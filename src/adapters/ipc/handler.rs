@@ -460,7 +460,10 @@ fn hard_occupied_structural_guard(
         }
         "workspace.close" => {
             if let Some(ws_id) = params::read_int::<u32>(params, "id").ok().flatten() {
-                engine.workspaces.iter().position(|w| w.id == ws_id)?
+                engine
+                    .workspaces()
+                    .into_iter()
+                    .position(|w| w.id == ws_id)?
             } else {
                 params::read_int::<usize>(params, "index").ok().flatten()?
             }
@@ -486,7 +489,7 @@ fn hard_occupied_structural_guard(
         "preset.apply" => {
             let active = || {
                 engine
-                    .workspaces
+                    .workspaces()
                     .len()
                     .checked_sub(1)
                     .map(|last| active_ws_idx.min(last))
@@ -505,7 +508,7 @@ fn hard_occupied_structural_guard(
         }
         _ => return None,
     };
-    let ws_id = engine.workspaces.get(ws_idx)?.id;
+    let ws_id = engine.workspace_at(ws_idx)?.id;
     if engine.attach.workspace_holder(ws_id).is_some() {
         return Some(hard_occupied_denial(ws_id, id));
     }
@@ -535,7 +538,7 @@ fn spawn_target_guard(
     id: &serde_json::Value,
 ) -> Option<JsonRpcResponse> {
     let ws_idx = engine.find_workspace_index_for_pane(pane_id)?;
-    let ws = engine.workspaces.get(ws_idx)?;
+    let ws = engine.workspace_at(ws_idx)?;
     let ws_id = ws.id;
     if ws.mirror {
         return Some(JsonRpcResponse::invalid_params(
@@ -1240,10 +1243,10 @@ pub(crate) fn system_info_fields(window: &dyn IpcWindow, engine: &CoreState) -> 
         "version": env!("CARGO_PKG_VERSION"),
         "scope": "engine",
         "layout_slot": engine.layout_slot,
-        "workspace_count": engine.workspaces.len(),
-        "workspace_ids": engine.workspaces.iter().map(|ws| ws.id).collect::<Vec<_>>(),
+        "workspace_count": engine.workspaces().len(),
+        "workspace_ids": engine.workspaces().into_iter().map(|ws| ws.id).collect::<Vec<_>>(),
         "active_workspace": active_workspace,
-        "active_workspace_id": engine.workspaces.get(active_workspace).map(|ws| ws.id),
+        "active_workspace_id": engine.workspace_at(active_workspace).map(|ws| ws.id),
     })
 }
 
@@ -1261,8 +1264,8 @@ pub(crate) fn build_engine_tree(
     engine: &crate::core::CoreState,
 ) -> Vec<serde_json::Value> {
     engine
-        .workspaces
-        .iter()
+        .workspaces()
+        .into_iter()
         .enumerate()
         .map(|(i, ws)| {
             let mut t = ws.to_tree_json(window.presentation());
@@ -1488,12 +1491,15 @@ mod system_info_tests {
         let engine = engine_session.borrow_mut();
         let info = system_info_fields(&state, &engine);
         assert_eq!(info["scope"], "engine");
-        assert_eq!(info["workspace_count"], engine.workspaces.len());
+        assert_eq!(info["workspace_count"], engine.workspaces().len());
         assert_eq!(info["active_workspace"], 0);
-        assert_eq!(info["active_workspace_id"], engine.workspaces[0].id);
+        assert_eq!(
+            info["active_workspace_id"],
+            engine.workspace_at(0).expect("workspace index is valid").id
+        );
         assert_eq!(
             info["workspace_ids"],
-            serde_json::json!([engine.workspaces[0].id])
+            serde_json::json!([engine.workspace_at(0).expect("workspace index is valid").id])
         );
     }
 
@@ -1501,7 +1507,7 @@ mod system_info_tests {
     fn system_info_does_not_invent_an_active_workspace_for_an_empty_engine() {
         let (state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        engine.workspaces.clear();
+        engine.replace_local_workspaces(Vec::new());
         let info = system_info_fields(&state, &engine);
         assert_eq!(info["workspace_count"], 0);
         assert_eq!(

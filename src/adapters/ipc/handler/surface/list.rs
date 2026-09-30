@@ -8,7 +8,7 @@ pub(crate) fn handle_surface_list(
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let mut surfaces = Vec::new();
-    for ws in &engine.workspaces {
+    for ws in &engine.workspaces() {
         for &pane_id in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                 for (tab_idx, tab) in pane.tabs.iter().enumerate() {

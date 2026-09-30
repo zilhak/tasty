@@ -15,18 +15,20 @@
 //!   통째로 적용한다. 중간에 실패하면 모델은 바뀌지 않는다. snapshot은 [`StructureModels`] 전체다.
 //! - codec은 이벤트 본문에 type tag와 schema version을 붙이고, 모르는 tag·version은 오류로
 //!   중단한다. 분할 비율은 f32 비트를 그대로 저장한다.
-//! - [`Decider`]는 상태·명령만 보고 결정하는 순수 계약이다. 새 ID와 시각은 [`DecisionContext`]로
+//! - [`Decider`]는 상태·명령만 보고 결정하는 순수 계약이다. 시각과 command identity는 [`DecisionContext`]로
 //!   받는다.
 //!
 //! 이 크레이트는 이벤트 저장소에 의존하지 않는다. 저장 봉투·저장 형식 버전·migration, 저장
 //! batch와 [`DomainBatch`] 사이의 변환, 명령 실행기는 root runtime이 맡는다.
 
 mod codec;
+mod command;
 mod decider;
 mod event;
 mod evolve;
 mod ids;
 mod model;
+mod operation;
 mod streams;
 
 #[cfg(test)]
@@ -36,13 +38,19 @@ pub use codec::{
     CodecError, EVENT_SCHEMA_VERSION, EncodedEvent, MODEL_VERSION, decode_event, decode_snapshot,
     encode_event, encode_snapshot,
 };
+pub use command::{
+    Rejection, StructuralCommand, StructuralDecision, StructuralResult, decide_structure,
+};
 pub use decider::{Decider, Decision, DecisionContext};
 pub use event::{DomainBatch, DomainEvent, MetadataTarget, RecordedEvent, SplitSpec, SurfaceSpec};
 pub use evolve::{EvolveError, evolve};
-pub use ids::{BatchId, IdKind, IdSupplier, MemoryIdSupplier, Revision};
+pub use ids::{BatchId, IdKind, Revision};
 pub use model::{
     Applied, Category, DataRef, JournalModel, Pane, Placement, Ratio, SplitTree, Surface, Tab,
     Workspace,
+};
+pub use operation::{
+    Activation, ActivationPhase, EntityId, Operation, OperationId, OperationOutcome,
 };
 pub use streams::{
     STRUCTURE_STREAM_PREFIX, StreamBatch, StructureModels, evolve_streams, is_structure_stream,

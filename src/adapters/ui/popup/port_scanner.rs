@@ -785,7 +785,7 @@ fn build_snapshot(
     show_all_system: bool,
 ) -> ScanSnapshot {
     let mut surfaces: Vec<(u32, u32, SurfaceDisplayPath)> = Vec::new();
-    for ws in &engine.workspaces {
+    for ws in &engine.workspaces() {
         for pane_id in ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                 for tab in &pane.tabs {

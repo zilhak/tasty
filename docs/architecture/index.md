@@ -121,6 +121,8 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 
 이 크레이트의 강제 종료 시험(`crates/tasty-event-store/tests/crash.rs`)은 시험 바이너리를 자식 프로세스로 다시 실행해 지정 지점에서 `abort`시키고, 부모가 journal을 다시 열어 판정한다. 판정 지점은 commit 직후(batch·명령·effect가 모두 남는다), 다음 commit 준비 뒤·확정 전(확정한 batch만 남는다), effect를 Running으로 기록한 직후(새 writer 세대가 그 attempt를 Running으로 보고 대조 전이로 닫을 수 있다), 두 프로세스의 동시 첫 열기(파일이 손상되지 않고 모든 migration이 한 번씩 적용된다)다. 프로세스 종료만 재현하며 전원 차단이나 OS 충돌에 의한 쓰기 유실은 재현하지 않는다.
 
+CoreState의 로컬 트리는 `local_workspaces`, 원격 mirror 트리는 `mirror_workspaces`에 별도로 있다. 렌더·입력·IPC는 빌린 합성 목록을 조회하고 로컬 저장·digest는 로컬 목록만 읽는다. 혼합 표시 순서는 비영속 projection으로 관리한다([ADR-0061](../adr/0061-external-remote-module-and-attach-sync.md)).
+
 `tasty-domain`은 구조 저널의 도메인 부분을 시험 전용으로 구현한다. 본 바이너리의 `CoreState`가 구조 상태의 유일한 원본이며, 이 크레이트의 모델은 그와 동시에 원본이 되지 않는다. 의존 방향은 `tasty-domain` → `tasty-model`이고 `tasty-event-store`에는 의존하지 않는다. 두 크레이트를 연결하는 것은 본 바이너리의 runtime 모듈이다.
 
 - 엔진별 구조 stream: journal 하나에 엔진마다 구조 stream이 하나 있고 이름은 `structure:` 접두로 시작한다. 이 접두가 없는 stream은 구조 이벤트로 해석하지 않는다.
@@ -133,6 +135,12 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 
 - 엔진의 구조 stream 이름을 레이아웃 슬롯 번호로 정한다(`structure:slot-<번호>`). 저장 batch에서 엔진 구조 stream 이벤트만 stream별로 해석해 도메인 batch를 만들고, 도메인 이벤트 본문을 저장 봉투에 담는다. 전체 로그 replay와 snapshot+tail 재구성은 모든 엔진에서 같은 모델·ID·revision을 만든다. snapshot 하나가 모든 엔진 모델과 그 surface 자료 참조를 함께 pin한다.
 - decide 계약에 대해 generic한 command executor: 재시도 키 조회를 대상 해소보다 먼저 하고, 새 요청만 decide한 뒤 명령·이벤트·effect를 한 transaction으로 확정한다. 확정에 성공한 뒤에만 메모리 상태에 적용하고 응답한다. 확정이 실패하면 상태를 바꾸지 않고 응답하지 않는다. revision 충돌이면 저장소에서 상태를 다시 읽어 정해진 횟수까지 다시 decide한다. 같은 프로세스에서 진행 중인 같은 키는 첫 실행에 합류하고 다른 요청이면 충돌로 거절한다. writer 잠금을 잃거나 fencing되면 이후 쓰기를 멈춘다. 도메인 거절은 저장하지 않는다.
+
+순수 명령은 metadata·명시 ID 재정렬·revision으로 고정한 split 비율을 결정한다. operation 준비/결과·activation·kind 변환·capture 세대는 별도 확정 사실이며 같은 activation의 늦은 capture도 거절한다. snapshot 모델은 v3이며 v2의 새 필드는 기본값으로 보완한다.
+
+`src/runtime/journal_product`의 저장 worker는 bounded 요청/완료 채널과 별도 publication ACK를 사용한다. 원본 key 조회에서 같은 진행 중 요청을 합치고, ID 예약은 decide 밖에서 수행한다. 저장소의 canonical 적용 뒤에도 App의 전체 batch 적용 ACK 전에는 성공 응답과 다음 변경을 내보내지 않는다. 부팅 replay cut도 초기 projection ACK가 필요하다. 현재 이 worker는 실제 저장소를 사용하는 시험으로 검증하며 App의 제품 명령 경로에는 아직 연결하지 않았다.
+
+데이터 홈의 명시 binding은 `structure/journal.json`, 저장소는 `structure/journal.db`다. 초기화 잠금 아래 Preparing→Ready로 확정한다. Ready binding에서 DB가 사라지면 빈 journal을 만들지 않는다. 파일을 flush한 뒤 Unix에서는 상위 디렉터리를 sync하고 Windows에서는 write-through rename을 사용한다. 이 절은 전원 차단이나 미실행 OS에서의 내구성을 실측했다는 뜻이 아니다.
 
 기존 layout 슬롯을 구조 journal로 가져오는 importer(`src/core/layout_persistence/import.rs`)도 시험 전용이며 부팅 경로에 연결하지 않았다. 슬롯 JSON 하나를 기존 슬롯 판정(높은 version·해석 실패 거절)으로 읽고, 그 슬롯 엔진의 구조 stream에 이벤트 batch 하나와 명령 기록으로 확정한다. 새 ID는 journal의 ID 예약에서 받으므로 여러 슬롯을 가져와도 엔진 사이에서 겹치지 않으며, surface ID는 standalone PTY ID 기준값 아래에서만 받는다. 슬롯 안의 위치(workspace 순서, 깊이 우선 leaf pane 순서, tab 순서, 깊이 우선 surface 순서)와 새 ID의 대응은 결과와 명령 기록에 남기며, 같은 슬롯을 같은 내용으로 다시 가져오면 저장된 대응을 돌려주고 다른 내용이면 거절한다. workspace 부제·설명·attach 매핑과 tab의 사용자 지정 이름은 전용 이벤트로 기록한다. terminal의 cwd·복원 명령·scrollback과 plugin surface 자료는 이벤트가 아니라 surface 저장 자료 payload 하나로 저장하고 이벤트에서 pin하며, 저장할 값이 없으면 자료 참조를 만들지 않는다. scrollback 파일이 없으면 저장 자료에 참조만 남긴다. 선택 workspace·focus pane·선택 tab·카테고리 접힘은 이벤트로 만들지 않고 결과로만 돌려준다.
 

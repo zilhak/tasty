@@ -410,8 +410,7 @@ pub(super) fn fire_require_approval(
     current: f64,
 ) {
     let ws_id = engine
-        .workspaces
-        .get(window.active_workspace_index(engine))
+        .workspace_at(window.active_workspace_index(engine))
         .map(|w| w.id);
     let title = format!("Cap '{}' — 승인 필요", cap.metric);
     let body = format!(
@@ -472,7 +471,7 @@ pub(super) fn fire_notify(
     cap: &CostCap,
     current: f64,
 ) {
-    let Some(ws) = engine.workspaces.get(window.active_workspace_index(engine)) else {
+    let Some(ws) = engine.workspace_at(window.active_workspace_index(engine)) else {
         tracing::warn!("cap notify: no active workspace, skipping cap {}", cap.id);
         return;
     };

@@ -130,11 +130,11 @@ fn a_workspace_closed_before_emission_reports_zero() {
     let mut engine = engine_session.borrow_mut();
     let ws = create_from_ipc(&mut state, &mut engine);
     let idx = engine
-        .workspaces
-        .iter()
+        .workspaces()
+        .into_iter()
         .position(|w| w.id == ws)
         .expect("created workspace");
-    engine.workspaces.remove(idx);
+    engine.remove_workspace_at(idx);
     let reg = registry_with_window(engine_session, WINDOW);
     assert_eq!(window_id_at_emission(&reg, &[WINDOW], ws), 0);
 }

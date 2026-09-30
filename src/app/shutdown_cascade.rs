@@ -22,7 +22,7 @@ impl App {
         engine: &crate::core::CoreState,
     ) -> usize {
         let mut targets: Vec<(u32, Option<&'static str>)> = Vec::new();
-        for ws in &engine.workspaces {
+        for ws in &engine.workspaces() {
             for pid in ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {

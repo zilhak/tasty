@@ -505,7 +505,7 @@ fn current_surface_kind(
     engine: &crate::core::CoreState,
     surface_id: u32,
 ) -> Option<&'static str> {
-    for ws in &engine.workspaces {
+    for ws in &engine.workspaces() {
         for &pid in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
                 for tab in &pane.tabs {

@@ -84,15 +84,15 @@ impl RequestContext {
         all_pane_ids.first().ok_or(ApplyError::Empty)?;
 
         let name = if preset.name.is_empty() {
-            format!("Workspace {}", engine.workspaces.len() + 1)
+            format!("Workspace {}", engine.workspaces().len() + 1)
         } else {
             preset.name.clone()
         };
 
         let mut ws = Workspace::from_restored(ws_id, name, preset.subtitle.clone(), pane_node);
         ws.description = preset.description.clone();
-        engine.workspaces.push(ws);
-        let idx = engine.workspaces.len() - 1;
+        engine.push_local_workspace(ws);
+        let idx = engine.workspaces().len() - 1;
 
         if let Some(cat_id) = category
             && let Err(e) = engine.set_workspace_category(ws_id, cat_id)
@@ -120,7 +120,9 @@ impl RequestContext {
         let tab = self.build_tab(engine, &preset.tab)?;
         let tab_id = tab.id;
 
-        let ws = &mut engine.workspaces[ws_idx];
+        let ws = engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid");
         let pane = ws
             .pane_layout_mut()
             .find_pane_mut(pane_id)
@@ -147,18 +149,20 @@ impl RequestContext {
                 .find_workspace_index_for_id(id)
                 .ok_or(ApplyError::WorkspaceNotFound(id))?,
             None => {
-                if engine.workspaces.is_empty() {
+                if engine.workspaces().is_empty() {
                     return Err(ApplyError::NoActiveWorkspace);
                 }
                 self.active_workspace_index(engine)
-                    .min(engine.workspaces.len() - 1)
+                    .min(engine.workspaces().len() - 1)
             }
         };
 
         let new_pane = self.build_pane(engine, &preset.pane)?;
         let new_pane_id = new_pane.id;
 
-        let ws = &mut engine.workspaces[ws_idx];
+        let ws = engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid");
         let target_pane_id = self.navigation.pane_id(ws).unwrap_or(0);
         let remaining = ws.pane_layout_mut().split_pane_in_place(
             target_pane_id,
@@ -192,7 +196,7 @@ impl RequestContext {
         engine: &CoreState,
         target_pane_id: Option<u32>,
     ) -> Result<(usize, u32), ApplyError> {
-        if engine.workspaces.is_empty() {
+        if engine.workspaces().is_empty() {
             return Err(ApplyError::NoActiveWorkspace);
         }
         if let Some(pid) = target_pane_id {
@@ -203,8 +207,10 @@ impl RequestContext {
         }
         let ws_idx = self
             .active_workspace_index(engine)
-            .min(engine.workspaces.len() - 1);
-        let ws = &engine.workspaces[ws_idx];
+            .min(engine.workspaces().len() - 1);
+        let ws = engine
+            .workspace_at(ws_idx)
+            .expect("workspace index is valid");
         let pid = self.navigation.pane_id(ws).unwrap_or(0);
         if ws.pane_layout().find_pane(pid).is_some() {
             return Ok((ws_idx, pid));
@@ -561,7 +567,13 @@ mod tests {
             )
             .expect("apply_workspace_preset");
 
-        assert_eq!(engine.workspaces[idx].category, work);
+        assert_eq!(
+            engine
+                .workspace_at(idx)
+                .expect("workspace index is valid")
+                .category,
+            work
+        );
     }
 
     #[test]
@@ -575,7 +587,10 @@ mod tests {
             .expect("apply_workspace_preset");
 
         assert_eq!(
-            engine.workspaces[idx].category,
+            engine
+                .workspace_at(idx)
+                .expect("workspace index is valid")
+                .category,
             crate::model::NORMAL_CATEGORY_ID
         );
     }
@@ -597,7 +612,10 @@ mod tests {
             .expect("apply_workspace_preset");
 
         assert_eq!(
-            engine.workspaces[idx].category,
+            engine
+                .workspace_at(idx)
+                .expect("workspace index is valid")
+                .category,
             crate::model::NORMAL_CATEGORY_ID
         );
     }

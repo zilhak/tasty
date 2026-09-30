@@ -76,7 +76,10 @@ impl Core {
         engine.mark_layout_dirty();
 
         if let Some(ws_idx) = engine.find_workspace_index_for_pane(pane_id) {
-            let ws_id = engine.workspaces[ws_idx].id;
+            let ws_id = engine
+                .workspace_at(ws_idx)
+                .expect("workspace index is valid")
+                .id;
             engine.tap_new_workspace_member(ws_id, surface_id, true);
         }
 

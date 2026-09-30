@@ -3,5 +3,7 @@
 mod common;
 
 mod codec;
+mod command;
 mod evolve;
+mod lifecycle;
 mod streams;

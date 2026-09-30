@@ -38,7 +38,10 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
     let (mut core, _) = build_test_core();
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
-    let sid = engine.workspaces[0].all_surface_ids()[0];
+    let sid = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     let pane = engine.find_pane_for_surface(sid).unwrap();
     FileHandlerRegistryPort::install_plugin_handlers(
         engine.file_handler.as_ref(),
@@ -74,7 +77,10 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
     )
     .unwrap();
     state.set_active_workspace_index(&engine, 1);
-    let before = engine.workspaces[0].all_surface_ids();
+    let before = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids();
     let active_tab = state
         .navigation
         .tab_index(engine.find_pane_by_id(pane).unwrap());
@@ -89,7 +95,9 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
         picker.dispatch_origin,
         picker.ignore_size_limit,
     );
-    let added = engine.workspaces[0]
+    let added = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
         .all_surface_ids()
         .into_iter()
         .find(|id| !before.contains(id))
@@ -150,7 +158,10 @@ fn no_origin_retains_the_user_new_tab_path_and_failed_creation_is_not_success() 
     let (mut core, _) = build_test_core();
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
-    let sid = engine.workspaces[0].all_surface_ids()[0];
+    let sid = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     assert!(!open_surface_tab(
         &mut core,
         &mut state,
@@ -178,7 +189,10 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
     let (mut core, _) = build_test_core();
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
-    let sid = engine.workspaces[0].all_surface_ids()[0];
+    let sid = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     let pane = engine.find_pane_for_surface(sid).unwrap();
     let target = FileTarget::new("/missing/unknown");
     apply_identify_result(
@@ -269,7 +283,10 @@ fn agent_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
     let (mut core, _) = build_test_core();
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
-    let origin = engine.workspaces[0].all_surface_ids()[0];
+    let origin = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     let pane_id = engine.find_pane_for_surface(origin).unwrap();
     // 원래 origin과 선택된 탭을 다르게 둔다.
     assert!(open_surface_tab(
@@ -321,7 +338,10 @@ fn a_user_origin_selects_its_result_tab() {
     let (mut core, _) = build_test_core();
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
-    let origin = engine.workspaces[0].all_surface_ids()[0];
+    let origin = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     let pane_id = engine.find_pane_for_surface(origin).unwrap();
     let before = engine.find_pane_by_id(pane_id).unwrap();
     let selected_before = before.tabs[state.navigation.tab_index(before)].id;
@@ -361,7 +381,10 @@ fn user_dispatch_and_remote_placeholder_open_the_picker_as_user_requests() {
     let (mut core, _) = build_test_core();
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
-    let sid = engine.workspaces[0].all_surface_ids()[0];
+    let sid = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     apply_identify_result(
         &mut core,
         &mut state,
@@ -387,7 +410,10 @@ fn agent_dispatch_without_a_matching_handler_opens_no_picker() {
     let (mut core, _) = build_test_core();
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
-    let sid = engine.workspaces[0].all_surface_ids()[0];
+    let sid = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     let recent_before = state.file_handler_recent.list().len();
     for origin_surface_id in [Some(sid), None] {
         for detector in [None, Some(DetectorId::new("no-such-detector"))] {
@@ -425,7 +451,10 @@ fn an_unverified_plugin_dispatch_without_a_matching_handler_opens_the_fallback_p
             "action": {"kind": "open_surface", "surface_kind": "empty", "param_key": "file"}}),
         ],
     );
-    let sid = engine.workspaces[0].all_surface_ids()[0];
+    let sid = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     for detector in [None, Some(DetectorId::new("no-such-detector"))] {
         apply_identify_result(
             &mut core,

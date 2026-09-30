@@ -18,7 +18,7 @@ impl CascadeWindow for RequestContext {
         RequestContext::apply_structure_result(self, engine, event);
     }
     fn select_surface_result(&mut self, engine: &CoreState, surface: u32) {
-        for ws in &engine.workspaces {
+        for ws in &engine.workspaces() {
             for pane_id in ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pane_id)
                     && let Some(tab) = pane.tabs.iter().find(|t| t.contains_surface(surface))
@@ -36,8 +36,8 @@ impl CascadeWindow for RequestContext {
     }
     fn select_pane_result(&mut self, engine: &CoreState, pane: u32) {
         if let Some(ws) = engine
-            .workspaces
-            .iter()
+            .workspaces()
+            .into_iter()
             .find(|ws| ws.pane_layout().find_pane(pane).is_some())
         {
             self.navigation.select_pane(ws, pane);

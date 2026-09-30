@@ -1164,8 +1164,8 @@ impl App {
     fn notify_resume_suspects(engine: &mut crate::core::CoreState, suspects: &[u32]) {
         for &sid in suspects {
             let ws_id = engine
-                .workspaces
-                .iter()
+                .workspaces()
+                .into_iter()
                 .find(|w| w.all_surface_ids().contains(&sid))
                 .map(|w| w.id)
                 .unwrap_or(0);

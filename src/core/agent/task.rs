@@ -716,7 +716,7 @@ pub(crate) fn dag_scan_workspaces(engine: &CoreState, workspace_id: Option<u32>)
     match workspace_id {
         Some(w) => vec![w],
         None => {
-            let mut ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
+            let mut ids: Vec<u32> = engine.workspaces().into_iter().map(|w| w.id).collect();
             ids.sort_unstable();
             ids
         }

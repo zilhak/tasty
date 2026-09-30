@@ -1,6 +1,6 @@
 # ADR-0061: 외부 원격 연결은 Remote가 소유하고 attach 동기화는 서버의 확정 순서를 따른다
 
-- **Status**: Accepted — 구현 상태: 단계적 이행 중. 현재 연결·재연결·ID mapping 상태가 App 필드와 attach client·Core attach runtime에 나뉘어 있다. mirror는 아직 로컬 workspace 목록 안에 `mirror` 표지로 섞여 있고 로컬 공유 카운터에서 ID를 받는다
+- **Status**: Accepted — 구현 상태: 단계적 이행 중. 현재 연결·재연결·ID mapping 상태가 App 필드와 attach client·Core attach runtime에 나뉘어 있다. mirror 트리는 `CoreState.mirror_workspaces`, 로컬 트리는 `CoreState.local_workspaces`로 분리됐다. `workspaces()`는 두 트리를 복제하지 않는 합성 읽기이며 기존 index wire와 ID 기반 navigation을 함께 지원한다. ID는 아직 로컬 공유 카운터에서 받는다
 - **Date**: 2026-09-30
 - **Tags**: attach, remote, stream, synchronization, plugins
 - **Group**: terminal
@@ -47,7 +47,7 @@ forward 요청의 출처, parked 엔진의 즉시 적용을 정했다. mirror �
   - 쓰기: mirror 전용 필드는 RemoteState 세션이 쓰는 단일 창구로만 바꾼다. 로컬 구조 트리는 Remote가 직접 바꾸지 않는다.
     조회는 로컬 목록과 mirror 필드를 함께 찾는 합성 조회로 제공한다.
   - 로컬 사용자와 에이전트의 mirror 구조 조작은 로컬에서 실행하지 않고 서버로 forward한다. 분할·닫기·이동·변환 같은 구조 변경은 mirror ID로 로컬 명령을 만들지 않는다.
-    사이드바 순서와 mirror에 붙인 로컬 메타데이터(카테고리·부제·설명 등)는 아래 Consequences의 미정 항목을 따른다.
+    사이드바 혼합 순서는 engine의 `workspace_display_order`라는 비영속 표시 projection에 둔다. 로컬 부분의 상대 순서는 로컬 구조 순서를 따르고, mirror의 위치는 Remote 표시 문맥이다. mirror의 로컬 카테고리·부제·설명은 journal 원본이 아니며 아래 호환 정책을 따른다.
   - 목표 소유는 `RemoteState`의 세션별 mirror projection이다. `CoreState` 안의 전용 필드는 그리로 가는 중간 배치다.
   - ID: mirror의 로컬 workspace·pane·tab·surface ID도 로컬 구조 journal의 같은 예약에서 받는다. 이벤트 없이 예약만 소비한다([ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)).
     엔진을 넘어 합산하는 목록에 mirror도 들어가므로 로컬 ID와 한 공간에서 유일해야 한다. mirror 전용 발급기는 두지 않는다.
@@ -108,8 +108,8 @@ forward 요청의 출처, parked 엔진의 즉시 적용을 정했다. mirror �
 plugin 내부 채널과 외부 연결의 수명·권한·큐 예산이 섞이지 않는다. 서버 구조 변경이 명령 경계를 거치므로 원격 경로가 기록에서 빠지지 않는다.
 
 mirror를 별도 필드에 두면 로컬 journal과 비교에서 mirror가 구조적으로 빠진다. 대신 mirror도 보여야 하는 조회(사이드바·렌더·입력 라우팅·IPC 목록)를 합성 조회로 바꿔야 하며,
-하나라도 빠뜨리면 mirror가 화면이나 목록에서 사라지는 회귀가 난다. 사이드바에서 로컬과 mirror가 섞인 순서를 누가 소유하는지,
-delta 적용 때 mirror에 로컬로 붙인 카테고리·부제·설명을 보존할지는 아직 정하지 않았다.
+하나라도 빠뜨리면 mirror가 화면이나 목록에서 사라지는 회귀가 난다. 혼합 순서는 engine의 표시 projection이며 로컬 canonical 순서를 덮어쓰는 원본이 아니다. 로컬 순서 적용은 기존 workspace·surface 인스턴스를 이동하고 mirror를 유지한다. mirror를 이동해도 로컬 membership은 바뀌지 않는다.
+기존 호환 정책을 유지한다. delta rebuild는 현재 mirror 이름을 사용하지만 로컬 카테고리·부제·설명은 새 mirror 기본값으로 돌아간다. 재연결은 서버 snapshot의 이름을 사용한다. 이 자료를 새로 영속화하거나 delta마다 보존하는 기능은 추가하지 않는다. 표시 순서와 mirror 자료는 RemoteState 이전 때 함께 옮기되 로컬 journal에는 넣지 않는다.
 처음 결정은 서버의 명령 경계와 client mirror projection을 한 문장에 적어 mirror 구조가 로컬 journal에 기록되는지 해석이 갈렸다. 이 개정에서 둘을 나누고 mirror의 저장 위치·쓰기 창구·ID 발급을 정했다.
 
 기존 wire를 유지하므로 구 client·server와의 호환 비용은 그대로다. 구 server는 origin을 무시해 새 client의 agent close를 복원 기록에 남긴다.

@@ -104,7 +104,9 @@ fn an_ipc_split_keeps_the_users_focus_for_every_caller() {
             );
 
             assert_eq!(
-                engine.workspaces[state.active_workspace_index(&engine)]
+                engine
+                    .workspace_at(state.active_workspace_index(&engine))
+                    .expect("workspace index is valid")
                     .all_surface_ids()
                     .len(),
                 2,
@@ -193,7 +195,8 @@ fn a_plugin_split_on_a_mirror_forwards_as_a_silent_agent_request() {
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
     let sid = state.focused_surface_id(&engine).expect("focused surface");
-    state.active_workspace_mut(&mut engine).mirror = true;
+    let active = state.active_workspace_index(&engine);
+    engine.make_mirror_fixture(active);
 
     super::handle_with_caller(
         &mut core,

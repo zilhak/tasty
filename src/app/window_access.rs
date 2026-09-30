@@ -580,7 +580,7 @@ fn find_workspace_by_name<'a>(
 ) -> Result<Option<WindowId>, String> {
     let mut matches: Vec<WindowId> = Vec::new();
     for (wid, engine) in windows {
-        if engine.workspaces.iter().any(|ws| ws.name == target) {
+        if engine.workspaces().into_iter().any(|ws| ws.name == target) {
             matches.push(wid);
         }
     }
@@ -635,7 +635,10 @@ mod tests {
         let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let mut engine = engine_session.borrow_mut();
-        engine.workspaces[0].name = name.to_string();
+        engine
+            .workspace_at_mut(0)
+            .expect("workspace index is valid")
+            .name = name.to_string();
         engine_session
     }
 
@@ -695,7 +698,10 @@ mod tests {
             .map(|name| {
                 let (state, mut engine_session) = crate::state::tests::test_state();
                 let mut engine = engine_session.borrow_mut();
-                engine.workspaces[0].name = (*name).to_string();
+                engine
+                    .workspace_at_mut(0)
+                    .expect("workspace index is valid")
+                    .name = (*name).to_string();
                 reg.park_for_test(state, engine_session)
             })
             .collect();
@@ -716,7 +722,10 @@ mod tests {
     fn workspace_in_windowed_engine_is_not_orphaned() {
         let mut windowed_session = engine_with_workspace_name("mirror");
         let windowed = windowed_session.borrow_mut();
-        let ws = windowed.workspaces[0].id;
+        let ws = windowed
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .id;
         assert!(any_engine_has_workspace(
             [&*windowed.core].into_iter(),
             std::iter::empty(),
@@ -727,7 +736,12 @@ mod tests {
     #[test]
     fn workspace_only_in_parked_engine_is_not_orphaned() {
         let (reg, ids) = parked(&["mirror"]);
-        let ws = reg.get(ids[0]).expect("engine").workspaces[0].id;
+        let ws = reg
+            .get(ids[0])
+            .expect("engine")
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .id;
         assert!(any_engine_has_workspace(
             std::iter::empty(),
             parked_pairs(&reg),
@@ -739,8 +753,15 @@ mod tests {
     fn workspace_in_later_parked_engine_is_not_orphaned() {
         let (mut reg, ids) = parked(&["first", "second"]);
         // 첫 engine과 겹치지 않는 ID를 두 번째 engine에만 만든다.
-        let target = engine_mut(&mut reg, ids[0]).workspaces[0].id + 5_000;
-        engine_mut(&mut reg, ids[1]).workspaces[0].id = target;
+        let target = engine_mut(&mut reg, ids[0])
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .id
+            + 5_000;
+        engine_mut(&mut reg, ids[1])
+            .workspace_at_mut(0)
+            .expect("workspace index is valid")
+            .id = target;
         assert!(any_engine_has_workspace(
             std::iter::empty(),
             parked_pairs(&reg),
@@ -753,8 +774,17 @@ mod tests {
         let mut windowed_session = engine_with_workspace_name("local");
         let windowed = windowed_session.borrow_mut();
         let (reg, ids) = parked(&["other"]);
-        let missing =
-            windowed.workspaces[0].id + reg.get(ids[0]).expect("engine").workspaces[0].id + 1_000;
+        let missing = windowed
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .id
+            + reg
+                .get(ids[0])
+                .expect("engine")
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .id
+            + 1_000;
         assert!(!any_engine_has_workspace(
             [&*windowed.core].into_iter(),
             parked_pairs(&reg),
@@ -763,7 +793,14 @@ mod tests {
     }
 
     fn names<'a>(engines: impl Iterator<Item = EngineRef<'a>>) -> Vec<String> {
-        engines.map(|e| e.workspaces[0].name.clone()).collect()
+        engines
+            .map(|e| {
+                e.workspace_at(0)
+                    .expect("workspace index is valid")
+                    .name
+                    .clone()
+            })
+            .collect()
     }
 
     fn with_pending(
@@ -838,7 +875,13 @@ mod tests {
         let mut views = HashMap::new();
         let mut scan = EngineScanMut::from_fields(&mut views, &mut reg);
         let visit = |it: &mut dyn Iterator<Item = EngineMut<'_>>| -> Vec<String> {
-            it.map(|e| e.workspaces[0].name.clone()).collect()
+            it.map(|e| {
+                e.workspace_at(0)
+                    .expect("workspace index is valid")
+                    .name
+                    .clone()
+            })
+            .collect()
         };
         assert_eq!(
             visit(&mut scan.reborrow().windowed_and_parked()),
@@ -849,7 +892,12 @@ mod tests {
         let sessions: Vec<String> = scan
             .reborrow()
             .sessions()
-            .map(|(_, e)| e.workspaces[0].name.clone())
+            .map(|(_, e)| {
+                e.workspace_at(0)
+                    .expect("workspace index is valid")
+                    .name
+                    .clone()
+            })
             .collect();
         assert_eq!(
             sessions,
@@ -857,9 +905,11 @@ mod tests {
             "sessions는 임시 engine을 넣지 않는다"
         );
         assert_eq!(
-            scan.reborrow()
-                .primary()
-                .map(|e| e.workspaces[0].name.clone()),
+            scan.reborrow().primary().map(|e| e
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .name
+                .clone()),
             Some("tmp".to_string())
         );
     }
@@ -870,7 +920,10 @@ mod tests {
         let mut views = HashMap::new();
         let (state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        engine.workspaces[0].name = "p1".to_string();
+        engine
+            .workspace_at_mut(0)
+            .expect("workspace index is valid")
+            .name = "p1".to_string();
         let p1 = with_pending(&mut reg, engine_session);
         let w = WindowId::from(1u64);
         reg.attach_window(w, p1);
@@ -899,7 +952,13 @@ mod tests {
         use crate::core::intent::DomainIntent;
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        let pane_id = engine.workspaces[0].pane_layout().first_pane().unwrap().id;
+        let pane_id = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .first_pane()
+            .unwrap()
+            .id;
         let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
         for _ in 0..2 {
             crate::app::structural_exec::execute(
@@ -970,8 +1029,15 @@ mod tests {
     fn parked_session_lookups_find_the_engine_by_id() {
         let (mut reg, ids) = parked(&["p0", "p1"]);
         // 첫 항목과 겹치지 않는 ID를 두 번째 항목에만 둔다.
-        let target = engine_mut(&mut reg, ids[0]).workspaces[0].id + 5_000;
-        engine_mut(&mut reg, ids[1]).workspaces[0].id = target;
+        let target = engine_mut(&mut reg, ids[0])
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .id
+            + 5_000;
+        engine_mut(&mut reg, ids[1])
+            .workspace_at_mut(0)
+            .expect("workspace index is valid")
+            .id = target;
         let mut other = EngineRegistry::default();
         let unknown = with_pending(&mut other, engine_with_workspace_name("x"));
         let mut views = HashMap::new();
@@ -980,9 +1046,15 @@ mod tests {
             .reborrow()
             .parked_session(ids[1])
             .expect("두 번째 항목");
-        assert_eq!(e.workspaces[0].name, "p1");
+        assert_eq!(
+            e.workspace_at(0).expect("workspace index is valid").name,
+            "p1"
+        );
         let (_, e) = scan.reborrow().first_parked_session().expect("첫 항목");
-        assert_eq!(e.workspaces[0].name, "p0");
+        assert_eq!(
+            e.workspace_at(0).expect("workspace index is valid").name,
+            "p0"
+        );
         assert!(scan.reborrow().parked_session(unknown).is_none());
         let rid = crate::core::request_target::ResourceId {
             kind: crate::core::request_target::Kind::Workspace,
@@ -991,7 +1063,10 @@ mod tests {
         let (_, e) = scan
             .parked_session_with_resource(rid)
             .expect("workspace를 가진 parked 항목");
-        assert_eq!(e.workspaces[0].name, "p1");
+        assert_eq!(
+            e.workspace_at(0).expect("workspace index is valid").name,
+            "p1"
+        );
     }
 
     /// 보관 순서가 바뀌어도 id는 처음 가리킨 engine을 계속 가리킨다.
@@ -1006,7 +1081,10 @@ mod tests {
         let (_, e) = EngineScanMut::from_fields(&mut views, &mut reg)
             .parked_session(ids[1])
             .expect("앞 항목을 꺼낸 뒤에도 같은 id로 찾는다");
-        assert_eq!(e.workspaces[0].name, "p1");
+        assert_eq!(
+            e.workspace_at(0).expect("workspace index is valid").name,
+            "p1"
+        );
 
         let w = WindowId::from(1u64);
         reg.attach_window(w, p0);
@@ -1016,12 +1094,18 @@ mod tests {
             .reborrow()
             .parked_session(p0)
             .expect("다시 보관한 engine은 원래 id를 유지한다");
-        assert_eq!(e.workspaces[0].name, "p0");
+        assert_eq!(
+            e.workspace_at(0).expect("workspace index is valid").name,
+            "p0"
+        );
         let (_, e) = scan
             .reborrow()
             .parked_session(ids[1])
             .expect("뒤에 보관한 항목이 있어도 같은 engine");
-        assert_eq!(e.workspaces[0].name, "p1");
+        assert_eq!(
+            e.workspace_at(0).expect("workspace index is valid").name,
+            "p1"
+        );
     }
 
     fn slots(v: &[LayoutSlotId]) -> HashSet<LayoutSlotId> {

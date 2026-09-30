@@ -10,20 +10,21 @@ use crate::core::CoreState;
 
 impl RequestContext {
     pub(crate) fn active_workspace_index(&self, engine: &CoreState) -> usize {
-        self.navigation.workspace_index(&engine.workspaces)
+        self.navigation.workspace_index(&engine.workspaces())
     }
 
     pub(crate) fn set_active_workspace_index(&mut self, engine: &CoreState, index: usize) {
-        if let Some(ws) = engine.workspaces.get(index) {
-            self.navigation.select_workspace(&engine.workspaces, ws.id);
+        if let Some(ws) = engine.workspace_at(index) {
+            self.navigation
+                .select_workspace(&engine.workspaces(), ws.id);
         }
     }
 
     #[cfg(feature = "gui")]
     pub(crate) fn select_pane(&mut self, engine: &CoreState, pane_id: u32) {
         if let Some(ws) = engine
-            .workspaces
-            .iter()
+            .workspaces()
+            .into_iter()
             .find(|ws| ws.pane_layout().find_pane(pane_id).is_some())
         {
             self.navigation.select_pane(ws, pane_id);
@@ -33,7 +34,7 @@ impl RequestContext {
     /// Retire presentation entries with their structure. Unlike the old fields
     /// on domain objects, these maps do not disappear when the objects drop.
     pub(crate) fn reconcile_presentation(&mut self, engine: &CoreState) {
-        self.navigation.reconcile(&engine.workspaces);
+        self.navigation.reconcile(&engine.workspaces());
         #[cfg(feature = "gui")]
         self.terminal_views.retain(engine);
         self.navigation
@@ -41,7 +42,10 @@ impl RequestContext {
             .retain(|id| engine.categories().iter().any(|c| c.id == *id));
         #[cfg(any(feature = "gui", debug_assertions, test))]
         self.category_last_active.retain(|category, workspace| {
-            engine.workspaces.iter().any(|ws| ws.id == *workspace)
+            engine
+                .workspaces()
+                .into_iter()
+                .any(|ws| ws.id == *workspace)
                 && engine.categories().iter().any(|c| c.id == *category)
         });
         #[cfg(feature = "gui")]
@@ -54,22 +58,22 @@ impl RequestContext {
         engine: &CoreState,
         event: &crate::core::intent::CoreEvent,
     ) {
-        self.navigation.apply_result(&engine.workspaces, event);
+        self.navigation.apply_result(&engine.workspaces(), event);
         self.reconcile_presentation(engine);
     }
 
-    /// Invariant: caller must ensure `engine.workspaces` is non-empty.
+    /// Invariant: caller must ensure `engine.workspaces()` is non-empty.
     /// Parked states (after the last window closes) can have zero workspaces —
-    /// such callers must use `engine.workspaces.is_empty()` checks instead.
+    /// such callers must use `engine.workspaces().is_empty()` checks instead.
     pub fn active_workspace<'a>(&self, engine: &'a CoreState) -> &'a crate::model::Workspace {
         debug_assert!(
-            !engine.workspaces.is_empty(),
+            !engine.workspaces().is_empty(),
             "active_workspace called with empty workspaces"
         );
         let idx = self
             .active_workspace_index(engine)
-            .min(engine.workspaces.len().saturating_sub(1));
-        &engine.workspaces[idx]
+            .min(engine.workspaces().len().saturating_sub(1));
+        engine.workspace_at(idx).expect("workspace index is valid")
     }
 
     #[cfg(any(feature = "gui", test))]
@@ -78,19 +82,21 @@ impl RequestContext {
         engine: &'a mut CoreState,
     ) -> &'a mut crate::model::Workspace {
         debug_assert!(
-            !engine.workspaces.is_empty(),
+            !engine.workspaces().is_empty(),
             "active_workspace_mut called with empty workspaces"
         );
         let idx = self
             .active_workspace_index(engine)
-            .min(engine.workspaces.len().saturating_sub(1));
-        &mut engine.workspaces[idx]
+            .min(engine.workspaces().len().saturating_sub(1));
+        engine
+            .workspace_at_mut(idx)
+            .expect("workspace index is valid")
     }
 
     /// Get the focused pane in the active workspace, or the first pane as fallback.
     /// Returns `None` if no workspaces exist (parked state after last-window close).
     pub fn focused_pane<'a>(&self, engine: &'a CoreState) -> Option<&'a crate::model::Pane> {
-        if engine.workspaces.is_empty() {
+        if engine.workspaces().is_empty() {
             return None;
         }
         let ws = self.active_workspace(engine);
@@ -107,12 +113,13 @@ impl RequestContext {
         &self,
         engine: &'a mut CoreState,
     ) -> Option<&'a mut crate::model::Pane> {
-        if engine.workspaces.is_empty() {
+        if engine.workspaces().is_empty() {
             return None;
         }
         let ws_id = self.active_workspace_index(engine);
-        let pane_id = self.navigation.pane_id(&engine.workspaces[ws_id])?;
-        engine.workspaces[ws_id]
+        let pane_id = self.navigation.pane_id(engine.workspace_at_mut(ws_id)?)?;
+        engine
+            .workspace_at_mut(ws_id)?
             .pane_layout_mut()
             .find_pane_mut(pane_id)
     }
@@ -163,7 +170,7 @@ impl RequestContext {
             })
             .map(|target| {
                 let pane_id = match target {
-                    SwitchTarget::Tab if !engine.workspaces.is_empty() => {
+                    SwitchTarget::Tab if !engine.workspaces().is_empty() => {
                         Some(self.focused_pane_id(engine))
                     }
                     _ => None,

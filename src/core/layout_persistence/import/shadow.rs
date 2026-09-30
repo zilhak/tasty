@@ -33,9 +33,8 @@ pub(super) fn core_canonical(engine: &CoreState) -> Canonical {
         })
         .collect();
     let workspaces = engine
-        .workspaces
+        .local_workspaces
         .iter()
-        .filter(|ws| !ws.mirror)
         .map(|ws| {
             let mut leaves = Vec::new();
             pane_leaves(ws.pane_layout(), &mut leaves);

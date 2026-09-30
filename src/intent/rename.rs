@@ -142,16 +142,22 @@ mod tests {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
-        engine.workspaces[0].mirror = mirror;
+        engine
+            .workspace_at_mut(0)
+            .expect("workspace index is valid")
+            .mirror = mirror;
         engine.layout_dirty.clear();
-        let rename = make(engine.workspaces[0].id);
+        let rename = make(engine.workspace_at(0).expect("workspace index is valid").id);
         let intent = Intent::DirectRename(rename).from_user_menu("test");
         handle(&mut core, &mut state, &mut engine, &intent);
         (state, engine_session)
     }
 
     fn first_tab(engine: &crate::core::CoreState) -> (u32, u32) {
-        let sid = engine.workspaces[0].all_surface_ids()[0];
+        let sid = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let pane_id = engine.find_pane_for_surface(sid).expect("pane");
         let tab = &engine.find_pane_by_id(pane_id).expect("pane").tabs[0];
         (pane_id, tab.id)
@@ -184,7 +190,10 @@ mod tests {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
-        engine.workspaces[0].mirror = mirror;
+        engine
+            .workspace_at_mut(0)
+            .expect("workspace index is valid")
+            .mirror = mirror;
         let (pane_id, tab_id) = first_tab(&engine);
         let intent = Intent::DirectRename(DirectRename::TabName {
             tab_id,
@@ -265,7 +274,13 @@ mod tests {
             false,
         );
         let engine = engine_session.borrow_mut();
-        assert_eq!(engine.workspaces[0].name, "N");
+        assert_eq!(
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .name,
+            "N"
+        );
         assert!(engine.layout_dirty.is_dirty());
         assert!(matches!(
             renamed_events(&state).as_slice(),
@@ -289,7 +304,13 @@ mod tests {
             false,
         );
         let engine = engine_session.borrow_mut();
-        assert_eq!(engine.workspaces[0].subtitle, "S");
+        assert_eq!(
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .subtitle,
+            "S"
+        );
         assert!(matches!(
             renamed_events(&state).as_slice(),
             [PendingHostEvent::WorkspaceRenamed {
@@ -311,7 +332,13 @@ mod tests {
             true,
         );
         let engine = engine_session.borrow_mut();
-        assert_eq!(engine.workspaces[0].name, "M");
+        assert_eq!(
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .name,
+            "M"
+        );
         assert_eq!(renamed_events(&state).len(), 1);
     }
 }

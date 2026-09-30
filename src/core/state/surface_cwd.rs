@@ -138,7 +138,10 @@ mod tests {
     fn cwd_forwards_only_on_change() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let sid = e.workspaces[0].all_surface_ids()[0];
+        let sid = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         e.attach.acquire(sid, 7).expect("lock");
 
         let first = e.surface_cwd_forwards();
@@ -155,7 +158,10 @@ mod tests {
     fn released_then_reacquired_pushes_baseline_again() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let sid = e.workspaces[0].all_surface_ids()[0];
+        let sid = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         e.attach.acquire(sid, 7).expect("lock");
         assert_eq!(e.surface_cwd_forwards().len(), 1);
 
@@ -178,7 +184,10 @@ mod tests {
     fn holder_swap_within_one_tick_pushes_to_the_new_holder() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let sid = e.workspaces[0].all_surface_ids()[0];
+        let sid = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         e.attach.acquire(sid, 7).expect("lock");
         assert_eq!(e.surface_cwd_forwards().len(), 1);
 
@@ -193,8 +202,11 @@ mod tests {
     fn mirror_push_overrides_and_none_clears() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let sid = e.workspaces[0].all_surface_ids()[0];
-        e.workspaces[0].mirror = true;
+        let sid = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
+        e.make_mirror_fixture(0);
 
         e.set_mirror_surface_cwd(sid, Some("/srv/remote".to_string()));
         assert_eq!(

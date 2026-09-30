@@ -20,21 +20,31 @@ fn queued_workspace_moves_keep_the_admitted_source_id() {
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-    engine.workspaces = vec![workspace(11), workspace(22), workspace(33)];
+    engine.set_workspace_fixture(vec![workspace(11), workspace(22), workspace(33)]);
     state.reconcile_presentation(&engine);
-    state.navigation.select_workspace(&engine.workspaces, 33);
+    state.navigation.select_workspace(&engine.workspaces(), 33);
     let queue = [0, 1].map(|index| DomainIntent::MoveWorkspace {
-        workspace_id: engine.workspaces[index].id,
+        workspace_id: engine
+            .workspace_at(index)
+            .expect("workspace index is valid")
+            .id,
         to_index: 2,
     });
     for request in queue {
         execute(&mut core, &mut state, &mut engine, request).unwrap();
     }
     assert_eq!(
-        engine.workspaces.iter().map(|w| w.id).collect::<Vec<_>>(),
+        engine
+            .workspaces()
+            .into_iter()
+            .map(|w| w.id)
+            .collect::<Vec<_>>(),
         [33, 11, 22]
     );
-    assert_eq!(state.navigation.workspace_id(&engine.workspaces), Some(33));
+    assert_eq!(
+        state.navigation.workspace_id(&engine.workspaces()),
+        Some(33)
+    );
     let events = execute(
         &mut core,
         &mut state,
@@ -56,8 +66,10 @@ fn queued_tab_moves_keep_identity_and_missing_sources_remain_noops() {
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-    engine.workspaces = vec![workspace(11)];
-    let pane = engine.workspaces[0]
+    engine.set_workspace_fixture(vec![workspace(11)]);
+    let pane = engine
+        .workspace_at_mut(0)
+        .expect("workspace index is valid")
         .pane_layout_mut()
         .find_pane_mut(110)
         .unwrap();

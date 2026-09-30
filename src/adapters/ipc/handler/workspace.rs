@@ -104,8 +104,8 @@ pub fn handle_workspace_list(
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let workspaces: Vec<_> = engine
-        .workspaces
-        .iter()
+        .workspaces()
+        .into_iter()
         .enumerate()
         .map(|(i, ws)| {
             let sids = ws.all_surface_ids();
@@ -298,7 +298,9 @@ pub fn handle_workspace_create(
         return JsonRpcResponse::internal_error(id, e.to_string());
     }
 
-    let ws = &engine.workspaces[index];
+    let ws = engine
+        .workspace_at(index)
+        .expect("workspace index is valid");
     JsonRpcResponse::success(
         id,
         json!({
@@ -334,17 +336,20 @@ pub fn handle_workspace_update(
         ws_id
     } else if let Some(i) = p_try!(params::opt_int::<u64>(params, "index", &id)) {
         let idx = i as usize;
-        if idx >= engine.workspaces.len() {
+        if idx >= engine.workspaces().len() {
             return JsonRpcResponse::invalid_params(
                 id,
                 format!(
                     "Workspace index {} out of range (0..{})",
                     idx,
-                    engine.workspaces.len()
+                    engine.workspaces().len()
                 ),
             );
         }
-        engine.workspaces[idx].id
+        engine
+            .workspace_at(idx)
+            .expect("workspace index is valid")
+            .id
     } else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'id' or 'index' parameter");
     };
@@ -438,7 +443,9 @@ pub fn handle_workspace_update(
         return JsonRpcResponse::internal_error(id, e.to_string());
     }
 
-    let ws = &engine.workspaces[index];
+    let ws = engine
+        .workspace_at(index)
+        .expect("workspace index is valid");
     JsonRpcResponse::success(
         id,
         json!({
@@ -469,7 +476,7 @@ pub fn handle_workspace_close(
         Err(e) => return e,
     };
     let ws_idx = if let Some(ws_id) = id_param {
-        match engine.workspaces.iter().position(|w| w.id == ws_id) {
+        match engine.workspaces().into_iter().position(|w| w.id == ws_id) {
             Some(i) => i,
             None => {
                 return JsonRpcResponse::invalid_params(id, format!("Workspace {ws_id} not found"));
@@ -477,13 +484,13 @@ pub fn handle_workspace_close(
         }
     } else if let Some(i) = p_try!(params::opt_int::<u64>(params, "index", &id)) {
         let idx = i as usize;
-        if idx >= engine.workspaces.len() {
+        if idx >= engine.workspaces().len() {
             return JsonRpcResponse::invalid_params(
                 id,
                 format!(
                     "Workspace index {} out of range (0..{})",
                     idx,
-                    engine.workspaces.len()
+                    engine.workspaces().len()
                 ),
             );
         }
@@ -506,7 +513,11 @@ pub fn handle_workspace_close(
     }
 
     // mirror는 터미널·busy·attention·mesh를 함께 정리하는 attach 해제 경로를 사용해야 한다.
-    if engine.workspaces[ws_idx].mirror {
+    if engine
+        .workspace_at(ws_idx)
+        .expect("workspace index is valid")
+        .mirror
+    {
         return JsonRpcResponse::invalid_params(
             id,
             "Workspace is a mirror of a remote attach session — detach it from that session \
@@ -515,7 +526,9 @@ pub fn handle_workspace_close(
     }
 
     // 로컬 소유 surface라도 원격 클라이언트가 점유 중이면 닫지 않는다.
-    if let Some(occupied) = engine.workspaces[ws_idx]
+    if let Some(occupied) = engine
+        .workspace_at(ws_idx)
+        .expect("workspace index is valid")
         .all_surface_ids()
         .into_iter()
         .find(|sid| engine.attach.is_hard_occupied(*sid))
@@ -530,11 +543,14 @@ pub fn handle_workspace_close(
         );
     }
 
-    if engine.workspaces.len() == 1 {
+    if engine.workspaces().len() == 1 {
         return JsonRpcResponse::invalid_params(id, last_workspace_refusal());
     }
 
-    let workspace_id = engine.workspaces[ws_idx].id;
+    let workspace_id = engine
+        .workspace_at(ws_idx)
+        .expect("workspace index is valid")
+        .id;
     let closed =
         window.close_workspace_at(engine, ws_idx, crate::state::WorkspaceCloseOrigin::Agent);
     JsonRpcResponse::success(id, json!({ "closed": closed, "id": workspace_id }))
@@ -585,7 +601,7 @@ pub fn handle_workspace_move(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'to_index' parameter"),
     };
 
-    let Some(workspace_id) = engine.workspaces.get(from).map(|ws| ws.id) else {
+    let Some(workspace_id) = engine.workspace_at(from).map(|ws| ws.id) else {
         return JsonRpcResponse::success(id, json!({ "moved": false }));
     };
     let intent = crate::core::intent::DomainIntent::MoveWorkspace {
@@ -621,15 +637,18 @@ mod close_tests {
         let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
             panic!("expected WorkspaceCreated");
         };
-        engine.workspaces[index].id
+        engine
+            .workspace_at(index)
+            .expect("workspace index is valid")
+            .id
     }
 
     #[test]
     fn closing_the_last_workspace_is_refused() {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        assert_eq!(engine.workspaces.len(), 1);
-        let only = engine.workspaces[0].id;
+        assert_eq!(engine.workspaces().len(), 1);
+        let only = engine.workspace_at(0).expect("workspace index is valid").id;
 
         let res = handle_workspace_close(&mut state, &mut engine, json!(1), &json!({ "id": only }));
 
@@ -654,7 +673,7 @@ mod close_tests {
             assert!(!err.message.contains("window.close"), "{}", err.message);
         }
         assert_eq!(
-            engine.workspaces.len(),
+            engine.workspaces().len(),
             1,
             "거절이면 아무것도 닫히지 않는다"
         );
@@ -666,11 +685,13 @@ mod close_tests {
         let mut engine = engine_session.borrow_mut();
         let target = add_workspace(&mut engine);
         let ws_idx = engine
-            .workspaces
-            .iter()
+            .workspaces()
+            .into_iter()
             .position(|w| w.id == target)
             .expect("방금 만든 워크스페이스가 있어야 한다");
-        let occupied = engine.workspaces[ws_idx]
+        let occupied = engine
+            .workspace_at(ws_idx)
+            .expect("workspace index is valid")
             .all_surface_ids()
             .first()
             .copied()
@@ -692,7 +713,7 @@ mod close_tests {
             err.message
         );
         assert_eq!(
-            engine.workspaces.len(),
+            engine.workspaces().len(),
             2,
             "거절이면 아무것도 닫히지 않는다"
         );
@@ -707,8 +728,10 @@ mod close_tests {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         add_workspace(&mut engine);
-        let target = engine.workspaces[0].id;
-        let caller = engine.workspaces[0]
+        let target = engine.workspace_at(0).expect("workspace index is valid").id;
+        let caller = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
             .all_surface_ids()
             .first()
             .copied()
@@ -725,7 +748,7 @@ mod close_tests {
             res.error.is_some(),
             "자기 surface 가 든 대상은 거절해야 한다"
         );
-        assert_eq!(engine.workspaces.len(), 2);
+        assert_eq!(engine.workspaces().len(), 2);
     }
 
     // 성공 경로에서 명시 대상·활성 포인터·복원 기록·응답 ID를 함께 확인한다.
@@ -735,12 +758,18 @@ mod close_tests {
         let mut engine = engine_session.borrow_mut();
         let target_id = add_workspace(&mut engine);
         add_workspace(&mut engine);
-        assert_eq!(engine.workspaces.len(), 3);
+        assert_eq!(engine.workspaces().len(), 3);
 
         state.set_active_workspace_index(&engine, 2);
-        let viewing_id = engine.workspaces[2].id;
+        let viewing_id = engine.workspace_at(2).expect("workspace index is valid").id;
         let target_idx = 1;
-        assert_eq!(engine.workspaces[target_idx].id, target_id);
+        assert_eq!(
+            engine
+                .workspace_at(target_idx)
+                .expect("workspace index is valid")
+                .id,
+            target_id
+        );
         assert_ne!(
             target_idx as u32, target_id,
             "인덱스와 id 가 같으면 응답이 어느 쪽을 실었는지 구분할 수 없다"
@@ -761,15 +790,18 @@ mod close_tests {
             "응답은 인덱스가 아니라 대상 워크스페이스 id 를 돌려줘야 한다"
         );
 
-        assert_eq!(engine.workspaces.len(), 2);
+        assert_eq!(engine.workspaces().len(), 2);
         assert!(
-            engine.workspaces.iter().all(|w| w.id != target_id),
+            engine.workspaces().into_iter().all(|w| w.id != target_id),
             "대상이 아직 남아 있다"
         );
 
         // 앞쪽 항목을 지워 인덱스가 바뀌어도 사용자가 보던 ID는 유지되어야 한다.
         assert_eq!(
-            engine.workspaces[state.active_workspace_index(&engine)].id,
+            engine
+                .workspace_at(state.active_workspace_index(&engine))
+                .expect("workspace index is valid")
+                .id,
             viewing_id,
             "앞쪽 워크스페이스를 닫았는데 사용자 시야가 다른 워크스페이스로 옮겨갔다"
         );
@@ -796,11 +828,11 @@ mod close_tests {
         let mut engine = engine_session.borrow_mut();
         let mirror_id = add_workspace(&mut engine);
         let mirror_idx = engine
-            .workspaces
-            .iter()
+            .workspaces()
+            .into_iter()
             .position(|w| w.id == mirror_id)
             .expect("방금 만든 워크스페이스");
-        engine.workspaces[mirror_idx].mirror = true;
+        engine.make_mirror_fixture(mirror_idx);
 
         let res = handle_workspace_close(
             &mut state,
@@ -811,7 +843,7 @@ mod close_tests {
 
         assert!(res.error.is_some(), "mirror 워크스페이스는 거절해야 한다");
         assert_eq!(
-            engine.workspaces.len(),
+            engine.workspaces().len(),
             2,
             "거절이면 아무것도 닫히지 않는다"
         );
@@ -827,7 +859,7 @@ mod close_tests {
             handle_workspace_close(&mut state, &mut engine, json!(1), &json!({ "id": 999_999 }));
 
         assert!(res.error.is_some());
-        assert_eq!(engine.workspaces.len(), 2);
+        assert_eq!(engine.workspaces().len(), 2);
     }
 }
 
@@ -886,7 +918,7 @@ mod create_cwd_tests {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
-        let before = engine.workspaces.len();
+        let before = engine.workspaces().len();
 
         let res = handle_workspace_create(
             &mut core,
@@ -899,7 +931,7 @@ mod create_cwd_tests {
         let err = res.error.expect("숫자가 아닌 surface_id 는 거절해야 한다");
         assert_eq!(err.code, -32602, "{}", err.message);
         assert!(err.message.contains("surface_id"), "{}", err.message);
-        assert_eq!(engine.workspaces.len(), before);
+        assert_eq!(engine.workspaces().len(), before);
     }
 
     // 헬퍼뿐 아니라 요청 파라미터가 실제 상속 원본으로 전달되는지도 확인한다.

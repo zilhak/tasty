@@ -128,7 +128,7 @@ impl RequestContext {
         memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     ) -> Self {
         let mut navigation = navigation::NavigationState::default();
-        navigation.reconcile(&engine.workspaces);
+        navigation.reconcile(&engine.workspaces());
         #[cfg(not(feature = "gui"))]
         drop(preset_store);
         Self {
@@ -542,7 +542,9 @@ impl RequestContext {
         ws_idx: usize,
     ) -> crate::model::ClosedItem {
         let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
-        let ws = &engine.workspaces[ws_idx];
+        let ws = engine
+            .workspace_at(ws_idx)
+            .expect("workspace index is valid");
         let terminals = &engine.runtime.terminals;
         crate::model::ClosedItem::from_workspace(
             ws,
@@ -558,7 +560,9 @@ impl RequestContext {
         ws_idx: usize,
     ) -> Vec<(u32, Option<String>)> {
         let mut targets = Vec::new();
-        let ws = &engine.workspaces[ws_idx];
+        let ws = engine
+            .workspace_at(ws_idx)
+            .expect("workspace index is valid");
         for pid in ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
                 for tab in &pane.tabs {
@@ -686,7 +690,7 @@ impl RequestContext {
     /// cwd 상속 설정이 켜져 있으면 포커스된 surface의 로컬 경로를 반환한다.
     /// 원격 mirror의 경로는 로컬 PTY 작업 디렉터리로 사용할 수 없어 제외한다.
     pub(crate) fn resolve_inherit_cwd(&self, engine: &EngineRef<'_>) -> Option<std::path::PathBuf> {
-        if !engine.settings.general.inherit_cwd || engine.workspaces.is_empty() {
+        if !engine.settings.general.inherit_cwd || engine.workspaces().is_empty() {
             return None;
         }
         let sid = self.focused_surface_id(engine)?;

@@ -30,8 +30,7 @@ pub(crate) fn check_request<'a>(
     let canonical = crate::ipc::alias::canonicalize(&request.method);
     let id = request.id.clone().unwrap_or(serde_json::Value::Null);
     let ws = engine
-        .workspaces
-        .get(window.active_workspace_index(engine))
+        .workspace_at(window.active_workspace_index(engine))
         .map(|w| w.id);
     // 거부 사유별 대응이 달라 따로 센다(ADR-0008). 첫 거부에서 반환하므로 중복 집계하지 않는다.
     use tasty_telemetry::GateRefusal;

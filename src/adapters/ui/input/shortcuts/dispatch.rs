@@ -182,7 +182,7 @@ impl MainView {
             }
             "close_workspace" => {
                 state.close_active_workspace(engine);
-                if engine.workspaces.is_empty() {
+                if engine.workspaces().is_empty() {
                     self.request_close();
                 } else {
                     crate::core::Core::resize_all_terminals(
@@ -200,7 +200,7 @@ impl MainView {
                 if !state.close_active_pane(engine) {
                     state.close_active_workspace(engine);
                 }
-                if engine.workspaces.is_empty() {
+                if engine.workspaces().is_empty() {
                     self.request_close();
                 } else {
                     crate::core::Core::resize_all_terminals(
@@ -219,7 +219,7 @@ impl MainView {
                 if !closed && !state.close_active_pane(engine) {
                     state.close_active_workspace(engine);
                 }
-                if engine.workspaces.is_empty() {
+                if engine.workspaces().is_empty() {
                     self.request_close();
                 } else {
                     crate::core::Core::resize_all_terminals(
@@ -237,7 +237,7 @@ impl MainView {
                 if !state.close_active_tab(engine) && !state.close_active_pane(engine) {
                     state.close_active_workspace(engine);
                 }
-                if engine.workspaces.is_empty() {
+                if engine.workspaces().is_empty() {
                     self.request_close();
                 } else {
                     crate::core::Core::resize_all_terminals(
@@ -349,7 +349,7 @@ impl MainView {
             }
             "rename_workspace" => {
                 let ws_idx = state.active_workspace_index(engine);
-                if let Some(ws) = engine.workspaces.get(ws_idx) {
+                if let Some(ws) = engine.workspace_at(ws_idx) {
                     let target = crate::state::RenameTarget::WorkspaceName {
                         workspace_id: ws.id,
                     };
@@ -366,7 +366,7 @@ impl MainView {
             }
             "rename_workspace_subtitle" => {
                 let ws_idx = state.active_workspace_index(engine);
-                if let Some(ws) = engine.workspaces.get(ws_idx) {
+                if let Some(ws) = engine.workspace_at(ws_idx) {
                     let target = crate::state::RenameTarget::WorkspaceSubtitle {
                         workspace_id: ws.id,
                     };
@@ -646,7 +646,7 @@ impl MainView {
             cells,
             &self.proxy,
         ) {
-            if engine.workspaces.is_empty() {
+            if engine.workspaces().is_empty() {
                 self.request_close();
             }
             self.base.dirty = true;
@@ -669,7 +669,7 @@ impl MainView {
             alt,
             option,
         ) {
-            if engine.workspaces.is_empty() {
+            if engine.workspaces().is_empty() {
                 self.request_close();
             }
             self.base.dirty = true;

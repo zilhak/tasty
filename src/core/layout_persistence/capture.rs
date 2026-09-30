@@ -50,13 +50,13 @@ impl SavedLayout {
         let mut seen_refs = SeenRefs::new();
         // mirror는 원격 세션 없이 복원할 수 없으므로 저장하지 않는다. 제외 후 활성 인덱스도 맞춘다.
         let active_workspace = engine
-            .workspaces
-            .iter()
+            .workspaces()
+            .into_iter()
             .take(active_workspace)
             .filter(|ws| !ws.mirror)
             .count();
         let workspaces: Vec<SavedWorkspace> = {
-            let workspaces = &mut engine.core.workspaces;
+            let workspaces = &mut engine.core.local_workspaces;
             let terminals = &mut engine.runtime.terminals;
             let mut ctx = CaptureCtx {
                 presentation,
@@ -68,7 +68,6 @@ impl SavedLayout {
             };
             workspaces
                 .iter_mut()
-                .filter(|ws| !ws.mirror)
                 .map(|ws| SavedWorkspace::capture(ws, &mut ctx))
                 .collect()
         };
@@ -399,7 +398,7 @@ mod tests {
             .iter()
             .map(|(name, mirror)| mirror_marker_ws(&mut engine, name, *mirror))
             .collect();
-        engine.workspaces = workspaces;
+        engine.set_workspace_fixture(workspaces);
         engine_session
     }
 

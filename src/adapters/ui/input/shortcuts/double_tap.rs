@@ -16,7 +16,7 @@ impl MainView {
         cell_w: f32,
         cell_h: f32,
     ) {
-        if engine.workspaces.is_empty() {
+        if engine.workspaces().is_empty() {
             self.request_close();
         } else {
             let scale_factor = self.base.gpu.scale_factor();

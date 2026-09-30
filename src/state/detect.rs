@@ -21,8 +21,7 @@ impl RequestContext {
 
     pub fn detect_workspace_activation(&mut self, engine: &CoreState) {
         let current = engine
-            .workspaces
-            .get(self.active_workspace_index(engine))
+            .workspace_at(self.active_workspace_index(engine))
             .map(|w| w.id);
         if current == self.last_active_workspace_id {
             return;
@@ -63,7 +62,7 @@ impl RequestContext {
         use std::collections::HashMap;
 
         let mut current: HashMap<u32, (u32, u32, String)> = HashMap::new();
-        for ws in &engine.workspaces {
+        for ws in &engine.workspaces() {
             let workspace_id = ws.id;
             for pane_id in ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pane_id) {

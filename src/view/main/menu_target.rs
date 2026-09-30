@@ -11,7 +11,7 @@ pub(super) struct WorkspaceMenuTarget {
 impl WorkspaceMenuTarget {
     pub(super) fn capture(engine: &CoreState, ws_idx: usize) -> Self {
         Self {
-            workspace_id: engine.workspaces.get(ws_idx).map(|w| w.id),
+            workspace_id: engine.workspace_at(ws_idx).map(|w| w.id),
         }
     }
 

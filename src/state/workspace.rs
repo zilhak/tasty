@@ -53,7 +53,7 @@ impl RequestContext {
         engine: &mut EngineMut<'_>,
         context: &str,
     ) -> bool {
-        if !engine.workspaces.is_empty() {
+        if !engine.workspaces().is_empty() {
             return false;
         }
         match crate::core::apply_create_workspace_inner(
@@ -75,11 +75,19 @@ impl RequestContext {
     /// 0-based 인덱스로 전환한다. 사용자 입력과 debug IPC에서만 호출한다.
     #[cfg(any(feature = "gui", debug_assertions, test))]
     pub fn switch_workspace(&mut self, engine: &mut EngineMut<'_>, index: usize) {
-        if index < engine.workspaces.len() {
+        if index < engine.workspaces().len() {
             self.set_active_workspace_index(engine, index);
-            let cat = engine.workspaces[index].category;
-            self.category_last_active
-                .insert(cat, engine.workspaces[index].id);
+            let cat = engine
+                .workspace_at(index)
+                .expect("workspace index is valid")
+                .category;
+            self.category_last_active.insert(
+                cat,
+                engine
+                    .workspace_at(index)
+                    .expect("workspace index is valid")
+                    .id,
+            );
             self.ensure_active_workspace_initialized(engine);
         }
     }
@@ -111,8 +119,8 @@ impl RequestContext {
             .copied()
             .and_then(|ws_id| {
                 engine
-                    .workspaces
-                    .iter()
+                    .workspaces()
+                    .into_iter()
                     .position(|w| w.id == ws_id && w.category == cat)
             })
             .or_else(|| {
@@ -134,10 +142,13 @@ impl RequestContext {
         engine: &mut EngineMut<'_>,
         local_idx: usize,
     ) {
-        if self.active_workspace_index(engine) >= engine.workspaces.len() {
+        if self.active_workspace_index(engine) >= engine.workspaces().len() {
             return;
         }
-        let cat = engine.workspaces[self.active_workspace_index(engine)].category;
+        let cat = engine
+            .workspace_at(self.active_workspace_index(engine))
+            .expect("workspace index is valid")
+            .category;
         let global = engine
             .workspaces_in_category(cat)
             .get(local_idx)
@@ -173,10 +184,13 @@ impl RequestContext {
         engine: &CoreState,
         delta: isize,
     ) -> Option<usize> {
-        if self.active_workspace_index(engine) >= engine.workspaces.len() {
+        if self.active_workspace_index(engine) >= engine.workspaces().len() {
             return None;
         }
-        let cat = engine.workspaces[self.active_workspace_index(engine)].category;
+        let cat = engine
+            .workspace_at(self.active_workspace_index(engine))
+            .expect("workspace index is valid")
+            .category;
         let locals = engine.workspaces_in_category(cat);
         let len = locals.len();
         let pos = locals
@@ -238,10 +252,13 @@ impl RequestContext {
     /// delta(±1) 방향으로 순환할 카테고리의 섹션 인덱스를 구한다.
     #[cfg(any(feature = "gui", test))]
     fn relative_category_section(&self, engine: &CoreState, delta: isize) -> Option<usize> {
-        if self.active_workspace_index(engine) >= engine.workspaces.len() {
+        if self.active_workspace_index(engine) >= engine.workspaces().len() {
             return None;
         }
-        let cat = engine.workspaces[self.active_workspace_index(engine)].category;
+        let cat = engine
+            .workspace_at(self.active_workspace_index(engine))
+            .expect("workspace index is valid")
+            .category;
         let categories = engine.categories();
         let len = categories.len();
         if len <= 1 {
@@ -255,12 +272,11 @@ impl RequestContext {
     /// 순서를 바꾸고 활성 대상을 유지한다. 범위 밖이거나 같은 위치면 false다.
     #[cfg(any(feature = "gui", test))]
     pub fn move_workspace(&mut self, engine: &mut CoreState, from: usize, to: usize) -> bool {
-        let len = engine.workspaces.len();
+        let len = engine.workspaces().len();
         if from == to || from >= len || to >= len {
             return false;
         }
-        let ws = engine.workspaces.remove(from);
-        engine.workspaces.insert(to, ws);
+        engine.move_workspace_in_display(from, to);
         self.reconcile_presentation(engine);
         true
     }
@@ -271,7 +287,9 @@ impl RequestContext {
     fn ensure_active_workspace_initialized(&mut self, engine: &mut EngineMut<'_>) {
         let mut deferred: Vec<u32> = Vec::new();
         {
-            let ws = &engine.workspaces[self.active_workspace_index(engine)];
+            let ws = engine
+                .workspace_at(self.active_workspace_index(engine))
+                .expect("workspace index is valid");
             for pane_id in ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pane_id)
                     && let Some(tab) = pane.tabs.get(self.navigation.tab_index(pane))
@@ -309,11 +327,14 @@ impl RequestContext {
         let save_snapshot = origin.saves_snapshot();
         let path = origin.trace_path();
 
-        if ws_idx >= engine.workspaces.len() {
+        if ws_idx >= engine.workspaces().len() {
             return false;
         }
         // IPC 사전 검사와 별개로 GUI·debug 경로도 hard 점유 조건을 검사한다.
-        let in_ws = engine.workspaces[ws_idx].all_surface_ids();
+        let in_ws = engine
+            .workspace_at(ws_idx)
+            .expect("workspace index is valid")
+            .all_surface_ids();
         if self.refuse_if_hard_occupied(engine, in_ws) {
             return false;
         }
@@ -329,8 +350,11 @@ impl RequestContext {
         let targets =
             super::RequestContext::collect_workspace_close_targets(&engine.as_ref(), ws_idx);
         close_trace::log_collect(t, targets.len(), path);
-        let workspace_id = engine.workspaces[ws_idx].id;
-        engine.workspaces.remove(ws_idx);
+        let workspace_id = engine
+            .workspace_at(ws_idx)
+            .expect("workspace index is valid")
+            .id;
+        engine.remove_workspace_at(ws_idx);
         self.after_workspace_removed(engine, workspace_id, path);
         self.reconcile_presentation(engine);
         // 제거 후 kind를 찾지 못할 수 있으므로 구독자는 surface ID로도 정리할 수 있어야 한다.
@@ -386,19 +410,22 @@ mod workspace_pointer_tests {
     fn reordering_keeps_the_active_pointer_on_the_same_workspace() {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        while engine.workspaces.len() < 4 {
+        while engine.workspaces().len() < 4 {
             crate::core::apply_create_workspace_inner(
                 &mut engine,
                 crate::core::WorkspaceCreationParams::terminal(),
             )
             .unwrap();
         }
-        let ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
+        let ids: Vec<u32> = engine.workspaces().into_iter().map(|w| w.id).collect();
 
         state.set_active_workspace_index(&engine, 2);
         assert!(state.move_workspace(&mut engine, 0, 3));
         assert_eq!(
-            engine.workspaces[state.active_workspace_index(&engine)].id,
+            engine
+                .workspace_at(state.active_workspace_index(&engine))
+                .expect("workspace index is valid")
+                .id,
             ids[2],
             "앞쪽 워크스페이스가 뒤로 가면 보고 있던 것은 한 칸 당겨진다"
         );
@@ -406,7 +433,10 @@ mod workspace_pointer_tests {
         let from = state.active_workspace_index(&engine);
         assert!(state.move_workspace(&mut engine, from, 0));
         assert_eq!(
-            engine.workspaces[state.active_workspace_index(&engine)].id,
+            engine
+                .workspace_at(state.active_workspace_index(&engine))
+                .expect("workspace index is valid")
+                .id,
             ids[2]
         );
         assert_eq!(state.active_workspace_index(&engine), 0);
@@ -425,8 +455,8 @@ mod workspace_pointer_tests {
         }
         state.set_active_workspace_index(&engine, 2);
         let selected = state.active_workspace(&engine).id;
-        let moved = engine.workspaces.remove(0);
-        engine.workspaces.insert(3, moved);
+        let moved = engine.remove_workspace_at(0);
+        engine.insert_local_workspace(3, moved);
         state.reconcile_presentation(&engine);
         assert_eq!(state.active_workspace(&engine).id, selected);
     }
@@ -435,7 +465,7 @@ mod workspace_pointer_tests {
     fn reordering_keeps_the_category_landing_on_the_same_workspace() {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        while engine.workspaces.len() < 4 {
+        while engine.workspaces().len() < 4 {
             crate::core::apply_create_workspace_inner(
                 &mut engine,
                 crate::core::WorkspaceCreationParams::terminal(),
@@ -444,7 +474,7 @@ mod workspace_pointer_tests {
         }
         let cat_a = engine.create_category("A").unwrap();
         let cat_b = engine.create_category("B").unwrap();
-        let ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
+        let ids: Vec<u32> = engine.workspaces().into_iter().map(|w| w.id).collect();
         for (i, cat) in [cat_a, cat_b, cat_a, cat_a].into_iter().enumerate() {
             engine.set_workspace_category(ids[i], cat).unwrap();
         }
@@ -455,14 +485,21 @@ mod workspace_pointer_tests {
 
         assert!(state.move_workspace(&mut engine, 0, 3));
         assert_eq!(
-            engine.workspaces.iter().map(|w| w.id).collect::<Vec<_>>(),
+            engine
+                .workspaces()
+                .into_iter()
+                .map(|w| w.id)
+                .collect::<Vec<_>>(),
             vec![ids[1], ids[2], ids[3], ids[0]]
         );
         assert_eq!(engine.workspaces_in_category(cat_a)[0].1.id, ids[2]);
 
         state.switch_to_category(&mut engine, 1);
         assert_eq!(
-            engine.workspaces[state.active_workspace_index(&engine)].id,
+            engine
+                .workspace_at(state.active_workspace_index(&engine))
+                .expect("workspace index is valid")
+                .id,
             ids[3],
             "재정렬 뒤에도 카테고리에서 마지막으로 본 워크스페이스를 선택해야 한다"
         );
@@ -472,7 +509,7 @@ mod workspace_pointer_tests {
     fn category_landing_points_survive_a_removal_because_they_hold_ids() {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        while engine.workspaces.len() < 3 {
+        while engine.workspaces().len() < 3 {
             crate::core::apply_create_workspace_inner(
                 &mut engine,
                 crate::core::WorkspaceCreationParams::terminal(),
@@ -481,7 +518,7 @@ mod workspace_pointer_tests {
         }
         let cat_a = engine.create_category("A").unwrap();
         let cat_b = engine.create_category("B").unwrap();
-        let ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
+        let ids: Vec<u32> = engine.workspaces().into_iter().map(|w| w.id).collect();
         engine.set_workspace_category(ids[0], cat_b).unwrap();
         engine.set_workspace_category(ids[1], cat_a).unwrap();
         engine.set_workspace_category(ids[2], cat_a).unwrap();
@@ -489,12 +526,15 @@ mod workspace_pointer_tests {
         state.switch_workspace(&mut engine, 2); // A 의 착지점 = ids[2]
         state.switch_workspace(&mut engine, 0); // B 의 착지점 = ids[0]
 
-        engine.workspaces.remove(0);
+        engine.remove_workspace_at(0);
         state.reconcile_presentation(&engine);
 
         state.switch_to_category(&mut engine, 1);
         assert_eq!(
-            engine.workspaces[state.active_workspace_index(&engine)].id,
+            engine
+                .workspace_at(state.active_workspace_index(&engine))
+                .expect("workspace index is valid")
+                .id,
             ids[2],
             "제거로 인덱스가 바뀌어도 같은 워크스페이스를 선택해야 한다"
         );

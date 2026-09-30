@@ -371,7 +371,7 @@ impl App {
         if let Some(restored_idx) = restored_idx_after_layout {
             state
                 .navigation
-                .restore(&self.core_state().workspaces, &restored_idx);
+                .restore(&self.core_state().workspaces(), &restored_idx);
         }
         if let Some(mgr) = self.plugin_manager.as_ref() {
             state
@@ -740,7 +740,7 @@ impl App {
         core: &mut crate::core::Core,
         engine: &mut EngineMut<'_>,
     ) -> Option<usize> {
-        if !engine.workspaces.is_empty() {
+        if !engine.workspaces().is_empty() {
             return None;
         }
         match core.create_default_workspace(engine) {

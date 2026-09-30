@@ -218,13 +218,13 @@ fn send_body_then_submit(
 /// 숫자 ID를 먼저 찾고 없으면 실제 name과 비교한다.
 fn resolve_workspace_id(engine: &CoreState, target: &str) -> Option<u32> {
     if let Ok(target_id) = target.parse::<u32>()
-        && engine.workspaces.iter().any(|w| w.id == target_id)
+        && engine.workspaces().into_iter().any(|w| w.id == target_id)
     {
         return Some(target_id);
     }
     engine
-        .workspaces
-        .iter()
+        .workspaces()
+        .into_iter()
         .find(|w| w.name == target)
         .map(|w| w.id)
 }
@@ -240,7 +240,9 @@ fn workspace_not_found_message(workspace_param: &str) -> String {
 
 fn first_pane_in_workspace(engine: &CoreState, ws_id: u32) -> Option<u32> {
     let idx = engine.find_workspace_index_for_id(ws_id)?;
-    engine.workspaces[idx]
+    engine
+        .workspace_at(idx)
+        .expect("workspace index is valid")
         .pane_layout()
         .all_pane_ids()
         .into_iter()
@@ -302,7 +304,7 @@ pub(crate) fn handle_spawn(
     }
     let ws_id = engine
         .find_workspace_index_for_pane(pane_id)
-        .and_then(|i| engine.workspaces.get(i))
+        .and_then(|i| engine.workspace_at(i))
         .map(|w| w.id)
         .unwrap_or(ws_id);
 
@@ -1013,13 +1015,18 @@ mod tests {
 
     // adopt의 존재 확인은 surface 트리를 보므로 실제 PTY 대신 표시용 surface만 추가한다.
     fn add_extra_surface(e: &mut CoreState, surface_id: u32) {
-        let pane_id = e.workspaces[0].pane_layout().all_pane_ids()[0];
+        let pane_id = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .all_pane_ids()[0];
         let tab = crate::model::Tab::new_with_surface(
             e.next_ids.next_tab(),
             "extra".to_string(),
             Box::new(crate::model::TerminalSurface { id: surface_id }),
         );
-        e.workspaces[0]
+        e.workspace_at_mut(0)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .find_pane_mut(pane_id)
             .expect("default pane")
@@ -1032,7 +1039,10 @@ mod tests {
         // 점유와 관계 등록만 검사한다. 탭 생성·입력 핸들러 전체 시험은 아니다.
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let parent = e.workspaces[0].all_surface_ids()[0];
+        let parent = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let c = 5000u32;
 
         let idx = e.runtime.child_terminals.next_index_for(parent);
@@ -1059,7 +1069,10 @@ mod tests {
     fn adopt_registers_existing_surface_without_new_tab() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let parent = e.workspaces[0].all_surface_ids()[0];
+        let parent = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let target = 6101u32; // 이미 존재하는(=spawn 아닌) surface
         add_extra_surface(&mut e, target);
 
@@ -1086,7 +1099,10 @@ mod tests {
     fn adopt_rejects_already_registered_child() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let parent = e.workspaces[0].all_surface_ids()[0];
+        let parent = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let target = 6102u32;
         add_extra_surface(&mut e, target);
 
@@ -1107,7 +1123,10 @@ mod tests {
     fn adopt_rejects_nonexistent_surface() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let parent = e.workspaces[0].all_surface_ids()[0];
+        let parent = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let resp = handle_adopt(
             &mut e,
             json!(1),
@@ -1120,7 +1139,10 @@ mod tests {
     fn adopt_rejects_self_adoption() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let parent = e.workspaces[0].all_surface_ids()[0];
+        let parent = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let resp = handle_adopt(
             &mut e,
             json!(1),
@@ -1133,7 +1155,10 @@ mod tests {
     fn adopt_rejects_hard_occupied_target_and_leaves_registry_unchanged() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let parent = e.workspaces[0].all_surface_ids()[0];
+        let parent = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let target = 6103u32;
         add_extra_surface(&mut e, target);
         e.attach
@@ -1154,7 +1179,10 @@ mod tests {
     fn release_clears_registry_and_occupancy_but_keeps_surface() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let parent = e.workspaces[0].all_surface_ids()[0];
+        let parent = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let c = 5701u32;
         add_extra_surface(&mut e, c);
 
@@ -1179,7 +1207,10 @@ mod tests {
     fn release_rejects_unregistered_child_index() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let parent = e.workspaces[0].all_surface_ids()[0];
+        let parent = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let resp = handle_release(
             &mut e,
             json!(1),
@@ -1192,7 +1223,10 @@ mod tests {
     fn release_does_not_touch_unrelated_hard_occupancy() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let parent = e.workspaces[0].all_surface_ids()[0];
+        let parent = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let c = 5702u32;
         add_extra_surface(&mut e, c);
         let idx = e.runtime.child_terminals.next_index_for(parent);
@@ -1218,7 +1252,10 @@ mod tests {
     fn resolve_parent_omitted_surface_succeeds_with_single_parent() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let parent = e.workspaces[0].all_surface_ids()[0];
+        let parent = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         add_extra_surface(&mut e, 59010);
         let idx = e.runtime.child_terminals.next_index_for(parent);
         e.runtime
@@ -1233,7 +1270,10 @@ mod tests {
     fn resolve_parent_omitted_surface_errors_with_multiple_parents_in_one_engine() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let parent1 = e.workspaces[0].all_surface_ids()[0];
+        let parent1 = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let parent2 = 59020u32;
         add_extra_surface(&mut e, 59030);
         add_extra_surface(&mut e, 59040);
@@ -1279,7 +1319,10 @@ mod tests {
     fn send_text_with_ack_succeeds_for_free_terminal() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let target = e.workspaces[0].all_surface_ids()[0];
+        let target = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
 
         assert!(send_text_to_surface_with_ack(&mut e, target, "hi").is_ok());
     }
@@ -1288,7 +1331,10 @@ mod tests {
     fn children_reconcile_prunes_dead_child() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let parent = e.workspaces[0].all_surface_ids()[0];
+        let parent = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         e.runtime
             .child_terminals
             .register_child(parent, child(99999, 0));
@@ -1301,7 +1347,10 @@ mod tests {
     fn children_item_carries_evidence_and_confidence() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let parent = e.workspaces[0].all_surface_ids()[0];
+        let parent = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let target = 5901u32;
         add_extra_surface(&mut e, target);
         e.runtime
@@ -1326,7 +1375,10 @@ mod tests {
     fn children_and_state_report_identical_liveness_fields() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let parent = e.workspaces[0].all_surface_ids()[0];
+        let parent = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let target = 5902u32;
         add_extra_surface(&mut e, target);
         e.runtime

@@ -97,7 +97,10 @@ mod tests {
             .all_surface_ids()
             .first()
             .expect("fixture surface");
-        engine.workspaces[0].mirror = mirror;
+        engine
+            .workspace_at_mut(0)
+            .expect("workspace index is valid")
+            .mirror = mirror;
         if let Some((plugin, instance)) = activated {
             state
                 .plugin_popup_user_activated

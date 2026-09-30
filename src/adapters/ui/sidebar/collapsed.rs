@@ -28,8 +28,8 @@ pub fn draw_collapsed_sidebar(
     let th = theme::theme();
     let active_ws = state.active_workspace_index(engine);
     let workspaces: Vec<WorkspaceEntryView> = engine
-        .workspaces
-        .iter()
+        .workspaces()
+        .into_iter()
         .enumerate()
         .map(|(i, ws)| entry_view(engine, i, ws, active_ws))
         .collect();

@@ -186,6 +186,13 @@ pub struct Surface {
     pub kind: String,
     pub data: Option<DataRef>,
     pub metadata: BTreeMap<String, String>,
+    #[serde(default)]
+    pub activation: Option<crate::Activation>,
+    /// Capture request order within an activation, distinct from resource identity.
+    #[serde(default)]
+    pub content_generation: u64,
+    #[serde(default)]
+    pub snapshot_schema: u32,
 }
 
 /// 모델에 마지막으로 적용한 journal 위치.
@@ -208,4 +215,18 @@ pub struct JournalModel {
     pub panes: BTreeMap<PaneId, Pane>,
     pub tabs: BTreeMap<TabId, Tab>,
     pub surfaces: BTreeMap<SurfaceId, Surface>,
+    #[serde(default)]
+    pub operations: BTreeMap<crate::OperationId, crate::Operation>,
+}
+
+impl JournalModel {
+    /// Snapshot pins include pending preparation and reconciliation evidence, not only visible surfaces.
+    pub fn data_refs(&self) -> impl Iterator<Item = DataRef> + '_ {
+        self.surfaces
+            .values()
+            .filter_map(|surface| surface.data)
+            .chain(self.operations.values().flat_map(|operation| {
+                std::iter::once(operation.input).chain(operation.reconciliation_evidence)
+            }))
+    }
 }

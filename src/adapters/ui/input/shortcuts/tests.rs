@@ -581,7 +581,7 @@ fn category_combo_routes_to_category_switch() {
     add_test_workspace(&mut state, &mut engine); // ws0 (normal)
     add_test_workspace(&mut state, &mut engine); // ws1
     let cat = engine.create_category("Services").unwrap();
-    let ws1_id = engine.workspaces[1].id;
+    let ws1_id = engine.workspace_at(1).expect("workspace index is valid").id;
     engine.set_workspace_category(ws1_id, cat).unwrap();
     state.switch_workspace(&mut engine, 0); // active = ws0 (normal)
     let kb = crate::settings::KeybindingSettings::default(); // cat=ctrl+shift, slot "2"=섹션 index 1
@@ -608,8 +608,8 @@ fn category_next_prev_keys_cycle_categories() {
     add_test_workspace(&mut state, &mut engine); // ws2
     let services = engine.create_category("Services").unwrap();
     let extra = engine.create_category("Extra").unwrap();
-    let ws1_id = engine.workspaces[1].id;
-    let ws2_id = engine.workspaces[2].id;
+    let ws1_id = engine.workspace_at(1).expect("workspace index is valid").id;
+    let ws2_id = engine.workspace_at(2).expect("workspace index is valid").id;
     engine.set_workspace_category(ws1_id, services).unwrap();
     engine.set_workspace_category(ws2_id, extra).unwrap();
     state.switch_workspace(&mut engine, 0); // active = ws0 (normal)
@@ -780,7 +780,7 @@ fn individual_category_axis_respects_folders_gate() {
     engine.settings.general.workspace_categories_enabled = true;
     add_test_workspace(&mut state, &mut engine); // ws0(normal) 이미 있으니 ws1 추가
     let cat = engine.create_category("Services").unwrap();
-    let ws1_id = engine.workspaces[1].id;
+    let ws1_id = engine.workspace_at(1).expect("workspace index is valid").id;
     engine.set_workspace_category(ws1_id, cat).unwrap();
     state.switch_workspace(&mut engine, 0);
     let mut kb = crate::settings::KeybindingSettings {
@@ -897,7 +897,7 @@ fn focused_workspace_category_returns_active_workspace_category() {
     let mut engine = engine_session.borrow_mut();
     let work = engine.create_category("Work").unwrap();
     add_test_workspace(&mut state, &mut engine); // ws1, 아직 normal
-    let ws1_id = engine.workspaces[1].id;
+    let ws1_id = engine.workspace_at(1).expect("workspace index is valid").id;
     engine.set_workspace_category(ws1_id, work).unwrap();
     state.switch_workspace(&mut engine, 1);
 
@@ -911,7 +911,7 @@ fn focused_workspace_category_returns_active_workspace_category() {
 fn focused_workspace_category_is_none_when_parked() {
     let (state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
-    engine.workspaces.clear(); // parked 상태 (마지막 윈도우가 닫힌 뒤) 재현.
+    engine.replace_local_workspaces(Vec::new()); // parked 상태 (마지막 윈도우가 닫힌 뒤) 재현.
     assert_eq!(super::focused_workspace_category(&state, &engine), None);
 }
 
@@ -921,7 +921,7 @@ fn shortcut_new_workspace_inherits_active_category() {
     let mut engine = engine_session.borrow_mut();
     let work = engine.create_category("Work").unwrap();
     add_test_workspace(&mut state, &mut engine); // ws1
-    let ws1_id = engine.workspaces[1].id;
+    let ws1_id = engine.workspace_at(1).expect("workspace index is valid").id;
     engine.set_workspace_category(ws1_id, work).unwrap();
     state.switch_workspace(&mut engine, 1);
 

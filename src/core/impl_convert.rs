@@ -139,7 +139,7 @@ impl Core {
         engine: &crate::core::CoreState,
         surface_id: u32,
     ) -> Option<(usize, u32, usize)> {
-        for (ws_idx, workspace) in engine.workspaces.iter().enumerate() {
+        for (ws_idx, workspace) in engine.workspaces().into_iter().enumerate() {
             for &pid in &workspace.pane_layout().all_pane_ids() {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
                     for (tab_idx, tab) in pane.tabs.iter().enumerate() {
@@ -163,7 +163,9 @@ impl Core {
         new_surface: Box<dyn crate::model::Surface>,
         new_name: Option<Option<String>>,
     ) -> Option<bool> {
-        let ws = &mut engine.workspaces[ws_idx];
+        let ws = engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid");
         let pane = ws.pane_layout_mut().find_pane_mut(pane_id)?;
         let tab = &mut pane.tabs[tab_idx];
         if tab.is_split() {

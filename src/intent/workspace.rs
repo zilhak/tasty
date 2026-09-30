@@ -97,7 +97,7 @@ fn new_workspace(
         {
             #[cfg(feature = "gui")]
             if tutorial_setup
-                && let Some(ws) = engine.workspaces.get(index)
+                && let Some(ws) = engine.workspace_at(index)
                 && let Some(pane) = ws
                     .pane_layout()
                     .find_pane(state.navigation.pane_id(ws).unwrap_or(0))

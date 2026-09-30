@@ -118,7 +118,10 @@ mod hard_occupancy_tests {
             crate::core::WorkspaceCreationParams::terminal(),
         )
         .expect("워크스페이스 생성");
-        let target = engine.workspaces[1].all_surface_ids()[0];
+        let target = engine
+            .workspace_at(1)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         engine.attach.acquire(target, HOLDER).expect("하드 점유");
 
         let res = handle_surface_close(
@@ -138,8 +141,8 @@ mod hard_occupancy_tests {
         );
         assert!(
             engine
-                .workspaces
-                .iter()
+                .workspaces()
+                .into_iter()
                 .any(|w| w.all_surface_ids().contains(&target)),
             "거절이면 surface 가 살아 있어야 한다"
         );
@@ -159,7 +162,10 @@ mod hard_occupancy_tests {
             crate::core::WorkspaceCreationParams::terminal(),
         )
         .expect("워크스페이스 생성");
-        let target = engine.workspaces[1].all_surface_ids()[0];
+        let target = engine
+            .workspace_at(1)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         engine.attach.acquire(target, HOLDER).expect("하드 점유");
 
         let res = handle_surface_close_self(
@@ -187,7 +193,10 @@ mod hard_occupancy_tests {
             crate::core::WorkspaceCreationParams::terminal(),
         )
         .expect("워크스페이스 생성");
-        let target = engine.workspaces[1].all_surface_ids()[0];
+        let target = engine
+            .workspace_at(1)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
 
         let res = handle_surface_close(
             &mut core,

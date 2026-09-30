@@ -21,7 +21,7 @@ pub fn handle_set_cwd(
         Some(_) => return JsonRpcResponse::invalid_params(id, "'cwd' must be string or null"),
     };
 
-    for ws in &engine.workspaces {
+    for ws in &engine.workspaces() {
         for &pid in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
                 for tab in &pane.tabs {

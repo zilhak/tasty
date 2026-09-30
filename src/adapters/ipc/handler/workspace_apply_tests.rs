@@ -6,7 +6,11 @@ use serde_json::json;
 use super::{handle_workspace_create, handle_workspace_update};
 
 fn names(engine: &crate::core::CoreState) -> Vec<String> {
-    engine.workspaces.iter().map(|w| w.name.clone()).collect()
+    engine
+        .workspaces()
+        .into_iter()
+        .map(|w| w.name.clone())
+        .collect()
 }
 
 #[test]
@@ -60,7 +64,7 @@ fn update_with_an_unknown_category_keeps_the_name() {
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
-    let target = engine.workspaces[0].id;
+    let target = engine.workspace_at(0).expect("workspace index is valid").id;
     let before = names(&engine);
 
     let res = handle_workspace_update(
@@ -80,8 +84,11 @@ fn update_with_a_malformed_attach_mapping_keeps_the_name_and_category() {
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
-    let target = engine.workspaces[0].id;
-    let category_before = engine.workspaces[0].category;
+    let target = engine.workspace_at(0).expect("workspace index is valid").id;
+    let category_before = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .category;
     let other = engine.create_category("other").expect("카테고리 생성");
     let before = names(&engine);
 
@@ -105,10 +112,20 @@ fn update_with_a_malformed_attach_mapping_keeps_the_name_and_category() {
     );
     assert_eq!(names(&engine), before, "거절했는데 이름이 바뀌었다");
     assert_eq!(
-        engine.workspaces[0].category, category_before,
+        engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .category,
+        category_before,
         "거절했는데 카테고리가 바뀌었다"
     );
-    assert_eq!(engine.workspaces[0].attach_mapping, None);
+    assert_eq!(
+        engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .attach_mapping,
+        None
+    );
 }
 
 #[test]
@@ -116,7 +133,7 @@ fn attach_clear_still_ignores_a_malformed_remote_workspace() {
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
-    let target = engine.workspaces[0].id;
+    let target = engine.workspace_at(0).expect("workspace index is valid").id;
 
     let res = handle_workspace_update(
         &mut core,
@@ -132,7 +149,13 @@ fn attach_clear_still_ignores_a_malformed_remote_workspace() {
     );
 
     assert!(res.error.is_none(), "{:?}", res.error);
-    assert_eq!(engine.workspaces[0].name, "renamed");
+    assert_eq!(
+        engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .name,
+        "renamed"
+    );
 }
 
 #[test]
@@ -157,7 +180,9 @@ fn valid_create_still_applies_category_and_mapping() {
 
     let result = res.result.unwrap_or_else(|| panic!("{:?}", res.error));
     let index = result["index"].as_u64().expect("index") as usize;
-    let ws = &engine.workspaces[index];
+    let ws = engine
+        .workspace_at(index)
+        .expect("workspace index is valid");
     assert_eq!(ws.name, "full-create");
     assert_eq!(ws.category, other);
     assert_eq!(

@@ -58,7 +58,7 @@ pub fn handle_open(
 
 pub fn handle_list(engine: &crate::core::CoreState, id: Value) -> JsonRpcResponse {
     let mut entries: Vec<Value> = Vec::new();
-    for workspace in &engine.workspaces {
+    for workspace in &engine.workspaces() {
         for pid in workspace.pane_layout().all_pane_ids() {
             if let Some(pane) = workspace.pane_layout().find_pane(pid) {
                 for tab in &pane.tabs {

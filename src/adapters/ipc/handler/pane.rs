@@ -13,7 +13,7 @@ pub fn handle_pane_list(
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let mut panes = Vec::new();
-    for ws in &engine.workspaces {
+    for ws in &engine.workspaces() {
         let pane_ids = ws.pane_layout().all_pane_ids();
         let focused = presentation.pane_id(ws).unwrap_or(0);
         for &pid in &pane_ids {

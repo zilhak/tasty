@@ -17,7 +17,7 @@ impl Core {
                 skipped_explicit: false,
             };
         }
-        for ws in &mut engine.workspaces {
+        for ws in engine.workspaces_mut() {
             let pane_ids = ws.pane_layout().all_pane_ids();
             for pane_id in pane_ids {
                 if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
@@ -125,7 +125,10 @@ impl Core {
         engine.mark_layout_dirty();
 
         if let Some(ws_idx) = engine.find_workspace_index_for_pane(pane_id) {
-            let ws_id = engine.workspaces[ws_idx].id;
+            let ws_id = engine
+                .workspace_at(ws_idx)
+                .expect("workspace index is valid")
+                .id;
             engine.tap_new_workspace_member(ws_id, surface_id, is_terminal);
         }
 
@@ -204,7 +207,10 @@ mod create_tab_selection_tests {
         let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
         let engine = engine_session.borrow_mut();
-        let sid = engine.workspaces[0].all_surface_ids()[0];
+        let sid = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let pane_id = engine.find_pane_for_surface(sid).expect("pane");
         (engine_session, pane_id)
     }
@@ -241,14 +247,19 @@ mod tab_title_tests {
     fn split_tab_engine() -> (crate::runtime::engine_session::EngineSession, u32, u32, u32) {
         let mut engine_session = test_engine();
         let mut engine = engine_session.borrow_mut();
-        let a = engine.workspaces[0].all_surface_ids()[0];
+        let a = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         engine
             .runtime
             .terminals
             .insert(a, Terminal::new_detached(80, 24), None);
         let b = 7777;
         let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(a).unwrap();
-        engine.workspaces[ws_idx]
+        engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .find_pane_mut(pane_id)
             .unwrap()
@@ -271,7 +282,9 @@ mod tab_title_tests {
     }
 
     fn display_name(engine: &CoreState, pane_id: u32, selected: u32) -> String {
-        engine.workspaces[0]
+        engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
             .pane_layout()
             .find_pane(pane_id)
             .unwrap()
@@ -301,7 +314,9 @@ mod tab_title_tests {
     fn explicit_name_survives_focused_title() {
         let (mut engine_session, pane_id, a, _b) = split_tab_engine();
         let mut engine = engine_session.borrow_mut();
-        engine.workspaces[0]
+        engine
+            .workspace_at_mut(0)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .find_pane_mut(pane_id)
             .unwrap()

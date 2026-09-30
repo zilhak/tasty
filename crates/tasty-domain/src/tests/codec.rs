@@ -14,7 +14,11 @@ fn decode(payload: &EncodedEvent) -> Result<DomainEvent, CodecError> {
 
 #[test]
 fn every_event_round_trips_and_the_tag_list_is_complete() {
-    let events: Vec<DomainEvent> = scenario().into_iter().flatten().collect();
+    let events: Vec<DomainEvent> = scenario()
+        .into_iter()
+        .flatten()
+        .chain(super::lifecycle::examples())
+        .collect();
     let mut seen = BTreeSet::new();
     for event in &events {
         let payload = encode_event(event).expect("encode");

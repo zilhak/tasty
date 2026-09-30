@@ -35,6 +35,7 @@ decide→commit→apply→응답을 CommandExecutor가, 순수 `decide`·`evolve
   저장 봉투, 저장 형식 버전, migration은 EventStore의 소관이다.
 - codec은 모르는 type tag나 schema version을 만나면 명시 오류로 재구성을 멈춘다. 건너뛰고 계속하지 않는다.
   도메인 payload의 schema version을 올릴 때 옛 payload를 새 형식으로 바꾸는 변환(upcast)도 이 codec이 맡는다. EventStore는 봉투의 저장 형식 버전과 migration만 맡는다.
+- ID 예약은 실행 계층에서 실패 가능한 작업으로 먼저 끝내고 명령에 고정 값을 넣는다. 순수 decide에는 저장소를 숨길 수 있는 ID supplier를 넘기지 않는다.
 - Decider에 대해 generic한 CommandExecutor와, 저장소의 batch(`StoredBatch`)와 도메인 batch 사이의 변환 어댑터는 root 내부 runtime 모듈에 둔다.
   명령 identity 조회(대상 해소보다 먼저, [ADR-0057](0057-command-identity-for-mutation-retries.md)), decide, 한 transaction의 commit,
   commit 성공 뒤의 메모리 `evolve`, 응답 순서를 그 모듈이 구현한다.
@@ -99,4 +100,4 @@ crate 목록 문서·README·가드의 crate 수 갱신이 함께 필요하다.
 - [ADR-0056](0056-crate-boundaries-for-core-event-store-and-task-runtime.md) — crate 배치와 `tasty-core` 추출 조건
 - [ADR-0057](0057-command-identity-for-mutation-retries.md) · [ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)
 - [ADR-0065](0065-journal-source-and-core-state-projection.md) — 제품 연결 뒤 JournalModel과 CoreState 트리의 관계, 엔진별 활성화 절차
-- 현재 구현: `crates/tasty-domain/src/model.rs`·`crates/tasty-domain/src/ids.rs`(저널 모델·저널 전용 값·`IdSupplier`), `src/runtime/command_executor.rs`·`src/runtime/journal.rs`(executor·저장 batch 변환·replay·snapshot), `crates/tasty-event-store/src/lib.rs`(도메인을 모르는 저장 계약), `crates/tasty-model`(재사용할 값·ID 타입)
+- 현재 구현: `crates/tasty-domain/src/model.rs`·`crates/tasty-domain/src/ids.rs`(저널 모델·저널 전용 값·typed ID kind), `src/runtime/command_executor.rs`·`src/runtime/journal.rs`(executor·저장 batch 변환·replay·snapshot), `crates/tasty-event-store/src/lib.rs`(도메인을 모르는 저장 계약), `crates/tasty-model`(재사용할 값·ID 타입)

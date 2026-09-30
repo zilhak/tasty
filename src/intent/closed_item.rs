@@ -20,7 +20,7 @@ fn ensure_workspace_for_restore(
         engine.closed_items.list().next(),
         Some(ClosedItem::Surface { .. } | ClosedItem::Tab(_) | ClosedItem::Pane { .. })
     );
-    if !top_needs_workspace || !engine.workspaces.is_empty() {
+    if !top_needs_workspace || !engine.workspaces().is_empty() {
         return;
     }
     match core.create_default_workspace(engine) {

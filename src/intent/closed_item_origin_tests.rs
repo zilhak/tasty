@@ -20,8 +20,16 @@ fn active_after_restoring_a_closed_workspace(intent: crate::intent::DispatchedIn
     let second = engine.next_ids.next_surface();
     let added_tab = engine.next_ids.next_tab();
     let added_surface = engine.next_ids.next_surface();
-    let pid = engine.workspaces[1].pane_layout().first_pane().unwrap().id;
-    let pane = engine.workspaces[1]
+    let pid = engine
+        .workspace_at(1)
+        .expect("workspace index is valid")
+        .pane_layout()
+        .first_pane()
+        .unwrap()
+        .id;
+    let pane = engine
+        .workspace_at_mut(1)
+        .expect("workspace index is valid")
         .pane_layout_mut()
         .find_pane_mut(pid)
         .unwrap();
@@ -40,7 +48,7 @@ fn active_after_restoring_a_closed_workspace(intent: crate::intent::DispatchedIn
     state.navigation.select_tab(pane, added_tab);
     assert!(state.close_workspace_at(&mut engine, 1, WorkspaceCloseOrigin::User));
     state.set_active_workspace_index(&engine, 0);
-    assert_eq!(engine.workspaces.len(), 1);
+    assert_eq!(engine.workspaces().len(), 1);
     assert_eq!(
         engine.closed_items.len(),
         1,
@@ -50,12 +58,14 @@ fn active_after_restoring_a_closed_workspace(intent: crate::intent::DispatchedIn
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
     handle(&mut core, &mut state, &mut engine, &intent);
     assert_eq!(
-        engine.workspaces.len(),
+        engine.workspaces().len(),
         2,
         "복원이 워크스페이스를 되살려야 한다"
     );
     assert_eq!(engine.closed_items.len(), 0);
-    let tab = &engine.workspaces[1]
+    let tab = &engine
+        .workspace_at(1)
+        .expect("workspace index is valid")
         .pane_layout()
         .first_pane()
         .unwrap()

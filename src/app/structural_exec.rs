@@ -573,7 +573,7 @@ pub(crate) fn close_surface(
         surface_id,
         presentation: save_snapshot.then(|| {
             Box::new(crate::model::StructurePresentationSnapshot::capture(
-                &engine.workspaces,
+                &engine.workspaces(),
                 &engine.categories,
                 state.presentation(),
             ))

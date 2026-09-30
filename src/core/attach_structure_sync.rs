@@ -66,7 +66,11 @@ impl EngineMut<'_> {
             let Some(hub) = self.attach.notifier() else {
                 continue;
             };
-            let class = self.core.workspaces[idx].classify_attach_surfaces();
+            let class = self
+                .core
+                .workspace_at(idx)
+                .expect("workspace index is valid")
+                .classify_attach_surfaces();
             let (tree, surfaces) = self.build_workspace_tree_surfaces(idx, &class);
             let delta = tasty_ipc::stream::StreamControl::StructuralDelta {
                 workspace_id: ws_id,

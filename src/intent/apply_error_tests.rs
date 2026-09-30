@@ -88,7 +88,7 @@ fn an_agent_forward_is_marked_for_a_silent_failure() {
         .all_surface_ids()
         .first()
         .expect("fixture surface");
-    engine.workspaces[0].mirror = true;
+    engine.make_mirror_fixture(0);
     let file = tempfile::NamedTempFile::new().expect("tmp file");
 
     let req = crate::ipc::protocol::JsonRpcRequest {
@@ -150,7 +150,7 @@ fn a_forwarded_block_is_user_triggered_only_for_the_user() {
         state.add_tab(&mut engine).expect("second tab");
         let target = state.focused_surface_id(&engine).expect("second surface");
         assert_ne!(source, target);
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
 
         let err = core
             .apply(
@@ -221,7 +221,7 @@ fn a_preset_apply_failure_toasts_only_for_the_user() {
 fn a_preset_save_failure_toasts_only_for_the_user() {
     let (core, mut state, mut engine_session) = fixture();
     let mut engine = engine_session.borrow_mut();
-    let ws = &engine.workspaces[0];
+    let ws = engine.workspace_at(0).expect("workspace index is valid");
     let captured = crate::intent::preset_capture::capture_workspace_preset(
         &crate::model::StructurePresentationSnapshot::default(),
         &engine.as_ref(),
@@ -350,7 +350,7 @@ fn a_convert_on_a_mirror_surface_leaves_no_local_recent_entry() {
         .all_surface_ids()
         .first()
         .expect("fixture surface");
-    engine.workspaces[0].mirror = true;
+    engine.make_mirror_fixture(0);
 
     crate::intent::surface::handle(
         &mut core,
@@ -420,7 +420,7 @@ fn a_new_tab_in_a_mirror_pane_leaves_no_local_recent_entry() {
     let (mut core, mut state, mut engine_session) = fixture();
     let mut engine = engine_session.borrow_mut();
     register_recent_probe(&engine, "probe_recent_newtab", "com.x.probe_newtab");
-    engine.workspaces[0].mirror = true;
+    engine.make_mirror_fixture(0);
 
     new_tab_with_file(
         &mut core,
@@ -483,7 +483,7 @@ fn an_ipc_direct_structural_forward_is_marked_for_a_silent_failure() {
         .and_then(|p| p.tabs.first())
         .map(|t| t.id)
         .expect("tab");
-    engine.workspaces[0].mirror = true;
+    engine.make_mirror_fixture(0);
 
     let requests = [
         (

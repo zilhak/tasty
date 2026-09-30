@@ -413,7 +413,7 @@ mod tests {
             tab_id,
             sid,
         );
-        engine.workspaces.push(ws);
+        engine.push_local_workspace(ws);
         ws_id
     }
 
@@ -448,7 +448,11 @@ mod tests {
         ));
         let (target, _) = state.dialogs.rename.take().unwrap();
         apply_rename_and_drain(&mut state, &mut engine, target, "RENAMED");
-        let names: Vec<_> = engine.workspaces.iter().map(|w| w.name.as_str()).collect();
+        let names: Vec<_> = engine
+            .workspaces()
+            .into_iter()
+            .map(|w| w.name.as_str())
+            .collect();
         assert_eq!(names, ["A", "RENAMED", "C"]);
     }
 
@@ -459,7 +463,11 @@ mod tests {
         let ws_idx = state.active_workspace_index(&engine);
         let pane_id = state
             .navigation
-            .pane_id(&engine.workspaces[ws_idx])
+            .pane_id(
+                engine
+                    .workspace_at(ws_idx)
+                    .expect("workspace index is valid"),
+            )
             .unwrap();
         let t2 = engine.next_ids.next_tab();
         let s2 = engine.next_ids.next_surface();
@@ -495,9 +503,17 @@ mod tests {
             crate::state::WorkspaceCloseOrigin::Agent
         ));
         assert!(!rename_target_exists(&target, &engine));
-        let before: Vec<_> = engine.workspaces.iter().map(|w| w.name.clone()).collect();
+        let before: Vec<_> = engine
+            .workspaces()
+            .into_iter()
+            .map(|w| w.name.clone())
+            .collect();
         apply_rename_and_drain(&mut state, &mut engine, target, "RENAMED");
-        let after: Vec<_> = engine.workspaces.iter().map(|w| w.name.clone()).collect();
+        let after: Vec<_> = engine
+            .workspaces()
+            .into_iter()
+            .map(|w| w.name.clone())
+            .collect();
         assert_eq!(before, after);
     }
 

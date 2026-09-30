@@ -18,8 +18,7 @@ impl MainView {
         ws_idx: usize,
     ) -> Result<()> {
         let ws = engine
-            .workspaces
-            .get(ws_idx)
+            .workspace_at(ws_idx)
             .ok_or_else(|| anyhow!("workspace idx {ws_idx} out of range"))?;
         let base_name = if ws.name.is_empty() {
             "workspace".to_string()

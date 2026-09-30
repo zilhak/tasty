@@ -7,7 +7,7 @@ use super::CoreState;
 
 impl CoreState {
     pub fn is_surface_deferred(&self, surface_id: u32) -> bool {
-        for ws in &self.workspaces {
+        for ws in &self.workspaces() {
             let pane_ids = ws.pane_layout().all_pane_ids();
             for pane_id in pane_ids {
                 if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
@@ -24,7 +24,7 @@ impl CoreState {
 
     /// mesh 메타데이터를 찾는다. 허용 종류·plugin 검증은 attach 호출자가 따로 한다.
     pub(crate) fn find_mesh_surface_info(&self, surface_id: u32) -> Option<(String, String)> {
-        for ws in &self.workspaces {
+        for ws in &self.workspaces() {
             let pane_ids = ws.pane_layout().all_pane_ids();
             for pane_id in pane_ids {
                 if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
@@ -47,7 +47,7 @@ impl CoreState {
         &self,
         surface_id: u32,
     ) -> Option<&crate::core::egui_mesh_surface::EguiMeshSurface> {
-        for ws in &self.workspaces {
+        for ws in &self.workspaces() {
             let pane_ids = ws.pane_layout().all_pane_ids();
             for pane_id in pane_ids {
                 if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
@@ -71,20 +71,24 @@ impl CoreState {
     /// surface_id를 지연 placeholder로 가진 tab. 실패 상한에 도달한 placeholder도 찾는다.
     fn deferred_tab_mut(&mut self, surface_id: u32) -> Option<&mut crate::model::Tab> {
         let (ws_idx, pane_id, tab_idx) =
-            self.workspaces.iter().enumerate().find_map(|(i, ws)| {
-                ws.pane_layout()
-                    .all_pane_ids()
-                    .into_iter()
-                    .find_map(|pane_id| {
-                        let pane = ws.pane_layout().find_pane(pane_id)?;
-                        let tab_idx = pane
-                            .tabs
-                            .iter()
-                            .position(|tab| tab.is_surface_deferred(surface_id))?;
-                        Some((i, pane_id, tab_idx))
-                    })
-            })?;
-        self.workspaces[ws_idx]
+            self.workspaces()
+                .into_iter()
+                .enumerate()
+                .find_map(|(i, ws)| {
+                    ws.pane_layout()
+                        .all_pane_ids()
+                        .into_iter()
+                        .find_map(|pane_id| {
+                            let pane = ws.pane_layout().find_pane(pane_id)?;
+                            let tab_idx = pane
+                                .tabs
+                                .iter()
+                                .position(|tab| tab.is_surface_deferred(surface_id))?;
+                            Some((i, pane_id, tab_idx))
+                        })
+                })?;
+        self.workspace_at_mut(ws_idx)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .find_pane_mut(pane_id)?
             .tabs
@@ -117,7 +121,7 @@ impl EngineMut<'_> {
     /// 등록된 종류로 placeholder 복원을 시도한다. 종류가 없거나 복원에 실패하면 placeholder가 남는다.
     pub fn reify_plugin_surface(&mut self, surface_id: u32) -> bool {
         let registry = self.surface_registry.clone();
-        for ws in &mut self.workspaces {
+        for ws in self.workspaces_mut() {
             let pane_ids: Vec<u32> = ws.pane_layout().all_pane_ids();
             for pane_id in pane_ids {
                 if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
@@ -361,7 +365,9 @@ mod tests {
             None,
             Box::new(EmptySurface::new_deferred(surface_id, spawn)),
         );
-        let ws = &mut engine.workspaces[0];
+        let ws = engine
+            .workspace_at_mut(0)
+            .expect("workspace index is valid");
         let pane_id = ws.pane_layout().all_pane_ids()[0];
         let pane = ws.pane_layout_mut().find_pane_mut(pane_id).expect("pane");
         pane.tabs.push(tab);
@@ -379,7 +385,9 @@ mod tests {
             },
         );
         let tab = Tab::new_named(tab_id, "t".to_string(), None, Box::new(placeholder));
-        let ws = &mut engine.workspaces[0];
+        let ws = engine
+            .workspace_at_mut(0)
+            .expect("workspace index is valid");
         let pane_id = ws.pane_layout().all_pane_ids()[0];
         let pane = ws.pane_layout_mut().find_pane_mut(pane_id).expect("pane");
         pane.tabs.push(tab);
@@ -413,7 +421,7 @@ mod tests {
     }
 
     fn tab_order_ids(engine: &CoreState) -> Vec<(u32, Vec<u32>)> {
-        let ws = &engine.workspaces[0];
+        let ws = engine.workspace_at(0).expect("workspace index is valid");
         ws.pane_layout()
             .all_pane_ids()
             .into_iter()

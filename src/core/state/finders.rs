@@ -5,7 +5,7 @@ use crate::core::engine_access::EngineMut;
 
 impl CoreState {
     pub fn find_surface_by_id(&self, surface_id: u32) -> Option<&dyn crate::model::Surface> {
-        for workspace in &self.workspaces {
+        for workspace in &self.workspaces() {
             for pid in workspace.pane_layout().all_pane_ids() {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
@@ -24,7 +24,7 @@ impl CoreState {
 
     pub fn live_surface_ids(&self) -> std::collections::HashSet<u32> {
         let mut ids = std::collections::HashSet::new();
-        for workspace in &self.workspaces {
+        for workspace in &self.workspaces() {
             for sid in workspace.all_surface_ids() {
                 ids.insert(sid);
             }
@@ -33,7 +33,7 @@ impl CoreState {
     }
 
     pub fn find_pane_for_surface(&self, surface_id: u32) -> Option<u32> {
-        for workspace in &self.workspaces {
+        for workspace in &self.workspaces() {
             let pane_ids = workspace.pane_layout().all_pane_ids();
             for pid in pane_ids {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
@@ -49,7 +49,7 @@ impl CoreState {
     }
 
     pub fn find_tab_for_surface(&self, surface_id: u32) -> Option<u32> {
-        for workspace in &self.workspaces {
+        for workspace in &self.workspaces() {
             for pid in workspace.pane_layout().all_pane_ids() {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
@@ -64,7 +64,7 @@ impl CoreState {
     }
 
     pub fn find_workspace_index_for_pane(&self, pane_id: u32) -> Option<usize> {
-        for (i, workspace) in self.workspaces.iter().enumerate() {
+        for (i, workspace) in self.workspaces().into_iter().enumerate() {
             if workspace.pane_layout().find_pane(pane_id).is_some() {
                 return Some(i);
             }
@@ -73,7 +73,7 @@ impl CoreState {
     }
 
     pub fn find_pane_by_id(&self, pane_id: u32) -> Option<&crate::model::Pane> {
-        for workspace in &self.workspaces {
+        for workspace in &self.workspaces() {
             if let Some(pane) = workspace.pane_layout().find_pane(pane_id) {
                 return Some(pane);
             }
@@ -82,7 +82,7 @@ impl CoreState {
     }
 
     pub fn find_pane_for_tab(&self, tab_id: u32) -> Option<u32> {
-        for workspace in &self.workspaces {
+        for workspace in &self.workspaces() {
             for pid in workspace.pane_layout().all_pane_ids() {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid)
                     && pane.tabs.iter().any(|t| t.id == tab_id)
@@ -95,7 +95,7 @@ impl CoreState {
     }
 
     pub fn find_pane_by_id_mut(&mut self, pane_id: u32) -> Option<&mut crate::model::Pane> {
-        for workspace in &mut self.workspaces {
+        for workspace in self.workspaces_mut() {
             if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pane_id) {
                 return Some(pane);
             }
@@ -104,7 +104,7 @@ impl CoreState {
     }
 
     pub fn find_workspace_index_for_surface(&self, surface_id: u32) -> Option<(usize, u32)> {
-        for (i, workspace) in self.workspaces.iter().enumerate() {
+        for (i, workspace) in self.workspaces().into_iter().enumerate() {
             for pid in workspace.pane_layout().all_pane_ids() {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
@@ -119,13 +119,13 @@ impl CoreState {
     }
 
     pub fn find_workspace_index_for_id(&self, ws_id: u32) -> Option<usize> {
-        self.workspaces.iter().position(|w| w.id == ws_id)
+        self.workspaces().into_iter().position(|w| w.id == ws_id)
     }
 
     /// surface가 mirror workspace에 속하는지 확인한다. ID를 못 찾으면 false다.
     pub fn is_mirror_surface(&self, surface_id: u32) -> bool {
         self.find_workspace_index_for_surface(surface_id)
-            .and_then(|(idx, _)| self.workspaces.get(idx))
+            .and_then(|(idx, _)| self.workspace_at(idx))
             .map(|ws| ws.mirror)
             .unwrap_or(false)
     }
@@ -158,7 +158,7 @@ impl CoreState {
                 // 이동·교체는 양쪽 중 하나라도 mirror이면 로컬에서 실행하지 않는다.
                 self.find_workspace_index_for_surface(*source_surface_id)
                     .map(|(i, _)| i)
-                    .filter(|&i| self.workspaces.get(i).is_some_and(|w| w.mirror))
+                    .filter(|&i| self.workspace_at(i).is_some_and(|w| w.mirror))
                     .or_else(|| {
                         self.find_workspace_index_for_surface(*target_surface_id)
                             .map(|(i, _)| i)
@@ -174,7 +174,7 @@ impl CoreState {
                         .and_then(|pid| self.find_workspace_index_for_pane(pid))
                 };
                 ws_of_tab(*source_tab_id)
-                    .filter(|&i| self.workspaces.get(i).is_some_and(|w| w.mirror))
+                    .filter(|&i| self.workspace_at(i).is_some_and(|w| w.mirror))
                     .or_else(|| ws_of_tab(*target_tab_id))
             }
             D::ReplacePaneWithPane {
@@ -183,7 +183,7 @@ impl CoreState {
             } => {
                 // 페인 이동도 양쪽 중 하나라도 mirror이면 로컬에서 실행하지 않는다.
                 self.find_workspace_index_for_pane(*source_pane_id)
-                    .filter(|&i| self.workspaces.get(i).is_some_and(|w| w.mirror))
+                    .filter(|&i| self.workspace_at(i).is_some_and(|w| w.mirror))
                     .or_else(|| self.find_workspace_index_for_pane(*target_pane_id))
             }
             D::SplitPane {
@@ -212,8 +212,7 @@ impl CoreState {
             => return None,
             _ => return None,
         }?;
-        self.workspaces
-            .get(ws_idx)
+        self.workspace_at(ws_idx)
             .filter(|w| w.mirror)
             .map(|_| ws_idx)
     }
@@ -223,8 +222,8 @@ impl CoreState {
         &self,
         category: crate::model::WorkspaceCategoryId,
     ) -> Vec<(usize, &crate::model::Workspace)> {
-        self.workspaces
-            .iter()
+        self.workspaces()
+            .into_iter()
             .enumerate()
             .filter(|(_, w)| w.category == category)
             .collect()
@@ -241,7 +240,7 @@ impl CoreState {
         surface_id: u32,
         presentation: &dyn crate::model::StructurePresentation,
     ) -> Option<SurfaceDisplayPath> {
-        for workspace in &self.workspaces {
+        for workspace in &self.workspaces() {
             for pid in workspace.pane_layout().all_pane_ids() {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {

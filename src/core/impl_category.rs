@@ -151,14 +151,23 @@ mod tests {
         );
         let order: Vec<u32> = engine.categories().iter().map(|c| c.id).collect();
         assert_eq!(order, [NORMAL_CATEGORY_ID, b, a]);
-        engine.workspaces[0].set_category(b);
+        engine
+            .workspace_at_mut(0)
+            .expect("workspace index is valid")
+            .set_category(b);
         apply(
             &mut core,
             &mut engine,
             DomainIntent::DeleteCategory { id: b },
         );
         assert_eq!(engine.category_index(b), None);
-        assert_eq!(engine.workspaces[0].category, NORMAL_CATEGORY_ID);
+        assert_eq!(
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .category,
+            NORMAL_CATEGORY_ID
+        );
 
         let err = core
             .apply(
@@ -180,7 +189,7 @@ mod tests {
         let mut engine = engine_session.borrow_mut();
         let a = create(&mut core, &mut engine, "A");
         engine.layout_dirty.clear();
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         apply(
             &mut core,
             &mut engine,
@@ -189,7 +198,13 @@ mod tests {
                 category: a,
             },
         );
-        assert_eq!(engine.workspaces[0].category, a);
+        assert_eq!(
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .category,
+            a
+        );
         assert!(engine.layout_dirty.is_dirty());
         assert!(
             core.apply(
@@ -201,14 +216,20 @@ mod tests {
             )
             .is_err()
         );
-        assert_eq!(engine.workspaces[0].category, a);
+        assert_eq!(
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .category,
+            a
+        );
     }
 
     #[test]
     fn set_workspace_attach_mapping_sets_and_clears() {
         let (mut core, mut engine_session) = fixture();
         let mut engine = engine_session.borrow_mut();
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         let mapping = crate::model::WorkspaceAttachMapping::profile("prod", Some(3));
         apply(
             &mut core,
@@ -218,7 +239,13 @@ mod tests {
                 mapping: Some(mapping.clone()),
             },
         );
-        assert_eq!(engine.workspaces[0].attach_mapping, Some(mapping));
+        assert_eq!(
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .attach_mapping,
+            Some(mapping)
+        );
         assert!(engine.layout_dirty.is_dirty());
         apply(
             &mut core,
@@ -228,7 +255,13 @@ mod tests {
                 mapping: None,
             },
         );
-        assert_eq!(engine.workspaces[0].attach_mapping, None);
+        assert_eq!(
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .attach_mapping,
+            None
+        );
         assert!(
             core.apply(
                 &mut engine,
@@ -245,9 +278,9 @@ mod tests {
     fn category_intents_still_apply_locally_on_a_mirror_workspace() {
         let (mut core, mut engine_session) = fixture();
         let mut engine = engine_session.borrow_mut();
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
         let a = create(&mut core, &mut engine, "A");
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         apply(
             &mut core,
             &mut engine,
@@ -264,8 +297,20 @@ mod tests {
                 mapping: Some(crate::model::WorkspaceAttachMapping::profile("p", None)),
             },
         );
-        assert_eq!(engine.workspaces[0].category, a);
-        assert!(engine.workspaces[0].attach_mapping.is_some());
+        assert_eq!(
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .category,
+            a
+        );
+        assert!(
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .attach_mapping
+                .is_some()
+        );
         assert!(engine.pending_structural_forward.is_empty());
     }
 }

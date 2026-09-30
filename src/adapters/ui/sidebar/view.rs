@@ -366,7 +366,7 @@ pub fn draw_full_sidebar_view(
         });
 
     // 전체 워크스페이스의 활성 인덱스를 기록해 실제로 바뀐 프레임에만 스크롤한다.
-    let active_idx = props.workspaces.iter().position(|w| w.is_active);
+    let active_idx = props.workspaces.into_iter().position(|w| w.is_active);
     let active_scroll_track_id = egui::Id::new("sidebar_workspace_active_scroll_track");
     let prev_active_idx: Option<Option<usize>> = ui.data(|d| d.get_temp(active_scroll_track_id));
     let should_scroll_to_active = should_scroll_to_active_workspace(prev_active_idx, active_idx);
@@ -475,7 +475,7 @@ pub fn draw_full_sidebar_view(
                     draw_list_separator(ui, th, 0.0);
                 }
 
-                for (i, ws) in props.workspaces.iter().enumerate() {
+                for (i, ws) in props.workspaces.into_iter().enumerate() {
                     if i > 0 {
                         draw_list_separator(ui, th, 32.0);
                     }
@@ -758,7 +758,7 @@ pub fn draw_collapsed_sidebar_view(
                 }
             }
         } else {
-            for (i, ws) in props.workspaces.iter().enumerate() {
+            for (i, ws) in props.workspaces.into_iter().enumerate() {
                 let switch_digit = if props.workspace_switch_held {
                     crate::adapters::ui::switch_overlay::workspace_digit(props.kb, i)
                 } else {

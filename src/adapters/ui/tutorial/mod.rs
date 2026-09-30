@@ -75,8 +75,7 @@ pub fn draw_tutorial_overlay(
     let step = &topic.steps[a.step];
     let in_workspace = state.tutorial.practice.is_none_or(|c| {
         engine
-            .workspaces
-            .get(state.active_workspace_index(engine))
+            .workspace_at(state.active_workspace_index(engine))
             .is_some_and(|w| w.id == c.workspace)
     });
     let pane_id = state

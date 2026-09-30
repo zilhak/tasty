@@ -110,7 +110,7 @@ pub fn draw_egui_panels(
     let explorer_bg = crate::theme::theme().bg_panel().to_egui();
 
     // Temporarily extract view stores so we can hold a `&mut View` from
-    // the store at the same time as `&mut Panel` from `engine.workspaces`.
+    // the store at the same time as `&mut Panel` from `engine.workspaces()`.
     let mut explorer_views = std::mem::take(&mut state.explorer_views);
     let mut dag_views = std::mem::take(&mut state.dag_graph_views);
     let explorer_favorites = engine.explorer_favorites.items.clone();
@@ -610,7 +610,7 @@ fn draw_occupied_overlays(
     }
     let mut occ: Vec<Occ> = Vec::new();
     {
-        let Some(ws) = engine.workspaces.get(active_ws) else {
+        let Some(ws) = engine.workspace_at(active_ws) else {
             return;
         };
         for &(pane_id, pane_rect) in pane_rects {
@@ -710,8 +710,14 @@ mod explorer_open_tests {
         for mirror in [false, true] {
             let (mut state, mut engine_session) = crate::state::tests::test_state();
             let mut engine = engine_session.borrow_mut();
-            engine.workspaces[0].mirror = mirror;
-            let sid = engine.workspaces[0].all_surface_ids()[0];
+            engine
+                .workspace_at_mut(0)
+                .expect("workspace index is valid")
+                .mirror = mirror;
+            let sid = engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .all_surface_ids()[0];
             super::apply_explorer_action(
                 &mut state,
                 &mut engine,

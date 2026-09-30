@@ -95,7 +95,7 @@ impl App {
     ) {
         let intent = DomainIntent::SaveLayoutNow {
             presentation: Box::new(crate::model::StructurePresentationSnapshot::capture(
-                &engine.workspaces,
+                &engine.workspaces(),
                 &engine.categories,
                 presentation,
             )),

@@ -433,7 +433,10 @@ mod tests {
     fn attention_forwards_only_on_change() {
         let mut e_session = state();
         let mut e = e_session.borrow_mut();
-        let sid = e.workspaces[0].all_surface_ids()[0];
+        let sid = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         e.attach.acquire(sid, 7).expect("lock 획득");
 
         assert_eq!(e.attention_forwards(), vec![(7, sid, None)]);
@@ -463,7 +466,10 @@ mod tests {
     fn attention_forwards_ignores_unoccupied_surfaces() {
         let mut e_session = state();
         let mut e = e_session.borrow_mut();
-        let sid = e.workspaces[0].all_surface_ids()[0];
+        let sid = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         e.raise_attention(sid, AttentionKind::NeedsInput);
         assert!(e.attention_forwards().is_empty());
     }
@@ -472,7 +478,10 @@ mod tests {
     fn attention_forwards_resets_on_reacquire() {
         let mut e_session = state();
         let mut e = e_session.borrow_mut();
-        let sid = e.workspaces[0].all_surface_ids()[0];
+        let sid = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         e.attach.acquire(sid, 7).expect("lock 획득");
         e.raise_attention(sid, AttentionKind::NeedsInput);
         assert_eq!(
@@ -497,7 +506,10 @@ mod tests {
     fn attention_forwards_holder_swap_within_one_tick_pushes_to_the_new_holder() {
         let mut e_session = state();
         let mut e = e_session.borrow_mut();
-        let sid = e.workspaces[0].all_surface_ids()[0];
+        let sid = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         e.attach.acquire(sid, 7).expect("lock 획득");
         e.raise_attention(sid, AttentionKind::NeedsInput);
         assert_eq!(
@@ -638,8 +650,11 @@ mod tests {
     fn mirror_state() -> (crate::runtime::engine_session::EngineSession, u32) {
         let mut s_session = state();
         let mut s = s_session.borrow_mut();
-        s.workspaces[0].mirror = true;
-        let sid = s.workspaces[0].all_surface_ids()[0];
+        s.make_mirror_fixture(0);
+        let sid = s
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         (s_session, sid)
     }
 
@@ -686,7 +701,10 @@ mod tests {
     fn non_mirror_clear_does_not_queue_a_forward() {
         let mut s_session = state();
         let mut s = s_session.borrow_mut();
-        let sid = s.workspaces[0].all_surface_ids()[0];
+        let sid = s
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         s.raise_attention(sid, AttentionKind::Completion);
 
         assert!(s.clear_attention(sid));
@@ -700,7 +718,7 @@ mod tests {
     fn mirror_notification_read_queues_the_clear_forward() {
         let (mut s_session, sid) = mirror_state();
         let mut s = s_session.borrow_mut();
-        let ws_id = s.workspaces[0].id;
+        let ws_id = s.workspace_at(0).expect("workspace index is valid").id;
         let nid = s
             .notifications
             .add(ws_id, sid, "t".into(), "b".into())
@@ -724,7 +742,7 @@ mod tests {
     fn mirror_mark_all_read_queues_the_clear_forward() {
         let (mut s_session, sid) = mirror_state();
         let mut s = s_session.borrow_mut();
-        let ws_id = s.workspaces[0].id;
+        let ws_id = s.workspace_at(0).expect("workspace index is valid").id;
         s.notifications.add(ws_id, sid, "t".into(), "b".into());
         s.set_mirror_surface_attention(sid, Some(AttentionKind::Completion));
 
@@ -830,8 +848,11 @@ mod tests {
     fn the_holders_clear_is_not_blocked_by_the_gate() {
         let mut s_session = state();
         let mut s = s_session.borrow_mut();
-        let sid = s.workspaces[0].all_surface_ids()[0];
-        let ws = s.workspaces[0].id;
+        let sid = s
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
+        let ws = s.workspace_at(0).expect("workspace index is valid").id;
         s.attach
             .acquire_workspace(ws, &[sid], &[sid], 1)
             .expect("workspace hard lock");

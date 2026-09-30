@@ -229,7 +229,7 @@ fn mirror_target_index(
 ) -> Option<usize> {
     let active = || {
         engine
-            .workspaces
+            .workspaces()
             .len()
             .checked_sub(1)
             .map(|last| state.active_workspace_index(engine).min(last))
@@ -245,11 +245,7 @@ fn mirror_target_index(
         },
         PresetKind::Workspace => return None,
     };
-    engine
-        .workspaces
-        .get(idx)
-        .filter(|ws| ws.mirror)
-        .map(|_| idx)
+    engine.workspace_at(idx).filter(|ws| ws.mirror).map(|_| idx)
 }
 
 // 적용 중 저장소 잠금을 유지하지 않도록 프리셋을 복사한다.
@@ -320,7 +316,10 @@ pub fn apply_inner(
             let idx = state
                 .apply_workspace_preset(engine, &p, target.category, options)
                 .map_err(PresetMutationError::Apply)?;
-            let workspace_id = engine.workspaces[idx].id;
+            let workspace_id = engine
+                .workspace_at(idx)
+                .expect("workspace index is valid")
+                .id;
             Ok(ApplyOutcome::Workspace { workspace_id })
         }
         ClonedPreset::Tab(p) => {
@@ -467,8 +466,8 @@ pub fn capture_inner(
     match kind {
         PresetKind::Workspace => {
             let ws = engine
-                .workspaces
-                .iter()
+                .workspaces()
+                .into_iter()
                 .find(|w| w.id == source_id)
                 .ok_or_else(|| format!("Workspace id {source_id} not found"))?;
             let base = if ws.name.is_empty() {
@@ -484,7 +483,7 @@ pub fn capture_inner(
             let pane_id = engine
                 .find_pane_for_tab(source_id)
                 .ok_or_else(|| format!("Tab id {source_id} not found"))?;
-            for ws in &engine.workspaces {
+            for ws in &engine.workspaces() {
                 if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                     for tab in &pane.tabs {
                         if tab.id == source_id {
@@ -507,7 +506,7 @@ pub fn capture_inner(
             Err(format!("Tab id {source_id} not found"))
         }
         PresetKind::Pane => {
-            for ws in &engine.workspaces {
+            for ws in &engine.workspaces() {
                 if let Some(pane) = ws.pane_layout().find_pane(source_id) {
                     let preset = capture_pane_preset(presentation, engine, pane, None, &registry)
                         .ok_or_else(|| "pane capture failed".to_string())?;
@@ -591,12 +590,25 @@ mod mirror_tests {
         let core = core_with_presets(dir.path());
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        engine.workspaces[0].mirror = true;
-        let ws_id = engine.workspaces[0].id;
-        let pane_id = engine.workspaces[0].pane_layout().first_pane().unwrap().id;
-        let panes_before = engine.workspaces[0].pane_layout().all_pane_ids().len();
+        engine.make_mirror_fixture(0);
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
+        let pane_id = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .first_pane()
+            .unwrap()
+            .id;
+        let panes_before = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .all_pane_ids()
+            .len();
         let tabs_before = |engine: &crate::core::CoreState| {
-            engine.workspaces[0]
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
                 .pane_layout()
                 .find_pane(pane_id)
                 .map(|p| p.tabs.len())
@@ -621,7 +633,12 @@ mod mirror_tests {
         }
         assert_eq!(tabs_before(&engine), tabs0, "탭이 추가됐다");
         assert_eq!(
-            engine.workspaces[0].pane_layout().all_pane_ids().len(),
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .pane_layout()
+                .all_pane_ids()
+                .len(),
             panes_before,
             "pane이 추가됐다"
         );
@@ -633,8 +650,14 @@ mod mirror_tests {
         let core = core_with_presets(dir.path());
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        let ws_id = engine.workspaces[0].id;
-        let pane_id = engine.workspaces[0].pane_layout().first_pane().unwrap().id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
+        let pane_id = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .first_pane()
+            .unwrap()
+            .id;
 
         for t in [
             target(PresetKind::Tab, Some(pane_id), None),

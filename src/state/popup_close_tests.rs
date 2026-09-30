@@ -118,7 +118,10 @@ const FIXED_POS: egui::Pos2 = egui::pos2(500.0, 500.0);
 fn convert_surface_escape_close_clears_dialog_state() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
-    let surface_id = engine.workspaces[0].all_surface_ids()[0];
+    let surface_id = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     state.dialogs.convert_popup = Some(surface_id);
     state.dialogs.convert_popup_selected = Some(0);
     state
@@ -136,7 +139,10 @@ fn convert_surface_escape_close_clears_dialog_state() {
 fn convert_surface_outside_click_clears_dialog_state() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
-    let surface_id = engine.workspaces[0].all_surface_ids()[0];
+    let surface_id = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     state.dialogs.convert_popup = Some(surface_id);
     state.dialogs.convert_popup_selected = Some(0);
     state
@@ -159,7 +165,10 @@ fn convert_surface_outside_click_clears_dialog_state() {
 fn convert_surface_close_intent_now_clears_dialog_state() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
-    let surface_id = engine.workspaces[0].all_surface_ids()[0];
+    let surface_id = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     state.dialogs.convert_popup = Some(surface_id);
     state.dialogs.convert_popup_selected = Some(0);
     state
@@ -655,8 +664,11 @@ fn occupied_workspace_with_popup(
     state: &mut crate::state::RequestContext,
     engine: &mut crate::core::engine_access::EngineMut<'_>,
 ) -> (crate::model::WorkspaceId, Vec<u32>) {
-    let ws_id = engine.workspaces[0].id;
-    let members = engine.workspaces[0].all_surface_ids();
+    let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
+    let members = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids();
     engine
         .attach
         .acquire_workspace(ws_id, &members, &members, 7)

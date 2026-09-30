@@ -271,7 +271,7 @@ impl MainView {
     ) -> bool {
         if matches_any_binding(&kb.close_workspace, key, mods) {
             state.close_active_workspace(engine);
-            if !engine.workspaces.is_empty() {
+            if !engine.workspaces().is_empty() {
                 state.resize_all(
                     engine,
                     terminal_rect,
@@ -286,7 +286,7 @@ impl MainView {
             if !state.close_active_pane(engine) {
                 state.close_active_workspace(engine);
             }
-            if !engine.workspaces.is_empty() {
+            if !engine.workspaces().is_empty() {
                 state.resize_all(
                     engine,
                     terminal_rect,
@@ -302,7 +302,7 @@ impl MainView {
             if !closed && !state.close_active_pane(engine) {
                 state.close_active_workspace(engine);
             }
-            if !engine.workspaces.is_empty() {
+            if !engine.workspaces().is_empty() {
                 state.resize_all(
                     engine,
                     terminal_rect,
@@ -502,7 +502,7 @@ impl MainView {
             if !state.close_active_tab(engine) && !state.close_active_pane(engine) {
                 state.close_active_workspace(engine);
             }
-            if !engine.workspaces.is_empty() {
+            if !engine.workspaces().is_empty() {
                 state.resize_all(
                     engine,
                     terminal_rect,
@@ -557,7 +557,7 @@ impl MainView {
         }
         if matches_any_binding(&kb.rename_workspace, key, mods) {
             let ws_idx = state.active_workspace_index(engine);
-            if let Some(ws) = engine.workspaces.get(ws_idx) {
+            if let Some(ws) = engine.workspace_at(ws_idx) {
                 let target = crate::state::RenameTarget::WorkspaceName {
                     workspace_id: ws.id,
                 };
@@ -656,7 +656,7 @@ impl MainView {
         }
         if matches_any_binding(&kb.rename_workspace_subtitle, key, mods) {
             let ws_idx = state.active_workspace_index(engine);
-            if let Some(ws) = engine.workspaces.get(ws_idx) {
+            if let Some(ws) = engine.workspace_at(ws_idx) {
                 let target = crate::state::RenameTarget::WorkspaceSubtitle {
                     workspace_id: ws.id,
                 };
@@ -785,7 +785,7 @@ impl MainView {
     ) {
         let mirror_ws_id = state.focused_surface_id(engine).and_then(|sid| {
             let (idx, _pane_id) = engine.find_workspace_index_for_surface(sid)?;
-            let ws = engine.workspaces.get(idx)?;
+            let ws = engine.workspace_at(idx)?;
             ws.mirror.then_some(ws.id)
         });
         engine.pending_screenshot_captures.push(mirror_ws_id);

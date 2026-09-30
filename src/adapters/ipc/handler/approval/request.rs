@@ -90,12 +90,16 @@ pub fn handle_request(
         .or_else(|| {
             surface_id
                 .and_then(|sid| engine.find_workspace_index_for_surface(sid))
-                .map(|(idx, _)| engine.workspaces[idx].id)
+                .map(|(idx, _)| {
+                    engine
+                        .workspace_at(idx)
+                        .expect("workspace index is valid")
+                        .id
+                })
         })
         .or_else(|| {
             engine
-                .workspaces
-                .get(window.active_workspace_index(engine))
+                .workspace_at(window.active_workspace_index(engine))
                 .map(|ws| ws.id)
         });
 

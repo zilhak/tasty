@@ -900,7 +900,7 @@ fn draw_ws_list(
     );
     list.set_clip_rect(list_rect);
     egui::ScrollArea::vertical()
-        .id_salt("remote_attach.workspaces")
+        .id_salt("remote_attach.workspaces()")
         .drag_to_scroll(false)
         .show(&mut list, |ui| {
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);

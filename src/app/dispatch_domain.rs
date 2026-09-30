@@ -1220,8 +1220,7 @@ pub(crate) fn cascade_workspace_created(
     c: WorkspaceCreatedCascade,
 ) {
     let name = engine
-        .workspaces
-        .get(c.index)
+        .workspace_at(c.index)
         .map(|w| w.name.clone())
         .unwrap_or_default();
     state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceCreated {
@@ -1261,7 +1260,7 @@ pub(crate) fn cascade_closed_item_restored(
     }
     state
         .navigation
-        .apply_snapshot(&engine.workspaces, presentation);
+        .apply_snapshot(&engine.workspaces(), presentation);
     match kind {
         RestoredKind::Nothing => {}
         RestoredKind::Workspace { new_ws_index } => {
@@ -1324,12 +1323,15 @@ mod apply_error_tests {
         let (state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
-        let surface = engine.workspaces[0].all_surface_ids()[0];
+        let surface = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let (_, pane) = engine
             .find_workspace_index_for_surface(surface)
             .expect("the first surface has a pane");
         let tab = engine.find_pane_by_id(pane).expect("pane").tabs[0].id;
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
         let applied = core.apply(
             &mut engine,
             DomainIntent::ReplaceTabWithTab {

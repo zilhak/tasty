@@ -80,8 +80,8 @@ impl Core {
                     return nothing();
                 };
                 let Some(ws) = engine
-                    .workspaces
-                    .iter_mut()
+                    .workspaces_mut()
+                    .into_iter()
                     .find(|ws| ws.pane_layout().find_pane(pane_id).is_some())
                 else {
                     return nothing();
@@ -132,9 +132,9 @@ impl Core {
                 };
                 let ws = Workspace::from_restored(ws_id, name, subtitle, pane_node);
                 presentation.panes.insert(ws_id, actual_focused);
-                engine.workspaces.push(ws);
+                engine.push_local_workspace(ws);
                 RestoredKind::Workspace {
-                    new_ws_index: engine.workspaces.len() - 1,
+                    new_ws_index: engine.workspaces().len() - 1,
                 }
             }
         };
@@ -199,12 +199,11 @@ impl Core {
         let Some(from_index) = engine.find_workspace_index_for_id(workspace_id) else {
             return CoreEvent::WorkspaceMoved { moved: false };
         };
-        let len = engine.workspaces.len();
+        let len = engine.workspaces().len();
         if from_index == to_index || from_index >= len || to_index >= len {
             return CoreEvent::WorkspaceMoved { moved: false };
         }
-        let ws = engine.workspaces.remove(from_index);
-        engine.workspaces.insert(to_index, ws);
+        engine.move_workspace_in_display(from_index, to_index);
         engine.mark_layout_dirty();
         CoreEvent::WorkspaceMoved { moved: true }
     }
@@ -218,14 +217,16 @@ impl Core {
         description: Option<String>,
     ) -> anyhow::Result<Vec<CoreEvent>> {
         let Some(index) = engine
-            .workspaces
-            .iter()
+            .workspaces()
+            .into_iter()
             .position(|ws| ws.id == workspace_id)
         else {
             anyhow::bail!("Workspace id {} not found", workspace_id);
         };
 
-        let ws = &mut engine.workspaces[index];
+        let ws = engine
+            .workspace_at_mut(index)
+            .expect("workspace index is valid");
         if let Some(ref n) = name {
             ws.name = n.clone();
         }
@@ -252,8 +253,8 @@ impl Core {
         mapping: Option<crate::model::WorkspaceAttachMapping>,
     ) -> anyhow::Result<Vec<CoreEvent>> {
         let Some(ws) = engine
-            .workspaces
-            .iter_mut()
+            .workspaces_mut()
+            .into_iter()
             .find(|ws| ws.id == workspace_id)
         else {
             anyhow::bail!("Workspace id {} not found", workspace_id);
@@ -346,8 +347,8 @@ impl Core {
         // 발급 기준만 올리면 죽은 scope는 남으므로 복원된 live ID 목록으로 따로 정리한다.
         {
             let live: std::collections::HashSet<u32> = engine
-                .workspaces
-                .iter()
+                .workspaces()
+                .into_iter()
                 .flat_map(|ws| ws.all_surface_ids())
                 .collect();
             let mut guard = crate::poison::recover_mutex(
@@ -419,7 +420,7 @@ pub(crate) fn apply_create_workspace_inner(
     let surface_id = engine.next_ids.next_surface();
     let auto_name = name
         .clone()
-        .unwrap_or_else(|| format!("Workspace {}", engine.workspaces.len() + 1));
+        .unwrap_or_else(|| format!("Workspace {}", engine.workspaces().len() + 1));
     let is_terminal = kind == "terminal";
 
     let mut ws = if is_terminal {
@@ -476,15 +477,21 @@ pub(crate) fn apply_create_workspace_inner(
         ws.set_category(cat_id);
     }
 
-    engine.workspaces.push(ws);
-    let idx = engine.workspaces.len() - 1;
+    engine.push_local_workspace(ws);
+    let idx = engine.workspaces().len() - 1;
 
     let renamed_name = name;
     let renamed_subtitle = subtitle.inspect(|s| {
-        engine.workspaces[idx].subtitle = s.clone();
+        engine
+            .workspace_at_mut(idx)
+            .expect("workspace exists")
+            .subtitle = s.clone();
     });
     let renamed_description = description.inspect(|d| {
-        engine.workspaces[idx].description = d.clone();
+        engine
+            .workspace_at_mut(idx)
+            .expect("workspace exists")
+            .description = d.clone();
     });
 
     if is_terminal {
@@ -492,7 +499,9 @@ pub(crate) fn apply_create_workspace_inner(
     }
     engine.mark_layout_dirty();
 
-    let final_surface_id = engine.workspaces[idx]
+    let final_surface_id = engine
+        .workspace_at(idx)
+        .expect("workspace index is valid")
         .pane_layout()
         .first_pane()
         .and_then(|pane| pane.tabs.first())
@@ -526,7 +535,7 @@ fn push_tab_to_pane(
     pane_id: u32,
     tab: crate::model::Tab,
 ) -> bool {
-    for ws in engine.workspaces.iter_mut() {
+    for ws in engine.workspaces_mut().into_iter() {
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             pane.tabs.push(tab);
             return true;

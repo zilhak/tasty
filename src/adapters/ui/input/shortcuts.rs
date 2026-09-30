@@ -29,7 +29,7 @@ pub(crate) fn focused_workspace_category(
     state: &crate::state::MainViewState,
     engine: &crate::core::CoreState,
 ) -> Option<crate::model::WorkspaceCategoryId> {
-    if engine.workspaces.is_empty() {
+    if engine.workspaces().is_empty() {
         return None;
     }
     Some(state.active_workspace(engine).category)

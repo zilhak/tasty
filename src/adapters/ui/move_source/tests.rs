@@ -24,7 +24,10 @@ fn same(a: Option<MoveSourceMark>, b: Option<MoveSourceMark>) -> bool {
 
 /// 첫 workspace의 첫 pane, 그 첫 탭과 surface.
 fn first_pane(engine: &CoreState) -> (u32, u32, u32) {
-    let a = engine.workspaces[0].all_surface_ids()[0];
+    let a = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     let (_, pane_id) = engine.find_workspace_index_for_surface(a).unwrap();
     let tab_id = engine.find_pane_by_id(pane_id).unwrap().tabs[0].id;
     (pane_id, tab_id, a)
@@ -47,7 +50,9 @@ fn split_new_pane(engine: &mut CoreState, pane_id: u32) -> (u32, u32) {
     let pane = crate::model::Pane::new_with_terminal_marker(new_pane_id, tab_id, sid);
     let ws_idx = engine.find_workspace_index_for_pane(pane_id).unwrap();
     assert!(
-        engine.workspaces[ws_idx]
+        engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .split_pane_in_place(pane_id, SplitDirection::Horizontal, pane)
             .is_none()
@@ -60,15 +65,13 @@ fn push_workspace(engine: &mut CoreState) -> (u32, u32, u32) {
     let pane_id = engine.next_ids.next_pane();
     let tab_id = engine.next_ids.next_tab();
     let sid = engine.next_ids.next_surface();
-    engine
-        .workspaces
-        .push(crate::model::Workspace::new_with_terminal_marker(
-            ws_id,
-            "ws1".to_string(),
-            pane_id,
-            tab_id,
-            sid,
-        ));
+    engine.push_local_workspace(crate::model::Workspace::new_with_terminal_marker(
+        ws_id,
+        "ws1".to_string(),
+        pane_id,
+        tab_id,
+        sid,
+    ));
     (pane_id, tab_id, sid)
 }
 

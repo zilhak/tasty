@@ -290,7 +290,7 @@ mod tests {
             surface_id,
         );
         ws.mirror = true;
-        engine.workspaces.push(ws);
+        engine.push_mirror_workspace(ws);
         (ws_id, surface_id)
     }
 
@@ -299,7 +299,12 @@ mod tests {
         let (mut state, mut engine_session) = make_test_state();
         let mut engine = engine_session.borrow_mut();
         let (ws_id, sid) = push_background_mirror(&mut engine);
-        assert!(!engine.workspaces[state.active_workspace_index(&engine)].mirror);
+        assert!(
+            !engine
+                .workspace_at(state.active_workspace_index(&engine))
+                .expect("workspace index is valid")
+                .mirror
+        );
 
         let resp = handle_trigger(
             &mut state,

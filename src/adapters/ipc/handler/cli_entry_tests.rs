@@ -60,7 +60,9 @@ pub(crate) fn test_core_builder() -> crate::core::builder::CoreBuilder {
 fn surface_query_cli_entry_points_reach_their_handlers() {
     let (_state, mut engine_session) = crate::state::tests::test_state();
     let engine = engine_session.borrow_mut();
-    let surface = engine.workspaces[0]
+    let surface = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
         .all_surface_ids()
         .first()
         .copied()
@@ -134,7 +136,10 @@ fn fire_hook_cli_entry_point_reaches_its_handler() {
     let mut core = test_core();
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
-    let surface = engine.workspaces[0].all_surface_ids()[0];
+    let surface = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
 
     let req = command_to_request(&Commands::Surface {
         command: SurfaceCommands::FireHook {
@@ -160,7 +165,10 @@ fn fire_hook_cli_entry_point_reaches_its_handler() {
 fn send_text_wait_idle_cli_entry_point_switches_method_and_reaches_its_handler() {
     let (_state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
-    let surface = engine.workspaces[0].all_surface_ids()[0];
+    let surface = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
 
     let plain = command_to_request(&Commands::Send {
         command: SendCommands::Text {

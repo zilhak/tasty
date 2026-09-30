@@ -400,10 +400,7 @@ impl MainView {
         engine: &crate::core::CoreState,
         surface_id: u32,
     ) -> bool {
-        let Some(ws) = engine
-            .workspaces
-            .get(self.state.active_workspace_index(engine))
-        else {
+        let Some(ws) = engine.workspace_at(self.state.active_workspace_index(engine)) else {
             return false;
         };
         for pane_id in ws.pane_layout().all_pane_ids() {
@@ -434,7 +431,7 @@ impl MainView {
             std::collections::HashMap::new();
         let mut all_html_ids: Vec<u32> = Vec::new();
 
-        for (ws_idx, ws) in engine.workspaces.iter().enumerate() {
+        for (ws_idx, ws) in engine.workspaces().into_iter().enumerate() {
             let pane_rects = ws
                 .pane_layout()
                 .compute_rects(terminal_rect, scale_factor as f32);
@@ -919,7 +916,7 @@ impl MainView {
         engine: &'e crate::core::CoreState,
         surface_id: u32,
     ) -> Option<&'e dyn crate::model::Surface> {
-        for ws in &engine.workspaces {
+        for ws in &engine.workspaces() {
             for &pid in &ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
@@ -1198,7 +1195,7 @@ impl MainView {
             Some(1) => self.rename_tab(engine, pane_id, tab_index),
             Some(2) => {
                 if self.state.close_tab(&mut *engine, pane_id, tab_index)
-                    && engine.workspaces.is_empty()
+                    && engine.workspaces().is_empty()
                 {
                     self.request_close();
                 }
@@ -1467,7 +1464,9 @@ impl MainView {
             };
             match result {
                 Some(1) => {
-                    let ws = &engine.workspaces[ws_idx];
+                    let ws = engine
+                        .workspace_at(ws_idx)
+                        .expect("workspace index is valid");
                     let (workspace_id, name) = (ws.id, ws.name.clone());
                     this.open_rename_workspace_dialog(
                         engine,
@@ -1476,7 +1475,9 @@ impl MainView {
                     );
                 }
                 Some(2) => {
-                    let ws = &engine.workspaces[ws_idx];
+                    let ws = engine
+                        .workspace_at(ws_idx)
+                        .expect("workspace index is valid");
                     let (workspace_id, subtitle) = (ws.id, ws.subtitle.clone());
                     this.open_rename_workspace_dialog(
                         engine,
@@ -1492,7 +1493,7 @@ impl MainView {
                 }
                 Some(4) => {
                     // Move Down
-                    if ws_idx + 1 < engine.workspaces.len() {
+                    if ws_idx + 1 < engine.workspaces().len() {
                         this.state.move_workspace(engine, ws_idx, ws_idx + 1);
                     }
                 }
@@ -1514,14 +1515,17 @@ impl MainView {
                         engine,
                         ws_idx,
                         crate::state::WorkspaceCloseOrigin::User,
-                    ) && engine.workspaces.is_empty()
+                    ) && engine.workspaces().is_empty()
                     {
                         this.request_close();
                     }
                 }
                 Some(7) => {
                     // 확인 팝업을 기다리는 동안 인덱스가 바뀔 수 있으므로 ID를 보관한다.
-                    let ws_id = engine.workspaces[ws_idx].id;
+                    let ws_id = engine
+                        .workspace_at(ws_idx)
+                        .expect("workspace index is valid")
+                        .id;
                     this.state.dialogs.pending_force_detach_workspace = Some(ws_id);
                     this.state.dispatch_intent(
                         crate::intent::UiIntent::OpenPopup {
@@ -1559,7 +1563,7 @@ impl MainView {
         Vec<crate::model::WorkspaceCategoryId>,
     ) {
         use crate::platform::native_menu::MenuItem;
-        let ws_count = engine.workspaces.len();
+        let ws_count = engine.workspaces().len();
         let can_move_up = ws_idx > 0;
         let can_move_down = ws_idx + 1 < ws_count;
 
@@ -1586,9 +1590,13 @@ impl MainView {
 
         // 현재 카테고리를 제외한 이동 대상과 새 카테고리 항목을 만든다.
         let mut move_targets: Vec<crate::model::WorkspaceCategoryId> = Vec::new();
-        if engine.settings.general.workspace_categories_enabled && ws_idx < engine.workspaces.len()
+        if engine.settings.general.workspace_categories_enabled
+            && ws_idx < engine.workspaces().len()
         {
-            let cur_cat = engine.workspaces[ws_idx].category;
+            let cur_cat = engine
+                .workspace_at(ws_idx)
+                .expect("workspace index is valid")
+                .category;
             items.push(MenuItem::separator());
             // 비클릭 헤더(disabled) + 대상 카테고리 항목들.
             items.push(MenuItem::disabled(
@@ -1615,10 +1623,15 @@ impl MainView {
         }
 
         // 사이드바 점유 표시와 같은 기준으로 강제 끊기 항목을 추가한다.
-        if ws_idx < engine.workspaces.len()
+        if ws_idx < engine.workspaces().len()
             && engine
                 .attach
-                .workspace_holder(engine.workspaces[ws_idx].id)
+                .workspace_holder(
+                    engine
+                        .workspace_at(ws_idx)
+                        .expect("workspace index is valid")
+                        .id,
+                )
                 .is_some()
         {
             items.push(MenuItem::separator());
@@ -1665,7 +1678,10 @@ impl MainView {
         id: u32,
     ) {
         if let Some(&cat_id) = move_targets.get((id - 200) as usize) {
-            let ws_id = engine.workspaces[ws_idx].id;
+            let ws_id = engine
+                .workspace_at(ws_idx)
+                .expect("workspace index is valid")
+                .id;
             if let Err(e) = engine.set_workspace_category(ws_id, cat_id) {
                 tracing::warn!("set_workspace_category failed: {e:?}");
             }

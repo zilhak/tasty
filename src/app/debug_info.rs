@@ -13,7 +13,7 @@ pub fn collect(
 ) -> Value {
     let mut info = serde_json::Map::new();
 
-    info.insert("workspace_count".into(), json!(engine.workspaces.len()));
+    info.insert("workspace_count".into(), json!(engine.workspaces().len()));
     info.insert(
         "active_workspace".into(),
         json!(state.active_workspace_index(engine)),

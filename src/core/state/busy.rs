@@ -207,7 +207,10 @@ mod tests {
     fn busy_activity_forwards_only_on_change() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let sid = e.workspaces[0].all_surface_ids()[0];
+        let sid = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         e.attach.acquire(sid, 7).expect("lock 획득");
 
         let first = e.busy_activity_forwards();
@@ -225,7 +228,10 @@ mod tests {
     fn busy_activity_forwards_resets_on_reacquire() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let sid = e.workspaces[0].all_surface_ids()[0];
+        let sid = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         e.attach.acquire(sid, 7).expect("lock 획득");
         assert_eq!(e.busy_activity_forwards(), vec![(7, sid, false)]);
         assert!(e.busy_activity_forwards().is_empty());
@@ -245,7 +251,10 @@ mod tests {
     fn busy_activity_forwards_holder_swap_within_one_tick_pushes_to_the_new_holder() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let sid = e.workspaces[0].all_surface_ids()[0];
+        let sid = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         e.busy_surfaces.insert(sid);
         e.attach.acquire(sid, 7).expect("lock 획득");
         assert_eq!(e.busy_activity_forwards(), vec![(7, sid, true)]);

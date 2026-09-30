@@ -127,10 +127,17 @@ fn removed_tab_and_surface_use_wire_defaults_but_live_choices_survive() {
 fn parked_mirror_deltas_reclaim_retired_navigation_without_a_redraw() {
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
-    let workspace = engine.workspaces[0].id;
+    engine.make_mirror_fixture(0);
+    let workspace = engine.workspace_at(0).expect("workspace index is valid").id;
     let mut session = super::tests::test_session(workspace, HashMap::new());
     for generation in 1..=12 {
-        let previous_pane = engine.workspaces[0].pane_layout().first_pane().unwrap().id;
+        let previous_pane = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .first_pane()
+            .unwrap()
+            .id;
         state
             .tab_bar_scroll
             .insert(previous_pane, Default::default());

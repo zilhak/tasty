@@ -49,11 +49,18 @@ pub(crate) fn execute_forwarded_structural_op(
     // close가 anchor를 지워도 변경 후 workspace를 찾을 수 있도록 ID를 먼저 보관한다.
     let ws_id = engine
         .find_workspace_index_for_surface(op.anchor_surface_id())
-        .map(|(idx, _)| engine.workspaces[idx].id);
+        .map(|(idx, _)| {
+            engine
+                .workspace_at(idx)
+                .expect("workspace index is valid")
+                .id
+        });
     let before: HashSet<SurfaceId> = ws_id
         .and_then(|id| engine.find_workspace_index_for_id(id))
         .map(|idx| {
-            engine.workspaces[idx]
+            engine
+                .workspace_at(idx)
+                .expect("workspace index is valid")
                 .all_surface_ids()
                 .into_iter()
                 .collect()
@@ -263,7 +270,12 @@ pub(crate) fn execute_forwarded_structural_op(
                 .ok_or_else(|| format!("anchor surface {anchor_surface_id} pane not found"))?;
             let ws_id = engine
                 .find_workspace_index_for_pane(pane_id)
-                .map(|idx| engine.workspaces[idx].id)
+                .map(|idx| {
+                    engine
+                        .workspace_at(idx)
+                        .expect("workspace index is valid")
+                        .id
+                })
                 .ok_or_else(|| format!("pane {pane_id} workspace not found"))?;
             let intent = crate::core::intent::DomainIntent::RestoreClosedItem {
                 target_pane_id: Some(pane_id),
@@ -299,7 +311,12 @@ pub(crate) fn execute_forwarded_structural_op(
             // 다른 workspace의 surface를 덮어쓰게 되므로 없는 surface와 같은 문구로 거절한다.
             let target_ws = engine
                 .find_workspace_index_for_surface(*target_surface_id)
-                .map(|(idx, _)| engine.workspaces[idx].id);
+                .map(|(idx, _)| {
+                    engine
+                        .workspace_at(idx)
+                        .expect("workspace index is valid")
+                        .id
+                });
             if ws_id.is_none() || target_ws != ws_id {
                 return Err(crate::core::request_target::unowned_target_message(
                     crate::core::request_target::ResourceId {
@@ -359,7 +376,10 @@ pub(crate) fn execute_forwarded_structural_op(
         engine.attach.force_detach_workspace(ws_id);
         return Ok(None);
     };
-    let class = engine.workspaces[idx_after].classify_attach_surfaces();
+    let class = engine
+        .workspace_at(idx_after)
+        .expect("workspace index is valid")
+        .classify_attach_surfaces();
     let added_terminals: Vec<SurfaceId> = class
         .terminals
         .iter()

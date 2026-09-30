@@ -67,7 +67,10 @@ mod tests {
         let (mut state, mut session) = crate::state::tests::test_state();
         let (mut core, _home) = crate::adapters::ipc::handler::pty::tests::core();
         let mut engine = session.borrow_mut();
-        let surface = engine.workspaces[0].all_surface_ids()[0];
+        let surface = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         engine
             .replace_terminal_by_id(surface, process(surface, "exit 7"))
             .unwrap();
@@ -125,11 +128,16 @@ mod tests {
         let (_state, mut session) = crate::state::tests::test_state();
         let (mut core, _home) = crate::adapters::ipc::handler::pty::tests::core();
         let mut engine = session.borrow_mut();
-        let surface = engine.workspaces[0].all_surface_ids()[0];
+        let surface = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let old = engine.runtime.terminals.generation(surface).unwrap();
         let pane_id = engine.find_pane_for_surface(surface).unwrap();
         let title = |engine: &EngineMut<'_>| {
-            engine.workspaces[0]
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
                 .pane_layout()
                 .find_pane(pane_id)
                 .unwrap()

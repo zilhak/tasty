@@ -247,7 +247,10 @@ mod terminal_generation_tests {
     fn the_real_host_queue_drops_only_the_old_connection_title() {
         let (mut state, mut session) = crate::state::tests::test_state();
         let engine = session.borrow_mut();
-        let surface = engine.workspaces[0].all_surface_ids()[0];
+        let surface = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let old = engine.runtime.terminals.generation(surface).unwrap();
         drop(state.take_pending_host_events());
         state.enqueue_host_event(PendingHostEvent::SurfaceTitleChanged {

@@ -19,17 +19,29 @@ fn two_owners_keep_independent_live_ids_through_reorder_and_creation() {
     let mut workspaces = vec![workspace(1), workspace(2), workspace(3)];
     let mut a = NavigationState::default();
     let mut b = NavigationState::default();
-    a.reconcile(&workspaces);
-    b.reconcile(&workspaces);
-    b.select_workspace(&workspaces, 3);
+    a.reconcile(&super::WorkspaceRead::local(&workspaces));
+    b.reconcile(&super::WorkspaceRead::local(&workspaces));
+    b.select_workspace(&super::WorkspaceRead::local(&workspaces), 3);
     workspaces.rotate_left(1);
     workspaces.insert(0, workspace(4));
-    a.reconcile(&workspaces);
-    b.reconcile(&workspaces);
-    assert_eq!(a.workspace_id(&workspaces), Some(1));
-    assert_eq!(b.workspace_id(&workspaces), Some(3));
-    assert_eq!(a.workspace_index(&workspaces), 3);
-    assert_eq!(b.workspace_index(&workspaces), 2);
+    a.reconcile(&super::WorkspaceRead::local(&workspaces));
+    b.reconcile(&super::WorkspaceRead::local(&workspaces));
+    assert_eq!(
+        a.workspace_id(&super::WorkspaceRead::local(&workspaces)),
+        Some(1)
+    );
+    assert_eq!(
+        b.workspace_id(&super::WorkspaceRead::local(&workspaces)),
+        Some(3)
+    );
+    assert_eq!(
+        a.workspace_index(&super::WorkspaceRead::local(&workspaces)),
+        3
+    );
+    assert_eq!(
+        b.workspace_index(&super::WorkspaceRead::local(&workspaces)),
+        2
+    );
 }
 
 #[test]
@@ -51,19 +63,19 @@ fn deleting_an_earlier_tab_preserves_id_and_deleting_selection_uses_next_slot() 
     );
     let mut nav = NavigationState::default();
     nav.select_tab(pane, 102);
-    nav.reconcile(&workspaces);
+    nav.reconcile(&super::WorkspaceRead::local(&workspaces));
     workspaces[0]
         .pane_layout_mut()
         .find_pane_mut(10)
         .unwrap()
         .tabs
         .remove(0);
-    nav.reconcile(&workspaces);
+    nav.reconcile(&super::WorkspaceRead::local(&workspaces));
     let pane = workspaces[0].pane_layout_mut().find_pane_mut(10).unwrap();
     assert_eq!(nav.tab_id(pane), Some(102));
     assert_eq!(nav.tab_index(pane), 1);
     pane.tabs.remove(1);
-    nav.reconcile(&workspaces);
+    nav.reconcile(&super::WorkspaceRead::local(&workspaces));
     assert_eq!(
         nav.tab_id(workspaces[0].pane_layout().first_pane().unwrap()),
         Some(103)
@@ -74,14 +86,14 @@ fn deleting_an_earlier_tab_preserves_id_and_deleting_selection_uses_next_slot() 
 fn split_does_not_select_new_surface_and_closed_selection_falls_back() {
     let mut workspaces = vec![workspace(1)];
     let mut nav = NavigationState::default();
-    nav.reconcile(&workspaces);
+    nav.reconcile(&super::WorkspaceRead::local(&workspaces));
     let pane = workspaces[0].pane_layout_mut().find_pane_mut(10).unwrap();
     pane.tabs[0].split_surface_by_id_generic(
         1000,
         SplitDirection::Horizontal,
         Box::new(EmptySurface::new(1001)),
     );
-    nav.reconcile(&workspaces);
+    nav.reconcile(&super::WorkspaceRead::local(&workspaces));
     let tab = &mut workspaces[0]
         .pane_layout_mut()
         .find_pane_mut(10)
@@ -90,7 +102,7 @@ fn split_does_not_select_new_surface_and_closed_selection_falls_back() {
     assert_eq!(nav.surface_id(tab), Some(1000));
     assert!(nav.select_surface(tab, 1001));
     tab.close_surface(1001);
-    nav.reconcile(&workspaces);
+    nav.reconcile(&super::WorkspaceRead::local(&workspaces));
     assert_eq!(
         nav.surface_id(&workspaces[0].pane_layout().first_pane().unwrap().tabs[0]),
         Some(1000)
@@ -101,17 +113,26 @@ fn split_does_not_select_new_surface_and_closed_selection_falls_back() {
 fn parked_navigation_reconciles_only_disappeared_selections() {
     let mut workspaces = vec![workspace(1), workspace(2), workspace(3)];
     let mut nav = NavigationState::default();
-    nav.select_workspace(&workspaces, 2);
-    nav.reconcile(&workspaces);
+    nav.select_workspace(&super::WorkspaceRead::local(&workspaces), 2);
+    nav.reconcile(&super::WorkspaceRead::local(&workspaces));
     workspaces.remove(0);
-    nav.reconcile(&workspaces);
-    assert_eq!(nav.workspace_id(&workspaces), Some(2));
+    nav.reconcile(&super::WorkspaceRead::local(&workspaces));
+    assert_eq!(
+        nav.workspace_id(&super::WorkspaceRead::local(&workspaces)),
+        Some(2)
+    );
     workspaces.remove(0);
-    nav.reconcile(&workspaces);
-    assert_eq!(nav.workspace_id(&workspaces), Some(3));
+    nav.reconcile(&super::WorkspaceRead::local(&workspaces));
+    assert_eq!(
+        nav.workspace_id(&super::WorkspaceRead::local(&workspaces)),
+        Some(3)
+    );
     workspaces.clear();
-    nav.reconcile(&workspaces);
-    assert_eq!(nav.workspace_id(&workspaces), None);
+    nav.reconcile(&super::WorkspaceRead::local(&workspaces));
+    assert_eq!(
+        nav.workspace_id(&super::WorkspaceRead::local(&workspaces)),
+        None
+    );
 }
 
 #[test]
@@ -177,13 +198,13 @@ fn all_tab_removal_positions_preserve_the_legacy_neighbour_policy_by_id() {
         }
         let mut nav = NavigationState::default();
         nav.select_tab(pane, selected);
-        nav.reconcile(&workspaces);
+        nav.reconcile(&super::WorkspaceRead::local(&workspaces));
         workspaces[0]
             .pane_layout_mut()
             .find_pane_mut(10)
             .unwrap()
             .remove_tab(removed);
-        nav.reconcile(&workspaces);
+        nav.reconcile(&super::WorkspaceRead::local(&workspaces));
         assert_eq!(
             nav.tab_id(workspaces[0].pane_layout().first_pane().unwrap()),
             Some(expected)
@@ -215,7 +236,7 @@ fn moving_a_surface_repairs_the_source_and_replaces_the_selected_destination() {
             Box::new(EmptySurface::new(2001)),
         );
     let mut nav = NavigationState::default();
-    nav.reconcile(&workspaces);
+    nav.reconcile(&super::WorkspaceRead::local(&workspaces));
     nav.select_surface(
         &workspaces[1].pane_layout().first_pane().unwrap().tabs[0],
         2001,
@@ -235,7 +256,7 @@ fn moving_a_surface_repairs_the_source_and_replaces_the_selected_destination() {
         .layout_mut()
         .replace_surface(2001, moved.unwrap());
     nav.remap_surface_selection(2001, 1000);
-    nav.reconcile(&workspaces);
+    nav.reconcile(&super::WorkspaceRead::local(&workspaces));
     assert_eq!(
         nav.surface_id(&workspaces[0].pane_layout().first_pane().unwrap().tabs[0]),
         Some(1001)
@@ -289,7 +310,7 @@ fn legacy_split_hints_follow_node_identity_through_extract_and_resplit() {
         nav.split_focus_second(replacement),
         "new split retains the legacy true hint"
     );
-    nav.reconcile(&workspaces);
+    nav.reconcile(&super::WorkspaceRead::local(&workspaces));
     assert!(
         !nav.split_hints.contains_key(&child),
         "retired split metadata is reclaimed"
@@ -388,7 +409,7 @@ fn category_only_changes_round_trip_and_removed_presentation_is_reclaimed() {
     let restored = saved.restore(&mut restored_engine).expect("restore");
     restored_state
         .navigation
-        .restore(&restored_engine.workspaces, &restored);
+        .restore(&restored_engine.workspaces(), &restored);
     assert!(
         restored_state
             .navigation

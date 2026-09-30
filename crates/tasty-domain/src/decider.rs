@@ -4,11 +4,8 @@
 
 use std::fmt;
 
-use crate::ids::{IdSupplier, Revision};
-
-/// decide에 주는 입력. 새 ID와 시각은 여기서만 받아 decide를 결정적으로 유지한다.
+/// decide의 고정 실행 문맥. 예약 ID는 명령 본문에 들어가며 이 문맥은 I/O를 제공하지 않는다.
 pub struct DecisionContext<'a> {
-    pub ids: &'a mut dyn IdSupplier,
     pub command_id: &'a str,
     pub now_ms: u64,
 }
@@ -23,7 +20,7 @@ pub struct Decision<E, F> {
     pub response: Vec<u8>,
 }
 
-/// 한 stream의 상태·명령·이벤트를 정하는 순수 규칙.
+/// 상태·명령·이벤트를 정하는 순수 규칙.
 pub trait Decider {
     type State;
     type Command;
@@ -31,9 +28,6 @@ pub trait Decider {
     type Effect;
     /// 도메인 거절. 이벤트를 만들지 않는다.
     type Rejection: Clone + fmt::Debug;
-
-    /// 상태에 마지막으로 적용한 이 stream의 revision.
-    fn revision(&self, state: &Self::State) -> Option<Revision>;
 
     /// 같은 재시도 키의 재요청이 원래 요청과 같은지 판정하는 값.
     fn request_digest(&self, command: &Self::Command) -> Vec<u8>;

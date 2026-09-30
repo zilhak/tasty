@@ -59,14 +59,19 @@ impl Core {
             crate::model::Pane::new_with_surface(new_pane_id, new_tab_id, name, surface)
         };
 
-        engine.workspaces[ws_idx]
+        engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .split_pane_in_place(target_pane_id, direction, new_pane);
 
         engine.send_fast_init(new_surface_id);
         engine.mark_layout_dirty();
 
-        let ws_id = engine.workspaces[ws_idx].id;
+        let ws_id = engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid")
+            .id;
         engine.tap_new_workspace_member(ws_id, new_surface_id, is_terminal);
 
         Ok(vec![CoreEvent::PaneSplit {
@@ -126,7 +131,9 @@ impl Core {
             .find_workspace_index_for_surface(target_surface_id)
             .ok_or_else(|| anyhow::anyhow!("surface {} not found", target_surface_id))?;
         {
-            let ws = &mut engine.workspaces[ws_idx];
+            let ws = engine
+                .workspace_at_mut(ws_idx)
+                .expect("workspace index is valid");
             let pane = ws
                 .pane_layout_mut()
                 .find_pane_mut(pane_id)
@@ -137,7 +144,10 @@ impl Core {
         engine.send_fast_init(new_surface_id);
         engine.mark_layout_dirty();
 
-        let ws_id = engine.workspaces[ws_idx].id;
+        let ws_id = engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid")
+            .id;
         engine.tap_new_workspace_member(ws_id, new_surface_id, is_terminal);
 
         Ok(vec![CoreEvent::SurfaceSplit {

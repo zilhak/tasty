@@ -12,6 +12,7 @@
 pub(crate) mod command_executor;
 pub(crate) mod engine_session;
 pub(crate) mod journal;
+pub(crate) mod journal_product;
 #[cfg(test)]
 pub(crate) mod shadow_digest;
 

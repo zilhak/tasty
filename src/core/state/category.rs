@@ -26,7 +26,7 @@ impl CoreState {
             self.next_ids.bump_category_floor(max_id + 1);
         }
         let valid: std::collections::HashSet<u32> = self.categories.iter().map(|c| c.id).collect();
-        for ws in &mut self.workspaces {
+        for ws in self.workspaces_mut() {
             if !valid.contains(&ws.category) {
                 ws.set_category(NORMAL_CATEGORY_ID);
             }
@@ -41,7 +41,7 @@ impl CoreState {
     #[cfg(feature = "gui")]
     pub fn collapse_categories_to_normal(&mut self) {
         use crate::model::{NORMAL_CATEGORY_ID, WorkspaceCategory};
-        for ws in &mut self.workspaces {
+        for ws in self.workspaces_mut() {
             ws.set_category(NORMAL_CATEGORY_ID);
         }
         self.categories = vec![WorkspaceCategory::normal()];
@@ -95,7 +95,7 @@ impl CoreState {
             return Err(CategoryOpError::IsNormal);
         }
         let idx = self.category_index(id).ok_or(CategoryOpError::NotFound)?;
-        for ws in &mut self.workspaces {
+        for ws in self.workspaces_mut() {
             if ws.category == id {
                 ws.set_category(NORMAL_CATEGORY_ID);
             }
@@ -134,8 +134,8 @@ impl CoreState {
             return Err(CategoryOpError::NotFound);
         }
         let ws = self
-            .workspaces
-            .iter_mut()
+            .workspaces_mut()
+            .into_iter()
             .find(|w| w.id == ws_id)
             .ok_or(CategoryOpError::WorkspaceNotFound)?;
         ws.set_category(cat_id);
@@ -239,11 +239,21 @@ mod category_tests {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
         let cat = e.create_category("Work").unwrap();
-        let ws_id = e.workspaces[0].id;
+        let ws_id = e.workspace_at(0).expect("workspace index is valid").id;
         e.set_workspace_category(ws_id, cat).unwrap();
-        assert_eq!(e.workspaces[0].category, cat);
+        assert_eq!(
+            e.workspace_at(0)
+                .expect("workspace index is valid")
+                .category,
+            cat
+        );
         e.delete_category(cat).unwrap();
-        assert_eq!(e.workspaces[0].category, NORMAL_CATEGORY_ID);
+        assert_eq!(
+            e.workspace_at(0)
+                .expect("workspace index is valid")
+                .category,
+            NORMAL_CATEGORY_ID
+        );
         assert_eq!(e.categories().len(), 1);
         assert_eq!(
             e.delete_category(NORMAL_CATEGORY_ID),
@@ -278,7 +288,7 @@ mod category_tests {
         use crate::core::layout_persistence::SavedLayout;
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let base_count = e.workspaces.len();
+        let base_count = e.workspaces().len();
         assert!(base_count >= 1, "엔진은 기본 workspace 를 하나 이상 가진다");
         let idx = match crate::core::apply_create_workspace_inner(
             &mut e,
@@ -289,8 +299,8 @@ mod category_tests {
             crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } => index,
             _ => panic!("expected WorkspaceCreated"),
         };
-        e.workspaces[idx].mirror = true;
-        assert_eq!(e.workspaces.len(), base_count + 1);
+        e.make_mirror_fixture(idx);
+        assert_eq!(e.workspaces().len(), base_count + 1);
 
         let saved = SavedLayout::capture(
             &mut e,
@@ -311,7 +321,7 @@ mod category_tests {
         let mut restored = restored_session.borrow_mut();
         assert!(saved.restore(&mut restored).is_some());
         assert!(
-            restored.workspaces.iter().all(|w| !w.mirror),
+            restored.workspaces().into_iter().all(|w| !w.mirror),
             "복원본에 mirror workspace 가 없어야 한다"
         );
     }
@@ -333,7 +343,12 @@ mod category_tests {
             crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } => index,
             _ => panic!("expected WorkspaceCreated"),
         };
-        assert_eq!(e.workspaces[idx].category, cat);
+        assert_eq!(
+            e.workspace_at(idx)
+                .expect("workspace index is valid")
+                .category,
+            cat
+        );
 
         let idx2 = match crate::core::apply_create_workspace_inner(
             &mut e,
@@ -347,6 +362,11 @@ mod category_tests {
             crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } => index,
             _ => unreachable!(),
         };
-        assert_eq!(e.workspaces[idx2].category, NORMAL_CATEGORY_ID);
+        assert_eq!(
+            e.workspace_at(idx2)
+                .expect("workspace index is valid")
+                .category,
+            NORMAL_CATEGORY_ID
+        );
     }
 }

@@ -64,7 +64,10 @@ mod tests {
         let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
         let mut engine = engine_session.borrow_mut();
-        engine.workspaces[0].id = workspace_id;
+        engine
+            .workspace_at_mut(0)
+            .expect("workspace index is valid")
+            .id = workspace_id;
         engine_session
     }
 

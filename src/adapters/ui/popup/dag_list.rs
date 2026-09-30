@@ -121,8 +121,8 @@ impl DagListState {
                         let c = &s.state_counts;
                         DagRow {
                             workspace_name: engine
-                                .workspaces
-                                .iter()
+                                .workspaces()
+                                .into_iter()
                                 .find(|w| w.id == s.workspace_id)
                                 .map(|w| w.name.clone())
                                 // 조회 중 워크스페이스가 사라졌으면 이름 대신 ID를 표시한다.
@@ -187,8 +187,7 @@ pub fn draw_dag_list_popup(
     engine: &mut EngineMut<'_>,
 ) -> PopupAction {
     let active_workspace_id = engine
-        .workspaces
-        .get(state.active_workspace_index(engine))
+        .workspace_at(state.active_workspace_index(engine))
         .map(|w| w.id);
     let dag = &mut state.dialogs.dag_list;
 

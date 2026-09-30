@@ -88,8 +88,8 @@ pub fn draw_full_sidebar(
     let th = theme::theme();
     let active_ws = state.active_workspace_index(engine);
     let workspaces: Vec<WorkspaceEntryView> = engine
-        .workspaces
-        .iter()
+        .workspaces()
+        .into_iter()
         .enumerate()
         .map(|(i, ws)| entry_view(engine, i, ws, active_ws))
         .collect();
@@ -181,7 +181,7 @@ pub fn draw_full_sidebar(
         egui::Stroke::new(th.border_width.value(), th.border_default().to_egui()),
     );
 
-    let ws_count = engine.workspaces.len();
+    let ws_count = engine.workspaces().len();
 
     for action in deferred_actions {
         match action {
@@ -214,14 +214,20 @@ pub fn draw_full_sidebar(
                 let from = state.dialogs.ws_drag.as_ref().map(|d| d.ws_idx);
                 state.dialogs.ws_drag = None;
                 if let Some(from) = from
-                    && from < engine.workspaces.len()
+                    && from < engine.workspaces().len()
                 {
-                    let src_cat = engine.workspaces[from].category;
+                    let src_cat = engine
+                        .workspace_at(from)
+                        .expect("workspace index is valid")
+                        .category;
                     match target_category {
                         Some(target_cat) if target_cat != src_cat => {
                             state.dispatch_intent(
                                 crate::core::intent::DomainIntent::SetWorkspaceCategory {
-                                    workspace_id: engine.workspaces[from].id,
+                                    workspace_id: engine
+                                        .workspace_at(from)
+                                        .expect("workspace index is valid")
+                                        .id,
                                     category: target_cat,
                                 }
                                 .from_user_menu("sidebar_drag_category"),

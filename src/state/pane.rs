@@ -262,7 +262,9 @@ impl RequestContext {
 
         let (ws_idx, _) = engine.find_workspace_index_for_surface(surface_id)?;
         // surface 하나와 workspace 전체 닫기는 트리에서 빠지기 전의 kind를 알린다.
-        let kinds: std::collections::HashMap<u32, Option<&'static str>> = engine.workspaces[ws_idx]
+        let kinds: std::collections::HashMap<u32, Option<&'static str>> = engine
+            .workspace_at(ws_idx)
+            .expect("workspace index is valid")
             .all_surface_ids()
             .into_iter()
             .map(|sid| (sid, self.surface_kind(engine, sid)))
@@ -381,7 +383,7 @@ impl RequestContext {
         pane_id: u32,
         new_surface_id: u32,
     ) {
-        if let Some(ws) = engine.workspaces.get(workspace_index)
+        if let Some(ws) = engine.workspace_at(workspace_index)
             && let Some(pane) = ws.pane_layout().find_pane(pane_id)
             && let Some(tab) = pane
                 .tabs

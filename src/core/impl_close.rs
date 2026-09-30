@@ -55,7 +55,9 @@ pub(crate) fn locate_surface_in_pane(
     surface_id: u32,
 ) -> Option<SurfaceCloseLocation> {
     let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(surface_id)?;
-    let ws = &engine.workspaces[ws_idx];
+    let ws = engine
+        .workspace_at(ws_idx)
+        .expect("workspace index is valid");
     let pane = ws.pane_layout().find_pane(pane_id)?;
     let mut found_tab = None;
     for (i, tab) in pane.tabs.iter().enumerate() {
@@ -148,13 +150,20 @@ impl Core {
         }
 
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
-        if let Some(pane) = engine.workspaces[ws_idx].pane_layout().find_pane(pane_id) {
+        if let Some(pane) = engine
+            .workspace_at(ws_idx)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .find_pane(pane_id)
+        {
             for tab in &pane.tabs {
                 collect_close_targets(tab, &engine.as_ref(), &mut targets);
             }
         }
 
-        let ws = &mut engine.workspaces[ws_idx];
+        let ws = engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid");
         let removed = ws.close_pane(pane_id);
         if removed {
             engine.mark_layout_dirty();
@@ -210,7 +219,9 @@ impl Core {
         use crate::core::intent::CascadeLevel;
         if let Some(presentation) = presentation {
             let tab_name_opt = {
-                let ws = &engine.workspaces[loc.ws_idx];
+                let ws = engine
+                    .workspace_at(loc.ws_idx)
+                    .expect("workspace index is valid");
                 let pane = ws.pane_layout().find_pane(loc.pane_id).unwrap();
                 let tab = &pane.tabs[loc.tab_idx];
                 if terminal_surface_in_tab(tab, surface_id).is_some() {
@@ -235,7 +246,9 @@ impl Core {
             .terminals
             .scrollback_persist_id(surface_id)
             .map(str::to_string);
-        let ws = &mut engine.workspaces[loc.ws_idx];
+        let ws = engine
+            .workspace_at_mut(loc.ws_idx)
+            .expect("workspace index is valid");
         let pane = ws.pane_layout_mut().find_pane_mut(loc.pane_id).unwrap();
         let tab = &mut pane.tabs[loc.tab_idx];
         let closed = tab.close_surface(surface_id);
@@ -268,7 +281,9 @@ impl Core {
     ) -> Option<CoreEvent> {
         use crate::core::intent::CascadeLevel;
         if let Some(presentation) = presentation {
-            let ws = &engine.workspaces[loc.ws_idx];
+            let ws = engine
+                .workspace_at(loc.ws_idx)
+                .expect("workspace index is valid");
             let pane = ws.pane_layout().find_pane(loc.pane_id).unwrap();
             if pane.tabs.len() > 1 {
                 let snapshot_opt = {
@@ -289,13 +304,17 @@ impl Core {
         }
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         {
-            let ws = &engine.workspaces[loc.ws_idx];
+            let ws = engine
+                .workspace_at(loc.ws_idx)
+                .expect("workspace index is valid");
             let pane = ws.pane_layout().find_pane(loc.pane_id).unwrap();
             if pane.tabs.len() > 1 {
                 collect_close_targets(&pane.tabs[loc.tab_idx], &engine.as_ref(), &mut targets);
             }
         }
-        let ws = &mut engine.workspaces[loc.ws_idx];
+        let ws = engine
+            .workspace_at_mut(loc.ws_idx)
+            .expect("workspace index is valid");
         let pane = ws.pane_layout_mut().find_pane_mut(loc.pane_id).unwrap();
         if pane.tabs.len() > 1 {
             let closed_tab_id = pane.tabs[loc.tab_idx].id;
@@ -324,7 +343,9 @@ impl Core {
         use crate::core::intent::CascadeLevel;
         // pane 제거가 부모 split을 없애므로 복원할 분할 정보는 제거 전에 캡처한다.
         if let Some(presentation) = presentation {
-            let ws = &engine.workspaces[loc.ws_idx];
+            let ws = engine
+                .workspace_at(loc.ws_idx)
+                .expect("workspace index is valid");
             if ws.pane_layout().all_pane_ids().len() > 1
                 && let Some(pane) = ws.pane_layout().find_pane(loc.pane_id)
                 && let Some((direction, ratio, was_first, sibling_pane_id)) =
@@ -351,7 +372,9 @@ impl Core {
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         let mut closed_tab_ids: Vec<u32> = Vec::new();
         {
-            let ws = &engine.workspaces[loc.ws_idx];
+            let ws = engine
+                .workspace_at(loc.ws_idx)
+                .expect("workspace index is valid");
             if ws.pane_layout().all_pane_ids().len() > 1
                 && let Some(pane) = ws.pane_layout().find_pane(loc.pane_id)
             {
@@ -361,7 +384,9 @@ impl Core {
                 }
             }
         }
-        let ws = &mut engine.workspaces[loc.ws_idx];
+        let ws = engine
+            .workspace_at_mut(loc.ws_idx)
+            .expect("workspace index is valid");
         if ws.pane_layout().all_pane_ids().len() > 1 {
             ws.close_pane(loc.pane_id);
             engine.mark_layout_dirty();
@@ -400,7 +425,9 @@ impl Core {
             let item = {
                 let mut snap_fn =
                     crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
-                let ws = &engine.workspaces[loc.ws_idx];
+                let ws = engine
+                    .workspace_at(loc.ws_idx)
+                    .expect("workspace index is valid");
                 let terminals = &engine.runtime.terminals;
                 crate::model::ClosedItem::from_workspace(
                     ws,
@@ -418,7 +445,9 @@ impl Core {
         let mut closed_tab_ids: Vec<u32> = Vec::new();
         let mut closed_pane_ids: Vec<u32> = Vec::new();
         {
-            let ws = &engine.workspaces[loc.ws_idx];
+            let ws = engine
+                .workspace_at(loc.ws_idx)
+                .expect("workspace index is valid");
             for pid in ws.pane_layout().all_pane_ids() {
                 closed_pane_ids.push(pid);
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
@@ -430,9 +459,12 @@ impl Core {
             }
         }
         close_trace::log_collect(t_collect, targets.len(), path);
-        let workspace_id = engine.workspaces[loc.ws_idx].id;
-        engine.workspaces.remove(loc.ws_idx);
-        let workspaces_now_empty = engine.workspaces.is_empty();
+        let workspace_id = engine
+            .workspace_at(loc.ws_idx)
+            .expect("workspace index is valid")
+            .id;
+        engine.remove_workspace_at(loc.ws_idx);
+        let workspaces_now_empty = engine.workspaces().is_empty();
         engine.mark_layout_dirty();
 
         CoreEvent::SurfaceClosed {
@@ -460,7 +492,7 @@ impl Core {
     ) -> CoreEvent {
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         let mut found_pane_id = None;
-        for workspace in &engine.workspaces {
+        for workspace in &engine.workspaces() {
             for &pid in &workspace.pane_layout().all_pane_ids() {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid)
                     && let Some(tab) = pane.tabs.iter().find(|t| t.id == tab_id)
@@ -536,12 +568,17 @@ mod close_surface_cascade_tests {
     fn case2_tab_close_returns_tab_level_fields() {
         let mut engine_session = test_engine();
         let mut engine = engine_session.borrow_mut();
-        let sid0 = engine.workspaces[0].all_surface_ids()[0];
+        let sid0 = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(sid0).unwrap();
         let tab1_id = engine.next_ids.next_tab();
         let sid1 = engine.next_ids.next_surface();
         insert_detached(&mut engine, sid1);
-        engine.workspaces[ws_idx]
+        engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .find_pane_mut(pane_id)
             .unwrap()
@@ -570,7 +607,9 @@ mod close_surface_cascade_tests {
             other => panic!("expected SurfaceClosed, got {other:?}"),
         }
         assert_eq!(
-            engine.workspaces[ws_idx]
+            engine
+                .workspace_at(ws_idx)
+                .expect("workspace index is valid")
                 .pane_layout()
                 .find_pane(pane_id)
                 .unwrap()
@@ -584,14 +623,19 @@ mod close_surface_cascade_tests {
     fn case3_pane_close_returns_pane_level_fields() {
         let mut engine_session = test_engine();
         let mut engine = engine_session.borrow_mut();
-        let sid0 = engine.workspaces[0].all_surface_ids()[0];
+        let sid0 = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let (ws_idx, pane0) = engine.find_workspace_index_for_surface(sid0).unwrap();
         let pane1_id = engine.next_ids.next_pane();
         let tab1_id = engine.next_ids.next_tab();
         let sid1 = engine.next_ids.next_surface();
         insert_detached(&mut engine, sid1);
         let new_pane = crate::model::Pane::new_with_terminal_marker(pane1_id, tab1_id, sid1);
-        let leftover = engine.workspaces[ws_idx]
+        let leftover = engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .split_pane_in_place(pane0, crate::model::SplitDirection::Horizontal, new_pane);
         assert!(leftover.is_none(), "split 성공해야 함");
@@ -619,7 +663,12 @@ mod close_surface_cascade_tests {
             other => panic!("expected SurfaceClosed, got {other:?}"),
         }
         assert_eq!(
-            engine.workspaces[ws_idx].pane_layout().all_pane_ids().len(),
+            engine
+                .workspace_at(ws_idx)
+                .expect("workspace index is valid")
+                .pane_layout()
+                .all_pane_ids()
+                .len(),
             1
         );
     }
@@ -640,8 +689,8 @@ mod close_surface_cascade_tests {
             tab1_id,
             sid1,
         );
-        engine.workspaces.push(ws1);
-        assert_eq!(engine.workspaces.len(), 2);
+        engine.push_local_workspace(ws1);
+        assert_eq!(engine.workspaces().len(), 2);
 
         let ev = Core::apply_close_surface(&mut engine, sid1, None);
         match ev {
@@ -665,7 +714,7 @@ mod close_surface_cascade_tests {
             }
             other => panic!("expected SurfaceClosed, got {other:?}"),
         }
-        assert_eq!(engine.workspaces.len(), 1);
+        assert_eq!(engine.workspaces().len(), 1);
     }
 
     /// 앞쪽 탭 삭제 후에도 active_tab 인덱스가 원래 보던 탭을 가리켜야 한다.
@@ -674,21 +723,28 @@ mod close_surface_cascade_tests {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut engine_session = test_engine();
         let mut engine = engine_session.borrow_mut();
-        let sid0 = engine.workspaces[0].all_surface_ids()[0];
+        let sid0 = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(sid0).unwrap();
         let mut tab_ids = vec![];
         for _ in 0..2 {
             let tab_id = engine.next_ids.next_tab();
             let sid = engine.next_ids.next_surface();
             insert_detached(&mut engine, sid);
-            engine.workspaces[ws_idx]
+            engine
+                .workspace_at_mut(ws_idx)
+                .expect("workspace index is valid")
                 .pane_layout_mut()
                 .find_pane_mut(pane_id)
                 .unwrap()
                 .add_terminal_marker_tab(tab_id, sid);
             tab_ids.push(tab_id);
         }
-        let pane = engine.workspaces[ws_idx]
+        let pane = engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .find_pane_mut(pane_id)
             .unwrap();
@@ -696,10 +752,12 @@ mod close_surface_cascade_tests {
         let viewed_tab_id = pane.tabs[1].id;
 
         let ev = Core::apply_close_surface(&mut engine, sid0, None);
-        navigation.apply_result(&engine.workspaces, &ev);
+        navigation.apply_result(&engine.workspaces(), &ev);
         assert!(matches!(ev, CoreEvent::SurfaceClosed { closed: true, .. }));
 
-        let pane = engine.workspaces[ws_idx]
+        let pane = engine
+            .workspace_at(ws_idx)
+            .expect("workspace index is valid")
             .pane_layout()
             .find_pane(pane_id)
             .unwrap();
@@ -715,14 +773,19 @@ mod close_surface_cascade_tests {
     fn case3_pane_close_keeps_focus_on_an_untouched_pane() {
         let mut engine_session = test_engine();
         let mut engine = engine_session.borrow_mut();
-        let sid0 = engine.workspaces[0].all_surface_ids()[0];
+        let sid0 = engine
+            .workspace_at_mut(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let (ws_idx, pane0) = engine.find_workspace_index_for_surface(sid0).unwrap();
         let pane1_id = engine.next_ids.next_pane();
         let tab1_id = engine.next_ids.next_tab();
         let sid1 = engine.next_ids.next_surface();
         insert_detached(&mut engine, sid1);
         let new_pane = crate::model::Pane::new_with_terminal_marker(pane1_id, tab1_id, sid1);
-        let leftover = engine.workspaces[ws_idx]
+        let leftover = engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .split_pane_in_place(pane0, crate::model::SplitDirection::Horizontal, new_pane);
         assert!(leftover.is_none());
@@ -732,23 +795,41 @@ mod close_surface_cascade_tests {
         let sid2 = engine.next_ids.next_surface();
         insert_detached(&mut engine, sid2);
         let third = crate::model::Pane::new_with_terminal_marker(pane2_id, tab2_id, sid2);
-        let leftover = engine.workspaces[ws_idx]
+        let leftover = engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .split_pane_in_place(pane1_id, crate::model::SplitDirection::Horizontal, third);
         assert!(leftover.is_none());
         assert_eq!(
-            engine.workspaces[ws_idx].pane_layout().all_pane_ids().len(),
+            engine
+                .workspace_at(ws_idx)
+                .expect("workspace index is valid")
+                .pane_layout()
+                .all_pane_ids()
+                .len(),
             3
         );
         let mut navigation = crate::state::navigation::NavigationState::default();
-        navigation.select_pane(&engine.workspaces[ws_idx], pane2_id);
+        navigation.select_pane(
+            engine
+                .workspace_at(ws_idx)
+                .expect("workspace index is valid"),
+            pane2_id,
+        );
 
         let ev = Core::apply_close_surface(&mut engine, sid0, None);
-        navigation.apply_result(&engine.workspaces, &ev);
+        navigation.apply_result(&engine.workspaces(), &ev);
         assert!(matches!(ev, CoreEvent::SurfaceClosed { closed: true, .. }));
 
         assert_eq!(
-            navigation.pane_id(&engine.workspaces[ws_idx]).unwrap(),
+            navigation
+                .pane_id(
+                    engine
+                        .workspace_at(ws_idx)
+                        .expect("workspace index is valid")
+                )
+                .unwrap(),
             pane2_id,
             "포커스와 무관한 pane 이 닫혔는데 포커스가 움직이면 안 된다"
         );
@@ -763,7 +844,7 @@ mod close_surface_cascade_tests {
         let tab1_id = engine.next_ids.next_tab();
         let sid1 = engine.next_ids.next_surface();
         insert_detached(&mut engine, sid1);
-        engine.workspaces.insert(
+        engine.insert_local_workspace(
             0,
             crate::model::Workspace::new_with_terminal_marker(
                 ws1_id,
@@ -789,9 +870,12 @@ mod close_surface_cascade_tests {
     fn case4_last_workspace_reports_now_empty() {
         let mut engine_session = test_engine();
         let mut engine = engine_session.borrow_mut();
-        let sid0 = engine.workspaces[0].all_surface_ids()[0];
+        let sid0 = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         insert_detached(&mut engine, sid0);
-        let ws0_id = engine.workspaces[0].id;
+        let ws0_id = engine.workspace_at(0).expect("workspace index is valid").id;
 
         let ev = Core::apply_close_surface(&mut engine, sid0, None);
         match ev {
@@ -809,18 +893,23 @@ mod close_surface_cascade_tests {
             }
             other => panic!("expected SurfaceClosed, got {other:?}"),
         }
-        assert!(engine.workspaces.is_empty());
+        assert!(engine.workspaces().is_empty());
     }
 
     #[test]
     fn case1_split_close_returns_single_cleanup_target() {
         let mut engine_session = test_engine();
         let mut engine = engine_session.borrow_mut();
-        let sid_a = engine.workspaces[0].all_surface_ids()[0];
+        let sid_a = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         insert_detached(&mut engine, sid_a);
         let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(sid_a).unwrap();
         let sid_b = engine.next_ids.next_surface();
-        engine.workspaces[ws_idx]
+        engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .find_pane_mut(pane_id)
             .unwrap()

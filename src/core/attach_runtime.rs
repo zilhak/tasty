@@ -18,7 +18,7 @@ impl CoreState {
         presentation: &dyn crate::model::StructurePresentation,
     ) {
         self.attach.presentation = crate::model::StructurePresentationSnapshot::capture(
-            &self.workspaces,
+            &self.workspaces(),
             &self.categories,
             presentation,
         );
@@ -874,7 +874,7 @@ impl EngineRef<'_> {
         serde_json::json!({
             "event": "attached_workspace",
             "workspace_id": workspace_id,
-            "name": self.core.workspaces[idx].name,
+            "name": self.core.workspace_at(idx).expect("workspace index is valid").name,
             "tree": tree,
             "surfaces": surfaces,
         })
@@ -886,7 +886,10 @@ impl EngineRef<'_> {
         idx: usize,
         class: &AttachSurfaceClass,
     ) -> (serde_json::Value, Vec<serde_json::Value>) {
-        let ws = &self.core.workspaces[idx];
+        let ws = self
+            .core
+            .workspace_at(idx)
+            .expect("workspace index is valid");
         let mut kinds: HashMap<u32, &'static str> = HashMap::new();
         let mut display_names: HashMap<u32, String> = HashMap::new();
         for pane_id in ws.pane_layout().all_pane_ids() {
@@ -1401,8 +1404,8 @@ mod mesh_descriptor_display_name_tests {
         ));
         let pane = crate::model::Pane::new_with_surface(1, 1, display_name.to_string(), surface);
         let ws = crate::model::Workspace::new_with_pane(1, "ws".to_string(), pane);
-        engine.workspaces.push(ws);
-        let idx = engine.workspaces.len() - 1;
+        engine.push_local_workspace(ws);
+        let idx = engine.workspaces().len() - 1;
         (engine_session, idx)
     }
 
@@ -1411,7 +1414,10 @@ mod mesh_descriptor_display_name_tests {
         let (mut engine_session, idx) =
             engine_with_mesh_surface("image", "com.tasty.image", "screenshot.png");
         let engine = engine_session.borrow_mut();
-        let class = engine.workspaces[idx].classify_attach_surfaces();
+        let class = engine
+            .workspace_at(idx)
+            .expect("workspace index is valid")
+            .classify_attach_surfaces();
         let (_tree, surfaces) = engine.build_workspace_tree_surfaces(idx, &class);
         let mesh = surfaces
             .iter()
@@ -1432,7 +1438,10 @@ mod mesh_descriptor_display_name_tests {
         ] {
             let (mut engine_session, idx) = engine_with_mesh_surface(kind, plugin_id, name);
             let engine = engine_session.borrow_mut();
-            let class = engine.workspaces[idx].classify_attach_surfaces();
+            let class = engine
+                .workspace_at(idx)
+                .expect("workspace index is valid")
+                .classify_attach_surfaces();
             let (_tree, surfaces) = engine.build_workspace_tree_surfaces(idx, &class);
             let mesh = surfaces
                 .iter()
@@ -1499,7 +1508,10 @@ mod forward_exec_tests {
     }
 
     fn seed(engine: &mut crate::core::engine_access::EngineMut<'_>) -> u32 {
-        let a = engine.workspaces[0].all_surface_ids()[0];
+        let a = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         engine
             .runtime
             .terminals
@@ -1914,9 +1926,14 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        state.active_workspace_mut(&mut engine).mirror = true;
+        let active = state.active_workspace_index(&engine);
+        engine.make_mirror_fixture(active);
 
-        let surfaces_before = engine.workspaces[0].all_surface_ids().len();
+        let surfaces_before = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()
+            .len();
 
         // 다시 전달한 요청은 forward_result가 성공으로 돌려준다.
         execute_forwarded_structural_op(
@@ -1929,7 +1946,11 @@ mod forward_exec_tests {
         .expect("forwarded again");
 
         assert_eq!(
-            engine.workspaces[0].all_surface_ids().len(),
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .all_surface_ids()
+                .len(),
             surfaces_before,
             "mirror 구조 변경은 로컬에서 실행하지 않는다"
         );
@@ -2083,7 +2104,11 @@ mod forward_exec_tests {
         )
         .expect("close ok");
 
-        let before = engine.workspaces[0].all_surface_ids().len();
+        let before = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()
+            .len();
         let fd = execute_forwarded_structural_op(
             &mut core,
             &mut state,
@@ -2096,7 +2121,11 @@ mod forward_exec_tests {
         .expect("restore must succeed")
         .expect("delta must be produced");
         assert_eq!(
-            engine.workspaces[0].all_surface_ids().len(),
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .all_surface_ids()
+                .len(),
             before + 1,
             "복원은 anchor 워크스페이스 안에 surface 를 되살려야 한다"
         );
@@ -2158,8 +2187,8 @@ mod forward_exec_tests {
 
         let ws_before = state.active_workspace_index(&engine);
         let focus_before: Vec<(u32, u32)> = engine
-            .workspaces
-            .iter()
+            .workspaces()
+            .into_iter()
             .map(|w| (w.id, state.navigation.pane_id(w).unwrap_or(0)))
             .collect();
         execute_forwarded_structural_op(
@@ -2178,8 +2207,8 @@ mod forward_exec_tests {
             "원격의 복원이 로컬 사용자의 활성 워크스페이스를 바꾸면 안 된다"
         );
         let focus_after: Vec<(u32, u32)> = engine
-            .workspaces
-            .iter()
+            .workspaces()
+            .into_iter()
             .map(|w| (w.id, state.navigation.pane_id(w).unwrap_or(0)))
             .collect();
         assert_eq!(
@@ -2221,12 +2250,17 @@ mod forward_exec_tests {
         let other_ws = core
             .create_default_workspace(&mut engine)
             .expect("second workspace");
-        let other_sid = engine.workspaces[other_ws].all_surface_ids()[0];
+        let other_sid = engine
+            .workspace_at(other_ws)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         engine
             .runtime
             .terminals
             .insert(other_sid, Terminal::new_detached(80, 24), None);
-        let other_pane = engine.workspaces[other_ws]
+        let other_pane = engine
+            .workspace_at(other_ws)
+            .expect("workspace index is valid")
             .pane_layout()
             .first_pane()
             .unwrap()
@@ -2237,7 +2271,11 @@ mod forward_exec_tests {
             .expect("other workspace tab snapshot");
         engine.push_closed_item(snapshot);
 
-        let restored_ws0 = engine.workspaces[0].all_surface_ids().len();
+        let restored_ws0 = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()
+            .len();
         execute_forwarded_structural_op(
             &mut core,
             &mut state,
@@ -2249,7 +2287,11 @@ mod forward_exec_tests {
         )
         .expect("restore must succeed");
         assert_eq!(
-            engine.workspaces[0].all_surface_ids().len(),
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .all_surface_ids()
+                .len(),
             restored_ws0 + 1,
             "anchor 워크스페이스의 항목이 복원돼야 한다"
         );
@@ -2265,7 +2307,7 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         let client_id = 42;
         engine
             .attach
@@ -2309,7 +2351,7 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         let client_id = 7;
         engine
             .attach
@@ -2370,7 +2412,7 @@ mod forward_exec_tests {
         let (mut core, _state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         let client_id = 7;
         engine
             .attach
@@ -2454,7 +2496,7 @@ mod forward_exec_tests {
         .expect("split ok")
         .expect("split delta")
         .added_terminals[0];
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         engine
             .attach
             .acquire_workspace(ws_id, &[a, b], &[a, b], 7)
@@ -2599,13 +2641,11 @@ mod forward_exec_tests {
             ));
         let pane =
             crate::model::Pane::new_with_surface(ws_id, ws_id, "elsewhere".to_string(), surface);
-        engine
-            .workspaces
-            .push(crate::model::Workspace::new_with_pane(
-                ws_id,
-                "elsewhere".to_string(),
-                pane,
-            ));
+        engine.push_local_workspace(crate::model::Workspace::new_with_pane(
+            ws_id,
+            "elsewhere".to_string(),
+            pane,
+        ));
     }
 
     #[test]
@@ -3005,7 +3045,7 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         engine
             .attach
             .acquire_workspace(ws_id, &[a], &[a], 7)
@@ -3035,12 +3075,17 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         engine
             .attach
             .acquire_workspace(ws_id, &[a], &[a], 7)
             .expect("workspace 점유 획득");
-        let panes_before = engine.workspaces[0].pane_layout().all_pane_ids().len();
+        let panes_before = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .all_pane_ids()
+            .len();
         let op = StructuralOp::SplitPane {
             anchor_surface_id: a,
             direction: SplitAxis::Horizontal,
@@ -3059,7 +3104,12 @@ mod forward_exec_tests {
             "holder 의 forward SplitPane 은 hard-occupied 상태에서도 성공해야 한다"
         );
         assert_eq!(
-            engine.workspaces[0].pane_layout().all_pane_ids().len(),
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .pane_layout()
+                .all_pane_ids()
+                .len(),
             panes_before + 1
         );
     }
@@ -3069,7 +3119,7 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         let split = StructuralOp::SplitPane {
             anchor_surface_id: a,
             direction: SplitAxis::Horizontal,
@@ -3086,12 +3136,20 @@ mod forward_exec_tests {
         .expect("split ok")
         .expect("split delta");
         let b = fd.added_terminals[0];
-        let all: Vec<u32> = engine.workspaces[0].all_surface_ids();
+        let all: Vec<u32> = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids();
         engine
             .attach
             .acquire_workspace(ws_id, &all, &all, 7)
             .expect("workspace 점유 획득");
-        let panes_before = engine.workspaces[0].pane_layout().all_pane_ids().len();
+        let panes_before = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .all_pane_ids()
+            .len();
         let close = StructuralOp::ClosePane {
             anchor_surface_id: b,
         };
@@ -3107,7 +3165,12 @@ mod forward_exec_tests {
             "holder 의 forward ClosePane 은 hard-occupied 상태에서도 성공해야 한다"
         );
         assert_eq!(
-            engine.workspaces[0].pane_layout().all_pane_ids().len(),
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .pane_layout()
+                .all_pane_ids()
+                .len(),
             panes_before - 1
         );
     }
@@ -3117,7 +3180,7 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         let new_tab = StructuralOp::NewTab {
             anchor_surface_id: a,
             surface_kind: "terminal".to_string(),
@@ -3132,7 +3195,10 @@ mod forward_exec_tests {
         )
         .expect("new-tab ok")
         .expect("new-tab delta");
-        let all: Vec<u32> = engine.workspaces[0].all_surface_ids();
+        let all: Vec<u32> = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids();
         engine
             .attach
             .acquire_workspace(ws_id, &all, &all, 7)
@@ -3160,7 +3226,7 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         let split_surface = StructuralOp::SplitSurface {
             surface_id: a,
             direction: SplitAxis::Horizontal,
@@ -3177,7 +3243,10 @@ mod forward_exec_tests {
         .expect("split ok")
         .expect("split delta");
         let b = fd.added_terminals[0];
-        let all: Vec<u32> = engine.workspaces[0].all_surface_ids();
+        let all: Vec<u32> = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids();
         engine
             .attach
             .acquire_workspace(ws_id, &all, &all, 7)
@@ -3207,13 +3276,16 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
 
         let hub = StreamHub::new();
         let holder = hub.alloc_id();
         let rx = hub.register(holder);
         engine.attach.set_notifier(hub);
-        let all: Vec<u32> = engine.workspaces[0].all_surface_ids();
+        let all: Vec<u32> = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids();
         engine
             .attach
             .acquire_workspace(ws_id, &all, &all, holder)
@@ -3287,7 +3359,7 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         engine
             .attach
             .acquire_workspace(ws_id, &[a], &[a], 7)
@@ -3463,7 +3535,7 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         let split_surface = StructuralOp::SplitSurface {
             surface_id: a,
             direction: SplitAxis::Horizontal,
@@ -3480,7 +3552,10 @@ mod forward_exec_tests {
         .expect("split ok")
         .expect("split delta");
         let b = fd.added_terminals[0];
-        let all: Vec<u32> = engine.workspaces[0].all_surface_ids();
+        let all: Vec<u32> = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids();
         engine
             .attach
             .acquire_workspace(ws_id, &all, &all, 7)
@@ -3507,15 +3582,24 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
-        let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
+        let pane_id = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .all_pane_ids()[0];
         engine
             .attach
             .acquire_workspace(ws_id, &[a], &[a], 7)
             .expect("workspace 점유 획득");
 
         let terminals_before = engine.runtime.terminals.iter().count();
-        let panes_before = engine.workspaces[0].pane_layout().all_pane_ids().len();
+        let panes_before = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .all_pane_ids()
+            .len();
 
         for (method, params) in [
             ("tab.create", serde_json::json!({ "pane_id": pane_id })),
@@ -3552,7 +3636,12 @@ mod forward_exec_tests {
             "거부된 요청은 새 터미널을 만들면 안 된다"
         );
         assert_eq!(
-            engine.workspaces[0].pane_layout().all_pane_ids().len(),
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .pane_layout()
+                .all_pane_ids()
+                .len(),
             panes_before,
             "거부된 요청은 새 pane 을 만들면 안 된다"
         );
@@ -3563,9 +3652,15 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
-        let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
-        let tab_id = engine.workspaces[0]
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
+        let pane_id = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .all_pane_ids()[0];
+        let tab_id = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
             .pane_layout()
             .find_pane(pane_id)
             .expect("pane exists")
@@ -3577,8 +3672,15 @@ mod forward_exec_tests {
             .expect("workspace 점유 획득");
 
         let terminals_before = engine.runtime.terminals.iter().count();
-        let panes_before = engine.workspaces[0].pane_layout().all_pane_ids().len();
-        let tabs_before = engine.workspaces[0]
+        let panes_before = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .all_pane_ids()
+            .len();
+        let tabs_before = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
             .pane_layout()
             .find_pane(pane_id)
             .expect("pane exists")
@@ -3614,12 +3716,19 @@ mod forward_exec_tests {
 
         assert_eq!(engine.runtime.terminals.iter().count(), terminals_before);
         assert_eq!(
-            engine.workspaces[0].pane_layout().all_pane_ids().len(),
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .pane_layout()
+                .all_pane_ids()
+                .len(),
             panes_before,
             "거부된 요청은 pane 을 닫으면 안 된다"
         );
         assert_eq!(
-            engine.workspaces[0]
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
                 .pane_layout()
                 .find_pane(pane_id)
                 .expect("pane exists")
@@ -3638,8 +3747,12 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
-        let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
+        let pane_id = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .all_pane_ids()[0];
         assert_eq!(
             state.active_workspace_index(&engine),
             0,
@@ -3653,7 +3766,9 @@ mod forward_exec_tests {
             .expect("workspace 점유 획득");
 
         let tab_count = |engine: &crate::core::CoreState| {
-            engine.workspaces[0]
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
                 .pane_layout()
                 .find_pane(pane_id)
                 .expect("pane exists")
@@ -3707,7 +3822,15 @@ mod forward_exec_tests {
             tabs_before,
             "거부된 요청은 탭을 만들면 안 된다"
         );
-        assert_eq!(engine.workspaces[0].pane_layout().all_pane_ids().len(), 1);
+        assert_eq!(
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .pane_layout()
+                .all_pane_ids()
+                .len(),
+            1
+        );
         assert!(
             engine.runtime.terminals.is_standalone(pty_id),
             "거부된 pty.attach_surface 는 PTY 를 registry 에 남겨야 한다"
@@ -3742,14 +3865,20 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let parent = seed(&mut engine);
-        let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+        let pane_id = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .all_pane_ids()[0];
         let child = engine.next_ids.next_surface();
         let tab_id = engine.next_ids.next_tab();
         engine
             .runtime
             .terminals
             .insert(child, Terminal::new_detached(80, 24), None);
-        engine.workspaces[0]
+        engine
+            .workspace_at_mut(0)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .find_pane_mut(pane_id)
             .expect("pane exists")
@@ -3768,7 +3897,7 @@ mod forward_exec_tests {
         let idx = resp.result.expect("adopt 성공")["child_index"]
             .as_u64()
             .expect("child_index") as u32;
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
 
         let kill = ipc_request(
             "terminal.kill",
@@ -3818,15 +3947,21 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let parent = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
-        let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
+        let pane_id = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .all_pane_ids()[0];
         let child = engine.next_ids.next_surface();
         let tab_id = engine.next_ids.next_tab();
         engine
             .runtime
             .terminals
             .insert(child, Terminal::new_detached(80, 24), None);
-        engine.workspaces[0]
+        engine
+            .workspace_at_mut(0)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .find_pane_mut(pane_id)
             .expect("pane exists")
@@ -3907,15 +4042,21 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         engine
             .attach
             .acquire_workspace(ws_id, &[a], &[a], 7)
             .expect("workspace 점유 획득");
 
         let terminals_before = engine.runtime.terminals.iter().count();
-        let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
-        let tabs_before = engine.workspaces[0]
+        let pane_id = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .all_pane_ids()[0];
+        let tabs_before = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
             .pane_layout()
             .find_pane(pane_id)
             .expect("pane exists")
@@ -3948,7 +4089,9 @@ mod forward_exec_tests {
             "거부된 spawn 은 새 터미널을 만들면 안 된다"
         );
         assert_eq!(
-            engine.workspaces[0]
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
                 .pane_layout()
                 .find_pane(pane_id)
                 .expect("pane exists")
@@ -3964,7 +4107,7 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         let terminals_before = engine.runtime.terminals.iter().count();
 
         let req = ipc_request(
@@ -3997,8 +4140,8 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
-        engine.workspaces[0].mirror = true;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
+        engine.make_mirror_fixture(0);
 
         let terminals_before = engine.runtime.terminals.iter().count();
 
@@ -4041,8 +4184,12 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         seed(&mut engine);
-        let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
-        engine.workspaces[0].mirror = true;
+        let pane_id = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .all_pane_ids()[0];
+        engine.make_mirror_fixture(0);
         let terminals_before = engine.runtime.terminals.iter().count();
 
         let req = ipc_request("tab.create", serde_json::json!({ "pane_id": pane_id }));
@@ -4081,8 +4228,12 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         seed(&mut engine);
-        let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
-        engine.workspaces[0].mirror = true;
+        let pane_id = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .all_pane_ids()[0];
+        engine.make_mirror_fixture(0);
         let terminals_before = engine.runtime.terminals.iter().count();
 
         let req = ipc_request("tab.create", serde_json::json!({ "pane_id": pane_id }));
@@ -4121,8 +4272,12 @@ mod forward_exec_tests {
             let (mut core, mut state, mut engine_session, _home) = make_core_state();
             let mut engine = engine_session.borrow_mut();
             let a = seed(&mut engine);
-            let blocked_ws_id = engine.workspaces[0].id;
-            let blocked_pane = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+            let blocked_ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
+            let blocked_pane = engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .pane_layout()
+                .all_pane_ids()[0];
 
             let create = handle_with_caller(
                 &mut core,
@@ -4133,14 +4288,14 @@ mod forward_exec_tests {
             );
             assert!(create.error.is_none(), "테스트 준비: {:?}", create.error);
             let clean_ws_id = engine
-                .workspaces
-                .iter()
+                .workspaces()
+                .into_iter()
                 .find(|w| w.id != blocked_ws_id)
                 .expect("두 번째 워크스페이스")
                 .id;
 
             match blocked {
-                "mirror" => engine.workspaces[0].mirror = true,
+                "mirror" => engine.make_mirror_fixture(0),
                 _ => {
                     engine
                         .attach
@@ -4192,7 +4347,11 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         seed(&mut engine);
-        let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+        let pane_id = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .all_pane_ids()[0];
         let req = ipc_request("tab.create", serde_json::json!({ "pane_id": pane_id }));
         let resp = handle_with_caller(
             &mut core,
@@ -4213,7 +4372,7 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine_session, _home) = make_core_state();
         let mut engine = engine_session.borrow_mut();
         let a = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         engine
             .attach
             .acquire_workspace(ws_id, &[a], &[a], 7)
@@ -4438,7 +4597,11 @@ impl crate::core::engine_access::EngineMut<'_> {
             reject_attach(hub, client_id, "workspace_not_found", None);
             return;
         };
-        let class = self.core.workspaces[idx].classify_attach_surfaces();
+        let class = self
+            .core
+            .workspace_at(idx)
+            .expect("workspace index is valid")
+            .classify_attach_surfaces();
         // 화면을 복제할 수 없는 멤버도 workspace 점유에 포함한다.
         let members: Vec<SurfaceId> = class
             .terminals

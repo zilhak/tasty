@@ -1,0 +1,148 @@
+use super::*;
+use crate::{
+    Activation, ActivationPhase, DataRef, EntityId, Operation, OperationId, OperationOutcome, Ratio,
+};
+
+pub(super) fn prepare(m: &mut JournalModel, operation: Operation) -> Result<()> {
+    if operation.id.0.is_empty()
+        || operation.command_id.is_empty()
+        || operation.activation_generation == 0
+        || operation.input.0 == 0
+        || operation.outcome.is_some()
+        || operation.reconciliation_evidence.is_some()
+    {
+        return Err(EvolveError::InvalidFact(
+            "invalid operation preparation".into(),
+        ));
+    }
+    if m.operations.contains_key(&operation.id) {
+        return Err(EvolveError::Duplicate(format!(
+            "operation:{}",
+            operation.id.0
+        )));
+    }
+    let mut reserved = std::collections::BTreeSet::new();
+    for entity in &operation.reserved {
+        if entity.id == 0
+            || exists(m, *entity)
+            || !reserved.insert((entity.kind, entity.id))
+            || m.operations.values().any(|op| op.reserved.contains(entity))
+        {
+            return Err(EvolveError::Duplicate(format!(
+                "reserved {}:{}",
+                entity.kind.label(),
+                entity.id
+            )));
+        }
+    }
+    m.operations.insert(operation.id.clone(), operation);
+    Ok(())
+}
+
+fn exists(m: &JournalModel, entity: EntityId) -> bool {
+    match entity.kind {
+        IdKind::Category => m.categories.contains_key(&entity.id),
+        IdKind::Workspace => m.workspaces.contains_key(&entity.id),
+        IdKind::Pane => m.panes.contains_key(&entity.id),
+        IdKind::Tab => m.tabs.contains_key(&entity.id),
+        IdKind::Surface => m.surfaces.contains_key(&entity.id),
+    }
+}
+
+pub(super) fn finish(
+    m: &mut JournalModel,
+    id: OperationId,
+    outcome: OperationOutcome,
+    evidence: Option<DataRef>,
+) -> Result<()> {
+    let op = m
+        .operations
+        .get_mut(&id)
+        .ok_or_else(|| EvolveError::Missing(format!("operation:{}", id.0)))?;
+    let allowed = match (&op.outcome, evidence) {
+        (None, None) => true,
+        (Some(OperationOutcome::Uncertain { .. }), Some(data)) => {
+            data.0 != 0
+                && !matches!(
+                    outcome,
+                    OperationOutcome::Uncertain { .. } | OperationOutcome::Superseded { .. }
+                )
+        }
+        _ => false,
+    };
+    if !allowed {
+        return Err(EvolveError::InvalidFact(
+            "operation outcome cannot be overwritten without reconciliation".into(),
+        ));
+    }
+    op.outcome = Some(outcome);
+    op.reconciliation_evidence = evidence;
+    Ok(())
+}
+
+pub(super) fn activation(
+    m: &mut JournalModel,
+    id: SurfaceId,
+    previous: Option<u64>,
+    next: Activation,
+) -> Result<()> {
+    let surface = get_mut(&mut m.surfaces, IdKind::Surface, id)?;
+    let current = surface.activation;
+    if current.map(|a| a.generation) != previous
+        || next.generation == 0
+        || current.is_some_and(|a| {
+            next.generation < a.generation
+                || (next.generation == a.generation && !phase_transition(a.phase, next.phase))
+        })
+    {
+        return Err(EvolveError::InvalidFact(
+            "stale or invalid activation transition".into(),
+        ));
+    }
+    surface.activation = Some(next);
+    Ok(())
+}
+
+fn phase_transition(from: ActivationPhase, to: ActivationPhase) -> bool {
+    use ActivationPhase::*;
+    matches!(
+        (from, to),
+        (Requested, Deferred | Ready | Failed | Retired | Uncertain)
+            | (Deferred, Requested | Ready | Failed | Retired)
+            | (Ready, Exited | Retired | Uncertain)
+            | (Exited | Failed, Retired)
+            | (Uncertain, Ready | Failed | Retired)
+    )
+}
+
+pub(super) fn ratio<Id>(layout: &mut SplitTree<Id>, path: &[bool], value: Ratio) -> Result<()> {
+    if !value.to_f32().is_finite() || !(0.1..=0.9).contains(&value.to_f32()) {
+        return Err(EvolveError::InvalidFact(
+            "split ratio is outside 0.1..=0.9".into(),
+        ));
+    }
+    let mut node = layout;
+    for second in path {
+        node = match node {
+            SplitTree::Split {
+                first,
+                second: other,
+                ..
+            } => {
+                if *second {
+                    other
+                } else {
+                    first
+                }
+            }
+            SplitTree::Leaf(_) => return Err(EvolveError::Missing("split path".into())),
+        };
+    }
+    match node {
+        SplitTree::Split { ratio, .. } => {
+            *ratio = value;
+            Ok(())
+        }
+        SplitTree::Leaf(_) => Err(EvolveError::Missing("split node".into())),
+    }
+}

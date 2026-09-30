@@ -83,7 +83,7 @@ impl MainView {
         // mirror에는 로컬 파일 경로를 쓰지 않고 업로드 뒤 원격 경로를 삽입한다.
         let mirror_ws_id = engine
             .find_workspace_index_for_surface(sid)
-            .and_then(|(idx, _)| engine.workspaces.get(idx))
+            .and_then(|(idx, _)| engine.workspace_at(idx))
             .and_then(|ws| ws.mirror.then_some(ws.id));
 
         match mirror_ws_id {

@@ -398,7 +398,7 @@ impl App {
                 &mut mapping.markdown,
             );
             ws.mirror = true;
-            engine.workspaces.push(ws);
+            engine.push_mirror_workspace(ws);
             main.state.reconcile_presentation(engine.core);
             main.mark_dirty();
         }
@@ -498,8 +498,8 @@ impl App {
             let ids = engine.next_ids.clone();
 
             let old_focused_remote: Option<u32> = engine
-                .workspaces
-                .iter()
+                .workspaces()
+                .into_iter()
                 .find(|w| w.id == local_workspace)
                 .and_then(|ws| {
                     capture_focused_remote(&main.state.navigation, ws, &sess.remote_to_local)
@@ -532,9 +532,9 @@ impl App {
                 .collect();
             sess.markdown_locals = new_markdown;
 
-            let Some(pos) = engine
-                .workspaces
-                .iter()
+            let Some(_) = engine
+                .workspaces()
+                .into_iter()
                 .position(|w| w.id == local_workspace)
             else {
                 anyhow::bail!(
@@ -565,7 +565,9 @@ impl App {
                     "gui reconnect: 이전 focus surface 를 재연결 후 트리에서 찾지 못함 — 원격 기본 focus 유지"
                 );
             }
-            engine.workspaces[pos] = ws;
+            engine
+                .replace_mirror_workspace(ws)
+                .unwrap_or_else(|_| panic!("mirror workspace disappeared"));
             main.state.reconcile_presentation(engine.core);
             main.state.toasts.push(
                 crate::i18n::t("attach.toast.mirror_reconnected").to_string(),
@@ -632,7 +634,11 @@ impl App {
     /// 사용자가 연결한 mirror로만 포커스를 옮긴다. IPC·자동 연결은 호출하지 않는다.
     fn focus_mirror_workspace(&mut self, ws_id: u32) {
         for (_, main, engine) in self.engines_mut().window_pairs() {
-            if let Some(idx) = engine.workspaces.iter().position(|ws| ws.id == ws_id) {
+            if let Some(idx) = engine
+                .workspaces()
+                .into_iter()
+                .position(|ws| ws.id == ws_id)
+            {
                 main.state.set_active_workspace_index(engine.core, idx);
                 main.mark_dirty();
                 break;
@@ -779,7 +785,11 @@ impl App {
             self.auto_attach_pending_reactivation.insert(anchor);
         }
         for (_, main, engine) in self.engines_mut().window_pairs() {
-            if engine.workspaces.iter().any(|ws| ws.id == local_workspace) {
+            if engine
+                .workspaces()
+                .into_iter()
+                .any(|ws| ws.id == local_workspace)
+            {
                 main.state.toasts.push(
                     crate::i18n::t("attach.toast.mirror_reconnecting").to_string(),
                     crate::adapters::ui::ToastKind::Warning,
@@ -1345,8 +1355,8 @@ fn remove_mirror_workspace_from_engine(
     remote_to_local: &HashMap<u32, u32>,
 ) -> bool {
     let Some(pos) = engine
-        .workspaces
-        .iter()
+        .workspaces()
+        .into_iter()
         .position(|ws| ws.id == local_workspace)
     else {
         return false;
@@ -1360,7 +1370,7 @@ fn remove_mirror_workspace_from_engine(
         // 로컬 닫기 정리와 같이 soft 점유 등 이 surface의 점유 기록을 지운다.
         engine.attach.forget_closed_surface(local);
     }
-    engine.workspaces.remove(pos);
+    engine.remove_workspace_at(pos);
     state.reconcile_presentation(engine);
     // mirror만 남았다면 원격 끊김 때문에 사용자 창을 닫는 대신 기본 workspace를 만든다.
     state.recreate_workspace_if_empty(engine, "mirror workspace cleanup");
@@ -2440,8 +2450,8 @@ fn apply_mirror_structural_delta(
     let ids = engine.next_ids.clone();
 
     let old_focused_remote: Option<u32> = engine
-        .workspaces
-        .iter()
+        .workspaces()
+        .into_iter()
         .find(|w| w.id == sess.local_workspace)
         .and_then(|ws| capture_focused_remote(navigation, ws, &sess.remote_to_local));
 
@@ -2464,11 +2474,15 @@ fn apply_mirror_structural_delta(
     sess.markdown_locals = new_markdown;
 
     if let Some(pos) = engine
-        .workspaces
-        .iter()
+        .workspaces()
+        .into_iter()
         .position(|w| w.id == sess.local_workspace)
     {
-        let name = engine.workspaces[pos].name.clone();
+        let name = engine
+            .workspace_at(pos)
+            .expect("workspace index is valid")
+            .name
+            .clone();
         let mut ws = build_mirror_workspace(
             &mut sess.structure_ids,
             navigation,
@@ -2512,7 +2526,9 @@ fn apply_mirror_structural_delta(
             }
         }
 
-        engine.workspaces[pos] = ws;
+        engine
+            .replace_mirror_workspace(ws)
+            .unwrap_or_else(|_| panic!("mirror workspace disappeared"));
     } else {
         tracing::warn!(
             "structural delta: mirror workspace {} (remote {workspace_id}) 를 찾지 못해 갱신을 건너뛴다",
@@ -2792,7 +2808,8 @@ fn build_mirror_workspace(
                 .get(&remote_focused_pane)
                 .copied()
                 .unwrap_or_else(|| node.first_pane().map(|p| p.id).unwrap_or(0));
-            let ws = Workspace::from_restored(ws_id, name.to_string(), String::new(), node);
+            let mut ws = Workspace::from_restored(ws_id, name.to_string(), String::new(), node);
+            ws.mirror = true;
             navigation.initialize_pane(&ws, focused_local_pane);
             structure_ids.retain_workspace(&ws);
             return ws;
@@ -2832,8 +2849,9 @@ fn build_mirror_workspace(
             crate::i18n::t("attach.tab_title_fallback").to_string(),
             Box::new(EmptySurface::new(sid)),
         );
-        let ws =
+        let mut ws =
             Workspace::from_restored(ws_id, name.to_string(), String::new(), PaneNode::Leaf(pane));
+        ws.mirror = true;
         structure_ids.retain_workspace(&ws);
         return ws;
     }
@@ -2856,7 +2874,8 @@ fn build_mirror_workspace(
         };
     }
 
-    let ws = Workspace::from_restored(ws_id, name.to_string(), String::new(), node);
+    let mut ws = Workspace::from_restored(ws_id, name.to_string(), String::new(), node);
+    ws.mirror = true;
     navigation.initialize_pane(&ws, focused_local_pane);
     structure_ids.retain_workspace(&ws);
     ws
@@ -3471,7 +3490,7 @@ mod tests {
             local_surface,
         );
         mirror_ws.mirror = true;
-        engine.workspaces.push(mirror_ws);
+        engine.push_mirror_workspace(mirror_ws);
         engine
             .runtime
             .terminals
@@ -3481,7 +3500,7 @@ mod tests {
         engine
             .attach_mesh_frames
             .update(local_surface, vec![1, 2, 3], 0, 0, true);
-        state.set_active_workspace_index(&engine, engine.workspaces.len() - 1);
+        state.set_active_workspace_index(&engine, engine.workspaces().len() - 1);
 
         let remote_to_local = HashMap::from([(remote_surface, local_surface)]);
         assert!(remove_mirror_workspace_from_engine(
@@ -3510,7 +3529,7 @@ mod tests {
         );
         assert_eq!(
             state.active_workspace_index(&engine),
-            engine.workspaces.len() - 1,
+            engine.workspaces().len() - 1,
             "제거로 out-of-range 가 된 active_workspace 클램프"
         );
     }
@@ -3529,8 +3548,8 @@ mod tests {
             local_surface,
         );
         mirror_ws.mirror = true;
-        engine.workspaces.clear();
-        engine.workspaces.push(mirror_ws);
+        engine.replace_local_workspaces(Vec::new());
+        engine.push_mirror_workspace(mirror_ws);
         state.set_active_workspace_index(&engine, 0);
 
         assert!(remove_mirror_workspace_from_engine(
@@ -3541,7 +3560,7 @@ mod tests {
         ));
 
         assert_eq!(
-            engine.workspaces.len(),
+            engine.workspaces().len(),
             1,
             "기본 워크스페이스가 다시 생긴다"
         );
@@ -3559,7 +3578,7 @@ mod tests {
             .runtime
             .terminals
             .insert(local_surface, Terminal::new_detached(80, 24), None);
-        let before = engine.workspaces.len();
+        let before = engine.workspaces().len();
 
         let remote_to_local = HashMap::from([(42u32, local_surface)]);
         assert!(!remove_mirror_workspace_from_engine(
@@ -3568,7 +3587,7 @@ mod tests {
             9_000,
             &remote_to_local
         ));
-        assert_eq!(engine.workspaces.len(), before);
+        assert_eq!(engine.workspaces().len(), before);
         assert!(engine.runtime.terminals.contains(local_surface));
     }
 
@@ -3586,7 +3605,7 @@ mod tests {
                 reg.park_for_test(state, engine_session)
             })
             .collect();
-        let untouched_ws_count = reg.get(ids[0]).expect("engine").workspaces.len();
+        let untouched_ws_count = reg.get(ids[0]).expect("engine").workspaces().len();
 
         let mut mirror_ws = Workspace::new_with_terminal_marker(
             ws_id,
@@ -3598,7 +3617,7 @@ mod tests {
         mirror_ws.mirror = true;
         {
             let (state, mut engine) = reg.parked_session_mut(ids[1]).expect("parked 항목");
-            engine.workspaces.push(mirror_ws);
+            engine.push_mirror_workspace(mirror_ws);
             engine
                 .runtime
                 .terminals
@@ -3607,7 +3626,7 @@ mod tests {
             engine
                 .attach_mesh_frames
                 .update(local_surface, vec![1, 2, 3], 0, 0, true);
-            state.set_active_workspace_index(engine.core, engine.workspaces.len() - 1);
+            state.set_active_workspace_index(engine.core, engine.workspaces().len() - 1);
         }
 
         assert!(remove_mirror_workspace_from_parked(
@@ -3632,10 +3651,10 @@ mod tests {
         );
         assert_eq!(
             state.active_workspace_index(engine.core),
-            engine.workspaces.len() - 1
+            engine.workspaces().len() - 1
         );
         assert_eq!(
-            reg.get(ids[0]).expect("engine").workspaces.len(),
+            reg.get(ids[0]).expect("engine").workspaces().len(),
             untouched_ws_count,
             "무관한 parked engine 은 건드리지 않는다"
         );
@@ -4483,7 +4502,7 @@ mod tests {
             &mut m1.markdown,
         );
         ws.mirror = true;
-        engine.workspaces.push(ws);
+        engine.push_mirror_workspace(ws);
 
         let surfaces_v2 = vec![serde_json::json!({
             "remote_id": 10,
@@ -4534,7 +4553,10 @@ mod tests {
         let ids = engine.next_ids.clone();
         let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
         let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
-        let parent = engine.workspaces[0].all_surface_ids()[0];
+        let parent = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
 
         let surfaces_v1 = vec![serde_json::json!({
             "remote_id": 10, "role": "terminal", "cols": 80, "rows": 24,
@@ -4558,7 +4580,10 @@ mod tests {
     fn removing_a_mirror_workspace_forgets_the_occupancy_of_its_surfaces() {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        let parent = engine.workspaces[0].all_surface_ids()[0];
+        let parent = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let event = crate::core::apply_create_workspace_inner(
             &mut engine,
             crate::core::WorkspaceCreationParams::terminal(),
@@ -4567,9 +4592,15 @@ mod tests {
         let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
             panic!("expected WorkspaceCreated");
         };
-        engine.workspaces[index].mirror = true;
-        let ws_id = engine.workspaces[index].id;
-        let local = engine.workspaces[index].all_surface_ids()[0];
+        engine.make_mirror_fixture(index);
+        let ws_id = engine
+            .workspace_at(index)
+            .expect("workspace index is valid")
+            .id;
+        let local = engine
+            .workspace_at(index)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         engine.occupy_soft(local, parent, None).expect("soft 점유");
 
         let map = HashMap::from([(99u32, local)]);
@@ -4638,7 +4669,7 @@ mod tests {
             &mut m1.markdown,
         );
         ws.mirror = true;
-        engine.workspaces.push(ws);
+        engine.push_mirror_workspace(ws);
         // terminal이 아니었던 surface의 이전 cwd도 지워야 한다.
         engine.set_mirror_surface_cwd(local_20, Some("/srv/remote/docs".to_string()));
 
@@ -4683,7 +4714,7 @@ mod tests {
             local_surface,
         );
         mirror_ws.mirror = true;
-        engine.workspaces.push(mirror_ws);
+        engine.push_mirror_workspace(mirror_ws);
         engine
             .runtime
             .terminals
@@ -5227,7 +5258,7 @@ mod tests {
             ws.pane_layout().first_pane().expect("pane").tabs[0].is_surface_deferred(local),
             "kind 가 없으면 kind 대기 placeholder"
         );
-        engine.workspaces.push(ws);
+        engine.push_mirror_workspace(ws);
 
         assert!(
             !engine.reify_plugin_surface(local),
@@ -5291,7 +5322,7 @@ mod tests {
             &mut m1.markdown,
         );
         ws.mirror = true;
-        engine.workspaces.push(ws);
+        engine.push_mirror_workspace(ws);
         assert_eq!(created_surfaces(&rx).len(), 1);
         let webview_url = engine
             .find_surface_by_id(local)
@@ -5423,7 +5454,7 @@ mod tests {
         );
         mirror_ws.mirror = true;
         let mut engine = parked[1].session.borrow_mut();
-        engine.workspaces.push(mirror_ws);
+        engine.push_mirror_workspace(mirror_ws);
         engine
             .runtime
             .terminals
@@ -5458,7 +5489,7 @@ mod tests {
         let ws_id = 9_000u32;
         let (survivor_remote, survivor_local, new_remote) = (42u32, 9_003u32, 43u32);
         let mut parked = parked_with_mirror(ws_id, survivor_local);
-        let untouched_ws_count = parked[0].session.core_state.workspaces.len();
+        let untouched_ws_count = parked[0].session.core_state.workspaces().len();
         let mut sess = test_session(ws_id, HashMap::from([(survivor_remote, survivor_local)]));
 
         let tree = serde_json::json!({
@@ -5533,8 +5564,8 @@ mod tests {
             fresh.screen_text(false)
         );
         let ws = engine
-            .workspaces
-            .iter()
+            .workspaces()
+            .into_iter()
             .find(|w| w.id == ws_id)
             .expect("mirror 워크스페이스는 같은 local id 로 교체된다");
         let sids = ws.all_surface_ids();
@@ -5543,7 +5574,7 @@ mod tests {
             "{sids:?}"
         );
         assert_eq!(
-            parked[0].session.core_state.workspaces.len(),
+            parked[0].session.core_state.workspaces().len(),
             untouched_ws_count,
             "무관한 parked engine 은 건드리지 않는다"
         );

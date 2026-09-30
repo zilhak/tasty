@@ -144,7 +144,9 @@ impl Core {
             .scrollback_persist_id(target_id)
             .map(str::to_string);
         let b_tab_idx = {
-            let ws = &engine.workspaces[ws_idx];
+            let ws = engine
+                .workspace_at(ws_idx)
+                .expect("workspace index is valid");
             match ws.pane_layout().find_pane(pane_id) {
                 Some(pane) => pane.tabs.iter().position(|t| t.contains_surface(target_id)),
                 None => None,
@@ -168,7 +170,9 @@ impl Core {
         target_id: u32,
         a_box: Box<dyn crate::model::Surface>,
     ) -> bool {
-        let ws = &mut engine.workspaces[ws_idx];
+        let ws = engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid");
         let pane = ws
             .pane_layout_mut()
             .find_pane_mut(pane_id)
@@ -202,7 +206,9 @@ impl Core {
         let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(source_id)?;
 
         let (tab_idx, is_split) = {
-            let ws = &engine.workspaces[ws_idx];
+            let ws = engine
+                .workspace_at(ws_idx)
+                .expect("workspace index is valid");
             let pane = ws.pane_layout().find_pane(pane_id)?;
             let mut found = None;
             for (i, tab) in pane.tabs.iter().enumerate() {
@@ -216,7 +222,9 @@ impl Core {
 
         if is_split {
             let (a_box, source_tab_focused) = {
-                let ws = &mut engine.workspaces[ws_idx];
+                let ws = engine
+                    .workspace_at_mut(ws_idx)
+                    .expect("workspace index is valid");
                 let pane = ws.pane_layout_mut().find_pane_mut(pane_id)?;
                 let tab = &mut pane.tabs[tab_idx];
                 let layout = tab.take_layout();
@@ -234,7 +242,9 @@ impl Core {
         }
 
         let (tabs_len, panes_len, tab_id) = {
-            let ws = &engine.workspaces[ws_idx];
+            let ws = engine
+                .workspace_at(ws_idx)
+                .expect("workspace index is valid");
             let pane = ws.pane_layout().find_pane(pane_id)?;
             (
                 pane.tabs.len(),
@@ -245,7 +255,9 @@ impl Core {
 
         // take_layout 뒤에는 잠시 layout이 없다. 같은 동기 호출 안에서 tab을 제거하거나 돌려놓는다.
         let a_box = {
-            let ws = &mut engine.workspaces[ws_idx];
+            let ws = engine
+                .workspace_at_mut(ws_idx)
+                .expect("workspace index is valid");
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id)?;
             let tab = &mut pane.tabs[tab_idx];
             match tab.take_layout() {
@@ -258,7 +270,9 @@ impl Core {
         };
 
         if tabs_len > 1 {
-            let ws = &mut engine.workspaces[ws_idx];
+            let ws = engine
+                .workspace_at_mut(ws_idx)
+                .expect("workspace index is valid");
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id)?;
             pane.remove_tab(tab_idx);
             engine.mark_layout_dirty();
@@ -266,7 +280,9 @@ impl Core {
         }
 
         if panes_len > 1 {
-            let ws = &mut engine.workspaces[ws_idx];
+            let ws = engine
+                .workspace_at_mut(ws_idx)
+                .expect("workspace index is valid");
             ws.close_pane(pane_id);
             engine.mark_layout_dirty();
             return Some((
@@ -279,9 +295,12 @@ impl Core {
             ));
         }
 
-        let workspace_id = engine.workspaces[ws_idx].id;
-        engine.workspaces.remove(ws_idx);
-        let workspaces_now_empty = engine.workspaces.is_empty();
+        let workspace_id = engine
+            .workspace_at(ws_idx)
+            .expect("workspace index is valid")
+            .id;
+        engine.remove_workspace_at(ws_idx);
+        let workspaces_now_empty = engine.workspaces().is_empty();
         engine.mark_layout_dirty();
         Some((
             a_box,
@@ -309,7 +328,10 @@ mod move_surface_tests {
     fn move_preserves_source_terminal_and_reports_b_cleanup() {
         let mut engine_session = test_engine();
         let mut engine = engine_session.borrow_mut();
-        let a = engine.workspaces[0].all_surface_ids()[0];
+        let a = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         engine
             .runtime
             .terminals
@@ -317,7 +339,9 @@ mod move_surface_tests {
 
         let b = 7777;
         let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(a).unwrap();
-        engine.workspaces[ws_idx]
+        engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .find_pane_mut(pane_id)
             .unwrap()
@@ -362,7 +386,10 @@ mod move_surface_tests {
     fn move_self_ref_is_noop() {
         let mut engine_session = test_engine();
         let mut engine = engine_session.borrow_mut();
-        let a = engine.workspaces[0].all_surface_ids()[0];
+        let a = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         engine.pending_move = Some(crate::core::state::PendingMove::Surface(a));
         let ev = Core::apply_move_surface(&mut engine, a, a);
         assert!(matches!(
@@ -376,7 +403,10 @@ mod move_surface_tests {
     fn move_missing_target_is_noop() {
         let mut engine_session = test_engine();
         let mut engine = engine_session.borrow_mut();
-        let a = engine.workspaces[0].all_surface_ids()[0];
+        let a = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         engine
             .runtime
             .terminals
@@ -397,7 +427,10 @@ mod move_surface_tests {
     fn move_surface_clears_pending_slot_of_any_kind() {
         let mut engine_session = test_engine();
         let mut engine = engine_session.borrow_mut();
-        let a = engine.workspaces[0].all_surface_ids()[0];
+        let a = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         engine.pending_move = Some(crate::core::state::PendingMove::Surface(a));
         let ev = Core::apply_move_surface(&mut engine, a, a);
         assert!(matches!(

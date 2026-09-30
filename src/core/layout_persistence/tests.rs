@@ -210,7 +210,13 @@ fn saved_layout_categories_round_trip() {
     assert_eq!(back.categories.len(), 2);
     assert_eq!(back.categories[1].name, "work");
     assert!(back.categories[1].collapsed);
-    assert_eq!(back.workspaces[0].category, 1);
+    assert_eq!(
+        back.workspaces
+            .first()
+            .expect("workspace index is valid")
+            .category,
+        1
+    );
 }
 
 #[test]
@@ -338,7 +344,14 @@ mod slots {
         assert!(!legacy.exists(), "레거시 파일은 복사가 아니라 이동이다");
         assert!(slot_path_in(&layouts, 1).exists());
         let restored = expect_loaded(&layouts, 1);
-        assert_eq!(restored.workspaces[0].name, "legacy-ws");
+        assert_eq!(
+            restored
+                .workspaces
+                .first()
+                .expect("workspace index is valid")
+                .name,
+            "legacy-ws"
+        );
 
         migrate_legacy_in(home);
         assert!(matches!(load_slot_in(&layouts, 1), SlotLoad::Loaded(_)));
@@ -411,7 +424,14 @@ mod slots {
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .collect();
         assert_eq!(names, vec!["01.json".to_string()], "tmp 잔재가 없어야 한다");
-        assert_eq!(expect_loaded(&dir, 1).workspaces[0].name, "second");
+        assert_eq!(
+            expect_loaded(&dir, 1)
+                .workspaces
+                .first()
+                .expect("workspace index is valid")
+                .name,
+            "second"
+        );
 
         // 같은 파일에 직접 쓰면 ID가 유지되므로 내용·tmp 잔재 검사만으로 놓친 변경을 검출한다.
         match (before, file_identity(&path)) {
@@ -589,7 +609,11 @@ mod slots {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
         assert!(matches!(verdict, SlotLoad::Unreadable));
         assert_eq!(
-            expect_loaded(&layouts, 1).workspaces[0].name,
+            expect_loaded(&layouts, 1)
+                .workspaces
+                .first()
+                .expect("workspace index is valid")
+                .name,
             "mine",
             "권한을 되돌리면 원본이 그대로 있어야 한다"
         );
@@ -908,7 +932,11 @@ fn moved_tab_is_saved_at_its_new_position() {
     };
     let mut engine_session = new_engine();
     let mut engine = engine_session.borrow_mut();
-    let p0 = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+    let p0 = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .pane_layout()
+        .all_pane_ids()[0];
     let pane0 = engine.find_pane_by_id_mut(p0).unwrap();
     pane0.tabs[0].explicit_name = Some("MOVED".to_string());
     let tab_a = pane0.tabs[0].id;
@@ -927,7 +955,7 @@ fn moved_tab_is_saved_at_its_new_position() {
     );
     let q = ws1.pane_layout().all_pane_ids()[0];
     let tab_q = ws1.pane_layout().find_pane(q).unwrap().tabs[0].id;
-    engine.workspaces.push(ws1);
+    engine.push_local_workspace(ws1);
 
     Core::apply_replace_tab_with_tab(&mut engine, tab_a, tab_q);
     engine.pending_move = Some(PendingMove::Tab(keep_tab));
@@ -941,7 +969,10 @@ fn moved_tab_is_saved_at_its_new_position() {
     let mut restored = restored_session.borrow_mut();
     assert!(saved.restore(&mut restored).is_some());
     let names = |ws: usize| -> Vec<Option<String>> {
-        let layout = restored.workspaces[ws].pane_layout();
+        let layout = restored
+            .workspace_at(ws)
+            .expect("workspace index is valid")
+            .pane_layout();
         let pid = layout.all_pane_ids()[0];
         layout
             .find_pane(pid)
@@ -968,7 +999,11 @@ fn moved_pane_is_saved_at_its_new_position() {
     };
     let mut engine_session = new_engine();
     let mut engine = engine_session.borrow_mut();
-    let p0 = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+    let p0 = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .pane_layout()
+        .all_pane_ids()[0];
     engine.find_pane_by_id_mut(p0).unwrap().tabs[0].explicit_name = Some("MOVED".to_string());
     let extra = crate::model::Pane::new_with_terminal_marker(
         engine.next_ids.next_pane(),
@@ -976,7 +1011,9 @@ fn moved_pane_is_saved_at_its_new_position() {
         engine.next_ids.next_surface(),
     );
     assert!(
-        engine.workspaces[0]
+        engine
+            .workspace_at_mut(0)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .split_pane_in_place(p0, crate::model::SplitDirection::Horizontal, extra)
             .is_none()
@@ -989,7 +1026,7 @@ fn moved_pane_is_saved_at_its_new_position() {
         engine.next_ids.next_surface(),
     );
     let q = ws1.pane_layout().all_pane_ids()[0];
-    engine.workspaces.push(ws1);
+    engine.push_local_workspace(ws1);
 
     Core::apply_replace_pane_with_pane(&mut engine, p0, q);
     let saved = SavedLayout::capture(
@@ -1002,7 +1039,10 @@ fn moved_pane_is_saved_at_its_new_position() {
     let mut restored = restored_session.borrow_mut();
     assert!(saved.restore(&mut restored).is_some());
     let names = |ws: usize| -> Vec<Option<String>> {
-        let layout = restored.workspaces[ws].pane_layout();
+        let layout = restored
+            .workspace_at(ws)
+            .expect("workspace index is valid")
+            .pane_layout();
         layout
             .all_pane_ids()
             .iter()

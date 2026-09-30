@@ -458,8 +458,8 @@ fn bootstrap_engine(
         &engine.task_scope,
         &engine
             .core_state
-            .workspaces
-            .iter()
+            .workspaces()
+            .into_iter()
             .map(|w| w.id)
             .collect::<Vec<_>>(),
     );

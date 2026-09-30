@@ -24,8 +24,8 @@ pub struct StructurePresentationSnapshot {
 }
 
 impl StructurePresentationSnapshot {
-    pub fn capture(
-        workspaces: &[Workspace],
+    pub fn capture<'a>(
+        workspaces: impl IntoIterator<Item = &'a Workspace>,
         categories: &[crate::WorkspaceCategory],
         presentation: &dyn StructurePresentation,
     ) -> Self {

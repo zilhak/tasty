@@ -231,8 +231,7 @@ pub(crate) fn publish_capability_elevation(
     reason: Option<&str>,
 ) -> Option<ApprovalRecord> {
     let workspace_id = engine
-        .workspaces
-        .get(window.active_workspace_index(engine))
+        .workspace_at(window.active_workspace_index(engine))
         .map(|ws| ws.id);
     let record = publish_capability_elevation_at(
         core,

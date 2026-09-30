@@ -74,7 +74,7 @@ pub(crate) fn record_ipc_call(
     if agent.is_host() {
         return;
     }
-    let ws = engine.workspaces.first().map(|w| w.id);
+    let ws = engine.workspace_at(0).map(|w| w.id);
     let ts = now_ms();
     let ev = match TelemetryEvent::new(agent.as_str(), "ipc_calls", 1.0, Op::Inc, ts) {
         Ok(e) => e,

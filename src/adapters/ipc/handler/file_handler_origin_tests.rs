@@ -75,15 +75,24 @@ fn dispatch_through_with(
         0
     );
     for attempt in navigated {
-        let sid = engine.workspaces[0].all_surface_ids()[0];
+        let sid = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         attempt.record(&mut state, sid);
     }
     if with_origin_surface {
-        let sid = engine.workspaces[0].all_surface_ids()[0];
+        let sid = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         assert_eq!(engine.find_pane_for_surface(sid), Some(pane_id));
         params["origin_surface_id"] = json!(sid);
     }
-    engine.workspaces[0].mirror = mirror;
+    engine
+        .workspace_at_mut(0)
+        .expect("workspace index is valid")
+        .mirror = mirror;
 
     let mut out = crate::ipc::window_port::IntentOutbox::default();
     let resp = handle_dispatch(&mut out, &mut state, &engine, caller, json!(1), params);
@@ -438,7 +447,10 @@ fn a_plugin_cannot_claim_another_plugins_webview_navigation() {
 fn a_click_drained_in_the_frame_the_owner_took_the_page_back_is_not_a_user_action() {
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let engine = engine_session.borrow_mut();
-    let sid = engine.workspaces[0].all_surface_ids()[0];
+    let sid = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     let mut params = link_params();
     params["origin_surface_id"] = json!(sid);
     let mut origins = Vec::new();
@@ -470,7 +482,10 @@ fn a_click_drained_in_the_frame_the_owner_took_the_page_back_is_not_a_user_actio
 fn a_webview_navigation_backs_only_one_dispatch() {
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let engine = engine_session.borrow_mut();
-    let sid = engine.workspaces[0].all_surface_ids()[0];
+    let sid = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     gesture(true).record(&mut state, sid);
     let mut params = link_params();
     params["origin_surface_id"] = json!(sid);
@@ -499,8 +514,14 @@ fn a_mirror_origin_dispatch_echoes_the_requested_depth() {
     for (mirror, expected) in [(false, "deep"), (true, "deep")] {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        engine.workspaces[0].mirror = mirror;
-        let sid = engine.workspaces[0].all_surface_ids()[0];
+        engine
+            .workspace_at_mut(0)
+            .expect("workspace index is valid")
+            .mirror = mirror;
+        let sid = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         let mut out = crate::ipc::window_port::IntentOutbox::default();
         let resp = handle_dispatch(
             &mut out,

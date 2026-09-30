@@ -147,7 +147,9 @@ impl Core {
             );
             return container_move_failed(detached);
         };
-        let ws = &mut engine.workspaces[target_ws];
+        let ws = engine
+            .workspace_at_mut(target_ws)
+            .expect("workspace index is valid");
         let replaced = match ws.pane_layout_mut().replace_pane(target_pane_id, pane) {
             Ok(replaced) => replaced,
             Err(_) => {
@@ -190,9 +192,14 @@ impl Core {
         ws_idx: usize,
         pane_id: u32,
     ) -> Option<(crate::model::Pane, SourceDetached)> {
-        let panes_len = engine.workspaces[ws_idx].pane_layout().all_pane_ids().len();
+        let panes_len = engine
+            .workspace_at(ws_idx)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .all_pane_ids()
+            .len();
         if panes_len > 1 {
-            let pane = engine.workspaces[ws_idx].detach_pane(pane_id)?;
+            let pane = engine.workspace_at_mut(ws_idx)?.detach_pane(pane_id)?;
             engine.mark_layout_dirty();
             return Some((
                 pane,
@@ -206,15 +213,22 @@ impl Core {
         }
 
         // 제거한 workspace에서 pane을 못 찾는 일이 없도록 제거 전에 확인한다.
-        engine.workspaces[ws_idx].pane_layout().find_pane(pane_id)?;
-        let workspace_id = engine.workspaces[ws_idx].id;
-        let mut ws = engine.workspaces.remove(ws_idx);
+        engine
+            .workspace_at(ws_idx)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .find_pane(pane_id)?;
+        let workspace_id = engine
+            .workspace_at(ws_idx)
+            .expect("workspace index is valid")
+            .id;
+        let mut ws = engine.remove_workspace_at(ws_idx);
         let empty = crate::model::Pane {
             id: 0,
             tabs: vec![],
         };
         let pane = std::mem::replace(ws.pane_layout_mut().find_pane_mut(pane_id)?, empty);
-        let workspaces_now_empty = engine.workspaces.is_empty();
+        let workspaces_now_empty = engine.workspaces().is_empty();
         engine.mark_layout_dirty();
         Some((
             pane,
@@ -236,7 +250,9 @@ impl Core {
     ) -> Option<(crate::model::Tab, SourceDetached)> {
         let ws_idx = engine.find_workspace_index_for_pane(pane_id)?;
         let (tabs_len, panes_len, tab_idx) = {
-            let ws = &engine.workspaces[ws_idx];
+            let ws = engine
+                .workspace_at(ws_idx)
+                .expect("workspace index is valid");
             let pane = ws.pane_layout().find_pane(pane_id)?;
             (
                 pane.tabs.len(),
@@ -245,7 +261,9 @@ impl Core {
             )
         };
 
-        let ws = &mut engine.workspaces[ws_idx];
+        let ws = engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid");
         let tab = ws
             .pane_layout_mut()
             .find_pane_mut(pane_id)?
@@ -284,9 +302,12 @@ impl Core {
             ));
         }
 
-        let workspace_id = engine.workspaces[ws_idx].id;
-        engine.workspaces.remove(ws_idx);
-        let workspaces_now_empty = engine.workspaces.is_empty();
+        let workspace_id = engine
+            .workspace_at(ws_idx)
+            .expect("workspace index is valid")
+            .id;
+        engine.remove_workspace_at(ws_idx);
+        let workspaces_now_empty = engine.workspaces().is_empty();
         engine.mark_layout_dirty();
         Some((
             tab,
@@ -314,7 +335,10 @@ mod move_container_tests {
 
     /// 첫 workspace의 첫 pane과 그 첫 탭·surface. surface에는 detached Terminal을 붙인다.
     fn first_pane(engine: &mut EngineMut<'_>) -> (u32, u32, u32) {
-        let a = engine.workspaces[0].all_surface_ids()[0];
+        let a = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         engine
             .runtime
             .terminals
@@ -351,7 +375,9 @@ mod move_container_tests {
         let pane = crate::model::Pane::new_with_terminal_marker(new_pane_id, tab_id, sid);
         let ws_idx = engine.find_workspace_index_for_pane(pane_id).unwrap();
         assert!(
-            engine.workspaces[ws_idx]
+            engine
+                .workspace_at_mut(ws_idx)
+                .expect("workspace index is valid")
                 .pane_layout_mut()
                 .split_pane_in_place(pane_id, SplitDirection::Horizontal, pane)
                 .is_none()
@@ -369,15 +395,13 @@ mod move_container_tests {
             .runtime
             .terminals
             .insert(sid, tasty_terminal::Terminal::new_detached(80, 24), None);
-        engine
-            .workspaces
-            .push(crate::model::Workspace::new_with_terminal_marker(
-                ws_id,
-                "ws1".to_string(),
-                pane_id,
-                tab_id,
-                sid,
-            ));
+        engine.push_local_workspace(crate::model::Workspace::new_with_terminal_marker(
+            ws_id,
+            "ws1".to_string(),
+            pane_id,
+            tab_id,
+            sid,
+        ));
         (pane_id, tab_id, sid)
     }
 
@@ -458,7 +482,7 @@ mod move_container_tests {
         add_tab(&mut engine, pane);
 
         let event = Core::apply_replace_tab_with_tab(&mut engine, tab_a, tab_b);
-        navigation.apply_result(&engine.workspaces, &event);
+        navigation.apply_result(&engine.workspaces(), &event);
         let p = engine.find_pane_by_id(other_pane).unwrap();
         assert_eq!(
             p.tabs.iter().map(|t| t.id).collect::<Vec<_>>(),
@@ -507,7 +531,7 @@ mod move_container_tests {
         let mut engine_session = test_engine();
         let mut engine = engine_session.borrow_mut();
         let (p0, tab_a, a) = first_pane(&mut engine);
-        let ws0_id = engine.workspaces[0].id;
+        let ws0_id = engine.workspace_at(0).expect("workspace index is valid").id;
         let (q, tab_q, q_sid) = push_workspace(&mut engine);
 
         let ev = Core::apply_replace_tab_with_tab(&mut engine, tab_a, tab_q);
@@ -529,7 +553,7 @@ mod move_container_tests {
         assert_eq!(workspace_purged, Some((0, ws0_id)));
         assert!(!workspaces_now_empty);
         assert_eq!(cleanup_targets, vec![(q_sid, None)]);
-        assert_eq!(engine.workspaces.len(), 1);
+        assert_eq!(engine.workspaces().len(), 1);
         let p = engine.find_pane_by_id(q).unwrap();
         assert_eq!(p.tabs.iter().map(|t| t.id).collect::<Vec<_>>(), vec![tab_a]);
         assert!(engine.runtime.terminals.contains(a));
@@ -576,13 +600,16 @@ mod move_container_tests {
             target_tab_id: tab_q,
         };
         assert_eq!(engine.mirror_workspace_index_for_structural(&intent), None);
-        engine.workspaces[1].mirror = true;
+        engine.make_mirror_fixture(1);
         assert_eq!(
             engine.mirror_workspace_index_for_structural(&intent),
             Some(1)
         );
-        engine.workspaces[1].mirror = false;
-        engine.workspaces[0].mirror = true;
+        engine
+            .workspace_at_mut(1)
+            .expect("workspace index is valid")
+            .mirror = false;
+        engine.make_mirror_fixture(0);
         assert_eq!(
             engine.mirror_workspace_index_for_structural(&intent),
             Some(0)
@@ -692,11 +719,11 @@ mod move_container_tests {
         let (q, tab_q, q_sid) = push_workspace(&mut engine);
         let (tab_q2, q2_sid) = add_tab(&mut engine, q);
         let mut navigation = crate::state::navigation::NavigationState::default();
-        navigation.select_pane(&engine.workspaces[1], q);
+        navigation.select_pane(engine.workspace_at(1).expect("workspace index is valid"), q);
         engine.pending_move = Some(PendingMove::Pane(p1));
 
         let ev = Core::apply_replace_pane_with_pane(&mut engine, p1, q);
-        navigation.apply_result(&engine.workspaces, &ev);
+        navigation.apply_result(&engine.workspaces(), &ev);
         let CoreEvent::ContainerMoveApplied {
             moved,
             cleanup_targets,
@@ -718,9 +745,28 @@ mod move_container_tests {
         assert_eq!(closed_pane_ids, vec![q]);
         assert!(workspace_purged.is_none());
 
-        assert_eq!(engine.workspaces[0].pane_layout().all_pane_ids(), vec![p2]);
-        assert_eq!(engine.workspaces[1].pane_layout().all_pane_ids(), vec![p1]);
-        assert_eq!(navigation.pane_id(&engine.workspaces[1]).unwrap(), p1);
+        assert_eq!(
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .pane_layout()
+                .all_pane_ids(),
+            vec![p2]
+        );
+        assert_eq!(
+            engine
+                .workspace_at(1)
+                .expect("workspace index is valid")
+                .pane_layout()
+                .all_pane_ids(),
+            vec![p1]
+        );
+        assert_eq!(
+            navigation
+                .pane_id(engine.workspace_at(1).expect("workspace index is valid"))
+                .unwrap(),
+            p1
+        );
         let moved_pane = engine.find_pane_by_id(p1).unwrap();
         assert_eq!(moved_pane.tabs[0].id, tab_a);
         assert!(
@@ -736,18 +782,27 @@ mod move_container_tests {
         let mut engine = engine_session.borrow_mut();
         let (p1, _tab_a, _a) = first_pane(&mut engine);
         let (_q, _tab_q, _q_sid) = push_workspace(&mut engine);
-        let q = engine.workspaces[1].pane_layout().all_pane_ids()[0];
+        let q = engine
+            .workspace_at(1)
+            .expect("workspace index is valid")
+            .pane_layout()
+            .all_pane_ids()[0];
         let new_pane_id = engine.next_ids.next_pane();
         let tab_id = engine.next_ids.next_tab();
         let sid = engine.next_ids.next_surface();
         let r = crate::model::Pane::new_with_terminal_marker(new_pane_id, tab_id, sid);
         assert!(
-            engine.workspaces[1]
+            engine
+                .workspace_at_mut(1)
+                .expect("workspace index is valid")
                 .pane_layout_mut()
                 .split_pane_in_place(q, SplitDirection::Vertical, r)
                 .is_none()
         );
-        if let crate::model::PaneNode::Split { ratio, .. } = engine.workspaces[1].pane_layout_mut()
+        if let crate::model::PaneNode::Split { ratio, .. } = engine
+            .workspace_at_mut(1)
+            .expect("workspace index is valid")
+            .pane_layout_mut()
         {
             *ratio = 0.3;
         }
@@ -755,15 +810,23 @@ mod move_container_tests {
 
         Core::apply_replace_pane_with_pane(&mut engine, p1, new_pane_id);
         assert_eq!(
-            engine.workspaces[0].pane_layout().all_pane_ids(),
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .pane_layout()
+                .all_pane_ids(),
             vec![p_extra]
         );
         assert_eq!(
-            engine.workspaces[1].pane_layout().all_pane_ids(),
+            engine
+                .workspace_at(1)
+                .expect("workspace index is valid")
+                .pane_layout()
+                .all_pane_ids(),
             vec![q, p1]
         );
         assert!(matches!(
-            engine.workspaces[1].pane_layout(),
+            engine.workspace_at(1).expect("workspace index is valid").pane_layout(),
             crate::model::PaneNode::Split { ratio, .. } if *ratio == 0.3
         ));
     }
@@ -773,7 +836,7 @@ mod move_container_tests {
         let mut engine_session = test_engine();
         let mut engine = engine_session.borrow_mut();
         let (p0, _tab_a, a) = first_pane(&mut engine);
-        let ws0_id = engine.workspaces[0].id;
+        let ws0_id = engine.workspace_at(0).expect("workspace index is valid").id;
         let (q, _tab_q, q_sid) = push_workspace(&mut engine);
 
         let ev = Core::apply_replace_pane_with_pane(&mut engine, p0, q);
@@ -795,8 +858,15 @@ mod move_container_tests {
         assert!(!workspaces_now_empty);
         assert_eq!(closed_pane_ids, vec![q], "source pane 은 닫힌 목록에 없다");
         assert_eq!(cleanup_targets, vec![(q_sid, None)]);
-        assert_eq!(engine.workspaces.len(), 1);
-        assert_eq!(engine.workspaces[0].pane_layout().all_pane_ids(), vec![p0]);
+        assert_eq!(engine.workspaces().len(), 1);
+        assert_eq!(
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .pane_layout()
+                .all_pane_ids(),
+            vec![p0]
+        );
         assert!(engine.runtime.terminals.contains(a));
     }
 
@@ -812,7 +882,14 @@ mod move_container_tests {
             CoreEvent::ContainerMoveApplied { moved: false, .. }
         ));
         assert!(engine.pending_move.is_none());
-        assert_eq!(engine.workspaces[0].pane_layout().all_pane_ids(), vec![p1]);
+        assert_eq!(
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .pane_layout()
+                .all_pane_ids(),
+            vec![p1]
+        );
     }
 
     #[test]
@@ -829,7 +906,11 @@ mod move_container_tests {
         ));
         assert!(engine.pending_move.is_none());
         assert_eq!(
-            engine.workspaces[0].pane_layout().all_pane_ids(),
+            engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .pane_layout()
+                .all_pane_ids(),
             vec![p1, p2]
         );
     }
@@ -845,13 +926,16 @@ mod move_container_tests {
             target_pane_id: q,
         };
         assert_eq!(engine.mirror_workspace_index_for_structural(&intent), None);
-        engine.workspaces[1].mirror = true;
+        engine.make_mirror_fixture(1);
         assert_eq!(
             engine.mirror_workspace_index_for_structural(&intent),
             Some(1)
         );
-        engine.workspaces[1].mirror = false;
-        engine.workspaces[0].mirror = true;
+        engine
+            .workspace_at_mut(1)
+            .expect("workspace index is valid")
+            .mirror = false;
+        engine.make_mirror_fixture(0);
         assert_eq!(
             engine.mirror_workspace_index_for_structural(&intent),
             Some(0)

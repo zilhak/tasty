@@ -37,7 +37,7 @@ pub fn handle_set_url(
     };
 
     // 분할 탭의 비포커스 surface도 찾도록 레이아웃 전체를 순회한다.
-    for ws in &engine.workspaces {
+    for ws in &engine.workspaces() {
         for &pid in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
                 for tab in &pane.tabs {
@@ -90,7 +90,7 @@ pub fn notify_navigation_attempt(
     surface_id: u32,
     url: &str,
 ) -> Option<crate::plugin_bridge::user_navigation::NavigationOwner> {
-    for ws in &engine.workspaces {
+    for ws in &engine.workspaces() {
         for &pid in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
                 for tab in &pane.tabs {
@@ -143,7 +143,9 @@ mod tests {
             .create_surface_via_registry(kind, new_sid, None, params)
             .expect("create surface via registry");
         let ws_index = state.active_workspace_index(engine);
-        let ws = &mut engine.workspaces[ws_index];
+        let ws = engine
+            .workspace_at_mut(ws_index)
+            .expect("workspace index is valid");
         let pane_id = state.navigation.pane_id(ws).unwrap();
         ws.pane_layout_mut()
             .find_pane_mut(pane_id)
@@ -157,7 +159,9 @@ mod tests {
         state: &crate::state::RequestContext,
         engine: &crate::core::CoreState,
     ) -> u32 {
-        let ws = &engine.workspaces[state.active_workspace_index(engine)];
+        let ws = engine
+            .workspace_at(state.active_workspace_index(engine))
+            .expect("workspace index is valid");
         let pane = ws
             .pane_layout()
             .find_pane(state.navigation.pane_id(ws).unwrap())
@@ -196,7 +200,7 @@ mod tests {
         engine: &crate::core::CoreState,
         sid: u32,
     ) -> &crate::plugin_bridge::remote_surface::RemoteSurface {
-        for ws in &engine.workspaces {
+        for ws in &engine.workspaces() {
             for pid in ws.pane_layout().all_pane_ids() {
                 let Some(pane) = ws.pane_layout().find_pane(pid) else {
                     continue;
@@ -368,7 +372,10 @@ mod tests {
         let client = hub.alloc_id();
         let rx = hub.register(client);
         engine.attach.set_notifier(hub);
-        let ws_id = engine.workspaces[state.active_workspace_index(&engine)].id;
+        let ws_id = engine
+            .workspace_at(state.active_workspace_index(&engine))
+            .expect("workspace index is valid")
+            .id;
         engine
             .attach
             .acquire_workspace(ws_id, &[terminal_sid], &[terminal_sid, md_sid], client)

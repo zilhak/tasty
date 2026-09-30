@@ -85,8 +85,7 @@ impl App {
             .and_then(|(main, engine)| {
                 engine
                     .core
-                    .workspaces
-                    .get(main.state.active_workspace_index(engine.core))
+                    .workspace_at(main.state.active_workspace_index(engine.core))
             })
             .map(|ws| ws.id);
         self.auto_attach_last_active_ws = current_ws_id;
@@ -120,7 +119,7 @@ impl App {
                 return;
             };
             let idx = main.state.active_workspace_index(engine.core);
-            match engine.workspaces.get(idx) {
+            match engine.workspace_at(idx) {
                 Some(ws) => ws.attach_mapping.as_ref().map(|m| (ws.id, m.clone())),
                 None => None,
             }
@@ -190,8 +189,8 @@ impl App {
             }
             // 대기 중 워크스페이스나 매핑이 사라졌을 수 있으므로 다시 읽는다.
             let mapping = self.engines().windows().find_map(|(_, e)| {
-                e.workspaces
-                    .iter()
+                e.workspaces()
+                    .into_iter()
                     .find(|ws| ws.id == anchor)
                     .and_then(|ws| ws.attach_mapping.clone())
             });
@@ -345,7 +344,7 @@ impl App {
     /// 자동 재시도 중단을 알린다. 워크스페이스 재활성화로 다시 시도할 상태는 유지한다.
     fn notify_reconnect_giveup(&mut self, anchor: u32) {
         for (_, main, engine) in self.engines_mut().window_pairs() {
-            if engine.workspaces.iter().any(|ws| ws.id == anchor) {
+            if engine.workspaces().into_iter().any(|ws| ws.id == anchor) {
                 main.state.toasts.push(
                     crate::i18n::t("attach.toast.mirror_reconnect_giveup").to_string(),
                     crate::adapters::ui::ToastKind::Warning,

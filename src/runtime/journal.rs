@@ -182,8 +182,7 @@ pub(crate) fn save_snapshot(
     let referenced_payloads = models
         .streams
         .values()
-        .flat_map(|model| model.surfaces.values())
-        .filter_map(|s| s.data)
+        .flat_map(JournalModel::data_refs)
         .map(|d| PayloadRef(d.0))
         .collect();
     Ok(store.save_snapshot(

@@ -13,7 +13,7 @@ pub(super) fn handle_ui_state(
 ) -> JsonRpcResponse {
     // 창이 없는 parked engine도 조회된다. workspace가 없으면 관련 값은 0 대신 null이다.
     // active_workspace에는 system.info와 마찬가지로 저장된 인덱스를 반환한다.
-    let ws = (!engine.workspaces.is_empty()).then(|| state.active_workspace(engine));
+    let ws = (!engine.workspaces().is_empty()).then(|| state.active_workspace(engine));
     let pane_count = ws.map(|ws| ws.pane_layout().all_pane_ids().len());
     let focused_pane = ws.and_then(|ws| {
         ws.pane_layout()
@@ -71,7 +71,7 @@ pub(super) fn handle_ui_state(
             "active_modal_kind": serde_json::Value::Null,
             "notification_panel_open": notification_panel_open,
             "active_workspace": state.active_workspace_index(engine),
-            "workspace_count": engine.workspaces.len(),
+            "workspace_count": engine.workspaces().len(),
             "pane_count": pane_count,
             "tab_count": tab_count,
             "active_tab": active_tab,
@@ -148,7 +148,7 @@ mod tests {
     fn ui_state_answers_for_a_parked_engine_without_workspaces() {
         let (state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        engine.workspaces.clear();
+        engine.replace_local_workspaces(Vec::new());
         let resp = handle_ui_state(&state, &engine, serde_json::json!(1));
         let result = resp.result.expect("성공 응답이어야 한다");
         assert_eq!(result["workspace_count"], 0);

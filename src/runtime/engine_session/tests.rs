@@ -14,7 +14,11 @@ fn session() -> EngineSession {
 #[test]
 fn execution_borrows_keep_one_terminal_and_one_task_scope() {
     let mut owner = session();
-    let sid = owner.core_state.workspaces[0].all_surface_ids()[0];
+    let sid = owner
+        .core_state
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     owner
         .runtime
         .terminals
@@ -56,7 +60,11 @@ fn execution_borrows_keep_one_terminal_and_one_task_scope() {
 #[test]
 fn session_drop_joins_observer_and_preserves_external_task_handles() {
     let mut owner = session();
-    let sid = owner.core_state.workspaces[0].all_surface_ids()[0];
+    let sid = owner
+        .core_state
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     let memory = Arc::clone(&owner.core_state.memory);
     let hub = Arc::clone(owner.task_scope.waker_hub());
     let feed = Arc::clone(owner.task_scope.event_queue());
@@ -117,7 +125,11 @@ fn session_drop_joins_observer_and_preserves_external_task_handles() {
 #[test]
 fn retired_terminal_content_cannot_mutate_the_replacement_binding() {
     let mut owner = session();
-    let sid = owner.core_state.workspaces[0].all_surface_ids()[0];
+    let sid = owner
+        .core_state
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     owner
         .runtime
         .terminals
@@ -153,7 +165,11 @@ fn parked_session_keeps_terminal_hook_and_task_identity() {
     use crate::hook_runtime::HookExecutor;
     use tasty_hooks::{HookBinding, HookEvent};
     let (state, mut owner) = crate::state::tests::test_state();
-    let sid = owner.core_state.workspaces[0].all_surface_ids()[0];
+    let sid = owner
+        .core_state
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     owner
         .runtime
         .terminals
@@ -211,7 +227,11 @@ fn a_physical_pty_keeps_its_pid_generation_and_io_while_parked() {
     use std::time::{Duration, Instant};
     let _home = crate::test_support::IsolatedHome::new();
     let (state, mut owner) = crate::state::tests::test_state();
-    let sid = owner.core_state.workspaces[0].all_surface_ids()[0];
+    let sid = owner
+        .core_state
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     let (terminal, pty) = tasty_terminal::spawn_terminal(
         tasty_terminal::TerminalConfig {
             cols: 80,

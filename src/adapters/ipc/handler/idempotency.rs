@@ -1128,7 +1128,7 @@ mod tests {
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        let base = engine.workspaces.len();
+        let base = engine.workspaces().len();
 
         for _ in 0..2 {
             let r = handle_with_caller(
@@ -1141,7 +1141,7 @@ mod tests {
             assert!(r.error.is_none(), "준비: {:?}", r.error);
         }
         assert_eq!(
-            engine.workspaces.len(),
+            engine.workspaces().len(),
             base + 2,
             "통제군이 성립하지 않는다"
         );
@@ -1156,7 +1156,7 @@ mod tests {
         );
         assert!(first.error.is_none(), "{:?}", first.error);
         assert!(!first.idempotent_replay);
-        let after_first = engine.workspaces.len();
+        let after_first = engine.workspaces().len();
 
         let second = handle_with_caller(
             &mut core,
@@ -1166,7 +1166,7 @@ mod tests {
             &CallerContext::Local,
         );
         assert_eq!(
-            engine.workspaces.len(),
+            engine.workspaces().len(),
             after_first,
             "같은 키의 재시도가 두 번째 워크스페이스를 만들었다"
         );
@@ -1186,7 +1186,7 @@ mod tests {
             ERR_IDEMPOTENCY_KEY_CONFLICT
         );
         assert_eq!(
-            engine.workspaces.len(),
+            engine.workspaces().len(),
             after_first,
             "충돌인데 워크스페이스가 생겼다"
         );

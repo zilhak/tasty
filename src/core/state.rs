@@ -197,7 +197,10 @@ pub(crate) struct AttachMeshContextForward {
 /// engine별 도메인 상태. GUI에서는 창마다 따로 보유하고 공유 자원은 Arc로 주입한다.
 /// 외부 함수의 타입에 쓰이지만 내부 필드는 crate 밖에 노출하지 않는다.
 pub struct CoreState {
-    pub(crate) workspaces: Vec<Workspace>,
+    pub(crate) local_workspaces: Vec<Workspace>,
+    pub(crate) mirror_workspaces: Vec<Workspace>,
+    /// Composite display projection; local relative order comes from the committed model.
+    workspace_display_order: Vec<u32>,
     /// 표시 순서의 카테고리. 생성·복원 뒤 기본 normal 항목을 앞에 두도록 정규화한다.
     pub(crate) categories: Vec<crate::model::WorkspaceCategory>,
     pub(crate) next_ids: IdGenerator,
@@ -441,7 +444,9 @@ impl CoreState {
         let restore_layout = settings.general.restore_layout;
 
         let mut engine = Self {
-            workspaces: Vec::new(),
+            local_workspaces: Vec::new(),
+            mirror_workspaces: Vec::new(),
+            workspace_display_order: Vec::new(),
             categories: vec![crate::model::WorkspaceCategory::normal()],
             next_ids: next_ids.clone(),
             default_cols: cols,
@@ -586,7 +591,7 @@ impl CoreState {
             ClosedItem::Pane { pane, .. } => self.find_workspace_index_for_pane(pane.id),
             ClosedItem::Workspace { .. } => return None,
         }?;
-        self.workspaces.get(ws_idx).map(|ws| ws.id)
+        self.workspace_at(ws_idx).map(|ws| ws.id)
     }
 
     pub fn push_closed_item(
@@ -757,6 +762,7 @@ mod soft_occupancy;
 mod surface_cleanup;
 mod surface_cwd;
 mod terminal_finders;
+pub(crate) mod workspaces;
 
 pub(crate) use attention::AttentionKind;
 #[cfg(feature = "gui")]
@@ -772,7 +778,7 @@ impl EngineMut<'_> {
     }
 
     pub fn refresh_tab_display_name(&mut self, surface_id: u32) {
-        let workspaces = &mut self.core.workspaces;
+        let workspaces = self.core.workspaces_mut();
         let terminals = &self.runtime.terminals;
         for workspace in workspaces {
             let pane_ids = workspace.pane_layout().all_pane_ids();
@@ -793,7 +799,7 @@ impl EngineMut<'_> {
     /// surface_id가 속한 탭에서 실제 선택된 surface의 제목을 읽는다.
     /// 제목이 없으면 OSC 제목을 비우고 사용자가 명시한 탭 이름은 유지한다.
     pub fn refresh_tab_osc_title(&mut self, surface_id: u32) {
-        let workspaces = &mut self.core.workspaces;
+        let workspaces = self.core.workspaces_mut();
         let terminals = &self.runtime.terminals;
         for workspace in workspaces {
             let pane_ids = workspace.pane_layout().all_pane_ids();
@@ -838,9 +844,7 @@ impl EngineRef<'_> {
         pane_id: u32,
         presentation: &dyn crate::model::StructurePresentation,
     ) -> Option<crate::model::ClosedItem> {
-        let ws = self
-            .workspaces
-            .get(self.find_workspace_index_for_pane(pane_id)?)?;
+        let ws = self.workspace_at(self.find_workspace_index_for_pane(pane_id)?)?;
         if ws.pane_layout().all_pane_ids().len() <= 1 {
             return None;
         }
@@ -1082,7 +1086,7 @@ mod engine_creation_failure_tests {
             )
             .expect("default settings must produce an engine");
         let engine = engine_session.borrow_mut();
-        assert_eq!(engine.workspaces.len(), 1);
+        assert_eq!(engine.workspaces().len(), 1);
     }
 
     #[test]

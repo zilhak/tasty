@@ -9,6 +9,7 @@ use tasty_model::{
 
 use crate::ids::{BatchId, Revision};
 use crate::model::{DataRef, Placement, Ratio, SplitDirectionDef};
+use crate::{Activation, Operation, OperationId, OperationOutcome};
 
 /// metadata를 가진 대상.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -149,6 +150,55 @@ pub enum DomainEvent {
     #[serde(rename = "surface.closed")]
     SurfaceClosed { id: SurfaceId },
 
+    /// The preparation has succeeded; the same surface identity now has this kind and data.
+    #[serde(rename = "surface.converted")]
+    SurfaceConverted {
+        id: SurfaceId,
+        kind: String,
+        data: Option<DataRef>,
+    },
+    #[serde(rename = "surface.data_recorded")]
+    SurfaceDataRecorded {
+        id: SurfaceId,
+        activation_generation: Option<u64>,
+        content_generation: u64,
+        snapshot_schema: u32,
+        data: DataRef,
+    },
+    #[serde(rename = "surface.activation_changed")]
+    SurfaceActivationChanged {
+        id: SurfaceId,
+        previous_generation: Option<u64>,
+        activation: Activation,
+    },
+    /// A path within the committed layout, false for first and true for second.
+    #[serde(rename = "pane.ratio_set")]
+    PaneRatioSet {
+        workspace: WorkspaceId,
+        path: Vec<bool>,
+        ratio: Ratio,
+    },
+    #[serde(rename = "surface.ratio_set")]
+    SurfaceRatioSet {
+        tab: TabId,
+        path: Vec<bool>,
+        ratio: Ratio,
+    },
+
+    #[serde(rename = "operation.prepared")]
+    OperationPrepared { operation: Operation },
+    #[serde(rename = "operation.finished")]
+    OperationFinished {
+        id: OperationId,
+        outcome: OperationOutcome,
+    },
+    #[serde(rename = "operation.reconciled")]
+    OperationReconciled {
+        id: OperationId,
+        outcome: OperationOutcome,
+        evidence: DataRef,
+    },
+
     #[serde(rename = "metadata.set")]
     MetadataSet {
         target: MetadataTarget,
@@ -160,6 +210,20 @@ pub enum DomainEvent {
 }
 
 impl DomainEvent {
+    /// Immutable content referenced by this fact. The storage adapter pins these in its commit.
+    pub fn data_refs(&self) -> Vec<DataRef> {
+        match self {
+            Self::TabCreated { surface, .. } | Self::SurfaceSplit { surface, .. } => {
+                surface.data.into_iter().collect()
+            }
+            Self::SurfaceConverted { data, .. } => data.iter().copied().collect(),
+            Self::SurfaceDataRecorded { data, .. } => vec![*data],
+            Self::OperationPrepared { operation } => vec![operation.input],
+            Self::OperationReconciled { evidence, .. } => vec![*evidence],
+            _ => Vec::new(),
+        }
+    }
+
     /// 이 빌드가 아는 모든 type tag. codec은 이 밖의 tag를 거절한다.
     pub const TAGS: &'static [&'static str] = &[
         "category.created",
@@ -183,6 +247,14 @@ impl DomainEvent {
         "surface.split",
         "surface.moved",
         "surface.closed",
+        "surface.converted",
+        "surface.data_recorded",
+        "surface.activation_changed",
+        "pane.ratio_set",
+        "surface.ratio_set",
+        "operation.prepared",
+        "operation.finished",
+        "operation.reconciled",
         "metadata.set",
         "metadata.removed",
     ];
@@ -210,6 +282,14 @@ impl DomainEvent {
             Self::SurfaceSplit { .. } => "surface.split",
             Self::SurfaceMoved { .. } => "surface.moved",
             Self::SurfaceClosed { .. } => "surface.closed",
+            Self::SurfaceConverted { .. } => "surface.converted",
+            Self::SurfaceDataRecorded { .. } => "surface.data_recorded",
+            Self::SurfaceActivationChanged { .. } => "surface.activation_changed",
+            Self::PaneRatioSet { .. } => "pane.ratio_set",
+            Self::SurfaceRatioSet { .. } => "surface.ratio_set",
+            Self::OperationPrepared { .. } => "operation.prepared",
+            Self::OperationFinished { .. } => "operation.finished",
+            Self::OperationReconciled { .. } => "operation.reconciled",
             Self::MetadataSet { .. } => "metadata.set",
             Self::MetadataRemoved { .. } => "metadata.removed",
         }

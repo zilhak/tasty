@@ -5,10 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use tasty_domain::{
-    Decider, Decision, DecisionContext, DomainEvent, IdKind, JournalModel, MemoryIdSupplier,
-    SurfaceSpec,
-};
+use tasty_domain::{Decider, Decision, DecisionContext, DomainEvent, JournalModel, SurfaceSpec};
 use tasty_event_store::{
     CommandKey, CommandLookup, EffectState, EventStore, NewEffect, OpaquePayload, Revision,
     StoreError, StoredBatch, StreamId,
@@ -71,6 +68,8 @@ struct Fake {
     gate: Option<Arc<Gate>>,
     /// 이 횟수만큼 revision을 틀리게 알려 저장소의 revision 충돌을 일으킨다.
     stale_revisions: Arc<AtomicUsize>,
+    fail_apply: Arc<AtomicBool>,
+    fail_load: Arc<AtomicBool>,
 }
 
 impl Fake {
@@ -86,19 +85,6 @@ impl Decider for Fake {
     type Effect = NewEffect;
     type Rejection = Reject;
 
-    fn revision(&self, state: &JournalModel) -> Option<Revision> {
-        let lie = self
-            .stale_revisions
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
-            .is_ok();
-        let actual = state.applied.revision;
-        if lie {
-            Some(actual.unwrap_or(0) + 100)
-        } else {
-            actual
-        }
-    }
-
     fn request_digest(&self, command: &Cmd) -> Vec<u8> {
         format!("{command:?}").into_bytes()
     }
@@ -107,16 +93,16 @@ impl Decider for Fake {
         &self,
         state: &JournalModel,
         command: &Cmd,
-        ctx: &mut DecisionContext<'_>,
+        _ctx: &mut DecisionContext<'_>,
     ) -> Result<Decision<DomainEvent, NewEffect>, Reject> {
         self.decides.fetch_add(1, Ordering::SeqCst);
         if let Some(gate) = &self.gate {
             gate.pass();
         }
         match command {
-            Cmd::CreateWorkspace { name } => create(state, name, ctx),
+            Cmd::CreateWorkspace { name } => create(state, name),
             Cmd::CreateWithEffect { name, effect_id } => {
-                let mut decision = create(state, name, ctx)?;
+                let mut decision = create(state, name)?;
                 decision.effects.push(NewEffect {
                     effect_id: effect_id.clone(),
                     operation_id: format!("spawn:{name}"),
@@ -149,8 +135,43 @@ impl Decider for Fake {
 }
 
 impl JournalDecider for Fake {
-    fn stream(&self) -> StreamId {
+    fn stream_revision(&self, state: &JournalModel, _stream: &StreamId) -> Option<Revision> {
+        let lie = self
+            .stale_revisions
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+            .is_ok();
+        let actual = state.applied.revision;
+        if lie {
+            Some(actual.unwrap_or(0) + 100)
+        } else {
+            actual
+        }
+    }
+
+    fn event_stream(&self, _event: &DomainEvent) -> StreamId {
         super::common::stream()
+    }
+
+    fn record(
+        &self,
+        _command: &Cmd,
+        decision: &Decision<DomainEvent, NewEffect>,
+    ) -> crate::runtime::command_executor::CommandRecordPlan {
+        let pending = !decision.effects.is_empty();
+        crate::runtime::command_executor::CommandRecordPlan {
+            status: if pending {
+                tasty_event_store::CommandStatus::InProgress
+            } else {
+                tasty_event_store::CommandStatus::Completed
+            },
+            response: if pending {
+                None
+            } else {
+                Some(decision.response.clone())
+            },
+            command_updates: Vec::new(),
+            effect_transitions: Vec::new(),
+        }
     }
 
     fn encode(&self, event: &DomainEvent) -> Result<OpaquePayload, String> {
@@ -158,23 +179,26 @@ impl JournalDecider for Fake {
     }
 
     fn apply(&self, state: &mut JournalModel, batch: &StoredBatch) -> Result<(), String> {
-        journal::apply(state, &self.stream(), batch).map_err(|e| e.to_string())
+        if self.fail_apply.swap(false, Ordering::SeqCst) {
+            return Err("injected post-commit apply failure".into());
+        }
+        journal::apply(state, &super::common::stream(), batch).map_err(|e| e.to_string())
     }
 
     fn load(&self, store: &EventStore) -> Result<JournalModel, String> {
-        journal::load(store, &self.stream()).map_err(|e| e.to_string())
+        if self.fail_load.load(Ordering::SeqCst) {
+            return Err("injected recovery failure".into());
+        }
+        journal::load(store, &super::common::stream()).map_err(|e| e.to_string())
     }
 }
 
-fn create(
-    state: &JournalModel,
-    name: &str,
-    ctx: &mut DecisionContext<'_>,
-) -> Result<Decision<DomainEvent, NewEffect>, Reject> {
-    let ws = ctx.ids.next_id(IdKind::Workspace);
-    let pane = ctx.ids.next_id(IdKind::Pane);
-    let tab = ctx.ids.next_id(IdKind::Tab);
-    let surface = ctx.ids.next_id(IdKind::Surface);
+fn create(state: &JournalModel, name: &str) -> Result<Decision<DomainEvent, NewEffect>, Reject> {
+    let next = |keys: Vec<u32>| keys.into_iter().max().unwrap_or(0) + 1;
+    let ws = next(state.workspaces.keys().copied().collect());
+    let pane = next(state.panes.keys().copied().collect());
+    let tab = next(state.tabs.keys().copied().collect());
+    let surface = next(state.surfaces.keys().copied().collect());
     if state.workspaces.contains_key(&ws) || state.panes.contains_key(&pane) {
         return Err(Reject::IdInUse);
     }
@@ -224,6 +248,7 @@ fn request(k: Option<&str>, command: Cmd) -> Request<Cmd> {
         key: k.map(key),
         actor: "agent".to_owned(),
         origin: "test".to_owned(),
+        causation_id: None,
         command,
     }
 }
@@ -234,28 +259,9 @@ fn create_cmd(name: &str) -> Cmd {
     }
 }
 
-/// 모델에 이미 있는 ID 다음부터 주는 메모리 공급자. 재오픈 뒤 ID 재사용을 피한다.
-fn ids_after(model: &JournalModel) -> Box<MemoryIdSupplier> {
-    let last = |keys: Vec<u32>| keys.into_iter().max().unwrap_or(0);
-    Box::new(
-        MemoryIdSupplier::default()
-            .starting_after(
-                IdKind::Workspace,
-                last(model.workspaces.keys().copied().collect()),
-            )
-            .starting_after(IdKind::Pane, last(model.panes.keys().copied().collect()))
-            .starting_after(IdKind::Tab, last(model.tabs.keys().copied().collect()))
-            .starting_after(
-                IdKind::Surface,
-                last(model.surfaces.keys().copied().collect()),
-            ),
-    )
-}
-
 fn open(path: &std::path::Path, fake: &Fake) -> Executor<Fake> {
     let store = EventStore::open(path, JOURNAL).expect("open journal");
-    let model = journal::load(&store, &super::common::stream()).expect("load");
-    Executor::open(fake.clone(), store, ids_after(&model)).expect("executor")
+    Executor::open(fake.clone(), store).expect("executor")
 }
 
 fn state(executor: &Executor<Fake>) -> JournalModel {
@@ -276,7 +282,7 @@ fn committed_batch_is_applied_and_matches_the_journal() {
         .execute(&request(Some("a"), create_cmd("main")))
         .expect("create");
     assert!(committed(&first));
-    assert_eq!(first.response, b"workspace:1");
+    assert_eq!(first.response.as_deref(), Some(b"workspace:1".as_slice()));
     let second = executor
         .execute(&request(None, create_cmd("side")))
         .expect("create without key");
@@ -380,7 +386,7 @@ fn after_reopen_the_same_key_is_answered_without_deciding() {
     let next = executor
         .execute(&request(Some("k2"), create_cmd("side")))
         .expect("new command after reopen");
-    assert_eq!(next.response, b"workspace:2");
+    assert_eq!(next.response.as_deref(), Some(b"workspace:2".as_slice()));
 }
 
 #[test]
@@ -493,4 +499,69 @@ fn lost_writer_lock_stops_writing() {
         executor.execute(&request(Some("b"), create_cmd("side"))),
         Err(ExecError::Halted)
     ));
+}
+
+#[test]
+fn committed_retry_and_reads_wait_for_recovery_after_apply_failure() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let fake = Fake::default();
+    let executor = open(&db_path(&dir), &fake);
+    let command = request(Some("committed"), create_cmd("main"));
+    fake.fail_apply.store(true, Ordering::SeqCst);
+    assert!(matches!(
+        executor.execute(&command),
+        Err(ExecError::Apply(_))
+    ));
+    assert!(executor.inner.lock().unwrap().state.workspaces.is_empty());
+    fake.fail_load.store(true, Ordering::SeqCst);
+    assert!(matches!(
+        executor.execute(&command),
+        Err(ExecError::Apply(_))
+    ));
+    let mut observed = false;
+    assert!(matches!(
+        executor.with_state(|_| observed = true),
+        Err(ExecError::Apply(_))
+    ));
+    assert!(!observed, "a stale read callback must not run");
+    assert_eq!(fake.decides(), 1);
+    fake.fail_load.store(false, Ordering::SeqCst);
+    let recovered = executor
+        .execute(&command)
+        .expect("stored result after recovery");
+    assert_eq!(recovered.source, Source::Stored);
+    assert_eq!(state(&executor).workspaces[&1].name, "main");
+    assert_eq!(fake.decides(), 1, "committed creation is never repeated");
+}
+
+#[test]
+fn pending_command_is_stored_without_a_final_response_and_preserves_causation() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let fake = Fake::default();
+    let executor = open(&db_path(&dir), &fake);
+    let mut command = request(
+        Some("pending"),
+        Cmd::CreateWithEffect {
+            name: "main".into(),
+            effect_id: "spawn".into(),
+        },
+    );
+    command.causation_id = Some("parent-command".into());
+    let first = executor.execute(&command).expect("prepare");
+    assert_eq!(first.status, tasty_event_store::CommandStatus::InProgress);
+    assert_eq!(first.response, None);
+    let retry = executor.execute(&command).expect("pending retry");
+    assert_eq!(retry.status, first.status);
+    assert_eq!(retry.response, None);
+    assert_eq!(retry.command_id, first.command_id);
+    assert_eq!(fake.decides(), 1);
+    let inner = executor.inner.lock().unwrap();
+    let batches = inner.store.read_batches_after(None, usize::MAX).unwrap();
+    assert_eq!(batches.len(), 1);
+    assert!(
+        batches[0]
+            .events
+            .iter()
+            .all(|event| event.causation_id.as_deref() == Some("parent-command"))
+    );
 }

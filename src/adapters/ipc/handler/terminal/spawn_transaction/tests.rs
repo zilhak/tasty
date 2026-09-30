@@ -5,8 +5,15 @@ fn send_failure_after_registry_and_soft_lock_closes_only_the_owned_surface() {
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
-    let parent = engine.workspaces[0].all_surface_ids()[0];
-    let pane = engine.workspaces[0].pane_layout().all_pane_ids()[0];
+    let parent = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
+    let pane = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .pane_layout()
+        .all_pane_ids()[0];
     // An owned empty surface cannot accept a terminal command. This injects a
     // real send failure at the last step of `finish`, after the child registry
     // entry and the soft acquisition are both already in place.

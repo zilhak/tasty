@@ -131,8 +131,10 @@ mod tests {
         let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
             panic!("expected WorkspaceCreated");
         };
-        engine.workspaces[index].mirror = true;
-        let sid = engine.workspaces[index]
+        engine.make_mirror_fixture(index);
+        let sid = engine
+            .workspace_at(index)
+            .expect("workspace index is valid")
             .all_surface_ids()
             .first()
             .copied()

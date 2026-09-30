@@ -140,7 +140,8 @@ mod tests {
         let (state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         let sid = state.focused_surface_id(&engine).expect("focused surface");
-        state.active_workspace_mut(&mut engine).mirror = true;
+        let active = state.active_workspace_index(&engine);
+        engine.make_mirror_fixture(active);
 
         let mut out = crate::ipc::window_port::IntentOutbox::default();
         let resp = handle_attention_clear(
@@ -166,7 +167,8 @@ mod tests {
         let (state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         let sid = state.focused_surface_id(&engine).expect("focused surface");
-        state.active_workspace_mut(&mut engine).mirror = true;
+        let active = state.active_workspace_index(&engine);
+        engine.make_mirror_fixture(active);
 
         let resp = handle_attention_get(&engine, json!(1), &json!({ "surface_id": sid }));
         assert!(resp.error.is_none(), "{:?}", resp.error);

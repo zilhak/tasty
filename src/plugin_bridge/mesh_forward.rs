@@ -160,8 +160,14 @@ mod tests {
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("core state");
         let mut engine = engine_session.borrow_mut();
 
-        let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
-        let surface_id = engine.workspaces[0]
+        let pane_id = engine
+            .workspace_at_mut(0)
+            .unwrap()
+            .pane_layout()
+            .all_pane_ids()[0];
+        let surface_id = engine
+            .workspace_at_mut(0)
+            .unwrap()
             .pane_layout()
             .find_pane(pane_id)
             .and_then(|pane| pane.tabs.first())
@@ -169,7 +175,9 @@ mod tests {
             .and_then(|layout| layout.first_surface_id())
             .expect("seed terminal surface");
 
-        let pane = engine.workspaces[0]
+        let pane = engine
+            .workspace_at_mut(0)
+            .unwrap()
             .pane_layout_mut()
             .find_pane_mut(pane_id)
             .expect("pane");

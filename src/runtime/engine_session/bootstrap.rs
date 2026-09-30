@@ -121,7 +121,7 @@ impl EngineSession {
                 tab_id,
                 surface_id,
             );
-            engine.workspaces = vec![ws];
+            engine.replace_local_workspaces(vec![ws]);
             engine.send_fast_init(surface_id);
         }
 

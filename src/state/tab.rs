@@ -376,7 +376,7 @@ impl RequestContext {
         };
 
         let mut location: Option<(usize, u32, usize)> = None;
-        'outer: for (ws_idx, workspace) in engine.workspaces.iter().enumerate() {
+        'outer: for (ws_idx, workspace) in engine.workspaces().into_iter().enumerate() {
             for &pid in &workspace.pane_layout().all_pane_ids() {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
                     for (tab_idx, tab) in pane.tabs.iter().enumerate() {
@@ -393,7 +393,9 @@ impl RequestContext {
             None => return false,
         };
 
-        let ws = &mut engine.workspaces[ws_idx];
+        let ws = engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid");
         let pane = match ws.pane_layout_mut().find_pane_mut(pane_id) {
             Some(p) => p,
             None => return false,
@@ -421,8 +423,8 @@ impl RequestContext {
             return;
         }
         if let Some(ws) = engine
-            .workspaces
-            .iter()
+            .workspaces()
+            .into_iter()
             .find(|w| w.pane_layout().find_pane(pane).is_some())
         {
             self.tutorial
@@ -434,7 +436,7 @@ impl RequestContext {
         }
     }
     pub(crate) fn tutorial_tab_snapshot(&self, engine: &CoreState) -> Option<(u32, u32, u32)> {
-        let ws = engine.workspaces.get(self.active_workspace_index(engine))?;
+        let ws = engine.workspace_at(self.active_workspace_index(engine))?;
         let pane = ws
             .pane_layout()
             .find_pane(self.navigation.pane_id(ws).unwrap_or(0))?;

@@ -14,7 +14,7 @@ fn collect_terminal_resize_targets(
     scale_factor: f32,
 ) -> Vec<(u32, usize, usize)> {
     let mut out = Vec::new();
-    for ws in &engine.workspaces {
+    for ws in &engine.workspaces() {
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
         for (pane_id, pane_rect) in pane_rects {
             let Some(pane) = ws.pane_layout().find_pane(pane_id) else {

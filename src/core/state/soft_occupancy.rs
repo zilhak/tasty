@@ -116,7 +116,10 @@ mod tests {
     fn focus_cleanup_keeps_soft_when_parent_alive() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let parent = e.workspaces[0].all_surface_ids()[0]; // 기본 워크스페이스 live surface
+        let parent = e
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0]; // 기본 워크스페이스 live surface
         e.occupy_soft(5000, parent, None).unwrap();
         e.reconcile_soft_occupancy_on_focus(5000);
         assert!(e.attach.occupancy_of(5000).is_some()); // parent 생존 → 유지.

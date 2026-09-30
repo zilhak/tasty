@@ -149,10 +149,10 @@ impl SavedLayout {
         }
 
         let active = self.active_workspace.min(workspaces.len() - 1);
-        engine.workspaces = workspaces;
+        engine.replace_local_workspaces(workspaces);
         engine.categories = categories;
         engine.ensure_normal_category();
-        presentation.active_workspace = engine.workspaces.get(active).map(|ws| ws.id);
+        presentation.active_workspace = engine.workspace_at(active).map(|ws| ws.id);
         Some(presentation)
     }
 }

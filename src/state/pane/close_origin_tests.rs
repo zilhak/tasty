@@ -46,7 +46,9 @@ fn arrange(
     let target = match case {
         Case::Surface => {
             let sid_b = engine.next_ids.next_surface();
-            engine.workspaces[ws_idx]
+            engine
+                .workspace_at_mut(ws_idx)
+                .expect("workspace index is valid")
                 .pane_layout_mut()
                 .find_pane_mut(pane_id)
                 .unwrap()
@@ -65,12 +67,17 @@ fn arrange(
             let sid_b = engine.next_ids.next_surface();
             insert_detached(&mut engine, sid_b);
             let pane = crate::model::Pane::new_with_terminal_marker(new_pane_id, new_tab_id, sid_b);
-            engine.workspaces[ws_idx]
+            engine
+                .workspace_at_mut(ws_idx)
+                .expect("workspace index is valid")
                 .pane_layout_mut()
                 .split_pane_in_place(pane_id, SplitDirection::Vertical, pane);
-            state
-                .navigation
-                .select_pane(&engine.workspaces[ws_idx], new_pane_id);
+            state.navigation.select_pane(
+                engine
+                    .workspace_at(ws_idx)
+                    .expect("workspace index is valid"),
+                new_pane_id,
+            );
             sid_b
         }
         Case::Workspace => {
@@ -83,7 +90,10 @@ fn arrange(
                 panic!("WorkspaceCreated expected");
             };
             state.set_active_workspace_index(&engine, index);
-            engine.workspaces[index].all_surface_ids()[0]
+            engine
+                .workspace_at(index)
+                .expect("workspace index is valid")
+                .all_surface_ids()[0]
         }
     };
     (state, engine_session, target)
@@ -252,7 +262,8 @@ fn the_window_path_and_core_apply_return_the_same_surface_closed_event() {
 fn a_mirror_close_active_surface_from_the_window_forwards_as_user_triggered() {
     let (mut state, mut engine_session, sid) = arrange(Case::Surface);
     let mut engine = engine_session.borrow_mut();
-    state.active_workspace_mut(&mut engine).mirror = true;
+    let active = state.active_workspace_index(&engine);
+    engine.make_mirror_fixture(active);
 
     assert!(state.close_active_surface(&mut engine));
 
@@ -268,7 +279,8 @@ fn a_mirror_close_active_surface_from_the_window_forwards_as_user_triggered() {
 fn a_mirror_close_from_an_agent_forwards_as_not_user_triggered() {
     let (mut state, mut engine_session, sid) = arrange(Case::Surface);
     let mut engine = engine_session.borrow_mut();
-    state.active_workspace_mut(&mut engine).mirror = true;
+    let active = state.active_workspace_index(&engine);
+    engine.make_mirror_fixture(active);
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
 
     let result = crate::app::structural_exec::close_surface(

@@ -2,6 +2,7 @@
 //! View's selection or the defaults of a headless command context. The domain
 //! tree is read only; reconciling it never performs a domain mutation.
 
+use crate::core::state::workspaces::WorkspaceRead;
 use std::collections::HashMap;
 
 use crate::model::{Pane, SurfaceId, Tab, Workspace, WorkspaceId};
@@ -72,7 +73,7 @@ impl NavigationState {
     #[cfg(feature = "gui")]
     pub(crate) fn restore(
         &mut self,
-        workspaces: &[Workspace],
+        workspaces: &WorkspaceRead<'_>,
         restored: &crate::model::RestoredPresentation,
     ) {
         self.collapsed_categories = restored.selection.collapsed_categories.clone();
@@ -87,7 +88,7 @@ impl NavigationState {
     #[cfg(feature = "gui")]
     pub(crate) fn apply_snapshot(
         &mut self,
-        workspaces: &[Workspace],
+        workspaces: &WorkspaceRead<'_>,
         selection: &crate::model::StructurePresentationSnapshot,
     ) {
         self.split_hints
@@ -113,11 +114,11 @@ impl NavigationState {
         }
     }
 
-    pub(crate) fn workspace_id(&self, workspaces: &[Workspace]) -> Option<WorkspaceId> {
+    pub(crate) fn workspace_id(&self, workspaces: &WorkspaceRead<'_>) -> Option<WorkspaceId> {
         self.workspace.resolve(&workspace_ids(workspaces))
     }
 
-    pub(crate) fn workspace_index(&self, workspaces: &[Workspace]) -> usize {
+    pub(crate) fn workspace_index(&self, workspaces: &WorkspaceRead<'_>) -> usize {
         self.workspace_id(workspaces)
             .and_then(|id| workspaces.iter().position(|ws| ws.id == id))
             .unwrap_or(0)
@@ -152,7 +153,11 @@ impl NavigationState {
             .or_else(|| tab.layout_if_initialized()?.first_surface_id())
     }
 
-    pub(crate) fn select_workspace(&mut self, workspaces: &[Workspace], id: WorkspaceId) -> bool {
+    pub(crate) fn select_workspace(
+        &mut self,
+        workspaces: &WorkspaceRead<'_>,
+        id: WorkspaceId,
+    ) -> bool {
         self.workspace.select(id, workspace_ids(workspaces))
     }
 
@@ -227,7 +232,7 @@ impl NavigationState {
 
     fn initialize_snapshot(
         &mut self,
-        workspaces: &[Workspace],
+        workspaces: &WorkspaceRead<'_>,
         selection: &crate::model::StructurePresentationSnapshot,
     ) {
         self.split_hints
@@ -256,7 +261,7 @@ impl NavigationState {
 
     pub(crate) fn apply_result(
         &mut self,
-        workspaces: &[Workspace],
+        workspaces: &WorkspaceRead<'_>,
         event: &crate::core::intent::CoreEvent,
     ) {
         use crate::core::intent::CoreEvent;
@@ -312,7 +317,7 @@ impl NavigationState {
     /// Apply the current structural result. Surviving IDs are retained; missing
     /// selections alone are replaced. New children are initialized without
     /// selecting them in their already existing parent.
-    pub(crate) fn reconcile(&mut self, workspaces: &[Workspace]) {
+    pub(crate) fn reconcile(&mut self, workspaces: &WorkspaceRead<'_>) {
         self.workspace.reconcile(workspace_ids(workspaces));
         self.panes
             .retain(|ws, _| workspaces.iter().any(|w| w.id == *ws));
@@ -351,7 +356,7 @@ impl NavigationState {
     }
 }
 
-fn workspace_ids(workspaces: &[Workspace]) -> Vec<u32> {
+fn workspace_ids(workspaces: &WorkspaceRead<'_>) -> Vec<u32> {
     workspaces.iter().map(|ws| ws.id).collect()
 }
 

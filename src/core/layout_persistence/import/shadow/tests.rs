@@ -246,7 +246,7 @@ fn full_engine() -> crate::runtime::engine_session::EngineSession {
         0,
         pane(25, vec![tab(36, "Shell", None, leaf(terminal(48)))]),
     );
-    engine.workspaces = vec![main, mirror, side_ws, normal_ws];
+    engine.set_workspace_fixture(vec![main, mirror, side_ws, normal_ws]);
     engine_session
 }
 
@@ -255,7 +255,7 @@ fn minimal_engine() -> crate::runtime::engine_session::EngineSession {
     let mut engine_session = engine();
     let mut engine = engine_session.borrow_mut();
     engine.categories = vec![WorkspaceCategory::normal()];
-    engine.workspaces = vec![workspace(
+    engine.local_workspaces = vec![workspace(
         1,
         "ws",
         0,
@@ -292,7 +292,7 @@ fn tabs_engine() -> crate::runtime::engine_session::EngineSession {
             )
         })
         .collect();
-    engine.workspaces = vec![
+    engine.local_workspaces = vec![
         workspace(3, "b-first", 2, pane(9, tabs)),
         workspace(
             4,
@@ -421,7 +421,7 @@ fn surface_data_is_compared_by_content() {
 type CoreMutation = (&'static str, fn(&mut CoreState));
 
 fn first_pane(engine: &mut CoreState) -> &mut Pane {
-    match engine.workspaces[0].pane_layout_mut() {
+    match engine.local_workspaces[0].pane_layout_mut() {
         PaneNode::Split { first, .. } => match first.as_mut() {
             PaneNode::Leaf(pane) => pane,
             PaneNode::Split { .. } => panic!("fixture: first pane is a leaf"),
@@ -433,23 +433,25 @@ fn first_pane(engine: &mut CoreState) -> &mut Pane {
 const CORE_MUTATIONS: &[CoreMutation] = &[
     ("category name", |e| e.categories[1].name.push('x')),
     ("category order", |e| e.categories.swap(1, 2)),
-    ("workspace order", |e| e.workspaces.swap(0, 2)),
-    ("workspace name", |e| e.workspaces[0].name.push('x')),
-    ("workspace category", |e| e.workspaces[0].category = 8),
-    ("workspace subtitle", |e| e.workspaces[0].subtitle.clear()),
+    ("workspace order", |e| e.local_workspaces.swap(0, 2)),
+    ("workspace name", |e| e.local_workspaces[0].name.push('x')),
+    ("workspace category", |e| e.local_workspaces[0].category = 8),
+    ("workspace subtitle", |e| {
+        e.local_workspaces[0].subtitle.clear()
+    }),
     ("workspace description", |e| {
-        e.workspaces[0].description.push('x')
+        e.local_workspaces[0].description.push('x')
     }),
     ("workspace attach mapping", |e| {
-        e.workspaces[0].attach_mapping = None
+        e.local_workspaces[0].attach_mapping = None
     }),
     ("pane split ratio", |e| {
-        if let PaneNode::Split { ratio, .. } = e.workspaces[0].pane_layout_mut() {
+        if let PaneNode::Split { ratio, .. } = e.local_workspaces[0].pane_layout_mut() {
             *ratio += f32::EPSILON;
         }
     }),
     ("pane split direction", |e| {
-        if let PaneNode::Split { direction, .. } = e.workspaces[0].pane_layout_mut() {
+        if let PaneNode::Split { direction, .. } = e.local_workspaces[0].pane_layout_mut() {
             *direction = SplitDirection::Horizontal;
         }
     }),
@@ -504,7 +506,7 @@ const EXCLUDED_MUTATIONS: &[CoreMutation] = &[
             pane(91, vec![tab(92, "m", None, leaf(terminal(93)))]),
         );
         ws.mirror = true;
-        e.workspaces.insert(0, ws);
+        e.insert_local_workspace(0, ws);
     }),
     ("spawn attempts", |e| {
         let tab = &mut first_pane(e).tabs[1];
@@ -759,7 +761,7 @@ fn capture_with_scrollback_reassigns_a_duplicate_deferred_scrollback_id() {
 }
 
 fn first_pane_of_minimal(engine: &mut CoreState) -> &mut Pane {
-    match engine.workspaces[0].pane_layout_mut() {
+    match engine.local_workspaces[0].pane_layout_mut() {
         PaneNode::Leaf(pane) => pane,
         PaneNode::Split { .. } => panic!("fixture: one pane"),
     }

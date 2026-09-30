@@ -124,7 +124,7 @@ fn build_mirror_forward_op(
             .and_then(|t| t.first_surface_id())
     };
     let tab_anchor = |tab_id: u32| -> Option<u32> {
-        for ws in &engine.workspaces {
+        for ws in &engine.workspaces() {
             for pid in ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
@@ -615,7 +615,10 @@ mod mirror_structural_guard_tests {
     }
 
     fn seed(engine: &mut EngineMut<'_>) -> (u32, u32) {
-        let a = engine.workspaces[0].all_surface_ids()[0];
+        let a = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         engine
             .runtime
             .terminals
@@ -634,7 +637,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (_a, pane) = seed(&mut engine);
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
         let pty_id =
             crate::adapters::ipc::handler::pty::tests::spawn_test_pty(&mut core, &mut engine);
         let tabs_before = engine.find_pane_by_id(pane).unwrap().tabs.len();
@@ -669,7 +672,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
 
         let res = core.apply(
             &mut engine,
@@ -695,7 +698,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (a, pane) = seed(&mut engine);
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
         let before = engine.runtime.terminals.iter().count();
 
         for intent in [
@@ -742,7 +745,12 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
-        assert!(!engine.workspaces[0].mirror);
+        assert!(
+            !engine
+                .workspace_at(0)
+                .expect("workspace index is valid")
+                .mirror
+        );
         let before = engine.runtime.terminals.iter().count();
 
         core.apply(
@@ -768,7 +776,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (a, pane) = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         let client_id = 42;
         engine
             .attach
@@ -813,7 +821,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (a, pane) = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         let client_id = 7;
         engine
             .attach
@@ -852,7 +860,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         let client_id = 9;
         engine
             .attach
@@ -891,7 +899,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (a, pane) = seed(&mut engine);
-        let ws_id = engine.workspaces[0].id;
+        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         let client_id = 13;
         engine
             .attach
@@ -1085,7 +1093,9 @@ mod mirror_structural_guard_tests {
             .runtime
             .terminals
             .insert(sid1, Terminal::new_detached(80, 24), None);
-        engine.workspaces[0]
+        engine
+            .workspace_at_mut(0)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .find_pane_mut(pane)
             .unwrap()
@@ -1140,7 +1150,7 @@ mod mirror_structural_guard_tests {
                 "비-mirror 는 통과해야 한다: {intent:?}"
             );
         }
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
         for intent in structural(a, pane, tab_id) {
             assert_eq!(
                 engine.mirror_workspace_index_for_structural(&intent),
@@ -1163,7 +1173,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
         assert!(engine.pending_structural_forward.is_empty());
 
         let err = core
@@ -1203,7 +1213,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (a, pane) = seed(&mut engine);
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
         core.apply(
             &mut engine,
             DomainIntent::SplitPane {
@@ -1235,7 +1245,7 @@ mod mirror_structural_guard_tests {
             tab_name: "gone".to_string(),
         });
         let before_len = engine.closed_items.len();
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
 
         let err = core
             .apply(
@@ -1270,7 +1280,7 @@ mod mirror_structural_guard_tests {
         let (mut _core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (_a, _pane) = seed(&mut engine);
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
         assert_eq!(
             engine.mirror_workspace_index_for_structural(&DomainIntent::RestoreClosedItem {
                 target_pane_id: None,
@@ -1287,7 +1297,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
         let err = core
             .apply(
                 &mut engine,
@@ -1332,7 +1342,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
         let err = core
             .apply(
                 &mut engine,
@@ -1366,7 +1376,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
         core.apply(
             &mut engine,
             DomainIntent::ConvertSurface {
@@ -1411,7 +1421,7 @@ mod mirror_structural_guard_tests {
             Some(CoreEvent::SurfaceSplit { new_surface_id, .. }) => new_surface_id,
             other => panic!("expected SurfaceSplit, got {other:?}"),
         };
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
 
         let err = core
             .apply(
@@ -1447,7 +1457,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
 
         let ws1_id = engine.next_ids.next_workspace();
         let pane1_id = engine.next_ids.next_pane();
@@ -1464,7 +1474,7 @@ mod mirror_structural_guard_tests {
             tab1_id,
             sid1,
         );
-        engine.workspaces.push(ws1);
+        engine.push_local_workspace(ws1);
 
         let err = core
             .apply(
@@ -1493,7 +1503,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
         let err = core
             .apply(
                 &mut engine,
@@ -1529,7 +1539,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
         let err = core
             .apply(
                 &mut engine,
@@ -1563,7 +1573,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (a, _pane) = seed(&mut engine);
-        engine.workspaces[0].mirror = true;
+        engine.make_mirror_fixture(0);
 
         let ws1_id = engine.next_ids.next_workspace();
         let pane1_id = engine.next_ids.next_pane();
@@ -1580,7 +1590,7 @@ mod mirror_structural_guard_tests {
             tab1_id,
             sid1,
         );
-        engine.workspaces.push(ws1);
+        engine.push_local_workspace(ws1);
 
         let err = core
             .apply(

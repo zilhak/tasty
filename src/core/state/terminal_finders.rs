@@ -5,18 +5,20 @@ use crate::core::engine_access::{EngineMut, EngineRef};
 
 impl CoreState {
     pub fn has_surface(&self, surface_id: u32) -> bool {
-        self.workspaces
-            .iter()
+        self.workspaces()
+            .into_iter()
             .any(|ws| ws.all_surface_ids().contains(&surface_id))
     }
 
     pub fn has_workspace(&self, workspace_id: u32) -> bool {
-        self.workspaces.iter().any(|ws| ws.id == workspace_id)
+        self.workspaces()
+            .into_iter()
+            .any(|ws| ws.id == workspace_id)
     }
 
     pub fn has_pane(&self, pane_id: u32) -> bool {
-        self.workspaces
-            .iter()
+        self.workspaces()
+            .into_iter()
             .any(|ws| ws.pane_layout().all_pane_ids().contains(&pane_id))
     }
 }

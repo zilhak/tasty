@@ -46,7 +46,7 @@ impl RequestContext {
     pub fn egui_mesh_surfaces_existing(&self, engine: &CoreState) -> Vec<(u32, String)> {
         use crate::core::egui_mesh_surface::EguiMeshSurface;
         let mut out: Vec<(u32, String)> = Vec::new();
-        for ws in &engine.workspaces {
+        for ws in &engine.workspaces() {
             for pane_id in ws.pane_layout().all_pane_ids() {
                 let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
                     continue;
@@ -73,7 +73,7 @@ impl RequestContext {
     pub fn attach_mesh_surfaces_existing(&self, engine: &CoreState) -> Vec<u32> {
         use crate::model::AttachMeshSurface;
         let mut out: Vec<u32> = Vec::new();
-        for ws in &engine.workspaces {
+        for ws in &engine.workspaces() {
             for pane_id in ws.pane_layout().all_pane_ids() {
                 let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
                     continue;
@@ -98,15 +98,15 @@ impl RequestContext {
     /// 활성 워크스페이스의 각 활성 탭에서 지연된 surface 초기화를 시도한다.
     /// 입력 경로마다 복원 처리를 넣는 대신 그리기 전에 한 번 순회한다.
     pub fn reify_displayed_surfaces(&self, engine: &mut crate::core::engine_access::EngineMut<'_>) {
-        if engine.workspaces.is_empty() {
+        if engine.workspaces().is_empty() {
             return;
         }
         let idx = self
             .active_workspace_index(engine)
-            .min(engine.workspaces.len().saturating_sub(1));
+            .min(engine.workspaces().len().saturating_sub(1));
         let mut deferred: Vec<u32> = Vec::new();
         {
-            let ws = &engine.workspaces[idx];
+            let ws = engine.workspace_at(idx).expect("workspace index is valid");
             for pane_id in ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pane_id)
                     && let Some(tab) = pane.tabs.get(self.navigation.tab_index(pane))

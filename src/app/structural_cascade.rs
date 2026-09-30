@@ -356,7 +356,7 @@ pub(crate) fn cascade_pane_split(
             new_pane: c.new_pane_id,
             direction: c.direction,
         });
-        let workspace_id = engine.workspaces.get(c.workspace_index).map(|w| w.id);
+        let workspace_id = engine.workspace_at(c.workspace_index).map(|w| w.id);
         if let Some(workspace_id) = workspace_id {
             state.enqueue_host_event(crate::core::host_event::PendingHostEvent::PaneCreated {
                 pane_id: c.new_pane_id,
@@ -429,7 +429,7 @@ fn find_surface_location(
     engine: &CoreState,
     surface_id: u32,
 ) -> Option<(u32, u32, u32, &'static str)> {
-    for ws in &engine.workspaces {
+    for ws in &engine.workspaces() {
         let workspace_id = ws.id;
         for pane_id in ws.pane_layout().all_pane_ids() {
             let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
@@ -467,8 +467,8 @@ pub(crate) fn cascade_tab_created(
     #[cfg(feature = "gui")]
     {
         let workspace_id = engine
-            .workspaces
-            .iter()
+            .workspaces()
+            .into_iter()
             .find(|w| w.pane_layout().find_pane(pane_id).is_some())
             .map(|w| w.id);
         let kind = engine

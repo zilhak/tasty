@@ -23,7 +23,7 @@ struct Target {
 /// 대상이 없거나 점유가 이미 풀렸으면 None을 반환한다.
 fn resolve_target(state: &MainViewState, engine: &crate::core::CoreState) -> Option<Target> {
     let ws_id = state.dialogs.pending_force_detach_workspace?;
-    let ws = engine.workspaces.iter().find(|w| w.id == ws_id)?;
+    let ws = engine.workspaces().into_iter().find(|w| w.id == ws_id)?;
     engine.attach.workspace_holder(ws_id)?;
     Some(Target {
         name: ws.name.clone(),

@@ -219,7 +219,8 @@ fn mirror_close_active_surface_forwards_close_surface() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
     let sid = state.focused_surface_id(&engine).unwrap();
-    state.active_workspace_mut(&mut engine).mirror = true;
+    let active = state.active_workspace_index(&engine);
+    engine.make_mirror_fixture(active);
     assert!(engine.pending_structural_forward.is_empty());
 
     assert!(state.close_active_surface(&mut engine));
@@ -248,7 +249,8 @@ fn mirror_convert_surface_from_the_user_forwards_as_user_triggered() {
     let mut engine = engine_session.borrow_mut();
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
     let sid = state.focused_surface_id(&engine).unwrap();
-    state.active_workspace_mut(&mut engine).mirror = true;
+    let active = state.active_workspace_index(&engine);
+    engine.make_mirror_fixture(active);
 
     crate::intent::surface::handle(
         &mut core,
@@ -278,7 +280,8 @@ fn mirror_close_active_pane_forwards_close_pane() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
     let sid = state.focused_surface_id(&engine).unwrap();
-    state.active_workspace_mut(&mut engine).mirror = true;
+    let active = state.active_workspace_index(&engine);
+    engine.make_mirror_fixture(active);
 
     assert!(state.close_active_pane(&mut engine));
     assert_eq!(
@@ -307,7 +310,8 @@ fn mirror_close_active_tab_forwards_close_tab() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
     let sid = state.focused_surface_id(&engine).unwrap();
-    state.active_workspace_mut(&mut engine).mirror = true;
+    let active = state.active_workspace_index(&engine);
+    engine.make_mirror_fixture(active);
 
     assert!(state.close_active_tab(&mut engine));
     assert!(
@@ -334,7 +338,8 @@ fn mirror_add_tab_forwards_new_tab() {
         .unwrap()
         .tabs
         .len();
-    state.active_workspace_mut(&mut engine).mirror = true;
+    let active = state.active_workspace_index(&engine);
+    engine.make_mirror_fixture(active);
 
     state.add_tab(&mut engine).unwrap();
     let tabs_after = state
@@ -371,7 +376,8 @@ fn mirror_close_active_tab_computes_sibling_candidate() {
     let sid_second = state.focused_surface_id(&engine).unwrap();
     assert_ne!(sid_first, sid_second);
 
-    state.active_workspace_mut(&mut engine).mirror = true;
+    let active = state.active_workspace_index(&engine);
+    engine.make_mirror_fixture(active);
     assert!(state.close_active_tab(&mut engine));
     let queued = &engine.pending_structural_forward[0];
     assert!(queued.user_triggered);
@@ -395,7 +401,9 @@ fn mirror_close_active_surface_split_computes_sibling_candidate() {
     let pane_id = state.focused_pane_id(&engine);
     let (ws_idx, _) = engine.find_workspace_index_for_surface(sid_a).unwrap();
     let sid_b = engine.next_ids.next_surface();
-    engine.workspaces[ws_idx]
+    engine
+        .workspace_at_mut(ws_idx)
+        .expect("workspace index is valid")
         .pane_layout_mut()
         .find_pane_mut(pane_id)
         .unwrap()
@@ -408,7 +416,8 @@ fn mirror_close_active_surface_split_computes_sibling_candidate() {
     // 분할 헬퍼가 포커스를 바꾸지 않아 sid_a를 닫는다.
     assert_eq!(state.focused_surface_id(&engine), Some(sid_a));
 
-    state.active_workspace_mut(&mut engine).mirror = true;
+    let active = state.active_workspace_index(&engine);
+    engine.make_mirror_fixture(active);
     assert!(state.close_active_surface(&mut engine));
     let queued = &engine.pending_structural_forward[0];
     assert!(queued.user_triggered);
@@ -431,7 +440,9 @@ fn close_active_surface_split_saves_closed_item_snapshot() {
     let pane_id = state.focused_pane_id(&engine);
     let (ws_idx, _) = engine.find_workspace_index_for_surface(sid_a).unwrap();
     let sid_b = engine.next_ids.next_surface();
-    engine.workspaces[ws_idx]
+    engine
+        .workspace_at_mut(ws_idx)
+        .expect("workspace index is valid")
         .pane_layout_mut()
         .find_pane_mut(pane_id)
         .unwrap()
@@ -605,7 +616,8 @@ fn close_pane_then_restore_reinserts_pane() {
 fn mirror_close_active_pane_has_no_focus_candidates() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
-    state.active_workspace_mut(&mut engine).mirror = true;
+    let active = state.active_workspace_index(&engine);
+    engine.make_mirror_fixture(active);
     assert!(state.close_active_pane(&mut engine));
     assert!(
         engine.pending_structural_forward[0]
@@ -618,14 +630,14 @@ fn mirror_close_active_pane_has_no_focus_candidates() {
 fn close_surface_by_id_no_snapshot_recreates_when_emptied() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
-    assert_eq!(engine.workspaces.len(), 1);
+    assert_eq!(engine.workspaces().len(), 1);
     let surface_ids = collect_surface_ids(&mut state, &mut engine);
     assert_eq!(surface_ids.len(), 1);
     let sid = surface_ids[0];
 
     assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid, false));
     assert!(
-        !engine.workspaces.is_empty(),
+        !engine.workspaces().is_empty(),
         "agent-initiated close must not leave the window with zero workspaces"
     );
     let new_surface_ids = collect_surface_ids(&mut state, &mut engine);
@@ -643,7 +655,9 @@ fn c3_case1_split_surface_close_cleans_up_and_keeps_sibling() {
     let pane_id = state.focused_pane_id(&engine);
     let (ws_idx, _) = engine.find_workspace_index_for_surface(sid_a).unwrap();
     let sid_b = engine.next_ids.next_surface();
-    engine.workspaces[ws_idx]
+    engine
+        .workspace_at_mut(ws_idx)
+        .expect("workspace index is valid")
         .pane_layout_mut()
         .find_pane_mut(pane_id)
         .unwrap()
@@ -871,8 +885,7 @@ fn add_mirror_test_workspace(state: &mut RequestContext, engine: &mut EngineMut<
     add_test_workspace(state, engine);
     let idx = state.active_workspace_index(engine);
     let ws = engine
-        .workspaces
-        .get_mut(idx)
+        .workspace_at_mut(idx)
         .expect("방금 만든 workspace 가 있어야 한다");
     ws.mirror = true;
     *ws.all_surface_ids()
@@ -887,8 +900,7 @@ fn local_attention_raise_is_suppressed_on_mirror_surface() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
     let local_sid = *engine
-        .workspaces
-        .get(state.active_workspace_index(&engine))
+        .workspace_at(state.active_workspace_index(&engine))
         .unwrap()
         .all_surface_ids()
         .first()
@@ -920,8 +932,7 @@ fn osc133_command_completed_raises_attention_only_off_mirror() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
     let local_sid = *engine
-        .workspaces
-        .get(state.active_workspace_index(&engine))
+        .workspace_at(state.active_workspace_index(&engine))
         .unwrap()
         .all_surface_ids()
         .first()
@@ -983,8 +994,7 @@ fn mirror_surface_notification_item_survives_the_attention_gate() {
     let mut engine = engine_session.borrow_mut();
     let mirror_sid = add_mirror_test_workspace(&mut state, &mut engine);
     let mirror_ws_id = engine
-        .workspaces
-        .get(state.active_workspace_index(&engine))
+        .workspace_at(state.active_workspace_index(&engine))
         .expect("mirror workspace")
         .id;
 
@@ -1062,8 +1072,7 @@ fn occupancy_suppresses_completion_highlight() {
     let (state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
     let sids = engine
-        .workspaces
-        .get(state.active_workspace_index(&engine))
+        .workspace_at(state.active_workspace_index(&engine))
         .unwrap()
         .all_surface_ids();
     let sid = *sids.first().expect("기본 workspace 에 surface 하나");
@@ -1105,8 +1114,7 @@ fn needs_input_not_suppressed_by_occupancy() {
     let (state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
     let sids = engine
-        .workspaces
-        .get(state.active_workspace_index(&engine))
+        .workspace_at(state.active_workspace_index(&engine))
         .unwrap()
         .all_surface_ids();
     let sid = *sids.first().expect("기본 workspace 에 surface 하나");
@@ -1136,9 +1144,9 @@ fn needs_input_not_suppressed_by_occupancy() {
 fn add_workspace_increments_count() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
-    assert_eq!(engine.workspaces.len(), 1);
+    assert_eq!(engine.workspaces().len(), 1);
     add_test_workspace(&mut state, &mut engine);
-    assert_eq!(engine.workspaces.len(), 2);
+    assert_eq!(engine.workspaces().len(), 2);
 }
 
 #[test]
@@ -1166,7 +1174,7 @@ fn next_prev_workspace_single_category_wraps() {
     let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // B=1
     add_test_workspace(&mut state, &mut engine); // C=2
-    assert_eq!(engine.workspaces.len(), 3);
+    assert_eq!(engine.workspaces().len(), 3);
 
     state.switch_workspace(&mut engine, 0); // active = A
     state.next_workspace_in_active_category(&mut engine);
@@ -1189,13 +1197,19 @@ fn next_workspace_in_active_category_wraps_within_category_only() {
     add_test_workspace(&mut state, &mut engine); // B=1
     add_test_workspace(&mut state, &mut engine); // C=2
     add_test_workspace(&mut state, &mut engine); // D=3
-    assert_eq!(engine.workspaces.len(), 4);
+    assert_eq!(engine.workspaces().len(), 4);
 
     let work = engine
         .create_category("work")
         .expect("create work category");
-    engine.workspaces[1].set_category(work); // B
-    engine.workspaces[3].set_category(work); // D
+    engine
+        .workspace_at_mut(1)
+        .expect("workspace index is valid")
+        .set_category(work); // B
+    engine
+        .workspace_at_mut(3)
+        .expect("workspace index is valid")
+        .set_category(work); // D
 
     state.switch_workspace(&mut engine, 0);
     state.next_workspace_in_active_category(&mut engine);
@@ -1222,8 +1236,14 @@ fn crosses_category_off_keeps_local_wrap() {
     add_test_workspace(&mut state, &mut engine); // C=2
     add_test_workspace(&mut state, &mut engine); // D=3
     let work = engine.create_category("work").expect("create work");
-    engine.workspaces[2].set_category(work); // C
-    engine.workspaces[3].set_category(work); // D
+    engine
+        .workspace_at_mut(2)
+        .expect("workspace index is valid")
+        .set_category(work); // C
+    engine
+        .workspace_at_mut(3)
+        .expect("workspace index is valid")
+        .set_category(work); // D
     assert!(!engine.settings.general.workspace_switch_crosses_category);
 
     state.switch_workspace(&mut engine, 1); // active = B (normal 의 마지막)
@@ -1239,8 +1259,14 @@ fn crosses_category_on_next_lands_on_next_category_first() {
     add_test_workspace(&mut state, &mut engine); // C=2
     add_test_workspace(&mut state, &mut engine); // D=3
     let work = engine.create_category("work").expect("create work");
-    engine.workspaces[2].set_category(work); // C (work 의 first)
-    engine.workspaces[3].set_category(work); // D
+    engine
+        .workspace_at_mut(2)
+        .expect("workspace index is valid")
+        .set_category(work); // C (work 의 first)
+    engine
+        .workspace_at_mut(3)
+        .expect("workspace index is valid")
+        .set_category(work); // D
 
     state.switch_workspace(&mut engine, 3);
     state.switch_workspace(&mut engine, 1); // active = B (normal 의 마지막)
@@ -1258,8 +1284,14 @@ fn crosses_category_on_prev_lands_on_prev_category_last() {
     add_test_workspace(&mut state, &mut engine); // C=2
     add_test_workspace(&mut state, &mut engine); // D=3
     let work = engine.create_category("work").expect("create work");
-    engine.workspaces[2].set_category(work); // C
-    engine.workspaces[3].set_category(work); // D (work 의 last)
+    engine
+        .workspace_at_mut(2)
+        .expect("workspace index is valid")
+        .set_category(work); // C
+    engine
+        .workspace_at_mut(3)
+        .expect("workspace index is valid")
+        .set_category(work); // D (work 의 last)
     engine.settings.general.workspace_switch_crosses_category = true;
 
     state.switch_workspace(&mut engine, 2); // active = C (work 의 첫)
@@ -1275,8 +1307,14 @@ fn crosses_category_on_wraps_across_full_category_list() {
     add_test_workspace(&mut state, &mut engine); // C=2
     add_test_workspace(&mut state, &mut engine); // D=3
     let work = engine.create_category("work").expect("create work");
-    engine.workspaces[2].set_category(work); // C (work 의 first)
-    engine.workspaces[3].set_category(work); // D (work 의 last, 마지막 카테고리)
+    engine
+        .workspace_at_mut(2)
+        .expect("workspace index is valid")
+        .set_category(work); // C (work 의 first)
+    engine
+        .workspace_at_mut(3)
+        .expect("workspace index is valid")
+        .set_category(work); // D (work 의 last, 마지막 카테고리)
     engine.settings.general.workspace_switch_crosses_category = true;
 
     state.switch_workspace(&mut engine, 3); // active = D (마지막 카테고리의 마지막)
@@ -1306,8 +1344,14 @@ fn switch_to_category_lands_on_last_active() {
     add_test_workspace(&mut state, &mut engine); // C=2
     add_test_workspace(&mut state, &mut engine); // D=3
     let work = engine.create_category("work").expect("create work");
-    engine.workspaces[1].set_category(work); // B
-    engine.workspaces[3].set_category(work); // D
+    engine
+        .workspace_at_mut(1)
+        .expect("workspace index is valid")
+        .set_category(work); // B
+    engine
+        .workspace_at_mut(3)
+        .expect("workspace index is valid")
+        .set_category(work); // D
 
     state.switch_workspace(&mut engine, 3);
     state.switch_workspace(&mut engine, 0);
@@ -1325,8 +1369,14 @@ fn switch_to_category_falls_back_to_first_when_never_visited() {
     add_test_workspace(&mut state, &mut engine); // C=2
     add_test_workspace(&mut state, &mut engine); // D=3
     let work = engine.create_category("work").expect("create work");
-    engine.workspaces[1].set_category(work); // B (work 의 first)
-    engine.workspaces[3].set_category(work); // D
+    engine
+        .workspace_at_mut(1)
+        .expect("workspace index is valid")
+        .set_category(work); // B (work 의 first)
+    engine
+        .workspace_at_mut(3)
+        .expect("workspace index is valid")
+        .set_category(work); // D
 
     state.switch_workspace(&mut engine, 0);
     state.switch_to_category(&mut engine, 1);
@@ -1340,7 +1390,10 @@ fn switch_to_category_auto_expands_collapsed() {
     let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // B=1
     let work = engine.create_category("work").expect("create work");
-    engine.workspaces[1].set_category(work); // B
+    engine
+        .workspace_at_mut(1)
+        .expect("workspace index is valid")
+        .set_category(work); // B
     state.navigation.collapsed_categories.insert(work);
     assert!(state.navigation.collapsed_categories.contains(&work));
 
@@ -1370,8 +1423,14 @@ fn next_prev_category_wraps_across_categories() {
     add_test_workspace(&mut state, &mut engine); // C=2
     let work = engine.create_category("work").expect("create work");
     let play = engine.create_category("play").expect("create play");
-    engine.workspaces[1].set_category(work); // B
-    engine.workspaces[2].set_category(play); // C
+    engine
+        .workspace_at_mut(1)
+        .expect("workspace index is valid")
+        .set_category(work); // B
+    engine
+        .workspace_at_mut(2)
+        .expect("workspace index is valid")
+        .set_category(play); // C
 
     state.switch_workspace(&mut engine, 0); // active = A (normal)
     state.next_category(&mut engine);
@@ -1407,8 +1466,14 @@ fn next_category_lands_on_last_active() {
     add_test_workspace(&mut state, &mut engine); // B=1
     add_test_workspace(&mut state, &mut engine); // C=2
     let work = engine.create_category("work").expect("create work");
-    engine.workspaces[1].set_category(work); // B
-    engine.workspaces[2].set_category(work); // C
+    engine
+        .workspace_at_mut(1)
+        .expect("workspace index is valid")
+        .set_category(work); // B
+    engine
+        .workspace_at_mut(2)
+        .expect("workspace index is valid")
+        .set_category(work); // C
 
     state.switch_workspace(&mut engine, 2);
     state.switch_workspace(&mut engine, 0); // normal 로 복귀.
@@ -1421,7 +1486,7 @@ fn next_category_lands_on_last_active() {
 fn next_prev_workspace_in_active_category_noop_when_alone() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
-    assert_eq!(engine.workspaces.len(), 1);
+    assert_eq!(engine.workspaces().len(), 1);
     assert_eq!(state.active_workspace_index(&engine), 0);
 
     state.next_workspace_in_active_category(&mut engine);
@@ -1445,7 +1510,7 @@ fn resolve_inherit_cwd_from_markdown_surface() {
         .unwrap();
 
     let mut sid_opt = None;
-    for ws in &engine.workspaces {
+    for ws in &engine.workspaces() {
         for pid in ws.pane_layout().all_pane_ids() {
             if let Some(p) = ws.pane_layout().find_pane(pid) {
                 for tab in &p.tabs {
@@ -1483,7 +1548,7 @@ fn resolve_inherit_cwd_from_surface_respects_toggle_off() {
         .unwrap();
 
     let mut sid_opt = None;
-    for ws in &engine.workspaces {
+    for ws in &engine.workspaces() {
         for pid in ws.pane_layout().all_pane_ids() {
             if let Some(p) = ws.pane_layout().find_pane(pid) {
                 for tab in &p.tabs {
@@ -1561,7 +1626,8 @@ fn mirror_explorer_cwd_is_remote_and_not_inherited_locally() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
     let (sid, root) = focused_explorer(&mut state, &mut engine);
-    state.active_workspace_mut(&mut engine).mirror = true;
+    let active = state.active_workspace_index(&engine);
+    engine.make_mirror_fixture(active);
 
     assert_eq!(
         engine.surface_cwd(sid),
@@ -1598,7 +1664,8 @@ fn popup_context_splits_cwd_keys_by_gate_and_provenance() {
     assert_eq!(gated["observed_cwd"], serde_json::json!(root_s));
 
     engine.settings.general.inherit_cwd = true;
-    state.active_workspace_mut(&mut engine).mirror = true;
+    let active = state.active_workspace_index(&engine);
+    engine.make_mirror_fixture(active);
     let mirror = state.popup_surface_context(&engine.as_ref(), Some(sid));
     assert!(
         mirror["cwd"].is_null(),
@@ -2036,9 +2103,12 @@ fn close_last_surface_of_first_workspace(
     engine: &mut EngineMut<'_>,
 ) -> (u32, u32, u32) {
     add_test_workspace(state, engine);
-    let victim_ws = engine.workspaces[0].id;
-    let kept_ws = engine.workspaces[1].id;
-    let victim_sids = engine.workspaces[0].all_surface_ids();
+    let victim_ws = engine.workspace_at(0).expect("workspace index is valid").id;
+    let kept_ws = engine.workspace_at(1).expect("workspace index is valid").id;
+    let victim_sids = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids();
     assert_eq!(
         victim_sids.len(),
         1,
@@ -2070,7 +2140,7 @@ fn cascade_workspace_removal_purges_only_its_scope_once() {
 
     run_cascade_close(&mut state, &mut engine, sid);
 
-    assert!(engine.workspaces.iter().all(|w| w.id != victim_ws));
+    assert!(engine.workspaces().into_iter().all(|w| w.id != victim_ws));
     let guard = mock.lock().unwrap();
     assert_eq!(
         guard.purge_scope_call_count(&tasty_memory::Scope::Workspace(victim_ws)),
@@ -2137,18 +2207,24 @@ fn cascade_workspace_removal_clears_regular_and_secret_entries_of_that_scope() {
 fn closing_an_earlier_workspace_keeps_the_viewed_workspace() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
-    let victim_sid = engine.workspaces[0].all_surface_ids()[0];
+    let victim_sid = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     for _ in 0..3 {
         add_test_workspace(&mut state, &mut engine);
     }
     state.switch_workspace(&mut engine, 2);
-    let viewed_id = engine.workspaces[2].id;
+    let viewed_id = engine.workspace_at(2).expect("workspace index is valid").id;
 
     assert!(state.close_surface_by_id_no_snapshot(&mut engine, victim_sid, false));
 
-    assert_eq!(engine.workspaces.len(), 3);
+    assert_eq!(engine.workspaces().len(), 3);
     assert_eq!(
-        engine.workspaces[state.active_workspace_index(&engine)].id,
+        engine
+            .workspace_at(state.active_workspace_index(&engine))
+            .expect("workspace index is valid")
+            .id,
         viewed_id,
         "앞쪽 워크스페이스가 닫혀도 사용자가 보던 워크스페이스는 그대로여야 한다"
     );
@@ -2162,14 +2238,26 @@ fn closing_the_viewed_workspace_moves_to_a_neighbour() {
         add_test_workspace(&mut state, &mut engine);
     }
     state.switch_workspace(&mut engine, 1);
-    let viewed_sid = engine.workspaces[1].all_surface_ids()[0];
-    let survivors: Vec<u32> = [engine.workspaces[0].id, engine.workspaces[2].id].into();
+    let viewed_sid = engine
+        .workspace_at(1)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
+    let survivors: Vec<u32> = [
+        engine.workspace_at(0).expect("workspace index is valid").id,
+        engine.workspace_at(2).expect("workspace index is valid").id,
+    ]
+    .into();
 
     assert!(state.close_surface_by_id_no_snapshot(&mut engine, viewed_sid, false));
 
-    assert_eq!(engine.workspaces.len(), 2);
+    assert_eq!(engine.workspaces().len(), 2);
     assert!(
-        survivors.contains(&engine.workspaces[state.active_workspace_index(&engine)].id),
+        survivors.contains(
+            &engine
+                .workspace_at(state.active_workspace_index(&engine))
+                .expect("workspace index is valid")
+                .id
+        ),
         "닫힌 대상이 보던 워크스페이스였으면 생존 워크스페이스로 이동한다"
     );
 }
@@ -2224,7 +2312,9 @@ fn closing_an_unfocused_pane_keeps_the_focused_pane() {
     assert_eq!(pane_ids.len(), 3);
     let focused_pane = *pane_ids.last().unwrap();
     state.navigation.select_pane(
-        &engine.workspaces[state.active_workspace_index(&engine)],
+        engine
+            .workspace_at(state.active_workspace_index(&engine))
+            .expect("workspace index is valid"),
         focused_pane,
     );
 
@@ -2247,7 +2337,9 @@ fn closing_the_focused_pane_reassigns_focus() {
         .unwrap();
     let (_, sid0_pane) = engine.find_workspace_index_for_surface(sid0).unwrap();
     state.navigation.select_pane(
-        &engine.workspaces[state.active_workspace_index(&engine)],
+        engine
+            .workspace_at(state.active_workspace_index(&engine))
+            .expect("workspace index is valid"),
         sid0_pane,
     );
 
@@ -2327,7 +2419,7 @@ fn closing_a_workspace_emits_the_host_event_for_both_origins() {
         let (mut state, mut engine_session) = test_state();
         let mut engine = engine_session.borrow_mut();
         add_test_workspace(&mut state, &mut engine);
-        let workspace_id = engine.workspaces[0].id;
+        let workspace_id = engine.workspace_at(0).expect("workspace index is valid").id;
 
         assert!(state.close_workspace_at(&mut engine, 0, origin));
 
@@ -2349,7 +2441,10 @@ fn pty_exit_close_skips_the_snapshot_but_still_reports_a_user_close() {
     let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine);
     let ws_idx = state.active_workspace_index(&engine);
-    let surface = engine.workspaces[ws_idx].all_surface_ids()[0];
+    let surface = engine
+        .workspace_at(ws_idx)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     let closed_before = engine.closed_items.len();
 
     assert!(state.close_surface_by_id_no_snapshot(&mut engine, surface, true));
@@ -2373,18 +2468,24 @@ fn inline_cascade_emits_the_workspace_closed_host_event() {
     let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine);
     let ws_idx = state.active_workspace_index(&engine);
-    let workspace_id = engine.workspaces[ws_idx].id;
-    let surface_ids = engine.workspaces[ws_idx].all_surface_ids();
+    let workspace_id = engine
+        .workspace_at(ws_idx)
+        .expect("workspace index is valid")
+        .id;
+    let surface_ids = engine
+        .workspace_at(ws_idx)
+        .expect("workspace index is valid")
+        .all_surface_ids();
     assert_eq!(
         surface_ids.len(),
         1,
         "워크스페이스에 surface 가 하나여야 한다"
     );
-    let before = engine.workspaces.len();
+    let before = engine.workspaces().len();
 
     assert!(state.close_surface_by_id_no_snapshot(&mut engine, surface_ids[0], false));
     assert_eq!(
-        engine.workspaces.len(),
+        engine.workspaces().len(),
         before - 1,
         "워크스페이스가 실제로 사라져야 이 경로를 지난 것이다"
     );
@@ -2424,8 +2525,8 @@ mod close_refuses_hard_occupied {
     /// 레이아웃과 TerminalStore가 같은 대상의 정리 여부에 동의하는지 확인한다.
     fn alive(engine: &EngineRef<'_>, sid: u32) -> bool {
         let in_tree = engine
-            .workspaces
-            .iter()
+            .workspaces()
+            .into_iter()
             .any(|w| w.all_surface_ids().contains(&sid));
         let has_terminal = engine.runtime.terminals.get(sid).is_some();
         assert_eq!(
@@ -2447,14 +2548,21 @@ mod close_refuses_hard_occupied {
         let (mut state, mut engine_session) = test_state();
         let mut engine = engine_session.borrow_mut();
         let idx = add_ws(&mut engine);
-        let sid = engine.workspaces[idx].all_surface_ids()[0];
+        let sid = engine
+            .workspace_at(idx)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         engine.attach.acquire(sid, HOLDER).expect("하드 점유");
 
         let closed = state.close_workspace_at(&mut engine, idx, WorkspaceCloseOrigin::User);
 
         assert!(!closed, "점유된 워크스페이스는 닫히면 안 된다");
         assert!(alive(&engine.as_ref(), sid), "surface 가 살아 있어야 한다");
-        assert_eq!(engine.workspaces.len(), 2, "거절이면 아무것도 안 사라진다");
+        assert_eq!(
+            engine.workspaces().len(),
+            2,
+            "거절이면 아무것도 안 사라진다"
+        );
         assert!(
             engine.attach.is_hard_occupied(sid),
             "거절 경로가 점유 상태를 건드리면 안 된다"
@@ -2468,7 +2576,7 @@ mod close_refuses_hard_occupied {
         let idx = add_ws(&mut engine);
 
         assert!(state.close_workspace_at(&mut engine, idx, WorkspaceCloseOrigin::User));
-        assert_eq!(engine.workspaces.len(), 1);
+        assert_eq!(engine.workspaces().len(), 1);
     }
 
     #[test]
@@ -2481,7 +2589,9 @@ mod close_refuses_hard_occupied {
             .find_workspace_index_for_surface(sid_a)
             .expect("워크스페이스");
         let sid_b = engine.next_ids.next_surface();
-        engine.workspaces[ws_idx]
+        engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .find_pane_mut(pane_id)
             .expect("pane")
@@ -2508,7 +2618,9 @@ mod close_refuses_hard_occupied {
             .find_workspace_index_for_surface(sid_a)
             .expect("워크스페이스");
         let sid_b = engine.next_ids.next_surface();
-        engine.workspaces[ws_idx]
+        engine
+            .workspace_at_mut(ws_idx)
+            .expect("workspace index is valid")
             .pane_layout_mut()
             .find_pane_mut(pane_id)
             .expect("pane")

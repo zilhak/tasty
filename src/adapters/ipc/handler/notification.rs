@@ -65,7 +65,10 @@ pub fn handle_notification_create(
         None => {
             if surface_id > 0 {
                 if let Some((idx, _)) = engine.find_workspace_index_for_surface(surface_id) {
-                    engine.workspaces[idx].id
+                    engine
+                        .workspace_at(idx)
+                        .expect("workspace index is valid")
+                        .id
                 } else {
                     return JsonRpcResponse::invalid_params(
                         id,
@@ -76,12 +79,12 @@ pub fn handle_notification_create(
                     );
                 }
             // workspace가 하나뿐이면 호환 동작으로 그 대상을 쓴다.
-            } else if engine.workspaces.len() == 1 {
+            } else if engine.workspaces().len() == 1 {
                 tracing::warn!(
                     "notification.create called without 'workspace_id' or 'surface_id'; \
                      auto-routing to the only workspace."
                 );
-                engine.workspaces[0].id
+                engine.workspace_at(0).expect("workspace index is valid").id
             } else {
                 return JsonRpcResponse::invalid_params(
                     id,

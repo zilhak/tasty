@@ -72,9 +72,16 @@ fn apply_on_mirror(
         "com.tasty.markdown",
         serde_json::json!({"kind": "open_surface", "surface_kind": "markdown", "param_key": "file"}),
     );
-    engine.workspaces[0].mirror = true;
-    let sid = engine.workspaces[0].all_surface_ids()[0];
-    let surfaces = engine.workspaces[0].all_surface_ids().len();
+    engine.make_mirror_fixture(0);
+    let sid = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
+    let surfaces = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()
+        .len();
     apply_identify_result(
         &mut core,
         &mut state,
@@ -109,7 +116,14 @@ fn a_mirror_open_forwards_one_user_new_tab_without_local_effects() {
         "사용자 더블클릭은 원격 새 탭을 선택한다"
     );
     assert!(!forward.silent_failure);
-    assert_eq!(engine.workspaces[0].all_surface_ids().len(), surfaces);
+    assert_eq!(
+        engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()
+            .len(),
+        surfaces
+    );
     assert_eq!(state.recent_files.get("markdown"), Vec::<String>::new());
     assert!(state.pending_intents.is_empty());
     assert!(state.dialogs.file_handler_picker.is_none());
@@ -139,8 +153,11 @@ fn a_mirror_open_with_only_an_ipc_handler_runs_nothing_and_toasts() {
         "com.example.ipc",
         serde_json::json!({"kind": "ipc", "method": "example.open"}),
     );
-    engine.workspaces[0].mirror = true;
-    let sid = engine.workspaces[0].all_surface_ids()[0];
+    engine.make_mirror_fixture(0);
+    let sid = engine
+        .workspace_at_mut(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     apply_identify_result(
         &mut core,
         &mut state,
@@ -166,8 +183,11 @@ fn a_mirror_open_without_a_detector_opens_no_picker() {
     let (mut core, _) = build_test_core();
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
-    engine.workspaces[0].mirror = true;
-    let sid = engine.workspaces[0].all_surface_ids()[0];
+    engine.make_mirror_fixture(0);
+    let sid = engine
+        .workspace_at_mut(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     apply_identify_result(
         &mut core,
         &mut state,
@@ -240,8 +260,11 @@ fn mirror_with_ipc_first() -> (
             "action": {"kind": "open_surface", "surface_kind": "markdown", "param_key": "file"}}),
         ],
     );
-    engine.workspaces[0].mirror = true;
-    let sid = engine.workspaces[0].all_surface_ids()[0];
+    engine.make_mirror_fixture(0);
+    let sid = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     (core, state, engine_session, sid)
 }
 
@@ -346,8 +369,11 @@ fn an_unopenable_remote_file_toasts_unless_an_external_ipc_asked() {
         let (mut core, _) = build_test_core();
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        engine.workspaces[0].mirror = true;
-        let sid = engine.workspaces[0].all_surface_ids()[0];
+        engine.make_mirror_fixture(0);
+        let sid = engine
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
         apply_identify_result(
             &mut core,
             &mut state,
@@ -431,7 +457,10 @@ fn a_mirror_origin_identifies_by_name_only() {
     let mut engine = engine_session.borrow_mut();
     let spawner = std::sync::Arc::new(RecordingSpawner::default());
     engine.identify_worker = Some(spawner.clone());
-    let sid = engine.workspaces[0].all_surface_ids()[0];
+    let sid = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
     let dispatch = |depth| DomainIntent::DispatchFile {
         target: FileTarget::new("/remote/doc.md"),
         depth,
@@ -442,7 +471,7 @@ fn a_mirror_origin_identifies_by_name_only() {
 
     core.apply(&mut engine, dispatch(DetectDepth::Deep))
         .unwrap();
-    engine.workspaces[0].mirror = true;
+    engine.make_mirror_fixture(0);
     core.apply(&mut engine, dispatch(DetectDepth::Deep))
         .unwrap();
 

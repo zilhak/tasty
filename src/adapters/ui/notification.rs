@@ -68,8 +68,8 @@ pub(crate) fn draw_notification_content_inner(
                     };
 
                     let ws_name = engine
-                        .workspaces
-                        .iter()
+                        .workspaces()
+                        .into_iter()
                         .find(|ws| ws.id == n.source_workspace)
                         .map(|ws| ws.name.as_str())
                         .unwrap_or(t("notification_panel.unknown_workspace"));
@@ -157,7 +157,10 @@ pub(crate) fn draw_notification_content_inner(
                 );
             }
             if let Some(ws_id) = jump_to_ws
-                && let Some(idx) = engine.workspaces.iter().position(|ws| ws.id == ws_id)
+                && let Some(idx) = engine
+                    .workspaces()
+                    .into_iter()
+                    .position(|ws| ws.id == ws_id)
             {
                 state.switch_workspace(engine, idx);
             }

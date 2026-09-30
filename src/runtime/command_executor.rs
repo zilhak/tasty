@@ -5,16 +5,16 @@
 //! 바꾸지 않고 응답하지 않는다. 같은 프로세스에서 진행 중인 같은 키는 첫 실행의 결과를 기다려 함께
 //! 받는다. writer 잠금을 잃거나 fencing되면 이후 쓰기를 멈춘다.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tasty_domain::{Decider, Decision, DecisionContext, IdSupplier};
+use tasty_domain::{Decider, Decision, DecisionContext};
 use tasty_event_store::{
-    BatchId, CommandKey, CommandLookup, CommandRecord, CommandStatus, CommitOutcome, CommitRequest,
-    EventStore, ExpectedRevision, NewCommand, NewEffect, NewEvent, OpaquePayload, PayloadRef,
-    StoreError, StoredBatch, StreamAppend, StreamId, WriterEpoch,
+    BatchId, CommandKey, CommandLookup, CommandRecord, CommandStatus, CommandUpdate, CommitOutcome,
+    CommitRequest, EffectTransition, EventStore, ExpectedRevision, NewCommand, NewEffect, NewEvent,
+    OpaquePayload, PayloadRef, StoreError, StoredBatch, StreamAppend, StreamId, WriterEpoch,
 };
 
 /// revision 충돌 뒤 상태를 다시 읽고 decide를 다시 시도하는 최대 횟수(첫 시도 포함).
@@ -24,7 +24,13 @@ pub(crate) const MAX_DECIDE_ATTEMPTS: u32 = 3;
 pub(crate) trait JournalDecider:
     Decider<Effect = NewEffect, State: Send, Rejection: Send> + Send + Sync
 {
-    fn stream(&self) -> StreamId;
+    fn event_stream(&self, event: &Self::Event) -> StreamId;
+    fn stream_revision(&self, state: &Self::State, stream: &StreamId) -> Option<u64>;
+    fn record(
+        &self,
+        command: &Self::Command,
+        decision: &Decision<Self::Event, NewEffect>,
+    ) -> CommandRecordPlan;
     fn encode(&self, event: &Self::Event) -> Result<OpaquePayload, String>;
     /// 이벤트가 참조하는 불변 payload. 같은 transaction에서 pin된다.
     fn payload_refs(&self, _event: &Self::Event) -> Vec<PayloadRef> {
@@ -41,7 +47,17 @@ pub(crate) struct Request<C> {
     pub(crate) key: Option<CommandKey>,
     pub(crate) actor: String,
     pub(crate) origin: String,
+    /// An effect/result command keeps the identity which caused it. Initial events name their command.
+    pub(crate) causation_id: Option<String>,
     pub(crate) command: C,
+}
+
+/// Progress and result/attempt updates are committed with the domain facts which justify them.
+pub(crate) struct CommandRecordPlan {
+    pub(crate) status: CommandStatus,
+    pub(crate) response: Option<Vec<u8>>,
+    pub(crate) command_updates: Vec<CommandUpdate>,
+    pub(crate) effect_transitions: Vec<EffectTransition>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,7 +72,9 @@ pub(crate) enum Source {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Executed {
-    pub(crate) response: Vec<u8>,
+    pub(crate) command_id: String,
+    pub(crate) status: CommandStatus,
+    pub(crate) response: Option<Vec<u8>>,
     pub(crate) source: Source,
 }
 
@@ -118,7 +136,6 @@ pub(crate) struct Inner<S> {
     pub(crate) store: EventStore,
     pub(crate) epoch: WriterEpoch,
     pub(crate) state: S,
-    ids: Box<dyn IdSupplier + Send>,
     next_command: u64,
     /// 쓰기 권한을 잃었다. 이후 요청은 저장소에 닿지 않는다.
     halted: bool,
@@ -141,11 +158,7 @@ pub(crate) struct Executor<D: JournalDecider> {
 
 impl<D: JournalDecider> Executor<D> {
     /// writer 잠금을 얻고 저장소에서 상태를 읽는다.
-    pub(crate) fn open(
-        decider: D,
-        mut store: EventStore,
-        ids: Box<dyn IdSupplier + Send>,
-    ) -> Result<Self, ExecError<D::Rejection>> {
+    pub(crate) fn open(decider: D, mut store: EventStore) -> Result<Self, ExecError<D::Rejection>> {
         let epoch = store.acquire_writer().map_err(store_error)?;
         let state = decider.load(&store).map_err(ExecError::Apply)?;
         Ok(Self {
@@ -154,7 +167,6 @@ impl<D: JournalDecider> Executor<D> {
                 store,
                 epoch,
                 state,
-                ids,
                 next_command: 0,
                 halted: false,
                 stale: false,
@@ -168,7 +180,11 @@ impl<D: JournalDecider> Executor<D> {
         &self,
         read: impl FnOnce(&D::State) -> T,
     ) -> Result<T, ExecError<D::Rejection>> {
-        Ok(read(&self.lock_inner()?.state))
+        let mut inner = self.lock_inner()?;
+        if inner.stale {
+            self.reload(&mut inner)?;
+        }
+        Ok(read(&inner.state))
     }
 
     pub(crate) fn execute(&self, request: &Request<D::Command>) -> ExecResult<D::Rejection> {
@@ -229,7 +245,14 @@ impl<D: JournalDecider> Executor<D> {
                 .map_err(store_error)?
             {
                 CommandLookup::Miss => {}
-                CommandLookup::Hit(record) => return stored(record),
+                CommandLookup::Hit(record) => {
+                    // Identity lookup still precedes target resolution, but a stored success
+                    // cannot bypass recovery of a previously committed, unapplied batch.
+                    if inner.stale {
+                        self.reload(&mut inner)?;
+                    }
+                    return stored(record);
+                }
                 CommandLookup::DigestMismatch(_) => {
                     return Err(ExecError::KeyConflict(key.clone()));
                 }
@@ -259,7 +282,6 @@ impl<D: JournalDecider> Executor<D> {
         let command_id = format!("cmd-{}-{}", inner.epoch.0, inner.next_command);
         let now_ms = now_ms();
         let mut ctx = DecisionContext {
-            ids: inner.ids.as_mut(),
             command_id: &command_id,
             now_ms,
         };
@@ -267,10 +289,6 @@ impl<D: JournalDecider> Executor<D> {
             .decider
             .decide(&inner.state, &request.command, &mut ctx)
             .map_err(ExecError::Rejected)?;
-        let expected = self
-            .decider
-            .revision(&inner.state)
-            .map_or(ExpectedRevision::NoStream, ExpectedRevision::Exact);
         let draft = Draft {
             epoch: inner.epoch,
             command_id: &command_id,
@@ -278,9 +296,14 @@ impl<D: JournalDecider> Executor<D> {
             digest,
             request,
             now_ms,
-            expected,
         };
-        let commit = self.commit_request(&draft, &decision)?;
+        let commit = self.commit_request(&inner.state, &draft, &decision)?;
+        let recorded = commit
+            .command
+            .as_ref()
+            .expect("a submitted command is recorded");
+        let status = recorded.status;
+        let response = recorded.response.clone();
         match inner.store.commit(&commit) {
             Ok(CommitOutcome::Committed { batch }) => {
                 let batch = batch.map(|cut| cut.batch_id);
@@ -288,7 +311,9 @@ impl<D: JournalDecider> Executor<D> {
                     self.apply(inner, batch_id)?;
                 }
                 Ok(Attempt::Done(Executed {
-                    response: decision.response,
+                    command_id,
+                    status,
+                    response,
                     source: Source::Committed { batch },
                 }))
             }
@@ -309,6 +334,7 @@ impl<D: JournalDecider> Executor<D> {
 
     fn commit_request(
         &self,
+        state: &D::State,
         draft: &Draft<'_, D::Command>,
         decision: &Decision<D::Event, NewEffect>,
     ) -> Result<CommitRequest, ExecError<D::Rejection>> {
@@ -319,36 +345,50 @@ impl<D: JournalDecider> Executor<D> {
             digest,
             request,
             now_ms,
-            expected,
         } = *draft;
-        let mut events = Vec::with_capacity(decision.events.len());
+        let mut streams: BTreeMap<StreamId, Vec<NewEvent>> = BTreeMap::new();
         for (index, event) in decision.events.iter().enumerate() {
-            events.push(NewEvent {
-                event_id: format!("{command_id}/{index}"),
-                payload: self.decider.encode(event).map_err(ExecError::Apply)?,
-                recorded_at_ms: now_ms,
-                causation_id: None,
-                actor: request.actor.clone(),
-                origin: request.origin.clone(),
-                payload_refs: self.decider.payload_refs(event),
-            });
+            streams
+                .entry(self.decider.event_stream(event))
+                .or_default()
+                .push(NewEvent {
+                    event_id: format!("{command_id}/{index}"),
+                    payload: self.decider.encode(event).map_err(ExecError::Apply)?,
+                    recorded_at_ms: now_ms,
+                    causation_id: Some(
+                        request
+                            .causation_id
+                            .clone()
+                            .unwrap_or_else(|| command_id.to_owned()),
+                    ),
+                    actor: request.actor.clone(),
+                    origin: request.origin.clone(),
+                    payload_refs: self.decider.payload_refs(event),
+                });
         }
+        let plan = self.decider.record(&request.command, decision);
         let mut commit = CommitRequest::new(epoch);
         commit.command = Some(NewCommand {
             command_id: command_id.to_owned(),
             key: key.cloned(),
             request_digest: digest.to_vec(),
             resolved: decision.resolved.clone(),
-            status: CommandStatus::Completed,
-            response: Some(decision.response.clone()),
+            status: plan.status,
+            response: plan.response,
         });
-        if !events.is_empty() {
+        for (stream_id, events) in streams {
+            let expected = self
+                .decider
+                .stream_revision(state, &stream_id)
+                .map_or(ExpectedRevision::NoStream, ExpectedRevision::Exact);
             commit.appends.push(StreamAppend {
-                stream_id: self.decider.stream(),
+                stream_id,
                 expected,
                 events,
             });
         }
+        commit.command_updates = plan.command_updates;
+        commit.effect_transitions = plan.effect_transitions;
         commit.effects = decision.effects.clone();
         Ok(commit)
     }
@@ -393,7 +433,6 @@ struct Draft<'a, C> {
     digest: &'a [u8],
     request: &'a Request<C>,
     now_ms: u64,
-    expected: ExpectedRevision,
 }
 
 enum Attempt {
@@ -455,16 +494,18 @@ fn wait<R: Clone + fmt::Debug>(slot: &InFlight<R>) -> ExecResult<R> {
 }
 
 fn stored<R: fmt::Debug>(record: CommandRecord) -> ExecResult<R> {
-    match record.response {
-        Some(response) => Ok(Executed {
-            response,
-            source: Source::Stored,
-        }),
-        None => Err(ExecError::NoStoredResponse {
+    if record.response.is_none() && record.status.is_terminal() {
+        return Err(ExecError::NoStoredResponse {
             command_id: record.command_id,
             status: record.status,
-        }),
+        });
     }
+    Ok(Executed {
+        command_id: record.command_id,
+        status: record.status,
+        response: record.response,
+        source: Source::Stored,
+    })
 }
 
 fn store_error<R: fmt::Debug>(error: StoreError) -> ExecError<R> {

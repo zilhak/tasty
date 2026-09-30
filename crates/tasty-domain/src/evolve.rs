@@ -3,6 +3,8 @@
 //! 이벤트는 decide가 확정한 사실이다. 참조가 맞지 않으면 추측해 고치지 않고 오류로 중단한다.
 //! 입력은 저장 batch가 아니라 해석을 마친 [`DomainBatch`]다.
 
+mod lifecycle;
+
 use std::collections::BTreeMap;
 
 use tasty_model::{PaneId, SurfaceId, TabId, WorkspaceCategoryId, WorkspaceId};
@@ -39,6 +41,9 @@ pub enum EvolveError {
 
     #[error("metadata key {key} is not set on {target}")]
     MissingKey { target: String, key: String },
+
+    #[error("invalid committed fact: {0}")]
+    InvalidFact(String),
 }
 
 type Result<T> = std::result::Result<T, EvolveError>;
@@ -144,6 +149,59 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
         } => split_surface(m, target, surface, split),
         DomainEvent::SurfaceMoved { id, target, split } => move_surface(m, id, target, split),
         DomainEvent::SurfaceClosed { id } => close_surface(m, id),
+        DomainEvent::SurfaceConverted { id, kind, data } => {
+            let surface = get_mut(&mut m.surfaces, IdKind::Surface, id)?;
+            surface.kind = kind;
+            surface.data = data;
+            surface.content_generation = 0;
+            surface.snapshot_schema = 0;
+            Ok(())
+        }
+        DomainEvent::SurfaceDataRecorded {
+            id,
+            activation_generation,
+            content_generation,
+            snapshot_schema,
+            data,
+        } => {
+            let surface = get_mut(&mut m.surfaces, IdKind::Surface, id)?;
+            if surface.activation.map(|a| a.generation) != activation_generation
+                || content_generation <= surface.content_generation
+                || snapshot_schema == 0
+            {
+                return Err(EvolveError::InvalidFact(
+                    "stale surface content generation".into(),
+                ));
+            }
+            surface.data = Some(data);
+            surface.content_generation = content_generation;
+            surface.snapshot_schema = snapshot_schema;
+            Ok(())
+        }
+        DomainEvent::SurfaceActivationChanged {
+            id,
+            previous_generation,
+            activation,
+        } => lifecycle::activation(m, id, previous_generation, activation),
+        DomainEvent::PaneRatioSet {
+            workspace,
+            path,
+            ratio,
+        } => {
+            let layout = &mut get_mut(&mut m.workspaces, IdKind::Workspace, workspace)?.layout;
+            lifecycle::ratio(layout, &path, ratio)
+        }
+        DomainEvent::SurfaceRatioSet { tab, path, ratio } => {
+            let layout = &mut get_mut(&mut m.tabs, IdKind::Tab, tab)?.layout;
+            lifecycle::ratio(layout, &path, ratio)
+        }
+        DomainEvent::OperationPrepared { operation } => lifecycle::prepare(m, operation),
+        DomainEvent::OperationFinished { id, outcome } => lifecycle::finish(m, id, outcome, None),
+        DomainEvent::OperationReconciled {
+            id,
+            outcome,
+            evidence,
+        } => lifecycle::finish(m, id, outcome, Some(evidence)),
         DomainEvent::MetadataSet { target, key, value } => {
             metadata_mut(m, target)?.insert(key, value);
             Ok(())
@@ -428,6 +486,9 @@ fn insert_surface(m: &mut JournalModel, tab: TabId, spec: SurfaceSpec) {
             kind: spec.kind,
             data: spec.data,
             metadata: Default::default(),
+            activation: None,
+            content_generation: 0,
+            snapshot_schema: 0,
         },
     );
 }

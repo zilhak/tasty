@@ -49,14 +49,14 @@ pub(super) fn handle_debug_close_workspace(
         Some(i) => i as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'index' parameter"),
     };
-    if index >= engine.workspaces.len() {
+    if index >= engine.workspaces().len() {
         return JsonRpcResponse::invalid_params(
             id,
             format!("Workspace index {index} out of range"),
         );
     }
     // 실제 메뉴와 달리 창 종료는 재현하지 않으므로 마지막 workspace는 남긴다.
-    if engine.workspaces.len() == 1 {
+    if engine.workspaces().len() == 1 {
         return JsonRpcResponse::invalid_params(
             id,
             "Refusing to close the last workspace (would leave no workspace)",
@@ -77,7 +77,7 @@ pub(super) fn handle_debug_switch_workspace(
         Some(i) => i as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'index' parameter"),
     };
-    if index >= engine.workspaces.len() {
+    if index >= engine.workspaces().len() {
         return JsonRpcResponse::invalid_params(
             id,
             format!("Workspace index {index} out of range"),
