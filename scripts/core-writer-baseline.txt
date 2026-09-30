@@ -1,9 +1,6 @@
 # 구조 writer 래칫 기준. scripts/check-core-writer-ratchet.sh --write-baseline 으로만 갱신한다.
 # metrics: field terminal subop appstate
 # metric	file	fn	count
-appstate	src/state/pane.rs	close_active_pane	1
-appstate	src/state/pane.rs	close_active_surface	1
-appstate	src/state/pane.rs	close_surface_by_id	1
 appstate	src/state/pane.rs	close_surface_by_id_no_snapshot	1
 appstate	src/state/preset_apply.rs	apply_pane_preset	1
 appstate	src/state/preset_apply.rs	apply_tab_preset	1
@@ -12,8 +9,6 @@ appstate	src/state/tab.rs	add_empty_tab	1
 appstate	src/state/tab.rs	add_kind_tab	1
 appstate	src/state/tab.rs	add_kind_tab_by_owner	1
 appstate	src/state/tab.rs	add_tab	1
-appstate	src/state/tab.rs	close_active_tab	1
-appstate	src/state/tab.rs	close_tab	1
 appstate	src/state/workspace.rs	close_active_workspace	1
 appstate	src/state/workspace.rs	close_workspace_at	1
 appstate	src/state/workspace.rs	move_workspace	1
@@ -31,7 +26,6 @@ field	src/core/state/category.rs	ensure_normal_category	4
 field	src/core/state/category.rs	rename_category	1
 field	src/core/state/category.rs	reorder_category	2
 field	src/core/state/category.rs	set_workspace_category	1
-field	src/state/pane.rs	close_case_workspace	1
 field	src/state/preset_apply.rs	apply_tab_preset	1
 field	src/state/preset_apply.rs	apply_workspace_preset	2
 field	src/state/preset_apply.rs	build_tab	1
