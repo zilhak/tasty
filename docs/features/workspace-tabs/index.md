@@ -100,7 +100,7 @@ Pane 이 존재하면 항상 그 위에 표시(Pane 마다 하나).
 - **close 버튼**(✕) — 활성 탭 또는 hover 시 우측에 노출. 숨어 있을 때도 칸(`tab_close_size`)을 지켜 hover 때 제목이 밀리지 않는다. lock 표지 위에 포인터가 있어도 탭 hover라 close가 보인다.
 - **오른쪽 상태 묶음** — 탭 칸 오른쪽 끝(`space-xs` 안쪽)에 고정 묶음 하나를 둔다. 왼쪽에서 오른쪽으로 html 스크립트 표지 · move 글리프 · busy 점 · close 순서이고, 항목 간격은 `tab_status_gap`(4), 제목과 묶음 사이는 `tab_gap`(8)이다. 묶음은 줄지 않아 탭이 좁으면 제목이 먼저 말줄임된다. 배치는 `tab_bar/tab.rs::status_cluster`다.
 - **`+` 추가 버튼** — 새 탭. 우클릭 = 프리셋 생성 메뉴.
-- **스크롤 화살표**(◀▶) — 탭이 폭을 넘칠 때만. chevron 아이콘(`tab_scroll_arrow_glyph_size`)을 스트립 높이와 같은 정사각 칸에 그리고, 칸은 채우지 않아 스트립 바탕이 그대로 보인다. 끝에 닿은 쪽은 disabled 잉크이며 hover 채움과 클릭 응답이 없다. 스크롤할 수 있는 쪽에만 hover 채움(`tab_scroll_arrow_hover_bg`)을 깐다. 공용 위젯 `horizontal_tab_bar_with_arrows`도 같은 painter(`tasty_ui_widgets::paint_tab_scroll_arrow`)를 쓴다. 이동 대기 대상 탭 칸이 스크롤에 가려지면 그쪽 화살표가 move 분홍 잉크로 바뀐다([이동 대기 표시](../surface-move/index.md#이동-대기-표시)).
+- **스크롤 화살표**(◀▶) — 탭이 폭을 넘칠 때만. chevron 아이콘(`tab_scroll_arrow_glyph_size`)을 스트립 높이와 같은 정사각 칸에 그리고, 칸은 채우지 않아 스트립 바탕이 그대로 보인다. 끝에 닿은 쪽은 disabled 잉크이며 hover 채움과 클릭 응답이 없다. 스크롤할 수 있는 쪽에만 hover 채움(`tab_scroll_arrow_hover_bg`)을 깐다. 공용 위젯 `horizontal_tab_bar_with_arrows`도 같은 painter(`tasty_ui_widgets::paint_tab_scroll_arrow`)를 쓴다. 본체 탭 스트립의 화살표 칸 폭은 스트립 높이와 같은 zoom 면제 값 `tab_bar_height`다. 같은 토큰의 `tab_scroll_arrow_width()`는 UI zoom을 따라 zoom 면제 스트립에서 정사각이 깨지므로 공용 위젯만 이 접근자를 쓴다. 이동 대기 대상 탭 칸이 스크롤에 가려지면 그쪽 화살표가 move 분홍 잉크로 바뀐다([이동 대기 표시](../surface-move/index.md#이동-대기-표시)).
 - **우측 액션** — split(⊟) / search(🔍) 아이콘 → 해당 Pane 분할 / 활성 surface 검색.
 - 탭 너비·라벨 폰트 크기는 **사용자 옵션**.
 
