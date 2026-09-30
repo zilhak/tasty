@@ -204,7 +204,7 @@ fn abort_right_after_commit_keeps_the_whole_batch() {
     run_child_to_abort(TEST, dir.path());
     integrity_ok(&db_path(dir.path()));
 
-    let (store, _) = reopen_as_writer(dir.path());
+    let (mut store, epoch) = reopen_as_writer(dir.path());
     let batches = store.read_batches_after(None, 10).expect("batches");
     assert_eq!(batches.len(), 1);
     assert_eq!(batches[0].events.len(), 3);
@@ -231,6 +231,23 @@ fn abort_right_after_commit_keeps_the_whole_batch() {
     assert_eq!(effect.state, EffectState::Pending);
     assert_eq!(effect.cause_batch_id, Some(batches[0].cut.batch_id));
     assert_eq!(effect.command_id.as_deref(), Some("cmd-1"));
+
+    // 새 writer가 같은 요청을 다시 보내도 기존 기록을 돌려받고 batch를 더 만들지 않는다.
+    let outcome = store
+        .commit(&full_request(epoch, 1))
+        .expect("resubmit after the crash");
+    assert!(
+        matches!(outcome, CommitOutcome::Duplicate(ref r) if r.command_id == "cmd-1"),
+        "{outcome:?}"
+    );
+    assert_eq!(
+        store.read_batches_after(None, 10).expect("batches").len(),
+        1
+    );
+    assert_eq!(
+        store.stream_revision(&stream("engine-a")).expect("a"),
+        Some(2)
+    );
 }
 
 // ---- b. commit 전 강제 종료 ----
