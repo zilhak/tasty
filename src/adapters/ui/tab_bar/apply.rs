@@ -155,26 +155,14 @@ fn show_html_script_banner(engine: &crate::core::CoreState, surface_id: u32) {
 
 /// 검색 버튼은 터미널에서만 동작한다. 검색창은 terminal 데이터만 읽는다.
 fn open_search_for_focused_terminal(state: &mut AppState, engine: &mut crate::core::CoreState) {
-    use crate::adapters::ui::popup::PopupScope;
-    use crate::intent::{OpenPopupMode, UiIntent};
     if !matches!(
         state.focused_surface_type(engine),
         crate::state::FocusedSurfaceType::Terminal
     ) {
         return;
     }
-    if state.popups.is_open("search_bar") {
-        state.popups.set_focused("search_bar", true);
-    } else if let Some(sid) = state.focused_surface_id(engine) {
-        state.search.surface_id = sid;
-        state.dispatch_intent(
-            UiIntent::OpenPopup {
-                id: "search_bar",
-                mode: OpenPopupMode::AtTopOfScope(PopupScope::Surface(sid)),
-            }
-            .from_user_shortcut("find"),
-        );
-    }
+    let focused = state.focused_surface_id(engine);
+    crate::adapters::ui::search_bar::open_or_focus_for(state, focused, "find");
 }
 
 /// 화면에서 계산한 자동 스크롤 오프셋을 pane에 반영한다.

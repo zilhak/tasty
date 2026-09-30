@@ -1434,3 +1434,127 @@ fn search_bar_closes_with_its_surface_and_reopens_elsewhere() {
     run_frame(empty_input(), &mut state, &mut engine);
     assert_eq!(visible_popup(&state, &engine), Some(SEARCH_BAR_POPUP_ID));
 }
+
+const SEARCH_BAR: PopupId = "search_bar";
+
+/// Ctrl+F·메뉴·탭바 검색 버튼이 공유하는 진입점을 부르고 쌓인 intent를 처리한다.
+fn find_in_focused_surface(
+    state: &mut crate::state::AppState,
+    engine: &mut crate::core::CoreState,
+) {
+    let focused = state.focused_surface_id(engine);
+    crate::adapters::ui::search_bar::open_or_focus_for(state, focused, "test");
+    for intent in state.take_pending_intents() {
+        crate::intent::popup::handle(state, &intent);
+    }
+}
+
+fn type_query(state: &mut crate::state::AppState, query: &str) {
+    state.search.query = query.to_string();
+    state.search.matches = vec![tasty_terminal::search::SearchMatch {
+        row: 0,
+        col_start: 0,
+        col_end: query.len(),
+    }];
+}
+
+fn search_scope(state: &crate::state::AppState) -> Option<crate::adapters::ui::popup::PopupScope> {
+    state.popups.open_scope(SEARCH_BAR).cloned()
+}
+
+/// 다른 탭에 열려 숨은 검색창은 현재 탭의 surface로 옮겨 보이고, 이전 검색은 비워진다.
+#[test]
+fn find_moves_a_search_bar_hidden_in_another_tab_to_the_focused_surface() {
+    use crate::adapters::ui::popup::PopupScope;
+    let (mut state, mut engine) = test_state();
+    let (_tab_id, target, other) = two_tab_surfaces(&mut state, &mut engine);
+    find_in_focused_surface(&mut state, &mut engine);
+    type_query(&mut state, "needle");
+    run_frame(empty_input(), &mut state, &mut engine);
+    assert_eq!(visible_popup(&state, &engine), Some(SEARCH_BAR));
+
+    state.goto_tab_in_pane(&mut engine, 0);
+    assert_eq!(state.focused_surface_id(&engine), Some(other));
+    run_frame(empty_input(), &mut state, &mut engine);
+    assert_eq!(visible_popup(&state, &engine), None, "hidden with its tab");
+    assert_eq!(search_scope(&state), Some(PopupScope::Surface(target)));
+
+    find_in_focused_surface(&mut state, &mut engine);
+    assert_eq!(state.search.surface_id, other);
+    assert!(
+        state.search.query.is_empty() && state.search.matches.is_empty(),
+        "the search of the previous surface must not carry over"
+    );
+    // 같은 프레임에 들어온 입력을 늦은 on_close가 지우지 않는다(닫았다 다시 여는 경로가 아니다).
+    type_query(&mut state, "fresh");
+    run_frame(empty_input(), &mut state, &mut engine);
+    assert_eq!(visible_popup(&state, &engine), Some(SEARCH_BAR));
+    assert_eq!(search_scope(&state), Some(PopupScope::Surface(other)));
+    assert_eq!(state.search.surface_id, other);
+    assert_eq!(state.search.query, "fresh");
+}
+
+/// 같은 surface에 열린 검색창은 범위와 검색을 그대로 두고 입력 포커스만 받는다.
+#[test]
+fn find_on_the_same_surface_only_focuses_the_open_search_bar() {
+    use crate::adapters::ui::popup::PopupScope;
+    let (mut state, mut engine) = test_state();
+    let sid = state.focused_surface_id(&engine).expect("surface");
+    find_in_focused_surface(&mut state, &mut engine);
+    type_query(&mut state, "needle");
+    state.popups.set_focused(SEARCH_BAR, false);
+    run_frame(empty_input(), &mut state, &mut engine);
+    assert!(!state.popups.is_focused(SEARCH_BAR));
+
+    find_in_focused_surface(&mut state, &mut engine);
+    assert!(state.take_pending_intents().is_empty(), "no reopen request");
+    run_frame(empty_input(), &mut state, &mut engine);
+    assert_eq!(search_scope(&state), Some(PopupScope::Surface(sid)));
+    assert_eq!(state.search.surface_id, sid);
+    assert_eq!(state.search.query, "needle");
+    assert_eq!(state.search.matches.len(), 1);
+    assert!(state.popups.is_focused(SEARCH_BAR));
+}
+
+/// 같은 탭의 다른 분할 surface에서 찾으면 검색창이 그 surface로 옮겨 가고 이전 검색은 비워진다.
+#[test]
+fn find_in_a_split_sibling_moves_the_search_bar_to_it() {
+    use crate::adapters::ui::popup::PopupScope;
+    let (mut state, mut engine) = test_state();
+    let a = state.focused_surface_id(&engine).expect("surface a");
+    let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
+    let events = core
+        .apply(
+            &mut engine,
+            crate::core::intent::DomainIntent::SplitSurface {
+                target_surface_id: a,
+                direction: crate::model::SplitDirection::Vertical,
+                cwd: None,
+                kind: "terminal".to_string(),
+                surface_params: serde_json::json!({}),
+            },
+        )
+        .expect("split surface");
+    let Some(crate::core::intent::CoreEvent::SurfaceSplit {
+        new_surface_id: b, ..
+    }) = events.into_iter().next()
+    else {
+        panic!("expected SurfaceSplit event");
+    };
+
+    // 분할 뒤 포커스가 새 surface로 갈 수 있으므로 A로 되돌린다. 이미 A면 바뀌지 않는다.
+    state.focus_surface_by_id(&mut engine, a);
+    assert_eq!(state.focused_surface_id(&engine), Some(a));
+    find_in_focused_surface(&mut state, &mut engine);
+    type_query(&mut state, "needle");
+    run_frame(empty_input(), &mut state, &mut engine);
+    assert_eq!(search_scope(&state), Some(PopupScope::Surface(a)));
+
+    assert!(state.focus_surface_by_id(&mut engine, b));
+    find_in_focused_surface(&mut state, &mut engine);
+    run_frame(empty_input(), &mut state, &mut engine);
+    assert_eq!(visible_popup(&state, &engine), Some(SEARCH_BAR));
+    assert_eq!(search_scope(&state), Some(PopupScope::Surface(b)));
+    assert_eq!(state.search.surface_id, b);
+    assert!(state.search.query.is_empty() && state.search.matches.is_empty());
+}

@@ -1,5 +1,5 @@
 use crate::adapters::ui::icons;
-use crate::adapters::ui::popup::PopupAction;
+use crate::adapters::ui::popup::{PopupAction, PopupScope};
 use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme::Theme;
@@ -10,6 +10,8 @@ use tasty_type_geometry::length::LogicalPx;
 /// 없어 `Theme` 필드가 없다 — ADR-0035 대로 **이름에 primitive 임을 남긴다**.
 const COUNTER_FONT_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
+const SEARCH_BAR_POPUP_ID: &str = "search_bar";
+
 /// PopupDef::on_close entry point — 어떤 경로로 닫히든(대상 surface 소멸 포함) 검색 결과를 비운다.
 /// 남겨 두면 다른 surface에서 다시 열 때 이전 surface의 좌표가 강조된다.
 pub fn on_close_search_bar(
@@ -18,6 +20,44 @@ pub fn on_close_search_bar(
     _engine: &mut crate::core::CoreState,
 ) {
     state.search.clear();
+}
+
+/// 포커스된 surface에 검색창을 연다. 그 surface에 이미 열려 있으면 입력 포커스만 준다.
+/// 다른 surface에 열려 있으면(다른 탭이라 숨은 경우 포함) 그 검색을 비우고 창을 현재 surface로
+/// 옮긴다. 닫았다 다시 열면 on_close 훅이 다음 프레임에 늦게 돌아 새 대상의 검색 상태를 지우고,
+/// 열린 팝업에 보내는 OpenPopup intent는 무시되므로 창의 범위를 직접 옮긴다.
+pub(crate) fn open_or_focus_for(
+    state: &mut AppState,
+    focused_surface: Option<u32>,
+    source: &'static str,
+) {
+    use crate::intent::{OpenPopupMode, UiIntent};
+    let Some(sid) = focused_surface else {
+        return;
+    };
+    let scope = PopupScope::Surface(sid);
+    if state.popups.open_scope(SEARCH_BAR_POPUP_ID) == Some(&scope) {
+        state.popups.set_focused(SEARCH_BAR_POPUP_ID, true);
+        return;
+    }
+    let open_elsewhere = state.popups.is_open(SEARCH_BAR_POPUP_ID);
+    if open_elsewhere {
+        state.search.clear();
+    }
+    state.search.surface_id = sid;
+    if open_elsewhere {
+        state
+            .popups
+            .open_at_top_of_scope(SEARCH_BAR_POPUP_ID, scope);
+    } else {
+        state.dispatch_intent(
+            UiIntent::OpenPopup {
+                id: SEARCH_BAR_POPUP_ID,
+                mode: OpenPopupMode::AtTopOfScope(scope),
+            }
+            .from_user_shortcut(source),
+        );
+    }
 }
 
 /// Draw the search bar popup content.

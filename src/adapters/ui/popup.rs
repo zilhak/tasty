@@ -659,6 +659,14 @@ impl PopupManager {
         self.popups.iter().any(|p| p.id == id && p.open)
     }
 
+    /// 열린 팝업의 범위. 닫혀 있으면 `None`이다. 범위가 지금 보이는지는 따지지 않는다.
+    pub fn open_scope(&self, id: PopupId) -> Option<&PopupScope> {
+        self.popups
+            .iter()
+            .find(|p| p.id == id && p.open)
+            .map(|p| &p.scope)
+    }
+
     /// Check if any popup currently has keyboard focus.
     pub fn has_focused(&self) -> bool {
         self.popups

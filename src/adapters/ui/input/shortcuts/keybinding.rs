@@ -252,20 +252,8 @@ impl MainView {
             ) {
                 return false;
             }
-            if state.popups.is_open("search_bar") {
-                state.popups.set_focused("search_bar", true);
-            } else if let Some(sid) = state.focused_surface_id(engine) {
-                state.search.surface_id = sid;
-                state.dispatch_intent(
-                    UiIntent::OpenPopup {
-                        id: "search_bar",
-                        mode: OpenPopupMode::AtTopOfScope(
-                            crate::adapters::ui::popup::PopupScope::Surface(sid),
-                        ),
-                    }
-                    .from_user_shortcut("find_open"),
-                );
-            }
+            let focused = state.focused_surface_id(engine);
+            crate::adapters::ui::search_bar::open_or_focus_for(state, focused, "find_open");
             return true;
         }
         false
