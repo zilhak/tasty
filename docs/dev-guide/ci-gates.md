@@ -24,6 +24,7 @@ CI 설정 설명은 작업 트리의 `.github/workflows/`를 기준으로 한다
 | Intent 규율 | `bash scripts/check-intent-discipline.sh` — **`mask-source` 판정기를 먼저 짓는다** | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 사유 없는 `#[allow]` (**상한 래칫**, 판정기 `mask-source` 선행) | `bash scripts/check-allow-reason.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 공용 순회를 안 거치는 직접 `read_dir` (**상한 래칫**, 판정기 `mask-source` 선행) | `bash scripts/check-shared-walk-ratchet.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
+| Core::apply 밖 구조 writer (**기준 파일 래칫**, 판정기 `strip-cfg-test`·`mask-source` 선행) | `bash scripts/check-core-writer-ratchet.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동. 범위와 한계는 [구조 writer 래칫](#구조-writer-래칫) | 등급 미정 |
 | 셸 자산 정적 검사 | `bash scripts/check-shell-assets.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동. install-shellcheck.sh로 도구를 준비한다. 추적 셸 자산을 검사하며 staged 훅은 새 파일도 확인한다. warning 이상은 실패, 도구 부재는 rc 2다. | 등급 미정 |
 | plugin 버전 bump | `bash scripts/check-plugin-version-bump.sh --range <before> <after>` | `plugin-version-check.yml` (self-hosted Linux X64) | main push · PR · 수동. 문서는 제외하되 `src/`·`lang/`·`assets/` 아래 `.md`를 포함한다. path 의존성 변경도 검사하며 패턴 순서가 중요하다. 잡이 strip-cfg-test를 먼저 빌드한다. staged 검사와 push 범위 검사는 구분한다([릴리스](release.md#플러그인-버전-비교)). | [실측] |
 | 공급망 | `cargo deny check` | `supply-chain-check.yml` | main push는 `Cargo.lock`·`deny.toml` 변경 시, main 대상 PR은 경로 필터 없이 실행한다. 매주 월 09:00 UTC와 수동 실행도 지원한다. 의존성 변경은 push에서, 새 외부 권고는 주기 실행에서 확인한다. | [실측] |
@@ -38,6 +39,9 @@ CI 설정 설명은 작업 트리의 `.github/workflows/`를 기준으로 한다
 cargo build -p tasty-doc-guards --bin mask-source
 ./target/debug/mask-source --check-fresh .
 ```
+
+구조 writer 래칫은 test 전용 코드를 지우는 `strip-cfg-test`도 함께 사용한다.
+`cargo build -p tasty-doc-guards --bin mask-source --bin strip-cfg-test`로 둘을 한 번에 빌드한다.
 
 바이너리가 없거나 소스와 맞지 않으면 먼저 다시 빌드한다. 기본 상한 검사는 이때 rc 2로
 측정을 거부한다. 다른 스크립트는 원문을 대신 셀 수 있으므로 오류·폴백 메시지를 읽는다.
@@ -660,6 +664,48 @@ spawn 시도 1회와 나머지 호출의 래치 진단을 확인한다. 정상 �
 줄면 실제 개선인지 검사 범위 누락인지 확인한 뒤 상한도 내린다. 도구 오류를 빈 결과로
 취급하지 않으며 예외 경로가 사라진 경우도 실패시킨다. 상한과 현재 검사 범위는
 각 스크립트를 따른다. 과거 조사 건수를 별도 정답으로 복제하지 않는다.
+
+### 구조 writer 래칫
+
+`check-core-writer-ratchet.sh`는 구조 상태를 `Core::apply` 밖에서 직접 바꾸는 writer를 센다.
+기준은 `scripts/core-writer-baseline.txt`의 (지표, 파일, 함수)별 개수다. 줄 번호를 키에 넣지 않으므로
+코드가 같은 함수 안에서 이동해도 기준이 유지된다. 지표는 세 가지다.
+
+- `field`: 구조 필드 직접 쓰기. Workspace의 name·subtitle·description·attach_mapping·mirror·category,
+  Pane.tabs, Tab의 name·explicit_name·layout_opt, CoreState의 workspaces·categories 벡터를 대상으로 한다.
+  대입, 인덱스 대입, 벡터 변경 메서드, `mem::replace`·`swap`·`take`의 `&mut` 인자, `set_attach_mapping`·`set_category` 호출을 센다.
+- `terminal`: `terminals.insert(` 호출.
+- `appstate`: `src/state.rs`와 `src/state/` 아래 pub·pub(crate) 함수 중 구조를 바꾸는 함수.
+  구조 하위 연산이나 위 필드 쓰기를 직접 호출하거나, 같은 모듈의 구조 함수를 이름으로 호출하는 함수가 해당한다.
+
+`Core::apply`의 구현 파일(`src/core/impl_*.rs` 중 구조 intent를 처리하는 파일과 `src/core/restore_rebuild.rs`)
+안의 쓰기는 입구 안으로 보고 세지 않는다. 나머지 `src/`는 `src/core` 안(`core`)과 밖(`outside`)으로 나눠 출력한다.
+입구 파일과 제외 목록(같은 이름의 필드를 쓰는 프리셋 저장소·importer·TerminalStore 구현)은
+`scripts/lib/core_writer_scan.py`에 있다. 목록의 경로가 사라지면 rc 2로 판정을 거부한다.
+
+종료코드는 0(기준 이하), 1(지표 합계 증가 또는 기준보다 writer가 많은 위치), 2(판정기 부재·사본 수 불일치·목록 경로 없음)다.
+합계가 줄면 통과하고 기준을 낮추라고 안내한다. 이 점에서 감소도 실패시키는 allow·직접 순회 검사와 다르다.
+writer를 Core로 옮긴 변경은 같은 커밋에서 `--write-baseline`으로 기준을 낮춘다.
+이 옵션은 어느 지표 합계라도 기준보다 크면 거절하므로 기준을 올리는 데 쓸 수 없다.
+합계가 같아도 writer가 기준에 없는 함수로 옮겨 가면 실패한다. 이동을 확인한 뒤 같은 옵션으로 기준을 다시 쓴다.
+
+test 전용 코드(`#[cfg(test)]` 범위와 test로만 선언된 파일)는 `strip-cfg-test --blank-test-only-files`로 비우고,
+주석과 문자열은 `mask-source`로 가린 사본에서 센다. 패턴이 공백과 줄바꿈을 허용하므로 rustfmt가 나눈
+`.terminals\n.insert(` 같은 체인도 잡는다. 변이 검증으로 다음을 확인했다.
+
+- Core 밖 파일에 필드 대입 한 줄을 넣으면 실패하고 위치를 출력한다.
+- 다줄 체인으로 넣어도 실패한다.
+- 같은 코드를 `#[cfg(test)]` 모듈, test로만 선언된 파일, 주석·문자열, 입구 파일에 넣으면 통과한다.
+- 구조 함수를 부르는 새 AppState pub 함수를 넣으면 실패한다. 이때 `--write-baseline`은 거절된다.
+- writer 한 줄을 지우면 통과하고 기준을 낮추라고 안내한다.
+
+한계는 다음과 같다.
+
+- 수신자 타입을 해석하지 않는다. 같은 이름의 다른 필드(`.name =` 등)도 세며, 제외 목록에 없는 새 파일에서 생기면 거짓 실패가 난다. 이때는 기준을 올리지 말고 제외 목록에 사유와 함께 추가한다.
+- 입구 판정은 파일 단위다. 입구 파일 안의 함수가 `Core::apply` 밖에서 호출되는 경우(`apply_create_workspace_inner` 등)도 입구 안으로 센다.
+- 가변 참조를 얻은 뒤 다른 이름으로 쓰는 경우, 트레이트 객체나 매크로를 거치는 경우, 위 목록 밖 필드와 하위 연산(pane 트리 분할 등)을 직접 부르는 `src/state` 밖 호출은 `field` 지표에 잡히지 않는다.
+- 선택 필드(focused_pane·active_tab·focused_surface), split ratio, standalone PTY와 자식 terminal 관계는 대상이 아니다.
+- 합계가 기준보다 줄어든 상태에서는 그 차이만큼 기존 위치에 writer를 다시 넣어도 통과한다. 기준을 낮추는 것으로 이 여유를 없앤다.
 
 <a id="무엇을-돌릴지-고를-때--무엇을-고쳤나-가-아니라-고친-것을-무엇이-보나"></a>
 <a id="동결-중에-잴-수-있는-것--낡은-바이너리가-현재-트리를-판정한다"></a>

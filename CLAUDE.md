@@ -124,7 +124,7 @@ Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 62 개 — 그중 `
 | 파일 크기·예외 총합 | `bash scripts/check-file-size.sh`와 `bash scripts/check-frozen-sum-ratchet.sh` |
 
 셸 검사는 `check-intent-discipline.sh`, `check-allow-reason.sh`,
-`check-shared-walk-ratchet.sh`, `check-shell-assets.sh`를 사용한다.
+`check-shared-walk-ratchet.sh`, `check-core-writer-ratchet.sh`, `check-shell-assets.sh`를 사용한다.
 필요한 보조 도구가 없거나 오래됐으면 먼저 준비한다. 실제 위반인지 확인하기 전에
 상한이나 예외를 바꿔 검사를 통과시키지 않는다.
 
