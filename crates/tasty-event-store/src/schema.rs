@@ -164,8 +164,23 @@ pub(crate) fn migrate(conn: &mut Connection) -> StoreResult<()> {
     Ok(())
 }
 
+/// 빈 DB이거나 버전 표가 있는 journal인지 확인한다. 다른 SQLite 파일은 읽기만 하고 거절한다.
+/// 잘못된 경로로 받은 기존 DB를 journal로 바꾸지 않기 위해서다.
+pub(crate) fn ensure_journal_or_empty(conn: &Connection) -> StoreResult<()> {
+    let (objects, has_versions): (i64, bool) = conn.query_row(
+        "SELECT COUNT(*), COALESCE(SUM(type = 'table' AND name = 'schema_migrations'), 0) > 0
+         FROM sqlite_master",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    if objects > 0 && !has_versions {
+        return Err(StoreError::NotAJournal);
+    }
+    Ok(())
+}
+
 /// 적용된 가장 큰 버전. 표가 비었으면 0이다.
-pub fn current_version(conn: &Connection) -> StoreResult<u32> {
+pub(crate) fn current_version(conn: &Connection) -> StoreResult<u32> {
     let version: Option<u32> = conn
         .query_row("SELECT MAX(version) FROM schema_migrations", [], |r| {
             r.get(0)

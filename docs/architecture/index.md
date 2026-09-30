@@ -115,7 +115,7 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 - effect 상태(Pending·Running·Deferred·Succeeded·Failed·Cancelled·Superseded·Uncertain)의 허용 전이, activation claim과 attempt 기록, 이전 attempt·generation의 늦은 결과 거절.
 - domain snapshot(파생 cache)과 snapshot+tail 읽기, consumer checkpoint, 불변 payload와 참조 기반 GC. 검증에 실패한 snapshot은 건너뛰고 이전 snapshot이나 전체 로그로 재구성한다.
 
-이 크레이트는 도메인 타입을 모른다. 이벤트·effect·snapshot 내용은 type tag·schema version·바이트로 저장하고 해석은 호출자의 codec이 맡는다. WAL과 `synchronous=FULL`이 실제로 적용되지 않거나 journal의 스키마 버전이 이 빌드보다 새로우면 열지 않는다. memory.db·state.db와 독립된 저장소이며 그 DB들과의 원자성은 없다.
+이 크레이트는 도메인 타입을 모른다. 이벤트·effect·snapshot 내용은 type tag·schema version·바이트로 저장하고 해석은 호출자의 codec이 맡는다. WAL과 `synchronous=FULL`이 실제로 적용되지 않거나 journal의 스키마 버전이 이 빌드보다 새로우면 열지 않는다. 비어 있지 않은데 journal 버전 표가 없는 SQLite 파일은 설정을 바꾸기 전에 거절하며 파일을 변경하지 않는다. memory.db·state.db와 독립된 저장소이며 그 DB들과의 원자성은 없다.
 
 ### UI primitive
 `tasty-egui-theme`(Theme를 egui Visuals/Style로 변환) · `tasty-ui-widgets`(본체·갤러리 공용 egui 위젯·배치 함수. [설명](ui-widgets-crate.md)) · `tasty-icons`(line/fill SVG. 본체·갤러리와 plugin 빌드가 공유) · `tasty-key-match`(바인딩과 키 이벤트 대조. 단축키·webview 공용, egui 입력은 egui-input feature, → settings/winit)

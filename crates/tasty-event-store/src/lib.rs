@@ -35,7 +35,7 @@ pub use effect::{
     ActivationClaim, AttemptRecord, EffectRecord, EffectState, EffectTransition, NewEffect,
 };
 pub use error::{StoreError, StoreResult};
-pub use schema::{SCHEMA_VERSION, current_version};
+pub use schema::SCHEMA_VERSION;
 pub use snapshot::{
     DomainSnapshot, NewSnapshot, RejectedSnapshot, Replay, SnapshotId, snapshot_holder,
 };

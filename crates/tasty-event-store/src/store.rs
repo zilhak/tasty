@@ -27,6 +27,8 @@ impl EventStore {
     pub fn open(path: &Path, journal_id: &str) -> StoreResult<Self> {
         let mut conn = Connection::open(path)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
+        // 파일을 바꾸는 설정·migration보다 먼저 journal인지 확인한다.
+        schema::ensure_journal_or_empty(&conn)?;
         schema::apply_durability(&conn)?;
         schema::migrate(&mut conn)?;
         bind_journal(&mut conn, journal_id)?;

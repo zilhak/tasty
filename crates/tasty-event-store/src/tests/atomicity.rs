@@ -1,6 +1,7 @@
 //! 원자 commit·revision 충돌·다중 stream batch 공개.
 
 use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::{
     CommitOutcome, CommitRequest, EffectState, EventStore, ExpectedRevision, PayloadRef,
@@ -215,7 +216,10 @@ fn concurrent_reader_never_sees_a_partial_batch() {
     let a = StreamId::new("engine-a");
     let b = StreamId::new("engine-b");
     let mut observations = 0;
+    // writer가 panic하거나 멈추면 무한 대기하지 않고 실패한다.
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
+        let writer_done = handle.is_finished();
         let cut = reader.current_cut().expect("cut");
         assert_eq!(
             cut.heads.get(&a),
@@ -228,10 +232,13 @@ fn concurrent_reader_never_sees_a_partial_batch() {
             assert_eq!(batch.cut.revisions.len(), 2);
         }
         observations += 1;
-        if cut.heads.get(&a) == Some(&(BATCHES as u64)) {
+        if cut.heads.get(&a) == Some(&(BATCHES as u64)) || writer_done {
             break;
         }
+        assert!(Instant::now() < deadline, "writer did not finish: {cut:?}");
     }
     handle.join().expect("writer thread");
+    let last = reader.current_cut().expect("final cut");
+    assert_eq!(last.heads.get(&a), Some(&(BATCHES as u64)));
     assert!(observations > 0);
 }

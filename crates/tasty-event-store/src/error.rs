@@ -18,6 +18,9 @@ pub enum StoreError {
         effective: String,
     },
 
+    #[error("file is a non-empty SQLite database without a journal version table")]
+    NotAJournal,
+
     #[error("journal id mismatch: requested {requested}, stored {stored}")]
     JournalMismatch { requested: String, stored: String },
 
