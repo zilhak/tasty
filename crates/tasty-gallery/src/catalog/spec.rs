@@ -1,6 +1,7 @@
 //! 갤러리의 구역·예제·설명·토큰 표를 배치하는 공용 헬퍼.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 /// 예제 영역의 레이아웃 종류.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -151,6 +152,8 @@ pub fn cluster(
 /// 왼쪽에는 치수 설명을, 오른쪽에는 사용한 토큰을 표시한다.
 /// `tokens` 가 비면 1컬럼(Layout spec)만 그린다.
 pub fn meta(ui: &mut egui::Ui, theme: &Theme, specs: &[(&str, &str)], tokens: &[TokenChip]) {
+    // 시안 `.meta`는 창 폭 900 이하에서 두 열을 한 열로 쌓는다.
+    let stacked = ui.ctx().screen_rect().width() <= META_STACK_MAX_W.value();
     body_column(ui, |ui| {
         egui::Frame::new()
             .fill(col(theme.bg_panel()))
@@ -161,57 +164,103 @@ pub fn meta(ui: &mut egui::Ui, theme: &Theme, specs: &[(&str, &str)], tokens: &[
             .corner_radius(theme.corner_radius_sm.value())
             .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))
             .show(ui, |ui| {
-                let n = if tokens.is_empty() { 1 } else { 2 };
-                ui.columns(n, |cols| {
-                    meta_head(&mut cols[0], theme, "Layout spec");
-                    for (k, v) in specs {
-                        cols[0].horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-                            ui.label(
-                                egui::RichText::new(*k)
-                                    .size(theme.font_size_term_sm.value())
-                                    .color(col(theme.text_muted())),
-                            );
-                            ui.label(
-                                egui::RichText::new(*v)
-                                    .size(theme.font_size_term_sm.value())
-                                    .color(col(theme.text_primary())),
-                            );
-                        });
-                    }
+                if tokens.is_empty() || stacked {
+                    // 시안 `.meta`는 한 열일 때도 본문 폭을 채운다.
+                    ui.set_min_width(ui.available_width());
+                    meta_specs(ui, theme, specs);
                     if !tokens.is_empty() {
-                        meta_head(&mut cols[1], theme, "Tokens used");
-                        for t in tokens {
-                            cols[1].horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                                if let Some(color) = t.color {
-                                    let sz = theme.font_size_caption.value();
-                                    let (r, _) = ui.allocate_exact_size(
-                                        egui::vec2(sz, sz),
-                                        egui::Sense::hover(),
-                                    );
-                                    ui.painter().rect_filled(
-                                        r,
-                                        theme.corner_radius_sm.value(),
-                                        color,
-                                    );
-                                }
-                                ui.label(
-                                    egui::RichText::new(t.tok)
-                                        .size(theme.font_size_caption.value())
-                                        .color(col(theme.text_secondary())),
-                                );
-                                ui.label(
-                                    egui::RichText::new(t.use_)
-                                        .size(theme.font_size_caption.value())
-                                        .color(col(theme.text_muted())),
-                                );
-                            });
-                        }
+                        ui.add_space(theme.spacing_md.value());
+                        meta_tokens(ui, theme, tokens);
                     }
-                });
+                } else {
+                    ui.columns(2, |cols| {
+                        meta_specs(&mut cols[0], theme, specs);
+                        meta_tokens(&mut cols[1], theme, tokens);
+                    });
+                }
             });
     });
+}
+
+/// 시안 `.meta`가 한 열로 쌓이는 창 폭 상한(`@media (max-width: 900px)`).
+const META_STACK_MAX_W: LogicalPx = LogicalPx(900.0);
+
+/// 시안 `.dl`처럼 키 열은 가장 긴 키의 폭, 값 열은 남은 폭이다. 긴 값은 값 열 안에서 줄바꿈한다.
+fn meta_specs(ui: &mut egui::Ui, theme: &Theme, specs: &[(&str, &str)]) {
+    meta_head(ui, theme, "Layout spec");
+    let font = egui::FontId::proportional(theme.font_size_term_sm.value());
+    let key_w = ui.fonts(|f| {
+        specs
+            .iter()
+            .map(|(k, _)| {
+                f.layout_no_wrap((*k).to_owned(), font.clone(), egui::Color32::PLACEHOLDER)
+                    .size()
+                    .x
+            })
+            .fold(0.0, f32::max)
+    });
+    let gap = theme.spacing_md.value();
+    for (k, v) in specs {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            ui.allocate_ui_with_layout(
+                egui::vec2(key_w, 0.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    // 자식 영역은 사용한 폭만 할당하므로 키 열 폭을 직접 채운다.
+                    ui.set_min_width(key_w);
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(*k)
+                                .size(theme.font_size_term_sm.value())
+                                .color(col(theme.text_muted())),
+                        )
+                        .extend(),
+                    );
+                },
+            );
+            let value_w = ui.available_width().max(0.0);
+            ui.allocate_ui_with_layout(
+                egui::vec2(value_w, 0.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(*v)
+                                .size(theme.font_size_term_sm.value())
+                                .color(col(theme.text_primary())),
+                        )
+                        .wrap(),
+                    );
+                },
+            );
+        });
+    }
+}
+
+fn meta_tokens(ui: &mut egui::Ui, theme: &Theme, tokens: &[TokenChip]) {
+    meta_head(ui, theme, "Tokens used");
+    for t in tokens {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+            if let Some(color) = t.color {
+                let sz = theme.font_size_caption.value();
+                let (r, _) = ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
+                ui.painter()
+                    .rect_filled(r, theme.corner_radius_sm.value(), color);
+            }
+            ui.label(
+                egui::RichText::new(t.tok)
+                    .size(theme.font_size_caption.value())
+                    .color(col(theme.text_secondary())),
+            );
+            ui.label(
+                egui::RichText::new(t.use_)
+                    .size(theme.font_size_caption.value())
+                    .color(col(theme.text_muted())),
+            );
+        });
+    }
 }
 
 fn meta_head(ui: &mut egui::Ui, theme: &Theme, text: &str) {
