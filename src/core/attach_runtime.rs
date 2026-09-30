@@ -2895,6 +2895,7 @@ mod forward_exec_tests {
         );
         assert_eq!(
             engine
+                .runtime
                 .terminals
                 .get(new_surface_id)
                 .unwrap()
