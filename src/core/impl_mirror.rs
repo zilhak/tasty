@@ -231,6 +231,8 @@ fn build_mirror_forward_op(
                 None
             }
         }
+        // 이름은 구조가 아니라서 위 분류가 mirror 차단 대상으로 고르지 않는다.
+        D::RenameTab { .. } => None,
         _ => None,
     }
 }
@@ -364,6 +366,9 @@ impl Core {
             } => Ok(vec![Self::apply_move_tab(
                 engine, pane_id, from_index, to_index,
             )]),
+            DomainIntent::RenameTab { tab_id, name } => {
+                Self::apply_rename_tab(engine, tab_id, name)
+            }
             DomainIntent::AdoptTerminal { pane_id, pty_id } => {
                 Self::apply_adopt_terminal(engine, pane_id, pty_id)
             }

@@ -49,7 +49,7 @@ Intent::PresetApplyCancelled → handler: …pending_preset_apply = None;
 
 `Intent`는 `Ui(UiIntent)`, `Domain(DomainIntent)`와 프리셋·탭 등 개별 작업 변종을 가진다. 정의는 `src/intent.rs`, 도메인 핸들러는 `src/intent/<domain>.rs`에 있다. 큐에 넣을 때 요청 출처를 함께 전달한다.
 
-이름 변경 팝업은 workspace 이름·부제목을 `Intent::DirectRename`으로 넣는다. `src/intent/rename.rs`가 `Core::apply`로 적용한 뒤 `user_direct`를 표시한 host 이벤트를 낸다. Domain 큐의 후속 처리는 이 표시를 싣지 않는다.
+이름 변경 팝업은 workspace 이름·부제목과 탭 이름을 `Intent::DirectRename`으로 넣는다. `src/intent/rename.rs`가 `Core::apply`로 적용한 뒤 `user_direct`를 표시한 host 이벤트를 낸다. Domain 큐의 후속 처리는 이 표시를 싣지 않는다.
 
 ```rust
 pub struct DispatchedIntent { pub body: Intent, pub origin: IntentOrigin, pub trace_id: Option<String> }

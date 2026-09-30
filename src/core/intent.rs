@@ -86,6 +86,11 @@ pub(crate) enum DomainIntent {
         from_index: usize,
         to_index: usize,
     },
+    /// 사용자가 붙인 탭 이름. None이면 지우고 선택된 surface의 제목으로 돌아간다.
+    RenameTab {
+        tab_id: u32,
+        name: Option<String>,
+    },
     /// 기존 headless Terminal을 새 surface ID로 옮긴다. PTY를 다시 만들지 않고 registry에서 제거한다.
     AdoptTerminal {
         pane_id: u32,

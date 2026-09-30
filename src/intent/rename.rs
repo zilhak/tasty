@@ -14,8 +14,19 @@ use crate::state::AppState;
 )]
 #[derive(Debug, Clone)]
 pub enum DirectRename {
-    WorkspaceName { workspace_id: u32, name: String },
-    WorkspaceSubtitle { workspace_id: u32, subtitle: String },
+    WorkspaceName {
+        workspace_id: u32,
+        name: String,
+    },
+    WorkspaceSubtitle {
+        workspace_id: u32,
+        subtitle: String,
+    },
+    /// None이면 사용자 이름을 지운다.
+    TabName {
+        tab_id: u32,
+        name: Option<String>,
+    },
 }
 
 pub fn handle(
@@ -49,7 +60,35 @@ pub fn handle(
             Some(subtitle),
             &intent.origin,
         ),
+        DirectRename::TabName { tab_id, name } => {
+            rename_tab(core, state, engine, tab_id, name, &intent.origin)
+        }
     }
+}
+
+fn rename_tab(
+    core: &mut Core,
+    state: &mut AppState,
+    engine: &mut CoreState,
+    tab_id: u32,
+    name: Option<String>,
+    origin: &IntentOrigin,
+) {
+    if let Err(e) = core.apply(engine, DomainIntent::RenameTab { tab_id, name }) {
+        super::report_apply_error(state, engine, origin, "DirectRename tab", &e);
+        return;
+    }
+    let title = engine
+        .find_pane_for_tab(tab_id)
+        .and_then(|pane_id| engine.find_pane_by_id(pane_id))
+        .and_then(|pane| pane.tabs.iter().find(|t| t.id == tab_id))
+        .map(|tab| tab.display_name().to_string())
+        .unwrap_or_default();
+    state.enqueue_host_event(crate::state::PendingHostEvent::TabRenamed {
+        tab_id,
+        title,
+        user_direct: origin.is_user(),
+    });
 }
 
 fn rename_workspace(
@@ -94,6 +133,87 @@ mod tests {
         let intent = Intent::DirectRename(rename).from_user_menu("test");
         handle(&mut core, &mut state, &mut engine, &intent);
         (state, engine)
+    }
+
+    fn first_tab(engine: &CoreState) -> (u32, u32) {
+        let sid = engine.workspaces[0].all_surface_ids()[0];
+        let pane_id = engine.find_pane_for_surface(sid).expect("pane");
+        let tab = &engine.find_pane_by_id(pane_id).expect("pane").tabs[0];
+        (pane_id, tab.id)
+    }
+
+    fn tab_renamed(state: &AppState) -> Vec<(u32, String, bool)> {
+        state
+            .pending_host_events
+            .iter()
+            .filter_map(|e| match e {
+                PendingHostEvent::TabRenamed {
+                    tab_id,
+                    title,
+                    user_direct,
+                } => Some((*tab_id, title.clone(), *user_direct)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn run_tab(name: Option<&str>, mirror: bool) -> (AppState, CoreState, u32, u32) {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let mut core = crate::ipc::handler::cli_entry_tests::test_core();
+        engine.workspaces[0].mirror = mirror;
+        let (pane_id, tab_id) = first_tab(&engine);
+        let intent = Intent::DirectRename(DirectRename::TabName {
+            tab_id,
+            name: name.map(str::to_string),
+        })
+        .from_user_menu("test");
+        handle(&mut core, &mut state, &mut engine, &intent);
+        (state, engine, pane_id, tab_id)
+    }
+
+    #[test]
+    fn a_tab_name_is_applied_with_a_user_direct_event() {
+        let (state, engine, pane_id, tab_id) = run_tab(Some("T"), false);
+        let tab = &engine.find_pane_by_id(pane_id).unwrap().tabs[0];
+        assert_eq!(tab.explicit_name.as_deref(), Some("T"));
+        assert!(engine.layout_dirty.is_dirty());
+        assert_eq!(tab_renamed(&state), [(tab_id, "T".to_string(), true)]);
+    }
+
+    #[test]
+    fn clearing_a_tab_name_returns_to_the_surface_title() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let mut core = crate::ipc::handler::cli_entry_tests::test_core();
+        let (pane_id, tab_id) = first_tab(&engine);
+        engine.find_pane_by_id_mut(pane_id).unwrap().tabs[0].explicit_name = Some("OLD".into());
+        let intent = Intent::DirectRename(DirectRename::TabName { tab_id, name: None })
+            .from_user_menu("test");
+        handle(&mut core, &mut state, &mut engine, &intent);
+        let tab = &engine.find_pane_by_id(pane_id).unwrap().tabs[0];
+        assert_eq!(tab.explicit_name, None);
+        let title = tab.display_name().to_string();
+        assert_eq!(tab_renamed(&state), [(tab_id, title, true)]);
+    }
+
+    #[test]
+    fn a_mirror_tab_is_still_renamed_locally() {
+        let (state, engine, pane_id, _) = run_tab(Some("M"), true);
+        let tab = &engine.find_pane_by_id(pane_id).unwrap().tabs[0];
+        assert_eq!(tab.explicit_name.as_deref(), Some("M"));
+        assert_eq!(tab_renamed(&state).len(), 1);
+    }
+
+    #[test]
+    fn a_missing_tab_emits_no_event() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let mut core = crate::ipc::handler::cli_entry_tests::test_core();
+        let intent = Intent::DirectRename(DirectRename::TabName {
+            tab_id: 999_999,
+            name: Some("X".into()),
+        })
+        .from_user_menu("test");
+        handle(&mut core, &mut state, &mut engine, &intent);
+        assert!(tab_renamed(&state).is_empty());
     }
 
     fn renamed_events(state: &AppState) -> Vec<PendingHostEvent> {

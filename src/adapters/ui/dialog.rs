@@ -316,43 +316,23 @@ fn apply_rename_workspace_subtitle(
 
 fn apply_rename_tab_name(
     state: &mut AppState,
-    engine: &mut crate::core::CoreState,
+    engine: &crate::core::CoreState,
     tab_id: u32,
     buffer: String,
 ) {
-    let name = buffer.trim().to_string();
-    let clear = name.is_empty();
-    let Some(pane_id) = engine.find_pane_for_tab(tab_id) else {
+    if engine.find_pane_for_tab(tab_id).is_none() {
         return;
-    };
-    let mut focused: Option<u32> = None;
-    if let Some(tab) = engine
-        .find_pane_by_id_mut(pane_id)
-        .and_then(|pane| pane.tabs.iter_mut().find(|t| t.id == tab_id))
-    {
-        if clear {
-            tab.explicit_name = None;
-        } else {
-            tab.explicit_name = Some(name.clone());
-        }
-        focused = Some(tab.focused_surface);
     }
-    if let Some(focused) = focused {
-        // 사용자 이름을 지우면 현재 포커스된 surface 제목으로 돌아간다.
-        if clear {
-            engine.refresh_tab_osc_title(focused);
-        }
-        let title = engine
-            .find_pane_by_id(pane_id)
-            .and_then(|pane| pane.tabs.iter().find(|t| t.id == tab_id))
-            .map(|tab| tab.display_name().to_string())
-            .unwrap_or_default();
-        state.enqueue_host_event(crate::state::PendingHostEvent::TabRenamed {
+    // 빈 이름은 사용자 이름을 지우고 선택된 surface의 제목으로 돌아가게 한다.
+    let name = buffer.trim();
+    let name = (!name.is_empty()).then(|| name.to_string());
+    state.dispatch_intent(
+        crate::intent::Intent::DirectRename(crate::intent::rename::DirectRename::TabName {
             tab_id,
-            title,
-            user_direct: true,
-        });
-    }
+            name,
+        })
+        .from_user_menu("rename_popup"),
+    );
 }
 
 fn apply_rename_explorer_entry(
@@ -480,7 +460,7 @@ mod tests {
         // 팝업이 열린 동안 에이전트가 tab.move로 순서를 바꾼다.
         assert!(engine.find_pane_by_id_mut(pane_id).unwrap().move_tab(0, 1));
         let (target, _) = state.dialogs.rename.take().unwrap();
-        apply_rename(&mut state, &mut engine, target, "RENAMED".to_string());
+        apply_rename_and_drain(&mut state, &mut engine, target, "RENAMED");
         let tabs: Vec<_> = engine
             .find_pane_by_id(pane_id)
             .unwrap()

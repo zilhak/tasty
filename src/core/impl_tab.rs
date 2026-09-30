@@ -142,6 +142,31 @@ impl Core {
         }])
     }
 
+    /// 없는 탭이면 오류다. 이름을 지우면 선택된 surface의 OSC 제목을 다시 반영한다.
+    pub(super) fn apply_rename_tab(
+        engine: &mut crate::core::CoreState,
+        tab_id: u32,
+        name: Option<String>,
+    ) -> anyhow::Result<Vec<CoreEvent>> {
+        let clear = name.is_none();
+        let focused = engine
+            .find_pane_for_tab(tab_id)
+            .and_then(|pane_id| engine.find_pane_by_id_mut(pane_id))
+            .and_then(|pane| pane.tabs.iter_mut().find(|t| t.id == tab_id))
+            .map(|tab| {
+                tab.explicit_name = name;
+                tab.focused_surface
+            });
+        let Some(focused) = focused else {
+            anyhow::bail!("Tab id {tab_id} not found");
+        };
+        if clear {
+            engine.refresh_tab_osc_title(focused);
+        }
+        engine.mark_layout_dirty();
+        Ok(Vec::new())
+    }
+
     pub(super) fn apply_move_tab(
         engine: &mut crate::core::CoreState,
         pane_id: u32,
