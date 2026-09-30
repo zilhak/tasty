@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 
 use tasty_terminal::ScrollbackLine;
-use termwiz::cell::CellAttributes;
 
 use super::{PaneId, SplitDirection, Surface, SurfaceId, TabId, WorkspaceId};
 
@@ -13,9 +12,15 @@ pub type SnapshotFn<'a> = &'a mut dyn FnMut(&dyn Surface) -> Option<serde_json::
 /// Maximum number of closed items to keep.
 const MAX_CLOSED_ITEMS: usize = 10;
 
-/// `surface_id` → `&Terminal` 매핑 함수. 캡처 시점에 `TerminalStore` 가
-/// 참조로 들어오면 `&|id| store.get(id)` 같은 closure 로 wrapping 한다.
-pub type TerminalLookup<'a> = dyn Fn(SurfaceId) -> Option<&'a tasty_terminal::Terminal> + 'a;
+/// 닫을 때 호스트가 터미널에서 읽어 넘기는 값. model은 터미널 객체를 보지 않는다.
+pub struct TerminalCapture {
+    pub cwd: Option<PathBuf>,
+    /// 호스트가 닫기 후 디스크로 옮기기 전의 임시 복사본.
+    pub scrollback: VecDeque<ScrollbackLine>,
+}
+
+/// `surface_id` → [`TerminalCapture`]. 살아 있는 터미널이 없으면 None이다.
+pub type TerminalCaptureFn<'a> = dyn Fn(SurfaceId) -> Option<TerminalCapture> + 'a;
 
 /// 닫힌 surface의 스크롤백. 캡처 직후 Inline이고 호스트가 저장에 성공하면
 /// Persisted ID만 남긴다. 저장 실패 때는 복원을 위해 Inline을 유지한다.
@@ -32,8 +37,6 @@ pub struct ClosedSurface {
     pub cwd: Option<PathBuf>,
     /// Command to re-launch the TUI app that was running (e.g. "claude -r <session-id>").
     pub restore_command: Option<String>,
-    /// Screen content: rows of (text, attrs) cells.
-    pub screen: Vec<Vec<(String, CellAttributes)>>,
     /// Scrollback buffer. Captured `Inline`, then persisted to disk and held as
     /// a `Persisted(persist_id)` reference (see [`ClosedScrollback`]).
     pub scrollback: ClosedScrollback,
@@ -121,68 +124,40 @@ pub enum ClosedItem {
 // ── Capture functions: live model → closed snapshot ──
 
 impl ClosedSurface {
-    /// Capture a snapshot from a TerminalSurface marker + its Terminal in the store.
-    /// `terminal` 가 None 이면 empty snapshot 만.
-    pub fn from_surface_id(id: SurfaceId, terminal: Option<&tasty_terminal::Terminal>) -> Self {
-        Self::from_surface_id_with_restore(id, terminal, None)
-    }
-
-    /// Capture a snapshot with an optional restore command (e.g. "claude -r <session-id>").
-    pub fn from_surface_id_with_restore(
-        id: SurfaceId,
-        terminal: Option<&tasty_terminal::Terminal>,
-        restore_command: Option<String>,
-    ) -> Self {
-        let Some(terminal) = terminal else {
+    /// 호스트가 캡처한 값으로 snapshot을 만든다. `capture`가 None이면 빈 snapshot이다.
+    pub fn from_capture(id: SurfaceId, capture: Option<TerminalCapture>) -> Self {
+        let Some(capture) = capture else {
             return Self {
                 id,
                 cwd: None,
-                restore_command,
-                screen: Vec::new(),
+                restore_command: None,
                 scrollback: ClosedScrollback::Empty,
             };
         };
-        let lines = terminal.screen_lines();
-
-        let screen: Vec<Vec<(String, CellAttributes)>> = lines
-            .iter()
-            .map(|line| {
-                line.visible_cells()
-                    .map(|cell| (cell.str().to_string(), cell.attrs().clone()))
-                    .collect()
-            })
-            .collect();
-
-        // 호스트가 닫기 후 디스크로 옮기기 전의 임시 복사본이다.
-        // 줄마다 terminal mutex를 잠그지 않도록 한 번에 읽는다.
-        let scrollback: VecDeque<ScrollbackLine> = terminal.scrollback_lines_all().into();
-        let scrollback = if scrollback.is_empty() {
+        let scrollback = if capture.scrollback.is_empty() {
             ClosedScrollback::Empty
         } else {
-            ClosedScrollback::Inline(scrollback)
+            ClosedScrollback::Inline(capture.scrollback)
         };
-
         Self {
             id,
-            cwd: terminal.get_cwd(),
-            restore_command,
-            screen,
+            cwd: capture.cwd,
+            restore_command: None,
             scrollback,
         }
     }
 }
 
 impl ClosedSurfaceLayout {
-    /// Capture from a live SurfaceLayout. `terminal_lookup` 은 surface_id ↔ Terminal
-    /// 매핑 — 보통 `&engine.terminals` 의 wrapping closure.
+    /// Capture from a live SurfaceLayout. `terminal_lookup` 은 surface_id → 호스트가 캡처한 값.
     pub fn from_layout(
         layout: &super::SurfaceLayout,
-        terminal_lookup: &TerminalLookup<'_>,
+        terminal_lookup: &TerminalCaptureFn<'_>,
     ) -> Self {
         match layout {
             super::SurfaceLayout::Leaf(surface) => {
                 if let Some(node) = surface.as_any().downcast_ref::<super::TerminalSurface>() {
-                    ClosedSurfaceLayout::Single(ClosedSurface::from_surface_id(
+                    ClosedSurfaceLayout::Single(ClosedSurface::from_capture(
                         node.id,
                         terminal_lookup(node.id),
                     ))
@@ -192,7 +167,6 @@ impl ClosedSurfaceLayout {
                         id: surface.surface_id().unwrap_or(0),
                         cwd: None,
                         restore_command: None,
-                        screen: Vec::new(),
                         scrollback: ClosedScrollback::Empty,
                     })
                 }
@@ -214,11 +188,11 @@ impl ClosedSurfaceLayout {
 }
 
 impl ClosedPanel {
-    /// Capture from a live Tab. `terminal_lookup` 은 surface_id ↔ Terminal 매핑.
+    /// Capture from a live Tab. `terminal_lookup` 은 surface_id → 호스트가 캡처한 값.
     pub fn from_tab(
         tab: &super::tab::Tab,
         snapshot: SnapshotFn<'_>,
-        terminal_lookup: &TerminalLookup<'_>,
+        terminal_lookup: &TerminalCaptureFn<'_>,
     ) -> Option<Self> {
         if tab.is_split() {
             return Some(ClosedPanel::Tab {
@@ -235,10 +209,10 @@ impl ClosedPanel {
     pub fn from_surface(
         surface: &dyn Surface,
         snapshot: SnapshotFn<'_>,
-        terminal_lookup: &TerminalLookup<'_>,
+        terminal_lookup: &TerminalCaptureFn<'_>,
     ) -> Option<Self> {
         if let Some(node) = surface.as_any().downcast_ref::<super::TerminalSurface>() {
-            return Some(ClosedPanel::Terminal(ClosedSurface::from_surface_id(
+            return Some(ClosedPanel::Terminal(ClosedSurface::from_capture(
                 node.id,
                 terminal_lookup(node.id),
             )));
@@ -257,7 +231,7 @@ impl ClosedTab {
     pub fn from_tab(
         tab: &super::tab::Tab,
         snapshot: SnapshotFn<'_>,
-        terminal_lookup: &TerminalLookup<'_>,
+        terminal_lookup: &TerminalCaptureFn<'_>,
     ) -> Option<Self> {
         let panel = ClosedPanel::from_tab(tab, snapshot, terminal_lookup)?;
         Some(Self {
@@ -274,7 +248,7 @@ impl ClosedPane {
     pub fn from_pane(
         pane: &super::Pane,
         snapshot: SnapshotFn<'_>,
-        terminal_lookup: &TerminalLookup<'_>,
+        terminal_lookup: &TerminalCaptureFn<'_>,
     ) -> Self {
         Self {
             id: pane.id,
@@ -293,7 +267,7 @@ impl ClosedPaneNode {
     pub fn from_pane_node(
         node: &super::PaneNode,
         snapshot: SnapshotFn<'_>,
-        terminal_lookup: &TerminalLookup<'_>,
+        terminal_lookup: &TerminalCaptureFn<'_>,
     ) -> Self {
         match node {
             super::PaneNode::Leaf(pane) => {
@@ -330,7 +304,7 @@ impl ClosedItem {
         ratio: f32,
         was_first: bool,
         snapshot: SnapshotFn<'_>,
-        terminal_lookup: &TerminalLookup<'_>,
+        terminal_lookup: &TerminalCaptureFn<'_>,
     ) -> Self {
         ClosedItem::Pane {
             pane: ClosedPane::from_pane(pane, snapshot, terminal_lookup),
@@ -345,7 +319,7 @@ impl ClosedItem {
     pub fn from_workspace(
         ws: &super::Workspace,
         snapshot: SnapshotFn<'_>,
-        terminal_lookup: &TerminalLookup<'_>,
+        terminal_lookup: &TerminalCaptureFn<'_>,
     ) -> Self {
         ClosedItem::Workspace {
             id: ws.id,
@@ -652,6 +626,7 @@ impl ClosedItemStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use termwiz::cell::CellAttributes;
 
     fn line(text: &str) -> ScrollbackLine {
         ScrollbackLine::new(vec![(text.to_string(), CellAttributes::default())], false)
@@ -663,7 +638,6 @@ mod tests {
                 id,
                 cwd: None,
                 restore_command: None,
-                screen: Vec::new(),
                 scrollback,
             },
             tab_name: String::new(),
@@ -675,6 +649,33 @@ mod tests {
             ClosedItem::Surface { surface, .. } => &surface.scrollback,
             _ => panic!("expected Surface"),
         }
+    }
+
+    #[test]
+    fn from_capture_keeps_host_values_and_normalizes_empty_scrollback() {
+        let s = ClosedSurface::from_capture(
+            3,
+            Some(TerminalCapture {
+                cwd: Some(PathBuf::from("/tmp/x")),
+                scrollback: [line("a")].into(),
+            }),
+        );
+        assert_eq!(s.cwd.as_deref(), Some(std::path::Path::new("/tmp/x")));
+        assert!(matches!(&s.scrollback, ClosedScrollback::Inline(l) if l.len() == 1));
+
+        let s = ClosedSurface::from_capture(
+            4,
+            Some(TerminalCapture {
+                cwd: None,
+                scrollback: VecDeque::new(),
+            }),
+        );
+        assert!(matches!(s.scrollback, ClosedScrollback::Empty));
+
+        let s = ClosedSurface::from_capture(5, None);
+        assert_eq!(s.id, 5);
+        assert!(s.cwd.is_none());
+        assert!(matches!(s.scrollback, ClosedScrollback::Empty));
     }
 
     #[test]

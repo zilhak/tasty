@@ -237,9 +237,9 @@ impl AppState {
         // surface를 제거하기 전에 복원 사본을 완성한다.
         let split_snapshot =
             tab_name_for_snapshot.map(|tab_name| crate::model::ClosedItem::Surface {
-                surface: crate::model::closed_item::ClosedSurface::from_surface_id(
+                surface: crate::model::closed_item::ClosedSurface::from_capture(
                     surface_id,
-                    engine.terminals.get(surface_id),
+                    engine.terminals.closed_capture(surface_id),
                 ),
                 tab_name,
             });
@@ -337,9 +337,9 @@ impl AppState {
             let pane = ws.pane_layout().find_pane(loc.pane_id).unwrap();
             let tab = &pane.tabs[loc.tab_idx];
             if terminal_surface_in_tab(tab, surface_id).is_some() {
-                let snapshot = crate::model::closed_item::ClosedSurface::from_surface_id(
+                let snapshot = crate::model::closed_item::ClosedSurface::from_capture(
                     surface_id,
-                    engine.terminals.get(surface_id),
+                    engine.terminals.closed_capture(surface_id),
                 );
                 let tab_name = tab.display_name().to_string();
                 engine.push_closed_item(crate::model::ClosedItem::Surface {
@@ -383,7 +383,7 @@ impl AppState {
                     crate::model::closed_item::ClosedTab::from_tab(
                         &pane.tabs[loc.tab_idx],
                         &mut snap_fn,
-                        &|id| terminals.get(id),
+                        &|id| terminals.closed_capture(id),
                     )
                 };
                 if let Some(snapshot) = snapshot_opt {
@@ -444,7 +444,7 @@ impl AppState {
                         ratio,
                         was_first,
                         &mut snap_fn,
-                        &|id| terminals.get(id),
+                        &|id| terminals.closed_capture(id),
                     )
                 };
                 engine.push_closed_item(snapshot);

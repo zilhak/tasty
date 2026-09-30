@@ -172,9 +172,9 @@ impl Core {
                 }
             };
             if let Some(tab_name) = tab_name_opt {
-                let snapshot = crate::model::closed_item::ClosedSurface::from_surface_id(
+                let snapshot = crate::model::closed_item::ClosedSurface::from_capture(
                     surface_id,
-                    engine.terminals.get(surface_id),
+                    engine.terminals.closed_capture(surface_id),
                 );
                 engine.push_closed_item(crate::model::ClosedItem::Surface {
                     surface: snapshot,
@@ -227,7 +227,7 @@ impl Core {
                     crate::model::closed_item::ClosedTab::from_tab(
                         &pane.tabs[loc.tab_idx],
                         &mut snap_fn,
-                        &|id| terminals.get(id),
+                        &|id| terminals.closed_capture(id),
                     )
                 };
                 if let Some(snapshot) = snapshot_opt {
@@ -289,7 +289,7 @@ impl Core {
                         ratio,
                         was_first,
                         &mut snap_fn,
-                        &|id| terminals.get(id),
+                        &|id| terminals.closed_capture(id),
                     )
                 };
                 engine.push_closed_item(snapshot);
@@ -346,7 +346,9 @@ impl Core {
                     crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
                 let ws = &engine.workspaces[loc.ws_idx];
                 let terminals = &engine.terminals;
-                crate::model::ClosedItem::from_workspace(ws, &mut snap_fn, &|id| terminals.get(id))
+                crate::model::ClosedItem::from_workspace(ws, &mut snap_fn, &|id| {
+                    terminals.closed_capture(id)
+                })
             };
             close_trace::log_snapshot(t, &item, "cascade");
             let t = Instant::now();

@@ -1171,7 +1171,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine) = build_test_core();
         let (a, pane) = seed(&mut engine);
         engine.push_closed_item(crate::model::ClosedItem::Surface {
-            surface: crate::model::closed_item::ClosedSurface::from_surface_id(9999, None),
+            surface: crate::model::closed_item::ClosedSurface::from_capture(9999, None),
             tab_name: "gone".to_string(),
         });
         let before_len = engine.closed_items.len();

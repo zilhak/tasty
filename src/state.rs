@@ -763,7 +763,9 @@ impl AppState {
         let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
         let ws = &engine.workspaces[ws_idx];
         let terminals = &engine.terminals;
-        crate::model::ClosedItem::from_workspace(ws, &mut snap_fn, &|id| terminals.get(id))
+        crate::model::ClosedItem::from_workspace(ws, &mut snap_fn, &|id| {
+            terminals.closed_capture(id)
+        })
     }
 
     /// 제거 전에 모든 surface의 ID와 스크롤백 저장 ID를 수집한다.

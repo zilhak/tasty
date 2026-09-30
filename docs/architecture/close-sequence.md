@@ -104,7 +104,7 @@ tab.create / tab.close / tab.move / pane.close / surface.close 는 IPC 핸들러
 
 ```
 close 진입
- ├─ C1 snapshot            capture_workspace_snapshot — 전 surface 화면+스크롤백 캡처
+ ├─ C1 snapshot            capture_workspace_snapshot — 전 surface cwd+스크롤백 캡처
  ├─ C2 push_closed_item    restore.command 주입 + 스크롤백 디스크 write + evict
  │   ├─ C2a restore_inject       surface 마다 surface_meta sqlite 조회
  │   ├─ C2b scrollback_persist   ~/.tasty/scrollback/<id>.bin write
@@ -128,7 +128,7 @@ close_total
 
 | 마커 | 구간 | 추가 필드 |
 |------|------|-----------|
-| C1 snapshot | `capture_workspace_snapshot` / `ClosedItem::from_workspace` | `surfaces`, `lines` = 캡처된 인라인 스크롤백 라인 총합 |
+| C1 snapshot | `capture_workspace_snapshot` / `ClosedItem::from_workspace`. 터미널 값은 호스트가 `TerminalStore::closed_capture`로 읽어 넘기고 model은 `Terminal`을 받지 않는다 | `surfaces`, `lines` = 캡처된 인라인 스크롤백 라인 총합 |
 | C2 push_closed_item | `CoreState::push_closed_item` 전체 | `restore_inject_ms`(C2a) · `scrollback_persist_ms`(C2b) · `evict_ms`(C2c) |
 | C3 collect_targets | `collect_workspace_close_targets` | `surfaces` |
 | C4 ws_memory_purge | `purge_scope(Scope::Workspace)` | — |

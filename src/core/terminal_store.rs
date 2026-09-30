@@ -93,6 +93,14 @@ impl TerminalStore {
         self.terminals.get(&id)
     }
 
+    /// 닫은 항목 snapshot에 넣을 값을 읽는다.
+    pub(crate) fn closed_capture(
+        &self,
+        id: SurfaceId,
+    ) -> Option<crate::model::closed_item::TerminalCapture> {
+        self.terminals.get(&id).map(closed_capture_of)
+    }
+
     pub(crate) fn get_mut(&mut self, id: SurfaceId) -> Option<&mut Terminal> {
         self.terminals.get_mut(&id)
     }
@@ -147,5 +155,14 @@ impl TerminalStore {
             }
         }
         any_pending
+    }
+}
+
+/// 터미널에서 닫은 항목 snapshot에 넣을 값을 읽는다. 줄마다 terminal mutex를 잠그지
+/// 않도록 스크롤백은 한 번에 읽는다.
+pub(crate) fn closed_capture_of(terminal: &Terminal) -> crate::model::closed_item::TerminalCapture {
+    crate::model::closed_item::TerminalCapture {
+        cwd: terminal.get_cwd(),
+        scrollback: terminal.scrollback_lines_all().into(),
     }
 }

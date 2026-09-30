@@ -716,8 +716,10 @@ impl CoreState {
         let tab = self.find_pane_by_id(pane_id)?.tabs.get(tab_index)?;
         let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&self.surface_registry);
         let terminals = &self.terminals;
-        crate::model::closed_item::ClosedTab::from_tab(tab, &mut snap_fn, &|id| terminals.get(id))
-            .map(crate::model::ClosedItem::Tab)
+        crate::model::closed_item::ClosedTab::from_tab(tab, &mut snap_fn, &|id| {
+            terminals.closed_capture(id)
+        })
+        .map(crate::model::ClosedItem::Tab)
     }
 
     /// pane 제거 전에 분할 위치를 포함한 snapshot을 만든다. workspace의 유일한 pane이면 None이다.
@@ -740,7 +742,7 @@ impl CoreState {
             ratio,
             was_first,
             &mut snap_fn,
-            &|id| terminals.get(id),
+            &|id| terminals.closed_capture(id),
         ))
     }
 

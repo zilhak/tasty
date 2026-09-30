@@ -220,7 +220,10 @@ mod tests {
         assert!(total > 100, "스크롤백이 충분히 쌓여야 한다 (len={total})");
 
         let mut item = crate::model::ClosedItem::Surface {
-            surface: crate::model::closed_item::ClosedSurface::from_surface_id(1, Some(&t)),
+            surface: crate::model::closed_item::ClosedSurface::from_capture(
+                1,
+                Some(crate::core::terminal_store::closed_capture_of(&t)),
+            ),
             tab_name: "round-trip".to_string(),
         };
 
