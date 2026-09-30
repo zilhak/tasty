@@ -174,12 +174,65 @@ pub(crate) fn handle_notify_error<H: HostCall>(
     Ok(json!({}))
 }
 
+/// 백그라운드 대기 기록을 읽는다. 없거나 해석할 수 없으면 `None` 이다.
+fn background_wait<H: HostCall>(host: &H, target_surface: u32) -> Option<Value> {
+    let raw = host
+        .call(
+            "surface.meta.get",
+            json!({ "surface_id": target_surface, "key": crate::hook::BACKGROUND_WAIT_META_KEY }),
+        )
+        .ok()?
+        .get("value")?
+        .as_str()?
+        .to_string();
+    serde_json::from_str(&raw)
+        .inspect_err(|e| tracing::warn!("claude background wait meta is not JSON ({e}): {raw}"))
+        .ok()
+}
+
+/// 백그라운드 대기 중인 자식의 정지 알림 문구. 작업 종류와 대기 시작부터 지난 분을 적는다.
+pub(crate) fn background_wait_message(
+    tr: &Translator,
+    target_surface: u32,
+    wait: &Value,
+    now_ms: u64,
+) -> String {
+    let types: Vec<&str> = wait
+        .get("types")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    // 종류가 없으면 대기 판정에 쓴 필드 이름을 적는다.
+    let detail = if types.is_empty() {
+        "waiting_on_background_work".to_string()
+    } else {
+        types.join(", ")
+    };
+    let since_ms = wait
+        .get("since_ms")
+        .and_then(Value::as_u64)
+        .unwrap_or(now_ms);
+    let minutes = now_ms.saturating_sub(since_ms) / 60_000;
+    tr.t("claude.notify.stalled_background_wait_message")
+        .replacen("{}", &target_surface.to_string(), 1)
+        .replacen("{}", &detail, 1)
+        .replacen("{}", &minutes.to_string(), 1)
+}
+
 /// 화면의 오류 줄을 알림에 덧붙인다. 조회에 실패하면 힌트를 생략한다.
+/// 자식이 백그라운드 작업을 기다리는 중이면 대기 문구를 쓴다.
 pub(crate) fn notify_error_message<H: HostCall>(
     tr: &Translator,
     host: &H,
     target_surface: u32,
 ) -> String {
+    if let Some(wait) = background_wait(host, target_surface) {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        return background_wait_message(tr, target_surface, &wait, now_ms);
+    }
     let screen = host
         .call(
             "surface.screen_text",

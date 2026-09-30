@@ -1649,6 +1649,8 @@ mod tests {
             ) -> Result<Value, tasty_plugin_sdk::PluginError> {
                 match method {
                     "surface.screen_text" => Ok(json!({ "text": self.0 })),
+                    // 백그라운드 대기 기록이 없다.
+                    "surface.meta.get" => Ok(json!({ "value": null })),
                     other => panic!("unexpected host call: {other}"),
                 }
             }
@@ -1668,6 +1670,59 @@ mod tests {
         // 화면에 에러 줄이 없으면 힌트 없이 본문만.
         let plain = notify_error_message(&tr, &ScreenHost("all good\n"), 42);
         assert!(!plain.contains("Last error"), "{plain}");
+    }
+
+    /// 백그라운드 작업을 기다리는 자식에는 "looks stuck" 대신 대기 문구를 쓴다.
+    #[test]
+    fn notify_error_message_describes_a_background_wait() {
+        struct WaitHost(String);
+        impl HostCall for WaitHost {
+            fn call(
+                &self,
+                method: &str,
+                params: Value,
+            ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+                match method {
+                    "surface.meta.get" => {
+                        assert_eq!(params["key"], crate::hook::BACKGROUND_WAIT_META_KEY);
+                        Ok(json!({ "value": self.0 }))
+                    }
+                    other => panic!("unexpected host call: {other}"),
+                }
+            }
+        }
+        let since_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+            - 11 * 60_000;
+        let wait = json!({ "since_ms": since_ms, "tasks": 1, "types": ["shell"] }).to_string();
+        let tr = test_translator();
+        let message = notify_error_message(&tr, &WaitHost(wait.clone()), 42);
+        assert_eq!(
+            message,
+            "surface 42: waiting on background work (shell) for 11 min, with no output meanwhile"
+        );
+        let ko = notify_error_message(&test_translator_ko(), &WaitHost(wait), 42);
+        assert!(
+            ko.contains("백그라운드 작업(shell)") && ko.contains("11분째"),
+            "{ko}"
+        );
+    }
+
+    #[test]
+    fn the_background_wait_message_names_the_flag_when_no_task_types_are_known() {
+        let tr = test_translator();
+        let message = crate::notifications::background_wait_message(
+            &tr,
+            3,
+            &json!({ "since_ms": 0, "tasks": 0, "types": [] }),
+            600_000,
+        );
+        assert_eq!(
+            message,
+            "surface 3: waiting on background work (waiting_on_background_work) for 10 min, with no output meanwhile"
+        );
     }
 
     #[test]

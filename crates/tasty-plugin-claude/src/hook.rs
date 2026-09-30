@@ -26,6 +26,12 @@ pub(crate) const RESTORE_COMMAND_META_KEY: &str = "restore.command";
 /// `session-end` 가 지운다. 부모 완료 알림 문구가 읽는다.
 pub(crate) const STOP_FAILURE_META_KEY: &str = "claude-last-stop-failure";
 
+/// surface meta 키 — 자식이 백그라운드 작업을 기다리는 중일 때 그 대기의 요약(JSON:
+/// `since_ms` 대기 시작 Unix ms · `tasks` 끝나지 않은 작업 수 · `types` 작업 종류 목록).
+/// 대기 Stop 이 쓰고 턴 종료(`stop`·`stop-failure`)·새 턴·`session-end` 가 지운다.
+/// 부모 정지 알림 문구가 읽는다.
+pub(crate) const BACKGROUND_WAIT_META_KEY: &str = "claude-background-wait";
+
 /// API 에러로 턴이 끝났을 때 `claude-idle` 과 함께 쏘는 surface hook 이벤트
 /// (매니페스트 `contributes.hook_events` 에 선언).
 pub(crate) const STOP_FAILURE_EVENT: &str = "claude-stop-failure";
@@ -112,10 +118,22 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
         tracing::info!(
             "claude hook stop s{surface_id}: waiting on background work ({pending}) — main turn continues, stays active"
         );
-        let calls = [HostCall::SetState {
-            surface_id,
-            state: "active",
-        }];
+        // 정지 감시가 대기 기준과 문구를 쓰도록 대기를 기록한다.
+        let since_ms =
+            crate::error_scan::lock_scanner(scanner).mark_background_wait(surface_id, now_ms);
+        let types = background_task_types(params);
+        let calls = [
+            HostCall::SetState {
+                surface_id,
+                state: "active",
+            },
+            HostCall::MetaSet {
+                surface_id,
+                key: BACKGROUND_WAIT_META_KEY,
+                value: json!({ "since_ms": since_ms, "tasks": types.len(), "types": types })
+                    .to_string(),
+            },
+        ];
         let host_call_failures = deliver_all(host, &calls);
         return Ok(json!({
             "ok": true,
@@ -169,6 +187,9 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
     if is_new_turn_event(event) {
         reset_dedupe_if_enabled(scanner, surface_id);
     }
+    if ends_background_wait(event) {
+        crate::error_scan::lock_scanner(scanner).clear_background_wait(surface_id);
+    }
 
     // 게이트 판정은 별도 경로지만 세션 종료 시 모든 게이트의 회차 상태를 정리한다.
     if event == "session-end" {
@@ -185,6 +206,12 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
         "event": event,
         "host_call_failures": host_call_failures,
     }))
+}
+
+/// 백그라운드 대기 기록을 지우는 이벤트. 대기가 아닌 Stop 과 StopFailure 는 턴이 끝났고,
+/// 새 턴과 세션 종료 뒤에는 이전 대기가 이어지지 않는다.
+fn ends_background_wait(event: &str) -> bool {
+    is_new_turn_event(event) || matches!(event, "stop" | "stop-failure" | "session-end")
 }
 
 /// agent_id가 있는 stop-failure는 서브에이전트 오류로 처리한다.
@@ -215,6 +242,14 @@ pub(crate) fn background_work_pending(params: &Value) -> Option<String> {
             pending.join(",")
         )
     })
+}
+
+/// 대기 기록에 남길 끝나지 않은 작업의 종류. `waiting_on_background_work` 만 있으면 비어 있다.
+fn background_task_types(params: &Value) -> Vec<String> {
+    params
+        .get("background_tasks")
+        .and_then(pending_background_task_types)
+        .unwrap_or_default()
 }
 
 /// `waiting_on_background_work` 값을 읽는다. 해석할 수 없으면 `None` 이며 background_tasks 로 넘어간다.
@@ -463,6 +498,12 @@ pub(crate) fn apply_hook(
         calls.push(HostCall::MetaUnset {
             surface_id,
             key: STOP_FAILURE_META_KEY,
+        });
+    }
+    if ends_background_wait(event) {
+        calls.push(HostCall::MetaUnset {
+            surface_id,
+            key: BACKGROUND_WAIT_META_KEY,
         });
     }
     match event {
@@ -1077,13 +1118,93 @@ mod tests {
             "background_tasks": running_subagent(),
         }));
         assert_eq!(out["waiting"], "background_work");
-        assert_eq!(rig.host.methods(), vec!["terminal.set_state"]);
+        assert_eq!(
+            rig.host.methods(),
+            vec!["terminal.set_state", "surface.meta.set"]
+        );
         assert_eq!(rig.host.states(), vec!["active"]);
         assert!(
             rig.resume_attempts_kept(),
             "자동 재개 시도 기록이 남아야 한다"
         );
         assert!(rig.wall_time_open(), "wall_time 이 열려 있어야 한다");
+    }
+
+    /// 대기 Stop 은 정지 감시와 부모 알림 문구가 쓰도록 대기를 기록한다.
+    #[test]
+    fn a_waiting_stop_records_the_background_wait() {
+        let mut rig = HookRig::new();
+        rig.run(json!({
+            "event": "stop",
+            "surface": HookRig::SURFACE,
+            "background_tasks": running_subagent(),
+        }));
+        assert!(
+            crate::error_scan::lock_scanner(&rig.scanner)
+                .is_waiting_on_background_work(HookRig::SURFACE)
+        );
+        let seen = rig.host.seen.borrow();
+        let (_, set) = seen
+            .iter()
+            .find(|(m, _)| m == "surface.meta.set")
+            .expect("대기 meta");
+        assert_eq!(set["key"], BACKGROUND_WAIT_META_KEY);
+        let value: Value = serde_json::from_str(set["value"].as_str().unwrap()).unwrap();
+        assert_eq!(value["tasks"], 1);
+        assert_eq!(value["types"], json!(["subagent"]));
+        assert!(value["since_ms"].as_u64().is_some_and(|ms| ms > 0));
+    }
+
+    /// 대기 기록은 턴 종료·새 턴·세션 종료에서 지운다. 서브에이전트 종료와 알림은 지우지 않는다.
+    #[test]
+    fn the_background_wait_record_is_cleared_by_turn_end_new_turn_and_session_end() {
+        let clears = [
+            json!({ "event": "stop", "background_tasks": [] }),
+            json!({ "event": "stop-failure", "error": "overloaded" }),
+            json!({ "event": "prompt-submit" }),
+            json!({ "event": "session-start", "session": "s-1" }),
+            json!({ "event": "session-end" }),
+            json!({ "event": "active" }),
+        ];
+        for mut params in clears {
+            let mut rig = HookRig::new();
+            rig.run(json!({
+                "event": "stop",
+                "surface": HookRig::SURFACE,
+                "background_tasks": running_subagent(),
+            }));
+            params["surface"] = json!(HookRig::SURFACE);
+            rig.run(params.clone());
+            assert!(
+                !crate::error_scan::lock_scanner(&rig.scanner)
+                    .is_waiting_on_background_work(HookRig::SURFACE),
+                "{params}"
+            );
+            assert!(
+                rig.host
+                    .unset_keys()
+                    .contains(&BACKGROUND_WAIT_META_KEY.to_string()),
+                "{params}"
+            );
+        }
+        for mut params in [
+            json!({ "event": "subagent-stop", "agent_id": "a1" }),
+            json!({ "event": "notification", "notification_type": "idle_prompt" }),
+        ] {
+            let mut rig = HookRig::new();
+            rig.run(json!({
+                "event": "stop",
+                "surface": HookRig::SURFACE,
+                "background_tasks": running_subagent(),
+            }));
+            params["surface"] = json!(HookRig::SURFACE);
+            rig.run(params.clone());
+            assert!(
+                crate::error_scan::lock_scanner(&rig.scanner)
+                    .is_waiting_on_background_work(HookRig::SURFACE),
+                "{params}"
+            );
+        }
     }
 
     #[test]
@@ -1139,9 +1260,9 @@ mod tests {
         assert!(rig.wall_time_open());
     }
 
-    /// 시작·종료의 호스트 호출이 모두 실패해도 열 개를 모두 시도하고 실패 횟수를 반환해야 한다.
+    /// 시작·종료의 호스트 호출이 모두 실패해도 열두 개를 모두 시도하고 실패 횟수를 반환해야 한다.
     #[test]
-    fn a_dead_surface_makes_every_host_call_fail_and_the_count_is_ten() {
+    fn a_dead_surface_makes_every_host_call_fail_and_the_count_is_twelve() {
         let tr = test_translator();
         let host = FlakyHost::failing_everything();
 
@@ -1149,10 +1270,10 @@ mod tests {
         let end = apply_hook("session-end", 100, None, None, None, &tr).unwrap();
         let failures = deliver_all(&host, &start) + deliver_all(&host, &end);
 
-        assert_eq!(failures, 10, "시도한 호출: {:?}", host.seen.borrow());
+        assert_eq!(failures, 12, "시도한 호출: {:?}", host.seen.borrow());
         assert_eq!(
             host.seen.borrow().len(),
-            10,
+            12,
             "실패 횟수와 시도한 호출 수가 같아야 한다"
         );
     }
@@ -1170,7 +1291,7 @@ mod tests {
         assert_eq!(failures, 0);
         assert_eq!(
             host.seen.borrow().len(),
-            10,
+            12,
             "실패가 없어도 같은 호출을 모두 시도해야 한다"
         );
     }
@@ -1187,12 +1308,12 @@ mod tests {
         let end = apply_hook("session-end", 100, None, None, None, &tr).unwrap();
         assert_eq!(
             deliver_all(&host, &end),
-            3,
-            "meta.unset 은 이 계획에 셋이다"
+            4,
+            "meta.unset 은 이 계획에 넷이다"
         );
         assert_eq!(
             host.seen.borrow().len(),
-            6,
+            7,
             "실패 뒤에도 나머지 호출을 시도해야 한다"
         );
     }
@@ -1203,6 +1324,10 @@ mod tests {
         assert_eq!(
             calls,
             vec![
+                HostCall::MetaUnset {
+                    surface_id: 100,
+                    key: BACKGROUND_WAIT_META_KEY,
+                },
                 HostCall::SetState {
                     surface_id: 100,
                     state: "idle",
@@ -1511,6 +1636,10 @@ mod tests {
                     surface_id: 100,
                     key: STOP_FAILURE_META_KEY,
                 },
+                HostCall::MetaUnset {
+                    surface_id: 100,
+                    key: BACKGROUND_WAIT_META_KEY,
+                },
                 HostCall::SetState {
                     surface_id: 100,
                     state: "idle",
@@ -1608,7 +1737,7 @@ mod tests {
     }
 
     #[test]
-    fn prompt_submit_sets_active_and_only_clears_the_stop_failure_record() {
+    fn prompt_submit_sets_active_and_clears_the_stop_failure_and_wait_records() {
         let calls = apply_hook("prompt-submit", 100, None, None, None, &test_translator()).unwrap();
         assert_eq!(
             calls,
@@ -1616,6 +1745,10 @@ mod tests {
                 HostCall::MetaUnset {
                     surface_id: 100,
                     key: STOP_FAILURE_META_KEY,
+                },
+                HostCall::MetaUnset {
+                    surface_id: 100,
+                    key: BACKGROUND_WAIT_META_KEY,
                 },
                 HostCall::SetState {
                     surface_id: 100,
@@ -1634,6 +1767,10 @@ mod tests {
                 HostCall::MetaUnset {
                     surface_id: 100,
                     key: STOP_FAILURE_META_KEY,
+                },
+                HostCall::MetaUnset {
+                    surface_id: 100,
+                    key: BACKGROUND_WAIT_META_KEY,
                 },
                 HostCall::SetState {
                     surface_id: 100,
@@ -1666,6 +1803,10 @@ mod tests {
         assert_eq!(
             calls,
             vec![
+                HostCall::MetaUnset {
+                    surface_id: 100,
+                    key: BACKGROUND_WAIT_META_KEY,
+                },
                 HostCall::SetState {
                     surface_id: 100,
                     state: "idle",
@@ -1756,6 +1897,10 @@ mod tests {
                 HostCall::MetaUnset {
                     surface_id: 100,
                     key: STOP_FAILURE_META_KEY,
+                },
+                HostCall::MetaUnset {
+                    surface_id: 100,
+                    key: BACKGROUND_WAIT_META_KEY,
                 },
                 HostCall::SetState {
                     surface_id: 100,

@@ -237,13 +237,13 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 
 | Claude Code 이벤트 | matcher | tasty hook token | `terminal.set_state` | `surface.fire_hook` | surface meta | `surface.completion` kind |
 |---|---|---|---|---|---|---|
-| `Stop` | `""`(전체) | `stop` | `idle`. 단 백그라운드 작업을 기다리는 Stop(아래)은 `active` | `claude-idle`(대기 Stop은 없음) | — | `completion`(대기 Stop은 없음) |
+| `Stop` | `""`(전체) | `stop` | `idle`. 단 백그라운드 작업을 기다리는 Stop(아래)은 `active` | `claude-idle`(대기 Stop은 없음) | 대기 Stop은 `claude-background-wait` **set**, 그 밖의 Stop은 **unset** | `completion`(대기 Stop은 없음) |
 | `SubagentStop` | `""`(전체) | `subagent-stop` | — (로그만) | — | — | — |
-| `StopFailure` | `""`(전체) | `stop-failure` | `idle` | `claude-idle` + `claude-stop-failure` | `claude-last-stop-failure` = stdin `error`(없으면 `unknown`) **set** | `completion` |
-| `SessionEnd` | `""`(전체) | `session-end` | `idle` | `claude-idle` | `claude-session-id`·`restore.command`·`claude-last-stop-failure` **unset** (프로필 meta 2키는 건드리지 않는다. 프로필 **부착 기록**에는 종료 표시만 하고 유예 뒤 회수 — 아래 "복원을 건너 프로필이 유지되는 방식") | `completion` |
+| `StopFailure` | `""`(전체) | `stop-failure` | `idle` | `claude-idle` + `claude-stop-failure` | `claude-last-stop-failure` = stdin `error`(없으면 `unknown`) **set**. `claude-background-wait` **unset** | `completion` |
+| `SessionEnd` | `""`(전체) | `session-end` | `idle` | `claude-idle` | `claude-session-id`·`restore.command`·`claude-last-stop-failure`·`claude-background-wait` **unset** (프로필 meta 2키는 건드리지 않는다. 프로필 **부착 기록**에는 종료 표시만 하고 유예 뒤 회수 — 아래 "복원을 건너 프로필이 유지되는 방식") | `completion` |
 | `Notification` | `""`(전체) | `notification` | `notification_type`별(아래 "Notification 유형별 상태"). `needs_input`·`active`·변경 없음 | `needs-input`(`needs_input` 유형만) | — | `needs_input`(`needs_input` 유형만) |
-| `UserPromptSubmit` | `""`(전체) | `prompt-submit` | `active` | — | `claude-last-stop-failure` **unset** | — |
-| `SessionStart` | `""`(전체) | `session-start` | `active` | — | `claude-last-stop-failure` **unset**. `claude-session-id` = 세션 ID, `restore.command` = `claude -r <id>` **set**(stdin JSON에 `session_id`가 없으면 건너뜀). 프로필이 부착돼 있으면 `claude -r <id> --settings "<경로>"` 로 쓰고, 복원으로 프로필 meta 가 사라졌으면 부착 기록에서 **복구**한다(아래 "복원을 건너 프로필이 유지되는 방식") | — |
+| `UserPromptSubmit` | `""`(전체) | `prompt-submit` | `active` | — | `claude-last-stop-failure`·`claude-background-wait` **unset** | — |
+| `SessionStart` | `""`(전체) | `session-start` | `active` | — | `claude-last-stop-failure`·`claude-background-wait` **unset**. `claude-session-id` = 세션 ID, `restore.command` = `claude -r <id>` **set**(stdin JSON에 `session_id`가 없으면 건너뜀). 프로필이 부착돼 있으면 `claude -r <id> --settings "<경로>"` 로 쓰고, 복원으로 프로필 meta 가 사라졌으면 부착 기록에서 **복구**한다(아래 "복원을 건너 프로필이 유지되는 방식") | — |
 | `PreToolUse` | `AskUserQuestion` | `pre-tool-use` | `needs_input` | `needs-input` | — | `needs_input` |
 | `PostToolUse` | `AskUserQuestion` | `post-tool-use` | `active` | — | — | — |
 
@@ -302,6 +302,9 @@ Meta를 먼저 쓴 뒤 이벤트를 보내며 새 턴(`prompt-submit`/`session-s
 항목은 끝나지 않은 것으로 센다. 항목의 종류(subagent·shell)는 가리지 않는다. 대기 Stop이면 상태를
 `active`로만 보고하고 `claude-idle`·`surface.completion`·telemetry `wall_time_ms`·자동 재개의
 성공 처리를 하지 않는다. 두 필드가 없거나 해석할 수 없으면 이전처럼 턴 종료로 처리한다.
+대기 Stop은 surface meta `claude-background-wait`에 대기 시작 시각(`since_ms`, Unix ms)·끝나지 않은 작업 수(`tasks`)·
+작업 종류(`types`)를 JSON으로 남긴다. 같은 대기에서 이어진 대기 Stop은 시작 시각을 유지한다. 대기가 아닌 `Stop`·`StopFailure`·
+새 턴(`UserPromptSubmit`·`SessionStart`)·`SessionEnd`가 이 meta를 지운다. 정지 알림은 이 대기를 따로 다룬다(아래 "정지 알림").
 Claude Code 2.1.283 실측 payload에는 `background_tasks`(항목 `id`·`type`·`status`·`description`·
 `agent_type` 또는 `command`)만 있고 `waiting_on_background_work`는 없었다. 공식 hooks 문서
 (2026-09-28 확인)의 `background_tasks` 항목 필드도 실측과 같은 모양이다. 문서는 `status`를 값 목록 없이
@@ -410,6 +413,15 @@ API 오류에서 실제 이벤트를 받은 실험까지 완료한 것은 아니
 | 누적 출력의 해시가 기준 시간 동안 같음 | 오류 문구가 있으면 30초, 없으면 120초. 비교 대상은 스캐너가 보관한 크기 제한 안의 누적 텍스트이며 화면 전체나 프로세스 진행 상태가 아니다. 오류 없는 120초 기준은 호스트의 `CHILD_OUTPUT_SILENCE`와 맞춘다 |
 | `terminal.state`가 `active` 또는 `stale` | `idle`·`needs_input`·`exited`는 별도 상태 훅이 다루므로 제외한다. 그 훅이나 알림이 실제 전달됐음을 확인하는 조건은 아니다. `stale`은 `confidence`와 무관하게 포함한다 |
 
+**백그라운드 작업을 기다리는 자식**(대기 Stop 뒤, 위 "백그라운드 작업을 기다리는 Stop")은 기준을 따로 둔다.
+Claude Code가 Stop payload로 알려 준 대기이므로 누적 출력이 **10분** 동안 같아야 알리고, 오류 문구 유무와 관계없이 이 기준을 쓴다.
+대기 한 번에 한 번만 알린다. 출력이 바뀌거나 쿨다운이 지나도 같은 대기에서는 다시 알리지 않는다.
+대기 기록은 플러그인 메모리에 두며 대기를 끝내는 이벤트(대기가 아닌 `Stop`·`StopFailure`·새 턴·`SessionEnd`)와 추적 해제가 지운다.
+이때 부모 로그 문구는 "looks stuck" 대신 대기 사실만 적는다.
+영어 문구는 `surface <N>: waiting on background work (<종류>) for <분> min, with no output meanwhile`이다.
+종류는 `claude-background-wait`의 `types`이며, 비어 있으면 판정에 쓴 `waiting_on_background_work`를 적는다.
+분은 `since_ms`부터 지난 시간을 버림한 값이다. 끝나지 않는 백그라운드 명령을 남긴 자식은 idle이 되지 않으므로, 이 알림이 부모가 받는 신호다.
+
 같은 정적 구간에서는 한 번만 알리고 surface별로 최소 5분 간격을 둔다. 출력이 바뀌면 정적 구간을 다시 측정한다. 새 턴 신호도 중복 기록과 정적 측정을 초기화하지만 5분 쿨다운은 유지한다. 긴 추론이나 입력 대기와 실제 멈춤은 구분하지 못할 수 있다.
 
 `StopFailure`가 상태를 idle로 바꾸면 이 정지 알림의 조건에서 빠진다. 대신 `claude-idle` 훅으로 실행된 `notify-done`이 API 오류 종류를 붙여 로그를 쓰는 경로를 사용한다. 훅 호출과 로그 쓰기가 실패하지 않았다는 보장까지 뜻하지는 않는다.
@@ -420,7 +432,7 @@ API 오류에서 실제 이벤트를 받은 실험까지 완료한 것은 아니
 
 같은 caller·target의 정지 알림을 다시 등록할 때는 같은 명령 문자열로 등록된 기존 훅을 정리한다.
 
-`notify-error`는 `surface.screen_text`에서 오류 문구를 찾아 안내를 조립한 뒤 `<parent_home>/notify/<caller_surface>.log`에 직접 추가한다. 다른 완료·상태 알림과 같은 [로그 경로](../../dev-guide/external-interaction.md#child-완료-알림--completion-log)를 사용하며 화면 조회나 기록은 실패할 수 있다.
+`notify-error`는 대상의 `claude-background-wait` meta가 있으면 위 대기 문구를 쓴다. 없으면 `surface.screen_text`에서 오류 문구를 찾아 안내를 조립한다. 어느 쪽이든 조립한 문구를 `<parent_home>/notify/<caller_surface>.log`에 직접 추가한다. 다른 완료·상태 알림과 같은 [로그 경로](../../dev-guide/external-interaction.md#child-완료-알림--completion-log)를 사용하며 화면 조회나 기록은 실패할 수 있다.
 
 ## 인터페이스
 

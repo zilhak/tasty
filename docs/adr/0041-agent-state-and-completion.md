@@ -60,6 +60,11 @@ Claude `Notification`은 `notification_type`으로 이 세션이 입력을 기�
 `active`이고, 나머지 유형은 상태를 바꾸지 않는다. 필드가 없으면 `needs_input`이다. 목록에 없는 값은
 상태를 바꾸지 않고 경고만 남긴다. 유형별 표는 [Claude 통합](../plugins/claude/index.md#notification-유형별-상태)에 있다.
 
+백그라운드 작업을 기다리는 Claude 자식의 정지 알림은 일반 정지와 구분한다. 대기 Stop이 대기를 플러그인
+메모리와 surface meta `claude-background-wait`에 기록한다. 누적 출력이 10분 동안 같으면 대기 한 번에
+한 번만 알린다. 문구는 기다리는 작업의 종류와 경과한 분만 적고, 멈췄을 가능성이나 유실된 훅을 추정하지 않는다.
+대기가 아닌 Stop, StopFailure, 새 턴, 세션 종료가 대기 기록을 지운다.
+
 부모에게 전달하는 완료·입력 대기·정지 알림은 부모 종류와 무관하게 완료 로그에 기록한다.
 부모 PTY에 사용자 메시지처럼 넣지 않으며 Codex App Server의 별도 전달 경로도 두지 않는다.
 부모가 그 로그를 읽을 수단은 따로 준비해야 한다. 로그 기록이 부모의 읽기나 다음 턴 시작을
@@ -80,7 +85,7 @@ Claude `Notification`은 `notification_type`으로 이 세션이 입력을 기�
 보수적으로 취소한다. 끝나지 않는 백그라운드 명령을 남긴 채 턴을 끝낸 Claude 자식은 idle이
 되지 않아 spawn·tell 대기 노드와 완료 알림이 오지 않는다. 대기 노드에는 제한 시간을 두어야 한다.
 Claude Code가 끝난 항목에 위 목록에 없는 `status`를 붙여 남기면 그 자식도 idle이 되지 않는다.
-Stop 게이트가 턴을 이어 가게 한 Stop은 여전히 idle로 기록된다. Claude Code가 새 입력 대기 유형을 추가하면 목록에 넣기 전까지 그 대기를 `needs_input`으로 보고하지 않는다. agent view를 연 Claude 자식은 다른 세션의 입력 대기에도, auto mode의 classifier 요금 안내에도 `needs_input`이 된다. 완료 로그는 제한된 기록이며 재시작·비우기·실패로 미독 내용이 사라질 수 있다.
+Stop 게이트가 턴을 이어 가게 한 Stop은 여전히 idle로 기록된다. Claude Code가 새 입력 대기 유형을 추가하면 목록에 넣기 전까지 그 대기를 `needs_input`으로 보고하지 않는다. agent view를 연 Claude 자식은 다른 세션의 입력 대기에도, auto mode의 classifier 요금 안내에도 `needs_input`이 된다. 백그라운드 작업을 기다리는 자식이 실제로 멈춰도 부모는 10분 뒤에야, 대기 한 번에 한 번만 알림을 받는다. 완료 로그는 제한된 기록이며 재시작·비우기·실패로 미독 내용이 사라질 수 있다.
 
 ## Alternatives Considered
 
@@ -107,6 +112,11 @@ Stop 게이트가 턴을 이어 가게 한 Stop은 여전히 idle로 기록된�
 - `agent_needs_input`을 무시하면 agent view의 다른 세션 대기나 auto mode의 classifier 요금 안내(약 6초 동안 입력이 없을 때)로
   조기 종결되지 않지만, 이 세션이 teammate 설정 질문을 하는 경우의 대기를 놓친다. payload로 세 경우를 구분할 수 없어
   `needs_input`을 유지한다.
+- 백그라운드 대기 중에 정지 알림을 끄면 부모 로그에 오해를 부르는 줄이 생기지 않는다. 하지만 끝나지 않는
+  백그라운드 명령을 남긴 자식은 idle이 되지 않으므로, 이 알림이 부모가 받는 유일한 신호다. 그래서 알림을 끄지 않고 기준과 문구를 바꾼다.
+- 호스트 상태에 대기 값을 추가하면 부모와 러너가 대기를 직접 조회할 수 있다. 하지만 상태 판정 규칙과 Codex
+  플러그인까지 바뀌는 큰 변경이라, 대기 노드의 제한 시간 정책과 함께 다시 검토한다.
+- 기존 "looks stuck" 문구를 유지하면 Claude Code가 알려 준 정상 대기를 훅 유실로 설명해 부모가 정상 대기에 개입하게 만든다.
 - 승인 화면 문구나 무출력으로 승인 대기를 추측하면 버전 변화와 장기 실행을 오판할 수 있다.
   구조화된 훅이 있는 경우 이를 사용한다.
 - 권한 우회를 기본값으로 정하거나 복원 명령에 남기면 사용자의 설정과 호출 범위를 넘을 수 있다.
@@ -154,6 +164,9 @@ Stop 게이트가 턴을 이어 가게 한 Stop은 여전히 idle로 기록된�
   테스트 `the_docs_notification_table_matches_the_effect_list`가 검사한다. 공식 문서와의 일치는 자동으로
   검사하지 않는다. 공식 hooks 문서의 Notification matcher 값 목록을 표와 대조하고, 플러그인 로그의
   `unknown notification_type` 경고를 확인한다.
+- 대기 노드의 제한 시간 정책을 정하거나, 백그라운드 대기 중 알림의 10분 기준이 너무 늦거나 이르다는 사례가 보고될 때.
+  자동 검사는 없다. 부모 완료 로그에서 `waiting on background work (…) for <분> min` 줄의 시각을 해당 자식 플러그인
+  로그의 `waiting on background work` 줄 시각과 비교한다.
 - 초안의 존재나 재시도 가능 시각을 직접 조회할 수 있거나 원치 않는 자동 재개가 보고될 때.
 
 - 완료 로그의 미독 손실·파일 수·부모 자동 수신 요구가 현재 보존 방식으로 감당되지 않을 때.

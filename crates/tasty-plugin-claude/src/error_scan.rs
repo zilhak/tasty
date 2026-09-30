@@ -44,6 +44,10 @@ const STALL_QUIET: Duration = Duration::from_secs(30);
 /// 호스트 CHILD_OUTPUT_SILENCE와 같은 값을 별도로 선언한다.
 const STALL_QUIET_NO_ERROR: Duration = Duration::from_secs(120);
 
+/// 백그라운드 작업을 기다리는 자식의 정지 알림 기준. Claude Code가 Stop payload로 알려 준
+/// 대기이므로 일반 기준보다 길게 기다리며, 대기 한 번에 한 번만 알린다.
+const STALL_QUIET_BACKGROUND_WAIT: Duration = Duration::from_secs(600);
+
 /// 같은 surface에 정지 알림을 다시 보낼 때 지킬 최소 간격.
 const STALL_NOTIFY_COOLDOWN: Duration = Duration::from_secs(300);
 
@@ -97,6 +101,16 @@ pub struct ErrorScanner {
     window: HashMap<u32, String>,
     /// surface별 마지막 정지 알림 시각.
     last_stall_notify: HashMap<u32, Instant>,
+    /// 백그라운드 작업을 기다리는 surface. 대기 Stop에서 넣고 턴 종료·새 턴·세션 종료에서 뺀다.
+    background_wait: HashMap<u32, BackgroundWait>,
+}
+
+/// 백그라운드 작업 대기 한 번의 기록.
+struct BackgroundWait {
+    /// 대기가 시작된 시각(Unix ms). 알림 문구의 경과 시간에 쓴다.
+    since_ms: u64,
+    /// 이 대기에서 정지 알림을 보냈는지.
+    notified: bool,
 }
 
 /// 누적 창의 해시 변화로 출력 변화를 추정한다. 실제 작업 진행 여부를 확정하지는 않는다.
@@ -130,9 +144,11 @@ fn trim_window(window: &mut String) {
     window.drain(..cut);
 }
 
-/// 오류 유무에 따라 정지 알림까지 기다릴 시간을 고른다.
-fn stall_threshold(saw_error: bool) -> Duration {
-    if saw_error {
+/// 백그라운드 대기 여부와 오류 유무에 따라 정지 알림까지 기다릴 시간을 고른다.
+fn stall_threshold(saw_error: bool, background_wait: bool) -> Duration {
+    if background_wait {
+        STALL_QUIET_BACKGROUND_WAIT
+    } else if saw_error {
         STALL_QUIET
     } else {
         STALL_QUIET_NO_ERROR
@@ -186,6 +202,29 @@ impl ErrorScanner {
         self.watch.remove(&surface_id);
         self.last_stall_notify.remove(&surface_id);
         self.window.remove(&surface_id);
+        self.background_wait.remove(&surface_id);
+    }
+
+    /// 대기 Stop을 기록하고 대기 시작 시각(Unix ms)을 돌려준다. 이어진 대기 Stop은 처음 기록을 유지한다.
+    pub fn mark_background_wait(&mut self, surface_id: u32, now_ms: u64) -> u64 {
+        self.background_wait
+            .entry(surface_id)
+            .or_insert(BackgroundWait {
+                since_ms: now_ms,
+                notified: false,
+            })
+            .since_ms
+    }
+
+    /// 백그라운드 대기 기록을 지운다.
+    pub fn clear_background_wait(&mut self, surface_id: u32) {
+        self.background_wait.remove(&surface_id);
+    }
+
+    /// 테스트 전용 — 대기 기록 존재 여부.
+    #[cfg(test)]
+    pub(crate) fn is_waiting_on_background_work(&self, surface_id: u32) -> bool {
+        self.background_wait.contains_key(&surface_id)
     }
 
     pub fn is_enabled(&self, surface_id: u32) -> bool {
@@ -318,8 +357,10 @@ impl ErrorScanner {
             return;
         };
         let quiet = now.saturating_duration_since(w.last_change);
-        let already_notified = w.stall_notified;
-        let threshold = stall_threshold(w.saw_error);
+        let wait = self.background_wait.get(&surface_id);
+        // 대기 한 번에 한 번만 알린다. 출력 변화로 stall_notified가 풀려도 다시 알리지 않는다.
+        let already_notified = w.stall_notified || wait.is_some_and(|b| b.notified);
+        let threshold = stall_threshold(w.saw_error, wait.is_some());
         let since_last_notify = self
             .last_stall_notify
             .get(&surface_id)
@@ -360,6 +401,9 @@ impl ErrorScanner {
         }
         if let Some(w) = self.watch.get_mut(&surface_id) {
             w.stall_notified = true;
+        }
+        if let Some(b) = self.background_wait.get_mut(&surface_id) {
+            b.notified = true;
         }
         self.last_stall_notify.insert(surface_id, now);
     }
@@ -562,8 +606,11 @@ mod tests {
 
     #[test]
     fn the_threshold_depends_on_whether_an_error_is_on_screen() {
-        assert_eq!(stall_threshold(true), STALL_QUIET);
-        assert_eq!(stall_threshold(false), STALL_QUIET_NO_ERROR);
+        assert_eq!(stall_threshold(true, false), STALL_QUIET);
+        assert_eq!(stall_threshold(false, false), STALL_QUIET_NO_ERROR);
+        // 백그라운드 대기는 오류 유무와 무관하게 대기 기준을 쓴다.
+        assert_eq!(stall_threshold(true, true), STALL_QUIET_BACKGROUND_WAIT);
+        assert_eq!(stall_threshold(false, true), STALL_QUIET_BACKGROUND_WAIT);
         assert!(
             STALL_QUIET_NO_ERROR > STALL_QUIET,
             "보강 증거가 없으면 더 길게 본다"
@@ -813,6 +860,68 @@ mod tests {
         assert_eq!(host.stalled_count(), 1, "재개 직후는 정적이 아니다");
         s.scan_one_at(&host, 1, t1 + STALL_QUIET_NO_ERROR);
         assert_eq!(host.stalled_count(), 2);
+    }
+
+    /// 백그라운드 작업을 기다리는 자식은 일반 기준(120초)에 정지 알림을 받지 않는다.
+    #[test]
+    fn a_surface_waiting_on_background_work_gets_no_notice_at_the_normal_threshold() {
+        let host = ScanHost::new("❯ \n⏵⏵ 1 shell\n", "active");
+        let mut s = ErrorScanner::new();
+        s.mark_background_wait(1, 1_000);
+        let t0 = Instant::now();
+        s.scan_one_at(&host, 1, t0);
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_NO_ERROR + Duration::from_secs(1));
+        assert_eq!(host.stalled_count(), 0);
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_BACKGROUND_WAIT);
+        assert_eq!(host.stalled_count(), 1, "대기 기준에 도달하면 한 번 알린다");
+    }
+
+    /// 대기 한 번에 한 번만 알린다. 출력이 바뀌고 쿨다운이 지나도 다시 알리지 않는다.
+    #[test]
+    fn a_background_wait_is_noticed_once() {
+        let host = ScanHost::new("❯ \n", "active");
+        let mut s = ErrorScanner::new();
+        s.mark_background_wait(1, 1_000);
+        let t0 = Instant::now();
+        s.scan_one_at(&host, 1, t0);
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_BACKGROUND_WAIT);
+        assert_eq!(host.stalled_count(), 1);
+        let t1 = t0 + STALL_QUIET_BACKGROUND_WAIT + STALL_NOTIFY_COOLDOWN;
+        host.set_text("❯ \n⏵⏵ 2 shells\n");
+        s.scan_one_at(&host, 1, t1);
+        s.scan_one_at(&host, 1, t1 + STALL_QUIET_BACKGROUND_WAIT);
+        assert_eq!(
+            host.stalled_count(),
+            1,
+            "같은 대기에서는 다시 알리지 않는다"
+        );
+        // 이어진 대기 Stop은 기록을 새로 만들지 않는다.
+        assert_eq!(s.mark_background_wait(1, 9_000), 1_000);
+        s.scan_one_at(&host, 1, t1 + STALL_QUIET_BACKGROUND_WAIT * 2);
+        assert_eq!(host.stalled_count(), 1);
+    }
+
+    /// 대기가 끝난 뒤의 조용한 턴은 다시 일반 기준으로 알린다.
+    #[test]
+    fn a_quiet_turn_after_the_wait_is_cleared_uses_the_normal_threshold() {
+        let host = ScanHost::new("thinking…\n", "active");
+        let mut s = ErrorScanner::new();
+        s.mark_background_wait(1, 1_000);
+        s.clear_background_wait(1);
+        assert!(!s.is_waiting_on_background_work(1));
+        let t0 = Instant::now();
+        s.scan_one_at(&host, 1, t0);
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_NO_ERROR);
+        assert_eq!(host.stalled_count(), 1);
+    }
+
+    #[test]
+    fn disable_clears_the_background_wait() {
+        let mut s = ErrorScanner::new();
+        s.enable(1, ScanTarget::Child);
+        s.mark_background_wait(1, 1_000);
+        s.disable(1);
+        assert!(!s.is_waiting_on_background_work(1));
     }
 
     /// 두 번의 읽기에 나뉜 오류 문자열도 누적해서 찾아야 한다.
