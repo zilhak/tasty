@@ -7,7 +7,43 @@ use std::sync::atomic::{AtomicU32, AtomicU64};
 
 use tasty_hooks::{FiredHook, HookBinding, HookEvent, HookManager};
 
+use crate::core::host_event::PendingHostEvent;
 use crate::global_hooks::{GlobalHookManager, HookCondition};
+
+/// 발화한 바인딩을 실행할 때 쓰는 IPC 주입기. 없으면 IpcSequence handler를 건너뛴다.
+pub(crate) struct HookExecutor {
+    injector: Option<tasty_ipc::host_call::HostIpcInjector>,
+}
+
+impl HookExecutor {
+    pub(crate) fn new(injector: Option<tasty_ipc::host_call::HostIpcInjector>) -> Self {
+        Self { injector }
+    }
+
+    /// 바인딩 실행을 시작만 하고 셸 작업의 완료는 기다리지 않는다.
+    fn run(&self, fired: &FiredHook, surface_id: u32) {
+        crate::hook_handler::trigger::execute_binding(
+            &fired.binding,
+            self.injector.as_ref(),
+            &fired.event,
+            &fired.received,
+            surface_id,
+        );
+    }
+}
+
+/// 자연 발생 이벤트의 HookFired event_kind. 등록 패턴이나 관측 값은 싣지 않는다.
+fn observed_kind(event: &HookEvent) -> &'static str {
+    match event {
+        HookEvent::ProcessExit => "process-exit",
+        HookEvent::OutputMatch(_) => "output-match",
+        HookEvent::Bell => "bell",
+        HookEvent::Notification => "notification",
+        HookEvent::IdleTimeout(_) => "idle-timeout",
+        HookEvent::CommandCompleted(_) => "command-completed",
+        HookEvent::Custom(_) => "custom",
+    }
+}
 
 /// surface 훅과 전역 훅의 엔진별 등록·감시 상태. ID 카운터는 다른 엔진과 공유한다.
 pub(crate) struct HookRuntimeState {
@@ -68,27 +104,170 @@ impl HookRuntimeState {
         self.global.remove(hook_id)
     }
 
-    /// 발화 판정만 한다. 바인딩 실행과 HookFired 전달은 호출자가 맡는다.
-    pub(crate) fn check_and_fire(
+    /// 관측한 이벤트에 일치한 훅의 바인딩을 실행하고 호스트에 전달할 HookFired를 돌려준다.
+    /// HookFired는 훅이 발화했다는 뜻이며 바인딩의 셸 작업이 끝났다는 뜻이 아니다.
+    pub(crate) fn fire(
         &mut self,
+        exec: &HookExecutor,
         surface_id: u32,
-        events: &[HookEvent],
-    ) -> Vec<FiredHook> {
-        self.surface.check_and_fire(surface_id, events)
+        event: HookEvent,
+    ) -> Vec<PendingHostEvent> {
+        let kind = observed_kind(&event).to_string();
+        self.fire_as(exec, surface_id, event, kind)
     }
 
-    pub(crate) fn check_idle_timeouts(
+    /// fire와 같지만 event_kind를 호출자가 정한다. 수동 발화는 요청한 이벤트 문자열을 싣는다.
+    /// CommandCompleted의 종료 코드는 작업 완료 전략이 성공·실패를 판정하도록 함께 싣는다.
+    pub(crate) fn fire_as(
         &mut self,
+        exec: &HookExecutor,
         surface_id: u32,
-        elapsed_secs: u64,
-        last_output_at: std::time::Instant,
-    ) -> Vec<FiredHook> {
-        self.surface
-            .check_idle_timeouts(surface_id, elapsed_secs, last_output_at)
+        event: HookEvent,
+        event_kind: String,
+    ) -> Vec<PendingHostEvent> {
+        let exit_code = match &event {
+            HookEvent::CommandCompleted(code) => *code,
+            _ => None,
+        };
+        let fired = self
+            .surface
+            .check_and_fire(surface_id, std::slice::from_ref(&event));
+        Self::run_fired(exec, fired, surface_id, &event_kind, exit_code)
+    }
+
+    /// 마지막 출력 뒤 경과가 기준을 넘은 IdleTimeout 훅을 발화한다.
+    /// last_output_at이 None인 surface는 터미널이 없으므로 건너뛴다.
+    pub(crate) fn fire_idle_timeouts(
+        &mut self,
+        exec: &HookExecutor,
+        last_output_at: impl Fn(u32) -> Option<std::time::Instant>,
+    ) -> Vec<PendingHostEvent> {
+        let surface_ids: std::collections::HashSet<u32> = self
+            .surface
+            .list_hooks(None)
+            .iter()
+            .filter(|h| matches!(h.event, HookEvent::IdleTimeout(_)))
+            .map(|h| h.surface_id)
+            .collect();
+        let kind = observed_kind(&HookEvent::IdleTimeout(0));
+        let mut out = Vec::new();
+        for sid in surface_ids {
+            let Some(at) = last_output_at(sid) else {
+                continue;
+            };
+            let fired = self
+                .surface
+                .check_idle_timeouts(sid, at.elapsed().as_secs(), at);
+            out.extend(Self::run_fired(exec, fired, sid, kind, None));
+        }
+        out
+    }
+
+    fn run_fired(
+        exec: &HookExecutor,
+        fired: Vec<FiredHook>,
+        surface_id: u32,
+        event_kind: &str,
+        exit_code: Option<i32>,
+    ) -> Vec<PendingHostEvent> {
+        fired
+            .iter()
+            .map(|f| {
+                exec.run(f, surface_id);
+                PendingHostEvent::HookFired {
+                    hook_id: f.hook_id,
+                    event_kind: event_kind.to_string(),
+                    surface_id,
+                    exit_code,
+                }
+            })
+            .collect()
     }
 
     /// 조건을 만족한 전역 훅의 명령을 돌려준다. 실행은 호출자가 맡는다.
     pub(crate) fn tick_global(&mut self) -> Vec<(u32, String)> {
         self.global.tick()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn runtime() -> HookRuntimeState {
+        HookRuntimeState::with_counters(Arc::new(AtomicU64::new(0)), Arc::new(AtomicU32::new(0)))
+    }
+
+    /// 등록부에 없는 handler는 실행 단계에서 로그만 남기고 건너뛰므로 셸을 띄우지 않는다.
+    fn inert() -> HookBinding {
+        HookBinding::Handler("test.missing-handler".into())
+    }
+
+    fn hook_fired(event: &PendingHostEvent) -> (u64, &str, u32, Option<i32>) {
+        match event {
+            PendingHostEvent::HookFired {
+                hook_id,
+                event_kind,
+                surface_id,
+                exit_code,
+            } => (*hook_id, event_kind.as_str(), *surface_id, *exit_code),
+            other => panic!("HookFired가 아니다: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn fire_reports_each_matching_hook_with_the_observed_kind() {
+        let mut rt = runtime();
+        let exec = HookExecutor::new(None);
+        let bell = rt.add_surface_hook(7, HookEvent::Bell, inert(), false);
+        rt.add_surface_hook(8, HookEvent::Bell, inert(), false);
+        rt.add_surface_hook(7, HookEvent::ProcessExit, inert(), false);
+
+        let fired = rt.fire(&exec, 7, HookEvent::Bell);
+
+        assert_eq!(fired.len(), 1);
+        assert_eq!(hook_fired(&fired[0]), (bell, "bell", 7, None));
+    }
+
+    #[test]
+    fn command_completed_carries_the_exit_code_and_once_hooks_fire_once() {
+        let mut rt = runtime();
+        let exec = HookExecutor::new(None);
+        let id = rt.add_surface_hook(3, HookEvent::CommandCompleted(None), inert(), true);
+
+        let first = rt.fire(&exec, 3, HookEvent::CommandCompleted(Some(2)));
+        let second = rt.fire(&exec, 3, HookEvent::CommandCompleted(Some(2)));
+
+        assert_eq!(first.len(), 1);
+        assert_eq!(hook_fired(&first[0]), (id, "command-completed", 3, Some(2)));
+        assert!(second.is_empty(), "once 훅이 다시 발화했다");
+    }
+
+    #[test]
+    fn fire_as_keeps_the_caller_kind() {
+        let mut rt = runtime();
+        let exec = HookExecutor::new(None);
+        let id = rt.add_surface_hook(1, HookEvent::Custom("x".into()), inert(), false);
+
+        let fired = rt.fire_as(&exec, 1, HookEvent::Custom("x".into()), "x".into());
+
+        assert_eq!(hook_fired(&fired[0]), (id, "x", 1, None));
+    }
+
+    #[test]
+    fn idle_timeouts_fire_once_per_output_epoch_and_skip_surfaces_without_terminal() {
+        let mut rt = runtime();
+        let exec = HookExecutor::new(None);
+        let id = rt.add_surface_hook(4, HookEvent::IdleTimeout(1), inert(), false);
+        rt.add_surface_hook(5, HookEvent::IdleTimeout(1), inert(), false);
+        let at = std::time::Instant::now() - std::time::Duration::from_secs(5);
+        let last_output = |sid: u32| (sid == 4).then_some(at);
+
+        let first = rt.fire_idle_timeouts(&exec, last_output);
+        let second = rt.fire_idle_timeouts(&exec, last_output);
+
+        assert_eq!(first.len(), 1);
+        assert_eq!(hook_fired(&first[0]), (id, "idle-timeout", 4, None));
+        assert!(second.is_empty(), "같은 출력 시각에서 다시 발화했다");
     }
 }

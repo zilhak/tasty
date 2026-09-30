@@ -390,27 +390,9 @@ impl Core {
         engine.hooks.remove_global_hook(hook_id)
     }
 
-    /// 일치한 hook의 바인딩을 실행하고 ID를 반환한다. host 이벤트를 큐에 넣는 일은 호출자가 맡는다.
-    pub(crate) fn fire_surface_hooks(
-        &mut self,
-        engine: &mut crate::core::CoreState,
-        surface_id: u32,
-        events: &[tasty_hooks::HookEvent],
-    ) -> Vec<u64> {
-        let fired = engine.hooks.check_and_fire(surface_id, events);
-        let injector = self.host_ipc_injector.get().cloned();
-        let mut ids = Vec::with_capacity(fired.len());
-        for f in &fired {
-            crate::hook_handler::trigger::execute_binding(
-                &f.binding,
-                injector.as_ref(),
-                &f.event,
-                &f.received,
-                surface_id,
-            );
-            ids.push(f.hook_id);
-        }
-        ids
+    /// 발화한 훅 바인딩의 실행기. IPC 주입기가 아직 없으면 IpcSequence handler를 건너뛴다.
+    pub(crate) fn hook_executor(&self) -> crate::hook_runtime::HookExecutor {
+        crate::hook_runtime::HookExecutor::new(self.host_ipc_injector.get().cloned())
     }
 
     pub(crate) fn request_approval(

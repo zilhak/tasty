@@ -413,24 +413,12 @@ impl App {
                 .from_system(),
             );
         }
-        let fired = engine
+        let exec = self.core.hook_executor();
+        for fired in engine
             .hooks
-            .check_and_fire(surface_id, &[tasty_hooks::HookEvent::Notification]);
-        let injector = self.core.host_ipc_injector.get().cloned();
-        for f in fired {
-            crate::hook_handler::trigger::execute_binding(
-                &f.binding,
-                injector.as_ref(),
-                &f.event,
-                &f.received,
-                surface_id,
-            );
-            state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
-                hook_id: f.hook_id,
-                event_kind: "notification".to_string(),
-                surface_id,
-                exit_code: None,
-            });
+            .fire(&exec, surface_id, tasty_hooks::HookEvent::Notification)
+        {
+            state.enqueue_host_event(fired);
         }
         if let Some(base) = dirty_main {
             base.dirty = true;
@@ -466,24 +454,12 @@ impl App {
                 .from_system(),
             );
         }
-        let fired = engine
+        let exec = self.core.hook_executor();
+        for fired in engine
             .hooks
-            .check_and_fire(surface_id, &[tasty_hooks::HookEvent::Bell]);
-        let injector = self.core.host_ipc_injector.get().cloned();
-        for f in fired {
-            crate::hook_handler::trigger::execute_binding(
-                &f.binding,
-                injector.as_ref(),
-                &f.event,
-                &f.received,
-                surface_id,
-            );
-            state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
-                hook_id: f.hook_id,
-                event_kind: "bell".to_string(),
-                surface_id,
-                exit_code: None,
-            });
+            .fire(&exec, surface_id, tasty_hooks::HookEvent::Bell)
+        {
+            state.enqueue_host_event(fired);
         }
         if let Some(base) = dirty_main {
             base.dirty = true;
@@ -511,24 +487,12 @@ impl App {
                 (state, engine, None)
             }
         };
-        let fired = engine
+        let exec = self.core.hook_executor();
+        for fired in engine
             .hooks
-            .check_and_fire(surface_id, &[tasty_hooks::HookEvent::OutputMatch(text)]);
-        let injector = self.core.host_ipc_injector.get().cloned();
-        for f in fired {
-            crate::hook_handler::trigger::execute_binding(
-                &f.binding,
-                injector.as_ref(),
-                &f.event,
-                &f.received,
-                surface_id,
-            );
-            state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
-                hook_id: f.hook_id,
-                event_kind: "output-match".to_string(),
-                surface_id,
-                exit_code: None,
-            });
+            .fire(&exec, surface_id, tasty_hooks::HookEvent::OutputMatch(text))
+        {
+            state.enqueue_host_event(fired);
         }
         if let Some(base) = dirty_main {
             base.dirty = true;
@@ -623,26 +587,13 @@ impl App {
         );
         engine.raise_attention(surface_id, AttentionKind::Completion);
         engine.mark_layout_dirty();
-        let fired = engine.hooks.check_and_fire(
+        let exec = self.core.hook_executor();
+        for fired in engine.hooks.fire(
+            &exec,
             surface_id,
-            &[tasty_hooks::HookEvent::CommandCompleted(exit_code)],
-        );
-        let injector = self.core.host_ipc_injector.get().cloned();
-        for f in fired {
-            crate::hook_handler::trigger::execute_binding(
-                &f.binding,
-                injector.as_ref(),
-                &f.event,
-                &f.received,
-                surface_id,
-            );
-            state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
-                hook_id: f.hook_id,
-                event_kind: "command-completed".to_string(),
-                surface_id,
-                // 작업 완료 전략이 성공·실패를 판정할 실제 종료 코드다.
-                exit_code,
-            });
+            tasty_hooks::HookEvent::CommandCompleted(exit_code),
+        ) {
+            state.enqueue_host_event(fired);
         }
         if let Some(base) = dirty_main {
             base.dirty = true;

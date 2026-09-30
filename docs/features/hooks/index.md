@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent (`hook.*` / `global_hook.*`)
 - **ADR**: 없음
-- **코드**: `tasty-hooks` 크레이트(`HookManager`/`HookEvent`/`HookBinding`), `hook.*`·`global_hook.*` 핸들러, 실행 연결 `src/hook_handler/trigger.rs`. IdleTimeout 조회·실행 연결: `src/core/state/idle_hooks.rs`(엔진 쿼리) + `src/app/idle_hooks.rs`(GUI 실행)/`src/boot.rs`(headless 실행). OutputMatch 라인 버퍼 공유: `src/core/output_observer.rs::ObserverRouter::dispatch_text`
+- **코드**: `tasty-hooks` 크레이트(`HookManager`/`HookEvent`/`HookBinding`), `hook.*`·`global_hook.*` 핸들러, 발화 판정·바인딩 실행·`HookFired` 생성 `HookRuntimeState::fire`(`src/hook_runtime/mod.rs`), 바인딩 실행 연결 `src/hook_handler/trigger.rs`. IdleTimeout 판정: `HookRuntimeState::fire_idle_timeouts` + `src/core/state/idle_hooks.rs`(터미널 출력 시각 제공), 전달: `src/app/idle_hooks.rs`(GUI 창과 parked engine)/`src/boot.rs`(headless). OutputMatch 라인 버퍼 공유: `src/core/output_observer.rs::ObserverRouter::dispatch_text`
 - **화면**: 없음
 
 ## 목적
@@ -69,7 +69,8 @@ surface hook 은 셸 명령 문자열 대신 **공유 훅 핸들러 레지스트
 
 - **once**는 첫 매칭 이벤트에서 한 번 실행한 뒤 등록을 제거한다. 한 번의 판정에 이벤트가 여러 개 들어와도 같은 once 등록을 다시 실행하지 않는다. 기본값인 persistent는 맞는 이벤트마다 실행한다. 검증 방법은 [guard-verification](../../dev-guide/guard-verification.md)을 따른다.
 - **비동기 실행**: 훅 동작은 백그라운드에서(메인 루프 블로킹 없음 — 셸은 자식 프로세스 스레드, `IpcSequence` 는 아래 "바인딩" 절의 실행기 스레드). 각 이벤트의 발생 surface ID 를 추적해 올바른 surface 에서 실행.
-- ProcessExit은 GUI/headless 모두에서 surface 자동 닫기까지 수행한다(surface→tab→pane→workspace 계층 정리, 마지막이면 새 셸 spawn). headless는 종료 hook의 binding을 먼저 모으고 surface를 닫은 뒤 실행한다.
+- ProcessExit은 GUI/headless 모두에서 surface 자동 닫기까지 수행한다(surface→tab→pane→workspace 계층 정리, 마지막이면 새 셸 spawn). 두 빌드 모두 공용 PTY 종료 처리(`src/app/process_exit.rs`)에서 종료 hook의 binding 실행을 시작하고 `HookFired`를 쌓은 뒤 surface를 닫는다.
+- 자연 발생 이벤트는 모두 `HookRuntimeState::fire` 한 경로로 발화해 `HookFired`를 쌓는다. GUI는 process-exit · bell · notification · output-match · idle-timeout · command-completed를, headless는 그중 process-exit · output-match · idle-timeout을 관측한다. `HookFired`는 훅이 발화했다는 뜻이며 바인딩의 셸 작업이 끝났다는 뜻이 아니다.
 - surface가 닫히면 그 surface의 once·persistent hook 등록도 제거한다. 이미 발생해 복사한 binding은 실행을 마치며, 다른 surface의 hook은 유지한다.
 
 #### 바인딩 (핸들러 참조 vs 인라인 셸)

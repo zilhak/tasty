@@ -3,25 +3,13 @@ use crate::core::{Core, CoreState};
 use crate::state::AppState;
 
 pub(crate) fn handle(core: &mut Core, state: &mut AppState, engine: &mut CoreState, surface: u32) {
-    let fired = engine
+    // 두 호스트 모두 HookFired로 작업 대기자를 깨우며 GUI는 이벤트도 방송한다.
+    let exec = core.hook_executor();
+    for fired in engine
         .hooks
-        .check_and_fire(surface, &[tasty_hooks::HookEvent::ProcessExit]);
-    let injector = core.host_ipc_injector.get().cloned();
-    for hook in fired {
-        crate::hook_handler::trigger::execute_binding(
-            &hook.binding,
-            injector.as_ref(),
-            &hook.event,
-            &hook.received,
-            surface,
-        );
-        // 두 호스트 모두 HookFired로 작업 대기자를 깨우며 GUI는 이벤트도 방송한다.
-        state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
-            hook_id: hook.hook_id,
-            event_kind: "process-exit".into(),
-            surface_id: surface,
-            exit_code: None,
-        });
+        .fire(&exec, surface, tasty_hooks::HookEvent::ProcessExit)
+    {
+        state.enqueue_host_event(fired);
     }
     #[cfg(feature = "gui")]
     state.enqueue_host_event(crate::state::PendingHostEvent::ProcessExited {

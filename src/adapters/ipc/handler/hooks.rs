@@ -270,20 +270,15 @@ pub(crate) fn handle_surface_fire_hook(
         return resp;
     }
 
-    let fired = core.fire_surface_hooks(engine, surface_id, std::slice::from_ref(&event));
+    // 수동 발화는 요청한 이벤트 문자열을 싣는다. command-completed의 종료 코드도 함께 전달해
+    // push 전략의 성공·실패를 시험할 수 있게 한다.
     let event_kind = event.to_display_string();
-    // 수동 command-completed도 종료 코드를 전달해 push 전략의 성공·실패를 시험할 수 있게 한다.
-    let exit_code = match &event {
-        HookEvent::CommandCompleted(code) => *code,
-        _ => None,
-    };
-    for hook_id in &fired {
-        window.push_host_event(crate::state::PendingHostEvent::HookFired {
-            hook_id: *hook_id,
-            event_kind: event_kind.clone(),
-            surface_id,
-            exit_code,
-        });
+    let fired = engine
+        .hooks
+        .fire_as(&core.hook_executor(), surface_id, event, event_kind);
+    let count = fired.len();
+    for event in fired {
+        window.push_host_event(event);
     }
-    JsonRpcResponse::success(id, json!({ "fired": fired.len() }))
+    JsonRpcResponse::success(id, json!({ "fired": count }))
 }

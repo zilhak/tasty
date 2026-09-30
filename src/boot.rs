@@ -258,21 +258,9 @@ fn run_due_timers(
                 engine.forward_attention(&app.stream_hub);
                 engine.forward_surface_cwd(&app.stream_hub);
                 engine.poll_global_hooks();
-                let injector = app.core.host_ipc_injector.get().cloned();
-                for (surface_id, f) in engine.poll_idle_timeout_hooks() {
-                    crate::hook_handler::trigger::execute_binding(
-                        &f.binding,
-                        injector.as_ref(),
-                        &f.event,
-                        &f.received,
-                        surface_id,
-                    );
-                    state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
-                        hook_id: f.hook_id,
-                        event_kind: "idle-timeout".to_string(),
-                        surface_id,
-                        exit_code: None,
-                    });
+                let exec = app.core.hook_executor();
+                for event in engine.fire_idle_timeout_hooks(&exec) {
+                    state.enqueue_host_event(event);
                 }
                 // 플러그인 소켓 입력이 없어도 상태 확인·재시작을 진행하는 주기 경로다.
                 headless_plugins::pump_plugins(app, state, engine);
@@ -330,8 +318,7 @@ fn handle_terminal_output(
     crate::intent::headless::drain_pending_host_events(&app.core, state, engine);
 }
 
-/// output-match 바인딩을 실행한다. PTY 종료는 호출자가 먼저 공용 process_exit 처리로 분기한다.
-/// 직접 종료 이벤트가 들어온 경우에도 닫기 전 바인딩을 모으고 닫은 뒤 실행한다.
+/// output-match 훅을 발화하고 HookFired를 큐에 넣는다. PTY 종료는 호출자가 먼저 공용 process_exit 처리로 분기한다.
 #[cfg(not(feature = "gui"))]
 fn fire_terminal_hooks(
     app: &crate::app::App,
@@ -339,30 +326,16 @@ fn fire_terminal_hooks(
     engine: &mut crate::core::CoreState,
     events: Vec<crate::core::intent::CoreEvent>,
 ) {
-    let injector = app.core.host_ipc_injector.get().cloned();
+    let exec = app.core.hook_executor();
     for event in events {
-        let (surface_id, hook_event, exited) = match event {
-            crate::core::intent::CoreEvent::TerminalOutputMatch { surface_id, text } => {
-                (surface_id, tasty_hooks::HookEvent::OutputMatch(text), false)
-            }
-            crate::core::intent::CoreEvent::TerminalProcessExited { surface_id } => {
-                (surface_id, tasty_hooks::HookEvent::ProcessExit, true)
-            }
-            _ => continue,
+        let crate::core::intent::CoreEvent::TerminalOutputMatch { surface_id, text } = event else {
+            continue;
         };
-        let fired = engine.hooks.check_and_fire(surface_id, &[hook_event]);
-        if exited {
-            // intent-exempt: headless PTY 종료 이벤트의 cascade — GUI와 같은 종료 정리 경계다.
-            state.close_surface_by_id_no_snapshot(engine, surface_id, true);
-        }
-        for f in fired {
-            crate::hook_handler::trigger::execute_binding(
-                &f.binding,
-                injector.as_ref(),
-                &f.event,
-                &f.received,
-                surface_id,
-            );
+        for fired in engine
+            .hooks
+            .fire(&exec, surface_id, tasty_hooks::HookEvent::OutputMatch(text))
+        {
+            state.enqueue_host_event(fired);
         }
     }
 }
