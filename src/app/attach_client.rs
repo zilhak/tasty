@@ -1328,6 +1328,8 @@ fn remove_mirror_workspace_from_engine(
         engine.forget_mirror_surface_attention(local);
         engine.forget_mirror_surface_cwd(local);
         engine.attach_mesh_frames.remove(local);
+        // 로컬 닫기 정리와 같이 soft 점유 등 이 surface의 점유 기록을 지운다.
+        engine.attach.forget_closed_surface(local);
     }
     engine.workspaces.remove(pos);
     state.fix_workspace_pointers_after_removal(pos, engine.workspaces.len());
@@ -1867,6 +1869,8 @@ fn merge_survivor_mapping(
             engine.forget_mirror_surface_attention(local_id);
             engine.forget_mirror_surface_cwd(local_id);
             engine.attach_mesh_frames.remove(local_id);
+            // 원격이 닫은 surface도 로컬 닫기처럼 soft 점유 등 점유 기록을 남기지 않는다.
+            engine.attach.forget_closed_surface(local_id);
         }
     }
 
@@ -4312,6 +4316,65 @@ mod tests {
         assert!(
             engine.attach_mesh_frames.get(local_10).is_none(),
             "옛(terminal 시절의 무의미한) mesh frame 캐시도 제거돼야 한다"
+        );
+    }
+
+    /// 원격이 닫은 mirror surface는 로컬 닫기처럼 attach 점유 기록도 남기지 않는다.
+    /// forwarded terminal.kill이 남긴 soft 점유가 이 경로로 사라져야 한다.
+    #[test]
+    fn merge_survivor_mapping_forgets_the_occupancy_of_a_remotely_closed_surface() {
+        let waker: crate::terminal::Waker = Arc::new(|| {});
+        let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+        let ids = engine.next_ids.clone();
+        let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
+        let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
+        let parent = engine.workspaces[0].all_surface_ids()[0];
+
+        let surfaces_v1 = vec![serde_json::json!({
+            "remote_id": 10, "role": "terminal", "cols": 80, "rows": 24,
+        })];
+        let m1 =
+            merge_survivor_mapping(&HashMap::new(), &surfaces_v1, &ids, &frame_tx, &mut engine);
+        let local_10 = m1.remote_to_local[&10];
+        engine
+            .occupy_soft(local_10, parent, None)
+            .expect("soft 점유");
+
+        let m2 = merge_survivor_mapping(&m1.remote_to_local, &[], &ids, &frame_tx, &mut engine);
+        assert!(m2.remote_to_local.is_empty());
+        assert!(
+            engine.attach.occupancy_of(local_10).is_none(),
+            "원격이 닫은 surface 의 soft 점유가 남았다"
+        );
+    }
+
+    #[test]
+    fn removing_a_mirror_workspace_forgets_the_occupancy_of_its_surfaces() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let parent = engine.workspaces[0].all_surface_ids()[0];
+        let event = crate::core::apply_create_workspace_inner(
+            &mut engine,
+            crate::core::WorkspaceCreationParams::terminal(),
+        )
+        .expect("workspace 생성");
+        let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
+            panic!("expected WorkspaceCreated");
+        };
+        engine.workspaces[index].mirror = true;
+        let ws_id = engine.workspaces[index].id;
+        let local = engine.workspaces[index].all_surface_ids()[0];
+        engine.occupy_soft(local, parent, None).expect("soft 점유");
+
+        let map = HashMap::from([(99u32, local)]);
+        assert!(remove_mirror_workspace_from_engine(
+            &mut engine,
+            &mut state,
+            ws_id,
+            &map
+        ));
+        assert!(
+            engine.attach.occupancy_of(local).is_none(),
+            "정리된 mirror surface 의 soft 점유가 남았다"
         );
     }
 

@@ -179,7 +179,7 @@ Codex에는 이 출력 스캐너가 없으므로 같은 감시가 있다고 설�
   - `tasty terminal children [--surface]` ↔ `terminal.children`
   - `tasty terminal parent --surface <child>` ↔ `terminal.parent`
   - `tasty terminal state --surface <child>` ↔ `terminal.state` — 자식 단건 상태(`idle`/`needs_input`/`active`/`stale`/`exited`) 조회. `terminal.children` 의 항목별 `state` 와 **같은 판정 헬퍼**(`CoreState::child_liveness`)를 쓰므로 목록과 단건의 답이 갈리지 않는다. 이미 registry 에서 정리된(reconcile 로 사라진) surface 도 라이브 트리와 직접 대조해 `"exited"` 로 판별한다 — `ChildTerminalRegistry::state_of` 자체의 미등록 surface `"active"` fallback 계약은 그대로 둔 채, 상위 판정 계층이 그 위에서 죽은 surface 를 걸러낸다
-  - `tasty terminal kill [--surface] --child <n>` ↔ `terminal.kill` — child surface 를 먼저 닫고, 실제로 닫혔을 때만 관계를 지우고 `killed_surface_id` 로 답한다. mirror workspace 의 child 처럼 닫기가 원격 실행 큐로 넘어가면 `{"forwarded": true, "surface_id", "child_index"}` 로 답하고 관계와 soft 점유를 남긴다. 관계는 surface 가 사라진 뒤 reconcile 이 정리한다. 닫기가 실패하면 그 오류를 돌려주고 관계·soft 점유는 그대로다
+  - `tasty terminal kill [--surface] --child <n>` ↔ `terminal.kill` — child surface 를 먼저 닫고, 실제로 닫혔을 때만 관계를 지우고 `killed_surface_id` 로 답한다. mirror workspace 의 child 처럼 닫기가 원격 실행 큐로 넘어가면 `{"forwarded": true, "surface_id", "child_index"}` 로 답하고 관계와 soft 점유를 남긴다. 원격이 surface 를 닫으면 구조 delta 반영이 soft 점유를 지우고, 관계는 그 뒤 reconcile 이 정리한다. 닫기가 실패하면 그 오류를 돌려주고 관계·soft 점유는 그대로다
   - `tasty terminal respawn [--surface] --child <n> [--cwd] [--command] [--role] [--nickname]` ↔ `terminal.respawn`
   - `tasty terminal broadcast "<text>" [--surface] [--role]` ↔ `terminal.broadcast`
   - `tasty terminal set-state --surface <child> --state <idle|needs_input|active>` ↔ `terminal.set_state` (에이전트 hook 진입점). **파생 상태(`stale`/`exited`)는 입력으로 받지 않는다** — 출력 전용이다(아래 "상태 판정")
