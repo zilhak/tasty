@@ -6,7 +6,8 @@ use std::time::Duration;
 use termwiz::cell::CellAttributes;
 use termwiz::surface::Change;
 
-use crate::{Terminal, TerminalState, WriteProgress};
+use crate::sink::{self, OutputSink, WriteProgress};
+use crate::{Terminal, TerminalState};
 
 /// PTY writer의 write_all+flush 완료를 기다리는 핸들.
 /// wait는 블로킹하므로 메인 스레드 밖에서 호출한다.
@@ -20,14 +21,14 @@ impl WriteAck {
     /// detached 터미널처럼 writer가 없거나 대기 제한 안에 완료하지 못하면 false다.
     pub fn wait(&self, timeout: Duration) -> bool {
         let (lock, cvar) = &*self.progress;
-        let guard = crate::lock_write_progress(lock);
+        let guard = sink::lock_write_progress(lock);
         if *guard >= self.target {
             return true;
         }
         resolve_wait(
             cvar.wait_timeout_while(guard, timeout, |n| *n < self.target),
-            crate::WRITE_PROGRESS_WHAT,
-            &crate::WRITE_PROGRESS_POISON_REPORTED,
+            sink::WRITE_PROGRESS_WHAT,
+            &sink::WRITE_PROGRESS_POISON_REPORTED,
         )
     }
 }
@@ -83,7 +84,7 @@ impl TerminalState {
     /// Hand bytes to the PTY writer (or the detached input sink) without
     /// classifying their origin. With neither wired, the bytes are dropped.
     fn enqueue_to_pty(&mut self, bytes: Vec<u8>) {
-        if let Some(sink) = self.input_tx.as_ref() {
+        if let Some(sink) = self.sink.as_ref() {
             if let Err(e) = sink.send(bytes) {
                 tracing::warn!("terminal input channel closed during input: {e}");
             } else {
@@ -166,7 +167,7 @@ impl Terminal {
     /// Set the input channel, typically to forward a detached mirror's input to attach.
     /// This replaces the current sender even if the terminal owns a PTY.
     pub fn set_input_sink(&mut self, sink: mpsc::Sender<Vec<u8>>) {
-        self.lock_state().input_tx = Some(sink);
+        self.lock_state().sink = Some(OutputSink::external(sink));
     }
 
     /// Plumb the host's resolved theme palette so OSC 10/11/12/4 color *queries*
@@ -186,7 +187,11 @@ impl Terminal {
         let mut state = self.lock_state();
         state.write_input(text.as_bytes().to_vec());
         WriteAck {
-            progress: state.write_progress.clone(),
+            // Without a sink no writer reports completion; a fresh counter only meets target 0.
+            progress: state
+                .sink
+                .as_ref()
+                .map_or_else(sink::new_write_progress, |s| s.progress().clone()),
             target: state.enqueued_count,
         }
     }
@@ -202,7 +207,6 @@ mod tests {
     use std::sync::{Arc, Condvar, Mutex};
 
     use super::*;
-    use crate::WriteProgress;
 
     /// Condvar 재획득에서 발생한 poison도 보고하는지 독립 플래그로 확인한다.
     #[test]
@@ -287,7 +291,7 @@ mod tests {
         let (tx, rx) = mpsc::channel::<Vec<u8>>();
         let for_writer = Arc::clone(&progress);
         let writer = std::thread::spawn(move || {
-            crate::run_writer_loop(Box::new(std::io::sink()), rx, for_writer);
+            crate::pty::run_writer_loop(Box::new(std::io::sink()), rx, for_writer);
         });
         tx.send(b"hello".to_vec())
             .expect("writer 스레드가 살아 있어야 한다");
@@ -308,7 +312,7 @@ mod tests {
             .expect("writer 스레드가 패닉 없이 끝나야 한다");
 
         assert!(
-            crate::WRITE_PROGRESS_POISON_REPORTED.load(std::sync::atomic::Ordering::Relaxed),
+            crate::sink::WRITE_PROGRESS_POISON_REPORTED.load(std::sync::atomic::Ordering::Relaxed),
             "복구했으면 한 번은 보고해야 한다 — 조용한 복구는 조용한 유실과 구분되지 않는다"
         );
     }

@@ -1,7 +1,6 @@
-//! Resize 처리 — grid 크기 변경(`TerminalState`)과 PTY 크기 알림 throttle
-//! (`Terminal` 핸들)로 분리 (docs/features/terminal/index.md#vte-에뮬레이션).
+//! Resize 처리 — grid 크기 변경(`TerminalState`)이 먼저이고, OS 크기 알림은 `Pty`에
+//! 예약한 뒤 throttle된 flush에서 적용한다 (docs/features/terminal/index.md#vte-에뮬레이션).
 
-use portable_pty::PtySize;
 use termwiz::cell::CellAttributes;
 use termwiz::surface::Change;
 
@@ -250,13 +249,13 @@ impl TerminalState {
 }
 
 impl Terminal {
-    /// Throttle interval for PTY resize notifications.
-    const PTY_RESIZE_THROTTLE: std::time::Duration = std::time::Duration::from_millis(100);
-
-    /// Resize the terminal grid and (for PTY-backed terminals) schedule a
-    /// throttled SIGWINCH notification. Lock-free no-op when the dimensions are
-    /// unchanged — the per-frame `resize_all` sweep calls this on every terminal,
-    /// so the common case must not lock a busy background terminal's state.
+    /// Resize the terminal grid, then (for PTY-backed terminals) schedule the OS
+    /// resize. The grid change and its resize-tap notification happen first; the
+    /// OS resize is applied later on the throttled flush path, so a tap is not a
+    /// confirmation that the OS accepted the size. Lock-free no-op when the
+    /// dimensions are unchanged — the per-frame `resize_all` sweep calls this on
+    /// every terminal, so the common case must not lock a busy background
+    /// terminal's state.
     pub fn resize(&mut self, cols: usize, rows: usize) {
         if self.cached_dims == (cols, rows) {
             return;
@@ -264,37 +263,15 @@ impl Terminal {
         let changed = self.lock_state().resize_grid(cols, rows);
         self.cached_dims = (cols, rows);
         // Defer PTY resize notification to avoid SIGWINCH storms during drag.
-        if changed && self.pty.is_some() {
-            self.pending_pty_resize = Some((cols, rows));
+        if changed && let Some(pty) = self.pty.as_mut() {
+            pty.schedule_resize(cols, rows);
         }
     }
 
     /// Try to flush pending PTY resize. Returns true if flushed/cleared, false if
     /// throttled (the pending resize is kept and the caller should retry later).
     pub fn flush_pty_resize(&mut self) -> bool {
-        if self.pending_pty_resize.is_none() {
-            return false;
-        }
-
-        if self.last_pty_flush.elapsed() < Self::PTY_RESIZE_THROTTLE {
-            return false; // throttled — caller should retry later
-        }
-
-        if let Some((cols, rows)) = self.pending_pty_resize.take() {
-            if let Some(pty) = self.pty.as_ref()
-                && let Some(master) = pty.pty_master.as_ref()
-                && let Err(e) = master.resize(PtySize {
-                    rows: rows as u16,
-                    cols: cols as u16,
-                    pixel_width: 0,
-                    pixel_height: 0,
-                })
-            {
-                tracing::warn!("PTY resize failed: {e}");
-            }
-            self.last_pty_flush = std::time::Instant::now();
-        }
-        true
+        self.pty.as_mut().is_some_and(|pty| pty.flush_resize())
     }
 
     /// Best-effort wake of a possibly-stalled child after an OS suspend/resume
@@ -308,13 +285,7 @@ impl Terminal {
     pub fn wake_nudge(&mut self) {
         let (cols, rows) = self.cached_dims;
         if let Some(pty) = self.pty.as_ref()
-            && let Some(master) = pty.pty_master.as_ref()
-            && let Err(e) = master.resize(PtySize {
-                rows: rows as u16,
-                cols: cols as u16,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
+            && let Err(e) = pty.apply_os_resize(cols, rows)
         {
             tracing::warn!("wake_nudge PTY resize failed: {e}");
         }
@@ -322,24 +293,15 @@ impl Terminal {
 
     /// Force flush pending PTY resize regardless of throttle.
     pub fn force_flush_pty_resize(&mut self) {
-        if let Some((cols, rows)) = self.pending_pty_resize.take() {
-            if let Some(pty) = self.pty.as_ref()
-                && let Some(master) = pty.pty_master.as_ref()
-                && let Err(e) = master.resize(PtySize {
-                    rows: rows as u16,
-                    cols: cols as u16,
-                    pixel_width: 0,
-                    pixel_height: 0,
-                })
-            {
-                tracing::warn!("PTY resize failed: {e}");
-            }
-            self.last_pty_flush = std::time::Instant::now();
+        if let Some(pty) = self.pty.as_mut() {
+            pty.force_flush_resize();
         }
     }
 
     /// Check if there is a pending PTY resize.
     pub fn has_pending_pty_resize(&self) -> bool {
-        self.pending_pty_resize.is_some()
+        self.pty
+            .as_ref()
+            .is_some_and(|pty| pty.has_pending_resize())
     }
 }

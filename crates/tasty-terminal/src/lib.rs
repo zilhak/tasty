@@ -10,9 +10,11 @@ mod mouse_report;
 mod output_buffer;
 mod port;
 mod port_impl;
+mod pty;
 mod resize;
 mod screen;
 mod scrollback;
+mod sink;
 mod snapshot;
 mod vte_handler;
 
@@ -23,13 +25,10 @@ pub mod search;
 pub mod testing;
 pub mod waker_factory;
 
-use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, mpsc};
-use std::thread;
+use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 
 use anyhow::Result;
-use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use termwiz::cell::CellAttributes;
 use termwiz::escape::csi::CSI;
 use termwiz::escape::parser::Parser;
@@ -44,21 +43,8 @@ pub use output_buffer::{
     OUTPUT_RETENTION_MAX_BYTES, OutputCursor, OutputRead, OutputReadError, OutputReadRequest,
 };
 pub use port::TerminalProcess;
+pub use pty::pty_drop_totals;
 pub use scrollback::ScrollbackLine;
-
-/// `PtyBackend::drop` 누적 소요(ns) — [`pty_drop_totals`] 참조.
-static PTY_DROP_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-/// `PtyBackend::drop` 누적 횟수 — [`pty_drop_totals`] 참조.
-static PTY_DROP_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-/// PTY Drop의 누적 시간과 횟수. 특정 종료 구간의 비용은 호출 전후 차이로 계산한다.
-pub fn pty_drop_totals() -> (std::time::Duration, u64) {
-    use std::sync::atomic::Ordering;
-    (
-        std::time::Duration::from_nanos(PTY_DROP_NANOS.load(Ordering::Relaxed)),
-        PTY_DROP_COUNT.load(Ordering::Relaxed),
-    )
-}
 
 /// Configuration for creating a new Terminal.
 pub struct TerminalConfig<'a> {
@@ -104,101 +90,6 @@ pub struct CellInfo {
     pub vertical_align: &'static str,
 }
 
-/// PTY-bearing fields, grouped so a terminal is either fully PTY-backed
-/// (`Some`) or fully detached (`None`). Detached mirror terminals own no PTY,
-/// no child process, and no reader/writer threads.
-///
-/// 파싱은 `_parser_thread` 가 수행한다(docs/features/terminal/index.md#vte-에뮬레이션). reader 스레드와 파서를 합쳐,
-/// PTY raw 바이트를 읽는 즉시 그 스레드에서 `TerminalState::ingest` 로 grid 를
-/// 갱신한다 — 메인(winit) 스레드는 파싱을 하지 않는다.
-struct PtyBackend {
-    _writer_thread: thread::JoinHandle<()>,
-    /// Drop의 계측 구간 안에서 master를 take해 해제한다. 살아 있는 동안은 Some이다.
-    pty_master: Option<Box<dyn portable_pty::MasterPty + Send>>,
-    /// 외부 exit watcher가 take_child로 가져가기 전까지 소유하는 자식.
-    /// Surface 터미널은 자식을 넘기지 않고 자체 kill/reap을 사용한다.
-    child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
-    /// PTY reader + VTE parser thread. Reads raw chunks and ingests them into the
-    /// shared `TerminalState` off the input thread.
-    _parser_thread: thread::JoinHandle<()>,
-}
-
-impl Drop for PtyBackend {
-    /// 정상 Drop에서는 자식 종료를 시도한다. Windows의 비정상 종료 처리는
-    /// Job Object에 등록된 자식에 한해 tasty_reaper가 맡는다.
-    fn drop(&mut self) {
-        // take_child로 넘긴 자식의 종료·회수는 새 소유자가 맡는다.
-        let Some(child) = self.child.as_mut() else {
-            return;
-        };
-        let t_drop = std::time::Instant::now();
-        // Unix는 SIGHUP만 보내고 대기·강제 종료·회수는 아래 스레드에 맡긴다.
-        // portable-pty kill의 동기 유예 대기를 메인 스레드에서 반복하지 않기 위해서다.
-        // Windows는 기존 kill 경로를 사용한다.
-        #[cfg(unix)]
-        let signalled_pid = child.process_id();
-        #[cfg(unix)]
-        match signalled_pid {
-            // SAFETY: kill syscall. 대상은 본 프로세스의 자식 pid 이고, 아직
-            // 회수 전(아래 reap 스레드가 회수한다)이라 pid 재사용이 일어날 수 없다.
-            Some(pid) => unsafe {
-                if libc::kill(pid as i32, libc::SIGHUP) != 0 {
-                    tracing::trace!(
-                        "pty child SIGHUP on drop failed (already exited?): {}",
-                        std::io::Error::last_os_error()
-                    );
-                }
-            },
-            // pid 를 못 얻는 예외 경로에서만 blocking kill 로 폴백한다.
-            None => {
-                if let Err(e) = child.kill() {
-                    tracing::trace!("pty child kill on drop failed (already exited?): {e}");
-                }
-            }
-        }
-        #[cfg(not(unix))]
-        if let Err(e) = child.kill() {
-            tracing::trace!("pty child kill on drop failed (already exited?): {e}");
-        }
-        // 메인 스레드 밖에서 유예 대기 후 필요하면 SIGKILL을 보내고 자식을 회수한다.
-        #[cfg(unix)]
-        if let Some(pid) = signalled_pid {
-            std::thread::spawn(move || {
-                let pid = pid as i32;
-                let mut status = 0i32;
-                for _ in 0..40 {
-                    // SAFETY: waitpid 는 본 프로세스의 자식 pid 에만 매칭된다. 이미
-                    // 다른 곳에서 회수됐으면 -1(ECHILD) 로 즉시 반환된다.
-                    match unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) } {
-                        0 => std::thread::sleep(std::time::Duration::from_millis(5)),
-                        _ => return, // >0 회수 완료, -1 이미 회수됨/자식 아님
-                    }
-                }
-                // 유예가 끝나면 SIGKILL을 보내고 회수한다. waitpid의 완료 시간은 보장하지 않는다.
-                // SAFETY: kill syscall. pid 는 아직 미회수 자식(위 waitpid 가 0 반환)
-                // 이므로 재사용될 수 없다.
-                unsafe {
-                    libc::kill(pid, libc::SIGKILL);
-                }
-                // SAFETY: waitpid syscall — 본 프로세스의 자식 pid 에만 매칭.
-                unsafe {
-                    libc::waitpid(pid, &raw mut status, 0);
-                }
-            });
-        }
-        // master 해제를 계측 구간 안으로 끌어들인다(위 필드 주석 참조).
-        drop(self.pty_master.take());
-        {
-            use std::sync::atomic::Ordering;
-            PTY_DROP_NANOS.fetch_add(
-                u64::try_from(t_drop.elapsed().as_nanos()).unwrap_or(u64::MAX),
-                Ordering::Relaxed,
-            );
-            PTY_DROP_COUNT.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-}
-
 /// A server-side subscriber to a terminal's raw PTY output.
 struct OutputTap {
     tx: mpsc::SyncSender<Vec<u8>>,
@@ -224,15 +115,12 @@ pub(crate) struct TerminalState {
     /// Whether the alternate screen is active.
     pub(crate) use_alternate: bool,
     parser: Parser,
-    /// Channel that delivers input/response bytes to the PTY writer thread (PTY
-    /// terminals) or to the attach stream (detached mirror via `set_input_sink`).
-    /// `None` until wired. Lives in the shared state because VTE responses
-    /// (DSR/DA) are emitted from the parser thread during ingest.
-    input_tx: Option<mpsc::Sender<Vec<u8>>>,
-    /// PTY flush 완료 횟수와 대기용 condvar. WriteAck가 입력의 실제 쓰기 완료를 확인한다.
-    /// detached 터미널에는 writer가 없으므로 횟수가 증가하지 않는다.
-    write_progress: WriteProgress,
-    /// input_tx에 넣은 횟수. WriteAck가 기다릴 순번을 정한다.
+    /// Current connection for input/response bytes: the local Pty writer, or the
+    /// attach stream of a detached mirror (`set_input_sink`). `None` until wired.
+    /// Lives in the shared state because VTE responses (DSR/DA/OSC queries) are
+    /// emitted during ingest.
+    sink: Option<sink::OutputSink>,
+    /// sink에 넣은 횟수. WriteAck가 기다릴 순번을 정한다.
     enqueued_count: u64,
     /// Server-side raw output subscribers. Each tap receives the exact raw PTY
     /// chunks (in apply order) so a remote mirror can replay them. Empty on a
@@ -350,27 +238,23 @@ pub(crate) struct TerminalState {
     pub(crate) charset_active_g1: bool,
 }
 
-/// PTY-backed (or detached mirror) terminal **handle**. Owns PTY I/O and the
-/// parser thread, and shares the VTE state machine ([`TerminalState`]) with that
-/// thread via `Arc<Mutex<_>>`. All grid/mode/scrollback accessors lock the shared
-/// state; the input (winit) thread never parses (docs/features/terminal/index.md#vte-에뮬레이션).
+/// Terminal handle: VT content ([`TerminalState`]) plus an optional OS PTY
+/// ([`pty::Pty`]). The two are owned separately — the state knows nothing about
+/// the PTY and reaches it only through its [`sink::OutputSink`]; the PTY knows
+/// nothing about VT and hands raw bytes to [`TerminalIngest`]. A detached mirror
+/// has no PTY and is fed via [`Terminal::feed_bytes`]. All grid/mode/scrollback
+/// accessors lock the shared state; the input (winit) thread never parses
+/// (docs/features/terminal/index.md#vte-에뮬레이션).
 pub struct Terminal {
-    /// Shared VTE state. The parser thread locks this per raw chunk to ingest;
+    /// Shared VTE state. The Pty reader worker locks this per raw chunk to ingest;
     /// the main thread locks it for render/IPC/resize/event-drain.
     state: Arc<Mutex<TerminalState>>,
-    /// PTY backend (master/child/writer-parser threads/channels). `None` for a
-    /// detached mirror terminal created via [`Terminal::new_detached`], which
-    /// reconstructs its grid from externally supplied bytes (`feed_bytes`).
-    pty: Option<PtyBackend>,
-    /// Set by the parser thread whenever it ingests a chunk; `process()` swaps it
+    /// OS PTY and child. `None` for a detached mirror created via
+    /// [`Terminal::new_detached`].
+    pty: Option<pty::Pty>,
+    /// Set by the reader worker whenever it ingests a chunk; `process()` swaps it
     /// to false and reports whether anything changed since the last poll.
     dirty: Arc<AtomicBool>,
-    /// Set by the parser thread on PTY EOF — forces a prompt alive check.
-    parser_eof: Arc<AtomicBool>,
-    /// Set once the handle no longer needs the parser thread's post-EOF wakes:
-    /// `ProcessExited` has been emitted, or the child was handed off
-    /// ([`take_child`](Self::take_child)). See the parser thread's EOF tail.
-    exit_settled: Arc<AtomicBool>,
     /// Last known grid dimensions `(cols, rows)`, mirrored on the handle so
     /// `cols()`/`rows()` and the no-op `resize()` fast path avoid locking the
     /// shared state. The per-frame `resize_all` sweep would otherwise lock every
@@ -382,23 +266,14 @@ pub struct Terminal {
     /// busy background terminal's parser lock every wake, re-serializing the input
     /// thread against parsing (docs/features/terminal/index.md#vte-에뮬레이션).
     cached_emit_events: bool,
-    /// Pending PTY resize: surface is updated immediately, but PTY notification
-    /// is throttled to avoid SIGWINCH storms during continuous window drag.
-    pending_pty_resize: Option<(usize, usize)>,
-    /// Timestamp of the last actual PTY resize flush. Used for throttling.
-    last_pty_flush: std::time::Instant,
-    /// Timestamp of the last `check_process_alive()` syscall from `process()`.
-    last_alive_check: std::time::Instant,
-    /// Whether we've already emitted a ProcessExited event.
-    process_exit_emitted: bool,
-    /// The parser thread's wake callback, held behind a mutex so it can be
+    /// The reader worker's wake callback, held behind a mutex so it can be
     /// re-targeted after construction. A headless PTY's Terminal is created with
     /// a waker targeting its pty id; when it is promoted to a real Surface
     /// (`pty.attach_surface`, docs/features/headless-pty/index.md#내부-동작-headless-valid) its
     /// store key changes to the new surface_id, so the waker must be
     /// [rewired](Terminal::rewire_waker) to that id — otherwise targeted PTY polling
     /// would keep draining the stale key and the promoted terminal would appear
-    /// frozen. `None` for a detached mirror.
+    /// frozen. A no-op callback for a detached mirror.
     waker: Arc<Mutex<Waker>>,
     /// Foreground PID that the last *observed* busy decision was made for, or
     /// [`BUSY_LATCH_NONE`]. It is the "was busy a moment ago" state of docs/design/policies/busy-indicator.md#판정--해제-두-조건--진입-조건-하나:
@@ -408,6 +283,54 @@ pub struct Terminal {
     /// never inherits the previous program's busy. Atomic so the shell-foreground
     /// release path can clear it without taking the parser lock.
     busy_latch: AtomicU64,
+}
+
+/// Receiving side of the Pty reader worker: ingests raw chunks into the shared
+/// state and wakes the host. Holds only a weak state reference so dropping the
+/// terminal stops further ingest.
+struct TerminalIngest {
+    state: Weak<Mutex<TerminalState>>,
+    dirty: Arc<AtomicBool>,
+    waker: Arc<Mutex<Waker>>,
+}
+
+impl TerminalIngest {
+    fn wake_now(&self) {
+        // Clone the current callback out from under a brief lock and invoke it
+        // after releasing, so `rewire_waker` can re-target it without racing.
+        let w = tasty_utils::poison::recover_mutex(
+            self.waker.lock(),
+            WAKER_WHAT,
+            &WAKER_POISON_REPORTED,
+        )
+        .clone();
+        w();
+    }
+}
+
+impl pty::PtyOutput for TerminalIngest {
+    fn on_bytes(&self, data: &[u8]) -> bool {
+        let Some(state) = self.state.upgrade() else {
+            return false;
+        };
+        tasty_utils::poison::recover_mutex(state.lock(), STATE_WHAT, &STATE_POISON_REPORTED)
+            .ingest(data);
+        self.dirty.store(true, Ordering::Release);
+        self.wake_now();
+        true
+    }
+
+    fn on_eof(&self) {
+        self.dirty.store(true, Ordering::Release);
+    }
+
+    fn wake(&self) {
+        self.wake_now();
+    }
+
+    fn is_attached(&self) -> bool {
+        self.state.strong_count() > 0
+    }
 }
 
 /// [`Terminal::busy_latch`] value meaning "not latched".
@@ -426,25 +349,10 @@ pub(crate) const INPUT_ECHO_WINDOW: std::time::Duration = std::time::Duration::f
 pub(crate) const CURSOR_OUTPUT_SUPPRESS_WINDOW: std::time::Duration =
     std::time::Duration::from_millis(120);
 
-/// Minimum interval between child-alive `try_wait` syscalls in `process()`.
-pub(crate) const ALIVE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
-
-/// Initial post-EOF wake interval, doubled up to ALIVE_CHECK_INTERVAL until exit is handled.
-pub(crate) const EOF_REWAKE_FIRST: std::time::Duration = std::time::Duration::from_millis(10);
-
 /// Default horizontal tab stops: a stop at column 0 and every 8th column.
 pub(crate) fn default_tab_stops(cols: usize) -> Vec<bool> {
     (0..cols).map(|c| c % 8 == 0).collect()
 }
-
-/// PTY writer 스레드가 지금까지 flush 완료한 write 개수(`Mutex<u64>`) + 대기자
-/// 깨우기용 condvar. [`io::WriteAck`] 가 폴링 없이 "이 write 가 실제로 flush
-/// 됐는지" 를 확인하는 데 쓴다.
-pub(crate) type WriteProgress = Arc<(Mutex<u64>, Condvar)>;
-
-const WRITE_PROGRESS_WHAT: &str = "the PTY write-progress counter";
-static WRITE_PROGRESS_POISON_REPORTED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
 
 /// 공유 상태 락의 poison 복구를 프로세스에서 처음 한 번 보고한다.
 pub(crate) const STATE_WHAT: &str = "the terminal state";
@@ -456,107 +364,6 @@ pub(crate) const WAKER_WHAT: &str = "the terminal render waker";
 pub(crate) static WAKER_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// writer와 WriteAck가 함께 쓰는 완료 횟수 락. poison을 복구하고 처음 한 번 보고한다.
-/// 복구 없이 갱신을 건너뛰면 PTY 쓰기가 끝나도 대기자는 완료를 확인하지 못한다.
-pub(crate) fn lock_write_progress(count: &Mutex<u64>) -> std::sync::MutexGuard<'_, u64> {
-    tasty_utils::poison::recover_mutex(
-        count.lock(),
-        WRITE_PROGRESS_WHAT,
-        &WRITE_PROGRESS_POISON_REPORTED,
-    )
-}
-
-/// PTY writer 스레드 본체 — 큐에 들어오는 write 를 순서대로 PTY 에
-/// write_all+flush 하고, 각 성공마다 `progress` 카운터를 올려 `\r` 를 별도로
-/// write 로 보내는 IPC 핸들러(`send_text_to_surface_with_ack`)가 `WriteAck` 로 실제 flush 완료를 확인할 수
-/// 있게 한다.
-pub(crate) fn run_writer_loop(
-    mut pty_writer: Box<dyn Write + Send>,
-    write_rx: mpsc::Receiver<Vec<u8>>,
-    progress: WriteProgress,
-) {
-    while let Ok(data) = write_rx.recv() {
-        if pty_writer.write_all(&data).is_err() {
-            break;
-        }
-        if pty_writer.flush().is_err() {
-            break;
-        }
-        let (count, cvar) = &*progress;
-        *lock_write_progress(count) += 1;
-        cvar.notify_all();
-    }
-}
-
-/// 자식 셸의 인자·환경변수·작업 디렉터리를 구성한다.
-fn build_shell_command(
-    shell: &str,
-    args: &[&str],
-    surface_id: u32,
-    working_dir: Option<&std::path::Path>,
-    extra_env: &[(&str, &str)],
-) -> CommandBuilder {
-    let mut cmd = CommandBuilder::new(shell);
-    // Launch as interactive login shell so .zshrc/.bashrc and themes are loaded —
-    // *unless* `args` already carries an explicit `--rcfile`-based bash startup
-    // (`GeneralSettings::effective_shell_args`): bash's `--rcfile` is
-    // silently ignored for login shells (`bash(1)`: it only applies to
-    // interactive *non-login* shells), so login mode must be dropped in that
-    // case — the args themselves append `-i` to keep the shell interactive.
-    #[cfg(not(windows))]
-    if !args.contains(&"--rcfile") {
-        cmd.arg("-li");
-    }
-    for arg in args {
-        if !arg.is_empty() {
-            cmd.arg(arg);
-        }
-    }
-    for (key, value) in extra_env {
-        cmd.env(key, value);
-    }
-    cmd.env("TERM", "xterm-256color");
-    cmd.env("TASTY_SURFACE_ID", surface_id.to_string());
-    // 자식이 부모의 데이터 경로를 찾도록 정보용 TASTY_PARENT_HOME을 전달한다.
-    // TASTY_HOME으로 주입하면 자식 Tasty의 debug/release별 경로 선택을 덮어쓰게 된다.
-    if let Some(home) = tasty_utils::path::tasty_home() {
-        cmd.env("TASTY_PARENT_HOME", &home);
-    }
-
-    // Remove CMUX_* environment variables so cmux CLI doesn't work inside tasty terminals.
-    for (key, _) in std::env::vars() {
-        if key.starts_with("CMUX_") {
-            cmd.env_remove(&key);
-        }
-    }
-
-    // Add tasty's own binary directory to PATH so `tasty` CLI works inside the
-    // terminal. hook_handler::trigger::spawn_shell 와 동일한 보강을 공유
-    // 헬퍼로 적용해 두 경로의 동작을 일치시킨다(패키징된 macOS `.app` 의
-    // 최소 PATH 에서 `tasty` self 호출 해결).
-    if let Some(new_path) = tasty_utils::process::path_prepending_self_dir(std::env::var_os("PATH"))
-    {
-        cmd.env("PATH", new_path);
-    }
-
-    if let Some(dir) = working_dir {
-        cmd.cwd(dir);
-    }
-    cmd
-}
-
-/// PTY writer를 시작하고 입력 sender·스레드 핸들·완료 카운터를 반환한다.
-fn spawn_pty_writer(
-    pty_writer: Box<dyn Write + Send>,
-) -> (mpsc::Sender<Vec<u8>>, thread::JoinHandle<()>, WriteProgress) {
-    let write_progress: WriteProgress = Arc::new((Mutex::new(0), Condvar::new()));
-    let write_progress_for_writer = Arc::clone(&write_progress);
-    let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>();
-    let writer_thread =
-        thread::spawn(move || run_writer_loop(pty_writer, write_rx, write_progress_for_writer));
-    (write_tx, writer_thread, write_progress)
-}
-
 impl TerminalState {
     /// Build the PTY-independent VTE state for a fresh terminal.
     fn new(cols: usize, rows: usize) -> Self {
@@ -565,8 +372,7 @@ impl TerminalState {
             alternate_surface: None,
             use_alternate: false,
             parser: Parser::new(),
-            input_tx: None,
-            write_progress: Arc::new((Mutex::new(0), Condvar::new())),
+            sink: None,
             enqueued_count: 0,
             output_taps: Vec::new(),
             resize_taps: Vec::new(),
@@ -612,7 +418,7 @@ impl TerminalState {
     }
 
     /// Parse a chunk of raw VT bytes and apply it to the surface. Shared by the
-    /// parser thread (PTY drain), [`Terminal::feed_bytes`] (mirror), and
+    /// Pty reader worker (via [`TerminalIngest`]), [`Terminal::feed_bytes`] (mirror), and
     /// `process_bytes` (test injection) so all three take an identical path.
     /// Returns true if the surface changed.
     pub(crate) fn ingest(&mut self, data: &[u8]) -> bool {
@@ -734,168 +540,43 @@ impl Terminal {
     /// The `waker` callback is invoked from the parser thread whenever new data
     /// has been ingested, allowing the main event loop to wake up and render.
     pub fn new(config: TerminalConfig<'_>, waker: Waker) -> Result<Self> {
-        let cols = config.cols;
-        let rows = config.rows;
-        let surface_id = config.surface_id;
-        let working_dir = config.working_dir;
-        let pty_system = NativePtySystem::default();
+        let (cols, rows) = (config.cols, config.rows);
+        let (mut pty, reader, sink) = pty::Pty::spawn(&config)?;
 
-        let pair = pty_system.openpty(PtySize {
-            rows: rows as u16,
-            cols: cols as u16,
-            pixel_width: 0,
-            pixel_height: 0,
-        })?;
-
-        let shell = match config.shell {
-            Some(s) if !s.is_empty() => s.to_string(),
-            _ => Self::default_shell(),
-        };
-        let cmd = build_shell_command(
-            &shell,
-            config.args,
-            surface_id,
-            working_dir,
-            config.extra_env,
-        );
-
-        let child = pair.slave.spawn_command(cmd)?;
-        drop(pair.slave);
-
-        // Windows Job Object에 자식 등록을 시도한다. 미초기화·다른 OS에서는 동작하지 않는다.
-        tasty_reaper::adopt_pid(child.process_id());
-
-        let mut pty_writer = pair.master.take_writer()?;
-        let mut pty_reader = pair.master.try_clone_reader()?;
-
-        // writer 스레드가 시작되기 전에 초기 입력을 쓴다. 자식은 이미 실행 중이므로
-        // 셸의 tcflush/TCSAFLUSH 등으로 입력이 사라질 수 있다.
-        if let Some(input) = config.initial_input
-            && !input.is_empty()
-        {
-            if let Err(e) = pty_writer.write_all(input.as_bytes()) {
-                tracing::warn!("initial_input write_all failed: {e}");
-            } else if let Err(e) = pty_writer.flush() {
-                tracing::warn!("initial_input flush failed: {e}");
-            }
-        }
-
-        // Writer thread: drains queued writes to PTY without blocking the main thread.
-        // `write_progress` 는 [`io::WriteAck`] 가 "이 write 가 실제로 flush 됐는지"
-        // 를 폴링 없이 확인하는 데 쓴다.
-        let (write_tx, writer_thread, write_progress) = spawn_pty_writer(pty_writer);
-
-        // Shared VTE state + signalling flags (docs/features/terminal/index.md#vte-에뮬레이션). The writer-thread sender
-        // is wired into the state so VTE responses (DSR/DA), emitted from the
-        // parser thread during ingest, reach the PTY.
+        // The Pty writer sink is wired into the state so VTE responses (DSR/DA),
+        // emitted by the reader worker during ingest, reach the PTY.
         let mut initial_state = TerminalState::new(cols, rows);
-        initial_state.input_tx = Some(write_tx);
-        initial_state.write_progress = write_progress;
+        initial_state.sink = Some(sink);
         let state = Arc::new(Mutex::new(initial_state));
         let dirty = Arc::new(AtomicBool::new(false));
-        let parser_eof = Arc::new(AtomicBool::new(false));
-        let exit_settled = Arc::new(AtomicBool::new(false));
+        let waker = Arc::new(Mutex::new(waker));
 
-        // Parse PTY chunks on a worker, releasing the state lock between chunks.
-        // Keep only a weak state reference so dropping the terminal stops further ingest.
-        let state_weak = Arc::downgrade(&state);
-        let dirty_t = Arc::clone(&dirty);
-        let eof_t = Arc::clone(&parser_eof);
-        let settled_t = Arc::clone(&exit_settled);
-        // Shared, rewireable waker. The parser thread reads the *current* callback
-        // each wake (cloning the inner Arc out from under a brief lock, then
-        // releasing before invoking), so `rewire_waker` can re-target it at
-        // runtime without racing the wake path.
-        let waker_holder = Arc::new(Mutex::new(waker));
-        let waker_t = Arc::clone(&waker_holder);
-        let parser_thread = thread::spawn(move || {
-            let mut buf = [0u8; 8192];
-            loop {
-                match pty_reader.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let Some(state) = state_weak.upgrade() else {
-                            // Terminal handle dropped — stop ingesting.
-                            return;
-                        };
-                        {
-                            let mut st = tasty_utils::poison::recover_mutex(
-                                state.lock(),
-                                STATE_WHAT,
-                                &STATE_POISON_REPORTED,
-                            );
-                            st.ingest(&buf[..n]);
-                        }
-                        dirty_t.store(true, Ordering::Release);
-                        let w = {
-                            tasty_utils::poison::recover_mutex(
-                                waker_t.lock(),
-                                WAKER_WHAT,
-                                &WAKER_POISON_REPORTED,
-                            )
-                            .clone()
-                        };
-                        w();
-                    }
-                    Err(_) => break,
-                }
-            }
-            // PTY EOF/error: signal so the next process() does an immediate alive
-            // check (bypassing the throttle), and wake to drive it.
-            eof_t.store(true, Ordering::Release);
-            dirty_t.store(true, Ordering::Release);
-            // EOF can precede a waitable child exit. Keep waking with increasing intervals
-            // until the handle observes exit, transfers the child, or is dropped.
-            let mut gap = EOF_REWAKE_FIRST;
-            loop {
-                let w = {
-                    tasty_utils::poison::recover_mutex(
-                        waker_t.lock(),
-                        WAKER_WHAT,
-                        &WAKER_POISON_REPORTED,
-                    )
-                    .clone()
-                };
-                w();
-                thread::sleep(gap);
-                if settled_t.load(Ordering::Acquire) || state_weak.strong_count() == 0 {
-                    break;
-                }
-                gap = (gap * 2).min(ALIVE_CHECK_INTERVAL);
-            }
-        });
-
-        let pty = PtyBackend {
-            _writer_thread: writer_thread,
-            pty_master: Some(pair.master),
-            child: Some(child),
-            _parser_thread: parser_thread,
-        };
+        pty.start_reader(
+            reader,
+            TerminalIngest {
+                state: Arc::downgrade(&state),
+                dirty: Arc::clone(&dirty),
+                waker: Arc::clone(&waker),
+            },
+        );
 
         Ok(Self {
             state,
             pty: Some(pty),
             dirty,
-            parser_eof,
-            exit_settled,
             cached_dims: (cols, rows),
             cached_emit_events: false,
-            pending_pty_resize: None,
-            last_pty_flush: std::time::Instant::now(),
-            // Start in the past so the first process() always checks immediately.
-            last_alive_check: std::time::Instant::now() - ALIVE_CHECK_INTERVAL,
-            process_exit_emitted: false,
-            waker: waker_holder,
+            waker,
             busy_latch: AtomicU64::new(BUSY_LATCH_NONE),
         })
     }
 
-    /// Re-target the parser thread's wake callback. Used when a headless PTY's
+    /// Re-target the reader worker's wake callback. Used when a headless PTY's
     /// Terminal is re-keyed to a new `surface_id` during promotion to a real
     /// Surface (`pty.attach_surface`, docs/features/headless-pty/index.md#내부-동작-headless-valid):
     /// the host installs a waker for
     /// the new id so targeted PTY polling drains the terminal at its new store
-    /// key. Detached mirrors have no parser thread, so this is inert for them.
+    /// key. Detached mirrors have no reader worker, so this is inert for them.
     pub fn rewire_waker(&self, waker: Waker) {
         *tasty_utils::poison::recover_mutex(
             self.waker.lock(),
@@ -911,16 +592,9 @@ impl Terminal {
             state: Arc::new(Mutex::new(TerminalState::new(cols, rows))),
             pty: None,
             dirty: Arc::new(AtomicBool::new(false)),
-            parser_eof: Arc::new(AtomicBool::new(false)),
-            // No parser thread to stop.
-            exit_settled: Arc::new(AtomicBool::new(true)),
             cached_dims: (cols, rows),
             cached_emit_events: false,
-            pending_pty_resize: None,
-            last_pty_flush: std::time::Instant::now(),
-            last_alive_check: std::time::Instant::now() - ALIVE_CHECK_INTERVAL,
-            process_exit_emitted: false,
-            // No parser thread — a no-op waker keeps the field total.
+            // No reader worker — a no-op waker keeps the field total.
             waker: Arc::new(Mutex::new(Arc::new(|| {}))),
             busy_latch: AtomicU64::new(BUSY_LATCH_NONE),
         }
@@ -947,7 +621,7 @@ impl Terminal {
         f(RenderView { state: &st })
     }
 
-    /// Process pending terminal state. Parsing now happens on the parser thread
+    /// Process pending terminal state. Parsing happens on the Pty reader worker
     /// (docs/features/terminal/index.md#vte-에뮬레이션), so this only: (1) flushes a deferred PTY resize, (2) reports
     /// whether the parser ingested anything since the last call, (3) detects child
     /// exit (emitting `ProcessExited` once). Returns true if the surface changed.
@@ -957,21 +631,14 @@ impl Terminal {
 
         let changed = self.dirty.swap(false, Ordering::AcqRel);
 
-        // Child exit detection (emit event once), throttled to one `try_wait`
-        // syscall per ALIVE_CHECK_INTERVAL. PTY EOF forces an immediate check.
-        if self.pty.is_some() && !self.process_exit_emitted {
-            let reader_gone = self.parser_eof.load(Ordering::Acquire);
-            if reader_gone || self.last_alive_check.elapsed() >= ALIVE_CHECK_INTERVAL {
-                self.last_alive_check = std::time::Instant::now();
-                if !self.check_process_alive() {
-                    self.process_exit_emitted = true;
-                    self.exit_settled.store(true, Ordering::Release);
-                    self.lock_state().events.push(TerminalEvent {
-                        surface_id: 0,
-                        kind: TerminalEventKind::ProcessExited,
-                    });
-                }
-            }
+        // Child exit detection, throttled by the Pty; PTY EOF forces an immediate check.
+        if let Some(pty) = self.pty.as_mut()
+            && pty.observe_exit()
+        {
+            self.lock_state().events.push(TerminalEvent {
+                surface_id: 0,
+                kind: TerminalEventKind::ProcessExited,
+            });
         }
 
         changed
@@ -1004,17 +671,6 @@ impl Terminal {
     /// in lockstep with this authoritative terminal.
     pub fn add_resize_tap(&mut self) -> mpsc::Receiver<(usize, usize)> {
         self.lock_state().add_resize_tap()
-    }
-
-    fn default_shell() -> String {
-        #[cfg(windows)]
-        {
-            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
-        }
-        #[cfg(not(windows))]
-        {
-            std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
-        }
     }
 }
 

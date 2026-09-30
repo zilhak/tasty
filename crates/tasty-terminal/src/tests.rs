@@ -1,6 +1,7 @@
 //! `Terminal` 단위 테스트.
 
 use super::*;
+use crate::pty::ALIVE_CHECK_INTERVAL;
 use std::sync::Arc;
 use termwiz::escape::csi::CSI;
 use termwiz::escape::parser::Parser;
@@ -793,6 +794,10 @@ fn detached_alt_screen_parity() {
     let _ = seq;
 }
 
+fn pty_state(t: &Terminal) -> &pty::PtyState {
+    &t.pty.as_ref().expect("PTY-backed terminal").state
+}
+
 #[test]
 fn detached_terminal_has_no_pty_state() {
     let mut t = Terminal::new_detached(40, 12);
@@ -1112,6 +1117,33 @@ fn resize_tap_emits_new_dims_only_on_change() {
     assert_eq!(rx.try_recv().unwrap(), (80, 24));
 }
 
+/// grid 변경과 tap 통지가 먼저이고, OS resize는 예약만 된 뒤 flush에서 적용된다.
+#[test]
+fn resize_taps_the_grid_before_the_os_resize_is_applied() {
+    let mut t = test_terminal(40, 12);
+    let rx = t.add_resize_tap();
+    t.resize(100, 30);
+
+    assert_eq!(
+        rx.try_recv().unwrap(),
+        (100, 30),
+        "tap은 grid 변경 즉시 온다"
+    );
+    assert_eq!(t.dimensions(), (100, 30));
+    assert!(t.has_pending_pty_resize(), "OS resize는 아직 예약 상태다");
+    let pty = t.pty.as_ref().expect("PTY-backed terminal");
+    assert_eq!(
+        pty.os_size(),
+        Some((40, 12)),
+        "tap 시점에 OS 크기는 그대로다"
+    );
+
+    t.force_flush_pty_resize();
+    assert!(!t.has_pending_pty_resize());
+    let pty = t.pty.as_ref().expect("PTY-backed terminal");
+    assert_eq!(pty.os_size(), Some((100, 30)), "flush 뒤 OS에 적용된다");
+}
+
 #[test]
 fn resize_tap_disconnected_is_pruned() {
     let mut t = test_terminal(40, 12);
@@ -1248,22 +1280,29 @@ fn snapshot_as_vt_preserves_alt_screen() {
 fn alive_check_throttled_within_window() {
     let mut t = test_terminal(80, 24);
     // In-the-past init: the first process() must check immediately.
-    assert!(t.last_alive_check.elapsed() >= ALIVE_CHECK_INTERVAL);
+    assert!(pty_state(&t).last_alive_check.elapsed() >= ALIVE_CHECK_INTERVAL);
 
     // 첫 process 호출이 검사 시각을 갱신했는지 직접 비교한다.
-    let before = t.last_alive_check;
+    let before = pty_state(&t).last_alive_check;
     t.process();
-    let first = t.last_alive_check;
+    let first = pty_state(&t).last_alive_check;
     assert!(first > before, "first check stamped now");
 
     // Immediate second call falls inside the throttle window — no re-check.
     t.process();
-    assert_eq!(first, t.last_alive_check, "check skipped within window");
+    assert_eq!(
+        first,
+        pty_state(&t).last_alive_check,
+        "check skipped within window"
+    );
 
     // After the window elapses the check runs (and re-stamps) again.
     std::thread::sleep(ALIVE_CHECK_INTERVAL + std::time::Duration::from_millis(100));
     t.process();
-    assert!(t.last_alive_check > first, "check re-ran after window");
+    assert!(
+        pty_state(&t).last_alive_check > first,
+        "check re-ran after window"
+    );
 }
 
 #[test]
@@ -1390,7 +1429,10 @@ fn process_exit_after_pty_eof_is_seen_by_wakes_alone() {
         {
             break;
         }
-        if t.parser_eof.load(std::sync::atomic::Ordering::Acquire) {
+        if pty_state(&t)
+            .reader_eof
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
             eof_seen_alive = true;
         }
     }

@@ -88,7 +88,7 @@ impl Terminal {
     /// Get the PID of the child process. `None` for a detached mirror (no child)
     /// or after [`take_child`](Self::take_child) hands the child off.
     pub fn process_id(&self) -> Option<u32> {
-        self.pty.as_ref()?.child.as_ref()?.process_id()
+        self.pty.as_ref()?.process_id()
     }
 
     /// Whether this terminal is a detached mirror (no PTY/child). Its grid is
@@ -236,30 +236,23 @@ impl Terminal {
     /// Check if the child process is still running. A detached mirror has no
     /// child; reported as alive.
     pub fn is_alive(&mut self) -> bool {
-        match self.pty.as_mut().and_then(|pty| pty.child.as_mut()) {
-            Some(child) => child.try_wait().ok().flatten().is_none(),
-            // 자식 없음: detached mirror 이거나 take_child 로 자식이 이관됨 — alive 로 본다.
-            None => true,
-        }
+        // 자식 없음: detached mirror 이거나 take_child 로 자식이 이관됨 — alive 로 본다.
+        self.pty.as_mut().is_none_or(|pty| pty.is_alive())
     }
 
     /// Returns false after observing child exit. Without an owned child, returns true.
     pub fn check_process_alive(&mut self) -> bool {
-        match self.pty.as_mut().and_then(|pty| pty.child.as_mut()) {
-            Some(child) => !matches!(child.try_wait(), Ok(Some(_status))),
-            // 자식 없음: detached mirror 이거나 take_child 로 이관됨 — alive 로 본다.
-            None => true,
-        }
+        // 자식 없음: detached mirror 이거나 take_child 로 이관됨 — alive 로 본다.
+        self.pty.as_mut().is_none_or(|pty| pty.check_alive())
     }
 
     /// Transfer the waitable child to an external owner, such as the headless exit watcher.
     /// The new owner must kill and reap it; this terminal stops checking or cleaning it up.
     /// Returns None when no child is owned. Surface terminals retain their child.
     pub fn take_child(&mut self) -> Option<Box<dyn portable_pty::Child + Send + Sync>> {
-        // The new owner reaps the exit; the parser thread's post-EOF wakes, which
+        // The new owner reaps the exit; the reader worker's post-EOF wakes, which
         // exist to drive this handle's own exit check, would only spin.
-        self.exit_settled.store(true, Ordering::Release);
-        self.pty.as_mut().and_then(|pty| pty.child.take())
+        self.pty.as_mut().and_then(|pty| pty.take_child())
     }
 
     /// Take all accumulated events, leaving the internal buffer empty.
