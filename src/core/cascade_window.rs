@@ -30,9 +30,8 @@ pub(crate) trait CascadeWindow {
 
     fn set_active_workspace(&mut self, index: usize);
 
-    /// workspace.closed 통지와 해당 workspace의 메모리 정리를 처리한다.
-    #[cfg(feature = "gui")]
-    fn after_workspace_removed(&mut self, workspace_id: u32, path: &'static str);
+    /// 제거된 workspace의 범위 메모리를 정리한다. 통지 여부와 무관하게 모든 빌드에서 필요하다.
+    fn purge_workspace_memory_scope(&mut self, workspace_id: u32, path: &'static str);
 
     #[cfg(feature = "gui")]
     fn enqueue_surface_closed(

@@ -1855,6 +1855,98 @@ fn workspace_close_purges_each_surface_scope_once() {
     );
 }
 
+/// 첫 workspace의 유일한 surface를 에이전트 경로로 닫아 workspace까지 연관 제거한다.
+fn close_last_surface_of_first_workspace(
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+) -> (u32, u32, u32) {
+    add_test_workspace(state, engine);
+    let victim_ws = engine.workspaces[0].id;
+    let kept_ws = engine.workspaces[1].id;
+    let victim_sids = engine.workspaces[0].all_surface_ids();
+    assert_eq!(
+        victim_sids.len(),
+        1,
+        "연관 제거가 일어나려면 surface가 하나여야 한다"
+    );
+    (victim_ws, kept_ws, victim_sids[0])
+}
+
+fn run_cascade_close(state: &mut AppState, engine: &mut crate::core::CoreState, sid: u32) {
+    let mut core = crate::ipc::handler::cli_entry_tests::test_core();
+    let closed = crate::core::structural_exec::close_surface(&mut core, state, engine, sid, false)
+        .expect("close_surface");
+    assert!(closed.closed);
+}
+
+/// headless에도 workspace.closed 통지와 별개로 workspace 범위 정리가 필요하다.
+#[test]
+fn cascade_workspace_removal_purges_only_its_scope_once() {
+    let (mut state, mut engine, mock) = test_state_with_mock_memory();
+    let (victim_ws, kept_ws, sid) = close_last_surface_of_first_workspace(&mut state, &mut engine);
+
+    run_cascade_close(&mut state, &mut engine, sid);
+
+    assert!(engine.workspaces.iter().all(|w| w.id != victim_ws));
+    let guard = mock.lock().unwrap();
+    assert_eq!(
+        guard.purge_scope_call_count(&tasty_memory::Scope::Workspace(victim_ws)),
+        1,
+        "호출 이력: {:?}",
+        guard.purge_scope_calls()
+    );
+    assert_eq!(
+        guard.purge_scope_call_count(&tasty_memory::Scope::Workspace(kept_ws)),
+        0
+    );
+    assert_eq!(
+        guard.purge_scope_call_count(&tasty_memory::Scope::Surface(sid)),
+        1
+    );
+}
+
+/// regular·secret 저장소 모두에서 제거된 workspace·surface 범위만 지우고 남은 workspace는 유지한다.
+#[test]
+fn cascade_workspace_removal_clears_regular_and_secret_entries_of_that_scope() {
+    use tasty_memory::{MemoryValue, PutOpts, Scope};
+    let store: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
+        std::sync::Arc::new(std::sync::Mutex::new(
+            tasty_memory::MemoryStore::open_in_memory().expect("in-memory store"),
+        ));
+    let (mut state, mut engine) = test_state_with_memory(store);
+    let (victim_ws, kept_ws, sid) = close_last_surface_of_first_workspace(&mut state, &mut engine);
+    let scopes = [
+        Scope::Workspace(victim_ws),
+        Scope::Workspace(kept_ws),
+        Scope::Surface(sid),
+    ];
+    let value = MemoryValue::Text("v".into());
+    state.with_memory(|m| {
+        for scope in &scopes {
+            m.put("test", scope, "k", &value, &PutOpts::default())
+                .expect("put");
+            m.put_secret("test", scope, "k", &value, &PutOpts::default())
+                .expect("put_secret");
+        }
+    });
+
+    run_cascade_close(&mut state, &mut engine, sid);
+
+    let present = |scope: &Scope| {
+        state.with_memory(|m| {
+            (
+                m.get(scope, "k").expect("get").is_some(),
+                m.get_secret("test", scope, "k")
+                    .expect("get_secret")
+                    .is_some(),
+            )
+        })
+    };
+    assert_eq!(present(&Scope::Workspace(victim_ws)), (false, false));
+    assert_eq!(present(&Scope::Surface(sid)), (false, false));
+    assert_eq!(present(&Scope::Workspace(kept_ws)), (true, true));
+}
+
 // 인덱스가 유지돼도 대상은 달라질 수 있어 포커스 보존을 ID로 확인한다.
 
 #[test]

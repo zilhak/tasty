@@ -39,9 +39,8 @@ impl CascadeWindow for AppState {
         self.active_workspace = index;
     }
 
-    #[cfg(feature = "gui")]
-    fn after_workspace_removed(&mut self, workspace_id: u32, path: &'static str) {
-        AppState::after_workspace_removed(self, workspace_id, path);
+    fn purge_workspace_memory_scope(&mut self, workspace_id: u32, path: &'static str) {
+        AppState::purge_workspace_memory_scope_traced(self, workspace_id, path);
     }
 
     #[cfg(feature = "gui")]

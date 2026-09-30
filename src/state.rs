@@ -842,6 +842,15 @@ impl AppState {
     /// path는 종료 시간 로그의 경로 구분값이다.
     pub(crate) fn after_workspace_removed(&mut self, workspace_id: u32, path: &'static str) {
         self.enqueue_host_event(PendingHostEvent::WorkspaceClosed { workspace_id });
+        self.purge_workspace_memory_scope_traced(workspace_id, path);
+    }
+
+    /// 워크스페이스 범위 메모리 정리와 C4 계측만 한다. 통지를 보내지 않는 headless 연관 정리도 쓴다.
+    pub(crate) fn purge_workspace_memory_scope_traced(
+        &mut self,
+        workspace_id: u32,
+        path: &'static str,
+    ) {
         let t = std::time::Instant::now();
         self.purge_workspace_memory_scope(workspace_id);
         crate::close_trace::log_ws_purge(t, path);

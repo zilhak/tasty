@@ -171,14 +171,6 @@ pub(crate) struct PaneSplitCascade {
 
 /// surface 자원을 정리하고 구조별 알림을 등록한다. 삭제 위치에 맞춰 활성 인덱스를 보정해야
 /// 앞쪽 workspace가 빠져도 다른 workspace로 선택이 옮겨가지 않는다.
-// 이유: workspace ID는 GUI의 제거 알림에만 쓰인다.
-#[cfg_attr(
-    not(feature = "gui"),
-    expect(
-        unused_variables,
-        reason = "the purged workspace id only feeds the gui-only workspace.closed notice"
-    )
-)]
 pub(crate) fn cascade_surface_closed(
     core: &mut Core,
     state: &mut dyn CascadeWindow,
@@ -212,8 +204,12 @@ pub(crate) fn cascade_surface_closed(
         "workspace level cascade 와 제거 위치는 함께 실려야 한다"
     );
     if let Some((removed_idx, workspace_id)) = c.workspace_purged {
+        // 통지는 소비자가 있는 GUI에서만 쌓고, 메모리 정리는 headless에서도 한다.
         #[cfg(feature = "gui")]
-        state.after_workspace_removed(workspace_id, "cascade");
+        state.enqueue_host_event(crate::core::host_event::PendingHostEvent::WorkspaceClosed {
+            workspace_id,
+        });
+        state.purge_workspace_memory_scope(workspace_id, "cascade");
         state.fix_workspace_pointers_after_removal(removed_idx, engine.workspaces.len());
     }
 
