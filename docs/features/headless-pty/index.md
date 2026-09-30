@@ -40,7 +40,7 @@ read·write·wait는 idle 시각을 갱신하며 기본값은 override할 수 �
 
 - spawn/list 접근에서 만료 항목을 먼저 정리한다. 특히 spawn의 상한 판단보다 먼저 수행한다.
 - Tick::PtySweep는 30초 주기, Lax slack 60초로 정리한다. 아무 호출이 없어도 TTL 뒤 최대 90초 안에 회수한다.
-- GUI main·parked engine과 headless 모두 같은 CoreState::sweep_idle_ptys를 사용한다.
+- GUI main·parked engine과 headless 모두 같은 EngineMut::sweep_idle_ptys를 사용한다.
   registry, TerminalStore, waker 중복 방지 등록을 함께 정리한다.
 
 자식은 PTY를 소유한 host 수명을 따른다. Windows의 Job Object와 Unix의 hangup 차이는

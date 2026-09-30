@@ -202,7 +202,7 @@ markdown의 Browse처럼 plugin이 호스트의 파일 선택 창을 열어야 �
   그 surface 가 속한 workspace 가 mirror 인지 보고, 없으면 활성 workspace 로 폴백한다. plugin
   트리거는 활성 workspace 와 무관할 수 있기 때문이다(포커스 독립성).
 - **시작 디렉토리**: `start_dir` 가 있으면 그것, 없으면 출발 surface 의 cwd
-  (`CoreState::surface_cwd` — mirror 면 서버가 push 한 원격 cwd). 로컬은 **절대경로인 디렉토리일
+  (`EngineRef::surface_cwd` — mirror 면 서버가 push 한 원격 cwd). 로컬은 **절대경로인 디렉토리일
   때만** 채택하고 아니면 홈으로 폴백한다(없는 경로로 열면 빈 에러 화면이 뜬다). 원격은 로컬에서
   stat 할 수 없으므로 그대로 `list_dir_request` 에 싣고 서버의 에러 회신에 맡긴다. 둘 다 없으면
   종전대로 로컬 홈 / 원격 홈(빈 `dir`)이다.

@@ -102,7 +102,7 @@ MainViewState와 CommandContext는 별도 struct다. 공통 알고리즘과 값 
 ## Core 결과와 공통 App adapter
 
 구조 변경은 도메인 결과로 반환하며 전송하지 않을 JSON-RPC 응답을 만들었다 다시 해석하지 않는다. 닫힌 surface 정리는 공용 `reclaim_closed_surfaces`가, MoveSurface 결과의 close 변환은 공용 생성자가 맡는다.
-닫힌 surface의 도메인 자원(스크롤백 파일·Terminal·명령/observer/hook 인덱스·shell hint·waker·surface memory scope·attach 점유·mirror 부속 맵(busy·cwd·mesh frame)·attention 레코드(로컬 포함))과 제거된 workspace의 memory scope는 `CoreState::cleanup_surface_traced`와 `CoreState::purge_workspace_memory_scope`(`src/core/state/surface_cleanup.rs`)가 창 상태 없이 회수한다. MainViewState에는 화면 cache 해제(`MainViewState::release_surface_views`)와 lifecycle·host 이벤트 적재만 남는다. 자원 정리를 Core::apply에 넣어 MainViewState 의존을 추가하지 않는다. must_use만으로 이벤트를 분해한 뒤 정리를 빠뜨리는 문제를 막을 수는 없다.
+닫힌 surface의 도메인 자원(스크롤백 파일·Terminal·명령/observer/hook 인덱스·shell hint·waker·surface memory scope·attach 점유·mirror 부속 맵(busy·cwd·mesh frame)·attention 레코드(로컬 포함))과 제거된 workspace의 memory scope는 `EngineMut::cleanup_surface_traced`와 `CoreState::purge_workspace_memory_scope`(`src/core/state/surface_cleanup.rs`)가 창 상태 없이 회수한다. MainViewState에는 화면 cache 해제(`MainViewState::release_surface_views`)와 lifecycle·host 이벤트 적재만 남는다. 자원 정리를 Core::apply에 넣어 MainViewState 의존을 추가하지 않는다. must_use만으로 이벤트를 분해한 뒤 정리를 빠뜨리는 문제를 막을 수는 없다.
 
 `app::structural_exec`가 split·tab 생성/이동/닫기·pane/surface 닫기의 검증과 적용을 맡는다.
 IPC와 원격 forward는 같은 실행 함수를 쓰며 `Rejected`, `MissingEvent`, `Apply` 실패를 각 전송 형식으로 변환한다.

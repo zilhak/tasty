@@ -69,7 +69,7 @@ forward 받은 tab/pane 닫기(`src/core/attach_runtime.rs`)다. holder 는 `Dom
 kill · 스크롤백 파일 삭제 · per-surface 인덱스 해제 · memory scope purge · attach 점유 흔적
 제거)와 `surface.closed` lifecycle 통지는 cascade 쪽이 한다.
 
-회수 본문은 창 상태 없이 호출할 수 있는 `CoreState::cleanup_surface_traced`와
+회수 본문은 창 상태 없이 호출할 수 있는 `EngineMut::cleanup_surface_traced`와
 `CoreState::purge_workspace_memory_scope`(`src/core/state/surface_cleanup.rs`)다. MainViewState에는
 화면 cache 해제(`MainViewState::release_surface_views` — explorer · DAG 그래프 view)와 lifecycle ·
 host 이벤트 적재만 남는다. MainViewState의 직접 닫기 경로(`gui` · `inline`)도 같은 CoreState 함수를
@@ -88,7 +88,7 @@ GUI dispatcher · IPC 핸들러 · 원격 forward 실행이 함께 부른다. �
 
 | | gui | headless |
 |---|---|---|
-| `CoreState::cleanup_surface_traced` (PTY · 스크롤백 · 인덱스 · surface memory scope · 점유) | 한다 | 한다 |
+| `EngineMut::cleanup_surface_traced` (PTY · 스크롤백 · 인덱스 · surface memory scope · 점유) | 한다 | 한다 |
 | 같은 함수의 부속 맵 회수 — busy · cwd · mesh frame 은 mirror 전용, attention 은 로컬 레코드도 함께 | 한다 | attention 만 해당 — headless에는 attach client가 없어 mirror 전용 맵은 비어 있다 |
 | 화면 cache 해제 (`release_surface_views`) | 한다 | 없음 — headless에는 View가 없다 |
 | `surface.closed` lifecycle enqueue | 한다 | **안 한다** |
@@ -143,7 +143,7 @@ close 진입
  │   └─ C2c evict                LIFO 상한 초과분의 backing 파일 삭제
  ├─ C3 collect_targets     pane × tab × leaf 3중 순회
  ├─ C4 ws_memory_purge     purge_scope(Scope::Workspace) — sqlite 풀스캔
- └─ C5 cleanup_targets     surface 마다 CoreState::cleanup_surface_traced (합계)
+ └─ C5 cleanup_targets     surface 마다 EngineMut::cleanup_surface_traced (합계)
      ├─ C5a scrollback_delete   fs::remove_file
      ├─ C5b terminal_drop       Terminal drop → PTY kill + master 해제
      ├─ C5c indices_drop        host-side per-surface 인덱스 해제 (observer sender drop — join 은 S3b, 화면 cache 해제는 제외)

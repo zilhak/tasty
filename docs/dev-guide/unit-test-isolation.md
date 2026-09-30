@@ -10,12 +10,12 @@ e2e 테스트의 격리 단위(프로세스 vs workspace)는 다른 축이다 �
 
 ## 1. 설정: 테스트 생성자는 `Settings::default()` 를 쓴다
 
-`CoreState` 생성자는 설정을 **어디서 얻는지** 로 갈린다.
+`EngineSession` 생성자는 설정을 **어디서 얻는지** 로 갈린다.
 
 | 생성자 | 설정 출처 | 용도 |
 |---|---|---|
-| `CoreState::new(cols, rows, waker)` | `Settings::default()` | 테스트 / non-host 진입점 |
-| `CoreState::new_with_ids(...)` | `Settings::load()` (`$TASTY_HOME/config.toml`) | host 부팅 경로 |
+| `EngineSession::new(cols, rows, waker)` | `Settings::default()` | 테스트 / non-host 진입점 |
+| `EngineSession::new_with_ids(...)` | `Settings::load()` (`$TASTY_HOME/config.toml`) | host 부팅 경로 |
 
 둘 다 내부 `new_with_ids_and_settings(..., settings)` 로 합류한다 — 설정 주입 지점이
 여기 하나뿐이라, 새 진입점을 만들 때도 "파일을 읽을 것인가" 를 명시적으로 고르게 된다.
@@ -24,7 +24,8 @@ e2e 테스트의 격리 단위(프로세스 vs workspace)는 다른 축이다 �
 있기를 기대하지 않는다:
 
 ```rust
-let (mut state, mut engine) = test_state();
+let (mut state, mut session) = test_state();
+let mut engine = session.borrow_mut();
 engine.settings.general.workspace_categories_enabled = true;
 ```
 
@@ -263,7 +264,7 @@ red 다. 처방은 벽시계 폴링을 **이벤트 대기**로 바꾸는 것 —
 처방은 직렬화가 아니라 **자원의 테스트-로컬화**다 — `tasty_utils::path::push_home_override`
 (스레드 로컬, env 미조작, 테스트 전용 홈 경로 주입)로 그 시험 전용 임시 홈을 세운다.
 
-- 본체는 `CoreState` 가 `IsolatedHome` 을 **마지막 필드**로 들고, 조립 지점
+- 본체는 `EngineSession` 이 `IsolatedHome` 을 **마지막 필드**로 들고, 조립 지점
   `new_with_ids_and_settings` 가 그것을 첫 줄에서 세운다. 그래서 생성자를 무엇으로 부르든
   — 픽스처를 거치든 그 함수를 직접 부르든 — 같은 격리를 받고, 생성 이후의 `save()` 까지
   엔진 수명 내내 덮인다(마지막 필드인 것이 그 계약이다: drop 순서가 선언 순서다).
@@ -335,7 +336,8 @@ gh api "repos/<owner>/<repo>/actions/jobs/<job_id>/logs"
 ## 8. 공유 픽스처 `test_state()` 는 **진짜 프로세스를 띄운다**
 
 `src/state/tests.rs` 의 `test_state()` / `test_state_with_memory()` 는 유닛 테스트가
-`MainViewState` + `CoreState` 한 쌍을 얻는 표준 통로다. 그 안에서 `CoreState::new` 이 도는데,
+`MainViewState` + `EngineSession` 한 쌍을 얻는 표준 통로다. Session 소유자는 시험이 끝날 때까지
+유지하고 `borrow_mut()`로 구조·실행 자원을 대여한다. 그 안에서 `EngineSession::new` 이 도는데,
 이 생성자는 **기본 워크스페이스를 만들면서 실제 PTY 를 열고 실제 셸을 fork 한다**
 (`spawn_shell_terminal` → `tasty_terminal::Terminal::new` → `portable_pty` →
 `std::process::Command::spawn`).
@@ -380,7 +382,7 @@ socket·pipe·dup으로 만든 fd를 모두 재구성할 수는 없다. 사용�
 따라서 셸도 안 띄운다. 그 자리를 채우는 것은 `restore_layout` 설정이 켜져 있고 `layout_slot`
 이 실제로 읽히는 경우뿐이다.
 
-**그러나 테스트에서 닿는 길은 아니다.** `CoreState::new` 은 `layout_slot` 에 `None` 을
+**그러나 테스트에서 닿는 길은 아니다.** `EngineSession::new` 은 `layout_slot` 에 `None` 을
 넘기므로 그 가지가 아예 안 돈다. 지금 유닛 테스트가 이 spawn 을 피하는 수단은 **없다** —
 `test_state()` 를 안 쓰는 것 말고는.
 

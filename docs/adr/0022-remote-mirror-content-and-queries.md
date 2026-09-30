@@ -37,7 +37,7 @@ JSON으로 직렬화한 원문은 700KiB 예산에서 UTF-8 문자 경계를 지
 
 surface cwd는 서버가 1Hz로 확인해 바뀐 값만 holder에 push한다. diff cache는 holder와 값을 함께 기억해 새 holder가 초기값을 받는다. 알 수 없어진 cwd는 null로 보내 client cache를 지운다.
 
-CoreState::surface_cwd는 Local(PathBuf)과 Remote(RemoteCwd)를 구분한다. RemoteCwd는 Path로 자동 변환하지 않는다. mirror의 push·OSC 7·explorer root에서 온 값은 모두 Remote다. 로컬 PTY 생성·preset 저장·로컬 Git 조회는 Local만 사용한다. plugin JSON도 remote_cwd와 mirror:true로 구분한다.
+EngineRef::surface_cwd는 Local(PathBuf)과 Remote(RemoteCwd)를 구분한다. RemoteCwd는 Path로 자동 변환하지 않는다. mirror의 push·OSC 7·explorer root에서 온 값은 모두 Remote다. 로컬 PTY 생성·preset 저장·로컬 Git 조회는 Local만 사용한다. plugin JSON도 remote_cwd와 mirror:true로 구분한다.
 
 inherit_cwd는 실행할 때만 적용한다. cwd push 자체를 끄지 않으며 원격 구조 변경은 client의 캐시를 그대로 보내지 않고 서버가 현재 값을 찾는다. 명시 cwd만 요청에 담는다.
 

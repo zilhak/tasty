@@ -69,10 +69,10 @@ impl App {
     }
 
     fn focus_surface_from_webview(&mut self, id: winit::window::WindowId, surface_id: u32) {
-        let Some((main, mut engine)) = engines_mut!(self).window_pair(id) else {
+        let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
             return;
         };
-        if main.state.focus_surface_by_id(&mut *engine, surface_id) {
+        if main.state.focus_surface_by_id(engine.core, surface_id) {
             main.mark_dirty();
         }
     }

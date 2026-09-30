@@ -89,7 +89,7 @@ TTL 기반 정리 세 가지는 `Lax`를 사용한다. 요청이 올 때만 정�
 두 경로가 공존하면 **후처리가 갈라지는 것**이 다음 위험이다. headless PTY 회수는
 registry 제거 + `TerminalStore` 제거 + waker 게이트 해제 셋을 한 묶음으로 해야 하는데
 (어느 하나만 하면 좀비나 누수), 경로마다 따로 쓰면 언젠가 어긋난다. 그래서 후처리를
-`CoreState::sweep_idle_ptys` 한 곳으로 묶고 두 경로가 그것만 부르게 했다. 로그 prune
+`EngineMut::sweep_idle_ptys` 한 곳으로 묶고 두 경로가 그것만 부르게 했다. 로그 prune
 도 같은 이유로 진입점(`log_retention::maybe_prune`)과 게이트(`LAST_PRUNE_MS`)를
 공유한다 — 새 게이트를 만들면 두 드라이버가 각자 주기를 세게 된다.
 
