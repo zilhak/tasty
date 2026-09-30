@@ -118,7 +118,7 @@ GUI의 `MainViewState`는 `src/state/main.rs`에, GUI 없는 `CommandContext`는
 
 분할 트리의 `SplitNodeId`는 프로세스 내부에서만 사용하는 node identity다. 기존 `focus_second` wire bool은 navigation의 별도 split-hint map에서 합성한다. 노드 이동·재결합은 ID를 유지하고 새 노드는 새 ID를 받는다. split 생성의 hint 기본값은 true, layout/preset/undo 복원은 false이며 remote 입력은 받은 값을 보존한다. 이 ID는 wire나 journal의 영속 식별자가 아니다.
 
-Mirror는 원격 pane/tab ID에 안정된 로컬 ID를 대응시킨다. snapshot 재구성에서 생존한 로컬 선택을 유지하고, 선택 ID가 사라지면 원격 기본값을 적용한다. 사용자 닫기의 인접 후보가 있으면 그 후보를 우선한다. 삭제된 pane/tab의 대응 ID는 매 재구성 후 회수한다.
+Mirror는 원격 pane/tab ID에 안정된 로컬 ID를 대응시킨다. snapshot 재구성에서 생존한 로컬 선택을 유지하고, 선택 ID가 사라지면 원격 기본값을 적용한다. 사용자 닫기의 인접 후보가 있으면 그 후보를 우선한다. 삭제된 pane/tab의 대응 ID는 매 재구성 후 회수한다. 연결·재연결·delta 결과에서 View map도 정리하므로 parked 상태에서도 redraw를 기다리지 않고 삭제된 선택·스크롤·hint 자료를 회수한다.
 
 사용자 탭 생성 후속 처리는 공통 App 실행 helper가 결과 ID에 적용한다. 호출자가 확인한 로컬 사용자 origin만 이 continuation을 허용하며, 원격 사용자 요청은 서버의 로컬 선택을 바꾸지 않는다. 원격 layout 파서는 immutable source 참조를 한 문맥으로 빌려 쓰고 선택/hint 적용과 리소스 데이터를 복제하지 않는다.
 

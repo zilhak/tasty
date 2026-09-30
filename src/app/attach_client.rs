@@ -398,6 +398,7 @@ impl App {
             );
             ws.mirror = true;
             engine.workspaces.push(ws);
+            main.state.reconcile_presentation(engine);
             main.mark_dirty();
         }
 
@@ -564,6 +565,7 @@ impl App {
                 );
             }
             engine.workspaces[pos] = ws;
+            main.state.reconcile_presentation(engine);
             main.state.toasts.push(
                 crate::i18n::t("attach.toast.mirror_reconnected").to_string(),
                 crate::adapters::ui::ToastKind::Success,
@@ -2176,6 +2178,7 @@ fn apply_one_mirror_event(
                 &surfaces,
                 pending_focus,
             );
+            host.state.reconcile_presentation(host.engine);
             destroy_mirror_markdown_surfaces(plugin_manager, removed_markdown);
         }
         MirrorEvent::CaptureResult { ok, path, reason } => {

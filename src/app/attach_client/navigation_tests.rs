@@ -122,3 +122,51 @@ fn removed_tab_and_surface_use_wire_defaults_but_live_choices_survive() {
         "deleted local leaf uses wire, not first"
     );
 }
+
+#[test]
+fn parked_mirror_deltas_reclaim_retired_navigation_without_a_redraw() {
+    let (mut state, mut engine) = crate::state::tests::test_state();
+    let workspace = engine.workspaces[0].id;
+    let mut session = super::tests::test_session(workspace, HashMap::new());
+    for generation in 1..=12 {
+        let previous_pane = engine.workspaces[0].pane_layout().first_pane().unwrap().id;
+        state
+            .tab_bar_scroll
+            .insert(previous_pane, Default::default());
+        let tree = serde_json::json!({
+            "focused_pane": generation + 10,
+            "panes": [{"id": generation + 10, "tabs": [{
+                "id": generation + 100, "active": true, "focused_surface": 2,
+                "layout": {"type": "Split", "direction": "horizontal", "ratio": 0.5,
+                    "focus_second": false,
+                    "first": {"type": "Leaf", "id": 1, "kind": "terminal"},
+                    "second": {"type": "Leaf", "id": 2, "kind": "terminal"}}
+            }]}]
+        });
+        let surfaces = [1, 2]
+            .map(|id| {
+                serde_json::json!({
+                    "remote_id": id, "role": "terminal", "cols": 80, "rows": 24
+                })
+            })
+            .to_vec();
+        apply_one_mirror_event(
+            &mut session,
+            &mut MirrorHost::parked(&mut state, &mut engine),
+            &mut None,
+            MirrorEvent::StructuralDelta {
+                workspace_id: 7,
+                tree,
+                surfaces,
+            },
+        );
+        assert_eq!(session.structure_ids.panes.len(), 1);
+        assert_eq!(session.structure_ids.remote_tabs.len(), 1);
+        assert_eq!(
+            state.navigation.split_hints.len(),
+            1,
+            "old split keys must not accumulate while no View redraw occurs"
+        );
+        assert!(!state.tab_bar_scroll.contains_key(&previous_pane));
+    }
+}
