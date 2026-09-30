@@ -5835,6 +5835,17 @@ name = "tasty-doc-guards"
 version = "0.1.0"
 
 [[package]]
+name = "tasty-domain"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tasty-event-store",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "tasty-egui-theme"
 version = "0.1.1"
 dependencies = [

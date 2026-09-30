@@ -1,0 +1,18 @@
+[package]
+name = "tasty-domain"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Journal-only structural model, domain events, codec, pure evolve and a generic command executor (test-only, not wired into the product)"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tasty-event-store = { path = "../tasty-event-store" }
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true
