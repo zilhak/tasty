@@ -21,16 +21,6 @@ impl CascadeWindow for AppState {
         self.with_memory(|m| crate::surface_meta::SurfaceMetaStore::set(m, surface_id, key, value))
     }
 
-    fn cleanup_surface_traced(
-        &mut self,
-        engine: &mut CoreState,
-        surface_id: u32,
-        persist_id: Option<String>,
-        sums: &mut crate::close_trace::CleanupSums,
-    ) {
-        AppState::cleanup_surface_traced(self, engine, surface_id, persist_id, sums);
-    }
-
     fn fix_workspace_pointers_after_removal(&mut self, removed_idx: usize, remaining: usize) {
         AppState::fix_workspace_pointers_after_removal(self, removed_idx, remaining);
     }
@@ -39,8 +29,9 @@ impl CascadeWindow for AppState {
         self.active_workspace = index;
     }
 
-    fn purge_workspace_memory_scope(&mut self, workspace_id: u32, path: &'static str) {
-        AppState::purge_workspace_memory_scope_traced(self, workspace_id, path);
+    #[cfg(feature = "gui")]
+    fn release_surface_views(&mut self, surface_id: u32) {
+        AppState::release_surface_views(self, surface_id);
     }
 
     #[cfg(feature = "gui")]

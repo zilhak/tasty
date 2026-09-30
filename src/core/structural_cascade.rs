@@ -209,7 +209,7 @@ pub(crate) fn cascade_surface_closed(
         state.enqueue_host_event(crate::core::host_event::PendingHostEvent::WorkspaceClosed {
             workspace_id,
         });
-        state.purge_workspace_memory_scope(workspace_id, "cascade");
+        engine.purge_workspace_memory_scope(workspace_id, "cascade");
         state.fix_workspace_pointers_after_removal(removed_idx, engine.workspaces.len());
     }
 
@@ -221,14 +221,15 @@ pub(crate) fn cascade_surface_closed(
     }
 }
 
-/// 닫힌 surface 정리를 공유한다. GUI에서만 lifecycle 알림과 선택적 계측 로그를 남긴다.
+/// 닫힌 surface 정리를 공유한다. 도메인 자원은 engine이 모든 빌드에서 회수하고,
+/// GUI에서만 화면 cache 해제·lifecycle 알림·선택적 계측 로그를 남긴다.
 /// kind는 정리 전에 찾지만 Core가 이미 트리를 바꾼 경우 None일 수 있다.
-// 이유: is_user_close와 trace는 GUI 알림·계측에만 쓰인다.
+// 이유: state·is_user_close·trace는 GUI 화면 정리·알림·계측에만 쓰인다.
 #[cfg_attr(
     not(feature = "gui"),
     expect(
         unused_variables,
-        reason = "the lifecycle notice and the C5 trace it gates have a consumer only in the gui build"
+        reason = "the view release, the lifecycle notice and the C5 trace have a consumer only in the gui build"
     )
 )]
 fn reclaim_closed_surfaces(
@@ -244,9 +245,12 @@ fn reclaim_closed_surfaces(
     for (sid, pid) in cleanup_targets {
         #[cfg(feature = "gui")]
         let kind = engine.find_surface_by_id(sid).map(|s| s.kind());
-        state.cleanup_surface_traced(engine, sid, pid, &mut sums);
+        engine.cleanup_surface_traced(sid, pid, &mut sums);
         #[cfg(feature = "gui")]
-        state.enqueue_surface_closed(sid, kind, is_user_close);
+        {
+            state.release_surface_views(sid);
+            state.enqueue_surface_closed(sid, kind, is_user_close);
+        }
     }
     #[cfg(feature = "gui")]
     if let Some(path) = trace {

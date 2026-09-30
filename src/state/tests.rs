@@ -56,6 +56,8 @@ pub(crate) fn test_state_with_memory(
     let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
         tasty_presets::PresetStore::load_default(),
     ));
+    // 운영 부팅처럼 engine과 AppState가 같은 저장소를 공유해야 engine 정리를 mock으로 관찰한다.
+    engine.memory = memory.clone();
     let state = AppState::new(&mut engine, preset_store, memory);
     (state, engine)
 }
@@ -1794,6 +1796,33 @@ fn cleanup_surface_purges_surface_scope_exactly_once() {
     assert_eq!(
         count, 1,
         "surface close 당 purge_scope(Scope::Surface) 는 1회여야 한다 (호출 이력: {calls:?})"
+    );
+}
+
+/// 도메인 자원 회수는 창 상태 없이 engine만으로 끝나야 한다.
+#[test]
+fn engine_cleanup_reclaims_domain_resources_without_window_state() {
+    let (mut state, mut engine, mock) = test_state_with_mock_memory();
+    let sid = collect_surface_ids(&mut state, &mut engine)[0];
+    engine.attach.acquire(sid, 7).expect("하드 점유");
+    let mut sums = crate::close_trace::CleanupSums::default();
+
+    engine.cleanup_surface_traced(sid, None, &mut sums);
+
+    assert!(
+        engine.terminals.get(sid).is_none(),
+        "Terminal이 남으면 안 된다"
+    );
+    assert!(
+        !engine.attach.is_hard_occupied(sid),
+        "닫힌 surface 점유가 남았다"
+    );
+    assert_eq!(sums.surfaces, 1);
+    assert_eq!(
+        mock.lock()
+            .unwrap()
+            .purge_scope_call_count(&tasty_memory::Scope::Surface(sid)),
+        1
     );
 }
 

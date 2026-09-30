@@ -730,7 +730,7 @@ impl AppState {
         }
     }
 
-    /// 닫힌 surface의 터미널·화면 상태·메모리 정리를 요청한다.
+    /// 닫힌 surface의 도메인 자원을 engine에서 회수하고 화면 cache를 해제한다.
     /// persist_id가 있으면 해당 스크롤백 파일 삭제도 시도한다.
     pub(crate) fn cleanup_surface(
         &mut self,
@@ -742,7 +742,7 @@ impl AppState {
         self.cleanup_surface_traced(engine, surface_id, persist_id, &mut sink);
     }
 
-    /// cleanup_surface와 같은 정리를 하며 단계별 시간을 sums에 합산한다.
+    /// cleanup_surface와 같은 정리를 하며 도메인 단계별 시간을 sums에 합산한다.
     pub(crate) fn cleanup_surface_traced(
         &mut self,
         engine: &mut CoreState,
@@ -750,67 +750,16 @@ impl AppState {
         persist_id: Option<String>,
         sums: &mut crate::close_trace::CleanupSums,
     ) {
-        use std::time::Instant;
-        sums.surfaces += 1;
-        let t = Instant::now();
-        Self::delete_scrollback_persist(persist_id);
-        sums.scrollback_delete += t.elapsed();
-        let t = Instant::now();
-        self.drop_terminal(engine, surface_id);
-        sums.terminal_drop += t.elapsed();
-        let t = Instant::now();
-        self.drop_surface_indices(engine, surface_id);
-        sums.indices_drop += t.elapsed();
-        let t = Instant::now();
-        self.purge_surface_memory_scope(surface_id);
-        sums.memory_purge += t.elapsed();
-        // 닫힌 surface 점유만 지운다. 다른 surface가 남은 workspace 점유는 유지한다.
-        engine.attach.forget_closed_surface(surface_id);
-    }
-
-    fn delete_scrollback_persist(persist_id: Option<String>) {
-        if let Some(pid) = persist_id {
-            crate::scrollback_store::delete(&pid);
-        }
-    }
-
-    /// Terminal과 부속 상태를 저장소에서 제거한다. 실제 종료 처리는 Terminal의 Drop에 맡긴다.
-    fn drop_terminal(&mut self, engine: &mut CoreState, surface_id: u32) {
-        engine.pending_scrollback_inject.remove(&surface_id);
-        if let Some(old_terminal) = engine.terminals.remove(surface_id) {
-            drop(old_terminal);
-        }
-    }
-
-    fn drop_surface_indices(&mut self, engine: &mut CoreState, surface_id: u32) {
+        engine.cleanup_surface_traced(surface_id, persist_id, sums);
         #[cfg(feature = "gui")]
-        {
-            self.explorer_views.drop_view(surface_id);
-            self.dag_graph_views.drop_view(surface_id);
-        }
-        engine.command_index.drop_surface(surface_id);
-        engine.observer_router.drop_surface(surface_id);
-        engine.hook_manager.remove_surface_hooks(surface_id);
-        engine.forget_shell_integration_hint(surface_id);
-        if let Some(factory) = engine.waker_factory.as_ref() {
-            factory.forget_surface(surface_id);
-        }
+        self.release_surface_views(surface_id);
     }
 
-    /// surface 범위의 regular·secret 메모리를 삭제한다.
-    /// 메타데이터뿐 아니라 플러그인·Lua가 직접 저장한 키도 포함한다.
-    fn purge_surface_memory_scope(&mut self, surface_id: u32) {
-        let scope = tasty_memory::Scope::Surface(surface_id);
-        match self.with_memory(|m| m.purge_scope(&scope)) {
-            Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
-                surface_id,
-                regular = stats.regular,
-                secret = stats.secret,
-                "memory: purged closed-surface scope",
-            ),
-            Ok(_) => {}
-            Err(e) => tracing::warn!(surface_id, "memory: purge_scope failed: {e}"),
-        }
+    /// 닫힌 surface의 화면 전용 cache를 해제한다. 도메인 자원은 engine이 정리한다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn release_surface_views(&mut self, surface_id: u32) {
+        self.explorer_views.drop_view(surface_id);
+        self.dag_graph_views.drop_view(surface_id);
     }
 
     /// 워크스페이스 복원 사본을 만든다. 저장 여부는 호출자가 결정한다.
@@ -838,37 +787,16 @@ impl AppState {
         targets
     }
 
-    /// 워크스페이스를 제거한 뒤 닫힘 이벤트를 큐에 넣고 메모리 정리를 시도한다.
+    /// 워크스페이스 제거 뒤 범위 메모리를 engine에서 정리하고 workspace.closed를 큐에 넣는다.
     /// path는 종료 시간 로그의 경로 구분값이다.
-    pub(crate) fn after_workspace_removed(&mut self, workspace_id: u32, path: &'static str) {
-        self.enqueue_host_event(PendingHostEvent::WorkspaceClosed { workspace_id });
-        self.purge_workspace_memory_scope_traced(workspace_id, path);
-    }
-
-    /// 워크스페이스 범위 메모리 정리와 C4 계측만 한다. 통지를 보내지 않는 headless 연관 정리도 쓴다.
-    pub(crate) fn purge_workspace_memory_scope_traced(
+    fn after_workspace_removed(
         &mut self,
+        engine: &CoreState,
         workspace_id: u32,
         path: &'static str,
     ) {
-        let t = std::time::Instant::now();
-        self.purge_workspace_memory_scope(workspace_id);
-        crate::close_trace::log_ws_purge(t, path);
-    }
-
-    /// 워크스페이스 범위 메모리를 정리한다. 이벤트 기록과 함께 실행하도록 after_workspace_removed를 쓴다.
-    fn purge_workspace_memory_scope(&mut self, workspace_id: u32) {
-        let ws_scope = tasty_memory::Scope::Workspace(workspace_id);
-        match self.with_memory(|m| m.purge_scope(&ws_scope)) {
-            Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
-                workspace_id,
-                regular = stats.regular,
-                secret = stats.secret,
-                "memory: purged closed-workspace scope",
-            ),
-            Ok(_) => {}
-            Err(e) => tracing::warn!(workspace_id, "memory: purge_scope failed: {e}"),
-        }
+        self.enqueue_host_event(PendingHostEvent::WorkspaceClosed { workspace_id });
+        engine.purge_workspace_memory_scope(workspace_id, path);
     }
 
     /// 수집한 대상을 정리하고 lifecycle 알림을 큐에 넣는다.

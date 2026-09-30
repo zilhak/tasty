@@ -63,7 +63,7 @@ impl FooViewStore {
 ```rust
 pub struct AppState { /* ... */ pub(crate) foo_views: FooViewStore }
 
-pub(crate) fn cleanup_surface(&mut self, surface_id: u32) {
+pub(crate) fn release_surface_views(&mut self, surface_id: u32) {
     /* ... */
     self.foo_views.drop_view(surface_id);  // ← 누락하면 close/reopen 시 텍스처/캐시 누수
 }
@@ -89,7 +89,7 @@ state.foo_views = foo_views;   // 반드시 복원 (이후 state 접근 전에)
 ## 안티패턴
 
 - **Model 에 `egui::*` 필드** — plugin 호환성을 깬다. View 로.
-- **store `drop_view` 누락** — close/reopen 누수. `cleanup_surface` 로 강제.
+- **store `drop_view` 누락** — close/reopen 누수. 모든 닫기 경로가 부르는 `release_surface_views` 로 강제.
 - **`mem::take` 후 복원 누락** — 다음 프레임 빈 store → 전 view 재생성 → flicker/상태 손실.
 - **panel↔view 양방향 의존** — view 는 panel 을 읽지만 panel 은 view 를 모른다.
 

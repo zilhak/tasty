@@ -17,21 +17,13 @@ pub(crate) trait CascadeWindow {
 
     fn set_surface_meta(&self, surface_id: u32, key: &str, value: &str) -> std::io::Result<()>;
 
-    /// 창 쪽 surface 자원을 정리하고 소요 시간을 sums에 더한다.
-    fn cleanup_surface_traced(
-        &mut self,
-        engine: &mut CoreState,
-        surface_id: u32,
-        persist_id: Option<String>,
-        sums: &mut crate::close_trace::CleanupSums,
-    );
-
     fn fix_workspace_pointers_after_removal(&mut self, removed_idx: usize, remaining: usize);
 
     fn set_active_workspace(&mut self, index: usize);
 
-    /// 제거된 workspace의 범위 메모리를 정리한다. 통지 여부와 무관하게 모든 빌드에서 필요하다.
-    fn purge_workspace_memory_scope(&mut self, workspace_id: u32, path: &'static str);
+    /// 닫힌 surface의 화면 전용 cache를 해제한다. 도메인 자원은 CoreState가 먼저 정리한다.
+    #[cfg(feature = "gui")]
+    fn release_surface_views(&mut self, surface_id: u32);
 
     #[cfg(feature = "gui")]
     fn enqueue_surface_closed(

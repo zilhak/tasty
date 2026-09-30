@@ -505,7 +505,7 @@ impl AppState {
         let workspace_id = engine.workspaces[loc.ws_idx].id;
         engine.workspaces.remove(loc.ws_idx);
         self.fix_workspace_pointers_after_removal(loc.ws_idx, engine.workspaces.len());
-        self.after_workspace_removed(workspace_id, PATH);
+        self.after_workspace_removed(engine, workspace_id, PATH);
         let zipped: Vec<(u32, Option<String>, Option<&'static str>)> = targets
             .into_iter()
             .zip(target_kinds)

@@ -376,7 +376,7 @@ impl AppState {
         close_trace::log_collect(t, targets.len(), path);
         let workspace_id = engine.workspaces[ws_idx].id;
         engine.workspaces.remove(ws_idx);
-        self.after_workspace_removed(workspace_id, path);
+        self.after_workspace_removed(engine, workspace_id, path);
         self.fix_workspace_pointers_after_removal(ws_idx, engine.workspaces.len());
         // 제거 후 kind를 찾지 못할 수 있으므로 구독자는 surface ID로도 정리할 수 있어야 한다.
         let zipped: Vec<(u32, Option<String>, Option<&'static str>)> = targets
