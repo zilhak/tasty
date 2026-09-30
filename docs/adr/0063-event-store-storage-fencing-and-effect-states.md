@@ -40,7 +40,8 @@ domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 제품 경
 ### writer는 독점 파일 잠금과 세대 검사를 함께 쓴다
 
 - journal은 잠금 없이 열 수 있고 이 상태에서는 읽기만 한다. writer가 되려면 OS 독점 잠금을 얻은 뒤 새 세대를 등록한다.
-  잠금은 기다리지 않고 시도하며, 다른 저장소(다른 프로세스 포함)가 쥐고 있으면 이미 사용 중이라는 오류로 실패하고 writer가 되지 않는다.
+  잠금은 최대 2초 동안 간격을 늘려 가며(10ms에서 두 배씩, 최대 100ms) 다시 시도하고, 그래도 다른 저장소(다른 프로세스 포함)가 쥐고 있으면 이미 사용 중이라는 오류로 실패하고 writer가 되지 않는다.
+  자식 프로세스는 생성부터 exec까지 부모의 잠금 파일 설명을 복제해 가지므로, 방금 놓은 잠금이 그동안 남아 있을 수 있기 때문이다.
   잠금은 한 journal의 활성 writer를 하나로 제한하고, 같은 journal의 resume는 명시한 journal 선택과 이 잠금으로만 허용한다.
 - 잠금 대상은 journal DB 파일이 아니라 그 옆의 `<journal 파일 경로>.writer-lock` 파일이다. Windows의 파일 잠금(LockFileEx)은 강제 잠금이라
   DB 파일 자체를 잠그면 같은 파일에 대한 SQLite 자신의 읽기·쓰기까지 막히기 때문이다. 세 플랫폼에서 같은 방식을 쓴다.
@@ -112,6 +113,7 @@ GC로 지운 공간은 VACUUM 전까지 파일 크기로 돌아오지 않는다.
 잠금을 지원하지 않는 환경(일부 네트워크 파일시스템 등)에서는 writer로 열 수 없으므로 데이터 홈 위치에 제약이 생긴다.
 일부 NFS·FUSE 구성은 잠금을 로컬에서만 성공시켜 호스트 간 배타를 보장하지 않는다.
 journal마다 잠금 파일 하나가 옆에 남는다. 이 파일을 지우는 정리 작업은 실행 중인 writer가 없음을 확인한 뒤에만 한다.
+잠금이 실제로 잡혀 있으면 writer 획득 실패까지 재시도 상한만큼 걸린다.
 
 전이표를 고정하면 복구기가 상태 이름만으로 다음 동작을 정할 수 있다. Uncertain에서 Cancelled로 가려면 실행되지 않았다는 증거가 필요하므로
 대조 수단이 없는 effect는 Uncertain으로 오래 남을 수 있다. 이는 결과를 아는 척하지 않기 위해 감수한다.
@@ -125,6 +127,9 @@ stream별 부분 소비자의 위치 표현은 아직 없다. 보존·정리와 
 ID 예약은 이벤트 commit과 다른 transaction이므로 실패한 명령이 쓰지 않은 ID가 빈 구간으로 남는다. ID가 연속이라는 가정에 기대는 코드는 이 journal의 ID에 쓸 수 없다.
 
 schema 이름 기반 식별은 같은 이름의 버전 표를 가진 다른 앱 DB를 걸러내지 못한다. 이 저장소의 다른 DB는 그 표를 쓰지 않는다.
+
+강제 종료 시험(`crates/tasty-event-store/tests/crash.rs`)은 commit 직후, 준비한 commit을 확정하기 전(API 경계), effect Running 기록 직후, 두 프로세스의 동시 첫 open에서 실제 프로세스를 abort한 뒤 journal을 다시 열어 판정한다.
+transaction 내부 지점의 abort와 전원 차단 수준의 쓰기 유실은 재현하지 않는다.
 
 ## Alternatives Considered
 
@@ -160,4 +165,4 @@ schema 이름 기반 식별은 같은 이름의 버전 표를 가진 다른 앱 
 
 - [ADR-0055](0055-structural-domain-event-sourcing.md) · [ADR-0056](0056-crate-boundaries-for-core-event-store-and-task-runtime.md) · [ADR-0057](0057-command-identity-for-mutation-retries.md) · [ADR-0010](0010-storage-failure-reporting.md)
 - 현재 구조: [아키텍처](../architecture/index.md)의 도메인-IO 절
-- 현재 구현: `crates/tasty-event-store/src/store.rs`, `crates/tasty-event-store/src/schema.rs`, `crates/tasty-event-store/src/payload.rs`, `crates/tasty-event-store/src/effect.rs`, `crates/tasty-event-store/src/command.rs`.
+- 현재 구현: `crates/tasty-event-store/src/store.rs`, `crates/tasty-event-store/src/schema.rs`, `crates/tasty-event-store/src/payload.rs`, `crates/tasty-event-store/src/effect.rs`, `crates/tasty-event-store/src/command.rs`, `crates/tasty-event-store/src/identity.rs`(ID 예약), `crates/tasty-event-store/src/projection.rs`(projection 출력·cursor).
