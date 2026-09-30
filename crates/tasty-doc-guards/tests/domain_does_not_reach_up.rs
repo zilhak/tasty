@@ -90,7 +90,7 @@ const UPPER: &[(&str, &str)] = &[
 /// 제품 도메인 코드의 gui 조건 수. gui_gates와 같은 판독으로 측정한 기준값이다.
 /// headless에 소비자가 없는 정의를 제외하는 조건 자체는 허용한다(ADR-0003).
 /// 증가·감소를 모두 확인해 변경 이유를 검토한다. GUI 동작을 조건부로 숨기는 데 사용하면 안 된다.
-const GUI_GATES_IN_DOMAIN: usize = 267;
+const GUI_GATES_IN_DOMAIN: usize = 256;
 
 /// 2026-09-21 실측 92파일(core84·ports8, test 전용이 아닌 파일 91)을 기준으로 둔 수집 하한.
 const MIN_DOMAIN_FILES: usize = 80;

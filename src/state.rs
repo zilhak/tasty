@@ -1,4 +1,6 @@
 mod accessors;
+#[cfg(feature = "gui")]
+pub(crate) mod branch;
 mod cascade_window;
 #[cfg(feature = "gui")]
 mod detect;
@@ -135,6 +137,9 @@ pub struct AppState {
     /// 공지와 조치 버튼을 표시하는 배너 관리자.
     #[cfg(feature = "gui")]
     pub(crate) banners: crate::adapters::ui::BannerManager,
+    /// 상태바에 표시할 선택 surface의 Git branch 캐시. 무효화는 branch 모듈이 맡는다.
+    #[cfg(feature = "gui")]
+    pub(crate) branch_cache: branch::BranchCache,
     /// kind별 최근 파일 목록. 읽기·저장은 RecentFilesStore가 담당한다.
     pub(crate) recent_files: crate::recent_files::RecentFiles,
     /// 팝업 위 포인터를 아래 터미널·분할선에 전달하지 않도록 하는 프레임 상태.
@@ -465,6 +470,8 @@ impl AppState {
             toasts: crate::adapters::ui::ToastManager::new(),
             #[cfg(feature = "gui")]
             banners: crate::adapters::ui::BannerManager::new(),
+            #[cfg(feature = "gui")]
+            branch_cache: branch::BranchCache::default(),
             #[cfg(feature = "gui")]
             explorer_views: Default::default(),
             #[cfg(feature = "gui")]

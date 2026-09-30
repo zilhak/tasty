@@ -1,9 +1,10 @@
-//! 상태바가 표시할 한 surface의 Git HEAD 캐시. GUI의 busy 폴링에서 갱신한다.
+//! 상태바가 표시할 한 surface의 Git HEAD 캐시. 창마다 두며 GUI의 busy 폴링에서 갱신한다.
 //! 매 렌더링마다 디스크를 읽지 않으며 원격 cwd를 로컬 경로로 해석하지 않는다.
 
 use std::path::{Path, PathBuf};
 
-use super::CoreState;
+use super::AppState;
+use crate::core::CoreState;
 
 /// 브랜치 이름과 detached SHA를 구분한다. 표시용 접두사는 상태바가 붙인다.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,12 +20,16 @@ pub(crate) struct BranchCache {
     branch: Option<HeadState>,
 }
 
-impl CoreState {
+impl AppState {
     /// cwd가 같아도 checkout 결과가 바뀔 수 있어 다시 읽는다.
     /// 대상 ID 또는 HEAD 값이 바뀌었으면 true이며 호출자가 redraw에 반영한다.
-    pub(crate) fn refresh_status_bar_branch(&mut self, surface_id: Option<u32>) -> bool {
+    pub(crate) fn refresh_status_bar_branch(
+        &mut self,
+        engine: &CoreState,
+        surface_id: Option<u32>,
+    ) -> bool {
         let branch = surface_id
-            .and_then(|sid| self.local_surface_cwd(sid))
+            .and_then(|sid| engine.local_surface_cwd(sid))
             .and_then(|cwd| git_branch(&cwd));
         let changed =
             self.branch_cache.surface_id != surface_id || self.branch_cache.branch != branch;

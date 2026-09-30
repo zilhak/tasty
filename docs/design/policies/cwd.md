@@ -114,7 +114,7 @@ mirror 워크스페이스의 convert 는 로컬에서 실행되지 않고 `Struc
 | `intent/surface.rs` (convert) | mirror 면 `StructuralOp::ConvertSurface.cwd` | 명시값만 실린다(§3-1 표) |
 | `core/attach_runtime.rs` (`execute_forwarded_structural_op`) | **서버측** 로컬 실행 | 서버 자기 트리의 surface 라 `Local` — 이 규칙의 대상이 아니다 |
 | `state.rs` (`enqueue_convert_input_popup`) · `adapters/ui/tools_menu.rs` | plugin popup context 의 `cwd` 키 | `cwd` 키에는 `Local` 만. 원격 값은 별도 키로만 나간다(ADR-0022) |
-| `core/state/branch.rs` (StatusBar git 브랜치) | 로컬 디스크 상향 탐색 | `local_surface_cwd` — mirror surface 는 브랜치 미표시 |
+| `state/branch.rs` (StatusBar git 브랜치) | 로컬 디스크 상향 탐색 | `local_surface_cwd` — mirror surface 는 브랜치 미표시 |
 | `intent/preset_capture.rs` (terminal cwd) | 영속 preset → 로컬 재실행 | `local_surface_cwd` — mirror terminal 은 cwd 없이 저장 |
 
 `CoreState::surface_cwd` 를 거치지 않고 `Terminal::get_cwd()` 를 직접 읽는 자리는 각자 mirror 를 배제한다: `adapters/ui/terminal_link.rs` 와 `view/main/redraw.rs` 의 선택 경로 열기는 `process_id()` 가 없으면(= mirror) 로컬 검증을 건너뛰거나 빠지고, `core/layout_persistence/capture.rs` 는 mirror 워크스페이스를 저장하지 않으며, `CoreState::refresh_tab_display_name` 은 표시 전용이라 로컬 fs 를 건드리지 않는다.

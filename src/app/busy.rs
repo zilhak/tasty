@@ -13,7 +13,9 @@ impl App {
                     let mut changed = crate::core::Core::update_busy_surfaces(&mut main.core_state);
                     // 상태바는 포커스된 surface만 표시하므로 불필요한 Git 조회를 피한다.
                     let focused = main.state.focused_surface_id(&main.core_state);
-                    changed |= main.core_state.refresh_status_bar_branch(focused);
+                    changed |= main
+                        .state
+                        .refresh_status_bar_branch(&main.core_state, focused);
                     main.core_state.forward_busy_activity(&hub);
                     main.core_state.forward_attention(&hub);
                     main.core_state.forward_surface_cwd(&hub);

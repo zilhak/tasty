@@ -7,8 +7,8 @@ use tasty_type_geometry::length::{LogicalPx, PhysicalPx};
 use tasty_type_geometry::rect::PhysicalRect;
 use tasty_ui_widgets::{StatusBarAction, StatusBarData, draw_status_bar_view};
 
-use crate::core::state::HeadState;
 use crate::state::AppState;
+use crate::state::branch::HeadState;
 use crate::theme;
 
 /// Area 생성과 egui_bridge의 레이어 정렬에서 공유하는 상태바 ID.
@@ -48,7 +48,7 @@ pub fn draw_status_bar(
         .map(|term| (term.cols(), term.rows()));
     let shell = surface_id.and_then(|sid| engine.foreground_name(sid).map(str::to_owned));
     let branch = surface_id
-        .and_then(|sid| engine.status_bar_branch(sid))
+        .and_then(|sid| state.status_bar_branch(sid))
         .map(head_display);
     let pane_id = surface_id.and_then(|sid| engine.find_pane_for_surface(sid));
     let palette_keys = engine

@@ -284,10 +284,6 @@ pub struct CoreState {
     // 매 프레임 OS 프로세스를 조회하지 않도록 busy 폴링의 전경 이름을 재사용한다.
     pub(crate) foreground_names: std::collections::HashMap<u32, String>,
 
-    /// 상태바에 표시할 선택 surface의 Git branch 캐시. 무효화는 branch 모듈이 맡는다.
-    #[cfg(feature = "gui")]
-    pub(crate) branch_cache: branch::BranchCache,
-
     /// 폴링에서 전경 이름이 바뀔 때 올리는 번호. PID나 실제 프로세스 동일성을 판별하는 값은 아니다.
     pub(crate) foreground_generation: std::collections::HashMap<u32, u64>,
 
@@ -572,8 +568,6 @@ impl CoreState {
             shell_integration_hint_shown: std::collections::HashSet::new(),
             foreground_names: std::collections::HashMap::new(),
             foreground_generation: std::collections::HashMap::new(),
-            #[cfg(feature = "gui")]
-            branch_cache: branch::BranchCache::default(),
             pending_move: None,
             #[cfg(feature = "gui")]
             explorer_favorites: crate::core::explorer_favorites::ExplorerFavorites::load(),
@@ -974,8 +968,6 @@ fn file_handler_user_config_path() -> Option<std::path::PathBuf> {
 }
 
 mod attention;
-#[cfg(feature = "gui")]
-mod branch;
 mod busy;
 mod category;
 pub mod child_liveness;
@@ -992,8 +984,6 @@ mod surface_cwd;
 mod terminal_finders;
 
 pub(crate) use attention::AttentionKind;
-#[cfg(feature = "gui")]
-pub(crate) use branch::HeadState;
 pub use category::CategoryOpError;
 #[cfg(feature = "gui")]
 pub use finders::SurfaceDisplayPath;
