@@ -2593,13 +2593,16 @@ mod forward_exec_tests {
         .expect("close ok");
 
         assert_eq!(engine.closed_items.len(), before + 1);
-        assert!(!state.pending_lifecycle_events.is_empty());
-        assert!(
-            state
-                .pending_lifecycle_events
-                .iter()
-                .all(|e| !e.is_user_close)
-        );
+        // lifecycle 통지는 gui 빌드에만 있다.
+        if cfg!(feature = "gui") {
+            assert!(!state.pending_lifecycle_events.is_empty());
+            assert!(
+                state
+                    .pending_lifecycle_events
+                    .iter()
+                    .all(|e| !e.is_user_close)
+            );
+        }
     }
 
     /// 서버도 mirror면 요청은 다시 전달된다. 그 실패는 서버 사용자 toast로 가지 않는다.

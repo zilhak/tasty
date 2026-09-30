@@ -160,17 +160,20 @@ fn ipc_tab_and_pane_closes_leave_no_user_close_trace_for_every_caller() {
         assert_eq!(closed["closed"], true, "{caller:?}");
 
         assert_eq!(engine.closed_items.len(), 0, "{caller:?}");
-        assert!(
-            !state.pending_lifecycle_events.is_empty(),
-            "{caller:?}: 닫기 lifecycle을 하나도 재지 않았다"
-        );
-        assert!(
-            state
-                .pending_lifecycle_events
-                .iter()
-                .all(|e| !e.is_user_close),
-            "{caller:?}"
-        );
+        // lifecycle 통지는 gui 빌드에만 있다.
+        if cfg!(feature = "gui") {
+            assert!(
+                !state.pending_lifecycle_events.is_empty(),
+                "{caller:?}: 닫기 lifecycle을 하나도 재지 않았다"
+            );
+            assert!(
+                state
+                    .pending_lifecycle_events
+                    .iter()
+                    .all(|e| !e.is_user_close),
+                "{caller:?}"
+            );
+        }
     }
 }
 

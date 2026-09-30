@@ -47,12 +47,14 @@ fn send_failure_after_registry_and_soft_lock_closes_only_the_owned_surface() {
             .list_children(parent)
             .is_empty()
     );
-    // 롤백 닫기는 spawn 요청의 출처를 따른다.
-    assert!(!state.pending_lifecycle_events.is_empty());
-    assert!(
-        state
-            .pending_lifecycle_events
-            .iter()
-            .all(|e| !e.is_user_close)
-    );
+    // 롤백 닫기는 spawn 요청의 출처를 따른다. lifecycle 통지는 gui 빌드에만 있다.
+    if cfg!(feature = "gui") {
+        assert!(!state.pending_lifecycle_events.is_empty());
+        assert!(
+            state
+                .pending_lifecycle_events
+                .iter()
+                .all(|e| !e.is_user_close)
+        );
+    }
 }
