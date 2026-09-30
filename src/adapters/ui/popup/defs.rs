@@ -104,8 +104,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::search_bar::draw_search_bar,
-                // 검색 상태의 정리는 검색창의 닫기 처리에서 맡는다.
-                on_close: None,
+                on_close: Some(crate::adapters::ui::search_bar::on_close_search_bar),
             },
             PopupDef {
                 id: crate::adapters::ui::info_modal::INFO_MODAL_ID,

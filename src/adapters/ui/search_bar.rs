@@ -10,6 +10,16 @@ use tasty_type_geometry::length::LogicalPx;
 /// 없어 `Theme` 필드가 없다 — ADR-0035 대로 **이름에 primitive 임을 남긴다**.
 const COUNTER_FONT_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
+/// PopupDef::on_close entry point — 어떤 경로로 닫히든(대상 surface 소멸 포함) 검색 결과를 비운다.
+/// 남겨 두면 다른 surface에서 다시 열 때 이전 surface의 좌표가 강조된다.
+pub fn on_close_search_bar(
+    _ctx: &egui::Context,
+    state: &mut AppState,
+    _engine: &mut crate::core::CoreState,
+) {
+    state.search.clear();
+}
+
 /// Draw the search bar popup content.
 pub fn draw_search_bar(
     ui: &mut egui::Ui,

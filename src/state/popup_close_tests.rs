@@ -1392,6 +1392,12 @@ fn search_bar_closes_with_its_surface_and_reopens_elsewhere() {
     let (mut state, mut engine) = test_state();
     let (tab_id, target, other) = two_tab_surfaces(&mut state, &mut engine);
     state.search.surface_id = target;
+    state.search.query = "needle".to_string();
+    state.search.matches = vec![tasty_terminal::search::SearchMatch {
+        row: 0,
+        col_start: 0,
+        col_end: 6,
+    }];
     crate::intent::popup::handle(
         &mut state,
         &UiIntent::OpenPopup {
@@ -1408,6 +1414,10 @@ fn search_bar_closes_with_its_surface_and_reopens_elsewhere() {
     assert!(
         !state.popups.is_open(SEARCH_BAR_POPUP_ID),
         "search bar stays open after its surface closed"
+    );
+    assert!(
+        state.search.query.is_empty() && state.search.matches.is_empty(),
+        "results of the closed surface must not carry over to the next surface"
     );
 
     state.search.surface_id = other;
