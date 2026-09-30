@@ -15,7 +15,7 @@ use tasty_event_store::{
 };
 use tasty_model::WorkspaceId;
 
-use super::common::{AsLockError, JOURNAL, db_path, retry_while_locked};
+use super::common::{JOURNAL, db_path};
 use crate::runtime::command_executor::{
     ExecError, Executed, Executor, JournalDecider, MAX_DECIDE_ATTEMPTS, Request, Source,
 };
@@ -253,18 +253,9 @@ fn ids_after(model: &JournalModel) -> Box<MemoryIdSupplier> {
 }
 
 fn open(path: &std::path::Path, fake: &Fake) -> Executor<Fake> {
-    retry_while_locked(|| {
-        let store = EventStore::open(path, JOURNAL).expect("open journal");
-        let model = journal::load(&store).expect("load");
-        Executor::open(fake.clone(), store, ids_after(&model))
-    })
-    .expect("executor")
-}
-
-impl AsLockError for ExecError<Reject> {
-    fn is_writer_locked(&self) -> bool {
-        matches!(self, ExecError::Store(e) if e.is_writer_locked())
-    }
+    let store = EventStore::open(path, JOURNAL).expect("open journal");
+    let model = journal::load(&store).expect("load");
+    Executor::open(fake.clone(), store, ids_after(&model)).expect("executor")
 }
 
 fn state(executor: &Executor<Fake>) -> JournalModel {
