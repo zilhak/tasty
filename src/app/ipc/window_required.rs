@@ -107,7 +107,7 @@ impl App {
                 return IpcStep::Handled;
             }
         };
-        let (w, engine) = match self.main_pair_mut(focused_id) {
+        let (w, engine) = match self.engines_mut().window_pair(focused_id) {
             Some(pair) => pair,
             // 현재 ID가 MainView를 가리키지 않으면 별도 응답 없이 처리됨으로 반환한다.
             None => return IpcStep::Handled,

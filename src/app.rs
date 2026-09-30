@@ -102,13 +102,6 @@ impl std::fmt::Display for NoGpuAdapter {
 #[cfg(feature = "gui")]
 impl std::error::Error for NoGpuAdapter {}
 
-#[cfg_attr(
-    not(feature = "gui"),
-    expect(
-        dead_code,
-        reason = "some fields are read only by the gui event loop; headless has no reader"
-    )
-)]
 pub(crate) struct App {
     pub(crate) core: Core,
     pub(crate) hub: Hub,
@@ -165,6 +158,13 @@ pub(crate) struct App {
     #[cfg(feature = "gui")]
     pub(crate) modal_shake: Option<ModalShake>,
     #[cfg(debug_assertions)]
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "read only by the gui event loop; headless has no reader"
+        )
+    )]
     pub(crate) input_simulation_enabled: bool,
     pub(crate) plugin_manager: Option<plugin::PluginManager>,
     /// 헤드리스의 전체 플러그인 설치·기동을 수행했는지 구별한다.

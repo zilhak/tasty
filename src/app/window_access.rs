@@ -424,14 +424,6 @@ impl App {
         engines_mut!(self).window_pair(wid)
     }
 
-    /// 창 ID로 고른 MainView와 그 engine.
-    pub(crate) fn main_pair_mut(
-        &mut self,
-        wid: WindowId,
-    ) -> Option<(&mut MainView, &mut CoreState)> {
-        engines_mut!(self).window_pair(wid)
-    }
-
     pub(crate) fn focused_window_mut(&mut self) -> Option<&mut view::main::MainView> {
         self.view
             .focused_view_id
