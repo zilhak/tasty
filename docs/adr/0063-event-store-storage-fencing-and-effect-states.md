@@ -1,6 +1,6 @@
 # ADR-0063: 이벤트 저장소는 payload를 journal DB에 두고 파일 잠금과 writer 세대로 쓰기를 제한한다
 
-- **Status**: Accepted — 구현 상태: 이 결정의 payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별은 `tasty-event-store`에 구현됐다. 영속 ID 예약과, projection 출력 행과 consumer 위치의 동시 확정도 구현됐다. 미이행: 제품 경로 연결(아직 어떤 크레이트도 이 저장소를 쓰지 않는다), 새 journal로 가져올 때의 payload 복사, 로그 보존·정리, stream별 부분 소비자의 위치 표현, 기존 runtime ID 공간과 예약 ID 공간의 통합
+- **Status**: Accepted — 구현 상태: 이 결정의 payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별은 `tasty-event-store`에 구현됐다. 영속 ID 예약과, projection 출력 행과 consumer 위치의 동시 확정도 구현됐다. 미이행: 제품 경로 연결(root `src/runtime` 시험 전용 모듈만 이 저장소를 사용하고 제품 경로는 연결되지 않았다), 새 journal로 가져올 때의 payload 복사, 로그 보존·정리, stream별 부분 소비자의 위치 표현, 기존 runtime ID 공간과 예약 ID 공간의 통합(`u32` 별칭 공유와 `u64` 예약의 좁힘 규칙 포함, 재검토 조건 참조)
 - **Date**: 2026-09-30
 - **Tags**: event-sourcing, storage, sqlite, durability, effects, fencing
 - **Group**: foundation
@@ -148,6 +148,7 @@ schema 이름 기반 식별은 같은 이름의 버전 표를 가진 다른 앱 
 - 로그 보존·정리를 설계하면 외래 키, cut 계산, snapshot+tail 재구성의 보존 경계를 함께 바꾸고 이 ADR의 schema 절을 다시 본다.
 - stream별 부분 소비자나 외부 projection 저장소가 필요해지면 checkpoint 키 형태(batch 단위 또는 stream별)와 출력 행 형식을 다시 정한다.
 - 제품에 연결하면서 기존 runtime ID와 예약 ID를 한 공간으로 합치거나, 여러 journal이 ID를 공유해야 하면 ID 예약 절을 다시 정한다.
+  저널 ID와 runtime ID는 모두 `tasty-model`이 재수출하는 같은 `u32` 별칭이라 컴파일러가 두 공간을 구분하지 못한다. EventStore의 예약은 `u64` 범위를 내주지만 `IdSupplier`는 `u32`를 준다. 제품에 배선하기 전에 `u64`→`u32` 좁힘 규칙과, 공간 통합 또는 newtype 구분을 정한다.
 - 여러 호스트나 여러 프로세스가 같은 journal에 써야 하는 요구가 생기면 잠금·세대 모델을 다시 정한다.
 
 ### 실행 결과로 확인
