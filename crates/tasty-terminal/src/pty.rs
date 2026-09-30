@@ -440,7 +440,7 @@ fn build_shell_command(
     }
 
     // Add tasty's own binary directory to PATH so `tasty` CLI works inside the
-    // terminal. hook_handler::trigger::spawn_shell 와 동일한 보강을 공유
+    // terminal. hook_runtime::trigger::spawn_shell 와 동일한 보강을 공유
     // 헬퍼로 적용해 두 경로의 동작을 일치시킨다(패키징된 macOS `.app` 의
     // 최소 PATH 에서 `tasty` self 호출 해결).
     if let Some(new_path) = tasty_utils::process::path_prepending_self_dir(std::env::var_os("PATH"))
