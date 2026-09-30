@@ -380,7 +380,7 @@ impl RenameTarget {
         }
     }
 
-    /// 여는 시점의 위치로 표시 범위를 정한다. 대상을 찾지 못하면 창 범위로 연다.
+    /// 대상 ID로 표시 범위를 정한다. 대상을 찾지 못하면 창 범위로 연다.
     pub fn popup_scope(
         &self,
         engine: &crate::core::CoreState,
@@ -390,16 +390,11 @@ impl RenameTarget {
             Self::WorkspaceName { workspace_id } | Self::WorkspaceSubtitle { workspace_id } => {
                 engine
                     .find_workspace_index_for_id(*workspace_id)
-                    .map_or(PopupScope::Window, PopupScope::Workspace)
+                    .map_or(PopupScope::Window, |_| PopupScope::Workspace(*workspace_id))
             }
             Self::TabName { tab_id } => engine
                 .find_pane_for_tab(*tab_id)
-                .and_then(|pane_id| {
-                    let pane = engine.find_pane_by_id(pane_id)?;
-                    let index = pane.tabs.iter().position(|t| t.id == *tab_id)?;
-                    Some(PopupScope::Tab(pane_id, index))
-                })
-                .unwrap_or(PopupScope::Window),
+                .map_or(PopupScope::Window, |_| PopupScope::Tab(*tab_id)),
             Self::ExplorerEntry { surface_id, .. } => {
                 crate::model::popup_kind::PopupScope::Surface(*surface_id)
             }

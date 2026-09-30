@@ -8,12 +8,12 @@ pub type PopupId = &'static str;
 pub enum PopupScope {
     /// 윈도우 전체에 클램프.
     Window,
-    /// 지정된 워크스페이스가 활성일 때만 표시.
-    Workspace(usize),
+    /// 지정된 워크스페이스(ID)가 활성일 때만 표시. 순서가 바뀌어도 같은 워크스페이스를 따른다.
+    Workspace(u32),
     /// 지정된 pane 이 보일 때만 표시 (pane 영역 클램프).
     Pane(u32),
-    /// 지정된 tab 이 활성일 때만 표시 (pane 영역 클램프).
-    Tab(u32, usize),
+    /// 지정된 tab(ID)이 활성일 때만 표시 (그 탭이 속한 pane 영역 클램프).
+    Tab(u32),
     /// 지정된 surface 가 보일 때만 표시 (surface 영역 클램프).
     Surface(u32),
 }

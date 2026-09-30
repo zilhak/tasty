@@ -240,7 +240,7 @@ impl MainView {
             return true;
         }
         if matches_any_binding(&kb.toggle_dag_list, key, mods) {
-            Self::toggle_dag_list_popup(state);
+            Self::toggle_dag_list_popup(state, engine);
             return true;
         }
         if matches_any_binding(&kb.find, key, mods) {
@@ -770,12 +770,16 @@ impl MainView {
     }
 
     /// 열 때의 활성 workspace에 연결한다. 다른 workspace로 가면 숨고 돌아오면 다시 보인다.
-    pub(crate) fn toggle_dag_list_popup(state: &mut crate::state::AppState) {
+    pub(crate) fn toggle_dag_list_popup(
+        state: &mut crate::state::AppState,
+        engine: &crate::core::CoreState,
+    ) {
+        let workspace_id = state.active_workspace(engine).id;
         state.dispatch_intent(
             UiIntent::TogglePopup {
                 id: crate::adapters::ui::popup::dag_list::DAG_LIST_POPUP_ID,
                 mode: OpenPopupMode::WithScope(crate::adapters::ui::popup::PopupScope::Workspace(
-                    state.active_workspace,
+                    workspace_id,
                 )),
             }
             .from_user_shortcut("toggle_dag_list"),

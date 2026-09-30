@@ -136,7 +136,7 @@ pub(super) fn handle_debug_host_popup_open(
             crate::adapters::ui::popup::PopupScope::Surface(sid),
         ),
         (true, None) => crate::intent::OpenPopupMode::WithScope(
-            crate::adapters::ui::popup::PopupScope::Workspace(state.active_workspace),
+            crate::adapters::ui::popup::PopupScope::Workspace(state.active_workspace(engine).id),
         ),
         (false, None) => crate::intent::OpenPopupMode::CenteredFocused,
     };

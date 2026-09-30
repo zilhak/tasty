@@ -9,7 +9,7 @@ DAG 를 **잠깐 확인하고 닫는** 관측 창이다. 탭 하나를 통째로
 하나를 고르면 같은 영역이 그 그래프로 교체된다(`DrillDown`). back bar 로 목록에 돌아온다.
 
 `PopupScope::Workspace`에 속하므로 다른 workspace로 전환하면 숨겨지고, 돌아오면
-보던 상태 그대로 다시 나타난다.
+보던 상태 그대로 다시 나타난다. 범위는 workspace ID라 에이전트가 workspace 순서를 바꾸거나 앞쪽 workspace를 닫아도 연 workspace를 따라간다.
 
 ## 트리거
 
@@ -18,7 +18,7 @@ DAG 를 **잠깐 확인하고 닫는** 관측 창이다. 탭 하나를 통째로
   설정 → 단축키 → General 에서 바꾼다([../../keybindings/index.md](../../keybindings/index.md)).
 
 여는 경로는 둘 다 `UiIntent::OpenPopup` / `TogglePopup` +
-`OpenPopupMode::WithScope(PopupScope::Workspace(활성 인덱스))` 로 연다. 스코프는 정의가
+`OpenPopupMode::WithScope(PopupScope::Workspace(활성 workspace ID))` 로 연다. 스코프는 정의가
 아니라 **여는 시점**에 정해지므로 `PopupDef.default_scope` 는 안전한 기본(`Window`)만 들고 있다.
 
 release에는 에이전트가 이 popup을 강제로 여는 IPC가 없다. 사용자 조작을 재현하는

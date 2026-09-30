@@ -96,7 +96,7 @@ plugin의 egui-mesh 팝업도 키보드 입력을 차단한다. 호스트 PopupM
 
 ## 스코프
 
-팝업은 소속 범위(`PopupScope`)를 가지며 가시성·경계가 결정된다. enum: `Window` / `Workspace(usize)` / `Pane(u32)` / `Tab(u32, usize)` / `Surface(u32)`.
+팝업은 소속 범위(`PopupScope`)를 가지며 가시성·경계가 결정된다. enum: `Window` / `Workspace(u32)` / `Pane(u32)` / `Tab(u32)` / `Surface(u32)`. 모든 대상은 ID다. 에이전트가 앞쪽 workspace를 닫거나 workspace·탭 순서를 바꿔도 팝업은 연 대상을 따라간다. 같은 인덱스로 밀려온 다른 대상에서 보이지 않는다. `Tab`의 경계는 그 탭이 활성인 pane에서 찾는다.
 
 | 스코프 | 가시성 | 경계 clamp | scrim 이 덮는 rect |
 |--------|--------|-----------|--------------------|
@@ -111,13 +111,13 @@ plugin의 egui-mesh 팝업도 키보드 입력을 차단한다. 호스트 PopupM
 `Workspace` 스코프의 clamp 는 실제로는 윈도우 전체다 — 워크스페이스가 윈도우를 통째로
 차지하므로 둘이 같은 사각형이다. 따라서 이 스코프가 실질적으로 결정하는 것은 **가시성**이다.
 
-**스코프는 `PopupDef` 에 못 박히지 않는다.** `Workspace(usize)` / `Pane(u32)` 처럼 대상을
+**스코프는 `PopupDef` 에 못 박히지 않는다.** `Workspace(u32)` / `Pane(u32)` 처럼 대상을
 런타임에야 아는 스코프는 `default_scope` 에 안전한 기본만 두고, 여는 쪽이
 `OpenPopupMode::WithScope(scope)` 로 실제 값을 주입한다. 현재 소비자:
 
 | 팝업 | 스코프 | 여는 쪽이 주입하는 값 |
 |------|--------|----------------------|
-| [DAG 목록](../../features/agent-collaboration/screens/dag-list-popup.md) (`dag_list`) | Workspace | 여는 시점의 활성 workspace 인덱스 |
+| [DAG 목록](../../features/agent-collaboration/screens/dag-list-popup.md) (`dag_list`) | Workspace | 여는 시점의 활성 workspace ID |
 | 변환(`convert_surface`) · 검색바(`search_bar`) | Surface | 포커스 surface id |
 | 부모가 있는 파일 피커(`file_picker`) | 부모의 유효 범위 | host가 첫 paint 전에 부모 선언 종류+target을 해석 |
 

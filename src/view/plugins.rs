@@ -124,9 +124,11 @@ impl View for PluginsView {
 
             let empty_layout = LayoutContext {
                 active_workspace: 0,
+                active_workspace_id: 0,
                 pane_rects: Vec::new(),
                 surface_rects: Vec::new(),
                 active_tabs: Vec::new(),
+                active_tab_ids: Vec::new(),
             };
             toasts.draw(ctx, &empty_layout, false);
         });

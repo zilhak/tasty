@@ -141,9 +141,11 @@ fn hidden_child_keeps_selection_and_request_without_paint_hit_or_keyboard_gate()
     let rect = egui::Rect::from_min_size(egui::pos2(100.0, 60.0), egui::vec2(400.0, 360.0));
     let mut layout = LayoutContext {
         active_workspace: 0,
+        active_workspace_id: 0,
         pane_rects: vec![],
         surface_rects: vec![(17, rect)],
         active_tabs: vec![],
+        active_tab_ids: vec![],
     };
     let mut draw = |state: &mut AppState, layout: &LayoutContext, events| {
         let raw = egui::RawInput {

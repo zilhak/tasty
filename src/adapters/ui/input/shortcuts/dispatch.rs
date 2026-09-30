@@ -433,7 +433,7 @@ impl MainView {
                     );
                 }
             }
-            "toggle_dag_list" => Self::toggle_dag_list_popup(state),
+            "toggle_dag_list" => Self::toggle_dag_list_popup(state, engine),
             "open_port_scanner" => Self::open_tool_popup(
                 state,
                 crate::adapters::ui::popup::port_scanner::PORT_SCANNER_POPUP_ID,

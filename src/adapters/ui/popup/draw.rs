@@ -604,12 +604,9 @@ impl PopupManager {
         let Some(ctx) = ctx else { return true };
         match scope {
             PopupScope::Window => true,
-            PopupScope::Workspace(ws_idx) => *ws_idx == ctx.active_workspace,
+            PopupScope::Workspace(ws_id) => *ws_id == ctx.active_workspace_id,
             PopupScope::Pane(pane_id) => ctx.pane_rects.iter().any(|(id, _)| *id == *pane_id),
-            PopupScope::Tab(pane_id, tab_idx) => ctx
-                .active_tabs
-                .iter()
-                .any(|(pid, tidx)| *pid == *pane_id && *tidx == *tab_idx),
+            PopupScope::Tab(tab_id) => ctx.active_tab_ids.iter().any(|(_, tid)| *tid == *tab_id),
             PopupScope::Surface(surface_id) => {
                 ctx.surface_rects.iter().any(|(id, _)| *id == *surface_id)
             }
@@ -630,11 +627,13 @@ impl PopupManager {
                 .iter()
                 .find(|(id, _)| *id == *pane_id)
                 .map(|(_, r)| *r),
-            PopupScope::Tab(pane_id, _) => ctx
-                .pane_rects
-                .iter()
-                .find(|(id, _)| *id == *pane_id)
-                .map(|(_, r)| *r),
+            PopupScope::Tab(tab_id) => {
+                let (pane_id, _) = ctx.active_tab_ids.iter().find(|(_, tid)| *tid == *tab_id)?;
+                ctx.pane_rects
+                    .iter()
+                    .find(|(id, _)| *id == *pane_id)
+                    .map(|(_, r)| *r)
+            }
             PopupScope::Surface(surface_id) => ctx
                 .surface_rects
                 .iter()
@@ -796,12 +795,14 @@ mod tests {
     fn two_surface_layout() -> LayoutContext {
         LayoutContext {
             active_workspace: 0,
+            active_workspace_id: 0,
             pane_rects: vec![(
                 1,
                 egui::Rect::from_min_max(egui::pos2(32.0, 60.0), egui::pos2(1000.0, 776.0)),
             )],
             surface_rects: vec![(SURFACE_A, surface_a()), (SURFACE_B, surface_b())],
             active_tabs: vec![(1, 0)],
+            active_tab_ids: vec![],
         }
     }
 
@@ -870,9 +871,11 @@ mod tests {
         let tiny = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(6.0, 400.0));
         let layout = LayoutContext {
             active_workspace: 0,
+            active_workspace_id: 0,
             pane_rects: vec![],
             surface_rects: vec![(SURFACE_A, tiny)],
             active_tabs: vec![],
+            active_tab_ids: vec![],
         };
         let bounds = PopupManager::scope_bounds(
             &PopupScope::Surface(SURFACE_A),

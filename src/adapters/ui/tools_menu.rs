@@ -133,7 +133,7 @@ pub fn draw_tools_menu(
             UiIntent::OpenPopup {
                 id: popup_id,
                 mode: OpenPopupMode::WithScope(popup::PopupScope::Workspace(
-                    state.active_workspace,
+                    state.active_workspace(engine).id,
                 )),
             }
             .from_user_menu("tools_menu"),

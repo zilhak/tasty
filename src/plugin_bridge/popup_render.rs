@@ -618,6 +618,7 @@ mod tests {
     fn layout_with_surface_7(visible: bool) -> LayoutContext {
         LayoutContext {
             active_workspace: 0,
+            active_workspace_id: 0,
             pane_rects: Vec::new(),
             surface_rects: if visible {
                 vec![(7, SURFACE_7)]
@@ -625,6 +626,7 @@ mod tests {
                 Vec::new()
             },
             active_tabs: Vec::new(),
+            active_tab_ids: Vec::new(),
         }
     }
 

@@ -166,12 +166,14 @@ fn registered_manager() -> PopupManager {
     mgr
 }
 
-fn layout_ctx(active_workspace: usize) -> LayoutContext {
+fn layout_ctx(active_workspace_id: u32) -> LayoutContext {
     LayoutContext {
-        active_workspace,
+        active_workspace: 0,
+        active_workspace_id,
         pane_rects: Vec::new(),
         surface_rects: Vec::new(),
         active_tabs: Vec::new(),
+        active_tab_ids: Vec::new(),
     }
 }
 
@@ -207,4 +209,95 @@ fn scope_hidden_popup_is_not_the_escape_candidate() {
     let ctx = layout_ctx(9);
     let (id, _) = mgr.topmost_visible_open(Some(&ctx)).unwrap();
     assert_eq!(id, PORT_SCANNER_ID);
+}
+
+fn push_workspace(engine: &mut crate::core::CoreState) -> u32 {
+    let event = crate::core::apply_create_workspace_inner(
+        engine,
+        crate::core::WorkspaceCreationParams::terminal(),
+    )
+    .expect("create workspace");
+    let crate::core::intent::CoreEvent::WorkspaceCreated { id, .. } = event else {
+        panic!("apply_create_workspace_inner must return WorkspaceCreated");
+    };
+    id
+}
+
+fn live_layout_ctx(state: &AppState, engine: &crate::core::CoreState) -> LayoutContext {
+    let rect = crate::model::PhysicalRect {
+        x: crate::model::PhysicalPx(0.0),
+        y: crate::model::PhysicalPx(0.0),
+        width: crate::model::PhysicalPx(1920.0),
+        height: crate::model::PhysicalPx(1080.0),
+    };
+    crate::adapters::ui::layout_context::build_layout_context(state, engine, &[], rect, 1.0)
+}
+
+/// 에이전트가 앞쪽 workspace를 닫아 인덱스가 당겨져도 팝업은 연 workspace를 따라간다.
+#[test]
+fn workspace_scoped_popup_follows_its_workspace_after_agent_close() {
+    let (mut state, mut engine) = test_state();
+    state.popups = registered_manager();
+    let a = push_workspace(&mut engine);
+    let b = push_workspace(&mut engine);
+    state.active_workspace = engine.find_workspace_index_for_id(b).unwrap();
+    let scope = crate::state::RenameTarget::WorkspaceName { workspace_id: b }.popup_scope(&engine);
+    state.popups.open_with_scope(PORT_SCANNER_ID, scope);
+
+    assert!(state.close_workspace_at(&mut engine, 0, crate::state::WorkspaceCloseOrigin::Agent));
+    assert_eq!(
+        engine.find_workspace_index_for_id(b),
+        Some(state.active_workspace)
+    );
+    let ctx = live_layout_ctx(&state, &engine);
+    assert!(
+        state.popups.topmost_visible_open(Some(&ctx)).is_some(),
+        "popup of the still-active workspace is hidden"
+    );
+
+    state.active_workspace = engine.find_workspace_index_for_id(a).unwrap();
+    let ctx = live_layout_ctx(&state, &engine);
+    assert!(
+        state.popups.topmost_visible_open(Some(&ctx)).is_none(),
+        "popup must stay hidden on the workspace that took over the old index"
+    );
+}
+
+/// 탭 순서가 바뀌어도 팝업은 연 탭이 활성일 때만 보인다.
+#[test]
+fn tab_scoped_popup_follows_its_tab_after_reorder() {
+    let (mut state, mut engine) = test_state();
+    state.popups = registered_manager();
+    state.add_tab(&mut engine).unwrap();
+    let pane_id = state.focused_pane_id(&engine);
+    let pane = engine.find_pane_by_id(pane_id).unwrap();
+    let first = pane.tabs[0].id;
+    let second = pane.tabs[pane.active_tab].id;
+    assert_ne!(first, second);
+    let scope = crate::state::RenameTarget::TabName { tab_id: second }.popup_scope(&engine);
+    state.popups.open_with_scope(PORT_SCANNER_ID, scope);
+
+    let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
+    core.apply(
+        &mut engine,
+        crate::core::intent::DomainIntent::MoveTab {
+            pane_id,
+            from_index: 1,
+            to_index: 0,
+        },
+    )
+    .expect("move tab");
+    let ctx = live_layout_ctx(&state, &engine);
+    assert!(
+        state.popups.topmost_visible_open(Some(&ctx)).is_some(),
+        "popup of the still-active tab is hidden after reorder"
+    );
+
+    let pane = engine.find_pane_by_id_mut(pane_id).unwrap();
+    pane.active_tab = pane.tabs.iter().position(|t| t.id == first).unwrap();
+    let ctx = live_layout_ctx(&state, &engine);
+    assert!(
+        state.popups.topmost_visible_open(Some(&ctx)).is_none(),
+        "popup must stay hidden while the other tab is active"
+    );
 }
