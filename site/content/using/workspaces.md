@@ -106,6 +106,8 @@ tasty new workspace --name api --category work
 tasty set workspace --id 3 --category work
 ```
 
+없는 카테고리를 지정하면 오류를 내고, 워크스페이스를 만들거나 이름 등을 바꾸지 않습니다.
+
 ## 재시작 후 복원
 
 Tasty 를 다시 실행하면 직전 윈도우의 워크스페이스 · 페인 · 탭 · 서피스 배치가 그대로 돌아옵니다. 관련 설정은 **설정** > **일반** 에 있습니다.

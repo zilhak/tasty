@@ -195,6 +195,18 @@ pub fn handle_workspace_create(
         );
     }
 
+    // 입력 검증은 생성 전에 끝낸다. 거절 응답은 멱등 키와 함께 저장되므로
+    // 생성 뒤에 거절하면 만들어진 workspace를 재시도로도 찾을 수 없다.
+    // 카테고리를 지정하지 않으면 기본 normal을 유지한다. 사용자 선택은 바꾸지 않는다.
+    let category = match resolve_category_param(engine, params) {
+        Ok(v) => v,
+        Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
+    };
+    let attach_mapping = match parse_attach_mapping(params) {
+        Ok(v) => v,
+        Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
+    };
+
     let name = params
         .get("name")
         .and_then(|v| v.as_str())
@@ -257,20 +269,11 @@ pub fn handle_workspace_create(
         },
     );
 
-    // 카테고리를 지정하지 않으면 기본 normal을 유지한다. 사용자 선택은 바꾸지 않는다.
-    match resolve_category_param(engine, params) {
-        Ok(Some(cat_id)) => {
-            engine.workspaces[index].set_category(cat_id);
-            engine.mark_layout_dirty();
-        }
-        Ok(None) => {}
-        Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
+    if let Some(cat_id) = category {
+        engine.workspaces[index].set_category(cat_id);
+        engine.mark_layout_dirty();
     }
-
-    if let Some(mapping) = match parse_attach_mapping(params) {
-        Ok(v) => v,
-        Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
-    } {
+    if let Some(mapping) = attach_mapping {
         engine.workspaces[index].set_attach_mapping(Some(mapping));
         engine.mark_layout_dirty();
     }
@@ -339,6 +342,25 @@ pub fn handle_workspace_update(
         .and_then(|v| v.as_str())
         .map(str::to_string);
 
+    // 이름 변경 전에 카테고리와 attach 입력을 검증한다. 거절이면 아무것도 바꾸지 않는다.
+    let category = match resolve_category_param(engine, params) {
+        Ok(v) => v,
+        Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
+    };
+    // attach_clear가 우선이다. 이때는 매핑 입력을 읽지 않는다.
+    let clear = params
+        .get("attach_clear")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let attach_mapping = if clear {
+        None
+    } else {
+        match parse_attach_mapping(params) {
+            Ok(v) => v,
+            Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
+        }
+    };
+
     let intent = crate::core::intent::DomainIntent::UpdateWorkspaceMeta {
         workspace_id,
         name,
@@ -367,29 +389,15 @@ pub fn handle_workspace_update(
 
     window.cascade_workspace_meta_updated(workspace_id, name, subtitle, description);
 
-    match resolve_category_param(engine, params) {
-        Ok(Some(cat_id)) => {
-            if let Err(e) = engine.set_workspace_category(workspace_id, cat_id) {
-                return JsonRpcResponse::invalid_params(id, e.to_string());
-            }
-            engine.mark_layout_dirty();
-        }
-        Ok(None) => {}
-        Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
+    // 검증을 마친 값만 대입한다. 변경은 layout.json에 저장하도록 표시한다.
+    if let Some(cat_id) = category {
+        engine.workspaces[index].set_category(cat_id);
+        engine.mark_layout_dirty();
     }
-
-    // attach_clear가 우선이다. 변경은 layout.json에 저장하도록 표시한다.
-    let clear = params
-        .get("attach_clear")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
     if clear {
         engine.workspaces[index].set_attach_mapping(None);
         engine.mark_layout_dirty();
-    } else if let Some(mapping) = match parse_attach_mapping(params) {
-        Ok(v) => v,
-        Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
-    } {
+    } else if let Some(mapping) = attach_mapping {
         engine.workspaces[index].set_attach_mapping(Some(mapping));
         engine.mark_layout_dirty();
     }
@@ -939,3 +947,7 @@ mod create_cwd_tests {
         assert_eq!(inherit_cwd_for_create(&state, &engine, Some(named)), None,);
     }
 }
+
+#[cfg(test)]
+#[path = "workspace_apply_tests.rs"]
+mod apply_tests;
