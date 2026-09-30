@@ -149,9 +149,13 @@ picker 취소는 action과 recent 기록을 모두 생략한다. Ipc action payl
 
 탭 선택 여부는 별도 FileDispatchOrigin으로 결정한다.
 사용자 Explorer 더블클릭·terminal link·drop·picker 확인·연결 동작 메뉴는 User라 결과를 선택한다.
-Agent 요청은 기존 탭과 surface 선택을 유지한다. origin 생략도 같은 원인 규칙을 적용한다.
-에이전트 요청은 로컬·원격 모두 사용자 화면에 picker 를 띄우지 않는다. 로컬에서 매칭 핸들러가 없으면
+Agent 요청과 사용자 입력을 증명하지 못한 plugin 중계 요청(PluginUnverified)은 기존 탭과 surface 선택을 유지한다.
+origin 생략도 같은 원인 규칙을 적용한다.
+외부 IPC(CLI·에이전트 세션) 요청인 Agent는 로컬·원격 모두 사용자 화면에 picker 를 띄우지 않는다. 로컬에서 매칭 핸들러가 없으면
 fallback picker 대신 warn 로그를 남기고 실행하지 않는다. RPC 는 이미 accepted:true 로 응답했으므로 오류를 따로 돌려주지 않는다.
+PluginUnverified는 사용자 클릭일 수 있어 아무 반응 없이 끝나지 않게 한다. 로컬에서 매칭 핸들러가 없으면 fallback picker 를 열고,
+mirror 에서 1순위를 원격에 열 수 없으면 원격 picker 를 열며, 원격에 열 수 있는 핸들러가 없으면 toast 로 알린다.
+그 picker 에서 확정해도 요청 출처는 그대로라 결과 탭을 선택하지 않는다.
 현재 focus로 사용자 여부를 추측하지 않는다.
 
 plugin이 중계한 IPC를 User로 인정하는 근거는 두 가지다.
@@ -162,13 +166,14 @@ plugin이 중계한 IPC를 User로 인정하는 근거는 두 가지다.
 | user_navigation_url | origin webview의 최신 적격 navigation을 같은 plugin에 통지했고 URL이 일치한다 | 성공한 한 호출이 소비. 부적격 navigation과 webview 제거는 이전 기록 삭제 |
 
 webview 적격 조건은 native 엔진의 user gesture와 현재 페이지를 작성한 소유 plugin이다.
-외부 caller가 같은 key를 보내거나 근거가 부족하면 거절 대신 Agent로 처리한다.
+외부 caller가 같은 key를 보내면 거절 대신 Agent로 처리한다. plugin caller의 근거가 부족하면 PluginUnverified로 처리한다.
 작성자가 외부에서 소유 plugin으로 바뀐 첫 drain 프레임은 이전 페이지 클릭과 혼동할 수 있어 인정하지 않는다.
 표지는 시도를 모두 처리한 뒤 지운다. 이전 클릭이 그 프레임 이후에 늦게 도착하는 경우까지 막는다고 보장하지 않는다.
 
-macOS는 동등한 공개 gesture 판정이 없어 항상 Agent다. Linux의 실행 확인과 Windows의 코드·컴파일 확인은 구별한다.
-같은 프레임의 앞 클릭이나 재로드가 끼어든 정당 클릭도 Agent가 될 수 있다.
-사용자 원인은 적용 실패 toast에도 쓰고 Agent 실패는 로그로 알린다.
+macOS는 동등한 공개 gesture 판정이 없어 plugin webview 링크가 항상 PluginUnverified다. 선택은 유지하지만 매칭 핸들러가 없으면 picker는 뜬다.
+Linux의 실행 확인과 Windows의 코드·컴파일 확인은 구별한다.
+같은 프레임의 앞 클릭이나 재로드가 끼어든 정당 클릭도 PluginUnverified가 될 수 있다.
+사용자 원인은 적용 실패 toast에도 쓰고 Agent·PluginUnverified 실패는 로그로 알린다(원격에 열 수 없음 toast는 위 예외).
 이 규칙은 파일 열기에 한정하며 plugin의 임의 사용자 선언을 신뢰하는 API가 아니다.
 
 ## 인터페이스

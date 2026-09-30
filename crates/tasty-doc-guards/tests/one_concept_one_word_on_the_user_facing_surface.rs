@@ -118,6 +118,12 @@ const NOT_A_WINDOW: &[NotAWindow] = &[
     },
     NotAWindow {
         path: "site/content/using/files.md",
+        phrase: "**다음으로 열기…** 창이 떠서 고르게 합니다(원격",
+        count: 1,
+        evidence: "마크다운 링크의 무매칭 fallback picker다. 같은 host `PopupDef` id `file_handler_picker`를 연다.",
+    },
+    NotAWindow {
+        path: "site/content/using/files.md",
         phrase: "창을 열어 둔 채 자정을",
         count: 1,
         evidence: "파일 핸들러 선택 팝업의 Recent 상대 시각을 설명한다. when_bucket을 열 때 고정하지 않고 매 프레임 계산한다.",

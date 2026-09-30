@@ -208,7 +208,7 @@ telemetry.record와 record_batch는 workspace_id를 생략하면 활성 workspac
 - plugin이 `owner_popup_instance`를 보내면 호스트는 그 plugin이 팝업 소유자인지, 팝업이 포인터 버튼이나 키 누름으로 확정 입력을 받았는지 확인한다. 외부 IPC 호출자는 같은 값을 보내도 에이전트 요청이다.
 - WebView 링크는 plugin이 통지받은 URL을 `user_navigation_url`로 보낸다. 호스트가 확인한 사용자 제스처이며, 현재 페이지를 소유 plugin이 작성했고, 그 plugin에 알린 마지막 탐색 시도일 때만 한 번 사용자 요청으로 인정한다.
 - `webview.set_url`은 에이전트도 호출할 수 있다. 에이전트가 작성한 페이지의 클릭은 사용자 요청으로 인정할 근거가 아니다. 페이지 작성자가 바뀐 뒤 늦게 도착한 탐색 이벤트의 구분은 아직 완전히 검증되지 않았다.
-- macOS 엔진은 같은 제스처 정보를 제공하지 않아 에이전트 요청으로 처리한다.
+- 근거가 없는 plugin 중계 요청은 `PluginUnverified`다. macOS 엔진은 같은 제스처 정보를 제공하지 않아 plugin webview 링크가 항상 여기에 해당한다. 결과 탭 선택은 에이전트 요청처럼 유지하고, 매칭 핸들러가 없을 때의 picker는 사용자 클릭일 수 있어 연다. 외부 IPC 요청(`Agent`)은 picker를 열지 않는다.
 
 상세 조건과 한계는 [파일 열기 가이드](../../features/file-handler/index.md), 결정 이유는 [ADR-0031](../../adr/0031-file-handler-routing.md)에 있다.
 
