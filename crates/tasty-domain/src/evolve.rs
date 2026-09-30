@@ -1,22 +1,21 @@
 //! pure evolve. batch 하나를 모델 사본에 모두 적용한 뒤에만 교체하므로 일부만 반영되지 않는다.
 //!
 //! 이벤트는 decide가 확정한 사실이다. 참조가 맞지 않으면 추측해 고치지 않고 오류로 중단한다.
+//! 입력은 저장 batch가 아니라 해석을 마친 [`DomainBatch`]다.
 
-use tasty_event_store::{BatchId, Revision, StoredBatch};
+use std::collections::BTreeMap;
 
-use crate::codec::{CodecError, decode_event};
-use crate::event::{DomainEvent, MetadataTarget, SplitSpec, SurfaceSpec};
-use crate::ids::{CategoryId, PaneId, SurfaceId, TabId, WorkspaceId};
+use tasty_model::{PaneId, SurfaceId, TabId, WorkspaceCategoryId, WorkspaceId};
+
+use crate::event::{DomainBatch, DomainEvent, MetadataTarget, SplitSpec, SurfaceSpec};
+use crate::ids::{BatchId, IdKind, Revision};
 use crate::model::{Category, JournalModel, Pane, RemoveLeaf, SplitTree, Surface, Tab, Workspace};
 
-/// 구조 이벤트를 담는 stream. 다른 stream의 이벤트는 이 모델이 적용하지 않는다.
+/// 구조 이벤트를 담는 stream 이름. 저장 batch에서 이 stream만 골라 [`DomainBatch`]를 만든다.
 pub const STRUCTURE_STREAM: &str = "structure";
 
 #[derive(Debug, thiserror::Error)]
 pub enum EvolveError {
-    #[error(transparent)]
-    Codec(#[from] CodecError),
-
     #[error("batch {got} is not after the last applied batch {last}")]
     StaleBatch { last: BatchId, got: BatchId },
 
@@ -35,8 +34,8 @@ pub enum EvolveError {
     #[error("{0} is the last node of its layout")]
     LastLeaf(String),
 
-    #[error("{0} still has workspaces")]
-    CategoryNotEmpty(CategoryId),
+    #[error("category:{0} still has workspaces")]
+    CategoryNotEmpty(WorkspaceCategoryId),
 
     #[error("{0} cannot be moved next to itself")]
     SelfTarget(String),
@@ -48,8 +47,8 @@ pub enum EvolveError {
 type Result<T> = std::result::Result<T, EvolveError>;
 
 /// batch의 구조 이벤트를 순서대로 적용한다. 오류이면 모델은 호출 전 그대로다.
-pub fn evolve(model: &mut JournalModel, batch: &StoredBatch) -> Result<()> {
-    let batch_id = batch.cut.batch_id;
+pub fn evolve(model: &mut JournalModel, batch: &DomainBatch) -> Result<()> {
+    let batch_id = batch.batch_id;
     if let Some(last) = model.applied.batch
         && batch_id <= last
     {
@@ -59,19 +58,16 @@ pub fn evolve(model: &mut JournalModel, batch: &StoredBatch) -> Result<()> {
         });
     }
     let mut next = model.clone();
-    for stored in &batch.events {
-        if stored.stream_id.as_str() != STRUCTURE_STREAM {
-            continue;
-        }
+    for recorded in &batch.events {
         let expected = next.applied.revision.unwrap_or(0) + 1;
-        if stored.stream_revision != expected {
+        if recorded.revision != expected {
             return Err(EvolveError::RevisionGap {
                 expected,
-                got: stored.stream_revision,
+                got: recorded.revision,
             });
         }
-        apply(&mut next, decode_event(&stored.payload)?)?;
-        next.applied.revision = Some(stored.stream_revision);
+        apply(&mut next, recorded.event.clone())?;
+        next.applied.revision = Some(recorded.revision);
     }
     next.applied.batch = Some(batch_id);
     *model = next;
@@ -82,10 +78,12 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
     match event {
         DomainEvent::CategoryCreated { id, name, index } => create_category(m, id, name, index),
         DomainEvent::CategoryRenamed { id, name } => {
-            get_mut(&mut m.categories, id)?.name = name;
+            get_mut(&mut m.categories, IdKind::Category, id)?.name = name;
             Ok(())
         }
-        DomainEvent::CategoryMoved { id, index } => move_in(&mut m.category_order, id, index),
+        DomainEvent::CategoryMoved { id, index } => {
+            move_in(&mut m.category_order, IdKind::Category, id, index)
+        }
         DomainEvent::CategoryClosed { id } => close_category(m, id),
         DomainEvent::WorkspaceCreated {
             id,
@@ -95,7 +93,7 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
             pane,
         } => create_workspace(m, id, name, category, index, pane),
         DomainEvent::WorkspaceRenamed { id, name } => {
-            get_mut(&mut m.workspaces, id)?.name = name;
+            get_mut(&mut m.workspaces, IdKind::Workspace, id)?.name = name;
             Ok(())
         }
         DomainEvent::WorkspaceMoved {
@@ -119,7 +117,7 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
             surface,
         } => create_tab(m, id, pane, index, name, surface),
         DomainEvent::TabRenamed { id, name } => {
-            get_mut(&mut m.tabs, id)?.name = name;
+            get_mut(&mut m.tabs, IdKind::Tab, id)?.name = name;
             Ok(())
         }
         DomainEvent::TabMoved { id, pane, index } => move_tab(m, id, pane, index),
@@ -147,15 +145,20 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
     }
 }
 
-fn create_category(m: &mut JournalModel, id: CategoryId, name: String, index: usize) -> Result<()> {
-    ensure_absent(&m.categories, id)?;
+fn create_category(
+    m: &mut JournalModel,
+    id: WorkspaceCategoryId,
+    name: String,
+    index: usize,
+) -> Result<()> {
+    ensure_absent(&m.categories, IdKind::Category, id)?;
     insert_at(&mut m.category_order, index, id)?;
     m.categories.insert(id, Category { name });
     Ok(())
 }
 
-fn close_category(m: &mut JournalModel, id: CategoryId) -> Result<()> {
-    get(&m.categories, id)?;
+fn close_category(m: &mut JournalModel, id: WorkspaceCategoryId) -> Result<()> {
+    get(&m.categories, IdKind::Category, id)?;
     if m.workspaces.values().any(|w| w.category == id) {
         return Err(EvolveError::CategoryNotEmpty(id));
     }
@@ -168,13 +171,13 @@ fn create_workspace(
     m: &mut JournalModel,
     id: WorkspaceId,
     name: String,
-    category: CategoryId,
+    category: WorkspaceCategoryId,
     index: usize,
     pane: PaneId,
 ) -> Result<()> {
-    ensure_absent(&m.workspaces, id)?;
-    ensure_absent(&m.panes, pane)?;
-    get(&m.categories, category)?;
+    ensure_absent(&m.workspaces, IdKind::Workspace, id)?;
+    ensure_absent(&m.panes, IdKind::Pane, pane)?;
+    get(&m.categories, IdKind::Category, category)?;
     insert_at(&mut m.workspace_order, index, id)?;
     m.workspaces.insert(
         id,
@@ -198,16 +201,16 @@ fn create_workspace(
 fn move_workspace(
     m: &mut JournalModel,
     id: WorkspaceId,
-    category: CategoryId,
+    category: WorkspaceCategoryId,
     index: usize,
 ) -> Result<()> {
-    get(&m.categories, category)?;
-    get_mut(&mut m.workspaces, id)?.category = category;
-    move_in(&mut m.workspace_order, id, index)
+    get(&m.categories, IdKind::Category, category)?;
+    get_mut(&mut m.workspaces, IdKind::Workspace, id)?.category = category;
+    move_in(&mut m.workspace_order, IdKind::Workspace, id, index)
 }
 
 fn close_workspace(m: &mut JournalModel, id: WorkspaceId) -> Result<()> {
-    let workspace = remove(&mut m.workspaces, id)?;
+    let workspace = remove(&mut m.workspaces, IdKind::Workspace, id)?;
     m.workspace_order.retain(|w| *w != id);
     for pane in workspace.layout.leaves() {
         drop_pane(m, pane)?;
@@ -216,8 +219,8 @@ fn close_workspace(m: &mut JournalModel, id: WorkspaceId) -> Result<()> {
 }
 
 fn split_pane(m: &mut JournalModel, target: PaneId, pane: PaneId, split: SplitSpec) -> Result<()> {
-    ensure_absent(&m.panes, pane)?;
-    let workspace = get(&m.panes, target)?.workspace;
+    ensure_absent(&m.panes, IdKind::Pane, pane)?;
+    let workspace = get(&m.panes, IdKind::Pane, target)?.workspace;
     attach_pane(m, workspace, target, pane, split)?;
     m.panes.insert(
         pane,
@@ -231,18 +234,18 @@ fn split_pane(m: &mut JournalModel, target: PaneId, pane: PaneId, split: SplitSp
 
 fn move_pane(m: &mut JournalModel, id: PaneId, target: PaneId, split: SplitSpec) -> Result<()> {
     if id == target {
-        return Err(EvolveError::SelfTarget(id.to_string()));
+        return Err(EvolveError::SelfTarget(name(IdKind::Pane, id)));
     }
-    let from = get(&m.panes, id)?.workspace;
-    let to = get(&m.panes, target)?.workspace;
+    let from = get(&m.panes, IdKind::Pane, id)?.workspace;
+    let to = get(&m.panes, IdKind::Pane, target)?.workspace;
     detach_pane(m, from, id)?;
     attach_pane(m, to, target, id, split)?;
-    get_mut(&mut m.panes, id)?.workspace = to;
+    get_mut(&mut m.panes, IdKind::Pane, id)?.workspace = to;
     Ok(())
 }
 
 fn close_pane(m: &mut JournalModel, id: PaneId) -> Result<()> {
-    let workspace = get(&m.panes, id)?.workspace;
+    let workspace = get(&m.panes, IdKind::Pane, id)?.workspace;
     detach_pane(m, workspace, id)?;
     drop_pane(m, id)
 }
@@ -254,22 +257,24 @@ fn attach_pane(
     pane: PaneId,
     split: SplitSpec,
 ) -> Result<()> {
-    let layout = &mut get_mut(&mut m.workspaces, workspace)?.layout;
+    let layout = &mut get_mut(&mut m.workspaces, IdKind::Workspace, workspace)?.layout;
     if layout.split_leaf(target, pane, split.direction, split.ratio, split.placement) {
         Ok(())
     } else {
-        Err(EvolveError::Missing(format!("{target} in {workspace}")))
+        Err(EvolveError::Missing(format!(
+            "pane:{target} in workspace:{workspace}"
+        )))
     }
 }
 
 fn detach_pane(m: &mut JournalModel, workspace: WorkspaceId, pane: PaneId) -> Result<()> {
-    let layout = &mut get_mut(&mut m.workspaces, workspace)?.layout;
-    removed(layout.remove_leaf(pane), pane.to_string())
+    let layout = &mut get_mut(&mut m.workspaces, IdKind::Workspace, workspace)?.layout;
+    removed(layout.remove_leaf(pane), name(IdKind::Pane, pane))
 }
 
 /// pane과 소속 tab·surface를 지운다. 배치에서는 호출자가 이미 뺐다.
 fn drop_pane(m: &mut JournalModel, id: PaneId) -> Result<()> {
-    let pane = remove(&mut m.panes, id)?;
+    let pane = remove(&mut m.panes, IdKind::Pane, id)?;
     for tab in pane.tabs {
         drop_tab(m, tab)?;
     }
@@ -284,9 +289,13 @@ fn create_tab(
     name: String,
     surface: SurfaceSpec,
 ) -> Result<()> {
-    ensure_absent(&m.tabs, id)?;
-    ensure_absent(&m.surfaces, surface.id)?;
-    insert_at(&mut get_mut(&mut m.panes, pane)?.tabs, index, id)?;
+    ensure_absent(&m.tabs, IdKind::Tab, id)?;
+    ensure_absent(&m.surfaces, IdKind::Surface, surface.id)?;
+    insert_at(
+        &mut get_mut(&mut m.panes, IdKind::Pane, pane)?.tabs,
+        index,
+        id,
+    )?;
     m.tabs.insert(
         id,
         Tab {
@@ -300,24 +309,32 @@ fn create_tab(
 }
 
 fn move_tab(m: &mut JournalModel, id: TabId, pane: PaneId, index: usize) -> Result<()> {
-    let from = get(&m.tabs, id)?.pane;
-    get(&m.panes, pane)?;
-    get_mut(&mut m.panes, from)?.tabs.retain(|t| *t != id);
-    insert_at(&mut get_mut(&mut m.panes, pane)?.tabs, index, id)?;
-    get_mut(&mut m.tabs, id)?.pane = pane;
+    let from = get(&m.tabs, IdKind::Tab, id)?.pane;
+    get(&m.panes, IdKind::Pane, pane)?;
+    get_mut(&mut m.panes, IdKind::Pane, from)?
+        .tabs
+        .retain(|t| *t != id);
+    insert_at(
+        &mut get_mut(&mut m.panes, IdKind::Pane, pane)?.tabs,
+        index,
+        id,
+    )?;
+    get_mut(&mut m.tabs, IdKind::Tab, id)?.pane = pane;
     Ok(())
 }
 
 fn close_tab(m: &mut JournalModel, id: TabId) -> Result<()> {
-    let pane = get(&m.tabs, id)?.pane;
-    get_mut(&mut m.panes, pane)?.tabs.retain(|t| *t != id);
+    let pane = get(&m.tabs, IdKind::Tab, id)?.pane;
+    get_mut(&mut m.panes, IdKind::Pane, pane)?
+        .tabs
+        .retain(|t| *t != id);
     drop_tab(m, id)
 }
 
 fn drop_tab(m: &mut JournalModel, id: TabId) -> Result<()> {
-    let tab = remove(&mut m.tabs, id)?;
+    let tab = remove(&mut m.tabs, IdKind::Tab, id)?;
     for surface in tab.layout.leaves() {
-        remove(&mut m.surfaces, surface)?;
+        remove(&mut m.surfaces, IdKind::Surface, surface)?;
     }
     Ok(())
 }
@@ -328,8 +345,8 @@ fn split_surface(
     surface: SurfaceSpec,
     split: SplitSpec,
 ) -> Result<()> {
-    ensure_absent(&m.surfaces, surface.id)?;
-    let tab = get(&m.surfaces, target)?.tab;
+    ensure_absent(&m.surfaces, IdKind::Surface, surface.id)?;
+    let tab = get(&m.surfaces, IdKind::Surface, target)?.tab;
     attach_surface(m, tab, target, surface.id, split)?;
     insert_surface(m, tab, surface);
     Ok(())
@@ -342,21 +359,21 @@ fn move_surface(
     split: SplitSpec,
 ) -> Result<()> {
     if id == target {
-        return Err(EvolveError::SelfTarget(id.to_string()));
+        return Err(EvolveError::SelfTarget(name(IdKind::Surface, id)));
     }
-    let from = get(&m.surfaces, id)?.tab;
-    let to = get(&m.surfaces, target)?.tab;
-    let layout = &mut get_mut(&mut m.tabs, from)?.layout;
-    removed(layout.remove_leaf(id), id.to_string())?;
+    let from = get(&m.surfaces, IdKind::Surface, id)?.tab;
+    let to = get(&m.surfaces, IdKind::Surface, target)?.tab;
+    let layout = &mut get_mut(&mut m.tabs, IdKind::Tab, from)?.layout;
+    removed(layout.remove_leaf(id), name(IdKind::Surface, id))?;
     attach_surface(m, to, target, id, split)?;
-    get_mut(&mut m.surfaces, id)?.tab = to;
+    get_mut(&mut m.surfaces, IdKind::Surface, id)?.tab = to;
     Ok(())
 }
 
 fn close_surface(m: &mut JournalModel, id: SurfaceId) -> Result<()> {
-    let tab = get(&m.surfaces, id)?.tab;
-    let layout = &mut get_mut(&mut m.tabs, tab)?.layout;
-    removed(layout.remove_leaf(id), id.to_string())?;
+    let tab = get(&m.surfaces, IdKind::Surface, id)?.tab;
+    let layout = &mut get_mut(&mut m.tabs, IdKind::Tab, tab)?.layout;
+    removed(layout.remove_leaf(id), name(IdKind::Surface, id))?;
     m.surfaces.remove(&id);
     Ok(())
 }
@@ -368,7 +385,7 @@ fn attach_surface(
     surface: SurfaceId,
     split: SplitSpec,
 ) -> Result<()> {
-    let layout = &mut get_mut(&mut m.tabs, tab)?.layout;
+    let layout = &mut get_mut(&mut m.tabs, IdKind::Tab, tab)?.layout;
     if layout.split_leaf(
         target,
         surface,
@@ -378,7 +395,9 @@ fn attach_surface(
     ) {
         Ok(())
     } else {
-        Err(EvolveError::Missing(format!("{target} in {tab}")))
+        Err(EvolveError::Missing(format!(
+            "surface:{target} in tab:{tab}"
+        )))
     }
 }
 
@@ -397,17 +416,19 @@ fn insert_surface(m: &mut JournalModel, tab: TabId, spec: SurfaceSpec) {
 fn metadata_mut(
     m: &mut JournalModel,
     target: MetadataTarget,
-) -> Result<&mut std::collections::BTreeMap<String, String>> {
+) -> Result<&mut BTreeMap<String, String>> {
     Ok(match target {
-        MetadataTarget::Workspace(id) => &mut get_mut(&mut m.workspaces, id)?.metadata,
-        MetadataTarget::Surface(id) => &mut get_mut(&mut m.surfaces, id)?.metadata,
+        MetadataTarget::Workspace(id) => {
+            &mut get_mut(&mut m.workspaces, IdKind::Workspace, id)?.metadata
+        }
+        MetadataTarget::Surface(id) => &mut get_mut(&mut m.surfaces, IdKind::Surface, id)?.metadata,
     })
 }
 
 fn target_name(target: MetadataTarget) -> String {
     match target {
-        MetadataTarget::Workspace(id) => id.to_string(),
-        MetadataTarget::Surface(id) => id.to_string(),
+        MetadataTarget::Workspace(id) => name(IdKind::Workspace, id),
+        MetadataTarget::Surface(id) => name(IdKind::Surface, id),
     }
 }
 
@@ -419,26 +440,30 @@ fn removed(result: RemoveLeaf, name: String) -> Result<()> {
     }
 }
 
-type Map<K, V> = std::collections::BTreeMap<K, V>;
+type Map<V> = BTreeMap<u32, V>;
 
-fn get<K: Ord + Copy + std::fmt::Display, V>(map: &Map<K, V>, id: K) -> Result<&V> {
+fn name(kind: IdKind, id: u32) -> String {
+    format!("{}:{id}", kind.label())
+}
+
+fn get<V>(map: &Map<V>, kind: IdKind, id: u32) -> Result<&V> {
     map.get(&id)
-        .ok_or_else(|| EvolveError::Missing(id.to_string()))
+        .ok_or_else(|| EvolveError::Missing(name(kind, id)))
 }
 
-fn get_mut<K: Ord + Copy + std::fmt::Display, V>(map: &mut Map<K, V>, id: K) -> Result<&mut V> {
+fn get_mut<V>(map: &mut Map<V>, kind: IdKind, id: u32) -> Result<&mut V> {
     map.get_mut(&id)
-        .ok_or_else(|| EvolveError::Missing(id.to_string()))
+        .ok_or_else(|| EvolveError::Missing(name(kind, id)))
 }
 
-fn remove<K: Ord + Copy + std::fmt::Display, V>(map: &mut Map<K, V>, id: K) -> Result<V> {
+fn remove<V>(map: &mut Map<V>, kind: IdKind, id: u32) -> Result<V> {
     map.remove(&id)
-        .ok_or_else(|| EvolveError::Missing(id.to_string()))
+        .ok_or_else(|| EvolveError::Missing(name(kind, id)))
 }
 
-fn ensure_absent<K: Ord + Copy + std::fmt::Display, V>(map: &Map<K, V>, id: K) -> Result<()> {
+fn ensure_absent<V>(map: &Map<V>, kind: IdKind, id: u32) -> Result<()> {
     if map.contains_key(&id) {
-        Err(EvolveError::Duplicate(id.to_string()))
+        Err(EvolveError::Duplicate(name(kind, id)))
     } else {
         Ok(())
     }
@@ -456,13 +481,9 @@ fn insert_at<T>(list: &mut Vec<T>, index: usize, item: T) -> Result<()> {
 }
 
 /// 목록에서 빼서 `index`에 다시 넣는다. `index`는 뺀 뒤 목록 기준이다.
-fn move_in<T: PartialEq + Copy + std::fmt::Display>(
-    list: &mut Vec<T>,
-    item: T,
-    index: usize,
-) -> Result<()> {
+fn move_in(list: &mut Vec<u32>, kind: IdKind, item: u32, index: usize) -> Result<()> {
     let Some(pos) = list.iter().position(|x| *x == item) else {
-        return Err(EvolveError::Missing(item.to_string()));
+        return Err(EvolveError::Missing(name(kind, item)));
     };
     list.remove(pos);
     insert_at(list, index, item)

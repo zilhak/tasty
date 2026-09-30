@@ -37,6 +37,7 @@ mod model;
 mod namespace_table_for_tests;
 mod plugin_bridge;
 mod ports;
+mod runtime;
 #[cfg(test)]
 mod source_guards;
 mod state;

@@ -2,8 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{CategoryId, PaneId, SurfaceId, TabId, WorkspaceId};
-use crate::model::{DataRef, Placement, Ratio, SplitDirection};
+use tasty_model::{PaneId, SplitDirection, SurfaceId, TabId, WorkspaceCategoryId, WorkspaceId};
+
+use crate::ids::{BatchId, Revision};
+use crate::model::{DataRef, Placement, Ratio, SplitDirectionDef};
 
 /// metadata를 가진 대상.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -21,37 +23,44 @@ pub struct SurfaceSpec {
 }
 
 /// 분할로 만들 새 노드의 위치.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct SplitSpec {
+    #[serde(with = "SplitDirectionDef")]
     pub direction: SplitDirection,
     pub ratio: Ratio,
     pub placement: Placement,
 }
 
 /// 구조 이벤트. serde 태그는 codec의 type tag와 같다.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum DomainEvent {
     #[serde(rename = "category.created")]
     CategoryCreated {
-        id: CategoryId,
+        id: WorkspaceCategoryId,
         name: String,
         index: usize,
     },
     #[serde(rename = "category.renamed")]
-    CategoryRenamed { id: CategoryId, name: String },
+    CategoryRenamed {
+        id: WorkspaceCategoryId,
+        name: String,
+    },
     #[serde(rename = "category.moved")]
-    CategoryMoved { id: CategoryId, index: usize },
+    CategoryMoved {
+        id: WorkspaceCategoryId,
+        index: usize,
+    },
     /// 소속 workspace가 없는 카테고리만 닫을 수 있다.
     #[serde(rename = "category.closed")]
-    CategoryClosed { id: CategoryId },
+    CategoryClosed { id: WorkspaceCategoryId },
 
     /// 첫 pane과 함께 만든다. tab은 뒤따르는 이벤트가 만든다.
     #[serde(rename = "workspace.created")]
     WorkspaceCreated {
         id: WorkspaceId,
         name: String,
-        category: CategoryId,
+        category: WorkspaceCategoryId,
         index: usize,
         pane: PaneId,
     },
@@ -61,7 +70,7 @@ pub enum DomainEvent {
     #[serde(rename = "workspace.moved")]
     WorkspaceMoved {
         id: WorkspaceId,
-        category: CategoryId,
+        category: WorkspaceCategoryId,
         index: usize,
     },
     /// 소속 pane·tab·surface를 함께 닫는다.
@@ -180,4 +189,19 @@ impl DomainEvent {
             Self::MetadataRemoved { .. } => "metadata.removed",
         }
     }
+}
+
+/// 구조 stream에 확정된 이벤트 하나와 그 revision.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecordedEvent {
+    pub revision: Revision,
+    pub event: DomainEvent,
+}
+
+/// 확정 batch의 도메인 입력. 저장 batch에서 구조 stream 이벤트만 해석해 순서대로 담는다.
+/// 구조 이벤트가 없는 batch도 적용 위치를 옮기기 위해 빈 목록으로 전달한다.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DomainBatch {
+    pub batch_id: BatchId,
+    pub events: Vec<RecordedEvent>,
 }

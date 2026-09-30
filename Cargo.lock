@@ -5689,7 +5689,9 @@ dependencies = [
  "tasty-dag-layout",
  "tasty-design-tokens",
  "tasty-doc-guards",
+ "tasty-domain",
  "tasty-egui-theme",
+ "tasty-event-store",
  "tasty-file-format",
  "tasty-file-handler",
  "tasty-font",
@@ -5840,8 +5842,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
- "tasty-event-store",
- "tempfile",
+ "tasty-model",
  "thiserror 2.0.18",
 ]
 

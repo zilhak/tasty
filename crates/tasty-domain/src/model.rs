@@ -3,9 +3,9 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use tasty_event_store::{BatchId, Revision};
+use tasty_model::{PaneId, SplitDirection, SurfaceId, TabId, WorkspaceCategoryId, WorkspaceId};
 
-use crate::ids::{CategoryId, PaneId, SurfaceId, TabId, WorkspaceId};
+use crate::ids::{BatchId, Revision};
 
 /// 분할 비율. f32의 비트를 그대로 보관해 인코딩 왕복에서 값이 바뀌지 않게 한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -26,8 +26,10 @@ impl Ratio {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum SplitDirection {
+/// `tasty_model::SplitDirection`의 직렬화 형식. 모델 타입에 serde를 더하지 않고 여기서 정한다.
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "SplitDirection")]
+pub(crate) enum SplitDirectionDef {
     Horizontal,
     Vertical,
 }
@@ -40,10 +42,11 @@ pub enum Placement {
 }
 
 /// 분할 트리. pane 배치와 tab 안의 surface 배치가 같은 형태를 쓴다.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SplitTree<Id> {
     Leaf(Id),
     Split {
+        #[serde(with = "SplitDirectionDef")]
         direction: SplitDirection,
         ratio: Ratio,
         first: Box<SplitTree<Id>>,
@@ -138,33 +141,33 @@ pub(crate) enum RemoveLeaf {
 #[serde(transparent)]
 pub struct DataRef(pub u64);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Category {
     pub name: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Workspace {
     pub name: String,
-    pub category: CategoryId,
+    pub category: WorkspaceCategoryId,
     pub layout: SplitTree<PaneId>,
     pub metadata: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Pane {
     pub workspace: WorkspaceId,
     pub tabs: Vec<TabId>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Tab {
     pub pane: PaneId,
     pub name: String,
     pub layout: SplitTree<SurfaceId>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Surface {
     pub tab: TabId,
     /// terminal·markdown·plugin kind 등. 해석은 kind 소유자가 한다.
@@ -183,11 +186,11 @@ pub struct Applied {
 }
 
 /// 구조 stream을 적용한 결과. 순서는 `*_order`와 각 부모의 목록이 정한다.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct JournalModel {
     pub applied: Applied,
-    pub categories: BTreeMap<CategoryId, Category>,
-    pub category_order: Vec<CategoryId>,
+    pub categories: BTreeMap<WorkspaceCategoryId, Category>,
+    pub category_order: Vec<WorkspaceCategoryId>,
     pub workspaces: BTreeMap<WorkspaceId, Workspace>,
     pub workspace_order: Vec<WorkspaceId>,
     pub panes: BTreeMap<PaneId, Pane>,

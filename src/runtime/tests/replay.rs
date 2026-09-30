@@ -1,14 +1,13 @@
-//! 실제 journal에서의 replay: 전체 로그와 snapshot+tail의 일치(E01), 모르는 tag 중단.
+//! 실제 journal에서의 replay: 전체 로그와 snapshot+tail의 일치(E01), 다른 stream 건너뛰기,
+//! 모르는 tag 중단.
 
+use tasty_domain::{CodecError, DomainEvent, JournalModel, MODEL_VERSION, STRUCTURE_STREAM};
 use tasty_event_store::{
     CommitRequest, ExpectedRevision, NewEvent, OpaquePayload, PayloadRef, StreamAppend, StreamId,
 };
 
-use super::common::{commit_events, db_path, open, scenario};
-use crate::{
-    CodecError, EvolveError, JournalModel, ReplayError, STRUCTURE_STREAM, full_replay, load,
-    save_snapshot,
-};
+use super::common::{commit_events, db_path, new_event, open, scenario};
+use crate::runtime::journal::{JournalError, full_replay, load, save_snapshot};
 
 #[test]
 fn full_replay_equals_snapshot_plus_tail() {
@@ -19,12 +18,12 @@ fn full_replay_equals_snapshot_plus_tail() {
     let notes = store.put_payload(epoch, b"notes").expect("payload");
     assert_eq!(notes, PayloadRef(1));
     let batches = scenario();
-    for events in &batches[..3] {
+    for events in &batches[..2] {
         commit_events(&mut store, epoch, events);
     }
     let mid = load(&store).expect("load without snapshot");
     save_snapshot(&mut store, epoch, &mid).expect("snapshot");
-    for events in &batches[3..] {
+    for events in &batches[2..] {
         commit_events(&mut store, epoch, events);
     }
 
@@ -62,9 +61,7 @@ fn snapshot_at_the_head_needs_no_tail() {
     }
     let model = load(&store).expect("load");
     save_snapshot(&mut store, epoch, &model).expect("snapshot");
-    let replay = store
-        .snapshot_and_tail(crate::MODEL_VERSION)
-        .expect("replay");
+    let replay = store.snapshot_and_tail(MODEL_VERSION).expect("replay");
     assert!(replay.snapshot.is_some());
     assert!(replay.tail.is_empty());
     assert_eq!(load(&store).expect("reload"), model);
@@ -76,7 +73,7 @@ fn empty_model_cannot_be_snapshotted() {
     let (mut store, epoch) = open(&db_path(&dir));
     assert!(matches!(
         save_snapshot(&mut store, epoch, &JournalModel::default()),
-        Err(ReplayError::NothingApplied)
+        Err(JournalError::NothingApplied)
     ));
 }
 
@@ -107,8 +104,30 @@ fn unknown_tag_in_the_journal_stops_the_replay() {
     for result in [load(&store), full_replay(&store)] {
         assert!(matches!(
             result,
-            Err(ReplayError::Evolve(EvolveError::Codec(CodecError::UnknownTag(tag))))
-                if tag == "window.created"
+            Err(JournalError::Codec(CodecError::UnknownTag(tag))) if tag == "window.created"
         ));
     }
+}
+
+#[test]
+fn other_streams_are_skipped_but_the_batch_is_recorded() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (mut store, epoch) = open(&db_path(&dir));
+    commit_events(&mut store, epoch, &scenario()[0]);
+    // 구조 이벤트처럼 보이는 본문이라도 다른 stream이면 해석하지 않는다.
+    let mut request = CommitRequest::new(epoch);
+    request.appends.push(StreamAppend {
+        stream_id: StreamId::new("terminal"),
+        expected: ExpectedRevision::NoStream,
+        events: vec![new_event(
+            "terminal-1".to_owned(),
+            &DomainEvent::TabClosed { id: 1 },
+        )],
+    });
+    store.commit(&request).expect("commit");
+    let model = full_replay(&store).expect("replay");
+    assert_eq!(model.applied.batch, Some(2));
+    assert_eq!(model.applied.revision, Some(3));
+    assert!(model.tabs.contains_key(&1));
+    assert_eq!(load(&store).expect("load"), model);
 }

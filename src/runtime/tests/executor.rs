@@ -5,17 +5,21 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
+use tasty_domain::{
+    Decider, Decision, DecisionContext, DomainEvent, IdKind, JournalModel, MemoryIdSupplier,
+    STRUCTURE_STREAM, SurfaceSpec,
+};
 use tasty_event_store::{
     CommandKey, CommandLookup, EffectState, EventStore, NewEffect, OpaquePayload, Revision,
     StoreError, StoredBatch, StreamId,
 };
+use tasty_model::WorkspaceId;
 
 use super::common::{JOURNAL, db_path};
-use crate::{
-    CategoryId, Decider, Decision, DecisionContext, DomainEvent, ExecError, Executed, Executor,
-    JournalModel, MAX_DECIDE_ATTEMPTS, MemoryIdSupplier, PaneId, Request, STRUCTURE_STREAM, Source,
-    SurfaceId, SurfaceSpec, TabId, WorkspaceId, encode_event,
+use crate::runtime::command_executor::{
+    ExecError, Executed, Executor, JournalDecider, MAX_DECIDE_ATTEMPTS, Request, Source,
 };
+use crate::runtime::journal;
 
 #[derive(Debug, Clone, PartialEq)]
 enum Cmd {
@@ -79,11 +83,8 @@ impl Decider for Fake {
     type State = JournalModel;
     type Command = Cmd;
     type Event = DomainEvent;
+    type Effect = NewEffect;
     type Rejection = Reject;
-
-    fn stream(&self) -> StreamId {
-        StreamId::new(STRUCTURE_STREAM)
-    }
 
     fn revision(&self, state: &JournalModel) -> Option<Revision> {
         let lie = self
@@ -107,7 +108,7 @@ impl Decider for Fake {
         state: &JournalModel,
         command: &Cmd,
         ctx: &mut DecisionContext<'_>,
-    ) -> Result<Decision<DomainEvent>, Reject> {
+    ) -> Result<Decision<DomainEvent, NewEffect>, Reject> {
         self.decides.fetch_add(1, Ordering::SeqCst);
         if let Some(gate) = &self.gate {
             gate.pass();
@@ -139,23 +140,29 @@ impl Decider for Fake {
                         name: name.clone(),
                     }],
                     effects: Vec::new(),
-                    resolved: id.0.to_be_bytes().to_vec(),
+                    resolved: id.to_be_bytes().to_vec(),
                     response: b"renamed".to_vec(),
                 })
             }
         }
     }
+}
 
-    fn encode(&self, event: &DomainEvent) -> Result<OpaquePayload, String> {
-        encode_event(event).map_err(|e| e.to_string())
+impl JournalDecider for Fake {
+    fn stream(&self) -> StreamId {
+        StreamId::new(STRUCTURE_STREAM)
     }
 
-    fn evolve(&self, state: &mut JournalModel, batch: &StoredBatch) -> Result<(), String> {
-        crate::evolve(state, batch).map_err(|e| e.to_string())
+    fn encode(&self, event: &DomainEvent) -> Result<OpaquePayload, String> {
+        journal::to_payload(event).map_err(|e| e.to_string())
+    }
+
+    fn apply(&self, state: &mut JournalModel, batch: &StoredBatch) -> Result<(), String> {
+        journal::apply(state, batch).map_err(|e| e.to_string())
     }
 
     fn load(&self, store: &EventStore) -> Result<JournalModel, String> {
-        crate::load(store).map_err(|e| e.to_string())
+        journal::load(store).map_err(|e| e.to_string())
     }
 }
 
@@ -163,18 +170,18 @@ fn create(
     state: &JournalModel,
     name: &str,
     ctx: &mut DecisionContext<'_>,
-) -> Result<Decision<DomainEvent>, Reject> {
-    let ws = WorkspaceId::allocate(ctx.ids);
-    let pane = PaneId::allocate(ctx.ids);
-    let tab = TabId::allocate(ctx.ids);
-    let surface = SurfaceId::allocate(ctx.ids);
+) -> Result<Decision<DomainEvent, NewEffect>, Reject> {
+    let ws = ctx.ids.next_id(IdKind::Workspace);
+    let pane = ctx.ids.next_id(IdKind::Pane);
+    let tab = ctx.ids.next_id(IdKind::Tab);
+    let surface = ctx.ids.next_id(IdKind::Surface);
     if state.workspaces.contains_key(&ws) || state.panes.contains_key(&pane) {
         return Err(Reject::IdInUse);
     }
     let mut events = Vec::new();
-    if !state.categories.contains_key(&CategoryId(0)) {
+    if !state.categories.contains_key(&0) {
         events.push(DomainEvent::CategoryCreated {
-            id: CategoryId(0),
+            id: 0,
             name: "normal".to_owned(),
             index: 0,
         });
@@ -182,7 +189,7 @@ fn create(
     events.push(DomainEvent::WorkspaceCreated {
         id: ws,
         name: name.to_owned(),
-        category: CategoryId(0),
+        category: 0,
         index: state.workspace_order.len(),
         pane,
     });
@@ -201,7 +208,7 @@ fn create(
         events,
         effects: Vec::new(),
         resolved: Vec::new(),
-        response: ws.to_string().into_bytes(),
+        response: format!("workspace:{ws}").into_bytes(),
     })
 }
 
@@ -229,28 +236,25 @@ fn create_cmd(name: &str) -> Cmd {
 
 /// 모델에 이미 있는 ID 다음부터 주는 메모리 공급자. 재오픈 뒤 ID 재사용을 피한다.
 fn ids_after(model: &JournalModel) -> Box<MemoryIdSupplier> {
-    let last = |keys: Vec<u64>| keys.into_iter().max().unwrap_or(0);
+    let last = |keys: Vec<u32>| keys.into_iter().max().unwrap_or(0);
     Box::new(
         MemoryIdSupplier::default()
             .starting_after(
-                WorkspaceId::SPACE,
-                last(model.workspaces.keys().map(|k| k.0).collect()),
+                IdKind::Workspace,
+                last(model.workspaces.keys().copied().collect()),
             )
+            .starting_after(IdKind::Pane, last(model.panes.keys().copied().collect()))
+            .starting_after(IdKind::Tab, last(model.tabs.keys().copied().collect()))
             .starting_after(
-                PaneId::SPACE,
-                last(model.panes.keys().map(|k| k.0).collect()),
-            )
-            .starting_after(TabId::SPACE, last(model.tabs.keys().map(|k| k.0).collect()))
-            .starting_after(
-                SurfaceId::SPACE,
-                last(model.surfaces.keys().map(|k| k.0).collect()),
+                IdKind::Surface,
+                last(model.surfaces.keys().copied().collect()),
             ),
     )
 }
 
 fn open(path: &std::path::Path, fake: &Fake) -> Executor<Fake> {
     let store = EventStore::open(path, JOURNAL).expect("open journal");
-    let model = crate::load(&store).expect("load");
+    let model = journal::load(&store).expect("load");
     Executor::open(fake.clone(), store, ids_after(&model)).expect("executor")
 }
 
@@ -278,10 +282,10 @@ fn committed_batch_is_applied_and_matches_the_journal() {
         .expect("create without key");
     assert!(committed(&second));
     let model = state(&executor);
-    assert_eq!(model.workspace_order, vec![WorkspaceId(1), WorkspaceId(2)]);
+    assert_eq!(model.workspace_order, vec![1, 2]);
     drop(executor);
     let store = EventStore::open(&path, JOURNAL).expect("reopen");
-    assert_eq!(crate::full_replay(&store).expect("replay"), model);
+    assert_eq!(journal::full_replay(&store).expect("replay"), model);
 }
 
 #[test]
@@ -307,7 +311,7 @@ fn e02_failed_commit_leaves_state_unchanged_and_sends_no_response() {
     let rejected = executor.execute(&request(
         Some("k3"),
         Cmd::RenameWorkspace {
-            id: WorkspaceId(99),
+            id: 99,
             name: "x".to_owned(),
         },
     ));
@@ -324,7 +328,7 @@ fn e02_failed_commit_leaves_state_unchanged_and_sends_no_response() {
         (
             "k3",
             Cmd::RenameWorkspace {
-                id: WorkspaceId(99),
+                id: 99,
                 name: "x".to_owned(),
             },
         ),
@@ -335,7 +339,7 @@ fn e02_failed_commit_leaves_state_unchanged_and_sends_no_response() {
             CommandLookup::Miss
         );
     }
-    assert_eq!(crate::load(&store).expect("load"), before);
+    assert_eq!(journal::load(&store).expect("load"), before);
 }
 
 #[test]

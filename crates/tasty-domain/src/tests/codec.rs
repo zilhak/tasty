@@ -2,13 +2,15 @@
 
 use std::collections::BTreeSet;
 
-use tasty_event_store::OpaquePayload;
-
 use super::common::{scenario, scenario_batches};
 use crate::{
-    CodecError, DomainEvent, EVENT_SCHEMA_VERSION, JournalModel, MODEL_VERSION, Ratio,
-    decode_event, decode_snapshot, encode_event, encode_snapshot, evolve,
+    CodecError, DomainEvent, EVENT_SCHEMA_VERSION, EncodedEvent, JournalModel, MODEL_VERSION,
+    Ratio, decode_event, decode_snapshot, encode_event, encode_snapshot, evolve,
 };
+
+fn decode(payload: &EncodedEvent) -> Result<DomainEvent, CodecError> {
+    decode_event(&payload.type_tag, payload.schema_version, &payload.bytes)
+}
 
 #[test]
 fn every_event_round_trips_and_the_tag_list_is_complete() {
@@ -18,7 +20,7 @@ fn every_event_round_trips_and_the_tag_list_is_complete() {
         let payload = encode_event(event).expect("encode");
         assert_eq!(payload.type_tag, event.type_tag());
         assert_eq!(payload.schema_version, EVENT_SCHEMA_VERSION);
-        assert_eq!(&decode_event(&payload).expect("decode"), event);
+        assert_eq!(&decode(&payload).expect("decode"), event);
         seen.insert(event.type_tag());
     }
     let known: BTreeSet<&str> = DomainEvent::TAGS.iter().copied().collect();
@@ -28,49 +30,42 @@ fn every_event_round_trips_and_the_tag_list_is_complete() {
 
 #[test]
 fn unknown_tag_is_rejected() {
-    let payload = OpaquePayload {
+    let payload = EncodedEvent {
         type_tag: "window.created".to_owned(),
         schema_version: EVENT_SCHEMA_VERSION,
         bytes: b"{}".to_vec(),
     };
     assert!(matches!(
-        decode_event(&payload),
+        decode(&payload),
         Err(CodecError::UnknownTag(tag)) if tag == "window.created"
     ));
 }
 
 #[test]
 fn unsupported_schema_version_is_rejected() {
-    let event = DomainEvent::TabClosed {
-        id: crate::TabId(1),
-    };
+    let event = DomainEvent::TabClosed { id: 1 };
     let mut payload = encode_event(&event).expect("encode");
     payload.schema_version = EVENT_SCHEMA_VERSION + 1;
     assert!(matches!(
-        decode_event(&payload),
+        decode(&payload),
         Err(CodecError::UnsupportedVersion { version, .. }) if version == EVENT_SCHEMA_VERSION + 1
     ));
 }
 
 #[test]
 fn body_that_disagrees_with_the_tag_is_rejected() {
-    let event = DomainEvent::TabClosed {
-        id: crate::TabId(1),
-    };
+    let event = DomainEvent::TabClosed { id: 1 };
     let mut payload = encode_event(&event).expect("encode");
     payload.type_tag = "pane.closed".to_owned();
     assert!(matches!(
-        decode_event(&payload),
+        decode(&payload),
         Err(CodecError::TagMismatch {
             body: "tab.closed",
             ..
         })
     ));
     payload.bytes = b"not json".to_vec();
-    assert!(matches!(
-        decode_event(&payload),
-        Err(CodecError::Body { .. })
-    ));
+    assert!(matches!(decode(&payload), Err(CodecError::Body { .. })));
 }
 
 #[test]
@@ -84,15 +79,15 @@ fn split_ratio_keeps_its_bits() {
     ];
     for value in values {
         let event = DomainEvent::PaneSplit {
-            target: crate::PaneId(1),
-            pane: crate::PaneId(2),
+            target: 1,
+            pane: 2,
             split: super::common::split(
-                crate::SplitDirection::Vertical,
+                tasty_model::SplitDirection::Vertical,
                 value,
                 crate::Placement::After,
             ),
         };
-        let decoded = decode_event(&encode_event(&event).expect("encode")).expect("decode");
+        let decoded = decode(&encode_event(&event).expect("encode")).expect("decode");
         let DomainEvent::PaneSplit { split, .. } = decoded else {
             panic!("wrong variant");
         };

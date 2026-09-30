@@ -1,6 +1,7 @@
-//! 이벤트·snapshot codec. 모르는 type tag나 schema version은 추측하지 않고 오류로 중단한다.
-
-use tasty_event_store::OpaquePayload;
+//! 도메인 이벤트·snapshot 본문의 codec. 모르는 type tag나 schema version은 추측하지 않고 오류로 중단한다.
+//!
+//! 저장 봉투·저장 형식 버전·migration은 이벤트 저장소가 정한다. 여기서는 봉투에 담을 tag·version·
+//! 본문 바이트만 만든다.
 
 use crate::event::DomainEvent;
 use crate::model::JournalModel;
@@ -8,7 +9,7 @@ use crate::model::JournalModel;
 /// 이 빌드가 쓰고 읽는 이벤트 schema version.
 pub const EVENT_SCHEMA_VERSION: u32 = 1;
 
-/// 이 빌드가 쓰고 읽는 snapshot model version. 다른 version의 snapshot은 저장소가 건너뛴다.
+/// 이 빌드가 쓰고 읽는 snapshot model version.
 pub const MODEL_VERSION: u32 = 1;
 
 #[derive(Debug, thiserror::Error)]
@@ -38,30 +39,41 @@ pub enum CodecError {
     Encode(serde_json::Error),
 }
 
-pub fn encode_event(event: &DomainEvent) -> Result<OpaquePayload, CodecError> {
-    Ok(OpaquePayload {
+/// 저장 봉투에 담을 이벤트 본문.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EncodedEvent {
+    pub type_tag: String,
+    pub schema_version: u32,
+    pub bytes: Vec<u8>,
+}
+
+pub fn encode_event(event: &DomainEvent) -> Result<EncodedEvent, CodecError> {
+    Ok(EncodedEvent {
         type_tag: event.type_tag().to_owned(),
         schema_version: EVENT_SCHEMA_VERSION,
         bytes: serde_json::to_vec(event).map_err(CodecError::Encode)?,
     })
 }
 
-pub fn decode_event(payload: &OpaquePayload) -> Result<DomainEvent, CodecError> {
-    let tag = payload.type_tag.as_str();
+pub fn decode_event(
+    type_tag: &str,
+    schema_version: u32,
+    bytes: &[u8],
+) -> Result<DomainEvent, CodecError> {
+    let tag = type_tag;
     if !DomainEvent::TAGS.contains(&tag) {
         return Err(CodecError::UnknownTag(tag.to_owned()));
     }
-    if payload.schema_version != EVENT_SCHEMA_VERSION {
+    if schema_version != EVENT_SCHEMA_VERSION {
         return Err(CodecError::UnsupportedVersion {
             tag: tag.to_owned(),
-            version: payload.schema_version,
+            version: schema_version,
         });
     }
-    let event: DomainEvent =
-        serde_json::from_slice(&payload.bytes).map_err(|source| CodecError::Body {
-            tag: tag.to_owned(),
-            source,
-        })?;
+    let event: DomainEvent = serde_json::from_slice(bytes).map_err(|source| CodecError::Body {
+        tag: tag.to_owned(),
+        source,
+    })?;
     if event.type_tag() != tag {
         return Err(CodecError::TagMismatch {
             tag: tag.to_owned(),

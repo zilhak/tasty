@@ -1,81 +1,51 @@
 //! decider 공용 최소 command executor.
 //!
 //! 흐름: 재시도 키 조회(대상 해소 전) → 새 요청만 decide → 명령·이벤트·effect를 한 transaction으로
-//! 확정 → 확정된 batch를 메모리 상태에 적용 → 응답. 확정이 실패하면 상태를 바꾸지 않고 응답하지
-//! 않는다. 같은 프로세스에서 진행 중인 같은 키는 첫 실행의 결과를 기다려 함께 받는다.
+//! 확정 → 확정된 batch를 저장소에서 다시 읽어 메모리 상태에 적용 → 응답. 확정이 실패하면 상태를
+//! 바꾸지 않고 응답하지 않는다. 같은 프로세스에서 진행 중인 같은 키는 첫 실행의 결과를 기다려 함께
+//! 받는다. writer 잠금을 잃거나 fencing되면 이후 쓰기를 멈춘다.
 
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use tasty_domain::{Decider, Decision, DecisionContext, IdSupplier};
 use tasty_event_store::{
     BatchId, CommandKey, CommandLookup, CommandRecord, CommandStatus, CommitOutcome, CommitRequest,
     EventStore, ExpectedRevision, NewCommand, NewEffect, NewEvent, OpaquePayload, PayloadRef,
-    Revision, StoreError, StoredBatch, StreamAppend, StreamId, WriterEpoch,
+    StoreError, StoredBatch, StreamAppend, StreamId, WriterEpoch,
 };
 
-use crate::ids::IdSupplier;
-
 /// revision 충돌 뒤 상태를 다시 읽고 decide를 다시 시도하는 최대 횟수(첫 시도 포함).
-pub const MAX_DECIDE_ATTEMPTS: u32 = 3;
+pub(crate) const MAX_DECIDE_ATTEMPTS: u32 = 3;
 
-/// decide에 주는 입력. 새 ID와 시각은 여기서만 받아 decide를 결정적으로 유지한다.
-pub struct DecisionContext<'a> {
-    pub ids: &'a mut dyn IdSupplier,
-    pub command_id: &'a str,
-    pub now_ms: u64,
-}
-
-/// decide 결과. 이벤트·effect·명령 기록이 한 transaction으로 확정된다.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Decision<E> {
-    pub events: Vec<E>,
-    pub effects: Vec<NewEffect>,
-    /// 최초 해소한 대상·입력. 재요청은 이 기록을 쓰고 대상을 다시 해소하지 않는다.
-    pub resolved: Vec<u8>,
-    pub response: Vec<u8>,
-}
-
-/// 한 stream의 상태·명령·이벤트를 정하는 규칙.
-pub trait Decider: Send + Sync {
-    type State: Send;
-    type Command;
-    type Event;
-    /// 도메인 거절. 저장하지 않으며 같은 키의 재요청은 다시 decide한다.
-    type Rejection: Clone + fmt::Debug + Send;
-
+/// 순수 [`Decider`]를 journal에 연결하는 부분. 저장 봉투·stream·재구성은 여기서 정한다.
+pub(crate) trait JournalDecider:
+    Decider<Effect = NewEffect, State: Send, Rejection: Send> + Send + Sync
+{
     fn stream(&self) -> StreamId;
-    /// 상태에 마지막으로 적용한 이 stream의 revision.
-    fn revision(&self, state: &Self::State) -> Option<Revision>;
-    /// 같은 키의 재요청이 원래 요청과 같은지 판정하는 값.
-    fn request_digest(&self, command: &Self::Command) -> Vec<u8>;
-    fn decide(
-        &self,
-        state: &Self::State,
-        command: &Self::Command,
-        ctx: &mut DecisionContext<'_>,
-    ) -> Result<Decision<Self::Event>, Self::Rejection>;
     fn encode(&self, event: &Self::Event) -> Result<OpaquePayload, String>;
     /// 이벤트가 참조하는 불변 payload. 같은 transaction에서 pin된다.
     fn payload_refs(&self, _event: &Self::Event) -> Vec<PayloadRef> {
         Vec::new()
     }
-    fn evolve(&self, state: &mut Self::State, batch: &StoredBatch) -> Result<(), String>;
+    /// 확정된 batch를 상태에 적용한다. 실패하면 상태는 그대로여야 한다.
+    fn apply(&self, state: &mut Self::State, batch: &StoredBatch) -> Result<(), String>;
     fn load(&self, store: &EventStore) -> Result<Self::State, String>;
 }
 
 /// 실행 요청.
 #[derive(Debug, Clone)]
-pub struct Request<C> {
-    pub key: Option<CommandKey>,
-    pub actor: String,
-    pub origin: String,
-    pub command: C,
+pub(crate) struct Request<C> {
+    pub(crate) key: Option<CommandKey>,
+    pub(crate) actor: String,
+    pub(crate) origin: String,
+    pub(crate) command: C,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Source {
+pub(crate) enum Source {
     /// 이번 호출이 decide하고 확정했다. 이벤트가 있었으면 batch가 있다.
     Committed { batch: Option<BatchId> },
     /// 같은 키·같은 요청의 저장된 결과다. decide하지 않았다.
@@ -85,42 +55,61 @@ pub enum Source {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Executed {
-    pub response: Vec<u8>,
-    pub source: Source,
+pub(crate) struct Executed {
+    pub(crate) response: Vec<u8>,
+    pub(crate) source: Source,
 }
 
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum ExecError<R: fmt::Debug> {
-    #[error("rejected: {0:?}")]
+#[derive(Debug, Clone)]
+pub(crate) enum ExecError<R: fmt::Debug> {
     Rejected(R),
-
-    #[error("command key ({}, {}) is bound to a different request", .0.caller_scope, .0.idempotency_key)]
+    /// 같은 재시도 키가 다른 요청에 쓰였거나 쓰이는 중이다.
     KeyConflict(CommandKey),
-
-    #[error(transparent)]
     Store(Arc<StoreError>),
-
-    #[error("writing stopped because the writer lock or epoch was lost")]
+    /// writer 잠금이나 세대를 잃어 쓰기를 멈췄다.
     Halted,
-
-    #[error("state could not be applied: {0}")]
+    /// 상태 적용·재구성·인코딩 실패.
     Apply(String),
-
-    #[error("revision conflict persisted after {0} attempts")]
+    /// revision 충돌이 정해진 횟수 동안 계속됐다.
     RetriesExhausted(u32),
-
-    #[error("stored command {command_id} is {status:?} without a response")]
     NoStoredResponse {
         command_id: String,
         status: CommandStatus,
     },
-
-    #[error("the first execution of this key ended without a result")]
+    /// 합류한 첫 실행이 결과 없이 끝났다.
     Abandoned,
-
-    #[error("executor lock is poisoned")]
     Poisoned,
+}
+
+impl<R: fmt::Debug> fmt::Display for ExecError<R> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Rejected(r) => write!(f, "rejected: {r:?}"),
+            Self::KeyConflict(key) => write!(
+                f,
+                "command key ({}, {}) is bound to a different request",
+                key.caller_scope, key.idempotency_key
+            ),
+            Self::Store(error) => write!(f, "{error}"),
+            Self::Halted => {
+                f.write_str("writing stopped because the writer lock or epoch was lost")
+            }
+            Self::Apply(reason) => write!(f, "state could not be applied: {reason}"),
+            Self::RetriesExhausted(n) => {
+                write!(f, "revision conflict persisted after {n} attempts")
+            }
+            Self::NoStoredResponse { command_id, status } => {
+                write!(
+                    f,
+                    "stored command {command_id} is {status:?} without a response"
+                )
+            }
+            Self::Abandoned => {
+                f.write_str("the first execution of this key ended without a result")
+            }
+            Self::Poisoned => f.write_str("executor lock is poisoned"),
+        }
+    }
 }
 
 type ExecResult<R> = Result<Executed, ExecError<R>>;
@@ -144,15 +133,15 @@ struct InFlight<R: fmt::Debug> {
     ready: Condvar,
 }
 
-pub struct Executor<D: Decider> {
+pub(crate) struct Executor<D: JournalDecider> {
     decider: D,
     pub(crate) inner: Mutex<Inner<D::State>>,
     in_flight: Mutex<HashMap<CommandKey, Arc<InFlight<D::Rejection>>>>,
 }
 
-impl<D: Decider> Executor<D> {
+impl<D: JournalDecider> Executor<D> {
     /// writer 잠금을 얻고 저장소에서 상태를 읽는다.
-    pub fn open(
+    pub(crate) fn open(
         decider: D,
         mut store: EventStore,
         ids: Box<dyn IdSupplier + Send>,
@@ -175,14 +164,14 @@ impl<D: Decider> Executor<D> {
     }
 
     /// 현재 메모리 상태를 읽는다.
-    pub fn with_state<T>(
+    pub(crate) fn with_state<T>(
         &self,
         read: impl FnOnce(&D::State) -> T,
     ) -> Result<T, ExecError<D::Rejection>> {
         Ok(read(&self.lock_inner()?.state))
     }
 
-    pub fn execute(&self, request: &Request<D::Command>) -> ExecResult<D::Rejection> {
+    pub(crate) fn execute(&self, request: &Request<D::Command>) -> ExecResult<D::Rejection> {
         let digest = self.decider.request_digest(&request.command);
         let Some(key) = &request.key else {
             return self.run(None, &digest, request);
@@ -321,7 +310,7 @@ impl<D: Decider> Executor<D> {
     fn commit_request(
         &self,
         draft: &Draft<'_, D::Command>,
-        decision: &Decision<D::Event>,
+        decision: &Decision<D::Event, NewEffect>,
     ) -> Result<CommitRequest, ExecError<D::Rejection>> {
         let Draft {
             epoch,
@@ -371,7 +360,7 @@ impl<D: Decider> Executor<D> {
         batch_id: BatchId,
     ) -> Result<(), ExecError<D::Rejection>> {
         let result = match inner.store.read_batch(batch_id) {
-            Ok(batch) => self.decider.evolve(&mut inner.state, &batch),
+            Ok(batch) => self.decider.apply(&mut inner.state, &batch),
             Err(error) => Err(error.to_string()),
         };
         result.map_err(|reason| {
@@ -414,33 +403,37 @@ enum Attempt {
 
 /// 첫 실행의 결과를 합류한 호출에 전달하고 진행 중 목록에서 지운다.
 /// 결과 없이 끝나도(panic 포함) 기다리는 호출이 멈추지 않도록 drop에서 정리한다.
-struct Lead<'a, D: Decider> {
+struct Lead<'a, D: JournalDecider> {
     executor: &'a Executor<D>,
     key: &'a CommandKey,
     slot: Arc<InFlight<D::Rejection>>,
     done: bool,
 }
 
-impl<D: Decider> Lead<'_, D> {
+impl<D: JournalDecider> Lead<'_, D> {
     fn finish(&mut self, result: ExecResult<D::Rejection>) {
         self.done = true;
         self.publish(result);
     }
 
-    // 두 잠금은 사용자 코드를 부르지 않고 짧게만 잡으므로 poison되지 않는다.
-    // 그래도 poison이면 목록 정리나 결과 기록을 건너뛰고, 기다리는 호출은 poison 오류를 받는다.
+    // 두 잠금은 사용자 코드를 부르지 않고 짧게만 잡는다. 그래도 poison이면 복구하지 않고 기록한 뒤
+    // 해당 정리를 건너뛴다. 기다리는 호출은 poison 오류를 받는다.
     fn publish(&self, result: ExecResult<D::Rejection>) {
-        if let Ok(mut map) = self.executor.in_flight.lock() {
-            map.remove(self.key);
+        match self.executor.in_flight.lock() {
+            Ok(mut map) => {
+                map.remove(self.key);
+            }
+            Err(_) => tracing::error!("command executor in-flight table is poisoned"),
         }
-        if let Ok(mut slot) = self.slot.result.lock() {
-            *slot = Some(result);
+        match self.slot.result.lock() {
+            Ok(mut slot) => *slot = Some(result),
+            Err(_) => tracing::error!("command executor result slot is poisoned"),
         }
         self.slot.ready.notify_all();
     }
 }
 
-impl<D: Decider> Drop for Lead<'_, D> {
+impl<D: JournalDecider> Drop for Lead<'_, D> {
     fn drop(&mut self) {
         if !self.done {
             self.publish(Err(ExecError::Abandoned));

@@ -96,7 +96,7 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 `tasty-shm`은 Tasty의 도메인 상태를 모르고 공유 메모리 전송만 담당하며 workspace 의존도 없다. syscall 사용 여부가 아니라 역할과 의존 방향으로 이 계층에 둔다. SDK가 shm을 사용하는 것을 도메인 의존 예외로 만들 필요도 없다.
 
 ### 도메인-IO
-`tasty-themes`(전역 Theme·TOML IO) · `tasty-settings`(설정 스키마·직렬화) · `tasty-font`(글리프 atlas) · `tasty-terminal`(PTY·termwiz) · `tasty-hooks`(Surface Hook) · `tasty-memory`(memory.db) · `tasty-event-store`(SQLite event journal 저장 기반. 제품 미연결, workspace 의존 없음) · `tasty-domain`(구조 저널의 도메인 이벤트·저널 전용 모델·codec·evolve와 decider 공용 command executor. 시험 전용·제품 미연결, → event-store) · `tasty-telemetry`(사용량·진단, → memory) · `tasty-output`(출력 파서) · `tasty-approval`(승인) · `tasty-agent`(세션·수명, → memory) · `tasty-presets`(레이아웃 프리셋) · `tasty-portscan`(포트 조회) · `tasty-reaper`(Windows Job Object로 자식 수명 관리. 다른 OS에서는 동작 없음) · `tasty-lua`(격리 워커·고정 host API, ADR-0027) · `tasty-i18n`(번역) · `tasty-remote-profiles`(연결 프로필·passkey. attach·explorer·plugin이 공유, ADR-0020) · `tasty-ssh`(시스템 ssh 실행·터널·포트 탐색·재시도·취소. SSH 프로토콜은 구현하지 않음, → remote-profiles/i18n/utils) · `tasty-remote`(원격 workspace 조회·생성. CLI·GUI·IPC 공용, → ssh/ipc/remote-profiles, ADR-0001) · `tasty-model`(workspace·pane·tab·surface 모델, GUI·PTY 의존 없음, → type-appearance/type-geometry/utils) · `tasty-dag-layout`(Sugiyama 방식의 DAG 좌표 계산. 본체·갤러리 공용, egui·Theme 의존 없음, → type-geometry. [설명](../dev-guide/dag-layout.md)) · `tasty-git-core`(git2 읽기 전용 래퍼. repo·status·log·diff·worktrees, 원격 host와 git-viewer 공용, → utils, ADR-0022) · `tasty-file-format`(detector·규칙·Lua·구조 평가. 호스트·GUI·IPC 구현 의존 없음, → utils/plugin-protocol) · `tasty-file-handler`(detector와 handler 연결·사용자 설정·plugin 등록·최근 선택. 호스트·GUI·IPC 구현 의존 없음, → utils/file-format/plugin-protocol) · `tasty-selection`(격자 선택·픽셀 변환·적중 판정·텍스트 추출. 렌더러·View 공용, → terminal/type-geometry/cell-width) · `tasty-terminal-link`(URL·파일 경로·여러 줄 링크와 강조 범위 계산. 실제 열기는 호스트 GUI에서 처리, → terminal/type-appearance/cell-width)
+`tasty-themes`(전역 Theme·TOML IO) · `tasty-settings`(설정 스키마·직렬화) · `tasty-font`(글리프 atlas) · `tasty-terminal`(PTY·termwiz) · `tasty-hooks`(Surface Hook) · `tasty-memory`(memory.db) · `tasty-event-store`(SQLite event journal 저장 기반. 제품 미연결, workspace 의존 없음) · `tasty-telemetry`(사용량·진단, → memory) · `tasty-output`(출력 파서) · `tasty-approval`(승인) · `tasty-agent`(세션·수명, → memory) · `tasty-presets`(레이아웃 프리셋) · `tasty-portscan`(포트 조회) · `tasty-reaper`(Windows Job Object로 자식 수명 관리. 다른 OS에서는 동작 없음) · `tasty-lua`(격리 워커·고정 host API, ADR-0027) · `tasty-i18n`(번역) · `tasty-remote-profiles`(연결 프로필·passkey. attach·explorer·plugin이 공유, ADR-0020) · `tasty-ssh`(시스템 ssh 실행·터널·포트 탐색·재시도·취소. SSH 프로토콜은 구현하지 않음, → remote-profiles/i18n/utils) · `tasty-remote`(원격 workspace 조회·생성. CLI·GUI·IPC 공용, → ssh/ipc/remote-profiles, ADR-0001) · `tasty-model`(workspace·pane·tab·surface 모델, GUI·PTY 의존 없음, → type-appearance/type-geometry/utils) · `tasty-domain`(구조 저널의 도메인 이벤트·저널 전용 모델·이벤트 codec·evolve·decide 계약. 시험 전용·제품 미연결, 이벤트 저장소 의존 없음, → model) · `tasty-dag-layout`(Sugiyama 방식의 DAG 좌표 계산. 본체·갤러리 공용, egui·Theme 의존 없음, → type-geometry. [설명](../dev-guide/dag-layout.md)) · `tasty-git-core`(git2 읽기 전용 래퍼. repo·status·log·diff·worktrees, 원격 host와 git-viewer 공용, → utils, ADR-0022) · `tasty-file-format`(detector·규칙·Lua·구조 평가. 호스트·GUI·IPC 구현 의존 없음, → utils/plugin-protocol) · `tasty-file-handler`(detector와 handler 연결·사용자 설정·plugin 등록·최근 선택. 호스트·GUI·IPC 구현 의존 없음, → utils/file-format/plugin-protocol) · `tasty-selection`(격자 선택·픽셀 변환·적중 판정·텍스트 추출. 렌더러·View 공용, → terminal/type-geometry/cell-width) · `tasty-terminal-link`(URL·파일 경로·여러 줄 링크와 강조 범위 계산. 실제 열기는 호스트 GUI에서 처리, → terminal/type-appearance/cell-width)
 
 이 절 + type-\*/primitive 절만 의존 가능(위와 같이 판정 단위는 절 소속이다). **예외 셋** — 첫째, `tasty-remote` 는 plugin host 의 `tasty-ipc` 에 의존한다: 원격 client 능력이 IPC 호출이고, 합칠 후보 둘(`tasty-ssh` 와 `tasty-ipc`)이 각각 더 나쁜 의존을 들여 기각됐다.
 그 방향은 [ADR-0001](../adr/0001-crate-dependency-boundaries.md) 의 결정이다.
@@ -107,7 +107,7 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 둘째와 같은 형태이고 같은 결정([ADR-0001](../adr/0001-crate-dependency-boundaries.md))의 적용이다.
 이 절의 다른 크레이트에는 예외가 없다.
 
-`tasty-event-store`는 인스턴스별 로컬 SQLite event journal의 저장 계약을 구현한다. 아직 본 바이너리가 사용하지 않으며 제품이 만드는 저장 파일도 없다. 시험 전용인 `tasty-domain`만 이 크레이트에 의존한다. 한 journal 파일 안에서 다음을 제공한다.
+`tasty-event-store`는 인스턴스별 로컬 SQLite event journal의 저장 계약을 구현한다. 본 바이너리의 시험 전용 구조 저널 runtime 모듈만 이 크레이트를 사용하며, 제품 경로에는 연결하지 않았고 제품이 만드는 저장 파일도 없다. 한 journal 파일 안에서 다음을 제공한다.
 
 - stream(엔진)별 revision과 expected revision 검사, 여러 stream을 한 batch로 묶는 원자 commit. batch는 번호와 stream별 revision vector로 식별한다.
 - 이벤트·명령 기록(재시도 키·요청 digest·해소한 대상·진행 상태·응답)·effect 의무를 한 transaction으로 확정한다. 하나라도 실패하면 아무것도 남지 않는다. 재시도 키로 저장된 대상·결과를 조회할 수 있고, 같은 키·같은 요청의 재제출은 새로 쓰지 않고 기존 기록을 돌려준다. 같은 키의 다른 요청은 충돌로 거절한다.
@@ -119,12 +119,17 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 
 이 크레이트는 도메인 타입을 모른다. 이벤트·effect·snapshot 내용은 type tag·schema version·바이트로 저장하고 해석은 호출자의 codec이 맡는다. WAL과 `synchronous=FULL`이 실제로 적용되지 않거나 journal의 스키마 버전이 이 빌드보다 새로우면 열지 않는다. 비어 있지 않은데 journal 버전 표가 없는 SQLite 파일은 설정을 바꾸기 전에 거절하며 파일을 변경하지 않는다. memory.db·state.db와 독립된 저장소이며 그 DB들과의 원자성은 없다.
 
-`tasty-domain`은 구조 저널의 도메인 부분을 `tasty-event-store` 위에 시험 전용으로 구현한다. 본 바이너리는 이 크레이트를 사용하지 않으며, 본 바이너리의 `CoreState`가 구조 상태의 유일한 원본이다. 이 크레이트의 모델은 그와 동시에 원본이 되지 않는다.
+`tasty-domain`은 구조 저널의 도메인 부분을 시험 전용으로 구현한다. 본 바이너리의 `CoreState`가 구조 상태의 유일한 원본이며, 이 크레이트의 모델은 그와 동시에 원본이 되지 않는다. 의존 방향은 `tasty-domain` → `tasty-model`이고 `tasty-event-store`에는 의존하지 않는다. 두 크레이트를 연결하는 것은 본 바이너리의 runtime 모듈이다.
 
-- 저널 전용 구조 모델: workspace·category·pane·tab·surface 트리, 이름, 소속, 분할 비율, surface kind와 자료 참조, metadata. 선택·포커스·접힘 같은 View 상태는 담지 않는다. typed ID는 runtime ID와 별개의 값 공간이며 공급자 trait에서 받는다.
-- 구조 이벤트(create·split·move·rename·close, metadata 설정·삭제)와 codec. 이벤트마다 type tag와 schema version을 붙이고 모르는 tag·version은 오류로 중단한다. 분할 비율은 f32 비트를 그대로 저장한다. snapshot은 model version을 함께 저장한다.
-- pure evolve: 저장된 batch 하나를 모델 사본에 모두 적용한 뒤 교체하므로 일부만 반영되지 않는다. batch 순서와 구조 stream revision의 연속성을 검사한다. 전체 로그 replay와 snapshot+tail 재구성은 같은 모델·ID·revision을 만든다.
-- decider 공용 command executor: 재시도 키 조회를 대상 해소보다 먼저 하고, 새 요청만 decide한 뒤 명령·이벤트·effect를 한 transaction으로 확정한다. 확정에 성공한 뒤에만 메모리 상태에 적용하고 응답한다. 확정이 실패하면 상태를 바꾸지 않고 응답하지 않는다. revision 충돌이면 저장소에서 상태를 다시 읽어 정해진 횟수까지 다시 decide한다. 같은 프로세스에서 진행 중인 같은 키는 첫 실행에 합류하고 다른 요청이면 충돌로 거절한다. writer 잠금을 잃거나 fencing되면 이후 쓰기를 멈춘다. 도메인 거절은 저장하지 않는다.
+- 저널 전용 구조 모델: workspace·category·pane·tab·surface 트리, 이름, 소속, 분할 비율, surface kind와 자료 참조, metadata. 선택·포커스·접힘 같은 View 상태는 담지 않는다. workspace·category·pane·tab·surface ID와 분할 방향은 `tasty-model`의 타입을 쓰고, revision·batch 번호·분할 비율 비트·surface 자료 참조처럼 저널에만 필요한 값은 이 크레이트에 둔다. 새 ID는 공급자 trait에서 받는다.
+- 구조 이벤트(create·split·move·rename·close, metadata 설정·삭제)와 이벤트 본문 codec. 이벤트마다 type tag와 schema version을 붙이고 모르는 tag·version은 오류로 중단한다. 분할 비율은 f32 비트를 그대로 저장한다. snapshot 본문은 model version과 함께 해석한다. 저장 봉투·저장 형식 버전·migration은 이벤트 저장소가 정한다.
+- pure evolve: 저장 batch가 아니라 해석을 마친 도메인 batch(batch 번호와 revision이 붙은 구조 이벤트 목록)를 받는다. 모델 사본에 모두 적용한 뒤 교체하므로 일부만 반영되지 않으며, batch 순서와 구조 stream revision의 연속성을 검사한다.
+- decide 계약: 상태·명령만 보고 이벤트·effect·응답을 정한다. 새 ID와 시각은 결정 문맥으로 받는다.
+
+본 바이너리의 구조 저널 runtime 모듈(`src/runtime/`)은 두 크레이트를 연결하며, 아직 제품 경로에서 호출하지 않는 시험 전용 모듈이다.
+
+- 저장 batch에서 구조 stream 이벤트만 해석해 도메인 batch를 만들고, 도메인 이벤트 본문을 저장 봉투에 담는다. 전체 로그 replay와 snapshot+tail 재구성은 같은 모델·ID·revision을 만든다.
+- decide 계약에 대해 generic한 command executor: 재시도 키 조회를 대상 해소보다 먼저 하고, 새 요청만 decide한 뒤 명령·이벤트·effect를 한 transaction으로 확정한다. 확정에 성공한 뒤에만 메모리 상태에 적용하고 응답한다. 확정이 실패하면 상태를 바꾸지 않고 응답하지 않는다. revision 충돌이면 저장소에서 상태를 다시 읽어 정해진 횟수까지 다시 decide한다. 같은 프로세스에서 진행 중인 같은 키는 첫 실행에 합류하고 다른 요청이면 충돌로 거절한다. writer 잠금을 잃거나 fencing되면 이후 쓰기를 멈춘다. 도메인 거절은 저장하지 않는다.
 
 ### UI primitive
 `tasty-egui-theme`(Theme를 egui Visuals/Style로 변환) · `tasty-ui-widgets`(본체·갤러리 공용 egui 위젯·배치 함수. [설명](ui-widgets-crate.md)) · `tasty-icons`(line/fill SVG. 본체·갤러리와 plugin 빌드가 공유) · `tasty-key-match`(바인딩과 키 이벤트 대조. 단축키·webview 공용, egui 입력은 egui-input feature, → settings/winit)
@@ -175,6 +180,7 @@ ports-and-adapters 배치:
 | `intent/` | **Intent 큐** — 호스트 내부 동작 디스패치. — [action-dispatch](../design/flows/action-dispatch.md) |
 | `host_api/` | 호스트가 외부(plugin/agent)에 제공하는 인터페이스 — Lua hooks, webview |
 | `hook_runtime/` | 엔진별 훅 등록·감시 상태(`HookRuntimeState` — surface 훅·전역 훅)와 발화한 훅의 실행(바인딩 실행 · 전역 훅 셸 실행 · IpcSequence worker). 공유 handler 정의 registry는 `hook_handler/` |
+| `runtime/` | 구조 저널 runtime(시험 전용, 제품 미연결) — 저장 batch ↔ 도메인 batch 변환, journal replay·snapshot, decide 계약에 generic한 command executor. `tasty-domain`과 `tasty-event-store`를 연결한다 |
 | `plugin_bridge/` | 호스트 측 plugin 라우팅 facade |
 | `store/` | 인메모리 스토어 — notification, state.db 수명의 창 간 공유 recent_files |
 | `db/` | SQLite `state.db`. — [storage](../design/systems/storage.md) |
