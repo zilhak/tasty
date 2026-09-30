@@ -578,8 +578,11 @@ pub fn handle_workspace_move(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'to_index' parameter"),
     };
 
+    let Some(workspace_id) = engine.workspaces.get(from).map(|ws| ws.id) else {
+        return JsonRpcResponse::success(id, json!({ "moved": false }));
+    };
     let intent = crate::core::intent::DomainIntent::MoveWorkspace {
-        from_index: from,
+        workspace_id,
         to_index: to,
     };
     let events = match core.apply(engine, intent) {

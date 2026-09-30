@@ -187,11 +187,15 @@ fn build_mirror_forward_op(
         }),
         D::MoveTab {
             pane_id,
-            from_index,
+            tab_id,
             to_index,
         } => Some(StructuralOp::MoveTab {
             anchor_surface_id: pane_anchor(*pane_id)?,
-            from_index: *from_index,
+            from_index: engine
+                .find_pane_by_id(*pane_id)?
+                .tabs
+                .iter()
+                .position(|tab| tab.id == *tab_id)?,
             to_index: *to_index,
         }),
         D::ConvertSurface { surface_id, target } => {
@@ -351,11 +355,13 @@ impl Core {
                 self.apply_update_workspace_meta(engine, workspace_id, name, subtitle, description)
             }
             DomainIntent::MoveWorkspace {
-                from_index,
+                workspace_id,
                 to_index,
-            } => Ok(vec![
-                self.apply_move_workspace(engine, from_index, to_index),
-            ]),
+            } => Ok(vec![self.apply_move_workspace(
+                engine,
+                workspace_id,
+                to_index,
+            )]),
             DomainIntent::SetWorkspaceCategory {
                 workspace_id,
                 category,
@@ -384,10 +390,10 @@ impl Core {
             DomainIntent::CloseTab { tab_id } => Ok(vec![Self::apply_close_tab(engine, tab_id)]),
             DomainIntent::MoveTab {
                 pane_id,
-                from_index,
+                tab_id,
                 to_index,
             } => Ok(vec![Self::apply_move_tab(
-                engine, pane_id, from_index, to_index,
+                engine, pane_id, tab_id, to_index,
             )]),
             DomainIntent::RenameTab { tab_id, name } => {
                 Self::apply_rename_tab(engine, tab_id, name)
@@ -1180,7 +1186,7 @@ mod mirror_structural_guard_tests {
                 DomainIntent::CloseTab { tab_id },
                 DomainIntent::MoveTab {
                     pane_id: pane,
-                    from_index: 0,
+                    tab_id,
                     to_index: 1,
                 },
                 DomainIntent::RestoreClosedItem {

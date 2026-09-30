@@ -192,9 +192,12 @@ impl Core {
     pub(super) fn apply_move_workspace(
         &mut self,
         engine: &mut crate::core::CoreState,
-        from_index: usize,
+        workspace_id: u32,
         to_index: usize,
     ) -> CoreEvent {
+        let Some(from_index) = engine.find_workspace_index_for_id(workspace_id) else {
+            return CoreEvent::WorkspaceMoved { moved: false };
+        };
         let len = engine.workspaces.len();
         if from_index == to_index || from_index >= len || to_index >= len {
             return CoreEvent::WorkspaceMoved { moved: false };

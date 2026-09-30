@@ -913,13 +913,14 @@ mod tests {
         {
             let scan = EngineScanMut::from_fields(&mut views, &mut reg);
             let (state, engine) = scan.parked_session(id).unwrap();
+            let tab_id = engine.find_pane_by_id(pane_id).unwrap().tabs[0].id;
             crate::app::structural_exec::execute(
                 &mut core,
                 state,
                 engine,
                 DomainIntent::MoveTab {
                     pane_id,
-                    from_index: 0,
+                    tab_id,
                     to_index: 2,
                 },
             )

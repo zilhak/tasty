@@ -157,13 +157,15 @@ impl Core {
     pub(super) fn apply_move_tab(
         engine: &mut crate::core::CoreState,
         pane_id: u32,
-        from_index: usize,
+        tab_id: u32,
         to_index: usize,
     ) -> CoreEvent {
-        let moved = engine
-            .find_pane_by_id_mut(pane_id)
-            .map(|p| p.move_tab(from_index, to_index))
-            .unwrap_or(false);
+        let moved = engine.find_pane_by_id_mut(pane_id).is_some_and(|pane| {
+            let Some(from_index) = pane.tabs.iter().position(|tab| tab.id == tab_id) else {
+                return false;
+            };
+            pane.move_tab(from_index, to_index)
+        });
         if moved {
             engine.mark_layout_dirty();
         }

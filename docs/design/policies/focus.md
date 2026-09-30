@@ -297,3 +297,5 @@ IPC에는 토스트 대신 사유를 담은 오류를 반환한다. `surface.clo
 - 워크스페이스 제거 후 뒷정리: 직접 닫기의 `workspace.closed` 전달은 `MainViewState::after_workspace_removed`(`src/state.rs`), workspace 범위 memory 정리는 `CoreState::purge_workspace_memory_scope`(`src/core/state/surface_cleanup.rs`).
 
 외부 소켓의 전 창 합산·namespace·App 조기 응답도 일반 handler와 같은 진입 검사와 허용된 요청의 사용량 집계를 한 번 거친다. 검사 완료 요청을 하위 라우터에 전달하므로 라우팅 층 수만큼 예산이 소비되지 않는다. [ADR-0012](../../adr/0012-request-admission-and-isolation.md).
+
+순서 이동도 source를 ID로 고정한다. IPC·remote의 기존 `from_index`는 App adapter에서 `workspace_id` 또는 `tab_id`로 해소한 뒤 Core 명령을 만든다. `to_index`는 목적지 순서 좌표이며 기존 범위 밖·동일 위치 no-op을 유지한다. 먼저 실행된 이동이 목록을 재정렬해도 이미 수락한 명령의 source가 다른 객체로 바뀌지 않는다.

@@ -131,6 +131,7 @@ mod tests {
         state.add_tab(&mut engine).unwrap();
         state.add_tab(&mut engine).unwrap();
         let pane_id = state.focused_pane_id(&engine);
+        let first = engine.find_pane_by_id(pane_id).unwrap().tabs[0].id;
         let middle = engine.find_pane_by_id(pane_id).unwrap().tabs[1].id;
         let target = TabMenuTarget::capture(&engine, pane_id, 1);
 
@@ -139,7 +140,7 @@ mod tests {
             &mut engine,
             crate::core::intent::DomainIntent::MoveTab {
                 pane_id,
-                from_index: 0,
+                tab_id: first,
                 to_index: 2,
             },
         )

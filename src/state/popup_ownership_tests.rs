@@ -282,7 +282,7 @@ fn tab_scoped_popup_follows_its_tab_after_reorder() {
         &mut engine,
         crate::core::intent::DomainIntent::MoveTab {
             pane_id,
-            from_index: 1,
+            tab_id: second,
             to_index: 0,
         },
     )

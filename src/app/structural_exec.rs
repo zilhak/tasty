@@ -532,13 +532,20 @@ pub(crate) fn move_tab(
     to_index: usize,
     origin: &IntentOrigin,
 ) -> Result<bool, StructuralFailure> {
+    let Some(tab_id) = engine
+        .find_pane_by_id(pane_id)
+        .and_then(|pane| pane.tabs.get(from_index))
+        .map(|tab| tab.id)
+    else {
+        return Ok(false);
+    };
     let events = apply(
         core,
         state,
         engine,
         DomainIntent::MoveTab {
             pane_id,
-            from_index,
+            tab_id,
             to_index,
         },
         origin,
@@ -592,3 +599,7 @@ pub(crate) fn close_surface(
         closed: true,
     })
 }
+
+#[cfg(test)]
+#[path = "structural_move_tests.rs"]
+mod move_tests;

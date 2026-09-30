@@ -60,9 +60,9 @@ pub(crate) enum DomainIntent {
         subtitle: Option<String>,
         description: Option<String>,
     },
-    /// 같은 인덱스나 범위 밖이면 이동하지 않는다. App의 활성 workspace 보정은 후속 처리다.
+    /// Source identity is fixed at admission; the destination is an order coordinate.
     MoveWorkspace {
-        from_index: usize,
+        workspace_id: u32,
         to_index: usize,
     },
 
@@ -112,7 +112,7 @@ pub(crate) enum DomainIntent {
     },
     MoveTab {
         pane_id: u32,
-        from_index: usize,
+        tab_id: u32,
         to_index: usize,
     },
     /// 사용자가 붙인 탭 이름. None이면 지우고 선택된 surface의 제목으로 돌아간다.

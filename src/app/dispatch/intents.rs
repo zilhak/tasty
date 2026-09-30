@@ -271,7 +271,7 @@ mod tests {
     fn classify_partitions_domain_appearance_immediate() {
         use crate::intent::{Intent, UiIntent};
         let dom = || crate::core::intent::DomainIntent::MoveWorkspace {
-            from_index: 0,
+            workspace_id: 0,
             to_index: 0,
         };
         let batch = [
