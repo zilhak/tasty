@@ -1,6 +1,6 @@
 # ADR-0063: 이벤트 저장소는 payload를 journal DB에 두고 파일 잠금과 writer 세대로 쓰기를 제한한다
 
-- **Status**: Accepted — 구현 상태: 이 결정의 payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별은 `tasty-event-store`에 구현됐다. 미이행: 제품 경로 연결(아직 어떤 크레이트도 이 저장소를 쓰지 않는다), 새 journal로 가져올 때의 payload 복사, 로그 보존·정리, projection 출력과 cursor의 동시 갱신
+- **Status**: Accepted — 구현 상태: 이 결정의 payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별은 `tasty-event-store`에 구현됐다. 영속 ID 예약과, projection 출력 행과 consumer 위치의 동시 확정도 구현됐다. 미이행: 제품 경로 연결(아직 어떤 크레이트도 이 저장소를 쓰지 않는다), 새 journal로 가져올 때의 payload 복사, 로그 보존·정리, stream별 부분 소비자의 위치 표현, 기존 runtime ID 공간과 예약 ID 공간의 통합
 - **Date**: 2026-09-30
 - **Tags**: event-sourcing, storage, sqlite, durability, effects, fencing
 - **Group**: foundation
@@ -12,7 +12,7 @@
 이 crate는 한 journal 파일(SQLite) 안에서 stream별 revision, 원자 batch, 명령 identity, effect 의무와 시도 기록,
 domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 제품 경로에는 아직 연결되지 않았다.
 
-구현하면서 저장 형식과 보장 범위에 관한 선택 네 가지가 남았다.
+구현하면서 저장 형식과 보장 범위에 관한 선택 다섯 가지가 남았다.
 
 - 큰 불변 내용(surface snapshot·scrollback 같은 payload)을 journal DB 안에 둘지 별도 파일로 둘지.
   계획 단계에서는 임시 파일 작성→sync→rename→부모 디렉터리 sync를 거친 파일 blob을 가정했다.
@@ -21,6 +21,8 @@ domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 제품 경
   writer 자리를 빼앗는 쪽은 아무 확인 없이 성공한다.
 - effect와 명령 상태의 허용 전이. 특히 결과 불명(Uncertain) effect의 종료 방법, 재시도 뒤 이전 결과의 처리, 비종료 명령 상태의 역행 여부.
 - 이 빌드보다 새 schema의 journal과 journal이 아닌 SQLite 파일을 열 때의 처리.
+- [ADR-0055](0055-structural-domain-event-sourcing.md)가 정한 재사용하지 않는 typed ID의 영속 예약을 저장소에서 어떤 형태로 보장할지.
+  예약 ID는 `decide`의 고정 입력이므로 그 ID를 쓰는 이벤트 commit보다 먼저 정해져야 한다.
 
 ## Decision
 
@@ -45,8 +47,9 @@ domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 제품 경
 - 잠금 파일은 writer가 끝나도 지우지 않는다. 잠금을 놓는 사이에 파일을 지우면 다음 두 프로세스가 서로 다른 새 파일을 만들어 각각 잠금을 얻을 수 있기 때문이다.
   잠금은 writer를 놓거나 저장소를 닫을 때, 그리고 프로세스가 비정상 종료할 때 OS가 푼다.
 - writer 세대(epoch) fencing은 잠금과 함께 유지한다. 모든 쓰기 API는 잠금 보유를 먼저 확인하고, 이어서 현재 세대를 확인한 transaction에서만 쓴다.
-  잠금 없이 쓰는 것은 journal을 열 때의 WAL 전환(`PRAGMA journal_mode = WAL`), schema migration, journal ID 기록뿐이며, migration과 journal ID 기록은 SQLite의 쓰기 transaction으로 직렬화된다.
-  한계: 두 프로세스가 빈 파일을 동시에 처음 열면 migration 버전 확인이 transaction 밖이라 한쪽 open이 오류로 실패할 수 있다. 파일이 손상되지는 않는다.
+  잠금 없이 쓰는 것은 journal을 열 때의 WAL 전환(`PRAGMA journal_mode = WAL`), schema migration, journal ID 기록뿐이며, migration과 journal ID 기록은 하나의 SQLite 쓰기 transaction으로 함께 직렬화된다.
+  journal을 열 때 migration 버전 확인·적용과 journal ID 기록은 그 한 transaction에서 함께 한다. 여러 연결이 빈 파일을 동시에 처음 열어도 migration은 한 번만 적용되고 모든 open이 성공한다.
+  WAL 전환은 transaction 밖에서 하며, 다른 연결의 전환과 겹쳐 잠금 오류가 나면 busy 대기 시간 안에서 다시 시도한다.
   잠금이 없으면 현재 세대 값을 알아도 쓰지 못한다. 잠금을 가진 저장소가 새 세대를 등록하면 이전 세대의 다음 쓰기부터 Fenced로 거절된다.
   세대 검사는 같은 저장소 안의 이전 writer·worker가 늦게 보낸 쓰기를 막는 장치이고, 잠금은 다른 저장소·프로세스를 막는 장치다. 한쪽이 다른 쪽을 대체하지 않는다.
 - 잠금 파일을 만들 수 없거나 잠금을 쓸 수 없는 파일시스템·플랫폼에서는 writer가 되지 않고 잠금을 쓸 수 없다고 알린다. 세대 검사만으로 계속하지 않는다.
@@ -81,13 +84,23 @@ domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 제품 경
 
 ### schema 버전과 파일 식별
 
-- journal은 적용한 migration 버전을 버전 표에 한 줄씩 남긴다. migration은 뒤에 추가만 하고 배포한 항목은 고치지 않으며, 한 버전씩 별도 transaction으로 적용한다.
+- journal은 적용한 migration 버전을 버전 표에 한 줄씩 남긴다. migration은 뒤에 추가만 하고 배포한 항목은 고치지 않는다.
+  아직 적용하지 않은 버전은 버전 확인·journal ID 기록과 같은 transaction에서 모두 적용하며, 중간에 실패하면 어느 버전도 남지 않는다.
 - 이 빌드가 아는 버전보다 새 journal은 열지 않고 schema가 너무 새롭다고 알린다. 읽기 전용으로 열거나 모르는 형식을 건너뛰며 읽지 않는다.
   새 journal을 읽지 못하는 옛 바이너리가 그 journal이나 그 상태에서 만든 export를 덮어쓰지 않게 하기 위해서다.
 - 비어 있지 않은데 버전 표가 없는 SQLite 파일은 journal이 아니라고 거절한다. 이 판정은 WAL 전환·migration·journal 바인딩보다 먼저 하고 파일을 바꾸지 않는다.
   잘못된 경로로 받은 다른 DB(memory.db 등)를 journal로 바꾸지 않기 위해서다. 빈 파일과 새 경로만 새 journal로 만든다.
 - 파일에 기록된 journal ID가 요청한 ID와 다르면 열지 않는다. 최근 파일이나 다른 단서로 대상을 추측하지 않는다.
 - WAL, `synchronous=FULL`, foreign key 검사가 실제로 적용됐는지 되읽고, 하나라도 다르면 열지 않는다. 완화된 설정이나 in-memory로 대체하지 않는다.
+
+### 영속 ID 예약
+
+- journal은 kind별 다음 예약 ID(high-water)를 저장한다. 예약은 그 ID를 쓰는 이벤트 commit보다 먼저, writer 잠금과 현재 세대를 확인한 자기 transaction으로 확정한다.
+  잠금이 없거나 이전 세대인 저장소의 예약은 거절하고 아무것도 바꾸지 않는다.
+- 예약한 범위는 재오픈 뒤에도 다시 내주지 않는다. 예약 뒤 commit이 실패하거나 예약한 ID를 다 쓰지 않으면 그 구간은 빈 채로 남는다.
+- 첫 ID는 1이다. 0은 호출자가 예약 상수로 쓸 수 있도록 내주지 않는다.
+- 호출자가 준 상한과 SQLite 정수에 저장할 수 있는 상한 중 작은 값을 넘는 예약은 되감지 않고 거절하며 상태를 바꾸지 않는다. 0개 예약도 거절한다.
+- 값 공간은 journal 내부다. 기존 runtime ID 공간과의 통합, 데이터 홈의 여러 journal이 공유하는 할당, 기존 데이터를 가져올 때 시작 값을 끌어올리는 것은 이 결정의 범위가 아니다.
 
 ## Consequences
 
@@ -103,10 +116,13 @@ journal마다 잠금 파일 하나가 옆에 남는다. 이 파일을 지우는 
 전이표를 고정하면 복구기가 상태 이름만으로 다음 동작을 정할 수 있다. Uncertain에서 Cancelled로 가려면 실행되지 않았다는 증거가 필요하므로
 대조 수단이 없는 effect는 Uncertain으로 오래 남을 수 있다. 이는 결과를 아는 척하지 않기 위해 감수한다.
 
-로그 보존·정리는 아직 설계하지 않았다. 현재 V1 schema는 batch를 참조하는 외래 키, 앞 구간 전체를 가정하는 cut 계산,
+로그 보존·정리는 아직 설계하지 않았다. 현재 schema는 batch를 참조하는 외래 키, 앞 구간 전체를 가정하는 cut 계산,
 유효한 snapshot이 없으면 처음부터 읽는 재구성을 전제로 한다. 오래된 구간을 지우려면 보존 경계 표와 schema migration이 필요하다.
-projection 출력과 cursor를 같은 transaction으로 갱신하는 API와 stream별 부분 소비자의 위치 표현도 아직 없다. 현재 checkpoint는 batch 단위로 따로 저장한다.
-두 항목은 후속 설계 대상이며 이 결정이 해결하지 않는다.
+projection 출력은 consumer·projection version별 key→바이트 행으로 저장하고, 행 변경과 consumer 위치(batch 단위)를 한 transaction으로 확정한다.
+위치가 뒤로 가거나 batch가 없으면 행 변경도 반영하지 않는다. projection 행을 가진 consumer는 위치만 저장하는 API로 위치를 옮길 수 없고, 행 변경과 함께 확정하는 API로만 옮긴다.
+stream별 부분 소비자의 위치 표현은 아직 없다. 보존·정리와 부분 소비자 위치는 후속 설계 대상이며 이 결정이 해결하지 않는다.
+
+ID 예약은 이벤트 commit과 다른 transaction이므로 실패한 명령이 쓰지 않은 ID가 빈 구간으로 남는다. ID가 연속이라는 가정에 기대는 코드는 이 journal의 ID에 쓸 수 없다.
 
 schema 이름 기반 식별은 같은 이름의 버전 표를 가진 다른 앱 DB를 걸러내지 못한다. 이 저장소의 다른 DB는 그 표를 쓰지 않는다.
 
@@ -121,6 +137,8 @@ schema 이름 기반 식별은 같은 이름의 버전 표를 가진 다른 앱 
 - 재시도 때 이전 결과를 effect에 남겨 두는 안: 새 attempt가 진행 중인데 이전 실패 결과가 보여 복구기가 오독할 수 있다.
 - 새 schema journal을 읽기 전용으로 여는 안: 모르는 이벤트 형식을 해석할 수 없어 조용히 건너뛰게 되고, 옛 바이너리가 만든 결과가 최신 상태처럼 보인다.
 - 다른 SQLite 파일도 journal로 초기화하는 안: 잘못된 경로 하나로 사용자 데이터 파일에 journal 표가 생기고 WAL로 바뀐다.
+- ID를 이벤트 commit과 같은 transaction에서 배정하는 안: 빈 구간은 없지만 `decide`가 commit 전에 ID를 고정 입력으로 받을 수 없다.
+- 상한에 닿으면 ID를 되감아 재사용하는 안: 예약 ID를 재사용하지 않는다는 ADR-0055의 전제를 깨고 옛 이벤트의 참조와 섞인다.
 
 ## Reconsideration Triggers
 
@@ -128,7 +146,8 @@ schema 이름 기반 식별은 같은 이름의 버전 표를 가진 다른 앱 
 
 - 제품에 연결할 때 모든 쓰기 경로가 잠금을 얻은 writer를 거치는지 확인한다. 잠금 없이 쓰는 경로가 생기면 연결하지 않는다.
 - 로그 보존·정리를 설계하면 외래 키, cut 계산, snapshot+tail 재구성의 보존 경계를 함께 바꾸고 이 ADR의 schema 절을 다시 본다.
-- projection lane에서 출력과 cursor의 동시 갱신 API를 설계하면 checkpoint 키 형태(batch 단위 또는 stream별)를 이 결정과 대조한다.
+- stream별 부분 소비자나 외부 projection 저장소가 필요해지면 checkpoint 키 형태(batch 단위 또는 stream별)와 출력 행 형식을 다시 정한다.
+- 제품에 연결하면서 기존 runtime ID와 예약 ID를 한 공간으로 합치거나, 여러 journal이 ID를 공유해야 하면 ID 예약 절을 다시 정한다.
 - 여러 호스트나 여러 프로세스가 같은 journal에 써야 하는 요구가 생기면 잠금·세대 모델을 다시 정한다.
 
 ### 실행 결과로 확인
