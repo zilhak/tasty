@@ -39,8 +39,8 @@ impl App {
 
     /// MainView의 RemoteSurface 소유자를 찾는다. parked 상태는 조회하지 않는다.
     fn plugin_surface_owner(&self, surface_id: u32) -> Option<String> {
-        self.view.views.values().find_map(|w| {
-            let surface = w.as_main()?.core_state.find_surface_by_id(surface_id)?;
+        self.engines().windows().find_map(|(_, e)| {
+            let surface = e.find_surface_by_id(surface_id)?;
             surface
                 .as_any()
                 .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()

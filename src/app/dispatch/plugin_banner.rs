@@ -16,17 +16,14 @@ impl App {
         surface_id: u32,
     ) -> Result<u64, String> {
         let mut owner: Option<(_, String)> = None;
-        for (wid, w) in self.view.views.iter() {
-            if let Some(main) = w.as_main() {
-                if let Some(surface) = main.core_state.find_surface_by_id(surface_id)
-                    && let Some(ms) = surface
-                        .as_any()
-                        .downcast_ref::<crate::core::egui_mesh_surface::EguiMeshSurface>(
-                    )
-                {
-                    owner = Some((*wid, ms.plugin_id.clone()));
-                    break;
-                }
+        for (wid, engine) in self.engines().windows() {
+            if let Some(surface) = engine.find_surface_by_id(surface_id)
+                && let Some(ms) = surface
+                    .as_any()
+                    .downcast_ref::<crate::core::egui_mesh_surface::EguiMeshSurface>()
+            {
+                owner = Some((wid, ms.plugin_id.clone()));
+                break;
             }
         }
         let Some((wid, owner_plugin)) = owner else {

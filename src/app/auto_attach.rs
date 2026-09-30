@@ -184,9 +184,8 @@ impl App {
                 self.auto_attach_reconnect.remove(&anchor);
             }
             // 대기 중 워크스페이스나 매핑이 사라졌을 수 있으므로 다시 읽는다.
-            let mapping = self.main_windows_iter_mut().find_map(|m| {
-                m.core_state
-                    .workspaces
+            let mapping = self.engines().windows().find_map(|(_, e)| {
+                e.workspaces
                     .iter()
                     .find(|ws| ws.id == anchor)
                     .and_then(|ws| ws.attach_mapping.clone())
