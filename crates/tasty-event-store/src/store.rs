@@ -38,9 +38,15 @@ impl EventStore {
         conn.busy_timeout(BUSY_TIMEOUT)?;
         // 파일을 바꾸는 설정·migration보다 먼저 journal인지 확인한다.
         schema::ensure_journal_or_empty(&conn)?;
-        schema::apply_durability(&conn)?;
-        schema::migrate(&mut conn)?;
-        bind_journal(&mut conn, journal_id)?;
+        schema::apply_durability(&conn, BUSY_TIMEOUT)?;
+        // 버전 확인·migration·journal 바인딩을 한 transaction으로 묶는다. 나눠 두면 동시에 처음
+        // 여는 연결이 서로의 중간 상태를 보고 같은 migration을 다시 적용하다 실패한다.
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        // 첫 검사 뒤 다른 연결이 이 파일에 무엇을 만들었을 수 있어 transaction 안에서 다시 본다.
+        schema::ensure_journal_or_empty(&tx)?;
+        schema::migrate(&tx)?;
+        bind_journal(&tx, journal_id)?;
+        tx.commit()?;
         Ok(Self {
             conn,
             journal_id: journal_id.to_owned(),
@@ -178,9 +184,8 @@ fn lock_exclusive(path: &Path) -> StoreResult<File> {
     }
 }
 
-fn bind_journal(conn: &mut Connection, journal_id: &str) -> StoreResult<()> {
-    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let stored: Option<String> = tx
+fn bind_journal(conn: &Connection, journal_id: &str) -> StoreResult<()> {
+    let stored: Option<String> = conn
         .query_row(
             "SELECT journal_id FROM journal_meta WHERE singleton = 1",
             [],
@@ -196,14 +201,13 @@ fn bind_journal(conn: &mut Connection, journal_id: &str) -> StoreResult<()> {
         }
         Some(_) => {}
         None => {
-            tx.execute(
+            conn.execute(
                 "INSERT INTO journal_meta (singleton, journal_id, writer_epoch, status)
                  VALUES (1, ?1, 0, 'active')",
                 [journal_id],
             )?;
         }
     }
-    tx.commit()?;
     Ok(())
 }
 

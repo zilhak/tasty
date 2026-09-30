@@ -1,7 +1,9 @@
 //! journal DB 스키마와 migration. 적용한 버전은 `schema_migrations` 표에 한 줄씩 남긴다.
 //! 이 빌드가 아는 버전보다 새 journal은 열지 않는다. 모르는 형식을 조용히 읽지 않기 위해서다.
 
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
+use std::time::{Duration, Instant};
+
+use rusqlite::{Connection, ErrorCode, OptionalExtension};
 
 use crate::error::{StoreError, StoreResult};
 
@@ -144,8 +146,9 @@ const V1: &str = r#"
     );
 "#;
 
-/// 버전 표를 만들고 부족한 migration을 한 transaction씩 적용한다.
-pub(crate) fn migrate(conn: &mut Connection) -> StoreResult<()> {
+/// 버전 표를 만들고 부족한 migration을 적용한다. 호출자가 연 쓰기 transaction 안에서 부른다.
+/// 버전 확인과 적용이 같은 transaction이라 여러 연결이 동시에 처음 열어도 한 번만 적용된다.
+pub(crate) fn migrate(conn: &Connection) -> StoreResult<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY)",
     )?;
@@ -158,13 +161,11 @@ pub(crate) fn migrate(conn: &mut Connection) -> StoreResult<()> {
     }
     for (index, sql) in MIGRATIONS.iter().enumerate().skip(found as usize) {
         let version = index as u32 + 1;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        tx.execute_batch(sql)?;
-        tx.execute(
+        conn.execute_batch(sql)?;
+        conn.execute(
             "INSERT INTO schema_migrations (version) VALUES (?1)",
             [version],
         )?;
-        tx.commit()?;
     }
     Ok(())
 }
@@ -184,6 +185,26 @@ pub(crate) fn ensure_journal_or_empty(conn: &Connection) -> StoreResult<()> {
     Ok(())
 }
 
+/// WAL로 전환한다. 다른 연결이 동시에 전환하는 중이면 SQLite가 busy 대기 없이 잠금 오류를
+/// 돌려줄 수 있어 `wait` 동안 다시 시도한다. 전환은 transaction 안에서 할 수 없다.
+fn switch_to_wal(conn: &Connection, wait: Duration) -> StoreResult<String> {
+    const RETRY: Duration = Duration::from_millis(10);
+    let deadline = Instant::now() + wait;
+    loop {
+        match conn.query_row("PRAGMA journal_mode = WAL", [], |r| r.get::<_, String>(0)) {
+            Err(rusqlite::Error::SqliteFailure(err, _))
+                if matches!(
+                    err.code,
+                    ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked
+                ) && Instant::now() < deadline =>
+            {
+                std::thread::sleep(RETRY);
+            }
+            other => return Ok(other?),
+        }
+    }
+}
+
 /// 적용된 가장 큰 버전. 표가 비었으면 0이다.
 pub(crate) fn current_version(conn: &Connection) -> StoreResult<u32> {
     let version: Option<u32> = conn
@@ -197,8 +218,8 @@ pub(crate) fn current_version(conn: &Connection) -> StoreResult<u32> {
 
 /// WAL과 `synchronous=FULL`을 요청하고 실제값을 되읽는다. 하나라도 다르면 열지 않는다.
 /// in-memory 대체나 NORMAL로의 완화는 하지 않는다.
-pub(crate) fn apply_durability(conn: &Connection) -> StoreResult<()> {
-    let journal_mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))?;
+pub(crate) fn apply_durability(conn: &Connection, wait: Duration) -> StoreResult<()> {
+    let journal_mode = switch_to_wal(conn, wait)?;
     if !journal_mode.eq_ignore_ascii_case("wal") {
         return Err(StoreError::Durability {
             pragma: "journal_mode",

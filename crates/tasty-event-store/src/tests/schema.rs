@@ -72,3 +72,41 @@ fn foreign_sqlite_file_is_refused_without_changes() {
         .expect("names");
     assert_eq!(tables, ["memory"]);
 }
+
+/// 여러 프로세스·스레드가 빈 경로를 동시에 처음 열어도 모두 성공하고 migration은 한 번만 적용된다.
+#[test]
+fn concurrent_first_opens_all_succeed() {
+    const OPENERS: usize = 8;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = db_path(&dir);
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(OPENERS));
+    let handles: Vec<_> = (0..OPENERS)
+        .map(|_| {
+            let path = path.clone();
+            let barrier = std::sync::Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                barrier.wait();
+                EventStore::open(&path, JOURNAL).map(drop)
+            })
+        })
+        .collect();
+    let failures: Vec<String> = handles
+        .into_iter()
+        .map(|h| h.join().expect("opener thread"))
+        .filter_map(|r| r.err().map(|e| e.to_string()))
+        .collect();
+    assert!(failures.is_empty(), "failed opens: {failures:?}");
+
+    let conn = raw(&path);
+    let rows: Vec<(u32, i64)> = conn
+        .prepare(
+            "SELECT version, COUNT(*) FROM schema_migrations GROUP BY version ORDER BY version",
+        )
+        .expect("prepare")
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .expect("query")
+        .collect::<Result<_, _>>()
+        .expect("rows");
+    let expected: Vec<(u32, i64)> = (1..=SCHEMA_VERSION).map(|v| (v, 1)).collect();
+    assert_eq!(rows, expected);
+}
