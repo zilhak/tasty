@@ -52,6 +52,14 @@ View (sealed trait, : sealed::Sealed + std::any::Any)
 
 parked 상태에서도 engine은 살아 있으므로 레이아웃 슬롯 점유를 유지한다.
 
+### engine 탐색
+
+engine은 세 자리에 있다. 창(`MainView`), `App.parked_states`, 창에 배정되기 전의 임시 `App.core_state`다. 이 자리들을 순회하는 App 코드는 `src/app/window_access.rs`의 `EngineScan`(읽기)·`EngineScanMut`(쓰기)를 거친다. `App::engines`/`App::engines_mut`로 얻고, 같은 함수에서 `App.core` 같은 다른 필드를 함께 빌려야 하면 `engines_mut!` 매크로로 engine 자리 필드만 빌린다.
+
+- 방문 순서는 창(`views` 순회 순서) → parked(보관 순서) → 임시 engine이다. 호출부가 필요한 자리만 고른다(`windowed_and_parked`, `windows_and_pending`, `primary` 등). 창 목록의 순서는 `HashMap` 순회 순서라 고정된 의미가 없다.
+- 한 engine은 세 자리 중 한 곳에만 있으므로 전체 순회(`all`, `sessions`)는 각 engine을 정확히 한 번 방문한다. 전역 목록 합산(`list_global`)과 슬롯 점유 계산이 같은 자원을 두 번 세지 않는 근거다. 단위 시험은 parked·임시 자리의 순서와 1회 방문을 고정한다. 창 자리는 `MainView`를 단위 시험에서 만들 수 없어 다중 창 라우팅 E2E로 간접 확인한다.
+- parked 보관과 복원은 `park`(뒤에 붙인다)·`unpark_first`(가장 먼저 보관한 항목)로 한다.
+
 engine의 존재 여부는 `views`와 `parked_states`를 함께 확인한다. 창이 없다는 이유만으로 원격 attach 세션을 끊으면 안 된다. mirror 이벤트도 parked engine에 적용하며 창을 복원하면 그 상태를 표시한다([원격 세션 수명](../features/remote-attach/index.md#창-없는-상태parked에서의-세션-수명), [ADR-0061](../adr/0061-external-remote-module-and-attach-sync.md)).
 
 ### 창이 스스로 닫히는 자리 — `close_requested`

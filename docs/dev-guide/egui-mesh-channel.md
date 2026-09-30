@@ -489,7 +489,7 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
   순회하며 각 engine 에 `forward_mesh_frames_for_engine` 을 호출한다(구독/입력 forward/
   full-resend 요청 자체는 `apply_mesh_context_on_owning_engine` 류의 owning-engine 순회
   패턴으로 이미 parked engine 에도 정상 반영되고 있었다 — 실제 frame 구동/relay 만
-  빠져 있었다). `window_lifecycle.rs` 의 창 복원은 `parked_states.remove(0)` 으로 **1 개씩만**
+  빠져 있었다). `window_lifecycle.rs` 의 창 복원은 `EngineScanMut::unpark_first` 로 **1 개씩만**
   꺼내므로, 여러 window 가 동시에 minimize 돼 있으면 나머지는 계속 이 순회의 대상으로
   남는다 — 첫 매치에서 멈추는 owning-engine 패턴과 달리, 이 순회는 매 tick `parked_states`
   전부를 무조건 방문한다.
