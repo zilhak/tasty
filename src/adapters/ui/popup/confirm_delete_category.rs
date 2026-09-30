@@ -160,10 +160,10 @@ pub fn draw_confirm_delete_category(
         return PopupAction::Close;
     }
     if confirm {
-        if let Err(e) = engine.delete_category(cat_id) {
-            tracing::warn!("delete_category {cat_id} failed: {e:?}");
-        }
-        engine.mark_layout_dirty();
+        state.dispatch_intent(
+            crate::core::intent::DomainIntent::DeleteCategory { id: cat_id }
+                .from_user_menu("confirm_delete_category"),
+        );
         state.dialogs.pending_category_delete = None;
         return PopupAction::Close;
     }

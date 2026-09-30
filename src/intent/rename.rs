@@ -9,7 +9,7 @@ use crate::state::AppState;
 
 /// 대상은 ID로 지정한다. 팝업이 열린 동안 순서가 바뀌어도 같은 대상을 바꾼다.
 #[cfg_attr(
-    not(feature = "gui"),
+    all(not(feature = "gui"), not(test)),
     expect(dead_code, reason = "only the gui rename popup raises a direct rename")
 )]
 #[derive(Debug, Clone)]

@@ -66,6 +66,54 @@ pub(crate) enum DomainIntent {
         to_index: usize,
     },
 
+    /// 이름을 검증해 목록 끝에 추가한다.
+    CreateCategory {
+        name: String,
+    },
+    /// normal은 이름을 바꿀 수 없다.
+    RenameCategory {
+        id: crate::model::WorkspaceCategoryId,
+        name: String,
+    },
+    /// normal은 지울 수 없다. 안의 workspace는 normal로 옮긴다.
+    DeleteCategory {
+        id: crate::model::WorkspaceCategoryId,
+    },
+    /// normal은 첫 위치에 고정한다.
+    ReorderCategory {
+        from_index: usize,
+        to_index: usize,
+    },
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "only the gui sidebar and shortcuts fold categories"
+        )
+    )]
+    SetCategoryCollapsed {
+        id: crate::model::WorkspaceCategoryId,
+        collapsed: bool,
+    },
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "only the gui sidebar and shortcuts fold categories"
+        )
+    )]
+    ToggleCategoryCollapsed {
+        id: crate::model::WorkspaceCategoryId,
+    },
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "only the gui sidebar and shortcuts fold categories"
+        )
+    )]
+    ToggleAllCategoriesCollapsed,
+
     CreateTab {
         pane_id: u32,
         cwd: Option<PathBuf>,

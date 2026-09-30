@@ -50,6 +50,7 @@ pub(crate) mod app_surface;
 #[cfg(debug_assertions)]
 pub(crate) mod app_surface_debug;
 pub(crate) mod impl_attach;
+pub(crate) mod impl_category;
 pub(crate) mod impl_clipboard;
 pub(crate) mod impl_close;
 pub(crate) mod impl_convert;

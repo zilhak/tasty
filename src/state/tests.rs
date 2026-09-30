@@ -1291,6 +1291,9 @@ fn switch_to_category_auto_expands_collapsed() {
 
     state.switch_workspace(&mut engine, 0); // active=A(normal)
     state.switch_to_category(&mut engine, 1); // → work
+    // 펼침은 Core 요청으로 큐에 들어가므로 메인 루프처럼 큐를 비운다.
+    let mut core = crate::ipc::handler::cli_entry_tests::test_core();
+    crate::intent::headless::drain_pending_intents(&mut core, &mut state, &mut engine);
     assert!(!engine.categories()[1].collapsed); // auto-expand
     assert_eq!(state.active_workspace, 1); // work first = B
 }

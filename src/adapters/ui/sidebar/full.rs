@@ -249,8 +249,10 @@ pub fn draw_full_sidebar(
             }
             SidebarFullAction::CategoryHeaderToggle(cat_id) => {
                 // 카테고리 접힘 상태는 레이아웃에 저장하며 펼친 화면과 레일이 공유한다.
-                engine.toggle_category_collapsed(cat_id);
-                engine.mark_layout_dirty();
+                state.dispatch_intent(
+                    crate::core::intent::DomainIntent::ToggleCategoryCollapsed { id: cat_id }
+                        .from_user_menu("sidebar_category_header"),
+                );
             }
             SidebarFullAction::CategoryHeaderContextMenu { cat_id, x, y } => {
                 state.dialogs.pending_native_menu =

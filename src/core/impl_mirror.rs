@@ -231,8 +231,15 @@ fn build_mirror_forward_op(
                 None
             }
         }
-        // 이름은 구조가 아니라서 위 분류가 mirror 차단 대상으로 고르지 않는다.
-        D::RenameTab { .. } => None,
+        // 이름·카테고리는 구조가 아니라서 위 분류가 mirror 차단 대상으로 고르지 않는다.
+        D::RenameTab { .. }
+        | D::CreateCategory { .. }
+        | D::RenameCategory { .. }
+        | D::DeleteCategory { .. }
+        | D::ReorderCategory { .. }
+        | D::SetCategoryCollapsed { .. }
+        | D::ToggleCategoryCollapsed { .. }
+        | D::ToggleAllCategoriesCollapsed => None,
         _ => None,
     }
 }
@@ -350,6 +357,24 @@ impl Core {
             } => Ok(vec![
                 self.apply_move_workspace(engine, from_index, to_index),
             ]),
+            DomainIntent::CreateCategory { name } => Self::apply_create_category(engine, &name),
+            DomainIntent::RenameCategory { id, name } => {
+                Self::apply_rename_category(engine, id, &name)
+            }
+            DomainIntent::DeleteCategory { id } => Self::apply_delete_category(engine, id),
+            DomainIntent::ReorderCategory {
+                from_index,
+                to_index,
+            } => Self::apply_reorder_category(engine, from_index, to_index),
+            DomainIntent::SetCategoryCollapsed { id, collapsed } => {
+                Ok(Self::apply_set_category_collapsed(engine, id, collapsed))
+            }
+            DomainIntent::ToggleCategoryCollapsed { id } => {
+                Ok(Self::apply_toggle_category_collapsed(engine, id))
+            }
+            DomainIntent::ToggleAllCategoriesCollapsed => {
+                Ok(Self::apply_toggle_all_categories_collapsed(engine))
+            }
             DomainIntent::CreateTab {
                 pane_id,
                 cwd,

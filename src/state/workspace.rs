@@ -144,8 +144,15 @@ impl AppState {
             .get(section_idx)
             .is_some_and(|c| c.collapsed);
         if collapsed {
-            engine.set_category_collapsed(cat, false);
-            engine.mark_layout_dirty();
+            self.dispatch_intent(
+                crate::intent::Intent::Domain(
+                    crate::core::intent::DomainIntent::SetCategoryCollapsed {
+                        id: cat,
+                        collapsed: false,
+                    },
+                )
+                .from_user_shortcut("switch_to_category"),
+            );
         }
         let target = self
             .category_last_active

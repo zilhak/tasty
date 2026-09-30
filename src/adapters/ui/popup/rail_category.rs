@@ -160,8 +160,10 @@ pub fn draw_rail_category_popup(
         (icons::CHEVRON_DOWN, t("workspace_category.collapse"))
     };
     if menu_row(ui, &th, collapse_icon, collapse_label, false) {
-        engine.toggle_category_collapsed(cat_id);
-        engine.mark_layout_dirty();
+        state.dispatch_intent(
+            crate::core::intent::DomainIntent::ToggleCategoryCollapsed { id: cat_id }
+                .from_user_menu("rail_category/toggle_collapsed"),
+        );
         return PopupAction::Close;
     }
 

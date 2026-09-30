@@ -143,7 +143,6 @@ impl CoreState {
     }
 
     /// normal도 접을 수 있다. 변경 뒤 mark_layout_dirty는 호출자 몫이다.
-    #[cfg(any(feature = "gui", test))]
     pub fn set_category_collapsed(
         &mut self,
         id: crate::model::WorkspaceCategoryId,
@@ -154,7 +153,6 @@ impl CoreState {
         }
     }
 
-    #[cfg(any(feature = "gui", test))]
     pub fn toggle_category_collapsed(&mut self, id: crate::model::WorkspaceCategoryId) {
         if let Some(cat) = self.categories.iter_mut().find(|c| c.id == id) {
             cat.collapsed = !cat.collapsed;
@@ -162,7 +160,6 @@ impl CoreState {
     }
 
     /// 하나라도 펼쳐져 있으면 모두 접고, 모두 접혀 있으면 모두 편다. 저장 예약은 호출자가 맡는다.
-    #[cfg(any(feature = "gui", test))]
     pub fn toggle_all_categories_collapsed(&mut self) {
         let target = self.categories.iter().any(|c| !c.collapsed);
         for cat in &mut self.categories {

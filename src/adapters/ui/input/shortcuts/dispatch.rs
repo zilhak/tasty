@@ -170,8 +170,10 @@ impl MainView {
             }
             "toggle_categories_collapsed" => {
                 if engine.settings.general.workspace_categories_enabled {
-                    engine.toggle_all_categories_collapsed();
-                    engine.mark_layout_dirty();
+                    state.dispatch_intent(
+                        crate::core::intent::DomainIntent::ToggleAllCategoriesCollapsed
+                            .from_user_shortcut("toggle_categories_collapsed"),
+                    );
                 }
             }
             "close_workspace" => {

@@ -583,15 +583,17 @@ fn route_engine_handler(
         "workspace.close" => workspace::handle_workspace_close(window, engine, id, &request.params),
         "workspace_category.list" => workspace_category::handle_list(engine, id),
         "workspace_category.create" => {
-            workspace_category::handle_create(engine, id, &request.params)
+            workspace_category::handle_create(core, engine, id, &request.params)
         }
         "workspace_category.rename" => {
-            workspace_category::handle_rename(engine, id, &request.params)
+            workspace_category::handle_rename(core, engine, id, &request.params)
         }
         "workspace_category.delete" => {
-            workspace_category::handle_delete(engine, id, &request.params)
+            workspace_category::handle_delete(core, engine, id, &request.params)
         }
-        "workspace_category.move" => workspace_category::handle_move(engine, id, &request.params),
+        "workspace_category.move" => {
+            workspace_category::handle_move(core, engine, id, &request.params)
+        }
         "pane.list" => pane::handle_pane_list(engine, id),
         "pane.close" => pane::handle_pane_close(core, window, engine, id, &request.params),
         "split" => pane::handle_split(core, window, engine, id, &request.params),

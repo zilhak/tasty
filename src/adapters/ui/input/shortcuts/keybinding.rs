@@ -359,8 +359,10 @@ impl MainView {
         if engine.settings.general.workspace_categories_enabled
             && matches_any_binding(&kb.toggle_categories_collapsed, key, mods)
         {
-            engine.toggle_all_categories_collapsed();
-            engine.mark_layout_dirty();
+            state.dispatch_intent(
+                crate::core::intent::DomainIntent::ToggleAllCategoriesCollapsed
+                    .from_user_shortcut("toggle_categories_collapsed"),
+            );
             return true;
         }
         false

@@ -968,7 +968,6 @@ mod surface_cwd;
 mod terminal_finders;
 
 pub(crate) use attention::AttentionKind;
-pub use category::CategoryOpError;
 #[cfg(feature = "gui")]
 pub use finders::SurfaceDisplayPath;
 pub(crate) use surface_cwd::RemoteCwd;

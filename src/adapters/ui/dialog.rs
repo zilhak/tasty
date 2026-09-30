@@ -267,8 +267,8 @@ fn apply_rename(
         RenameTarget::ExplorerAddFavorite { path } => {
             apply_rename_explorer_add_favorite(engine, path, buffer)
         }
-        RenameTarget::NewCategory => apply_rename_new_category(engine, buffer),
-        RenameTarget::CategoryName { cat_id } => apply_rename_category_name(engine, cat_id, buffer),
+        RenameTarget::NewCategory => apply_rename_new_category(state, buffer),
+        RenameTarget::CategoryName { cat_id } => apply_rename_category_name(state, cat_id, buffer),
     }
     engine.mark_layout_dirty();
 }
@@ -368,20 +368,25 @@ fn apply_rename_explorer_add_favorite(
     engine.explorer_favorites.save();
 }
 
-fn apply_rename_new_category(engine: &mut crate::core::CoreState, buffer: String) {
-    if let Err(e) = engine.create_category(&buffer) {
-        tracing::warn!("create_category '{buffer}' failed: {e:?}");
-    }
+fn apply_rename_new_category(state: &mut AppState, buffer: String) {
+    state.dispatch_intent(
+        crate::core::intent::DomainIntent::CreateCategory { name: buffer }
+            .from_user_menu("rename_popup"),
+    );
 }
 
 fn apply_rename_category_name(
-    engine: &mut crate::core::CoreState,
+    state: &mut AppState,
     cat_id: crate::model::WorkspaceCategoryId,
     buffer: String,
 ) {
-    if let Err(e) = engine.rename_category(cat_id, &buffer) {
-        tracing::warn!("rename_category {cat_id} '{buffer}' failed: {e:?}");
-    }
+    state.dispatch_intent(
+        crate::core::intent::DomainIntent::RenameCategory {
+            id: cat_id,
+            name: buffer,
+        }
+        .from_user_menu("rename_popup"),
+    );
 }
 
 #[cfg(test)]
