@@ -111,7 +111,7 @@ pub fn draw_status_bar(
 }
 
 /// detached HEAD는 같은 이름의 브랜치와 구분하도록 @를 붙인다.
-/// HeadState는 core 타입이라 공용 위젯에 넘기기 전에 표시 문자열로 바꾼다.
+/// HeadState는 창 상태 타입이라 공용 위젯에 넘기기 전에 표시 문자열로 바꾼다.
 fn head_display(head: &HeadState) -> String {
     match head {
         HeadState::Branch(name) => name.clone(),
