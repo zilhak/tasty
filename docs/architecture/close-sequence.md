@@ -38,6 +38,12 @@ C1→C2→C3→C4→C5 순이다.
 kill · 스크롤백 파일 삭제 · per-surface 인덱스 해제 · memory scope purge · attach 점유 흔적
 제거)와 `surface.closed` lifecycle 통지는 cascade 쪽이 한다.
 
+회수 본문은 창 상태 없이 호출할 수 있는 `CoreState::cleanup_surface_traced`와
+`CoreState::purge_workspace_memory_scope`(`src/core/state/surface_cleanup.rs`)다. AppState에는
+화면 cache 해제(`AppState::release_surface_views` — explorer · DAG 그래프 view)와 lifecycle ·
+host 이벤트 적재만 남는다. AppState의 직접 닫기 경로(`gui` · `inline`)도 같은 CoreState 함수를
+부르고, `AppState::cleanup_surface`는 engine 회수 뒤 화면 cache를 해제하는 얇은 래퍼다.
+
 그 회수는 **한 함수**가 소유한다 — `src/core/structural_cascade.rs` 의
 `reclaim_closed_surfaces`. close cascade 셋(`cascade_surface_closed` · `cascade_pane_closed_full` ·
 `cascade_tab_closed_full`)이 모두 그것을 부르고, 그 셋과 split / tab 생성 cascade 를 사용자
@@ -51,10 +57,11 @@ GUI dispatcher · IPC 핸들러 · 원격 forward 실행이 함께 부른다. �
 
 | | gui | headless |
 |---|---|---|
-| `cleanup_surface` (PTY · 스크롤백 · 인덱스 · memory scope) | 한다 | 한다 |
+| `CoreState::cleanup_surface_traced` (PTY · 스크롤백 · 인덱스 · surface memory scope · 점유) | 한다 | 한다 |
+| 화면 cache 해제 (`release_surface_views`) | 한다 | 없음 — headless에는 View가 없다 |
 | `surface.closed` lifecycle enqueue | 한다 | **안 한다** |
 | `tab.closed` / `pane.closed` / `workspace.closed` host event | 한다 | **안 한다** |
-| C4 워크스페이스 memory scope purge (`after_workspace_removed`) | 한다 | **안 한다** — 아래 기준으로는 회수라 양쪽에 있어야 하는 단계다. `workspace.closed` 통지와 한 함수에 묶여 함께 빠져 있고, 의도인지는 정해지지 않았다 |
+| C4 워크스페이스 memory scope purge (`CoreState::purge_workspace_memory_scope`) | 한다 | 한다 — `workspace.closed` 통지와 분리되어 있다 |
 | 활성 포인터 보정 (`fix_workspace_pointers_after_removal`) | 한다 | 한다 |
 | 워크스페이스가 비면 재생성 | 한다 | 한다 |
 | C5 계측 · `close_total` 기록 | `cascade_surface_closed` 만 | 안 한다 |
@@ -104,10 +111,10 @@ close 진입
  │   └─ C2c evict                LIFO 상한 초과분의 backing 파일 삭제
  ├─ C3 collect_targets     pane × tab × leaf 3중 순회
  ├─ C4 ws_memory_purge     purge_scope(Scope::Workspace) — sqlite 풀스캔
- └─ C5 cleanup_targets     surface 마다 cleanup_surface (합계)
+ └─ C5 cleanup_targets     surface 마다 CoreState::cleanup_surface_traced (합계)
      ├─ C5a scrollback_delete   fs::remove_file
      ├─ C5b terminal_drop       Terminal drop → PTY kill + master 해제
-     ├─ C5c indices_drop        host-side per-surface 인덱스 해제 (observer sender drop — join 은 S3b)
+     ├─ C5c indices_drop        host-side per-surface 인덱스 해제 (observer sender drop — join 은 S3b, 화면 cache 해제는 제외)
      └─ C5d memory_purge        purge_scope(Scope::Surface) — sqlite 풀스캔 (surface 당 1회)
 close_total
 ```
