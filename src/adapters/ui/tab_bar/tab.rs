@@ -185,6 +185,10 @@ pub(super) fn draw_tab(
         let show_close = is_active || resp.hovered();
         let close_clicked = if show_close {
             let close_rect = slot_rect(cluster.close);
+            // 닫기 칸의 입력과 아이콘을 뷰포트 안으로 자른다. 스크롤로 가려진 탭의 닫기 칸이
+            // 스크롤 화살표 밑에 놓여도 화살표 클릭을 가로채지 않는다.
+            let prev_clip = ui.clip_rect();
+            ui.set_clip_rect(clip_rect.intersect(prev_clip));
             let cr = ui.interact(
                 close_rect,
                 egui::Id::new(("tabclose", info.pane_id, i)),
@@ -203,9 +207,6 @@ pub(super) fn draw_tab(
                 th.text_muted().into()
             };
             let glyph = th.icon_glyph_size_xs.value();
-            // 닫기 아이콘도 뷰포트 안에서만 그린다.
-            let prev_clip = ui.clip_rect();
-            ui.set_clip_rect(clip_rect.intersect(prev_clip));
             icons::CLOSE.image(glyph, cc).paint_at(
                 ui,
                 egui::Rect::from_center_size(close_rect.center(), egui::vec2(glyph, glyph)),

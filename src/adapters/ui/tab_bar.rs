@@ -1332,4 +1332,39 @@ mod tests {
             .for_each(|c| flatten(c.shape, &mut shapes));
         shapes
     }
+
+    /// 탭 폭 160·스크롤 160이면 가려진 활성 탭 0의 닫기 칸 [4, 20]이 왼쪽 화살표 칸 [0, 24] 안에 놓인다.
+    /// 화살표를 누르면 한 칸 스크롤만 나오고 가려진 탭은 닫히지 않는다.
+    #[test]
+    fn the_left_arrow_click_does_not_close_the_tab_hidden_under_it() {
+        let ctx = egui::Context::default();
+        let pane = scrolling_pane(160.0);
+        let bar_h = test_theme().tab_bar_height.value();
+        let left = egui::pos2(arrow_centers_x()[0], bar_h / 2.0);
+        let mut actions = Vec::new();
+        let steps =
+            std::iter::repeat_n(None, 30).chain([Some(None), Some(Some(true)), Some(Some(false))]);
+        for step in steps {
+            let mut raw = egui::RawInput::default();
+            let Some(pressed) = step else {
+                run_frame(&ctx, &pane, raw, &mut Vec::new());
+                continue;
+            };
+            raw.events.push(egui::Event::PointerMoved(left));
+            if let Some(pressed) = pressed {
+                raw.events.push(egui::Event::PointerButton {
+                    pos: left,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            }
+            run_frame(&ctx, &pane, raw, &mut actions);
+        }
+        let non_auto: Vec<_> = actions
+            .into_iter()
+            .filter(|a| !matches!(a, TabBarAction::AutoScrollToActiveTab { .. }))
+            .collect();
+        assert_eq!(non_auto, vec![TabBarAction::ScrollLeft { pane_id: 1 }]);
+    }
 }
