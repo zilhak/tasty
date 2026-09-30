@@ -7,9 +7,9 @@
 
 ## Context
 
-현재 `crates/tasty-terminal/src/lib.rs`의 `Terminal`은 VT 상태와 PTY 핸들을 함께 가지며, 내부 `PtyBackend`가 OS master·child와
+결정 당시 `crates/tasty-terminal/src/lib.rs`의 `Terminal`은 VT 상태와 PTY 핸들을 함께 가지며, 내부 `PtyBackend`가 OS master·child와
 reader/parser·writer thread를 소유한다. `src/core/terminal_store.rs`의 `TerminalStore`는 `CoreState` 안에서 Terminal을 보관하고,
-`src/core/pty_registry.rs`의 `PtyRegistry`는 surface 없는 PTY의 메타데이터·상한·유휴 정리·exit watcher를 따로 가진다.
+당시 `PtyRegistry`는 surface 없는 PTY의 메타데이터·상한·유휴 정리·exit watcher를 따로 가진다.
 원격 mirror의 Terminal에는 PTY가 없다.
 
 [ADR-0013](0013-terminal-io-and-process-lifetime.md)은 이 구조에서 파서 스레드·잠금·PTY 수명·절전 복구·출력 스캐너 커서를 정했다.
@@ -120,4 +120,4 @@ Terminal·Pty 등록과 종료 책임이 한 곳에 있어 누락·중복 정리
 - 대체 대상: [ADR-0013](0013-terminal-io-and-process-lifetime.md)
 - [ADR-0054](0054-app-core-view-layers-and-state-ownership.md) · [ADR-0055](0055-structural-domain-event-sourcing.md) · [ADR-0056](0056-crate-boundaries-for-core-event-store-and-task-runtime.md) · [ADR-0034](0034-output-cursor-contract.md)
 - [터미널](../features/terminal/index.md), [헤드리스 PTY](../features/headless-pty/index.md)
-- 현재 구현: `crates/tasty-terminal/src/lib.rs`, `src/core/terminal_store.rs`, `src/core/pty_registry.rs`.
+- 현재 구현: `crates/tasty-terminal/src/lib.rs`, `crates/tasty-terminal/src/pty.rs`, `src/core/terminal_store.rs`, `src/core/terminal_store/standalone.rs`.

@@ -1,6 +1,6 @@
 //! surface 없이 백그라운드 PTY를 관리한다. 화면·포커스·복원 기록은 만들지 않는다.
-//! 등록 수와 idle TTL을 제한하며, 메타데이터와 Terminal은 같은 PTY ID로 서로 다른 저장소에 둔다.
-//! PTY_ID_BASE 이상의 ID를 사용해 surface ID와 구분하고 회수할 때 두 저장소를 함께 정리한다.
+//! 등록 수와 idle TTL을 제한하며, 메타데이터를 가진 Pty와 Terminal은 같은 PTY ID의 단일 저장소 항목에 둔다.
+//! PTY_ID_BASE 이상의 ID를 사용해 surface ID와 구분하고 회수할 때 내용과 물리 owner를 함께 제거한다.
 
 use super::params::{self, p_try};
 use crate::core::engine_access::EngineMut;

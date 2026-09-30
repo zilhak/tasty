@@ -431,16 +431,16 @@ impl Drop for Pty {
         self.state.connection.revoke();
         self.state.exit_settled.store(true, Ordering::Release);
         self.state.pending_resize = None;
-        if let Some(tx) = self.writer_wake.take() {
-            if tx.send(Vec::new()).is_err() {
-                tracing::trace!("PTY writer already stopped before connection retirement");
-            }
+        if let Some(tx) = self.writer_wake.take()
+            && tx.send(Vec::new()).is_err()
+        {
+            tracing::trace!("PTY writer already stopped before connection retirement");
         }
         let t_drop = Instant::now();
-        if let Some(child) = self.child.take() {
-            if self.state.exit().is_none() {
-                retire_child(child, Arc::clone(&self.state.exit));
-            }
+        if let Some(child) = self.child.take()
+            && self.state.exit().is_none()
+        {
+            retire_child(child, Arc::clone(&self.state.exit));
         }
         // master 해제를 계측 구간 안으로 끌어들인다(위 필드 주석 참조).
         drop(self.master.take());
@@ -481,19 +481,8 @@ fn retire_child(mut child: Box<dyn portable_pty::Child + Send + Sync>, cell: Exi
         observe(&cell).phase = PtyPhase::Signalled;
     }
     thread::spawn(move || {
-        for _ in 0..40 {
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    publish_exit(&cell, status);
-                    return;
-                }
-                Ok(None) => thread::sleep(Duration::from_millis(5)),
-                Err(error) => {
-                    tracing::warn!("PTY reap check failed: {error}");
-                    publish_wait_failure(&cell);
-                    return;
-                }
-            }
+        if observe_grace_period(child.as_mut(), &cell) {
+            return;
         }
         #[cfg(unix)]
         if let Some(pid) = child.process_id() {
@@ -514,6 +503,25 @@ fn retire_child(mut child: Box<dyn portable_pty::Child + Send + Sync>, cell: Exi
             }
         }
     });
+}
+
+/// True means exit or a wait failure was recorded; neither permits a later PID signal.
+fn observe_grace_period(child: &mut dyn portable_pty::Child, cell: &ExitCell) -> bool {
+    for _ in 0..40 {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                publish_exit(cell, status);
+                return true;
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(5)),
+            Err(error) => {
+                tracing::warn!("PTY reap check failed: {error}");
+                publish_wait_failure(cell);
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn pty_size(cols: usize, rows: usize) -> PtySize {
