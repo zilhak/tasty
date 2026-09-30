@@ -829,7 +829,20 @@ pub(crate) fn execute_forwarded_structural_op(
             source_surface_id,
             target_surface_id,
         } => {
-            // 이 실행 함수 자체는 source와 target이 같은 workspace인지 검사하지 않는다.
+            // 호출자는 anchor(source)의 holder만 검증한다. target이 점유한 workspace 밖이면
+            // 다른 workspace의 surface를 덮어쓰게 되므로 없는 surface와 같은 문구로 거절한다.
+            let target_ws = engine
+                .find_workspace_index_for_surface(*target_surface_id)
+                .map(|(idx, _)| engine.workspaces[idx].id);
+            if ws_id.is_none() || target_ws != ws_id {
+                return Err(crate::core::request_target::unowned_target_message(
+                    crate::core::request_target::ResourceId {
+                        kind: crate::core::request_target::Kind::Surface,
+                        id: u64::from(*target_surface_id),
+                    },
+                    &format!("structural_op.{}", op.wire_kind()),
+                ));
+            }
             let intent = crate::core::intent::DomainIntent::MoveSurface {
                 source_surface_id: *source_surface_id,
                 target_surface_id: *target_surface_id,

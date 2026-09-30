@@ -153,3 +153,54 @@ fn a_forward_naming_a_gone_surface_is_answered_like_ipc() {
         "꼬리 문장까지 같아야 한다"
     );
 }
+
+/// forward된 move_surface의 target이 점유하지 않은 workspace에 있으면 서버가 거절한다.
+/// 받아들이면 source가 다른 workspace로 옮겨 가고 그 자리의 surface가 파괴된다.
+#[test]
+fn a_move_surface_target_outside_the_held_workspace_is_rejected() {
+    let server = common::shared();
+    let held = server.create_workspace("structure-sync-move-held");
+    let other = server.create_workspace("structure-sync-move-other");
+    let mut stream = open_workspace_attach(server.port(), held.id);
+    // source가 떠나도 held가 비지 않도록 surface를 하나 더 만든다.
+    let src = split_and_read_new_surface(&mut stream, held.surface_id);
+
+    write_control_frame(
+        &mut stream,
+        &json!({ "event": "structural_op", "op_id": 2, "op": {
+            "kind": "move_surface", "source_surface_id": src,
+            "target_surface_id": other.surface_id,
+        }}),
+    );
+    let result = next_structural(&mut stream, "structural_result");
+    assert_eq!(
+        result["ok"], false,
+        "다른 workspace target 을 받아들였다: {result:?}"
+    );
+    let reason = result["reason"].as_str().expect("reason");
+    assert!(
+        reason.starts_with(&format!(
+            "no live surface {} (named by 'structural_op.move_surface'); ",
+            other.surface_id
+        )),
+        "점유 범위 밖 target 은 없는 surface 와 같은 문구로 거절한다: {reason}"
+    );
+
+    let list = server.call("surface.list", json!({}));
+    let arr = list.as_array().expect("surface.list array");
+    let ws_of = |sid: u64| {
+        arr.iter()
+            .find(|s| s["id"].as_u64() == Some(sid))
+            .map(|s| s["workspace_id"].clone())
+    };
+    assert_eq!(
+        ws_of(other.surface_id),
+        Some(json!(other.id)),
+        "다른 workspace 의 surface 는 그대로여야 한다"
+    );
+    assert_eq!(
+        ws_of(src),
+        Some(json!(held.id)),
+        "source 는 held 에 남아야 한다"
+    );
+}

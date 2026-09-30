@@ -873,7 +873,10 @@ impl App {
         ) else {
             return;
         };
-        let wire = local_op.with_anchor_surface_id(remote_anchor);
+        let Some(wire) = remote_structural_op(local_op, remote_anchor, &sess.remote_to_local)
+        else {
+            return;
+        };
         let op_id = sess.op_seq;
         sess.op_seq += 1;
 
@@ -1222,6 +1225,31 @@ fn structural_op_payload(
         origin: Some(forward_origin_of(user_triggered)),
     })
     .unwrap_or_default()
+}
+
+/// 로컬 mirror ID로 만든 구조 변경을 원격 ID로 바꾼다. anchor는 호출자가 이미 찾았다.
+/// MoveSurface의 target도 로컬 ID이므로 같은 세션의 매핑으로 바꾸고, 없으면 보내지 않는다.
+/// 로컬 ID를 그대로 보내면 서버의 무관한 surface를 가리킬 수 있다.
+fn remote_structural_op(
+    local_op: &StructuralOp,
+    remote_anchor: u32,
+    remote_to_local: &HashMap<u32, u32>,
+) -> Option<StructuralOp> {
+    let wire = local_op.with_anchor_surface_id(remote_anchor);
+    let Some(local_target) = local_op.move_target_surface_id() else {
+        return Some(wire);
+    };
+    let Some(remote_target) = remote_to_local
+        .iter()
+        .find(|&(_, &l)| l == local_target)
+        .map(|(&r, _)| r)
+    else {
+        tracing::warn!(
+            "structural forward: 이동 대상 로컬 surface {local_target} 가 같은 mirror 세션에 없어 요청을 버린다"
+        );
+        return None;
+    };
+    Some(wire.with_move_target_surface_id(remote_target))
 }
 
 fn find_mirror_session_and_remote_id<'a>(
@@ -4086,6 +4114,44 @@ mod tests {
         assert!(
             !set_focus_to_surface(&mut ws, 12345),
             "존재하지 않는 surface 는 false"
+        );
+    }
+
+    #[test]
+    fn remote_structural_op_maps_the_move_target_to_its_remote_id() {
+        // remote → local. 로컬 ID가 다른 원격 surface ID와 겹치는 배치다.
+        let map: HashMap<u32, u32> = [(40, 3), (41, 4), (3, 9)].into_iter().collect();
+        let local = StructuralOp::MoveSurface {
+            source_surface_id: 4,
+            target_surface_id: 3,
+        };
+        let wire = remote_structural_op(&local, 41, &map).expect("target mapped");
+        assert_eq!(
+            wire,
+            StructuralOp::MoveSurface {
+                source_surface_id: 41,
+                target_surface_id: 40,
+            },
+            "target 도 원격 ID 로 보내야 한다 — 로컬 3 을 그대로 보내면 원격 surface 3 을 가리킨다"
+        );
+    }
+
+    #[test]
+    fn remote_structural_op_drops_a_move_whose_target_is_not_mirrored() {
+        let map: HashMap<u32, u32> = [(41, 4)].into_iter().collect();
+        let local = StructuralOp::MoveSurface {
+            source_surface_id: 4,
+            target_surface_id: 7,
+        };
+        assert_eq!(remote_structural_op(&local, 41, &map), None);
+    }
+
+    #[test]
+    fn remote_structural_op_only_swaps_the_anchor_for_other_ops() {
+        let local = StructuralOp::CloseSurface { surface_id: 4 };
+        assert_eq!(
+            remote_structural_op(&local, 41, &HashMap::new()),
+            Some(StructuralOp::CloseSurface { surface_id: 41 })
         );
     }
 

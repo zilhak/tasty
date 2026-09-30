@@ -396,7 +396,8 @@ pub enum StructuralOp {
         #[serde(default)]
         cwd: Option<String>,
     },
-    /// Move a live surface onto another surface's slot (both remote ids).
+    /// Move a live surface onto another surface's slot. On the wire both ids are
+    /// remote ids of the held workspace; the server rejects a target outside it.
     MoveSurface {
         source_surface_id: u32,
         target_surface_id: u32,
@@ -489,8 +490,8 @@ impl StructuralOp {
     /// Return a copy with the anchor surface id replaced. The mirror client builds
     /// an op with a **local** anchor id (the only id it knows at the block point),
     /// then swaps in the mapped **remote** id before sending. For `MoveSurface`
-    /// the anchor is the source; the target id is left untouched (both are remote
-    /// ids the client already holds).
+    /// the anchor is the source; the target is also a local id and must be
+    /// replaced separately with [`with_move_target_surface_id`](Self::with_move_target_surface_id).
     pub fn with_anchor_surface_id(&self, remote: u32) -> StructuralOp {
         let mut cloned = self.clone();
         match &mut cloned {
@@ -512,6 +513,29 @@ impl StructuralOp {
             StructuralOp::MoveSurface {
                 source_surface_id, ..
             } => *source_surface_id = remote,
+        }
+        cloned
+    }
+
+    /// The second surface a `MoveSurface` names (its target). Other ops name only the anchor.
+    pub fn move_target_surface_id(&self) -> Option<u32> {
+        match self {
+            StructuralOp::MoveSurface {
+                target_surface_id, ..
+            } => Some(*target_surface_id),
+            _ => None,
+        }
+    }
+
+    /// Return a copy with the `MoveSurface` target replaced by the mapped **remote**
+    /// id. Other ops are returned unchanged.
+    pub fn with_move_target_surface_id(&self, remote: u32) -> StructuralOp {
+        let mut cloned = self.clone();
+        if let StructuralOp::MoveSurface {
+            target_surface_id, ..
+        } = &mut cloned
+        {
+            *target_surface_id = remote;
         }
         cloned
     }
@@ -1229,10 +1253,19 @@ mod tests {
                 target_surface_id,
             } => {
                 assert_eq!(source_surface_id, 9);
-                assert_eq!(target_surface_id, 2);
+                assert_eq!(
+                    target_surface_id, 2,
+                    "anchor 치환은 target 을 바꾸지 않는다"
+                );
             }
             _ => unreachable!(),
         }
+        assert_eq!(mv.move_target_surface_id(), Some(2));
+        let mv = mv.with_move_target_surface_id(11);
+        assert_eq!(mv.move_target_surface_id(), Some(11));
+        assert_eq!(mv.anchor_surface_id(), 9);
+        assert_eq!(remote.move_target_surface_id(), None);
+        assert_eq!(remote.with_move_target_surface_id(11), remote);
     }
 
     #[test]

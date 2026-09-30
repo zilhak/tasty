@@ -1,4 +1,4 @@
-<!-- source-hash: 41a2109efd3b -->
+<!-- source-hash: 0b884b527e6c -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -129,6 +129,7 @@ tasty set workspace --id 5 --clear-mapping                              # remove
 
 - Keyboard input · mouse go straight to the remote terminal. The remote re-lays out to match the size of your Pane.
 - Splits, new Tabs, closing · reordering Tabs, Surface conversion, and reopening a closed item are **executed on the remote** and the result is reflected in the mirror. Creating a Surface of a type the remote does not have fails with a toast. When an agent requests a split, new Tab, close, move, or conversion (including a markdown navigation or an image open), or a file open without specifying where to open it, and that fails on the remote, it is only logged, with no toast.
+- **Move Surface** from the Surface context menu is executed on the remote only within the same mirror Workspace. Moving between a mirror and another Workspace is blocked.
 - Moving with **Move Tab** · **Move Pane** from the Tab context menu is not available in a mirror. If the item to move or the destination is a mirror, a toast says it was blocked and nothing changes.
 - **Reopening a closed item** (`Ctrl+Shift+T` by default) inside a mirror brings back a Tab that was closed on the remote — that Tab is a remote terminal, so your input goes to the remote too. Its earlier scrollback is fully visible only in the remote window (a mirror starts from the visible screen).
   - A Tab that an agent closed from the CLI inside a mirror is not brought back — not even by reopening from the remote window. Reopening only covers what a person closed by hand.
