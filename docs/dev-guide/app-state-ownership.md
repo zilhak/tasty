@@ -152,3 +152,11 @@ cargo check -p tasty --no-default-features --all-targets
 - [헤드리스 정의 경계](headless-build-boundaries.md) — gui 전용 판정 규칙 세 갈래와 여덟 칸
 - [model-view-split](model-view-split.md) — Model 과 Host View 를 가르는 패턴
 - [focus 정책](../design/policies/focus.md) — 사용자 view 상태 중 포커스의 운영 규칙
+
+## 실행 자원 대여의 검사 범위
+
+`engine_resource_ownership` 문서 가드는 CoreState의 이동 대상 자원 타입 재유입, Session의 직접 소유,
+EngineRef/EngineMut의 참조 필드와 Session의 암묵적 Deref를 검사한다. 이름을 가진 필드와 직접 경로를 읽는 검사이며
+타입 별칭·전이 의존이나 CoreState 전체의 순수성을 증명하지 않는다. `domain_does_not_reach_up`은 Core의
+`runtime::engine_session` 직접 의존을 막는다. Session 단위 시험은 Terminal/task 원본 공유, observer 종료 flush,
+교체된 Terminal 내용의 격리와 parked 자원의 보존을 검사한다. 실제 PTY 종료·reap과 resource generation의 계약은 별도 검증 대상이다.

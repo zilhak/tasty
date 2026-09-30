@@ -26,6 +26,10 @@ const DOMAIN_ROOTS: &[&str] = &["src/core/", "src/ports/"];
 /// 금지할 루트 모듈과 lib 재노출 별칭을 함께 등록한다. 별칭만 막으면 정식 경로로, 정식 경로만 막으면 별칭으로 참조할 수 있다.
 const UPPER: &[(&str, &str)] = &[
     ("app", "창·이벤트 루프 조립(`App`)"),
+    (
+        "runtime::engine_session",
+        "EngineSession 소유·저널 실행 조립; Core는 분리 대여만 받는다",
+    ),
     ("AppEvent", "`app::event::AppEvent` 의 lib 루트 별칭"),
     ("App", "`app::App` 의 lib 루트 별칭"),
     ("adapters", "어댑터 전체(IPC 핸들러 · UI · production 구현)"),
@@ -90,7 +94,9 @@ const UPPER: &[(&str, &str)] = &[
 /// 제품 도메인 코드의 gui 조건 수. gui_gates와 같은 판독으로 측정한 기준값이다.
 /// headless에 소비자가 없는 정의를 제외하는 조건 자체는 허용한다(ADR-0003).
 /// 증가·감소를 모두 확인해 변경 이유를 검토한다. GUI 동작을 조건부로 숨기는 데 사용하면 안 된다.
-const GUI_GATES_IN_DOMAIN: usize = 209;
+// readonly Terminal 사본은 CoreState의 headless unused 필드에서 EngineRuntime의 GUI 전용 필드로 옮겼다.
+// 필드와 초기화의 두 조건으로 원래 cfg_attr 한 조건을 대체하여 전체 조건 수가 하나 늘었다.
+const GUI_GATES_IN_DOMAIN: usize = 210;
 
 /// 2026-09-21 실측 92파일(core84·ports8, test 전용이 아닌 파일 91)을 기준으로 둔 수집 하한.
 const MIN_DOMAIN_FILES: usize = 80;
@@ -489,5 +495,20 @@ fn n() -> crate::core::origin::FileDispatchOrigin { todo!() }
             (17, "view"),
         ],
         "정식 경로·별칭·중괄호 import·여러 줄 경로를 검출해야 한다. 같은 형제 모듈의 비 GUI 하위 경로는 제외한다."
+    );
+}
+
+#[test]
+fn an_engine_session_dependency_is_rejected_but_core_borrows_are_allowed() {
+    let source = "use crate::runtime::engine_session::EngineSession;";
+    let violations = upper_references("src/core/example.rs", source);
+    assert_eq!(violations.len(), 1);
+    assert_eq!(violations[0].1, "runtime::engine_session");
+    assert!(
+        upper_references(
+            "src/core/example.rs",
+            "use crate::core::engine_access::{EngineRef, EngineMut};"
+        )
+        .is_empty()
     );
 }

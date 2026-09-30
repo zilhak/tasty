@@ -130,7 +130,7 @@ impl MainView {
     /// 출력·스크롤백 정리·크기 변경으로 내용이 달라졌으면 선택하지 않는다.
     fn apply_link_selection(&mut self, engine: &mut EngineMut<'_>, link: &TerminalLinkMenu) {
         let sel = link_selection(link.surface_id, link.start, link.end);
-        let Some(terminal) = engine.visible_terminal(link.surface_id) else {
+        let Some(terminal) = engine.as_ref().visible_terminal(link.surface_id) else {
             return;
         };
         if crate::selection::extract_selected_text(terminal, &sel) != link.text {

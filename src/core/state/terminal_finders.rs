@@ -48,10 +48,4 @@ impl EngineMut<'_> {
     pub fn find_terminal_by_id(&self, surface_id: u32) -> Option<&Terminal> {
         self.as_ref().find_terminal_by_id(surface_id)
     }
-
-    /// 불변 실행 대여와 같은 hard 점유 표시 정책을 사용한다.
-    #[cfg(feature = "gui")]
-    pub fn visible_terminal(&self, surface_id: u32) -> Option<&Terminal> {
-        self.as_ref().visible_terminal(surface_id)
-    }
 }

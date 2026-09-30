@@ -823,7 +823,7 @@ impl MainView {
         }
 
         let sid = self.vi_copy.as_ref().expect("vi mode exists").surface_id;
-        let Some(terminal) = engine.visible_terminal(sid) else {
+        let Some(terminal) = engine.as_ref().visible_terminal(sid) else {
             self.vi_copy = None;
             return true;
         };

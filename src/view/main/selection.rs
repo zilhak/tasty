@@ -341,7 +341,7 @@ impl MainView {
             Some(s) if !s.is_empty() => s.clone(),
             _ => return false,
         };
-        let text = if let Some(terminal) = engine.visible_terminal(sel.surface_id) {
+        let text = if let Some(terminal) = engine.as_ref().visible_terminal(sel.surface_id) {
             selection::extract_selected_text(terminal, &sel)
         } else {
             return false;
@@ -367,7 +367,7 @@ impl MainView {
             Some(s) if !s.is_empty() => s.clone(),
             _ => return false,
         };
-        let text = if let Some(terminal) = engine.visible_terminal(sel.surface_id) {
+        let text = if let Some(terminal) = engine.as_ref().visible_terminal(sel.surface_id) {
             selection::extract_selected_text(terminal, &sel)
         } else {
             return false;

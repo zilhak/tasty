@@ -98,7 +98,22 @@ impl CoreState {
 
 /// 종류별 지연 surface 실제화. plugin restore는 GUI 경로와 시험에서만 쓴다.
 #[cfg(any(feature = "gui", test))]
-impl CoreState {
+impl EngineMut<'_> {
+    /// 지연 placeholder를 종류에 맞는 경로로 실제화하는 단일 진입점이다. 성공하면 true다.
+    /// 터미널은 PTY를 만들고, plugin은 등록된 kind의 restore를 호출한다.
+    /// 포커스·활성 workspace·활성 tab은 바꾸지 않는다.
+    pub fn reify_deferred_surface(&mut self, surface_id: u32) -> bool {
+        let kind = self
+            .deferred_tab_mut(surface_id)
+            .and_then(|tab| tab.deferred_kind(surface_id));
+        match kind {
+            Some(crate::model::DeferredKind::Terminal) => {
+                self.ensure_surface_initialized(surface_id)
+            }
+            Some(crate::model::DeferredKind::Plugin) => self.reify_plugin_surface(surface_id),
+            None => false,
+        }
+    }
     /// 등록된 종류로 placeholder 복원을 시도한다. 종류가 없거나 복원에 실패하면 placeholder가 남는다.
     pub fn reify_plugin_surface(&mut self, surface_id: u32) -> bool {
         let registry = self.surface_registry.clone();
@@ -295,23 +310,6 @@ impl EngineMut<'_> {
     #[allow(dead_code)]
     pub fn all_terminal_surface_ids(&mut self) -> Vec<u32> {
         self.runtime.terminals.iter().map(|(id, _)| id).collect()
-    }
-
-    /// 지연 placeholder를 종류에 맞는 경로로 실제화하는 단일 진입점이다. 성공하면 true다.
-    /// 터미널은 PTY를 만들고, plugin은 등록된 kind의 restore를 호출한다.
-    /// 포커스·활성 workspace·활성 tab은 바꾸지 않는다.
-    #[cfg(any(feature = "gui", test))]
-    pub fn reify_deferred_surface(&mut self, surface_id: u32) -> bool {
-        let kind = self
-            .deferred_tab_mut(surface_id)
-            .and_then(|tab| tab.deferred_kind(surface_id));
-        match kind {
-            Some(crate::model::DeferredKind::Terminal) => {
-                self.ensure_surface_initialized(surface_id)
-            }
-            Some(crate::model::DeferredKind::Plugin) => self.reify_plugin_surface(surface_id),
-            None => false,
-        }
     }
 }
 

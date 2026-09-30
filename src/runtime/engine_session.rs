@@ -67,3 +67,6 @@ impl EngineSession {
 }
 
 mod bootstrap;
+
+#[cfg(test)]
+mod tests;

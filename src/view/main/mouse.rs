@@ -1178,7 +1178,7 @@ impl MainView {
                     return;
                 }
                 let viewport = self.state.terminal_views.get(engine, surface_id);
-                let info = engine.visible_terminal(surface_id).map(|t| {
+                let info = engine.as_ref().visible_terminal(surface_id).map(|t| {
                     t.with_view(&viewport, |view| {
                         (
                             view.is_alternate_screen(),

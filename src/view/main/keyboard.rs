@@ -327,7 +327,7 @@ impl MainView {
 
         let surface_id = self.state.focused_surface_id(engine);
         let read_state = surface_id.and_then(|sid| {
-            engine.visible_terminal(sid).map(|t| {
+            engine.as_ref().visible_terminal(sid).map(|t| {
                 t.with_view(&self.state.terminal_views.get(engine, sid), |view| {
                     KeyboardReadState {
                         shift_enter_newline,
