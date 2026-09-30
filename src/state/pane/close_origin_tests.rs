@@ -220,7 +220,7 @@ fn the_window_path_and_core_apply_return_the_same_surface_closed_event() {
 
 /// 사용자 창 경로의 mirror 닫기는 user_triggered로 전달한다.
 #[test]
-fn a_mirror_close_by_id_from_the_window_forwards_as_user_triggered() {
+fn a_mirror_close_active_surface_from_the_window_forwards_as_user_triggered() {
     let (mut state, mut engine, sid) = arrange(Case::Surface);
     state.active_workspace_mut(&mut engine).mirror = true;
 
