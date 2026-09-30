@@ -2833,6 +2833,77 @@ mod forward_exec_tests {
         );
     }
 
+    /// 사용자의 로컬 분할은 forward 억제 구간 밖이라 생성 직후 delta를 보내고 한 번 tap한다.
+    /// 비-holder IPC의 생성은 라우터 가드가 거절하므로 Core::apply로 이 후처리를 확인한다.
+    #[test]
+    fn local_split_in_held_workspace_sends_delta_then_taps_once() {
+        use crate::core::intent::{CoreEvent, DomainIntent};
+        use tasty_ipc::stream::{StreamTag, decode_mux};
+
+        let (mut core, _state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let ws_id = engine.workspaces[0].id;
+        let client_id = 7;
+        engine
+            .attach
+            .acquire_workspace(ws_id, &[a], &[a], client_id)
+            .expect("workspace 점유 획득");
+        let hub = tasty_ipc::stream_hub::StreamHub::new();
+        let rx = hub.register(client_id);
+        engine.attach.set_notifier(hub.clone());
+
+        let events = core
+            .apply(
+                &mut engine,
+                DomainIntent::SplitSurface {
+                    target_surface_id: a,
+                    direction: crate::model::SplitDirection::Horizontal,
+                    cwd: None,
+                    kind: "terminal".to_string(),
+                    surface_params: serde_json::json!({}),
+                },
+            )
+            .expect("local split must succeed");
+        let Some(CoreEvent::SurfaceSplit { new_surface_id, .. }) = events.into_iter().next() else {
+            panic!("expected SurfaceSplit event");
+        };
+
+        assert_eq!(
+            engine.attach.workspace_holder_of(new_surface_id),
+            Some(client_id),
+            "새 surface는 holder의 점유에 편입돼야 한다"
+        );
+        assert_eq!(
+            engine
+                .terminals
+                .get(new_surface_id)
+                .unwrap()
+                .output_tap_count(),
+            1,
+            "로컬 생성은 즉시 한 번 tap해야 한다"
+        );
+
+        let frames: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        let delta_at = frames.iter().position(|f| {
+            f.tag == StreamTag::Control
+                && serde_json::from_slice::<serde_json::Value>(&f.payload).is_ok_and(|v| {
+                    v["event"] == "structural_delta"
+                        && surface_ids_of(&v).contains(&u64::from(new_surface_id))
+                })
+        });
+        let snapshot_at = frames.iter().position(|f| {
+            f.tag == StreamTag::Data
+                && decode_mux(&f.payload).is_some_and(|(sid, _)| sid == new_surface_id)
+        });
+        let (Some(delta_at), Some(snapshot_at)) = (delta_at, snapshot_at) else {
+            panic!("delta와 새 surface의 snapshot이 모두 와야 한다: {delta_at:?}, {snapshot_at:?}");
+        };
+        assert!(
+            delta_at < snapshot_at,
+            "client가 ID 매핑을 만든 뒤 snapshot을 받도록 delta가 먼저 와야 한다"
+        );
+    }
+
     fn attached_pair(
         core: &mut crate::core::Core,
         state: &mut AppState,

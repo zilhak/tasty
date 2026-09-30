@@ -371,8 +371,11 @@ mirror 워크스페이스의 구조 변경(split/new-tab/close/move-tab/닫은 �
   이 후처리는 생성 차단을 통과한 요청에만 적용된다. 비-holder의 `terminal.spawn`은
   앞의 가드가 거절하므로 여기까지 오지 않는다. 점유 등록은 `impl_mirror.rs`의
   `mirror_structural_guard_tests::*_in_occupied_workspace_inherits_occupancy` 4개
-  단위 시험이 확인한다. `tests/attach_local_creation_tap.rs`는 loopback 통합 시험으로
-  `pty.spawn` + `pty.attach_surface` 뒤 실제 mux `Data` 프레임 수신까지 확인한다.
+  단위 시험이 확인한다. delta 뒤 tap 한 번과 snapshot `Data` 프레임 순서는
+  `forward_exec_tests::local_split_in_held_workspace_sends_delta_then_taps_once`가 실제
+  `StreamHub`로 확인한다. 비-holder의 `pty.attach_surface`도 가드가 거절하므로
+  `tests/attach_local_creation_tap.rs`는 거절된 PTY가 headless로 남아 점유되지 않은
+  workspace에 입양되는지 확인한다.
 - **forward-op 경로는 이 즉시-tap 을 스킵한다(이중 tap 방지)**: 위 4개 생성 경로는 `execute_forwarded_structural_op` 가 재사용하는 `handle_split`/`handle_tab_create` 에서도 그대로 호출된다 — 즉 holder 자신의 forward 실행 중에도 (가드를 통과한 뒤) `tap_new_workspace_member` 가 타지만, 그 경로는 위 §"역반영" 이 이미 delta 전송 **후** `tap_surface_for_stream` 을 직접 걸므로 여기서 또 tap 하면 같은 surface 에 tap 이 2개 등록돼 매 PTY 청크(타이핑 echo 포함)가 client 에 2번 도착한다("tttttest" 증상). `OccupancyRegistry::set_auto_tap_suppressed(true/false)` 로 `execute_forwarded_structural_op` 가 `pane::handle_split`/`tab::handle_tab_create` 호출 구간만 감싸 이 즉시-tap 을 억제하고(멤버 편입은 그대로 진행), 로컬 생성 경로(플래그 항상 `false` — `terminal.spawn`/`pty.attach_surface` 포함, 가드를 통과했든 안 했든 무관)는 영향받지 않는다. 테스트: `forward_exec_tests::forward_split_surface_taps_exactly_once_with_real_stream_hub`(실제 `StreamHub` 주입, tap 개수 검증 — `Terminal::output_tap_count`).
 
 ## SSH 터널 (원격 client 공통)
