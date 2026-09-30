@@ -131,6 +131,8 @@ agent
 
 `window.kind`/`modality` 는 [hierarchy](../concepts/hierarchy.md) 와 일치.
 
+`workspace.created` 의 `window_id` 는 발행 시점에 그 workspace 가 속한 창의 id 다. 창이 없는 engine(창을 닫아 보관 중인 engine 등)에서 만들었거나 발행 전에 창에서 사라졌으면 `0` 이며, `0` 은 "창 없음"을 뜻한다. 같은 payload 를 받는 Lua `workspace.create.post` 도 같다.
+
 ### Process (scope 표시)
 | 키 | scope | payload |
 |----|-------|---------|

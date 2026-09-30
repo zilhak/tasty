@@ -6,6 +6,9 @@ mod surface;
 mod tab;
 mod workspace;
 
+#[cfg(test)]
+mod created_window_tests;
+
 use crate::app::App;
 use crate::app::window_access::engines_mut;
 use crate::core::CoreState;
@@ -27,6 +30,16 @@ impl App {
         if drained.is_empty() {
             return;
         }
+        // 수집하면서 창 구분이 사라지고 IPC·UI 경로는 창 id를 모른 채 0으로 쌓으므로, 발행 직전에
+        // workspace를 가진 창을 다시 찾는다.
+        let drained: Vec<PendingHostEvent> = drained
+            .into_iter()
+            .map(|ev| {
+                resolve_created_window(ev, |workspace_id| {
+                    self.find_main_with_workspace(workspace_id).map(u64::from)
+                })
+            })
+            .collect();
         let scripts = self.autofire_scripts();
         macro_rules! af {
             () => {
@@ -210,5 +223,23 @@ fn resolve_hook_fired_task_waits(
                 core.now_unix_millis() as u64,
             );
         }
+    }
+}
+
+/// workspace.created의 window_id를 발행 시점에 그 workspace를 가진 창으로 정한다. 쌓을 때의 값은
+/// 쓰지 않는다. 창이 없는 engine(parked)에 있거나 발행 전에 사라졌으면 0이다.
+fn resolve_created_window(
+    ev: PendingHostEvent,
+    window_of: impl Fn(u32) -> Option<u64>,
+) -> PendingHostEvent {
+    match ev {
+        PendingHostEvent::WorkspaceCreated {
+            workspace_id, name, ..
+        } => PendingHostEvent::WorkspaceCreated {
+            workspace_id,
+            window_id: window_of(workspace_id).unwrap_or(0),
+            name,
+        },
+        other => other,
     }
 }
