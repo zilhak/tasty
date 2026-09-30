@@ -44,6 +44,7 @@ pub fn report_apply_error(
     label: &str,
     err: &anyhow::Error,
 ) {
+    crate::core::mark_last_forward_user_triggered(engine, err, origin);
     crate::core::mark_last_forward_agent_origin(engine, err, origin);
     if let Some(blocked) = err.downcast_ref::<crate::core::MirrorStructuralBlocked>() {
         // 원격에 전달한 요청은 회신에서 실패를 처리하므로 여기서는 토스트를 띄우지 않는다.

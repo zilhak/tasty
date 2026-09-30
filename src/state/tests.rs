@@ -223,6 +223,38 @@ fn mirror_close_active_surface_forwards_close_surface() {
     }
 }
 
+/// 변환은 선행 표시 없이 공용 오류 보고만 거친다. 사용자 요청이면 원격에도 사용자 조작으로 전달해야 한다.
+#[cfg(feature = "gui")] // mirror 구조 변경 전달은 gui 전용이다
+#[test]
+fn mirror_convert_surface_from_the_user_forwards_as_user_triggered() {
+    use crate::ipc::stream::StructuralOp;
+    let (mut state, mut engine) = test_state();
+    let mut core = crate::ipc::handler::cli_entry_tests::test_core();
+    let sid = state.focused_surface_id(&engine).unwrap();
+    state.active_workspace_mut(&mut engine).mirror = true;
+
+    crate::intent::surface::handle(
+        &mut core,
+        &mut state,
+        &mut engine,
+        &crate::intent::Intent::ConvertSurface {
+            surface_id: sid,
+            target: crate::intent::ConvertTarget::Terminal,
+        }
+        .from_user_menu("test"),
+    );
+    assert_eq!(engine.pending_structural_forward.len(), 1);
+    let queued = &engine.pending_structural_forward[0];
+    assert!(
+        queued.user_triggered,
+        "사용자의 변환 요청은 원격에 사용자 조작으로 전달한다"
+    );
+    match &queued.op {
+        StructuralOp::ConvertSurface { surface_id, .. } => assert_eq!(*surface_id, sid),
+        other => panic!("expected ConvertSurface, got {other:?}"),
+    }
+}
+
 #[test]
 fn mirror_close_active_pane_forwards_close_pane() {
     use crate::ipc::stream::StructuralOp;

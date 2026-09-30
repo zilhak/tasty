@@ -135,6 +135,53 @@ fn an_agent_forward_is_marked_for_a_silent_failure() {
     assert!(!engine.pending_structural_forward[0].silent_failure);
 }
 
+/// mirror workspace의 MoveSurface를 전달한 뒤 events_or_report처럼 apply 오류를 그대로 넘긴다.
+/// 공용 보고 함수만 거쳐도 사용자 요청이면 user_triggered가 켜지고 에이전트 요청이면 꺼진 채 남아야 한다.
+#[test]
+fn a_forwarded_block_is_user_triggered_only_for_the_user() {
+    for (origin, expect_user) in [(user(), true), (agent(), false)] {
+        let (mut core, mut state, mut engine) = fixture();
+        let source = state.focused_surface_id(&engine).expect("fixture surface");
+        state.add_tab(&mut engine).expect("second tab");
+        let target = state.focused_surface_id(&engine).expect("second surface");
+        assert_ne!(source, target);
+        engine.workspaces[0].mirror = true;
+
+        let err = core
+            .apply(
+                &mut engine,
+                crate::core::intent::DomainIntent::MoveSurface {
+                    source_surface_id: source,
+                    target_surface_id: target,
+                },
+            )
+            .expect_err("mirror workspace는 로컬에서 옮기지 않는다");
+        assert!(
+            err.downcast_ref::<crate::core::MirrorStructuralBlocked>()
+                .is_some_and(|b| b.forwarded),
+            "원격으로 전달한 차단이어야 한다: {err}"
+        );
+        assert_eq!(engine.pending_structural_forward.len(), 1);
+        assert!(!engine.pending_structural_forward[0].user_triggered);
+
+        report_apply_error(&mut state, &mut engine, &origin, "t", &err);
+        let queued = &engine.pending_structural_forward[0];
+        assert_eq!(
+            queued.user_triggered, expect_user,
+            "{origin:?}: 사용자 요청만 사용자 조작으로 전달한다"
+        );
+        assert_eq!(
+            queued.silent_failure, !expect_user,
+            "{origin:?}: 에이전트 요청만 원격 실패를 로그로 남긴다"
+        );
+        assert_eq!(
+            state.toasts.len(),
+            0,
+            "전달한 요청은 여기서 토스트를 띄우지 않는다"
+        );
+    }
+}
+
 #[test]
 fn a_preset_apply_failure_toasts_only_for_the_user() {
     let (core, mut state, mut engine) = fixture();
