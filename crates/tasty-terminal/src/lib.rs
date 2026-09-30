@@ -1,6 +1,7 @@
 // 이유: 테스트의 반환값 무시는 허용하되 제품 코드의 반환값 무시는 계속 검사한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 mod accessors;
+mod binding;
 mod color;
 mod events;
 mod handle;
@@ -8,8 +9,6 @@ mod io;
 mod modes;
 mod mouse_report;
 mod output_buffer;
-mod port;
-mod port_impl;
 mod pty;
 mod resize;
 mod screen;
@@ -23,7 +22,6 @@ pub mod cwd;
 pub mod disk_scrollback;
 pub mod foreground_process;
 pub mod search;
-pub mod testing;
 pub mod waker_factory;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -36,6 +34,7 @@ use termwiz::escape::parser::Parser;
 use termwiz::escape::{Action, ControlCode, Esc, EscCode};
 use termwiz::surface::Surface;
 
+pub use binding::ResourceGeneration;
 pub use color::{ColorPalette, TerminalRgb};
 pub use events::*;
 pub use io::WriteAck;
@@ -43,8 +42,7 @@ pub use mouse_report::encode_mouse_report;
 pub use output_buffer::{
     OUTPUT_RETENTION_MAX_BYTES, OutputCursor, OutputRead, OutputReadError, OutputReadRequest,
 };
-pub use port::TerminalProcess;
-pub use pty::pty_drop_totals;
+pub use pty::{Pty, PtyExit, PtyObservation, PtyPhase, PtyState, StandalonePty, pty_drop_totals};
 pub use scrollback::ScrollbackLine;
 pub use viewport::{ContentCut, ContentEpoch, TerminalViewport, ViewportInfo};
 
@@ -110,6 +108,7 @@ const RESIZE_TAP_CAP: usize = 8;
 /// 파서와 메인 스레드가 공유하는 VTE 상태. 파서는 raw 청크마다 락을 얻고 해제한다.
 /// 렌더·IPC·리사이즈도 같은 락을 사용하므로 경합할 수 있다.
 pub(crate) struct TerminalState {
+    connection: binding::ConnectionLease,
     content_revision: u64,
     alternate_epoch: ContentEpoch,
     /// Primary screen buffer.
@@ -242,20 +241,14 @@ pub(crate) struct TerminalState {
     pub(crate) charset_active_g1: bool,
 }
 
-/// Terminal handle: VT content ([`TerminalState`]) plus an optional OS PTY
-/// ([`pty::Pty`]). The two are owned separately — the state knows nothing about
-/// the PTY and reaches it only through its [`sink::OutputSink`]; the PTY knows
-/// nothing about VT and hands raw bytes to [`TerminalIngest`]. A detached mirror
-/// has no PTY and is fed via [`Terminal::feed_bytes`]. All grid/mode/scrollback
-/// accessors lock the shared state; the input (winit) thread never parses
-/// (docs/features/terminal/index.md#vte-에뮬레이션).
+/// VT content owner. OS child/master and raw workers belong to a separate [`Pty`].
+/// The shared state reaches its current input/response sink only through a channel.
+/// Grid/mode/scrollback accessors lock the same state the reader ingests into;
+/// the GUI input thread does not parse VT.
 pub struct Terminal {
     /// Shared VTE state. The Pty reader worker locks this per raw chunk to ingest;
     /// the main thread locks it for render/IPC/resize/event-drain.
     state: Arc<Mutex<TerminalState>>,
-    /// OS PTY and child. `None` for a detached mirror created via
-    /// [`Terminal::new_detached`].
-    pty: Option<pty::Pty>,
     /// Set by the reader worker whenever it ingests a chunk; `process()` swaps it
     /// to false and reports whether anything changed since the last poll.
     dirty: Arc<AtomicBool>,
@@ -293,6 +286,7 @@ pub struct Terminal {
 /// state and wakes the host. Holds only a weak state reference so dropping the
 /// terminal stops further ingest.
 struct TerminalIngest {
+    generation: ResourceGeneration,
     state: Weak<Mutex<TerminalState>>,
     dirty: Arc<AtomicBool>,
     waker: Arc<Mutex<Waker>>,
@@ -317,8 +311,13 @@ impl pty::PtyOutput for TerminalIngest {
         let Some(state) = self.state.upgrade() else {
             return false;
         };
-        tasty_utils::poison::recover_mutex(state.lock(), STATE_WHAT, &STATE_POISON_REPORTED)
-            .ingest(data);
+        let mut state =
+            tasty_utils::poison::recover_mutex(state.lock(), STATE_WHAT, &STATE_POISON_REPORTED);
+        if state.connection.generation() != self.generation || !state.connection.is_active() {
+            return false;
+        }
+        state.ingest(data);
+        drop(state);
         self.dirty.store(true, Ordering::Release);
         self.wake_now();
         true
@@ -372,6 +371,7 @@ impl TerminalState {
     /// Build the PTY-independent VTE state for a fresh terminal.
     fn new(cols: usize, rows: usize) -> Self {
         Self {
+            connection: binding::ConnectionLease::new(),
             content_revision: 0,
             primary_surface: Surface::new(cols, rows),
             alternate_surface: None,
@@ -552,42 +552,58 @@ fn is_screen_repaint_action(action: &Action) -> bool {
     )
 }
 
+/// Spawn both independent owners and connect their byte endpoints before the reader starts.
+/// The caller must retain both values; dropping Pty terminates its own child.
+pub fn spawn_terminal(config: TerminalConfig<'_>, waker: Waker) -> Result<(Terminal, Pty)> {
+    let (mut pty, reader, sink) = Pty::spawn(&config)?;
+    let mut terminal = Terminal::new_detached(config.cols, config.rows);
+    terminal.waker = Arc::new(Mutex::new(waker));
+    {
+        let mut state = terminal.lock_state();
+        state.connection = pty.connection();
+        state.sink = Some(sink);
+    }
+    pty.start_reader(
+        reader,
+        TerminalIngest {
+            generation: pty.generation(),
+            state: Arc::downgrade(&terminal.state),
+            dirty: Arc::clone(&terminal.dirty),
+            waker: Arc::clone(&terminal.waker),
+        },
+    );
+    Ok((terminal, pty))
+}
+
 impl Terminal {
-    /// Create a new terminal.
-    ///
-    /// If `config.shell` is `None` or empty, the platform default shell is used.
-    /// The `waker` callback is invoked from the Pty reader worker whenever new data
-    /// has been ingested, allowing the main event loop to wake up and render.
-    pub fn new(config: TerminalConfig<'_>, waker: Waker) -> Result<Self> {
-        let (cols, rows) = (config.cols, config.rows);
-        let (mut pty, reader, sink) = pty::Pty::spawn(&config)?;
+    /// The connection identity is independent of content reset/alternate-screen epochs.
+    pub fn resource_generation(&self) -> ResourceGeneration {
+        self.lock_state().connection.generation()
+    }
 
-        // The Pty writer sink is wired into the state so VTE responses (DSR/DA),
-        // emitted by the reader worker during ingest, reach the PTY.
-        let mut initial_state = TerminalState::new(cols, rows);
-        initial_state.sink = Some(sink);
-        let state = Arc::new(Mutex::new(initial_state));
-        let dirty = Arc::new(AtomicBool::new(false));
-        let waker = Arc::new(Mutex::new(waker));
+    /// Retire this binding before replacing a store entry. Old readers and sinks cannot
+    /// deliver through it even if an observer still temporarily retains old content.
+    pub fn disconnect(&mut self) {
+        let mut state = self.lock_state();
+        state.connection.revoke();
+        state.sink = None;
+        state.output_taps.clear();
+        state.resize_taps.clear();
+        state.events.clear();
+    }
 
-        pty.start_reader(
-            reader,
-            TerminalIngest {
-                state: Arc::downgrade(&state),
-                dirty: Arc::clone(&dirty),
-                waker: Arc::clone(&waker),
-            },
-        );
-
-        Ok(Self {
-            state,
-            pty: Some(pty),
-            dirty,
-            cached_dims: (cols, rows),
-            cached_emit_events: false,
-            waker,
-            busy_latch: AtomicU64::new(BUSY_LATCH_NONE),
-        })
+    /// Queue a resource observation only for the connection which produced it.
+    pub fn record_exit(&mut self, generation: ResourceGeneration) -> bool {
+        let mut state = self.lock_state();
+        if state.connection.generation() != generation || !state.connection.is_active() {
+            return false;
+        }
+        state.events.push(TerminalEvent {
+            surface_id: 0,
+            generation,
+            kind: TerminalEventKind::ProcessExited,
+        });
+        true
     }
 
     /// Re-target the reader worker's wake callback. Used when a headless PTY's
@@ -601,7 +617,8 @@ impl Terminal {
             self.waker.lock(),
             WAKER_WHAT,
             &WAKER_POISON_REPORTED,
-        ) = waker;
+        ) = Arc::clone(&waker);
+        waker();
     }
 
     /// Create a detached mirror terminal with no PTY, child, or threads. Its grid
@@ -609,7 +626,6 @@ impl Terminal {
     pub fn new_detached(cols: usize, rows: usize) -> Self {
         Self {
             state: Arc::new(Mutex::new(TerminalState::new(cols, rows))),
-            pty: None,
             dirty: Arc::new(AtomicBool::new(false)),
             cached_dims: (cols, rows),
             cached_emit_events: false,
@@ -632,27 +648,10 @@ impl Terminal {
         f(st.surface())
     }
 
-    /// Process pending terminal state. Parsing happens on the Pty reader worker
-    /// (docs/features/terminal/index.md#vte-에뮬레이션), so this only: (1) flushes a deferred PTY resize, (2) reports
-    /// whether the parser ingested anything since the last call, (3) detects child
-    /// exit (emitting `ProcessExited` once). Returns true if the surface changed.
+    /// Report whether the reader ingested content since the last poll. The host
+    /// collection separately flushes and observes the paired Pty before draining events.
     pub fn process(&mut self) -> bool {
-        // Flush deferred PTY resize before reporting.
-        self.force_flush_pty_resize();
-
-        let changed = self.dirty.swap(false, Ordering::AcqRel);
-
-        // Child exit detection, throttled by the Pty; PTY EOF forces an immediate check.
-        if let Some(pty) = self.pty.as_mut()
-            && pty.observe_exit()
-        {
-            self.lock_state().events.push(TerminalEvent {
-                surface_id: 0,
-                kind: TerminalEventKind::ProcessExited,
-            });
-        }
-
-        changed
+        self.dirty.swap(false, Ordering::AcqRel)
     }
 
     /// Feed externally supplied raw VT bytes into the parser, updating the surface

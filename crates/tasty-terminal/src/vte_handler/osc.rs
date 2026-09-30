@@ -30,6 +30,7 @@ impl TerminalState {
         }
         self.current_title = Some(title.clone());
         self.events.push(TerminalEvent {
+            generation: self.connection.generation(),
             surface_id: 0,
             kind: TerminalEventKind::TitleChanged(title),
         });
@@ -72,12 +73,14 @@ impl TerminalState {
                 // Cache the reported directory for get_cwd.
                 self.cached_cwd = Some(std::path::PathBuf::from(&path));
                 self.events.push(TerminalEvent {
+                    generation: self.connection.generation(),
                     surface_id: 0,
                     kind: TerminalEventKind::CwdChanged(path),
                 });
             }
             OperatingSystemCommand::SystemNotification(body) => {
                 self.events.push(TerminalEvent {
+                    generation: self.connection.generation(),
                     surface_id: 0,
                     kind: TerminalEventKind::Notification {
                         title: "Terminal".to_string(),
@@ -90,6 +93,7 @@ impl TerminalState {
                     let title = parts.get(1).cloned().unwrap_or_default();
                     let body = parts.get(2).cloned().unwrap_or_default();
                     self.events.push(TerminalEvent {
+                        generation: self.connection.generation(),
                         surface_id: 0,
                         kind: TerminalEventKind::Notification { title, body },
                     });
@@ -144,6 +148,7 @@ impl TerminalState {
             }
             OperatingSystemCommand::SetSelection(_selection, data) => {
                 self.events.push(TerminalEvent {
+                    generation: self.connection.generation(),
                     surface_id: 0,
                     kind: TerminalEventKind::ClipboardSet(data),
                 });
@@ -155,6 +160,7 @@ impl TerminalState {
             // is ignored; the host always answers for the clipboard (`c`).
             OperatingSystemCommand::QuerySelection(_selection) => {
                 self.events.push(TerminalEvent {
+                    generation: self.connection.generation(),
                     surface_id: 0,
                     kind: TerminalEventKind::ClipboardQuery,
                 });
@@ -174,6 +180,7 @@ impl TerminalState {
                     _ => return,
                 };
                 self.events.push(TerminalEvent {
+                    generation: self.connection.generation(),
                     surface_id: 0,
                     kind: TerminalEventKind::PromptBoundary { phase, payload },
                 });
@@ -205,6 +212,7 @@ impl TerminalState {
                                 payload.push_str(&String::from_utf8_lossy(extra));
                             }
                             self.events.push(TerminalEvent {
+                                generation: self.connection.generation(),
                                 surface_id: 0,
                                 kind: TerminalEventKind::PromptBoundary { phase, payload },
                             });
@@ -230,6 +238,7 @@ impl TerminalState {
                             title = "Terminal".to_string();
                         }
                         self.events.push(TerminalEvent {
+                            generation: self.connection.generation(),
                             surface_id: 0,
                             kind: TerminalEventKind::Notification { title, body },
                         });
@@ -280,6 +289,7 @@ impl TerminalState {
                     self.current_title = restored.clone();
                     if let Some(title) = restored {
                         self.events.push(TerminalEvent {
+                            generation: self.connection.generation(),
                             surface_id: 0,
                             kind: TerminalEventKind::TitleChanged(title),
                         });

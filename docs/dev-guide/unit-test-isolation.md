@@ -339,14 +339,14 @@ gh api "repos/<owner>/<repo>/actions/jobs/<job_id>/logs"
 `MainViewState` + `EngineSession` 한 쌍을 얻는 표준 통로다. Session 소유자는 시험이 끝날 때까지
 유지하고 `borrow_mut()`로 구조·실행 자원을 대여한다. 그 안에서 `EngineSession::new` 이 도는데,
 이 생성자는 **기본 워크스페이스를 만들면서 실제 PTY 를 열고 실제 셸을 fork 한다**
-(`spawn_shell_terminal` → `tasty_terminal::Terminal::new` → `portable_pty` →
+(`spawn_shell_terminal` → `tasty_terminal::spawn_terminal` → `portable_pty` →
 `std::process::Command::spawn`).
 
 그러니 이 픽스처를 쓰면 그 시험은 **파일 몇 개를 읽는 시험이 아니라 프로세스를 하나
 띄우는 시험**이다. 따라오는 것:
 
 - 자식 셸 프로세스 하나와 그 PTY(master `/dev/ptmx` + slave `/dev/pts/N`).
-- PTY 마다 exit-watcher OS 스레드 하나(`src/core/pty_registry.rs`).
+- PTY마다 raw reader/writer worker. child 종료는 Pty에서 관측하며 정상 Drop의 유예·회수는 별도 reaper에서 처리한다.
 - `std::process::Command::spawn` 이 exec 결과를 부모에게 알리려고 내부에서 만드는
   AF_UNIX SEQPACKET socketpair 한 쌍. 이 spawn 경로에서 관측할 수 있는 보조 지표다.
   아래 명령으로 소켓 생성 횟수를 세되, 실제 spawn 호출과 대조해 해석한다.

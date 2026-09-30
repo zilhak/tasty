@@ -156,7 +156,7 @@ impl Core {
         let rows = engine.default_rows;
         let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let waker = engine.make_waker(surface_id);
-        let new_terminal = match tasty_terminal::Terminal::new(
+        let new_terminal = match tasty_terminal::spawn_terminal(
             tasty_terminal::TerminalConfig {
                 cols,
                 rows,
@@ -435,7 +435,7 @@ pub(crate) fn apply_create_workspace_inner(
             .iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect();
-        let terminal = crate::core::terminal_spawn::spawn_shell_terminal(
+        let (terminal, pty) = crate::core::terminal_spawn::spawn_shell_terminal(
             surface_id,
             crate::core::terminal_spawn::ShellSpawnOpts {
                 cols: engine.default_cols,
@@ -447,7 +447,10 @@ pub(crate) fn apply_create_workspace_inner(
                 working_dir: cwd.as_deref(),
             },
         )?;
-        engine.runtime.terminals.insert(surface_id, terminal);
+        engine
+            .runtime
+            .terminals
+            .insert(surface_id, terminal, Some(pty));
         crate::model::Workspace::new_with_terminal_marker(
             ws_id, auto_name, pane_id, tab_id, surface_id,
         )
@@ -540,7 +543,7 @@ pub(crate) fn seed_surface_id_floor(
     mem: &mut dyn tasty_memory::MemoryStorage,
     ids: &crate::core::state::IdGenerator,
 ) {
-    use crate::core::pty_registry::PTY_ID_BASE;
+    use crate::core::terminal_store::PTY_ID_BASE;
     let purged = crate::surface_meta::SurfaceMetaStore::purge_out_of_range_surfaces(mem);
     if purged > 0 {
         tracing::error!(
@@ -556,8 +559,8 @@ pub(crate) fn seed_surface_id_floor(
 #[cfg(test)]
 mod surface_id_floor_tests {
     use super::seed_surface_id_floor;
-    use crate::core::pty_registry::PTY_ID_BASE;
     use crate::core::state::IdGenerator;
+    use crate::core::terminal_store::PTY_ID_BASE;
     use crate::surface_meta::SurfaceMetaStore;
     use tasty_memory::testing::InMemoryStorage;
 
@@ -587,7 +590,7 @@ mod surface_id_floor_tests {
 
         let first = ids.next_surface();
         assert!(
-            crate::core::pty_registry::is_surface_id_space(first),
+            crate::core::terminal_store::is_surface_id_space(first),
             "오염 scope 가 있어도 surface 카운터는 PTY 공간에 진입하지 않아야 한다 (got {first})"
         );
         assert_eq!(first, 4, "정상 범위 stale 최대 id(3) 기준으로만 floor 상승");

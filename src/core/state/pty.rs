@@ -140,7 +140,7 @@ impl EngineMut<'_> {
     /// 유휴 TTL이 지난 등록을 지우고 Terminal과 waker 기록도 함께 정리한다.
     /// 실제 자식 종료·회수는 Terminal의 소유권과 플랫폼별 Drop 처리에 달려 있다.
     pub(crate) fn sweep_idle_ptys(&mut self, now: Instant) -> Vec<u32> {
-        let expired = self.runtime.pty_registry.sweep_idle(now);
+        let expired = self.runtime.terminals.expired_standalone_ids(now);
         for pty_id in &expired {
             let pty_id = *pty_id;
             self.runtime.terminals.remove(pty_id);
@@ -189,7 +189,7 @@ impl EngineMut<'_> {
         let Some(tab) = self.deferred_tab_mut(surface_id) else {
             return false;
         };
-        let terminal = match result {
+        let (terminal, pty) = match result {
             Ok(terminal) => terminal,
             Err(e) => {
                 tab.record_terminal_spawn_failure(surface_id, &e.to_string());
@@ -199,7 +199,9 @@ impl EngineMut<'_> {
         if !tab.complete_terminal_spawn(surface_id) {
             return false;
         }
-        self.runtime.terminals.insert(surface_id, terminal);
+        self.runtime
+            .terminals
+            .insert(surface_id, terminal, Some(pty));
         if let Some(pid) = spawn.scrollback_persist_id {
             self.runtime
                 .terminals
@@ -231,9 +233,13 @@ impl EngineMut<'_> {
     pub fn replace_terminal_by_id(
         &mut self,
         surface_id: u32,
-        new_terminal: Terminal,
+        new_terminal: (Terminal, tasty_terminal::Pty),
     ) -> anyhow::Result<()> {
-        if let Some(old) = self.runtime.terminals.replace(surface_id, new_terminal) {
+        if let Some(old) =
+            self.runtime
+                .terminals
+                .replace(surface_id, new_terminal.0, Some(new_terminal.1))
+        {
             drop(old);
             return Ok(());
         }
@@ -259,13 +265,25 @@ impl EngineMut<'_> {
     #[cfg(all(windows, feature = "gui"))]
     pub(crate) fn wake_terminals_after_resume(&mut self) -> Vec<u32> {
         let mut suspects = Vec::new();
-        for (sid, term) in self.runtime.terminals.iter_mut() {
-            if !term.check_process_alive() {
+        let ids: Vec<_> = self.runtime.terminals.iter().map(|(sid, _)| sid).collect();
+        for sid in ids {
+            let (cols, rows) = self
+                .runtime
+                .terminals
+                .get(sid)
+                .expect("collected ID")
+                .dimensions();
+            let Some(pty) = self.runtime.terminals.pty_mut(sid) else {
+                continue;
+            };
+            if !pty.check_alive() {
                 continue; // 죽음 — process_all 의 ProcessExited cascade 가 정리.
             }
-            term.wake_nudge();
-            let shell_pid = term.process_id();
-            if let Some(info) = term.foreground_process_info()
+            if let Err(error) = pty.apply_os_resize(cols, rows) {
+                tracing::warn!("wake_nudge PTY resize failed: {error}");
+            }
+            let shell_pid = pty.process_id();
+            if let Some(info) = pty.foreground_process_info()
                 && Some(info.pid) != shell_pid
                 && !tasty_terminal::foreground_process::is_known_shell_name(&info.name)
             {

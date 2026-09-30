@@ -22,7 +22,18 @@ impl App {
             s.detect_workspace_activation(engine.core);
             s.detect_tab_focus_change(engine.core);
             s.detect_tab_lifecycle(engine.core);
-            let events = s.take_pending_host_events();
+            let mut events = s.take_pending_host_events();
+            events.retain(|event| match event {
+                PendingHostEvent::SurfaceTitleChanged {
+                    surface_id,
+                    generation,
+                    ..
+                } => engine
+                    .runtime
+                    .terminals
+                    .matches_generation(*surface_id, *generation),
+                _ => true,
+            });
             reproject_osc_title_on_focus(&mut engine, &events);
             resolve_hook_fired_task_waits(&self.core, &engine.as_ref(), &events);
             drained.extend(events);
@@ -49,9 +60,9 @@ impl App {
                     surface_id,
                     prev_surface_id,
                 } => surface::emit_focused(mgr, surface_id, prev_surface_id),
-                PendingHostEvent::SurfaceTitleChanged { surface_id, title } => {
-                    surface::emit_title_changed(mgr, surface_id, title)
-                }
+                PendingHostEvent::SurfaceTitleChanged {
+                    surface_id, title, ..
+                } => surface::emit_title_changed(mgr, surface_id, title),
                 PendingHostEvent::SurfaceCreated {
                     surface_id,
                     kind,

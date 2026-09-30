@@ -167,7 +167,8 @@ impl Terminal {
     /// Set the input channel, typically to forward a detached mirror's input to attach.
     /// This replaces the current sender even if the terminal owns a PTY.
     pub fn set_input_sink(&mut self, sink: mpsc::Sender<Vec<u8>>) {
-        self.lock_state().sink = Some(OutputSink::external(sink));
+        let mut state = self.lock_state();
+        state.sink = Some(OutputSink::external(sink).bind(state.connection.clone()));
     }
 
     /// Plumb the host's resolved theme palette so OSC 10/11/12/4 color *queries*
@@ -175,6 +176,21 @@ impl Terminal {
     /// this on terminal creation and whenever the theme changes.
     pub fn set_color_palette(&mut self, palette: crate::color::ColorPalette) {
         self.lock_state().color_palette = Some(palette);
+    }
+
+    /// Apply a delayed host protocol response only to the requesting connection.
+    /// Unlike user input, a response must not change echo/busy input timestamps.
+    pub fn send_response_for(
+        &mut self,
+        generation: crate::ResourceGeneration,
+        bytes: &[u8],
+    ) -> bool {
+        let mut state = self.lock_state();
+        if state.connection.generation() != generation || !state.connection.is_active() {
+            return false;
+        }
+        state.enqueue_to_pty(bytes.to_vec());
+        true
     }
 
     /// Send keyboard input to PTY (non-blocking, queued to writer thread).
@@ -291,7 +307,7 @@ mod tests {
         let (tx, rx) = mpsc::channel::<Vec<u8>>();
         let for_writer = Arc::clone(&progress);
         let writer = std::thread::spawn(move || {
-            crate::pty::run_writer_loop(Box::new(std::io::sink()), rx, for_writer);
+            crate::pty::run_writer_loop(Box::new(std::io::sink()), rx, for_writer, None);
         });
         tx.send(b"hello".to_vec())
             .expect("writer 스레드가 살아 있어야 한다");

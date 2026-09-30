@@ -54,9 +54,8 @@ impl MainView {
             ))
         })?;
         // 자식 PTY 가 없는 terminal 은 원격 attach mirror 다 — 화면 경로가 원격 호스트 경로.
-        let is_mirror = engine
-            .find_terminal_by_id(surface_id)
-            .is_some_and(|t| t.process_id().is_none());
+        let is_mirror = engine.runtime.terminals.contains(surface_id)
+            && engine.runtime.terminals.pty(surface_id).is_none();
         let (open_with, remote_path) = link_open_target(&hovered.uri, is_mirror);
         Some(TerminalLinkMenu {
             surface_id,

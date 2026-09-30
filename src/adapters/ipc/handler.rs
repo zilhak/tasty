@@ -1159,7 +1159,7 @@ pub(super) fn require_surface_id(
         Ok(v) => v,
         Err(e) => return Err(e),
     };
-    if !crate::core::pty_registry::is_surface_id_space(raw) {
+    if !crate::core::terminal_store::is_surface_id_space(raw) {
         return Err(JsonRpcResponse::invalid_params(
             id.clone(),
             format!("'surface_id' {raw} is inside the headless PTY id space"),
@@ -1441,7 +1441,7 @@ mod structural_apply_error_tests {
 #[cfg(test)]
 mod require_surface_id_tests {
     use super::require_surface_id;
-    use crate::core::pty_registry::PTY_ID_BASE;
+    use crate::core::terminal_store::PTY_ID_BASE;
     use serde_json::json;
 
     #[test]

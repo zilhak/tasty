@@ -31,7 +31,7 @@ pub(super) fn require_workspace_id(params: &Value, id: &Value) -> Result<u32, Js
 pub(super) fn require_surface_id(params: &Value, id: &Value) -> Result<u32, JsonRpcResponse> {
     params::opt_int::<u64>(params, "surface_id", id)?
         .and_then(|n| u32::try_from(n).ok())
-        .filter(|n| crate::core::pty_registry::is_surface_id_space(*n))
+        .filter(|n| crate::core::terminal_store::is_surface_id_space(*n))
         .ok_or_else(|| {
             JsonRpcResponse::invalid_params(id.clone(), "Missing or invalid 'surface_id'")
         })
@@ -72,7 +72,7 @@ fn require_scope(params: &Value, id: &Value) -> Result<Scope, JsonRpcResponse> {
 /// scope 문자열로 들어온 surface ID도 검사해 PTY ID가 surface scope로 저장되지 않게 한다.
 fn reject_pty_space_surface_scope(scope: &Scope, id: &Value) -> Result<(), JsonRpcResponse> {
     match scope {
-        Scope::Surface(sid) if !crate::core::pty_registry::is_surface_id_space(*sid) => {
+        Scope::Surface(sid) if !crate::core::terminal_store::is_surface_id_space(*sid) => {
             Err(JsonRpcResponse::invalid_params(
                 id.clone(),
                 format!("invalid scope: surface id {sid} is inside the headless PTY id space"),

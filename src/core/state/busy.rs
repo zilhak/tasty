@@ -106,8 +106,13 @@ impl EngineMut<'_> {
         // Windows에서 surface마다 전체 프로세스를 다시 조회하지 않도록 한 번에 해석한다.
         let mut sids: Vec<u32> = Vec::new();
         let mut shell_pids: Vec<u32> = Vec::new();
-        for (sid, terminal) in self.runtime.terminals.iter() {
-            if let Some(pid) = terminal.process_id() {
+        for (sid, _) in self.runtime.terminals.iter() {
+            if let Some(pid) = self
+                .runtime
+                .terminals
+                .pty(sid)
+                .and_then(|pty| pty.process_id())
+            {
                 sids.push(sid);
                 shell_pids.push(pid);
             }

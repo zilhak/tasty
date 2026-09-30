@@ -35,7 +35,6 @@ pub(crate) mod output_observer;
 pub(crate) mod param_bag;
 #[cfg(feature = "gui")]
 pub(crate) mod port_favorites;
-pub(crate) mod pty_registry;
 pub(crate) mod restore_rebuild;
 pub(crate) mod session;
 pub(crate) mod state;

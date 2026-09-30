@@ -1890,9 +1890,9 @@ impl MainView {
         sel: &crate::selection::TextSelection,
     ) -> Option<std::path::PathBuf> {
         let terminal = engine.visible_terminal(sel.surface_id)?;
-        terminal.process_id()?;
+        engine.runtime.terminals.pty(sel.surface_id)?.process_id()?;
         let raw_text = crate::selection::extract_selected_text(terminal, sel);
-        let cwd = terminal.get_cwd();
+        let cwd = engine.runtime.terminals.cwd(sel.surface_id);
         crate::adapters::ui::terminal_link::longest_existing_selection_path(
             &raw_text,
             cwd.as_deref(),

@@ -7,6 +7,7 @@ pub type Waker = Arc<dyn Fn() + Send + Sync>;
 pub struct TerminalEvent {
     /// The surface ID that generated this event (0 if not yet assigned).
     pub surface_id: u32,
+    pub generation: crate::ResourceGeneration,
     pub kind: TerminalEventKind,
 }
 

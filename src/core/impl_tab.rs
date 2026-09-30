@@ -84,8 +84,12 @@ impl Core {
                 waker,
                 working_dir: cwd.as_deref(),
             };
-            let terminal = crate::core::terminal_spawn::spawn_shell_terminal(surface_id, spawn)?;
-            engine.runtime.terminals.insert(surface_id, terminal);
+            let (terminal, pty) =
+                crate::core::terminal_spawn::spawn_shell_terminal(surface_id, spawn)?;
+            engine
+                .runtime
+                .terminals
+                .insert(surface_id, terminal, Some(pty));
             true
         } else {
             false

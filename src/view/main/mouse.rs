@@ -65,8 +65,8 @@ impl MainView {
             self.state
                 .surface_rect_by_id(engine, surface_id, terminal_rect, scale_factor)?;
 
-        let cwd = terminal.get_cwd();
-        let mirror = terminal.process_id().is_none();
+        let cwd = engine.runtime.terminals.cwd(surface_id);
+        let mirror = engine.runtime.terminals.pty(surface_id).is_none();
         let (span, cut) =
             terminal.with_view(&self.state.terminal_views.get(engine, surface_id), |view| {
                 let point = crate::selection::pixel_to_grid(
@@ -726,10 +726,8 @@ impl MainView {
             // 링크를 연 press는 앱에 보내지 않았으므로 release도 보내지 않는다.
             self.link_click_consumed = true;
             // 자식 PTY가 없는 mirror의 파일 경로는 원격 호스트 경로다.
-            let is_mirror = engine
-                .find_terminal_by_id(hovered.surface_id)
-                .map(|t| t.process_id().is_none())
-                .unwrap_or(false);
+            let is_mirror = engine.runtime.terminals.contains(hovered.surface_id)
+                && engine.runtime.terminals.pty(hovered.surface_id).is_none();
             match crate::file_dispatch::parse_link(&hovered.uri) {
                 crate::file_dispatch::LinkKind::FileTarget(path) => {
                     if is_mirror {

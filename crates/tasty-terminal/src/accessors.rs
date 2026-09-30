@@ -12,7 +12,7 @@ use termwiz::surface::Surface;
 use crate::CURSOR_OUTPUT_SUPPRESS_WINDOW;
 use crate::{
     BUSY_LATCH_NONE, BUSY_OUTPUT_WINDOW, INPUT_ECHO_WINDOW, Terminal, TerminalEvent, TerminalState,
-    cwd, foreground_process,
+    foreground_process,
 };
 
 impl TerminalState {
@@ -83,38 +83,6 @@ impl Terminal {
     /// Grid rows. Served from the handle-side cache (lock-free).
     pub fn rows(&self) -> usize {
         self.cached_dims.1
-    }
-
-    /// Get the PID of the child process. `None` for a detached mirror (no child)
-    /// or after [`take_child`](Self::take_child) hands the child off.
-    pub fn process_id(&self) -> Option<u32> {
-        self.pty.as_ref()?.process_id()
-    }
-
-    /// Whether this terminal is a detached mirror (no PTY/child). Its grid is
-    /// authoritative from the remote handshake/resize and must NOT be overwritten
-    /// by the local layout resize sweep — the local resize path skips these.
-    pub fn is_detached(&self) -> bool {
-        self.pty.is_none()
-    }
-
-    /// Get the foreground process info (name, PID) for this terminal.
-    pub fn foreground_process_info(&self) -> Option<foreground_process::ForegroundProcessInfo> {
-        let shell_pid = self.process_id()?;
-        foreground_process::get_foreground_process(shell_pid)
-    }
-
-    /// Whether the terminal is currently considered "active" — a non-shell
-    /// foreground program is running AND the PTY produced output within the last
-    /// `BUSY_OUTPUT_WINDOW`. Output within `INPUT_ECHO_WINDOW` after the last
-    /// keystroke is treated as echo, but only blocks *entering* busy; a terminal
-    /// that was already busy stays busy while the user types (docs/design/policies/busy-indicator.md#판정--해제-두-조건--진입-조건-하나).
-    pub fn is_busy(&self) -> bool {
-        let Some(shell_pid) = self.process_id() else {
-            return false;
-        };
-        let info = foreground_process::get_foreground_process(shell_pid);
-        self.busy_with_foreground(shell_pid, info.as_ref())
     }
 
     /// is_busy와 같은 판정에 호출자가 조회한 foreground를 사용한다.
@@ -211,16 +179,9 @@ impl Terminal {
         }
     }
 
-    /// Get the current working directory of the child process. Prefers the CWD
-    /// cached from OSC 7; falls back to an OS-level query (not cached).
-    pub fn get_cwd(&self) -> Option<std::path::PathBuf> {
-        if let Some(cwd) = self.lock_state().cached_cwd.clone() {
-            return Some(cwd);
-        }
-        if let Some(pid) = self.process_id() {
-            return cwd::get_cwd_of_pid(pid);
-        }
-        None
+    /// CWD reported by OSC 7. OS fallback is resolved by the separate Pty owner.
+    pub fn cached_cwd(&self) -> Option<std::path::PathBuf> {
+        self.lock_state().cached_cwd.clone()
     }
 
     /// Set the cached CWD. Used by the OS-level CWD polling mechanism.
@@ -231,28 +192,6 @@ impl Terminal {
     /// Last OSC 0/2 window title. The host uses the focused surface's title as its tab name.
     pub fn current_title(&self) -> Option<String> {
         self.lock_state().current_title.clone()
-    }
-
-    /// Check if the child process is still running. A detached mirror has no
-    /// child; reported as alive.
-    pub fn is_alive(&mut self) -> bool {
-        // 자식 없음: detached mirror 이거나 take_child 로 자식이 이관됨 — alive 로 본다.
-        self.pty.as_mut().is_none_or(|pty| pty.is_alive())
-    }
-
-    /// Returns false after observing child exit. Without an owned child, returns true.
-    pub fn check_process_alive(&mut self) -> bool {
-        // 자식 없음: detached mirror 이거나 take_child 로 이관됨 — alive 로 본다.
-        self.pty.as_mut().is_none_or(|pty| pty.check_alive())
-    }
-
-    /// Transfer the waitable child to an external owner, such as the headless exit watcher.
-    /// The new owner must kill and reap it; this terminal stops checking or cleaning it up.
-    /// Returns None when no child is owned. Surface terminals retain their child.
-    pub fn take_child(&mut self) -> Option<Box<dyn portable_pty::Child + Send + Sync>> {
-        // The new owner reaps the exit; the reader worker's post-EOF wakes, which
-        // exist to drive this handle's own exit check, would only spin.
-        self.pty.as_mut().and_then(|pty| pty.take_child())
     }
 
     /// Take all accumulated events, leaving the internal buffer empty.

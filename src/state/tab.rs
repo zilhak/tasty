@@ -33,7 +33,7 @@ impl RequestContext {
         let rows = engine.default_rows;
         let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let waker = engine.make_waker(surface_id);
-        let terminal = crate::core::terminal_spawn::spawn_shell_terminal(
+        let (terminal, pty) = crate::core::terminal_spawn::spawn_shell_terminal(
             surface_id,
             crate::core::terminal_spawn::ShellSpawnOpts {
                 cols,
@@ -45,7 +45,10 @@ impl RequestContext {
                 working_dir: cwd.as_deref(),
             },
         )?;
-        engine.runtime.terminals.insert(surface_id, terminal);
+        engine
+            .runtime
+            .terminals
+            .insert(surface_id, terminal, Some(pty));
         if let Some(pane) = self.focused_pane_mut(engine) {
             pane.add_terminal_marker_tab(tab_id, surface_id);
             self.navigation.select_tab(pane, tab_id);

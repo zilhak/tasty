@@ -790,8 +790,11 @@ fn build_snapshot(
             if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                 for tab in &pane.tabs {
                     for sid in tab.all_surface_ids() {
-                        let Some(shell_pid) =
-                            engine.find_terminal_by_id(sid).and_then(|t| t.process_id())
+                        let Some(shell_pid) = engine
+                            .runtime
+                            .terminals
+                            .pty(sid)
+                            .and_then(|pty| pty.process_id())
                         else {
                             continue;
                         };

@@ -98,7 +98,7 @@ impl EngineSession {
             let tab_id = engine.next_ids.next_tab();
             let surface_id = engine.next_ids.next_surface();
             let sh = ShellConfig::from_settings(&engine.settings);
-            let terminal = crate::core::terminal_spawn::spawn_shell_terminal(
+            let (terminal, pty) = crate::core::terminal_spawn::spawn_shell_terminal(
                 surface_id,
                 crate::core::terminal_spawn::ShellSpawnOpts {
                     cols,
@@ -110,7 +110,10 @@ impl EngineSession {
                     working_dir: None,
                 },
             )?;
-            engine.runtime.terminals.insert(surface_id, terminal);
+            engine
+                .runtime
+                .terminals
+                .insert(surface_id, terminal, Some(pty));
             let ws = Workspace::new_with_terminal_marker(
                 ws_id,
                 "Workspace 1".to_string(),

@@ -8,7 +8,15 @@ pub(crate) fn handle(
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     surface: u32,
+    generation: tasty_terminal::ResourceGeneration,
 ) {
+    if !engine
+        .runtime
+        .terminals
+        .matches_generation(surface, generation)
+    {
+        return;
+    }
     // 두 호스트 모두 HookFired로 작업 대기자를 깨우며 GUI는 이벤트도 방송한다.
     let exec = core.hook_executor();
     for fired in engine

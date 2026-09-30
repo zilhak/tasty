@@ -400,7 +400,7 @@ fn restore_terminal_immediate(
     // 복원 명령을 생성 시 초기 입력으로 전달한다. 자식의 첫 read나 명령 실행 성공을 보장하지는 않는다.
     let initial = restore_command.as_deref().map(|c| format!("{c}\r"));
     let initial_input = initial.as_deref();
-    let mut terminal = match tasty_terminal::Terminal::new(
+    let (mut terminal, pty) = match tasty_terminal::spawn_terminal(
         tasty_terminal::TerminalConfig {
             cols: engine.default_cols,
             rows: engine.default_rows,
@@ -430,7 +430,10 @@ fn restore_terminal_immediate(
         let prefill = terminal.rows() / 2;
         terminal.prefill_visible_from_scrollback(prefill);
     }
-    engine.runtime.terminals.insert(surface_id, terminal);
+    engine
+        .runtime
+        .terminals
+        .insert(surface_id, terminal, Some(pty));
     if let Some(pid) = scrollback_ref {
         engine
             .runtime

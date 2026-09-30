@@ -416,10 +416,10 @@ pub fn link_at(
     terminal: &tasty_terminal::Terminal,
     col: usize,
     absolute_row: usize,
+    cwd: Option<&Path>,
+    mirror: bool,
 ) -> Option<LinkSpan> {
-    let cwd = terminal.get_cwd();
-    let mirror = terminal.process_id().is_none();
-    terminal.with_content(|view| link_at_view(&view, col, absolute_row, cwd.as_deref(), mirror))
+    terminal.with_content(|view| link_at_view(&view, col, absolute_row, cwd, mirror))
 }
 
 /// Hit test using the same locked content cut as pixel-to-grid conversion.

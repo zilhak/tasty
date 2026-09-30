@@ -333,8 +333,11 @@ impl RequestContext {
     ) -> Result<Box<dyn Surface>, ApplyError> {
         let surface_id = engine.next_ids.next_surface();
         if preset.kind == "terminal" {
-            let terminal = self.build_terminal(engine, surface_id, preset)?;
-            engine.runtime.terminals.insert(surface_id, terminal);
+            let (terminal, pty) = self.build_terminal(engine, surface_id, preset)?;
+            engine
+                .runtime
+                .terminals
+                .insert(surface_id, terminal, Some(pty));
             engine.send_fast_init(surface_id);
             return Ok(Box::new(TerminalSurface { id: surface_id }));
         }
@@ -371,7 +374,7 @@ impl RequestContext {
         engine: &CoreState,
         surface_id: u32,
         preset: &PresetSurface,
-    ) -> Result<tasty_terminal::Terminal, ApplyError> {
+    ) -> Result<(tasty_terminal::Terminal, tasty_terminal::Pty), ApplyError> {
         let cols = engine.default_cols;
         let rows = engine.default_rows;
         let shell_string = engine.settings.general.shell.clone();
@@ -407,7 +410,7 @@ impl RequestContext {
             Some(initial.as_str())
         };
 
-        tasty_terminal::Terminal::new(
+        tasty_terminal::spawn_terminal(
             tasty_terminal::TerminalConfig {
                 cols,
                 rows,

@@ -70,43 +70,61 @@ impl Core {
         let mut out = Vec::with_capacity(raw.len());
         for ev in raw {
             let sid = ev.surface_id;
+            let generation = ev.generation;
+            if !engine.runtime.terminals.matches_generation(sid, generation) {
+                continue;
+            }
             match ev.kind {
                 TerminalEventKind::OutputAppended { text } => {
-                    self.handle_output_appended(engine, sid, &text, &mut out);
+                    self.handle_output_appended(engine, sid, generation, &text, &mut out);
                 }
                 TerminalEventKind::PromptBoundary { phase, payload } => {
-                    self.handle_prompt_boundary(engine, sid, phase, &payload, &mut out);
+                    self.handle_prompt_boundary(engine, sid, generation, phase, &payload, &mut out);
                 }
                 TerminalEventKind::ClipboardSet(text) => {
                     if let Err(e) = self.clipboard.write_text(&text) {
                         tracing::warn!("OSC 52 clipboard write failed: {e}");
                     }
-                    out.push(CoreEvent::TerminalClipboardSet { surface_id: sid });
+                    out.push(CoreEvent::TerminalClipboardSet {
+                        generation,
+                        surface_id: sid,
+                    });
                 }
                 TerminalEventKind::ClipboardQuery => {
-                    self.handle_clipboard_query(engine, sid);
+                    self.handle_clipboard_query(engine, sid, generation);
                 }
                 TerminalEventKind::Notification { title, body } => {
                     out.push(CoreEvent::TerminalNotification {
+                        generation,
                         surface_id: sid,
                         title,
                         body,
                     });
                 }
                 TerminalEventKind::BellRing => {
-                    out.push(CoreEvent::TerminalBellRing { surface_id: sid });
+                    out.push(CoreEvent::TerminalBellRing {
+                        generation,
+                        surface_id: sid,
+                    });
                 }
                 TerminalEventKind::TitleChanged(title) => {
                     out.push(CoreEvent::TerminalTitleChanged {
+                        generation,
                         surface_id: sid,
                         title,
                     });
                 }
                 TerminalEventKind::CwdChanged(_cwd) => {
-                    out.push(CoreEvent::TerminalCwdChanged { surface_id: sid });
+                    out.push(CoreEvent::TerminalCwdChanged {
+                        generation,
+                        surface_id: sid,
+                    });
                 }
                 TerminalEventKind::ProcessExited => {
-                    out.push(CoreEvent::TerminalProcessExited { surface_id: sid });
+                    out.push(CoreEvent::TerminalProcessExited {
+                        generation,
+                        surface_id: sid,
+                    });
                 }
             }
         }
@@ -117,6 +135,7 @@ impl Core {
         &mut self,
         engine: &mut EngineMut<'_>,
         sid: u32,
+        generation: tasty_terminal::ResourceGeneration,
         text: &str,
         out: &mut Vec<CoreEvent>,
     ) {
@@ -125,6 +144,7 @@ impl Core {
         if engine.hooks.has_output_match_hook(sid) {
             for line in completed_lines {
                 out.push(CoreEvent::TerminalOutputMatch {
+                    generation,
                     surface_id: sid,
                     text: line,
                 });
@@ -133,7 +153,10 @@ impl Core {
         // 첫 출력 이후 경계 보고가 없으면 셸 통합 안내를 요청한다. 이 경로는 출력이 올 때 실행된다.
         engine.note_first_output(sid);
         if engine.take_shell_integration_hint_due(sid) {
-            out.push(CoreEvent::TerminalShellIntegrationHint { surface_id: sid });
+            out.push(CoreEvent::TerminalShellIntegrationHint {
+                generation,
+                surface_id: sid,
+            });
         }
     }
 
@@ -141,6 +164,7 @@ impl Core {
         &mut self,
         engine: &mut crate::core::CoreState,
         sid: u32,
+        generation: tasty_terminal::ResourceGeneration,
         phase: char,
         payload: &str,
         out: &mut Vec<CoreEvent>,
@@ -160,6 +184,7 @@ impl Core {
                 ),
             };
             out.push(CoreEvent::TerminalNotification {
+                generation,
                 surface_id: sid,
                 title,
                 body,
@@ -169,6 +194,7 @@ impl Core {
         if phase == 'D' {
             let exit_code = crate::core::command_index::extract_exit_code(payload);
             out.push(CoreEvent::TerminalCommandCompleted {
+                generation,
                 surface_id: sid,
                 exit_code,
             });
@@ -204,16 +230,16 @@ impl Core {
             if engine.attach.is_hard_occupied(sid) {
                 continue;
             }
-            if let Some(t) = engine.runtime.terminals.get_mut(sid) {
+            if let Some(t) = engine.runtime.terminals.get(sid) {
                 // mirror에 먼저 크기를 적용하면 서버의 reflow 전 출력과 어긋날 수 있다.
                 // 서버에 resize를 요청하고 echo를 받아 로컬 크기를 바꾼다.
-                if t.is_detached() {
+                if engine.runtime.terminals.pty(sid).is_none() {
                     if t.cols() != cols || t.rows() != rows {
                         engine.pending_resize_forward.insert(sid, (cols, rows));
                     }
                     continue;
                 }
-                t.resize(cols, rows);
+                engine.runtime.terminals.resize(sid, cols, rows);
             }
         }
     }

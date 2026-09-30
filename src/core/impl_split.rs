@@ -27,7 +27,7 @@ impl Core {
         let waker = engine.make_waker(new_surface_id);
 
         let new_pane = if is_terminal {
-            let terminal = crate::core::terminal_spawn::spawn_shell_terminal(
+            let (terminal, pty) = crate::core::terminal_spawn::spawn_shell_terminal(
                 new_surface_id,
                 crate::core::terminal_spawn::ShellSpawnOpts {
                     cols,
@@ -39,7 +39,10 @@ impl Core {
                     working_dir: cwd.as_deref(),
                 },
             )?;
-            engine.runtime.terminals.insert(new_surface_id, terminal);
+            engine
+                .runtime
+                .terminals
+                .insert(new_surface_id, terminal, Some(pty));
             crate::model::Pane::new_with_terminal_marker(new_pane_id, new_tab_id, new_surface_id)
         } else {
             let surface = engine.create_surface_via_registry(
@@ -92,7 +95,7 @@ impl Core {
             let rows = engine.default_rows;
             let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
             let waker = engine.make_waker(new_surface_id);
-            let terminal = tasty_terminal::Terminal::new(
+            let (terminal, pty) = tasty_terminal::spawn_terminal(
                 tasty_terminal::TerminalConfig {
                     cols,
                     rows,
@@ -105,7 +108,10 @@ impl Core {
                 },
                 waker,
             )?;
-            engine.runtime.terminals.insert(new_surface_id, terminal);
+            engine
+                .runtime
+                .terminals
+                .insert(new_surface_id, terminal, Some(pty));
             Box::new(crate::model::TerminalSurface { id: new_surface_id })
         } else {
             engine.create_surface_via_registry(

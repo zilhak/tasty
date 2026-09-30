@@ -307,11 +307,28 @@ fn handle_terminal_output(
         }
     };
     for event in outcome.events {
+        if let Some((surface, generation)) = event.terminal_binding()
+            && !engine
+                .runtime
+                .terminals
+                .matches_generation(surface, generation)
+        {
+            continue;
+        }
         match event {
-            crate::core::intent::CoreEvent::TerminalProcessExited { surface_id } => {
-                crate::app::process_exit::handle(&mut app.core, state, engine, surface_id);
+            crate::core::intent::CoreEvent::TerminalProcessExited {
+                surface_id,
+                generation,
+            } => {
+                crate::app::process_exit::handle(
+                    &mut app.core,
+                    state,
+                    engine,
+                    surface_id,
+                    generation,
+                );
             }
-            crate::core::intent::CoreEvent::TerminalCwdChanged { surface_id } => {
+            crate::core::intent::CoreEvent::TerminalCwdChanged { surface_id, .. } => {
                 crate::intent::headless::apply_terminal_cwd_changed(engine, surface_id);
             }
             event => fire_terminal_hooks(app, state, engine, vec![event]),
@@ -330,9 +347,21 @@ fn fire_terminal_hooks(
 ) {
     let exec = app.core.hook_executor();
     for event in events {
-        let crate::core::intent::CoreEvent::TerminalOutputMatch { surface_id, text } = event else {
+        let crate::core::intent::CoreEvent::TerminalOutputMatch {
+            surface_id,
+            text,
+            generation,
+        } = event
+        else {
             continue;
         };
+        if !engine
+            .runtime
+            .terminals
+            .matches_generation(surface_id, generation)
+        {
+            continue;
+        }
         for fired in engine
             .hooks
             .fire(&exec, surface_id, tasty_hooks::HookEvent::OutputMatch(text))

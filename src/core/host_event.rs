@@ -35,6 +35,7 @@ pub enum PendingHostEvent {
     },
     SurfaceTitleChanged {
         surface_id: u32,
+        generation: tasty_terminal::ResourceGeneration,
         title: String,
     },
     SurfaceCreated {

@@ -216,8 +216,7 @@ impl SavedSurface {
         };
         let cwd = ctx
             .terminals
-            .get(surface_id)
-            .and_then(|t| t.get_cwd())
+            .cwd(surface_id)
             .map(|p| p.to_string_lossy().to_string());
         let scrollback_ref = if ctx.capture_scrollback {
             capture_scrollback_to_disk(surface_id, ctx.terminals, ctx.seen_refs)

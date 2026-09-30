@@ -42,6 +42,7 @@ impl TerminalState {
             }
             ControlCode::Bell => {
                 self.events.push(TerminalEvent {
+                    generation: self.connection.generation(),
                     surface_id: 0,
                     kind: TerminalEventKind::BellRing,
                 });

@@ -200,8 +200,9 @@ impl MainView {
         // terminal grid positions, so arrow-key injection would be incorrect.
         let is_shell = self
             .state
-            .focused_terminal(&engine.as_ref())
-            .and_then(|t| t.foreground_process_info())
+            .focused_surface_id(engine)
+            .and_then(|sid| engine.runtime.terminals.pty(sid))
+            .and_then(|pty| pty.foreground_process_info())
             .map(|info| crate::click_cursor::is_shell_process(&info.name))
             .unwrap_or(false);
         if !is_shell {

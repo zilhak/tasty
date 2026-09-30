@@ -4,9 +4,11 @@
 //! 쓸 byte는 [`OutputSink`] 채널로 받는다. reader worker가 받은 byte를 바로
 //! Terminal에 ingest하더라도 그 상태와 lock은 Terminal 쪽 소유다.
 
+use crate::ResourceGeneration;
+use crate::binding::ConnectionLease;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -50,20 +52,75 @@ pub(crate) trait PtyOutput: Send + 'static {
     fn is_attached(&self) -> bool;
 }
 
-/// Pty의 현재 runtime 상태. OS 자원 자체는 [`Pty`]가 따로 소유한다.
-pub(crate) struct PtyState {
-    /// grid는 이미 바뀌었고 OS에 아직 알리지 않은 크기.
+/// Exit result obtained by the unique child owner, after the child has been reaped.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PtyExit {
+    pub code: Option<i32>,
+    pub success: bool,
+}
+
+/// Standalone-only metadata. Adoption removes it without changing the child or generation.
+#[derive(Debug)]
+pub struct StandalonePty {
+    pub owner_agent_id: String,
+    pub cwd: Option<String>,
+    pub command: Vec<String>,
+    pub created_at: Instant,
+    pub last_activity: Instant,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PtyPhase {
+    Running,
+    TerminationRequested,
+    Signalled,
+    Reaped,
+    WaitFailed,
+}
+
+#[derive(Debug, Clone)]
+pub struct PtyObservation {
+    pub phase: PtyPhase,
+    pub exit: Option<PtyExit>,
+}
+
+type ExitCell = Arc<(Mutex<PtyObservation>, Condvar)>;
+static EXIT_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+fn observe(cell: &ExitCell) -> std::sync::MutexGuard<'_, PtyObservation> {
+    tasty_utils::poison::recover_mutex(cell.0.lock(), "PTY child lifecycle", &EXIT_POISON_REPORTED)
+}
+fn publish_exit(cell: &ExitCell, status: portable_pty::ExitStatus) {
+    let mut observation = observe(cell);
+    observation.phase = PtyPhase::Reaped;
+    observation.exit = Some(PtyExit {
+        code: Some(status.exit_code() as i32),
+        success: status.success(),
+    });
+    cell.1.notify_all();
+}
+
+fn publish_wait_failure(cell: &ExitCell) {
+    let mut observation = observe(cell);
+    observation.phase = PtyPhase::WaitFailed;
+    // Keep the existing standalone wait wire outcome without claiming an observed/reaped exit.
+    observation.exit = Some(PtyExit {
+        code: None,
+        success: false,
+    });
+    cell.1.notify_all();
+}
+
+/// Runtime state for one OS resource; it never contains VT grid/content state.
+pub struct PtyState {
     pub(crate) pending_resize: Option<(usize, usize)>,
-    /// 마지막 OS resize flush 시각. throttle에 사용한다.
     pub(crate) last_resize_flush: Instant,
-    /// 마지막 `try_wait` 시각.
     pub(crate) last_alive_check: Instant,
-    /// 자식 종료를 이미 관측했는지. 관측은 한 번만 보고한다.
     pub(crate) exit_observed: bool,
-    /// reader worker가 EOF/오류를 만났는지. 다음 관측이 throttle 없이 확인한다.
     pub(crate) reader_eof: Arc<AtomicBool>,
-    /// 종료를 관측했거나 자식을 넘겨 EOF 뒤 재촉이 더는 필요 없는지.
     pub(crate) exit_settled: Arc<AtomicBool>,
+    connection: ConnectionLease,
+    standalone: Option<StandalonePty>,
+    exit: ExitCell,
 }
 
 impl PtyState {
@@ -71,12 +128,32 @@ impl PtyState {
         Self {
             pending_resize: None,
             last_resize_flush: Instant::now(),
-            // Start in the past so the first observation always checks immediately.
             last_alive_check: Instant::now() - ALIVE_CHECK_INTERVAL,
             exit_observed: false,
             reader_eof: Arc::new(AtomicBool::new(false)),
             exit_settled: Arc::new(AtomicBool::new(false)),
+            connection: ConnectionLease::new(),
+            standalone: None,
+            exit: Arc::new((
+                Mutex::new(PtyObservation {
+                    phase: PtyPhase::Running,
+                    exit: None,
+                }),
+                Condvar::new(),
+            )),
         }
+    }
+    pub fn generation(&self) -> ResourceGeneration {
+        self.connection.generation()
+    }
+    pub fn standalone(&self) -> Option<&StandalonePty> {
+        self.standalone.as_ref()
+    }
+    pub fn exit(&self) -> Option<PtyExit> {
+        observe(&self.exit).exit.clone()
+    }
+    pub fn observation(&self) -> PtyObservation {
+        observe(&self.exit).clone()
     }
 }
 
@@ -84,9 +161,10 @@ impl PtyState {
 pub(crate) struct PtyReader(Box<dyn Read + Send>);
 
 /// OS PTY와 자식 프로세스의 소유자.
-pub(crate) struct Pty {
+pub struct Pty {
     pub(crate) state: PtyState,
-    _writer_thread: thread::JoinHandle<()>,
+    _writer_thread: Option<thread::JoinHandle<()>>,
+    writer_wake: Option<mpsc::Sender<Vec<u8>>>,
     /// Drop의 계측 구간 안에서 master를 take해 해제한다. 살아 있는 동안은 Some이다.
     master: Option<Box<dyn portable_pty::MasterPty + Send>>,
     /// 외부 exit watcher가 take_child로 가져가기 전까지 소유하는 자식.
@@ -118,11 +196,19 @@ impl Pty {
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);
 
-        // Windows Job Object에 자식 등록을 시도한다. 미초기화·다른 OS에서는 동작하지 않는다.
+        // From this point every fallible setup operation is protected by Pty::drop.
         tasty_reaper::adopt_pid(child.process_id());
-
-        let mut pty_writer = pair.master.take_writer()?;
-        let pty_reader = pair.master.try_clone_reader()?;
+        let mut pty = Self {
+            state: PtyState::new(),
+            _writer_thread: None,
+            writer_wake: None,
+            master: Some(pair.master),
+            child: Some(child),
+            _reader_thread: None,
+        };
+        let master = pty.master.as_ref().expect("spawned master");
+        let mut pty_writer = master.take_writer()?;
+        let pty_reader = master.try_clone_reader()?;
 
         // writer 스레드가 시작되기 전에 초기 입력을 쓴다. 자식은 이미 실행 중이므로
         // 셸의 tcflush/TCSAFLUSH 등으로 입력이 사라질 수 있다.
@@ -139,17 +225,16 @@ impl Pty {
         let write_progress = new_write_progress();
         let progress_for_writer = Arc::clone(&write_progress);
         let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>();
-        let writer_thread =
-            thread::spawn(move || run_writer_loop(pty_writer, write_rx, progress_for_writer));
-        let sink = OutputSink::with_progress(write_tx, write_progress);
+        let connection = pty.connection();
+        let writer_thread = thread::Builder::new()
+            .name("pty-writer".into())
+            .spawn(move || {
+                run_writer_loop(pty_writer, write_rx, progress_for_writer, Some(connection));
+            })?;
+        pty.writer_wake = Some(write_tx.clone());
+        pty._writer_thread = Some(writer_thread);
+        let sink = OutputSink::with_progress(write_tx, write_progress).bind(pty.connection());
 
-        let pty = Self {
-            state: PtyState::new(),
-            _writer_thread: writer_thread,
-            master: Some(pair.master),
-            child: Some(child),
-            _reader_thread: None,
-        };
         Ok((pty, PtyReader(pty_reader), sink))
     }
 
@@ -190,17 +275,26 @@ impl Pty {
     }
 
     /// grid 변경 뒤 OS resize를 예약한다. 실제 적용은 flush 경로에서 한다.
-    pub(crate) fn schedule_resize(&mut self, cols: usize, rows: usize) {
+    pub fn schedule_resize(
+        &mut self,
+        generation: ResourceGeneration,
+        cols: usize,
+        rows: usize,
+    ) -> bool {
+        if generation != self.generation() || !self.state.connection.is_active() {
+            return false;
+        }
         self.state.pending_resize = Some((cols, rows));
+        true
     }
 
-    pub(crate) fn has_pending_resize(&self) -> bool {
+    pub fn has_pending_resize(&self) -> bool {
         self.state.pending_resize.is_some()
     }
 
     /// 예약된 OS resize를 throttle에 맞춰 적용한다. 적용했으면 true, 예약이 없거나
     /// throttle에 걸렸으면 false다(throttle이면 예약은 유지된다).
-    pub(crate) fn flush_resize(&mut self) -> bool {
+    pub fn flush_resize(&mut self) -> bool {
         if self.state.pending_resize.is_none() {
             return false;
         }
@@ -212,7 +306,7 @@ impl Pty {
     }
 
     /// throttle과 무관하게 예약된 OS resize를 적용한다.
-    pub(crate) fn force_flush_resize(&mut self) {
+    pub fn force_flush_resize(&mut self) {
         if let Some((cols, rows)) = self.state.pending_resize.take() {
             if let Err(e) = self.apply_os_resize(cols, rows) {
                 tracing::warn!("PTY resize failed: {e}");
@@ -222,7 +316,7 @@ impl Pty {
     }
 
     /// OS PTY에 크기를 바로 알린다. master가 없으면 아무 일도 하지 않는다.
-    pub(crate) fn apply_os_resize(&self, cols: usize, rows: usize) -> Result<()> {
+    pub fn apply_os_resize(&self, cols: usize, rows: usize) -> Result<()> {
         if let Some(master) = self.master.as_ref() {
             master.resize(pty_size(cols, rows))?;
         }
@@ -231,7 +325,7 @@ impl Pty {
 
     /// 자식 종료를 관측한다. 이번 호출에서 처음 종료를 확인했으면 true다.
     /// `try_wait`는 ALIVE_CHECK_INTERVAL마다 한 번이며 reader EOF 뒤에는 즉시 확인한다.
-    pub(crate) fn observe_exit(&mut self) -> bool {
+    pub fn observe_exit(&mut self) -> bool {
         if self.state.exit_observed {
             return false;
         }
@@ -255,30 +349,60 @@ impl Pty {
         Some((usize::from(size.cols), usize::from(size.rows)))
     }
 
-    pub(crate) fn process_id(&self) -> Option<u32> {
+    pub fn state(&self) -> &PtyState {
+        &self.state
+    }
+    pub fn generation(&self) -> ResourceGeneration {
+        self.state.generation()
+    }
+    pub(crate) fn connection(&self) -> ConnectionLease {
+        self.state.connection.clone()
+    }
+    pub fn set_standalone(&mut self, metadata: StandalonePty) {
+        self.state.standalone = Some(metadata);
+    }
+    pub fn adopt(&mut self) {
+        self.state.standalone = None;
+    }
+    pub fn touch(&mut self, now: Instant) {
+        if let Some(metadata) = &mut self.state.standalone {
+            metadata.last_activity = now;
+        }
+    }
+    pub fn process_id(&self) -> Option<u32> {
+        if self.state.exit().is_some() {
+            return None;
+        }
         self.child.as_ref()?.process_id()
     }
-
-    /// 자식이 아직 실행 중인지. 소유한 자식이 없으면 true다.
-    pub(crate) fn is_alive(&mut self) -> bool {
-        match self.child.as_mut() {
-            Some(child) => child.try_wait().ok().flatten().is_none(),
-            None => true,
-        }
+    pub fn foreground_process_info(
+        &self,
+    ) -> Option<crate::foreground_process::ForegroundProcessInfo> {
+        crate::foreground_process::get_foreground_process(self.process_id()?)
     }
 
-    /// 자식 종료를 확인하면 false다. 소유한 자식이 없거나 조회가 실패하면 true다.
-    pub(crate) fn check_alive(&mut self) -> bool {
-        match self.child.as_mut() {
-            Some(child) => !matches!(child.try_wait(), Ok(Some(_status))),
-            None => true,
-        }
+    pub fn is_alive(&mut self) -> bool {
+        self.check_alive()
     }
-
-    /// 자식의 kill/wait 소유권을 넘긴다. 이후 EOF 뒤 재촉과 Drop의 종료 처리는 하지 않는다.
-    pub(crate) fn take_child(&mut self) -> Option<Box<dyn portable_pty::Child + Send + Sync>> {
-        self.state.exit_settled.store(true, Ordering::Release);
-        self.child.take()
+    pub fn check_alive(&mut self) -> bool {
+        match self.state.observation().phase {
+            PtyPhase::Reaped => return false,
+            PtyPhase::WaitFailed => return true,
+            _ => {}
+        }
+        match self.child.as_mut().map(|child| child.try_wait()) {
+            Some(Ok(Some(status))) => {
+                publish_exit(&self.state.exit, status);
+                false
+            }
+            Some(Err(error)) => {
+                tracing::warn!("PTY child try_wait failed: {error}");
+                publish_wait_failure(&self.state.exit);
+                self.state.exit_settled.store(true, Ordering::Release);
+                true
+            }
+            _ => true,
+        }
     }
 }
 
@@ -286,64 +410,69 @@ impl Drop for Pty {
     /// 정상 Drop에서는 자식 종료를 시도한다. Windows의 비정상 종료 처리는
     /// Job Object에 등록된 자식에 한해 tasty_reaper가 맡는다.
     fn drop(&mut self) {
-        // take_child로 넘긴 자식의 종료·회수는 새 소유자가 맡는다.
-        let Some(child) = self.child.as_mut() else {
-            return;
-        };
-        let t_drop = Instant::now();
-        // Unix는 SIGHUP만 보내고 대기·강제 종료·회수는 아래 스레드에 맡긴다.
-        // portable-pty kill의 동기 유예 대기를 메인 스레드에서 반복하지 않기 위해서다.
-        // Windows는 기존 kill 경로를 사용한다.
-        #[cfg(unix)]
-        let signalled_pid = child.process_id();
-        #[cfg(unix)]
-        match signalled_pid {
-            // SAFETY: kill syscall. 대상은 본 프로세스의 자식 pid 이고, 아직
-            // 회수 전(아래 reap 스레드가 회수한다)이라 pid 재사용이 일어날 수 없다.
-            Some(pid) => unsafe {
-                if libc::kill(pid as i32, libc::SIGHUP) != 0 {
-                    tracing::trace!(
-                        "pty child SIGHUP on drop failed (already exited?): {}",
-                        std::io::Error::last_os_error()
-                    );
-                }
-            },
-            // pid 를 못 얻는 예외 경로에서만 blocking kill 로 폴백한다.
-            None => {
-                if let Err(e) = child.kill() {
-                    tracing::trace!("pty child kill on drop failed (already exited?): {e}");
-                }
+        self.state.connection.revoke();
+        self.state.exit_settled.store(true, Ordering::Release);
+        self.state.pending_resize = None;
+        if let Some(tx) = self.writer_wake.take() {
+            if tx.send(Vec::new()).is_err() {
+                tracing::trace!("PTY writer already stopped before connection retirement");
             }
         }
-        #[cfg(not(unix))]
-        if let Err(e) = child.kill() {
-            tracing::trace!("pty child kill on drop failed (already exited?): {e}");
-        }
-        // 메인 스레드 밖에서 유예 대기 후 필요하면 SIGKILL을 보내고 자식을 회수한다.
-        #[cfg(unix)]
-        if let Some(pid) = signalled_pid {
-            thread::spawn(move || {
-                let pid = pid as i32;
-                let mut status = 0i32;
-                for _ in 0..40 {
-                    // SAFETY: waitpid 는 본 프로세스의 자식 pid 에만 매칭된다. 이미
-                    // 다른 곳에서 회수됐으면 -1(ECHILD) 로 즉시 반환된다.
-                    match unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) } {
-                        0 => thread::sleep(Duration::from_millis(5)),
-                        _ => return, // >0 회수 완료, -1 이미 회수됨/자식 아님
+        let t_drop = Instant::now();
+        if let Some(mut child) = self.child.take() {
+            if self.state.exit().is_none() {
+                let cell = Arc::clone(&self.state.exit);
+                observe(&cell).phase = PtyPhase::TerminationRequested;
+                // The waitable child handle is moved, never cloned or reduced to a PID.
+                // Unix signals synchronously; bounded grace and final wait run off the event loop.
+                #[cfg(unix)]
+                let signalled = child.process_id().is_some_and(|pid| {
+                    // SAFETY: this sole owner has not reaped its child, so this PID cannot be reused.
+                    unsafe { libc::kill(pid as i32, libc::SIGHUP) == 0 }
+                });
+                #[cfg(not(unix))]
+                let signalled = child.kill().is_ok();
+                if signalled {
+                    observe(&cell).phase = PtyPhase::Signalled;
+                }
+                thread::spawn(move || {
+                    for _ in 0..40 {
+                        match child.try_wait() {
+                            Ok(Some(status)) => {
+                                publish_exit(&cell, status);
+                                return;
+                            }
+                            Ok(None) => thread::sleep(Duration::from_millis(5)),
+                            Err(error) => {
+                                tracing::warn!("PTY reap check failed: {error}");
+                                publish_wait_failure(&cell);
+                                return;
+                            }
+                        }
                     }
-                }
-                // 유예가 끝나면 SIGKILL을 보내고 회수한다. waitpid의 완료 시간은 보장하지 않는다.
-                // SAFETY: kill syscall. pid 는 아직 미회수 자식(위 waitpid 가 0 반환)
-                // 이므로 재사용될 수 없다.
-                unsafe {
-                    libc::kill(pid, libc::SIGKILL);
-                }
-                // SAFETY: waitpid syscall — 본 프로세스의 자식 pid 에만 매칭.
-                unsafe {
-                    libc::waitpid(pid, &raw mut status, 0);
-                }
-            });
+                    #[cfg(unix)]
+                    if let Some(pid) = child.process_id() {
+                        // SAFETY: the sole waitable owner just observed this child alive.
+                        if unsafe { libc::kill(pid as i32, libc::SIGKILL) } != 0 {
+                            tracing::trace!(
+                                "PTY final kill failed: {}",
+                                std::io::Error::last_os_error()
+                            );
+                        }
+                    }
+                    #[cfg(not(unix))]
+                    if let Err(error) = child.kill() {
+                        tracing::trace!("PTY final kill failed: {error}");
+                    }
+                    match child.wait() {
+                        Ok(status) => publish_exit(&cell, status),
+                        Err(error) => {
+                            tracing::warn!("PTY child wait failed: {error}");
+                            publish_wait_failure(&cell);
+                        }
+                    }
+                });
+            }
         }
         // master 해제를 계측 구간 안으로 끌어들인다(위 필드 주석 참조).
         drop(self.master.take());
@@ -372,8 +501,12 @@ pub(crate) fn run_writer_loop(
     mut pty_writer: Box<dyn Write + Send>,
     write_rx: mpsc::Receiver<Vec<u8>>,
     progress: WriteProgress,
+    connection: Option<ConnectionLease>,
 ) {
     while let Ok(data) = write_rx.recv() {
+        if connection.as_ref().is_some_and(|lease| !lease.is_active()) {
+            break;
+        }
         if pty_writer.write_all(&data).is_err() {
             break;
         }

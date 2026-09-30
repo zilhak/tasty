@@ -109,7 +109,7 @@ pub(crate) fn rebuild_surface_node(
         Some(initial.as_str())
     };
 
-    let mut terminal = tasty_terminal::Terminal::new(
+    let (mut terminal, pty) = tasty_terminal::spawn_terminal(
         tasty_terminal::TerminalConfig {
             cols,
             rows,
@@ -154,7 +154,10 @@ pub(crate) fn rebuild_surface_node(
         terminal.prefill_visible_from_scrollback(prefill);
     }
 
-    engine.runtime.terminals.insert(surface_id, terminal);
+    engine
+        .runtime
+        .terminals
+        .insert(surface_id, terminal, Some(pty));
     engine.send_fast_init(surface_id);
 
     Some(TerminalSurface { id: surface_id })

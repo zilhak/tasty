@@ -24,7 +24,7 @@ ConPTY(Windows) / Unix PTY 로 네이티브 셸 실행(`TERM=xterm-256color`). �
 `try_wait`는 보통 Terminal을 깨워 처리할 때 실행하며 확인 간격은 500ms다. PTY EOF 뒤에는 즉시 확인한다.
 
 EOF와 자식 종료는 같은 사건이 아니다. EOF 직후 자식이 아직 실행 중이면 PTY reader가 10ms부터
-간격을 두 배씩 늘려 최대 500ms마다 다시 깨운다. 종료가 확인되거나 take_child로 소유권을 넘기거나
+간격을 두 배씩 늘려 최대 500ms마다 다시 깨운다. 종료가 확인되거나 해당 연결이 무효화되거나
 Terminal이 사라지면 멈춘다. 이 처리가 없으면 출력이 끝난 뒤 자식 종료를 확인할 기회가 사라질 수 있다.
 
 자식은 PTY를 소유한 host와 수명을 함께한다. Windows는 KILL_ON_JOB_CLOSE Job Object를 사용한다.
@@ -39,7 +39,7 @@ macOS·Linux에는 이 Windows 전용 처리를 적용하지 않는다.
 
 ### 터미널 상태와 PTY 연결
 
-`tasty-terminal` 안에서 터미널 내용과 OS 연결을 따로 소유한다. 공개 타입 `Terminal`은 둘을 묶은 핸들이다.
+`tasty-terminal` 안에서 터미널 내용과 OS 연결을 따로 소유한다. `Terminal`은 내용만 소유하며, host collection이 선택적인 `Pty`와 연결한다.
 
 | 구성 | 소유하는 것 | 코드 |
 |---|---|---|
@@ -50,8 +50,10 @@ macOS·Linux에는 이 Windows 전용 처리를 적용하지 않는다.
 - TerminalState는 Pty를 모르고 OutputSink로만 byte를 내보낸다. DSR/DA/OSC 조회 응답도 ingest 중에 같은 sink로 나간다. mirror에는 Pty가 없으며 sink는 attach 입력 채널이다.
 - Pty는 VT를 모르고 읽은 raw 청크를 받는 쪽 계약(`PtyOutput`)으로 넘긴다. 같은 reader worker가 청크를 바로 ingest하지만 grid와 lock은 Terminal 쪽 소유다.
 - 청크 하나의 output tap 전달과 grid 갱신은 같은 state lock 안에서 일어난다. attach는 `Terminal::snapshot_and_tap`으로 VT snapshot과 output·resize tap 등록을 한 번의 lock 안에서 수행한다. 그래서 reader worker가 ingest한 청크는 snapshot과 tap 중 한쪽에만 들어간다. tap 채널이 가득 차 버려지는 청크는 이와 별개다.
-- resize는 grid 변경과 resize tap 통지가 먼저다. OS resize는 Pty에 예약만 하고, 다음 `process()`의 강제 flush 또는 호스트가 대기 중인 resize를 순회하는 `flush_pty_resize`(100ms throttle)에서 적용한다. 그래서 tap은 OS 적용 확인이 아니다.
-- `take_child`는 자식의 kill·wait 소유권을 넘긴다. 이후 Pty는 종료를 재촉하지 않고 Drop에서도 그 자식을 건드리지 않는다.
+- resize는 grid 변경과 resize tap 통지가 먼저다. OS resize는 Pty에 예약만 하고, collection의 다음 process 처리에서 강제 flush 또는 호스트가 대기 중인 resize를 순회하는 `Pty::flush_resize`(100ms throttle)에서 적용한다. 그래서 tap은 OS 적용 확인이 아니다.
+- child의 kill·wait 소유자는 Pty 하나다. standalone에서 surface로 adopt해도 바뀌지 않으며 정상 Drop의 Unix 신호 전달 뒤 유예·회수는 메인 루프 밖에서 수행한다. reader/writer 준비가 실패해도 이미 생성한 child는 같은 owner가 정리한다.
+- EngineSession의 기존 TerminalStore는 한 항목에 Terminal과 Option<Pty>를 함께 보관한다. Terminal 자체에는 child/master가 없다. 내용 조회는 Terminal만 빌리고 PID·OS cwd·resize는 Pty를 명시적으로 조회한다.
+- resource generation은 현재 프로세스의 연결 신원으로 ContentEpoch와 독립이다. adopt는 세대를 유지하고 respawn은 교체한다. 늦은 reader output·프로토콜 응답·resize 및 종료/제목/cwd 후속 요청은 현재 binding을 확인한다. durable journal activation과 연결된 세대는 아직 구현하지 않았다.
 
 ### 표시 위치의 소유와 읽기
 

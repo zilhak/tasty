@@ -535,8 +535,7 @@ fn resolve_git_query_target(
     engine
         .runtime
         .terminals
-        .get(surface_id)
-        .and_then(|t| t.get_cwd())
+        .cwd(surface_id)
         .ok_or_else(|| "remote surface has no known cwd".to_string())
 }
 
@@ -4616,8 +4615,8 @@ impl crate::core::engine_access::EngineMut<'_> {
         if self.attach.workspace_holder(ws) != Some(client_id) {
             return false;
         }
-        if let Some(terminal) = self.runtime.terminals.get_mut(remote_surface_id) {
-            terminal.resize(cols, rows);
+        if self.runtime.terminals.contains(remote_surface_id) {
+            self.runtime.terminals.resize(remote_surface_id, cols, rows);
             true
         } else {
             false

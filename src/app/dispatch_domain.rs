@@ -84,6 +84,14 @@ impl App {
     ) {
         if let Some(DispatchCtx { state, engine, .. }) = engines_mut!(self).resolve(source.engine())
         {
+            if let Some((surface, generation)) = event.terminal_binding()
+                && !engine
+                    .runtime
+                    .terminals
+                    .matches_generation(surface, generation)
+            {
+                return;
+            }
             state.apply_structure_result(engine.core, &event);
         }
         match event {
@@ -105,7 +113,7 @@ impl App {
             CoreEvent::AllNotificationsReadRequested => {
                 self.cascade_all_notifications_read();
             }
-            CoreEvent::SurfaceCwdChanged { surface_id } => {
+            CoreEvent::SurfaceCwdChanged { surface_id, .. } => {
                 self.cascade_surface_cwd_changed(surface_id);
             }
             CoreEvent::TerminalMarkSet { surface_id } => {
@@ -290,35 +298,49 @@ impl App {
                 surface_id,
                 title,
                 body,
+                ..
             } => {
                 self.cascade_terminal_notification(source, surface_id, title, body);
             }
-            CoreEvent::TerminalBellRing { surface_id } => {
+            CoreEvent::TerminalBellRing { surface_id, .. } => {
                 self.cascade_terminal_bell_ring(source, surface_id);
             }
-            CoreEvent::TerminalOutputMatch { surface_id, text } => {
+            CoreEvent::TerminalOutputMatch {
+                surface_id, text, ..
+            } => {
                 self.cascade_terminal_output_match(source, surface_id, text);
             }
-            CoreEvent::TerminalTitleChanged { surface_id, title } => {
-                self.cascade_terminal_title_changed(source, surface_id, title);
+            CoreEvent::TerminalTitleChanged {
+                surface_id,
+                title,
+                generation,
+            } => {
+                self.cascade_terminal_title_changed(source, surface_id, title, generation);
             }
-            CoreEvent::TerminalCwdChanged { surface_id } => {
-                self.cascade_terminal_pty_cwd_changed(source, surface_id);
+            CoreEvent::TerminalCwdChanged {
+                surface_id,
+                generation,
+            } => {
+                self.cascade_terminal_pty_cwd_changed(source, surface_id, generation);
             }
             CoreEvent::TerminalCommandCompleted {
                 surface_id,
                 exit_code,
+                ..
             } => {
                 self.cascade_terminal_command_completed(source, surface_id, exit_code);
             }
-            CoreEvent::TerminalShellIntegrationHint { surface_id } => {
+            CoreEvent::TerminalShellIntegrationHint { surface_id, .. } => {
                 self.cascade_terminal_shell_integration_hint(source, surface_id);
             }
-            CoreEvent::TerminalClipboardSet { surface_id } => {
+            CoreEvent::TerminalClipboardSet { surface_id, .. } => {
                 self.cascade_terminal_clipboard_set(source, surface_id);
             }
-            CoreEvent::TerminalProcessExited { surface_id } => {
-                self.cascade_terminal_process_exited(source, surface_id);
+            CoreEvent::TerminalProcessExited {
+                surface_id,
+                generation,
+            } => {
+                self.cascade_terminal_process_exited(source, surface_id, generation);
             }
             CoreEvent::TabNameUpdated { .. } => {
                 // OSC 제목은 저장 대상이 아니므로 레이아웃 저장 대신 화면 갱신만 요청한다.
@@ -489,6 +511,7 @@ impl App {
         source: DispatchSource,
         surface_id: u32,
         title: String,
+        generation: tasty_terminal::ResourceGeneration,
     ) {
         let Some(DispatchCtx {
             state,
@@ -501,11 +524,13 @@ impl App {
         };
         state.enqueue_host_event(crate::state::PendingHostEvent::SurfaceTitleChanged {
             surface_id,
+            generation,
             title: title.clone(),
         });
         state.dispatch_intent(
             crate::core::intent::DomainIntent::UpdateTabName {
                 surface_id,
+                generation,
                 name: title,
             }
             .from_system(),
@@ -515,7 +540,12 @@ impl App {
         }
     }
 
-    fn cascade_terminal_pty_cwd_changed(&mut self, source: DispatchSource, surface_id: u32) {
+    fn cascade_terminal_pty_cwd_changed(
+        &mut self,
+        source: DispatchSource,
+        surface_id: u32,
+        generation: tasty_terminal::ResourceGeneration,
+    ) {
         let Some(DispatchCtx {
             state,
             engine: _,
@@ -526,7 +556,11 @@ impl App {
             return;
         };
         state.dispatch_intent(
-            crate::core::intent::DomainIntent::SurfaceCwdChanged { surface_id }.from_system(),
+            crate::core::intent::DomainIntent::SurfaceCwdChanged {
+                surface_id,
+                generation,
+            }
+            .from_system(),
         );
         if let Some(base) = dirty_main {
             base.dirty = true;
@@ -613,7 +647,12 @@ impl App {
     }
 
     /// 종료 후 자원 정리·훅·알림은 공용 process_exit 처리로 전달한다.
-    fn cascade_terminal_process_exited(&mut self, source: DispatchSource, surface_id: u32) {
+    fn cascade_terminal_process_exited(
+        &mut self,
+        source: DispatchSource,
+        surface_id: u32,
+        generation: tasty_terminal::ResourceGeneration,
+    ) {
         let Some(DispatchCtx {
             state,
             mut engine,
@@ -623,7 +662,7 @@ impl App {
         else {
             return;
         };
-        super::process_exit::handle(&mut self.core, state, &mut engine, surface_id);
+        super::process_exit::handle(&mut self.core, state, &mut engine, surface_id, generation);
         if let Some(base) = dirty_main {
             base.dirty = true;
         }

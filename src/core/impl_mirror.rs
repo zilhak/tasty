@@ -309,8 +309,21 @@ impl Core {
                 Ok(vec![CoreEvent::AllNotificationsReadRequested])
             }
             #[cfg(feature = "gui")]
-            DomainIntent::SurfaceCwdChanged { surface_id } => {
-                Ok(vec![CoreEvent::SurfaceCwdChanged { surface_id }])
+            DomainIntent::SurfaceCwdChanged {
+                surface_id,
+                generation,
+            } => {
+                if !engine
+                    .runtime
+                    .terminals
+                    .matches_generation(surface_id, generation)
+                {
+                    return Ok(Vec::new());
+                }
+                Ok(vec![CoreEvent::SurfaceCwdChanged {
+                    surface_id,
+                    generation,
+                }])
             }
             DomainIntent::SetTerminalMark { surface_id } => {
                 Ok(vec![CoreEvent::TerminalMarkSet { surface_id }])
@@ -485,7 +498,18 @@ impl Core {
                 scope,
             )]),
             #[cfg(feature = "gui")]
-            DomainIntent::UpdateTabName { surface_id, name } => {
+            DomainIntent::UpdateTabName {
+                surface_id,
+                name,
+                generation,
+            } => {
+                if !engine
+                    .runtime
+                    .terminals
+                    .matches_generation(surface_id, generation)
+                {
+                    return Ok(Vec::new());
+                }
                 Ok(vec![Self::apply_update_tab_name(engine, surface_id, name)])
             }
             #[cfg(feature = "gui")]
@@ -905,7 +929,7 @@ mod mirror_structural_guard_tests {
             .expect("register headless pty");
         let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let waker = engine.make_waker(pty_id);
-        let terminal = tasty_terminal::Terminal::new(
+        let terminal = tasty_terminal::spawn_terminal(
             tasty_terminal::TerminalConfig {
                 cols: 80,
                 rows: 24,
@@ -966,7 +990,7 @@ mod mirror_structural_guard_tests {
             .expect("register headless pty");
         let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let waker = engine.make_waker(pty_id);
-        let terminal = tasty_terminal::Terminal::new(
+        let terminal = tasty_terminal::spawn_terminal(
             tasty_terminal::TerminalConfig {
                 cols: 80,
                 rows: 24,
@@ -1081,7 +1105,7 @@ mod mirror_structural_guard_tests {
             .expect("register headless pty");
         let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let waker = engine.make_waker(pty_id);
-        let terminal = tasty_terminal::Terminal::new(
+        let terminal = tasty_terminal::spawn_terminal(
             tasty_terminal::TerminalConfig {
                 cols: 80,
                 rows: 24,
@@ -1132,7 +1156,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (_a, pane) = seed(&mut engine);
-        let bogus = crate::core::pty_registry::PTY_ID_BASE + 4242;
+        let bogus = crate::core::terminal_store::PTY_ID_BASE + 4242;
         let before = engine.runtime.terminals.iter().count();
         let err = core
             .apply(

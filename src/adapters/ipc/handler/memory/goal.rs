@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn require_surface_id_rejects_pty_id_space() {
-        use crate::core::pty_registry::PTY_ID_BASE;
+        use crate::core::terminal_store::PTY_ID_BASE;
         let id = json!(1);
         assert!(require_surface_id(&json!({ "surface_id": PTY_ID_BASE }), &id).is_err());
         assert!(require_surface_id(&json!({ "surface_id": 2147484147u64 }), &id).is_err());
@@ -107,7 +107,7 @@ mod tests {
     #[test]
     fn scope_param_rejects_pty_id_space_surface() {
         use super::super::{optional_scope, require_scope};
-        use crate::core::pty_registry::PTY_ID_BASE;
+        use crate::core::terminal_store::PTY_ID_BASE;
         let id = json!(1);
         let polluted = json!({ "scope": format!("surface:{}", PTY_ID_BASE) });
         assert!(require_scope(&polluted, &id).is_err());

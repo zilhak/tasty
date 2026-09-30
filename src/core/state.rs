@@ -43,7 +43,7 @@ impl IdGenerator {
             pane: Arc::new(AtomicU32::new(1)),
             tab: Arc::new(AtomicU32::new(1)),
             surface: Arc::new(AtomicU32::new(1)),
-            pty: Arc::new(AtomicU32::new(crate::core::pty_registry::PTY_ID_BASE)),
+            pty: Arc::new(AtomicU32::new(crate::core::terminal_store::PTY_ID_BASE)),
             observer: Arc::new(AtomicU64::new(1)),
             hook: Arc::new(AtomicU64::new(1)),
             global_hook: Arc::new(AtomicU32::new(0)),
@@ -780,7 +780,7 @@ impl EngineMut<'_> {
                 if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
                     for tab in &mut pane.tabs {
                         if tab.contains_surface(surface_id) {
-                            let cwd = terminals.get(surface_id).and_then(|t| t.get_cwd());
+                            let cwd = terminals.cwd(surface_id);
                             tab.refresh_display_name(surface_id, cwd.as_deref());
                             return;
                         }

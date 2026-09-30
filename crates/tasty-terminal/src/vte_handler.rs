@@ -94,6 +94,7 @@ impl TerminalState {
             return;
         }
         self.events.push(TerminalEvent {
+            generation: self.connection.generation(),
             surface_id: 0,
             kind: TerminalEventKind::OutputAppended { text },
         });

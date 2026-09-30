@@ -10,7 +10,6 @@ use serde_json::{Value, json};
 
 use super::surface::query::{ScreenDiag, with_screen_diagnostics};
 
-use crate::core::pty_registry::{PtySpawnError, PtySpawnSpec};
 use crate::ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -62,18 +61,9 @@ pub(crate) fn handle_spawn(
     let owner_agent_id = caller.agent_id().as_str().to_string();
 
     let now = core.now_instant();
-    let pty_id = match engine.runtime.pty_registry.register(
-        PtySpawnSpec {
-            owner_agent_id: owner_agent_id.clone(),
-            cwd: cwd.clone(),
-            command: command.clone(),
-        },
-        now,
-    ) {
+    let pty_id = match engine.runtime.terminals.reserve_pty_id() {
         Ok(pid) => pid,
-        Err(e @ PtySpawnError::LimitReached { .. }) => {
-            return JsonRpcResponse::error(id, -32000, e.to_string());
-        }
+        Err(error) => return JsonRpcResponse::error(id, -32000, error.to_string()),
     };
 
     // surface를 만들지 않고 셸만 시작한다. command는 최초 stdin 입력으로 보낸다.
@@ -87,7 +77,7 @@ pub(crate) fn handle_spawn(
     } else {
         Some(format!("{}\n", command.join(" ")))
     };
-    let terminal = match tasty_terminal::Terminal::new(
+    let (terminal, mut pty) = match tasty_terminal::spawn_terminal(
         tasty_terminal::TerminalConfig {
             cols,
             rows,
@@ -102,34 +92,17 @@ pub(crate) fn handle_spawn(
     ) {
         Ok(t) => t,
         Err(e) => {
-            engine.runtime.pty_registry.remove(pty_id);
             return JsonRpcResponse::internal_error(id, format!("pty spawn failed: {e}"));
         }
     };
-    engine.runtime.terminals.insert(pty_id, terminal);
-
-    // child를 watcher로 넘겨 종료 코드를 수집한다. 이후 Terminal 자체는 child를 소유하지 않는다.
-    // kill은 Terminal을 제거해 PTY master를 닫고, watcher가 종료 결과를 기다린다.
-    if let Some(mut child) = engine
-        .runtime
-        .terminals
-        .get_mut(pty_id)
-        .and_then(|t| t.take_child())
-    {
-        engine
-            .runtime
-            .pty_registry
-            .attach_exit_watcher(pty_id, move || match child.wait() {
-                Ok(status) => crate::core::pty_registry::PtyExit::from_status(
-                    Some(status.exit_code() as i32),
-                    status.success(),
-                ),
-                Err(e) => {
-                    tracing::warn!("headless pty {pty_id} child.wait failed: {e}");
-                    crate::core::pty_registry::PtyExit::from_status(None, false)
-                }
-            });
-    }
+    pty.set_standalone(tasty_terminal::StandalonePty {
+        owner_agent_id: owner_agent_id.clone(),
+        cwd: cwd.clone(),
+        command: command.clone(),
+        created_at: now,
+        last_activity: now,
+    });
+    engine.runtime.terminals.insert(pty_id, terminal, Some(pty));
 
     JsonRpcResponse::success(
         id,
@@ -157,7 +130,7 @@ pub(crate) fn handle_write(
         Ok(t) => t,
         Err(e) => return e,
     };
-    if !engine.runtime.pty_registry.contains(pty_id) {
+    if !engine.runtime.terminals.is_standalone(pty_id) {
         return JsonRpcResponse::invalid_params(id, format!("headless pty {pty_id} not found"));
     }
     let Some(terminal) = engine.runtime.terminals.get_mut(pty_id) else {
@@ -167,7 +140,10 @@ pub(crate) fn handle_write(
         );
     };
     terminal.send_bytes(text.as_bytes());
-    engine.runtime.pty_registry.touch(pty_id, Instant::now());
+    engine
+        .runtime
+        .terminals
+        .touch_standalone(pty_id, Instant::now());
     JsonRpcResponse::success(id, json!({ "id": pty_id, "written": text.len() }))
 }
 
@@ -182,7 +158,7 @@ pub(crate) fn handle_read(
         Ok(v) => v,
         Err(e) => return e,
     };
-    if !engine.runtime.pty_registry.contains(pty_id) {
+    if !engine.runtime.terminals.is_standalone(pty_id) {
         return JsonRpcResponse::invalid_params(id, format!("headless pty {pty_id} not found"));
     }
     let lines = p_try!(params::opt_int::<usize>(params, "lines", &id));
@@ -204,7 +180,10 @@ pub(crate) fn handle_read(
         ),
         None => (String::new(), None),
     };
-    engine.runtime.pty_registry.touch(pty_id, Instant::now());
+    engine
+        .runtime
+        .terminals
+        .touch_standalone(pty_id, Instant::now());
     JsonRpcResponse::success(
         id,
         with_screen_diagnostics(json!({ "id": pty_id, "text": text }), diag),
@@ -221,16 +200,19 @@ pub(crate) fn handle_wait(
         Ok(v) => v,
         Err(e) => return e,
     };
-    if !engine.runtime.pty_registry.contains(pty_id) {
+    if !engine.runtime.terminals.is_standalone(pty_id) {
         return JsonRpcResponse::invalid_params(id, format!("headless pty {pty_id} not found"));
     }
-    engine.runtime.pty_registry.touch(pty_id, Instant::now());
+    engine
+        .runtime
+        .terminals
+        .touch_standalone(pty_id, Instant::now());
     let entry = engine
         .runtime
-        .pty_registry
-        .get(pty_id)
+        .terminals
+        .standalone(pty_id)
         .expect("contains() checked above");
-    match entry.exit() {
+    match entry.state().exit() {
         Some(exit) => JsonRpcResponse::success(
             id,
             json!({
@@ -255,11 +237,10 @@ pub(crate) fn handle_kill(
         Ok(v) => v,
         Err(e) => return e,
     };
-    let had_entry = engine.runtime.pty_registry.remove(pty_id).is_some();
-    let had_terminal = engine.runtime.terminals.remove(pty_id).is_some();
-    if !had_entry && !had_terminal {
+    if !engine.runtime.terminals.is_standalone(pty_id) {
         return JsonRpcResponse::invalid_params(id, format!("headless pty {pty_id} not found"));
     }
+    engine.runtime.terminals.remove(pty_id);
     // PTY별 waker 기록도 지워 반복 생성·삭제 시 누적되지 않게 한다.
     if let Some(factory) = engine.waker_factory.as_ref() {
         factory.forget_surface(pty_id);
@@ -286,11 +267,11 @@ pub(crate) fn handle_attach_surface(
         Err(e) => return e,
     };
 
-    match engine.runtime.pty_registry.get(pty_id) {
+    match engine.runtime.terminals.standalone(pty_id) {
         None => {
             return JsonRpcResponse::invalid_params(id, format!("headless pty {pty_id} not found"));
         }
-        Some(entry) if entry.has_exited() => {
+        Some(entry) if entry.state().exit().is_some() => {
             return JsonRpcResponse::invalid_params(
                 id,
                 format!("headless pty {pty_id} already exited"),
@@ -343,16 +324,17 @@ pub(crate) fn handle_list(engine: &mut EngineMut<'_>, id: Value) -> JsonRpcRespo
     lazy_sweep(engine);
     let ptys: Vec<Value> = engine
         .runtime
-        .pty_registry
-        .iter()
-        .map(|e| {
+        .terminals
+        .standalone_iter()
+        .map(|(pty_id, pty)| {
+            let e = pty.state().standalone().expect("standalone");
             json!({
-                "id": e.id,
+                "id": pty_id,
                 "owner_agent_id": e.owner_agent_id,
                 "cwd": e.cwd,
                 "command": e.command,
-                "has_exited": e.has_exited(),
-                "exit_code": e.exit().and_then(|x| x.code),
+                "has_exited": pty.state().exit().is_some(),
+                "exit_code": pty.state().exit().and_then(|x| x.code),
             })
         })
         .collect();
@@ -462,7 +444,7 @@ mod tests {
             }),
             None => {
                 let elapsed = started.elapsed();
-                let still_registered = engine.runtime.pty_registry.contains(pty_id);
+                let still_registered = engine.runtime.terminals.is_standalone(pty_id);
                 let observed = observed_pty_state(&engine.as_ref(), pty_id, sent);
                 panic!(
                     "{}",
@@ -517,7 +499,7 @@ mod tests {
         pty_id: u32,
         sent: &str,
     ) -> String {
-        let watcher = match engine.runtime.pty_registry.get(pty_id) {
+        let watcher = match engine.runtime.terminals.standalone(pty_id) {
             Some(e) => watch_phase_note(e.watch_phase()),
             None => "registry에 항목이 없어 watcher 상태를 읽을 수 없다",
         };
@@ -647,7 +629,7 @@ mod tests {
         let resp = handle_spawn(&mut c, &mut e, &caller, json!(1), &json!({}));
         let spawned = ok(resp);
         let pty_id = spawned["pty_id"].as_u64().unwrap() as u32;
-        assert!(pty_id >= crate::core::pty_registry::PTY_ID_BASE);
+        assert!(pty_id >= crate::core::terminal_store::PTY_ID_BASE);
 
         let listed = ok(handle_list(&mut e, json!(2)));
         let arr = listed["ptys"].as_array().unwrap();
@@ -795,7 +777,7 @@ mod tests {
     fn write_read_wait_on_unknown_id_errors() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let bogus = crate::core::pty_registry::PTY_ID_BASE + 999;
+        let bogus = crate::core::terminal_store::PTY_ID_BASE + 999;
         assert!(
             handle_write(&mut e, json!(1), &json!({ "id": bogus, "text": "x" }))
                 .error

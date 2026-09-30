@@ -81,7 +81,7 @@ impl Core {
                 let rows = engine.default_rows;
                 let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
                 let waker = engine.make_waker(surface_id);
-                let terminal = match tasty_terminal::Terminal::new(
+                let (terminal, pty) = match tasty_terminal::spawn_terminal(
                     tasty_terminal::TerminalConfig {
                         cols,
                         rows,
@@ -103,7 +103,10 @@ impl Core {
                         });
                     }
                 };
-                engine.runtime.terminals.insert(surface_id, terminal);
+                engine
+                    .runtime
+                    .terminals
+                    .insert(surface_id, terminal, Some(pty));
                 let node = crate::model::TerminalSurface { id: surface_id };
                 // 단일 surface 탭에서는 기존 명시 이름을 지우고 자동 제목을 사용한다.
                 Ok((Box::new(node), Some(None)))

@@ -251,59 +251,14 @@ impl TerminalState {
 }
 
 impl Terminal {
-    /// Resize the terminal grid, then (for PTY-backed terminals) schedule the OS
-    /// resize. The grid change and its resize-tap notification happen first; the
-    /// OS resize is applied later, by the forced flush in the next `process()` or
-    /// by a throttled `flush_pty_resize` call, so a tap is not a confirmation that the OS accepted the size. Lock-free no-op when the
-    /// dimensions are unchanged — the per-frame `resize_all` sweep calls this on
-    /// every terminal, so the common case must not lock a busy background
-    /// terminal's state.
-    pub fn resize(&mut self, cols: usize, rows: usize) {
+    /// Change the grid and publish its resize tap under the content lock. The owner
+    /// subsequently schedules this size on the matching Pty; a tap is not an OS ACK.
+    pub fn resize(&mut self, cols: usize, rows: usize) -> bool {
         if self.cached_dims == (cols, rows) {
-            return;
+            return false;
         }
         let changed = self.lock_state().resize_grid(cols, rows);
         self.cached_dims = (cols, rows);
-        // Defer PTY resize notification to avoid SIGWINCH storms during drag.
-        if changed && let Some(pty) = self.pty.as_mut() {
-            pty.schedule_resize(cols, rows);
-        }
-    }
-
-    /// Try to flush pending PTY resize. Returns true if flushed/cleared, false if
-    /// throttled (the pending resize is kept and the caller should retry later).
-    pub fn flush_pty_resize(&mut self) -> bool {
-        self.pty.as_mut().is_some_and(|pty| pty.flush_resize())
-    }
-
-    /// Best-effort wake of a possibly-stalled child after an OS suspend/resume
-    /// (Windows ConPTY). Re-issues a `ResizePseudoConsole` at the *current* size
-    /// to nudge the child into repainting and resuming its input loop. Unlike
-    /// [`resize`](Self::resize) this bypasses the `cached_dims` no-op guard, so it
-    /// fires even though the dimensions are unchanged. Caller decides when (the
-    /// resume health pass); the crate stays platform-neutral and only no-ops when
-    /// there is no PTY. The nudge is not guaranteed to revive a fully hung child
-    /// (see docs/features/terminal/index.md#프로세스-종료--절전-복귀).
-    pub fn wake_nudge(&mut self) {
-        let (cols, rows) = self.cached_dims;
-        if let Some(pty) = self.pty.as_ref()
-            && let Err(e) = pty.apply_os_resize(cols, rows)
-        {
-            tracing::warn!("wake_nudge PTY resize failed: {e}");
-        }
-    }
-
-    /// Force flush pending PTY resize regardless of throttle.
-    pub fn force_flush_pty_resize(&mut self) {
-        if let Some(pty) = self.pty.as_mut() {
-            pty.force_flush_resize();
-        }
-    }
-
-    /// Check if there is a pending PTY resize.
-    pub fn has_pending_pty_resize(&self) -> bool {
-        self.pty
-            .as_ref()
-            .is_some_and(|pty| pty.has_pending_resize())
+        changed
     }
 }

@@ -43,9 +43,9 @@ impl Core {
         pane_id: u32,
         pty_id: u32,
     ) -> anyhow::Result<Vec<CoreEvent>> {
-        match engine.runtime.pty_registry.get(pty_id) {
+        match engine.runtime.terminals.standalone(pty_id) {
             None => anyhow::bail!("headless pty {pty_id} not found"),
-            Some(entry) if entry.has_exited() => {
+            Some(entry) if entry.state().exit().is_some() => {
                 anyhow::bail!("headless pty {pty_id} already exited")
             }
             Some(_) => {}
@@ -57,12 +57,11 @@ impl Core {
         let tab_id = engine.next_ids.next_tab();
         let surface_id = engine.next_ids.next_surface();
 
-        // 수신 알림이 새 ID의 터미널을 찾도록 waker도 바꾼다.
-        let Some(terminal) = engine.runtime.terminals.remove(pty_id) else {
-            anyhow::bail!("headless pty {pty_id} registry/store desync (terminal missing)");
-        };
-        terminal.rewire_waker(engine.make_waker(surface_id));
-        engine.runtime.terminals.insert(surface_id, terminal);
+        // Move the same content/Pty pair and physical generation; only its host key changes.
+        let waker = engine.make_waker(surface_id);
+        if !engine.runtime.terminals.adopt(pty_id, surface_id, waker) {
+            anyhow::bail!("headless pty {pty_id} binding missing");
+        }
 
         // 에이전트의 생성이 사용자 선택을 바꾸지 않도록 배경 탭으로 넣는다.
         engine
@@ -70,8 +69,6 @@ impl Core {
             .expect("pane existence checked above")
             .add_terminal_marker_tab_background(tab_id, surface_id, None);
 
-        // registry에서 빼도 기존 exit watcher는 자식 회수를 계속한다.
-        engine.runtime.pty_registry.remove(pty_id);
         // 옛 ID의 알림 중복 방지 항목이 승격 때마다 남지 않도록 지운다.
         if let Some(factory) = engine.waker_factory.as_ref() {
             factory.forget_surface(pty_id);

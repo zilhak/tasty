@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: AI Agent
 - **ADR**: [ADR-0060](../../adr/0060-terminal-and-pty-separation.md) (신규 `pty.*` 네임스페이스 결정) · [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md) (surface와 PTY의 ID 범위 분리)
-- **코드**: `src/core/pty_registry.rs` (registry+exit-code) · `src/adapters/ipc/handler/pty.rs` (IPC) · `src/core/impl_attach.rs` `apply_adopt_terminal` (승격) · `crates/tasty-cli` `pty` 서브커맨드 (CLI)
+- **코드**: `src/core/terminal_store/standalone.rs` (단일 collection의 standalone 정책) · `crates/tasty-terminal/src/pty.rs` (PtyState·exit/reap) · `src/adapters/ipc/handler/pty.rs` (IPC) · `src/core/impl_attach.rs` `apply_adopt_terminal` (승격) · `crates/tasty-cli` `pty` 서브커맨드 (CLI)
 - **화면**: 없음 — headless 전용. 렌더되지 않고 포커스/닫은-항목 히스토리/선택에 닿지 않는다(identity.md 원칙 1). 승격(`pty.attach_surface`) 후에만 일반 terminal surface 로 렌더.
 
 ## 목적
@@ -17,10 +17,12 @@
 
 ### 저장과 종료 코드
 
-`PtyRegistry`는 메타데이터와 종료 코드를, `TerminalStore`는 실제 Terminal을 같은 PTY ID로 보관한다.
-두 컬렉션은 자식 terminal 기록과 함께 `EngineSession.runtime`의 `EngineRuntime`(`src/core/engine_runtime.rs`)에 있다. CoreState는 이 컬렉션을 소유하지 않으며 실행 경로가 별도로 빌린다.
-`portable_pty::Child`를 받은 watcher가 wait로 실제 종료 코드를 기록한다.
+`EngineSession.runtime`의 `TerminalStore` 한 항목이 Terminal과 선택적인 Pty를 소유한다.
+standalone metadata와 종료 관측은 해당 Pty의 PtyState에 있다. 같은 PTY를 별도 registry에 다시 등록하지 않는다.
+Pty가 child handle을 끝까지 소유하며 `try_wait` 결과를 보관한다. 외부 watcher로 child를 넘기지 않는다.
 `pty.wait`는 이 값을 즉시 조회하며 블로킹 대기가 아니다.
+wait 실패는 내부 WaitFailed로 보존하고 기존 wire에서는 exit_code:null/success:false의 결과로 답한다.
+kill/remove 응답은 신호 전달·실제 종료·reap 완료를 모두 확인했다는 뜻이 아니다.
 owner_agent_id는 호출자의 TASTY_AGENT_ID에서 오며 위조할 수 있어 강한 인증 정보로 취급하지 않는다.
 
 ### ID 범위
@@ -41,7 +43,7 @@ read·write·wait는 idle 시각을 갱신하며 기본값은 override할 수 �
 - spawn/list 접근에서 만료 항목을 먼저 정리한다. 특히 spawn의 상한 판단보다 먼저 수행한다.
 - Tick::PtySweep는 30초 주기, Lax slack 60초로 정리한다. 아무 호출이 없어도 TTL 뒤 최대 90초 안에 회수한다.
 - GUI main·parked engine과 headless 모두 같은 EngineMut::sweep_idle_ptys를 사용한다.
-  registry, TerminalStore, waker 중복 방지 등록을 함께 정리한다.
+  Terminal/Pty 쌍과 waker 중복 방지 등록을 함께 정리한다.
 
 자식은 PTY를 소유한 host 수명을 따른다. Windows의 Job Object와 Unix의 hangup 차이는
 [터미널 수명](../terminal/index.md#프로세스-종료--절전-복귀)을 참고한다.
@@ -51,7 +53,7 @@ read·write·wait는 idle 시각을 갱신하며 기본값은 override할 수 �
 `AdoptTerminal { pane_id, pty_id }`는 새 surface ID를 만들고 TerminalStore의 키를 옮긴다.
 새 ID로 waker를 연결하고 기존 Pane에 background tab을 추가한다. 프로세스와 화면 내용은 유지한다.
 사용자의 활성 탭은 바꾸지 않으며 tab.created·surface.created를 보낸다.
-PTY registry에서 제거되어 이후에는 surface API로 다룬다. 옛 PTY ID의 waker 등록도 정리한다.
+PtyState의 standalone 표시가 제거되어 이후에는 surface API로 다룬다. 물리 generation과 child handle은 유지된다. 옛 PTY ID의 waker 등록도 정리한다.
 
 ## 인터페이스
 
@@ -63,7 +65,7 @@ PTY registry에서 제거되어 이후에는 surface API로 다룬다. 옛 PTY I
 | `tasty pty write --id <n> "<text>"` | `pty.write` | `TerminalWrite` | 실행 중 PTY 에 stdin 을 as-is 전송(자동 제출 없음 — 개행은 호출자 포함). idle 리셋. |
 | `tasty pty read --id <n> [--lines <k>] [--show-dim]` | `pty.read` | `TerminalRead` | 현재 화면 텍스트 읽기(옵션 `lines`=내용 기준 마지막 N줄 — 하단 공백 행 건너뜀, 모자라면 스크롤백에서 채움). `surface.screen_text` 와 동일 추출이며 진단 필드(`is_terminal`·`scrollback_len`·`alt_screen`)도 같이 낸다 — N 보다 적게 왔을 때 "그게 전부" 와 "잘렸다" 를 가른다. idle 리셋. dim(ghost-suggestion, 예: Claude Code 자동완성 제안) 셀은 기본 제외 — `--show-dim`/`show_dim:true` 로 포함. |
 | `tasty pty wait --id <n>` | `pty.wait` | `TerminalRead` | 즉시 반환 폴링(blocking 아님). exit cell 조회 → `{exited, exit_code, success}`. idle 리셋. |
-| `tasty pty kill --id <n>` | `pty.kill` | `TerminalWrite` | 프로세스 종료 + 두 store 회수(Surface 를 닫는 게 아님 — headless 라 없음). |
+| `tasty pty kill --id <n>` | `pty.kill` | `TerminalWrite` | 소유 프로세스 종료 요청 + collection 항목 회수(실제 reap 완료와 구분)(Surface 를 닫는 게 아님 — headless 라 없음). |
 | `tasty pty list` | `pty.list` | `TerminalRead` | 살아있는 headless PTY 전체 목록(`id`/`owner_agent_id`/`cwd`/`command`/`has_exited`/`exit_code`). 접근 시 idle sweep(주기 타이머와 별개로 항상 돈다). |
 | `tasty pty attach-surface --pty-id <n> --pane-id <p>` | `pty.attach_surface` | `SurfaceWrite, TerminalSpawn` | headless PTY 를 Pane `p` 의 실제 Tab 으로 승격(상태 보존). `{pane_id, tab_id, surface_id}` 반환. |
 
@@ -80,10 +82,10 @@ PTY registry에서 제거되어 이후에는 surface API로 다룬다. 옛 PTY I
 ## Acceptance Criteria
 
 - Given 상한 미만 When `pty.spawn{command}` Then surface와 겹치지 않는 고범위 pty id 반환 + `pty.list` 에 등장, command 즉시 실행.
-- Given 실행 중 pty When `pty.write` → 종료 유발 → `pty.wait` Then watcher 가 잡은 실제 exit_code 반환.
+- Given 실행 중 pty When `pty.write` → 종료 유발 → `pty.wait` Then Pty가 관측한 실제 exit_code 반환.
 - Given 상한 도달 When `pty.spawn` Then `LimitReached` 에러(자원 미생성) — panic 없음.
-- Given idle 이 TTL 초과 When `pty.spawn`/`pty.list` 접근 Then 두 store 에서 함께 회수.
-- Given idle 이 TTL 초과 When `pty.*` 를 **한 번도 부르지 않음** Then 주기 타이머가 최대 90초 안에 두 store 에서 함께 회수.
+- Given idle 이 TTL 초과 When `pty.spawn`/`pty.list` 접근 Then 같은 collection에서 Terminal/Pty를 함께 회수.
+- Given idle 이 TTL 초과 When `pty.*` 를 **한 번도 부르지 않음** Then 주기 타이머가 최대 90초 안에 같은 collection에서 Terminal/Pty를 함께 회수.
 - Given 상한이 꽉 찼고 그 항목들이 idle 만료 When `pty.spawn` Then lazy sweep 이 먼저 돌아 spawn 이 성공(주기 타이머를 기다리지 않는다).
 - Given 살아있는 headless pty When `pty.attach_surface{pane}` Then Terminal 이 surface_id 로 re-key(상태 보존) + pane tab 등장 + `pty.list` 에서 제거 + `tab.created` cascade.
 - kill/idle-sweep/adopt 각각이 회수/재배선하는 pty_id 의 waker dedup 게이트를 정리(`forget_surface`) — 누수 없음.

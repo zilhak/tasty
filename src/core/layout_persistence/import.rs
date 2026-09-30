@@ -41,7 +41,7 @@ use super::schema::{
     SavedCategory, SavedLayout, SavedPaneNode, SavedSurface, SavedSurfaceLayout, SavedWorkspace,
 };
 use super::{LayoutSlotId, SlotLoad, classify_slot_json};
-use crate::core::pty_registry::PTY_ID_BASE;
+use crate::core::terminal_store::PTY_ID_BASE;
 use crate::model::{
     NORMAL_CATEGORY_ID, PaneId, SurfaceId, TabId, WorkspaceCategoryId, WorkspaceId,
 };

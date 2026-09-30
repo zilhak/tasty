@@ -210,6 +210,7 @@ pub(crate) enum DomainIntent {
     #[cfg(feature = "gui")]
     SurfaceCwdChanged {
         surface_id: u32,
+        generation: tasty_terminal::ResourceGeneration,
     },
 
     SetTerminalMark {
@@ -240,6 +241,7 @@ pub(crate) enum DomainIntent {
     #[cfg(feature = "gui")]
     UpdateTabName {
         surface_id: u32,
+        generation: tasty_terminal::ResourceGeneration,
         name: String,
     },
 
@@ -428,6 +430,7 @@ pub(crate) enum CoreEvent {
     #[cfg(feature = "gui")]
     SurfaceCwdChanged {
         surface_id: u32,
+        generation: tasty_terminal::ResourceGeneration,
     },
 
     TerminalMarkSet {
@@ -461,6 +464,7 @@ pub(crate) enum CoreEvent {
     /// 자식 프로세스 종료. GUI는 hook·알림과 닫기 요청을 이어 처리한다.
     TerminalProcessExited {
         surface_id: u32,
+        generation: tasty_terminal::ResourceGeneration,
     },
 
     /// OSC 제목 변경. GUI는 host 이벤트와 탭 제목 갱신 요청으로 처리한다.
@@ -473,6 +477,7 @@ pub(crate) enum CoreEvent {
     )]
     TerminalTitleChanged {
         surface_id: u32,
+        generation: tasty_terminal::ResourceGeneration,
         title: String,
     },
 
@@ -485,6 +490,7 @@ pub(crate) enum CoreEvent {
     )]
     TerminalNotification {
         surface_id: u32,
+        generation: tasty_terminal::ResourceGeneration,
         title: String,
         body: String,
     },
@@ -498,17 +504,20 @@ pub(crate) enum CoreEvent {
     )]
     TerminalBellRing {
         surface_id: u32,
+        generation: tasty_terminal::ResourceGeneration,
     },
 
     /// 완성된 출력 줄. 해당 surface에 OutputMatch hook이 있을 때만 만들어진다.
     TerminalOutputMatch {
         surface_id: u32,
+        generation: tasty_terminal::ResourceGeneration,
         text: String,
     },
 
     /// cwd 변경. GUI는 후속 요청으로, 헤드리스는 PTY 처리 경로에서 직접 반영한다.
     TerminalCwdChanged {
         surface_id: u32,
+        generation: tasty_terminal::ResourceGeneration,
     },
 
     /// OSC 133의 명령 완료 보고. GUI는 종료 코드와 무관하게 완료 attention을 올리고 hook에도 코드를 전달한다.
@@ -521,6 +530,7 @@ pub(crate) enum CoreEvent {
     )]
     TerminalCommandCompleted {
         surface_id: u32,
+        generation: tasty_terminal::ResourceGeneration,
         exit_code: Option<i32>,
     },
 
@@ -534,6 +544,7 @@ pub(crate) enum CoreEvent {
     )]
     TerminalShellIntegrationHint {
         surface_id: u32,
+        generation: tasty_terminal::ResourceGeneration,
     },
 
     /// 클립보드 쓰기를 시도했다는 알림. Core는 쓰기 오류를 기록하고 이 이벤트도 반환한다.
@@ -547,6 +558,7 @@ pub(crate) enum CoreEvent {
     )]
     TerminalClipboardSet {
         surface_id: u32,
+        generation: tasty_terminal::ResourceGeneration,
     },
 
     /// 탭 표시를 다시 그리기 위한 결과. OSC 제목은 레이아웃 저장 대상이 아니다.
@@ -665,4 +677,63 @@ pub(crate) enum CascadeLevel {
 #[derive(Debug, Default)]
 pub(crate) struct ProcessPtyOutcome {
     pub events: Vec<CoreEvent>,
+}
+
+impl CoreEvent {
+    /// Keep resource identity through the application queue, not just the raw event drain.
+    pub(crate) fn terminal_binding(&self) -> Option<(u32, tasty_terminal::ResourceGeneration)> {
+        match self {
+            #[cfg(feature = "gui")]
+            Self::SurfaceCwdChanged {
+                surface_id,
+                generation,
+            } => Some((*surface_id, *generation)),
+            Self::TerminalProcessExited {
+                surface_id,
+                generation,
+                ..
+            }
+            | Self::TerminalTitleChanged {
+                surface_id,
+                generation,
+                ..
+            }
+            | Self::TerminalNotification {
+                surface_id,
+                generation,
+                ..
+            }
+            | Self::TerminalBellRing {
+                surface_id,
+                generation,
+                ..
+            }
+            | Self::TerminalOutputMatch {
+                surface_id,
+                generation,
+                ..
+            }
+            | Self::TerminalCwdChanged {
+                surface_id,
+                generation,
+                ..
+            }
+            | Self::TerminalCommandCompleted {
+                surface_id,
+                generation,
+                ..
+            }
+            | Self::TerminalShellIntegrationHint {
+                surface_id,
+                generation,
+                ..
+            }
+            | Self::TerminalClipboardSet {
+                surface_id,
+                generation,
+                ..
+            } => Some((*surface_id, *generation)),
+            _ => None,
+        }
+    }
 }

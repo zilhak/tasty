@@ -1732,7 +1732,7 @@ fn make_mirror_surface(
     });
     // mirror의 feed_bytes는 process의 lazy 동기화를 거치지 않아 옵저버 게이트를 여기서 초기화한다.
     mirror.set_output_events_enabled(engine.observer_router.wants(local_id));
-    engine.runtime.terminals.insert(local_id, mirror);
+    engine.runtime.terminals.insert(local_id, mirror, None);
 }
 
 /// 성공한 사용자 요청의 다음 delta에 한 번 적용할 로컬 포커스 의도.

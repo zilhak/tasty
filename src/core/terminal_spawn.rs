@@ -1,6 +1,6 @@
 //! 셸 PTY 생성. model은 생성 정보만 보관하고 실제 `Terminal`과 waker는 호스트가 만든다.
 
-use tasty_terminal::{Terminal, TerminalConfig, Waker};
+use tasty_terminal::{Pty, Terminal, TerminalConfig, Waker};
 
 use crate::model::DeferredSpawn;
 
@@ -22,8 +22,8 @@ pub(crate) struct ShellSpawnOpts<'a> {
 pub(crate) fn spawn_shell_terminal(
     surface_id: u32,
     spawn: ShellSpawnOpts<'_>,
-) -> anyhow::Result<Terminal> {
-    Terminal::new(
+) -> anyhow::Result<(Terminal, Pty)> {
+    tasty_terminal::spawn_terminal(
         TerminalConfig {
             cols: spawn.cols,
             rows: spawn.rows,
@@ -43,7 +43,7 @@ pub(crate) fn spawn_deferred_terminal(
     surface_id: u32,
     spawn: &DeferredSpawn,
     waker: Waker,
-) -> anyhow::Result<Terminal> {
+) -> anyhow::Result<(Terminal, Pty)> {
     let shell_args: Vec<&str> = spawn.shell_args.iter().map(|s| s.as_str()).collect();
     let extra_env: Vec<(&str, &str)> = spawn
         .extra_env
@@ -51,7 +51,7 @@ pub(crate) fn spawn_deferred_terminal(
         .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
     let initial = deferred_initial_input(spawn);
-    Terminal::new(
+    tasty_terminal::spawn_terminal(
         TerminalConfig {
             cols: spawn.cols,
             rows: spawn.rows,

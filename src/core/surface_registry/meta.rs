@@ -102,7 +102,7 @@ impl SurfaceMetaStore {
     /// 복원 시 발급 기준을 높일 때 PTY 범위의 기록까지 따라가지 않도록 제외한다.
     #[cfg(any(feature = "gui", test))]
     pub fn max_surface_id(mem: &mut dyn MemoryStorage) -> u32 {
-        use crate::core::pty_registry::is_surface_id_space;
+        use crate::core::terminal_store::is_surface_id_space;
         let scopes = match mem.scopes() {
             Ok(s) => s,
             Err(e) => {
@@ -124,7 +124,7 @@ impl SurfaceMetaStore {
     /// 목록 조회 실패는 0이고 개별 삭제 실패는 로그 후 계속한다. ID 발급기 자체의 범위 검사는 아니다.
     #[cfg(any(feature = "gui", test))]
     pub fn purge_out_of_range_surfaces(mem: &mut dyn MemoryStorage) -> usize {
-        use crate::core::pty_registry::is_surface_id_space;
+        use crate::core::terminal_store::is_surface_id_space;
         let scopes = match mem.scopes() {
             Ok(s) => s,
             Err(e) => {
@@ -202,7 +202,7 @@ impl SurfaceMetaStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::pty_registry::PTY_ID_BASE;
+    use crate::core::terminal_store::PTY_ID_BASE;
     use std::collections::HashSet;
     use tasty_memory::testing::InMemoryStorage;
 

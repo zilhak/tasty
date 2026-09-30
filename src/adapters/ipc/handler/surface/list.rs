@@ -51,7 +51,12 @@ fn collect_tab_surface_info(
                 "pty_ready": engine.runtime.terminals.contains(node.id),
                 "attached": engine.attach.is_hard_occupied(node.id),
             });
-            if let Some(fg) = t.and_then(|x| x.foreground_process_info()) {
+            if let Some(fg) = engine
+                .runtime
+                .terminals
+                .pty(node.id)
+                .and_then(|pty| pty.foreground_process_info())
+            {
                 entry["foreground_process"] = json!(fg.name);
                 entry["foreground_pid"] = json!(fg.pid);
             }
@@ -103,7 +108,12 @@ fn collect_surface_layout_info(
                 entry["cols"] = json!(terminal.cols());
                 entry["rows"] = json!(terminal.rows());
                 entry["pty_ready"] = json!(true);
-                if let Some(fg) = terminal.foreground_process_info() {
+                if let Some(fg) = engine
+                    .runtime
+                    .terminals
+                    .pty(id)
+                    .and_then(|pty| pty.foreground_process_info())
+                {
                     entry["foreground_process"] = json!(fg.name);
                     entry["foreground_pid"] = json!(fg.pid);
                 }

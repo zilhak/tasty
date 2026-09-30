@@ -57,7 +57,7 @@ App이 가진 모든 engine은 `App.engines`(`EngineRegistry`, `src/app/engine_r
 한 engine은 세 관계 중 정확히 하나에 속하고, 관계들의 합집합은 registry가 가진 engine 전체와 같다. 창 전이는 관계만 바꾼다.
 
 `EngineSession`은 `CoreState`와 `EngineRuntime`, engine별 `HookRuntimeState`·`TaskScope`·`ObserverRouter`를 직접 소유한다.
-`EngineRuntime`에는 실제 TerminalStore, child terminal 관계, standalone PtyRegistry와 GUI의 readonly Terminal 사본이 있다.
+`EngineRuntime`에는 Terminal/Pty 쌍의 단일 TerminalStore, child terminal 관계와 GUI의 readonly Terminal 사본이 있다.
 park/unpark는 이 객체나 작업 대기 허브를 교체하지 않는다. 창의 사용자 선택·viewport는 MainViewState에 남는다.
 headless도 같은 Session을 지역 변수로 소유하며 로컬 View를 만들지 않는다.
 
@@ -67,8 +67,8 @@ Core에 상위 `EngineSession` 전체를 전달하지 않는다. Terminal 읽기
 
 생성 조립은 `src/runtime/engine_session/bootstrap.rs`가 담당한다. 설정·슬롯·registry·child 관계 읽기와 기본 shell 생성은
 기존 시작 조건을 따른다. Session Drop은 hook·task·observer를 Terminal보다 먼저 정리하고, observer는 남은 worker를 join한다.
-TaskScope Drop은 task 취소나 OS 자식 종료를 새로 요청하지 않는다. PtyRegistry의 외부 watcher 및 Terminal 내부 Pty 소유는 유지되므로
-이 배치가 Terminal/Pty 물리 분리나 구조 replay의 무자원화를 완료한 것은 아니다.
+TaskScope Drop은 task 취소나 OS 자식 종료를 새로 요청하지 않는다. Terminal과 Pty는 store의 같은 항목에서 각각 소유하며 standalone에서도 Pty가 child kill/wait를 맡는다.
+이 배치가 구조 replay의 무자원화나 durable activation을 완료한 것은 아니다.
 
 
 | 전이 | 동작 |

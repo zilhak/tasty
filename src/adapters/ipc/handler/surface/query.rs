@@ -181,8 +181,10 @@ pub(crate) fn handle_foreground_process(
         Err(e) => return e,
     };
     let (name, pid) = engine
-        .find_terminal_by_id(surface_id)
-        .and_then(|t| t.foreground_process_info())
+        .runtime
+        .terminals
+        .pty(surface_id)
+        .and_then(|pty| pty.foreground_process_info())
         .map(|fg| (Some(fg.name.clone()), Some(fg.pid)))
         .unwrap_or((None, None));
     JsonRpcResponse::success(

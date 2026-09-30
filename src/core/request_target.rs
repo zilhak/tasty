@@ -177,7 +177,7 @@ pub(crate) fn engine_has_resource(engine: &EngineRef<'_>, rid: ResourceId) -> bo
         Kind::Workspace => narrow.is_some_and(|id| engine.has_workspace(id)),
         Kind::Pane => narrow.is_some_and(|id| engine.has_pane(id)),
         Kind::Tab => narrow.is_some_and(|id| engine.find_pane_for_tab(id).is_some()),
-        Kind::HeadlessPty => narrow.is_some_and(|id| engine.runtime.pty_registry.contains(id)),
+        Kind::HeadlessPty => narrow.is_some_and(|id| engine.runtime.terminals.is_standalone(id)),
         Kind::Hook => engine
             .hooks
             .surface_hooks()
