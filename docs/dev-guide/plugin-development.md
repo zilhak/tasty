@@ -507,7 +507,7 @@ Unix에서는 PTY master가 닫히며 SIGHUP이 전경 프로세스 그룹에 �
 신호를 무시하거나 분리된 자식까지 모두 종료한다고 일반화하지 않는다.
 `portable-pty::CommandBuilder`는 `pre_exec`를 제공하지 않아 셸에 PDEATHSIG를 설치하지 않는다.
 
-정상 종료 경로(surface 닫기/quit)에서는 `PtyBackend::Drop` 이 셸을 명시적으로 kill 해 PTY master HUP 에만 의존하지 않는다. 결정 배경·대안·재검토 조건은 [ADR-0060](../adr/0060-terminal-and-pty-separation.md).
+정상 종료 경로(surface 닫기/quit)에서는 `tasty-terminal` 의 `Pty` Drop 이 셸을 명시적으로 kill 해 PTY master HUP 에만 의존하지 않는다. 결정 배경·대안·재검토 조건은 [ADR-0060](../adr/0060-terminal-and-pty-separation.md).
 
 ### 토큰 핸드셰이크 (보안)
 

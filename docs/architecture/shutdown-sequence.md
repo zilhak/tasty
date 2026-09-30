@@ -41,7 +41,7 @@ run_app 반환 (src/boot.rs) — 여기부터 Drop tail. 종료 화면은 더 �
   drop_app_with_trace(app)
     ├─ S5d TcpIpcServer::drop        accept 스레드 stop + **port 파일 제거**
     ├─ S5a LuaEngine::drop           Shutdown send + 워커 join (블로킹)
-    ├─ S5b PtyBackend::drop 합계     자식 셸 kill (surface 수만큼 반복)
+    ├─ S5b Pty::drop 합계            자식 셸 kill (surface 수만큼 반복)
     ├─ S5c SshTunnel::drop 합계      child.kill + wait (attach 세션 수만큼, 블로킹)
     ├─ S5  drop_tail                 run_app 반환 → App drop 완료 전체
     └─ shutdown_total_with_drop      **사용자 체감에 대응하는 값**
@@ -164,7 +164,7 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
 | shutdown_total | 종료 진입 → `event_loop.exit()` 직전 | — |
 | S5d ipc_server_drop | `TcpIpcServer::drop` (accept stop + port 파일 제거) | — |
 | S5a lua_join | `LuaEngine::drop` (Shutdown send + 워커 join) | — |
-| S5b pty_drop | `PtyBackend::drop` 합계 (자식 종료 **대기는 포함하지 않는다** — [ADR-0016](../adr/0016-window-platform-and-shutdown.md)) | `ptys` = drop 된 PTY 수 |
+| S5b pty_drop | `Pty::drop` 합계 (자식 종료 **대기는 포함하지 않는다** — [ADR-0016](../adr/0016-window-platform-and-shutdown.md)) | `ptys` = drop 된 PTY 수 |
 | S5c ssh_tunnel_drop | `SshTunnel::drop` 합계 | `tunnels` = drop 된 터널 수 |
 | S5 drop_tail | `run_app` 반환 → `App` drop 완료 | — |
 | shutdown_total_with_drop | 종료 진입 → Drop tail 완료 (**체감 종료 시간**) | — |

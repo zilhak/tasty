@@ -132,7 +132,7 @@ close_total
 
 읽는 법:
 
-- **C5a~C5d 는 surface 마다가 아니라 합계다.** 종료 계측 S5b(`PtyBackend::drop`
+- **C5a~C5d 는 surface 마다가 아니라 합계다.** 종료 계측 S5b(`Pty::drop`
   누적) 선례와 같다. 탭 30개를 surface 단위로 찍으면 로그 150줄이 close 구간
   *안에서* 발생해 그 write 비용이 측정을 왜곡한다. N 에 대한 선형성은 `surfaces`
   필드와 합계 ms 의 조합으로 판정한다.
@@ -151,8 +151,8 @@ close_total
   surface 마다 lifecycle 이벤트를 *큐에 넣기만* 하고 `cleanup_surface` /
   `close_workspace_at` 을 호출하지 않는다 — 실측에서도 quit 시 `tasty::shutdown`
   마커만 나오고 `tasty::close` 로그는 나오지 않는다.
-- **C5b 는 `PtyBackend::drop` 전체다.** `pty_master` 해제(Windows 는 여기서
-  `ClosePseudoConsole` 이 자식 종료를 기다린다)를 포함하도록 `pty_master` 를
+- **C5b 는 `Pty::drop` 전체다.** `master` 해제(Windows 는 여기서
+  `ClosePseudoConsole` 이 자식 종료를 기다린다)를 포함하도록 `master` 를
   `Option` 으로 두고 drop 본문 안에서 `take()` 한다 — 필드 자연 해제에 맡기면 그
   비용이 계측 구간 밖으로 새어나간다. 종료 계측 S5b 도 같은 누적기를 쓴다.
 - **C5b 는 자식이 죽기를 기다리지 않는다** — unix 는 SIGHUP 만 보내고 유예 폴링과

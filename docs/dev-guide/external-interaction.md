@@ -244,7 +244,7 @@ Monitor의 전달은 외부 도구 동작에 의존한다. 기존 관측에는 i
   모든 hook 셸 커맨드에 적용된다. **스코프**: self-binary 디렉토리 하나만 추가하며, 로그인쉘(`$SHELL -lc`)
   이나 사용자 커스텀 PATH(nvm/rbenv/cargo bin 등)를 복제하지는 않는다.
 - **공유 헬퍼**: 실제 PATH 계산은 `tasty_utils::process::path_prepending_self_dir` 하나로 통일돼,
-  hook 셸(`spawn_shell`)과 PTY 셸(`crates/tasty-terminal/src/lib.rs::Terminal::new`, conductor 자신의
+  hook 셸(`spawn_shell`)과 PTY 셸(`crates/tasty-terminal/src/pty.rs::build_shell_command`, conductor 자신의
   인터랙티브 터미널이 `tasty` CLI 를 찾는 것도 이 경로 덕분)이 **동일 로직**을 쓴다. 구분자(`:`/`;`)는
   `std::env::{split_paths,join_paths}` 로 크로스플랫폼 처리.
 - **회귀 방어**: `crates/tasty-utils/src/process.rs` 의 `prepends_self_binary_dir_to_minimal_path`

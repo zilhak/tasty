@@ -23,7 +23,7 @@ ConPTY(Windows) / Unix PTY 로 네이티브 셸 실행(`TERM=xterm-256color`). �
 자식 종료를 확인하면 ProcessExited를 한 번 발생시키고 훅 통지와 surface 정리를 수행한다.
 `try_wait`는 보통 Terminal을 깨워 처리할 때 실행하며 확인 간격은 500ms다. PTY EOF 뒤에는 즉시 확인한다.
 
-EOF와 자식 종료는 같은 사건이 아니다. EOF 직후 자식이 아직 실행 중이면 parser가 10ms부터
+EOF와 자식 종료는 같은 사건이 아니다. EOF 직후 자식이 아직 실행 중이면 PTY reader가 10ms부터
 간격을 두 배씩 늘려 최대 500ms마다 다시 깨운다. 종료가 확인되거나 take_child로 소유권을 넘기거나
 Terminal이 사라지면 멈춘다. 이 처리가 없으면 출력이 끝난 뒤 자식 종료를 확인할 기회가 사라질 수 있다.
 
@@ -36,6 +36,22 @@ Windows 절전 복귀는 WM_POWERBROADCAST로 감지한다.
 복구되지 않을 수 있는 surface는 사용자에게 알린다. 멈춤과 정상 대기를 구분할 수 없으므로
 자동 강제 종료·재생성은 하지 않으며 최종 재시작은 사용자가 결정한다.
 macOS·Linux에는 이 Windows 전용 처리를 적용하지 않는다.
+
+### 터미널 상태와 PTY 연결
+
+`tasty-terminal` 안에서 터미널 내용과 OS 연결을 따로 소유한다. 공개 타입 `Terminal`은 둘을 묶은 핸들이다.
+
+| 구성 | 소유하는 것 | 코드 |
+|---|---|---|
+| TerminalState | VT parser, grid, 프로그램 커서·모드, scrollback, 출력 버퍼, output·resize tap, 출력 sink | `lib.rs`, `vte_handler/`, `resize.rs` |
+| Pty / PtyState | 자식 프로세스, PTY master, writer·reader worker, OS resize 예약·적용, 종료 관측, Drop의 종료·회수 | `pty.rs` |
+| OutputSink | 사용자 입력과 VT 응답을 내보내는 현재 연결. local Pty writer 또는 mirror의 attach 입력 채널 | `sink.rs` |
+
+- TerminalState는 Pty를 모르고 OutputSink로만 byte를 내보낸다. DSR/DA/OSC 조회 응답도 ingest 중에 같은 sink로 나간다. mirror에는 Pty가 없으며 sink는 attach 입력 채널이다.
+- Pty는 VT를 모르고 읽은 raw 청크를 받는 쪽 계약(`PtyOutput`)으로 넘긴다. 같은 reader worker가 청크를 바로 ingest하지만 grid와 lock은 Terminal 쪽 소유다.
+- ingest는 한 번의 state lock 안에서 output tap 전달과 grid 갱신을 함께 한다. 그래서 VT snapshot과 tap 등록 사이에 출력이 끼어들지 않는다.
+- resize는 grid 변경과 resize tap 통지가 먼저다. OS resize는 Pty에 예약한 뒤 100ms throttle의 flush에서 적용하므로 tap은 OS 적용 확인이 아니다.
+- `take_child`는 자식의 kill·wait 소유권을 넘긴다. 이후 Pty는 종료를 재촉하지 않고 Drop에서도 그 자식을 건드리지 않는다.
 
 ### VTE 에뮬레이션
 
