@@ -4,8 +4,8 @@ use std::collections::BTreeSet;
 
 use super::common::{scenario, scenario_batches};
 use crate::{
-    CodecError, DomainEvent, EVENT_SCHEMA_VERSION, EncodedEvent, JournalModel, MODEL_VERSION,
-    Ratio, decode_event, decode_snapshot, encode_event, encode_snapshot, evolve,
+    CodecError, DomainEvent, EVENT_SCHEMA_VERSION, EncodedEvent, MODEL_VERSION, Ratio, StreamBatch,
+    StructureModels, decode_event, decode_snapshot, encode_event, encode_snapshot, evolve_streams,
 };
 
 fn decode(payload: &EncodedEvent) -> Result<DomainEvent, CodecError> {
@@ -98,19 +98,23 @@ fn split_ratio_keeps_its_bits() {
 
 #[test]
 fn snapshot_round_trips_at_every_batch() {
-    let mut model = JournalModel::default();
+    let mut models = StructureModels::default();
     for batch in scenario_batches() {
-        evolve(&mut model, &batch).expect("evolve");
-        let bytes = encode_snapshot(&model).expect("encode");
+        let batch = StreamBatch {
+            batch_id: batch.batch_id,
+            streams: [("structure:slot-1".to_owned(), batch.events)].into(),
+        };
+        evolve_streams(&mut models, &batch).expect("evolve");
+        let bytes = encode_snapshot(&models).expect("encode");
         let decoded = decode_snapshot(MODEL_VERSION, &bytes).expect("decode");
-        assert_eq!(decoded, model);
+        assert_eq!(decoded, models);
         assert_eq!(encode_snapshot(&decoded).expect("re-encode"), bytes);
     }
 }
 
 #[test]
 fn snapshot_with_another_model_version_is_rejected() {
-    let bytes = encode_snapshot(&JournalModel::default()).expect("encode");
+    let bytes = encode_snapshot(&StructureModels::default()).expect("encode");
     assert!(matches!(
         decode_snapshot(MODEL_VERSION + 1, &bytes),
         Err(CodecError::UnsupportedModelVersion(v)) if v == MODEL_VERSION + 1

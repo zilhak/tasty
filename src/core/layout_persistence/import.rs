@@ -1,18 +1,21 @@
 //! 기존 layout 슬롯 JSON을 새 구조 journal로 가져온다.
 //!
-//! 슬롯 하나를 이벤트 batch 하나로 확정한다. 새 ID는 journal의 ID 예약에서 받고, 슬롯 안의 위치
+//! 슬롯은 엔진 하나의 자료이므로 그 엔진의 구조 stream([`journal::engine_stream`])에 가져온다.
+//! 슬롯 하나를 이벤트 batch 하나로 확정한다. 새 ID는 journal의 ID 예약에서 받으므로 여러 슬롯을
+//! 가져와도 엔진 사이에서 겹치지 않는다. surface ID는 standalone PTY 범위 아래에서만 받는다. 슬롯 안의 위치
 //! (workspace 순서, 깊이 우선 leaf pane 순서, tab 순서, 깊이 우선 surface 순서)와 새 ID의 대응을
 //! 결과와 명령 기록에 함께 남긴다. 같은 슬롯을 같은 내용으로 다시 가져오면 저장된 대응을 돌려주고
 //! 새로 쓰지 않는다. 선택·접힘 같은 화면 상태는 이벤트로 만들지 않고 결과로만 돌려준다.
 //!
-//! 도메인 모델에 자리가 없는 값(workspace subtitle·description·attach 매핑, tab의 사용자 지정
-//! 이름, terminal의 cwd·복원 명령·scrollback 참조, plugin surface 자료)은 `import.` 접두의
-//! metadata로 담는다. 부팅 경로에는 연결하지 않았다.
+//! workspace 부제·설명·attach 매핑과 tab의 사용자 지정 이름은 전용 이벤트로 기록한다.
+//! terminal의 cwd·복원 명령·scrollback과 plugin surface 자료는 이벤트가 아니라 surface 저장 자료
+//! ([`surface_data::SurfaceData`]) payload로 저장하고 자료 참조로 가리킨다. 부팅 경로에는 연결하지 않았다.
 
 // reason: 부팅 경로에 연결하기 전의 시험 전용 importer라 시험 밖 빌드에서는 호출하는 곳이 없다.
 // 부팅 경로에 연결하면 이 허용을 지운다.
 #![cfg_attr(not(test), allow(dead_code))]
 
+pub(crate) mod surface_data;
 #[cfg(test)]
 mod tests;
 
@@ -21,8 +24,8 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use tasty_domain::{
-    CodecError, DataRef, DomainEvent, IdKind, JournalModel, MetadataTarget, Placement, Ratio,
-    STRUCTURE_STREAM, SplitSpec, SurfaceSpec,
+    CodecError, DataRef, DomainEvent, IdKind, JournalModel, Placement, Ratio, SplitSpec,
+    SurfaceSpec,
 };
 use tasty_event_store::{
     BatchId, CommandKey, CommandLookup, CommandStatus, CommitOutcome, CommitRequest, EventStore,
@@ -30,10 +33,13 @@ use tasty_event_store::{
     WriterEpoch,
 };
 
+use surface_data::SurfaceData;
+
 use super::schema::{
     SavedCategory, SavedLayout, SavedPaneNode, SavedSurface, SavedSurfaceLayout, SavedWorkspace,
 };
 use super::{LayoutSlotId, SlotLoad, classify_slot_json};
+use crate::core::pty_registry::PTY_ID_BASE;
 use crate::model::{
     NORMAL_CATEGORY_ID, PaneId, SurfaceId, TabId, WorkspaceCategoryId, WorkspaceId,
 };
@@ -41,24 +47,6 @@ use crate::runtime::journal::{self, JournalError};
 
 /// 명령 기록의 호출자 범위. 슬롯 번호가 재시도 키가 된다.
 pub(crate) const IMPORT_SCOPE: &str = "layout-import";
-
-/// 도메인 모델에 자리가 없는 값을 담는 metadata 키.
-pub(crate) mod keys {
-    pub(crate) const SUBTITLE: &str = "import.subtitle";
-    pub(crate) const DESCRIPTION: &str = "import.description";
-    /// JSON으로 직렬화한 `WorkspaceAttachMapping`.
-    pub(crate) const ATTACH_MAPPING: &str = "import.attach_mapping";
-    pub(crate) const CWD: &str = "import.terminal.cwd";
-    pub(crate) const RESTORE_COMMAND: &str = "import.terminal.restore_command";
-    pub(crate) const SCROLLBACK_REF: &str = "import.terminal.scrollback_ref";
-    /// JSON으로 직렬화한 plugin surface 자료. 이 키가 있으면 Generic surface다.
-    pub(crate) const GENERIC_DATA: &str = "import.generic.data";
-
-    /// tab에는 metadata가 없어 소속 workspace에 tab ID로 구분해 둔다.
-    pub(crate) fn tab_explicit_name(tab: u32) -> String {
-        format!("import.tab.{tab}.explicit_name")
-    }
-}
 
 /// terminal surface의 kind.
 pub(crate) const TERMINAL_KIND: &str = "terminal";
@@ -86,6 +74,8 @@ pub(crate) enum ImportError {
     IdPoolExhausted(IdKind),
     /// 명령 기록의 대응 자료를 쓰거나 읽지 못했다.
     Mapping(serde_json::Error),
+    /// surface 저장 자료를 만들지 못했다.
+    SurfaceData(serde_json::Error),
 }
 
 impl fmt::Display for ImportError {
@@ -109,6 +99,7 @@ impl fmt::Display for ImportError {
                 write!(f, "reserved {} ids ran out while importing", kind.label())
             }
             Self::Mapping(error) => write!(f, "import mapping: {error}"),
+            Self::SurfaceData(error) => write!(f, "surface data: {error}"),
         }
     }
 }
@@ -257,7 +248,7 @@ pub(crate) struct ImportOutcome {
     pub(crate) moved_to_normal: Vec<usize>,
 }
 
-/// 슬롯 JSON 하나를 journal에 가져온다. 이벤트·명령 기록은 한 transaction으로 확정한다.
+/// 슬롯 JSON 하나를 그 엔진의 구조 stream에 가져온다. 이벤트·명령 기록은 한 transaction으로 확정한다.
 /// ID 예약과 scrollback payload는 그보다 먼저 각자 확정하며, 확정이 실패하면 빈 구간과
 /// 참조되지 않은 payload가 남는다.
 pub(crate) fn import_slot(
@@ -296,7 +287,8 @@ pub(crate) fn import_slot(
         CommandLookup::Miss => {}
     }
 
-    let model = journal::load(store)?;
+    let stream = journal::engine_stream(slot);
+    let model = journal::load(store, &stream)?;
     let categories = categories_of(&layout);
     let ids = IdPools::reserve(store, epoch, &layout, &categories)?;
     let mut plan = Plan::new(ids, &model);
@@ -315,7 +307,16 @@ pub(crate) fn import_slot(
         workspaces: plan.workspaces.clone(),
     };
     let command_id = format!("import-slot-{slot}-{}", epoch.0);
-    let request = commit_request(epoch, &command_id, key, digest, &mapping, &plan, store)?;
+    let request = commit_request(
+        epoch,
+        &command_id,
+        key,
+        digest,
+        &mapping,
+        &plan,
+        store,
+        stream,
+    )?;
     let batch = match store.commit(&request)? {
         CommitOutcome::Committed { batch } => batch.map(|cut| cut.batch_id),
         // 조회와 확정 사이에 같은 키가 기록됐다. 저장된 대응을 쓴다.
@@ -342,6 +343,10 @@ pub(crate) fn import_slot(
     })
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the commit request needs every value that the import plan already holds separately"
+)]
 fn commit_request(
     epoch: WriterEpoch,
     command_id: &str,
@@ -350,8 +355,8 @@ fn commit_request(
     mapping: &ImportMapping,
     plan: &Plan,
     store: &EventStore,
+    stream: StreamId,
 ) -> Result<CommitRequest, ImportError> {
-    let stream = StreamId::new(STRUCTURE_STREAM);
     let head = store.stream_revision(&stream)?;
     let mut events = Vec::with_capacity(plan.events.len());
     for (index, (event, pins)) in plan.events.iter().enumerate() {
@@ -454,6 +459,14 @@ fn count_surfaces(node: &SavedSurfaceLayout) -> u64 {
     }
 }
 
+/// kind별 예약 상한. surface는 standalone PTY ID와 겹치지 않게 그 기준값 아래에서만 받는다.
+fn max_id(kind: IdKind) -> u64 {
+    match kind {
+        IdKind::Surface => u64::from(PTY_ID_BASE - 1),
+        _ => u64::from(u32::MAX),
+    }
+}
+
 /// 가져올 객체 수만큼 미리 예약한 ID.
 struct IdPools {
     pools: BTreeMap<IdKind, std::vec::IntoIter<u32>>,
@@ -494,7 +507,7 @@ impl IdPools {
         for (kind, count) in counts {
             let mut ids = Vec::new();
             if count > 0 {
-                let range = store.reserve_ids(epoch, kind.label(), count, u64::from(u32::MAX))?;
+                let range = store.reserve_ids(epoch, kind.label(), count, max_id(kind))?;
                 for id in range.ids() {
                     ids.push(u32::try_from(id).map_err(|_| ImportError::IdOverflow(id))?);
                 }
@@ -605,7 +618,7 @@ impl Plan {
             pane: pane_ids[0],
         });
         self.pane_splits(&saved.pane_layout, &pane_ids);
-        self.workspace_metadata(id, saved)?;
+        self.workspace_details(id, saved);
         let mut panes = Vec::with_capacity(pane_ids.len());
         for (saved_pane, pane) in saved_panes.iter().zip(pane_ids) {
             let mut tabs = Vec::with_capacity(saved_pane.tabs.len());
@@ -616,11 +629,10 @@ impl Plan {
                 };
                 let tab = self.tab(sink, pane, tab, tab_index, saved_tab)?;
                 if let Some(explicit) = &saved_tab.explicit_name {
-                    self.metadata(
-                        MetadataTarget::Workspace(id),
-                        keys::tab_explicit_name(tab.id),
-                        explicit.clone(),
-                    );
+                    self.push(DomainEvent::TabExplicitNameSet {
+                        id: tab.id,
+                        name: Some(explicit.clone()),
+                    });
                 }
                 tabs.push(tab);
             }
@@ -684,9 +696,6 @@ impl Plan {
             pins,
         ));
         self.surface_splits(sink, &saved.surface, &tab.surfaces)?;
-        for (surface, leaf) in tab.surfaces.iter().zip(&leaves) {
-            self.surface_metadata(*surface, leaf)?;
-        }
         Ok(tab)
     }
 
@@ -721,114 +730,89 @@ impl Plan {
         Ok(())
     }
 
-    /// terminal의 scrollback 파일이 있으면 payload로 저장하고 자료 참조로 둔다.
+    /// surface 저장 자료를 payload로 저장하고 자료 참조로 둔다. 저장할 값이 없으면 참조도 없다.
     fn surface_spec(
         &mut self,
         sink: &mut Sink<'_>,
         id: SurfaceId,
         saved: &SavedSurface,
     ) -> Result<(SurfaceSpec, Vec<PayloadRef>), ImportError> {
-        match saved {
-            SavedSurface::Terminal { scrollback_ref, .. } => {
-                let payload = match scrollback_ref {
-                    Some(persist_id) => self.scrollback_payload(sink, persist_id)?,
+        let (kind, data) = match saved {
+            SavedSurface::Terminal {
+                cwd,
+                restore_command,
+                scrollback_ref,
+            } => {
+                let scrollback = match scrollback_ref {
+                    Some(persist_id) => self.scrollback_bytes(sink, persist_id),
                     None => None,
                 };
-                Ok((
-                    SurfaceSpec {
-                        id,
-                        kind: TERMINAL_KIND.to_owned(),
-                        data: payload.map(|p| DataRef(p.0)),
+                (
+                    TERMINAL_KIND.to_owned(),
+                    SurfaceData::Terminal {
+                        cwd: cwd.clone(),
+                        restore_command: restore_command.clone(),
+                        scrollback_ref: scrollback_ref.clone(),
+                        scrollback,
                     },
-                    payload.into_iter().collect(),
-                ))
+                )
             }
-            SavedSurface::Generic { kind, .. } => Ok((
-                SurfaceSpec {
-                    id,
-                    kind: kind.clone(),
-                    data: None,
-                },
-                Vec::new(),
-            )),
-        }
+            SavedSurface::Generic { kind, data } => {
+                (kind.clone(), SurfaceData::Generic { data: data.clone() })
+            }
+        };
+        let payload = if data.is_empty() {
+            None
+        } else {
+            let bytes = data.encode().map_err(ImportError::SurfaceData)?;
+            Some(sink.store.put_payload(sink.epoch, &bytes)?)
+        };
+        Ok((
+            SurfaceSpec {
+                id,
+                kind,
+                data: payload.map(|p| DataRef(p.0)),
+            },
+            payload.into_iter().collect(),
+        ))
     }
 
-    fn scrollback_payload(
-        &mut self,
-        sink: &mut Sink<'_>,
-        persist_id: &str,
-    ) -> Result<Option<PayloadRef>, ImportError> {
+    /// 파일이 없거나 읽지 못하면 참조만 남기고 내용 없이 계속한다.
+    fn scrollback_bytes(&mut self, sink: &mut Sink<'_>, persist_id: &str) -> Option<Vec<u8>> {
         match sink.scrollback.read_bytes(persist_id) {
-            Ok(Some(bytes)) => Ok(Some(sink.store.put_payload(sink.epoch, &bytes)?)),
+            Ok(Some(bytes)) => Some(bytes),
             Ok(None) => {
                 tracing::warn!(
                     "layout import: scrollback {persist_id} is missing; recording the reference only"
                 );
                 self.missing_scrollback.push(persist_id.to_owned());
-                Ok(None)
+                None
             }
             Err(error) => {
                 tracing::warn!(
                     "layout import: reading scrollback {persist_id} failed: {error}; recording the reference only"
                 );
                 self.missing_scrollback.push(persist_id.to_owned());
-                Ok(None)
+                None
             }
         }
     }
 
-    fn surface_metadata(&mut self, id: SurfaceId, saved: &SavedSurface) -> Result<(), ImportError> {
-        let target = MetadataTarget::Surface(id);
-        match saved {
-            SavedSurface::Terminal {
-                cwd,
-                restore_command,
-                scrollback_ref,
-            } => {
-                for (key, value) in [
-                    (keys::CWD, cwd),
-                    (keys::RESTORE_COMMAND, restore_command),
-                    (keys::SCROLLBACK_REF, scrollback_ref),
-                ] {
-                    if let Some(value) = value {
-                        self.metadata(target, key.to_owned(), value.clone());
-                    }
-                }
-            }
-            SavedSurface::Generic { data, .. } => {
-                let json = serde_json::to_string(data).map_err(ImportError::Mapping)?;
-                self.metadata(target, keys::GENERIC_DATA.to_owned(), json);
-            }
-        }
-        Ok(())
-    }
-
-    fn workspace_metadata(
-        &mut self,
-        id: WorkspaceId,
-        saved: &SavedWorkspace,
-    ) -> Result<(), ImportError> {
-        let target = MetadataTarget::Workspace(id);
-        if !saved.subtitle.is_empty() {
-            self.metadata(target, keys::SUBTITLE.to_owned(), saved.subtitle.clone());
-        }
-        if !saved.description.is_empty() {
-            self.metadata(
-                target,
-                keys::DESCRIPTION.to_owned(),
-                saved.description.clone(),
-            );
+    /// 빈 부제·설명과 없는 연결 설정은 기본값이라 기록하지 않는다.
+    fn workspace_details(&mut self, id: WorkspaceId, saved: &SavedWorkspace) {
+        if !saved.subtitle.is_empty() || !saved.description.is_empty() {
+            self.push(DomainEvent::WorkspaceDetailsSet {
+                id,
+                subtitle: saved.subtitle.clone(),
+                description: saved.description.clone(),
+            });
         }
         if let Some(mapping) = &saved.attach_mapping {
-            let json = serde_json::to_string(mapping).map_err(ImportError::Mapping)?;
-            self.metadata(target, keys::ATTACH_MAPPING.to_owned(), json);
+            self.push(DomainEvent::WorkspaceAttachMappingSet {
+                id,
+                mapping: Some(mapping.clone()),
+            });
         }
-        Ok(())
-    }
-
-    fn metadata(&mut self, target: MetadataTarget, key: String, value: String) {
-        self.push(DomainEvent::MetadataSet { target, key, value });
     }
 }
 

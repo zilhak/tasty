@@ -151,6 +151,19 @@ pub fn scenario() -> Vec<Vec<DomainEvent>> {
                 index: 0,
             },
             DomainEvent::CategoryMoved { id: 1, index: 0 },
+            DomainEvent::WorkspaceDetailsSet {
+                id: ws,
+                subtitle: "sub".to_owned(),
+                description: "desc".to_owned(),
+            },
+            DomainEvent::WorkspaceAttachMappingSet {
+                id: ws,
+                mapping: Some(tasty_model::WorkspaceAttachMapping::profile("box", Some(4))),
+            },
+            DomainEvent::TabExplicitNameSet {
+                id: 1,
+                name: Some("Build!".to_owned()),
+            },
         ],
         vec![
             DomainEvent::SurfaceMoved {
@@ -171,6 +184,10 @@ pub fn scenario() -> Vec<Vec<DomainEvent>> {
             DomainEvent::MetadataRemoved {
                 target: MetadataTarget::Workspace(ws),
                 key: "project".to_owned(),
+            },
+            DomainEvent::WorkspaceAttachMappingSet {
+                id: ws,
+                mapping: None,
             },
         ],
         vec![

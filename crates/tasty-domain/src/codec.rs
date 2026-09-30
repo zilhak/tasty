@@ -4,13 +4,13 @@
 //! 본문 바이트만 만든다.
 
 use crate::event::DomainEvent;
-use crate::model::JournalModel;
+use crate::streams::StructureModels;
 
 /// 이 빌드가 쓰고 읽는 이벤트 schema version.
 pub const EVENT_SCHEMA_VERSION: u32 = 1;
 
-/// 이 빌드가 쓰고 읽는 snapshot model version.
-pub const MODEL_VERSION: u32 = 1;
+/// 이 빌드가 쓰고 읽는 snapshot model version. 2부터 snapshot 하나가 모든 엔진 stream 모델을 담는다.
+pub const MODEL_VERSION: u32 = 2;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CodecError {
@@ -83,11 +83,11 @@ pub fn decode_event(
     Ok(event)
 }
 
-pub fn encode_snapshot(model: &JournalModel) -> Result<Vec<u8>, CodecError> {
-    serde_json::to_vec(model).map_err(CodecError::Encode)
+pub fn encode_snapshot(models: &StructureModels) -> Result<Vec<u8>, CodecError> {
+    serde_json::to_vec(models).map_err(CodecError::Encode)
 }
 
-pub fn decode_snapshot(model_version: u32, bytes: &[u8]) -> Result<JournalModel, CodecError> {
+pub fn decode_snapshot(model_version: u32, bytes: &[u8]) -> Result<StructureModels, CodecError> {
     if model_version != MODEL_VERSION {
         return Err(CodecError::UnsupportedModelVersion(model_version));
     }

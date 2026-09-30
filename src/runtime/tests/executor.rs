@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use tasty_domain::{
     Decider, Decision, DecisionContext, DomainEvent, IdKind, JournalModel, MemoryIdSupplier,
-    STRUCTURE_STREAM, SurfaceSpec,
+    SurfaceSpec,
 };
 use tasty_event_store::{
     CommandKey, CommandLookup, EffectState, EventStore, NewEffect, OpaquePayload, Revision,
@@ -150,7 +150,7 @@ impl Decider for Fake {
 
 impl JournalDecider for Fake {
     fn stream(&self) -> StreamId {
-        StreamId::new(STRUCTURE_STREAM)
+        super::common::stream()
     }
 
     fn encode(&self, event: &DomainEvent) -> Result<OpaquePayload, String> {
@@ -158,11 +158,11 @@ impl JournalDecider for Fake {
     }
 
     fn apply(&self, state: &mut JournalModel, batch: &StoredBatch) -> Result<(), String> {
-        journal::apply(state, batch).map_err(|e| e.to_string())
+        journal::apply(state, &self.stream(), batch).map_err(|e| e.to_string())
     }
 
     fn load(&self, store: &EventStore) -> Result<JournalModel, String> {
-        journal::load(store).map_err(|e| e.to_string())
+        journal::load(store, &self.stream()).map_err(|e| e.to_string())
     }
 }
 
@@ -254,7 +254,7 @@ fn ids_after(model: &JournalModel) -> Box<MemoryIdSupplier> {
 
 fn open(path: &std::path::Path, fake: &Fake) -> Executor<Fake> {
     let store = EventStore::open(path, JOURNAL).expect("open journal");
-    let model = journal::load(&store).expect("load");
+    let model = journal::load(&store, &super::common::stream()).expect("load");
     Executor::open(fake.clone(), store, ids_after(&model)).expect("executor")
 }
 
@@ -285,7 +285,12 @@ fn committed_batch_is_applied_and_matches_the_journal() {
     assert_eq!(model.workspace_order, vec![1, 2]);
     drop(executor);
     let store = EventStore::open(&path, JOURNAL).expect("reopen");
-    assert_eq!(journal::full_replay(&store).expect("replay"), model);
+    assert_eq!(
+        journal::full_replay(&store)
+            .expect("replay")
+            .stream(super::common::stream().as_str()),
+        model
+    );
 }
 
 #[test]
@@ -339,7 +344,10 @@ fn failed_commit_leaves_state_unchanged_and_sends_no_response() {
             CommandLookup::Miss
         );
     }
-    assert_eq!(journal::load(&store).expect("load"), before);
+    assert_eq!(
+        journal::load(&store, &super::common::stream()).expect("load"),
+        before
+    );
 }
 
 #[test]

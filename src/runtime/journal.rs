@@ -1,18 +1,25 @@
 //! 저장 batch ↔ 도메인 batch 변환과 journal에서의 모델 재구성·snapshot 저장.
 //!
-//! 저장 봉투(`OpaquePayload`)와 도메인 이벤트 본문 사이의 변환은 여기서만 한다. 구조 stream이
-//! 아닌 이벤트는 해석하지 않고 건너뛰며, batch 위치는 도메인 batch로 그대로 넘긴다.
+//! 저장 봉투(`OpaquePayload`)와 도메인 이벤트 본문 사이의 변환은 여기서만 한다. journal 하나에
+//! 엔진마다 구조 stream이 하나 있으며 이름은 [`engine_stream`]이 정한다. 구조 stream이 아닌 이벤트는
+//! 해석하지 않고 건너뛰며, batch 위치는 모든 엔진 모델에 그대로 넘긴다.
 
 use std::fmt;
 
 use tasty_domain::{
-    CodecError, DomainBatch, DomainEvent, EvolveError, JournalModel, MODEL_VERSION, RecordedEvent,
-    STRUCTURE_STREAM, decode_event, decode_snapshot, encode_event, encode_snapshot, evolve,
+    CodecError, DomainEvent, EvolveError, JournalModel, MODEL_VERSION, RecordedEvent,
+    STRUCTURE_STREAM_PREFIX, StreamBatch, StructureModels, decode_event, decode_snapshot,
+    encode_event, encode_snapshot, evolve_streams, is_structure_stream,
 };
 use tasty_event_store::{
     EventStore, NewSnapshot, OpaquePayload, PayloadRef, SnapshotId, StoreError, StoredBatch,
-    WriterEpoch,
+    StreamId, WriterEpoch,
 };
+
+/// 엔진의 구조 stream. 엔진의 영속 식별은 그 엔진이 쓰는 레이아웃 슬롯 번호다.
+pub(crate) fn engine_stream(slot: u32) -> StreamId {
+    StreamId::new(format!("{STRUCTURE_STREAM_PREFIX}slot-{slot}"))
+}
 
 #[derive(Debug)]
 pub(crate) enum JournalError {
@@ -78,74 +85,104 @@ pub(crate) fn to_payload(event: &DomainEvent) -> Result<OpaquePayload, CodecErro
     })
 }
 
-/// 저장 batch에서 구조 stream 이벤트만 해석한다. 모르는 tag·version이면 멈춘다.
-pub(crate) fn domain_batch(batch: &StoredBatch) -> Result<DomainBatch, CodecError> {
-    let mut events = Vec::new();
+/// 저장 batch에서 엔진 구조 stream 이벤트만 stream별로 해석한다. 모르는 tag·version이면 멈춘다.
+pub(crate) fn stream_batch(batch: &StoredBatch) -> Result<StreamBatch, CodecError> {
+    let mut out = StreamBatch {
+        batch_id: batch.cut.batch_id,
+        streams: Default::default(),
+    };
     for stored in &batch.events {
-        if stored.stream_id.as_str() != STRUCTURE_STREAM {
+        if !is_structure_stream(stored.stream_id.as_str()) {
             continue;
         }
         let payload = &stored.payload;
-        events.push(RecordedEvent {
-            revision: stored.stream_revision,
-            event: decode_event(&payload.type_tag, payload.schema_version, &payload.bytes)?,
-        });
+        out.streams
+            .entry(stored.stream_id.as_str().to_owned())
+            .or_default()
+            .push(RecordedEvent {
+                revision: stored.stream_revision,
+                event: decode_event(&payload.type_tag, payload.schema_version, &payload.bytes)?,
+            });
     }
-    Ok(DomainBatch {
-        batch_id: batch.cut.batch_id,
-        events,
-    })
+    Ok(out)
 }
 
-/// 저장 batch 하나를 모델에 적용한다. 해석이나 적용이 실패하면 모델은 그대로다.
-pub(crate) fn apply(model: &mut JournalModel, batch: &StoredBatch) -> Result<(), JournalError> {
-    evolve(model, &domain_batch(batch)?)?;
+/// 저장 batch 하나를 모든 엔진 모델에 적용한다. 해석이나 적용이 실패하면 어느 모델도 바뀌지 않는다.
+pub(crate) fn apply_all(
+    models: &mut StructureModels,
+    batch: &StoredBatch,
+) -> Result<(), JournalError> {
+    evolve_streams(models, &stream_batch(batch)?)?;
     Ok(())
 }
 
-/// 가장 최근의 검증된 snapshot과 그 뒤 batch로 모델을 만든다. snapshot이 없으면 전체 로그를 쓴다.
+/// 저장 batch 하나를 엔진 stream 하나의 모델에 적용한다. 다른 stream은 해석만 하고 적용하지 않는다.
+pub(crate) fn apply(
+    model: &mut JournalModel,
+    stream: &StreamId,
+    batch: &StoredBatch,
+) -> Result<(), JournalError> {
+    let mut decoded = stream_batch(batch)?;
+    let events = decoded.streams.remove(stream.as_str()).unwrap_or_default();
+    tasty_domain::evolve(
+        model,
+        &tasty_domain::DomainBatch {
+            batch_id: decoded.batch_id,
+            events,
+        },
+    )?;
+    Ok(())
+}
+
+/// 가장 최근의 검증된 snapshot과 그 뒤 batch로 모든 엔진 모델을 만든다. snapshot이 없으면 전체 로그를 쓴다.
 /// snapshot 내용을 해석하지 못하면 다른 snapshot으로 넘어가지 않고 오류로 중단한다.
-pub(crate) fn load(store: &EventStore) -> Result<JournalModel, JournalError> {
+pub(crate) fn load_all(store: &EventStore) -> Result<StructureModels, JournalError> {
     let replay = store.snapshot_and_tail(MODEL_VERSION)?;
-    let mut model = match replay.snapshot {
+    let mut models = match replay.snapshot {
         Some(snapshot) => {
-            let model = decode_snapshot(snapshot.model_version, &snapshot.bytes)?;
-            if model.applied.batch != snapshot.cut.last_batch {
+            let models = decode_snapshot(snapshot.model_version, &snapshot.bytes)?;
+            if models.batch != snapshot.cut.last_batch {
                 return Err(JournalError::SnapshotCutMismatch {
                     snapshot_id: snapshot.snapshot_id,
                     stored: snapshot.cut.last_batch,
-                    model: model.applied.batch,
+                    model: models.batch,
                 });
             }
-            model
+            models
         }
-        None => JournalModel::default(),
+        None => StructureModels::default(),
     };
     for batch in &replay.tail {
-        apply(&mut model, batch)?;
+        apply_all(&mut models, batch)?;
     }
-    Ok(model)
+    Ok(models)
 }
 
-/// 전체 로그만으로 모델을 만든다. snapshot+tail 결과와 대조할 때 쓴다.
-pub(crate) fn full_replay(store: &EventStore) -> Result<JournalModel, JournalError> {
-    let mut model = JournalModel::default();
+/// 엔진 stream 하나의 모델. 이벤트가 아직 없는 엔진이면 빈 모델이다.
+pub(crate) fn load(store: &EventStore, stream: &StreamId) -> Result<JournalModel, JournalError> {
+    Ok(load_all(store)?.stream(stream.as_str()))
+}
+
+/// 전체 로그만으로 모든 엔진 모델을 만든다. snapshot+tail 결과와 대조할 때 쓴다.
+pub(crate) fn full_replay(store: &EventStore) -> Result<StructureModels, JournalError> {
+    let mut models = StructureModels::default();
     for batch in store.read_batches_after(None, usize::MAX)? {
-        apply(&mut model, &batch)?;
+        apply_all(&mut models, &batch)?;
     }
-    Ok(model)
+    Ok(models)
 }
 
-/// 모델을 마지막 적용 batch 위치의 snapshot으로 저장한다. surface 자료 참조를 함께 pin한다.
+/// 모든 엔진 모델을 마지막 적용 batch 위치의 snapshot 하나로 저장한다. surface 자료 참조를 함께 pin한다.
 pub(crate) fn save_snapshot(
     store: &mut EventStore,
     epoch: WriterEpoch,
-    model: &JournalModel,
+    models: &StructureModels,
 ) -> Result<SnapshotId, JournalError> {
-    let batch_id = model.applied.batch.ok_or(JournalError::NothingApplied)?;
-    let referenced_payloads = model
-        .surfaces
+    let batch_id = models.batch.ok_or(JournalError::NothingApplied)?;
+    let referenced_payloads = models
+        .streams
         .values()
+        .flat_map(|model| model.surfaces.values())
         .filter_map(|s| s.data)
         .map(|d| PayloadRef(d.0))
         .collect();
@@ -154,7 +191,7 @@ pub(crate) fn save_snapshot(
         &NewSnapshot {
             batch_id,
             model_version: MODEL_VERSION,
-            bytes: encode_snapshot(model)?,
+            bytes: encode_snapshot(models)?,
             referenced_payloads,
         },
     )?)

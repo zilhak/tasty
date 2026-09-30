@@ -1,13 +1,15 @@
-//! 실제 journal에서의 replay: 전체 로그와 snapshot+tail의 일치, 다른 stream 건너뛰기,
-//! 모르는 tag 중단.
+//! 실제 journal에서의 replay: 전체 로그와 snapshot+tail의 일치, 엔진 stream 분리, 다른 stream
+//! 건너뛰기, 모르는 tag 중단.
 
-use tasty_domain::{CodecError, DomainEvent, JournalModel, MODEL_VERSION, STRUCTURE_STREAM};
+use tasty_domain::{CodecError, DomainEvent, MODEL_VERSION, StructureModels};
 use tasty_event_store::{
     CommitRequest, ExpectedRevision, NewEvent, OpaquePayload, PayloadRef, StreamAppend, StreamId,
 };
 
-use super::common::{commit_events, db_path, new_event, open, scenario};
-use crate::runtime::journal::{JournalError, full_replay, load, save_snapshot};
+use super::common::{commit_events, db_path, new_event, open, scenario, stream};
+use crate::runtime::journal::{
+    JournalError, engine_stream, full_replay, load, load_all, save_snapshot,
+};
 
 #[test]
 fn full_replay_equals_snapshot_plus_tail() {
@@ -21,23 +23,21 @@ fn full_replay_equals_snapshot_plus_tail() {
     for events in &batches[..2] {
         commit_events(&mut store, epoch, events);
     }
-    let mid = load(&store).expect("load without snapshot");
+    let mid = load_all(&store).expect("load without snapshot");
     save_snapshot(&mut store, epoch, &mid).expect("snapshot");
     for events in &batches[2..] {
         commit_events(&mut store, epoch, events);
     }
 
     let full = full_replay(&store).expect("full replay");
-    let fast = load(&store).expect("snapshot + tail");
+    let fast = load_all(&store).expect("snapshot + tail");
     assert_eq!(full, fast);
-    let revision = store
-        .stream_revision(&StreamId::new(STRUCTURE_STREAM))
-        .expect("head");
-    assert_eq!(fast.applied.revision, revision);
-    assert_eq!(
-        fast.applied.batch,
-        store.current_cut().expect("cut").last_batch
-    );
+    let revision = store.stream_revision(&stream()).expect("head");
+    let engine = fast.stream(stream().as_str());
+    assert_eq!(engine.applied.revision, revision);
+    let last = store.current_cut().expect("cut").last_batch;
+    assert_eq!(engine.applied.batch, last);
+    assert_eq!(fast.batch, last);
     assert_ne!(mid, fast);
     assert!(
         store
@@ -49,7 +49,7 @@ fn full_replay_equals_snapshot_plus_tail() {
 
     drop(store);
     let (reopened, _) = open(&path);
-    assert_eq!(load(&reopened).expect("reload"), full);
+    assert_eq!(load_all(&reopened).expect("reload"), full);
 }
 
 #[test]
@@ -59,12 +59,12 @@ fn snapshot_at_the_head_needs_no_tail() {
     for events in scenario() {
         commit_events(&mut store, epoch, &events);
     }
-    let model = load(&store).expect("load");
-    save_snapshot(&mut store, epoch, &model).expect("snapshot");
+    let models = load_all(&store).expect("load");
+    save_snapshot(&mut store, epoch, &models).expect("snapshot");
     let replay = store.snapshot_and_tail(MODEL_VERSION).expect("replay");
     assert!(replay.snapshot.is_some());
     assert!(replay.tail.is_empty());
-    assert_eq!(load(&store).expect("reload"), model);
+    assert_eq!(load_all(&store).expect("reload"), models);
 }
 
 #[test]
@@ -72,7 +72,7 @@ fn empty_model_cannot_be_snapshotted() {
     let dir = tempfile::tempdir().expect("tempdir");
     let (mut store, epoch) = open(&db_path(&dir));
     assert!(matches!(
-        save_snapshot(&mut store, epoch, &JournalModel::default()),
+        save_snapshot(&mut store, epoch, &StructureModels::default()),
         Err(JournalError::NothingApplied)
     ));
 }
@@ -84,7 +84,7 @@ fn unknown_tag_in_the_journal_stops_the_replay() {
     commit_events(&mut store, epoch, &scenario()[0]);
     let mut request = CommitRequest::new(epoch);
     request.appends.push(StreamAppend {
-        stream_id: StreamId::new(STRUCTURE_STREAM),
+        stream_id: stream(),
         expected: ExpectedRevision::Any,
         events: vec![NewEvent {
             event_id: "future".to_owned(),
@@ -101,7 +101,7 @@ fn unknown_tag_in_the_journal_stops_the_replay() {
         }],
     });
     store.commit(&request).expect("commit");
-    for result in [load(&store), full_replay(&store)] {
+    for result in [load_all(&store), full_replay(&store)] {
         assert!(matches!(
             result,
             Err(JournalError::Codec(CodecError::UnknownTag(tag))) if tag == "window.created"
@@ -125,9 +125,47 @@ fn other_streams_are_skipped_but_the_batch_is_recorded() {
         )],
     });
     store.commit(&request).expect("commit");
-    let model = full_replay(&store).expect("replay");
+    let models = full_replay(&store).expect("replay");
+    assert_eq!(models.streams.len(), 1);
+    let model = models.stream(stream().as_str());
     assert_eq!(model.applied.batch, Some(2));
     assert_eq!(model.applied.revision, Some(3));
     assert!(model.tabs.contains_key(&1));
-    assert_eq!(load(&store).expect("load"), model);
+    assert_eq!(load(&store, &stream()).expect("load"), model);
+}
+
+/// 한 batch가 두 엔진 stream을 함께 바꿔도 각 엔진 모델은 자기 stream 이벤트만 담는다.
+/// snapshot 하나가 두 엔진을 같은 cut으로 담는다.
+#[test]
+fn engine_streams_are_separate_models_in_one_snapshot() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (mut store, epoch) = open(&db_path(&dir));
+    let first = scenario().remove(0);
+    let other = engine_stream(2);
+    let mut request = CommitRequest::new(epoch);
+    for (stream_id, prefix) in [(stream(), "a"), (other.clone(), "b")] {
+        request.appends.push(StreamAppend {
+            stream_id,
+            expected: ExpectedRevision::NoStream,
+            events: first
+                .iter()
+                .enumerate()
+                .map(|(i, e)| new_event(format!("{prefix}-{i}"), e))
+                .collect(),
+        });
+    }
+    store.commit(&request).expect("commit");
+    commit_events(&mut store, epoch, &scenario()[1]);
+
+    let models = load_all(&store).expect("load");
+    assert_eq!(models.streams.len(), 2);
+    let one = models.stream(stream().as_str());
+    let two = models.stream(other.as_str());
+    assert_eq!(two.applied.revision, Some(first.len() as u64));
+    assert_eq!(two.applied.batch, Some(2));
+    assert!(one.panes.len() > two.panes.len());
+    save_snapshot(&mut store, epoch, &models).expect("snapshot");
+    assert_eq!(load_all(&store).expect("reload"), models);
+    assert_eq!(full_replay(&store).expect("replay"), models);
+    assert_eq!(load(&store, &other).expect("engine 2"), two);
 }

@@ -11,9 +11,6 @@ use crate::event::{DomainBatch, DomainEvent, MetadataTarget, SplitSpec, SurfaceS
 use crate::ids::{BatchId, IdKind, Revision};
 use crate::model::{Category, JournalModel, Pane, RemoveLeaf, SplitTree, Surface, Tab, Workspace};
 
-/// 구조 이벤트를 담는 stream 이름. 저장 batch에서 이 stream만 골라 [`DomainBatch`]를 만든다.
-pub const STRUCTURE_STREAM: &str = "structure";
-
 #[derive(Debug, thiserror::Error)]
 pub enum EvolveError {
     #[error("batch {got} is not after the last applied batch {last}")]
@@ -96,6 +93,20 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
             get_mut(&mut m.workspaces, IdKind::Workspace, id)?.name = name;
             Ok(())
         }
+        DomainEvent::WorkspaceDetailsSet {
+            id,
+            subtitle,
+            description,
+        } => {
+            let workspace = get_mut(&mut m.workspaces, IdKind::Workspace, id)?;
+            workspace.subtitle = subtitle;
+            workspace.description = description;
+            Ok(())
+        }
+        DomainEvent::WorkspaceAttachMappingSet { id, mapping } => {
+            get_mut(&mut m.workspaces, IdKind::Workspace, id)?.attach_mapping = mapping;
+            Ok(())
+        }
         DomainEvent::WorkspaceMoved {
             id,
             category,
@@ -118,6 +129,10 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
         } => create_tab(m, id, pane, index, name, surface),
         DomainEvent::TabRenamed { id, name } => {
             get_mut(&mut m.tabs, IdKind::Tab, id)?.name = name;
+            Ok(())
+        }
+        DomainEvent::TabExplicitNameSet { id, name } => {
+            get_mut(&mut m.tabs, IdKind::Tab, id)?.explicit_name = name;
             Ok(())
         }
         DomainEvent::TabMoved { id, pane, index } => move_tab(m, id, pane, index),
@@ -185,6 +200,9 @@ fn create_workspace(
             name,
             category,
             layout: SplitTree::Leaf(pane),
+            subtitle: String::new(),
+            description: String::new(),
+            attach_mapping: None,
             metadata: Default::default(),
         },
     );
@@ -301,6 +319,7 @@ fn create_tab(
         Tab {
             pane,
             name,
+            explicit_name: None,
             layout: SplitTree::Leaf(surface.id),
         },
     );

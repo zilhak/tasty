@@ -4,3 +4,4 @@ mod common;
 
 mod codec;
 mod evolve;
+mod streams;

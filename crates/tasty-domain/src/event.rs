@@ -1,8 +1,11 @@
-//! 구조 stream의 도메인 이벤트. 이미 결정된 사실만 담으며 적용 중에 새 ID·시각을 만들지 않는다.
+//! 엔진 구조 stream의 도메인 이벤트. 이미 결정된 사실만 담으며 적용 중에 새 ID·시각을 만들지 않는다.
 
 use serde::{Deserialize, Serialize};
 
-use tasty_model::{PaneId, SplitDirection, SurfaceId, TabId, WorkspaceCategoryId, WorkspaceId};
+use tasty_model::{
+    PaneId, SplitDirection, SurfaceId, TabId, WorkspaceAttachMapping, WorkspaceCategoryId,
+    WorkspaceId,
+};
 
 use crate::ids::{BatchId, Revision};
 use crate::model::{DataRef, Placement, Ratio, SplitDirectionDef};
@@ -66,6 +69,19 @@ pub enum DomainEvent {
     },
     #[serde(rename = "workspace.renamed")]
     WorkspaceRenamed { id: WorkspaceId, name: String },
+    /// 부제와 설명을 함께 정한다. 빈 문자열은 값이 없다는 뜻이다.
+    #[serde(rename = "workspace.details_set")]
+    WorkspaceDetailsSet {
+        id: WorkspaceId,
+        subtitle: String,
+        description: String,
+    },
+    /// `None`이면 연결 설정을 지운다.
+    #[serde(rename = "workspace.attach_mapping_set")]
+    WorkspaceAttachMappingSet {
+        id: WorkspaceId,
+        mapping: Option<WorkspaceAttachMapping>,
+    },
     /// 순서와 카테고리 소속을 함께 바꾼다.
     #[serde(rename = "workspace.moved")]
     WorkspaceMoved {
@@ -104,6 +120,9 @@ pub enum DomainEvent {
     },
     #[serde(rename = "tab.renamed")]
     TabRenamed { id: TabId, name: String },
+    /// `None`이면 사용자 지정 이름을 지운다.
+    #[serde(rename = "tab.explicit_name_set")]
+    TabExplicitNameSet { id: TabId, name: Option<String> },
     #[serde(rename = "tab.moved")]
     TabMoved {
         id: TabId,
@@ -149,6 +168,8 @@ impl DomainEvent {
         "category.closed",
         "workspace.created",
         "workspace.renamed",
+        "workspace.details_set",
+        "workspace.attach_mapping_set",
         "workspace.moved",
         "workspace.closed",
         "pane.split",
@@ -156,6 +177,7 @@ impl DomainEvent {
         "pane.closed",
         "tab.created",
         "tab.renamed",
+        "tab.explicit_name_set",
         "tab.moved",
         "tab.closed",
         "surface.split",
@@ -173,6 +195,8 @@ impl DomainEvent {
             Self::CategoryClosed { .. } => "category.closed",
             Self::WorkspaceCreated { .. } => "workspace.created",
             Self::WorkspaceRenamed { .. } => "workspace.renamed",
+            Self::WorkspaceDetailsSet { .. } => "workspace.details_set",
+            Self::WorkspaceAttachMappingSet { .. } => "workspace.attach_mapping_set",
             Self::WorkspaceMoved { .. } => "workspace.moved",
             Self::WorkspaceClosed { .. } => "workspace.closed",
             Self::PaneSplit { .. } => "pane.split",
@@ -180,6 +204,7 @@ impl DomainEvent {
             Self::PaneClosed { .. } => "pane.closed",
             Self::TabCreated { .. } => "tab.created",
             Self::TabRenamed { .. } => "tab.renamed",
+            Self::TabExplicitNameSet { .. } => "tab.explicit_name_set",
             Self::TabMoved { .. } => "tab.moved",
             Self::TabClosed { .. } => "tab.closed",
             Self::SurfaceSplit { .. } => "surface.split",
@@ -191,14 +216,14 @@ impl DomainEvent {
     }
 }
 
-/// 구조 stream에 확정된 이벤트 하나와 그 revision.
+/// 엔진 구조 stream 하나에 확정된 이벤트와 그 stream의 revision.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RecordedEvent {
     pub revision: Revision,
     pub event: DomainEvent,
 }
 
-/// 확정 batch의 도메인 입력. 저장 batch에서 구조 stream 이벤트만 해석해 순서대로 담는다.
+/// 확정 batch에서 엔진 구조 stream 하나의 도메인 입력. 저장 batch에서 그 stream 이벤트만 해석해 순서대로 담는다.
 /// 구조 이벤트가 없는 batch도 적용 위치를 옮기기 위해 빈 목록으로 전달한다.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DomainBatch {

@@ -3,7 +3,10 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use tasty_model::{PaneId, SplitDirection, SurfaceId, TabId, WorkspaceCategoryId, WorkspaceId};
+use tasty_model::{
+    PaneId, SplitDirection, SurfaceId, TabId, WorkspaceAttachMapping, WorkspaceCategoryId,
+    WorkspaceId,
+};
 
 use crate::ids::{BatchId, Revision};
 
@@ -136,7 +139,8 @@ pub(crate) enum RemoveLeaf {
     LastLeaf,
 }
 
-/// surface kind 고유 자료의 참조. 내용은 journal의 불변 payload에 있다.
+/// surface kind 고유 저장 자료의 참조. 내용은 journal의 불변 payload에 있고 해석은 kind 소유자가 한다.
+/// terminal의 cwd·복원 명령·scrollback처럼 관측해 저장하는 값은 이벤트가 아니라 이 자료에 담는다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct DataRef(pub u64);
@@ -151,6 +155,12 @@ pub struct Workspace {
     pub name: String,
     pub category: WorkspaceCategoryId,
     pub layout: SplitTree<PaneId>,
+    /// 사용자·에이전트가 쓰는 부제. 없으면 빈 문자열이다.
+    pub subtitle: String,
+    pub description: String,
+    /// 원격 프로필·원격 workspace와의 연결 설정. Remote의 runtime ID mapping과 다르다.
+    pub attach_mapping: Option<WorkspaceAttachMapping>,
+    /// 사용자 정의 키만 담는다. 위의 typed 속성을 예약 키로 넣지 않는다.
     pub metadata: BTreeMap<String, String>,
 }
 
@@ -164,6 +174,8 @@ pub struct Pane {
 pub struct Tab {
     pub pane: PaneId,
     pub name: String,
+    /// 사용자가 지정한 이름. 빈 문자열도 지정한 값이며 `None`과 다르다.
+    pub explicit_name: Option<String>,
     pub layout: SplitTree<SurfaceId>,
 }
 
@@ -185,7 +197,7 @@ pub struct Applied {
     pub revision: Option<Revision>,
 }
 
-/// 구조 stream을 적용한 결과. 순서는 `*_order`와 각 부모의 목록이 정한다.
+/// 엔진 하나의 구조 stream을 적용한 결과. 순서는 `*_order`와 각 부모의 목록이 정한다.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct JournalModel {
     pub applied: Applied,

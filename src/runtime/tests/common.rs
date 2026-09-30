@@ -3,8 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use tasty_domain::{
-    DataRef, DomainEvent, MetadataTarget, Placement, Ratio, STRUCTURE_STREAM, SplitSpec,
-    SurfaceSpec,
+    DataRef, DomainEvent, MetadataTarget, Placement, Ratio, SplitSpec, SurfaceSpec,
 };
 use tasty_event_store::{
     BatchCut, CommitOutcome, CommitRequest, EventStore, ExpectedRevision, NewEvent, StreamAppend,
@@ -12,9 +11,14 @@ use tasty_event_store::{
 };
 use tasty_model::SplitDirection;
 
-use crate::runtime::journal::to_payload;
+use crate::runtime::journal::{engine_stream, to_payload};
 
 pub(super) const JOURNAL: &str = "journal-runtime-test";
+
+/// 시험 엔진(슬롯 1)의 구조 stream.
+pub(super) fn stream() -> StreamId {
+    engine_stream(1)
+}
 
 pub(super) fn db_path(dir: &tempfile::TempDir) -> PathBuf {
     dir.path().join("journal.db")
@@ -38,13 +42,13 @@ pub(super) fn new_event(id: String, event: &DomainEvent) -> NewEvent {
     }
 }
 
-/// 이벤트를 구조 stream에 한 batch로 확정한다.
+/// 이벤트를 시험 엔진의 구조 stream에 한 batch로 확정한다.
 pub(super) fn commit_events(
     store: &mut EventStore,
     epoch: WriterEpoch,
     events: &[DomainEvent],
 ) -> BatchCut {
-    let stream = StreamId::new(STRUCTURE_STREAM);
+    let stream = stream();
     let head = store.stream_revision(&stream).expect("head");
     let start = head.unwrap_or(0);
     let mut request = CommitRequest::new(epoch);
