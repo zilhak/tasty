@@ -1,0 +1,122 @@
+//! 불변 payload generation. 내용은 한 번 쓰면 바꾸지 않는다. 삭제는 참조(pin) 해제이고,
+//! 실제 행 삭제는 참조가 하나도 없는 payload만 지우는 [`EventStore::gc_payloads`]가 한다.
+//!
+//! 새로 넣은 payload는 참조가 생기기 전까지 GC 대상이다. 참조할 기록을 commit하기 전에 GC가
+//! 돌았으면 그 commit은 [`StoreError::PayloadMissing`]으로 실패한다.
+
+use rusqlite::{Connection, OptionalExtension, params};
+use sha2::{Digest, Sha256};
+
+use crate::error::{StoreError, StoreResult};
+use crate::store::{EventStore, to_i64, to_u64};
+use crate::types::{PayloadRef, WriterEpoch};
+
+impl EventStore {
+    /// payload를 새 generation으로 저장한다. 같은 내용이어도 새 참조를 만든다.
+    pub fn put_payload(&mut self, epoch: WriterEpoch, bytes: &[u8]) -> StoreResult<PayloadRef> {
+        let tx = self.write_tx(epoch)?;
+        let payload = insert(&tx, bytes)?;
+        tx.commit()?;
+        Ok(payload)
+    }
+
+    /// 내용을 읽고 checksum을 검증한다.
+    pub fn read_payload(&self, payload: PayloadRef) -> StoreResult<Vec<u8>> {
+        read_verified(&self.conn, payload)
+    }
+
+    /// 외부 보유자(undo·View 복원 기록·import 등)의 참조를 건다.
+    pub fn pin_payload(
+        &mut self,
+        epoch: WriterEpoch,
+        payload: PayloadRef,
+        holder: &str,
+    ) -> StoreResult<()> {
+        let tx = self.write_tx(epoch)?;
+        pin_in(&tx, payload, holder)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// 참조를 푼다. 내용은 GC가 지울 때까지 남는다.
+    pub fn unpin_payload(
+        &mut self,
+        epoch: WriterEpoch,
+        payload: PayloadRef,
+        holder: &str,
+    ) -> StoreResult<()> {
+        let tx = self.write_tx(epoch)?;
+        tx.execute(
+            "DELETE FROM payload_pins WHERE payload_id = ?1 AND holder = ?2",
+            params![to_i64(payload.0)?, holder],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// payload의 현재 참조 보유자 목록.
+    pub fn payload_holders(&self, payload: PayloadRef) -> StoreResult<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT holder FROM payload_pins WHERE payload_id = ?1 ORDER BY holder")?;
+        let rows = stmt.query_map([to_i64(payload.0)?], |r| r.get::<_, String>(0))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// 참조가 없는 payload를 지우고 지운 개수를 돌려준다.
+    pub fn gc_payloads(&mut self, epoch: WriterEpoch) -> StoreResult<usize> {
+        let tx = self.write_tx(epoch)?;
+        let removed = tx.execute(
+            "DELETE FROM payloads
+             WHERE payload_id NOT IN (SELECT payload_id FROM payload_pins)",
+            [],
+        )?;
+        tx.commit()?;
+        Ok(removed)
+    }
+}
+
+pub(crate) fn insert(conn: &Connection, bytes: &[u8]) -> StoreResult<PayloadRef> {
+    let digest = Sha256::digest(bytes).to_vec();
+    conn.execute(
+        "INSERT INTO payloads (sha256, bytes) VALUES (?1, ?2)",
+        params![digest, bytes],
+    )?;
+    Ok(PayloadRef(to_u64(conn.last_insert_rowid())?))
+}
+
+pub(crate) fn pin_in(conn: &Connection, payload: PayloadRef, holder: &str) -> StoreResult<()> {
+    let id = to_i64(payload.0)?;
+    let exists: Option<i64> = conn
+        .query_row(
+            "SELECT payload_id FROM payloads WHERE payload_id = ?1",
+            [id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if exists.is_none() {
+        return Err(StoreError::PayloadMissing(payload.0));
+    }
+    conn.execute(
+        "INSERT OR IGNORE INTO payload_pins (payload_id, holder) VALUES (?1, ?2)",
+        params![id, holder],
+    )?;
+    Ok(())
+}
+
+pub(crate) fn read_verified(conn: &Connection, payload: PayloadRef) -> StoreResult<Vec<u8>> {
+    let row: Option<(Vec<u8>, Vec<u8>)> = conn
+        .query_row(
+            "SELECT sha256, bytes FROM payloads WHERE payload_id = ?1",
+            [to_i64(payload.0)?],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let Some((digest, bytes)) = row else {
+        return Err(StoreError::PayloadMissing(payload.0));
+    };
+    if Sha256::digest(&bytes).as_slice() != digest.as_slice() {
+        return Err(StoreError::PayloadCorrupt(payload.0));
+    }
+    Ok(bytes)
+}

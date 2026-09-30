@@ -5846,6 +5846,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tasty-event-store"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "tasty-file-format"
 version = "0.1.0"
 dependencies = [

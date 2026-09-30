@@ -1,0 +1,124 @@
+//! 저장소 오류. 거절 사유를 호출자가 구분할 수 있도록 종류별로 나눈다.
+
+use crate::effect::EffectState;
+use crate::types::{CommandStatus, ExpectedRevision, WriterEpoch};
+
+#[derive(Debug, thiserror::Error)]
+pub enum StoreError {
+    #[error("sqlite: {0}")]
+    Sqlite(#[from] rusqlite::Error),
+
+    #[error("journal schema version {found} is newer than supported {supported}")]
+    SchemaTooNew { found: u32, supported: u32 },
+
+    #[error("durability unavailable: {pragma} is {effective}, required {required}")]
+    Durability {
+        pragma: &'static str,
+        required: &'static str,
+        effective: String,
+    },
+
+    #[error("journal id mismatch: requested {requested}, stored {stored}")]
+    JournalMismatch { requested: String, stored: String },
+
+    #[error("journal is archived and accepts no writes")]
+    JournalArchived,
+
+    #[error("writer epoch {presented:?} is fenced by current {current:?}")]
+    Fenced {
+        presented: WriterEpoch,
+        current: WriterEpoch,
+    },
+
+    #[error("stream {stream}: expected {expected:?}, actual {actual:?}")]
+    RevisionConflict {
+        stream: String,
+        expected: ExpectedRevision,
+        actual: Option<u64>,
+    },
+
+    #[error("append to stream {0} has no events")]
+    EmptyAppend(String),
+
+    #[error("stream {0} appears twice in one batch")]
+    DuplicateStream(String),
+
+    #[error("command key ({caller_scope}, {idempotency_key}) is bound to a different request")]
+    KeyConflict {
+        caller_scope: String,
+        idempotency_key: String,
+    },
+
+    #[error("unknown command {0}")]
+    UnknownCommand(String),
+
+    #[error("command {command_id} already finished as {status:?}")]
+    CommandFinished {
+        command_id: String,
+        status: CommandStatus,
+    },
+
+    #[error("unknown effect {0}")]
+    UnknownEffect(String),
+
+    #[error("effect {effect_id}: expected state {expected:?}, actual {actual:?}")]
+    EffectStateMismatch {
+        effect_id: String,
+        expected: EffectState,
+        actual: EffectState,
+    },
+
+    #[error("effect {effect_id}: transition {from:?} -> {to:?} is not allowed")]
+    InvalidEffectTransition {
+        effect_id: String,
+        from: EffectState,
+        to: EffectState,
+    },
+
+    #[error("effect {effect_id}: generation {presented} does not match {current}")]
+    StaleGeneration {
+        effect_id: String,
+        presented: u64,
+        current: u64,
+    },
+
+    #[error("effect {effect_id}: attempt {presented:?} does not match {current}")]
+    StaleAttempt {
+        effect_id: String,
+        presented: Option<u32>,
+        current: u32,
+    },
+
+    #[error("effect {effect_id}: initial state {state:?} must be Pending or Deferred")]
+    InvalidInitialEffectState {
+        effect_id: String,
+        state: EffectState,
+    },
+
+    #[error("effect {0}: transition to Running needs an activation claim")]
+    ClaimRequired(String),
+
+    #[error("effect {effect_id}: activation claim is held by effect {holder}")]
+    ClaimHeld { effect_id: String, holder: String },
+
+    #[error("payload {0} does not exist")]
+    PayloadMissing(u64),
+
+    #[error("payload {0} failed checksum verification")]
+    PayloadCorrupt(u64),
+
+    #[error("batch {0} does not exist")]
+    UnknownBatch(u64),
+
+    #[error("checkpoint for {consumer_id} would move back from batch {current} to {requested}")]
+    CheckpointRegression {
+        consumer_id: String,
+        current: u64,
+        requested: u64,
+    },
+
+    #[error("stored value is out of range: {0}")]
+    Corrupt(String),
+}
+
+pub type StoreResult<T> = Result<T, StoreError>;
