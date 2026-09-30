@@ -301,8 +301,9 @@ pub(crate) fn handle_children<H: HostCall>(
     Ok(json!(entries))
 }
 
-/// terminal.kill에 종료를 위임하고 호스트 응답을 그대로 반환한다.
-/// 실제로 닫힌 경우(killed_surface_id)에만 오류 감시에서 제거한다. 원격으로 넘긴 kill은 forwarded로 답한다.
+/// terminal.kill에 종료를 위임하고 호스트 응답에 `killed`를 더해 반환한다.
+/// 실제로 닫힌 경우(killed_surface_id)에만 `killed: true`로 답하고 오류 감시에서 제거한다.
+/// 원격으로 넘긴 kill은 forwarded 응답에 `killed: false`를 붙인다.
 pub(crate) fn handle_kill<H: HostCall>(
     scanner: &Arc<Mutex<ErrorScanner>>,
     host: &H,
@@ -314,15 +315,20 @@ pub(crate) fn handle_kill<H: HostCall>(
     put_target_surface(&mut kp, params, tr)?;
     kp.insert("child".into(), json!(child_index));
     let resp = host_call(host, "terminal.kill", Value::Object(kp))?;
-    // 다음 폴링을 기다리지 않고 오류 감시에서 제거한다.
-    if let Some(killed) = resp
+    let killed_id = resp
         .get("killed_surface_id")
         .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-    {
+        .map(|v| v as u32);
+    // 다음 폴링을 기다리지 않고 오류 감시에서 제거한다.
+    if let Some(killed) = killed_id {
         crate::error_scan::lock_scanner(scanner).disable(killed);
     }
-    Ok(resp)
+    // 기존 호출자가 읽던 `killed`를 유지하되, 실제로 닫힌 경우에만 true로 둔다.
+    let mut out = resp;
+    if let Value::Object(m) = &mut out {
+        m.insert("killed".into(), json!(killed_id.is_some()));
+    }
+    Ok(out)
 }
 
 /// 부모의 자식에게 텍스트를 보내는 terminal.broadcast에 위임한다. role 필터도 전달한다.
@@ -1743,7 +1749,7 @@ mod tests {
         assert_eq!(e["foreground_pid"], json!(4242));
     }
 
-    /// 실제로 닫힌 kill은 호스트 응답을 그대로 돌려주고 닫힌 surface의 오류 감시를 끈다.
+    /// 실제로 닫힌 kill은 호스트 응답에 `killed: true`를 더해 돌려주고 닫힌 surface의 오류 감시를 끈다.
     #[test]
     fn kill_response_is_the_host_response() {
         let scanner = Arc::new(Mutex::new(ErrorScanner::new()));
@@ -1755,11 +1761,14 @@ mod tests {
             &test_translator(),
         )
         .expect("handle_kill");
-        assert_eq!(out, json!({ "killed_surface_id": 42, "child_index": 0 }));
+        assert_eq!(
+            out,
+            json!({ "killed_surface_id": 42, "child_index": 0, "killed": true })
+        );
         assert!(!crate::error_scan::lock_scanner(&scanner).is_enabled(42));
     }
 
-    /// 원격으로 넘긴 kill은 죽인 것으로 답하지 않고 surface의 오류 감시도 유지한다.
+    /// 원격으로 넘긴 kill은 `killed: false`로 답하고 surface의 오류 감시도 유지한다.
     #[test]
     fn a_forwarded_kill_is_not_reported_as_killed() {
         struct ForwardHost;
@@ -1784,7 +1793,7 @@ mod tests {
         .expect("handle_kill");
         assert_eq!(
             out,
-            json!({ "forwarded": true, "surface_id": 42, "child_index": 0 })
+            json!({ "forwarded": true, "surface_id": 42, "child_index": 0, "killed": false })
         );
         assert!(crate::error_scan::lock_scanner(&scanner).is_enabled(42));
     }
