@@ -371,10 +371,10 @@ fn run_search(state: &mut AppState, engine: &crate::core::CoreState) {
 
 fn focused_terminal_surface_id(state: &AppState, engine: &crate::core::CoreState) -> u32 {
     let ws = state.active_workspace(engine);
-    let pane_id = ws.focused_pane;
+    let pane_id = state.navigation.pane_id(ws).unwrap_or(0);
     ws.pane_layout()
         .find_pane(pane_id)
-        .and_then(|pane| pane.tabs.get(pane.active_tab))
+        .and_then(|pane| pane.tabs.get(state.navigation.tab_index(pane)))
         .and_then(|tab| tab.focused_surface_id())
         .unwrap_or(0)
 }

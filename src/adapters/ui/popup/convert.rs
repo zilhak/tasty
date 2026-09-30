@@ -514,7 +514,7 @@ fn current_surface_kind(
                     if let Some(leaf) = tab.layout().find_surface(surface_id) {
                         return Some(leaf.kind());
                     }
-                    return Some(tab.surface().kind());
+                    return None;
                 }
             }
         }

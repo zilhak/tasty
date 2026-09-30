@@ -98,8 +98,11 @@ fn new_workspace(
             #[cfg(feature = "gui")]
             if tutorial_setup {
                 if let Some(ws) = engine.workspaces.get(index) {
-                    if let Some(pane) = ws.pane_layout().find_pane(ws.focused_pane) {
-                        if let Some(tab) = pane.tabs.get(pane.active_tab) {
+                    if let Some(pane) = ws
+                        .pane_layout()
+                        .find_pane(state.navigation.pane_id(ws).unwrap_or(0))
+                    {
+                        if let Some(tab) = pane.tabs.get(state.navigation.tab_index(pane)) {
                             state.tutorial.prepared(
                                 crate::adapters::ui::tutorial::PracticeContext {
                                     workspace: workspace_id,

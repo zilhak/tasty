@@ -92,7 +92,7 @@ impl AppState {
         scale_factor: f32,
     ) -> Option<DividerInfo> {
         let ws = self.active_workspace(engine);
-        let focused_id = ws.focused_pane;
+        let focused_id = self.navigation.pane_id(ws).unwrap_or(0);
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
 
         let pane_rect = pane_rects.into_iter().find(|(id, _)| *id == focused_id);
@@ -110,7 +110,7 @@ impl AppState {
             height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
         };
 
-        let tab = pane.tabs.get(pane.active_tab)?;
+        let tab = pane.tabs.get(self.navigation.tab_index(pane))?;
         tab.layout().find_divider_at(
             x,
             y,
@@ -172,7 +172,7 @@ impl AppState {
 
         let tab_bar_h = self.tab_bar_height;
         let ws = self.active_workspace_mut(engine);
-        let focused_id = ws.focused_pane;
+        let focused_id = self.navigation.pane_id(ws).unwrap_or(0);
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
 
         let pane_rect = pane_rects.into_iter().find(|(id, _)| *id == focused_id);

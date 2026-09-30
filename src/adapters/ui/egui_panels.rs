@@ -41,7 +41,7 @@ pub fn draw_egui_panels(
                 Some(p) => p,
                 None => continue,
             };
-            let tab = match pane.tabs.get(pane.active_tab) {
+            let tab = match pane.tabs.get(state.navigation.tab_index(pane)) {
                 Some(t) => t,
                 None => continue,
             };
@@ -150,7 +150,8 @@ pub fn draw_egui_panels(
             Some(p) => p,
             None => continue,
         };
-        let tab = match pane.active_tab_mut() {
+        let selected_tab = state.navigation.tab_index(pane);
+        let tab = match pane.tabs.get_mut(selected_tab) {
             Some(t) => t,
             None => continue,
         };
@@ -161,7 +162,13 @@ pub fn draw_egui_panels(
                 None => continue,
             }
         } else {
-            tab.surface_mut()
+            let Some(sid) = state.navigation.surface_id(tab) else {
+                continue;
+            };
+            let Some(surface) = tab.surface_mut(sid) else {
+                continue;
+            };
+            surface
         };
 
         if let Some(empty) = surface
@@ -596,7 +603,7 @@ fn draw_occupied_overlays(
             let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
                 continue;
             };
-            let Some(tab) = pane.tabs.get(pane.active_tab) else {
+            let Some(tab) = pane.tabs.get(state.navigation.tab_index(pane)) else {
                 continue;
             };
             let content_rect = PhysicalRect {

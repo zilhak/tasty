@@ -160,9 +160,15 @@ impl App {
                 tab_id,
                 surface_id,
                 tab_count: _,
-                active_tab: _,
+                activate,
             } => {
-                self.dispatch_tab_created_cascade(source, pane_id, tab_id, surface_id);
+                self.dispatch_tab_created_cascade(
+                    source,
+                    pane_id,
+                    tab_id,
+                    surface_id,
+                    activate && origin.is_user(),
+                );
             }
             CoreEvent::TabClosed {
                 tab_id,
@@ -689,6 +695,7 @@ impl App {
         pane_id: u32,
         tab_id: u32,
         surface_id: u32,
+        activate: bool,
     ) {
         let Some(DispatchCtx {
             state,
@@ -700,6 +707,11 @@ impl App {
             return;
         };
         cascade_tab_created(state, engine, pane_id, tab_id, surface_id);
+        if activate {
+            if let Some(pane) = engine.find_pane_by_id(pane_id) {
+                state.navigation.select_tab(pane, tab_id);
+            }
+        }
         if let Some(view) = view {
             view.mark_dirty();
         }
@@ -1230,7 +1242,7 @@ pub(crate) fn cascade_closed_item_restored(
         }
         RestoredKind::TabIntoPane => {}
         RestoredKind::PaneIntoWorkspace { pane_id } => {
-            state.active_workspace_mut(engine).focused_pane = pane_id;
+            state.select_pane(engine, pane_id);
         }
     }
 }

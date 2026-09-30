@@ -80,7 +80,6 @@ impl PaneNode {
                         second: Box::new(PaneNode::Leaf(Pane {
                             id: new_pane_id,
                             tabs: vec![],
-                            active_tab: 0,
                         })),
                     },
                 );
@@ -119,7 +118,6 @@ impl PaneNode {
                         PaneNode::Leaf(Pane {
                             id: 0,
                             tabs: vec![],
-                            active_tab: 0,
                         }),
                     );
                     if let PaneNode::Split { second, .. } = old {
@@ -133,7 +131,6 @@ impl PaneNode {
                         PaneNode::Leaf(Pane {
                             id: 0,
                             tabs: vec![],
-                            active_tab: 0,
                         }),
                     );
                     if let PaneNode::Split { first, .. } = old {
@@ -163,7 +160,6 @@ impl PaneNode {
         let placeholder = PaneNode::Leaf(Pane {
             id: 0,
             tabs: vec![],
-            active_tab: 0,
         });
         let PaneNode::Split { first, second, .. } = std::mem::replace(self, placeholder) else {
             return None;
@@ -260,7 +256,6 @@ impl PaneNode {
             let placeholder = PaneNode::Leaf(Pane {
                 id: 0,
                 tabs: vec![],
-                active_tab: 0,
             });
             let original = std::mem::replace(self, placeholder);
             let (first, second) = if new_pane_is_first {
@@ -348,10 +343,13 @@ impl PaneNode {
     }
 
     /// pane 이진트리의 분할 방향·비율과 각 pane의 탭을 JSON으로 반환한다.
-    pub fn to_tree_json_full(&self) -> serde_json::Value {
+    pub fn to_tree_json_full(
+        &self,
+        presentation: &(impl crate::StructurePresentation + ?Sized),
+    ) -> serde_json::Value {
         match self {
             PaneNode::Leaf(pane) => {
-                let mut v = pane.to_attach_json();
+                let mut v = pane.to_attach_json(presentation);
                 v["type"] = serde_json::json!("Leaf");
                 v
             }
@@ -367,8 +365,8 @@ impl PaneNode {
                     SplitDirection::Vertical => "vertical",
                 },
                 "ratio": ratio,
-                "first": first.to_tree_json_full(),
-                "second": second.to_tree_json_full(),
+                "first": first.to_tree_json_full(presentation),
+                "second": second.to_tree_json_full(presentation),
             }),
         }
     }
@@ -441,11 +439,7 @@ mod tests {
     use super::*;
 
     fn leaf_pane(id: PaneId) -> PaneNode {
-        PaneNode::Leaf(Pane {
-            id,
-            tabs: vec![],
-            active_tab: 0,
-        })
+        PaneNode::Leaf(Pane { id, tabs: vec![] })
     }
 
     #[test]

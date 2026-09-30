@@ -38,9 +38,11 @@ impl AppState {
     }
 
     pub fn detect_tab_focus_change(&mut self, engine: &CoreState) {
-        let current = self
-            .focused_pane(engine)
-            .and_then(|pane| pane.tabs.get(pane.active_tab).map(|tab| (pane.id, tab.id)));
+        let current = self.focused_pane(engine).and_then(|pane| {
+            pane.tabs
+                .get(self.navigation.tab_index(pane))
+                .map(|tab| (pane.id, tab.id))
+        });
         if current == self.last_focused_tab {
             return;
         }

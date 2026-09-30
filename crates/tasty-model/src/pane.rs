@@ -19,7 +19,6 @@ pub enum TabSwitch {
 pub struct Pane {
     pub id: PaneId,
     pub tabs: Vec<Tab>,
-    pub active_tab: usize,
 }
 
 impl Default for Pane {
@@ -27,7 +26,6 @@ impl Default for Pane {
         Self {
             id: 0,
             tabs: Vec::new(),
-            active_tab: 0,
         }
     }
 }
@@ -44,7 +42,6 @@ impl Pane {
         Self {
             id,
             tabs: vec![tab],
-            active_tab: 0,
         }
     }
 
@@ -56,7 +53,6 @@ impl Pane {
         Self {
             id,
             tabs: vec![tab],
-            active_tab: 0,
         }
     }
 
@@ -66,7 +62,6 @@ impl Pane {
         let surface: Box<dyn super::Surface> = Box::new(TerminalSurface { id: surface_id });
         let tab = Tab::new_with_surface(tab_id, "Shell".to_string(), surface);
         self.tabs.push(tab);
-        self.active_tab = self.tabs.len() - 1;
     }
 
     /// Same as [`add_terminal_marker_tab`] but does NOT change `active_tab`.
@@ -88,20 +83,6 @@ impl Pane {
             ids.extend(tab.all_surface_ids());
         }
         ids
-    }
-
-    /// Split the active panel's focused surface with a TerminalSurface marker.
-    /// Caller must have already inserted the spawned Terminal into the store.
-    pub fn split_active_surface_marker(
-        &mut self,
-        direction: SplitDirection,
-        new_surface_id: SurfaceId,
-    ) {
-        if self.tabs.is_empty() {
-            return;
-        }
-        let active = self.active_tab.min(self.tabs.len() - 1);
-        self.tabs[active].split_focused_surface(direction, new_surface_id);
     }
 
     /// Split a specific surface by ID with a TerminalSurface marker. Caller must
@@ -137,31 +118,17 @@ impl Pane {
         anyhow::bail!("surface {} not found in this pane", target_surface_id)
     }
 
-    /// Remove the tab at `tab_index`, keeping `active_tab` pointed at the **same
-    /// tab** it pointed at before.
-    ///
-    /// `active_tab` is an index, so removing an earlier tab shifts every later
-    /// tab down one slot and the untouched index silently starts naming a
-    /// different tab. Only closing the active tab itself may move the view, and
-    /// then it lands on the tab that slid into the slot (or the last one).
-    /// See `docs/design/policies/focus.md`.
-    pub fn remove_tab_preserving_active(&mut self, tab_index: usize) {
-        self.take_tab_preserving_active(tab_index);
+    /// Remove a tab by its current position. Selection belongs to the caller.
+    pub fn remove_tab(&mut self, tab_index: usize) {
+        self.take_tab(tab_index);
     }
 
-    /// Same as [`Self::remove_tab_preserving_active`], but hands the removed
-    /// tab back so a move can put it elsewhere without rebuilding it.
-    pub fn take_tab_preserving_active(&mut self, tab_index: usize) -> Option<Tab> {
+    /// Remove and return a tab for a structural move.
+    pub fn take_tab(&mut self, tab_index: usize) -> Option<Tab> {
         if tab_index >= self.tabs.len() {
             return None;
         }
-        let tab = self.tabs.remove(tab_index);
-        if tab_index < self.active_tab {
-            self.active_tab -= 1;
-        } else if self.active_tab >= self.tabs.len() {
-            self.active_tab = self.tabs.len().saturating_sub(1);
-        }
-        Some(tab)
+        Some(self.tabs.remove(tab_index))
     }
 
     /// Close the tab at the given index. Returns false if the tab can't be closed
@@ -171,16 +138,11 @@ impl Pane {
             return false; // Can't close last tab
         }
         if tab_index < self.tabs.len() {
-            self.remove_tab_preserving_active(tab_index);
+            self.remove_tab(tab_index);
             true
         } else {
             false
         }
-    }
-
-    /// Close the currently active tab. Returns false if it's the last tab.
-    pub fn close_active_tab(&mut self) -> bool {
-        self.close_tab(self.active_tab)
     }
 
     /// Close a tab by its ID. Returns false if not found or it's the last tab.
@@ -189,7 +151,7 @@ impl Pane {
             return false;
         }
         if let Some(idx) = self.tabs.iter().position(|t| t.id == tab_id) {
-            self.remove_tab_preserving_active(idx);
+            self.remove_tab(idx);
             true
         } else {
             false
@@ -199,34 +161,6 @@ impl Pane {
     /// Check if any tab in this pane contains the given surface ID.
     pub fn contains_surface(&self, surface_id: SurfaceId) -> bool {
         self.tabs.iter().any(|tab| tab.contains_surface(surface_id))
-    }
-
-    /// 0부터 시작하는 인덱스로 전환한다. 변경·이미 선택됨·대상 부재를 구분해 반환한다.
-    pub fn goto_tab(&mut self, index: usize) -> TabSwitch {
-        if index >= self.tabs.len() {
-            TabSwitch::OutOfRange {
-                tabs: self.tabs.len(),
-            }
-        } else if index == self.active_tab {
-            TabSwitch::AlreadyActive
-        } else {
-            self.active_tab = index;
-            TabSwitch::Switched
-        }
-    }
-
-    /// Switch to next tab.
-    pub fn next_tab(&mut self) {
-        if self.tabs.len() > 1 {
-            self.active_tab = (self.active_tab + 1) % self.tabs.len();
-        }
-    }
-
-    /// Switch to previous tab.
-    pub fn prev_tab(&mut self) {
-        if self.tabs.len() > 1 {
-            self.active_tab = (self.active_tab + self.tabs.len() - 1) % self.tabs.len();
-        }
     }
 
     /// Add a tab with a Surface trait object and switch to it.
@@ -239,7 +173,6 @@ impl Pane {
     ) {
         let tab = super::tab::Tab::new_named(tab_id, name, explicit_name, surface);
         self.tabs.push(tab);
-        self.active_tab = self.tabs.len() - 1;
     }
 
     /// Same as [`add_surface_tab`](Self::add_surface_tab) but does NOT change `active_tab`.
@@ -254,15 +187,6 @@ impl Pane {
         self.tabs.push(tab);
     }
 
-    /// Get the active tab (mutable). Returns None if tabs are empty.
-    pub fn active_tab_mut(&mut self) -> Option<&mut Tab> {
-        if self.tabs.is_empty() {
-            return None;
-        }
-        let idx = self.active_tab.min(self.tabs.len() - 1);
-        Some(&mut self.tabs[idx])
-    }
-
     /// Move a tab from one index to another, adjusting active_tab accordingly.
     /// Returns false if indices are out of bounds or equal.
     pub fn move_tab(&mut self, from: usize, to: usize) -> bool {
@@ -271,25 +195,21 @@ impl Pane {
         }
         let tab = self.tabs.remove(from);
         self.tabs.insert(to, tab);
-        if self.active_tab == from {
-            self.active_tab = to;
-        } else if from < to && self.active_tab > from && self.active_tab <= to {
-            self.active_tab -= 1;
-        } else if from > to && self.active_tab >= to && self.active_tab < from {
-            self.active_tab += 1;
-        }
         true
     }
 
     /// Produce a JSON tree representation of this pane.
-    pub fn to_tree_json(&self) -> serde_json::Value {
+    pub fn to_tree_json(
+        &self,
+        presentation: &(impl crate::StructurePresentation + ?Sized),
+    ) -> serde_json::Value {
         let tabs: Vec<_> = self
             .tabs
             .iter()
             .enumerate()
             .map(|(i, tab)| {
-                let mut t = tab.to_tree_json();
-                t["active"] = serde_json::json!(i == self.active_tab);
+                let mut t = tab.to_tree_json(presentation.surface_id(tab));
+                t["active"] = serde_json::json!(i == presentation.tab_index(self));
                 t
             })
             .collect();
@@ -303,7 +223,10 @@ impl Pane {
     /// "focused_surface","layout"}, ...]}`. `Workspace::to_attach_tree_json`(평면
     /// "panes")과 `PaneNode::to_tree_json_full`(트리 Leaf)이 이 메서드를 공유해
     /// 두 표현이 서로 다른 pane 직렬화를 갖지 않도록 한다.
-    pub fn to_attach_json(&self) -> serde_json::Value {
+    pub fn to_attach_json(
+        &self,
+        presentation: &(impl crate::StructurePresentation + ?Sized),
+    ) -> serde_json::Value {
         let tabs: Vec<_> = self
             .tabs
             .iter()
@@ -316,8 +239,8 @@ impl Pane {
                 serde_json::json!({
                     "id": tab.id,
                     "name": tab.display_name(),
-                    "active": i == self.active_tab,
-                    "focused_surface": tab.focused_surface,
+                    "active": i == presentation.tab_index(self),
+                    "focused_surface": presentation.surface_id(tab).unwrap_or(0),
                     "layout": layout,
                 })
             })
@@ -408,7 +331,7 @@ mod tab_removal_focus_tests {
     #[test]
     fn removing_an_earlier_tab_keeps_the_same_tab_active() {
         let mut pane = pane_with_three_tabs(1); // 사용자는 tab 11 을 본다
-        pane.remove_tab_preserving_active(0);
+        pane.remove_tab(0);
         assert_eq!(
             active_tab_id(&pane),
             11,
@@ -419,14 +342,14 @@ mod tab_removal_focus_tests {
     #[test]
     fn removing_a_later_tab_keeps_the_same_tab_active() {
         let mut pane = pane_with_three_tabs(1);
-        pane.remove_tab_preserving_active(2);
+        pane.remove_tab(2);
         assert_eq!(active_tab_id(&pane), 11);
     }
 
     #[test]
     fn removing_the_active_tab_lands_on_the_tab_that_slid_in() {
         let mut pane = pane_with_three_tabs(1);
-        pane.remove_tab_preserving_active(1);
+        pane.remove_tab(1);
         assert_eq!(
             active_tab_id(&pane),
             12,
@@ -437,7 +360,7 @@ mod tab_removal_focus_tests {
     #[test]
     fn removing_the_active_last_tab_falls_back_to_the_previous_one() {
         let mut pane = pane_with_three_tabs(2);
-        pane.remove_tab_preserving_active(2);
+        pane.remove_tab(2);
         assert_eq!(active_tab_id(&pane), 11);
     }
 
@@ -459,7 +382,7 @@ mod tab_removal_focus_tests {
     #[test]
     fn removing_an_out_of_range_index_is_a_noop() {
         let mut pane = pane_with_three_tabs(1);
-        pane.remove_tab_preserving_active(9);
+        pane.remove_tab(9);
         assert_eq!(pane.tabs.len(), 3);
         assert_eq!(active_tab_id(&pane), 11);
     }

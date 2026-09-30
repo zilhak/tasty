@@ -29,7 +29,6 @@ pub struct Workspace {
     pub description: String,
     /// Always `Some` during normal operation. Temporarily `None` during structural mutations.
     pane_layout_opt: Option<PaneNode>,
-    pub focused_pane: PaneId,
     /// 저장할 원격 attach 매핑. 활성화할 때 호스트가 자동 연결에 사용한다.
     pub attach_mapping: Option<WorkspaceAttachMapping>,
     /// 원격 workspace를 보여 주는 client mirror인지. 영속하지 않으며 UI 구분 표시에 사용한다.
@@ -50,14 +49,12 @@ impl Workspace {
         surface_id: SurfaceId,
     ) -> Self {
         let pane = Pane::new_with_terminal_marker(pane_id, tab_id, surface_id);
-        let focused_pane = pane_id;
         Self {
             id,
             name,
             subtitle: String::new(),
             description: String::new(),
             pane_layout_opt: Some(PaneNode::Leaf(pane)),
-            focused_pane,
             attach_mapping: None,
             mirror: false,
             category: NORMAL_CATEGORY_ID,
@@ -82,41 +79,24 @@ impl Workspace {
             .expect("BUG: pane_layout accessed during structural mutation (between take/put)")
     }
 
-    /// pane을 닫고, 그 pane이 포커스 대상이었을 때만 남은 pane으로 포커스를 옮긴다.
-    /// 실제로 닫았는지 반환한다.
-    pub fn close_pane_preserving_focus(&mut self, pane_id: PaneId) -> bool {
-        let was_focused = self.focused_pane == pane_id;
-        let removed = self.pane_layout_mut().close_pane(pane_id);
-        if removed
-            && was_focused
-            && let Some(first) = self.pane_layout().first_pane()
-        {
-            self.focused_pane = first.id;
-        }
-        removed
+    /// Remove a pane without making a presentation choice.
+    pub fn close_pane(&mut self, pane_id: PaneId) -> bool {
+        self.pane_layout_mut().close_pane(pane_id)
     }
 
-    /// pane을 트리에서 떼어 돌려준다. 그 pane이 포커스 대상이었을 때만 남은 pane으로 포커스를 옮긴다.
-    /// 유일한 pane은 뗄 수 없어 None이다.
-    pub fn detach_pane_preserving_focus(&mut self, pane_id: PaneId) -> Option<Pane> {
-        let was_focused = self.focused_pane == pane_id;
-        let detached = self.pane_layout_mut().detach_pane(pane_id)?;
-        if was_focused && let Some(first) = self.pane_layout().first_pane() {
-            self.focused_pane = first.id;
-        }
-        Some(detached)
+    /// Detach a pane for a structural move. The caller repairs its selection.
+    pub fn detach_pane(&mut self, pane_id: PaneId) -> Option<Pane> {
+        self.pane_layout_mut().detach_pane(pane_id)
     }
 
     /// Create a workspace from a pre-built Pane (for non-terminal surface types).
     pub fn new_with_pane(id: WorkspaceId, name: String, pane: Pane) -> Self {
-        let focused_pane = pane.id;
         Self {
             id,
             name,
             subtitle: String::new(),
             description: String::new(),
             pane_layout_opt: Some(PaneNode::Leaf(pane)),
-            focused_pane,
             attach_mapping: None,
             mirror: false,
             category: NORMAL_CATEGORY_ID,
@@ -129,7 +109,6 @@ impl Workspace {
         name: String,
         subtitle: String,
         pane_layout: PaneNode,
-        focused_pane: PaneId,
     ) -> Self {
         Self {
             id,
@@ -137,7 +116,6 @@ impl Workspace {
             subtitle,
             description: String::new(),
             pane_layout_opt: Some(pane_layout),
-            focused_pane,
             attach_mapping: None,
             mirror: false,
             category: NORMAL_CATEGORY_ID,
@@ -210,33 +188,39 @@ impl Workspace {
     }
 
     /// client mirror 복원용 전체 pane·tab·surface 트리. 분할 방향과 비율을 보존한다.
-    pub fn to_attach_tree_json(&self) -> serde_json::Value {
+    pub fn to_attach_tree_json(
+        &self,
+        presentation: &(impl crate::StructurePresentation + ?Sized),
+    ) -> serde_json::Value {
         let panes: Vec<_> = self
             .pane_layout()
             .all_pane_ids()
             .iter()
             .filter_map(|&pid| self.pane_layout().find_pane(pid))
-            .map(|pane| pane.to_attach_json())
+            .map(|pane| pane.to_attach_json(presentation))
             .collect();
         serde_json::json!({
             "id": self.id,
             "name": self.name,
-            "focused_pane": self.focused_pane,
+            "focused_pane": presentation.pane_id(self).unwrap_or(0),
             "panes": panes,
-            "pane_layout": self.pane_layout().to_tree_json_full(),
+            "pane_layout": self.pane_layout().to_tree_json_full(presentation),
         })
     }
 
     /// Produce a JSON tree representation of this workspace.
-    pub fn to_tree_json(&self) -> serde_json::Value {
+    pub fn to_tree_json(
+        &self,
+        presentation: &(impl crate::StructurePresentation + ?Sized),
+    ) -> serde_json::Value {
         let panes: Vec<_> = self
             .pane_layout()
             .all_pane_ids()
             .iter()
             .filter_map(|&pid| self.pane_layout().find_pane(pid))
             .map(|pane| {
-                let mut p = pane.to_tree_json();
-                p["focused"] = serde_json::json!(pane.id == self.focused_pane);
+                let mut p = pane.to_tree_json(presentation);
+                p["focused"] = serde_json::json!(Some(pane.id) == presentation.pane_id(self));
                 p
             })
             .collect();

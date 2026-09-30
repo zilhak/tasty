@@ -135,6 +135,19 @@ impl NavigationState {
         changed
     }
 
+    pub(crate) fn goto_tab(&mut self, pane: &Pane, index: usize) -> crate::model::TabSwitch {
+        let Some(tab) = pane.tabs.get(index) else {
+            return crate::model::TabSwitch::OutOfRange {
+                tabs: pane.tabs.len(),
+            };
+        };
+        if self.select_tab(pane, tab.id) {
+            crate::model::TabSwitch::Switched
+        } else {
+            crate::model::TabSwitch::AlreadyActive
+        }
+    }
+
     /// Apply the current structural result. Surviving IDs are retained; missing
     /// selections alone are replaced. New children are initialized without
     /// selecting them in their already existing parent.
@@ -179,3 +192,15 @@ fn tab_ids(pane: &Pane) -> Vec<u32> {
 
 #[cfg(test)]
 mod tests;
+
+impl crate::model::StructurePresentation for NavigationState {
+    fn pane_id(&self, workspace: &Workspace) -> Option<u32> {
+        self.pane_id(workspace)
+    }
+    fn tab_index(&self, pane: &Pane) -> usize {
+        self.tab_index(pane)
+    }
+    fn surface_id(&self, tab: &Tab) -> Option<SurfaceId> {
+        self.surface_id(tab)
+    }
+}

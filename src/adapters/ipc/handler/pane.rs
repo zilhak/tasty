@@ -6,11 +6,15 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_pane_id;
 
-pub fn handle_pane_list(engine: &crate::core::CoreState, id: serde_json::Value) -> JsonRpcResponse {
+pub fn handle_pane_list(
+    presentation: &(impl crate::model::StructurePresentation + ?Sized),
+    engine: &crate::core::CoreState,
+    id: serde_json::Value,
+) -> JsonRpcResponse {
     let mut panes = Vec::new();
     for ws in &engine.workspaces {
         let pane_ids = ws.pane_layout().all_pane_ids();
-        let focused = ws.focused_pane;
+        let focused = presentation.pane_id(ws).unwrap_or(0);
         for &pid in &pane_ids {
             let tab_count = ws
                 .pane_layout()

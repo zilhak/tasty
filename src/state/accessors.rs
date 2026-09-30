@@ -17,6 +17,16 @@ impl AppState {
         }
     }
 
+    pub(crate) fn select_pane(&mut self, engine: &CoreState, pane_id: u32) {
+        if let Some(ws) = engine
+            .workspaces
+            .iter()
+            .find(|ws| ws.pane_layout().find_pane(pane_id).is_some())
+        {
+            self.navigation.select_pane(ws, pane_id);
+        }
+    }
+
     /// Invariant: caller must ensure `engine.workspaces` is non-empty.
     /// Parked states (after the last window closes) can have zero workspaces —
     /// such callers must use `engine.workspaces.is_empty()` checks instead.
@@ -55,7 +65,7 @@ impl AppState {
         let ws = self.active_workspace(engine);
         let layout = ws.pane_layout();
         layout
-            .find_pane(ws.focused_pane)
+            .find_pane(self.navigation.pane_id(ws)?)
             .or_else(|| layout.first_pane())
     }
 
@@ -69,22 +79,17 @@ impl AppState {
         if engine.workspaces.is_empty() {
             return None;
         }
-        let ws = self.active_workspace_mut(engine);
-        let focused_id = ws.focused_pane;
-        if ws.pane_layout().find_pane(focused_id).is_none() {
-            let fallback_id = ws.pane_layout().first_pane().map(|p| p.id);
-            if let Some(fid) = fallback_id {
-                ws.focused_pane = fid;
-            }
-        }
-        let focused_id = ws.focused_pane;
-        ws.pane_layout_mut().find_pane_mut(focused_id)
+        let ws_id = self.active_workspace_index(engine);
+        let pane_id = self.navigation.pane_id(&engine.workspaces[ws_id])?;
+        engine.workspaces[ws_id]
+            .pane_layout_mut()
+            .find_pane_mut(pane_id)
     }
 
     pub fn focused_surface_id(&self, engine: &CoreState) -> Option<u32> {
         let pane = self.focused_pane(engine)?;
-        let tab = pane.tabs.get(pane.active_tab)?;
-        tab.focused_surface_id()
+        let tab = pane.tabs.get(self.navigation.tab_index(pane))?;
+        self.navigation.surface_id(tab)
     }
 
     #[cfg(feature = "gui")]
@@ -101,7 +106,9 @@ impl AppState {
 
     #[cfg(feature = "gui")]
     pub fn focused_pane_id(&self, engine: &CoreState) -> crate::model::PaneId {
-        self.active_workspace(engine).focused_pane
+        self.navigation
+            .pane_id(self.active_workspace(engine))
+            .unwrap_or(0)
     }
 
     #[cfg(feature = "gui")]

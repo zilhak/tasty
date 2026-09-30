@@ -25,10 +25,9 @@ pub fn handle_set_cwd(
         for &pid in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
                 for tab in &pane.tabs {
-                    let surface = tab.surface();
-                    if surface.surface_id() != Some(sid) {
+                    let Some(surface) = tab.surface(sid) else {
                         continue;
-                    }
+                    };
                     if let Some(rs) = surface
                         .as_any()
                         .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(

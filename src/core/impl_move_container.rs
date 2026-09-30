@@ -184,7 +184,7 @@ impl Core {
     ) -> Option<(crate::model::Pane, SourceDetached)> {
         let panes_len = engine.workspaces[ws_idx].pane_layout().all_pane_ids().len();
         if panes_len > 1 {
-            let pane = engine.workspaces[ws_idx].detach_pane_preserving_focus(pane_id)?;
+            let pane = engine.workspaces[ws_idx].detach_pane(pane_id)?;
             engine.mark_layout_dirty();
             return Some((
                 pane,
@@ -242,7 +242,7 @@ impl Core {
         let tab = ws
             .pane_layout_mut()
             .find_pane_mut(pane_id)?
-            .take_tab_preserving_active(tab_idx)?;
+            .take_tab(tab_idx)?;
 
         if tabs_len > 1 {
             engine.mark_layout_dirty();
@@ -258,7 +258,7 @@ impl Core {
         }
 
         if panes_len > 1 {
-            if !ws.close_pane_preserving_focus(pane_id) {
+            if !ws.close_pane(pane_id) {
                 // 닫지 못한 pane이 탭 없이 남지 않도록 되돌린다.
                 if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
                     pane.tabs.push(tab);

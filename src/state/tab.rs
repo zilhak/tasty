@@ -46,6 +46,7 @@ impl AppState {
         engine.runtime.terminals.insert(surface_id, terminal);
         if let Some(pane) = self.focused_pane_mut(engine) {
             pane.add_terminal_marker_tab(tab_id, surface_id);
+            self.navigation.select_tab(pane, tab_id);
         }
         #[cfg(feature = "gui")]
         if let Some(pane) = self.focused_pane(engine) {
@@ -87,6 +88,7 @@ impl AppState {
         );
         if let Some(pane) = self.focused_pane_mut(engine) {
             pane.add_surface_tab(tab_id, name, None, surface);
+            self.navigation.select_tab(pane, tab_id);
             engine.mark_layout_dirty();
             Ok((tab_id, surface_id))
         } else {
@@ -133,6 +135,7 @@ impl AppState {
         let ws = self.active_workspace_mut(engine);
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             pane.add_surface_tab(tab_id, name, None, surface);
+            self.navigation.select_tab(pane, tab_id);
             engine.mark_layout_dirty();
             Ok((tab_id, surface_id))
         } else {
@@ -189,7 +192,8 @@ impl AppState {
         #[cfg(feature = "gui")]
         let before = self.tutorial_tab_snapshot(engine);
         if let Some(pane) = self.focused_pane_mut(engine) {
-            pane.next_tab();
+            let index = (self.navigation.tab_index(pane) + 1) % pane.tabs.len().max(1);
+            self.navigation.goto_tab(pane, index);
         }
         #[cfg(feature = "gui")]
         self.observe_tutorial_tab_switch(engine, before);
@@ -200,7 +204,9 @@ impl AppState {
         #[cfg(feature = "gui")]
         let before = self.tutorial_tab_snapshot(engine);
         if let Some(pane) = self.focused_pane_mut(engine) {
-            pane.prev_tab();
+            let len = pane.tabs.len().max(1);
+            let index = (self.navigation.tab_index(pane) + len - 1) % len;
+            self.navigation.goto_tab(pane, index);
         }
         #[cfg(feature = "gui")]
         self.observe_tutorial_tab_switch(engine, before);
@@ -212,7 +218,7 @@ impl AppState {
         #[cfg(feature = "gui")]
         let before = self.tutorial_tab_snapshot(engine);
         let result = if let Some(pane) = self.focused_pane_mut(engine) {
-            pane.goto_tab(index)
+            self.navigation.goto_tab(pane, index)
         } else {
             TabSwitch::NoPane
         };
@@ -229,7 +235,7 @@ impl AppState {
             .pane_layout()
             .find_pane(pane_id)
             .and_then(|p| p.tabs.get(tab_index))
-            .and_then(|t| t.focused_surface_id())
+            .and_then(|t| self.navigation.surface_id(t))
             .map(|sid| crate::ipc::stream::StructuralOp::CloseTab {
                 anchor_surface_id: sid,
             });
@@ -300,7 +306,9 @@ impl AppState {
                 });
         let candidates = self
             .focused_pane(engine)
-            .map(|pane| AppState::pane_sibling_tab_focus_candidates(pane, pane.active_tab))
+            .map(|pane| {
+                AppState::pane_sibling_tab_focus_candidates(pane, self.navigation.tab_index(pane))
+            })
             .unwrap_or_default();
         if self.forward_mirror_structural(engine, mirror_op, candidates) {
             return true;
@@ -308,7 +316,7 @@ impl AppState {
         let in_tab: Vec<u32> = {
             let mut t: Vec<(u32, Option<String>)> = Vec::new();
             if let Some(pane) = self.focused_pane(engine)
-                && let Some(tab) = pane.tabs.get(pane.active_tab)
+                && let Some(tab) = pane.tabs.get(self.navigation.tab_index(pane))
             {
                 crate::core::impl_close::collect_close_targets(tab, engine, &mut t);
             }
@@ -319,7 +327,7 @@ impl AppState {
         }
         let Some(tab_id) = self
             .focused_pane(engine)
-            .and_then(|pane| pane.tabs.get(pane.active_tab))
+            .and_then(|pane| pane.tabs.get(self.navigation.tab_index(pane)))
             .map(|tab| tab.id)
         else {
             return false;
@@ -418,8 +426,14 @@ impl AppState {
         let ws = engine
             .workspaces
             .get(self.active_workspace_index(&engine))?;
-        let pane = ws.pane_layout().find_pane(ws.focused_pane)?;
-        Some((ws.id, pane.id, pane.tabs.get(pane.active_tab)?.id))
+        let pane = ws
+            .pane_layout()
+            .find_pane(self.navigation.pane_id(ws).unwrap_or(0))?;
+        Some((
+            ws.id,
+            pane.id,
+            pane.tabs.get(self.navigation.tab_index(pane))?.id,
+        ))
     }
     pub(crate) fn observe_tutorial_tab_switch(
         &mut self,

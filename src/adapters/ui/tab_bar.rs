@@ -315,7 +315,7 @@ pub fn draw_pane_tab_bars(
                     .iter()
                     .map(|t| {
                         let kind = engine
-                            .find_surface_by_id(t.focused_surface)
+                            .find_surface_by_id(state.navigation.surface_id(t).unwrap_or(0))
                             .map(|s| s.kind())
                             .unwrap_or("terminal");
                         engine
@@ -328,7 +328,7 @@ pub fn draw_pane_tab_bars(
                     .collect(),
                 tab_attention_kind,
                 tab_is_busy,
-                active_tab: pane.active_tab,
+                active_tab: state.navigation.tab_index(pane),
                 is_focused: pane_id == focused_pane_id,
                 scroll_offset: state
                     .tab_bar_scroll

@@ -119,8 +119,8 @@ fn build_mirror_forward_op(
     let pane_anchor = |pane_id: u32| -> Option<u32> {
         engine
             .find_pane_by_id(pane_id)
-            .and_then(|p| p.tabs.get(p.active_tab))
-            .and_then(|t| t.focused_surface_id())
+            .and_then(|p| p.tabs.first())
+            .and_then(|t| t.first_surface_id())
     };
     let tab_anchor = |tab_id: u32| -> Option<u32> {
         for ws in &engine.workspaces {
@@ -128,7 +128,7 @@ fn build_mirror_forward_op(
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
                         if tab.id == tab_id {
-                            return tab.focused_surface_id();
+                            return tab.first_surface_id();
                         }
                     }
                 }

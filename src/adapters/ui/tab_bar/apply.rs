@@ -18,7 +18,9 @@ pub fn apply_tab_bar_actions(
 
     for action in actions {
         if let Some(pane_id) = action.focus_target_pane() {
-            state.active_workspace_mut(engine).focused_pane = pane_id;
+            state
+                .navigation
+                .select_pane(state.active_workspace(engine), pane_id);
         }
         match action {
             TabBarAction::SwitchTab { pane_id, tab_index } => {
@@ -29,7 +31,7 @@ pub fn apply_tab_bar_actions(
                     .pane_layout_mut()
                     .find_pane_mut(pane_id)
                 {
-                    pane.active_tab = tab_index;
+                    state.navigation.goto_tab(pane, tab_index);
                     if let Some(tab) = pane.tabs.get(tab_index) {
                         to_wake = tab.deferred_surface_ids();
                     }
@@ -203,7 +205,7 @@ fn apply_drag_end(
         if target != drag.tab_index {
             let mirror_op = engine
                 .find_pane_by_id(pane_id)
-                .and_then(|p| p.tabs.get(p.active_tab))
+                .and_then(|p| p.tabs.get(state.navigation.tab_index(p)))
                 .and_then(|t| t.focused_surface_id())
                 .map(|sid| crate::ipc::stream::StructuralOp::MoveTab {
                     anchor_surface_id: sid,

@@ -160,7 +160,7 @@ impl AppState {
         let new_pane_id = new_pane.id;
 
         let ws = &mut engine.workspaces[ws_idx];
-        let target_pane_id = ws.focused_pane;
+        let target_pane_id = self.navigation.pane_id(ws).unwrap_or(0);
         let remaining = ws.pane_layout_mut().split_pane_in_place(
             target_pane_id,
             SplitDirection::Vertical,
@@ -206,7 +206,7 @@ impl AppState {
             .active_workspace_index(&engine)
             .min(engine.workspaces.len() - 1);
         let ws = &engine.workspaces[ws_idx];
-        let pid = ws.focused_pane;
+        let pid = self.navigation.pane_id(ws).unwrap_or(0);
         if ws.pane_layout().find_pane(pid).is_some() {
             return Ok((ws_idx, pid));
         }

@@ -340,7 +340,7 @@ pub(crate) enum CoreEvent {
         tab_id: u32,
         surface_id: u32,
         tab_count: usize,
-        active_tab: usize,
+        activate: bool,
     },
     /// 닫힌 탭의 자원 정리 대상. pane_id가 없으면 대상 탭을 찾지 못한 경우다.
     TabClosed {

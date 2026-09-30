@@ -90,7 +90,7 @@ pub fn draw_tutorial_overlay(
     let surface_id = if let Some(c) = state.tutorial.practice {
         engine
             .find_pane_by_id(c.pane)
-            .and_then(|p| p.tabs.get(p.active_tab))
+            .and_then(|p| p.tabs.get(state.navigation.tab_index(p)))
             .and_then(|t| t.focused_surface_id())
     } else {
         state.focused_surface_id(engine)

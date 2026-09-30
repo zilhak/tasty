@@ -325,12 +325,7 @@ pub(crate) fn cascade_surface_split(
     if !origin.is_user() {
         return;
     }
-    if let Some(ws) = engine.workspaces.get_mut(workspace_index)
-        && let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id)
-        && let Some(tab) = pane.active_tab_mut()
-    {
-        tab.focused_surface = new_surface_id;
-    }
+    state.select_surface_result(engine, new_surface_id);
     #[cfg(feature = "gui")]
     state.observe_tutorial_surface_split(engine, workspace_index, pane_id, new_surface_id);
 }
@@ -367,10 +362,8 @@ pub(crate) fn cascade_pane_split(
         cascade_surface_created(state, engine, c.new_surface_id);
         workspace_id
     };
-    if origin.is_user()
-        && let Some(ws) = engine.workspaces.get_mut(c.workspace_index)
-    {
-        ws.focused_pane = c.new_pane_id;
+    if origin.is_user() {
+        state.select_pane_result(engine, c.new_pane_id);
     }
     #[cfg(feature = "gui")]
     if origin.is_user()
@@ -477,7 +470,7 @@ pub(crate) fn cascade_tab_created(
         let kind = engine
             .find_pane_by_id(pane_id)
             .and_then(|p| p.tabs.iter().find(|t| t.id == tab_id))
-            .and_then(|t| t.focused_surface_id())
+            .and_then(|t| t.first_surface_id())
             .and_then(|sid| engine.find_surface_by_id(sid))
             .map(|s| s.kind().to_string())
             .unwrap_or_else(|| "unknown".to_string());

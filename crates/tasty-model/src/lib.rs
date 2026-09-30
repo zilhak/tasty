@@ -106,3 +106,6 @@ pub use workspace_category::*;
 
 #[cfg(test)]
 mod tests;
+
+mod structure_presentation;
+pub use structure_presentation::StructurePresentation;

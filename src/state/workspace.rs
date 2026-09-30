@@ -325,7 +325,7 @@ impl AppState {
             let ws = &engine.workspaces[self.active_workspace_index(&engine)];
             for pane_id in ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pane_id)
-                    && let Some(tab) = pane.tabs.get(pane.active_tab)
+                    && let Some(tab) = pane.tabs.get(self.navigation.tab_index(pane))
                 {
                     deferred.extend(tab.deferred_surface_ids());
                 }

@@ -403,7 +403,7 @@ impl MainView {
         };
         for pane_id in ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pane_id)
-                && let Some(tab) = pane.tabs.get(pane.active_tab)
+                && let Some(tab) = pane.tabs.get(self.state.navigation.tab_index(pane))
                 && tab.contains_surface(surface_id)
             {
                 return true;
@@ -449,7 +449,8 @@ impl MainView {
                             continue;
                         };
                         // Only visible if: active workspace AND active tab
-                        let is_visible = ws_idx == active_ws && tab_idx == pane.active_tab;
+                        let is_visible =
+                            ws_idx == active_ws && tab_idx == self.state.navigation.tab_index(pane);
                         // 비포커스 leaf에도 native WebView가 필요하므로 탭 전체를 순회한다.
                         for (sid, leaf_rect) in
                             layout.compute_rects(content_rect, scale_factor as f32)
@@ -1373,7 +1374,7 @@ impl MainView {
     ) {
         match result {
             Some(1) => {
-                self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                self.state.select_pane(engine, pane_id);
                 if let Err(e) = self.state.add_tab(engine) {
                     tracing::warn!("add_tab from context menu failed: {e}");
                 }
@@ -1381,7 +1382,7 @@ impl MainView {
             Some(2) => {
                 // 빈 탭을 먼저 만들고, 그 surface 를 제자리 markdown 변환. surface_id 를
                 // 실어 file-open 팝업을 연다(plugin 이 markdown.navigate 로 제자리 변환).
-                self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                self.state.select_pane(engine, pane_id);
                 if let Some((_tab_id, surface_id)) = self.state.add_empty_tab(engine) {
                     // intent-exempt: surface_id 결과 의존 (후속 convert)
                     self.state
@@ -1389,7 +1390,7 @@ impl MainView {
                 }
             }
             Some(5) => {
-                self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                self.state.select_pane(engine, pane_id);
                 if let Some((_tab_id, surface_id)) = self.state.add_empty_tab(engine) {
                     // intent-exempt: surface_id 결과 의존 (후속 convert)
 
@@ -1417,7 +1418,7 @@ impl MainView {
                 }
             }
             Some(7) => {
-                self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                self.state.select_pane(engine, pane_id);
                 self.state.dialogs.preset_picker_selected = None;
                 self.state.dispatch_intent(
                     crate::intent::UiIntent::OpenPopup {
@@ -1428,7 +1429,7 @@ impl MainView {
                 );
             }
             Some(8) => {
-                self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                self.state.select_pane(engine, pane_id);
                 self.state.dialogs.preset_picker_selected = None;
                 self.state.dispatch_intent(
                     crate::intent::UiIntent::OpenPopup {
@@ -2454,7 +2455,7 @@ impl MainView {
             }
             match result {
                 Some(1) => {
-                    this.state.active_workspace_mut(engine).focused_pane = pane_id;
+                    this.state.select_pane(engine, pane_id);
                     this.state.dialogs.preset_picker_selected = None;
                     this.state.dispatch_intent(
                         crate::intent::UiIntent::OpenPopup {
@@ -2465,7 +2466,7 @@ impl MainView {
                     );
                 }
                 Some(2) => {
-                    this.state.active_workspace_mut(engine).focused_pane = pane_id;
+                    this.state.select_pane(engine, pane_id);
                     this.state.dialogs.preset_picker_selected = None;
                     this.state.dispatch_intent(
                         crate::intent::UiIntent::OpenPopup {

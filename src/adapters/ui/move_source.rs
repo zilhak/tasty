@@ -91,7 +91,7 @@ pub(crate) fn resolve(
                 .tabs
                 .iter()
                 .position(|t| t.contains_surface(surface_id))?;
-            if tab_index != pane.active_tab {
+            if tab_index != state.navigation.tab_index(pane) {
                 return Some(MoveSourceMark::TabGlyph { pane_id, tab_index });
             }
             let content = PhysicalRect {

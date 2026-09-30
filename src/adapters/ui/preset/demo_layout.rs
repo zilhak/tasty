@@ -461,7 +461,10 @@ fn norm_pane(
 ) -> PreviewPane {
     let id = pane_ids.next();
     let tabs: Vec<PreviewTab> = pane.tabs.iter().map(|t| norm_tab(t, resolve)).collect();
-    let active = pane.active_tab.min(tabs.len().saturating_sub(1));
+    let active = state
+        .navigation
+        .tab_index(pane)
+        .min(tabs.len().saturating_sub(1));
     PreviewPane { id, tabs, active }
 }
 

@@ -16,6 +16,7 @@ fn require_tab_id(
 }
 
 pub fn handle_tab_list(
+    presentation: &(impl crate::model::StructurePresentation + ?Sized),
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -29,14 +30,14 @@ pub fn handle_tab_list(
             .iter()
             .enumerate()
             .map(|(i, tab)| {
-                let surface = tab.surface();
-                let surface_type = surface.type_name();
-                let surface_id = surface.surface_id();
+                let surface = presentation.surface_id(tab).and_then(|id| tab.surface(id));
+                let surface_type = surface.map(|s| s.type_name()).unwrap_or("Empty");
+                let surface_id = surface.and_then(|s| s.surface_id());
                 let sids = tab.all_surface_ids();
                 let mut entry = json!({
                     "id": tab.id,
                     "name": tab.name,
-                    "active": i == pane.active_tab,
+                    "active": i == presentation.tab_index(pane),
                     "type": surface_type,
                     "busy_count": engine.busy_count(&sids),
                 });

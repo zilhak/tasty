@@ -612,10 +612,10 @@ fn route_engine_handler(
         "workspace_category.move" => {
             workspace_category::handle_move(core, engine, id, &request.params)
         }
-        "pane.list" => pane::handle_pane_list(engine, id),
+        "pane.list" => pane::handle_pane_list(window.presentation(), engine, id),
         "pane.close" => pane::handle_pane_close(core, window, engine, id, &request.params, &origin),
         "split" => pane::handle_split(core, window, engine, id, &request.params, &origin),
-        "tab.list" => tab::handle_tab_list(engine, id, &request.params),
+        "tab.list" => tab::handle_tab_list(window.presentation(), engine, id, &request.params),
         "tab.create" => tab::handle_tab_create(core, window, engine, id, &request.params, &origin),
         "tab.close" => tab::handle_tab_close(core, window, engine, id, &request.params, &origin),
         "tab.move" => tab::handle_tab_move(core, engine, id, &request.params, &origin),
@@ -1245,7 +1245,7 @@ pub(crate) fn build_engine_tree(
         .iter()
         .enumerate()
         .map(|(i, ws)| {
-            let mut t = ws.to_tree_json();
+            let mut t = ws.to_tree_json(window.presentation());
             t["active"] = json!(i == window.active_workspace_index(engine));
             t["busy_count"] = json!(engine.busy_count(&ws.all_surface_ids()));
             annotate_tree_busy(&mut t, engine);

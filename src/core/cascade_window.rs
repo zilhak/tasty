@@ -8,6 +8,12 @@ use crate::core::CoreState;
 use crate::core::host_event::PendingHostEvent;
 
 pub(crate) trait CascadeWindow {
+    /// Apply a live User continuation using the IDs returned by a structural result.
+    fn select_surface_result(&mut self, engine: &CoreState, surface: u32);
+    fn select_tab_result(&mut self, engine: &CoreState, pane: u32, tab: u32);
+    fn select_pane_result(&mut self, engine: &CoreState, pane: u32);
+    fn presentation(&self) -> &dyn crate::model::StructurePresentation;
+
     /// inherit_cwd 설정과 원래 surface의 cwd를 함께 확인한다.
     fn resolve_inherit_cwd_from_surface(
         &self,

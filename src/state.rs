@@ -834,12 +834,15 @@ impl AppState {
             Some(p) => p,
             None => return FocusedSurfaceType::None,
         };
-        let tab = match pane.tabs.get(pane.active_tab) {
+        let tab = match pane.tabs.get(self.navigation.tab_index(pane)) {
             Some(t) => t,
             None => return FocusedSurfaceType::None,
         };
 
-        if let Some(leaf) = tab.layout().find_surface(tab.focused_surface) {
+        if let Some(leaf) = tab
+            .layout()
+            .find_surface(self.navigation.surface_id(tab).unwrap_or(0))
+        {
             return Self::surface_to_type(leaf);
         }
 

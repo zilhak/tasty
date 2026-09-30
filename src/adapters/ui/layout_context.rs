@@ -45,8 +45,8 @@ pub(crate) fn build_layout_context(
     let ws = state.active_workspace(engine);
     for &pid in &ws.pane_layout().all_pane_ids() {
         if let Some(pane) = ws.pane_layout().find_pane(pid) {
-            active_tabs.push((pid, pane.active_tab));
-            if let Some(tab) = pane.tabs.get(pane.active_tab) {
+            active_tabs.push((pid, state.navigation.tab_index(pane)));
+            if let Some(tab) = pane.tabs.get(state.navigation.tab_index(pane)) {
                 active_tab_ids.push((pid, tab.id));
             }
         }

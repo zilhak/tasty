@@ -201,14 +201,15 @@ impl ClosedPanel {
         tab: &super::tab::Tab,
         snapshot: SnapshotFn<'_>,
         terminal_lookup: &TerminalCaptureFn<'_>,
+        presentation: &(impl crate::StructurePresentation + ?Sized),
     ) -> Option<Self> {
         if tab.is_split() {
             return Some(ClosedPanel::Tab {
                 layout: ClosedSurfaceLayout::from_layout(tab.layout(), terminal_lookup),
-                focused_surface: tab.focused_surface,
+                focused_surface: presentation.surface_id(tab).unwrap_or(0),
             });
         }
-        let surface = tab.surface();
+        let surface = tab.surface(tab.first_surface_id()?)?;
         Self::from_surface(surface, snapshot, terminal_lookup)
     }
 
@@ -240,8 +241,9 @@ impl ClosedTab {
         tab: &super::tab::Tab,
         snapshot: SnapshotFn<'_>,
         terminal_lookup: &TerminalCaptureFn<'_>,
+        presentation: &(impl crate::StructurePresentation + ?Sized),
     ) -> Option<Self> {
-        let panel = ClosedPanel::from_tab(tab, snapshot, terminal_lookup)?;
+        let panel = ClosedPanel::from_tab(tab, snapshot, terminal_lookup, presentation)?;
         Some(Self {
             id: tab.id,
             name: tab.name.clone(),
@@ -257,15 +259,16 @@ impl ClosedPane {
         pane: &super::Pane,
         snapshot: SnapshotFn<'_>,
         terminal_lookup: &TerminalCaptureFn<'_>,
+        presentation: &(impl crate::StructurePresentation + ?Sized),
     ) -> Self {
         Self {
             id: pane.id,
             tabs: pane
                 .tabs
                 .iter()
-                .filter_map(|t| ClosedTab::from_tab(t, snapshot, terminal_lookup))
+                .filter_map(|t| ClosedTab::from_tab(t, snapshot, terminal_lookup, presentation))
                 .collect(),
-            active_tab: pane.active_tab,
+            active_tab: presentation.tab_index(pane),
         }
     }
 }
@@ -276,11 +279,15 @@ impl ClosedPaneNode {
         node: &super::PaneNode,
         snapshot: SnapshotFn<'_>,
         terminal_lookup: &TerminalCaptureFn<'_>,
+        presentation: &(impl crate::StructurePresentation + ?Sized),
     ) -> Self {
         match node {
-            super::PaneNode::Leaf(pane) => {
-                ClosedPaneNode::Leaf(ClosedPane::from_pane(pane, snapshot, terminal_lookup))
-            }
+            super::PaneNode::Leaf(pane) => ClosedPaneNode::Leaf(ClosedPane::from_pane(
+                pane,
+                snapshot,
+                terminal_lookup,
+                presentation,
+            )),
             super::PaneNode::Split {
                 direction,
                 ratio,
@@ -290,8 +297,18 @@ impl ClosedPaneNode {
             } => ClosedPaneNode::Split {
                 direction: *direction,
                 ratio: *ratio,
-                first: Box::new(Self::from_pane_node(first, snapshot, terminal_lookup)),
-                second: Box::new(Self::from_pane_node(second, snapshot, terminal_lookup)),
+                first: Box::new(Self::from_pane_node(
+                    first,
+                    snapshot,
+                    terminal_lookup,
+                    presentation,
+                )),
+                second: Box::new(Self::from_pane_node(
+                    second,
+                    snapshot,
+                    terminal_lookup,
+                    presentation,
+                )),
             },
         }
     }
@@ -313,9 +330,10 @@ impl ClosedItem {
         was_first: bool,
         snapshot: SnapshotFn<'_>,
         terminal_lookup: &TerminalCaptureFn<'_>,
+        presentation: &(impl crate::StructurePresentation + ?Sized),
     ) -> Self {
         ClosedItem::Pane {
-            pane: ClosedPane::from_pane(pane, snapshot, terminal_lookup),
+            pane: ClosedPane::from_pane(pane, snapshot, terminal_lookup, presentation),
             sibling_pane_id,
             direction,
             ratio,
@@ -328,6 +346,7 @@ impl ClosedItem {
         ws: &super::Workspace,
         snapshot: SnapshotFn<'_>,
         terminal_lookup: &TerminalCaptureFn<'_>,
+        presentation: &(impl crate::StructurePresentation + ?Sized),
     ) -> Self {
         ClosedItem::Workspace {
             id: ws.id,
@@ -337,8 +356,9 @@ impl ClosedItem {
                 ws.pane_layout(),
                 snapshot,
                 terminal_lookup,
+                presentation,
             ),
-            focused_pane: ws.focused_pane,
+            focused_pane: presentation.pane_id(ws).unwrap_or(0),
         }
     }
 }

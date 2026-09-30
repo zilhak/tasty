@@ -278,14 +278,14 @@ impl Core {
         if tabs_len > 1 {
             let ws = &mut engine.workspaces[ws_idx];
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id)?;
-            pane.remove_tab_preserving_active(tab_idx);
+            pane.remove_tab(tab_idx);
             engine.mark_layout_dirty();
             return Some((a_box, CascadeLevel::Tab, vec![tab_id], vec![], None, false));
         }
 
         if panes_len > 1 {
             let ws = &mut engine.workspaces[ws_idx];
-            ws.close_pane_preserving_focus(pane_id);
+            ws.close_pane(pane_id);
             engine.mark_layout_dirty();
             return Some((
                 a_box,

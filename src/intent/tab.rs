@@ -26,7 +26,7 @@ fn new_tab(
     origin: &IntentOrigin,
 ) {
     let kind = kind.unwrap_or("terminal");
-    let pane_id = state.active_workspace(engine).focused_pane;
+    let pane_id = state.focused_pane_id(engine);
     let cwd = if kind == "terminal" {
         state.resolve_inherit_cwd(engine)
     } else {

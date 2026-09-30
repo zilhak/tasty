@@ -128,17 +128,17 @@ impl Core {
             engine.tap_new_workspace_member(ws_id, surface_id, is_terminal);
         }
 
-        let (tab_count, active_tab) = engine
+        let tab_count = engine
             .find_pane_by_id(pane_id)
-            .map(|p| (p.tabs.len(), p.active_tab))
-            .unwrap_or((0, 0));
+            .map(|p| p.tabs.len())
+            .unwrap_or(0);
 
         Ok(vec![CoreEvent::TabCreated {
             pane_id,
             tab_id,
             surface_id,
             tab_count,
-            active_tab,
+            activate: activate && !is_terminal,
         }])
     }
 

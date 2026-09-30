@@ -9,6 +9,36 @@ use crate::core::cascade_window::CascadeWindow;
 use crate::core::host_event::PendingHostEvent;
 
 impl CascadeWindow for AppState {
+    fn select_surface_result(&mut self, engine: &CoreState, surface: u32) {
+        for ws in &engine.workspaces {
+            for pane_id in ws.pane_layout().all_pane_ids() {
+                if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
+                    if let Some(tab) = pane.tabs.iter().find(|t| t.contains_surface(surface)) {
+                        self.navigation.select_surface(tab, surface);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    fn select_tab_result(&mut self, engine: &CoreState, pane: u32, tab: u32) {
+        if let Some(pane) = engine.find_pane_by_id(pane) {
+            self.navigation.select_tab(pane, tab);
+        }
+    }
+    fn select_pane_result(&mut self, engine: &CoreState, pane: u32) {
+        if let Some(ws) = engine
+            .workspaces
+            .iter()
+            .find(|ws| ws.pane_layout().find_pane(pane).is_some())
+        {
+            self.navigation.select_pane(ws, pane);
+        }
+    }
+    fn presentation(&self) -> &dyn crate::model::StructurePresentation {
+        &self.navigation
+    }
+
     fn resolve_inherit_cwd_from_surface(
         &self,
         engine: &CoreState,

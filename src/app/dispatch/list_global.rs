@@ -37,9 +37,9 @@ impl App {
             "surface.list" => {
                 Some(self.collect_list(id, |_c, _s, e, id| surface::handle_surface_list(e, id)))
             }
-            "pane.list" => {
-                Some(self.collect_list(id, |_c, _s, e, id| pane::handle_pane_list(e, id)))
-            }
+            "pane.list" => Some(self.collect_list(id, |_c, s, e, id| {
+                pane::handle_pane_list(&s.navigation, e, id)
+            })),
             "tree" => Some(self.collect_list(id, |_c, s, e, id| {
                 JsonRpcResponse::success(id, json!(host_ipc::handler::build_engine_tree(s, e)))
             })),

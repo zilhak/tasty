@@ -24,7 +24,7 @@ fn split(
     direction: SplitDirection,
     origin: &IntentOrigin,
 ) {
-    let pane_id = state.active_workspace(engine).focused_pane;
+    let pane_id = state.focused_pane_id(engine);
     let cwd = state.resolve_inherit_cwd(engine);
     let intent = crate::core::intent::DomainIntent::SplitPane {
         target_pane_id: pane_id,

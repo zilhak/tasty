@@ -487,14 +487,11 @@ pub(crate) fn apply_create_workspace_inner(
     }
     engine.mark_layout_dirty();
 
-    let final_surface_id = {
-        let ws = &engine.workspaces[idx];
-        let pane_id = ws.focused_pane;
-        ws.pane_layout()
-            .find_pane(pane_id)
-            .and_then(|pane| pane.tabs.get(pane.active_tab))
-            .and_then(|tab| tab.focused_surface_id())
-    };
+    let final_surface_id = engine.workspaces[idx]
+        .pane_layout()
+        .first_pane()
+        .and_then(|pane| pane.tabs.first())
+        .and_then(|tab| tab.first_surface_id());
 
     Ok(CoreEvent::WorkspaceCreated {
         id: ws_id,
@@ -527,7 +524,6 @@ fn push_tab_to_pane(
     for ws in engine.workspaces.iter_mut() {
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
             pane.tabs.push(tab);
-            pane.active_tab = pane.tabs.len() - 1;
             return true;
         }
     }

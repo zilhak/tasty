@@ -40,8 +40,8 @@ fn focused_explorer_panel<'a>(
     engine: &'a crate::core::CoreState,
 ) -> Option<&'a crate::model::ExplorerPanel> {
     let pane = state.focused_pane(engine)?;
-    let tab = pane.tabs.get(pane.active_tab)?;
-    let focused = tab.focused_surface;
+    let tab = pane.tabs.get(state.navigation.tab_index(pane))?;
+    let focused = state.navigation.surface_id(tab).unwrap_or(0);
     let surface = tab.layout().find_surface(focused)?;
     surface
         .as_any()

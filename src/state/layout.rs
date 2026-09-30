@@ -27,7 +27,7 @@ impl AppState {
                     width: pane_rect.width,
                     height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
                 };
-                let regions = match pane.tabs.get(pane.active_tab) {
+                let regions = match pane.tabs.get(self.navigation.tab_index(pane)) {
                     Some(tab) => tab.surface_regions(content_rect),
                     None => Vec::new(),
                 };
@@ -106,7 +106,7 @@ impl AppState {
             let ws = &engine.workspaces[idx];
             for pane_id in ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pane_id)
-                    && let Some(tab) = pane.tabs.get(pane.active_tab)
+                    && let Some(tab) = pane.tabs.get(self.navigation.tab_index(pane))
                 {
                     deferred.extend(tab.deferred_surface_ids());
                 }

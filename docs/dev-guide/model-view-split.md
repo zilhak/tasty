@@ -102,3 +102,9 @@ state.foo_views = foo_views;   // 반드시 복원 (이후 state 접근 전에)
 | `TerminalSurface` / `EmptySurface` | (없음 — GPU 렌더 또는 id-only) | — |
 
 신규 host surface 추가 시 이 표에 줄을 더한다. plugin surface(`image`/`html`/`markdown`)는 여기 들어오지 않는다.
+
+## 구조 선택의 projection
+
+Workspace·Pane·Tab의 구조에는 현재 사용자 선택을 저장하지 않는다. View의 navigation은 workspace·pane·tab·surface ID를 선택하고, 현재 구조와 대조해 삭제된 선택만 보정한다. 인덱스는 UI 입력과 기존 IPC·저장 형식의 경계에서 변환한다. 이전 순서는 삭제 시 이웃을 찾는 보정 자료이며 별도의 선택 원본이 아니다.
+
+모델의 `StructurePresentation`은 구조를 기존 조회·attach·복원 DTO로 만드는 읽기 전용 입력이다. 직렬화와 복원 사본 캡처가 이 입력을 명시적으로 받으며, 모델이 View 선택을 변경하지 않는다. `Tab::surface`와 `surface_mut`는 명시 surface ID를 찾고 없는 ID에는 `None`을 반환한다. 구조 자체의 대표 surface가 필요한 호출자는 `first_surface_id`라는 기준을 명시한다.

@@ -148,8 +148,8 @@ pub(crate) fn split(
                 cwd.or_else(|| {
                     let sid = engine
                         .find_pane_by_id(resolved_pane_id)
-                        .and_then(|p| p.tabs.get(p.active_tab))
-                        .and_then(|t| t.focused_surface_id())?;
+                        .and_then(|p| p.tabs.get(state.presentation().tab_index(p)))
+                        .and_then(|t| state.presentation().surface_id(t))?;
                     state.resolve_inherit_cwd_from_surface(engine, sid)
                 })
             } else {
@@ -319,8 +319,8 @@ pub(crate) fn create_tab(
         explicit.or_else(|| {
             let sid = engine
                 .find_pane_by_id(pane_id)
-                .and_then(|p| p.tabs.get(p.active_tab))
-                .and_then(|t| t.focused_surface_id())?;
+                .and_then(|p| p.tabs.get(state.presentation().tab_index(p)))
+                .and_then(|t| state.presentation().surface_id(t))?;
             state.resolve_inherit_cwd_from_surface(engine, sid)
         })
     } else {
@@ -346,7 +346,7 @@ pub(crate) fn create_tab(
         tab_id,
         surface_id,
         tab_count,
-        active_tab,
+        activate,
     }) = events.into_iter().next()
     else {
         return Err(StructuralFailure::MissingEvent(
@@ -355,6 +355,13 @@ pub(crate) fn create_tab(
     };
 
     cascade_tab_created(state, engine, pane_id, tab_id, surface_id);
+    if activate && origin.is_user() {
+        state.select_tab_result(engine, pane_id, tab_id);
+    }
+    let active_tab = engine
+        .find_pane_by_id(pane_id)
+        .map(|pane| state.presentation().tab_index(pane))
+        .unwrap_or(0);
 
     Ok(TabCreated {
         pane_id,

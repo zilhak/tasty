@@ -107,10 +107,13 @@ impl AppState {
         surface_id: u32,
     ) -> Vec<u32> {
         let ws = self.active_workspace(engine);
-        let Some(pane) = ws.pane_layout().find_pane(ws.focused_pane) else {
+        let Some(pane) = ws
+            .pane_layout()
+            .find_pane(self.navigation.pane_id(ws).unwrap_or(0))
+        else {
             return Vec::new();
         };
-        let tab_index = pane.active_tab;
+        let tab_index = self.navigation.tab_index(pane);
         let Some(tab) = pane.tabs.get(tab_index) else {
             return Vec::new();
         };
@@ -193,7 +196,7 @@ impl AppState {
         }
         let Some(surface_id) = self
             .focused_pane(engine)
-            .and_then(|pane| pane.tabs.get(pane.active_tab))
+            .and_then(|pane| pane.tabs.get(self.navigation.tab_index(pane)))
             .map(|tab| tab.focused_surface)
         else {
             return false;
@@ -345,7 +348,7 @@ impl AppState {
             crate::model::Pane::new_with_terminal_marker(new_pane_id, new_tab_id, new_surface_id);
 
         let ws = self.active_workspace_mut(engine);
-        let target_pane_id = ws.focused_pane;
+        let target_pane_id = self.navigation.pane_id(ws).unwrap_or(0);
         ws.pane_layout_mut()
             .split_pane_in_place(target_pane_id, direction, new_pane);
         ws.focused_pane = new_pane_id;

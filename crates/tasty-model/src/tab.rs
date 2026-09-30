@@ -1,4 +1,3 @@
-use super::FocusDirection;
 use super::surface_layout::SurfaceLayout;
 use super::surface_trait::Surface;
 use super::terminal_surface::DeferredSpawn;
@@ -15,8 +14,6 @@ pub struct Tab {
     /// surface의 이진트리. take_layout/put_layout 사이에만 None이다.
     /// 지연 생성은 트리 안 EmptySurface의 Deferred 값으로 표현한다.
     pub layout_opt: Option<SurfaceLayout>,
-    /// The focused surface ID within this tab's layout.
-    pub focused_surface: SurfaceId,
     /// Cached display name. Updated on CwdChanged/explicit_name change, not every frame.
     pub cached_display_name: Option<String>,
 }
@@ -37,14 +34,12 @@ impl Tab {
         explicit_name: Option<String>,
         surface: Box<dyn Surface>,
     ) -> Self {
-        let surface_id = surface.surface_id().unwrap_or(0);
         Self {
             id,
             name,
             explicit_name,
             osc_title: None,
             layout_opt: Some(SurfaceLayout::Leaf(surface)),
-            focused_surface: surface_id,
             cached_display_name: None,
         }
     }
@@ -126,62 +121,16 @@ impl Tab {
         self.layout_opt = Some(layout);
     }
 
-    // ── Surface delegation (backward-compat helpers) ──
-
-    /// Get the "surface" for this tab. For a single leaf, returns the leaf.
-    /// For a split, returns the focused leaf surface.
-    /// NOTE: Callers that need the full layout tree should use layout() instead.
-    #[track_caller]
-    pub fn surface(&self) -> &dyn Surface {
-        let layout = self.layout();
-        if let SurfaceLayout::Leaf(surface) = layout {
-            return surface.as_ref();
-        }
-        if let Some(leaf) = layout.find_surface(self.focused_surface) {
-            return leaf;
-        }
-        if let Some(first_id) = layout.first_surface_id()
-            && let Some(leaf) = layout.find_surface(first_id)
-        {
-            return leaf;
-        }
-        panic!("BUG: layout has no surfaces");
+    /// Find exactly the requested surface; a stale ID never selects a sibling.
+    pub fn surface(&self, surface_id: SurfaceId) -> Option<&dyn Surface> {
+        self.layout_opt.as_ref()?.find_surface(surface_id)
     }
 
-    /// Get the focused surface mutably.
-    /// NOTE: Callers that need the full layout tree should use layout_mut() instead.
-    #[track_caller]
-    pub fn surface_mut(&mut self) -> &mut dyn Surface {
-        let focused = self.focused_surface;
-        let layout = self.layout_mut();
-        if let SurfaceLayout::Leaf(surface) = layout {
-            return surface.as_mut();
+    pub fn surface_mut(&mut self, surface_id: SurfaceId) -> Option<&mut (dyn Surface + '_)> {
+        match self.layout_opt.as_mut()?.find_leaf_mut(surface_id) {
+            Some(surface) => Some(surface.as_mut()),
+            None => None,
         }
-        let target_id = if layout.contains_surface(focused) {
-            focused
-        } else {
-            layout
-                .first_surface_id()
-                .expect("BUG: layout has no surfaces")
-        };
-        layout
-            .find_leaf_mut(target_id)
-            .map(|b| b.as_mut())
-            .expect("BUG: layout has no surfaces")
-    }
-
-    /// Access the surface if initialized (for backward compat).
-    pub fn surface_if_initialized(&self) -> Option<&dyn Surface> {
-        let layout = self.layout_opt.as_ref()?;
-        if let SurfaceLayout::Leaf(surface) = layout {
-            return Some(surface.as_ref());
-        }
-        if let Some(leaf) = layout.find_surface(self.focused_surface) {
-            return Some(leaf);
-        }
-        layout
-            .first_surface_id()
-            .and_then(|id| layout.find_surface(id))
     }
 
     /// Whether the layout is a split (more than one surface).
@@ -202,9 +151,9 @@ impl Tab {
         }
     }
 
-    /// Get the focused surface ID.
-    pub fn focused_surface_id(&self) -> Option<SurfaceId> {
-        Some(self.focused_surface)
+    /// A deterministic structural representative, independent from navigation.
+    pub fn first_surface_id(&self) -> Option<SurfaceId> {
+        self.layout_if_initialized()?.first_surface_id()
     }
 
     /// Visit every leaf Surface (read-only). 닫기 경로의 persist_id 수집용.
@@ -221,45 +170,7 @@ impl Tab {
         let old_layout = self.take_layout();
         let (new_layout, found) = old_layout.close_surface(target_id);
         self.put_layout(new_layout);
-        if found
-            && self.focused_surface == target_id
-            && let Some(first_id) = self.layout().first_surface_id()
-        {
-            self.focused_surface = first_id;
-        }
         found
-    }
-
-    /// Move focus to the next surface.
-    pub fn move_focus_forward(&mut self) {
-        let ids = self.layout().all_surface_ids();
-        if ids.len() <= 1 {
-            return;
-        }
-        let pos = ids
-            .iter()
-            .position(|&id| id == self.focused_surface)
-            .unwrap_or(0);
-        self.focused_surface = ids[(pos + 1) % ids.len()];
-    }
-
-    /// Move focus to the previous surface.
-    pub fn move_focus_backward(&mut self) {
-        let ids = self.layout().all_surface_ids();
-        if ids.len() <= 1 {
-            return;
-        }
-        let pos = ids
-            .iter()
-            .position(|&id| id == self.focused_surface)
-            .unwrap_or(0);
-        self.focused_surface = ids[(pos + ids.len() - 1) % ids.len()];
-    }
-
-    /// Directional focus navigation.
-    pub fn directional_focus(&self, direction: FocusDirection) -> Option<SurfaceId> {
-        self.layout()
-            .directional_focus(self.focused_surface, direction)
     }
 
     /// Resize all surfaces within the layout.
@@ -414,24 +325,10 @@ impl Tab {
 
     /// Replace the entire layout with a single surface.
     pub fn put_surface(&mut self, surface: Box<dyn Surface>) {
-        let sid = surface.surface_id().unwrap_or(0);
         self.layout_opt = Some(SurfaceLayout::Leaf(surface));
-        self.focused_surface = sid;
     }
 
     // ── Split operations ──
-
-    /// Split the focused surface within this tab with a TerminalSurface marker.
-    /// Moves focus to the new surface. Caller must have already inserted the
-    /// spawned Terminal into `CoreState::runtime.terminals`.
-    pub fn split_focused_surface(&mut self, direction: SplitDirection, new_surface_id: SurfaceId) {
-        let new_node = TerminalSurface { id: new_surface_id };
-        let target = self.focused_surface;
-        let old_layout = self.take_layout();
-        let (new_layout, _) = old_layout.split_with_node(target, direction, new_node);
-        self.put_layout(new_layout);
-        self.focused_surface = new_surface_id;
-    }
 
     /// Split a specific surface by ID with a TerminalSurface marker. Does NOT
     /// change focused_surface. Caller must have already inserted the spawned
@@ -471,11 +368,11 @@ impl Tab {
     }
 
     /// Produce a JSON tree representation of this tab.
-    pub fn to_tree_json(&self) -> serde_json::Value {
+    pub fn to_tree_json(&self, selected_surface: Option<SurfaceId>) -> serde_json::Value {
         let layout_json = if self.is_split() {
             let mut v = serde_json::json!({
                 "type": "SplitLayout",
-                "focused_surface": self.focused_surface,
+                "focused_surface": selected_surface.or_else(|| self.first_surface_id()).unwrap_or(0),
                 "surfaces": self.all_surface_ids(),
             });
             // 분할 방향/비율/상위-하위 중첩 구조를 보존한 전체 트리. CLI `list tree`
@@ -488,7 +385,10 @@ impl Tab {
         } else {
             // Single-leaf tab. EmptySurface(deferred) renders itself with pty_ready: false.
             // For a live TerminalSurface, append pty_ready: true.
-            let mut v = self.surface().to_tree_json();
+            let mut v = self
+                .surface(self.first_surface_id().expect("single leaf has an ID"))
+                .expect("single leaf ID exists")
+                .to_tree_json();
             if v.get("type").and_then(|t| t.as_str()) == Some("Terminal")
                 && !v
                     .as_object()

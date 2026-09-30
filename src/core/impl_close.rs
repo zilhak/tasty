@@ -152,7 +152,7 @@ impl Core {
         }
 
         let ws = &mut engine.workspaces[ws_idx];
-        let removed = ws.close_pane_preserving_focus(pane_id);
+        let removed = ws.close_pane(pane_id);
         if removed {
             engine.mark_layout_dirty();
         }
@@ -293,7 +293,7 @@ impl Core {
         let pane = ws.pane_layout_mut().find_pane_mut(loc.pane_id).unwrap();
         if pane.tabs.len() > 1 {
             let closed_tab_id = pane.tabs[loc.tab_idx].id;
-            pane.remove_tab_preserving_active(loc.tab_idx);
+            pane.remove_tab(loc.tab_idx);
             engine.mark_layout_dirty();
             return Some(CoreEvent::SurfaceClosed {
                 surface_id,
@@ -356,7 +356,7 @@ impl Core {
         }
         let ws = &mut engine.workspaces[loc.ws_idx];
         if ws.pane_layout().all_pane_ids().len() > 1 {
-            ws.close_pane_preserving_focus(loc.pane_id);
+            ws.close_pane(loc.pane_id);
             engine.mark_layout_dirty();
             return Some(CoreEvent::SurfaceClosed {
                 surface_id,

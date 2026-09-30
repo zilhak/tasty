@@ -743,7 +743,7 @@ impl GpuState {
                     width: pane_rect.width,
                     height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
                 };
-                if let Some(tab) = pane.tabs.get(pane.active_tab) {
+                if let Some(tab) = pane.tabs.get(state.navigation.tab_index(pane)) {
                     dividers.extend(
                         tab.layout()
                             .collect_dividers(content_rect, self.scale_factor),

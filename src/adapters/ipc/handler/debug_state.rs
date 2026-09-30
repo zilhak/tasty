@@ -15,9 +15,16 @@ pub(super) fn handle_ui_state(
     // active_workspace에는 system.info와 마찬가지로 저장된 인덱스를 반환한다.
     let ws = (!engine.workspaces.is_empty()).then(|| state.active_workspace(engine));
     let pane_count = ws.map(|ws| ws.pane_layout().all_pane_ids().len());
-    let focused_pane = ws.and_then(|ws| ws.pane_layout().find_pane(ws.focused_pane));
+    let focused_pane = ws.and_then(|ws| {
+        ws.pane_layout()
+            .find_pane(state.navigation.pane_id(ws).unwrap_or(0))
+    });
     let tab_count = ws.map(|_| focused_pane.map(|p| p.tabs.len()).unwrap_or(0));
-    let active_tab = ws.map(|_| focused_pane.map(|p| p.active_tab).unwrap_or(0));
+    let active_tab = ws.map(|_| {
+        focused_pane
+            .map(|p| state.navigation.tab_index(p))
+            .unwrap_or(0)
+    });
     #[cfg(feature = "gui")]
     let notification_panel_open = state.popups.is_open("notifications");
     #[cfg(not(feature = "gui"))]

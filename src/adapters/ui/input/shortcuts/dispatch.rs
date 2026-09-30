@@ -324,13 +324,13 @@ impl MainView {
                 }
             }
             "rename_tab" => {
-                let pane_id = state.active_workspace(engine).focused_pane;
+                let pane_id = state.focused_pane_id(engine);
                 if let Some(pane) = state
                     .active_workspace(engine)
                     .pane_layout()
                     .find_pane(pane_id)
                 {
-                    let tab_index = pane.active_tab;
+                    let tab_index = state.navigation.tab_index(pane);
                     if let Some(tab) = pane.tabs.get(tab_index) {
                         let current_name = tab.display_name();
                         let target = crate::state::RenameTarget::TabName { tab_id: tab.id };

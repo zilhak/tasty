@@ -30,7 +30,9 @@ fn collect_tab_surface_info(
     if tab.is_split() {
         collect_surface_layout_info(engine, tab.layout(), pane_id, workspace_id, tab_idx, out);
     } else {
-        let surface = tab.surface();
+        let Some(surface) = tab.first_surface_id().and_then(|id| tab.surface(id)) else {
+            return;
+        };
         if let Some(node) = surface
             .as_any()
             .downcast_ref::<crate::model::TerminalSurface>()
