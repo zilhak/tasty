@@ -288,6 +288,8 @@ pub fn draw_pane_tab_bars(
         state.active_workspace_index(engine),
         pane_rects,
         state.tab_bar_height,
+        Some(&state.layout_previews),
+        scale_factor,
     );
 
     let mut panes: Vec<PaneTabBarView> = Vec::new();

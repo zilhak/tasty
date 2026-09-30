@@ -116,6 +116,7 @@ pub(crate) enum DomainIntent {
         to_index: usize,
     },
     /// 사용자가 붙인 탭 이름. None이면 지우고 선택된 surface의 제목으로 돌아간다.
+    #[cfg(test)]
     RenameTab {
         tab_id: u32,
         name: Option<String>,

@@ -3,45 +3,6 @@
 use super::*;
 use crate::core::engine_access::EngineMut;
 
-/// workspace만 읽어 목표 grid를 모은다. 이후 Terminal store를 변경할 때 borrow가 겹치지 않게 한다.
-#[cfg(feature = "gui")]
-fn collect_terminal_resize_targets(
-    tab_bar_h: crate::model::PhysicalPx,
-    engine: &crate::core::CoreState,
-    terminal_rect: crate::model::PhysicalRect,
-    cell_width: f32,
-    cell_height: f32,
-    scale_factor: f32,
-) -> Vec<(u32, usize, usize)> {
-    let mut out = Vec::new();
-    for ws in &engine.workspaces() {
-        let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
-        for (pane_id, pane_rect) in pane_rects {
-            let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
-                continue;
-            };
-            let content_rect = crate::model::PhysicalRect {
-                x: pane_rect.x,
-                y: pane_rect.y + tab_bar_h,
-                width: pane_rect.width,
-                height: (pane_rect.height - tab_bar_h).max(crate::model::PhysicalPx(1.0)),
-            };
-            for tab in &pane.tabs {
-                let Some(layout) = tab.layout_opt.as_ref() else {
-                    continue;
-                };
-                for (sid, rect) in layout.compute_rects(content_rect, scale_factor) {
-                    let cols = ((rect.width.value() / cell_width.max(1.0)).floor() as usize).max(1);
-                    let rows =
-                        ((rect.height.value() / cell_height.max(1.0)).floor() as usize).max(1);
-                    out.push((sid, cols, rows));
-                }
-            }
-        }
-    }
-    out
-}
-
 impl Core {
     /// 지정 터미널의 출력을 읽고 engine에 쌓인 터미널 이벤트를 처리한다. GUI·헤드리스가 함께 사용한다.
     pub(crate) fn process_pty_output(
@@ -209,22 +170,7 @@ impl Core {
 
     /// 레이아웃의 목표 크기를 Terminal store에 적용한다. 탭 바 높이는 창 계층이 값으로 넘긴다.
     #[cfg(feature = "gui")]
-    pub(crate) fn resize_all_terminals(
-        tab_bar_height: crate::model::PhysicalPx,
-        engine: &mut EngineMut<'_>,
-        terminal_rect: crate::model::PhysicalRect,
-        cell_width: f32,
-        cell_height: f32,
-        scale_factor: f32,
-    ) {
-        let targets = collect_terminal_resize_targets(
-            tab_bar_height,
-            engine,
-            terminal_rect,
-            cell_width,
-            cell_height,
-            scale_factor,
-        );
+    pub(crate) fn resize_terminals(engine: &mut EngineMut<'_>, targets: Vec<(u32, usize, usize)>) {
         for (sid, cols, rows) in targets {
             // 점유 client가 정한 크기를 서버 창 레이아웃으로 덮지 않는다.
             if engine.attach.is_hard_occupied(sid) {

@@ -55,7 +55,11 @@ impl RequestContext {
         scale_factor: f32,
     ) -> bool {
         let ws = self.active_workspace(engine);
-        for (pane_id, rect) in ws.pane_layout().compute_rects(terminal_rect, scale_factor) {
+        #[cfg(feature = "gui")]
+        let pane_rects = self.pane_rects(engine, ws, terminal_rect, scale_factor);
+        #[cfg(not(feature = "gui"))]
+        let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
+        for (pane_id, rect) in pane_rects {
             if rect.contains(PhysicalPx(x), PhysicalPx(y)) {
                 return self.navigation.select_pane(ws, pane_id);
             }
@@ -75,12 +79,11 @@ impl RequestContext {
         let Some(pane_id) = self.navigation.pane_id(ws) else {
             return false;
         };
-        let Some((_, rect)) = ws
-            .pane_layout()
-            .compute_rects(terminal_rect, scale_factor)
-            .into_iter()
-            .find(|(id, _)| *id == pane_id)
-        else {
+        #[cfg(feature = "gui")]
+        let pane_rects = self.pane_rects(engine, ws, terminal_rect, scale_factor);
+        #[cfg(not(feature = "gui"))]
+        let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
+        let Some((_, rect)) = pane_rects.into_iter().find(|(id, _)| *id == pane_id) else {
             return false;
         };
         let content = crate::model::PhysicalRect {
@@ -95,9 +98,15 @@ impl RequestContext {
         let Some(tab) = pane.tabs.get(self.navigation.tab_index(pane)) else {
             return false;
         };
-        tab.layout()
-            .find_surface_at(x, y, content)
-            .is_some_and(|id| self.navigation.select_surface(tab, id))
+        #[cfg(feature = "gui")]
+        let surface = self
+            .tab_surface_regions(engine, tab, content, scale_factor)
+            .into_iter()
+            .find(|region| region.rect.contains(PhysicalPx(x), PhysicalPx(y)))
+            .map(|region| region.id);
+        #[cfg(not(feature = "gui"))]
+        let surface = tab.layout().find_surface_at(x, y, content);
+        surface.is_some_and(|id| self.navigation.select_surface(tab, id))
     }
 
     /// Native input may focus a surface only in a currently displayed tab.

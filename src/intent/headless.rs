@@ -36,14 +36,20 @@ pub(crate) fn drain_pending_intents_in_app(
 ) {
     let engine_id = state.engine_id;
     drain_with(core, state, engine, |core, dispatched| {
-        let Intent::Domain(intent) = &dispatched.body else {
-            return false;
-        };
         let Some(id) = engine_id else {
             tracing::error!("headless structural intent has no application engine owner");
             return true;
         };
-        journal.admit_metadata_intent(id, core, intent, &dispatched.origin)
+        match &dispatched.body {
+            Intent::Domain(intent) => {
+                journal.admit_metadata_intent(id, core, intent, &dispatched.origin)
+            }
+            Intent::DirectRename(rename) => {
+                journal.admit_direct_rename(id, rename, &dispatched.origin);
+                true
+            }
+            _ => false,
+        }
     });
 }
 
@@ -153,8 +159,17 @@ fn route_non_domain(
         Intent::RestoreClosedItem => {
             crate::intent::closed_item::handle(core, state, engine, dispatched);
         }
-        Intent::DirectRename(_) => crate::intent::rename::handle(core, state, engine, dispatched),
+        Intent::DirectRename(_) => {
+            #[cfg(test)]
+            crate::intent::rename::handle(core, state, engine, dispatched);
+            #[cfg(not(test))]
+            tracing::error!("direct rename bypassed journal admission");
+        }
         Intent::Domain(_) => {}
+        #[cfg(feature = "gui")]
+        Intent::CommitDivider(_) => {
+            tracing::error!("divider commit requires the GUI application adapter")
+        }
     }
 }
 

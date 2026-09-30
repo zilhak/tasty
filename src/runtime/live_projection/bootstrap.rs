@@ -71,6 +71,7 @@ pub(crate) fn initialize(core: &mut CoreState, model: &JournalModel) -> Result<(
     if live::core_canonical(core) != Canonical::of_journal(model, &SkipData) {
         return Err("bootstrap live projection differs from journal structure".into());
     }
+    core.committed_structure_revision = model.applied.revision;
     Ok(())
 }
 

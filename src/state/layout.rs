@@ -18,7 +18,7 @@ impl RequestContext {
         scale_factor: f32,
     ) -> Vec<(PaneId, PhysicalRect, Vec<SurfaceRegion<'a>>)> {
         let ws = self.active_workspace(engine);
-        let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
+        let pane_rects = self.pane_rects(engine, ws, terminal_rect, scale_factor);
 
         let mut result = Vec::new();
         for (pane_id, pane_rect) in pane_rects {
@@ -31,7 +31,7 @@ impl RequestContext {
                     height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
                 };
                 let regions = match pane.tabs.get(self.navigation.tab_index(pane)) {
-                    Some(tab) => tab.surface_regions(content_rect),
+                    Some(tab) => self.tab_surface_regions(engine, tab, content_rect, scale_factor),
                     None => Vec::new(),
                 };
                 result.push((pane_id, pane_rect, regions));
@@ -216,7 +216,7 @@ impl RequestContext {
         None
     }
 
-    /// 점유·mirror 처리를 포함한 Core::resize_all_terminals에 위임한다.
+    /// View geometry로 고정한 크기를 Core::resize_terminals에 넘긴다. 점유·mirror 및 grid/tap/OS 순서는 실행 경계가 유지한다.
     /// PTY resize는 미뤄지므로 호출자가 resize 이벤트 처리 후 flush_all_pty_resizes를 호출해야 한다.
     #[cfg(feature = "gui")]
     pub fn resize_all(
@@ -227,13 +227,36 @@ impl RequestContext {
         cell_height: f32,
         scale_factor: f32,
     ) {
-        crate::core::Core::resize_all_terminals(
-            self.tab_bar_height,
-            engine,
-            terminal_rect,
-            cell_width,
-            cell_height,
-            scale_factor,
-        );
+        let mut targets = Vec::new();
+        for workspace in engine.workspaces().iter() {
+            for (pane_id, pane_rect) in
+                self.pane_rects(engine, workspace, terminal_rect, scale_factor)
+            {
+                let Some(pane) = workspace.pane_layout().find_pane(pane_id) else {
+                    continue;
+                };
+                let content = PhysicalRect {
+                    x: pane_rect.x,
+                    y: pane_rect.y + self.tab_bar_height,
+                    width: pane_rect.width,
+                    height: (pane_rect.height - self.tab_bar_height).max(PhysicalPx(1.0)),
+                };
+                for tab in &pane.tabs {
+                    if tab.layout_if_initialized().is_none() {
+                        continue;
+                    }
+                    for region in self.tab_surface_regions(engine, tab, content, scale_factor) {
+                        let cols = ((region.rect.width.value() / cell_width.max(1.0)).floor()
+                            as usize)
+                            .max(1);
+                        let rows = ((region.rect.height.value() / cell_height.max(1.0)).floor()
+                            as usize)
+                            .max(1);
+                        targets.push((region.id, cols, rows));
+                    }
+                }
+            }
+        }
+        crate::core::Core::resize_terminals(engine, targets);
     }
 }

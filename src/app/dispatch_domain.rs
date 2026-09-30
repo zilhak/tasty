@@ -49,6 +49,31 @@ impl App {
         source: DispatchSource,
         dispatched: DispatchedIntent,
     ) -> anyhow::Result<()> {
+        if let Intent::CommitDivider(commit) = &dispatched.body {
+            let id = source.engine();
+            let result = self
+                .engines
+                .session_mut(id)
+                .ok_or_else(|| "divider engine disappeared".to_owned())
+                .and_then(|session| {
+                    self.journal
+                        .admit_divider(session, commit.clone(), &dispatched.origin)
+                });
+            if result.is_err()
+                && let Some(context) = self.engines_mut().resolve(id)
+            {
+                context.state.layout_previews.cancel(commit.sequence);
+                if let Some(view) = context.view {
+                    view.mark_dirty();
+                }
+            }
+            return result.map_err(anyhow::Error::msg);
+        }
+        if let Intent::DirectRename(rename) = &dispatched.body {
+            self.journal
+                .admit_direct_rename(source.engine(), rename, &dispatched.origin);
+            return Ok(());
+        }
         let Intent::Domain(intent) = dispatched.body else {
             anyhow::bail!("dispatch_domain_intent: non-Domain Intent");
         };
@@ -60,31 +85,6 @@ impl App {
                 .admit_metadata_intent(session.id, &session.core_state, &intent, &origin)
         {
             return Ok(());
-        }
-        if let crate::core::intent::DomainIntent::RenameTab { tab_id, name } = &intent {
-            let session = self
-                .engines
-                .session_mut(id)
-                .ok_or_else(|| anyhow::anyhow!("intent engine disappeared"))?;
-            if !session
-                .core_state
-                .find_pane_for_tab(*tab_id)
-                .and_then(|pane| session.core_state.find_workspace_index_for_pane(pane))
-                .and_then(|index| session.core_state.workspace_at(index))
-                .is_some_and(|workspace| workspace.mirror)
-            {
-                return self
-                    .journal
-                    .admit_fixed_intent(
-                        session,
-                        vec![tasty_domain::StructuralCommand::RenameTab {
-                            tab_id: *tab_id,
-                            name: name.clone(),
-                        }],
-                        &origin,
-                    )
-                    .map_err(anyhow::Error::msg);
-            }
         }
         let core = &mut self.core;
         let Some(DispatchCtx {

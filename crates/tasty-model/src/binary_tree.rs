@@ -1,9 +1,15 @@
 use super::{DividerInfo, FocusDirection, PhysicalPx, PhysicalRect, SplitDirection};
 
+/// Geometry of a borrowed layout with transient ratio overrides. No leaf payload is cloned.
+pub struct TreeGeometry<Id> {
+    pub leaves: Vec<(Id, PhysicalRect)>,
+    pub dividers: Vec<(Vec<bool>, DividerInfo, f32)>,
+}
+
 /// Common binary-tree surface for `PaneNode` and `SurfaceLayout`.
 ///
 /// Leaf payloads differ per enum (`Pane` vs `Box<dyn Surface>`) and the
-/// `Split` variant carries different side fields (`focus_second` only on
+/// `Split` variant carries different side fields (`SplitNodeId` only on
 /// `SurfaceLayout`). This trait abstracts *only the recursive structure*;
 /// leaf-touching mutation and lookup stays in each enum's inherent impl.
 pub trait BinaryTree: Sized {
@@ -16,7 +22,7 @@ pub trait BinaryTree: Sized {
     /// `Split` 일 때 (direction, ratio, &first, &second). `Leaf` 면 None.
     fn split_parts(&self) -> Option<(SplitDirection, f32, &Self, &Self)>;
 
-    /// Split의 가변 접근자. ratio와 두 자식만 노출하고 focus_second 같은 부가 상태는 제외한다.
+    /// Split의 가변 접근자. ratio와 두 자식만 노출하고 SplitNodeId 같은 부가 상태는 제외한다.
     fn split_parts_mut(&mut self) -> Option<(SplitDirection, &mut f32, &mut Self, &mut Self)>;
 
     /// `Leaf` 일 때 그 id. `Split` 이면 None.
@@ -58,6 +64,56 @@ pub trait BinaryTree: Sized {
         }
         let pos = ids.iter().position(|i| *i == current).unwrap_or(0);
         ids[(pos + ids.len() - 1) % ids.len()]
+    }
+
+    fn preview_geometry(
+        &self,
+        rect: PhysicalRect,
+        scale_factor: f32,
+        ratio_at: &impl Fn(&[bool], f32) -> f32,
+    ) -> TreeGeometry<Self::Id> {
+        fn visit<T: BinaryTree>(
+            tree: &T,
+            rect: PhysicalRect,
+            scale: f32,
+            path: &mut Vec<bool>,
+            ratios: &impl Fn(&[bool], f32) -> f32,
+            out: &mut TreeGeometry<T::Id>,
+        ) {
+            if let Some((direction, ratio, first, second)) = tree.split_parts() {
+                let ratio = ratios(path, ratio);
+                out.dividers.push((
+                    path.clone(),
+                    DividerInfo {
+                        direction,
+                        split_rect: rect,
+                    },
+                    ratio,
+                ));
+                let (a, b) = rect.split_with_gap(direction, ratio, T::border_width(scale));
+                path.push(false);
+                visit(first, a, scale, path, ratios, out);
+                path.pop();
+                path.push(true);
+                visit(second, b, scale, path, ratios, out);
+                path.pop();
+            } else if let Some(id) = tree.leaf_id() {
+                out.leaves.push((id, rect));
+            }
+        }
+        let mut out = TreeGeometry {
+            leaves: Vec::new(),
+            dividers: Vec::new(),
+        };
+        visit(
+            self,
+            rect,
+            scale_factor,
+            &mut Vec::new(),
+            ratio_at,
+            &mut out,
+        );
+        out
     }
 
     fn compute_rects(

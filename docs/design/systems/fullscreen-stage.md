@@ -266,14 +266,15 @@ click-to-activate press 가드, OS 가장자리 리사이즈 양보, 링크 hove
 안 된다. `update_ime_cursor_area` 도 무대 중 조기 반환한다(보이지 않는 뒤 surface 의 셀
 좌표로 후보창을 잡을 이유가 없다).
 
-### 진입 시 정리 — 확정하지 않고 폐기한다
+### 진입 시 제스처 종료와 상태 보존
 
 `MainView::sync_fullscreen_stage_transition`은 `handle_redraw` 시작에서 무대가 비활성에서 활성으로 바뀌었는지 확인한다. 열기 API는 MainViewState만 받아 View의 제스처 상태를 직접 바꿀 수 없으므로 공통 프레임 경로에서 정리한다.
 
 | 대상 | 처리 | 이유 |
 |------|------|------|
 | IME preedit | 버림 | 조합 문자가 뒤 PTY 로 새면 안 됨 |
-| divider 드래그 · 좌클릭 선택 게이트 · popup 이동/리사이즈 | 폐기 | 무대가 마우스 경로를 끊어 짝이 되는 release 를 영영 못 받는다 → 드래그 상태가 남음 |
+| divider 드래그 | 마지막 유효 표시 비율을 유지하며 종료 | 로컬은 확정 명령으로 넘기고 mirror는 표시 override를 유지한다. 짝이 되는 release를 받지 못해도 드래그 상태를 남기지 않는다 |
+| 좌클릭 선택 게이트 · popup 이동/리사이즈 | 종료 | 무대가 마우스 경로를 끊어 짝이 되는 release를 받지 못한다 |
 | hovered_link · pending_resize_cursor | 비움 | 뒤 좌표 기반 잔재. 무대 중 갱신도 안 된다 |
 | 네이티브 컨텍스트 메뉴 | dismiss + 요청 폐기 | 아래 |
 | 네이티브 파일 드래그 요청 | 폐기 | 아래 |

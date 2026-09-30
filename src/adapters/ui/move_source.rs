@@ -61,6 +61,8 @@ pub(crate) fn resolve(
     active_ws: usize,
     pane_rects: &[(u32, PhysicalRect)],
     tab_bar_h: PhysicalPx,
+    previews: Option<&crate::state::layout_preview::LayoutPreviews>,
+    scale_factor: f32,
 ) -> Option<MoveSourceMark> {
     let pending = engine.pending_move?;
     if workspace_of(engine, pending)? != active_ws {
@@ -101,11 +103,16 @@ pub(crate) fn resolve(
                 width: pane_rect.width,
                 height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
             };
-            let rect = pane.tabs[tab_index]
-                .surface_regions(content)
-                .into_iter()
-                .find(|r| r.id == surface_id)?
-                .rect;
+            let rect = crate::state::layout_preview::surface_regions(
+                previews,
+                engine,
+                &pane.tabs[tab_index],
+                content,
+                scale_factor,
+            )
+            .into_iter()
+            .find(|r| r.id == surface_id)?
+            .rect;
             Some(MoveSourceMark::Ring { pane_id, rect })
         }
     }

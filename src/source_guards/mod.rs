@@ -680,3 +680,5 @@ mod shutdown_channel_order;
 
 #[cfg(test)]
 mod headless_loop_reaps_both_hubs;
+
+mod committed_ratio_boundary;

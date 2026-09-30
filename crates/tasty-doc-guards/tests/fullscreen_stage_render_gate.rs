@@ -100,8 +100,12 @@ fn terminal_resize_is_the_gated_one_in_handle_redraw() {
     let body = fn_body(&src, "fn handle_redraw(");
     assert!(
         body.contains("if !self.state.fullscreen_stage_active() {")
-            && body.contains("resize_all_terminals("),
-        "`handle_redraw` 의 `resize_all_terminals` 가 무대 게이트를 잃었다 — 무대 중 \
+            && body
+                .chars()
+                .filter(|ch| !ch.is_whitespace())
+                .collect::<String>()
+                .contains("self.state.resize_all("),
+        "`handle_redraw` 의 `state.resize_all` 가 무대 게이트를 잃었다 — 무대 중 \
          창 크기가 바뀌면 원본 grid 가 따라가 리플로우된다."
     );
 }

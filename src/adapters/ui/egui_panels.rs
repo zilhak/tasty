@@ -55,7 +55,7 @@ pub fn draw_egui_panels(
                     .max(tasty_type_geometry::length::PhysicalPx(1.0)),
             };
             // 점유된 터미널도 GPU가 읽기 전용으로 그린다. 비터미널은 숨기지 않고 내용을 표시한다.
-            for r in tab.layout().surface_regions(content_rect) {
+            for r in state.tab_surface_regions(engine, tab, content_rect, scale_factor) {
                 if r.surface.kind() == "terminal" {
                     continue;
                 }
@@ -275,7 +275,7 @@ pub fn draw_egui_panels(
     let tab_bar_h = state.tab_bar_height;
     draw_occupied_overlays(
         ctx,
-        &state.navigation,
+        state,
         active_ws,
         tab_bar_h,
         engine,
@@ -590,7 +590,7 @@ where
 /// 포커스와 관계없이 표시하며 강제 해제 버튼은 hard 점유에만 제공한다.
 fn draw_occupied_overlays(
     ctx: &egui::Context,
-    presentation: &dyn crate::model::StructurePresentation,
+    state: &crate::state::MainViewState,
     active_ws: usize,
     tab_bar_h: tasty_type_geometry::length::PhysicalPx,
     engine: &mut crate::core::CoreState,
@@ -617,7 +617,7 @@ fn draw_occupied_overlays(
             let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
                 continue;
             };
-            let Some(tab) = pane.tabs.get(presentation.tab_index(pane)) else {
+            let Some(tab) = pane.tabs.get(state.navigation.tab_index(pane)) else {
                 continue;
             };
             let content_rect = PhysicalRect {
@@ -627,7 +627,7 @@ fn draw_occupied_overlays(
                 height: (pane_rect.height - tab_bar_h)
                     .max(tasty_type_geometry::length::PhysicalPx(1.0)),
             };
-            for r in tab.layout().surface_regions(content_rect) {
+            for r in state.tab_surface_regions(engine, tab, content_rect, scale_factor) {
                 let hard = if engine.attach.is_content_hidden(r.id) {
                     true
                 } else {

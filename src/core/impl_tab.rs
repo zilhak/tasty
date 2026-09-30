@@ -147,6 +147,7 @@ impl Core {
     }
 
     /// 없는 탭이면 오류다. 이름을 지우면 선택된 surface의 OSC 제목을 다시 반영한다.
+    #[cfg(test)]
     pub(super) fn apply_rename_tab(
         engine: &mut crate::core::CoreState,
         tab_id: u32,

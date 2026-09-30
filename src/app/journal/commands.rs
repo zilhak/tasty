@@ -1,7 +1,11 @@
 //! Accepted structural requests retain their original identity until a committed wire reply exists.
 mod category;
 mod display;
+#[cfg(feature = "gui")]
+mod divider;
 mod intents;
+mod notification;
+mod tab;
 mod workspace;
 use super::*;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
@@ -16,6 +20,12 @@ struct CategoryReservation {
 }
 
 enum Reply {
+    #[cfg(feature = "gui")]
+    Divider {
+        engine: EngineId,
+        sequence: u64,
+        origin: crate::intent::IntentOrigin,
+    },
     #[cfg(feature = "gui")]
     Settings {
         settings: Option<Box<crate::settings::Settings>>,
@@ -71,9 +81,11 @@ impl Pending {
 #[derive(Default)]
 pub(super) struct Commands {
     pending: std::collections::BTreeMap<u64, Pending>,
+    #[cfg(feature = "gui")]
+    completed_dividers: Vec<(EngineId, u64, crate::intent::IntentOrigin, JsonRpcResponse)>,
     completed_plugins: Vec<(String, u64, std::sync::Weak<()>, JsonRpcResponse)>,
     completed_intents: Vec<IntentResult>,
-    completed_host_events: Vec<(EngineId, crate::core::host_event::PendingHostEvent)>,
+    completed_host_events: Vec<(EngineId, notification::Notification)>,
     #[cfg(feature = "gui")]
     settings_generation: u64,
     #[cfg(feature = "gui")]
@@ -88,6 +100,14 @@ pub(super) struct Commands {
 impl Commands {
     fn deliver(&mut self, reply: Reply, response: JsonRpcResponse) {
         match reply {
+            #[cfg(feature = "gui")]
+            Reply::Divider {
+                engine,
+                sequence,
+                origin,
+            } => self
+                .completed_dividers
+                .push((engine, sequence, origin, response)),
             #[cfg(feature = "gui")]
             Reply::Settings {
                 settings,
@@ -348,9 +368,20 @@ impl JournalApplication {
         };
         if matches!(
             pending.request.method.as_str(),
-            "workspace.update" | "workspace.move" | "intent.workspace-mapping"
+            "workspace.update"
+                | "workspace.move"
+                | "intent.workspace-mapping"
+                | "intent.workspace-rename"
+                | "intent.tab-name"
+                | "intent.tab-move"
         ) {
-            match workspace::resolve(&pending.request, session, &binding.stream) {
+            match if pending.request.method == "intent.tab-name" {
+                tab::rename(&pending.request, session)
+            } else if pending.request.method == "intent.tab-move" {
+                tab::move_tab(&pending.request)
+            } else {
+                workspace::resolve(&pending.request, session, &binding.stream)
+            } {
                 Ok(resolved) => {
                     pending.display = resolved.display;
                     pending.queued = Some(Work::Resolve {
@@ -564,7 +595,9 @@ impl JournalApplication {
             self.resolve_ipc_for_engine(ticket, session);
         }
         for (engine, event) in std::mem::take(&mut self.commands.completed_host_events) {
-            if engine == session.id {
+            if engine == session.id
+                && let Some(event) = event.resolve(&session.core_state, &state.navigation)
+            {
                 state.enqueue_host_event(event);
             }
         }
@@ -666,8 +699,29 @@ impl crate::app::App {
                 );
             }
         }
-        for (engine, event) in std::mem::take(&mut self.journal.commands.completed_host_events) {
+        for (engine, sequence, origin, response) in
+            std::mem::take(&mut self.journal.commands.completed_dividers)
+        {
             if let Some(context) = self.engines_mut().resolve(engine) {
+                context.state.layout_previews.cancel(sequence);
+                if let Some(error) = response.error {
+                    crate::intent::report_apply_error(
+                        context.state,
+                        context.engine.core,
+                        &origin,
+                        "divider commit",
+                        &anyhow::anyhow!(error.message),
+                    );
+                }
+                if let Some(view) = context.view {
+                    view.mark_dirty();
+                }
+            }
+        }
+        for (engine, event) in std::mem::take(&mut self.journal.commands.completed_host_events) {
+            if let Some(context) = self.engines_mut().resolve(engine)
+                && let Some(event) = event.resolve(context.engine.core, &context.state.navigation)
+            {
                 context.state.enqueue_host_event(event);
             }
         }

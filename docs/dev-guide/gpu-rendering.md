@@ -20,6 +20,14 @@ grid만 대상으로 하고 공개 content 검색과 IPC whole-buffer 읽기는 
 IME 조합 보정은 dirty View 프레임에서 후보창 위치와 GPU 제출 전에 수행한다. 특정
 PTY wake 종류에 의존하지 않아 global wake·직접 parser 주입·attach 출력에도 적용된다.
 
+## 분할선 미리보기와 확정 구조
+
+드래그 중 비율은 `MainViewState.layout_previews`에 있고 Core의 pane/surface tree를 바꾸지 않는다. renderer·divider hit-test·선택 위치·WebView bounds·이동 대상 표시와 PTY 크기 계산은 같은 View geometry를 읽는다. geometry 계산은 기존 leaf 객체를 빌리며 kind·Terminal·Pty를 복제하지 않는다. 기존 grid resize→tap→OS throttle 순서는 명시 surface 크기를 받은 실행 경계에서 유지한다.
+
+로컬 드래그는 시작 시 live projection의 revision과 workspace/tab ID·split path·leaf ID 목록을 고정한다. 마지막 비율을 확정 명령으로 제출한 뒤에도 미리보기를 유지하며, 거절되거나 대상이 사라지면 해당 미리보기를 해제한다. 같은 leaf 배치로 split이 다시 만들어져도 이전 revision의 명령은 적용하지 않는다. 크롬 위 release와 무대 진입은 마지막 유효 비율로 제스처를 끝낸다.
+
+mirror 비율은 서버 구조를 바꾸지 않는 로컬 표시 override다. 완료된 비율은 다음 delta·재연결로 mirror projection token이 바뀔 때까지 유지한다. 새 드래그가 취소되어도 앞서 완료한 override는 남는다. 로컬 구조 journal과 원격 전송 connection epoch의 원본이 아니다.
+
 ## 프레임 흐름
 
 1. **Clear pass** — 배경색으로 클리어

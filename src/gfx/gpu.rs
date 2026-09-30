@@ -732,11 +732,10 @@ impl GpuState {
         engine: &crate::core::CoreState,
         terminal_rect: PhysicalRect,
     ) -> (Vec<(u32, PhysicalRect)>, Vec<PhysicalRect>, Option<u32>) {
-        let pane_layout = state.active_workspace(engine).pane_layout();
-        let pane_rects: Vec<(u32, PhysicalRect)> =
-            pane_layout.compute_rects(terminal_rect, self.scale_factor);
-        let mut dividers: Vec<PhysicalRect> =
-            pane_layout.collect_dividers(terminal_rect, self.scale_factor);
+        let workspace = state.active_workspace(engine);
+        let pane_layout = workspace.pane_layout();
+        let pane_rects = state.pane_rects(engine, workspace, terminal_rect, self.scale_factor);
+        let mut dividers = state.pane_dividers(engine, workspace, terminal_rect, self.scale_factor);
 
         let focused_surface_id = state.focused_surface_id(engine);
         for (pane_id, pane_rect) in &pane_rects {
@@ -749,10 +748,12 @@ impl GpuState {
                     height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
                 };
                 if let Some(tab) = pane.tabs.get(state.navigation.tab_index(pane)) {
-                    dividers.extend(
-                        tab.layout()
-                            .collect_dividers(content_rect, self.scale_factor),
-                    );
+                    dividers.extend(state.surface_dividers(
+                        engine,
+                        tab,
+                        content_rect,
+                        self.scale_factor,
+                    ));
                 }
             }
         }

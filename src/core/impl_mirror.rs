@@ -237,8 +237,7 @@ fn build_mirror_forward_op(
             }
         }
         // 이름·카테고리·attach 매핑은 구조가 아니라서 위 분류가 mirror 차단 대상으로 고르지 않는다.
-        D::RenameTab { .. }
-        | D::SetWorkspaceCategory { .. }
+        D::SetWorkspaceCategory { .. }
         | D::SetWorkspaceAttachMapping { .. }
         | D::CreateCategory { .. }
         | D::RenameCategory { .. }
@@ -409,6 +408,7 @@ impl Core {
             } => Ok(vec![Self::apply_move_tab(
                 engine, pane_id, tab_id, to_index,
             )]),
+            #[cfg(test)]
             DomainIntent::RenameTab { tab_id, name } => {
                 Self::apply_rename_tab(engine, tab_id, name)
             }

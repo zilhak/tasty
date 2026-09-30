@@ -2,7 +2,7 @@ use crate::core::engine_access::{EngineMut, EngineRef};
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 use winit::window::CursorIcon;
 
-use super::{DividerDrag, DividerDragKind, HoveredLink, MainView, MeshHoverTarget};
+use super::{DividerDrag, HoveredLink, MainView, MeshHoverTarget};
 use crate::core::intent::{DomainIntent, SendPayload};
 use crate::settings::LinkModifier;
 use crate::terminal_link::{self, LinkHighlight};
@@ -263,24 +263,20 @@ impl MainView {
             let cell_h = self.base.gpu.cell_height();
             let scale_factor = self.base.gpu.scale_factor();
             let changed = {
-                let changed = match drag.kind {
-                    DividerDragKind::Pane => self.state.update_pane_divider(
-                        engine,
-                        &drag.info,
-                        x,
-                        y,
-                        terminal_rect,
-                        scale_factor,
-                    ),
-                    DividerDragKind::Surface => self.state.update_surface_divider(
-                        engine,
-                        &drag.info,
-                        x,
-                        y,
-                        terminal_rect,
-                        scale_factor,
-                    ),
+                let ratio = match drag.info.direction {
+                    crate::model::SplitDirection::Vertical => {
+                        (PhysicalPx(x) - drag.info.split_rect.x).value()
+                            / drag.info.split_rect.width.value()
+                    }
+                    crate::model::SplitDirection::Horizontal => {
+                        (PhysicalPx(y) - drag.info.split_rect.y).value()
+                            / drag.info.split_rect.height.value()
+                    }
                 };
+                let changed = self
+                    .state
+                    .layout_previews
+                    .update(engine, drag.sequence, ratio);
                 if changed {
                     self.state
                         .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
@@ -376,7 +372,7 @@ impl MainView {
             // pane 포커스 갱신은 위 click-to-activate 단계가 흡수하므로 여기서는
             // Release 정리와 egui 소비 repaint 만 남긴다.
             if button_state == ElementState::Released {
-                self.dragging_divider = None;
+                self.finish_divider_drag(engine);
                 self.left_mouse_down = false;
                 self.left_select_bypass = false;
             }
@@ -768,24 +764,23 @@ impl MainView {
         y: f32,
         terminal_rect: &crate::model::PhysicalRect,
     ) {
-        let threshold =
-            crate::state::mouse::divider_hit_threshold_physical(self.base.gpu.scale_factor());
+        let scale_factor = self.base.gpu.scale_factor();
         let pane_div = self
             .state
-            .find_pane_divider_at(engine, x, y, *terminal_rect, threshold);
-        let surf_div = self
-            .state
-            .find_surface_divider_at(engine, x, y, *terminal_rect, threshold);
+            .find_pane_divider_at(engine, x, y, *terminal_rect, scale_factor);
+        let surf_div =
+            self.state
+                .find_surface_divider_at(engine, x, y, *terminal_rect, scale_factor);
         if let Some(info) = pane_div {
-            self.dragging_divider = Some(DividerDrag {
-                info,
-                kind: DividerDragKind::Pane,
-            });
+            self.dragging_divider = self
+                .state
+                .begin_pane_divider(engine, info, *terminal_rect, scale_factor)
+                .map(|sequence| DividerDrag { info, sequence });
         } else if let Some(info) = surf_div {
-            self.dragging_divider = Some(DividerDrag {
-                info,
-                kind: DividerDragKind::Surface,
-            });
+            self.dragging_divider = self
+                .state
+                .begin_surface_divider(engine, info, *terminal_rect, scale_factor)
+                .map(|sequence| DividerDrag { info, sequence });
         } else {
             self.begin_left_selection(engine, x, y, terminal_rect);
         }
@@ -891,8 +886,7 @@ impl MainView {
         y: f32,
         terminal_rect: &crate::model::PhysicalRect,
     ) {
-        if self.dragging_divider.is_some() {
-            self.dragging_divider = None;
+        if self.finish_divider_drag(engine) {
             let cell_w = self.base.gpu.cell_width();
             let cell_h = self.base.gpu.cell_height();
             let scale_factor = self.base.gpu.scale_factor();

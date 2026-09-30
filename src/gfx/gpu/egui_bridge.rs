@@ -117,6 +117,8 @@ impl GpuState {
                 state.active_workspace_index(engine),
                 pane_rects,
                 state.tab_bar_height,
+                Some(&state.layout_previews),
+                scale_factor,
             );
             ui::move_source::draw_move_source_ring(ctx, move_mark, scale_factor);
             ui::draw_status_bar(ctx, state, engine, terminal_rect, scale_factor);

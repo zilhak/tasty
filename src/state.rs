@@ -17,6 +17,8 @@ mod handler_recent;
 mod ipc_window;
 #[cfg(any(feature = "gui", test))]
 mod layout;
+#[cfg(feature = "gui")]
+pub(crate) mod layout_preview;
 pub mod mouse;
 pub(crate) mod navigation;
 pub(crate) mod pane;
@@ -138,6 +140,8 @@ impl RequestContext {
             navigation,
             #[cfg(feature = "gui")]
             tab_bar_scroll: Default::default(),
+            #[cfg(feature = "gui")]
+            layout_previews: Default::default(),
             #[cfg(feature = "gui")]
             terminal_views: Default::default(),
             #[cfg(any(feature = "gui", debug_assertions, test))]

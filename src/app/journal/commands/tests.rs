@@ -129,6 +129,11 @@ fn category_wire_results_and_rejections_survive_deletion_and_worker_restart() {
 }
 
 fn boot() -> (EngineSession, JournalApplication) {
+    boot_with_layout(None)
+}
+
+fn boot_with_layout(layout: Option<serde_json::Value>) -> (EngineSession, JournalApplication) {
+    let resume = layout.is_some();
     let mut settings = crate::settings::Settings::default();
     settings.general.shell = "/bin/sh".into();
     settings.general.startup_command = "exec sleep 60".into();
@@ -145,19 +150,21 @@ fn boot() -> (EngineSession, JournalApplication) {
         settings,
     )
     .unwrap();
+    if let Some(layout) = layout {
+        let directory = tasty_utils::path::tasty_home().unwrap().join("layouts");
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("01.json"), layout.to_string()).unwrap();
+    }
     let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
     journal
-        .begin_engine(
-            &session,
-            EngineSelection::Slot {
-                slot: 1,
-                resume: false,
-            },
-        )
+        .begin_engine(&session, EngineSelection::Slot { slot: 1, resume })
         .unwrap();
     let until = Instant::now() + Duration::from_secs(10);
     while !journal.is_ready(session.id) {
         journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        if resume {
+            journal.poll_restore_bootstrap(&mut session).unwrap();
+        }
         assert!(Instant::now() < until);
         std::thread::sleep(Duration::from_millis(1));
     }
@@ -613,3 +620,7 @@ fn each_keyed_journal_request_reports_only_its_initial_retry_decision() {
         );
     }
 }
+
+#[cfg(feature = "gui")]
+#[path = "divider_tests.rs"]
+mod divider;

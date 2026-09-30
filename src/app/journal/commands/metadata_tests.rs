@@ -47,7 +47,7 @@ fn workspace_response_is_frozen_and_host_notification_is_emitted_once() {
         "metadata preserves the physical owner"
     );
     assert!(
-        matches!(journal.commands.completed_host_events.as_slice(), [(engine, crate::core::host_event::PendingHostEvent::WorkspaceRenamed { workspace_id, name: Some(name), user_direct: false, .. })] if *engine == session.id && *workspace_id == workspace && name == "first")
+        matches!(journal.commands.completed_host_events.as_slice(), [(engine, notification::Notification::Ready(crate::core::host_event::PendingHostEvent::WorkspaceRenamed { workspace_id, name: Some(name), user_direct: false, .. }))] if *engine == session.id && *workspace_id == workspace && name == "first")
     );
     journal.commands.completed_host_events.clear();
     let rx = send(
@@ -207,4 +207,100 @@ fn mixed_order_keeps_local_canonical_order_and_stored_move_does_not_move_again()
     let rx = send(&mut journal, original);
     assert!(finish(&mut journal, &mut session, &rx).idempotent_replay);
     assert_eq!(session.core_state.workspace_at(0).unwrap().id, local);
+}
+
+pub(super) fn finish_intents(journal: &mut JournalApplication, session: &mut EngineSession) {
+    let until = Instant::now() + Duration::from_secs(10);
+    while !journal.commands.pending.is_empty() {
+        journal.poll_bootstrap(&mut [session]).unwrap();
+        for (ticket, _) in journal.requests_needing_resolution() {
+            journal.resolve_ipc_for_engine(ticket, session);
+        }
+        assert!(Instant::now() < until);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[test]
+fn direct_rename_commits_before_notification_and_clear_uses_current_selected_title() {
+    use crate::core::host_event::PendingHostEvent as Event;
+    use crate::intent::{IntentOrigin, rename::DirectRename};
+    let (mut session, mut journal) = boot();
+    let workspace = session.core_state.local_workspaces[0].id;
+    let sid = session.core_state.local_workspaces[0].all_surface_ids()[0];
+    let tab_id = session.core_state.find_tab_for_surface(sid).unwrap();
+    let pane_id = session.core_state.find_pane_for_tab(tab_id).unwrap();
+    let origin = IntentOrigin::User {
+        source: crate::core::origin::UserSource::Menu("rename-test".into()),
+    };
+    journal.admit_direct_rename(
+        session.id,
+        &DirectRename::WorkspaceName {
+            workspace_id: workspace,
+            name: "direct-name".into(),
+        },
+        &origin,
+    );
+    assert_ne!(session.core_state.local_workspaces[0].name, "direct-name");
+    assert!(journal.commands.completed_host_events.is_empty());
+    finish_intents(&mut journal, &mut session);
+    let mut navigation = crate::state::navigation::NavigationState::default();
+    navigation.reconcile(&session.core_state.workspaces());
+    let (_, notification) = journal.commands.completed_host_events.pop().unwrap();
+    assert!(
+        matches!(notification.resolve(&session.core_state, &navigation), Some(Event::WorkspaceRenamed { workspace_id, user_direct: true, .. }) if workspace_id == workspace)
+    );
+    journal.admit_direct_rename(
+        session.id,
+        &DirectRename::TabName {
+            tab_id,
+            name: Some("explicit".into()),
+        },
+        &origin,
+    );
+    finish_intents(&mut journal, &mut session);
+    journal.commands.completed_host_events.clear();
+    journal.admit_direct_rename(
+        session.id,
+        &DirectRename::TabName { tab_id, name: None },
+        &origin,
+    );
+    resolve_without_executing(&mut journal, &mut session);
+    let tab = &mut session
+        .core_state
+        .find_pane_by_id_mut(pane_id)
+        .unwrap()
+        .tabs[0];
+    assert_eq!(tab.explicit_name.as_deref(), Some("explicit"));
+    tab.surface_titles.entry(sid).or_default().osc_title = Some("latest observed title".into());
+    finish_intents(&mut journal, &mut session);
+    assert!(
+        session.core_state.find_pane_by_id(pane_id).unwrap().tabs[0]
+            .explicit_name
+            .is_none()
+    );
+    let (_, notification) = journal.commands.completed_host_events.pop().unwrap();
+    assert!(
+        matches!(notification.resolve(&session.core_state, &navigation), Some(Event::TabRenamed { title, user_direct: true, .. }) if title == "latest observed title")
+    );
+    journal.admit_direct_rename(
+        session.id,
+        &DirectRename::TabName {
+            tab_id: 999_999,
+            name: Some("missing".into()),
+        },
+        &origin,
+    );
+    finish_intents(&mut journal, &mut session);
+    assert!(journal.commands.completed_host_events.is_empty());
+    assert!(
+        journal
+            .commands
+            .completed_intents
+            .last()
+            .unwrap()
+            .response
+            .error
+            .is_some()
+    );
 }

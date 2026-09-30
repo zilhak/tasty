@@ -36,6 +36,8 @@ impl RequestContext {
     pub(crate) fn reconcile_presentation(&mut self, engine: &CoreState) {
         self.navigation.reconcile(&engine.workspaces());
         #[cfg(feature = "gui")]
+        self.layout_previews.retain(engine);
+        #[cfg(feature = "gui")]
         self.terminal_views.retain(engine);
         self.navigation
             .collapsed_categories

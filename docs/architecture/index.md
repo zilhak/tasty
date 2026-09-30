@@ -144,6 +144,8 @@ CoreState의 로컬 트리는 `local_workspaces`, 원격 mirror 트리는 `mirro
 
 mirror 이름·부제·설명·분류와 혼합 표시 순서는 비영속 App continuation이다. 로컬 상대 순서는 확정 모델을 따르며, continuation은 local tree를 재정렬하지 않는다. mirror 교체 때 발급한 token으로 delta·재연결 이후의 오래된 표시 변경을 버리고, 저장 응답 재시도에는 표시 변경과 host 알림을 재발행하지 않는다. 이 token은 transport reconnect epoch와 별개다.
 
+직접 이름 변경 팝업은 확정 후 origin에 맞는 host 알림을 보낸다. 탭 이름 해제 알림은 그 시점의 View 선택 surface 제목을 읽는다. 분할선 드래그는 View 미리보기이며 시작 revision과 명시 split 대상을 고정한 순수 명령으로 끝낸다. `CoreState.committed_structure_revision`은 검증된 live projection의 읽기용 적용 위치이고 명령 원본 모델은 아니다. 로컬 탭 이동 Domain intent도 고정 TabId를 journal로 넘기며, 공개 tab.move와 원격 forward 수신을 포함한 나머지 producer 전환은 아직 진행 중이다.
+
 정상 slot resume는 구조 ID와 incarnation을 유지한다. 복원을 끄고 버리는 engine은 retirement fact를 확정한 뒤 정확한 실행 owner를 회수한다. 폐기된 slot 재사용은 새 incarnation이며 과거 ID·명령·미완 효과는 되감지 않는다. 최초 창은 worker의 journal 슬롯 목록을 받은 뒤 활성 저장 슬롯을 고르고, View 선택은 해당 binding과 공개 cut을 가진 별도 checkpoint로 저장한다([ADR-0063](../adr/0063-event-store-storage-fencing-and-effect-states.md)).
 
 데이터 홈의 명시 binding은 `structure/journal.json`, 저장소는 `structure/journal.db`다. 초기화 잠금 아래 Preparing→Ready로 확정한다. Ready binding에서 DB가 사라지면 빈 journal을 만들지 않는다. 파일을 flush한 뒤 Unix에서는 상위 디렉터리를 sync하고 Windows에서는 write-through rename을 사용한다. 이 절은 전원 차단이나 미실행 OS에서의 내구성을 실측했다는 뜻이 아니다.

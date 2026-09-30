@@ -20,7 +20,7 @@ pub(crate) mod vi_copy;
 
 pub(crate) mod ime;
 
-pub(crate) use divider_drag::{DividerDrag, DividerDragKind};
+pub(crate) use divider_drag::DividerDrag;
 
 use crate::core::engine_access::{EngineMut, EngineRef};
 use std::sync::Arc;

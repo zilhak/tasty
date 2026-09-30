@@ -100,7 +100,10 @@ impl App {
 
     fn classify_intent(intent: &crate::intent::DispatchedIntent) -> IntentClass {
         use crate::intent::{Intent, UiIntent};
-        if matches!(intent.body, Intent::Domain(_)) {
+        if matches!(
+            intent.body,
+            Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_)
+        ) {
             IntentClass::Domain
         } else if matches!(intent.body, Intent::Ui(UiIntent::AppearanceChanged)) {
             IntentClass::Appearance
@@ -181,10 +184,7 @@ impl App {
             Intent::RestoreClosedItem => {
                 crate::intent::closed_item::handle(core, state, engine, intent);
             }
-            Intent::DirectRename(_) => {
-                crate::intent::rename::handle(core, state, engine, intent);
-            }
-            Intent::Domain(_) => {
+            Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_) => {
                 tracing::error!(
                     "dispatch_one_intent reached Intent::Domain (should be handled in domain_batch)"
                 );

@@ -1,10 +1,15 @@
-//! 이름 변경 팝업에 사용자가 직접 입력한 이름을 Core::apply로 적용한다.
-//! Domain 큐의 후속 처리는 host 이벤트에 user_direct를 싣지 않으므로 이 핸들러가 직접 낸다.
+//! Direct rename intent data. Product dispatch uses committed journal admission.
+//! The legacy handler remains only for behavior comparison fixtures.
 
+#[cfg(test)]
 use super::{DispatchedIntent, Intent, IntentOrigin};
+#[cfg(test)]
 use crate::core::Core;
+#[cfg(test)]
 use crate::core::engine_access::EngineMut;
+#[cfg(test)]
 use crate::core::intent::DomainIntent;
+#[cfg(test)]
 use crate::state::RequestContext;
 
 /// 대상은 ID로 지정한다. 팝업이 열린 동안 순서가 바뀌어도 같은 대상을 바꾼다.
@@ -29,6 +34,7 @@ pub enum DirectRename {
     },
 }
 
+#[cfg(test)]
 pub fn handle(
     core: &mut Core,
     state: &mut RequestContext,
@@ -66,6 +72,7 @@ pub fn handle(
     }
 }
 
+#[cfg(test)]
 fn rename_tab(
     core: &mut Core,
     state: &mut RequestContext,
@@ -99,6 +106,7 @@ fn rename_tab(
     });
 }
 
+#[cfg(test)]
 fn rename_workspace(
     core: &mut Core,
     state: &mut RequestContext,

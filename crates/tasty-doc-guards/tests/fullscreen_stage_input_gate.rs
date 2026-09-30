@@ -205,8 +205,8 @@ fn stage_entry_discards_every_in_flight_gesture() {
             "조합 중 IME 가 뒤 PTY 로 확정된다",
         ),
         (
-            "self.dragging_divider = None;",
-            "분할선 드래그 상태가 해제되지 않는다",
+            "self.finish_divider_drag(engine);",
+            "마지막 유효 비율을 확정하며 분할선 제스처를 끝내지 않는다",
         ),
         (
             "self.left_mouse_down = false;",

@@ -73,8 +73,63 @@ impl JournalApplication {
                 "intent.workspace-mapping",
                 serde_json::json!({"id":workspace_id,"mapping":mapping}),
             ),
+            I::MoveTab {
+                pane_id,
+                tab_id,
+                to_index,
+            } => {
+                if core
+                    .find_workspace_index_for_pane(*pane_id)
+                    .and_then(|index| core.workspace_at(index))
+                    .is_some_and(|workspace| workspace.mirror)
+                {
+                    return false; // Existing remote forwarding owns mirror structure commands.
+                }
+                (
+                    "intent.tab-move",
+                    serde_json::json!({"pane_id":pane_id,"tab_id":tab_id,"to_index":to_index}),
+                )
+            }
             _ => return false,
         };
+        self.admit_intent_request(engine_id, method, params, origin);
+
+        true
+    }
+    pub(crate) fn admit_direct_rename(
+        &mut self,
+        engine_id: EngineId,
+        rename: &crate::intent::rename::DirectRename,
+        origin: &crate::intent::IntentOrigin,
+    ) {
+        use crate::intent::rename::DirectRename as R;
+        let (method, params) = match rename {
+            R::WorkspaceName { workspace_id, name } => (
+                "intent.workspace-rename",
+                serde_json::json!({"id":workspace_id,"name":name,"user_direct":origin.is_user()}),
+            ),
+            R::WorkspaceSubtitle {
+                workspace_id,
+                subtitle,
+            } => (
+                "intent.workspace-rename",
+                serde_json::json!({"id":workspace_id,"subtitle":subtitle,"user_direct":origin.is_user()}),
+            ),
+            R::TabName { tab_id, name } => (
+                "intent.tab-name",
+                serde_json::json!({"tab_id":tab_id,"name":name,"user_direct":origin.is_user()}),
+            ),
+        };
+        self.admit_intent_request(engine_id, method, params, origin);
+    }
+
+    fn admit_intent_request(
+        &mut self,
+        engine_id: EngineId,
+        method: &str,
+        params: serde_json::Value,
+        origin: &crate::intent::IntentOrigin,
+    ) {
         let request = JsonRpcRequest {
             jsonrpc: "2.0".into(),
             method: method.into(),
@@ -98,11 +153,10 @@ impl JournalApplication {
             .into(),
             &format!("intent:{origin:?}"),
         );
-        true
     }
 }
 
-#[cfg(feature = "gui")]
+#[cfg(all(test, feature = "gui"))]
 impl JournalApplication {
     pub(crate) fn admit_fixed_intent(
         &mut self,
@@ -222,7 +276,7 @@ impl JournalApplication {
 }
 
 #[cfg(feature = "gui")]
-fn intent_actor(origin: &crate::intent::IntentOrigin) -> &'static str {
+pub(super) fn intent_actor(origin: &crate::intent::IntentOrigin) -> &'static str {
     match origin {
         crate::intent::IntentOrigin::User { .. } => "user",
         crate::intent::IntentOrigin::Agent { .. } => "agent",

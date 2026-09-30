@@ -49,6 +49,7 @@ pub(crate) fn apply(
     if live::core_canonical(engine) != Canonical::of_journal(&after, &SkipData) {
         return Err("committed live projection differs from the canonical result".into());
     }
+    engine.committed_structure_revision = after.applied.revision;
     Ok(())
 }
 

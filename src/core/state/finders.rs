@@ -202,8 +202,7 @@ impl CoreState {
                 self.find_workspace_index_for_pane((*target_pane_id)?)
             }
             // 이름·카테고리·attach 매핑은 원격 트리 구조가 아니다. mirror에서도 로컬에만 적용하며 forward하지 않는다.
-            D::RenameTab { .. }
-            | D::SetWorkspaceCategory { .. }
+             D::SetWorkspaceCategory { .. }
             | D::SetWorkspaceAttachMapping { .. }
             | D::CreateCategory { .. }
             | D::RenameCategory { .. }

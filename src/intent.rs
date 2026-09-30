@@ -178,6 +178,8 @@ pub enum Intent {
 
     /// 사용자가 이름 변경 팝업에 직접 입력한 이름. 적용 뒤 user_direct host 이벤트를 낸다.
     DirectRename(rename::DirectRename),
+    #[cfg(feature = "gui")]
+    CommitDivider(crate::state::layout_preview::DividerCommit),
 }
 
 /// 팝업과 테마 등 화면 상태를 바꾸는 명령.

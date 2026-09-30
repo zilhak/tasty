@@ -120,14 +120,8 @@ impl MainView {
             let cell_w = self.base.gpu.cell_width();
             let cell_h = self.base.gpu.cell_height();
             let scale_factor = self.base.gpu.scale_factor();
-            crate::core::Core::resize_all_terminals(
-                self.state.tab_bar_height,
-                &mut *engine,
-                terminal_rect,
-                cell_w,
-                cell_h,
-                scale_factor,
-            );
+            self.state
+                .resize_all(&mut *engine, terminal_rect, cell_w, cell_h, scale_factor);
         }
 
         self.render_if_dirty(engine, plugin_manager, stream_hub);
@@ -186,8 +180,8 @@ impl MainView {
             self.clear_ime_preedit(engine);
         }
 
-        // 진행 중 포인터 제스처 폐기.
-        self.dragging_divider = None;
+        // 분할선은 마지막 유효 비율을 확정하고 나머지 포인터 제스처를 끝낸다.
+        self.finish_divider_drag(engine);
         self.left_mouse_down = false;
         self.left_select_bypass = false;
         self.state.popups.cancel_pointer_interactions();
@@ -432,9 +426,9 @@ impl MainView {
         let mut all_html_ids: Vec<u32> = Vec::new();
 
         for (ws_idx, ws) in engine.workspaces().into_iter().enumerate() {
-            let pane_rects = ws
-                .pane_layout()
-                .compute_rects(terminal_rect, scale_factor as f32);
+            let pane_rects = self
+                .state
+                .pane_rects(engine, ws, terminal_rect, scale_factor as f32);
             for (pane_id, pane_rect) in &pane_rects {
                 if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
                     // tab bar 아래 콘텐츠 영역 — 탭 내부 분할(SurfaceGroup)의 leaf rect
@@ -447,19 +441,22 @@ impl MainView {
                             .max(crate::model::PhysicalPx(1.0)),
                     };
                     for (tab_idx, tab) in pane.tabs.iter().enumerate() {
-                        let Some(layout) = tab.layout_if_initialized() else {
+                        let Some(_) = tab.layout_if_initialized() else {
                             continue;
                         };
                         // Only visible if: active workspace AND active tab
                         let is_visible =
                             ws_idx == active_ws && tab_idx == self.state.navigation.tab_index(pane);
                         // 비포커스 leaf에도 native WebView가 필요하므로 탭 전체를 순회한다.
-                        for (sid, leaf_rect) in
-                            layout.compute_rects(content_rect, scale_factor as f32)
-                        {
-                            let Some(surface) = layout.find_surface(sid) else {
-                                continue;
-                            };
+                        for region in self.state.tab_surface_regions(
+                            engine,
+                            tab,
+                            content_rect,
+                            scale_factor as f32,
+                        ) {
+                            let sid = region.id;
+                            let leaf_rect = region.rect;
+                            let surface = region.surface;
                             if surface.webview_url().is_none() {
                                 continue;
                             }

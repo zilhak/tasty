@@ -90,7 +90,7 @@ mod workspace_category;
 
 pub use attach_mapping::{WorkspaceAttachMapping, WorkspaceAttachTarget};
 pub use attach_mesh_surface::AttachMeshSurface;
-pub use binary_tree::BinaryTree;
+pub use binary_tree::{BinaryTree, TreeGeometry};
 pub use closed_item::{ClosedItem, ClosedItemStore};
 pub use dag_graph_surface::*;
 pub use empty_surface::*;

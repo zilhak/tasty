@@ -197,6 +197,8 @@ pub(crate) struct AttachMeshContextForward {
 /// engine별 도메인 상태. GUI에서는 창마다 따로 보유하고 공유 자원은 Arc로 주입한다.
 /// 외부 함수의 타입에 쓰이지만 내부 필드는 crate 밖에 노출하지 않는다.
 pub struct CoreState {
+    /// Revision of this committed live projection, never a command-decision source.
+    pub(crate) committed_structure_revision: Option<u64>,
     pub(crate) local_workspaces: Vec<Workspace>,
     pub(crate) mirror_workspaces: Vec<Workspace>,
     /// Composite display projection; local relative order comes from the committed model.
@@ -449,6 +451,7 @@ impl CoreState {
         settings: Settings,
     ) -> Self {
         let mut engine = Self {
+            committed_structure_revision: None,
             local_workspaces: Vec::new(),
             mirror_workspaces: Vec::new(),
             workspace_display_order: Vec::new(),

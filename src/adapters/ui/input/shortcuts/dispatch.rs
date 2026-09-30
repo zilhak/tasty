@@ -57,27 +57,13 @@ impl MainView {
                     }
                     .from_user_shortcut("new_workspace"),
                 );
-                crate::core::Core::resize_all_terminals(
-                    state.tab_bar_height,
-                    engine,
-                    terminal_rect,
-                    cell_w,
-                    cell_h,
-                    scale_factor,
-                );
+                state.resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
             }
             "new_tab" => {
                 if let Err(e) = state.add_tab(engine) {
                     tracing::warn!("add_tab failed: {e}");
                 }
-                crate::core::Core::resize_all_terminals(
-                    state.tab_bar_height,
-                    engine,
-                    terminal_rect,
-                    cell_w,
-                    cell_h,
-                    scale_factor,
-                );
+                state.resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
             }
             "split_pane_vertical" => {
                 state.dispatch_intent(
@@ -86,14 +72,7 @@ impl MainView {
                     }
                     .from_user_shortcut("split_pane_vertical"),
                 );
-                crate::core::Core::resize_all_terminals(
-                    state.tab_bar_height,
-                    engine,
-                    terminal_rect,
-                    cell_w,
-                    cell_h,
-                    scale_factor,
-                );
+                state.resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
             }
             "split_pane_horizontal" => {
                 state.dispatch_intent(
@@ -102,14 +81,7 @@ impl MainView {
                     }
                     .from_user_shortcut("split_pane_horizontal"),
                 );
-                crate::core::Core::resize_all_terminals(
-                    state.tab_bar_height,
-                    engine,
-                    terminal_rect,
-                    cell_w,
-                    cell_h,
-                    scale_factor,
-                );
+                state.resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
             }
             "split_surface_vertical" => {
                 state.dispatch_intent(
@@ -118,14 +90,7 @@ impl MainView {
                     }
                     .from_user_shortcut("split_surface_vertical"),
                 );
-                crate::core::Core::resize_all_terminals(
-                    state.tab_bar_height,
-                    engine,
-                    terminal_rect,
-                    cell_w,
-                    cell_h,
-                    scale_factor,
-                );
+                state.resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
             }
             "split_surface_horizontal" => {
                 state.dispatch_intent(
@@ -134,14 +99,7 @@ impl MainView {
                     }
                     .from_user_shortcut("split_surface_horizontal"),
                 );
-                crate::core::Core::resize_all_terminals(
-                    state.tab_bar_height,
-                    engine,
-                    terminal_rect,
-                    cell_w,
-                    cell_h,
-                    scale_factor,
-                );
+                state.resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
             }
             "toggle_settings" => {
                 send_app_event(proxy, crate::AppEvent::OpenSettings);
@@ -185,14 +143,8 @@ impl MainView {
                 if engine.workspaces().is_empty() {
                     self.request_close();
                 } else {
-                    crate::core::Core::resize_all_terminals(
-                        self.state.tab_bar_height,
-                        engine,
-                        terminal_rect,
-                        cell_w,
-                        cell_h,
-                        scale_factor,
-                    );
+                    self.state
+                        .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
                 }
                 return true;
             }
@@ -203,14 +155,8 @@ impl MainView {
                 if engine.workspaces().is_empty() {
                     self.request_close();
                 } else {
-                    crate::core::Core::resize_all_terminals(
-                        self.state.tab_bar_height,
-                        engine,
-                        terminal_rect,
-                        cell_w,
-                        cell_h,
-                        scale_factor,
-                    );
+                    self.state
+                        .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
                 }
                 return true;
             }
@@ -222,14 +168,8 @@ impl MainView {
                 if engine.workspaces().is_empty() {
                     self.request_close();
                 } else {
-                    crate::core::Core::resize_all_terminals(
-                        self.state.tab_bar_height,
-                        engine,
-                        terminal_rect,
-                        cell_w,
-                        cell_h,
-                        scale_factor,
-                    );
+                    self.state
+                        .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
                 }
                 return true;
             }
@@ -240,14 +180,8 @@ impl MainView {
                 if engine.workspaces().is_empty() {
                     self.request_close();
                 } else {
-                    crate::core::Core::resize_all_terminals(
-                        self.state.tab_bar_height,
-                        engine,
-                        terminal_rect,
-                        cell_w,
-                        cell_h,
-                        scale_factor,
-                    );
+                    self.state
+                        .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
                 }
                 return true;
             }
@@ -261,14 +195,7 @@ impl MainView {
                 state.dispatch_intent(
                     crate::intent::Intent::RestoreClosedItem.from_user_shortcut("restore_closed"),
                 );
-                crate::core::Core::resize_all_terminals(
-                    state.tab_bar_height,
-                    engine,
-                    terminal_rect,
-                    cell_w,
-                    cell_h,
-                    scale_factor,
-                );
+                state.resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
             }
             "quit" => send_app_event(proxy, crate::AppEvent::QuitRequested),
             "quit_immediate" => send_app_event(proxy, crate::AppEvent::Shutdown),

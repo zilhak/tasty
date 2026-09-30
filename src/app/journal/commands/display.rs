@@ -11,6 +11,7 @@ pub(super) struct DisplayContinuation {
 pub(super) enum DisplayAction {
     Workspace {
         id: u32,
+        user_direct: bool,
         name: Option<String>,
         subtitle: Option<String>,
         description: Option<String>,
@@ -18,13 +19,18 @@ pub(super) enum DisplayAction {
         mapping: Option<Option<crate::model::WorkspaceAttachMapping>>,
     },
     Order(Vec<u32>),
+    TabName {
+        tab_id: u32,
+        name: Option<String>,
+        notify: Option<bool>,
+    },
 }
 
 impl DisplayContinuation {
     pub fn apply(
         self,
         sessions: &mut [&mut EngineSession],
-    ) -> Option<(EngineId, Option<crate::core::host_event::PendingHostEvent>)> {
+    ) -> Option<(EngineId, Option<super::notification::Notification>)> {
         let session = sessions
             .iter_mut()
             .find(|session| session.id == self.engine)?;
@@ -41,6 +47,7 @@ impl DisplayContinuation {
         match self.action {
             DisplayAction::Workspace {
                 id,
+                user_direct,
                 name,
                 subtitle,
                 description,
@@ -52,15 +59,15 @@ impl DisplayContinuation {
                     return None;
                 }
                 if name.is_some() || subtitle.is_some() || description.is_some() {
-                    host_event = Some(
+                    host_event = Some(super::notification::Notification::Ready(
                         crate::core::host_event::PendingHostEvent::WorkspaceRenamed {
                             workspace_id: id,
                             name: name.clone(),
                             subtitle: subtitle.clone(),
                             description: description.clone(),
-                            user_direct: false,
+                            user_direct,
                         },
-                    );
+                    ));
                 }
                 // Local metadata already came from the committed projection. Only the remote
                 // display annotation has a volatile write at this boundary.
@@ -86,6 +93,31 @@ impl DisplayContinuation {
                     }
                 }
             }
+            DisplayAction::TabName {
+                tab_id,
+                name,
+                notify,
+            } => {
+                let pane_id = core.find_pane_for_tab(tab_id)?;
+                let mirror = core
+                    .find_workspace_index_for_pane(pane_id)
+                    .and_then(|index| core.workspace_at(index))
+                    .is_some_and(|workspace| workspace.mirror);
+                let tab = core
+                    .find_pane_by_id_mut(pane_id)?
+                    .tabs
+                    .iter_mut()
+                    .find(|tab| tab.id == tab_id)?;
+                if mirror {
+                    tab.explicit_name = name;
+                }
+                if let Some(user_direct) = notify {
+                    host_event = Some(super::notification::Notification::TabName {
+                        tab_id,
+                        user_direct,
+                    });
+                }
+            }
             DisplayAction::Order(order) => {
                 if !core.apply_workspace_display_order(order) {
                     return None;
@@ -98,6 +130,7 @@ impl DisplayContinuation {
     pub fn weight(&self) -> usize {
         self.mirrors.len() * std::mem::size_of::<(u32, Weak<()>)>()
             + match &self.action {
+                DisplayAction::TabName { name, .. } => name.as_ref().map_or(0, String::len),
                 DisplayAction::Order(order) => order.len() * std::mem::size_of::<u32>(),
                 DisplayAction::Workspace {
                     name,

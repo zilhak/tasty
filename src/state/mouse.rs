@@ -73,11 +73,12 @@ impl RequestContext {
         scale_factor: f32,
     ) -> Option<DividerInfo> {
         let ws = self.active_workspace(engine);
-        ws.pane_layout().find_divider_at(
-            x,
-            y,
+        self.layout_previews.find_divider(
+            engine,
+            super::layout_preview::LayoutTarget::Workspace(ws.id),
+            ws.pane_layout(),
+            (x, y),
             terminal_rect,
-            divider_hit_threshold_physical(scale_factor),
             scale_factor,
         )
     }
@@ -93,7 +94,7 @@ impl RequestContext {
     ) -> Option<DividerInfo> {
         let ws = self.active_workspace(engine);
         let focused_id = self.navigation.pane_id(ws).unwrap_or(0);
-        let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
+        let pane_rects = self.pane_rects(engine, ws, terminal_rect, scale_factor);
 
         let pane_rect = pane_rects.into_iter().find(|(id, _)| *id == focused_id);
         let pane_rect = match pane_rect {
@@ -111,103 +112,66 @@ impl RequestContext {
         };
 
         let tab = pane.tabs.get(self.navigation.tab_index(pane))?;
-        tab.layout().find_divider_at(
-            x,
-            y,
+        self.layout_previews.find_divider(
+            engine,
+            super::layout_preview::LayoutTarget::Tab(tab.id),
+            tab.layout(),
+            (x, y),
             content_rect,
-            divider_hit_threshold_physical(scale_factor),
             scale_factor,
         )
     }
 
     #[cfg(feature = "gui")]
-    pub fn update_pane_divider(
+    pub(crate) fn begin_pane_divider(
         &mut self,
-        engine: &mut CoreState,
-        divider: &DividerInfo,
-        x: f32,
-        y: f32,
-        terminal_rect: PhysicalRect,
-        scale_factor: f32,
-    ) -> bool {
-        let new_ratio = match divider.direction {
-            SplitDirection::Vertical => {
-                (PhysicalPx(x) - divider.split_rect.x).value() / divider.split_rect.width.value()
-            }
-            SplitDirection::Horizontal => {
-                (PhysicalPx(y) - divider.split_rect.y).value() / divider.split_rect.height.value()
-            }
-        };
-        let ws = self.active_workspace_mut(engine);
-        let updated = ws.pane_layout_mut().update_ratio_for_rect(
-            divider.split_rect,
-            new_ratio,
-            terminal_rect,
-            scale_factor,
-        );
-        if updated {
-            engine.mark_layout_dirty();
-        }
-        updated
+        engine: &CoreState,
+        info: DividerInfo,
+        rect: PhysicalRect,
+        scale: f32,
+    ) -> Option<u64> {
+        let workspace = self.active_workspace(engine);
+        self.layout_previews.begin(
+            engine,
+            super::layout_preview::LayoutTarget::Workspace(workspace.id),
+            workspace.pane_layout(),
+            info,
+            rect,
+            scale,
+        )
     }
 
     #[cfg(feature = "gui")]
-    pub fn update_surface_divider(
+    pub(crate) fn begin_surface_divider(
         &mut self,
-        engine: &mut CoreState,
-        divider: &DividerInfo,
-        x: f32,
-        y: f32,
-        terminal_rect: PhysicalRect,
-        scale_factor: f32,
-    ) -> bool {
-        let new_ratio = match divider.direction {
-            SplitDirection::Vertical => {
-                (PhysicalPx(x) - divider.split_rect.x).value() / divider.split_rect.width.value()
-            }
-            SplitDirection::Horizontal => {
-                (PhysicalPx(y) - divider.split_rect.y).value() / divider.split_rect.height.value()
-            }
-        };
-
-        let tab_bar_h = self.tab_bar_height;
-        let ws = self.active_workspace_mut(engine);
-        let focused_id = self.navigation.pane_id(ws).unwrap_or(0);
-        let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
-
-        let pane_rect = pane_rects.into_iter().find(|(id, _)| *id == focused_id);
-        let pane_rect = match pane_rect {
-            Some((_, r)) => r,
-            None => return false,
-        };
-
-        let pane = match ws.pane_layout_mut().find_pane_mut(focused_id) {
-            Some(p) => p,
-            None => return false,
-        };
-        let content_rect = PhysicalRect {
+        engine: &CoreState,
+        info: DividerInfo,
+        rect: PhysicalRect,
+        scale: f32,
+    ) -> Option<u64> {
+        let workspace = self.active_workspace(engine);
+        let pane_id = self.navigation.pane_id(workspace)?;
+        let pane_rect = self
+            .pane_rects(engine, workspace, rect, scale)
+            .into_iter()
+            .find(|(id, _)| *id == pane_id)?
+            .1;
+        let pane = workspace.pane_layout().find_pane(pane_id)?;
+        let tab = pane.tabs.get(self.navigation.tab_index(pane))?;
+        let content = PhysicalRect {
             x: pane_rect.x,
-            y: pane_rect.y + tab_bar_h,
+            y: pane_rect.y + self.tab_bar_height,
             width: pane_rect.width,
-            height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
+            height: (pane_rect.height - self.tab_bar_height).max(PhysicalPx(1.0)),
         };
-
-        let selected = self.navigation.tab_index(pane);
-        let tab = match pane.tabs.get_mut(selected) {
-            Some(t) => t,
-            None => return false,
-        };
-
-        let updated = tab.layout_mut().update_ratio_for_rect(
-            divider.split_rect,
-            new_ratio,
-            content_rect,
-            scale_factor,
-        );
-        if updated {
-            engine.mark_layout_dirty();
-        }
-        updated
+        self.layout_previews.begin(
+            engine,
+            super::layout_preview::LayoutTarget::Tab(tab.id),
+            tab.layout(),
+            info,
+            content,
+            scale,
+        )
     }
 }
 

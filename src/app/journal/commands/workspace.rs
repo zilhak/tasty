@@ -16,7 +16,9 @@ pub(super) fn resolve(
     stream: &str,
 ) -> Result<Resolved, JsonRpcResponse> {
     match request.method.as_str() {
-        "workspace.update" | "intent.workspace-mapping" => update(request, session, stream),
+        "workspace.update" | "intent.workspace-mapping" | "intent.workspace-rename" => {
+            update(request, session, stream)
+        }
         "workspace.move" => reorder(request, session),
         _ => unreachable!("workspace command family"),
     }
@@ -105,6 +107,8 @@ fn update(
                 mirrors: vec![(workspace_id, token)],
                 action: DisplayAction::Workspace {
                     id: workspace_id,
+                    user_direct: request.method == "intent.workspace-rename"
+                        && input["user_direct"].as_bool().unwrap_or(false),
                     name,
                     subtitle,
                     description,
@@ -119,6 +123,8 @@ fn update(
         mirrors: Vec::new(),
         action: DisplayAction::Workspace {
             id: workspace_id,
+            user_direct: request.method == "intent.workspace-rename"
+                && input["user_direct"].as_bool().unwrap_or(false),
             name: name.clone(),
             subtitle: subtitle.clone(),
             description: description.clone(),
