@@ -1,6 +1,6 @@
 # ADR-0063: 이벤트 저장소는 payload를 journal DB에 두고 파일 잠금과 writer 세대로 쓰기를 제한한다
 
-- **Status**: Accepted — 구현 상태: 이 결정의 payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별은 `tasty-event-store`에 구현됐다. 미이행: 제품 경로 연결(아직 어떤 크레이트도 이 저장소를 쓰지 않는다), 새 journal로 가져올 때의 payload 복사와 복원 manifest 전환, 데이터 홈 공유 ID 할당기, 로그 보존·정리와 용량 예산, projection 출력과 cursor의 동시 갱신
+- **Status**: Accepted — 구현 상태: 이 결정의 payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별은 `tasty-event-store`에 구현됐다. 미이행: 제품 경로 연결(아직 어떤 크레이트도 이 저장소를 쓰지 않는다), 새 journal로 가져올 때의 payload 복사, 로그 보존·정리, projection 출력과 cursor의 동시 갱신
 - **Date**: 2026-09-30
 - **Tags**: event-sourcing, storage, sqlite, durability, effects, fencing
 - **Group**: foundation
@@ -45,7 +45,8 @@ domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 제품 경
 - 잠금 파일은 writer가 끝나도 지우지 않는다. 잠금을 놓는 사이에 파일을 지우면 다음 두 프로세스가 서로 다른 새 파일을 만들어 각각 잠금을 얻을 수 있기 때문이다.
   잠금은 writer를 놓거나 저장소를 닫을 때, 그리고 프로세스가 비정상 종료할 때 OS가 푼다.
 - writer 세대(epoch) fencing은 잠금과 함께 유지한다. 모든 쓰기 API는 잠금 보유를 먼저 확인하고, 이어서 현재 세대를 확인한 transaction에서만 쓴다.
-  잠금 없이 쓰는 것은 journal을 열 때의 schema migration과 journal ID 기록뿐이며, 둘 다 SQLite의 쓰기 transaction으로 직렬화된다.
+  잠금 없이 쓰는 것은 journal을 열 때의 WAL 전환(`PRAGMA journal_mode = WAL`), schema migration, journal ID 기록뿐이며, migration과 journal ID 기록은 SQLite의 쓰기 transaction으로 직렬화된다.
+  한계: 두 프로세스가 빈 파일을 동시에 처음 열면 migration 버전 확인이 transaction 밖이라 한쪽 open이 오류로 실패할 수 있다. 파일이 손상되지는 않는다.
   잠금이 없으면 현재 세대 값을 알아도 쓰지 못한다. 잠금을 가진 저장소가 새 세대를 등록하면 이전 세대의 다음 쓰기부터 Fenced로 거절된다.
   세대 검사는 같은 저장소 안의 이전 writer·worker가 늦게 보낸 쓰기를 막는 장치이고, 잠금은 다른 저장소·프로세스를 막는 장치다. 한쪽이 다른 쪽을 대체하지 않는다.
 - 잠금 파일을 만들 수 없거나 잠금을 쓸 수 없는 파일시스템·플랫폼에서는 writer가 되지 않고 잠금을 쓸 수 없다고 알린다. 세대 검사만으로 계속하지 않는다.
@@ -61,7 +62,7 @@ domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 제품 경
 | Uncertain | Succeeded, Failed, Cancelled | 대조 결과로만. Cancelled는 실행되지 않았다는 증거를 결과로 함께 기록할 때만 |
 | Succeeded, Cancelled, Superseded | 없음 | 종료 |
 
-- 모든 전이는 저장된 현재 상태·resource generation·attempt와 대조한다(compare-and-set). 다르면 늦은 결과로 보고 거절한다.
+- 상태와 resource generation은 모든 전이에서, attempt는 Running에서 벗어날 때 저장값과 대조한다(compare-and-set). 다르면 늦은 결과로 보고 거절한다.
 - Running 진입은 activation claim(journal·엔진·surface·runtime epoch·activation generation)을 얻어야 하며, 같은 generation의 실행권은 effect 하나만 갖는다.
 - Uncertain은 새 generation이 생겼다는 이유만으로 성공·취소로 바꾸지 않는다. 대조로 실제 실행 여부를 확인한 뒤 그 결과로만 벗어나며, 확인 전에는 원래 자원의 대조·정리 의무를 유지한다.
   Running에서 바로 Superseded로 가지 않는다. 결과를 모르는 시도를 대체된 것으로 덮지 않기 위해서다.
@@ -96,6 +97,7 @@ GC로 지운 공간은 VACUUM 전까지 파일 크기로 돌아오지 않는다.
 
 잠금과 세대 검사를 함께 쓰면 두 프로세스가 같은 journal에 번갈아 쓰는 경우와 같은 프로세스 안의 늦은 결과를 모두 막는다.
 잠금을 지원하지 않는 환경(일부 네트워크 파일시스템 등)에서는 writer로 열 수 없으므로 데이터 홈 위치에 제약이 생긴다.
+일부 NFS·FUSE 구성은 잠금을 로컬에서만 성공시켜 호스트 간 배타를 보장하지 않는다.
 journal마다 잠금 파일 하나가 옆에 남는다. 이 파일을 지우는 정리 작업은 실행 중인 writer가 없음을 확인한 뒤에만 한다.
 
 전이표를 고정하면 복구기가 상태 이름만으로 다음 동작을 정할 수 있다. Uncertain에서 Cancelled로 가려면 실행되지 않았다는 증거가 필요하므로
