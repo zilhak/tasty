@@ -221,6 +221,7 @@ pub fn draw_disabled(ui: &mut egui::Ui, theme: &Theme) {
                 "→ state-disabled-fg",
                 egui::Color32::from(theme.button_disabled_fg()),
             ),
+            TokenChip::without_color("state-dim-opacity", "items only"),
         ],
     );
     dont(

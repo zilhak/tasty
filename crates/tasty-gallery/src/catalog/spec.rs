@@ -19,16 +19,30 @@ pub enum StageVariant {
 }
 
 /// "Tokens used" 칩 한 개 — 색 스와치 + 토큰명 + 용도.
+/// 색이 없는 토큰(치수·불투명도·폰트 등)은 시안 `Meta`처럼 스와치를 그리지 않는다.
 #[derive(Clone, Copy)]
 pub struct TokenChip {
     pub tok: &'static str,
     pub use_: &'static str,
-    pub color: egui::Color32,
+    pub color: Option<egui::Color32>,
 }
 
 impl TokenChip {
     pub fn new(tok: &'static str, use_: &'static str, color: egui::Color32) -> Self {
-        Self { tok, use_, color }
+        Self {
+            tok,
+            use_,
+            color: Some(color),
+        }
+    }
+
+    /// 색 스와치 없이 토큰명과 용도만 보이는 칩.
+    pub fn without_color(tok: &'static str, use_: &'static str) -> Self {
+        Self {
+            tok,
+            use_,
+            color: None,
+        }
     }
 }
 
@@ -170,14 +184,18 @@ pub fn meta(ui: &mut egui::Ui, theme: &Theme, specs: &[(&str, &str)], tokens: &[
                         for t in tokens {
                             cols[1].horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                                let sz = theme.font_size_caption.value();
-                                let (r, _) = ui
-                                    .allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
-                                ui.painter().rect_filled(
-                                    r,
-                                    theme.corner_radius_sm.value(),
-                                    t.color,
-                                );
+                                if let Some(color) = t.color {
+                                    let sz = theme.font_size_caption.value();
+                                    let (r, _) = ui.allocate_exact_size(
+                                        egui::vec2(sz, sz),
+                                        egui::Sense::hover(),
+                                    );
+                                    ui.painter().rect_filled(
+                                        r,
+                                        theme.corner_radius_sm.value(),
+                                        color,
+                                    );
+                                }
                                 ui.label(
                                     egui::RichText::new(t.tok)
                                         .size(theme.font_size_caption.value())

@@ -345,7 +345,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 
 | 헬퍼 | 제공 | 쓰는 곳 |
 |---|---|---|
-| `spec.rs` | `section` / `spec` / `stage`(`StageVariant`) / `cluster` / `meta`(`TokenChip`) / `note` / `do_` / `dont` | 카탈로그 `.rs` 대부분 |
+| `spec.rs` | `section` / `spec` / `stage`(`StageVariant`) / `cluster` / `meta`(`TokenChip`) / `note` / `do_` / `dont`. `TokenChip::new`는 색 스와치를 그리고, `TokenChip::without_color`는 시안 `Meta`에서 `color`가 없는 토큰(치수·불투명도·폰트 등)을 스와치 없이 그린다 | 카탈로그 `.rs` 대부분 |
 | `toast_card.rs` | `tasty-type-appearance` 의 `ToastKind` · `tasty-ui-widgets` 의 `draw_toast_single_card` 재수출 — 정의는 여기 없다 | toast(components/widgets) · kb import/export |
 | `popup_frame.rs` | `draw` (`ContentInset` · `TitleButtons`) — surface-raised 프레임 + border-strong + 타이틀바 우측 버튼군(`draw_title_buttons`: IconButton sm 규칙의 `close` / 전체화면 `fit`) + 제목(`draw_title_text`: 본체와 같은 `popup_title_text_rect`·`elide_popup_title`, 버튼 수와 무관하게 대칭, 잘리면 띠를 돌려줘 `title_tooltip`이 전체 제목 Tooltip 을 붙인다) | notification_panel · info_modal · fullscreen_stage (뒤의 둘은 `draw_title_buttons`·`draw_title_text`·`TITLE_BAR_HEIGHT` 만) |
 
