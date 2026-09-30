@@ -43,7 +43,7 @@ impl AppState {
                 working_dir: cwd.as_deref(),
             },
         )?;
-        engine.terminals.insert(surface_id, terminal);
+        engine.runtime.terminals.insert(surface_id, terminal);
         if let Some(pane) = self.focused_pane_mut(engine) {
             pane.add_terminal_marker_tab(tab_id, surface_id);
         }

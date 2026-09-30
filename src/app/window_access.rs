@@ -159,7 +159,7 @@ impl App {
     pub(crate) fn find_main_with_headless_pty(&self, pty_id: u32) -> Option<WindowId> {
         for (wid, w) in &self.view.views {
             if let Some(m) = w.as_main()
-                && m.core_state.pty_registry.contains(pty_id)
+                && m.core_state.runtime.pty_registry.contains(pty_id)
             {
                 return Some(*wid);
             }

@@ -10,7 +10,7 @@ impl CoreState {
         &mut self,
         exec: &crate::hook_runtime::HookExecutor,
     ) -> Vec<PendingHostEvent> {
-        let terminals = &self.terminals;
+        let terminals = &self.runtime.terminals;
         self.hooks
             .fire_idle_timeouts(exec, |sid| terminals.get(sid).map(|t| t.last_output_at()))
     }

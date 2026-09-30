@@ -18,6 +18,7 @@
 ### 저장과 종료 코드
 
 `PtyRegistry`는 메타데이터와 종료 코드를, `TerminalStore`는 실제 Terminal을 같은 PTY ID로 보관한다.
+두 컬렉션은 자식 terminal 기록과 함께 engine의 `EngineRuntime`(`src/core/engine_runtime.rs`)에 있다.
 `portable_pty::Child`를 받은 watcher가 wait로 실제 종료 코드를 기록한다.
 `pty.wait`는 이 값을 즉시 조회하며 블로킹 대기가 아니다.
 owner_agent_id는 호출자의 TASTY_AGENT_ID에서 오며 위조할 수 있어 강한 인증 정보로 취급하지 않는다.

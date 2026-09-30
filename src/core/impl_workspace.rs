@@ -428,7 +428,7 @@ pub(crate) fn apply_create_workspace_inner(
                 working_dir: cwd.as_deref(),
             },
         )?;
-        engine.terminals.insert(surface_id, terminal);
+        engine.runtime.terminals.insert(surface_id, terminal);
         crate::model::Workspace::new_with_terminal_marker(
             ws_id, auto_name, pane_id, tab_id, surface_id,
         )

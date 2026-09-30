@@ -762,7 +762,7 @@ impl AppState {
     fn capture_workspace_snapshot(engine: &CoreState, ws_idx: usize) -> crate::model::ClosedItem {
         let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
         let ws = &engine.workspaces[ws_idx];
-        let terminals = &engine.terminals;
+        let terminals = &engine.runtime.terminals;
         crate::model::ClosedItem::from_workspace(ws, &mut snap_fn, &|id| {
             terminals.closed_capture(id)
         })

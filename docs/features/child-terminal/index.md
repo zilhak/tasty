@@ -238,7 +238,7 @@ kill/release/respawn 세 경로가 같은 메시지를 쓴다. 실패는 `exit=1
 ### `--surface` 생략과 다중 윈도우
 
 `kill`/`release`/`respawn`/`broadcast` 는 `--surface`(parent) 를 생략할 수 있다 — host 가
-현재 engine 의 `child_terminals.single_parent()` 로 폴백한다(parent 가 정확히 1개일 때만
+현재 engine 의 `runtime.child_terminals.single_parent()` 로 폴백한다(parent 가 정확히 1개일 때만
 성공, 0 개·2 개 이상이면 에러). 이 폴백은 **그 engine(= 하나의 main window) 안에서만**
 유일성을 본다 — main window 가 2 개 이상 열린 세션에서는 애초에 어느 window 를 봐야
 하는지가 정해지지 않는다. 그래서 이 4 개 메서드가 `--surface` 없이(그리고 라우팅 가능한

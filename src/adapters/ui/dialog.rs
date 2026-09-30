@@ -416,6 +416,7 @@ mod tests {
         let tab_id = engine.next_ids.next_tab();
         let sid = engine.next_ids.next_surface();
         engine
+            .runtime
             .terminals
             .insert(sid, tasty_terminal::Terminal::new_detached(80, 24));
         let ws = crate::model::Workspace::new_with_terminal_marker(

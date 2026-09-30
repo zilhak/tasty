@@ -66,7 +66,7 @@ impl Tab {
 
     /// Recompute and cache the display name from the focused terminal's CWD.
     /// Caller (CoreState::refresh_tab_display_name) lookups Terminal via
-    /// `engine.terminals.get(focused_surface).and_then(|t| t.get_cwd())` first
+    /// `engine.runtime.terminals.get(focused_surface).and_then(|t| t.get_cwd())` first
     /// and passes the cwd in. Tab itself doesn't see the TerminalStore.
     pub fn refresh_display_name(&mut self, cwd: Option<&std::path::Path>) {
         if self.explicit_name.is_some() {
@@ -423,7 +423,7 @@ impl Tab {
 
     /// Split the focused surface within this tab with a TerminalSurface marker.
     /// Moves focus to the new surface. Caller must have already inserted the
-    /// spawned Terminal into `CoreState::terminals`.
+    /// spawned Terminal into `CoreState::runtime.terminals`.
     pub fn split_focused_surface(&mut self, direction: SplitDirection, new_surface_id: SurfaceId) {
         let new_node = TerminalSurface { id: new_surface_id };
         let target = self.focused_surface;
@@ -435,7 +435,7 @@ impl Tab {
 
     /// Split a specific surface by ID with a TerminalSurface marker. Does NOT
     /// change focused_surface. Caller must have already inserted the spawned
-    /// Terminal into `CoreState::terminals`.
+    /// Terminal into `CoreState::runtime.terminals`.
     pub fn split_surface_by_id(
         &mut self,
         target_surface_id: SurfaceId,

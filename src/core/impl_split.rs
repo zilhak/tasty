@@ -38,7 +38,7 @@ impl Core {
                     working_dir: cwd.as_deref(),
                 },
             )?;
-            engine.terminals.insert(new_surface_id, terminal);
+            engine.runtime.terminals.insert(new_surface_id, terminal);
             crate::model::Pane::new_with_terminal_marker(new_pane_id, new_tab_id, new_surface_id)
         } else {
             let surface = engine.create_surface_via_registry(
@@ -104,7 +104,7 @@ impl Core {
                 },
                 waker,
             )?;
-            engine.terminals.insert(new_surface_id, terminal);
+            engine.runtime.terminals.insert(new_surface_id, terminal);
             Box::new(crate::model::TerminalSurface { id: new_surface_id })
         } else {
             engine.create_surface_via_registry(

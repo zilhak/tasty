@@ -44,7 +44,7 @@ pub fn draw_status_bar(
     let surface_id = state.focused_surface_id(engine);
     // 그리드·프로세스·Git 정보는 캐시에서 읽어 프레임마다 시스템·파일 조회를 반복하지 않는다.
     let grid = surface_id
-        .and_then(|sid| engine.terminals.get(sid))
+        .and_then(|sid| engine.runtime.terminals.get(sid))
         .map(|term| (term.cols(), term.rows()));
     let shell = surface_id.and_then(|sid| engine.foreground_name(sid).map(str::to_owned));
     let branch = surface_id

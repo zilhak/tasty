@@ -20,7 +20,7 @@ impl CoreState {
         client_id: AttachClientId,
         hub: &StreamHub,
     ) {
-        if !self.terminals.contains(surface_id) && !self.is_surface_deferred(surface_id) {
+        if !self.runtime.terminals.contains(surface_id) && !self.is_surface_deferred(surface_id) {
             if let Some((kind, plugin_id)) = self.find_mesh_surface_info(surface_id)
                 && crate::core::surface_registry::egui_mesh::is_egui_mesh_allowed(&kind, &plugin_id)
             {
@@ -45,7 +45,7 @@ impl CoreState {
 
         self.ensure_surface_initialized(surface_id);
 
-        let Some(terminal) = self.terminals.get_mut(surface_id) else {
+        let Some(terminal) = self.runtime.terminals.get_mut(surface_id) else {
             let _ = self.attach.release(surface_id, client_id); // 이미 해제됐으면 추가 처리가 필요 없다.
             reject_attach(hub, client_id, "spawn_failed", None);
             return;
@@ -200,7 +200,7 @@ impl CoreState {
         let Some(surface_id) = self.attach.surface_held_by(client_id) else {
             return false;
         };
-        if let Some(terminal) = self.terminals.get_mut(surface_id) {
+        if let Some(terminal) = self.runtime.terminals.get_mut(surface_id) {
             terminal.send_bytes(bytes);
             true
         } else {
@@ -285,7 +285,7 @@ impl CoreState {
         client_id: AttachClientId,
         hub: &StreamHub,
     ) {
-        let Some(terminal) = self.terminals.get_mut(sid) else {
+        let Some(terminal) = self.runtime.terminals.get_mut(sid) else {
             return;
         };
         let snapshot = terminal.snapshot_as_vt();
@@ -372,7 +372,7 @@ impl CoreState {
         if self.attach.workspace_holder(ws) != Some(client_id) {
             return false;
         }
-        if let Some(terminal) = self.terminals.get_mut(remote_surface_id) {
+        if let Some(terminal) = self.runtime.terminals.get_mut(remote_surface_id) {
             terminal.send_bytes(bytes);
             true
         } else {
@@ -395,7 +395,7 @@ impl CoreState {
         if self.attach.workspace_holder(ws) != Some(client_id) {
             return false;
         }
-        if let Some(terminal) = self.terminals.get_mut(remote_surface_id) {
+        if let Some(terminal) = self.runtime.terminals.get_mut(remote_surface_id) {
             terminal.resize(cols, rows);
             true
         } else {
@@ -504,6 +504,7 @@ impl CoreState {
         let mut surfaces = Vec::new();
         for &sid in &class.terminals {
             let (cols, rows) = self
+                .runtime
                 .terminals
                 .get(sid)
                 .map(|t| (t.cols(), t.rows()))
@@ -1334,6 +1335,7 @@ fn resolve_git_query_target(
         return Ok(std::path::PathBuf::from(p));
     }
     engine
+        .runtime
         .terminals
         .get(surface_id)
         .and_then(|t| t.get_cwd())
@@ -2185,7 +2187,10 @@ mod forward_exec_tests {
 
     fn seed(engine: &mut crate::core::CoreState) -> u32 {
         let a = engine.workspaces[0].all_surface_ids()[0];
-        engine.terminals.insert(a, Terminal::new_detached(80, 24));
+        engine
+            .runtime
+            .terminals
+            .insert(a, Terminal::new_detached(80, 24));
         a
     }
 
@@ -2207,7 +2212,7 @@ mod forward_exec_tests {
     fn forward_split_surface_executes_and_spawns() {
         let (mut core, mut state, mut engine, _home) = make_core_state();
         let a = seed(&mut engine);
-        let before = engine.terminals.iter().count();
+        let before = engine.runtime.terminals.iter().count();
         let op = StructuralOp::SplitSurface {
             surface_id: a,
             direction: SplitAxis::Horizontal,
@@ -2225,7 +2230,7 @@ mod forward_exec_tests {
             .expect("expected Ok")
             .expect("split 성공은 delta 를 동반해야 한다");
         assert_eq!(
-            engine.terminals.iter().count(),
+            engine.runtime.terminals.iter().count(),
             before + 1,
             "forward split 은 서버에서 새 터미널을 spawn 해야 한다"
         );
@@ -2709,6 +2714,7 @@ mod forward_exec_tests {
             .expect("second workspace");
         let other_sid = engine.workspaces[other_ws].all_surface_ids()[0];
         engine
+            .runtime
             .terminals
             .insert(other_sid, Terminal::new_detached(80, 24));
         let other_pane = engine.workspaces[other_ws]
@@ -2820,14 +2826,24 @@ mod forward_exec_tests {
         let new_sid = fd.added_terminals[0];
 
         assert_eq!(
-            engine.terminals.get(new_sid).unwrap().output_tap_count(),
+            engine
+                .runtime
+                .terminals
+                .get(new_sid)
+                .unwrap()
+                .output_tap_count(),
             0,
             "구조 변경 실행 중에는 tap하지 않고 호출자가 delta를 보낸 뒤 tap해야 한다"
         );
 
         engine.tap_surface_for_stream(new_sid, client_id, &hub);
         assert_eq!(
-            engine.terminals.get(new_sid).unwrap().output_tap_count(),
+            engine
+                .runtime
+                .terminals
+                .get(new_sid)
+                .unwrap()
+                .output_tap_count(),
             1,
             "호출자가 tap한 뒤에는 하나만 등록돼야 한다"
         );
@@ -3096,7 +3112,7 @@ mod forward_exec_tests {
     fn forward_new_tab_executes() {
         let (mut core, mut state, mut engine, _home) = make_core_state();
         let a = seed(&mut engine);
-        let before = engine.terminals.iter().count();
+        let before = engine.runtime.terminals.iter().count();
         let op = StructuralOp::NewTab {
             anchor_surface_id: a,
             surface_kind: "terminal".to_string(),
@@ -3110,7 +3126,7 @@ mod forward_exec_tests {
             ForwardOrigin::User,
         );
         let fd = r.expect("expected Ok").expect("new-tab 성공은 delta 동반");
-        assert_eq!(engine.terminals.iter().count(), before + 1);
+        assert_eq!(engine.runtime.terminals.iter().count(), before + 1);
         assert_eq!(fd.added_terminals.len(), 1);
     }
 
@@ -3158,7 +3174,7 @@ mod forward_exec_tests {
     fn forward_unknown_kind_fails() {
         let (mut core, mut state, mut engine, _home) = make_core_state();
         let a = seed(&mut engine);
-        let before = engine.terminals.iter().count();
+        let before = engine.runtime.terminals.iter().count();
         let op = StructuralOp::NewTab {
             anchor_surface_id: a,
             surface_kind: "definitely-not-registered".to_string(),
@@ -3177,7 +3193,7 @@ mod forward_exec_tests {
             "reason 이 미등록 kind 를 가리켜야 한다"
         );
         assert_eq!(
-            engine.terminals.iter().count(),
+            engine.runtime.terminals.iter().count(),
             before,
             "실패한 forward 는 새 터미널을 만들지 않는다"
         );
@@ -3205,7 +3221,7 @@ mod forward_exec_tests {
         };
         assert_eq!(reason, "unknown surface kind: definitely-not-registered");
         assert!(
-            engine.terminals.get(a).is_some(),
+            engine.runtime.terminals.get(a).is_some(),
             "실패한 convert 는 원래 터미널을 그대로 둔다"
         );
     }
@@ -3400,7 +3416,7 @@ mod forward_exec_tests {
             .attach
             .acquire_workspace(ws_id, &[a], &[a], 7)
             .expect("workspace 점유 획득");
-        let before = engine.terminals.iter().count();
+        let before = engine.runtime.terminals.iter().count();
         let op = StructuralOp::NewTab {
             anchor_surface_id: a,
             surface_kind: "terminal".to_string(),
@@ -3417,7 +3433,7 @@ mod forward_exec_tests {
             r.is_ok(),
             "holder 의 forward NewTab 은 hard-occupied 상태에서도 성공해야 한다"
         );
-        assert_eq!(engine.terminals.iter().count(), before + 1);
+        assert_eq!(engine.runtime.terminals.iter().count(), before + 1);
     }
 
     #[test]
@@ -3568,7 +3584,7 @@ mod forward_exec_tests {
             .attach
             .acquire_workspace(ws_id, &all, &all, 7)
             .expect("workspace 점유 획득");
-        let before = engine.terminals.iter().count();
+        let before = engine.runtime.terminals.iter().count();
         let close = StructuralOp::CloseSurface { surface_id: b };
         let r = execute_forwarded_structural_op(
             &mut core,
@@ -3581,7 +3597,7 @@ mod forward_exec_tests {
             r.is_ok(),
             "holder 의 forward CloseSurface 는 hard-occupied 상태에서도 성공해야 한다"
         );
-        assert_eq!(engine.terminals.iter().count(), before - 1);
+        assert_eq!(engine.runtime.terminals.iter().count(), before - 1);
     }
 
     #[test]
@@ -3661,7 +3677,7 @@ mod forward_exec_tests {
             "converted_surface 는 실제로 교체된 surface_id 를 실어야 한다"
         );
         assert!(
-            engine.terminals.get(a).is_some(),
+            engine.runtime.terminals.get(a).is_some(),
             "terminal 로의 convert 는 새 Terminal 을 insert 해야 한다"
         );
     }
@@ -3734,6 +3750,7 @@ mod forward_exec_tests {
         let a = seed(&mut engine);
         let dir = tempfile::tempdir().expect("test tempdir");
         engine
+            .runtime
             .terminals
             .get_mut(a)
             .expect("seeded terminal")
@@ -3762,6 +3779,7 @@ mod forward_exec_tests {
         let a = seed(&mut engine);
         let dir = tempfile::tempdir().expect("test tempdir");
         engine
+            .runtime
             .terminals
             .get_mut(a)
             .expect("seeded terminal")
@@ -3805,7 +3823,7 @@ mod forward_exec_tests {
         .expect("split ok")
         .expect("split delta");
         let b = fd.added_terminals[0];
-        let before = engine.terminals.iter().count();
+        let before = engine.runtime.terminals.iter().count();
 
         let mv = StructuralOp::MoveSurface {
             source_surface_id: a,
@@ -3825,12 +3843,12 @@ mod forward_exec_tests {
             "이동은 converted_surface를 반환하면 안 된다"
         );
         assert_eq!(
-            engine.terminals.iter().count(),
+            engine.runtime.terminals.iter().count(),
             before - 1,
             "이동 대상으로 덮어쓴 B의 터미널은 제거돼야 한다"
         );
         assert!(
-            engine.terminals.get(a).is_some(),
+            engine.runtime.terminals.get(a).is_some(),
             "이동한 A의 터미널은 유지돼야 한다"
         );
     }
@@ -3889,7 +3907,7 @@ mod forward_exec_tests {
             .acquire_workspace(ws_id, &[a], &[a], 7)
             .expect("workspace 점유 획득");
 
-        let terminals_before = engine.terminals.iter().count();
+        let terminals_before = engine.runtime.terminals.iter().count();
         let panes_before = engine.workspaces[0].pane_layout().all_pane_ids().len();
 
         for (method, params) in [
@@ -3922,7 +3940,7 @@ mod forward_exec_tests {
         }
 
         assert_eq!(
-            engine.terminals.iter().count(),
+            engine.runtime.terminals.iter().count(),
             terminals_before,
             "거부된 요청은 새 터미널을 만들면 안 된다"
         );
@@ -3950,7 +3968,7 @@ mod forward_exec_tests {
             .acquire_workspace(ws_id, &[a], &[a], 7)
             .expect("workspace 점유 획득");
 
-        let terminals_before = engine.terminals.iter().count();
+        let terminals_before = engine.runtime.terminals.iter().count();
         let panes_before = engine.workspaces[0].pane_layout().all_pane_ids().len();
         let tabs_before = engine.workspaces[0]
             .pane_layout()
@@ -3986,7 +4004,7 @@ mod forward_exec_tests {
             );
         }
 
-        assert_eq!(engine.terminals.iter().count(), terminals_before);
+        assert_eq!(engine.runtime.terminals.iter().count(), terminals_before);
         assert_eq!(
             engine.workspaces[0].pane_layout().all_pane_ids().len(),
             panes_before,
@@ -4020,6 +4038,7 @@ mod forward_exec_tests {
             "기본 대상은 점유된 workspace 여야 한다"
         );
         let pty_id = engine
+            .runtime
             .pty_registry
             .register(
                 PtySpawnSpec {
@@ -4031,6 +4050,7 @@ mod forward_exec_tests {
             )
             .expect("register headless pty");
         engine
+            .runtime
             .terminals
             .insert(pty_id, Terminal::new_detached(80, 24));
         engine
@@ -4095,7 +4115,7 @@ mod forward_exec_tests {
         );
         assert_eq!(engine.workspaces[0].pane_layout().all_pane_ids().len(), 1);
         assert!(
-            engine.pty_registry.get(pty_id).is_some(),
+            engine.runtime.pty_registry.get(pty_id).is_some(),
             "거부된 pty.attach_surface 는 PTY 를 registry 에 남겨야 한다"
         );
 
@@ -4118,7 +4138,7 @@ mod forward_exec_tests {
                 err.message
             );
         }
-        engine.terminals.remove(pty_id);
+        engine.runtime.terminals.remove(pty_id);
     }
 
     /// terminal.kill은 child가 hard 점유 workspace에 있으면 surface.close처럼 거부한다.
@@ -4133,6 +4153,7 @@ mod forward_exec_tests {
         let child = engine.next_ids.next_surface();
         let tab_id = engine.next_ids.next_tab();
         engine
+            .runtime
             .terminals
             .insert(child, Terminal::new_detached(80, 24));
         engine.workspaces[0]
@@ -4140,8 +4161,8 @@ mod forward_exec_tests {
             .find_pane_mut(pane_id)
             .expect("pane exists")
             .add_terminal_marker_tab_background(tab_id, child, None);
-        let idx = engine.child_terminals.next_index_for(parent);
-        engine.child_terminals.register_child(
+        let idx = engine.runtime.child_terminals.next_index_for(parent);
+        engine.runtime.child_terminals.register_child(
             parent,
             crate::core::child_terminal::ChildEntry {
                 child_surface_id: child,
@@ -4184,7 +4205,11 @@ mod forward_exec_tests {
             "거부된 kill 은 holder 를 떼어내면 안 된다"
         );
         assert!(
-            engine.child_terminals.find_child(parent, idx).is_some(),
+            engine
+                .runtime
+                .child_terminals
+                .find_child(parent, idx)
+                .is_some(),
             "거부된 kill 은 child 관계를 지우면 안 된다"
         );
         assert!(engine.find_surface_by_id(child).is_some());
@@ -4196,7 +4221,13 @@ mod forward_exec_tests {
             .expect("hard 해제 뒤 soft 점유 복원");
         let resp = kill(&mut core, &mut state, &mut engine);
         assert!(resp.error.is_none(), "{:?}", resp.error);
-        assert!(engine.child_terminals.find_child(parent, idx).is_none());
+        assert!(
+            engine
+                .runtime
+                .child_terminals
+                .find_child(parent, idx)
+                .is_none()
+        );
         assert!(engine.attach.occupancy_of(child).is_none());
         assert!(engine.find_surface_by_id(child).is_none());
     }
@@ -4211,7 +4242,7 @@ mod forward_exec_tests {
             .acquire_workspace(ws_id, &[a], &[a], 7)
             .expect("workspace 점유 획득");
 
-        let terminals_before = engine.terminals.iter().count();
+        let terminals_before = engine.runtime.terminals.iter().count();
         let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
         let tabs_before = engine.workspaces[0]
             .pane_layout()
@@ -4241,7 +4272,7 @@ mod forward_exec_tests {
         );
 
         assert_eq!(
-            engine.terminals.iter().count(),
+            engine.runtime.terminals.iter().count(),
             terminals_before,
             "거부된 spawn 은 새 터미널을 만들면 안 된다"
         );
@@ -4262,7 +4293,7 @@ mod forward_exec_tests {
         let (mut core, mut state, mut engine, _home) = make_core_state();
         let a = seed(&mut engine);
         let ws_id = engine.workspaces[0].id;
-        let terminals_before = engine.terminals.iter().count();
+        let terminals_before = engine.runtime.terminals.iter().count();
 
         let req = ipc_request(
             "terminal.spawn",
@@ -4281,7 +4312,7 @@ mod forward_exec_tests {
             resp.error
         );
         assert_eq!(
-            engine.terminals.iter().count(),
+            engine.runtime.terminals.iter().count(),
             terminals_before + 1,
             "정상 spawn 은 새 터미널을 만들어야 한다"
         );
@@ -4296,7 +4327,7 @@ mod forward_exec_tests {
         let ws_id = engine.workspaces[0].id;
         engine.workspaces[0].mirror = true;
 
-        let terminals_before = engine.terminals.iter().count();
+        let terminals_before = engine.runtime.terminals.iter().count();
 
         let req = ipc_request(
             "terminal.spawn",
@@ -4327,7 +4358,7 @@ mod forward_exec_tests {
             engine.pending_structural_forward.is_empty(),
             "거부된 spawn 은 원격 NewTab 을 forward 하면 안 된다"
         );
-        assert_eq!(engine.terminals.iter().count(), terminals_before);
+        assert_eq!(engine.runtime.terminals.iter().count(), terminals_before);
     }
 
     /// GUI는 mirror의 tab.create를 forward한다. 큐를 비우는 메인 루프가 GUI에만 있다.
@@ -4338,7 +4369,7 @@ mod forward_exec_tests {
         seed(&mut engine);
         let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
         engine.workspaces[0].mirror = true;
-        let terminals_before = engine.terminals.iter().count();
+        let terminals_before = engine.runtime.terminals.iter().count();
 
         let req = ipc_request("tab.create", serde_json::json!({ "pane_id": pane_id }));
         let resp = handle_with_caller(
@@ -4363,7 +4394,7 @@ mod forward_exec_tests {
             engine.pending_structural_forward.first().map(|p| &p.op)
         );
         assert_eq!(
-            engine.terminals.iter().count(),
+            engine.runtime.terminals.iter().count(),
             terminals_before,
             "forward 된 구조 변경은 로컬 트리를 바꾸지 않는다"
         );
@@ -4377,7 +4408,7 @@ mod forward_exec_tests {
         seed(&mut engine);
         let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
         engine.workspaces[0].mirror = true;
-        let terminals_before = engine.terminals.iter().count();
+        let terminals_before = engine.runtime.terminals.iter().count();
 
         let req = ipc_request("tab.create", serde_json::json!({ "pane_id": pane_id }));
         let resp = handle_with_caller(
@@ -4405,7 +4436,7 @@ mod forward_exec_tests {
             engine.pending_structural_forward.is_empty(),
             "헤드리스에서 mirror forward 큐에 요청을 넣으면 안 된다"
         );
-        assert_eq!(engine.terminals.iter().count(), terminals_before);
+        assert_eq!(engine.runtime.terminals.iter().count(), terminals_before);
     }
 
     /// workspace와 다른 pane을 지정해도 최종 pane의 점유·mirror 여부로 차단해야 한다.
@@ -4442,7 +4473,7 @@ mod forward_exec_tests {
                 }
             }
 
-            let terminals_before = engine.terminals.iter().count();
+            let terminals_before = engine.runtime.terminals.iter().count();
             let req = ipc_request(
                 "terminal.spawn",
                 serde_json::json!({
@@ -4469,7 +4500,7 @@ mod forward_exec_tests {
                 err.message
             );
             assert_eq!(
-                engine.terminals.iter().count(),
+                engine.runtime.terminals.iter().count(),
                 terminals_before,
                 "{blocked}: 거부된 spawn 은 새 터미널을 만들면 안 된다"
             );

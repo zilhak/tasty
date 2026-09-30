@@ -288,8 +288,8 @@ pub struct CoreState {
     #[cfg(feature = "gui")]
     pub(crate) port_favorites: crate::core::port_favorites::PortFavorites,
 
-    /// 실제 Terminal과 scrollback 저장 ID. 레이아웃 트리의 TerminalSurface는 ID만 참조한다.
-    pub(crate) terminals: crate::core::terminal_store::TerminalStore,
+    /// 실제 Terminal·PTY 원본 컬렉션. 이 위치에서 drop돼 Terminal 정리 순서를 유지한다.
+    pub(crate) runtime: crate::core::engine_runtime::EngineRuntime,
 
     /// attach 점유는 연결 수명 동안만 유지하며 저장·복원하지 않는다.
     pub(crate) attach: crate::core::attach::OccupancyRegistry,
@@ -300,12 +300,6 @@ pub struct CoreState {
     /// client가 조립한 mesh frame을 로컬 surface ID로 보관한다. 서버 구독 상태와는 별개다.
     #[cfg(feature = "gui")]
     pub(crate) attach_mesh_frames: crate::core::attach_mesh_frames::AttachMeshFrameStore,
-
-    /// 자식 terminal surface의 부모·번호·상태 기록. 파일에서 읽으며 저장은 호출자가 요청한다.
-    pub(crate) child_terminals: crate::core::child_terminal::ChildTerminalRegistry,
-
-    /// surface가 없는 PTY의 등록 정보와 watcher 결과. Terminal은 별도 store에 있다. 비영속이다.
-    pub(crate) pty_registry: crate::core::pty_registry::PtyRegistry,
 
     /// 서버의 attach 점유 터미널을 표시할 사본. GUI 타이머가 갱신하며 원본 PTY는 계속 유지한다.
     #[cfg_attr(
@@ -551,15 +545,11 @@ impl CoreState {
             explorer_favorites: crate::core::explorer_favorites::ExplorerFavorites::load(),
             #[cfg(feature = "gui")]
             port_favorites: crate::core::port_favorites::PortFavorites::load(),
-            terminals: crate::core::terminal_store::TerminalStore::new(),
+            runtime: crate::core::engine_runtime::EngineRuntime::new(next_ids.pty_counter()),
             attach: crate::core::attach::OccupancyRegistry::new(),
             mesh_mirror: crate::core::mesh_mirror::MeshMirrorRegistry::default(),
             #[cfg(feature = "gui")]
             attach_mesh_frames: crate::core::attach_mesh_frames::AttachMeshFrameStore::default(),
-            child_terminals: crate::core::child_terminal::ChildTerminalRegistry::load(),
-            pty_registry: crate::core::pty_registry::PtyRegistry::with_counter(
-                next_ids.pty_counter(),
-            ),
             readonly_views: HashMap::new(),
             pending_gui_attach: Vec::new(),
             #[cfg(feature = "gui")]
@@ -663,7 +653,7 @@ impl CoreState {
                     working_dir: None,
                 },
             )?;
-            engine.terminals.insert(surface_id, terminal);
+            engine.runtime.terminals.insert(surface_id, terminal);
             let ws = Workspace::new_with_terminal_marker(
                 ws_id,
                 "Workspace 1".to_string(),
@@ -696,7 +686,7 @@ impl CoreState {
     ) -> Option<crate::model::ClosedItem> {
         let tab = self.find_pane_by_id(pane_id)?.tabs.get(tab_index)?;
         let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&self.surface_registry);
-        let terminals = &self.terminals;
+        let terminals = &self.runtime.terminals;
         crate::model::closed_item::ClosedTab::from_tab(tab, &mut snap_fn, &|id| {
             terminals.closed_capture(id)
         })
@@ -715,7 +705,7 @@ impl CoreState {
         let (direction, ratio, was_first, sibling_pane_id) =
             ws.pane_layout().locate_split_context(pane_id)?;
         let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&self.surface_registry);
-        let terminals = &self.terminals;
+        let terminals = &self.runtime.terminals;
         Some(crate::model::ClosedItem::from_pane(
             pane,
             sibling_pane_id,
@@ -797,7 +787,7 @@ impl CoreState {
 
     #[cfg(feature = "gui")]
     pub fn resync_terminal_palettes(&mut self) {
-        self.terminals.resync_palettes();
+        self.runtime.terminals.resync_palettes();
     }
 
     pub fn is_typing(&self, surface_id: u32) -> bool {
@@ -893,7 +883,7 @@ impl CoreState {
 impl CoreState {
     pub fn refresh_tab_display_name(&mut self, surface_id: u32) {
         let workspaces = &mut self.workspaces;
-        let terminals = &self.terminals;
+        let terminals = &self.runtime.terminals;
         for workspace in workspaces {
             let pane_ids = workspace.pane_layout().all_pane_ids();
             for pid in pane_ids {
@@ -914,7 +904,7 @@ impl CoreState {
     /// 제목이 없으면 OSC 제목을 비우고 사용자가 명시한 탭 이름은 유지한다.
     pub fn refresh_tab_osc_title(&mut self, surface_id: u32) {
         let workspaces = &mut self.workspaces;
-        let terminals = &self.terminals;
+        let terminals = &self.runtime.terminals;
         for workspace in workspaces {
             let pane_ids = workspace.pane_layout().all_pane_ids();
             for pid in pane_ids {

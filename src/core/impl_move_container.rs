@@ -310,6 +310,7 @@ mod move_container_tests {
     fn first_pane(engine: &mut CoreState) -> (u32, u32, u32) {
         let a = engine.workspaces[0].all_surface_ids()[0];
         engine
+            .runtime
             .terminals
             .insert(a, tasty_terminal::Terminal::new_detached(80, 24));
         let (_, pane_id) = engine.find_workspace_index_for_surface(a).unwrap();
@@ -322,6 +323,7 @@ mod move_container_tests {
         let tab_id = engine.next_ids.next_tab();
         let sid = engine.next_ids.next_surface();
         engine
+            .runtime
             .terminals
             .insert(sid, tasty_terminal::Terminal::new_detached(80, 24));
         engine
@@ -337,6 +339,7 @@ mod move_container_tests {
         let tab_id = engine.next_ids.next_tab();
         let sid = engine.next_ids.next_surface();
         engine
+            .runtime
             .terminals
             .insert(sid, tasty_terminal::Terminal::new_detached(80, 24));
         let pane = crate::model::Pane::new_with_terminal_marker(new_pane_id, tab_id, sid);
@@ -357,6 +360,7 @@ mod move_container_tests {
         let tab_id = engine.next_ids.next_tab();
         let sid = engine.next_ids.next_surface();
         engine
+            .runtime
             .terminals
             .insert(sid, tasty_terminal::Terminal::new_detached(80, 24));
         engine
@@ -403,9 +407,12 @@ mod move_container_tests {
         let p = engine.find_pane_by_id(pane).unwrap();
         assert_eq!(p.tabs.iter().map(|t| t.id).collect::<Vec<_>>(), vec![tab_a]);
         assert!(p.tabs[0].contains_surface(a));
-        assert!(engine.terminals.contains(a), "source terminal must survive");
         assert!(
-            engine.terminals.contains(b),
+            engine.runtime.terminals.contains(a),
+            "source terminal must survive"
+        );
+        assert!(
+            engine.runtime.terminals.contains(b),
             "target store 제거는 호출자의 후속 처리다"
         );
         assert!(engine.pending_move.is_none());
@@ -480,7 +487,7 @@ mod move_container_tests {
         assert!(engine.find_pane_by_id(p1).is_none());
         let p = engine.find_pane_by_id(p2).unwrap();
         assert_eq!(p.tabs.iter().map(|t| t.id).collect::<Vec<_>>(), vec![tab_a]);
-        assert!(engine.terminals.contains(a));
+        assert!(engine.runtime.terminals.contains(a));
     }
 
     #[test]
@@ -512,7 +519,7 @@ mod move_container_tests {
         assert_eq!(engine.workspaces.len(), 1);
         let p = engine.find_pane_by_id(q).unwrap();
         assert_eq!(p.tabs.iter().map(|t| t.id).collect::<Vec<_>>(), vec![tab_a]);
-        assert!(engine.terminals.contains(a));
+        assert!(engine.runtime.terminals.contains(a));
     }
 
     #[test]
@@ -694,7 +701,10 @@ mod move_container_tests {
         assert_eq!(engine.workspaces[1].focused_pane, p1);
         let moved_pane = engine.find_pane_by_id(p1).unwrap();
         assert_eq!(moved_pane.tabs[0].id, tab_a);
-        assert!(engine.terminals.contains(a), "source terminal must survive");
+        assert!(
+            engine.runtime.terminals.contains(a),
+            "source terminal must survive"
+        );
         assert!(engine.pending_move.is_none());
     }
 
@@ -763,7 +773,7 @@ mod move_container_tests {
         assert_eq!(cleanup_targets, vec![(q_sid, None)]);
         assert_eq!(engine.workspaces.len(), 1);
         assert_eq!(engine.workspaces[0].pane_layout().all_pane_ids(), vec![p0]);
-        assert!(engine.terminals.contains(a));
+        assert!(engine.runtime.terminals.contains(a));
     }
 
     #[test]

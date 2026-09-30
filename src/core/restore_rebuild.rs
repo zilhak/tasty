@@ -147,7 +147,7 @@ pub(crate) fn rebuild_surface_node(
         terminal.prefill_visible_from_scrollback(prefill);
     }
 
-    engine.terminals.insert(surface_id, terminal);
+    engine.runtime.terminals.insert(surface_id, terminal);
     engine.send_fast_init(surface_id);
 
     Some(TerminalSurface { id: surface_id })

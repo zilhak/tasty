@@ -520,7 +520,7 @@ mod tests {
         let (_core, state, mut engine, sid) = fixture();
         let mut terminal = tasty_terminal::Terminal::new_detached(80, 24);
         terminal.feed_bytes(b"\x1b]7;file://localhost/tmp/tasty-osc7-probe\x07");
-        engine.terminals.insert(sid, terminal);
+        engine.runtime.terminals.insert(sid, terminal);
         engine.layout_dirty.clear();
         let tab_name = |engine: &CoreState| {
             state

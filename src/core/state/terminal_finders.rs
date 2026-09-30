@@ -20,11 +20,11 @@ impl CoreState {
     }
 
     pub fn find_terminal_by_id(&self, surface_id: u32) -> Option<&Terminal> {
-        self.terminals.get(surface_id)
+        self.runtime.terminals.get(surface_id)
     }
 
     pub fn find_terminal_by_id_mut(&mut self, surface_id: u32) -> Option<&mut Terminal> {
-        self.terminals.get_mut(surface_id)
+        self.runtime.terminals.get_mut(surface_id)
     }
 
     /// 화면과 같은 Terminal을 사용해야 선택 좌표와 복사 내용이 맞는다.
@@ -34,7 +34,7 @@ impl CoreState {
         if self.attach.is_hard_occupied(surface_id) {
             self.readonly_view(surface_id)
         } else {
-            self.terminals.get(surface_id)
+            self.runtime.terminals.get(surface_id)
         }
     }
 }

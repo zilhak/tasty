@@ -17,6 +17,7 @@ pub(crate) mod cascade_window;
 pub(crate) mod child_terminal;
 pub(crate) mod command_index;
 pub(crate) mod egui_mesh_surface;
+pub(crate) mod engine_runtime;
 #[cfg(feature = "gui")]
 pub(crate) mod explorer_favorites;
 pub(crate) mod file;

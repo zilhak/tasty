@@ -8,10 +8,10 @@ impl CoreState {
     /// 유휴 TTL이 지난 등록을 지우고 Terminal과 waker 기록도 함께 정리한다.
     /// 실제 자식 종료·회수는 Terminal의 소유권과 플랫폼별 Drop 처리에 달려 있다.
     pub(crate) fn sweep_idle_ptys(&mut self, now: Instant) -> Vec<u32> {
-        let expired = self.pty_registry.sweep_idle(now);
+        let expired = self.runtime.pty_registry.sweep_idle(now);
         for pty_id in &expired {
             let pty_id = *pty_id;
-            self.terminals.remove(pty_id);
+            self.runtime.terminals.remove(pty_id);
             if let Some(factory) = self.waker_factory.as_ref() {
                 factory.forget_surface(pty_id);
             }
@@ -129,9 +129,11 @@ impl CoreState {
         if !tab.complete_terminal_spawn(surface_id) {
             return false;
         }
-        self.terminals.insert(surface_id, terminal);
+        self.runtime.terminals.insert(surface_id, terminal);
         if let Some(pid) = spawn.scrollback_persist_id {
-            self.terminals.set_scrollback_persist_id(surface_id, pid);
+            self.runtime
+                .terminals
+                .set_scrollback_persist_id(surface_id, pid);
         }
         self.send_fast_init(surface_id);
         self.apply_pending_scrollback_inject(surface_id);
@@ -184,7 +186,7 @@ impl CoreState {
         surface_id: u32,
         new_terminal: Terminal,
     ) -> anyhow::Result<()> {
-        if let Some(old) = self.terminals.replace(surface_id, new_terminal) {
+        if let Some(old) = self.runtime.terminals.replace(surface_id, new_terminal) {
             drop(old);
             return Ok(());
         }
@@ -195,14 +197,14 @@ impl CoreState {
     pub(crate) fn sync_output_event_gates(&mut self) {
         let router = &self.observer_router;
         let hooks = &self.hooks;
-        for (sid, t) in self.terminals.iter_mut() {
+        for (sid, t) in self.runtime.terminals.iter_mut() {
             t.set_output_events_enabled(router.wants(sid) || hooks.has_output_match_hook(sid));
         }
     }
 
     pub fn process_all(&mut self) -> bool {
         self.sync_output_event_gates();
-        self.terminals.process_all()
+        self.runtime.terminals.process_all()
     }
 
     /// Windows 절전 복귀 후 살아 있는 자식에 wake를 시도하고 비셸 전경 surface를 알림 후보로 반환한다.
@@ -210,7 +212,7 @@ impl CoreState {
     #[cfg(all(windows, feature = "gui"))]
     pub(crate) fn wake_terminals_after_resume(&mut self) -> Vec<u32> {
         let mut suspects = Vec::new();
-        for (sid, term) in self.terminals.iter_mut() {
+        for (sid, term) in self.runtime.terminals.iter_mut() {
             if !term.check_process_alive() {
                 continue; // 죽음 — process_all 의 ProcessExited cascade 가 정리.
             }
@@ -229,15 +231,15 @@ impl CoreState {
     pub fn process_surface(&mut self, surface_id: u32) -> bool {
         let enabled =
             self.observer_router.wants(surface_id) || self.hooks.has_output_match_hook(surface_id);
-        if let Some(t) = self.terminals.get_mut(surface_id) {
+        if let Some(t) = self.runtime.terminals.get_mut(surface_id) {
             t.set_output_events_enabled(enabled);
         }
-        self.terminals.process_surface(surface_id)
+        self.runtime.terminals.process_surface(surface_id)
     }
 
     #[cfg(feature = "gui")]
     pub fn flush_all_pty_resizes(&mut self) -> bool {
-        self.terminals.flush_pty_resizes()
+        self.runtime.terminals.flush_pty_resizes()
     }
 
     pub fn mark_layout_dirty(&mut self) {
@@ -248,7 +250,7 @@ impl CoreState {
     /// 그 이벤트는 큐에 남지만 여기서 다음 호출 시각이나 전달 성공까지 보장하지는 않는다.
     pub fn collect_events(&mut self) -> Vec<TerminalEvent> {
         let mut all_events = Vec::new();
-        for (sid, terminal) in self.terminals.iter_mut() {
+        for (sid, terminal) in self.runtime.terminals.iter_mut() {
             let Some(mut events) = terminal.try_take_events() else {
                 continue;
             };
@@ -264,7 +266,7 @@ impl CoreState {
     // 이유: 현재 호출자가 없으며 터미널 ID 조회 API를 유지한다.
     #[allow(dead_code)]
     pub fn all_terminal_surface_ids(&mut self) -> Vec<u32> {
-        self.terminals.iter().map(|(id, _)| id).collect()
+        self.runtime.terminals.iter().map(|(id, _)| id).collect()
     }
 }
 
@@ -373,13 +375,16 @@ mod tests {
         let before = active_tab_ids(&engine);
 
         assert!(engine.reify_deferred_surface(term), "터미널은 PTY 생성");
-        assert!(engine.terminals.get(term).is_some());
+        assert!(engine.runtime.terminals.get(term).is_some());
         assert!(
             engine.reify_deferred_surface(plugin),
             "등록된 kind 는 restore"
         );
         assert!(!engine.is_surface_deferred(plugin));
-        assert!(engine.terminals.get(plugin).is_none(), "plugin 은 PTY 없음");
+        assert!(
+            engine.runtime.terminals.get(plugin).is_none(),
+            "plugin 은 PTY 없음"
+        );
         assert!(!engine.reify_deferred_surface(missing), "미등록 kind");
         assert!(engine.is_surface_deferred(missing), "placeholder 유지");
         assert!(!engine.reify_deferred_surface(term), "이미 실제화됨");
@@ -403,9 +408,9 @@ mod tests {
 
         assert!(engine.ensure_surface_initialized(sid), "기본 셸 spawn 성공");
         assert!(!engine.is_surface_deferred(sid));
-        assert!(engine.terminals.get(sid).is_some(), "store 에 등록");
+        assert!(engine.runtime.terminals.get(sid).is_some(), "store 에 등록");
         assert_eq!(
-            engine.terminals.scrollback_persist_id(sid),
+            engine.runtime.terminals.scrollback_persist_id(sid),
             Some("persist-xyz")
         );
         assert_eq!(active_tab_ids(&engine), before, "활성 탭 불변");
@@ -421,7 +426,7 @@ mod tests {
             assert!(!engine.ensure_surface_initialized(sid));
         }
         assert!(engine.is_surface_deferred(sid), "placeholder 유지");
-        assert!(engine.terminals.get(sid).is_none());
+        assert!(engine.runtime.terminals.get(sid).is_none());
         let tab = engine.deferred_tab_mut(sid).expect("deferred tab");
         assert!(
             tab.pending_terminal_spawn(sid).is_none(),

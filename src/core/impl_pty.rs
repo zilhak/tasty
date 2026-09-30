@@ -203,7 +203,7 @@ impl Core {
             if engine.attach.is_hard_occupied(sid) {
                 continue;
             }
-            if let Some(t) = engine.terminals.get_mut(sid) {
+            if let Some(t) = engine.runtime.terminals.get_mut(sid) {
                 // mirror에 먼저 크기를 적용하면 서버의 reflow 전 출력과 어긋날 수 있다.
                 // 서버에 resize를 요청하고 echo를 받아 로컬 크기를 바꾼다.
                 if t.is_detached() {

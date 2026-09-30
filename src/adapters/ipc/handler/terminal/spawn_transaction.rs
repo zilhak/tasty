@@ -12,8 +12,11 @@ pub(super) fn finish(
     command: Option<&str>,
 ) -> Result<(), JsonRpcResponse> {
     let target = child.child_surface_id;
-    engine.child_terminals.register_child(parent, child.clone());
-    engine.child_terminals.save();
+    engine
+        .runtime
+        .child_terminals
+        .register_child(parent, child.clone());
+    engine.runtime.child_terminals.save();
     let label = child.nickname.clone().or_else(|| child.role.clone());
     if let Err(error) = engine.occupy_soft(target, parent, label) {
         let error =
@@ -39,13 +42,17 @@ fn rollback(
     mut original: JsonRpcResponse,
 ) -> JsonRpcResponse {
     if engine
+        .runtime
         .child_terminals
         .list_children(parent)
         .iter()
         .any(|entry| entry.index == child.index && entry.child_surface_id == child.child_surface_id)
     {
-        engine.child_terminals.remove_child(parent, child.index);
-        engine.child_terminals.save();
+        engine
+            .runtime
+            .child_terminals
+            .remove_child(parent, child.index);
+        engine.runtime.child_terminals.save();
     }
     // Standard agent close runs PTY/occupancy/lifecycle cleanup without adding
     // user close history. The only close target is this invocation's fresh surface.

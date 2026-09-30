@@ -168,6 +168,7 @@ mod tests {
             .into_iter()
             .collect();
         engine
+            .runtime
             .terminals
             .iter()
             .find_map(|(sid, _)| ws_ids.contains(&sid).then_some(sid))

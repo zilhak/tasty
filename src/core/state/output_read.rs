@@ -3,7 +3,8 @@ use super::CoreState;
 impl CoreState {
     /// 지정한 surface의 사용자 mark 이후 출력. 로컬 Terminal이 없으면 빈 문자열이다.
     pub fn read_since_mark_of(&mut self, surface_id: u32, strip_ansi: bool) -> String {
-        self.terminals
+        self.runtime
+            .terminals
             .get_mut(surface_id)
             .map(|t| t.read_since_mark(strip_ansi))
             .unwrap_or_default()
@@ -11,7 +12,8 @@ impl CoreState {
 
     /// scanner mark 이후 출력을 읽고 커서를 옮긴다. 다른 surface나 포커스로 대체하지 않는다.
     pub fn take_since_output_scan_mark(&mut self, surface_id: u32, strip_ansi: bool) -> String {
-        self.terminals
+        self.runtime
+            .terminals
             .get_mut(surface_id)
             .map(|t| t.take_since_output_scan_mark(strip_ansi))
             .unwrap_or_default()
@@ -23,7 +25,8 @@ impl CoreState {
         surface_id: u32,
         req: &tasty_terminal::OutputReadRequest,
     ) -> Option<Result<tasty_terminal::OutputRead, tasty_terminal::OutputReadError>> {
-        self.terminals
+        self.runtime
+            .terminals
             .get_mut(surface_id)
             .map(|t| t.read_output(req))
     }

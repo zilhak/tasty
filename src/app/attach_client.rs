@@ -489,7 +489,7 @@ impl App {
             sess.remote_to_local = std::mem::take(&mut mapping.remote_to_local);
             // 연결 사이에 빠진 출력을 연속된 스트림으로 읽지 않도록 표지를 바꾼다.
             for &local in sess.remote_to_local.values() {
-                if let Some(t) = engine.terminals.get_mut(local) {
+                if let Some(t) = engine.runtime.terminals.get_mut(local) {
                     t.renew_output_stream();
                 }
             }
@@ -1355,7 +1355,7 @@ fn remove_mirror_workspace_from_engine(
         return false;
     };
     for &local in remote_to_local.values() {
-        engine.terminals.remove(local);
+        engine.runtime.terminals.remove(local);
         engine.forget_mirror_surface_busy(local);
         engine.forget_mirror_surface_attention(local);
         engine.forget_mirror_surface_cwd(local);
@@ -1726,7 +1726,7 @@ fn make_mirror_surface(
     });
     // mirror의 feed_bytes는 process의 lazy 동기화를 거치지 않아 옵저버 게이트를 여기서 초기화한다.
     mirror.set_output_events_enabled(engine.observer_router.wants(local_id));
-    engine.terminals.insert(local_id, mirror);
+    engine.runtime.terminals.insert(local_id, mirror);
 }
 
 /// 성공한 사용자 요청의 다음 delta에 한 번 적용할 로컬 포커스 의도.
@@ -1811,7 +1811,7 @@ fn merge_survivor_mapping(
                 // ID가 같아도 kind가 바뀌면 옛 자원은 정리한다. markdown destroy는 호출자가 맡는다.
                 if old_kind != Some(new_kind) {
                     if old_kind == Some("terminal") {
-                        engine.terminals.remove(l);
+                        engine.runtime.terminals.remove(l);
                         engine.forget_mirror_surface_busy(l);
                     }
                     // cwd는 terminal뿐 아니라 explorer·markdown에도 있어 이전 kind와 함께 지운다.
@@ -1891,7 +1891,7 @@ fn merge_survivor_mapping(
 
     for (&remote_id, &local_id) in old_map.iter() {
         if !new_map.contains_key(&remote_id) {
-            engine.terminals.remove(local_id);
+            engine.runtime.terminals.remove(local_id);
             engine.forget_mirror_surface_busy(local_id);
             engine.forget_mirror_surface_attention(local_id);
             engine.forget_mirror_surface_cwd(local_id);
@@ -2057,7 +2057,7 @@ fn markdown_content_failure(local_surface_id: u32, request_id: u64, reason: &str
 /// parked 상태에서는 창을 다시 찾을 때까지 Detach를 미룬다.
 fn begin_resync(sess: &mut AttachClientSession, host: &mut MirrorHost<'_>, frames: u64) {
     for &local in sess.remote_to_local.values() {
-        if let Some(t) = host.engine.terminals.get_mut(local) {
+        if let Some(t) = host.engine.runtime.terminals.get_mut(local) {
             t.renew_output_stream();
         }
     }
@@ -2115,14 +2115,14 @@ fn apply_one_mirror_event(
         MirrorEvent::Desynced { frames } => begin_resync(sess, host, frames),
         MirrorEvent::Data(remote_id, bytes) => {
             if let Some(&local) = sess.remote_to_local.get(&remote_id)
-                && let Some(t) = host.engine.terminals.get_mut(local)
+                && let Some(t) = host.engine.runtime.terminals.get_mut(local)
             {
                 t.feed_bytes(&bytes);
             }
         }
         MirrorEvent::Resize(remote_id, cols, rows) => {
             if let Some(&local) = sess.remote_to_local.get(&remote_id)
-                && let Some(t) = host.engine.terminals.get_mut(local)
+                && let Some(t) = host.engine.runtime.terminals.get_mut(local)
             {
                 t.resize(cols, rows);
             }
@@ -3377,6 +3377,7 @@ mod tests {
         mirror_ws.mirror = true;
         engine.workspaces.push(mirror_ws);
         engine
+            .runtime
             .terminals
             .insert(local_surface, Terminal::new_detached(80, 24));
         engine.set_mirror_surface_busy(local_surface, true);
@@ -3396,7 +3397,7 @@ mod tests {
 
         assert!(!engine.has_workspace(ws_id), "mirror 워크스페이스 행 제거");
         assert!(
-            !engine.terminals.contains(local_surface),
+            !engine.runtime.terminals.contains(local_surface),
             "mirror 터미널 제거"
         );
         assert!(
@@ -3457,6 +3458,7 @@ mod tests {
         let (mut state, mut engine) = crate::state::tests::test_state();
         let local_surface = 9_003u32;
         engine
+            .runtime
             .terminals
             .insert(local_surface, Terminal::new_detached(80, 24));
         let before = engine.workspaces.len();
@@ -3469,7 +3471,7 @@ mod tests {
             &remote_to_local
         ));
         assert_eq!(engine.workspaces.len(), before);
-        assert!(engine.terminals.contains(local_surface));
+        assert!(engine.runtime.terminals.contains(local_surface));
     }
 
     /// mirror가 두 번째 parked engine에 있어야 첫 항목만 검사하는 오류를 잡을 수 있다.
@@ -3495,6 +3497,7 @@ mod tests {
             let (state, engine) = &mut parked[1];
             engine.workspaces.push(mirror_ws);
             engine
+                .runtime
                 .terminals
                 .insert(local_surface, Terminal::new_detached(80, 24));
             engine.set_mirror_surface_busy(local_surface, true);
@@ -3513,7 +3516,7 @@ mod tests {
         let (state, engine) = &parked[1];
         assert!(!engine.has_workspace(ws_id), "mirror 워크스페이스 행 제거");
         assert!(
-            !engine.terminals.contains(local_surface),
+            !engine.runtime.terminals.contains(local_surface),
             "mirror 터미널 제거"
         );
         assert!(
@@ -4271,7 +4274,7 @@ mod tests {
         let map1 = m1.remote_to_local.clone();
         let local_10 = map1[&10];
         assert!(
-            engine.terminals.get(local_10).is_some(),
+            engine.runtime.terminals.get(local_10).is_some(),
             "최초 terminal survivor 는 Terminal 을 만들어야 한다"
         );
         engine
@@ -4332,7 +4335,7 @@ mod tests {
             "mesh_locals 에는 새로 등록돼야 한다"
         );
         assert!(
-            engine.terminals.get(local_10).is_none(),
+            engine.runtime.terminals.get(local_10).is_none(),
             "옛 Terminal 객체는 즉시 제거돼야 한다"
         );
         assert!(
@@ -4362,7 +4365,7 @@ mod tests {
         let map1 = m1.remote_to_local.clone();
         let local_20 = map1[&20];
         assert!(
-            engine.terminals.get(local_20).is_none(),
+            engine.runtime.terminals.get(local_20).is_none(),
             "mesh survivor 는 애초에 Terminal 이 없어야 한다"
         );
 
@@ -4413,7 +4416,7 @@ mod tests {
             "kind 전환은 비-terminal 출발이어도 옛 cwd 를 버린다"
         );
         assert!(
-            engine.terminals.get(local_20).is_some(),
+            engine.runtime.terminals.get(local_20).is_some(),
             "mesh → terminal convert 는 새 Terminal 을 만들어야 한다(안 그러면 입력이 안 감)"
         );
     }
@@ -4434,6 +4437,7 @@ mod tests {
         mirror_ws.mirror = true;
         engine.workspaces.push(mirror_ws);
         engine
+            .runtime
             .terminals
             .insert(local_surface, Terminal::new_detached(80, 24));
         let mut sess = test_session(ws_id, HashMap::from([(remote_surface, local_surface)]));
@@ -4542,6 +4546,7 @@ mod tests {
         let (mut state, mut engine) = crate::state::tests::test_state();
         let (remote_surface, local_surface) = (42u32, 9_003u32);
         engine
+            .runtime
             .terminals
             .insert(local_surface, Terminal::new_detached(80, 24));
         let mut sess = test_session(9_000, HashMap::from([(remote_surface, local_surface)]));
@@ -4551,6 +4556,7 @@ mod tests {
 
         let read = |engine: &crate::core::CoreState, expect: Option<String>| {
             engine
+                .runtime
                 .terminals
                 .get(local_surface)
                 .expect("mirror terminal")
@@ -4614,6 +4620,7 @@ mod tests {
         let (mut state, mut engine) = crate::state::tests::test_state();
         let (remote_surface, local_surface) = (42u32, 9_003u32);
         engine
+            .runtime
             .terminals
             .insert(local_surface, Terminal::new_detached(80, 24));
         let mut sess = test_session(9_000, HashMap::from([(remote_surface, local_surface)]));
@@ -5136,6 +5143,7 @@ mod tests {
         let engine = &mut parked[1].1;
         engine.workspaces.push(mirror_ws);
         engine
+            .runtime
             .terminals
             .insert(local_surface, Terminal::new_detached(80, 24));
         parked
@@ -5210,6 +5218,7 @@ mod tests {
 
         let engine = &parked[pidx].1;
         let survivor = engine
+            .runtime
             .terminals
             .get(survivor_local)
             .expect("survivor mirror 터미널은 delta 뒤에도 같은 local id 로 남는다");
@@ -5223,6 +5232,7 @@ mod tests {
             .get(&new_remote)
             .expect("delta 가 새 remote surface 를 매핑에 넣어야 한다(desync 방지)");
         let fresh = engine
+            .runtime
             .terminals
             .get(new_local)
             .expect("delta 가 새 mirror 터미널을 만들어야 한다");
@@ -5299,6 +5309,7 @@ mod tests {
         assert!(sess.output.peek().is_empty(), "적용했으면 버퍼는 비워진다");
         let term = parked[pidx]
             .1
+            .runtime
             .terminals
             .get(local_surface)
             .expect("mirror 터미널");

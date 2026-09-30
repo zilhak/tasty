@@ -552,7 +552,10 @@ mod mirror_structural_guard_tests {
 
     fn seed(engine: &mut CoreState) -> (u32, u32) {
         let a = engine.workspaces[0].all_surface_ids()[0];
-        engine.terminals.insert(a, Terminal::new_detached(80, 24));
+        engine
+            .runtime
+            .terminals
+            .insert(a, Terminal::new_detached(80, 24));
         let (_ws, pane) = engine.find_workspace_index_for_surface(a).unwrap();
         (a, pane)
     }
@@ -569,6 +572,7 @@ mod mirror_structural_guard_tests {
         let (_a, pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
         let pty_id = engine
+            .runtime
             .pty_registry
             .register(
                 PtySpawnSpec {
@@ -580,6 +584,7 @@ mod mirror_structural_guard_tests {
             )
             .expect("register headless pty");
         engine
+            .runtime
             .terminals
             .insert(pty_id, Terminal::new_detached(80, 24));
         let tabs_before = engine.find_pane_by_id(pane).unwrap().tabs.len();
@@ -603,7 +608,7 @@ mod mirror_structural_guard_tests {
         );
         assert!(engine.pending_structural_forward.is_empty());
         assert!(
-            engine.pty_registry.get(pty_id).is_some(),
+            engine.runtime.pty_registry.get(pty_id).is_some(),
             "PTY 는 registry 에 남아야 한다"
         );
     }
@@ -624,7 +629,7 @@ mod mirror_structural_guard_tests {
         );
         let still_detached = engine.find_terminal_by_id(a).unwrap().is_detached();
         // 가드가 없으면 로컬 셸이 생기므로 단언 전에 정리한다.
-        engine.terminals.remove(a);
+        engine.runtime.terminals.remove(a);
         let err = res.expect_err("respawn on a mirror surface must be blocked");
         assert!(
             is_blocked(&err),
@@ -639,7 +644,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine) = build_test_core();
         let (a, pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
-        let before = engine.terminals.iter().count();
+        let before = engine.runtime.terminals.iter().count();
 
         for intent in [
             DomainIntent::SplitSurface {
@@ -673,7 +678,7 @@ mod mirror_structural_guard_tests {
                 "expected MirrorStructuralBlocked, got: {err}"
             );
             assert_eq!(
-                engine.terminals.iter().count(),
+                engine.runtime.terminals.iter().count(),
                 before,
                 "mirror 워크스페이스에서 새 로컬 터미널이 insert 되면 안 된다"
             );
@@ -685,7 +690,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine) = build_test_core();
         let (a, _pane) = seed(&mut engine);
         assert!(!engine.workspaces[0].mirror);
-        let before = engine.terminals.iter().count();
+        let before = engine.runtime.terminals.iter().count();
 
         core.apply(
             &mut engine,
@@ -699,7 +704,7 @@ mod mirror_structural_guard_tests {
         )
         .expect("non-mirror split must succeed");
         assert_eq!(
-            engine.terminals.iter().count(),
+            engine.runtime.terminals.iter().count(),
             before + 1,
             "비-mirror split은 로컬 터미널을 1개 늘려야 한다"
         );
@@ -839,6 +844,7 @@ mod mirror_structural_guard_tests {
             .expect("workspace 점유 획득");
 
         let pty_id = engine
+            .runtime
             .pty_registry
             .register(
                 PtySpawnSpec {
@@ -865,7 +871,7 @@ mod mirror_structural_guard_tests {
             waker,
         )
         .expect("spawn headless terminal");
-        engine.terminals.insert(pty_id, terminal);
+        engine.runtime.terminals.insert(pty_id, terminal);
 
         let events = core
             .apply(
@@ -887,7 +893,7 @@ mod mirror_structural_guard_tests {
             Some(client_id)
         );
 
-        engine.terminals.remove(surface_id);
+        engine.runtime.terminals.remove(surface_id);
     }
 
     #[test]
@@ -898,6 +904,7 @@ mod mirror_structural_guard_tests {
         let (_a, pane) = seed(&mut engine);
 
         let pty_id = engine
+            .runtime
             .pty_registry
             .register(
                 PtySpawnSpec {
@@ -924,7 +931,7 @@ mod mirror_structural_guard_tests {
             waker,
         )
         .expect("spawn headless terminal");
-        engine.terminals.insert(pty_id, terminal);
+        engine.runtime.terminals.insert(pty_id, terminal);
 
         // 화면 내용을 만든 뒤 이동 후에도 남는지 검사한다. 이것만으로 프로세스 동일성을 증명하지는 않는다.
         engine
@@ -982,7 +989,7 @@ mod mirror_structural_guard_tests {
         );
 
         assert!(
-            !engine.pty_registry.contains(pty_id),
+            !engine.runtime.pty_registry.contains(pty_id),
             "promoted pty must leave the headless registry"
         );
 
@@ -995,7 +1002,7 @@ mod mirror_structural_guard_tests {
             "promoted surface must appear in the pane's tabs"
         );
 
-        engine.terminals.remove(surface_id);
+        engine.runtime.terminals.remove(surface_id);
     }
 
     /// 새 ID로 옮긴 뒤 옛 PTY ID의 waker 항목은 지우고 새 항목은 유지해야 한다.
@@ -1011,6 +1018,7 @@ mod mirror_structural_guard_tests {
         let (_a, pane) = seed(&mut engine);
 
         let pty_id = engine
+            .runtime
             .pty_registry
             .register(
                 PtySpawnSpec {
@@ -1037,7 +1045,7 @@ mod mirror_structural_guard_tests {
             waker,
         )
         .expect("spawn headless terminal");
-        engine.terminals.insert(pty_id, terminal);
+        engine.runtime.terminals.insert(pty_id, terminal);
         assert!(
             factory.made().contains(&pty_id),
             "spawn 흉내는 pty_id 게이트를 만든다"
@@ -1066,7 +1074,7 @@ mod mirror_structural_guard_tests {
             "재배선된 새 surface_id 게이트는 정리 대상이 아니다"
         );
 
-        engine.terminals.remove(surface_id);
+        engine.runtime.terminals.remove(surface_id);
     }
 
     #[test]
@@ -1074,7 +1082,7 @@ mod mirror_structural_guard_tests {
         let (mut core, mut engine) = build_test_core();
         let (_a, pane) = seed(&mut engine);
         let bogus = crate::core::pty_registry::PTY_ID_BASE + 4242;
-        let before = engine.terminals.iter().count();
+        let before = engine.runtime.terminals.iter().count();
         let err = core
             .apply(
                 &mut engine,
@@ -1086,7 +1094,7 @@ mod mirror_structural_guard_tests {
             .expect_err("unknown pty must error");
         assert!(err.to_string().contains("not found"), "err: {err}");
         assert_eq!(
-            engine.terminals.iter().count(),
+            engine.runtime.terminals.iter().count(),
             before,
             "실패한 승격은 store 를 건드리지 않아야 한다"
         );
@@ -1099,6 +1107,7 @@ mod mirror_structural_guard_tests {
         let tab_id = engine.next_ids.next_tab();
         let sid1 = engine.next_ids.next_surface();
         engine
+            .runtime
             .terminals
             .insert(sid1, Terminal::new_detached(80, 24));
         engine.workspaces[0]
@@ -1461,6 +1470,7 @@ mod mirror_structural_guard_tests {
         let tab1_id = engine.next_ids.next_tab();
         let sid1 = engine.next_ids.next_surface();
         engine
+            .runtime
             .terminals
             .insert(sid1, Terminal::new_detached(80, 24));
         let ws1 = crate::model::Workspace::new_with_terminal_marker(
@@ -1573,6 +1583,7 @@ mod mirror_structural_guard_tests {
         let tab1_id = engine.next_ids.next_tab();
         let sid1 = engine.next_ids.next_surface();
         engine
+            .runtime
             .terminals
             .insert(sid1, Terminal::new_detached(80, 24));
         let ws1 = crate::model::Workspace::new_with_terminal_marker(

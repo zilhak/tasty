@@ -8,7 +8,7 @@ impl CoreState {
         // Windows에서 surface마다 전체 프로세스를 다시 조회하지 않도록 한 번에 해석한다.
         let mut sids: Vec<u32> = Vec::new();
         let mut shell_pids: Vec<u32> = Vec::new();
-        for (sid, terminal) in self.terminals.iter() {
+        for (sid, terminal) in self.runtime.terminals.iter() {
             if let Some(pid) = terminal.process_id() {
                 sids.push(sid);
                 shell_pids.push(pid);
@@ -21,7 +21,7 @@ impl CoreState {
             std::collections::HashSet::new();
         let mut names: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
         for ((&sid, &shell_pid), fg) in sids.iter().zip(shell_pids.iter()).zip(foregrounds.iter()) {
-            let Some(terminal) = self.terminals.get(sid) else {
+            let Some(terminal) = self.runtime.terminals.get(sid) else {
                 continue;
             };
             if terminal.busy_with_foreground(shell_pid, fg.as_ref()) {

@@ -95,12 +95,16 @@ fn resolve_parent(engine: &CoreState, params: &Value, id: &Value) -> Result<u32,
     if let Some(p) = optional_u32(params, "surface", id)? {
         return Ok(p);
     }
-    engine.child_terminals.single_parent().ok_or_else(|| {
-        JsonRpcResponse::invalid_params(
-            id.clone(),
-            "missing 'surface' parameter (0 or >1 parents — specify --surface)".to_string(),
-        )
-    })
+    engine
+        .runtime
+        .child_terminals
+        .single_parent()
+        .ok_or_else(|| {
+            JsonRpcResponse::invalid_params(
+                id.clone(),
+                "missing 'surface' parameter (0 or >1 parents — specify --surface)".to_string(),
+            )
+        })
 }
 
 /// in-process sibling 핸들러 응답을 `Result<Value, JsonRpcResponse>` 로 변환.
@@ -296,7 +300,7 @@ pub(crate) fn handle_spawn(
         .map(|w| w.id)
         .unwrap_or(ws_id);
 
-    let index = engine.child_terminals.next_index_for(parent);
+    let index = engine.runtime.child_terminals.next_index_for(parent);
     let tab_name = format!("child{index}");
     let mut tab_params = json!({
         "pane_id": pane_id,
@@ -369,8 +373,8 @@ pub(crate) fn handle_tell(
     if let Err(e) = send_body_then_submit(engine, core, &id, surface_id, payload) {
         return e;
     }
-    if clear_idle_for_new_prompt(&mut engine.child_terminals, surface_id) {
-        engine.child_terminals.save();
+    if clear_idle_for_new_prompt(&mut engine.runtime.child_terminals, surface_id) {
+        engine.runtime.child_terminals.save();
     }
     JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
 }
@@ -401,6 +405,7 @@ pub(crate) fn handle_children(
     };
     let live = engine.live_surface_ids();
     let children: Vec<Value> = engine
+        .runtime
         .child_terminals
         .list_children(parent)
         .iter()
@@ -447,7 +452,11 @@ pub(crate) fn handle_parent(engine: &mut CoreState, id: Value, params: &Value) -
         Ok(s) => s,
         Err(e) => return e,
     };
-    match engine.child_terminals.parent_of_child(child_surface) {
+    match engine
+        .runtime
+        .child_terminals
+        .parent_of_child(child_surface)
+    {
         Some(parent_id) => JsonRpcResponse::success(
             id,
             json!({ "parent_surface_id": parent_id, "status": "active" }),
@@ -476,26 +485,31 @@ pub(crate) fn handle_kill(
         Err(e) => return e,
     };
     let Some(child_surface_id) = engine
+        .runtime
         .child_terminals
         .find_child(parent, child_index)
         .map(|c| c.child_surface_id)
     else {
         return JsonRpcResponse::invalid_params(
             id,
-            child_not_found_message(&engine.child_terminals, parent, child_index),
+            child_not_found_message(&engine.runtime.child_terminals, parent, child_index),
         );
     };
     // 원격 holder의 점유를 강제로 풀지 않는다. surface.close와 같은 이유로 거절하고 관계는 그대로 둔다.
     if let Some(resp) = surface::refuse_if_hard_occupied(engine, &id, child_surface_id) {
         return resp;
     }
-    let Some(removed) = engine.child_terminals.remove_child(parent, child_index) else {
+    let Some(removed) = engine
+        .runtime
+        .child_terminals
+        .remove_child(parent, child_index)
+    else {
         return JsonRpcResponse::invalid_params(
             id,
-            child_not_found_message(&engine.child_terminals, parent, child_index),
+            child_not_found_message(&engine.runtime.child_terminals, parent, child_index),
         );
     };
-    engine.child_terminals.save();
+    engine.runtime.child_terminals.save();
 
     if let Err(e) = engine.release_soft_occupancy(removed.child_surface_id, parent) {
         tracing::warn!(
@@ -533,13 +547,17 @@ pub(crate) fn handle_release(engine: &mut CoreState, id: Value, params: &Value) 
         Ok(c) => c,
         Err(e) => return e,
     };
-    let Some(removed) = engine.child_terminals.remove_child(parent, child_index) else {
+    let Some(removed) = engine
+        .runtime
+        .child_terminals
+        .remove_child(parent, child_index)
+    else {
         return JsonRpcResponse::invalid_params(
             id,
-            child_not_found_message(&engine.child_terminals, parent, child_index),
+            child_not_found_message(&engine.runtime.child_terminals, parent, child_index),
         );
     };
-    engine.child_terminals.save();
+    engine.runtime.child_terminals.save();
 
     if let Err(e) = engine.release_soft_occupancy(removed.child_surface_id, parent) {
         tracing::warn!(
@@ -581,7 +599,7 @@ pub(crate) fn handle_adopt(engine: &mut CoreState, id: Value, params: &Value) ->
             "cannot adopt a surface as its own child".to_string(),
         );
     }
-    if let Some(existing_parent) = engine.child_terminals.parent_of_child(target) {
+    if let Some(existing_parent) = engine.runtime.child_terminals.parent_of_child(target) {
         return JsonRpcResponse::invalid_params(
             id,
             format!(
@@ -612,8 +630,8 @@ pub(crate) fn handle_adopt(engine: &mut CoreState, id: Value, params: &Value) ->
     if let Err(error) = engine.occupy_soft(target, parent, label) {
         return JsonRpcResponse::error(id, -32020, format!("occupy_soft failed: {error:?}"));
     }
-    let index = engine.child_terminals.next_index_for(parent);
-    engine.child_terminals.register_child(
+    let index = engine.runtime.child_terminals.next_index_for(parent);
+    engine.runtime.child_terminals.register_child(
         parent,
         ChildEntry {
             child_surface_id: target,
@@ -623,7 +641,7 @@ pub(crate) fn handle_adopt(engine: &mut CoreState, id: Value, params: &Value) ->
             nickname,
         },
     );
-    engine.child_terminals.save();
+    engine.runtime.child_terminals.save();
 
     JsonRpcResponse::success(
         id,
@@ -650,13 +668,14 @@ pub(crate) fn handle_respawn(
         Err(e) => return e,
     };
     let Some(entry) = engine
+        .runtime
         .child_terminals
         .find_child(parent, child_index)
         .cloned()
     else {
         return JsonRpcResponse::invalid_params(
             id,
-            child_not_found_message(&engine.child_terminals, parent, child_index),
+            child_not_found_message(&engine.runtime.child_terminals, parent, child_index),
         );
     };
     let new_cwd = optional_str(params, "cwd");
@@ -700,6 +719,7 @@ pub(crate) fn handle_respawn(
     let new_role = optional_str(params, "role");
     let new_nick = optional_str(params, "nickname");
     engine
+        .runtime
         .child_terminals
         .update_child(parent, child_index, |e| {
             if let Some(r) = new_role {
@@ -713,9 +733,10 @@ pub(crate) fn handle_respawn(
             }
         });
     engine
+        .runtime
         .child_terminals
         .set_idle(entry.child_surface_id, false);
-    engine.child_terminals.save();
+    engine.runtime.child_terminals.save();
     JsonRpcResponse::success(
         id,
         json!({
@@ -773,6 +794,7 @@ pub(crate) fn handle_broadcast(
     let role_filter = optional_str(params, "role");
 
     let targets: Vec<u32> = engine
+        .runtime
         .child_terminals
         .list_children(parent)
         .iter()
@@ -788,12 +810,12 @@ pub(crate) fn handle_broadcast(
     let mut idle_cleared = false;
     for sid in targets {
         if send_broadcast_to_child(core, engine, &id, sid, &body, submit) {
-            idle_cleared |= clear_idle_for_new_prompt(&mut engine.child_terminals, sid);
+            idle_cleared |= clear_idle_for_new_prompt(&mut engine.runtime.child_terminals, sid);
         }
         sent_ids.push(sid);
     }
     if idle_cleared {
-        engine.child_terminals.save();
+        engine.runtime.child_terminals.save();
     }
     JsonRpcResponse::success(
         id,
@@ -823,9 +845,12 @@ pub(crate) fn handle_set_state(
         );
     }
     match new_state.as_str() {
-        "idle" => engine.child_terminals.set_idle(surface_id, true),
-        "active" => engine.child_terminals.set_idle(surface_id, false),
-        "needs_input" => engine.child_terminals.set_needs_input(surface_id, true),
+        "idle" => engine.runtime.child_terminals.set_idle(surface_id, true),
+        "active" => engine.runtime.child_terminals.set_idle(surface_id, false),
+        "needs_input" => engine
+            .runtime
+            .child_terminals
+            .set_needs_input(surface_id, true),
         other => {
             return JsonRpcResponse::invalid_params(
                 id,
@@ -833,7 +858,7 @@ pub(crate) fn handle_set_state(
             );
         }
     }
-    engine.child_terminals.save();
+    engine.runtime.child_terminals.save();
     JsonRpcResponse::success(
         id,
         json!({ "ok": true, "surface_id": surface_id, "state": new_state }),
@@ -969,15 +994,22 @@ mod tests {
         let parent = e.workspaces[0].all_surface_ids()[0];
         let c = 5000u32;
 
-        let idx = e.child_terminals.next_index_for(parent);
-        e.child_terminals.register_child(parent, child(c, idx));
+        let idx = e.runtime.child_terminals.next_index_for(parent);
+        e.runtime
+            .child_terminals
+            .register_child(parent, child(c, idx));
         e.occupy_soft(c, parent, Some("worker".into())).unwrap();
         let occ = e.attach.occupancy_of(c).expect("soft occupancy present");
         assert_eq!(occ.tier, OccupancyTier::Soft);
         assert_eq!(occ.parent, Some(parent));
         assert!(!e.attach.is_hard_occupied(c));
 
-        assert!(e.child_terminals.remove_child(parent, idx).is_some());
+        assert!(
+            e.runtime
+                .child_terminals
+                .remove_child(parent, idx)
+                .is_some()
+        );
         e.release_soft_occupancy(c, parent).unwrap();
         assert!(e.attach.occupancy_of(c).is_none());
     }
@@ -1002,7 +1034,10 @@ mod tests {
             .expect("soft occupancy present");
         assert_eq!(occ.tier, OccupancyTier::Soft);
         assert_eq!(occ.parent, Some(parent));
-        assert_eq!(e.child_terminals.parent_of_child(target), Some(parent));
+        assert_eq!(
+            e.runtime.child_terminals.parent_of_child(target),
+            Some(parent)
+        );
     }
 
     #[test]
@@ -1065,7 +1100,7 @@ mod tests {
             &json!({ "surface": parent, "target": target }),
         );
         assert!(resp.error.is_some());
-        assert!(e.child_terminals.parent_of_child(target).is_none());
+        assert!(e.runtime.child_terminals.parent_of_child(target).is_none());
         assert!(e.attach.is_hard_occupied(target)); // 기존 hard 점유는 건드리지 않음
     }
 
@@ -1076,8 +1111,10 @@ mod tests {
         let c = 5701u32;
         add_extra_surface(&mut e, c);
 
-        let idx = e.child_terminals.next_index_for(parent);
-        e.child_terminals.register_child(parent, child(c, idx));
+        let idx = e.runtime.child_terminals.next_index_for(parent);
+        e.runtime
+            .child_terminals
+            .register_child(parent, child(c, idx));
         e.occupy_soft(c, parent, Some("worker".into())).unwrap();
 
         let resp = handle_release(
@@ -1087,7 +1124,7 @@ mod tests {
         );
         assert!(resp.error.is_none());
 
-        assert!(e.child_terminals.find_child(parent, idx).is_none());
+        assert!(e.runtime.child_terminals.find_child(parent, idx).is_none());
         assert!(e.attach.occupancy_of(c).is_none());
     }
 
@@ -1109,8 +1146,10 @@ mod tests {
         let parent = e.workspaces[0].all_surface_ids()[0];
         let c = 5702u32;
         add_extra_surface(&mut e, c);
-        let idx = e.child_terminals.next_index_for(parent);
-        e.child_terminals.register_child(parent, child(c, idx));
+        let idx = e.runtime.child_terminals.next_index_for(parent);
+        e.runtime
+            .child_terminals
+            .register_child(parent, child(c, idx));
         e.occupy_soft(c, parent, None).unwrap();
         let other = 5703u32;
         e.attach.acquire(other, 1).unwrap();
@@ -1131,8 +1170,10 @@ mod tests {
         let mut e = engine();
         let parent = e.workspaces[0].all_surface_ids()[0];
         add_extra_surface(&mut e, 59010);
-        let idx = e.child_terminals.next_index_for(parent);
-        e.child_terminals.register_child(parent, child(59010, idx));
+        let idx = e.runtime.child_terminals.next_index_for(parent);
+        e.runtime
+            .child_terminals
+            .register_child(parent, child(59010, idx));
 
         let resp = handle_release(&mut e, json!(1), &json!({ "child": idx }));
         assert!(resp.error.is_none(), "{:?}", resp.error);
@@ -1145,11 +1186,13 @@ mod tests {
         let parent2 = 59020u32;
         add_extra_surface(&mut e, 59030);
         add_extra_surface(&mut e, 59040);
-        let idx1 = e.child_terminals.next_index_for(parent1);
-        e.child_terminals
+        let idx1 = e.runtime.child_terminals.next_index_for(parent1);
+        e.runtime
+            .child_terminals
             .register_child(parent1, child(59030, idx1));
-        let idx2 = e.child_terminals.next_index_for(parent2);
-        e.child_terminals
+        let idx2 = e.runtime.child_terminals.next_index_for(parent2);
+        e.runtime
+            .child_terminals
             .register_child(parent2, child(59040, idx2));
 
         let resp = handle_release(&mut e, json!(1), &json!({ "child": idx1 }));
@@ -1191,7 +1234,9 @@ mod tests {
     fn children_reconcile_prunes_dead_child() {
         let mut e = engine();
         let parent = e.workspaces[0].all_surface_ids()[0];
-        e.child_terminals.register_child(parent, child(99999, 0));
+        e.runtime
+            .child_terminals
+            .register_child(parent, child(99999, 0));
         let resp = handle_children(&mut e, json!(1), &json!({ "surface": parent }));
         let n = ok(resp)["children"].as_array().unwrap().len();
         assert_eq!(n, 0);
@@ -1203,7 +1248,9 @@ mod tests {
         let parent = e.workspaces[0].all_surface_ids()[0];
         let target = 5901u32;
         add_extra_surface(&mut e, target);
-        e.child_terminals.register_child(parent, child(target, 0));
+        e.runtime
+            .child_terminals
+            .register_child(parent, child(target, 0));
 
         let resp = ok(handle_children(
             &mut e,
@@ -1225,7 +1272,9 @@ mod tests {
         let parent = e.workspaces[0].all_surface_ids()[0];
         let target = 5902u32;
         add_extra_surface(&mut e, target);
-        e.child_terminals.register_child(parent, child(target, 0));
+        e.runtime
+            .child_terminals
+            .register_child(parent, child(target, 0));
 
         let list = ok(handle_children(
             &mut e,
@@ -1268,40 +1317,40 @@ mod tests {
     #[test]
     fn set_state_updates_registry() {
         let mut e = engine();
-        e.child_terminals.register_child(7, child(5000, 0));
+        e.runtime.child_terminals.register_child(7, child(5000, 0));
         let _ = handle_set_state(
             &mut e,
             json!(1),
             &json!({ "surface": 5000, "state": "idle" }),
         );
-        assert_eq!(e.child_terminals.state_of(5000), "idle");
+        assert_eq!(e.runtime.child_terminals.state_of(5000), "idle");
         let _ = handle_set_state(
             &mut e,
             json!(1),
             &json!({ "surface": 5000, "state": "needs_input" }),
         );
-        assert_eq!(e.child_terminals.state_of(5000), "needs_input");
+        assert_eq!(e.runtime.child_terminals.state_of(5000), "needs_input");
         let _ = handle_set_state(
             &mut e,
             json!(1),
             &json!({ "surface": 5000, "state": "active" }),
         );
-        assert_eq!(e.child_terminals.state_of(5000), "active");
+        assert_eq!(e.runtime.child_terminals.state_of(5000), "active");
     }
 
     // needs_input 뒤 idle만 보고되어도 이전 입력 대기 상태를 지워야 한다.
     #[test]
     fn set_state_idle_clears_a_pending_needs_input() {
         let mut e = engine();
-        e.child_terminals.register_child(7, child(5001, 0));
+        e.runtime.child_terminals.register_child(7, child(5001, 0));
         fn push_child_state(e: &mut CoreState, state: &str) {
             let resp = handle_set_state(e, json!(1), &json!({ "surface": 5001, "state": state }));
             assert!(resp.error.is_none(), "{state} 주입이 거부됐다");
         }
         push_child_state(&mut e, "needs_input");
-        assert_eq!(e.child_terminals.state_of(5001), "needs_input");
+        assert_eq!(e.runtime.child_terminals.state_of(5001), "needs_input");
         push_child_state(&mut e, "idle");
-        assert_eq!(e.child_terminals.state_of(5001), "idle");
+        assert_eq!(e.runtime.child_terminals.state_of(5001), "idle");
     }
 
     #[test]

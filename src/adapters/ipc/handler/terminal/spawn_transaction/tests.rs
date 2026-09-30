@@ -37,5 +37,11 @@ fn send_failure_after_registry_and_soft_lock_closes_only_the_owned_surface() {
     assert!(engine.find_surface_by_id(target).is_none());
     assert!(engine.find_surface_by_id(parent).is_some());
     assert!(engine.attach.occupancy_of(target).is_none());
-    assert!(engine.child_terminals.list_children(parent).is_empty());
+    assert!(
+        engine
+            .runtime
+            .child_terminals
+            .list_children(parent)
+            .is_empty()
+    );
 }

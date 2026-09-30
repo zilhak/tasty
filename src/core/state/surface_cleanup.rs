@@ -39,7 +39,7 @@ impl CoreState {
     /// Terminal과 부속 상태를 저장소에서 제거한다. 실제 종료 처리는 Terminal의 Drop에 맡긴다.
     fn drop_terminal(&mut self, surface_id: u32) {
         self.pending_scrollback_inject.remove(&surface_id);
-        if let Some(old_terminal) = self.terminals.remove(surface_id) {
+        if let Some(old_terminal) = self.runtime.terminals.remove(surface_id) {
             drop(old_terminal);
         }
     }

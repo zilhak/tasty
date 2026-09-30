@@ -136,6 +136,7 @@ impl Core {
             }
         };
         let b_persist = engine
+            .runtime
             .terminals
             .scrollback_persist_id(target_id)
             .map(str::to_string);
@@ -327,6 +328,7 @@ mod move_surface_tests {
         let mut engine = test_engine();
         let a = engine.workspaces[0].all_surface_ids()[0];
         engine
+            .runtime
             .terminals
             .insert(a, tasty_terminal::Terminal::new_detached(80, 24));
 
@@ -339,11 +341,12 @@ mod move_surface_tests {
             .split_surface_by_id_marker(a, SplitDirection::Horizontal, b)
             .unwrap();
         engine
+            .runtime
             .terminals
             .insert(b, tasty_terminal::Terminal::new_detached(80, 24));
 
-        assert!(engine.terminals.contains(a));
-        assert!(engine.terminals.contains(b));
+        assert!(engine.runtime.terminals.contains(a));
+        assert!(engine.runtime.terminals.contains(b));
         assert!(engine.find_workspace_index_for_surface(b).is_some());
 
         let ev = Core::apply_move_surface(&mut engine, a, b);
@@ -359,14 +362,14 @@ mod move_surface_tests {
         }
 
         assert!(
-            engine.terminals.contains(a),
+            engine.runtime.terminals.contains(a),
             "source terminal must survive move"
         );
         assert!(engine.find_workspace_index_for_surface(a).is_some());
         // target의 store 제거는 호출자의 후속 처리이므로 여기서는 아직 남아 있어야 한다.
         assert!(engine.find_workspace_index_for_surface(b).is_none());
         assert!(
-            engine.terminals.contains(b),
+            engine.runtime.terminals.contains(b),
             "apply 직후에는 B의 Terminal store 항목도 남아 있어야 한다"
         );
         assert!(engine.pending_move.is_none());
@@ -390,6 +393,7 @@ mod move_surface_tests {
         let mut engine = test_engine();
         let a = engine.workspaces[0].all_surface_ids()[0];
         engine
+            .runtime
             .terminals
             .insert(a, tasty_terminal::Terminal::new_detached(80, 24));
         engine.pending_move = Some(crate::core::state::PendingMove::Surface(a));
@@ -399,7 +403,7 @@ mod move_surface_tests {
             ev,
             CoreEvent::MoveSurfaceApplied { moved: false, .. }
         ));
-        assert!(engine.terminals.contains(a));
+        assert!(engine.runtime.terminals.contains(a));
         assert!(engine.find_workspace_index_for_surface(a).is_some());
         assert!(engine.pending_move.is_none());
     }

@@ -102,7 +102,7 @@ impl Core {
                         });
                     }
                 };
-                engine.terminals.insert(surface_id, terminal);
+                engine.runtime.terminals.insert(surface_id, terminal);
                 let node = crate::model::TerminalSurface { id: surface_id };
                 // 단일 surface 탭에서는 기존 명시 이름을 지우고 자동 제목을 사용한다.
                 Ok((Box::new(node), Some(None)))

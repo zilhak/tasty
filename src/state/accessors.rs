@@ -80,13 +80,13 @@ impl AppState {
     #[cfg(feature = "gui")]
     pub fn focused_terminal<'a>(&self, engine: &'a CoreState) -> Option<&'a Terminal> {
         let id = self.focused_surface_id(engine)?;
-        engine.terminals.get(id)
+        engine.runtime.terminals.get(id)
     }
 
     #[cfg(feature = "gui")]
     pub fn focused_terminal_mut<'a>(&self, engine: &'a mut CoreState) -> Option<&'a mut Terminal> {
         let id = self.focused_surface_id(engine)?;
-        engine.terminals.get_mut(id)
+        engine.runtime.terminals.get_mut(id)
     }
 
     #[cfg(feature = "gui")]

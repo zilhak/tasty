@@ -24,6 +24,7 @@ pub(crate) fn collect_close_targets(
             out.push((
                 ts.id,
                 engine
+                    .runtime
                     .terminals
                     .scrollback_persist_id(ts.id)
                     .map(str::to_string),
@@ -174,7 +175,7 @@ impl Core {
             if let Some(tab_name) = tab_name_opt {
                 let snapshot = crate::model::closed_item::ClosedSurface::from_capture(
                     surface_id,
-                    engine.terminals.closed_capture(surface_id),
+                    engine.runtime.terminals.closed_capture(surface_id),
                 );
                 engine.push_closed_item(crate::model::ClosedItem::Surface {
                     surface: snapshot,
@@ -183,6 +184,7 @@ impl Core {
             }
         }
         let persist_id = engine
+            .runtime
             .terminals
             .scrollback_persist_id(surface_id)
             .map(str::to_string);
@@ -223,7 +225,7 @@ impl Core {
                 let snapshot_opt = {
                     let mut snap_fn =
                         crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
-                    let terminals = &engine.terminals;
+                    let terminals = &engine.runtime.terminals;
                     crate::model::closed_item::ClosedTab::from_tab(
                         &pane.tabs[loc.tab_idx],
                         &mut snap_fn,
@@ -281,7 +283,7 @@ impl Core {
                 let snapshot = {
                     let mut snap_fn =
                         crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
-                    let terminals = &engine.terminals;
+                    let terminals = &engine.runtime.terminals;
                     crate::model::ClosedItem::from_pane(
                         pane,
                         sibling_pane_id,
@@ -345,7 +347,7 @@ impl Core {
                 let mut snap_fn =
                     crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
                 let ws = &engine.workspaces[loc.ws_idx];
-                let terminals = &engine.terminals;
+                let terminals = &engine.runtime.terminals;
                 crate::model::ClosedItem::from_workspace(ws, &mut snap_fn, &|id| {
                     terminals.closed_capture(id)
                 })
@@ -448,7 +450,10 @@ mod close_surface_cascade_tests {
     }
 
     fn insert_detached(engine: &mut CoreState, sid: u32) {
-        engine.terminals.insert(sid, Terminal::new_detached(80, 24));
+        engine
+            .runtime
+            .terminals
+            .insert(sid, Terminal::new_detached(80, 24));
     }
 
     #[test]

@@ -62,7 +62,7 @@ pub(crate) fn handle_spawn(
     let owner_agent_id = caller.agent_id().as_str().to_string();
 
     let now = core.now_instant();
-    let pty_id = match engine.pty_registry.register(
+    let pty_id = match engine.runtime.pty_registry.register(
         PtySpawnSpec {
             owner_agent_id: owner_agent_id.clone(),
             cwd: cwd.clone(),
@@ -102,20 +102,22 @@ pub(crate) fn handle_spawn(
     ) {
         Ok(t) => t,
         Err(e) => {
-            engine.pty_registry.remove(pty_id);
+            engine.runtime.pty_registry.remove(pty_id);
             return JsonRpcResponse::internal_error(id, format!("pty spawn failed: {e}"));
         }
     };
-    engine.terminals.insert(pty_id, terminal);
+    engine.runtime.terminals.insert(pty_id, terminal);
 
     // child를 watcher로 넘겨 종료 코드를 수집한다. 이후 Terminal 자체는 child를 소유하지 않는다.
     // kill은 Terminal을 제거해 PTY master를 닫고, watcher가 종료 결과를 기다린다.
     if let Some(mut child) = engine
+        .runtime
         .terminals
         .get_mut(pty_id)
         .and_then(|t| t.take_child())
     {
         engine
+            .runtime
             .pty_registry
             .attach_exit_watcher(pty_id, move || match child.wait() {
                 Ok(status) => crate::core::pty_registry::PtyExit::from_status(
@@ -151,17 +153,17 @@ pub(crate) fn handle_write(engine: &mut CoreState, id: Value, params: &Value) ->
         Ok(t) => t,
         Err(e) => return e,
     };
-    if !engine.pty_registry.contains(pty_id) {
+    if !engine.runtime.pty_registry.contains(pty_id) {
         return JsonRpcResponse::invalid_params(id, format!("headless pty {pty_id} not found"));
     }
-    let Some(terminal) = engine.terminals.get_mut(pty_id) else {
+    let Some(terminal) = engine.runtime.terminals.get_mut(pty_id) else {
         return JsonRpcResponse::internal_error(
             id,
             format!("headless pty {pty_id} registry/store desync (terminal missing)"),
         );
     };
     terminal.send_bytes(text.as_bytes());
-    engine.pty_registry.touch(pty_id, Instant::now());
+    engine.runtime.pty_registry.touch(pty_id, Instant::now());
     JsonRpcResponse::success(id, json!({ "id": pty_id, "written": text.len() }))
 }
 
@@ -172,7 +174,7 @@ pub(crate) fn handle_read(engine: &mut CoreState, id: Value, params: &Value) -> 
         Ok(v) => v,
         Err(e) => return e,
     };
-    if !engine.pty_registry.contains(pty_id) {
+    if !engine.runtime.pty_registry.contains(pty_id) {
         return JsonRpcResponse::invalid_params(id, format!("headless pty {pty_id} not found"));
     }
     let lines = p_try!(params::opt_int::<usize>(params, "lines", &id));
@@ -194,7 +196,7 @@ pub(crate) fn handle_read(engine: &mut CoreState, id: Value, params: &Value) -> 
         ),
         None => (String::new(), None),
     };
-    engine.pty_registry.touch(pty_id, Instant::now());
+    engine.runtime.pty_registry.touch(pty_id, Instant::now());
     JsonRpcResponse::success(
         id,
         with_screen_diagnostics(json!({ "id": pty_id, "text": text }), diag),
@@ -207,11 +209,12 @@ pub(crate) fn handle_wait(engine: &mut CoreState, id: Value, params: &Value) -> 
         Ok(v) => v,
         Err(e) => return e,
     };
-    if !engine.pty_registry.contains(pty_id) {
+    if !engine.runtime.pty_registry.contains(pty_id) {
         return JsonRpcResponse::invalid_params(id, format!("headless pty {pty_id} not found"));
     }
-    engine.pty_registry.touch(pty_id, Instant::now());
+    engine.runtime.pty_registry.touch(pty_id, Instant::now());
     let entry = engine
+        .runtime
         .pty_registry
         .get(pty_id)
         .expect("contains() checked above");
@@ -236,8 +239,8 @@ pub(crate) fn handle_kill(engine: &mut CoreState, id: Value, params: &Value) -> 
         Ok(v) => v,
         Err(e) => return e,
     };
-    let had_entry = engine.pty_registry.remove(pty_id).is_some();
-    let had_terminal = engine.terminals.remove(pty_id).is_some();
+    let had_entry = engine.runtime.pty_registry.remove(pty_id).is_some();
+    let had_terminal = engine.runtime.terminals.remove(pty_id).is_some();
     if !had_entry && !had_terminal {
         return JsonRpcResponse::invalid_params(id, format!("headless pty {pty_id} not found"));
     }
@@ -267,7 +270,7 @@ pub(crate) fn handle_attach_surface(
         Err(e) => return e,
     };
 
-    match engine.pty_registry.get(pty_id) {
+    match engine.runtime.pty_registry.get(pty_id) {
         None => {
             return JsonRpcResponse::invalid_params(id, format!("headless pty {pty_id} not found"));
         }
@@ -319,6 +322,7 @@ pub(crate) fn handle_attach_surface(
 pub(crate) fn handle_list(engine: &mut CoreState, id: Value) -> JsonRpcResponse {
     lazy_sweep(engine);
     let ptys: Vec<Value> = engine
+        .runtime
         .pty_registry
         .iter()
         .map(|e| {
@@ -425,7 +429,11 @@ mod tests {
     /// Condvar로 종료 결과를 기다린다. 보낸 입력은 실패 시 에코와 다른 출력을 구분하는 데 쓴다.
     fn wait_for_exit(engine: &mut CoreState, pty_id: u32, sent: &str) -> Value {
         let started = std::time::Instant::now();
-        match engine.pty_registry.wait_for_exit(pty_id, EXIT_WAIT_BUDGET) {
+        match engine
+            .runtime
+            .pty_registry
+            .wait_for_exit(pty_id, EXIT_WAIT_BUDGET)
+        {
             Some(exit) => json!({
                 "id": pty_id,
                 "exited": true,
@@ -434,7 +442,7 @@ mod tests {
             }),
             None => {
                 let elapsed = started.elapsed();
-                let still_registered = engine.pty_registry.contains(pty_id);
+                let still_registered = engine.runtime.pty_registry.contains(pty_id);
                 let observed = observed_pty_state(engine, pty_id, sent);
                 panic!(
                     "{}",
@@ -485,7 +493,7 @@ mod tests {
     /// 실패 시 watcher 상태와 화면 꼬리를 수집한다. raw 읽기/쓰기 바이트 계수는 없다.
     /// 화면과 에코 비교는 관측 보조 자료이며 자식의 생사나 실행 이력을 보장하지 않는다.
     fn observed_pty_state(engine: &CoreState, pty_id: u32, sent: &str) -> String {
-        let watcher = match engine.pty_registry.get(pty_id) {
+        let watcher = match engine.runtime.pty_registry.get(pty_id) {
             Some(e) => watch_phase_note(e.watch_phase()),
             None => "registry에 항목이 없어 watcher 상태를 읽을 수 없다",
         };
@@ -633,7 +641,7 @@ mod tests {
 
         let killed = ok(handle_kill(&mut e, json!(4), &json!({ "id": pty_id })));
         assert_eq!(killed["killed"], Value::Bool(true));
-        assert!(!e.pty_registry.contains(pty_id));
+        assert!(!e.runtime.pty_registry.contains(pty_id));
         assert!(e.find_terminal_by_id(pty_id).is_none());
         let listed2 = ok(handle_list(&mut e, json!(5)));
         assert!(
@@ -667,7 +675,7 @@ mod tests {
     fn spawn_beyond_limit_returns_error() {
         let mut e = engine();
         let (mut c, _home) = core();
-        e.pty_registry = crate::core::pty_registry::PtyRegistry::with_limits(
+        e.runtime.pty_registry = crate::core::pty_registry::PtyRegistry::with_limits(
             2,
             crate::core::pty_registry::DEFAULT_IDLE_TTL,
         );
@@ -687,7 +695,7 @@ mod tests {
             "error should mention limit: {}",
             err.message
         );
-        for pid in e.pty_registry.ids() {
+        for pid in e.runtime.pty_registry.ids() {
             handle_kill(&mut e, json!(0), &json!({ "id": pid }));
         }
     }
@@ -731,7 +739,7 @@ mod tests {
         use crate::adapters::test::mock_waker_factory::RecordingWakerFactory;
         let mut e = engine();
         let (mut c, _home) = core();
-        e.pty_registry =
+        e.runtime.pty_registry =
             crate::core::pty_registry::PtyRegistry::with_limits(8, std::time::Duration::ZERO);
         let factory = RecordingWakerFactory::new();
         let shared: crate::waker::SharedWakerFactory = factory.clone();
@@ -745,7 +753,7 @@ mod tests {
 
         ok(handle_list(&mut e, json!(2)));
         assert!(
-            !e.pty_registry.contains(a),
+            !e.runtime.pty_registry.contains(a),
             "TTL 0 이므로 sweep 이 a 를 회수해야 한다"
         );
         assert!(
@@ -812,7 +820,7 @@ mod tests {
         let (mut c, _home) = core();
         let recorder = std::sync::Arc::new(RecordingWakerFactory::default());
         e.waker_factory = Some(recorder.clone());
-        e.pty_registry = short_ttl_registry(8);
+        e.runtime.pty_registry = short_ttl_registry(8);
 
         let spawned = ok(handle_spawn(
             &mut c,
@@ -822,16 +830,22 @@ mod tests {
             &json!({}),
         ));
         let pty_id = spawned["pty_id"].as_u64().expect("pty_id") as u32;
-        assert!(e.pty_registry.contains(pty_id), "registry entry");
-        assert!(e.terminals.get(pty_id).is_some(), "TerminalStore entry");
+        assert!(e.runtime.pty_registry.contains(pty_id), "registry entry");
+        assert!(
+            e.runtime.terminals.get(pty_id).is_some(),
+            "TerminalStore entry"
+        );
 
         std::thread::sleep(Duration::from_millis(5));
         let reaped = e.sweep_idle_ptys(Instant::now());
 
         assert_eq!(reaped, vec![pty_id], "회수 id");
-        assert!(!e.pty_registry.contains(pty_id), "registry 에서 제거");
         assert!(
-            e.terminals.get(pty_id).is_none(),
+            !e.runtime.pty_registry.contains(pty_id),
+            "registry 에서 제거"
+        );
+        assert!(
+            e.runtime.terminals.get(pty_id).is_none(),
             "TerminalStore에서도 제거해 PTY master를 닫아야 한다"
         );
         assert_eq!(
@@ -846,8 +860,9 @@ mod tests {
     fn spawn_still_reclaims_idle_slots_before_checking_the_limit() {
         let mut e = engine();
         let (mut c, _home) = core();
-        e.pty_registry = short_ttl_registry(1);
-        e.pty_registry
+        e.runtime.pty_registry = short_ttl_registry(1);
+        e.runtime
+            .pty_registry
             .register(
                 crate::core::pty_registry::PtySpawnSpec {
                     owner_agent_id: "agent-1".into(),

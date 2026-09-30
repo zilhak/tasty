@@ -95,7 +95,7 @@ impl Core {
                 working_dir: cwd.as_deref(),
             };
             let terminal = crate::core::terminal_spawn::spawn_shell_terminal(surface_id, spawn)?;
-            engine.terminals.insert(surface_id, terminal);
+            engine.runtime.terminals.insert(surface_id, terminal);
             true
         } else {
             false
@@ -219,7 +219,10 @@ mod tab_title_tests {
     fn split_tab_engine() -> (CoreState, u32, u32, u32) {
         let mut engine = test_engine();
         let a = engine.workspaces[0].all_surface_ids()[0];
-        engine.terminals.insert(a, Terminal::new_detached(80, 24));
+        engine
+            .runtime
+            .terminals
+            .insert(a, Terminal::new_detached(80, 24));
         let b = 7777;
         let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(a).unwrap();
         engine.workspaces[ws_idx]
@@ -228,7 +231,10 @@ mod tab_title_tests {
             .unwrap()
             .split_surface_by_id_marker(a, SplitDirection::Horizontal, b)
             .unwrap();
-        engine.terminals.insert(b, Terminal::new_detached(80, 24));
+        engine
+            .runtime
+            .terminals
+            .insert(b, Terminal::new_detached(80, 24));
         set_focused(&mut engine, pane_id, a);
         (engine, pane_id, a, b)
     }
@@ -244,6 +250,7 @@ mod tab_title_tests {
 
     fn set_title(engine: &mut CoreState, sid: u32, title: &str) {
         engine
+            .runtime
             .terminals
             .get_mut(sid)
             .unwrap()

@@ -2,7 +2,7 @@
 
 surface의 현재 폴더(cwd)는 종류 전환, 새 탭·분할의 폴더 상속, 터미널 링크 해석, 닫은 항목 복원에 쓰인다. 이 문서는 종류별 cwd와 [생성·변환 중 전달 규칙](#surface-cwd-invariant)을 설명한다.
 
-호스트는 `CoreState::surface_cwd(sid)`(`src/core/state/surface_cwd.rs`)로 조회한다. 터미널은 `engine.terminals.get(sid).get_cwd()`, 나머지는 `Surface::source_cwd()`를 사용한다. 반환 타입 `SurfaceCwd`는 `Local`과 `Remote`를 구분한다. mirror workspace의 cwd는 항상 원격 값이며 [로컬 실행에는 사용하지 않는다](#3-2-원격-출처-cwd-는-로컬-실행-경로로-새지-않는다).
+호스트는 `CoreState::surface_cwd(sid)`(`src/core/state/surface_cwd.rs`)로 조회한다. 터미널은 `engine.runtime.terminals.get(sid).get_cwd()`, 나머지는 `Surface::source_cwd()`를 사용한다. 반환 타입 `SurfaceCwd`는 `Local`과 `Remote`를 구분한다. mirror workspace의 cwd는 항상 원격 값이며 [로컬 실행에는 사용하지 않는다](#3-2-원격-출처-cwd-는-로컬-실행-경로로-새지-않는다).
 
 ## Surface 별 cwd
 

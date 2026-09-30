@@ -331,7 +331,7 @@ impl AppState {
         let surface_id = engine.next_ids.next_surface();
         if preset.kind == "terminal" {
             let terminal = self.build_terminal(engine, surface_id, preset)?;
-            engine.terminals.insert(surface_id, terminal);
+            engine.runtime.terminals.insert(surface_id, terminal);
             engine.send_fast_init(surface_id);
             return Ok(Box::new(TerminalSurface { id: surface_id }));
         }

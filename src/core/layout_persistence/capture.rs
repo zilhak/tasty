@@ -53,7 +53,7 @@ impl SavedLayout {
         let workspaces: Vec<SavedWorkspace> = {
             let CoreState {
                 workspaces,
-                terminals,
+                runtime: crate::core::engine_runtime::EngineRuntime { terminals, .. },
                 ..
             } = engine;
             let mut ctx = CaptureCtx {

@@ -53,7 +53,7 @@ impl Pane {
     }
 
     /// Create a Pane with a TerminalSurface marker. Caller must have already
-    /// `engine.terminals.insert(surface_id, terminal)` for the spawned Terminal.
+    /// `engine.runtime.terminals.insert(surface_id, terminal)` for the spawned Terminal.
     pub fn new_with_terminal_marker(id: PaneId, tab_id: TabId, surface_id: SurfaceId) -> Self {
         let surface: Box<dyn super::Surface> = Box::new(TerminalSurface { id: surface_id });
         let tab = Tab::new_with_surface(tab_id, "Shell".to_string(), surface);

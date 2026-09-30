@@ -21,7 +21,7 @@ impl CoreState {
 
         let mut any = false;
         for sid in attached {
-            let Some(live) = self.terminals.get(sid) else {
+            let Some(live) = self.runtime.terminals.get(sid) else {
                 continue;
             };
             let cols = live.cols();

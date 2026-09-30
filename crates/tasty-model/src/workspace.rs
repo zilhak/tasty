@@ -41,7 +41,7 @@ pub struct Workspace {
 
 impl Workspace {
     /// Create a workspace with a TerminalSurface marker. Caller must have already
-    /// `engine.terminals.insert(surface_id, terminal)` for the spawned Terminal.
+    /// `engine.runtime.terminals.insert(surface_id, terminal)` for the spawned Terminal.
     pub fn new_with_terminal_marker(
         id: WorkspaceId,
         name: String,

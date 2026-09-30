@@ -1565,14 +1565,16 @@ impl App {
         for w in self.view.views.values_mut() {
             if let Some(main) = w.as_main_mut() {
                 let e = &mut main.core_state;
-                if e.terminals.contains(surface_id) || e.is_surface_deferred(surface_id) {
+                if e.runtime.terminals.contains(surface_id) || e.is_surface_deferred(surface_id) {
                     e.attach_surface_for_stream(surface_id, client_id, hub);
                     return true;
                 }
             }
         }
         for (_, engine) in self.parked_states.iter_mut() {
-            if engine.terminals.contains(surface_id) || engine.is_surface_deferred(surface_id) {
+            if engine.runtime.terminals.contains(surface_id)
+                || engine.is_surface_deferred(surface_id)
+            {
                 engine.attach_surface_for_stream(surface_id, client_id, hub);
                 return true;
             }

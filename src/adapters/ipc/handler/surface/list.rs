@@ -35,7 +35,7 @@ fn collect_tab_surface_info(
             .as_any()
             .downcast_ref::<crate::model::TerminalSurface>()
         {
-            let t = engine.terminals.get(node.id);
+            let t = engine.runtime.terminals.get(node.id);
             let mut entry = json!({
                 "id": node.id,
                 "pane_id": pane_id,
@@ -45,7 +45,7 @@ fn collect_tab_surface_info(
                 "cols": t.map(|x| x.cols()).unwrap_or(0),
                 "rows": t.map(|x| x.rows()).unwrap_or(0),
                 "busy": engine.is_surface_busy(node.id),
-                "pty_ready": engine.terminals.contains(node.id),
+                "pty_ready": engine.runtime.terminals.contains(node.id),
                 "attached": engine.attach.is_hard_occupied(node.id),
             });
             if let Some(fg) = t.and_then(|x| x.foreground_process_info()) {
@@ -96,7 +96,7 @@ fn collect_surface_layout_info(
                 "busy": engine.is_surface_busy(id),
                 "attached": engine.attach.is_hard_occupied(id),
             });
-            if let Some(terminal) = engine.terminals.get(id) {
+            if let Some(terminal) = engine.runtime.terminals.get(id) {
                 entry["cols"] = json!(terminal.cols());
                 entry["rows"] = json!(terminal.rows());
                 entry["pty_ready"] = json!(true);

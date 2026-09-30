@@ -230,6 +230,7 @@ impl AppState {
             return false;
         }
         let persist_id = engine
+            .runtime
             .terminals
             .scrollback_persist_id(surface_id)
             .map(str::to_string);
@@ -239,7 +240,7 @@ impl AppState {
             tab_name_for_snapshot.map(|tab_name| crate::model::ClosedItem::Surface {
                 surface: crate::model::closed_item::ClosedSurface::from_capture(
                     surface_id,
-                    engine.terminals.closed_capture(surface_id),
+                    engine.runtime.terminals.closed_capture(surface_id),
                 ),
                 tab_name,
             });
@@ -339,7 +340,7 @@ impl AppState {
             if terminal_surface_in_tab(tab, surface_id).is_some() {
                 let snapshot = crate::model::closed_item::ClosedSurface::from_capture(
                     surface_id,
-                    engine.terminals.closed_capture(surface_id),
+                    engine.runtime.terminals.closed_capture(surface_id),
                 );
                 let tab_name = tab.display_name().to_string();
                 engine.push_closed_item(crate::model::ClosedItem::Surface {
@@ -349,6 +350,7 @@ impl AppState {
             }
         }
         let persist_id = engine
+            .runtime
             .terminals
             .scrollback_persist_id(surface_id)
             .map(str::to_string);
@@ -379,7 +381,7 @@ impl AppState {
                 let snapshot_opt = {
                     let mut snap_fn =
                         crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
-                    let terminals = &engine.terminals;
+                    let terminals = &engine.runtime.terminals;
                     crate::model::closed_item::ClosedTab::from_tab(
                         &pane.tabs[loc.tab_idx],
                         &mut snap_fn,
@@ -436,7 +438,7 @@ impl AppState {
                 let snapshot = {
                     let mut snap_fn =
                         crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
-                    let terminals = &engine.terminals;
+                    let terminals = &engine.runtime.terminals;
                     crate::model::ClosedItem::from_pane(
                         pane,
                         sibling_pane_id,
@@ -547,7 +549,7 @@ impl AppState {
                 working_dir: cwd.as_deref(),
             },
         )?;
-        engine.terminals.insert(new_surface_id, terminal);
+        engine.runtime.terminals.insert(new_surface_id, terminal);
         let new_pane =
             crate::model::Pane::new_with_terminal_marker(new_pane_id, new_tab_id, new_surface_id);
 

@@ -66,6 +66,7 @@ fn collect_surface_ids(state: &mut AppState, engine: &mut crate::core::CoreState
     let ws = state.active_workspace_mut(engine);
     let ws_ids: std::collections::HashSet<u32> = ws.all_surface_ids().into_iter().collect();
     engine
+        .runtime
         .terminals
         .iter()
         .filter_map(|(sid, _)| ws_ids.contains(&sid).then_some(sid))
@@ -73,7 +74,12 @@ fn collect_surface_ids(state: &mut AppState, engine: &mut crate::core::CoreState
 }
 
 fn collect_all_surface_ids(_state: &mut AppState, engine: &mut crate::core::CoreState) -> Vec<u32> {
-    engine.terminals.iter().map(|(sid, _)| sid).collect()
+    engine
+        .runtime
+        .terminals
+        .iter()
+        .map(|(sid, _)| sid)
+        .collect()
 }
 
 #[test]
@@ -342,6 +348,7 @@ fn mirror_close_active_surface_split_computes_sibling_candidate() {
         .split_surface_by_id_marker(sid_a, SplitDirection::Horizontal, sid_b)
         .unwrap();
     engine
+        .runtime
         .terminals
         .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24));
     // 분할 헬퍼가 포커스를 바꾸지 않아 sid_a를 닫는다.
@@ -376,6 +383,7 @@ fn close_active_surface_split_saves_closed_item_snapshot() {
         .split_surface_by_id_marker(sid_a, SplitDirection::Horizontal, sid_b)
         .unwrap();
     engine
+        .runtime
         .terminals
         .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24));
     assert_eq!(state.focused_surface_id(&engine), Some(sid_a));
@@ -581,18 +589,22 @@ fn c3_case1_split_surface_close_cleans_up_and_keeps_sibling() {
         .split_surface_by_id_marker(sid_a, SplitDirection::Horizontal, sid_b)
         .unwrap();
     engine
+        .runtime
         .terminals
         .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24));
-    assert!(engine.terminals.contains(sid_a));
+    assert!(engine.runtime.terminals.contains(sid_a));
 
     let _ = state.take_pending_lifecycle_events();
     assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid_a, false));
 
     assert!(
-        !engine.terminals.contains(sid_a),
+        !engine.runtime.terminals.contains(sid_a),
         "닫힌 surface 의 Terminal 이 cleanup 돼야 함"
     );
-    assert!(engine.terminals.contains(sid_b), "형제 surface 는 생존");
+    assert!(
+        engine.runtime.terminals.contains(sid_b),
+        "형제 surface 는 생존"
+    );
     let events = state.take_pending_lifecycle_events();
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].surface_id, sid_a);
@@ -633,11 +645,11 @@ fn c3_case2_tab_close_removes_tab_and_cleans_surface() {
         1
     );
     assert!(
-        !engine.terminals.contains(sid1),
+        !engine.runtime.terminals.contains(sid1),
         "닫힌 tab 의 surface 가 cleanup 돼야 함"
     );
     assert!(
-        engine.terminals.contains(sid0),
+        engine.runtime.terminals.contains(sid0),
         "형제 tab 의 surface 는 생존"
     );
     let events = state.take_pending_lifecycle_events();
@@ -676,9 +688,9 @@ fn c3_case3_pane_close_removes_pane_and_reassigns_focus() {
             .len(),
         1
     );
-    assert!(!engine.terminals.contains(sid1));
+    assert!(!engine.runtime.terminals.contains(sid1));
     assert!(
-        engine.terminals.contains(sid0),
+        engine.runtime.terminals.contains(sid0),
         "형제 pane 의 surface 는 생존"
     );
     let focused = state.active_workspace(&engine).focused_pane;
@@ -743,7 +755,7 @@ fn keyboard_tab_switch_reifies_deferred_surface() {
         "표시 전 초기화 호출로 지연된 surface를 복원해야 한다"
     );
     assert!(
-        engine.terminals.contains(sid),
+        engine.runtime.terminals.contains(sid),
         "PTY가 TerminalStore에 추가돼야 한다"
     );
 }
@@ -765,7 +777,7 @@ fn close_active_tab_reifies_newly_active_deferred_surface() {
         !engine.is_surface_deferred(sid),
         "닫기 후 활성화된 지연 탭을 복원해야 한다"
     );
-    assert!(engine.terminals.contains(sid));
+    assert!(engine.runtime.terminals.contains(sid));
 }
 
 #[test]
@@ -1808,7 +1820,7 @@ fn engine_cleanup_reclaims_domain_resources_without_window_state() {
     engine.cleanup_surface_traced(sid, None, &mut sums);
 
     assert!(
-        engine.terminals.get(sid).is_none(),
+        engine.runtime.terminals.get(sid).is_none(),
         "Terminal이 남으면 안 된다"
     );
     assert!(
@@ -2250,7 +2262,7 @@ mod close_refuses_hard_occupied {
             .workspaces
             .iter()
             .any(|w| w.all_surface_ids().contains(&sid));
-        let has_terminal = engine.terminals.get(sid).is_some();
+        let has_terminal = engine.runtime.terminals.get(sid).is_some();
         assert_eq!(
             in_tree, has_terminal,
             "surface {sid}: 레이아웃 트리({in_tree})와 터미널 저장소({has_terminal})의 정리 상태가 다르다"
@@ -2308,6 +2320,7 @@ mod close_refuses_hard_occupied {
             .split_surface_by_id_marker(sid_a, SplitDirection::Horizontal, sid_b)
             .expect("surface split");
         engine
+            .runtime
             .terminals
             .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24));
         engine.attach.acquire(sid_a, HOLDER).expect("하드 점유");
@@ -2332,6 +2345,7 @@ mod close_refuses_hard_occupied {
             .split_surface_by_id_marker(sid_a, SplitDirection::Horizontal, sid_b)
             .expect("surface split");
         engine
+            .runtime
             .terminals
             .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24));
 

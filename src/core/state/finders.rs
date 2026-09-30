@@ -34,9 +34,12 @@ impl CoreState {
     /// 현재 트리에 없는 자식 등록을 정리한다. 변경이 있으면 저장을 시도한다.
     pub fn reconcile_child_terminals(&mut self) {
         let live = self.live_surface_ids();
-        let summary = self.child_terminals.reconcile_with_live_surfaces(&live);
+        let summary = self
+            .runtime
+            .child_terminals
+            .reconcile_with_live_surfaces(&live);
         if summary.changed() {
-            self.child_terminals.save();
+            self.runtime.child_terminals.save();
         }
     }
 

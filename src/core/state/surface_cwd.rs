@@ -52,7 +52,10 @@ impl CoreState {
         }
         let surface = self.find_surface_by_id(surface_id)?;
         let path = if surface.kind() == "terminal" {
-            self.terminals.get(surface_id).and_then(|t| t.get_cwd())
+            self.runtime
+                .terminals
+                .get(surface_id)
+                .and_then(|t| t.get_cwd())
         } else {
             surface.source_cwd()
         }?;
