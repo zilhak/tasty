@@ -358,14 +358,10 @@ impl App {
 
     /// PTY 레지스트리는 engine별로 있으므로 ID의 소유 창을 전체 MainView에서 찾는다.
     pub(crate) fn find_main_with_headless_pty(&self, pty_id: u32) -> Option<WindowId> {
-        for (wid, w) in &self.view.views {
-            if let Some(m) = w.as_main()
-                && m.core_state.runtime.pty_registry.contains(pty_id)
-            {
-                return Some(*wid);
-            }
-        }
-        None
+        self.engines()
+            .windows()
+            .find(|(_, e)| e.runtime.pty_registry.contains(pty_id))
+            .map(|(wid, _)| wid)
     }
 
     pub(crate) fn find_main_with_resource(

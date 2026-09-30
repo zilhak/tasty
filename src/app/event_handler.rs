@@ -1531,16 +1531,7 @@ impl App {
         client_id: u32,
         hub: &tasty_ipc::stream_hub::StreamHub,
     ) -> bool {
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                let e = &mut main.core_state;
-                if e.runtime.terminals.contains(surface_id) || e.is_surface_deferred(surface_id) {
-                    e.attach_surface_for_stream(surface_id, client_id, hub);
-                    return true;
-                }
-            }
-        }
-        for engine in self.engines_mut().parked() {
+        for engine in self.engines_mut().windowed_and_parked() {
             if engine.runtime.terminals.contains(surface_id)
                 || engine.is_surface_deferred(surface_id)
             {

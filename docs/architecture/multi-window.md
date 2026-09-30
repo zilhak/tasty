@@ -54,7 +54,7 @@ parked 상태에서도 engine은 살아 있으므로 레이아웃 슬롯 점유�
 
 ### engine 탐색
 
-engine은 세 자리에 있다. 창(`MainView`), `App.parked_states`, 창에 배정되기 전의 임시 `App.core_state`다. engine만 다루는 App의 순회는 `src/app/window_access.rs`의 `EngineScan`(읽기)·`EngineScanMut`(쓰기)를 거친다. 창 View 작업(다시 그리기 표시, toast 등)이 함께 필요한 창 루프와, 창 ID로 고른 engine 접근(`DispatchSource::Main`이나 `find_main_with_*`의 결과로 MainView를 찾는 경로)은 MainView의 `core_state`를 직접 쓴다. engine 소유 구조가 바뀌면 두 타입과 `engines_mut!` 매크로, 그리고 이 창 루프와 창 ID 접근을 함께 고친다. `App::engines`/`App::engines_mut`로 얻고, 같은 함수에서 `App.core` 같은 다른 필드를 함께 빌려야 하면 `engines_mut!` 매크로로 engine 자리 필드만 빌린다.
+engine은 세 자리에 있다. 창(`MainView`), `App.parked_states`, 창에 배정되기 전의 임시 `App.core_state`다. engine만 다루는 App의 순회는 `src/app/window_access.rs`의 `EngineScan`(읽기)·`EngineScanMut`(쓰기)를 거친다. 이 두 핸들은 `App::engines`/`App::engines_mut`로 얻고, 같은 함수에서 `App.core` 같은 다른 필드를 함께 빌려야 하면 `engines_mut!` 매크로로 engine 자리 필드만 빌린다. 창 View 작업(다시 그리기 표시, toast 등)이 함께 필요한 창 루프와, 창 ID로 고른 engine 접근(`DispatchSource::Main`이나 `find_main_with_*`의 결과로 MainView를 찾는 경로)은 MainView의 `core_state`를 직접 쓴다. engine 소유 구조가 바뀌면 두 타입과 `engines_mut!` 매크로, 그리고 이 창 루프와 창 ID 접근을 함께 고친다.
 
 - 방문 순서는 창(`views` 순회 순서) → parked(보관 순서) → 임시 engine이다. 호출부가 필요한 자리만 고른다(`windowed_and_parked`, `windows_and_pending`, `primary` 등). 창 목록의 순서는 `HashMap` 순회 순서라 고정된 의미가 없다.
 - 한 engine은 세 자리 중 한 곳에만 있으므로 전체 순회(`all`, `sessions`)는 각 engine을 정확히 한 번 방문한다. 전역 목록 합산(`list_global`)과 슬롯 점유 계산이 같은 자원을 두 번 세지 않는 근거다. 단위 시험은 parked·임시 자리의 순서와 1회 방문을 고정한다. 창 자리는 `MainView`를 단위 시험에서 만들 수 없어 다중 창 라우팅 E2E로 간접 확인한다.
