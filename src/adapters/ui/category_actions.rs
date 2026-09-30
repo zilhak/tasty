@@ -5,9 +5,9 @@ use crate::intent::{OpenPopupMode, UiIntent};
 use crate::model::WorkspaceCategoryId;
 use crate::state::{AppState, RenameTarget};
 
-pub(crate) fn open_new_category_dialog(state: &mut AppState) {
+pub(crate) fn open_new_category_dialog(state: &mut AppState, engine: &crate::core::CoreState) {
     let target = RenameTarget::NewCategory;
-    let scope = target.popup_scope();
+    let scope = target.popup_scope(engine);
     state.dialogs.rename = Some((target, String::new()));
     state.dispatch_intent(
         UiIntent::OpenPopup {
@@ -25,7 +25,7 @@ pub(crate) fn open_rename_category_dialog(
 ) {
     let name = engine.category_name(cat_id).unwrap_or_default().to_string();
     let target = RenameTarget::CategoryName { cat_id };
-    let scope = target.popup_scope();
+    let scope = target.popup_scope(engine);
     state.dialogs.rename = Some((target, name));
     state.dispatch_intent(
         UiIntent::OpenPopup {

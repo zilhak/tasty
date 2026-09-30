@@ -56,6 +56,7 @@
 
 - 접기 버튼 클릭 시 full ↔ collapsed 가 토글된다.
 - 워크스페이스 카드 클릭 시 해당 Workspace 로 전환된다.
+- 워크스페이스 이름·부제 변경 팝업이 열린 동안 에이전트가 다른 Workspace 를 닫거나 옮겨 인덱스가 바뀌어도, 저장한 값은 팝업을 연 Workspace 에 적용된다. 그 Workspace 가 닫히면 팝업이 닫힌다.
 - 카테고리 토글 off: New workspace 버튼으로 새 Workspace 가 생성된다 (우클릭 시 프리셋).
 - 카테고리 토글 on: New workspace 버튼이 full/collapsed 모두에서 숨고, 워크스페이스 영역이 카테고리 섹션으로 그룹 렌더된다 (섹션·생성 경로의 세부 AC 는 [`features/workspace-category/`](../workspace-category/index.md)).
 - 다른 client 가 점유 중인 Workspace 카드에 점유 인디케이터가 표시된다.

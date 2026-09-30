@@ -70,21 +70,7 @@ pub fn draw_rename_popup(
 
     let is_add_favorite = matches!(target, RenameTarget::ExplorerAddFavorite { .. });
 
-    let valid = match target {
-        RenameTarget::WorkspaceName { ws_idx } | RenameTarget::WorkspaceSubtitle { ws_idx } => {
-            *ws_idx < engine.workspaces.len()
-        }
-        RenameTarget::TabName { pane_id, tab_index } => state
-            .active_workspace(engine)
-            .pane_layout()
-            .find_pane(*pane_id)
-            .is_some_and(|p| *tab_index < p.tabs.len()),
-        RenameTarget::ExplorerEntry { path, .. } => path.exists(),
-        RenameTarget::ExplorerAddFavorite { path } => path.exists(),
-        RenameTarget::NewCategory => true,
-        RenameTarget::CategoryName { cat_id } => engine.category_index(*cat_id).is_some(),
-    };
-    if !valid {
+    if !rename_target_exists(target, engine) {
         state.dialogs.rename = None;
         return PopupAction::Close;
     }
@@ -247,6 +233,20 @@ fn category_validation(
     }
 }
 
+fn rename_target_exists(target: &RenameTarget, engine: &crate::core::CoreState) -> bool {
+    match target {
+        RenameTarget::WorkspaceName { workspace_id }
+        | RenameTarget::WorkspaceSubtitle { workspace_id } => {
+            engine.find_workspace_index_for_id(*workspace_id).is_some()
+        }
+        RenameTarget::TabName { tab_id } => engine.find_pane_for_tab(*tab_id).is_some(),
+        RenameTarget::ExplorerEntry { path, .. } => path.exists(),
+        RenameTarget::ExplorerAddFavorite { path } => path.exists(),
+        RenameTarget::NewCategory => true,
+        RenameTarget::CategoryName { cat_id } => engine.category_index(*cat_id).is_some(),
+    }
+}
+
 fn apply_rename(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
@@ -254,15 +254,13 @@ fn apply_rename(
     buffer: String,
 ) {
     match target {
-        RenameTarget::WorkspaceName { ws_idx } => {
-            apply_rename_workspace_name(state, engine, ws_idx, buffer)
+        RenameTarget::WorkspaceName { workspace_id } => {
+            apply_rename_workspace_name(state, engine, workspace_id, buffer)
         }
-        RenameTarget::WorkspaceSubtitle { ws_idx } => {
-            apply_rename_workspace_subtitle(state, engine, ws_idx, buffer)
+        RenameTarget::WorkspaceSubtitle { workspace_id } => {
+            apply_rename_workspace_subtitle(state, engine, workspace_id, buffer)
         }
-        RenameTarget::TabName { pane_id, tab_index } => {
-            apply_rename_tab_name(state, engine, pane_id, tab_index, buffer)
-        }
+        RenameTarget::TabName { tab_id } => apply_rename_tab_name(state, engine, tab_id, buffer),
         RenameTarget::ExplorerEntry { surface_id, path } => {
             apply_rename_explorer_entry(state, surface_id, path, buffer)
         }
@@ -278,17 +276,14 @@ fn apply_rename(
 fn apply_rename_workspace_name(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
-    ws_idx: usize,
+    workspace_id: u32,
     buffer: String,
 ) {
     if buffer.is_empty() {
         return;
     }
-    let workspace_id = engine.workspaces.get(ws_idx).map(|w| w.id);
-    if let Some(ws) = engine.workspaces.get_mut(ws_idx) {
+    if let Some(ws) = engine.workspaces.iter_mut().find(|w| w.id == workspace_id) {
         ws.name = buffer.clone();
-    }
-    if let Some(workspace_id) = workspace_id {
         state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
             workspace_id,
             name: Some(buffer),
@@ -302,14 +297,11 @@ fn apply_rename_workspace_name(
 fn apply_rename_workspace_subtitle(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
-    ws_idx: usize,
+    workspace_id: u32,
     buffer: String,
 ) {
-    let workspace_id = engine.workspaces.get(ws_idx).map(|w| w.id);
-    if let Some(ws) = engine.workspaces.get_mut(ws_idx) {
+    if let Some(ws) = engine.workspaces.iter_mut().find(|w| w.id == workspace_id) {
         ws.subtitle = buffer.clone();
-    }
-    if let Some(workspace_id) = workspace_id {
         state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
             workspace_id,
             name: None,
@@ -323,36 +315,34 @@ fn apply_rename_workspace_subtitle(
 fn apply_rename_tab_name(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
-    pane_id: u32,
-    tab_index: usize,
+    tab_id: u32,
     buffer: String,
 ) {
     let name = buffer.trim().to_string();
     let clear = name.is_empty();
-    let mut located: Option<(u32, u32)> = None;
-    if let Some(pane) = state
-        .active_workspace_mut(engine)
-        .pane_layout_mut()
-        .find_pane_mut(pane_id)
-        && let Some(tab) = pane.tabs.get_mut(tab_index)
+    let Some(pane_id) = engine.find_pane_for_tab(tab_id) else {
+        return;
+    };
+    let mut focused: Option<u32> = None;
+    if let Some(tab) = engine
+        .find_pane_by_id_mut(pane_id)
+        .and_then(|pane| pane.tabs.iter_mut().find(|t| t.id == tab_id))
     {
         if clear {
             tab.explicit_name = None;
         } else {
             tab.explicit_name = Some(name.clone());
         }
-        located = Some((tab.id, tab.focused_surface));
+        focused = Some(tab.focused_surface);
     }
-    if let Some((tab_id, focused)) = located {
+    if let Some(focused) = focused {
         // 사용자 이름을 지우면 현재 포커스된 surface 제목으로 돌아간다.
         if clear {
             engine.refresh_tab_osc_title(focused);
         }
-        let title = state
-            .active_workspace_mut(engine)
-            .pane_layout_mut()
-            .find_pane_mut(pane_id)
-            .and_then(|pane| pane.tabs.get(tab_index))
+        let title = engine
+            .find_pane_by_id(pane_id)
+            .and_then(|pane| pane.tabs.iter().find(|t| t.id == tab_id))
             .map(|tab| tab.display_name().to_string())
             .unwrap_or_default();
         state.enqueue_host_event(crate::state::PendingHostEvent::TabRenamed {
@@ -418,6 +408,91 @@ mod tests {
 
     fn test_theme() -> Theme {
         tasty_themes::mocha_fallback()
+    }
+
+    fn push_workspace(engine: &mut crate::core::CoreState, name: &str) -> u32 {
+        let ws_id = engine.next_ids.next_workspace();
+        let pane_id = engine.next_ids.next_pane();
+        let tab_id = engine.next_ids.next_tab();
+        let sid = engine.next_ids.next_surface();
+        engine
+            .terminals
+            .insert(sid, tasty_terminal::Terminal::new_detached(80, 24));
+        let ws = crate::model::Workspace::new_with_terminal_marker(
+            ws_id,
+            name.to_string(),
+            pane_id,
+            tab_id,
+            sid,
+        );
+        engine.workspaces.push(ws);
+        ws_id
+    }
+
+    #[test]
+    fn workspace_rename_targets_same_workspace_after_agent_close() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        push_workspace(&mut engine, "A");
+        let b_id = push_workspace(&mut engine, "B");
+        push_workspace(&mut engine, "C");
+        state.dialogs.rename = Some((
+            RenameTarget::WorkspaceName { workspace_id: b_id },
+            String::new(),
+        ));
+        // 팝업이 열린 동안 에이전트가 앞쪽 workspace를 닫아 인덱스가 당겨진다.
+        assert!(state.close_workspace_at(
+            &mut engine,
+            0,
+            crate::state::WorkspaceCloseOrigin::Agent
+        ));
+        let (target, _) = state.dialogs.rename.take().unwrap();
+        apply_rename(&mut state, &mut engine, target, "RENAMED".to_string());
+        let names: Vec<_> = engine.workspaces.iter().map(|w| w.name.as_str()).collect();
+        assert_eq!(names, ["A", "RENAMED", "C"]);
+    }
+
+    #[test]
+    fn tab_rename_targets_same_tab_after_agent_move() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let ws_idx = state.active_workspace;
+        let pane_id = engine.workspaces[ws_idx].focused_pane;
+        let t2 = engine.next_ids.next_tab();
+        let s2 = engine.next_ids.next_surface();
+        let pane = engine.find_pane_by_id_mut(pane_id).unwrap();
+        pane.add_terminal_marker_tab_background(t2, s2, None);
+        let first_tab = pane.tabs[0].id;
+        state.dialogs.rename = Some((RenameTarget::TabName { tab_id: first_tab }, String::new()));
+        // 팝업이 열린 동안 에이전트가 tab.move로 순서를 바꾼다.
+        assert!(engine.find_pane_by_id_mut(pane_id).unwrap().move_tab(0, 1));
+        let (target, _) = state.dialogs.rename.take().unwrap();
+        apply_rename(&mut state, &mut engine, target, "RENAMED".to_string());
+        let tabs: Vec<_> = engine
+            .find_pane_by_id(pane_id)
+            .unwrap()
+            .tabs
+            .iter()
+            .map(|t| (t.id, t.explicit_name.clone()))
+            .collect();
+        assert_eq!(tabs, [(t2, None), (first_tab, Some("RENAMED".to_string()))]);
+    }
+
+    #[test]
+    fn rename_target_is_gone_after_agent_closes_it() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let b_id = push_workspace(&mut engine, "B");
+        let target = RenameTarget::WorkspaceName { workspace_id: b_id };
+        assert!(rename_target_exists(&target, &engine));
+        let b_idx = engine.find_workspace_index_for_id(b_id).unwrap();
+        assert!(state.close_workspace_at(
+            &mut engine,
+            b_idx,
+            crate::state::WorkspaceCloseOrigin::Agent
+        ));
+        assert!(!rename_target_exists(&target, &engine));
+        let before: Vec<_> = engine.workspaces.iter().map(|w| w.name.clone()).collect();
+        apply_rename(&mut state, &mut engine, target, "RENAMED".to_string());
+        let after: Vec<_> = engine.workspaces.iter().map(|w| w.name.clone()).collect();
+        assert_eq!(before, after);
     }
 
     fn run_with_input(raw: egui::RawInput, initial_buffer: &str) -> (RenamePopupAction, String) {

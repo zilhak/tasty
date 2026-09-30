@@ -550,8 +550,8 @@ impl MainView {
                 let tab_index = pane.active_tab;
                 if let Some(tab) = pane.tabs.get(tab_index) {
                     let current_name = tab.display_name();
-                    let target = crate::state::RenameTarget::TabName { pane_id, tab_index };
-                    let scope = target.popup_scope();
+                    let target = crate::state::RenameTarget::TabName { tab_id: tab.id };
+                    let scope = target.popup_scope(engine);
                     state.dialogs.rename = Some((target, current_name));
                     state.dispatch_intent(
                         UiIntent::OpenPopup {
@@ -567,8 +567,10 @@ impl MainView {
         if matches_any_binding(&kb.rename_workspace, key, mods) {
             let ws_idx = state.active_workspace;
             if let Some(ws) = engine.workspaces.get(ws_idx) {
-                let target = crate::state::RenameTarget::WorkspaceName { ws_idx };
-                let scope = target.popup_scope();
+                let target = crate::state::RenameTarget::WorkspaceName {
+                    workspace_id: ws.id,
+                };
+                let scope = target.popup_scope(engine);
                 state.dialogs.rename = Some((target, ws.name.clone()));
                 state.dispatch_intent(
                     UiIntent::OpenPopup {
@@ -664,8 +666,10 @@ impl MainView {
         if matches_any_binding(&kb.rename_workspace_subtitle, key, mods) {
             let ws_idx = state.active_workspace;
             if let Some(ws) = engine.workspaces.get(ws_idx) {
-                let target = crate::state::RenameTarget::WorkspaceSubtitle { ws_idx };
-                let scope = target.popup_scope();
+                let target = crate::state::RenameTarget::WorkspaceSubtitle {
+                    workspace_id: ws.id,
+                };
+                let scope = target.popup_scope(engine);
                 state.dialogs.rename = Some((target, ws.subtitle.clone()));
                 state.dispatch_intent(
                     UiIntent::OpenPopup {

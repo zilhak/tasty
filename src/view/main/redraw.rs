@@ -1264,16 +1264,18 @@ impl MainView {
     /// scope 로 `rename` 팝업을 dispatch.
     fn rename_tab(&mut self, pane_id: u32, tab_index: usize) {
         let engine = &mut self.core_state;
-        let current_name = self
+        let Some((tab_id, current_name)) = self
             .state
             .active_workspace(engine)
             .pane_layout()
             .find_pane(pane_id)
             .and_then(|p| p.tabs.get(tab_index))
-            .map(|t| t.display_name())
-            .unwrap_or_default();
-        let target = crate::state::RenameTarget::TabName { pane_id, tab_index };
-        let scope = target.popup_scope();
+            .map(|t| (t.id, t.display_name()))
+        else {
+            return;
+        };
+        let target = crate::state::RenameTarget::TabName { tab_id };
+        let scope = target.popup_scope(engine);
         self.state.dialogs.rename = Some((target, current_name));
         self.state.dispatch_intent(
             crate::intent::UiIntent::OpenPopup {
@@ -1391,16 +1393,18 @@ impl MainView {
             }
             match result {
                 Some(1) => {
-                    let name = engine.workspaces[ws_idx].name.clone();
+                    let ws = &engine.workspaces[ws_idx];
+                    let (workspace_id, name) = (ws.id, ws.name.clone());
                     this.open_rename_workspace_dialog(
-                        crate::state::RenameTarget::WorkspaceName { ws_idx },
+                        crate::state::RenameTarget::WorkspaceName { workspace_id },
                         name,
                     );
                 }
                 Some(2) => {
-                    let subtitle = engine.workspaces[ws_idx].subtitle.clone();
+                    let ws = &engine.workspaces[ws_idx];
+                    let (workspace_id, subtitle) = (ws.id, ws.subtitle.clone());
                     this.open_rename_workspace_dialog(
-                        crate::state::RenameTarget::WorkspaceSubtitle { ws_idx },
+                        crate::state::RenameTarget::WorkspaceSubtitle { workspace_id },
                         subtitle,
                     );
                 }
@@ -1456,6 +1460,7 @@ impl MainView {
                     // 새 카테고리 생성 다이얼로그.
                     crate::adapters::ui::category_actions::open_new_category_dialog(
                         &mut this.state,
+                        &this.core_state,
                     );
                 }
                 Some(id) if id >= 200 => {
@@ -1561,7 +1566,7 @@ impl MainView {
         target: crate::state::RenameTarget,
         current_value: String,
     ) {
-        let scope = target.popup_scope();
+        let scope = target.popup_scope(&self.core_state);
         self.state.dialogs.rename = Some((target, current_value));
         self.state.dispatch_intent(
             crate::intent::UiIntent::OpenPopup {
@@ -1664,6 +1669,7 @@ impl MainView {
                 Some(100) => {
                     crate::adapters::ui::category_actions::open_new_category_dialog(
                         &mut this.state,
+                        &this.core_state,
                     );
                 }
                 _ => {}
@@ -1686,7 +1692,10 @@ impl MainView {
         // continuation 시점에 재확인할 대상 자체가 없다.
         self.open_native_menu(x, y, &items, move |this, result| match result {
             Some(100) => {
-                crate::adapters::ui::category_actions::open_new_category_dialog(&mut this.state);
+                crate::adapters::ui::category_actions::open_new_category_dialog(
+                    &mut this.state,
+                    &this.core_state,
+                );
             }
             Some(2) => {
                 this.state.dispatch_intent(
@@ -2129,7 +2138,7 @@ impl MainView {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
             let target = crate::state::RenameTarget::ExplorerEntry { surface_id, path };
-            let scope = target.popup_scope();
+            let scope = target.popup_scope(&self.core_state);
             self.state.dialogs.rename = Some((target, current_name));
             self.state.dispatch_intent(
                 crate::intent::UiIntent::OpenPopup {
@@ -2165,7 +2174,7 @@ impl MainView {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
         let target = crate::state::RenameTarget::ExplorerAddFavorite { path };
-        let scope = target.popup_scope();
+        let scope = target.popup_scope(&self.core_state);
         self.state.dialogs.rename = Some((target, seed));
         self.state.dispatch_intent(
             crate::intent::UiIntent::OpenPopup {

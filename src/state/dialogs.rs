@@ -339,17 +339,18 @@ pub(crate) enum FilePickerResult {
     Confirmed { paths: Vec<String>, is_remote: bool },
 }
 
+/// workspace·탭 대상은 ID로 고정한다. 팝업이 열린 동안 에이전트가 닫기·이동으로
+/// 인덱스를 바꿔도 사용자가 고른 대상에만 적용되고, 대상이 사라지면 팝업을 닫는다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenameTarget {
     WorkspaceName {
-        ws_idx: usize,
+        workspace_id: u32,
     },
     WorkspaceSubtitle {
-        ws_idx: usize,
+        workspace_id: u32,
     },
     TabName {
-        pane_id: u32,
-        tab_index: usize,
+        tab_id: u32,
     },
     /// 이름을 바꿀 파일·폴더와 explorer surface.
     ExplorerEntry {
@@ -379,17 +380,26 @@ impl RenameTarget {
         }
     }
 
-    pub fn popup_scope(&self) -> crate::model::popup_kind::PopupScope {
+    /// 여는 시점의 위치로 표시 범위를 정한다. 대상을 찾지 못하면 창 범위로 연다.
+    pub fn popup_scope(
+        &self,
+        engine: &crate::core::CoreState,
+    ) -> crate::model::popup_kind::PopupScope {
+        use crate::model::popup_kind::PopupScope;
         match self {
-            Self::WorkspaceName { ws_idx } => {
-                crate::model::popup_kind::PopupScope::Workspace(*ws_idx)
+            Self::WorkspaceName { workspace_id } | Self::WorkspaceSubtitle { workspace_id } => {
+                engine
+                    .find_workspace_index_for_id(*workspace_id)
+                    .map_or(PopupScope::Window, PopupScope::Workspace)
             }
-            Self::WorkspaceSubtitle { ws_idx } => {
-                crate::model::popup_kind::PopupScope::Workspace(*ws_idx)
-            }
-            Self::TabName { pane_id, tab_index } => {
-                crate::model::popup_kind::PopupScope::Tab(*pane_id, *tab_index)
-            }
+            Self::TabName { tab_id } => engine
+                .find_pane_for_tab(*tab_id)
+                .and_then(|pane_id| {
+                    let pane = engine.find_pane_by_id(pane_id)?;
+                    let index = pane.tabs.iter().position(|t| t.id == *tab_id)?;
+                    Some(PopupScope::Tab(pane_id, index))
+                })
+                .unwrap_or(PopupScope::Window),
             Self::ExplorerEntry { surface_id, .. } => {
                 crate::model::popup_kind::PopupScope::Surface(*surface_id)
             }
