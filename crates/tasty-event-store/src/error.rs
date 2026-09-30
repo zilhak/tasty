@@ -150,6 +150,9 @@ pub enum StoreError {
         requested: u64,
     },
 
+    #[error("projection key {0} appears twice in one write")]
+    ProjectionKeyConflict(String),
+
     #[error("stored value is out of range: {0}")]
     Corrupt(String),
 }

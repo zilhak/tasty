@@ -113,22 +113,7 @@ impl EventStore {
         batch_id: BatchId,
     ) -> StoreResult<()> {
         let tx = self.write_tx(epoch)?;
-        cut_at(&tx, batch_id)?;
-        if let Some(current) = checkpoint_batch(&tx, consumer_id, projection_version)?
-            && current > batch_id
-        {
-            return Err(StoreError::CheckpointRegression {
-                consumer_id: consumer_id.to_owned(),
-                current,
-                requested: batch_id,
-            });
-        }
-        tx.execute(
-            "INSERT INTO consumer_checkpoints (consumer_id, projection_version, batch_id)
-             VALUES (?1, ?2, ?3)
-             ON CONFLICT(consumer_id, projection_version) DO UPDATE SET batch_id = excluded.batch_id",
-            params![consumer_id, projection_version, to_i64(batch_id)?],
-        )?;
+        advance_checkpoint(&tx, consumer_id, projection_version, batch_id)?;
         tx.commit()?;
         Ok(())
     }
@@ -192,7 +177,33 @@ fn latest_valid(
     Ok((None, rejected))
 }
 
-fn checkpoint_batch(
+/// batch가 있고 뒤로 가지 않을 때만 consumer 위치를 옮긴다. 호출자의 쓰기 transaction 안에서 부른다.
+pub(crate) fn advance_checkpoint(
+    conn: &Connection,
+    consumer_id: &str,
+    projection_version: u32,
+    batch_id: BatchId,
+) -> StoreResult<()> {
+    cut_at(conn, batch_id)?;
+    if let Some(current) = checkpoint_batch(conn, consumer_id, projection_version)?
+        && current > batch_id
+    {
+        return Err(StoreError::CheckpointRegression {
+            consumer_id: consumer_id.to_owned(),
+            current,
+            requested: batch_id,
+        });
+    }
+    conn.execute(
+        "INSERT INTO consumer_checkpoints (consumer_id, projection_version, batch_id)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(consumer_id, projection_version) DO UPDATE SET batch_id = excluded.batch_id",
+        params![consumer_id, projection_version, to_i64(batch_id)?],
+    )?;
+    Ok(())
+}
+
+pub(crate) fn checkpoint_batch(
     conn: &Connection,
     consumer_id: &str,
     projection_version: u32,

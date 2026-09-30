@@ -4,7 +4,7 @@
 //!
 //! 한 journal 파일에 stream(엔진)별 revision, 여러 stream을 묶는 원자 batch, 재시도 키로 찾는
 //! 명령 기록, effect 의무와 시도 기록, domain snapshot·consumer checkpoint, 불변 payload,
-//! kind별 영속 ID 예약을 둔다.
+//! kind별 영속 ID 예약, projection 출력 행을 둔다.
 //! 이벤트·명령·effect는 [`EventStore::commit`] 한 transaction으로 확정되며, 실패하면 아무것도
 //! 남지 않는다.
 //!
@@ -24,6 +24,7 @@ mod effect;
 mod error;
 mod identity;
 mod payload;
+mod projection;
 mod read;
 mod schema;
 mod snapshot;
@@ -39,6 +40,7 @@ pub use effect::{
 };
 pub use error::{StoreError, StoreResult};
 pub use identity::IdRange;
+pub use projection::{ProjectionState, ProjectionWrite};
 pub use schema::SCHEMA_VERSION;
 pub use snapshot::{
     DomainSnapshot, NewSnapshot, RejectedSnapshot, Replay, SnapshotId, snapshot_holder,
