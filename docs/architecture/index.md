@@ -119,6 +119,8 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 
 이 크레이트는 도메인 타입을 모른다. 이벤트·effect·snapshot 내용은 type tag·schema version·바이트로 저장하고 해석은 호출자의 codec이 맡는다. WAL과 `synchronous=FULL`이 실제로 적용되지 않거나 journal의 스키마 버전이 이 빌드보다 새로우면 열지 않는다. 비어 있지 않은데 journal 버전 표가 없는 SQLite 파일은 설정을 바꾸기 전에 거절하며 파일을 변경하지 않는다. memory.db·state.db와 독립된 저장소이며 그 DB들과의 원자성은 없다.
 
+이 크레이트의 강제 종료 시험(`crates/tasty-event-store/tests/crash.rs`)은 시험 바이너리를 자식 프로세스로 다시 실행해 지정 지점에서 `abort`시키고, 부모가 journal을 다시 열어 판정한다. 판정 지점은 commit 직후(batch·명령·effect가 모두 남는다), 다음 commit 준비 뒤·확정 전(확정한 batch만 남는다), effect를 Running으로 기록한 직후(새 writer 세대가 그 attempt를 Running으로 보고 대조 전이로 닫을 수 있다), 두 프로세스의 동시 첫 열기(파일이 손상되지 않고 모든 migration이 한 번씩 적용된다)다. 프로세스 종료만 재현하며 전원 차단이나 OS 충돌에 의한 쓰기 유실은 재현하지 않는다.
+
 `tasty-domain`은 구조 저널의 도메인 부분을 시험 전용으로 구현한다. 본 바이너리의 `CoreState`가 구조 상태의 유일한 원본이며, 이 크레이트의 모델은 그와 동시에 원본이 되지 않는다. 의존 방향은 `tasty-domain` → `tasty-model`이고 `tasty-event-store`에는 의존하지 않는다. 두 크레이트를 연결하는 것은 본 바이너리의 runtime 모듈이다.
 
 - 저널 전용 구조 모델: workspace·category·pane·tab·surface 트리, 이름, 소속, 분할 비율, surface kind와 자료 참조, metadata. 선택·포커스·접힘 같은 View 상태는 담지 않는다. workspace·category·pane·tab·surface ID와 분할 방향은 `tasty-model`의 타입을 쓰고, revision·batch 번호·분할 비율 비트·surface 자료 참조처럼 저널에만 필요한 값은 이 크레이트에 둔다. 새 ID는 공급자 trait에서 받는다.
