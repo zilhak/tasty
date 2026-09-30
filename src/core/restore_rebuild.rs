@@ -132,7 +132,13 @@ pub(crate) fn rebuild_surface_node(
                 Vec::new()
             }
         },
-        ClosedScrollback::Inline(lines) => lines.into_iter().collect(),
+        ClosedScrollback::Inline(blob) => crate::scrollback_store::decode_blob(&blob)
+            .unwrap_or_else(|| {
+                tracing::warn!(
+                    "restore: in-memory scrollback could not be decoded; continuing without it"
+                );
+                Vec::new()
+            }),
         ClosedScrollback::Empty => Vec::new(),
     };
     if !scrollback_lines.is_empty() {

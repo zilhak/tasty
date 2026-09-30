@@ -159,10 +159,15 @@ impl TerminalStore {
 }
 
 /// 터미널에서 닫은 항목 snapshot에 넣을 값을 읽는다. 줄마다 terminal mutex를 잠그지
-/// 않도록 스크롤백은 한 번에 읽는다.
+/// 않도록 스크롤백은 한 번에 읽는다. 스크롤백은 디스크 저장 형식으로 인코딩해 넘기므로
+/// 닫기 뒤 저장은 이 바이트를 그대로 쓴다.
 pub(crate) fn closed_capture_of(terminal: &Terminal) -> crate::model::closed_item::TerminalCapture {
+    let lines = terminal.scrollback_lines_all();
     crate::model::closed_item::TerminalCapture {
         cwd: terminal.get_cwd(),
-        scrollback: terminal.scrollback_lines_all().into(),
+        scrollback: crate::model::closed_item::ScrollbackBlob {
+            bytes: tasty_terminal::disk_scrollback::serialize_lines(&lines),
+            lines: lines.len(),
+        },
     }
 }

@@ -6072,11 +6072,9 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "tasty-terminal",
  "tasty-type-appearance",
  "tasty-type-geometry",
  "tasty-utils",
- "termwiz",
  "tracing",
 ]
 

@@ -783,9 +783,9 @@ impl CoreState {
         // 닫힌 항목은 큰 scrollback을 메모리에 계속 들지 않도록 별도 파일 ID로 저장한다.
         // 원래 surface의 저장 ID와 분리해 surface 정리가 이 파일까지 지우지 않게 한다.
         let t_persist = std::time::Instant::now();
-        crate::model::closed_item::persist_closed_scrollback(&mut item, &mut |lines| {
+        crate::model::closed_item::persist_closed_scrollback(&mut item, &mut |blob| {
             let id = crate::scrollback_store::new_persist_id();
-            match crate::scrollback_store::write(&id, lines) {
+            match crate::scrollback_store::write_bytes(&id, &blob.bytes) {
                 Ok(()) => Some(id),
                 Err(e) => {
                     tracing::warn!("closed-item scrollback persist failed: {e}");

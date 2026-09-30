@@ -1,8 +1,6 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
-use tasty_terminal::ScrollbackLine;
-
 use super::{PaneId, SplitDirection, Surface, SurfaceId, TabId, WorkspaceId};
 
 /// `&dyn Surface` → snapshot JSON. `None`이면 영속화에서 제외(휘발성 surface).
@@ -12,11 +10,21 @@ pub type SnapshotFn<'a> = &'a mut dyn FnMut(&dyn Surface) -> Option<serde_json::
 /// Maximum number of closed items to keep.
 const MAX_CLOSED_ITEMS: usize = 10;
 
+/// 닫힌 터미널의 스크롤백 값. 호스트가 디스크 저장과 같은 형식으로 인코딩한 바이트이며
+/// model은 내용을 해석하지 않는다. 인코딩·해석과 형식 버전은 호스트가 맡는다.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ScrollbackBlob {
+    /// 인코딩된 스크롤백.
+    pub bytes: Vec<u8>,
+    /// 담긴 줄 수. 0이면 스크롤백이 없는 것으로 본다.
+    pub lines: usize,
+}
+
 /// 닫을 때 호스트가 터미널에서 읽어 넘기는 값. model은 터미널 객체를 보지 않는다.
 pub struct TerminalCapture {
     pub cwd: Option<PathBuf>,
     /// 호스트가 닫기 후 디스크로 옮기기 전의 임시 복사본.
-    pub scrollback: VecDeque<ScrollbackLine>,
+    pub scrollback: ScrollbackBlob,
 }
 
 /// `surface_id` → [`TerminalCapture`]. 살아 있는 터미널이 없으면 None이다.
@@ -27,7 +35,7 @@ pub type TerminalCaptureFn<'a> = dyn Fn(SurfaceId) -> Option<TerminalCapture> + 
 /// Empty는 스크롤백이 없음을 뜻한다.
 pub enum ClosedScrollback {
     Empty,
-    Inline(VecDeque<ScrollbackLine>),
+    Inline(ScrollbackBlob),
     Persisted(String),
 }
 
@@ -134,7 +142,7 @@ impl ClosedSurface {
                 scrollback: ClosedScrollback::Empty,
             };
         };
-        let scrollback = if capture.scrollback.is_empty() {
+        let scrollback = if capture.scrollback.lines == 0 {
             ClosedScrollback::Empty
         } else {
             ClosedScrollback::Inline(capture.scrollback)
@@ -500,17 +508,15 @@ fn visit_pane_node(node: &ClosedPaneNode, f: &mut dyn FnMut(&ClosedSurface)) {
 /// works from memory. Called by the host once per close, after capture.
 pub fn persist_closed_scrollback(
     item: &mut ClosedItem,
-    persist: &mut dyn FnMut(&[ScrollbackLine]) -> Option<String>,
+    persist: &mut dyn FnMut(&ScrollbackBlob) -> Option<String>,
 ) {
     visit_surfaces_mut(item, &mut |s| {
         let taken = std::mem::replace(&mut s.scrollback, ClosedScrollback::Empty);
         s.scrollback = match taken {
-            ClosedScrollback::Inline(mut lines) if !lines.is_empty() => {
-                match persist(lines.make_contiguous()) {
-                    Some(id) => ClosedScrollback::Persisted(id),
-                    None => ClosedScrollback::Inline(lines),
-                }
-            }
+            ClosedScrollback::Inline(blob) if blob.lines > 0 => match persist(&blob) {
+                Some(id) => ClosedScrollback::Persisted(id),
+                None => ClosedScrollback::Inline(blob),
+            },
             ClosedScrollback::Inline(_) => ClosedScrollback::Empty,
             other => other,
         };
@@ -543,8 +549,8 @@ pub fn snapshot_extent(item: &ClosedItem) -> SnapshotExtent {
     let mut out = SnapshotExtent::default();
     visit_surfaces(item, &mut |s| {
         out.surfaces += 1;
-        if let ClosedScrollback::Inline(lines) = &s.scrollback {
-            out.scrollback_lines += lines.len() as u64;
+        if let ClosedScrollback::Inline(blob) = &s.scrollback {
+            out.scrollback_lines += blob.lines as u64;
         }
     });
     out
@@ -626,10 +632,13 @@ impl ClosedItemStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use termwiz::cell::CellAttributes;
 
-    fn line(text: &str) -> ScrollbackLine {
-        ScrollbackLine::new(vec![(text.to_string(), CellAttributes::default())], false)
+    /// 줄 수만 의미 있는 시험용 값. model은 바이트를 해석하지 않는다.
+    fn blob(lines: usize) -> ScrollbackBlob {
+        ScrollbackBlob {
+            bytes: vec![0xAB; lines],
+            lines,
+        }
     }
 
     fn surface_item(id: SurfaceId, scrollback: ClosedScrollback) -> ClosedItem {
@@ -657,17 +666,17 @@ mod tests {
             3,
             Some(TerminalCapture {
                 cwd: Some(PathBuf::from("/tmp/x")),
-                scrollback: [line("a")].into(),
+                scrollback: blob(1),
             }),
         );
         assert_eq!(s.cwd.as_deref(), Some(std::path::Path::new("/tmp/x")));
-        assert!(matches!(&s.scrollback, ClosedScrollback::Inline(l) if l.len() == 1));
+        assert!(matches!(&s.scrollback, ClosedScrollback::Inline(b) if *b == blob(1)));
 
         let s = ClosedSurface::from_capture(
             4,
             Some(TerminalCapture {
                 cwd: None,
-                scrollback: VecDeque::new(),
+                scrollback: ScrollbackBlob::default(),
             }),
         );
         assert!(matches!(s.scrollback, ClosedScrollback::Empty));
@@ -680,12 +689,12 @@ mod tests {
 
     #[test]
     fn persist_replaces_inline_with_reference_and_drops_lines() {
-        let inline: VecDeque<ScrollbackLine> = [line("a"), line("b")].into();
-        let mut item = surface_item(1, ClosedScrollback::Inline(inline));
+        let mut item = surface_item(1, ClosedScrollback::Inline(blob(2)));
+        assert_eq!(snapshot_extent(&item).scrollback_lines, 2);
 
         let mut captured_len = 0usize;
-        persist_closed_scrollback(&mut item, &mut |lines| {
-            captured_len = lines.len();
+        persist_closed_scrollback(&mut item, &mut |b| {
+            captured_len = b.lines;
             Some("ref-1".to_string())
         });
 
@@ -702,14 +711,14 @@ mod tests {
 
     #[test]
     fn persist_normalizes_empty_inline_and_keeps_inline_on_write_failure() {
-        let mut empty = surface_item(1, ClosedScrollback::Inline(VecDeque::new()));
+        let mut empty = surface_item(1, ClosedScrollback::Inline(ScrollbackBlob::default()));
         persist_closed_scrollback(&mut empty, &mut |_| panic!("must not persist empty"));
         assert!(matches!(scrollback_of(&empty), ClosedScrollback::Empty));
 
-        let mut item = surface_item(2, ClosedScrollback::Inline([line("x")].into()));
+        let mut item = surface_item(2, ClosedScrollback::Inline(blob(1)));
         persist_closed_scrollback(&mut item, &mut |_| None);
         match scrollback_of(&item) {
-            ClosedScrollback::Inline(lines) => assert_eq!(lines.len(), 1),
+            ClosedScrollback::Inline(b) => assert_eq!(*b, blob(1)),
             _ => panic!("expected Inline kept on failure"),
         }
         let mut refs = Vec::new();

@@ -14,7 +14,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use tasty_terminal::ScrollbackLine;
-use tasty_terminal::disk_scrollback::{deserialize_lines, serialize_lines};
+use tasty_terminal::disk_scrollback::deserialize_lines;
 
 // 루트 경로 선택과 debug/release 구분은 tasty_home()에서 처리한다.
 const SUBDIR: &str = "scrollback";
@@ -32,14 +32,24 @@ fn file_path_in(dir: &Path, persist_id: &str) -> Option<PathBuf> {
     Some(dir.join(format!("{persist_id}.{EXT}")))
 }
 
-/// 임시 파일에 쓴 뒤 rename으로 대상 경로를 교체한다.
+// 줄 목록 쓰기는 layout 저장(GUI)에서만 쓴다. 닫은 항목은 인코딩된 값을 `write_bytes`로 쓴다.
+#[cfg(any(feature = "gui", test))]
 fn write_in(dir: &Path, persist_id: &str, lines: &[ScrollbackLine]) -> io::Result<()> {
+    write_bytes_in(
+        dir,
+        persist_id,
+        &tasty_terminal::disk_scrollback::serialize_lines(lines),
+    )
+}
+
+/// 이미 `serialize_lines` 형식으로 인코딩한 바이트를 쓴다. 임시 파일에 쓴 뒤 rename으로
+/// 대상 경로를 교체한다.
+fn write_bytes_in(dir: &Path, persist_id: &str, bytes: &[u8]) -> io::Result<()> {
     let path = file_path_in(dir, persist_id)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid persist_id"))?;
     fs::create_dir_all(dir)?;
-    let bytes = serialize_lines(lines);
     let tmp = path.with_extension(format!("{EXT}.tmp"));
-    fs::write(&tmp, &bytes)?;
+    fs::write(&tmp, bytes)?;
     fs::rename(&tmp, &path)
 }
 
@@ -125,9 +135,23 @@ pub(crate) fn gc_orphans_in(dir: &Path, known: &HashSet<String>) {
     }
 }
 
+#[cfg(any(feature = "gui", test))]
 pub fn write(persist_id: &str, lines: &[ScrollbackLine]) -> io::Result<()> {
     let dir = scrollback_dir().ok_or_else(|| io::Error::other("cannot determine tasty home"))?;
     write_in(&dir, persist_id, lines)
+}
+
+/// 닫은 항목의 인코딩된 스크롤백([`crate::model::closed_item::ScrollbackBlob`])을 쓴다.
+pub fn write_bytes(persist_id: &str, bytes: &[u8]) -> io::Result<()> {
+    let dir = scrollback_dir().ok_or_else(|| io::Error::other("cannot determine tasty home"))?;
+    write_bytes_in(&dir, persist_id, bytes)
+}
+
+/// 닫은 항목의 인코딩된 스크롤백을 줄로 푼다. 형식이 맞지 않으면 None이다.
+pub fn decode_blob(
+    blob: &crate::model::closed_item::ScrollbackBlob,
+) -> Option<Vec<ScrollbackLine>> {
+    deserialize_lines(&blob.bytes)
 }
 
 pub fn read(persist_id: &str) -> ScrollbackRead {
@@ -171,6 +195,7 @@ pub fn new_persist_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tasty_terminal::disk_scrollback::serialize_lines;
     use termwiz::cell::CellAttributes;
 
     fn expect_lines(dir: &Path, id: &str) -> Vec<ScrollbackLine> {
@@ -238,22 +263,26 @@ mod tests {
             .collect();
 
         let dir = tempfile::tempdir().expect("tempdir");
-        let mut captured = Vec::new();
+        let mut captured_blob = None;
         let mut persisted_id = None;
-        crate::model::closed_item::persist_closed_scrollback(&mut item, &mut |lines| {
-            captured = lines.to_vec();
+        crate::model::closed_item::persist_closed_scrollback(&mut item, &mut |blob| {
+            captured_blob = Some(blob.clone());
             let id = new_persist_id();
-            write_in(dir.path(), &id, lines).expect("write");
+            write_bytes_in(dir.path(), &id, &blob.bytes).expect("write");
             persisted_id = Some(id.clone());
             Some(id)
         });
         let id = persisted_id.expect("스크롤백이 디스크로 영속화되어야 한다");
 
+        let captured_blob = captured_blob.expect("인라인 스크롤백이 저장 콜백에 전달돼야 한다");
+        assert_eq!(captured_blob.lines, total, "값의 줄 수가 원본과 다르다");
         assert_eq!(
-            serialize_lines(&captured),
+            captured_blob.bytes,
             serialize_lines(&legacy),
             "새 캡처 경로의 직렬화 결과가 옛 재압축 경로와 다르다"
         );
+        let captured = decode_blob(&captured_blob).expect("인코딩된 값을 다시 풀 수 있어야 한다");
+        assert_eq!(captured.len(), total);
 
         let got = expect_lines(dir.path(), &id);
         assert_eq!(got.len(), total, "복원 라인 수가 원본과 다르다");

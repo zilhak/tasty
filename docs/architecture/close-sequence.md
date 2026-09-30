@@ -104,10 +104,10 @@ tab.create / tab.close / tab.move / pane.close / surface.close 는 IPC 핸들러
 
 ```
 close 진입
- ├─ C1 snapshot            capture_workspace_snapshot — 전 surface cwd+스크롤백 캡처
+ ├─ C1 snapshot            capture_workspace_snapshot — 전 surface cwd+스크롤백 캡처, 스크롤백을 디스크 형식으로 인코딩
  ├─ C2 push_closed_item    restore.command 주입 + 스크롤백 디스크 write + evict
  │   ├─ C2a restore_inject       surface 마다 surface_meta sqlite 조회
- │   ├─ C2b scrollback_persist   ~/.tasty/scrollback/<id>.bin write
+ │   ├─ C2b scrollback_persist   인코딩된 바이트를 ~/.tasty/scrollback/<id>.bin 에 write
  │   └─ C2c evict                LIFO 상한 초과분의 backing 파일 삭제
  ├─ C3 collect_targets     pane × tab × leaf 3중 순회
  ├─ C4 ws_memory_purge     purge_scope(Scope::Workspace) — sqlite 풀스캔
@@ -128,7 +128,7 @@ close_total
 
 | 마커 | 구간 | 추가 필드 |
 |------|------|-----------|
-| C1 snapshot | `capture_workspace_snapshot` / `ClosedItem::from_workspace`. 터미널 값은 호스트가 `TerminalStore::closed_capture`로 읽어 넘기고 model은 `Terminal`을 받지 않는다 | `surfaces`, `lines` = 캡처된 인라인 스크롤백 라인 총합 |
+| C1 snapshot | `capture_workspace_snapshot` / `ClosedItem::from_workspace`. 터미널 값은 호스트가 `TerminalStore::closed_capture`로 읽고 스크롤백을 디스크 형식 바이트(`ScrollbackBlob`)로 인코딩해 넘긴다. model은 `Terminal`을 받지 않고 바이트를 해석하지 않는다 | `surfaces`, `lines` = 캡처된 인라인 스크롤백 라인 총합 |
 | C2 push_closed_item | `CoreState::push_closed_item` 전체 | `restore_inject_ms`(C2a) · `scrollback_persist_ms`(C2b) · `evict_ms`(C2c) |
 | C3 collect_targets | `collect_workspace_close_targets` | `surfaces` |
 | C4 ws_memory_purge | `purge_scope(Scope::Workspace)` | — |
@@ -188,6 +188,9 @@ surface 마다 `seq 1 20000`(기본 상한 10000 줄까지 채워짐). 각 조�
 아래는 **벌크 캡처(C1) · surface purge 중복 제거(C5) ·
 [ADR-0016](../adr/0016-window-platform-and-shutdown.md)(C5b) 이 모두
 적용된 뒤의 측정 기록**이다. 현재 환경의 성능을 보장하는 값은 아니다.
+측정 당시 C1은 화면도 복제했고 스크롤백 인코딩은 C2b에서 했다. 지금은 C1이 화면을 복제하지
+않고 스크롤백 인코딩을 맡으며 C2b는 파일 쓰기만 한다. 그래서 아래 C1·C2b 값의 배분은 현재
+구조에 그대로 적용되지 않는다(합계 작업량은 화면 복제만큼 줄었다, 미측정).
 
 | 탭 수 | 스크롤백 | close_total | C1 snapshot | C2b sb_persist | C3 collect | C4 ws_purge | C5 cleanup | (C5b terminal_drop) |
 |-------|----------|-------------|-------------|----------------|-----------|-------------|------------|---------------------|
