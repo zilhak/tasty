@@ -111,7 +111,7 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 
 - stream(엔진)별 revision과 expected revision 검사, 여러 stream을 한 batch로 묶는 원자 commit. batch는 번호와 stream별 revision vector로 식별한다.
 - 이벤트·명령 기록(재시도 키·요청 digest·해소한 대상·진행 상태·응답)·effect 의무를 한 transaction으로 확정한다. 하나라도 실패하면 아무것도 남지 않는다. 재시도 키로 저장된 대상·결과를 조회할 수 있고, 같은 키·같은 요청의 재제출은 새로 쓰지 않고 기존 기록을 돌려준다. 같은 키의 다른 요청은 충돌로 거절한다.
-- writer 독점 잠금과 세대(epoch) fencing. 쓰기는 journal 옆 잠금 파일(`<journal>.writer-lock`)의 OS 독점 잠금을 얻은 저장소만 하며, 잠금을 얻지 못하거나 잠금을 쓸 수 없는 환경이면 writer가 되지 않는다. 잠금 없이 연 저장소는 읽기만 한다. 같은 저장소가 새 세대를 등록하면 이전 세대의 쓰기를 거절한다.
+- writer 독점 잠금과 세대(epoch) fencing. 쓰기는 journal 옆 잠금 파일(`<journal>.writer-lock`)의 OS 독점 잠금을 얻은 저장소만 하며, 잠금을 얻지 못하거나 잠금을 쓸 수 없는 환경이면 writer가 되지 않는다. 자식 프로세스는 생성부터 exec까지 방금 놓은 잠금의 파일 설명을 복제해 가질 수 있으므로, 잠금이 잡혀 있으면 최대 2초 동안 다시 시도한 뒤 실패로 돌려준다. 잠금 없이 연 저장소는 읽기만 한다. 같은 저장소가 새 세대를 등록하면 이전 세대의 쓰기를 거절한다.
 - effect 상태(Pending·Running·Deferred·Succeeded·Failed·Cancelled·Superseded·Uncertain)의 허용 전이, activation claim과 attempt 기록, 이전 attempt·generation의 늦은 결과 거절.
 - domain snapshot(파생 cache)과 snapshot+tail 읽기, consumer checkpoint, 불변 payload와 참조 기반 GC. 검증에 실패한 snapshot은 건너뛰고 이전 snapshot이나 전체 로그로 재구성한다.
 - projection 출력 행(consumer·projection version별 key→바이트)과 consumer 위치를 한 transaction으로 확정한다. 위치가 뒤로 가거나 batch가 없으면 행 변경도 반영하지 않는다. 행을 가진 consumer는 위치만 저장하는 API로 위치를 옮길 수 없다.
