@@ -147,7 +147,8 @@ const AREAS: &[(&str, usize, &str)] = &[
         // CenterState 무대 카드 288×220·288×160은 디자인 무대 액자라 토큰으로 옮기지 않는다.
         // 탭 스트립 스크롤 화살표 예제의 스트립 폭 288은 디자인 C4 행의 `--tasty-size-288`이며 역할 토큰이 없다.
         // Foundations disabled ink 예제의 C4 스트립 폭 288도 같은 디자인 값이다.
-        // 페인 탭 스트립 시안 예제의 스트립 폭 560은 디자인 `Strip`의 `--tasty-size-560`이며 역할 토큰이 없다.
+        // 페인 탭 스트립 시안 예제의 스트립 폭 560과 좁은 탭 칸 폭 120은 디자인 `Strip`의 `--tasty-size-560`과
+        // cluster 예제의 `--tasty-size-120`이며 역할 토큰이 없다.
         // 튜토리얼 주제 목록의 스크롤 상한 200은 DTCG 토큰이 없는 화면 전용 치수다. 배율을 타므로
         // 본체와 같은 수기 Theme 접근자를 써서 이 수에 들어가지 않는다.
         // 원격 도구 예제의 SSH config 빈 상태 카드 폭 300은 디자인 Stage 액자 값이다.
@@ -159,7 +160,7 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 공개 역할 토큰이 없다.
         // Appearance 색 행 예제와 Extension Mapping 예제의 테마 패널 바깥 폭 360은 디자인 Spec의
         // `--tasty-size-360`이며 공개 역할 토큰이 없다.
-        139,
+        140,
         "갤러리 specimen은 배율 검사에서 제외돼도 스케일 검사는 받는다(ADR-0039). 이름 붙은 치수와 인라인 값, 전시 목적을 별도로 분류한다.",
     ),
     (
@@ -616,7 +617,7 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
     );
     assert_eq!(
         (named_cited, named_plain, inline_cited, inline_plain),
-        (57, 75, 0, 12),
+        (58, 75, 0, 12),
         "갤러리 후보의 (이름 있음/없음, 디자인 언급 있음/없음) 분류 수가 바뀌었다. 해당 선언과 주석을 확인하고 기록을 갱신한다."
     );
 }

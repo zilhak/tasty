@@ -1609,6 +1609,14 @@ pub fn pages() -> Vec<Page> {
                             components::tab_bar::draw_scroll_arrows,
                         ),
                         spec(
+                            "tab-status-cluster",
+                            "Tab cell — the right-hand status cluster",
+                            Some(
+                                "marker · move · busy · close in one fixed cluster · the label ellipsises first",
+                            ),
+                            components::tab_bar::draw_status_cluster,
+                        ),
+                        spec(
                             "tab-scroll-arrow-shape",
                             "Scroll arrows — chevron icon, square cell, no own fill",
                             Some(

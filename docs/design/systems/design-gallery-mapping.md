@@ -958,6 +958,20 @@ C3(port scanner 푸터) 행은 이 specimen에 넣지 않는다. Mocha·Latte는
 
 Mocha·Latte는 고정 테마(`mocha_fallback`·`latte_theme`)로 위아래에 그린다. 행 다섯 개와 Meta 행·토큰 칩·Don't 문구는 시안을 그대로 옮긴다.
 
+### 탭 칸 오른쪽 상태 묶음
+
+디자인 같은 파일의 Spec "Tab cell — the right-hand status cluster" ↔ 갤러리 `kit_strip.rs::draw_status_cluster`(`tab-status-cluster` spec) ↔ 본체 `src/adapters/ui/tab_bar/tab.rs::draw_tab`.
+
+| 디자인 요소 | 갤러리 | 본체 | 비고 |
+|---|---|---|---|
+| `TabCellS` 오른쪽 묶음 [표지][move][busy][close], 간격 `tab-status-gap` | `tab_cell`의 `slot` | 탭 칸 오른쪽 묶음 | 오른쪽 끝 `space-xs` 안쪽에서 왼쪽으로 칸을 잡는다 |
+| 제목 → 묶음 간격 `tab-gap`, 제목이 먼저 말줄임 | `LayoutJob` 한 줄 `…` | `layout_tab_label` | 묶음 폭은 제목 길이와 무관하다 |
+| close 칸 `tab-close-size`(활성·hover 전에도 자리 유지) | `CellCfg.active`·`hover` | 같은 조건 | 글리프 `icon-size-xs` |
+| lock 칸 hover 채움 | `marker: Some((Blocked, true))` | `tasty_ui_widgets::html_script_marker` | lock hover도 탭 hover라 close가 보인다 |
+| 좁은 탭 폭 `size-120` | `NARROW_TAB_W` | 설정의 탭 폭 | 예제 전용 이름 붙은 상수 |
+
+행 여덟 개와 Meta 행·토큰 칩은 시안을 그대로 옮긴다. 탭 칸 툴팁 위치 Spec은 이 예제에 넣지 않았다.
+
 ### 숨은 이동 대상 화살표
 
 디자인 같은 파일의 Spec "Move source scrolled out of view — the arrow on that side turns pink" ↔ 갤러리 `kit_strip.rs::draw_move_cue`(`tab-move-cue` spec) ↔ 본체 `view.rs`의 스크롤 화살표 잉크.

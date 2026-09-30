@@ -4,7 +4,10 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{TabScrollArrowInk, TabScrollArrowSide as Side, paint_tab_scroll_arrow};
+use tasty_ui_widgets::{
+    HtmlScriptMarkerKind, TabScrollArrowInk, TabScrollArrowSide as Side, move_source_glyph_size,
+    paint_move_source_glyph, paint_tab_scroll_arrow,
+};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
@@ -12,6 +15,8 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 const STRIP_W: LogicalPx = LogicalPx(560.0);
 /// 시안 `Strip`의 기본 탭 다섯 개. 두 번째 탭이 활성이다.
 const STRIP_TABS: [&str; 5] = ["server", "dev", "vim", "logs", "tests"];
+/// 시안 좁은 탭 예제의 칸 폭(`--tasty-size-120`). 제목이 먼저 말줄임되는 모습을 보인다.
+const NARROW_TAB_W: LogicalPx = LogicalPx(120.0);
 
 /// 스트립이 어디까지 스크롤됐는지. 시안 `at`.
 #[derive(Clone, Copy, PartialEq)]
@@ -82,11 +87,26 @@ fn arrow(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, side: Side, cfg: StripC
     paint_tab_scroll_arrow(ui, theme, rect, side, ink, cfg.hover == Some(side));
 }
 
-/// 시안 `TabCellS`의 스트립용 최소형: 아이콘·제목과 닫기 칸(활성일 때만 보임).
-fn tab_cell(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, label: &str, active: bool) {
+/// 시안 `TabCellS`의 상태. 스트립 예제는 `label`·`active`만 쓴다.
+#[derive(Clone, Copy, Default)]
+struct CellCfg {
+    label: &'static str,
+    active: bool,
+    hover: bool,
+    /// html 스크립트 표지 종류와 그 칸의 hover 여부.
+    marker: Option<(HtmlScriptMarkerKind, bool)>,
+    mv: bool,
+    busy: bool,
+}
+
+/// 시안 `TabCellS`: [아이콘][제목…] · 오른쪽 고정 묶음 [표지][move][busy][close].
+/// 묶음은 줄지 않고 제목이 먼저 말줄임된다. close 칸은 활성·hover 전에도 자리를 지킨다.
+fn tab_cell(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, cfg: CellCfg) {
     let p = ui.painter();
-    let (bg, fg) = if active {
+    let (bg, fg) = if cfg.active {
         (theme.tab_bg_active(), theme.tab_fg_active())
+    } else if cfg.hover {
+        (theme.surface_hover(), theme.tab_fg_hover())
     } else {
         (theme.tab_bg(), theme.tab_fg())
     };
@@ -97,7 +117,7 @@ fn tab_cell(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, label: &str, active:
         0.0,
         theme.tab_separator().to_egui_premultiplied(),
     );
-    if active {
+    if cfg.active {
         let bar = egui::Rect::from_min_size(
             rect.min,
             egui::vec2(rect.width(), theme.tab_indicator_width().value()),
@@ -114,34 +134,76 @@ fn tab_cell(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, label: &str, active:
         egui::vec2(icon, icon),
     );
     tasty_icons::HTML.image(icon, c(fg)).paint_at(ui, icon_rect);
-    let close = theme.tab_close_size().value();
-    let close_rect = egui::Rect::from_min_size(
-        egui::pos2(
-            rect.max.x - theme.spacing_xs.value() - close,
-            rect.center().y - close * 0.5,
-        ),
-        egui::vec2(close, close),
-    );
-    if active {
+
+    // 오른쪽 끝에서 왼쪽으로 close · busy · move · 표지 순서로 칸을 잡는다.
+    let status_gap = theme.tab_status_gap().value();
+    let mut right = rect.max.x - theme.spacing_xs.value();
+    let mut slot = |w: f32| {
+        let r = egui::Rect::from_min_max(
+            egui::pos2(right - w, rect.center().y - w * 0.5),
+            egui::pos2(right, rect.center().y + w * 0.5),
+        );
+        right -= w + status_gap;
+        r
+    };
+    let close_rect = slot(theme.tab_close_size().value());
+    if cfg.active || cfg.hover {
         let x = theme.icon_glyph_size_xs.value();
         tasty_icons::CLOSE.image(x, c(theme.text_muted())).paint_at(
             ui,
             egui::Rect::from_center_size(close_rect.center(), egui::vec2(x, x)),
         );
     }
+    if cfg.busy {
+        let dot = slot(theme.tab_dot_size().value());
+        p.circle_filled(
+            dot.center(),
+            dot.width() * 0.5,
+            c(theme.status_dot_success()),
+        );
+    }
+    if cfg.mv {
+        paint_move_source_glyph(ui, theme, slot(move_source_glyph_size(theme)));
+    }
+    if let Some((kind, hover)) = cfg.marker {
+        let hit = slot(theme.html_script_marker_hit().value());
+        let (glyph, ink) = match kind {
+            HtmlScriptMarkerKind::Blocked => (tasty_icons::LOCK, theme.html_script_marker_fg()),
+            HtmlScriptMarkerKind::Allowed => {
+                (tasty_icons::SCRIPT, theme.html_script_marker_allowed_fg())
+            }
+        };
+        if hover && kind == HtmlScriptMarkerKind::Blocked {
+            p.rect_filled(
+                hit,
+                theme.corner_radius_sm.value(),
+                theme.html_script_marker_hover_bg().to_egui_premultiplied(),
+            );
+        }
+        let size = theme.html_script_marker_size().value();
+        glyph.image(size, c(ink)).paint_at(
+            ui,
+            egui::Rect::from_center_size(hit.center(), egui::vec2(size, size)),
+        );
+    }
+    // 묶음 왼쪽 끝(마지막 칸 뒤 간격을 되돌린다)에서 tab-gap을 띄운 곳까지가 제목 자리다.
+    let label_right = right + status_gap - gap;
     let text_x = icon_rect.max.x + gap;
-    let clip = egui::Rect::from_min_max(
-        egui::pos2(text_x, rect.min.y),
-        egui::pos2(close_rect.min.x - gap, rect.max.y),
-    )
-    .intersect(ui.clip_rect());
-    ui.painter_at(clip).text(
-        egui::pos2(text_x, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        label,
+    let mut job = egui::text::LayoutJob::simple_singleline(
+        cfg.label.to_owned(),
         egui::FontId::proportional(theme.font_size_caption.value()),
         c(fg),
     );
+    job.wrap = egui::text::TextWrapping {
+        max_width: (label_right - text_x).max(0.0),
+        max_rows: 1,
+        break_anywhere: true,
+        overflow_character: Some('…'),
+    };
+    let galley = ui.fonts(|f| f.layout_job(job));
+    let pos = egui::pos2(text_x, rect.center().y - galley.size().y * 0.5);
+    ui.painter_at(rect.intersect(ui.clip_rect()))
+        .galley(pos, galley, c(fg));
 }
 
 /// 시안 `Strip`: 양끝 화살표 사이의 뷰포트에 탭 다섯 개를 `at` 위치로 스크롤해 그린다.
@@ -177,7 +239,12 @@ fn strip(ui: &mut egui::Ui, theme: &Theme, cfg: StripCfg) {
             egui::vec2(tab_w, h),
         );
         if cell.intersects(viewport) {
-            tab_cell(&tabs, theme, cell, label, i == 1);
+            let cfg = CellCfg {
+                label,
+                active: i == 1,
+                ..CellCfg::default()
+            };
+            tab_cell(&tabs, theme, cell, cfg);
         }
     }
 
@@ -368,5 +435,166 @@ pub fn draw_move_cue(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "Nothing new appears in the strip. The arrow already means \"more tabs this way\"; the pink says the move source is one of them.",
+    );
+}
+
+const BLOCKED: Option<(HtmlScriptMarkerKind, bool)> = Some((HtmlScriptMarkerKind::Blocked, false));
+
+/// 시안 cluster 예제 여덟 줄. 마지막 줄만 좁은 탭이다.
+const CLUSTER_ROWS: [(&str, CellCfg); 8] = [
+    (
+        "marker only · inactive",
+        CellCfg {
+            label: "report.html",
+            active: false,
+            hover: false,
+            marker: BLOCKED,
+            mv: false,
+            busy: false,
+        },
+    ),
+    (
+        "marker only · active",
+        CellCfg {
+            label: "report.html",
+            active: true,
+            hover: false,
+            marker: BLOCKED,
+            mv: false,
+            busy: false,
+        },
+    ),
+    (
+        "allowed · active",
+        CellCfg {
+            label: "report.html",
+            active: true,
+            hover: false,
+            marker: Some((HtmlScriptMarkerKind::Allowed, false)),
+            mv: false,
+            busy: false,
+        },
+    ),
+    (
+        "marker + busy",
+        CellCfg {
+            label: "report.html",
+            active: false,
+            hover: false,
+            marker: BLOCKED,
+            mv: false,
+            busy: true,
+        },
+    ),
+    (
+        "marker + move",
+        CellCfg {
+            label: "report.html",
+            active: false,
+            hover: false,
+            marker: BLOCKED,
+            mv: true,
+            busy: false,
+        },
+    ),
+    (
+        "marker + move + busy · hover",
+        CellCfg {
+            label: "report.html",
+            active: false,
+            hover: true,
+            marker: BLOCKED,
+            mv: true,
+            busy: true,
+        },
+    ),
+    (
+        "hover on the lock",
+        CellCfg {
+            label: "report.html",
+            active: false,
+            hover: true,
+            marker: Some((HtmlScriptMarkerKind::Blocked, true)),
+            mv: false,
+            busy: false,
+        },
+    ),
+    (
+        "narrow tab — label ellipsises",
+        CellCfg {
+            label: "quarterly-report-final.html",
+            active: true,
+            hover: false,
+            marker: BLOCKED,
+            mv: true,
+            busy: true,
+        },
+    ),
+];
+
+fn cluster_card(ui: &mut egui::Ui, theme: &Theme, name: &str) {
+    themed(ui, theme, name, |ui| {
+        for (i, (label, cfg)) in CLUSTER_ROWS.iter().enumerate() {
+            let w = if i + 1 == CLUSTER_ROWS.len() {
+                NARROW_TAB_W.value()
+            } else {
+                theme.tab_width.value()
+            };
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                caption(ui, theme, label);
+                let (rect, _) = ui.allocate_exact_size(
+                    egui::vec2(w, theme.tab_height().value()),
+                    egui::Sense::hover(),
+                );
+                ui.painter().rect_filled(rect, 0.0, c(theme.bg_sidebar()));
+                tab_cell(ui, theme, rect, *cfg);
+            });
+        }
+    });
+}
+
+/// 탭 칸 오른쪽의 고정 상태 묶음: 표지 · move · busy · close.
+pub fn draw_status_cluster(ui: &mut egui::Ui, theme: &Theme) {
+    let mocha = tasty_themes::mocha_fallback();
+    let latte = crate::host_shell::latte_theme();
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        cluster_card(ui, &mocha, "Mocha");
+        cluster_card(ui, &latte, "Latte");
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("order", "label … | marker · move · busy · close"),
+            ("cluster gap", "4 · tab-status-gap"),
+            ("label → cluster", "8 · tab-gap"),
+            ("squeeze", "label ellipsises; cluster fixed"),
+            ("lock hit", "16 × 16, hover = overlay-hover"),
+            (
+                "lock click",
+                "re-shows the banner only (no tab switch, no focus change) · mouse only",
+            ),
+            ("scriptFile", "tooltip only"),
+            ("tooltip placement", "top (see next spec)"),
+        ],
+        &[
+            TokenChip::new("tab-status-gap", "→ space-xs 4", egui::Color32::TRANSPARENT),
+            TokenChip::new(
+                "html-script-marker-hit",
+                "→ size-16",
+                egui::Color32::TRANSPARENT,
+            ),
+            TokenChip::new(
+                "html-script-marker-hover-bg",
+                "→ overlay-hover",
+                egui::Color32::TRANSPARENT,
+            ),
+            TokenChip::new(
+                "html-script-marker-fg",
+                "lock",
+                c(theme.html_script_marker_fg()),
+            ),
+        ],
     );
 }
