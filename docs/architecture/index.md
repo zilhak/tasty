@@ -131,6 +131,8 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 - 저장 batch에서 구조 stream 이벤트만 해석해 도메인 batch를 만들고, 도메인 이벤트 본문을 저장 봉투에 담는다. 전체 로그 replay와 snapshot+tail 재구성은 같은 모델·ID·revision을 만든다.
 - decide 계약에 대해 generic한 command executor: 재시도 키 조회를 대상 해소보다 먼저 하고, 새 요청만 decide한 뒤 명령·이벤트·effect를 한 transaction으로 확정한다. 확정에 성공한 뒤에만 메모리 상태에 적용하고 응답한다. 확정이 실패하면 상태를 바꾸지 않고 응답하지 않는다. revision 충돌이면 저장소에서 상태를 다시 읽어 정해진 횟수까지 다시 decide한다. 같은 프로세스에서 진행 중인 같은 키는 첫 실행에 합류하고 다른 요청이면 충돌로 거절한다. writer 잠금을 잃거나 fencing되면 이후 쓰기를 멈춘다. 도메인 거절은 저장하지 않는다.
 
+기존 layout 슬롯을 구조 journal로 가져오는 importer(`src/core/layout_persistence/import.rs`)도 시험 전용이며 부팅 경로에 연결하지 않았다. 슬롯 JSON 하나를 기존 슬롯 판정(높은 version·해석 실패 거절)으로 읽고, 새 ID를 journal의 ID 예약에서 받아 이벤트 batch 하나와 명령 기록으로 확정한다. 슬롯 안의 위치(workspace 순서, 깊이 우선 leaf pane 순서, tab 순서, 깊이 우선 surface 순서)와 새 ID의 대응은 결과와 명령 기록에 남기며, 같은 슬롯을 같은 내용으로 다시 가져오면 저장된 대응을 돌려주고 다른 내용이면 거절한다. 도메인 모델에 자리가 없는 값(workspace subtitle·description·attach 매핑, tab의 사용자 지정 이름, terminal의 cwd·복원 명령·scrollback 참조, plugin surface 자료)은 `import.` 접두 metadata로 담는다. scrollback 파일이 있으면 내용을 payload로 저장해 이벤트에서 pin하고, 없으면 참조만 남긴다. 선택 workspace·focus pane·선택 tab·카테고리 접힘은 이벤트로 만들지 않고 결과로만 돌려준다.
+
 ### UI primitive
 `tasty-egui-theme`(Theme를 egui Visuals/Style로 변환) · `tasty-ui-widgets`(본체·갤러리 공용 egui 위젯·배치 함수. [설명](ui-widgets-crate.md)) · `tasty-icons`(line/fill SVG. 본체·갤러리와 plugin 빌드가 공유) · `tasty-key-match`(바인딩과 키 이벤트 대조. 단축키·webview 공용, egui 입력은 egui-input feature, → settings/winit)
 

@@ -4,6 +4,7 @@
 
 #[cfg(any(feature = "gui", test))]
 mod capture;
+mod import;
 mod restore;
 mod schema;
 #[cfg(any(feature = "gui", test))]
