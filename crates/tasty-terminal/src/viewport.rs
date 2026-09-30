@@ -199,6 +199,9 @@ impl crate::TerminalReadView<'_> {
     pub fn is_alternate_screen(&self) -> bool {
         self.viewport.cut.alternate
     }
+    pub fn find_fake_cursor_cell(&self) -> Option<(usize, usize)> {
+        self.state.find_fake_cursor_cell()
+    }
     pub fn snapshot_as_vt(&self) -> Vec<u8> {
         self.state.snapshot_as_vt()
     }

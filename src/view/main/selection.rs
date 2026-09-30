@@ -213,16 +213,8 @@ impl MainView {
 
         // Commit any in-progress IME composition before moving cursor.
         // preedit text 도 Intent 큐로 — Intent FIFO 라 arrow 보다 먼저 처리.
-        if let Some(preedit) = self.ime_preedit.take()
-            && !preedit.text.is_empty()
-        {
-            self.state.dispatch_intent(
-                DomainIntent::SendToSurface {
-                    surface_id: preedit.surface_id,
-                    payload: SendPayload::Text(preedit.text),
-                }
-                .from_user_shortcut("click_cursor"),
-            );
+        if self.ime_preedit.is_some() {
+            super::ime::flush_preedit(self, engine);
         }
 
         let terminal = match self.state.focused_terminal(&*engine) {

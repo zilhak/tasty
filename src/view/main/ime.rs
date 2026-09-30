@@ -12,11 +12,19 @@ use crate::view::ui::View as _;
 
 /// IME 입력의 preedit/commit text 를 Intent 큐로 보낸다. surface_id 가
 /// None 이거나 text 가 비어있으면 no-op.
-fn dispatch_send_text(w: &mut MainView, surface_id: Option<u32>, text: &str) {
+fn dispatch_send_text(
+    w: &mut MainView,
+    engine: &crate::core::CoreState,
+    surface_id: Option<u32>,
+    text: &str,
+) {
     let Some(sid) = surface_id else { return };
     if text.is_empty() {
         return;
     }
+    w.state
+        .terminal_views
+        .update(engine, sid, |viewport, _| viewport.scroll_to_bottom());
     w.state.dispatch_intent(
         DomainIntent::SendToSurface {
             surface_id: sid,
@@ -115,9 +123,6 @@ fn forward_ime_to_attach_mesh(w: &mut MainView, surface_id: u32, event: Ime) {
 /// 포착해 preedit anchor를 재계산한다.
 pub(super) fn recalc_anchor(w: &mut MainView, engine: &mut crate::core::CoreState) {
     let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
-    if w.ime_cursor_advance == 0 {
-        return;
-    }
     let Some(preedit) = &w.ime_preedit else {
         return;
     };
@@ -126,8 +131,23 @@ pub(super) fn recalc_anchor(w: &mut MainView, engine: &mut crate::core::CoreStat
         return;
     };
 
-    let (col, row) = reference_cursor(terminal);
-    let cols = terminal.cols();
+    let (col, row, cut) = terminal.with_content(|view| {
+        let (col, row) = reference_cursor(&view);
+        (col, row, view.cut())
+    });
+    if invalidate_stale_composition(
+        &mut w.ime_preedit,
+        &mut w.ime_cursor_advance,
+        &mut w.ime_advance_base,
+        cut.epoch,
+    ) {
+        w.mark_dirty();
+        return;
+    }
+    if w.ime_cursor_advance == 0 {
+        return;
+    }
+    let cols = cut.cols;
     let (base_col, base_row) = w.ime_advance_base;
     let raw_advance = compute_raw_advance(col, row, base_col, base_row, cols);
 
@@ -140,8 +160,11 @@ pub(super) fn recalc_anchor(w: &mut MainView, engine: &mut crate::core::CoreStat
 
     let (anchor_col, anchor_row) = advanced_anchor(col, row, cols, w.ime_cursor_advance);
     if let Some(p) = &mut w.ime_preedit {
-        p.anchor_col = anchor_col;
-        p.anchor_row = anchor_row;
+        p.anchor = tasty_selection::SelectionPoint {
+            epoch: cut.epoch,
+            col: anchor_col,
+            absolute_row: cut.screen_start + anchor_row,
+        };
     }
 }
 
@@ -156,7 +179,7 @@ pub(super) fn flush_preedit(w: &mut MainView, engine: &mut crate::core::CoreStat
             return;
         }
     };
-    dispatch_send_text(w, Some(preedit.surface_id), &preedit.text);
+    dispatch_send_text(w, engine, Some(preedit.surface_id), &preedit.text);
     engine.record_typing(preedit.surface_id);
     w.ime_cursor_advance = 0;
     w.ime_advance_base = (0, 0);
@@ -194,16 +217,12 @@ pub(crate) fn ipc_set_preedit(
 ) -> Option<(usize, usize, u32)> {
     let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     let surface_id = w.state.focused_surface_id(engine)?;
-    let (col, row, cols) = {
-        let terminal = w.state.focused_terminal(engine)?;
-        // Snapshot cursor and cols under one state lock so they share a
-        // generation (ADR-0013).
-        terminal.with_surface(|s| {
-            let (col, row) = s.cursor_position();
-            let (cols, _) = s.dimensions();
-            (col, row, cols)
-        })
-    };
+    let terminal = w.state.focused_terminal(engine)?;
+    let (col, row, cut) = terminal.with_content(|view| {
+        let (col, row) = view.cursor_position();
+        (col, row, view.cut())
+    });
+    let cols = cut.cols;
 
     if w.ime_cursor_advance > 0 {
         let (base_col, base_row) = w.ime_advance_base;
@@ -220,8 +239,11 @@ pub(crate) fn ipc_set_preedit(
     w.ime_preedit = Some(ImePreeditState {
         text,
         cursor,
-        anchor_col,
-        anchor_row,
+        anchor: tasty_selection::SelectionPoint {
+            epoch: cut.epoch,
+            col: anchor_col,
+            absolute_row: cut.screen_start + anchor_row,
+        },
         surface_id,
     });
     w.update_ime_cursor_area(engine);
@@ -242,7 +264,7 @@ pub(crate) fn ipc_commit(w: &mut MainView, engine: &mut crate::core::CoreState, 
     }
     w.ime_preedit = None;
     let sid = w.state.focused_surface_id(engine);
-    dispatch_send_text(w, sid, text);
+    dispatch_send_text(w, engine, sid, text);
     if let Some(sid) = sid {
         engine.record_typing(sid);
     }
@@ -289,11 +311,10 @@ fn on_preedit(
     let anchor = reconcile_and_compute_anchor(w, engine);
 
     w.ime_preedit = match (surface_id, anchor) {
-        (Some(sid), Some((anchor_col, anchor_row))) => Some(ImePreeditState {
+        (Some(sid), Some(anchor)) => Some(ImePreeditState {
             text,
             cursor,
-            anchor_col,
-            anchor_row,
+            anchor,
             surface_id: sid,
         }),
         _ => None,
@@ -307,7 +328,7 @@ fn on_commit(w: &mut MainView, engine: &mut crate::core::CoreState, text: String
     if w.ime_cursor_advance == 0
         && let Some(terminal) = w.state.focused_terminal(engine)
     {
-        w.ime_advance_base = reference_cursor(terminal);
+        w.ime_advance_base = terminal.with_content(|view| reference_cursor(&view));
     }
     for ch in text.chars() {
         w.ime_cursor_advance += tasty_cell_width::unicode_width(ch);
@@ -315,7 +336,7 @@ fn on_commit(w: &mut MainView, engine: &mut crate::core::CoreState, text: String
     w.ime_preedit = None;
 
     let sid = w.state.focused_surface_id(engine);
-    dispatch_send_text(w, sid, &text);
+    dispatch_send_text(w, engine, sid, &text);
     if let Some(sid) = sid {
         engine.record_typing(sid);
     }
@@ -348,14 +369,14 @@ fn advanced_anchor(col: usize, row: usize, cols: usize, advance: usize) -> (usiz
 fn reconcile_and_compute_anchor(
     w: &mut MainView,
     engine: &mut crate::core::CoreState,
-) -> Option<(usize, usize)> {
+) -> Option<tasty_selection::SelectionPoint> {
     let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     let terminal = w.state.focused_terminal(engine)?;
-    let cols = terminal.cols();
-
-    // 참조 좌표 선택: TUI(cursor 숨김 + 단일 reverse-video 셀)면 fake cursor,
-    // 아니면 실제 terminal cursor.
-    let (ref_col, ref_row) = reference_cursor(terminal);
+    let (ref_col, ref_row, cut) = terminal.with_content(|view| {
+        let (col, row) = reference_cursor(&view);
+        (col, row, view.cut())
+    });
+    let cols = cut.cols;
 
     if w.ime_cursor_advance > 0 {
         let (base_col, base_row) = w.ime_advance_base;
@@ -368,22 +389,76 @@ fn reconcile_and_compute_anchor(
         w.ime_advance_base = (ref_col, ref_row);
     }
 
-    Some(advanced_anchor(
-        ref_col,
-        ref_row,
-        cols,
-        w.ime_cursor_advance,
-    ))
+    let (col, row) = advanced_anchor(ref_col, ref_row, cols, w.ime_cursor_advance);
+    Some(tasty_selection::SelectionPoint {
+        epoch: cut.epoch,
+        col,
+        absolute_row: cut.screen_start + row,
+    })
 }
 
 /// Preedit/commit 모두가 사용하는 "입력 위치" 좌표.
 /// Ink 기반 TUI가 `\e[?25l`로 real cursor를 숨기고 `\e[7m`으로 그린 fake cursor가
 /// 있으면 그걸 우선 사용. 없으면 real cursor.
-fn reference_cursor(terminal: &tasty_terminal::Terminal) -> (usize, usize) {
+fn invalidate_stale_composition(
+    preedit: &mut Option<ImePreeditState>,
+    advance: &mut usize,
+    base: &mut (usize, usize),
+    epoch: tasty_terminal::ContentEpoch,
+) -> bool {
+    if preedit.as_ref().is_some_and(|p| p.anchor.epoch != epoch) {
+        *preedit = None;
+        *advance = 0;
+        *base = (0, 0);
+        true
+    } else {
+        false
+    }
+}
+
+fn reference_cursor(terminal: &tasty_terminal::TerminalReadView<'_>) -> (usize, usize) {
     if !terminal.cursor_visible()
         && let Some(fake) = terminal.find_fake_cursor_cell()
     {
         return fake;
     }
     terminal.cursor_position()
+}
+
+#[cfg(test)]
+mod viewport_tests {
+    use super::*;
+    #[test]
+    fn stale_preedit_is_cleared_instead_of_rebound_by_echo_reconciliation() {
+        let mut terminal = tasty_terminal::Terminal::new_detached(20, 3);
+        let mut preedit = Some(ImePreeditState {
+            text: "ime".into(),
+            cursor: None,
+            anchor: tasty_selection::SelectionPoint {
+                epoch: terminal.content_cut().epoch,
+                col: 1,
+                absolute_row: 0,
+            },
+            surface_id: 1,
+        });
+        let mut advance = 2;
+        let mut base = (1, 0);
+        terminal.feed_bytes(b"one\r\ntwo\r\nthree\r\nfour");
+        assert!(!invalidate_stale_composition(
+            &mut preedit,
+            &mut advance,
+            &mut base,
+            terminal.content_cut().epoch
+        ));
+        terminal.feed_bytes(b"\x1b[3JNEW");
+        assert!(invalidate_stale_composition(
+            &mut preedit,
+            &mut advance,
+            &mut base,
+            terminal.content_cut().epoch
+        ));
+        assert!(preedit.is_none());
+        assert_eq!(advance, 0);
+        assert_eq!(base, (0, 0));
+    }
 }

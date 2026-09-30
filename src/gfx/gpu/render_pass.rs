@@ -111,8 +111,7 @@ impl GpuState {
                     .filter(|ime| ime.surface_id == *surface_id && !ime.text.is_empty())
                     .map(|ime| RenderPreedit {
                         text: ime.text.clone(),
-                        anchor_col: ime.anchor_col,
-                        anchor_row: ime.anchor_row,
+                        anchor: ime.anchor,
                         bg_color: theme.accent_primary().to_gpu_rgba(),
                         fg_color: theme.bg_panel().to_gpu_rgba(),
                     });

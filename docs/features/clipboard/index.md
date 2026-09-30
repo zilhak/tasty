@@ -30,6 +30,10 @@
 있는 행만 추출한다. 앞쪽 trim으로 삭제된 행이 다른 내용으로 재해석되지 않으며 ED3,
 terminal 교체, alternate clear 뒤의 옛 선택은 표시하거나 복사하지 않는다.
 
+IME preedit와 OS 후보창 위치도 같은 epoch·행 좌표를 사용한다. 내용 세대가 바뀌면
+기존 조합 anchor와 에코 보정을 폐기한다. IME Commit·단축키 앞 flush·debug Commit은
+공통 사용자 전송 경로에서 해당 View를 live로 돌린다. Agent 전송에는 적용하지 않는다.
+
 ### 텍스트 선택
 
 마우스 드래그(Normal) / 더블클릭(Word) / 트리플클릭(Line) / vi 복사 모드의 `Ctrl+v`(Block). 선택은 화면↔스크롤백을 넘나들고 전각(CJK) 2셀 폭을 정확히 처리. vi 스타일 키보드 복사 모드(`enter_copy_mode` 액션)는 hjkl 이동·visual 선택·`/`·`?` 검색·`y` 복사를 제공.

@@ -70,8 +70,7 @@ use types::{BgInstance, GlyphInstance, Uniforms};
 
 pub struct RenderPreedit {
     pub text: String,
-    pub anchor_col: usize,
-    pub anchor_row: usize,
+    pub anchor: SelectionPoint,
     pub bg_color: GpuRgba,
     pub fg_color: GpuRgba,
 }
@@ -79,7 +78,7 @@ pub struct RenderPreedit {
 impl RenderPreedit {
     /// Returns the exclusive end column of the preedit text.
     fn end_col(&self) -> usize {
-        let mut col = self.anchor_col;
+        let mut col = self.anchor.col;
         for ch in self.text.chars() {
             col += unicode_width(ch);
         }
@@ -88,7 +87,7 @@ impl RenderPreedit {
 
     /// Check if a cell at (col, row) is covered by the preedit overlay.
     fn covers(&self, col: usize, row: usize) -> bool {
-        row == self.anchor_row && col >= self.anchor_col && col < self.end_col()
+        row == self.anchor.absolute_row && col >= self.anchor.col && col < self.end_col()
     }
 }
 
@@ -180,6 +179,7 @@ impl CellRenderer {
             let vi_cursor = vi_cursor.filter(|(p, _)| p.epoch == epoch);
             let link = link.filter(|l| l.epoch == epoch);
             let search = search.filter(|s| s.epoch == epoch);
+            let preedit = preedit.filter(|p| p.anchor.epoch == epoch);
             // reverse_screen_enabled일 때만 기본 전경·배경을 바꾼다.
             // 꺼져 있어도 터미널 모드 자체는 유지해 조회 결과는 바꾸지 않는다.
             let (default_bg, default_fg) = if reverse_screen_enabled && view.screen_reverse() {
@@ -225,7 +225,7 @@ impl CellRenderer {
                     link,
                     search,
                 );
-                self.append_preedit_overlay(preedit, queue, cols, rows, 0);
+                self.append_preedit_overlay(preedit, queue, cols, rows, view.viewport().top_row);
             } else {
                 let scroll_offset = view.scroll_offset();
                 let scrollback_len = view.screen_start();
@@ -302,7 +302,7 @@ impl CellRenderer {
                     });
                 }
 
-                self.append_preedit_overlay(preedit, queue, cols, rows, scroll_offset);
+                self.append_preedit_overlay(preedit, queue, cols, rows, view.viewport().top_row);
             }
         }
 
@@ -423,7 +423,7 @@ impl CellRenderer {
                     continue;
                 }
 
-                if preedit.is_some_and(|p| p.covers(col_idx, row_idx)) {
+                if preedit.is_some_and(|p| p.covers(col_idx, abs_row)) {
                     continue;
                 }
 
@@ -567,18 +567,20 @@ impl CellRenderer {
         queue: &wgpu::Queue,
         cols: usize,
         rows: usize,
-        scroll_offset: usize,
+        top_row: usize,
     ) {
         let Some(preedit) = preedit else {
             return;
         };
-        let screen_row = preedit.anchor_row + scroll_offset;
-        if preedit.text.is_empty() || screen_row >= rows || preedit.anchor_col >= cols {
+        let Some(screen_row) = preedit.anchor.absolute_row.checked_sub(top_row) else {
+            return;
+        };
+        if preedit.text.is_empty() || screen_row >= rows || preedit.anchor.col >= cols {
             return;
         }
 
         let off = self.current_viewport_offset;
-        let mut col_idx = preedit.anchor_col;
+        let mut col_idx = preedit.anchor.col;
         for ch in preedit.text.chars() {
             if col_idx >= cols {
                 break;

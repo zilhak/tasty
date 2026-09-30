@@ -41,7 +41,10 @@ impl MainView {
         changed
     }
 
-    fn compute_hovered_link(&self, engine: &crate::core::CoreState) -> Option<HoveredLink> {
+    pub(super) fn compute_hovered_link(
+        &self,
+        engine: &crate::core::CoreState,
+    ) -> Option<HoveredLink> {
         let pos = self.cursor_position?;
         let terminal_rect = self.compute_terminal_rect();
         let x = pos.x as f32;
@@ -56,14 +59,17 @@ impl MainView {
         let surface_id =
             self.state
                 .surface_id_at_position(engine, x, y, terminal_rect, scale_factor)?;
-        let terminal = engine.find_terminal_by_id(surface_id)?;
+        if engine.attach.is_hard_occupied(surface_id) {
+            return None;
+        }
+        let terminal = engine.visible_terminal(surface_id)?;
         let surface_rect =
             self.state
                 .surface_rect_by_id(engine, surface_id, terminal_rect, scale_factor)?;
 
         let cwd = terminal.get_cwd();
         let mirror = terminal.process_id().is_none();
-        let (span, epoch) =
+        let (span, cut) =
             terminal.with_view(&self.state.terminal_views.get(engine, surface_id), |view| {
                 let point = crate::selection::pixel_to_grid(
                     x,
@@ -80,16 +86,17 @@ impl MainView {
                     cwd.as_deref(),
                     mirror,
                 )
-                .map(|span| (span, view.cut().epoch))
+                .map(|span| (span, view.cut()))
             })?;
         let th = theme::theme();
         let highlight = LinkHighlight {
-            epoch,
+            epoch: cut.epoch,
             segments: span.segments,
             fg: th.accent_primary().to_gpu_rgba(),
             bg: th.selection_bg.to_gpu_rgba(),
         };
         Some(HoveredLink {
+            revision: cut.revision,
             surface_id,
             uri: span.uri,
             highlight,
@@ -728,7 +735,7 @@ impl MainView {
                 self.base.dirty = true;
             }
         }
-        if let Some(hovered) = self.hovered_link.clone() {
+        if let Some(hovered) = self.compute_hovered_link(engine) {
             // 링크를 연 press는 앱에 보내지 않았으므로 release도 보내지 않는다.
             self.link_click_consumed = true;
             // 자식 PTY가 없는 mirror의 파일 경로는 원격 호스트 경로다.

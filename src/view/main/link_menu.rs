@@ -25,7 +25,8 @@ impl MainView {
         engine: &crate::core::CoreState,
         surface_id: u32,
     ) -> Option<TerminalLinkMenu> {
-        let hovered = self.hovered_link.as_ref();
+        let fresh = self.compute_hovered_link(engine);
+        let hovered = fresh.as_ref();
         if !link_menu_gate(
             hovered.map(|h| h.surface_id),
             surface_id,
@@ -37,10 +38,17 @@ impl MainView {
         let (start, end) =
             link_selection_bounds(&hovered.highlight.segments, hovered.highlight.epoch)?;
         let terminal = engine.visible_terminal(surface_id)?;
-        let text = crate::selection::extract_selected_text(
-            terminal,
-            &link_selection(surface_id, start, end),
-        );
+        let text = terminal.with_content(|view| {
+            if view.cut().epoch != hovered.highlight.epoch
+                || view.cut().revision != hovered.revision
+            {
+                return None;
+            }
+            Some(crate::selection::extract_selected_text_from_view(
+                &view,
+                &link_selection(surface_id, start, end),
+            ))
+        })?;
         // 자식 PTY 가 없는 terminal 은 원격 attach mirror 다 — 화면 경로가 원격 호스트 경로.
         let is_mirror = engine
             .find_terminal_by_id(surface_id)

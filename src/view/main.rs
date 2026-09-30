@@ -162,6 +162,7 @@ pub(crate) const PASTE_CTRL_C_COOLDOWN: std::time::Duration = std::time::Duratio
 /// 마우스가 위에 있고 설정된 수식키 조건을 만족한 링크.
 #[derive(Debug, Clone)]
 pub(crate) struct HoveredLink {
+    pub revision: u64,
     pub surface_id: u32,
     pub uri: String,
     pub highlight: crate::terminal_link::LinkHighlight,
@@ -292,13 +293,32 @@ impl MainView {
         let Some(preedit) = &self.ime_preedit else {
             return;
         };
+        let Some(terminal) = engine.visible_terminal(preedit.surface_id) else {
+            return;
+        };
+        let display_row = terminal.with_view(
+            &self.state.terminal_views.get(engine, preedit.surface_id),
+            |view| {
+                if preedit.anchor.epoch != view.cut().epoch {
+                    return None;
+                }
+                preedit
+                    .anchor
+                    .absolute_row
+                    .checked_sub(view.viewport().top_row)
+                    .filter(|row| *row < view.rows())
+            },
+        );
+        let Some(display_row) = display_row else {
+            return;
+        };
         let terminal_rect = self.compute_terminal_rect();
         let Some(cell_rect) = self.state.surface_cell_rect(
             engine,
             terminal_rect,
             preedit.surface_id,
-            preedit.anchor_col,
-            preedit.anchor_row,
+            preedit.anchor.col,
+            display_row,
             self.base.gpu.cell_width(),
             self.base.gpu.cell_height(),
             self.base.gpu.scale_factor(),

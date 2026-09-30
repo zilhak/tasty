@@ -27,8 +27,7 @@ pub struct ImePreeditState {
     /// IME 조합 중 커서 위치. 현재 렌더링에서는 사용하지 않는다.
     #[allow(dead_code)] // 구조체 필드 — 향후 IME caret 렌더용 보존, 현재 미read
     pub cursor: Option<(usize, usize)>,
-    pub anchor_col: usize,
-    pub anchor_row: usize,
+    pub anchor: tasty_selection::SelectionPoint,
     pub surface_id: u32,
 }
 
