@@ -192,7 +192,7 @@ pub(crate) fn open_picker(
     };
     state.dispatch_intent(match dispatch_origin {
         FileDispatchOrigin::User => intent.from_user_menu("file_dispatch"),
-        FileDispatchOrigin::Agent => intent.from_agent_ipc(),
+        FileDispatchOrigin::Agent | FileDispatchOrigin::PluginUnverified => intent.from_agent_ipc(),
     });
 }
 
@@ -424,7 +424,9 @@ pub(crate) fn open_surface_tab(
             };
             state.dispatch_intent(match dispatch_origin {
                 FileDispatchOrigin::User => intent.from_user_menu("file_dispatch"),
-                FileDispatchOrigin::Agent => intent.from_agent_ipc(),
+                FileDispatchOrigin::Agent | FileDispatchOrigin::PluginUnverified => {
+                    intent.from_agent_ipc()
+                }
             });
         }
     }
@@ -449,9 +451,11 @@ fn mark_remote_forward(
         FileDispatchOrigin::User => crate::intent::IntentOrigin::User {
             source: crate::intent::UserSource::Menu("file_dispatch"),
         },
-        FileDispatchOrigin::Agent => crate::intent::IntentOrigin::Agent {
-            source: crate::intent::AgentSource::Ipc,
-        },
+        FileDispatchOrigin::Agent | FileDispatchOrigin::PluginUnverified => {
+            crate::intent::IntentOrigin::Agent {
+                source: crate::intent::AgentSource::Ipc,
+            }
+        }
     };
     crate::core::mark_last_forward_user_triggered(engine, err, &origin);
     crate::core::mark_last_forward_agent_origin(engine, err, &origin);

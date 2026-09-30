@@ -50,8 +50,9 @@ fn mirrors_content(engine: &CoreState, kind: &str) -> bool {
 }
 
 /// mirror origin의 식별 결과를 적용한다. 로컬 핸들러 전체 picker는 띄우지 않는다.
-/// 1순위가 원격에 열 수 있으면 바로 실행한다. 아니면 사용자 요청에는 원격에 열 수 있는 핸들러만 담은
-/// picker를 띄우고, 에이전트 요청은 사용자 화면에 팝업을 만들지 않도록 그중 첫 핸들러를 실행한다.
+/// 1순위가 원격에 열 수 있으면 바로 실행한다. 아니면 사용자 요청과 사용자 입력을 증명하지 못한 plugin 중계 요청에는
+/// 원격에 열 수 있는 핸들러만 담은 picker를 띄우고, 외부 IPC 요청은 사용자 화면에 팝업을 만들지 않도록
+/// 그중 첫 핸들러를 실행한다.
 pub(crate) fn apply_remote_identify_result(
     core: &mut Core,
     state: &mut AppState,
@@ -90,7 +91,15 @@ pub(crate) fn apply_remote_identify_result(
         );
         return;
     }
-    open_remote_picker(state, engine, target, detector, openable, origin_surface_id);
+    open_remote_picker(
+        state,
+        engine,
+        target,
+        detector,
+        openable,
+        origin_surface_id,
+        dispatch_origin,
+    );
 }
 
 /// 기존 핸들러 picker를 원격에 열 수 있는 후보만으로 연다. 최근 목록도 같은 조건으로 거른다.
@@ -102,6 +111,7 @@ fn open_remote_picker(
     detector: Option<DetectorId>,
     openable: Vec<FileHandler>,
     origin_surface_id: u32,
+    dispatch_origin: FileDispatchOrigin,
 ) {
     crate::file::dispatch::open_picker(
         state,
@@ -110,7 +120,7 @@ fn open_remote_picker(
         detector,
         openable,
         false,
-        FileDispatchOrigin::User,
+        dispatch_origin,
         false,
     );
     let Some(picker) = state.dialogs.file_handler_picker.as_mut() else {
@@ -128,7 +138,7 @@ fn open_remote_picker(
 
 fn report_unsupported(state: &mut AppState, target: &FileTarget, origin: FileDispatchOrigin) {
     match origin {
-        FileDispatchOrigin::User => state.toasts.push(
+        FileDispatchOrigin::User | FileDispatchOrigin::PluginUnverified => state.toasts.push(
             crate::i18n::t("explorer.state.remote_open_unsupported").to_string(),
             crate::adapters::ui::ToastKind::Info,
             crate::adapters::ui::ToastScope::Window,

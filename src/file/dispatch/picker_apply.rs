@@ -40,7 +40,8 @@ pub(crate) fn apply_identify_result(
         None => Vec::new(),
     };
     if handlers.is_empty() && dispatch_origin == crate::file::dispatch::FileDispatchOrigin::Agent {
-        // 에이전트 요청은 사용자 화면에 picker를 띄우지 않는다. RPC는 이미 수락을 응답했으므로 로그로 알린다.
+        // 외부 IPC 요청은 사용자 화면에 picker를 띄우지 않는다. 사용자 입력을 증명하지 못한 plugin 중계 요청은
+        // 사용자 클릭일 수 있어 fallback picker를 연다. RPC는 이미 수락을 응답했으므로 로그로 알린다.
         tracing::warn!(target = %target.display(), "no file handler matches this file; not executed");
         return;
     }

@@ -149,7 +149,7 @@ fn a_dispatch_without_a_popup_keeps_the_users_tab() {
         json!({ "path": "/tmp/a.md" }),
         false,
     );
-    assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, (2, 0)));
 }
 
 #[test]
@@ -171,13 +171,13 @@ fn a_plugin_cannot_claim_another_plugins_popup() {
         popup_params(),
         false,
     );
-    assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, (2, 0)));
 }
 
 #[test]
 fn an_untouched_popup_is_not_a_user_action() {
     let got = dispatch_then_selection(&plugin_caller(PLUGIN), None, popup_params(), false);
-    assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, (2, 0)));
 }
 
 // 대상 pane을 명시해도 사용자 여부는 팝업 입력으로 판정한다.
@@ -200,7 +200,7 @@ fn an_origin_surface_without_a_popup_keeps_the_users_tab() {
         json!({ "path": "/tmp/a.md" }),
         true,
     );
-    assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, (2, 0)));
 }
 
 /// 원격 실패는 사용자 요청이면 toast, 에이전트 요청이면 로그로 남겨야 한다.
@@ -232,7 +232,7 @@ fn a_mirror_tab_from_the_users_popup_keeps_its_remote_failure_toast() {
         false,
         true,
     );
-    assert_eq!(origin, FileDispatchOrigin::Agent);
+    assert_eq!(origin, FileDispatchOrigin::PluginUnverified);
     assert_eq!(engine.pending_structural_forward.len(), 1);
     assert!(
         engine.pending_structural_forward[0].silent_failure,
@@ -299,12 +299,12 @@ fn a_link_the_user_clicked_in_the_plugins_webview_selects_the_new_tab() {
 #[test]
 fn a_navigation_the_engine_did_not_see_as_a_gesture_is_not_a_user_action() {
     let got = link_then_selection(&plugin_caller(PLUGIN), &[gesture(false)], link_params());
-    assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, (2, 0)));
 }
 
 /// 뒤따른 비사용자 navigation이 이전 클릭 기록을 지워야 한다.
 #[test]
-fn a_non_gesture_attempt_after_an_unused_click_leaves_the_dispatch_an_agent_request() {
+fn a_non_gesture_attempt_after_an_unused_click_leaves_the_dispatch_unverified() {
     let agents_script = Attempt {
         user_gesture: false,
         owner_wrote_page: false,
@@ -315,7 +315,7 @@ fn a_non_gesture_attempt_after_an_unused_click_leaves_the_dispatch_an_agent_requ
             &[gesture(true), later],
             link_params(),
         );
-        assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
+        assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, (2, 0)));
     }
 }
 
@@ -327,18 +327,76 @@ fn a_click_on_a_page_the_owner_did_not_write_is_not_a_user_action() {
         owner_wrote_page: false,
     };
     let got = link_then_selection(&plugin_caller(PLUGIN), &[on_agents_page], link_params());
-    assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, (2, 0)));
 }
 
 #[test]
 fn a_plugin_cannot_claim_a_navigation_that_never_happened() {
     let got = link_then_selection(&plugin_caller(PLUGIN), &[], link_params());
-    assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, (2, 0)));
 }
 
 #[test]
 fn an_external_caller_cannot_claim_a_webview_navigation() {
     let got = link_then_selection(&CallerContext::Local, &[gesture(true)], link_params());
+    assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
+}
+
+/// 입구 판정부터 식별 결과 적용까지 이어서 본다. 매칭 핸들러가 없을 때 fallback picker는
+/// 증명하지 못한 plugin 중계 요청에만 열리고 외부 IPC 요청에는 열리지 않는다.
+#[test]
+fn only_an_unverified_plugin_request_opens_the_fallback_picker() {
+    for (caller, opens) in [(plugin_caller(PLUGIN), true), (CallerContext::Local, false)] {
+        let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let mut out = crate::ipc::window_port::IntentOutbox::default();
+        let resp = handle_dispatch(
+            &mut out,
+            &mut state,
+            &engine,
+            &caller,
+            json!(1),
+            json!({ "path": "/tmp/unmatched.unknown" }),
+        );
+        assert!(resp.error.is_none(), "dispatch must be accepted: {resp:?}");
+        let Intent::Domain(DomainIntent::DispatchFile {
+            target,
+            origin_surface_id,
+            dispatch_origin,
+            ignore_size_limit,
+            ..
+        }) = out.into_vec().remove(0).body
+        else {
+            panic!("file_handler.dispatch 가 DispatchFile 외 intent 를 냈다");
+        };
+        crate::file::dispatch::apply_identify_result(
+            &mut core,
+            &mut state,
+            &mut engine,
+            target,
+            None,
+            origin_surface_id,
+            dispatch_origin,
+            ignore_size_limit,
+        );
+        assert_eq!(
+            state.dialogs.file_handler_picker.is_some(),
+            opens,
+            "{caller:?}"
+        );
+    }
+}
+
+/// 세션 에이전트도 외부 IPC라 팝업이나 navigation 기록이 있어도 picker를 띄울 수 없는 Agent다.
+#[test]
+fn a_session_agent_caller_stays_an_agent_request() {
+    let agent = CallerContext::Agent {
+        agent_id: "child:1".to_string(),
+        permissions: Arc::new(HashSet::new()),
+    };
+    let got = dispatch_then_selection(&agent, Some((PLUGIN, POPUP)), popup_params(), false);
+    assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
+    let got = link_then_selection(&agent, &[gesture(true)], link_params());
     assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
 }
 
@@ -349,7 +407,7 @@ fn a_plugin_cannot_claim_another_plugins_webview_navigation() {
         &[gesture(true)],
         link_params(),
     );
-    assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, (2, 0)));
 }
 
 /// 같은 프레임에 페이지 작성자가 바뀌면 navigation 기록을 버린다. 다음 프레임의 클릭은 허용한다.

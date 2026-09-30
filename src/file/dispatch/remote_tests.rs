@@ -293,6 +293,62 @@ fn an_agent_open_with_an_unopenable_first_handler_runs_the_first_remote_one() {
     assert!(!engine.pending_structural_forward[0].user_triggered);
 }
 
+/// 사용자 입력을 증명하지 못한 plugin 중계 요청도 사용자 클릭일 수 있어 원격 picker를 연다.
+/// 확정 뒤에도 같은 출처로 실행하도록 picker에 전달된 출처를 싣는다.
+#[test]
+fn an_unverified_plugin_open_with_an_unopenable_first_handler_shows_the_remote_picker() {
+    let (mut core, mut state, mut engine, sid) = mirror_with_ipc_first();
+    apply_identify_result(
+        &mut core,
+        &mut state,
+        &mut engine,
+        FileTarget::new("/remote/doc.md"),
+        Some(DetectorId::new("remote-test")),
+        Some(sid),
+        FileDispatchOrigin::PluginUnverified,
+        false,
+    );
+    assert!(engine.pending_structural_forward.is_empty());
+    assert!(state.pending_handler_ipc.is_empty());
+    let picker = state
+        .dialogs
+        .file_handler_picker
+        .as_ref()
+        .expect("unverified plugin open shows the remote picker");
+    assert_eq!(picker.dispatch_origin, FileDispatchOrigin::PluginUnverified);
+    assert_eq!(picker.origin_surface_id, Some(sid));
+    assert!(picker.default_handler.is_none());
+    assert_eq!(state.toasts.len(), 0);
+}
+
+/// 원격에 열 수 없으면 사용자와 증명하지 못한 plugin 중계 요청은 toast로, 외부 IPC 요청은 로그로 알린다.
+#[test]
+fn an_unopenable_remote_file_toasts_unless_an_external_ipc_asked() {
+    for (origin, toasts) in [
+        (FileDispatchOrigin::User, 1),
+        (FileDispatchOrigin::PluginUnverified, 1),
+        (FileDispatchOrigin::Agent, 0),
+    ] {
+        let (mut core, _) = build_test_core();
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        engine.workspaces[0].mirror = true;
+        let sid = engine.workspaces[0].all_surface_ids()[0];
+        apply_identify_result(
+            &mut core,
+            &mut state,
+            &mut engine,
+            FileTarget::new("/remote/unknown"),
+            None,
+            Some(sid),
+            origin,
+            false,
+        );
+        assert!(state.dialogs.file_handler_picker.is_none(), "{origin:?}");
+        assert!(engine.pending_structural_forward.is_empty(), "{origin:?}");
+        assert_eq!(state.toasts.len(), toasts, "{origin:?}");
+    }
+}
+
 #[test]
 fn a_remote_picker_selection_forwards_a_user_new_tab_and_rejects_local_handlers() {
     let (mut core, mut state, mut engine, sid) = mirror_with_ipc_first();

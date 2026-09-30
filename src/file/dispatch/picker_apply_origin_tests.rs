@@ -391,3 +391,72 @@ fn agent_dispatch_without_a_matching_handler_opens_no_picker() {
     }
     assert_eq!(state.file_handler_recent.list().len(), recent_before);
 }
+
+/// 사용자 입력을 증명하지 못한 plugin 중계 요청은 사용자 클릭일 수 있어 무매칭이면 fallback picker를 연다.
+/// 확정해도 출처는 그대로라 결과 탭으로 선택을 옮기지 않는다.
+#[test]
+fn an_unverified_plugin_dispatch_without_a_matching_handler_opens_the_fallback_picker() {
+    use tasty_plugin_protocol::host_port::FileHandlerRegistryPort;
+    let (mut core, _) = build_test_core();
+    let (mut state, mut engine) = crate::state::tests::test_state();
+    FileHandlerRegistryPort::install_plugin_handlers(
+        engine.file_handler.as_ref(),
+        "com.example.picker",
+        &[
+            serde_json::json!({"id": "open", "detector": "picker-test", "priority": 0,
+            "action": {"kind": "open_surface", "surface_kind": "empty", "param_key": "file"}}),
+        ],
+    );
+    let sid = engine.workspaces[0].all_surface_ids()[0];
+    for detector in [None, Some(DetectorId::new("no-such-detector"))] {
+        apply_identify_result(
+            &mut core,
+            &mut state,
+            &mut engine,
+            FileTarget::new("/unknown"),
+            detector,
+            Some(sid),
+            FileDispatchOrigin::PluginUnverified,
+            false,
+        );
+        let picker = state
+            .dialogs
+            .file_handler_picker
+            .take()
+            .expect("unverified plugin dispatch opens the fallback picker");
+        assert!(picker.candidates_are_fallback);
+        assert_eq!(picker.dispatch_origin, FileDispatchOrigin::PluginUnverified);
+        assert_eq!(picker.origin_surface_id, Some(sid));
+        take_picker_open_request(&mut state, true);
+    }
+
+    let pane_id = engine.find_pane_for_surface(sid).unwrap();
+    let before = engine.find_pane_by_id(pane_id).unwrap();
+    let selected_id = before.tabs[before.active_tab].id;
+    let count = before.tabs.len();
+    let picked = engine
+        .file_handler
+        .all_handlers()
+        .into_iter()
+        .find(|h| {
+            matches!(&h.action, HandlerAction::OpenSurface { surface_kind, .. }
+                if surface_kind == "empty")
+        })
+        .expect("installed open_surface handler");
+    apply_file_picker_result(
+        &mut core,
+        &mut state,
+        &mut engine,
+        DispatchTarget::File(FileTarget::new("/unknown")),
+        FileHandlerPickerResult::Selected(picked.id),
+        Some(sid),
+        FileDispatchOrigin::PluginUnverified,
+        false,
+    );
+    let after = engine.find_pane_by_id(pane_id).unwrap();
+    assert_eq!(after.tabs.len(), count + 1, "선택한 핸들러가 탭을 연다");
+    assert_eq!(
+        after.tabs[after.active_tab].id, selected_id,
+        "증명하지 못한 요청의 결과는 사용자 선택을 옮기지 않는다"
+    );
+}

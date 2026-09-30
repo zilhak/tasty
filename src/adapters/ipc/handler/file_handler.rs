@@ -190,7 +190,8 @@ pub fn handle_dispatch(
     // 새 탭 선택과 실패 알림도 같은 요청 출처를 사용한다.
     out.push(match dispatch_origin {
         crate::file::dispatch::FileDispatchOrigin::User => intent.from_user_menu("plugin_popup"),
-        crate::file::dispatch::FileDispatchOrigin::Agent => intent.from_agent_ipc(),
+        crate::file::dispatch::FileDispatchOrigin::Agent
+        | crate::file::dispatch::FileDispatchOrigin::PluginUnverified => intent.from_agent_ipc(),
     });
     JsonRpcResponse::success(
         id,
@@ -206,7 +207,7 @@ pub fn handle_dispatch(
 /// 팝업은 호출 플러그인 소유로 열려 있고 확정 입력을 받은 상태여야 한다.
 /// webview는 소유 플러그인이 쓴 페이지의 사용자 제스처를 host가 같은 플러그인에 통지했어야 한다.
 /// 통지된 URL과 요청 URL이 같아야 하며 이 기록은 한 번만 쓸 수 있다.
-/// 어느 조건에도 맞지 않거나 외부 IPC 호출이면 에이전트 요청으로 처리한다(ADR-0031).
+/// 외부 IPC 호출은 에이전트 요청이다. 플러그인 호출이 어느 조건에도 맞지 않으면 PluginUnverified로 처리한다.
 /// markdown.navigate도 팝업 확정 요청을 같은 규칙으로 판정한다.
 #[cfg(feature = "gui")]
 pub(super) fn dispatch_origin_of(
@@ -227,7 +228,7 @@ pub(super) fn dispatch_origin_of(
         tracing::debug!(
             plugin_id = %plugin_id,
             instance_id,
-            "owner_popup_instance is not a user-activated popup of the caller; treated as an agent request",
+            "owner_popup_instance is not a user-activated popup of the caller; treated as an unverified plugin request",
         );
     }
     if let Some(url) = user_navigation_url {
@@ -239,10 +240,10 @@ pub(super) fn dispatch_origin_of(
         tracing::debug!(
             plugin_id = %plugin_id,
             ?origin_surface_id,
-            "file_handler.dispatch: user_navigation_url is not an unused user-gesture navigation the caller received on origin_surface_id over a page the caller wrote; treated as an agent request",
+            "file_handler.dispatch: user_navigation_url is not an unused user-gesture navigation the caller received on origin_surface_id over a page the caller wrote; treated as an unverified plugin request",
         );
     }
-    FileDispatchOrigin::Agent
+    FileDispatchOrigin::PluginUnverified
 }
 
 #[cfg(all(test, feature = "gui"))]

@@ -71,8 +71,11 @@ impl IntentOrigin {
 pub enum FileDispatchOrigin {
     /// 직접 사용자 조작 또는 host가 확인한 사용자 입력을 plugin이 중계한 요청.
     User,
-    /// 에이전트의 파일 열기 요청.
+    /// 외부 IPC(CLI·에이전트 세션)의 파일 열기 요청. 사용자 화면에 picker를 띄우지 않는다.
     Agent,
+    /// 사용자 입력을 증명하지 못한 plugin 중계 요청. 선택은 Agent처럼 유지하고
+    /// 무매칭 fallback picker는 연다(사용자 입력일 수 있어 아무 반응이 없으면 안 된다).
+    PluginUnverified,
 }
 
 impl FileDispatchOrigin {

@@ -53,7 +53,8 @@ pub fn handle_navigate(
     };
     out.push(match origin {
         crate::file::dispatch::FileDispatchOrigin::User => intent.from_user_menu("plugin_popup"),
-        crate::file::dispatch::FileDispatchOrigin::Agent => intent.from_agent_ipc(),
+        crate::file::dispatch::FileDispatchOrigin::Agent
+        | crate::file::dispatch::FileDispatchOrigin::PluginUnverified => intent.from_agent_ipc(),
     });
     JsonRpcResponse::success(id, json!({ "accepted": true }))
 }
