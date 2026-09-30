@@ -37,7 +37,9 @@ soft 마커는 명령이 사용자의 미제출 입력과 독립적으로 실행
 
 readonly mirror는 3초 주기로 갱신하므로 선택 화면에도 지연이 있다. 선택 이외의 IME·vi 커서·링크·검색 하이라이트는 계속 억제한다. soft 점유는 이 입력 제한을 적용하지 않는다. 네트워크 지연이 TTL보다 크면 살아 있는 연결도 해제될 수 있다.
 
-pty.attach_surface가 점유된 workspace에 들어가는 유사한 경우까지 해결됐다고 가정하지 않는다. 이 경로는 소비자 동작과 함께 별도로 검토해야 한다.
+같은 문제가 있는 pty.attach_surface(headless PTY 입양)도 점유된 workspace에 탭을 넣지 않는다. 결정 당시에는 terminal.spawn만 막았고 입양 경로는 별도 검토로 남겼으며, 지금은 다음 두 경우를 거절한다.
+hard 점유 workspace는 로컬 IPC 호출의 pane_id가 속한 workspace로 판정해 거절하고 PTY를 headless registry에 그대로 둔다. 점유자의 forward에는 입양 명령이 없으므로 이 거절이 점유자를 막지 않는다.
+mirror workspace의 pane으로의 입양은 대응하는 원격 구조 명령이 없어 forward하지 않고 로컬에서 거절한다. 로컬 PTY가 원격 트리에 없는 탭으로 남기 때문이다.
 
 사용자는 점유 표시 또는 사이드바의 강제 끊기로 점유를 회수한 뒤 닫을 수 있다. 사용자 거절은 방법을 안내하고 에이전트 오류는 문제 surface를 포함한다. 복원 기록은 새 세션을 만들 뿐 기존 원격 작업을 되살리지 못하므로 무경고 닫기를 허용하지 않는다.
 
@@ -61,7 +63,7 @@ forward 응답에서 ID를 못 찾은 뒤 오류만 바꾸면 원격 고아 탭�
 
 mirror 휠·실시간 갱신·선택 중 좌표 변화 문제가 생기면 readonly 조작을 다시 검토한다. heartbeat 오탐, 다른 transport, 재접속 유예 요구가 생기면 생존 판정과 해제 시간을 함께 검토한다.
 
-pty.attach_surface에서 같은 입력 불가 문제가 확인되거나 점유된 workspace에 독립적인 background 자식을 만들 정당한 요구가 생기면 생성 제한 범위를 검토한다.
+점유된 workspace에 독립적인 background 자식을 만들거나 PTY를 입양할 정당한 요구가 생기면 terminal.spawn과 pty.attach_surface의 생성 제한 범위를 함께 검토한다. mirror workspace에 입양이 필요해지면 입양을 원격 구조 명령으로 forward하는 방법을 먼저 비교한다.
 
 forward가 생성 ID를 반환하고 원격 child의 소유·입력을 다룰 수 있게 되면 mirror spawn을 다시 검토한다. 동기 ID가 필요 없는 spawn이 추가되면 메서드 전체 거절보다 좁은 조건을 비교한다.
 
@@ -73,3 +75,4 @@ forward가 생성 ID를 반환하고 원격 child의 소유·입력을 다룰 �
 
 - [주체와 점유](../concepts/actors.md)
 - [attach 구현](../dev-guide/attach-behavior.md)
+- 현재 구현: 로컬 IPC의 hard 점유 거절은 `hard_occupied_structural_guard`(`src/adapters/ipc/handler.rs`), mirror 구조 변경의 forward·거절은 `mirror_workspace_index_for_structural`(`src/core/state/finders.rs`)과 `src/core/impl_mirror.rs`

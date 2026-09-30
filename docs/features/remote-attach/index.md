@@ -168,8 +168,8 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
   - 생성도 점유 차단 대상이다. `tasty claude/codex spawn`은 `terminal.spawn` →
     `tab::handle_tab_create` → `apply_create_tab`을 사용한다. 로컬 호출로 생성한 직후
     원격 점유를 상속하면 호출자 자신이 새 자식에게 입력하지 못하므로 생성부터 거절한다.
-    `pty.attach_surface`도 같은 후처리를 쓰지만 아직 이 가드에 포함되지 않는다
-    ([ADR-0021](../../adr/0021-occupancy-and-attach-admission.md)).
+    `pty.attach_surface`도 같은 후처리를 쓰며, 아래 비-holder 구조 변경 차단으로 hard 점유
+    workspace의 pane에 입양하는 요청을 거절한다([ADR-0021](../../adr/0021-occupancy-and-attach-admission.md)).
   - hard-occupied workspace 에 새로 생긴 surface 는(차단을 통과한, 즉 holder 본인의 forward 경로로 생긴 surface 는) 위와 동일하게 `OccupancyRegistry::add_workspace_member` + `tap_surface_for_stream` 이 실행돼야 한다 — 실행되지 않으면 PTY/화면버퍼는 정상인데 attach client 로의 스트리밍만 시작되지 않아 그 tab 이 검정 화면으로만 보인다(스트림 tap 이 아예 안 걸린 상태).
     `CoreState::tap_new_workspace_member`(`src/core/attach_runtime.rs`)가 `apply_create_tab`(`src/core/impl_tab.rs`)/`apply_split_pane`/`apply_split_surface`(`src/core/impl_split.rs`)/`apply_adopt_terminal`(`src/core/impl_attach.rs`) 공통 후처리로 이를 수행한다 — `hub`/`client_id` 를 호출 체인에 새로 꿰지 않고, `OccupancyRegistry` 에 boot 시 주입된 notifier(`StreamHub`, `notify_detached` 와 동일 패턴)를 재사용한다.
 - **실패 회신**: 원격이 op 를 실패 처리(대표적으로 **원격에 등록되지 않은 plugin surface kind** — 원격의 kind 레지스트리가 그 호스트에서 생성 가능한 kind 의 authority)하면 `ok:false`+`reason` 을 회신하고, client 가 실패 toast(`attach.toast.mirror_structural_forward_failed`)를 띄운다.
