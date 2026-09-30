@@ -126,6 +126,7 @@ version·소유 검사가 필요하다. 영속 commit이 추가되어 구조 변
 ## References
 
 - [ADR-0054](0054-app-core-view-layers-and-state-ownership.md) · [ADR-0056](0056-crate-boundaries-for-core-event-store-and-task-runtime.md) · [ADR-0057](0057-command-identity-for-mutation-retries.md) · [ADR-0060](0060-terminal-and-pty-separation.md) · [ADR-0061](0061-external-remote-module-and-attach-sync.md)
+- [ADR-0063](0063-event-store-storage-fencing-and-effect-states.md) — `tasty-event-store`의 payload 저장·writer 잠금·effect 전이·schema 버전 결정
 - [ADR-0033](0033-event-feed-delivery.md) — 통지용 이벤트 피드는 이 저장소와 별개다
 - [ADR-0010](0010-storage-failure-reporting.md) — 기존 state.db·memory.db의 내구성 정책은 바뀌지 않는다
 - 현재 흐름: [동작 처리 흐름](../design/flows/action-dispatch.md), [레이아웃 저장](../features/layout-persistence/index.md)

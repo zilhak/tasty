@@ -90,6 +90,7 @@ crate 목록 문서·README·가드의 crate 수를 추출마다 함께 갱신�
 ## References
 
 - 대체 대상: [ADR-0002](0002-domain-execution-and-ports.md) — crate 배치 부분. 계층·상태 소유는 [ADR-0054](0054-app-core-view-layers-and-state-ownership.md)
+- [ADR-0063](0063-event-store-storage-fencing-and-effect-states.md) — `tasty-event-store`의 payload 저장·writer 잠금·effect 전이·schema 버전 결정
 - [ADR-0001](0001-crate-dependency-boundaries.md) · [ADR-0055](0055-structural-domain-event-sourcing.md) · [ADR-0062](0062-task-service-and-hook-runtime.md)
 - 현재 빌드 구조: [빌드 가이드](../dev-guide/build.md), [헤드리스 컴파일 경계](../dev-guide/headless-build-boundaries.md), [아키텍처](../architecture/index.md)
 - 현재 구현: `crates/tasty-model`, `crates/tasty-agent`, `crates/tasty-hooks`, `crates/tasty-remote`, `crates/tasty-terminal/src/lib.rs`.
