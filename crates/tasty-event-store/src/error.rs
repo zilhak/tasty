@@ -150,6 +150,9 @@ pub enum StoreError {
         requested: u64,
     },
 
+    #[error("consumer {0} keeps projection rows; move its position with commit_projection")]
+    CheckpointOwnedByProjection(String),
+
     #[error("projection key {0} appears twice in one write")]
     ProjectionKeyConflict(String),
 

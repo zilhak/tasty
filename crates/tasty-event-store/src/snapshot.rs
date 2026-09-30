@@ -104,7 +104,11 @@ impl EventStore {
         })
     }
 
-    /// consumer의 적용 위치를 저장한다. 뒤로 되돌리는 요청은 거절한다.
+    /// 출력 행이 없는 consumer의 적용 위치를 저장한다. 뒤로 되돌리는 요청은 거절한다.
+    ///
+    /// projection 행을 가진 consumer는 어느 projection version이든 이 API로 위치만 옮길 수 없고
+    /// [`StoreError::CheckpointOwnedByProjection`]으로 거절된다. 행과 위치를 함께 옮기는
+    /// [`EventStore::commit_projection`]을 사용한다.
     pub fn save_checkpoint(
         &mut self,
         epoch: WriterEpoch,
@@ -113,6 +117,11 @@ impl EventStore {
         batch_id: BatchId,
     ) -> StoreResult<()> {
         let tx = self.write_tx(epoch)?;
+        if has_projection_rows(&tx, consumer_id)? {
+            return Err(StoreError::CheckpointOwnedByProjection(
+                consumer_id.to_owned(),
+            ));
+        }
         advance_checkpoint(&tx, consumer_id, projection_version, batch_id)?;
         tx.commit()?;
         Ok(())
@@ -201,6 +210,14 @@ pub(crate) fn advance_checkpoint(
         params![consumer_id, projection_version, to_i64(batch_id)?],
     )?;
     Ok(())
+}
+
+fn has_projection_rows(conn: &Connection, consumer_id: &str) -> StoreResult<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM projection_rows WHERE consumer_id = ?1)",
+        [consumer_id],
+        |r| r.get(0),
+    )?)
 }
 
 pub(crate) fn checkpoint_batch(

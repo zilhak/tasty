@@ -1,5 +1,6 @@
 //! 영속 projection 출력. 출력 행 변경과 consumer 위치를 한 transaction으로 확정해 위치만 앞서는
 //! 일이 없게 한다. 출력은 consumer·projection version별 key→바이트 표이며 해석은 호출자가 한다.
+//! 행을 가진 consumer는 [`EventStore::save_checkpoint`]로 위치만 옮길 수 없다.
 
 use std::collections::{BTreeMap, BTreeSet};
 

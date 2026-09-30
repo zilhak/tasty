@@ -154,3 +154,36 @@ fn projection_versions_keep_separate_rows_and_positions() {
     assert_eq!(one.cut.and_then(|c| c.last_batch), Some(2));
     assert_eq!(two.cut.and_then(|c| c.last_batch), Some(1));
 }
+
+#[test]
+fn a_consumer_with_rows_cannot_move_only_its_position() {
+    let (_dir, mut store, epoch) = fresh();
+    seed_batches(&mut store, epoch, 3);
+    store
+        .commit_projection(epoch, &write(1, &[("tab:1", b"a")], &[]))
+        .expect("rows");
+    let before = store.projection_state("tab-list", 1).expect("before");
+
+    for version in [1, 2] {
+        assert!(matches!(
+            store.save_checkpoint(epoch, "tab-list", version, 3),
+            Err(StoreError::CheckpointOwnedByProjection(ref c)) if c == "tab-list"
+        ));
+    }
+    assert_eq!(
+        store.projection_state("tab-list", 1).expect("after"),
+        before
+    );
+    assert_eq!(store.checkpoint("tab-list", 2).expect("v2"), None);
+
+    store
+        .save_checkpoint(epoch, "remote-1", 1, 3)
+        .expect("a consumer without rows still saves its position");
+    assert_eq!(
+        store
+            .checkpoint("remote-1", 1)
+            .expect("remote")
+            .and_then(|c| c.last_batch),
+        Some(3)
+    );
+}

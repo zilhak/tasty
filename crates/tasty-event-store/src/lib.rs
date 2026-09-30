@@ -17,6 +17,8 @@
 //!   지키는지는 이 크레이트가 확인하지 않는다.
 //! - 쓰기는 독점 writer 잠금을 가진 저장소만 하며 세대 검사를 쓰기마다 한다. 잠금은 다른 저장소·
 //!   프로세스를, 세대는 같은 저장소 안의 늦은 writer·worker를 막는다. 읽기용으로 여는 것은 막지 않는다.
+//! - projection 행을 가진 consumer의 위치는 [`EventStore::commit_projection`]으로만 옮긴다.
+//!   위치만 저장하는 [`EventStore::save_checkpoint`]는 그 consumer를 거절한다.
 
 mod command;
 mod commit;
