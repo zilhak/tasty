@@ -293,13 +293,6 @@ pub(crate) enum CoreEvent {
         subtitle: Option<String>,
         description: Option<String>,
     },
-    #[cfg_attr(
-        not(feature = "gui"),
-        expect(
-            dead_code,
-            reason = "some shared event fields are read only by GUI dispatch and remain unused in headless builds"
-        )
-    )]
     WorkspaceMoved {
         moved: bool,
     },

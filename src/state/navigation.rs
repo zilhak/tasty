@@ -194,23 +194,38 @@ impl NavigationState {
         }
     }
 
+    // Mirror snapshots initialize only missing/deleted selections from the wire.
+    // Surviving local choices win; a pending user close may then choose its neighbour.
     #[cfg(feature = "gui")]
     pub(crate) fn initialize_pane(&mut self, workspace: &Workspace, pane: u32) {
-        self.panes.entry(workspace.id).or_insert(pane);
+        if !self
+            .panes
+            .get(&workspace.id)
+            .is_some_and(|id| workspace.pane_layout().find_pane(*id).is_some())
+        {
+            self.select_pane(workspace, pane);
+        }
     }
     #[cfg(feature = "gui")]
     pub(crate) fn initialize_tab(&mut self, pane: &Pane, index: usize) {
-        if let std::collections::hash_map::Entry::Vacant(entry) = self.tabs.entry(pane.id) {
-            let mut selection = Selection::default();
-            if let Some(tab) = pane.tabs.get(index) {
-                selection.select(tab.id, tab_ids(pane));
-            }
-            entry.insert(selection);
+        let selection = self.tabs.entry(pane.id).or_default();
+        if !selection
+            .selected
+            .is_some_and(|id| pane.tabs.iter().any(|tab| tab.id == id))
+            && let Some(tab) = pane.tabs.get(index)
+        {
+            selection.select(tab.id, tab_ids(pane));
         }
     }
     #[cfg(feature = "gui")]
     pub(crate) fn initialize_surface(&mut self, tab: &Tab, surface: u32) {
-        self.surfaces.entry(tab.id).or_insert(surface);
+        if !self
+            .surfaces
+            .get(&tab.id)
+            .is_some_and(|id| tab.contains_surface(*id))
+        {
+            self.select_surface(tab, surface);
+        }
     }
 
     pub(crate) fn apply_result(

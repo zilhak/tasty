@@ -242,7 +242,6 @@ fn closed_pending_target_emits_nothing() {
 #[test]
 fn live_target_keeps_the_slot() {
     let mut engine = test_engine();
-    let navigation = crate::state::navigation::NavigationState::default();
     let (pane, tab, a) = first_pane(&engine);
     for pending in [
         PendingMove::Surface(a),

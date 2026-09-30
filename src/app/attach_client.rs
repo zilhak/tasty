@@ -4,6 +4,8 @@
 
 mod agent_origin;
 mod dispatch;
+#[cfg(test)]
+mod navigation_tests;
 
 use dispatch::{AttachSource, Outcome, dispatch_attach};
 
@@ -208,6 +210,21 @@ struct MirrorMeshInfo {
 struct MirrorStructureIds {
     panes: HashMap<u32, u32>,
     tabs: HashMap<u32, u32>,
+}
+
+impl MirrorStructureIds {
+    fn retain_workspace(&mut self, workspace: &Workspace) {
+        let pane_ids = workspace.pane_layout().all_pane_ids();
+        self.panes.retain(|_, local| pane_ids.contains(local));
+        self.tabs.retain(|_, local| {
+            pane_ids.iter().any(|id| {
+                workspace
+                    .pane_layout()
+                    .find_pane(*id)
+                    .is_some_and(|pane| pane.tabs.iter().any(|tab| tab.id == *local))
+            })
+        });
+    }
 }
 
 pub(crate) struct AttachClientSession {
@@ -2536,7 +2553,7 @@ fn set_focus_to_surface(
     }
 }
 
-/// pane·tab ID는 재구성 때 달라질 수 있어 포커스를 원격 surface ID로 기억한다.
+/// Surviving remote surface IDs restore the active branch after a subtree moves.
 fn capture_focused_remote(
     navigation: &crate::state::navigation::NavigationState,
     ws: &Workspace,
@@ -2771,6 +2788,7 @@ fn build_mirror_workspace(
                 .unwrap_or_else(|| node.first_pane().map(|p| p.id).unwrap_or(0));
             let ws = Workspace::from_restored(ws_id, name.to_string(), String::new(), node);
             navigation.initialize_pane(&ws, focused_local_pane);
+            structure_ids.retain_workspace(&ws);
             return ws;
         }
     }
@@ -2808,12 +2826,10 @@ fn build_mirror_workspace(
             crate::i18n::t("attach.tab_title_fallback").to_string(),
             Box::new(EmptySurface::new(sid)),
         );
-        return Workspace::from_restored(
-            ws_id,
-            name.to_string(),
-            String::new(),
-            PaneNode::Leaf(pane),
-        );
+        let ws =
+            Workspace::from_restored(ws_id, name.to_string(), String::new(), PaneNode::Leaf(pane));
+        structure_ids.retain_workspace(&ws);
+        return ws;
     }
 
     let focused_local_pane = local_panes
@@ -2836,6 +2852,7 @@ fn build_mirror_workspace(
 
     let ws = Workspace::from_restored(ws_id, name.to_string(), String::new(), node);
     navigation.initialize_pane(&ws, focused_local_pane);
+    structure_ids.retain_workspace(&ws);
     ws
 }
 
@@ -4118,14 +4135,11 @@ mod tests {
             &mut HashMap::new(),
         );
 
-        // 복원 전에는 원격이 보낸 pane A를 선택한 상태다.
-        let pane_a_local_surface = *after_map.get(&1).unwrap();
-        let (pane_a_id, _) = find_pane_and_tab_for_surface(&after_ws, pane_a_local_surface)
-            .expect("pane A surface must exist in rebuilt tree");
+        // Stable local pane/tab IDs preserve the live selection during rebuild.
+        assert_eq!(navigation.pane_id(&after_ws), Some(pane_b_id));
         assert_eq!(
-            navigation.pane_id(&after_ws).unwrap(),
-            pane_a_id,
-            "로컬 포커스 복원 전에는 원격이 지정한 pane A를 선택한다"
+            capture_focused_remote(&navigation, &after_ws, &after_map),
+            Some(3)
         );
 
         restore_focus_after_delta(

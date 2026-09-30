@@ -267,18 +267,15 @@ fn agent_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
     let origin = engine.workspaces[0].all_surface_ids()[0];
     let pane_id = engine.find_pane_for_surface(origin).unwrap();
     // 원래 origin과 선택된 탭을 다르게 둔다.
-    core.apply(
+    assert!(open_surface_tab(
+        &mut core,
+        &mut state,
         &mut engine,
-        DomainIntent::CreateTab {
-            pane_id,
-            cwd: None,
-            kind: "empty".into(),
-            name: None,
-            surface_params: serde_json::json!({}),
-            activate: true,
-        },
-    )
-    .unwrap();
+        "empty",
+        serde_json::json!({}),
+        Some(origin),
+        FileDispatchOrigin::User,
+    ));
     assert_eq!(
         state
             .navigation

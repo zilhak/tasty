@@ -117,3 +117,5 @@ GUI의 `MainViewState`는 `src/state/main.rs`에, GUI 없는 `CommandContext`는
 공통 App adapter의 `RequestContext`는 빌드에 맞는 수신 타입을 재노출하는 이름이다. 두 원본을 공유하거나 동기화하는 wrapper가 아니며 Core 명령은 이 타입을 받지 않는다. 구조 실행과 결과 처리는 `src/app/structural_exec.rs`와 `structural_cascade.rs`에서 수행한다. 삭제/이동 결과를 받은 뒤 선택 ID와 표시 map을 보정하고, 사용자 생성 continuation만 새 대상을 선택한다.
 
 분할 트리의 `SplitNodeId`는 프로세스 내부에서만 사용하는 node identity다. 기존 `focus_second` wire bool은 navigation의 별도 split-hint map에서 합성한다. 노드 이동·재결합은 ID를 유지하고 새 노드는 새 ID를 받는다. split 생성의 hint 기본값은 true, layout/preset/undo 복원은 false이며 remote 입력은 받은 값을 보존한다. 이 ID는 wire나 journal의 영속 식별자가 아니다.
+
+Mirror는 원격 pane/tab ID에 안정된 로컬 ID를 대응시킨다. snapshot 재구성에서 생존한 로컬 선택을 유지하고, 선택 ID가 사라지면 원격 기본값을 적용한다. 사용자 닫기의 인접 후보가 있으면 그 후보를 우선한다. 삭제된 pane/tab의 대응 ID는 매 재구성 후 회수한다.

@@ -29,7 +29,7 @@ const BASELINE_FILES: &[&str] = &[];
 const TEST_ONLY_FILES: &[(&str, &str)] = &[
     (
         "src/adapters/ipc/handler/cli_entry_tests.rs",
-        "CLI가 만든 요청을 제품 핸들러에 전달해 검증한다. 사용하는 핸들러·AppState 픽스처가 cfg(test) 전용이라 외부 통합 테스트에서 사용할 수 없다.",
+        "CLI가 만든 요청을 제품 핸들러에 전달해 검증한다. 사용하는 핸들러·RequestContext 픽스처가 cfg(test) 전용이라 외부 통합 테스트에서 사용할 수 없다.",
     ),
     (
         "src/adapters/ipc/handler/cli_entry_debug_tests.rs",

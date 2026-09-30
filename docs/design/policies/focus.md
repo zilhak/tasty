@@ -250,8 +250,9 @@ GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 
 
 에이전트가 탭을 만들어도 그 pane 의 활성 탭은 그대로다.
 
-- 선택 여부는 `DomainIntent::CreateTab` 의 `activate` **하나**가 정한다. 각 진입점이 값을 정해
-  싣는다.
+- 각 진입점은 `DomainIntent::CreateTab`의 `activate`로 사용자 후속 선택 의도를 전달한다.
+  Core는 구조를 만들고 결과 ID를 반환하며, App의 사용자 continuation이 해당 View의 선택을 적용한다.
+  원격 전송의 active/focused 값은 별도 명시 projection으로 합성한다.
   - IPC `tab.create`(CLI `tasty new tab`): `false`. 새 탭은 뒤에 붙기만 한다.
   - attach forward 의 `NewTab`: 원격 **사용자**의 손 조작이면 `true`, 원격 에이전트면 `false`
     (복원 스택을 가르는 `ForwardOrigin` 과 같은 축).

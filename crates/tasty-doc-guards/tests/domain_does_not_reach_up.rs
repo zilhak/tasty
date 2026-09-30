@@ -38,7 +38,7 @@ const UPPER: &[(&str, &str)] = &[
     ),
     (
         "state",
-        "창 상태(`AppState`) — 도메인은 `core::cascade_window` 포트로만 닿는다",
+        "View navigation/명령 문맥 — 도메인은 결과 ID를 반환하고 App이 선택을 적용한다",
     ),
     ("search_state", "`state::search` 의 별칭"),
     ("selection", "`state::selection` 의 별칭"),
@@ -404,7 +404,7 @@ other = [\"dep:not-gui\"]
 fn the_predicates_catch_what_they_claim() {
     let src = "\
 use crate::core::CoreState;
-use crate::state::AppState;
+use crate::state::MainViewState;
 // crate::app::App 은 주석이다
 fn f() { let _s = \"crate::intent\"; }
 fn g() -> crate::AppEvent { todo!() }
@@ -459,7 +459,7 @@ use crate::plugin::manager::PluginManager;
 use crate::file::format::FileTarget;
 use crate::host_api::hooks::global::GlobalHookManager;
 use crate::ports::clipboard::ClipboardSystem;
-use crate::{core::CoreState, state::AppState};
+use crate::{core::CoreState, state::MainViewState};
 use crate::{file::{format::DetectDepth, dispatch::open_picker}};
 use crate::
     app::App;
