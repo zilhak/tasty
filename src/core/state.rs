@@ -576,7 +576,6 @@ impl CoreState {
             branch_cache: branch::BranchCache::default(),
             pending_move: None,
             #[cfg(feature = "gui")]
-            #[cfg(feature = "gui")]
             explorer_favorites: crate::core::explorer_favorites::ExplorerFavorites::load(),
             #[cfg(feature = "gui")]
             port_favorites: crate::core::port_favorites::PortFavorites::load(),
