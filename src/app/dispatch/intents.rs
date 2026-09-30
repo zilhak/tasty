@@ -211,6 +211,9 @@ impl App {
             Intent::RestoreClosedItem => {
                 crate::intent::closed_item::handle(core, state, engine, intent);
             }
+            Intent::DirectRename(_) => {
+                crate::intent::rename::handle(core, state, engine, intent);
+            }
             Intent::Domain(_) => {
                 tracing::error!(
                     "dispatch_one_intent reached Intent::Domain (should be handled in domain_batch)"

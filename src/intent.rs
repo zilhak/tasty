@@ -17,6 +17,7 @@ pub mod pane;
 pub mod popup;
 pub mod preset;
 pub mod preset_capture;
+pub mod rename;
 pub mod surface;
 pub mod tab;
 #[cfg(all(debug_assertions, feature = "gui"))]
@@ -174,6 +175,9 @@ pub enum Intent {
 
     /// 최근 닫은 항목을 포커스된 pane에 복원한다. 필요한 워크스페이스는 먼저 만든다.
     RestoreClosedItem,
+
+    /// 사용자가 이름 변경 팝업에 직접 입력한 이름. 적용 뒤 user_direct host 이벤트를 낸다.
+    DirectRename(rename::DirectRename),
 }
 
 /// 팝업과 테마 등 화면 상태를 바꾸는 명령.

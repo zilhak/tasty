@@ -275,40 +275,42 @@ fn apply_rename(
 
 fn apply_rename_workspace_name(
     state: &mut AppState,
-    engine: &mut crate::core::CoreState,
+    engine: &crate::core::CoreState,
     workspace_id: u32,
     buffer: String,
 ) {
     if buffer.is_empty() {
         return;
     }
-    if let Some(ws) = engine.workspaces.iter_mut().find(|w| w.id == workspace_id) {
-        ws.name = buffer.clone();
-        state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
-            workspace_id,
-            name: Some(buffer),
-            subtitle: None,
-            description: None,
-            user_direct: true,
-        });
+    if engine.find_workspace_index_for_id(workspace_id).is_some() {
+        state.dispatch_intent(
+            crate::intent::Intent::DirectRename(
+                crate::intent::rename::DirectRename::WorkspaceName {
+                    workspace_id,
+                    name: buffer,
+                },
+            )
+            .from_user_menu("rename_popup"),
+        );
     }
 }
 
 fn apply_rename_workspace_subtitle(
     state: &mut AppState,
-    engine: &mut crate::core::CoreState,
+    engine: &crate::core::CoreState,
     workspace_id: u32,
     buffer: String,
 ) {
-    if let Some(ws) = engine.workspaces.iter_mut().find(|w| w.id == workspace_id) {
-        ws.subtitle = buffer.clone();
-        state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
-            workspace_id,
-            name: None,
-            subtitle: Some(buffer),
-            description: None,
-            user_direct: true,
-        });
+    if engine.find_workspace_index_for_id(workspace_id).is_some() {
+        state.dispatch_intent(
+            crate::intent::Intent::DirectRename(
+                crate::intent::rename::DirectRename::WorkspaceSubtitle {
+                    workspace_id,
+                    subtitle: buffer,
+                },
+            )
+            .from_user_menu("rename_popup"),
+        );
     }
 }
 
@@ -430,6 +432,18 @@ mod tests {
         ws_id
     }
 
+    /// 팝업은 요청을 큐에 넣기만 하므로 메인 루프처럼 큐를 비워 적용한다.
+    fn apply_rename_and_drain(
+        state: &mut AppState,
+        engine: &mut crate::core::CoreState,
+        target: RenameTarget,
+        buffer: &str,
+    ) {
+        let mut core = crate::ipc::handler::cli_entry_tests::test_core();
+        apply_rename(state, engine, target, buffer.to_string());
+        crate::intent::headless::drain_pending_intents(&mut core, state, engine);
+    }
+
     #[test]
     fn workspace_rename_targets_same_workspace_after_agent_close() {
         let (mut state, mut engine) = crate::state::tests::test_state();
@@ -447,7 +461,7 @@ mod tests {
             crate::state::WorkspaceCloseOrigin::Agent
         ));
         let (target, _) = state.dialogs.rename.take().unwrap();
-        apply_rename(&mut state, &mut engine, target, "RENAMED".to_string());
+        apply_rename_and_drain(&mut state, &mut engine, target, "RENAMED");
         let names: Vec<_> = engine.workspaces.iter().map(|w| w.name.as_str()).collect();
         assert_eq!(names, ["A", "RENAMED", "C"]);
     }
@@ -491,7 +505,7 @@ mod tests {
         ));
         assert!(!rename_target_exists(&target, &engine));
         let before: Vec<_> = engine.workspaces.iter().map(|w| w.name.clone()).collect();
-        apply_rename(&mut state, &mut engine, target, "RENAMED".to_string());
+        apply_rename_and_drain(&mut state, &mut engine, target, "RENAMED");
         let after: Vec<_> = engine.workspaces.iter().map(|w| w.name.clone()).collect();
         assert_eq!(before, after);
     }

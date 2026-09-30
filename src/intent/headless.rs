@@ -110,6 +110,7 @@ fn route_non_domain(
         Intent::RestoreClosedItem => {
             crate::intent::closed_item::handle(core, state, engine, dispatched);
         }
+        Intent::DirectRename(_) => crate::intent::rename::handle(core, state, engine, dispatched),
         Intent::Domain(_) => {}
     }
 }
