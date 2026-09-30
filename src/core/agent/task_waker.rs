@@ -18,16 +18,20 @@ pub struct TerminalSnapshot {
 pub enum AwaitOutcome {
     Terminal(TerminalSnapshot),
     TimedOut,
+    NotFound,
 }
 
 type WaiterKey = (u32, TaskId);
+type Waiters = HashMap<WaiterKey, Vec<(u64, SyncSender<TerminalSnapshot>)>>;
 
 static TASK_WAKER_POISONED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 #[derive(Default)]
 pub struct TaskWakerHub {
-    waiters: Mutex<HashMap<WaiterKey, Vec<SyncSender<TerminalSnapshot>>>>,
+    waiters: Mutex<Waiters>,
+    /// 조회 후 즉시 반환하거나 시간 초과한 대기자만 골라 지우는 데 쓴다.
+    next_waiter: std::sync::atomic::AtomicU64,
     /// engine과 같은 큐를 공유해야 메인 루프가 이 이벤트를 방송할 수 있다.
     feed: std::sync::Arc<crate::core::agent::event_feed::AgentEventQueue>,
 }
@@ -44,37 +48,56 @@ impl TaskWakerHub {
     ) -> Self {
         Self {
             waiters: Mutex::new(HashMap::new()),
+            next_waiter: std::sync::atomic::AtomicU64::new(0),
             feed,
         }
     }
 
     /// poison을 알리고 waiter 맵을 계속 사용해 상태 전이 경로에서 다시 패닉하지 않게 한다.
-    fn lock_recovering(
-        &self,
-    ) -> std::sync::MutexGuard<'_, HashMap<WaiterKey, Vec<SyncSender<TerminalSnapshot>>>> {
+    fn lock_recovering(&self) -> std::sync::MutexGuard<'_, Waiters> {
         crate::poison::recover_mutex(self.waiters.lock(), "task waker hub", &TASK_WAKER_POISONED)
     }
 
-    /// 받은 current가 종결이면 즉시 반환하며 그 외에는 등록 후 기다린다. 현재 저장소 상태를 재조회하지 않는다.
-    /// None·Some(0)은 무기한 대기다. 등록 전에 지나간 fire를 재생하지 않는다.
+    fn unregister(&self, key: &WaiterKey, waiter: u64) {
+        let mut g = self.lock_recovering();
+        if let Some(senders) = g.get_mut(key) {
+            senders.retain(|(id, _)| *id != waiter);
+            if senders.is_empty() {
+                g.remove(key);
+            }
+        }
+    }
+
+    /// 대기자를 먼저 등록한 뒤 load_current로 현재 상태를 읽는다. 조회와 등록 사이에 지나간 fire를 놓치지 않는다.
+    /// load_current가 None이면 NotFound, 종결 상태면 즉시 반환한다. None·Some(0)은 무기한 대기다.
     pub fn await_terminal(
         &self,
         workspace_id: u32,
         task_id: &TaskId,
         timeout_ms: Option<u64>,
-        current: TerminalSnapshot,
+        load_current: impl FnOnce() -> Option<TerminalSnapshot>,
     ) -> AwaitOutcome {
+        let key = (workspace_id, task_id.clone());
+        let waiter = self
+            .next_waiter
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let (tx, rx) = sync_channel::<TerminalSnapshot>(1);
+        self.lock_recovering()
+            .entry(key.clone())
+            .or_default()
+            .push((waiter, tx));
+        // fire가 lock을 잡으므로 조회는 lock 밖에서 한다.
+        let current = match load_current() {
+            None => {
+                self.unregister(&key, waiter);
+                return AwaitOutcome::NotFound;
+            }
+            Some(c) => c,
+        };
         if current.state.is_terminal() {
+            self.unregister(&key, waiter);
             return AwaitOutcome::Terminal(current);
         }
-        let rx = {
-            let (tx, rx) = sync_channel::<TerminalSnapshot>(1);
-            let mut g = self.lock_recovering();
-            g.entry((workspace_id, task_id.clone()))
-                .or_default()
-                .push(tx);
-            rx
-        };
         let infinite = matches!(timeout_ms, None | Some(0));
         let result = if infinite {
             rx.recv().ok()
@@ -89,7 +112,8 @@ impl TaskWakerHub {
         match result {
             Some(snap) => AwaitOutcome::Terminal(snap),
             None => {
-                // timeout·채널 종료를 같은 결과로 반환한다. sender는 다음 fire가 맵을 제거할 때까지 남는다.
+                // timeout·채널 종료를 같은 결과로 반환한다.
+                self.unregister(&key, waiter);
                 AwaitOutcome::TimedOut
             }
         }
@@ -109,7 +133,7 @@ impl TaskWakerHub {
         let Some(senders) = g.remove(&(workspace_id, task_id.clone())) else {
             return;
         };
-        for tx in senders {
+        for (_, tx) in senders {
             let _ = tx.try_send(snapshot.clone()); // 대기 시간이 끝나 수신자가 없을 수 있어 실패는 무시한다.
         }
     }
@@ -137,12 +161,9 @@ mod tests {
         let hub = TaskWakerHub::new();
         let mut control = ControlProbe::start("종료 상태의 await_terminal 즉시 반환");
         let start = Instant::now();
-        let out = hub.await_terminal(
-            1,
-            &"t-1".to_string(),
-            Some(5000),
-            snap(TaskState::Succeeded),
-        );
+        let out = hub.await_terminal(1, &"t-1".to_string(), Some(5000), || {
+            Some(snap(TaskState::Succeeded))
+        });
         let elapsed = start.elapsed();
         assert!(elapsed < LIMIT, "{}", control.verdict(elapsed, LIMIT));
         match out {
@@ -156,7 +177,9 @@ mod tests {
         let hub = Arc::new(TaskWakerHub::new());
         let hub_w = hub.clone();
         let handle = thread::spawn(move || {
-            hub_w.await_terminal(1, &"t-1".to_string(), Some(5000), snap(TaskState::Running))
+            hub_w.await_terminal(1, &"t-1".to_string(), Some(5000), || {
+                Some(snap(TaskState::Running))
+            })
         });
         // 등록할 시간을 주지만 등록 완료를 동기화하는 방식은 아니다.
         thread::sleep(Duration::from_millis(50));
@@ -174,12 +197,48 @@ mod tests {
         let hub = TaskWakerHub::new();
         let mut control = ControlProbe::start("50 ms 요청의 실제 대기 시간");
         let start = Instant::now();
-        let out = hub.await_terminal(1, &"t-1".to_string(), Some(50), snap(TaskState::Running));
+        let out = hub.await_terminal(1, &"t-1".to_string(), Some(50), || {
+            Some(snap(TaskState::Running))
+        });
         let elapsed = start.elapsed();
         assert!(matches!(out, AwaitOutcome::TimedOut));
         // 하한은 조기 반환을, 상한은 과도한 지연을 검사한다. 상한 실패에는 대조 측정도 표시한다.
         assert!(elapsed >= Duration::from_millis(40), "elapsed={elapsed:?}");
         assert!(elapsed < CEILING, "{}", control.verdict(elapsed, CEILING));
+    }
+
+    /// 조회가 비종결을 본 직후의 완료도 이미 등록된 대기자에게 전달돼야 한다.
+    #[test]
+    fn a_fire_right_after_the_state_read_still_wakes_the_waiter() {
+        let hub = TaskWakerHub::new();
+        let out = hub.await_terminal(1, &"t-1".to_string(), Some(2_000), || {
+            let current = snap(TaskState::Running);
+            hub.fire(1, &"t-1".to_string(), snap(TaskState::Succeeded));
+            Some(current)
+        });
+        match out {
+            AwaitOutcome::Terminal(s) => assert!(matches!(s.state, TaskState::Succeeded)),
+            other => panic!("조회 직후의 완료를 놓쳤다: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_missing_task_is_not_found_and_leaves_no_waiter() {
+        let hub = TaskWakerHub::new();
+        let out = hub.await_terminal(1, &"t-1".to_string(), Some(2_000), || None);
+        assert!(matches!(out, AwaitOutcome::NotFound), "{out:?}");
+        assert!(hub.lock_recovering().is_empty());
+    }
+
+    #[test]
+    fn immediate_and_timed_out_returns_leave_no_waiter() {
+        let hub = TaskWakerHub::new();
+        let id = "t-1".to_string();
+        let out = hub.await_terminal(1, &id, Some(5_000), || Some(snap(TaskState::Cancelled)));
+        assert!(matches!(out, AwaitOutcome::Terminal(_)), "{out:?}");
+        let out = hub.await_terminal(1, &id, Some(20), || Some(snap(TaskState::Running)));
+        assert!(matches!(out, AwaitOutcome::TimedOut), "{out:?}");
+        assert!(hub.lock_recovering().is_empty());
     }
 
     #[test]
@@ -237,15 +296,12 @@ mod poison_tests {
 
         let waiting = Arc::clone(&hub);
         let awaiting = std::thread::spawn(move || {
-            waiting.await_terminal(
-                1,
-                &"t1".to_string(),
-                Some(5_000),
-                TerminalSnapshot {
+            waiting.await_terminal(1, &"t1".to_string(), Some(5_000), || {
+                Some(TerminalSnapshot {
                     state: TaskState::Running,
                     result: None,
-                },
-            )
+                })
+            })
         });
 
         let snapshot = TerminalSnapshot {

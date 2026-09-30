@@ -408,7 +408,8 @@ pub fn await_task_blocking(
             .unwrap_or(DEFAULT_TASK_AWAIT_TIMEOUT_MS),
     );
 
-    let snap_opt: Option<TerminalSnapshot> = {
+    // 허브가 대기자를 등록한 뒤 저장소를 읽어야 그 사이의 완료를 놓치지 않는다.
+    let load_current = || -> Option<TerminalSnapshot> {
         let mut guard = crate::poison::recover_mutex(
             memory.lock(),
             crate::core::MEMORY_WHAT,
@@ -424,11 +425,8 @@ pub fn await_task_blocking(
             Err(_) => None,
         }
     };
-    let Some(current) = snap_opt else {
-        return JsonRpcResponse::success(rpc_id, json!({ "outcome": "not_found" }));
-    };
 
-    let outcome = hub.await_terminal(workspace_id, &task_id, timeout_ms, current);
+    let outcome = hub.await_terminal(workspace_id, &task_id, timeout_ms, load_current);
     match outcome {
         AwaitOutcome::Terminal(snap) => {
             let mut resp = json!({
@@ -443,7 +441,24 @@ pub fn await_task_blocking(
         AwaitOutcome::TimedOut => {
             JsonRpcResponse::success(rpc_id, json!({ "outcome": "timed_out" }))
         }
+        AwaitOutcome::NotFound => {
+            JsonRpcResponse::success(rpc_id, json!({ "outcome": "not_found" }))
+        }
     }
+}
+
+/// 요청 workspace를 가진 engine이 없으면 다른 허브에서 기다리지 않고 라우터와 같은 대상 없음 오류로 답한다.
+pub(crate) fn unowned_await_workspace(rpc_id: Value, workspace_id: u32) -> JsonRpcResponse {
+    JsonRpcResponse::invalid_params(
+        rpc_id,
+        crate::core::request_target::unowned_target_message(
+            crate::core::request_target::ResourceId {
+                kind: crate::core::request_target::Kind::Workspace,
+                id: u64::from(workspace_id),
+            },
+            "agent.task_await",
+        ),
+    )
 }
 
 /// 메인 루프를 막지 않도록 워커에서 완료를 기다린다.

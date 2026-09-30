@@ -19,6 +19,8 @@
 
 `task_await` 는 응답을 기다린다(`TaskWakerHub` 기반, 워커 스레드에서 처리). `timeout_ms` 생략 시 기본 10분(600,000ms, 잠정값 — 실사용 경험이 쌓이면 재조정)까지 대기하고, 그 안에 terminal 에 도달하지 못하면 `{"outcome":"timed_out"}` 으로 반환한다. `timeout_ms: 0` 을 명시하면 이 기본값을 우회해 무한 대기한다. **local caller 전용**(`local_only`) — `approval.await` 와 대칭으로, plugin SDK 는 단일 워커 스레드가 요청을 직렬 처리하므로 plugin 이 `task_await` 로 블록되면 자기 자신의 다른 host→plugin 요청을 전혀 처리하지 못한다(자기 자신이 호출한 응답 수신은 별도 경로라 자기-교착까지는 아니지만, 그 task 가 자신을 다시 호출하는 구성이면 dispatch 타임아웃(5s)으로 정상 작업이 실패한다). plugin 은 대신 완료 판정 전략(`[[contributes.completion_strategy]]`)을 선언해 러너가 대신 기다리게 하거나, `task_get` 을 폴링한다.
 
+대기는 요청한 `workspace_id` 를 가진 engine 의 `TaskWakerHub` 에서 한다. 허브는 engine 마다 따로 있고 완료 통지는 task 가 속한 engine 의 허브로만 가므로, 창이 여러 개이거나 parked engine 이 있어도 포커스나 창 순서로 허브를 고르지 않는다. 어느 engine 도 그 workspace 를 갖지 않으면 다른 요청의 라우팅과 같은 대상 없음 오류(`-32602`)로 답한다. workspace 는 있지만 task 가 없으면 `{"outcome":"not_found"}` 다. 허브는 대기자를 먼저 등록한 뒤 저장소 상태를 읽는다. 그래서 상태를 읽은 직후에 끝난 task 의 완료도 놓치지 않는다.
+
 <a id="6-primitive"></a>
 
 ### 6가지 협업 기능

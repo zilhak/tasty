@@ -1,6 +1,7 @@
 //! 창·플러그인 등 App 자원이 필요한 IPC 메서드를 처리한다.
 
 mod remote;
+mod task_await;
 
 use crate::AppEvent;
 use crate::adapters::ipc::handler::params;
@@ -758,43 +759,6 @@ impl App {
         });
     }
 
-    /// 요청한 작업을 가진 engine의 허브를 고르고 대기는 공용 워커 함수에 맡긴다.
-    fn ipc_dispatch_task_await(&mut self, cmd: &IpcCommand) {
-        let hub_opt = self
-            .view
-            .views
-            .values()
-            .find_map(|w| w.as_main().map(|w| w.core_state.task_waker_hub.clone()))
-            .or_else(|| {
-                self.parked_states
-                    .first()
-                    .map(|(_, e)| e.task_waker_hub.clone())
-            })
-            .or_else(|| self.core_state.as_ref().map(|e| e.task_waker_hub.clone()));
-        let seq_opt = self
-            .view
-            .views
-            .values()
-            .find_map(|w| w.as_main().map(|w| w.core_state.agent_seq.clone()))
-            .or_else(|| self.parked_states.first().map(|(_, e)| e.agent_seq.clone()))
-            .or_else(|| self.core_state.as_ref().map(|e| e.agent_seq.clone()));
-        let memory = self.core.memory_arc();
-        let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-        match (hub_opt, seq_opt) {
-            (Some(hub), Some(seq)) => crate::ipc::handler::agent::task::spawn_task_await(
-                hub,
-                memory,
-                seq,
-                rpc_id,
-                cmd.request.params.clone(),
-                &cmd.response_tx,
-            ),
-            _ => send_response(
-                &cmd.response_tx,
-                crate::core::app_surface::no_application_state(rpc_id),
-            ),
-        }
-    }
     /// 창 생성 때 공유한 approval_store를 고르고 대기는 공용 함수에 맡긴다.
     fn ipc_dispatch_approval_await(&mut self, cmd: &IpcCommand) {
         let store_opt = self

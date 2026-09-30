@@ -247,6 +247,21 @@ fn intercept_app_layer(
             }
             // 헤드리스의 실제 engine은 App.core_state에 없고 이 함수 인자로 전달된다.
             "agent.task_await" => {
+                // GUI 라우팅과 같게 이 engine에 없는 workspace는 대상 없음으로 거절한다.
+                if let Some(ws) = cmd
+                    .request
+                    .params
+                    .get("workspace_id")
+                    .and_then(|v| v.as_u64())
+                    .and_then(|v| u32::try_from(v).ok())
+                    && !engine.has_workspace(ws)
+                {
+                    send_response(
+                        &cmd.response_tx,
+                        crate::ipc::handler::agent::task::unowned_await_workspace(rpc_id, ws),
+                    );
+                    return Some(Intercepted::Answered);
+                }
                 crate::ipc::handler::agent::task::spawn_task_await(
                     engine.task_waker_hub.clone(),
                     app.core.memory_arc(),
