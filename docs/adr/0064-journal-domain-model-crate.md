@@ -41,7 +41,7 @@ decide→commit→apply→응답을 CommandExecutor가, 순수 `decide`·`evolve
 ### ADR-0056과의 관계
 
 이 결정은 ADR-0056의 배치 결정을 바꾸지 않는다. 0056 표에서 도메인 Command/Event와 순수 decide/evolve를 `tasty-core`에 두는 행은 `tasty-core` 추출 시점까지 발동하지 않으며, 추출할 때 `tasty-domain`과 합치거나 이름을 정리한다. 순수 구조 타입은 `tasty-model`에 두고 새 domain-types crate를 만들지 않는다는 배치(0056 표의 순수 구조 타입 행)와
-`tasty-domain-types` 신설을 기각한 대안을 따라, ID와 분할 방향처럼 `tasty-model`에 같은 역할의 직렬화 가능한 타입이 있으면 그것을 쓴다.
+`tasty-domain-types` 신설을 기각한 대안을 따라, ID와 분할 방향처럼 `tasty-model`에 같은 역할의 타입이 있으면 그 타입을 쓴다. 그 타입에 직렬화 형식이 없으면(`SplitDirection`) serde remote 정의를 이 crate에 둔다.
 저널에만 필요한 값(revision·batch ID·비율 비트 표현 `Ratio`·자료 참조 `DataRef`·분할 트리 표현 `SplitTree`·ID 종류 `IdKind`)은 이 crate에 둔다.
 `tasty-model`의 `PaneNode`·`SurfaceLayout`은 pane·surface 실행 인스턴스를 담고 비율을 `f32` 값으로 들고 있어 저널 값으로 쓸 수 없기 때문이다.
 CommandExecutor를 root 내부 runtime 모듈에 둔다는 표의 행도 그대로 따른다.
