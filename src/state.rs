@@ -142,7 +142,7 @@ pub struct AppState {
     /// 상태바에 표시할 선택 surface의 Git branch 캐시. 무효화는 branch 모듈이 맡는다.
     #[cfg(feature = "gui")]
     pub(crate) branch_cache: branch::BranchCache,
-    /// 셸 통합 안내 배너를 이미 띄운 surface. Core가 같은 surface의 안내를 다시 요청해도 한 번만 표시한다.
+    /// 이 창에서 셸 통합 안내 배너를 이미 띄운 surface. 안내 요청을 한 번만 보내는 판단은 Core가 한다.
     #[cfg(feature = "gui")]
     pub(crate) shell_integration_hint_shown: std::collections::HashSet<u32>,
     /// kind별 최근 파일 목록. 읽기·저장은 RecentFilesStore가 담당한다.
