@@ -1,4 +1,4 @@
-<!-- source-hash: e627a2fc5884 -->
+<!-- source-hash: dec33689e773 -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -140,6 +140,7 @@ tasty set workspace --id 5 --clear-mapping                              # remove
 - Pasting a clipboard image uploads it to the remote and inputs the **remote path**. Text paste works as usual.
 - You cannot create child agents in a mirror Workspace with `tasty claude spawn` and the like. Launch them directly on the remote instance.
 - Restarting the shell of a mirror surface (`tasty surface respawn-terminal`, `tasty terminal respawn`) or attaching a background PTY as a tab inside a mirror (`tasty pty attach-surface`) is also refused, because it would put a local shell where the remote terminal is. Run them directly on the remote instance.
+- Applying a Tab or Pane preset to a mirror Workspace (the preset popup, `tasty preset apply`) is refused for the same reason. A Workspace preset creates a new Workspace, so it still works.
 - Closing the last terminal of a mirror removes the remote Workspace itself and disconnects.
 
 ## Releasing the occupation (on the remote side)

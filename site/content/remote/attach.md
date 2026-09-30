@@ -139,6 +139,7 @@ tasty set workspace --id 5 --clear-mapping                              # 해제
 - 클립보드 이미지를 붙여넣으면 원격으로 업로드되고 **원격 경로**가 입력됩니다. 텍스트 붙여넣기는 그대로.
 - mirror 워크스페이스에 `tasty claude spawn` 등으로 자식 에이전트를 만들 수는 없습니다. 원격 인스턴스에서 직접 띄웁니다.
 - mirror 표면의 셸을 다시 띄우거나(`tasty surface respawn-terminal`, `tasty terminal respawn`) 백그라운드 PTY 를 mirror 안에 탭으로 붙이는 것(`tasty pty attach-surface`)도 거부됩니다. 원격 터미널 자리에 내 쪽 셸이 섞이기 때문입니다. 원격 인스턴스에서 직접 실행합니다.
+- mirror 워크스페이스에 탭·페인 preset 을 적용하는 것(preset 팝업, `tasty preset apply`)도 같은 이유로 거부됩니다. 워크스페이스 preset 은 새 워크스페이스를 만들므로 그대로 쓸 수 있습니다.
 - mirror 의 마지막 터미널을 닫으면 원격 워크스페이스 자체가 사라지고 연결이 끊깁니다.
 
 ## 점유 풀기 (원격 쪽에서)
