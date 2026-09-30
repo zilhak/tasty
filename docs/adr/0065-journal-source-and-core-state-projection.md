@@ -12,7 +12,7 @@
 0064는 제품에 연결하기 전까지 JournalModel이 CoreState와 동시에 원본이 아니라고만 정했고, 연결한 뒤 두 모델의 관계와 전환 절차는 정하지 않았다.
 
 두 모델은 모양이 다르다. JournalModel(`crates/tasty-domain/src/model.rs`)은 ID 키 map에 이름·소속·분할 트리·kind·자료 참조·metadata만 담는다.
-`tasty-model`의 CoreState 트리는 surface 실행 인스턴스(`Box<dyn Surface>`), 사용자 선택 필드(`Workspace.focused_pane`·`Pane.active_tab`·`Tab.focused_surface`),
+결정 당시 `tasty-model`의 CoreState 트리는 surface 실행 인스턴스(`Box<dyn Surface>`), 사용자 선택 필드(`Workspace.focused_pane`·`Pane.active_tab`·`Tab.focused_surface`),
 Terminal에서 계산한 파생 캐시(`Tab.osc_title`·`cached_display_name`), 분할 트리의 호환 hint(`focus_second`)를 함께 담는다.
 IPC 응답과 GUI는 CoreState 트리를 읽는다.
 

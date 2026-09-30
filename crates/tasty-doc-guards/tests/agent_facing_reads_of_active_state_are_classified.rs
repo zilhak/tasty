@@ -82,8 +82,8 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
     (
         "src/app/structural_exec.rs",
         Projection,
-        6,
-        "구조 실행 전 attach 전송 문맥과 사용자 close 기록용 snapshot을 명시적으로 캡처한다",
+        7,
+        "구조 실행 전후 attach 전송 문맥과 사용자 close 기록용 snapshot을 명시적으로 캡처한다",
     ),
     (
         "src/app/attach_structure.rs",

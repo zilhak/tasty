@@ -196,7 +196,6 @@ impl NavigationState {
 
     // Mirror snapshots initialize only missing/deleted selections from the wire.
     // Surviving local choices win; a pending user close may then choose its neighbour.
-    #[cfg(feature = "gui")]
     pub(crate) fn initialize_pane(&mut self, workspace: &Workspace, pane: u32) {
         if self
             .panes
@@ -206,7 +205,6 @@ impl NavigationState {
             self.select_pane(workspace, pane);
         }
     }
-    #[cfg(feature = "gui")]
     pub(crate) fn initialize_tab(&mut self, pane: &Pane, index: usize) {
         let selection = self.selected_tabs.entry(pane.id).or_default();
         if !selection
@@ -217,7 +215,6 @@ impl NavigationState {
             selection.select(tab.id, tab_ids(pane));
         }
     }
-    #[cfg(feature = "gui")]
     pub(crate) fn initialize_surface(&mut self, tab: &Tab, surface: u32) {
         if !self
             .surfaces
@@ -228,6 +225,35 @@ impl NavigationState {
         }
     }
 
+    fn initialize_snapshot(
+        &mut self,
+        workspaces: &[Workspace],
+        selection: &crate::model::StructurePresentationSnapshot,
+    ) {
+        self.split_hints
+            .extend(selection.split_hints.iter().map(|(id, hint)| (*id, *hint)));
+        for ws in workspaces {
+            if let Some(id) = selection.panes.get(&ws.id) {
+                self.initialize_pane(ws, *id);
+            }
+            for id in ws.pane_layout().all_pane_ids() {
+                let Some(pane) = ws.pane_layout().find_pane(id) else {
+                    continue;
+                };
+                if let Some(id) = selection.selected_tabs.get(&pane.id)
+                    && let Some(index) = pane.tabs.iter().position(|tab| tab.id == *id)
+                {
+                    self.initialize_tab(pane, index);
+                }
+                for tab in &pane.tabs {
+                    if let Some(id) = selection.surfaces.get(&tab.id) {
+                        self.initialize_surface(tab, *id);
+                    }
+                }
+            }
+        }
+    }
+
     pub(crate) fn apply_result(
         &mut self,
         workspaces: &[Workspace],
@@ -235,6 +261,11 @@ impl NavigationState {
     ) {
         use crate::core::intent::CoreEvent;
         match event {
+            CoreEvent::ClosedItemRestored { presentation, .. } => {
+                // New objects inherit stored internal defaults for every origin.
+                // Existing live View choices are changed only by user continuations.
+                self.initialize_snapshot(workspaces, presentation);
+            }
             CoreEvent::MoveSurfaceApplied {
                 replacement: Some((removed, replacement)),
                 ..

@@ -1,13 +1,13 @@
 # ADR-0054: App·Core·View가 각자의 상태를 소유하고 엔진 수명을 창과 분리한다
 
-- **Status**: Accepted — 구현 상태: 단계적 이행 중. 현재 코드는 창별 `AppState`와 `CoreState`의 직접 소유 구조이며 아래 배치로 옮기는 중이다
+- **Status**: Accepted — 구현 상태: 단계적 이행 중. engine은 App registry가 소유하며 구조 선택은 창별 MainViewState로 분리됐다. Headless는 별도 CommandContext를 사용한다. 저널 원본과 나머지 실행 자원 분리는 계속 이행 대상이다
 - **Date**: 2026-09-30
 - **Tags**: architecture, state, ownership, lifecycle, domain
 - **Group**: foundation
 
 ## Context
 
-현재 `src/state.rs`의 `AppState`는 이름과 달리 창별 상태다. 실행 큐, 도메인 정리, 선택·스크롤 같은 사용자 상태와 GUI 자원을 함께 가진다.
+결정 당시 `src/state.rs`의 `AppState`는 이름과 달리 창별 상태였다. 실행 큐, 도메인 정리, 선택·스크롤 같은 사용자 상태와 GUI 자원을 함께 가진다.
 `src/view/main.rs`의 `MainView`가 `CoreState`를 직접 소유하고, 창이 없는 엔진은 `src/app.rs`의 `App::parked_states`에
 `(AppState, CoreState)` 짝으로 옮겨 보관한다. `src/core/state.rs`의 `CoreState`에는 활성 workspace·tab 인덱스와
 `TerminalStore`, 훅·작업 대기 자원이 함께 있다.

@@ -882,6 +882,76 @@ mod tests {
     }
 
     #[test]
+    fn parked_navigation_survives_application_mutations_and_unpark() {
+        use crate::core::intent::DomainIntent;
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let pane_id = engine.workspaces[0].pane_layout().first_pane().unwrap().id;
+        let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
+        for _ in 0..2 {
+            crate::app::structural_exec::execute(
+                &mut core,
+                &mut state,
+                &mut engine,
+                DomainIntent::CreateTab {
+                    pane_id,
+                    cwd: None,
+                    kind: "empty".into(),
+                    name: None,
+                    surface_params: serde_json::json!({}),
+                    activate: false,
+                },
+            )
+            .unwrap();
+        }
+        let pane = engine.find_pane_by_id(pane_id).unwrap();
+        let selected = pane.tabs[2].id;
+        let removed = pane.tabs[1].id;
+        state.navigation.select_tab(pane, selected);
+        let mut reg = EngineRegistry::default();
+        let id = reg.park_for_test(state, engine);
+        let mut views = HashMap::new();
+        {
+            let scan = EngineScanMut::from_fields(&mut views, &mut reg);
+            let (state, engine) = scan.parked_session(id).unwrap();
+            crate::app::structural_exec::execute(
+                &mut core,
+                state,
+                engine,
+                DomainIntent::MoveTab {
+                    pane_id,
+                    from_index: 0,
+                    to_index: 2,
+                },
+            )
+            .unwrap();
+            crate::app::structural_exec::execute(
+                &mut core,
+                state,
+                engine,
+                DomainIntent::CloseTab { tab_id: removed },
+            )
+            .unwrap();
+            assert_eq!(
+                state
+                    .navigation
+                    .tab_id(engine.find_pane_by_id(pane_id).unwrap()),
+                Some(selected)
+            );
+        }
+        let (unparked, state) = EngineScanMut::from_fields(&mut views, &mut reg)
+            .unpark_first()
+            .unwrap();
+        assert_eq!(unparked, id);
+        let engine = reg.get(id).unwrap();
+        assert_eq!(
+            state
+                .navigation
+                .tab_id(engine.find_pane_by_id(pane_id).unwrap()),
+            Some(selected)
+        );
+    }
+
+    #[test]
     fn parked_session_lookups_find_the_engine_by_id() {
         let (mut reg, ids) = parked(&["p0", "p1"]);
         // 첫 항목과 겹치지 않는 ID를 두 번째 항목에만 둔다.

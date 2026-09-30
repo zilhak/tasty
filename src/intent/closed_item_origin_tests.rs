@@ -16,6 +16,27 @@ fn active_after_restoring_a_closed_workspace(intent: crate::intent::DispatchedIn
         panic!("apply_create_workspace_inner가 WorkspaceCreated를 반환해야 한다");
     };
     assert_eq!(index, 1);
+    let second = engine.next_ids.next_surface();
+    let added_tab = engine.next_ids.next_tab();
+    let added_surface = engine.next_ids.next_surface();
+    let pid = engine.workspaces[1].pane_layout().first_pane().unwrap().id;
+    let pane = engine.workspaces[1]
+        .pane_layout_mut()
+        .find_pane_mut(pid)
+        .unwrap();
+    let first = pane.tabs[0].first_surface_id().unwrap();
+    pane.tabs[0].split_surface_by_id_generic(
+        first,
+        crate::model::SplitDirection::Horizontal,
+        Box::new(crate::model::EmptySurface::new(second)),
+    );
+    pane.add_surface_tab_background(
+        added_tab,
+        "restore-selected".into(),
+        None,
+        Box::new(crate::model::EmptySurface::new(added_surface)),
+    );
+    state.navigation.select_tab(pane, added_tab);
     assert!(state.close_workspace_at(&mut engine, 1, WorkspaceCloseOrigin::User));
     state.set_active_workspace_index(&engine, 0);
     assert_eq!(engine.workspaces.len(), 1);
@@ -33,6 +54,19 @@ fn active_after_restoring_a_closed_workspace(intent: crate::intent::DispatchedIn
         "복원이 워크스페이스를 되살려야 한다"
     );
     assert_eq!(engine.closed_items.len(), 0);
+    let tab = &engine.workspaces[1]
+        .pane_layout()
+        .first_pane()
+        .unwrap()
+        .tabs[0];
+    let crate::model::SurfaceLayout::Split { node_id, .. } = tab.layout() else {
+        panic!("undo must rebuild the split");
+    };
+    assert_eq!(state.navigation.split_hints.get(node_id), Some(&false));
+    assert_eq!(
+        engine.attach.presentation.split_hints.get(node_id),
+        Some(&false)
+    );
     state.active_workspace_index(&engine)
 }
 

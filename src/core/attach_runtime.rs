@@ -2930,6 +2930,52 @@ mod forward_exec_tests {
     }
 
     #[test]
+    fn forwarded_tab_origin_changes_wire_selection_without_changing_server_selection() {
+        for origin in [ForwardOrigin::User, ForwardOrigin::Agent] {
+            let (mut core, mut state, mut engine, _home) = make_core_state();
+            let anchor = seed(&mut engine);
+            state.reconcile_presentation(&engine);
+            let pane_id = engine.find_pane_for_surface(anchor).unwrap();
+            let selected = state
+                .navigation
+                .tab_id(engine.find_pane_by_id(pane_id).unwrap());
+            let result = execute_forwarded_structural_op(
+                &mut core,
+                &mut state,
+                &mut engine,
+                &StructuralOp::NewTab {
+                    anchor_surface_id: anchor,
+                    surface_kind: "empty".into(),
+                    params: serde_json::json!({}),
+                },
+                origin,
+            )
+            .unwrap()
+            .unwrap();
+            let tasty_ipc::stream::StreamControl::StructuralDelta { tree, .. } = result.delta
+            else {
+                panic!("expected structural delta");
+            };
+            let tabs = tree["panes"][0]["tabs"].as_array().unwrap();
+            assert_eq!(tabs[1]["active"], origin == ForwardOrigin::User);
+            assert_eq!(tabs[0]["active"], origin == ForwardOrigin::Agent);
+            assert_eq!(
+                state
+                    .navigation
+                    .tab_id(engine.find_pane_by_id(pane_id).unwrap()),
+                selected
+            );
+            // A later subscription takes the server's current View/defaults,
+            // not the previous remote caller's transient creation projection.
+            engine.refresh_attach_presentation(&state.navigation);
+            assert_eq!(
+                engine.attach.presentation.selected_tabs.get(&pane_id),
+                selected.as_ref()
+            );
+        }
+    }
+
+    #[test]
     fn forward_close_tab_removes_from_delta() {
         let (mut core, mut state, mut engine, _home) = make_core_state();
         let a = seed(&mut engine);

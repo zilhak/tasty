@@ -1,7 +1,7 @@
 # 헤드리스 정의 경계
 
 headless(`--no-default-features`)는 IPC/CLI 와 attach 서버를 실행하는 제품 형태다. GUI 가
-없다는 이유로 공유 Core·MainViewState·registry 를 통째로 숨기지 않는다. `dead_code` 진단이
+없다는 이유로 공유 Core·registry를 통째로 숨기지 않는다. GUI는 MainViewState, headless는 별도 CommandContext를 소유한다. `dead_code` 진단이
 가리키는 정의의 생산자와 소비자를 따라가며 아래 기준으로 컴파일 대상을 나눈다.
 
 결정과 그 근거는 [ADR-0058](../adr/0058-headless-without-local-views.md).
@@ -34,7 +34,7 @@ dead_code 예외는 쓰지 않는다.
 조건은 [ADR-0058](../adr/0058-headless-without-local-views.md).
 세는 법: `git grep -nE '#!\[(cfg_attr\([^]]*)?allow\([^)]*dead_code' -- '*.rs'`.
 
-지금 ③ 에 해당하는 것은 열하나다.
+③에 해당하는 정의는 아래처럼 분류한다.
 
 | 정의 | 왜 남는가 |
 |---|---|
@@ -46,7 +46,6 @@ dead_code 예외는 쓰지 않는다.
 | workspace 생성 cascade 의 필드(`WorkspaceCreatedCascade`, headless 판 `app/dispatch_domain_stubs.rs`) | 만드는 자리(`workspace.create` IPC · workspace intent)는 두 빌드가 공유하지만 headless 의 cascade 는 no-op 이라 필드를 읽는 자가 gui 뿐이다. 그 파일 전체가 `not(feature = "gui")` 라 조건 없는 `expect` 로 적는다 |
 | `App` 의 필드(`src/app.rs`) | headless boot 도 `App` 을 세워 Core 를 쓰지만, 일부 필드를 읽는 자는 gui 이벤트 루프뿐이다 |
 | `AppEvent::Shutdown` · `AppEvent::QuitRequested`(`src/app/event.rs`) | 만드는 자리가 gui 창 라이프사이클·종료 경로뿐이다. 열거와 그 match 는 headless 도 컴파일한다 |
-| `MainViewState::preset_store` | headless 도 `MainViewState::new` 로 Core 의 사본을 받지만 읽는 자(preset popup)가 GUI 뿐이다. 에이전트의 preset IPC 는 `Core.preset_store` 를 잠근다 |
 | 사용자가 발생시킨 intent 의 variant(`Intent` 의 단축키·메뉴 variant · `UiIntent` · `OpenPopupMode` · `ConvertTarget` · 도메인의 `IntentOrigin::User` · `UserSource`) | 만드는 자리(단축키·메뉴·우클릭·popup)가 GUI 뿐이다. 열거와 그 match 는 headless 의 intent drain 도 컴파일한다. `IntentOrigin::User` 는 headless 시험이 만들므로 `not(test)` 도 조건이다 |
 
 ## 판정은 바깥에서 안으로

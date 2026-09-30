@@ -619,9 +619,20 @@ mod tests {
             .build_surface_layout(&mut engine, &split)
             .expect("미등록 kind가 있어도 다른 surface를 유지해야 한다");
 
-        let SurfaceLayout::Split { first, second, .. } = layout else {
+        let SurfaceLayout::Split {
+            first,
+            second,
+            node_id,
+            ..
+        } = layout
+        else {
             panic!("Split 이어야 한다");
         };
+        assert_eq!(
+            state.navigation.split_hints.get(&node_id),
+            Some(&false),
+            "preset reconstruction preserves the legacy false hint"
+        );
         let SurfaceLayout::Leaf(term) = *first else {
             panic!("first 는 Leaf 여야 한다");
         };

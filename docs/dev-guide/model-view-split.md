@@ -121,3 +121,5 @@ GUI의 `MainViewState`는 `src/state/main.rs`에, GUI 없는 `CommandContext`는
 Mirror는 원격 pane/tab ID에 안정된 로컬 ID를 대응시킨다. snapshot 재구성에서 생존한 로컬 선택을 유지하고, 선택 ID가 사라지면 원격 기본값을 적용한다. 사용자 닫기의 인접 후보가 있으면 그 후보를 우선한다. 삭제된 pane/tab의 대응 ID는 매 재구성 후 회수한다.
 
 사용자 탭 생성 후속 처리는 공통 App 실행 helper가 결과 ID에 적용한다. 호출자가 확인한 로컬 사용자 origin만 이 continuation을 허용하며, 원격 사용자 요청은 서버의 로컬 선택을 바꾸지 않는다. 원격 layout 파서는 immutable source 참조를 한 문맥으로 빌려 쓰고 선택/hint 적용과 리소스 데이터를 복제하지 않는다.
+
+닫힌 구조를 복원하면 새 객체의 내부 선택과 legacy split hint는 origin과 무관하게 복원 자료로 초기화한다. 이미 존재하는 선택은 보존하며, 복원된 탭·pane·workspace로 사용자를 옮기는 후속 선택만 User origin에 제한한다. attach 전송 projection은 구조 결과의 보정값을 반영하고, 원격 사용자 생성의 일회성 active 값은 서버 View 선택으로 역수입하지 않는다. 새 구독은 그 시점 서버 View/명령 기본값으로 다시 캡처한다.

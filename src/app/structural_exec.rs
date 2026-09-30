@@ -43,6 +43,24 @@ pub(crate) fn execute(
     for event in &events {
         state.apply_structure_result(engine, event);
     }
+    // Publication follows structural repair. Keep the wire's creation result
+    // even when a remote user must not activate a tab in the server's View.
+    engine.refresh_attach_presentation(state.presentation());
+    for event in &events {
+        if let CoreEvent::TabCreated {
+            pane_id,
+            tab_id,
+            activate: true,
+            ..
+        } = event
+        {
+            engine
+                .attach
+                .presentation
+                .selected_tabs
+                .insert(*pane_id, *tab_id);
+        }
+    }
     Ok(events)
 }
 
