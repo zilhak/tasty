@@ -270,13 +270,11 @@ pub struct CoreState {
     // busy 폴링에서 얻은 전경 이름으로 마우스 캡처 제한도 계산한다.
     pub(crate) mouse_capture_disabled_surfaces: std::collections::HashSet<u32>,
 
-    /// 첫 출력 뒤 OSC 133 경계가 없는 surface에 셸 통합 안내를 고려할 기준 시각.
+    /// OSC 133 경계가 없는 surface에 셸 통합 안내를 고려할 기준 시각. 첫 출력 또는 직전 안내 요청 뒤의 출력이다.
     pub(crate) shell_integration_first_output_at:
         std::collections::HashMap<u32, std::time::Instant>,
     /// OSC 133 경계를 한 번이라도 받아 안내 대상에서 제외한 surface.
     pub(crate) shell_integration_boundary_seen: std::collections::HashSet<u32>,
-    /// 같은 안내를 다시 표시하지 않기 위한 집합.
-    pub(crate) shell_integration_hint_shown: std::collections::HashSet<u32>,
 
     // 매 프레임 OS 프로세스를 조회하지 않도록 busy 폴링의 전경 이름을 재사용한다.
     pub(crate) foreground_names: std::collections::HashMap<u32, String>,
@@ -561,7 +559,6 @@ impl CoreState {
             mouse_capture_disabled_surfaces: std::collections::HashSet::new(),
             shell_integration_first_output_at: std::collections::HashMap::new(),
             shell_integration_boundary_seen: std::collections::HashSet::new(),
-            shell_integration_hint_shown: std::collections::HashSet::new(),
             foreground_names: std::collections::HashMap::new(),
             foreground_generation: std::collections::HashMap::new(),
             pending_move: None,

@@ -23,6 +23,8 @@ pub(crate) mod pane;
 mod popup_close_tests;
 #[cfg(all(test, feature = "gui"))]
 mod popup_ownership_tests;
+#[cfg(feature = "gui")]
+mod shell_integration_hint;
 mod tab;
 #[cfg(test)]
 pub(crate) mod tests;
@@ -140,6 +142,9 @@ pub struct AppState {
     /// 상태바에 표시할 선택 surface의 Git branch 캐시. 무효화는 branch 모듈이 맡는다.
     #[cfg(feature = "gui")]
     pub(crate) branch_cache: branch::BranchCache,
+    /// 셸 통합 안내 배너를 이미 띄운 surface. Core가 같은 surface의 안내를 다시 요청해도 한 번만 표시한다.
+    #[cfg(feature = "gui")]
+    pub(crate) shell_integration_hint_shown: std::collections::HashSet<u32>,
     /// kind별 최근 파일 목록. 읽기·저장은 RecentFilesStore가 담당한다.
     pub(crate) recent_files: crate::recent_files::RecentFiles,
     /// 팝업 위 포인터를 아래 터미널·분할선에 전달하지 않도록 하는 프레임 상태.
@@ -473,6 +478,8 @@ impl AppState {
             #[cfg(feature = "gui")]
             branch_cache: branch::BranchCache::default(),
             #[cfg(feature = "gui")]
+            shell_integration_hint_shown: std::collections::HashSet::new(),
+            #[cfg(feature = "gui")]
             explorer_views: Default::default(),
             #[cfg(feature = "gui")]
             explorer_clipboard: None,
@@ -748,6 +755,7 @@ impl AppState {
     pub(crate) fn release_surface_views(&mut self, surface_id: u32) {
         self.explorer_views.drop_view(surface_id);
         self.dag_graph_views.drop_view(surface_id);
+        self.shell_integration_hint_shown.remove(&surface_id);
     }
 
     /// 워크스페이스 복원 사본을 만든다. 저장 여부는 호출자가 결정한다.

@@ -649,7 +649,7 @@ impl App {
         }
     }
 
-    /// 셸 통합 미설치 추정을 배너로 알릴 뿐 자동 설정이나 attention 변경은 하지 않는다.
+    /// 셸 통합 미설치 추정을 surface마다 한 번 배너로 알릴 뿐 자동 설정이나 attention 변경은 하지 않는다.
     fn cascade_terminal_shell_integration_hint(&mut self, source: DispatchSource, surface_id: u32) {
         let (state, dirty_main) = match source {
             DispatchSource::Main(wid) => {
@@ -665,6 +665,9 @@ impl App {
                 (state, None)
             }
         };
+        if !state.take_first_shell_integration_hint(surface_id) {
+            return;
+        }
         state
             .banners
             .push(crate::adapters::ui::BannerState::persistent(
