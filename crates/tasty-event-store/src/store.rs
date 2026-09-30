@@ -1,6 +1,8 @@
 //! journal 열기·writer 세대·읽기.
 
-use std::path::Path;
+use std::ffi::OsString;
+use std::fs::{File, OpenOptions, TryLockError};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
@@ -12,13 +14,20 @@ use crate::types::{JournalCut, StreamId, WriterEpoch};
 /// 다른 연결이 쓰는 동안 기다리는 시간. 넘으면 SQLITE_BUSY 오류로 돌려준다.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// writer 잠금 파일 이름에 붙이는 접미사. journal 파일과 같은 디렉터리에 둔다.
+const WRITER_LOCK_SUFFIX: &str = ".writer-lock";
+
 /// 한 journal 파일의 저장소. 연결 하나를 가지며 Sync가 아니다.
 ///
-/// 활성 writer는 [`EventStore::acquire_writer`]가 돌려준 세대로 쓴다. 더 새 세대가 등록되면
-/// 이전 세대의 모든 쓰기는 [`StoreError::Fenced`]로 거절된다.
+/// 쓰기는 [`EventStore::acquire_writer`]로 독점 파일 잠금과 writer 세대를 얻은 저장소만 한다.
+/// 잠금은 다른 프로세스·다른 저장소를 막고, 세대는 같은 저장소 안의 이전 writer·worker가
+/// 늦게 보낸 쓰기를 [`StoreError::Fenced`]로 막는다. 잠금 없이 연 저장소는 읽기만 한다.
 pub struct EventStore {
     pub(crate) conn: Connection,
     journal_id: String,
+    lock_path: PathBuf,
+    /// 이 저장소가 가진 writer 잠금. drop하면 OS가 잠금을 푼다.
+    writer_lock: Option<File>,
 }
 
 impl EventStore {
@@ -35,6 +44,8 @@ impl EventStore {
         Ok(Self {
             conn,
             journal_id: journal_id.to_owned(),
+            lock_path: writer_lock_path(path),
+            writer_lock: None,
         })
     }
 
@@ -42,8 +53,32 @@ impl EventStore {
         &self.journal_id
     }
 
-    /// 새 writer 세대를 등록한다. 이후 이전 세대의 쓰기는 거절된다.
+    /// 독점 writer 잠금을 얻고 새 writer 세대를 등록한다. 이후 이전 세대의 쓰기는 거절된다.
+    /// 다른 저장소가 잠금을 가지고 있으면 [`StoreError::WriterLocked`], 잠금을 쓸 수 없는
+    /// 환경이면 [`StoreError::WriterLockUnavailable`]로 실패하며 writer가 되지 않는다.
+    /// 이미 잠금을 가진 저장소가 다시 부르면 세대만 올린다.
     pub fn acquire_writer(&mut self) -> StoreResult<WriterEpoch> {
+        let fresh_lock = match self.writer_lock {
+            Some(_) => None,
+            None => Some(lock_exclusive(&self.lock_path)?),
+        };
+        let epoch = self.register_epoch()?;
+        if let Some(lock) = fresh_lock {
+            self.writer_lock = Some(lock);
+        }
+        Ok(epoch)
+    }
+
+    /// writer 잠금을 놓는다. 이후 이 저장소의 쓰기는 [`StoreError::NotWriter`]로 거절된다.
+    pub fn release_writer(&mut self) {
+        self.writer_lock = None;
+    }
+
+    pub fn is_writer(&self) -> bool {
+        self.writer_lock.is_some()
+    }
+
+    fn register_epoch(&mut self) -> StoreResult<WriterEpoch> {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -102,6 +137,9 @@ impl EventStore {
 
     /// writer 세대와 활성 여부를 확인한 쓰기 transaction을 연다.
     pub(crate) fn write_tx(&mut self, epoch: WriterEpoch) -> StoreResult<Transaction<'_>> {
+        if self.writer_lock.is_none() {
+            return Err(StoreError::NotWriter);
+        }
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -114,6 +152,29 @@ impl EventStore {
             });
         }
         Ok(tx)
+    }
+}
+
+fn writer_lock_path(path: &Path) -> PathBuf {
+    let mut name = OsString::from(path.as_os_str());
+    name.push(WRITER_LOCK_SUFFIX);
+    PathBuf::from(name)
+}
+
+/// 잠금 파일에 독점 잠금을 건다. 기다리지 않는다. SQLite 파일 자체를 잠그지 않는 이유는
+/// Windows의 파일 잠금이 같은 파일에 대한 SQLite 자신의 읽기·쓰기까지 막기 때문이다.
+/// 잠금 파일은 지우지 않는다. 지우면 다른 프로세스가 새 파일에 따로 잠금을 걸 수 있다.
+fn lock_exclusive(path: &Path) -> StoreResult<File> {
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(path)
+        .map_err(StoreError::WriterLockUnavailable)?;
+    match file.try_lock() {
+        Ok(()) => Ok(file),
+        Err(TryLockError::WouldBlock) => Err(StoreError::WriterLocked),
+        Err(TryLockError::Error(err)) => Err(StoreError::WriterLockUnavailable(err)),
     }
 }
 

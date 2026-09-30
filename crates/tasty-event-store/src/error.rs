@@ -27,6 +27,15 @@ pub enum StoreError {
     #[error("journal is archived and accepts no writes")]
     JournalArchived,
 
+    #[error("another store holds the journal writer lock")]
+    WriterLocked,
+
+    #[error("journal writer lock is unavailable: {0}")]
+    WriterLockUnavailable(std::io::Error),
+
+    #[error("this store does not hold the journal writer lock")]
+    NotWriter,
+
     #[error("writer epoch {presented:?} is fenced by current {current:?}")]
     Fenced {
         presented: WriterEpoch,
