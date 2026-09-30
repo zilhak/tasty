@@ -350,6 +350,13 @@ fn deserialize_color(data: &[u8]) -> (ColorAttribute, usize) {
 }
 
 #[cfg(test)]
+impl DiskScrollback {
+    pub(crate) fn backing_file(&self) -> &std::path::Path {
+        &self.file_path
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use termwiz::cell::{Intensity, Underline};
@@ -473,12 +480,5 @@ mod tests {
         let bytes = serialize_lines(&[]);
         let out = deserialize_lines(&bytes).expect("deserialize");
         assert!(out.is_empty());
-    }
-}
-
-#[cfg(test)]
-impl DiskScrollback {
-    pub(crate) fn backing_file(&self) -> &std::path::Path {
-        &self.file_path
     }
 }
