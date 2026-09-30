@@ -1,6 +1,6 @@
 # ADR-0061: 외부 원격 연결은 Remote가 소유하고 attach 동기화는 서버의 확정 순서를 따른다
 
-- **Status**: Accepted — 구현 상태: 단계적 이행 중. 현재 연결·재연결·ID mapping 상태가 App 필드와 attach client·Core attach runtime에 나뉘어 있다
+- **Status**: Accepted — 구현 상태: 단계적 이행 중. 현재 연결·재연결·ID mapping 상태가 App 필드와 attach client·Core attach runtime에 나뉘어 있다. mirror는 아직 로컬 workspace 목록 안에 `mirror` 표지로 섞여 있고 로컬 공유 카운터에서 ID를 받는다
 - **Date**: 2026-09-30
 - **Tags**: attach, remote, stream, synchronization, plugins
 - **Group**: terminal
@@ -40,7 +40,16 @@ forward 요청의 출처, parked 엔진의 즉시 적용을 정했다. mirror �
 
 - 누구의 입력을 허용할지, surface 생존, hard 점유 판정은 Core와 `LiveDomainState`가 맡는다([ADR-0021](0021-occupancy-and-attach-admission.md)). Remote는 검증된 연결 주체를 전달한다.
   점유는 connection epoch에 묶이며, 이전 실행의 점유를 재시작 뒤 현재 잠금으로 복원하지 않는다.
-- Remote는 도메인 모델을 직접 바꾸지 않는다. 서버에서 받은 구조 변경은 명령으로 CommandExecutor에 넣고, client mirror 구조는 원격 확정 결과의 local projection이다.
+- 서버는 client가 forward한 구조 요청을 자기 CommandExecutor에 명령으로 넣는다. 원격 경로도 서버의 기록 경계를 거친다.
+- client의 mirror 구조는 원격 확정 결과의 local projection이다. 로컬 구조 journal의 원본이 아니며 로컬 journal에 기록하지 않는다.
+  - 배치: mirror workspace와 그 pane·tab·surface는 `CoreState` 안에서 로컬 workspace 목록과 다른 mirror 전용 필드에 둔다.
+    로컬 journal·digest 비교·레이아웃 저장은 로컬 workspace 목록만 보므로 mirror를 걸러 내는 필터가 필요 없다.
+  - 쓰기: mirror 전용 필드는 RemoteState 세션이 쓰는 단일 창구로만 바꾼다. 로컬 구조 트리는 Remote가 직접 바꾸지 않는다.
+    조회는 로컬 목록과 mirror 필드를 함께 찾는 합성 조회로 제공한다.
+  - 로컬 사용자와 에이전트의 mirror 구조 조작은 로컬에서 실행하지 않고 서버로 forward한다. mirror ID로 로컬 구조 명령을 만들지 않는다.
+  - 목표 소유는 `RemoteState`의 세션별 mirror projection이다. `CoreState` 안의 전용 필드는 그리로 가는 중간 배치다.
+  - ID: mirror의 로컬 workspace·pane·tab·surface ID도 로컬 구조 journal의 같은 예약에서 받는다. 이벤트 없이 예약만 소비한다([ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)).
+    엔진을 넘어 합산하는 목록에 mirror도 들어가므로 로컬 ID와 한 공간에서 유일해야 한다. mirror 전용 발급기는 두지 않는다.
 - 원격 terminal bytes와 VT 응답은 Terminal ingest와 원격 sink로 연결하며 local Pty를 요구하지 않는다([ADR-0060](0060-terminal-and-pty-separation.md)).
 - plugin mesh의 생산과 plugin IPC는 plugin 모듈에 남는다. Remote는 명시한 frame·context·input 경계로 교환한다.
   네트워크 오류가 내부 plugin 채널을 끝내거나 plugin 재시작이 무관한 SSH 연결을 끝내지 않는다.
@@ -97,6 +106,11 @@ forward 요청의 출처, parked 엔진의 즉시 적용을 정했다. mirror �
 외부 연결의 epoch·재연결·mapping이 한 곳에 있어 재시작·재연결 뒤 오래된 점유나 mapping이 살아남는 경로를 찾기 쉽다.
 plugin 내부 채널과 외부 연결의 수명·권한·큐 예산이 섞이지 않는다. 서버 구조 변경이 명령 경계를 거치므로 원격 경로가 기록에서 빠지지 않는다.
 
+mirror를 별도 필드에 두면 로컬 journal과 비교에서 mirror가 구조적으로 빠진다. 대신 mirror도 보여야 하는 조회(사이드바·렌더·입력 라우팅·IPC 목록)를 합성 조회로 바꿔야 하며,
+하나라도 빠뜨리면 mirror가 화면이나 목록에서 사라지는 회귀가 난다. 사이드바에서 로컬과 mirror가 섞인 순서를 누가 소유하는지,
+delta 적용 때 mirror에 로컬로 붙인 카테고리·부제·설명을 보존할지는 아직 정하지 않았다.
+처음 결정은 서버의 명령 경계와 client mirror projection을 한 문장에 적어 mirror 구조가 로컬 journal에 기록되는지 해석이 갈렸다. 이 개정에서 둘을 나누고 mirror의 저장 위치·쓰기 창구·ID 발급을 정했다.
+
 기존 wire를 유지하므로 구 client·server와의 호환 비용은 그대로다. 구 server는 origin을 무시해 새 client의 agent close를 복원 기록에 남긴다.
 Loss 재시도와 데이터 삽입의 경합으로 데이터 프레임 하나가 통지보다 앞설 가능성은 소스상 남아 있다.
 큰 workspace의 재attach는 전체 snapshot을 다시 받아 비용이 크다.
@@ -111,7 +125,12 @@ StreamReady만으로 전송하는 기타 구조 변경은 다음 stream 활동�
 
 - 현재처럼 App과 Core에 연결 상태를 나눠 두는 안: 재연결·epoch·점유 회수의 경계가 흐려지고 창 수명과 연결 수명이 다시 엮인다.
 - 모든 소켓 통신을 NetworkManager 하나로 합치는 안: Remote·Webhook·local IPC·plugin IPC의 권한·수명·재시도가 서로 다르다.
-- Remote가 mirror 구조를 도메인 모델에 직접 쓰는 안: 원격 경로가 기록 밖 writer가 된다.
+- Remote가 mirror 구조를 로컬 도메인 모델에 직접 쓰는 안: 원격 경로가 기록 밖 writer가 된다.
+- mirror를 로컬 workspace 목록에 그대로 두고 표지로 journal·비교에서 제외하는 안: 저장·digest·importer·preset 같은 소비자마다 필터가 흩어지고,
+  새 소비자가 필터를 빠뜨리면 mirror가 기록으로 샌다. CoreState를 journal에서 다시 만들 때 mirror를 다시 끼워 넣는 코드도 필요하다.
+- mirror를 지금 바로 `RemoteState` 저장소로 옮기고 View·IPC가 합성하는 안: 목표 배치이지만 모든 조회와 활성 workspace 인덱스의 의미를 한 번에 바꿔야 한다.
+  전용 필드와 합성 조회를 먼저 두면 나중에 저장소를 옮길 때 조회 뒤쪽만 바꾸면 된다.
+- mirror도 로컬 journal에 기록하는 안: 재시작 replay가 끊긴 원격 세션의 구조를 되살리고, 서버 stream과 로컬 stream이 같은 사실의 원본 둘이 된다.
 - 창이 없는 동안 mirror 데이터를 쌓기만 하는 안: 메모리 상한과 구조 delta 보존, 재생 지연 문제가 생긴다. 최소화만으로 세션을 끊으면 점유가 풀린다.
 - 손실 때 mirror를 닫는 안: 사용자의 작업 공간이 사라진다. 서버가 임의 시점에 snapshot을 push하면 이미 큐에 들어간 tap과 순서가 섞인다.
 - 요청 출처 생략을 agent로 읽는 안: 옛 client의 사용자 undo가 깨진다.
@@ -121,6 +140,7 @@ StreamReady만으로 전송하는 기타 구조 변경은 다음 stream 활동�
 ### 코드와 설정에서 확인
 
 - 원격 호스트 간 원자적 변경이나 여러 writer가 같은 stream을 쓰는 요구가 생기면 동기화 모델을 다시 정한다.
+- 로컬 대상과 mirror 대상을 함께 바꾸는 명령(로컬 탭을 mirror로 옮기기 등)이 생기거나 합성 조회 누락 결함이 반복되면 mirror를 `RemoteState` 저장소로 옮기는 시점을 다시 본다.
 - 헤드리스 attach client가 제품 요구가 되면 Remote의 client 쪽 범위를 헤드리스에 연결한다([ADR-0058](0058-headless-without-local-views.md)).
 - CLI에 GUI·host 전용의 큰 의존이 `tasty-remote`를 통해 들어오면 그 부분만 feature나 crate로 나눈다.
 - user·agent로 표현할 수 없는 요청자가 생기거나 구 server가 사라지면 origin 호환을 재검토한다.

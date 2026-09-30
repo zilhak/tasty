@@ -106,6 +106,7 @@ domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 제품 경
 - wire 표현은 `u32`로 유지한다. surface는 standalone PTY ID 기준값 미만, 그 밖의 구조 kind는 `u32` 최대값을 상한으로 예약한다.
   상한을 넘는 예약은 위 규칙대로 되감지 않고 거절한다. surface와 PTY의 범위 분리는 [ADR-0059](0059-id-targets-and-view-owned-selection.md)를 따른다.
 - journal 밖의 ID(PTY·hook·observer·notification)는 기존 카운터를 쓴다.
+- 원격 mirror의 로컬 구조 ID도 같은 예약에서 받는다. mirror는 로컬 journal에 기록하지 않으므로 이벤트 없이 예약만 소비한다([ADR-0061](0061-external-remote-module-and-attach-sync.md)).
 - 이 절의 journal 배치와 전역 발급은 구조 journal을 제품에 연결하기 전에 정했다. 처음 결정은 값 공간을 journal 내부로 한정하고 runtime ID와의 통합을 범위 밖으로 두었다.
 
 ## Consequences
