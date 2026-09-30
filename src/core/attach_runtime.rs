@@ -704,16 +704,17 @@ pub(crate) fn execute_forwarded_structural_op(
             let tab_id = engine
                 .find_tab_for_surface(*anchor_surface_id)
                 .ok_or_else(|| format!("anchor surface {anchor_surface_id} tab not found"))?;
-            // 닫기 전에 캡처해야 복원에 필요한 트리 정보가 남는다.
+            // 기록은 출처 workspace를 트리에서 찾으므로 닫기 전에 한다.
+            // pane의 마지막 탭은 닫히지 않으므로 기록하지 않는다. Core 탭 닫기와 같은 규칙이다.
             if let Some(item) = restorable
                 .then(|| engine.find_pane_for_tab(tab_id))
                 .flatten()
                 .and_then(|pane_id| {
-                    let idx = engine
-                        .find_pane_by_id(pane_id)?
-                        .tabs
-                        .iter()
-                        .position(|t| t.id == tab_id)?;
+                    let tabs = &engine.find_pane_by_id(pane_id)?.tabs;
+                    if tabs.len() <= 1 {
+                        return None;
+                    }
+                    let idx = tabs.iter().position(|t| t.id == tab_id)?;
                     Some((pane_id, idx))
                 })
                 .and_then(|(pane_id, idx)| engine.capture_closed_tab(pane_id, idx))
@@ -727,6 +728,7 @@ pub(crate) fn execute_forwarded_structural_op(
                 .find_pane_for_surface(*anchor_surface_id)
                 .ok_or_else(|| format!("anchor surface {anchor_surface_id} pane not found"))?;
             // 닫기 전에 캡처해야 pane의 split context가 남는다.
+            // 유일한 pane은 닫히지 않으며 capture_closed_pane도 None을 돌려준다.
             if let Some(item) = restorable
                 .then(|| engine.capture_closed_pane(pane_id))
                 .flatten()
@@ -2330,6 +2332,40 @@ mod forward_exec_tests {
             ),
             "탭 단위로 캡처돼야 한다"
         );
+    }
+
+    /// pane의 마지막 탭과 workspace의 유일한 pane은 닫히지 않으므로 기록도 남기지 않는다.
+    #[test]
+    fn a_forwarded_close_that_cannot_close_leaves_no_snapshot() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        for op in [
+            StructuralOp::CloseTab {
+                anchor_surface_id: a,
+            },
+            StructuralOp::ClosePane {
+                anchor_surface_id: a,
+            },
+        ] {
+            let before = engine.closed_items.len();
+            let result = execute_forwarded_structural_op(
+                &mut core,
+                &mut state,
+                &mut engine,
+                &op,
+                ForwardOrigin::User,
+            );
+            assert!(
+                engine.find_terminal_by_id(a).is_some(),
+                "{op:?}: 마지막 탭·pane은 닫히지 않는다 ({:?})",
+                result.map(|_| ())
+            );
+            assert_eq!(
+                engine.closed_items.len(),
+                before,
+                "{op:?}: 닫히지 않은 대상은 서버 복원 스택에 남기지 않는다"
+            );
+        }
     }
 
     fn tabs_and_selection(engine: &crate::core::CoreState, surface_id: u32) -> (usize, usize) {
