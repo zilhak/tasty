@@ -48,6 +48,7 @@ impl ShutdownPhase {
 
 pub(crate) struct ShutdownState {
     pub(crate) phase: ShutdownPhase,
+    final_view_sequence: Option<u64>,
 }
 
 enum StepOutcome {
@@ -65,6 +66,7 @@ impl App {
         shutdown_trace::mark_start();
         self.shutdown = Some(ShutdownState {
             phase: ShutdownPhase::SavingLayout,
+            final_view_sequence: None,
         });
 
         // Native child views sit above the GPU loading frame. Normal redraws no
@@ -182,7 +184,21 @@ impl App {
     /// 부팅 중에는 저장 대상 engine이 아직 없어 빈 레이아웃으로 덮어쓰지 않는다.
     fn shutdown_step_saving_layout(&mut self) -> StepOutcome {
         let t_flush = Instant::now();
-        self.flush_layout_persistence(true);
+        if self
+            .shutdown
+            .as_ref()
+            .is_some_and(|shutdown| shutdown.final_view_sequence.is_none())
+        {
+            self.flush_layout_persistence(true);
+            self.shutdown
+                .as_mut()
+                .expect("shutdown phase")
+                .final_view_sequence = Some(self.journal.latest_view_sequence());
+        }
+        self.poll_journal_application();
+        if self.journal.has_pending_view_writes() {
+            return StepOutcome::Waiting;
+        }
         tracing::info!(
             target: "tasty::shutdown",
             ms = shutdown_trace::elapsed_ms(t_flush),

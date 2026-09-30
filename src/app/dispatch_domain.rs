@@ -347,9 +347,6 @@ impl App {
                 self.mark_source_window_dirty(source);
             }
             CoreEvent::LayoutSaved => {}
-            CoreEvent::LayoutRestored { .. } => {
-                // 레이아웃 복원은 직접 Core::apply를 호출한 부팅 경로가 결과를 처리한다.
-            }
             CoreEvent::PluginLoaded { plugin_id, version } => {
                 self.cascade_plugin_loaded(plugin_id, version)
             }

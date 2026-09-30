@@ -13,6 +13,47 @@ impl App {
         if self.journal.is_halted() {
             return;
         }
+        let mut captures = Vec::new();
+        for (window, view, engine) in self.engines().window_pairs() {
+            if engine.settings.general.restore_layout
+                && let Some(binding) = self
+                    .engines
+                    .of_window(window)
+                    .and_then(|id| self.engines.journal_binding(id))
+            {
+                let active = engine
+                    .workspace_at(view.state.active_workspace_index(&engine))
+                    .map(|workspace| workspace.id);
+                captures.push(
+                    crate::runtime::journal_product::view_record::StoredView::capture(
+                        binding.clone(),
+                        &engine,
+                        active,
+                        &view.state.navigation,
+                    ),
+                );
+            }
+        }
+        for (id, state, engine) in self.engines.parked_sessions() {
+            if engine.settings.general.restore_layout
+                && let Some(binding) = self.engines.journal_binding(id)
+            {
+                let active = engine
+                    .workspace_at(state.active_workspace_index(&engine))
+                    .map(|workspace| workspace.id);
+                captures.push(
+                    crate::runtime::journal_product::view_record::StoredView::capture(
+                        binding.clone(),
+                        &engine,
+                        active,
+                        &state.navigation,
+                    ),
+                );
+            }
+        }
+        for capture in captures {
+            self.journal.queue_view(capture);
+        }
         let label = if force { "final" } else { "tick" };
         let mut engines = engines_mut!(self);
         for (state, mut engine) in engines.reborrow().window_sessions() {

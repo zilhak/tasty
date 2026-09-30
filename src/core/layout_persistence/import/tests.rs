@@ -582,3 +582,29 @@ fn unknown_category_moves_the_workspace_to_normal() {
         0
     );
 }
+
+#[test]
+fn imported_out_of_range_view_positions_match_legacy_restore_clamping() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (mut store, epoch) = open(&dir.path().join("journal.db"));
+    let mut layout: serde_json::Value = serde_json::from_str(FULL_SLOT).unwrap();
+    layout["active_workspace"] = serde_json::json!(9999);
+    layout["workspaces"][0]["focused_pane_index"] = serde_json::json!(9999);
+    layout["workspaces"][0]["pane_layout"]["Split"]["first"]["Leaf"]["active_tab"] =
+        serde_json::json!(9999);
+    let imported = import(&mut store, epoch, &layout.to_string());
+    assert_eq!(
+        imported.view.active_workspace,
+        Some(imported.mapping.workspaces.last().unwrap().id)
+    );
+    let first = &imported.mapping.workspaces[0];
+    let pane = &first.panes[0];
+    assert_eq!(
+        imported.view.active_tabs[&pane.id],
+        pane.tabs.last().unwrap().id
+    );
+    assert!(
+        !imported.view.focused_panes.contains_key(&first.id),
+        "missing pane selection uses the presentation's first living pane"
+    );
+}

@@ -255,10 +255,6 @@ pub(crate) enum DomainIntent {
         force: bool,
     },
 
-    /// 대기 레이아웃을 복원한다. plugin 준비 대기는 호출자가 끝내야 하며 대기 항목이 없으면 복원하지 않는다.
-    #[cfg(feature = "gui")]
-    ApplyPendingLayoutRestore,
-
     /// GUI 파일 식별 worker에 요청한다. 결과는 App 이벤트로 받으며 worker가 없으면 로그만 남긴다.
     #[cfg(feature = "gui")]
     DispatchFile {
@@ -551,13 +547,6 @@ pub(crate) enum CoreEvent {
     /// 저장을 생략하거나 쓰기에 실패해도 반환될 수 있으며 실제 저장 성공 확인은 아니다.
     #[cfg(any(feature = "gui", test))]
     LayoutSaved,
-
-    /// pending 부재나 복원 실패면 restored=false다. 활성 workspace 보정은 이 결과를 받은 호출자가 맡는다.
-    #[cfg(feature = "gui")]
-    LayoutRestored {
-        restored: bool,
-        presentation: Option<crate::model::RestoredPresentation>,
-    },
 
     #[cfg(feature = "gui")]
     PluginLoaded {

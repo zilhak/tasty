@@ -127,6 +127,8 @@ pub(crate) struct App {
     /// 첫 창의 부팅 중에만 보유한다. 완료 시 상태를 MainView로 옮긴다.
     #[cfg(feature = "gui")]
     pub(crate) boot: Option<boot_machine::BootState>,
+    #[cfg(feature = "gui")]
+    pub(crate) pending_window: Option<window_lifecycle::PendingWindow>,
     /// 종료를 시작한 뒤 이벤트 루프를 나갈 때까지 보유한다.
     #[cfg(feature = "gui")]
     pub(crate) shutdown: Option<shutdown_machine::ShutdownState>,
@@ -305,6 +307,7 @@ impl App {
             view: ViewRegistry::new(proxy.clone()),
             engines: engine_registry::EngineRegistry::default(),
             boot: None,
+            pending_window: None,
             shutdown: None,
             shell_setup_mode: false,
             shell_setup_path: String::new(),
@@ -476,13 +479,5 @@ impl App {
             )
             .await
         })
-    }
-
-    #[cfg(feature = "gui")]
-    pub(crate) fn core_state_mut(&mut self) -> &mut crate::core::CoreState {
-        self.engines_mut()
-            .primary()
-            .expect("App engine accessed before initialization")
-            .core
     }
 }

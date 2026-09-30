@@ -9,11 +9,8 @@
 //!
 //! workspace 부제·설명·attach 매핑과 tab의 사용자 지정 이름은 전용 이벤트로 기록한다.
 //! terminal의 cwd·복원 명령·scrollback과 plugin surface 자료는 이벤트가 아니라 surface 저장 자료
-//! ([`surface_data::SurfaceData`]) payload로 저장하고 자료 참조로 가리킨다. 부팅 경로에는 연결하지 않았다.
-
-// reason: 부팅 경로에 연결하기 전의 시험 전용 importer라 시험 밖 빌드에서는 호출하는 곳이 없다.
-// 부팅 경로에 연결하면 이 허용을 지운다.
-#![cfg_attr(not(test), allow(dead_code))]
+//! ([`surface_data::SurfaceData`]) payload로 저장하고 자료 참조로 가리킨다. 제품 worker가 선택된
+//! 슬롯에 구조 stream이 아직 없을 때 호출하며, 이미 활성화한 stream에는 파일을 다시 가져오지 않는다.
 
 #[cfg(test)]
 mod shadow;
@@ -163,6 +160,7 @@ impl ImportMapping {
             .map(|(_, new)| *new)
     }
 
+    #[cfg(test)]
     pub(crate) fn saved_category(&self, new: WorkspaceCategoryId) -> Option<WorkspaceCategoryId> {
         self.categories
             .iter()
@@ -170,11 +168,13 @@ impl ImportMapping {
             .map(|(saved, _)| *saved)
     }
 
+    #[cfg(test)]
     pub(crate) fn workspace_index(&self, id: WorkspaceId) -> Option<usize> {
         self.workspaces.iter().position(|w| w.id == id)
     }
 
     /// (workspace 순서, leaf pane 순서).
+    #[cfg(test)]
     pub(crate) fn pane_index(&self, id: PaneId) -> Option<(usize, usize)> {
         self.positions()
             .find(|p| p.pane == id)
@@ -182,6 +182,7 @@ impl ImportMapping {
     }
 
     /// (workspace 순서, leaf pane 순서, tab 순서).
+    #[cfg(test)]
     pub(crate) fn tab_index(&self, id: TabId) -> Option<(usize, usize, usize)> {
         self.positions()
             .find(|p| p.tab == id)
@@ -189,6 +190,7 @@ impl ImportMapping {
     }
 
     /// (workspace 순서, leaf pane 순서, tab 순서, leaf surface 순서).
+    #[cfg(test)]
     pub(crate) fn surface_index(&self, id: SurfaceId) -> Option<(usize, usize, usize, usize)> {
         self.positions().find(|p| p.surface == id).map(|p| {
             (
@@ -200,6 +202,7 @@ impl ImportMapping {
         })
     }
 
+    #[cfg(test)]
     fn positions(&self) -> impl Iterator<Item = Position> + '_ {
         self.workspaces.iter().enumerate().flat_map(|(wi, w)| {
             w.panes.iter().enumerate().flat_map(move |(pi, p)| {
@@ -219,6 +222,7 @@ impl ImportMapping {
     }
 }
 
+#[cfg(test)]
 struct Position {
     workspace_index: usize,
     pane_index: usize,
@@ -230,11 +234,13 @@ struct Position {
 }
 
 /// 이벤트로 만들지 않은 화면 상태. 범위를 벗어난 선택 위치는 비워 둔다.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub(crate) struct ImportedView {
     pub(crate) active_workspace: Option<WorkspaceId>,
     pub(crate) focused_panes: BTreeMap<WorkspaceId, PaneId>,
     pub(crate) active_tabs: BTreeMap<PaneId, TabId>,
+    #[serde(default)]
+    pub(crate) selected_surfaces: BTreeMap<TabId, SurfaceId>,
     pub(crate) collapsed_categories: Vec<WorkspaceCategoryId>,
 }
 
@@ -308,6 +314,7 @@ pub(crate) fn import_slot(
         categories: plan.category_map.clone(),
         workspaces: plan.workspaces.clone(),
     };
+    let view = view_of(&layout, &mapping);
     let command_id = format!("import-slot-{slot}-{}", epoch.0);
     let request = commit_request(
         epoch,
@@ -315,6 +322,7 @@ pub(crate) fn import_slot(
         key,
         digest,
         &mapping,
+        &view,
         &plan,
         store,
         stream,
@@ -355,6 +363,7 @@ fn commit_request(
     key: CommandKey,
     digest: &[u8],
     mapping: &ImportMapping,
+    view: &ImportedView,
     plan: &Plan,
     store: &EventStore,
     stream: StreamId,
@@ -379,7 +388,7 @@ fn commit_request(
         request_digest: digest.to_vec(),
         resolved: serde_json::to_vec(mapping).map_err(ImportError::Mapping)?,
         status: CommandStatus::Completed,
-        response: Some(Vec::new()),
+        response: Some(serde_json::to_vec(view).map_err(ImportError::Mapping)?),
     });
     if !events.is_empty() {
         request.appends.push(StreamAppend {
@@ -416,7 +425,11 @@ fn view_of(layout: &SavedLayout, mapping: &ImportMapping) -> ImportedView {
     let mut view = ImportedView {
         active_workspace: mapping
             .workspaces
-            .get(layout.active_workspace)
+            .get(
+                layout
+                    .active_workspace
+                    .min(mapping.workspaces.len().saturating_sub(1)),
+            )
             .map(|w| w.id),
         ..ImportedView::default()
     };
@@ -427,7 +440,10 @@ fn view_of(layout: &SavedLayout, mapping: &ImportMapping) -> ImportedView {
         let mut saved_panes = Vec::new();
         collect_panes(&saved.pane_layout, &mut saved_panes);
         for (saved_pane, pane) in saved_panes.iter().zip(&imported.panes) {
-            if let Some(tab) = pane.tabs.get(saved_pane.active_tab) {
+            if let Some(tab) = pane
+                .tabs
+                .get(saved_pane.active_tab.min(pane.tabs.len().saturating_sub(1)))
+            {
                 view.active_tabs.insert(pane.id, tab.id);
             }
         }

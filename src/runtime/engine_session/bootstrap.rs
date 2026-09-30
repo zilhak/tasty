@@ -142,6 +142,15 @@ impl EngineSession {
             #[cfg(test)]
             test_host_commands: None,
         };
+        #[cfg(test)]
+        if materialize_default
+            && session.core_state.settings.general.restore_layout
+            && let Some(slot) = layout_slot
+        {
+            session
+                .core_state
+                .accept_slot_load(crate::core::layout_persistence::load_slot(slot), slot);
+        }
         let mut engine = session.borrow_mut();
         // 복원할 레이아웃이 있으면 기본 PTY를 먼저 만들지 않는다. 복원이 트리를 교체해도 별도 store의 PTY는 남기 때문이다.
         if materialize_default && engine.pending_layout_restore.is_none() {

@@ -316,60 +316,6 @@ impl Core {
         engine.layout_dirty.clear();
         CoreEvent::LayoutSaved
     }
-
-    /// 대기 중인 저장 레이아웃을 꺼내 복원하고 활성 workspace 후보를 반환한다.
-    #[cfg(feature = "gui")]
-    pub(super) fn apply_apply_pending_layout_restore(engine: &mut EngineMut<'_>) -> CoreEvent {
-        let Some(saved) = engine.pending_layout_restore.take() else {
-            return CoreEvent::LayoutRestored {
-                restored: false,
-                presentation: None,
-            };
-        };
-
-        // 새 ID가 이전 실행의 surface 메타데이터와 겹치지 않도록 복원 전에 발급 기준을 올린다.
-        {
-            let mut guard = crate::poison::recover_mutex(
-                engine.memory.lock(),
-                crate::core::MEMORY_WHAT,
-                &crate::core::MEMORY_POISONED,
-            );
-            seed_surface_id_floor(&mut *guard, &engine.next_ids);
-        }
-
-        let Some(presentation) = saved.restore(engine) else {
-            return CoreEvent::LayoutRestored {
-                restored: false,
-                presentation: None,
-            };
-        };
-
-        // 발급 기준만 올리면 죽은 scope는 남으므로 복원된 live ID 목록으로 따로 정리한다.
-        {
-            let live: std::collections::HashSet<u32> = engine
-                .workspaces()
-                .into_iter()
-                .flat_map(|ws| ws.all_surface_ids())
-                .collect();
-            let mut guard = crate::poison::recover_mutex(
-                engine.memory.lock(),
-                crate::core::MEMORY_WHAT,
-                &crate::core::MEMORY_POISONED,
-            );
-            let removed =
-                crate::surface_meta::SurfaceMetaStore::purge_dead_surfaces(&mut *guard, &live);
-            if removed > 0 {
-                tracing::info!(
-                    "surface_meta GC: purged {removed} dead surface scope(s) on restore"
-                );
-            }
-        }
-
-        CoreEvent::LayoutRestored {
-            restored: true,
-            presentation: Some(presentation),
-        }
-    }
 }
 
 /// workspace 생성 요청. 사용자 요청과 내부 기본 workspace 생성이 같은 구현을 사용한다.
@@ -548,6 +494,7 @@ fn push_tab_to_pane(
 /// PTY 범위의 scope는 삭제를 시도하고 최대값 계산에서 제외해 잘못된 ID가 다음 실행에 이어지지 않게 한다.
 /// 이미 높아진 발급 기준을 낮추거나 ID 범위 소진을 막는 함수는 아니다.
 #[cfg(any(feature = "gui", test))]
+#[cfg(test)]
 pub(crate) fn seed_surface_id_floor(
     mem: &mut dyn tasty_memory::MemoryStorage,
     ids: &crate::core::state::IdGenerator,

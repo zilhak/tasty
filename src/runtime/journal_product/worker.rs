@@ -99,7 +99,7 @@ pub(super) fn run(
         };
         let mut result = match &halted {
             Some(reason) => Err(reason.clone()),
-            None => handle(&executor, &mut pending, request.ticket, request.work),
+            None => handle(&executor, &home, &mut pending, request.ticket, request.work),
         };
         if halted.is_none()
             && let Err(error) = publish(
@@ -130,6 +130,7 @@ pub(super) fn run(
 
 fn handle(
     executor: &Executor<StructureDecider>,
+    home: &std::path::Path,
     pending: &mut HashMap<u64, Pending>,
     ticket: u64,
     work: Work,
@@ -138,7 +139,15 @@ fn handle(
         Work::OpenEngine {
             selection,
             normal_category_name,
-        } => binding::open(executor, ticket, selection, normal_category_name),
+            surface_floor,
+        } => binding::open(
+            executor,
+            home,
+            ticket,
+            selection,
+            normal_category_name,
+            surface_floor,
+        ),
         Work::Admit(admission) => {
             if pending.contains_key(&ticket)
                 || pending.values().any(|p| p.followers.contains(&ticket))
@@ -275,6 +284,26 @@ fn handle(
             }
             Ok(ResultValue::Reserved(ranges))
         }
+        #[cfg(feature = "gui")]
+        Work::SaveView(view) => {
+            let inner = executor.inner.lock().map_err(|error| error.to_string())?;
+            if view.binding.journal_id != inner.store.journal_id()
+                || view.binding.runtime_epoch != inner.epoch.0
+                || inner
+                    .state
+                    .streams
+                    .get(&view.binding.stream)
+                    .is_none_or(|model| {
+                        model.engine_incarnation != view.binding.incarnation
+                            || model.applied.revision < view.binding.revision
+                            || model.applied.batch < view.binding.published_cut
+                    })
+            {
+                return Err("View snapshot belongs to a retired engine binding".into());
+            }
+            super::view_record::save(home, &view)?;
+            Ok(ResultValue::ViewSaved)
+        }
         Work::ReadPayload(reference) => {
             let inner = executor.inner.lock().map_err(|error| error.to_string())?;
             let bytes = inner
@@ -340,7 +369,7 @@ fn publish(
             return Ok(());
         };
         let decoded = journal::stream_batch(&batch).map_err(|e| e.to_string())?;
-        let previous = predecessor
+        let mut previous = predecessor
             .take()
             .ok_or("committed batch has no live predecessor")?;
         let before = decoded
@@ -348,6 +377,8 @@ fn publish(
             .keys()
             .map(|stream| (stream.clone(), previous.stream(stream)))
             .collect();
+        tasty_domain::evolve_streams(&mut previous, &decoded).map_err(|error| error.to_string())?;
+        *predecessor = Some(previous);
         if !send(Completion::Publish {
             engine_binding: engine_binding.clone(),
             batch: decoded,

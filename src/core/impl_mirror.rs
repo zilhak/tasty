@@ -523,10 +523,6 @@ impl Core {
                 force,
                 &*presentation,
             )]),
-            #[cfg(feature = "gui")]
-            DomainIntent::ApplyPendingLayoutRestore => {
-                Ok(vec![Self::apply_apply_pending_layout_restore(engine)])
-            }
             // 결과를 이벤트 루프로 돌려주는 identify worker는 GUI에만 있다.
             #[cfg(feature = "gui")]
             DomainIntent::DispatchFile {

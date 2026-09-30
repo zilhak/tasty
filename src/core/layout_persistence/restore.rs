@@ -1,36 +1,25 @@
-//! 저장 레이아웃을 engine에 복원한다. plugin kind는 실제 등록된 생성기가 있어야 복원할 수 있다.
+//! Legacy 복원 비교 구현은 시험에서만 실행한다. 제품은 journal importer와 SurfaceRestorer를 쓴다.
 //! 호출자가 required_plugin_kinds로 필요한 종류를 확인하고 plugin 준비를 기다린다.
 
-#[cfg(any(feature = "gui", test))]
+#[cfg(test)]
 use crate::core::engine_access::EngineMut;
-#[cfg(any(feature = "gui", test))]
+#[cfg(test)]
 use std::path::PathBuf;
 
-#[cfg(any(feature = "gui", test))]
+#[cfg(test)]
 use crate::core::CoreState;
-#[cfg(any(feature = "gui", test))]
+#[cfg(test)]
 use crate::core::state::ShellConfig;
-#[cfg(any(feature = "gui", test))]
+#[cfg(test)]
 use crate::model::{Pane, PaneNode, Surface, SurfaceLayout, Tab, TerminalSurface, Workspace};
 
-use super::schema::{
-    SavedLayout, SavedPane, SavedPaneNode, SavedSurface, SavedSurfaceLayout, SavedTab,
-    SavedWorkspace,
-};
-#[cfg(any(feature = "gui", test))]
+use super::schema::{SavedLayout, SavedPaneNode, SavedSurface, SavedSurfaceLayout};
+#[cfg(test)]
+use super::schema::{SavedPane, SavedTab, SavedWorkspace};
+#[cfg(test)]
 use super::scrollback::queue_scrollback_for_surface;
 
 impl SavedLayout {
-    /// 호출자가 plugin 준비 여부를 확인할 Generic 종류 목록.
-    #[cfg(feature = "gui")]
-    pub fn required_plugin_kinds(&self) -> Vec<String> {
-        let mut kinds = std::collections::HashSet::new();
-        for ws in &self.workspaces {
-            Self::collect_kinds_in_pane(&ws.pane_layout, &mut kinds);
-        }
-        kinds.into_iter().collect()
-    }
-
     /// 이 슬롯의 scrollback 참조만 모은다. GC는 다른 창의 파일을 지우지 않도록 모든 슬롯과 합쳐야 한다.
     pub fn collect_scrollback_refs(&self) -> std::collections::HashSet<String> {
         let mut refs = std::collections::HashSet::new();
@@ -76,41 +65,9 @@ impl SavedLayout {
         }
     }
 
-    #[cfg(feature = "gui")]
-    fn collect_kinds_in_pane(node: &SavedPaneNode, out: &mut std::collections::HashSet<String>) {
-        match node {
-            SavedPaneNode::Leaf(pane) => {
-                for tab in &pane.tabs {
-                    Self::collect_kinds_in_layout(&tab.surface, out);
-                }
-            }
-            SavedPaneNode::Split { first, second, .. } => {
-                Self::collect_kinds_in_pane(first, out);
-                Self::collect_kinds_in_pane(second, out);
-            }
-        }
-    }
-
-    #[cfg(feature = "gui")]
-    fn collect_kinds_in_layout(
-        layout: &SavedSurfaceLayout,
-        out: &mut std::collections::HashSet<String>,
-    ) {
-        match layout {
-            SavedSurfaceLayout::Leaf(SavedSurface::Generic { kind, .. }) => {
-                out.insert(kind.clone());
-            }
-            SavedSurfaceLayout::Leaf(_) => {}
-            SavedSurfaceLayout::Split { first, second, .. } => {
-                Self::collect_kinds_in_layout(first, out);
-                Self::collect_kinds_in_layout(second, out);
-            }
-        }
-    }
-
     /// workspace를 하나라도 복원하면 true다. 실패한 workspace는 생략한다.
     /// false여도 이미 발급한 ID·생성한 터미널·메타데이터 등의 변경을 되돌리지는 않는다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     pub fn restore(self, engine: &mut EngineMut<'_>) -> Option<crate::model::RestoredPresentation> {
         if self.workspaces.is_empty() {
             return None;
@@ -158,8 +115,9 @@ impl SavedLayout {
     }
 }
 
+#[cfg(test)]
 impl SavedWorkspace {
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     fn restore(
         self,
         engine: &mut EngineMut<'_>,
@@ -186,7 +144,7 @@ impl SavedWorkspace {
 }
 
 impl SavedPaneNode {
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     fn restore(
         self,
         engine: &mut EngineMut<'_>,
@@ -217,8 +175,9 @@ impl SavedPaneNode {
     }
 }
 
+#[cfg(test)]
 impl SavedPane {
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     fn restore(
         self,
         engine: &mut EngineMut<'_>,
@@ -255,8 +214,9 @@ impl SavedPane {
     }
 }
 
+#[cfg(test)]
 impl SavedTab {
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     fn restore(
         self,
         engine: &mut EngineMut<'_>,
@@ -277,7 +237,7 @@ impl SavedTab {
 
 impl SavedSurfaceLayout {
     /// 비활성 탭의 Terminal leaf는 placeholder로 남긴다. Generic은 활성 여부와 무관하게 복원을 시도한다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     fn restore(
         self,
         engine: &mut EngineMut<'_>,
@@ -312,7 +272,7 @@ impl SavedSurfaceLayout {
 }
 
 impl SavedSurface {
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     fn restore_leaf(self, engine: &mut EngineMut<'_>, is_active: bool) -> Option<Box<dyn Surface>> {
         let surface_id = engine.next_ids.next_surface();
         match self {
@@ -366,7 +326,7 @@ impl SavedSurface {
         }
     }
 
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     fn restore_immediate_inner(
         self,
         engine: &mut EngineMut<'_>,
@@ -387,7 +347,7 @@ impl SavedSurface {
     }
 }
 
-#[cfg(any(feature = "gui", test))]
+#[cfg(test)]
 fn restore_terminal_immediate(
     engine: &mut EngineMut<'_>,
     surface_id: u32,
@@ -445,7 +405,7 @@ fn restore_terminal_immediate(
     Some(Box::new(TerminalSurface { id: surface_id }))
 }
 
-#[cfg(any(feature = "gui", test))]
+#[cfg(test)]
 fn restore_generic_immediate(
     engine: &mut CoreState,
     surface_id: u32,

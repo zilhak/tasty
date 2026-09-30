@@ -1,7 +1,9 @@
 //! scrollback과 화면을 저장하고, deferred 터미널에 적용할 이전 내용을 준비한다.
 
+#[cfg(test)]
 use crate::core::CoreState;
 
+#[cfg(test)]
 pub(super) fn queue_scrollback_for_surface(
     engine: &mut CoreState,
     surface_id: u32,

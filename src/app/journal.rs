@@ -13,6 +13,7 @@ struct Opening {
     selection: EngineSelection,
     ticket: Option<u64>,
     projected: bool,
+    surface_floor: u32,
 }
 
 pub(crate) struct JournalApplication {
@@ -24,6 +25,21 @@ pub(crate) struct JournalApplication {
     restoration_queue: VecDeque<(EngineId, crate::runtime::surface_restorer::RestoreInput)>,
     restoration_ready: HashMap<EngineId, Vec<crate::runtime::surface_restorer::RestoreInput>>,
     restoration_boot_done: std::collections::HashSet<EngineId>,
+    restored_views: HashMap<EngineId, crate::model::RestoredPresentation>,
+    #[cfg(feature = "gui")]
+    queued_view_writes: HashMap<String, crate::runtime::journal_product::view_record::StoredView>,
+    #[cfg(feature = "gui")]
+    view_writes: HashMap<u64, crate::runtime::journal_product::view_record::StoredView>,
+    #[cfg(feature = "gui")]
+    failed_view_writes: HashMap<
+        String,
+        (
+            crate::runtime::journal_product::view_record::StoredView,
+            String,
+        ),
+    >,
+    #[cfg(feature = "gui")]
+    latest_view_sequence: u64,
     started: bool,
     next_ticket: u64,
     halted: Option<String>,
@@ -43,18 +59,58 @@ impl JournalApplication {
             restoration_queue: VecDeque::new(),
             restoration_ready: HashMap::new(),
             restoration_boot_done: Default::default(),
+            restored_views: Default::default(),
+            #[cfg(feature = "gui")]
+            queued_view_writes: Default::default(),
+            #[cfg(feature = "gui")]
+            view_writes: Default::default(),
+            #[cfg(feature = "gui")]
+            failed_view_writes: Default::default(),
+            #[cfg(feature = "gui")]
+            latest_view_sequence: 0,
             started: false,
             next_ticket: 1,
             halted: None,
         })
     }
 
-    pub(crate) fn begin_engine(&mut self, engine: EngineId, selection: EngineSelection) {
-        self.opening.entry(engine).or_insert(Opening {
-            selection,
-            ticket: None,
-            projected: false,
-        });
+    pub(crate) fn begin_engine(
+        &mut self,
+        session: &EngineSession,
+        selection: EngineSelection,
+    ) -> Result<(), String> {
+        if self.opening.contains_key(&session.id) {
+            return Ok(());
+        }
+        let scopes = session
+            .core_state
+            .memory
+            .lock()
+            .map_err(|error| error.to_string())?
+            .scopes()
+            .map_err(|error| format!("cannot establish existing surface ID floor: {error}"))?;
+        let surface_floor = scopes
+            .iter()
+            .filter_map(|scope| match tasty_memory::Scope::parse(scope) {
+                Ok(tasty_memory::Scope::Surface(id))
+                    if crate::core::terminal_store::is_surface_id_space(id) =>
+                {
+                    Some(id)
+                }
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0);
+        self.opening.insert(
+            session.id,
+            Opening {
+                selection,
+                ticket: None,
+                projected: false,
+                surface_floor,
+            },
+        );
+        Ok(())
     }
 
     /// The caller holds newly opening engines behind its startup read/render barrier.
@@ -66,6 +122,16 @@ impl JournalApplication {
             return Err(reason.clone());
         }
         let result = self.poll_initial(sessions);
+        #[cfg(feature = "gui")]
+        for session in sessions {
+            if session
+                .journal_binding
+                .as_ref()
+                .is_some_and(|binding| self.failed_view_writes.contains_key(&binding.stream))
+            {
+                session.core_state.layout_dirty.mark_dirty();
+            }
+        }
         if let Err(reason) = &result {
             self.halted = Some(reason.clone());
         }
@@ -78,6 +144,8 @@ impl JournalApplication {
             if self.started {
                 self.submit_openings()?;
                 self.submit_restore_reads()?;
+                #[cfg(feature = "gui")]
+                self.submit_view_writes()?;
                 for creation in self.creations.values_mut() {
                     creation.poll_cleanup(&self.worker)?;
                 }
@@ -149,7 +217,9 @@ impl JournalApplication {
                             events: events.clone(),
                         };
                         if let Some(opening) = opening
-                            && !opening.projected
+                            && (!opening.projected
+                                || (session.core_state.local_workspaces.is_empty()
+                                    && predecessor.workspaces.is_empty()))
                         {
                             let mut after = predecessor.clone();
                             tasty_domain::evolve(&mut after, &domain)
@@ -194,12 +264,32 @@ impl JournalApplication {
                                     .installed(installed);
                             }
                         }
+                        if let Some(binding) = session.journal_binding.as_mut() {
+                            binding.published_cut = Some(batch.batch_id);
+                            if let Some(last) = events.last() {
+                                binding.revision = Some(last.revision);
+                            }
+                        }
                     }
                     self.worker
                         .acknowledge(batch.batch_id, Ok(()))
                         .map_err(|error| format!("bootstrap publication ACK: {error:?}"))?;
                 }
                 Completion::Finished { ticket, result } => {
+                    #[cfg(feature = "gui")]
+                    if let Some(view) = self.view_writes.remove(&ticket) {
+                        match result {
+                            Ok(ResultValue::ViewSaved) => {}
+                            Err(error) => {
+                                tracing::warn!("View snapshot write failed: {error}");
+                                self.failed_view_writes
+                                    .insert(view.binding.stream.clone(), (view, error));
+                            }
+                            _ => return Err("View snapshot returned another completion".into()),
+                        }
+                        continue;
+                    }
+
                     if let Some((engine, mut restoration)) = self.restoration_reads.remove(&ticket)
                     {
                         let ResultValue::Payload { reference, bytes } = result? else {
@@ -271,6 +361,14 @@ impl JournalApplication {
                             &bound.model,
                         )?;
                     }
+                    self.restored_views.insert(
+                        session.id,
+                        live_projection::bootstrap::presentation(
+                            &session.core_state,
+                            bound.imported_view,
+                        ),
+                    );
+                    session.core_state.pending_layout_restore = None;
                     session.journal_binding = Some(bound.binding);
                     if session.core_state.local_workspaces.is_empty() {
                         let ticket = self.next_ticket;
@@ -301,6 +399,27 @@ impl JournalApplication {
         // turn even if its earlier wake was coalesced while this bounded batch was consumed.
         (self.wake)();
         Ok(())
+    }
+
+    #[cfg(feature = "gui")]
+    pub(crate) fn halt_reason(&self) -> Option<&str> {
+        self.halted.as_deref()
+    }
+
+    #[cfg(feature = "gui")]
+    pub(crate) fn abandon_halted_engine(&mut self, id: EngineId) {
+        assert!(
+            self.is_halted(),
+            "only halted bootstrap continuations can be abandoned without a result command"
+        );
+        self.opening.remove(&id);
+        self.creations.remove(&id);
+        self.restored_views.remove(&id);
+        self.restoration_boot_done.remove(&id);
+        self.restoration_ready.remove(&id);
+        self.restoration_queue.retain(|(engine, _)| *engine != id);
+        self.restoration_reads
+            .retain(|_, (engine, _)| *engine != id);
     }
 
     pub(crate) fn is_halted(&self) -> bool {
@@ -338,8 +457,10 @@ impl JournalApplication {
         {
             return Ok(());
         }
-        let selected =
-            crate::runtime::surface_restorer::initial_terminal_selection(&session.core_state);
+        let selected = crate::runtime::surface_restorer::initial_terminal_selection(
+            &session.core_state,
+            self.restored_views.get(&id),
+        );
         let next = self
             .restoration_ready
             .get(&id)
@@ -363,6 +484,14 @@ impl JournalApplication {
             self.restoration_boot_done.insert(id);
         }
         Ok(())
+    }
+
+    #[cfg(feature = "gui")]
+    pub(crate) fn take_restored_presentation(
+        &mut self,
+        id: EngineId,
+    ) -> Option<crate::model::RestoredPresentation> {
+        self.restored_views.remove(&id)
     }
 
     /// Selection is supplied by the application/View. Loading a payload alone grants no activation.
@@ -442,6 +571,80 @@ impl JournalApplication {
         Ok(())
     }
 
+    #[cfg(feature = "gui")]
+    pub(crate) fn queue_view(
+        &mut self,
+        mut view: crate::runtime::journal_product::view_record::StoredView,
+    ) {
+        if !self.is_halted() {
+            let Some(sequence) = self.latest_view_sequence.checked_add(1) else {
+                self.halted = Some("View checkpoint sequence exhausted".into());
+                return;
+            };
+            self.latest_view_sequence = sequence;
+            view.sequence = sequence;
+            self.failed_view_writes.remove(&view.binding.stream);
+            self.queued_view_writes
+                .insert(view.binding.stream.clone(), view);
+            (self.wake)();
+        }
+    }
+
+    #[cfg(feature = "gui")]
+    pub(crate) fn latest_view_sequence(&self) -> u64 {
+        self.latest_view_sequence
+    }
+
+    #[cfg(feature = "gui")]
+    pub(crate) fn failed_view_streams(&self) -> impl Iterator<Item = &str> {
+        self.failed_view_writes.keys().map(String::as_str)
+    }
+
+    #[cfg(feature = "gui")]
+    pub(crate) fn has_pending_view_writes(&self) -> bool {
+        !self.is_halted() && (!self.queued_view_writes.is_empty() || !self.view_writes.is_empty())
+    }
+
+    #[cfg(feature = "gui")]
+    fn submit_view_writes(&mut self) -> Result<(), String> {
+        let ready: Vec<_> = self
+            .queued_view_writes
+            .keys()
+            .filter(|stream| {
+                !self
+                    .view_writes
+                    .values()
+                    .any(|current| current.binding.stream == **stream)
+            })
+            .cloned()
+            .take(8)
+            .collect();
+        for stream in ready {
+            let view = self
+                .queued_view_writes
+                .remove(&stream)
+                .expect("listed View write");
+            let ticket = self.next_ticket;
+            match self.worker.submit(Request {
+                ticket,
+                work: Work::SaveView(view.clone()),
+            }) {
+                Ok(()) => {
+                    self.next_ticket = ticket
+                        .checked_add(1)
+                        .ok_or("journal ticket range exhausted")?;
+                    self.view_writes.insert(ticket, view);
+                }
+                Err(crate::runtime::journal_product::SubmitError::Busy) => {
+                    self.queued_view_writes.insert(stream, view);
+                    break;
+                }
+                Err(error) => return Err(format!("View snapshot submission: {error:?}")),
+            }
+        }
+        Ok(())
+    }
+
     fn submit_openings(&mut self) -> Result<(), String> {
         for opening in self
             .opening
@@ -458,6 +661,7 @@ impl JournalApplication {
                     work: Work::OpenEngine {
                         selection: opening.selection.clone(),
                         normal_category_name: "normal".into(),
+                        surface_floor: opening.surface_floor,
                     },
                 })
                 .map_err(|error| format!("engine bootstrap submission: {error:?}"))?;
@@ -471,3 +675,6 @@ impl JournalApplication {
 mod bulk_restore_tests;
 #[cfg(all(test, unix))]
 mod tests;
+
+#[cfg(all(test, unix, feature = "gui"))]
+mod view_tests;

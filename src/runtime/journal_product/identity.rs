@@ -75,7 +75,7 @@ fn read_or_create(path: &Path, database: &Path) -> Result<Binding, String> {
     Ok(binding)
 }
 
-fn write_binding(path: &Path, binding: &Binding) -> Result<(), String> {
+pub(super) fn write_binding<T: Serialize>(path: &Path, binding: &T) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or("journal binding has no parent directory")?;

@@ -188,6 +188,14 @@ impl<D: JournalDecider> Executor<D> {
         Ok(read(&inner.state))
     }
 
+    /// Import commits already validated structural facts through the same store. Mark the cached
+    /// model stale before reloading, so a reload failure cannot expose the old projection as current.
+    pub(crate) fn reload_committed(&self) -> Result<(), ExecError<D::Rejection>> {
+        let mut inner = self.lock_inner()?;
+        inner.stale = true;
+        self.reload(&mut inner)
+    }
+
     pub(crate) fn execute(&self, request: &Request<D::Command>) -> ExecResult<D::Rejection> {
         let digest = self.decider.request_digest(&request.command);
         let Some(key) = &request.key else {

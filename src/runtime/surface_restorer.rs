@@ -111,54 +111,32 @@ pub(crate) fn accept_payload(
     Ok(())
 }
 
-/// The legacy View snapshot still selects positions until its import mapping is consumed. The
-/// resulting activation list is fixed to live IDs before any asynchronous preparation begins.
-pub(crate) fn initial_terminal_selection(core: &CoreState) -> std::collections::HashSet<u32> {
-    let active = core
-        .pending_layout_restore
-        .as_ref()
-        .map_or(0, |saved| saved.active_workspace);
-    let Some(workspace) = core
-        .local_workspaces
-        .get(active.min(core.local_workspaces.len().saturating_sub(1)))
+/// Initial activation follows explicit imported/restored View IDs, never a mutable tree index.
+pub(crate) fn initial_terminal_selection(
+    core: &CoreState,
+    presentation: Option<&crate::model::RestoredPresentation>,
+) -> std::collections::HashSet<u32> {
+    use crate::model::StructurePresentation;
+    let Some(workspace) = presentation
+        .and_then(|view| view.active_workspace)
+        .and_then(|id| {
+            core.local_workspaces
+                .iter()
+                .find(|workspace| workspace.id == id)
+        })
+        .or_else(|| core.local_workspaces.first())
     else {
         return Default::default();
     };
-    let saved = core
-        .pending_layout_restore
-        .as_ref()
-        .and_then(|saved| saved.workspaces.get(active));
-    let mut selected_tabs = Vec::new();
-    if let Some(saved) = saved {
-        fn walk(
-            node: &crate::core::layout_persistence::schema::SavedPaneNode,
-            out: &mut Vec<usize>,
-        ) {
-            use crate::core::layout_persistence::schema::SavedPaneNode;
-            match node {
-                SavedPaneNode::Leaf(pane) => out.push(pane.active_tab),
-                SavedPaneNode::Split { first, second, .. } => {
-                    walk(first, out);
-                    walk(second, out);
-                }
-            }
-        }
-        walk(&saved.pane_layout, &mut selected_tabs);
-    }
     workspace
         .pane_layout()
         .all_pane_ids()
         .into_iter()
-        .enumerate()
-        .flat_map(|(index, id)| {
+        .flat_map(|id| {
             let pane = workspace.pane_layout().find_pane(id).expect("listed pane");
-            let selected = selected_tabs
-                .get(index)
-                .copied()
-                .unwrap_or(0)
-                .min(pane.tabs.len().saturating_sub(1));
+            let index = presentation.map_or(0, |view| view.selection.tab_index(pane));
             pane.tabs
-                .get(selected)
+                .get(index)
                 .map(|tab| tab.all_surface_ids())
                 .unwrap_or_default()
         })

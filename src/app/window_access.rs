@@ -102,10 +102,12 @@ impl<'a> EngineScan<'a> {
         self.engines.pending()
     }
 
-    /// 임시 engine, 없으면 첫 창 engine. parked engine은 보지 않는다.
+    /// 공개된 창 engine을 우선하고, 첫 부팅처럼 창이 없을 때만 임시 engine을 쓴다.
     pub(crate) fn primary(self) -> Option<EngineRef<'a>> {
-        self.pending()
-            .or_else(|| self.windows().next().map(|(_, e)| e))
+        self.windows()
+            .next()
+            .map(|(_, engine)| engine)
+            .or_else(|| self.pending())
     }
 
     /// 창 → parked 순서. 임시 engine은 제외한다.
@@ -286,14 +288,6 @@ impl<'a> EngineScanMut<'a> {
 
     pub(crate) fn pending(self) -> Option<EngineMut<'a>> {
         self.engines.pending_mut()
-    }
-
-    /// 임시 engine, 없으면 첫 창 engine. 순서는 [`EngineScan::primary`]와 같다.
-    pub(crate) fn primary(self) -> Option<EngineMut<'a>> {
-        match self.engines.pending_id() {
-            Some(id) => self.engines.get_mut(id),
-            None => self.windows().next().map(|(_, e)| e),
-        }
     }
 
     /// 창 → 임시 순서. parked engine은 제외한다.
@@ -824,7 +818,7 @@ mod tests {
         assert_eq!(
             names(scan.primary().into_iter()),
             ["tmp"],
-            "임시 engine이 창보다 먼저다"
+            "창이 없으면 임시 engine을 쓴다"
         );
     }
 
@@ -905,7 +899,7 @@ mod tests {
             "sessions는 임시 engine을 넣지 않는다"
         );
         assert_eq!(
-            scan.reborrow().primary().map(|e| e
+            scan.reborrow().pending().map(|e| e
                 .workspace_at(0)
                 .expect("workspace index is valid")
                 .name

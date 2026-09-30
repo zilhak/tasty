@@ -5,14 +5,17 @@ use tasty_event_store::{CommandKey, CommandLookup};
 
 pub(super) fn open(
     executor: &Executor<StructureDecider>,
+    home: &std::path::Path,
     ticket: u64,
     selection: EngineSelection,
     normal_category_name: String,
+    surface_floor: u32,
 ) -> Result<ResultValue, String> {
     executor
         .with_state(|_| ())
         .map_err(|error| error.to_string())?;
-    let digest = serde_json::to_vec(&(&selection, &normal_category_name))
+    let resume_view = matches!(selection, EngineSelection::Slot { resume: true, .. });
+    let digest = serde_json::to_vec(&(&selection, &normal_category_name, surface_floor))
         .map_err(|error| error.to_string())?;
     let (key, stream, previous, reset) = {
         let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
@@ -33,17 +36,40 @@ pub(super) fn open(
                     .first()
                     .ok_or("bootstrap command has no engine")?
                     .stream;
-                return Ok(bound(
+                return bound(
                     &inner.store,
+                    home,
                     epoch.0,
                     stream,
                     inner.state.stream(stream),
-                ));
+                    resume_view,
+                );
             }
             CommandLookup::DigestMismatch(_) => {
                 return Err("bootstrap ticket was reused for another engine selection".into());
             }
             CommandLookup::Miss => {}
+        }
+        let next = inner
+            .store
+            .next_unreserved_id("surface")
+            .map_err(|error| error.to_string())?;
+        if next <= u64::from(surface_floor) {
+            let count = u64::from(surface_floor) + 1 - next;
+            inner
+                .store
+                .reserve_ids(
+                    epoch,
+                    "surface",
+                    count,
+                    u64::from(crate::core::terminal_store::PTY_ID_BASE - 1),
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        if let EngineSelection::Slot { slot, resume: true } = selection {
+            drop(inner);
+            import_legacy(executor, home, slot)?;
+            inner = executor.inner.lock().map_err(|error| error.to_string())?;
         }
         let (stream, reset) = match selection {
             EngineSelection::Slot { slot, resume } => (format!("structure:slot-{slot}"), !resume),
@@ -85,27 +111,115 @@ pub(super) fn open(
         })
         .map_err(|error| error.to_string())?;
     let inner = executor.inner.lock().map_err(|error| error.to_string())?;
-    Ok(bound(
+    bound(
         &inner.store,
+        home,
         inner.epoch.0,
         &stream,
         inner.state.stream(&stream),
-    ))
+        resume_view,
+    )
 }
 
 fn bound(
     store: &tasty_event_store::EventStore,
+    home: &std::path::Path,
     epoch: u64,
     stream: &str,
     model: tasty_domain::JournalModel,
-) -> ResultValue {
-    ResultValue::Bound(BoundEngine {
-        binding: EngineBinding {
-            journal_id: store.journal_id().into(),
-            stream: stream.into(),
-            incarnation: model.engine_incarnation,
-            runtime_epoch: epoch,
-        },
+    resume_view: bool,
+) -> Result<ResultValue, String> {
+    let binding = EngineBinding {
+        journal_id: store.journal_id().into(),
+        stream: stream.into(),
+        incarnation: model.engine_incarnation,
+        runtime_epoch: epoch,
+        published_cut: model.applied.batch,
+        revision: model.applied.revision,
+    };
+    let restored_view = if resume_view {
+        match super::super::view_record::load(home, &binding)? {
+            Some(view) => Some(view),
+            None if model.engine_incarnation == 1 => imported_view(store, stream)?,
+            None => None,
+        }
+    } else {
+        None
+    };
+    Ok(ResultValue::Bound(BoundEngine {
+        binding,
+        imported_view: restored_view,
         model,
-    })
+    }))
+}
+
+fn import_legacy(
+    executor: &Executor<StructureDecider>,
+    home: &std::path::Path,
+    slot: u32,
+) -> Result<(), String> {
+    let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
+    let stream = format!("structure:slot-{slot}");
+    if inner
+        .state
+        .streams
+        .get(&stream)
+        .is_some_and(|model| model.applied.revision.is_some())
+    {
+        return Ok(());
+    }
+    let path = home.join("layouts").join(format!("{slot:02}.json"));
+    let json = match std::fs::read_to_string(&path) {
+        Ok(json) => json,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(format!("legacy slot read {}: {error}", path.display())),
+    };
+    struct Scrollback<'a>(&'a std::path::Path);
+    impl crate::core::layout_persistence::import::ScrollbackSource for Scrollback<'_> {
+        fn read_bytes(&self, id: &str) -> std::io::Result<Option<Vec<u8>>> {
+            crate::scrollback_store::read_bytes_from_home(self.0, id)
+        }
+    }
+    let epoch = inner.epoch;
+    crate::core::layout_persistence::import::import_slot(
+        &mut inner.store,
+        epoch,
+        slot,
+        &json,
+        &Scrollback(home),
+    )
+    .map_err(|error| error.to_string())?;
+    drop(inner);
+    executor
+        .reload_committed()
+        .map_err(|error| error.to_string())
+}
+
+fn imported_view(
+    store: &tasty_event_store::EventStore,
+    stream: &str,
+) -> Result<Option<crate::core::layout_persistence::import::ImportedView>, String> {
+    let Some(slot) = stream
+        .strip_prefix("structure:slot-")
+        .and_then(|slot| slot.parse::<u32>().ok())
+    else {
+        return Ok(None);
+    };
+    let key = CommandKey {
+        caller_scope: crate::core::layout_persistence::import::IMPORT_SCOPE.into(),
+        idempotency_key: format!("slot-{slot}"),
+    };
+    let record = match store
+        .lookup_command(&key, &[])
+        .map_err(|error| error.to_string())?
+    {
+        CommandLookup::Hit(record) | CommandLookup::DigestMismatch(record) => record,
+        CommandLookup::Miss => return Ok(None),
+    };
+    let Some(bytes) = record.response.filter(|bytes| !bytes.is_empty()) else {
+        return Ok(None);
+    };
+    serde_json::from_slice(&bytes)
+        .map(Some)
+        .map_err(|error| error.to_string())
 }

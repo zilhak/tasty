@@ -82,7 +82,7 @@ impl IdGenerator {
     }
 
     /// 복원한 카테고리 ID를 재사용하지 않도록 다음 발급 기준을 높인다. 이미 더 크면 유지한다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     pub fn bump_category_floor(&self, min_next: u32) {
         self.category
             .fetch_max(min_next, std::sync::atomic::Ordering::Relaxed);
@@ -103,7 +103,7 @@ impl IdGenerator {
 
     /// 이전 실행의 surface 메타데이터 ID를 피하도록 다음 발급 기준을 높인다.
     /// 현재 기준을 낮추지 않으며 이후 overflow까지 막는 함수는 아니다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     pub fn bump_surface_floor(&self, min_next: u32) {
         self.surface
             .fetch_max(min_next, std::sync::atomic::Ordering::Relaxed);
@@ -377,13 +377,16 @@ pub struct CoreState {
     /// 디스크 잠금은 아니며 헤드리스는 None이다.
     pub(crate) layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
     /// 읽기 실패·높은 version으로 기존 슬롯을 덮어쓰면 안 되는 상태.
+    #[cfg(any(feature = "gui", test))]
     pub(crate) layout_slot_protected: bool,
     /// 해석 실패한 원본을 저장 전에 재확인·백업해야 하는 상태.
+    #[cfg(any(feature = "gui", test))]
     pub(crate) layout_slot_unparsable: bool,
     /// 검사에서 실제 홈 대신 사용할 저장 디렉터리. 저장과 백업 공간 판정이 함께 사용한다.
     #[cfg(test)]
     pub(crate) layouts_dir_override: Option<std::path::PathBuf>,
     /// 백업 공간 부족 또는 보존 실패를 사용자에게 알리기 위한 상태.
+    #[cfg(any(feature = "gui", test))]
     pub(crate) layout_slot_preserve_failed: bool,
 
     #[cfg(debug_assertions)]
@@ -402,6 +405,7 @@ pub struct CoreState {
 
 impl CoreState {
     /// 슬롯 로드 판정을 대기 복원·쓰기 보호·백업 필요 플래그에 반영한다.
+    #[cfg(test)]
     pub(crate) fn accept_slot_load(
         &mut self,
         load: crate::core::layout_persistence::SlotLoad,
@@ -421,6 +425,7 @@ impl CoreState {
     }
 
     /// 저장과 같은 디렉터리에서 백업 공간을 확인한다. 검사 override도 동일하게 적용한다.
+    #[cfg(test)]
     fn slot_preservation_is_blocked(
         &self,
         slot: crate::core::layout_persistence::LayoutSlotId,
@@ -441,8 +446,6 @@ impl CoreState {
         memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
         settings: Settings,
     ) -> Self {
-        let restore_layout = settings.general.restore_layout;
-
         let mut engine = Self {
             local_workspaces: Vec::new(),
             mirror_workspaces: Vec::new(),
@@ -540,10 +543,13 @@ impl CoreState {
             pending_scrollback_inject: HashMap::new(),
             pending_layout_restore: None,
             layout_slot,
+            #[cfg(any(feature = "gui", test))]
             layout_slot_protected: false,
+            #[cfg(any(feature = "gui", test))]
             layout_slot_unparsable: false,
             #[cfg(test)]
             layouts_dir_override: None,
+            #[cfg(any(feature = "gui", test))]
             layout_slot_preserve_failed: false,
             #[cfg(debug_assertions)]
             input_simulation_enabled: false,
@@ -558,11 +564,6 @@ impl CoreState {
             engine.settings.notification.coalesce_ms,
             next_ids.notification_counter(),
         );
-
-        // 대기를 마친 뒤 복원하도록 데이터만 읽는다. 이 슬롯만으로 GC하면 다른 창의 scrollback을 지울 수 있다.
-        if restore_layout && let Some(slot) = layout_slot {
-            engine.accept_slot_load(crate::core::layout_persistence::load_slot(slot), slot);
-        }
 
         engine
     }

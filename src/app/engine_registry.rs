@@ -52,6 +52,14 @@ impl EngineRegistry {
         Ok(id)
     }
 
+    pub(crate) fn retire_pending(&mut self, id: EngineId) -> Option<EngineSession> {
+        if self.pending != Some(id) {
+            return None;
+        }
+        self.pending = None;
+        self.sessions.remove(&id)
+    }
+
     pub(crate) fn pending_id(&self) -> Option<EngineId> {
         self.pending
     }
@@ -118,6 +126,18 @@ impl EngineRegistry {
 
     pub(crate) fn get_mut(&mut self, id: EngineId) -> Option<EngineMut<'_>> {
         self.sessions.get_mut(&id).map(|s| s.borrow_mut())
+    }
+
+    /// Publication borrows every live, parked and opening owner as one application batch.
+    pub(crate) fn all_sessions_mut(&mut self) -> impl Iterator<Item = &mut EngineSession> {
+        self.sessions.values_mut()
+    }
+
+    pub(crate) fn journal_binding(
+        &self,
+        id: EngineId,
+    ) -> Option<&crate::runtime::journal_product::EngineBinding> {
+        self.sessions.get(&id)?.journal_binding.as_ref()
     }
 
     pub(crate) fn session_mut(&mut self, id: EngineId) -> Option<&mut EngineSession> {

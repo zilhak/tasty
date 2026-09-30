@@ -7,12 +7,14 @@ pub(crate) enum EngineSelection {
     FreshHeadless,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct EngineBinding {
     pub(crate) journal_id: String,
     pub(crate) stream: String,
     pub(crate) incarnation: u64,
     pub(crate) runtime_epoch: u64,
+    pub(crate) published_cut: Option<u64>,
+    pub(crate) revision: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -20,4 +22,5 @@ pub(crate) struct BoundEngine {
     pub(crate) binding: EngineBinding,
     /// One-use bootstrap source; consumed when the initial live projection is built.
     pub(crate) model: tasty_domain::JournalModel,
+    pub(crate) imported_view: Option<crate::core::layout_persistence::import::ImportedView>,
 }

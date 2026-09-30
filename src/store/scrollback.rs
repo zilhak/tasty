@@ -53,6 +53,17 @@ fn write_bytes_in(dir: &Path, persist_id: &str, bytes: &[u8]) -> io::Result<()> 
     fs::rename(&tmp, &path)
 }
 
+/// Read a legacy immutable capture from the explicitly selected data home during journal import.
+pub(crate) fn read_bytes_from_home(home: &Path, persist_id: &str) -> io::Result<Option<Vec<u8>>> {
+    let path = file_path_in(&home.join(SUBDIR), persist_id)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid persist_id"))?;
+    match fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
 /// 파일 부재와 읽기 실패를 구분한다. 복원 실패 시 원본을 남겨 재시도할 수 있어야 한다.
 pub enum ScrollbackRead {
     /// 정상적으로 읽고 역직렬화했다(빈 목록일 수 있다).

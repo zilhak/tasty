@@ -100,7 +100,7 @@ impl SurfaceMetaStore {
 
     /// PTY 범위 아래의 Surface ID 최대값. 없음·목록 조회 실패는 0이다.
     /// 복원 시 발급 기준을 높일 때 PTY 범위의 기록까지 따라가지 않도록 제외한다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     pub fn max_surface_id(mem: &mut dyn MemoryStorage) -> u32 {
         use crate::core::terminal_store::is_surface_id_space;
         let scopes = match mem.scopes() {
@@ -122,7 +122,7 @@ impl SurfaceMetaStore {
 
     /// PTY 범위에 들어간 Surface scope를 삭제하고 성공한 scope 수를 반환한다.
     /// 목록 조회 실패는 0이고 개별 삭제 실패는 로그 후 계속한다. ID 발급기 자체의 범위 검사는 아니다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     pub fn purge_out_of_range_surfaces(mem: &mut dyn MemoryStorage) -> usize {
         use crate::core::terminal_store::is_surface_id_space;
         let scopes = match mem.scopes() {
@@ -153,7 +153,7 @@ impl SurfaceMetaStore {
 
     /// 전달받은 live 집합 밖의 Surface scope를 삭제한다. 호출자가 완전한 복원 집합을 넘겨야 한다.
     /// 성공한 scope 수를 반환하며 목록·개별 삭제 실패는 로그로 남긴다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     pub fn purge_dead_surfaces(
         mem: &mut dyn MemoryStorage,
         live: &std::collections::HashSet<u32>,

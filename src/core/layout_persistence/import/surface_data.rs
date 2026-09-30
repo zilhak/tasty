@@ -71,7 +71,8 @@ impl SurfaceData {
                     && scrollback_ref.is_none()
                     && scrollback.is_none()
             }
-            Self::Generic { data } => data.is_null(),
+            // Even JSON null is a snapshot: restoring it must call restore, never create.
+            Self::Generic { .. } => false,
         }
     }
 

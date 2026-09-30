@@ -62,6 +62,7 @@ pub(crate) struct BootState {
     db_init_error: Option<crate::db::DbInitError>,
     invalid_theme_name: Option<String>,
     restored_idx: Option<crate::model::RestoredPresentation>,
+    journal_plugins_waited: bool,
     /// 부팅 미완 중 도착한 `AppEvent` — Ready 후 도착 순서대로 재생한다.
     pub(crate) pending_events: Vec<crate::AppEvent>,
 }
@@ -101,6 +102,7 @@ impl App {
             db_init_error,
             invalid_theme_name,
             restored_idx: None,
+            journal_plugins_waited: false,
             pending_events: Vec::new(),
         };
 
@@ -261,12 +263,8 @@ impl App {
                 deadline_ms = PLUGIN_WAIT_DEADLINE.as_millis() as u64,
                 "T4 layout_wait_plugins"
             );
-            boot.restored_idx = self.boot_apply_pending_layout_restore();
-            let now = Instant::now();
-            boot.phase = BootPhase::RestoringLayout {
-                started: now,
-                deadline: now + Duration::from_millis(500),
-            };
+            boot.journal_plugins_waited = true;
+            boot.phase = BootPhase::WaitingJournal;
         }
         false
     }
@@ -352,13 +350,16 @@ impl App {
             .core_state
             .layout_slot
             .expect("GUI engine has a layout slot");
-        self.journal.begin_engine(
-            id,
+        if let Err(error) = self.journal.begin_engine(
+            session,
             crate::runtime::journal_product::EngineSelection::Slot {
                 slot,
                 resume: session.core_state.settings.general.restore_layout,
             },
-        );
+        ) {
+            self.boot_error_info = Some(boot_engine_error_info(&anyhow::anyhow!(error)));
+            return false;
+        }
         boot.phase = BootPhase::WaitingJournal;
         false
     }
@@ -370,6 +371,20 @@ impl App {
             self.boot_error_info = Some(boot_engine_error_info(&anyhow::anyhow!(error)));
             return false;
         }
+        if session.journal_binding.is_some() && !boot.journal_plugins_waited {
+            let needed = self.boot_required_plugin_kinds();
+            if !needed.is_empty() {
+                let now = Instant::now();
+                boot.phase = BootPhase::WaitingPlugins {
+                    started: now,
+                    deadline: now + PLUGIN_WAIT_DEADLINE,
+                    needed,
+                };
+                return false;
+            }
+            boot.journal_plugins_waited = true;
+        }
+        let session = self.engines.session_mut(id).expect("pending engine exists");
         if let Err(error) = self.journal.poll_restore_bootstrap(session) {
             self.boot_error_info = Some(boot_engine_error_info(&anyhow::anyhow!(error)));
             return false;
@@ -381,18 +396,14 @@ impl App {
     }
 
     fn boot_transition_after_journal(&mut self, boot: &mut BootState) -> bool {
-        if self.core_state().pending_layout_restore.is_some() {
-            let needed = self.boot_required_plugin_kinds();
-            let now = Instant::now();
-            boot.phase = BootPhase::WaitingPlugins {
-                started: now,
-                deadline: now + PLUGIN_WAIT_DEADLINE,
-                needed,
-            };
-            false
-        } else {
-            true
-        }
+        let id = self.engines.pending_id().expect("pending bootstrap engine");
+        boot.restored_idx = self.journal.take_restored_presentation(id);
+        let now = Instant::now();
+        boot.phase = BootPhase::RestoringLayout {
+            started: now,
+            deadline: now + Duration::from_millis(500),
+        };
+        false
     }
 
     /// 종료 전에 결과를 회수해야 할 부팅 워커가 있는지 확인한다.
@@ -443,16 +454,10 @@ impl App {
             db_init_error,
             invalid_theme_name,
             restored_idx,
+            journal_plugins_waited: _,
             pending_events,
         } = boot;
 
-        // 복원 예정이면 기본 workspace를 만들지 않았으므로 복원 실패 시 여기서 보충한다.
-        let _bootstrapped = match self.engines.pending_mut() {
-            Some(mut engine) => {
-                crate::app::App::bootstrap_workspace_if_empty(&mut self.core, &mut engine)
-            }
-            None => None,
-        };
         let mut state = self.assemble_app_state(restored_idx);
         Self::report_boot_init_errors(&mut state, db_init_error, invalid_theme_name);
         Self::report_locale_fallback(&mut state);

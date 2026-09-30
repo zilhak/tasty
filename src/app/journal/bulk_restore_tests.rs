@@ -67,13 +67,15 @@ fn more_than_one_channel_capacity_of_captures_are_read_without_halting_bootstrap
             .collect::<std::collections::BTreeMap<_, _>>()
     };
     let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
-    journal.begin_engine(
-        session.id,
-        EngineSelection::Slot {
-            slot: 1,
-            resume: true,
-        },
-    );
+    journal
+        .begin_engine(
+            &session,
+            EngineSelection::Slot {
+                slot: 1,
+                resume: true,
+            },
+        )
+        .unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut turns = 0;
     loop {
@@ -179,13 +181,15 @@ fn selected_terminal_restores_capture_while_other_tabs_remain_resource_free() {
             .collect::<Vec<_>>()
     };
     let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
-    journal.begin_engine(
-        session.id,
-        EngineSelection::Slot {
-            slot: 1,
-            resume: true,
-        },
-    );
+    journal
+        .begin_engine(
+            &session,
+            EngineSelection::Slot {
+                slot: 1,
+                resume: true,
+            },
+        )
+        .unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         journal.poll_bootstrap(&mut [&mut session]).unwrap();
@@ -298,13 +302,15 @@ fn large_generic_capture_waits_for_registration_and_reaches_restore_factory_unch
             .surfaces[0]
     };
     let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
-    journal.begin_engine(
-        session.id,
-        EngineSelection::Slot {
-            slot: 1,
-            resume: true,
-        },
-    );
+    journal
+        .begin_engine(
+            &session,
+            EngineSelection::Slot {
+                slot: 1,
+                resume: true,
+            },
+        )
+        .unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         journal.poll_bootstrap(&mut [&mut session]).unwrap();
@@ -370,4 +376,138 @@ fn large_generic_capture_waits_for_registration_and_reaches_restore_factory_unch
         "one claim publishes exactly one restore request"
     );
     assert_eq!(session.runtime.terminals.iter().count(), 0);
+}
+
+#[test]
+fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_legacy_file() {
+    let memory = Arc::new(std::sync::Mutex::new(
+        tasty_memory::testing::InMemoryStorage::new(),
+    ));
+    crate::surface_meta::SurfaceMetaStore::set(
+        &mut *memory.lock().unwrap(),
+        17,
+        "restore.command",
+        "old unrelated scope",
+    )
+    .unwrap();
+    let runners = Arc::new(crate::core::agent::runner_thread::RunnerRegistry::new());
+    let mut session = EngineSession::for_journal(
+        80,
+        24,
+        Arc::new(|| {}),
+        None,
+        Some(1),
+        memory,
+        runners,
+        crate::settings::Settings::default(),
+    )
+    .unwrap();
+    let home = tasty_utils::path::tasty_home().unwrap();
+    std::fs::create_dir(home.join("layouts")).unwrap();
+    let slot_path = home.join("layouts/01.json");
+    let layout = serde_json::json!({"version":2,"active_workspace":0,"workspaces":[{"name":"imported","subtitle":"","description":"","category":0,"focused_pane_index":0,"pane_layout":{"Leaf":{"tabs":[{"name":"null snapshot","explicit_name":null,"surface":{"Leaf":{"Generic":{"kind":"import-null","data":null}}}}],"active_tab":0}}}]});
+    std::fs::write(&slot_path, layout.to_string()).unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let declaration=serde_json::from_value(serde_json::json!({"kind":"import-null","display_name_i18n_key":"surface.kind.markdown","rendering":"remote"})).unwrap();
+    crate::plugin_bridge::remote_kind::register_remote_kind(
+        &session.core_state.surface_registry,
+        "com.test.import-null",
+        &declaration,
+        sender,
+    );
+    let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
+    journal
+        .begin_engine(
+            &session,
+            EngineSelection::Slot {
+                slot: 1,
+                resume: true,
+            },
+        )
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_restore_bootstrap(&session).unwrap();
+        if journal.is_ready(session.id) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "product slot import stalled");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let ids = session.core_state.local_workspaces[0].all_surface_ids();
+    assert_eq!(
+        ids,
+        vec![18],
+        "legacy import reserves above numeric metadata scopes"
+    );
+    assert_eq!(session.core_state.local_workspaces[0].name, "imported");
+    match receiver.try_recv().unwrap() {
+        crate::plugin_bridge::host_cmd::HostCmd::RemoteSurfaceRestored {
+            surface_id, data, ..
+        } => {
+            assert_eq!(surface_id, ids[0]);
+            assert!(data.is_null());
+        }
+        _ => panic!("JSON null was treated as create rather than a restore snapshot"),
+    }
+    assert!(session.core_state.pending_layout_restore.is_none());
+    crate::surface_meta::SurfaceMetaStore::set(
+        &mut *session.core_state.memory.lock().unwrap(),
+        ids[0],
+        "restore.command",
+        "keep live metadata",
+    )
+    .unwrap();
+    let binding = session.journal_binding.clone().unwrap();
+    drop(journal);
+    // A later legacy export is not another import request or a source of positional identities.
+    std::fs::write(&slot_path, "{broken legacy after successful import").unwrap();
+    session.core_state.replace_local_workspaces(Vec::new());
+    session.journal_binding = None;
+    let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
+    journal
+        .begin_engine(
+            &session,
+            EngineSelection::Slot {
+                slot: 1,
+                resume: true,
+            },
+        )
+        .unwrap();
+    loop {
+        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_restore_bootstrap(&session).unwrap();
+        if journal.is_ready(session.id) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "journal resume stalled");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(
+        session.core_state.local_workspaces[0].all_surface_ids(),
+        ids
+    );
+    assert_eq!(
+        crate::surface_meta::SurfaceMetaStore::get(
+            &mut *session.core_state.memory.lock().unwrap(),
+            ids[0],
+            "restore.command"
+        )
+        .as_deref(),
+        Some("keep live metadata")
+    );
+    assert_eq!(
+        session.journal_binding.as_ref().unwrap().incarnation,
+        binding.incarnation
+    );
+    assert_eq!(
+        session.journal_binding.as_ref().unwrap().stream,
+        binding.stream
+    );
+    assert!(session.journal_binding.as_ref().unwrap().runtime_epoch > binding.runtime_epoch);
+    assert_eq!(
+        std::fs::read_to_string(slot_path).unwrap(),
+        "{broken legacy after successful import"
+    );
 }

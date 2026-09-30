@@ -453,10 +453,12 @@ fn bootstrap_engine(
         std::sync::Arc::clone(app.core.tasks.runner_registry()),
     )?;
     engine.core_state.waker_factory = Some(factory);
-    app.journal.begin_engine(
-        engine.id,
-        crate::runtime::journal_product::EngineSelection::FreshHeadless,
-    );
+    app.journal
+        .begin_engine(
+            &engine,
+            crate::runtime::journal_product::EngineSelection::FreshHeadless,
+        )
+        .map_err(anyhow::Error::msg)?;
     while engine.journal_binding.is_none() || !app.journal.is_ready(engine.id) {
         app.journal
             .poll_bootstrap(&mut [&mut engine])

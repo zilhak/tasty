@@ -51,7 +51,11 @@ impl ApplicationHandler<AppEvent> for App {
             }
             AppEvent::CreateWindow(origin, completion) => {
                 let outcome = self.create_new_window(event_loop, origin);
-                if let Some(completion) = completion {
+                if let Some(pending) = self.pending_window.as_mut()
+                    && outcome.as_ref().is_ok_and(|id| *id == pending.window.id())
+                {
+                    pending.completion = completion;
+                } else if let Some(completion) = completion {
                     completion.reply_window_create(outcome.map(u64::from));
                 }
             }
@@ -329,6 +333,13 @@ impl ApplicationHandler<AppEvent> for App {
         if self.journal.is_halted() {
             self.ipc_pacer.loop_reached_about_to_wait();
             self.process_ipc();
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+            return;
+        }
+
+        self.poll_journal_application();
+        self.poll_pending_window();
+        if self.journal.is_halted() {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
             return;
         }
@@ -2125,6 +2136,12 @@ impl App {
             self.plugin_manager.as_ref().and_then(|m| m.next_deadline()),
         );
         self.timer_waker.set_deadline(deadline);
+        let deadline = if self.pending_window.is_some() {
+            let opening = std::time::Instant::now() + crate::app::boot_machine::BOOT_FRAME_INTERVAL;
+            Some(deadline.map_or(opening, |deadline| deadline.min(opening)))
+        } else {
+            deadline
+        };
         event_loop.set_control_flow(match deadline {
             Some(at) => winit::event_loop::ControlFlow::WaitUntil(at),
             None => winit::event_loop::ControlFlow::Wait,

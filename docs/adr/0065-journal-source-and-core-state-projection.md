@@ -1,6 +1,6 @@
 # ADR-0065: 구조 journal이 원본이고 CoreState 트리는 확정 이벤트로 갱신하는 live projection이다
 
-- **Status**: Accepted — 구현 상태: 이행 중. App의 초기 엔진 구성은 journal worker·확정 projection·실제 자원 설치에 연결했다. 선택한 복원 자료도 같은 activation 경계를 사용한다. 일반 구조 producer와 legacy import·복구 경계가 아직 이행 중이므로 엔진 단위 활성화 조건을 모두 충족한 제품 끝점은 아니다
+- **Status**: Accepted — 구현 상태: 이행 중. App의 초기 엔진 구성은 journal worker·확정 projection·실제 자원 설치에 연결했다. 선택한 복원 자료도 같은 activation 경계를 사용한다. 선택 slot의 legacy import는 연결했으며 일반 구조 producer·복구 경계가 아직 이행 중이므로 엔진 단위 활성화 조건을 모두 충족한 제품 끝점은 아니다
 - **Date**: 2026-09-30
 - **Tags**: architecture, event-sourcing, domain, projection, migration
 - **Group**: foundation
@@ -58,6 +58,19 @@ App 한 회의 완료 처리량은 제한한다.
 복원 capture는 기존 DataRef로 읽고, 같은 자료를 준비 요청에 복사해 다시 저장하지 않는다.
 선택되지 않은 terminal과 아직 등록되지 않은 kind의 지연 활성화 및 일반 명령 진입점은
 계속 이행 중이다. 이 상태를 완전한 writer 단일화나 장애 복구 완료로 해석하지 않는다.
+
+선택한 legacy slot은 worker가 원본 파일과 자료를 읽어 한 import batch로 확정하고 초기 View의
+ID 대응을 함께 보존한다. 이미 journal stream이 있으면 legacy 파일을 다시 원본으로 읽지 않는다.
+CoreState 생성자도 제품에서 legacy 파일을 선행 해석하지 않는다. 기존 위치가 범위를 벗어나면
+workspace와 tab은 마지막 항목, pane은 첫 항목을 고르는 복원 규칙을 유지한다.
+
+정상 resume는 journal/stream/incarnation과 확정 cut/revision을 붙인 최신 View checkpoint를
+초기 import 선택보다 우선한다. 이 선택은 구조 이벤트가 아니다. sidecar는 slot과 incarnation별
+경로를 써 새 시작이 손상된 과거 View 파일에 막히지 않고 그 파일도 보존한다.
+현재 incarnation을 선택하지 않은 시작에서는 과거 View를 읽지 않는다. worker는 옛 incarnation과
+더 늦게 도착한 과거 sequence의 저장을 거절한다. 저장 실패의 후보와 dirty 상태는 재시도를 위해
+남기며 종료는 기존 tick 저장과 별도로 최신 final capture를 한 번 요청한다.
+전체 View/payload pin·보존 정리는 최종 저장 전환에서 완성해야 한다.
 
 ## Consequences
 

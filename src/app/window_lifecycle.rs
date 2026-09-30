@@ -1,7 +1,8 @@
 //! 창 생성·등록과 engine 초기화·복원을 담당한다.
-//! 첫 창은 boot_machine이 단계를 나눠 실행하고 새 창 생성은 동기 경로로 같은 하위 함수를 사용한다.
+//! 첫 창과 추가 창 모두 journal 완료를 기다리는 동안 이벤트 루프에 제어를 돌려준다.
 
-use crate::core::engine_access::EngineMut;
+mod pending;
+
 use std::sync::Arc;
 
 use winit::window::Window;
@@ -10,6 +11,7 @@ use crate::app::App;
 use crate::app::event::WindowRequestOrigin;
 use crate::gpu::GpuState;
 use crate::{plugin, window};
+pub(crate) use pending::PendingWindow;
 
 fn warn_on_theme_err<T, E: std::fmt::Display>(step: &str, result: Result<T, E>) {
     if let Err(e) = result {
@@ -200,33 +202,6 @@ impl WindowCreationTarget {
 }
 
 impl App {
-    /// 추가 창의 동기 초기화. 첫 부팅은 같은 단계를 boot_machine에서 나눠 실행한다.
-    pub(crate) fn create_app_state(
-        &mut self,
-        gpu: &GpuState,
-        sidebar_width: tasty_type_geometry::length::LogicalPx,
-    ) -> anyhow::Result<crate::state::MainViewState> {
-        self.ensure_engine_and_plugins(gpu, sidebar_width)?;
-
-        // main loop 진입 전이라 Intent 큐를 기다리지 않고 복원을 직접 적용한다.
-        let restored_idx_after_layout = if self.core_state().pending_layout_restore.is_some() {
-            self.boot_wait_for_required_plugin_kinds();
-            let restored = self.boot_apply_pending_layout_restore();
-            self.boot_wait_for_remote_surface_restores();
-            restored
-        } else {
-            None
-        };
-
-        // 복원을 예정한 engine에는 기본 workspace가 없을 수 있어 복원 실패 뒤 보충한다.
-        let _bootstrapped = match self.engines.pending_mut() {
-            Some(mut engine) => Self::bootstrap_workspace_if_empty(&mut self.core, &mut engine),
-            None => None,
-        };
-
-        Ok(self.assemble_app_state(restored_idx_after_layout))
-    }
-
     /// 없는 engine·매니저만 초기화하며 새 engine은 기존 engine의 공용 상태를 공유한다.
     pub(super) fn ensure_engine_and_plugins(
         &mut self,
@@ -323,55 +298,21 @@ impl App {
         Ok(())
     }
 
-    pub(super) fn boot_apply_pending_layout_restore(
-        &mut self,
-    ) -> Option<crate::model::RestoredPresentation> {
-        let t5 = std::time::Instant::now();
-        let mut engine = self
-            .engines
-            .pending_mut()
-            .expect("pending engine must be initialized before layout restore");
-        let restored = match self.core.apply(
-            &mut engine,
-            crate::core::intent::DomainIntent::ApplyPendingLayoutRestore,
-        ) {
-            Ok(events) => events.into_iter().find_map(|e| {
-                if let crate::core::intent::CoreEvent::LayoutRestored {
-                    restored: true,
-                    presentation,
-                } = e
-                {
-                    tracing::info!("Layout restored from slot file (deferred)");
-                    presentation
-                } else {
-                    None
-                }
-            }),
-            Err(e) => {
-                tracing::warn!("ApplyPendingLayoutRestore failed: {e}");
-                None
-            }
-        };
-        tracing::info!(
-            target: "tasty::boot",
-            ms = t5.elapsed().as_secs_f64() * 1000.0,
-            "T5 layout_apply (ApplyPendingLayoutRestore)"
-        );
-        restored
-    }
-
     pub(super) fn assemble_app_state(
         &mut self,
         restored_idx_after_layout: Option<crate::model::RestoredPresentation>,
     ) -> crate::state::MainViewState {
         let preset_store = self.core.preset_store.clone();
         let memory = self.core.memory_arc();
-        let mut state =
-            crate::state::MainViewState::new(self.core_state_mut(), preset_store, memory);
+        let engine = self
+            .engines
+            .pending_mut()
+            .expect("assembling the pending engine View");
+        let mut state = crate::state::MainViewState::new(engine.core, preset_store, memory);
         if let Some(restored_idx) = restored_idx_after_layout {
             state
                 .navigation
-                .restore(&self.core_state().workspaces(), &restored_idx);
+                .restore(&engine.workspaces(), &restored_idx);
         }
         if let Some(mgr) = self.plugin_manager.as_ref() {
             state
@@ -383,37 +324,15 @@ impl App {
         state
     }
 
-    /// 필요한 플러그인 kind가 등록되거나 대기 기한이 지날 때까지 pump한다.
-    /// 복원 데이터는 여기서 가져오지 않고 실제 복원 Intent에 남겨 둔다.
-    fn boot_wait_for_required_plugin_kinds(&mut self) {
-        use crate::app::boot_machine::PLUGIN_WAIT_DEADLINE;
-        use std::time::{Duration, Instant};
-        let needed = self.boot_required_plugin_kinds();
-        let t4 = Instant::now();
-        let deadline = t4 + PLUGIN_WAIT_DEADLINE;
-        let mut t4_reason = "deadline";
-        while Instant::now() < deadline {
-            if self.boot_pump_step_plugins_registered(&needed) {
-                t4_reason = "satisfied";
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        tracing::info!(
-            target: "tasty::boot",
-            ms = t4.elapsed().as_secs_f64() * 1000.0,
-            reason = t4_reason,
-            deadline_ms = PLUGIN_WAIT_DEADLINE.as_millis() as u64,
-            "T4 layout_wait_plugins"
-        );
-    }
-
     pub(super) fn boot_required_plugin_kinds(&self) -> Vec<String> {
-        self.core_state()
-            .pending_layout_restore
-            .as_ref()
-            .map(|s| s.required_plugin_kinds())
-            .unwrap_or_default()
+        let Some(engine) = self.engines.pending() else {
+            return Vec::new();
+        };
+        engine.local_workspaces.iter().flat_map(|workspace|workspace.all_surface_ids()).filter_map(|id|
+            engine.find_surface_by_id(id).and_then(|surface|surface.as_any().downcast_ref::<crate::runtime::live_projection::bootstrap::JournalPlaceholder>())
+                .filter(|surface|surface.kind!="terminal" && engine.surface_registry.get_live(&surface.kind).is_none())
+                .map(|surface|surface.kind.clone())
+        ).collect()
     }
 
     pub(super) fn boot_pump_step_plugins_registered(&mut self, needed: &[String]) -> bool {
@@ -429,30 +348,6 @@ impl App {
             .all(|k| engine.surface_registry.get_live(k).is_some())
     }
 
-    /// 복원 요청을 pump해 응답을 기다리되 기한이 지나면 계속 부팅한다.
-    /// 복원 응답이 첫 사용자 조작을 뒤늦게 덮는 경우를 줄이려는 대기이며 완료를 보장하지 않는다.
-    /// 응답 전에는 RemoteSurface가 보존한 carry 상태를 사용한다.
-    fn boot_wait_for_remote_surface_restores(&mut self) {
-        use std::time::{Duration, Instant};
-        let t6 = Instant::now();
-        let deadline = t6 + Duration::from_millis(500);
-        let mut t6_reason = "deadline";
-        while Instant::now() < deadline {
-            if self.boot_pump_step_remote_restores_done() {
-                t6_reason = "satisfied";
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        tracing::info!(
-            target: "tasty::boot",
-            ms = t6.elapsed().as_secs_f64() * 1000.0,
-            reason = t6_reason,
-            "T6 remote_surface_wait (deadline 500ms)"
-        );
-    }
-
-    /// pending 여부를 보기 전에 pump해 송수신을 진행한다. 매니저가 없으면 완료로 본다.
     pub(super) fn boot_pump_step_remote_restores_done(&mut self) -> bool {
         let still_pending = if let Some(mgr) = self.plugin_manager.as_mut() {
             let hello_pairs = mgr.pump(std::time::Instant::now());
@@ -503,6 +398,22 @@ impl App {
         // A halted batch may have changed only part of the live tree. Closing remains available,
         // but neither capture nor slot deletion may turn that partial projection into restore input.
         if !self.journal.is_halted() {
+            if session.core_state.settings.general.restore_layout
+                && let Some(binding) = session.journal_binding.as_ref()
+            {
+                let active = session
+                    .core_state
+                    .workspace_at(main.state.active_workspace_index(&session.core_state))
+                    .map(|workspace| workspace.id);
+                self.journal.queue_view(
+                    crate::runtime::journal_product::view_record::StoredView::capture(
+                        binding.clone(),
+                        &session.core_state,
+                        active,
+                        &main.state.navigation,
+                    ),
+                );
+            }
             let active_workspace = main.state.active_workspace_index(&session.core_state);
             Self::retire_main_engine(
                 &mut self.core,
@@ -552,7 +463,7 @@ impl App {
         }
     }
 
-    fn focused_main_winit(&self) -> Option<Arc<Window>> {
+    pub(super) fn focused_main_winit(&self) -> Option<Arc<Window>> {
         let id = self.view.focused_view_id?;
         let view = self.view.views.get(&id)?;
         view.as_main().map(|_| view.base().winit.clone())
@@ -565,6 +476,9 @@ impl App {
         origin: WindowRequestOrigin,
     ) -> Result<winit::window::WindowId, String> {
         use winit::window::WindowAttributes;
+        if self.pending_window.is_some() {
+            return Err("another window is waiting for its committed engine".into());
+        }
 
         let title = if cfg!(debug_assertions) {
             "Tasty (Debug)"
@@ -622,19 +536,37 @@ impl App {
             }
         };
 
-        let (mut state, engine) =
-            match self.acquire_app_state_and_engine(&gpu, settings.appearance.sidebar_width) {
-                Ok(pair) => pair,
-                Err(e) => {
-                    return Err(self.notify_window_creation_failed(
-                        WindowCreationTarget::NewWindow,
-                        origin,
-                        "failed to create engine for new window",
-                        e,
-                    ));
-                }
-            };
-        self.ensure_at_least_one_workspace(engine, &mut state);
+        let (mut state, engine) = if let Some((engine, state)) = self.engines_mut().unpark_first() {
+            tracing::info!(
+                "restoring parked state, {} remaining",
+                self.engines().parked_count()
+            );
+            (state, engine)
+        } else {
+            self.ensure_engine_and_plugins(&gpu, settings.appearance.sidebar_width)
+                .map_err(|error| error.to_string())?;
+            let engine = self.engines.pending_id().expect("new pending engine");
+            let session = self.engines.session_mut(engine).expect("pending engine");
+            self.journal.begin_engine(
+                session,
+                crate::runtime::journal_product::EngineSelection::Slot {
+                    slot: session.core_state.layout_slot.expect("GUI layout slot"),
+                    resume: session.core_state.settings.general.restore_layout,
+                },
+            )?;
+            let id = window.id();
+            self.pending_window = Some(PendingWindow {
+                window,
+                gpu,
+                engine,
+                origin,
+                db_init_error,
+                invalid_theme_name,
+                completion: None,
+                plugin_deadline: None,
+            });
+            return Ok(id);
+        };
 
         // DB 오류를 먼저 큐에 넣어 확인 시 종료 안내가 다른 모달보다 앞서도록 한다.
         if let Some(err) = db_init_error {
@@ -699,62 +631,6 @@ impl App {
         }
         body
     }
-
-    fn acquire_app_state_and_engine(
-        &mut self,
-        gpu: &GpuState,
-        sidebar_width: tasty_type_geometry::length::LogicalPx,
-    ) -> anyhow::Result<(
-        crate::state::MainViewState,
-        crate::runtime::engine_session::EngineId,
-    )> {
-        // parked engine은 임시 관계로 옮겨 슬롯을 그대로 쓴다. 새 슬롯을 주면 다른 창의 복원 파일을 덮을 수 있다.
-        let state = if let Some((_, state)) = self.engines_mut().unpark_first() {
-            tracing::info!(
-                "restoring parked state, {} remaining",
-                self.engines().parked_count()
-            );
-            state
-        } else {
-            self.create_app_state(gpu, sidebar_width)?
-        };
-        let engine = self
-            .engines
-            .pending_id()
-            .expect("pending engine must be present to register a main window");
-        Ok((state, engine))
-    }
-
-    fn ensure_at_least_one_workspace(
-        &mut self,
-        engine: crate::runtime::engine_session::EngineId,
-        state: &mut crate::state::MainViewState,
-    ) {
-        let Some(mut core_state) = self.engines.get_mut(engine) else {
-            return;
-        };
-        if let Some(idx) = Self::bootstrap_workspace_if_empty(&mut self.core, &mut core_state) {
-            state.set_active_workspace_index(core_state.core, idx);
-        }
-    }
-
-    /// 복원 예정 engine은 기본 workspace 없이 시작할 수 있어 복원 뒤 비어 있으면 하나 만든다.
-    /// 부팅·추가 창 경로가 함께 사용한다. 생성 실패는 로그를 남기고 None을 반환한다.
-    pub(super) fn bootstrap_workspace_if_empty(
-        core: &mut crate::core::Core,
-        engine: &mut EngineMut<'_>,
-    ) -> Option<usize> {
-        if !engine.workspaces().is_empty() {
-            return None;
-        }
-        match core.create_default_workspace(engine) {
-            Ok(idx) => Some(idx),
-            Err(e) => {
-                tracing::error!("bootstrap workspace failed: {e}");
-                None
-            }
-        }
-    }
 }
 
 fn boot_load_and_normalize_settings() -> (crate::settings::Settings, Option<String>) {
@@ -776,7 +652,7 @@ fn boot_load_and_normalize_settings() -> (crate::settings::Settings, Option<Stri
     (settings, invalid_theme_name)
 }
 
-fn build_db_init_error_modal(
+pub(super) fn build_db_init_error_modal(
     err: &crate::db::DbInitError,
 ) -> crate::adapters::ui::info_modal::InfoModal {
     tracing::error!("state.db init failed: {err}");
@@ -796,7 +672,7 @@ fn build_db_init_error_modal(
     }
 }
 
-fn build_theme_fallback_modal(
+pub(super) fn build_theme_fallback_modal(
     invalid_theme_name: &str,
 ) -> crate::adapters::ui::info_modal::InfoModal {
     crate::adapters::ui::info_modal::InfoModal {

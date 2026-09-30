@@ -7,6 +7,7 @@ mod binding;
 mod decider;
 mod identity;
 mod preparation;
+pub(crate) mod view_record;
 mod worker;
 
 use std::path::PathBuf;
@@ -39,11 +40,14 @@ pub(crate) enum Work {
     OpenEngine {
         selection: EngineSelection,
         normal_category_name: String,
+        surface_floor: u32,
     },
     /// Current permissions are checked by App before this lookup. Targets are not resolved yet.
     Admit(Admission),
     Resolve(Vec<StreamCommand>),
     Reserve(Vec<(IdKind, u32)>),
+    #[cfg(feature = "gui")]
+    SaveView(view_record::StoredView),
     ReadEngine(String),
     ReadPayload(tasty_domain::DataRef),
     PutPreparation(PreparationInput),
@@ -73,6 +77,8 @@ pub(crate) struct Request {
 
 #[derive(Debug, Clone)]
 pub(crate) enum ResultValue {
+    #[cfg(feature = "gui")]
+    ViewSaved,
     Bound(BoundEngine),
     NeedsResolution,
     JoinedAdmission {
@@ -218,10 +224,13 @@ impl Drop for JournalWorker {
 
 fn request_size(work: &Work) -> usize {
     match work {
+        #[cfg(feature = "gui")]
+        Work::SaveView(view) => serde_json::to_vec(view).map_or(usize::MAX, |bytes| bytes.len()),
         Work::OpenEngine {
             selection,
             normal_category_name,
-        } => serde_json::to_vec(&(selection, normal_category_name))
+            surface_floor,
+        } => serde_json::to_vec(&(selection, normal_category_name, surface_floor))
             .map_or(usize::MAX, |bytes| bytes.len()),
         Work::Admit(header) => header
             .original_digest

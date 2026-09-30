@@ -5,7 +5,7 @@ use super::CoreState;
 impl CoreState {
     /// 생성·복원 뒤 normal을 첫 위치에 두고 없는 카테고리 참조를 normal로 돌린다.
     /// 기존 최대 ID보다 발급 기준을 높이지만 ID overflow를 별도로 검사하지는 않는다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     pub fn ensure_normal_category(&mut self) {
         use crate::model::{NORMAL_CATEGORY_ID, WorkspaceCategory};
         match self.categories.iter().position(|c| c.is_normal()) {
