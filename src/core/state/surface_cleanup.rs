@@ -31,9 +31,9 @@ impl CoreState {
         self.forget_mirror_surface_extras(surface_id);
     }
 
-    /// attach client가 mirror surface에 채운 부속 맵 항목을 지운다. mirror가 아니면 항목이 없다.
+    /// 닫힌 surface의 busy·cwd·mesh frame(mirror 전용)과 attention 레코드를 지운다.
+    /// attention은 로컬 surface도 두 빌드에서 가지므로 로컬 레코드도 함께 지운다.
     /// client 쪽 정리는 workspace가 이미 없으면 건너뛰므로 사용자 닫기 경로도 여기서 회수한다.
-    /// headless에는 attach client가 없어 맵이 비어 있다.
     fn forget_mirror_surface_extras(&mut self, surface_id: u32) {
         self.mirror_busy_surfaces.remove(&surface_id);
         self.mirror_surface_cwd.remove(&surface_id);

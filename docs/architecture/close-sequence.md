@@ -58,7 +58,7 @@ GUI dispatcher · IPC 핸들러 · 원격 forward 실행이 함께 부른다. �
 | | gui | headless |
 |---|---|---|
 | `CoreState::cleanup_surface_traced` (PTY · 스크롤백 · 인덱스 · surface memory scope · 점유) | 한다 | 한다 |
-| 같은 함수의 mirror 부속 맵 회수 (busy · cwd · attention · mesh frame) | 한다 | 없음 — headless에는 attach client가 없어 맵을 채우지 않는다 |
+| 같은 함수의 부속 맵 회수 — busy · cwd · mesh frame 은 mirror 전용, attention 은 로컬 레코드도 함께 | 한다 | attention 만 해당 — headless에는 attach client가 없어 mirror 전용 맵은 비어 있다 |
 | 화면 cache 해제 (`release_surface_views`) | 한다 | 없음 — headless에는 View가 없다 |
 | `surface.closed` lifecycle enqueue | 한다 | **안 한다** |
 | `tab.closed` / `pane.closed` / `workspace.closed` host event | 한다 | **안 한다** |
