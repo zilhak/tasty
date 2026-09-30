@@ -230,7 +230,7 @@ impl DropTailCounters {
             ms = duration_ms(self.pty.0.saturating_sub(before.pty.0)),
             // layout surface 수가 아니라 실제 PTY를 가진 backend 수다.
             ptys = self.pty.1 - before.pty.1,
-            "S5b pty_drop (PtyBackend::drop 합계)"
+            "S5b pty_drop (Pty::drop 합계)"
         );
         tracing::info!(
             target: "tasty::shutdown",
