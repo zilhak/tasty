@@ -70,7 +70,7 @@ fn dag_view_polling_is_not_skipped_on_an_empty_frame() {
     let src = read(FILE);
 
     assert!(
-        src.contains("dag_views.poll(engine, &requests);"),
+        src.contains("dag_views.poll(&engine.as_ref(), &requests);"),
         "{FILE}: DAG 뷰 폴링 호출이 없다 — 옮겼다면 이 테스트도 함께 옮겨라."
     );
     let offenders: Vec<usize> = code_lines(&src)

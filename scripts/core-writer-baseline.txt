@@ -18,7 +18,6 @@ field	src/app/attach_client.rs	reconnect_session	2
 field	src/app/attach_client.rs	remove_mirror_workspace_from_engine	1
 field	src/app/attach_client.rs	start_gui_attach	2
 field	src/core/layout_persistence/restore.rs	restore	4
-field	src/core/state.rs	new_with_ids_and_settings	1
 field	src/core/state/category.rs	collapse_categories_to_normal	2
 field	src/core/state/category.rs	create_category	1
 field	src/core/state/category.rs	delete_category	2
@@ -26,6 +25,7 @@ field	src/core/state/category.rs	ensure_normal_category	4
 field	src/core/state/category.rs	rename_category	1
 field	src/core/state/category.rs	reorder_category	2
 field	src/core/state/category.rs	set_workspace_category	1
+field	src/runtime/engine_session/bootstrap.rs	new_with_ids_and_settings	1
 field	src/state/preset_apply.rs	apply_tab_preset	1
 field	src/state/preset_apply.rs	apply_workspace_preset	2
 field	src/state/preset_apply.rs	build_tab	1
@@ -41,7 +41,7 @@ subop	src/view/main/redraw.rs	move_workspace_to_category	1
 terminal	src/adapters/ipc/handler/pty.rs	handle_spawn	1
 terminal	src/app/attach_client.rs	make_mirror_surface	1
 terminal	src/core/layout_persistence/restore.rs	restore_terminal_immediate	1
-terminal	src/core/state.rs	new_with_ids_and_settings	1
 terminal	src/core/state/pty.rs	ensure_surface_initialized	1
+terminal	src/runtime/engine_session/bootstrap.rs	new_with_ids_and_settings	1
 terminal	src/state/preset_apply.rs	build_leaf_surface	1
 terminal	src/state/tab.rs	add_tab	1

@@ -1,4 +1,4 @@
-#[cfg(feature = "gui")]
+#[cfg(any(feature = "gui", test))]
 use crate::core::CoreState;
 
 use super::RequestContext;
