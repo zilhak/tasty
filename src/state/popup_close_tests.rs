@@ -1324,3 +1324,103 @@ fn tab_rename_popup_closes_with_its_tab() {
     assert!(!state.popups.is_open(RENAME_POPUP_ID));
     assert!(state.dialogs.rename.is_none());
 }
+
+/// 두 탭을 만들고 활성 탭의 surface와 다른 탭의 surface를 돌려준다.
+fn two_tab_surfaces(
+    state: &mut crate::state::AppState,
+    engine: &mut crate::core::CoreState,
+) -> (u32, u32, u32) {
+    let other = state.focused_surface_id(engine).expect("first surface");
+    state.add_tab(engine).unwrap();
+    let pane_id = state.focused_pane_id(engine);
+    let pane = engine.find_pane_by_id(pane_id).unwrap();
+    let tab_id = pane.tabs[pane.active_tab].id;
+    let target = state.focused_surface_id(engine).expect("second surface");
+    assert_ne!(target, other);
+    (tab_id, target, other)
+}
+
+fn close_tab(engine: &mut crate::core::CoreState, tab_id: u32) {
+    let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
+    core.apply(
+        engine,
+        crate::core::intent::DomainIntent::CloseTab { tab_id },
+    )
+    .expect("close tab");
+}
+
+/// 범위 surface가 사라지면 변환 팝업이 닫히고, 다른 surface로 다시 열면 보인다.
+#[test]
+fn convert_popup_closes_with_its_surface_and_reopens_elsewhere() {
+    let (mut state, mut engine) = test_state();
+    let (tab_id, target, other) = two_tab_surfaces(&mut state, &mut engine);
+    state.dialogs.convert_popup = Some(target);
+    open_scoped(
+        &mut state,
+        CONVERT_SURFACE_POPUP_ID,
+        crate::adapters::ui::popup::PopupScope::Surface(target),
+    );
+
+    close_tab(&mut engine, tab_id);
+    for _ in 0..3 {
+        run_frame(empty_input(), &mut state, &mut engine);
+    }
+    assert!(
+        !state.popups.is_open(CONVERT_SURFACE_POPUP_ID),
+        "convert popup stays open after its surface closed"
+    );
+    assert!(state.dialogs.convert_popup.is_none());
+
+    assert_eq!(state.focused_surface_id(&engine), Some(other));
+    state.dialogs.convert_popup = Some(other);
+    open_scoped(
+        &mut state,
+        CONVERT_SURFACE_POPUP_ID,
+        crate::adapters::ui::popup::PopupScope::Surface(other),
+    );
+    run_frame(empty_input(), &mut state, &mut engine);
+    assert_eq!(
+        visible_popup(&state, &engine),
+        Some(CONVERT_SURFACE_POPUP_ID)
+    );
+}
+
+/// 범위 surface가 사라진 검색창은 닫혀 Ctrl+F가 여는 분기로 가고, 다른 surface에서 다시 보인다.
+#[test]
+fn search_bar_closes_with_its_surface_and_reopens_elsewhere() {
+    const SEARCH_BAR_POPUP_ID: PopupId = "search_bar";
+    let (mut state, mut engine) = test_state();
+    let (tab_id, target, other) = two_tab_surfaces(&mut state, &mut engine);
+    state.search.surface_id = target;
+    crate::intent::popup::handle(
+        &mut state,
+        &UiIntent::OpenPopup {
+            id: SEARCH_BAR_POPUP_ID,
+            mode: crate::intent::OpenPopupMode::AtTopOfScope(
+                crate::adapters::ui::popup::PopupScope::Surface(target),
+            ),
+        }
+        .from_user_menu("test"),
+    );
+
+    close_tab(&mut engine, tab_id);
+    run_frame(empty_input(), &mut state, &mut engine);
+    assert!(
+        !state.popups.is_open(SEARCH_BAR_POPUP_ID),
+        "search bar stays open after its surface closed"
+    );
+
+    state.search.surface_id = other;
+    crate::intent::popup::handle(
+        &mut state,
+        &UiIntent::OpenPopup {
+            id: SEARCH_BAR_POPUP_ID,
+            mode: crate::intent::OpenPopupMode::AtTopOfScope(
+                crate::adapters::ui::popup::PopupScope::Surface(other),
+            ),
+        }
+        .from_user_menu("test"),
+    );
+    run_frame(empty_input(), &mut state, &mut engine);
+    assert_eq!(visible_popup(&state, &engine), Some(SEARCH_BAR_POPUP_ID));
+}

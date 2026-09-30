@@ -127,7 +127,9 @@ fn assert_work_preserved(state: &AppState, dir: &str, request: u64) {
 #[test]
 fn hidden_child_keeps_selection_and_request_without_paint_hit_or_keyboard_gate() {
     let (mut state, mut engine) = trigger(Some(7));
-    let inst = parent("surface", Some(17));
+    // 범위 대상이 사라진 팝업은 그리기 전에 닫히므로 엔진에 있는 surface를 쓴다.
+    let sid = state.focused_surface_id(&engine).expect("surface");
+    let inst = parent("surface", Some(sid));
     inherit_file_picker_scope(&mut state, [(7, &inst)].into_iter());
     let data = state.dialogs.file_picker.as_mut().unwrap();
     data.selected = vec!["draft.md".into()];
@@ -143,7 +145,7 @@ fn hidden_child_keeps_selection_and_request_without_paint_hit_or_keyboard_gate()
         active_workspace: 0,
         active_workspace_id: 0,
         pane_rects: vec![],
-        surface_rects: vec![(17, rect)],
+        surface_rects: vec![(sid, rect)],
         active_tabs: vec![],
         active_tab_ids: vec![],
     };
@@ -193,7 +195,7 @@ fn hidden_child_keeps_selection_and_request_without_paint_hit_or_keyboard_gate()
     );
     assert_hidden_gates(&mut state);
     assert_work_preserved(&state, &dir, request);
-    layout.surface_rects.push((17, rect));
+    layout.surface_rects.push((sid, rect));
     layout.active_workspace = 0;
     draw(&mut state, &layout, vec![]);
     assert!(state.popups.has_focused());

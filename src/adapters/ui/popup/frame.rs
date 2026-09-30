@@ -27,7 +27,8 @@ fn drain_on_close_hooks(
     });
 }
 
-/// workspace·탭 범위의 대상 ID가 아직 엔진에 있는지 확인한다. 다른 범위는 대상 소멸로 닫지 않는다.
+/// workspace·탭·surface 범위의 대상 ID가 아직 엔진에 있는지 확인한다. 창·pane 범위는 대상 소멸로 닫지 않는다.
+/// surface는 비활성 탭에 있어도 살아 있는 것으로 본다. 변환은 같은 surface ID를 유지한다.
 fn scope_target_exists(
     scope: &crate::adapters::ui::popup::PopupScope,
     engine: &crate::core::CoreState,
@@ -36,7 +37,8 @@ fn scope_target_exists(
     match scope {
         PopupScope::Workspace(ws_id) => engine.find_workspace_index_for_id(*ws_id).is_some(),
         PopupScope::Tab(tab_id) => engine.find_pane_for_tab(*tab_id).is_some(),
-        PopupScope::Window | PopupScope::Pane(_) | PopupScope::Surface(_) => true,
+        PopupScope::Surface(sid) => engine.find_workspace_index_for_surface(*sid).is_some(),
+        PopupScope::Window | PopupScope::Pane(_) => true,
     }
 }
 
