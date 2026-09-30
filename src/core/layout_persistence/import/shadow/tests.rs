@@ -11,7 +11,7 @@ use tasty_event_store::{
 };
 
 use super::super::ScrollbackSource;
-use super::{DecodedData, capture_and_import, core_canonical};
+use super::{DecodedData, capture_and_import, capture_keeps_kind, core_canonical};
 use crate::core::CoreState;
 use crate::model::{
     Deferred, DeferredPlugin, DeferredSpawn, EmptySurface, Pane, PaneNode, SplitDirection, Surface,
@@ -613,8 +613,10 @@ fn an_unregistered_surface_kind_is_the_only_known_mismatch() {
         diffs[0].path,
         "workspaces[0].panes[0].tabs[0].surfaces[0].kind"
     );
+    let kept = |kind: &str| capture_keeps_kind(&engine, kind);
+    assert!(!kept("shadow-unregistered"));
     assert_eq!(
-        known_mismatch(&diffs[0]).map(|k| k.id),
+        known_mismatch(&diffs[0], &kept).map(|k| k.id),
         Some("unregistered-surface-kind")
     );
     assert_eq!(KNOWN_MISMATCHES.len(), 1);
@@ -622,7 +624,28 @@ fn an_unregistered_surface_kind_is_the_only_known_mismatch() {
     let mut renamed = full_engine();
     first_pane(&mut renamed).tabs[0].name.push('x');
     let other = differences(&core_side(&renamed), &core_side(&full_engine()));
-    assert!(other.iter().all(|d| known_mismatch(d).is_none()));
+    assert!(other.iter().all(|d| known_mismatch(d, &kept).is_none()));
+}
+
+/// capture가 그대로 저장하는 kind가 empty가 되면 알려진 불일치로 가리지 않는다.
+#[test]
+fn a_kept_kind_saved_as_empty_stays_an_unclassified_difference() {
+    let mut engine = full_engine();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (_store, _, journal) = imported(&mut engine, &dir);
+    let mut regressed = journal_side(&journal);
+    let surface = &mut regressed.workspaces[0].panes[0].tabs[0].surfaces[0];
+    assert_eq!(surface.kind, "terminal");
+    surface.kind = "empty".to_owned();
+    let diffs = differences(&core_side(&engine), &regressed);
+    assert_eq!(diffs.len(), 1, "{}", render(&diffs));
+    assert_eq!(
+        diffs[0].path,
+        "workspaces[0].panes[0].tabs[0].surfaces[0].kind"
+    );
+    let kept = |kind: &str| capture_keeps_kind(&engine, kind);
+    assert!(kept("terminal"));
+    assert_eq!(known_mismatch(&diffs[0], &kept).map(|k| k.id), None);
 }
 
 /// 제외 목록과 알려진 불일치는 아키텍처 문서에도 같은 이름으로 적는다.

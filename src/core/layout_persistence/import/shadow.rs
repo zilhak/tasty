@@ -106,6 +106,13 @@ fn core_kind(surface: &dyn Surface) -> String {
     surface.kind().to_owned()
 }
 
+/// capture가 이 kind를 그대로 저장하는지. terminal은 registry를 보지 않고 저장하며, 그 밖의 surface는
+/// capture와 같은 registry 조회(철회된 정의 포함)로 정한다. 대기 plugin은 등록 여부와 관계없이
+/// kind를 유지하지만 kind 문자열만으로는 구별하지 못해 registry 판정을 따른다.
+pub(super) fn capture_keeps_kind(engine: &CoreState, kind: &str) -> bool {
+    kind == super::TERMINAL_KIND || engine.surface_registry.get(kind).is_some()
+}
+
 fn surface_id(surface: &dyn Surface, defects: &mut Vec<String>) -> u32 {
     surface.surface_id().unwrap_or_else(|| {
         defects.push(format!("a {} surface has no id", surface.kind()));

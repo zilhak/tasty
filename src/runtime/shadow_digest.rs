@@ -50,14 +50,23 @@ pub(crate) const DIGEST_EXCLUDED: &[(&str, &str)] = &[
 pub(crate) const KNOWN_MISMATCHES: &[KnownMismatch] = &[KnownMismatch {
     id: "unregistered-surface-kind",
     reason: "layout capture saves a surface of an unregistered kind as kind empty",
-    applies: |d| d.field() == "kind" && d.right == "empty" && d.left != "empty",
+    applies: |d, kept| {
+        d.field() == "kind"
+            && d.right == "empty"
+            && d.left
+                .as_str()
+                .is_some_and(|kind| kind != "empty" && !kept(kind))
+    },
 }];
+
+/// capture가 kind를 그대로 저장하는지 답한다. 판정 원본은 CoreState 쪽이 준다.
+pub(crate) type KeptKind<'a> = &'a dyn Fn(&str) -> bool;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct KnownMismatch {
     pub(crate) id: &'static str,
     pub(crate) reason: &'static str,
-    pub(crate) applies: fn(&Difference) -> bool,
+    pub(crate) applies: fn(&Difference, KeptKind<'_>) -> bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -515,6 +524,13 @@ fn diff_value(
 }
 
 /// CoreState 쪽을 왼쪽, 가져온 journal 쪽을 오른쪽에 둔 차이가 알려진 불일치인지.
-pub(crate) fn known_mismatch(difference: &Difference) -> Option<&'static KnownMismatch> {
-    KNOWN_MISMATCHES.iter().find(|k| (k.applies)(difference))
+/// `kept`는 capture가 그 kind를 그대로 저장하는지 답한다. 그대로 저장하는 kind가 empty가 됐다면
+/// 알려진 불일치가 아니라 회귀다.
+pub(crate) fn known_mismatch(
+    difference: &Difference,
+    kept: KeptKind<'_>,
+) -> Option<&'static KnownMismatch> {
+    KNOWN_MISMATCHES
+        .iter()
+        .find(|k| (k.applies)(difference, kept))
 }
