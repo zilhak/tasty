@@ -98,6 +98,8 @@ const V1: &str = r#"
         activation_generation INTEGER NOT NULL,
         writer_epoch INTEGER NOT NULL,
         outcome TEXT,
+        -- 이 attempt가 Running에서 벗어날 때 보고한 결과. 재시도해도 지우지 않는다.
+        result BLOB,
         PRIMARY KEY (effect_id, attempt)
     );
 

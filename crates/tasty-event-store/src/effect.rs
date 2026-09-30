@@ -112,6 +112,7 @@ pub struct EffectRecord {
     pub payload: OpaquePayload,
     pub state: EffectState,
     pub attempt: u32,
+    /// 현재 결과. 가장 최근 attempt 또는 대조의 결과이며, 재시도(Failed→Pending) 때 비워진다.
     pub result: Option<Vec<u8>>,
 }
 
@@ -123,6 +124,8 @@ pub struct AttemptRecord {
     pub writer_epoch: WriterEpoch,
     /// Running에서 벗어난 상태. 아직 Running이면 `None`이다.
     pub outcome: Option<EffectState>,
+    /// Running에서 벗어날 때 보고한 결과. 이후 재시도로 effect의 현재 결과가 비워져도 남는다.
+    pub result: Option<Vec<u8>>,
 }
 
 impl EventStore {
@@ -167,7 +170,7 @@ impl EventStore {
     pub fn effect_attempts(&self, effect_id: &str) -> StoreResult<Vec<AttemptRecord>> {
         let mut stmt = self.conn.prepare(
             "SELECT attempt, journal_id, engine_id, surface_id, runtime_epoch,
-                activation_generation, writer_epoch, outcome
+                activation_generation, writer_epoch, outcome, result
              FROM effect_attempts WHERE effect_id = ?1 ORDER BY attempt",
         )?;
         let rows = stmt.query_map([effect_id], read_attempt)?;
@@ -229,11 +232,20 @@ pub(crate) fn apply_transition(
         next_attempt = attempt + 1;
         open_attempt(conn, t, next_attempt, journal_id, epoch)?;
     }
-    conn.execute(
-        "UPDATE effects SET state = ?2, attempt = ?3, result = COALESCE(?4, result)
-         WHERE effect_id = ?1",
-        params![t.effect_id, t.to.as_str(), next_attempt, t.result],
-    )?;
+    // 재시도는 새 attempt를 준비하므로 이전 attempt의 결과를 현재 결과로 남기지 않는다.
+    // 이전 결과는 effect_attempts에 보존돼 있다.
+    if t.from == EffectState::Failed && t.to == EffectState::Pending {
+        conn.execute(
+            "UPDATE effects SET state = ?2, attempt = ?3, result = NULL WHERE effect_id = ?1",
+            params![t.effect_id, t.to.as_str(), next_attempt],
+        )?;
+    } else {
+        conn.execute(
+            "UPDATE effects SET state = ?2, attempt = ?3, result = COALESCE(?4, result)
+             WHERE effect_id = ?1",
+            params![t.effect_id, t.to.as_str(), next_attempt, t.result],
+        )?;
+    }
     Ok(())
 }
 
@@ -289,8 +301,8 @@ fn close_attempt(conn: &Connection, t: &EffectTransition, current: u32) -> Store
         });
     }
     conn.execute(
-        "UPDATE effect_attempts SET outcome = ?3 WHERE effect_id = ?1 AND attempt = ?2",
-        params![t.effect_id, current, t.to.as_str()],
+        "UPDATE effect_attempts SET outcome = ?3, result = ?4 WHERE effect_id = ?1 AND attempt = ?2",
+        params![t.effect_id, current, t.to.as_str(), t.result],
     )?;
     Ok(())
 }
@@ -409,34 +421,46 @@ fn finish_effect(raw: RawEffect) -> StoreResult<EffectRecord> {
     })
 }
 
-type RawAttempt = (i64, String, String, String, i64, i64, i64, Option<String>);
+struct RawAttempt {
+    attempt: i64,
+    journal_id: String,
+    engine_id: String,
+    surface_id: String,
+    runtime_epoch: i64,
+    activation_generation: i64,
+    writer_epoch: i64,
+    outcome: Option<String>,
+    result: Option<Vec<u8>>,
+}
 
 fn read_attempt(r: &Row<'_>) -> rusqlite::Result<RawAttempt> {
-    Ok((
-        r.get(0)?,
-        r.get(1)?,
-        r.get(2)?,
-        r.get(3)?,
-        r.get(4)?,
-        r.get(5)?,
-        r.get(6)?,
-        r.get(7)?,
-    ))
+    Ok(RawAttempt {
+        attempt: r.get(0)?,
+        journal_id: r.get(1)?,
+        engine_id: r.get(2)?,
+        surface_id: r.get(3)?,
+        runtime_epoch: r.get(4)?,
+        activation_generation: r.get(5)?,
+        writer_epoch: r.get(6)?,
+        outcome: r.get(7)?,
+        result: r.get(8)?,
+    })
 }
 
 fn finish_attempt(raw: RawAttempt) -> StoreResult<AttemptRecord> {
-    let (attempt, journal_id, engine_id, surface, runtime_epoch, generation, epoch, outcome) = raw;
+    let surface = raw.surface_id;
     Ok(AttemptRecord {
-        attempt: to_u32(attempt)?,
-        journal_id,
+        attempt: to_u32(raw.attempt)?,
+        journal_id: raw.journal_id,
         claim: ActivationClaim {
-            engine_id,
+            engine_id: raw.engine_id,
             surface_id: (!surface.is_empty()).then_some(surface),
-            runtime_epoch: to_u64(runtime_epoch)?,
-            activation_generation: to_u64(generation)?,
+            runtime_epoch: to_u64(raw.runtime_epoch)?,
+            activation_generation: to_u64(raw.activation_generation)?,
         },
-        writer_epoch: WriterEpoch(to_u64(epoch)?),
-        outcome: outcome.as_deref().map(parse_state).transpose()?,
+        writer_epoch: WriterEpoch(to_u64(raw.writer_epoch)?),
+        outcome: raw.outcome.as_deref().map(parse_state).transpose()?,
+        result: raw.result,
     })
 }
 

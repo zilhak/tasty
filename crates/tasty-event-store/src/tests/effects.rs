@@ -105,6 +105,53 @@ fn lifecycle_records_attempts_and_claims() {
 }
 
 #[test]
+fn retry_clears_the_current_result_and_keeps_it_per_attempt() {
+    let (_dir, mut store, epoch) = fresh();
+    seed(&mut store, epoch, "fx-1", Pending);
+    store
+        .transition_effect(epoch, &run("fx-1", Pending, 1))
+        .expect("run");
+    let first = EffectTransition {
+        result: Some(b"exit 1".to_vec()),
+        ..finish("fx-1", Failed, 1)
+    };
+    store.transition_effect(epoch, &first).expect("fail");
+    let current = |store: &EventStore| store.effect("fx-1").expect("read").expect("exists");
+    assert_eq!(current(&store).result.as_deref(), Some(&b"exit 1"[..]));
+
+    store
+        .transition_effect(epoch, &step("fx-1", Failed, Pending))
+        .expect("retry");
+    assert_eq!(
+        current(&store).result,
+        None,
+        "retry must not show the old result"
+    );
+
+    store
+        .transition_effect(epoch, &run("fx-1", Pending, 1))
+        .expect("rerun");
+    assert_eq!(current(&store).result, None);
+    let second = EffectTransition {
+        result: Some(b"exit 0".to_vec()),
+        ..finish("fx-1", Succeeded, 2)
+    };
+    store.transition_effect(epoch, &second).expect("succeed");
+    assert_eq!(current(&store).result.as_deref(), Some(&b"exit 0"[..]));
+
+    let results: Vec<_> = store
+        .effect_attempts("fx-1")
+        .expect("attempts")
+        .into_iter()
+        .map(|a| a.result)
+        .collect();
+    assert_eq!(
+        results,
+        [Some(b"exit 1".to_vec()), Some(b"exit 0".to_vec())]
+    );
+}
+
+#[test]
 fn transitions_outside_the_table_are_rejected() {
     let (_dir, mut store, epoch) = fresh();
     let cases = [
