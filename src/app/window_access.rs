@@ -1,9 +1,11 @@
 //! 모달을 제외한 MainView와 engine의 대상 자원을 찾는다.
 //!
 //! engine은 세 자리에 있다. 창(MainView), 창을 모두 닫아 보관한 parked 항목,
-//! 창에 배정되기 전의 임시 `App.core_state`다. 이 자리들을 순회하는 코드는
-//! [`EngineScan`]·[`EngineScanMut`]을 거친다. engine 소유 구조가 바뀌면 이 두 타입과
-//! [`engines_mut!`]만 고친다.
+//! 창에 배정되기 전의 임시 `App.core_state`다. engine만 다루는 순회는
+//! [`EngineScan`]·[`EngineScanMut`]을 거친다. 창 View 작업이 함께 필요한 창 루프와
+//! 창 ID로 고른 engine 접근은 MainView의 `core_state`를 직접 쓴다.
+//! engine 소유 구조가 바뀌면 이 두 타입과 [`engines_mut!`], 그리고 그 창 루프와
+//! 창 ID 접근을 함께 고친다.
 
 use std::collections::{HashMap, HashSet};
 
