@@ -69,7 +69,7 @@ impl TerminalState {
     }
 
     /// Reply to a terminal query (DSR / DA / cursor position report). Runs on the
-    /// parser thread during ingest, so it writes back through the same input
+    /// reader worker during ingest, so it writes back through the same input
     /// channel.
     ///
     /// Deliberately does **not** touch `last_input_at`: this write originates

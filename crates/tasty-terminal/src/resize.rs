@@ -1,5 +1,6 @@
 //! Resize 처리 — grid 크기 변경(`TerminalState`)이 먼저이고, OS 크기 알림은 `Pty`에
-//! 예약한 뒤 throttle된 flush에서 적용한다 (docs/features/terminal/index.md#vte-에뮬레이션).
+//! 예약한 뒤 다음 `process()`의 강제 flush 또는 throttle된 `flush_pty_resize` 호출에서
+//! 적용한다 (docs/features/terminal/index.md#vte-에뮬레이션).
 
 use termwiz::cell::CellAttributes;
 use termwiz::surface::Change;
@@ -251,8 +252,8 @@ impl TerminalState {
 impl Terminal {
     /// Resize the terminal grid, then (for PTY-backed terminals) schedule the OS
     /// resize. The grid change and its resize-tap notification happen first; the
-    /// OS resize is applied later on the throttled flush path, so a tap is not a
-    /// confirmation that the OS accepted the size. Lock-free no-op when the
+    /// OS resize is applied later, by the forced flush in the next `process()` or
+    /// by a throttled `flush_pty_resize` call, so a tap is not a confirmation that the OS accepted the size. Lock-free no-op when the
     /// dimensions are unchanged — the per-frame `resize_all` sweep calls this on
     /// every terminal, so the common case must not lock a busy background
     /// terminal's state.

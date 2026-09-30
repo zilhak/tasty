@@ -537,7 +537,7 @@ impl Terminal {
     /// Create a new terminal.
     ///
     /// If `config.shell` is `None` or empty, the platform default shell is used.
-    /// The `waker` callback is invoked from the parser thread whenever new data
+    /// The `waker` callback is invoked from the Pty reader worker whenever new data
     /// has been ingested, allowing the main event loop to wake up and render.
     pub fn new(config: TerminalConfig<'_>, waker: Waker) -> Result<Self> {
         let (cols, rows) = (config.cols, config.rows);
@@ -615,7 +615,7 @@ impl Terminal {
 
     /// Run a closure with a read-only [`RenderView`] over the shared state. Locks
     /// once for an entire terminal render (surface + scrollback + cursor/modes),
-    /// keeping the parser thread's per-chunk lock window the only contention.
+    /// keeping the reader worker's per-chunk lock window the only contention.
     pub fn with_render_view<R>(&self, f: impl FnOnce(RenderView<'_>) -> R) -> R {
         let st = self.lock_state();
         f(RenderView { state: &st })
