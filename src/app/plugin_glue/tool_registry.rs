@@ -10,10 +10,7 @@ impl App {
             Some(mgr) => mgr.plugin_tool_items(),
             None => return,
         };
-        for main in self.main_windows_iter_mut() {
-            main.state.tool_registry.set_plugin_items(items.clone());
-        }
-        for (state, _engine) in self.parked_states.iter_mut() {
+        for (state, _engine) in self.engines_mut().sessions() {
             state.tool_registry.set_plugin_items(items.clone());
         }
     }

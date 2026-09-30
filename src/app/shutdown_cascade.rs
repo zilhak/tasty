@@ -11,12 +11,7 @@ impl App {
     /// 실제 이벤트 전달은 dispatch_pending_surface_lifecycle을 별도로 호출한다.
     pub(crate) fn cascade_shutdown_close_all_surfaces(&mut self) -> usize {
         let mut closed = 0usize;
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                closed += Self::enqueue_close_for_engine(&mut main.state, &main.core_state);
-            }
-        }
-        for (state, engine) in self.parked_states.iter_mut() {
+        for (state, engine) in self.engines_mut().sessions() {
             closed += Self::enqueue_close_for_engine(state, engine);
         }
         closed
@@ -79,12 +74,7 @@ impl App {
     /// join_retired는 동기적으로 기다리므로 이 단계의 렌더가 지연될 수 있다.
     pub(super) fn shutdown_join_observer_sinks(&mut self) {
         let t = Instant::now();
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                main.core_state.observer_router.join_retired();
-            }
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().windowed_and_parked() {
             engine.observer_router.join_retired();
         }
         tracing::info!(

@@ -6,12 +6,7 @@ impl App {
     /// 이벤트 payload는 플러그인이 정의한 JSON 그대로 전달한다.
     pub(crate) fn dispatch_pending_tool_events(&mut self) {
         let mut drained: Vec<(String, serde_json::Value)> = Vec::new();
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                drained.append(&mut main.state.pending_tool_events);
-            }
-        }
-        for (s, _engine) in &mut self.parked_states {
+        for (s, _engine) in self.engines_mut().sessions() {
             drained.append(&mut s.pending_tool_events);
         }
         if drained.is_empty() {

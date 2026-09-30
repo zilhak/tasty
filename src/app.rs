@@ -380,36 +380,20 @@ impl App {
     /// App 또는 MainView의 CoreState를 반환한다. 아직 초기화되지 않았으면 panic한다.
     #[cfg(feature = "gui")]
     pub(crate) fn core_state(&self) -> &crate::core::CoreState {
-        if let Some(e) = self.core_state.as_ref() {
-            return e;
-        }
-        #[cfg(feature = "gui")]
-        for w in self.view.views.values() {
-            if let Some(main) = w.as_main() {
-                return &main.core_state;
-            }
-        }
-        panic!("App.core_state accessed before initialization");
+        self.engines()
+            .primary()
+            .expect("App.core_state accessed before initialization")
     }
 
     /// 자동실행은 CoreState 초기화 전에도 호출될 수 있어 그때는 빈 레지스트리를 반환한다.
     #[cfg(feature = "gui")]
     pub(crate) fn autofire_scripts(&self) -> tasty_settings::ScriptRegistry {
-        if let Some(cs) = self.core_state.as_ref() {
-            return cs.settings.scripts.clone();
-        }
-        #[cfg(feature = "gui")]
-        {
-            for w in self.view.views.values() {
-                if let Some(main) = w.as_main() {
-                    return main.core_state.settings.scripts.clone();
-                }
-            }
-            if let Some((_, e)) = self.parked_states.first() {
-                return e.settings.scripts.clone();
-            }
-        }
-        tasty_settings::ScriptRegistry::default()
+        let engines = self.engines();
+        engines
+            .primary()
+            .or_else(|| engines.parked().next())
+            .map(|e| e.settings.scripts.clone())
+            .unwrap_or_default()
     }
 
     /// 창별 GPU 상태를 만들되 instance와 첫 창에서 선택한 adapter는 공유한다.
@@ -422,15 +406,9 @@ impl App {
         let instance = Arc::clone(&self.gpu_instance);
         // 첫 창은 CoreState보다 먼저 만들어질 수 있어 없으면 기본 휠 거리를 사용한다.
         let wheel_line_scroll = self
-            .core_state
-            .as_ref()
+            .engines()
+            .primary()
             .map(|cs| cs.settings.general.wheel_line_scroll)
-            .or_else(|| {
-                self.view.views.values().find_map(|w| {
-                    w.as_main()
-                        .map(|m| m.core_state.settings.general.wheel_line_scroll)
-                })
-            })
             .unwrap_or(tasty_settings::DEFAULT_WHEEL_LINE_SCROLL);
         // 모달의 CoreState가 아직 없을 수 있으므로 배율은 이 창의 appearance를 사용한다.
         let theme_runtime = tasty_themes::ThemeRuntime {
@@ -492,15 +470,8 @@ impl App {
 
     #[cfg(feature = "gui")]
     pub(crate) fn core_state_mut(&mut self) -> &mut crate::core::CoreState {
-        if let Some(cs) = self.core_state.as_mut() {
-            return cs;
-        }
-        #[cfg(feature = "gui")]
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                return &mut main.core_state;
-            }
-        }
-        panic!("App.core_state accessed before initialization");
+        self.engines_mut()
+            .primary()
+            .expect("App.core_state accessed before initialization")
     }
 }

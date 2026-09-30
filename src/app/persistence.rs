@@ -1,6 +1,7 @@
 //! 레이아웃 변경을 타이머·종료·창 닫기 시점에 저장한다.
 
 use crate::app::App;
+use crate::app::window_access::engines_mut;
 use crate::core::intent::DomainIntent;
 
 impl App {
@@ -9,19 +10,18 @@ impl App {
     /// 저장 가능 여부와 dirty 해제는 Core가 판단한다.
     pub(crate) fn flush_layout_persistence(&mut self, force: bool) {
         let label = if force { "final" } else { "tick" };
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                Self::flush_one_engine(
-                    &mut self.core,
-                    &mut main.core_state,
-                    main.state.active_workspace,
-                    force,
-                    label,
-                    "main",
-                );
-            }
+        let mut engines = engines_mut!(self);
+        for (state, engine) in engines.reborrow().window_sessions() {
+            Self::flush_one_engine(
+                &mut self.core,
+                engine,
+                state.active_workspace,
+                force,
+                label,
+                "main",
+            );
         }
-        for (state, engine) in self.parked_states.iter_mut() {
+        for (state, engine) in engines.parked_sessions() {
             Self::flush_one_engine(
                 &mut self.core,
                 engine,
@@ -57,12 +57,8 @@ impl App {
     /// 저장 가능한 engine 중 가장 이른 변경 시각. 없으면 저장 타이머를 해제한다.
     /// 저장을 꺼도 dirty는 남겨 두어 다시 켤 때 그동안의 변경을 저장한다.
     pub(crate) fn earliest_layout_dirty_since(&self) -> Option<std::time::Instant> {
-        self.view
-            .views
-            .values()
-            .filter_map(|w| w.as_main())
-            .map(|m| &m.core_state)
-            .chain(self.parked_states.iter().map(|(_, e)| e))
+        self.engines()
+            .windowed_and_parked()
             .filter_map(|e| {
                 schedulable_dirty_since(
                     e.settings.general.restore_layout,

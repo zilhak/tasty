@@ -10,12 +10,7 @@ impl App {
         use tasty_plugin_protocol::events::LifecycleReason;
         use tasty_plugin_protocol::events::payloads::SurfaceClosed;
         let mut drained: Vec<crate::state::PendingSurfaceClosed> = Vec::new();
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                drained.extend(main.state.take_pending_lifecycle_events());
-            }
-        }
-        for (s, _engine) in &mut self.parked_states {
+        for (s, _engine) in self.engines_mut().sessions() {
             drained.extend(s.take_pending_lifecycle_events());
         }
         if drained.is_empty() {

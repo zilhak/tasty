@@ -5,12 +5,7 @@ use crate::app::App;
 impl App {
     pub(crate) fn dispatch_pending_popup_opens(&mut self) {
         let mut drained: Vec<crate::state::PendingPopupOpen> = Vec::new();
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                drained.append(&mut main.state.pending_popup_opens);
-            }
-        }
-        for (s, _engine) in &mut self.parked_states {
+        for (s, _engine) in self.engines_mut().sessions() {
             drained.append(&mut s.pending_popup_opens);
         }
         if drained.is_empty() {

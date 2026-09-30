@@ -23,7 +23,7 @@ impl App {
         }
 
         // 화면이 없는 parked engine도 계속 판정한다.
-        for (state, engine) in self.parked_states.iter_mut() {
+        for (state, engine) in self.engines_mut().parked_sessions() {
             for event in engine.fire_idle_timeout_hooks(&exec) {
                 state.enqueue_host_event(event);
             }

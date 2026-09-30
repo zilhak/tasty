@@ -24,12 +24,7 @@ impl App {
             return;
         };
         let mut tree = Vec::new();
-        for w in self.view.views.values() {
-            if let Some(m) = w.as_main() {
-                tree.extend(build_engine_tree(&m.state, &m.core_state));
-            }
-        }
-        for (s, e) in &self.parked_states {
+        for (s, e) in self.engines().sessions() {
             tree.extend(build_engine_tree(s, e));
         }
         engine.publish_snapshot(LuaSnapshot { tree });

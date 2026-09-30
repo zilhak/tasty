@@ -24,20 +24,18 @@ impl App {
 
     fn trigger_pending_screenshot_captures(&mut self) {
         let mut reqs: Vec<(Option<WindowId>, Option<u32>)> = Vec::new();
-        for (wid, view) in self.view.views.iter_mut() {
-            let Some(main) = view.as_main_mut() else {
-                continue;
-            };
-            for mirror_ws_id in main.core_state.pending_screenshot_captures.drain(..) {
-                reqs.push((Some(*wid), mirror_ws_id));
+        let mut engines = self.engines_mut();
+        for (wid, engine) in engines.reborrow().windows() {
+            for mirror_ws_id in engine.pending_screenshot_captures.drain(..) {
+                reqs.push((Some(wid), mirror_ws_id));
             }
         }
-        if let Some(e) = self.core_state.as_mut() {
+        if let Some(e) = engines.reborrow().pending() {
             for mirror_ws_id in e.pending_screenshot_captures.drain(..) {
                 reqs.push((None, mirror_ws_id));
             }
         }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in engines.parked() {
             for mirror_ws_id in engine.pending_screenshot_captures.drain(..) {
                 reqs.push((None, mirror_ws_id));
             }

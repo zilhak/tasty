@@ -13,7 +13,7 @@ impl App {
                 w.mark_dirty_from(RepaintSource::AttachMirror);
             }
         }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().parked() {
             let _ = engine.refresh_readonly_views(); // dirty 여부 반환값 무시 — parked 는 repaint 안 함.
         }
 

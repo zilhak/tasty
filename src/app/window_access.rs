@@ -1,12 +1,218 @@
 //! 모달을 제외한 MainView와 engine의 대상 자원을 찾는다.
+//!
+//! engine은 세 자리에 있다. 창(MainView), 창을 모두 닫아 보관한 parked 항목,
+//! 창에 배정되기 전의 임시 `App.core_state`다. 이 자리들을 순회하는 코드는
+//! [`EngineScan`]·[`EngineScanMut`]을 거친다. engine 소유 구조가 바뀌면 이 두 타입과
+//! [`engines_mut!`]만 고친다.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use winit::window::WindowId;
 
 use crate::app::App;
+use crate::core::CoreState;
 use crate::core::layout_persistence::LayoutSlotId;
+use crate::state::AppState;
 use crate::view;
+
+type ViewMap = HashMap<WindowId, Box<dyn view::ui::View>>;
+
+/// App의 engine 자리 필드만 가변으로 빌린다.
+/// `&mut self` 메서드와 달리 같은 함수에서 `self.core` 같은 다른 필드를 함께 빌릴 수 있다.
+macro_rules! engines_mut {
+    ($app:expr) => {
+        $crate::app::window_access::EngineScanMut::from_fields(
+            &mut $app.view.views,
+            &mut $app.parked_states,
+            &mut $app.core_state,
+        )
+    };
+}
+pub(crate) use engines_mut;
+
+/// 창·parked·임시 engine을 읽기 전용으로 순회한다.
+///
+/// 방문 순서는 창(`views` 순회 순서) → parked(보관 순서) → 임시 engine이다.
+/// 한 engine은 세 자리 중 한 곳에만 있으므로 [`all`](Self::all)은 각 engine을 정확히 한 번 방문한다.
+/// 모달 View는 engine이 없어 건너뛴다.
+#[derive(Clone, Copy)]
+pub(crate) struct EngineScan<'a> {
+    views: &'a ViewMap,
+    parked: &'a [(AppState, CoreState)],
+    pending: Option<&'a CoreState>,
+}
+
+impl<'a> EngineScan<'a> {
+    pub(crate) fn from_fields(
+        views: &'a ViewMap,
+        parked: &'a [(AppState, CoreState)],
+        pending: Option<&'a CoreState>,
+    ) -> Self {
+        Self {
+            views,
+            parked,
+            pending,
+        }
+    }
+
+    /// 창 engine과 그 창의 ID.
+    pub(crate) fn windows(self) -> impl Iterator<Item = (WindowId, &'a CoreState)> {
+        self.views
+            .iter()
+            .filter_map(|(wid, w)| w.as_main().map(|m| (*wid, &m.core_state)))
+    }
+
+    /// 창과 parked 항목의 AppState·engine 쌍. 창 → parked 순서다.
+    pub(crate) fn sessions(self) -> impl Iterator<Item = (&'a AppState, &'a CoreState)> {
+        self.views
+            .values()
+            .filter_map(|w| w.as_main().map(|m| (&m.state, &m.core_state)))
+            .chain(self.parked_sessions())
+    }
+
+    pub(crate) fn parked(self) -> impl Iterator<Item = &'a CoreState> {
+        self.parked.iter().map(|(_, e)| e)
+    }
+
+    pub(crate) fn parked_sessions(self) -> impl Iterator<Item = (&'a AppState, &'a CoreState)> {
+        self.parked.iter().map(|(s, e)| (s, e))
+    }
+
+    /// 창에 배정되기 전의 임시 engine.
+    pub(crate) fn pending(self) -> Option<&'a CoreState> {
+        self.pending
+    }
+
+    /// 임시 engine, 없으면 첫 창 engine. parked engine은 보지 않는다.
+    pub(crate) fn primary(self) -> Option<&'a CoreState> {
+        self.pending
+            .or_else(|| self.windows().next().map(|(_, e)| e))
+    }
+
+    /// 창 → parked 순서. 임시 engine은 제외한다.
+    pub(crate) fn windowed_and_parked(self) -> impl Iterator<Item = &'a CoreState> {
+        self.windows().map(|(_, e)| e).chain(self.parked())
+    }
+
+    /// 창 → parked → 임시 순서로 모든 engine을 한 번씩 방문한다.
+    pub(crate) fn all(self) -> impl Iterator<Item = &'a CoreState> {
+        self.windowed_and_parked().chain(self.pending)
+    }
+}
+
+/// 창·parked·임시 engine을 가변으로 순회한다. 순서와 1회 방문 성질은 [`EngineScan`]과 같다.
+/// 메서드는 핸들을 소비한다. 한 함수에서 여러 번 쓰려면 [`reborrow`](Self::reborrow)한다.
+pub(crate) struct EngineScanMut<'a> {
+    views: &'a mut ViewMap,
+    parked: &'a mut Vec<(AppState, CoreState)>,
+    pending: &'a mut Option<CoreState>,
+}
+
+impl<'a> EngineScanMut<'a> {
+    /// [`engines_mut!`]가 쓴다. 호출부에서 필드를 직접 넘기지 않는다.
+    pub(crate) fn from_fields(
+        views: &'a mut ViewMap,
+        parked: &'a mut Vec<(AppState, CoreState)>,
+        pending: &'a mut Option<CoreState>,
+    ) -> Self {
+        Self {
+            views,
+            parked,
+            pending,
+        }
+    }
+
+    pub(crate) fn reborrow(&mut self) -> EngineScanMut<'_> {
+        EngineScanMut {
+            views: self.views,
+            parked: self.parked,
+            pending: self.pending,
+        }
+    }
+
+    pub(crate) fn windows(self) -> impl Iterator<Item = (WindowId, &'a mut CoreState)> {
+        self.views
+            .iter_mut()
+            .filter_map(|(wid, w)| w.as_main_mut().map(|m| (*wid, &mut m.core_state)))
+    }
+
+    /// 창의 AppState·engine 쌍.
+    pub(crate) fn window_sessions(
+        self,
+    ) -> impl Iterator<Item = (&'a mut AppState, &'a mut CoreState)> {
+        self.views
+            .values_mut()
+            .filter_map(|w| w.as_main_mut().map(|m| (&mut m.state, &mut m.core_state)))
+    }
+
+    /// 창과 parked 항목의 AppState·engine 쌍. 창 → parked 순서다.
+    pub(crate) fn sessions(self) -> impl Iterator<Item = (&'a mut AppState, &'a mut CoreState)> {
+        let Self { views, parked, .. } = self;
+        views
+            .values_mut()
+            .filter_map(|w| w.as_main_mut().map(|m| (&mut m.state, &mut m.core_state)))
+            .chain(parked.iter_mut().map(|(s, e)| (s, e)))
+    }
+
+    pub(crate) fn parked(self) -> impl Iterator<Item = &'a mut CoreState> {
+        self.parked.iter_mut().map(|(_, e)| e)
+    }
+
+    /// parked 항목의 AppState·engine 쌍. 위치는 `DispatchSource::Parked`의 index와 같다.
+    pub(crate) fn parked_sessions(
+        self,
+    ) -> impl Iterator<Item = (&'a mut AppState, &'a mut CoreState)> {
+        self.parked.iter_mut().map(|(s, e)| (s, e))
+    }
+
+    pub(crate) fn pending(self) -> Option<&'a mut CoreState> {
+        self.pending.as_mut()
+    }
+
+    /// 임시 engine, 없으면 첫 창 engine. 순서는 [`EngineScan::primary`]와 같다.
+    pub(crate) fn primary(self) -> Option<&'a mut CoreState> {
+        match self.pending {
+            Some(e) => Some(e),
+            None => self
+                .views
+                .values_mut()
+                .find_map(|w| w.as_main_mut())
+                .map(|m| &mut m.core_state),
+        }
+    }
+
+    /// 창 → 임시 순서. parked engine은 제외한다.
+    pub(crate) fn windows_and_pending(self) -> impl Iterator<Item = &'a mut CoreState> {
+        let Self { views, pending, .. } = self;
+        views
+            .values_mut()
+            .filter_map(|w| w.as_main_mut().map(|m| &mut m.core_state))
+            .chain(pending.as_mut())
+    }
+
+    /// 창 → parked 순서. 임시 engine은 제외한다.
+    pub(crate) fn windowed_and_parked(self) -> impl Iterator<Item = &'a mut CoreState> {
+        let Self { views, parked, .. } = self;
+        views
+            .values_mut()
+            .filter_map(|w| w.as_main_mut().map(|m| &mut m.core_state))
+            .chain(parked.iter_mut().map(|(_, e)| e))
+    }
+}
+
+impl App {
+    pub(crate) fn engines(&self) -> EngineScan<'_> {
+        EngineScan::from_fields(
+            &self.view.views,
+            &self.parked_states,
+            self.core_state.as_ref(),
+        )
+    }
+
+    pub(crate) fn engines_mut(&mut self) -> EngineScanMut<'_> {
+        engines_mut!(self)
+    }
+}
 
 impl App {
     pub(crate) fn focused_window(&self) -> Option<&view::main::MainView> {
@@ -53,36 +259,13 @@ impl App {
 
     /// 새 engine이 공용 레지스트리·ID 발급기를 공유할 기존 engine을 찾는다. 창을 먼저, parked를 나중에 본다.
     pub(crate) fn any_main_engine(&self) -> Option<&crate::core::CoreState> {
-        for w in self.view.views.values() {
-            if let Some(m) = w.as_main() {
-                return Some(&m.core_state);
-            }
-        }
-        self.parked_states.first().map(|(_, e)| e)
+        self.engines().windowed_and_parked().next()
     }
 
     /// 점유를 별도로 관리하지 않고 살아 있는 engine의 슬롯을 모은다.
     /// 창에 등록되기 전 임시 App.core_state도 포함해야 중복 배정을 피할 수 있다.
     pub(crate) fn occupied_layout_slots(&self) -> HashSet<LayoutSlotId> {
-        let mut occupied = HashSet::new();
-        for w in self.view.views.values() {
-            if let Some(m) = w.as_main()
-                && let Some(slot) = m.core_state.layout_slot
-            {
-                occupied.insert(slot);
-            }
-        }
-        for (_, engine) in &self.parked_states {
-            if let Some(slot) = engine.layout_slot {
-                occupied.insert(slot);
-            }
-        }
-        if let Some(engine) = self.core_state.as_ref()
-            && let Some(slot) = engine.layout_slot
-        {
-            occupied.insert(slot);
-        }
-        occupied
+        occupied_slots(self.engines())
     }
 
     /// 빈 슬롯을 고르기만 한다. engine이 만들어져야 실제 점유로 센다.
@@ -94,25 +277,17 @@ impl App {
     }
 
     pub(crate) fn find_main_with_surface(&self, surface_id: u32) -> Option<WindowId> {
-        for (wid, w) in &self.view.views {
-            if let Some(m) = w.as_main()
-                && m.core_state.has_surface(surface_id)
-            {
-                return Some(*wid);
-            }
-        }
-        None
+        self.engines()
+            .windows()
+            .find(|(_, e)| e.has_surface(surface_id))
+            .map(|(wid, _)| wid)
     }
 
     pub(crate) fn find_main_with_workspace(&self, workspace_id: u32) -> Option<WindowId> {
-        for (wid, w) in &self.view.views {
-            if let Some(m) = w.as_main()
-                && m.core_state.has_workspace(workspace_id)
-            {
-                return Some(*wid);
-            }
-        }
-        None
+        self.engines()
+            .windows()
+            .find(|(_, e)| e.has_workspace(workspace_id))
+            .map(|(wid, _)| wid)
     }
 
     /// mirror workspace의 engine이 창 또는 parked 상태에 남아 있으면 세션을 유지한다.
@@ -134,25 +309,17 @@ impl App {
     }
 
     pub(crate) fn find_main_with_pane(&self, pane_id: u32) -> Option<WindowId> {
-        for (wid, w) in &self.view.views {
-            if let Some(m) = w.as_main()
-                && m.core_state.has_pane(pane_id)
-            {
-                return Some(*wid);
-            }
-        }
-        None
+        self.engines()
+            .windows()
+            .find(|(_, e)| e.has_pane(pane_id))
+            .map(|(wid, _)| wid)
     }
 
     pub(crate) fn find_main_with_tab(&self, tab_id: u32) -> Option<WindowId> {
-        for (wid, w) in &self.view.views {
-            if let Some(m) = w.as_main()
-                && m.core_state.find_pane_for_tab(tab_id).is_some()
-            {
-                return Some(*wid);
-            }
-        }
-        None
+        self.engines()
+            .windows()
+            .find(|(_, e)| e.find_pane_for_tab(tab_id).is_some())
+            .map(|(wid, _)| wid)
     }
 
     /// PTY 레지스트리는 engine별로 있으므로 ID의 소유 창을 전체 MainView에서 찾는다.
@@ -191,14 +358,10 @@ impl App {
         &self,
         rid: crate::core::request_target::ResourceId,
     ) -> Option<WindowId> {
-        for (wid, w) in &self.view.views {
-            if let Some(m) = w.as_main()
-                && crate::core::request_target::engine_has_resource(&m.core_state, rid)
-            {
-                return Some(*wid);
-            }
-        }
-        None
+        self.engines()
+            .windows()
+            .find(|(_, e)| crate::core::request_target::engine_has_resource(e, rid))
+            .map(|(wid, _)| wid)
     }
 
     /// 전체 창에서 숫자 ID를 먼저 찾고 없으면 이름을 찾는다.
@@ -212,13 +375,7 @@ impl App {
         {
             return Ok(Some(wid));
         }
-        find_workspace_by_name(
-            self.view
-                .views
-                .iter()
-                .filter_map(|(wid, w)| w.as_main().map(|m| (*wid, &m.core_state))),
-            target,
-        )
+        find_workspace_by_name(self.engines().windows(), target)
     }
 }
 
@@ -250,6 +407,11 @@ fn any_engine_has_workspace<'a>(
 ) -> bool {
     main.any(|e| e.has_workspace(workspace_id))
         || super::attach_client::find_parked_with_workspace(parked, workspace_id).is_some()
+}
+
+/// 모든 engine의 슬롯을 모은다. 창·parked·임시 engine을 [`EngineScan::all`]로 한 번씩 본다.
+fn occupied_slots(engines: EngineScan<'_>) -> HashSet<LayoutSlotId> {
+    engines.all().filter_map(|e| e.layout_slot).collect()
 }
 
 /// 저장된 레이아웃을 우선 복원하도록 오름차순 files의 첫 미점유 슬롯을 고른다.
@@ -372,6 +534,52 @@ mod tests {
             &parked,
             missing
         ));
+    }
+
+    fn names<'a>(engines: impl Iterator<Item = &'a crate::core::CoreState>) -> Vec<String> {
+        engines.map(|e| e.workspaces[0].name.clone()).collect()
+    }
+
+    #[test]
+    fn scan_visits_parked_then_pending_once_each() {
+        let parked = parked(&["p0", "p1"]);
+        let pending = engine_with_workspace_name("tmp");
+        let views = HashMap::new();
+        let scan = EngineScan::from_fields(&views, &parked, Some(&pending));
+        assert_eq!(names(scan.all()), ["p0", "p1", "tmp"]);
+        assert_eq!(names(scan.windowed_and_parked()), ["p0", "p1"]);
+        assert_eq!(names(scan.parked()), ["p0", "p1"]);
+        assert_eq!(
+            names(scan.primary().into_iter()),
+            ["tmp"],
+            "임시 engine이 창보다 먼저다"
+        );
+    }
+
+    #[test]
+    fn scan_without_pending_has_no_primary() {
+        let parked = parked(&["p0"]);
+        let views = HashMap::new();
+        let scan = EngineScan::from_fields(&views, &parked, None);
+        assert!(scan.primary().is_none(), "primary는 parked를 보지 않는다");
+        assert_eq!(names(scan.all()), ["p0"]);
+    }
+
+    #[test]
+    fn occupied_slots_counts_each_engine_once() {
+        let mut parked = parked(&["p0", "p1"]);
+        parked[0].1.layout_slot = Some(4);
+        parked[1].1.layout_slot = Some(2);
+        let mut pending = engine_with_workspace_name("tmp");
+        pending.layout_slot = Some(7);
+        let views = HashMap::new();
+        let scan = EngineScan::from_fields(&views, &parked, Some(&pending));
+        assert_eq!(occupied_slots(scan), slots(&[2, 4, 7]));
+        assert_eq!(
+            scan.all().filter(|e| e.layout_slot.is_some()).count(),
+            3,
+            "슬롯을 가진 engine이 각각 한 번만 보인다"
+        );
     }
 
     fn slots(v: &[LayoutSlotId]) -> HashSet<LayoutSlotId> {

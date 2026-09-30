@@ -10,10 +10,7 @@ impl App {
             Some(mgr) => mgr.plugin_palette_commands(),
             None => return,
         };
-        for main in self.main_windows_iter_mut() {
-            main.state.palette_plugin_commands = commands.clone();
-        }
-        for (state, _engine) in self.parked_states.iter_mut() {
+        for (state, _engine) in self.engines_mut().sessions() {
             state.palette_plugin_commands = commands.clone();
         }
     }

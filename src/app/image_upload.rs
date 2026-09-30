@@ -49,13 +49,11 @@ impl App {
     /// 워커에는 세션 전체 대신 접속 포트와 원격 workspace ID를 전달한다.
     fn trigger_pending_image_uploads(&mut self) {
         let mut reqs: Vec<crate::core::PendingImageUpload> = Vec::new();
-        for main in self.main_windows_iter_mut() {
-            reqs.append(&mut main.core_state.pending_image_uploads);
+        let mut engines = self.engines_mut();
+        for engine in engines.reborrow().windows_and_pending() {
+            reqs.append(&mut engine.pending_image_uploads);
         }
-        if let Some(e) = self.core_state.as_mut() {
-            reqs.append(&mut e.pending_image_uploads);
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in engines.parked() {
             reqs.append(&mut engine.pending_image_uploads);
         }
         for req in reqs {

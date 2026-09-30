@@ -42,13 +42,7 @@ impl App {
         reason: tasty_plugin_protocol::PopupCloseReason,
     ) {
         let mut queued = false;
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                main.state.plugin_popup_closes.push((instance_id, reason));
-                queued = true;
-            }
-        }
-        for (s, _engine) in &mut self.parked_states {
+        for (s, _engine) in self.engines_mut().sessions() {
             s.plugin_popup_closes.push((instance_id, reason));
             queued = true;
         }
@@ -63,16 +57,7 @@ impl App {
         let mut drained_banner_closes: Vec<(u64, tasty_plugin_protocol::BannerCloseReason)> =
             Vec::new();
         let mut drained_focus_bumps: Vec<u64> = Vec::new();
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                let closes = std::mem::take(&mut main.state.plugin_popup_closes);
-                cancel_child_file_picker(&mut main.state, &closes);
-                drained_closes.extend(closes);
-                drained_banner_closes.append(&mut main.state.plugin_banner_closes);
-                drained_focus_bumps.append(&mut main.state.plugin_popup_focus_bumps);
-            }
-        }
-        for (s, _engine) in &mut self.parked_states {
+        for (s, _engine) in self.engines_mut().sessions() {
             let closes = std::mem::take(&mut s.plugin_popup_closes);
             cancel_child_file_picker(s, &closes);
             drained_closes.extend(closes);

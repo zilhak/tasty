@@ -6,12 +6,7 @@ impl App {
     /// 응답은 기다리지 않는다. 처리 결과는 플러그인의 로그·이벤트로 확인한다.
     pub(crate) fn dispatch_pending_handler_ipc(&mut self) {
         let mut drained: Vec<(String, crate::file::format::FileTarget)> = Vec::new();
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                drained.append(&mut main.state.pending_handler_ipc);
-            }
-        }
-        for (s, _engine) in &mut self.parked_states {
+        for (s, _engine) in self.engines_mut().sessions() {
             drained.append(&mut s.pending_handler_ipc);
         }
         if drained.is_empty() {

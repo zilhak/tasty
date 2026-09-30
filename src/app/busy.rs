@@ -28,7 +28,7 @@ impl App {
                 w.mark_dirty();
             }
         }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().parked() {
             // 창이 없는 상태에서는 상태바용 브랜치 조회와 redraw가 필요 없다.
             crate::core::Core::update_busy_surfaces(engine);
             engine.forward_busy_activity(&hub);

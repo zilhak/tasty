@@ -4,12 +4,7 @@ use crate::app::App;
 
 impl App {
     pub(crate) fn poll_global_hooks(&mut self) {
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                main.core_state.poll_global_hooks();
-            }
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
+        for engine in self.engines_mut().windowed_and_parked() {
             engine.poll_global_hooks();
         }
     }

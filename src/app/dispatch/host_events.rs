@@ -7,26 +7,14 @@ mod tab;
 mod workspace;
 
 use crate::app::App;
+use crate::app::window_access::engines_mut;
 use crate::core::CoreState;
 use crate::state::PendingHostEvent;
 
 impl App {
     pub(crate) fn dispatch_pending_host_events(&mut self) {
         let mut drained: Vec<PendingHostEvent> = Vec::new();
-        for (_win_id, w) in self.view.views.iter_mut() {
-            if let Some(main) = w.as_main_mut() {
-                let engine = &mut main.core_state;
-                main.state.detect_focus_change(engine);
-                main.state.detect_workspace_activation(engine);
-                main.state.detect_tab_focus_change(engine);
-                main.state.detect_tab_lifecycle(engine);
-                let events = main.state.take_pending_host_events();
-                reproject_osc_title_on_focus(engine, &events);
-                resolve_hook_fired_task_waits(&self.core, engine, &events);
-                drained.extend(events);
-            }
-        }
-        for (s, engine) in self.parked_states.iter_mut() {
+        for (s, engine) in engines_mut!(self).sessions() {
             s.detect_focus_change(engine);
             s.detect_workspace_activation(engine);
             s.detect_tab_focus_change(engine);
