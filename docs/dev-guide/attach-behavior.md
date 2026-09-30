@@ -327,8 +327,11 @@ mirror 워크스페이스의 구조 변경(split/new-tab/close/move-tab/닫은 �
 
     `agent` close는 `save_snapshot=false`로 호출하고 별도 캡처도 하지 않는다.
     복원 스택은 에이전트가 바꾸지 않는 사용자 상태다([identity](../identity.md) 원칙 1,
-    [ADR-0061](../adr/0061-external-remote-module-and-attach-sync.md)). `is_user_close`는
-    origin과 별개이며 이 경로에서는 항상 false다.
+    [ADR-0061](../adr/0061-external-remote-module-and-attach-sync.md)). forward 실행은
+    `user`와 `agent` 모두 `structural_exec`에 에이전트 origin(`AgentSource::Remote`)을
+    넘긴다. 원격 사용자의 조작이 서버 앞 사용자의 선택 pane·surface를 옮기지 않게 하기
+    위해서다. 복원 기록과 새 탭 활성화만 wire origin에서 정한다. 그래서 lifecycle의
+    `is_user_close`는 이 경로에서 항상 false다.
   - **실행은 `Core::apply` 직접 호출이다**: 복원은 IPC/CLI 로 노출된 적이 없어 대응하는 도메인 실행 함수가 없다 — `ConvertSurface`/`MoveSurface` 와 같은 형태로 `execute_forwarded_structural_op` 이 `DomainIntent::RestoreClosedItem` 을 직접 부르고 `CoreEvent::ClosedItemRestored{restored}` 로 성공을 판정한다. 복원된 터미널은 이 함수의 기존 before/after diff 에 잡혀 `added_terminals` → 점유 편입 → tap 을 그대로 탄다(별도 연결 없음).
   - **실행측은 cascade 를 재현하지 않는다**: 로컬 경로가 부르는 `cascade_closed_item_restored` 는 (사용자 발화이면) `AppState::active_workspace`/`focused_pane` 을 바꾼다 — forward 경로에서 그것을 부르면 원격 사용자의 조작이 서버 앞 로컬 사용자의 화면을 움직인다(원칙 1·3 위반). forward 실행은 engine 변경만 하고 AppState 를 안 만지며, client focus 는 `PendingOpFocus::NewResource` 가 delta 적용 시점에 client-only 로 보정한다.
 - **convert/move-surface**: 둘 다 forward 대상이다. convert(`ConvertSurface`)는 항상 forward. move-surface(`MoveSurface`)는 **source/target 이 같은 mirror workspace 안에 있을 때만** `build_mirror_forward_op` 가 forward 한다 — mirror↔local(또는 서로 다른 mirror) workspace 경계를 넘는 이동은 로컬 전용 surface_id 를 원격에 그대로 보내는 꼴이 되어(u32 네임스페이스 분리가 없어 원격 트리의 무관한 surface 와 우연히 겹칠 위험) 여전히 로컬 차단으로 남는다. 같은 workspace 안의 이동도 client 가 source 와 target 을 **둘 다** 같은 mirror 세션의 `remote_to_local` 역매핑으로 원격 ID 로 바꿔 보낸다(`remote_structural_op`). target 매핑이 없으면 보내지 않는다. 서버는 holder 검증이 anchor(source)만 보므로 `execute_forwarded_structural_op` 이 target 이 anchor 와 같은 workspace 인지 다시 검사하고, 아니면 IPC 와 같은 대상 없음 문구(`no live surface N (named by 'structural_op.move_surface')`)로 거절한다 — 다른 workspace 의 surface 를 덮어쓰는 것을 막는다. `execute_forwarded_structural_op` 의 move-surface 실행은 target(B) 의 PTY cleanup 을 `core::structural_cascade::cascade_surface_closed` 로 명시 재현한다(대응하는 도메인 실행 함수가 없어 이 함수가 직접 호출해야 함 — CloseSurface 가 `structural_exec::close_surface` 안에서 부르는 것과 같은 cascade). convert 실행 성공(`replaced:true`) 시 `ForwardedDelta.converted_surface` 에 대상 surface_id 를 실어, 메인루프(`event_handler.rs`/`boot/headless_stream.rs`)가 `PluginManager::drop_egui_mesh_frame` 을 호출해 egui-mesh(image 등) stale frame 을 방지한다 — 로컬(비-forward) 변환 경로의 `SurfaceConverted` cascade(`app/dispatch_domain.rs`)와 동일 처리를 forward 경로에도 재현한 것. plugin manager 는 forward 실행이 받는 상태 어디에도 없고 두 빌드 모두 호출자가 소유하므로, 결과를 값으로 돌려주고 호출자가 반영한다(ADR-0002, 대체: ADR-0054).

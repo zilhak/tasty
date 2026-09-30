@@ -47,8 +47,11 @@ surface·tab·pane 닫기의 트리 변경과 복원 기록(`push_closed_item`)�
   `user_triggered: true` 로 전달 큐에 넣고 로컬 트리를 바꾸지 않는다.
 - `close_surface_by_id` 에는 가드가 없다. `close_active_surface` 가 검사를 마친 뒤에만 부른다.
   `close_surface_by_id_no_snapshot` 은 로컬 PTY 종료 정리(`src/app/process_exit.rs`)에서만 부른다.
-- 에이전트 origin 표시는 IPC 경로에만 있다. `Core::apply` 가 아니라 `structural_exec::apply_as_agent` 가
-  `Core::apply` 의 Err 를 받은 뒤 `mark_last_forward_agent_origin` 으로 에이전트 요청임을 표시한다.
+- IPC 와 원격 forward 경로의 origin 표시는 `Core::apply` 가 아니라 `structural_exec` 의 실행 함수가 한다.
+  진입점이 넘긴 origin 으로 `Core::apply` 의 Err 에 `mark_last_forward_agent_origin` 과
+  `mark_last_forward_user_triggered` 를 적용한다. 현재 두 진입점은 모두 에이전트 origin 을 넘긴다.
+- lifecycle 의 `is_user_close` 는 창 경로에서는 사용자 닫기 여부로, `structural_exec` 경로에서는
+  넘겨받은 origin 이 사용자인지로 정한다. `save_snapshot` 과는 별개다.
 
 닫기가 끝나면 AppState 가 Core 가 돌려준 이벤트로 자원 회수·lifecycle 통지·활성 포인터 보정을 이어서
 한다.

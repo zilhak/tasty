@@ -35,7 +35,7 @@ Toast는 “복사됨”, “저장됨”처럼 사용자 조작의 결과를 �
 
 `report_apply_error`와 preset 적용·저장 실패는 사용자 origin에서만 토스트를 낸다. 에이전트의 forward 요청에는 `silent_failure`를 붙이고 attach client의 `AgentRequests`가 회신까지 op_id를 보관한다. 성공·실패 회신 뒤에는 항목을 지우고 재연결 때도 비운다. preset 저장 성공 알림은 이 실패 처리 규칙의 대상이 아니다.
 
-직접 `Core::apply`를 부르는 split·tab.create/close/move·pane.close·surface.close는 `structural_exec::apply_as_agent`에서, image.open은 `image::handle_open`에서 같은 표시를 붙인다. 원격 요청을 다시 전달하는 경우도 로컬 사용자의 조작이 아니므로 토스트 없이 로그로 알린다.
+직접 `Core::apply`를 부르는 split·tab.create/close/move·pane.close·surface.close는 `structural_exec`의 실행 함수가 진입점에서 받은 origin으로 같은 표시를 붙인다. IPC 라우터는 모든 호출자를, 원격 forward 실행은 모든 forward를 에이전트 origin으로 넘긴다. image.open은 `image::handle_open`에서 같은 표시를 붙인다. 원격 요청을 다시 전달하는 경우도 로컬 사용자의 조작이 아니므로 토스트 없이 로그로 알린다.
 
 `file_handler.dispatch`는 사용자가 조작한 플러그인 팝업을 검증할 수 있으면 사용자 origin이 된다. markdown 파일열기 팝업이 이 경로다. origin을 구분하지 못하는 기존 `Some(pane)` 직접 적용과 사용자 전용 `forward_mirror_structural`은 원격 실패 토스트를 유지한다. accepted 응답 뒤 적용한 실패 사유는 기존 응답에 소급해 넣을 수 없어 로그에 남는다.
 
