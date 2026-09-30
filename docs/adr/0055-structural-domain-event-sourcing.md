@@ -65,6 +65,7 @@ Effect(확정된 의무에 따른 외부 실행), Observation(자원에서 관�
   재시도 계약은 [ADR-0057](0057-command-identity-for-mutation-retries.md)을 따른다.
 - 한 transaction이 expected revision·events·command 기록·effect 의무를 함께 확정한다. 실패하면 메모리 적용과 외부 실행을 시작하지 않는다.
 - stream 단위는 엔진이다. 한 stream에는 활성 writer 하나만 있고 revision은 단조 증가한다. stream 사이의 전체 도착 순서는 보장하지 않는다.
+  구조 journal은 데이터 홈에 하나이고 엔진은 그 안의 stream이다. 구조 ID는 그 journal의 예약에서 모든 엔진에 걸쳐 발급한다([ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)).
   여러 엔진을 바꾸는 명령은 하나의 transaction으로 확정하고, 모두 staging에 적용한 뒤 하나의 공개 barrier를 넘긴다.
   여러 엔진을 읽는 조회는 batch ID와 revision vector가 같은 cut을 읽는다.
 - `evolve`는 이벤트만으로 결정되며 디스크·OS·현재 포커스를 읽지 않는다. 시간·CWD·설정·registry 값과 예약 ID는 `decide`의 고정 입력으로 받는다.

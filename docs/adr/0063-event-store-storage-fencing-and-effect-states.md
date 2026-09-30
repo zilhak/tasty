@@ -1,6 +1,6 @@
 # ADR-0063: 이벤트 저장소는 payload를 journal DB에 두고 파일 잠금과 writer 세대로 쓰기를 제한한다
 
-- **Status**: Accepted — 구현 상태: 이 결정의 payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별은 `tasty-event-store`에 구현됐다. 영속 ID 예약과, projection 출력 행과 consumer 위치의 동시 확정도 구현됐다. 미이행: 제품 경로 연결(root의 시험 전용 코드인 `src/runtime` 모듈과 기존 layout importer만 이 저장소를 사용하고 제품 경로는 연결되지 않았다), 새 journal로 가져올 때의 payload 복사, 로그 보존·정리, stream별 부분 소비자의 위치 표현, 기존 runtime ID 공간과 예약 ID 공간의 통합(`u32` 별칭 공유와 `u64` 예약의 좁힘 규칙 포함, 재검토 조건 참조)
+- **Status**: Accepted — 구현 상태: 이 결정의 payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별은 `tasty-event-store`에 구현됐다. 영속 ID 예약과, projection 출력 행과 consumer 위치의 동시 확정도 구현됐다. 미이행: 제품 경로 연결(root의 시험 전용 코드인 `src/runtime` 모듈과 기존 layout importer만 이 저장소를 사용하고 제품 경로는 연결되지 않았다), 새 journal로 가져올 때의 payload 복사, 로그 보존·정리, stream별 부분 소비자의 위치 표현, 데이터 홈의 구조 journal 하나에서 구조 ID를 전역 발급하는 배선과 `u32` 좁힘(영속 ID 예약 절), importer의 엔진별 stream 분리
 - **Date**: 2026-09-30
 - **Tags**: event-sourcing, storage, sqlite, durability, effects, fencing
 - **Group**: foundation
@@ -101,7 +101,12 @@ domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 제품 경
 - 예약한 범위는 재오픈 뒤에도 다시 내주지 않는다. 예약 뒤 commit이 실패하거나 예약한 ID를 다 쓰지 않으면 그 구간은 빈 채로 남는다.
 - 첫 ID는 1이다. 0은 호출자가 예약 상수로 쓸 수 있도록 내주지 않는다.
 - 호출자가 준 상한과 SQLite 정수에 저장할 수 있는 상한 중 작은 값을 넘는 예약은 되감지 않고 거절하며 상태를 바꾸지 않는다. 0개 예약도 거절한다.
-- 값 공간은 journal 내부다. 기존 runtime ID 공간과의 통합, 데이터 홈의 여러 journal이 공유하는 할당, 기존 데이터를 가져올 때 시작 값을 끌어올리는 것은 이 결정의 범위가 아니다.
+- 구조 journal은 데이터 홈에 하나 둔다. 엔진은 그 journal 안의 stream이며 엔진마다 journal 파일을 따로 두지 않는다.
+  구조 ID는 이 journal의 kind별 예약에서 발급하므로 journal 하나로 모든 엔진에 걸쳐 유일하다. 프로세스가 공유하는 runtime ID 발급기는 이 예약에서 받은 구간을 나눠 주는 캐시가 된다.
+- wire 표현은 `u32`로 유지한다. surface는 standalone PTY ID 기준값 미만, 그 밖의 구조 kind는 `u32` 최대값을 상한으로 예약한다.
+  상한을 넘는 예약은 위 규칙대로 되감지 않고 거절한다. surface와 PTY의 범위 분리는 [ADR-0059](0059-id-targets-and-view-owned-selection.md)를 따른다.
+- journal 밖의 ID(PTY·hook·observer·notification)는 기존 카운터를 쓴다.
+- 이 절의 journal 배치와 전역 발급은 구조 journal을 제품에 연결하기 전에 정했다. 처음 결정은 값 공간을 journal 내부로 한정하고 runtime ID와의 통합을 범위 밖으로 두었다.
 
 ## Consequences
 
@@ -126,6 +131,10 @@ stream별 부분 소비자의 위치 표현은 아직 없다. 보존·정리와 
 
 ID 예약은 이벤트 commit과 다른 transaction이므로 실패한 명령이 쓰지 않은 ID가 빈 구간으로 남는다. ID가 연속이라는 가정에 기대는 코드는 이 journal의 ID에 쓸 수 없다.
 
+데이터 홈에 구조 journal이 하나이므로 모든 엔진의 구조 쓰기가 한 파일의 writer에서 직렬화된다. 이 지연은 구조 명령 commit 지연 측정으로 확인한다.
+여러 엔진을 바꾸는 명령은 추가 장치 없이 한 transaction으로 확정할 수 있다.
+현재 layout importer는 한 저장소에 여러 슬롯을 가져올 때 모두 같은 구조 stream 하나에 이어 붙인다. 엔진이 stream이라는 배치와 맞지 않으므로 활성화 전에 슬롯마다 해당 엔진의 stream으로 가져오도록 고쳐야 한다.
+
 schema 이름 기반 식별은 같은 이름의 버전 표를 가진 다른 앱 DB를 걸러내지 못한다. 이 저장소의 다른 DB는 그 표를 쓰지 않는다.
 
 강제 종료 시험(`crates/tasty-event-store/tests/crash.rs`)은 commit 직후, 준비한 commit을 확정하기 전(API 경계), effect Running 기록 직후, 두 프로세스의 동시 첫 open에서 실제 프로세스를 abort한 뒤 journal을 다시 열어 판정한다.
@@ -145,6 +154,9 @@ transaction 내부 지점의 abort와 전원 차단 수준의 쓰기 유실은 �
 - 다른 SQLite 파일도 journal로 초기화하는 안: 잘못된 경로 하나로 사용자 데이터 파일에 journal 표가 생기고 WAL로 바뀐다.
 - ID를 이벤트 commit과 같은 transaction에서 배정하는 안: 빈 구간은 없지만 `decide`가 commit 전에 ID를 고정 입력으로 받을 수 없다.
 - 상한에 닿으면 ID를 되감아 재사용하는 안: 예약 ID를 재사용하지 않는다는 ADR-0055의 전제를 깨고 옛 이벤트의 참조와 섞인다.
+- 엔진마다 journal을 두고 `u32` 상위 비트에 엔진 번호를 넣는 안: 엔진당 surface ID 수가 줄고 기존 슬롯의 ID를 다시 매겨야 한다.
+  여러 엔진을 바꾸는 명령을 한 transaction으로 확정할 수 없어 ADR-0055의 다중 엔진 원자성 조항을 고쳐야 한다.
+- 엔진마다 journal을 두고 ID만 데이터 홈의 공용 할당 저장소에서 받는 안: 잠금과 파일이 둘이 되고 예약과 commit이 다른 저장소라 종료 경계가 늘어난다. 다중 엔진 원자성 문제는 앞의 안과 같다.
 
 ## Reconsideration Triggers
 
@@ -153,8 +165,8 @@ transaction 내부 지점의 abort와 전원 차단 수준의 쓰기 유실은 �
 - 제품에 연결할 때 모든 쓰기 경로가 잠금을 얻은 writer를 거치는지 확인한다. 잠금 없이 쓰는 경로가 생기면 연결하지 않는다.
 - 로그 보존·정리를 설계하면 외래 키, cut 계산, snapshot+tail 재구성의 보존 경계를 함께 바꾸고 이 ADR의 schema 절을 다시 본다.
 - stream별 부분 소비자나 외부 projection 저장소가 필요해지면 checkpoint 키 형태(batch 단위 또는 stream별)와 출력 행 형식을 다시 정한다.
-- 제품에 연결하면서 기존 runtime ID와 예약 ID를 한 공간으로 합치거나, 여러 journal이 ID를 공유해야 하면 ID 예약 절을 다시 정한다.
-  저널 ID와 runtime ID는 모두 `tasty-model`이 재수출하는 같은 `u32` 별칭이라 컴파일러가 두 공간을 구분하지 못한다. EventStore의 예약은 `u64` 범위를 내주지만 `IdSupplier`는 `u32`를 준다. 제품에 배선하기 전에 `u64`→`u32` 좁힘 규칙과, 공간 통합 또는 newtype 구분을 정한다.
+- 엔진마다 journal 파일을 나눠야 하거나 여러 journal이 구조 ID를 나눠 써야 하는 요구가 생기면 ID 예약 절의 journal 배치와 발급 범위를 다시 정한다.
+- 구조 kind의 `u32` 범위가 고갈에 가까워지거나 surface·PTY 외의 ID 종류가 같은 공간을 쓰게 되면 좁힘 규칙과 wire 표현을 다시 본다.
 - 여러 호스트나 여러 프로세스가 같은 journal에 써야 하는 요구가 생기면 잠금·세대 모델을 다시 정한다.
 
 ### 실행 결과로 확인

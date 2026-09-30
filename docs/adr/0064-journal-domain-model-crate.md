@@ -1,6 +1,6 @@
 # ADR-0064: 저널 도메인 모델은 `tasty-core` 추출 전에 순수 도메인 crate `tasty-domain`에 새로 작성한다
 
-- **Status**: Accepted — 구현 상태: `tasty-domain` crate와 root `src/runtime` 모듈(generic CommandExecutor, 저장 batch 변환, 전체 replay와 snapshot+tail 재구성)이 있다. 둘 다 시험 전용이며 제품 경로에는 연결되지 않았다. 미이행: 제품 배선(원본과 projection의 관계와 전환 절차는 [ADR-0065](0065-journal-source-and-core-state-projection.md)), 저널 ID 공간과 runtime ID 공간의 구분(재검토 조건 참조)
+- **Status**: Accepted — 구현 상태: `tasty-domain` crate와 root `src/runtime` 모듈(generic CommandExecutor, 저장 batch 변환, 전체 replay와 snapshot+tail 재구성)이 있다. 둘 다 시험 전용이며 제품 경로에는 연결되지 않았다. 미이행: 제품 배선(원본과 projection의 관계와 전환 절차는 [ADR-0065](0065-journal-source-and-core-state-projection.md)), 저널 예약에서 runtime ID를 발급하는 배선과 `u64`→`u32` 좁힘(규칙은 [ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)의 영속 ID 예약 절)
 - **Date**: 2026-09-30
 - **Tags**: architecture, crates, domain, event-sourcing, commands
 - **Group**: foundation
@@ -76,7 +76,7 @@ crate 목록 문서·README·가드의 crate 수 갱신이 함께 필요하다.
 ### 코드와 설정에서 확인
 
 - `tasty-core` 추출 시점을 판단할 때 `tasty-domain`과 합칠지, 이름을 바꿀지를 함께 정한다. 추출 결과 도메인 Command/Event 소유자가 둘이 되면 하나로 모은다.
-- 제품 배선 전: 저널 ID와 runtime ID는 모두 `tasty-model`이 재수출하는 같은 `u32` 별칭이라 컴파일러가 두 공간을 구분하지 못한다. EventStore의 예약은 `u64` 범위를 내주지만 `IdSupplier`는 `u32`를 준다. 제품에 배선하기 전에 `u64`→`u32` 좁힘 규칙과, 공간 통합 또는 newtype 구분을 정한다.
+- 저널 ID와 runtime ID는 모두 `tasty-model`이 재수출하는 같은 `u32` 별칭이다. 두 공간은 데이터 홈의 구조 journal 예약 하나로 합치기로 했으므로(ADR-0063) newtype으로 나누지 않는다. 다른 발급원이 같은 별칭을 쓰게 되면 구분 방식을 다시 정한다.
 - root 배선 단계에서 Decider 문맥에 권한·대상 해소 같은 root 전용 값이 들어가야 하면 Decider trait과 root runtime의 경계를 다시 본다.
 - `tasty-domain`이 `tasty-model` 외의 저장·실행 계층(`tasty-event-store`·PTY·GUI·root)을 의존해야 하는 요구가 생기면 이 경계를 다시 정한다.
   `cargo tree -p tasty-domain --edges normal`로 확인한다.
