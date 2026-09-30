@@ -205,7 +205,7 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
 
 **현재 범위**: surface split / pane split / 새 탭 / surface·tab·pane 닫기 / 탭 순서 변경(`MoveTab` — 탭 헤더 메뉴의 교체 이동 `탭 이동`과 다르다) / 닫은 항목 복원 / surface convert(kind 변환, `markdown.navigate`/`image.open`/host convert 팝업이 모두 이 경로를 탄다 — 변환 결과의 cwd 는 op 의 `cwd` 필드로 전달되고, 비어 있으면 원격이 대상 surface 의 실제 PTY 에서 직접 resolve 한다.
 [surface-cwd invariant §3-1](../../design/policies/cwd.md#3-1-mirror원격-attach-forward-경로도-같은-불변식-대상)) / surface 이동(move-surface)이 forward 대상이며, 성공 시 원격 실행 결과가 mirror 트리에 역반영된다.
-move-surface 는 **source/target 이 같은 mirror workspace 안에 있을 때만** forward 된다 — 로컬(비-mirror) workspace 와의 경계를 넘는 이동은 로컬 전용 surface_id 를 원격에 그대로 보내는 꼴이 되어(원격 트리의 무관한 surface 와 id 가 우연히 겹칠 위험) 여전히 로컬 차단 toast(`mirror_structural_blocked`)를 유지한다.
+move-surface 는 **source/target 이 같은 mirror workspace 안에 있을 때만** forward 된다 — 로컬(비-mirror) workspace 와의 경계를 넘는 이동은 로컬 전용 surface_id 를 원격에 그대로 보내는 꼴이 되어(원격 트리의 무관한 surface 와 id 가 우연히 겹칠 위험) 여전히 로컬 차단 toast(`mirror_structural_blocked`)를 유지한다. 같은 workspace 안의 이동도 client 는 source 와 target 을 **둘 다** 같은 mirror 세션의 매핑으로 원격 ID 로 바꿔 보내고, target 의 원격 ID 를 모르면 보내지 않는다. 서버는 target 도 점유된 같은 workspace 안의 살아 있는 surface 인지 다시 확인하고, 아니면 `no live surface N (named by 'structural_op.move_surface')` 로 거절해 다른 workspace 의 surface 를 덮어쓰지 않는다([attach 동작](../../dev-guide/attach-behavior.md)).
 
 ### 서버(피점유)측 비-holder 구조 변경 차단
 
