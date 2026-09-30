@@ -708,6 +708,10 @@ fn capture_without_scrollback_leaves_core_state_unchanged() {
 /// 구조 digest에는 들어가지 않는다.
 #[test]
 fn capture_with_scrollback_reassigns_a_duplicate_deferred_scrollback_id() {
+    // capture가 겹친 ID의 scrollback 파일을 읽으려 하므로 실제 홈 대신 임시 홈을 쓴다.
+    let real_home = tasty_utils::path::tasty_home();
+    let _home = tasty_test_support::IsolatedHome::new();
+    assert_ne!(tasty_utils::path::tasty_home(), real_home);
     let mut engine = minimal_engine();
     engine.settings.general.restore_surface_content = true;
     let duplicate = format!("shadow-digest-missing-{}", std::process::id());
