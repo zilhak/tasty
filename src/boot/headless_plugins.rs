@@ -144,18 +144,29 @@ pub(crate) fn ensure_plugin_for_surface_kind(
         );
         return;
     }
+    wait_for_started_owner(app, state, engine, &kind, &owner);
+}
+
+/// 이번 호출이 시작한 소유자의 연결과 kind 등록을 기다리고, 등록되지 않았으면 이유를 남긴다.
+fn wait_for_started_owner(
+    app: &mut App,
+    state: &mut AppState,
+    engine: &mut CoreState,
+    kind: &str,
+    owner: &str,
+) {
     let connect_limit = app
         .plugin_manager
         .as_ref()
         .map_or(std::time::Duration::ZERO, |mgr| mgr.connection_wait_limit());
     let outcome = wait_for_kind_registration(connect_limit, KIND_REGISTRATION_WAIT, || {
         pump_plugins(app, state, engine);
-        if engine.surface_registry.get_live(&kind).is_some() {
+        if engine.surface_registry.get_live(kind).is_some() {
             return OwnerPoll::Registered;
         }
         match app.plugin_manager.as_ref() {
-            Some(mgr) if mgr.is_connecting(&owner) => OwnerPoll::Connecting,
-            Some(mgr) if mgr.is_running(&owner) => OwnerPoll::Connected,
+            Some(mgr) if mgr.is_connecting(owner) => OwnerPoll::Connecting,
+            Some(mgr) if mgr.is_running(owner) => OwnerPoll::Connected,
             _ => OwnerPoll::Gone,
         }
     });
