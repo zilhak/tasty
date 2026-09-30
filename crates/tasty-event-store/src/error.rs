@@ -61,6 +61,13 @@ pub enum StoreError {
         status: CommandStatus,
     },
 
+    #[error("command {command_id} cannot move back from {from:?} to {to:?}")]
+    CommandRegression {
+        command_id: String,
+        from: CommandStatus,
+        to: CommandStatus,
+    },
+
     #[error("unknown effect {0}")]
     UnknownEffect(String),
 

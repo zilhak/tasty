@@ -156,6 +156,56 @@ fn progress_updates_stop_at_a_terminal_status() {
 }
 
 #[test]
+fn progress_does_not_move_back() {
+    let (_dir, mut store, epoch) = fresh();
+    let mut accept = CommitRequest::new(epoch);
+    let mut cmd = command("cmd-1", Some(key("agent", "k")), b"d");
+    cmd.status = CommandStatus::Accepted;
+    cmd.response = None;
+    accept.command = Some(cmd);
+    store.commit(&accept).expect("accept");
+
+    let update = |status, response: &[u8]| {
+        let mut request = CommitRequest::new(epoch);
+        request.command_updates.push(CommandUpdate {
+            command_id: "cmd-1".to_owned(),
+            status,
+            response: Some(response.to_vec()),
+        });
+        request
+    };
+    store
+        .commit(&update(CommandStatus::InProgress, b"step 1"))
+        .expect("forward");
+    // 진행 중 응답은 같은 단계에서 교체할 수 있다.
+    store
+        .commit(&update(CommandStatus::InProgress, b"step 2"))
+        .expect("same stage");
+
+    let err = store
+        .commit(&update(CommandStatus::Accepted, b"back"))
+        .expect_err("regression");
+    assert!(
+        matches!(
+            err,
+            StoreError::CommandRegression {
+                from: CommandStatus::InProgress,
+                to: CommandStatus::Accepted,
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+    let record = store.command("cmd-1").expect("read").expect("exists");
+    assert_eq!(record.status, CommandStatus::InProgress);
+    assert_eq!(record.response.as_deref(), Some(&b"step 2"[..]));
+
+    store
+        .commit(&update(CommandStatus::Cancelled, b"cancelled"))
+        .expect("finish");
+}
+
+#[test]
 fn events_carry_their_command_and_causation() {
     let (_dir, mut store, epoch) = fresh();
     let mut request = CommitRequest::new(epoch);

@@ -59,7 +59,8 @@ pub struct CommandKey {
     pub idempotency_key: String,
 }
 
-/// 명령의 진행 상태. 종료 상태(Completed·Failed·Cancelled)는 다시 바꿀 수 없다.
+/// 명령의 진행 상태. Accepted → InProgress → 종료 순서로만 진행하며 뒤로 돌아가지 않는다.
+/// 종료 상태(Completed·Failed·Cancelled)는 다시 바꿀 수 없다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandStatus {
     Accepted,
@@ -72,6 +73,15 @@ pub enum CommandStatus {
 impl CommandStatus {
     pub fn is_terminal(self) -> bool {
         matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
+    }
+
+    /// 진행 순서. 갱신은 같은 단계이거나 뒤 단계로만 허용한다.
+    pub(crate) fn stage(self) -> u8 {
+        match self {
+            Self::Accepted => 0,
+            Self::InProgress => 1,
+            Self::Completed | Self::Failed | Self::Cancelled => 2,
+        }
     }
 
     pub(crate) fn as_str(self) -> &'static str {

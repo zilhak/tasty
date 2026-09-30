@@ -73,7 +73,7 @@ pub(crate) fn insert(conn: &Connection, new: &NewCommand) -> StoreResult<()> {
     Ok(())
 }
 
-/// 진행 상태를 갱신한다. 종료된 명령은 바꾸지 않는다.
+/// 진행 상태를 갱신한다. 종료된 명령은 바꾸지 않고, 앞 단계로 되돌리는 갱신은 거절한다.
 pub(crate) fn apply_update(conn: &Connection, update: &CommandUpdate) -> StoreResult<()> {
     let status: Option<String> = conn
         .query_row(
@@ -90,6 +90,13 @@ pub(crate) fn apply_update(conn: &Connection, update: &CommandUpdate) -> StoreRe
         return Err(StoreError::CommandFinished {
             command_id: update.command_id.clone(),
             status: current,
+        });
+    }
+    if update.status.stage() < current.stage() {
+        return Err(StoreError::CommandRegression {
+            command_id: update.command_id.clone(),
+            from: current,
+            to: update.status,
         });
     }
     conn.execute(
