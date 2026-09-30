@@ -61,7 +61,7 @@ App이 가진 모든 engine은 `App.engines`(`EngineRegistry`, `src/app/engine_r
 | 창 등록 | 임시 engine을 창 관계로 옮긴다(`register_window`). |
 | park | 창 관계를 parked로 바꾸고 View 복원 자료(AppState)를 뒤에 붙인다. 마지막 창 닫기와 macOS 최소화가 쓴다. |
 | unpark | 가장 먼저 보관한 parked engine을 임시 관계로 옮긴다. 새 창이 이어받는다. |
-| 은퇴 | 창 관계를 끊고 engine을 registry에서 꺼낸다. 저장(flush)을 마친 뒤 View, engine 순서로 버린다. |
+| 은퇴 | 창 관계를 끊고 engine을 registry에서 꺼낸다. 레이아웃 복원 설정에 따라 저장하거나 슬롯 파일을 지운 뒤 View, engine 순서로 버린다. |
 
 parked 상태에서도 engine은 살아 있으므로 레이아웃 슬롯 점유를 유지한다. 종료 때 저장은 창 engine과 parked engine을 한 번씩 본다. `App.engines`는 `App.view` 바로 뒤에 있어 프로세스 종료 때 모든 창 View가 먼저, 그 뒤 engine이 drop된다.
 

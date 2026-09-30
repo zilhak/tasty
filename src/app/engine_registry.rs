@@ -92,7 +92,7 @@ impl EngineRegistry {
         Some((engine, state))
     }
 
-    /// 창 관계를 끊고 engine을 꺼낸다. 호출자가 저장을 마친 뒤 drop 시점을 정한다.
+    /// 창 관계를 끊고 engine을 꺼낸다. 호출자가 저장이나 슬롯 파일 삭제를 마친 뒤 drop 시점을 정한다.
     pub(crate) fn retire_window(&mut self, wid: WindowId) -> Option<EngineSession> {
         let id = self.by_window.remove(&wid)?;
         self.sessions.remove(&id)
