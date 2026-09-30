@@ -1147,4 +1147,189 @@ mod tests {
             .collect();
         assert_eq!(non_auto, vec![TabBarAction::ScrollRight { pane_id: 1 }]);
     }
+
+    fn cluster_sizes() -> tab::ClusterSizes {
+        tab::ClusterSizes {
+            close: tasty_type_geometry::length::LogicalPx(16.0),
+            busy: tasty_type_geometry::length::LogicalPx(6.0),
+            move_glyph: tasty_type_geometry::length::LogicalPx(12.0),
+            marker: tasty_type_geometry::length::LogicalPx(16.0),
+            gap: tasty_type_geometry::length::LogicalPx(4.0),
+            label_gap: tasty_type_geometry::length::LogicalPx(8.0),
+        }
+    }
+
+    fn range(a: f32, b: f32) -> egui::Rangef {
+        egui::Rangef::new(a, b)
+    }
+
+    #[test]
+    fn the_status_cluster_orders_marker_move_busy_close_four_apart() {
+        let all = tab::ClusterItems {
+            marker: true,
+            move_glyph: true,
+            busy: true,
+        };
+        let slots = tab::status_cluster(
+            tasty_type_geometry::length::LogicalPx(200.0),
+            cluster_sizes(),
+            all,
+        );
+        assert_eq!(slots.close, range(184.0, 200.0));
+        assert_eq!(slots.busy, Some(range(174.0, 180.0)));
+        assert_eq!(slots.move_glyph, Some(range(158.0, 170.0)));
+        assert_eq!(slots.marker, Some(range(138.0, 154.0)));
+        // 묶음 왼쪽 끝 138에서 tab-gap 8을 띄운다.
+        assert_eq!(slots.label_right.value(), 130.0);
+    }
+
+    /// close 칸은 항상 자리를 잡는다. 없는 항목은 칸도 간격도 차지하지 않는다.
+    #[test]
+    fn the_cluster_reserves_close_and_only_the_items_present() {
+        let right = tasty_type_geometry::length::LogicalPx(200.0);
+        let none = tab::status_cluster(right, cluster_sizes(), tab::ClusterItems::default());
+        assert_eq!(none.close, range(184.0, 200.0));
+        assert_eq!(
+            (none.busy, none.move_glyph, none.marker),
+            (None, None, None)
+        );
+        assert_eq!(none.label_right.value(), 176.0);
+        let marker_only = tab::status_cluster(
+            right,
+            cluster_sizes(),
+            tab::ClusterItems {
+                marker: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(marker_only.marker, Some(range(164.0, 180.0)));
+        assert_eq!(marker_only.label_right.value(), 156.0);
+    }
+
+    /// 좁은 탭에서 모든 항목이 있는 묶음은 크기를 지키고 긴 제목만 말줄임된다.
+    #[test]
+    fn a_narrow_tab_ellipsises_the_label_and_keeps_the_cluster() {
+        let th = test_theme();
+        let long = "quarterly-report-final.html";
+        let mut pane = mk_pane(1, &[long, "b"], 1, true);
+        pane.tab_is_busy[0] = true;
+        pane.move_mark = Some((0, TabMoveMark::Glyph));
+        pane.tab_html_script_marker[0] = Some(TabScriptMarker {
+            surface_id: 7,
+            kind: tasty_ui_widgets::HtmlScriptMarkerKind::Blocked,
+        });
+        let shapes = settled_strip_shapes(pane);
+        let label = shapes
+            .iter()
+            .find_map(|s| match s {
+                egui::Shape::Text(t) if t.galley.text().starts_with("quarterly") => Some(t),
+                _ => None,
+            })
+            .expect("제목이 칠해진다");
+        assert!(
+            label.galley.text().ends_with('…'),
+            "{}",
+            label.galley.text()
+        );
+        // 탭 폭 160의 오른쪽 끝 space-xs 안쪽부터 close · busy · move · 표지와 간격 셋을 뺀 곳이
+        // 묶음 왼쪽 끝이고, 제목은 그보다 tab-gap 앞에서 끝난다.
+        let gap = th.tab_status_gap().value();
+        let busy_right = 160.0 - th.spacing_xs.value() - th.tab_close_size().value() - gap;
+        let busy_center = busy_right - th.tab_dot_size().value() / 2.0;
+        let cluster_left = busy_right
+            - th.tab_dot_size().value()
+            - gap
+            - tasty_ui_widgets::move_source_glyph_size(&th)
+            - gap
+            - th.html_script_marker_hit().value();
+        let label_right = label.pos.x + label.galley.size().x;
+        assert!(
+            label_right <= cluster_left - th.tab_gap().value() + 0.01,
+            "제목 {label_right} 이 묶음 자리 {cluster_left} 를 침범한다"
+        );
+        let dot = shapes.iter().any(|s| match s {
+            egui::Shape::Circle(c) => {
+                (c.center.x - busy_center).abs() < 0.01
+                    && (c.radius * 2.0 - th.tab_dot_size().value()).abs() < 0.01
+            }
+            _ => false,
+        });
+        assert!(dot, "busy 점이 제 크기로 제 칸에 있다");
+    }
+
+    /// 비활성 탭의 lock 칸 위에 포인터가 있어도 탭 hover라 close가 보인다.
+    #[test]
+    fn hovering_the_lock_of_an_inactive_tab_still_shows_close() {
+        let th = test_theme();
+        let pane = marker_pane(tasty_ui_widgets::HtmlScriptMarkerKind::Blocked);
+        let slots = tab::status_cluster(
+            tasty_type_geometry::length::LogicalPx(160.0) - th.spacing_xs,
+            tab::ClusterSizes::of(&th),
+            tab::ClusterItems {
+                marker: true,
+                ..Default::default()
+            },
+        );
+        let y = th.tab_bar_height.value() / 2.0;
+        let close_glyph_at = |shapes: &[egui::Shape]| {
+            let size = th.icon_glyph_size_xs.value();
+            shapes.iter().any(|s| match s {
+                egui::Shape::Rect(r) => {
+                    r.brush.is_some()
+                        && (r.rect.width() - size).abs() < 0.01
+                        && (r.rect.center().x - slots.close.center()).abs() < 0.01
+                }
+                _ => false,
+            })
+        };
+        let on_lock = egui::pos2(slots.marker.expect("표지 칸").center(), y);
+        assert!(close_glyph_at(&hovered_strip_shapes(&pane, on_lock)));
+        // 탭 밖(두 번째 탭 위)이면 첫 탭의 close는 숨는다.
+        assert!(!close_glyph_at(&hovered_strip_shapes(
+            &pane,
+            egui::pos2(240.0, y)
+        )));
+    }
+
+    /// 포인터를 `pos`에 둔 채 여러 프레임 그린 뒤 마지막 프레임의 도형을 돌려준다.
+    fn hovered_strip_shapes(pane: &PaneTabBarView, pos: egui::Pos2) -> Vec<egui::Shape> {
+        let ctx = egui::Context::default();
+        egui_extras::install_image_loaders(&ctx);
+        let theme = test_theme();
+        let kb = crate::settings::KeybindingSettings::default();
+        let panes = vec![pane.clone()];
+        let mut out = egui::FullOutput::default();
+        for _ in 0..30 {
+            let raw = egui::RawInput {
+                events: vec![egui::Event::PointerMoved(pos)],
+                ..Default::default()
+            };
+            out = ctx.run(raw, |ctx| {
+                let props = PaneTabBarsProps {
+                    theme: &theme,
+                    kb: &kb,
+                    panes: &panes,
+                    scale_factor: 1.0,
+                    tab_width: 160.0,
+                    tab_font_size: 12.0,
+                    active_tab_indicator: crate::settings::ActiveTabIndicator::default(),
+                    drag: None,
+                    switch_overlay_pane: None,
+                    native_content: &[],
+                };
+                drop(draw_pane_tab_bars_view(ctx, &props));
+            });
+        }
+        let mut shapes = Vec::new();
+        fn flatten(s: egui::Shape, out: &mut Vec<egui::Shape>) {
+            match s {
+                egui::Shape::Vec(v) => v.into_iter().for_each(|s| flatten(s, out)),
+                other => out.push(other),
+            }
+        }
+        out.shapes
+            .into_iter()
+            .for_each(|c| flatten(c.shape, &mut shapes));
+        shapes
+    }
 }

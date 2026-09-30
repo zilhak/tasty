@@ -76,7 +76,7 @@ source 또는 target 워크스페이스가 mirror 면 로컬 실행을 막는다
 - **링**: 대상 rect **안쪽**에 대시 링을 그린다. 2px(`move_source_ring_width` = `focus_ring_width`), 4px 선·4px 간격(`move_source_dash`·`move_source_dash_gap`), 색 `move_source_ring()` = `accent_move()`(pink). 선 전체를 rect 안에 두어 이웃과 공유하는 1px 구분선을 덮지 않는다. 변마다 대시 위상을 새로 시작한다. 정적 표시이며 입력을 받지 않는다.
 - **rect**: 서피스는 서피스 영역, 탭은 탭 칸(오른쪽 구분선 포함), 페인은 탭 바와 콘텐츠를 합친 페인 rect다. 페인 링은 탭 바를 감싸고 서피스 링은 감싸지 않아 세 종류가 구별된다. 탭 링은 활성·비활성·hover 상태와 관계없이 칸 위에 그린다.
 - **보이지 않는 대상**: 대상에서 위로 올라가 처음 보이는 컨테이너 하나에만 move 글리프(`move_source_glyph()`, 12px `move_source_glyph_size`)를 둔다. 텍스트는 없다.
-  - 대상 서피스가 활성 워크스페이스의 비활성 탭 안에 있으면 그 탭 칸의 제목 뒤. 제목이 먼저 줄어든다.
+  - 대상 서피스가 활성 워크스페이스의 비활성 탭 안에 있으면 그 탭 칸 오른쪽 상태 묶음의 move 칸(html 스크립트 표지와 busy 점 사이). 제목이 먼저 줄어든다([탭 칸 구성](../workspace-tabs/index.md#ui-요소-인벤토리)).
   - 대상(종류 무관)이 다른 워크스페이스에 있으면 사이드바의 그 워크스페이스 행(이름 뒤, 배지 묶음 앞). 접힌 레일에서는 아바타 왼쪽 아래 12px 칩(`move_source_chip_size`, 글리프 8px `move_source_chip_glyph_size`, 바탕 `bg_sidebar`). 오른쪽 위는 알림 점, 오른쪽 아래는 mirror 칩이 쓴다.
   - 탭 링이나 탭 칸 글리프를 둘 대상 탭 칸이 탭 바 스크롤에 가려지면, 가려진 쪽 스크롤 화살표가 `tab_scroll_arrow_move_fg()`(= `move_source_glyph()`) 잉크로 바뀐다. 칸이 viewport 안에 완전히 들어와야 보이는 것으로 치며, 일부만 보여도 화살표가 표시를 유지한다. 그쪽 화살표는 disabled가 되지 않고, 클릭은 평소의 한 칸 스크롤이다(대상으로 건너뛰지 않는다). 스크롤은 여전히 활성 탭만 따라간다. 판정은 `tab_bar/view.rs::hidden_move_side`다.
   - 그 밖에 활성 워크스페이스에 있지만 보이지 않는 대상에는 대체 표시가 없다.

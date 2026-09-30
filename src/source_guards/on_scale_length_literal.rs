@@ -120,7 +120,7 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 본체 chrome의 역할별 치수다. 테마 접근자가 생긴 값은 옮기되 같은 숫자의 다른 역할과 혼동하지 않는다.
         // 튜토리얼 popup 360·탐색기 열 140 같은 기존 값은 새 스케일 값이라 집계된다.
         // 알림 popup 기본 높이 400은 대응 토큰이 없어 notification.rs 의 sizer 에 남는다(폭은 토큰).
-        51,
+        50,
         "나머지 host chrome(사이드바·타이틀바·서피스 장식)",
     ),
     (
@@ -736,7 +736,7 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // Layout preview tests add on-scale PhysicalPx(0), PhysicalPx(0),
         // PhysicalPx(600), and the PhysicalPx(1) content-height floor; 1000 is off-scale.
         // Tooltip placement tests add their window, anchor and WebView rect literals.
-        (187, 340),
+        (187, 350),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

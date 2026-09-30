@@ -8,9 +8,6 @@ use tasty_type_geometry::length::LogicalPx;
 /// 점 형태의 활성 표시 지름. 대응 역할 토큰이 없어 별도로 두며 밑줄 두께와 구분한다.
 const TAB_ACTIVE_DOT_SIZE: LogicalPx = LogicalPx(4.0);
 
-/// busy 점과 탭 이름 사이 간격. 점 지름과는 별도 치수다.
-const TAB_BUSY_DOT_PAD: LogicalPx = LogicalPx(6.0);
-
 /// Inputs shared by the tab slots in one clipped pane strip.
 pub(super) struct TabRenderContext<'a, 'props> {
     pub props: &'a PaneTabBarsProps<'props>,
@@ -45,9 +42,6 @@ pub(super) fn draw_tab(
     let label_font_size = props.tab_font_size;
     let h_padding: f32 = 8.0;
     let active_indicator_h = th.tab_indicator_width.value();
-    // 점·여백은 같은 탭의 다른 요소와 배율을 맞춘다.
-    let dot_radius = th.tab_dot_size().scaled(0.5);
-    let dot_reserve = (th.tab_dot_size() + zoomed_px(th, TAB_BUSY_DOT_PAD)).value();
     if i > 0 {
         let sep = egui::Rect::from_min_size(
             egui::pos2(x, clip_rect.min.y),
@@ -101,13 +95,26 @@ pub(super) fn draw_tab(
         }
     }
 
-    // close 버튼 슬롯(우측 h_padding + 14px)을 비워두고 dot 은
-    // 그 왼쪽에 둔다 (close 와 겹치지 않게).
-    let dot_right = tab_rect.max.x - h_padding - 14.0;
-    if is_busy {
-        let dot_center = egui::pos2(dot_right - dot_radius.value(), tab_rect.center().y);
+    let marker = info.tab_html_script_marker.get(i).copied().flatten();
+    let cluster = status_cluster(
+        LogicalPx(tab_rect.max.x) - th.spacing_xs,
+        ClusterSizes::of(th),
+        ClusterItems {
+            marker: marker.is_some(),
+            move_glyph: info.move_mark == Some((i, super::TabMoveMark::Glyph)),
+            busy: is_busy,
+        },
+    );
+    let cy = tab_rect.center().y;
+    let slot_rect = |x: egui::Rangef| {
+        egui::Rect::from_x_y_ranges(
+            x,
+            egui::Rangef::new(cy - x.span() / 2.0, cy + x.span() / 2.0),
+        )
+    };
+    if let Some(x) = cluster.busy {
         let color: egui::Color32 = th.accent_success().into();
-        painter.circle_filled(dot_center, dot_radius.value(), color);
+        painter.circle_filled(egui::pos2(x.center(), cy), x.span() / 2.0, color);
     }
 
     let icon_size = 14.0;
@@ -153,14 +160,11 @@ pub(super) fn draw_tab(
     }
 
     let text_x = icon_rect.max.x + 6.0;
-    let mut text_right = dot_right - 4.0;
-    if is_busy {
-        text_right -= dot_reserve;
+    if let Some(x) = cluster.move_glyph {
+        paint_move_glyph(ui, context, slot_rect(x));
     }
-    text_right = paint_move_glyph(ui, context, i, tab_rect, text_right);
-    let marker_slot;
-    (marker_slot, text_right) = html_script_marker_slot(context, i, tab_rect, text_right);
-    let available_w = (text_right - text_x).max(0.0);
+    let marker_slot = marker.zip(cluster.marker).map(|(m, x)| (slot_rect(x), m));
+    let available_w = (cluster.label_right.value() - text_x).max(0.0);
     let font_id = egui::FontId::proportional(label_font_size);
     let final_galley = layout_tab_label(painter, name, font_id, text_color, LogicalPx(available_w));
     let text_y = tab_rect.center().y - final_galley.size().y / 2.0;
@@ -177,30 +181,35 @@ pub(super) fn draw_tab(
         // SwitchTab 보다 우선.
         let marker_clicked =
             marker_slot.and_then(|slot| paint_html_script_marker(ui, context, i, slot));
+        // lock 칸은 click만 받아 click_and_drag인 탭 응답의 hover를 빼앗지 않는다. lock hover에도 close가 보인다.
         let show_close = is_active || resp.hovered();
         let close_clicked = if show_close {
-            let cs = 14.0;
-            let close_rect = egui::Rect::from_center_size(
-                egui::pos2(tab_rect.max.x - h_padding - cs / 2.0, tab_rect.center().y),
-                egui::vec2(cs, cs),
-            );
+            let close_rect = slot_rect(cluster.close);
             let cr = ui.interact(
                 close_rect,
                 egui::Id::new(("tabclose", info.pane_id, i)),
                 egui::Sense::click(),
             );
             if cr.hovered() {
-                painter.rect_filled(close_rect, 2.0, th.active_overlay.to_egui_premultiplied());
+                painter.rect_filled(
+                    close_rect,
+                    th.tab_close_radius().value(),
+                    th.active_overlay.to_egui_premultiplied(),
+                );
             }
             let cc: egui::Color32 = if cr.hovered() {
                 th.text_primary().into()
             } else {
                 th.text_muted().into()
             };
+            let glyph = th.icon_glyph_size_xs.value();
             // 닫기 아이콘도 뷰포트 안에서만 그린다.
             let prev_clip = ui.clip_rect();
             ui.set_clip_rect(clip_rect.intersect(prev_clip));
-            icons::CLOSE.image(cs, cc).paint_at(ui, close_rect);
+            icons::CLOSE.image(glyph, cc).paint_at(
+                ui,
+                egui::Rect::from_center_size(close_rect.center(), egui::vec2(glyph, glyph)),
+            );
             ui.set_clip_rect(prev_clip);
             cr.clicked()
         } else {
@@ -251,28 +260,12 @@ pub(super) fn draw_tab(
     LogicalPx(x)
 }
 
-/// 대상 서피스를 담은 비활성 탭이면 제목 뒤에 move 글리프를 그린다. 제목에 남는 오른쪽 끝을 반환한다.
-fn paint_move_glyph(
-    ui: &mut egui::Ui,
-    context: &TabRenderContext<'_, '_>,
-    i: usize,
-    tab_rect: egui::Rect,
-    text_right: f32,
-) -> f32 {
-    if context.info.move_mark != Some((i, super::TabMoveMark::Glyph)) {
-        return text_right;
-    }
-    let th = context.props.theme;
-    let glyph = tasty_ui_widgets::move_source_glyph_size(th);
-    let slot = egui::Rect::from_min_size(
-        egui::pos2(text_right - glyph, tab_rect.center().y - glyph / 2.0),
-        egui::vec2(glyph, glyph),
-    );
+/// 대상 서피스를 담은 비활성 탭의 묶음 칸에 move 글리프를 그린다.
+fn paint_move_glyph(ui: &mut egui::Ui, context: &TabRenderContext<'_, '_>, slot: egui::Rect) {
     let prev_clip = ui.clip_rect();
     ui.set_clip_rect(context.clip_rect.intersect(prev_clip));
-    tasty_ui_widgets::paint_move_source_glyph(ui, th, slot);
+    tasty_ui_widgets::paint_move_source_glyph(ui, context.props.theme, slot);
     ui.set_clip_rect(prev_clip);
-    text_right - glyph - th.spacing_xs.value()
 }
 
 /// 탭 한 칸의 왼쪽 클릭을 동작 하나로 정한다. 닫기, 스크립트 표지, 탭 전환 순으로 우선한다.
@@ -294,32 +287,77 @@ fn primary_click_action(
     }
 }
 
-/// html 스크립트 표지 칸을 이동 글리프 왼쪽에 잡는다. 제목에 남는 오른쪽 끝을 함께 돌려준다.
-fn html_script_marker_slot(
-    context: &TabRenderContext<'_, '_>,
-    i: usize,
-    tab_rect: egui::Rect,
-    text_right: f32,
-) -> (Option<(egui::Rect, super::TabScriptMarker)>, f32) {
-    let Some(marker) = context
-        .info
-        .tab_html_script_marker
-        .get(i)
-        .copied()
-        .flatten()
-    else {
-        return (None, text_right);
+/// 탭 칸 오른쪽 묶음에 둘 항목.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct ClusterItems {
+    pub marker: bool,
+    pub move_glyph: bool,
+    pub busy: bool,
+}
+
+/// 묶음 항목의 폭과 간격.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ClusterSizes {
+    pub close: LogicalPx,
+    pub busy: LogicalPx,
+    pub move_glyph: LogicalPx,
+    pub marker: LogicalPx,
+    /// 묶음 항목 사이 간격.
+    pub gap: LogicalPx,
+    /// 제목 오른쪽 끝과 묶음 사이 간격.
+    pub label_gap: LogicalPx,
+}
+
+impl ClusterSizes {
+    pub(super) fn of(th: &tasty_type_appearance::theme::Theme) -> Self {
+        Self {
+            close: th.tab_close_size(),
+            busy: th.tab_dot_size(),
+            move_glyph: LogicalPx(tasty_ui_widgets::move_source_glyph_size(th)),
+            marker: th.html_script_marker_hit(),
+            gap: th.tab_status_gap(),
+            label_gap: th.tab_gap(),
+        }
+    }
+}
+
+/// 묶음 항목이 차지하는 x 범위와 제목에 남는 오른쪽 끝.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct ClusterSlots {
+    pub close: egui::Rangef,
+    pub busy: Option<egui::Rangef>,
+    pub move_glyph: Option<egui::Rangef>,
+    pub marker: Option<egui::Rangef>,
+    pub label_right: LogicalPx,
+}
+
+/// 탭 칸 오른쪽 끝 `right`에서 왼쪽으로 close · busy · move · 표지 순서로 칸을 잡는다.
+/// close 칸은 보이지 않을 때도 자리를 지키고, 묶음은 제목 길이와 관계없이 줄지 않는다.
+pub(super) fn status_cluster(
+    right: LogicalPx,
+    sizes: ClusterSizes,
+    items: ClusterItems,
+) -> ClusterSlots {
+    let gap = sizes.gap.value();
+    let mut edge = right.value();
+    let mut take = |w: LogicalPx| {
+        let range = egui::Rangef::new(edge - w.value(), edge);
+        edge -= w.value() + gap;
+        range
     };
-    let th = context.props.theme;
-    let hit = th.html_script_marker_hit().value();
-    let slot = egui::Rect::from_min_size(
-        egui::pos2(text_right - hit, tab_rect.center().y - hit / 2.0),
-        egui::vec2(hit, hit),
-    );
-    (
-        Some((slot, marker)),
-        text_right - hit - th.tab_status_gap().value(),
-    )
+    let close = take(sizes.close);
+    let busy = items.busy.then(|| take(sizes.busy));
+    let move_glyph = items.move_glyph.then(|| take(sizes.move_glyph));
+    let marker = items.marker.then(|| take(sizes.marker));
+    // 마지막 칸 뒤에 더한 항목 간격을 되돌린 곳이 묶음의 왼쪽 끝이다.
+    let cluster_left = edge + gap;
+    ClusterSlots {
+        close,
+        busy,
+        move_glyph,
+        marker,
+        label_right: LogicalPx(cluster_left) - sizes.label_gap,
+    }
 }
 
 /// 표지를 그리고, 사용자가 lock 을 눌렀으면 그 surface id 를 돌려준다.
@@ -350,7 +388,7 @@ fn paint_html_script_marker(
     resp.clicked().then_some(marker.surface_id)
 }
 
-/// Fit the label into the space left by the leading icon, busy dot and close slot.
+/// Fit the label into the space left by the leading icon and the right-hand status cluster.
 fn layout_tab_label(
     painter: &egui::Painter,
     name: &str,
