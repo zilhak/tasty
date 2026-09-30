@@ -33,6 +33,7 @@
   OSC 7 cwd는 헤드리스에서도 탭 이름과 레이아웃 변경 상태를 갱신한다.
 - `HookFired`는 agent task 대기를 완료한다. host event의 일반 plugin bus 전달은 지원하지 않는다.
 - plugin 조회는 설치·권한 부여·실행을 하지 않는다. 메타데이터 조회와 실제 기동을 분리하고, enable·disable은 공용 핸들러로 지정한 plugin만 처리한다.
+  enable·disable 외의 설치·삭제·권한 변경 기능까지 지원한다고 해석하지 않는다.
   명시한 호스트 대상 ID는 실행 전에 확인하며 plugin 자체 ID 공간은 호스트가 추정하지 않는다.
 - 헤드리스는 로컬 View의 레이아웃을 저장·복원하지 않는다. workspace는 프로세스 수명 동안 유지된다.
   복원 설정이 켜져 있으면 부팅 경고를 남기고 `system.info.layout_slot`은 `null`이다.

@@ -52,28 +52,45 @@ forward 요청의 출처, parked 엔진의 즉시 적용을 정했다. mirror �
   terminal bytes의 snapshot·tap은 Terminal의 일관성 경계를 따른다. revision 기반 재동기화 확장은 capability로 협상하고 기존 wire는 유지한다.
 - mirror의 Data·Resize·StructuralDelta는 도착 순서대로 적용한다. 적용 대상 엔진을 찾은 뒤에만 수신 buffer를 비우며, 대상 없이 데이터를 꺼내지 않는다.
 - mirror 출력은 창이 있는 엔진과 parked 엔진 모두에 즉시 적용한다. 엔진 조회는 `EngineSession` 집합 하나를 사용한다.
-  parked 엔진도 VT를 파싱하지만 toast·repaint는 생략한다. 대상 없는 세션은 고아 세션 정리에서 제거한다.
+  parked 엔진도 VT를 파싱하지만 toast·repaint는 생략하고 필요한 진단은 로그로 남긴다. 창이 돌아오면 이미 갱신된 grid를 그린다.
+  대상 없는 세션은 고아 세션 정리에서 제거한다. 생존 판단·정리·출력 적용은 같은 엔진 범위를 순회한다.
 
 ### 유지하는 wire·복구 규칙
 
 아래 규칙은 새 배치에서도 유지한다. 세부 동작은 [attach 구현](../dev-guide/attach-behavior.md)이 설명한다.
 
-- 손실: 수신을 선언한 client에 `Loss{frames}`를 보낸다(`ipc.stream.loss-notify`). 기존 프로토콜 번호를 올려 구 client를 끊지 않는다.
-  큐가 가득 차면 `pending_loss`에 보관하고 실제로 넣은 뒤에만 지운다. 통지 전송으로 lag를 초기화하지 않는다.
-  밀린 통지는 write 스레드가 프레임 하나를 꺼내 공간을 만든 직후 넣는다.
+- 손실: 수신을 선언한 client에 `Loss{frames}`를 보낸다(`ipc.stream.loss-notify`). server는 capability를 알리고 client는 `ClientLossNotify`로 선언한다.
+  기존 프로토콜 번호를 올려 구 client를 끊지 않으며, 선언하지 않은 연결의 바이트 흐름은 그대로 유지한다.
+  큐가 가득 차면 `pending_loss`에 보관하고 실제로 넣은 뒤에만 지운다. 통지 전송을 정상 데이터 소비로 보아 lag를 초기화하지 않는다.
+  밀린 통지는 write 스레드가 프레임 하나를 꺼내 공간을 만든 직후 넣고, push 앞 재시도와 inbound 처리 끝 재시도도 유지한다.
+  평소에는 원자 표지만 읽고 필요할 때만 sink map을 잠그며, 수신자는 sender를 직접 소유하지 않고 Weak로 접근해 연결 해제를 막지 않는다.
   프레임의 기존 뜻이 바뀔 때만 `STREAM_PROTO`를 올리고, 더해지는 기능은 `ipc.stream.<기능>` 이름으로 선언한다.
 - 전송 압력: lag는 연결별 연속 전송 실패 횟수, `frames_dropped`와 `clients_lagged_out`은 누계, `backlog`는 살아 있는 연결들의 미전송 큐 길이 합이다.
   누계와 `backlog`는 `system.pressure`에 `sink_capacity`와 함께 노출한다. 연결별 큐 길이를 합산해 끊긴 연결의 backlog가 남지 않게 한다.
-- 복구: 손실 복구는 연결이 전달하는 데이터 중 가장 강한 요구를 따른다. workspace mirror는 Detach 후 이전 연결의 EOF를 확인하고 재attach한다.
-  한 세션에서 재attach는 한 번에 하나이고 진행 중 추가 손실은 합산한다. parked 엔진의 복구는 창이 돌아올 때까지 미루되 연결과 출력 처리는 유지한다.
-  bulk 중단은 결과 불명으로 처리해 자동 재시도하지 않는다.
-- CLI: dump는 최대 세 번 재attach하고, 수집 루프에서 5초마다 Ping을 보낸다. raw bridge는 횟수 제한 없이 재attach한다.
+- 복구: 손실 복구는 연결이 전달하는 데이터 중 가장 강한 요구를 따른다. PTY delta는 snapshot을 다시 받고, 상태 snapshot은 오래됐다고 표시하며,
+  mesh 조립은 종료하고 처음부터 구독한다(mesh cache와 구독 중복 방지 상태도 지운다). bulk 중단은 이미 commit됐을 수 있으므로 결과 불명으로 처리해 자동 재시도하지 않는다.
+  workspace mirror는 Detach를 보내고 이전 연결의 EOF를 확인한 뒤 새 연결을 만든다. 서버는 Disconnected를 inbound에 넣은 뒤 소켓을 닫아 새 attach가 이전 해제 뒤에 도착하게 한다.
+  GUI는 한 세션에서 재attach를 한 번에 하나만 진행하고, 진행 중 추가 손실은 합산하며, 완료 뒤 다시 손실이 나면 재attach할 수 있다.
+  parked 엔진의 복구는 창이 돌아올 때까지 미루되 연결과 출력 처리는 유지한다.
+- CLI: dump는 최대 세 번 재attach하고 이후에도 손실이 있으면 stderr에 알린 채 결과를 출력한다. `--send`는 최초 연결에만 수행한다.
+  raw bridge는 횟수 제한 없이 재attach하되 `Ctrl+\`와 stdin EOF는 대기 중에도 종료한다.
+  surface·workspace dump도 수집 루프에서 5초마다 Ping을 보내고, 대기는 수집 종료와 다음 Ping 중 먼저 오는 때까지만 한다. 별도 스레드를 만들지 않으며
+  송신 실패는 Disconnected로 처리한다. 긴 `--dump-after` 값을 거절하지 않는다.
   손실과 재연결 snapshot 때 출력 stream ID를 바꿔 이전 위치의 독자가 불연속을 알 수 있게 한다.
-- 요청 출처: forward 구조 요청은 origin(user·agent)을 전달한다. 필드 생략과 null은 옛 client 호환을 위해 user, 모르는 값은 agent로 해석한다.
-  서버는 user close만 복원 기록에 넣고, mirror의 닫은 항목 복원은 PTY와 scrollback이 있는 서버에서 수행한다. 원격 복원은 anchor workspace의 항목만 고른다.
-- 서버 쪽 변경: PTY 종료나 서버 로컬 변경으로 바뀐 점유 workspace도 정리가 끝난 뒤 구조 변경으로 보낸다. workspace가 사라지면 강제 detach하고 잠금을 정리한다.
-  forward 실패 사유는 도메인이 남긴 문구를 그대로 전달하고 추측하지 않는다.
-- 연결 사건: anchor 없는 mirror가 끊겨 마지막 workspace가 사라지면 기본 터미널 workspace를 다시 만들고, 사용자 요청이 아닌 연결 사건으로 창을 닫지 않는다.
+- 요청 출처: forward 구조 요청은 origin(user·agent)을 전달한다. 새 client는 user_triggered에 따라 항상 값을 보내고, 필드 생략과 null은 옛 client 호환을 위해 user,
+  모르는 값은 프레임을 버리지 않고 agent로 해석한다. tab 선택도 같은 origin을 사용한다. forward의 user origin은 snapshot 여부와 탭 선택을 정하지만 plugin lifecycle의 `is_user_close`와는 구분한다.
+- 닫은 항목 복원: 서버는 user close만 복원 기록에 넣는다. mirror의 닫은 항목 복원은 PTY와 scrollback이 있는 서버에서 수행하며 로컬 항목을 대신 복원하지 않는다.
+  서버의 닫은 항목은 출처 workspace ID를 저장하고, 원격 복원은 anchor workspace의 항목만 고르며 workspace 전체 항목은 그 범위에서 제외한다.
+  원격 기록이 비면 안내를 반환하고 로컬 기록을 소비하지 않는다. 로컬 사용자의 복원은 기존 전역 LIFO를 유지한다.
+  서버 쪽 복원에서 로컬 복원의 focus 후처리를 실행하지 않는다.
+- 서버 쪽 변경: PTY 종료나 서버 로컬 멤버 추가로 바뀐 점유 workspace도 변경 workspace 집합을 기록하고 정리가 끝난 뒤 구조 변경으로 보낸다.
+  새 멤버의 트리는 snapshot tap보다 먼저 보낸다. workspace가 사라지면 강제 detach하고 잠금을 정리한다. forward는 자신의 Result와 Delta를 보낸 뒤 별도 변경 표시를 지워 중복을 피한다.
+- forward 실패 사유: anchor가 없으면 모든 엔진에서 surface 생존 여부를 먼저 확인한다. client가 실제 workspace를 점유했고 surface가 서버 전체에 없을 때만
+  IPC와 같은 `no live surface` 사유를 반환하고, 다른 곳에 살아 있거나 점유 workspace가 없으면 `workspace not found`를 유지한다.
+  사유에는 실제 structural_op 이름을 넣고 포커스로 대체하지 않는다. convert 실패는 `SurfaceConverted.failure`에 도메인이 남긴 사유를 그대로 전달하고,
+  사유가 없으면 'surface N was not converted'처럼 결과만 말하며 대상이 없다고 추측하지 않는다. `Core::apply`의 `replaced:false` 반환 방식은 유지한다.
+- 연결 사건: anchor 없는 mirror가 끊겨 마지막 workspace가 사라지면 기본 터미널 workspace를 다시 만든다. 사용자 요청이 아닌 연결 사건으로 창을 닫지 않으며,
+  창 있는 엔진과 parked 엔진 모두 같은 복구를 쓰고 시스템 복구에 사용자 생성 event를 내지 않는다.
 
 ## Consequences
 
@@ -83,6 +100,10 @@ plugin 내부 채널과 외부 연결의 수명·권한·큐 예산이 섞이지
 기존 wire를 유지하므로 구 client·server와의 호환 비용은 그대로다. 구 server는 origin을 무시해 새 client의 agent close를 복원 기록에 남긴다.
 Loss 재시도와 데이터 삽입의 경합으로 데이터 프레임 하나가 통지보다 앞설 가능성은 소스상 남아 있다.
 큰 workspace의 재attach는 전체 snapshot을 다시 받아 비용이 크다.
+survivor scrollback에 화면이 한 번 더 남을 수 있고, 창에서 시작한 재attach의 EOF 대기 중 그 창이 park되면 anchor 없는 세션이 정리될 수 있는 한계가 있다.
+로컬 사용자는 서버에서 원격 사용자가 닫은 항목도 복원할 수 있어 한 방향의 기록 간섭이 남는다. 구 server가 모르는 복원 op는 응답 없이 무시될 수 있다.
+통지도 큐 한 칸을 쓰므로 매 push마다 한 칸만 비우는 client는 lag 한도에서 끊길 수 있다. 5초 이하 dump에는 Ping이 추가되지 않는다.
+StreamReady만으로 전송하는 기타 구조 변경은 다음 stream 활동까지 지연될 수 있다.
 
 이행 중에는 App 필드·attach client·Core attach runtime에 남은 상태를 Remote로 옮기며, 한 상태의 원본이 두 곳에 있는 기간이 없도록 한 번에 옮긴다.
 
@@ -103,6 +124,10 @@ Loss 재시도와 데이터 삽입의 경합으로 데이터 프레임 하나가
 - 헤드리스 attach client가 제품 요구가 되면 Remote의 client 쪽 범위를 헤드리스에 연결한다([ADR-0058](0058-headless-without-local-views.md)).
 - CLI에 GUI·host 전용의 큰 의존이 `tasty-remote`를 통해 들어오면 그 부분만 feature나 crate로 나눈다.
 - user·agent로 표현할 수 없는 요청자가 생기거나 구 server가 사라지면 origin 호환을 재검토한다.
+- holder가 바뀐 뒤 이전 사용자의 기록을 복원하는 문제가 생기거나 로컬 전역 LIFO가 혼란을 만들면 복원 기록의 범위를 workspace 대신 사용자·로컬 범위로 검토한다.
+- dump가 writer를 공유하거나 server가 timeout을 협상하게 되면 heartbeat 구조를 검토한다. anchor 없는 세션도 재연결을 지원하면 마지막 workspace 복구를 재검토한다.
+- workspace를 제거하는 새 경로는 사용자 창 닫기 또는 빈 영역 복구를 수행해야 한다. convert 반환 방식이 바뀌거나 사유를 코드처럼 파싱하는 소비자가 생기면 오류 전달 형식을 검토한다.
+- Loss에 surface·종류가 실리거나 attach 밖의 안전한 snapshot 생산자, 상태 전용 연결이 생기면 복구 범위를 줄일 수 있다.
 
 ### 실행 결과로 확인
 

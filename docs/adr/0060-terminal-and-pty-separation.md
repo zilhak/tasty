@@ -55,7 +55,23 @@ OS 자원을 가질 수 없고, 같은 자원을 여러 Store·Registry에 반�
   Unix의 비정상 종료는 PTY hangup과 SIGHUP에 의존한다. kill·wait 소유자는 한 곳이다. 닫기 완료·종료 신호 전달·실제 exit·reap 완료를 같은 것으로 보고하지 않는다.
 - Windows 절전 복귀는 `WM_POWERBROADCAST`로 감지해 종료한 자식을 정리하고 살아 있는 PTY에 현재 크기로 resize를 보낸다. 응답이 없다는 이유로 자식을 강제 종료하거나 재생성하지 않는다.
 - PTY EOF는 자식 종료와 구분한다. EOF 뒤에는 종료가 확인되거나 소유권이 이전되거나 Terminal이 사라질 때까지 10ms부터 두 배씩 최대 500ms 간격으로 host를 깨운다.
-- 출력 스캐너는 에이전트 mark와 독립된 scan 커서를 쓰며, `take_since_scan_mark`는 읽기와 커서 전진을 한 번에 한다. `surface.read_since_scan_mark`는 커서를 소비하므로 재전달 분류가 Mutate다.
+- EOF 직후 한 번의 `try_wait`가 아직 실행 중이라고 반환해도 나중에 종료를 확인할 수 있어야 한다. parser가 child wait를 직접 소유하지 않는다.
+  PTY를 닫고 계속 실행하는 자식은 최대 500ms마다 host를 깨우며, Terminal을 버릴 때 parser 종료를 기다리지 않는다(최대 한 대기 간격 뒤 종료).
+  targeted polling은 해당 터미널만 처리하지만 GUI에서 보이는 surface는 그 창을 다시 그릴 수 있다. targeted polling을 끄면 전체 터미널을 처리하고 모든 창을 다시 그릴 수 있다.
+- 새 접근자는 상태 잠금을 거친다. mutex가 poison 상태이면 내부 값을 꺼내 복구한다. 백그라운드 터미널의 잠금은 사용자가 보는 터미널의 잠금과 독립이다.
+- Windows 절전 복귀 처리에서 복구가 어려울 수 있는 surface는 사용자에게 알린다. 이 처리는 Windows에만 적용한다.
+- Windows에서는 호스트 종료 시 `nohup`·백그라운드 작업도 종료되고, Unix에서는 SIGHUP을 무시한 프로세스가 남을 수 있다.
+  Job 등록 실패는 경고를 남기고 기존 정리 방법을 사용한다. 플러그인과 터미널은 종료 구현을 공유하되 Job Object는 각 소유자가 따로 보관한다.
+  클라이언트의 attach·detach는 서버가 소유한 셸의 수명을 바꾸지 않는다.
+- standalone PTY(`pty.*`)는 surface를 만들지 않고 실제 종료 코드를 보관한다. 사용자가 탭을 보고 정리할 수 없으므로 개수 제한과 유휴 세션 회수를 두며,
+  PtyState·Terminal·wake 등록을 같은 정리 경로에서 함께 정리한다.
+- `pty.*`는 별도 Pty 권한을 만들지 않고 기존 `TerminalRead`·`TerminalWrite`·`TerminalSpawn`으로 설명한다. 화면 없는 작업을 `terminal.*` 옵션으로 넣지 않는다.
+- 출력 스캐너는 에이전트 mark와 독립된 scan 커서를 쓰며, `take_since_scan_mark`는 읽기와 커서 전진을 한 번에 한다. 에이전트의 set/read/parse mark API는 그대로 유지한다.
+  `surface.read_since_scan_mark`는 `TerminalRead` 권한으로 호출하고, 커서를 소비하므로 재전달 분류가 Mutate다.
+  CLI 명령은 만들지 않지만 일반 로컬 IPC 호출을 막는 API는 아니다.
+- scan 커서는 surface마다 하나다. 소비자가 둘이면 서로 읽을 데이터를 가져갈 수 있으므로 소비자는 하나라는 전제다. 첫 호출은 현재 보관한 출력을 모두,
+  이후 호출은 새 출력만 반환한다. plugin은 새 출력만 자기 제한된 버퍼에 모으며, host와 plugin의 보관 상한은 같은 값이어야 한다.
+  여러 소비자의 독립 읽기는 [ADR-0034](0034-output-cursor-contract.md)의 cursor 계약을 쓴다.
 
 ## Consequences
 
@@ -72,6 +88,13 @@ Terminal·Pty 등록과 종료 책임이 한 곳에 있어 누락·중복 정리
 - standalone PTY를 별도 registry로 계속 두는 안([ADR-0013](0013-terminal-io-and-process-lifetime.md)의 방식): 같은 자원의 두 번째 컬렉션이 되고 adopt 때 소유 이전이 두 컬렉션을 오간다.
 - parser와 PTY reader를 다른 thread로 강제 분리하는 안: snapshot·tap 원자성이 어려워지고 이득이 측정되지 않았다.
 - 별도 PTY crate를 바로 추출하는 안: 소비 API가 정리되지 않아 공개 범위만 넓어진다.
+- Pty 전용 권한을 새로 만드는 안: 기존 `Terminal*` 세 권한으로 설명할 수 있고 plugin 권한 선언만 늘어난다.
+- scan mark 대신 기존 `read_since_mark`에 선택 인자를 붙이는 안: 구 host가 인자를 무시하고 다른 범위를 돌려줄 수 있다. 새 이름은 미지원 오류로 구별된다.
+- 절전 복귀를 winit `suspended`·`resumed`로 감지하거나 모든 OS에 적용하는 안: 데스크톱 절전을 감지하지 못하고 문제가 확인되지 않은 Unix PTY까지 다시 그린다.
+  멈춘 프로세스와 정상 대기를 구분할 수 없으므로 자동 종료·재실행도 하지 않는다.
+- Drop만으로 자식을 정리하는 안: 크래시·강제 종료에서 Windows 자식이 남는다. 다음 부팅에서 고아를 찾아 종료하는 안은 다른 호스트의 자식과 혼동할 수 있다.
+- DAG runner의 subprocess로 standalone PTY를 대신하는 안: stdout·stderr 캡처 구조라 PTY 화면 조회와 입력 전달을 대신하지 못한다. 종료 코드 watcher 방식만 공유한다.
+- EOF 뒤 모든 host가 모든 터미널을 주기 검사하는 안: 원인과 무관한 터미널까지 반복 처리한다. SIGCHLD는 Windows에 같은 기능이 없어 공통 해법으로 쓰지 않는다.
 
 ## Reconsideration Triggers
 
@@ -80,11 +103,16 @@ Terminal·Pty 등록과 종료 책임이 한 곳에 있어 누락·중복 정리
 - 순수 터미널 재생·원격 mirror·renderer 테스트에서 PTY 의존을 빼야 하면 PTY crate 추출을 검토한다.
 - Terminal과 Pty 사이에 독립 수명을 가진 세 번째 책임이 확인되면 그때 객체를 추가한다. 이름의 대칭만으로 추가하지 않는다.
 - 엔진 컬렉션 밖에 Terminal·Pty의 두 번째 원본이 생기면 소유 배치를 다시 본다.
+- scan API의 두 번째 소비자가 생기면 소비자별 커서를 도입한다. host와 plugin의 출력 상한이 달라지면 스캐너가 새 데이터를 받는지 다시 점검한다.
+- standalone PTY의 상시 표시나 권한 분리 요구가 생기면 standalone 색인과 권한 경계를 다시 본다.
+- Unix에서 자식 수명을 호스트에 연결하는 API나 ConPTY 종료 보장이 추가되면 OS별 종료 차이를 줄일 수 있는지 검토한다.
 
 ### 실행 결과로 확인
 
 - parked 파싱의 배터리·CPU 비용이 문제로 관측되면 흐름 제어를 검토한다.
-- 절전 복귀 후 입력이 멈추는 사례가 반복되면 복구 절차를 다시 본다.
+- 절전 복귀 후 입력이 멈추는 사례가 반복되거나 Unix에서도 같은 문제가 재현되면 복구 절차를 다시 본다.
+- standalone PTY의 개수·TTL·회수 지연이 장수명 작업에 맞지 않는 사례가 나오면 기본값과 설정 범위를 재검토한다.
+- 청크 잠금 경합이 프로파일에서 확인되면 읽기용 snapshot이나 이중 버퍼를 검토한다.
 - resize 순서나 snapshot·tap 경계를 바꾸면 원격 mirror에서 화면 어긋남이 없는지 확인한다.
 
 ## References

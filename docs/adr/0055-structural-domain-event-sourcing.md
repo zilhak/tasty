@@ -59,6 +59,8 @@ Effect(확정된 의무에 따른 외부 실행), Observation(자원에서 관�
 
 - GUI·IPC·plugin·원격·시스템 요청이 모두 같은 CommandExecutor로 합류한다. Intent 큐 사용은 필수가 아니다.
   범위 안의 모델은 이 경계를 거치지 않고 바꾸지 않는다. 결과는 도메인 값이며 wire 오류·응답 조립은 진입점이 한다.
+  같은 입력에는 진입점과 무관하게 같은 검증·실패 사유를 내고 기존 실패 문구를 유지한다. 공용 정수·범위 검사는 도메인에 두되 IPC 전용 별칭 해석은 진입 계층에 둔다.
+  닫힌 surface의 회수와 닫기 결과 변환은 공용 경로 하나가 맡는다. 다른 소유자의 자원 정리(plugin mesh frame 등)는 실행 결과로 알리고 그 소유자가 수행한다.
 - 같은 command identity 조회는 대상 존재 검사와 포커스 해소보다 먼저 한다. 신규 명령만 최초 대상을 해소하고 그 값을 기록한다.
   재시도 계약은 [ADR-0057](0057-command-identity-for-mutation-retries.md)을 따른다.
 - 한 transaction이 expected revision·events·command 기록·effect 의무를 함께 확정한다. 실패하면 메모리 적용과 외부 실행을 시작하지 않는다.
@@ -118,6 +120,7 @@ version·소유 검사가 필요하다. 영속 commit이 추가되어 구조 변
 ### 실행 결과로 확인
 
 - 구조 명령 commit 지연이 사용자 입력 응답에 보이면 transaction 묶음과 저장 위치를 다시 본다. 측정은 commit 경과 시간과 큐 압력으로 한다.
+- IPC·원격 forward·GUI 경로의 실패 문구 일치, 기존 문구 호환, GUI·헤드리스 두 빌드의 후속 처리를 각각 검증한다. 어긋나면 공용 경계 밖 경로가 남았는지 먼저 찾는다.
 - 강제 종료 시험(migration·commit·effect·restore 경계)에서 중복 생성이나 누락 정리가 나오면 activation claim과 effect 상태 전이를 다시 본다.
 
 ## References
