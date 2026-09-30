@@ -20,7 +20,8 @@ const DOCS_FLOOR: Floor = Floor {
     measured: tasty_doc_guards::floored_walk::populations::DOCS_MD.measured,
     measured_on: tasty_doc_guards::floored_walk::populations::DOCS_MD.measured_on,
     counted_on: tasty_doc_guards::floored_walk::populations::DOCS_MD.counted_on,
-    why_this_gap: "실측 214개에서 가장 큰 비-ADR 분류인 docs/features의 52개만큼 여유를 둔다. \
+    why_this_gap: "실측 216개보다 54개 낮다. 가장 큰 비-ADR 분류인 docs/features의 52개를 \
+                   잃어도 통과하는 여유다. \
                    한 분류를 통합하는 작업은 허용하되 더 큰 수집 누락은 실패시킨다. \
                    ADR 구성 방식이나 검사 범위를 바꾸면 모수와 하한을 함께 다시 검토한다.",
 };
