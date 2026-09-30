@@ -61,7 +61,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 **surface의 나머지 영역**: 위 위치별 핸들러가 처리하지 못한 우클릭(툴바/주소창/내부 탭바/상태줄/빈 사이드바 등 chrome 영역)은 `draw_explorer` 끝의 **표면 전체 rect catch-all** 이 `Empty`(cwd) target 으로 처리한다. 하위 위젯이 이미 `action`을 만들었으면 건너뛰므로 파일/폴더/다중 선택 메뉴를 유지한다. 이로써 generic surface fallback("터미널 ID 복사")이 explorer 표면 어디에서도 뜨지 않는다(불가침 원칙 §1·§2). 예외: 권한 거부 루트(`LoadState::NoPermission`)는 붙여넣기가 무의미하므로 catch-all 을 건너뛴다(content 빈영역 규칙과 동일).
 
 - **경로 복사** (`copy_path`, 다중은 개행 결합) → OS 텍스트 클립보드 + `toast.copied_path` 토스트(단축키/Command Palette/우클릭 메뉴 모두 동일).
-- **복사 / 잘라내기 / 붙여넣기** — explorer 내부 파일 클립보드(`AppState::explorer_clipboard`, 창마다 단일 슬롯·세션 종료 시 폐기)에 경로+cut 플래그를 담고, 붙여넣기에서 소비한다.
+- **복사 / 잘라내기 / 붙여넣기** — explorer 내부 파일 클립보드(`MainViewState::explorer_clipboard`, 창마다 단일 슬롯·세션 종료 시 폐기)에 경로+cut 플래그를 담고, 붙여넣기에서 소비한다.
   실제 파일 이동은 `explorer/ops.rs`(순수 fs 헬퍼 — 충돌 시 `(copy)` 접미사, 자기 자신/하위로 붙여넣기 거부, cut 의 cross-volume 은 copy+remove 폴백).
   잘라내기는 이동 성공 시 클립보드를 비운다.
   우클릭 메뉴뿐 아니라 키보드 단축키(기본 `copy`/`cut`/`paste` 바인딩, explorer 포커스 시)로도 동일하게 동작한다 — `handle_explorer_shortcut`(`src/adapters/ui/input/shortcuts/copy_paste.rs`)가 선택 항목을 모아 컨텍스트 메뉴와 같은 `explorer_menu_set_clipboard`/`explorer_menu_paste` 를 호출하므로 fs 동작이 두 경로에서 갈라지지 않는다.
@@ -71,8 +71,8 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 - **이름 변경** (`rename`, 단일만) — 공용 rename 팝업(`PopupDef`)을 재사용해 `std::fs::rename`. mirror 에서 차단(가드가 먼저 막아 팝업 자체가 열리지 않는다).
 - **OS 기본 앱으로 열기** (`open_in_system`, 단일 폴더만) — `platform::reveal::open_path`(Windows `explorer` / macOS `open` / Linux `xdg-open`). mirror 에서 차단.
 - **즐겨찾기 추가** (`add_to_favorites`, 단일 폴더 또는 빈 영역) — 아래 참조. mirror 에서 차단.
-- **새 탭으로 열기** (`open_in_new_tab`, 단일 폴더) — 그 폴더를 cwd 로 하는 새 explorer 를 **Pane 탭**(explorer 내부 탭이 아님)으로 연다. 우클릭 대상 surface 의 **소유 pane** 에 추가해(`AppState::add_kind_tab_by_owner`) focused pane 이 아니어도 올바른 pane 에 열린다. 기존 explorer 는 불변. mirror 에서 메뉴 자체가 숨겨지고 클릭 시에도 차단된다(아래 참고 — `add_kind_tab_by_owner` 는 mirror 구조 변경 forward 를 거치지 않는다).
-- **이 폴더로 루트 설정** (`set_as_root`, 단일 폴더) — **현재 explorer** 의 cwd 를 그 폴더로 이동한다(`AppState::set_explorer_cwd` → `ExplorerTab::set_cwd`: 좌측 트리 루트·current 이동 + 히스토리 초기화 + 뷰 리로드). 순수 로컬 뷰 상태 이동이라 mirror 에서도 그대로 동작.
+- **새 탭으로 열기** (`open_in_new_tab`, 단일 폴더) — 그 폴더를 cwd 로 하는 새 explorer 를 **Pane 탭**(explorer 내부 탭이 아님)으로 연다. 우클릭 대상 surface 의 **소유 pane** 에 추가해(`MainViewState::add_kind_tab_by_owner`) focused pane 이 아니어도 올바른 pane 에 열린다. 기존 explorer 는 불변. mirror 에서 메뉴 자체가 숨겨지고 클릭 시에도 차단된다(아래 참고 — `add_kind_tab_by_owner` 는 mirror 구조 변경 forward 를 거치지 않는다).
+- **이 폴더로 루트 설정** (`set_as_root`, 단일 폴더) — **현재 explorer** 의 cwd 를 그 폴더로 이동한다(`MainViewState::set_explorer_cwd` → `ExplorerTab::set_cwd`: 좌측 트리 루트·current 이동 + 히스토리 초기화 + 뷰 리로드). 순수 로컬 뷰 상태 이동이라 mirror 에서도 그대로 동작.
 
 ### mirror(attach) explorer 의 파일 변경 차단
 
@@ -82,7 +82,7 @@ ADR-0022에 따라 mirror explorer 는 파일 변경(rename/delete/새 폴더 �
 - **액션별 개별 가드**: 메뉴가 아닌 다른 경로(키보드 단축키 등)로 같은 핸들러가 호출되는 경우를 방어하기 위해, 각 핸들러(`explorer_menu_paste`/`_trash`/`_rename`/`_open_in_system`/`_add_favorite`/`_open_in_new_tab`, `explorer_menu_set_clipboard`의 `cut=true`)가 진입부에서 `CoreState::is_mirror_surface(surface_id)` 로 재확인하고, mirror 면 로컬 fs 를 건드리지 않고 `explorer.state.remote_write_unsupported` toast 로 안내한 뒤 반환한다.
 - **rename 팝업의 `path.exists()` 게이트**(`draw_rename_popup`, `src/adapters/ui/dialog.rs`)는 위 가드가 먼저 막기 때문에 mirror 경로에서는 도달하지 않는다 — 이 게이트는 로컬(비-mirror) 시나리오에서 대상이 그 사이 사라진 경우를 위한 안전장치로만 남는다.
 - **즐겨찾기**: `~/.tasty/explorer-favorites.toml` 는 surface/host 무관 전역 저장소다. mirror explorer 의 경로(원격 호스트 경로)가 이 전역 목록에 섞이면 로컬/다른 호스트 explorer 의 사이드바를 오염시키므로, 즐겨찾기 추가는 mirror 에서 팝업을 열기 전에 차단된다.
-- **새 탭으로 열기가 차단되는 이유**: `AppState::add_kind_tab_by_owner`(`src/state/tab.rs`)는 `add_tab`/`add_kind_tab`과 달리 mirror 구조 변경을 원격으로 forward하는 `forward_mirror_structural` 을 거치지 않고 로컬 pane을 직접 변경한다. mirror 트리 동기화(`apply_mirror_structural_delta`, `src/app/attach_client.rs`)는 원격 authoritative 트리 기준 전체 재구성이므로, 이렇게 로컬에서만 생긴 탭은 원격 트리에 없어 다음 구조 델타 수신 시 제거된다 — 사용자가 연 탭이 다음 동기화 때 사라질 수 있다. 이 기능을 지원하려면 소유 surface를 기준으로 `StructuralOp::NewTab`을 원격에 전달해야 한다.
+- **새 탭으로 열기가 차단되는 이유**: `MainViewState::add_kind_tab_by_owner`(`src/state/tab.rs`)는 `add_tab`/`add_kind_tab`과 달리 mirror 구조 변경을 원격으로 forward하는 `forward_mirror_structural` 을 거치지 않고 로컬 pane을 직접 변경한다. mirror 트리 동기화(`apply_mirror_structural_delta`, `src/app/attach_client.rs`)는 원격 authoritative 트리 기준 전체 재구성이므로, 이렇게 로컬에서만 생긴 탭은 원격 트리에 없어 다음 구조 델타 수신 시 제거된다 — 사용자가 연 탭이 다음 동기화 때 사라질 수 있다. 이 기능을 지원하려면 소유 surface를 기준으로 `StructuralOp::NewTab`을 원격에 전달해야 한다.
 
 ### mirror explorer 의 파일 열기
 

@@ -1,6 +1,6 @@
 //! 헤드리스에서 사용하는 창별 후속 처리 대체 함수.
 //! 생성·복원·메타 변경의 GUI 처리는 생략하지만 workspace 이동의 활성 인덱스는 보정한다.
-//! 구조 변경과 자원 정리는 두 빌드가 공유하는 core::structural_cascade가 담당한다.
+//! 구조 변경과 자원 정리는 두 빌드가 공유하는 app::structural_cascade가 담당한다.
 
 #![cfg(not(feature = "gui"))]
 

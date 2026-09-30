@@ -144,7 +144,7 @@ popup 상태에서 받는다. popup 폭 560은 상세 도킹 기준 640보다 �
 ## 영속
 
 **없다.** popup 은 surface 가 아니라 레이아웃 snapshot/restore 대상이 아니고, 상태 전부가
-`AppState.dialogs.dag_list` 에 있다가 `PopupDef.on_close` 에서 기본값으로 되돌아간다. 닫는
+`MainViewState.dialogs.dag_list` 에 있다가 `PopupDef.on_close` 에서 기본값으로 되돌아간다. 닫는
 경로 6 가지가 전부 그 훅을 지나므로([popup-implementation](../../../dev-guide/popup-implementation.md)),
 어떻게 닫든 다음 open 은 **목록 뷰**에서 시작한다.
 

@@ -27,7 +27,7 @@
 
 - **전환**: 카드 클릭 → 해당 Workspace 활성.
 - **활성 카드 자동 스크롤**: 전환(클릭·quick-switch 단축키·카테고리 경계 이동 등, 전부 단일 관문
-  `AppState::switch_workspace` 경유) 으로 활성 Workspace 가 바뀌었을 때 그 카드가 목록
+  `MainViewState::switch_workspace` 경유) 으로 활성 Workspace 가 바뀌었을 때 그 카드가 목록
   `ScrollArea` 뷰포트 밖이면 자동으로 스크롤해 보이게 한다. 활성 인덱스가 실제로 바뀐
   프레임에만 최소 이동으로 보정하므로(egui `scroll_to_rect`, align 없음) 사용자가 수동으로
   스크롤해 둔 상태를 매 프레임 덮어쓰지 않는다. collapsed 사이드바는 `ScrollArea` 자체가

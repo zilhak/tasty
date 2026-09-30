@@ -1,7 +1,7 @@
 # 헤드리스 정의 경계
 
 headless(`--no-default-features`)는 IPC/CLI 와 attach 서버를 실행하는 제품 형태다. GUI 가
-없다는 이유로 공유 Core·AppState·registry 를 통째로 숨기지 않는다. `dead_code` 진단이
+없다는 이유로 공유 Core·MainViewState·registry 를 통째로 숨기지 않는다. `dead_code` 진단이
 가리키는 정의의 생산자와 소비자를 따라가며 아래 기준으로 컴파일 대상을 나눈다.
 
 결정과 그 근거는 [ADR-0058](../adr/0058-headless-without-local-views.md).
@@ -41,12 +41,12 @@ dead_code 예외는 쓰지 않는다.
 | 구조 op forward 큐의 원소(`PendingStructuralForward`, `core/impl_mirror.rs`) | headless 의 `Core::apply` 는 이 큐에 넣지 않고 거절한다([ADR-0058](../adr/0058-headless-without-local-views.md)). 정의가 남는 것은 두 조합이 공유하는 `mark_last_forward_*` 가 큐의 마지막 원소를 표시하기 때문이고, op 를 읽어 보내는 쪽은 GUI 의 `about_to_wait` 뿐이다. git query · markdown content · resize의 forward 큐는 채우는 자리도 gui 전용이라 필드째 ① 이다 |
 | `SurfaceKindDef` 의 입력·줌·복사 플래그와 변환 입력 popup id | plugin 매니페스트의 `SurfaceKindDecl` 에서 복사되는 값이다. 복사는 headless 에서도 일어난다 |
 | CoreEvent 의 페이로드(터미널 이벤트 중 제목 · 알림 · 벨 · 명령 완료 · 셸 통합 힌트 · 클립보드, `RestoredKind` 의 인덱스) | variant는 headless에서도 발생하지만 그 빌드의 drain 이 `other` 분기에서 버린다. OSC 7 cwd(`TerminalCwdChanged`)는 여기 없다 — headless PTY drain 이 읽는다(아래 "두 조합이 같게 하는 것") |
-| 호스트 이벤트 큐 항목(`PendingHostEvent` · `PendingSurfaceClosed`, `core/host_event.rs`) | enqueue 메서드는 두 빌드에서 컴파일된다. 헤드리스도 host event 큐를 비우지만 `HookFired`만 적용하고, 이 항목의 GUI 전용 payload는 읽지 않는다. 그 메서드들이 headless 에서 어느 갈래인지는 [AppState 필드 소유권](app-state-ownership.md) 이 적는다 |
+| 호스트 이벤트 큐 항목(`PendingHostEvent` · `PendingSurfaceClosed`, `core/host_event.rs`) | enqueue 메서드는 두 빌드에서 컴파일된다. 헤드리스도 host event 큐를 비우지만 `HookFired`만 적용하고, 이 항목의 GUI 전용 payload는 읽지 않는다. 그 메서드들이 headless 에서 어느 갈래인지는 [MainViewState 필드 소유권](app-state-ownership.md) 이 적는다 |
 | 파일 열기 요청의 주체(`FileDispatchOrigin`, `core/origin.rs`) | 도메인의 `DispatchFile` intent 가 headless 에도 컴파일되지만 값을 만드는 자리(explorer·링크·드롭·picker·`file_handler.dispatch` arm)가 전부 GUI 다. `file::dispatch` 모듈 자체는 headless 라이브러리에 없다(링크 해석·대상 판정을 시험이 부르므로 ②) |
 | workspace 생성 cascade 의 필드(`WorkspaceCreatedCascade`, headless 판 `app/dispatch_domain_stubs.rs`) | 만드는 자리(`workspace.create` IPC · workspace intent)는 두 빌드가 공유하지만 headless 의 cascade 는 no-op 이라 필드를 읽는 자가 gui 뿐이다. 그 파일 전체가 `not(feature = "gui")` 라 조건 없는 `expect` 로 적는다 |
 | `App` 의 필드(`src/app.rs`) | headless boot 도 `App` 을 세워 Core 를 쓰지만, 일부 필드를 읽는 자는 gui 이벤트 루프뿐이다 |
 | `AppEvent::Shutdown` · `AppEvent::QuitRequested`(`src/app/event.rs`) | 만드는 자리가 gui 창 라이프사이클·종료 경로뿐이다. 열거와 그 match 는 headless 도 컴파일한다 |
-| `AppState::preset_store` | headless 도 `AppState::new` 로 Core 의 사본을 받지만 읽는 자(preset popup)가 GUI 뿐이다. 에이전트의 preset IPC 는 `Core.preset_store` 를 잠근다 |
+| `MainViewState::preset_store` | headless 도 `MainViewState::new` 로 Core 의 사본을 받지만 읽는 자(preset popup)가 GUI 뿐이다. 에이전트의 preset IPC 는 `Core.preset_store` 를 잠근다 |
 | 사용자가 발생시킨 intent 의 variant(`Intent` 의 단축키·메뉴 variant · `UiIntent` · `OpenPopupMode` · `ConvertTarget` · 도메인의 `IntentOrigin::User` · `UserSource`) | 만드는 자리(단축키·메뉴·우클릭·popup)가 GUI 뿐이다. 열거와 그 match 는 headless 의 intent drain 도 컴파일한다. `IntentOrigin::User` 는 headless 시험이 만들므로 `not(test)` 도 조건이다 |
 
 ## 판정은 바깥에서 안으로
@@ -95,4 +95,4 @@ host event 큐도 같은 세 처리 지점에서 비운다. `HookFired`는 대�
 
 헤드리스 workspace는 프로세스 수명 동안만 유지되고 레이아웃을 저장·복원하지 않는다. restore_layout이 켜진 경우 부팅에서 warn으로 알리며 system.info의 layout_slot:null이 슬롯 미점유를 나타낸다. 레거시 layout 이관·scrollback 정리 부팅 훅은 공유 홈의 GUI 데이터를 위해 계속 실행한다. 자동 복원을 도입하면 예상 밖 셸 재기동, ID 변화, 프로세스 간 슬롯 충돌, lazy plugin 복원을 함께 해결해야 한다. 같은 설정을 GUI와 공유하므로 복원 설정 때문에 헤드리스 부팅을 실패시키지 않는다.
 
-관련 문서: [IPC 지원 범위](headless-ipc-surface.md) · [AppState 소유권](app-state-ownership.md) · [빌드](build.md)
+관련 문서: [IPC 지원 범위](headless-ipc-surface.md) · [MainViewState 소유권](app-state-ownership.md) · [빌드](build.md)

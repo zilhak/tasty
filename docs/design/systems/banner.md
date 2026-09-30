@@ -176,7 +176,7 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
 
 `draw()`는 `LayoutContext`에서 배치 영역을 계산한다. 호출자가 현재 더보기 메뉴의 scope를 `more_menu_open_for: Option<&BannerScope>`로 전달하며, BannerManager가 팝업을 직접 조회하지는 않는다. 반환값은 `BannerDrawResult { hovered, more_clicked }`다.
 
-- `hovered`는 `AppState.banner_hovered`를 통해 [입력 계층](../../architecture/input-layer.md)에 전달한다.
+- `hovered`는 `MainViewState.banner_hovered`를 통해 [입력 계층](../../architecture/input-layer.md)에 전달한다.
 - `more_clicked: Option<(BannerScope, egui::Rect)>`는 버튼의 scope와 사각형이다. 호출자가 이 값으로 대상 필드를 채우고 컨텍스트 메뉴를 연다.
 
 마우스는 scope 전체가 아니라 실제 카드 영역에서만 소비한다. 그렇지 않으면 배너 아래 터미널 클릭까지 막힌다. 배치 영역(`banner_zone`)과 입력 영역(`card_rects`)을 구분하며, 카드 영역은 직전 프레임 값을 사용해 1프레임 늦게 반영된다. 위치가 고정된 persistent 배너에서는 이 지연이 드러나지 않는다.

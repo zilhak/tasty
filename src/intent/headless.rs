@@ -149,7 +149,7 @@ fn handle_core_event(engine: &mut CoreState, event: CoreEvent) {
                 engine.mark_layout_dirty();
             }
         }
-        // 닫기 IPC는 큐를 거치지 않고 core::structural_cascade에서 자원을 정리한다.
+        // 닫기 IPC는 큐를 거치지 않고 app::structural_cascade에서 자원을 정리한다.
         // 닫기 요청을 이 큐로도 받게 되면 해당 정리 경로를 연결해야 한다.
         // 정리 주체는 docs/architecture/close-sequence.md를 참고한다.
         other => tracing::debug!(

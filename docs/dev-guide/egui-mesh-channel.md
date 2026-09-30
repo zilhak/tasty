@@ -135,13 +135,13 @@ variant 는 서로 완전히 같은 모양이다(아래 설명은 popup 기준�
    `main_windows_iter_mut()` 로 순회하며 broadcast 한다(`attach_client.rs` 의 기존
    `plugin_mesh_popup_pending_repaint` 예약 패턴과 동형).
 3. 새 set_context 트리거가 아니라, popup 이 이미 갖고 있던
-   `AppState::plugin_mesh_popup_pending_repaint`(ADR-0022 — 비동기 host→plugin push 후 강제
+   `MainViewState::plugin_mesh_popup_pending_repaint`(ADR-0022 — 비동기 host→plugin push 후 강제
    repaint 예약)에 그대로 얹는다. `popup_render.rs` 의 forward 게이트(`need_repaint`)가 다음
    프레임에 무입력 `popup.set_context` 를 1 회 통과시킨다 — surface 의 `invalidated` 플래그와
    동일 역할을 이미 있던 필드가 겸한다(별도 상태 필드 신설 불필요).
 4. banner 도 같은 네 자리를 갖는다 — `pump()` 의 `invalidated_banners` 누적 /
    `take_invalidated_banners()` 드레인 / `App::mark_invalidated_banners_dirty` 의
-   `AppState::plugin_mesh_banner_pending_repaint` 예약 / `banner_render.rs` 의 forward
+   `MainViewState::plugin_mesh_banner_pending_repaint` 예약 / `banner_render.rs` 의 forward
    게이트가 popup 과 같은 `need_repaint` 항으로 소비. **다른 점은 한 자리뿐이다**:
    popup 의 `plugin_mesh_popup_pending_repaint` 는 `attach_client.rs` 두 곳에서도
    채워지는데(git-viewer 의 비동기 원격 조회 결과 뒤 강제 repaint), 그 경로는
@@ -228,7 +228,7 @@ latest-wins 라, host 가 중간 frame 을 못 보면 그 frame 의 텍스처 de
 
 1. **surface 수명 귀속** — 전용 Renderer/디코드 캐시는 "보이는 동안"이 아니라 **layout 에
    존재하는 동안**(전 workspace, 비활성 탭 포함) 유지한다
-   (`AppState::egui_mesh_surfaces_existing`). 비가시 surface 의 도착 frame 도 매 tick
+   (`MainViewState::egui_mesh_surfaces_existing`). 비가시 surface 의 도착 frame 도 매 tick
    디코드해 delta 체인을 유지한다(합성만 skip) — 탭/workspace 전환 후 복귀 시 재전송
    왕복 없이 즉시 정상 합성된다. 비가시 GPU 텍스처 상주는 의도된 비용이다.
 2. **frame_seq 체인 검증 + full 재전송 (텍스처 delta 한정)** — plugin SDK 는 송신 frame
@@ -272,7 +272,7 @@ latest-wins 라, host 가 중간 frame 을 못 보면 그 frame 의 텍스처 de
 
 요청 플래그의 흐름: 렌더 prepare 가 `NeedsFull` 또는 `AcceptedStale` 을 판정하면 `GpuState` 의
 요청 대기열에 적재 → redraw 가 drain 해 세 채널 모두 `MeshForwardCommon::pending_full` 에
-옮김(surface 는 `MeshForwardState` 안에, popup/banner 는 `AppState` 의
+옮김(surface 는 `MeshForwardState` 안에, popup/banner 는 `MainViewState` 의
 `plugin_mesh_{popup,banner}_forward` 맵 안에) → 다음 tick 의 forward 가
 `need_full_textures` set_context 를 송신(비가시 surface 는 마지막 geom/theme 으로 송신).
 plugin generation 이 정지해 새 frame 이 안 와도 이미 재전송 대기 중인 surface 는 매 tick 재요청을
@@ -482,7 +482,7 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
   인터랙티브하지 않다.
 - **서버측(GUI, parked engine): 헤드리스와 동일하게 직접 구동** — macOS 에서 window 를
   최소화하면 `App::handle_minimize` 의 macOS 분기가 그 window 의 `MainView` 를 파괴하고
-  engine 을 `App.engines`(`src/app/engine_registry.rs`)의 parked 관계로 바꾸며 AppState 를 보관한다. 이 engine 은
+  engine 을 `App.engines`(`src/app/engine_registry.rs`)의 parked 관계로 바꾸며 MainViewState 를 보관한다. 이 engine 은
   더 이상 `handle_redraw` 가 돌지 않으므로 "GUI 살아있는 window" 항목이 전제하는 로컬
   authoritative loop 가 없다 — **처지가 헤드리스와 같다.** `App::about_to_wait`
   (`src/app/event_handler.rs`, plugin manager `pump()` 호출 직후)가 parked engine 전부를

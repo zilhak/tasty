@@ -55,7 +55,7 @@ plugin 이 `file_picker.trigger`로 host popup 을 열 때 `owner_popup_instance
 
 - **범위 상속·숨김 보존** — host는 요청자와 부모 instance를 대조해 선언 종류+target의 유효 범위를 자식 파일 피커에 적용한다([ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md)). 부모가 숨으면 자식도 paint/hit/Esc/키 게이트에서 빠지고, 돌아오면 draft·선택·pending 요청을 그대로 이어간다. 숨김은 닫기로 처리하지 않는다. Window 부모와 owner 없는 피커는 창 범위다.
 - **스택 유지** — 자식이 열려 있는 동안 부모는 outside-click dismiss 대상에서 빠진다. 부모를 모달로 잠그는 것이 아니라 dismiss 목록에서만 제외한다(popup은 포커스를 독점하지 않으므로).
-- **Esc 소유권** — host/plugin 통틀어 그 프레임 최상단 popup **하나만** Esc 를 소비한다. Esc 를 한 번 누르면 최상단 팝업 하나가 닫힌다. host 쪽 판정은 `AppState.popup_escape_owner`(`popup::frame` 이 매 프레임 결정), plugin 쪽은 `popup_render` 가 같은 z 축으로 비교한다. **host popup 끼리의 Esc 중재는 범위 밖** — 각 view 가 자기 Esc 를 직접 소비하며, 현재 스택에 참여하는 `file_picker` 에만 게이트가 붙어 있다.
+- **Esc 소유권** — host/plugin 통틀어 그 프레임 최상단 popup **하나만** Esc 를 소비한다. Esc 를 한 번 누르면 최상단 팝업 하나가 닫힌다. host 쪽 판정은 `MainViewState.popup_escape_owner`(`popup::frame` 이 매 프레임 결정), plugin 쪽은 `popup_render` 가 같은 z 축으로 비교한다. **host popup 끼리의 Esc 중재는 범위 밖** — 각 view 가 자기 Esc 를 직접 소비하며, 현재 스택에 참여하는 `file_picker` 에만 게이트가 붙어 있다.
 - **연쇄 정리** — 부모가 어떤 경로로 닫히든 자식 피커에 취소 결과가 채워져, 평소 result 경로 그대로 plugin 에 `cancelled: true` 가 전달되고 피커도 닫힌다. 부모 없는 피커나 결과 유실을 남기지 않는다. 사용자가 이미 확정한 결과는 덮지 않는다.
 
 소유 관계는 자식(요청자 기록) 한 곳에만 있다 — 부모 쪽 사본이 없어 둘이 어긋날 수 없다. host는 특정 plugin 이름/kind로 분기하지 않는다. 범위 상속에서는 요청자 plugin과 부모 소유자가 같은지만 확인한다.
@@ -78,9 +78,9 @@ plugin 이 `file_picker.trigger`로 host popup 을 열 때 `owner_popup_instance
 
 Modal 의 전역 입력 독점과 다르다 — 팝업 포커스는 **키보드만** 차단하고, 마우스는 [입력 계층](../../architecture/input-layer.md)에 따라 팝업이 소비한다.
 
-plugin의 egui-mesh 팝업도 키보드 입력을 차단한다. 호스트 PopupManager 소속이 아니므로 렌더 프레임이 `AppState.plugin_popup_open` 캐시를 갱신한다. PluginManager에 접근할 수 없는 winit 입력 핸들러는 이 값을 읽는다.
+plugin의 egui-mesh 팝업도 키보드 입력을 차단한다. 호스트 PopupManager 소속이 아니므로 렌더 프레임이 `MainViewState.plugin_popup_open` 캐시를 갱신한다. PluginManager에 접근할 수 없는 winit 입력 핸들러는 이 값을 읽는다.
 
-`AppState::keyboard_overlay_open()`은 egui에 키·IME를 전달할지, 터미널로 보내지 않을지를 함께 결정한다. 서로 다른 조건을 쓰면 양쪽이 모두 처리하거나 모두 버릴 수 있다. IME 라우팅과 plugin surface 단축키도 같은 조건을 쓴다.
+`MainViewState::keyboard_overlay_open()`은 egui에 키·IME를 전달할지, 터미널로 보내지 않을지를 함께 결정한다. 서로 다른 조건을 쓰면 양쪽이 모두 처리하거나 모두 버릴 수 있다. IME 라우팅과 plugin surface 단축키도 같은 조건을 쓴다.
 
 `set_ime_allowed`만은 plugin 팝업을 차단 조건에서 제외한다. 이 팝업에는 호스트 egui 위젯이 없으므로 IME를 끄면 조합 입력을 할 수 없다. `collect_mesh_popup_input`이 이미 호스트 egui에 들어온 이벤트를 plugin에 보내고, 후보창 위치는 plugin이 반환한 값으로 정한다([egui-mesh 채널](../../dev-guide/egui-mesh-channel.md)).
 

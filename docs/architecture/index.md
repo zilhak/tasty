@@ -50,7 +50,7 @@ webhook·hook 실행부는 inbound adapter 대신 HostIpcInjector를 사용하�
 전이 의존, 다른 workspace crate 내부 feature, 새 port 구현 파일 누락은 여전히 별도 확인 대상이다.
 GUI 허용 경로 목록에 항목이 생기면 같은 경로의 추가 사용도 셀 수 있도록 검사 범위를 재검토한다.
 
-구조 실행과 IPC 핸들러의 구체적인 port 사용은 [AppState 소유권](../dev-guide/app-state-ownership.md)을 따른다.
+구조 실행과 IPC 핸들러의 구체적인 port 사용은 [MainViewState 소유권](../dev-guide/app-state-ownership.md)을 따른다.
 
 ### 크레이트를 나누는 기준
 
@@ -188,7 +188,7 @@ ports-and-adapters 배치:
 | `core/` | **도메인 본체**(`Core`) — state, session, attach, agent, terminal_store, ipc_facade, 구조 실행·cascade, 도메인이 선언한 창 포트(`cascade_window` · `identify_port`). 위 "도메인 경계" 절 |
 | `hub.rs` | **외부 통신**(`Hub`) — IPC 서버, 포트 파일 |
 | `view/` | **GUI**(gui-gated) — `View` sealed trait 계층 + MainView/SettingsView/QuitView/PluginsView/PresetView. — [multi-window](multi-window.md) |
-| `state/` | `AppState` — MainView 당 1개 런타임 상태(focus/layout/mouse/mark/restore). 도메인 포트 `CascadeWindow` 의 구현(`cascade_window.rs`) |
+| `state/` | `MainViewState` — MainView 당 1개 런타임 상태(focus/layout/mouse/mark/restore). 공통 App adapter 포트 `CascadeWindow`의 구현(`cascade_window.rs`). Headless는 별도 `CommandContext` |
 | `gfx/` | GPU — `GpuState`, renderer(셀 렌더), screenshot, perf. — [gpu-rendering](../dev-guide/gpu-rendering.md) |
 | `adapters/` | 외부 경계 구현 — `ui`(egui 컴포넌트·popup), `ipc`(handler), `production`/`test`(port 구현체), `cli`, `plugin` |
 | `ports/` | **의존성 역전 trait** — ipc_server, clipboard, clock, fs, home, process, notification_sound (production/test adapter 가 구현 → headless·테스트 교체). 도메인의 일부다 |

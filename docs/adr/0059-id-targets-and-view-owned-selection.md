@@ -48,7 +48,7 @@
   OS의 실제 focus·쌓임 순서는 플랫폼이 결정한다. X11에서는 초기 focus 금지와 restack 요청을 보내고, Wayland에서는 활성화를 요청하지 않는다.
   비활성 표시에 실패하면 경고를 남기고 기본 표시로 복구한다.
 - 새 탭의 선택 여부는 종류가 아니라 사용자 요청 여부로 정한다. CreateTab의 activate 값을 모든 호출자가 전달하며 에이전트 요청은 기존 탭을 보존한다.
-  도메인 CreateTab의 terminal 분기는 activate와 무관하게 background로 유지하고, 사용자의 새 terminal 탭은 별도 경로(현재 `AppState::add_tab`)에서 선택한다.
+  도메인 CreateTab의 terminal 분기는 activate와 무관하게 background로 유지하고, 사용자의 새 terminal 탭은 별도 경로(현재 `MainViewState::add_tab`)에서 선택한다.
   에이전트가 만든 새 비터미널 탭은 사용자가 선택하기 전까지 렌더되지 않는다.
 - 대상을 지정하지 않는 창 소유 자원 목록은 살아 있는 모든 엔진(창이 있는 엔진과 parked 엔진)의 결과를 합친다. 메서드 이름에 list가 있는지나 params 유무로 분류하지 않고,
   필터는 대상 지정과 다르다. tree도 `workspace.list`와 같은 workspace 집합을 반환한다. 집계한 active는 엔진별 활성 상태이므로 여러 개가 true일 수 있다.

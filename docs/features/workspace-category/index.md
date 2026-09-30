@@ -3,7 +3,7 @@
 - **Status**: Done
 - **주체**: AI Agent (CRUD·소속 변경, IPC/CLI 양면) · 로컬 사용자 (사이드바 그룹·전환·생성/이름변경/삭제, 토글 on 시)
 - **ADR**: [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)
-- **코드**: `crates/tasty-model/src/workspace_category.rs` · `src/core/state.rs` (`categories` / CRUD 메서드 / `set_category_collapsed`) · `src/core/impl_category.rs` (카테고리 `DomainIntent`를 `Core::apply`로 적용) · `src/core/layout_persistence/{schema,capture,restore}.rs` · `src/adapters/ipc/handler/workspace_category.rs` · `crates/tasty-cli/src/commands/workspace_category.rs` · `src/adapters/ui/sidebar/{view,full,collapsed}.rs` (사이드바 그룹·헤더/레일 키캡) · `src/adapters/ui/switch_overlay.rs` (`SwitchTarget::Category` 판정·`category_switch_held`) · `src/adapters/ui/input/shortcuts/numeric.rs` (카테고리 조합+숫자 → `switch_to_category`) · `src/state/workspace.rs` (`switch_to_category` / `category_last_active` / `relative_workspace_in_active_category` 의 경계 넘기) · `crates/tasty-settings/src/general.rs` (`workspace_switch_crosses_category`) · `src/adapters/ui/input/shortcuts/modifier_hint.rs` (`HintRole::CategorySwitch`) · `crates/tasty-settings/src/keybindings.rs` (`category_switch_modifier` / `category_switch_slot_keys`) · `src/adapters/ui/popup/{rail_category,confirm_delete_category}.rs` · `src/adapters/ui/{dialog,category_actions}.rs` · `src/view/main/redraw.rs` (컨텍스트 메뉴) · `src/state/preset_apply.rs`(`apply_workspace_preset` 의 `category` 파라미터) · `src/adapters/ui/popup/preset_apply.rs`(`preset_apply_target_category` 소비/리셋)
+- **코드**: `crates/tasty-model/src/workspace_category.rs` · `src/core/state.rs` (`categories` / CRUD 메서드) · `src/core/impl_category.rs` (카테고리 `DomainIntent`를 `Core::apply`로 적용) · `src/core/layout_persistence/{schema,capture,restore}.rs` · `src/adapters/ipc/handler/workspace_category.rs` · `crates/tasty-cli/src/commands/workspace_category.rs` · `src/adapters/ui/sidebar/{view,full,collapsed}.rs` (사이드바 그룹·헤더/레일 키캡) · `src/adapters/ui/switch_overlay.rs` (`SwitchTarget::Category` 판정·`category_switch_held`) · `src/adapters/ui/input/shortcuts/numeric.rs` (카테고리 조합+숫자 → `switch_to_category`) · `src/state/workspace.rs` (`switch_to_category` / `category_last_active` / `relative_workspace_in_active_category` 의 경계 넘기) · `crates/tasty-settings/src/general.rs` (`workspace_switch_crosses_category`) · `src/adapters/ui/input/shortcuts/modifier_hint.rs` (`HintRole::CategorySwitch`) · `crates/tasty-settings/src/keybindings.rs` (`category_switch_modifier` / `category_switch_slot_keys`) · `src/adapters/ui/popup/{rail_category,confirm_delete_category}.rs` · `src/adapters/ui/{dialog,category_actions}.rs` · `src/view/main/redraw.rs` (컨텍스트 메뉴) · `src/state/preset_apply.rs`(`apply_workspace_preset` 의 `category` 파라미터) · `src/adapters/ui/popup/preset_apply.rs`(`preset_apply_target_category` 소비/리셋)
 - **화면**: 설정 토글 on 시 사이드바가 카테고리 섹션으로 그룹 렌더. 확장 사이드바는 밴드형 헤더(bg-app 면 + 상/하 hairline, chevron+대문자 캡스 라벨(secondary)+우측 워크스페이스 카운트, 접힘 토글)+소속 행, 축소 레일은 카테고리 경계 `---` 버튼+우측 앵커드 팝업. 우클릭 컨텍스트 메뉴(헤더/배경/행)와 레일 팝업으로 생성/이름변경/삭제/카테고리 이동. 드래그로 다른 카테고리 이동. **카테고리 modifier 조합(`category_switch_modifier`, 기본 Ctrl+Shift) 홀드** 시 카테고리 헤더 우측(확장)·`---` 경계 중앙(레일)에 숫자 키캡이 뜨고, 숫자로 그 카테고리로 전환한다. 갤러리 specimen: Layouts › Sidebar & rail(그룹), Overlays › Workspace categories(다이얼로그·레일 팝업), Overlays › Switch-number overlay › Category switch(modifier held — 부제가 기본 조합을 설정 기본값에서 파생해 표기).
 
 ## 목적
@@ -29,8 +29,8 @@
   워크스페이스 오버레이와 **modifier-exclusive** — 서로 다른 조합이라 동시에 그려지지 않는다(같은 조합을 갖는 상태는 설정 충돌 차단으로 저장 불가).
   기본값 `ctrl+shift` 는 macOS 스크린샷 예약(`⌘⇧3/4/5`)과 겹치지 않는다.
   번호는 카테고리 순서대로 reserved `normal`("Workspaces")=1, 1–9 then 0(10th), 11번째+ 는 키캡 없음(작동 안 할 숫자는 칠하지 않음).
-  전환 시 (1) 대상이 접혀 있으면 `DomainIntent::SetCategoryCollapsed`(`collapsed: false`)로 **자동 확장**하고 슬롯 파일에 영속, (2) 그 카테고리의 **last-active** 워크스페이스로 이동(방문 이력 없으면 첫 워크스페이스).
-  last-active 는 `AppState.category_last_active: HashMap<WorkspaceCategoryId, usize>` 에 `switch_workspace` 마다 기록된다.
+  전환 시 (1) 대상이 접혀 있으면 `UiIntent::SetCategoryCollapsed`(`collapsed: false`)로 **자동 확장**하고 슬롯 파일에 영속, (2) 그 카테고리의 **last-active** 워크스페이스로 이동(방문 이력 없으면 첫 워크스페이스).
+  last-active 는 `MainViewState.category_last_active: HashMap<WorkspaceCategoryId, WorkspaceId>` 에 `switch_workspace` 마다 기록된다.
   슬롯 키는 `KeybindingSettings.category_switch_slot_keys`(기본 `["1".."9","0"]`).
   오버레이 modifier 는 egui raw_input(사용자 키)만 보므로 IPC/CLI 로는 유발 불가(원칙 1).
   전 기능은 folders 토글 on 게이트.
@@ -71,7 +71,7 @@ workspace의 카테고리를 이어받는다. parked 상태나 workspace가 없�
 워크스페이스 카드 우클릭에는 없다([원격 추가](../remote-attach/index.md#원격-워크스페이스-추가-팝업-gui-picker--사용자-경로)).
 생성·이름 변경은 360px 단일 필드 창에서 입력 중 검증하고, 삭제는 확인 창을 거친다.
 
-- **전체 접기/펴기 단축키**: `KeybindingSettings.toggle_categories_collapsed`(기본 빈 binding — 사용자가 Settings › Keybindings 에서 지정). 하나라도 펼쳐져 있으면 전부 접고, 전부 접혀 있으면 전부 편다(normal 포함, `DomainIntent::ToggleAllCategoriesCollapsed`). 카테고리 토글 off 면 매칭·consume 하지 않아 키가 다른 binding 으로 흐른다. Command Palette 파리티는 `dispatch_action_by_id("toggle_categories_collapsed")`.
+- **전체 접기/펴기 단축키**: `KeybindingSettings.toggle_categories_collapsed`(기본 빈 binding — 사용자가 Settings › Keybindings 에서 지정). 하나라도 펼쳐져 있으면 전부 접고, 전부 접혀 있으면 전부 편다(normal 포함, `UiIntent::ToggleAllCategoriesCollapsed`). 카테고리 토글 off 면 매칭·consume 하지 않아 키가 다른 binding 으로 흐른다. Command Palette 파리티는 `dispatch_action_by_id("toggle_categories_collapsed")`.
 
 ## 비-목표 (Out of scope)
 

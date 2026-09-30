@@ -120,7 +120,7 @@ Toast 위에서 마우스 클릭/드래그해도 토스트는 무시하고 이�
   `crates/tasty-type-appearance/src/toast_kind.rs` 이고 여기는 재수출이다.
 - `ToastScope` — 위 enum. 정본은 `crates/tasty-model/src/toast_kind.rs`.
 - `ToastState` — id, message, kind, scope, spawned_at, lifetime.
-- `ToastManager` — `push(message, kind, scope)` / `push_info(...)` / `draw(ctx, &LayoutContext, reduced_motion)`(만료 제거 + 렌더). `AppState::toasts` 로 통합, draw 는 popup draw 직후(= 위 레이어)에서.
+- `ToastManager` — `push(message, kind, scope)` / `push_info(...)` / `draw(ctx, &LayoutContext, reduced_motion)`(만료 제거 + 렌더). `MainViewState::toasts` 로 통합, draw 는 popup draw 직후(= 위 레이어)에서.
 - `compute_alpha` — `ToastState` 에서 곡선이 읽는 두 값을 꺼내는 어댑터. `ToastState` 가
   `ToastScope`를 포함해 `tasty-model`에 의존하므로 위젯 크레이트로 옮기지 않는다.
 - `truncate_message` — 문자 수 제한. `push` 진입부라 그리기 경로가 아니다.

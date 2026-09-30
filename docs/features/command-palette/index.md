@@ -17,7 +17,7 @@ VS Code 스타일 명령 팔레트. 모든 단축키 명령을 쿼리로 검색�
 두 출처를 합친다(`PaletteCommand::Host` / `PaletteCommand::Plugin`):
 
 - 호스트: `KeybindingSettings::GENERAL_BINDING_FIELDS` (단축키 설정 탭에 나타나는 모든 명령). `toggle_command_palette` 자신(이미 팔레트 안이므로)과 `fullscreen_stage_exit`(팔레트를 열 수 있는 시점엔 no-op)는 제외(`PALETTE_EXCLUDED`).
-- Plugin: `AppState.palette_plugin_commands` — `PluginManager::plugin_palette_commands()` 스냅샷. `[[contributes.commands]]` 로 선언된 명령 중 **`scope = "global"`만** 노출한다 — `surface` scope 는 owner plugin surface 가 포커스되어 있을 때만 의미가 있는데, 팔레트 실행 시점엔 그 컨텍스트를 보장할 수 없다(포커스 없이 매칭되는 키보드 단축키 경로 `match_global_shortcut` 과 동일 판단). 비활성 plugin 의 명령은 제외된다(`plugin_tool_items` = Tools 메뉴와 동일 필터 — 설정 UI 의 사전 키 바인딩 목적과 달리 팔레트는 "지금 실행 가능한" 명령만 보여줘야 하는 실행 UI).
+- Plugin: `MainViewState.palette_plugin_commands` — `PluginManager::plugin_palette_commands()` 스냅샷. `[[contributes.commands]]` 로 선언된 명령 중 **`scope = "global"`만** 노출한다 — `surface` scope 는 owner plugin surface 가 포커스되어 있을 때만 의미가 있는데, 팔레트 실행 시점엔 그 컨텍스트를 보장할 수 없다(포커스 없이 매칭되는 키보드 단축키 경로 `match_global_shortcut` 과 동일 판단). 비활성 plugin 의 명령은 제외된다(`plugin_tool_items` = Tools 메뉴와 동일 필터 — 설정 UI 의 사전 키 바인딩 목적과 달리 팔레트는 "지금 실행 가능한" 명령만 보여줘야 하는 실행 UI).
 
 ### 매칭
 
@@ -32,11 +32,11 @@ VS Code 스타일 명령 팔레트. 모든 단축키 명령을 쿼리로 검색�
 Enter/클릭 시 `command_palette.pending_run` 에 선택된 `PaletteCommand` 적재 → `MainView::handle_redraw` 가 다음 프레임에 drain:
 
 - `Host`: `dispatch_action_by_id` 호출 — **단축키와 정확히 같은 action body** 를 타므로 효과 동일.
-- `Plugin`: `AppState.pending_plugin_command_invokes` 에 `(plugin_id, command_id)` 를 enqueue(팔레트 draw/redraw 경로는 `PluginManager` 에 접근할 수 없음 — `PopupDef` 고정 시그니처 제약). `App::dispatch_pending_palette_plugin_commands` 가 다음 IPC 처리 틱에 drain 해 `command_registry` 로 조회: `action` 이 있으면 `invoke_tool` 로 직접 실행(`try_plugin_shortcut` 의 action 분기와 동일 패턴), 없으면 `key_dispatch::dispatch_plugin_command(.., surface_id: None)` 으로 `command.invoked` 이벤트만 발생(포커스 없이 매칭된 global 단축키와 동일 — 옛 `command.invoke` IPC 는 대상 surface 가 없어 생략).
+- `Plugin`: `MainViewState.pending_plugin_command_invokes` 에 `(plugin_id, command_id)` 를 enqueue(팔레트 draw/redraw 경로는 `PluginManager` 에 접근할 수 없음 — `PopupDef` 고정 시그니처 제약). `App::dispatch_pending_palette_plugin_commands` 가 다음 IPC 처리 틱에 drain 해 `command_registry` 로 조회: `action` 이 있으면 `invoke_tool` 로 직접 실행(`try_plugin_shortcut` 의 action 분기와 동일 패턴), 없으면 `key_dispatch::dispatch_plugin_command(.., surface_id: None)` 으로 `command.invoked` 이벤트만 발생(포커스 없이 매칭된 global 단축키와 동일 — 옛 `command.invoke` IPC 는 대상 surface 가 없어 생략).
 
-### AppState 동기화
+### MainViewState 동기화
 
-`AppState.palette_plugin_commands` 는 `tool_registry` 와 동형 — 첫 창 조립(`assemble_app_state`) 시 1 회, 이후 plugin 라이프사이클 변경(`install`/`remove`/`enable`/`disable`/`grant`/`revoke`/`upgrade_builtins`) 시 `App::refresh_palette_plugin_commands`(`refresh_tool_registry` 와 동일 트리거·호출부)가 갱신한다.
+`MainViewState.palette_plugin_commands` 는 `tool_registry` 와 동형 — 첫 창 조립(`assemble_app_state`) 시 1 회, 이후 plugin 라이프사이클 변경(`install`/`remove`/`enable`/`disable`/`grant`/`revoke`/`upgrade_builtins`) 시 `App::refresh_palette_plugin_commands`(`refresh_tool_registry` 와 동일 트리거·호출부)가 갱신한다.
 
 ## 인터페이스
 
@@ -66,7 +66,7 @@ debug IPC(`debug.host_popup.open`/`debug.inject_egui_mouse`)로 확인할 수 �
 - popup: `src/adapters/ui/popup/command_palette.rs`.
 - plugin 명령 snapshot 동기화: `src/app/plugin_glue/palette_commands.rs`(`refresh_palette_plugin_commands`), 초기 populate `src/app/window_lifecycle.rs`(`assemble_app_state`).
 - plugin 명령 조회 필터: `crates/tasty-host-plugin/src/manager/queries.rs`(`plugin_palette_commands`).
-- dispatch: `src/view/main/redraw.rs` 가 `pending_run` drain → 호스트는 `dispatch_action_by_id`, plugin 은 `AppState.pending_plugin_command_invokes` 로 enqueue. `src/app/dispatch/palette_plugin_commands.rs`(`dispatch_pending_palette_plugin_commands`)가 App 메인 루프에서 drain해 action 실행 또는 이벤트 발생.
+- dispatch: `src/view/main/redraw.rs` 가 `pending_run` drain → 호스트는 `dispatch_action_by_id`, plugin 은 `MainViewState.pending_plugin_command_invokes` 로 enqueue. `src/app/dispatch/palette_plugin_commands.rs`(`dispatch_pending_palette_plugin_commands`)가 App 메인 루프에서 drain해 action 실행 또는 이벤트 발생.
 
 ## 화면
 

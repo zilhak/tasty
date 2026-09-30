@@ -12,7 +12,7 @@
 
 ## 내부 동작 (headless-valid)
 
-탭 스트립은 순수 view(`draw_pane_tab_bars_view`)가 그리고, 사용자 입력을 `TabBarAction` 으로 보고하면 wrapper 가 work-area 도메인에 반영한다. view 는 AppState/CoreState 비의존(데이터 props 만 받음).
+탭 스트립은 순수 view(`draw_pane_tab_bars_view`)가 그리고, 사용자 입력을 `TabBarAction` 으로 보고하면 wrapper 가 work-area 도메인에 반영한다. view 는 MainViewState/CoreState 비의존(데이터 props 만 받음).
 
 ### 입력 → 액션 (`TabBarAction`)
 

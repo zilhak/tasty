@@ -11,8 +11,8 @@
 
 | `path` | 진입점 | 트리거 | 스냅샷 |
 |--------|--------|--------|--------|
-| `gui` | `AppState::close_workspace_at` (`src/state/workspace.rs`) | 워크스페이스 컨텍스트 메뉴 "Close workspace" / 단축키 `close_active_workspace` | 항상 |
-| `inline` | `AppState::close_surface_by_id_inner` (`src/state/pane.rs`) → `Core::close_surface_recording` (`src/core/impl_close.rs`) | surface→tab→pane→workspace cascade 의 창 경로 (사용자 닫기 단축키, PTY exit 등) | `save_snapshot` 조건부 (PTY exit 는 false) |
+| `gui` | `MainViewState::close_workspace_at` (`src/state/workspace.rs`) | 워크스페이스 컨텍스트 메뉴 "Close workspace" / 단축키 `close_active_workspace` | 항상 |
+| `inline` | `MainViewState::close_surface_by_id_inner` (`src/state/pane.rs`) → `Core::close_surface_recording` (`src/core/impl_close.rs`) | surface→tab→pane→workspace cascade 의 창 경로 (사용자 닫기 단축키, PTY exit 등) | `save_snapshot` 조건부 (PTY exit 는 false) |
 | `cascade` | `Core::close_case_workspace` (`src/core/impl_close.rs`) → `cascade_surface_closed` (`src/app/structural_cascade.rs`) | `DomainIntent::CloseSurface` 도메인 이벤트 경로 (IPC `surface.close` 등) | `save_snapshot` 조건부 (IPC 는 false) |
 
 **세 경로의 비용 구조는 근본적으로 다르다.** `gui` 만 "탭이 N 개인 워크스페이스를
@@ -20,24 +20,20 @@
 workspace 까지 무너지는 경우라 cleanup 대상이 사실상 항상 1개다. UI 멈춤이
 보고되는 조건(탭 많은 워크스페이스 닫기)은 `gui` 경로에서만 재현된다.
 
-**세 경로 모두 workspace 벡터에서 원소를 제거한 뒤 활성 포인터를 대상 기준으로 보정해야
-한다** — 활성 인덱스(`AppState::active_workspace`)는 앞쪽 원소가 빠지면 가리키는 대상이
-바뀌기 때문이다. 규칙과 헬퍼는 [design/policies/focus.md](../design/policies/focus.md)
-"삭제로 인한 인덱스 이동에서도 포커스 대상은 보존된다". 네 번째 경로를 추가하면 같은 보정을
-함께 적용한다(계측 단계에는 포함되지 않는 O(1) 작업이다).
+세 경로 모두 구조 결과를 받은 App이 View navigation을 보정한다. 생존한 workspace ID는 유지하고, 선택한 workspace가 삭제됐을 때만 이전 순서에서 다음 생존 ID 또는 마지막 이전 생존 ID를 고른다. 인덱스는 응답과 표시 시점에 계산한다([포커스 정책](../design/policies/focus.md)).
 
 `inline`·`cascade` 두 경로는 트리 변경과 C1~C3 을 같은 Core 닫기 함수(`close_case_workspace`)가
 하고, C4/C5 는 호출한 쪽이 한다. `cascade` 는 cascade(`cascade_surface_closed`) 쪽이라 로그 순서가
 **C5 가 C4 보다 먼저** 나온다(cascade 쪽 1단계가 cleanup, 3단계가 workspace purge). `inline` 은
-AppState 가 workspace purge 뒤 cleanup 을 해서 `gui` 와 같이 C1→C2→C3→C4→C5 순이다. 두 경로는
-`CloseTracePath` 로 로그의 `path` 를 가르고, `close_total` 은 `inline` 이면 AppState 가,
+MainViewState 가 workspace purge 뒤 cleanup 을 해서 `gui` 와 같이 C1→C2→C3→C4→C5 순이다. 두 경로는
+`CloseTracePath` 로 로그의 `path` 를 가르고, `close_total` 은 `inline` 이면 MainViewState 가,
 `cascade` 면 `cascade_surface_closed` 가 기록한다.
 
 ## 트리 변경과 복원 기록의 소유
 
 surface·tab·pane 닫기의 트리 변경과 복원 기록(`push_closed_item`)은 Core 닫기 함수
 (`src/core/impl_close.rs`의 `Core::close_surface_recording` · `close_pane_recording` ·
-`close_tab_recording`)가 한다. `Core::apply` 의 close 계열과 AppState 의 직접 닫기
+`close_tab_recording`)가 한다. `Core::apply` 의 close 계열과 MainViewState 의 직접 닫기
 (`close_active_surface` · `close_surface_by_id` · `close_surface_by_id_no_snapshot` ·
 `close_active_pane` · `close_active_tab` · `close_tab`)가 모두 이 함수를 부른다. 창 경로는
 `Core::apply` 를 거치지 않고 이 세 함수를 직접 부르므로 `Core::apply` 의 mirror 가드를 지나지 않는다.
@@ -53,14 +49,14 @@ surface·tab·pane 닫기의 트리 변경과 복원 기록(`push_closed_item`)�
 - lifecycle 의 `is_user_close` 는 창 경로에서는 사용자 닫기 여부로, `structural_exec` 경로에서는
   넘겨받은 origin 이 사용자인지로 정한다. `save_snapshot` 과는 별개다.
 
-닫기가 끝나면 AppState 가 Core 가 돌려준 이벤트로 자원 회수·lifecycle 통지·활성 포인터 보정을 이어서
+닫기가 끝나면 MainViewState 가 Core 가 돌려준 이벤트로 자원 회수·lifecycle 통지·활성 포인터 보정을 이어서
 한다.
 
 복원 기록 여부는 `save_snapshot` 인자로 정한다. `Core::apply` 에는 origin 이 없으므로 origin 을 아는
 진입점이 값을 정한다. 사용자 창 닫기는 true, IPC 와 `DomainIntent::{ClosePane,CloseTab}` 은 false,
 원격 holder 의 forward 는 사용자 origin 일 때만 true 다. PTY 종료 정리는 사용자 닫기로 통지하지만
 기록하지 않는다. Core 닫기 함수는 pane 의 마지막 탭처럼 닫지 못한 대상을 기록하지 않는다.
-Core 밖에서 기록하는 곳은 둘이다. workspace 전체 닫기(`AppState::close_workspace_at`)와 원격 holder 가
+Core 밖에서 기록하는 곳은 둘이다. workspace 전체 닫기(`MainViewState::close_workspace_at`)와 원격 holder 가
 forward 받은 tab/pane 닫기(`src/core/attach_runtime.rs`)다. holder 는 `DomainIntent::{CloseTab,ClosePane}`
 에 기록 인자가 없어 Core 닫기 전에 사본을 직접 기록하고, Core 와 같이 pane 의 마지막 탭과 유일한 pane 은
 기록하지 않는다. 복원 목록은 현재 트리에서 항목의 출처 workspace 를 찾으므로 기록은 모든 경로에서 트리를
@@ -74,10 +70,10 @@ kill · 스크롤백 파일 삭제 · per-surface 인덱스 해제 · memory sco
 제거)와 `surface.closed` lifecycle 통지는 cascade 쪽이 한다.
 
 회수 본문은 창 상태 없이 호출할 수 있는 `CoreState::cleanup_surface_traced`와
-`CoreState::purge_workspace_memory_scope`(`src/core/state/surface_cleanup.rs`)다. AppState에는
-화면 cache 해제(`AppState::release_surface_views` — explorer · DAG 그래프 view)와 lifecycle ·
-host 이벤트 적재만 남는다. AppState의 직접 닫기 경로(`gui` · `inline`)도 같은 CoreState 함수를
-부르고, `AppState::cleanup_surface`는 engine 회수 뒤 화면 cache를 해제하는 얇은 래퍼다.
+`CoreState::purge_workspace_memory_scope`(`src/core/state/surface_cleanup.rs`)다. MainViewState에는
+화면 cache 해제(`MainViewState::release_surface_views` — explorer · DAG 그래프 view)와 lifecycle ·
+host 이벤트 적재만 남는다. MainViewState의 직접 닫기 경로(`gui` · `inline`)도 같은 CoreState 함수를
+부르고, `MainViewState::cleanup_surface`는 engine 회수 뒤 화면 cache를 해제하는 얇은 래퍼다.
 
 그 회수는 **한 함수**가 소유한다 — `src/app/structural_cascade.rs` 의
 `reclaim_closed_surfaces`. close cascade 셋(`cascade_surface_closed` · `cascade_pane_closed_full` ·

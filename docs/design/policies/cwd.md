@@ -93,7 +93,7 @@ mirror 워크스페이스의 convert 는 로컬에서 실행되지 않고 `Struc
 | 단계 | 담당 | 값 |
 |------|------|----|
 | client → wire | `src/core/impl_mirror.rs` (`build_mirror_forward_op`) | intent 에 **명시된** cwd 만 `StructuralOp::ConvertSurface.cwd`(경로 문자열, `#[serde(default)]`) 로 실어 보낸다. mirror surface 에서 carry 한 cwd 는 원격 출처(§3-2)라 로컬 carry 헬퍼가 `None` 을 돌려주므로 싣지 않는다 — 실제 기준은 서버가 자기 PTY에서 읽은 값이며 클라이언트 값은 그 사본이다 |
-| 원격 실행 | `src/core/attach_runtime.rs` (`execute_forwarded_structural_op`) | op 의 `cwd` 가 비어 있으면 `AppState::resolve_inherit_cwd_from_surface` 로 **실제 원격 PTY** 기준(OSC 7 캐시 → Linux `/proc`·macOS `proc_pidinfo`) cwd 를 직접 판정한다 |
+| 원격 실행 | `src/core/attach_runtime.rs` (`execute_forwarded_structural_op`) | op 의 `cwd` 가 비어 있으면 `MainViewState::resolve_inherit_cwd_from_surface` 로 **실제 원격 PTY** 기준(OSC 7 캐시 → Linux `/proc`·macOS `proc_pidinfo`) cwd 를 직접 판정한다 |
 | 관측 push (server → client) | `CoreState::forward_surface_cwd` → `StreamControl::Cwd` → client `mirror_surface_cwd` 맵 | 서버가 1Hz 로 점유 surface 의 cwd 를 자기 트리에서 계산해 값이 바뀐 것만 holder 에 보낸다. 실행이 아니라 **관측**이다([ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md)) |
 
 서버측 resolve 는 로컬 convert 와 같은 헬퍼를 쓰므로 **원격 인스턴스의 `inherit_cwd` 설정 게이트를 그대로 적용**한다(실행하는 인스턴스의 설정을 따름). `cwd` 키가 없는 구버전 client 의 op 도 이 서버측 resolve 로 커버된다. **이 게이트는 실행 경로(서버측 resolve)에 한정된다** — 관측 push 는 `inherit_cwd` 와 무관하게 raw cwd 를 보내고, 게이트는 소비 시점(client)이 건다. `inherit_cwd` 는 "새 surface 가 cwd 를 상속하는가" 이지 "cwd 를 아는가" 가 아니다.
@@ -102,7 +102,7 @@ mirror 워크스페이스의 convert 는 로컬에서 실행되지 않고 `Struc
 
 두 인스턴스의 파일시스템은 다르다. surface cwd 의 판정은 `CoreState::surface_cwd`(`src/core/state/surface_cwd.rs`) 하나이고 반환 타입 `SurfaceCwd` 가 출처를 가른다 — `Local(PathBuf)` / `Remote(RemoteCwd)`. mirror 워크스페이스에 속한 surface 의 값은 출처(OSC 7 캐시 · explorer root · plugin surface 의 `set_cwd`)와 무관하게 `Remote` 이고, `RemoteCwd` 에는 `Path` 로 가는 변환이 없다([ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md)). 분류는 **값이 어디서 들어왔는가가 아니라 surface 가 어느 워크스페이스에 있는가**로 한다 — 그래서 cwd 가 들어오는 경로(`surface.set_cwd` IPC, `plugin_bridge/remote_kind.rs` 의 생성 시 `set_cwd`)를 따로 막지 않아도 나가는 쪽에서 한 번에 걸린다.
 
-`AppState::resolve_inherit_cwd` / `resolve_inherit_cwd_from_surface` 는 `inherit_cwd` 게이트를 건 뒤 **`Local` 만** 돌려준다. 사용처별 처리 방식은 다음과 같다.
+`MainViewState::resolve_inherit_cwd` / `resolve_inherit_cwd_from_surface` 는 `inherit_cwd` 게이트를 건 뒤 **`Local` 만** 돌려준다. 사용처별 처리 방식은 다음과 같다.
 
 | 소비 지점 | cwd 가 가는 곳 | 판정 |
 |---|---|---|

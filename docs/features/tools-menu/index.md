@@ -22,7 +22,7 @@
   - Tutorial → 튜토리얼 토픽 popup
   - Task DAGs → DAG 목록 popup (**workspace 스코프** — 아래 참조)
   - Open File → 네이티브 파일 피커
-- **플러그인 기여 항목**: 활성 + `ui.tool_item` 권한을 grant 받은 plugin 이 `[[contributes.tool]]` 로 선언한 항목. `AppState::tool_registry` 에 동기화된다.
+- **플러그인 기여 항목**: 활성 + `ui.tool_item` 권한을 grant 받은 plugin 이 `[[contributes.tool]]` 로 선언한 항목. `MainViewState::tool_registry` 에 동기화된다.
 
 ### 레이아웃 / 크기
 
@@ -64,7 +64,7 @@
 
 - `src/adapters/ui/tools_menu.rs` — `BUILTIN_TOOLS`, `draw_tools_menu`, `invoke_tool`, `tools_menu_sizer`.
 - `src/adapters/ui/sidebar/tools.rs` — `open_tools_menu` (도구 버튼 → 메뉴 popup).
-- 플러그인 항목: `AppState::tool_registry` (plugin `[[contributes.tool]]` 동기화).
+- 플러그인 항목: `MainViewState::tool_registry` (plugin `[[contributes.tool]]` 동기화).
 
 ## 화면
 

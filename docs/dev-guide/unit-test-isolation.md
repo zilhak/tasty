@@ -335,7 +335,7 @@ gh api "repos/<owner>/<repo>/actions/jobs/<job_id>/logs"
 ## 8. 공유 픽스처 `test_state()` 는 **진짜 프로세스를 띄운다**
 
 `src/state/tests.rs` 의 `test_state()` / `test_state_with_memory()` 는 유닛 테스트가
-`AppState` + `CoreState` 한 쌍을 얻는 표준 통로다. 그 안에서 `CoreState::new` 이 도는데,
+`MainViewState` + `CoreState` 한 쌍을 얻는 표준 통로다. 그 안에서 `CoreState::new` 이 도는데,
 이 생성자는 **기본 워크스페이스를 만들면서 실제 PTY 를 열고 실제 셸을 fork 한다**
 (`spawn_shell_terminal` → `tasty_terminal::Terminal::new` → `portable_pty` →
 `std::process::Command::spawn`).

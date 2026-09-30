@@ -58,7 +58,7 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
   `RecentFiles::add` 가 같은 키의 옛 행을 제거 후 저장하고, `load()` 는 마이그레이션 체인이
   없는 fresh-start 정책이라 로드 시 1회 정규화 dedup 패스로 기존 중복을 접는다.
 - **기록 진입점**: markdown-open 이 수렴하는 인텐트 계층(`Intent::NewTab`/
-  `ConvertSurface`, file-dispatch 직접 `CreateTab`)에서 `AppState::record_recent`
+  `ConvertSurface`, file-dispatch 직접 `CreateTab`)에서 `MainViewState::record_recent`
   로 1회 기록한다 — 파일-열기 팝업·주소창 navigate·링크 클릭이 모두 반영된다.
 
 ### 최근 목록의 창 간 일관성

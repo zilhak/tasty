@@ -151,7 +151,7 @@ info modal 셸이 해석한다. 셸의 크기·버튼 배치와 시안 대응은
 [디자인·갤러리 매핑](../../design/systems/design-gallery-mapping.md#settings--general--permissions-macos)에 있다.
 
 버튼을 눌렀을 때 창이 두 단계를 거쳐 열리는 것은 의도한 구조다. 팝업을 그리는 코드는
-`AppState`만 가지고 있어 winit 이벤트 루프에 접근할 수 없다. 그래서
+`MainViewState`만 가지고 있어 winit 이벤트 루프에 접근할 수 없다. 그래서
 `dialogs.permission_settings_requested`만 표시해 두고, App 계층의
 `dispatch_pending_info_modal_requests`가 프레임 시작에 이를 읽어 `AppEvent::OpenSettings`를
 보낸다. 파일 핸들러 피커의 결과 처리와 같은 방식이다. 진입 탭은 L1 `General`과 L2

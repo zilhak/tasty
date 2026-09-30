@@ -210,7 +210,7 @@ markdown의 Browse처럼 plugin이 호스트의 파일 선택 창을 열어야 �
   surface 를 만들지 않는다([ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md)
   참조). Tools 메뉴·단축키로 연 피커도 focus surface 의 폴더에서 출발한다.
 - plugin 은 popup context 의 `observed_cwd`(로컬) / `remote_cwd`(mirror) 와 `origin_surface_id` 를
-  그대로 실어 보내면 된다(키 의미는 `AppState::popup_surface_context`). 게이트가 걸린 `cwd` 키를
+  그대로 실어 보내면 된다(키 의미는 `MainViewState::popup_surface_context`). 게이트가 걸린 `cwd` 키를
   쓰면 설정을 끈 사용자에게서 시작 위치가 사라진다.
 - `path_input` 등 plugin 팝업에 사용자가 이미 적어 둔 경로를 시작점으로 삼는 것은 다루지 않는다.
 
@@ -232,7 +232,7 @@ Tools 메뉴는 `from_user_menu`를 사용한다. IPC 요청을 사용자 메뉴
 
 ### 설정 창에서의 로컬 전용 재사용
 
-설정 창은 메인 윈도우와 별개의 winit 창이라, 메인 창 popup 스택(`AppState.dialogs.file_picker`)
+설정 창은 메인 윈도우와 별개의 winit 창이라, 메인 창 popup 스택(`MainViewState.dialogs.file_picker`)
 에 상태를 둔 이 피커를 그대로 열 수 없다. 대신 **순수 view(`draw_file_picker_view`)만 재사용**한다 —
 view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상태를 어디에 두든 그릴 수 있다.
 
@@ -450,7 +450,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   `src/core/attach_runtime.rs`(`list_dir_entries_wire_capped_tests` — byte-budget truncation),
   `src/adapters/ui/popup/file_picker.rs`(`path_helper_tests` — POSIX/Windows 원격 경로 처리 +
   `matches_filters_*` 확장자 필터), `src/adapters/ipc/handler/file_picker.rs`(`tests` —
-  trigger 성공/requester 기록/busy 거부/filters 전달, 실제 `AppState`/`CoreState` fixture),
+  trigger 성공/requester 기록/busy 거부/filters 전달, 실제 `MainViewState`/`CoreState` fixture),
   `crates/tasty-ipc/src/method_meta_tests.rs`(`file_picker_trigger_requires_fs_read`),
   `tests/attach_list_dir_loopback.rs`(실제 서버 인스턴스 상대 loopback 왕복 3 종 — 성공/디렉토리
   없음 에러/attach 점유 없는 client 거부), `src/view/settings/ui/file_chooser.rs`(`tests` — 설정 창

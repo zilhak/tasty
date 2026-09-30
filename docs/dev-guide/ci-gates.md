@@ -704,7 +704,7 @@ spawn 시도 1회와 나머지 호출의 래치 진단을 확인한다. 정상 �
 - `subop`: `src/state` 밖에서 구조 하위 연산을 메서드로 호출하는 곳. `appstate` 판정과 같은 목록을 쓴다.
   pane의 `move_tab`, tab의 `close_surface`, layout의 `replace_surface`, CoreState의 category 메서드·`push_closed_item`,
   Core의 `create_default_workspace` 등이 해당한다. setter는 `field`가 세므로 뺀다.
-  수신자가 `state`인 호출은 AppState 메서드라서 `appstate`가 대신 센다.
+  수신자가 `state`인 호출은 MainViewState 메서드라서 `appstate`가 대신 센다.
 - `appstate`: `src/state.rs`와 `src/state/` 아래 pub·pub(crate) 함수 중 구조를 바꾸는 함수.
   구조 하위 연산이나 위 필드 쓰기를 직접 호출하거나, 같은 모듈의 구조 함수를 이름으로 호출하는 함수가 해당한다.
 
@@ -726,7 +726,7 @@ test 전용 코드(`#[cfg(test)]` 범위와 test로만 선언된 파일)는 `str
 - Core 밖 파일에 필드 대입 한 줄을 넣으면 실패하고 위치를 출력한다.
 - 다줄 체인으로 넣어도 실패한다.
 - 같은 코드를 `#[cfg(test)]` 모듈, test로만 선언된 파일, 주석·문자열, 입구 파일에 넣으면 통과한다.
-- 구조 함수를 부르는 새 AppState pub 함수를 넣으면 실패한다. 이때 `--write-baseline`은 거절된다.
+- 구조 함수를 부르는 새 MainViewState pub 함수를 넣으면 실패한다. 이때 `--write-baseline`은 거절된다.
 - Core 밖 새 함수에서 `pane.move_tab`을 부르면 한 줄이든 다줄 체인이든 실패한다. 같은 호출을 `#[cfg(test)]` 모듈에 넣으면 통과한다.
 - writer 한 줄을 지우면 통과하고 기준을 낮추라고 안내한다.
 
@@ -735,7 +735,7 @@ test 전용 코드(`#[cfg(test)]` 범위와 test로만 선언된 파일)는 `str
 - 수신자 타입을 해석하지 않는다. 같은 이름의 다른 필드(`.name =` 등)도 세며, 제외 목록에 없는 새 파일에서 생기면 거짓 실패가 난다. 이때는 기준을 올리지 말고 제외 목록에 사유와 함께 추가한다.
 - 입구 판정은 파일 단위다. 입구 파일 안의 함수가 `Core::apply` 밖에서 호출되는 경우(`apply_create_workspace_inner` 등)도 입구 안으로 센다.
 - 가변 참조를 얻은 뒤 다른 이름으로 쓰는 경우, 트레이트 객체나 매크로를 거치는 경우, 위 목록 밖의 필드와 하위 연산은 잡히지 않는다.
-- `subop`은 이름으로만 판정한다. 수신자가 `state`가 아닌 AppState 메서드 호출이나 같은 이름의 다른 타입 메서드도 센다.
+- `subop`은 이름으로만 판정한다. 수신자가 `state`가 아닌 MainViewState 메서드 호출이나 같은 이름의 다른 타입 메서드도 센다.
 - 선택 필드(focused_pane·active_tab·focused_surface), split ratio, standalone PTY와 자식 terminal 관계는 대상이 아니다.
 - 합계가 기준보다 줄어든 상태에서는 그 차이만큼 기존 위치에 writer를 다시 넣어도 통과한다. 기준을 낮추는 것으로 이 여유를 없앤다.
 

@@ -90,7 +90,7 @@ attention·notification 적재, terminal mark, 설정 적용·저장처럼 engin
 
 헤드리스의 `drain_pending_host_events`도 위 세 시점과 PTY 출력 처리 끝에서 실행한다. `pending_host_events`를 비우고 `HookFired`로 push 완료를 기다리는 agent task를 마감한다. 일반 plugin Event Bus 전달 경로는 없어 나머지 이벤트는 버린다. 지원 범위와 이유는 [ADR-0058](../../adr/0058-headless-without-local-views.md)을 따른다.
 
-핸들러는 `match &intent.body`로 도메인 함수를 선택한다. AppState 전체를 trait object가 대여하면 필요한 필드만 따로 변경하기 어렵기 때문이다. 오류는 `tracing::warn!`으로 기록하고, 사용자에게 알려야 할 실패는 사용자·에이전트 정책에 따라 토스트로 표시한다. 패닉을 일으키거나 `let _ =`로 오류를 버리지 않는다.
+핸들러는 `match &intent.body`로 도메인 함수를 선택한다. MainViewState 전체를 trait object가 대여하면 필요한 필드만 따로 변경하기 어렵기 때문이다. 오류는 `tracing::warn!`으로 기록하고, 사용자에게 알려야 할 실패는 사용자·에이전트 정책에 따라 토스트로 표시한다. 패닉을 일으키거나 `let _ =`로 오류를 버리지 않는다.
 
 ## Intent → Event Bus Bridge
 

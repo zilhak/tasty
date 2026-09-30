@@ -17,7 +17,7 @@ App  (1 프로세스, 메인 스레드, winit ApplicationHandler)
 
 `focused_view_id` 는 대상 없는 IPC 요청이 떨어지는 main 창이다. 창을 등록할 때는 그 창을 사용자가 만들었을 때만 옮긴다 — 에이전트가 만든 창은 옮기지 않는다([포커스 정책](../design/policies/focus.md#에이전트가-만든-창과-포커스), [ADR-0059](../adr/0059-id-targets-and-view-owned-selection.md)).
 
-모든 View는 하나의 `views` 맵에 보관한다. 모달도 별도 객체 집합으로 관리하지 않고 `active_modal`로 활성 View와 종류를 표시한다. 활성 모달의 원본은 이 필드 하나이며 창별 AppState에는 사본이 없다.
+모든 View는 하나의 `views` 맵에 보관한다. 모달도 별도 객체 집합으로 관리하지 않고 `active_modal`로 활성 View와 종류를 표시한다. 활성 모달의 원본은 이 필드 하나이며 창별 MainViewState에는 사본이 없다.
 
 ## Window 트레잇 계층 (`src/view/`)
 
@@ -51,7 +51,7 @@ View (sealed trait, : sealed::Sealed + std::any::Any)
 App이 가진 모든 engine은 `App.engines`(`EngineRegistry`, `src/app/engine_registry.rs`)에 있다. engine과 그 id(`EngineSession`, `src/runtime/engine_session.rs`)는 `EngineId`를 키로 한 곳에 머물고, 창을 열거나 닫아도 다른 컬렉션으로 옮겨 가지 않는다. 창과의 관계만 바뀐다.
 
 - **창**: 창 ID → engine id. MainView는 engine을 소유하지 않고 id도 들지 않는다. App이 창 ID로 registry에서 engine을 찾아 View에 넘긴다(`ViewCtx.engine`, 창 루프의 `window_pairs`, 창 ID 접근의 `window_pair`).
-- **parked**: 창이 없는 engine과 창을 다시 만들 때 쓸 AppState. 보관 순서를 유지한다. 모든 윈도우가 닫혀도 PTY 세션을 잃지 않는 근거다. 윈도우가 0개여도 프로세스(트레이)는 살아 있을 수 있다 — [system-tray 정책](../design/policies/system-tray.md).
+- **parked**: 창이 없는 engine과 창을 다시 만들 때 쓸 MainViewState. 보관 순서를 유지한다. 모든 윈도우가 닫혀도 PTY 세션을 잃지 않는 근거다. 윈도우가 0개여도 프로세스(트레이)는 살아 있을 수 있다 — [system-tray 정책](../design/policies/system-tray.md).
 - **임시**: 창에 배정되기 전의 engine 하나. 부팅과 새 창 생성이 이 관계를 거쳐 창에 붙인다.
 
 한 engine은 세 관계 중 정확히 하나에 속하고, 관계들의 합집합은 registry가 가진 engine 전체와 같다. 창 전이는 관계만 바꾼다.
@@ -59,7 +59,7 @@ App이 가진 모든 engine은 `App.engines`(`EngineRegistry`, `src/app/engine_r
 | 전이 | 동작 |
 |------|------|
 | 창 등록 | 임시 engine을 창 관계로 옮긴다(`register_window`). |
-| park | 창 관계를 parked로 바꾸고 View 복원 자료(AppState)를 뒤에 붙인다. 마지막 창 닫기와 macOS 최소화가 쓴다. |
+| park | 창 관계를 parked로 바꾸고 View 복원 자료(MainViewState)를 뒤에 붙인다. 마지막 창 닫기와 macOS 최소화가 쓴다. |
 | unpark | 가장 먼저 보관한 parked engine을 임시 관계로 옮긴다. 새 창이 이어받는다. |
 | 은퇴 | 창 관계를 끊고 engine을 registry에서 꺼낸다. 레이아웃 복원 설정에 따라 저장하거나 슬롯 파일을 지운 뒤 View, engine 순서로 버린다. |
 
@@ -67,7 +67,7 @@ parked 상태에서도 engine은 살아 있으므로 레이아웃 슬롯 점유�
 
 ### engine 탐색
 
-engine만 다루는 App의 순회는 `src/app/window_access.rs`의 `EngineScan`(읽기)·`EngineScanMut`(쓰기)를 거친다. 이 두 핸들은 `App::engines`/`App::engines_mut`로 얻고, 같은 함수에서 `App.core` 같은 다른 필드를 함께 빌려야 하면 `engines_mut!` 매크로로 `views`와 `engines` 필드만 빌린다. 창 View 작업(다시 그리기 표시, toast 등)이 함께 필요한 창 루프는 MainView와 그 engine을 쌍으로 주는 `window_pairs`를, 창 ID로 고른 접근(`find_main_with_*`의 결과 등)은 `window_pair`를 쓴다. engine 기준 요청(`DispatchSource::Engine`)은 `resolve`가 AppState·engine과 창이 있으면 그 창의 `ViewBase`를 함께 돌려준다.
+engine만 다루는 App의 순회는 `src/app/window_access.rs`의 `EngineScan`(읽기)·`EngineScanMut`(쓰기)를 거친다. 이 두 핸들은 `App::engines`/`App::engines_mut`로 얻고, 같은 함수에서 `App.core` 같은 다른 필드를 함께 빌려야 하면 `engines_mut!` 매크로로 `views`와 `engines` 필드만 빌린다. 창 View 작업(다시 그리기 표시, toast 등)이 함께 필요한 창 루프는 MainView와 그 engine을 쌍으로 주는 `window_pairs`를, 창 ID로 고른 접근(`find_main_with_*`의 결과 등)은 `window_pair`를 쓴다. engine 기준 요청(`DispatchSource::Engine`)은 `resolve`가 MainViewState·engine과 창이 있으면 그 창의 `ViewBase`를 함께 돌려준다.
 
 - 방문 순서는 창(`views` 순회 순서) → parked(보관 순서) → 임시 engine이다. 호출부가 필요한 관계만 고른다(`windowed_and_parked`, `windows_and_pending`, `primary` 등). 창 목록의 순서는 `HashMap` 순회 순서라 고정된 의미가 없다. 창 관계가 있어도 `views`에 View가 없으면 창 순회에 나오지 않는다.
 - 한 engine은 세 관계 중 한 곳에만 있으므로 전체 순회(`all`, `sessions`)는 각 engine을 정확히 한 번 방문한다. 전역 목록 합산(`list_global`)과 슬롯 점유 계산이 같은 자원을 두 번 세지 않는 근거다. 단위 시험은 전이마다 관계 분할과 슬롯 점유를, parked·임시 관계의 순서와 1회 방문을 고정한다. 창 순회는 `MainView`를 단위 시험에서 만들 수 없어 다중 창 라우팅 E2E로 간접 확인한다.

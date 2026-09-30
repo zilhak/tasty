@@ -37,7 +37,7 @@ tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전�
 
 디자인과의 차이는 헤더·빈 줄 위 세로 여백 2px다. 4px 그리드 밖이며 대응 토큰이 없어 적용하지 않았다. 가로 들여쓰기 4px는 `space-xs`를 사용한다. 자간 `letterSpacing: 0.06em`은 `SECTION_HEADING_TRACKING_EM`(0.06)에 글자 크기를 곱해 `TextFormat::extra_letter_spacing`으로 적용한다. caption 11px에서는 0.66px이며, 사이드바의 0.07em(10px에서 0.7px)과 같은 방법이다.
 
-`draw_remote_tool_popup`은 AppState·CoreState를 받으므로 갤러리의 `(ui, &Theme)` 콜백에서 직접 호출할 수 없다. 프로필·Passkey 읽기, `FILTER_MEMORY_ID`·`FILTER_POPUP_ID`, 배치는 본체가 맡는다. 내부 그리기 함수는 `crates/tasty-ui-widgets/src/remote_tool.rs`에서 props를 받아 본체와 갤러리가 공유한다.
+`draw_remote_tool_popup`은 MainViewState·CoreState를 받으므로 갤러리의 `(ui, &Theme)` 콜백에서 직접 호출할 수 없다. 프로필·Passkey 읽기, `FILTER_MEMORY_ID`·`FILTER_POPUP_ID`, 배치는 본체가 맡는다. 내부 그리기 함수는 `crates/tasty-ui-widgets/src/remote_tool.rs`에서 props를 받아 본체와 갤러리가 공유한다.
 
 필터 예제는 닫힘과 열림 모습을 나란히 보여 준다. 열림 전이를 재현하지 않으며 목록 높이를 먼저 확보한다. 본체 팝업과 달리 갤러리 카드의 남은 높이가 작으면 같은 ScrollArea도 마지막 행을 자르기 때문이다.
 

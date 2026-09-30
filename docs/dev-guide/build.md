@@ -108,7 +108,7 @@ cargo tree --no-default-features --edges normal -i wgpu
 코드(`src/boot/locale_font.rs` 의 `family_path`)가 그 타입을 실제로 쓴다. 빼려면 폰트 DB 를
 여는 수단 자체를 바꿔야 하고 그것은 **동작 변경**이다.
 
-gui 전용 심볼(`AppState.toasts` 등)을 `#[cfg(feature = "gui")]` 게이팅 없이 쓰면 gui 빌드는 통과하지만 headless 빌드만 깨진다. 이 회귀는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡(`cargo check --workspace --no-default-features --locked`)이 `main` push 마다 자동 검출한다(문서만 바뀐 push 는 제외).
+gui 전용 심볼(`MainViewState.toasts` 등)을 `#[cfg(feature = "gui")]` 게이팅 없이 쓰면 gui 빌드는 통과하지만 headless 빌드만 깨진다. 이 회귀는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡(`cargo check --workspace --no-default-features --locked`)이 `main` push 마다 자동 검출한다(문서만 바뀐 push 는 제외).
 
 #### 공용 모듈 안의 GUI 전용 정의
 

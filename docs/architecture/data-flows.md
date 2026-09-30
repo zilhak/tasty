@@ -127,7 +127,7 @@ winit 은 사용자 이벤트를 큐가 빌 때까지 처리한 뒤에야 `about
   → tasty-settings Settings::load()
       → ~/.tasty/config.toml → toml::from_str, 없거나 실패 시 default 폴백
       → #[serde(default)] 부분 TOML 지원
-  → boot/core 초기화 시 GpuState/AppState 에 반영 (font·theme·opacity·shell·scrollback)
+  → boot/core 초기화 시 GpuState/MainViewState 에 반영 (font·theme·opacity·shell·scrollback)
 
 런타임 변경:
   → 설정 모달(SettingsView)에서 draft 편집 → Save → Settings::save() (TOML write)

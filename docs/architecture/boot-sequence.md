@@ -51,7 +51,7 @@ resumed() (src/app/event_handler.rs)
   (deadline 500ms) pending 확인. 완료/초과 시 → Ready
 
 finish_boot (Ready):
-  AppState 조립 → db/theme 실패 InfoModal → IPC 서버 시작 + 웹훅 init →
+  MainViewState 조립 → db/theme 실패 InfoModal → IPC 서버 시작 + 웹훅 init →
   register_window(MainView 등록) → system.startup_complete 발화 →
   부팅 중 지연된 AppEvent 재생 → 첫 실 UI 프레임 요청
 ```

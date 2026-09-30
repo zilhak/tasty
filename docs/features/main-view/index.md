@@ -14,11 +14,11 @@ tasty 의 주 윈도우. 워크스페이스를 호스팅하고 사이드바·탭
 
 ### 무엇을 호스팅하나
 
-`MainView` 는 UI 상태(`AppState`)를 보유하고, 창에 연결된 도메인 트리(`CoreState` — Workspace › Pane › Tab › Surface)를 표시한다. `CoreState` 는 App 이 소유하며 창 ID 로 찾아 MainView 에 넘긴다. 한 MainView 가 **여러 Workspace** 를 갖고 사이드바에서 전환한다 (계층·두 레벨 레이아웃은 [hierarchy](../../concepts/hierarchy.md)).
+`MainView` 는 UI 상태(`MainViewState`)를 보유하고, 창에 연결된 도메인 트리(`CoreState` — Workspace › Pane › Tab › Surface)를 표시한다. `CoreState` 는 App 이 소유하며 창 ID 로 찾아 MainView 에 넘긴다. 한 MainView 가 **여러 Workspace** 를 갖고 사이드바에서 전환한다 (계층·두 레벨 레이아웃은 [hierarchy](../../concepts/hierarchy.md)).
 
 ### 멀티 윈도우
 
-`create_new_window` 로 **MainView 를 여러 개** 띄울 수 있다. 각 MainView 는 독립 winit Window(1:1)이고 자기 `AppState` 를 가지며 독립 `CoreState` 하나가 연결된다. View 는 `views: HashMap<WindowId, Box<dyn View>>`, engine 은 `App.engines` 가 관리한다([multi-window](../../architecture/multi-window.md#engine-registry와-parked--pty-생존)).
+`create_new_window` 로 **MainView 를 여러 개** 띄울 수 있다. 각 MainView 는 독립 winit Window(1:1)이고 자기 `MainViewState` 를 가지며 독립 `CoreState` 하나가 연결된다. View 는 `views: HashMap<WindowId, Box<dyn View>>`, engine 은 `App.engines` 가 관리한다([multi-window](../../architecture/multi-window.md#engine-registry와-parked--pty-생존)).
 
 ### headless 와의 관계
 
@@ -54,7 +54,7 @@ tasty 의 주 윈도우. 워크스페이스를 호스팅하고 사이드바·탭
 
 ## 구현
 
-- struct: `src/view/main.rs` `MainView` (`ViewBase` + `AppState` + 입력 상태). 연결된 `CoreState` 는 `src/app/engine_registry.rs` 의 `EngineRegistry` 가 소유한다.
+- struct: `src/view/main.rs` `MainView` (`ViewBase` + `MainViewState` + 입력 상태). 연결된 `CoreState` 는 `src/app/engine_registry.rs` 의 `EngineRegistry` 가 소유한다.
 - 렌더: `src/view/main/redraw.rs` (`handle_redraw` 경로. `View::render` 는 trait 호환용 빈 구현).
 - 멀티 윈도우 생성: `src/app/window_lifecycle.rs` `create_new_window` → `views.insert`.
 - 사이드바/크롬: `src/adapters/ui/sidebar/`.

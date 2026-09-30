@@ -6,7 +6,7 @@
 [ADR-0018](../../adr/0018-explicit-capture-and-fullscreen-stage.md). 이 문서는 시스템 *동작 모델* 이고, 끝의 [기능 명세](#기능-명세--상태--인터페이스--acceptance-criteria) 절이 상태 · 인터페이스 · Acceptance Criteria 를 담는다.
 
 구현: `src/adapters/ui/fullscreen.rs`(무대 셸·닫힘 훅 처리) + `.../fullscreen/defs.rs`(정적
-테이블) + `src/fullscreen_stages.rs`(gui 무관 메타) + `AppState`(상태) + `Gpu::render`(렌더 분기).
+테이블) + `src/fullscreen_stages.rs`(gui 무관 메타) + `MainViewState`(상태) + `Gpu::render`(렌더 분기).
 
 ## 모델
 
@@ -15,7 +15,7 @@
    구성하는 것이다.
 2. **원본은 그대로** — 무대가 유지되는 동안 뒤는 가려져 있으므로 **redraw 하지 않는다.**
    나올 때 그때 화면에 보이는 것을 다시 그린다.
-3. **창당 하나** — 무대 상태는 `AppState`(= `MainView` 당 하나)의 `Option` 필드다. 한 창에
+3. **창당 하나** — 무대 상태는 `MainViewState`(= `MainView` 당 하나)의 `Option` 필드다. 한 창에
    최대 1 개, 창이 여럿이면 창마다 독립적으로 가질 수 있다.
 4. **선언된 것만** — 무대에 올릴 수 있는 것은 정적 테이블(`fullscreen::defs::all_defs()`)에
    등록된 `StageDef` 뿐이다.
@@ -28,7 +28,7 @@
 |-------|------|
 | `PopupDef` + `popup::defs::all_defs()` | `StageDef` + `fullscreen::defs::all_defs()` |
 | `PopupManager`(다중 + z-order) | `Option<StageState>`(하나뿐이라 관리자 불필요) |
-| `PopupManager::close` → `closed_queue` → `on_close` | `AppState::close_fullscreen_stage` → `stage_closed_queue` → `drain_on_close_hooks` |
+| `PopupManager::close` → `closed_queue` → `on_close` | `MainViewState::close_fullscreen_stage` → `stage_closed_queue` → `drain_on_close_hooks` |
 | `draw_popup_layer` | `draw_fullscreen_stage` |
 
 `StageDef` 필드: `meta`(`&'static StageMeta` — `id`(진입 경로가 지정하는 이름) · `title_key`(i18n), `src/fullscreen_stages.rs`) · `draw_fn` · `on_close`.
@@ -74,10 +74,10 @@
 
 ## 진입 / 종료
 
-- 진입 `AppState::open_fullscreen_stage(id)` — 테이블에 없는 id 는 `false` 로 거부. 다른 무대가
+- 진입 `MainViewState::open_fullscreen_stage(id)` — 테이블에 없는 id 는 `false` 로 거부. 다른 무대가
   올라와 있으면 **그 무대를 닫고**(훅 경유) 교체한다. 같은 id 재진입은 no-op(콘텐츠 상태가
   날아가지 않게).
-- 종료 `AppState::close_fullscreen_stage()` — **닫는 경로 전부가 지나는 유일한 지점**
+- 종료 `MainViewState::close_fullscreen_stage()` — **닫는 경로 전부가 지나는 유일한 지점**
   ([ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md) 과 같은 패턴). 닫힌 id 를
   훅 대기열에 넣고, draw 경로가 `on_close`를 정확히 1회 호출한다.
 - 훅 처리는 **무대 프레임과 일반 프레임 양쪽**에서 돈다. 무대를 나오면 다음 프레임은 일반
@@ -131,7 +131,7 @@
 창**을 OS fullscreen 으로 전환한 뒤 크롬 UI 를 숨긴다. 무대도 새 `View`(별개 OS 창)를 만들지
 않고 그 `MainView` 의 winit 창을 전환한다. 구현은 `src/view/main/fullscreen_window.rs`.
 
-`MainView`는 매 프레임 `fullscreen_stage_active()`를 읽어 OS 창 상태를 맞춘다. AppState의 열기·닫기 함수가 winit 핸들을 직접 다루지는 않는다. WebView 표시를 맞추는 `sync_webviews`와 같은 방식이며, 새 진입 경로마다 OS 전환 호출을 추가할 필요가 없다.
+`MainView`는 매 프레임 `fullscreen_stage_active()`를 읽어 OS 창 상태를 맞춘다. MainViewState의 열기·닫기 함수가 winit 핸들을 직접 다루지는 않는다. WebView 표시를 맞추는 `sync_webviews`와 같은 방식이며, 새 진입 경로마다 OS 전환 호출을 추가할 필요가 없다.
 
 호출은 `handle_redraw`의 render 뒤에 둔다. 무대가 자기 그리기에서 `StageAction::Close`를 반환할 수 있어, 그보다 앞에서 확인하면 창 복원이 다음 프레임까지 늦어진다.
 
@@ -212,7 +212,7 @@ release IPC/CLI 에 창 전환 API 를 노출하지 않는다 — 전환은 무�
 
 WebView 는 OS 네이티브 자식 뷰(macOS `WKWebView` / Windows WebView2 / Linux WebKitGTK)이고
 wgpu 렌더 표면 **위**에 있다. 그리지 않아도 화면에 남으므로 반드시 `set_visible(false)` 가
-필요하다. 무대는 `AppState::has_egui_overlay_open()` 에 참여하고, `MainView::sync_webviews` 가
+필요하다. 무대는 `MainViewState::has_egui_overlay_open()` 에 참여하고, `MainView::sync_webviews` 가
 그 값으로 reveal 을 결정한다 — popup 이 열렸을 때와 **같은 게이트**를 그대로 쓴다.
 
 ## 입력 계약
@@ -268,7 +268,7 @@ click-to-activate press 가드, OS 가장자리 리사이즈 양보, 링크 hove
 
 ### 진입 시 정리 — 확정하지 않고 폐기한다
 
-`MainView::sync_fullscreen_stage_transition`은 `handle_redraw` 시작에서 무대가 비활성에서 활성으로 바뀌었는지 확인한다. 열기 API는 AppState만 받아 View의 제스처 상태를 직접 바꿀 수 없으므로 공통 프레임 경로에서 정리한다.
+`MainView::sync_fullscreen_stage_transition`은 `handle_redraw` 시작에서 무대가 비활성에서 활성으로 바뀌었는지 확인한다. 열기 API는 MainViewState만 받아 View의 제스처 상태를 직접 바꿀 수 없으므로 공통 프레임 경로에서 정리한다.
 
 | 대상 | 처리 | 이유 |
 |------|------|------|
@@ -342,7 +342,7 @@ OS 가 직접 띄우는 UI 는 wgpu 표면 **위**에 있어 무대가 덮지 �
 ## headless
 
 무대는 화면 투영이라 headless 에 대응 도메인이 없다(`docs/identity.md` §2.2). 상태 필드와
-API 는 `#[cfg(feature = "gui")]` 안에 있고, `AppState::fullscreen_stage_active()` 는
+API 는 `#[cfg(feature = "gui")]` 안에 있고, `MainViewState::fullscreen_stage_active()` 는
 `#[cfg(any(feature = "gui", debug_assertions))]` 라 debug headless 에도 있고 거기서는 항상 `false` 를 돌려준다(release headless 에는 없다).
 
 ## 기능 명세 — 상태 · 인터페이스 · Acceptance Criteria
@@ -359,7 +359,7 @@ API 는 `#[cfg(feature = "gui")]` 안에 있고, `AppState::fullscreen_stage_act
 
 ### 내부 동작
 
-상태는 창별 `AppState.fullscreen_stage: Option<StageState>`이며 영속화하지 않는다. `fullscreen::defs::all_defs()`에 등록된 `blank`(셸 확인용)와 `notifications`(알림)를 열 수 있다.
+상태는 창별 `MainViewState.fullscreen_stage: Option<StageState>`이며 영속화하지 않는다. `fullscreen::defs::all_defs()`에 등록된 `blank`(셸 확인용)와 `notifications`(알림)를 열 수 있다.
 
 열기·닫기와 훅 처리, 렌더·입력·WebView 동작은 위 절을 따른다. 알림 목록 스크롤은 원본 팝업과 별도 상태로 관리하고 무대 종료 시 지운다. `fullscreen_stage_exit`은 네 프리셋 모두 기본값이 `escape`이며, 변경하면 새 키만 종료에 사용한다. 빈값이어도 셸 종료 버튼은 남는다. [프리셋 표](../../features/keybindings/index.md#프리셋-바인딩--네-프리셋의-기본값)를 참고한다.
 

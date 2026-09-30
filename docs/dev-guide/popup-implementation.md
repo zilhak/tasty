@@ -14,7 +14,7 @@ tasty 에는 팝업을 만드는 경로가 **둘** 있다. 아래 문서 나머�
 | 콘텐츠 렌더 | host 프로세스 egui (`draw_fn`) | **plugin 프로세스** egui → egui-mesh 로 tessellate, host 가 합성 ([ADR-0028](../adr/0028-egui-mesh-rendering.md)) |
 | 셸(scrim·border·이동·리사이즈·outside-click·Esc) | `PopupManager` | **host `PopupManager`** (동일 — 셸은 언제나 host 소유) |
 | 여는 주체 | host — `UiIntent::OpenPopup { id }` | host 가 `PluginManager::open_popup_instance(plugin_id, popup_id, context)` 로 인스턴스화. 트리거는 (a) 매니페스트 `trigger = { kind = "event", event_key }` 를 host 이벤트로 실행, 또는 (b) surface-kind capability(`convert_input_popup`) 로 host 가 직접 open ([ADR-0031](../adr/0031-file-handler-routing.md)) |
-| 상태·입력 버퍼 | host `AppState.dialogs` | **plugin 프로세스** 내 인스턴스 상태(`instance_id` 키) |
+| 상태·입력 버퍼 | host `MainViewState.dialogs` | **plugin 프로세스** 내 인스턴스 상태(`instance_id` 키) |
 | 스코프(가시성·경계) | `PopupDef.default_scope` + 여는 쪽 `OpenPopupMode::WithScope` | 매니페스트 `scope`(`window` 기본 / `surface`) + 여는 host 진입점이 대상 surface 바인딩 — 판정 함수는 host 와 같다([design/systems/popup.md](../design/systems/popup.md) §plugin popup 의 스코프) |
 
 **선택 기준 — 콘텐츠의 소유자가 누구인가:**
@@ -41,12 +41,12 @@ plugin 팝업 제작 절차는 [plugin-development](plugin-development.md) · [e
 ### 1. draw 함수 (`src/adapters/ui/...`)
 
 ```rust
-use crate::state::AppState;
+use crate::state::MainViewState;
 use crate::adapters::ui::popup::PopupAction;
 
 pub fn draw_my_popup(
     ui: &mut egui::Ui,
-    state: &mut AppState,
+    state: &mut MainViewState,
     core: &mut crate::core::CoreState,
 ) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -65,9 +65,9 @@ pub fn draw_my_popup(
 PopupDef {
     id: "my_popup",
     title_key: "my_popup.title",     // i18n 키 (t() 로 번역)
-    title_fn: None,                  // 동적 제목이면 Some(fn(&AppState, &CoreState) -> String)
+    title_fn: None,                  // 동적 제목이면 Some(fn(&MainViewState, &CoreState) -> String)
     default_size: egui::vec2(280.0, 120.0),
-    sizer: None,                     // 동적 크기면 Some(fn(&AppState, &CoreState) -> Vec2)
+    sizer: None,                     // 동적 크기면 Some(fn(&MainViewState, &CoreState) -> Vec2)
     default_scope: PopupScope::Window,  // Window/Workspace/Pane/Tab/Surface
     close_on_outside_click: false,
     headless: false,                 // true = 타이틀바·닫기버튼 없이 콘텐츠만 (컨텍스트 메뉴 스타일)
@@ -100,9 +100,9 @@ state.dispatch_intent(UiIntent::OpenPopup { id: "my_popup", mode: OpenPopupMode:
 |------|------|------|
 | `id` | `PopupId`(`&'static str`) | 고유 식별자 |
 | `title_key` | `&'static str` | i18n 키 → 타이틀바 |
-| `title_fn` | `Option<fn(&AppState, &CoreState) -> String>` | 동적 제목. 설정 시 `title_key` 대신 매 프레임 호출. 길이 걱정 없이 원본 문자열 반환 — 폭 초과 시 elide 는 `draw.rs`가 공통 처리(아래 "타이틀 길이 처리" 참고) |
+| `title_fn` | `Option<fn(&MainViewState, &CoreState) -> String>` | 동적 제목. 설정 시 `title_key` 대신 매 프레임 호출. 길이 걱정 없이 원본 문자열 반환 — 폭 초과 시 elide 는 `draw.rs`가 공통 처리(아래 "타이틀 길이 처리" 참고) |
 | `default_size` | `egui::Vec2` | 기본 크기 (unzoomed baseline) |
-| `sizer` | `Option<fn(&AppState, &CoreState) -> Vec2>` | 동적 크기. **매 프레임 호출된다** — 아래 "sizer 는 매 프레임 돈다" 참조. **`ui_scale_factor()` 곱 금지** — sizing 토큰에 host UI zoom 이 이미 baked. 추가 곱은 이중 곱셈으로 medium/large 에서 layout 붕괴. **사용자가 직접 리사이즈한 팝업(`resizable`)에서는 리사이즈 이후 sizer 가 크기를 덮어쓰지 않는다**(`size_user_overridden` 가드 — popup close 시 리셋되어 다음 open 에 복원) |
+| `sizer` | `Option<fn(&MainViewState, &CoreState) -> Vec2>` | 동적 크기. **매 프레임 호출된다** — 아래 "sizer 는 매 프레임 돈다" 참조. **`ui_scale_factor()` 곱 금지** — sizing 토큰에 host UI zoom 이 이미 baked. 추가 곱은 이중 곱셈으로 medium/large 에서 layout 붕괴. **사용자가 직접 리사이즈한 팝업(`resizable`)에서는 리사이즈 이후 sizer 가 크기를 덮어쓰지 않는다**(`size_user_overridden` 가드 — popup close 시 리셋되어 다음 open 에 복원) |
 | `default_scope` | `PopupScope` | 가시성/경계 범위. `Surface` 범위면 경계가 그 칸 **안쪽 8pt** 이고 scrim 도 그 칸만 덮는다(아래 "scrim 의 범위") |
 | `close_on_outside_click` | `bool` | 바깥 클릭 시 닫힘 |
 | `headless` | `bool` | 타이틀바 없이 콘텐츠만 |
@@ -111,8 +111,8 @@ state.dispatch_intent(UiIntent::OpenPopup { id: "my_popup", mode: OpenPopupMode:
 | `resizable` | `bool` | true 면 테두리 8방향 드래그로 크기 조절(min_size·scope 경계 클램프, 엣지별 리사이즈 커서) |
 | `min_size` | `Option<egui::Vec2>` | 리사이즈 최소 크기. `None`이면 `default_size`를 최소로 사용 |
 | `fullscreen_stage` | `Option<StageId>` | `Some(id)` 면 타이틀바 X 왼쪽에 전체화면 버튼이 붙고, 누르면 그 [무대](../design/systems/fullscreen-stage.md)가 뜬다. 노출 여부와 대상이 한 필드라 "버튼은 있는데 갈 곳이 없는" 상태가 생기지 않는다. 아래 "전체화면 버튼" 참고 |
-| `draw_fn` | `fn(&mut Ui, &mut AppState, &mut CoreState) -> PopupAction` | 매 프레임 렌더 |
-| `on_close` | `Option<fn(&egui::Context, &mut AppState, &mut CoreState)>` | 닫힘 뒷정리 훅. `PopupManager::close()`(6개 close 경로 전부가 거치는 유일한 지점)를 통해 어떤 경로로 닫히든 정확히 한 번 실행(아래 "닫힘 정리" 참고) |
+| `draw_fn` | `fn(&mut Ui, &mut MainViewState, &mut CoreState) -> PopupAction` | 매 프레임 렌더 |
+| `on_close` | `Option<fn(&egui::Context, &mut MainViewState, &mut CoreState)>` | 닫힘 뒷정리 훅. `PopupManager::close()`(6개 close 경로 전부가 거치는 유일한 지점)를 통해 어떤 경로로 닫히든 정확히 한 번 실행(아래 "닫힘 정리" 참고) |
 
 ### sizer 는 매 프레임 돈다 (열 때 한 번이 아니다)
 
@@ -209,7 +209,7 @@ scrim 이 덮는 rect 는 그 팝업의 `PopupScope` rect 다 — `Surface` 범�
 
 ## 전체화면 버튼
 
-`fullscreen_stage: Some(<stage id>)` 하나로 끝난다 — rect 계산·렌더·hit-test·커서·tooltip 은 `PopupManager` 가 공통 처리하고, 클릭은 `popup::frame::draw_popup_layer` 가 `AppState::open_fullscreen_stage` 로 넘긴다.
+`fullscreen_stage: Some(<stage id>)` 하나로 끝난다 — rect 계산·렌더·hit-test·커서·tooltip 은 `PopupManager` 가 공통 처리하고, 클릭은 `popup::frame::draw_popup_layer` 가 `MainViewState::open_fullscreen_stage` 로 넘긴다.
 
 - **대상 무대는 먼저 존재해야 한다** — `fullscreen::defs::all_defs()` 에 같은 id 의 `StageDef` 를 등록한다(방법: [fullscreen-stage.md](../design/systems/fullscreen-stage.md)). 두 테이블의 정합은 단위 테스트가 강제한다(`popup_declared_stages_exist_and_are_not_headless`).
 - **headless popup 에는 달 수 없다** — 타이틀바가 없어 버튼을 놓을 자리가 없다. 값이 `Some` 이어도 그려지지 않고, 같은 테스트가 그 조합을 금지한다.
@@ -274,7 +274,7 @@ if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) { /* apply
 
 호스트는 플러그인의 이름이나 요청 목적을 하드코딩하지 않는다. 로컬·원격 파일 조회는 기존 피커가 처리한다. 새 팝업에 같은 패턴을 적용할 때에는 중복 요청의 거부·대기 정책과 확정/취소 양쪽의 결과 전송을 함께 확인한다.
 
-부모 팝업에서 열었다면 `owner_popup_instance`를 전달한다. 플러그인 팝업 닫힘은 `AppState.plugin_popup_closes` 큐를 거쳐 한 곳에서 처리해야 한다. 부모 종료로 자식을 취소한 뒤에는 자식의 부모 링크를 끊는다. 이미 확정된 결과는 취소로 덮지 않고 링크도 남겨, 결과 전송 시 부모가 없으면 경고를 기록한다. 경고 여부와 관계없이 결과 이벤트는 전송한다. 플러그인이 팝업 밖에서 결과를 기다릴 수도 있기 때문이다.
+부모 팝업에서 열었다면 `owner_popup_instance`를 전달한다. 플러그인 팝업 닫힘은 `MainViewState.plugin_popup_closes` 큐를 거쳐 한 곳에서 처리해야 한다. 부모 종료로 자식을 취소한 뒤에는 자식의 부모 링크를 끊는다. 이미 확정된 결과는 취소로 덮지 않고 링크도 남겨, 결과 전송 시 부모가 없으면 경고를 기록한다. 경고 여부와 관계없이 결과 이벤트는 전송한다. 플러그인이 팝업 밖에서 결과를 기다릴 수도 있기 때문이다.
 
 부모를 신고하지 않은 요청은 단독 팝업이다. 현재 host끼리의 Esc 중재는 공통 처리되지 않으며, 부모·자식 스택에 참여하는 파일 피커만 Esc 소유권을 확인한다.
 

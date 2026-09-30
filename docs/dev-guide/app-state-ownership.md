@@ -1,20 +1,16 @@
-# AppState 필드 소유권
+# MainViewState 필드 소유권
 
-`AppState`(`src/state.rs`)는 창 하나의 상태다. 필드를 다음 세 종류로 나누고,
-수명·값을 쓰고 읽는 주체·헤드리스 빌드 포함 여부를 기록한다.
+`MainViewState`(`src/state/main.rs`)는 창 하나의 navigation·표시 상태·실행 큐를 가진다.
+Headless는 별도 `CommandContext`(`src/state/command.rs`)를 생성한다. 이 타입은 생략된 명령 대상을 해소하는 기본값과 공통 실행 큐·서비스만 가지며, GUI 상태 객체를 만들지 않는다.
+공통 App adapter 코드의 `RequestContext`는 빌드에 맞는 구체 타입을 재노출하는 이름이다. Core는 이 타입을 참조하지 않는다.
 
-- **도메인 사실** — 에이전트가 IPC 로 묻고 바꾸는 구조의 일부. 창이 없어도 뜻이 있다.
-- **사용자 view 상태** — 로컬 사용자가 지금 무엇을 보고 어디를 누르는지. 포커스·선택·
-  popup 입력·hover 가 여기다. 불가침 원칙 1·3(`docs/identity.md`)이 지키는 대상이다.
-- **실행 자원** — 다른 소유자의 핸들 사본이나, 한 계층이 넣고 다른 계층이 비우는 큐.
+GUI의 `navigation`은 사용자 선택 원본이고, headless의 같은 값 타입은 호환 명령의 대상 해소 문맥이다.
+Workspace·Pane·Tab에는 사용자 선택이 없다. 명령은 해소된 ID로 실행하고 Core 결과의 ID를 App이 받아 선택 삭제 보정 또는 사용자 continuation을 적용한다.
+IPC·저장·attach의 active/focused 값은 명시 read-only presentation으로 합성한다([모델·View 분리](model-view-split.md)).
 
-창의 engine(`CoreState`)은 AppState와 MainView 어디에도 없다. GUI에서는 `App.engines`가 모든 engine을 소유하고,
+창의 engine(`CoreState`)은 MainViewState와 MainView 어디에도 없다. GUI에서는 `App.engines`가 engine을 소유하고,
 App이 창 ID로 찾아 View에 넘긴다([engine registry](../architecture/multi-window.md#engine-registry와-parked--pty-생존)).
-
-소유권을 struct 두 개로 가르지 않고 **컴파일 경계와 모듈 경계**로 가른 결정과 그 근거는
-[ADR-0002](../adr/0002-domain-execution-and-ports.md). 이 결정은 [ADR-0054](../adr/0054-app-core-view-layers-and-state-ownership.md)가 대체했으며 이행 중이다.
-"어떤 정의를 gui 전용으로 가르는가" 의 판정 규칙 자체는 [헤드리스 정의 경계](headless-build-boundaries.md)
-가 정본이고, 이 문서는 그 규칙을 `AppState` 에 적용한 결과표다.
+구조와 실행 자원의 나머지 분리는 [ADR-0054](../adr/0054-app-core-view-layers-and-state-ownership.md)를 따른다.
 
 ## 열 읽는 법
 
@@ -57,9 +53,10 @@ App이 창 ID로 찾아 View에 넘긴다([engine registry](../architecture/mult
 
 | 필드 | 분류 | 수명 | 설정하는 쪽 → 비우는 쪽 | headless |
 |---|---|---|---|---|
-| `active_workspace` | 사용자 view 상태 | 세션 | 사용자 전환 → — | 읽힘 (대상 생략 시 기본값) |
+| `navigation` | 사용자 workspace/pane/tab/surface ID 선택·category 접힘·split 호환 hint | 세션 | 사용자 intent·구조 결과의 삭제 보정 → 표시·저장 projection | CommandContext는 생략 대상 해소 기본값으로 별도 소유 |
+| `tab_bar_scroll` | pane ID별 사용자 탭바 스크롤 | 세션 | 사용자 입력·표시 보정 → pane 삭제 시 회수 | 없음 |
 | `category_last_active` | 사용자 view 상태 | 세션 | 사용자 전환 → — | debug 헤드리스만 읽힘(release 에는 필드 없음) |
-| `settings_open_requested` · `plugins_open` | 사용자 view 상태 | 요청 | 사이드바 버튼 → 다음 프레임 `dispatch_pending_modal_opens` | 앞은 debug 헤드리스만 읽힘(`ui.state`, release 에는 필드 없음), 뒤는 없음 |
+| `settings_open_requested` · `plugins_open` | 사용자 view 상태 | 요청 | 사이드바 버튼 → 다음 프레임 `dispatch_pending_modal_opens` | 없음 |
 | `sidebar_width` · `sidebar_visible` · `sidebar_collapsed` | 사용자 view 상태 | 세션 | 설정·사용자 토글 → — | 없음 |
 | `pending_resize_cursor` · `switch_overlay` · `modifier_hint` · `tutorial` | 사용자 view 상태 | 프레임·열림 | GUI 입력 → GUI | 없음 |
 | `dialogs` | 사용자 view 상태 | 열림·요청 | 위 절 | 없음 |
@@ -71,9 +68,9 @@ App이 창 ID로 찾아 View에 넘긴다([engine registry](../architecture/mult
 | `command_palette` | 사용자 view 상태 | 열림 | 팔레트 → 팔레트 | 없음 |
 | `recent_files` | 도메인 사실 | 영속 | 디스크 로드·파일 열기 → — | 읽힘 |
 | `popup_hovered` · `banner_hovered` · `modifier_hint_hovered` · `resize_edge_widget_hovered` | 사용자 view 상태 | 프레임 | egui 패스 → 입력 라우팅 | 없음 |
-| `plugin_popup_open` | 사용자 view 상태 | 프레임 | plugin popup 그리기 → 입력 라우팅 | debug 헤드리스만 읽힘(`ui.state`, release 에는 필드 없음) |
+| `plugin_popup_open` | 사용자 view 상태 | 프레임 | plugin popup 그리기 → 입력 라우팅 | 없음 |
 | `popup_layers` · `plugin_popup_layers` · `host_popup_hittest` · `popup_escape_owner` · `plugin_popup_hittest` · `banner_layer` · `modifier_hint_layer` | 사용자 view 상태 | 프레임 | egui 패스 → 입력 라우팅 | 없음 |
-| `preset_store` · `memory` | 실행 자원 (Core 소유 Arc 의 사본) | 세션 | Core → — | `memory` 는 읽힘, `preset_store` 는 ③(사본을 받지만 읽는 자가 GUI 뿐 — `expect`) |
+| `preset_store` · `memory` | 실행 자원 (Core 소유 Arc 의 사본) | 세션 | Core → — | `memory`는 읽힘, `preset_store`는 없음 |
 | `pending_lifecycle_events` | 실행 자원 (큐) | 요청 | close cascade → 메인 루프가 plugin 에 통지 | 읽힘 |
 | `pending_host_events` | 실행 자원 (큐) | 요청 | `enqueue_host_event` → Event Bus 이벤트 발행 | 읽힘 (headless drain) |
 | `last_focused_surface_id` · `last_active_workspace_id` · `last_focused_tab` · `last_tab_locations` | 실행 자원 (변화 감지 기준값) | 세션 | GUI tick 의 감지 → 같은 자리 | 없음 |
@@ -95,18 +92,18 @@ App이 창 ID로 찾아 View에 넘긴다([engine registry](../architecture/mult
 | `webview_user_navigations` | 실행 자원 (사용자 행동 근거) | 요청 | `sync_webviews` → 한 번 쓰이거나 webview 소멸 | 없음 |
 | `pending_intents` | 실행 자원 (큐) | 요청 | GUI 의 `dispatch_intent` · IPC 진입점이 옮기는 요청 출구 → `dispatch_pending_intents` / headless drain | 읽힘 |
 
-활성 모달의 ID·종류는 AppState에 없다. 모달은 앱 전체에 최대 1개라 `ViewRegistry`(`src/view/mod.rs`)가 유일한 원본으로 갖고, `App::open_modal`이 세우고 `App::close_active_modal`과 macOS의 `App::handle_minimize`가 비운다. 이 세 곳 밖에서는 바꾸지 않는다. debug `ui.state`의 `modal_open`·`active_modal_id`·`active_modal_kind`는 handler가 모달 없음으로 채운 뒤 GUI App이 응답을 보내기 전에 이 원본으로 덮어쓴다. 그래서 창과 parked 상태 어느 쪽이 응답해도 같은 값이고, 헤드리스는 늘 모달 없음이다.
+활성 모달의 ID·종류는 MainViewState에 없다. 모달은 앱 전체에 최대 1개라 `ViewRegistry`(`src/view/mod.rs`)가 유일한 원본으로 갖고, `App::open_modal`이 세우고 `App::close_active_modal`과 macOS의 `App::handle_minimize`가 비운다. 이 세 곳 밖에서는 바꾸지 않는다. debug `ui.state`의 `modal_open`·`active_modal_id`·`active_modal_kind`는 handler가 모달 없음으로 채운 뒤 GUI App이 응답을 보내기 전에 이 원본으로 덮어쓴다. 그래서 창과 parked 상태 어느 쪽이 응답해도 같은 값이고, 헤드리스는 늘 모달 없음이다.
 
 ## 모듈 단위 예외 없이 가른다
 
-AppState를 별도 도메인·GUI struct로 복제하지 않는다. DialogState처럼 생산자와 소비자가 GUI뿐인 상태는 모듈과 필드 모두 gui 조건으로 제외한다. 실제 승인 레코드는 Core에 있고 popup의 pending ID 목록은 화면 상태다. 창 상태가 필요한 진입점은 AppState를 소유할 수 있지만 도메인 실행과 IPC engine 핸들러에는 좁은 port만 전달한다. CoreState에도 사용자 포커스·선택·히스토리가 있으므로 AppState 제거만으로 사용자 상태 보호가 완성되지는 않는다. intent origin 검사를 함께 유지한다.
+MainViewState와 CommandContext는 별도 struct다. 공통 알고리즘과 값 타입은 재사용하되 GUI popup·hover·렌더 자료는 headless에 만들지 않는다. 실제 승인 레코드는 Core에 있고 popup의 pending ID 목록은 View 상태다. intent origin 검사는 사용자 선택·닫은 항목 기록 보호를 위해 계속 유지한다.
 
-## `state` 가 아니라 `core` 에 두는 것
+## Core 결과와 공통 App adapter
 
 구조 변경은 도메인 결과로 반환하며 전송하지 않을 JSON-RPC 응답을 만들었다 다시 해석하지 않는다. 닫힌 surface 정리는 공용 `reclaim_closed_surfaces`가, MoveSurface 결과의 close 변환은 공용 생성자가 맡는다.
-닫힌 surface의 도메인 자원(스크롤백 파일·Terminal·명령/observer/hook 인덱스·shell hint·waker·surface memory scope·attach 점유·mirror 부속 맵(busy·cwd·mesh frame)·attention 레코드(로컬 포함))과 제거된 workspace의 memory scope는 `CoreState::cleanup_surface_traced`와 `CoreState::purge_workspace_memory_scope`(`src/core/state/surface_cleanup.rs`)가 창 상태 없이 회수한다. AppState에는 화면 cache 해제(`AppState::release_surface_views`)와 lifecycle·host 이벤트 적재만 남는다. 자원 정리를 Core::apply에 넣어 AppState 의존을 추가하지 않는다. must_use만으로 이벤트를 분해한 뒤 정리를 빠뜨리는 문제를 막을 수는 없다.
+닫힌 surface의 도메인 자원(스크롤백 파일·Terminal·명령/observer/hook 인덱스·shell hint·waker·surface memory scope·attach 점유·mirror 부속 맵(busy·cwd·mesh frame)·attention 레코드(로컬 포함))과 제거된 workspace의 memory scope는 `CoreState::cleanup_surface_traced`와 `CoreState::purge_workspace_memory_scope`(`src/core/state/surface_cleanup.rs`)가 창 상태 없이 회수한다. MainViewState에는 화면 cache 해제(`MainViewState::release_surface_views`)와 lifecycle·host 이벤트 적재만 남는다. 자원 정리를 Core::apply에 넣어 MainViewState 의존을 추가하지 않는다. must_use만으로 이벤트를 분해한 뒤 정리를 빠뜨리는 문제를 막을 수는 없다.
 
-`core::structural_exec`가 split·tab 생성/이동/닫기·pane/surface 닫기의 검증과 적용을 맡는다.
+`app::structural_exec`가 split·tab 생성/이동/닫기·pane/surface 닫기의 검증과 적용을 맡는다.
 IPC와 원격 forward는 같은 실행 함수를 쓰며 `Rejected`, `MissingEvent`, `Apply` 실패를 각 전송 형식으로 변환한다.
 정수 범위 같은 공용 파라미터 판정은 core::param_bag에 둔다.
 권한·점유·자기 대상 제한은 진입점에 남고 anchor 해석·snapshot·즉시 tap 억제·delta 계산은 forward에 남는다.
@@ -114,15 +111,14 @@ IPC와 원격 forward는 같은 실행 함수를 쓰며 `Rejected`, `MissingEven
 변환한 surface의 mesh 정리는 매니저를 소유한 호출자에게 결과값으로 알린다.
 두 경로의 실패 문구 일치와 기존 외부 문구 보존은 서로 다른 검증이다.
 
-핸들러는 사용하는 상태만 인자로 받는다. 쓰지 않는 `_state: AppState` 인자를 공통 호출 모양에 맞추려고 남기지 않는다. memory와 대상 nickname 해석은 Core의 공유 핸들에서 읽고, 창과 무관한 출력 조회는 CoreState에서 수행한다. GUI·debug에서 창 상태 자체를 조작하는 핸들러는 창 전용 라우터에 둔다.
+핸들러는 사용하는 상태만 인자로 받는다. 쓰지 않는 `_state: MainViewState` 인자를 공통 호출 모양에 맞추려고 남기지 않는다. memory와 대상 nickname 해석은 Core의 공유 핸들에서 읽고, 창과 무관한 출력 조회는 CoreState에서 수행한다. GUI·debug에서 창 상태 자체를 조작하는 핸들러는 창 전용 라우터에 둔다.
 
 IPC engine 핸들러는 `IpcWindow`와 요청별 `IntentOutbox`로 필요한 창 연산과 intent 생성을 수행한다.
 진입점이 요청 완료 시 outbox를 창 큐 끝에 옮기며 게이트가 만든 intent가 핸들러 intent보다 앞선다.
 `EntryWindow`는 입구 본문에 창 전체를 꺼내는 접근자를 제공하지 않는다.
 창·debug 라우터는 별도 경로이며 각 창 메서드의 caller 정책을 선언·검증한다.
 포트가 상속한 활성 워크스페이스 변경까지 막는 것은 아니므로 origin과 대상 정책을 별도로 유지한다.
-헤드리스 pump는 응답 전 intent 적용이 AppState를 요구하는 동안 이를 소유한다.
-drain이 좁은 port로 실행 가능해질 때만 pump 인자를 줄인다.
+헤드리스 pump는 CommandContext를 소유하고 같은 App 실행 adapter로 결과를 적용한다. GUI 전용 요청의 기존 미지원 오류를 유지한다.
 
 ### 아직 남아 있는 동작 차이
 
@@ -148,7 +144,7 @@ cargo check -p tasty --no-default-features --all-targets
 안 쓴다. 그래서 이 칸의 변화는 경고 수로만 보인다. `②` 를 `cfg(feature =
 "gui")` 로 좁히면 뒤 검사가 그 정의를 부르는 시험에서 실패한다.
 
-`없음` 칸은 필드 선언 앞의 `#[cfg(feature = "gui")]` 로 읽는다.
+`없음` 칸은 MainViewState에만 있는 필드 또는 GUI 조건으로 제외되는 정의다.
 
 ## 관련
 

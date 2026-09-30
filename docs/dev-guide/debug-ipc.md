@@ -12,7 +12,7 @@
 JSON-RPC 라우터는 공통 `check_request`의 권한·cap·rate 검사와 사용량 집계를 마친 요청만 `src/adapters/ipc/handler.rs::handle_checked_request`에 넘기고, 핸들러 탐색은 그 안의 `dispatch_routed` 가 한다:
 
 ```rust
-// window: &mut EntryWindow — handle_checked_request 가 쥔 AppState 를 감싼 것
+// window: &mut EntryWindow — handle_checked_request 가 쥔 MainViewState 를 감싼 것
 let mut out = IntentOutbox::default();   // 요청별 intent 수집
 let routed = route_engine_handler(core, window.port(), &mut out, engine, caller, request, id.clone());
 window.port().enqueue_intents(out);      // 수집한 intent를 창 큐에 추가
@@ -37,13 +37,13 @@ cfg 를 선언이 아니라 파일 머리의 `#![cfg(debug_assertions)]` 로 건
 
 `route_debug_handler` 함수 자체가 `#[cfg(debug_assertions)]` 라 release 바이너리엔 분기 한 줄과 함수가 모두 사라진다. release 에서 debug 메서드를 부르면 `-32601`(`method_not_found`)로 떨어진다 — 위 블록 끝의 `unrouted_for_external_caller` 는 **등록된 이름**이면 `-32017`(이 빌드 조합에 dispatch 팔이 없음)을, plugin 전용이면 `-32016` 을 답하지만, debug 메서드 표(`DEBUG_METHODS`)가 release 에서는 빈 표라 debug 메서드는 등록된 이름이 아니다. 그래서 모르는 이름과 같은 답이 된다(release 헤드리스 인스턴스에서 `debug.info` · `debug.popup.open` · `surface.raw_key` 가 전부 `-32601`, 2026-09-22 실측). `-32017` 은 release 에도 등록된 이름이 이 조합에서 빠진 경우(gui 전용 메서드를 헤드리스에 부른 것 등)의 답이다.
 
-### `AppState` 하나로는 부족한 debug 메서드는 App-level 에서 분기
+### `MainViewState` 하나로는 부족한 debug 메서드는 App-level 에서 분기
 
-`debug.event_bus.*` / `debug.extension.invoke_hook` / `debug.popup.*` 는 `route_debug_handler` 를 거치지 않는다 — `AppState` 가 `PluginManager` 를 들고 있지 않기 때문이다. 이들은 `App` 레벨의 `ipc_step_debug`(`src/app/ipc/debug_methods.rs`)에서 `plugin_manager` 를 직접 호출한다.
+`debug.event_bus.*` / `debug.extension.invoke_hook` / `debug.popup.*` 는 `route_debug_handler` 를 거치지 않는다 — `MainViewState` 가 `PluginManager` 를 들고 있지 않기 때문이다. 이들은 `App` 레벨의 `ipc_step_debug`(`src/app/ipc/debug_methods.rs`)에서 `plugin_manager` 를 직접 호출한다.
 
-`debug.fullscreen.*` 도 같은 곳에서 처리되지만 이유는 또 다르다 — **창을 골라야 하기 때문**이다. `route_debug_handler` 는 `AppState`(=`MainView` 하나)만 받아 다른 창을 볼 수 없는데, 전체화면 무대는 창 단위 상태라([fullscreen-stage](../design/systems/fullscreen-stage.md)) `window_id` 로 대상을 지목하지 못하면 "창 2 개에 각각 무대를 띄운 뒤 한쪽만 닫는다" 같은 시나리오 자체가 구동 불가다. `self.view.views` 순회는 App 레벨에서만 가능하다. `window_id` 해석은 `ui.screenshot` 과 동형 — 지정하면 그 창, 미지정이고 창이 하나면 그 창, 여럿이면 `-32000` 에러다. 포커스된 창으로 조용히 폴백하지 않는다([focus](../design/policies/focus.md)).
+`debug.fullscreen.*` 도 같은 곳에서 처리되지만 이유는 또 다르다 — **창을 골라야 하기 때문**이다. `route_debug_handler` 는 `MainViewState`(=`MainView` 하나)만 받아 다른 창을 볼 수 없는데, 전체화면 무대는 창 단위 상태라([fullscreen-stage](../design/systems/fullscreen-stage.md)) `window_id` 로 대상을 지목하지 못하면 "창 2 개에 각각 무대를 띄운 뒤 한쪽만 닫는다" 같은 시나리오 자체가 구동 불가다. `self.view.views` 순회는 App 레벨에서만 가능하다. `window_id` 해석은 `ui.screenshot` 과 동형 — 지정하면 그 창, 미지정이고 창이 하나면 그 창, 여럿이면 `-32000` 에러다. 포커스된 창으로 조용히 폴백하지 않는다([focus](../design/policies/focus.md)).
 
-`debug.settings.open` 도 같은 `ipc_step_debug` 에서 처리되지만 이유는 또 다르다 — 설정 모달은 `AppEvent::OpenSettings`(event-loop proxy → `open_settings_modal`) 로만 열리는 **별도 winit 윈도우**라, `AppState` 핸들러가 아니라 `App` 의 `self.view.proxy` 가 필요하다(`window.create` 와 동일 패턴). 사용자 단축키/버튼 클릭과 같은 진입점을 그대로 호출하므로, 모달 생성 이후에는 일반 동작과 같은 경로를 따른다. `tab` 인자는 `App.pending_settings_tab`(debug 전용 필드)에 1회성으로 실려 `open_settings_modal` 이 소비한다.
+`debug.settings.open` 도 같은 `ipc_step_debug` 에서 처리되지만 이유는 또 다르다 — 설정 모달은 `AppEvent::OpenSettings`(event-loop proxy → `open_settings_modal`) 로만 열리는 **별도 winit 윈도우**라, `MainViewState` 핸들러가 아니라 `App` 의 `self.view.proxy` 가 필요하다(`window.create` 와 동일 패턴). 사용자 단축키/버튼 클릭과 같은 진입점을 그대로 호출하므로, 모달 생성 이후에는 일반 동작과 같은 경로를 따른다. `tab` 인자는 `App.pending_settings_tab`(debug 전용 필드)에 1회성으로 실려 `open_settings_modal` 이 소비한다.
 
 ## 메서드 목록
 

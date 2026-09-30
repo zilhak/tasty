@@ -98,7 +98,7 @@ grep -rn 'crate::' src/gfx/renderer.rs src/gfx/renderer/ | grep -v '^[^:]*:[0-9]
 반대로 `super::…`나 `use crate as c` 뒤의 `c::…`는 이 검색에 잡히지 않는다.
 검색 결과가 적다는 것만으로 의존 규칙 준수를 확정하지 않는다.
 
-`src/gfx/gpu*` 는 이 규칙의 대상이 아니다 — 그쪽은 `AppState`·`CoreState`·
+`src/gfx/gpu*` 는 이 규칙의 대상이 아니다 — 그쪽은 `MainViewState`·`CoreState`·
 `PluginManager` 를 받는 호스트 접착층이고, 본체 의존이 거짓이 아니라 사실이다. 다만
 렌더 입력 타입 둘(`tasty_selection::*` · `tasty_terminal_link::LinkHighlight`)은
 호출 양쪽에서 뜻이 하나로 남도록 그쪽 시그니처도 같은 이름을 쓴다.
