@@ -39,6 +39,8 @@ pub enum AgentSource {
     Ipc,
     Plugin(String),
     Cli,
+    /// 원격 client가 forward한 구조 요청. 원격 쪽 사용자 조작이어도 이 호스트에서는 에이전트 요청이다.
+    Remote,
 }
 
 impl IntentOrigin {
