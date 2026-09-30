@@ -37,7 +37,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("session", 3),
     ("settings", 7),
     // 입력 재현 메서드는 release에서 제외된 debug 표에 있어 이 개수에 포함되지 않는다(ADR-0012).
-    ("surface", 33),
+    ("surface", 34),
     ("system", 3),
     ("tab", 4),
     ("telemetry", 12),
