@@ -194,7 +194,7 @@ impl CoreState {
     }
 
     /// 사라진 mirror의 레코드를 버린다. 사용자 확인이 아니므로 서버로 해제를 보내지 않는다.
-    #[cfg(any(feature = "gui", test))]
+    /// 닫기 정리가 두 빌드에서 부르므로 gui 조건을 두지 않는다.
     pub(crate) fn forget_mirror_surface_attention(&mut self, surface_id: u32) {
         self.attention.clear(surface_id);
     }

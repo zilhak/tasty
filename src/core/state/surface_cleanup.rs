@@ -28,6 +28,18 @@ impl CoreState {
         sums.memory_purge += t.elapsed();
         // 닫힌 surface 점유만 지운다. 다른 surface가 남은 workspace 점유는 유지한다.
         self.attach.forget_closed_surface(surface_id);
+        self.forget_mirror_surface_extras(surface_id);
+    }
+
+    /// attach client가 mirror surface에 채운 부속 맵 항목을 지운다. mirror가 아니면 항목이 없다.
+    /// client 쪽 정리는 workspace가 이미 없으면 건너뛰므로 사용자 닫기 경로도 여기서 회수한다.
+    /// headless에는 attach client가 없어 맵이 비어 있다.
+    fn forget_mirror_surface_extras(&mut self, surface_id: u32) {
+        self.mirror_busy_surfaces.remove(&surface_id);
+        self.mirror_surface_cwd.remove(&surface_id);
+        self.forget_mirror_surface_attention(surface_id);
+        #[cfg(feature = "gui")]
+        self.attach_mesh_frames.remove(surface_id);
     }
 
     fn delete_scrollback_persist(persist_id: Option<String>) {
@@ -97,5 +109,52 @@ impl CoreState {
             &crate::core::MEMORY_POISONED,
         );
         f(&mut *guard)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// 사용자가 mirror workspace를 닫으면 attach client가 채운 부속 맵도 비워야 한다.
+    /// attach client의 정리는 workspace를 찾지 못하면 건너뛰므로 닫기 정리가 맡는다.
+    #[test]
+    fn user_close_of_a_mirror_workspace_forgets_the_mirror_maps() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let event = crate::core::apply_create_workspace_inner(
+            &mut engine,
+            crate::core::WorkspaceCreationParams::terminal(),
+        )
+        .expect("workspace 생성");
+        let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
+            panic!("expected WorkspaceCreated");
+        };
+        engine.workspaces[index].mirror = true;
+        let sid = engine.workspaces[index]
+            .all_surface_ids()
+            .first()
+            .copied()
+            .expect("surface");
+
+        engine.set_mirror_surface_busy(sid, true);
+        engine.set_mirror_surface_cwd(sid, Some("/srv/remote".to_string()));
+        engine.set_mirror_surface_attention(sid, Some(crate::core::AttentionKind::NeedsInput));
+        #[cfg(feature = "gui")]
+        engine
+            .attach_mesh_frames
+            .update(sid, vec![1, 2, 3], 1, 1, true);
+
+        assert!(state.close_workspace_at(
+            &mut engine,
+            index,
+            crate::state::WorkspaceCloseOrigin::User
+        ));
+
+        assert!(!engine.mirror_busy_surfaces.contains(&sid), "busy 남음");
+        assert!(!engine.mirror_surface_cwd.contains_key(&sid), "cwd 남음");
+        assert!(engine.attention_kind(sid).is_none(), "attention 남음");
+        #[cfg(feature = "gui")]
+        assert!(
+            engine.attach_mesh_frames.get(sid).is_none(),
+            "mesh frame 남음"
+        );
     }
 }
