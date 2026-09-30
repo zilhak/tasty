@@ -47,7 +47,9 @@ wgpu 24 기준으로 호출별 상한은 다음과 같다:
 ```rust
 renderer.begin_frame();                       // ① accumulator 클리어
 for surface in surfaces {                      // ② 각 surface 인스턴스를 Vec 에 push
-    renderer.append_terminal_viewport(term, queue, &viewport, ansi, ...);
+    terminal.with_view(&display_viewport, |content| {
+        renderer.append_terminal_viewport(&content, queue, &viewport, ansi, ...);
+    });
 }
 renderer.flush_buffers(device, queue);         // ③ 누적분을 버퍼에 1회 write
 // 단일 render pass 안에서:

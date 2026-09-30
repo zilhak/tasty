@@ -24,6 +24,7 @@ use overlay::composite_over;
 
 /// Search match highlights to pass into the renderer.
 pub struct SearchHighlights<'a> {
+    pub epoch: tasty_terminal::ContentEpoch,
     pub matches: &'a [tasty_terminal::search::SearchMatch],
     pub active_index: usize,
     pub inactive_bg: GpuRgba,
@@ -151,7 +152,7 @@ impl CellRenderer {
     #[allow(clippy::too_many_arguments)]
     pub fn append_terminal_viewport(
         &mut self,
-        terminal: &tasty_terminal::Terminal,
+        view: &tasty_terminal::TerminalReadView<'_>,
         queue: &wgpu::Queue,
         viewport: &PhysicalRect,
         ansi: &[GpuRgb; 16],
@@ -172,7 +173,13 @@ impl CellRenderer {
         self.current_viewport_offset = [viewport.x.value(), viewport.y.value()];
 
         // viewport 전체를 일관되게 읽도록 터미널 상태 잠금을 한 번 잡는다.
-        terminal.with_render_view(|view| {
+        {
+            let epoch = view.cut().epoch;
+            let selection =
+                selection.filter(|(s, _)| s.start.epoch == epoch && s.end.epoch == epoch);
+            let vi_cursor = vi_cursor.filter(|(p, _)| p.epoch == epoch);
+            let link = link.filter(|l| l.epoch == epoch);
+            let search = search.filter(|s| s.epoch == epoch);
             // reverse_screen_enabled일 때만 기본 전경·배경을 바꾼다.
             // 꺼져 있어도 터미널 모드 자체는 유지해 조회 결과는 바꾸지 않는다.
             let (default_bg, default_fg) = if reverse_screen_enabled && view.screen_reverse() {
@@ -203,7 +210,7 @@ impl CellRenderer {
             let (cols, rows) = view.dimensions();
 
             if view.scroll_offset() == 0 {
-                let row_offset = view.scrollback_len();
+                let row_offset = view.screen_start();
                 self.fill_surface(
                     view.surface(),
                     queue,
@@ -221,7 +228,7 @@ impl CellRenderer {
                 self.append_preedit_overlay(preedit, queue, cols, rows, 0);
             } else {
                 let scroll_offset = view.scroll_offset();
-                let scrollback_len = view.scrollback_len();
+                let scrollback_len = view.screen_start();
                 let surface_lines = view.surface().screen_lines();
 
                 for row_idx in 0..rows {
@@ -297,7 +304,7 @@ impl CellRenderer {
 
                 self.append_preedit_overlay(preedit, queue, cols, rows, scroll_offset);
             }
-        });
+        }
 
         let bg_range = bg_start..self.bg_instances.len() as u32;
         let glyph_range = glyph_start..self.glyph_instances.len() as u32;

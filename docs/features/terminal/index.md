@@ -53,6 +53,20 @@ macOS·Linux에는 이 Windows 전용 처리를 적용하지 않는다.
 - resize는 grid 변경과 resize tap 통지가 먼저다. OS resize는 Pty에 예약만 하고, 다음 `process()`의 강제 flush 또는 호스트가 대기 중인 resize를 순회하는 `flush_pty_resize`(100ms throttle)에서 적용한다. 그래서 tap은 OS 적용 확인이 아니다.
 - `take_child`는 자식의 kill·wait 소유권을 넘긴다. 이후 Pty는 종료를 재촉하지 않고 Drop에서도 그 자식을 건드리지 않는다.
 
+### 표시 위치의 소유와 읽기
+
+`MainViewState.terminal_views`는 surface별 사용자 `TerminalViewport`를 소유한다.
+local/client mirror 표시와 서버 readonly 표시는 별도 문맥이며, terminal resource를
+복제하거나 보관하지 않는다. 화면 상태는 저장하지 않고 surface가 사라지면 회수한다.
+headless의 `CommandContext`에는 viewport를 만들지 않는다. IPC 화면 읽기는 기존 live
+내용 계약을 유지하며 에이전트 입력·출력은 로컬 사용자 앵커를 변경하지 않는다.
+
+renderer·선택·vi-copy·검색·링크·마우스 보고·surface screenshot은 같은 표시면의
+viewport를 사용한다. `TerminalReadView`는 parser mutex 안에서 앵커와 content epoch,
+행 좌표·치수·모드를 함께 읽는다. ED3 뒤 같은 청크에서 새 출력이 쌓여도 옛 앵커는
+되살아나지 않는다. alternate는 live를 표시하고 primary 앵커를 보존한다. 1049 clear와
+새 alternate buffer는 새 epoch를 사용하고 47/1047의 기존 buffer 복귀는 유지한다.
+
 ### VTE 에뮬레이션
 
 termwiz가 VT 시퀀스를 파싱하고 셀 grid를 갱신한다. 주요 지원 범위는 다음과 같다.
@@ -181,7 +195,7 @@ ED/EL은 커서 위치를 유지하며 현재 셀을 포함해 지운다.
 
 ### 스크롤백
 
-화면 위로 밀린 줄을 `VecDeque` 에 보관(`scrollback_lines`, 기본 10,000, 0~100,000 설정). 마우스 휠/PageUp·Down 탐색, 타이핑 시 자동 라이브 뷰 복귀. 대체 화면(vim/less/htop)에선 스크롤백 비활성(모든 입력 PTY 로). 스크롤백 중 새 출력 도착 시 `scroll_offset` 자동 보정으로 위치 유지. 텍스트 wrap 에 의한 implicit 스크롤도 기록한다 — 출력 텍스트를 스크롤이 일어날 바이트 위치에서 잘라 적용하며 밀려나기 직전의 상단 행을 회수하므로, 사라진 행이 빠짐없이 순서대로 남는다(선택 영역 `absolute_row` 가 콘텐츠를 정확히 추적). 부분 스크롤 영역에서의 적재 범위는 위 "스크롤 영역과 소거" 절 참조. 세션 간 보존은 disk scrollback. **ED3(`CSI 3J`)** 는 스크롤백 히스토리(메모리+디스크)를 비우고 뷰포트를 라이브로 되돌린다 — 화면 내용은 보존(`clear` 가 보내는 `\x1b[3J\x1b[2J` 에서 ED2 가 화면을, ED3 가 스크롤백을 담당).
+화면 위로 밀린 줄을 `VecDeque` 에 보관(`scrollback_lines`, 기본 10,000, 0~100,000 설정). 마우스 휠/PageUp·Down 탐색, 타이핑 시 자동 라이브 뷰 복귀. 대체 화면(vim/less/htop)에선 스크롤백 비활성(모든 입력 PTY 로). 스크롤백 중 새 출력이 도착해도 창의 표시면별 앵커로 읽던 행을 유지한다. 앞쪽 기록이 삭제되면 남은 첫 행으로 보정한다. 텍스트 wrap 에 의한 implicit 스크롤도 기록한다 — 출력 텍스트를 스크롤이 일어날 바이트 위치에서 잘라 적용하며 밀려나기 직전의 상단 행을 회수하므로, 사라진 행이 빠짐없이 순서대로 남는다(선택 영역 `absolute_row` 가 콘텐츠를 정확히 추적). 부분 스크롤 영역에서의 적재 범위는 위 "스크롤 영역과 소거" 절 참조. 세션 간 보존은 disk scrollback. **ED3(`CSI 3J`)** 는 스크롤백 히스토리(메모리+디스크)를 비우고 뷰포트를 라이브로 되돌린다 — 화면 내용은 보존(`clear` 가 보내는 `\x1b[3J\x1b[2J` 에서 ED2 가 화면을, ED3 가 스크롤백을 담당).
 
 ### 키보드 입력
 

@@ -103,6 +103,7 @@ impl TerminalState {
                     self.alt_saved_cursor = Some((pos.0, pos.1));
                     if self.alternate_surface.is_none() {
                         self.alternate_surface = Some(Surface::new(self.cols, self.rows));
+                        self.alternate_epoch = crate::ContentEpoch::fresh();
                     }
                     // Stash the primary pen and adopt the alt surface's pen mirror
                     // (only on a real primary→alt transition).
@@ -141,6 +142,7 @@ impl TerminalState {
                 if enable {
                     if self.alternate_surface.is_none() {
                         self.alternate_surface = Some(Surface::new(self.cols, self.rows));
+                        self.alternate_epoch = crate::ContentEpoch::fresh();
                     }
                     // No clear here: adopt the alt surface's retained pen mirror.
                     if !self.use_alternate {

@@ -736,3 +736,36 @@ enum BreakKind {
     /// the screen may scroll, so the move is dropped and the cursor stays.
     Clamp,
 }
+
+#[cfg(test)]
+mod viewport_tests {
+    use super::*;
+
+    #[test]
+    fn lost_disk_spill_invalidates_the_content_timeline() {
+        // Remove only this test's own backing file, making append deterministically fail.
+        let id = u32::MAX - 703;
+        let mut history = Scrollback::new();
+        history.enable_disk(id);
+        assert!(history.disk.is_some());
+        let subdir = if cfg!(debug_assertions) {
+            "tasty-scrollback-debug"
+        } else {
+            "tasty-scrollback"
+        };
+        let path = std::env::temp_dir().join(subdir).join(format!(
+            "surface-{}-{}.scrollback",
+            std::process::id(),
+            id
+        ));
+        std::fs::remove_file(path).unwrap();
+        history.set_limit(0);
+        let epoch = history.epoch;
+        history.push_line(ScrollbackLine::new(
+            vec![("lost".into(), CellAttributes::default())],
+            false,
+        ));
+        assert_eq!(history.total_len(), 0);
+        assert_ne!(history.epoch, epoch);
+    }
+}

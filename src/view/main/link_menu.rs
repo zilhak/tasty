@@ -34,7 +34,8 @@ impl MainView {
             return None;
         }
         let hovered = hovered?;
-        let (start, end) = link_selection_bounds(&hovered.highlight.segments)?;
+        let (start, end) =
+            link_selection_bounds(&hovered.highlight.segments, hovered.highlight.epoch)?;
         let terminal = engine.visible_terminal(surface_id)?;
         let text = crate::selection::extract_selected_text(
             terminal,
@@ -171,15 +172,20 @@ fn link_menu_gate(hovered_surface: Option<u32>, clicked_surface: u32, hard_occup
 
 /// 링크 세그먼트(화면 순서, `end_col` 포함)를 selection 양끝으로. 선택 범위 판정도 양끝
 /// 포함이라 그대로 맞물린다. 소프트 wrap 링크는 첫 세그먼트 시작 ~ 마지막 세그먼트 끝.
-fn link_selection_bounds(segments: &[LinkSegment]) -> Option<(SelectionPoint, SelectionPoint)> {
+fn link_selection_bounds(
+    segments: &[LinkSegment],
+    epoch: tasty_terminal::ContentEpoch,
+) -> Option<(SelectionPoint, SelectionPoint)> {
     let first = segments.first()?;
     let last = segments.last()?;
     Some((
         SelectionPoint {
+            epoch,
             col: first.start_col,
             absolute_row: first.absolute_row,
         },
         SelectionPoint {
+            epoch,
             col: last.end_col,
             absolute_row: last.absolute_row,
         },
@@ -243,7 +249,11 @@ mod tests {
     }
 
     fn pt(col: usize, absolute_row: usize) -> SelectionPoint {
-        SelectionPoint { col, absolute_row }
+        SelectionPoint {
+            epoch: Default::default(),
+            col,
+            absolute_row,
+        }
     }
 
     /// 좌클릭과 대칭 — 이 게이트는 tracking 모드를 보지 않는다. `handle_right_button` 은
@@ -267,7 +277,7 @@ mod tests {
     #[test]
     fn selection_from_single_segment_link_covers_exact_columns() {
         assert_eq!(
-            link_selection_bounds(&[seg(5, 3, 20)]),
+            link_selection_bounds(&[seg(5, 3, 20)], Default::default()),
             Some((pt(3, 5), pt(20, 5)))
         );
     }
@@ -275,10 +285,10 @@ mod tests {
     #[test]
     fn selection_from_wrapped_link_spans_first_to_last_segment() {
         assert_eq!(
-            link_selection_bounds(&[seg(5, 70, 79), seg(6, 0, 12)]),
+            link_selection_bounds(&[seg(5, 70, 79), seg(6, 0, 12)], Default::default()),
             Some((pt(70, 5), pt(12, 6)))
         );
-        assert_eq!(link_selection_bounds(&[]), None);
+        assert_eq!(link_selection_bounds(&[], Default::default()), None);
     }
 
     #[test]

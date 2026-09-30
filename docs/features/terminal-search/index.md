@@ -12,6 +12,11 @@
 
 ## 내부 동작
 
+검색 결과는 단일 `TerminalReadView`에서 읽은 content epoch와 안정된 행 좌표로
+보관한다. 결과로 이동할 때 현재 내용 cut에서 살아 있는지 확인하고 View의 viewport만
+변경한다. renderer는 다른 epoch의 결과를 강조하지 않는다.
+
+
 ### find 단축키 = 포커스 토글
 
 `find` 바인딩([keybindings](../keybindings/index.md), Tasty 프리셋 `Ctrl+F`/`Alt+F`)은 **포커스 토글**이다:

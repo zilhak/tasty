@@ -152,67 +152,71 @@ impl GpuState {
     pub(super) fn capture_surface_to_png(
         &mut self,
         terminal: &tasty_terminal::Terminal,
+        viewport: &tasty_terminal::TerminalViewport,
         reverse_screen_enabled: bool,
         path: &std::path::Path,
     ) {
-        let (cols, rows) = terminal.dimensions();
-        let cw = self.renderer.cell_width();
-        let ch = self.renderer.cell_height();
-        let max_dim = self.device.limits().max_texture_dimension_2d;
-        let width = ((cols as f32 * cw).ceil() as u32).clamp(1, max_dim);
-        let height = ((rows as f32 * ch).ceil() as u32).clamp(1, max_dim);
+        let (texture, view, width, height, clear) = terminal.with_view(viewport, |content| {
+            let (cols, rows) = content.dimensions();
+            let cw = self.renderer.cell_width();
+            let ch = self.renderer.cell_height();
+            let max_dim = self.device.limits().max_texture_dimension_2d;
+            let width = ((cols as f32 * cw).ceil() as u32).clamp(1, max_dim);
+            let height = ((rows as f32 * ch).ceil() as u32).clamp(1, max_dim);
 
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("surface_screenshot_target"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            // Same format as the swapchain so the terminal pipelines and the
-            // BGRA→RGB readback in `capture_frame_to_png` stay valid.
-            format: self.config.format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("surface_screenshot_target"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                // Same format as the swapchain so the terminal pipelines and the
+                // BGRA→RGB readback in `capture_frame_to_png` stay valid.
+                format: self.config.format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+            // Retarget the projection uniform to the offscreen size (rect placed at
+            // origin below). Restored to `self.size` at the end of this method.
+            self.renderer.resize(&self.queue, width, height);
+
+            let theme = crate::theme::theme();
+            let term_surface = theme.surface("terminal");
+            let ansi = theme.ansi_palette();
+            let bg = term_surface.unfocused_bg.to_gpu_rgba();
+            let fg = term_surface.unfocused_fg.to_gpu_rgba();
+            let clear = theme.bg_panel().to_gpu_rgba();
+
+            self.renderer.begin_frame();
+            let rect = PhysicalRect {
+                x: PhysicalPx(0.0),
+                y: PhysicalPx(0.0),
+                width: PhysicalPx(width as f32),
+                height: PhysicalPx(height as f32),
+            };
+            self.renderer.append_terminal_viewport(
+                &content,
+                &self.queue,
+                &rect,
+                &ansi,
+                bg,
+                fg,
+                false, // no cursor overlay in a static capture
+                None,  // selection
+                None,  // vi cursor
+                None,  // preedit
+                None,  // link hover
+                None,  // search highlights
+                reverse_screen_enabled,
+            );
+            (texture, view, width, height, clear)
         });
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        // Retarget the projection uniform to the offscreen size (rect placed at
-        // origin below). Restored to `self.size` at the end of this method.
-        self.renderer.resize(&self.queue, width, height);
-
-        let theme = crate::theme::theme();
-        let term_surface = theme.surface("terminal");
-        let ansi = theme.ansi_palette();
-        let bg = term_surface.unfocused_bg.to_gpu_rgba();
-        let fg = term_surface.unfocused_fg.to_gpu_rgba();
-        let clear = theme.bg_panel().to_gpu_rgba();
-
-        self.renderer.begin_frame();
-        let rect = PhysicalRect {
-            x: PhysicalPx(0.0),
-            y: PhysicalPx(0.0),
-            width: PhysicalPx(width as f32),
-            height: PhysicalPx(height as f32),
-        };
-        self.renderer.append_terminal_viewport(
-            terminal,
-            &self.queue,
-            &rect,
-            &ansi,
-            bg,
-            fg,
-            false, // no cursor overlay in a static capture
-            None,  // selection
-            None,  // vi cursor
-            None,  // preedit
-            None,  // link hover
-            None,  // search highlights
-            reverse_screen_enabled,
-        );
         self.renderer.flush_buffers(&self.device, &self.queue);
 
         let mut encoder = self

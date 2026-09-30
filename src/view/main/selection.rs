@@ -18,18 +18,15 @@ impl MainView {
         if let Some((point, surface_id)) = self.mouse_to_grid(engine, x, y, terminal_rect) {
             if let Some(sel) = &mut self.text_selection {
                 // Existing selection: keep anchor, move cursor
-                if sel.surface_id == surface_id {
+                if sel.surface_id == surface_id && sel.anchor.epoch == point.epoch {
                     sel.cursor = point;
                     sel.mode = SelectionMode::Normal;
                     sel.dragging = true;
                 }
-            } else if let Some((col, abs_row)) = self.last_click_pos {
+            } else if let Some(anchor) = self.last_click_pos.filter(|p| p.epoch == point.epoch) {
                 // No selection but have a previous click position: use it as anchor
                 self.text_selection = Some(TextSelection {
-                    anchor: SelectionPoint {
-                        col,
-                        absolute_row: abs_row,
-                    },
+                    anchor,
                     cursor: point,
                     mode: SelectionMode::Normal,
                     surface_id,
@@ -48,12 +45,14 @@ impl MainView {
         y: f32,
         terminal_rect: &PhysicalRect,
     ) {
-        if let Some((point, surface_id)) = self.mouse_to_grid(engine, x, y, terminal_rect) {
+        if let Some((point, surface_id, word_bounds, cols)) =
+            self.mouse_selection_context(engine, x, y, terminal_rect)
+        {
             // Detect multi-click
             let now = std::time::Instant::now();
             let same_pos = self
                 .last_click_pos
-                .is_some_and(|(c, r)| c == point.col && r == point.absolute_row);
+                .is_some_and(|previous| previous == point);
             let within_time = self
                 .last_click_time
                 .is_some_and(|t| now.duration_since(t).as_millis() < 400);
@@ -63,7 +62,7 @@ impl MainView {
                 self.click_count = 1;
             }
             self.last_click_time = Some(now);
-            self.last_click_pos = Some((point.col, point.absolute_row));
+            self.last_click_pos = Some(point);
 
             let (mode, dragging) = match self.click_count {
                 2 => (SelectionMode::Word, false),
@@ -77,36 +76,25 @@ impl MainView {
             // For word/line mode, expand anchor/cursor
             let (anchor, cursor) = match mode {
                 SelectionMode::Word => {
-                    let (start_col, end_col) =
-                        self.find_word_bounds(engine, point.col, point.absolute_row);
+                    let (start_col, end_col) = word_bounds;
                     (
                         SelectionPoint {
                             col: start_col,
-                            absolute_row: point.absolute_row,
+                            ..point
                         },
                         SelectionPoint {
                             col: end_col,
-                            absolute_row: point.absolute_row,
+                            ..point
                         },
                     )
                 }
-                SelectionMode::Line => {
-                    let cols = self
-                        .state
-                        .focused_terminal(&*engine)
-                        .map(|t| t.dimensions().0)
-                        .unwrap_or(80);
-                    (
-                        SelectionPoint {
-                            col: 0,
-                            absolute_row: point.absolute_row,
-                        },
-                        SelectionPoint {
-                            col: cols.saturating_sub(1),
-                            absolute_row: point.absolute_row,
-                        },
-                    )
-                }
+                SelectionMode::Line => (
+                    SelectionPoint { col: 0, ..point },
+                    SelectionPoint {
+                        col: cols.saturating_sub(1),
+                        ..point
+                    },
+                ),
                 SelectionMode::Normal | SelectionMode::Block => {
                     // Clear any existing selection on single click. Block mode
                     // is never produced by mouse click — defensive default.
@@ -131,45 +119,31 @@ impl MainView {
 
     /// Find word boundaries around the given column in the given absolute row.
     fn find_word_bounds(
-        &self,
-        engine: &crate::core::CoreState,
-        col: usize,
-        absolute_row: usize,
+        view: &tasty_terminal::TerminalReadView<'_>,
+        point: SelectionPoint,
     ) -> (usize, usize) {
-        let terminal = match self.state.focused_terminal(engine) {
-            Some(t) => t,
-            None => return (col, col),
-        };
-        // Snapshot scrollback length and the target row under a single state lock
-        // so the parser thread cannot shift scrollback_len relative to the line
-        // read between locks (ADR-0013).
-        let row_text: Vec<(String, usize)> =
-            match terminal.with_render_view(|v| -> Option<Vec<(String, usize)>> {
-                let scrollback_len = v.scrollback_len();
-                if absolute_row < scrollback_len {
-                    v.scrollback_line(absolute_row).map(|line| {
-                        let mut result = Vec::new();
-                        let mut c = 0;
-                        for (text, _) in line.cells() {
-                            let ch = text.chars().next().unwrap_or(' ');
-                            let w = tasty_cell_width::unicode_width(ch);
-                            result.push((text.to_string(), c));
-                            c += w;
-                        }
-                        result
-                    })
-                } else {
-                    let screen_row = absolute_row - scrollback_len;
-                    v.surface().screen_lines().get(screen_row).map(|line| {
-                        line.visible_cells()
-                            .map(|cell| (cell.str().to_string(), cell.cell_index()))
-                            .collect()
-                    })
-                }
-            }) {
-                Some(rt) => rt,
-                None => return (col, col),
+        let col = point.col;
+        let absolute_row = point.absolute_row;
+        let row_text: Vec<(String, usize)> = if absolute_row < view.screen_start() {
+            let Some(line) = view.scrollback_line_full(absolute_row) else {
+                return (col, col);
             };
+            let mut result = Vec::new();
+            let mut c = 0;
+            for (text, _) in line.cells() {
+                result.push((text.to_string(), c));
+                c += tasty_cell_width::unicode_width(text.chars().next().unwrap_or(' '));
+            }
+            result
+        } else {
+            let lines = view.surface().screen_lines();
+            let Some(line) = lines.get(absolute_row - view.screen_start()) else {
+                return (col, col);
+            };
+            line.visible_cells()
+                .map(|cell| (cell.str().to_string(), cell.cell_index()))
+                .collect()
+        };
 
         // Find which cell the col is in
         let is_word_char = |s: &str| -> bool {
@@ -256,12 +230,6 @@ impl MainView {
             None => return,
         };
 
-        let region = match crate::click_cursor::EditableRegion::from_terminal(terminal) {
-            Some(r) => r,
-            None => return,
-        };
-
-        let (cols, rows) = terminal.dimensions();
         // Use the actual content rect (after tab bar) instead of the raw pane rect
         let surface_rect = match self.state.focused_surface_rect(
             &*engine,
@@ -271,41 +239,37 @@ impl MainView {
             Some(r) => r,
             None => return,
         };
-        let (click_col, click_row) = crate::click_cursor::pixel_to_grid(
-            x,
-            y,
-            &surface_rect,
-            self.base.gpu.cell_width(),
-            self.base.gpu.cell_height(),
-            cols,
-            rows,
-        );
-
-        // Clamp to editable region
-        let (click_row, click_col) = match region.clamp(click_row, click_col) {
-            Some(pos) => pos,
-            None => return,
+        let position =
+            terminal.with_view(&self.state.terminal_views.get(engine, surface_id), |view| {
+                let region = crate::click_cursor::EditableRegion::from_terminal(&view)?;
+                let (cols, rows) = view.dimensions();
+                let (click_col, click_row) = crate::click_cursor::pixel_to_grid(
+                    x,
+                    y,
+                    &surface_rect,
+                    self.base.gpu.cell_width(),
+                    self.base.gpu.cell_height(),
+                    cols,
+                    rows,
+                );
+                let (click_row, click_col) = region.clamp(click_row, click_col)?;
+                if click_row == region.cursor_row && click_col == region.cursor_col {
+                    return None;
+                }
+                let going_right = (click_row, click_col) > (region.cursor_row, region.cursor_col);
+                let count = crate::click_cursor::count_arrows(
+                    &view,
+                    region.cursor_row,
+                    region.cursor_col,
+                    click_row,
+                    click_col,
+                    cols,
+                );
+                (count != 0).then_some((going_right, count, view.application_cursor_keys()))
+            });
+        let Some((going_right, arrow_count, app_cursor)) = position else {
+            return;
         };
-
-        if click_row == region.cursor_row && click_col == region.cursor_col {
-            return;
-        }
-
-        let going_right = (click_row, click_col) > (region.cursor_row, region.cursor_col);
-        let arrow_count = crate::click_cursor::count_arrows(
-            terminal,
-            region.cursor_row,
-            region.cursor_col,
-            click_row,
-            click_col,
-            cols,
-        );
-
-        if arrow_count == 0 {
-            return;
-        }
-
-        let app_cursor = terminal.application_cursor_keys();
         let arrow: &'static [u8] = if going_right {
             if app_cursor { b"\x1bOC" } else { b"\x1b[C" }
         } else if app_cursor {
@@ -337,6 +301,17 @@ impl MainView {
         y: f32,
         terminal_rect: &PhysicalRect,
     ) -> Option<(SelectionPoint, u32)> {
+        self.mouse_selection_context(engine, x, y, terminal_rect)
+            .map(|(point, sid, _, _)| (point, sid))
+    }
+
+    fn mouse_selection_context(
+        &self,
+        engine: &crate::core::CoreState,
+        x: f32,
+        y: f32,
+        terminal_rect: &PhysicalRect,
+    ) -> Option<(SelectionPoint, u32, (usize, usize), usize)> {
         let surface_id = self.state.focused_surface_id(engine)?;
         // hard 점유(readonly)면 mirror, 아니면 live — 실제 렌더되는 것과 동일 대상을
         // 참조해야 좌표 변환이 화면과 일치한다(ADR-0021).
@@ -347,19 +322,22 @@ impl MainView {
             *terminal_rect,
             self.base.gpu.scale_factor(),
         )?;
-        let (cols, rows) = terminal.dimensions();
-        let point = selection::pixel_to_grid(
-            x,
-            y,
-            &surface_rect,
-            self.base.gpu.cell_width(),
-            self.base.gpu.cell_height(),
-            cols,
-            rows,
-            terminal.scroll_offset(),
-            terminal.scrollback_len(),
-        );
-        Some((point, surface_id))
+        terminal.with_view(&self.state.terminal_views.get(engine, surface_id), |view| {
+            let point = selection::pixel_to_grid(
+                x,
+                y,
+                &surface_rect,
+                self.base.gpu.cell_width(),
+                self.base.gpu.cell_height(),
+                view.viewport(),
+            );
+            Some((
+                point,
+                surface_id,
+                Self::find_word_bounds(&view, point),
+                view.cols(),
+            ))
+        })
     }
 
     /// 현재 선택을 복사하고 선택 범위는 유지한다. 우클릭 복사는 포커스와 무관하다.

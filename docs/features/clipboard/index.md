@@ -23,6 +23,13 @@
 - **붙여넣기**: bracketed paste(DECSET 2004) 지원. 텍스트 없고 이미지가 있으면 PNG 로 저장 후 경로를 붙여넣기(AI 에이전트가 이미지 참조 가능).
 - **Paste 후 Ctrl+C 보호(500ms)**: paste 직후 500ms 내 Ctrl+C 는 무시(SIGINT·복사 안 함) — Ctrl+V 옆 키 오타로 입력을 날리는 사고 방지, 무시 시 토스트.
 
+### 선택 좌표와 내용 일관성
+
+`SelectionPoint`는 보존 이력의 안정된 행 좌표와 content epoch를 가진다. 선택·word
+확장·vi 이동은 표시면의 `TerminalReadView`에서 계산하고 복사는 같은 epoch의 살아
+있는 행만 추출한다. 앞쪽 trim으로 삭제된 행이 다른 내용으로 재해석되지 않으며 ED3,
+terminal 교체, alternate clear 뒤의 옛 선택은 표시하거나 복사하지 않는다.
+
 ### 텍스트 선택
 
 마우스 드래그(Normal) / 더블클릭(Word) / 트리플클릭(Line) / vi 복사 모드의 `Ctrl+v`(Block). 선택은 화면↔스크롤백을 넘나들고 전각(CJK) 2셀 폭을 정확히 처리. vi 스타일 키보드 복사 모드(`enter_copy_mode` 액션)는 hjkl 이동·visual 선택·`/`·`?` 검색·`y` 복사를 제공.

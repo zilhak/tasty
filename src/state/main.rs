@@ -3,6 +3,7 @@
 use super::*;
 
 pub struct MainViewState {
+    pub(crate) terminal_views: terminal_view::TerminalViewports,
     pub(crate) navigation: navigation::NavigationState,
     /// Tab bar viewport by stable pane ID; never part of the domain layout.
     #[cfg(feature = "gui")]

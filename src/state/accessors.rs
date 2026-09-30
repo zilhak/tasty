@@ -32,6 +32,8 @@ impl RequestContext {
     /// on domain objects, these maps do not disappear when the objects drop.
     pub(crate) fn reconcile_presentation(&mut self, engine: &CoreState) {
         self.navigation.reconcile(&engine.workspaces);
+        #[cfg(feature = "gui")]
+        self.terminal_views.retain(engine);
         self.navigation
             .collapsed_categories
             .retain(|id| engine.categories().iter().any(|c| c.id == *id));
@@ -123,12 +125,6 @@ impl RequestContext {
     pub fn focused_terminal<'a>(&self, engine: &'a CoreState) -> Option<&'a Terminal> {
         let id = self.focused_surface_id(engine)?;
         engine.runtime.terminals.get(id)
-    }
-
-    #[cfg(feature = "gui")]
-    pub fn focused_terminal_mut<'a>(&self, engine: &'a mut CoreState) -> Option<&'a mut Terminal> {
-        let id = self.focused_surface_id(engine)?;
-        engine.runtime.terminals.get_mut(id)
     }
 
     pub fn focused_pane_id(&self, engine: &CoreState) -> crate::model::PaneId {

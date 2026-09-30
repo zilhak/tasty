@@ -24,9 +24,8 @@ impl CoreState {
             let Some(live) = self.runtime.terminals.get(sid) else {
                 continue;
             };
-            let cols = live.cols();
-            let rows = live.rows();
-            let snapshot = live.snapshot_as_vt();
+            let (cols, rows, snapshot) =
+                live.with_content(|view| (view.cols(), view.rows(), view.snapshot_as_vt()));
             let mirror = self
                 .readonly_views
                 .entry(sid)

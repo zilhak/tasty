@@ -54,7 +54,7 @@ impl GpuState {
         focused_surface_id: Option<u32>,
         selection: Option<&tasty_selection::TextSelection>,
         vi_cursor: Option<(u32, tasty_selection::SelectionPoint)>,
-        _settings: &crate::settings::AppearanceSettings,
+        terminal_views: &crate::state::terminal_view::TerminalViewports,
         preedit: Option<&super::ImePreeditState>,
         link_hover: Option<(u32, &tasty_terminal_link::LinkHighlight)>,
         search: Option<&crate::search_state::SearchState>,
@@ -127,6 +127,7 @@ impl GpuState {
                     .filter(|_| !is_readonly)
                     .filter(|s| s.surface_id == *surface_id && !s.matches.is_empty())
                     .map(|s| crate::renderer::SearchHighlights {
+                        epoch: s.epoch,
                         matches: &s.matches,
                         active_index: s.current_index,
                         inactive_bg: theme.search_match_bg.to_gpu_rgba(),
@@ -140,21 +141,23 @@ impl GpuState {
                 }
                 let show_cursor = is_focused && !suppress_cursor;
 
-                self.renderer.append_terminal_viewport(
-                    terminal,
-                    &self.queue,
-                    rect,
-                    &ansi,
-                    bg,
-                    fg,
-                    show_cursor,
-                    sel_ref,
-                    vi_cursor_ref,
-                    render_preedit_ref,
-                    link_for_this,
-                    search_ref,
-                    reverse_screen_enabled,
-                );
+                terminal.with_view(&terminal_views.get(engine, *surface_id), |view| {
+                    self.renderer.append_terminal_viewport(
+                        &view,
+                        &self.queue,
+                        rect,
+                        &ansi,
+                        bg,
+                        fg,
+                        show_cursor,
+                        sel_ref,
+                        vi_cursor_ref,
+                        render_preedit_ref,
+                        link_for_this,
+                        search_ref,
+                        reverse_screen_enabled,
+                    );
+                });
             }
         }
 

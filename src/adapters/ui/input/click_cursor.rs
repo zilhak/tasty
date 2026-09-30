@@ -36,7 +36,7 @@ impl EditableRegion {
     /// Compute the editable region from the current terminal state.
     /// Returns `None` if the terminal is in a state where click-to-move
     /// should be disabled (scrollback, alternate screen, mouse tracking).
-    pub fn from_terminal(terminal: &tasty_terminal::Terminal) -> Option<Self> {
+    pub fn from_terminal(terminal: &tasty_terminal::TerminalReadView<'_>) -> Option<Self> {
         if terminal.scroll_offset() > 0 || terminal.is_alternate_screen() {
             return None;
         }
@@ -45,16 +45,9 @@ impl EditableRegion {
         }
 
         // 파서 갱신 사이에 커서와 그리드를 따로 읽지 않도록 같은 잠금에서 가져온다(ADR-0013).
-        let (cols, rows, cursor_col, cursor_row, screen_lines) = terminal.with_surface(|s| {
-            let (cols, rows) = s.dimensions();
-            let (cursor_col, cursor_row) = s.cursor_position();
-            let screen_lines: Vec<_> = s
-                .screen_lines()
-                .into_iter()
-                .map(|c| c.into_owned())
-                .collect();
-            (cols, rows, cursor_col, cursor_row, screen_lines)
-        });
+        let (cols, rows) = terminal.dimensions();
+        let (cursor_col, cursor_row) = terminal.cursor_position();
+        let screen_lines = terminal.screen_lines();
 
         let mut start_row = cursor_row;
         while start_row > 0 {
@@ -126,7 +119,7 @@ impl EditableRegion {
 /// Count the number of arrow key presses needed to move from one position to
 /// another, accounting for wide (2-cell) characters.
 pub fn count_arrows(
-    terminal: &tasty_terminal::Terminal,
+    terminal: &tasty_terminal::TerminalReadView<'_>,
     from_row: usize,
     from_col: usize,
     to_row: usize,

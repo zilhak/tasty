@@ -348,9 +348,12 @@ fn run_search(state: &mut MainViewState, engine: &crate::core::CoreState) {
         regex: state.search.regex,
         whole_word: state.search.whole_word,
     };
-    let result = engine
-        .find_terminal_by_id(surface_id)
-        .map(|terminal| terminal.search(&query, &options));
+    let result = engine.find_terminal_by_id(surface_id).map(|terminal| {
+        terminal.with_content(|view| {
+            state.search.epoch = view.cut().epoch;
+            view.search(&query, &options)
+        })
+    });
     match result {
         Some(Ok(matches)) => {
             state.search.matches = matches;
@@ -381,13 +384,12 @@ fn focused_terminal_surface_id(state: &MainViewState, engine: &crate::core::Core
 
 fn scroll_to_current_match(state: &mut MainViewState, engine: &mut crate::core::CoreState) {
     let surface_id = state.search.surface_id;
-    if let Some(terminal) = engine.find_terminal_by_id(surface_id) {
-        let scrollback_len = terminal.scrollback_len();
-        let screen_rows = terminal.rows();
-        if let Some(offset) = state.search.scroll_to_current(scrollback_len, screen_rows)
-            && let Some(terminal) = engine.find_terminal_by_id_mut(surface_id)
-        {
-            terminal.set_scroll_offset(offset);
-        }
-    }
+    let search = &state.search;
+    state
+        .terminal_views
+        .update(engine, surface_id, |viewport, cut| {
+            if let Some(offset) = search.scroll_to_current(cut) {
+                viewport.set_scroll_offset(cut, offset);
+            }
+        });
 }

@@ -324,18 +324,21 @@ impl MainView {
                 .and_then(|sid| engine.foreground_name(sid)),
         );
 
-        let read_state = self
-            .state
-            .focused_terminal(&*engine)
-            .map(|t| KeyboardReadState {
-                shift_enter_newline,
-                app_cursor: t.application_cursor_keys(),
-                is_alt_screen: t.is_alternate_screen(),
-                scroll_offset: t.scroll_offset(),
-                rows: t.rows(),
-                option_as_meta,
-            });
-        let surface_id = self.state.focused_surface_id(&*engine);
+        let surface_id = self.state.focused_surface_id(engine);
+        let read_state = surface_id.and_then(|sid| {
+            engine.visible_terminal(sid).map(|t| {
+                t.with_view(&self.state.terminal_views.get(engine, sid), |view| {
+                    KeyboardReadState {
+                        shift_enter_newline,
+                        app_cursor: view.application_cursor_keys(),
+                        is_alt_screen: view.is_alternate_screen(),
+                        scroll_offset: view.scroll_offset(),
+                        rows: view.rows(),
+                        option_as_meta,
+                    }
+                })
+            })
+        });
 
         if let (Some(rs), Some(sid)) = (read_state, surface_id) {
             let outcome = Self::decide_key_to_terminal(
@@ -405,24 +408,17 @@ impl MainView {
         engine: &mut crate::core::CoreState,
         action: KeyboardScrollAction,
     ) {
-        match action {
-            KeyboardScrollAction::None => {}
-            KeyboardScrollAction::ScrollUp(n) => {
-                if let Some(terminal) = self.state.focused_terminal_mut(&mut *engine) {
-                    terminal.scroll_up(n);
-                }
-            }
-            KeyboardScrollAction::ScrollDown(n) => {
-                if let Some(terminal) = self.state.focused_terminal_mut(&mut *engine) {
-                    terminal.scroll_down(n);
-                }
-            }
-            KeyboardScrollAction::ScrollToBottom => {
-                if let Some(terminal) = self.state.focused_terminal_mut(&mut *engine) {
-                    terminal.scroll_to_bottom();
-                }
-            }
-        }
+        let Some(sid) = self.state.focused_surface_id(engine) else {
+            return;
+        };
+        self.state
+            .terminal_views
+            .update(engine, sid, |viewport, cut| match action {
+                KeyboardScrollAction::None => {}
+                KeyboardScrollAction::ScrollUp(n) => viewport.scroll_up(cut, n),
+                KeyboardScrollAction::ScrollDown(n) => viewport.scroll_down(cut, n),
+                KeyboardScrollAction::ScrollToBottom => viewport.scroll_to_bottom(),
+            });
     }
 
     /// 키를 PTY 전송 데이터와 스크롤 동작으로 변환한다. 실제 반영은 호출자가 한다.

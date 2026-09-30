@@ -273,7 +273,7 @@ fn append_regex_matches(
 
 /// 주어진 절대 row 하나에서 링크를 검출한다 — scrollback/screen 판별 포함.
 fn detect_row_links(
-    terminal: &tasty_terminal::Terminal,
+    terminal: &tasty_terminal::TerminalReadView<'_>,
     absolute_row: usize,
     scrollback_len: usize,
     cwd: Option<&Path>,
@@ -293,7 +293,7 @@ fn detect_row_links(
 /// 행의 줄바꿈 여부. scrollback은 저장된 wrapped를 쓰고 현재 화면은
 /// 오른쪽 끝의 공백 아닌 글리프로 추정한다. tasty-terminal의 캡처와 같은 기준이다.
 fn row_wrapped(
-    terminal: &tasty_terminal::Terminal,
+    terminal: &tasty_terminal::TerminalReadView<'_>,
     absolute_row: usize,
     scrollback_len: usize,
 ) -> Option<bool> {
@@ -310,7 +310,7 @@ fn row_wrapped(
 /// `absolute_row` 행의 컬럼 수(그 행 자체의 셀 개수 — 과거 리사이즈로 현재
 /// 터미널 폭과 다를 수 있는 scrollback 행도 정확히 반영).
 fn row_cols(
-    terminal: &tasty_terminal::Terminal,
+    terminal: &tasty_terminal::TerminalReadView<'_>,
     absolute_row: usize,
     scrollback_len: usize,
 ) -> Option<usize> {
@@ -345,7 +345,7 @@ fn screen_line_soft_wrapped(line: &termwiz::surface::line::Line, cols: usize) ->
 /// 다음 행이 col 0 부터 동일 `uri`의 OSC8 링크로 시작하면 그 행의 세그먼트를
 /// 이어붙이고, 그 행도 wrapped 면 계속 내려간다(3행 이상 체인 대응).
 fn merge_wrap_chain_down(
-    terminal: &tasty_terminal::Terminal,
+    terminal: &tasty_terminal::TerminalReadView<'_>,
     scrollback_len: usize,
     cwd: Option<&Path>,
     mirror: bool,
@@ -376,7 +376,7 @@ fn merge_wrap_chain_down(
 /// `span`의 첫 행 바로 위 행이 wrapped(그 행이 현재 행으로 이어짐)이고 동일
 /// `uri`의 OSC8 링크로 끝나면 그 행의 세그먼트를 앞에 붙이고 계속 올라간다.
 fn merge_wrap_chain_up(
-    terminal: &tasty_terminal::Terminal,
+    terminal: &tasty_terminal::TerminalReadView<'_>,
     scrollback_len: usize,
     cwd: Option<&Path>,
     mirror: bool,
@@ -417,11 +417,24 @@ pub fn link_at(
     col: usize,
     absolute_row: usize,
 ) -> Option<LinkSpan> {
-    let scrollback_len = terminal.scrollback_len();
     let cwd = terminal.get_cwd();
-    let cwd_ref = cwd.as_deref();
-    // GUI store의 detached 터미널은 원격 mirror다. 원격 경로는 로컬 exists로 검사하지 않는다.
     let mirror = terminal.process_id().is_none();
+    terminal.with_content(|view| link_at_view(&view, col, absolute_row, cwd.as_deref(), mirror))
+}
+
+/// Hit test using the same locked content cut as pixel-to-grid conversion.
+pub fn link_at_view(
+    terminal: &tasty_terminal::TerminalReadView<'_>,
+    col: usize,
+    absolute_row: usize,
+    cwd_ref: Option<&Path>,
+    mirror: bool,
+) -> Option<LinkSpan> {
+    let cwd_ref = terminal.cached_cwd().or(cwd_ref);
+    let scrollback_len = terminal.screen_start();
+    if absolute_row < terminal.first_row() {
+        return None;
+    }
     let spans = detect_row_links(terminal, absolute_row, scrollback_len, cwd_ref, mirror)?;
     let mut found = spans.into_iter().find(|s| s.contains(col, absolute_row))?;
     merge_wrap_chain_down(terminal, scrollback_len, cwd_ref, mirror, &mut found);
@@ -434,6 +447,7 @@ pub fn link_at(
 /// 오버라이드한다.
 #[derive(Debug, Clone)]
 pub struct LinkHighlight {
+    pub epoch: tasty_terminal::ContentEpoch,
     pub segments: Vec<LinkSegment>,
     pub fg: tasty_type_appearance::color::GpuRgba,
     pub bg: tasty_type_appearance::color::GpuRgba,
@@ -568,6 +582,23 @@ fn resolve_selection_path_candidate(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn link_hit_test_uses_the_anchored_row_after_front_trim() {
+        let mut terminal = tasty_terminal::Terminal::new_detached(40, 3);
+        terminal.set_scrollback_limit(3);
+        terminal.feed_bytes(b"zero\r\nhttps://example.com\r\ntwo\r\nthree\r\nfour");
+        let mut viewport = tasty_terminal::TerminalViewport::LIVE;
+        viewport.scroll_up(terminal.content_cut(), 1);
+        terminal.feed_bytes(b"\r\nfive\r\nsix");
+        terminal.with_view(&viewport, |view| {
+            let row = view.viewport().top_row;
+            let link = link_at_view(&view, 3, row, None, false).unwrap();
+            assert_eq!(link.uri, "https://example.com");
+            assert!(link.contains(3, row));
+            assert!(link_at_view(&view, 3, 0, None, false).is_none());
+        });
+    }
 
     #[test]
     fn path_regex_matches_common_forms() {
@@ -716,6 +747,7 @@ mod tests {
     #[test]
     fn link_highlight_covers_checks_all_segments() {
         let highlight = LinkHighlight {
+            epoch: Default::default(),
             segments: vec![
                 LinkSegment {
                     absolute_row: 5,

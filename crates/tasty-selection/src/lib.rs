@@ -3,9 +3,10 @@
 use tasty_type_geometry::rect::PhysicalRect;
 
 /// A point in the terminal grid using absolute row coordinates.
-/// absolute_row 0 = oldest scrollback line, scrollback_len = first screen row.
+/// Rows use the content timeline; epoch prevents reuse after a buffer reset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SelectionPoint {
+    pub epoch: tasty_terminal::ContentEpoch,
     pub col: usize,
     pub absolute_row: usize,
 }
@@ -75,18 +76,16 @@ impl TextSelection {
 }
 
 /// Convert mouse physical pixel coordinates to a terminal grid SelectionPoint.
-#[allow(clippy::too_many_arguments)] // reason: 마우스→grid 좌표 변환 컨텍스트
 pub fn pixel_to_grid(
     mouse_x: f32,
     mouse_y: f32,
     viewport: &PhysicalRect,
     cell_width: f32,
     cell_height: f32,
-    cols: usize,
-    rows: usize,
-    scroll_offset: usize,
-    scrollback_len: usize,
+    content: tasty_terminal::ViewportInfo,
 ) -> SelectionPoint {
+    let cols = content.cut.cols;
+    let rows = content.cut.rows;
     let rel_x = mouse_x - viewport.x.value();
     let rel_y = mouse_y - viewport.y.value();
 
@@ -96,11 +95,13 @@ pub fn pixel_to_grid(
     let display_row = (rel_y / cell_height).floor() as isize;
     let display_row = display_row.clamp(0, (rows as isize) - 1) as usize;
 
-    // Convert display row to absolute row:
-    // display_row 0 shows: scrollback_len - scroll_offset
-    let absolute_row = scrollback_len.saturating_sub(scroll_offset) + display_row;
+    let absolute_row = content.top_row + display_row;
 
-    SelectionPoint { col, absolute_row }
+    SelectionPoint {
+        epoch: content.cut.epoch,
+        col,
+        absolute_row,
+    }
 }
 
 /// Check if a cell at (col, absolute_row) is within the normalized selection range.
@@ -136,8 +137,21 @@ pub fn extract_selected_text(
     terminal: &tasty_terminal::Terminal,
     selection: &TextSelection,
 ) -> String {
+    terminal.with_content(|view| extract_selected_text_from_view(&view, selection))
+}
+
+/// Extract stable coordinates using the caller's already-locked content cut.
+pub fn extract_selected_text_from_view(
+    terminal: &tasty_terminal::TerminalReadView<'_>,
+    selection: &TextSelection,
+) -> String {
+    if selection.anchor.epoch != terminal.cut().epoch
+        || selection.cursor.epoch != terminal.cut().epoch
+    {
+        return String::new();
+    }
     let norm = selection.normalized();
-    let scrollback_len = terminal.scrollback_len();
+    let scrollback_len = terminal.screen_start();
     let (cols, _) = terminal.dimensions();
     let screen_lines = terminal.screen_lines();
 
@@ -147,7 +161,12 @@ pub fn extract_selected_text(
         let c0 = norm.start.col.min(norm.end.col);
         let c1 = norm.start.col.max(norm.end.col);
         let mut lines: Vec<String> = Vec::new();
-        for abs_row in norm.start.absolute_row..=norm.end.absolute_row {
+        for abs_row in norm.start.absolute_row.max(terminal.first_row())
+            ..=norm
+                .end
+                .absolute_row
+                .min(terminal.end_row().saturating_sub(1))
+        {
             let mut row_text = String::new();
             if abs_row < scrollback_len {
                 if let Some(cells) = terminal.scrollback_line_owned(abs_row) {
@@ -178,7 +197,12 @@ pub fn extract_selected_text(
     }
 
     let mut rows: Vec<(String, bool)> = Vec::new();
-    for abs_row in norm.start.absolute_row..=norm.end.absolute_row {
+    for abs_row in norm.start.absolute_row.max(terminal.first_row())
+        ..=norm
+            .end
+            .absolute_row
+            .min(terminal.end_row().saturating_sub(1))
+    {
         let (text, wrapped) = if abs_row < scrollback_len {
             let raw = extract_scrollback_line(terminal, abs_row, &norm, abs_row);
             let wrapped = terminal.scrollback_line_wrapped(abs_row).unwrap_or(false);
@@ -238,7 +262,7 @@ fn screen_line_soft_wrapped(line: &termwiz::surface::line::Line, cols: usize) ->
 }
 
 fn extract_scrollback_line(
-    terminal: &tasty_terminal::Terminal,
+    terminal: &tasty_terminal::TerminalReadView<'_>,
     index: usize,
     sel: &NormalizedSelection,
     abs_row: usize,
@@ -325,10 +349,12 @@ mod tests {
         let (cols, rows) = terminal.dimensions();
         TextSelection {
             anchor: SelectionPoint {
+                epoch: terminal.content_cut().epoch,
                 col: 0,
                 absolute_row: 0,
             },
             cursor: SelectionPoint {
+                epoch: terminal.content_cut().epoch,
                 col: cols.saturating_sub(1),
                 absolute_row: scrollback_len + rows.saturating_sub(1),
             },
@@ -336,6 +362,52 @@ mod tests {
             surface_id: 0,
             dragging: false,
         }
+    }
+
+    #[test]
+    fn viewport_points_and_copy_keep_row_identity_through_trim_and_reset() {
+        let mut t = Terminal::new_detached(20, 3);
+        t.set_scrollback_limit(3);
+        t.feed_bytes(b"zero\r\none\r\ntwo\r\nthree\r\nfour");
+        let mut viewport = tasty_terminal::TerminalViewport::LIVE;
+        viewport.scroll_up(t.content_cut(), 1);
+        let selection = t.with_view(&viewport, |view| {
+            let rect = PhysicalRect {
+                x: tasty_type_geometry::length::PhysicalPx(0.0),
+                y: tasty_type_geometry::length::PhysicalPx(0.0),
+                width: tasty_type_geometry::length::PhysicalPx(20.0),
+                height: tasty_type_geometry::length::PhysicalPx(3.0),
+            };
+            let point = pixel_to_grid(0.0, 0.0, &rect, 1.0, 1.0, view.viewport());
+            let selection = TextSelection {
+                anchor: point,
+                cursor: SelectionPoint { col: 2, ..point },
+                mode: SelectionMode::Normal,
+                surface_id: 1,
+                dragging: false,
+            };
+            assert_eq!(extract_selected_text_from_view(&view, &selection), "one");
+            selection
+        });
+        t.feed_bytes(b"\r\nfive\r\nsix");
+        assert_eq!(extract_selected_text(&t, &selection), "one");
+        t.feed_bytes(b"\r\nseven");
+        assert!(
+            extract_selected_text(&t, &selection).is_empty(),
+            "removed row cannot alias two"
+        );
+        t.feed_bytes(b"\x1b[3J\r\nNEW\r\nCONTENT\r\nHERE");
+        assert!(extract_selected_text(&t, &selection).is_empty());
+    }
+
+    #[test]
+    fn cleared_alternate_content_rejects_previous_selection() {
+        let mut t = Terminal::new_detached(20, 3);
+        t.feed_bytes(b"\x1b[?1049hOLD");
+        let selection = select_all(&t);
+        assert_eq!(extract_selected_text(&t, &selection), "OLD");
+        t.feed_bytes(b"\x1b[?1049l\x1b[?1049hNEW");
+        assert!(extract_selected_text(&t, &selection).is_empty());
     }
 
     #[test]

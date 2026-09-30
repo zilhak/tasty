@@ -62,6 +62,8 @@ use crate::model::PhysicalPx;
 #[cfg(feature = "gui")]
 mod main;
 #[cfg(feature = "gui")]
+pub(crate) mod terminal_view;
+#[cfg(feature = "gui")]
 pub use main::MainViewState;
 #[cfg(not(feature = "gui"))]
 mod command;
@@ -135,6 +137,8 @@ impl RequestContext {
             navigation,
             #[cfg(feature = "gui")]
             tab_bar_scroll: Default::default(),
+            #[cfg(feature = "gui")]
+            terminal_views: Default::default(),
             #[cfg(any(feature = "gui", debug_assertions, test))]
             category_last_active: std::collections::HashMap::new(),
             #[cfg(feature = "gui")]
@@ -524,6 +528,7 @@ impl RequestContext {
     /// 닫힌 surface의 화면 전용 cache를 해제한다. 도메인 자원은 engine이 정리한다.
     #[cfg(feature = "gui")]
     pub(crate) fn release_surface_views(&mut self, surface_id: u32) {
+        self.terminal_views.remove(surface_id);
         self.explorer_views.drop_view(surface_id);
         self.dag_graph_views.drop_view(surface_id);
         self.shell_integration_hint_shown.remove(&surface_id);

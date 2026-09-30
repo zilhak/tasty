@@ -61,21 +61,30 @@ impl MainView {
             self.state
                 .surface_rect_by_id(engine, surface_id, terminal_rect, scale_factor)?;
 
-        let (cols, rows) = terminal.dimensions();
-        let point = crate::selection::pixel_to_grid(
-            x,
-            y,
-            &surface_rect,
-            self.base.gpu.cell_width(),
-            self.base.gpu.cell_height(),
-            cols,
-            rows,
-            terminal.scroll_offset(),
-            terminal.scrollback_len(),
-        );
-        let span = terminal_link::link_at(terminal, point.col, point.absolute_row)?;
+        let cwd = terminal.get_cwd();
+        let mirror = terminal.process_id().is_none();
+        let (span, epoch) =
+            terminal.with_view(&self.state.terminal_views.get(engine, surface_id), |view| {
+                let point = crate::selection::pixel_to_grid(
+                    x,
+                    y,
+                    &surface_rect,
+                    self.base.gpu.cell_width(),
+                    self.base.gpu.cell_height(),
+                    view.viewport(),
+                );
+                terminal_link::link_at_view(
+                    &view,
+                    point.col,
+                    point.absolute_row,
+                    cwd.as_deref(),
+                    mirror,
+                )
+                .map(|span| (span, view.cut().epoch))
+            })?;
         let th = theme::theme();
         let highlight = LinkHighlight {
+            epoch,
             segments: span.segments,
             fg: th.accent_primary().to_gpu_rgba(),
             bg: th.selection_bg.to_gpu_rgba(),
@@ -232,6 +241,9 @@ impl MainView {
                 && let Some((point, _)) = self.mouse_to_grid(engine, x, y, &terminal_rect)
             {
                 if let Some(sel) = &mut self.text_selection {
+                    if sel.anchor.epoch != point.epoch {
+                        sel.anchor = point;
+                    }
                     sel.cursor = point;
                 }
                 self.mark_dirty();
@@ -951,10 +963,7 @@ impl MainView {
         let terminal_rect = self.compute_terminal_rect();
         let cell_w = self.base.gpu.cell_width();
         let cell_h = self.base.gpu.cell_height();
-        let Some((scroll_offset, sb_len, (cols, rows))) = engine
-            .visible_terminal(surface_id)
-            .map(|t| (t.scroll_offset(), t.scrollback_len(), t.dimensions()))
-        else {
+        let Some(terminal) = engine.visible_terminal(surface_id) else {
             return (1, 1);
         };
         let Some(rect) = self.state.surface_rect_by_id(
@@ -965,25 +974,17 @@ impl MainView {
         ) else {
             return (1, 1);
         };
-        let point = crate::selection::pixel_to_grid(
-            x,
-            y,
-            &rect,
-            cell_w,
-            cell_h,
-            cols,
-            rows,
-            scroll_offset,
-            sb_len,
-        );
-        let viewport_top = sb_len.saturating_sub(scroll_offset);
-        let row = point
-            .absolute_row
-            .saturating_sub(viewport_top)
-            .min(rows.saturating_sub(1))
-            + 1;
-        let col = point.col.min(cols.saturating_sub(1)) + 1;
-        (col, row)
+        terminal.with_view(&self.state.terminal_views.get(engine, surface_id), |view| {
+            let point =
+                crate::selection::pixel_to_grid(x, y, &rect, cell_w, cell_h, view.viewport());
+            let row = point
+                .absolute_row
+                .saturating_sub(view.viewport().top_row)
+                .min(view.rows().saturating_sub(1))
+                + 1;
+            let col = point.col.min(view.cols().saturating_sub(1)) + 1;
+            (col, row)
+        })
     }
 
     /// 캡처 제외 목록에 해당하거나 hard 점유 중이면 클릭 트래킹을 None으로 처리한다.
@@ -1182,20 +1183,21 @@ impl MainView {
                 if lines == 0 {
                     return;
                 }
-                let info = engine.find_terminal_by_id(surface_id).map(|t| {
-                    (
-                        t.is_alternate_screen(),
-                        t.mouse_tracking(),
-                        t.sgr_mouse(),
-                        t.scroll_offset(),
-                        t.scrollback_len(),
-                        t.dimensions(),
-                    )
+                let viewport = self.state.terminal_views.get(engine, surface_id);
+                let info = engine.visible_terminal(surface_id).map(|t| {
+                    t.with_view(&viewport, |view| {
+                        (
+                            view.is_alternate_screen(),
+                            view.mouse_tracking(),
+                            view.sgr_mouse(),
+                            view.viewport(),
+                        )
+                    })
                 });
-                let Some((is_alt, tracking, sgr, scroll_offset, sb_len, (cols, rows))) = info
-                else {
+                let Some((is_alt, tracking, sgr, content)) = info else {
                     return;
                 };
+                let (cols, rows) = (content.cut.cols, content.cut.rows);
 
                 if tracking != tasty_terminal::MouseTrackingMode::None {
                     // 마우스 추적이 켜져 있으면 휠을 마우스 이벤트로 전송한다 (표준
@@ -1214,19 +1216,11 @@ impl MainView {
                                 self.base.gpu.scale_factor(),
                             )?;
                             let point = crate::selection::pixel_to_grid(
-                                x,
-                                y,
-                                &rect,
-                                cell_w,
-                                cell_h,
-                                cols,
-                                rows,
-                                scroll_offset,
-                                sb_len,
+                                x, y, &rect, cell_w, cell_h, content,
                             );
                             // viewport 기준 1-based (col, row). alt screen 은 scrollback
                             // 이 없어 absolute_row 가 곧 viewport row.
-                            let viewport_top = sb_len.saturating_sub(scroll_offset);
+                            let viewport_top = content.top_row;
                             let row = point
                                 .absolute_row
                                 .saturating_sub(viewport_top)
@@ -1266,13 +1260,15 @@ impl MainView {
                     );
                 } else {
                     // 일반 화면 — scrollback (UI 자체 mutate, PTY 와 무관).
-                    if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
-                        if lines > 0 {
-                            terminal.scroll_up(lines as usize);
-                        } else if lines < 0 {
-                            terminal.scroll_down((-lines) as usize);
-                        }
-                    }
+                    self.state
+                        .terminal_views
+                        .update(engine, surface_id, |viewport, cut| {
+                            if lines > 0 {
+                                viewport.scroll_up(cut, lines as usize);
+                            } else if lines < 0 {
+                                viewport.scroll_down(cut, (-lines) as usize);
+                            }
+                        });
                     self.base.dirty = true;
                 }
             }

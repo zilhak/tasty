@@ -358,7 +358,7 @@ impl GpuState {
         let render_start = std::time::Instant::now();
 
         // surface 캡처를 먼저 처리한다. 별도 텍스처를 쓰고 투영값을 복원해 뒤의 화면 렌더에 영향이 없게 한다.
-        self.handle_pending_surface_screenshot(engine);
+        self.handle_pending_surface_screenshot(state, engine);
 
         // 무대 분기는 surface 캡처 뒤, 레이아웃·PTY 크기 갱신 전에 둔다.
         // 앞당기면 surface 캡처를 처리하지 못하고 뒤로 미루면 배경 PTY 크기가 바뀐다.
@@ -477,7 +477,7 @@ impl GpuState {
             focused_surface_id,
             selection,
             vi_cursor,
-            &engine.settings.appearance,
+            &state.terminal_views,
             preedit,
             link_hover,
             search_state,
@@ -574,13 +574,22 @@ impl GpuState {
     /// Pending offscreen surface screenshot(agent action, focus-independent) 소비.
     /// A hard-occupied surface shows a readonly mirror server-side; capture what
     /// the user would see (mirror), else the live terminal.
-    fn handle_pending_surface_screenshot(&mut self, engine: &crate::core::CoreState) {
+    fn handle_pending_surface_screenshot(
+        &mut self,
+        state: &MainViewState,
+        engine: &crate::core::CoreState,
+    ) {
         let Some((surface_id, path)) = self.pending_surface_screenshot.take() else {
             return;
         };
         let reverse_screen = engine.settings.general.reverse_screen_enabled;
         match engine.visible_terminal(surface_id) {
-            Some(t) => self.capture_surface_to_png(t, reverse_screen, &path),
+            Some(t) => self.capture_surface_to_png(
+                t,
+                &state.terminal_views.get(engine, surface_id),
+                reverse_screen,
+                &path,
+            ),
             None => {
                 tracing::warn!(
                     "surface screenshot: surface {surface_id} has no terminal to capture"

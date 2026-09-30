@@ -146,14 +146,12 @@ pub struct ViCopyMode {
 
 impl ViCopyMode {
     /// 진입 시 cursor 는 현재 화면 첫 행 (display row 0) 의 0 col 로.
-    pub fn enter(surface_id: u32, terminal: &tasty_terminal::Terminal) -> Self {
-        let scrollback_len = terminal.scrollback_len();
-        let scroll_offset = terminal.scroll_offset();
-        // display row 0 의 absolute_row = scrollback_len - scroll_offset.
-        let absolute_row = scrollback_len.saturating_sub(scroll_offset);
+    pub fn enter(surface_id: u32, terminal: &tasty_terminal::TerminalReadView<'_>) -> Self {
+        let absolute_row = terminal.viewport().top_row;
         Self {
             surface_id,
             cursor: SelectionPoint {
+                epoch: terminal.cut().epoch,
                 col: 0,
                 absolute_row,
             },
@@ -215,8 +213,11 @@ fn is_word_char(ch: char) -> bool {
 
 /// 한 row 의 셀 텍스트를 col → char 매핑으로 추출. col 인덱스는 visible_cells 의
 /// cell_index 와 동일 (멀티-byte 셀의 시작 col).
-fn row_chars(terminal: &tasty_terminal::Terminal, abs_row: usize) -> Vec<(usize, char)> {
-    let scrollback_len = terminal.scrollback_len();
+fn row_chars(
+    terminal: &tasty_terminal::TerminalReadView<'_>,
+    abs_row: usize,
+) -> Vec<(usize, char)> {
+    let scrollback_len = terminal.screen_start();
     let mut out: Vec<(usize, char)> = Vec::new();
     if abs_row < scrollback_len {
         if let Some(line) = terminal.scrollback_line_owned(abs_row) {
@@ -276,12 +277,12 @@ fn class(kind: WordJump, ch: char) -> bool {
 
 /// 단어 점프. `count` 반복.
 pub fn word_jump(
-    terminal: &tasty_terminal::Terminal,
+    terminal: &tasty_terminal::TerminalReadView<'_>,
     start: SelectionPoint,
     kind: WordJump,
     count: usize,
 ) -> SelectionPoint {
-    let scrollback_len = terminal.scrollback_len();
+    let scrollback_len = terminal.screen_start();
     let rows = terminal.rows();
     let total_rows = scrollback_len + rows;
     let mut cur = start;
@@ -292,14 +293,14 @@ pub fn word_jump(
 }
 
 fn word_jump_once(
-    terminal: &tasty_terminal::Terminal,
+    terminal: &tasty_terminal::TerminalReadView<'_>,
     start: SelectionPoint,
     kind: WordJump,
     total_rows: usize,
 ) -> SelectionPoint {
     // 커서 앞뒤 20행으로 단어 검색 범위를 제한한다.
     let span: isize = 30;
-    let from = (start.absolute_row as isize - span).max(0) as usize;
+    let from = (start.absolute_row as isize - span).max(terminal.first_row() as isize) as usize;
     let to = ((start.absolute_row as isize + span) as usize).min(total_rows.saturating_sub(1));
     let mut flat: Vec<(usize, usize, char)> = Vec::new(); // (abs_row, col, ch)
     for r in from..=to {
@@ -336,6 +337,7 @@ fn word_jump_once(
                 return SelectionPoint {
                     col: c,
                     absolute_row: r,
+                    ..start
                 };
             }
             start
@@ -358,6 +360,7 @@ fn word_jump_once(
             SelectionPoint {
                 col: c,
                 absolute_row: r,
+                ..start
             }
         }
         WordJump::NextEnd | WordJump::NextEndBig => {
@@ -382,6 +385,7 @@ fn word_jump_once(
                 return SelectionPoint {
                     col: c,
                     absolute_row: r,
+                    ..start
                 };
             }
             // fallback
@@ -390,6 +394,7 @@ fn word_jump_once(
             SelectionPoint {
                 col: c,
                 absolute_row: r,
+                ..start
             }
         }
     }
@@ -431,10 +436,17 @@ pub enum ViKeyOutcome {
 /// 녹화 시작·중단 키와 재생 중인 키는 녹화에 포함하지 않는다.
 pub fn handle_vi_key(
     vi: &mut ViCopyMode,
-    terminal: &tasty_terminal::Terminal,
+    terminal: &tasty_terminal::TerminalReadView<'_>,
     key: &Key,
     modifiers: ModifiersState,
 ) -> ViKeyOutcome {
+    if vi.cursor.epoch != terminal.cut().epoch {
+        return ViKeyOutcome::Exit;
+    }
+    vi.cursor.absolute_row = vi
+        .cursor
+        .absolute_row
+        .clamp(terminal.first_row(), terminal.end_row().saturating_sub(1));
     let outcome = handle_vi_key_inner(vi, terminal, key, modifiers);
     // 녹화 중이고, 녹화 시작/중단 토글 자체가 아니며, replay 중이 아니면 키를 buffer 에 push.
     let should_record = vi.recording.is_some()
@@ -451,7 +463,7 @@ pub fn handle_vi_key(
 
 fn handle_vi_key_inner(
     vi: &mut ViCopyMode,
-    terminal: &tasty_terminal::Terminal,
+    terminal: &tasty_terminal::TerminalReadView<'_>,
     key: &Key,
     modifiers: ModifiersState,
 ) -> ViKeyOutcome {
@@ -498,7 +510,7 @@ fn handle_vi_key_inner(
         match op {
             PendingOp::G => {
                 if matches!(key.as_ref(), Key::Character(s) if s == "g") {
-                    vi.cursor.absolute_row = 0;
+                    vi.cursor.absolute_row = terminal.first_row();
                     vi.cursor.col = 0;
                     vi.count_buf.clear();
                     return ViKeyOutcome::Moved;
@@ -556,7 +568,7 @@ fn handle_vi_key_inner(
     }
 
     let cols = terminal.cols();
-    let scrollback_len = terminal.scrollback_len();
+    let scrollback_len = terminal.screen_start();
     let rows = terminal.rows();
     let max_row = scrollback_len + rows.saturating_sub(1);
 
@@ -622,7 +634,11 @@ fn handle_vi_key_inner(
                     ViKeyOutcome::Moved
                 }
                 'k' => {
-                    vi.cursor.absolute_row = vi.cursor.absolute_row.saturating_sub(count);
+                    vi.cursor.absolute_row = vi
+                        .cursor
+                        .absolute_row
+                        .saturating_sub(count)
+                        .max(terminal.first_row());
                     ViKeyOutcome::Moved
                 }
                 'g' => {
@@ -786,7 +802,11 @@ impl MainView {
             );
             return;
         }
-        self.vi_copy = Some(ViCopyMode::enter(sid, terminal));
+        self.vi_copy = Some(
+            terminal.with_view(&self.state.terminal_views.get(engine, sid), |view| {
+                ViCopyMode::enter(sid, &view)
+            }),
+        );
         self.text_selection = None;
         self.base.dirty = true;
     }
@@ -802,33 +822,22 @@ impl MainView {
             return false;
         }
 
-        // surface ID + terminal 의 viewport 상태를 미리 read.
-        let (rows, scrollback_len) = {
-            let Some(t) = self.state.focused_terminal(&*engine) else {
-                // surface 가 사라짐 → vi mode 종료.
-                self.vi_copy = None;
-                return true;
-            };
-            (t.rows(), t.scrollback_len())
+        let sid = self.vi_copy.as_ref().expect("vi mode exists").surface_id;
+        let Some(terminal) = engine.visible_terminal(sid) else {
+            self.vi_copy = None;
+            return true;
         };
-
-        let outcome = {
-            let terminal = match self.state.focused_terminal(&*engine) {
-                Some(t) => t,
-                None => {
-                    self.vi_copy = None;
-                    return true;
-                }
-            };
-            let vi = self.vi_copy.as_mut().expect("vi_copy is Some");
-            handle_vi_key(vi, terminal, key, modifiers)
-        };
+        let viewport = self.state.terminal_views.get(engine, sid);
+        let outcome = terminal.with_view(&viewport, |view| {
+            let vi = self.vi_copy.as_mut().expect("vi mode exists");
+            handle_vi_key(vi, &view, key, modifiers)
+        });
 
         match outcome {
             ViKeyOutcome::NotHandled => return false,
             ViKeyOutcome::Consumed => {}
             ViKeyOutcome::Moved => {
-                self.vi_copy_viewport_align(engine, rows, scrollback_len);
+                self.vi_copy_viewport_align(engine);
             }
             ViKeyOutcome::Yank => {
                 self.vi_copy_yank(engine);
@@ -846,13 +855,13 @@ impl MainView {
                 if let Some(terminal) = engine.find_terminal_by_id(surface_id) {
                     self.state.search.execute(terminal);
                 }
-                Self::vi_copy_jump_to_current_match(self, engine, rows, scrollback_len);
+                Self::vi_copy_jump_to_current_match(self, engine);
             }
             ViKeyOutcome::SearchNext => {
-                self.vi_copy_search_navigate(engine, true, rows, scrollback_len);
+                self.vi_copy_search_navigate(engine, true);
             }
             ViKeyOutcome::SearchPrev => {
-                self.vi_copy_search_navigate(engine, false, rows, scrollback_len);
+                self.vi_copy_search_navigate(engine, false);
             }
             ViKeyOutcome::InvalidRegister => {
                 let sid = self.vi_copy.as_ref().map(|v| v.surface_id).unwrap_or(0);
@@ -890,27 +899,25 @@ impl MainView {
     }
 
     /// cursor 가 viewport 밖이면 scroll 하여 정렬.
-    fn vi_copy_viewport_align(
-        &mut self,
-        engine: &mut crate::core::CoreState,
-        rows: usize,
-        scrollback_len: usize,
-    ) {
+    fn vi_copy_viewport_align(&mut self, engine: &crate::core::CoreState) {
         let Some(vi) = self.vi_copy.as_ref() else {
             return;
         };
-        let cursor_row = vi.cursor.absolute_row;
-        let Some(terminal) = self.state.focused_terminal_mut(&mut *engine) else {
-            return;
-        };
-        let scroll_offset = terminal.scroll_offset();
-        let viewport_top = scrollback_len.saturating_sub(scroll_offset);
-        let viewport_bottom = viewport_top + rows.saturating_sub(1);
-        if cursor_row < viewport_top {
-            terminal.scroll_up(viewport_top - cursor_row);
-        } else if cursor_row > viewport_bottom {
-            terminal.scroll_down(cursor_row - viewport_bottom);
-        }
+        let cursor = vi.cursor;
+        self.state
+            .terminal_views
+            .update(engine, vi.surface_id, |viewport, cut| {
+                if cursor.epoch != cut.epoch {
+                    return;
+                }
+                let top = viewport.resolve(cut).top_row;
+                let bottom = top + cut.rows.saturating_sub(1);
+                if cursor.absolute_row < top {
+                    viewport.scroll_up(cut, top - cursor.absolute_row);
+                } else if cursor.absolute_row > bottom {
+                    viewport.scroll_down(cut, cursor.absolute_row - bottom);
+                }
+            });
     }
 
     /// 현재 vi selection 을 클립보드에 복사하고 mode 종료.
@@ -948,13 +955,7 @@ impl MainView {
         self.vi_copy = None;
     }
 
-    fn vi_copy_search_navigate(
-        &mut self,
-        engine: &mut crate::core::CoreState,
-        forward: bool,
-        rows: usize,
-        scrollback_len: usize,
-    ) {
+    fn vi_copy_search_navigate(&mut self, engine: &mut crate::core::CoreState, forward: bool) {
         if self.state.search.matches.is_empty() {
             return;
         }
@@ -970,15 +971,10 @@ impl MainView {
         } else {
             self.state.search.prev_match();
         }
-        Self::vi_copy_jump_to_current_match(self, engine, rows, scrollback_len);
+        Self::vi_copy_jump_to_current_match(self, engine);
     }
 
-    fn vi_copy_jump_to_current_match(
-        view: &mut Self,
-        engine: &mut crate::core::CoreState,
-        rows: usize,
-        scrollback_len: usize,
-    ) {
+    fn vi_copy_jump_to_current_match(view: &mut Self, engine: &mut crate::core::CoreState) {
         let m = match view
             .state
             .search
@@ -990,11 +986,12 @@ impl MainView {
         };
         if let Some(vi) = view.vi_copy.as_mut() {
             vi.cursor = SelectionPoint {
+                epoch: view.state.search.epoch,
                 col: m.col_start,
                 absolute_row: m.row,
             };
         }
-        view.vi_copy_viewport_align(engine, rows, scrollback_len);
+        view.vi_copy_viewport_align(engine);
     }
 
     /// `live_selection` 우선 — vi mode 의 1-cell cursor 또는 visual selection 을
@@ -1013,6 +1010,14 @@ fn _module_uses_core_state(_: &CoreState) {}
 mod tests {
     use super::*;
     use tasty_terminal::Terminal;
+    fn handle_vi_key(
+        vi: &mut ViCopyMode,
+        t: &Terminal,
+        key: &Key,
+        mods: ModifiersState,
+    ) -> ViKeyOutcome {
+        t.with_content(|view| super::handle_vi_key(vi, &view, key, mods))
+    }
 
     /// 셸 출력과 경합하지 않도록 PTY 없이 격자만 만들고 process_bytes로 입력한다.
     fn term(cols: usize, rows: usize) -> Terminal {
@@ -1026,7 +1031,7 @@ mod tests {
     #[test]
     fn enter_then_exit_returns_to_normal() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         assert_eq!(vi.visual, ViCopyVisual::None);
         let out = handle_vi_key(
             &mut vi,
@@ -1040,7 +1045,7 @@ mod tests {
     #[test]
     fn hjkl_move_cursor() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         let start = vi.cursor;
         // j moves down
         handle_vi_key(&mut vi, &t, &key_char('j'), ModifiersState::empty());
@@ -1059,7 +1064,7 @@ mod tests {
     #[test]
     fn count_prefix_repeats_movement() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         let start = vi.cursor;
         handle_vi_key(&mut vi, &t, &key_char('5'), ModifiersState::empty());
         handle_vi_key(&mut vi, &t, &key_char('l'), ModifiersState::empty());
@@ -1071,7 +1076,7 @@ mod tests {
     #[test]
     fn zero_alone_is_line_start_but_part_of_count() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         vi.cursor.col = 10;
         // '0' alone: line start.
         handle_vi_key(&mut vi, &t, &key_char('0'), ModifiersState::empty());
@@ -1086,7 +1091,7 @@ mod tests {
     #[test]
     fn visual_char_then_escape_clears_visual_not_mode() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         handle_vi_key(&mut vi, &t, &key_char('v'), ModifiersState::empty());
         assert_eq!(vi.visual, ViCopyVisual::Char);
         let out = handle_vi_key(
@@ -1102,7 +1107,7 @@ mod tests {
     #[test]
     fn yank_outcome_signals_copy() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         handle_vi_key(&mut vi, &t, &key_char('v'), ModifiersState::empty());
         handle_vi_key(&mut vi, &t, &key_char('l'), ModifiersState::empty());
         let out = handle_vi_key(&mut vi, &t, &key_char('y'), ModifiersState::empty());
@@ -1112,7 +1117,7 @@ mod tests {
     #[test]
     fn search_slash_opens_buffer_and_enter_commits() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         handle_vi_key(&mut vi, &t, &key_char('/'), ModifiersState::empty());
         assert!(vi.search.is_some());
         assert!(vi.search.as_ref().unwrap().buffer.is_some());
@@ -1140,7 +1145,7 @@ mod tests {
     #[test]
     fn gg_moves_to_top() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         vi.cursor.absolute_row = 5;
         handle_vi_key(&mut vi, &t, &key_char('g'), ModifiersState::empty());
         assert_eq!(vi.cursor.absolute_row, 5, "first g should not move");
@@ -1154,7 +1159,7 @@ mod tests {
     #[test]
     fn single_g_then_other_cancels_pending() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         vi.cursor.absolute_row = 5;
         handle_vi_key(&mut vi, &t, &key_char('g'), ModifiersState::empty());
         assert_eq!(vi.pending_op, Some(PendingOp::G));
@@ -1170,7 +1175,7 @@ mod tests {
     #[test]
     fn g_then_escape_cancels_pending_then_exits() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         handle_vi_key(&mut vi, &t, &key_char('g'), ModifiersState::empty());
         assert_eq!(vi.pending_op, Some(PendingOp::G));
         let out = handle_vi_key(
@@ -1193,7 +1198,7 @@ mod tests {
     fn caret_jumps_to_first_non_whitespace() {
         let mut t = term(40, 10);
         write_line(&mut t, "   foo");
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         // 첫 화면 행 = scrollback_len.
         vi.cursor.absolute_row = t.scrollback_len();
         vi.cursor.col = 10;
@@ -1204,7 +1209,7 @@ mod tests {
     #[test]
     fn caret_on_empty_line_stays_at_zero() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         vi.cursor.absolute_row = t.scrollback_len();
         vi.cursor.col = 5;
         handle_vi_key(&mut vi, &t, &key_char('^'), ModifiersState::empty());
@@ -1215,7 +1220,7 @@ mod tests {
     fn caret_on_all_whitespace_line_goes_to_zero() {
         let mut t = term(40, 10);
         write_line(&mut t, "      ");
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         vi.cursor.absolute_row = t.scrollback_len();
         vi.cursor.col = 4;
         handle_vi_key(&mut vi, &t, &key_char('^'), ModifiersState::empty());
@@ -1226,7 +1231,7 @@ mod tests {
     fn big_w_jumps_over_punctuation() {
         let mut t = term(40, 10);
         write_line(&mut t, "foo.bar baz");
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         vi.cursor.absolute_row = t.scrollback_len();
         vi.cursor.col = 0;
         handle_vi_key(&mut vi, &t, &key_char('W'), ModifiersState::empty());
@@ -1238,7 +1243,7 @@ mod tests {
     fn big_e_jumps_to_big_word_end() {
         let mut t = term(40, 10);
         write_line(&mut t, "foo.bar baz");
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         vi.cursor.absolute_row = t.scrollback_len();
         vi.cursor.col = 0;
         handle_vi_key(&mut vi, &t, &key_char('E'), ModifiersState::empty());
@@ -1250,7 +1255,7 @@ mod tests {
     fn big_b_jumps_to_prev_big_word_start() {
         let mut t = term(40, 10);
         write_line(&mut t, "foo.bar baz");
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         vi.cursor.absolute_row = t.scrollback_len();
         vi.cursor.col = 8;
         handle_vi_key(&mut vi, &t, &key_char('B'), ModifiersState::empty());
@@ -1262,7 +1267,7 @@ mod tests {
     fn big_w_count_repeats() {
         let mut t = term(40, 10);
         write_line(&mut t, "a.b c.d e.f");
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         vi.cursor.absolute_row = t.scrollback_len();
         vi.cursor.col = 0;
         handle_vi_key(&mut vi, &t, &key_char('2'), ModifiersState::empty());
@@ -1274,7 +1279,7 @@ mod tests {
     #[test]
     fn register_prefix_plus_sets_active_register() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         let out = handle_vi_key(&mut vi, &t, &key_char('"'), ModifiersState::empty());
         assert!(matches!(out, ViKeyOutcome::Consumed));
         assert_eq!(vi.pending_op, Some(PendingOp::DoubleQuote));
@@ -1286,7 +1291,7 @@ mod tests {
     #[test]
     fn register_prefix_star_sets_active_register() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         handle_vi_key(&mut vi, &t, &key_char('"'), ModifiersState::empty());
         handle_vi_key(&mut vi, &t, &key_char('*'), ModifiersState::empty());
         assert_eq!(vi.active_register, Some('*'));
@@ -1295,7 +1300,7 @@ mod tests {
     #[test]
     fn invalid_register_returns_invalid_register_outcome() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         handle_vi_key(&mut vi, &t, &key_char('"'), ModifiersState::empty());
         let out = handle_vi_key(&mut vi, &t, &key_char('j'), ModifiersState::empty());
         assert!(matches!(out, ViKeyOutcome::InvalidRegister));
@@ -1306,7 +1311,7 @@ mod tests {
     #[test]
     fn record_then_replay_repeats_motion() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         // qa l j j j q → register a 에 4 키 저장.
         handle_vi_key(&mut vi, &t, &key_char('q'), ModifiersState::empty());
         let out = handle_vi_key(&mut vi, &t, &key_char('a'), ModifiersState::empty());
@@ -1331,7 +1336,7 @@ mod tests {
     #[test]
     fn empty_macro_replay_signals_failure() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         handle_vi_key(&mut vi, &t, &key_char('@'), ModifiersState::empty());
         let out = handle_vi_key(&mut vi, &t, &key_char('z'), ModifiersState::empty());
         assert!(matches!(out, ViKeyOutcome::MacroReplayFailed));
@@ -1340,7 +1345,7 @@ mod tests {
     #[test]
     fn recursive_macro_depth_capped() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         // register a 에 `@a` 만 들어가는 매크로 — 무한 재귀 시도.
         let mk_at = MacroKey::from_winit(&key_char('@'), ModifiersState::empty()).unwrap();
         let mk_a = MacroKey::from_winit(&key_char('a'), ModifiersState::empty()).unwrap();
@@ -1353,7 +1358,7 @@ mod tests {
     #[test]
     fn recording_esc_stops_recording_then_exits() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         handle_vi_key(&mut vi, &t, &key_char('q'), ModifiersState::empty());
         handle_vi_key(&mut vi, &t, &key_char('a'), ModifiersState::empty());
         assert!(vi.recording.is_some());
@@ -1371,7 +1376,7 @@ mod tests {
     #[test]
     fn q_alone_then_non_register_exits() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         handle_vi_key(&mut vi, &t, &key_char('q'), ModifiersState::empty());
         assert_eq!(vi.pending_op, Some(PendingOp::Q));
         // ASCII 비알파숫자 키 (`!`) → vim 비표준 호환 동작 = Exit.
@@ -1383,7 +1388,7 @@ mod tests {
     #[test]
     fn macro_replay_does_not_leak_count_buf() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         // qa 3 j q  → register a 에 `3` `j` 저장 (count prefix 가 buffer 에 들어감).
         handle_vi_key(&mut vi, &t, &key_char('q'), ModifiersState::empty());
         handle_vi_key(&mut vi, &t, &key_char('a'), ModifiersState::empty());
@@ -1404,7 +1409,7 @@ mod tests {
     #[test]
     fn count_buf_overflow_capped() {
         let t = term(40, 10);
-        let mut vi = ViCopyMode::enter(0, &t);
+        let mut vi = t.with_content(|view| ViCopyMode::enter(0, &view));
         for _ in 0..15 {
             handle_vi_key(&mut vi, &t, &key_char('9'), ModifiersState::empty());
         }

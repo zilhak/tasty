@@ -12,6 +12,10 @@
 
 ## 내부 동작
 
+픽셀 좌표 해소와 링크 hit-test는 같은 `TerminalReadView` 안에서 수행한다. 링크
+강조와 메뉴의 선택 좌표는 content epoch를 보관하므로 기록 reset이나 alternate clear
+뒤 같은 숫자의 행을 이전 링크로 표시하지 않는다.
+
 ### 감지 대상
 
 - URL: `http://`·`https://`·`ftp://`·`file://`, OSC 8 hyperlink.

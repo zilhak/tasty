@@ -199,8 +199,20 @@ impl crate::TerminalReadView<'_> {
     pub fn is_alternate_screen(&self) -> bool {
         self.viewport.cut.alternate
     }
+    pub fn snapshot_as_vt(&self) -> Vec<u8> {
+        self.state.snapshot_as_vt()
+    }
+    pub fn cached_cwd(&self) -> Option<&std::path::Path> {
+        self.state.cached_cwd.as_deref()
+    }
     pub fn cursor_position(&self) -> (usize, usize) {
         self.state.surface().cursor_position()
+    }
+    pub fn mouse_tracking(&self) -> crate::MouseTrackingMode {
+        self.state.mouse_tracking()
+    }
+    pub fn sgr_mouse(&self) -> bool {
+        self.state.sgr_mouse()
     }
     pub fn application_cursor_keys(&self) -> bool {
         self.state.application_cursor_keys()
@@ -343,6 +355,8 @@ mod tests {
         assert_eq!(retained, terminal.content_cut().epoch);
         terminal.feed_bytes(b"\x1b[?1047l\x1b[?1047h");
         assert_eq!(retained, terminal.content_cut().epoch);
+        terminal.feed_bytes(b"\x1bc\x1b[?47hRECREATED");
+        assert_ne!(retained, terminal.content_cut().epoch);
     }
 
     #[test]

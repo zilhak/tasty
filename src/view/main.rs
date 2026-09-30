@@ -63,7 +63,7 @@ pub struct MainView {
     /// 마지막으로 보고한 surface·셀 위치. surface를 포함해 같은 좌표의 다른 화면 입력까지 중복으로 버리지 않는다.
     pub(crate) last_mouse_report_cell: Option<(u32, usize, usize)>,
     pub(crate) last_click_time: Option<std::time::Instant>,
-    pub(crate) last_click_pos: Option<(usize, usize)>,
+    pub(crate) last_click_pos: Option<tasty_selection::SelectionPoint>,
     pub(crate) click_count: u8,
     /// Whether IME composition is active (set by Ime::Enabled/Disabled).
     /// When true, KeyboardInput text is ignored — only Ime::Commit sends text.
