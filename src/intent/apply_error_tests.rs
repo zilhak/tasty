@@ -216,6 +216,7 @@ fn a_preset_save_failure_toasts_only_for_the_user() {
     let (core, mut state, mut engine) = fixture();
     let ws = &engine.workspaces[0];
     let captured = crate::intent::preset_capture::capture_workspace_preset(
+        &crate::model::StructurePresentationSnapshot::default(),
         &engine,
         ws,
         None,

@@ -591,7 +591,7 @@ mod mirror_tests {
         let (mut state, mut engine) = crate::state::tests::test_state();
         engine.workspaces[0].mirror = true;
         let ws_id = engine.workspaces[0].id;
-        let pane_id = engine.workspaces[0].focused_pane;
+        let pane_id = engine.workspaces[0].pane_layout().first_pane().unwrap().id;
         let panes_before = engine.workspaces[0].pane_layout().all_pane_ids().len();
         let tabs_before = |engine: &crate::core::CoreState| {
             engine.workspaces[0]
@@ -631,7 +631,7 @@ mod mirror_tests {
         let core = core_with_presets(dir.path());
         let (mut state, mut engine) = crate::state::tests::test_state();
         let ws_id = engine.workspaces[0].id;
-        let pane_id = engine.workspaces[0].focused_pane;
+        let pane_id = engine.workspaces[0].pane_layout().first_pane().unwrap().id;
 
         for t in [
             target(PresetKind::Tab, Some(pane_id), None),

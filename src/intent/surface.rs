@@ -42,7 +42,7 @@ fn split(
         kind: "terminal".to_string(),
         surface_params: serde_json::json!({}),
     };
-    let events = match core.apply(engine, intent) {
+    let events = match crate::app::structural_exec::execute(core, state, engine, intent) {
         Ok(e) => e,
         Err(e) => {
             crate::core::mark_last_forward_user_triggered(engine, &e, origin);
@@ -118,7 +118,7 @@ fn convert(
         surface_id,
         target: domain_target,
     };
-    if let Err(e) = core.apply(engine, intent) {
+    if let Err(e) = crate::app::structural_exec::execute(core, state, engine, intent) {
         super::report_apply_error(state, engine, origin, "ConvertSurface", &e);
     }
 }

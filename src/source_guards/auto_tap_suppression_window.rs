@@ -8,7 +8,7 @@
 
 use super::{fn_body, line_of, mask_non_code, repo_root};
 
-const HOME: &str = "src/core/attach_runtime.rs";
+const HOME: &str = "src/app/attach_structure.rs";
 const WINDOW_FN: &str = "fn execute_forwarded_structural_op";
 const OPEN: &str = "set_auto_tap_suppressed(true)";
 const CLOSE: &str = "set_auto_tap_suppressed(false)";
@@ -17,8 +17,8 @@ const READER_FN: &str = "fn tap_new_workspace_member";
 const ESCAPES: &[&str] = &["?", "return", "break", "continue"];
 
 /// 주석·리터럴을 호출로 세지 않도록 마스킹한다.
-fn masked_home() -> String {
-    let path = repo_root().join(HOME);
+fn masked_source(source: &str) -> String {
+    let path = repo_root().join(source);
     let src = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("{HOME} 을 읽지 못했다: {e}"))
         .replace("\r\n", "\n");
@@ -37,7 +37,7 @@ fn all_positions(body: &str, needle: &str) -> Vec<usize> {
 
 #[test]
 fn every_suppression_window_is_closed_before_any_way_out() {
-    let masked = masked_home();
+    let masked = masked_source(HOME);
     let body = body_of(&masked, WINDOW_FN);
     let opens = all_positions(&body, OPEN);
     let closes = all_positions(&body, CLOSE);
@@ -98,7 +98,7 @@ fn every_suppression_window_is_closed_before_any_way_out() {
 
 #[test]
 fn the_flag_still_has_a_reader_and_it_is_the_tap_path() {
-    let masked = masked_home();
+    let masked = masked_source("src/core/attach_runtime.rs");
     let reads = all_positions(&masked, READ);
     assert!(
         !reads.is_empty(),
@@ -120,7 +120,7 @@ fn the_flag_still_has_a_reader_and_it_is_the_tap_path() {
 #[test]
 fn the_guard_cuts_the_two_functions_and_not_some_others() {
     // 함수 추출이 다른 본문을 반환하지 않았는지 주변의 호출 형태도 확인한다.
-    let masked = masked_home();
+    let masked = masked_source(HOME);
     let window = body_of(&masked, WINDOW_FN);
     for neighbour in ["StructuralOp::SplitSurface", "exec::create_tab("] {
         assert!(
@@ -128,7 +128,7 @@ fn the_guard_cuts_the_two_functions_and_not_some_others() {
             "잘라 온 본문이 `{WINDOW_FN}` 이 아니다 — `{neighbour}` 가 안 보인다"
         );
     }
-    let reader = body_of(&masked, READER_FN);
+    let reader = body_of(&masked_source("src/core/attach_runtime.rs"), READER_FN);
     for neighbour in ["add_workspace_member(", "tap_surface_for_stream("] {
         assert!(
             reader.contains(neighbour),

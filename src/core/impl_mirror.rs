@@ -1174,7 +1174,7 @@ mod mirror_structural_guard_tests {
                 },
                 DomainIntent::CloseSurface {
                     surface_id: a,
-                    save_snapshot: false,
+                    presentation: None,
                 },
                 DomainIntent::ClosePane { pane_id: pane },
                 DomainIntent::CloseTab { tab_id },

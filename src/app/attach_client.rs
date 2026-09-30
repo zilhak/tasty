@@ -3676,6 +3676,8 @@ mod tests {
 
     #[test]
     fn build_layout_preserves_split_and_remaps_ids() {
+        let mut navigation = crate::state::navigation::NavigationState::default();
+
         let ids = IdGenerator::new();
         let mut map = HashMap::new();
         map.insert(100u32, 5u32); // 100 → local 5 (terminal)
@@ -3691,6 +3693,7 @@ mod tests {
             "second": { "type": "Leaf", "id": 101, "kind": "empty" },
         });
         let layout = build_layout(
+            &mut navigation,
             &node,
             &ids,
             &map,
@@ -3704,13 +3707,13 @@ mod tests {
             SurfaceLayout::Split {
                 direction,
                 ratio,
-                focus_second,
+                node_id,
                 first,
                 second,
             } => {
                 assert_eq!(direction, SplitDirection::Vertical);
                 assert!((ratio - 0.3).abs() < 1e-6);
-                assert!(focus_second);
+                assert!(navigation.split_hints.get(&node_id).copied().unwrap());
                 assert_eq!(first.first_surface_id(), Some(5));
                 assert_eq!(second.first_surface_id(), Some(6));
                 assert_eq!(first.find_surface(5).unwrap().kind(), "terminal");
@@ -3722,6 +3725,8 @@ mod tests {
 
     #[test]
     fn build_layout_constructs_explorer_panel_from_explorer_map() {
+        let mut navigation = crate::state::navigation::NavigationState::default();
+
         let ids = IdGenerator::new();
         let map = HashMap::from([(200u32, 9u32)]);
         let term = HashSet::new();
@@ -3729,6 +3734,7 @@ mod tests {
         let explorer = HashMap::from([(9u32, std::path::PathBuf::from("/remote/project"))]);
         let node = serde_json::json!({ "type": "Leaf", "id": 200, "kind": "explorer" });
         let layout = build_layout(
+            &mut navigation,
             &node,
             &ids,
             &map,
@@ -3755,6 +3761,8 @@ mod tests {
 
     #[test]
     fn build_mirror_workspace_single_pane_tab() {
+        let mut navigation = crate::state::navigation::NavigationState::default();
+        let mut structure_ids = MirrorStructureIds::default();
         let ids = IdGenerator::new();
         let mut map = HashMap::new();
         map.insert(1u32, 50u32);
@@ -3771,6 +3779,8 @@ mod tests {
             } ]
         });
         let ws = build_mirror_workspace(
+            &mut structure_ids,
+            &mut navigation,
             99,
             "remote",
             &tree,
@@ -3787,6 +3797,8 @@ mod tests {
 
     #[test]
     fn build_mirror_workspace_preserves_survivor_and_inserts_new_leaf() {
+        let mut navigation = crate::state::navigation::NavigationState::default();
+        let mut structure_ids = MirrorStructureIds::default();
         let ids = IdGenerator::new();
         let survivor_local = 50u32;
         let mut map = HashMap::new();
@@ -3812,6 +3824,8 @@ mod tests {
             } ]
         });
         let ws = build_mirror_workspace(
+            &mut structure_ids,
+            &mut navigation,
             99,
             "remote",
             &tree,
@@ -3836,10 +3850,14 @@ mod tests {
 
     #[test]
     fn build_mirror_workspace_empty_tree_fallback() {
+        let mut navigation = crate::state::navigation::NavigationState::default();
+        let mut structure_ids = MirrorStructureIds::default();
         let ids = IdGenerator::new();
         let map = HashMap::new();
         let term = HashSet::new();
         let ws = build_mirror_workspace(
+            &mut structure_ids,
+            &mut navigation,
             1,
             "remote",
             &serde_json::Value::Null,
@@ -3856,6 +3874,8 @@ mod tests {
 
     #[test]
     fn build_mirror_workspace_preserves_vertical_pane_split() {
+        let mut navigation = crate::state::navigation::NavigationState::default();
+        let mut structure_ids = MirrorStructureIds::default();
         let ids = IdGenerator::new();
         let map = HashMap::new(); // 이 테스트는 focused_surface 매핑 불필요(pane 레벨 검증 목적)
         let term = HashSet::new();
@@ -3871,6 +3891,8 @@ mod tests {
             }
         });
         let ws = build_mirror_workspace(
+            &mut structure_ids,
+            &mut navigation,
             99,
             "remote",
             &tree,
@@ -3891,7 +3913,7 @@ mod tests {
                 assert_eq!(*direction, SplitDirection::Vertical);
                 assert!((*ratio - 0.3).abs() < 0.001);
                 if let PaneNode::Leaf(p) = second.as_ref() {
-                    assert_eq!(ws.focused_pane, p.id);
+                    assert_eq!(navigation.pane_id(&ws).unwrap(), p.id);
                 } else {
                     panic!("expected second to be Leaf");
                 }
@@ -3902,6 +3924,8 @@ mod tests {
 
     #[test]
     fn build_mirror_workspace_falls_back_to_horizontal_chain_without_pane_layout_field() {
+        let mut navigation = crate::state::navigation::NavigationState::default();
+        let mut structure_ids = MirrorStructureIds::default();
         let ids = IdGenerator::new();
         let mut map = HashMap::new();
         map.insert(1u32, 50u32);
@@ -3919,6 +3943,8 @@ mod tests {
             ]
         });
         let ws = build_mirror_workspace(
+            &mut structure_ids,
+            &mut navigation,
             99,
             "remote",
             &tree,
@@ -3943,6 +3969,8 @@ mod tests {
     /// pane B의 두 번째 탭에 있는 surface를 원격 ID로 되찾는다.
     #[test]
     fn capture_focused_remote_finds_remote_id_of_locally_focused_surface() {
+        let mut navigation = crate::state::navigation::NavigationState::default();
+        let mut structure_ids = MirrorStructureIds::default();
         let ids = IdGenerator::new();
         let mut map = HashMap::new();
         map.insert(1u32, 50u32); // pane A 의 surface
@@ -3970,6 +3998,8 @@ mod tests {
             }
         });
         let ws = build_mirror_workspace(
+            &mut structure_ids,
+            &mut navigation,
             99,
             "remote",
             &tree,
@@ -3981,7 +4011,7 @@ mod tests {
             &mut HashMap::new(),
         );
         assert_eq!(
-            capture_focused_remote(&ws, &map),
+            capture_focused_remote(&navigation, &ws, &map),
             Some(3),
             "focused_pane=pane B, active_tab=tab2(remote 3) 를 정확히 되짚어야 한다"
         );
@@ -3990,6 +4020,8 @@ mod tests {
     /// 원격 포커스와 다른 로컬 포커스를 기억해 구조 재구성 뒤 복원한다.
     #[test]
     fn focus_restore_keeps_client_on_pane_b_after_structural_delta_from_pane_a() {
+        let mut navigation = crate::state::navigation::NavigationState::default();
+        let mut structure_ids = MirrorStructureIds::default();
         let ids = IdGenerator::new();
 
         let mut map = HashMap::new();
@@ -4018,6 +4050,8 @@ mod tests {
             }
         });
         let mut before_ws = build_mirror_workspace(
+            &mut structure_ids,
+            &mut navigation,
             99,
             "remote",
             &before_tree,
@@ -4032,7 +4066,7 @@ mod tests {
         let pane_b_surface3_local = *map.get(&3).unwrap();
         let (pane_b_id, tab_id) = find_pane_and_tab_for_surface(&before_ws, pane_b_surface3_local)
             .expect("pane B tab2 surface must exist");
-        before_ws.focused_pane = pane_b_id;
+        navigation.select_pane(&before_ws, pane_b_id);
         let pane_b = before_ws
             .pane_layout_mut()
             .find_pane_mut(pane_b_id)
@@ -4042,10 +4076,10 @@ mod tests {
             .iter()
             .position(|t| t.id == tab_id)
             .expect("tab exists");
-        pane_b.active_tab = tab_index;
-        pane_b.tabs[tab_index].focused_surface = pane_b_surface3_local;
+        navigation.goto_tab(&pane_b, tab_index);
+        navigation.select_surface(&pane_b.tabs[tab_index], pane_b_surface3_local);
 
-        let old_focused_remote = capture_focused_remote(&before_ws, &map);
+        let old_focused_remote = capture_focused_remote(&navigation, &before_ws, &map);
         assert_eq!(old_focused_remote, Some(3));
 
         let mut after_map = map.clone();
@@ -4071,6 +4105,8 @@ mod tests {
             }
         });
         let mut after_ws = build_mirror_workspace(
+            &mut structure_ids,
+            &mut navigation,
             99,
             "remote",
             &after_tree,
@@ -4087,17 +4123,24 @@ mod tests {
         let (pane_a_id, _) = find_pane_and_tab_for_surface(&after_ws, pane_a_local_surface)
             .expect("pane A surface must exist in rebuilt tree");
         assert_eq!(
-            after_ws.focused_pane, pane_a_id,
+            navigation.pane_id(&after_ws).unwrap(),
+            pane_a_id,
             "로컬 포커스 복원 전에는 원격이 지정한 pane A를 선택한다"
         );
 
-        restore_focus_after_delta(&mut after_ws, old_focused_remote, &after_map);
+        restore_focus_after_delta(
+            &mut navigation,
+            &mut after_ws,
+            old_focused_remote,
+            &after_map,
+        );
 
         let pane_b_surface3_local = *after_map.get(&3).unwrap();
         let (pane_b_id, tab_id) = find_pane_and_tab_for_surface(&after_ws, pane_b_surface3_local)
             .expect("pane B tab2 surface must exist in rebuilt tree");
         assert_eq!(
-            after_ws.focused_pane, pane_b_id,
+            navigation.pane_id(&after_ws).unwrap(),
+            pane_b_id,
             "복원 후 focus 는 pane A 가 아니라 사용자가 실제로 보던 pane B 에 있어야 한다"
         );
         let pane_b = after_ws
@@ -4105,17 +4148,23 @@ mod tests {
             .find_pane(pane_b_id)
             .expect("pane B exists");
         assert_eq!(
-            pane_b.tabs[pane_b.active_tab].id, tab_id,
+            pane_b.tabs[navigation.tab_index(pane_b)].id,
+            tab_id,
             "pane B 의 active_tab 도 사용자가 보던 두 번째 탭이어야 한다"
         );
         assert_eq!(
-            pane_b.tabs[pane_b.active_tab].focused_surface, pane_b_surface3_local,
+            navigation
+                .surface_id(&pane_b.tabs[navigation.tab_index(pane_b)])
+                .unwrap(),
+            pane_b_surface3_local,
             "그 탭의 focused_surface 도 정확히 그 surface 를 가리켜야 한다"
         );
     }
 
     #[test]
     fn focus_restore_is_noop_when_captured_surface_no_longer_exists() {
+        let mut navigation = crate::state::navigation::NavigationState::default();
+        let mut structure_ids = MirrorStructureIds::default();
         let ids = IdGenerator::new();
         let mut map = HashMap::new();
         map.insert(1u32, 50u32);
@@ -4139,6 +4188,8 @@ mod tests {
             }
         });
         let mut ws = build_mirror_workspace(
+            &mut structure_ids,
+            &mut navigation,
             99,
             "remote",
             &tree,
@@ -4149,18 +4200,21 @@ mod tests {
             &HashMap::new(),
             &mut HashMap::new(),
         );
-        let untouched_focused_pane = ws.focused_pane;
+        let untouched_focused_pane = navigation.pane_id(&ws).unwrap();
 
-        restore_focus_after_delta(&mut ws, Some(3), &map);
+        restore_focus_after_delta(&mut navigation, &mut ws, Some(3), &map);
 
         assert_eq!(
-            ws.focused_pane, untouched_focused_pane,
+            navigation.pane_id(&ws).unwrap(),
+            untouched_focused_pane,
             "캡처된 surface 가 없으면 원격이 보낸 focused_pane 그대로 둬야 한다"
         );
     }
 
     #[test]
     fn set_focus_to_surface_updates_pane_tab_surface_or_reports_false() {
+        let mut navigation = crate::state::navigation::NavigationState::default();
+        let mut structure_ids = MirrorStructureIds::default();
         let ids = IdGenerator::new();
         let mut map = HashMap::new();
         map.insert(1u32, 50u32);
@@ -4184,6 +4238,8 @@ mod tests {
             }
         });
         let mut ws = build_mirror_workspace(
+            &mut structure_ids,
+            &mut navigation,
             99,
             "remote",
             &tree,
@@ -4196,16 +4252,21 @@ mod tests {
         );
         let local_b = *map.get(&2).unwrap();
 
-        assert!(set_focus_to_surface(&mut ws, local_b));
+        assert!(set_focus_to_surface(&mut navigation, &mut ws, local_b));
         let (pane_b_id, tab_b_id) =
             find_pane_and_tab_for_surface(&ws, local_b).expect("pane B exists");
-        assert_eq!(ws.focused_pane, pane_b_id);
+        assert_eq!(navigation.pane_id(&ws).unwrap(), pane_b_id);
         let pane_b = ws.pane_layout().find_pane(pane_b_id).unwrap();
-        assert_eq!(pane_b.tabs[pane_b.active_tab].id, tab_b_id);
-        assert_eq!(pane_b.tabs[pane_b.active_tab].focused_surface, local_b);
+        assert_eq!(pane_b.tabs[navigation.tab_index(pane_b)].id, tab_b_id);
+        assert_eq!(
+            navigation
+                .surface_id(&pane_b.tabs[navigation.tab_index(pane_b)])
+                .unwrap(),
+            local_b
+        );
 
         assert!(
-            !set_focus_to_surface(&mut ws, 12345),
+            !set_focus_to_surface(&mut navigation, &mut ws, 12345),
             "존재하지 않는 surface 는 false"
         );
     }
@@ -4349,6 +4410,8 @@ mod tests {
 
     #[test]
     fn merge_survivor_mapping_cleans_up_stale_terminal_on_convert_to_mesh() {
+        let mut navigation = crate::state::navigation::NavigationState::default();
+        let mut structure_ids = MirrorStructureIds::default();
         let waker: crate::terminal::Waker = Arc::new(|| {});
         let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
         // 별도 발급기를 만들면 기본 workspace의 ID와 충돌하므로 engine의 발급기를 공유한다.
@@ -4383,6 +4446,8 @@ mod tests {
             } ]
         });
         let mut ws = build_mirror_workspace(
+            &mut structure_ids,
+            &mut navigation,
             999,
             "mirror",
             &tree,
@@ -4495,6 +4560,8 @@ mod tests {
 
     #[test]
     fn merge_survivor_mapping_creates_terminal_when_mesh_survivor_converts_to_terminal() {
+        let mut navigation = crate::state::navigation::NavigationState::default();
+        let mut structure_ids = MirrorStructureIds::default();
         let waker: crate::terminal::Waker = Arc::new(|| {});
         let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
         // 기본 workspace와 ID가 충돌하지 않도록 engine의 발급기를 공유한다.
@@ -4529,6 +4596,8 @@ mod tests {
             } ]
         });
         let mut ws = build_mirror_workspace(
+            &mut structure_ids,
+            &mut navigation,
             999,
             "mirror",
             &tree,
@@ -4896,6 +4965,7 @@ mod tests {
     ) -> AttachClientSession {
         let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
         AttachClientSession {
+            structure_ids: Default::default(),
             local_workspace,
             remote_to_local,
             output: MirrorOutbox::new(),
@@ -4981,6 +5051,8 @@ mod tests {
 
     #[test]
     fn merge_survivor_mapping_builds_local_markdown_surface_for_markdown_role() {
+        let mut navigation = crate::state::navigation::NavigationState::default();
+        let mut structure_ids = MirrorStructureIds::default();
         let waker: crate::terminal::Waker = Arc::new(|| {});
         let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
         let rx = register_markdown_kind(&engine, MARKDOWN_PLUGIN_ID);
@@ -5008,6 +5080,8 @@ mod tests {
         );
 
         let ws = build_mirror_workspace(
+            &mut structure_ids,
+            &mut navigation,
             999,
             "mirror",
             &single_leaf_tree(30),
@@ -5033,6 +5107,8 @@ mod tests {
     /// 다른 소유자의 markdown kind는 사용하지 않고 빈 surface로 둔다.
     #[test]
     fn markdown_role_stays_empty_when_another_plugin_owns_the_kind() {
+        let mut navigation = crate::state::navigation::NavigationState::default();
+        let mut structure_ids = MirrorStructureIds::default();
         let waker: crate::terminal::Waker = Arc::new(|| {});
         let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
         let rx = register_markdown_kind(&engine, "com.example.other-markdown");
@@ -5051,6 +5127,8 @@ mod tests {
         assert!(created_surfaces(&rx).is_empty());
         let local = mapping.remote_to_local[&30];
         let ws = build_mirror_workspace(
+            &mut structure_ids,
+            &mut navigation,
             999,
             "mirror",
             &single_leaf_tree(30),
@@ -5072,6 +5150,8 @@ mod tests {
 
     #[test]
     fn markdown_role_waits_for_the_plugin_kind_and_reifies_as_a_mirror_document() {
+        let mut navigation = crate::state::navigation::NavigationState::default();
+        let mut structure_ids = MirrorStructureIds::default();
         let waker: crate::terminal::Waker = Arc::new(|| {});
         let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
         let ids = engine.next_ids.clone();
@@ -5092,6 +5172,8 @@ mod tests {
             "placeholder 도 이 세션의 markdown leaf 로 센다 — destroy·끊김 통지 대상"
         );
         let ws = build_mirror_workspace(
+            &mut structure_ids,
+            &mut navigation,
             999,
             "mirror",
             &single_leaf_tree(30),
@@ -5136,6 +5218,8 @@ mod tests {
 
     #[test]
     fn structural_delta_reuses_markdown_survivor_and_reports_removed_ones() {
+        let mut navigation = crate::state::navigation::NavigationState::default();
+        let mut structure_ids = MirrorStructureIds::default();
         let waker: crate::terminal::Waker = Arc::new(|| {});
         let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
         let rx = register_markdown_kind(&engine, MARKDOWN_PLUGIN_ID);
@@ -5153,6 +5237,8 @@ mod tests {
         let local = m1.remote_to_local[&30];
         let ws_id = 999;
         let mut ws = build_mirror_workspace(
+            &mut structure_ids,
+            &mut navigation,
             ws_id,
             "mirror",
             &single_leaf_tree(30),
@@ -5179,6 +5265,7 @@ mod tests {
         sess.markdown_locals = HashSet::from([local]);
 
         let removed = apply_mirror_structural_delta(
+            &mut navigation,
             &mut sess,
             &mut engine,
             7,
@@ -5201,6 +5288,7 @@ mod tests {
         assert!(Arc::ptr_eq(&shared.webview_url, &webview_url));
 
         let removed = apply_mirror_structural_delta(
+            &mut navigation,
             &mut sess,
             &mut engine,
             7,

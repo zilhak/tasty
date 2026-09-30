@@ -268,111 +268,6 @@ mod category_tests {
     }
 
     #[test]
-    fn set_collapsed_updates_memory() {
-        let mut e = engine();
-        let id = e.create_category("Services").unwrap();
-        assert!(
-            !e.categories()
-                .iter()
-                .find(|c| c.id == id)
-                .unwrap()
-                .collapsed
-        );
-        e.set_category_collapsed(id, true);
-        assert!(
-            e.categories()
-                .iter()
-                .find(|c| c.id == id)
-                .unwrap()
-                .collapsed
-        );
-        e.set_category_collapsed(id, false);
-        assert!(
-            !e.categories()
-                .iter()
-                .find(|c| c.id == id)
-                .unwrap()
-                .collapsed
-        );
-        e.set_category_collapsed(9999, true);
-    }
-
-    #[test]
-    fn toggle_collapsed_flips() {
-        let mut e = engine();
-        let id = e.create_category("Toggle").unwrap();
-        e.toggle_category_collapsed(id);
-        assert!(
-            e.categories()
-                .iter()
-                .find(|c| c.id == id)
-                .unwrap()
-                .collapsed
-        );
-        e.toggle_category_collapsed(id);
-        assert!(
-            !e.categories()
-                .iter()
-                .find(|c| c.id == id)
-                .unwrap()
-                .collapsed
-        );
-    }
-
-    #[test]
-    fn toggle_all_collapses_when_any_expanded_then_expands_when_all_collapsed() {
-        let mut e = engine();
-        let a = e.create_category("A").unwrap();
-        let b = e.create_category("B").unwrap();
-        e.set_category_collapsed(a, true);
-        e.toggle_all_categories_collapsed();
-        assert!(
-            e.categories().iter().all(|c| c.collapsed),
-            "하나라도 펼쳐져 있으면 전부 접힌다(normal 포함)"
-        );
-        e.toggle_all_categories_collapsed();
-        assert!(
-            e.categories().iter().all(|c| !c.collapsed),
-            "전부 접혀 있으면 전부 펴진다"
-        );
-        assert!(!e.categories().iter().find(|c| c.id == b).unwrap().collapsed);
-    }
-
-    #[test]
-    fn set_collapsed_allows_normal() {
-        let mut e = engine();
-        e.set_category_collapsed(NORMAL_CATEGORY_ID, true);
-        assert!(
-            e.categories()
-                .iter()
-                .find(|c| c.id == NORMAL_CATEGORY_ID)
-                .unwrap()
-                .collapsed
-        );
-    }
-
-    #[test]
-    fn collapsed_survives_layout_round_trip() {
-        use crate::core::layout_persistence::SavedLayout;
-        let mut e = engine();
-        let id = e.create_category("Services").unwrap();
-        e.set_category_collapsed(id, true);
-        let saved = SavedLayout::capture(&mut e, 0);
-
-        let mut restored = engine();
-        assert!(saved.restore(&mut restored));
-        let cat = restored
-            .categories()
-            .iter()
-            .find(|c| c.name == "Services")
-            .expect("Services category should be restored");
-        assert!(
-            cat.collapsed,
-            "collapsed 상태가 왕복 후에도 유지되어야 한다"
-        );
-    }
-
-    #[test]
     fn mirror_workspace_not_persisted() {
         use crate::core::layout_persistence::SavedLayout;
         let mut e = engine();
@@ -390,7 +285,11 @@ mod category_tests {
         e.workspaces[idx].mirror = true;
         assert_eq!(e.workspaces.len(), base_count + 1);
 
-        let saved = SavedLayout::capture(&mut e, idx);
+        let saved = SavedLayout::capture(
+            &mut e,
+            idx,
+            &crate::model::StructurePresentationSnapshot::default(),
+        );
         assert_eq!(
             saved.workspaces.len(),
             base_count,
@@ -402,7 +301,7 @@ mod category_tests {
         );
 
         let mut restored = engine();
-        assert!(saved.restore(&mut restored));
+        assert!(saved.restore(&mut restored).is_some());
         assert!(
             restored.workspaces.iter().all(|w| !w.mirror),
             "복원본에 mirror workspace 가 없어야 한다"

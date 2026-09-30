@@ -545,7 +545,7 @@ mod close_surface_cascade_tests {
             .unwrap()
             .add_terminal_marker_tab(tab1_id, sid1);
 
-        let ev = Core::apply_close_surface(&mut engine, sid1, false);
+        let ev = Core::apply_close_surface(&mut engine, sid1, None);
         match ev {
             CoreEvent::SurfaceClosed {
                 closed,
@@ -593,7 +593,7 @@ mod close_surface_cascade_tests {
             .split_pane_in_place(pane0, crate::model::SplitDirection::Horizontal, new_pane);
         assert!(leftover.is_none(), "split 성공해야 함");
 
-        let ev = Core::apply_close_surface(&mut engine, sid1, false);
+        let ev = Core::apply_close_surface(&mut engine, sid1, None);
         match ev {
             CoreEvent::SurfaceClosed {
                 closed,
@@ -639,7 +639,7 @@ mod close_surface_cascade_tests {
         engine.workspaces.push(ws1);
         assert_eq!(engine.workspaces.len(), 2);
 
-        let ev = Core::apply_close_surface(&mut engine, sid1, false);
+        let ev = Core::apply_close_surface(&mut engine, sid1, None);
         match ev {
             CoreEvent::SurfaceClosed {
                 closed,
@@ -667,6 +667,7 @@ mod close_surface_cascade_tests {
     /// 앞쪽 탭 삭제 후에도 active_tab 인덱스가 원래 보던 탭을 가리켜야 한다.
     #[test]
     fn case2_tab_close_preserves_the_viewed_tab() {
+        let mut navigation = crate::state::navigation::NavigationState::default();
         let mut engine = test_engine();
         let sid0 = engine.workspaces[0].all_surface_ids()[0];
         let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(sid0).unwrap();
@@ -686,10 +687,11 @@ mod close_surface_cascade_tests {
             .pane_layout_mut()
             .find_pane_mut(pane_id)
             .unwrap();
-        pane.active_tab = 1;
+        navigation.goto_tab(pane, 1);
         let viewed_tab_id = pane.tabs[1].id;
 
-        let ev = Core::apply_close_surface(&mut engine, sid0, false);
+        let ev = Core::apply_close_surface(&mut engine, sid0, None);
+        navigation.apply_result(&engine.workspaces, &ev);
         assert!(matches!(ev, CoreEvent::SurfaceClosed { closed: true, .. }));
 
         let pane = engine.workspaces[ws_idx]
@@ -698,7 +700,8 @@ mod close_surface_cascade_tests {
             .unwrap();
         assert_eq!(pane.tabs.len(), 2);
         assert_eq!(
-            pane.tabs[pane.active_tab].id, viewed_tab_id,
+            pane.tabs[navigation.tab_index(pane)].id,
+            viewed_tab_id,
             "앞쪽 탭이 닫혀도 보던 탭이 유지돼야 한다"
         );
     }
@@ -731,13 +734,16 @@ mod close_surface_cascade_tests {
             engine.workspaces[ws_idx].pane_layout().all_pane_ids().len(),
             3
         );
-        engine.workspaces[ws_idx].focused_pane = pane2_id;
+        let mut navigation = crate::state::navigation::NavigationState::default();
+        navigation.select_pane(&engine.workspaces[ws_idx], pane2_id);
 
-        let ev = Core::apply_close_surface(&mut engine, sid0, false);
+        let ev = Core::apply_close_surface(&mut engine, sid0, None);
+        navigation.apply_result(&engine.workspaces, &ev);
         assert!(matches!(ev, CoreEvent::SurfaceClosed { closed: true, .. }));
 
         assert_eq!(
-            engine.workspaces[ws_idx].focused_pane, pane2_id,
+            navigation.pane_id(&engine.workspaces[ws_idx]).unwrap(),
+            pane2_id,
             "포커스와 무관한 pane 이 닫혔는데 포커스가 움직이면 안 된다"
         );
     }
@@ -761,7 +767,7 @@ mod close_surface_cascade_tests {
             ),
         );
 
-        let ev = Core::apply_close_surface(&mut engine, sid1, false);
+        let ev = Core::apply_close_surface(&mut engine, sid1, None);
         match ev {
             CoreEvent::SurfaceClosed {
                 workspace_purged, ..
@@ -779,7 +785,7 @@ mod close_surface_cascade_tests {
         insert_detached(&mut engine, sid0);
         let ws0_id = engine.workspaces[0].id;
 
-        let ev = Core::apply_close_surface(&mut engine, sid0, false);
+        let ev = Core::apply_close_surface(&mut engine, sid0, None);
         match ev {
             CoreEvent::SurfaceClosed {
                 closed,
@@ -813,7 +819,7 @@ mod close_surface_cascade_tests {
             .unwrap();
         insert_detached(&mut engine, sid_b);
 
-        let ev = Core::apply_close_surface(&mut engine, sid_a, false);
+        let ev = Core::apply_close_surface(&mut engine, sid_a, None);
         match ev {
             CoreEvent::SurfaceClosed {
                 closed,

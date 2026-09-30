@@ -114,7 +114,7 @@ fn split(
         ratio,
         first: Box::new(first),
         second: Box::new(second),
-        focus_second: false,
+        node_id: crate::model::SplitNodeId::allocate(),
     }
 }
 
@@ -129,17 +129,12 @@ fn tab(id: u32, name: &str, explicit: Option<&str>, layout: SurfaceLayout) -> Ta
         explicit.map(str::to_owned),
         Box::new(EmptySurface::new(0)),
     );
-    tab.focused_surface = crate::model::BinaryTree::first_id(&layout).unwrap_or(0);
     tab.layout_opt = Some(layout);
     tab
 }
 
 fn pane(id: u32, tabs: Vec<Tab>) -> PaneNode {
-    PaneNode::Leaf(Pane {
-        id,
-        tabs,
-        active_tab: 0,
-    })
+    PaneNode::Leaf(Pane { id, tabs })
 }
 
 fn pane_split(
@@ -157,10 +152,8 @@ fn pane_split(
 }
 
 fn workspace(id: u32, name: &str, category: u32, layout: PaneNode) -> Workspace {
-    let first = crate::model::BinaryTree::first_id(&layout).unwrap_or(0);
     let mut ws = Workspace::new_with_pane(id, name.to_owned(), Pane::default());
     *ws.pane_layout_mut() = layout;
-    ws.focused_pane = first;
     ws.category = category;
     ws
 }
@@ -176,8 +169,7 @@ fn engine() -> CoreState {
 /// 여러 단계 분할, typed 필드, 여러 surface kind, 빈 카테고리와 mirror workspace를 담은 엔진.
 fn full_engine() -> CoreState {
     let mut engine = engine();
-    let mut side = WorkspaceCategory::new(6, "side".to_owned());
-    side.collapsed = true;
+    let side = WorkspaceCategory::new(6, "side".to_owned());
     engine.categories = vec![
         WorkspaceCategory::normal(),
         WorkspaceCategory::new(5, "work".to_owned()),
@@ -474,24 +466,26 @@ const CORE_MUTATIONS: &[CoreMutation] = &[
 
 /// 비교에서 뺀 CoreState 자료만 바꾸는 변경. digest가 그대로여야 한다.
 const EXCLUDED_MUTATIONS: &[CoreMutation] = &[
-    ("focused pane", |e| e.workspaces[0].focused_pane = 22),
-    ("active tab", |e| first_pane(e).active_tab = 1),
-    ("focused surface", |e| {
-        first_pane(e).tabs[1].focused_surface = 43
-    }),
-    ("focus second", |e| {
-        if let Some(SurfaceLayout::Split { focus_second, .. }) =
+    ("split publication identity", |e| {
+        if let Some(SurfaceLayout::Split { node_id, .. }) =
             first_pane(e).tabs[1].layout_opt.as_mut()
         {
-            *focus_second = true;
+            *node_id = crate::model::SplitNodeId::allocate();
         }
     }),
-    ("category collapsed", |e| e.categories[1].collapsed = true),
-    ("osc title", |e| {
-        first_pane(e).tabs[0].osc_title = Some("vim".to_owned())
+    ("surface title observation", |e| {
+        first_pane(e).tabs[0]
+            .surface_titles
+            .entry(40)
+            .or_default()
+            .osc_title = Some("vim".to_owned());
     }),
-    ("cached display name", |e| {
-        first_pane(e).tabs[0].cached_display_name = Some("~".to_owned())
+    ("cwd observation", |e| {
+        first_pane(e).tabs[0]
+            .surface_titles
+            .entry(40)
+            .or_default()
+            .cwd_name = Some("~".to_owned());
     }),
     ("mirror workspace", |e| {
         let mut ws = workspace(
@@ -670,13 +664,8 @@ fn exclusion_list_names_every_excluded_mutation() {
     assert!(DIGEST_EXCLUDED.iter().all(|(_, reason)| !reason.is_empty()));
     assert!(KNOWN_MISMATCHES.iter().all(|k| !k.reason.is_empty()));
     for field in [
-        "Workspace.focused_pane",
-        "Pane.active_tab",
-        "Tab.focused_surface",
-        "SurfaceLayout::Split.focus_second",
-        "WorkspaceCategory.collapsed",
-        "Tab.osc_title",
-        "Tab.cached_display_name",
+        "SurfaceLayout::Split.node_id",
+        "Tab.surface_titles",
         "Workspace.mirror",
         "EmptySurface.spawn_attempts",
     ] {
@@ -690,11 +679,19 @@ fn capture_without_scrollback_leaves_core_state_unchanged() {
     let mut engine = full_engine();
     let before = core_canonical(&engine);
     let first = serde_json::to_string(
-        &crate::core::layout_persistence::schema::SavedLayout::capture(&mut engine, 0),
+        &crate::core::layout_persistence::schema::SavedLayout::capture(
+            &mut engine,
+            0,
+            &crate::model::StructurePresentationSnapshot::default(),
+        ),
     )
     .expect("json");
     let second = serde_json::to_string(
-        &crate::core::layout_persistence::schema::SavedLayout::capture(&mut engine, 0),
+        &crate::core::layout_persistence::schema::SavedLayout::capture(
+            &mut engine,
+            0,
+            &crate::model::StructurePresentationSnapshot::default(),
+        ),
     )
     .expect("json");
     assert_eq!(first, second);
@@ -725,7 +722,11 @@ fn capture_with_scrollback_reassigns_a_duplicate_deferred_scrollback_id() {
         leaf(surface(2)),
     ));
     let before = core_canonical(&engine);
-    crate::core::layout_persistence::schema::SavedLayout::capture(&mut engine, 0);
+    crate::core::layout_persistence::schema::SavedLayout::capture(
+        &mut engine,
+        0,
+        &crate::model::StructurePresentationSnapshot::default(),
+    );
     assert_eq!(core_canonical(&engine), before);
     let ids = scrollback_ids(&mut engine);
     assert_eq!(ids[0].as_deref(), Some(duplicate.as_str()));

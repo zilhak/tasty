@@ -181,6 +181,7 @@ impl RequestContext {
                 self.enqueue_surface_closed(sid, kind, true);
             }
         }
+        self.reconcile_presentation(engine);
         closed
     }
 
@@ -272,6 +273,7 @@ impl RequestContext {
             save_snapshot.then_some(&self.navigation as &dyn crate::model::StructurePresentation),
             crate::core::CloseTracePath::Inline,
         );
+        self.apply_structure_result(engine, &event);
         let CoreEvent::SurfaceClosed {
             closed: true,
             cascade_level,
@@ -352,7 +354,7 @@ impl RequestContext {
         let target_pane_id = self.navigation.pane_id(ws).unwrap_or(0);
         ws.pane_layout_mut()
             .split_pane_in_place(target_pane_id, direction, new_pane);
-        ws.focused_pane = new_pane_id;
+        self.navigation.select_pane(ws, new_pane_id);
         engine.send_fast_init(new_surface_id);
         engine.mark_layout_dirty();
         self.enqueue_host_event(super::PendingHostEvent::PaneSplit {

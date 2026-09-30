@@ -86,7 +86,7 @@ fn apply_one(
         return;
     };
     engine.refresh_attach_presentation(&state.navigation);
-    match core.apply(engine, domain) {
+    match crate::app::structural_exec::execute(core, state, engine, domain) {
         Ok(events) => {
             for event in events {
                 state.apply_structure_result(engine, &event);
@@ -513,9 +513,9 @@ mod tests {
             params: serde_json::json!({}),
         }));
         drain_pending_intents(&mut core, &mut state, &mut engine);
-        let pane_id = state.active_workspace(&engine).focused_pane;
+        let pane_id = state.focused_pane_id(&engine);
         let pane = engine.find_pane_by_id(pane_id).expect("focused pane");
-        (pane.tabs.len(), pane.active_tab)
+        (pane.tabs.len(), state.navigation.tab_index(pane))
     }
 
     #[test]
@@ -552,7 +552,7 @@ mod tests {
                     pane.tabs
                         .iter()
                         .find(|t| t.contains_surface(sid))
-                        .map(|t| t.display_name())
+                        .map(|t| t.display_name(state.navigation.surface_id(t)))
                 })
                 .expect("fixture tab")
         };

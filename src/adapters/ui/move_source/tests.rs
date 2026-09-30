@@ -75,14 +75,16 @@ fn push_workspace(engine: &mut CoreState) -> (u32, u32, u32) {
 #[test]
 fn empty_slot_emits_nothing() {
     let engine = test_engine();
+    let navigation = crate::state::navigation::NavigationState::default();
     let (pane, _, _) = first_pane(&engine);
     let panes = [(pane, rect(0.0, 0.0, 400.0, 300.0))];
-    assert!(same(resolve(&engine, 0, &panes, BAR), None));
+    assert!(same(resolve(&navigation, &engine, 0, &panes, BAR), None));
 }
 
 #[test]
 fn pending_surface_region_is_emitted_only_for_the_pending_id() {
     let mut engine = test_engine();
+    let navigation = crate::state::navigation::NavigationState::default();
     let (left, _, a) = first_pane(&engine);
     let (right, b) = split_new_pane(&mut engine, left);
     let panes = [
@@ -92,7 +94,7 @@ fn pending_surface_region_is_emitted_only_for_the_pending_id() {
     engine.pending_move = Some(PendingMove::Surface(b));
     // 탭 바 아래 콘텐츠 영역의 b 자리만 나온다. a나 포커스와 무관하다.
     assert!(same(
-        resolve(&engine, 0, &panes, BAR),
+        resolve(&navigation, &engine, 0, &panes, BAR),
         Some(MoveSourceMark::Ring {
             pane_id: right,
             rect: rect(200.0, 24.0, 200.0, 276.0),
@@ -100,7 +102,7 @@ fn pending_surface_region_is_emitted_only_for_the_pending_id() {
     ));
     engine.pending_move = Some(PendingMove::Surface(a));
     assert!(same(
-        resolve(&engine, 0, &panes, BAR),
+        resolve(&navigation, &engine, 0, &panes, BAR),
         Some(MoveSourceMark::Ring {
             pane_id: left,
             rect: rect(0.0, 24.0, 200.0, 276.0),
@@ -111,13 +113,14 @@ fn pending_surface_region_is_emitted_only_for_the_pending_id() {
 #[test]
 fn surface_in_an_inactive_tab_puts_the_glyph_on_that_tab() {
     let mut engine = test_engine();
+    let mut navigation = crate::state::navigation::NavigationState::default();
     let (pane, _, a) = first_pane(&engine);
     let (_, b) = add_tab(&mut engine, pane);
-    engine.find_pane_by_id_mut(pane).unwrap().active_tab = 1;
+    navigation.goto_tab(engine.find_pane_by_id(pane).unwrap(), 1);
     engine.pending_move = Some(PendingMove::Surface(a));
     let panes = [(pane, rect(0.0, 0.0, 400.0, 300.0))];
     assert!(same(
-        resolve(&engine, 0, &panes, BAR),
+        resolve(&navigation, &engine, 0, &panes, BAR),
         Some(MoveSourceMark::TabGlyph {
             pane_id: pane,
             tab_index: 0,
@@ -126,7 +129,7 @@ fn surface_in_an_inactive_tab_puts_the_glyph_on_that_tab() {
     // 대상이 활성 탭에 있으면 글리프 대신 링이다.
     engine.pending_move = Some(PendingMove::Surface(b));
     assert!(matches!(
-        resolve(&engine, 0, &panes, BAR),
+        resolve(&navigation, &engine, 0, &panes, BAR),
         Some(MoveSourceMark::Ring { .. })
     ));
 }
@@ -134,12 +137,13 @@ fn surface_in_an_inactive_tab_puts_the_glyph_on_that_tab() {
 #[test]
 fn pending_tab_rings_its_cell_whether_active_or_not() {
     let mut engine = test_engine();
+    let navigation = crate::state::navigation::NavigationState::default();
     let (pane, tab_a, _) = first_pane(&engine);
     let (tab_b, _) = add_tab(&mut engine, pane);
     let panes = [(pane, rect(0.0, 0.0, 400.0, 300.0))];
     engine.pending_move = Some(PendingMove::Tab(tab_b));
     assert!(same(
-        resolve(&engine, 0, &panes, BAR),
+        resolve(&navigation, &engine, 0, &panes, BAR),
         Some(MoveSourceMark::TabRing {
             pane_id: pane,
             tab_index: 1,
@@ -147,7 +151,7 @@ fn pending_tab_rings_its_cell_whether_active_or_not() {
     ));
     engine.pending_move = Some(PendingMove::Tab(tab_a));
     assert!(same(
-        resolve(&engine, 0, &panes, BAR),
+        resolve(&navigation, &engine, 0, &panes, BAR),
         Some(MoveSourceMark::TabRing {
             pane_id: pane,
             tab_index: 0,
@@ -158,13 +162,14 @@ fn pending_tab_rings_its_cell_whether_active_or_not() {
 #[test]
 fn pending_pane_rings_the_whole_pane_rect() {
     let mut engine = test_engine();
+    let navigation = crate::state::navigation::NavigationState::default();
     let (left, _, _) = first_pane(&engine);
     let (right, _) = split_new_pane(&mut engine, left);
     let right_rect = rect(200.0, 0.0, 200.0, 300.0);
     let panes = [(left, rect(0.0, 0.0, 200.0, 300.0)), (right, right_rect)];
     engine.pending_move = Some(PendingMove::Pane(right));
     assert!(same(
-        resolve(&engine, 0, &panes, BAR),
+        resolve(&navigation, &engine, 0, &panes, BAR),
         Some(MoveSourceMark::Ring {
             pane_id: right,
             rect: right_rect,
@@ -175,6 +180,7 @@ fn pending_pane_rings_the_whole_pane_rect() {
 #[test]
 fn target_in_another_workspace_marks_that_workspace_for_every_kind() {
     let mut engine = test_engine();
+    let navigation = crate::state::navigation::NavigationState::default();
     let (pane, _, _) = first_pane(&engine);
     let (other_pane, other_tab, other_sid) = push_workspace(&mut engine);
     let panes = [(pane, rect(0.0, 0.0, 400.0, 300.0))];
@@ -184,14 +190,17 @@ fn target_in_another_workspace_marks_that_workspace_for_every_kind() {
         PendingMove::Pane(other_pane),
     ] {
         engine.pending_move = Some(pending);
-        assert!(same(resolve(&engine, 0, &panes, BAR), None), "{pending:?}");
+        assert!(
+            same(resolve(&navigation, &engine, 0, &panes, BAR), None),
+            "{pending:?}"
+        );
         assert_eq!(workspace_cue(&engine, 0), Some(1), "{pending:?}");
     }
     // 활성 워크스페이스가 바뀌면 같은 슬롯이 사이드바 단서 대신 링으로 보인다.
     engine.pending_move = Some(PendingMove::Pane(other_pane));
     let other_panes = [(other_pane, rect(0.0, 0.0, 400.0, 300.0))];
     assert!(matches!(
-        resolve(&engine, 1, &other_panes, BAR),
+        resolve(&navigation, &engine, 1, &other_panes, BAR),
         Some(MoveSourceMark::Ring { .. })
     ));
     assert_eq!(workspace_cue(&engine, 1), None);
@@ -200,17 +209,19 @@ fn target_in_another_workspace_marks_that_workspace_for_every_kind() {
 #[test]
 fn hidden_pane_in_the_active_workspace_emits_nothing() {
     let mut engine = test_engine();
+    let navigation = crate::state::navigation::NavigationState::default();
     let (left, _, _) = first_pane(&engine);
     let (right, _) = split_new_pane(&mut engine, left);
     engine.pending_move = Some(PendingMove::Pane(right));
     // right가 pane_rects에 없는 프레임. 지금은 생기지 않는 방어 경로다.
     let panes = [(left, rect(0.0, 0.0, 400.0, 300.0))];
-    assert!(same(resolve(&engine, 0, &panes, BAR), None));
+    assert!(same(resolve(&navigation, &engine, 0, &panes, BAR), None));
 }
 
 #[test]
 fn closed_pending_target_emits_nothing() {
     let mut engine = test_engine();
+    let navigation = crate::state::navigation::NavigationState::default();
     let (pane, _, _) = first_pane(&engine);
     let panes = [(pane, rect(0.0, 0.0, 400.0, 300.0))];
     for pending in [
@@ -219,7 +230,10 @@ fn closed_pending_target_emits_nothing() {
         PendingMove::Pane(999_999),
     ] {
         engine.pending_move = Some(pending);
-        assert!(same(resolve(&engine, 0, &panes, BAR), None), "{pending:?}");
+        assert!(
+            same(resolve(&navigation, &engine, 0, &panes, BAR), None),
+            "{pending:?}"
+        );
         assert!(clear_if_target_closed(&mut engine), "{pending:?}");
         assert!(engine.pending_move.is_none());
     }
@@ -228,6 +242,7 @@ fn closed_pending_target_emits_nothing() {
 #[test]
 fn live_target_keeps_the_slot() {
     let mut engine = test_engine();
+    let navigation = crate::state::navigation::NavigationState::default();
     let (pane, tab, a) = first_pane(&engine);
     for pending in [
         PendingMove::Surface(a),

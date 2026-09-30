@@ -351,6 +351,7 @@ mod tests {
         let mut seen_refs = SeenRefs::new();
         let mut terminals = crate::core::terminal_store::TerminalStore::new();
         let mut ctx = CaptureCtx {
+            presentation: &crate::model::StructurePresentationSnapshot::default(),
             registry: &registry,
             capture_scrollback: false,
             memory: &mem,
@@ -409,7 +410,11 @@ mod tests {
             ("m3", true),
             ("n4", false),
         ]);
-        let saved = SavedLayout::capture(&mut engine, 2);
+        let saved = SavedLayout::capture(
+            &mut engine,
+            2,
+            &crate::model::StructurePresentationSnapshot::default(),
+        );
 
         let names: Vec<&str> = saved.workspaces.iter().map(|w| w.name.as_str()).collect();
         assert_eq!(
@@ -426,7 +431,11 @@ mod tests {
     #[test]
     fn capture_remaps_active_when_active_was_mirror() {
         let mut engine = engine_with_workspaces(&[("n0", false), ("m1", true), ("n2", false)]);
-        let saved = SavedLayout::capture(&mut engine, 1);
+        let saved = SavedLayout::capture(
+            &mut engine,
+            1,
+            &crate::model::StructurePresentationSnapshot::default(),
+        );
 
         let names: Vec<&str> = saved.workspaces.iter().map(|w| w.name.as_str()).collect();
         assert_eq!(names, vec!["n0", "n2"]);
@@ -436,7 +445,11 @@ mod tests {
     #[test]
     fn capture_clamps_active_when_trailing_are_mirror() {
         let mut engine = engine_with_workspaces(&[("n0", false), ("m1", true)]);
-        let saved = SavedLayout::capture(&mut engine, 1);
+        let saved = SavedLayout::capture(
+            &mut engine,
+            1,
+            &crate::model::StructurePresentationSnapshot::default(),
+        );
 
         let names: Vec<&str> = saved.workspaces.iter().map(|w| w.name.as_str()).collect();
         assert_eq!(names, vec!["n0"]);

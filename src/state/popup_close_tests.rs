@@ -164,6 +164,7 @@ fn convert_surface_close_intent_now_clears_dialog_state() {
 
     crate::intent::popup::handle(
         &mut state,
+        &mut engine,
         &UiIntent::ClosePopup {
             id: CONVERT_SURFACE_POPUP_ID,
         }
@@ -233,6 +234,7 @@ fn rail_category_close_intent_now_clears_dialog_state() {
 
     crate::intent::popup::handle(
         &mut state,
+        &mut engine,
         &UiIntent::ClosePopup {
             id: RAIL_CATEGORY_POPUP_ID,
         }
@@ -291,6 +293,7 @@ fn transfer_progress_close_intent_now_clears_dialog_state() {
 
     crate::intent::popup::handle(
         &mut state,
+        &mut engine,
         &UiIntent::ClosePopup {
             id: TRANSFER_PROGRESS_POPUP_ID,
         }
@@ -375,6 +378,7 @@ fn transfer_error_close_intent_now_pops_head_and_reopens() {
 
     crate::intent::popup::handle(
         &mut state,
+        &mut engine,
         &UiIntent::ClosePopup {
             id: TRANSFER_ERROR_POPUP_ID,
         }
@@ -410,6 +414,7 @@ fn script_changed_confirm_close_intent_now_clears_undecided_pending() {
 
     crate::intent::popup::handle(
         &mut state,
+        &mut engine,
         &UiIntent::ClosePopup {
             id: SCRIPT_CHANGED_CONFIRM_POPUP_ID,
         }
@@ -434,6 +439,7 @@ fn script_changed_confirm_close_intent_preserves_decided_result_for_dispatch() {
 
     crate::intent::popup::handle(
         &mut state,
+        &mut engine,
         &UiIntent::ClosePopup {
             id: SCRIPT_CHANGED_CONFIRM_POPUP_ID,
         }
@@ -528,6 +534,7 @@ fn info_modal_close_intent_now_pops_head_and_reopens() {
 
     crate::intent::popup::handle(
         &mut state,
+        &mut engine,
         &UiIntent::ClosePopup { id: INFO_MODAL_ID }.from_user_menu("test"),
     );
     assert!(!state.popups.is_open(INFO_MODAL_ID));
@@ -551,6 +558,7 @@ fn info_modal_close_intent_with_single_entry_pops_and_does_not_reopen() {
 
     crate::intent::popup::handle(
         &mut state,
+        &mut engine,
         &UiIntent::ClosePopup { id: INFO_MODAL_ID }.from_user_menu("test"),
     );
     run_frame(empty_input(), &mut state, &mut engine);
@@ -604,6 +612,7 @@ fn confirm_delete_category_close_intent_now_clears_dialog_state() {
 
     crate::intent::popup::handle(
         &mut state,
+        &mut engine,
         &UiIntent::ClosePopup {
             id: CONFIRM_DELETE_CATEGORY_POPUP_ID,
         }
@@ -684,6 +693,7 @@ fn confirm_force_detach_close_intent_clears_state_after_next_frame() {
 
     crate::intent::popup::handle(
         &mut state,
+        &mut engine,
         &UiIntent::ClosePopup {
             id: CONFIRM_FORCE_DETACH_WORKSPACE_POPUP_ID,
         }
@@ -822,6 +832,7 @@ fn file_handler_picker_close_intent_now_marks_cancelled() {
 
     crate::intent::popup::handle(
         &mut state,
+        &mut engine,
         &UiIntent::ClosePopup {
             id: PICKER_POPUP_ID,
         }
@@ -991,6 +1002,7 @@ fn file_picker_close_intent_now_marks_cancelled() {
 
     crate::intent::popup::handle(
         &mut state,
+        &mut engine,
         &UiIntent::ClosePopup {
             id: FILE_PICKER_POPUP_ID,
         }
@@ -1109,6 +1121,7 @@ fn approval_close_intent_now_refires_open_popup() {
 
     crate::intent::popup::handle(
         &mut state,
+        &mut engine,
         &UiIntent::ClosePopup {
             id: APPROVAL_POPUP_ID,
         }
@@ -1139,7 +1152,7 @@ fn close_intent_now_clears_cleanup_after_next_frame() {
         id: RENAME_POPUP_ID,
     }
     .from_user_menu("test");
-    crate::intent::popup::handle(&mut state, &dispatched);
+    crate::intent::popup::handle(&mut state, &mut engine, &dispatched);
 
     assert!(!state.popups.is_open(RENAME_POPUP_ID));
     assert!(state.dialogs.rename.is_some());
@@ -1213,11 +1226,13 @@ fn preset_apply_cancel_action_close_clears_selection_and_target_category() {
 
 fn open_scoped(
     state: &mut crate::state::RequestContext,
+    engine: &mut crate::core::CoreState,
     id: PopupId,
     scope: crate::adapters::ui::popup::PopupScope,
 ) {
     crate::intent::popup::handle(
         state,
+        engine,
         &UiIntent::OpenPopup {
             id,
             mode: crate::intent::OpenPopupMode::WithScope(scope),
@@ -1247,7 +1262,7 @@ fn rename_popup_closes_with_its_workspace_and_reopens_elsewhere() {
     let target = RenameTarget::WorkspaceName { workspace_id: b };
     let scope = target.popup_scope(&engine);
     state.dialogs.rename = Some((target, "B".to_string()));
-    open_scoped(&mut state, RENAME_POPUP_ID, scope);
+    open_scoped(&mut state, &mut engine, RENAME_POPUP_ID, scope);
 
     let b_idx = engine.find_workspace_index_for_id(b).unwrap();
     assert!(state.close_workspace_at(
@@ -1268,7 +1283,7 @@ fn rename_popup_closes_with_its_workspace_and_reopens_elsewhere() {
     let target = RenameTarget::WorkspaceName { workspace_id: c };
     let scope = target.popup_scope(&engine);
     state.dialogs.rename = Some((target, "C".to_string()));
-    open_scoped(&mut state, RENAME_POPUP_ID, scope);
+    open_scoped(&mut state, &mut engine, RENAME_POPUP_ID, scope);
     run_frame(empty_input(), &mut state, &mut engine);
     assert_eq!(visible_popup(&state, &engine), Some(RENAME_POPUP_ID));
 }
@@ -1282,6 +1297,7 @@ fn tool_popup_reopens_on_the_active_workspace_after_its_workspace_closed() {
     state.set_active_workspace_index(&engine, engine.find_workspace_index_for_id(b).unwrap());
     open_scoped(
         &mut state,
+        &mut engine,
         PORT_SCANNER_POPUP_ID,
         crate::adapters::ui::popup::PopupScope::Workspace(b),
     );
@@ -1294,6 +1310,7 @@ fn tool_popup_reopens_on_the_active_workspace_after_its_workspace_closed() {
     let active_id = state.active_workspace(&engine).id;
     open_scoped(
         &mut state,
+        &mut engine,
         PORT_SCANNER_POPUP_ID,
         crate::adapters::ui::popup::PopupScope::Workspace(active_id),
     );
@@ -1308,11 +1325,11 @@ fn tab_rename_popup_closes_with_its_tab() {
     state.add_tab(&mut engine).unwrap();
     let pane_id = state.focused_pane_id(&engine);
     let pane = engine.find_pane_by_id(pane_id).unwrap();
-    let tab_id = pane.tabs[pane.active_tab].id;
+    let tab_id = pane.tabs[state.navigation.tab_index(pane)].id;
     let target = RenameTarget::TabName { tab_id };
     let scope = target.popup_scope(&engine);
     state.dialogs.rename = Some((target, "t".to_string()));
-    open_scoped(&mut state, RENAME_POPUP_ID, scope);
+    open_scoped(&mut state, &mut engine, RENAME_POPUP_ID, scope);
 
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
     core.apply(
@@ -1334,7 +1351,7 @@ fn two_tab_surfaces(
     state.add_tab(engine).unwrap();
     let pane_id = state.focused_pane_id(engine);
     let pane = engine.find_pane_by_id(pane_id).unwrap();
-    let tab_id = pane.tabs[pane.active_tab].id;
+    let tab_id = pane.tabs[state.navigation.tab_index(pane)].id;
     let target = state.focused_surface_id(engine).expect("second surface");
     assert_ne!(target, other);
     (tab_id, target, other)
@@ -1357,6 +1374,7 @@ fn convert_popup_closes_with_its_surface_and_reopens_elsewhere() {
     state.dialogs.convert_popup = Some(target);
     open_scoped(
         &mut state,
+        &mut engine,
         CONVERT_SURFACE_POPUP_ID,
         crate::adapters::ui::popup::PopupScope::Surface(target),
     );
@@ -1375,6 +1393,7 @@ fn convert_popup_closes_with_its_surface_and_reopens_elsewhere() {
     state.dialogs.convert_popup = Some(other);
     open_scoped(
         &mut state,
+        &mut engine,
         CONVERT_SURFACE_POPUP_ID,
         crate::adapters::ui::popup::PopupScope::Surface(other),
     );
@@ -1400,6 +1419,7 @@ fn search_bar_closes_with_its_surface_and_reopens_elsewhere() {
     }];
     crate::intent::popup::handle(
         &mut state,
+        &mut engine,
         &UiIntent::OpenPopup {
             id: SEARCH_BAR_POPUP_ID,
             mode: crate::intent::OpenPopupMode::AtTopOfScope(
@@ -1423,6 +1443,7 @@ fn search_bar_closes_with_its_surface_and_reopens_elsewhere() {
     state.search.surface_id = other;
     crate::intent::popup::handle(
         &mut state,
+        &mut engine,
         &UiIntent::OpenPopup {
             id: SEARCH_BAR_POPUP_ID,
             mode: crate::intent::OpenPopupMode::AtTopOfScope(
@@ -1445,7 +1466,7 @@ fn find_in_focused_surface(
     let focused = state.focused_surface_id(engine);
     crate::adapters::ui::search_bar::open_or_focus_for(state, focused, "test");
     for intent in state.take_pending_intents() {
-        crate::intent::popup::handle(state, &intent);
+        crate::intent::popup::handle(state, engine, &intent);
     }
 }
 

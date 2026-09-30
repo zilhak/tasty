@@ -448,17 +448,19 @@ mod move_container_tests {
         let (pane, tab_a, _a) = first_pane(&mut engine);
         let (other_pane, tab_b, _b) = split_new_pane(&mut engine, pane);
         let (tab_c, _c) = add_tab(&mut engine, other_pane);
-        engine.find_pane_by_id_mut(other_pane).unwrap().active_tab = 0;
+        let mut navigation = crate::state::navigation::NavigationState::default();
+        navigation.goto_tab(engine.find_pane_by_id(other_pane).unwrap(), 0);
         // P1 에 탭을 하나 더 두어 source pane 이 남게 한다.
         add_tab(&mut engine, pane);
 
-        Core::apply_replace_tab_with_tab(&mut engine, tab_a, tab_b);
+        let event = Core::apply_replace_tab_with_tab(&mut engine, tab_a, tab_b);
+        navigation.apply_result(&engine.workspaces, &event);
         let p = engine.find_pane_by_id(other_pane).unwrap();
         assert_eq!(
             p.tabs.iter().map(|t| t.id).collect::<Vec<_>>(),
             vec![tab_a, tab_c]
         );
-        assert_eq!(p.active_tab, 0);
+        assert_eq!(navigation.tab_index(p), 0);
     }
 
     #[test]
@@ -676,10 +678,12 @@ mod move_container_tests {
         let (p2, _tab_p2, _p2_sid) = split_new_pane(&mut engine, p1);
         let (q, tab_q, q_sid) = push_workspace(&mut engine);
         let (tab_q2, q2_sid) = add_tab(&mut engine, q);
-        engine.workspaces[1].focused_pane = q;
+        let mut navigation = crate::state::navigation::NavigationState::default();
+        navigation.select_pane(&engine.workspaces[1], q);
         engine.pending_move = Some(PendingMove::Pane(p1));
 
         let ev = Core::apply_replace_pane_with_pane(&mut engine, p1, q);
+        navigation.apply_result(&engine.workspaces, &ev);
         let CoreEvent::ContainerMoveApplied {
             moved,
             cleanup_targets,
@@ -703,7 +707,7 @@ mod move_container_tests {
 
         assert_eq!(engine.workspaces[0].pane_layout().all_pane_ids(), vec![p2]);
         assert_eq!(engine.workspaces[1].pane_layout().all_pane_ids(), vec![p1]);
-        assert_eq!(engine.workspaces[1].focused_pane, p1);
+        assert_eq!(navigation.pane_id(&engine.workspaces[1]).unwrap(), p1);
         let moved_pane = engine.find_pane_by_id(p1).unwrap();
         assert_eq!(moved_pane.tabs[0].id, tab_a);
         assert!(

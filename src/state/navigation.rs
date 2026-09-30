@@ -213,6 +213,34 @@ impl NavigationState {
         self.surfaces.entry(tab.id).or_insert(surface);
     }
 
+    pub(crate) fn apply_result(
+        &mut self,
+        workspaces: &[Workspace],
+        event: &crate::core::intent::CoreEvent,
+    ) {
+        use crate::core::intent::CoreEvent;
+        match event {
+            CoreEvent::MoveSurfaceApplied {
+                replacement: Some((removed, replacement)),
+                ..
+            } => self.replace_surface(*removed, *replacement),
+            CoreEvent::ContainerMoveApplied {
+                replaced_tab,
+                replaced_pane,
+                ..
+            } => {
+                if let Some((removed, replacement)) = replaced_tab {
+                    self.replace_tab(*removed, *replacement);
+                }
+                if let Some((removed, replacement)) = replaced_pane {
+                    self.replace_pane(*removed, *replacement);
+                }
+            }
+            _ => {}
+        }
+        self.reconcile(workspaces);
+    }
+
     pub(crate) fn replace_surface(&mut self, removed: u32, replacement: u32) {
         for selected in self.surfaces.values_mut() {
             if *selected == removed {

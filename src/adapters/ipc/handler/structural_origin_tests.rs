@@ -41,7 +41,10 @@ fn callers() -> [CallerContext; 3] {
 /// 활성 workspace의 선택 pane과 각 pane 선택 탭의 선택 surface.
 fn user_focus(state: &RequestContext, engine: &crate::core::CoreState) -> (u32, Option<u32>) {
     let ws = state.active_workspace(engine);
-    (ws.focused_pane, state.focused_surface_id(engine))
+    (
+        state.navigation.pane_id(&ws).unwrap(),
+        state.focused_surface_id(engine),
+    )
 }
 
 fn call(
@@ -117,7 +120,7 @@ fn ipc_tab_and_pane_closes_leave_no_user_close_trace_for_every_caller() {
         let mut core = super::cli_entry_tests::test_core();
         let (mut state, mut engine) = crate::state::tests::test_state();
         let sid = state.focused_surface_id(&engine).expect("focused surface");
-        let pane_id = state.active_workspace(&engine).focused_pane;
+        let pane_id = state.focused_pane_id(&engine);
 
         let tab = call(
             &mut core,

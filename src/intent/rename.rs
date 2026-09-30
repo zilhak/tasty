@@ -74,7 +74,12 @@ fn rename_tab(
     name: Option<String>,
     origin: &IntentOrigin,
 ) {
-    if let Err(e) = core.apply(engine, DomainIntent::RenameTab { tab_id, name }) {
+    if let Err(e) = crate::app::structural_exec::execute(
+        core,
+        state,
+        engine,
+        DomainIntent::RenameTab { tab_id, name },
+    ) {
         super::report_apply_error(state, engine, origin, "DirectRename tab", &e);
         return;
     }
@@ -109,7 +114,7 @@ fn rename_workspace(
         subtitle: subtitle.clone(),
         description: None,
     };
-    if let Err(e) = core.apply(engine, intent) {
+    if let Err(e) = crate::app::structural_exec::execute(core, state, engine, intent) {
         super::report_apply_error(state, engine, origin, "DirectRename workspace", &e);
         return;
     }

@@ -30,6 +30,22 @@ impl From<anyhow::Error> for StructuralFailure {
     }
 }
 
+/// Resolve publication context before mutation and apply only the resulting
+/// structural repair afterward. User activation is a separate continuation.
+pub(crate) fn execute(
+    core: &mut Core,
+    state: &mut dyn CascadeWindow,
+    engine: &mut CoreState,
+    intent: DomainIntent,
+) -> anyhow::Result<Vec<CoreEvent>> {
+    engine.refresh_attach_presentation(state.presentation());
+    let events = core.apply(engine, intent)?;
+    for event in &events {
+        state.apply_structure_result(engine, event);
+    }
+    Ok(events)
+}
+
 /// 요청 출처는 진입점이 정해 넘긴다(ADR-0057). 다른 mirror로 다시 전달한 요청이 실패하면
 /// Agent는 사용자 toast 대신 로그로, User는 사용자 조작 실패로 표시한다.
 fn apply(
@@ -39,14 +55,11 @@ fn apply(
     intent: DomainIntent,
     origin: &IntentOrigin,
 ) -> Result<Vec<CoreEvent>, StructuralFailure> {
-    let events = core.apply(engine, intent).map_err(|e| {
+    let events = execute(core, state, engine, intent).map_err(|e| {
         crate::core::mark_last_forward_agent_origin(engine, &e, origin);
         crate::core::mark_last_forward_user_triggered(engine, &e, origin);
         StructuralFailure::Apply(e)
     })?;
-    for event in &events {
-        state.apply_structure_result(engine, event);
-    }
     Ok(events)
 }
 

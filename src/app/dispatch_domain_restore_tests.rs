@@ -6,12 +6,18 @@ use crate::intent::{AgentSource, IntentOrigin, UserSource};
 
 fn restored_workspace_index(origin: &IntentOrigin) -> usize {
     let (mut state, mut engine) = crate::state::tests::test_state();
+    crate::core::apply_create_workspace_inner(
+        &mut engine,
+        crate::core::WorkspaceCreationParams::terminal(),
+    )
+    .unwrap();
     assert_eq!(state.active_workspace_index(&engine), 0);
     cascade_closed_item_restored(
         &mut state,
         &mut engine,
         origin,
         RestoredKind::Workspace { new_ws_index: 1 },
+        &crate::model::StructurePresentationSnapshot::default(),
     );
     state.active_workspace_index(&engine)
 }

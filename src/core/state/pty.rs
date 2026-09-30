@@ -372,7 +372,7 @@ mod tests {
         let term = push_deferred_tab(&mut engine, None);
         let plugin = push_deferred_plugin_tab(&mut engine, "empty");
         let missing = push_deferred_plugin_tab(&mut engine, "tasty_no_such_kind");
-        let before = active_tab_ids(&engine);
+        let before = tab_order_ids(&engine);
 
         assert!(engine.reify_deferred_surface(term), "터미널은 PTY 생성");
         assert!(engine.runtime.terminals.get(term).is_some());
@@ -388,15 +388,19 @@ mod tests {
         assert!(!engine.reify_deferred_surface(missing), "미등록 kind");
         assert!(engine.is_surface_deferred(missing), "placeholder 유지");
         assert!(!engine.reify_deferred_surface(term), "이미 실제화됨");
-        assert_eq!(active_tab_ids(&engine), before, "활성 탭 불변");
+        assert_eq!(tab_order_ids(&engine), before, "활성 탭 불변");
     }
 
-    fn active_tab_ids(engine: &CoreState) -> Vec<(u32, usize)> {
+    fn tab_order_ids(engine: &CoreState) -> Vec<(u32, Vec<u32>)> {
         let ws = &engine.workspaces[0];
         ws.pane_layout()
             .all_pane_ids()
             .into_iter()
-            .filter_map(|id| ws.pane_layout().find_pane(id).map(|p| (id, p.active_tab)))
+            .filter_map(|id| {
+                ws.pane_layout()
+                    .find_pane(id)
+                    .map(|p| (id, p.tabs.iter().map(|t| t.id).collect()))
+            })
             .collect()
     }
 
@@ -404,7 +408,7 @@ mod tests {
     fn ensure_surface_initialized_moves_persist_id_and_keeps_active_tab() {
         let mut engine = engine();
         let sid = push_deferred_tab(&mut engine, None);
-        let before = active_tab_ids(&engine);
+        let before = tab_order_ids(&engine);
 
         assert!(engine.ensure_surface_initialized(sid), "기본 셸 spawn 성공");
         assert!(!engine.is_surface_deferred(sid));
@@ -413,7 +417,7 @@ mod tests {
             engine.runtime.terminals.scrollback_persist_id(sid),
             Some("persist-xyz")
         );
-        assert_eq!(active_tab_ids(&engine), before, "활성 탭 불변");
+        assert_eq!(tab_order_ids(&engine), before, "활성 탭 불변");
         assert!(!engine.ensure_surface_initialized(sid), "이미 생성됨");
     }
 

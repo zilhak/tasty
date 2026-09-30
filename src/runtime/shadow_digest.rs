@@ -23,19 +23,11 @@ use tasty_model::SplitDirection;
 
 /// 비교에서 뺀 CoreState 자료와 그 이유. 문서의 제외 목록과 같다.
 pub(crate) const DIGEST_EXCLUDED: &[(&str, &str)] = &[
-    ("Workspace.focused_pane", "user selection owned by the View"),
-    ("Pane.active_tab", "user selection owned by the View"),
-    ("Tab.focused_surface", "user selection owned by the View"),
     (
-        "SurfaceLayout::Split.focus_second",
-        "focus hint filled by the applier",
+        "SurfaceLayout::Split.node_id",
+        "process-local compatibility projection identity",
     ),
-    (
-        "WorkspaceCategory.collapsed",
-        "sidebar state owned by the View",
-    ),
-    ("Tab.osc_title", "terminal derived value"),
-    ("Tab.cached_display_name", "terminal derived value"),
+    ("Tab.surface_titles", "per-surface terminal observations"),
     (
         "Workspace.mirror",
         "mirror workspaces are remote structure, not local",

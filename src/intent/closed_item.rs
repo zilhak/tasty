@@ -46,7 +46,7 @@ pub fn handle(
         target_pane_id,
         scope: crate::core::intent::RestoreScope::Local,
     };
-    let events = match core.apply(engine, domain_intent) {
+    let events = match crate::app::structural_exec::execute(core, state, engine, domain_intent) {
         Ok(e) => e,
         Err(e) => {
             // 사용자 요청임을 전달해야 원격 복원 결과에 맞춰 포커스도 옮긴다.

@@ -185,7 +185,11 @@ pub(super) fn capture_and_import(
     slot: LayoutSlotId,
     scrollback: &dyn ScrollbackSource,
 ) -> Result<(ImportOutcome, JournalModel), ImportError> {
-    let layout = SavedLayout::capture(engine, 0);
+    let layout = SavedLayout::capture(
+        engine,
+        0,
+        &crate::model::StructurePresentationSnapshot::default(),
+    );
     let json = serde_json::to_string(&layout).map_err(ImportError::Mapping)?;
     let outcome = import_slot(store, epoch, slot, &json, scrollback)?;
     let model = journal::load(store, &journal::engine_stream(slot))?;

@@ -301,8 +301,6 @@ pub(crate) enum CoreEvent {
         )
     )]
     WorkspaceMoved {
-        from_index: usize,
-        to_index: usize,
         moved: bool,
     },
 

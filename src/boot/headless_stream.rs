@@ -102,7 +102,7 @@ fn apply_structural_ops(
         let anchor = op.anchor_surface_id();
         let (ok, reason, delta) = match engine.attach.workspace_of_surface(anchor) {
             Some(ws) if engine.attach.workspace_holder(ws) == Some(client_id) => {
-                match crate::core::attach_runtime::execute_forwarded_structural_op(
+                match crate::app::attach_structure::execute_forwarded_structural_op(
                     &mut app.core,
                     state,
                     engine,

@@ -35,7 +35,7 @@ fn arrange(case: Case) -> (RequestContext, CoreState, u32) {
     let (mut state, mut engine) = test_state();
     let sid_a = state.focused_surface_id(&engine).unwrap();
     let ws_idx = state.active_workspace_index(&engine);
-    let pane_id = state.active_workspace(&engine).focused_pane;
+    let pane_id = state.focused_pane_id(&engine);
     let target = match case {
         Case::Surface => {
             let sid_b = engine.next_ids.next_surface();
@@ -61,7 +61,9 @@ fn arrange(case: Case) -> (RequestContext, CoreState, u32) {
             engine.workspaces[ws_idx]
                 .pane_layout_mut()
                 .split_pane_in_place(pane_id, SplitDirection::Vertical, pane);
-            engine.workspaces[ws_idx].focused_pane = new_pane_id;
+            state
+                .navigation
+                .select_pane(&engine.workspaces[ws_idx], new_pane_id);
             sid_b
         }
         Case::Workspace => {
@@ -158,7 +160,7 @@ fn user_pane_and_tab_closes_record_but_agent_ones_do_not() {
 
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
     let (mut state, mut engine, _) = arrange(Case::Pane);
-    let pane_id = state.active_workspace(&engine).focused_pane;
+    let pane_id = state.focused_pane_id(&engine);
     let closed = crate::app::structural_exec::close_pane(
         &mut core,
         &mut state,
@@ -211,7 +213,7 @@ fn the_window_path_and_core_apply_return_the_same_surface_closed_event() {
                 &mut twin,
                 DomainIntent::CloseSurface {
                     surface_id: sid,
-                    save_snapshot: false,
+                    presentation: None,
                 },
             )
             .expect("Core::apply CloseSurface");

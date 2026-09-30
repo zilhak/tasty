@@ -416,7 +416,12 @@ fn custom_tab_slot_key_switches_correct_tab() {
         false, // option
     );
     assert!(consumed);
-    assert_eq!(state.focused_pane(&engine).unwrap().active_tab, 2);
+    assert_eq!(
+        state
+            .navigation
+            .tab_index(state.focused_pane(&engine).unwrap()),
+        2
+    );
 }
 
 #[test]
@@ -437,7 +442,12 @@ fn tab_next_prev_keys_cycle_focused_pane_tabs() {
         false,
         false,
     ));
-    assert_eq!(state.focused_pane(&engine).unwrap().active_tab, 1);
+    assert_eq!(
+        state
+            .navigation
+            .tab_index(state.focused_pane(&engine).unwrap()),
+        1
+    );
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
         &mut engine,
@@ -449,7 +459,12 @@ fn tab_next_prev_keys_cycle_focused_pane_tabs() {
         false,
         false,
     ));
-    assert_eq!(state.focused_pane(&engine).unwrap().active_tab, 0);
+    assert_eq!(
+        state
+            .navigation
+            .tab_index(state.focused_pane(&engine).unwrap()),
+        0
+    );
 }
 
 #[test]
@@ -512,7 +527,9 @@ fn wrong_modifier_and_unbound_key_return_false() {
     state.add_tab(&mut engine).unwrap(); // 2 tabs
     state.goto_tab_in_pane(&mut engine, 0);
     let kb = crate::settings::KeybindingSettings::default();
-    let before = state.focused_pane(&engine).unwrap().active_tab;
+    let before = state
+        .navigation
+        .tab_index(state.focused_pane(&engine).unwrap());
     assert!(!MainView::handle_numeric_switch_shortcuts(
         &mut state,
         &mut engine,
@@ -535,7 +552,12 @@ fn wrong_modifier_and_unbound_key_return_false() {
         false,
         false,
     ));
-    assert_eq!(state.focused_pane(&engine).unwrap().active_tab, before);
+    assert_eq!(
+        state
+            .navigation
+            .tab_index(state.focused_pane(&engine).unwrap()),
+        before
+    );
 }
 
 #[test]
@@ -663,7 +685,12 @@ fn individual_tab_axis_slot_and_next_prev_dispatch() {
         false,
         false,
     ));
-    assert_eq!(state.focused_pane(&engine).unwrap().active_tab, 2);
+    assert_eq!(
+        state
+            .navigation
+            .tab_index(state.focused_pane(&engine).unwrap()),
+        2
+    );
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
         &mut engine,
@@ -675,7 +702,12 @@ fn individual_tab_axis_slot_and_next_prev_dispatch() {
         true,
         false,
     ));
-    assert_eq!(state.focused_pane(&engine).unwrap().active_tab, 1);
+    assert_eq!(
+        state
+            .navigation
+            .tab_index(state.focused_pane(&engine).unwrap()),
+        1
+    );
     // 개별 지정은 규칙 기반 대상 조회에서 제외한다.
     assert!(!MainView::handle_numeric_switch_shortcuts(
         &mut state,
@@ -688,7 +720,12 @@ fn individual_tab_axis_slot_and_next_prev_dispatch() {
         false,
         false,
     ));
-    assert_eq!(state.focused_pane(&engine).unwrap().active_tab, 1);
+    assert_eq!(
+        state
+            .navigation
+            .tab_index(state.focused_pane(&engine).unwrap()),
+        1
+    );
 }
 
 #[test]
@@ -770,7 +807,9 @@ fn axis_combos_do_not_cross_route() {
     state.add_tab(&mut engine).unwrap(); // 2 tabs
     state.goto_tab_in_pane(&mut engine, 0);
     let kb = crate::settings::KeybindingSettings::default();
-    let before = state.focused_pane(&engine).unwrap().active_tab;
+    let before = state
+        .navigation
+        .tab_index(state.focused_pane(&engine).unwrap());
     assert!(!MainView::handle_numeric_switch_shortcuts(
         &mut state,
         &mut engine,
@@ -782,7 +821,12 @@ fn axis_combos_do_not_cross_route() {
         false, // alt
         false, // option
     ));
-    assert_eq!(state.focused_pane(&engine).unwrap().active_tab, before);
+    assert_eq!(
+        state
+            .navigation
+            .tab_index(state.focused_pane(&engine).unwrap()),
+        before
+    );
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
         &mut engine,
@@ -794,7 +838,12 @@ fn axis_combos_do_not_cross_route() {
         false, // alt
         false, // option
     ));
-    assert_eq!(state.focused_pane(&engine).unwrap().active_tab, 1);
+    assert_eq!(
+        state
+            .navigation
+            .tab_index(state.focused_pane(&engine).unwrap()),
+        1
+    );
 }
 
 fn default_new_workspace_key_mods() -> (Key, ModifiersState) {

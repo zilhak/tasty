@@ -72,7 +72,7 @@ fn new_workspace(
         category,
     };
 
-    let events = match core.apply(engine, intent) {
+    let events = match crate::app::structural_exec::execute(core, state, engine, intent) {
         Ok(events) => events,
         Err(e) => {
             #[cfg(feature = "gui")]

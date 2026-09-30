@@ -43,7 +43,7 @@ fn trigger(owner: Option<u64>) -> (RequestContext, crate::core::CoreState) {
     );
     assert!(response.result.is_some());
     for intent in state.take_pending_intents() {
-        crate::intent::popup::handle(&mut state, &intent);
+        crate::intent::popup::handle(&mut state, &mut engine, &intent);
     }
     (state, engine)
 }

@@ -58,8 +58,7 @@ impl App {
         let Some(DispatchCtx { state, engine, .. }) = engines_mut!(self).resolve(id) else {
             anyhow::bail!("dispatch_domain_intent: engine {id:?} not found");
         };
-        engine.refresh_attach_presentation(&state.navigation);
-        let applied = core.apply(engine, intent);
+        let applied = crate::app::structural_exec::execute(core, state, engine, intent);
         let events = events_or_report(state, engine, &origin, applied);
         for event in events {
             self.handle_core_event(source, &origin, event);

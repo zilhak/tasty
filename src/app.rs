@@ -6,6 +6,7 @@ pub(crate) mod agent_events;
 pub(crate) mod attach_client;
 #[cfg(feature = "gui")]
 pub(crate) mod attach_poll;
+pub(crate) mod attach_structure;
 #[cfg(feature = "gui")]
 pub(crate) mod auto_attach;
 #[cfg(feature = "gui")]

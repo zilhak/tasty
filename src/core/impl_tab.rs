@@ -182,10 +182,10 @@ mod create_tab_selection_tests {
             activate,
         )
         .expect("create tab");
-        let Some(CoreEvent::TabCreated { active_tab, .. }) = events.into_iter().next() else {
+        let Some(CoreEvent::TabCreated { activate, .. }) = events.into_iter().next() else {
             panic!("expected TabCreated");
         };
-        active_tab
+        usize::from(activate)
     }
 
     fn engine_and_pane() -> (CoreState, u32) {
@@ -197,19 +197,18 @@ mod create_tab_selection_tests {
     }
 
     #[test]
-    fn a_background_non_terminal_tab_keeps_the_selected_tab() {
+    fn background_creation_emits_no_activation() {
         let (mut engine, pane_id) = engine_and_pane();
         assert_eq!(create(&mut engine, pane_id, "empty", false), 0);
         let pane = engine.find_pane_by_id(pane_id).unwrap();
         assert_eq!(pane.tabs.len(), 2);
-        assert_eq!(pane.active_tab, 0);
     }
 
     #[test]
-    fn an_activated_non_terminal_tab_becomes_the_selected_tab() {
+    fn activated_creation_returns_a_user_continuation() {
         let (mut engine, pane_id) = engine_and_pane();
         assert_eq!(create(&mut engine, pane_id, "empty", true), 1);
-        assert_eq!(engine.find_pane_by_id(pane_id).unwrap().active_tab, 1);
+        assert_eq!(engine.find_pane_by_id(pane_id).unwrap().tabs.len(), 2);
     }
 }
 
@@ -243,17 +242,7 @@ mod tab_title_tests {
             .runtime
             .terminals
             .insert(b, Terminal::new_detached(80, 24));
-        set_focused(&mut engine, pane_id, a);
         (engine, pane_id, a, b)
-    }
-
-    fn set_focused(engine: &mut CoreState, pane_id: u32, sid: u32) {
-        engine.workspaces[0]
-            .pane_layout_mut()
-            .find_pane_mut(pane_id)
-            .unwrap()
-            .tabs[0]
-            .focused_surface = sid;
     }
 
     fn set_title(engine: &mut CoreState, sid: u32, title: &str) {
@@ -265,13 +254,13 @@ mod tab_title_tests {
             .feed_bytes(format!("\x1b]2;{title}\x07").as_bytes());
     }
 
-    fn display_name(engine: &CoreState, pane_id: u32) -> String {
+    fn display_name(engine: &CoreState, pane_id: u32, selected: u32) -> String {
         engine.workspaces[0]
             .pane_layout()
             .find_pane(pane_id)
             .unwrap()
             .tabs[0]
-            .display_name()
+            .display_name(Some(selected))
     }
 
     #[test]
@@ -285,10 +274,10 @@ mod tab_title_tests {
                 ..
             }
         ));
-        assert_ne!(display_name(&engine, pane_id), "TITLE-FROM-B");
+        assert_ne!(display_name(&engine, pane_id, a), "TITLE-FROM-B");
 
         Core::apply_update_tab_name(&mut engine, a, "TITLE-A".to_string());
-        assert_eq!(display_name(&engine, pane_id), "TITLE-A");
+        assert_eq!(display_name(&engine, pane_id, a), "TITLE-A");
     }
 
     #[test]
@@ -308,7 +297,7 @@ mod tab_title_tests {
                 ..
             }
         ));
-        assert_eq!(display_name(&engine, pane_id), "FIXED");
+        assert_eq!(display_name(&engine, pane_id, a), "FIXED");
     }
 
     #[test]
@@ -317,11 +306,10 @@ mod tab_title_tests {
         set_title(&mut engine, a, "TITLE-A");
         set_title(&mut engine, b, "TITLE-B");
         Core::apply_update_tab_name(&mut engine, a, "TITLE-A".to_string());
-        assert_eq!(display_name(&engine, pane_id), "TITLE-A");
+        assert_eq!(display_name(&engine, pane_id, a), "TITLE-A");
 
-        set_focused(&mut engine, pane_id, b);
         engine.refresh_tab_osc_title(b);
-        assert_eq!(display_name(&engine, pane_id), "TITLE-B");
+        assert_eq!(display_name(&engine, pane_id, b), "TITLE-B");
     }
 
     #[test]
@@ -329,11 +317,10 @@ mod tab_title_tests {
         let (mut engine, pane_id, a, b) = split_tab_engine();
         set_title(&mut engine, a, "TITLE-A");
         Core::apply_update_tab_name(&mut engine, a, "TITLE-A".to_string());
-        assert_eq!(display_name(&engine, pane_id), "TITLE-A");
+        assert_eq!(display_name(&engine, pane_id, a), "TITLE-A");
 
-        set_focused(&mut engine, pane_id, b);
         engine.refresh_tab_osc_title(b);
-        assert_ne!(display_name(&engine, pane_id), "TITLE-A");
+        assert_ne!(display_name(&engine, pane_id, b), "TITLE-A");
     }
 
     #[test]
@@ -342,11 +329,11 @@ mod tab_title_tests {
         set_title(&mut engine, a, "TITLE-A");
         set_title(&mut engine, b, "TITLE-B");
         Core::apply_update_tab_name(&mut engine, a, "TITLE-A".to_string());
-        assert_eq!(display_name(&engine, pane_id), "TITLE-A");
+        assert_eq!(display_name(&engine, pane_id, a), "TITLE-A");
 
-        let ev = Core::apply_close_surface(&mut engine, a, false);
+        let ev = Core::apply_close_surface(&mut engine, a, None);
         assert!(matches!(ev, CoreEvent::SurfaceClosed { closed: true, .. }));
-        assert_eq!(display_name(&engine, pane_id), "TITLE-B");
+        assert_eq!(display_name(&engine, pane_id, b), "TITLE-B");
     }
 
     #[test]
@@ -354,9 +341,8 @@ mod tab_title_tests {
         let (mut engine, pane_id, a, b) = split_tab_engine();
         set_title(&mut engine, a, "TITLE-A");
         set_title(&mut engine, b, "TITLE-B");
-        set_focused(&mut engine, pane_id, b);
         engine.refresh_tab_osc_title(b);
-        assert_eq!(display_name(&engine, pane_id), "TITLE-B");
+        assert_eq!(display_name(&engine, pane_id, b), "TITLE-B");
 
         engine.pending_move = Some(crate::core::state::PendingMove::Surface(a));
         let ev = Core::apply_move_surface(&mut engine, a, b);
@@ -364,6 +350,6 @@ mod tab_title_tests {
             ev,
             CoreEvent::MoveSurfaceApplied { moved: true, .. }
         ));
-        assert_eq!(display_name(&engine, pane_id), "TITLE-A");
+        assert_eq!(display_name(&engine, pane_id, a), "TITLE-A");
     }
 }

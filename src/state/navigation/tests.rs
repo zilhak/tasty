@@ -297,3 +297,108 @@ fn legacy_split_hints_follow_node_identity_through_extract_and_resplit() {
     assert_eq!(tree["focus_second"], false);
     assert_eq!(tree["first"]["focus_second"], true);
 }
+
+#[cfg(feature = "gui")]
+#[test]
+fn category_user_intents_preserve_dirty_scheduling_and_agent_isolation() {
+    use crate::intent::UiIntent;
+    let (mut state, mut engine) = crate::state::tests::test_state();
+    let category = engine.create_category("work").unwrap();
+    let mut apply = |intent: UiIntent| {
+        engine.layout_dirty.clear();
+        crate::intent::popup::handle(&mut state, &mut engine, &intent.from_user_menu("test"));
+        assert!(engine.layout_dirty.is_dirty());
+    };
+    apply(UiIntent::SetCategoryCollapsed {
+        id: category,
+        collapsed: true,
+    });
+    assert!(state.navigation.collapsed_categories.contains(&category));
+    crate::intent::popup::handle(
+        &mut state,
+        &mut engine,
+        &UiIntent::ToggleCategoryCollapsed { id: category }.from_user_menu("test"),
+    );
+    assert!(!state.navigation.collapsed_categories.contains(&category));
+    crate::intent::popup::handle(
+        &mut state,
+        &mut engine,
+        &UiIntent::ToggleAllCategoriesCollapsed.from_user_menu("test"),
+    );
+    assert!(
+        engine
+            .categories()
+            .iter()
+            .all(|c| state.navigation.collapsed_categories.contains(&c.id))
+    );
+    crate::intent::popup::handle(
+        &mut state,
+        &mut engine,
+        &UiIntent::ToggleAllCategoriesCollapsed.from_agent_cli(),
+    );
+    assert!(
+        engine
+            .categories()
+            .iter()
+            .all(|c| state.navigation.collapsed_categories.contains(&c.id))
+    );
+    crate::intent::popup::handle(
+        &mut state,
+        &mut engine,
+        &UiIntent::ToggleAllCategoriesCollapsed.from_user_menu("test"),
+    );
+    assert!(state.navigation.collapsed_categories.is_empty());
+    crate::intent::popup::handle(
+        &mut state,
+        &mut engine,
+        &UiIntent::SetCategoryCollapsed {
+            id: 0,
+            collapsed: true,
+        }
+        .from_user_menu("test"),
+    );
+    assert!(state.navigation.collapsed_categories.contains(&0));
+    crate::intent::popup::handle(
+        &mut state,
+        &mut engine,
+        &UiIntent::SetCategoryCollapsed {
+            id: u32::MAX,
+            collapsed: true,
+        }
+        .from_user_menu("test"),
+    );
+    assert!(!state.navigation.collapsed_categories.contains(&u32::MAX));
+}
+
+#[cfg(feature = "gui")]
+#[test]
+fn category_only_changes_round_trip_and_removed_presentation_is_reclaimed() {
+    let (mut state, mut engine) = crate::state::tests::test_state();
+    let category = engine.create_category("services").unwrap();
+    state.navigation.collapsed_categories.insert(category);
+    let saved =
+        crate::core::layout_persistence::SavedLayout::capture(&mut engine, 0, &state.navigation);
+    let (mut restored_state, mut restored_engine) = crate::state::tests::test_state();
+    let restored = saved.restore(&mut restored_engine).expect("restore");
+    restored_state
+        .navigation
+        .restore(&restored_engine.workspaces, &restored);
+    assert!(
+        restored_state
+            .navigation
+            .collapsed_categories
+            .contains(&category)
+    );
+    restored_state
+        .tab_bar_scroll
+        .insert(u32::MAX, crate::model::LogicalPx(12.0));
+    restored_engine.delete_category(category).unwrap();
+    restored_state.reconcile_presentation(&restored_engine);
+    assert!(
+        !restored_state
+            .navigation
+            .collapsed_categories
+            .contains(&category)
+    );
+    assert!(!restored_state.tab_bar_scroll.contains_key(&u32::MAX));
+}

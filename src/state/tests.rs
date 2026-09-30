@@ -180,7 +180,7 @@ fn close_active_tab_after_add() {
     let (mut state, mut engine) = test_state();
     state.add_tab(&mut engine).unwrap();
 
-    let pane_id = state.active_workspace(&engine).focused_pane;
+    let pane_id = state.focused_pane_id(&engine);
     let tab_count = state
         .active_workspace(&engine)
         .pane_layout()
@@ -312,7 +312,7 @@ fn mirror_add_tab_forwards_new_tab() {
     use crate::ipc::stream::StructuralOp;
     let (mut state, mut engine) = test_state();
     let sid = state.focused_surface_id(&engine).unwrap();
-    let pane_id = state.active_workspace(&engine).focused_pane;
+    let pane_id = state.focused_pane_id(&engine);
     let tabs_before = state
         .active_workspace(&engine)
         .pane_layout()
@@ -376,7 +376,7 @@ fn mirror_close_active_surface_split_computes_sibling_candidate() {
     use crate::ipc::stream::StructuralOp;
     let (mut state, mut engine) = test_state();
     let sid_a = state.focused_surface_id(&engine).unwrap();
-    let pane_id = state.active_workspace(&engine).focused_pane;
+    let pane_id = state.focused_pane_id(&engine);
     let (ws_idx, _) = engine.find_workspace_index_for_surface(sid_a).unwrap();
     let sid_b = engine.next_ids.next_surface();
     engine.workspaces[ws_idx]
@@ -411,7 +411,7 @@ fn mirror_close_active_surface_split_computes_sibling_candidate() {
 fn close_active_surface_split_saves_closed_item_snapshot() {
     let (mut state, mut engine) = test_state();
     let sid_a = state.focused_surface_id(&engine).unwrap();
-    let pane_id = state.active_workspace(&engine).focused_pane;
+    let pane_id = state.focused_pane_id(&engine);
     let (ws_idx, _) = engine.find_workspace_index_for_surface(sid_a).unwrap();
     let sid_b = engine.next_ids.next_surface();
     engine.workspaces[ws_idx]
@@ -514,7 +514,7 @@ fn close_pane_then_restore_reinserts_pane() {
         "pane close 직후엔 1개여야 한다"
     );
     assert_eq!(engine.closed_items.len(), 1);
-    let remaining_pane_id = state.active_workspace(&engine).focused_pane;
+    let remaining_pane_id = state.focused_pane_id(&engine);
 
     let mut core = CoreBuilder::new()
         .with_fs(std::sync::Arc::new(
@@ -571,6 +571,7 @@ fn close_pane_then_restore_reinserts_pane() {
             CoreEvent::ClosedItemRestored {
                 restored: true,
                 kind: RestoredKind::PaneIntoWorkspace { .. },
+                ..
             }
         )
     });
@@ -617,7 +618,7 @@ fn close_surface_by_id_no_snapshot_recreates_when_emptied() {
 fn c3_case1_split_surface_close_cleans_up_and_keeps_sibling() {
     let (mut state, mut engine) = test_state();
     let sid_a = collect_surface_ids(&mut state, &mut engine)[0];
-    let pane_id = state.active_workspace(&engine).focused_pane;
+    let pane_id = state.focused_pane_id(&engine);
     let (ws_idx, _) = engine.find_workspace_index_for_surface(sid_a).unwrap();
     let sid_b = engine.next_ids.next_surface();
     engine.workspaces[ws_idx]
@@ -653,7 +654,7 @@ fn c3_case2_tab_close_removes_tab_and_cleans_surface() {
     let (mut state, mut engine) = test_state();
     let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
     state.add_tab(&mut engine).unwrap();
-    let pane_id = state.active_workspace(&engine).focused_pane;
+    let pane_id = state.focused_pane_id(&engine);
     let sid1 = *collect_surface_ids(&mut state, &mut engine)
         .iter()
         .find(|&&s| s != sid0)
@@ -731,7 +732,7 @@ fn c3_case3_pane_close_removes_pane_and_reassigns_focus() {
         engine.runtime.terminals.contains(sid0),
         "형제 pane 의 surface 는 생존"
     );
-    let focused = state.active_workspace(&engine).focused_pane;
+    let focused = state.focused_pane_id(&engine);
     assert!(
         state
             .active_workspace(&engine)
@@ -1295,15 +1296,15 @@ fn switch_to_category_auto_expands_collapsed() {
     add_test_workspace(&mut state, &mut engine); // B=1
     let work = engine.create_category("work").expect("create work");
     engine.workspaces[1].set_category(work); // B
-    engine.set_category_collapsed(work, true);
-    assert!(engine.categories()[1].collapsed);
+    state.navigation.collapsed_categories.insert(work);
+    assert!(state.navigation.collapsed_categories.contains(&work));
 
     state.switch_workspace(&mut engine, 0); // active=A(normal)
     state.switch_to_category(&mut engine, 1); // → work
     // 펼침은 Core 요청으로 큐에 들어가므로 메인 루프처럼 큐를 비운다.
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
     crate::intent::headless::drain_pending_intents(&mut core, &mut state, &mut engine);
-    assert!(!engine.categories()[1].collapsed); // auto-expand
+    assert!(!state.navigation.collapsed_categories.contains(&work)); // auto-expand
     assert_eq!(state.active_workspace_index(&engine), 1); // work first = B
 }
 
@@ -1397,7 +1398,9 @@ fn resolve_inherit_cwd_from_markdown_surface() {
         for pid in ws.pane_layout().all_pane_ids() {
             if let Some(p) = ws.pane_layout().find_pane(pid) {
                 for tab in &p.tabs {
-                    if let Some(s) = tab.layout().find_surface(tab.focused_surface)
+                    if let Some(s) = tab
+                        .layout()
+                        .find_surface(state.navigation.surface_id(&tab).unwrap_or(0))
                         && s.kind() == "markdown"
                     {
                         sid_opt = s.surface_id();
@@ -1432,7 +1435,9 @@ fn resolve_inherit_cwd_from_surface_respects_toggle_off() {
         for pid in ws.pane_layout().all_pane_ids() {
             if let Some(p) = ws.pane_layout().find_pane(pid) {
                 for tab in &p.tabs {
-                    if let Some(s) = tab.layout().find_surface(tab.focused_surface)
+                    if let Some(s) = tab
+                        .layout()
+                        .find_surface(state.navigation.surface_id(&tab).unwrap_or(0))
                         && s.kind() == "markdown"
                     {
                         sid_opt = s.surface_id();
@@ -1625,11 +1630,11 @@ fn two_pane_setup(
     u32, /* pane_a: 비focused */
     u32, /* pane_b: focused */
 ) {
-    let pane_a = state.active_workspace(engine).focused_pane;
+    let pane_a = state.focused_pane_id(engine);
     state
         .test_split_pane(engine, SplitDirection::Vertical)
         .unwrap();
-    let pane_b = state.active_workspace(engine).focused_pane;
+    let pane_b = state.focused_pane_id(engine);
     assert_ne!(pane_a, pane_b, "split 은 새 pane 을 만들어야 한다");
     (pane_a, pane_b)
 }
@@ -1641,7 +1646,7 @@ fn switch_tab_on_other_pane_moves_focus() {
 
     let (mut state, mut engine) = test_state();
     let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
-    assert_eq!(state.active_workspace(&engine).focused_pane, pane_b);
+    assert_eq!(state.focused_pane_id(&engine), pane_b);
 
     apply_tab_bar_actions(
         &mut state,
@@ -1656,7 +1661,7 @@ fn switch_tab_on_other_pane_moves_focus() {
     );
 
     assert_eq!(
-        state.active_workspace(&engine).focused_pane,
+        state.focused_pane_id(&engine),
         pane_a,
         "비-focused pane 의 탭 클릭은 그 pane 으로 focus 를 옮겨야 한다"
     );
@@ -1671,16 +1676,17 @@ fn focus_pane_action_moves_focus_without_switching_tab() {
     let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
 
     // 빈 영역 클릭이 활성 탭을 바꾸지 않는지 확인하도록 탭을 두 개 둔다.
-    state.active_workspace_mut(&mut engine).focused_pane = pane_a;
+    state
+        .navigation
+        .select_pane(&state.active_workspace_mut(&mut engine), pane_a);
     state.add_tab(&mut engine).unwrap();
     let active_before = state
-        .active_workspace(&engine)
-        .pane_layout()
-        .find_pane(pane_a)
-        .unwrap()
-        .active_tab;
+        .navigation
+        .tab_index(engine.find_pane_by_id(pane_a).unwrap());
     assert_eq!(active_before, 1);
-    state.active_workspace_mut(&mut engine).focused_pane = pane_b;
+    state
+        .navigation
+        .select_pane(&state.active_workspace_mut(&mut engine), pane_b);
 
     apply_tab_bar_actions(
         &mut state,
@@ -1692,16 +1698,13 @@ fn focus_pane_action_moves_focus_without_switching_tab() {
     );
 
     assert_eq!(
-        state.active_workspace(&engine).focused_pane,
+        state.focused_pane_id(&engine),
         pane_a,
         "탭바 빈 영역 클릭은 그 pane 으로 focus 를 옮겨야 한다"
     );
     let active_after = state
-        .active_workspace(&engine)
-        .pane_layout()
-        .find_pane(pane_a)
-        .unwrap()
-        .active_tab;
+        .navigation
+        .tab_index(engine.find_pane_by_id(pane_a).unwrap());
     assert_eq!(
         active_after, active_before,
         "빈 영역 클릭은 focus 만 이동하고 active_tab 은 건드리지 않아야 한다"
@@ -1719,7 +1722,7 @@ fn scroll_left_and_right_on_other_pane_move_focus() {
     ] {
         let (mut state, mut engine) = test_state();
         let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
-        assert_eq!(state.active_workspace(&engine).focused_pane, pane_b);
+        assert_eq!(state.focused_pane_id(&engine), pane_b);
 
         apply_tab_bar_actions(
             &mut state,
@@ -1731,7 +1734,7 @@ fn scroll_left_and_right_on_other_pane_move_focus() {
         );
 
         assert_eq!(
-            state.active_workspace(&engine).focused_pane,
+            state.focused_pane_id(&engine),
             pane_a,
             "스크롤 화살표 클릭도 그 pane 으로 focus 를 옮겨야 한다"
         );
@@ -1747,9 +1750,13 @@ fn close_tab_on_other_pane_moves_focus() {
     let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
 
     // 탭이 실제로 닫힌 뒤에도 pane이 남도록 두 개를 둔다.
-    state.active_workspace_mut(&mut engine).focused_pane = pane_a;
+    state
+        .navigation
+        .select_pane(&state.active_workspace_mut(&mut engine), pane_a);
     state.add_tab(&mut engine).unwrap();
-    state.active_workspace_mut(&mut engine).focused_pane = pane_b;
+    state
+        .navigation
+        .select_pane(&state.active_workspace_mut(&mut engine), pane_b);
 
     apply_tab_bar_actions(
         &mut state,
@@ -1764,7 +1771,7 @@ fn close_tab_on_other_pane_moves_focus() {
     );
 
     assert_eq!(
-        state.active_workspace(&engine).focused_pane,
+        state.focused_pane_id(&engine),
         pane_a,
         "다른 pane 의 탭을 close 해도 그 pane 으로 focus 를 옮겨야 한다"
     );
@@ -1788,7 +1795,7 @@ fn context_menu_actions_do_not_move_focus() {
 
     let (mut state, mut engine) = test_state();
     let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
-    assert_eq!(state.active_workspace(&engine).focused_pane, pane_b);
+    assert_eq!(state.focused_pane_id(&engine), pane_b);
 
     let actions = vec![
         TabBarAction::OpenContextMenu {
@@ -1808,7 +1815,7 @@ fn context_menu_actions_do_not_move_focus() {
     apply_tab_bar_actions(&mut state, &mut engine, actions, &[], 160.0, 1.0);
 
     assert_eq!(
-        state.active_workspace(&engine).focused_pane,
+        state.focused_pane_id(&engine),
         pane_b,
         "우클릭 컨텍스트 메뉴는 focus 를 옮기면 안 된다(대상은 pending_native_menu 의 pane_id 로 이미 결정됨)"
     );
@@ -2088,12 +2095,10 @@ fn closing_an_earlier_tab_keeps_the_viewed_tab() {
     let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
     state.add_tab(&mut engine).unwrap();
     state.add_tab(&mut engine).unwrap();
-    let pane_id = state.active_workspace(&engine).focused_pane;
-    engine.workspaces[state.active_workspace_index(&engine)]
-        .pane_layout_mut()
-        .find_pane_mut(pane_id)
-        .unwrap()
-        .active_tab = 1;
+    let pane_id = state.focused_pane_id(&engine);
+    state
+        .navigation
+        .goto_tab(engine.find_pane_by_id(pane_id).unwrap(), 1);
     let viewed_tab_id = {
         let pane = state
             .active_workspace(&engine)
@@ -2112,7 +2117,8 @@ fn closing_an_earlier_tab_keeps_the_viewed_tab() {
         .unwrap();
     assert_eq!(pane.tabs.len(), 2);
     assert_eq!(
-        pane.tabs[pane.active_tab].id, viewed_tab_id,
+        pane.tabs[state.navigation.tab_index(&pane)].id,
+        viewed_tab_id,
         "앞쪽 탭이 닫혀도 사용자가 보던 탭은 그대로여야 한다"
     );
 }
@@ -2130,12 +2136,15 @@ fn closing_an_unfocused_pane_keeps_the_focused_pane() {
     let pane_ids = state.active_workspace(&engine).pane_layout().all_pane_ids();
     assert_eq!(pane_ids.len(), 3);
     let focused_pane = *pane_ids.last().unwrap();
-    engine.workspaces[state.active_workspace_index(&engine)].focused_pane = focused_pane;
+    state.navigation.select_pane(
+        &engine.workspaces[state.active_workspace_index(&engine)],
+        focused_pane,
+    );
 
     assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid0, false));
 
     assert_eq!(
-        state.active_workspace(&engine).focused_pane,
+        state.focused_pane_id(&engine),
         focused_pane,
         "포커스와 무관한 pane 이 닫혔는데 포커스가 움직이면 안 된다"
     );
@@ -2149,14 +2158,19 @@ fn closing_the_focused_pane_reassigns_focus() {
         .test_split_pane(&mut engine, SplitDirection::Vertical)
         .unwrap();
     let (_, sid0_pane) = engine.find_workspace_index_for_surface(sid0).unwrap();
-    engine.workspaces[state.active_workspace_index(&engine)].focused_pane = sid0_pane;
+    state.navigation.select_pane(
+        &engine.workspaces[state.active_workspace_index(&engine)],
+        sid0_pane,
+    );
 
     assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid0, false));
 
     let ws = state.active_workspace(&engine);
-    assert_ne!(ws.focused_pane, sid0_pane);
+    assert_ne!(state.navigation.pane_id(&ws).unwrap(), sid0_pane);
     assert!(
-        ws.pane_layout().find_pane(ws.focused_pane).is_some(),
+        ws.pane_layout()
+            .find_pane(state.navigation.pane_id(&ws).unwrap())
+            .is_some(),
         "포커스 pane 을 닫았으면 생존 pane 으로 재배정돼야 한다"
     );
 }
@@ -2364,7 +2378,7 @@ mod close_refuses_hard_occupied {
     fn closing_the_focused_surface_when_occupied_is_refused() {
         let (mut state, mut engine) = test_state();
         let sid_a = state.focused_surface_id(&engine).expect("포커스 surface");
-        let pane_id = state.active_workspace(&engine).focused_pane;
+        let pane_id = state.focused_pane_id(&engine);
         let (ws_idx, _) = engine
             .find_workspace_index_for_surface(sid_a)
             .expect("워크스페이스");
@@ -2389,7 +2403,7 @@ mod close_refuses_hard_occupied {
     fn closing_an_unoccupied_focused_surface_still_works() {
         let (mut state, mut engine) = test_state();
         let sid_a = state.focused_surface_id(&engine).expect("포커스 surface");
-        let pane_id = state.active_workspace(&engine).focused_pane;
+        let pane_id = state.focused_pane_id(&engine);
         let (ws_idx, _) = engine
             .find_workspace_index_for_surface(sid_a)
             .expect("워크스페이스");

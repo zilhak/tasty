@@ -265,7 +265,14 @@ mod tests {
         ));
         let pane = Pane::new_with_surface(1, 1, "t".into(), surface);
 
-        let preset = capture_pane_preset(&engine, &pane, None, &registry).expect("capture");
+        let preset = capture_pane_preset(
+            &crate::model::StructurePresentationSnapshot::default(),
+            &engine,
+            &pane,
+            None,
+            &registry,
+        )
+        .expect("capture");
         let leaf = leaf_surface(&preset);
 
         assert_eq!(leaf.kind, "terminal");
@@ -281,7 +288,14 @@ mod tests {
             Box::new(EmptySurface::new_deferred(sid, deferred_spawn(None)));
         let pane = Pane::new_with_surface(1, 1, "t".into(), surface);
 
-        let preset = capture_pane_preset(&engine, &pane, None, &registry).expect("capture");
+        let preset = capture_pane_preset(
+            &crate::model::StructurePresentationSnapshot::default(),
+            &engine,
+            &pane,
+            None,
+            &registry,
+        )
+        .expect("capture");
         let leaf = leaf_surface(&preset);
 
         assert_eq!(leaf.kind, "terminal");
@@ -296,7 +310,14 @@ mod tests {
         let surface: Box<dyn Surface> = Box::new(EmptySurface::new(sid));
         let pane = Pane::new_with_surface(1, 1, "t".into(), surface);
 
-        let preset = capture_pane_preset(&engine, &pane, None, &registry).expect("capture");
+        let preset = capture_pane_preset(
+            &crate::model::StructurePresentationSnapshot::default(),
+            &engine,
+            &pane,
+            None,
+            &registry,
+        )
+        .expect("capture");
         let leaf = leaf_surface(&preset);
 
         assert_eq!(leaf.kind, "empty");
@@ -319,7 +340,14 @@ mod tests {
         ));
         let pane = Pane::new_with_surface(1, 1, "t".into(), surface);
 
-        let preset = capture_pane_preset(&engine, &pane, None, &registry).expect("capture");
+        let preset = capture_pane_preset(
+            &crate::model::StructurePresentationSnapshot::default(),
+            &engine,
+            &pane,
+            None,
+            &registry,
+        )
+        .expect("capture");
         let leaf = leaf_surface(&preset);
 
         assert_eq!(

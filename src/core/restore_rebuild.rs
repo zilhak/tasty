@@ -282,7 +282,12 @@ mod deferred_plugin_tests {
             kind: "no_such_plugin".to_string(),
             snapshot: serde_json::json!({ "a": 1 }),
         };
-        let r = rebuild_surface(&mut e, panel).expect("miss must yield a placeholder, not None");
+        let r = rebuild_surface(
+            &mut e,
+            panel,
+            &mut crate::model::StructurePresentationSnapshot::default(),
+        )
+        .expect("miss must yield a placeholder, not None");
         match r {
             RebuildResult::Single(s) => {
                 let es = s
@@ -309,7 +314,12 @@ mod deferred_plugin_tests {
             ],
             active_tab: 0,
         };
-        let rebuilt = rebuild_pane(&mut e, pane).expect("pane must survive a missing plugin kind");
+        let rebuilt = rebuild_pane(
+            &mut e,
+            pane,
+            &mut crate::model::StructurePresentationSnapshot::default(),
+        )
+        .expect("pane must survive a missing plugin kind");
         assert_eq!(
             rebuilt.tabs.len(),
             2,
@@ -334,8 +344,12 @@ mod deferred_plugin_tests {
                 active_tab: 0,
             })),
         };
-        let rebuilt =
-            rebuild_pane_node(&mut e, node).expect("split must survive a missing kind in one leaf");
+        let rebuilt = rebuild_pane_node(
+            &mut e,
+            node,
+            &mut crate::model::StructurePresentationSnapshot::default(),
+        )
+        .expect("split must survive a missing kind in one leaf");
         match rebuilt {
             PaneNode::Split { first, second, .. } => {
                 assert!(
@@ -388,7 +402,12 @@ mod deferred_plugin_tests {
             kind: "present_plugin".to_string(),
             snapshot: serde_json::json!({ "a": 1 }),
         };
-        let r = rebuild_surface(&mut e, panel).expect("registered kind restores");
+        let r = rebuild_surface(
+            &mut e,
+            panel,
+            &mut crate::model::StructurePresentationSnapshot::default(),
+        )
+        .expect("registered kind restores");
         match r {
             RebuildResult::Single(s) => {
                 let es = s

@@ -142,8 +142,9 @@ mod tests {
         let surface = engine
             .create_surface_via_registry(kind, new_sid, None, params)
             .expect("create surface via registry");
-        let ws = &mut engine.workspaces[state.active_workspace_index(&engine)];
-        let pane_id = ws.focused_pane;
+        let ws_index = state.active_workspace_index(&engine);
+        let ws = &mut engine.workspaces[ws_index];
+        let pane_id = state.navigation.pane_id(&ws).unwrap();
         ws.pane_layout_mut()
             .find_pane_mut(pane_id)
             .expect("focused pane")
@@ -159,9 +160,12 @@ mod tests {
         let ws = &engine.workspaces[state.active_workspace_index(&engine)];
         let pane = ws
             .pane_layout()
-            .find_pane(ws.focused_pane)
+            .find_pane(state.navigation.pane_id(&ws).unwrap())
             .expect("focused pane");
-        pane.tabs[pane.active_tab].focused_surface
+        state
+            .navigation
+            .surface_id(&pane.tabs[state.navigation.tab_index(&pane)])
+            .unwrap()
     }
 
     fn set_url(engine: &crate::core::CoreState, sid: u32) -> JsonRpcResponse {

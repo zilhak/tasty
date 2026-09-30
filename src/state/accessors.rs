@@ -37,10 +37,8 @@ impl RequestContext {
             .retain(|id| engine.categories().iter().any(|c| c.id == *id));
         #[cfg(any(feature = "gui", debug_assertions, test))]
         self.category_last_active.retain(|category, workspace| {
-            engine
-                .workspaces
-                .iter()
-                .any(|ws| ws.id == *workspace && ws.category == *category)
+            engine.workspaces.iter().any(|ws| ws.id == *workspace)
+                && engine.categories().iter().any(|c| c.id == *category)
         });
         #[cfg(feature = "gui")]
         self.tab_bar_scroll
@@ -52,26 +50,7 @@ impl RequestContext {
         engine: &CoreState,
         event: &crate::core::intent::CoreEvent,
     ) {
-        use crate::core::intent::CoreEvent;
-        match event {
-            CoreEvent::MoveSurfaceApplied {
-                replacement: Some((removed, replacement)),
-                ..
-            } => self.navigation.replace_surface(*removed, *replacement),
-            CoreEvent::ContainerMoveApplied {
-                replaced_tab,
-                replaced_pane,
-                ..
-            } => {
-                if let Some((removed, replacement)) = replaced_tab {
-                    self.navigation.replace_tab(*removed, *replacement);
-                }
-                if let Some((removed, replacement)) = replaced_pane {
-                    self.navigation.replace_pane(*removed, *replacement);
-                }
-            }
-            _ => {}
-        }
+        self.navigation.apply_result(&engine.workspaces, event);
         self.reconcile_presentation(engine);
     }
 

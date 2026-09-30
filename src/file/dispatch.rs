@@ -401,16 +401,35 @@ pub(crate) fn open_surface_tab(
                 && engine
                     .mirror_workspace_index_for_structural(&intent)
                     .is_none();
-            if let Err(e) = core.apply(engine, intent) {
-                if mark_remote_forward(engine, &e, dispatch_origin) {
-                    return true;
+            match crate::app::structural_exec::execute(core, state, engine, intent) {
+                Ok(events) => {
+                    if dispatch_origin.selects_result() {
+                        for event in events {
+                            if let crate::core::intent::CoreEvent::TabCreated {
+                                pane_id,
+                                tab_id,
+                                activate: true,
+                                ..
+                            } = event
+                            {
+                                if let Some(pane) = engine.find_pane_by_id(pane_id) {
+                                    state.navigation.select_tab(pane, tab_id);
+                                }
+                            }
+                        }
+                    }
                 }
-                tracing::warn!(
-                    pane_id,
-                    kind = %surface_kind,
-                    "file_dispatch CreateTab failed: {e}",
-                );
-                return false;
+                Err(e) => {
+                    if mark_remote_forward(engine, &e, dispatch_origin) {
+                        return true;
+                    }
+                    tracing::warn!(
+                        pane_id,
+                        kind = %surface_kind,
+                        "file_dispatch CreateTab failed: {e}",
+                    );
+                    return false;
+                }
             }
             if records_recent {
                 state.record_recent(surface_kind, &params);

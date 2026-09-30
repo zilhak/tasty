@@ -197,20 +197,12 @@ impl Core {
     ) -> CoreEvent {
         let len = engine.workspaces.len();
         if from_index == to_index || from_index >= len || to_index >= len {
-            return CoreEvent::WorkspaceMoved {
-                from_index,
-                to_index,
-                moved: false,
-            };
+            return CoreEvent::WorkspaceMoved { moved: false };
         }
         let ws = engine.workspaces.remove(from_index);
         engine.workspaces.insert(to_index, ws);
         engine.mark_layout_dirty();
-        CoreEvent::WorkspaceMoved {
-            from_index,
-            to_index,
-            moved: true,
-        }
+        CoreEvent::WorkspaceMoved { moved: true }
     }
 
     pub(super) fn apply_update_workspace_meta(

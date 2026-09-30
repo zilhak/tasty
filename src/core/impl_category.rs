@@ -167,34 +167,6 @@ mod tests {
     }
 
     #[test]
-    fn collapse_intents_set_toggle_and_toggle_all() {
-        let (mut core, mut engine) = fixture();
-        let a = create(&mut core, &mut engine, "A");
-        apply(
-            &mut core,
-            &mut engine,
-            DomainIntent::SetCategoryCollapsed {
-                id: a,
-                collapsed: true,
-            },
-        );
-        assert!(engine.categories()[1].collapsed);
-        apply(
-            &mut core,
-            &mut engine,
-            DomainIntent::ToggleCategoryCollapsed { id: a },
-        );
-        assert!(!engine.categories()[1].collapsed);
-        apply(
-            &mut core,
-            &mut engine,
-            DomainIntent::ToggleAllCategoriesCollapsed,
-        );
-        assert!(engine.categories().iter().all(|c| c.collapsed));
-        assert!(engine.layout_dirty.is_dirty());
-    }
-
-    #[test]
     fn set_workspace_category_moves_the_workspace_and_rejects_unknown_targets() {
         let (mut core, mut engine) = fixture();
         let a = create(&mut core, &mut engine, "A");
@@ -264,12 +236,6 @@ mod tests {
         let (mut core, mut engine) = fixture();
         engine.workspaces[0].mirror = true;
         let a = create(&mut core, &mut engine, "A");
-        apply(
-            &mut core,
-            &mut engine,
-            DomainIntent::ToggleCategoryCollapsed { id: a },
-        );
-        assert!(engine.categories()[1].collapsed);
         let ws_id = engine.workspaces[0].id;
         apply(
             &mut core,

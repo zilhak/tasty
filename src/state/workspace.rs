@@ -348,7 +348,6 @@ impl RequestContext {
 
 #[cfg(test)]
 mod workspace_pointer_tests {
-    use super::*;
 
     /// 공통 정리 코드의 보정 호출과 바로 앞 cfg 속성을 검사한다.
     /// 호출 전체를 감싼 GUI 전용 블록까지 판별하지는 못한다.

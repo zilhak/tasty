@@ -1650,7 +1650,7 @@ impl App {
             let (ok, reason, delta) = if engine.attach.workspace_holder(ws) != Some(client_id) {
                 (false, Some("not workspace holder".to_string()), None)
             } else {
-                match crate::core::attach_runtime::execute_forwarded_structural_op(
+                match crate::app::attach_structure::execute_forwarded_structural_op(
                     core,
                     &mut main.state,
                     engine,

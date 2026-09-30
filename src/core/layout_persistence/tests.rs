@@ -627,7 +627,13 @@ mod wiring {
         // 실제 부팅 대신 판정 결과를 주입한다.
         engine.accept_slot_load(SlotLoad::Unparsable, 1);
 
-        save_slot_in_dir(&mut engine, 0, 1, &layouts);
+        save_slot_in_dir(
+            &mut engine,
+            0,
+            1,
+            &layouts,
+            &crate::model::StructurePresentationSnapshot::default(),
+        );
 
         assert_eq!(
             std::fs::read_to_string(layouts.join("01.json.bak")).unwrap(),
@@ -652,7 +658,13 @@ mod wiring {
         super::slots::write_valid_slot(&layouts, 1, "written-by-another-instance");
         engine.accept_slot_load(SlotLoad::Unparsable, 1);
 
-        save_slot_in_dir(&mut engine, 0, 1, &layouts);
+        save_slot_in_dir(
+            &mut engine,
+            0,
+            1,
+            &layouts,
+            &crate::model::StructurePresentationSnapshot::default(),
+        );
 
         assert!(
             !layouts.join("01.json.bak").exists(),
@@ -730,7 +742,13 @@ mod wiring {
         exhaust_backup_budget(&layouts, 1);
         engine.layout_slot_preserve_failed = false;
 
-        save_slot_in_dir(&mut engine, 0, 1, &layouts);
+        save_slot_in_dir(
+            &mut engine,
+            0,
+            1,
+            &layouts,
+            &crate::model::StructurePresentationSnapshot::default(),
+        );
 
         assert!(
             engine.layout_slot_preserve_failed,
@@ -756,7 +774,13 @@ mod wiring {
         std::fs::write(&path, &from_the_future).unwrap();
         engine.accept_slot_load(SlotLoad::Unparsable, 1);
 
-        save_slot_in_dir(&mut engine, 0, 1, &layouts);
+        save_slot_in_dir(
+            &mut engine,
+            0,
+            1,
+            &layouts,
+            &crate::model::StructurePresentationSnapshot::default(),
+        );
 
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
@@ -781,7 +805,13 @@ mod wiring {
         engine.accept_slot_load(SlotLoad::Unparsable, 1);
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
 
-        save_slot_in_dir(&mut engine, 0, 1, &layouts);
+        save_slot_in_dir(
+            &mut engine,
+            0,
+            1,
+            &layouts,
+            &crate::model::StructurePresentationSnapshot::default(),
+        );
 
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
         assert_eq!(
@@ -805,7 +835,12 @@ mod wiring {
         engine.accept_slot_load(SlotLoad::Unreadable, 1);
         engine.mark_layout_dirty();
 
-        Core::apply_save_layout_now(&mut engine, 0, true);
+        Core::apply_save_layout_now(
+            &mut engine,
+            0,
+            true,
+            &crate::model::StructurePresentationSnapshot::default(),
+        );
 
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
@@ -830,7 +865,12 @@ mod wiring {
         engine.accept_slot_load(SlotLoad::Absent, 1);
         engine.mark_layout_dirty();
 
-        Core::apply_save_layout_now(&mut engine, 0, true);
+        Core::apply_save_layout_now(
+            &mut engine,
+            0,
+            true,
+            &crate::model::StructurePresentationSnapshot::default(),
+        );
 
         assert!(
             matches!(load_slot_in(&layouts, 1), SlotLoad::Loaded(_)),
@@ -876,10 +916,14 @@ fn moved_tab_is_saved_at_its_new_position() {
 
     Core::apply_replace_tab_with_tab(&mut engine, tab_a, tab_q);
     engine.pending_move = Some(PendingMove::Tab(keep_tab));
-    let saved = SavedLayout::capture(&mut engine, 0);
+    let saved = SavedLayout::capture(
+        &mut engine,
+        0,
+        &crate::model::StructurePresentationSnapshot::default(),
+    );
 
     let mut restored = new_engine();
-    assert!(saved.restore(&mut restored));
+    assert!(saved.restore(&mut restored).is_some());
     let names = |ws: usize| -> Vec<Option<String>> {
         let layout = restored.workspaces[ws].pane_layout();
         let pid = layout.all_pane_ids()[0];
@@ -929,10 +973,14 @@ fn moved_pane_is_saved_at_its_new_position() {
     engine.workspaces.push(ws1);
 
     Core::apply_replace_pane_with_pane(&mut engine, p0, q);
-    let saved = SavedLayout::capture(&mut engine, 0);
+    let saved = SavedLayout::capture(
+        &mut engine,
+        0,
+        &crate::model::StructurePresentationSnapshot::default(),
+    );
 
     let mut restored = new_engine();
-    assert!(saved.restore(&mut restored));
+    assert!(saved.restore(&mut restored).is_some());
     let names = |ws: usize| -> Vec<Option<String>> {
         let layout = restored.workspaces[ws].pane_layout();
         layout

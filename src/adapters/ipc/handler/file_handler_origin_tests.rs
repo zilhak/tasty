@@ -66,8 +66,13 @@ fn dispatch_through_with(
             .plugin_popup_user_activated
             .insert(instance, plugin.to_string());
     }
-    let pane_id = state.active_workspace(&engine).focused_pane;
-    assert_eq!(engine.find_pane_by_id(pane_id).expect("pane").active_tab, 0);
+    let pane_id = state.focused_pane_id(&engine);
+    assert_eq!(
+        state
+            .navigation
+            .tab_index(engine.find_pane_by_id(pane_id).expect("pane")),
+        0
+    );
     for attempt in navigated {
         let sid = engine.workspaces[0].all_surface_ids()[0];
         attempt.record(&mut state, sid);
@@ -120,10 +125,14 @@ fn dispatch_then_selection(
     params: serde_json::Value,
     with_origin_surface: bool,
 ) -> (FileDispatchOrigin, bool, (usize, usize)) {
-    let (origin, intent_is_user, _state, engine, pane_id) =
+    let (origin, intent_is_user, state, engine, pane_id) =
         dispatch_through(caller, activated, params, with_origin_surface, false);
     let pane = engine.find_pane_by_id(pane_id).expect("pane");
-    (origin, intent_is_user, (pane.tabs.len(), pane.active_tab))
+    (
+        origin,
+        intent_is_user,
+        (pane.tabs.len(), state.navigation.tab_index(&pane)),
+    )
 }
 
 fn popup_params() -> serde_json::Value {
@@ -284,10 +293,14 @@ fn link_then_selection(
     navigated: &[Attempt],
     params: serde_json::Value,
 ) -> (FileDispatchOrigin, bool, (usize, usize)) {
-    let (origin, intent_is_user, _state, engine, pane_id) =
+    let (origin, intent_is_user, state, engine, pane_id) =
         dispatch_through_with(caller, None, navigated, params, true, false);
     let pane = engine.find_pane_by_id(pane_id).expect("pane");
-    (origin, intent_is_user, (pane.tabs.len(), pane.active_tab))
+    (
+        origin,
+        intent_is_user,
+        (pane.tabs.len(), state.navigation.tab_index(&pane)),
+    )
 }
 
 #[test]

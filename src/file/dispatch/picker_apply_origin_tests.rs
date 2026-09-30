@@ -74,7 +74,9 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
     .unwrap();
     state.set_active_workspace_index(&engine, 1);
     let before = engine.workspaces[0].all_surface_ids();
-    let active_tab = engine.find_pane_by_id(pane).unwrap().active_tab;
+    let active_tab = state
+        .navigation
+        .tab_index(engine.find_pane_by_id(pane).unwrap());
     let focused_surface = state.focused_surface_id(&engine);
     apply_file_picker_result(
         &mut core,
@@ -94,8 +96,8 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
     assert_eq!(engine.find_pane_for_surface(added), Some(pane));
     // 사용자 선택은 origin pane의 결과 탭을 고르지만 활성 workspace와 포커스는 옮기지 않는다.
     let after = engine.find_pane_by_id(pane).unwrap();
-    assert_ne!(after.active_tab, active_tab);
-    assert_eq!(after.active_tab, after.tabs.len() - 1);
+    assert_ne!(state.navigation.tab_index(after), active_tab);
+    assert_eq!(state.navigation.tab_index(after), after.tabs.len() - 1);
     assert_eq!(state.active_workspace_index(&engine), 1);
     assert_eq!(state.focused_surface_id(&engine), focused_surface);
     assert!(state.pending_intents.is_empty());
@@ -220,7 +222,7 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
         &mut engine,
         DomainIntent::CloseSurface {
             surface_id: sid,
-            save_snapshot: false,
+            presentation: None,
         },
     )
     .unwrap();
@@ -277,12 +279,17 @@ fn agent_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
         },
     )
     .unwrap();
-    assert_eq!(engine.find_pane_by_id(pane_id).unwrap().active_tab, 1);
+    assert_eq!(
+        state
+            .navigation
+            .tab_index(engine.find_pane_by_id(pane_id).unwrap()),
+        1
+    );
     let focused_surface = state.focused_surface_id(&engine);
     assert_ne!(focused_surface, Some(origin));
     for kind in ["empty", "terminal", "missing-kind"] {
         let before = engine.find_pane_by_id(pane_id).unwrap();
-        let selected_id = before.tabs[before.active_tab].id;
+        let selected_id = before.tabs[state.navigation.tab_index(before)].id;
         let count = before.tabs.len();
         let succeeded = open_surface_tab(
             &mut core,
@@ -296,7 +303,11 @@ fn agent_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
         assert_eq!(succeeded, kind != "missing-kind");
         let after = engine.find_pane_by_id(pane_id).unwrap();
         assert_eq!(after.tabs.len(), count + usize::from(succeeded));
-        assert_eq!(after.tabs[after.active_tab].id, selected_id, "{kind}");
+        assert_eq!(
+            after.tabs[state.navigation.tab_index(after)].id,
+            selected_id,
+            "{kind}"
+        );
         assert_eq!(state.focused_surface_id(&engine), focused_surface, "{kind}");
         assert!(state.pending_intents.is_empty());
     }
@@ -310,7 +321,7 @@ fn a_user_origin_selects_its_result_tab() {
     let origin = engine.workspaces[0].all_surface_ids()[0];
     let pane_id = engine.find_pane_for_surface(origin).unwrap();
     let before = engine.find_pane_by_id(pane_id).unwrap();
-    let selected_before = before.tabs[before.active_tab].id;
+    let selected_before = before.tabs[state.navigation.tab_index(before)].id;
     let count = before.tabs.len();
 
     assert!(open_surface_tab(
@@ -330,11 +341,12 @@ fn a_user_origin_selects_its_result_tab() {
         "origin 의 pane 에 하나 늘어야 한다"
     );
     assert_ne!(
-        after.tabs[after.active_tab].id, selected_before,
+        after.tabs[state.navigation.tab_index(after)].id,
+        selected_before,
         "사용자가 연 결과는 선택돼야 한다"
     );
     assert_eq!(
-        after.tabs[after.active_tab].id,
+        after.tabs[state.navigation.tab_index(after)].id,
         after.tabs[after.tabs.len() - 1].id,
         "선택은 방금 append 된 탭이어야 한다"
     );
@@ -432,7 +444,7 @@ fn an_unverified_plugin_dispatch_without_a_matching_handler_opens_the_fallback_p
 
     let pane_id = engine.find_pane_for_surface(sid).unwrap();
     let before = engine.find_pane_by_id(pane_id).unwrap();
-    let selected_id = before.tabs[before.active_tab].id;
+    let selected_id = before.tabs[state.navigation.tab_index(before)].id;
     let count = before.tabs.len();
     let picked = engine
         .file_handler
@@ -456,7 +468,8 @@ fn an_unverified_plugin_dispatch_without_a_matching_handler_opens_the_fallback_p
     let after = engine.find_pane_by_id(pane_id).unwrap();
     assert_eq!(after.tabs.len(), count + 1, "선택한 핸들러가 탭을 연다");
     assert_eq!(
-        after.tabs[after.active_tab].id, selected_id,
+        after.tabs[state.navigation.tab_index(after)].id,
+        selected_id,
         "증명하지 못한 요청의 결과는 사용자 선택을 옮기지 않는다"
     );
 }
