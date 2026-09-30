@@ -2,12 +2,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::core::surface_registry::SurfaceKindRegistry;
-use crate::global_hooks::GlobalHookManager;
 use crate::model::Workspace;
 use crate::notification::NotificationStore;
 use crate::settings::Settings;
 pub(crate) use message::SurfaceMessage;
-use tasty_hooks::HookManager;
 use tasty_terminal::Waker;
 
 /// 여러 engine이 같은 Arc 카운터를 써 ID가 겹치지 않게 한다. Clone도 카운터를 공유한다.
@@ -209,8 +207,8 @@ pub struct CoreState {
     pub(crate) settings: Settings,
 
     pub(crate) notifications: NotificationStore,
-    pub(crate) hook_manager: HookManager,
-    pub(crate) global_hook_manager: GlobalHookManager,
+    /// surface 훅과 전역 훅의 엔진별 등록·감시 상태.
+    pub(crate) hooks: crate::hook_runtime::HookRuntimeState,
 
     pub(crate) closed_items: crate::model::ClosedItemStore,
 
@@ -531,8 +529,10 @@ impl CoreState {
             waker: waker.clone(),
             settings,
             notifications: NotificationStore::with_counter(500, next_ids.notification_counter()),
-            hook_manager: HookManager::with_counter(next_ids.hook_counter()),
-            global_hook_manager: GlobalHookManager::with_counter(next_ids.global_hook_counter()),
+            hooks: crate::hook_runtime::HookRuntimeState::with_counters(
+                next_ids.hook_counter(),
+                next_ids.global_hook_counter(),
+            ),
             closed_items: crate::model::ClosedItemStore::new(),
             command_index: crate::core::command_index::CommandIndex::new(),
             observer_router: crate::output_observer::ObserverRouter::with_counter(

@@ -350,9 +350,7 @@ fn fire_terminal_hooks(
             }
             _ => continue,
         };
-        let fired = engine
-            .hook_manager
-            .check_and_fire(surface_id, &[hook_event]);
+        let fired = engine.hooks.check_and_fire(surface_id, &[hook_event]);
         if exited {
             // intent-exempt: headless PTY 종료 이벤트의 cascade — GUI와 같은 종료 정리 경계다.
             state.close_surface_by_id_no_snapshot(engine, surface_id, true);

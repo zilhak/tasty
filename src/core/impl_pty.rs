@@ -121,7 +121,7 @@ impl Core {
     ) {
         let completed_lines = engine.observer_router.dispatch_text(sid, text);
         // 청크 경계와 무관하게 완성된 줄만 OutputMatch에 넘긴다.
-        if engine.hook_manager.has_output_match_hook(sid) {
+        if engine.hooks.has_output_match_hook(sid) {
             for line in completed_lines {
                 out.push(CoreEvent::TerminalOutputMatch {
                     surface_id: sid,

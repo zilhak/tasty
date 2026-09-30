@@ -27,6 +27,7 @@ mod fullscreen_stages;
 #[cfg(feature = "gui")]
 mod gfx;
 mod hook_handler;
+mod hook_runtime;
 mod host_api;
 mod hub;
 mod i18n;

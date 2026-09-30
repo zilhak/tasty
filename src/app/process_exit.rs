@@ -4,7 +4,7 @@ use crate::state::AppState;
 
 pub(crate) fn handle(core: &mut Core, state: &mut AppState, engine: &mut CoreState, surface: u32) {
     let fired = engine
-        .hook_manager
+        .hooks
         .check_and_fire(surface, &[tasty_hooks::HookEvent::ProcessExit]);
     let injector = core.host_ipc_injector.get().cloned();
     for hook in fired {

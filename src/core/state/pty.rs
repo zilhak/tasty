@@ -194,11 +194,9 @@ impl CoreState {
     /// OutputAppended 발생 여부를 현재 observer 목록에 맞춘다. 생성 직후만 설정하면 등록 변경을 놓친다.
     pub(crate) fn sync_output_event_gates(&mut self) {
         let router = &self.observer_router;
-        let hook_manager = &self.hook_manager;
+        let hooks = &self.hooks;
         for (sid, t) in self.terminals.iter_mut() {
-            t.set_output_events_enabled(
-                router.wants(sid) || hook_manager.has_output_match_hook(sid),
-            );
+            t.set_output_events_enabled(router.wants(sid) || hooks.has_output_match_hook(sid));
         }
     }
 
@@ -229,8 +227,8 @@ impl CoreState {
     }
 
     pub fn process_surface(&mut self, surface_id: u32) -> bool {
-        let enabled = self.observer_router.wants(surface_id)
-            || self.hook_manager.has_output_match_hook(surface_id);
+        let enabled =
+            self.observer_router.wants(surface_id) || self.hooks.has_output_match_hook(surface_id);
         if let Some(t) = self.terminals.get_mut(surface_id) {
             t.set_output_events_enabled(enabled);
         }

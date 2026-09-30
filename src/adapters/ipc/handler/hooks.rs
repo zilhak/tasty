@@ -130,7 +130,8 @@ pub(crate) fn handle_hook_list(
     };
 
     let hooks: Vec<_> = engine
-        .hook_manager
+        .hooks
+        .surface_hooks()
         .list_hooks(surface_id)
         .iter()
         .map(|h| {
@@ -207,7 +208,8 @@ pub(crate) fn handle_global_hook_list(
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let hooks: Vec<_> = engine
-        .global_hook_manager
+        .hooks
+        .global_hooks()
         .list()
         .iter()
         .map(|h| {

@@ -47,7 +47,7 @@ impl CoreState {
     fn drop_surface_indices(&mut self, surface_id: u32) {
         self.command_index.drop_surface(surface_id);
         self.observer_router.drop_surface(surface_id);
-        self.hook_manager.remove_surface_hooks(surface_id);
+        self.hooks.forget_surface(surface_id);
         self.forget_shell_integration_hint(surface_id);
         if let Some(factory) = self.waker_factory.as_ref() {
             factory.forget_surface(surface_id);

@@ -80,7 +80,7 @@ const ROSTER: &[(&str, Class, &str)] = &[
     (
         "global_hook.list",
         Aggregated,
-        "global_hook_manager는 CoreState마다 있어 합산이 필요하다. ID는 공유하며 개별 항목의 소유 창은 Kind::GlobalHook으로 찾는다.",
+        "전역 훅 등록(HookRuntimeState)은 CoreState마다 있어 합산이 필요하다. ID는 공유하며 개별 항목의 소유 창은 Kind::GlobalHook으로 찾는다.",
     ),
     (
         "notification.list",

@@ -5,7 +5,7 @@ use crate::host_api::hooks::global::GlobalHookManager;
 
 impl CoreState {
     pub(crate) fn poll_global_hooks(&mut self) {
-        let to_fire = self.global_hook_manager.tick();
+        let to_fire = self.hooks.tick_global();
         for (_, command) in to_fire {
             GlobalHookManager::execute_command(&command);
         }

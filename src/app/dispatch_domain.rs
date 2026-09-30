@@ -414,7 +414,7 @@ impl App {
             );
         }
         let fired = engine
-            .hook_manager
+            .hooks
             .check_and_fire(surface_id, &[tasty_hooks::HookEvent::Notification]);
         let injector = self.core.host_ipc_injector.get().cloned();
         for f in fired {
@@ -467,7 +467,7 @@ impl App {
             );
         }
         let fired = engine
-            .hook_manager
+            .hooks
             .check_and_fire(surface_id, &[tasty_hooks::HookEvent::Bell]);
         let injector = self.core.host_ipc_injector.get().cloned();
         for f in fired {
@@ -512,7 +512,7 @@ impl App {
             }
         };
         let fired = engine
-            .hook_manager
+            .hooks
             .check_and_fire(surface_id, &[tasty_hooks::HookEvent::OutputMatch(text)]);
         let injector = self.core.host_ipc_injector.get().cloned();
         for f in fired {
@@ -623,7 +623,7 @@ impl App {
         );
         engine.raise_attention(surface_id, AttentionKind::Completion);
         engine.mark_layout_dirty();
-        let fired = engine.hook_manager.check_and_fire(
+        let fired = engine.hooks.check_and_fire(
             surface_id,
             &[tasty_hooks::HookEvent::CommandCompleted(exit_code)],
         );

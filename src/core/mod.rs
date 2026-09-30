@@ -356,8 +356,8 @@ impl Core {
         once: bool,
     ) -> u64 {
         let id = engine
-            .hook_manager
-            .add_hook(surface_id, event, binding, once);
+            .hooks
+            .add_surface_hook(surface_id, event, binding, once);
         engine.sync_output_event_gates();
         id
     }
@@ -367,7 +367,7 @@ impl Core {
         engine: &mut crate::core::CoreState,
         hook_id: u64,
     ) -> bool {
-        let removed = engine.hook_manager.remove_hook(hook_id);
+        let removed = engine.hooks.remove_surface_hook(hook_id);
         engine.sync_output_event_gates();
         removed
     }
@@ -379,7 +379,7 @@ impl Core {
         command: String,
         label: Option<String>,
     ) -> u32 {
-        engine.global_hook_manager.add(condition, command, label)
+        engine.hooks.add_global_hook(condition, command, label)
     }
 
     pub(crate) fn unregister_global_hook(
@@ -387,7 +387,7 @@ impl Core {
         engine: &mut crate::core::CoreState,
         hook_id: u32,
     ) -> bool {
-        engine.global_hook_manager.remove(hook_id)
+        engine.hooks.remove_global_hook(hook_id)
     }
 
     /// 일치한 hook의 바인딩을 실행하고 ID를 반환한다. host 이벤트를 큐에 넣는 일은 호출자가 맡는다.
@@ -397,7 +397,7 @@ impl Core {
         surface_id: u32,
         events: &[tasty_hooks::HookEvent],
     ) -> Vec<u64> {
-        let fired = engine.hook_manager.check_and_fire(surface_id, events);
+        let fired = engine.hooks.check_and_fire(surface_id, events);
         let injector = self.host_ipc_injector.get().cloned();
         let mut ids = Vec::with_capacity(fired.len());
         for f in &fired {

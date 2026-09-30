@@ -12,7 +12,7 @@ pub(crate) enum Kind {
     HeadlessPty,
     /// surface hook과 global hook은 같은 키 이름을 써도 저장소가 달라 메서드로 구별한다.
     Hook,
-    /// 이름과 달리 engine별 global_hook_manager에 저장된다.
+    /// 이름과 달리 engine별 훅 등록 상태(HookRuntimeState)에 저장된다.
     GlobalHook,
     Observer,
     /// 기본 normal ID 0은 모든 engine에 있어 이 ID만으로 창을 고를 수 없다.
@@ -177,11 +177,12 @@ pub(crate) fn engine_has_resource(engine: &crate::core::CoreState, rid: Resource
         Kind::Tab => narrow.is_some_and(|id| engine.find_pane_for_tab(id).is_some()),
         Kind::HeadlessPty => narrow.is_some_and(|id| engine.pty_registry.contains(id)),
         Kind::Hook => engine
-            .hook_manager
+            .hooks
+            .surface_hooks()
             .list_hooks(None)
             .iter()
             .any(|h| h.id == rid.id),
-        Kind::GlobalHook => narrow.is_some_and(|id| engine.global_hook_manager.get(id).is_some()),
+        Kind::GlobalHook => narrow.is_some_and(|id| engine.hooks.global_hooks().get(id).is_some()),
         Kind::Observer => engine.observer_router.info(rid.id).is_some(),
         Kind::Category => narrow.is_some_and(|id| engine.category_index(id).is_some()),
     }
@@ -407,7 +408,7 @@ mod tests {
         use crate::host_api::hooks::global::HookCondition;
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         let mut engine = crate::core::CoreState::new(80, 24, waker).expect("engine");
-        let id = engine.global_hook_manager.add(
+        let id = engine.hooks.add_global_hook(
             HookCondition::Interval(std::time::Duration::from_secs(60)),
             "echo x".into(),
             None,
