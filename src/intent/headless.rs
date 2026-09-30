@@ -44,7 +44,12 @@ pub(crate) fn drain_pending_host_events(core: &Core, state: &mut AppState, engin
             hook_id, exit_code, ..
         } = event
         {
-            core.resolve_hook_task_wait(engine, hook_id, exit_code);
+            core.tasks.resolve_hook_task_wait(
+                &engine.task_scope,
+                hook_id,
+                exit_code,
+                core.now_unix_millis() as u64,
+            );
         }
     }
 }
@@ -368,8 +373,9 @@ mod tests {
         let ws = state.active_workspace(&engine).id;
 
         let task_id = core
+            .tasks
             .task_create(
-                &engine,
+                &engine.task_scope,
                 tasty_agent::task::TaskCreateOpts {
                     workspace_id: ws,
                     name: "push-wait".to_string(),
@@ -387,7 +393,8 @@ mod tests {
             )
             .expect("task_create")
             .id;
-        core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
+        core.tasks
+            .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
 
         let resp = crate::ipc::handler::handle_with_caller(
@@ -427,7 +434,8 @@ mod tests {
         drain_pending_host_events(&core, &mut state, &engine);
 
         let task = core
-            .task_get(&engine, ws, &task_id)
+            .tasks
+            .task_get(&engine.task_scope, ws, &task_id)
             .expect("task_get")
             .expect("task exists");
         assert!(

@@ -323,8 +323,12 @@ fn fetch(
 ) -> Result<DagData, String> {
     use tasty_agent::{TaskGraph, group_tasks_into_dags};
 
-    let tasks = crate::core::agent::task::task_list_from_state(engine, workspace_id)
-        .map_err(|e| e.to_string())?;
+    let tasks = crate::core::agent::task::task_list_from_state(
+        &engine.memory,
+        &engine.task_scope,
+        workspace_id,
+    )
+    .map_err(|e| e.to_string())?;
     let summaries = group_tasks_into_dags(&tasks);
 
     let dags: Vec<DagListEntry> = summaries

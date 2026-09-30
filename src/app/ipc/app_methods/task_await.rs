@@ -40,9 +40,7 @@ impl App {
             return;
         };
         crate::ipc::handler::agent::task::spawn_task_await(
-            engine.task_scope.waker_hub().clone(),
-            self.core.memory_arc(),
-            engine.task_scope.agent_seq().clone(),
+            self.core.tasks.awaiter(&engine.task_scope),
             rpc_id,
             cmd.request.params.clone(),
             &cmd.response_tx,
@@ -89,7 +87,8 @@ mod tests {
             metadata: serde_json::Value::Null,
             now_ms: 1,
         };
-        core.task_create(engine, opts, false)
+        core.tasks
+            .task_create(&engine.task_scope, opts, false)
             .expect("task_create")
             .id
     }
@@ -122,22 +121,16 @@ mod tests {
         let task_id = ready_task(&core, &owner, 2);
 
         let picked = task_await_engine([&first, &owner].into_iter(), 2).expect("engine");
-        let hub = picked.task_scope.waker_hub().clone();
-        let seq = picked.task_scope.agent_seq().clone();
-        let memory = core.memory_arc();
+        let awaiter = core.tasks.awaiter(&picked.task_scope);
         let params = json!({ "workspace_id": 2, "id": task_id, "timeout_ms": 3_000 });
         let waiting = std::thread::spawn(move || {
-            crate::ipc::handler::agent::task::await_task_blocking(
-                &hub,
-                &memory,
-                seq,
-                json!(1),
-                &params,
-            )
+            crate::ipc::handler::agent::task::await_task_blocking(&awaiter, json!(1), &params)
         });
         // 대기자가 등록된 뒤 완료되도록 기다린다. 등록 전에 완료돼도 조회가 종결 상태를 본다.
         std::thread::sleep(Duration::from_millis(200));
-        core.task_cancel(&owner, 2, &task_id, 2).expect("cancel");
+        core.tasks
+            .task_cancel(&owner.task_scope, 2, &task_id, 2)
+            .expect("cancel");
 
         let resp = waiting.join().expect("await thread");
         let result = resp.result.expect("success response");

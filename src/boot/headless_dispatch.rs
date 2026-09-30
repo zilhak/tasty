@@ -263,9 +263,7 @@ fn intercept_app_layer(
                     return Some(Intercepted::Answered);
                 }
                 crate::ipc::handler::agent::task::spawn_task_await(
-                    engine.task_scope.waker_hub().clone(),
-                    app.core.memory_arc(),
-                    engine.task_scope.agent_seq().clone(),
+                    app.core.tasks.awaiter(&engine.task_scope),
                     rpc_id,
                     cmd.request.params.clone(),
                     &cmd.response_tx,

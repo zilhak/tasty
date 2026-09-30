@@ -1,4 +1,4 @@
-//! Core의 저장소와 engine의 공유 시퀀스로 작업을 관리한다.
+//! TaskService의 작업 API. 원본은 memory의 TaskStore이며 engine별 순번·허브는 TaskScope로 받는다.
 
 use tasty_agent::task::{
     TaskCreateOpts, TaskDeleteOpts, TaskDeleteReport, TaskPurgeFilter, TaskSweepPlan,
@@ -9,19 +9,19 @@ use tasty_agent::{
 };
 use tasty_memory::HOST_OWNER;
 
-use crate::core::Core;
 use crate::core::CoreState;
 use crate::core::agent::runner_host::evict_task_side_keys;
+use crate::core::task_service::{TaskScope, TaskService};
 
-impl Core {
+impl TaskService {
     /// fallback 예약 작업은 참조할 본 작업이 등록되기 전에 Ready가 되지 않게 만든다.
     pub(crate) fn task_create(
         &self,
-        engine: &CoreState,
+        scope: &TaskScope,
         opts: TaskCreateOpts,
         reserved_for_fallback: bool,
     ) -> Result<Task, AgentError> {
-        let seq = engine.task_scope.agent_seq().clone();
+        let seq = scope.agent_seq().clone();
         self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             if reserved_for_fallback {
@@ -34,32 +34,31 @@ impl Core {
 
     pub(crate) fn task_list(
         &self,
-        engine: &CoreState,
+        scope: &TaskScope,
         workspace_id: u32,
     ) -> Result<Vec<Task>, AgentError> {
-        // 렌더 경로도 Core 없이 같은 저장소와 목록 구현을 사용할 수 있게 위임한다.
-        task_list_from_state(engine, workspace_id)
+        task_list_from_state(self.memory(), scope, workspace_id)
     }
 
-    /// ID를 지정하지 않으면 이 engine에 살아 있는 workspace만 순회한다. 삭제된 workspace의 고아 scope는 조회하지 않는다.
+    /// 받은 workspace만 순회한다. 화면의 DAG 목록과 같은 구현을 쓴다.
     pub(crate) fn dag_list(
         &self,
-        engine: &CoreState,
-        workspace_id: Option<u32>,
+        scope: &TaskScope,
+        workspace_ids: &[u32],
     ) -> Result<Vec<DagSummary>, AgentError> {
-        dag_list_from_state(engine, workspace_id)
+        dag_list_from_state(self.memory(), scope, workspace_ids)
     }
 
-    /// workspace를 지정하지 않으면 ID 오름차순의 첫 일치를 반환한다.
+    /// 받은 순서의 첫 일치를 반환한다. dag_scan_workspaces는 ID 오름차순으로 넘긴다.
     /// 사용자가 정한 DAG 키가 여러 workspace에 같을 수 있어 구별하려면 workspace_id도 지정한다.
     pub(crate) fn dag_get(
         &self,
-        engine: &CoreState,
-        workspace_id: Option<u32>,
+        scope: &TaskScope,
+        workspace_ids: &[u32],
         dag_id: &str,
     ) -> Result<Option<(DagSummary, Vec<Task>)>, AgentError> {
-        for wid in dag_scan_workspaces(engine, workspace_id) {
-            let tasks = self.task_list(engine, wid)?;
+        for wid in workspace_ids.iter().copied() {
+            let tasks = self.task_list(scope, wid)?;
             let Some(dag) = group_tasks_into_dags(&tasks)
                 .into_iter()
                 .find(|d| d.id == dag_id)
@@ -77,11 +76,11 @@ impl Core {
 
     pub(crate) fn task_get(
         &self,
-        engine: &CoreState,
+        scope: &TaskScope,
         workspace_id: u32,
         task_id: &TaskId,
     ) -> Result<Option<Task>, AgentError> {
-        let seq = engine.task_scope.agent_seq().clone();
+        let seq = scope.agent_seq().clone();
         self.with_memory(|mem| {
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.get(workspace_id, task_id)
@@ -90,31 +89,31 @@ impl Core {
 
     pub(crate) fn task_cancel(
         &self,
-        engine: &CoreState,
+        scope: &TaskScope,
         workspace_id: u32,
         task_id: &TaskId,
         now_ms: u64,
     ) -> Result<(Task, Vec<Task>), AgentError> {
-        let seq = engine.task_scope.agent_seq().clone();
+        let seq = scope.agent_seq().clone();
         let result = self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.cancel(workspace_id, task_id, now_ms)
         });
         if let Ok((ref task, ref downstream)) = result {
-            self.fire_waker_if_terminal(engine, workspace_id, task);
+            self.fire_waker_if_terminal(scope, workspace_id, task);
             for d in downstream {
-                self.fire_waker_if_terminal(engine, workspace_id, d);
+                self.fire_waker_if_terminal(scope, workspace_id, d);
             }
         }
         result
     }
 
     /// 종결 상태 전이 경로는 대기자를 깨우고 사건 피드를 기록하도록 이 hub를 호출해야 한다.
-    fn fire_waker_if_terminal(&self, engine: &CoreState, workspace_id: u32, task: &Task) {
+    fn fire_waker_if_terminal(&self, scope: &TaskScope, workspace_id: u32, task: &Task) {
         if !task.state.is_terminal() {
             return;
         }
-        engine.task_scope.waker_hub().fire(
+        scope.waker_hub().fire(
             workspace_id,
             &task.id,
             crate::core::agent::task_waker::TerminalSnapshot {
@@ -126,13 +125,13 @@ impl Core {
 
     pub(crate) fn task_retry(
         &self,
-        engine: &CoreState,
+        scope: &TaskScope,
         workspace_id: u32,
         task_id: &TaskId,
         reset_downstream: bool,
         now_ms: u64,
     ) -> Result<Task, AgentError> {
-        let seq = engine.task_scope.agent_seq().clone();
+        let seq = scope.agent_seq().clone();
         self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.retry(workspace_id, task_id, reset_downstream, now_ms)
@@ -142,21 +141,21 @@ impl Core {
     /// 상태 변경과 자동 전이된 후속 작업을 반환한다.
     pub(crate) fn task_set_state(
         &self,
-        engine: &CoreState,
+        scope: &TaskScope,
         workspace_id: u32,
         task_id: &TaskId,
         new_state: TaskState,
         now_ms: u64,
     ) -> Result<(Task, Vec<Task>), AgentError> {
-        let seq = engine.task_scope.agent_seq().clone();
+        let seq = scope.agent_seq().clone();
         let result = self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.set_state(workspace_id, task_id, new_state, now_ms)
         });
         if let Ok((ref task, ref downstream)) = result {
-            self.fire_waker_if_terminal(engine, workspace_id, task);
+            self.fire_waker_if_terminal(scope, workspace_id, task);
             for d in downstream {
-                self.fire_waker_if_terminal(engine, workspace_id, d);
+                self.fire_waker_if_terminal(scope, workspace_id, d);
             }
         }
         result
@@ -164,12 +163,12 @@ impl Core {
 
     pub(crate) fn task_set_result(
         &self,
-        engine: &CoreState,
+        scope: &TaskScope,
         workspace_id: u32,
         task_id: &TaskId,
         result: TaskResult,
     ) -> Result<Task, AgentError> {
-        let seq = engine.task_scope.agent_seq().clone();
+        let seq = scope.agent_seq().clone();
         self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.set_result(workspace_id, task_id, result)
@@ -177,15 +176,16 @@ impl Core {
     }
 
     /// 훅 매핑을 소비해 exit code가 0 또는 없으면 성공, 나머지는 실패로 처리한다.
-    /// 대기자를 깨울 hub가 engine에 있으므로 훅이 발생한 engine을 전달해야 한다.
+    /// 대기자를 깨울 hub가 engine별이므로 훅이 발생한 engine의 범위를 전달해야 한다.
     /// 매핑은 저장 전에 제거하며 저장 실패 때 다시 등록하지 않는다.
     pub(crate) fn resolve_hook_task_wait(
         &self,
-        engine: &CoreState,
+        scope: &TaskScope,
         hook_id: u64,
         exit_code: Option<i32>,
+        now_ms: u64,
     ) {
-        let Some((workspace_id, task_id)) = self.tasks.hook_task_waits().resolve(hook_id) else {
+        let Some((workspace_id, task_id)) = self.hook_task_waits().resolve(hook_id) else {
             return;
         };
         let result = TaskResult {
@@ -193,18 +193,17 @@ impl Core {
             output: None,
             error: None,
         };
-        if let Err(e) = self.task_set_result(engine, workspace_id, &task_id, result) {
+        if let Err(e) = self.task_set_result(scope, workspace_id, &task_id, result) {
             tracing::warn!("resolve_hook_task_wait: set_result {task_id} failed: {e}");
             return;
         }
-        let now_ms = self.clock.now_unix_millis() as u64;
         let new_state = match exit_code {
             Some(code) if code != 0 => TaskState::Failed {
                 error: format!("command exited with code {code}"),
             },
             _ => TaskState::Succeeded,
         };
-        if let Err(e) = self.task_set_state(engine, workspace_id, &task_id, new_state, now_ms) {
+        if let Err(e) = self.task_set_state(scope, workspace_id, &task_id, new_state, now_ms) {
             tracing::warn!("resolve_hook_task_wait: set_state {task_id} failed: {e}");
         }
     }
@@ -212,11 +211,11 @@ impl Core {
     /// 저장소 락 안에서는 입력 결과만 모으고 실제 reducer 실행은 호출자가 락 밖에서 한다.
     pub(crate) fn task_reduce_collect(
         &self,
-        engine: &CoreState,
+        scope: &TaskScope,
         workspace_id: u32,
         inputs: &[TaskId],
     ) -> Result<Vec<ReducerInput>, AgentError> {
-        let seq = engine.task_scope.agent_seq().clone();
+        let seq = scope.agent_seq().clone();
         self.with_memory(|mem| {
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             let mut out: Vec<ReducerInput> = Vec::with_capacity(inputs.len());
@@ -244,17 +243,17 @@ impl Core {
     /// 부속 키 정리는 저장소 락을 다시 사용하므로 첫 락을 놓은 뒤 호출해야 한다.
     pub(crate) fn task_delete(
         &self,
-        engine: &CoreState,
+        scope: &TaskScope,
         workspace_id: u32,
         task_id: &TaskId,
         opts: TaskDeleteOpts,
     ) -> Result<TaskDeleteReport, AgentError> {
-        let seq = engine.task_scope.agent_seq().clone();
+        let seq = scope.agent_seq().clone();
         let report = self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.delete_checked(workspace_id, task_id, opts)
         })?;
-        let ctx = self.tasks.runner_context(engine);
+        let ctx = self.runner_context(scope);
         for id in &report.deleted {
             evict_task_side_keys(&ctx, workspace_id, id);
         }
@@ -265,7 +264,7 @@ impl Core {
     /// 계획 조회와 적용은 별도 락 구간이다.
     pub(crate) fn task_purge(
         &self,
-        engine: &CoreState,
+        scope: &TaskScope,
         workspace_id: u32,
         filter: TaskPurgeFilter,
         dry_run: bool,
@@ -275,7 +274,7 @@ impl Core {
                 "task_purge requires at least one of 'states'/'older_than_ms'".into(),
             ));
         }
-        let seq = engine.task_scope.agent_seq().clone();
+        let seq = scope.agent_seq().clone();
         let plan = self.with_memory(|mem| {
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.plan_sweep(workspace_id, &filter)
@@ -287,7 +286,7 @@ impl Core {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.apply_sweep_plan(workspace_id, &plan)
         })?;
-        let ctx = self.tasks.runner_context(engine);
+        let ctx = self.runner_context(scope);
         for id in &plan.deleted {
             evict_task_side_keys(&ctx, workspace_id, id);
         }
@@ -307,6 +306,7 @@ mod hook_wait_tests {
         fake_clock::FakeClock, mem_fs::MemFileSystem, mock_clipboard::MockClipboard,
         mock_process::MockProcessSpawner, tmp_home::TmpHome,
     };
+    use crate::core::Core;
     use crate::core::CoreState;
     use crate::core::builder::CoreBuilder;
     use crate::ports::notification_sound::NoopPlayer;
@@ -357,7 +357,8 @@ mod hook_wait_tests {
             metadata: serde_json::Value::Null,
             now_ms: 1,
         };
-        core.task_create(engine, opts, false)
+        core.tasks
+            .task_create(&engine.task_scope, opts, false)
             .expect("task_create")
             .id
     }
@@ -368,16 +369,23 @@ mod hook_wait_tests {
         let engine = engine();
         let ws = 1;
         let task_id = mk_ready_task(&core, &engine, ws);
-        core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
+        core.tasks
+            .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
 
         core.tasks
             .hook_task_waits()
             .register(42, ws, task_id.clone(), u64::MAX);
-        core.resolve_hook_task_wait(&engine, 42, Some(0));
+        core.tasks.resolve_hook_task_wait(
+            &engine.task_scope,
+            42,
+            Some(0),
+            core.now_unix_millis() as u64,
+        );
 
         let task = core
-            .task_reduce_collect(&engine, ws, std::slice::from_ref(&task_id))
+            .tasks
+            .task_reduce_collect(&engine.task_scope, ws, std::slice::from_ref(&task_id))
             .expect("collect")
             .remove(0);
         assert!(
@@ -392,13 +400,20 @@ mod hook_wait_tests {
         let engine = engine();
         let ws = 1;
         let task_id = mk_ready_task(&core, &engine, ws);
-        core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
+        core.tasks
+            .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
 
-        core.resolve_hook_task_wait(&engine, 999, None);
+        core.tasks.resolve_hook_task_wait(
+            &engine.task_scope,
+            999,
+            None,
+            core.now_unix_millis() as u64,
+        );
 
         let task = core
-            .task_reduce_collect(&engine, ws, std::slice::from_ref(&task_id))
+            .tasks
+            .task_reduce_collect(&engine.task_scope, ws, std::slice::from_ref(&task_id))
             .expect("collect")
             .remove(0);
         assert!(!task.succeeded);
@@ -410,17 +425,29 @@ mod hook_wait_tests {
         let engine = engine();
         let ws = 1;
         let task_id = mk_ready_task(&core, &engine, ws);
-        core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
+        core.tasks
+            .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
 
         core.tasks
             .hook_task_waits()
             .register(7, ws, task_id.clone(), u64::MAX);
-        core.resolve_hook_task_wait(&engine, 7, None);
-        core.resolve_hook_task_wait(&engine, 7, None);
+        core.tasks.resolve_hook_task_wait(
+            &engine.task_scope,
+            7,
+            None,
+            core.now_unix_millis() as u64,
+        );
+        core.tasks.resolve_hook_task_wait(
+            &engine.task_scope,
+            7,
+            None,
+            core.now_unix_millis() as u64,
+        );
 
         let task = core
-            .task_reduce_collect(&engine, ws, std::slice::from_ref(&task_id))
+            .tasks
+            .task_reduce_collect(&engine.task_scope, ws, std::slice::from_ref(&task_id))
             .expect("collect")
             .remove(0);
         assert!(task.succeeded);
@@ -432,16 +459,23 @@ mod hook_wait_tests {
         let engine = engine();
         let ws = 1;
         let task_id = mk_ready_task(&core, &engine, ws);
-        core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
+        core.tasks
+            .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
 
         core.tasks
             .hook_task_waits()
             .register(1, ws, task_id.clone(), u64::MAX);
-        core.resolve_hook_task_wait(&engine, 1, Some(1));
+        core.tasks.resolve_hook_task_wait(
+            &engine.task_scope,
+            1,
+            Some(1),
+            core.now_unix_millis() as u64,
+        );
 
         let task = core
-            .task_get(&engine, ws, &task_id)
+            .tasks
+            .task_get(&engine.task_scope, ws, &task_id)
             .expect("task_get")
             .expect("task exists");
         assert!(matches!(task.state, TaskState::Failed { .. }));
@@ -468,7 +502,8 @@ mod hook_wait_tests {
             now_ms: 1,
         };
         let task = core
-            .task_create(&engine, opts, true)
+            .tasks
+            .task_create(&engine.task_scope, opts, true)
             .expect("task_create reserved");
         assert_eq!(
             task.state,
@@ -492,6 +527,7 @@ mod task_delete_tests {
         fake_clock::FakeClock, mem_fs::MemFileSystem, mock_clipboard::MockClipboard,
         mock_process::MockProcessSpawner, tmp_home::TmpHome,
     };
+    use crate::core::Core;
     use crate::core::CoreState;
     use crate::core::agent::runner_host::{handle_key, run_result_key};
     use crate::core::builder::CoreBuilder;
@@ -543,7 +579,8 @@ mod task_delete_tests {
             metadata: serde_json::Value::Null,
             now_ms: 1,
         };
-        core.task_create(engine, opts, false)
+        core.tasks
+            .task_create(&engine.task_scope, opts, false)
             .expect("task_create")
             .id
     }
@@ -576,12 +613,15 @@ mod task_delete_tests {
         })
         .expect("persist run_result");
 
-        core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
+        core.tasks
+            .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
-        core.task_set_state(&engine, ws, &task_id, TaskState::Succeeded, 3)
+        core.tasks
+            .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Succeeded, 3)
             .expect("Running -> Succeeded");
 
-        core.task_delete(&engine, ws, &task_id, TaskDeleteOpts::default())
+        core.tasks
+            .task_delete(&engine.task_scope, ws, &task_id, TaskDeleteOpts::default())
             .expect("delete succeeded task");
 
         let handle_gone = core
@@ -615,11 +655,13 @@ mod task_delete_tests {
         })
         .expect("acquire permit");
 
-        core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
+        core.tasks
+            .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
 
         let err = core
-            .task_delete(&engine, ws, &task_id, TaskDeleteOpts::default())
+            .tasks
+            .task_delete(&engine.task_scope, ws, &task_id, TaskDeleteOpts::default())
             .expect_err("Running task delete must be rejected");
         assert!(matches!(err, AgentError::TaskRunning(_)));
 
@@ -639,18 +681,18 @@ mod task_delete_tests {
     }
 }
 
-/// Core를 받지 못하는 화면도 같은 목록 조회를 사용할 수 있도록 engine에서 저장소를 가져온다.
+/// 서비스와 서비스를 받지 못하는 화면이 같은 목록 조회를 쓴다. 화면은 engine의 저장소를 넘긴다.
 pub(crate) fn task_list_from_state(
-    engine: &CoreState,
+    memory: &std::sync::Mutex<dyn tasty_memory::MemoryStorage>,
+    scope: &TaskScope,
     workspace_id: u32,
 ) -> Result<Vec<Task>, AgentError> {
-    let seq = engine.task_scope.agent_seq().clone();
     let mut guard = crate::poison::recover_mutex(
-        engine.memory.lock(),
+        memory.lock(),
         crate::core::MEMORY_WHAT,
         &crate::core::MEMORY_POISONED,
     );
-    let store = TaskStore::new(&mut *guard, HOST_OWNER, seq.as_ref());
+    let store = TaskStore::new(&mut *guard, HOST_OWNER, scope.agent_seq().as_ref());
     store.list(workspace_id)
 }
 
@@ -666,13 +708,18 @@ pub(crate) fn dag_scan_workspaces(engine: &CoreState, workspace_id: Option<u32>)
     }
 }
 
+/// 받은 workspace만 순회한다. 호출자는 dag_scan_workspaces로 engine의 live workspace를 넘겨
+/// 삭제된 workspace의 고아 scope를 조회하지 않게 한다.
 pub(crate) fn dag_list_from_state(
-    engine: &CoreState,
-    workspace_id: Option<u32>,
+    memory: &std::sync::Mutex<dyn tasty_memory::MemoryStorage>,
+    scope: &TaskScope,
+    workspace_ids: &[u32],
 ) -> Result<Vec<DagSummary>, AgentError> {
     let mut out = Vec::new();
-    for wid in dag_scan_workspaces(engine, workspace_id) {
-        out.extend(group_tasks_into_dags(&task_list_from_state(engine, wid)?));
+    for wid in workspace_ids {
+        out.extend(group_tasks_into_dags(&task_list_from_state(
+            memory, scope, *wid,
+        )?));
     }
     Ok(out)
 }

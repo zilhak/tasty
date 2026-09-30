@@ -10,8 +10,8 @@ use tasty_memory::MemoryStorage;
 use crate::core::agent::event_feed::AgentEventQueue;
 use crate::core::agent::hook_wait::HookTaskWaits;
 use crate::core::agent::runner_host::RunnerContext;
-use crate::core::agent::runner_thread::RunnerRegistry;
-use crate::core::agent::task_waker::TaskWakerHub;
+use crate::core::agent::runner_thread::{RunnerRegistry, RunnerStatus};
+use crate::core::agent::task_waker::{AwaitOutcome, TaskWakerHub, TerminalSnapshot};
 
 /// engine 하나의 작업 실행 범위. 완료 대기 허브와 사건 큐는 engine마다 따로 두며,
 /// 완료 통지는 task가 속한 workspace를 가진 engine의 범위로만 간다.
@@ -89,25 +89,34 @@ impl TaskService {
         }
     }
 
-    pub(crate) fn runner_context(&self, engine: &crate::core::CoreState) -> RunnerContext {
+    /// Core와 같은 poison 복구 헬퍼로 저장소 락을 얻는다. 콜백이 끝날 때까지 락을 유지한다.
+    pub(crate) fn with_memory<R>(&self, f: impl FnOnce(&mut dyn MemoryStorage) -> R) -> R {
+        let mut guard = crate::poison::recover_mutex(
+            self.memory.lock(),
+            crate::core::MEMORY_WHAT,
+            &crate::core::MEMORY_POISONED,
+        );
+        f(&mut *guard)
+    }
+
+    pub(crate) fn memory(&self) -> &Mutex<dyn MemoryStorage> {
+        &self.memory
+    }
+
+    pub(crate) fn runner_context(&self, scope: &TaskScope) -> RunnerContext {
         RunnerContext {
             memory: self.memory.clone(),
-            agent_seq: engine.task_scope.agent_seq().clone(),
+            agent_seq: scope.agent_seq().clone(),
             host_ipc: self.host_ipc.clone(),
-            task_waker_hub: engine.task_scope.waker_hub().clone(),
+            task_waker_hub: scope.waker_hub().clone(),
             hook_task_waits: self.hook_task_waits.clone(),
         }
     }
 
-    /// 현재 engine의 workspace에 남은 runner 상태를 정리한다. runner 스레드를 자동 시작하지는 않는다.
-    pub(crate) fn purge_stale_agent_state_on_boot(&self, engine: &crate::core::CoreState) {
-        let ctx = self.runner_context(engine);
-        let workspace_ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
-        crate::core::agent::runner_thread::purge_stale_agent_state_on_boot(&ctx, &workspace_ids);
-    }
-
-    pub(crate) fn runner_registry(&self) -> Arc<RunnerRegistry> {
-        self.runner_registry.clone()
+    /// 받은 workspace에 남은 runner 상태를 정리한다. runner 스레드를 자동 시작하지는 않는다.
+    pub(crate) fn purge_stale_agent_state_on_boot(&self, scope: &TaskScope, workspace_ids: &[u32]) {
+        let ctx = self.runner_context(scope);
+        crate::core::agent::runner_thread::purge_stale_agent_state_on_boot(&ctx, workspace_ids);
     }
 
     pub(crate) fn hook_task_waits(&self) -> &HookTaskWaits {
@@ -116,14 +125,93 @@ impl TaskService {
 
     /// 렌더링 등 서비스를 받지 않는 코드가 같은 runner 상태를 조회하도록 Arc를 주입한다.
     /// OnceLock이 이미 차 있으면 덮어쓰지 않고 경고한다.
-    pub(crate) fn inject_agent_runner_registry(&self, engine: &crate::core::CoreState) {
-        if engine
-            .task_scope
+    pub(crate) fn inject_agent_runner_registry(&self, scope: &TaskScope) {
+        if scope
             .runner_registry
-            .set(self.runner_registry())
+            .set(self.runner_registry.clone())
             .is_err()
         {
             tracing::warn!("agent runner registry already injected into the task scope");
         }
+    }
+
+    /// 이미 실행 중이면 false다. 작업 취소나 OS 자식 종료와는 별개의 계약이다.
+    pub(crate) fn runner_start(&self, scope: &TaskScope, workspace_id: u32) -> bool {
+        self.runner_registry
+            .start(self.runner_context(scope), workspace_id)
+    }
+
+    /// runner 스레드만 멈춘다. 작업 상태를 바꾸거나 실행 중인 자식 프로세스를 종료하지 않는다.
+    pub(crate) fn runner_stop(&self, workspace_id: u32) -> bool {
+        self.runner_registry.stop(workspace_id)
+    }
+
+    /// 러너가 꺼져 있어도 저장소를 조회해 실제 작업 수를 채운다.
+    pub(crate) fn runner_status(&self, scope: &TaskScope, workspace_id: u32) -> RunnerStatus {
+        self.runner_registry
+            .status(&self.runner_context(scope), workspace_id)
+    }
+
+    /// 외부 완료 신호를 기다리는 작업의 저장된 dispatch handle을 읽는다.
+    pub(crate) fn dispatch_handle(
+        &self,
+        scope: &TaskScope,
+        workspace_id: u32,
+        task_id: &str,
+    ) -> Option<tasty_agent::DispatchHandle> {
+        crate::core::agent::runner_host::load_dispatch_handle(
+            &self.runner_context(scope),
+            workspace_id,
+            task_id,
+        )
+    }
+
+    /// 메인 루프 밖의 워커로 옮겨 기다릴 수 있도록 이 engine 범위의 대기 계약을 떼어 준다.
+    pub(crate) fn awaiter(&self, scope: &TaskScope) -> TaskAwaiter {
+        TaskAwaiter {
+            memory: self.memory.clone(),
+            agent_seq: scope.agent_seq().clone(),
+            waker_hub: scope.waker_hub().clone(),
+        }
+    }
+}
+
+/// 한 engine 범위의 task 종결 대기. 허브에 대기자를 먼저 등록한 뒤 저장소를 읽어
+/// 조회와 등록 사이에 지나간 완료를 놓치지 않는다.
+pub(crate) struct TaskAwaiter {
+    memory: Arc<Mutex<dyn MemoryStorage>>,
+    agent_seq: Arc<AtomicU64>,
+    waker_hub: Arc<TaskWakerHub>,
+}
+
+impl TaskAwaiter {
+    /// None·Some(0)은 무기한 대기다. 저장소 조회가 실패하면 작업이 없는 것으로 본다.
+    pub(crate) fn await_terminal(
+        &self,
+        workspace_id: u32,
+        task_id: &tasty_agent::TaskId,
+        timeout_ms: Option<u64>,
+    ) -> AwaitOutcome {
+        let load_current = || -> Option<TerminalSnapshot> {
+            let mut guard = crate::poison::recover_mutex(
+                self.memory.lock(),
+                crate::core::MEMORY_WHAT,
+                &crate::core::MEMORY_POISONED,
+            );
+            let store = tasty_agent::TaskStore::new(
+                &mut *guard,
+                tasty_memory::HOST_OWNER,
+                self.agent_seq.as_ref(),
+            );
+            match store.get(workspace_id, task_id) {
+                Ok(Some(t)) => Some(TerminalSnapshot {
+                    state: t.state,
+                    result: t.result,
+                }),
+                Ok(None) | Err(_) => None,
+            }
+        };
+        self.waker_hub
+            .await_terminal(workspace_id, task_id, timeout_ms, load_current)
     }
 }

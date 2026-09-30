@@ -108,7 +108,11 @@ impl DagListState {
             return;
         }
         self.last_list_poll = Some(now);
-        match crate::core::agent::task::dag_list_from_state(engine, None) {
+        match crate::core::agent::task::dag_list_from_state(
+            &engine.memory,
+            &engine.task_scope,
+            &crate::core::agent::task::dag_scan_workspaces(engine, None),
+        ) {
             Ok(summaries) => {
                 self.rows = summaries
                     .into_iter()

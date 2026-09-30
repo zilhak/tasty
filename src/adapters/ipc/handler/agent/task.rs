@@ -78,7 +78,10 @@ pub fn handle_task_create(
     };
     mark_durability(
         core,
-        match core.task_create(engine, opts, reserved_for_fallback) {
+        match core
+            .tasks
+            .task_create(&engine.task_scope, opts, reserved_for_fallback)
+        {
             Ok(task) => match serde_json::to_value(&task) {
                 Ok(mut v) => {
                     if let Some(warnings) = fallback_with_deps_warning(&task)
@@ -232,7 +235,7 @@ pub fn handle_task_list(
     };
     let state_filter = state_names_param(params, "state");
 
-    match core.task_list(engine, workspace_id) {
+    match core.tasks.task_list(&engine.task_scope, workspace_id) {
         Err(e) => agent_err_to_response(id, e),
         Ok(mut tasks) => {
             retain_by_state(&mut tasks, state_filter.as_deref());
@@ -252,9 +255,7 @@ pub fn handle_task_list(
 /// 조회 실패 시 카운트는 0이 아니라 null이며 store_error에 원인이 담긴다.
 /// list_failures는 러너의 연속 조회 실패 횟수다. 스레드가 살아 있어도 작업이 진행되지 않을 수 있다.
 fn runner_status_json(core: &Core, engine: &crate::core::CoreState, workspace_id: u32) -> Value {
-    let ctx = core.tasks.runner_context(engine);
-    let status = core.tasks.runner_registry().status(&ctx, workspace_id);
-    runner_status_value(&status)
+    runner_status_value(&core.tasks.runner_status(&engine.task_scope, workspace_id))
 }
 
 fn runner_status_value(status: &crate::core::agent::runner_thread::RunnerStatus) -> Value {
@@ -275,8 +276,10 @@ fn awaiting_external_json(
     workspace_id: u32,
     task_id: &str,
 ) -> Option<Value> {
-    let ctx = core.tasks.runner_context(engine);
-    match crate::core::agent::runner_host::load_dispatch_handle(&ctx, workspace_id, task_id)? {
+    match core
+        .tasks
+        .dispatch_handle(&engine.task_scope, workspace_id, task_id)?
+    {
         DispatchHandle::AwaitExternal {
             wait_key,
             deadline_ms,
@@ -303,7 +306,10 @@ pub fn handle_task_get(
         Ok(t) => t,
         Err(e) => return e,
     };
-    match core.task_get(engine, workspace_id, &task_id) {
+    match core
+        .tasks
+        .task_get(&engine.task_scope, workspace_id, &task_id)
+    {
         Err(e) => agent_err_to_response(id, e),
         Ok(None) => JsonRpcResponse::error(id, -32004, format!("task not found: {task_id}")),
         Ok(Some(t)) => {
@@ -337,7 +343,10 @@ pub fn handle_task_cancel(
     };
     mark_durability(
         core,
-        match core.task_cancel(engine, workspace_id, &task_id, now_ms()) {
+        match core
+            .tasks
+            .task_cancel(&engine.task_scope, workspace_id, &task_id, now_ms())
+        {
             Err(e) => agent_err_to_response(id, e),
             Ok((task, cascaded)) => JsonRpcResponse::success(
                 id,
@@ -371,7 +380,13 @@ pub fn handle_task_retry(
         .unwrap_or(false);
     mark_durability(
         core,
-        match core.task_retry(engine, workspace_id, &task_id, reset_downstream, now_ms()) {
+        match core.tasks.task_retry(
+            &engine.task_scope,
+            workspace_id,
+            &task_id,
+            reset_downstream,
+            now_ms(),
+        ) {
             Err(e) => agent_err_to_response(id, e),
             Ok(task) => match serde_json::to_value(task) {
                 Ok(v) => JsonRpcResponse::success(id, v),
@@ -386,14 +401,11 @@ pub fn handle_task_retry(
 pub const DEFAULT_TASK_AWAIT_TIMEOUT_MS: u64 = 600_000;
 
 pub fn await_task_blocking(
-    hub: &crate::core::agent::task_waker::TaskWakerHub,
-    memory: &std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-    agent_seq: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    awaiter: &crate::core::task_service::TaskAwaiter,
     rpc_id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    use crate::core::agent::task_waker::{AwaitOutcome, TerminalSnapshot};
-    use tasty_memory::HOST_OWNER;
+    use crate::core::agent::task_waker::AwaitOutcome;
 
     let workspace_id = match workspace_id_param(params, &rpc_id) {
         Ok(w) => w,
@@ -408,25 +420,7 @@ pub fn await_task_blocking(
             .unwrap_or(DEFAULT_TASK_AWAIT_TIMEOUT_MS),
     );
 
-    // 허브가 대기자를 등록한 뒤 저장소를 읽어야 그 사이의 완료를 놓치지 않는다.
-    let load_current = || -> Option<TerminalSnapshot> {
-        let mut guard = crate::poison::recover_mutex(
-            memory.lock(),
-            crate::core::MEMORY_WHAT,
-            &crate::core::MEMORY_POISONED,
-        );
-        let store = tasty_agent::TaskStore::new(&mut *guard, HOST_OWNER, agent_seq.as_ref());
-        match store.get(workspace_id, &task_id) {
-            Ok(Some(t)) => Some(TerminalSnapshot {
-                state: t.state,
-                result: t.result,
-            }),
-            Ok(None) => None,
-            Err(_) => None,
-        }
-    };
-
-    let outcome = hub.await_terminal(workspace_id, &task_id, timeout_ms, load_current);
+    let outcome = awaiter.await_terminal(workspace_id, &task_id, timeout_ms);
     match outcome {
         AwaitOutcome::Terminal(snap) => {
             let mut resp = json!({
@@ -462,18 +456,16 @@ pub(crate) fn unowned_await_workspace(rpc_id: Value, workspace_id: u32) -> JsonR
 }
 
 /// 메인 루프를 막지 않도록 워커에서 완료를 기다린다.
-/// GUI와 헤드리스의 engine 선택 방식이 달라, 호출자가 대상 저장소를 먼저 고른다.
+/// GUI와 헤드리스의 engine 선택 방식이 달라, 호출자가 소유 engine의 대기 계약을 먼저 고른다.
 pub(crate) fn spawn_task_await(
-    hub: std::sync::Arc<crate::core::agent::task_waker::TaskWakerHub>,
-    memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-    agent_seq: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    awaiter: crate::core::task_service::TaskAwaiter,
     rpc_id: Value,
     params: Value,
     response_tx: &std::sync::mpsc::SyncSender<JsonRpcResponse>,
 ) {
     let response_tx = response_tx.clone();
     std::thread::spawn(move || {
-        let resp = await_task_blocking(&hub, &memory, agent_seq, rpc_id, &params);
+        let resp = await_task_blocking(&awaiter, rpc_id, &params);
         tasty_ipc::server::send_response(&response_tx, resp);
     });
 }
@@ -560,7 +552,7 @@ pub fn handle_task_graph(
         .unwrap_or("json")
         .to_string();
 
-    let tasks = match core.task_list(engine, workspace_id) {
+    let tasks = match core.tasks.task_list(&engine.task_scope, workspace_id) {
         Err(e) => return agent_err_to_response(id, e),
         Ok(t) => t,
     };
@@ -626,7 +618,10 @@ pub fn handle_dag_list(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    match core.dag_list(engine, workspace_id) {
+    match core.tasks.dag_list(
+        &engine.task_scope,
+        &crate::core::agent::task::dag_scan_workspaces(engine, workspace_id),
+    ) {
         Err(e) => agent_err_to_response(id, e),
         Ok(dags) => {
             let rendered: Vec<Value> = dags
@@ -677,7 +672,11 @@ pub fn handle_dag_get(
         .unwrap_or("json")
         .to_string();
 
-    let (dag, tasks) = match core.dag_get(engine, workspace_id, &dag_id) {
+    let (dag, tasks) = match core.tasks.dag_get(
+        &engine.task_scope,
+        &crate::core::agent::task::dag_scan_workspaces(engine, workspace_id),
+        &dag_id,
+    ) {
         Err(e) => return agent_err_to_response(id, e),
         Ok(None) => {
             return JsonRpcResponse::invalid_params(id, format!("unknown dag id: {dag_id}"));
@@ -749,7 +748,10 @@ pub fn handle_task_reduce(
     };
     let extract_path = params.get("extract_path").and_then(|v| v.as_str());
 
-    let collected = match core.task_reduce_collect(engine, workspace_id, &inputs) {
+    let collected = match core
+        .tasks
+        .task_reduce_collect(&engine.task_scope, workspace_id, &inputs)
+    {
         Err(e) => return agent_err_to_response(id, e),
         Ok(v) => v,
     };
@@ -782,14 +784,12 @@ pub fn handle_task_run(
         .get("action")
         .and_then(|v| v.as_str())
         .unwrap_or("status");
-    let ctx = core.tasks.runner_context(engine);
-    let registry = core.tasks.runner_registry();
     match action {
         "start" => {
-            registry.start(ctx.clone(), workspace_id);
+            core.tasks.runner_start(&engine.task_scope, workspace_id);
         }
         "stop" => {
-            registry.stop(workspace_id);
+            core.tasks.runner_stop(workspace_id);
         }
         "status" => {}
         other => {
@@ -799,11 +799,11 @@ pub fn handle_task_run(
             );
         }
     }
-    let status = registry.status(&ctx, workspace_id);
+    let status = core.tasks.runner_status(&engine.task_scope, workspace_id);
     JsonRpcResponse::success(id, runner_status_value(&status))
 }
 
-/// 외부에서 작업 결과를 보고하는 진입점. 러너는 이 IPC 대신 Core를 직접 호출한다.
+/// 외부에서 작업 결과를 보고하는 진입점. 러너는 이 IPC 대신 RunnerContext로 저장소를 직접 갱신한다.
 pub fn handle_task_set_result(
     core: &Core,
     engine: &mut crate::core::CoreState,
@@ -841,7 +841,10 @@ pub fn handle_task_set_result(
         error: error.clone(),
     };
 
-    if let Err(e) = core.task_set_result(engine, workspace_id, &task_id, result) {
+    if let Err(e) = core
+        .tasks
+        .task_set_result(&engine.task_scope, workspace_id, &task_id, result)
+    {
         return agent_err_to_response(id, e);
     }
 
@@ -860,7 +863,13 @@ pub fn handle_task_set_result(
 
     mark_durability(
         core,
-        match core.task_set_state(engine, workspace_id, &task_id, new_state, now_ms()) {
+        match core.tasks.task_set_state(
+            &engine.task_scope,
+            workspace_id,
+            &task_id,
+            new_state,
+            now_ms(),
+        ) {
             Err(e) => agent_err_to_response(id, e),
             Ok((task, cascaded)) => JsonRpcResponse::success(
                 id,
@@ -900,8 +909,8 @@ pub fn handle_task_delete(
         .unwrap_or(false);
     mark_durability(
         core,
-        match core.task_delete(
-            engine,
+        match core.tasks.task_delete(
+            &engine.task_scope,
             workspace_id,
             &task_id,
             TaskDeleteOpts { cascade, force },
@@ -945,7 +954,10 @@ pub fn handle_task_purge(
     };
     mark_durability(
         core,
-        match core.task_purge(engine, workspace_id, filter, dry_run) {
+        match core
+            .tasks
+            .task_purge(&engine.task_scope, workspace_id, filter, dry_run)
+        {
             Err(e) => agent_err_to_response(id, e),
             Ok(plan) => JsonRpcResponse::success(
                 id,
