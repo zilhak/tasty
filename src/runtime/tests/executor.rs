@@ -1,5 +1,5 @@
-//! executor: 가짜 decider와 실제 journal로 E02(확정 실패 시 상태·응답 없음), E03(재오픈 후 같은
-//! 키는 decide하지 않음), E04(같은 키 동시 실행은 decide 1회, 다른 요청은 충돌)를 확인한다.
+//! executor: 가짜 decider와 실제 journal로 확정 실패 시 상태·응답 없음, 재오픈 후 같은 키는
+//! decide하지 않음, 같은 키 동시 실행은 decide 1회이고 다른 요청은 충돌함을 확인한다.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -298,7 +298,7 @@ fn committed_batch_is_applied_and_matches_the_journal() {
 }
 
 #[test]
-fn e02_failed_commit_leaves_state_unchanged_and_sends_no_response() {
+fn failed_commit_leaves_state_unchanged_and_sends_no_response() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = db_path(&dir);
     let fake = Fake::default();
@@ -352,7 +352,7 @@ fn e02_failed_commit_leaves_state_unchanged_and_sends_no_response() {
 }
 
 #[test]
-fn e03_after_reopen_the_same_key_is_answered_without_deciding() {
+fn after_reopen_the_same_key_is_answered_without_deciding() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = db_path(&dir);
     let before_restart = Fake::default();
@@ -385,7 +385,7 @@ fn e03_after_reopen_the_same_key_is_answered_without_deciding() {
 }
 
 #[test]
-fn e04_concurrent_same_key_decides_once_and_other_request_conflicts() {
+fn concurrent_same_key_decides_once_and_other_request_conflicts() {
     let dir = tempfile::tempdir().expect("tempdir");
     let gate = Arc::new(Gate::default());
     let fake = Fake {

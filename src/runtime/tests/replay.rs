@@ -1,4 +1,4 @@
-//! 실제 journal에서의 replay: 전체 로그와 snapshot+tail의 일치(E01), 다른 stream 건너뛰기,
+//! 실제 journal에서의 replay: 전체 로그와 snapshot+tail의 일치, 다른 stream 건너뛰기,
 //! 모르는 tag 중단.
 
 use tasty_domain::{CodecError, DomainEvent, JournalModel, MODEL_VERSION, STRUCTURE_STREAM};
