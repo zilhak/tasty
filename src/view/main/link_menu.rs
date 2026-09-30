@@ -25,6 +25,9 @@ impl MainView {
         engine: &crate::core::CoreState,
         surface_id: u32,
     ) -> Option<TerminalLinkMenu> {
+        // Keep the modifier/overlay eligibility established by hover handling,
+        // but resolve the target again at the click content cut.
+        self.hovered_link.as_ref()?;
         let fresh = self.compute_hovered_link(engine);
         let hovered = fresh.as_ref();
         if !link_menu_gate(

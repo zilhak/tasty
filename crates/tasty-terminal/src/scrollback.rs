@@ -748,17 +748,7 @@ mod viewport_tests {
         let mut history = Scrollback::new();
         history.enable_disk(id);
         assert!(history.disk.is_some());
-        let subdir = if cfg!(debug_assertions) {
-            "tasty-scrollback-debug"
-        } else {
-            "tasty-scrollback"
-        };
-        let path = std::env::temp_dir().join(subdir).join(format!(
-            "surface-{}-{}.scrollback",
-            std::process::id(),
-            id
-        ));
-        std::fs::remove_file(path).unwrap();
+        std::fs::remove_file(history.disk.as_ref().unwrap().backing_file()).unwrap();
         history.set_limit(0);
         let epoch = history.epoch;
         history.push_line(ScrollbackLine::new(

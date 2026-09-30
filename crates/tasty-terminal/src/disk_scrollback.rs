@@ -475,3 +475,10 @@ mod tests {
         assert!(out.is_empty());
     }
 }
+
+#[cfg(test)]
+impl DiskScrollback {
+    pub(crate) fn backing_file(&self) -> &std::path::Path {
+        &self.file_path
+    }
+}

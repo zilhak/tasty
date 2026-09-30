@@ -52,7 +52,7 @@ fn stage_branch_sits_between_offscreen_capture_and_layout() {
     let src = read("src/gfx/gpu.rs");
     let screenshot = only_at(
         &src,
-        "self.handle_pending_surface_screenshot(engine);",
+        "self.handle_pending_surface_screenshot(state, engine);",
         "offscreen 캡처",
     );
     let branch = only_at(&src, "if state.fullscreen_stage_active() {", "무대 분기");
