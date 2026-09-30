@@ -5,6 +5,7 @@ use winit::window::WindowId;
 use crate::app::App;
 use crate::app::window_access::engines_mut;
 use crate::ipc;
+use crate::runtime::engine_session::EngineId;
 use crate::view::ui::View as _;
 
 enum IntentClass {
@@ -45,7 +46,7 @@ impl App {
         &mut self,
     ) -> (
         Vec<(WindowId, Vec<crate::intent::DispatchedIntent>)>,
-        Vec<(usize, Vec<crate::intent::DispatchedIntent>)>,
+        Vec<(EngineId, Vec<crate::intent::DispatchedIntent>)>,
     ) {
         let mut per_state_batches = Vec::new();
         let mut parked_batches = Vec::new();
@@ -57,10 +58,10 @@ impl App {
                 }
             }
         }
-        for (idx, (s, _)) in self.engines_mut().parked_sessions().enumerate() {
+        for (id, s, _) in self.engines_mut().parked_sessions_with_ids() {
             let batch = s.take_pending_intents();
             if !batch.is_empty() {
-                parked_batches.push((idx, batch));
+                parked_batches.push((id, batch));
             }
         }
         (per_state_batches, parked_batches)
@@ -69,7 +70,7 @@ impl App {
     fn process_state_batches(
         &mut self,
         per_state_batches: Vec<(WindowId, Vec<crate::intent::DispatchedIntent>)>,
-        parked_batches: Vec<(usize, Vec<crate::intent::DispatchedIntent>)>,
+        parked_batches: Vec<(EngineId, Vec<crate::intent::DispatchedIntent>)>,
         domain_batch: &mut Vec<(
             crate::app::dispatch_domain::DispatchSource,
             crate::intent::DispatchedIntent,
@@ -105,9 +106,9 @@ impl App {
             }
             main.mark_dirty();
         }
-        for (idx, batch) in parked_batches {
+        for (id, batch) in parked_batches {
             let core = &mut self.core;
-            let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
+            let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
                 continue;
             };
             for intent in batch {
@@ -115,7 +116,7 @@ impl App {
                 crate::intent::watch::observe(&intent);
                 match Self::classify_intent(&intent) {
                     IntentClass::Domain => domain_batch.push((
-                        crate::app::dispatch_domain::DispatchSource::Parked(idx),
+                        crate::app::dispatch_domain::DispatchSource::Parked(id),
                         intent,
                     )),
                     IntentClass::Appearance => *appearance_changed = true,

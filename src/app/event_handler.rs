@@ -785,11 +785,11 @@ impl App {
                 }
             }
             if !found {
-                for (idx, engine) in engines_mut!(self).parked().enumerate() {
+                for (id, _, engine) in engines_mut!(self).parked_sessions_with_ids() {
                     if engine.find_terminal_by_id(sid).is_some() {
                         let outcome = core.process_pty_output(engine, sid);
                         if !outcome.events.is_empty() {
-                            pending.push((DispatchSource::Parked(idx), outcome.events));
+                            pending.push((DispatchSource::Parked(id), outcome.events));
                         }
                         break;
                     }
@@ -805,10 +805,10 @@ impl App {
                 }
                 w.mark_dirty_from(RepaintSource::TerminalOutput);
             }
-            for (idx, engine) in engines_mut!(self).parked().enumerate() {
+            for (id, _, engine) in engines_mut!(self).parked_sessions_with_ids() {
                 let outcome = core.process_all_pty_output(engine);
                 if !outcome.events.is_empty() {
-                    pending.push((DispatchSource::Parked(idx), outcome.events));
+                    pending.push((DispatchSource::Parked(id), outcome.events));
                 }
             }
         }
@@ -826,7 +826,8 @@ impl App {
             let drained: Vec<_> = self.view.views.drain().map(|(_, w)| w).collect();
             for w in drained {
                 if let Some(main_box) = crate::view::unbox_main(w) {
-                    self.engines_mut().park(main_box.state, main_box.core_state);
+                    let (view_restore, session) = main_box.into_park_parts();
+                    self.engines_mut().park(view_restore, session);
                 }
             }
             self.view.focused_view_id = None;
@@ -1116,7 +1117,8 @@ impl App {
                 // 마지막 MainView는 engine을 park하므로 레이아웃 슬롯 점유도 유지한다.
                 Some(main_box) if was_last_main => {
                     tracing::info!("last main window closed via request, parking state");
-                    self.engines_mut().park(main_box.state, main_box.core_state);
+                    let (view_restore, session) = main_box.into_park_parts();
+                    self.engines_mut().park(view_restore, session);
                 }
                 Some(mut main_box) => {
                     let active_workspace = main_box.state.active_workspace;
@@ -1159,11 +1161,11 @@ impl App {
             Self::notify_resume_suspects(&mut main.core_state, &suspects);
             w.mark_dirty();
         }
-        for (idx, engine) in engines_mut!(self).parked().enumerate() {
+        for (id, _, engine) in engines_mut!(self).parked_sessions_with_ids() {
             let suspects = engine.wake_terminals_after_resume();
             let outcome = core.process_all_pty_output(engine);
             if !outcome.events.is_empty() {
-                pending.push((DispatchSource::Parked(idx), outcome.events));
+                pending.push((DispatchSource::Parked(id), outcome.events));
             }
             Self::notify_resume_suspects(engine, &suspects);
         }

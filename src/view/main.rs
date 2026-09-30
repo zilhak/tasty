@@ -42,6 +42,8 @@ pub struct MainView {
     pub(crate) state: AppState,
     /// AppState와 따로 빌릴 수 있도록 분리한 이 창의 CoreState.
     pub(crate) core_state: crate::core::CoreState,
+    /// 이 창 engine의 id. engine과 창의 관계를 App 한 곳이 보관하게 되면 없어진다.
+    pub(crate) engine_id: crate::runtime::engine_session::EngineId,
     pub(crate) cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
     pub(crate) dragging_divider: Option<DividerDrag>,
     pub(crate) clipboard: Option<ClipboardContext>,
@@ -177,17 +179,29 @@ pub(crate) enum MeshHoverTarget {
 }
 
 impl MainView {
+    /// 창을 없애고 engine을 보관할 때 View 복원 상태와 id를 붙인 engine으로 나눈다.
+    pub(crate) fn into_park_parts(
+        self,
+    ) -> (AppState, crate::runtime::engine_session::EngineSession) {
+        let session = crate::runtime::engine_session::EngineSession {
+            id: self.engine_id,
+            core_state: self.core_state,
+        };
+        (self.state, session)
+    }
+
     pub(crate) fn new(
         gpu: GpuState,
         state: AppState,
-        core_state: crate::core::CoreState,
+        session: crate::runtime::engine_session::EngineSession,
         window: Arc<winit::window::Window>,
         proxy: winit::event_loop::EventLoopProxy<AppEvent>,
     ) -> Self {
         Self {
             base: ViewBase::new(gpu, window),
             state,
-            core_state,
+            core_state: session.core_state,
+            engine_id: session.id,
             cursor_position: None,
             dragging_divider: None,
             clipboard: ClipboardContext::new(),

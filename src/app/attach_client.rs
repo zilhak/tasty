@@ -26,6 +26,7 @@ use crate::model::{
     DeferredPlugin, EmptySurface, ExplorerPanel, Pane, PaneNode, SplitDirection, Surface,
     SurfaceLayout, Tab, TerminalSurface, Workspace,
 };
+use crate::runtime::engine_session::EngineId;
 use crate::view::ui::View as _;
 
 /// 번들 git-viewer 매니페스트의 ID와 일치해야 한다.
@@ -628,7 +629,7 @@ impl App {
 
             let host = mirror_output_host(
                 self.find_main_with_workspace(local_ws),
-                self.engines().parked(),
+                self.engines().parked_with_ids(),
                 local_ws,
             );
             // delta 뒤의 출력도 갱신된 ID 매핑을 써야 하므로 세션을 복제하지 않고 나눠 빌린다.
@@ -648,11 +649,11 @@ impl App {
                         main.mark_dirty_from(crate::view::RepaintSource::AttachMirror);
                     }
                 }
-                Some(MirrorOutputHost::Parked(pidx)) => {
+                Some(MirrorOutputHost::Parked(id)) => {
                     let sess = &mut self.attach_client_sessions[idx];
                     let (state, engine) = engines_mut!(self)
-                        .parked_session(pidx)
-                        .expect("mirror_output_host가 방금 찾은 parked index");
+                        .parked_session(id)
+                        .expect("mirror_output_host가 방금 찾은 parked engine");
                     apply_pending_mirror_output(
                         sess,
                         Some(MirrorHost::parked(state, engine)),
@@ -1344,11 +1345,14 @@ fn remove_mirror_workspace_from_parked(
     local_workspace: u32,
     remote_to_local: &HashMap<u32, u32>,
 ) -> bool {
-    let parked = engines.reborrow().parked().map(|e| &*e);
-    let Some(idx) = find_parked_with_workspace(parked, local_workspace) else {
+    let parked = engines
+        .reborrow()
+        .parked_sessions_with_ids()
+        .map(|(id, _, e)| (id, &*e));
+    let Some(id) = find_parked_with_workspace(parked, local_workspace) else {
         return false;
     };
-    let Some((state, engine)) = engines.parked_session(idx) else {
+    let Some((state, engine)) = engines.parked_session(id) else {
         return false;
     };
     remove_mirror_workspace_from_engine(engine, state, local_workspace, remote_to_local)
@@ -1357,13 +1361,13 @@ fn remove_mirror_workspace_from_parked(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MirrorOutputHost {
     Window(winit::window::WindowId),
-    Parked(usize),
+    Parked(EngineId),
 }
 
 /// 창이 있는 engine을 우선하고 없으면 parked engine에서 찾는다. None이면 버퍼를 비우지 않는다.
 fn mirror_output_host<'a>(
     windowed: Option<winit::window::WindowId>,
-    parked: impl IntoIterator<Item = &'a crate::core::CoreState>,
+    parked: impl IntoIterator<Item = (EngineId, &'a crate::core::CoreState)>,
     local_workspace: u32,
 ) -> Option<MirrorOutputHost> {
     windowed.map(MirrorOutputHost::Window).or_else(|| {
@@ -1373,12 +1377,13 @@ fn mirror_output_host<'a>(
 
 /// 출력 적용·정리·고아 판정이 공유하는 parked engine 검색. 여러 항목 모두 확인한다.
 pub(super) fn find_parked_with_workspace<'a>(
-    parked: impl IntoIterator<Item = &'a crate::core::CoreState>,
+    parked: impl IntoIterator<Item = (EngineId, &'a crate::core::CoreState)>,
     local_workspace: u32,
-) -> Option<usize> {
+) -> Option<EngineId> {
     parked
         .into_iter()
-        .position(|engine| engine.has_workspace(local_workspace))
+        .find(|(_, engine)| engine.has_workspace(local_workspace))
+        .map(|(id, _)| id)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3313,6 +3318,7 @@ pub(crate) fn upload_file_over_bulk(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::window_access::ParkedEngine;
     use crate::core::state::IdGenerator;
 
     #[test]
@@ -3456,9 +3462,10 @@ mod tests {
         let (pane_id, tab_id, local_surface) = (9_001u32, 9_002u32, 9_003u32);
         let remote_to_local = HashMap::from([(42u32, local_surface)]);
 
-        let mut parked: Vec<(crate::state::AppState, crate::core::CoreState)> =
-            (0..2).map(|_| crate::state::tests::test_state()).collect();
-        let untouched_ws_count = parked[0].1.workspaces.len();
+        let mut parked: Vec<ParkedEngine> = (0..2)
+            .map(|_| ParkedEngine::from_test_state(crate::state::tests::test_state()))
+            .collect();
+        let untouched_ws_count = parked[0].session.core_state.workspaces.len();
 
         let mut mirror_ws = Workspace::new_with_terminal_marker(
             ws_id,
@@ -3469,7 +3476,11 @@ mod tests {
         );
         mirror_ws.mirror = true;
         {
-            let (state, engine) = &mut parked[1];
+            let ParkedEngine {
+                view_restore: state,
+                session,
+            } = &mut parked[1];
+            let engine = &mut session.core_state;
             engine.workspaces.push(mirror_ws);
             engine
                 .runtime
@@ -3488,7 +3499,7 @@ mod tests {
             &remote_to_local
         ));
 
-        let (state, engine) = &parked[1];
+        let (state, engine) = (&parked[1].view_restore, &parked[1].session.core_state);
         assert!(!engine.has_workspace(ws_id), "mirror 워크스페이스 행 제거");
         assert!(
             !engine.runtime.terminals.contains(local_surface),
@@ -3504,7 +3515,7 @@ mod tests {
         );
         assert_eq!(state.active_workspace, engine.workspaces.len() - 1);
         assert_eq!(
-            parked[0].1.workspaces.len(),
+            parked[0].session.core_state.workspaces.len(),
             untouched_ws_count,
             "무관한 parked engine 은 건드리지 않는다"
         );
@@ -3512,8 +3523,9 @@ mod tests {
 
     #[test]
     fn cleanup_parked_scan_reports_false_when_absent() {
-        let mut parked: Vec<(crate::state::AppState, crate::core::CoreState)> =
-            (0..2).map(|_| crate::state::tests::test_state()).collect();
+        let mut parked: Vec<ParkedEngine> = (0..2)
+            .map(|_| ParkedEngine::from_test_state(crate::state::tests::test_state()))
+            .collect();
         let remote_to_local = HashMap::from([(42u32, 9_003u32)]);
         assert!(!remove_mirror_workspace_from_parked(
             EngineScanMut::from_fields(&mut HashMap::new(), &mut parked, &mut None),
@@ -5159,13 +5171,17 @@ mod tests {
         );
     }
 
+    fn parked_ids(
+        parked: &[ParkedEngine],
+    ) -> impl Iterator<Item = (EngineId, &crate::core::CoreState)> {
+        parked.iter().map(|p| (p.session.id, &p.session.core_state))
+    }
+
     /// 첫 항목만 보는 오류를 잡도록 mirror는 두 번째 parked engine에만 둔다.
-    fn parked_with_mirror(
-        ws_id: u32,
-        local_surface: u32,
-    ) -> Vec<(crate::state::AppState, crate::core::CoreState)> {
-        let mut parked: Vec<(crate::state::AppState, crate::core::CoreState)> =
-            (0..2).map(|_| crate::state::tests::test_state()).collect();
+    fn parked_with_mirror(ws_id: u32, local_surface: u32) -> Vec<ParkedEngine> {
+        let mut parked: Vec<ParkedEngine> = (0..2)
+            .map(|_| ParkedEngine::from_test_state(crate::state::tests::test_state()))
+            .collect();
         let mut mirror_ws = Workspace::new_with_terminal_marker(
             ws_id,
             "mirror".to_string(),
@@ -5174,7 +5190,7 @@ mod tests {
             local_surface,
         );
         mirror_ws.mirror = true;
-        let engine = &mut parked[1].1;
+        let engine = &mut parked[1].session.core_state;
         engine.workspaces.push(mirror_ws);
         engine
             .runtime
@@ -5189,17 +5205,17 @@ mod tests {
         let parked = parked_with_mirror(ws_id, 9_003);
         let wid = winit::window::WindowId::from(7u64);
         assert_eq!(
-            mirror_output_host(Some(wid), parked.iter().map(|(_, e)| e), ws_id),
+            mirror_output_host(Some(wid), parked_ids(&parked), ws_id),
             Some(MirrorOutputHost::Window(wid)),
             "창 있는 engine 이 있으면 그쪽"
         );
         assert_eq!(
-            mirror_output_host(None, parked.iter().map(|(_, e)| e), ws_id),
-            Some(MirrorOutputHost::Parked(1)),
+            mirror_output_host(None, parked_ids(&parked), ws_id),
+            Some(MirrorOutputHost::Parked(parked[1].session.id)),
             "창이 없으면 mirror 를 든 parked engine(두 번째)"
         );
         assert_eq!(
-            mirror_output_host(None, parked.iter().map(|(_, e)| e), 424_242),
+            mirror_output_host(None, parked_ids(&parked), 424_242),
             None,
             "어느 engine 에도 없으면 None — drain 하지 않는다"
         );
@@ -5210,7 +5226,7 @@ mod tests {
         let ws_id = 9_000u32;
         let (survivor_remote, survivor_local, new_remote) = (42u32, 9_003u32, 43u32);
         let mut parked = parked_with_mirror(ws_id, survivor_local);
-        let untouched_ws_count = parked[0].1.workspaces.len();
+        let untouched_ws_count = parked[0].session.core_state.workspaces.len();
         let mut sess = test_session(ws_id, HashMap::from([(survivor_remote, survivor_local)]));
 
         let tree = serde_json::json!({
@@ -5242,16 +5258,24 @@ mod tests {
             MirrorEvent::Data(new_remote, b"world-new".to_vec()),
         ];
 
-        let pidx = find_parked_with_workspace(parked.iter().map(|(_, e)| e), ws_id)
+        let id = find_parked_with_workspace(parked_ids(&parked), ws_id)
             .expect("mirror 를 든 parked engine");
+        let pidx = parked
+            .iter()
+            .position(|p| p.session.id == id)
+            .expect("찾은 id의 항목");
         {
-            let (state, engine) = &mut parked[pidx];
+            let ParkedEngine {
+                view_restore: state,
+                session,
+            } = &mut parked[pidx];
+            let engine = &mut session.core_state;
             let mut host = MirrorHost::parked(state, engine);
             let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
             apply_mirror_events(&mut sess, &mut host, &mut plugin_manager, events);
         }
 
-        let engine = &parked[pidx].1;
+        let engine = &parked[pidx].session.core_state;
         let survivor = engine
             .runtime
             .terminals
@@ -5287,7 +5311,7 @@ mod tests {
             "{sids:?}"
         );
         assert_eq!(
-            parked[0].1.workspaces.len(),
+            parked[0].session.core_state.workspaces.len(),
             untouched_ws_count,
             "무관한 parked engine 은 건드리지 않는다"
         );
@@ -5330,10 +5354,18 @@ mod tests {
             .push(MirrorEvent::Data(remote_surface, b"applied-here".to_vec()));
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
 
-        let pidx = find_parked_with_workspace(parked.iter().map(|(_, e)| e), ws_id)
+        let id = find_parked_with_workspace(parked_ids(&parked), ws_id)
             .expect("mirror 를 든 parked engine");
+        let pidx = parked
+            .iter()
+            .position(|p| p.session.id == id)
+            .expect("찾은 id의 항목");
         let applied = {
-            let (state, engine) = &mut parked[pidx];
+            let ParkedEngine {
+                view_restore: state,
+                session,
+            } = &mut parked[pidx];
+            let engine = &mut session.core_state;
             apply_pending_mirror_output(
                 &mut sess,
                 Some(MirrorHost::parked(state, engine)),
@@ -5344,7 +5376,8 @@ mod tests {
         assert!(applied);
         assert!(sess.output.peek().is_empty(), "적용했으면 버퍼는 비워진다");
         let term = parked[pidx]
-            .1
+            .session
+            .core_state
             .runtime
             .terminals
             .get(local_surface)

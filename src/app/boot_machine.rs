@@ -206,7 +206,7 @@ impl App {
             Ok(Ok((engine, mgr))) => {
                 let wait_ms = started.elapsed().as_secs_f64() * 1000.0;
                 let frames = *frames;
-                self.core_state = Some(engine);
+                self.core_state = Some(crate::runtime::engine_session::EngineSession::new(engine));
                 self.plugin_manager = Some(mgr);
                 tracing::info!(
                     target: "tasty::boot",
@@ -394,7 +394,10 @@ impl App {
 
         // 복원 예정이면 기본 workspace를 만들지 않았으므로 복원 실패 시 여기서 보충한다.
         let bootstrapped = match self.core_state.as_mut() {
-            Some(engine) => crate::app::App::bootstrap_workspace_if_empty(&mut self.core, engine),
+            Some(session) => crate::app::App::bootstrap_workspace_if_empty(
+                &mut self.core,
+                &mut session.core_state,
+            ),
             None => None,
         };
         let mut state = self.assemble_app_state(bootstrapped.or(restored_idx));
@@ -403,10 +406,11 @@ impl App {
         self.start_boot_ipc_and_webhooks(&mut state);
         Self::report_persistence_incidents(settings_origin, self.core_state(), &mut state);
 
-        let mut core_state = self
+        let mut session = self
             .core_state
             .take()
             .expect("App.core_state must be present to register a main window");
+        let core_state = &mut session.core_state;
         // force-detach 통지를 IPC와 같은 스트림으로 보낸다.
         core_state.attach.set_notifier(self.stream_hub.clone());
         // 첫 창을 노출하기 전에 이전 실행의 에이전트 작업 상태를 정리하며 자동 실행은 하지 않는다.
@@ -422,7 +426,7 @@ impl App {
         self.register_window(
             gpu,
             state,
-            core_state,
+            session,
             window.clone(),
             crate::app::event::WindowRequestOrigin::User,
         );

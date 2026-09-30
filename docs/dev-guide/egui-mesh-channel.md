@@ -482,7 +482,7 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
   인터랙티브하지 않다.
 - **서버측(GUI, parked engine): 헤드리스와 동일하게 직접 구동** — macOS 에서 window 를
   최소화하면 `App::handle_minimize` 의 macOS 분기가 그 window 의 `MainView` 를 파괴하고
-  `(AppState, CoreState)` 를 `App::parked_states`(`src/app.rs`) 로 옮긴다. 이 engine 은
+  AppState 와 engine 을 `App::parked_states`(`src/app.rs`) 로 옮긴다. 이 engine 은
   더 이상 `handle_redraw` 가 돌지 않으므로 "GUI 살아있는 window" 항목이 전제하는 로컬
   authoritative loop 가 없다 — **처지가 헤드리스와 같다.** `App::about_to_wait`
   (`src/app/event_handler.rs`, plugin manager `pump()` 호출 직후)가 `parked_states` 전부를

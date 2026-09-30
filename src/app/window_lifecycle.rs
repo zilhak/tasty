@@ -217,7 +217,9 @@ impl App {
 
         // 복원을 예정한 engine에는 기본 workspace가 없을 수 있어 복원 실패 뒤 보충한다.
         let bootstrapped = match self.core_state.as_mut() {
-            Some(engine) => Self::bootstrap_workspace_if_empty(&mut self.core, engine),
+            Some(session) => {
+                Self::bootstrap_workspace_if_empty(&mut self.core, &mut session.core_state)
+            }
             None => None,
         };
 
@@ -309,7 +311,7 @@ impl App {
                     self.input_simulation_enabled,
                 )?
             };
-            self.core_state = Some(engine);
+            self.core_state = Some(crate::runtime::engine_session::EngineSession::new(engine));
         }
 
         if self.plugin_manager.is_none() {
@@ -325,6 +327,7 @@ impl App {
         let engine = self
             .core_state
             .as_mut()
+            .map(|s| &mut s.core_state)
             .expect("core_state must be initialized before layout restore");
         let restored = match self.core.apply(
             engine,
@@ -465,13 +468,13 @@ impl App {
         &mut self,
         gpu: GpuState,
         state: crate::state::AppState,
-        core_state: crate::core::CoreState,
+        session: crate::runtime::engine_session::EngineSession,
         window: Arc<Window>,
         origin: WindowRequestOrigin,
     ) {
         let window_id = window.id();
         let main =
-            window::main::MainView::new(gpu, state, core_state, window, self.view.proxy.clone());
+            window::main::MainView::new(gpu, state, session, window, self.view.proxy.clone());
         self.view.views.insert(window_id, Box::new(main));
         self.view.focused_view_id =
             focus_after_register(self.view.focused_view_id, window_id, origin);
@@ -567,7 +570,7 @@ impl App {
             }
         };
 
-        let (mut state, mut core_state) =
+        let (mut state, mut session) =
             match self.acquire_app_state_and_engine(&gpu, settings.appearance.sidebar_width) {
                 Ok(pair) => pair,
                 Err(e) => {
@@ -579,7 +582,7 @@ impl App {
                     ));
                 }
             };
-        self.ensure_at_least_one_workspace(&mut core_state, &mut state);
+        self.ensure_at_least_one_workspace(&mut session.core_state, &mut state);
 
         // DB 오류를 먼저 큐에 넣어 확인 시 종료 안내가 다른 모달보다 앞서도록 한다.
         if let Some(err) = db_init_error {
@@ -600,7 +603,7 @@ impl App {
         // 등록 전에 사용자가 보던 창을 기억해 에이전트 창을 그 뒤에 표시한다.
         let behind = matches!(origin, WindowRequestOrigin::Agent)
             .then(|| (window.clone(), self.focused_main_winit()));
-        self.register_window(gpu, state, core_state, window, origin);
+        self.register_window(gpu, state, session, window, origin);
         if let Some((window, anchor)) = behind {
             show_agent_window(&window, anchor.as_deref());
             self.pending_focus_hint_clear.insert(window_id);
@@ -649,27 +652,30 @@ impl App {
         &mut self,
         gpu: &GpuState,
         sidebar_width: tasty_type_geometry::length::LogicalPx,
-    ) -> anyhow::Result<(crate::state::AppState, crate::core::CoreState)> {
-        let (state, parked_engine) = if let Some((st, eng)) = self.engines_mut().unpark_first() {
+    ) -> anyhow::Result<(
+        crate::state::AppState,
+        crate::runtime::engine_session::EngineSession,
+    )> {
+        let (state, parked_engine) = if let Some(parked) = self.engines_mut().unpark_first() {
             tracing::info!(
                 "restoring parked state, {} remaining",
                 self.engines().parked_count()
             );
-            (st, Some(eng))
+            (parked.view_restore, Some(parked.session))
         } else {
             let st = self.create_app_state(gpu, sidebar_width)?;
             (st, None)
         };
 
         // parked engine의 슬롯은 그대로 유지한다. 새 슬롯을 주면 다른 창의 복원 파일을 덮을 수 있다.
-        let core_state = match parked_engine {
+        let session = match parked_engine {
             Some(e) => e,
             None => self
                 .core_state
                 .take()
                 .expect("App.core_state must be present to register a main window"),
         };
-        Ok((state, core_state))
+        Ok((state, session))
     }
 
     fn ensure_at_least_one_workspace(

@@ -48,7 +48,7 @@ View (sealed trait, : sealed::Sealed + std::any::Any)
 
 ## parked states — PTY 생존
 
-모든 윈도우가 닫혀도 PTY 세션을 잃지 않도록, `App.parked_states` 에 `(AppState, CoreState)` 를 보관한다. 새 윈도우 생성 시 옮겨 담거나 IPC 가 직접 쓴다. 윈도우가 0개여도 프로세스(트레이)는 살아 있을 수 있다 — [system-tray 정책](../design/policies/system-tray.md).
+모든 윈도우가 닫혀도 PTY 세션을 잃지 않도록, `App.parked_states` 에 `ParkedEngine` 을 보관한다. engine 과 그 id(`EngineSession`, `src/runtime/engine_session.rs`)에 창을 다시 만들 때 쓸 AppState 를 붙인 항목이다. 새 윈도우 생성 시 옮겨 담거나 IPC 가 직접 쓴다. 윈도우가 0개여도 프로세스(트레이)는 살아 있을 수 있다 — [system-tray 정책](../design/policies/system-tray.md).
 
 parked 상태에서도 engine은 살아 있으므로 레이아웃 슬롯 점유를 유지한다.
 
@@ -59,6 +59,7 @@ engine은 세 자리에 있다. 창(`MainView`), `App.parked_states`, 창에 배
 - 방문 순서는 창(`views` 순회 순서) → parked(보관 순서) → 임시 engine이다. 호출부가 필요한 자리만 고른다(`windowed_and_parked`, `windows_and_pending`, `primary` 등). 창 목록의 순서는 `HashMap` 순회 순서라 고정된 의미가 없다.
 - 한 engine은 세 자리 중 한 곳에만 있으므로 전체 순회(`all`, `sessions`)는 각 engine을 정확히 한 번 방문한다. 전역 목록 합산(`list_global`)과 슬롯 점유 계산이 같은 자원을 두 번 세지 않는 근거다. 단위 시험은 parked·임시 자리의 순서와 1회 방문을 고정한다. 창 자리는 `MainView`를 단위 시험에서 만들 수 없어 다중 창 라우팅 E2E로 간접 확인한다.
 - parked 보관과 복원은 `park`(뒤에 붙인다)·`unpark_first`(가장 먼저 보관한 항목)로 한다.
+- engine 은 생성할 때 받은 `EngineId` 를 창·parked·임시 자리를 옮겨 다녀도 유지한다. 특정 parked engine 은 보관 위치가 아니라 이 id 로 찾는다(`parked_session`, `DispatchSource::Parked`, attach mirror 출력 대상). 다른 engine 을 보관하거나 꺼내 위치가 바뀌어도 같은 engine 을 가리킨다. 창에 놓인 engine 의 id 는 MainView 가 보관한다.
 
 engine의 존재 여부는 `views`와 `parked_states`를 함께 확인한다. 창이 없다는 이유만으로 원격 attach 세션을 끊으면 안 된다. mirror 이벤트도 parked engine에 적용하며 창을 복원하면 그 상태를 표시한다([원격 세션 수명](../features/remote-attach/index.md#창-없는-상태parked에서의-세션-수명), [ADR-0061](../adr/0061-external-remote-module-and-attach-sync.md)).
 

@@ -19,10 +19,11 @@ use crate::intent::{DispatchedIntent, Intent, IntentOrigin};
 use crate::view::ui::View as _;
 
 /// 요청이 시작된 창 또는 parked 상태. 도메인 변경과 후속 처리가 같은 engine을 사용한다.
+/// parked는 engine id로 가리켜 사이에 다른 engine을 보관하거나 꺼내도 대상이 바뀌지 않는다.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum DispatchSource {
     Main(WindowId),
-    Parked(usize),
+    Parked(crate::runtime::engine_session::EngineId),
 }
 
 /// workspace 생성 결과. window_id는 호출한 쪽이 원래 engine에서 구한다.
@@ -55,9 +56,9 @@ impl App {
                 let applied = core.apply(&mut main.core_state, intent);
                 events_or_report(&mut main.state, &mut main.core_state, &origin, applied)
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
-                    anyhow::bail!("dispatch_domain_intent: parked state {idx} not found");
+            DispatchSource::Parked(id) => {
+                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
+                    anyhow::bail!("dispatch_domain_intent: parked engine {id:?} not found");
                 };
                 let applied = core.apply(engine, intent);
                 events_or_report(state, engine, &origin, applied)
@@ -373,8 +374,8 @@ impl App {
                 cascade_closed_item_restored(&mut main.state, &mut main.core_state, origin, kind);
                 main.mark_dirty();
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 cascade_closed_item_restored(state, engine, origin, kind);
@@ -396,8 +397,8 @@ impl App {
                 };
                 (&mut main.state, &mut main.core_state, Some(&mut main.base))
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 (state, engine, None)
@@ -436,8 +437,8 @@ impl App {
                 };
                 (&mut main.state, &mut main.core_state, Some(&mut main.base))
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 (state, engine, None)
@@ -483,8 +484,8 @@ impl App {
                 };
                 (&mut main.state, &mut main.core_state, Some(&mut main.base))
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 (state, engine, None)
@@ -515,8 +516,8 @@ impl App {
                 };
                 (&mut main.state, Some(&mut main.base))
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, _)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, _)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 (state, None)
@@ -546,8 +547,8 @@ impl App {
                 };
                 (&mut main.state, Some(&mut main.base))
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, _)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, _)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 (state, None)
@@ -576,8 +577,8 @@ impl App {
                 };
                 (&mut main.state, &mut main.core_state, Some(&mut main.base))
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 (state, engine, None)
@@ -612,8 +613,8 @@ impl App {
                 };
                 (&mut main.state, Some(&mut main.base))
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, _)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, _)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 (state, None)
@@ -642,8 +643,8 @@ impl App {
                 };
                 &mut main.state
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, _)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, _)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 state
@@ -664,8 +665,8 @@ impl App {
                 };
                 (&mut main.state, &mut main.core_state, Some(&mut main.base))
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 (state, engine, None)
@@ -687,8 +688,8 @@ impl App {
                 cascade_surface_closed(core, &mut main.state, &mut main.core_state, c);
                 main.mark_dirty();
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 cascade_surface_closed(core, state, engine, c);
@@ -719,8 +720,8 @@ impl App {
                 );
                 main.mark_dirty();
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 cascade_surface_split(
@@ -749,8 +750,8 @@ impl App {
                 cascade_pane_split(&mut main.state, &mut main.core_state, origin, c);
                 main.mark_dirty();
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 cascade_pane_split(state, engine, origin, c);
@@ -779,8 +780,8 @@ impl App {
                 );
                 main.mark_dirty();
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 cascade_tab_created(state, engine, pane_id, tab_id, surface_id);
@@ -809,8 +810,8 @@ impl App {
                 );
                 main.mark_dirty();
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 cascade_pane_closed_full(state, engine, pane_id, cleanup_targets, is_user_close);
@@ -841,8 +842,8 @@ impl App {
                 );
                 main.mark_dirty();
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 cascade_tab_closed_full(
@@ -872,8 +873,8 @@ impl App {
                 cascade_workspace_moved(&mut main.state, from_index, to_index);
                 main.mark_dirty();
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, _)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, _)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 cascade_workspace_moved(state, from_index, to_index);
@@ -903,8 +904,8 @@ impl App {
                 );
                 main.mark_dirty();
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, _)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, _)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 cascade_workspace_meta_updated(state, workspace_id, name, subtitle, description);
@@ -933,8 +934,8 @@ impl App {
                 );
                 main.mark_dirty();
             }
-            DispatchSource::Parked(idx) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(idx) else {
+            DispatchSource::Parked(id) => {
+                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
                     return;
                 };
                 cascade_workspace_created(state, engine, origin, 0, c);

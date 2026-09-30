@@ -80,7 +80,7 @@ use crate::plugin;
 #[cfg(feature = "gui")]
 use crate::view::ViewRegistry;
 #[cfg(feature = "gui")]
-use crate::{AppEvent, plugin, state};
+use crate::{AppEvent, plugin};
 
 /// GPU 어댑터를 찾지 못한 오류. 호출자가 downcast하여 사용자에게 안내한다.
 #[cfg(feature = "gui")]
@@ -122,7 +122,7 @@ pub(crate) struct App {
     /// Parked AppStates: preserved when all windows are closed so PTY sessions survive.
     /// Moved into new windows when created, or used directly for IPC.
     #[cfg(feature = "gui")]
-    pub(crate) parked_states: Vec<(state::AppState, crate::core::CoreState)>,
+    pub(crate) parked_states: Vec<window_access::ParkedEngine>,
     /// 첫 창의 부팅 중에만 보유한다. 완료 시 상태를 MainView로 옮긴다.
     #[cfg(feature = "gui")]
     pub(crate) boot: Option<boot_machine::BootState>,
@@ -169,8 +169,8 @@ pub(crate) struct App {
     /// 메타데이터 조회만으로도 매니저는 만들어지므로 Some 여부로 대신할 수 없다.
     #[cfg(not(feature = "gui"))]
     pub(crate) plugin_started: bool,
-    /// 창에 배정하기 전의 CoreState. 창 생성 시 MainView로 옮긴다.
-    pub(crate) core_state: Option<crate::core::CoreState>,
+    /// 창에 배정하기 전의 engine. 창 생성 시 MainView로 옮긴다.
+    pub(crate) core_state: Option<crate::runtime::engine_session::EngineSession>,
     /// VM은 전용 워커 스레드가 소유한다. 초기화 실패 시 None.
     pub(crate) lua_engine: Option<tasty_lua::LuaEngine>,
     /// 자동실행 스크립트가 일으킨 이벤트로 같은 스크립트를 다시 실행하지 않게 한다.
