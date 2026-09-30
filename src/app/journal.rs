@@ -596,11 +596,6 @@ impl JournalApplication {
     }
 
     #[cfg(feature = "gui")]
-    pub(crate) fn failed_view_streams(&self) -> impl Iterator<Item = &str> {
-        self.failed_view_writes.keys().map(String::as_str)
-    }
-
-    #[cfg(feature = "gui")]
     pub(crate) fn has_pending_view_writes(&self) -> bool {
         !self.is_halted() && (!self.queued_view_writes.is_empty() || !self.view_writes.is_empty())
     }

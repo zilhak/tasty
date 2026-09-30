@@ -91,7 +91,7 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
     poll_until(&mut journal, &mut session, |journal, _| {
         !journal.has_pending_view_writes()
     });
-    assert!(journal.failed_view_streams().next().is_none());
+    assert!(journal.failed_view_writes.is_empty());
     let bytes = std::fs::read(home.join("structure/views/slot-1/incarnation-1.json")).unwrap();
     let saved: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(saved["sequence"], final_sequence);
@@ -193,7 +193,7 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
     poll_until(&mut journal, &mut session, |journal, _| {
         !journal.has_pending_view_writes()
     });
-    assert!(journal.failed_view_streams().next().is_none());
+    assert!(journal.failed_view_writes.is_empty());
     assert!(
         home.join("structure/views/slot-1/incarnation-2.json")
             .is_file()
@@ -268,6 +268,6 @@ fn failed_view_write_retains_the_checkpoint_and_marks_its_engine_dirty() {
     poll_until(&mut journal, &mut session, |journal, _| {
         !journal.has_pending_view_writes()
     });
-    assert!(journal.failed_view_streams().next().is_none());
+    assert!(journal.failed_view_writes.is_empty());
     assert!(path.is_file());
 }
