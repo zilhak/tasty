@@ -350,7 +350,7 @@ impl App {
             .core_state
             .layout_slot
             .expect("GUI engine has a layout slot");
-        if let Err(error) = self.journal.begin_engine(
+        if let Err(error) = self.journal.begin_first_gui_engine(
             session,
             crate::runtime::journal_product::EngineSelection::Slot {
                 slot,

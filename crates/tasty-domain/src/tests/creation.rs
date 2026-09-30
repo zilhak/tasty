@@ -262,3 +262,68 @@ fn successful_creation_seed_survives_operation_compaction_and_restore_keeps_it()
         model.surfaces[&1].activation.unwrap().generation > surface.activation.unwrap().generation
     );
 }
+
+#[test]
+fn retired_engine_discards_late_preparation_and_rejects_late_installation_success() {
+    for already_authorized in [false, true] {
+        let mut model = initial(false);
+        model.engine_incarnation = 1;
+        let old_surface = model.surfaces[&1].clone();
+        let operation = OperationId("retired-candidate".into());
+        execute(&mut model, &convert("retired-candidate", "markdown", None));
+        if already_authorized {
+            execute(
+                &mut model,
+                &StructuralCommand::FinishCreation {
+                    operation: operation.clone(),
+                    result: PreparationResult::Ready { data: None },
+                },
+            );
+        }
+        execute(
+            &mut model,
+            &StructuralCommand::RetireEngine {
+                expected_incarnation: 1,
+            },
+        );
+        if already_authorized {
+            assert!(
+                decide_structure(
+                    &model,
+                    &StructuralCommand::FinishCleanup {
+                        operation: operation.clone()
+                    }
+                )
+                .is_err()
+            );
+            assert!(
+                model.operations[&operation].outcome.is_none(),
+                "unknown external installation is not relabelled successful or failed"
+            );
+        } else {
+            execute(
+                &mut model,
+                &StructuralCommand::FinishCreation {
+                    operation: operation.clone(),
+                    result: PreparationResult::Ready { data: None },
+                },
+            );
+            assert!(matches!(
+                model.operations[&operation].cleanup,
+                Some(CleanupPlan::DiscardPrepared { .. })
+            ));
+            execute(
+                &mut model,
+                &StructuralCommand::FinishCleanup {
+                    operation: operation.clone(),
+                },
+            );
+            assert!(matches!(
+                model.operations[&operation].outcome,
+                Some(OperationOutcome::Cancelled { .. })
+            ));
+        }
+        assert_eq!(model.surfaces[&1], old_surface);
+        assert!(decide_structure(&model, &convert("new-candidate", "markdown", None)).is_err());
+    }
+}

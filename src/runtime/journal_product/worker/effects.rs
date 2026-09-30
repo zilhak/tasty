@@ -73,7 +73,10 @@ pub(super) fn claim(
         .streams
         .get(stream)
         .ok_or("engine stream missing")?;
-    if operation.engine_incarnation != model.engine_incarnation || !plan.target_is_live(model) {
+    if model.engine_retired
+        || operation.engine_incarnation != model.engine_incarnation
+        || !plan.target_is_live(model)
+    {
         let transition = EffectTransition {
             effect_id,
             from: effect.state,

@@ -41,6 +41,8 @@ pub struct SplitSpec {
 pub enum DomainEvent {
     #[serde(rename = "engine.incarnation_started")]
     EngineIncarnationStarted { previous: u64, current: u64 },
+    #[serde(rename = "engine.retired")]
+    EngineRetired { incarnation: u64 },
     #[serde(rename = "category.created")]
     CategoryCreated {
         id: WorkspaceCategoryId,
@@ -253,6 +255,7 @@ impl DomainEvent {
     /// 이 빌드가 아는 모든 type tag. codec은 이 밖의 tag를 거절한다.
     pub const TAGS: &'static [&'static str] = &[
         "engine.incarnation_started",
+        "engine.retired",
         "category.created",
         "category.renamed",
         "category.moved",
@@ -291,6 +294,7 @@ impl DomainEvent {
     pub fn type_tag(&self) -> &'static str {
         match self {
             Self::EngineIncarnationStarted { .. } => "engine.incarnation_started",
+            Self::EngineRetired { .. } => "engine.retired",
             Self::CategoryCreated { .. } => "category.created",
             Self::CategoryRenamed { .. } => "category.renamed",
             Self::CategoryMoved { .. } => "category.moved",

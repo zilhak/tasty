@@ -8,7 +8,7 @@ pub(super) fn apply_event(
     retired: &mut Vec<Retired>,
 ) -> Result<()> {
     match event {
-        DomainEvent::EngineIncarnationStarted { .. } => {}
+        DomainEvent::EngineIncarnationStarted { .. } | DomainEvent::EngineRetired { .. } => {}
         DomainEvent::CategoryCreated { id, name, index } => engine
             .categories
             .insert(*index, WorkspaceCategory::new(*id, name.clone())),

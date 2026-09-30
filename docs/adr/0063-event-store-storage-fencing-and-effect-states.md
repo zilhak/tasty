@@ -1,6 +1,6 @@
 # ADR-0063: 이벤트 저장소는 payload를 journal DB에 두고 파일 잠금과 writer 세대로 쓰기를 제한한다
 
-- **Status**: Accepted — 구현 상태: payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별, 영속 ID 예약 및 projection 출력/consumer 위치 원자 확정은 `tasty-event-store`에 구현됐다. App 초기 엔진 구성·선택 slot import·자원 준비는 데이터 홈 worker에 연결 중이다. 기존 숫자 surface metadata를 피하는 예약 기준도 이 worker에서 영속 반영한다. 미이행: 일반 구조 writer 전체 합류, 효과 복구·최종 제품 활성화, 새 journal로의 payload 복사, 로그 보존·정리, 부분 consumer 위치, 모든 local/mirror ID 발급 전환, 엔진 종료·슬롯 폐기 binding 규칙.
+- **Status**: Accepted — 구현 상태: payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별, 영속 ID 예약 및 projection 출력/consumer 위치 원자 확정은 `tasty-event-store`에 구현됐다. App 초기 엔진 구성·선택 slot import·자원 준비는 데이터 홈 worker에 연결 중이다. 기존 숫자 surface metadata를 피하는 예약 기준도 이 worker에서 영속 반영한다. 미이행: 일반 구조 writer 전체 합류, 효과 복구·최종 제품 활성화, 새 journal로의 payload 복사, 로그 보존·정리, 부분 consumer 위치, 모든 local/mirror ID 발급 전환. 정상 슬롯 resume와 폐기 뒤 incarnation 전환은 App bootstrap·retirement에 연결돼 있다.
 - **Date**: 2026-09-30
 - **Tags**: event-sourcing, storage, sqlite, durability, effects, fencing
 - **Group**: foundation
@@ -111,6 +111,14 @@ domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 제품 경
 - 원격 mirror의 로컬 구조 ID도 같은 예약에서 받는다. mirror는 로컬 journal에 기록하지 않으므로 이벤트 없이 예약만 소비한다([ADR-0061](0061-external-remote-module-and-attach-sync.md)).
 - 이 절의 journal 배치와 전역 발급은 구조 journal을 제품에 연결하기 전에 정했다. 처음 결정은 값 공간을 journal 내부로 한정하고 runtime ID와의 통합을 범위 밖으로 두었다.
 
+### 슬롯 재사용과 엔진 incarnation
+
+- 정상 복원은 명시된 slot stream의 구조 ID·명령 identity·incarnation을 유지한다. 프로세스 재시작의 writer/runtime epoch는 별도로 바뀐다.
+- 복원을 끄고 창을 버릴 때는 `engine.retired`를 먼저 확정한다. 실행 중인 materialization은 기존 owner에서 마무리하고 새 활성화는 받지 않는다. App registry의 retiring 관계가 자원을 유지하며, publication 완료 뒤 그 owner를 버린다. 종료는 이 확정을 비동기로 기다린다.
+- 폐기된 슬롯을 다시 사용하거나 복원 없이 새로 시작하면 `engine.incarnation_started`로 incarnation을 올리고 새 구조를 확정한다. stream history와 ID·activation high-water는 되감지 않는다. 이전 Running/Uncertain 의무는 incarnation 변경만으로 성공·폐기 처리하지 않는다.
+- 첫 창은 journal을 읽은 뒤 미점유 활성 저장 슬롯을 우선 선택한다. 추가 창도 같은 파생 목록을 사용하고, retired 슬롯을 저장된 레이아웃 후보로 취급하지 않는다. legacy 파일의 존재·수정 시각으로 journal의 폐기 상태를 덮지 않는다.
+- 슬롯 없는 headless 새 시작은 영속 예약한 engine 번호의 새 stream을 연다. 과거 임의 stream을 선택해 실행하지 않는다.
+
 ## Consequences
 
 payload와 이벤트가 같은 SQLite transaction에 있으므로, 파일 blob과 DB commit 사이에 종료돼 참조가 끊기거나 고아 파일이 남는 경우를 따로 다루지 않아도 된다.
@@ -169,8 +177,7 @@ transaction 내부 지점의 abort와 전원 차단 수준의 쓰기 유실은 �
 - 로그 보존·정리를 설계하면 외래 키, cut 계산, snapshot+tail 재구성의 보존 경계를 함께 바꾸고 이 ADR의 schema 절을 다시 본다.
 - stream별 부분 소비자나 외부 projection 저장소가 필요해지면 checkpoint 키 형태(batch 단위 또는 stream별)와 출력 행 형식을 다시 정한다.
 - 엔진마다 journal 파일을 나눠야 하거나 여러 journal이 구조 ID를 나눠 써야 하는 요구가 생기면 ID 예약 절의 journal 배치와 발급 범위를 다시 정한다.
-- 미결: 새 창은 비어 있는 가장 낮은 슬롯을 복원하고 `restore_layout`을 끄면 종료 때 슬롯을 지우므로([ADR-0059](0059-id-targets-and-view-owned-selection.md)),
-  닫힌 엔진의 stream `structure:slot-<N>`을 다음에 슬롯 N을 받는 엔진이 이어받을 수 있다. 엔진 종료·슬롯 삭제 때 stream을 비우거나 폐기하는 규칙은 구조 journal을 제품에 연결하기 전에 정한다.
+- 슬롯 선택·폐기 정책이 바뀌면 아래 incarnation 규칙과 View checkpoint의 binding 검사를 함께 다시 본다. 과거 명령 identity·미완 효과를 슬롯 재사용 때문에 지우지 않는다.
 - 구조 kind의 `u32` 범위가 고갈에 가까워지거나 surface·PTY 외의 ID 종류가 같은 공간을 쓰게 되면 좁힘 규칙과 wire 표현을 다시 본다.
 - 여러 호스트나 여러 프로세스가 같은 journal에 써야 하는 요구가 생기면 잠금·세대 모델을 다시 정한다.
 

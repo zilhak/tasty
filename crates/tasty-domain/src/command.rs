@@ -11,6 +11,9 @@ use crate::{DomainEvent, JournalModel, Ratio};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StructuralCommand {
+    RetireEngine {
+        expected_incarnation: u64,
+    },
     OpenEngine {
         expected_incarnation: u64,
         reset_structure: bool,
@@ -152,8 +155,23 @@ pub fn decide_structure(
     model: &JournalModel,
     command: &StructuralCommand,
 ) -> Result<StructuralDecision, Rejection> {
+    if model.engine_retired
+        && !matches!(
+            command,
+            StructuralCommand::OpenEngine { .. }
+                | StructuralCommand::RetireEngine { .. }
+                | StructuralCommand::FinishCreation { .. }
+                | StructuralCommand::FinishCleanup { .. }
+                | StructuralCommand::RejectInstallation { .. }
+                | StructuralCommand::CancelUnstartedCreation { .. }
+        )
+    {
+        return Err(Rejection("engine binding has been retired".into()));
+    }
     let decision = match command {
-        StructuralCommand::OpenEngine { .. } => bootstrap::decide(model, command)?,
+        StructuralCommand::OpenEngine { .. } | StructuralCommand::RetireEngine { .. } => {
+            bootstrap::decide(model, command)?
+        }
         StructuralCommand::PrepareCreation { .. }
         | StructuralCommand::FinishCreation { .. }
         | StructuralCommand::FinishCleanup { .. }

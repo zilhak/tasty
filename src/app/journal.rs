@@ -5,6 +5,8 @@ use crate::runtime::journal_product::{
 };
 use crate::runtime::live_projection;
 mod creation;
+#[cfg(feature = "gui")]
+mod retirement;
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -14,6 +16,7 @@ struct Opening {
     ticket: Option<u64>,
     projected: bool,
     surface_floor: u32,
+    select_available_slot: bool,
 }
 
 pub(crate) struct JournalApplication {
@@ -40,6 +43,9 @@ pub(crate) struct JournalApplication {
     >,
     #[cfg(feature = "gui")]
     latest_view_sequence: u64,
+    #[cfg(feature = "gui")]
+    retirements: retirement::Retirements,
+    known_slots: std::collections::BTreeMap<u32, bool>,
     started: bool,
     next_ticket: u64,
     halted: Option<String>,
@@ -68,6 +74,9 @@ impl JournalApplication {
             failed_view_writes: Default::default(),
             #[cfg(feature = "gui")]
             latest_view_sequence: 0,
+            #[cfg(feature = "gui")]
+            retirements: Default::default(),
+            known_slots: Default::default(),
             started: false,
             next_ticket: 1,
             halted: None,
@@ -108,6 +117,7 @@ impl JournalApplication {
                 ticket: None,
                 projected: false,
                 surface_floor,
+                select_available_slot: false,
             },
         );
         Ok(())
@@ -145,6 +155,8 @@ impl JournalApplication {
                 self.submit_openings()?;
                 self.submit_restore_reads()?;
                 #[cfg(feature = "gui")]
+                self.submit_retirements()?;
+                #[cfg(feature = "gui")]
                 self.submit_view_writes()?;
                 for creation in self.creations.values_mut() {
                     creation.poll_cleanup(&self.worker)?;
@@ -161,10 +173,40 @@ impl JournalApplication {
                 Completion::Ready {
                     cut, mut bootstrap, ..
                 } => {
+                    self.known_slots.extend(bootstrap.streams.iter().filter_map(
+                        |(stream, model)| {
+                            stream
+                                .strip_prefix("structure:slot-")
+                                .and_then(|slot| slot.parse::<u32>().ok())
+                                .map(|slot| (slot, model.engine_retired))
+                        },
+                    ));
+                    let occupied: Vec<_> = sessions
+                        .iter()
+                        .map(|session| (session.id, session.core_state.layout_slot))
+                        .collect();
                     for session in sessions.iter_mut() {
                         let Some(opening) = self.opening.get_mut(&session.id) else {
                             continue;
                         };
+                        if opening.select_available_slot
+                            && let EngineSelection::Slot { slot, .. } = &mut opening.selection
+                        {
+                            if let Some(available) = self
+                                .known_slots
+                                .iter()
+                                .filter(|(_, retired)| !**retired)
+                                .map(|(slot, _)| slot)
+                                .find(|candidate| {
+                                    !occupied.iter().any(|(id, used)| {
+                                        *id != session.id && *used == Some(**candidate)
+                                    })
+                                })
+                            {
+                                *slot = *available;
+                                session.core_state.layout_slot = Some(*available);
+                            }
+                        }
                         let model = match opening.selection {
                             EngineSelection::Slot { slot, resume: true } => bootstrap
                                 .streams
@@ -207,6 +249,12 @@ impl JournalApplication {
                         let Some(stream) = stream else {
                             continue;
                         };
+                        if let Some(slot) = stream
+                            .strip_prefix("structure:slot-")
+                            .and_then(|slot| slot.parse::<u32>().ok())
+                        {
+                            self.known_slots.entry(slot).or_insert(false);
+                        }
                         let Some(events) = batch.streams.get(&stream) else {
                             continue;
                         };
@@ -264,6 +312,24 @@ impl JournalApplication {
                                     .installed(installed);
                             }
                         }
+                        if let Some(slot) = stream
+                            .strip_prefix("structure:slot-")
+                            .and_then(|slot| slot.parse::<u32>().ok())
+                        {
+                            let mut retired = predecessor.engine_retired;
+                            for event in events {
+                                match event.event {
+                                    tasty_domain::DomainEvent::EngineRetired { .. } => {
+                                        retired = true
+                                    }
+                                    tasty_domain::DomainEvent::EngineIncarnationStarted {
+                                        ..
+                                    } => retired = false,
+                                    _ => {}
+                                }
+                            }
+                            self.known_slots.insert(slot, retired);
+                        }
                         if let Some(binding) = session.journal_binding.as_mut() {
                             binding.published_cut = Some(batch.batch_id);
                             if let Some(last) = events.last() {
@@ -276,6 +342,10 @@ impl JournalApplication {
                         .map_err(|error| format!("bootstrap publication ACK: {error:?}"))?;
                 }
                 Completion::Finished { ticket, result } => {
+                    #[cfg(feature = "gui")]
+                    if self.finish_retirement(ticket, &result)? {
+                        continue;
+                    }
                     #[cfg(feature = "gui")]
                     if let Some(view) = self.view_writes.remove(&ticket) {
                         match result {
@@ -292,6 +362,10 @@ impl JournalApplication {
 
                     if let Some((engine, mut restoration)) = self.restoration_reads.remove(&ticket)
                     {
+                        #[cfg(feature = "gui")]
+                        if self.retirements.pending.contains_key(&engine) {
+                            continue;
+                        }
                         let ResultValue::Payload { reference, bytes } = result? else {
                             return Err("restore payload request returned another value".into());
                         };
@@ -443,6 +517,10 @@ impl JournalApplication {
     /// Stage selected startup resources while leaving inactive terminals and missing kinds pending.
     pub(crate) fn poll_restore_bootstrap(&mut self, session: &EngineSession) -> Result<(), String> {
         let id = session.id;
+        #[cfg(feature = "gui")]
+        if self.retirements.pending.contains_key(&id) {
+            return Ok(());
+        }
         if self.opening.contains_key(&id)
             || session.journal_binding.is_none()
             || self.creations.contains_key(&id)
@@ -500,6 +578,10 @@ impl JournalApplication {
         session: &EngineSession,
         surface_id: u32,
     ) -> Result<bool, String> {
+        #[cfg(feature = "gui")]
+        if self.retirements.pending.contains_key(&session.id) {
+            return Ok(false);
+        }
         if self.is_halted() || self.creations.contains_key(&session.id) {
             return Ok(false);
         }

@@ -223,3 +223,59 @@ fn imported_view(
         .map(Some)
         .map_err(|error| error.to_string())
 }
+
+pub(super) fn retire(
+    executor: &Executor<StructureDecider>,
+    home: &std::path::Path,
+    ticket: u64,
+    binding: EngineBinding,
+) -> Result<ResultValue, String> {
+    executor
+        .with_state(|_| ())
+        .map_err(|error| error.to_string())?;
+    {
+        let inner = executor.inner.lock().map_err(|error| error.to_string())?;
+        if inner.store.journal_id() != binding.journal_id || inner.epoch.0 != binding.runtime_epoch
+        {
+            return Err("retirement belongs to another journal runtime".into());
+        }
+    }
+    let slot = binding
+        .stream
+        .strip_prefix("structure:slot-")
+        .and_then(|slot| slot.parse::<u32>().ok());
+    let digest = serde_json::to_vec(&binding).map_err(|error| error.to_string())?;
+    let executed = executor
+        .execute(&ExecuteRequest {
+            key: Some(CommandKey {
+                caller_scope: "engine-retirement".into(),
+                idempotency_key: format!("{}/{ticket}", binding.runtime_epoch),
+            }),
+            actor: "system".into(),
+            origin: "engine-retirement".into(),
+            causation_id: None,
+            command: ResolvedCommand {
+                original_digest: digest,
+                changes: vec![StreamCommand {
+                    stream: binding.stream,
+                    command: StructuralCommand::RetireEngine {
+                        expected_incarnation: binding.incarnation,
+                    },
+                }],
+                effect_result: None,
+                cancellation: None,
+                original_results: Default::default(),
+            },
+        })
+        .map_err(|error| error.to_string())?;
+    // The legacy export is no longer a resume authority. Remove it only after durable retirement.
+    if let Some(slot) = slot {
+        let path = home.join("layouts").join(format!("{slot:02}.json"));
+        if let Err(error) = std::fs::remove_file(&path)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!("retired slot export removal {}: {error}", path.display());
+        }
+    }
+    Ok(ResultValue::Executed(executed))
+}

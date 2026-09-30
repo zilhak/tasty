@@ -72,6 +72,7 @@ pub(super) fn run(
         let mut predecessor = if matches!(
             request.work,
             Work::OpenEngine { .. }
+                | Work::RetireEngine(_)
                 | Work::Resolve(_)
                 | Work::Prepared { .. }
                 | Work::CleanupFinished { .. }
@@ -136,6 +137,7 @@ fn handle(
     work: Work,
 ) -> Result<ResultValue, String> {
     match work {
+        Work::RetireEngine(binding) => binding::retire(executor, home, ticket, binding),
         Work::OpenEngine {
             selection,
             normal_category_name,
@@ -294,7 +296,8 @@ fn handle(
                     .streams
                     .get(&view.binding.stream)
                     .is_none_or(|model| {
-                        model.engine_incarnation != view.binding.incarnation
+                        model.engine_retired
+                            || model.engine_incarnation != view.binding.incarnation
                             || model.applied.revision < view.binding.revision
                             || model.applied.batch < view.binding.published_cut
                     })

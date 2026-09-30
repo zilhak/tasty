@@ -85,6 +85,16 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
                 ));
             }
             m.engine_incarnation = current;
+            m.engine_retired = false;
+            Ok(())
+        }
+        DomainEvent::EngineRetired { incarnation } => {
+            if m.engine_incarnation != incarnation || incarnation == 0 {
+                return Err(EvolveError::InvalidFact(
+                    "retirement belongs to another engine incarnation".into(),
+                ));
+            }
+            m.engine_retired = true;
             Ok(())
         }
         DomainEvent::CategoryCreated { id, name, index } => create_category(m, id, name, index),

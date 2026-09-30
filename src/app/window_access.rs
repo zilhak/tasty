@@ -457,15 +457,19 @@ impl App {
     /// 점유를 별도로 관리하지 않고 살아 있는 engine의 슬롯을 모은다.
     /// 창에 등록되기 전 임시 engine도 포함해야 중복 배정을 피할 수 있다.
     pub(crate) fn occupied_layout_slots(&self) -> HashSet<LayoutSlotId> {
-        occupied_slots(self.engines())
+        let mut occupied = occupied_slots(self.engines());
+        occupied.extend(self.engines.retiring_slots());
+        occupied
     }
 
     /// 빈 슬롯을 고르기만 한다. engine이 만들어져야 실제 점유로 센다.
     pub(crate) fn claim_free_layout_slot(&self) -> LayoutSlotId {
-        pick_free_slot(
-            &crate::core::layout_persistence::list_slots(),
-            &self.occupied_layout_slots(),
-        )
+        let mut slots = crate::core::layout_persistence::list_slots();
+        slots.retain(|slot| !self.journal.layout_slot_retired(*slot));
+        slots.extend(self.journal.known_layout_slots());
+        slots.sort_unstable();
+        slots.dedup();
+        pick_free_slot(&slots, &self.occupied_layout_slots())
     }
 
     pub(crate) fn find_main_with_surface(&self, surface_id: u32) -> Option<WindowId> {

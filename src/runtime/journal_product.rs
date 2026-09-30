@@ -37,6 +37,7 @@ pub(crate) struct Admission {
 
 #[derive(Debug)]
 pub(crate) enum Work {
+    RetireEngine(EngineBinding),
     OpenEngine {
         selection: EngineSelection,
         normal_category_name: String,
@@ -224,6 +225,7 @@ impl Drop for JournalWorker {
 
 fn request_size(work: &Work) -> usize {
     match work {
+        Work::RetireEngine(binding) => binding.stream.len() + binding.journal_id.len() + 64,
         #[cfg(feature = "gui")]
         Work::SaveView(view) => serde_json::to_vec(view).map_or(usize::MAX, |bytes| bytes.len()),
         Work::OpenEngine {

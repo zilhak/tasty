@@ -213,6 +213,8 @@ pub struct JournalModel {
     pub applied: Applied,
     #[serde(default)]
     pub engine_incarnation: u64,
+    #[serde(default)]
+    pub engine_retired: bool,
     /// Survives operation compaction and failed or cancelled preparation.
     #[serde(default)]
     pub activation_high_water: BTreeMap<SurfaceId, u64>,

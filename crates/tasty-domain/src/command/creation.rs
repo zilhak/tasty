@@ -265,7 +265,7 @@ pub(super) fn decide(
 }
 
 fn validate_target(model: &JournalModel, plan: &CreationPlan) -> Result<()> {
-    if !plan.target_is_live(model) {
+    if model.engine_retired || !plan.target_is_live(model) {
         return Err(Rejection(
             "creation target no longer exists or its activation changed".into(),
         ));

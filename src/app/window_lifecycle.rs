@@ -391,6 +391,20 @@ impl App {
         wid: winit::window::WindowId,
         main: Box<crate::view::main::MainView>,
     ) {
+        if !self.journal.is_halted() {
+            let retiring = self.engines.of_window(wid).and_then(|id| {
+                let session = self.engines.session_mut(id)?;
+                (!session.core_state.settings.general.restore_layout)
+                    .then(|| (id, session.journal_binding.clone()))
+                    .and_then(|(id, binding)| binding.map(|binding| (id, binding)))
+            });
+            if let Some((id, binding)) = retiring {
+                self.engines.begin_retiring_window(wid);
+                self.journal.retire_engine(id, binding, true);
+                drop(main);
+                return;
+            }
+        }
         let Some(mut session) = self.engines.retire_window(wid) else {
             tracing::error!("retiring window {wid:?} without an engine relation");
             return;

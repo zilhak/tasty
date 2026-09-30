@@ -5,6 +5,28 @@ pub(super) fn decide(
     model: &JournalModel,
     command: &StructuralCommand,
 ) -> Result<StructuralDecision, Rejection> {
+    if let StructuralCommand::RetireEngine {
+        expected_incarnation,
+    } = command
+    {
+        if model.engine_incarnation != *expected_incarnation || *expected_incarnation == 0 {
+            return Err(Rejection(
+                "cannot retire a different engine incarnation".into(),
+            ));
+        }
+        return Ok(StructuralDecision {
+            events: if model.engine_retired {
+                Vec::new()
+            } else {
+                vec![DomainEvent::EngineRetired {
+                    incarnation: *expected_incarnation,
+                }]
+            },
+            effects: Vec::new(),
+            completed_command: None,
+            result: StructuralResult::Updated,
+        });
+    }
     let StructuralCommand::OpenEngine {
         expected_incarnation,
         reset_structure,
@@ -16,8 +38,9 @@ pub(super) fn decide(
     if model.engine_incarnation != *expected_incarnation {
         return Err(Rejection("engine binding changed before bootstrap".into()));
     }
+    let reset_structure = *reset_structure || model.engine_retired;
     let mut events = Vec::new();
-    let incarnation = if *reset_structure || model.engine_incarnation == 0 {
+    let incarnation = if reset_structure || model.engine_incarnation == 0 {
         let current = model
             .engine_incarnation
             .checked_add(1)
@@ -30,7 +53,7 @@ pub(super) fn decide(
     } else {
         model.engine_incarnation
     };
-    if *reset_structure {
+    if reset_structure {
         events.extend(
             model
                 .workspace_order

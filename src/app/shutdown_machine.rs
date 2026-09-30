@@ -190,13 +190,22 @@ impl App {
             .is_some_and(|shutdown| shutdown.final_view_sequence.is_none())
         {
             self.flush_layout_persistence(true);
+            if !self.journal.is_halted() {
+                for session in self.engines.all_sessions_mut() {
+                    if !session.core_state.settings.general.restore_layout
+                        && let Some(binding) = session.journal_binding.clone()
+                    {
+                        self.journal.retire_engine(session.id, binding, false);
+                    }
+                }
+            }
             self.shutdown
                 .as_mut()
                 .expect("shutdown phase")
                 .final_view_sequence = Some(self.journal.latest_view_sequence());
         }
         self.poll_journal_application();
-        if self.journal.has_pending_view_writes() {
+        if self.journal.has_pending_view_writes() || self.journal.has_pending_retirements() {
             return StepOutcome::Waiting;
         }
         tracing::info!(

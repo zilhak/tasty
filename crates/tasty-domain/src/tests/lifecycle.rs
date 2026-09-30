@@ -31,6 +31,7 @@ pub(super) fn examples() -> Vec<DomainEvent> {
             previous: 0,
             current: 1,
         },
+        DomainEvent::EngineRetired { incarnation: 1 },
         DomainEvent::OperationPrepared {
             operation: operation(),
         },
@@ -308,4 +309,50 @@ fn older_capture_completion_cannot_replace_newer_content_in_the_same_activation(
     );
     assert_eq!(model, before);
     assert_eq!(model.surfaces[&1].data, Some(DataRef(20)));
+}
+
+#[test]
+fn retired_binding_cannot_resume_its_old_structure_or_rewind_generations() {
+    let mut model = initial();
+    model.engine_incarnation = 7;
+    model.activation_high_water.insert(1, 19);
+    let old_ids = model.workspace_order.clone();
+    let retirement = decide_structure(
+        &model,
+        &StructuralCommand::RetireEngine {
+            expected_incarnation: 7,
+        },
+    )
+    .unwrap();
+    let revision = model.applied.revision.unwrap_or(0);
+    evolve(&mut model, &batch(100, revision, &retirement.events)).unwrap();
+    assert!(model.engine_retired);
+    assert_eq!(
+        model.workspace_order, old_ids,
+        "retirement preserves reconciliation evidence"
+    );
+    assert!(
+        decide_structure(
+            &model,
+            &StructuralCommand::RetireEngine {
+                expected_incarnation: 6
+            }
+        )
+        .is_err()
+    );
+    let reset = decide_structure(
+        &model,
+        &StructuralCommand::OpenEngine {
+            expected_incarnation: 7,
+            reset_structure: false,
+            normal_category_name: "Normal".into(),
+        },
+    )
+    .unwrap();
+    let revision = model.applied.revision.unwrap_or(0);
+    evolve(&mut model, &batch(101, revision, &reset.events)).unwrap();
+    assert_eq!(model.engine_incarnation, 8);
+    assert!(!model.engine_retired);
+    assert!(model.workspace_order.is_empty());
+    assert_eq!(model.activation_high_water[&1], 19);
 }

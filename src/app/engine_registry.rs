@@ -1,7 +1,7 @@
 //! App이 소유한 모든 engine과 창·parked·임시 관계의 유일한 원본.
 //!
 //! engine은 [`EngineSession`] 하나로 `sessions`에 머물고, 창을 열거나 닫아도 컬렉션을 옮기지 않는다.
-//! 창·parked·임시는 관계 상태다. 한 engine은 셋 중 정확히 하나에 속한다.
+//! 창·parked·임시·retiring은 관계 상태다. retiring owner도 확정 완료까지 같은 표에 남는다.
 //! MainView는 engine을 소유하거나 id를 들지 않고 자기 창 ID로 이 registry를 조회한다.
 //! 규칙은 [ADR-0054](../../docs/adr/0054-app-core-view-layers-and-state-ownership.md)를 따른다.
 
@@ -35,6 +35,7 @@ pub(crate) struct EngineRegistry {
     parked: Vec<ParkedView>,
     /// 창에 배정되기 전의 engine.
     pending: Option<EngineId>,
+    retiring: std::collections::HashSet<EngineId>,
 }
 
 impl EngineRegistry {
@@ -106,6 +107,26 @@ impl EngineRegistry {
     pub(crate) fn retire_window(&mut self, wid: WindowId) -> Option<EngineSession> {
         let id = self.by_window.remove(&wid)?;
         self.sessions.remove(&id)
+    }
+
+    /// Keep the sole resource owner while its slot retirement is awaiting durable publication.
+    pub(crate) fn begin_retiring_window(&mut self, wid: WindowId) -> Option<EngineId> {
+        let id = self.by_window.remove(&wid)?;
+        self.retiring.insert(id);
+        Some(id)
+    }
+
+    pub(crate) fn finish_retiring(&mut self, id: EngineId) -> Option<EngineSession> {
+        self.retiring
+            .remove(&id)
+            .then(|| self.sessions.remove(&id))
+            .flatten()
+    }
+
+    pub(crate) fn retiring_slots(&self) -> impl Iterator<Item = u32> + '_ {
+        self.retiring
+            .iter()
+            .filter_map(|id| self.sessions.get(id)?.core_state.layout_slot)
     }
 
     pub(crate) fn of_window(&self, wid: WindowId) -> Option<EngineId> {
@@ -211,6 +232,7 @@ impl EngineRegistry {
             by_window,
             parked,
             pending,
+            retiring: _,
         } = self;
         let by_id = sessions
             .values_mut()

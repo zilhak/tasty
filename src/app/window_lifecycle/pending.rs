@@ -19,6 +19,9 @@ impl App {
         if let Err(error) = self.journal.poll_bootstrap(&mut sessions) {
             tracing::error!("journal publication halted: {error}");
         }
+        for id in self.journal.take_retired_engines() {
+            drop(self.engines.finish_retiring(id));
+        }
     }
 
     pub(crate) fn poll_pending_window(&mut self) {
