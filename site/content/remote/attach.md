@@ -138,6 +138,7 @@ tasty set workspace --id 5 --clear-mapping                              # 해제
 - 원격이 보내던 화면 일부를 놓치면 "원격 화면 일부를 놓쳤습니다" <!-- en: Part of the remote screen was lost --> 토스트가 뜨고 mirror 가 스스로 다시 붙어 화면을 새로 받습니다(프로필 없이 붙인 mirror 도 같습니다). 다시 붙은 뒤에는 스크롤백에 같은 화면이 한 번 더 쌓일 수 있습니다. 클립보드 이미지 업로드 중에 이런 일이 생기면 업로드는 실패로 끝나고 다시 시도할 수 있습니다 — 원격에 이미 저장됐을 수도 있어 저절로 다시 보내지는 않습니다.
 - 클립보드 이미지를 붙여넣으면 원격으로 업로드되고 **원격 경로**가 입력됩니다. 텍스트 붙여넣기는 그대로.
 - mirror 워크스페이스에 `tasty claude spawn` 등으로 자식 에이전트를 만들 수는 없습니다. 원격 인스턴스에서 직접 띄웁니다.
+- mirror 표면의 셸을 다시 띄우거나(`tasty surface respawn-terminal`, `tasty terminal respawn`) 백그라운드 PTY 를 mirror 안에 탭으로 붙이는 것(`tasty pty attach-surface`)도 거부됩니다. 원격 터미널 자리에 내 쪽 셸이 섞이기 때문입니다. 원격 인스턴스에서 직접 실행합니다.
 - mirror 의 마지막 터미널을 닫으면 원격 워크스페이스 자체가 사라지고 연결이 끊깁니다.
 
 ## 점유 풀기 (원격 쪽에서)

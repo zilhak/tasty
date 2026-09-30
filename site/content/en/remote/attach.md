@@ -1,4 +1,4 @@
-<!-- source-hash: 0b884b527e6c -->
+<!-- source-hash: cab879587046 -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -139,6 +139,7 @@ tasty set workspace --id 5 --clear-mapping                              # remove
 - If part of what the remote was sending is lost, a "Part of the remote screen was lost" toast appears and the mirror re-attaches on its own to fetch the screen again (a mirror attached without a profile does the same). After it re-attaches, the same screen may appear once more in the scrollback. If this happens during a clipboard image upload, the upload ends as failed and you can try again — it is not resent automatically, because the remote may already have saved it.
 - Pasting a clipboard image uploads it to the remote and inputs the **remote path**. Text paste works as usual.
 - You cannot create child agents in a mirror Workspace with `tasty claude spawn` and the like. Launch them directly on the remote instance.
+- Restarting the shell of a mirror surface (`tasty surface respawn-terminal`, `tasty terminal respawn`) or attaching a background PTY as a tab inside a mirror (`tasty pty attach-surface`) is also refused, because it would put a local shell where the remote terminal is. Run them directly on the remote instance.
 - Closing the last terminal of a mirror removes the remote Workspace itself and disconnects.
 
 ## Releasing the occupation (on the remote side)

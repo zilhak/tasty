@@ -561,6 +561,79 @@ mod mirror_structural_guard_tests {
         err.downcast_ref::<MirrorStructuralBlocked>().is_some()
     }
 
+    // 입양한 PTY 탭은 원격 트리에 없으므로 mirror pane에 붙이지 않는다.
+    #[test]
+    fn adopt_into_mirror_pane_is_blocked() {
+        use crate::core::pty_registry::PtySpawnSpec;
+        let (mut core, mut engine) = build_test_core();
+        let (_a, pane) = seed(&mut engine);
+        engine.workspaces[0].mirror = true;
+        let pty_id = engine
+            .pty_registry
+            .register(
+                PtySpawnSpec {
+                    owner_agent_id: "agent-x".into(),
+                    cwd: None,
+                    command: vec![],
+                },
+                std::time::Instant::now(),
+            )
+            .expect("register headless pty");
+        engine
+            .terminals
+            .insert(pty_id, Terminal::new_detached(80, 24));
+        let tabs_before = engine.find_pane_by_id(pane).unwrap().tabs.len();
+
+        let err = core
+            .apply(
+                &mut engine,
+                DomainIntent::AdoptTerminal {
+                    pane_id: pane,
+                    pty_id,
+                },
+            )
+            .expect_err("adopt into a mirror pane must be blocked");
+        assert!(
+            is_blocked(&err),
+            "expected MirrorStructuralBlocked, got: {err}"
+        );
+        assert_eq!(
+            engine.find_pane_by_id(pane).unwrap().tabs.len(),
+            tabs_before
+        );
+        assert!(engine.pending_structural_forward.is_empty());
+        assert!(
+            engine.pty_registry.get(pty_id).is_some(),
+            "PTY 는 registry 에 남아야 한다"
+        );
+    }
+
+    // mirror surface의 detached Terminal을 로컬 셸로 바꾸지 않는다.
+    #[test]
+    fn respawn_on_mirror_surface_is_blocked() {
+        let (mut core, mut engine) = build_test_core();
+        let (a, _pane) = seed(&mut engine);
+        engine.workspaces[0].mirror = true;
+
+        let res = core.apply(
+            &mut engine,
+            DomainIntent::RespawnTerminal {
+                surface_id: a,
+                cwd: None,
+            },
+        );
+        let still_detached = engine.find_terminal_by_id(a).unwrap().is_detached();
+        // 가드가 없으면 로컬 셸이 생기므로 단언 전에 정리한다.
+        engine.terminals.remove(a);
+        let err = res.expect_err("respawn on a mirror surface must be blocked");
+        assert!(
+            is_blocked(&err),
+            "expected MirrorStructuralBlocked, got: {err}"
+        );
+        assert!(still_detached, "mirror Terminal 이 로컬 PTY 로 바뀌었다");
+        assert!(engine.pending_structural_forward.is_empty());
+    }
+
     #[test]
     fn mirror_split_and_newtab_are_blocked_without_spawning() {
         let (mut core, mut engine) = build_test_core();

@@ -200,6 +200,7 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
   그래서 mirror 워크스페이스를 대상으로 한 `terminal.spawn` 은 tab/surface 를 하나도 만들지 않고 `invalid_params` 로 즉시 거부하며, 메시지에 mirror 사유와 대안(다른 워크스페이스 사용 / 원격 인스턴스에서 직접 spawn)을 담는다.
   나머지 구조 변경은 아래 "현재 범위"대로 mirror 에서도 forward 된다 — 이 거부는 `terminal.spawn` 한 method 에만 적용된다.
 - **탭·페인 교체 이동은 forward 하지 않고 로컬에서 차단한다**: 탭 헤더 메뉴의 `탭 이동`/`페인 이동`으로 고른 교체 이동(`ReplaceTabWithTab`/`ReplacePaneWithPane`)은 source 나 target 중 하나라도 mirror 워크스페이스면 `Core::apply` 가 로컬 실행을 거부하고, 대응 `StructuralOp` 가 없어 원격으로 보내지 않는다. 사용자에게는 차단 toast(`attach.toast.mirror_structural_blocked`)만 뜬다([surface-move](../surface-move/index.md)).
+- **터미널 재시작·PTY 입양은 forward 하지 않고 로컬에서 거부한다**: mirror surface 대상 `RespawnTerminal`(`surface.respawn_terminal`·`terminal.respawn`)과 mirror pane 대상 `AdoptTerminal`(`pty.attach_surface`)은 `Core::apply` 가 `MirrorStructuralBlocked` 로 거부한다. 둘 다 로컬 PTY 를 mirror 트리에 넣는 동작이라 원격 트리와 어긋나고, 대응 `StructuralOp` 가 없어 원격으로 보내지 않는다. IPC 응답은 mirror 사유를 담은 오류이며 트리·PTY registry 는 바뀌지 않는다.
 
 **현재 범위**: surface split / pane split / 새 탭 / surface·tab·pane 닫기 / 탭 순서 변경(`MoveTab` — 탭 헤더 메뉴의 교체 이동 `탭 이동`과 다르다) / 닫은 항목 복원 / surface convert(kind 변환, `markdown.navigate`/`image.open`/host convert 팝업이 모두 이 경로를 탄다 — 변환 결과의 cwd 는 op 의 `cwd` 필드로 전달되고, 비어 있으면 원격이 대상 surface 의 실제 PTY 에서 직접 resolve 한다.
 [surface-cwd invariant §3-1](../../design/policies/cwd.md#3-1-mirror원격-attach-forward-경로도-같은-불변식-대상)) / surface 이동(move-surface)이 forward 대상이며, 성공 시 원격 실행 결과가 mirror 트리에 역반영된다.

@@ -154,6 +154,10 @@ impl CoreState {
             }
             | D::ConvertSurface {
                 surface_id: sid, ..
+            }
+            // 원격 터미널 자리를 로컬 PTY로 바꾸므로 forward하지 않고 막는다.
+            | D::RespawnTerminal {
+                surface_id: sid, ..
             } => self.find_workspace_index_for_surface(*sid).map(|(i, _)| i),
             D::MoveSurface {
                 source_surface_id,
@@ -195,6 +199,8 @@ impl CoreState {
                 ..
             }
             | D::CreateTab { pane_id: pid, .. }
+            // 입양한 로컬 PTY 탭은 원격 트리에 없다.
+            | D::AdoptTerminal { pane_id: pid, .. }
             | D::ClosePane { pane_id: pid }
             | D::MoveTab { pane_id: pid, .. } => self.find_workspace_index_for_pane(*pid),
             D::CloseTab { tab_id } => self
