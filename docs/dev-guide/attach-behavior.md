@@ -42,7 +42,7 @@ attach 는 **server**(피점유 — PTY/grid 소유)와 **client**(점유 — mi
 
 ## 초기 스냅샷 + delta
 
-attach 직후 서버가 현재 visible 화면을 `snapshot_as_vt` 로 **1회** 직렬화 push(셀 속성 + 커서 + alt-screen/DECCKM/bracketed 모드 복원). 이후 변화는 output tap delta(Data 프레임). client 는 받은 바이트를 PTY 없는 mirror 터미널(`Terminal::new_detached` + `feed_bytes`)에 먹여 같은 termwiz 파서로 grid 재구성.
+attach 직후 서버가 현재 visible 화면을 `snapshot_and_tap` 으로 tap 등록과 같은 lock 안에서 **1회** 직렬화 push(셀 속성 + 커서 + alt-screen/DECCKM/bracketed 모드 복원). 이후 변화는 output tap delta(Data 프레임). client 는 받은 바이트를 PTY 없는 mirror 터미널(`Terminal::new_detached` + `feed_bytes`)에 먹여 같은 termwiz 파서로 grid 재구성.
 
 ## workspace mux
 

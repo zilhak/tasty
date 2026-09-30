@@ -2353,3 +2353,54 @@ fn contended_lock_guess_does_not_latch() {
         "추정 갈래의 true 가 유지 상태의 근거가 되면 안 된다",
     );
 }
+
+/// reader worker처럼 다른 스레드가 상태 잠금으로 ingest하는 동안 attach 구독을 건다.
+/// 구독 시점 이전 출력은 snapshot에, 이후 출력은 tap에 정확히 한 번 들어가야 한다.
+fn attach_subscription_accounts_for_every_byte(
+    subscribe: impl Fn(&mut Terminal) -> (Vec<u8>, mpsc::Receiver<Vec<u8>>),
+) -> usize {
+    use std::sync::atomic::AtomicUsize;
+    const CHUNK: &[u8] = b"xxxxxxxx";
+    const CHUNKS: usize = 350; // 80x40 격자에 줄바꿈 없이 들어가고 tap 용량보다 작다.
+    let mut mismatches = 0;
+    for _ in 0..1000 {
+        let mut t = Terminal::new_detached(80, 40);
+        let state = Arc::clone(&t.state);
+        let fed = Arc::new(AtomicUsize::new(0));
+        let fed_in_worker = Arc::clone(&fed);
+        let feeder = std::thread::spawn(move || {
+            for _ in 0..CHUNKS {
+                tasty_utils::poison::recover_mutex(
+                    state.lock(),
+                    STATE_WHAT,
+                    &STATE_POISON_REPORTED,
+                )
+                .ingest(CHUNK);
+                fed_in_worker.fetch_add(1, Ordering::Release);
+            }
+        });
+        while fed.load(Ordering::Acquire) < CHUNKS / 4 {
+            std::hint::spin_loop();
+        }
+        let (snapshot, tap) = subscribe(&mut t);
+        feeder.join().expect("feeder");
+        let in_snapshot = snapshot.iter().filter(|&&b| b == b'x').count();
+        let tapped: usize = tap.try_iter().map(|c| c.len()).sum();
+        if in_snapshot + tapped != CHUNKS * CHUNK.len() {
+            mismatches += 1;
+        }
+    }
+    mismatches
+}
+
+#[test]
+fn snapshot_and_tap_accounts_for_output_ingested_concurrently() {
+    let mismatches = attach_subscription_accounts_for_every_byte(|t| {
+        let sub = t.snapshot_and_tap();
+        (sub.snapshot, sub.output)
+    });
+    assert_eq!(
+        mismatches, 0,
+        "snapshot과 tap 사이에 들어온 출력이 빠지거나 겹쳤다"
+    );
+}

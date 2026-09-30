@@ -475,6 +475,16 @@ impl TerminalState {
         rx
     }
 
+    /// Serialize the screen and register output and resize taps under one lock, so
+    /// no reader worker ingest can land between the snapshot and the taps.
+    pub(crate) fn snapshot_and_tap(&mut self) -> AttachSubscription {
+        AttachSubscription {
+            snapshot: self.snapshot_as_vt(),
+            output: self.add_output_tap(),
+            resize: self.add_resize_tap(),
+        }
+    }
+
     /// Registered output taps, including disconnected ones until the next ingest removes them.
     /// Public to support downstream tests, where dependency cfg(test) items are unavailable.
     pub(crate) fn output_tap_count(&self) -> usize {
@@ -660,6 +670,14 @@ impl Terminal {
         self.lock_state().add_output_tap()
     }
 
+    /// Take an attach mirror's initial screen and subscribe to later output and
+    /// resizes atomically. The Pty reader worker ingests on its own thread, so
+    /// separate [`Terminal::snapshot_as_vt`] and tap calls can drop output that
+    /// arrives between them.
+    pub fn snapshot_and_tap(&mut self) -> AttachSubscription {
+        self.lock_state().snapshot_and_tap()
+    }
+
     /// Currently registered output tap count. See
     /// [`TerminalState::output_tap_count`] for why this isn't `#[cfg(test)]`-gated.
     pub fn output_tap_count(&self) -> usize {
@@ -672,6 +690,14 @@ impl Terminal {
     pub fn add_resize_tap(&mut self) -> mpsc::Receiver<(usize, usize)> {
         self.lock_state().add_resize_tap()
     }
+}
+
+/// An attach mirror's starting point: output ingested before the subscription is
+/// in `snapshot`, everything after arrives through `output`.
+pub struct AttachSubscription {
+    pub snapshot: Vec<u8>,
+    pub output: mpsc::Receiver<Vec<u8>>,
+    pub resize: mpsc::Receiver<(usize, usize)>,
 }
 
 /// Read-only render view over a terminal's shared [`TerminalState`], exposing

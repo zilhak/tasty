@@ -53,11 +53,13 @@ impl CoreState {
 
         let cols = terminal.cols();
         let rows = terminal.rows();
-        // 메인 루프가 터미널을 단독 소유하므로 snapshot과 tap 등록 사이에 ingest가 없다.
+        // reader worker가 다른 스레드에서 ingest하므로 snapshot과 tap을 한 번의 잠금으로 건다.
         // 이후 허브에서 발생할 수 있는 전송 손실까지 막는 것은 아니다.
-        let snapshot = terminal.snapshot_as_vt();
-        let tap_rx = terminal.add_output_tap();
-        let resize_rx = terminal.add_resize_tap();
+        let tasty_terminal::AttachSubscription {
+            snapshot,
+            output: tap_rx,
+            resize: resize_rx,
+        } = terminal.snapshot_and_tap();
 
         let attached = serde_json::json!({
             "event": "attached",
@@ -277,7 +279,7 @@ impl CoreState {
     }
 
     /// workspace 연결에 터미널 snapshot과 출력·resize tap을 등록한다.
-    /// 메인 루프가 단독 소유하므로 snapshot과 tap 사이에 ingest가 없다.
+    /// snapshot과 tap은 한 번의 잠금으로 걸어 그 사이 출력이 빠지지 않게 한다.
     /// forwarder는 채널 EOF 또는 다음 push의 끊김 결과로 종료한다.
     pub(crate) fn tap_surface_for_stream(
         &mut self,
@@ -288,9 +290,11 @@ impl CoreState {
         let Some(terminal) = self.runtime.terminals.get_mut(sid) else {
             return;
         };
-        let snapshot = terminal.snapshot_as_vt();
-        let tap_rx = terminal.add_output_tap();
-        let resize_rx = terminal.add_resize_tap();
+        let tasty_terminal::AttachSubscription {
+            snapshot,
+            output: tap_rx,
+            resize: resize_rx,
+        } = terminal.snapshot_and_tap();
         let snapshot_frame = StreamFrame::new(StreamTag::Data, encode_mux(sid, &snapshot));
         let _ = hub.push(client_id, snapshot_frame); // 손실·끊김 처리는 허브에 맡기고 여기서는 재전송하지 않는다.
         let hub2 = hub.clone();
