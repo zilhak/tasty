@@ -5,6 +5,7 @@
 수신자 타입은 해석하지 않으므로 같은 이름의 다른 필드도 센다. 한계는
 docs/dev-guide/ci-gates.md의 구조 writer 래칫 절에 있다.
 
+지표는 field·terminal·subop·appstate 네 가지다.
 출력: 한 줄에 hit 하나, 탭 구분 `metric bucket file fn line kind`.
 """
 
@@ -39,6 +40,8 @@ EXCLUDED_PREFIXES = [
 EXCLUDED_FNS = {
     # 저장할 프리셋 사본의 이름을 바꾼다.
     ("src/intent/preset.rs", "store_preset"),
+    # Explorer 패널 내부 탭을 닫는다. surface 콘텐츠이며 구조가 아니다.
+    ("src/adapters/ui/egui_panels.rs", "apply_to_explorer_panel"),
 }
 
 APPSTATE_PREFIXES = ["src/state.rs", "src/state/"]
@@ -81,6 +84,12 @@ STRUCTURAL_CALLS = [
 ]
 STRUCTURAL_CALL_RE = re.compile(
     r"(?<!fn )(?<![\w])(?:" + "|".join(STRUCTURAL_CALLS) + r")\s*\(")
+# src/state 밖에서 하위 연산을 직접 부르는 곳. setter는 field 지표가 이미 센다.
+SUBOP_RE = re.compile(
+    r"\.\s*(" + "|".join(n for n in STRUCTURAL_CALLS
+                         if n not in ("set_attach_mapping", "set_category")) + r")\s*\(")
+# 수신자가 `state`이면 AppState 메서드 호출이다. 그 함수는 appstate 지표가 센다.
+APPSTATE_RECEIVER_RE = re.compile(r"\bstate\s*$")
 DIRECT_STRUCTURAL_EXTRA = [
     re.compile(r"\.\s*terminals\s*\.\s*(?:insert|remove|replace)\s*\("),
     re.compile(r"\bnext_ids\s*\.\s*next_\w+\s*\("),
@@ -203,6 +212,12 @@ def main():
                 fn = enclosing(fns, m.start())
                 if not excluded(rel, fn):
                     rows.append(("terminal", bucket, rel, fn, line_of(text, m.start()), "insert"))
+            if not any(rel.startswith(p) for p in APPSTATE_PREFIXES):
+                for m in SUBOP_RE.finditer(text):
+                    fn = enclosing(fns, m.start())
+                    if excluded(rel, fn) or APPSTATE_RECEIVER_RE.search(text[:m.start()]):
+                        continue
+                    rows.append(("subop", bucket, rel, fn, line_of(text, m.start()), m.group(1)))
         if any(rel.startswith(p) for p in APPSTATE_PREFIXES):
             for name, is_pub, bs, be in fns:
                 body = text[bs:be + 1]

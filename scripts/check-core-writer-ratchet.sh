@@ -13,7 +13,7 @@ cd "$ROOT"
 
 BASELINE="scripts/core-writer-baseline.txt"
 SCANNER="scripts/lib/core_writer_scan.py"
-METRICS=(field terminal appstate)
+METRICS=(field terminal subop appstate)
 
 MODE="check"
 case "${1:-}" in
@@ -77,6 +77,20 @@ fi
 awk -F'\t' '{ c[$1 "\t" $3 "\t" $4]++ } END { for (k in c) print k "\t" c[k] }' \
     "$WORK/rows.tsv" | LC_ALL=C sort >"$WORK/current.tsv"
 
+# 기준 파일 머리글에 기록된 지표. 여기에 없는 지표는 아직 기준을 정하지 않은 새 지표다.
+# 머리글이 없는 이전 형식은 행이 있는 지표를 기록된 것으로 본다.
+recorded_metrics() {
+    _rm=$(sed -n '/^# metrics: /{s/^# metrics: //p;q;}' "$1")
+    if [ -z "$_rm" ]; then
+        _rm=$(awk -F'\t' '!/^#/ { print $1 }' "$1" | LC_ALL=C sort -u | tr '\n' ' ')
+    fi
+    printf '%s\n' "$_rm"
+}
+
+has_metric() {
+    case " $1 " in *" $2 "*) return 0 ;; *) return 1 ;; esac
+}
+
 total_of() {
     awk -F'\t' -v m="$2" '!/^#/ && $1 == m { s += $4 } END { print s + 0 }' "$1"
 }
@@ -87,6 +101,7 @@ for m in "${METRICS[@]}"; do
     case "$m" in
         field) label="구조 필드 직접 쓰기" ;;
         terminal) label="Core::apply 밖 terminals.insert" ;;
+        subop) label="src/state 밖 구조 하위 연산 호출" ;;
         appstate) label="AppState 구조 변경 pub 함수" ;;
     esac
     by_bucket=$(awk -F'\t' -v m="$m" '$1 == m { b[$2]++ } END { for (k in b) printf "%s %d · ", k, b[k] }' \
@@ -97,7 +112,10 @@ echo
 
 if [ "$MODE" = write ]; then
     if [ -f "$BASELINE" ]; then
+        known=$(recorded_metrics "$BASELINE")
         for m in "${METRICS[@]}"; do
+            # 새 지표는 처음 기록할 때만 현재 값을 그대로 기준으로 삼는다.
+            has_metric "$known" "$m" || continue
             cur=$(total_of "$WORK/current.tsv" "$m")
             base=$(total_of "$BASELINE" "$m")
             if [ "$cur" -gt "$base" ]; then
@@ -108,6 +126,7 @@ if [ "$MODE" = write ]; then
     fi
     {
         echo "# 구조 writer 래칫 기준. scripts/check-core-writer-ratchet.sh --write-baseline 으로만 갱신한다."
+        echo "# metrics: ${METRICS[*]}"
         echo "# metric	file	fn	count"
         cat "$WORK/current.tsv"
     } >"$BASELINE"
@@ -119,6 +138,15 @@ if [ ! -f "$BASELINE" ]; then
     echo "[core-writer] 기준 파일이 없다: ${BASELINE} — 판정하지 않는다." >&2
     exit 2
 fi
+
+known=$(recorded_metrics "$BASELINE")
+for m in "${METRICS[@]}"; do
+    if ! has_metric "$known" "$m"; then
+        echo "[core-writer] 기준 파일에 지표 ${m}가 없다 — 판정하지 않는다." >&2
+        echo "  새 지표를 추가한 변경이면 위치를 확인한 뒤 --write-baseline으로 처음 한 번 기록한다." >&2
+        exit 2
+    fi
+done
 
 # 기준보다 개수가 많은 (지표, 파일, 함수)가 새 위치다.
 awk -F'\t' 'NR == FNR { if ($0 !~ /^#/) base[$1 "\t" $2 "\t" $3] = $4; next }

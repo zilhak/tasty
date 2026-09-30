@@ -1,4 +1,5 @@
 # 구조 writer 래칫 기준. scripts/check-core-writer-ratchet.sh --write-baseline 으로만 갱신한다.
+# metrics: field terminal subop appstate
 # metric	file	fn	count
 appstate	src/state/pane.rs	close_active_pane	1
 appstate	src/state/pane.rs	close_active_surface	1
@@ -41,6 +42,21 @@ field	src/state/preset_apply.rs	apply_workspace_preset	2
 field	src/state/preset_apply.rs	build_tab	1
 field	src/state/workspace.rs	close_workspace_at	1
 field	src/state/workspace.rs	move_workspace	2
+subop	src/adapters/ipc/handler/workspace_category.rs	handle_create	1
+subop	src/adapters/ipc/handler/workspace_category.rs	handle_delete	1
+subop	src/adapters/ipc/handler/workspace_category.rs	handle_move	1
+subop	src/adapters/ipc/handler/workspace_category.rs	handle_rename	1
+subop	src/adapters/ui/dialog.rs	apply_rename_category_name	1
+subop	src/adapters/ui/dialog.rs	apply_rename_new_category	1
+subop	src/adapters/ui/popup/confirm_delete_category.rs	draw_confirm_delete_category	1
+subop	src/adapters/ui/sidebar/full.rs	draw_full_sidebar	1
+subop	src/adapters/ui/tab_bar/apply.rs	apply_drag_end	1
+subop	src/app/window_lifecycle.rs	bootstrap_workspace_if_empty	1
+subop	src/core/attach_runtime.rs	execute_forwarded_structural_op	2
+subop	src/core/structural_cascade.rs	recreate_workspace_if_now_empty	1
+subop	src/intent/closed_item.rs	ensure_workspace_for_restore	1
+subop	src/view/main/redraw.rs	move_tab_via_mirror_or_local	1
+subop	src/view/main/redraw.rs	move_workspace_to_category	1
 terminal	src/adapters/ipc/handler/pty.rs	handle_spawn	1
 terminal	src/app/attach_client.rs	make_mirror_surface	1
 terminal	src/core/layout_persistence/restore.rs	restore_terminal_immediate	1
