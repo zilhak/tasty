@@ -1,31 +1,24 @@
 //! `Tick::Busy` 처리 — 모든 surface 의 busy 상태 갱신.
 
 use crate::app::App;
+use crate::view::ui::View as _;
 
 impl App {
     /// Busy tick에서 상태를 갱신하고 busy·attention·cwd 변경을 점유 클라이언트에 전송한다.
     /// 전송 지연이나 실패가 있을 수 있어 원격 반영 시각은 보장하지 않는다.
     pub(crate) fn poll_busy_states(&mut self) {
         let hub = self.stream_hub.clone();
-        for w in self.view.views.values_mut() {
-            let changed = match w.as_main_mut() {
-                Some(main) => {
-                    let mut changed = crate::core::Core::update_busy_surfaces(&mut main.core_state);
-                    // 상태바는 포커스된 surface만 표시하므로 불필요한 Git 조회를 피한다.
-                    let focused = main.state.focused_surface_id(&main.core_state);
-                    changed |= main
-                        .state
-                        .refresh_status_bar_branch(&main.core_state, focused);
-                    main.core_state.forward_busy_activity(&hub);
-                    main.core_state.forward_attention(&hub);
-                    main.core_state.forward_surface_cwd(&hub);
-                    close_stale_mouse_capture_banners(&mut main.state, &main.core_state);
-                    changed
-                }
-                None => false,
-            };
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            let mut changed = crate::core::Core::update_busy_surfaces(engine);
+            // 상태바는 포커스된 surface만 표시하므로 불필요한 Git 조회를 피한다.
+            let focused = main.state.focused_surface_id(engine);
+            changed |= main.state.refresh_status_bar_branch(engine, focused);
+            engine.forward_busy_activity(&hub);
+            engine.forward_attention(&hub);
+            engine.forward_surface_cwd(&hub);
+            close_stale_mouse_capture_banners(&mut main.state, engine);
             if changed {
-                w.mark_dirty();
+                main.mark_dirty();
             }
         }
         for engine in self.engines_mut().parked() {

@@ -7,6 +7,7 @@ use crate::AppEvent;
 use crate::adapters::ipc::handler::params;
 use crate::app::App;
 use crate::app::ipc::IpcStep;
+use crate::app::window_access::engines_mut;
 use crate::ipc as host_ipc;
 use crate::ipc::server::{IpcCommand, send_response};
 
@@ -255,17 +256,14 @@ impl App {
     fn ipc_handle_window_list(&self, cmd: &IpcCommand) -> IpcStep {
         let focused_id = self.view.focused_view_id;
         let list: Vec<_> = self
-            .view
-            .views
-            .iter()
-            .filter_map(|(id, w)| {
-                let main = w.as_main()?;
-                let mut info = host_ipc::handler::system_info_fields(&main.state, &main.core_state);
-                info["id"] = serde_json::json!(u64::from(*id));
-                info["focused"] = serde_json::json!(focused_id == Some(*id));
-                info["title"] =
-                    serde_json::json!(main.state.active_workspace(&main.core_state).name);
-                Some(info)
+            .engines()
+            .window_pairs()
+            .map(|(id, main, engine)| {
+                let mut info = host_ipc::handler::system_info_fields(&main.state, engine);
+                info["id"] = serde_json::json!(u64::from(id));
+                info["focused"] = serde_json::json!(focused_id == Some(id));
+                info["title"] = serde_json::json!(main.state.active_workspace(engine).name);
+                info
             })
             .collect();
         let response = host_ipc::protocol::JsonRpcResponse::success(
@@ -383,22 +381,19 @@ impl App {
         path: &str,
         sid: u32,
     ) -> IpcStep {
-        let owner = self.view.views.values_mut().find_map(|w| {
-            let m = w.as_main_mut()?;
-            if m.core_state.has_surface(sid) {
-                Some(m)
-            } else {
-                None
-            }
-        });
+        let owner = self
+            .engines_mut()
+            .window_pairs()
+            .find(|(_, _, engine)| engine.has_surface(sid))
+            .map(|(_, m, engine)| (m, engine));
         let response = match owner {
             None => host_ipc::protocol::JsonRpcResponse::error(
                 response_id,
                 -32602,
                 format!("Surface {sid} not found"),
             ),
-            Some(m) => {
-                let kind = m.core_state.find_surface_by_id(sid).map(|s| s.kind());
+            Some((m, engine)) => {
+                let kind = engine.find_surface_by_id(sid).map(|s| s.kind());
                 if kind == Some("terminal") {
                     m.base.gpu.pending_surface_screenshot =
                         Some((sid, std::path::PathBuf::from(path)));
@@ -694,12 +689,12 @@ impl App {
                 // 창 생성 경로가 approval_store Arc를 공유하므로 첫 MainView를 사용한다.
                 // 창이 없으면 승인 popup을 표시할 수 없어 거절한다.
                 let core = &mut self.core;
-                let main = self.view.views.values_mut().find_map(|w| w.as_main_mut());
+                let main = engines_mut!(self).window_pairs().next();
                 match main {
-                    Some(m) => host_ipc::handler::session::handle_request_permission(
+                    Some((_, m, engine)) => host_ipc::handler::session::handle_request_permission(
                         core,
                         &mut m.state,
-                        &mut m.core_state,
+                        engine,
                         caller,
                         id,
                         &cmd.request.params,

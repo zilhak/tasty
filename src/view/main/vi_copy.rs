@@ -764,7 +764,7 @@ use super::MainView;
 
 impl MainView {
     /// `pending_enter_copy_mode` 플래그를 소비하고 mode 진입을 시도한다.
-    pub(crate) fn try_enter_vi_copy_mode(&mut self) {
+    pub(crate) fn try_enter_vi_copy_mode(&mut self, engine: &mut crate::core::CoreState) {
         if !self.state.dialogs.pending_enter_copy_mode {
             return;
         }
@@ -773,10 +773,10 @@ impl MainView {
             // 이미 활성 → noop.
             return;
         }
-        let Some(sid) = self.state.focused_surface_id(&self.core_state) else {
+        let Some(sid) = self.state.focused_surface_id(&*engine) else {
             return;
         };
-        let Some(terminal) = self.state.focused_terminal(&self.core_state) else {
+        let Some(terminal) = self.state.focused_terminal(&*engine) else {
             return;
         };
         if terminal.is_alternate_screen() {
@@ -794,6 +794,7 @@ impl MainView {
     /// vi mode 가 활성일 때 키 이벤트를 가로채고 처리한다. true 면 키가 소비됨.
     pub(crate) fn try_handle_vi_key(
         &mut self,
+        engine: &mut crate::core::CoreState,
         key: &winit::keyboard::Key,
         modifiers: ModifiersState,
     ) -> bool {
@@ -803,7 +804,7 @@ impl MainView {
 
         // surface ID + terminal 의 viewport 상태를 미리 read.
         let (rows, scrollback_len) = {
-            let Some(t) = self.state.focused_terminal(&self.core_state) else {
+            let Some(t) = self.state.focused_terminal(&*engine) else {
                 // surface 가 사라짐 → vi mode 종료.
                 self.vi_copy = None;
                 return true;
@@ -812,7 +813,7 @@ impl MainView {
         };
 
         let outcome = {
-            let terminal = match self.state.focused_terminal(&self.core_state) {
+            let terminal = match self.state.focused_terminal(&*engine) {
                 Some(t) => t,
                 None => {
                     self.vi_copy = None;
@@ -827,10 +828,10 @@ impl MainView {
             ViKeyOutcome::NotHandled => return false,
             ViKeyOutcome::Consumed => {}
             ViKeyOutcome::Moved => {
-                self.vi_copy_viewport_align(rows, scrollback_len);
+                self.vi_copy_viewport_align(engine, rows, scrollback_len);
             }
             ViKeyOutcome::Yank => {
-                self.vi_copy_yank();
+                self.vi_copy_yank(engine);
             }
             ViKeyOutcome::Exit => {
                 self.vi_copy = None;
@@ -842,16 +843,16 @@ impl MainView {
                 let surface_id = self.vi_copy.as_ref().map(|v| v.surface_id).unwrap_or(0);
                 self.state.search.query = query;
                 self.state.search.surface_id = surface_id;
-                if let Some(terminal) = self.core_state.find_terminal_by_id(surface_id) {
+                if let Some(terminal) = engine.find_terminal_by_id(surface_id) {
                     self.state.search.execute(terminal);
                 }
-                Self::vi_copy_jump_to_current_match(self, rows, scrollback_len);
+                Self::vi_copy_jump_to_current_match(self, engine, rows, scrollback_len);
             }
             ViKeyOutcome::SearchNext => {
-                self.vi_copy_search_navigate(true, rows, scrollback_len);
+                self.vi_copy_search_navigate(engine, true, rows, scrollback_len);
             }
             ViKeyOutcome::SearchPrev => {
-                self.vi_copy_search_navigate(false, rows, scrollback_len);
+                self.vi_copy_search_navigate(engine, false, rows, scrollback_len);
             }
             ViKeyOutcome::InvalidRegister => {
                 let sid = self.vi_copy.as_ref().map(|v| v.surface_id).unwrap_or(0);
@@ -889,12 +890,17 @@ impl MainView {
     }
 
     /// cursor 가 viewport 밖이면 scroll 하여 정렬.
-    fn vi_copy_viewport_align(&mut self, rows: usize, scrollback_len: usize) {
+    fn vi_copy_viewport_align(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        rows: usize,
+        scrollback_len: usize,
+    ) {
         let Some(vi) = self.vi_copy.as_ref() else {
             return;
         };
         let cursor_row = vi.cursor.absolute_row;
-        let Some(terminal) = self.state.focused_terminal_mut(&mut self.core_state) else {
+        let Some(terminal) = self.state.focused_terminal_mut(&mut *engine) else {
             return;
         };
         let scroll_offset = terminal.scroll_offset();
@@ -908,7 +914,7 @@ impl MainView {
     }
 
     /// 현재 vi selection 을 클립보드에 복사하고 mode 종료.
-    fn vi_copy_yank(&mut self) {
+    fn vi_copy_yank(&mut self, engine: &mut crate::core::CoreState) {
         let Some(vi) = self.vi_copy.as_ref() else {
             return;
         };
@@ -920,7 +926,7 @@ impl MainView {
         let sel = vi.live_selection();
         let sid = sel.surface_id;
         let register = vi.active_register;
-        let text = match self.core_state.find_terminal_by_id(sid) {
+        let text = match engine.find_terminal_by_id(sid) {
             Some(t) => extract_selected_text(t, &sel),
             None => String::new(),
         };
@@ -942,7 +948,13 @@ impl MainView {
         self.vi_copy = None;
     }
 
-    fn vi_copy_search_navigate(&mut self, forward: bool, rows: usize, scrollback_len: usize) {
+    fn vi_copy_search_navigate(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        forward: bool,
+        rows: usize,
+        scrollback_len: usize,
+    ) {
         if self.state.search.matches.is_empty() {
             return;
         }
@@ -958,10 +970,15 @@ impl MainView {
         } else {
             self.state.search.prev_match();
         }
-        Self::vi_copy_jump_to_current_match(self, rows, scrollback_len);
+        Self::vi_copy_jump_to_current_match(self, engine, rows, scrollback_len);
     }
 
-    fn vi_copy_jump_to_current_match(view: &mut Self, rows: usize, scrollback_len: usize) {
+    fn vi_copy_jump_to_current_match(
+        view: &mut Self,
+        engine: &mut crate::core::CoreState,
+        rows: usize,
+        scrollback_len: usize,
+    ) {
         let m = match view
             .state
             .search
@@ -977,7 +994,7 @@ impl MainView {
                 absolute_row: m.row,
             };
         }
-        view.vi_copy_viewport_align(rows, scrollback_len);
+        view.vi_copy_viewport_align(engine, rows, scrollback_len);
     }
 
     /// `live_selection` 우선 — vi mode 의 1-cell cursor 또는 visual selection 을

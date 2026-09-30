@@ -4,10 +4,9 @@
 //! [계층 경계](../../docs/adr/0002-domain-execution-and-ports.md)를 따른다.
 
 use tasty_settings::Settings;
-use winit::window::WindowId;
 
 use crate::app::App;
-use crate::app::window_access::engines_mut;
+use crate::app::window_access::{DispatchCtx, engines_mut};
 use crate::core::AttentionKind;
 use crate::core::intent::CoreEvent;
 use crate::core::structural_cascade::{
@@ -18,12 +17,19 @@ use crate::core::structural_cascade::{
 use crate::intent::{DispatchedIntent, Intent, IntentOrigin};
 use crate::view::ui::View as _;
 
-/// 요청이 시작된 창 또는 parked 상태. 도메인 변경과 후속 처리가 같은 engine을 사용한다.
-/// parked는 engine id로 가리켜 사이에 다른 engine을 보관하거나 꺼내도 대상이 바뀌지 않는다.
+/// 요청이 시작된 engine. 도메인 변경과 후속 처리가 같은 engine을 사용한다.
+/// 창·parked 어느 관계든 engine id로 가리켜 사이에 창을 열거나 닫아도 대상이 바뀌지 않는다.
+/// 창 View와 AppState는 처리 시점에 [`resolve`](crate::app::window_access::EngineScanMut::resolve)로 찾는다.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum DispatchSource {
-    Main(WindowId),
-    Parked(crate::runtime::engine_session::EngineId),
+    Engine(crate::runtime::engine_session::EngineId),
+}
+
+impl DispatchSource {
+    pub(crate) fn engine(self) -> crate::runtime::engine_session::EngineId {
+        let Self::Engine(id) = self;
+        id
+    }
 }
 
 /// workspace 생성 결과. window_id는 호출한 쪽이 원래 engine에서 구한다.
@@ -48,22 +54,12 @@ impl App {
         };
         let origin = dispatched.origin;
         let core = &mut self.core;
-        let events = match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    anyhow::bail!("dispatch_domain_intent: main window {wid:?} not found");
-                };
-                let applied = core.apply(&mut main.core_state, intent);
-                events_or_report(&mut main.state, &mut main.core_state, &origin, applied)
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
-                    anyhow::bail!("dispatch_domain_intent: parked engine {id:?} not found");
-                };
-                let applied = core.apply(engine, intent);
-                events_or_report(state, engine, &origin, applied)
-            }
+        let id = source.engine();
+        let Some(DispatchCtx { state, engine, .. }) = engines_mut!(self).resolve(id) else {
+            anyhow::bail!("dispatch_domain_intent: engine {id:?} not found");
         };
+        let applied = core.apply(engine, intent);
+        let events = events_or_report(state, engine, &origin, applied);
         for event in events {
             self.handle_core_event(source, &origin, event);
         }
@@ -186,11 +182,8 @@ impl App {
                 }
             }
             CoreEvent::TabMoved { moved } => {
-                if moved
-                    && let DispatchSource::Main(wid) = source
-                    && let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut())
-                {
-                    main.mark_dirty();
+                if moved {
+                    self.mark_source_window_dirty(source);
                 }
             }
             CoreEvent::PaneSplit {
@@ -255,12 +248,7 @@ impl App {
                     if let Some(mgr) = self.plugin_manager.as_mut() {
                         mgr.drop_egui_mesh_frame(surface_id);
                     }
-                    if let DispatchSource::Main(wid) = source
-                        && let Some(main) =
-                            self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut())
-                    {
-                        main.mark_dirty();
-                    }
+                    self.mark_source_window_dirty(source);
                 }
             }
             ev @ CoreEvent::MoveSurfaceApplied { .. } => {
@@ -321,11 +309,7 @@ impl App {
             }
             CoreEvent::TabNameUpdated { .. } => {
                 // OSC 제목은 저장 대상이 아니므로 레이아웃 저장 대신 화면 갱신만 요청한다.
-                if let DispatchSource::Main(wid) = source
-                    && let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut())
-                {
-                    main.mark_dirty();
-                }
+                self.mark_source_window_dirty(source);
             }
             CoreEvent::LayoutSaved => {}
             CoreEvent::LayoutRestored { .. } => {
@@ -366,20 +350,18 @@ impl App {
         origin: &IntentOrigin,
         kind: crate::core::intent::RestoredKind,
     ) {
-        match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                cascade_closed_item_restored(&mut main.state, &mut main.core_state, origin, kind);
-                main.mark_dirty();
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                cascade_closed_item_restored(state, engine, origin, kind);
-            }
+        let Some(DispatchCtx {
+            state,
+            engine,
+            view,
+            ..
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
+        };
+        cascade_closed_item_restored(state, engine, origin, kind);
+        if let Some(view) = view {
+            view.mark_dirty();
         }
     }
 
@@ -390,19 +372,14 @@ impl App {
         title: String,
         body: String,
     ) {
-        let (state, engine, dirty_main) = match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                (&mut main.state, &mut main.core_state, Some(&mut main.base))
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                (state, engine, None)
-            }
+        let Some(DispatchCtx {
+            state,
+            engine,
+            view: dirty_main,
+            ..
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
         };
         if engine.settings.notification.enabled {
             let ws_id = state.active_workspace(engine).id;
@@ -430,19 +407,14 @@ impl App {
     }
 
     fn cascade_terminal_bell_ring(&mut self, source: DispatchSource, surface_id: u32) {
-        let (state, engine, dirty_main) = match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                (&mut main.state, &mut main.core_state, Some(&mut main.base))
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                (state, engine, None)
-            }
+        let Some(DispatchCtx {
+            state,
+            engine,
+            view: dirty_main,
+            ..
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
         };
         // 사용자가 등록한 Bell 훅은 알림·벨 표시 설정을 꺼도 실행한다.
         if engine.settings.notification.enabled && engine.settings.general.bell_notification {
@@ -477,19 +449,14 @@ impl App {
         surface_id: u32,
         text: String,
     ) {
-        let (state, engine, dirty_main) = match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                (&mut main.state, &mut main.core_state, Some(&mut main.base))
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                (state, engine, None)
-            }
+        let Some(DispatchCtx {
+            state,
+            engine,
+            view: dirty_main,
+            ..
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
         };
         let exec = self.core.hook_executor();
         for fired in engine
@@ -509,19 +476,14 @@ impl App {
         surface_id: u32,
         title: String,
     ) {
-        let (state, dirty_main) = match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                (&mut main.state, Some(&mut main.base))
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, _)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                (state, None)
-            }
+        let Some(DispatchCtx {
+            state,
+            engine: _,
+            view: dirty_main,
+            ..
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
         };
         state.enqueue_host_event(crate::state::PendingHostEvent::SurfaceTitleChanged {
             surface_id,
@@ -540,19 +502,14 @@ impl App {
     }
 
     fn cascade_terminal_pty_cwd_changed(&mut self, source: DispatchSource, surface_id: u32) {
-        let (state, dirty_main) = match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                (&mut main.state, Some(&mut main.base))
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, _)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                (state, None)
-            }
+        let Some(DispatchCtx {
+            state,
+            engine: _,
+            view: dirty_main,
+            ..
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
         };
         state.dispatch_intent(
             crate::core::intent::DomainIntent::SurfaceCwdChanged { surface_id }.from_system(),
@@ -570,19 +527,14 @@ impl App {
         surface_id: u32,
         exit_code: Option<i32>,
     ) {
-        let (state, engine, dirty_main) = match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                (&mut main.state, &mut main.core_state, Some(&mut main.base))
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                (state, engine, None)
-            }
+        let Some(DispatchCtx {
+            state,
+            engine,
+            view: dirty_main,
+            ..
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
         };
         tracing::debug!(
             surface_id,
@@ -606,19 +558,14 @@ impl App {
 
     /// 셸 통합 미설치 추정을 surface마다 한 번 배너로 알릴 뿐 자동 설정이나 attention 변경은 하지 않는다.
     fn cascade_terminal_shell_integration_hint(&mut self, source: DispatchSource, surface_id: u32) {
-        let (state, dirty_main) = match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                (&mut main.state, Some(&mut main.base))
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, _)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                (state, None)
-            }
+        let Some(DispatchCtx {
+            state,
+            engine: _,
+            view: dirty_main,
+            ..
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
         };
         if !state.take_first_shell_integration_hint(surface_id) {
             return;
@@ -636,19 +583,14 @@ impl App {
 
     /// OSC 52 복사 안내만 표시한다. 클립보드 쓰기는 Core가 이미 처리했다.
     fn cascade_terminal_clipboard_set(&mut self, source: DispatchSource, surface_id: u32) {
-        let state = match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                &mut main.state
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, _)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                state
-            }
+        let Some(DispatchCtx {
+            state,
+            engine: _,
+            view: _,
+            ..
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
         };
         state.toasts.push_info(
             crate::i18n::t("toast.copied_osc52"),
@@ -658,19 +600,14 @@ impl App {
 
     /// 종료 후 자원 정리·훅·알림은 공용 process_exit 처리로 전달한다.
     fn cascade_terminal_process_exited(&mut self, source: DispatchSource, surface_id: u32) {
-        let (state, engine, dirty_main) = match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                (&mut main.state, &mut main.core_state, Some(&mut main.base))
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                (state, engine, None)
-            }
+        let Some(DispatchCtx {
+            state,
+            engine,
+            view: dirty_main,
+            ..
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
         };
         super::process_exit::handle(&mut self.core, state, engine, surface_id);
         if let Some(base) = dirty_main {
@@ -680,20 +617,18 @@ impl App {
 
     fn dispatch_surface_closed_cascade(&mut self, source: DispatchSource, c: SurfaceCloseCascade) {
         let core = &mut self.core;
-        match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                cascade_surface_closed(core, &mut main.state, &mut main.core_state, c);
-                main.mark_dirty();
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                cascade_surface_closed(core, state, engine, c);
-            }
+        let Some(DispatchCtx {
+            state,
+            engine,
+            view,
+            ..
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
+        };
+        cascade_surface_closed(core, state, engine, c);
+        if let Some(view) = view {
+            view.mark_dirty();
         }
     }
 
@@ -705,34 +640,25 @@ impl App {
         pane_id: u32,
         new_surface_id: u32,
     ) {
-        match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                cascade_surface_split(
-                    &mut main.state,
-                    &mut main.core_state,
-                    origin,
-                    workspace_index,
-                    pane_id,
-                    new_surface_id,
-                );
-                main.mark_dirty();
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                cascade_surface_split(
-                    state,
-                    engine,
-                    origin,
-                    workspace_index,
-                    pane_id,
-                    new_surface_id,
-                );
-            }
+        let Some(DispatchCtx {
+            state,
+            engine,
+            view,
+            ..
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
+        };
+        cascade_surface_split(
+            state,
+            engine,
+            origin,
+            workspace_index,
+            pane_id,
+            new_surface_id,
+        );
+        if let Some(view) = view {
+            view.mark_dirty();
         }
     }
 
@@ -742,20 +668,18 @@ impl App {
         origin: &IntentOrigin,
         c: PaneSplitCascade,
     ) {
-        match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                cascade_pane_split(&mut main.state, &mut main.core_state, origin, c);
-                main.mark_dirty();
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                cascade_pane_split(state, engine, origin, c);
-            }
+        let Some(DispatchCtx {
+            state,
+            engine,
+            view,
+            ..
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
+        };
+        cascade_pane_split(state, engine, origin, c);
+        if let Some(view) = view {
+            view.mark_dirty();
         }
     }
 
@@ -766,26 +690,18 @@ impl App {
         tab_id: u32,
         surface_id: u32,
     ) {
-        match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                cascade_tab_created(
-                    &mut main.state,
-                    &main.core_state,
-                    pane_id,
-                    tab_id,
-                    surface_id,
-                );
-                main.mark_dirty();
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                cascade_tab_created(state, engine, pane_id, tab_id, surface_id);
-            }
+        let Some(DispatchCtx {
+            state,
+            engine,
+            view,
+            ..
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
+        };
+        cascade_tab_created(state, engine, pane_id, tab_id, surface_id);
+        if let Some(view) = view {
+            view.mark_dirty();
         }
     }
 
@@ -796,26 +712,18 @@ impl App {
         cleanup_targets: Vec<(u32, Option<String>)>,
         is_user_close: bool,
     ) {
-        match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                cascade_pane_closed_full(
-                    &mut main.state,
-                    &mut main.core_state,
-                    pane_id,
-                    cleanup_targets,
-                    is_user_close,
-                );
-                main.mark_dirty();
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                cascade_pane_closed_full(state, engine, pane_id, cleanup_targets, is_user_close);
-            }
+        let Some(DispatchCtx {
+            state,
+            engine,
+            view,
+            ..
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
+        };
+        cascade_pane_closed_full(state, engine, pane_id, cleanup_targets, is_user_close);
+        if let Some(view) = view {
+            view.mark_dirty();
         }
     }
 
@@ -827,34 +735,25 @@ impl App {
         cleanup_targets: Vec<(u32, Option<String>)>,
         is_user_close: bool,
     ) {
-        match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                cascade_tab_closed_full(
-                    &mut main.state,
-                    &mut main.core_state,
-                    tab_id,
-                    pane_id,
-                    cleanup_targets,
-                    is_user_close,
-                );
-                main.mark_dirty();
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                cascade_tab_closed_full(
-                    state,
-                    engine,
-                    tab_id,
-                    pane_id,
-                    cleanup_targets,
-                    is_user_close,
-                );
-            }
+        let Some(DispatchCtx {
+            state,
+            engine,
+            view,
+            ..
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
+        };
+        cascade_tab_closed_full(
+            state,
+            engine,
+            tab_id,
+            pane_id,
+            cleanup_targets,
+            is_user_close,
+        );
+        if let Some(view) = view {
+            view.mark_dirty();
         }
     }
 
@@ -865,20 +764,18 @@ impl App {
         from_index: usize,
         to_index: usize,
     ) {
-        match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                cascade_workspace_moved(&mut main.state, from_index, to_index);
-                main.mark_dirty();
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, _)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                cascade_workspace_moved(state, from_index, to_index);
-            }
+        let Some(DispatchCtx {
+            state,
+            engine: _,
+            view,
+            ..
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
+        };
+        cascade_workspace_moved(state, from_index, to_index);
+        if let Some(view) = view {
+            view.mark_dirty();
         }
     }
 
@@ -890,26 +787,18 @@ impl App {
         subtitle: Option<String>,
         description: Option<String>,
     ) {
-        match source {
-            DispatchSource::Main(wid) => {
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                cascade_workspace_meta_updated(
-                    &mut main.state,
-                    workspace_id,
-                    name,
-                    subtitle,
-                    description,
-                );
-                main.mark_dirty();
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, _)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                cascade_workspace_meta_updated(state, workspace_id, name, subtitle, description);
-            }
+        let Some(DispatchCtx {
+            state,
+            engine: _,
+            view,
+            ..
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
+        };
+        cascade_workspace_meta_updated(state, workspace_id, name, subtitle, description);
+        if let Some(view) = view {
+            view.mark_dirty();
         }
     }
 
@@ -919,27 +808,19 @@ impl App {
         origin: &IntentOrigin,
         c: WorkspaceCreatedCascade,
     ) {
-        match source {
-            DispatchSource::Main(wid) => {
-                let window_id = u64::from(wid);
-                let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
-                    return;
-                };
-                cascade_workspace_created(
-                    &mut main.state,
-                    &mut main.core_state,
-                    origin,
-                    window_id,
-                    c,
-                );
-                main.mark_dirty();
-            }
-            DispatchSource::Parked(id) => {
-                let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
-                    return;
-                };
-                cascade_workspace_created(state, engine, origin, 0, c);
-            }
+        let Some(DispatchCtx {
+            state,
+            engine,
+            view,
+            window,
+        }) = engines_mut!(self).resolve(source.engine())
+        else {
+            return;
+        };
+        let window_id = window.map_or(0, u64::from);
+        cascade_workspace_created(state, engine, origin, window_id, c);
+        if let Some(view) = view {
+            view.mark_dirty();
         }
     }
 
@@ -1091,10 +972,10 @@ impl App {
     }
 
     fn cascade_surface_completion(&mut self, surface_id: u32, kind: AttentionKind) {
-        for main in self.main_windows_iter_mut() {
-            if main.core_state.has_surface(surface_id) {
-                main.core_state.raise_attention(surface_id, kind);
-                main.core_state.mark_layout_dirty();
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            if engine.has_surface(surface_id) {
+                engine.raise_attention(surface_id, kind);
+                engine.mark_layout_dirty();
                 main.mark_dirty();
                 return;
             }
@@ -1115,13 +996,12 @@ impl App {
         surface_id: u32,
         kind_filter: Option<AttentionKind>,
     ) {
-        for main in self.main_windows_iter_mut() {
-            if main.core_state.has_surface(surface_id) {
-                if kind_filter.is_none_or(|k| main.core_state.attention_kind(surface_id) == Some(k))
-                {
-                    main.core_state.clear_attention(surface_id);
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            if engine.has_surface(surface_id) {
+                if kind_filter.is_none_or(|k| engine.attention_kind(surface_id) == Some(k)) {
+                    engine.clear_attention(surface_id);
                 }
-                main.core_state.mark_layout_dirty();
+                engine.mark_layout_dirty();
                 main.mark_dirty();
                 return;
             }
@@ -1138,10 +1018,10 @@ impl App {
     }
 
     fn cascade_surface_cwd_changed(&mut self, surface_id: u32) {
-        for main in self.main_windows_iter_mut() {
-            if main.core_state.has_surface(surface_id) {
-                main.core_state.refresh_tab_display_name(surface_id);
-                main.core_state.mark_layout_dirty();
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            if engine.has_surface(surface_id) {
+                engine.refresh_tab_display_name(surface_id);
+                engine.mark_layout_dirty();
                 main.mark_dirty();
                 return;
             }
@@ -1171,11 +1051,11 @@ impl App {
         let categories_turned_off = prev_categories_enabled == Some(true)
             && !new_settings.general.workspace_categories_enabled;
 
-        for main in self.main_windows_iter_mut() {
-            main.core_state.settings = new_settings.clone();
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            engine.settings = new_settings.clone();
             if categories_turned_off {
-                main.core_state.collapse_categories_to_normal();
-                main.core_state.layout_dirty.mark_dirty();
+                engine.collapse_categories_to_normal();
+                engine.layout_dirty.mark_dirty();
             }
             main.mark_dirty();
         }
@@ -1253,22 +1133,17 @@ impl App {
             );
             return;
         };
-        let Some(window) = self.view.views.get_mut(&wid) else {
-            return;
-        };
-        let Some(main) = window.as_main_mut() else {
+        let Some((main, engine)) = engines_mut!(self).window_pair(wid) else {
             return;
         };
 
-        let created_id =
-            main.core_state
-                .notifications
-                .add(ws_id, surface_id, title.clone(), body.clone());
+        let created_id = engine
+            .notifications
+            .add(ws_id, surface_id, title.clone(), body.clone());
         if let Some(nid) = created_id {
-            main.core_state
-                .raise_attention(surface_id, AttentionKind::Completion);
+            engine.raise_attention(surface_id, AttentionKind::Completion);
             // OS 벨과의 중복을 피하려는 TerminalBellRing 표지는 사운드에서 제외한다.
-            if main.core_state.settings.notification.sound && source != "TerminalBellRing" {
+            if engine.settings.notification.sound && source != "TerminalBellRing" {
                 self.core.sound_player().play();
             }
             main.state
@@ -1283,8 +1158,8 @@ impl App {
 
     /// 창과 parked engine에 읽음 처리를 전달한다. attention 해제 여부는 engine이 정한다.
     fn cascade_notification_read(&mut self, id: u64) {
-        for main in self.main_windows_iter_mut() {
-            main.core_state.mark_notification_read(id);
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            engine.mark_notification_read(id);
             main.mark_dirty();
         }
         for engine in self.engines_mut().parked() {
@@ -1293,8 +1168,8 @@ impl App {
     }
 
     fn cascade_all_notifications_read(&mut self) {
-        for main in self.main_windows_iter_mut() {
-            main.core_state.mark_all_notifications_read();
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            engine.mark_all_notifications_read();
             main.mark_dirty();
         }
         for engine in self.engines_mut().parked() {

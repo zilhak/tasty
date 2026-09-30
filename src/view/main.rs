@@ -40,10 +40,6 @@ use crate::{AppEvent, ClipboardContext};
 pub struct MainView {
     pub base: ViewBase,
     pub(crate) state: AppState,
-    /// AppState와 따로 빌릴 수 있도록 분리한 이 창의 CoreState.
-    pub(crate) core_state: crate::core::CoreState,
-    /// 이 창 engine의 id. engine과 창의 관계를 App 한 곳이 보관하게 되면 없어진다.
-    pub(crate) engine_id: crate::runtime::engine_session::EngineId,
     pub(crate) cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
     pub(crate) dragging_divider: Option<DividerDrag>,
     pub(crate) clipboard: Option<ClipboardContext>,
@@ -157,7 +153,7 @@ pub struct MainView {
 /// `MainView::pending_menu` 슬롯의 내용물.
 pub(crate) type PendingNativeMenuSlot = (
     crate::platform::native_menu::MenuHandle,
-    Box<dyn FnOnce(&mut MainView, Option<u32>)>,
+    Box<dyn FnOnce(&mut MainView, &mut crate::core::CoreState, Option<u32>)>,
 );
 
 /// Ctrl+V 직후 Ctrl+C를 SIGINT로 흘려보내지 않을 보호 시간.
@@ -179,29 +175,15 @@ pub(crate) enum MeshHoverTarget {
 }
 
 impl MainView {
-    /// 창을 없애고 engine을 보관할 때 View 복원 상태와 id를 붙인 engine으로 나눈다.
-    pub(crate) fn into_park_parts(
-        self,
-    ) -> (AppState, crate::runtime::engine_session::EngineSession) {
-        let session = crate::runtime::engine_session::EngineSession {
-            id: self.engine_id,
-            core_state: self.core_state,
-        };
-        (self.state, session)
-    }
-
     pub(crate) fn new(
         gpu: GpuState,
         state: AppState,
-        session: crate::runtime::engine_session::EngineSession,
         window: Arc<winit::window::Window>,
         proxy: winit::event_loop::EventLoopProxy<AppEvent>,
     ) -> Self {
         Self {
             base: ViewBase::new(gpu, window),
             state,
-            core_state: session.core_state,
-            engine_id: session.id,
             cursor_position: None,
             dragging_divider: None,
             clipboard: ClipboardContext::new(),
@@ -277,24 +259,24 @@ impl MainView {
 
     /// 현재 preedit이 있으면 원래 surface에 확정 전송하고 IME 상태를 리셋한다.
     /// 단축키 소비/포커스 전환 직전에 호출.
-    pub(crate) fn flush_ime_preedit(&mut self) {
-        ime::flush_preedit(self);
+    pub(crate) fn flush_ime_preedit(&mut self, engine: &mut crate::core::CoreState) {
+        ime::flush_preedit(self, engine);
     }
 
     /// 현재 preedit을 PTY로 보내지 않고 버린다.
     /// 팝업/오버레이가 열릴 때 사용.
-    pub(crate) fn clear_ime_preedit(&mut self) {
-        ime::clear_preedit(self);
+    pub(crate) fn clear_ime_preedit(&mut self, engine: &mut crate::core::CoreState) {
+        ime::clear_preedit(self, engine);
     }
 
     /// PTY 출력 처리 후 cursor가 움직였을 수 있을 때 preedit anchor를 재계산한다.
-    pub(crate) fn recalc_ime_preedit_anchor(&mut self) {
-        ime::recalc_anchor(self);
+    pub(crate) fn recalc_ime_preedit_anchor(&mut self, engine: &mut crate::core::CoreState) {
+        ime::recalc_anchor(self, engine);
     }
 
     /// 조합 입력 대상과 같은 순서로 plugin 팝업·mesh surface·터미널의 IME 후보창 위치를 고른다.
     /// plugin 위젯은 host의 PlatformOutput에 없으므로 mesh 프레임으로 받은 위치를 사용한다.
-    pub(crate) fn update_ime_cursor_area(&self) {
+    pub(crate) fn update_ime_cursor_area(&self, engine: &crate::core::CoreState) {
         // 무대 중에는 보이지 않는 배경 surface의 IME 위치를 사용하지 않는다.
         if self.state.fullscreen_stage_active() {
             return;
@@ -312,7 +294,7 @@ impl MainView {
         };
         let terminal_rect = self.compute_terminal_rect();
         let Some(cell_rect) = self.state.surface_cell_rect(
-            &self.core_state,
+            engine,
             terminal_rect,
             preedit.surface_id,
             preedit.anchor_col,
@@ -345,23 +327,14 @@ impl MainView {
             ),
         );
     }
-}
 
-impl View for MainView {
-    fn base(&self) -> &ViewBase {
-        &self.base
-    }
-    fn base_mut(&mut self) -> &mut ViewBase {
-        &mut self.base
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-
-    fn handle_event(&mut self, event: WindowEvent, ctx: &mut ViewCtx<'_>) -> ViewAction {
+    /// 창의 engine과 함께 창 이벤트를 처리한다. engine은 App registry가 창 ID로 찾아 넘긴다.
+    fn handle_engine_event(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        event: WindowEvent,
+        ctx: &mut ViewCtx<'_>,
+    ) -> ViewAction {
         // If a modal is active, block all input events before they reach egui.
         // Only allow non-input events (resize, redraw, scale factor, focus) through.
         if ctx.modal_active {
@@ -393,8 +366,8 @@ impl View for MainView {
         // plugin mesh 입력은 별도 전달 경로를 사용해 host가 먼저 소비하지 않게 한다.
         let egui_surface = self
             .state
-            .focused_surface_type(&self.core_state)
-            .kind_capability(&self.core_state, |d| d.consumes_egui_input);
+            .focused_surface_type(&*engine)
+            .kind_capability(&*engine, |d| d.consumes_egui_input);
 
         let is_redraw_event = matches!(&event, WindowEvent::RedrawRequested);
 
@@ -437,12 +410,12 @@ impl View for MainView {
                 } else {
                     let terminal_rect = self.compute_terminal_rect();
                     let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
-                    self.core_state.update_grid_size(cols, rows);
+                    engine.update_grid_size(cols, rows);
                     let cell_w = self.base.gpu.cell_width();
                     let cell_h = self.base.gpu.cell_height();
                     let scale_factor = self.base.gpu.scale_factor();
                     self.state.resize_all(
-                        &mut self.core_state,
+                        &mut *engine,
                         terminal_rect,
                         cell_w,
                         cell_h,
@@ -457,7 +430,7 @@ impl View for MainView {
                 self.double_tap.reset();
                 if !focused {
                     if self.ime_preedit.is_some() {
-                        self.flush_ime_preedit();
+                        self.flush_ime_preedit(engine);
                     }
                     self.base.modifiers = ModifiersState::empty();
                     self.state.clear_switch_overlay();
@@ -470,7 +443,7 @@ impl View for MainView {
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.base.modifiers = modifiers.state();
-                let mut dirty = self.update_hovered_link();
+                let mut dirty = self.update_hovered_link(engine);
                 // modifier 변화에 따라 키캡 표시 대상과 다시 그리기를 갱신한다.
                 let mods = self.base.modifiers;
                 let ctrl = mods.control_key();
@@ -481,10 +454,10 @@ impl View for MainView {
                 let (alt, option) = (mods.super_key(), mods.alt_key());
                 #[cfg(not(target_os = "macos"))]
                 let (alt, option) = (mods.alt_key(), false);
-                let kb = &self.core_state.settings.keybindings;
+                let kb = &engine.settings.keybindings;
                 if self
                     .state
-                    .update_switch_overlay(&self.core_state, kb, ctrl, shift, alt, option)
+                    .update_switch_overlay(&*engine, kb, ctrl, shift, alt, option)
                 {
                     dirty = true;
                 }
@@ -501,13 +474,13 @@ impl View for MainView {
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                self.handle_keyboard_input(&event, egui_consumed);
+                self.handle_keyboard_input(engine, &event, egui_consumed);
             }
             WindowEvent::Ime(ime_event) => {
-                self.handle_ime(ime_event, egui_consumed);
+                self.handle_ime(engine, ime_event, egui_consumed);
             }
             WindowEvent::CursorMoved { position, .. } => {
-                self.handle_cursor_moved(position, egui_consumed);
+                self.handle_cursor_moved(engine, position, egui_consumed);
             }
             WindowEvent::CursorLeft { .. } => {
                 self.handle_cursor_left();
@@ -517,10 +490,16 @@ impl View for MainView {
                 button,
                 ..
             } => {
-                self.handle_mouse_input(button_state, button, egui_consumed, menu_dismiss_swallow);
+                self.handle_mouse_input(
+                    engine,
+                    button_state,
+                    button,
+                    egui_consumed,
+                    menu_dismiss_swallow,
+                );
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                self.handle_mouse_wheel(delta, egui_consumed);
+                self.handle_mouse_wheel(engine, delta, egui_consumed);
             }
             WindowEvent::HoveredFile(path) => {
                 self.handle_hovered_file(path);
@@ -532,7 +511,7 @@ impl View for MainView {
                 self.handle_dropped_file(path);
             }
             WindowEvent::RedrawRequested => {
-                self.handle_redraw(ctx.event_loop, ctx.plugin_manager, ctx.stream_hub);
+                self.handle_redraw(engine, ctx.event_loop, ctx.plugin_manager, ctx.stream_hub);
             }
             _ => {}
         }
@@ -542,6 +521,29 @@ impl View for MainView {
         }
 
         ViewAction::None
+    }
+}
+
+impl View for MainView {
+    fn base(&self) -> &ViewBase {
+        &self.base
+    }
+    fn base_mut(&mut self) -> &mut ViewBase {
+        &mut self.base
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn handle_event(&mut self, event: WindowEvent, ctx: &mut ViewCtx<'_>) -> ViewAction {
+        let Some(session) = ctx.engine.take() else {
+            tracing::warn!("main window event without an engine: {event:?}");
+            return ViewAction::None;
+        };
+        self.handle_engine_event(&mut session.core_state, event, ctx)
     }
 
     fn render(&mut self) {

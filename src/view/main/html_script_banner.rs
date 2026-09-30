@@ -13,8 +13,8 @@ use super::MainView;
 
 impl MainView {
     /// 호스트가 이 surface의 webview에 URL을 넣었다.
-    pub(super) fn note_host_webview_load(&self, sid: u32) {
-        if let Some(rs) = self.find_remote_surface(sid) {
+    pub(super) fn note_host_webview_load(&self, engine: &crate::core::CoreState, sid: u32) {
+        if let Some(rs) = self.find_remote_surface(engine, sid) {
             rs.with_html_script(|st| st.on_host_load_requested());
         }
     }
@@ -32,11 +32,15 @@ impl MainView {
 
     /// 포커스 전이를 사용자 선택으로 알리고 html surface마다 배너 단계를 갱신한다.
     /// 단계가 바뀌면 다음 프레임에 egui가 배너를 다시 그리도록 dirty를 세운다.
-    pub(super) fn update_html_script_banners(&mut self, all_html_ids: &[u32]) {
-        self.note_user_selection();
+    pub(super) fn update_html_script_banners(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        all_html_ids: &[u32],
+    ) {
+        self.note_user_selection(engine);
         let mut phases = std::collections::HashMap::new();
         for &sid in all_html_ids {
-            let Some(phase) = self.update_html_script_banner(sid) else {
+            let Some(phase) = self.update_html_script_banner(engine, sid) else {
                 continue;
             };
             if phase != BannerPhase::Hidden {
@@ -50,14 +54,14 @@ impl MainView {
     }
 
     /// 포커스된 surface가 바뀌었으면 새 surface에 사용자 선택을 알린다.
-    fn note_user_selection(&mut self) {
-        let focused = self.state.focused_surface_id(&self.core_state);
+    fn note_user_selection(&mut self, engine: &mut crate::core::CoreState) {
+        let focused = self.state.focused_surface_id(&*engine);
         let selected = match self.html_script_seen_focus.replace(focused) {
             Some(prev) if prev != focused => focused,
             _ => None,
         };
         if let Some(sid) = selected
-            && let Some(rs) = self.find_remote_surface(sid)
+            && let Some(rs) = self.find_remote_surface(engine, sid)
             && rs.kind_static == "html"
         {
             tracing::debug!("html script banner: surface {sid} selected by the user");
@@ -66,9 +70,13 @@ impl MainView {
     }
 
     /// html surface 하나의 배너 단계를 갱신하고 바뀌었으면 기록한다.
-    fn update_html_script_banner(&self, sid: u32) -> Option<BannerPhase> {
+    fn update_html_script_banner(
+        &self,
+        engine: &crate::core::CoreState,
+        sid: u32,
+    ) -> Option<BannerPhase> {
         let rs = self
-            .find_remote_surface(sid)
+            .find_remote_surface(engine, sid)
             .filter(|rs| rs.kind_static == "html")?;
         let phase = rs.with_html_script(|st| st.update_banner());
         let before = self

@@ -73,15 +73,15 @@ impl MainView {
     /// 합성과 같은 surface 영역으로 포인터 대상을 찾는다.
     pub(super) fn egui_mesh_target_at(
         &self,
+        engine: &crate::core::CoreState,
         x: f32,
         y: f32,
     ) -> Option<(u32, String, PhysicalRect)> {
         let terminal_rect = self.compute_terminal_rect();
-        for (_pane_id, _pane_rect, regions) in self.state.surface_regions(
-            &self.core_state,
-            terminal_rect,
-            self.base.gpu.scale_factor(),
-        ) {
+        for (_pane_id, _pane_rect, regions) in
+            self.state
+                .surface_regions(engine, terminal_rect, self.base.gpu.scale_factor())
+        {
             for r in regions {
                 if r.rect.contains(PhysicalPx(x), PhysicalPx(y))
                     && let Some(ms) = r.surface.as_any().downcast_ref::<EguiMeshSurface>()
@@ -94,12 +94,12 @@ impl MainView {
     }
 
     /// wire에 전달할 색·is_light·UI 배율. 현재 reduced_motion은 포함하지 않는다.
-    pub(super) fn mesh_theme_snapshot(&self) -> ThemeWire {
+    pub(super) fn mesh_theme_snapshot(&self, engine: &crate::core::CoreState) -> ThemeWire {
         let theme = crate::theme::theme();
         ThemeWire {
             colors: theme.to_colors(),
             is_light: theme.is_light,
-            ui_zoom: self.core_state.settings.appearance.ui_scale_factor(),
+            ui_zoom: engine.settings.appearance.ui_scale_factor(),
         }
     }
 
@@ -189,9 +189,12 @@ impl MainView {
     }
 
     /// 포커스된 EguiMeshSurface의 ID. 다른 종류에는 입력을 전달하지 않는다.
-    pub(crate) fn focused_egui_mesh_surface_id(&self) -> Option<u32> {
-        let sid = self.state.focused_surface_id(&self.core_state)?;
-        let surface = self.core_state.find_surface_by_id(sid)?;
+    pub(crate) fn focused_egui_mesh_surface_id(
+        &self,
+        engine: &crate::core::CoreState,
+    ) -> Option<u32> {
+        let sid = self.state.focused_surface_id(engine)?;
+        let surface = engine.find_surface_by_id(sid)?;
         surface
             .as_any()
             .downcast_ref::<EguiMeshSurface>()
@@ -232,10 +235,14 @@ impl MainView {
     }
 
     /// 이 창의 surface가 무효화됐으면 다음 컨텍스트 전송을 요청한다. 다른 창의 ID는 무시한다.
-    pub(crate) fn mark_surface_invalidated(&mut self, surface_id: u32) -> bool {
+    pub(crate) fn mark_surface_invalidated(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        surface_id: u32,
+    ) -> bool {
         let exists = self
             .state
-            .egui_mesh_surfaces_existing(&self.core_state)
+            .egui_mesh_surfaces_existing(&*engine)
             .iter()
             .any(|(sid, _)| *sid == surface_id);
         if !exists {
@@ -250,19 +257,22 @@ impl MainView {
 
     /// 활성 workspace 의 egui-mesh surface 들에 렌더 컨텍스트를 forward.
     /// [`MainView::handle_redraw`] 가 합성(`gpu.render`) 직전에 부른다.
-    pub(super) fn forward_egui_mesh_context(&mut self, mgr: &PluginManager) {
+    pub(super) fn forward_egui_mesh_context(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        mgr: &PluginManager,
+    ) {
         let terminal_rect = self.compute_terminal_rect();
         let ppp = self.base.gpu.scale_factor();
-        let focused = self.state.focused_surface_id(&self.core_state);
+        let focused = self.state.focused_surface_id(&*engine);
         let modifiers = self.mesh_modifiers();
-        let current_theme = self.mesh_theme_snapshot();
+        let current_theme = self.mesh_theme_snapshot(engine);
 
         let mut targets: Vec<MeshTarget> = Vec::new();
-        for (_pane_id, _pane_rect, regions) in self.state.surface_regions(
-            &self.core_state,
-            terminal_rect,
-            self.base.gpu.scale_factor(),
-        ) {
+        for (_pane_id, _pane_rect, regions) in
+            self.state
+                .surface_regions(&*engine, terminal_rect, self.base.gpu.scale_factor())
+        {
             for r in regions {
                 if let Some(ms) = r.surface.as_any().downcast_ref::<EguiMeshSurface>() {
                     targets.push(MeshTarget {
@@ -278,7 +288,7 @@ impl MainView {
         }
 
         // 숨겨진 surface 상태도 보존하고 레이아웃에서 사라진 것만 정리한다.
-        let existing = self.state.egui_mesh_surfaces_existing(&self.core_state);
+        let existing = self.state.egui_mesh_surfaces_existing(&*engine);
         let live: HashSet<u32> = existing.iter().map(|e| e.0).collect();
         self.egui_mesh.retain(|sid, _| live.contains(sid));
 
@@ -404,11 +414,12 @@ impl MainView {
     /// 기존 surface의 새 구독·복구 요청은 pending_full에 넣고 해당 tick의 중계를 생략한다.
     pub(super) fn forward_mesh_to_attach_subscribers(
         &mut self,
+        engine: &mut crate::core::CoreState,
         mgr: &PluginManager,
         stream_hub: &StreamHub,
     ) {
-        for sid in self.core_state.mesh_mirror.active_surface_ids() {
-            let Some(ctx) = self.core_state.mesh_mirror.get(sid) else {
+        for sid in engine.mesh_mirror.active_surface_ids() {
+            let Some(ctx) = engine.mesh_mirror.get(sid) else {
                 continue;
             };
             let client_id = ctx.client_id;
@@ -418,13 +429,13 @@ impl MainView {
             let theme = ctx.theme.clone();
             let focused = ctx.focused;
 
-            let need_full = self.core_state.mesh_mirror.take_need_full_textures(sid);
+            let need_full = engine.mesh_mirror.take_need_full_textures(sid);
             // 컨텍스트 전송은 기존 로컬 경로가 맡으며 여기서는 변경 표시만 비운다.
-            let _ = self.core_state.mesh_mirror.take_dirty(sid);
+            let _ = engine.mesh_mirror.take_dirty(sid);
 
             if mgr.egui_mesh_frame(sid).is_none() {
-                let Some(ms) = self.core_state.find_egui_mesh_surface(sid) else {
-                    self.core_state.mesh_mirror.remove(sid);
+                let Some(ms) = engine.find_egui_mesh_surface(sid) else {
+                    engine.mesh_mirror.remove(sid);
                     continue;
                 };
                 let plugin_id = ms.plugin_id.clone();
@@ -467,7 +478,7 @@ impl MainView {
             }
 
             crate::plugin_bridge::mesh_forward::relay_mesh_frame_if_new(
-                &mut self.core_state,
+                &mut *engine,
                 mgr,
                 stream_hub,
                 sid,

@@ -151,7 +151,7 @@ fn window_resize_does_not_touch_the_grid_during_a_stage() {
         "gpu.resize 가 무대 게이트 안으로 들어갔다 — GPU 서페이스 크기는 무대 여부와 \
          무관하게 창을 따라가야 한다."
     );
-    for after_gate in ["self.core_state.update_grid_size(", ".resize_all("] {
+    for after_gate in ["engine.update_grid_size(", ".resize_all("] {
         let at = arm
             .find(after_gate)
             .unwrap_or_else(|| panic!("resize 이벤트 arm 에 `{after_gate}` 가 없다"));

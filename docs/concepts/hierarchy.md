@@ -33,7 +33,7 @@ CoreState   도메인 트리 — headless 에서도 구성·동작
             └── Surface   최하위. 타입(Terminal/Markdown/…)을 가짐.
 ```
 
-GUI 에서는 `MainView`(View) 가 이 `CoreState` 를 호스팅·렌더한다. 윈도우가 여럿이면 각 MainView 가 자기 `CoreState` 를 가진다. headless 엔 MainView 없이 `CoreState` 만 존재한다.
+GUI 에서는 `MainView`(View) 가 이 `CoreState` 를 호스팅·렌더한다. 윈도우가 여럿이면 각 윈도우에 `CoreState` 가 하나씩 연결된다. `CoreState` 는 App 이 소유하고 MainView 에 넘겨 준다([multi-window](../architecture/multi-window.md#engine-registry와-parked--pty-생존)). headless 엔 MainView 없이 `CoreState` 만 존재한다.
 
 - **Workspace** — 도메인의 최상위 컨테이너. (GUI 에선) 한 MainView 가 여러 워크스페이스를 갖고 사이드바에서 전환한다.
 - **Pane** — 독립적인 탭 바를 가진 화면 영역. 위치는 **상위 레이아웃**으로 결정되고 탭 전환과 무관하게 고정된다. tmux/iTerm2 에 대응 개념이 없는 tasty 고유 설계.

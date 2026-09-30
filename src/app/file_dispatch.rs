@@ -27,14 +27,11 @@ impl App {
             Some(rid) => self.find_main_with_resource(rid),
             None => self.view.focused_view_id,
         };
-        if let Some(main) = window
-            .and_then(|id| self.view.views.get_mut(&id))
-            .and_then(|view| view.as_main_mut())
-        {
+        if let Some((main, engine)) = window.and_then(|id| engines_mut!(self).window_pair(id)) {
             crate::file::dispatch::apply_identify_result(
                 &mut self.core,
                 &mut main.state,
-                &mut main.core_state,
+                engine,
                 target,
                 detector,
                 origin_surface_id,

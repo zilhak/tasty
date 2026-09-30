@@ -41,7 +41,7 @@ pub(crate) fn dispatch_paste(w: &mut MainView, surface_id: u32, bracketed: bool,
 }
 
 impl MainView {
-    pub fn paste_to_terminal(&mut self) {
+    pub fn paste_to_terminal(&mut self, engine: &mut crate::core::CoreState) {
         let text = match &mut self.clipboard {
             Some(cb) => cb.get_text(),
             None => None,
@@ -49,10 +49,10 @@ impl MainView {
         if let Some(text) = text
             && !text.is_empty()
         {
-            let surface_id = self.state.focused_surface_id(&self.core_state);
+            let surface_id = self.state.focused_surface_id(&*engine);
             let bracketed = self
                 .state
-                .focused_terminal(&self.core_state)
+                .focused_terminal(&*engine)
                 .map(|t| t.bracketed_paste());
             if let (Some(sid), Some(bracketed)) = (surface_id, bracketed) {
                 dispatch_paste(self, sid, bracketed, text);
@@ -68,22 +68,21 @@ impl MainView {
         let Some(image) = image else {
             return;
         };
-        let Some(sid) = self.state.focused_surface_id(&self.core_state) else {
+        let Some(sid) = self.state.focused_surface_id(&*engine) else {
             return;
         };
         let Some(bracketed) = self
             .state
-            .focused_terminal(&self.core_state)
+            .focused_terminal(&*engine)
             .map(|t| t.bracketed_paste())
         else {
             return;
         };
 
         // mirror에는 로컬 파일 경로를 쓰지 않고 업로드 뒤 원격 경로를 삽입한다.
-        let mirror_ws_id = self
-            .core_state
+        let mirror_ws_id = engine
             .find_workspace_index_for_surface(sid)
-            .and_then(|(idx, _)| self.core_state.workspaces.get(idx))
+            .and_then(|(idx, _)| engine.workspaces.get(idx))
             .and_then(|ws| ws.mirror.then_some(ws.id));
 
         match mirror_ws_id {
@@ -91,15 +90,15 @@ impl MainView {
                 // PNG를 메모리에서 인코딩해 App의 비동기 업로드 큐에 넣는다.
                 match encode_clipboard_image_as_png(&image) {
                     Ok(png_bytes) => {
-                        self.core_state.pending_image_uploads.push(
-                            crate::core::PendingImageUpload {
+                        engine
+                            .pending_image_uploads
+                            .push(crate::core::PendingImageUpload {
                                 mirror_ws_id: ws_id,
                                 surface_id: sid,
                                 bracketed,
                                 file_name: clipboard_image_file_name(),
                                 png_bytes,
-                            },
-                        );
+                            });
                         self.last_terminal_paste_at = Some(std::time::Instant::now());
                     }
                     Err(e) => {

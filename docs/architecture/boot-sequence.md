@@ -84,8 +84,8 @@ finish_boot (Ready):
   [shutdown-sequence](shutdown-sequence.md).
 - **AppEvent** 는 종료 계열(Shutdown/QuitRequested)만 즉시 처리하고 나머지는
   `BootState.pending_events` 에 지연 → Ready 후 도착 순서대로 재생한다. 특히
-  `TerminalOutput` 을 부팅 중 소비하면 대상 engine 이 아직 views 밖
-  (`App.core_state`)이라 waker dedup 게이트가 닫힌 채 wake 가 유실된다.
+  `TerminalOutput` 을 부팅 중 소비하면 대상 engine 이 아직 창에 붙기 전의 임시 관계
+  (`App.engines`)에 있어 waker dedup 게이트가 닫힌 채 wake 가 유실된다.
 - **IPC** 는 서버 자체가 `finish_boot` 에서 시작하므로 부팅 중 유입이 구조적으로
   없다. `about_to_wait` 의 steady-state 파이프라인(plugin pump / intent drain 등)도
   부팅 미완 동안 타지 않는다.

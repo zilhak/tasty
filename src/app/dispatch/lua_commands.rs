@@ -2,6 +2,7 @@
 
 use crate::adapters::ipc::handler::build_engine_tree;
 use crate::app::App;
+use crate::app::window_access::engines_mut;
 use crate::view::ui::View;
 use tasty_lua::{HostCommand, LuaSnapshot};
 
@@ -57,12 +58,12 @@ impl App {
             if pending.result != Some(true) {
                 continue; // 취소 — 폐기(이미 take 됨).
             }
-            if let Some(main) = self.view.views.get_mut(&id).and_then(|w| w.as_main_mut()) {
-                main.core_state
+            if let Some((main, engine)) = engines_mut!(self).window_pair(id) {
+                engine
                     .settings
                     .scripts
                     .update_hash(&pending.script_id, pending.new_hash.clone());
-                if let Err(e) = main.core_state.settings.save() {
+                if let Err(e) = engine.settings.save() {
                     tracing::warn!(target: "tasty_lua", "script hash persist failed: {e}");
                 }
                 main.mark_dirty();

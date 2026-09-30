@@ -60,16 +60,8 @@ pub(crate) trait View: sealed::Sealed + std::any::Any {
         self.mark_dirty_from(RepaintSource::Interactive);
     }
 
-    /// 요청 원인에 따라 redraw를 미루되 dirty는 즉시 설정한다.
-    /// 미룬 시각은 about_to_wait에서 WaitUntil로 예약한다.
+    /// 요청 원인에 따라 redraw를 미루되 dirty는 즉시 설정한다. 규칙은 [`ViewBase::mark_dirty_from`]과 같다.
     fn mark_dirty_from(&mut self, source: RepaintSource) {
-        let base = self.base_mut();
-        base.dirty = true;
-        if base
-            .repaint
-            .admit(source, std::time::Instant::now(), &base.winit)
-        {
-            base.winit.request_redraw();
-        }
+        self.base_mut().mark_dirty_from(source);
     }
 }

@@ -1,50 +1,33 @@
 //! 모달을 제외한 MainView와 engine의 대상 자원을 찾는다.
 //!
-//! engine은 세 자리에 있다. 창(MainView), 창을 모두 닫아 보관한 parked 항목,
-//! 창에 배정되기 전의 임시 `App.core_state`다. 어느 자리에서든 [`EngineId`]로 식별한다. engine만 다루는 순회는
+//! engine은 모두 App의 [`EngineRegistry`]에 있고 창·parked·임시는 관계 상태다.
+//! 어느 관계든 [`EngineId`]로 식별한다. engine만 다루는 순회는
 //! [`EngineScan`]·[`EngineScanMut`]을 거친다. 창 View 작업이 함께 필요한 창 루프와
-//! 창 ID로 고른 engine 접근은 MainView의 `core_state`를 직접 쓴다.
-//! engine 소유 구조가 바뀌면 이 두 타입과 [`engines_mut!`], 그리고 그 창 루프와
-//! 창 ID 접근을 함께 고친다.
+//! 창 ID로 고른 engine 접근은 `window_pairs`·`window_pair`로 MainView와 engine을 함께 빌린다.
+//! engine 소유 구조가 바뀌면 이 두 타입과 [`engines_mut!`]를 함께 고친다.
 
 use std::collections::{HashMap, HashSet};
 
 use winit::window::WindowId;
 
 use crate::app::App;
+use crate::app::engine_registry::{EngineRegistry, ParkedView};
 use crate::core::CoreState;
 use crate::core::layout_persistence::LayoutSlotId;
-use crate::runtime::engine_session::{EngineId, EngineSession};
+use crate::runtime::engine_session::EngineId;
 use crate::state::AppState;
 use crate::view;
+use crate::view::main::MainView;
 
 type ViewMap = HashMap<WindowId, Box<dyn view::ui::View>>;
 
-/// 창이 없어진 engine과 창을 다시 열 때 쓸 View 상태.
-pub(crate) struct ParkedEngine {
-    pub(crate) session: EngineSession,
-    pub(crate) view_restore: AppState,
-}
-
-#[cfg(test)]
-impl ParkedEngine {
-    /// 시험용 `test_state()` 쌍에 새 id를 붙여 보관 항목으로 만든다.
-    pub(crate) fn from_test_state((view_restore, core_state): (AppState, CoreState)) -> Self {
-        Self {
-            session: EngineSession::new(core_state),
-            view_restore,
-        }
-    }
-}
-
-/// App의 engine 자리 필드만 가변으로 빌린다.
+/// App의 View·engine 필드만 가변으로 빌린다.
 /// `&mut self` 메서드와 달리 같은 함수에서 `self.core` 같은 다른 필드를 함께 빌릴 수 있다.
 macro_rules! engines_mut {
     ($app:expr) => {
         $crate::app::window_access::EngineScanMut::from_fields(
             &mut $app.view.views,
-            &mut $app.parked_states,
-            &mut $app.core_state,
+            &mut $app.engines,
         )
     };
 }
@@ -53,72 +36,73 @@ pub(crate) use engines_mut;
 /// 창·parked·임시 engine을 읽기 전용으로 순회한다.
 ///
 /// 방문 순서는 창(`views` 순회 순서) → parked(보관 순서) → 임시 engine이다.
-/// 한 engine은 세 자리 중 한 곳에만 있으므로 [`all`](Self::all)은 각 engine을 정확히 한 번 방문한다.
+/// 한 engine은 세 관계 중 한 곳에만 있으므로 [`all`](Self::all)은 각 engine을 정확히 한 번 방문한다.
 /// 모달 View는 engine이 없어 건너뛴다.
 #[derive(Clone, Copy)]
 pub(crate) struct EngineScan<'a> {
     views: &'a ViewMap,
-    parked: &'a [ParkedEngine],
-    pending: Option<&'a CoreState>,
+    engines: &'a EngineRegistry,
 }
 
 impl<'a> EngineScan<'a> {
-    pub(crate) fn from_fields(
-        views: &'a ViewMap,
-        parked: &'a [ParkedEngine],
-        pending: Option<&'a CoreState>,
-    ) -> Self {
-        Self {
-            views,
-            parked,
-            pending,
-        }
+    pub(crate) fn from_fields(views: &'a ViewMap, engines: &'a EngineRegistry) -> Self {
+        Self { views, engines }
     }
 
     /// 창 engine과 그 창의 ID.
     pub(crate) fn windows(self) -> impl Iterator<Item = (WindowId, &'a CoreState)> {
-        self.views
-            .iter()
-            .filter_map(|(wid, w)| w.as_main().map(|m| (*wid, &m.core_state)))
+        self.engines.windows_in(self.views.keys().copied())
+    }
+
+    /// 창 MainView와 그 engine.
+    pub(crate) fn window_pairs(
+        self,
+    ) -> impl Iterator<Item = (WindowId, &'a MainView, &'a CoreState)> {
+        let engines = self.engines;
+        self.views.iter().filter_map(move |(wid, w)| {
+            let main = w.as_main()?;
+            engines.window_engine(*wid).map(|e| (*wid, main, e))
+        })
+    }
+
+    /// 창 ID로 고른 MainView와 그 engine.
+    pub(crate) fn window_pair(self, wid: WindowId) -> Option<(&'a MainView, &'a CoreState)> {
+        let main = self.views.get(&wid)?.as_main()?;
+        self.engines.window_engine(wid).map(|e| (main, e))
     }
 
     /// 창과 parked 항목의 AppState·engine 쌍. 창 → parked 순서다.
     pub(crate) fn sessions(self) -> impl Iterator<Item = (&'a AppState, &'a CoreState)> {
-        self.views
-            .values()
-            .filter_map(|w| w.as_main().map(|m| (&m.state, &m.core_state)))
+        self.window_pairs()
+            .map(|(_, m, e)| (&m.state, e))
             .chain(self.parked_sessions())
     }
 
     pub(crate) fn parked(self) -> impl Iterator<Item = &'a CoreState> {
-        self.parked.iter().map(|p| &p.session.core_state)
+        self.engines.parked_sessions().map(|(_, _, e)| e)
     }
 
     /// parked engine과 그 id. 보관 순서다.
     pub(crate) fn parked_with_ids(self) -> impl Iterator<Item = (EngineId, &'a CoreState)> {
-        self.parked
-            .iter()
-            .map(|p| (p.session.id, &p.session.core_state))
+        self.engines.parked_sessions().map(|(id, _, e)| (id, e))
     }
 
     pub(crate) fn parked_sessions(self) -> impl Iterator<Item = (&'a AppState, &'a CoreState)> {
-        self.parked
-            .iter()
-            .map(|p| (&p.view_restore, &p.session.core_state))
+        self.engines.parked_sessions().map(|(_, s, e)| (s, e))
     }
 
     pub(crate) fn parked_count(self) -> usize {
-        self.parked.len()
+        self.engines.parked_count()
     }
 
     /// 창에 배정되기 전의 임시 engine.
     pub(crate) fn pending(self) -> Option<&'a CoreState> {
-        self.pending
+        self.engines.pending()
     }
 
     /// 임시 engine, 없으면 첫 창 engine. parked engine은 보지 않는다.
     pub(crate) fn primary(self) -> Option<&'a CoreState> {
-        self.pending
+        self.pending()
             .or_else(|| self.windows().next().map(|(_, e)| e))
     }
 
@@ -129,88 +113,154 @@ impl<'a> EngineScan<'a> {
 
     /// 창 → parked → 임시 순서로 모든 engine을 한 번씩 방문한다.
     pub(crate) fn all(self) -> impl Iterator<Item = &'a CoreState> {
-        self.windowed_and_parked().chain(self.pending)
+        self.windowed_and_parked().chain(self.pending())
     }
+}
+
+/// [`EngineScanMut`]이 한 번에 나눠 빌린 필드. engine 참조는 id별로 한 번만 꺼낸다.
+struct SplitMut<'a> {
+    views: &'a mut ViewMap,
+    by_id: HashMap<EngineId, &'a mut CoreState>,
+    by_window: &'a HashMap<WindowId, EngineId>,
+    parked: &'a mut Vec<ParkedView>,
+    pending: Option<EngineId>,
 }
 
 /// 창·parked·임시 engine을 가변으로 순회한다. 순서와 1회 방문 성질은 [`EngineScan`]과 같다.
 /// 메서드는 핸들을 소비한다. 한 함수에서 여러 번 쓰려면 [`reborrow`](Self::reborrow)한다.
 pub(crate) struct EngineScanMut<'a> {
     views: &'a mut ViewMap,
-    parked: &'a mut Vec<ParkedEngine>,
-    pending: &'a mut Option<EngineSession>,
+    engines: &'a mut EngineRegistry,
 }
 
 impl<'a> EngineScanMut<'a> {
     /// [`engines_mut!`]가 쓴다. 호출부에서 필드를 직접 넘기지 않는다.
-    pub(crate) fn from_fields(
-        views: &'a mut ViewMap,
-        parked: &'a mut Vec<ParkedEngine>,
-        pending: &'a mut Option<EngineSession>,
-    ) -> Self {
-        Self {
-            views,
-            parked,
-            pending,
-        }
+    pub(crate) fn from_fields(views: &'a mut ViewMap, engines: &'a mut EngineRegistry) -> Self {
+        Self { views, engines }
     }
 
     pub(crate) fn reborrow(&mut self) -> EngineScanMut<'_> {
         EngineScanMut {
             views: self.views,
-            parked: self.parked,
-            pending: self.pending,
+            engines: self.engines,
+        }
+    }
+
+    fn split(self) -> SplitMut<'a> {
+        let (by_id, by_window, parked, pending) = self.engines.split_by_id();
+        SplitMut {
+            views: self.views,
+            by_id,
+            by_window,
+            parked,
+            pending,
         }
     }
 
     pub(crate) fn windows(self) -> impl Iterator<Item = (WindowId, &'a mut CoreState)> {
-        self.views
-            .iter_mut()
-            .filter_map(|(wid, w)| w.as_main_mut().map(|m| (*wid, &mut m.core_state)))
+        let SplitMut {
+            views,
+            mut by_id,
+            by_window,
+            ..
+        } = self.split();
+        let views: &'a ViewMap = views;
+        views.keys().filter_map(move |wid| {
+            let id = by_window.get(wid)?;
+            by_id.remove(id).map(|e| (*wid, e))
+        })
+    }
+
+    /// 창 MainView와 그 engine. 창 순회 순서다.
+    pub(crate) fn window_pairs(
+        self,
+    ) -> impl Iterator<Item = (WindowId, &'a mut MainView, &'a mut CoreState)> {
+        let SplitMut {
+            views,
+            mut by_id,
+            by_window,
+            ..
+        } = self.split();
+        views.iter_mut().filter_map(move |(wid, w)| {
+            let id = by_window.get(wid)?;
+            let main = w.as_main_mut()?;
+            by_id.remove(id).map(|e| (*wid, main, e))
+        })
+    }
+
+    /// [`window_pairs`](Self::window_pairs)에 engine id를 더한다. 사건을 engine 기준으로 되돌려 보낼 때 쓴다.
+    pub(crate) fn window_entries(
+        self,
+    ) -> impl Iterator<Item = (EngineId, &'a mut MainView, &'a mut CoreState)> {
+        let SplitMut {
+            views,
+            mut by_id,
+            by_window,
+            ..
+        } = self.split();
+        views.iter_mut().filter_map(move |(wid, w)| {
+            let id = *by_window.get(wid)?;
+            let main = w.as_main_mut()?;
+            by_id.remove(&id).map(|e| (id, main, e))
+        })
+    }
+
+    /// 창 ID로 고른 MainView와 그 engine.
+    pub(crate) fn window_pair(
+        self,
+        wid: WindowId,
+    ) -> Option<(&'a mut MainView, &'a mut CoreState)> {
+        let main = self.views.get_mut(&wid)?.as_main_mut()?;
+        self.engines.window_engine_mut(wid).map(|e| (main, e))
     }
 
     /// 창의 AppState·engine 쌍.
     pub(crate) fn window_sessions(
         self,
     ) -> impl Iterator<Item = (&'a mut AppState, &'a mut CoreState)> {
-        self.views
-            .values_mut()
-            .filter_map(|w| w.as_main_mut().map(|m| (&mut m.state, &mut m.core_state)))
+        self.window_pairs().map(|(_, m, e)| (&mut m.state, e))
     }
 
     /// 창과 parked 항목의 AppState·engine 쌍. 창 → parked 순서다.
     pub(crate) fn sessions(self) -> impl Iterator<Item = (&'a mut AppState, &'a mut CoreState)> {
-        let Self { views, parked, .. } = self;
-        views
-            .values_mut()
-            .filter_map(|w| w.as_main_mut().map(|m| (&mut m.state, &mut m.core_state)))
-            .chain(
-                parked
-                    .iter_mut()
-                    .map(|p| (&mut p.view_restore, &mut p.session.core_state)),
-            )
+        let SplitMut {
+            views,
+            mut by_id,
+            by_window,
+            parked,
+            ..
+        } = self.split();
+        let windowed: Vec<(&'a mut AppState, &'a mut CoreState)> = views
+            .iter_mut()
+            .filter_map(|(wid, w)| {
+                let id = by_window.get(wid)?;
+                let main = w.as_main_mut()?;
+                by_id.remove(id).map(|e| (&mut main.state, e))
+            })
+            .collect();
+        windowed.into_iter().chain(
+            parked
+                .iter_mut()
+                .filter_map(move |p| by_id.remove(&p.engine).map(|e| (&mut p.state, e))),
+        )
     }
 
     pub(crate) fn parked(self) -> impl Iterator<Item = &'a mut CoreState> {
-        self.parked.iter_mut().map(|p| &mut p.session.core_state)
+        self.engines.parked_sessions_mut().map(|(_, _, e)| e)
     }
 
-    /// parked 항목의 id·AppState·engine. id는 `DispatchSource::Parked`에 싣는 값이다.
+    /// parked 항목의 id·AppState·engine. id는 `DispatchSource::Engine`에 싣는 값이다.
     pub(crate) fn parked_sessions_with_ids(
         self,
     ) -> impl Iterator<Item = (EngineId, &'a mut AppState, &'a mut CoreState)> {
-        self.parked
-            .iter_mut()
-            .map(|p| (p.session.id, &mut p.view_restore, &mut p.session.core_state))
+        self.engines.parked_sessions_mut()
     }
 
     /// parked 항목의 AppState·engine 쌍. 보관 순서다.
     pub(crate) fn parked_sessions(
         self,
     ) -> impl Iterator<Item = (&'a mut AppState, &'a mut CoreState)> {
-        self.parked
-            .iter_mut()
-            .map(|p| (&mut p.view_restore, &mut p.session.core_state))
+        self.engines.parked_sessions_mut().map(|(_, s, e)| (s, e))
     }
 
     /// id로 parked 항목을 찾는다. 사이에 다른 항목을 보관하거나 꺼내도 같은 engine을 가리킨다.
@@ -218,17 +268,12 @@ impl<'a> EngineScanMut<'a> {
         self,
         id: EngineId,
     ) -> Option<(&'a mut AppState, &'a mut CoreState)> {
-        self.parked
-            .iter_mut()
-            .find(|p| p.session.id == id)
-            .map(|p| (&mut p.view_restore, &mut p.session.core_state))
+        self.engines.parked_session_mut(id)
     }
 
     /// 가장 먼저 보관한 parked 항목. 대상 없는 요청의 기본 engine이다.
     pub(crate) fn first_parked_session(self) -> Option<(&'a mut AppState, &'a mut CoreState)> {
-        self.parked
-            .first_mut()
-            .map(|p| (&mut p.view_restore, &mut p.session.core_state))
+        self.parked_sessions().next()
     }
 
     /// 요청 대상 자원을 가진 parked 항목. 창의 소유 판정과 같은 `engine_has_resource`를 쓴다.
@@ -241,64 +286,122 @@ impl<'a> EngineScanMut<'a> {
     }
 
     pub(crate) fn pending(self) -> Option<&'a mut CoreState> {
-        self.pending.as_mut().map(|s| &mut s.core_state)
+        self.engines.pending_mut()
     }
 
     /// 임시 engine, 없으면 첫 창 engine. 순서는 [`EngineScan::primary`]와 같다.
     pub(crate) fn primary(self) -> Option<&'a mut CoreState> {
-        match self.pending {
-            Some(s) => Some(&mut s.core_state),
-            None => self
-                .views
-                .values_mut()
-                .find_map(|w| w.as_main_mut())
-                .map(|m| &mut m.core_state),
+        match self.engines.pending_id() {
+            Some(id) => self.engines.get_mut(id),
+            None => self.windows().next().map(|(_, e)| e),
         }
     }
 
     /// 창 → 임시 순서. parked engine은 제외한다.
     pub(crate) fn windows_and_pending(self) -> impl Iterator<Item = &'a mut CoreState> {
-        let Self { views, pending, .. } = self;
-        views
-            .values_mut()
-            .filter_map(|w| w.as_main_mut().map(|m| &mut m.core_state))
-            .chain(pending.as_mut().map(|s| &mut s.core_state))
+        let SplitMut {
+            views,
+            mut by_id,
+            by_window,
+            pending,
+            ..
+        } = self.split();
+        let views: &'a ViewMap = views;
+        let windowed: Vec<&'a mut CoreState> = views
+            .keys()
+            .filter_map(|wid| by_window.get(wid).and_then(|id| by_id.remove(id)))
+            .collect();
+        windowed
+            .into_iter()
+            .chain(pending.and_then(move |id| by_id.remove(&id)))
     }
 
     /// 창 → parked 순서. 임시 engine은 제외한다.
     pub(crate) fn windowed_and_parked(self) -> impl Iterator<Item = &'a mut CoreState> {
-        let Self { views, parked, .. } = self;
-        views
-            .values_mut()
-            .filter_map(|w| w.as_main_mut().map(|m| &mut m.core_state))
-            .chain(parked.iter_mut().map(|p| &mut p.session.core_state))
+        let SplitMut {
+            views,
+            mut by_id,
+            by_window,
+            parked,
+            ..
+        } = self.split();
+        let views: &'a ViewMap = views;
+        let windowed: Vec<&'a mut CoreState> = views
+            .keys()
+            .filter_map(|wid| by_window.get(wid).and_then(|id| by_id.remove(id)))
+            .collect();
+        let parked: &'a Vec<ParkedView> = parked;
+        windowed
+            .into_iter()
+            .chain(parked.iter().filter_map(move |p| by_id.remove(&p.engine)))
     }
 
-    /// 마지막 창을 닫거나 백그라운드로 보낼 때 engine을 보관한다. 뒤에 붙인다.
-    pub(crate) fn park(self, view_restore: AppState, session: EngineSession) {
-        self.parked.push(ParkedEngine {
-            session,
-            view_restore,
-        });
+    /// 요청이 가리킨 engine과 그 AppState. 창이 있으면 그 창의 ViewBase도 준다.
+    pub(crate) fn resolve(self, id: EngineId) -> Option<DispatchCtx<'a>> {
+        let SplitMut {
+            views,
+            mut by_id,
+            by_window,
+            parked,
+            ..
+        } = self.split();
+        let engine = by_id.remove(&id)?;
+        if let Some((wid, _)) = by_window.iter().find(|(_, e)| **e == id) {
+            let MainView { state, base, .. } = views.get_mut(wid)?.as_main_mut()?;
+            return Some(DispatchCtx {
+                state,
+                engine,
+                view: Some(base),
+                window: Some(*wid),
+            });
+        }
+        let p = parked.iter_mut().find(|p| p.engine == id)?;
+        Some(DispatchCtx {
+            state: &mut p.state,
+            engine,
+            view: None,
+            window: None,
+        })
     }
 
-    /// 새 창에 넘길 parked 항목을 가장 먼저 보관한 것부터 꺼낸다.
-    pub(crate) fn unpark_first(self) -> Option<ParkedEngine> {
-        (!self.parked.is_empty()).then(|| self.parked.remove(0))
+    /// 마지막 창을 닫거나 백그라운드로 보낼 때 창 관계를 parked로 바꾼다. 뒤에 붙인다.
+    pub(crate) fn park(self, wid: WindowId, view_restore: AppState) -> Option<EngineId> {
+        self.engines.park(wid, view_restore)
     }
+
+    /// 새 창에 넘길 parked 항목을 가장 먼저 보관한 것부터 임시 관계로 옮긴다.
+    pub(crate) fn unpark_first(self) -> Option<(EngineId, AppState)> {
+        self.engines.unpark_first()
+    }
+}
+
+/// [`EngineScanMut::resolve`]가 준 요청 대상. 창이 없는 parked engine이면 `view`가 없다.
+pub(crate) struct DispatchCtx<'a> {
+    pub(crate) state: &'a mut AppState,
+    pub(crate) engine: &'a mut CoreState,
+    pub(crate) view: Option<&'a mut view::ViewBase>,
+    pub(crate) window: Option<WindowId>,
 }
 
 impl App {
     pub(crate) fn engines(&self) -> EngineScan<'_> {
-        EngineScan::from_fields(
-            &self.view.views,
-            &self.parked_states,
-            self.core_state.as_ref().map(|s| &s.core_state),
-        )
+        EngineScan::from_fields(&self.view.views, &self.engines)
     }
 
     pub(crate) fn engines_mut(&mut self) -> EngineScanMut<'_> {
         engines_mut!(self)
+    }
+
+    /// 요청한 engine이 창에 있으면 그 창을 다시 그리게 한다. parked engine이면 아무것도 하지 않는다.
+    pub(crate) fn mark_source_window_dirty(
+        &mut self,
+        source: crate::app::dispatch_domain::DispatchSource,
+    ) {
+        if let Some(wid) = self.engines.window_of(source.engine())
+            && let Some(w) = self.view.views.get_mut(&wid)
+        {
+            w.mark_dirty();
+        }
     }
 }
 
@@ -308,6 +411,25 @@ impl App {
             .focused_view_id
             .and_then(|id| self.view.views.get(&id))
             .and_then(|w| w.as_main())
+    }
+
+    /// 포커스된 MainView와 그 engine.
+    pub(crate) fn focused_pair(&self) -> Option<(&MainView, &CoreState)> {
+        self.engines().window_pair(self.view.focused_view_id?)
+    }
+
+    /// 포커스된 MainView와 그 engine. 다른 App 필드와 함께 빌려야 하면 `engines_mut!`로 `window_pair`를 쓴다.
+    pub(crate) fn focused_pair_mut(&mut self) -> Option<(&mut MainView, &mut CoreState)> {
+        let wid = self.view.focused_view_id?;
+        engines_mut!(self).window_pair(wid)
+    }
+
+    /// 창 ID로 고른 MainView와 그 engine.
+    pub(crate) fn main_pair_mut(
+        &mut self,
+        wid: WindowId,
+    ) -> Option<(&mut MainView, &mut CoreState)> {
+        engines_mut!(self).window_pair(wid)
     }
 
     pub(crate) fn focused_window_mut(&mut self) -> Option<&mut view::main::MainView> {
@@ -351,7 +473,7 @@ impl App {
     }
 
     /// 점유를 별도로 관리하지 않고 살아 있는 engine의 슬롯을 모은다.
-    /// 창에 등록되기 전 임시 App.core_state도 포함해야 중복 배정을 피할 수 있다.
+    /// 창에 등록되기 전 임시 engine도 포함해야 중복 배정을 피할 수 있다.
     pub(crate) fn occupied_layout_slots(&self) -> HashSet<LayoutSlotId> {
         occupied_slots(self.engines())
     }
@@ -382,7 +504,7 @@ impl App {
     /// cleanup_mirror_workspace·mirror_output_host와 같은 범위를 찾아야 한다.
     /// parked 조회는 find_parked_with_workspace를 공유하지만 창 있는 engine의 순회는 별도다.
     /// 세 경로의 집합이 같은지 자동 비교하는 검사는 없어 함께 검토해야 한다.
-    /// 임시 App.core_state는 제외한다. start_gui_attach는 실제 창에만 mirror를 만들고
+    /// 임시 engine은 제외한다. start_gui_attach는 실제 창에만 mirror를 만들고
     /// 임시 engine에는 정리 후 active_workspace를 보정할 AppState도 없다. 이 조건이 바뀌면 세 경로를 함께 고친다.
     pub(crate) fn mirror_workspace_engine_alive(&self, workspace_id: u32) -> bool {
         let engines = self.engines();
@@ -567,15 +689,28 @@ mod tests {
         );
     }
 
-    fn parked(names: &[&str]) -> Vec<ParkedEngine> {
-        names
+    /// 이름 순서대로 park한 registry와 각 id.
+    fn parked(names: &[&str]) -> (EngineRegistry, Vec<EngineId>) {
+        let mut reg = EngineRegistry::default();
+        let ids = names
             .iter()
             .map(|name| {
                 let (state, mut engine) = crate::state::tests::test_state();
                 engine.workspaces[0].name = (*name).to_string();
-                ParkedEngine::from_test_state((state, engine))
+                reg.park_for_test(state, engine)
             })
-            .collect()
+            .collect();
+        (reg, ids)
+    }
+
+    fn engine_mut(reg: &mut EngineRegistry, id: EngineId) -> &mut crate::core::CoreState {
+        reg.get_mut(id).expect("registry에 있는 engine")
+    }
+
+    fn parked_pairs(
+        reg: &EngineRegistry,
+    ) -> impl Iterator<Item = (EngineId, &crate::core::CoreState)> {
+        reg.parked_sessions().map(|(id, _, e)| (id, e))
     }
 
     #[test]
@@ -591,24 +726,24 @@ mod tests {
 
     #[test]
     fn workspace_only_in_parked_engine_is_not_orphaned() {
-        let parked = parked(&["mirror"]);
-        let ws = parked[0].session.core_state.workspaces[0].id;
+        let (reg, ids) = parked(&["mirror"]);
+        let ws = reg.get(ids[0]).expect("engine").workspaces[0].id;
         assert!(any_engine_has_workspace(
             std::iter::empty(),
-            parked.iter().map(|p| (p.session.id, &p.session.core_state)),
+            parked_pairs(&reg),
             ws
         ));
     }
 
     #[test]
     fn workspace_in_later_parked_engine_is_not_orphaned() {
-        let mut parked = parked(&["first", "second"]);
+        let (mut reg, ids) = parked(&["first", "second"]);
         // 첫 engine과 겹치지 않는 ID를 두 번째 engine에만 만든다.
-        let target = parked[0].session.core_state.workspaces[0].id + 5_000;
-        parked[1].session.core_state.workspaces[0].id = target;
+        let target = engine_mut(&mut reg, ids[0]).workspaces[0].id + 5_000;
+        engine_mut(&mut reg, ids[1]).workspaces[0].id = target;
         assert!(any_engine_has_workspace(
             std::iter::empty(),
-            parked.iter().map(|p| (p.session.id, &p.session.core_state)),
+            parked_pairs(&reg),
             target
         ));
     }
@@ -616,12 +751,12 @@ mod tests {
     #[test]
     fn workspace_in_no_engine_is_orphaned() {
         let windowed = engine_with_workspace_name("local");
-        let parked = parked(&["other"]);
+        let (reg, ids) = parked(&["other"]);
         let missing =
-            windowed.workspaces[0].id + parked[0].session.core_state.workspaces[0].id + 1_000;
+            windowed.workspaces[0].id + reg.get(ids[0]).expect("engine").workspaces[0].id + 1_000;
         assert!(!any_engine_has_workspace(
             [&windowed].into_iter(),
-            parked.iter().map(|p| (p.session.id, &p.session.core_state)),
+            parked_pairs(&reg),
             missing
         ));
     }
@@ -630,12 +765,17 @@ mod tests {
         engines.map(|e| e.workspaces[0].name.clone()).collect()
     }
 
+    fn with_pending(reg: &mut EngineRegistry, engine: crate::core::CoreState) -> EngineId {
+        reg.insert_pending(engine)
+            .unwrap_or_else(|_| panic!("임시 engine이 이미 있다"))
+    }
+
     #[test]
     fn scan_visits_parked_then_pending_once_each() {
-        let parked = parked(&["p0", "p1"]);
-        let pending = engine_with_workspace_name("tmp");
+        let (mut reg, _) = parked(&["p0", "p1"]);
+        with_pending(&mut reg, engine_with_workspace_name("tmp"));
         let views = HashMap::new();
-        let scan = EngineScan::from_fields(&views, &parked, Some(&pending));
+        let scan = EngineScan::from_fields(&views, &reg);
         assert_eq!(names(scan.all()), ["p0", "p1", "tmp"]);
         assert_eq!(names(scan.windowed_and_parked()), ["p0", "p1"]);
         assert_eq!(names(scan.parked()), ["p0", "p1"]);
@@ -649,22 +789,23 @@ mod tests {
 
     #[test]
     fn scan_without_pending_has_no_primary() {
-        let parked = parked(&["p0"]);
+        let (reg, _) = parked(&["p0"]);
         let views = HashMap::new();
-        let scan = EngineScan::from_fields(&views, &parked, None);
+        let scan = EngineScan::from_fields(&views, &reg);
         assert!(scan.primary().is_none(), "primary는 parked를 보지 않는다");
         assert_eq!(names(scan.all()), ["p0"]);
     }
 
     #[test]
     fn occupied_slots_counts_each_engine_once() {
-        let mut parked = parked(&["p0", "p1"]);
-        parked[0].session.core_state.layout_slot = Some(4);
-        parked[1].session.core_state.layout_slot = Some(2);
+        let (mut reg, ids) = parked(&["p0", "p1"]);
+        engine_mut(&mut reg, ids[0]).layout_slot = Some(4);
+        engine_mut(&mut reg, ids[1]).layout_slot = Some(2);
         let mut pending = engine_with_workspace_name("tmp");
         pending.layout_slot = Some(7);
+        with_pending(&mut reg, pending);
         let views = HashMap::new();
-        let scan = EngineScan::from_fields(&views, &parked, Some(&pending));
+        let scan = EngineScan::from_fields(&views, &reg);
         assert_eq!(occupied_slots(scan), slots(&[2, 4, 7]));
         assert_eq!(
             scan.all().filter(|e| e.layout_slot.is_some()).count(),
@@ -673,12 +814,24 @@ mod tests {
         );
     }
 
+    /// View가 없는 창 관계는 창 순회에 나오지 않는다. 창 순회는 View 목록이 정한다.
+    #[test]
+    fn window_relation_without_a_view_is_not_scanned() {
+        let mut reg = EngineRegistry::default();
+        let id = with_pending(&mut reg, engine_with_workspace_name("w"));
+        reg.attach_window(WindowId::from(1u64), id);
+        let views = HashMap::new();
+        let scan = EngineScan::from_fields(&views, &reg);
+        assert!(scan.windows().next().is_none());
+        assert!(scan.all().next().is_none());
+    }
+
     #[test]
     fn scan_mut_keeps_order_and_excludes_by_place() {
-        let mut parked = parked(&["p0", "p1"]);
-        let mut pending = Some(EngineSession::new(engine_with_workspace_name("tmp")));
+        let (mut reg, _) = parked(&["p0", "p1"]);
+        with_pending(&mut reg, engine_with_workspace_name("tmp"));
         let mut views = HashMap::new();
-        let mut scan = EngineScanMut::from_fields(&mut views, &mut parked, &mut pending);
+        let mut scan = EngineScanMut::from_fields(&mut views, &mut reg);
         let visit = |it: &mut dyn Iterator<Item = &mut crate::core::CoreState>| -> Vec<String> {
             it.map(|e| e.workspaces[0].name.clone()).collect()
         };
@@ -708,35 +861,50 @@ mod tests {
 
     #[test]
     fn park_appends_and_unpark_takes_the_oldest() {
-        let mut parked = parked(&["p0"]);
-        let mut pending = None;
+        let (mut reg, ids) = parked(&["p0"]);
         let mut views = HashMap::new();
-        let mut scan = EngineScanMut::from_fields(&mut views, &mut parked, &mut pending);
         let (state, mut engine) = crate::state::tests::test_state();
         engine.workspaces[0].name = "p1".to_string();
-        scan.reborrow().park(state, EngineSession::new(engine));
-        let first = scan.reborrow().unpark_first().expect("보관한 항목");
-        assert_eq!(first.session.core_state.workspaces[0].name, "p0");
-        let second = scan.reborrow().unpark_first().expect("보관한 항목");
-        assert_eq!(second.session.core_state.workspaces[0].name, "p1");
-        assert!(scan.unpark_first().is_none());
+        let p1 = with_pending(&mut reg, engine);
+        let w = WindowId::from(1u64);
+        reg.attach_window(w, p1);
+        let mut scan = EngineScanMut::from_fields(&mut views, &mut reg);
+        assert_eq!(scan.reborrow().park(w, state), Some(p1));
+        let (first, _) = scan.reborrow().unpark_first().expect("보관한 항목");
+        assert_eq!(first, ids[0]);
+        assert!(
+            scan.reborrow().unpark_first().is_none(),
+            "임시 engine이 창에 붙기 전에는 다음 항목을 꺼내지 않는다"
+        );
+        reg.attach_window(WindowId::from(2u64), first);
+        let mut scan = EngineScanMut::from_fields(&mut views, &mut reg);
+        let (second, _) = scan.reborrow().unpark_first().expect("보관한 항목");
+        assert_eq!(second, p1);
+        reg.attach_window(WindowId::from(3u64), second);
+        assert!(
+            EngineScanMut::from_fields(&mut views, &mut reg)
+                .unpark_first()
+                .is_none()
+        );
     }
 
     #[test]
     fn parked_session_lookups_find_the_engine_by_id() {
-        let mut parked = parked(&["p0", "p1"]);
+        let (mut reg, ids) = parked(&["p0", "p1"]);
         // 첫 항목과 겹치지 않는 ID를 두 번째 항목에만 둔다.
-        let target = parked[0].session.core_state.workspaces[0].id + 5_000;
-        parked[1].session.core_state.workspaces[0].id = target;
-        let p1_id = parked[1].session.id;
-        let mut pending = None;
+        let target = engine_mut(&mut reg, ids[0]).workspaces[0].id + 5_000;
+        engine_mut(&mut reg, ids[1]).workspaces[0].id = target;
+        let mut other = EngineRegistry::default();
+        let unknown = with_pending(&mut other, engine_with_workspace_name("x"));
         let mut views = HashMap::new();
-        let mut scan = EngineScanMut::from_fields(&mut views, &mut parked, &mut pending);
-        let (_, e) = scan.reborrow().parked_session(p1_id).expect("두 번째 항목");
+        let mut scan = EngineScanMut::from_fields(&mut views, &mut reg);
+        let (_, e) = scan
+            .reborrow()
+            .parked_session(ids[1])
+            .expect("두 번째 항목");
         assert_eq!(e.workspaces[0].name, "p1");
         let (_, e) = scan.reborrow().first_parked_session().expect("첫 항목");
         assert_eq!(e.workspaces[0].name, "p0");
-        let unknown = EngineSession::new(engine_with_workspace_name("x")).id;
         assert!(scan.reborrow().parked_session(unknown).is_none());
         let rid = crate::core::request_target::ResourceId {
             kind: crate::core::request_target::Kind::Workspace,
@@ -751,32 +919,29 @@ mod tests {
     /// 보관 순서가 바뀌어도 id는 처음 가리킨 engine을 계속 가리킨다.
     #[test]
     fn engine_id_survives_park_and_unpark_of_other_engines() {
-        let mut parked = parked(&["p0", "p1"]);
-        let p1_id = parked[1].session.id;
-        let mut pending = None;
+        let (mut reg, ids) = parked(&["p0", "p1"]);
         let mut views = HashMap::new();
-        let mut scan = EngineScanMut::from_fields(&mut views, &mut parked, &mut pending);
-        let first = scan
-            .reborrow()
+        let (p0, view_restore) = EngineScanMut::from_fields(&mut views, &mut reg)
             .unpark_first()
             .expect("가장 먼저 보관한 항목");
-        assert_eq!(first.session.core_state.workspaces[0].name, "p0");
-        let (_, e) = scan
-            .reborrow()
-            .parked_session(p1_id)
+        assert_eq!(p0, ids[0]);
+        let (_, e) = EngineScanMut::from_fields(&mut views, &mut reg)
+            .parked_session(ids[1])
             .expect("앞 항목을 꺼낸 뒤에도 같은 id로 찾는다");
         assert_eq!(e.workspaces[0].name, "p1");
 
-        let p0_id = first.session.id;
-        scan.reborrow().park(first.view_restore, first.session);
+        let w = WindowId::from(1u64);
+        reg.attach_window(w, p0);
+        let mut scan = EngineScanMut::from_fields(&mut views, &mut reg);
+        scan.reborrow().park(w, view_restore);
         let (_, e) = scan
             .reborrow()
-            .parked_session(p0_id)
+            .parked_session(p0)
             .expect("다시 보관한 engine은 원래 id를 유지한다");
         assert_eq!(e.workspaces[0].name, "p0");
         let (_, e) = scan
             .reborrow()
-            .parked_session(p1_id)
+            .parked_session(ids[1])
             .expect("뒤에 보관한 항목이 있어도 같은 engine");
         assert_eq!(e.workspaces[0].name, "p1");
     }

@@ -107,25 +107,16 @@ impl App {
                 return IpcStep::Handled;
             }
         };
-        let w = match self
-            .view
-            .views
-            .get_mut(&focused_id)
-            .and_then(|w| w.as_main_mut())
-        {
-            Some(w) => w,
+        let (w, engine) = match self.main_pair_mut(focused_id) {
+            Some(pair) => pair,
             // 현재 ID가 MainView를 가리키지 않으면 별도 응답 없이 처리됨으로 반환한다.
             None => return IpcStep::Handled,
         };
 
         #[cfg(debug_assertions)]
         if cmd.request.method == "debug.info" {
-            let debug_data = crate::debug_info::collect(
-                &w.state,
-                &w.core_state,
-                Some(&w.base.gpu),
-                w.ime_active,
-            );
+            let debug_data =
+                crate::debug_info::collect(&w.state, engine, Some(&w.base.gpu), w.ime_active);
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 debug_data,
@@ -153,7 +144,7 @@ impl App {
                 Ok(v) => v,
                 Err(msg) => return reject_bad_params(cmd, &msg),
             };
-            let ok = w.debug_inject_mesh_pointer(surface_id, fx, fy, action);
+            let ok = w.debug_inject_mesh_pointer(engine, surface_id, fx, fy, action);
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 serde_json::json!({ "injected": ok }),
@@ -182,7 +173,7 @@ impl App {
                 Ok(v) => v,
                 Err(msg) => return reject_bad_params(cmd, &msg),
             };
-            let ok = w.debug_inject_egui_pointer(fx, fy, surface_id, action);
+            let ok = w.debug_inject_egui_pointer(engine, fx, fy, surface_id, action);
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 serde_json::json!({ "injected": ok }),
@@ -281,7 +272,7 @@ impl App {
         // engine 목록과 별개인 view의 포커스 surface를 조회한다.
         #[cfg(debug_assertions)]
         if cmd.request.method == "debug.focused_surface" {
-            let focused = w.state.focused_surface_id(&w.core_state);
+            let focused = w.state.focused_surface_id(engine);
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 serde_json::json!({ "surface_id": focused }),
@@ -293,6 +284,7 @@ impl App {
             let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
             let response = host_ipc::handler::ime::handle_ime_method(
                 w,
+                engine,
                 &cmd.request.method,
                 &cmd.request.params,
                 id,

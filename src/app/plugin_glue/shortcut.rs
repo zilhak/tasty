@@ -1,6 +1,7 @@
 //! 플러그인 명령 단축키의 설정·조회·키 입력 처리.
 
 use crate::app::App;
+use crate::app::window_access::engines_mut;
 use crate::plugin::registry_state::shortcut_override_display;
 use crate::{plugin, settings_ui, shortcuts};
 
@@ -163,21 +164,16 @@ impl App {
         if self.view.is_modal_active() {
             return false;
         }
-        let Some(w) = self.view.views.get_mut(&id) else {
-            return false;
-        };
-        let Some(main) = w.as_main_mut() else {
+        let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
             return false;
         };
         // 일반 창 키 처리보다 먼저 실행되므로 popup·overlay·전체화면 무대의 키를 여기서 보호한다.
         if main.state.keyboard_overlay_open() || main.state.fullscreen_stage_active() {
             return false;
         }
-        let focused = crate::plugin_bridge::key_dispatch::focused_plugin_surface(
-            &main.state,
-            &main.core_state,
-        );
-        let host_kb = main.core_state.settings.keybindings.clone();
+        let focused =
+            crate::plugin_bridge::key_dispatch::focused_plugin_surface(&main.state, engine);
+        let host_kb = engine.settings.keybindings.clone();
 
         let matched = {
             let Some(mgr) = self.plugin_manager.as_ref() else {
@@ -232,11 +228,7 @@ impl App {
                 action,
                 order_hint: 0,
             };
-            crate::adapters::ui::tools_menu::invoke_tool(
-                &mut main.state,
-                &mut main.core_state,
-                &item,
-            );
+            crate::adapters::ui::tools_menu::invoke_tool(&mut main.state, engine, &item);
         } else if let Some(mgr) = self.plugin_manager.as_mut() {
             crate::plugin_bridge::key_dispatch::dispatch_plugin_command(
                 mgr, &plugin_id, &cmd_id, surface_id,

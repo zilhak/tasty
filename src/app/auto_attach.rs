@@ -81,8 +81,8 @@ impl App {
     pub(crate) fn poll_auto_attach(&mut self) {
         let prev_active = self.auto_attach_last_active_ws;
         let current_ws_id = self
-            .focused_window()
-            .and_then(|main| main.core_state.workspaces.get(main.state.active_workspace))
+            .focused_pair()
+            .and_then(|(main, engine)| engine.workspaces.get(main.state.active_workspace))
             .map(|ws| ws.id);
         self.auto_attach_last_active_ws = current_ws_id;
 
@@ -111,11 +111,11 @@ impl App {
     /// 대상 ID는 매핑에서 가져오며 포커스를 바꾸지 않는다.
     fn maybe_trigger_auto_attach(&mut self, current_ws_id: Option<u32>, prev_active: Option<u32>) {
         let candidate = {
-            let Some(main) = self.focused_window_mut() else {
+            let Some((main, engine)) = self.focused_pair() else {
                 return;
             };
             let idx = main.state.active_workspace;
-            match main.core_state.workspaces.get(idx) {
+            match engine.workspaces.get(idx) {
                 Some(ws) => ws.attach_mapping.as_ref().map(|m| (ws.id, m.clone())),
                 None => None,
             }
@@ -339,8 +339,8 @@ impl App {
 
     /// 자동 재시도 중단을 알린다. 워크스페이스 재활성화로 다시 시도할 상태는 유지한다.
     fn notify_reconnect_giveup(&mut self, anchor: u32) {
-        for main in self.main_windows_iter_mut() {
-            if main.core_state.workspaces.iter().any(|ws| ws.id == anchor) {
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            if engine.workspaces.iter().any(|ws| ws.id == anchor) {
                 main.state.toasts.push(
                     crate::i18n::t("attach.toast.mirror_reconnect_giveup").to_string(),
                     crate::adapters::ui::ToastKind::Warning,

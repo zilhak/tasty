@@ -20,25 +20,28 @@ impl MainView {
     /// 우클릭한 surface의 hover 링크를 복사해 메뉴 대상으로 보관한다.
     /// 우클릭 뒤 항목을 명시적으로 고르므로 LinkModifier::None도 허용한다.
     /// 메뉴를 열어도 터미널 포커스는 옮기지 않는다.
-    pub(super) fn terminal_link_menu_target(&self, surface_id: u32) -> Option<TerminalLinkMenu> {
+    pub(super) fn terminal_link_menu_target(
+        &self,
+        engine: &crate::core::CoreState,
+        surface_id: u32,
+    ) -> Option<TerminalLinkMenu> {
         let hovered = self.hovered_link.as_ref();
         if !link_menu_gate(
             hovered.map(|h| h.surface_id),
             surface_id,
-            self.core_state.attach.is_hard_occupied(surface_id),
+            engine.attach.is_hard_occupied(surface_id),
         ) {
             return None;
         }
         let hovered = hovered?;
         let (start, end) = link_selection_bounds(&hovered.highlight.segments)?;
-        let terminal = self.core_state.visible_terminal(surface_id)?;
+        let terminal = engine.visible_terminal(surface_id)?;
         let text = crate::selection::extract_selected_text(
             terminal,
             &link_selection(surface_id, start, end),
         );
         // 자식 PTY 가 없는 terminal 은 원격 attach mirror 다 — 화면 경로가 원격 호스트 경로.
-        let is_mirror = self
-            .core_state
+        let is_mirror = engine
             .find_terminal_by_id(surface_id)
             .is_some_and(|t| t.process_id().is_none());
         let (open_with, remote_path) = link_open_target(&hovered.uri, is_mirror);
@@ -75,6 +78,7 @@ impl MainView {
 
     pub(super) fn handle_terminal_link_native_menu(
         &mut self,
+        engine: &mut crate::core::CoreState,
         link: TerminalLinkMenu,
         x: f32,
         y: f32,
@@ -84,13 +88,13 @@ impl MainView {
             .into_iter()
             .map(|(id, key)| MenuItem::new(id, crate::i18n::t(key)))
             .collect();
-        self.open_native_menu(x, y, &items, move |this, result| {
+        self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
             // Linux 는 continuation 이 여러 프레임 뒤다 — 그 사이 surface 가 닫혔을 수 있다.
-            if !this.core_state.has_surface(link.surface_id) {
+            if !engine.has_surface(link.surface_id) {
                 return;
             }
             match result {
-                Some(ITEM_SELECT) => this.apply_link_selection(&link),
+                Some(ITEM_SELECT) => this.apply_link_selection(engine, &link),
                 Some(ITEM_COPY) => {
                     if link.text.is_empty() {
                         return;
@@ -103,7 +107,7 @@ impl MainView {
                         crate::adapters::ui::ToastScope::Surface(link.surface_id),
                     );
                 }
-                Some(ITEM_OPEN_WITH) => this.open_link_handler_picker(&link),
+                Some(ITEM_OPEN_WITH) => this.open_link_handler_picker(engine, &link),
                 _ => {}
             }
         });
@@ -111,9 +115,13 @@ impl MainView {
 
     /// 메뉴를 연 뒤에도 같은 범위의 문자가 같을 때만 링크를 선택한다.
     /// 출력·스크롤백 정리·크기 변경으로 내용이 달라졌으면 선택하지 않는다.
-    fn apply_link_selection(&mut self, link: &TerminalLinkMenu) {
+    fn apply_link_selection(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        link: &TerminalLinkMenu,
+    ) {
         let sel = link_selection(link.surface_id, link.start, link.end);
-        let Some(terminal) = self.core_state.visible_terminal(link.surface_id) else {
+        let Some(terminal) = engine.visible_terminal(link.surface_id) else {
             return;
         };
         if crate::selection::extract_selected_text(terminal, &sel) != link.text {
@@ -125,7 +133,11 @@ impl MainView {
 
     /// 자동 실행이나 detector 조회 없이 전체 핸들러 선택창을 연다.
     /// 원격 경로에는 후보와 최근 사용 목록을 표시하지 않는다.
-    fn open_link_handler_picker(&mut self, link: &TerminalLinkMenu) {
+    fn open_link_handler_picker(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        link: &TerminalLinkMenu,
+    ) {
         let Some(target) = link.open_with.clone() else {
             return;
         };
@@ -134,10 +146,10 @@ impl MainView {
                 crate::file::dispatch::open_remote_placeholder_picker(&mut self.state, file);
             }
             target => {
-                let all = self.core_state.file_handler.all_handlers();
+                let all = engine.file_handler.all_handlers();
                 crate::file::dispatch::open_picker(
                     &mut self.state,
-                    &mut self.core_state,
+                    &mut *engine,
                     target,
                     None,
                     all,

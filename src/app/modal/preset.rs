@@ -60,14 +60,14 @@ impl App {
     }
 
     fn focused_appearance_or_disk(&self) -> crate::settings::AppearanceSettings {
-        self.focused_window()
-            .map(|w| w.core_state.settings.appearance.clone())
+        self.focused_pair()
+            .map(|(_, engine)| engine.settings.appearance.clone())
             .unwrap_or_else(|| crate::settings::Settings::load().appearance)
     }
 
     fn focused_keybindings_or_disk(&self) -> crate::settings::KeybindingSettings {
-        self.focused_window()
-            .map(|w| w.core_state.settings.keybindings.clone())
+        self.focused_pair()
+            .map(|(_, engine)| engine.settings.keybindings.clone())
             .unwrap_or_else(|| crate::settings::Settings::load().keybindings)
     }
 

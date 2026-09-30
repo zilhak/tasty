@@ -316,7 +316,7 @@ Auto 체인이 전 단계 실패하면 가장 확정적인 분류(취소 > 타�
 
 ### 창 없는 상태(parked)에서의 세션 수명
 
-attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** 마지막 창을 닫거나(macOS 는 최소화도) 창은 사라지지만 engine 은 `parked_states` 에 그대로 살아 있고([multi-window](../../architecture/multi-window.md), [ADR-0054](../../adr/0054-app-core-view-layers-and-state-ownership.md) — parked engine 은 레이아웃 슬롯 점유를 유지한다), mirror 워크스페이스와 그 mirror 터미널도 그 engine 안에 남는다. 따라서:
+attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** 마지막 창을 닫거나(macOS 는 최소화도) 창은 사라지지만 engine 은 `App.engines` 에 parked 관계로 그대로 살아 있고([multi-window](../../architecture/multi-window.md), [ADR-0054](../../adr/0054-app-core-view-layers-and-state-ownership.md) — parked engine 은 레이아웃 슬롯 점유를 유지한다), mirror 워크스페이스와 그 mirror 터미널도 그 engine 안에 남는다. 따라서:
 
 - **parking 만으로는 세션이 끊기지 않는다.** 고아 판정(`detach_orphaned_mirror_sessions`)이 묻는 것은 "창이 있는가"가 아니라 **"그 mirror 워크스페이스를 들고 있는 engine 이 살아 있는가"** 다 — 창 있는 engine 과 parked engine 을 함께 본다. 창 유무로 판정하면 사용자가 창을 최소화했을 뿐인데 원격에 `Detach` 가 나가 점유가 조용히 풀린다.
 - **사용자가 mirror 워크스페이스를 직접 닫으면** 어느 engine 에도 그 워크스페이스가 없으므로 고아로 판정되어 기존대로 정리된다 — `Detach` 통지 → 원격 점유 해제 + anchor 게이트 해제 + 터널 kill. 두 상황(창이 없어졌을 뿐 vs 워크스페이스가 없어짐)은 이 판정으로 구분된다.

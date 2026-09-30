@@ -13,9 +13,11 @@ use tasty_doc_guards::source_text::{mask_non_code, rust_sources};
 
 /// 활성 상태 식별자. active_tab은 ID로 찾은 페인의 필드일 수도 있으므로
 /// 제외하지 않고 사람이 IdResolved 여부를 분류한다.
+/// focused_pair는 포커스 창과 그 engine을 함께 돌려주는 focused_window의 짝이다.
 const NEEDLES: &[&str] = &[
     "active_workspace",
     "focused_window",
+    "focused_pair",
     "active_surface",
     "active_tab",
     "active_pane",

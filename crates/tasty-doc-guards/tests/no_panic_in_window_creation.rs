@@ -17,8 +17,8 @@ const SCANNED: &[&str] = &[
 
 /// 사용자 입력·환경 오류가 아닌 코드 불변식의 단언만 허용한다.
 const INVARIANT_ALLOWLIST: &[&str] = &[
-    "core_state must be initialized before layout restore",
-    "App.core_state must be present to register a main window",
+    "pending engine must be initialized before layout restore",
+    "pending engine must be present to register a main window",
 ];
 
 fn read(rel: &str) -> String {

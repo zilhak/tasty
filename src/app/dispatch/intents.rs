@@ -1,12 +1,9 @@
 //! Intent 큐를 처리하고 검사된 IPC 요청을 대상 engine에 전달한다.
 
-use winit::window::WindowId;
-
 use crate::app::App;
-use crate::app::window_access::engines_mut;
+use crate::app::window_access::{DispatchCtx, engines_mut};
 use crate::ipc;
 use crate::runtime::engine_session::EngineId;
-use crate::view::ui::View as _;
 
 enum IntentClass {
     Domain,
@@ -20,19 +17,14 @@ impl App {
     /// Domain 처리는 App 전체를 빌리므로 창별 상태를 빌린 루프 밖에서 수행한다.
     /// docs/design/flows/action-dispatch.md 참조.
     pub(crate) fn dispatch_pending_intents(&mut self) {
-        let (per_state_batches, parked_batches) = self.drain_pending_batches();
+        let batches = self.drain_pending_batches();
 
         let mut domain_batch: Vec<(
             crate::app::dispatch_domain::DispatchSource,
             crate::intent::DispatchedIntent,
         )> = Vec::new();
         let mut appearance_changed = false;
-        self.process_state_batches(
-            per_state_batches,
-            parked_batches,
-            &mut domain_batch,
-            &mut appearance_changed,
-        );
+        self.process_state_batches(batches, &mut domain_batch, &mut appearance_changed);
 
         self.run_domain_cascade(domain_batch);
 
@@ -41,49 +33,47 @@ impl App {
         }
     }
 
-    /// 큐의 소유권을 옮겨 둔 뒤 창·parked 상태의 빌림을 끝내고 처리한다.
-    fn drain_pending_batches(
-        &mut self,
-    ) -> (
-        Vec<(WindowId, Vec<crate::intent::DispatchedIntent>)>,
-        Vec<(EngineId, Vec<crate::intent::DispatchedIntent>)>,
-    ) {
-        let mut per_state_batches = Vec::new();
-        let mut parked_batches = Vec::new();
-        for (id, w) in self.view.views.iter_mut() {
+    /// 큐의 소유권을 옮겨 둔 뒤 창·parked 상태의 빌림을 끝내고 처리한다. 창 → parked 순서다.
+    fn drain_pending_batches(&mut self) -> Vec<(EngineId, Vec<crate::intent::DispatchedIntent>)> {
+        let mut windowed = Vec::new();
+        for (wid, w) in self.view.views.iter_mut() {
             if let Some(main) = w.as_main_mut() {
                 let batch = main.state.take_pending_intents();
                 if !batch.is_empty() {
-                    per_state_batches.push((*id, batch));
+                    windowed.push((*wid, batch));
                 }
             }
         }
+        let mut batches: Vec<_> = windowed
+            .into_iter()
+            .filter_map(|(wid, batch)| self.engines.of_window(wid).map(|id| (id, batch)))
+            .collect();
         for (id, s, _) in self.engines_mut().parked_sessions_with_ids() {
             let batch = s.take_pending_intents();
             if !batch.is_empty() {
-                parked_batches.push((id, batch));
+                batches.push((id, batch));
             }
         }
-        (per_state_batches, parked_batches)
+        batches
     }
 
     fn process_state_batches(
         &mut self,
-        per_state_batches: Vec<(WindowId, Vec<crate::intent::DispatchedIntent>)>,
-        parked_batches: Vec<(EngineId, Vec<crate::intent::DispatchedIntent>)>,
+        batches: Vec<(EngineId, Vec<crate::intent::DispatchedIntent>)>,
         domain_batch: &mut Vec<(
             crate::app::dispatch_domain::DispatchSource,
             crate::intent::DispatchedIntent,
         )>,
         appearance_changed: &mut bool,
     ) {
-        for (window_id, batch) in per_state_batches {
+        for (id, batch) in batches {
             let core = &mut self.core;
-            let Some(main) = self
-                .view
-                .views
-                .get_mut(&window_id)
-                .and_then(|w| w.as_main_mut())
+            let Some(DispatchCtx {
+                state,
+                engine,
+                view,
+                ..
+            }) = engines_mut!(self).resolve(id)
             else {
                 continue;
             };
@@ -92,31 +82,7 @@ impl App {
                 crate::intent::watch::observe(&intent);
                 match Self::classify_intent(&intent) {
                     IntentClass::Domain => domain_batch.push((
-                        crate::app::dispatch_domain::DispatchSource::Main(window_id),
-                        intent,
-                    )),
-                    IntentClass::Appearance => *appearance_changed = true,
-                    IntentClass::Immediate => Self::dispatch_one_intent(
-                        core,
-                        &mut main.state,
-                        &mut main.core_state,
-                        &intent,
-                    ),
-                }
-            }
-            main.mark_dirty();
-        }
-        for (id, batch) in parked_batches {
-            let core = &mut self.core;
-            let Some((state, engine)) = engines_mut!(self).parked_session(id) else {
-                continue;
-            };
-            for intent in batch {
-                #[cfg(debug_assertions)]
-                crate::intent::watch::observe(&intent);
-                match Self::classify_intent(&intent) {
-                    IntentClass::Domain => domain_batch.push((
-                        crate::app::dispatch_domain::DispatchSource::Parked(id),
+                        crate::app::dispatch_domain::DispatchSource::Engine(id),
                         intent,
                     )),
                     IntentClass::Appearance => *appearance_changed = true,
@@ -124,6 +90,9 @@ impl App {
                         Self::dispatch_one_intent(core, state, engine, &intent)
                     }
                 }
+            }
+            if let Some(view) = view {
+                view.mark_dirty();
             }
         }
     }
@@ -157,8 +126,8 @@ impl App {
     pub(crate) fn cascade_appearance_changed(&mut self) {
         // 색과 런타임 값이 서로 다른 설정에서 나오지 않게 같은 사본을 읽는다.
         let picked = self
-            .focused_window()
-            .map(|w| &w.core_state.settings)
+            .focused_pair()
+            .map(|(_, engine)| &engine.settings)
             .or_else(|| {
                 self.engines()
                     .windowed_and_parked()
@@ -258,21 +227,11 @@ impl App {
         };
         if let Some(id) = target_id {
             let core = &mut self.core;
-            let resp_opt = self
-                .view
-                .views
-                .get_mut(&id)
-                .and_then(|w| w.as_main_mut())
-                .map(|w| {
-                    let r = ipc::handler::handle_checked_request(
-                        core,
-                        &mut w.state,
-                        &mut w.core_state,
-                        checked,
-                    );
-                    w.base.dirty = true;
-                    r
-                });
+            let resp_opt = engines_mut!(self).window_pair(id).map(|(w, engine)| {
+                let r = ipc::handler::handle_checked_request(core, &mut w.state, engine, checked);
+                w.base.dirty = true;
+                r
+            });
             if let Some(response) = resp_opt {
                 self.dispatch_pending_intents();
                 return response;

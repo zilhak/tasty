@@ -1,6 +1,7 @@
 //! 파일 핸들러 선택 결과를 처리한다.
 
 use crate::app::App;
+use crate::app::window_access::engines_mut;
 use crate::view::ui::View;
 
 impl App {
@@ -18,7 +19,7 @@ impl App {
             .collect();
         for id in pending {
             let core = &mut self.core;
-            let Some(main) = self.view.views.get_mut(&id).and_then(|w| w.as_main_mut()) else {
+            let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
                 continue;
             };
             let Some(data) = main.state.dialogs.file_handler_picker.as_mut() else {
@@ -40,7 +41,7 @@ impl App {
                 crate::file::dispatch::apply_file_picker_result(
                     core,
                     &mut main.state,
-                    &mut main.core_state,
+                    &mut *engine,
                     target,
                     result,
                     origin_surface_id,

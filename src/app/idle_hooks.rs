@@ -8,11 +8,8 @@ impl App {
     pub(crate) fn poll_idle_timeout_hooks(&mut self) {
         let exec = self.core.hook_executor();
 
-        for w in self.view.views.values_mut() {
-            let Some(main) = w.as_main_mut() else {
-                continue;
-            };
-            let fired = main.core_state.fire_idle_timeout_hooks(&exec);
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            let fired = engine.fire_idle_timeout_hooks(&exec);
             if fired.is_empty() {
                 continue;
             }

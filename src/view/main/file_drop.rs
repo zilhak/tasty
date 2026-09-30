@@ -38,7 +38,7 @@ impl MainView {
     }
 
     /// 쌓인 파일을 DispatchFile로 보낸다. 터미널 영역 밖이면 안내하고 무시한다.
-    pub(crate) fn process_pending_file_drops(&mut self) {
+    pub(crate) fn process_pending_file_drops(&mut self, engine: &mut crate::core::CoreState) {
         let drops = std::mem::take(&mut self.state.pending_file_drops);
         if drops.is_empty() {
             return;
@@ -60,7 +60,6 @@ impl MainView {
         }
         {
             let scale_factor = self.base.gpu.scale_factor();
-            let engine = &mut self.core_state;
             // best-effort focus 이동. drop 좌표에 pane/surface 가 없으면 현재 focus 유지.
             let _pane_focus =
                 self.state

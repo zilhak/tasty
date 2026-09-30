@@ -70,6 +70,7 @@ impl MainView {
     /// 에 없으면 `false`.
     pub(crate) fn debug_inject_mesh_pointer(
         &mut self,
+        engine: &mut crate::core::CoreState,
         surface_id: u32,
         fx: f32,
         fy: f32,
@@ -77,7 +78,7 @@ impl MainView {
     ) -> bool {
         let terminal_rect = self.compute_terminal_rect();
         let Some(rect) = self.state.surface_rect_by_id(
-            &self.core_state,
+            &*engine,
             surface_id,
             terminal_rect,
             self.base.gpu.scale_factor(),
@@ -91,7 +92,7 @@ impl MainView {
         self.cursor_position = Some(pos);
 
         match action {
-            InjectPointer::Move => self.handle_cursor_moved(pos, false),
+            InjectPointer::Move => self.handle_cursor_moved(engine, pos, false),
             InjectPointer::Button { button, pressed } => {
                 // 이전 메뉴 결과를 지우고 이번 요청을 OS가 표시하기 전에 debug 슬롯으로 옮긴다.
                 self.debug_captured_menu = None;
@@ -102,7 +103,7 @@ impl MainView {
                 };
                 // handle_event를 거치지 않아 메뉴 닫기 입력 판정을 직접 호출한다.
                 let swallow = self.take_menu_dismiss_swallow(state, button);
-                self.handle_mouse_input(state, button, false, swallow);
+                self.handle_mouse_input(engine, state, button, false, swallow);
                 if let Some(menu) = self.state.dialogs.pending_native_menu.take() {
                     self.debug_captured_menu = Some(menu);
                 }
@@ -111,7 +112,7 @@ impl MainView {
                 let Some(delta) = unit.to_winit_delta(dx, dy) else {
                     return false;
                 };
-                self.handle_mouse_wheel(delta, false);
+                self.handle_mouse_wheel(engine, delta, false);
             }
         }
         true
@@ -120,6 +121,7 @@ impl MainView {
     /// 정규화 좌표를 egui의 다음 프레임 입력에 넣어 plugin 팝업 전달을 검사한다.
     pub(crate) fn debug_inject_egui_pointer(
         &mut self,
+        engine: &mut crate::core::CoreState,
         fx: f32,
         fy: f32,
         surface_id: Option<u32>,
@@ -130,7 +132,7 @@ impl MainView {
         let pos = if let Some(sid) = surface_id {
             let terminal_rect = self.compute_terminal_rect();
             let Some(rect) = self.state.surface_rect_by_id(
-                &self.core_state,
+                &*engine,
                 sid,
                 terminal_rect,
                 self.base.gpu.scale_factor(),

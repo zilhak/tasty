@@ -66,10 +66,10 @@ if resp.secondary_clicked() {
 ```rust
 PendingNativeMenu::MyMenu { data, x, y } => {
     let items = [MenuItem::new(1, "Action A"), MenuItem::new(2, "Action B")];
-    self.open_native_menu(x, y, &items, move |this, result| {
+    self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
         // Linux 는 continuation 이 여러 프레임 뒤에 실행된다 — 그 사이 대상이
         // 사라졌을 수 있으므로 대상 id 유효성을 여기서 다시 확인하고 무효하면 반환.
-        if !this.core_state.has_surface(surface_id) {
+        if !engine.has_surface(surface_id) {
             return;
         }
         match result {

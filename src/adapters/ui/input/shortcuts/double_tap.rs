@@ -10,15 +10,15 @@ impl MainView {
     /// 마지막 workspace가 닫혔으면 창을 닫고, 남아 있으면 레이아웃을 다시 계산한다.
     fn finish_after_possible_close(
         &mut self,
+        engine: &mut crate::core::CoreState,
         terminal_rect: PhysicalRect,
         cell_w: f32,
         cell_h: f32,
     ) {
-        if self.core_state.workspaces.is_empty() {
+        if engine.workspaces.is_empty() {
             self.request_close();
         } else {
             let scale_factor = self.base.gpu.scale_factor();
-            let engine = &mut self.core_state;
             self.state
                 .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
         }
@@ -26,9 +26,10 @@ impl MainView {
 
     pub(crate) fn handle_double_tap_shortcut(
         &mut self,
+        engine: &mut crate::core::CoreState,
         dt: crate::double_tap::DoubleTapKey,
     ) -> bool {
-        let kb = self.core_state.settings.keybindings.clone();
+        let kb = engine.settings.keybindings.clone();
         let dt_str = dt.binding_str();
 
         let has_dt = |bindings: &[String]| bindings.iter().any(|b| b == dt_str);
@@ -85,7 +86,7 @@ impl MainView {
 
         // 매칭뿐 아니라 실제 실행한 경우에만 입력을 소비한다.
         for (bindings, action) in &bindings_to_check {
-            if has_dt(bindings) && self.run_double_tap_action(action) {
+            if has_dt(bindings) && self.run_double_tap_action(engine, action) {
                 return true;
             }
         }
@@ -94,10 +95,10 @@ impl MainView {
     }
 
     /// 매칭된 액션을 실행하고 처리 여부를 반환한다.
-    fn run_double_tap_action(&mut self, action: &str) -> bool {
-        if self.run_double_tap_layout_action(action)
-            || self.run_double_tap_focus_action(action)
-            || self.run_double_tap_open_action(action)
+    fn run_double_tap_action(&mut self, engine: &mut crate::core::CoreState, action: &str) -> bool {
+        if self.run_double_tap_layout_action(engine, action)
+            || self.run_double_tap_focus_action(engine, action)
+            || self.run_double_tap_open_action(engine, action)
             || self.run_double_tap_app_action(action)
         {
             return true;
@@ -106,13 +107,16 @@ impl MainView {
         false
     }
 
-    fn run_double_tap_layout_action(&mut self, action: &str) -> bool {
+    fn run_double_tap_layout_action(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        action: &str,
+    ) -> bool {
         let terminal_rect = self.compute_terminal_rect();
         let cell_w = self.base.gpu.cell_width();
         let cell_h = self.base.gpu.cell_height();
         let scale_factor = self.base.gpu.scale_factor();
 
-        let engine = &mut self.core_state;
         match action {
             "new_workspace" => {
                 let category = focused_workspace_category(&self.state, engine);
@@ -129,7 +133,7 @@ impl MainView {
             }
             "close_workspace" => {
                 self.state.close_active_workspace(engine);
-                self.finish_after_possible_close(terminal_rect, cell_w, cell_h);
+                self.finish_after_possible_close(engine, terminal_rect, cell_w, cell_h);
             }
             "new_tab" => {
                 if let Err(e) = self.state.add_tab(engine) {
@@ -142,7 +146,7 @@ impl MainView {
                 if !self.state.close_active_pane(engine) {
                     self.state.close_active_workspace(engine);
                 }
-                self.finish_after_possible_close(terminal_rect, cell_w, cell_h);
+                self.finish_after_possible_close(engine, terminal_rect, cell_w, cell_h);
             }
             "split_pane_vertical" => {
                 self.state.dispatch_intent(
@@ -189,13 +193,13 @@ impl MainView {
                 if !closed && !self.state.close_active_pane(engine) {
                     self.state.close_active_workspace(engine);
                 }
-                self.finish_after_possible_close(terminal_rect, cell_w, cell_h);
+                self.finish_after_possible_close(engine, terminal_rect, cell_w, cell_h);
             }
             "close_active" => {
                 if !self.state.close_active_tab(engine) && !self.state.close_active_pane(engine) {
                     self.state.close_active_workspace(engine);
                 }
-                self.finish_after_possible_close(terminal_rect, cell_w, cell_h);
+                self.finish_after_possible_close(engine, terminal_rect, cell_w, cell_h);
             }
             "restore_closed" => {
                 self.state.dispatch_intent(
@@ -209,8 +213,11 @@ impl MainView {
         true
     }
 
-    fn run_double_tap_focus_action(&mut self, action: &str) -> bool {
-        let engine = &mut self.core_state;
+    fn run_double_tap_focus_action(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        action: &str,
+    ) -> bool {
         match action {
             "focus_pane_next" => {
                 self.state.move_pane_focus_forward(engine);
@@ -235,8 +242,11 @@ impl MainView {
         true
     }
 
-    fn run_double_tap_open_action(&mut self, action: &str) -> bool {
-        let engine = &mut self.core_state;
+    fn run_double_tap_open_action(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        action: &str,
+    ) -> bool {
         match action {
             "open_markdown" => {
                 self.state

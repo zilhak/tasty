@@ -3,14 +3,13 @@
 
 use crate::app::App;
 use crate::view::RepaintSource;
+use crate::view::ui::View as _;
 
 impl App {
     pub(crate) fn poll_attach_views(&mut self) {
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut()
-                && main.core_state.refresh_readonly_views()
-            {
-                w.mark_dirty_from(RepaintSource::AttachMirror);
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            if engine.refresh_readonly_views() {
+                main.mark_dirty_from(RepaintSource::AttachMirror);
             }
         }
         for engine in self.engines_mut().parked() {

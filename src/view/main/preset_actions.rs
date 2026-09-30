@@ -11,8 +11,11 @@ use crate::intent::{ClonedPreset, Intent};
 use super::MainView;
 
 impl MainView {
-    pub(crate) fn save_workspace_preset_from_idx(&mut self, ws_idx: usize) -> Result<()> {
-        let engine = &mut self.core_state;
+    pub(crate) fn save_workspace_preset_from_idx(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        ws_idx: usize,
+    ) -> Result<()> {
         let ws = engine
             .workspaces
             .get(ws_idx)
@@ -41,10 +44,10 @@ impl MainView {
 
     pub(crate) fn save_tab_preset_from_pane_tab(
         &mut self,
+        engine: &mut crate::core::CoreState,
         pane_id: u32,
         tab_index: usize,
     ) -> Result<()> {
-        let engine = &mut self.core_state;
         let ws = self.state.active_workspace(engine);
         let pane = ws
             .pane_layout()
@@ -80,8 +83,11 @@ impl MainView {
         Ok(())
     }
 
-    pub(crate) fn save_pane_preset_from_pane_id(&mut self, pane_id: u32) -> Result<()> {
-        let engine = &mut self.core_state;
+    pub(crate) fn save_pane_preset_from_pane_id(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        pane_id: u32,
+    ) -> Result<()> {
         let ws = self.state.active_workspace(engine);
         let pane = ws
             .pane_layout()

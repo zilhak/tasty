@@ -5,6 +5,7 @@
 use winit::window::WindowId;
 
 use crate::app::App;
+use crate::app::window_access::engines_mut;
 use crate::plugin;
 
 impl App {
@@ -49,10 +50,10 @@ impl App {
                     action,
                     order_hint: 0,
                 };
-                if let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) {
+                if let Some((main, engine)) = engines_mut!(self).window_pair(wid) {
                     crate::adapters::ui::tools_menu::invoke_tool(
                         &mut main.state,
-                        &mut main.core_state,
+                        &mut *engine,
                         &item,
                     );
                 }

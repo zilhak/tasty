@@ -17,12 +17,16 @@ const ITEM_MOVE_PANE_HERE: u32 = 10;
 
 impl MainView {
     /// "서피스 이동"과, 서피스가 대기 중일 때만 "서피스를 이곳으로 이동"을 붙인다.
-    pub(super) fn push_surface_move_items(&self, items: &mut Vec<MenuItem>) {
+    pub(super) fn push_surface_move_items(
+        &self,
+        engine: &crate::core::CoreState,
+        items: &mut Vec<MenuItem>,
+    ) {
         items.push(MenuItem::new(
             ITEM_MOVE_SURFACE,
             crate::i18n::t("surface_context_menu.move"),
         ));
-        if matches!(self.core_state.pending_move, Some(PendingMove::Surface(_))) {
+        if matches!(engine.pending_move, Some(PendingMove::Surface(_))) {
             items.push(MenuItem::new(
                 ITEM_MOVE_SURFACE_HERE,
                 crate::i18n::t("surface_context_menu.move_here"),
@@ -31,11 +35,16 @@ impl MainView {
     }
 
     /// surface 메뉴의 이동 항목을 처리한다. 이동 항목이 아니면 false를 반환한다.
-    pub(super) fn apply_surface_move_selection(&mut self, surface_id: u32, item: u32) -> bool {
+    pub(super) fn apply_surface_move_selection(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        surface_id: u32,
+        item: u32,
+    ) -> bool {
         match item {
             ITEM_MOVE_SURFACE => {
                 // 도메인 구조는 바꾸지 않고 대기 슬롯만 덮어쓴다.
-                self.core_state.pending_move = Some(PendingMove::Surface(surface_id));
+                engine.pending_move = Some(PendingMove::Surface(surface_id));
                 self.state.toasts.push_info(
                     crate::i18n::t("toast.surface_cut"),
                     crate::adapters::ui::ToastScope::Surface(surface_id),
@@ -43,8 +52,8 @@ impl MainView {
                 true
             }
             ITEM_MOVE_SURFACE_HERE => {
-                if let Some(PendingMove::Surface(source)) = self.core_state.pending_move {
-                    self.core_state.pending_move = None;
+                if let Some(PendingMove::Surface(source)) = engine.pending_move {
+                    engine.pending_move = None;
                     self.state.dispatch_intent(
                         crate::core::intent::DomainIntent::MoveSurface {
                             source_surface_id: source,
@@ -61,19 +70,24 @@ impl MainView {
 
     /// 탭 메뉴 끝에 구분선과 "탭 이동"을 붙인다. 다른 탭이 대기 중일 때만 "탭을 이곳으로 이동"도 붙인다.
     /// 이어서 구분선과 그 탭이 속한 페인의 "페인 이동"을, 다른 페인이 대기 중일 때만 "페인을 이곳으로 이동"을 붙인다.
-    pub(super) fn push_tab_move_items(&self, items: &mut Vec<MenuItem>, tab_id: u32) {
+    pub(super) fn push_tab_move_items(
+        &self,
+        engine: &crate::core::CoreState,
+        items: &mut Vec<MenuItem>,
+        tab_id: u32,
+    ) {
         items.push(MenuItem::separator());
         items.push(MenuItem::new(
             ITEM_MOVE_TAB,
             crate::i18n::t("tab_context_menu.move_tab"),
         ));
-        if matches!(self.core_state.pending_move, Some(PendingMove::Tab(id)) if id != tab_id) {
+        if matches!(engine.pending_move, Some(PendingMove::Tab(id)) if id != tab_id) {
             items.push(MenuItem::new(
                 ITEM_MOVE_TAB_HERE,
                 crate::i18n::t("tab_context_menu.move_tab_here"),
             ));
         }
-        let Some(pane_id) = self.core_state.find_pane_for_tab(tab_id) else {
+        let Some(pane_id) = engine.find_pane_for_tab(tab_id) else {
             return;
         };
         items.push(MenuItem::separator());
@@ -81,7 +95,7 @@ impl MainView {
             ITEM_MOVE_PANE,
             crate::i18n::t("tab_context_menu.move_pane"),
         ));
-        if matches!(self.core_state.pending_move, Some(PendingMove::Pane(id)) if id != pane_id) {
+        if matches!(engine.pending_move, Some(PendingMove::Pane(id)) if id != pane_id) {
             items.push(MenuItem::new(
                 ITEM_MOVE_PANE_HERE,
                 crate::i18n::t("tab_context_menu.move_pane_here"),
@@ -91,11 +105,16 @@ impl MainView {
 
     /// 탭 메뉴의 탭·페인 이동 항목을 처리한다. 이동 항목이 아니면 false를 반환한다.
     /// 페인 항목의 대상은 우클릭한 탭이 지금 속한 페인이다. 메뉴가 열린 동안 탭이 닫혔으면 아무것도 하지 않는다.
-    pub(super) fn apply_tab_move_selection(&mut self, tab_id: u32, item: u32) -> bool {
+    pub(super) fn apply_tab_move_selection(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        tab_id: u32,
+        item: u32,
+    ) -> bool {
         match item {
             ITEM_MOVE_TAB => {
-                if let Some(pane_id) = self.core_state.find_pane_for_tab(tab_id) {
-                    self.core_state.pending_move = Some(PendingMove::Tab(tab_id));
+                if let Some(pane_id) = engine.find_pane_for_tab(tab_id) {
+                    engine.pending_move = Some(PendingMove::Tab(tab_id));
                     self.state.toasts.push_info(
                         crate::i18n::t("toast.tab_cut"),
                         crate::adapters::ui::ToastScope::Pane(pane_id),
@@ -104,10 +123,10 @@ impl MainView {
                 true
             }
             ITEM_MOVE_TAB_HERE => {
-                if self.core_state.find_pane_for_tab(tab_id).is_some()
-                    && let Some(PendingMove::Tab(source)) = self.core_state.pending_move
+                if engine.find_pane_for_tab(tab_id).is_some()
+                    && let Some(PendingMove::Tab(source)) = engine.pending_move
                 {
-                    self.core_state.pending_move = None;
+                    engine.pending_move = None;
                     self.state.dispatch_intent(
                         crate::core::intent::DomainIntent::ReplaceTabWithTab {
                             source_tab_id: source,
@@ -119,8 +138,8 @@ impl MainView {
                 true
             }
             ITEM_MOVE_PANE => {
-                if let Some(pane_id) = self.core_state.find_pane_for_tab(tab_id) {
-                    self.core_state.pending_move = Some(PendingMove::Pane(pane_id));
+                if let Some(pane_id) = engine.find_pane_for_tab(tab_id) {
+                    engine.pending_move = Some(PendingMove::Pane(pane_id));
                     self.state.toasts.push_info(
                         crate::i18n::t("toast.pane_cut"),
                         crate::adapters::ui::ToastScope::Pane(pane_id),
@@ -129,10 +148,10 @@ impl MainView {
                 true
             }
             ITEM_MOVE_PANE_HERE => {
-                if let Some(pane_id) = self.core_state.find_pane_for_tab(tab_id)
-                    && let Some(PendingMove::Pane(source)) = self.core_state.pending_move
+                if let Some(pane_id) = engine.find_pane_for_tab(tab_id)
+                    && let Some(PendingMove::Pane(source)) = engine.pending_move
                 {
-                    self.core_state.pending_move = None;
+                    engine.pending_move = None;
                     self.state.dispatch_intent(
                         crate::core::intent::DomainIntent::ReplacePaneWithPane {
                             source_pane_id: source,

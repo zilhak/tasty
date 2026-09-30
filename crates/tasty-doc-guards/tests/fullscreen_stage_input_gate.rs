@@ -25,12 +25,12 @@ fn keyboard_stage_gate_precedes_double_tap_and_escape() {
     let src = read("src/view/main/keyboard.rs");
     let gate = only_at(
         &src,
-        "if self.try_consume_fullscreen_stage_key(event) {",
+        "if self.try_consume_fullscreen_stage_key(engine, event) {",
         "0단계 무대 게이트 호출",
     );
     let double_tap = only_at(
         &src,
-        "if self.try_consume_double_tap_key() {",
+        "if self.try_consume_double_tap_key(engine) {",
         "1~3단계 double-tap",
     );
     let escape = only_at(&src, "if self.try_consume_escape_key(event) {", "4단계 ESC");
@@ -48,7 +48,8 @@ fn keyboard_stage_gate_precedes_double_tap_and_escape() {
 #[test]
 fn keyboard_stage_gate_returns_immediately() {
     let src = read("src/view/main/keyboard.rs");
-    let call = "if self.try_consume_fullscreen_stage_key(event) {\n            return;\n        }";
+    let call =
+        "if self.try_consume_fullscreen_stage_key(engine, event) {\n            return;\n        }";
     assert!(
         src.contains(call),
         "0단계 게이트가 소비 즉시 return 하지 않는다 — 무대 중 키가 뒤 단계로 샌다."
@@ -71,12 +72,12 @@ fn stage_exit_key_has_a_single_decision_site() {
     );
     let lookup = only_at(
         &src,
-        "&self.core_state.settings.keybindings.fullscreen_stage_exit,",
+        "&engine.settings.keybindings.fullscreen_stage_exit,",
         "게이트의 바인딩 조회",
     );
     let gate_fn = only_at(
         &src,
-        "fn try_consume_fullscreen_stage_key(&mut self, event: &winit::event::KeyEvent) -> bool {",
+        "fn try_consume_fullscreen_stage_key(\n        &mut self,\n        engine: &mut crate::core::CoreState,\n        event: &winit::event::KeyEvent,\n    ) -> bool {",
         "0단계 게이트 함수",
     );
     let stage_active_guard = only_at(
@@ -118,7 +119,7 @@ fn mouse_layers_share_one_stage_aware_gate() {
     );
     // click-to-activate는 일반 차단 검사보다 먼저 실행되므로 같은 조건을 인자로 받아야 한다.
     assert!(
-        src.contains("self.try_click_to_activate(button, button_state, overlay_open)"),
+        src.contains("self.try_click_to_activate(engine, button, button_state, overlay_open)"),
         "click-to-activate가 공통 오버레이 조건을 받지 않는다. 무대 뒤 서피스로 포커스가 이동할 수 있다."
     );
     assert!(
@@ -152,7 +153,7 @@ fn os_level_ui_is_suppressed_during_a_stage() {
     let src = read("src/view/main/redraw.rs");
     only_at(
         &src,
-        "self.sync_fullscreen_stage_transition();",
+        "self.sync_fullscreen_stage_transition(engine);",
         "무대 진입 정리 훅 호출",
     );
     let menu_guard = "if self.state.fullscreen_stage_active() {\n            self.state.dialogs.pending_native_menu = None;\n            return;\n        }";
@@ -169,7 +170,7 @@ fn os_level_ui_is_suppressed_during_a_stage() {
     // 닫힌 네이티브 메뉴의 결과를 회수하려면 폴링은 계속해야 한다.
     only_at(
         &src,
-        "self.poll_pending_native_menu();",
+        "self.poll_pending_native_menu(engine);",
         "네이티브 메뉴 폴링",
     );
 }
@@ -180,7 +181,7 @@ fn native_menu_polling_stays_after_render() {
     let src = read("src/view/main/redraw.rs");
     let poll = only_at(
         &src,
-        "self.poll_pending_native_menu();",
+        "self.poll_pending_native_menu(engine);",
         "네이티브 메뉴 폴링",
     );
     let render = only_at(&src, "self.render_if_dirty(", "렌더 호출");
@@ -194,10 +195,13 @@ fn native_menu_polling_stays_after_render() {
 #[test]
 fn stage_entry_discards_every_in_flight_gesture() {
     let src = read("src/view/main/redraw.rs");
-    let body = fn_body(&src, "fn sync_fullscreen_stage_transition(&mut self) {");
+    let body = fn_body(
+        &src,
+        "fn sync_fullscreen_stage_transition(&mut self, engine: &mut crate::core::CoreState) {",
+    );
     for (line, why) in [
         (
-            "self.clear_ime_preedit();",
+            "self.clear_ime_preedit(engine);",
             "조합 중 IME 가 뒤 PTY 로 확정된다",
         ),
         (
@@ -304,7 +308,7 @@ fn every_overlay_open_composite_is_stage_aware() {
             if rel == ALLOWED_WITHOUT_STAGE_TERM {
                 assert!(
                     src.contains("fn try_consume_fullscreen_stage_key")
-                        || src.contains("self.try_consume_fullscreen_stage_key(event)"),
+                        || src.contains("self.try_consume_fullscreen_stage_key(engine, event)"),
                     "{rel}: 무대 항 없이 예외로 허용되던 근거(0단계 무대 게이트)가 사라졌다."
                 );
                 continue;

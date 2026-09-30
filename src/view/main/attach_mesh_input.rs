@@ -27,13 +27,17 @@ pub(crate) struct AttachMeshForwardState {
 
 impl MainView {
     /// 포인터 위치의 원격 mesh surface와 영역.
-    pub(super) fn attach_mesh_target_at(&self, x: f32, y: f32) -> Option<(u32, PhysicalRect)> {
+    pub(super) fn attach_mesh_target_at(
+        &self,
+        engine: &crate::core::CoreState,
+        x: f32,
+        y: f32,
+    ) -> Option<(u32, PhysicalRect)> {
         let terminal_rect = self.compute_terminal_rect();
-        for (_pane_id, _pane_rect, regions) in self.state.surface_regions(
-            &self.core_state,
-            terminal_rect,
-            self.base.gpu.scale_factor(),
-        ) {
+        for (_pane_id, _pane_rect, regions) in
+            self.state
+                .surface_regions(engine, terminal_rect, self.base.gpu.scale_factor())
+        {
             for r in regions {
                 if r.rect.contains(PhysicalPx(x), PhysicalPx(y))
                     && r.surface
@@ -49,9 +53,12 @@ impl MainView {
     }
 
     /// 포커스된 원격 mesh surface ID.
-    pub(super) fn focused_attach_mesh_surface_id(&self) -> Option<u32> {
-        let sid = self.state.focused_surface_id(&self.core_state)?;
-        let surface = self.core_state.find_surface_by_id(sid)?;
+    pub(super) fn focused_attach_mesh_surface_id(
+        &self,
+        engine: &crate::core::CoreState,
+    ) -> Option<u32> {
+        let sid = self.state.focused_surface_id(engine)?;
+        let surface = engine.find_surface_by_id(sid)?;
         surface
             .as_any()
             .downcast_ref::<AttachMeshSurface>()
@@ -147,19 +154,18 @@ impl MainView {
     }
 
     /// 변경된 영역·테마·포커스와 누적 입력을 App의 네트워크 전송 큐에 넣는다.
-    pub(super) fn forward_attach_mesh_context(&mut self) {
+    pub(super) fn forward_attach_mesh_context(&mut self, engine: &mut crate::core::CoreState) {
         let terminal_rect = self.compute_terminal_rect();
         let ppp = self.base.gpu.scale_factor();
-        let focused = self.state.focused_surface_id(&self.core_state);
+        let focused = self.state.focused_surface_id(&*engine);
         let modifiers = self.mesh_modifiers();
-        let current_theme = self.mesh_theme_snapshot();
+        let current_theme = self.mesh_theme_snapshot(engine);
 
         let mut targets: Vec<(u32, PhysicalRect)> = Vec::new();
-        for (_pane_id, _pane_rect, regions) in self.state.surface_regions(
-            &self.core_state,
-            terminal_rect,
-            self.base.gpu.scale_factor(),
-        ) {
+        for (_pane_id, _pane_rect, regions) in
+            self.state
+                .surface_regions(&*engine, terminal_rect, self.base.gpu.scale_factor())
+        {
             for r in regions {
                 if r.surface
                     .as_any()
@@ -171,7 +177,7 @@ impl MainView {
             }
         }
 
-        let existing = self.state.attach_mesh_surfaces_existing(&self.core_state);
+        let existing = self.state.attach_mesh_surfaces_existing(&*engine);
         let live: std::collections::HashSet<u32> = existing.into_iter().collect();
         self.attach_mesh_input.retain(|sid, _| live.contains(sid));
 
@@ -191,7 +197,7 @@ impl MainView {
                 st.last_geom = Some(geom);
                 st.last_theme = Some(current_theme.clone());
                 st.last_focused = Some(is_focused);
-                self.core_state.pending_mesh_context_forward.insert(
+                engine.pending_mesh_context_forward.insert(
                     sid,
                     AttachMeshContextForward {
                         width_px: w,
@@ -205,7 +211,7 @@ impl MainView {
 
             if has_input {
                 let events = std::mem::take(&mut st.events);
-                self.core_state.pending_mesh_input_forward.insert(
+                engine.pending_mesh_input_forward.insert(
                     sid,
                     RawInputWire {
                         time: None,

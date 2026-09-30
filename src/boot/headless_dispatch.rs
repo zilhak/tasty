@@ -245,7 +245,7 @@ fn intercept_app_layer(
                 );
                 return Some(Intercepted::Answered);
             }
-            // 헤드리스의 실제 engine은 App.core_state에 없고 이 함수 인자로 전달된다.
+            // 헤드리스의 실제 engine은 App에 없고 이 함수 인자로 전달된다.
             "agent.task_await" => {
                 // GUI 라우팅과 같게 이 engine에 없는 workspace는 대상 없음으로 거절한다.
                 if let Some(ws) = cmd

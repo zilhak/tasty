@@ -216,10 +216,8 @@ impl App {
         };
 
         // 복원을 예정한 engine에는 기본 workspace가 없을 수 있어 복원 실패 뒤 보충한다.
-        let bootstrapped = match self.core_state.as_mut() {
-            Some(session) => {
-                Self::bootstrap_workspace_if_empty(&mut self.core, &mut session.core_state)
-            }
+        let bootstrapped = match self.engines.pending_mut() {
+            Some(engine) => Self::bootstrap_workspace_if_empty(&mut self.core, engine),
             None => None,
         };
 
@@ -238,7 +236,7 @@ impl App {
         );
         let layout_slot = self.claim_free_layout_slot();
 
-        if self.core_state.is_none() {
+        if self.engines.pending_id().is_none() {
             // 플러그인이 등록한 kind·파일 처리기와 ID 발급기를 창마다 새로 만들지 않는다.
             let shared = self.any_main_engine().map(|src| {
                 (
@@ -311,7 +309,7 @@ impl App {
                     self.input_simulation_enabled,
                 )?
             };
-            self.core_state = Some(crate::runtime::engine_session::EngineSession::new(engine));
+            self.install_pending_engine(engine);
         }
 
         if self.plugin_manager.is_none() {
@@ -325,10 +323,9 @@ impl App {
     pub(super) fn boot_apply_pending_layout_restore(&mut self) -> Option<usize> {
         let t5 = std::time::Instant::now();
         let engine = self
-            .core_state
-            .as_mut()
-            .map(|s| &mut s.core_state)
-            .expect("core_state must be initialized before layout restore");
+            .engines
+            .pending_mut()
+            .expect("pending engine must be initialized before layout restore");
         let restored = match self.core.apply(
             engine,
             crate::core::intent::DomainIntent::ApplyPendingLayoutRestore,
@@ -463,19 +460,54 @@ impl App {
         !still_pending
     }
 
+    /// 새 engine을 창에 배정하기 전 임시 관계로 둔다. 임시 engine은 하나뿐이다.
+    pub(crate) fn install_pending_engine(&mut self, engine: crate::core::CoreState) {
+        if self.engines.insert_pending(engine).is_err() {
+            tracing::error!("pending engine already present; dropping the new engine");
+        }
+    }
+
+    /// 창 관계를 parked로 바꾸고 View 복원 자료만 남긴다. engine은 registry에 그대로 있다.
+    pub(crate) fn park_main_window(
+        &mut self,
+        wid: winit::window::WindowId,
+        main: Box<crate::view::main::MainView>,
+    ) {
+        let crate::view::main::MainView { state, .. } = *main;
+        if self.engines_mut().park(wid, state).is_none() {
+            tracing::error!("parking window {wid:?} without an engine relation");
+        }
+    }
+
+    /// 창 관계를 끊고 engine을 저장한 뒤 View, engine 순서로 버린다.
+    pub(crate) fn retire_main_window(
+        &mut self,
+        wid: winit::window::WindowId,
+        main: Box<crate::view::main::MainView>,
+    ) {
+        let active_workspace = main.state.active_workspace;
+        let Some(mut session) = self.engines.retire_window(wid) else {
+            tracing::error!("retiring window {wid:?} without an engine relation");
+            return;
+        };
+        Self::retire_main_engine(&mut self.core, &mut session.core_state, active_workspace);
+        drop(main);
+        drop(session);
+    }
+
     /// 사용자 요청 창은 포커스를 옮기고, 에이전트 요청은 기존 포커스를 유지한다.
     pub(crate) fn register_window(
         &mut self,
         gpu: GpuState,
         state: crate::state::AppState,
-        session: crate::runtime::engine_session::EngineSession,
+        engine: crate::runtime::engine_session::EngineId,
         window: Arc<Window>,
         origin: WindowRequestOrigin,
     ) {
         let window_id = window.id();
-        let main =
-            window::main::MainView::new(gpu, state, session, window, self.view.proxy.clone());
+        let main = window::main::MainView::new(gpu, state, window, self.view.proxy.clone());
         self.view.views.insert(window_id, Box::new(main));
+        self.engines.attach_window(window_id, engine);
         self.view.focused_view_id =
             focus_after_register(self.view.focused_view_id, window_id, origin);
         let scripts = self.autofire_scripts();
@@ -570,7 +602,7 @@ impl App {
             }
         };
 
-        let (mut state, mut session) =
+        let (mut state, engine) =
             match self.acquire_app_state_and_engine(&gpu, settings.appearance.sidebar_width) {
                 Ok(pair) => pair,
                 Err(e) => {
@@ -582,7 +614,7 @@ impl App {
                     ));
                 }
             };
-        self.ensure_at_least_one_workspace(&mut session.core_state, &mut state);
+        self.ensure_at_least_one_workspace(engine, &mut state);
 
         // DB 오류를 먼저 큐에 넣어 확인 시 종료 안내가 다른 모달보다 앞서도록 한다.
         if let Some(err) = db_init_error {
@@ -603,7 +635,7 @@ impl App {
         // 등록 전에 사용자가 보던 창을 기억해 에이전트 창을 그 뒤에 표시한다.
         let behind = matches!(origin, WindowRequestOrigin::Agent)
             .then(|| (window.clone(), self.focused_main_winit()));
-        self.register_window(gpu, state, session, window, origin);
+        self.register_window(gpu, state, engine, window, origin);
         if let Some((window, anchor)) = behind {
             show_agent_window(&window, anchor.as_deref());
             self.pending_focus_hint_clear.insert(window_id);
@@ -654,35 +686,33 @@ impl App {
         sidebar_width: tasty_type_geometry::length::LogicalPx,
     ) -> anyhow::Result<(
         crate::state::AppState,
-        crate::runtime::engine_session::EngineSession,
+        crate::runtime::engine_session::EngineId,
     )> {
-        let (state, parked_engine) = if let Some(parked) = self.engines_mut().unpark_first() {
+        // parked engine은 임시 관계로 옮겨 슬롯을 그대로 쓴다. 새 슬롯을 주면 다른 창의 복원 파일을 덮을 수 있다.
+        let state = if let Some((_, state)) = self.engines_mut().unpark_first() {
             tracing::info!(
                 "restoring parked state, {} remaining",
                 self.engines().parked_count()
             );
-            (parked.view_restore, Some(parked.session))
+            state
         } else {
-            let st = self.create_app_state(gpu, sidebar_width)?;
-            (st, None)
+            self.create_app_state(gpu, sidebar_width)?
         };
-
-        // parked engine의 슬롯은 그대로 유지한다. 새 슬롯을 주면 다른 창의 복원 파일을 덮을 수 있다.
-        let session = match parked_engine {
-            Some(e) => e,
-            None => self
-                .core_state
-                .take()
-                .expect("App.core_state must be present to register a main window"),
-        };
-        Ok((state, session))
+        let engine = self
+            .engines
+            .pending_id()
+            .expect("pending engine must be present to register a main window");
+        Ok((state, engine))
     }
 
     fn ensure_at_least_one_workspace(
         &mut self,
-        core_state: &mut crate::core::CoreState,
+        engine: crate::runtime::engine_session::EngineId,
         state: &mut crate::state::AppState,
     ) {
+        let Some(core_state) = self.engines.get_mut(engine) else {
+            return;
+        };
         if let Some(idx) = Self::bootstrap_workspace_if_empty(&mut self.core, core_state) {
             state.active_workspace = idx;
         }

@@ -54,21 +54,12 @@ impl App {
         };
         if let Some(id) = target_id {
             let core = &mut self.core;
-            let resp_opt = self
-                .view
-                .views
-                .get_mut(&id)
-                .and_then(|w| w.as_main_mut())
-                .map(|w| {
-                    let r = host_ipc::handler::handle_checked_request(
-                        core,
-                        &mut w.state,
-                        &mut w.core_state,
-                        checked,
-                    );
-                    w.base.dirty = true;
-                    r
-                });
+            let resp_opt = engines_mut!(self).window_pair(id).map(|(w, engine)| {
+                let r =
+                    host_ipc::handler::handle_checked_request(core, &mut w.state, engine, checked);
+                w.base.dirty = true;
+                r
+            });
             if let Some(response) = resp_opt {
                 self.send_routed_response(cmd, response);
                 self.dispatch_pending_intents();

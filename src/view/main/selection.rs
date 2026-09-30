@@ -8,8 +8,14 @@ use super::MainView;
 impl MainView {
     /// Extend the current selection (or create one from last click) to the given position.
     /// Used for Shift+Click range selection.
-    pub(super) fn extend_selection(&mut self, x: f32, y: f32, terminal_rect: &PhysicalRect) {
-        if let Some((point, surface_id)) = self.mouse_to_grid(x, y, terminal_rect) {
+    pub(super) fn extend_selection(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        x: f32,
+        y: f32,
+        terminal_rect: &PhysicalRect,
+    ) {
+        if let Some((point, surface_id)) = self.mouse_to_grid(engine, x, y, terminal_rect) {
             if let Some(sel) = &mut self.text_selection {
                 // Existing selection: keep anchor, move cursor
                 if sel.surface_id == surface_id {
@@ -35,8 +41,14 @@ impl MainView {
     }
 
     /// Start a new text selection from the given pixel position.
-    pub(super) fn start_selection(&mut self, x: f32, y: f32, terminal_rect: &PhysicalRect) {
-        if let Some((point, surface_id)) = self.mouse_to_grid(x, y, terminal_rect) {
+    pub(super) fn start_selection(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        x: f32,
+        y: f32,
+        terminal_rect: &PhysicalRect,
+    ) {
+        if let Some((point, surface_id)) = self.mouse_to_grid(engine, x, y, terminal_rect) {
             // Detect multi-click
             let now = std::time::Instant::now();
             let same_pos = self
@@ -65,7 +77,8 @@ impl MainView {
             // For word/line mode, expand anchor/cursor
             let (anchor, cursor) = match mode {
                 SelectionMode::Word => {
-                    let (start_col, end_col) = self.find_word_bounds(point.col, point.absolute_row);
+                    let (start_col, end_col) =
+                        self.find_word_bounds(engine, point.col, point.absolute_row);
                     (
                         SelectionPoint {
                             col: start_col,
@@ -80,7 +93,7 @@ impl MainView {
                 SelectionMode::Line => {
                     let cols = self
                         .state
-                        .focused_terminal(&self.core_state)
+                        .focused_terminal(&*engine)
                         .map(|t| t.dimensions().0)
                         .unwrap_or(80);
                     (
@@ -117,8 +130,12 @@ impl MainView {
     }
 
     /// Find word boundaries around the given column in the given absolute row.
-    fn find_word_bounds(&self, col: usize, absolute_row: usize) -> (usize, usize) {
-        let engine = &self.core_state;
+    fn find_word_bounds(
+        &self,
+        engine: &crate::core::CoreState,
+        col: usize,
+        absolute_row: usize,
+    ) -> (usize, usize) {
         let terminal = match self.state.focused_terminal(engine) {
             Some(t) => t,
             None => return (col, col),
@@ -191,8 +208,13 @@ impl MainView {
     }
 
     /// Move the terminal cursor to the clicked position using the click_cursor module.
-    pub(super) fn move_cursor_to_click(&mut self, x: f32, y: f32, terminal_rect: &PhysicalRect) {
-        let engine = &mut self.core_state;
+    pub(super) fn move_cursor_to_click(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        x: f32,
+        y: f32,
+        terminal_rect: &PhysicalRect,
+    ) {
         if !engine.settings.general.click_to_move_cursor {
             return;
         }
@@ -202,7 +224,7 @@ impl MainView {
         // terminal grid positions, so arrow-key injection would be incorrect.
         let is_shell = self
             .state
-            .focused_terminal(&self.core_state)
+            .focused_terminal(&*engine)
             .and_then(|t| t.foreground_process_info())
             .map(|info| crate::click_cursor::is_shell_process(&info.name))
             .unwrap_or(false);
@@ -210,7 +232,7 @@ impl MainView {
             return;
         }
 
-        let surface_id = match self.state.focused_surface_id(&self.core_state) {
+        let surface_id = match self.state.focused_surface_id(&*engine) {
             Some(sid) => sid,
             None => return,
         };
@@ -229,7 +251,7 @@ impl MainView {
             );
         }
 
-        let terminal = match self.state.focused_terminal(&self.core_state) {
+        let terminal = match self.state.focused_terminal(&*engine) {
             Some(t) => t,
             None => return,
         };
@@ -242,7 +264,7 @@ impl MainView {
         let (cols, rows) = terminal.dimensions();
         // Use the actual content rect (after tab bar) instead of the raw pane rect
         let surface_rect = match self.state.focused_surface_rect(
-            &self.core_state,
+            &*engine,
             *terminal_rect,
             self.base.gpu.scale_factor(),
         ) {
@@ -310,11 +332,11 @@ impl MainView {
     /// Convert mouse physical coordinates to a grid SelectionPoint for the focused terminal.
     pub(super) fn mouse_to_grid(
         &self,
+        engine: &crate::core::CoreState,
         x: f32,
         y: f32,
         terminal_rect: &PhysicalRect,
     ) -> Option<(SelectionPoint, u32)> {
-        let engine = &self.core_state;
         let surface_id = self.state.focused_surface_id(engine)?;
         // hard 점유(readonly)면 mirror, 아니면 live — 실제 렌더되는 것과 동일 대상을
         // 참조해야 좌표 변환이 화면과 일치한다(ADR-0021).
@@ -342,8 +364,7 @@ impl MainView {
 
     /// 현재 선택을 복사하고 선택 범위는 유지한다. 우클릭 복사는 포커스와 무관하다.
     /// Ctrl+C의 포커스 일치 검사는 호출자인 handle_copy_shortcut에서 한다.
-    pub fn copy_selection_to_clipboard(&mut self) -> bool {
-        let engine = &mut self.core_state;
+    pub fn copy_selection_to_clipboard(&mut self, engine: &mut crate::core::CoreState) -> bool {
         let sel = match &self.text_selection {
             Some(s) if !s.is_empty() => s.clone(),
             _ => return false,
@@ -369,8 +390,7 @@ impl MainView {
 
     /// 현재 선택의 줄바꿈을 공백 하나로 바꿔 복사한다. soft wrap은 추출할 때 이미 연결된다.
     /// 우클릭 복사와 같이 포커스를 검사하지 않고 선택 범위도 유지한다.
-    pub fn copy_selection_no_newline(&mut self) -> bool {
-        let engine = &mut self.core_state;
+    pub fn copy_selection_no_newline(&mut self, engine: &mut crate::core::CoreState) -> bool {
         let sel = match &self.text_selection {
             Some(s) if !s.is_empty() => s.clone(),
             _ => return false,

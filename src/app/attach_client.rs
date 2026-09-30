@@ -346,11 +346,10 @@ impl App {
         let remote_to_local: HashMap<u32, u32>;
         let markdown_locals: HashSet<u32>;
         {
-            let Some(main) = self.focused_window_mut() else {
+            let Some((main, engine)) = self.focused_pair_mut() else {
                 anyhow::bail!("no focused window to host mirror workspace");
             };
             proxy = main.proxy.clone();
-            let engine = &mut main.core_state;
             let ids = engine.next_ids.clone();
 
             let mut mapping =
@@ -462,11 +461,10 @@ impl App {
         let removed_markdown: Vec<u32>;
         {
             let sess = &mut self.attach_client_sessions[sess_idx];
-            let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+            let Some((main, engine)) = engines_mut!(self).window_pair(wid) else {
                 anyhow::bail!("window {wid:?} 가 더 이상 MainView 가 아님 — 재연결 취소");
             };
             proxy = main.proxy.clone();
-            let engine = &mut main.core_state;
             let ids = engine.next_ids.clone();
 
             let old_focused_remote: Option<u32> = engine
@@ -593,13 +591,8 @@ impl App {
 
     /// 사용자가 연결한 mirror로만 포커스를 옮긴다. IPC·자동 연결은 호출하지 않는다.
     fn focus_mirror_workspace(&mut self, ws_id: u32) {
-        for main in self.main_windows_iter_mut() {
-            if let Some(idx) = main
-                .core_state
-                .workspaces
-                .iter()
-                .position(|ws| ws.id == ws_id)
-            {
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            if let Some(idx) = engine.workspaces.iter().position(|ws| ws.id == ws_id) {
                 main.state.active_workspace = idx;
                 main.mark_dirty();
                 break;
@@ -636,16 +629,16 @@ impl App {
             match host {
                 Some(MirrorOutputHost::Window(wid)) => {
                     let sess = &mut self.attach_client_sessions[idx];
-                    let mut main = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut());
-                    let mut mirror_host = main
+                    let mut pair = engines_mut!(self).window_pair(wid);
+                    let mut mirror_host = pair
                         .as_mut()
-                        .map(|m| MirrorHost::windowed(&mut m.state, &mut m.core_state));
+                        .map(|(m, engine)| MirrorHost::windowed(&mut m.state, engine));
                     if let Some(host) = mirror_host.as_mut() {
                         resume_resync_in_window(sess, host);
                     }
                     let applied =
                         apply_pending_mirror_output(sess, mirror_host, &mut self.plugin_manager);
-                    if applied && let Some(main) = main {
+                    if applied && let Some((main, _)) = pair {
                         main.mark_dirty_from(crate::view::RepaintSource::AttachMirror);
                     }
                 }
@@ -745,13 +738,8 @@ impl App {
             self.auto_attach_active.remove(&anchor);
             self.auto_attach_pending_reactivation.insert(anchor);
         }
-        for main in self.main_windows_iter_mut() {
-            if main
-                .core_state
-                .workspaces
-                .iter()
-                .any(|ws| ws.id == local_workspace)
-            {
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            if engine.workspaces.iter().any(|ws| ws.id == local_workspace) {
                 main.state.toasts.push(
                     crate::i18n::t("attach.toast.mirror_reconnecting").to_string(),
                     crate::adapters::ui::ToastKind::Warning,
@@ -774,9 +762,9 @@ impl App {
         // 창을 순회하는 부분의 범위 일치는 자동 검증하지 않는다.
         // window_access::mirror_workspace_engine_alive의 검사 범위 설명을 참고한다.
         let mut removed = false;
-        for main in self.main_windows_iter_mut() {
+        for (_, main, engine) in self.engines_mut().window_pairs() {
             if remove_mirror_workspace_from_engine(
-                &mut main.core_state,
+                &mut *engine,
                 &mut main.state,
                 sess.local_workspace,
                 &sess.remote_to_local,
@@ -3318,8 +3306,26 @@ pub(crate) fn upload_file_over_bulk(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::window_access::ParkedEngine;
+    use crate::app::engine_registry::EngineRegistry;
     use crate::core::state::IdGenerator;
+    use crate::runtime::engine_session::EngineSession;
+
+    /// 순수 함수 시험용 parked 항목. registry 없이 id·View 복원 자료·engine만 묶는다.
+    struct ParkedEngine {
+        view_restore: crate::state::AppState,
+        session: EngineSession,
+    }
+
+    impl ParkedEngine {
+        fn from_test_state(
+            (view_restore, core_state): (crate::state::AppState, crate::core::CoreState),
+        ) -> Self {
+            Self {
+                view_restore,
+                session: EngineSession::new(core_state),
+            }
+        }
+    }
 
     #[test]
     fn an_agent_close_is_forwarded_with_the_agent_origin() {
@@ -3462,10 +3468,14 @@ mod tests {
         let (pane_id, tab_id, local_surface) = (9_001u32, 9_002u32, 9_003u32);
         let remote_to_local = HashMap::from([(42u32, local_surface)]);
 
-        let mut parked: Vec<ParkedEngine> = (0..2)
-            .map(|_| ParkedEngine::from_test_state(crate::state::tests::test_state()))
+        let mut reg = EngineRegistry::default();
+        let ids: Vec<EngineId> = (0..2)
+            .map(|_| {
+                let (state, engine) = crate::state::tests::test_state();
+                reg.park_for_test(state, engine)
+            })
             .collect();
-        let untouched_ws_count = parked[0].session.core_state.workspaces.len();
+        let untouched_ws_count = reg.get(ids[0]).expect("engine").workspaces.len();
 
         let mut mirror_ws = Workspace::new_with_terminal_marker(
             ws_id,
@@ -3476,11 +3486,7 @@ mod tests {
         );
         mirror_ws.mirror = true;
         {
-            let ParkedEngine {
-                view_restore: state,
-                session,
-            } = &mut parked[1];
-            let engine = &mut session.core_state;
+            let (state, engine) = reg.parked_session_mut(ids[1]).expect("parked 항목");
             engine.workspaces.push(mirror_ws);
             engine
                 .runtime
@@ -3494,12 +3500,12 @@ mod tests {
         }
 
         assert!(remove_mirror_workspace_from_parked(
-            EngineScanMut::from_fields(&mut HashMap::new(), &mut parked, &mut None),
+            EngineScanMut::from_fields(&mut HashMap::new(), &mut reg),
             ws_id,
             &remote_to_local
         ));
 
-        let (state, engine) = (&parked[1].view_restore, &parked[1].session.core_state);
+        let (state, engine) = reg.parked_session_mut(ids[1]).expect("parked 항목");
         assert!(!engine.has_workspace(ws_id), "mirror 워크스페이스 행 제거");
         assert!(
             !engine.runtime.terminals.contains(local_surface),
@@ -3515,7 +3521,7 @@ mod tests {
         );
         assert_eq!(state.active_workspace, engine.workspaces.len() - 1);
         assert_eq!(
-            parked[0].session.core_state.workspaces.len(),
+            reg.get(ids[0]).expect("engine").workspaces.len(),
             untouched_ws_count,
             "무관한 parked engine 은 건드리지 않는다"
         );
@@ -3523,12 +3529,14 @@ mod tests {
 
     #[test]
     fn cleanup_parked_scan_reports_false_when_absent() {
-        let mut parked: Vec<ParkedEngine> = (0..2)
-            .map(|_| ParkedEngine::from_test_state(crate::state::tests::test_state()))
-            .collect();
+        let mut reg = EngineRegistry::default();
+        for _ in 0..2 {
+            let (state, engine) = crate::state::tests::test_state();
+            reg.park_for_test(state, engine);
+        }
         let remote_to_local = HashMap::from([(42u32, 9_003u32)]);
         assert!(!remove_mirror_workspace_from_parked(
-            EngineScanMut::from_fields(&mut HashMap::new(), &mut parked, &mut None),
+            EngineScanMut::from_fields(&mut HashMap::new(), &mut reg),
             9_000,
             &remote_to_local
         ));

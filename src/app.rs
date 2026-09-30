@@ -21,6 +21,8 @@ pub(crate) mod dispatch_domain;
 #[cfg(not(feature = "gui"))]
 #[path = "app/dispatch_domain_stubs.rs"]
 pub(crate) mod dispatch_domain;
+#[cfg(feature = "gui")]
+pub(crate) mod engine_registry;
 pub(crate) mod event;
 #[cfg(feature = "gui")]
 pub(crate) mod event_handler;
@@ -119,10 +121,10 @@ pub(crate) struct App {
     pub(crate) stream_inbound_rx: std::sync::mpsc::Receiver<tasty_ipc::stream_hub::StreamInbound>,
     #[cfg(feature = "gui")]
     pub(crate) view: ViewRegistry,
-    /// Parked AppStates: preserved when all windows are closed so PTY sessions survive.
-    /// Moved into new windows when created, or used directly for IPC.
+    /// 모든 engine과 창·parked·임시 관계. 창을 모두 닫아도 engine과 PTY는 여기 남는다.
+    /// `view` 바로 뒤에 두어 종료 때 모든 창 View가 먼저, 그 뒤 engine이 drop된다.
     #[cfg(feature = "gui")]
-    pub(crate) parked_states: Vec<window_access::ParkedEngine>,
+    pub(crate) engines: engine_registry::EngineRegistry,
     /// 첫 창의 부팅 중에만 보유한다. 완료 시 상태를 MainView로 옮긴다.
     #[cfg(feature = "gui")]
     pub(crate) boot: Option<boot_machine::BootState>,
@@ -169,8 +171,6 @@ pub(crate) struct App {
     /// 메타데이터 조회만으로도 매니저는 만들어지므로 Some 여부로 대신할 수 없다.
     #[cfg(not(feature = "gui"))]
     pub(crate) plugin_started: bool,
-    /// 창에 배정하기 전의 engine. 창 생성 시 MainView로 옮긴다.
-    pub(crate) core_state: Option<crate::runtime::engine_session::EngineSession>,
     /// VM은 전용 워커 스레드가 소유한다. 초기화 실패 시 None.
     pub(crate) lua_engine: Option<tasty_lua::LuaEngine>,
     /// 자동실행 스크립트가 일으킨 이벤트로 같은 스크립트를 다시 실행하지 않게 한다.
@@ -288,7 +288,7 @@ impl App {
             stream_inbound_tx,
             stream_inbound_rx,
             view: ViewRegistry::new(proxy.clone()),
-            parked_states: Vec::new(),
+            engines: engine_registry::EngineRegistry::default(),
             boot: None,
             shutdown: None,
             shell_setup_mode: false,
@@ -309,7 +309,6 @@ impl App {
             plugin_manager: None,
             #[cfg(not(feature = "gui"))]
             plugin_started: false,
-            core_state: None,
             lua_engine: crate::hooks::lua::init_engine(),
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
             timers,
@@ -370,19 +369,18 @@ impl App {
             plugin_manager: None,
             #[cfg(not(feature = "gui"))]
             plugin_started: false,
-            core_state: None,
             lua_engine: crate::hooks::lua::init_engine(),
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
             timers,
         })
     }
 
-    /// App 또는 MainView의 CoreState를 반환한다. 아직 초기화되지 않았으면 panic한다.
+    /// 임시 engine, 없으면 첫 창 engine을 반환한다. 아직 초기화되지 않았으면 panic한다.
     #[cfg(feature = "gui")]
     pub(crate) fn core_state(&self) -> &crate::core::CoreState {
         self.engines()
             .primary()
-            .expect("App.core_state accessed before initialization")
+            .expect("App engine accessed before initialization")
     }
 
     /// 자동실행은 CoreState 초기화 전에도 호출될 수 있어 그때는 빈 레지스트리를 반환한다.
@@ -466,6 +464,6 @@ impl App {
     pub(crate) fn core_state_mut(&mut self) -> &mut crate::core::CoreState {
         self.engines_mut()
             .primary()
-            .expect("App.core_state accessed before initialization")
+            .expect("App engine accessed before initialization")
     }
 }

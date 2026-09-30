@@ -9,6 +9,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 /// IME 상태는 창마다 다르므로 MainView를 직접 받아 입력을 재현한다.
 pub fn handle_ime_method(
     w: &mut MainView,
+    engine: &mut crate::core::CoreState,
     method: &str,
     params: &serde_json::Value,
     id: serde_json::Value,
@@ -16,8 +17,8 @@ pub fn handle_ime_method(
     match method {
         "surface.ime_enable" => handle_ime_enable(w, id),
         "surface.ime_disable" => handle_ime_disable(w, id),
-        "surface.ime_preedit" => handle_ime_preedit(w, params, id),
-        "surface.ime_commit" => handle_ime_commit(w, params, id),
+        "surface.ime_preedit" => handle_ime_preedit(w, engine, params, id),
+        "surface.ime_commit" => handle_ime_commit(w, engine, params, id),
         "surface.ime_status" => handle_ime_status(w, id),
         _ => JsonRpcResponse::method_not_found(id, method),
     }
@@ -38,6 +39,7 @@ fn handle_ime_disable(w: &mut MainView, id: serde_json::Value) -> JsonRpcRespons
 
 fn handle_ime_preedit(
     w: &mut MainView,
+    engine: &mut crate::core::CoreState,
     params: &serde_json::Value,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -56,7 +58,7 @@ fn handle_ime_preedit(
         .map(|c| (c as usize, (c as usize) + text.len()));
 
     let text_for_response = text.clone();
-    match window_ime::ipc_set_preedit(w, text, cursor) {
+    match window_ime::ipc_set_preedit(w, engine, text, cursor) {
         Some((anchor_col, anchor_row, surface_id)) => JsonRpcResponse::success(
             id,
             json!({
@@ -73,6 +75,7 @@ fn handle_ime_preedit(
 
 fn handle_ime_commit(
     w: &mut MainView,
+    engine: &mut crate::core::CoreState,
     params: &serde_json::Value,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -81,7 +84,7 @@ fn handle_ime_commit(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
     };
 
-    window_ime::ipc_commit(w, &text);
+    window_ime::ipc_commit(w, engine, &text);
 
     JsonRpcResponse::success(id, json!({ "committed": true, "text": text }))
 }

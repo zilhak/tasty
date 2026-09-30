@@ -228,9 +228,9 @@ bundled egui-mesh surface(image/mesh_demo — `is_egui_mesh_allowed` 화이트�
   이유: 텍스처 델타 포함 paint frame 이 `MAX_FRAME_LEN` 을 초과할 수 있음). 이 함수는 **로컬
   authoritative render loop(살아있는 window)가 없는 engine 전용** — 두 소비처가 있다:
   헤드리스 부트스트랩(`src/boot/headless_plugins.rs::pump_plugins` 가 매 tick 호출)과, gui
-  인스턴스에서 macOS 최소화로 window 가 파괴되고 `CoreState` 만 `App::parked_states` 로
-  옮겨진 engine(`App::about_to_wait`, `src/app/event_handler.rs` 가 매 tick `parked_states`
-  전부를 순회하며 호출 — `window_lifecycle.rs` 의 창 복원이 `remove(0)` 으로 1개씩만
+  인스턴스에서 macOS 최소화로 window 가 파괴되고 `App.engines` 에서 parked 관계가 된
+  engine(`App::about_to_wait`, `src/app/event_handler.rs` 가 매 tick parked engine
+  전부를 순회하며 호출 — `window_lifecycle.rs` 의 창 복원이 `unpark_first` 로 1개씩만
   꺼내므로, 여러 window 가 동시에 최소화돼 있어도 나머지는 계속 이 순회 대상으로 남는다).
   client reader 스레드는 `tasty_ipc::mesh_stream::MeshFrameAssembler` 로 청크를 재조립해
   `MirrorEvent::Mesh(remote_surface_id, generation, frame_seq, full_textures, bytes)` 를

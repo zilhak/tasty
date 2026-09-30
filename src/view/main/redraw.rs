@@ -94,6 +94,7 @@ pub(crate) fn take_hidden_webview_focus_targets(
 impl MainView {
     pub(super) fn handle_redraw(
         &mut self,
+        engine: &mut crate::core::CoreState,
         _event_loop: &ActiveEventLoop,
         plugin_manager: Option<&PluginManager>,
         stream_hub: &tasty_ipc::stream_hub::StreamHub,
@@ -104,11 +105,11 @@ impl MainView {
         self.dispatch_pending_modal_opens();
 
         // 렌더링 전에 무대 진입으로 중단된 드래그와 IME 조합을 정리한다.
-        self.sync_fullscreen_stage_transition();
+        self.sync_fullscreen_stage_transition(engine);
 
         // PTY 출력과 TerminalEvent 처리는 AppEvent::TerminalOutput에서 수행한다.
 
-        self.resync_scale_factor();
+        self.resync_scale_factor(engine);
 
         // 레이아웃 변경에 맞춰 터미널 크기를 갱신한다. 무대 중에는 원본 grid를
         // 보존하고 무대를 나온 뒤 현재 영역에 맞춘다.
@@ -119,7 +120,7 @@ impl MainView {
             let scale_factor = self.base.gpu.scale_factor();
             crate::core::Core::resize_all_terminals(
                 self.state.tab_bar_height,
-                &mut self.core_state,
+                &mut *engine,
                 terminal_rect,
                 cell_w,
                 cell_h,
@@ -127,23 +128,23 @@ impl MainView {
             );
         }
 
-        self.render_if_dirty(plugin_manager, stream_hub);
+        self.render_if_dirty(engine, plugin_manager, stream_hub);
 
         // 무대가 draw 중 닫힐 수 있으므로 렌더 뒤 OS 전체화면 상태를 맞춘다.
         self.sync_window_fullscreen();
 
-        self.dispatch_pending_command_palette();
+        self.dispatch_pending_command_palette(engine);
 
         // 닫힌 메뉴의 후처리를 먼저 마쳐 새 메뉴 요청을 처리할 수 있게 한다.
-        self.poll_pending_native_menu();
+        self.poll_pending_native_menu(engine);
 
         // Process pending native context menu (after egui frame, before webview sync)
-        self.process_pending_native_menu();
+        self.process_pending_native_menu(engine);
 
         // file handler 선택 결과는 App의 다음 frame begin에서 처리한다.
 
         // 외부 drag&drop 으로 받은 파일 큐 처리.
-        self.process_pending_file_drops();
+        self.process_pending_file_drops(engine);
 
         // 무대 중에는 파일 드래그 요청을 버린다. 나중에 시작하면 버튼을 놓은 뒤일 수 있다.
         if self.state.fullscreen_stage_active() {
@@ -157,7 +158,7 @@ impl MainView {
         }
 
         // Sync webview lifecycle: create/destroy/reposition/visibility
-        self.sync_webviews(plugin_manager);
+        self.sync_webviews(engine, plugin_manager);
 
         if self.base.dirty {
             self.base.winit.request_redraw();
@@ -167,7 +168,7 @@ impl MainView {
     /// 전체화면 무대 진입 시 진행 중인 드래그·IME·native 메뉴를 취소한다.
     /// 배경으로 release가 전달되지 않으므로 드래그를 확정하지 않고 버린다.
     /// 이미 확정된 텍스트 선택과 vi 복사 모드는 유지한다.
-    fn sync_fullscreen_stage_transition(&mut self) {
+    fn sync_fullscreen_stage_transition(&mut self, engine: &mut crate::core::CoreState) {
         let active = self.state.fullscreen_stage_active();
         if active == self.stage_was_active {
             return;
@@ -180,7 +181,7 @@ impl MainView {
 
         // 무대를 열던 중의 조합 문자는 PTY로 보내지 않고 버린다.
         if self.ime_preedit.is_some() {
-            self.clear_ime_preedit();
+            self.clear_ime_preedit(engine);
         }
 
         // 진행 중 포인터 제스처 폐기.
@@ -218,7 +219,7 @@ impl MainView {
 
     /// Re-sync scale factor before render — macOS may not fire
     /// ScaleFactorChanged reliably during monitor hot-swap or sleep/wake.
-    fn resync_scale_factor(&mut self) {
+    fn resync_scale_factor(&mut self, engine: &mut crate::core::CoreState) {
         if self.base.gpu.sync_scale_factor(&self.base.winit) {
             let new_size = self.base.winit.inner_size();
             self.base.gpu.resize(new_size);
@@ -226,29 +227,30 @@ impl MainView {
             if self.state.fullscreen_stage_active() {
                 self.state.stage_deferred_grid_resync = true;
             } else {
-                self.apply_grid_resync();
+                self.apply_grid_resync(engine);
             }
             // Schedule another redraw to verify scale factor has stabilized.
             self.base.dirty = true;
         } else if self.state.stage_deferred_grid_resync && !self.state.fullscreen_stage_active() {
             // 무대를 나온 첫 프레임 — 보류했던 갱신을 여기서 소진한다.
             self.state.stage_deferred_grid_resync = false;
-            self.apply_grid_resync();
+            self.apply_grid_resync(engine);
             self.base.dirty = true;
         }
     }
 
     /// 현재 창/스케일 기준으로 신규 터미널의 기본 grid(cols/rows)를 갱신한다.
-    fn apply_grid_resync(&mut self) {
+    fn apply_grid_resync(&mut self, engine: &mut crate::core::CoreState) {
         let terminal_rect = self.compute_terminal_rect();
         let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
-        self.core_state.update_grid_size(cols, rows);
+        engine.update_grid_size(cols, rows);
     }
 
     /// dirty일 때 입력·mesh 중계와 GPU 렌더링, full 재전송 요청을 처리한다.
     /// 로컬 무대 중에도 attach 구독자에게 mesh를 중계해야 하므로 조기 반환하지 않는다.
     fn render_if_dirty(
         &mut self,
+        engine: &mut crate::core::CoreState,
         plugin_manager: Option<&PluginManager>,
         stream_hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
@@ -256,24 +258,28 @@ impl MainView {
             return;
         }
         self.base.begin_frame();
-        self.update_ime_cursor_area();
+        self.update_ime_cursor_area(engine);
         // 불변 차용 전에 plugin에 크기·배율·입력을 보내고 회신한 mesh를 합성한다.
         if let Some(mgr) = plugin_manager {
-            self.forward_egui_mesh_context(mgr);
+            self.forward_egui_mesh_context(engine, mgr);
             // GUI가 attach 서버인 경우의 mesh mirror forward — 로컬 redraw가
             // 방금 만든(또는 위 호출로 이미 있던) EguiMeshFrame 을 attach 구독자에게
             // 중계한다. 로컬 set_context 송신 이후에 불러 최신 프레임을 relay한다.
-            self.forward_mesh_to_attach_subscribers(mgr, stream_hub);
+            self.forward_mesh_to_attach_subscribers(engine, mgr, stream_hub);
         }
         // attach mesh mirror surface — 위와 동형이되 목적지가 원격이라
         // PluginManager 가 필요 없다(로컬에 plugin 프로세스가 없다).
-        self.forward_attach_mesh_context();
-        self.submit_gpu_frame(plugin_manager);
-        self.drain_full_texture_requests();
+        self.forward_attach_mesh_context(engine);
+        self.submit_gpu_frame(engine, plugin_manager);
+        self.drain_full_texture_requests(engine);
     }
 
     /// 실제 GPU 프레임 제출 + surface 에러 분기 처리.
-    fn submit_gpu_frame(&mut self, plugin_manager: Option<&PluginManager>) {
+    fn submit_gpu_frame(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        plugin_manager: Option<&PluginManager>,
+    ) {
         let link_hover = self
             .hovered_link
             .as_ref()
@@ -282,7 +288,7 @@ impl MainView {
         let vi_cursor = self.vi_copy.as_ref().map(|v| (v.surface_id, v.cursor));
         match self.base.gpu.render(
             &mut self.state,
-            &mut self.core_state,
+            &mut *engine,
             &self.base.winit,
             self.ime_preedit.as_ref(),
             active_sel.as_ref(),
@@ -322,7 +328,7 @@ impl MainView {
     /// 다음 tick 의 forward 가 need_full_textures `set_context`/`MeshFullResendRequest`
     /// 를 보낸다. plugin/원격은 스스로 재송신하지 않으므로 다음 tick 을 dirty 로
     /// 보장한다.
-    fn drain_full_texture_requests(&mut self) {
+    fn drain_full_texture_requests(&mut self, engine: &mut crate::core::CoreState) {
         let full_reqs = self.base.gpu.take_egui_mesh_full_requests();
         let popup_full_reqs = self.base.gpu.take_egui_mesh_popup_full_requests();
         let banner_full_reqs = self.base.gpu.take_egui_mesh_banner_full_requests();
@@ -353,7 +359,7 @@ impl MainView {
         // 가 세션을 통해 `MeshFullResendRequest` 로 forward 하도록 큐에 옮긴다.
         let attach_full_reqs = self.base.gpu.take_attach_mesh_full_requests();
         if !attach_full_reqs.is_empty() {
-            self.core_state
+            engine
                 .pending_mesh_full_resend_forward
                 .extend(attach_full_reqs);
             self.base.dirty = true;
@@ -362,12 +368,12 @@ impl MainView {
 
     /// 팝업이 닫힌 뒤 팔레트 명령을 실행한다.
     /// 호스트 명령은 여기서 실행하고 plugin 명령은 App의 처리 큐에 넣는다.
-    fn dispatch_pending_command_palette(&mut self) {
+    fn dispatch_pending_command_palette(&mut self, engine: &mut crate::core::CoreState) {
         if let Some(cmd) = self.state.command_palette.pending_run.take() {
             match cmd {
                 crate::state::command_palette::PaletteCommand::Host { id, .. } => {
                     // 알 수 없는 action_id는 dispatch_action_by_id가 경고를 기록한다.
-                    self.dispatch_action_by_id(id);
+                    self.dispatch_action_by_id(engine, id);
                 }
                 crate::state::command_palette::PaletteCommand::Plugin {
                     plugin_id,
@@ -384,8 +390,12 @@ impl MainView {
 
     /// 활성 워크스페이스의 각 패널에서 활성 탭에 속한 surface인지 확인한다.
     /// 분할된 탭은 모든 leaf가 보인다. 숨겨진 surface의 출력도 읽되 redraw만 생략한다.
-    pub(crate) fn is_surface_visible(&self, surface_id: u32) -> bool {
-        let Some(ws) = self.core_state.workspaces.get(self.state.active_workspace) else {
+    pub(crate) fn is_surface_visible(
+        &self,
+        engine: &crate::core::CoreState,
+        surface_id: u32,
+    ) -> bool {
+        let Some(ws) = engine.workspaces.get(self.state.active_workspace) else {
             return false;
         };
         for pane_id in ws.pane_layout().all_pane_ids() {
@@ -402,6 +412,7 @@ impl MainView {
     /// HTML surface 전체와 활성 surface의 영역을 수집한다. native 호출은 하지 않는다.
     fn collect_html_surfaces(
         &self,
+        engine: &crate::core::CoreState,
         scale_factor: f64,
     ) -> (
         std::collections::HashMap<u32, crate::webview::WebViewBounds>,
@@ -415,7 +426,7 @@ impl MainView {
             std::collections::HashMap::new();
         let mut all_html_ids: Vec<u32> = Vec::new();
 
-        for (ws_idx, ws) in self.core_state.workspaces.iter().enumerate() {
+        for (ws_idx, ws) in engine.workspaces.iter().enumerate() {
             let pane_rects = ws
                 .pane_layout()
                 .compute_rects(terminal_rect, scale_factor as f32);
@@ -506,6 +517,7 @@ impl MainView {
     /// 필요한 설정을 읽은 뒤 HTML surface의 native WebView를 만들고 페이지를 연다.
     fn create_missing_webviews(
         &mut self,
+        engine: &mut crate::core::CoreState,
         all_html_ids: &[u32],
         active_html: &std::collections::HashMap<u32, crate::webview::WebViewBounds>,
         scale_factor: f64,
@@ -519,9 +531,9 @@ impl MainView {
                     continue;
                 }
                 // Find the URL for this surface
-                let url = self.find_webview_url(sid);
+                let url = self.find_webview_url(engine, sid);
                 // 생성 시 적용할 plugin 설정(부재 시 default) 을 미리 해석한다.
-                let settings = self.resolve_webview_settings(sid);
+                let settings = self.resolve_webview_settings(engine, sid);
                 match crate::webview::PlatformWebView::new(
                     self.base.winit.as_ref(),
                     active_html
@@ -545,8 +557,8 @@ impl MainView {
                             bounds,
                             describe_webview_url(url.as_ref())
                         );
-                        self.attach_script_gate(sid, &wv, &settings);
-                        self.load_initial_url(sid, &wv, url.as_ref());
+                        self.attach_script_gate(engine, sid, &wv, &settings);
+                        self.load_initial_url(engine, sid, &wv, url.as_ref());
                         // 생성 직후 HTML viewer 설정(zoom/JS/scheme/remote) 적용 + 기록.
                         settings.apply(&wv);
                         // Start hidden if not active
@@ -566,12 +578,13 @@ impl MainView {
     /// html surface에 문서 단위 스크립트 허용을 붙인다(ADR-0053). 첫 로드 전에 sandbox 값을 맞춘다.
     fn attach_script_gate(
         &self,
+        engine: &crate::core::CoreState,
         sid: u32,
         wv: &crate::webview::PlatformWebView,
         settings: &crate::webview::HtmlWebViewSettings,
     ) {
         let Some(rs) = self
-            .find_remote_surface(sid)
+            .find_remote_surface(engine, sid)
             .filter(|rs| rs.kind_static == "html")
         else {
             return;
@@ -585,10 +598,10 @@ impl MainView {
     }
 
     /// 허용 직후의 재로드와 debug 탐색 조작을 native webview에 전달한다.
-    fn apply_webview_requests(&mut self) {
+    fn apply_webview_requests(&mut self, engine: &mut crate::core::CoreState) {
         for (sid, wv) in &self.webviews {
             let reload = self
-                .find_remote_surface(*sid)
+                .find_remote_surface(engine, *sid)
                 .is_some_and(|rs| rs.with_html_script(|st| st.take_reload_request()));
             if reload {
                 tracing::debug!("WebView surface {sid}: reloading after the script allowance");
@@ -635,6 +648,7 @@ impl MainView {
     /// URL scheme이 있으면 페이지를 열고, 없으면 HTML 본문으로 로드한다.
     fn load_initial_url(
         &mut self,
+        engine: &mut crate::core::CoreState,
         sid: u32,
         wv: &crate::webview::PlatformWebView,
         url: Option<&String>,
@@ -646,7 +660,7 @@ impl MainView {
             tracing::warn!("WebView surface {sid}: created without a URL; nothing will be loaded");
             return;
         };
-        self.note_host_webview_load(sid);
+        self.note_host_webview_load(engine, sid);
         if url.starts_with("file://") || url.starts_with("http://") || url.starts_with("https://") {
             wv.load_url(url);
         } else {
@@ -678,16 +692,16 @@ impl MainView {
             .retain(|sid, _| pending.iter().any(|(p, _)| p == sid));
     }
 
-    fn resync_webview_urls(&mut self, all_html_ids: &[u32]) {
+    fn resync_webview_urls(&mut self, engine: &mut crate::core::CoreState, all_html_ids: &[u32]) {
         for &sid in all_html_ids {
-            let Some(url) = self.find_webview_url(sid) else {
+            let Some(url) = self.find_webview_url(engine, sid) else {
                 continue;
             };
             if self.webview_loaded_urls.get(&sid) == Some(&url) {
                 continue;
             }
             if let Some(wv) = self.webviews.get(&sid) {
-                self.note_host_webview_load(sid);
+                self.note_host_webview_load(engine, sid);
                 if url.starts_with("file://")
                     || url.starts_with("http://")
                     || url.starts_with("https://")
@@ -704,12 +718,16 @@ impl MainView {
     /// Synchronize native WebView instances with the current state.
     /// Creates webviews for new Html panels, destroys removed ones,
     /// updates bounds and visibility based on active workspace/tab.
-    fn sync_webviews(&mut self, plugin_manager: Option<&PluginManager>) {
+    fn sync_webviews(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        plugin_manager: Option<&PluginManager>,
+    ) {
         let scale_factor = self.base.gpu.scale_factor() as f64;
-        let (active_html, all_html_ids) = self.collect_html_surfaces(scale_factor);
-        self.create_missing_webviews(&all_html_ids, &active_html, scale_factor);
-        self.resync_webview_urls(&all_html_ids);
-        self.update_html_script_banners(&all_html_ids);
+        let (active_html, all_html_ids) = self.collect_html_surfaces(engine, scale_factor);
+        self.create_missing_webviews(engine, &all_html_ids, &active_html, scale_factor);
+        self.resync_webview_urls(engine, &all_html_ids);
+        self.update_html_script_banners(engine, &all_html_ids);
 
         // When any egui overlay (context menu, popup, dialog) is open,
         // hide all WebViews so they don't cover the overlay.
@@ -720,10 +738,10 @@ impl MainView {
         // native 콜백이 사용할 단축키 스냅샷을 다시 만든다.
         let plugin_epoch =
             plugin_manager.map(|m| (m.command_registry.revision(), m.config.shortcut_revision()));
-        if self.webview_policy_src.as_ref() != Some(&self.core_state.settings.keybindings)
+        if self.webview_policy_src.as_ref() != Some(&engine.settings.keybindings)
             || self.webview_policy_plugin_epoch != plugin_epoch
         {
-            let kb = &self.core_state.settings.keybindings;
+            let kb = &engine.settings.keybindings;
             let plugin_combos = plugin_manager
                 .map(|m| crate::plugin_bridge::key_dispatch::all_command_bindings(m, kb))
                 .unwrap_or_default();
@@ -817,7 +835,7 @@ impl MainView {
         // 다를 때만 backend 에 재적용한다(변경 없으면 backend 호출 0 — 매 프레임 호출 회피).
         let live_sids: Vec<u32> = self.webviews.keys().copied().collect();
         for sid in live_sids {
-            let resolved = self.resolve_webview_settings(sid);
+            let resolved = self.resolve_webview_settings(engine, sid);
             if self.webview_applied_settings.get(&sid) != Some(&resolved) {
                 if let Some(wv) = self.webviews.get(&sid) {
                     resolved.apply(wv);
@@ -825,7 +843,7 @@ impl MainView {
                 self.webview_applied_settings.insert(sid, resolved);
             }
         }
-        self.apply_webview_requests();
+        self.apply_webview_requests(engine);
 
         // native nav_state 를 RemoteSurface 로 mirror — egui 렌더 경로(egui_panels →
         // webview_chrome)가 다음 프레임에 읽어 loading/error chrome 을 그린다. borrow 충돌
@@ -838,7 +856,7 @@ impl MainView {
             .collect();
         let mut nav_changed = false;
         for (sid, nav) in navs {
-            if let Some(rs) = self.find_remote_surface(sid)
+            if let Some(rs) = self.find_remote_surface(engine, sid)
                 && rs.nav_state() != nav
             {
                 rs.set_nav_state(nav);
@@ -858,10 +876,7 @@ impl MainView {
             for nav in wv.take_pending_navigations() {
                 if let Some(mgr) = plugin_manager {
                     let owner = crate::adapters::ipc::handler::webview::notify_navigation_attempt(
-                        mgr,
-                        &self.core_state,
-                        *sid,
-                        &nav.url,
+                        mgr, &*engine, *sid, &nav.url,
                     );
                     crate::plugin_bridge::user_navigation::record(
                         records,
@@ -877,7 +892,7 @@ impl MainView {
         let sids: Vec<u32> = self.webviews.keys().copied().collect();
         for sid in sids {
             let took_over = self
-                .find_remote_surface(sid)
+                .find_remote_surface(engine, sid)
                 .is_some_and(|rs| rs.take_webview_owner_takeover());
             crate::plugin_bridge::user_navigation::settle_frame(
                 &mut self.state.webview_user_navigations,
@@ -890,8 +905,12 @@ impl MainView {
     /// surface_id 로 surface 를 전 workspace 에서 찾는다. 탭당 1 개만 보는
     /// `Tab::surface()`(포커스 leaf) 가 아니라 각 탭의 `SurfaceLayout` 트리 전체를
     /// 훑으므로, 탭 내부 분할(SurfaceGroup)의 비포커스 leaf 도 도달한다.
-    fn find_surface_anywhere(&self, surface_id: u32) -> Option<&dyn crate::model::Surface> {
-        for ws in &self.core_state.workspaces {
+    fn find_surface_anywhere<'e>(
+        &self,
+        engine: &'e crate::core::CoreState,
+        surface_id: u32,
+    ) -> Option<&'e dyn crate::model::Surface> {
+        for ws in &engine.workspaces {
             for &pid in &ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
@@ -908,33 +927,43 @@ impl MainView {
     }
 
     /// surface_id 로 RemoteSurface 를 찾아 반환. nav_state mirror 기록에 쓴다.
-    pub(super) fn find_remote_surface(
+    pub(super) fn find_remote_surface<'e>(
         &self,
+        engine: &'e crate::core::CoreState,
         surface_id: u32,
-    ) -> Option<&crate::plugin_bridge::remote_surface::RemoteSurface> {
-        self.find_surface_anywhere(surface_id)?
+    ) -> Option<&'e crate::plugin_bridge::remote_surface::RemoteSurface> {
+        self.find_surface_anywhere(engine, surface_id)?
             .as_any()
             .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
     }
 
     /// webview surface 의 kind.
-    fn webview_surface_kind(&self, surface_id: u32) -> Option<&'static str> {
-        self.find_surface_anywhere(surface_id).map(|s| s.kind())
+    fn webview_surface_kind(
+        &self,
+        engine: &crate::core::CoreState,
+        surface_id: u32,
+    ) -> Option<&'static str> {
+        self.find_surface_anywhere(engine, surface_id)
+            .map(|s| s.kind())
     }
 
     /// surface 소유 plugin의 WebView 설정을 읽는다. 저장된 값이 없으면 기본값을 쓴다.
-    fn resolve_webview_settings(&self, surface_id: u32) -> crate::webview::HtmlWebViewSettings {
+    fn resolve_webview_settings(
+        &self,
+        engine: &crate::core::CoreState,
+        surface_id: u32,
+    ) -> crate::webview::HtmlWebViewSettings {
         use crate::settings::PluginSettingValue;
         use crate::webview::{ColorScheme, HtmlWebViewSettings};
 
         let plugin_id = match self
-            .webview_surface_kind(surface_id)
+            .webview_surface_kind(engine, surface_id)
             .and_then(crate::webview::webview_settings_plugin_id)
         {
             Some(id) => id,
             None => return HtmlWebViewSettings::default(),
         };
-        let s = &self.core_state.settings;
+        let s = &engine.settings;
         let zoom_percent = match s.plugin_setting(plugin_id, "zoom") {
             Some(PluginSettingValue::Number(n)) => *n,
             _ => 100.0,
@@ -969,8 +998,8 @@ impl MainView {
     }
 
     /// Find the URL for an Html panel by surface ID.
-    fn find_webview_url(&self, surface_id: u32) -> Option<String> {
-        self.find_surface_anywhere(surface_id)?
+    fn find_webview_url(&self, engine: &crate::core::CoreState, surface_id: u32) -> Option<String> {
+        self.find_surface_anywhere(engine, surface_id)?
             .webview_url()
             .map(|u| u.to_string())
     }
@@ -979,10 +1008,11 @@ impl MainView {
     /// macOS/Windows의 Ready는 즉시 처리하며 Linux의 Pending은 이후 폴링으로 회수한다.
     pub(super) fn open_native_menu(
         &mut self,
+        engine: &mut crate::core::CoreState,
         x: f32,
         y: f32,
         items: &[crate::platform::native_menu::MenuItem],
-        cont: impl FnOnce(&mut MainView, Option<u32>) + 'static,
+        cont: impl FnOnce(&mut MainView, &mut crate::core::CoreState, Option<u32>) + 'static,
     ) {
         use crate::platform::native_menu::{
             MenuOutcome, show_context_menu, warn_if_menu_anchor_scale_premise_broken,
@@ -993,7 +1023,7 @@ impl MainView {
         warn_if_menu_anchor_scale_premise_broken(self.base.winit.scale_factor());
         match show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, items) {
             MenuOutcome::Ready(result) => {
-                cont(self, result);
+                cont(self, engine, result);
                 self.mark_dirty();
             }
             MenuOutcome::Pending(handle) => {
@@ -1006,7 +1036,7 @@ impl MainView {
 
     /// 메뉴 결과를 비차단 조회하고 완료됐으면 후처리를 실행한다.
     /// redraw에서는 새 메뉴 요청보다 먼저, 대기 중에는 8ms 주기로 호출한다.
-    pub(crate) fn poll_pending_native_menu(&mut self) {
+    pub(crate) fn poll_pending_native_menu(&mut self, engine: &mut crate::core::CoreState) {
         let Some((handle, _)) = self.pending_menu.as_mut() else {
             return;
         };
@@ -1016,7 +1046,7 @@ impl MainView {
         let Some((_, cont)) = self.pending_menu.take() else {
             return;
         };
-        cont(self, result);
+        cont(self, engine, result);
         self.mark_dirty();
     }
 
@@ -1033,7 +1063,7 @@ impl MainView {
 
     /// Process pending native context menu request.
     /// Called after egui frame so we have access to the window handle.
-    fn process_pending_native_menu(&mut self) {
+    fn process_pending_native_menu(&mut self, engine: &mut crate::core::CoreState) {
         use crate::state::PendingNativeMenu;
 
         // OS 메뉴는 무대 위에 뜨므로 요청을 버린다. 무대 종료 뒤에는 좌표도 유효하지 않다.
@@ -1066,27 +1096,27 @@ impl MainView {
                 tab_index,
                 x,
                 y,
-            } => self.handle_tab_native_menu(pane_id, tab_index, x, y),
+            } => self.handle_tab_native_menu(engine, pane_id, tab_index, x, y),
             PendingNativeMenu::Pane { pane_id, x, y } => {
-                self.handle_pane_native_menu(pane_id, x, y)
+                self.handle_pane_native_menu(engine, pane_id, x, y)
             }
             PendingNativeMenu::Workspace { ws_idx, x, y } => {
-                self.handle_workspace_native_menu(ws_idx, x, y)
+                self.handle_workspace_native_menu(engine, ws_idx, x, y)
             }
             PendingNativeMenu::WorkspaceCategoryHeader { cat_id, x, y } => {
-                self.handle_workspace_category_header_native_menu(cat_id, x, y)
+                self.handle_workspace_category_header_native_menu(engine, cat_id, x, y)
             }
             PendingNativeMenu::SidebarBackground { x, y } => {
-                self.handle_sidebar_background_native_menu(x, y)
+                self.handle_sidebar_background_native_menu(engine, x, y)
             }
             PendingNativeMenu::TerminalSurface { surface_id, x, y } => {
-                self.handle_terminal_surface_native_menu(surface_id, x, y)
+                self.handle_terminal_surface_native_menu(engine, surface_id, x, y)
             }
             PendingNativeMenu::TerminalLink { link, x, y } => {
-                self.handle_terminal_link_native_menu(link, x, y)
+                self.handle_terminal_link_native_menu(engine, link, x, y)
             }
             PendingNativeMenu::Surface { surface_id, x, y } => {
-                self.handle_surface_native_menu(surface_id, x, y)
+                self.handle_surface_native_menu(engine, surface_id, x, y)
             }
             PendingNativeMenu::Explorer {
                 surface_id,
@@ -1095,53 +1125,71 @@ impl MainView {
                 single_is_dir,
                 x,
                 y,
-            } => self.handle_explorer_native_menu(surface_id, paths, cwd, single_is_dir, x, y),
+            } => self.handle_explorer_native_menu(
+                engine,
+                surface_id,
+                paths,
+                cwd,
+                single_is_dir,
+                x,
+                y,
+            ),
             PendingNativeMenu::ExplorerFavorite {
                 surface_id,
                 path,
                 x,
                 y,
-            } => self.handle_explorer_favorite_native_menu(surface_id, path, x, y),
+            } => self.handle_explorer_favorite_native_menu(engine, surface_id, path, x, y),
             PendingNativeMenu::NewWorkspaceButton { x, y } => {
-                self.handle_new_workspace_button_native_menu(x, y)
+                self.handle_new_workspace_button_native_menu(engine, x, y)
             }
             PendingNativeMenu::NewTabButton { pane_id, x, y } => {
-                self.handle_new_tab_button_native_menu(pane_id, x, y)
+                self.handle_new_tab_button_native_menu(engine, pane_id, x, y)
             }
         }
     }
 
-    fn handle_tab_native_menu(&mut self, pane_id: u32, tab_index: usize, x: f32, y: f32) {
+    fn handle_tab_native_menu(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        pane_id: u32,
+        tab_index: usize,
+        x: f32,
+        y: f32,
+    ) {
         // 메뉴가 열린 동안 탭 순서가 바뀌어도 같은 탭을 가리키도록 ID로 고정한다.
-        let target =
-            super::menu_target::TabMenuTarget::capture(&self.core_state, pane_id, tab_index);
+        let target = super::menu_target::TabMenuTarget::capture(&*engine, pane_id, tab_index);
         let tab_id = target.tab_id();
-        let items = self.build_tab_context_menu_items(pane_id, tab_index, tab_id);
-        self.open_native_menu(x, y, &items, move |this, result| {
+        let items = self.build_tab_context_menu_items(engine, pane_id, tab_index, tab_id);
+        self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
             if let (Some(tab_id), Some(item)) = (tab_id, result)
-                && this.apply_tab_move_selection(tab_id, item)
+                && this.apply_tab_move_selection(engine, tab_id, item)
             {
                 return;
             }
             // continuation 은 메뉴가 닫힌 뒤(플랫폼에 따라 여러 프레임 뒤)
             // 실행된다 — 그 사이 탭이 닫혔거나 옮겨졌을 수 있으므로 현재 위치를 다시 찾는다.
-            let Some((pane_id, tab_index)) = target.resolve(&this.core_state) else {
+            let Some((pane_id, tab_index)) = target.resolve(&*engine) else {
                 return;
             };
-            this.apply_tab_menu_selection(pane_id, tab_index, result);
+            this.apply_tab_menu_selection(engine, pane_id, tab_index, result);
         });
     }
 
     /// tab 컨텍스트 메뉴 선택 적용. 대상 유효성은 호출부(continuation)가 미리
     /// 검사한다.
-    fn apply_tab_menu_selection(&mut self, pane_id: u32, tab_index: usize, result: Option<u32>) {
+    fn apply_tab_menu_selection(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        pane_id: u32,
+        tab_index: usize,
+        result: Option<u32>,
+    ) {
         match result {
-            Some(1) => self.rename_tab(pane_id, tab_index),
+            Some(1) => self.rename_tab(engine, pane_id, tab_index),
             Some(2) => {
-                if self
-                    .state
-                    .close_tab(&mut self.core_state, pane_id, tab_index)
-                    && self.core_state.workspaces.is_empty()
+                if self.state.close_tab(&mut *engine, pane_id, tab_index)
+                    && engine.workspaces.is_empty()
                 {
                     self.request_close();
                 }
@@ -1150,16 +1198,16 @@ impl MainView {
                 // Move Left — mirror 워크스페이스는 로컬 탭 순서 변경 대신 MoveTab 을
                 // 원격으로 forward 한다(로컬 실행은 원격 트리와 어긋남).
                 if tab_index > 0 {
-                    self.move_tab_via_mirror_or_local(pane_id, tab_index, tab_index - 1);
+                    self.move_tab_via_mirror_or_local(engine, pane_id, tab_index, tab_index - 1);
                 }
             }
             Some(4) => {
                 // Move Right — mirror 워크스페이스는 로컬 탭 순서 변경 대신 MoveTab 을
                 // 원격으로 forward 한다(로컬 실행은 원격 트리와 어긋남).
-                self.move_tab_via_mirror_or_local(pane_id, tab_index, tab_index + 1);
+                self.move_tab_via_mirror_or_local(engine, pane_id, tab_index, tab_index + 1);
             }
             Some(5) => {
-                if let Err(e) = self.save_tab_preset_from_pane_tab(pane_id, tab_index) {
+                if let Err(e) = self.save_tab_preset_from_pane_tab(engine, pane_id, tab_index) {
                     tracing::warn!("save tab preset failed: {e}");
                     self.state.toasts.push(
                         crate::i18n::t("preset.toast.save_failed"),
@@ -1169,7 +1217,7 @@ impl MainView {
                 }
             }
             Some(6) => {
-                if let Err(e) = self.save_pane_preset_from_pane_id(pane_id) {
+                if let Err(e) = self.save_pane_preset_from_pane_id(engine, pane_id) {
                     tracing::warn!("save pane preset failed: {e}");
                     self.state.toasts.push(
                         crate::i18n::t("preset.toast.save_failed"),
@@ -1186,12 +1234,12 @@ impl MainView {
     /// 존재 여부로 활성/비활성을 미리 계산하고, 이동 항목은 대기 슬롯에 따라 붙인다.
     fn build_tab_context_menu_items(
         &mut self,
+        engine: &mut crate::core::CoreState,
         pane_id: u32,
         tab_index: usize,
         tab_id: Option<u32>,
     ) -> Vec<crate::platform::native_menu::MenuItem> {
         use crate::platform::native_menu::MenuItem;
-        let engine = &mut self.core_state;
         let tab_count = self
             .state
             .active_workspace(engine)
@@ -1224,15 +1272,20 @@ impl MainView {
             MenuItem::new(6, crate::i18n::t("preset.context.save_as_pane_preset")),
         ];
         if let Some(tab_id) = tab_id {
-            self.push_tab_move_items(&mut items, tab_id);
+            self.push_tab_move_items(engine, &mut items, tab_id);
         }
         items
     }
 
     /// mirror의 탭 이동은 원격으로 보내고, 그 외에는 로컬 탭 순서를 변경한다.
-    fn move_tab_via_mirror_or_local(&mut self, pane_id: u32, from_index: usize, to_index: usize) {
-        let mirror_op = self
-            .core_state
+    fn move_tab_via_mirror_or_local(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        pane_id: u32,
+        from_index: usize,
+        to_index: usize,
+    ) {
+        let mirror_op = engine
             .find_pane_by_id(pane_id)
             .and_then(|p| p.tabs.get(p.active_tab))
             .and_then(|t| t.focused_surface_id())
@@ -1243,10 +1296,10 @@ impl MainView {
             });
         if !self
             .state
-            .forward_mirror_structural(&mut self.core_state, mirror_op, Vec::new())
+            .forward_mirror_structural(&mut *engine, mirror_op, Vec::new())
             && let Some(pane) = self
                 .state
-                .active_workspace_mut(&mut self.core_state)
+                .active_workspace_mut(&mut *engine)
                 .pane_layout_mut()
                 .find_pane_mut(pane_id)
         {
@@ -1256,8 +1309,7 @@ impl MainView {
 
     /// tab rename 팝업을 연다 — 현재 표시명을 prefill 하고 `RenameTarget::TabName`
     /// scope 로 `rename` 팝업을 dispatch.
-    fn rename_tab(&mut self, pane_id: u32, tab_index: usize) {
-        let engine = &mut self.core_state;
+    fn rename_tab(&mut self, engine: &mut crate::core::CoreState, pane_id: u32, tab_index: usize) {
         let Some((tab_id, current_name)) = self
             .state
             .active_workspace(engine)
@@ -1280,7 +1332,13 @@ impl MainView {
         );
     }
 
-    fn handle_pane_native_menu(&mut self, pane_id: u32, x: f32, y: f32) {
+    fn handle_pane_native_menu(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        pane_id: u32,
+        x: f32,
+        y: f32,
+    ) {
         use crate::platform::native_menu::MenuItem;
         let items = [
             MenuItem::new(1, crate::i18n::t("pane_context_menu.new_terminal")),
@@ -1293,19 +1351,23 @@ impl MainView {
             MenuItem::new(7, crate::i18n::t("preset.context.apply_tab_preset")),
             MenuItem::new(8, crate::i18n::t("preset.context.apply_pane_preset")),
         ];
-        self.open_native_menu(x, y, &items, move |this, result| {
+        self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
             // 메뉴가 열려 있는 동안 pane 이 닫혔을 수 있다.
-            if !this.core_state.has_pane(pane_id) {
+            if !engine.has_pane(pane_id) {
                 return;
             }
-            this.apply_pane_menu_selection(pane_id, result);
+            this.apply_pane_menu_selection(engine, pane_id, result);
         });
     }
 
     /// pane 컨텍스트 메뉴 선택 적용. 대상 유효성은 호출부(continuation)가 미리
     /// 검사한다.
-    fn apply_pane_menu_selection(&mut self, pane_id: u32, result: Option<u32>) {
-        let engine = &mut self.core_state;
+    fn apply_pane_menu_selection(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        pane_id: u32,
+        result: Option<u32>,
+    ) {
         match result {
             Some(1) => {
                 self.state.active_workspace_mut(engine).focused_pane = pane_id;
@@ -1342,7 +1404,7 @@ impl MainView {
                 }
             }
             Some(6) => {
-                if let Err(e) = self.save_pane_preset_from_pane_id(pane_id) {
+                if let Err(e) = self.save_pane_preset_from_pane_id(engine, pane_id) {
                     tracing::warn!("save pane preset failed: {e}");
                     self.state.toasts.push(
                         crate::i18n::t("preset.toast.save_failed"),
@@ -1377,11 +1439,16 @@ impl MainView {
         }
     }
 
-    fn handle_workspace_native_menu(&mut self, ws_idx: usize, x: f32, y: f32) {
-        let target = super::menu_target::WorkspaceMenuTarget::capture(&self.core_state, ws_idx);
-        let (items, move_targets) = self.build_workspace_context_menu_items(ws_idx);
-        self.open_native_menu(x, y, &items, move |this, result| {
-            let engine = &mut this.core_state;
+    fn handle_workspace_native_menu(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        ws_idx: usize,
+        x: f32,
+        y: f32,
+    ) {
+        let target = super::menu_target::WorkspaceMenuTarget::capture(&*engine, ws_idx);
+        let (items, move_targets) = self.build_workspace_context_menu_items(engine, ws_idx);
+        self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
             // 메뉴가 열려 있는 동안 워크스페이스가 닫히거나 옮겨졌을 수 있어 현재 위치를 다시 찾는다.
             let Some(ws_idx) = target.resolve(engine) else {
                 return;
@@ -1391,6 +1458,7 @@ impl MainView {
                     let ws = &engine.workspaces[ws_idx];
                     let (workspace_id, name) = (ws.id, ws.name.clone());
                     this.open_rename_workspace_dialog(
+                        engine,
                         crate::state::RenameTarget::WorkspaceName { workspace_id },
                         name,
                     );
@@ -1399,6 +1467,7 @@ impl MainView {
                     let ws = &engine.workspaces[ws_idx];
                     let (workspace_id, subtitle) = (ws.id, ws.subtitle.clone());
                     this.open_rename_workspace_dialog(
+                        engine,
                         crate::state::RenameTarget::WorkspaceSubtitle { workspace_id },
                         subtitle,
                     );
@@ -1416,7 +1485,7 @@ impl MainView {
                     }
                 }
                 Some(5) => {
-                    if let Err(e) = this.save_workspace_preset_from_idx(ws_idx) {
+                    if let Err(e) = this.save_workspace_preset_from_idx(engine, ws_idx) {
                         tracing::warn!("save workspace preset failed: {e}");
                         this.state.toasts.push(
                             crate::i18n::t("preset.toast.save_failed"),
@@ -1455,11 +1524,11 @@ impl MainView {
                     // 새 카테고리 생성 다이얼로그.
                     crate::adapters::ui::category_actions::open_new_category_dialog(
                         &mut this.state,
-                        &this.core_state,
+                        &*engine,
                     );
                 }
                 Some(id) if id >= 200 => {
-                    this.move_workspace_to_category(ws_idx, &move_targets, id);
+                    this.move_workspace_to_category(engine, ws_idx, &move_targets, id);
                 }
                 _ => {}
             }
@@ -1471,13 +1540,13 @@ impl MainView {
     /// 대응한다(카테고리 토글이 꺼져 있으면 빈 벡터).
     fn build_workspace_context_menu_items(
         &mut self,
+        engine: &mut crate::core::CoreState,
         ws_idx: usize,
     ) -> (
         Vec<crate::platform::native_menu::MenuItem>,
         Vec<crate::model::WorkspaceCategoryId>,
     ) {
         use crate::platform::native_menu::MenuItem;
-        let engine = &mut self.core_state;
         let ws_count = engine.workspaces.len();
         let can_move_up = ws_idx > 0;
         let can_move_down = ws_idx + 1 < ws_count;
@@ -1558,10 +1627,11 @@ impl MainView {
     /// scope 로 `rename` 팝업을 dispatch(제목/부제 공용 — 값과 target 만 다르다).
     fn open_rename_workspace_dialog(
         &mut self,
+        engine: &mut crate::core::CoreState,
         target: crate::state::RenameTarget,
         current_value: String,
     ) {
-        let scope = target.popup_scope(&self.core_state);
+        let scope = target.popup_scope(&*engine);
         self.state.dialogs.rename = Some((target, current_value));
         self.state.dispatch_intent(
             crate::intent::UiIntent::OpenPopup {
@@ -1577,11 +1647,11 @@ impl MainView {
     /// 참고) 그대로 받는다.
     fn move_workspace_to_category(
         &mut self,
+        engine: &mut crate::core::CoreState,
         ws_idx: usize,
         move_targets: &[crate::model::WorkspaceCategoryId],
         id: u32,
     ) {
-        let engine = &mut self.core_state;
         if let Some(&cat_id) = move_targets.get((id - 200) as usize) {
             let ws_id = engine.workspaces[ws_idx].id;
             if let Err(e) = engine.set_workspace_category(ws_id, cat_id) {
@@ -1593,21 +1663,20 @@ impl MainView {
 
     fn handle_workspace_category_header_native_menu(
         &mut self,
+        engine: &mut crate::core::CoreState,
         cat_id: crate::model::WorkspaceCategoryId,
         x: f32,
         y: f32,
     ) {
         // 카테고리 메뉴를 구성한다. 기본 카테고리는 이름 변경과 삭제를 제외한다.
-        let is_normal = self
-            .core_state
+        let is_normal = engine
             .categories()
             .iter()
             .find(|c| c.id == cat_id)
             .map(|c| c.is_normal())
             .unwrap_or(true);
         let items = category_header_menu_items(is_normal);
-        self.open_native_menu(x, y, &items, move |this, result| {
-            let engine = &mut this.core_state;
+        self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
             // 메뉴가 열려 있는 동안 카테고리가 삭제됐을 수 있다.
             if !engine.categories().iter().any(|c| c.id == cat_id) {
                 return;
@@ -1664,7 +1733,7 @@ impl MainView {
                 Some(100) => {
                     crate::adapters::ui::category_actions::open_new_category_dialog(
                         &mut this.state,
-                        &this.core_state,
+                        &*engine,
                     );
                 }
                 _ => {}
@@ -1672,7 +1741,12 @@ impl MainView {
         });
     }
 
-    fn handle_sidebar_background_native_menu(&mut self, x: f32, y: f32) {
+    fn handle_sidebar_background_native_menu(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        x: f32,
+        y: f32,
+    ) {
         use crate::platform::native_menu::MenuItem;
         // 빈 배경 우클릭 — 새 카테고리 · 원격 워크스페이스 추가. 그룹모드 배경(카테고리
         // ON)·flat모드 배경(카테고리 OFF, `docs/features/workspace-category/index.md`
@@ -1685,28 +1759,39 @@ impl MainView {
         ];
         // 사이드바 배경 메뉴는 특정 대상(탭/pane/워크스페이스)에 매이지 않아
         // continuation 시점에 재확인할 대상 자체가 없다.
-        self.open_native_menu(x, y, &items, move |this, result| match result {
-            Some(100) => {
-                crate::adapters::ui::category_actions::open_new_category_dialog(
-                    &mut this.state,
-                    &this.core_state,
-                );
-            }
-            Some(2) => {
-                this.state.dispatch_intent(
-                    crate::intent::UiIntent::OpenPopup {
-                        id: crate::adapters::ui::popup::remote_attach::REMOTE_ATTACH_POPUP_ID,
-                        mode: crate::intent::OpenPopupMode::CenteredFocused,
-                    }
-                    .from_user_context_menu(),
-                );
-            }
-            _ => {}
-        });
+        self.open_native_menu(
+            engine,
+            x,
+            y,
+            &items,
+            move |this, engine, result| match result {
+                Some(100) => {
+                    crate::adapters::ui::category_actions::open_new_category_dialog(
+                        &mut this.state,
+                        &*engine,
+                    );
+                }
+                Some(2) => {
+                    this.state.dispatch_intent(
+                        crate::intent::UiIntent::OpenPopup {
+                            id: crate::adapters::ui::popup::remote_attach::REMOTE_ATTACH_POPUP_ID,
+                            mode: crate::intent::OpenPopupMode::CenteredFocused,
+                        }
+                        .from_user_context_menu(),
+                    );
+                }
+                _ => {}
+            },
+        );
     }
 
-    fn handle_terminal_surface_native_menu(&mut self, surface_id: u32, x: f32, y: f32) {
-        let engine = &mut self.core_state;
+    fn handle_terminal_surface_native_menu(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        surface_id: u32,
+        x: f32,
+        y: f32,
+    ) {
         use crate::platform::native_menu::MenuItem;
         // Show copy items only when there is an active (non-empty) selection.
         let has_selection = self.text_selection.as_ref().is_some_and(|s| !s.is_empty());
@@ -1747,10 +1832,10 @@ impl MainView {
             crate::i18n::t("terminal_context_menu.copy_surface_id"),
         ));
         items.push(MenuItem::separator());
-        self.push_surface_move_items(&mut items);
-        self.open_native_menu(x, y, &items, move |this, result| {
+        self.push_surface_move_items(engine, &mut items);
+        self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
             // 메뉴가 열려 있는 동안 대상 surface 가 닫혔을 수 있다.
-            if !this.core_state.has_surface(surface_id) {
+            if !engine.has_surface(surface_id) {
                 return;
             }
             match result {
@@ -1765,10 +1850,10 @@ impl MainView {
                     );
                 }
                 Some(2) => {
-                    this.copy_selection_to_clipboard();
+                    this.copy_selection_to_clipboard(engine);
                 }
                 Some(3) => {
-                    this.copy_selection_no_newline();
+                    this.copy_selection_no_newline(engine);
                 }
                 Some(20) => {
                     if let Some(target) = &selection_open_path
@@ -1779,7 +1864,7 @@ impl MainView {
                 }
                 Some(item) => {
                     // 사용자 우클릭 조작(release 경로)이다. 이동 항목이 아니면 무시한다.
-                    this.apply_surface_move_selection(surface_id, item);
+                    this.apply_surface_move_selection(engine, surface_id, item);
                 }
                 None => {}
             }
@@ -1803,7 +1888,13 @@ impl MainView {
         )
     }
 
-    fn handle_surface_native_menu(&mut self, surface_id: u32, x: f32, y: f32) {
+    fn handle_surface_native_menu(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        surface_id: u32,
+        x: f32,
+        y: f32,
+    ) {
         use crate::platform::native_menu::MenuItem;
         // 비-terminal surface: 전용 항목(copy surface id) + 구분선 +
         // 서피스 이동 / (서피스가 대기 중일 때) 서피스를 이곳으로 이동.
@@ -1812,10 +1903,10 @@ impl MainView {
             crate::i18n::t("terminal_context_menu.copy_surface_id"),
         )];
         items.push(MenuItem::separator());
-        self.push_surface_move_items(&mut items);
-        self.open_native_menu(x, y, &items, move |this, result| {
+        self.push_surface_move_items(engine, &mut items);
+        self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
             // 메뉴가 열려 있는 동안 대상 surface 가 닫혔을 수 있다.
-            if !this.core_state.has_surface(surface_id) {
+            if !engine.has_surface(surface_id) {
                 return;
             }
             match result {
@@ -1831,7 +1922,7 @@ impl MainView {
                 }
                 Some(item) => {
                     // 사용자 우클릭 조작(release 경로)이다. 이동 항목이 아니면 무시한다.
-                    this.apply_surface_move_selection(surface_id, item);
+                    this.apply_surface_move_selection(engine, surface_id, item);
                 }
                 None => {}
             }
@@ -1840,6 +1931,7 @@ impl MainView {
 
     fn handle_explorer_native_menu(
         &mut self,
+        engine: &mut crate::core::CoreState,
         surface_id: u32,
         paths: Vec<std::path::PathBuf>,
         cwd: std::path::PathBuf,
@@ -1858,7 +1950,7 @@ impl MainView {
             .unwrap_or(false);
         // mirror 경로를 로컬 파일 작업에 사용하지 않도록 쓰기 메뉴를 숨긴다(ADR-0022).
         // 다른 호출 경로도 있으므로 각 핸들러의 검사도 유지한다.
-        let is_mirror = self.core_state.is_mirror_surface(surface_id);
+        let is_mirror = engine.is_mirror_surface(surface_id);
 
         let items = Self::build_explorer_context_menu(
             multi,
@@ -1867,24 +1959,28 @@ impl MainView {
             has_clip,
             is_mirror,
         );
-        self.open_native_menu(x, y, &items, move |this, result| {
+        self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
             // 메뉴가 열려 있는 동안 explorer surface 가 닫혔을 수 있다.
-            if !this.core_state.has_surface(surface_id) {
+            if !engine.has_surface(surface_id) {
                 return;
             }
             match result {
                 Some(1) => this.explorer_menu_copy_path(surface_id, &paths, &cwd, is_empty_target),
-                Some(10) => this.explorer_menu_set_clipboard(surface_id, &paths, false),
-                Some(11) => this.explorer_menu_set_clipboard(surface_id, &paths, true),
-                Some(12) => this.explorer_menu_paste(surface_id, &paths, &cwd, is_folder),
-                Some(30) => this.explorer_menu_trash(surface_id, &paths),
-                Some(20) => this.explorer_menu_open_in_system(surface_id, &paths, &cwd),
-                Some(40) => this.explorer_menu_rename(surface_id, &paths),
-                Some(50) => {
-                    this.explorer_menu_add_favorite(surface_id, &paths, &cwd, is_empty_target)
-                }
-                Some(60) => this.explorer_menu_open_in_new_tab(surface_id, &paths),
-                Some(61) => this.explorer_menu_set_root(surface_id, &paths),
+                Some(10) => this.explorer_menu_set_clipboard(engine, surface_id, &paths, false),
+                Some(11) => this.explorer_menu_set_clipboard(engine, surface_id, &paths, true),
+                Some(12) => this.explorer_menu_paste(engine, surface_id, &paths, &cwd, is_folder),
+                Some(30) => this.explorer_menu_trash(engine, surface_id, &paths),
+                Some(20) => this.explorer_menu_open_in_system(engine, surface_id, &paths, &cwd),
+                Some(40) => this.explorer_menu_rename(engine, surface_id, &paths),
+                Some(50) => this.explorer_menu_add_favorite(
+                    engine,
+                    surface_id,
+                    &paths,
+                    &cwd,
+                    is_empty_target,
+                ),
+                Some(60) => this.explorer_menu_open_in_new_tab(engine, surface_id, &paths),
+                Some(61) => this.explorer_menu_set_root(engine, surface_id, &paths),
                 _ => {}
             }
         });
@@ -2033,11 +2129,12 @@ impl MainView {
     /// 없어 무해하므로 그대로 둔다.
     pub(crate) fn explorer_menu_set_clipboard(
         &mut self,
+        engine: &mut crate::core::CoreState,
         surface_id: u32,
         paths: &[std::path::PathBuf],
         cut: bool,
     ) {
-        if cut && self.core_state.is_mirror_surface(surface_id) {
+        if cut && engine.is_mirror_surface(surface_id) {
             self.toast_remote_write_unsupported();
             return;
         }
@@ -2050,6 +2147,7 @@ impl MainView {
     /// 붙여넣기 (아이템 12). 컨텍스트 메뉴와 키보드 단축키 양쪽에서 공유한다.
     pub(crate) fn explorer_menu_paste(
         &mut self,
+        engine: &mut crate::core::CoreState,
         surface_id: u32,
         paths: &[std::path::PathBuf],
         cwd: &std::path::Path,
@@ -2058,7 +2156,7 @@ impl MainView {
         // (ADR-0022) mirror explorer 는 파일 변경을 지원하지 않는다 — 표시된 경로는 원격
         // 호스트의 경로라 로컬 fs 붙여넣기를 그대로 실행하면 로컬을 원격 경로
         // 문자열로 오조작(우연히 동일 경로 존재)하거나 조용히 실패한다.
-        if self.core_state.is_mirror_surface(surface_id) {
+        if engine.is_mirror_surface(surface_id) {
             self.toast_remote_write_unsupported();
             return;
         }
@@ -2083,9 +2181,14 @@ impl MainView {
     }
 
     /// 휴지통으로 이동 (아이템 30, 가역적이라 별도 확인 모달 없음).
-    fn explorer_menu_trash(&mut self, surface_id: u32, paths: &[std::path::PathBuf]) {
+    fn explorer_menu_trash(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        surface_id: u32,
+        paths: &[std::path::PathBuf],
+    ) {
         // (ADR-0022) mirror explorer 는 파일 변경을 지원하지 않는다.
-        if self.core_state.is_mirror_surface(surface_id) {
+        if engine.is_mirror_surface(surface_id) {
             self.toast_remote_write_unsupported();
             return;
         }
@@ -2102,12 +2205,13 @@ impl MainView {
     /// 시스템에서 열기 (아이템 20).
     fn explorer_menu_open_in_system(
         &mut self,
+        engine: &mut crate::core::CoreState,
         surface_id: u32,
         paths: &[std::path::PathBuf],
         cwd: &std::path::Path,
     ) {
         // (ADR-0022) mirror explorer 는 파일 변경을 지원하지 않는다.
-        if self.core_state.is_mirror_surface(surface_id) {
+        if engine.is_mirror_surface(surface_id) {
             self.toast_remote_write_unsupported();
             return;
         }
@@ -2118,11 +2222,16 @@ impl MainView {
     }
 
     /// 이름 변경 (아이템 40).
-    fn explorer_menu_rename(&mut self, surface_id: u32, paths: &[std::path::PathBuf]) {
+    fn explorer_menu_rename(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        surface_id: u32,
+        paths: &[std::path::PathBuf],
+    ) {
         // (ADR-0022) mirror explorer 는 파일 변경을 지원하지 않는다 — 이 가드가 먼저 막아서
         // rename 팝업(`draw_rename_popup`) 자체가 열리지 않는다(팝업의
         // `path.exists()` 게이트까지 도달하지 않음).
-        if self.core_state.is_mirror_surface(surface_id) {
+        if engine.is_mirror_surface(surface_id) {
             self.toast_remote_write_unsupported();
             return;
         }
@@ -2132,7 +2241,7 @@ impl MainView {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
             let target = crate::state::RenameTarget::ExplorerEntry { surface_id, path };
-            let scope = target.popup_scope(&self.core_state);
+            let scope = target.popup_scope(&*engine);
             self.state.dialogs.rename = Some((target, current_name));
             self.state.dispatch_intent(
                 crate::intent::UiIntent::OpenPopup {
@@ -2147,6 +2256,7 @@ impl MainView {
     /// 즐겨찾기 추가 (아이템 50) — 대상: 단일 폴더면 그 폴더, 빈 영역이면 cwd.
     fn explorer_menu_add_favorite(
         &mut self,
+        engine: &mut crate::core::CoreState,
         surface_id: u32,
         paths: &[std::path::PathBuf],
         cwd: &std::path::Path,
@@ -2154,7 +2264,7 @@ impl MainView {
     ) {
         // 원격 경로를 전역 즐겨찾기에 저장하면 로컬·다른 호스트에서도 사용될 수 있다.
         // 팝업에는 surface_id가 없으므로 여기서 mirror를 차단한다(ADR-0022).
-        if self.core_state.is_mirror_surface(surface_id) {
+        if engine.is_mirror_surface(surface_id) {
             self.toast_remote_write_unsupported();
             return;
         }
@@ -2168,7 +2278,7 @@ impl MainView {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
         let target = crate::state::RenameTarget::ExplorerAddFavorite { path };
-        let scope = target.popup_scope(&self.core_state);
+        let scope = target.popup_scope(&*engine);
         self.state.dialogs.rename = Some((target, seed));
         self.state.dispatch_intent(
             crate::intent::UiIntent::OpenPopup {
@@ -2182,14 +2292,18 @@ impl MainView {
     /// 대상 폴더로 새 explorer 탭을 연다.
     /// add_kind_tab_by_owner는 원격 구조 변경을 전달하지 않고 로컬만 변경하므로
     /// mirror에서는 금지한다. 로컬에만 만든 탭은 다음 원격 구조 동기화에서 사라진다.
-    fn explorer_menu_open_in_new_tab(&mut self, surface_id: u32, paths: &[std::path::PathBuf]) {
-        if self.core_state.is_mirror_surface(surface_id) {
+    fn explorer_menu_open_in_new_tab(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        surface_id: u32,
+        paths: &[std::path::PathBuf],
+    ) {
+        if engine.is_mirror_surface(surface_id) {
             self.toast_remote_write_unsupported();
             return;
         }
         if let Some(folder) = paths.first().cloned() {
             let params = serde_json::json!({ "path": folder.to_string_lossy() });
-            let engine = &mut self.core_state;
             if let Err(e) = self
                 .state
                 .add_kind_tab_by_owner(engine, surface_id, "explorer", &params)
@@ -2200,15 +2314,20 @@ impl MainView {
     }
 
     /// 이 폴더로 루트 설정 (아이템 61) — 현재 explorer 의 cwd 를 그 폴더로 이동.
-    fn explorer_menu_set_root(&mut self, surface_id: u32, paths: &[std::path::PathBuf]) {
+    fn explorer_menu_set_root(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        surface_id: u32,
+        paths: &[std::path::PathBuf],
+    ) {
         if let Some(folder) = paths.first().cloned() {
-            let engine = &mut self.core_state;
             self.state.set_explorer_cwd(engine, surface_id, folder);
         }
     }
 
     fn handle_explorer_favorite_native_menu(
         &mut self,
+        engine: &mut crate::core::CoreState,
         surface_id: u32,
         path: std::path::PathBuf,
         x: f32,
@@ -2219,7 +2338,7 @@ impl MainView {
         // 동일 mirror 문제(`explorer_menu_open_in_new_tab` 주석 참고) — mirror 에서는
         // 메뉴에서부터 숨긴다. "이 폴더로 루트 설정"/"즐겨찾기에서 제거"는 로컬 뷰
         // 상태만 바꾸는 안전한 동작이라 그대로 노출.
-        let is_mirror = self.core_state.is_mirror_surface(surface_id);
+        let is_mirror = engine.is_mirror_surface(surface_id);
         let mut items = Vec::new();
         if !is_mirror {
             items.push(MenuItem::new(
@@ -2236,9 +2355,9 @@ impl MainView {
             1,
             crate::i18n::t("explorer.context_menu.remove_from_favorites"),
         ));
-        self.open_native_menu(x, y, &items, move |this, result| {
+        self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
             // 메뉴가 열려 있는 동안 explorer surface 가 닫혔을 수 있다.
-            if !this.core_state.has_surface(surface_id) {
+            if !engine.has_surface(surface_id) {
                 return;
             }
             match result {
@@ -2248,7 +2367,6 @@ impl MainView {
                         this.toast_remote_write_unsupported();
                     } else {
                         let params = serde_json::json!({ "path": path.to_string_lossy() });
-                        let engine = &mut this.core_state;
                         if let Err(e) = this
                             .state
                             .add_kind_tab_by_owner(engine, surface_id, "explorer", &params)
@@ -2258,12 +2376,10 @@ impl MainView {
                     }
                 }
                 Some(61) => {
-                    let engine = &mut this.core_state;
                     this.state
                         .set_explorer_cwd(engine, surface_id, path.clone());
                 }
                 Some(1) => {
-                    let engine = &mut this.core_state;
                     // 사이드바는 다음 프레임 스냅샷에서 갱신 — redraw 만 요청.
                     engine.explorer_favorites.remove(&path);
                     engine.explorer_favorites.save();
@@ -2273,7 +2389,12 @@ impl MainView {
         });
     }
 
-    fn handle_new_workspace_button_native_menu(&mut self, x: f32, y: f32) {
+    fn handle_new_workspace_button_native_menu(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        x: f32,
+        y: f32,
+    ) {
         use crate::platform::native_menu::MenuItem;
         let items = [
             MenuItem::new(1, crate::i18n::t("preset.context.apply_workspace_preset")),
@@ -2281,42 +2402,53 @@ impl MainView {
             MenuItem::new(2, crate::i18n::t("context_menu.add_remote_workspace")),
         ];
         // 두 항목 모두 특정 대상에 매이지 않는 팝업 열기라 재확인할 대상이 없다.
-        self.open_native_menu(x, y, &items, move |this, result| match result {
-            Some(1) => {
-                this.state.dialogs.preset_picker_selected = None;
-                this.state.dispatch_intent(
-                    crate::intent::UiIntent::OpenPopup {
-                        id: crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
-                        mode: crate::intent::OpenPopupMode::CenteredFocused,
-                    }
-                    .from_user_context_menu(),
-                );
-            }
-            Some(2) => {
-                this.state.dispatch_intent(
-                    crate::intent::UiIntent::OpenPopup {
-                        id: crate::adapters::ui::popup::remote_attach::REMOTE_ATTACH_POPUP_ID,
-                        mode: crate::intent::OpenPopupMode::CenteredFocused,
-                    }
-                    .from_user_context_menu(),
-                );
-            }
-            _ => {}
-        });
+        self.open_native_menu(
+            engine,
+            x,
+            y,
+            &items,
+            move |this, _engine, result| match result {
+                Some(1) => {
+                    this.state.dialogs.preset_picker_selected = None;
+                    this.state.dispatch_intent(
+                        crate::intent::UiIntent::OpenPopup {
+                            id: crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
+                            mode: crate::intent::OpenPopupMode::CenteredFocused,
+                        }
+                        .from_user_context_menu(),
+                    );
+                }
+                Some(2) => {
+                    this.state.dispatch_intent(
+                        crate::intent::UiIntent::OpenPopup {
+                            id: crate::adapters::ui::popup::remote_attach::REMOTE_ATTACH_POPUP_ID,
+                            mode: crate::intent::OpenPopupMode::CenteredFocused,
+                        }
+                        .from_user_context_menu(),
+                    );
+                }
+                _ => {}
+            },
+        );
     }
 
-    fn handle_new_tab_button_native_menu(&mut self, pane_id: u32, x: f32, y: f32) {
+    fn handle_new_tab_button_native_menu(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        pane_id: u32,
+        x: f32,
+        y: f32,
+    ) {
         use crate::platform::native_menu::MenuItem;
         let items = [
             MenuItem::new(1, crate::i18n::t("preset.context.apply_tab_preset")),
             MenuItem::new(2, crate::i18n::t("preset.context.apply_pane_preset")),
         ];
-        self.open_native_menu(x, y, &items, move |this, result| {
+        self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
             // 메뉴가 열려 있는 동안 pane 이 닫혔을 수 있다.
-            if !this.core_state.has_pane(pane_id) {
+            if !engine.has_pane(pane_id) {
                 return;
             }
-            let engine = &mut this.core_state;
             match result {
                 Some(1) => {
                     this.state.active_workspace_mut(engine).focused_pane = pane_id;

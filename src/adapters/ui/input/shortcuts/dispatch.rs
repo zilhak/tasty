@@ -25,7 +25,11 @@ impl MainView {
     /// KeybindingSettings의 field_id로 액션을 실행한다. 알 수 없는 ID는 false다.
     /// 현재 명령 팔레트가 호출하며 에이전트 IPC에는 노출하지 않는다.
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: action_id 문자열→액션 평면 match 디스패치 — 단축키와 1:1, arm 나열
-    pub(crate) fn dispatch_action_by_id(&mut self, action_id: &str) -> bool {
+    pub(crate) fn dispatch_action_by_id(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        action_id: &str,
+    ) -> bool {
         use crate::adapters::ui::popup::PopupScope;
         use crate::model::SplitDirection;
 
@@ -40,7 +44,6 @@ impl MainView {
         // state/engine 차용이 끝난 뒤 clipboard/selection 액션을 실행하도록 모아 둔다.
         let mut deferred: Option<DeferredPaletteAction> = None;
         let state = &mut self.state;
-        let engine = &mut self.core_state;
 
         match action_id {
             "new_workspace" => {
@@ -479,16 +482,16 @@ impl MainView {
         // 키 경로와 같은 순서: 복사는 선택 텍스트→탐색기 파일, 붙여넣기는 탐색기→터미널이다.
         match deferred {
             Some(DeferredPaletteAction::Copy) => {
-                if !self.run_copy() {
-                    self.run_explorer_action(ExplorerAction::CopyFiles);
+                if !self.run_copy(engine) {
+                    self.run_explorer_action(engine, ExplorerAction::CopyFiles);
                 }
             }
             Some(DeferredPaletteAction::Cut) => {
-                self.run_explorer_action(ExplorerAction::CutFiles);
+                self.run_explorer_action(engine, ExplorerAction::CutFiles);
             }
             Some(DeferredPaletteAction::Paste) => {
-                if !self.run_explorer_action(ExplorerAction::PasteFiles) {
-                    self.run_paste();
+                if !self.run_explorer_action(engine, ExplorerAction::PasteFiles) {
+                    self.run_paste(engine);
                 }
             }
             None => {}
@@ -512,6 +515,7 @@ impl MainView {
     #[cfg(not(target_os = "macos"))]
     fn handle_window_control_shortcuts(
         &mut self,
+        engine: &mut crate::core::CoreState,
         key: &Key,
         mods: ModifiersState,
         kb: &crate::settings::KeybindingSettings,
@@ -522,7 +526,7 @@ impl MainView {
             (&kb.close_window, "close_window"),
         ] {
             if matches_any_binding(binding, key, mods) {
-                return self.dispatch_action_by_id(action_id);
+                return self.dispatch_action_by_id(engine, action_id);
             }
         }
         false
@@ -530,8 +534,13 @@ impl MainView {
 
     /// 사용자 스크립트를 읽어 App의 Lua 워커에 실행을 요청한다.
     /// 등록이 없거나 파일을 못 읽어도 매칭된 키는 소비해 다른 액션으로 넘어가지 않게 한다.
-    fn try_dispatch_script_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
-        let kb = &self.core_state.settings.keybindings;
+    fn try_dispatch_script_shortcut(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        key: &Key,
+        mods: ModifiersState,
+    ) -> bool {
+        let kb = &engine.settings.keybindings;
         let Some(script_id) = kb
             .script_bindings
             .iter()
@@ -540,7 +549,7 @@ impl MainView {
         else {
             return false;
         };
-        let Some(entry) = self.core_state.settings.scripts.get(&script_id) else {
+        let Some(entry) = engine.settings.scripts.get(&script_id) else {
             tracing::warn!(
                 target: "tasty_lua",
                 "script shortcut matched but script '{script_id}' not registered — ignoring"
@@ -586,7 +595,12 @@ impl MainView {
         true
     }
 
-    pub(crate) fn handle_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
+    pub(crate) fn handle_shortcut(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        key: &Key,
+        mods: ModifiersState,
+    ) -> bool {
         let ctrl = mods.control_key();
         let shift = mods.shift_key();
         // alt는 macOS의 Command, 다른 OS의 Alt다. option은 macOS에서만 사용한다.
@@ -599,20 +613,20 @@ impl MainView {
         let cell_w = self.base.gpu.cell_width();
         let cell_h = self.base.gpu.cell_height();
 
-        if self.handle_copy_shortcut(key, mods) {
+        if self.handle_copy_shortcut(engine, key, mods) {
             return true;
         }
 
-        if self.handle_explorer_shortcut(key, mods) {
+        if self.handle_explorer_shortcut(engine, key, mods) {
             self.base.dirty = true;
             return true;
         }
 
-        let kb = self.core_state.settings.keybindings.clone();
+        let kb = engine.settings.keybindings.clone();
 
         // macOS는 AppKit의 메뉴 단축키가 처리하므로 winit에서 중복 실행하지 않는다.
         #[cfg(not(target_os = "macos"))]
-        if self.handle_window_control_shortcuts(key, mods, &kb) {
+        if self.handle_window_control_shortcuts(engine, key, mods, &kb) {
             return true;
         }
 
@@ -623,7 +637,7 @@ impl MainView {
         };
         if Self::handle_keybinding_shortcuts(
             &mut self.state,
-            &mut self.core_state,
+            &mut *engine,
             &kb,
             key,
             mods,
@@ -631,21 +645,21 @@ impl MainView {
             cells,
             &self.proxy,
         ) {
-            if self.core_state.workspaces.is_empty() {
+            if engine.workspaces.is_empty() {
                 self.request_close();
             }
             self.base.dirty = true;
             return true;
         }
 
-        if self.try_dispatch_script_shortcut(key, mods) {
+        if self.try_dispatch_script_shortcut(engine, key, mods) {
             self.base.dirty = true;
             return true;
         }
 
         if Self::handle_numeric_switch_shortcuts(
             &mut self.state,
-            &mut self.core_state,
+            &mut *engine,
             &kb,
             key,
             mods,
@@ -654,18 +668,18 @@ impl MainView {
             alt,
             option,
         ) {
-            if self.core_state.workspaces.is_empty() {
+            if engine.workspaces.is_empty() {
                 self.request_close();
             }
             self.base.dirty = true;
             return true;
         }
 
-        if self.handle_paste_shortcut(key, mods) {
+        if self.handle_paste_shortcut(engine, key, mods) {
             return true;
         }
 
-        if Self::handle_zoom_shortcut(&mut self.state, &mut self.core_state, key, mods) {
+        if Self::handle_zoom_shortcut(&mut self.state, &mut *engine, key, mods) {
             self.base.dirty = true;
             return true;
         }

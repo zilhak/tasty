@@ -12,8 +12,7 @@ use tasty_type_geometry::length::PhysicalPx;
 impl MainView {
     /// 현재 마우스 좌표와 수식키 상태로 hovered_link를 갱신한다.
     /// 변경이 있으면 true를 반환 (렌더 dirty 플래그를 켜기 위함).
-    pub(crate) fn update_hovered_link(&mut self) -> bool {
-        let engine = &mut self.core_state;
+    pub(crate) fn update_hovered_link(&mut self, engine: &mut crate::core::CoreState) -> bool {
         let prev = self
             .hovered_link
             .as_ref()
@@ -31,7 +30,7 @@ impl MainView {
         {
             None
         } else {
-            self.compute_hovered_link()
+            self.compute_hovered_link(engine)
         };
 
         let changed = prev
@@ -42,8 +41,7 @@ impl MainView {
         changed
     }
 
-    fn compute_hovered_link(&self) -> Option<HoveredLink> {
-        let engine = &self.core_state;
+    fn compute_hovered_link(&self, engine: &crate::core::CoreState) -> Option<HoveredLink> {
         let pos = self.cursor_position?;
         let terminal_rect = self.compute_terminal_rect();
         let x = pos.x as f32;
@@ -120,6 +118,7 @@ impl MainView {
 
     pub(super) fn handle_cursor_moved(
         &mut self,
+        engine: &mut crate::core::CoreState,
         position: winit::dpi::PhysicalPosition<f64>,
         egui_consumed: bool,
     ) {
@@ -171,7 +170,7 @@ impl MainView {
         // divider 드래그 중에는 mesh로 전달하지 않아야 아래 드래그 갱신이 실행된다.
         // 입력 우선순위: docs/architecture/input-layer.md.
         if self.dragging_divider.is_none()
-            && let Some((sid, _plugin_id, rect)) = self.egui_mesh_target_at(x, y)
+            && let Some((sid, _plugin_id, rect)) = self.egui_mesh_target_at(engine, x, y)
         {
             self.update_mesh_hover(Some(MeshHoverTarget::Local(sid)));
             self.egui_mesh_push_pointer_moved(sid, rect, x, y);
@@ -180,7 +179,7 @@ impl MainView {
         }
         // attach mesh mirror surface 위 포인터 이동 forward(`docs/dev-guide/egui-mesh-channel.md`
         // 의 "attach mesh mirror 소비 경로" 참고) — 위와 동형이되 목적지가 원격.
-        if let Some((sid, rect)) = self.attach_mesh_target_at(x, y) {
+        if let Some((sid, rect)) = self.attach_mesh_target_at(engine, x, y) {
             self.update_mesh_hover(Some(MeshHoverTarget::Attach(sid)));
             self.attach_mesh_push_pointer_moved(sid, rect, x, y);
             self.mark_dirty();
@@ -191,7 +190,7 @@ impl MainView {
         // `PointerGone` 을 1 회 forward 한다(mesh→mesh, mesh→non-mesh 전환 공통 처리).
         self.update_mesh_hover(None);
 
-        if self.update_hovered_link() {
+        if self.update_hovered_link(engine) {
             self.mark_dirty();
         }
 
@@ -207,21 +206,21 @@ impl MainView {
                     .last()
                     .copied()
                     .and_then(|(button, sid)| {
-                        self.core_state
+                        engine
                             .find_terminal_by_id(sid)
                             .map(|t| (sid, button, t.mouse_tracking()))
                     });
                 // 1002와 1003 모두 버튼 드래그를 보고한다. 버튼 없는 1003 이동은 아래에서 처리한다.
                 if let Some((sid, button, mode)) = track
                     && matches!(
-                        self.effective_click_tracking(sid, mode),
+                        self.effective_click_tracking(engine, sid, mode),
                         tasty_terminal::MouseTrackingMode::CellMotion
                             | tasty_terminal::MouseTrackingMode::AllMotion
                     )
                 {
-                    let (col, row) = self.mouse_cell_for_report(sid, x, y);
+                    let (col, row) = self.mouse_cell_for_report(engine, sid, x, y);
                     if self.last_mouse_report_cell != Some((sid, col, row)) {
-                        self.report_mouse_event(sid, x, y, button, true, false);
+                        self.report_mouse_event(engine, sid, x, y, button, true, false);
                     }
                     return;
                 }
@@ -229,7 +228,9 @@ impl MainView {
             // 우·미들 버튼 드래그로 로컬 선택을 바꾸지 않는다.
             let is_dragging =
                 self.left_mouse_down && self.text_selection.as_ref().is_some_and(|s| s.dragging);
-            if is_dragging && let Some((point, _)) = self.mouse_to_grid(x, y, &terminal_rect) {
+            if is_dragging
+                && let Some((point, _)) = self.mouse_to_grid(engine, x, y, &terminal_rect)
+            {
                 if let Some(sel) = &mut self.text_selection {
                     sel.cursor = point;
                 }
@@ -237,7 +238,7 @@ impl MainView {
             }
         } else {
             // 버튼 없는 DECSET 1003 이동. 위 드래그 보고와 중복하지 않는다.
-            self.report_hover_motion(x, y, &terminal_rect);
+            self.report_hover_motion(engine, x, y, &terminal_rect);
         }
 
         if let Some(drag) = self.dragging_divider {
@@ -245,7 +246,6 @@ impl MainView {
             let cell_h = self.base.gpu.cell_height();
             let scale_factor = self.base.gpu.scale_factor();
             let changed = {
-                let engine = &mut self.core_state;
                 let changed = match drag.kind {
                     DividerDragKind::Pane => self.state.update_pane_divider(
                         engine,
@@ -315,6 +315,7 @@ impl MainView {
     /// 남은 클릭을 버튼별 핸들러에 전달한다.
     pub(super) fn handle_mouse_input(
         &mut self,
+        engine: &mut crate::core::CoreState,
         button_state: ElementState,
         button: MouseButton,
         egui_consumed: bool,
@@ -344,7 +345,7 @@ impl MainView {
         }
 
         let overlay_open = self.mouse_overlay_open();
-        if self.try_click_to_activate(button, button_state, overlay_open) {
+        if self.try_click_to_activate(engine, button, button_state, overlay_open) {
             return;
         }
 
@@ -371,18 +372,18 @@ impl MainView {
         // divider 드래그의 release는 mesh로 보내지 않는다. 아래 핸들러가
         // 크기 변경을 확정하고 드래그 상태를 해제해야 한다.
         if self.dragging_divider.is_none()
-            && self.try_forward_egui_mesh_button(button, button_state)
+            && self.try_forward_egui_mesh_button(engine, button, button_state)
         {
             return;
         }
-        if self.try_forward_attach_mesh_button(button, button_state) {
+        if self.try_forward_attach_mesh_button(engine, button, button_state) {
             return;
         }
 
         match button {
-            MouseButton::Right => self.handle_right_button(button_state),
-            MouseButton::Middle => self.handle_middle_button(button_state),
-            MouseButton::Left => self.handle_left_button(button_state),
+            MouseButton::Right => self.handle_right_button(engine, button_state),
+            MouseButton::Middle => self.handle_middle_button(engine, button_state),
+            MouseButton::Left => self.handle_left_button(engine, button_state),
             _ => {}
         }
     }
@@ -425,6 +426,7 @@ impl MainView {
     /// docs/architecture/input-layer.md.
     fn try_click_to_activate(
         &mut self,
+        engine: &mut crate::core::CoreState,
         button: MouseButton,
         button_state: ElementState,
         overlay_open: bool,
@@ -439,15 +441,11 @@ impl MainView {
             let terminal_rect = self.compute_terminal_rect();
             let scale_factor = self.base.gpu.scale_factor();
             let (x, y) = (pos.x as f32, pos.y as f32);
-            if let Some(sid) = self.state.surface_id_at_position(
-                &self.core_state,
-                x,
-                y,
-                terminal_rect,
-                scale_factor,
-            ) && self.state.focused_surface_id(&self.core_state) != Some(sid)
+            if let Some(sid) =
+                self.state
+                    .surface_id_at_position(&*engine, x, y, terminal_rect, scale_factor)
+                && self.state.focused_surface_id(&*engine) != Some(sid)
             {
-                let engine = &mut self.core_state;
                 let changed_pane =
                     self.state
                         .focus_pane_at_position(engine, x, y, terminal_rect, scale_factor);
@@ -468,12 +466,13 @@ impl MainView {
     /// 이벤트를 surface-local 좌표로 누적해 다음 set_context 로 보내고 소비(`true`).
     fn try_forward_egui_mesh_button(
         &mut self,
+        engine: &mut crate::core::CoreState,
         button: MouseButton,
         button_state: ElementState,
     ) -> bool {
         if let Some(pos) = self.cursor_position {
             let (x, y) = (pos.x as f32, pos.y as f32);
-            if let Some((sid, _plugin_id, rect)) = self.egui_mesh_target_at(x, y) {
+            if let Some((sid, _plugin_id, rect)) = self.egui_mesh_target_at(engine, x, y) {
                 let pressed = super::egui_mesh::is_pressed(button_state);
                 if !pressed {
                     self.left_mouse_down = false;
@@ -489,12 +488,13 @@ impl MainView {
     /// attach mesh mirror surface 입력 forward — 위와 동형이되 목적지가 원격.
     fn try_forward_attach_mesh_button(
         &mut self,
+        engine: &mut crate::core::CoreState,
         button: MouseButton,
         button_state: ElementState,
     ) -> bool {
         if let Some(pos) = self.cursor_position {
             let (x, y) = (pos.x as f32, pos.y as f32);
-            if let Some((sid, rect)) = self.attach_mesh_target_at(x, y) {
+            if let Some((sid, rect)) = self.attach_mesh_target_at(engine, x, y) {
                 let pressed = super::egui_mesh::is_pressed(button_state);
                 if !pressed {
                     self.left_mouse_down = false;
@@ -509,7 +509,11 @@ impl MainView {
 
     /// 우클릭 라우팅: 트래킹 ON+Shift없음이면 앱 위임(ADR-0015), 아니면 tasty 컨텍스트
     /// 메뉴(terminal/비-terminal 별도). 결정은 순수 `right_click_delegates_to_app`.
-    fn handle_right_button(&mut self, button_state: ElementState) {
+    fn handle_right_button(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        button_state: ElementState,
+    ) {
         // 링크 메뉴 스냅샷은 한 클릭 사이클의 것이다 — press 는 이전 값을 버리고, release 는
         // 아래 early return 보다 먼저 회수해 다음 사이클로 새지 않게 한다.
         let released_link = match button_state {
@@ -528,7 +532,7 @@ impl MainView {
             return;
         }
         let Some(surface_id) = self.state.surface_id_at_position(
-            &self.core_state,
+            &*engine,
             x,
             y,
             terminal_rect,
@@ -536,8 +540,7 @@ impl MainView {
         ) else {
             return;
         };
-        let tracking = self
-            .core_state
+        let tracking = engine
             .find_terminal_by_id(surface_id)
             .map(|t| t.mouse_tracking());
         let Some(tracking) = tracking else {
@@ -549,7 +552,7 @@ impl MainView {
         // `try_handle_link_click` 을 위임 판정보다 먼저 부르는 것과 같은 게이트다.
         let link = match button_state {
             ElementState::Pressed => {
-                self.right_link_press = self.terminal_link_menu_target(surface_id);
+                self.right_link_press = self.terminal_link_menu_target(engine, surface_id);
                 self.right_link_press.clone()
             }
             ElementState::Released => released_link,
@@ -559,18 +562,19 @@ impl MainView {
             return;
         }
         // 블랙리스트면 None 으로 격하 → 우클릭이 tasty 컨텍스트 메뉴로 빠진다.
-        let tracking = self.effective_click_tracking(surface_id, tracking);
+        let tracking = self.effective_click_tracking(engine, surface_id, tracking);
         let shift = self.base.modifiers.shift_key();
         if right_click_delegates_to_app(tracking, shift) {
             // 트래킹 앱이 마우스를 캡처 중이라 우클릭이 앱으로 간다 — Shift+드래그/
             // Shift+우클릭 우회 안내를 트래킹 세션당 1회(Pressed, 설정 ON, ADR-0015).
             if button_state == ElementState::Pressed {
-                self.report_left_press_capture(surface_id);
+                self.report_left_press_capture(engine, surface_id);
                 // Shift+우클릭(ADR-0015)은 이 분기에 들어오지 않으므로 스택에도 안
                 // 오른다 — press 를 안 보낸 드래그의 motion 이 새지 않는다.
                 push_report_button(&mut self.report_buttons_down, 2, surface_id);
             }
             self.report_mouse_event(
+                engine,
                 surface_id,
                 x,
                 y,
@@ -596,28 +600,32 @@ impl MainView {
     }
 
     /// 미들클릭 라우팅: 트래킹 ON 에서만 앱에 보고 (트래킹 OFF 는 무동작 유지).
-    fn handle_middle_button(&mut self, button_state: ElementState) {
+    fn handle_middle_button(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        button_state: ElementState,
+    ) {
         let terminal_rect = self.compute_terminal_rect();
         if let Some(pos) = self.cursor_position {
             let (x, y) = (pos.x as f32, pos.y as f32);
             if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y))
                 && let Some(surface_id) = self.state.surface_id_at_position(
-                    &self.core_state,
+                    &*engine,
                     x,
                     y,
                     terminal_rect,
                     self.base.gpu.scale_factor(),
                 )
-                && self
-                    .core_state
+                && engine
                     .find_terminal_by_id(surface_id)
                     .map(|t| {
-                        self.effective_click_tracking(surface_id, t.mouse_tracking())
+                        self.effective_click_tracking(engine, surface_id, t.mouse_tracking())
                             != tasty_terminal::MouseTrackingMode::None
                     })
                     .unwrap_or(false)
             {
                 self.report_mouse_event(
+                    engine,
                     surface_id,
                     x,
                     y,
@@ -634,7 +642,11 @@ impl MainView {
 
     /// 좌클릭 라우팅: 상태 갱신(left_mouse_down·vi_copy 종료) 후 링크클릭 →
     /// press(divider/selection) → release 로 위임.
-    fn handle_left_button(&mut self, button_state: ElementState) {
+    fn handle_left_button(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        button_state: ElementState,
+    ) {
         if button_state == ElementState::Pressed {
             self.left_mouse_down = true;
             // 이전 클릭의 링크 실행 여부를 비운다.
@@ -653,13 +665,13 @@ impl MainView {
             return;
         };
         let (x, y) = (pos.x as f32, pos.y as f32);
-        if self.try_handle_link_click(x, y, &terminal_rect, button_state) {
+        if self.try_handle_link_click(engine, x, y, &terminal_rect, button_state) {
             return;
         }
         if button_state == ElementState::Pressed {
-            self.handle_left_press(x, y, &terminal_rect);
+            self.handle_left_press(engine, x, y, &terminal_rect);
         } else if button_state == ElementState::Released {
-            self.handle_left_release(x, y, &terminal_rect);
+            self.handle_left_release(engine, x, y, &terminal_rect);
         }
     }
 
@@ -667,12 +679,13 @@ impl MainView {
     /// 아니면 아무것도 안 함 — 어느 쪽이든 `true`(selection 경로로 안 샘).
     fn try_handle_link_click(
         &mut self,
+        engine: &mut crate::core::CoreState,
         x: f32,
         y: f32,
         terminal_rect: &crate::model::PhysicalRect,
         button_state: ElementState,
     ) -> bool {
-        let modifier = LinkModifier::parse(&self.core_state.settings.general.link_click_modifier);
+        let modifier = LinkModifier::parse(&engine.settings.general.link_click_modifier);
         let mods = &self.base.modifiers;
         let link_mods_match = !matches!(modifier, LinkModifier::None)
             && modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
@@ -682,18 +695,17 @@ impl MainView {
         // hard 점유 화면은 지연된 스냅샷이므로 링크를 열지 않는다(ADR-0021).
         // false를 반환해 로컬 텍스트 선택은 계속 허용한다.
         if let Some(sid) = self.state.surface_id_at_position(
-            &self.core_state,
+            &*engine,
             x,
             y,
             *terminal_rect,
             self.base.gpu.scale_factor(),
-        ) && self.core_state.attach.is_hard_occupied(sid)
+        ) && engine.attach.is_hard_occupied(sid)
         {
             return false;
         }
         if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
             let scale_factor = self.base.gpu.scale_factor();
-            let engine = &mut self.core_state;
             let changed_pane =
                 self.state
                     .focus_pane_at_position(engine, x, y, *terminal_rect, scale_factor);
@@ -708,8 +720,7 @@ impl MainView {
             // 링크를 연 press는 앱에 보내지 않았으므로 release도 보내지 않는다.
             self.link_click_consumed = true;
             // 자식 PTY가 없는 mirror의 파일 경로는 원격 호스트 경로다.
-            let is_mirror = self
-                .core_state
+            let is_mirror = engine
                 .find_terminal_by_id(hovered.surface_id)
                 .map(|t| t.process_id().is_none())
                 .unwrap_or(false);
@@ -746,10 +757,15 @@ impl MainView {
     }
 
     /// 좌클릭 press: divider 히트 시 드래그 시작, 아니면 selection 시작으로 위임.
-    fn handle_left_press(&mut self, x: f32, y: f32, terminal_rect: &crate::model::PhysicalRect) {
+    fn handle_left_press(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        x: f32,
+        y: f32,
+        terminal_rect: &crate::model::PhysicalRect,
+    ) {
         let threshold =
             crate::state::mouse::divider_hit_threshold_physical(self.base.gpu.scale_factor());
-        let engine = &mut self.core_state;
         let pane_div = self
             .state
             .find_pane_divider_at(engine, x, y, *terminal_rect, threshold);
@@ -767,15 +783,20 @@ impl MainView {
                 kind: DividerDragKind::Surface,
             });
         } else {
-            self.begin_left_selection(x, y, terminal_rect);
+            self.begin_left_selection(engine, x, y, terminal_rect);
         }
     }
 
     /// 좌클릭 로컬/보고 선택 시작. focus 전환 + IME flush 후, 순수
     /// `left_click_local_select` 결정에 따라 로컬 선택 시작 / 앱 보고 / Shift extend.
-    fn begin_left_selection(&mut self, x: f32, y: f32, terminal_rect: &crate::model::PhysicalRect) {
+    fn begin_left_selection(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        x: f32,
+        y: f32,
+        terminal_rect: &crate::model::PhysicalRect,
+    ) {
         let scale_factor = self.base.gpu.scale_factor();
-        let engine = &mut self.core_state;
         let (need_flush, mouse_tracking) = {
             let old_surface = self.state.focused_surface_id(engine);
             let changed_pane =
@@ -798,14 +819,14 @@ impl MainView {
             (need_flush, mouse_tracking)
         };
         if need_flush {
-            self.flush_ime_preedit();
+            self.flush_ime_preedit(engine);
         }
         // 블랙리스트면 None 으로 격하 → 좌클릭이 로컬 텍스트 선택으로 빠지고 앱 보고/
         // 캡처 안내 배너 경로엔 진입하지 않는다.
         let mouse_tracking = self
             .state
-            .focused_surface_id(&self.core_state)
-            .map(|sid| self.effective_click_tracking(sid, mouse_tracking))
+            .focused_surface_id(&*engine)
+            .map(|sid| self.effective_click_tracking(engine, sid, mouse_tracking))
             .unwrap_or(mouse_tracking);
         let shift = self.base.modifiers.shift_key();
         if mouse_tracking != tasty_terminal::MouseTrackingMode::None {
@@ -813,38 +834,37 @@ impl MainView {
                 // Shift 우회는 press에서 결정하고 release까지 유지한다.
                 // 트래킹 중에는 이전 로컬 앵커가 없어 선택을 새로 시작한다.
                 self.left_select_bypass = true;
-                self.start_selection(x, y, terminal_rect);
+                self.start_selection(engine, x, y, terminal_rect);
             } else {
                 // 트래킹 ON + Shift 없음: 버튼 press 를 앱에 보고 (ADR-0015 앱 위임). 단,
                 // 트래킹 진입 후 첫 캡처 상호작용이면 캡처 안내를 1회 띄운다.
-                if let Some(sid) = self.state.focused_surface_id(&self.core_state) {
-                    self.report_left_press_capture(sid);
-                    self.report_mouse_event(sid, x, y, 0, false, false);
+                if let Some(sid) = self.state.focused_surface_id(&*engine) {
+                    self.report_left_press_capture(engine, sid);
+                    self.report_mouse_event(engine, sid, x, y, 0, false, false);
                     // press 를 보고했으니 이후 motion 도 좌버튼으로 보고한다.
                     push_report_button(&mut self.report_buttons_down, 0, sid);
                 }
             }
         } else if shift {
-            self.extend_selection(x, y, terminal_rect);
+            self.extend_selection(engine, x, y, terminal_rect);
         } else {
-            self.start_selection(x, y, terminal_rect);
+            self.start_selection(engine, x, y, terminal_rect);
         }
     }
 
     /// 트래킹 세션의 첫 캡처 조작에 Shift 우회 안내를 표시한다(ADR-0015).
     /// 설정이 꺼져 있거나 배너 억제 목록에 해당하면 표시하지 않는다.
     /// 억제된 앱에서는 첫 조작 표지를 남겨 이후 다른 앱에서 안내할 수 있게 한다.
-    fn report_left_press_capture(&mut self, surface_id: u32) {
-        if mouse_capture_banner_suppressed(&self.core_state, surface_id) {
+    fn report_left_press_capture(&mut self, engine: &mut crate::core::CoreState, surface_id: u32) {
+        if mouse_capture_banner_suppressed(&*engine, surface_id) {
             return;
         }
-        if self.core_state.settings.general.mouse_capture_hint {
-            let show = self
-                .core_state
+        if engine.settings.general.mouse_capture_hint {
+            let show = engine
                 .find_terminal_by_id(surface_id)
                 .is_some_and(|t| t.take_mouse_capture_hint());
             if show {
-                let generation = self.core_state.foreground_generation(surface_id);
+                let generation = engine.foreground_generation(surface_id);
                 self.state.banners.push(
                     crate::adapters::ui::BannerState::persistent(
                         crate::adapters::ui::banner::defs::BANNER_MOUSE_CAPTURE,
@@ -860,13 +880,18 @@ impl MainView {
     /// 아니면 로컬 선택 확정(빈 클릭은 커서 이동 + 선택 클리어). bypass 는 앱 보고 스킵.
     /// press 가 링크오픈으로 소비됐으면(`link_click_consumed`) 마찬가지로 앱 보고 스킵
     /// (press/release 비대칭으로 인한 mouse-tracking 앱의 링크 중복 오픈 방지).
-    fn handle_left_release(&mut self, x: f32, y: f32, terminal_rect: &crate::model::PhysicalRect) {
+    fn handle_left_release(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        x: f32,
+        y: f32,
+        terminal_rect: &crate::model::PhysicalRect,
+    ) {
         if self.dragging_divider.is_some() {
             self.dragging_divider = None;
             let cell_w = self.base.gpu.cell_width();
             let cell_h = self.base.gpu.cell_height();
             let scale_factor = self.base.gpu.scale_factor();
-            let engine = &mut self.core_state;
             self.state
                 .resize_all(engine, *terminal_rect, cell_w, cell_h, scale_factor);
             self.base.dirty = true;
@@ -879,22 +904,20 @@ impl MainView {
         let report_surface = if bypass {
             None
         } else {
-            self.state
-                .focused_surface_id(&self.core_state)
-                .filter(|sid| {
-                    self.core_state
-                        .find_terminal_by_id(*sid)
-                        .map(|t| {
-                            should_report_release_to_app(
-                                self.effective_click_tracking(*sid, t.mouse_tracking()),
-                                link_click_consumed,
-                            )
-                        })
-                        .unwrap_or(false)
-                })
+            self.state.focused_surface_id(&*engine).filter(|sid| {
+                engine
+                    .find_terminal_by_id(*sid)
+                    .map(|t| {
+                        should_report_release_to_app(
+                            self.effective_click_tracking(engine, *sid, t.mouse_tracking()),
+                            link_click_consumed,
+                        )
+                    })
+                    .unwrap_or(false)
+            })
         };
         if let Some(sid) = report_surface {
-            self.report_mouse_event(sid, x, y, 0, false, true);
+            self.report_mouse_event(engine, sid, x, y, 0, false, true);
         } else {
             let empty = if let Some(sel) = &mut self.text_selection {
                 sel.dragging = false;
@@ -906,7 +929,7 @@ impl MainView {
                 // bypass 단일(빈) 클릭은 커서 이동 없이 선택만 클리어한다. 일반 단일
                 // 클릭은 클릭 위치로 커서 이동 후 클리어.
                 if !bypass {
-                    self.move_cursor_to_click(x, y, terminal_rect);
+                    self.move_cursor_to_click(engine, x, y, terminal_rect);
                 }
                 self.text_selection = None;
             }
@@ -918,19 +941,24 @@ impl MainView {
 
     /// 클릭/드래그 픽셀 좌표를 해당 surface 의 viewport 1-based `(col, row)` 로 변환
     /// (마우스 리포팅 전송용). surface 를 못 찾으면 `(1, 1)`.
-    fn mouse_cell_for_report(&self, surface_id: u32, x: f32, y: f32) -> (usize, usize) {
+    fn mouse_cell_for_report(
+        &self,
+        engine: &crate::core::CoreState,
+        surface_id: u32,
+        x: f32,
+        y: f32,
+    ) -> (usize, usize) {
         let terminal_rect = self.compute_terminal_rect();
         let cell_w = self.base.gpu.cell_width();
         let cell_h = self.base.gpu.cell_height();
-        let Some((scroll_offset, sb_len, (cols, rows))) = self
-            .core_state
+        let Some((scroll_offset, sb_len, (cols, rows))) = engine
             .visible_terminal(surface_id)
             .map(|t| (t.scroll_offset(), t.scrollback_len(), t.dimensions()))
         else {
             return (1, 1);
         };
         let Some(rect) = self.state.surface_rect_by_id(
-            &self.core_state,
+            engine,
             surface_id,
             terminal_rect,
             self.base.gpu.scale_factor(),
@@ -963,13 +991,13 @@ impl MainView {
     /// 휠은 이 함수를 쓰지 않고 별도로 hard 점유를 차단한다.
     fn effective_click_tracking(
         &self,
+        engine: &crate::core::CoreState,
         surface_id: u32,
         actual: tasty_terminal::MouseTrackingMode,
     ) -> tasty_terminal::MouseTrackingMode {
         crate::state::mouse::effective_click_tracking_decision(
-            self.core_state.attach.is_hard_occupied(surface_id),
-            self.core_state
-                .is_surface_mouse_capture_disabled(surface_id),
+            engine.attach.is_hard_occupied(surface_id),
+            engine.is_surface_mouse_capture_disabled(surface_id),
             actual,
         )
     }
@@ -977,17 +1005,22 @@ impl MainView {
     /// DECSET 1003의 버튼 없는 셀 이동을 보고한다.
     /// OS 창과 대상 surface 모두 포커스되어야 하며 포커스를 옮기지는 않는다.
     /// divider와 창 리사이즈 영역에서는 보고하지 않는다(ADR-0015).
-    fn report_hover_motion(&mut self, x: f32, y: f32, terminal_rect: &crate::model::PhysicalRect) {
-        let Some(sid) = self.state.focused_surface_id(&self.core_state) else {
+    fn report_hover_motion(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        x: f32,
+        y: f32,
+        terminal_rect: &crate::model::PhysicalRect,
+    ) {
+        let Some(sid) = self.state.focused_surface_id(&*engine) else {
             return;
         };
-        let tracking = self
-            .core_state
+        let tracking = engine
             .find_terminal_by_id(sid)
             .map(|t| t.mouse_tracking())
             .unwrap_or(tasty_terminal::MouseTrackingMode::None);
         // 클릭과 같은 제외 목록·hard 점유 조건을 적용한다.
-        let tracking = self.effective_click_tracking(sid, tracking);
+        let tracking = self.effective_click_tracking(engine, sid, tracking);
         if tracking != tasty_terminal::MouseTrackingMode::AllMotion {
             // 여기서 끊어야 아래 hit-test 들이 매 프레임 헛돌지 않는다.
             return;
@@ -996,19 +1029,14 @@ impl MainView {
             crate::state::mouse::divider_hit_threshold_physical(self.base.gpu.scale_factor());
         let on_divider_band = self
             .state
-            .find_pane_divider_at(&self.core_state, x, y, *terminal_rect, threshold)
+            .find_pane_divider_at(&*engine, x, y, *terminal_rect, threshold)
             .or_else(|| {
-                self.state.find_surface_divider_at(
-                    &self.core_state,
-                    x,
-                    y,
-                    *terminal_rect,
-                    threshold,
-                )
+                self.state
+                    .find_surface_divider_at(&*engine, x, y, *terminal_rect, threshold)
             })
             .is_some();
         let over_focused_surface = self.state.surface_id_at_position(
-            &self.core_state,
+            &*engine,
             x,
             y,
             *terminal_rect,
@@ -1025,11 +1053,11 @@ impl MainView {
         }) {
             return;
         }
-        let (col, row) = self.mouse_cell_for_report(sid, x, y);
+        let (col, row) = self.mouse_cell_for_report(engine, sid, x, y);
         if self.last_mouse_report_cell == Some((sid, col, row)) {
             return;
         }
-        self.report_mouse_event(sid, x, y, MOUSE_BUTTON_NONE, true, false);
+        self.report_mouse_event(engine, sid, x, y, MOUSE_BUTTON_NONE, true, false);
     }
 
     /// 마우스 버튼/드래그 이벤트를 트래킹 앱(PTY)에 보고한다. `button` 0=left /
@@ -1037,6 +1065,7 @@ impl MainView {
     /// 보고 시점에 해당 surface 에서 조회한다.
     fn report_mouse_event(
         &mut self,
+        engine: &mut crate::core::CoreState,
         surface_id: u32,
         x: f32,
         y: f32,
@@ -1044,9 +1073,8 @@ impl MainView {
         motion: bool,
         release: bool,
     ) {
-        let (col, row) = self.mouse_cell_for_report(surface_id, x, y);
-        let sgr = self
-            .core_state
+        let (col, row) = self.mouse_cell_for_report(engine, surface_id, x, y);
+        let sgr = engine
             .find_terminal_by_id(surface_id)
             .map(|t| t.sgr_mouse())
             .unwrap_or(false);
@@ -1063,7 +1091,12 @@ impl MainView {
         self.last_mouse_report_cell = Some((surface_id, col, row));
     }
 
-    pub(super) fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta, egui_consumed: bool) {
+    pub(super) fn handle_mouse_wheel(
+        &mut self,
+        engine: &mut crate::core::CoreState,
+        delta: MouseScrollDelta,
+        egui_consumed: bool,
+    ) {
         let overlay_open = self.mouse_overlay_open();
         if egui_consumed {
             self.mark_dirty();
@@ -1082,7 +1115,7 @@ impl MainView {
                 // 거리와 plugin 표면이 받는 거리를 같게 유지한다(ADR-0015).
                 let line_scroll =
                     crate::plugin_bridge::wire_scroll::line_scroll(&self.base.gpu.egui_ctx);
-                if let Some((sid, _plugin_id, _rect)) = self.egui_mesh_target_at(x, y) {
+                if let Some((sid, _plugin_id, _rect)) = self.egui_mesh_target_at(engine, x, y) {
                     let (dx, dy) = match delta {
                         MouseScrollDelta::LineDelta(lx, ly) => {
                             ((line_scroll * lx).value(), (line_scroll * ly).value())
@@ -1101,7 +1134,7 @@ impl MainView {
                 }
                 // attach mesh mirror surface 휠 forward — 위와 동형이되
                 // 목적지가 원격.
-                if let Some((sid, _rect)) = self.attach_mesh_target_at(x, y) {
+                if let Some((sid, _rect)) = self.attach_mesh_target_at(engine, x, y) {
                     let (dx, dy) = match delta {
                         MouseScrollDelta::LineDelta(lx, ly) => {
                             ((line_scroll * lx).value(), (line_scroll * ly).value())
@@ -1127,19 +1160,19 @@ impl MainView {
                 .and_then(|pos| {
                     let (x, y) = (pos.x as f32, pos.y as f32);
                     self.state.surface_id_at_position(
-                        &self.core_state,
+                        &*engine,
                         x,
                         y,
                         terminal_rect,
                         self.base.gpu.scale_factor(),
                     )
                 })
-                .or_else(|| self.state.focused_surface_id(&self.core_state));
+                .or_else(|| self.state.focused_surface_id(&*engine));
 
             if let Some(surface_id) = target_id {
                 // hard 점유에서는 휠을 막는다. 표시 중인 mirror 대신 live 터미널에
                 // 보고하거나 스크롤 위치를 바꾸면 점유 해제 뒤 화면이 달라질 수 있다.
-                if self.core_state.attach.is_hard_occupied(surface_id) {
+                if engine.attach.is_hard_occupied(surface_id) {
                     return;
                 }
                 let lines = match delta {
@@ -1149,7 +1182,7 @@ impl MainView {
                 if lines == 0 {
                     return;
                 }
-                let info = self.core_state.find_terminal_by_id(surface_id).map(|t| {
+                let info = engine.find_terminal_by_id(surface_id).map(|t| {
                     (
                         t.is_alternate_screen(),
                         t.mouse_tracking(),
@@ -1175,7 +1208,7 @@ impl MainView {
                         .and_then(|pos| {
                             let (x, y) = (pos.x as f32, pos.y as f32);
                             let rect = self.state.surface_rect_by_id(
-                                &self.core_state,
+                                &*engine,
                                 surface_id,
                                 terminal_rect,
                                 self.base.gpu.scale_factor(),
@@ -1233,7 +1266,7 @@ impl MainView {
                     );
                 } else {
                     // 일반 화면 — scrollback (UI 자체 mutate, PTY 와 무관).
-                    if let Some(terminal) = self.core_state.find_terminal_by_id_mut(surface_id) {
+                    if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
                         if lines > 0 {
                             terminal.scroll_up(lines as usize);
                         } else if lines < 0 {

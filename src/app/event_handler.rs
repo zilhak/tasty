@@ -573,12 +573,12 @@ impl App {
         if let Some(mgr) = self.plugin_manager.as_mut() {
             let rss_samples = mgr.take_rss_samples();
             if !rss_samples.is_empty()
-                && let Some(main) = self.view.views.values_mut().find_map(|w| w.as_main_mut())
+                && let Some((_, main, engine)) = engines_mut!(self).window_pairs().next()
             {
                 crate::adapters::ipc::handler::record_plugin_rss_samples(
                     &self.core,
                     &mut main.state,
-                    &mut main.core_state,
+                    engine,
                     &rss_samples,
                 );
             }
@@ -609,22 +609,16 @@ impl App {
         if invalidated_surfaces.is_empty() {
             return;
         }
-        for w in self.view.views.values_mut() {
-            let touched = match w.as_main_mut() {
-                Some(main) => {
-                    // any는 첫 true에서 멈추므로 모든 surface를 표시할 수 없다.
-                    let mut any_touched = false;
-                    for &sid in &invalidated_surfaces {
-                        if main.mark_surface_invalidated(sid) {
-                            any_touched = true;
-                        }
-                    }
-                    any_touched
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            // any는 첫 true에서 멈추므로 모든 surface를 표시할 수 없다.
+            let mut touched = false;
+            for &sid in &invalidated_surfaces {
+                if main.mark_surface_invalidated(engine, sid) {
+                    touched = true;
                 }
-                None => false,
-            };
+            }
             if touched {
-                w.mark_dirty();
+                main.mark_dirty();
             }
         }
     }
@@ -762,22 +756,18 @@ impl App {
         // 비우는 동안 도착한 wake가 중복으로 버려지지 않도록 먼저 해제한다.
         self.note_drained_all(surface_id);
         let core = &mut self.core;
-        let views = &mut self.view.views;
         let mut pending: Vec<(DispatchSource, Vec<CoreEvent>)> = Vec::new();
         if let Some(sid) = surface_id {
             let mut found = false;
-            for (wid, w) in views.iter_mut() {
-                let Some(main) = w.as_main_mut() else {
-                    continue;
-                };
-                if main.core_state.find_terminal_by_id(sid).is_some() {
-                    let outcome = core.process_pty_output(&mut main.core_state, sid);
+            for (id, main, engine) in engines_mut!(self).window_entries() {
+                if engine.find_terminal_by_id(sid).is_some() {
+                    let outcome = core.process_pty_output(engine, sid);
                     if !outcome.events.is_empty() {
-                        pending.push((DispatchSource::Main(*wid), outcome.events));
+                        pending.push((DispatchSource::Engine(id), outcome.events));
                     }
-                    main.recalc_ime_preedit_anchor();
+                    main.recalc_ime_preedit_anchor(engine);
                     // 출력 처리는 끝냈다. 보이지 않는 surface는 전환할 때 새로 그리므로 지금 redraw하지 않는다.
-                    if main.is_surface_visible(sid) {
+                    if main.is_surface_visible(engine, sid) {
                         main.mark_dirty_from(RepaintSource::TerminalOutput);
                     }
                     found = true;
@@ -789,26 +779,26 @@ impl App {
                     if engine.find_terminal_by_id(sid).is_some() {
                         let outcome = core.process_pty_output(engine, sid);
                         if !outcome.events.is_empty() {
-                            pending.push((DispatchSource::Parked(id), outcome.events));
+                            pending.push((DispatchSource::Engine(id), outcome.events));
                         }
                         break;
                     }
                 }
             }
         } else {
-            for (wid, w) in views.iter_mut() {
-                if let Some(main) = w.as_main_mut() {
-                    let outcome = core.process_all_pty_output(&mut main.core_state);
-                    if !outcome.events.is_empty() {
-                        pending.push((DispatchSource::Main(*wid), outcome.events));
-                    }
+            for (id, _, engine) in engines_mut!(self).window_entries() {
+                let outcome = core.process_all_pty_output(engine);
+                if !outcome.events.is_empty() {
+                    pending.push((DispatchSource::Engine(id), outcome.events));
                 }
+            }
+            for w in self.view.views.values_mut() {
                 w.mark_dirty_from(RepaintSource::TerminalOutput);
             }
             for (id, _, engine) in engines_mut!(self).parked_sessions_with_ids() {
                 let outcome = core.process_all_pty_output(engine);
                 if !outcome.events.is_empty() {
-                    pending.push((DispatchSource::Parked(id), outcome.events));
+                    pending.push((DispatchSource::Engine(id), outcome.events));
                 }
             }
         }
@@ -823,11 +813,10 @@ impl App {
     fn handle_minimize(&mut self) {
         #[cfg(target_os = "macos")]
         {
-            let drained: Vec<_> = self.view.views.drain().map(|(_, w)| w).collect();
-            for w in drained {
+            let drained: Vec<_> = self.view.views.drain().collect();
+            for (wid, w) in drained {
                 if let Some(main_box) = crate::view::unbox_main(w) {
-                    let (view_restore, session) = main_box.into_park_parts();
-                    self.engines_mut().park(view_restore, session);
+                    self.park_main_window(wid, main_box);
                 }
             }
             self.view.focused_view_id = None;
@@ -989,6 +978,7 @@ impl App {
             let mut ctx = ViewCtx {
                 event_loop,
                 modal_active: false,
+                engine: None,
                 plugin_manager: self.plugin_manager.as_ref(),
                 stream_hub: &self.stream_hub,
             };
@@ -1044,9 +1034,14 @@ impl App {
         let modal_active = self.view.is_modal_active();
         let action = {
             if let Some(w) = self.view.views.get_mut(&id) {
+                let engine = self
+                    .engines
+                    .of_window(id)
+                    .and_then(|e| self.engines.session_mut(e));
                 let mut ctx = ViewCtx {
                     event_loop,
                     modal_active,
+                    engine,
                     plugin_manager: self.plugin_manager.as_ref(),
                     stream_hub: &self.stream_hub,
                 };
@@ -1117,17 +1112,9 @@ impl App {
                 // 마지막 MainView는 engine을 park하므로 레이아웃 슬롯 점유도 유지한다.
                 Some(main_box) if was_last_main => {
                     tracing::info!("last main window closed via request, parking state");
-                    let (view_restore, session) = main_box.into_park_parts();
-                    self.engines_mut().park(view_restore, session);
+                    self.park_main_window(id, main_box);
                 }
-                Some(mut main_box) => {
-                    let active_workspace = main_box.state.active_workspace;
-                    Self::retire_main_engine(
-                        &mut self.core,
-                        &mut main_box.core_state,
-                        active_workspace,
-                    );
-                }
+                Some(main_box) => self.retire_main_window(id, main_box),
                 None => {}
             }
         }
@@ -1149,23 +1136,20 @@ impl App {
         tracing::info!("system resumed — running PTY health pass (ADR-0013)");
         let core = &mut self.core;
         let mut pending: Vec<(DispatchSource, Vec<CoreEvent>)> = Vec::new();
-        for (wid, w) in self.view.views.iter_mut() {
-            let Some(main) = w.as_main_mut() else {
-                continue;
-            };
-            let suspects = main.core_state.wake_terminals_after_resume();
-            let outcome = core.process_all_pty_output(&mut main.core_state);
+        for (id, main, engine) in engines_mut!(self).window_entries() {
+            let suspects = engine.wake_terminals_after_resume();
+            let outcome = core.process_all_pty_output(engine);
             if !outcome.events.is_empty() {
-                pending.push((DispatchSource::Main(*wid), outcome.events));
+                pending.push((DispatchSource::Engine(id), outcome.events));
             }
-            Self::notify_resume_suspects(&mut main.core_state, &suspects);
-            w.mark_dirty();
+            Self::notify_resume_suspects(engine, &suspects);
+            main.mark_dirty();
         }
         for (id, _, engine) in engines_mut!(self).parked_sessions_with_ids() {
             let suspects = engine.wake_terminals_after_resume();
             let outcome = core.process_all_pty_output(engine);
             if !outcome.events.is_empty() {
-                pending.push((DispatchSource::Parked(id), outcome.events));
+                pending.push((DispatchSource::Engine(id), outcome.events));
             }
             Self::notify_resume_suspects(engine, &suspects);
         }
@@ -1216,9 +1200,8 @@ impl App {
         // engine이 drop되기 전에 슬롯을 마무리하고 닫기 통지를 보낸다.
         self.pending_focus_hint_clear.remove(&id);
         let removed = self.view.views.remove(&id);
-        if let Some(mut main_box) = removed.and_then(crate::view::unbox_main) {
-            let active_workspace = main_box.state.active_workspace;
-            Self::retire_main_engine(&mut self.core, &mut main_box.core_state, active_workspace);
+        if let Some(main_box) = removed.and_then(crate::view::unbox_main) {
+            self.retire_main_window(id, main_box);
         }
         let scripts = self.autofire_scripts();
         if let Some(mgr) = self.plugin_manager.as_mut() {
@@ -1298,12 +1281,10 @@ impl App {
         }
 
         // 점유 변경 직후 readonly 화면을 갱신해 다음 주기 확인까지 빈 화면으로 남지 않게 한다.
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                main.core_state.push_structure_changes();
-                if main.core_state.refresh_readonly_views() {
-                    w.mark_dirty();
-                }
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            engine.push_structure_changes();
+            if engine.refresh_readonly_views() {
+                main.mark_dirty();
             }
         }
         for engine in self.engines_mut().parked() {
@@ -1393,13 +1374,9 @@ impl App {
 
     /// 점유를 확인해 attention을 해제한다. 저장 대상이 아니므로 레이아웃 저장은 예약하지 않는다.
     fn apply_forwarded_attention_clear(&mut self, client_id: u32, remote_surface_id: u32) {
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut()
-                && main
-                    .core_state
-                    .apply_attached_attention_clear(client_id, remote_surface_id)
-            {
-                w.mark_dirty();
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            if engine.apply_attached_attention_clear(client_id, remote_surface_id) {
+                main.mark_dirty();
                 return;
             }
         }
@@ -1653,11 +1630,7 @@ impl App {
         let anchor = op.anchor_surface_id();
         let core = &mut self.core;
         let mut handled = false;
-        for w in self.view.views.values_mut() {
-            let Some(main) = w.as_main_mut() else {
-                continue;
-            };
-            let engine = &mut main.core_state;
+        for (_, main, engine) in engines_mut!(self).window_pairs() {
             let Some(ws) = engine.attach.workspace_of_surface(anchor) else {
                 continue;
             };
@@ -1690,7 +1663,7 @@ impl App {
                     mgr.drop_egui_mesh_frame(sid);
                 }
             }
-            w.mark_dirty();
+            main.mark_dirty();
             break;
         }
         if !handled {
@@ -1712,16 +1685,9 @@ impl App {
         cols: usize,
         rows: usize,
     ) {
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut()
-                && main.core_state.apply_attached_workspace_resize(
-                    client_id,
-                    remote_surface_id,
-                    cols,
-                    rows,
-                )
-            {
-                w.mark_dirty();
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            if engine.apply_attached_workspace_resize(client_id, remote_surface_id, cols, rows) {
+                main.mark_dirty();
                 return;
             }
         }
@@ -2160,10 +2126,8 @@ impl App {
 
     /// 메뉴 결과가 마지막 workspace를 닫을 수 있어 처리 직후 빈 창의 닫기 요청도 소비한다.
     fn poll_pending_native_menus(&mut self) {
-        for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                main.poll_pending_native_menu();
-            }
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            main.poll_pending_native_menu(engine);
         }
         self.close_self_requesting_windows();
     }

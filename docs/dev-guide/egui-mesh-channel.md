@@ -482,16 +482,16 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
   인터랙티브하지 않다.
 - **서버측(GUI, parked engine): 헤드리스와 동일하게 직접 구동** — macOS 에서 window 를
   최소화하면 `App::handle_minimize` 의 macOS 분기가 그 window 의 `MainView` 를 파괴하고
-  AppState 와 engine 을 `App::parked_states`(`src/app.rs`) 로 옮긴다. 이 engine 은
+  engine 을 `App.engines`(`src/app/engine_registry.rs`)의 parked 관계로 바꾸며 AppState 를 보관한다. 이 engine 은
   더 이상 `handle_redraw` 가 돌지 않으므로 "GUI 살아있는 window" 항목이 전제하는 로컬
   authoritative loop 가 없다 — **처지가 헤드리스와 같다.** `App::about_to_wait`
-  (`src/app/event_handler.rs`, plugin manager `pump()` 호출 직후)가 `parked_states` 전부를
+  (`src/app/event_handler.rs`, plugin manager `pump()` 호출 직후)가 parked engine 전부를
   순회하며 각 engine 에 `forward_mesh_frames_for_engine` 을 호출한다(구독/입력 forward/
   full-resend 요청 자체는 `apply_mesh_context_on_owning_engine` 류의 owning-engine 순회
   패턴으로 이미 parked engine 에도 정상 반영되고 있었다 — 실제 frame 구동/relay 만
   빠져 있었다). `window_lifecycle.rs` 의 창 복원은 `EngineScanMut::unpark_first` 로 **1 개씩만**
   꺼내므로, 여러 window 가 동시에 minimize 돼 있으면 나머지는 계속 이 순회의 대상으로
-  남는다 — 첫 매치에서 멈추는 owning-engine 패턴과 달리, 이 순회는 매 tick `parked_states`
+  남는다 — 첫 매치에서 멈추는 owning-engine 패턴과 달리, 이 순회는 매 tick parked engine
   전부를 무조건 방문한다.
 - **client측: host 합성 축의 재구현** — client 가 원본 `PaintFrame` 바이트를 받아 **자기
   화면에서** 위 "host 합성" 단계(decode → 전용 `egui_wgpu::Renderer` → surface rect 합성)를
