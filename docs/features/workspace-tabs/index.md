@@ -59,6 +59,7 @@
 - Given 탭이 스트립 폭을 넘침 When 스크롤 화살표 Then 가로 스크롤된다.
 - Given 탭 드래그 Then drop 위치(`compute_drop_index`)대로 순서가 바뀐다.
 - Given 탭 이름 변경 팝업이 열림 When 에이전트가 탭을 옮기거나 다른 탭을 닫아 인덱스가 바뀐다 Then 저장한 이름은 팝업을 연 탭에 붙는다. 그 탭이 닫히면 팝업이 닫힌다.
+- Given 탭 우클릭 메뉴가 열림 When 에이전트가 탭 순서를 바꾸거나 다른 탭을 닫는다 Then 고른 항목(이름 변경·닫기·좌우 이동·프리셋 저장)은 메뉴를 연 탭에 적용된다. 그 탭이 먼저 닫혔으면 아무것도 하지 않는다.
 - Given busy/알림 상태 Then 녹색 점 / 노란 라벨이 표시된다.
 - Given 비-focused Pane When 그 Pane 의 탭/빈 영역/스크롤 화살표를 클릭 Then 그 Pane 으로 focus 가 이동한다(빈 영역 클릭은 `active_tab` 불변).
 - Given 비-focused Pane When 그 Pane 의 탭/빈 영역 우클릭 Then focus 는 이동하지 않는다(컨텍스트 메뉴만 열림).

@@ -9,6 +9,7 @@ mod fullscreen_window;
 mod html_script_banner;
 mod keyboard;
 mod link_menu;
+mod menu_target;
 mod mouse;
 mod move_menu;
 mod preset_actions;

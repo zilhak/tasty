@@ -1112,12 +1112,10 @@ impl MainView {
     }
 
     fn handle_tab_native_menu(&mut self, pane_id: u32, tab_index: usize, x: f32, y: f32) {
-        // 이동 항목은 메뉴가 열린 동안 탭 순서가 바뀌어도 같은 탭을 가리키도록 ID로 고정한다.
-        let tab_id = self
-            .core_state
-            .find_pane_by_id(pane_id)
-            .and_then(|p| p.tabs.get(tab_index))
-            .map(|t| t.id);
+        // 메뉴가 열린 동안 탭 순서가 바뀌어도 같은 탭을 가리키도록 ID로 고정한다.
+        let target =
+            super::menu_target::TabMenuTarget::capture(&self.core_state, pane_id, tab_index);
+        let tab_id = target.tab_id();
         let items = self.build_tab_context_menu_items(pane_id, tab_index, tab_id);
         self.open_native_menu(x, y, &items, move |this, result| {
             if let (Some(tab_id), Some(item)) = (tab_id, result)
@@ -1126,14 +1124,10 @@ impl MainView {
                 return;
             }
             // continuation 은 메뉴가 닫힌 뒤(플랫폼에 따라 여러 프레임 뒤)
-            // 실행된다 — 그 사이 탭이 닫혔을 수 있으므로 대상을 재확인한다.
-            if this
-                .core_state
-                .find_pane_by_id(pane_id)
-                .is_none_or(|p| tab_index >= p.tabs.len())
-            {
+            // 실행된다 — 그 사이 탭이 닫혔거나 옮겨졌을 수 있으므로 현재 위치를 다시 찾는다.
+            let Some((pane_id, tab_index)) = target.resolve(&this.core_state) else {
                 return;
-            }
+            };
             this.apply_tab_menu_selection(pane_id, tab_index, result);
         });
     }
@@ -1384,13 +1378,14 @@ impl MainView {
     }
 
     fn handle_workspace_native_menu(&mut self, ws_idx: usize, x: f32, y: f32) {
+        let target = super::menu_target::WorkspaceMenuTarget::capture(&self.core_state, ws_idx);
         let (items, move_targets) = self.build_workspace_context_menu_items(ws_idx);
         self.open_native_menu(x, y, &items, move |this, result| {
             let engine = &mut this.core_state;
-            // 메뉴가 열려 있는 동안 워크스페이스가 닫혀 인덱스가 밀렸을 수 있다.
-            if ws_idx >= engine.workspaces.len() {
+            // 메뉴가 열려 있는 동안 워크스페이스가 닫히거나 옮겨졌을 수 있어 현재 위치를 다시 찾는다.
+            let Some(ws_idx) = target.resolve(engine) else {
                 return;
-            }
+            };
             match result {
                 Some(1) => {
                     let ws = &engine.workspaces[ws_idx];
