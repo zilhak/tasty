@@ -7,7 +7,8 @@
 //! 잘못된 surface 인자는 어느 키가 잘못됐는지까지 호출자에게 전달해야 한다.
 //!
 //! 현재 공개 응답 형식도 유지한다. Claude의 children은 추가 조회·변환한 배열이고,
-//! kill은 {"killed": true}를 반환한다. Codex는 두 경우 모두 호스트 응답을 그대로 반환한다.
+//! kill은 호스트 응답에 killed를 더한다(killed_surface_id가 있을 때만 true, 원격 전달이면 false).
+//! Codex는 두 경우 모두 호스트 응답을 그대로 반환한다.
 //! Claude의 kill은 별도로 error_scan도 해제한다. 이 동작은 Codex에는 없다.
 //! 계약과 각 플러그인의 응답 시험은 docs/dev-guide/paired-agent-handlers.md 참고.
 //!

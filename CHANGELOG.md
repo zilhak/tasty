@@ -26,7 +26,6 @@
 
 ### Changed
 
-- **`tasty claude kill` 응답이 호스트의 종료 결과를 함께 담는다.** 이전에는 원격 attach(mirror) 서피스로 넘긴 kill도 `{"killed": true}`로만 답해 실제로 닫힌 것처럼 보였다. 이제 호스트 응답(닫혔으면 `killed_surface_id`·`child_index`, 원격으로 넘겼으면 `forwarded`·`surface_id`·`child_index`)에 `killed`를 더해 돌려주며, `killed`는 실제로 닫힌 경우에만 `true`다. 원격으로 넘긴 kill은 `killed: false`이고 그 서피스의 오류 감시도 유지한다.
 - **popup 제목이 버튼 수와 관계없이 타이틀바 가운데에 온다.** 이전에는 전체화면 버튼이 있는 popup(알림)의 제목이 가운데보다 왼쪽에 놓였다. 이제 오른쪽 버튼 영역만큼 왼쪽도 비워 제목을 가운데에 두고, 넘치면 그 사이에서 말줄임한다. 타이틀바 버튼 칸은 20에서 24로 커졌고, 전체화면 버튼은 새 `fit` 글리프로 그린다. 알림 popup 의 폭은 UI 배율을 따른다.
 - **popup 타이틀바의 닫기 버튼이 다른 아이콘 버튼과 같은 모양이다.** 선 두 개로 그리던 ×를 `close` 아이콘으로 바꿨다. 마우스를 올리면 빨간색 대신 다른 아이콘 버튼처럼 글자색이 밝아지고 배경이 옅게 칠해지며, 누르는 동안 더 진한 배경이 보인다. 마우스를 올리지 않은 기본 상태의 × 와 전체화면 글리프도 다른 아이콘 버튼과 같은 글자색이라 전보다 밝다. 전체화면 버튼도 같은 표시를 쓴다.
 - **popup 제목 글자가 커졌다.** 안내 모달 외 popup 의 제목을 본문 크기(13)로 그리던 것을 안내 모달과 같은 14로 그린다. 좁은 popup 에서 긴 제목은 전보다 일찍 말줄임되고, 잘린 제목은 툴팁으로 전체를 볼 수 있다.
@@ -38,6 +37,8 @@
 
 ### Fixed
 
+- **`tasty claude kill`이 원격으로 넘긴 종료를 `killed: true`로 답하지 않는다.** 이전에는 원격 attach(mirror) 서피스로 넘긴 kill도 `{"killed": true}`로만 답해 실제로 닫힌 것처럼 보였다. 이제 호스트 응답(닫혔으면 `killed_surface_id`·`child_index`, 원격으로 넘겼으면 `forwarded`·`surface_id`·`child_index`)에 `killed`를 더해 돌려주며, `killed`는 실제로 닫힌 경우에만 `true`다. 원격으로 넘긴 kill은 `killed: false`이고 그 서피스의 오류 감시도 유지한다.
+- **`tasty terminal kill`과 `tasty codex kill`이 원격으로 넘긴 종료를 성공으로 답하지 않는다.** 이전에는 원격 attach(mirror) 워크스페이스의 자식을 종료하면 닫기가 원격에 넘어가기만 했는데도 `killed_surface_id`로 성공을 답하고 부모·자식 관계를 먼저 지웠다. 그래서 서피스가 살아 있는데도 자식 목록 조회·종료·해제로 다시 다룰 수 없었다. 이제 원격으로 넘긴 경우 `{"forwarded": true, "surface_id", "child_index"}`로 답하고 관계를 남겼다가 원격에서 서피스가 닫히면 정리한다. 닫기가 실패하면 오류를 돌려주고 관계는 그대로 둔다. 실제로 닫혔을 때만 관계를 지우고 `killed_surface_id`로 답한다.
 - **서피스 타입 전환 popup 에서 목록에 보이는 종류가 첫 글자 단축키를 받는다.** 첫 글자가 같은 두 종류 중 앞선 것이 지금 종류이면, 목록에서 빠진 지금 종류가 그 글자를 차지해 뒤의 종류는 단축키가 없었다. 이제 지금 종류를 뺀 목록에서 단축키를 배정한다.
 - **설정 창의 파일 선택기에 제목과 닫기 버튼이 두 번 나오지 않는다.** 스크립트 Browse…나 단축키 Import/Export로 여는 파일 선택기가 창 타이틀바 아래에 자기 헤더를 한 번 더 그려 제목과 ✕가 두 줄로 보였다. 이제 Tasty의 파일 선택 창과 같이 헤더 한 줄만 있고, 그 헤더의 빈 곳을 끌어 창을 옮긴다. 헤더 ✕ · Cancel · Esc로 닫으면 여전히 취소로 처리돼 연 쪽 입력은 바뀌지 않는다.
 - **Claude 자식이 작업 중인데 idle 로 보고되던 문제를 고쳤다.** 서브에이전트가 끝날 때(`SubagentStop`)와 백그라운드 서브에이전트·셸이 실행 중인 채 메인 응답이 끝날 때(`Stop` 의 `background_tasks` 에 끝나지 않은 항목) 자식을 idle 로 바꾸고 완료 알림을 보내, `claude.spawn`·`claude.tell` 대기 task 가 자식 작업 도중 `succeeded` 로 끝나고 의존 task 가 먼저 실행됐다. 이제 `SubagentStop` 은 상태를 바꾸지 않고, 백그라운드 작업을 기다리는 `Stop` 은 `active` 로만 보고한다. 끝난 항목은 `status` 가 completed·failed·cancelled·canceled·killed·stopped·error·done 중 하나(대소문자 무관)인 항목이고, 그 밖의 값이나 `status` 가 없는 항목은 대기로 센다. 백그라운드 작업이 끝나고 이어진 턴의 `Stop` 이 idle 과 완료 알림을 만든다. 서브에이전트 종료로 뜨던 테두리 완료 강조도 더는 뜨지 않는다. 끝나지 않는 백그라운드 명령을 남기고 턴을 끝낸 자식은 idle 이 되지 않는다. `tasty claude hook` 에 `--background-tasks`·`--waiting-on-background-work` 인자가 추가됐다(stdin JSON 에서 자동으로 채운다). `waiting_on_background_work` 는 공식 hooks 문서(2026-09-28 확인)와 Claude Code 2.1.283 실측에 없지만, 오면 방어적으로 읽는다.
