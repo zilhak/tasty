@@ -19,6 +19,8 @@
 `tasty-model`의 `DeferredSpawn`은 `tasty_terminal::Waker`를 담고 Surface 트리는 동작을 가진 trait 객체를 담는다.
 지금의 `tasty-model`을 그대로 순수 도메인의 의존으로 삼으면 PTY 실행 계층이 따라온다.
 
+(결정 당시 상태. `DeferredSpawn`이 waker를 담던 결합은 이후 해소됐다. 현재 상태는 재검토 조건 절에 적는다.)
+
 ## Decision
 
 crate는 상태 객체별이 아니라 함께 바뀌는 코드·의존성·테스트 범위로 나눈다. State는 해당 객체의 crate에 함께 둔다.
@@ -78,6 +80,9 @@ crate 목록 문서·README·가드의 crate 수를 추출마다 함께 갱신�
 ### 코드와 설정에서 확인
 
 - `tasty-model`에서 실행 인스턴스(`DeferredSpawn.waker` 등)를 걷어내면 `tasty-core` 추출 시점을 판단한다.
+  현재 상태: `DeferredSpawn`은 waker를 담지 않고 waker 공급은 호스트가 spawn 시점에 맡는다. `tasty-model`은 `tasty-terminal`을 의존하지 않으며
+  `cargo tree -p tasty-model --edges normal`에 `tasty-terminal`이 나오지 않는다. Surface 트리가 동작을 가진 trait 객체(`Box<dyn Surface>`)를 담는 구조는 남아 있다.
+  PTY 실행 계층이 따라오는 결합은 해소됐으므로 이 조건에 따른 추출 시점 판단이 남은 일이다. 판단할 때 [ADR-0064](0064-journal-domain-model-and-command-executor-crate.md)의 `tasty-domain`과의 관계를 함께 정한다.
 - TaskService API와 host port가 정리되면 `tasty-task-runtime` 추출 시점을 판단한다.
 - HookRuntime의 공개 API가 안정되고 root 밖 소비자가 생기면 별도 crate 추출을 검토한다.
 - 순수 터미널 재생·원격 mirror·renderer 테스트에서 PTY 의존을 빼야 하면 별도 PTY crate 추출을 검토한다.
@@ -91,6 +96,7 @@ crate 목록 문서·README·가드의 crate 수를 추출마다 함께 갱신�
 
 - 대체 대상: [ADR-0002](0002-domain-execution-and-ports.md) — crate 배치 부분. 계층·상태 소유는 [ADR-0054](0054-app-core-view-layers-and-state-ownership.md)
 - [ADR-0063](0063-event-store-storage-fencing-and-effect-states.md) — `tasty-event-store`의 payload 저장·writer 잠금·effect 전이·schema 버전 결정
+- [ADR-0064](0064-journal-domain-model-and-command-executor-crate.md) — `tasty-core` 추출 전에 저널 도메인 모델과 generic CommandExecutor를 새로 작성하는 `tasty-domain`
 - [ADR-0001](0001-crate-dependency-boundaries.md) · [ADR-0055](0055-structural-domain-event-sourcing.md) · [ADR-0062](0062-task-service-and-hook-runtime.md)
 - 현재 빌드 구조: [빌드 가이드](../dev-guide/build.md), [헤드리스 컴파일 경계](../dev-guide/headless-build-boundaries.md), [아키텍처](../architecture/index.md)
 - 현재 구현: `crates/tasty-model`, `crates/tasty-agent`, `crates/tasty-hooks`, `crates/tasty-remote`, `crates/tasty-terminal/src/lib.rs`.
