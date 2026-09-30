@@ -333,14 +333,12 @@ mod tests {
             .unwrap();
         }
 
-        let waker: tasty_terminal::Waker = Arc::new(|| {});
         let spawn = crate::model::DeferredSpawn {
             shell: None,
             shell_args: Vec::new(),
             extra_env: Vec::new(),
             cols: 80,
             rows: 24,
-            waker,
             working_dir: None,
             restore_command: None,
             scrollback_persist_id: None,

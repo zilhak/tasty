@@ -1,10 +1,4 @@
 use super::*;
-use std::sync::Arc;
-use tasty_terminal::Waker;
-
-fn noop_waker() -> Waker {
-    Arc::new(|| {})
-}
 
 fn px(v: f32) -> PhysicalPx {
     PhysicalPx(v)
@@ -819,14 +813,12 @@ fn surface_layout_all_surface_ids_three_way() {
 // ---- Deferred placeholder tests ----
 
 fn test_deferred_placeholder(id: SurfaceId) -> super::EmptySurface {
-    let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
     let spawn = super::terminal_surface::DeferredSpawn {
         shell: None,
         shell_args: Vec::new(),
         extra_env: Vec::new(),
         cols: 80,
         rows: 24,
-        waker,
         working_dir: None,
         restore_command: None,
         scrollback_persist_id: None,
@@ -898,7 +890,7 @@ fn tab_is_not_deferred_with_real_terminal() {
 }
 
 #[test]
-fn tab_ensure_initialized_replaces_placeholder_in_split() {
+fn tab_complete_terminal_spawn_replaces_placeholder_in_split() {
     let p1 = test_deferred_placeholder(11);
     let p2 = test_deferred_placeholder(12);
     let layout = SurfaceLayout::Split {
@@ -918,8 +910,8 @@ fn tab_ensure_initialized_replaces_placeholder_in_split() {
         cached_display_name: None,
     };
     // Only wake id=11. id=12 must remain deferred.
-    let spawned = tab.ensure_initialized(11);
-    assert!(spawned.is_some());
+    assert!(tab.pending_terminal_spawn(11).is_some());
+    assert!(tab.complete_terminal_spawn(11));
     assert!(!tab.is_surface_deferred(11));
     assert!(tab.is_surface_deferred(12));
     assert_eq!(tab.deferred_surface_ids(), vec![12]);
@@ -1186,30 +1178,6 @@ fn compute_terminal_rect_with_bottom_inset() {
 fn source_cwd_empty_surface_is_none() {
     let e = EmptySurface::new(1);
     assert_eq!(e.source_cwd(), None);
-}
-
-// ---- Pane::spawn_terminal — 셸 spawn 실패는 패닉이 아니라 Err ----
-
-#[test]
-fn spawn_terminal_with_a_missing_shell_returns_err_not_panic() {
-    // 잘못된 셸 경로는 복구 가능한 오류로 반환해야 한다.
-    let bogus = "/nonexistent/definitely/not/a/real/shell-xyzzy";
-    let result = Pane::spawn_terminal(
-        1,
-        ShellSpawnOpts {
-            cols: 80,
-            rows: 24,
-            shell: Some(bogus),
-            shell_args: &[],
-            waker: noop_waker(),
-            working_dir: None,
-            extra_env: &[],
-        },
-    );
-    assert!(
-        result.is_err(),
-        "a missing shell path must return Err, not Ok or panic"
-    );
 }
 
 // ---- 보더 상수의 좌표계 (docs/concepts/typed-length.md#두-타입) ----

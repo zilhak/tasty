@@ -1,19 +1,5 @@
 use super::tab::Tab;
 use super::{PaneId, SplitDirection, SurfaceId, TabId, TerminalSurface};
-use tasty_terminal::{Terminal, Waker};
-
-/// Pane::spawn_terminal의 셸 실행 옵션.
-pub struct ShellSpawnOpts<'a> {
-    pub cols: usize,
-    pub rows: usize,
-    pub shell: Option<&'a str>,
-    pub shell_args: &'a [&'a str],
-    pub waker: Waker,
-    pub working_dir: Option<&'a std::path::Path>,
-    /// 자식 셸에 추가로 심을 환경변수(docs/features/terminal-output/index.md#명령-인덱싱-osc-133,
-    /// `ShellConfig::envs_ref` 참고).
-    pub extra_env: &'a [(&'a str, &'a str)],
-}
 
 /// 탭 전환 결과. 변경 없음과 대상 부재를 구분한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,29 +52,6 @@ impl Pane {
         }
     }
 
-    /// Spawn a Terminal with the given shell spawn options. Caller registers the
-    /// returned Terminal into `CoreState::terminals` *before* it inserts the
-    /// returned Pane (or its surface) into a workspace — so the layout never sees
-    /// a missing-store-entry state.
-    pub fn spawn_terminal(
-        surface_id: SurfaceId,
-        spawn: ShellSpawnOpts<'_>,
-    ) -> anyhow::Result<Terminal> {
-        Terminal::new(
-            tasty_terminal::TerminalConfig {
-                cols: spawn.cols,
-                rows: spawn.rows,
-                shell: spawn.shell,
-                args: spawn.shell_args,
-                surface_id,
-                working_dir: spawn.working_dir,
-                initial_input: None,
-                extra_env: spawn.extra_env,
-            },
-            spawn.waker,
-        )
-    }
-
     /// Create a Pane with a TerminalSurface marker. Caller must have already
     /// `engine.terminals.insert(surface_id, terminal)` for the spawned Terminal.
     pub fn new_with_terminal_marker(id: PaneId, tab_id: TabId, surface_id: SurfaceId) -> Self {
@@ -130,18 +93,6 @@ impl Pane {
             ids.extend(tab.all_surface_ids());
         }
         ids
-    }
-
-    /// 활성 tab 안의 모든 deferred placeholder를 spawn. 반환은
-    /// `(surface_id, Terminal, persist_id)` 목록 — caller 가 store insert.
-    pub fn ensure_active_tab_initialized_all(
-        &mut self,
-    ) -> Vec<(SurfaceId, Terminal, Option<String>)> {
-        if self.tabs.is_empty() {
-            return Vec::new();
-        }
-        let idx = self.active_tab.min(self.tabs.len() - 1);
-        self.tabs[idx].ensure_all_initialized()
     }
 
     /// Split the active panel's focused surface with a TerminalSurface marker.

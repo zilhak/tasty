@@ -236,7 +236,6 @@ mod tests {
             extra_env: Vec::new(),
             cols: 80,
             rows: 24,
-            waker: waker(),
             working_dir: working_dir.map(PathBuf::from),
             restore_command: None,
             scrollback_persist_id: None,

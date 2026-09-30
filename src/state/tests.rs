@@ -700,7 +700,6 @@ fn add_deferred_tab(state: &mut AppState, engine: &mut crate::core::CoreState) -
     let tab_id = engine.next_ids.next_tab();
     let surface_id = engine.next_ids.next_surface();
     let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
-    let waker = engine.make_waker(surface_id);
     let spawn = crate::model::DeferredSpawn {
         shell: sh.shell_ref().map(|s| s.to_string()),
         shell_args: sh.args_ref().iter().map(|s| s.to_string()).collect(),
@@ -711,7 +710,6 @@ fn add_deferred_tab(state: &mut AppState, engine: &mut crate::core::CoreState) -
             .collect(),
         cols: engine.default_cols,
         rows: engine.default_rows,
-        waker,
         working_dir: None,
         restore_command: None,
         scrollback_persist_id: None,

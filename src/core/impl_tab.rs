@@ -85,7 +85,7 @@ impl Core {
 
         // pane을 가변 참조하기 전에 Terminal을 store에 넣는다. 이후 pane 조회 실패가 이를 되돌리지는 않는다.
         let prepared_terminal = if is_terminal {
-            let spawn = crate::model::ShellSpawnOpts {
+            let spawn = crate::core::terminal_spawn::ShellSpawnOpts {
                 cols,
                 rows,
                 shell: sh.shell_ref(),
@@ -94,7 +94,7 @@ impl Core {
                 waker,
                 working_dir: cwd.as_deref(),
             };
-            let terminal = crate::model::Pane::spawn_terminal(surface_id, spawn)?;
+            let terminal = crate::core::terminal_spawn::spawn_shell_terminal(surface_id, spawn)?;
             engine.terminals.insert(surface_id, terminal);
             true
         } else {

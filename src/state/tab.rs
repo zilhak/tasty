@@ -31,9 +31,9 @@ impl AppState {
         let rows = engine.default_rows;
         let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let waker = engine.make_waker(surface_id);
-        let terminal = crate::model::Pane::spawn_terminal(
+        let terminal = crate::core::terminal_spawn::spawn_shell_terminal(
             surface_id,
-            crate::model::ShellSpawnOpts {
+            crate::core::terminal_spawn::ShellSpawnOpts {
                 cols,
                 rows,
                 shell: sh.shell_ref(),

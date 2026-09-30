@@ -7,7 +7,8 @@ pub struct TerminalSurface {
     pub id: SurfaceId,
 }
 
-/// EmptySurface의 Deferred::Terminal에 보관할 PTY 생성 정보.
+/// EmptySurface의 Deferred::Terminal에 보관할 PTY 생성 정보. waker는 담지 않는다.
+/// 실제 PTY 생성과 waker 공급은 호스트가 spawn 시점에 맡는다.
 #[derive(Clone)]
 pub struct DeferredSpawn {
     pub shell: Option<String>,
@@ -18,7 +19,6 @@ pub struct DeferredSpawn {
     pub extra_env: Vec<(String, String)>,
     pub cols: usize,
     pub rows: usize,
-    pub waker: tasty_terminal::Waker,
     pub working_dir: Option<std::path::PathBuf>,
     /// PTY 첫 입력으로 보낼 복원 명령. 생성 경로가 끝에 CR을 붙인다.
     /// 호출자는 줄바꿈을 넣지 않는다. TUI 세션 재개에 사용한다.

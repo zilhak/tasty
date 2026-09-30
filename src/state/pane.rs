@@ -535,9 +535,9 @@ impl AppState {
         let rows = engine.default_rows;
 
         let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
-        let terminal = crate::model::Pane::spawn_terminal(
+        let terminal = crate::core::terminal_spawn::spawn_shell_terminal(
             new_surface_id,
-            crate::model::ShellSpawnOpts {
+            crate::core::terminal_spawn::ShellSpawnOpts {
                 cols,
                 rows,
                 shell: sh.shell_ref(),

@@ -416,9 +416,9 @@ pub(crate) fn apply_create_workspace_inner(
             .iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect();
-        let terminal = crate::model::Pane::spawn_terminal(
+        let terminal = crate::core::terminal_spawn::spawn_shell_terminal(
             surface_id,
-            crate::model::ShellSpawnOpts {
+            crate::core::terminal_spawn::ShellSpawnOpts {
                 cols: engine.default_cols,
                 rows: engine.default_rows,
                 shell,

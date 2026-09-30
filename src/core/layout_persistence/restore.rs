@@ -292,7 +292,6 @@ impl SavedSurface {
                 scrollback_ref,
             } if !is_active => {
                 let sh = ShellConfig::from_settings(&engine.settings);
-                let waker = engine.make_waker(surface_id);
                 // 이후 실제 터미널을 capture할 때 사용할 복원 명령도 메타데이터에 기록한다.
                 // 아직 deferred인 동안의 capture는 DeferredSpawn 값을 읽는다.
                 if let Some(cmd) = restore_command.as_deref() {
@@ -326,7 +325,6 @@ impl SavedSurface {
                         .collect(),
                     cols: engine.default_cols,
                     rows: engine.default_rows,
-                    waker,
                     working_dir: cwd.as_ref().map(PathBuf::from),
                     restore_command,
                     scrollback_persist_id: scrollback_ref,

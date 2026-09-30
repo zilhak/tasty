@@ -1,8 +1,8 @@
 use super::FocusDirection;
 use super::surface_layout::SurfaceLayout;
 use super::surface_trait::Surface;
+use super::terminal_surface::DeferredSpawn;
 use super::{SplitDirection, SurfaceId, TabId, TerminalSurface};
-use tasty_terminal::Terminal;
 
 pub struct Tab {
     pub id: TabId,
@@ -277,45 +277,70 @@ impl Tab {
     // ── Initialization ──
 
     /// PTY 생성의 연속 실패 뒤 재시도를 멈출 횟수.
-    const MAX_SPAWN_ATTEMPTS: u32 = 5;
+    pub const MAX_SPAWN_ATTEMPTS: u32 = 5;
 
-    /// 특정 surface_id에 해당하는 deferred placeholder를 찾아 PTY를 spawn하고
-    /// `TerminalSurface` marker로 교체. spawn된 경우 `Some((terminal, persist_id))`
-    /// 를 반환 — caller가 `engine.terminals.insert` + `set_scrollback_persist_id`
-    /// 로 store 에 넣는다. None 이면 spawn 실패 또는 deferred 아님.
-    pub fn ensure_initialized(
-        &mut self,
-        surface_id: SurfaceId,
-    ) -> Option<(Terminal, Option<String>)> {
-        let layout = self.layout_opt.as_mut()?;
-        let leaf = layout.find_leaf_mut(surface_id)?;
-        let empty = leaf.as_any_mut().downcast_mut::<super::EmptySurface>()?;
-        // 실패 상한에 도달한 placeholder는 더 이상 spawn하지 않는다.
+    /// 터미널 placeholder의 PTY 생성 정보를 복사해 반환한다. model은 PTY를 만들지 않는다.
+    /// 호스트가 이 정보로 PTY를 만든 뒤 성공하면 [`Tab::complete_terminal_spawn`],
+    /// 실패하면 [`Tab::record_terminal_spawn_failure`]를 호출한다.
+    /// 터미널 placeholder가 아니거나 연속 실패 상한에 도달했으면 None이다.
+    pub fn pending_terminal_spawn(&self, surface_id: SurfaceId) -> Option<DeferredSpawn> {
+        let empty = self.deferred_terminal_placeholder(surface_id)?;
         if empty.spawn_attempts >= Self::MAX_SPAWN_ATTEMPTS {
             return None;
         }
-        // 실패 뒤 재시도할 수 있도록 복원 정보를 take하지 않고 복사한다.
-        let spawn = empty.deferred_spawn().cloned()?;
-        let persist_id = spawn.scrollback_persist_id.clone();
-        let terminal = match spawn_terminal_from_deferred(surface_id, spawn) {
-            Ok(t) => t,
-            Err(e) => {
-                // placeholder를 유지하고 연속 실패 횟수를 센다.
-                empty.spawn_attempts += 1;
-                if empty.spawn_attempts >= Self::MAX_SPAWN_ATTEMPTS {
-                    tracing::error!(
-                        "surface {surface_id}: PTY spawn {}회 연속 실패 — 재시도 중단: {e}",
-                        Self::MAX_SPAWN_ATTEMPTS
-                    );
-                } else if empty.spawn_attempts == 1 {
-                    tracing::warn!("surface {surface_id}: PTY spawn 실패 (재시도 예정): {e}");
-                }
-                return None;
-            }
+        empty.deferred_spawn().cloned()
+    }
+
+    /// PTY 생성에 성공한 터미널 placeholder를 `TerminalSurface` marker로 교체한다.
+    /// 터미널 placeholder가 아니면 false다.
+    pub fn complete_terminal_spawn(&mut self, surface_id: SurfaceId) -> bool {
+        let Some(layout) = self.layout_opt.as_mut() else {
+            return false;
         };
-        let ts: Box<dyn Surface> = Box::new(TerminalSurface { id: surface_id });
-        *leaf = ts;
-        Some((terminal, persist_id))
+        let Some(leaf) = layout.find_leaf_mut(surface_id) else {
+            return false;
+        };
+        let is_terminal_placeholder = leaf
+            .as_any()
+            .downcast_ref::<super::EmptySurface>()
+            .is_some_and(|e| e.deferred_spawn().is_some());
+        if !is_terminal_placeholder {
+            return false;
+        }
+        *leaf = Box::new(TerminalSurface { id: surface_id });
+        true
+    }
+
+    /// PTY 생성 실패를 기록한다. placeholder와 복원 정보는 재시도를 위해 남긴다.
+    pub fn record_terminal_spawn_failure(&mut self, surface_id: SurfaceId, error: &str) {
+        let Some(layout) = self.layout_opt.as_mut() else {
+            return;
+        };
+        let Some(empty) = layout
+            .find_leaf_mut(surface_id)
+            .and_then(|leaf| leaf.as_any_mut().downcast_mut::<super::EmptySurface>())
+            .filter(|e| e.deferred_spawn().is_some())
+        else {
+            return;
+        };
+        empty.spawn_attempts = empty.spawn_attempts.saturating_add(1);
+        if empty.spawn_attempts == Self::MAX_SPAWN_ATTEMPTS {
+            tracing::error!(
+                "surface {surface_id}: PTY spawn {}회 연속 실패 — 재시도 중단: {error}",
+                Self::MAX_SPAWN_ATTEMPTS
+            );
+        } else if empty.spawn_attempts == 1 {
+            tracing::warn!("surface {surface_id}: PTY spawn 실패 (재시도 예정): {error}");
+        }
+    }
+
+    fn deferred_terminal_placeholder(&self, surface_id: SurfaceId) -> Option<&super::EmptySurface> {
+        self.layout_opt
+            .as_ref()?
+            .find_surface(surface_id)?
+            .as_any()
+            .downcast_ref::<super::EmptySurface>()
+            .filter(|e| e.deferred_spawn().is_some())
     }
 
     /// 호스트의 restore(kind, snapshot) 콜백으로 plugin placeholder를 교체한다.
@@ -345,20 +370,6 @@ impl Tab {
         };
         *leaf = new_surface;
         true
-    }
-
-    /// 이 탭의 layout 안에 deferred placeholder로 남아있는 모든 surface ID를 spawn.
-    /// 반환값은 `(surface_id, Terminal, persist_id)` 의 목록 — caller 가 store 에
-    /// insert 한다.
-    pub fn ensure_all_initialized(&mut self) -> Vec<(SurfaceId, Terminal, Option<String>)> {
-        let ids = self.deferred_surface_ids();
-        let mut spawned = Vec::with_capacity(ids.len());
-        for sid in ids {
-            if let Some((t, pid)) = self.ensure_initialized(sid) {
-                spawned.push((sid, t, pid));
-            }
-        }
-        spawned
     }
 
     /// layout 안에 deferred EmptySurface placeholder가 하나라도 있으면 true.
@@ -501,41 +512,6 @@ fn collect_deferred_ids(layout: &SurfaceLayout, out: &mut Vec<SurfaceId>) {
     }
 }
 
-fn spawn_terminal_from_deferred(
-    surface_id: SurfaceId,
-    spawn: super::terminal_surface::DeferredSpawn,
-) -> Result<Terminal, String> {
-    let shell_ref = spawn.shell.as_deref();
-    let shell_args: Vec<&str> = spawn.shell_args.iter().map(|s| s.as_str()).collect();
-    let extra_env: Vec<(&str, &str)> = spawn
-        .extra_env
-        .iter()
-        .map(|(k, v)| (k.as_str(), v.as_str()))
-        .collect();
-    let working_dir = spawn.working_dir.as_deref();
-    // PTY master 의 첫 입력으로 restore_command 를 미리 적재. Terminal::new 가
-    // writer thread spawn 전에 동기 write 하므로, shell 이 stdin 을 처음 read
-    // 하는 순간 이 명령이 들어간다 (예: `claude -r <uuid>\r`).
-    let initial = spawn.restore_command.as_deref().map(|c| format!("{c}\r"));
-    let initial_input = initial.as_deref();
-    match Terminal::new(
-        tasty_terminal::TerminalConfig {
-            cols: spawn.cols,
-            rows: spawn.rows,
-            shell: shell_ref,
-            args: &shell_args,
-            surface_id,
-            working_dir,
-            initial_input,
-            extra_env: &extra_env,
-        },
-        spawn.waker,
-    ) {
-        Ok(terminal) => Ok(terminal),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
 fn dirs_home() -> Option<std::path::PathBuf> {
     #[cfg(not(windows))]
     {
@@ -554,7 +530,6 @@ mod tests {
     use super::*;
     use crate::EmptySurface;
     use crate::terminal_surface::DeferredSpawn;
-    use std::sync::Arc;
 
     fn deferred_spawn(shell: Option<&str>) -> DeferredSpawn {
         DeferredSpawn {
@@ -563,7 +538,6 @@ mod tests {
             extra_env: Vec::new(),
             cols: 80,
             rows: 24,
-            waker: Arc::new(|| {}) as tasty_terminal::Waker,
             working_dir: None,
             restore_command: None,
             scrollback_persist_id: None,
@@ -629,24 +603,23 @@ mod tests {
 
     /// PTY 생성 실패 뒤에도 복원 정보가 남아 다시 시도할 수 있어야 한다.
     #[test]
-    fn ensure_initialized_failure_keeps_surface_deferred() {
+    fn spawn_failure_keeps_surface_deferred() {
         let sid: SurfaceId = 42;
-        // 존재하지 않는 shell → Terminal::new 의 spawn_command 가 실패한다.
-        let mut tab = deferred_tab(
-            sid,
-            deferred_spawn(Some("/nonexistent/tasty_no_such_shell")),
-        );
+        let mut tab = deferred_tab(sid, deferred_spawn(Some("/bin/sh")));
         assert!(tab.is_surface_deferred(sid));
 
-        let result = tab.ensure_initialized(sid);
-        assert!(result.is_none(), "spawn 실패 시 None");
+        let spec = tab.pending_terminal_spawn(sid).expect("터미널 placeholder");
+        assert_eq!(spec.shell.as_deref(), Some("/bin/sh"));
+        tab.record_terminal_spawn_failure(sid, "spawn failed");
         assert!(
             tab.is_surface_deferred(sid),
             "생성 실패 뒤에도 재시도에 필요한 복원 정보를 유지해야 한다"
         );
-
-        assert!(tab.ensure_initialized(sid).is_none());
-        assert!(tab.is_surface_deferred(sid));
+        assert_eq!(spawn_attempts_of(&tab, sid), Some(1));
+        assert!(
+            tab.pending_terminal_spawn(sid).is_some(),
+            "상한 전에는 재시도"
+        );
     }
 
     /// 테스트 헬퍼: layout 안 EmptySurface 의 spawn_attempts 를 읽는다.
@@ -660,21 +633,16 @@ mod tests {
     }
 
     /// 영구 실패 케이스: 연속 실패가 MAX_SPAWN_ATTEMPTS 에서 capped 되어 더 이상
-    /// spawn 을 재시도하지 않는다 (reify 매 프레임 폭주 차단). placeholder 는 남는다.
+    /// spawn 정보를 내주지 않는다 (reify 매 프레임 폭주 차단). placeholder 는 남는다.
     #[test]
-    fn ensure_initialized_stops_after_max_attempts() {
+    fn pending_spawn_stops_after_max_attempts() {
         let sid: SurfaceId = 99;
-        let mut tab = deferred_tab(
-            sid,
-            deferred_spawn(Some("/nonexistent/tasty_no_such_shell")),
-        );
-        assert!(tab.is_surface_deferred(sid));
+        let mut tab = deferred_tab(sid, deferred_spawn(None));
 
         for _ in 0..(Tab::MAX_SPAWN_ATTEMPTS + 3) {
-            assert!(
-                tab.ensure_initialized(sid).is_none(),
-                "영구 실패는 항상 None"
-            );
+            if tab.pending_terminal_spawn(sid).is_some() {
+                tab.record_terminal_spawn_failure(sid, "spawn failed");
+            }
         }
 
         assert_eq!(
@@ -682,21 +650,40 @@ mod tests {
             Some(Tab::MAX_SPAWN_ATTEMPTS),
             "spawn_attempts 가 MAX 에서 capped 되어야 함"
         );
+        assert!(tab.pending_terminal_spawn(sid).is_none());
         assert!(tab.is_surface_deferred(sid));
     }
 
     #[test]
-    fn ensure_initialized_success_replaces_leaf() {
+    fn complete_terminal_spawn_replaces_leaf() {
         let sid: SurfaceId = 7;
-        // shell None → default_shell 로 실제 PTY spawn (테스트 머신에 shell 존재).
         let mut tab = deferred_tab(sid, deferred_spawn(None));
         assert!(tab.is_surface_deferred(sid));
 
-        let result = tab.ensure_initialized(sid);
-        assert!(result.is_some(), "정상 shell 은 spawn 성공");
+        assert!(tab.complete_terminal_spawn(sid));
         assert!(
             !tab.is_surface_deferred(sid),
             "성공 시 deferred 해제 + TerminalSurface 로 교체"
         );
+        assert!(
+            tab.surface()
+                .as_any()
+                .downcast_ref::<TerminalSurface>()
+                .is_some()
+        );
+        assert!(tab.pending_terminal_spawn(sid).is_none());
+        assert!(!tab.complete_terminal_spawn(sid), "이미 교체된 leaf");
+    }
+
+    /// plugin placeholder 는 터미널 spawn 경로가 건드리지 않는다.
+    #[test]
+    fn terminal_spawn_api_ignores_plugin_placeholder() {
+        let sid = 7;
+        let mut tab = deferred_plugin_tab(sid, "markdown");
+        assert!(tab.pending_terminal_spawn(sid).is_none());
+        tab.record_terminal_spawn_failure(sid, "x");
+        assert_eq!(spawn_attempts_of(&tab, sid), Some(0));
+        assert!(!tab.complete_terminal_spawn(sid));
+        assert!(tab.is_surface_deferred(sid));
     }
 }

@@ -26,9 +26,9 @@ impl Core {
         let waker = engine.make_waker(new_surface_id);
 
         let new_pane = if is_terminal {
-            let terminal = crate::model::Pane::spawn_terminal(
+            let terminal = crate::core::terminal_spawn::spawn_shell_terminal(
                 new_surface_id,
-                crate::model::ShellSpawnOpts {
+                crate::core::terminal_spawn::ShellSpawnOpts {
                     cols,
                     rows,
                     shell: sh.shell_ref(),

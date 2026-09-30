@@ -41,6 +41,7 @@ pub(crate) mod state;
 pub(crate) mod structural_cascade;
 pub(crate) mod structural_exec;
 pub(crate) mod surface_registry;
+pub(crate) mod terminal_spawn;
 pub(crate) mod terminal_store;
 
 pub(crate) mod app_surface;

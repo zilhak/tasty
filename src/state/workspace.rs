@@ -311,27 +311,19 @@ impl AppState {
     /// 비활성 탭은 전환할 때까지 지연 상태로 남긴다.
     #[cfg(any(feature = "gui", debug_assertions, test))]
     fn ensure_active_workspace_initialized(&mut self, engine: &mut CoreState) {
-        let mut spawned: Vec<(u32, tasty_terminal::Terminal, Option<String>)> = Vec::new();
+        let mut deferred: Vec<u32> = Vec::new();
         {
-            let ws = &mut engine.workspaces[self.active_workspace];
-            let pane_ids: Vec<u32> = ws.pane_layout().all_pane_ids();
-            for pane_id in pane_ids {
-                if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-                    let active_idx = pane.active_tab;
-                    if let Some(tab) = pane.tabs.get_mut(active_idx) {
-                        let mut entries = tab.ensure_all_initialized();
-                        spawned.append(&mut entries);
-                    }
+            let ws = &engine.workspaces[self.active_workspace];
+            for pane_id in ws.pane_layout().all_pane_ids() {
+                if let Some(pane) = ws.pane_layout().find_pane(pane_id)
+                    && let Some(tab) = pane.tabs.get(pane.active_tab)
+                {
+                    deferred.extend(tab.deferred_surface_ids());
                 }
             }
         }
-        for (surface_id, terminal, persist_id) in spawned {
-            engine.terminals.insert(surface_id, terminal);
-            if let Some(pid) = persist_id {
-                engine.terminals.set_scrollback_persist_id(surface_id, pid);
-            }
-            engine.send_fast_init(surface_id);
-            engine.apply_pending_scrollback_inject(surface_id);
+        for surface_id in deferred {
+            engine.ensure_surface_initialized(surface_id);
         }
     }
 
