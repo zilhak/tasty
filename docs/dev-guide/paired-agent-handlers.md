@@ -9,11 +9,11 @@
 | 기능 | Claude | Codex | 유지 근거와 검증 |
 |---|---|---|---|
 | `children` | bare 배열. `child_surface_id` 등으로 remap하고 전경 프로세스 이름/PID를 보충 | 호스트의 `{"children": […]}` 응답 그대로 | 기존 호출자의 JSON 해석을 보존한다. 각 plugin의 `children_response_is_*` 시험이 자기 변환을 고정한다 |
-| `kill` 성공 | `{"killed": true}` | 호스트의 `killed_surface_id`·`child_index`를 포함한 응답 그대로 | 기존 성공 응답을 보존한다. 각 plugin의 `kill_response_is_*` 시험이 자기 변환을 고정한다 |
+| `kill` 성공 | 호스트 응답 그대로 | 호스트 응답 그대로 | 실제로 닫혔으면 `killed_surface_id`·`child_index`, 원격으로 넘겼으면 `forwarded`·`surface_id`·`child_index`다. 원격 전달을 종료로 오인하지 않도록 두 plugin 모두 변환하지 않는다. 각 plugin의 `kill_response_is_*` 시험이 고정하고, Claude의 `a_forwarded_kill_is_not_reported_as_killed`가 전달 응답을 확인한다 |
 | spawn 경고 | 위치 placeholder와 `claude.spawn.warning_*` 키 | 이름 placeholder와 `codex.spawn_warning.*` 키 | 기존 번역 카탈로그와 치환 방식을 함께 유지한다. `build_spawn_warning_*` 시험은 임계값·idle/stale 후보를 확인한다 |
 
 `children`의 전경 정보 보충과 `kill`의 error scanner 해제는 별개의 동작이다.
-Claude는 scanner를 소유하므로 성공한 kill의 surface id로 즉시 해제한다. Codex에
+Claude는 scanner를 소유하므로 응답에 `killed_surface_id`가 있을 때만 그 surface를 즉시 해제한다. 원격으로 넘긴 kill은 surface가 아직 살아 있어 감시를 유지한다. Codex에
 없는 scanner를 형식 통일을 위해 추가하거나 Claude의 정리를 제거하지 않는다.
 
 응답을 그대로 출력하는 CLI 외에 저장소 밖에서 JSON을 해석하는 호출자가 있을 수 있다.

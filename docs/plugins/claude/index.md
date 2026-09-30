@@ -366,7 +366,7 @@ API 오류에서 실제 이벤트를 받은 실험까지 완료한 것은 아니
 | top-level (`launch`) | child registry에 없음 | `surface.locate`를 조회한다. 대상 부재를 포함해 조회 오류가 나도 추적을 유지한다 |
 | 자식 (`spawn`/`respawn`) | 호스트 child registry | `terminal.parent`로 부모·자식 관계를 확인한다. 관계 없음은 추적을 해제하고 그 밖의 조회 오류는 유지한다 |
 
-`terminal.release`는 surface를 남기고 부모·자식 관계와 soft 점유만 해제하므로 자식은 surface 존재만으로 판단하지 않는다. `claude kill`이 성공 응답의 `killed_surface_id`를 받으면 해당 추적을 즉시 해제한다. 일반 조회 오류로 추적을 지우면 다시 등록할 기회가 없어 오류 시에는 유지하는 쪽을 택한다.
+`terminal.release`는 surface를 남기고 부모·자식 관계와 soft 점유만 해제하므로 자식은 surface 존재만으로 판단하지 않는다. `claude kill`은 호스트의 `terminal.kill` 응답을 그대로 돌려주며, 응답에 `killed_surface_id`가 있을 때만 해당 추적을 즉시 해제한다. 원격으로 넘긴 kill(`forwarded`)은 surface가 남아 있으므로 추적을 유지한다. 일반 조회 오류로 추적을 지우면 다시 등록할 기회가 없어 오류 시에는 유지하는 쪽을 택한다.
 
 `surface.read_since_scan_mark`는 에이전트의 `tasty set mark`·`read since-mark`·`parse-since-mark`와 별도의 커서를 사용한다. 읽을 때마다 해당 커서만 전진하며, 다음 호출에는 그 이후 출력이 온다.
 

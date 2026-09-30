@@ -301,8 +301,8 @@ pub(crate) fn handle_children<H: HostCall>(
     Ok(json!(entries))
 }
 
-/// terminal.kill에 종료를 위임하고 오류 감시에서 제거한다.
-/// 공개 성공 응답은 기존 형식인 {killed: true}로 반환한다.
+/// terminal.kill에 종료를 위임하고 호스트 응답을 그대로 반환한다.
+/// 실제로 닫힌 경우(killed_surface_id)에만 오류 감시에서 제거한다. 원격으로 넘긴 kill은 forwarded로 답한다.
 pub(crate) fn handle_kill<H: HostCall>(
     scanner: &Arc<Mutex<ErrorScanner>>,
     host: &H,
@@ -322,7 +322,7 @@ pub(crate) fn handle_kill<H: HostCall>(
     {
         crate::error_scan::lock_scanner(scanner).disable(killed);
     }
-    Ok(json!({ "killed": true }))
+    Ok(resp)
 }
 
 /// 부모의 자식에게 텍스트를 보내는 terminal.broadcast에 위임한다. role 필터도 전달한다.
@@ -1743,10 +1743,11 @@ mod tests {
         assert_eq!(e["foreground_pid"], json!(4242));
     }
 
-    /// 종료 성공 응답은 기존 공개 형식인 {killed: true}를 유지한다.
+    /// 실제로 닫힌 kill은 호스트 응답을 그대로 돌려주고 닫힌 surface의 오류 감시를 끈다.
     #[test]
-    fn kill_response_is_reduced_to_a_killed_flag() {
+    fn kill_response_is_the_host_response() {
         let scanner = Arc::new(Mutex::new(ErrorScanner::new()));
+        crate::error_scan::lock_scanner(&scanner).enable(42, ScanTarget::Child);
         let out = handle_kill(
             &scanner,
             &ShapeHost,
@@ -1754,10 +1755,37 @@ mod tests {
             &test_translator(),
         )
         .expect("handle_kill");
+        assert_eq!(out, json!({ "killed_surface_id": 42, "child_index": 0 }));
+        assert!(!crate::error_scan::lock_scanner(&scanner).is_enabled(42));
+    }
+
+    /// 원격으로 넘긴 kill은 죽인 것으로 답하지 않고 surface의 오류 감시도 유지한다.
+    #[test]
+    fn a_forwarded_kill_is_not_reported_as_killed() {
+        struct ForwardHost;
+        impl HostCall for ForwardHost {
+            fn call(
+                &self,
+                method: &str,
+                _params: Value,
+            ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+                assert_eq!(method, "terminal.kill");
+                Ok(json!({ "forwarded": true, "surface_id": 42, "child_index": 0 }))
+            }
+        }
+        let scanner = Arc::new(Mutex::new(ErrorScanner::new()));
+        crate::error_scan::lock_scanner(&scanner).enable(42, ScanTarget::Child);
+        let out = handle_kill(
+            &scanner,
+            &ForwardHost,
+            &json!({ "surface_id": 1, "child_index": 0 }),
+            &test_translator(),
+        )
+        .expect("handle_kill");
         assert_eq!(
             out,
-            json!({ "killed": true }),
-            "기존 공개 응답인 killed 플래그를 유지해야 한다"
+            json!({ "forwarded": true, "surface_id": 42, "child_index": 0 })
         );
+        assert!(crate::error_scan::lock_scanner(&scanner).is_enabled(42));
     }
 }
