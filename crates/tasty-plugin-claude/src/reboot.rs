@@ -575,6 +575,7 @@ fn resume_and_wait(
     profile_file: Option<&str>,
     permission_mode: Option<&str>,
 ) -> bool {
+    crate::stop_pairing::record_settings_file(host, surface_id, profile_file);
     if let Err(e) = host.call(
         "surface.send",
         json!({

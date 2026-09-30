@@ -176,7 +176,7 @@ description = "~/.claude/settings.jsonにtastyフックをインストール"
 description = "~/.claude/settings.jsonからtastyフックを削除"
 
 [claude.cli.sub.hook]
-description = "Claude Codeフック連携。Claude Codeのフックシステムから呼び出されるとstdinからJSONペイロード（session_id、message、notification_type、error、agent_id、background_tasks）を読み取ります。公式 hooks ドキュメントと実測 payload にはありませんが、waiting_on_background_work も防御的に読み取ります。"
+description = "Claude Codeフック連携。Claude Codeのフックシステムから呼び出されるとstdinからJSONペイロード（session_id、prompt_id、message、notification_type、error、agent_id、background_tasks）を読み取ります。公式 hooks ドキュメントと実測 payload にはありませんが、waiting_on_background_work も防御的に読み取ります。"
 
 [claude.cli.sub.checklist-hook]
 description = "Stopフックゲートの判定。stdinからJSON（session_id、prompt_id、stop_hook_active、last_assistant_message）を読み取ります。--gateで判定する登録ゲートを選択（既定値：continue-checklist）。"
@@ -409,6 +409,9 @@ help = "Claude Code通知のサブタイプ（例：permission_prompt、auth_suc
 [claude.cli.arg.hook_args.error]
 help = "ターンを終了させた API エラーの種類（例：overloaded、rate_limit、server_error、authentication_failed）。StopFailure フックで stdin JSON の 'error' から自動設定"
 
+[claude.cli.arg.hook_args.prompt_id]
+help = "Claude Code のプロンプト（ターン）ID。Stop フックの stdin JSON の 'prompt_id' から自動設定。この Stop を同じターンの Stop フックゲート判定と対応付けるために使う"
+
 [claude.cli.arg.hook_args.agent_id]
 help = "フックがサブエージェント内で発火したときのサブエージェント ID（メインスレッドでは無し）。stdin JSON の 'agent_id' から自動設定。これを持つ stop-failure はサブエージェントの API エラーでメインターンは続くため無視"
 
@@ -432,6 +435,9 @@ help = "Claude Code自身のstop-hook-activeフラグの有無（主判定では
 
 [claude.cli.arg.checklist_hook_args.last_assistant_message]
 help = "完了マーカーを探すassistantの最終メッセージ。stdin JSONの 'last_assistant_message' から自動設定"
+
+[claude.cli.arg.checklist_hook_args.block_cap]
+help = "Claude Code が Stop フックの block を連続で受け入れる上限（CLAUDE_CODE_STOP_HOOK_BLOCK_CAP）。ゲートコマンドが環境変数の値を渡し、空なら既定値 8 を使う。上限に達した block はターンを続けないため、子を idle として報告する"
 
 [claude.cli.arg.checklist_hook_args.gate]
 help = "本文・完了マーカー・回数制限で判定するStopフックゲート名（'claude gate-register' 参照）。既定値は組み込みcontinue-checklist"

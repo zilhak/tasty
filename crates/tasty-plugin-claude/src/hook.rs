@@ -13,7 +13,8 @@ use tasty_plugin_agent_common::host_call::HostCall as HostCallSink;
 use crate::checklist;
 use crate::error_scan::ErrorScanner;
 use crate::profile_attach::{self, AttachRecord};
-use crate::state::ClaudeState;
+use crate::state::{ClaudeState, lock_state};
+use crate::stop_pairing::{Expired, Settled, StopKind, StopPairing, lock_pairing};
 
 /// surface meta 키 — 복원이 셸에 그대로 타이핑하는 재기동 명령
 /// (`src/core/layout_persistence/restore.rs`). 값 포맷의 소유자는
@@ -69,10 +70,142 @@ pub enum HostCall {
     SurfaceCompletion { surface_id: u32, kind: &'static str },
 }
 
+/// 보류한 Stop 을 확정할 때 쓰는 공유 상태. 훅·게이트 처리기와 시간 초과 스레드가 함께 쓴다.
+pub(crate) struct StopTail<'a, H> {
+    pub state: &'a Mutex<ClaudeState>,
+    pub scanner: &'a Arc<Mutex<ErrorScanner>>,
+    pub resume: &'a Mutex<crate::auto_resume::ResumeTable>,
+    pub pairing: &'a Mutex<StopPairing>,
+    pub host: &'a H,
+}
+
+impl<H: HostCallSink> StopTail<'_, H> {
+    /// 게이트가 붙은 세션의 Stop 을 보류 표에 넣는다. 게이트나 세션 id 가 없으면 아무것도 하지 않는다.
+    fn pair_stop(
+        &self,
+        session: Option<&str>,
+        surface_id: u32,
+        prompt_id: Option<String>,
+        kind: StopKind,
+        gates: usize,
+    ) -> usize {
+        let Some(session_id) = session.filter(|_| gates > 0) else {
+            return 0;
+        };
+        let settled = lock_pairing(self.pairing).stop(
+            session_id,
+            surface_id,
+            prompt_id,
+            kind,
+            gates,
+            std::time::Instant::now(),
+        );
+        self.finish(settled)
+    }
+
+    /// 새 턴이 오면 보류 중인 Stop 에서 턴이 끝난 것이므로 idle 로 확정한다. 세션 종료는 보류를 버린다.
+    fn settle_at_turn_boundary(&self, event: &str, session: Option<&str>) -> usize {
+        let Some(session_id) = session else {
+            return 0;
+        };
+        if is_new_turn_event(event) {
+            let settled = lock_pairing(self.pairing).new_turn(session_id);
+            return self.finish(settled);
+        }
+        if event == "session-end" {
+            lock_pairing(self.pairing).end_session(session_id);
+        }
+        0
+    }
+
+    /// 확정된 Stop 을 처리한다. 턴이 끝났으면 보류했던 idle 처리를 실행하고,
+    /// 게이트가 턴을 이어 가게 했으면 보류 때 보낸 active 를 그대로 둔다.
+    pub(crate) fn finish(&self, settled: impl IntoIterator<Item = Settled>) -> usize {
+        let mut failures = 0;
+        for s in settled {
+            if s.runs_idle() {
+                tracing::info!(
+                    "claude stop s{}: every gate let the turn end — reporting idle",
+                    s.surface_id
+                );
+                failures += self.run_idle_stop(s.surface_id);
+            } else if s.kind == StopKind::Idle {
+                tracing::info!(
+                    "claude stop s{}: a gate blocked the stop — turn continues, stays active",
+                    s.surface_id
+                );
+                failures += self.end_background_wait(s.surface_id);
+            }
+        }
+        failures
+    }
+
+    /// 시간 초과로 확정한 Stop 을 처리한다. 확정한 뒤 같은 세션에 새 턴이 시작됐으면 버린다.
+    /// 판정 표를 잠근 채 보내므로, 워커의 새 턴 처리는 이 처리가 끝난 뒤에 active 를 보낸다.
+    pub(crate) fn finish_expired(&self, expired: Vec<Expired>) -> usize {
+        let mut failures = 0;
+        for e in expired {
+            let table = lock_pairing(self.pairing);
+            if !table.is_current_turn(&e.session, e.turn) {
+                tracing::info!(
+                    "claude stop s{}: a new turn started before the timed-out stop was reported — dropped",
+                    e.settled.surface_id
+                );
+                continue;
+            }
+            failures += self.finish([e.settled]);
+            drop(table);
+        }
+        failures
+    }
+
+    /// 대기가 아닌 Stop 이 왔으므로 앞선 백그라운드 대기는 끝났다. 게이트가 턴을 이어 가도 대기 기록을 지운다.
+    fn end_background_wait(&self, surface_id: u32) -> usize {
+        crate::error_scan::lock_scanner(self.scanner).clear_background_wait(surface_id);
+        deliver_all(
+            self.host,
+            &[HostCall::MetaUnset {
+                surface_id,
+                key: BACKGROUND_WAIT_META_KEY,
+            }],
+        )
+    }
+
+    /// 턴 종료 Stop 의 처리. 보류하지 않은 Stop 과 같은 호출·기록을 만든다.
+    fn run_idle_stop(&self, surface_id: u32) -> usize {
+        // stop 의 호출 목록은 번역 문구를 쓰지 않는다.
+        let mut calls = apply_hook("stop", surface_id, None, None, None, &Translator::default())
+            .unwrap_or_else(|e| {
+                tracing::warn!("claude stop s{surface_id}: building the idle calls failed: {e:?}");
+                Vec::new()
+            });
+        calls.extend(telemetry_for_hook(
+            &mut lock_state(self.state),
+            "stop",
+            surface_id,
+            None,
+            now_ms(),
+        ));
+        let failures = deliver_all(self.host, &calls);
+        crate::auto_resume::observe_hook(
+            self.resume,
+            self.host,
+            "stop",
+            surface_id,
+            None,
+            std::time::Instant::now(),
+        );
+        crate::error_scan::lock_scanner(self.scanner).clear_background_wait(surface_id);
+        failures
+    }
+}
+
+#[allow(clippy::too_many_arguments)] // reason: 훅 처리에 필요한 플러그인 상태를 각각 빌려 받는다.
 pub(crate) fn handle_claude_hook<H: HostCallSink>(
-    state: &mut ClaudeState,
+    state: &Mutex<ClaudeState>,
     scanner: &Arc<Mutex<ErrorScanner>>,
     resume: &Mutex<crate::auto_resume::ResumeTable>,
+    pairing: &Mutex<StopPairing>,
     host: &H,
     params: &Value,
     data_dir: Option<&Path>,
@@ -93,6 +226,13 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
     let error = params.get("error").and_then(|v| v.as_str());
     let agent_id = params.get("agent_id").and_then(|v| v.as_str());
     let now_ms = now_ms();
+    let tail = StopTail {
+        state,
+        scanner,
+        resume,
+        pairing,
+        host,
+    };
 
     if is_subagent_stop_failure(event, agent_id) {
         // 메인 턴은 끝나지 않았다 — 상태·알림·meta 어느 것도 건드리지 않는다.
@@ -109,40 +249,21 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
     }
 
     if event == "stop"
-        && let Some(pending) = background_work_pending(params)
+        && let Some(response) = stop_that_does_not_end_the_turn(
+            &tail,
+            params,
+            surface_id,
+            session.as_deref(),
+            now_ms,
+            data_dir,
+            tr,
+        )
     {
-        // 메인 응답만 끝났고 백그라운드 작업이 남아 있다. 작업이 끝나면 Claude Code 가
-        // 새 턴(UserPromptSubmit)을 열고 그 턴의 Stop 이 진짜 종료가 된다.
-        // idle·완료 알림·화면 알림·wall_time 기록·자동 재개 성공 처리를 하지 않고,
-        // 턴이 이어진다는 사실만 active 로 보고한다.
-        tracing::info!(
-            "claude hook stop s{surface_id}: waiting on background work ({pending}) — main turn continues, stays active"
-        );
-        // 정지 감시가 대기 기준과 문구를 쓰도록 대기를 기록한다.
-        let since_ms =
-            crate::error_scan::lock_scanner(scanner).mark_background_wait(surface_id, now_ms);
-        let types = background_task_types(params);
-        let calls = [
-            HostCall::SetState {
-                surface_id,
-                state: "active",
-            },
-            HostCall::MetaSet {
-                surface_id,
-                key: BACKGROUND_WAIT_META_KEY,
-                value: json!({ "since_ms": since_ms, "tasks": types.len(), "types": types })
-                    .to_string(),
-            },
-        ];
-        let host_call_failures = deliver_all(host, &calls);
-        return Ok(json!({
-            "ok": true,
-            "surface_id": surface_id,
-            "event": event,
-            "waiting": "background_work",
-            "host_call_failures": host_call_failures,
-        }));
+        return Ok(response);
     }
+
+    // 새 프롬프트가 왔다면 보류 중인 Stop 에서 턴이 끝났다. 새 턴의 active 보다 먼저 idle 을 보고한다.
+    let settled_failures = tail.settle_at_turn_boundary(event, session.as_deref());
 
     let mut calls = apply_hook(
         event,
@@ -169,11 +290,15 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
     }
 
     calls.extend(telemetry_for_hook(
-        state, event, surface_id, message, now_ms,
+        &mut lock_state(state),
+        event,
+        surface_id,
+        message,
+        now_ms,
     ));
 
     // 호스트 호출의 실패 횟수를 항상 응답에 포함한다.
-    let host_call_failures = deliver_all(host, &calls);
+    let host_call_failures = settled_failures + deliver_all(host, &calls);
     // 상태(`idle`)를 먼저 쓴 뒤에 예약한다 — 만기 처리가 그 상태를 확인한다.
     crate::auto_resume::observe_hook(
         resume,
@@ -206,6 +331,87 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
         "event": event,
         "host_call_failures": host_call_failures,
     }))
+}
+
+/// 턴을 끝내지 않는 Stop 을 처리한다. 백그라운드 작업을 기다리는 Stop 과, 게이트 판정을 기다리며
+/// idle 처리를 보류하는 Stop 이다. 둘 다 아니면 `None` 이며 호출자가 턴 종료로 처리한다.
+fn stop_that_does_not_end_the_turn<H: HostCallSink>(
+    tail: &StopTail<'_, H>,
+    params: &Value,
+    surface_id: u32,
+    session: Option<&str>,
+    now_ms: u64,
+    data_dir: Option<&Path>,
+    tr: &Translator,
+) -> Option<Value> {
+    let prompt_id = params
+        .get("prompt_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from);
+    // 게이트가 붙은 세션의 Stop 은 게이트 판정과 짝지어 확정한다. 판정을 가릴 세션 id 가 필요하다.
+    let gates = match session {
+        Some(_) => crate::stop_pairing::attached_gate_count(tail.host, surface_id, data_dir, tr),
+        None => 0,
+    };
+
+    if let Some(pending) = background_work_pending(params) {
+        // 메인 응답만 끝났고 백그라운드 작업이 남아 있다. 작업이 끝나면 Claude Code 가
+        // 새 턴(UserPromptSubmit)을 열고 그 턴의 Stop 이 진짜 종료가 된다.
+        // idle·완료 알림·화면 알림·wall_time 기록·자동 재개 성공 처리를 하지 않고,
+        // 턴이 이어진다는 사실만 active 로 보고한다.
+        tracing::info!(
+            "claude hook stop s{surface_id}: waiting on background work ({pending}) — main turn continues, stays active"
+        );
+        // 정지 감시가 대기 기준과 문구를 쓰도록 대기를 기록한다.
+        let since_ms =
+            crate::error_scan::lock_scanner(tail.scanner).mark_background_wait(surface_id, now_ms);
+        let types = background_task_types(params);
+        let calls = [
+            HostCall::SetState {
+                surface_id,
+                state: "active",
+            },
+            HostCall::MetaSet {
+                surface_id,
+                key: BACKGROUND_WAIT_META_KEY,
+                value: json!({ "since_ms": since_ms, "tasks": types.len(), "types": types })
+                    .to_string(),
+            },
+        ];
+        // 게이트는 대기 Stop 도 판정한다. 그 판정이 다음 Stop 과 섞이지 않도록 이 Stop 과 짝짓는다.
+        let host_call_failures = deliver_all(tail.host, &calls)
+            + tail.pair_stop(session, surface_id, prompt_id, StopKind::Waiting, gates);
+        return Some(json!({
+            "ok": true,
+            "surface_id": surface_id,
+            "event": "stop",
+            "waiting": "background_work",
+            "host_call_failures": host_call_failures,
+        }));
+    }
+
+    if gates > 0 && session.is_some() {
+        // 게이트가 block 하면 턴이 이어진다. 판정이 모일 때까지 idle 처리를 보류하고 active 로 둔다.
+        tracing::info!(
+            "claude hook stop s{surface_id}: {gates} gate(s) attached — idle deferred until their decisions"
+        );
+        let active = [HostCall::SetState {
+            surface_id,
+            state: "active",
+        }];
+        let host_call_failures = deliver_all(tail.host, &active)
+            + tail.pair_stop(session, surface_id, prompt_id, StopKind::Idle, gates);
+        return Some(json!({
+            "ok": true,
+            "surface_id": surface_id,
+            "event": "stop",
+            "deferred": "gate",
+            "host_call_failures": host_call_failures,
+        }));
+    }
+
+    None
 }
 
 /// 백그라운드 대기 기록을 지우는 이벤트. 대기가 아닌 Stop 과 StopFailure 는 턴이 끝났고,
@@ -921,9 +1127,11 @@ mod tests {
     }
 
     /// 호출한 메서드와 인자를 모두 기록하는 mock 호스트. 모든 호출이 성공한다.
+    /// `settings_file` 이 있으면 부착 settings 경로 meta 조회에 그 값을 돌려준다.
     #[derive(Default)]
     struct RecordingHost {
         seen: std::cell::RefCell<Vec<(String, Value)>>,
+        settings_file: Option<String>,
     }
 
     impl HostCallSink for RecordingHost {
@@ -932,8 +1140,18 @@ mod tests {
             method: &str,
             params: Value,
         ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+            let reply = match (&self.settings_file, method, params["key"].as_str()) {
+                (
+                    Some(path),
+                    "surface.meta.get",
+                    Some(crate::stop_pairing::SETTINGS_FILE_META_KEY),
+                ) => {
+                    json!({ "value": path })
+                }
+                _ => json!({}),
+            };
             self.seen.borrow_mut().push((method.to_string(), params));
-            Ok(json!({}))
+            Ok(reply)
         }
     }
 
@@ -972,9 +1190,10 @@ mod tests {
 
     /// 훅 처리기 전체를 한 번 돌리는 준비물. wall_time 시작과 자동 재개 시도 1회를 미리 남긴다.
     struct HookRig {
-        state: ClaudeState,
+        state: Mutex<ClaudeState>,
         scanner: Arc<Mutex<ErrorScanner>>,
         resume: Mutex<crate::auto_resume::ResumeTable>,
+        pairing: Mutex<StopPairing>,
         host: RecordingHost,
     }
 
@@ -987,18 +1206,82 @@ mod tests {
             let resume = Mutex::new(crate::auto_resume::ResumeTable::default());
             crate::auto_resume::lock_table(&resume).record_attempt(Self::SURFACE);
             Self {
-                state,
+                state: Mutex::new(state),
                 scanner: Arc::new(Mutex::new(ErrorScanner::new())),
                 resume,
+                pairing: Mutex::new(StopPairing::default()),
                 host: RecordingHost::default(),
             }
         }
 
+        /// 이 surface 의 Claude 가 `gates` 개의 Stop 게이트를 붙인 settings 로 실행된 준비물.
+        /// 파일은 게이트 부착과 같은 명령 문자열로 만든다.
+        fn with_gates(dir: &Path, gates: usize) -> Self {
+            let hooks: Vec<Value> = (0..gates)
+                .map(|i| {
+                    let command = crate::install::tasty_guarded_command(
+                        &crate::gate::gate_hook_argv(&format!("gate-{i}")),
+                    );
+                    json!({ "type": "command", "command": command })
+                })
+                .collect();
+            let path = dir.join("settings.json");
+            std::fs::write(
+                &path,
+                json!({ "hooks": { "Stop": [{ "matcher": "", "hooks": hooks }] } }).to_string(),
+            )
+            .unwrap();
+            let mut rig = Self::new();
+            rig.host.settings_file = Some(path.to_string_lossy().into_owned());
+            rig
+        }
+
+        fn tail(&self) -> StopTail<'_, RecordingHost> {
+            StopTail {
+                state: &self.state,
+                scanner: &self.scanner,
+                resume: &self.resume,
+                pairing: &self.pairing,
+                host: &self.host,
+            }
+        }
+
+        /// 시간 초과로 확정할 Stop 을 꺼낸다. 확정 스레드가 잠금을 풀고 보내기 전의 상태다.
+        fn take_expired(&self) -> Vec<crate::stop_pairing::Expired> {
+            lock_pairing(&self.pairing)
+                .expire(std::time::Instant::now() + crate::stop_pairing::GATE_DECISION_TIMEOUT)
+        }
+
+        fn is_waiting(&self) -> bool {
+            crate::error_scan::lock_scanner(&self.scanner)
+                .is_waiting_on_background_work(Self::SURFACE)
+        }
+
+        /// 게이트 한 건의 판정이 도착한 것처럼 처리한다.
+        fn gate(&self, decision: Value, prompt_id: &str) {
+            let settled = lock_pairing(&self.pairing).verdict(
+                "sess-1",
+                Some(prompt_id.to_string()),
+                crate::stop_pairing::verdict_of(&decision),
+                None,
+                std::time::Instant::now(),
+            );
+            StopTail {
+                state: &self.state,
+                scanner: &self.scanner,
+                resume: &self.resume,
+                pairing: &self.pairing,
+                host: &self.host,
+            }
+            .finish(settled);
+        }
+
         fn run(&mut self, params: Value) -> Value {
             handle_claude_hook(
-                &mut self.state,
+                &self.state,
                 &self.scanner,
                 &self.resume,
+                &self.pairing,
                 &self.host,
                 &params,
                 None,
@@ -1013,7 +1296,9 @@ mod tests {
         }
 
         fn wall_time_open(&mut self) -> bool {
-            self.state.take_wall_time(Self::SURFACE, u64::MAX).is_some()
+            lock_state(&self.state)
+                .take_wall_time(Self::SURFACE, u64::MAX)
+                .is_some()
         }
     }
 
@@ -1026,6 +1311,171 @@ mod tests {
             "description": "README first line",
             "agent_type": "Explore",
         }])
+    }
+
+    fn gated_stop(prompt_id: &str) -> Value {
+        json!({ "event": "stop", "surface": HookRig::SURFACE, "session": "sess-1", "prompt_id": prompt_id })
+    }
+
+    #[test]
+    fn a_stop_the_gate_blocks_does_not_report_idle_in_either_arrival_order() {
+        let block = json!({ "decision": "block", "reason": "checklist" });
+        for gate_first in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut rig = HookRig::with_gates(dir.path(), 1);
+            if gate_first {
+                rig.gate(block.clone(), "p1");
+            }
+            let resp = rig.run(gated_stop("p1"));
+            assert_eq!(resp["deferred"], "gate");
+            if !gate_first {
+                rig.gate(block.clone(), "p1");
+            }
+            assert_eq!(rig.host.states(), vec!["active"], "gate_first={gate_first}");
+            assert!(rig.host.fired().is_empty(), "claude-idle must not fire");
+            assert!(!rig.host.methods().iter().any(|m| m == "surface.completion"));
+            assert!(!rig.host.methods().iter().any(|m| m == "telemetry.record"));
+            assert!(rig.resume_attempts_kept());
+            assert!(rig.wall_time_open());
+        }
+    }
+
+    #[test]
+    fn a_stop_every_gate_passes_reports_idle_once_the_decisions_arrive() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut rig = HookRig::with_gates(dir.path(), 2);
+        rig.run(gated_stop("p1"));
+        rig.gate(json!({}), "p1");
+        // 두 번째 판정 전에는 idle 을 보고하지 않는다.
+        assert_eq!(rig.host.states(), vec!["active"]);
+        rig.gate(json!({}), "p1");
+        assert_eq!(rig.host.states(), vec!["active", "idle"]);
+        assert_eq!(rig.host.fired(), vec!["claude-idle"]);
+        assert!(rig.host.methods().iter().any(|m| m == "surface.completion"));
+        assert!(!rig.resume_attempts_kept());
+        assert!(!rig.wall_time_open());
+    }
+
+    #[test]
+    fn a_stop_without_an_attached_gate_reports_idle_at_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut rig = HookRig::with_gates(dir.path(), 0);
+        let resp = rig.run(gated_stop("p1"));
+        assert!(resp.get("deferred").is_none());
+        assert_eq!(rig.host.states(), vec!["idle"]);
+        assert_eq!(rig.host.fired(), vec!["claude-idle"]);
+    }
+
+    #[test]
+    fn a_blocked_stop_is_followed_by_the_next_stop_of_the_same_turn() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut rig = HookRig::with_gates(dir.path(), 1);
+        rig.run(gated_stop("p1"));
+        rig.gate(json!({ "decision": "block" }), "p1");
+        rig.run(gated_stop("p1"));
+        rig.gate(json!({}), "p1");
+        assert_eq!(rig.host.states(), vec!["active", "active", "idle"]);
+        assert_eq!(rig.host.fired(), vec!["claude-idle"]);
+    }
+
+    fn gated_waiting_stop(prompt_id: &str) -> Value {
+        json!({
+            "event": "stop",
+            "surface": HookRig::SURFACE,
+            "session": "sess-1",
+            "prompt_id": prompt_id,
+            "background_tasks": running_subagent(),
+        })
+    }
+
+    #[test]
+    fn a_timed_out_stop_is_not_reported_after_a_new_turn_started() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut rig = HookRig::with_gates(dir.path(), 1);
+        rig.run(gated_stop("p1"));
+        let expired = rig.take_expired();
+        // 확정 스레드가 보내기 전에 워커가 새 턴을 처리했다.
+        rig.run(
+            json!({ "event": "prompt-submit", "surface": HookRig::SURFACE, "session": "sess-1" }),
+        );
+        rig.tail().finish_expired(expired);
+        assert_eq!(rig.host.states(), vec!["active", "active"]);
+        assert!(rig.host.fired().is_empty());
+        // 새 턴이 없었으면 보낸다.
+        rig.run(gated_stop("p2"));
+        rig.tail().finish_expired(rig.take_expired());
+        assert_eq!(
+            rig.host.states(),
+            vec!["active", "active", "active", "idle"]
+        );
+    }
+
+    #[test]
+    fn a_blocked_stop_after_a_background_wait_clears_the_wait_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut rig = HookRig::with_gates(dir.path(), 1);
+        rig.run(gated_waiting_stop("p1"));
+        rig.gate(json!({}), "p1");
+        assert!(rig.is_waiting());
+        rig.run(gated_stop("p1"));
+        rig.gate(json!({ "decision": "block" }), "p1");
+        assert!(!rig.is_waiting(), "대기가 아닌 Stop 은 대기 기록을 지운다");
+        assert!(
+            rig.host
+                .unset_keys()
+                .iter()
+                .any(|k| k == BACKGROUND_WAIT_META_KEY)
+        );
+        assert!(rig.host.fired().is_empty());
+    }
+
+    /// 대기 Stop 의 판정은 그 Stop 과 짝지어진다. 짝짓지 않으면 다음 Stop 이 그 block 을 가져간다.
+    #[test]
+    fn a_waiting_stop_takes_its_own_gate_decision() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut rig = HookRig::with_gates(dir.path(), 1);
+        rig.run(gated_waiting_stop("p1"));
+        rig.gate(json!({ "decision": "block" }), "p1");
+        rig.run(gated_stop("p1"));
+        rig.gate(json!({}), "p1");
+        assert_eq!(rig.host.fired(), vec!["claude-idle"]);
+    }
+
+    #[test]
+    fn the_deferred_idle_clears_the_background_wait_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut rig = HookRig::with_gates(dir.path(), 1);
+        rig.run(gated_waiting_stop("p1"));
+        rig.gate(json!({}), "p1");
+        rig.run(gated_stop("p1"));
+        rig.gate(json!({}), "p1");
+        assert_eq!(rig.host.fired(), vec!["claude-idle"]);
+        assert!(!rig.is_waiting());
+    }
+
+    /// 시간 초과로 확정한 Stop 의 판정이 다음 Stop 전에 늦게 오면 버린다. 그 Stop 과 짝짓지 않는다.
+    #[test]
+    fn a_late_decision_of_a_timed_out_stop_is_not_given_to_the_next_stop() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut rig = HookRig::with_gates(dir.path(), 1);
+        rig.run(gated_stop("p1"));
+        rig.tail().finish_expired(rig.take_expired());
+        rig.gate(json!({ "decision": "block" }), "p1");
+        rig.run(gated_stop("p1"));
+        rig.gate(json!({}), "p1");
+        assert_eq!(rig.host.states(), vec!["active", "idle", "active", "idle"]);
+    }
+
+    #[test]
+    fn a_new_prompt_reports_the_pending_stop_idle_before_the_new_turn() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut rig = HookRig::with_gates(dir.path(), 1);
+        rig.run(gated_stop("p1"));
+        rig.run(
+            json!({ "event": "prompt-submit", "surface": HookRig::SURFACE, "session": "sess-1" }),
+        );
+        assert_eq!(rig.host.states(), vec!["active", "idle", "active"]);
+        assert_eq!(rig.host.fired(), vec!["claude-idle"]);
     }
 
     #[test]

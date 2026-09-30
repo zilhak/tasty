@@ -176,7 +176,7 @@ description = "Install tasty hooks into ~/.claude/settings.json"
 description = "Uninstall tasty hooks from ~/.claude/settings.json"
 
 [claude.cli.sub.hook]
-description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, message, notification_type, error, agent_id, background_tasks) when invoked by Claude Code's hook system. Also reads waiting_on_background_work defensively, although neither the official hooks documentation nor observed payloads include it."
+description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, prompt_id, message, notification_type, error, agent_id, background_tasks) when invoked by Claude Code's hook system. Also reads waiting_on_background_work defensively, although neither the official hooks documentation nor observed payloads include it."
 
 [claude.cli.sub.checklist-hook]
 description = "Stop-hook gate decision. Reads JSON payload from stdin (session_id, prompt_id, stop_hook_active, last_assistant_message); --gate selects which registered gate decides (default: continue-checklist)."
@@ -409,6 +409,9 @@ help = "Claude Code notification subtype (e.g. permission_prompt, auth_success).
 [claude.cli.arg.hook_args.error]
 help = "API error kind that ended the turn (e.g. overloaded, rate_limit, server_error, authentication_failed). Auto-populated from stdin JSON 'error' on the StopFailure hook."
 
+[claude.cli.arg.hook_args.prompt_id]
+help = "Claude Code prompt/turn ID. Auto-populated from stdin JSON 'prompt_id' on the Stop hook. Pairs this stop with the Stop-hook gate decisions for the same turn."
+
 [claude.cli.arg.hook_args.agent_id]
 help = "Subagent ID when the hook fires inside a subagent (absent on the main thread). Auto-populated from stdin JSON 'agent_id'. A stop-failure carrying it is a subagent's API error — the main turn continues, so it is ignored."
 
@@ -432,6 +435,9 @@ help = "Whether Claude Code's own stop-hook-active flag was set (sanity-check on
 
 [claude.cli.arg.checklist_hook_args.last_assistant_message]
 help = "The assistant's last message text, searched for the completion sentinel. Auto-populated from stdin JSON 'last_assistant_message'."
+
+[claude.cli.arg.checklist_hook_args.block_cap]
+help = "Claude Code's cap on consecutive Stop-hook blocks (CLAUDE_CODE_STOP_HOOK_BLOCK_CAP). The gate command passes the environment value; empty means the default 8. A block that reaches the cap does not continue the turn, so the child is reported idle."
 
 [claude.cli.arg.checklist_hook_args.gate]
 help = "Name of the Stop-hook gate whose body, sentinel and round limit this hook decides with (see 'claude gate-register'). Defaults to the built-in continue-checklist gate."

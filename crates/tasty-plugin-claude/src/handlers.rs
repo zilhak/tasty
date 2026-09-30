@@ -438,6 +438,7 @@ pub(crate) fn handle_launch(
         }
 
         crate::error_scan::lock_scanner(scanner).enable(sid, ScanTarget::TopLevel);
+        crate::stop_pairing::record_settings_file(host, sid, profile_file.as_deref());
     }
 
     Ok(json!({
@@ -556,6 +557,8 @@ pub(crate) fn start_claude_in_surface(
     profile_file: Option<&str>,
     permission_mode: Option<&str>,
 ) {
+    // Stop 이 부착 게이트 수를 셀 수 있도록 붙인 settings 경로를 남긴다.
+    crate::stop_pairing::record_settings_file(host, surface_id, profile_file);
     let agent_id = format!("claude_s{surface_id}");
     let session_token = issue_session_token(host, &agent_id);
     let agent_prefix = match session_token {

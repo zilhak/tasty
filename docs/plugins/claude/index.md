@@ -158,7 +158,8 @@ Stop 게이트는 턴을 끝내기 전에 확인할 본문, 종료 표시 문자
 `--profile gate-a,gate-b`처럼 여러 게이트나 일반 프로필을 함께 사용할 수 있다.
 등록 프로필 → 등록 게이트 → 내장 게이트 → 내장 훅 토큰 순서로 이름을 해석한다.
 
-부착 명령에는 `checklist-hook --gate <이름>`만 넣고 본문·상한은 넣지 않는다.
+부착 명령에는 `checklist-hook --gate <이름> --block-cap "${CLAUDE_CODE_STOP_HOOK_BLOCK_CAP:-}"`만 넣고 본문·상한은 넣지 않는다.
+`--block-cap`은 Claude Code의 연속 block 상한을 플러그인에 알린다(아래 "Stop 게이트와 idle").
 훅이 실행될 때 다시 읽으므로 재등록한 내용이 재부착 없이 반영된다.
 이름이 셸 명령에 들어가므로 허용 문자를 넓히면 인용·이스케이프도 함께 바꿔야 한다.
 명령 문자열은 `install.rs::tasty_guarded_command`를 공유한다.
@@ -233,11 +234,11 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 
 > **기존 사용자는 `tasty claude install` 재실행이 필요하다.** 명령 문자열은 사용자의 `settings.json` 에 이미 기록돼 있어, plugin 을 업데이트해도 옛 문자열 그대로다. 재실행하면 marker(`tasty claude hook <token>`) 가 일치하는 기존 entry 를 찾아 **제자리 갱신**하므로 entry 가 중복되지 않는다.
 
-`session_id`/`message`/`notification_type`/`error`/`agent_id`/`background_tasks` 같은 이벤트별 가변 데이터는 명령 인자가 아니라 **stdin JSON**으로 들어온다 — 매니페스트 `hook` cli 항목이 `stdin_json = true`를 선언하고, `--session`/`--message`/`--notification-type`/`--error`/`--agent-id`/`--background-tasks`/`--waiting-on-background-work` 플래그가 각각 `stdin_field`로 stdin JSON에서 자동 채워진다. 공식 hooks 문서와 실측 payload에는 없지만 `waiting_on_background_work`도 `--waiting-on-background-work`로 방어적으로 읽는다. `--background-tasks`와 이 인자는 문자열로 선언해 stdin의 배열·bool 값을 그대로 넘긴다(Claude Code가 hook 실행 시 stdin으로 JSON payload를 준다). POSIX 셸 구문 1종만 발행한다 — [codex](../codex/index.md)처럼 Windows PowerShell 분기는 없다.
+`session_id`/`prompt_id`/`message`/`notification_type`/`error`/`agent_id`/`background_tasks` 같은 이벤트별 가변 데이터는 명령 인자가 아니라 **stdin JSON**으로 들어온다 — 매니페스트 `hook` cli 항목이 `stdin_json = true`를 선언하고, `--session`/`--prompt-id`/`--message`/`--notification-type`/`--error`/`--agent-id`/`--background-tasks`/`--waiting-on-background-work` 플래그가 각각 `stdin_field`로 stdin JSON에서 자동 채워진다. 공식 hooks 문서와 실측 payload에는 없지만 `waiting_on_background_work`도 `--waiting-on-background-work`로 방어적으로 읽는다. `--background-tasks`와 이 인자는 문자열로 선언해 stdin의 배열·bool 값을 그대로 넘긴다(Claude Code가 hook 실행 시 stdin으로 JSON payload를 준다). POSIX 셸 구문 1종만 발행한다 — [codex](../codex/index.md)처럼 Windows PowerShell 분기는 없다.
 
 | Claude Code 이벤트 | matcher | tasty hook token | `terminal.set_state` | `surface.fire_hook` | surface meta | `surface.completion` kind |
 |---|---|---|---|---|---|---|
-| `Stop` | `""`(전체) | `stop` | `idle`. 단 백그라운드 작업을 기다리는 Stop(아래)은 `active` | `claude-idle`(대기 Stop은 없음) | 대기 Stop은 `claude-background-wait` **set**, 그 밖의 Stop은 **unset** | `completion`(대기 Stop은 없음) |
+| `Stop` | `""`(전체) | `stop` | `idle`. 단 백그라운드 작업을 기다리는 Stop(아래)은 `active`, Stop 게이트가 붙은 세션은 판정이 모일 때까지 `active`(아래 "Stop 게이트와 idle") | `claude-idle`(대기 Stop은 없음) | 대기 Stop은 `claude-background-wait` **set**, 그 밖의 Stop은 **unset** | `completion`(대기 Stop은 없음) |
 | `SubagentStop` | `""`(전체) | `subagent-stop` | — (로그만) | — | — | — |
 | `StopFailure` | `""`(전체) | `stop-failure` | `idle` | `claude-idle` + `claude-stop-failure` | `claude-last-stop-failure` = stdin `error`(없으면 `unknown`) **set**. `claude-background-wait` **unset** | `completion` |
 | `SessionEnd` | `""`(전체) | `session-end` | `idle` | `claude-idle` | `claude-session-id`·`restore.command`·`claude-last-stop-failure`·`claude-background-wait` **unset** (프로필 meta 2키는 건드리지 않는다. 프로필 **부착 기록**에는 종료 표시만 하고 유예 뒤 회수 — 아래 "복원을 건너 프로필이 유지되는 방식") | `completion` |
@@ -312,9 +313,38 @@ Claude Code 2.1.283 실측 payload에는 `background_tasks`(항목 `id`·`type`�
 작업이라 하고 진행 중인 작업이 없으면 배열이 비어 있다고 설명하므로, 끝을 뜻하는 값이 아니면 모르는 값도
 대기로 본다. Tasty는 문서에 없는 `waiting_on_background_work`도 방어적으로 읽는다.
 끝나지 않는 백그라운드 명령(개발 서버 등)을 남긴 채 턴을 끝내면 그 자식은 idle이 되지 않는다.
-Stop 게이트가 `block`으로 턴을 이어 가게 한 Stop은 여전히 idle을 기록한다. 두 훅은 따로
-실행되며 이 판정은 게이트의 결과를 읽지 않는다. 판정 근거와 재검토 조건은
-[에이전트 상태와 완료 전달](../../adr/0041-agent-state-and-completion.md)에 있다.
+판정 근거와 재검토 조건은 [에이전트 상태와 완료 전달](../../adr/0041-agent-state-and-completion.md)에 있다.
+
+#### Stop 게이트와 idle
+
+Stop 게이트가 `block`을 반환하면 Claude Code는 턴을 끝내지 않고 이어 간다. 그 Stop은 턴 종료가 아니다.
+Claude Code는 한 Stop의 훅을 병렬로 실행하므로 상태 훅(`claude hook stop`)과 게이트 판정(`claude checklist-hook`)은
+어느 쪽이든 먼저 도착할 수 있다. 플러그인은 요청을 한 워커에서 차례로 처리하므로 한 요청이 다른 요청을 기다리지 않고
+메모리의 표에서 둘을 짝짓는다.
+
+- 게이트 수: Stop마다 그 surface에 부착된 settings 파일의 `hooks.Stop`에서 `tasty claude checklist-hook` 명령 수를 센다.
+  경로는 `launch`·`spawn`·`respawn`·`reboot`가 기록하는 surface meta `claude-settings-file`에서 읽는다(프로필 없이 실행하면 지운다).
+  이 meta가 없으면 프로필 meta 2키(`claude-session-profile`·`claude-session-profile-names`)를 읽는다. 사용자가 직접 `--settings`를
+  붙여 실행한 Claude는 알 수 없어 게이트가 없는 것으로 센다. 같은 명령 문자열은 한 번만 센다. Claude Code는 같은 handler를
+  한 번만 실행한다(공식 hooks 문서는 settings 파일이 여럿인 경우를 적고, 한 파일 안의 중복도 2.1.285에서 한 번 실행됐다).
+- 게이트가 없거나 payload에 `session_id`가 없으면 지금처럼 곧바로 idle을 기록한다.
+- 게이트가 있으면 상태를 `active`로 보내고 idle 처리(`claude-idle`·`surface.completion`·telemetry `wall_time_ms`·자동 재개 성공 처리)를
+  보류한다. 같은 `session_id`·`prompt_id`의 게이트 판정이 게이트 수만큼 모이면 확정한다. 하나라도 `block`이면 턴이 이어지므로
+  `active`를 유지하고, 모두 통과하면 보류한 idle 처리를 실행한다.
+- 판정이 5초 안에 다 오지 않으면 온 판정만으로 확정하고 오지 않은 판정은 통과로 본다. 그 판정이 다음 Stop 전에 늦게 오면 버린다.
+  다음 Stop이 오면 앞 Stop의 판정은 더 오지 않으므로(한 Stop의 훅이 모두 끝나야 턴이 이어진다) 빈자리를 지운다.
+  시간 초과로 확정한 idle은 그 사이 같은 세션에 새 턴이 시작됐으면 보내지 않는다.
+  격리 debug 인스턴스에서 게이트 CLI 한 번은 최대 115ms(80회 중앙값 99ms)였다.
+- Claude Code는 연속 block을 8회(`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`로 변경)까지만 받아들이고 그 뒤의 block은 무시하고 턴을 끝낸다.
+  플러그인은 `prompt_id`별로 연속 block을 세고 상한에 닿은 block은 통과로 본다. 게이트 명령은 환경 변수 값을 `--block-cap`으로 넘긴다.
+  Claude Code의 상한은 tasty 게이트가 아닌 Stop 훅의 continuation도 세지만 플러그인은 tasty 게이트의 block만 센다. 그런 훅이 함께
+  턴을 이어 가게 하면 상한으로 끝난 턴의 idle이 기록되지 않을 수 있다.
+- 보류 중에 같은 세션의 새 턴(`prompt-submit`·`session-start`·`active`)이 오면 보류한 Stop에서 턴이 끝난 것이므로
+  새 턴의 `active`보다 먼저 idle을 기록한다. 판정이 모이기 전에 다음 Stop이 오면 앞 Stop은 block된 것으로 확정한다.
+  `session-end`는 보류 기록을 버린다.
+- 백그라운드 작업을 기다리는 Stop도 게이트가 판정한다. 그 판정은 연속 block 수에만 쓰고 상태는 이미 보고한 `active`다.
+- block으로 확정된 Stop도 대기가 아닌 Stop이므로 `claude-background-wait` 기록과 meta를 지운다.
+- 표는 메모리에만 있다. 보류 중에 플러그인이 다시 시작되면 그 Stop의 idle은 기록되지 않고 다음 훅이 상태를 정한다.
 
 `SubagentStop`은 서브에이전트가 끝났다는 신호이며 메인 턴의 끝이 아니다. 상태·`claude-idle`·
 `surface.completion`·telemetry `wall_time_ms`를 만들지 않고 로그만 남긴다. Claude Code 2.1.283은

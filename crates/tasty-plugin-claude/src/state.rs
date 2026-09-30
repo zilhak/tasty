@@ -3,6 +3,15 @@
 
 use std::collections::HashMap;
 
+/// 훅 처리기와 Stop 확정 스레드가 함께 잠근다. poison 은 한 번 알리고 기존 상태를 계속 쓴다.
+pub(crate) fn lock_state(
+    state: &std::sync::Mutex<ClaudeState>,
+) -> std::sync::MutexGuard<'_, ClaudeState> {
+    const WHAT: &str = "the claude wall-time state";
+    static REPORTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    tasty_utils::poison::recover_mutex(state.lock(), WHAT, &REPORTED)
+}
+
 #[derive(Debug, Default)]
 pub struct ClaudeState {
     /// surface → session-start 시각 (unix ms).

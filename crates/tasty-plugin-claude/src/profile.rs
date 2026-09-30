@@ -614,7 +614,7 @@ mod tests {
         assert_eq!(
             stop_commands(&path),
             vec![crate::install::tasty_guarded_command(
-                "tasty claude checklist-hook --gate continue-checklist"
+                &crate::gate::gate_hook_argv("continue-checklist")
             )]
         );
     }
@@ -655,7 +655,7 @@ mod tests {
         assert_eq!(
             stop_commands(&path),
             vec![crate::install::tasty_guarded_command(
-                "tasty claude checklist-hook --gate mygate"
+                &crate::gate::gate_hook_argv("mygate")
             )]
         );
     }

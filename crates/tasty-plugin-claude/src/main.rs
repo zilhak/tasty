@@ -17,6 +17,7 @@ mod profile_attach;
 mod profile_merge;
 mod reboot;
 mod state;
+mod stop_pairing;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -38,9 +39,14 @@ const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// 폴링 사이의 대기 시간. 한 회차의 IPC 처리 시간은 별도로 걸린다.
 const ERROR_SCAN_INTERVAL: Duration = Duration::from_millis(800);
 
+/// 보류한 Stop 의 시간 초과를 확인하는 간격. 확정이 이만큼 늦어질 수 있다.
+const STOP_PAIRING_TICK: Duration = Duration::from_millis(250);
+
 struct ClaudePlugin {
     /// 훅에서 사용하는 Claude 실행 시간 기록. 자식 목록은 호스트가 관리한다.
-    state: ClaudeState,
+    state: Arc<Mutex<ClaudeState>>,
+    /// 게이트가 붙은 Stop 과 그 판정의 짝. `claude-stop-pairing` 스레드가 시간 초과를 확정한다.
+    pairing: Arc<Mutex<stop_pairing::StopPairing>>,
     scanner: Arc<Mutex<ErrorScanner>>,
     /// API 오류 후 재개 예약. `claude-auto-resume` 스레드가 만기를 처리한다.
     resume: Arc<Mutex<auto_resume::ResumeTable>>,
@@ -70,7 +76,8 @@ impl ClaudePlugin {
             limit_body: translator.t("claude.auto_resume.limit_body").to_string(),
         };
         Self {
-            state: ClaudeState::new(),
+            state: Arc::new(Mutex::new(ClaudeState::new())),
+            pairing: Arc::new(Mutex::new(stop_pairing::StopPairing::default())),
             scanner: Arc::new(Mutex::new(ErrorScanner::new())),
             resume: Arc::new(Mutex::new(auto_resume::ResumeTable::default())),
             resume_texts,
@@ -78,6 +85,38 @@ impl ClaudePlugin {
             plugin_data_dir,
             checklist_body,
             translator,
+        }
+    }
+}
+
+impl ClaudePlugin {
+    /// 게이트 판정을 같은 Stop 의 상태 훅과 짝짓는다. 짝이 모이면 보류한 idle 처리를 실행한다.
+    fn observe_gate_verdict(&self, host: &HostHandle, params: &Value, response: &Value) {
+        let Some(session) = params.get("session_id").and_then(Value::as_str) else {
+            return;
+        };
+        let prompt_id = params
+            .get("prompt_id")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+        let settled = stop_pairing::lock_pairing(&self.pairing).verdict(
+            session,
+            prompt_id,
+            stop_pairing::verdict_of(response),
+            stop_pairing::block_cap_param(params),
+            std::time::Instant::now(),
+        );
+        self.stop_tail(host).finish(settled);
+    }
+
+    fn stop_tail<'a>(&'a self, host: &'a HostHandle) -> hook::StopTail<'a, HostHandle> {
+        hook::StopTail {
+            state: &self.state,
+            scanner: &self.scanner,
+            resume: &self.resume,
+            pairing: &self.pairing,
+            host,
         }
     }
 }
@@ -99,21 +138,26 @@ impl Plugin for ClaudePlugin {
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         match ctx.method.as_str() {
             "claude.hook" => hook::handle_claude_hook(
-                &mut self.state,
+                &self.state,
                 &self.scanner,
                 &self.resume,
+                &self.pairing,
                 &ctx.host,
                 &ctx.params,
                 self.plugin_data_dir.as_deref(),
                 &self.translator,
             ),
-            "claude.checklist_hook" => checklist::handle_checklist_hook(
-                &ctx.host,
-                self.plugin_data_dir.as_deref(),
-                &self.checklist_body,
-                &ctx.params,
-                &self.translator,
-            ),
+            "claude.checklist_hook" => {
+                let response = checklist::handle_checklist_hook(
+                    &ctx.host,
+                    self.plugin_data_dir.as_deref(),
+                    &self.checklist_body,
+                    &ctx.params,
+                    &self.translator,
+                )?;
+                self.observe_gate_verdict(&ctx.host, &ctx.params, &response);
+                Ok(response)
+            }
             "claude.checklist_enable" => checklist::handle_enable(
                 self.plugin_data_dir.as_deref(),
                 &ctx.params,
@@ -250,6 +294,17 @@ impl Plugin for ClaudePlugin {
                 }
             })
             .expect("spawn claude-input-default thread");
+        let (state, scanner, resume, pairing) = (
+            self.state.clone(),
+            self.scanner.clone(),
+            self.resume.clone(),
+            self.pairing.clone(),
+        );
+        let pairing_host = host.clone();
+        std::thread::Builder::new()
+            .name("claude-stop-pairing".into())
+            .spawn(move || stop_pairing_loop(&state, &scanner, &resume, &pairing, &pairing_host))
+            .expect("spawn claude-stop-pairing thread");
         // 등록된 최상위·자식 터미널을 별도 스레드에서 주기적으로 확인한다.
         let scanner = self.scanner.clone();
         let resume = self.resume.clone();
@@ -265,6 +320,28 @@ impl Plugin for ClaudePlugin {
             .name("claude-auto-resume".into())
             .spawn(move || auto_resume::run_loop(resume, resume_host, resume_texts))
             .expect("spawn claude-auto-resume thread");
+    }
+}
+
+/// 판정이 [`stop_pairing::GATE_DECISION_TIMEOUT`] 안에 모이지 않은 Stop 을 확정한다.
+fn stop_pairing_loop(
+    state: &Mutex<ClaudeState>,
+    scanner: &Arc<Mutex<ErrorScanner>>,
+    resume: &Mutex<auto_resume::ResumeTable>,
+    pairing: &Mutex<stop_pairing::StopPairing>,
+    host: &HostHandle,
+) {
+    let tail = hook::StopTail {
+        state,
+        scanner,
+        resume,
+        pairing,
+        host,
+    };
+    loop {
+        std::thread::sleep(STOP_PAIRING_TICK);
+        let expired = stop_pairing::lock_pairing(tail.pairing).expire(std::time::Instant::now());
+        tail.finish_expired(expired);
     }
 }
 

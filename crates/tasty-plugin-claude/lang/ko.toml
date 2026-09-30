@@ -176,7 +176,7 @@ description = "~/.claude/settings.json에 tasty 훅 설치"
 description = "~/.claude/settings.json에서 tasty 훅 제거"
 
 [claude.cli.sub.hook]
-description = "Claude Code 훅 연동. Claude Code 훅 시스템이 호출하면 stdin에서 JSON payload(session_id, message, notification_type, error, agent_id, background_tasks)를 읽습니다. 공식 hooks 문서와 실측 payload에는 없지만 waiting_on_background_work도 방어적으로 읽습니다."
+description = "Claude Code 훅 연동. Claude Code 훅 시스템이 호출하면 stdin에서 JSON payload(session_id, prompt_id, message, notification_type, error, agent_id, background_tasks)를 읽습니다. 공식 hooks 문서와 실측 payload에는 없지만 waiting_on_background_work도 방어적으로 읽습니다."
 
 [claude.cli.sub.checklist-hook]
 description = "Stop 훅 게이트 판정. stdin에서 JSON(session_id, prompt_id, stop_hook_active, last_assistant_message)을 읽습니다. --gate로 판정할 등록 게이트 선택(기본값: continue-checklist)."
@@ -409,6 +409,9 @@ help = "Claude Code 알림 하위 종류(예: permission_prompt, auth_success). 
 [claude.cli.arg.hook_args.error]
 help = "턴을 끝낸 API 에러 종류(예: overloaded, rate_limit, server_error, authentication_failed). StopFailure 훅에서 stdin JSON의 'error'로 자동 입력"
 
+[claude.cli.arg.hook_args.prompt_id]
+help = "Claude Code의 프롬프트(턴) ID입니다. Stop 훅의 stdin JSON 'prompt_id'에서 자동 입력합니다. 이 Stop을 같은 턴의 Stop 훅 게이트 판정과 짝짓는 데 씁니다."
+
 [claude.cli.arg.hook_args.agent_id]
 help = "서브에이전트에서 발생한 훅의 agent_id입니다(메인 스레드에서는 없음). stdin JSON의 'agent_id'에서 자동 입력합니다. 이 값이 있는 stop-failure는 서브에이전트의 API 오류이므로 메인 턴을 중단한 것으로 처리하지 않습니다."
 
@@ -432,6 +435,9 @@ help = "Claude Code 자체 stop-hook-active 플래그 설정 여부(주 판정 �
 
 [claude.cli.arg.checklist_hook_args.last_assistant_message]
 help = "완료 표식을 찾을 assistant의 마지막 메시지. stdin JSON의 'last_assistant_message'에서 자동 입력"
+
+[claude.cli.arg.checklist_hook_args.block_cap]
+help = "Claude Code가 Stop 훅 block을 연속으로 받아들이는 상한(CLAUDE_CODE_STOP_HOOK_BLOCK_CAP)입니다. 게이트 명령이 환경 변수 값을 넘기며, 비어 있으면 기본값 8을 씁니다. 상한에 도달한 block은 턴을 잇지 않으므로 자식을 idle로 보고합니다."
 
 [claude.cli.arg.checklist_hook_args.gate]
 help = "본문·완료 표식·회차 제한으로 판정할 Stop 훅 게이트 이름('claude gate-register' 참조). 기본값은 내장 continue-checklist"

@@ -234,9 +234,7 @@ pub(crate) fn attach_profile(
 
 /// 공용 tasty_guarded_command로 게이트 호출 명령을 만들어 Stop 훅 설정에 넣는다.
 fn stop_hook_profile(short_name: &str) -> Value {
-    let command = crate::install::tasty_guarded_command(&format!(
-        "tasty claude checklist-hook --gate {short_name}"
-    ));
+    let command = crate::install::tasty_guarded_command(&gate_hook_argv(short_name));
     json!({
         "hooks": {
             "Stop": [{
@@ -245,6 +243,14 @@ fn stop_hook_profile(short_name: &str) -> Value {
             }]
         }
     })
+}
+
+/// 게이트 호출 명령. Claude Code 의 연속 block 상한은 환경 변수로만 정해지므로
+/// 그 값을 `--block-cap` 으로 넘겨 플러그인이 상한에 닿은 block 을 알아보게 한다.
+pub(crate) fn gate_hook_argv(short_name: &str) -> String {
+    format!(
+        "tasty claude checklist-hook --gate {short_name} --block-cap \"${{CLAUDE_CODE_STOP_HOOK_BLOCK_CAP:-}}\""
+    )
 }
 
 /// 이름·본문·완료 표식·상한을 검증하고 본문 복사본과 정의를 저장한다.

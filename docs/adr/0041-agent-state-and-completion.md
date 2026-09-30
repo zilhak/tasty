@@ -60,6 +60,14 @@ Claude `Notification`은 `notification_type`으로 이 세션이 입력을 기�
 `active`이고, 나머지 유형은 상태를 바꾸지 않는다. 필드가 없으면 `needs_input`이다. 목록에 없는 값은
 상태를 바꾸지 않고 경고만 남긴다. 유형별 표는 [Claude 통합](../plugins/claude/index.md#notification-유형별-상태)에 있다.
 
+Stop 게이트가 `block`으로 턴을 이어 가게 한 Stop은 턴 종료가 아니다. 게이트가 붙은 세션의 Stop은 idle 처리를
+보류하고 `active`를 보낸 뒤, 같은 `session_id`·`prompt_id`의 게이트 판정을 플러그인 메모리에서 짝짓는다.
+게이트 수는 Stop마다 부착된 settings에서 다시 센다. 판정이 모두 통과하면 보류한 idle 처리를 실행하고, 하나라도
+block이면 `active`를 유지한다. 판정이 5초 안에 다 오지 않으면 온 판정만으로 확정하고 오지 않은 판정은 통과로 본다.
+Claude Code의 연속 block 상한(기본 8, `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`)에 닿은 block은 통과로 본다.
+보류 중에 새 턴이 오면 보류한 Stop을 idle로 확정한 뒤 새 턴을 처리한다. 세부는
+[Claude 통합](../plugins/claude/index.md#stop-게이트와-idle)에 있다.
+
 백그라운드 작업을 기다리는 Claude 자식의 정지 알림은 일반 정지와 구분한다. 대기 Stop이 대기를 플러그인
 메모리와 surface meta `claude-background-wait`에 기록한다. 누적 출력이 10분 동안 같으면 대기 한 번에
 한 번만 알린다. 문구는 기다리는 작업의 종류와 경과한 분만 적고, 멈췄을 가능성이나 유실된 훅을 추정하지 않는다.
@@ -85,7 +93,14 @@ Claude `Notification`은 `notification_type`으로 이 세션이 입력을 기�
 보수적으로 취소한다. 끝나지 않는 백그라운드 명령을 남긴 채 턴을 끝낸 Claude 자식은 idle이
 되지 않아 spawn·tell 대기 노드와 완료 알림이 오지 않는다. 대기 노드에는 제한 시간을 두어야 한다.
 Claude Code가 끝난 항목에 위 목록에 없는 `status`를 붙여 남기면 그 자식도 idle이 되지 않는다.
-Stop 게이트가 턴을 이어 가게 한 Stop은 여전히 idle로 기록된다. Claude Code가 새 입력 대기 유형을 추가하면 목록에 넣기 전까지 그 대기를 `needs_input`으로 보고하지 않는다. agent view를 연 Claude 자식은 다른 세션의 입력 대기에도, auto mode의 classifier 요금 안내에도 `needs_input`이 된다. 백그라운드 작업을 기다리는 자식이 실제로 멈춰도 부모는 10분 뒤에야, 대기 한 번에 한 번만 알림을 받는다. 완료 로그는 제한된 기록이며 재시작·비우기·실패로 미독 내용이 사라질 수 있다.
+API 오류로 끝난 턴(`StopFailure`)은 payload에 `background_tasks`가 없어 백그라운드 작업이 남아 있어도 대기로 구분하지 못하고 idle과 완료 알림을 보낸다. 작업이 끝나면 Claude Code가 새 턴을 열어 다시 `active`가 된다.
+게이트가 붙은 세션은 턴이 끝나도 판정이 모일 때까지 idle이 늦어진다. 판정이 5초 안에 오지 않으면 그만큼 늦고, 그 사이
+block된 판정이 늦게 오면 턴이 이어지는데도 idle로 기록된다. 늦게 온 판정은 다음 Stop이 오기 전까지만 버리고, 다음 Stop이 오면
+앞 Stop의 빈자리를 지운다. 다만 그 사이 다음 Stop의 게이트 판정이 상태 훅보다 먼저 오면 앞 Stop의 늦은 판정으로 보고 버리므로,
+그 Stop은 5초 뒤 통과로 확정되어 block이어도 idle로 기록될 수 있다. 시간 초과로 확정한 idle은 그 사이 같은 세션에 새 턴이
+시작됐으면 보내지 않는다. Claude Code의 연속 block 상한은 tasty 게이트가 아닌 Stop 훅의 continuation도 세지만 플러그인은 tasty
+게이트의 block만 센다. 다른 Stop 훅이 함께 턴을 이어 가게 하면 상한으로 끝난 턴의 idle이 기록되지 않을 수 있다. 사용자가 직접 `--settings`로 게이트를 붙인 Claude는 게이트 수를
+알 수 없어 block된 Stop도 idle로 기록된다. 보류 중에 플러그인이 다시 시작되면 그 Stop의 idle은 기록되지 않는다. Claude Code가 새 입력 대기 유형을 추가하면 목록에 넣기 전까지 그 대기를 `needs_input`으로 보고하지 않는다. agent view를 연 Claude 자식은 다른 세션의 입력 대기에도, auto mode의 classifier 요금 안내에도 `needs_input`이 된다. 백그라운드 작업을 기다리는 자식이 실제로 멈춰도 부모는 10분 뒤에야, 대기 한 번에 한 번만 알림을 받는다. 완료 로그는 제한된 기록이며 재시작·비우기·실패로 미독 내용이 사라질 수 있다.
 
 ## Alternatives Considered
 
@@ -112,6 +127,13 @@ Stop 게이트가 턴을 이어 가게 한 Stop은 여전히 idle로 기록된�
 - `agent_needs_input`을 무시하면 agent view의 다른 세션 대기나 auto mode의 classifier 요금 안내(약 6초 동안 입력이 없을 때)로
   조기 종결되지 않지만, 이 세션이 teammate 설정 질문을 하는 경우의 대기를 놓친다. payload로 세 경우를 구분할 수 없어
   `needs_input`을 유지한다.
+- 게이트 CLI가 판정과 함께 상태를 직접 보고하면 짝짓기가 필요 없지만, 게이트가 여럿이면 한 게이트는 다른 게이트의 판정을
+  모른다. 한 게이트의 통과로 idle을 보고하면 다른 게이트의 block을 놓친다.
+- 상태 훅이 게이트 판정을 기다리게 하면 순서 문제가 사라지지만, 플러그인은 요청을 한 워커에서 차례로 처리하므로 기다리는
+  동안 그 판정 요청도 처리되지 않는다. 보류 표에 넣고 곧바로 반환한다.
+- idle을 그대로 보고하고 block이 오면 `active`로 되돌리면 구현이 단순하지만, 그 사이 `claude-idle`·완료 알림·spawn·tell 대기
+  노드의 종결이 이미 일어난다. 되돌릴 수 없는 부수 효과라 보류한다.
+- 게이트 수를 세지 않고 판정 한 건만 기다리면 게이트가 여럿일 때 첫 통과로 확정해 뒤의 block을 놓친다.
 - 백그라운드 대기 중에 정지 알림을 끄면 부모 로그에 오해를 부르는 줄이 생기지 않는다. 하지만 끝나지 않는
   백그라운드 명령을 남긴 자식은 idle이 되지 않으므로, 이 알림이 부모가 받는 유일한 신호다. 그래서 알림을 끄지 않고 기준과 문구를 바꾼다.
 - 호스트 상태에 대기 값을 추가하면 부모와 러너가 대기를 직접 조회할 수 있다. 하지만 상태 판정 규칙과 Codex
@@ -158,7 +180,10 @@ Stop 게이트가 턴을 이어 가게 한 Stop은 여전히 idle로 기록된�
 - 끝난 백그라운드 항목이 끝 값 목록에 없는 `status`로 `background_tasks`에 남는 사례가 보일 때.
   자동 검사는 없다. 위 추적 훅의 Stop payload에서 항목의 `status`를 보고, 그 작업이 끝났는데도
   플러그인 로그에 `waiting on background work` 줄이 이어지는지 확인한다.
-- Stop 게이트의 차단 결과를 상태 보고와 연결할 수단이 생길 때.
+- Claude Code가 Stop 훅의 실행 방식(병렬 실행·연속 block 상한·`prompt_id`)을 바꾸거나 block된 Stop을 따로 알리는 이벤트를 제공할 때.
+  자동 검사는 없다. 게이트를 붙인 자식의 플러그인 로그에서 `a gate blocked the stop — turn continues` 줄과 그 뒤의 다음 Stop이
+  짝을 이루는지, 턴 종료 때 `every gate let the turn end — reporting idle` 줄이 나오는지, `gate decision(s) did not arrive` 경고가
+  반복되는지 확인한다.
 - Claude Code가 `Notification` 유형을 추가·변경하거나 payload가 `agent_needs_input`의 세 경우를 구분하게 될 때.
   코드 목록과 [Claude 통합](../plugins/claude/index.md#notification-유형별-상태) 표의 일치는 claude plugin
   테스트 `the_docs_notification_table_matches_the_effect_list`가 검사한다. 공식 문서와의 일치는 자동으로
