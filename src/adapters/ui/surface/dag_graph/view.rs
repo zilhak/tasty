@@ -360,7 +360,7 @@ fn fetch(
         graph
     });
 
-    let (running, crashed) = crate::core::agent::task::runner_liveness(engine, workspace_id);
+    let (running, crashed) = engine.task_scope.runner_liveness(workspace_id);
     let runner = current
         .as_ref()
         .map(|g| RunnerBadgeData {

@@ -36,7 +36,7 @@ impl Core {
         if let Ok(b) = &result
             && b.state == BarrierState::Closed
         {
-            engine.agent_event_queue.push(
+            engine.task_scope.event_queue().push(
                 crate::core::agent::event_feed::AgentEvent::BarrierClosed {
                     workspace_id,
                     name: b.name.clone(),

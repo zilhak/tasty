@@ -40,9 +40,9 @@ impl App {
             return;
         };
         crate::ipc::handler::agent::task::spawn_task_await(
-            engine.task_waker_hub.clone(),
+            engine.task_scope.waker_hub().clone(),
             self.core.memory_arc(),
-            engine.agent_seq.clone(),
+            engine.task_scope.agent_seq().clone(),
             rpc_id,
             cmd.request.params.clone(),
             &cmd.response_tx,
@@ -101,7 +101,7 @@ mod tests {
         let picked =
             task_await_engine([&first, &owner].into_iter(), 2).expect("소유 engine이 있다");
         assert!(
-            Arc::ptr_eq(&picked.task_waker_hub, &owner.task_waker_hub),
+            Arc::ptr_eq(picked.task_scope.waker_hub(), owner.task_scope.waker_hub()),
             "두 번째 engine의 workspace를 기다리면 그 engine의 허브를 써야 한다"
         );
     }
@@ -122,8 +122,8 @@ mod tests {
         let task_id = ready_task(&core, &owner, 2);
 
         let picked = task_await_engine([&first, &owner].into_iter(), 2).expect("engine");
-        let hub = picked.task_waker_hub.clone();
-        let seq = picked.agent_seq.clone();
+        let hub = picked.task_scope.waker_hub().clone();
+        let seq = picked.task_scope.agent_seq().clone();
         let memory = core.memory_arc();
         let params = json!({ "workspace_id": 2, "id": task_id, "timeout_ms": 3_000 });
         let waiting = std::thread::spawn(move || {

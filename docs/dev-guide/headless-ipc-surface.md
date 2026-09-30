@@ -185,7 +185,7 @@ GUI 조건에 따른다. 창이 없다는 이유로 권한 요청 자체를 막�
 | `timer.list` | `App` 의 TimerHub — 무엇이 인스턴스를 깨우는가 |
 | `clipboard.set_text` | `Core` 의 클립보드 포트. 없는 환경이면 포트가 실패를 돌려주고 그것이 사실이다 |
 | `remote.workspaces` | 인자만 읽는다. App 상태를 하나도 안 본다 |
-| `agent.task_await` | 이 engine 의 `task_waker_hub` + `agent_seq` |
+| `agent.task_await` | 이 engine 의 `TaskScope` 가 가진 완료 대기 허브 + task 순번 |
 | `approval.await` | 이 engine 의 `approval_store` |
 | `events.fetch` | `App.plugin_manager` 의 이벤트 버스 링. `wait_ms` 대기는 워커로 나가 dispatch 루프를 안 막는다. **이벤트를 넣는 경로도 필요하다** — `agent` 사건 큐를 버스로 옮기는 드레인이 데몬 루프(`run_headless`)의 맨 위에도 있어야 하고, 두 조합이 같은 함수를 쓴다(`app::agent_events`) |
 | `system.shutdown` | 데몬을 멈춘다(debug 전용). 응답을 먼저 보내고 run loop 를 끊는다 |

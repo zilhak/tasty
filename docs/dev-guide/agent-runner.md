@@ -191,7 +191,7 @@ user → plugin → host 순, ID 순으로 고른다. 선택되지 않은 전략
 받은 `hook_id`에 `(workspace_id, task_id, deadline)`을 연결해
 `RunnerContext.hook_task_waits`에 넣고 작업을 `AwaitExternal`로 전환한다.
 이 저장소는 `Arc<HookTaskWaits>`로 runner thread와 직접 공유하므로 `Core`를 거치지
-않고 접근할 수 있다. `task_waker_hub`도 같은 공유 방식을 쓴다.
+않고 접근할 수 있다. `RunnerContext.task_waker_hub`도 같은 공유 방식을 쓴다. 이 허브는 engine의 `TaskScope`(`src/core/task_service.rs`)가 만든 것이다.
 
 - 훅이 발생하면 `resolve_hook_fired_task_waits` → `Core::resolve_hook_task_wait`가
   `hook_id`로 작업을 찾는다. `CommandCompleted`의 종료 코드가 0이거나 없으면

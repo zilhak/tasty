@@ -559,7 +559,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
             let mut agent_events = Vec::new();
             let mut dropped = 0u64;
             crate::app::agent_events::take_from(
-                &engine.agent_event_queue,
+                engine.task_scope.event_queue(),
                 &mut agent_events,
                 &mut dropped,
             );

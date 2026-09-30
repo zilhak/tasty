@@ -10,19 +10,19 @@ impl App {
         let mut events = Vec::new();
         let mut dropped = 0u64;
         if let Some(engine) = self.core_state.as_ref() {
-            take_from(&engine.agent_event_queue, &mut events, &mut dropped);
+            take_from(engine.task_scope.event_queue(), &mut events, &mut dropped);
         }
         for (_win_id, w) in self.view.views.iter() {
             if let Some(main) = w.as_main() {
                 take_from(
-                    &main.core_state.agent_event_queue,
+                    main.core_state.task_scope.event_queue(),
                     &mut events,
                     &mut dropped,
                 );
             }
         }
         for (_s, engine) in self.parked_states.iter() {
-            take_from(&engine.agent_event_queue, &mut events, &mut dropped);
+            take_from(engine.task_scope.event_queue(), &mut events, &mut dropped);
         }
         emit(self.plugin_manager.as_mut(), events, dropped);
     }

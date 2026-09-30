@@ -226,7 +226,9 @@ impl App {
                     src.approval_store.clone(),
                     src.telemetry_seq.clone(),
                     src.anomaly_detector.clone(),
-                    src.agent_seq.clone(),
+                    crate::core::task_service::TaskScope::with_seq(Arc::clone(
+                        src.task_scope.agent_seq(),
+                    )),
                     src.next_ids.clone(),
                 )
             });
@@ -239,7 +241,7 @@ impl App {
                 approval_store,
                 telemetry_seq,
                 anomaly_detector,
-                agent_seq,
+                task_scope,
                 next_ids,
             )) = shared
             {
@@ -263,7 +265,7 @@ impl App {
                 engine.approval_store = approval_store;
                 engine.telemetry_seq = telemetry_seq;
                 engine.anomaly_detector = anomaly_detector;
-                engine.agent_seq = agent_seq;
+                engine.task_scope = task_scope;
                 #[cfg(debug_assertions)]
                 {
                     engine.input_simulation_enabled = self.input_simulation_enabled;

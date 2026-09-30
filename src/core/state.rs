@@ -224,13 +224,8 @@ pub struct CoreState {
     /// 이 engine의 메모리 내 이상 탐지 상태. 탐지 기록 저장은 호출자가 맡는다.
     pub(crate) anomaly_detector: std::sync::Arc<tasty_telemetry::AnomalyDetector>,
 
-    pub(crate) agent_seq: std::sync::Arc<std::sync::atomic::AtomicU64>,
-
-    /// task 종결을 대기자에게 알리고 같은 이벤트 큐에도 기록한다.
-    pub(crate) task_waker_hub: std::sync::Arc<crate::core::agent::task_waker::TaskWakerHub>,
-
-    /// runner 스레드에서 생성한 이벤트를 메인 루프로 넘기는 큐.
-    pub(crate) agent_event_queue: std::sync::Arc<crate::core::agent::event_feed::AgentEventQueue>,
+    /// 이 engine의 작업 순번·완료 대기·사건 큐. 자원의 정의와 사용은 TaskService 모듈이 맡는다.
+    pub(crate) task_scope: crate::core::task_service::TaskScope,
 
     pub(crate) surface_messages: HashMap<u32, Vec<SurfaceMessage>>,
     pub(crate) surface_next_message_id: u32,
@@ -428,10 +423,6 @@ pub struct CoreState {
     /// Core와 공유하는 저장소. engine 내부에서 직접 메타데이터를 기록할 때 쓴다.
     pub(crate) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
 
-    /// Core와 같은 runner 등록부를 렌더 경로에서도 조회하도록 부팅 때 주입한다.
-    pub(crate) agent_runner_registry:
-        std::sync::OnceLock<std::sync::Arc<crate::core::agent::runner_thread::RunnerRegistry>>,
-
     /// 검사 중 홈 경로 override를 유지한다. 다른 필드의 Drop까지 격리하려면 마지막 필드여야 한다.
     /// 생성 때만 잠시 바꾸면 이후 저장·정리 코드가 실제 홈을 사용할 수 있다.
     #[cfg(test)]
@@ -517,9 +508,6 @@ impl CoreState {
         let restore_layout = settings.general.restore_layout;
 
         let next_ids = shared_ids.unwrap_or_default();
-        // task 통지를 기록하는 쪽과 메인 루프가 같은 큐를 사용해야 한다.
-        let agent_event_queue =
-            std::sync::Arc::new(crate::core::agent::event_feed::AgentEventQueue::new());
         let mut engine = Self {
             workspaces: Vec::new(),
             categories: vec![crate::model::WorkspaceCategory::normal()],
@@ -541,13 +529,7 @@ impl CoreState {
             approval_store: std::sync::Arc::new(tasty_approval::ApprovalStore::new()),
             telemetry_seq: std::sync::Arc::new(tasty_telemetry::TelemetrySeq::new()),
             anomaly_detector: std::sync::Arc::new(tasty_telemetry::AnomalyDetector::new()),
-            agent_seq: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            task_waker_hub: std::sync::Arc::new(
-                crate::core::agent::task_waker::TaskWakerHub::with_feed(std::sync::Arc::clone(
-                    &agent_event_queue,
-                )),
-            ),
-            agent_event_queue,
+            task_scope: crate::core::task_service::TaskScope::new(),
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),
@@ -644,7 +626,6 @@ impl CoreState {
             #[cfg(debug_assertions)]
             input_simulation_enabled: false,
             memory,
-            agent_runner_registry: std::sync::OnceLock::new(),
             #[cfg(test)]
             _isolated_home: isolated_home,
         };

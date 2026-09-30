@@ -21,7 +21,7 @@ impl Core {
         opts: TaskCreateOpts,
         reserved_for_fallback: bool,
     ) -> Result<Task, AgentError> {
-        let seq = engine.agent_seq.clone();
+        let seq = engine.task_scope.agent_seq().clone();
         self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             if reserved_for_fallback {
@@ -81,7 +81,7 @@ impl Core {
         workspace_id: u32,
         task_id: &TaskId,
     ) -> Result<Option<Task>, AgentError> {
-        let seq = engine.agent_seq.clone();
+        let seq = engine.task_scope.agent_seq().clone();
         self.with_memory(|mem| {
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.get(workspace_id, task_id)
@@ -95,7 +95,7 @@ impl Core {
         task_id: &TaskId,
         now_ms: u64,
     ) -> Result<(Task, Vec<Task>), AgentError> {
-        let seq = engine.agent_seq.clone();
+        let seq = engine.task_scope.agent_seq().clone();
         let result = self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.cancel(workspace_id, task_id, now_ms)
@@ -114,7 +114,7 @@ impl Core {
         if !task.state.is_terminal() {
             return;
         }
-        engine.task_waker_hub.fire(
+        engine.task_scope.waker_hub().fire(
             workspace_id,
             &task.id,
             crate::core::agent::task_waker::TerminalSnapshot {
@@ -132,7 +132,7 @@ impl Core {
         reset_downstream: bool,
         now_ms: u64,
     ) -> Result<Task, AgentError> {
-        let seq = engine.agent_seq.clone();
+        let seq = engine.task_scope.agent_seq().clone();
         self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.retry(workspace_id, task_id, reset_downstream, now_ms)
@@ -148,7 +148,7 @@ impl Core {
         new_state: TaskState,
         now_ms: u64,
     ) -> Result<(Task, Vec<Task>), AgentError> {
-        let seq = engine.agent_seq.clone();
+        let seq = engine.task_scope.agent_seq().clone();
         let result = self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.set_state(workspace_id, task_id, new_state, now_ms)
@@ -169,7 +169,7 @@ impl Core {
         task_id: &TaskId,
         result: TaskResult,
     ) -> Result<Task, AgentError> {
-        let seq = engine.agent_seq.clone();
+        let seq = engine.task_scope.agent_seq().clone();
         self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.set_result(workspace_id, task_id, result)
@@ -216,7 +216,7 @@ impl Core {
         workspace_id: u32,
         inputs: &[TaskId],
     ) -> Result<Vec<ReducerInput>, AgentError> {
-        let seq = engine.agent_seq.clone();
+        let seq = engine.task_scope.agent_seq().clone();
         self.with_memory(|mem| {
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             let mut out: Vec<ReducerInput> = Vec::with_capacity(inputs.len());
@@ -249,7 +249,7 @@ impl Core {
         task_id: &TaskId,
         opts: TaskDeleteOpts,
     ) -> Result<TaskDeleteReport, AgentError> {
-        let seq = engine.agent_seq.clone();
+        let seq = engine.task_scope.agent_seq().clone();
         let report = self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.delete_checked(workspace_id, task_id, opts)
@@ -275,7 +275,7 @@ impl Core {
                 "task_purge requires at least one of 'states'/'older_than_ms'".into(),
             ));
         }
-        let seq = engine.agent_seq.clone();
+        let seq = engine.task_scope.agent_seq().clone();
         let plan = self.with_memory(|mem| {
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.plan_sweep(workspace_id, &filter)
@@ -644,7 +644,7 @@ pub(crate) fn task_list_from_state(
     engine: &CoreState,
     workspace_id: u32,
 ) -> Result<Vec<Task>, AgentError> {
-    let seq = engine.agent_seq.clone();
+    let seq = engine.task_scope.agent_seq().clone();
     let mut guard = crate::poison::recover_mutex(
         engine.memory.lock(),
         crate::core::MEMORY_WHAT,
@@ -675,15 +675,4 @@ pub(crate) fn dag_list_from_state(
         out.extend(group_tasks_into_dags(&task_list_from_state(engine, wid)?));
     }
     Ok(out)
-}
-
-/// 화면은 표시 중인 DAG의 task만 세므로 여기서는 러너 실행·crash 여부만 반환한다.
-/// 레지스트리가 없으면 (false, false)다.
-#[cfg(feature = "gui")]
-pub(crate) fn runner_liveness(engine: &CoreState, workspace_id: u32) -> (bool, bool) {
-    engine
-        .agent_runner_registry
-        .get()
-        .map(|registry| registry.liveness(workspace_id))
-        .unwrap_or((false, false))
 }
