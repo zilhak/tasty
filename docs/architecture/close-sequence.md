@@ -39,8 +39,11 @@ surface·tab·pane 닫기의 트리 변경과 복원 기록(`push_closed_item`)�
 (`src/core/impl_close.rs`의 `Core::close_surface_recording` · `close_pane_recording` ·
 `close_tab_recording`)가 한다. `Core::apply` 의 close 계열과 AppState 의 직접 닫기
 (`close_active_surface` · `close_surface_by_id` · `close_surface_by_id_no_snapshot` ·
-`close_active_pane` · `close_active_tab` · `close_tab`)가 모두 이 함수를 부른다. AppState 는 mirror
-전달·hard 점유 검사를 먼저 하고, Core 가 돌려준 이벤트로 자원 회수·lifecycle 통지·활성 포인터 보정을
+`close_active_pane` · `close_active_tab` · `close_tab`)가 모두 이 함수를 부른다. 창 경로는
+`Core::apply` 를 거치지 않고 이 세 함수를 직접 부른다. 그래서 `Core::apply` 가 하는 mirror 가드와
+에이전트 origin 표시를 창 경로에서는 AppState 가 먼저 처리한다. mirror workspace 면
+`forward_mirror_structural` 이 사용자 요청(`user_triggered: true`)으로 전달하고 로컬 트리를 바꾸지 않는다.
+그다음 hard 점유 검사를 하고, Core 가 돌려준 이벤트로 자원 회수·lifecycle 통지·활성 포인터 보정을
 이어서 한다.
 
 복원 기록 여부는 `save_snapshot` 인자로 정한다. `Core::apply` 에는 origin 이 없으므로 origin 을 아는
@@ -49,7 +52,9 @@ surface·tab·pane 닫기의 트리 변경과 복원 기록(`push_closed_item`)�
 기록하지 않는다. Core 닫기 함수는 pane 의 마지막 탭처럼 닫지 못한 대상을 기록하지 않는다.
 Core 밖에서 기록하는 곳은 둘이다. workspace 전체 닫기(`AppState::close_workspace_at`)와 원격 holder 가
 forward 받은 tab/pane 닫기(`src/core/attach_runtime.rs`)다. holder 는 `DomainIntent::{CloseTab,ClosePane}`
-에 기록 인자가 없어 Core 닫기 전에 사본을 직접 기록한다.
+에 기록 인자가 없어 Core 닫기 전에 사본을 직접 기록하고, Core 와 같이 pane 의 마지막 탭과 유일한 pane 은
+기록하지 않는다. 복원 목록은 현재 트리에서 항목의 출처 workspace 를 찾으므로 기록은 모든 경로에서 트리를
+바꾸기 전에 한다.
 
 ## 자원 회수의 소유
 
