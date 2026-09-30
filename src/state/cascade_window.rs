@@ -19,11 +19,11 @@ impl CascadeWindow for RequestContext {
     fn select_surface_result(&mut self, engine: &CoreState, surface: u32) {
         for ws in &engine.workspaces {
             for pane_id in ws.pane_layout().all_pane_ids() {
-                if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
-                    if let Some(tab) = pane.tabs.iter().find(|t| t.contains_surface(surface)) {
-                        self.navigation.select_surface(tab, surface);
-                        return;
-                    }
+                if let Some(pane) = ws.pane_layout().find_pane(pane_id)
+                    && let Some(tab) = pane.tabs.iter().find(|t| t.contains_surface(surface))
+                {
+                    self.navigation.select_surface(tab, surface);
+                    return;
                 }
             }
         }
@@ -63,7 +63,7 @@ impl CascadeWindow for RequestContext {
     }
 
     fn set_active_workspace(&mut self, engine: &CoreState, index: usize) {
-        self.set_active_workspace_index(&engine, index);
+        self.set_active_workspace_index(engine, index);
     }
 
     #[cfg(feature = "gui")]

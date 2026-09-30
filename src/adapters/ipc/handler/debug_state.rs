@@ -70,7 +70,7 @@ pub(super) fn handle_ui_state(
             "active_modal_id": serde_json::Value::Null,
             "active_modal_kind": serde_json::Value::Null,
             "notification_panel_open": notification_panel_open,
-            "active_workspace": state.active_workspace_index(&engine),
+            "active_workspace": state.active_workspace_index(engine),
             "workspace_count": engine.workspaces.len(),
             "pane_count": pane_count,
             "tab_count": tab_count,

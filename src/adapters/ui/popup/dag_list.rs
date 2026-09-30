@@ -187,7 +187,7 @@ pub fn draw_dag_list_popup(
 ) -> PopupAction {
     let active_workspace_id = engine
         .workspaces
-        .get(state.active_workspace_index(&engine))
+        .get(state.active_workspace_index(engine))
         .map(|w| w.id);
     let dag = &mut state.dialogs.dag_list;
 

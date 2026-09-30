@@ -284,7 +284,7 @@ pub fn draw_pane_tab_bars(
     let move_mark = crate::adapters::ui::move_source::resolve(
         &state.navigation,
         engine,
-        state.active_workspace_index(&engine),
+        state.active_workspace_index(engine),
         pane_rects,
         state.tab_bar_height,
     );

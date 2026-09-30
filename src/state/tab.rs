@@ -424,9 +424,7 @@ impl RequestContext {
         }
     }
     pub(crate) fn tutorial_tab_snapshot(&self, engine: &CoreState) -> Option<(u32, u32, u32)> {
-        let ws = engine
-            .workspaces
-            .get(self.active_workspace_index(&engine))?;
+        let ws = engine.workspaces.get(self.active_workspace_index(engine))?;
         let pane = ws
             .pane_layout()
             .find_pane(self.navigation.pane_id(ws).unwrap_or(0))?;

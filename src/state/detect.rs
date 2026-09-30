@@ -22,7 +22,7 @@ impl RequestContext {
     pub fn detect_workspace_activation(&mut self, engine: &CoreState) {
         let current = engine
             .workspaces
-            .get(self.active_workspace_index(&engine))
+            .get(self.active_workspace_index(engine))
             .map(|w| w.id);
         if current == self.last_active_workspace_id {
             return;

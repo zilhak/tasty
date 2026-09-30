@@ -21,7 +21,7 @@ pub(crate) fn build_layout_context(
     terminal_rect: crate::model::PhysicalRect,
     scale_factor: f32,
 ) -> LayoutContext {
-    let active_workspace = state.active_workspace_index(&engine);
+    let active_workspace = state.active_workspace_index(engine);
 
     let pane_rects_logical: Vec<(u32, egui::Rect)> = pane_rects
         .iter()

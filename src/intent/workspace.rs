@@ -96,23 +96,20 @@ fn new_workspace(
         } = event
         {
             #[cfg(feature = "gui")]
-            if tutorial_setup {
-                if let Some(ws) = engine.workspaces.get(index) {
-                    if let Some(pane) = ws
-                        .pane_layout()
-                        .find_pane(state.navigation.pane_id(ws).unwrap_or(0))
-                    {
-                        if let Some(tab) = pane.tabs.get(state.navigation.tab_index(pane)) {
-                            state.tutorial.prepared(
-                                crate::adapters::ui::tutorial::PracticeContext {
-                                    workspace: workspace_id,
-                                    pane: pane.id,
-                                    tab: tab.id,
-                                },
-                            );
-                        }
-                    }
-                }
+            if tutorial_setup
+                && let Some(ws) = engine.workspaces.get(index)
+                && let Some(pane) = ws
+                    .pane_layout()
+                    .find_pane(state.navigation.pane_id(ws).unwrap_or(0))
+                && let Some(tab) = pane.tabs.get(state.navigation.tab_index(pane))
+            {
+                state
+                    .tutorial
+                    .prepared(crate::adapters::ui::tutorial::PracticeContext {
+                        workspace: workspace_id,
+                        pane: pane.id,
+                        tab: tab.id,
+                    });
             }
             crate::app::dispatch_domain::cascade_workspace_created(
                 state,

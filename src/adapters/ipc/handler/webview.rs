@@ -142,9 +142,9 @@ mod tests {
         let surface = engine
             .create_surface_via_registry(kind, new_sid, None, params)
             .expect("create surface via registry");
-        let ws_index = state.active_workspace_index(&engine);
+        let ws_index = state.active_workspace_index(engine);
         let ws = &mut engine.workspaces[ws_index];
-        let pane_id = state.navigation.pane_id(&ws).unwrap();
+        let pane_id = state.navigation.pane_id(ws).unwrap();
         ws.pane_layout_mut()
             .find_pane_mut(pane_id)
             .expect("focused pane")
@@ -157,14 +157,14 @@ mod tests {
         state: &crate::state::RequestContext,
         engine: &crate::core::CoreState,
     ) -> u32 {
-        let ws = &engine.workspaces[state.active_workspace_index(&engine)];
+        let ws = &engine.workspaces[state.active_workspace_index(engine)];
         let pane = ws
             .pane_layout()
-            .find_pane(state.navigation.pane_id(&ws).unwrap())
+            .find_pane(state.navigation.pane_id(ws).unwrap())
             .expect("focused pane");
         state
             .navigation
-            .surface_id(&pane.tabs[state.navigation.tab_index(&pane)])
+            .surface_id(&pane.tabs[state.navigation.tab_index(pane)])
             .unwrap()
     }
 

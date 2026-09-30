@@ -8,7 +8,7 @@ use crate::core::CoreState;
 
 impl IpcWindow for RequestContext {
     fn active_workspace_index(&self, engine: &CoreState) -> usize {
-        self.active_workspace_index(&engine)
+        self.active_workspace_index(engine)
     }
 
     fn resolve_inherit_cwd(&self, engine: &CoreState) -> Option<PathBuf> {

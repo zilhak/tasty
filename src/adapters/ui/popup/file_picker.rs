@@ -932,7 +932,7 @@ pub fn open(
         .map(|(idx, _)| idx);
     let mirror_ws_id = engine
         .workspaces
-        .get(origin_ws.unwrap_or(state.active_workspace_index(&engine)))
+        .get(origin_ws.unwrap_or(state.active_workspace_index(engine)))
         .filter(|ws| ws.mirror)
         .map(|ws| ws.id);
 

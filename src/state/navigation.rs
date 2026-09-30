@@ -198,10 +198,10 @@ impl NavigationState {
     // Surviving local choices win; a pending user close may then choose its neighbour.
     #[cfg(feature = "gui")]
     pub(crate) fn initialize_pane(&mut self, workspace: &Workspace, pane: u32) {
-        if !self
+        if self
             .panes
             .get(&workspace.id)
-            .is_some_and(|id| workspace.pane_layout().find_pane(*id).is_some())
+            .is_none_or(|id| workspace.pane_layout().find_pane(*id).is_none())
         {
             self.select_pane(workspace, pane);
         }

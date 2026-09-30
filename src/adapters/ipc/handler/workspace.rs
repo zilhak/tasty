@@ -592,7 +592,7 @@ pub fn handle_workspace_move(
         Some(crate::core::intent::CoreEvent::WorkspaceMoved { moved: true, .. })
     );
     if moved {
-        window.reconcile_presentation(&engine);
+        window.reconcile_presentation(engine);
     }
     JsonRpcResponse::success(id, json!({ "moved": moved }))
 }

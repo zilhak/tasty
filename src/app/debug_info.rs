@@ -16,7 +16,7 @@ pub fn collect(
     info.insert("workspace_count".into(), json!(engine.workspaces.len()));
     info.insert(
         "active_workspace".into(),
-        json!(state.active_workspace_index(&engine)),
+        json!(state.active_workspace_index(engine)),
     );
 
     if let Some(gpu) = gpu {

@@ -403,21 +403,12 @@ pub(crate) fn open_surface_tab(
                     .is_none();
             match crate::app::structural_exec::execute(core, state, engine, intent) {
                 Ok(events) => {
-                    if dispatch_origin.selects_result() {
-                        for event in events {
-                            if let crate::core::intent::CoreEvent::TabCreated {
-                                pane_id,
-                                tab_id,
-                                activate: true,
-                                ..
-                            } = event
-                            {
-                                if let Some(pane) = engine.find_pane_by_id(pane_id) {
-                                    state.navigation.select_tab(pane, tab_id);
-                                }
-                            }
-                        }
-                    }
+                    crate::app::structural_exec::select_created_tabs(
+                        state,
+                        engine,
+                        &events,
+                        dispatch_origin.selects_result(),
+                    );
                 }
                 Err(e) => {
                     if mark_remote_forward(engine, &e, dispatch_origin) {

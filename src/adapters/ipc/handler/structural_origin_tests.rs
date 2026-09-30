@@ -42,7 +42,7 @@ fn callers() -> [CallerContext; 3] {
 fn user_focus(state: &RequestContext, engine: &crate::core::CoreState) -> (u32, Option<u32>) {
     let ws = state.active_workspace(engine);
     (
-        state.navigation.pane_id(&ws).unwrap(),
+        state.navigation.pane_id(ws).unwrap(),
         state.focused_surface_id(engine),
     )
 }

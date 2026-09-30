@@ -24,7 +24,7 @@ fn ensure_workspace_for_restore(
         return;
     }
     match core.create_default_workspace(engine) {
-        Ok(idx) => state.set_active_workspace_index(&engine, idx),
+        Ok(idx) => state.set_active_workspace_index(engine, idx),
         Err(e) => {
             tracing::warn!("RestoreClosedItem precondition workspace failed: {e}");
         }

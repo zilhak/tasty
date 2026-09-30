@@ -46,6 +46,30 @@ pub(crate) fn execute(
     Ok(events)
 }
 
+/// Apply creation IDs only for a verified local user origin. The flag is
+/// supplied by the application origin policy, never by untrusted request params.
+pub(crate) fn select_created_tabs(
+    state: &mut dyn CascadeWindow,
+    engine: &CoreState,
+    events: &[CoreEvent],
+    local_user: bool,
+) {
+    if !local_user {
+        return;
+    }
+    for event in events {
+        if let CoreEvent::TabCreated {
+            pane_id,
+            tab_id,
+            activate: true,
+            ..
+        } = event
+        {
+            state.select_tab_result(engine, *pane_id, *tab_id);
+        }
+    }
+}
+
 /// 요청 출처는 진입점이 정해 넘긴다(ADR-0057). 다른 mirror로 다시 전달한 요청이 실패하면
 /// Agent는 사용자 toast 대신 로그로, User는 사용자 조작 실패로 표시한다.
 fn apply(

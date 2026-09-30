@@ -64,21 +64,12 @@ fn new_tab(
     }
     match crate::app::structural_exec::execute(core, state, engine, intent) {
         Ok(events) => {
-            if origin.is_user() {
-                for event in &events {
-                    if let crate::core::intent::CoreEvent::TabCreated {
-                        pane_id,
-                        tab_id,
-                        activate: true,
-                        ..
-                    } = event
-                    {
-                        if let Some(pane) = engine.find_pane_by_id(*pane_id) {
-                            state.navigation.select_tab(pane, *tab_id);
-                        }
-                    }
-                }
-            }
+            crate::app::structural_exec::select_created_tabs(
+                state,
+                engine,
+                &events,
+                origin.is_user(),
+            );
 
             #[cfg(feature = "gui")]
             if origin.is_user() {

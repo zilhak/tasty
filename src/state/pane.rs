@@ -302,7 +302,7 @@ impl RequestContext {
             }
             CascadeLevel::Workspace => {
                 if let Some((_, workspace_id)) = *workspace_purged {
-                    self.reconcile_presentation(&engine);
+                    self.reconcile_presentation(engine);
                     self.after_workspace_removed(engine, workspace_id, PATH);
                 }
                 let zipped: Vec<(u32, Option<String>, Option<&'static str>)> = targets

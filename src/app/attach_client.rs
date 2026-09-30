@@ -630,7 +630,7 @@ impl App {
     fn focus_mirror_workspace(&mut self, ws_id: u32) {
         for (_, main, engine) in self.engines_mut().window_pairs() {
             if let Some(idx) = engine.workspaces.iter().position(|ws| ws.id == ws_id) {
-                main.state.set_active_workspace_index(&engine, idx);
+                main.state.set_active_workspace_index(engine, idx);
                 main.mark_dirty();
                 break;
             }
@@ -1358,7 +1358,7 @@ fn remove_mirror_workspace_from_engine(
         engine.attach.forget_closed_surface(local);
     }
     engine.workspaces.remove(pos);
-    state.reconcile_presentation(&engine);
+    state.reconcile_presentation(engine);
     // mirror만 남았다면 원격 끊김 때문에 사용자 창을 닫는 대신 기본 workspace를 만든다.
     state.recreate_workspace_if_empty(engine, "mirror workspace cleanup");
     true
@@ -2607,11 +2607,13 @@ fn build_pane_from_json(
         let layout = build_layout(
             navigation,
             &layout_json,
-            ids,
-            map,
-            term,
-            mesh,
-            explorer,
+            &MirrorLayoutSources {
+                ids,
+                map,
+                term,
+                mesh,
+                explorer,
+            },
             markdown,
         )
         .unwrap_or_else(|| SurfaceLayout::Leaf(Box::new(EmptySurface::new(ids.next_surface()))));
@@ -2856,16 +2858,27 @@ fn build_mirror_workspace(
     ws
 }
 
+struct MirrorLayoutSources<'a> {
+    ids: &'a crate::core::state::IdGenerator,
+    map: &'a HashMap<u32, u32>,
+    term: &'a HashSet<u32>,
+    mesh: &'a HashMap<u32, MirrorMeshInfo>,
+    explorer: &'a HashMap<u32, std::path::PathBuf>,
+}
+
 fn build_layout(
     navigation: &mut crate::state::navigation::NavigationState,
     node: &Value,
-    ids: &crate::core::state::IdGenerator,
-    map: &HashMap<u32, u32>,
-    term: &HashSet<u32>,
-    mesh: &HashMap<u32, MirrorMeshInfo>,
-    explorer: &HashMap<u32, std::path::PathBuf>,
+    sources: &MirrorLayoutSources<'_>,
     markdown: &mut MirrorMarkdownLeaves,
 ) -> Option<SurfaceLayout> {
+    let MirrorLayoutSources {
+        ids,
+        map,
+        term,
+        mesh,
+        explorer,
+    } = *sources;
     match node.get("type").and_then(|v| v.as_str())? {
         "Leaf" => {
             let remote = node.get("id").and_then(|v| v.as_u64())? as u32;
@@ -2902,26 +2915,8 @@ fn build_layout(
                 .get("focus_second")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
-            let first = build_layout(
-                navigation,
-                node.get("first")?,
-                ids,
-                map,
-                term,
-                mesh,
-                explorer,
-                markdown,
-            )?;
-            let second = build_layout(
-                navigation,
-                node.get("second")?,
-                ids,
-                map,
-                term,
-                mesh,
-                explorer,
-                markdown,
-            )?;
+            let first = build_layout(navigation, node.get("first")?, sources, markdown)?;
+            let second = build_layout(navigation, node.get("second")?, sources, markdown)?;
             let node_id = crate::model::SplitNodeId::allocate();
             navigation.split_hints.insert(node_id, focus_second);
             Some(SurfaceLayout::Split {
@@ -3605,7 +3600,7 @@ mod tests {
             engine
                 .attach_mesh_frames
                 .update(local_surface, vec![1, 2, 3], 0, 0, true);
-            state.set_active_workspace_index(&engine, engine.workspaces.len() - 1);
+            state.set_active_workspace_index(engine, engine.workspaces.len() - 1);
         }
 
         assert!(remove_mirror_workspace_from_parked(
@@ -3629,7 +3624,7 @@ mod tests {
             "mesh 프레임 캐시 제거"
         );
         assert_eq!(
-            state.active_workspace_index(&engine),
+            state.active_workspace_index(engine),
             engine.workspaces.len() - 1
         );
         assert_eq!(
@@ -3712,11 +3707,13 @@ mod tests {
         let layout = build_layout(
             &mut navigation,
             &node,
-            &ids,
-            &map,
-            &term,
-            &HashMap::new(),
-            &HashMap::new(),
+            &MirrorLayoutSources {
+                ids: &ids,
+                map: &map,
+                term: &term,
+                mesh: &HashMap::new(),
+                explorer: &HashMap::new(),
+            },
             &mut HashMap::new(),
         )
         .expect("layout");
@@ -3753,11 +3750,13 @@ mod tests {
         let layout = build_layout(
             &mut navigation,
             &node,
-            &ids,
-            &map,
-            &term,
-            &mesh,
-            &explorer,
+            &MirrorLayoutSources {
+                ids: &ids,
+                map: &map,
+                term: &term,
+                mesh: &mesh,
+                explorer: &explorer,
+            },
             &mut HashMap::new(),
         )
         .expect("layout");
@@ -4093,7 +4092,7 @@ mod tests {
             .iter()
             .position(|t| t.id == tab_id)
             .expect("tab exists");
-        navigation.goto_tab(&pane_b, tab_index);
+        navigation.goto_tab(pane_b, tab_index);
         navigation.select_surface(&pane_b.tabs[tab_index], pane_b_surface3_local);
 
         let old_focused_remote = capture_focused_remote(&navigation, &before_ws, &map);
@@ -4251,7 +4250,7 @@ mod tests {
                 ] }
             }
         });
-        let mut ws = build_mirror_workspace(
+        let ws = build_mirror_workspace(
             &mut structure_ids,
             &mut navigation,
             99,
@@ -4266,7 +4265,7 @@ mod tests {
         );
         let local_b = *map.get(&2).unwrap();
 
-        assert!(set_focus_to_surface(&mut navigation, &mut ws, local_b));
+        assert!(set_focus_to_surface(&mut navigation, &ws, local_b));
         let (pane_b_id, tab_b_id) =
             find_pane_and_tab_for_surface(&ws, local_b).expect("pane B exists");
         assert_eq!(navigation.pane_id(&ws).unwrap(), pane_b_id);
@@ -4280,7 +4279,7 @@ mod tests {
         );
 
         assert!(
-            !set_focus_to_surface(&mut navigation, &mut ws, 12345),
+            !set_focus_to_surface(&mut navigation, &ws, 12345),
             "존재하지 않는 surface 는 false"
         );
     }

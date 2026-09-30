@@ -270,7 +270,7 @@ pub fn draw_egui_panels(
         }
     }
 
-    let active_ws = state.active_workspace_index(&engine);
+    let active_ws = state.active_workspace_index(engine);
     let tab_bar_h = state.tab_bar_height;
     draw_occupied_overlays(
         ctx,

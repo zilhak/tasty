@@ -393,7 +393,7 @@ fn add_test_workspace(
     let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
         panic!("apply_create_workspace_inner did not return WorkspaceCreated");
     };
-    state.set_active_workspace_index(&engine, index);
+    state.set_active_workspace_index(engine, index);
 }
 
 #[test]

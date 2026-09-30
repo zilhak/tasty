@@ -59,7 +59,7 @@ impl RequestContext {
             crate::core::WorkspaceCreationParams::terminal(),
         ) {
             Ok(crate::core::intent::CoreEvent::WorkspaceCreated { index, .. }) => {
-                self.set_active_workspace_index(&engine, index);
+                self.set_active_workspace_index(engine, index);
                 true
             }
             Ok(_) => unreachable!("apply_create_workspace_inner 는 WorkspaceCreated 만 반환"),
@@ -74,7 +74,7 @@ impl RequestContext {
     #[cfg(any(feature = "gui", debug_assertions, test))]
     pub fn switch_workspace(&mut self, engine: &mut CoreState, index: usize) {
         if index < engine.workspaces.len() {
-            self.set_active_workspace_index(&engine, index);
+            self.set_active_workspace_index(engine, index);
             let cat = engine.workspaces[index].category;
             self.category_last_active
                 .insert(cat, engine.workspaces[index].id);
@@ -132,10 +132,10 @@ impl RequestContext {
         engine: &mut CoreState,
         local_idx: usize,
     ) {
-        if self.active_workspace_index(&engine) >= engine.workspaces.len() {
+        if self.active_workspace_index(engine) >= engine.workspaces.len() {
             return;
         }
-        let cat = engine.workspaces[self.active_workspace_index(&engine)].category;
+        let cat = engine.workspaces[self.active_workspace_index(engine)].category;
         let global = engine
             .workspaces_in_category(cat)
             .get(local_idx)
@@ -171,15 +171,15 @@ impl RequestContext {
         engine: &CoreState,
         delta: isize,
     ) -> Option<usize> {
-        if self.active_workspace_index(&engine) >= engine.workspaces.len() {
+        if self.active_workspace_index(engine) >= engine.workspaces.len() {
             return None;
         }
-        let cat = engine.workspaces[self.active_workspace_index(&engine)].category;
+        let cat = engine.workspaces[self.active_workspace_index(engine)].category;
         let locals = engine.workspaces_in_category(cat);
         let len = locals.len();
         let pos = locals
             .iter()
-            .position(|(gi, _)| *gi == self.active_workspace_index(&engine))?;
+            .position(|(gi, _)| *gi == self.active_workspace_index(engine))?;
 
         if engine.settings.general.workspace_switch_crosses_category {
             let raw = pos as isize + delta;
@@ -236,10 +236,10 @@ impl RequestContext {
     /// delta(±1) 방향으로 순환할 카테고리의 섹션 인덱스를 구한다.
     #[cfg(any(feature = "gui", test))]
     fn relative_category_section(&self, engine: &CoreState, delta: isize) -> Option<usize> {
-        if self.active_workspace_index(&engine) >= engine.workspaces.len() {
+        if self.active_workspace_index(engine) >= engine.workspaces.len() {
             return None;
         }
-        let cat = engine.workspaces[self.active_workspace_index(&engine)].category;
+        let cat = engine.workspaces[self.active_workspace_index(engine)].category;
         let categories = engine.categories();
         let len = categories.len();
         if len <= 1 {
@@ -259,7 +259,7 @@ impl RequestContext {
         }
         let ws = engine.workspaces.remove(from);
         engine.workspaces.insert(to, ws);
-        self.reconcile_presentation(&engine);
+        self.reconcile_presentation(engine);
         true
     }
 
@@ -269,7 +269,7 @@ impl RequestContext {
     fn ensure_active_workspace_initialized(&mut self, engine: &mut CoreState) {
         let mut deferred: Vec<u32> = Vec::new();
         {
-            let ws = &engine.workspaces[self.active_workspace_index(&engine)];
+            let ws = &engine.workspaces[self.active_workspace_index(engine)];
             for pane_id in ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pane_id)
                     && let Some(tab) = pane.tabs.get(self.navigation.tab_index(pane))
@@ -287,7 +287,7 @@ impl RequestContext {
     pub fn close_active_workspace(&mut self, engine: &mut CoreState) -> bool {
         self.close_workspace_at(
             engine,
-            self.active_workspace_index(&engine),
+            self.active_workspace_index(engine),
             WorkspaceCloseOrigin::User,
         )
     }
@@ -329,7 +329,7 @@ impl RequestContext {
         let workspace_id = engine.workspaces[ws_idx].id;
         engine.workspaces.remove(ws_idx);
         self.after_workspace_removed(engine, workspace_id, path);
-        self.reconcile_presentation(&engine);
+        self.reconcile_presentation(engine);
         // 제거 후 kind를 찾지 못할 수 있으므로 구독자는 surface ID로도 정리할 수 있어야 한다.
         let zipped: Vec<(u32, Option<String>, Option<&'static str>)> = targets
             .into_iter()

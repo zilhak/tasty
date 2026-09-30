@@ -712,10 +712,8 @@ impl App {
             return;
         };
         cascade_tab_created(state, engine, pane_id, tab_id, surface_id);
-        if activate {
-            if let Some(pane) = engine.find_pane_by_id(pane_id) {
-                state.navigation.select_tab(pane, tab_id);
-            }
+        if activate && let Some(pane) = engine.find_pane_by_id(pane_id) {
+            state.navigation.select_tab(pane, tab_id);
         }
         if let Some(view) = view {
             view.mark_dirty();
@@ -1202,7 +1200,7 @@ pub(crate) fn cascade_workspace_created(
         cascade_surface_created(state, engine, surface_id);
     }
     if origin.is_user() {
-        state.set_active_workspace_index(&engine, c.index);
+        state.set_active_workspace_index(engine, c.index);
     }
 }
 
@@ -1225,7 +1223,7 @@ pub(crate) fn cascade_closed_item_restored(
     match kind {
         RestoredKind::Nothing => {}
         RestoredKind::Workspace { new_ws_index } => {
-            state.set_active_workspace_index(&engine, new_ws_index);
+            state.set_active_workspace_index(engine, new_ws_index);
         }
         RestoredKind::TabIntoPane => {}
         RestoredKind::PaneIntoWorkspace { pane_id } => {

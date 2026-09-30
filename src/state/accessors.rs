@@ -63,7 +63,7 @@ impl RequestContext {
             "active_workspace called with empty workspaces"
         );
         let idx = self
-            .active_workspace_index(&engine)
+            .active_workspace_index(engine)
             .min(engine.workspaces.len().saturating_sub(1));
         &engine.workspaces[idx]
     }
@@ -78,7 +78,7 @@ impl RequestContext {
             "active_workspace_mut called with empty workspaces"
         );
         let idx = self
-            .active_workspace_index(&engine)
+            .active_workspace_index(engine)
             .min(engine.workspaces.len().saturating_sub(1));
         &mut engine.workspaces[idx]
     }

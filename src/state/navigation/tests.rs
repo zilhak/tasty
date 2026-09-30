@@ -194,13 +194,16 @@ fn all_tab_removal_positions_preserve_the_legacy_neighbour_policy_by_id() {
 #[test]
 fn moving_a_surface_repairs_the_source_and_replaces_the_selected_destination() {
     let mut workspaces = vec![workspace(1), workspace(2)];
-    for (ws, first, second) in [(&mut workspaces[0], 1000, 1001)] {
-        ws.pane_layout_mut().find_pane_mut(10).unwrap().tabs[0].split_surface_by_id_generic(
-            first,
+    workspaces[0]
+        .pane_layout_mut()
+        .find_pane_mut(10)
+        .unwrap()
+        .tabs[0]
+        .split_surface_by_id_generic(
+            1000,
             SplitDirection::Horizontal,
-            Box::new(EmptySurface::new(second)),
+            Box::new(EmptySurface::new(1001)),
         );
-    }
     workspaces[1]
         .pane_layout_mut()
         .find_pane_mut(20)

@@ -272,7 +272,7 @@ fn tab_scoped_popup_follows_its_tab_after_reorder() {
     let pane_id = state.focused_pane_id(&engine);
     let pane = engine.find_pane_by_id(pane_id).unwrap();
     let first = pane.tabs[0].id;
-    let second = pane.tabs[state.navigation.tab_index(&pane)].id;
+    let second = pane.tabs[state.navigation.tab_index(pane)].id;
     assert_ne!(first, second);
     let scope = crate::state::RenameTarget::TabName { tab_id: second }.popup_scope(&engine);
     state.popups.open_with_scope(PORT_SCANNER_ID, scope);
@@ -296,7 +296,7 @@ fn tab_scoped_popup_follows_its_tab_after_reorder() {
     let pane = engine.find_pane_by_id_mut(pane_id).unwrap();
     state
         .navigation
-        .goto_tab(&pane, pane.tabs.iter().position(|t| t.id == first).unwrap());
+        .goto_tab(pane, pane.tabs.iter().position(|t| t.id == first).unwrap());
     let ctx = live_layout_ctx(&state, &engine);
     assert!(
         state.popups.topmost_visible_open(Some(&ctx)).is_none(),

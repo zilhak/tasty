@@ -131,7 +131,7 @@ fn dispatch_then_selection(
     (
         origin,
         intent_is_user,
-        (pane.tabs.len(), state.navigation.tab_index(&pane)),
+        (pane.tabs.len(), state.navigation.tab_index(pane)),
     )
 }
 
@@ -299,7 +299,7 @@ fn link_then_selection(
     (
         origin,
         intent_is_user,
-        (pane.tabs.len(), state.navigation.tab_index(&pane)),
+        (pane.tabs.len(), state.navigation.tab_index(pane)),
     )
 }
 

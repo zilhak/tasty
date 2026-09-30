@@ -15,7 +15,7 @@ impl App {
             Self::flush_one_engine(
                 &mut self.core,
                 engine,
-                state.active_workspace_index(&engine),
+                state.active_workspace_index(engine),
                 &state.navigation,
                 force,
                 label,
@@ -26,7 +26,7 @@ impl App {
             Self::flush_one_engine(
                 &mut self.core,
                 engine,
-                state.active_workspace_index(&engine),
+                state.active_workspace_index(engine),
                 &state.navigation,
                 force,
                 label,

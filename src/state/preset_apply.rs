@@ -100,7 +100,7 @@ impl RequestContext {
         }
 
         if opts.focus {
-            self.set_active_workspace_index(&engine, idx);
+            self.set_active_workspace_index(engine, idx);
         }
         engine.mark_layout_dirty();
         Ok(idx)
@@ -149,7 +149,7 @@ impl RequestContext {
                 if engine.workspaces.is_empty() {
                     return Err(ApplyError::NoActiveWorkspace);
                 }
-                self.active_workspace_index(&engine)
+                self.active_workspace_index(engine)
                     .min(engine.workspaces.len() - 1)
             }
         };
@@ -201,7 +201,7 @@ impl RequestContext {
             return Ok((ws_idx, pid));
         }
         let ws_idx = self
-            .active_workspace_index(&engine)
+            .active_workspace_index(engine)
             .min(engine.workspaces.len() - 1);
         let ws = &engine.workspaces[ws_idx];
         let pid = self.navigation.pane_id(ws).unwrap_or(0);

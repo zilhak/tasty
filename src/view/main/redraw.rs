@@ -398,7 +398,7 @@ impl MainView {
     ) -> bool {
         let Some(ws) = engine
             .workspaces
-            .get(self.state.active_workspace_index(&engine))
+            .get(self.state.active_workspace_index(engine))
         else {
             return false;
         };
@@ -425,7 +425,7 @@ impl MainView {
         let terminal_rect = self.compute_terminal_rect();
 
         // Collect all Html surface IDs and their visibility/bounds
-        let active_ws = self.state.active_workspace_index(&engine);
+        let active_ws = self.state.active_workspace_index(engine);
         let mut active_html: std::collections::HashMap<u32, crate::webview::WebViewBounds> =
             std::collections::HashMap::new();
         let mut all_html_ids: Vec<u32> = Vec::new();

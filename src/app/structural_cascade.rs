@@ -220,7 +220,7 @@ pub(crate) fn cascade_surface_closed(
             workspace_id,
         });
         engine.purge_workspace_memory_scope(workspace_id, "cascade");
-        state.reconcile_presentation(&engine);
+        state.reconcile_presentation(engine);
     }
 
     recreate_workspace_if_now_empty(core, state, engine, c.workspaces_now_empty);

@@ -113,7 +113,7 @@ impl GpuState {
             let move_mark = ui::move_source::resolve(
                 &state.navigation,
                 engine,
-                state.active_workspace_index(&engine),
+                state.active_workspace_index(engine),
                 pane_rects,
                 state.tab_bar_height,
             );
