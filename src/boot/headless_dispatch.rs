@@ -264,7 +264,7 @@ fn intercept_app_layer(
                     return Some(Intercepted::Answered);
                 }
                 crate::ipc::handler::agent::task::spawn_task_await(
-                    app.core.tasks.awaiter(&engine.task_scope),
+                    app.core.tasks.awaiter(engine.task_scope),
                     rpc_id,
                     cmd.request.params.clone(),
                     &cmd.response_tx,

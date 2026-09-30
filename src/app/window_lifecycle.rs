@@ -250,7 +250,7 @@ impl App {
                     src.approval_store.clone(),
                     src.telemetry_seq.clone(),
                     src.anomaly_detector.clone(),
-                    additional_window_task_scope(&src.task_scope, &self.core.tasks),
+                    additional_window_task_scope(src.task_scope, &self.core.tasks),
                     src.next_ids.clone(),
                 )
             });

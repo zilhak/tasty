@@ -33,7 +33,7 @@ impl App {
             return;
         };
         crate::ipc::handler::agent::task::spawn_task_await(
-            self.core.tasks.awaiter(&engine.task_scope),
+            self.core.tasks.awaiter(engine.task_scope),
             rpc_id,
             cmd.request.params.clone(),
             &cmd.response_tx,
@@ -83,7 +83,7 @@ mod tests {
             now_ms: 1,
         };
         core.tasks
-            .task_create(&engine.task_scope, opts, false)
+            .task_create(engine.task_scope, opts, false)
             .expect("task_create")
             .id
     }
@@ -123,7 +123,7 @@ mod tests {
 
         let picked =
             task_await_engine([first.as_ref(), owner.as_ref()].into_iter(), 2).expect("engine");
-        let awaiter = core.tasks.awaiter(&picked.task_scope);
+        let awaiter = core.tasks.awaiter(picked.task_scope);
         let params = json!({ "workspace_id": 2, "id": task_id, "timeout_ms": 3_000 });
         let waiting = std::thread::spawn(move || {
             crate::ipc::handler::agent::task::await_task_blocking(&awaiter, json!(1), &params)
@@ -131,7 +131,7 @@ mod tests {
         // 대기자가 등록된 뒤 완료되도록 기다린다. 등록 전에 완료돼도 조회가 종결 상태를 본다.
         std::thread::sleep(Duration::from_millis(200));
         core.tasks
-            .task_cancel(&owner.task_scope, 2, &task_id, 2)
+            .task_cancel(owner.task_scope, 2, &task_id, 2)
             .expect("cancel");
 
         let resp = waiting.join().expect("await thread");

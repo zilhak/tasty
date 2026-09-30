@@ -326,7 +326,7 @@ fn fetch(
 
     let tasks = crate::core::agent::task::task_list_from_state(
         &engine.memory,
-        &engine.task_scope,
+        engine.task_scope,
         workspace_id,
     )
     .map_err(|e| e.to_string())?;

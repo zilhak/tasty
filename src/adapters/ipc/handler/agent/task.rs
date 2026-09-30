@@ -81,7 +81,7 @@ pub fn handle_task_create(
         core,
         match core
             .tasks
-            .task_create(&engine.task_scope, opts, reserved_for_fallback)
+            .task_create(engine.task_scope, opts, reserved_for_fallback)
         {
             Ok(task) => match serde_json::to_value(&task) {
                 Ok(mut v) => {
@@ -236,7 +236,7 @@ pub fn handle_task_list(
     };
     let state_filter = state_names_param(params, "state");
 
-    match core.tasks.task_list(&engine.task_scope, workspace_id) {
+    match core.tasks.task_list(engine.task_scope, workspace_id) {
         Err(e) => agent_err_to_response(id, e),
         Ok(mut tasks) => {
             retain_by_state(&mut tasks, state_filter.as_deref());
@@ -256,7 +256,7 @@ pub fn handle_task_list(
 /// 조회 실패 시 카운트는 0이 아니라 null이며 store_error에 원인이 담긴다.
 /// list_failures는 러너의 연속 조회 실패 횟수다. 스레드가 살아 있어도 작업이 진행되지 않을 수 있다.
 fn runner_status_json(core: &Core, engine: &EngineRef<'_>, workspace_id: u32) -> Value {
-    runner_status_value(&core.tasks.runner_status(&engine.task_scope, workspace_id))
+    runner_status_value(&core.tasks.runner_status(engine.task_scope, workspace_id))
 }
 
 fn runner_status_value(status: &crate::core::agent::runner_thread::RunnerStatus) -> Value {
@@ -279,7 +279,7 @@ fn awaiting_external_json(
 ) -> Option<Value> {
     match core
         .tasks
-        .dispatch_handle(&engine.task_scope, workspace_id, task_id)?
+        .dispatch_handle(engine.task_scope, workspace_id, task_id)?
     {
         DispatchHandle::AwaitExternal {
             wait_key,
@@ -309,7 +309,7 @@ pub fn handle_task_get(
     };
     match core
         .tasks
-        .task_get(&engine.task_scope, workspace_id, &task_id)
+        .task_get(engine.task_scope, workspace_id, &task_id)
     {
         Err(e) => agent_err_to_response(id, e),
         Ok(None) => JsonRpcResponse::error(id, -32004, format!("task not found: {task_id}")),
@@ -347,7 +347,7 @@ pub fn handle_task_cancel(
         core,
         match core
             .tasks
-            .task_cancel(&engine.task_scope, workspace_id, &task_id, now_ms())
+            .task_cancel(engine.task_scope, workspace_id, &task_id, now_ms())
         {
             Err(e) => agent_err_to_response(id, e),
             Ok((task, cascaded)) => JsonRpcResponse::success(
@@ -383,7 +383,7 @@ pub fn handle_task_retry(
     mark_durability(
         core,
         match core.tasks.task_retry(
-            &engine.task_scope,
+            engine.task_scope,
             workspace_id,
             &task_id,
             reset_downstream,
@@ -554,7 +554,7 @@ pub fn handle_task_graph(
         .unwrap_or("json")
         .to_string();
 
-    let tasks = match core.tasks.task_list(&engine.task_scope, workspace_id) {
+    let tasks = match core.tasks.task_list(engine.task_scope, workspace_id) {
         Err(e) => return agent_err_to_response(id, e),
         Ok(t) => t,
     };
@@ -621,7 +621,7 @@ pub fn handle_dag_list(
         .unwrap_or(false);
 
     match core.tasks.dag_list(
-        &engine.task_scope,
+        engine.task_scope,
         &crate::core::agent::task::dag_scan_workspaces(engine, workspace_id),
     ) {
         Err(e) => agent_err_to_response(id, e),
@@ -675,7 +675,7 @@ pub fn handle_dag_get(
         .to_string();
 
     let (dag, tasks) = match core.tasks.dag_get(
-        &engine.task_scope,
+        engine.task_scope,
         &crate::core::agent::task::dag_scan_workspaces(engine, workspace_id),
         &dag_id,
     ) {
@@ -752,7 +752,7 @@ pub fn handle_task_reduce(
 
     let collected = match core
         .tasks
-        .task_reduce_collect(&engine.task_scope, workspace_id, &inputs)
+        .task_reduce_collect(engine.task_scope, workspace_id, &inputs)
     {
         Err(e) => return agent_err_to_response(id, e),
         Ok(v) => v,
@@ -788,7 +788,7 @@ pub fn handle_task_run(
         .unwrap_or("status");
     match action {
         "start" => {
-            core.tasks.runner_start(&engine.task_scope, workspace_id);
+            core.tasks.runner_start(engine.task_scope, workspace_id);
         }
         "stop" => {
             core.tasks.runner_stop(workspace_id);
@@ -801,7 +801,7 @@ pub fn handle_task_run(
             );
         }
     }
-    let status = core.tasks.runner_status(&engine.task_scope, workspace_id);
+    let status = core.tasks.runner_status(engine.task_scope, workspace_id);
     JsonRpcResponse::success(id, runner_status_value(&status))
 }
 
@@ -845,7 +845,7 @@ pub fn handle_task_set_result(
 
     if let Err(e) = core
         .tasks
-        .task_set_result(&engine.task_scope, workspace_id, &task_id, result)
+        .task_set_result(engine.task_scope, workspace_id, &task_id, result)
     {
         return agent_err_to_response(id, e);
     }
@@ -866,7 +866,7 @@ pub fn handle_task_set_result(
     mark_durability(
         core,
         match core.tasks.task_set_state(
-            &engine.task_scope,
+            engine.task_scope,
             workspace_id,
             &task_id,
             new_state,
@@ -912,7 +912,7 @@ pub fn handle_task_delete(
     mark_durability(
         core,
         match core.tasks.task_delete(
-            &engine.task_scope,
+            engine.task_scope,
             workspace_id,
             &task_id,
             TaskDeleteOpts { cascade, force },
@@ -958,7 +958,7 @@ pub fn handle_task_purge(
         core,
         match core
             .tasks
-            .task_purge(&engine.task_scope, workspace_id, filter, dry_run)
+            .task_purge(engine.task_scope, workspace_id, filter, dry_run)
         {
             Err(e) => agent_err_to_response(id, e),
             Ok(plan) => JsonRpcResponse::success(

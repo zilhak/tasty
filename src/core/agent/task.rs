@@ -362,7 +362,7 @@ mod hook_wait_tests {
             now_ms: 1,
         };
         core.tasks
-            .task_create(&engine.task_scope, opts, false)
+            .task_create(engine.task_scope, opts, false)
             .expect("task_create")
             .id
     }
@@ -375,14 +375,14 @@ mod hook_wait_tests {
         let ws = 1;
         let task_id = mk_ready_task(&core, &engine.as_ref(), ws);
         core.tasks
-            .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Running, 2)
+            .task_set_state(engine.task_scope, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
 
         core.tasks
             .hook_task_waits()
             .register(42, ws, task_id.clone(), u64::MAX);
         core.tasks.resolve_hook_task_wait(
-            &engine.task_scope,
+            engine.task_scope,
             42,
             Some(0),
             core.now_unix_millis() as u64,
@@ -390,7 +390,7 @@ mod hook_wait_tests {
 
         let task = core
             .tasks
-            .task_reduce_collect(&engine.task_scope, ws, std::slice::from_ref(&task_id))
+            .task_reduce_collect(engine.task_scope, ws, std::slice::from_ref(&task_id))
             .expect("collect")
             .remove(0);
         assert!(
@@ -407,11 +407,11 @@ mod hook_wait_tests {
         let ws = 1;
         let task_id = mk_ready_task(&core, &engine.as_ref(), ws);
         core.tasks
-            .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Running, 2)
+            .task_set_state(engine.task_scope, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
 
         core.tasks.resolve_hook_task_wait(
-            &engine.task_scope,
+            engine.task_scope,
             999,
             None,
             core.now_unix_millis() as u64,
@@ -419,7 +419,7 @@ mod hook_wait_tests {
 
         let task = core
             .tasks
-            .task_reduce_collect(&engine.task_scope, ws, std::slice::from_ref(&task_id))
+            .task_reduce_collect(engine.task_scope, ws, std::slice::from_ref(&task_id))
             .expect("collect")
             .remove(0);
         assert!(!task.succeeded);
@@ -433,20 +433,20 @@ mod hook_wait_tests {
         let ws = 1;
         let task_id = mk_ready_task(&core, &engine.as_ref(), ws);
         core.tasks
-            .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Running, 2)
+            .task_set_state(engine.task_scope, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
 
         core.tasks
             .hook_task_waits()
             .register(7, ws, task_id.clone(), u64::MAX);
         core.tasks.resolve_hook_task_wait(
-            &engine.task_scope,
+            engine.task_scope,
             7,
             None,
             core.now_unix_millis() as u64,
         );
         core.tasks.resolve_hook_task_wait(
-            &engine.task_scope,
+            engine.task_scope,
             7,
             None,
             core.now_unix_millis() as u64,
@@ -454,7 +454,7 @@ mod hook_wait_tests {
 
         let task = core
             .tasks
-            .task_reduce_collect(&engine.task_scope, ws, std::slice::from_ref(&task_id))
+            .task_reduce_collect(engine.task_scope, ws, std::slice::from_ref(&task_id))
             .expect("collect")
             .remove(0);
         assert!(task.succeeded);
@@ -468,14 +468,14 @@ mod hook_wait_tests {
         let ws = 1;
         let task_id = mk_ready_task(&core, &engine.as_ref(), ws);
         core.tasks
-            .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Running, 2)
+            .task_set_state(engine.task_scope, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
 
         core.tasks
             .hook_task_waits()
             .register(1, ws, task_id.clone(), u64::MAX);
         core.tasks.resolve_hook_task_wait(
-            &engine.task_scope,
+            engine.task_scope,
             1,
             Some(1),
             core.now_unix_millis() as u64,
@@ -483,7 +483,7 @@ mod hook_wait_tests {
 
         let task = core
             .tasks
-            .task_get(&engine.task_scope, ws, &task_id)
+            .task_get(engine.task_scope, ws, &task_id)
             .expect("task_get")
             .expect("task exists");
         assert!(matches!(task.state, TaskState::Failed { .. }));
@@ -512,7 +512,7 @@ mod hook_wait_tests {
         };
         let task = core
             .tasks
-            .task_create(&engine.task_scope, opts, true)
+            .task_create(engine.task_scope, opts, true)
             .expect("task_create reserved");
         assert_eq!(
             task.state,
@@ -593,7 +593,7 @@ mod task_delete_tests {
             now_ms: 1,
         };
         core.tasks
-            .task_create(&engine.task_scope, opts, false)
+            .task_create(engine.task_scope, opts, false)
             .expect("task_create")
             .id
     }
@@ -628,14 +628,14 @@ mod task_delete_tests {
         .expect("persist run_result");
 
         core.tasks
-            .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Running, 2)
+            .task_set_state(engine.task_scope, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
         core.tasks
-            .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Succeeded, 3)
+            .task_set_state(engine.task_scope, ws, &task_id, TaskState::Succeeded, 3)
             .expect("Running -> Succeeded");
 
         core.tasks
-            .task_delete(&engine.task_scope, ws, &task_id, TaskDeleteOpts::default())
+            .task_delete(engine.task_scope, ws, &task_id, TaskDeleteOpts::default())
             .expect("delete succeeded task");
 
         let handle_gone = core
@@ -671,12 +671,12 @@ mod task_delete_tests {
         .expect("acquire permit");
 
         core.tasks
-            .task_set_state(&engine.task_scope, ws, &task_id, TaskState::Running, 2)
+            .task_set_state(engine.task_scope, ws, &task_id, TaskState::Running, 2)
             .expect("Ready -> Running");
 
         let err = core
             .tasks
-            .task_delete(&engine.task_scope, ws, &task_id, TaskDeleteOpts::default())
+            .task_delete(engine.task_scope, ws, &task_id, TaskDeleteOpts::default())
             .expect_err("Running task delete must be rejected");
         assert!(matches!(err, AgentError::TaskRunning(_)));
 

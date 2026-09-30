@@ -429,7 +429,7 @@ impl App {
         core_state.attach.set_notifier(self.stream_hub.clone());
         // 첫 창을 노출하기 전에 이전 실행의 에이전트 작업 상태를 정리하며 자동 실행은 하지 않는다.
         self.core.tasks.purge_stale_agent_state_on_boot(
-            &core_state.task_scope,
+            core_state.task_scope,
             &core_state
                 .workspaces
                 .iter()

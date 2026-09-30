@@ -211,7 +211,7 @@ fn resolve_hook_fired_task_waits(
         } = ev
         {
             core.tasks.resolve_hook_task_wait(
-                &engine.task_scope,
+                engine.task_scope,
                 *hook_id,
                 *exit_code,
                 core.now_unix_millis() as u64,

@@ -111,7 +111,7 @@ impl DagListState {
         self.last_list_poll = Some(now);
         match crate::core::agent::task::dag_list_from_state(
             &engine.memory,
-            &engine.task_scope,
+            engine.task_scope,
             &crate::core::agent::task::dag_scan_workspaces(engine, None),
         ) {
             Ok(summaries) => {
