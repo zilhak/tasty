@@ -332,13 +332,10 @@ impl App {
     /// 임시 App.core_state는 제외한다. start_gui_attach는 실제 창에만 mirror를 만들고
     /// 임시 engine에는 정리 후 active_workspace를 보정할 AppState도 없다. 이 조건이 바뀌면 세 경로를 함께 고친다.
     pub(crate) fn mirror_workspace_engine_alive(&self, workspace_id: u32) -> bool {
+        let engines = self.engines();
         any_engine_has_workspace(
-            self.view
-                .views
-                .values()
-                .filter_map(|w| w.as_main())
-                .map(|m| &m.core_state),
-            &self.parked_states,
+            engines.windows().map(|(_, e)| e),
+            engines.parked(),
             workspace_id,
         )
     }
@@ -437,7 +434,7 @@ fn find_workspace_by_name<'a>(
 /// 창과 parked engine 양쪽을 확인한다. parked 조회는 mirror 적용·정리 경로와 공유한다.
 fn any_engine_has_workspace<'a>(
     mut main: impl Iterator<Item = &'a crate::core::CoreState>,
-    parked: &'a [(crate::state::AppState, crate::core::CoreState)],
+    parked: impl IntoIterator<Item = &'a crate::core::CoreState>,
     workspace_id: u32,
 ) -> bool {
     main.any(|e| e.has_workspace(workspace_id))
@@ -536,14 +533,22 @@ mod tests {
     fn workspace_in_windowed_engine_is_not_orphaned() {
         let windowed = engine_with_workspace_name("mirror");
         let ws = windowed.workspaces[0].id;
-        assert!(any_engine_has_workspace([&windowed].into_iter(), &[], ws));
+        assert!(any_engine_has_workspace(
+            [&windowed].into_iter(),
+            std::iter::empty(),
+            ws
+        ));
     }
 
     #[test]
     fn workspace_only_in_parked_engine_is_not_orphaned() {
         let parked = parked(&["mirror"]);
         let ws = parked[0].1.workspaces[0].id;
-        assert!(any_engine_has_workspace(std::iter::empty(), &parked, ws));
+        assert!(any_engine_has_workspace(
+            std::iter::empty(),
+            parked.iter().map(|(_, e)| e),
+            ws
+        ));
     }
 
     #[test]
@@ -554,7 +559,7 @@ mod tests {
         parked[1].1.workspaces[0].id = target;
         assert!(any_engine_has_workspace(
             std::iter::empty(),
-            &parked,
+            parked.iter().map(|(_, e)| e),
             target
         ));
     }
@@ -566,7 +571,7 @@ mod tests {
         let missing = windowed.workspaces[0].id + parked[0].1.workspaces[0].id + 1_000;
         assert!(!any_engine_has_workspace(
             [&windowed].into_iter(),
-            &parked,
+            parked.iter().map(|(_, e)| e),
             missing
         ));
     }

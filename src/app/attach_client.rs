@@ -20,6 +20,7 @@ use tasty_terminal::Terminal;
 
 use crate::AppEvent;
 use crate::app::App;
+use crate::app::window_access::{EngineScanMut, engines_mut};
 use crate::ipc::stream::{self, STREAM_PROTO, StreamControl, StreamTag, StructuralOp};
 use crate::model::{
     DeferredPlugin, EmptySurface, ExplorerPanel, Pane, PaneNode, SplitDirection, Surface,
@@ -276,11 +277,8 @@ impl AttachClientSession {
 impl App {
     pub(crate) fn dispatch_pending_gui_attach(&mut self) {
         let mut reqs: Vec<(u16, u32)> = Vec::new();
-        for main in self.main_windows_iter_mut() {
-            reqs.append(&mut main.core_state.pending_gui_attach);
-        }
-        if let Some(e) = self.core_state.as_mut() {
-            reqs.append(&mut e.pending_gui_attach);
+        for engine in self.engines_mut().windows_and_pending() {
+            reqs.append(&mut engine.pending_gui_attach);
         }
         for (port, workspace) in reqs {
             self.try_dispatch_one_gui_attach_ipc(port, workspace);
@@ -288,11 +286,8 @@ impl App {
 
         // 사용자 요청만 성공 후 포커스를 이동한다. IPC 요청과 큐를 나눈다.
         let mut user_reqs: Vec<crate::core::GuiAttachUserReq> = Vec::new();
-        for main in self.main_windows_iter_mut() {
-            user_reqs.append(&mut main.core_state.pending_gui_attach_user);
-        }
-        if let Some(e) = self.core_state.as_mut() {
-            user_reqs.append(&mut e.pending_gui_attach_user);
+        for engine in self.engines_mut().windows_and_pending() {
+            user_reqs.append(&mut engine.pending_gui_attach_user);
         }
         for req in user_reqs {
             self.try_dispatch_one_gui_attach_user(req);
@@ -633,7 +628,7 @@ impl App {
 
             let host = mirror_output_host(
                 self.find_main_with_workspace(local_ws),
-                &self.parked_states,
+                self.engines().parked(),
                 local_ws,
             );
             // delta 뒤의 출력도 갱신된 ID 매핑을 써야 하므로 세션을 복제하지 않고 나눠 빌린다.
@@ -655,7 +650,9 @@ impl App {
                 }
                 Some(MirrorOutputHost::Parked(pidx)) => {
                     let sess = &mut self.attach_client_sessions[idx];
-                    let (state, engine) = &mut self.parked_states[pidx];
+                    let (state, engine) = engines_mut!(self)
+                        .parked_session(pidx)
+                        .expect("mirror_output_host가 방금 찾은 parked index");
                     apply_pending_mirror_output(
                         sess,
                         Some(MirrorHost::parked(state, engine)),
@@ -799,7 +796,7 @@ impl App {
         if !removed {
             // parked 상태에는 표시할 창이 없어 toast를 쌓거나 redraw를 요청하지 않는다.
             remove_mirror_workspace_from_parked(
-                &mut self.parked_states,
+                self.engines_mut(),
                 sess.local_workspace,
                 &sess.remote_to_local,
             );
@@ -846,11 +843,8 @@ impl App {
     /// 로컬 구조 변경 큐를 원격으로 보내며 결과는 회신과 delta로 적용한다.
     pub(crate) fn dispatch_pending_structural_forwards(&mut self) {
         let mut pending: Vec<crate::core::PendingStructuralForward> = Vec::new();
-        for main in self.main_windows_iter_mut() {
-            pending.append(&mut main.core_state.pending_structural_forward);
-        }
-        if let Some(e) = self.core_state.as_mut() {
-            pending.append(&mut e.pending_structural_forward);
+        for engine in self.engines_mut().windows_and_pending() {
+            pending.append(&mut engine.pending_structural_forward);
         }
         for local_op in pending {
             self.forward_one_structural_op(local_op);
@@ -897,13 +891,8 @@ impl App {
     /// resize 요청만 전송한다. 로컬 mirror grid는 서버의 Resize 회신으로 갱신한다.
     pub(crate) fn dispatch_pending_resize_forwards(&mut self) {
         let mut pending: Vec<(u32, usize, usize)> = Vec::new();
-        for main in self.main_windows_iter_mut() {
-            for (sid, (cols, rows)) in main.core_state.pending_resize_forward.drain() {
-                pending.push((sid, cols, rows));
-            }
-        }
-        if let Some(e) = self.core_state.as_mut() {
-            for (sid, (cols, rows)) in e.pending_resize_forward.drain() {
+        for engine in self.engines_mut().windows_and_pending() {
+            for (sid, (cols, rows)) in engine.pending_resize_forward.drain() {
                 pending.push((sid, cols, rows));
             }
         }
@@ -939,11 +928,8 @@ impl App {
     /// 목록 요청을 원격으로 보낸다. 세션이 없으면 폐기하며 소비자는 자체 timeout으로 실패 처리한다.
     pub(crate) fn dispatch_pending_list_dir_forwards(&mut self) {
         let mut pending: Vec<crate::core::PendingListDirForward> = Vec::new();
-        for main in self.main_windows_iter_mut() {
-            pending.append(&mut main.core_state.pending_list_dir_forward);
-        }
-        if let Some(e) = self.core_state.as_mut() {
-            pending.append(&mut e.pending_list_dir_forward);
+        for engine in self.engines_mut().windows_and_pending() {
+            pending.append(&mut engine.pending_list_dir_forward);
         }
         for req in pending {
             if let Err(e) =
@@ -961,11 +947,8 @@ impl App {
     /// 원격 git 요청을 보낼 수 없으면 플러그인에 즉시 실패 결과를 전달한다.
     pub(crate) fn dispatch_pending_git_query_forwards(&mut self) {
         let mut pending: Vec<crate::core::PendingGitQueryForward> = Vec::new();
-        for main in self.main_windows_iter_mut() {
-            pending.append(&mut main.core_state.pending_git_query_forward);
-        }
-        if let Some(e) = self.core_state.as_mut() {
-            pending.append(&mut e.pending_git_query_forward);
+        for engine in self.engines_mut().windows_and_pending() {
+            pending.append(&mut engine.pending_git_query_forward);
         }
         for req in pending {
             let send_result = self.send_git_query_request(
@@ -989,11 +972,8 @@ impl App {
     /// 원격 원문 요청을 보낼 수 없으면 플러그인에 즉시 실패 결과를 전달한다.
     pub(crate) fn dispatch_pending_markdown_content_forwards(&mut self) {
         let mut pending: Vec<crate::core::PendingMarkdownContentForward> = Vec::new();
-        for main in self.main_windows_iter_mut() {
-            pending.append(&mut main.core_state.pending_markdown_content_forward);
-        }
-        if let Some(e) = self.core_state.as_mut() {
-            pending.append(&mut e.pending_markdown_content_forward);
+        for engine in self.engines_mut().windows_and_pending() {
+            pending.append(&mut engine.pending_markdown_content_forward);
         }
         for req in pending {
             if let Err(e) = self.send_markdown_content_request(&req) {
@@ -1068,11 +1048,8 @@ impl App {
 
     pub(crate) fn dispatch_pending_mesh_context_forwards(&mut self) {
         let mut pending: Vec<(u32, crate::core::AttachMeshContextForward)> = Vec::new();
-        for main in self.main_windows_iter_mut() {
-            pending.extend(main.core_state.pending_mesh_context_forward.drain());
-        }
-        if let Some(e) = self.core_state.as_mut() {
-            pending.extend(e.pending_mesh_context_forward.drain());
+        for engine in self.engines_mut().windows_and_pending() {
+            pending.extend(engine.pending_mesh_context_forward.drain());
         }
         for (local_sid, ctx) in pending {
             self.forward_one_mesh_context(local_sid, ctx);
@@ -1107,11 +1084,8 @@ impl App {
 
     pub(crate) fn dispatch_pending_mesh_input_forwards(&mut self) {
         let mut pending: Vec<(u32, tasty_plugin_protocol::protocol::RawInputWire)> = Vec::new();
-        for main in self.main_windows_iter_mut() {
-            pending.extend(main.core_state.pending_mesh_input_forward.drain());
-        }
-        if let Some(e) = self.core_state.as_mut() {
-            pending.extend(e.pending_mesh_input_forward.drain());
+        for engine in self.engines_mut().windows_and_pending() {
+            pending.extend(engine.pending_mesh_input_forward.drain());
         }
         for (local_sid, input) in pending {
             self.forward_one_mesh_input(local_sid, input);
@@ -1143,11 +1117,8 @@ impl App {
     /// texture delta 연결이 끊겨 요청한 full frame 재전송을 원격에 전달한다.
     pub(crate) fn dispatch_pending_mesh_full_resend_forwards(&mut self) {
         let mut pending: Vec<u32> = Vec::new();
-        for main in self.main_windows_iter_mut() {
-            pending.extend(main.core_state.pending_mesh_full_resend_forward.drain());
-        }
-        if let Some(e) = self.core_state.as_mut() {
-            pending.extend(e.pending_mesh_full_resend_forward.drain());
+        for engine in self.engines_mut().windows_and_pending() {
+            pending.extend(engine.pending_mesh_full_resend_forward.drain());
         }
         for local_sid in pending {
             self.forward_one_mesh_full_resend_request(local_sid);
@@ -1157,11 +1128,8 @@ impl App {
     /// 실제 attention 해제 때만 기록된 큐를 전달한다. 포커스를 유지한다고 반복 전송하지 않는다.
     pub(crate) fn dispatch_pending_attention_clear_forwards(&mut self) {
         let mut pending: Vec<u32> = Vec::new();
-        for main in self.main_windows_iter_mut() {
-            pending.extend(main.core_state.pending_attention_clear_forward.drain());
-        }
-        if let Some(e) = self.core_state.as_mut() {
-            pending.extend(e.pending_attention_clear_forward.drain());
+        for engine in self.engines_mut().windows_and_pending() {
+            pending.extend(engine.pending_attention_clear_forward.drain());
         }
         for local_sid in pending {
             self.forward_one_attention_clear(local_sid);
@@ -1370,14 +1338,17 @@ fn remove_mirror_workspace_from_engine(
 
 /// 출력 적용·고아 판정과 같은 parked 순회를 사용한다. 첫 항목만 확인해서는 안 된다.
 fn remove_mirror_workspace_from_parked(
-    parked: &mut [(crate::state::AppState, crate::core::CoreState)],
+    mut engines: EngineScanMut<'_>,
     local_workspace: u32,
     remote_to_local: &HashMap<u32, u32>,
 ) -> bool {
+    let parked = engines.reborrow().parked().map(|e| &*e);
     let Some(idx) = find_parked_with_workspace(parked, local_workspace) else {
         return false;
     };
-    let (state, engine) = &mut parked[idx];
+    let Some((state, engine)) = engines.parked_session(idx) else {
+        return false;
+    };
     remove_mirror_workspace_from_engine(engine, state, local_workspace, remote_to_local)
 }
 
@@ -1388,9 +1359,9 @@ enum MirrorOutputHost {
 }
 
 /// 창이 있는 engine을 우선하고 없으면 parked engine에서 찾는다. None이면 버퍼를 비우지 않는다.
-fn mirror_output_host(
+fn mirror_output_host<'a>(
     windowed: Option<winit::window::WindowId>,
-    parked: &[(crate::state::AppState, crate::core::CoreState)],
+    parked: impl IntoIterator<Item = &'a crate::core::CoreState>,
     local_workspace: u32,
 ) -> Option<MirrorOutputHost> {
     windowed.map(MirrorOutputHost::Window).or_else(|| {
@@ -1399,13 +1370,13 @@ fn mirror_output_host(
 }
 
 /// 출력 적용·정리·고아 판정이 공유하는 parked engine 검색. 여러 항목 모두 확인한다.
-pub(super) fn find_parked_with_workspace(
-    parked: &[(crate::state::AppState, crate::core::CoreState)],
+pub(super) fn find_parked_with_workspace<'a>(
+    parked: impl IntoIterator<Item = &'a crate::core::CoreState>,
     local_workspace: u32,
 ) -> Option<usize> {
     parked
-        .iter()
-        .position(|(_, engine)| engine.has_workspace(local_workspace))
+        .into_iter()
+        .position(|engine| engine.has_workspace(local_workspace))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3508,7 +3479,7 @@ mod tests {
         }
 
         assert!(remove_mirror_workspace_from_parked(
-            &mut parked,
+            EngineScanMut::from_fields(&mut HashMap::new(), &mut parked, &mut None),
             ws_id,
             &remote_to_local
         ));
@@ -3541,7 +3512,7 @@ mod tests {
             (0..2).map(|_| crate::state::tests::test_state()).collect();
         let remote_to_local = HashMap::from([(42u32, 9_003u32)]);
         assert!(!remove_mirror_workspace_from_parked(
-            &mut parked,
+            EngineScanMut::from_fields(&mut HashMap::new(), &mut parked, &mut None),
             9_000,
             &remote_to_local
         ));
@@ -5155,17 +5126,17 @@ mod tests {
         let parked = parked_with_mirror(ws_id, 9_003);
         let wid = winit::window::WindowId::from(7u64);
         assert_eq!(
-            mirror_output_host(Some(wid), &parked, ws_id),
+            mirror_output_host(Some(wid), parked.iter().map(|(_, e)| e), ws_id),
             Some(MirrorOutputHost::Window(wid)),
             "창 있는 engine 이 있으면 그쪽"
         );
         assert_eq!(
-            mirror_output_host(None, &parked, ws_id),
+            mirror_output_host(None, parked.iter().map(|(_, e)| e), ws_id),
             Some(MirrorOutputHost::Parked(1)),
             "창이 없으면 mirror 를 든 parked engine(두 번째)"
         );
         assert_eq!(
-            mirror_output_host(None, &parked, 424_242),
+            mirror_output_host(None, parked.iter().map(|(_, e)| e), 424_242),
             None,
             "어느 engine 에도 없으면 None — drain 하지 않는다"
         );
@@ -5208,7 +5179,8 @@ mod tests {
             MirrorEvent::Data(new_remote, b"world-new".to_vec()),
         ];
 
-        let pidx = find_parked_with_workspace(&parked, ws_id).expect("mirror 를 든 parked engine");
+        let pidx = find_parked_with_workspace(parked.iter().map(|(_, e)| e), ws_id)
+            .expect("mirror 를 든 parked engine");
         {
             let (state, engine) = &mut parked[pidx];
             let mut host = MirrorHost::parked(state, engine);
@@ -5295,7 +5267,8 @@ mod tests {
             .push(MirrorEvent::Data(remote_surface, b"applied-here".to_vec()));
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
 
-        let pidx = find_parked_with_workspace(&parked, ws_id).expect("mirror 를 든 parked engine");
+        let pidx = find_parked_with_workspace(parked.iter().map(|(_, e)| e), ws_id)
+            .expect("mirror 를 든 parked engine");
         let applied = {
             let (state, engine) = &mut parked[pidx];
             apply_pending_mirror_output(
