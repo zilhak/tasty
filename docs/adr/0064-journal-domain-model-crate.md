@@ -1,6 +1,6 @@
 # ADR-0064: 저널 도메인 모델은 `tasty-core` 추출 전에 순수 도메인 crate `tasty-domain`에 새로 작성한다
 
-- **Status**: Accepted — 구현 상태: 미이행(crate 작성 중). CommandExecutor와 저장 어댑터를 둘 root runtime 모듈도 아직 없고, 제품 경로 연결은 root 배선 단계에서 한다
+- **Status**: Accepted — 구현 상태: `tasty-domain` crate와 root `src/runtime` 모듈(generic CommandExecutor, 저장 batch 변환, 전체 replay와 snapshot+tail 재구성)이 있다. 둘 다 시험 전용이며 제품 경로에는 연결되지 않았다. 미이행: 제품 배선, 저널 ID 공간과 runtime ID 공간의 구분(재검토 조건 참조)
 - **Date**: 2026-09-30
 - **Tags**: architecture, crates, domain, event-sourcing, commands
 - **Group**: foundation
@@ -41,7 +41,9 @@ decide→commit→apply→응답을 CommandExecutor가, 순수 `decide`·`evolve
 ### ADR-0056과의 관계
 
 이 결정은 ADR-0056의 배치 결정을 바꾸지 않는다. 0056 표에서 도메인 Command/Event와 순수 decide/evolve를 `tasty-core`에 두는 행은 `tasty-core` 추출 시점까지 발동하지 않으며, 추출할 때 `tasty-domain`과 합치거나 이름을 정리한다. 순수 구조 타입은 `tasty-model`에 두고 새 domain-types crate를 만들지 않는다는 배치(0056 표의 순수 구조 타입 행)와
-`tasty-domain-types` 신설을 기각한 대안을 따라, `tasty-domain`은 ID·값 타입을 새로 정의하지 않고 `tasty-model`에서 가져온다.
+`tasty-domain-types` 신설을 기각한 대안을 따라, ID와 분할 방향처럼 `tasty-model`에 같은 역할의 직렬화 가능한 타입이 있으면 그것을 쓴다.
+저널에만 필요한 값(revision·batch ID·비율 비트 표현 `Ratio`·자료 참조 `DataRef`·분할 트리 표현 `SplitTree`·ID 종류 `IdKind`)은 이 crate에 둔다.
+`tasty-model`의 `PaneNode`·`SurfaceLayout`은 pane·surface 실행 인스턴스를 담고 비율을 `f32` 값으로 들고 있어 저널 값으로 쓸 수 없기 때문이다.
 CommandExecutor를 root 내부 runtime 모듈에 둔다는 표의 행도 그대로 따른다.
 도메인 crate와 `tasty-event-store`의 의존 방향은 0056이 금지한 쪽(도메인 → event-store)을 쓰지 않으며, 두 crate는 서로 의존하지 않는다.
 0056이 EventStore에 둔 저장 형식 버전·codec·migration은 저장 봉투에 관한 것이고, `tasty-domain`의 codec은 그 봉투 안 바이트와 도메인 이벤트 사이의 변환만 맡는다.
@@ -51,7 +53,7 @@ CommandExecutor를 root 내부 runtime 모듈에 둔다는 표의 행도 그대�
 
 저장 계약을 도메인 이벤트로 검증하는 순수 부분을 `-p tasty-domain` 단위에서 시험할 수 있고, root 빌드와 교집합 없이 병렬로 작성할 수 있다.
 도메인 crate가 GUI·PTY·SQL을 참조하면 컴파일 오류가 난다. 저장소와 도메인을 함께 쓰는 시험(commit 실패 시 상태 불변, 같은 명령 재시도)은
-root runtime 모듈이 생긴 뒤 그쪽에서 돈다.
+root `src/runtime` 모듈의 시험에서 돈다.
 
 JournalModel은 현재 CoreState와 별개인 두 번째 구조 모델이다. 제품에 연결하기 전까지 두 모델의 관계는 importer와 비교 시험으로만 확인되며,
 연결 단계에서 어느 쪽이 원본인지 전환하는 절차가 필요하다. 이 사이에 CoreState 쪽 구조 규칙이 바뀌면 JournalModel에도 반영해야 한다.
@@ -73,6 +75,7 @@ crate 목록 문서·README·가드의 crate 수 갱신이 함께 필요하다.
 ### 코드와 설정에서 확인
 
 - `tasty-core` 추출 시점을 판단할 때 `tasty-domain`과 합칠지, 이름을 바꿀지를 함께 정한다. 추출 결과 도메인 Command/Event 소유자가 둘이 되면 하나로 모은다.
+- 제품 배선 전: 저널 ID와 runtime ID는 모두 `tasty-model`이 재수출하는 같은 `u32` 별칭이라 컴파일러가 두 공간을 구분하지 못한다. EventStore의 예약은 `u64` 범위를 내주지만 `IdSupplier`는 `u32`를 준다. 제품에 배선하기 전에 `u64`→`u32` 좁힘 규칙과, 공간 통합 또는 newtype 구분을 정한다.
 - root 배선 단계에서 Decider 문맥에 권한·대상 해소 같은 root 전용 값이 들어가야 하면 Decider trait과 root runtime의 경계를 다시 본다.
 - `tasty-domain`이 `tasty-model` 외의 저장·실행 계층(`tasty-event-store`·PTY·GUI·root)을 의존해야 하는 요구가 생기면 이 경계를 다시 정한다.
   `cargo tree -p tasty-domain --edges normal`로 확인한다.
@@ -86,4 +89,4 @@ crate 목록 문서·README·가드의 crate 수 갱신이 함께 필요하다.
 - [ADR-0055](0055-structural-domain-event-sourcing.md) — 객체와 책임, 확정 경계
 - [ADR-0056](0056-crate-boundaries-for-core-event-store-and-task-runtime.md) — crate 배치와 `tasty-core` 추출 조건
 - [ADR-0057](0057-command-identity-for-mutation-retries.md) · [ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)
-- 현재 구현: `crates/tasty-event-store/src/lib.rs`(도메인을 모르는 저장 계약), `crates/tasty-model`(재사용할 값·ID 타입)
+- 현재 구현: `crates/tasty-domain/src/model.rs`·`crates/tasty-domain/src/ids.rs`(저널 모델·저널 전용 값·`IdSupplier`), `src/runtime/command_executor.rs`·`src/runtime/journal.rs`(executor·저장 batch 변환·replay·snapshot), `crates/tasty-event-store/src/lib.rs`(도메인을 모르는 저장 계약), `crates/tasty-model`(재사용할 값·ID 타입)
