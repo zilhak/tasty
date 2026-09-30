@@ -47,7 +47,6 @@ dead_code 예외는 쓰지 않는다.
 | `App` 의 필드(`src/app.rs`) | headless boot 도 `App` 을 세워 Core 를 쓰지만, 일부 필드를 읽는 자는 gui 이벤트 루프뿐이다 |
 | `AppEvent::Shutdown` · `AppEvent::QuitRequested`(`src/app/event.rs`) | 만드는 자리가 gui 창 라이프사이클·종료 경로뿐이다. 열거와 그 match 는 headless 도 컴파일한다 |
 | `AppState::preset_store` | headless 도 `AppState::new` 로 Core 의 사본을 받지만 읽는 자(preset popup)가 GUI 뿐이다. 에이전트의 preset IPC 는 `Core.preset_store` 를 잠근다 |
-| `ModalKind` 의 variant | 모달을 여는 자리(`App::open_modal`)가 GUI 뿐이다. 열거와 `active_modal_kind` 는 `ui.state` 덤프가 debug 빌드의 두 조합에서 같은 키로 읽는다(release 헤드리스에는 `active_modal_kind` 필드가 없다) |
 | 사용자가 발생시킨 intent 의 variant(`Intent` 의 단축키·메뉴 variant · `UiIntent` · `OpenPopupMode` · `ConvertTarget` · 도메인의 `IntentOrigin::User` · `UserSource`) | 만드는 자리(단축키·메뉴·우클릭·popup)가 GUI 뿐이다. 열거와 그 match 는 headless 의 intent drain 도 컴파일한다. `IntentOrigin::User` 는 headless 시험이 만들므로 `not(test)` 도 조건이다 |
 
 ## 판정은 바깥에서 안으로

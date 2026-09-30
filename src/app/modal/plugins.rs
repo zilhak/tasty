@@ -61,7 +61,7 @@ impl App {
         self.open_modal(
             Box::new(modal),
             modal_window_id,
-            crate::state::ModalKind::Plugins,
+            crate::view::ModalKind::Plugins,
         );
         tracing::info!("opened plugins modal {:?}", modal_window_id);
     }

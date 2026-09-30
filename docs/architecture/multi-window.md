@@ -11,13 +11,13 @@ App  (1 프로세스, 메인 스레드, winit ApplicationHandler)
 └── view: ViewRegistry GUI 어댑터 — #[cfg(feature = "gui")]
     ├── proxy              winit EventLoopProxy<AppEvent>
     ├── views: HashMap<WindowId, Box<dyn View>>
-    ├── active_modal_id: Option<WindowId>   (모달 전역 최대 1)
+    ├── active_modal: Option<ActiveModal>   (ID·종류, 모달 전역 최대 1, 비공개)
     └── focused_view_id: Option<WindowId>
 ```
 
 `focused_view_id` 는 대상 없는 IPC 요청이 떨어지는 main 창이다. 창을 등록할 때는 그 창을 사용자가 만들었을 때만 옮긴다 — 에이전트가 만든 창은 옮기지 않는다([포커스 정책](../design/policies/focus.md#에이전트가-만든-창과-포커스), [ADR-0059](../adr/0059-id-targets-and-view-owned-selection.md)).
 
-모든 View는 하나의 `views` 맵에 보관한다. 모달도 별도 객체 집합으로 관리하지 않고 `active_modal_id`로 활성 View를 표시한다.
+모든 View는 하나의 `views` 맵에 보관한다. 모달도 별도 객체 집합으로 관리하지 않고 `active_modal`로 활성 View와 종류를 표시한다. 활성 모달의 원본은 이 필드 하나이며 창별 AppState에는 사본이 없다.
 
 ## Window 트레잇 계층 (`src/view/`)
 
@@ -42,7 +42,7 @@ View (sealed trait, : sealed::Sealed + std::any::Any)
 
 엔진 전역 최대 1개. 설정창·종료 다이얼로그가 대표.
 
-- Modal View 가 열리면 `active_modal_id` 설정, 닫히면 `None`(`src/app/modal.rs`).
+- Modal View 가 열리면 `set_active_modal` 로 ID·종류를 세우고, 닫히면 `take_active_modal` 로 비운다(`src/app/modal.rs`).
 - 이벤트 디스패처는 다른 modeless View 에 `modal_active: true` 를 전달하고, 각 View 의 입력 핸들러가 이때 입력을 차단한다(Resized/RedrawRequested/ModifiersChanged/Focused 만 허용).
 - 모달도 같은 `views` 맵에 있어 단일 이벤트 디스패처가 전부 처리한다.
 

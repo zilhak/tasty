@@ -69,7 +69,7 @@ impl App {
                     r
                 });
             if let Some(response) = resp_opt {
-                send_response(&cmd.response_tx, response);
+                self.send_routed_response(cmd, response);
                 self.dispatch_pending_intents();
                 return IpcStep::Handled;
             }
@@ -83,7 +83,7 @@ impl App {
         if let Some((state, engine)) = owner_in_parked {
             let response =
                 host_ipc::handler::handle_checked_request(&mut self.core, state, engine, checked);
-            send_response(&cmd.response_tx, response);
+            self.send_routed_response(cmd, response);
             self.dispatch_pending_intents();
             return IpcStep::Handled;
         }
@@ -101,9 +101,22 @@ impl App {
         if let Some((state, engine)) = self.parked_states.first_mut() {
             let response =
                 host_ipc::handler::handle_checked_request(&mut self.core, state, engine, checked);
-            send_response(&cmd.response_tx, response);
+            self.send_routed_response(cmd, response);
             self.dispatch_pending_intents();
         }
         IpcStep::Handled
+    }
+}
+
+impl App {
+    /// 창·parked 상태가 만든 응답을 보낸다. debug ui.state는 App이 소유한 활성 모달을 덧붙인다.
+    fn send_routed_response(
+        &self,
+        cmd: &IpcCommand,
+        response: host_ipc::protocol::JsonRpcResponse,
+    ) {
+        #[cfg(debug_assertions)]
+        let response = self.project_active_modal(&cmd.request.method, response);
+        send_response(&cmd.response_tx, response);
     }
 }

@@ -60,16 +60,43 @@ pub(crate) struct ViewCtx<'a> {
     pub(crate) stream_hub: &'a tasty_ipc::stream_hub::StreamHub,
 }
 
+/// 열린 모달의 종류. 창을 열 때 기록해 debug 조회에서 모달을 구분한다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModalKind {
+    Settings,
+    Plugins,
+    Quit,
+}
+
+impl ModalKind {
+    /// debug IPC 응답에 쓰는 이름. 내부 판정은 enum을 사용한다.
+    #[cfg(debug_assertions)]
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Settings => "settings",
+            Self::Plugins => "plugins",
+            Self::Quit => "quit",
+        }
+    }
+}
+
+/// 활성 모달의 창 ID와 종류. 둘은 항상 함께 바뀐다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ActiveModal {
+    pub(crate) id: WindowId,
+    pub(crate) kind: ModalKind,
+}
+
 pub(crate) struct ViewRegistry {
     /// winit event loop 의 proxy. AppEvent 를 enqueue 하기 위한 채널.
     /// View 영역은 GUI 어댑터로서 winit 과 직접 결합되어 있다.
     pub proxy: EventLoopProxy<AppEvent>,
-    /// When Some, a modal view is active and all other views should ignore input.
-    /// At most one modal can exist at a time.
-    pub active_modal_id: Option<WindowId>,
+    /// 활성 모달의 유일한 원본. Some이면 다른 View는 입력을 무시한다. 모달은 최대 1개다.
+    /// 쓰기는 `set_active_modal`/`take_active_modal`만 사용하도록 필드를 비공개로 둔다.
+    active_modal: Option<ActiveModal>,
     /// The view that currently has focus (receives IPC commands targeting "focused" view).
     pub focused_view_id: Option<WindowId>,
-    /// 모든 View(모달 포함). `active_modal_id`로 현재 활성 모달을 식별한다.
+    /// 모든 View(모달 포함). `active_modal`로 현재 활성 모달을 식별한다.
     /// 모달도 여기에 들어가며, 모달은 엔진 전역에 최대 1개라는 불변식을 유지한다.
     /// key 는 winit `WindowId`.
     pub views: HashMap<WindowId, Box<dyn ui::View>>,
@@ -79,7 +106,7 @@ impl ViewRegistry {
     pub(crate) fn new(proxy: EventLoopProxy<AppEvent>) -> Self {
         Self {
             proxy,
-            active_modal_id: None,
+            active_modal: None,
             focused_view_id: None,
             views: HashMap::new(),
         }
@@ -87,6 +114,22 @@ impl ViewRegistry {
 
     /// Check if a modal is active.
     pub fn is_modal_active(&self) -> bool {
-        self.active_modal_id.is_some()
+        self.active_modal.is_some()
+    }
+
+    pub(crate) fn active_modal(&self) -> Option<ActiveModal> {
+        self.active_modal
+    }
+
+    pub(crate) fn active_modal_id(&self) -> Option<WindowId> {
+        self.active_modal.map(|m| m.id)
+    }
+
+    pub(crate) fn set_active_modal(&mut self, id: WindowId, kind: ModalKind) {
+        self.active_modal = Some(ActiveModal { id, kind });
+    }
+
+    pub(crate) fn take_active_modal(&mut self) -> Option<ActiveModal> {
+        self.active_modal.take()
     }
 }

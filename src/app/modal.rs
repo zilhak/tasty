@@ -1,4 +1,4 @@
-//! 모달은 일반 view 맵에 두고 active_modal_id로 구별하며 한 번에 하나만 활성화한다.
+//! 모달은 일반 view 맵에 두고 ViewRegistry의 활성 모달로 구별하며 한 번에 하나만 활성화한다.
 //! 종료 확인은 다른 모달과 달리 열기 실패 때도 종료를 계속한다.
 //! 공통 첫 프레임 처리는 present_first_frame에 두고 각 창의 실패 정책은 호출부에 남긴다.
 
@@ -11,8 +11,8 @@ pub(crate) mod shake;
 use winit::window::WindowId;
 
 use crate::app::App;
-use crate::state::ModalKind;
 use crate::view;
+use crate::view::ModalKind;
 use crate::view::ui::View as _;
 
 impl App {
@@ -23,24 +23,14 @@ impl App {
         kind: ModalKind,
     ) {
         self.view.views.insert(window_id, modal);
-        self.view.active_modal_id = Some(window_id);
-        // debug ui.state가 읽을 ID·종류를 각 MainView에도 기록한다. parked 상태는 여기서 갱신하지 않는다.
-        let raw = u64::from(window_id);
-        for main in self.main_windows_iter_mut() {
-            main.state.active_modal_id = Some(raw);
-            main.state.active_modal_kind = Some(kind);
-        }
+        self.view.set_active_modal(window_id, kind);
     }
 
     pub(crate) fn close_active_modal(&mut self) {
-        let Some(modal_id) = self.view.active_modal_id.take() else {
+        let Some(active) = self.view.take_active_modal() else {
             return;
         };
-        for main in self.main_windows_iter_mut() {
-            main.state.active_modal_id = None;
-            main.state.active_modal_kind = None;
-        }
-        let Some(mut modal) = self.view.views.remove(&modal_id) else {
+        let Some(mut modal) = self.view.views.remove(&active.id) else {
             return;
         };
         if let Some(settings_modal) = modal.as_any_mut().downcast_mut::<view::SettingsView>() {

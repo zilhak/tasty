@@ -215,7 +215,7 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
-        if let Some(modal_id) = self.view.active_modal_id
+        if let Some(modal_id) = self.view.active_modal_id()
             && id == modal_id
         {
             self.handle_active_modal_window_event(event_loop, id, event);
@@ -839,16 +839,14 @@ impl App {
         {
             let drained: Vec<_> = self.view.views.drain().map(|(_, w)| w).collect();
             for w in drained {
-                if let Some(mut main_box) = crate::view::unbox_main(w) {
-                    // 모달은 함께 park하지 않으므로 상태의 모달 ID·종류도 비운다.
-                    main_box.state.active_modal_id = None;
-                    main_box.state.active_modal_kind = None;
+                if let Some(main_box) = crate::view::unbox_main(w) {
                     self.parked_states
                         .push((main_box.state, main_box.core_state));
                 }
             }
             self.view.focused_view_id = None;
-            self.view.active_modal_id = None;
+            // 모달 View는 위에서 함께 버렸으므로 park하지 않고 활성 모달도 비운다.
+            self.view.take_active_modal();
             tracing::info!(
                 "minimized to background ({} states parked)",
                 self.parked_states.len()
@@ -1044,7 +1042,7 @@ impl App {
             };
             mgr.emit_host_event("window.focused", &payload, EventScope::System);
         }
-        if let Some(modal_id) = self.view.active_modal_id
+        if let Some(modal_id) = self.view.active_modal_id()
             && let Some(modal) = self.view.views.get(&modal_id)
         {
             modal.base().winit.focus_window();

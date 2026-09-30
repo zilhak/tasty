@@ -1,5 +1,5 @@
-//! View의 모달 ID와 AppState의 조회용 ID·종류를 함께 갱신하는지 소스로 확인한다.
-//! 파일별 문자열 존재와 open·close 함수 이름 사이 구간을 비교하므로 실행 경로별 동기화를 증명하지는 않는다.
+//! 활성 모달의 ID·종류가 ViewRegistry 한 곳에만 있고 정해진 함수만 바꾸는지 소스로 확인한다.
+//! 파일별 문자열 존재와 함수 이름 사이 구간을 비교하므로 실행 경로별 동작을 증명하지는 않는다.
 
 use std::path::Path;
 
@@ -34,70 +34,71 @@ fn sources() -> Vec<(String, String)> {
         .collect()
 }
 
+fn file<'a>(files: &'a [(String, String)], rel: &str) -> &'a str {
+    files
+        .iter()
+        .find(|(r, _)| r == rel)
+        .map(|(_, t)| t.as_str())
+        .unwrap_or_else(|| panic!("`{rel}` 를 모수에서 못 찾았다 — 파일이 옮겨졌다"))
+}
+
+const REGISTRY: &str = "src/view/mod.rs";
 const OWNER: &str = "src/app/modal.rs";
+/// 최소화는 모달 View를 함께 버리므로 닫기 처리 없이 원본만 비운다.
+const MINIMIZE: &str = "src/app/event_handler.rs";
+const ROUTING: &str = "src/app/ipc/routing.rs";
 
-fn writes_the_original(t: &str) -> bool {
-    t.contains("view.active_modal_id = ") || t.contains("view.active_modal_id.take")
-}
-
-fn writes_the_mirror(t: &str) -> bool {
-    t.contains("state.active_modal_id = ")
-}
-
-fn writes_the_kind(t: &str) -> bool {
-    t.contains("state.active_modal_kind = ")
-}
-
+/// 창별 AppState에 사본이 다시 생기면 parked 상태나 다른 창과 값이 갈라진다.
 #[test]
-fn every_file_that_moves_the_original_moves_the_mirror_too() {
+fn no_per_window_state_keeps_a_modal_copy() {
     let offenders: Vec<String> = sources()
         .into_iter()
-        .filter(|(_, t)| writes_the_original(t) && !writes_the_mirror(t))
+        .filter(|(_, t)| t.contains("state.active_modal"))
         .map(|(rel, _)| rel)
         .collect();
     assert!(
         offenders.is_empty(),
-        "View 모달 ID의 변경 표지가 있지만 AppState 사본의 변경 표지가 없는 파일이다. 실제 갱신 경로를 확인한다: {offenders:?}"
+        "창별 상태의 모달 필드를 읽거나 쓰는 파일이다. 활성 모달은 ViewRegistry에서 읽는다: {offenders:?}"
     );
-}
-
-#[test]
-fn nobody_touches_the_mirror_alone() {
-    let offenders: Vec<String> = sources()
-        .into_iter()
-        .filter(|(rel, t)| rel != "src/state.rs" && writes_the_mirror(t) && !writes_the_original(t))
-        .map(|(rel, _)| rel)
-        .collect();
+    let state = file(&sources(), "src/state.rs").to_string();
     assert!(
-        offenders.is_empty(),
-        "AppState 사본의 변경 표지만 있는 파일이다. View 상태와 함께 갱신되는지 확인한다: {offenders:?}"
+        !state.contains("active_modal"),
+        "`src/state.rs` 에 모달 필드가 다시 생겼다. AppState는 모달 사본을 갖지 않는다"
     );
 }
 
+/// 필드가 비공개여야 아래의 호출 위치 검사가 모든 쓰기를 덮는다.
 #[test]
-fn the_open_close_pair_still_lives_in_one_file() {
+fn the_registry_field_is_private_and_holds_id_and_kind_together() {
     let files = sources();
-    let owner = files
+    let registry = file(&files, REGISTRY);
+    assert!(
+        registry.contains("\n    active_modal: Option<ActiveModal>,"),
+        "ViewRegistry의 활성 모달이 ID·종류를 함께 담는 비공개 필드가 아니다"
+    );
+    assert!(
+        !registry.contains("pub active_modal") && !registry.contains("pub(crate) active_modal:"),
+        "활성 모달 필드가 공개됐다. 쓰기는 set_active_modal/take_active_modal만 사용한다"
+    );
+}
+
+fn callers_of(files: &[(String, String)], call: &str) -> Vec<String> {
+    files
         .iter()
-        .find(|(rel, _)| rel == OWNER)
-        .map(|(_, t)| t.as_str())
-        .unwrap_or_else(|| panic!("`{OWNER}` 를 모수에서 못 찾았다 — 파일이 옮겨졌다"));
-    let writes = owner.matches("state.active_modal_id = ").count();
+        .filter(|(rel, t)| rel != REGISTRY && t.contains(call))
+        .map(|(rel, _)| rel.clone())
+        .collect()
+}
+
+#[test]
+fn only_open_modal_sets_the_active_modal() {
+    let files = sources();
     assert_eq!(
-        writes, 2,
-        "여닫는 파일이 사본을 두 번 써야 한다(열기 · 닫기). 지금 {writes} 곳이다."
+        callers_of(&files, "set_active_modal("),
+        vec![OWNER.to_string()],
+        "활성 모달을 세우는 곳은 `App::open_modal` 뿐이어야 한다"
     );
-}
-
-/// 함수 이름의 위치로 나눈 구간을 확인한다. 끝 구간은 파일 끝까지여서 함수 경계를 정확히 파싱하지는 않는다.
-#[test]
-fn each_mirror_write_sits_inside_the_function_that_moves_the_original() {
-    let files = sources();
-    let owner = files
-        .iter()
-        .find(|(rel, _)| rel == OWNER)
-        .map(|(_, t)| t.as_str())
-        .expect("owner 파일");
+    let owner = file(&files, OWNER);
     let open_at = owner
         .find("fn open_modal(")
         .expect("`open_modal` 을 못 찾았다");
@@ -106,57 +107,62 @@ fn each_mirror_write_sits_inside_the_function_that_moves_the_original() {
         .expect("`close_active_modal` 을 못 찾았다");
     assert!(
         open_at < close_at,
-        "두 함수의 순서가 바뀌었다 — 아래 구간 판정이 무의미해진다"
+        "두 함수의 순서가 바뀌었다 — 구간 판정이 무의미해진다"
     );
-
-    let opening = &owner[open_at..close_at];
-    let closing = &owner[close_at..];
+    assert_eq!(owner.matches("set_active_modal(").count(), 1);
     assert!(
-        opening.contains("state.active_modal_id = Some("),
-        "모달을 여는 함수가 사본을 안 세운다 — 그러면 `ui.state` 는 모달이 떠도 없다고 말한다"
+        owner[open_at..close_at].contains("self.view.set_active_modal(window_id, kind)"),
+        "모달을 여는 함수가 ID·종류를 세우지 않는다 — `ui.state` 는 모달이 떠도 없다고 말한다"
     );
     assert!(
-        closing.contains("state.active_modal_id = None"),
-        "모달 닫기 구간에서 조회용 ID를 지우는 코드를 찾지 못했다"
+        owner[close_at..].contains("self.view.take_active_modal()"),
+        "모달을 닫는 함수가 활성 모달을 지우지 않는다 — 닫힌 뒤에도 입력이 막힌다"
     );
 }
 
 #[test]
-fn the_kind_moves_with_the_id() {
-    let offenders: Vec<String> = sources()
-        .into_iter()
-        .filter(|(rel, t)| rel != "src/state.rs" && (writes_the_mirror(t) != writes_the_kind(t)))
-        .map(|(rel, _)| rel)
-        .collect();
-    assert!(
-        offenders.is_empty(),
-        "AppState 모달 ID와 종류 중 한쪽 변경 표지만 있는 파일이다. 두 상태의 갱신 경로를 확인한다: {offenders:?}"
-    );
-}
-
-#[test]
-fn each_kind_write_sits_inside_the_function_that_moves_the_original() {
+fn only_close_and_minimize_clear_the_active_modal() {
     let files = sources();
-    let owner = files
-        .iter()
-        .find(|(rel, _)| rel == OWNER)
-        .map(|(_, t)| t.as_str())
-        .expect("owner 파일");
-    let open_at = owner
-        .find("fn open_modal(")
-        .expect("`open_modal` 을 못 찾았다");
-    let close_at = owner
-        .find("fn close_active_modal(")
-        .expect("`close_active_modal` 을 못 찾았다");
-    assert!(open_at < close_at, "두 함수의 순서가 바뀌었다");
-
+    let mut callers = callers_of(&files, "take_active_modal(");
+    callers.sort();
+    let mut expected = vec![OWNER.to_string(), MINIMIZE.to_string()];
+    expected.sort();
+    assert_eq!(
+        callers, expected,
+        "활성 모달을 지우는 곳이 늘거나 줄었다. 닫기 처리를 건너뛰는 경로인지 확인한다"
+    );
+    let minimize = file(&files, MINIMIZE);
+    let at = minimize
+        .find("fn handle_minimize(")
+        .expect("`handle_minimize` 를 못 찾았다");
+    assert_eq!(minimize.matches("take_active_modal(").count(), 1);
     assert!(
-        owner[open_at..close_at].contains("state.active_modal_kind = Some("),
-        "모달을 여는 함수가 종류를 안 세운다 — `ui.state` 는 무언가 떠 있다고만 말하고 \
-         무엇인지는 직전 값으로 답한다"
+        minimize[at..].contains("take_active_modal("),
+        "`{MINIMIZE}` 의 활성 모달 지우기가 최소화 처리 밖에 있다"
+    );
+}
+
+/// 창과 parked 상태 어느 쪽이 응답해도 모달 필드가 같은 원본에서 온다.
+#[test]
+fn every_routed_ui_state_reports_the_registry_modal() {
+    let files = sources();
+    let handler = file(&files, "src/adapters/ipc/handler/debug_state.rs");
+    assert!(
+        handler.contains("\"modal_open\": false"),
+        "handler 기본값이 모달 없음이 아니다. 헤드리스·원격 복제본은 모달을 갖지 않는다"
+    );
+    let routing = file(&files, ROUTING);
+    let handled = routing.matches("handle_checked_request(").count();
+    let projected = routing
+        .matches("self.send_routed_response(cmd, response)")
+        .count();
+    assert!(handled > 0, "`{ROUTING}` 에서 handler 호출을 못 찾았다");
+    assert_eq!(
+        handled, projected,
+        "handler 응답 중 모달 투영을 거치지 않고 보내는 경로가 있다"
     );
     assert!(
-        owner[close_at..].contains("state.active_modal_kind = None"),
-        "모달을 닫는 함수가 종류를 안 지운다 — 닫힌 뒤에도 그 종류가 남는다"
+        routing.contains("self.project_active_modal(&cmd.request.method, response)"),
+        "`send_routed_response` 가 모달 투영을 호출하지 않는다"
     );
 }

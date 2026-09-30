@@ -52,34 +52,6 @@ use crate::model::LogicalPx;
 #[cfg(any(feature = "gui", test))]
 use crate::model::PhysicalPx;
 
-/// 열린 모달의 종류. 창을 열 때 기록해 debug 조회에서 모달을 구분한다.
-// 이유: 헤드리스에는 모달을 여는 호출부가 없지만 debug ui.state가 같은 타입을 사용한다.
-#[cfg_attr(
-    not(feature = "gui"),
-    expect(
-        dead_code,
-        reason = "only the gui opens a modal, so headless never builds a variant"
-    )
-)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ModalKind {
-    Settings,
-    Plugins,
-    Quit,
-}
-
-impl ModalKind {
-    /// debug IPC 응답에 쓰는 이름. 내부 판정은 enum을 사용한다.
-    #[cfg(debug_assertions)]
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Settings => "settings",
-            Self::Plugins => "plugins",
-            Self::Quit => "quit",
-        }
-    }
-}
-
 pub struct AppState {
     pub(crate) active_workspace: usize,
     /// 카테고리별로 마지막에 선택한 워크스페이스 ID. 영속화하지 않는다.
@@ -89,20 +61,11 @@ pub struct AppState {
         tasty_utils::id::WorkspaceCategoryId,
         tasty_utils::id::WorkspaceId,
     >,
-    /// 설정 모달 열기 요청. 화면에 이미 표시됐는지는 active_modal_id/kind로 확인한다.
+    /// 설정 모달 열기 요청. 화면에 이미 표시됐는지는 ViewRegistry의 활성 모달로 확인한다.
     /// redraw의 dispatch_pending_modal_opens 또는 Escape 처리가 요청을 지운다.
     // release 헤드리스에는 이 요청을 읽는 경로가 없다.
     #[cfg(any(feature = "gui", debug_assertions))]
     pub(crate) settings_open_requested: bool,
-    /// View에 등록된 활성 모달 ID의 사본. 열기 요청과 달리 모달이 닫힐 때까지 유지한다.
-    /// AppState만 받는 debug 조회를 위해 보관하며 open/close에서 함께 갱신한다.
-    // release 헤드리스에는 이 값을 읽는 경로가 없다.
-    #[cfg(any(feature = "gui", debug_assertions))]
-    pub(crate) active_modal_id: Option<u64>,
-    /// 활성 모달의 종류. active_modal_id만으로는 설정·플러그인·종료 모달을 구별할 수 없다.
-    // release 헤드리스에는 이 값을 읽는 경로가 없다.
-    #[cfg(any(feature = "gui", debug_assertions))]
-    pub(crate) active_modal_kind: Option<ModalKind>,
     /// 플러그인 모달 열기 요청. dispatch_pending_modal_opens가 처리한 뒤 지운다.
     #[cfg(feature = "gui")]
     pub(crate) plugins_open: bool,
@@ -401,10 +364,6 @@ impl AppState {
             category_last_active: std::collections::HashMap::new(),
             #[cfg(any(feature = "gui", debug_assertions))]
             settings_open_requested: false,
-            #[cfg(any(feature = "gui", debug_assertions))]
-            active_modal_id: None,
-            #[cfg(any(feature = "gui", debug_assertions))]
-            active_modal_kind: None,
             #[cfg(feature = "gui")]
             plugins_open: false,
             #[cfg(feature = "gui")]

@@ -15,7 +15,7 @@ impl App {
     pub(crate) fn handle_quit_requested(&mut self, event_loop: &ActiveEventLoop) {
         let quit_modal_open = self
             .view
-            .active_modal_id
+            .active_modal_id()
             .and_then(|id| self.view.views.get(&id))
             .map(|m| m.as_any().downcast_ref::<crate::view::QuitView>().is_some())
             .unwrap_or(false);
@@ -120,6 +120,6 @@ impl App {
         let window_id = window.id();
         let mut modal = crate::view::QuitView::new(gpu, window);
         crate::view::ui::present_first_frame(&mut modal);
-        self.open_modal(Box::new(modal), window_id, crate::state::ModalKind::Quit);
+        self.open_modal(Box::new(modal), window_id, crate::view::ModalKind::Quit);
     }
 }

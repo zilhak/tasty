@@ -77,7 +77,7 @@ impl App {
         self.open_modal(
             Box::new(modal),
             modal_window_id,
-            crate::state::ModalKind::Settings,
+            crate::view::ModalKind::Settings,
         );
         tracing::info!("opened settings modal {:?}", modal_window_id);
     }

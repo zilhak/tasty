@@ -57,7 +57,8 @@
 | `active_workspace` | 사용자 view 상태 | 세션 | 사용자 전환 → — | 읽힘 (대상 생략 시 기본값) |
 | `category_last_active` | 사용자 view 상태 | 세션 | 사용자 전환 → — | debug 헤드리스만 읽힘(release 에는 필드 없음) |
 | `settings_open_requested` · `plugins_open` | 사용자 view 상태 | 요청 | 사이드바 버튼 → 다음 프레임 `dispatch_pending_modal_opens` | 앞은 debug 헤드리스만 읽힘(`ui.state`, release 에는 필드 없음), 뒤는 없음 |
-| `active_modal_id` · `active_modal_kind` | 사용자 view 상태 | 열림 | `App::open_modal` → 모달 닫힘 | debug 헤드리스만 읽힘(release 에는 필드 없음) |
+
+활성 모달의 ID·종류는 AppState에 없다. 모달은 앱 전체에 최대 1개라 `ViewRegistry`(`src/view/mod.rs`)가 유일한 원본으로 갖고, `App::open_modal`·`App::close_active_modal`만 바꾼다. debug `ui.state`의 `modal_open`·`active_modal_id`·`active_modal_kind`는 handler가 모달 없음으로 채운 뒤 GUI App이 응답을 보내기 전에 이 원본으로 덮어쓴다. 그래서 창과 parked 상태 어느 쪽이 응답해도 같은 값이고, 헤드리스는 늘 모달 없음이다.
 | `sidebar_width` · `sidebar_visible` · `sidebar_collapsed` | 사용자 view 상태 | 세션 | 설정·사용자 토글 → — | 없음 |
 | `pending_resize_cursor` · `switch_overlay` · `modifier_hint` · `tutorial` | 사용자 view 상태 | 프레임·열림 | GUI 입력 → GUI | 없음 |
 | `dialogs` | 사용자 view 상태 | 열림·요청 | 위 절 | 없음 |

@@ -360,7 +360,7 @@ const DEBUG_NOT_IN_HEADLESS: &[(&str, &str)] = &[
     ),
     (
         "debug.modal.close_request",
-        "활성 모달은 `self.view.active_modal_id` 로 식별하고 `close_active_modal()` 이 \
+        "활성 모달은 `self.view.active_modal_id()` 로 식별하고 `close_active_modal()` 이 \
          `self.view.views` 에서 지운다 — view 가 없다",
     ),
     // fullscreen.list는 창 없이 제공할 수 있지만 open/close/state는 창이 필요해 각각 기록한다.

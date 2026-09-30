@@ -14,10 +14,10 @@ Engine
 
 ## Modal 포커스 차단
 
-앱(ViewRegistry)이 `active_modal_id: Option<WindowId>` 를 보유한다.
+앱(ViewRegistry)이 활성 모달의 ID·종류를 `active_modal` 하나로 보유하고 `active_modal_id()` 로 ID를 읽는다.
 
-- **Modal 없음**(`active_modal_id == None`): 각 View 는 OS 네이티브 포커스를 따른다. View 들은 독립적으로 포커스를 받고(z-order 독립), 사이에 다른 앱 창이 있을 수 있다.
-- **Modal 있음**(`active_modal_id == Some(id)`): 이벤트 디스패처가 각 View 에 `modal_active: bool` 을 전달한다. Modal 이 아닌 View 는 입력 이벤트를 무시하고(`Resized`/`RedrawRequested`/`ScaleFactorChanged`/`ModifiersChanged`/`Focused` 만 통과), Modal View 만 `modal_active: false` 로 받아 정상 동작한다. Modal 을 닫으면 기존 포커스로 자연 복귀한다.
+- **Modal 없음**(`active_modal_id() == None`): 각 View 는 OS 네이티브 포커스를 따른다. View 들은 독립적으로 포커스를 받고(z-order 독립), 사이에 다른 앱 창이 있을 수 있다.
+- **Modal 있음**(`active_modal_id() == Some(id)`): 이벤트 디스패처가 각 View 에 `modal_active: bool` 을 전달한다. Modal 이 아닌 View 는 입력 이벤트를 무시하고(`Resized`/`RedrawRequested`/`ScaleFactorChanged`/`ModifiersChanged`/`Focused` 만 통과), Modal View 만 `modal_active: false` 로 받아 정상 동작한다. Modal 을 닫으면 기존 포커스로 자연 복귀한다.
 
 | 상태 | 구현체 | 동작 |
 |----------|--------|------|
@@ -308,7 +308,7 @@ category_last_active는 ID를 저장해 삭제·이동 때 인덱스 보정이 �
 
 ## 코드 위치
 
-- `active_modal_id` / `modal_active` 게이트: `src/app/event_handler.rs`(`self.view.active_modal_id`), View 디스패치.
+- `active_modal_id()` / `modal_active` 게이트: `src/app/event_handler.rs`(`self.view.active_modal_id()`), View 디스패치.
 - focus 대상 해석 / `TASTY_SURFACE_ID` / `this`: `crates/tasty-cli/src/request.rs`.
 - `tasty close self`: `crates/tasty-cli/src/commands/new_close.rs`(`CloseCommands::CloseSelf`).
 - 삭제 시 활성 포인터 보정: `Pane::remove_tab_preserving_active`(`crates/tasty-model/src/pane.rs`) · `active_index_after_removal` / `AppState::fix_workspace_pointers_after_removal`(`src/state/workspace.rs`) · cascade 진입점 `cascade_surface_closed`(`src/core/structural_cascade.rs` — 두 빌드가 같은 본문).

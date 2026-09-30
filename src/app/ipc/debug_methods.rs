@@ -272,7 +272,7 @@ impl App {
     #[cfg(feature = "gui")]
     fn ipc_handle_debug_modal_close_request(&mut self, cmd: &IpcCommand) -> IpcStep {
         let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-        let was_open = self.view.active_modal_id.is_some();
+        let was_open = self.view.active_modal_id().is_some();
         if was_open {
             self.close_active_modal();
         }
@@ -389,5 +389,84 @@ impl App {
                 "Multiple windows open; specify 'window_id' (focus-independent). Use 'window.list' to enumerate.".to_string(),
             )),
         }
+    }
+}
+
+impl App {
+    /// ui.state 응답의 모달 필드를 ViewRegistry의 활성 모달로 채운다.
+    /// 응답을 만든 창·parked 상태와 관계없이 전역 원본 하나를 보고한다.
+    pub(super) fn project_active_modal(
+        &self,
+        method: &str,
+        mut response: host_ipc::protocol::JsonRpcResponse,
+    ) -> host_ipc::protocol::JsonRpcResponse {
+        if method == "ui.state" {
+            fill_active_modal(self.view.active_modal(), &mut response);
+        }
+        response
+    }
+}
+
+fn fill_active_modal(
+    active: Option<crate::view::ActiveModal>,
+    response: &mut host_ipc::protocol::JsonRpcResponse,
+) {
+    let Some(serde_json::Value::Object(fields)) = response.result.as_mut() else {
+        return;
+    };
+    fields.insert("modal_open".into(), serde_json::json!(active.is_some()));
+    fields.insert(
+        "active_modal_id".into(),
+        serde_json::json!(active.map(|m| u64::from(m.id))),
+    );
+    // 창 ID만으로는 설정 모달과 다른 모달을 구분할 수 없다.
+    fields.insert(
+        "active_modal_kind".into(),
+        serde_json::json!(active.map(|m| m.kind.as_str())),
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fill_active_modal;
+    use crate::ipc::protocol::JsonRpcResponse;
+    use crate::view::{ActiveModal, ModalKind};
+    use winit::window::WindowId;
+
+    fn ui_state_without_modal() -> JsonRpcResponse {
+        JsonRpcResponse::success(
+            serde_json::json!(1),
+            serde_json::json!({
+                "modal_open": false,
+                "active_modal_id": null,
+                "active_modal_kind": null,
+                "workspace_count": 1,
+            }),
+        )
+    }
+
+    #[test]
+    fn an_open_modal_fills_all_three_fields() {
+        let mut resp = ui_state_without_modal();
+        let active = ActiveModal {
+            id: WindowId::from(7u64),
+            kind: ModalKind::Plugins,
+        };
+        fill_active_modal(Some(active), &mut resp);
+        let result = resp.result.expect("성공 응답");
+        assert_eq!(result["modal_open"], true);
+        assert_eq!(result["active_modal_id"], 7);
+        assert_eq!(result["active_modal_kind"], "plugins");
+        assert_eq!(result["workspace_count"], 1);
+    }
+
+    #[test]
+    fn no_modal_reports_closed_and_null() {
+        let mut resp = ui_state_without_modal();
+        fill_active_modal(None, &mut resp);
+        let result = resp.result.expect("성공 응답");
+        assert_eq!(result["modal_open"], false);
+        assert!(result["active_modal_id"].is_null());
+        assert!(result["active_modal_kind"].is_null());
     }
 }

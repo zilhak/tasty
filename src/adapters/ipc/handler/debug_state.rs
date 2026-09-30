@@ -57,10 +57,11 @@ pub(super) fn handle_ui_state(
             "gate_input_dialog_open": state.has_input_dialog_open(),
             "gate_host_popup_focused": host_popup_focused,
             "gate_plugin_popup_open": state.plugin_popup_open,
-            "modal_open": state.active_modal_id.is_some(),
-            "active_modal_id": state.active_modal_id,
-            // 창 ID만으로는 설정 모달과 다른 모달을 구분할 수 없다.
-            "active_modal_kind": state.active_modal_kind.map(|k| k.as_str()),
+            // 모달은 GUI App의 ViewRegistry가 소유한다. 여기서는 모달이 없는 값을 내고,
+            // GUI App이 응답을 보내기 전에 활성 모달로 덮어쓴다(App::project_active_modal).
+            "modal_open": false,
+            "active_modal_id": serde_json::Value::Null,
+            "active_modal_kind": serde_json::Value::Null,
             "notification_panel_open": notification_panel_open,
             "active_workspace": state.active_workspace,
             "workspace_count": engine.workspaces.len(),

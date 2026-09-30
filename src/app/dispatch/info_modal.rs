@@ -32,7 +32,7 @@ impl App {
             return;
         }
 
-        if let Some(modal_id) = self.view.active_modal_id {
+        if let Some(modal_id) = self.view.active_modal_id() {
             // 열려 있는 모달이 설정 창이면 그 자리에서 탭을 바꾼다. Plugins처럼 다른
             // 모달이면 설정 창을 열 수 없으므로 아무것도 하지 않는다.
             if let Some(view) = self.view.views.get_mut(&modal_id) {

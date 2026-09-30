@@ -178,7 +178,7 @@ impl App {
     }
 
     pub(crate) fn process_plugins_window_actions(&mut self) {
-        let Some(modal_id) = self.view.active_modal_id else {
+        let Some(modal_id) = self.view.active_modal_id() else {
             return;
         };
         let Some(modal) = self.view.views.get_mut(&modal_id) else {
