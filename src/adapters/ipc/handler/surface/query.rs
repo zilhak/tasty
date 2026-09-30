@@ -50,16 +50,18 @@ pub(crate) fn handle_screen_text(
         .unwrap_or(false);
     let found = engine.find_terminal_by_id(surface_id);
     let (text, diag) = match found {
-        Some(t) => (
-            match lines {
-                Some(n) => t.screen_text_lines(n, show_dim),
-                None => t.screen_text(show_dim),
-            },
-            Some(ScreenDiag {
-                scrollback_len: t.scrollback_len(),
-                alt_screen: t.is_alternate_screen(),
-            }),
-        ),
+        Some(t) => t.with_content(|view| {
+            (
+                match lines {
+                    Some(n) => view.screen_text_lines(n, show_dim),
+                    None => view.screen_text(show_dim),
+                },
+                Some(ScreenDiag {
+                    scrollback_len: view.scrollback_len(),
+                    alt_screen: view.is_alternate_screen(),
+                }),
+            )
+        }),
         None => (String::new(), None),
     };
     JsonRpcResponse::success(

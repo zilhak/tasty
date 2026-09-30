@@ -746,10 +746,17 @@ impl TerminalReadView<'_> {
         self.state.scrollback_len()
     }
 
-    /// Borrow a scrollback line by absolute index.
-    pub fn scrollback_line(&self, index: usize) -> Option<&ScrollbackLine> {
-        self.state
-            .scrollback_line(index.checked_sub(self.viewport.cut.first_row)?)
+    /// Read one absolute history row. Memory rows borrow; disk rows load only
+    /// the requested line, under the same content cut as the viewport.
+    pub fn scrollback_line(&self, index: usize) -> Option<std::borrow::Cow<'_, ScrollbackLine>> {
+        let relative = index.checked_sub(self.viewport.cut.first_row)?;
+        if let Some(line) = self.state.scrollback_line(relative) {
+            Some(std::borrow::Cow::Borrowed(line))
+        } else {
+            self.state
+                .scrollback_line_full(relative)
+                .map(std::borrow::Cow::Owned)
+        }
     }
 }
 

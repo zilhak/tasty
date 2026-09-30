@@ -220,6 +220,12 @@ impl crate::TerminalReadView<'_> {
     pub fn application_cursor_keys(&self) -> bool {
         self.state.application_cursor_keys()
     }
+    pub fn screen_text(&self, include_dim: bool) -> String {
+        self.state.screen_text(include_dim)
+    }
+    pub fn screen_text_lines(&self, n: usize, include_dim: bool) -> String {
+        self.state.screen_text_lines(n, include_dim)
+    }
     pub fn screen_row(&self, row: usize, include_dim: bool) -> String {
         self.state.screen_row(row, include_dim)
     }
@@ -311,6 +317,33 @@ mod tests {
                 "removed IDs cannot name a different row"
             );
             assert_eq!(view.scroll_offset(), 3);
+        });
+    }
+
+    #[test]
+    fn disk_spill_keeps_the_anchor_readable_without_cloning_memory_rows() {
+        let mut terminal = filled();
+        terminal.enable_disk_scrollback(u32::MAX - 704);
+        terminal.set_scrollback_limit(1);
+        let mut viewport = TerminalViewport::LIVE;
+        viewport.scroll_up(terminal.content_cut(), 2);
+        terminal.with_view(&viewport, |view| {
+            let disk = view.scrollback_line(view.viewport().top_row).unwrap();
+            assert!(matches!(disk, std::borrow::Cow::Owned(_)));
+            assert_eq!(disk.cells().next().unwrap().0, "0");
+            assert!(matches!(
+                view.scrollback_line(1),
+                Some(std::borrow::Cow::Borrowed(_))
+            ));
+        });
+        terminal.feed_bytes(b"\r\n5\r\n6\r\n7");
+        terminal.with_view(&viewport, |view| {
+            assert_eq!(view.first_row(), 0);
+            assert_eq!(view.viewport().top_row, 0);
+            assert_eq!(
+                view.scrollback_line(0).unwrap().cells().next().unwrap().0,
+                "0"
+            );
         });
     }
 

@@ -935,3 +935,11 @@ info/style는 검사 범위 밖이다. 버전을 올릴 때는 새 진단을 먼
 `python3 scripts/lib/test_core_writer_scan.py`는 선택 map/remap과 실제 구조 쓰기를 구별하는 변이 시험이다. Navigation 파일의 `engine.workspaces.clear()`와 App adapter의 `remove_tab`/`take_tab` 호출을 검출한다. 타입을 해석하지 않는 scanner의 한계는 그대로이며 파일 전체 제외를 추가하지 않는다.
 
 활성 상태 읽기 명부는 구 active/focused 식별자와 함께 App의 `presentation()` 및 `.navigation` 접근도 수집한다. 응답 보고·명시 ID 내부의 CWD 상속·사용자 continuation·저장/원격 snapshot을 구분하며, 문자열 집계만으로 대상 선택의 적법성을 판단하지는 않는다.
+
+### Terminal viewport 소유 경계
+
+`terminal_viewport_ownership`은 TerminalState·Terminal·Scrollback·Pty·PtyState·
+CommandContext의 struct 본문에서 사용자 offset과 viewport 타입을 금지하고 MainViewState의
+원본을 확인한다. 재도입 fixture 변이도 검사한다. 이름과 타입 토큰을 읽는 검사이므로
+별칭·간접 참조를 통한 소유까지 증명하지는 않는다. parser 내용 cut의 일관성과 출력·trim·
+resize 보정은 tasty-terminal의 viewport 행동 시험으로 확인한다.

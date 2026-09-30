@@ -59,7 +59,8 @@ macOS·Linux에는 이 Windows 전용 처리를 적용하지 않는다.
 local/client mirror 표시와 서버 readonly 표시는 별도 문맥이며, terminal resource를
 복제하거나 보관하지 않는다. 화면 상태는 저장하지 않고 surface가 사라지면 회수한다.
 headless의 `CommandContext`에는 viewport를 만들지 않는다. IPC 화면 읽기는 기존 live
-내용 계약을 유지하며 에이전트 입력·출력은 로컬 사용자 앵커를 변경하지 않는다.
+내용 계약을 유지하며 본문·scrollback 수·alternate 진단을 같은 내용 cut에서 읽는다.
+에이전트 입력·출력은 로컬 사용자 앵커를 변경하지 않는다.
 
 renderer·선택·vi-copy·검색·링크·마우스 보고·surface screenshot은 같은 표시면의
 viewport를 사용한다. `TerminalReadView`는 parser mutex 안에서 앵커와 content epoch,

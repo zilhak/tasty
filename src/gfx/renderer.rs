@@ -251,7 +251,7 @@ impl CellRenderer {
                     if source_line < scrollback_len {
                         if let Some(line) = view.scrollback_line(source_line) {
                             self.render_scrollback_line(
-                                line,
+                                &line,
                                 row_idx,
                                 cols,
                                 default_bg,
