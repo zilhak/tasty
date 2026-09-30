@@ -1315,6 +1315,14 @@ pub fn pages() -> Vec<Page> {
                             components::settings::draw,
                         ),
                         spec(
+                            "settings-appearance-colour-rows",
+                            "Appearance › colour rows — the Default hex is read-only, not disabled",
+                            Some(
+                                "Default hex = Input readOnly (neutral box, text-secondary value, focusable, copyable) · override = normal Input",
+                            ),
+                            components::settings_appearance_colors::draw,
+                        ),
+                        spec(
                             "settings-file-extension-mapping",
                             "Handler › File Extension Mapping",
                             Some("ext cluster (mono) → handler Select · Add mapping"),

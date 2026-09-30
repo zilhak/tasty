@@ -10,7 +10,7 @@ use tasty_type_appearance::theme::{
     FALLBACK_SURFACE, PartialColors, PartialSurfaceTheme, SurfaceTheme, Theme, ThemeColors,
 };
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{HelpHint, TooltipPlacement, vspace};
+use tasty_ui_widgets::{HelpHint, Input, TooltipPlacement, vspace};
 
 /// plugin ID와 page ID를 함께 비교해 다른 plugin의 같은 이름 페이지와 구분한다.
 pub(super) fn find_plugin_settings_entry<'a>(
@@ -538,6 +538,30 @@ fn draw_appearance_tasty(ui: &mut egui::Ui, settings: &mut Settings) {
     }
 }
 
+/// 색 행 한 줄 — 높이 control-height(`input_height`)에 세로 가운데 정렬한다.
+/// 시안 색 행은 `alignItems: center`, `minHeight: control-height`다.
+fn color_row_line(ui: &mut egui::Ui, th: &Theme, add: impl FnOnce(&mut egui::Ui)) {
+    let h = th.input_height().value();
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), h),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.set_min_height(h);
+            add(ui);
+        },
+    );
+}
+
+/// Default 행의 hex 칸. 쓰고 있는 기본값을 보여 주는 칸이라 disabled가 아니라 읽기 전용이다
+/// (포커스·선택·복사 가능, 편집 불가). 입력이 와도 `hex`는 바뀌지 않는다.
+fn default_hex_field(ui: &mut egui::Ui, th: &Theme, hex: &mut String) -> egui::Response {
+    Input::new()
+        .mono(true)
+        .read_only(true)
+        .width(th.field_width_xs.value())
+        .show(ui, th, hex)
+}
+
 /// A single Tasty curated color row — friendly label (i18n), hex input, swatch,
 /// and a "Default" checkbox. `base`/`get`/`set` point at one field of
 /// `theme_base`/`theme_overrides`, giving identical set/clear semantics to the
@@ -558,7 +582,7 @@ fn draw_tasty_color_row(
     let val = cur.unwrap_or(base_color);
     let buf_id = ui.make_persistent_id(("appearance_tasty_hex", label_key));
 
-    ui.horizontal(|ui| {
+    color_row_line(ui, th, |ui| {
         // ── override dot ──
         let dot = COLOR_OVERRIDE_DOT_SIZE.value();
         let (dot_rect, _) = ui.allocate_exact_size(egui::vec2(dot, dot), egui::Sense::hover());
@@ -585,11 +609,10 @@ fn draw_tasty_color_row(
             let mut text = ui
                 .data(|d| d.get_temp::<String>(buf_id))
                 .unwrap_or_else(|| val.to_hex());
-            let resp = ui.add(
-                egui::TextEdit::singleline(&mut text)
-                    .font(egui::TextStyle::Monospace)
-                    .desired_width(COLOR_HEX_INPUT_WIDTH.value()),
-            );
+            let resp = Input::new()
+                .mono(true)
+                .width(th.field_width_xs.value())
+                .show(ui, th, &mut text);
             if resp.changed()
                 && let Some(parsed) = HexColor::from_hex(text.trim())
             {
@@ -597,13 +620,7 @@ fn draw_tasty_color_row(
             }
             ui.data_mut(|d| d.insert_temp(buf_id, text));
         } else {
-            let mut text = base_color.to_hex();
-            ui.add_enabled(
-                false,
-                egui::TextEdit::singleline(&mut text)
-                    .font(egui::TextStyle::Monospace)
-                    .desired_width(COLOR_HEX_INPUT_WIDTH.value()),
-            );
+            default_hex_field(ui, th, &mut base_color.to_hex());
         }
 
         // ── swatch (override 시 full, base 시 40% dim) ──
@@ -823,7 +840,7 @@ fn draw_surface_bg_row(
     let val = cur.unwrap_or(base);
     let buf_id = ui.make_persistent_id(("appearance_surface_hex", field.key()));
 
-    ui.horizontal(|ui| {
+    color_row_line(ui, th, |ui| {
         // ── override dot ──
         let dot = COLOR_OVERRIDE_DOT_SIZE.value();
         let (dot_rect, _) = ui.allocate_exact_size(egui::vec2(dot, dot), egui::Sense::hover());
@@ -850,11 +867,10 @@ fn draw_surface_bg_row(
             let mut text = ui
                 .data(|d| d.get_temp::<String>(buf_id))
                 .unwrap_or_else(|| val.to_hex());
-            let resp = ui.add(
-                egui::TextEdit::singleline(&mut text)
-                    .font(egui::TextStyle::Monospace)
-                    .desired_width(COLOR_HEX_INPUT_WIDTH.value()),
-            );
+            let resp = Input::new()
+                .mono(true)
+                .width(th.field_width_xs.value())
+                .show(ui, th, &mut text);
             if resp.changed()
                 && let Some(parsed) = HexColor::from_hex(text.trim())
             {
@@ -866,13 +882,7 @@ fn draw_surface_bg_row(
             }
             ui.data_mut(|d| d.insert_temp(buf_id, text));
         } else {
-            let mut text = base.to_hex();
-            ui.add_enabled(
-                false,
-                egui::TextEdit::singleline(&mut text)
-                    .font(egui::TextStyle::Monospace)
-                    .desired_width(COLOR_HEX_INPUT_WIDTH.value()),
-            );
+            default_hex_field(ui, th, &mut base.to_hex());
         }
 
         // ── swatch (override 시 full, base 시 40% dim) ──
@@ -1023,8 +1033,6 @@ const SWATCH_INHERITED_ALPHA: u8 = 102;
 /// 색 override 여부를 표시하는 점. 상태 점과 역할·크기가 달라 별도 치수를 유지한다(ADR-0035).
 const COLOR_OVERRIDE_DOT_SIZE: LogicalPx = LogicalPx(5.0);
 
-/// hex 입력 폭 (디자인 jsx: 96px). 4px 그리드의 배수이되 대응 토큰이 없어 이름만 둔다.
-const COLOR_HEX_INPUT_WIDTH: LogicalPx = LogicalPx(96.0);
 /// 색 토큰 이름 컬럼 폭 — 행 간 입력/스와치/체크박스 정렬용.
 const COLOR_FIELD_NAME_WIDTH: LogicalPx = LogicalPx(150.0);
 
@@ -1289,7 +1297,7 @@ fn draw_color_picker_row(
     // 되돌리면 편집 중 부분 입력(`#89b4f`)이 즉시 덮어써져 타이핑이 불가능해진다.
     let buf_id = ui.make_persistent_id(("appearance_colors_hex", row.name));
 
-    ui.horizontal(|ui| {
+    color_row_line(ui, th, |ui| {
         // ── override dot ──
         let dot = COLOR_OVERRIDE_DOT_SIZE.value();
         let (dot_rect, _) = ui.allocate_exact_size(egui::vec2(dot, dot), egui::Sense::hover());
@@ -1316,11 +1324,10 @@ fn draw_color_picker_row(
             let mut text = ui
                 .data(|d| d.get_temp::<String>(buf_id))
                 .unwrap_or_else(|| val.to_hex());
-            let resp = ui.add(
-                egui::TextEdit::singleline(&mut text)
-                    .font(egui::TextStyle::Monospace)
-                    .desired_width(COLOR_HEX_INPUT_WIDTH.value()),
-            );
+            let resp = Input::new()
+                .mono(true)
+                .width(th.field_width_xs.value())
+                .show(ui, th, &mut text);
             if resp.changed()
                 && let Some(parsed) = HexColor::from_hex(text.trim())
             {
@@ -1328,14 +1335,7 @@ fn draw_color_picker_row(
             }
             ui.data_mut(|d| d.insert_temp(buf_id, text));
         } else {
-            // base 값을 읽기 전용으로 보여준다 (비활성·dim).
-            let mut text = base.to_hex();
-            ui.add_enabled(
-                false,
-                egui::TextEdit::singleline(&mut text)
-                    .font(egui::TextStyle::Monospace)
-                    .desired_width(COLOR_HEX_INPUT_WIDTH.value()),
-            );
+            default_hex_field(ui, th, &mut base.to_hex());
         }
 
         // ── swatch (override 시 full, base 시 40% dim) ──
@@ -2333,5 +2333,80 @@ mod tests {
             .expect("mocha base has terminal surface")
             .focused_bg = marker;
         assert_eq!(surface_bg_base(&base, SurfaceBgField::Focused), marker);
+    }
+}
+
+#[cfg(test)]
+mod default_hex_field_tests {
+    use super::{Theme, color_row_line, default_hex_field};
+
+    /// `hex`를 담은 칸으로 한 프레임을 그리고 응답을 돌려준다.
+    fn frame(
+        ctx: &egui::Context,
+        th: &Theme,
+        hex: &mut String,
+        events: Vec<egui::Event>,
+    ) -> egui::Response {
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 200.0));
+        let raw = egui::RawInput {
+            screen_rect: Some(screen),
+            events,
+            ..Default::default()
+        };
+        let mut seen = None;
+        drop(ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                color_row_line(ui, th, |ui| {
+                    seen = Some(default_hex_field(ui, th, hex));
+                });
+            });
+        }));
+        seen.expect("frame ran")
+    }
+
+    /// Default 행의 hex 칸은 disabled가 아니라 읽기 전용이다. 클릭하면 포커스를 받고,
+    /// 포커스 상태에서 글자를 입력하거나 지워도 값은 그대로다.
+    #[test]
+    fn default_hex_field_is_read_only_and_takes_focus() {
+        let th = tasty_themes::mocha_fallback();
+        let ctx = egui::Context::default();
+        let mut hex = String::from("#89b4fa");
+        let first = frame(&ctx, &th, &mut hex, Vec::new());
+        let pos = first.rect.center();
+        let press = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(
+            &ctx,
+            &th,
+            &mut hex,
+            vec![egui::Event::PointerMoved(pos), press(true)],
+        );
+        frame(&ctx, &th, &mut hex, vec![press(false)]);
+        let after = frame(&ctx, &th, &mut hex, Vec::new());
+        assert!(after.has_focus(), "Default hex field did not take focus");
+
+        let key = |key| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let typed = frame(
+            &ctx,
+            &th,
+            &mut hex,
+            vec![
+                egui::Event::Text("x".to_owned()),
+                key(egui::Key::Backspace),
+                key(egui::Key::Backspace),
+            ],
+        );
+        assert!(typed.has_focus(), "typing moved focus away");
+        assert_eq!(hex, "#89b4fa", "Default hex field accepted an edit");
     }
 }

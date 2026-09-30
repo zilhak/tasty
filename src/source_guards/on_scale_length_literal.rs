@@ -127,7 +127,7 @@ const AREAS: &[(&str, usize, &str)] = &[
         "src/view/",
         // 설정·플러그인 화면에서 역할에 맞는 토큰이 아직 없는 치수와 폰트 값이 남아 있다.
         // 단축키 탭 버튼 폭 140은 새 스케일 값이지만 녹화 슬롯 토큰과 역할이 달라 그대로 둔다.
-        37,
+        36,
         "설정 화면의 폼 레이아웃",
     ),
     (
@@ -156,7 +156,9 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 역할 토큰이 없다.
         // ListCtrl disabled trailing 예제의 테마 패널 바깥 폭 320은 디자인 Spec의 `--tasty-size-320`이며
         // 공개 역할 토큰이 없다.
-        136,
+        // Appearance 색 행 예제의 테마 패널 바깥 폭 360은 디자인 Spec의 `--tasty-size-360`이며
+        // 공개 역할 토큰이 없다.
+        137,
         "갤러리 specimen은 배율 검사에서 제외돼도 스케일 검사는 받는다(ADR-0039). 이름 붙은 치수와 인라인 값, 전시 목적을 별도로 분류한다.",
     ),
     (
@@ -613,7 +615,7 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
     );
     assert_eq!(
         (named_cited, named_plain, inline_cited, inline_plain),
-        (54, 75, 0, 12),
+        (55, 75, 0, 12),
         "갤러리 후보의 (이름 있음/없음, 디자인 언급 있음/없음) 분류 수가 바뀌었다. 해당 선언과 주석을 확인하고 기록을 갱신한다."
     );
 }
@@ -732,7 +734,7 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // Layout preview tests add on-scale PhysicalPx(0), PhysicalPx(0),
         // PhysicalPx(600), and the PhysicalPx(1) content-height floor; 1000 is off-scale.
         // Tooltip placement tests add their window, anchor and WebView rect literals.
-        (187, 333),
+        (187, 335),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

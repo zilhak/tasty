@@ -429,6 +429,7 @@ Layouts 의 `widgets/layout_2depth.rs`(`twodepth`)는 이 미러가 아니라 �
 | `Mono`(섹션 헤딩) | — | `mono` | micro(10)·uppercase·text-muted |
 | `Note` | — | `note` | `measure-md`(400) 폭·text-muted |
 | 색 스와치(16, radius 2) | — | `theme_swatch` | `swatch-size`16·`corner_radius_sm`2·`border_strong` 보더 |
+| 색 행 hex 칸(Colors·Tasty·Terminal surface 배경) | `tabs/appearance.rs` 의 세 행 → `color_row_line`(높이 control-height = `input_height`, 세로 가운데) + Default 칸 `default_hex_field`(`Input::mono().read_only(true)`) | `settings_appearance_colors` (`settings-appearance-colour-rows` spec, Mocha·Latte) | Default = 읽기 전용(`input-readonly-*`, 값 text-secondary, 1px focus 테두리·선택·복사), override = 일반 Input · 폭 `field-width-xs` · 패널 바깥 폭 `--tasty-size-360` |
 | footer Cancel/Save | `draw_settings_footer` | `footer` | ghost/primary, gap 8 |
 
 form-control 폭: `field-width-{xs,color,md,range,lg}` = 90/110/160/180/200 (디자인

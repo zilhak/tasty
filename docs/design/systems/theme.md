@@ -31,7 +31,7 @@ UI의 색·글꼴 크기·간격은 `Theme`에서 읽는다. 이 문서는 테�
 
 - **`theme_base` 는 앱 소유다.** 빌트인 테마 파일은 앱이 관리하고 부팅 때 임베드 원본과 동기화한다. 사용자 테마 파일은 별도 ID로 만들 수 있다. 선택한 테마 위에서 색을 조절할 때는 아래 override를 사용한다.
 - **사용자 색 변경은 오직 `theme_overrides` 로만 들어간다.** settings 가 보관하는 partial 레이어로, base 위에 resolve 시점에 얹힌다. base(파일)를 어떻게 바꾸거나 동기화해도 사용자 override 는 보존된다 — 두 레이어가 분리돼 충돌이 없다.
-- **override 를 기록하는 정식 경로 = Settings › Appearance › Colors picker.** 픽커는 flat `PartialColors` 46색(Surfaces·Overlays·Text·Accents·Terminal-specific·ANSI 16) 을 그룹별 collapsible 로 노출한다. 각 행의 "Default" 체크 = 그 필드 `None`(프리셋 base 추종), 해제 = `Some(hex)`. base 값은 resolved `theme_base` 에서 읽어 시드한다(하드코딩 없음). 행/그룹/전체 3단계 reset 으로 `None` 복귀. 저장 시 `theme_overrides`가 바뀌면 설정 적용 경로가 모든 창에 즉시 반영한다(아래 "라이브 갱신"). `surface_themes`(맵 구조)는 이 flat 픽커에서 분리돼 `Tasty`/`Terminal` 섹션의 curated shortcut 으로 남되 같은 `theme_overrides` 에 기록된다.
+- **override 를 기록하는 정식 경로 = Settings › Appearance › Colors picker.** 픽커는 flat `PartialColors` 46색(Surfaces·Overlays·Text·Accents·Terminal-specific·ANSI 16) 을 그룹별 collapsible 로 노출한다. 각 행의 "Default" 체크 = 그 필드 `None`(프리셋 base 추종), 해제 = `Some(hex)`. base 값은 resolved `theme_base` 에서 읽어 시드한다(하드코딩 없음). 행/그룹/전체 3단계 reset 으로 `None` 복귀. "Default"가 체크된 행의 hex 칸은 disabled가 아니라 읽기 전용 `Input`(mono, `field-width-xs`)이다 — 사용 중인 base 값을 text-secondary로 보여 주고 포커스·선택·복사를 허용하며, 체크를 풀면 일반 Input이 된다. Tasty 색 행과 Terminal surface 배경 행도 같다. 저장 시 `theme_overrides`가 바뀌면 설정 적용 경로가 모든 창에 즉시 반영한다(아래 "라이브 갱신"). `surface_themes`(맵 구조)는 이 flat 픽커에서 분리돼 `Tasty`/`Terminal` 섹션의 curated shortcut 으로 남되 같은 `theme_overrides` 에 기록된다.
 - **테마를 바꾸면 `theme_overrides` 를 비운다(설계).** `apply_theme` 의 `theme_overrides.clear()` 는 부수효과가 아니라 의도다 — 테마 전환 = 그 테마의 색을 깨끗하게 적용하고 이전 테마에 얹어둔 사용자 변경분은 폐기한다. 픽커가 채운 override 도 함께 비워진다.
 
 ### Crate 책임
