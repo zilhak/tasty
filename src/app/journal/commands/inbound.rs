@@ -65,18 +65,7 @@ impl JournalApplication {
                 _ => None,
             },
         };
-        let request = JsonRpcRequest {
-            jsonrpc: "2.0".into(),
-            method: "remote.structural".into(),
-            params: serde_json::json!({"op":op,"origin":origin,"correlation":{
-                "client":client,"runtime_epoch":runtime_epoch,"registration":registration,"op_id":op_id
-            }}),
-            id: None,
-            session_token: None,
-            response_timeout_ms: None,
-            // Remote op_id correlates Result/Delta; it is not an explicit retry key.
-            idempotency_key: None,
-        };
+        let request = remote_request(client, runtime_epoch, registration, op_id, op, origin);
         self.admit_request(
             &request,
             Reply::Remote(remote),
@@ -394,5 +383,59 @@ impl crate::app::App {
                 );
             }
         }
+    }
+}
+
+// Correlation is internal durable metadata, not the StreamControl wire or an idempotency key.
+// Registration spans all 128 bits; serde_json::Value numbers cannot represent that range.
+fn remote_request(
+    client: u32,
+    runtime_epoch: u64,
+    registration: u128,
+    op_id: u64,
+    op: StructuralOp,
+    origin: ForwardOrigin,
+) -> JsonRpcRequest {
+    JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        method: "remote.structural".into(),
+        params: serde_json::json!({"op":op,"origin":origin,"correlation":{
+            "client":client,"runtime_epoch":runtime_epoch,"registration":registration.to_string(),"op_id":op_id
+        }}),
+        id: None,
+        session_token: None,
+        response_timeout_ms: None,
+        // Remote op_id correlates Result/Delta; it is not an explicit retry key.
+        idempotency_key: None,
+    }
+}
+
+#[cfg(test)]
+mod correlation_tests {
+    use super::*;
+
+    #[test]
+    fn split_correlation_preserves_full_registration_in_durable_request_bytes() {
+        let op = StructuralOp::SplitSurface {
+            surface_id: 7,
+            direction: tasty_ipc::stream::SplitAxis::Horizontal,
+            surface_kind: "terminal".into(),
+            params: serde_json::json!({}),
+        };
+        let request = remote_request(3, u64::MAX, u128::MAX, 1, op.clone(), ForwardOrigin::User);
+        let stored: serde_json::Value = serde_json::from_slice(&request_digest(&request)).unwrap();
+        assert_eq!(stored[0], "remote.structural");
+        let params = &stored[1];
+        assert_eq!(params["correlation"]["registration"], u128::MAX.to_string());
+        assert_eq!(params["correlation"]["runtime_epoch"], u64::MAX);
+        assert_eq!(params["correlation"]["client"], 3);
+        assert_eq!(params["correlation"]["op_id"], 1);
+        assert_eq!(
+            serde_json::from_value::<StructuralOp>(params["op"].clone()).unwrap(),
+            op
+        );
+        assert!(request.idempotency_key.is_none());
+        let successor = remote_request(3, u64::MAX, u128::MAX - 1, 1, op, ForwardOrigin::User);
+        assert_ne!(request_digest(&request), request_digest(&successor));
     }
 }
