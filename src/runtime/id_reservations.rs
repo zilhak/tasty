@@ -1,7 +1,11 @@
 //! Runtime consumption of already durable ID ranges. This module never issues IDs or opens SQLite.
 use std::collections::{BTreeMap, VecDeque};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+
 use tasty_core::IdKind;
+
+static REFILL_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 const KINDS: [IdKind; 4] = [
     IdKind::Workspace,
     IdKind::Pane,
@@ -122,8 +126,16 @@ impl IdReservations {
         Ok(())
     }
     pub(crate) fn refuse_refill(&self, reason: String) {
-        if let Ok(mut bank) = self.0.lock() {
-            bank.failure = Some(reason);
+        match self.0.lock() {
+            Ok(mut bank) => bank.failure = Some(reason),
+            Err(error) => {
+                // Multi-kind leasing may have advanced only part of a reservation. Do not
+                // recover or clear poison: every subsequent ID operation must still fail.
+                if !REFILL_POISON_REPORTED.swap(true, Ordering::Relaxed) {
+                    tracing::error!(%error, %reason,
+                        "cannot record ID refill refusal; poisoned reservation bank remains unavailable");
+                }
+            }
         }
     }
     #[cfg(feature = "gui")]

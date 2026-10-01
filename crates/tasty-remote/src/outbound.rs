@@ -1,5 +1,6 @@
 //! App-owned outbound connection lifetime. No View/engine relationship is duplicated here.
 use super::client_session::AttachClientSession;
+use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 use tasty_ssh::{Backoff, SshTunnel};
 /// 실패한 재연결의 다음 시도 시각과 누적 횟수. 첫 시도는 슬롯 없이 즉시 수행한다.
@@ -107,6 +108,10 @@ fn shutdown_cancelled_socket(socket: &std::net::TcpStream) {
     }
 }
 
+// These lists own cancellation controls, not a stream writer or protocol frame state.
+static ATTEMPT_SSH_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+static ATTEMPT_SOCKETS_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+
 impl AttemptToken {
     pub fn is_active(&self) -> bool {
         self.0.active.load(std::sync::atomic::Ordering::Acquire)
@@ -115,12 +120,22 @@ impl AttemptToken {
         self.0
             .active
             .store(false, std::sync::atomic::Ordering::Release);
-        if let Ok(mut ssh) = self.0.ssh.lock() {
+        {
+            let mut ssh = tasty_utils::poison::recover_mutex(
+                self.0.ssh.lock(),
+                "remote attempt SSH cancellation controls",
+                &ATTEMPT_SSH_POISON_REPORTED,
+            );
             for cancel in ssh.drain(..) {
                 cancel.request_cancel();
             }
         }
-        if let Ok(mut sockets) = self.0.sockets.lock() {
+        {
+            let mut sockets = tasty_utils::poison::recover_mutex(
+                self.0.sockets.lock(),
+                "remote attempt socket cancellation controls",
+                &ATTEMPT_SOCKETS_POISON_REPORTED,
+            );
             for socket in sockets.drain(..) {
                 shutdown_cancelled_socket(&socket);
             }
@@ -143,9 +158,12 @@ impl AttemptToken {
         self.0
             .active
             .store(false, std::sync::atomic::Ordering::Release);
-        if let Ok(mut sockets) = self.0.sockets.lock() {
-            sockets.clear();
-        }
+        let mut sockets = tasty_utils::poison::recover_mutex(
+            self.0.sockets.lock(),
+            "remote attempt socket cancellation controls",
+            &ATTEMPT_SOCKETS_POISON_REPORTED,
+        );
+        sockets.clear();
     }
     /// Register the exact connecting socket before the first blocking handshake read/write.
     pub fn register_socket(&self, socket: &std::net::TcpStream) -> std::io::Result<()> {
