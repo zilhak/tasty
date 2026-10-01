@@ -11,7 +11,7 @@ use crate::state::RequestContext;
 use crate::webview::DebugHistoryAction;
 
 fn find_html_surface<'a>(
-    engine: &'a crate::core::CoreState,
+    engine: &'a crate::runtime::engine_access::EngineRef<'_>,
     sid: u32,
     id: &Value,
 ) -> Result<&'a RemoteSurface, JsonRpcResponse> {
@@ -34,7 +34,7 @@ fn find_html_surface<'a>(
 
 /// `debug.html_script.allow` — 허용 클릭을 재현한다. 현재 문서를 기록하고 재로드를 요청한다.
 pub(super) fn handle_allow(
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -69,7 +69,7 @@ pub(super) fn handle_allow(
 /// `debug.webview.history` — 뒤로·앞으로·재로드·중지를 재현한다. 다음 redraw에서 적용한다.
 pub(super) fn handle_history(
     state: &mut RequestContext,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {

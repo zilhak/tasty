@@ -90,7 +90,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 /// 읽기 전용 진단 조회. engine에서는 주입된 스트림 허브를 얻는다.
 pub(super) fn handle_system_pressure(
     core: &crate::app::services::AppServices,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let mut body = snapshot_json(

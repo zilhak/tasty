@@ -17,7 +17,7 @@ fn require_tab_id(
 
 pub fn handle_tab_list(
     presentation: &(impl crate::model::StructurePresentation + ?Sized),
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -30,7 +30,9 @@ pub fn handle_tab_list(
             .iter()
             .enumerate()
             .map(|(i, tab)| {
-                let surface = presentation.surface_id(tab).and_then(|id| tab.surface(id));
+                let surface = presentation
+                    .surface_id(tab)
+                    .and_then(|id| engine.find_surface_by_id(id));
                 let surface_type = surface.map(|s| s.type_name()).unwrap_or("Empty");
                 let surface_id = surface.and_then(|s| s.surface_id());
                 let sids = tab.all_surface_ids();
@@ -39,7 +41,7 @@ pub fn handle_tab_list(
                     "name": tab.name,
                     "active": i == presentation.tab_index(pane),
                     "type": surface_type,
-                    "busy_count": engine.busy_count(&sids),
+                    "busy_count": engine.read().busy_count(&sids),
                 });
                 if let Some(sid) = surface_id {
                     entry["surface_id"] = json!(sid);

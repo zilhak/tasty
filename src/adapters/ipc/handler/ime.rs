@@ -59,7 +59,7 @@ fn handle_ime_preedit(
         .map(|c| (c as usize, (c as usize) + text.len()));
 
     let text_for_response = text.clone();
-    match window_ime::ipc_set_preedit(w, engine, text, cursor) {
+    match window_ime::ipc_set_preedit(w, &engine.read(), text, cursor) {
         Some((anchor_col, anchor_row, surface_id)) => JsonRpcResponse::success(
             id,
             json!({
@@ -85,7 +85,7 @@ fn handle_ime_commit(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
     };
 
-    window_ime::ipc_commit(w, engine, &text);
+    window_ime::ipc_commit(w, &engine.read(), &text);
 
     JsonRpcResponse::success(id, json!({ "committed": true, "text": text }))
 }

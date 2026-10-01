@@ -100,7 +100,7 @@ pub(crate) fn mapping_to_json(mapping: &Option<WorkspaceAttachMapping>) -> serde
 
 pub fn handle_workspace_list(
     window: &dyn crate::ipc::window_port::IpcWindow,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let workspaces: Vec<_> = engine
@@ -116,7 +116,7 @@ pub fn handle_workspace_list(
                 "description": ws.description,
                 "active": i == window.active_workspace_index(engine),
                 "pane_count": ws.pane_layout().all_pane_ids().len(),
-                "busy_count": engine.busy_count(&sids),
+                "busy_count": engine.read().busy_count(&sids),
                 "attach_mapping": mapping_to_json(&ws.attach_mapping),
                 // 연결 설정과 현재 mirror 여부는 다르다.
                 "mirror": ws.mirror,

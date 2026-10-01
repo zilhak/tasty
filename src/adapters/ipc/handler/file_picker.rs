@@ -81,9 +81,15 @@ pub fn handle_trigger(
             dir: Some(dir),
             origin_surface_id: req.origin_surface_id,
         },
-        None => FilePickerStart::from_surface(&engine.as_ref(), req.origin_surface_id),
+        None => FilePickerStart::from_surface(&engine.read(), req.origin_surface_id),
     };
-    crate::adapters::ui::popup::file_picker::open(state, engine, requester, req.filters, start);
+    crate::adapters::ui::popup::file_picker::open(
+        state,
+        &engine.read(),
+        requester,
+        req.filters,
+        start,
+    );
 
     JsonRpcResponse::success(id, json!({ "request_id": request_id }))
 }

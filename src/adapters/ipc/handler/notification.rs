@@ -4,10 +4,11 @@ use crate::i18n::t;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 pub fn handle_notification_list(
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let notifications: Vec<_> = engine
+        .live
         .notifications
         .all()
         .rev()

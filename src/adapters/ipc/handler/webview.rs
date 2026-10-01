@@ -50,7 +50,10 @@ pub fn handle_set_url(
                     let Some(layout) = tab.layout_if_initialized() else {
                         continue;
                     };
-                    let Some(surface) = layout.find_surface(sid) else {
+                    let Some(surface) = layout
+                        .find_surface(sid)
+                        .and_then(|_| engine.find_surface_by_id(sid))
+                    else {
                         continue;
                     };
                     if let Some(rs) = surface
@@ -103,7 +106,10 @@ pub fn notify_navigation_attempt(
                     let Some(layout) = tab.layout_if_initialized() else {
                         continue;
                     };
-                    let Some(surface) = layout.find_surface(surface_id) else {
+                    let Some(surface) = layout
+                        .find_surface(surface_id)
+                        .and_then(|_| engine.find_surface_by_id(surface_id))
+                    else {
                         continue;
                     };
                     if let Some(rs) = surface

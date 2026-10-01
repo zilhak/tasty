@@ -1,20 +1,20 @@
 //! image.open과 image.list는 호스트에서 처리한다. 픽셀 편집은 image 플러그인으로 전달한다.
 //! open은 surface_id를 명시하고 list는 모든 이미지 surface를 조회한다.
 
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineRef;
 use serde_json::{Value, json};
 
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
 
-pub fn handle_list(engine: &crate::core::CoreState, id: Value) -> JsonRpcResponse {
+pub fn handle_list(engine: &EngineRef<'_>, id: Value) -> JsonRpcResponse {
     let mut entries: Vec<Value> = Vec::new();
     for workspace in &engine.workspaces() {
         for pid in workspace.pane_layout().all_pane_ids() {
             if let Some(pane) = workspace.pane_layout().find_pane(pid) {
                 for tab in &pane.tabs {
-                    collect_image_panels(tab.layout(), &mut entries);
+                    collect_image_panels(engine, tab.layout(), &mut entries);
                 }
             }
         }
@@ -22,14 +22,19 @@ pub fn handle_list(engine: &crate::core::CoreState, id: Value) -> JsonRpcRespons
     JsonRpcResponse::success(id, json!({ "entries": entries }))
 }
 
-fn collect_image_panels(layout: &crate::model::SurfaceLayout, out: &mut Vec<Value>) {
+fn collect_image_panels(
+    engine: &EngineRef<'_>,
+    layout: &crate::model::SurfaceLayout,
+    out: &mut Vec<Value>,
+) {
     match layout {
         crate::model::SurfaceLayout::Leaf(surface) => {
             // dir_count/current_index는 플러그인이 관리하므로 여기서는 surface_id/path만 반환한다.
-            if let Some(ms) = surface
-                .as_any()
-                .downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>()
-                && ms.kind_static == "image"
+            if let Some(ms) = engine.find_surface_by_id(surface.id).and_then(|surface| {
+                surface
+                    .as_any()
+                    .downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>()
+            }) && ms.kind_static == "image"
             {
                 out.push(json!({
                     "surface_id": ms.id,
@@ -38,8 +43,8 @@ fn collect_image_panels(layout: &crate::model::SurfaceLayout, out: &mut Vec<Valu
             }
         }
         crate::model::SurfaceLayout::Split { first, second, .. } => {
-            collect_image_panels(first, out);
-            collect_image_panels(second, out);
+            collect_image_panels(engine, first, out);
+            collect_image_panels(engine, second, out);
         }
     }
 }

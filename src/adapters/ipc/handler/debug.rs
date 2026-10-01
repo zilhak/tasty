@@ -12,7 +12,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 use super::require_surface_id;
 
 pub(super) fn require_input_simulation(
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     id: &serde_json::Value,
 ) -> Result<(), JsonRpcResponse> {
     if !engine.runtime.input_simulation_enabled {
@@ -34,7 +34,7 @@ pub(super) fn handle_debug_inject_mouse(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_input_simulation(engine, &id) {
+    if let Err(e) = require_input_simulation(&engine.as_ref(), &id) {
         return e;
     }
     let surface_id = match require_surface_id(params, &id) {
@@ -178,7 +178,7 @@ pub(super) fn handle_debug_host_popup_close(
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_modhint_hold(
     state: &mut RequestContext,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -206,7 +206,7 @@ pub(super) fn handle_debug_modhint_hold(
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_modhint_state(
     state: &RequestContext,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let theme = crate::theme::theme();
@@ -362,7 +362,7 @@ pub(super) fn handle_debug_inject_key(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_input_simulation(engine, &id) {
+    if let Err(e) = require_input_simulation(&engine.as_ref(), &id) {
         return e;
     }
     let surface_id = match require_surface_id(params, &id) {

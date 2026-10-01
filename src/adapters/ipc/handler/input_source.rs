@@ -16,7 +16,7 @@ use crate::state::RequestContext;
 /// 시스템 전역 입력 소스를 바꾸므로 `--enable-input-simulation` 게이트를 지난다.
 pub fn handle_switch_input_source(
     _state: &RequestContext,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -41,7 +41,7 @@ pub fn handle_switch_input_source(
 /// 손쉬운 사용 권한은 호출마다 확인한다. 미승인 시 이벤트가 무시되므로 먼저 오류로 답한다.
 pub fn handle_raw_key(
     _state: &RequestContext,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

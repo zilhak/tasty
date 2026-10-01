@@ -62,7 +62,11 @@ pub(super) fn handle_debug_close_workspace(
             "Refusing to close the last workspace (would leave no workspace)",
         );
     }
-    let closed = state.close_workspace_at(engine, index, crate::state::WorkspaceCloseOrigin::User);
+    let closed = state.close_workspace_at(
+        &engine.read(),
+        index,
+        crate::state::WorkspaceCloseOrigin::User,
+    );
     JsonRpcResponse::success(id, json!({"closed": closed, "index": index}))
 }
 
@@ -83,6 +87,6 @@ pub(super) fn handle_debug_switch_workspace(
             format!("Workspace index {index} out of range"),
         );
     }
-    state.switch_workspace(engine, index);
+    state.switch_workspace(&engine.read(), index);
     JsonRpcResponse::success(id, json!({"switched": true, "active": index}))
 }

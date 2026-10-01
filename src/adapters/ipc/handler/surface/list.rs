@@ -31,7 +31,10 @@ fn collect_tab_surface_info(
     if tab.is_split() {
         collect_surface_layout_info(engine, tab.layout(), pane_id, workspace_id, tab_idx, out);
     } else {
-        let Some(surface) = tab.first_surface_id().and_then(|id| tab.surface(id)) else {
+        let Some(surface) = tab
+            .first_surface_id()
+            .and_then(|id| engine.find_surface_by_id(id))
+        else {
             return;
         };
         if let Some(node) = surface
@@ -47,7 +50,7 @@ fn collect_tab_surface_info(
                 "type": "Terminal",
                 "cols": t.map(|x| x.cols()).unwrap_or(0),
                 "rows": t.map(|x| x.rows()).unwrap_or(0),
-                "busy": engine.is_surface_busy(node.id),
+                "busy": engine.read().is_surface_busy(node.id),
                 "pty_ready": engine.runtime.terminals.contains(node.id),
                 "attached": engine.live.occupancy.is_hard_occupied(node.id),
             });
@@ -67,7 +70,7 @@ fn collect_tab_surface_info(
             // expose `type: "Terminal"` so agents can target them like any
             // other terminal — they just report `pty_ready: false` until the
             // PTY is spawned (auto on send, manual via `tasty wake`).
-            let deferred = tab.is_surface_deferred(id);
+            let deferred = engine.is_surface_deferred(id);
             let mut entry = json!({
                 "id": id,
                 "pane_id": pane_id,
@@ -100,8 +103,8 @@ fn collect_surface_layout_info(
                 "pane_id": pane_id,
                 "workspace_id": workspace_id,
                 "tab_index": tab_idx,
-                "type": surface.type_name(),
-                "busy": engine.is_surface_busy(id),
+                "type": engine.find_surface_by_id(id).map(|surface| surface.type_name()).unwrap_or("Empty"),
+                "busy": engine.read().is_surface_busy(id),
                 "attached": engine.live.occupancy.is_hard_occupied(id),
             });
             if let Some(terminal) = engine.runtime.terminals.get(id) {

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 pub fn handle_set_cwd(
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -25,7 +25,10 @@ pub fn handle_set_cwd(
         for &pid in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
                 for tab in &pane.tabs {
-                    let Some(surface) = tab.surface(sid) else {
+                    let Some(surface) = tab
+                        .surface(sid)
+                        .and_then(|_| engine.find_surface_by_id(sid))
+                    else {
                         continue;
                     };
                     if let Some(rs) = surface

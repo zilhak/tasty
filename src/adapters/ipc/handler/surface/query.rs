@@ -119,7 +119,7 @@ pub(crate) fn handle_mouse_tracking(
             terminal.mouse_tracking(),
             terminal.sgr_mouse(),
             engine.live.occupancy.is_hard_occupied(surface_id),
-            engine.is_surface_mouse_capture_disabled(surface_id),
+            engine.read().is_surface_mouse_capture_disabled(surface_id),
         ),
     )
 }

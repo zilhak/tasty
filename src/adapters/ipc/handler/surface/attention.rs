@@ -8,7 +8,7 @@ use super::require_surface_id;
 
 /// 명시한 surface의 attention을 completion/needs_input/null로 반환한다.
 pub(crate) fn handle_attention_get(
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -23,7 +23,7 @@ pub(crate) fn handle_attention_get(
         id,
         json!({
             "surface_id": surface_id,
-            "kind": engine.attention_kind(surface_id).map(AttentionKind::to_wire),
+            "kind": engine.read().attention_kind(surface_id).map(AttentionKind::to_wire),
         }),
     )
 }

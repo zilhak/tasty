@@ -11,7 +11,7 @@ use super::require_surface_id;
 use crate::plugin_bridge::remote_surface::RemoteSurface;
 
 pub(crate) fn handle_html_script(
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {

@@ -32,7 +32,9 @@ pub(crate) fn handle_acquire(
         Err(e) => return e,
     };
     // 실재하는(또는 deferred) 터미널 surface 만 점유 대상. 없는 id 점유 방지.
-    if !engine.runtime.terminals.contains(surface_id) && !engine.is_surface_deferred(surface_id) {
+    if !engine.runtime.terminals.contains(surface_id)
+        && !engine.as_ref().is_surface_deferred(surface_id)
+    {
         return JsonRpcResponse::invalid_params(
             id,
             format!("Surface {surface_id} not found or not attachable"),
