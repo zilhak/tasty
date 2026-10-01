@@ -12,6 +12,9 @@ tasty-i18n = { path = "../tasty-i18n" }
 tasty-ipc = { path = "../tasty-ipc" }
 tasty-remote-profiles = { path = "../tasty-remote-profiles" }
 tasty-ssh = { path = "../tasty-ssh" }
+tasty-model = { path = "../tasty-model" }
+tasty-utils = { path = "../tasty-utils" }
+tracing = "0.1"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

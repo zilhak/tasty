@@ -772,3 +772,5 @@ impl TerminalReadView<'_> {
 
 #[cfg(test)]
 mod tests;
+
+pub use sink::ExternalInput;

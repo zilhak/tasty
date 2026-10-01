@@ -9,8 +9,8 @@ use std::time::Instant;
 use tasty_remote_profiles::{Passkeys, RemoteProfiles};
 use tasty_ssh::{self as ssh, Backoff, PortMode, SshTarget, SshTunnel};
 
-use crate::remote::client_session::SessionState;
-use crate::remote::outbound::{ReconnectSlot,AutoAttachOutcome};
+use tasty_remote::client_session::SessionState;
+use tasty_remote::outbound::{ReconnectSlot,AutoAttachOutcome};
 use crate::app::App;
 use crate::model::WorkspaceAttachTarget;
 use crate::view::ui::View as _;
@@ -19,16 +19,6 @@ use crate::view::ui::View as _;
 const MAX_RECONNECT_ATTEMPTS: u32 = 20;
 
 
-impl ReconnectSlot {
-    fn new() -> Self {
-        Self {
-            backoff: Backoff::new(),
-            next_attempt: Instant::now(),
-            attempts: 0,
-            given_up: false,
-        }
-    }
-}
 
 fn reconnect_due(slot: Option<&ReconnectSlot>, now: Instant) -> bool {
     match slot {
@@ -138,7 +128,7 @@ impl App {
         let proxy = self.view.proxy.clone();
         let target = mapping.target.clone();
         // SSH 연결 준비가 메인 루프를 막지 않게 한다.
-        std::thread::spawn(move || {
+        self.remote.spawn_attempt(move || {
             let result = resolve_endpoint(&target);
             let outcome = AutoAttachOutcome {
                 attempt,
@@ -198,7 +188,7 @@ impl App {
             let tx = self.remote.tx.clone();
             let proxy = self.view.proxy.clone();
             let target = mapping.target.clone();
-            std::thread::spawn(move || {
+            self.remote.spawn_attempt(move || {
                 let result = resolve_endpoint(&target);
                 let outcome = AutoAttachOutcome {
                     attempt,
@@ -214,6 +204,7 @@ impl App {
     }
 
     pub(crate) fn drain_auto_attach_results(&mut self) {
+        self.remote.reap_attempts();
         while let Ok(outcome) = self.remote.rx.try_recv() {
             self.apply_auto_attach_outcome(outcome);
         }

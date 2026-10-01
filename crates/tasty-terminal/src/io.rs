@@ -182,6 +182,17 @@ impl Terminal {
         state.events.clear();
     }
 
+    /// A nonblocking external endpoint. Remote applies its own bounded admission synchronously;
+    /// Terminal owns neither a second unbounded byte queue nor a forwarding worker.
+    pub fn bind_external_input(&mut self,send:crate::ExternalInput,reconnect:bool) {
+        let mut state=self.lock_state();
+        if reconnect {
+            state.connection.revoke();state.connection=crate::binding::ConnectionLease::new();
+            state.enqueued_count=0;state.events.clear();
+        }
+        state.sink=Some(OutputSink::callback(send).bind(state.connection.clone()));
+    }
+
     /// Plumb the host's resolved theme palette so OSC 10/11/12/4 color *queries*
     /// are answered with the colors the renderer actually draws. The host calls
     /// this on terminal creation and whenever the theme changes.

@@ -177,7 +177,7 @@ pub(crate) struct App {
     #[cfg(feature = "gui")]
     pub(crate) pending_focus_hint_clear: std::collections::HashSet<WindowId>,
     #[cfg(feature="gui")]
-    pub(crate) remote:crate::remote::outbound::Remote,
+    pub(crate) remote:tasty_remote::outbound::Remote,
     /// 스크린샷→클립보드 캡처 워커 스레드 → 메인 루프 결과 채널.
     #[cfg(feature = "gui")]
     pub(crate) screenshot_capture_tx:
@@ -270,7 +270,7 @@ impl App {
                 })
             }),
             pending_focus_hint_clear: std::collections::HashSet::new(),
-            remote:crate::remote::outbound::Remote::new(),
+            remote:tasty_remote::outbound::Remote::new(),
             screenshot_capture_tx,
             screenshot_capture_rx,
             image_upload_tx,

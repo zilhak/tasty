@@ -6,7 +6,7 @@ use serde_json::Value;
 use tasty_ipc::client::StreamConnection;
 use tasty_ipc::stream::{self,STREAM_PROTO,StreamControl,StreamTag};
 use super::client_session::{MirrorEvent,MirrorOutbox,OutFrame,FrameSender};
-pub(crate) fn attach_handshake(
+pub fn attach_handshake(
     port: u16,
     workspace: u32,
     log_prefix: &str,
@@ -31,7 +31,7 @@ pub(crate) fn attach_handshake(
     Ok((conn, client_id, write_half, name, surfaces, tree))
 }
 
-pub(crate) fn arm_attach_timeouts(sock: &TcpStream, log_prefix: &str) {
+pub fn arm_attach_timeouts(sock: &TcpStream, log_prefix: &str) {
     if let Err(e) = sock.set_read_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
         tracing::warn!("{log_prefix}: failed to set read timeout: {e}");
     }
@@ -40,7 +40,7 @@ pub(crate) fn arm_attach_timeouts(sock: &TcpStream, log_prefix: &str) {
     }
 }
 
-pub(crate) fn parse_attach_descriptor(ctrl: &Value) -> anyhow::Result<(String, Vec<Value>, Value)> {
+pub fn parse_attach_descriptor(ctrl: &Value) -> anyhow::Result<(String, Vec<Value>, Value)> {
     match ctrl.get("event").and_then(|v| v.as_str()) {
         Some("attached_workspace") => {}
         Some("attach_error") => {
@@ -66,16 +66,21 @@ pub(crate) fn parse_attach_descriptor(ctrl: &Value) -> anyhow::Result<(String, V
     Ok((name, surfaces, tree))
 }
 
-pub(crate) fn spawn_attach_write_thread(
+pub fn spawn_attach_write_thread(
     write_half: TcpStream,
     frame_rx: std::sync::mpsc::Receiver<super::connection::QueuedFrame>,
     disconnected: Arc<AtomicBool>,
     wake:Arc<dyn Fn()+Send+Sync>,
     log_suffix: &'static str,
-) {
+) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut write_half = write_half;
-        for queued in frame_rx {
+        loop {
+            let queued=match frame_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                Ok(queued)=>queued,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) if !disconnected.load(Ordering::Acquire)=>continue,
+                Err(_)=>break,
+            };
             let item=queued.frame;
             let detach=item.tag==StreamTag::Detach;
             if !detach && (!queued.epoch.is_active() || disconnected.load(Ordering::Acquire)) {continue;}
@@ -92,10 +97,10 @@ pub(crate) fn spawn_attach_write_thread(
                 break;
             }
         }
-    });
+    })
 }
 
-pub(crate) fn spawn_attach_reader_thread(
+pub fn spawn_attach_reader_thread(
     mut conn: StreamConnection,
     output: MirrorOutbox,
     disconnected: Arc<AtomicBool>,
@@ -103,7 +108,7 @@ pub(crate) fn spawn_attach_reader_thread(
     local_workspace: u32,
     log_suffix: &'static str,
     decode_control:fn(&[u8])->Option<MirrorEvent>,
-) {
+) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut mesh_assembler = tasty_ipc::mesh_stream::MeshFrameAssembler::new();
         loop {
@@ -159,13 +164,13 @@ pub(crate) fn spawn_attach_reader_thread(
                 }
             }
         }
-    });
+    })
 }
 
-pub(crate) fn spawn_attach_heartbeat_thread(raw_frame_tx: FrameSender, disconnected: Arc<AtomicBool>) {
+pub fn spawn_attach_heartbeat_thread(raw_frame_tx: FrameSender, disconnected: Arc<AtomicBool>) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         loop {
-            std::thread::sleep(stream::HEARTBEAT_INTERVAL);
+            std::thread::park_timeout(stream::HEARTBEAT_INTERVAL);
             if disconnected.load(Ordering::SeqCst) {
                 break;
             }
@@ -179,5 +184,55 @@ pub(crate) fn spawn_attach_heartbeat_thread(raw_frame_tx: FrameSender, disconnec
                 break;
             }
         }
+    })
+}
+
+/// The connection owns every I/O worker. Retirement is nonblocking for the GUI: a short-lived
+/// reaper closes the exact socket and joins its workers, never a current replacement connection.
+#[derive(Clone)]
+pub struct RetirementReceipt(std::sync::Arc<std::sync::atomic::AtomicU8>);
+impl RetirementReceipt {
+    pub fn is_done(&self)->bool {self.0.load(Ordering::Acquire)!=0}
+    pub fn failed(&self)->bool {self.0.load(Ordering::Acquire)==2}
+}
+pub struct ConnectionWorkers {
+    receipt:RetirementReceipt,
+    control:Option<TcpStream>,
+    handles:Vec<std::thread::JoinHandle<()>>,
+}
+impl ConnectionWorkers {
+    pub fn new(control:TcpStream,handles:Vec<std::thread::JoinHandle<()>>)->Self {Self {receipt:RetirementReceipt(Arc::new(std::sync::atomic::AtomicU8::new(0))),control:Some(control),handles}}
+    pub fn receipt(&self)->RetirementReceipt {self.receipt.clone()}
+}
+impl Drop for ConnectionWorkers {
+    fn drop(&mut self) {
+        let Some(control)=self.control.take() else {return;};
+        let handles=std::mem::take(&mut self.handles);
+        for handle in &handles {handle.thread().unpark();}
+        let receipt=self.receipt.clone();
+        std::thread::spawn(move || {
+            let deadline=std::time::Instant::now()+std::time::Duration::from_millis(250);
+            while !handles.iter().all(std::thread::JoinHandle::is_finished) && std::time::Instant::now()<deadline {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            if let Err(error)=control.shutdown(std::net::Shutdown::Both) {tracing::debug!("retired remote socket already closed: {error}");}
+            let mut failed=false;
+            for handle in handles {if handle.join().is_err() {failed=true;tracing::error!("remote I/O worker panicked during retirement");}}
+            receipt.0.store(if failed {2}else {1},Ordering::Release);
+        });
+    }
+}
+
+/// Retain ownership of non-socket connection workers (SSH endpoint resolution) through join.
+/// Cancellation is supplied by the attempt token; a slow external resolver is reported by the
+/// Remote shutdown deadline instead of treating detached execution as completed.
+pub(crate) fn join_attempt_workers(handles:Vec<std::thread::JoinHandle<()>>)->RetirementReceipt {
+    let receipt=RetirementReceipt(Arc::new(std::sync::atomic::AtomicU8::new(0)));
+    let result=receipt.clone();
+    std::thread::spawn(move || {
+        let mut failed=false;
+        for handle in handles {if handle.join().is_err() {failed=true;tracing::error!("remote endpoint worker panicked");}}
+        result.0.store(if failed {2}else {1},Ordering::Release);
     });
+    receipt
 }

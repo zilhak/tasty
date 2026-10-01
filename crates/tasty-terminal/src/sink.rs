@@ -29,8 +29,10 @@ pub(crate) fn new_write_progress() -> WriteProgress {
 }
 
 /// Terminal이 byte를 내보내는 현재 연결. 보낸 순서대로 전달된다.
+pub type ExternalInput = Arc<dyn Fn(Vec<u8>)->Result<(),mpsc::SendError<Vec<u8>>>+Send+Sync>;
+enum Target {Channel(mpsc::Sender<Vec<u8>>),External(ExternalInput)}
 pub(crate) struct OutputSink {
-    tx: mpsc::Sender<Vec<u8>>,
+    target:Target,
     /// local Pty writer의 완료 카운터. 외부 채널은 완료를 보고하지 않으므로 증가하지 않는다.
     progress: WriteProgress,
     lease: Option<crate::binding::ConnectionLease>,
@@ -40,7 +42,7 @@ impl OutputSink {
     /// 완료 카운터를 가진 writer(local Pty)와 연결한다.
     pub(crate) fn with_progress(tx: mpsc::Sender<Vec<u8>>, progress: WriteProgress) -> Self {
         Self {
-            tx,
+            target:Target::Channel(tx),
             progress,
             lease: None,
         }
@@ -51,11 +53,13 @@ impl OutputSink {
         Self::with_progress(tx, new_write_progress())
     }
 
+    pub(crate) fn callback(send:ExternalInput)->Self {Self {target:Target::External(send),progress:new_write_progress(),lease:None}}
+
     pub(crate) fn send(&self, bytes: Vec<u8>) -> Result<(), mpsc::SendError<Vec<u8>>> {
         if self.lease.as_ref().is_some_and(|lease| !lease.is_active()) {
             return Err(mpsc::SendError(bytes));
         }
-        self.tx.send(bytes)
+        match &self.target {Target::Channel(tx)=>tx.send(bytes),Target::External(send)=>send(bytes)}
     }
 
     pub(crate) fn bind(mut self, lease: crate::binding::ConnectionLease) -> Self {

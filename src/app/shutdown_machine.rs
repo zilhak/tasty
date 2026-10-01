@@ -283,12 +283,19 @@ impl App {
         self.emit_shutdown_initiated();
         self.shutdown_close_surfaces();
         self.shutdown_join_observer_sinks();
+        self.remote.begin_shutdown();
         self.begin_plugin_shutdown();
         self.set_shutdown_phase(ShutdownPhase::StoppingPlugins);
         StepOutcome::Advanced
     }
 
     fn shutdown_step_stopping_plugins(&mut self) -> StepOutcome {
+        let remote=self.remote.shutdown_observation();
+        match remote {
+            tasty_remote::outbound::ShutdownObservation::Waiting=>return StepOutcome::Waiting,
+            tasty_remote::outbound::ShutdownObservation::Joined=>{},
+            other=>tracing::warn!(?other,"remote I/O retirement was not a confirmed clean join"),
+        }
         let done = match self.plugin_manager.as_mut() {
             Some(mgr) => mgr.poll_shutdown_all(),
             None => true,

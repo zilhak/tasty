@@ -9,8 +9,8 @@ mod navigation_tests;
 
 use crate::runtime::engine_access::EngineMut;
 use dispatch::{AttachSource, Outcome, dispatch_attach};
-use crate::remote::client_session::*;
-use crate::remote::transport::*;
+use tasty_remote::client_session::*;
+use tasty_remote::transport::*;
 
 use std::collections::{HashMap, HashSet};
 use std::net::TcpStream;
@@ -115,7 +115,7 @@ impl App {
         let (conn, client_id, write_half, name, surfaces, tree) =
             attach_handshake(port, workspace, "gui attach")?;
 
-        let (frame_tx,frame_rx)=crate::remote::connection::channel();
+        let (frame_tx,frame_rx)=tasty_remote::connection::channel();
         // 재연결해도 입력 forwarder가 새 sender를 볼 수 있도록 공유 핸들을 유지한다.
         
 
@@ -159,8 +159,10 @@ impl App {
 
         let output = MirrorOutbox::new(frame_tx.epoch());
         let disconnected = Arc::new(AtomicBool::new(false));
+        frame_tx.bind_failure(disconnected.clone(),attach_wake(&proxy));
 
-        spawn_attach_write_thread(
+        let control=write_half.try_clone()?;
+        let writer=spawn_attach_write_thread(
             write_half,
             frame_rx,
             disconnected.clone(),
@@ -168,7 +170,7 @@ impl App {
             "",
         );
 
-        spawn_attach_reader_thread(
+        let reader=spawn_attach_reader_thread(
             conn,
             output.clone(),
             disconnected.clone(),
@@ -181,10 +183,12 @@ impl App {
         // heartbeat는 이 연결의 sender와 종료 신호를 사용한다. 재연결 시 새 스레드를 만든다.
         let raw_frame_tx =
             frame_tx.clone();
-        spawn_attach_heartbeat_thread(raw_frame_tx, disconnected.clone());
+        let heartbeat=spawn_attach_heartbeat_thread(raw_frame_tx, disconnected.clone());
+        let workers=ConnectionWorkers::new(control,vec![writer,reader,heartbeat]);
+        self.remote.track_workers(workers.receipt());
 
         self.remote.sessions.push(AttachClientSession {
-            transport:ClientTransport {output,disconnected,frame_tx,tunnel},
+            transport:ClientTransport {workers,output,disconnected,frame_tx,tunnel},
             state:ClientSessionState {
             structure_ids,
             local_workspace: local_ws_id,
@@ -229,7 +233,7 @@ impl App {
             attach_handshake(port, workspace, "gui reconnect")?;
 
         // Retiring the prior epoch rejects its queued frames; survivors receive a new sink.
-        let (shared_frame_tx,frame_rx)=crate::remote::connection::channel();
+        let (shared_frame_tx,frame_rx)=tasty_remote::connection::channel();
 
         let Some(wid) = self.find_main_with_workspace(local_workspace) else {
             anyhow::bail!(
@@ -242,7 +246,6 @@ impl App {
             let sess = &mut self.remote.sessions[sess_idx];
             sess.transport.frame_tx.retire();
             sess.transport.disconnected.store(true,Ordering::Release);
-            sess.transport.frame_tx=shared_frame_tx.clone();
 
             let Some((main, mut engine)) = engines_mut!(self).window_pair(wid) else {
                 anyhow::bail!("window {wid:?} 가 더 이상 MainView 가 아님 — 재연결 취소");
@@ -336,8 +339,10 @@ impl App {
 
         let output = MirrorOutbox::new(shared_frame_tx.epoch());
         let disconnected = Arc::new(AtomicBool::new(false));
+        shared_frame_tx.bind_failure(disconnected.clone(),attach_wake(&proxy));
 
-        spawn_attach_write_thread(
+        let control=write_half.try_clone()?;
+        let writer=spawn_attach_write_thread(
             write_half,
             frame_rx,
             disconnected.clone(),
@@ -345,7 +350,7 @@ impl App {
             "(재연결)",
         );
 
-        spawn_attach_reader_thread(
+        let reader=spawn_attach_reader_thread(
             conn,
             output.clone(),
             disconnected.clone(),
@@ -357,14 +362,14 @@ impl App {
 
         let raw_frame_tx =
             shared_frame_tx.clone();
-        spawn_attach_heartbeat_thread(raw_frame_tx, disconnected.clone());
+        let heartbeat=spawn_attach_heartbeat_thread(raw_frame_tx, disconnected.clone());
+        let workers=ConnectionWorkers::new(control,vec![writer,reader,heartbeat]);
+        self.remote.track_workers(workers.receipt());
 
         let sess = &mut self.remote.sessions[sess_idx];
-        sess.transport.output = output;
-        sess.transport.disconnected = disconnected;
+        sess.transport=ClientTransport {workers,output,disconnected,frame_tx:shared_frame_tx,tunnel};
         sess.state.client_id = client_id;
         sess.state.bulk_port = port;
-        sess.transport.tunnel = tunnel;
         sess.state.op_seq = 0;
         sess.state.pending_op_focus.clear();
         sess.state.agent_requests.clear();
@@ -1795,9 +1800,11 @@ fn apply_one_mirror_event(
             truncated,
             reason,
         } => {
-            apply_list_dir_result_event(
-                sess, host, request_id, ok, dir, entries, truncated, reason,
-            );
+            let entries=entries.map(|entries|entries.into_iter().map(|entry|crate::core::fs_list::DirEntryInfo {
+                path:dir.as_deref().map(|dir|std::path::Path::new(dir).join(&entry.name)).unwrap_or_else(||std::path::PathBuf::from(&entry.name)),
+                name:entry.name,is_dir:entry.is_dir,size:entry.size,modified:entry.modified,ext:entry.ext,
+            }).collect());
+            apply_list_dir_result_event(sess,host,request_id,ok,dir,entries,truncated,reason);
         }
         MirrorEvent::GitQueryResult {
             request_id,
@@ -2597,12 +2604,7 @@ fn parse_list_dir_result(payload: &[u8]) -> Option<MirrorEvent> {
     let wire: ListDirResultWire = serde_json::from_value(value).ok()?;
     let entries = wire.entries.map(|es| {
         es.into_iter()
-            .map(|e| crate::core::fs_list::DirEntryInfo {
-                path: wire
-                    .dir
-                    .as_deref()
-                    .map(|d| std::path::Path::new(d).join(&e.name))
-                    .unwrap_or_else(|| std::path::PathBuf::from(&e.name)),
+            .map(|e| tasty_remote::client_session::RemoteDirEntry {
                 name: e.name,
                 is_dir: e.is_dir,
                 size: e.size,
@@ -2897,7 +2899,7 @@ fn send_bulk_payload(
     file_name: &str,
     bytes: &[u8],
     on_progress: impl Fn(u64, u64),
-    epoch:&crate::remote::connection::ConnectionEpoch,
+    epoch:&tasty_remote::connection::ConnectionEpoch,
 ) -> anyhow::Result<()> {
     let begin = StreamControl::BulkBegin {
         transfer_id,
@@ -2926,7 +2928,7 @@ fn send_bulk_payload(
 
 /// 해당 transfer_id의 결과를 기다린다. Ping이나 다른 응답은 무시하므로 전체 대기 기한은 없다.
 /// 소켓 timeout이 설정됐다면 개별 읽기에 적용된다.
-fn await_bulk_result(conn:&mut StreamConnection,transfer_id:u64,epoch:&crate::remote::connection::ConnectionEpoch)->anyhow::Result<String> {
+fn await_bulk_result(conn:&mut StreamConnection,transfer_id:u64,epoch:&tasty_remote::connection::ConnectionEpoch)->anyhow::Result<String> {
     loop {
         ensure_bulk_epoch(epoch)?;
         let frame = conn.recv()?;
@@ -2981,7 +2983,7 @@ pub(crate) fn upload_file_over_bulk(
     file_name: &str,
     bytes: &[u8],
     on_progress: impl Fn(u64, u64),
-    epoch:&crate::remote::connection::ConnectionEpoch,
+    epoch:&tasty_remote::connection::ConnectionEpoch,
 ) -> anyhow::Result<String> {
     ensure_bulk_epoch(epoch)?;
     let transfer_id = next_bulk_transfer_id();
@@ -5266,29 +5268,17 @@ fn attach_wake(proxy:&EventLoopProxy<AppEvent>)->Arc<dyn Fn()+Send+Sync> {
 }
 
 fn bind_mirror_input(mirror:&mut Terminal,remote_id:u32,frame_tx:&SharedFrameSender,reconnect:bool) {
-    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
-    if reconnect {mirror.replace_external_connection(tx);} else {mirror.set_input_sink(tx);}
-    let frame_tx = frame_tx.clone();
-    // 프레임 상한에서 mux 헤더를 뺀 크기로 나눠 paste 순서를 유지한다.
-    // 매번 현재 sender를 읽고, 연결이 끊겨 전송에 실패해도 forwarder는 다음 입력을 기다린다.
-    // 실패한 청크는 재전송하지 않으며 터미널 sink가 닫히면 스레드도 종료한다.
-    std::thread::spawn(move || {
-        const MAX_BODY: usize = (stream::MAX_FRAME_LEN as usize) - 4;
-        for chunk in rx {
-            for part in chunk.chunks(MAX_BODY) {
-                let framed = stream::encode_mux(remote_id, part);
-                if frame_tx
-                    .send(OutFrame {
-                        tag: StreamTag::Data,
-                        payload: framed,
-                    })
-                    .is_err()
-                {
-                    continue;
-                }
+    let sender=frame_tx.clone();
+    mirror.bind_external_input(Arc::new(move |bytes| {
+        const MAX_BODY:usize=stream::MAX_FRAME_LEN as usize-4;
+        for part in bytes.chunks(MAX_BODY) {
+            if sender.send(OutFrame {tag:StreamTag::Data,payload:stream::encode_mux(remote_id,part)}).is_err() {
+                // A partial paste is an explicit retired-connection loss, never a replay candidate.
+                return Err(std::sync::mpsc::SendError(bytes));
             }
         }
-    });
+        Ok(())
+    }),reconnect);
 }
 
 impl App {
@@ -5323,6 +5313,6 @@ pub(crate) struct RemoteTarget {
     pub(crate) remote_workspace:u32,
 }
 
-fn ensure_bulk_epoch(epoch:&crate::remote::connection::ConnectionEpoch)->anyhow::Result<()> {
+fn ensure_bulk_epoch(epoch:&tasty_remote::connection::ConnectionEpoch)->anyhow::Result<()> {
     if epoch.is_active() {Ok(())} else {anyhow::bail!("bulk connection retired; remote save outcome may be unknown")}
 }

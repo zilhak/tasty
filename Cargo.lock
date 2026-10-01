@@ -6387,6 +6387,9 @@ dependencies = [
  "tasty-ipc",
  "tasty-remote-profiles",
  "tasty-ssh",
+ "tasty-model",
+ "tasty-utils",
+ "tracing",
 ]
 
 [[package]]

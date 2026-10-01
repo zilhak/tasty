@@ -49,7 +49,7 @@ impl App {
         let proxy = self.view.proxy.clone();
         match target {
             RemoteAttachTarget::Existing(remote_ws) => {
-                std::thread::spawn(move || {
+                self.remote.spawn_attempt(move || {
                     let result = conn.resolve_endpoint();
                     send_attach_outcome(&tx, &proxy, attempt,remote_ws, result);
                 });
@@ -63,7 +63,7 @@ impl App {
             }
             RemoteAttachTarget::Create { name, cwd } => {
                 let response_tx = cmd.response_tx.clone();
-                std::thread::spawn(move || {
+                self.remote.spawn_attempt(move || {
                     remote_attach_create_worker(conn,name,cwd,rpc_id,&response_tx,&tx,&proxy,attempt);
                 });
             }
@@ -133,13 +133,13 @@ impl RemoteAttachTarget {
 
 /// 결과 채널에 터널을 넘기고 메인 루프를 깨운다. mirror 생성은 이후에 수행한다.
 fn send_attach_outcome(
-    tx: &std::sync::mpsc::Sender<crate::remote::outbound::AutoAttachOutcome>,
+    tx: &std::sync::mpsc::Sender<tasty_remote::outbound::AutoAttachOutcome>,
     proxy: &winit::event_loop::EventLoopProxy<AppEvent>,
-    attempt:crate::remote::outbound::AttemptToken,
+    attempt:tasty_remote::outbound::AttemptToken,
     remote_ws: u32,
     result: anyhow::Result<(Option<tasty_ssh::SshTunnel>, u16)>,
 ) {
-    let outcome = crate::remote::outbound::AutoAttachOutcome {
+    let outcome = tasty_remote::outbound::AutoAttachOutcome {
         attempt,
         anchor_ws_id: None,
         remote_ws,
@@ -157,9 +157,9 @@ fn remote_attach_create_worker(
     cwd: Option<String>,
     rpc_id: serde_json::Value,
     response_tx: &std::sync::mpsc::SyncSender<host_ipc::protocol::JsonRpcResponse>,
-    tx: &std::sync::mpsc::Sender<crate::remote::outbound::AutoAttachOutcome>,
+    tx: &std::sync::mpsc::Sender<tasty_remote::outbound::AutoAttachOutcome>,
     proxy: &winit::event_loop::EventLoopProxy<AppEvent>,
-    attempt:crate::remote::outbound::AttemptToken,
+    attempt:tasty_remote::outbound::AttemptToken,
 ) {
     let (tunnel, port) = match conn.resolve_endpoint() {
         Ok(v) => v,
