@@ -169,6 +169,18 @@ pub(super) fn run(
             halted = Some(error.clone());
             result = Err(error);
         }
+        if !was_halted && halted.is_some() {
+            // Publication failure ends all unresolved admissions. Their credits must not survive
+            // the terminal transport failure; committed operations already have durable pins.
+            let abandoned:Vec<_>=pending.drain().map(|(ticket,_)|ticket).collect();
+            let mut inner=executor.inner.lock().expect("worker executor lock");
+            let epoch=inner.epoch;
+            for ticket in abandoned {
+                if let Err(error)=inner.store.release_payload_holder(epoch,&format!("admission/{}/{ticket}",epoch.0)) {
+                    tracing::warn!(%error,"halted admission pin remains for fenced-writer cleanup");
+                }
+            }
+        }
         if checkpoint_requested && halted.is_none() && result.is_ok() {
             checkpoint_published(&executor,published,&readers);
         }
