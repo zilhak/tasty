@@ -73,9 +73,10 @@ CoreState만 필요한 함수에는 구조 참조를, 실행 adapter에는 `Engi
 | `popup_hovered` · `banner_hovered` · `modifier_hint_hovered` · `resize_edge_widget_hovered` | 사용자 view 상태 | 프레임 | egui 패스 → 입력 라우팅 | 없음 |
 | `plugin_popup_open` | 사용자 view 상태 | 프레임 | plugin popup 그리기 → 입력 라우팅 | 없음 |
 | `popup_layers` · `plugin_popup_layers` · `host_popup_hittest` · `popup_escape_owner` · `plugin_popup_hittest` · `banner_layer` · `modifier_hint_layer` | 사용자 view 상태 | 프레임 | egui 패스 → 입력 라우팅 | 없음 |
-| `preset_store` · `memory` | 실행 자원 (Core 소유 Arc 의 사본) | 세션 | Core → — | `memory`는 읽힘, `preset_store`는 없음 |
-| `pending_lifecycle_events` | 실행 자원 (큐) | 요청 | close cascade → 메인 루프가 plugin 에 통지 | 읽힘 |
-| `pending_host_events` | 실행 자원 (큐) | 요청 | `enqueue_host_event` → Event Bus 이벤트 발행 | 읽힘 (headless drain) |
+| `preset_store` | 읽기 facade (`PresetCatalog`) | View 수명 | AppServices 저장소의 목록 query → popup 표시 | 없음 |
+| `memory` | View 필드 아님. AppServices/EngineRuntime의 실행 저장소 | process/engine | App·runtime adapter → 저장 서비스 | EngineRuntime 사용 |
+| `pending_lifecycle_events` | View 필드 아님. EngineRuntime 완료 큐 | engine 요청 | retirement 완료 → plugin 통지 | EngineRuntime 사용 |
+| `pending_host_events` | View 필드 아님. EngineRuntime 및 AppState의 별도 큐 | engine/process 요청 | 확정 결과·표시 관측 → Event Bus, hook 완료 | EngineRuntime drain |
 | `last_focused_surface_id` · `last_active_workspace_id` · `last_focused_tab` · `last_tab_locations` | 실행 자원 (변화 감지 기준값) | 세션 | GUI tick 의 감지 → 같은 자리 | 없음 |
 | `explorer_views` · `dag_graph_views` | 사용자 view 상태 | 열림 (surface 수명) | surface 그리기 → surface 닫힘 | 없음 |
 | `explorer_clipboard` | 사용자 view 상태 | 세션 | explorer 복사·잘라내기 → 잘라내기 붙여넣기 성공 | 없음 |
@@ -92,7 +93,7 @@ CoreState만 필요한 함수에는 구조 참조를, 실행 adapter에는 `Engi
 | `plugin_mesh_banner_regions` | 사용자 view 상태 | 프레임 | egui 패스 → 합성 | 없음 |
 | `plugin_mesh_popup_pending_repaint` · `plugin_mesh_banner_pending_repaint` | 사용자 view 상태 | 요청 | plugin repaint 요청 → 합성 | 없음 |
 | `plugin_popup_user_activated` | 실행 자원 (사용자 행동 근거) | 열림 | `draw_plugin_popups` 입력 forward → popup 닫힘 | 없음 |
-| `webview_user_navigations` | 실행 자원 (사용자 행동 근거) | 요청 | `sync_webviews` → 한 번 쓰이거나 webview 소멸 | 없음 |
+| navigation proof | View 필드 아님. AppServices의 `NavigationProofs` | 원 document·View 요청 | App webview 동기화 → bound 요청에서 1회 소비/만료 | 없음 |
 | `pending_intents` | 실행 자원 (큐) | 요청 | GUI 의 `dispatch_intent` · IPC 진입점이 옮기는 요청 출구 → `dispatch_pending_intents` / headless drain | 읽힘 |
 
 활성 모달의 ID·종류는 MainViewState에 없다. 모달은 앱 전체에 최대 1개라 `ViewRegistry`(`src/view/mod.rs`)가 유일한 원본으로 갖고, `App::open_modal`이 세우고 `App::close_active_modal`과 macOS의 `App::handle_minimize`가 비운다. 이 세 곳 밖에서는 바꾸지 않는다. debug `ui.state`의 `modal_open`·`active_modal_id`·`active_modal_kind`는 handler가 모달 없음으로 채운 뒤 GUI App이 응답을 보내기 전에 이 원본으로 덮어쓴다. 그래서 창과 parked 상태 어느 쪽이 응답해도 같은 값이고, 헤드리스는 늘 모달 없음이다.

@@ -195,7 +195,7 @@ Core의 결과 ID를 App의 공통 구조 adapter가 받아 navigation을 보정
 
 - `workspace.close` 후 App이 navigation을 현재 구조와 대조한다. 선택 ID가 살아 있으면 유지하고 삭제된 선택만 보정한다. 새 제거 경로도 같은 결과 적용을 거친다.
 - **활성 워크스페이스 자신을 닫을 때만** 이웃으로 이동한다.
-- 에이전트가 닫은 것은 사용자의 "닫은 항목" 되돌리기 스택에 쌓이지 않는다. 사용자 경로와 에이전트 경로의 차이는 `close_workspace_at` 의 `WorkspaceCloseOrigin` **하나**로 표현하고, 갈리는 부수효과(되돌리기 스택 · plugin `surface.closed` 의 reason · close 계측 경로값)를 전부 거기서 파생시킨다 — 같은 요청 출처를 여러 값으로 나타내면 일부만 갱신되는 오류가 생길 수 있다.
+- 에이전트가 닫은 것은 사용자의 "닫은 항목" 되돌리기 스택에 쌓이지 않는다. View의 `WorkspaceCloseOrigin`은 고정 ID의 Intent를 만드는 입력 표지다. App journal close admission이 원 Reply/Intent origin에서 `RetirementPlan.is_user_close`와 `remote_user_close`를 정하고, 확정된 계획을 undo·회수·완료 통지까지 유지한다. 원격 사용자 닫기는 undo를 허용하지만 로컬 plugin 이벤트의 User 이유로 바꾸지 않는다.
 - 확정 workspace 닫기의 통지와 memory 정리는 origin에 따른 표시 정책과 구별한다. `ResourceRetirement`가 원 자원 receipt와 metadata 정리를 완료하고 App이 완료 통지를 해소한다. View는 선택·cache만 보정하며 새 제거 경로도 이 필수 정리를 우회하지 않는다([닫기 순서](../../architecture/close-sequence.md)).
 
 ### 파일 열기의 사용자 동작 판정
@@ -293,7 +293,7 @@ IPC에는 토스트 대신 사유를 담은 오류를 반환한다. `surface.clo
 - `tasty close self`: `crates/tasty-cli/src/commands/new_close.rs`(`CloseCommands::CloseSelf`).
 - 창 생성의 origin 분기: `WindowRequestOrigin`(`src/app/event.rs`) → `focus_after_register` · `origin_window_attributes`(`src/app/window_lifecycle.rs`) — 등록 뒤 focused 창과 생성 속성(`with_active` · `with_visible`)이 여기서 파생된다. 에이전트 창을 사용자 창 뒤에 보이는 OS 호출은 `crates/tasty-platform/src/window_stacking.rs`.
 - 탭 생성의 선택 분기: `DomainIntent::CreateTab`의 `activate`를 Core 결과에 연결하고 App adapter가 사용자 continuation으로 처리한다. 값을 정하는 진입점은 App journal 명령 admission의 호출자 · `src/intent/tab.rs` · `open_surface_tab`(`src/file/dispatch.rs`).
-- 워크스페이스 close 의 origin 분기: `WorkspaceCloseOrigin`(`src/state/workspace.rs`) — 되돌리기 스택 · plugin close reason · 계측 경로값이 여기서 파생된다.
+- 워크스페이스 close의 origin: View producer는 `src/state/workspace.rs`, 실제 원 reply/origin 분류와 retirement 계획은 `src/app/journal/commands/close.rs`다.
 - 워크스페이스 제거 후 뒷정리: 확정 닫기의 `workspace.closed` 전달은 App의 완료 후처리이며 workspace 범위 memory 정리는 `ResourceRetirement`의 metadata 정리(`src/runtime/resource_retirement.rs`).
 
 외부 소켓의 전 창 합산·namespace·App 조기 응답도 일반 handler와 같은 진입 검사와 허용된 요청의 사용량 집계를 한 번 거친다. 검사 완료 요청을 하위 라우터에 전달하므로 라우팅 층 수만큼 예산이 소비되지 않는다. [ADR-0012](../../adr/0012-request-admission-and-isolation.md).

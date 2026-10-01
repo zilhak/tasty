@@ -89,9 +89,9 @@ present 한다. **부팅과 같은 렌더 함수와 화면 구성**이고 다른
 
 | phase | 문구 키 | 프레임을 넘기는가 |
 |-------|---------|-------------------|
-| `SavingLayout` | `shutdown.phase_saving_layout` | 파일 저장을 마친 뒤 같은 호출에서 계속 진행 |
+| `SavingLayout` | `shutdown.phase_saving_layout` | publication·View 저장·retirement가 남으면 Waiting으로 다음 회차에서 관측 |
 | `ReclaimingBootWorker` | `shutdown.phase_finishing_startup` | 예 (부팅 중 종료 전용) |
-| `ClosingSurfaces` | `shutdown.phase_closing_surfaces` | 이벤트 전송과 동기 join 뒤 같은 호출에서 계속 진행 |
+| `ClosingSurfaces` | `shutdown.phase_closing_surfaces` | runner stop의 실제 join 관측 등이 남으면 기한까지 Waiting. 완료 또는 명시한 미회수 처리 뒤 다음 단계로 진행 |
 | `StoppingPlugins` | `shutdown.phase_stopping_plugins` | 남은 대상이 있으면 다음 회차에서 확인. kill·wait는 동기 호출 |
 
 SavingLayout과 ClosingSurfaces가 1ms 미만으로 끝난 측정은 아래 조건의 관측값이며 단계의 시간 제한은 아니다.
@@ -111,7 +111,7 @@ SavingLayout과 ClosingSurfaces가 1ms 미만으로 끝난 측정은 아래 조�
   가드는 `event_loop.exit()` **이후에도 유지된다** — winit 은 exit 요청 즉시 루프를
   끊지 않고 콜백을 한 번 더 돌리며(Linux/X11 실측), 그 패스에서 가드가 풀려 있으면
   이미 정리가 끝난 상태로 파이프라인이 돈다. 그래서 `finish_shutdown` 은
-  `App.shutdown` 을 비우지 않고 phase 를 `Exited` 로 옮긴다.
+  `App.state.shutdown` 을 비우지 않고 phase 를 `Exited` 로 옮긴다.
 - **IPC 요청은 무시하지 않고 거절한다** — 가드가 `process_ipc()` 를 막으므로 이
   구간의 요청은 정상 핸들러로 처리하지 않는다. 클라이언트가 응답 없이 기다리지 않도록 매 프레임과 `exit()` 직전에 큐를 drain 해
   핸들러를 실행하지 않고 `-32000 "host is shutting down"` 으로 회신한다

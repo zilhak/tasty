@@ -129,8 +129,9 @@ winit 은 사용자 이벤트를 큐가 빌 때까지 처리한 뒤에야 `about
   → boot/core 초기화 시 GpuState/MainViewState 에 반영 (font·theme·opacity·shell·scrollback)
 
 런타임 변경:
-  → 설정 모달(SettingsView)에서 draft 편집 → Save → Settings::save() (TOML write)
-  → 닫힐 때 모든 MainView 에 적용
+  → SettingsView에서 draft 편집 → footer Save로 SettingsEdits 회수
+  → App이 원 SettingsEditOwner와 함께 적용·저장하고 MainView에 설정 변경 반영
+  → Cancel/일반 close는 Save 실행 초안을 만들지 않음
 
 즉시 반영: font·theme·opacity(렌더러 재초기화/테마 전환), notification·keybindings(매 프레임/이벤트 참조).
 새 터미널부터 반영: shell·shell_mode·scrollback (effective_shell_args — tasty 모드 --rcfile 주입은 플랫폼별).
@@ -141,4 +142,4 @@ winit 은 사용자 이벤트를 큐가 빌 때까지 처리한 뒤에야 `about
 ## 관련
 
 - [action-dispatch](../design/flows/action-dispatch.md) — Intent 큐 디스패치 모델
-- [아키텍처 개요](index.md) — Core/Hub/View 분리, 모듈 배치
+- [아키텍처 개요](index.md) — App/process · EngineSession/domain/runtime · View 소유와 모듈 배치

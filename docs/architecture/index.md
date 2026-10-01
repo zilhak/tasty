@@ -93,7 +93,7 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 둘째와 같은 형태이고 같은 결정([ADR-0001](../adr/0001-crate-dependency-boundaries.md))의 적용이다.
 이 절의 다른 크레이트에는 예외가 없다.
 
-`tasty-event-store`는 데이터 홈 하나의 SQLite 구조 journal 저장 계약을 구현한다. App 초기 engine 생성·선택 슬롯 import·복원·슬롯 폐기는 저장 worker에 연결돼 있다. 일반 구조 명령 전체의 journal 전환은 아직 완료되지 않았다. 한 journal 파일 안에서 다음을 제공한다.
+`tasty-event-store`는 데이터 홈 하나의 SQLite 구조 journal 저장 계약을 구현한다. App 초기 engine 생성·선택 슬롯 import·복원·슬롯 폐기는 저장 worker에 연결돼 있다. 일반 구조 명령도 App admission과 journal publication을 사용한다. source 연결과 전체 실행 검증은 구별한다. 한 journal 파일 안에서 다음을 제공한다.
 
 - stream(엔진)별 revision과 expected revision 검사, 여러 stream을 한 batch로 묶는 원자 commit. batch는 번호와 stream별 revision vector로 식별한다.
 - 이벤트·명령 기록(재시도 키·요청 digest·해소한 대상·진행 상태·응답)·effect 의무를 한 transaction으로 확정한다. 하나라도 실패하면 아무것도 남지 않는다. 재시도 키로 저장된 대상·결과를 조회할 수 있고, 같은 키·같은 요청의 재제출은 새로 쓰지 않고 기존 기록을 돌려준다. 같은 키의 다른 요청은 충돌로 거절한다.
@@ -157,10 +157,10 @@ mirror 이름·부제·설명·분류와 혼합 표시 순서는 비영속 App c
 - 비교 범위: 두 쪽을 같은 정규 표현으로 옮긴다. category 순서와 이름, workspace 순서·이름·소속 category·부제·설명·attach 매핑·metadata, pane 분할 트리(방향, 비율의 f32 비트), pane마다 tab 순서·이름·사용자 지정 이름, tab마다 surface 분할 트리, surface kind·metadata·저장 자료를 담는다. digest는 정규 표현 직렬화의 FNV-1a 64비트 해시이고, 차이를 찾을 때는 경로별 차이 목록을 쓴다. journal 쪽은 순서 목록에서 닿지 않는 항목과 부모 역참조가 맞지 않는 항목도 결함으로 담는다.
 - ID: 원래 ID로 비교하거나, category·workspace는 표시 순서로, pane·tab·surface는 전체 깊이 우선 순서로 번호를 다시 매겨 비교한다. importer는 새 ID를 받으므로 CoreState와 가져온 모델은 순서 번호로 비교한다.
 - 저장 자료: payload 번호가 아니라 내용으로 비교한다. 바이트 길이와 해시로 비교하거나, surface 저장 자료 형식으로 해석해 비교한다(scrollback은 길이와 해시). 비교에서 뺄 수도 있다.
-- CoreState 쪽 입력은 두 가지다. 트리를 직접 읽은 정규 표현(저장 자료는 비교하지 않는다)과, capture → importer → journal 재구성을 거친 모델의 정규 표현이다. journal 쪽은 전체 로그 replay와 snapshot+tail 재구성에서 같은 digest를 낸다.
-- 비교에서 빼는 값: `SurfaceLayout::Split.node_id`(프로세스 내부 호환 projection 식별자), `Tab.surface_titles`(surface별 Terminal 관측 캐시), `Workspace.mirror`(원격 구조는 로컬 비교에서 통째로 제외), `JournalModel.applied`(journal 위치), `EmptySurface.spawn_attempts`(실행 재시도 횟수). 사용자 선택·접힘·탭바 스크롤은 CoreState 원본에 없으므로 이 제외 명부의 필드가 아니다.
-- 알려진 불일치: `unregistered-surface-kind` — layout capture는 등록되지 않은 kind의 surface를 kind `empty`로 저장하므로, CoreState를 직접 읽은 kind와 가져온 모델의 kind가 다르다. capture가 그대로 저장하는 kind(terminal과 surface kind registry에 있는 kind)가 `empty`가 된 차이는 회귀로 보고 이 불일치로 분류하지 않는다. 시험의 세 엔진(다단 분할, 여러 surface kind, typed 필드, 빈 category, mirror workspace 포함)에서 이 불일치 외에는 차이가 없다.
-- 한계: CoreState를 직접 읽은 쪽은 저장 자료와 metadata를 비교하지 않는다. terminal cwd·복원 명령·scrollback의 해석자는 capture이고, surface metadata는 CoreState 트리가 아니라 memory DB에 있다. 저장 자료 비교는 journal 모델끼리(가져온 직후와 재구성 뒤, 서로 다른 journal)만 한다. 순서 번호 비교는 같은 구조에 다른 ID를 매긴 결함을 드러내지 않는다. 결함 목록은 원래 ID로 적으므로 순서 번호 비교에서는 ID만 다른 결함도 차이로 보인다. capture는 scrollback 저장이 켜져 있으면 살아 있는 terminal의 scrollback을 디스크에 쓰고, 겹친 대기 terminal의 scrollback 저장 ID를 새로 정해 EngineRuntime의 TerminalStore를 바꾼다. 차이 판정은 정규 표현의 동등 비교와 경로별 차이 목록으로 한다. digest는 비교를 줄인 요약값이며 암호학적 해시가 아니다(FNV-1a 64비트). 재구성 경로를 비교하는 일부 시험(`every_replay_path_gives_the_same_digest`, `replaying_the_imported_journal_gives_the_import_digest`의 저장 자료 해석 경로)은 digest가 같은지만 본다.
+- 시험 전용 `import/shadow.rs`의 CoreState 쪽 입력은 두 가지다. 트리를 직접 읽은 정규 표현(저장 자료는 비교하지 않는다)과, capture → importer → journal 재구성을 거친 모델의 정규 표현이다. journal 쪽은 전체 로그 replay와 snapshot+tail 재구성에서 같은 digest를 낸다.
+- 비교에서 빼는 값: `SurfaceLayout::Split.node_id`(프로세스 내부 호환 projection 식별자), `Workspace.mirror`(원격 구조는 로컬 비교에서 통째로 제외), `JournalModel.applied`(journal 위치), `EmptySurface.spawn_attempts`(실행 재시도 횟수). 사용자 선택·접힘·탭바 스크롤은 CoreState 원본에 없으므로 이 제외 명부의 필드가 아니다.
+- 과거 capture/import shadow 시험의 분류(현재 실행 검증 아님): `unregistered-surface-kind` — layout capture는 등록되지 않은 kind의 surface를 kind `empty`로 저장하므로, CoreState를 직접 읽은 kind와 가져온 모델의 kind가 다르다. capture가 그대로 저장하는 kind(terminal과 surface kind registry에 있는 kind)가 `empty`가 된 차이는 회귀로 보고 이 불일치로 분류하지 않는다. 해당 세 엔진 fixture의 과거 비교 범위는 다단 분할, 여러 surface kind, typed 필드, 빈 category, mirror workspace다. 현재 제품 검증 결과로 일반화하지 않는다.
+- 과거 shadow fixture의 한계: CoreState를 직접 읽은 쪽은 저장 자료와 metadata를 비교하지 않는다. terminal cwd·복원 명령·scrollback의 해석자는 capture이고, surface metadata는 CoreState 트리가 아니라 memory DB에 있다. 저장 자료 비교는 journal 모델끼리(가져온 직후와 재구성 뒤, 서로 다른 journal)만 한다. 순서 번호 비교는 같은 구조에 다른 ID를 매긴 결함을 드러내지 않는다. 결함 목록은 원래 ID로 적으므로 순서 번호 비교에서는 ID만 다른 결함도 차이로 보인다. capture는 scrollback 저장이 켜져 있으면 살아 있는 terminal의 scrollback을 디스크에 쓰고, 겹친 대기 terminal의 scrollback 저장 ID를 새로 정해 EngineRuntime의 TerminalStore를 바꾼다. 차이 판정은 정규 표현의 동등 비교와 경로별 차이 목록으로 한다. digest는 비교를 줄인 요약값이며 암호학적 해시가 아니다(FNV-1a 64비트). 재구성 경로를 비교하는 일부 시험(`every_replay_path_gives_the_same_digest`, `replaying_the_imported_journal_gives_the_import_digest`의 저장 자료 해석 경로)은 digest가 같은지만 본다.
 
 ### UI primitive
 `tasty-egui-theme`(Theme를 egui Visuals/Style로 변환) · `tasty-ui-widgets`(본체·갤러리 공용 egui 위젯·배치 함수. [설명](ui-widgets-crate.md)) · `tasty-icons`(line/fill SVG. 본체·갤러리와 plugin 빌드가 공유) · `tasty-key-match`(바인딩과 키 이벤트 대조. 단축키·webview 공용, egui 입력은 egui-input feature, → settings/winit)
@@ -205,7 +205,7 @@ ports-and-adapters 배치:
 | `boot/` | `fn main` 부팅 시퀀스(`run()` 진입점) — event_loop, headless_{dispatch,stream,plugins}, cli_routing, wiring, locale, trace(부팅 계측) |
 | `app/` | `App`(winit `ApplicationHandler`) — window_lifecycle, boot_machine(첫 윈도우 부팅 상태 머신 — [boot-sequence](boot-sequence.md)), shutdown_cascade(종료 cascade — [shutdown-sequence](shutdown-sequence.md)), modal, ipc dispatch, attach, journal admission/publication·retirement receipt — [close-sequence](close-sequence.md) |
 | `core/` | 호스트 측 도메인 adapter·live 정책·legacy layout 이관. 순수 구조 원본과 projection은 tasty-core에 있다 |
-| `runtime/` | EngineSession, EngineRead/EngineRef/EngineMut, TerminalStore, effect·자원 receipt, journal worker adapter |
+| `runtime/` | EngineSession, EngineRead/EngineRef/EngineMut, TerminalStore, effect·자원 receipt, journal worker adapter. tasty-core과 tasty-event-store 사이의 batch 변환·replay·snapshot·command executor·projection 연결 |
 | `remote/` | engine별 attach 구독·표시·전송 adapter. socket/SSH owner는 tasty-remote |
 | `hub.rs` | **외부 통신**(`Hub`) — IPC 서버, 포트 파일 |
 | `view/` | **GUI**(gui-gated) — `View` sealed trait 계층 + MainView/SettingsView/QuitView/PluginsView/PresetView. — [multi-window](multi-window.md) |
@@ -216,7 +216,6 @@ ports-and-adapters 배치:
 | `intent/` | **Intent 큐** — 호스트 내부 동작 디스패치. — [action-dispatch](../design/flows/action-dispatch.md) |
 | `host_api/` | 호스트가 외부(plugin/agent)에 제공하는 인터페이스 — Lua hooks, webview |
 | `hook_runtime/` | 엔진별 훅 등록·감시 상태(`HookRuntimeState` — surface 훅·전역 훅)와 발화한 훅의 실행(바인딩 실행 · 전역 훅 셸 실행 · IpcSequence worker). 공유 handler 정의 registry는 `hook_handler/` |
-| `runtime/` | 제품 engine의 `EngineSession` 소유·실행 생성자. 구조 저널 runtime(bootstrap·복원 제품 연결, 일반 writer 전환 중) — 저장 batch ↔ 도메인 batch 변환, journal replay·snapshot, decide 계약에 generic한 command executor, CoreState와 journal 모델의 구조 digest. `tasty-core`과 `tasty-event-store`를 연결한다 |
 | `plugin_bridge/` | 호스트 측 plugin 라우팅 facade |
 | `store/` | 인메모리 스토어 — notification, state.db 수명의 창 간 공유 recent_files |
 | `db/` | SQLite `state.db`. — [storage](../design/systems/storage.md) |

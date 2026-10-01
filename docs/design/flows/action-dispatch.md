@@ -24,13 +24,13 @@ Intent는 동작을 요청할 때 사용한다. 처리 결과나 중간 데이�
 
 - 이벤트를 해석하는 함수는 `fn parse(e) -> Option<Intent>`처럼 Intent를 반환할 수 있다.
 - 처리 핸들러가 추가 작업을 요청할 때는 본문에서 `state.dispatch_intent(...)`를 호출한다. 반환값으로 Intent를 전달해 호출자가 재귀 처리하게 만들지 않는다.
-- Intent에는 응답 데이터를 넣지 않는다. 새 ID나 처리 상태를 받아야 하면 결과를 반환하는 Core 메서드를 사용하고, 상태 조회에는 Query를 사용한다.
+- Intent에는 응답 데이터를 넣지 않는다. 구조 명령의 새 ID와 처리 상태는 App journal admission의 원 reply/continuation으로 전달한다. commit·projection과 필요한 effect 완료를 거친 결과이며, Core의 동기 생성 메서드 반환값으로 응답하지 않는다. 상태 조회에는 Query를 사용한다.
 
 | 유형 | 처리 방식 | 응답 |
 |------|----------|------|
-| Query | `&CoreState` 직접 조회 | 데이터 |
+| Query | 일관된 publication 관측 시점의 CoreState/EngineRead 조회 | 데이터 |
 | Intent | 큐에 등록한 뒤 처리 | 없음 |
-| Core method | `core.create_workspace(...) -> WorkspaceCreated` | 동기 반환값 |
+| 구조 명령 | App admission → journal 결정·publication → 필요한 effect 완료 | 원 reply/continuation으로 완료 결과 |
 
 ### 사용자 입력 대기 = 반드시 2 Intent 분리
 
@@ -94,7 +94,7 @@ attention·notification 적재, terminal mark, 설정 적용·저장처럼 engin
 
 ## Intent → Event Bus Bridge
 
-변경을 마친 핸들러가 `state.pending_host_events`에 이벤트를 넣는다. `src/app/dispatch/host_events.rs`의 공통 경로가 `PluginManager::emit_host_event`를 호출해 [Event Bus](../../reference/event-catalog.md) 메시지로 바꾼다.
+엔진의 확정 결과는 `EngineRuntime.pending_host_events`에, 엔진 밖 process 이벤트는 `AppState.pending_host_events`에 쌓는다. View는 포커스 변화 같은 표시 관측값을 제공하며 두 실행 큐의 원본을 소유하지 않는다. `src/app/dispatch/host_events.rs`의 공통 경로가 `PluginManager::emit_host_event`를 호출해 [Event Bus](../../reference/event-catalog.md) 메시지로 바꾼다.
 
 | 필드 | 규칙 |
 |------|------|

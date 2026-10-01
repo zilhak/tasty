@@ -4,7 +4,7 @@
 
 ## 명령에서 완료까지
 
-1. GUI·IPC·원격 요청은 원 대상 ID와 origin을 해소하고 App의 journal admission에 들어간다. 사용자 선택이나 현재 포커스를 나중에 다시 조회해 대상을 바꾸지 않는다.
+1. GUI producer는 사용자 입력 시 대상 ID와 origin을 고정한다. keyed IPC는 원 method/params의 digest와 재시도 key를 먼저 admission에 넘긴다. key hit는 저장된 결과를 반환하고, miss의 `NeedsResolution`에서만 존재 여부·기본 대상을 해소한다. 원격 요청도 원 연결·origin binding을 유지한다. 수락한 대상은 나중의 포커스로 바꾸지 않는다.
 2. worker는 닫을 대상과 cleanup 의무를 journal에 확정한다. App의 publication은 원 descriptor의 kind·activation, engine incarnation과 runtime epoch를 검사하고, 제거할 surface box와 Terminal/Pty를 `ResourceRetirement`에 넘긴다.
 3. 논리 projection의 batch 적용과 ACK 뒤, cleanup effect의 원 attempt를 claim하여 실행한다. `ResourceRetirement`는 숫자 ID로 후속 자원을 다시 찾아 파괴하지 않고 이미 보유한 원 owner를 처리한다.
 4. PTY retirement receipt와 원 plugin process·surface instance에 묶인 ACK/retirement receipt를 관측한다. metadata 정리와 회수 결과를 확정하고 명령의 모든 member 결과를 집계한다. 필요한 batch publication까지 완료한 뒤 응답을 공개한다.
