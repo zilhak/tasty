@@ -375,7 +375,7 @@ fn register_one_surface_kind(
 fn gates_before_intercept<'a>(
     app: &mut App,
     window: &mut crate::state::CommandContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     request: &'a crate::ipc::protocol::JsonRpcRequest,
     caller: &'a crate::ipc::caller::CallerContext,
 ) -> Result<crate::ipc::handler::CheckedRequest<'a>, crate::ipc::protocol::JsonRpcResponse> {

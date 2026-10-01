@@ -234,8 +234,8 @@ impl App {
         caller: &'a ipc::caller::CallerContext,
     ) -> Result<ipc::handler::CheckedRequest<'a>, ipc::protocol::JsonRpcResponse> {
         let core = &mut self.services;
-        if let Some((state, engine)) = engines_mut!(self).sessions().next() {
-            return ipc::handler::check_request(core, state, engine.core, request, caller);
+        if let Some((state, mut engine)) = engines_mut!(self).sessions().next() {
+            return ipc::handler::check_request(core, state, &mut engine, request, caller);
         }
         ipc::handler::check_without_engine(request, caller)
     }

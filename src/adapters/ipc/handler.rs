@@ -239,7 +239,7 @@ fn canonicalize_and_route(request: &JsonRpcRequest) -> (&str, Cow<'_, JsonRpcReq
 pub(crate) fn check_permission_gate(
     core: &mut crate::app::services::AppServices,
     window: &mut dyn IpcWindow,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     caller: &CallerContext,
     canonical: &str,
     workspace_id: Option<u32>,
@@ -293,7 +293,6 @@ pub(crate) fn check_permission_gate(
 /// Local은 제외하므로 telemetry.cap.reset으로 해제할 수 있다.
 pub(crate) fn check_cap_gate(
     core: &mut crate::app::services::AppServices,
-    engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     canonical: &str,
     workspace_id: Option<u32>,
@@ -324,7 +323,6 @@ pub(crate) fn check_cap_gate(
 /// 거절된 호출은 ipc_calls 대신 RateLimit.throttled_count에 집계한다.
 pub(crate) fn check_rate_limit_gate(
     core: &mut crate::app::services::AppServices,
-    engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     canonical: &str,
     workspace_id: Option<u32>,
@@ -365,7 +363,7 @@ pub(crate) fn check_rate_limit_gate(
 fn record_telemetry_and_audit(
     core: &mut crate::app::services::AppServices,
     window: &mut dyn IpcWindow,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
     caller: &CallerContext,
     canonical: &str,
     params: &serde_json::Value,

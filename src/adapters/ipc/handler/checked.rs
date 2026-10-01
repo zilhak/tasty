@@ -1,6 +1,6 @@
 //! 호출 경로에 필요한 진입 검사를 마친 요청. 외부 입력을 역직렬화해 만들 수 없다.
 use super::{CallerContext, JsonRpcRequest, JsonRpcResponse};
-use crate::core::CoreState;
+use crate::runtime::engine_access::EngineMut;
 use crate::app::services::AppServices;
 
 /// 진입 검사를 통과한 요청. engine이 없는 GUI 부팅·종료 구간의 Local 호출은
@@ -38,7 +38,7 @@ impl CheckedRequest<'_> {
 fn check_scope_request<'a>(
     core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     request: &'a JsonRpcRequest,
     caller: &'a CallerContext,
 ) -> Result<CheckedRequest<'a>, JsonRpcResponse> {
@@ -53,11 +53,11 @@ fn check_scope_request<'a>(
     let refused = super::check_permission_gate(core, window, engine, caller, canonical, ws, &id)
         .map(|r| (GateRefusal::Permission, r))
         .or_else(|| {
-            super::check_cap_gate(core, engine, caller, canonical, ws, &id)
+            super::check_cap_gate(core, caller, canonical, ws, &id)
                 .map(|r| (GateRefusal::Cap, r))
         })
         .or_else(|| {
-            super::check_rate_limit_gate(core, engine, caller, canonical, ws, &id)
+            super::check_rate_limit_gate(core, caller, canonical, ws, &id)
                 .map(|r| (GateRefusal::Throttle, r))
         });
     if let Some((by, response)) = refused {
@@ -72,10 +72,10 @@ fn check_scope_request<'a>(
 }
 
 /// App constructs a detached scope before admission; a refused gate still returns its display outputs.
-pub(crate) fn check_request<'a>(core:&mut AppServices,state:&mut crate::state::RequestContext,engine:&mut CoreState,request:&'a JsonRpcRequest,caller:&'a CallerContext)->Result<CheckedRequest<'a>,JsonRpcResponse> {
-    let mut scope=crate::ipc::request_scope::RequestScope::capture(state,engine,#[cfg(feature="gui")] None);
+pub(crate) fn check_request<'a>(core:&mut AppServices,state:&mut crate::state::RequestContext,engine:&mut EngineMut<'_>,request:&'a JsonRpcRequest,caller:&'a CallerContext)->Result<CheckedRequest<'a>,JsonRpcResponse> {
+    let mut scope=crate::ipc::request_scope::RequestScope::capture(state,engine.core,#[cfg(feature="gui")] None);
     let result=check_scope_request(core,&mut scope,engine,request,caller);
-    let outputs=scope.finish();outputs.apply(state,engine);result
+    let outputs=scope.finish();outputs.apply(state,engine.core);result
 }
 
 /// 창/parked engine이 전혀 없는 GUI 부팅·종료 구간에는 Local만 진입 가능하다.

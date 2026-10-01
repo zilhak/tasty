@@ -56,7 +56,7 @@ fn dispatch_command(
     let checked = match crate::ipc::handler::check_request(
         &mut app.services,
         state,
-        &mut session.core_state,
+        &mut session.borrow_mut(),
         &cmd.request,
         &caller,
     ) {
