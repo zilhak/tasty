@@ -5,6 +5,9 @@ use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
     mpsc,
 };
+// Only the observer value is replaced/cloned under this lock; callbacks run after unlocking.
+static FAILURE_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+
 #[derive(Clone)]
 pub struct ConnectionEpoch(Arc<AtomicBool>);
 impl ConnectionEpoch {
@@ -44,10 +47,13 @@ pub struct ConnectionSender {
 }
 impl ConnectionSender {
     pub fn bind_failure(&self, disconnected: Arc<AtomicBool>, wake: Arc<dyn Fn() + Send + Sync>) {
-        let mut observer = self
-            .failure
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
+        let mut observer = self.failure.lock().unwrap_or_else(|poison| {
+            tasty_utils::poison::recover_poisoned(
+                poison,
+                "remote connection failure observer",
+                &FAILURE_POISON_REPORTED,
+            )
+        });
         *observer = Some((disconnected.clone(), wake.clone()));
         drop(observer);
         if self.failed.load(Ordering::Acquire) {
@@ -66,7 +72,13 @@ impl ConnectionSender {
         let observer = self
             .failure
             .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
+            .unwrap_or_else(|poison| {
+                tasty_utils::poison::recover_poisoned(
+                    poison,
+                    "remote connection failure observer",
+                    &FAILURE_POISON_REPORTED,
+                )
+            })
             .clone();
         if let Some((disconnected, wake)) = observer {
             disconnected.store(true, Ordering::Release);

@@ -1,6 +1,10 @@
 //! Resource ownership while a host waits for its fixed engine's durable logical ID reservation.
 use super::outbound::{AttemptToken, Remote};
 use super::transport::PreparedConnection;
+// This slot transfers the tunnel with Option::take; it does not protect protocol frame writes.
+static TUNNEL_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ConnectionTicket(pub u64);
 pub(crate) enum PendingConnection {
@@ -51,7 +55,13 @@ impl Remote {
         if let Err(error) = self.spawn_attempt(token.clone(), move || {
             let tunnel = worker_tunnel
                 .lock()
-                .unwrap_or_else(|poison| poison.into_inner())
+                .unwrap_or_else(|poison| {
+                    tasty_utils::poison::recover_poisoned(
+                        poison,
+                        "pending remote connection tunnel",
+                        &TUNNEL_POISON_REPORTED,
+                    )
+                })
                 .take();
             let result = PreparedConnection::connect(
                 worker_token,
@@ -73,7 +83,13 @@ impl Remote {
             self.retire_tunnel(
                 tunnel
                     .lock()
-                    .unwrap_or_else(|poison| poison.into_inner())
+                    .unwrap_or_else(|poison| {
+                        tasty_utils::poison::recover_poisoned(
+                            poison,
+                            "pending remote connection tunnel",
+                            &TUNNEL_POISON_REPORTED,
+                        )
+                    })
                     .take(),
             );
             return Err(error);

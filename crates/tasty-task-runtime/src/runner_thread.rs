@@ -22,6 +22,9 @@ use super::runner_host::{
 };
 use tasty_agent::runner::PollOutcome;
 
+// The join slot only transfers an owned handle; recovery never treats a missing handle as joined.
+static JOIN_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+
 const TICK_INTERVAL: Duration = Duration::from_millis(500);
 
 /// 조회가 반복 실패할 때 error로 올릴 횟수. tick 소요가 달라질 수 있어 시간 상한은 아니다.
@@ -71,7 +74,13 @@ impl RunnerControl {
         let mut slot = match self.join.try_lock() {
             Ok(slot) => slot,
             Err(std::sync::TryLockError::WouldBlock) => return RunnerStopObservation::Waiting,
-            Err(std::sync::TryLockError::Poisoned(poison)) => poison.into_inner(),
+            Err(std::sync::TryLockError::Poisoned(poison)) => {
+                tasty_utils::poison::recover_poisoned(
+                    poison,
+                    "task runner join slot",
+                    &JOIN_POISON_REPORTED,
+                )
+            }
         };
         if let Some(handle) = slot.as_ref() {
             if !handle.is_finished() {
@@ -92,10 +101,11 @@ impl RunnerControl {
         }
     }
     fn join_blocking(&self) {
-        let mut slot = self
-            .join
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
+        let mut slot = tasty_utils::poison::recover_mutex(
+            self.join.lock(),
+            "task runner join slot",
+            &JOIN_POISON_REPORTED,
+        );
         if let Some(handle) = slot.take() {
             let failed = handle.join().is_err() || self.crashed.load(Ordering::Acquire);
             if failed {
@@ -356,10 +366,13 @@ impl Default for RunnerRegistry {
 }
 impl Drop for RunnerRegistry {
     fn drop(&mut self) {
-        let threads = self
-            .threads
-            .get_mut()
-            .unwrap_or_else(|poison| poison.into_inner());
+        let threads = self.threads.get_mut().unwrap_or_else(|poison| {
+            tasty_utils::poison::recover_poisoned(
+                poison,
+                "runner registry thread map",
+                &self.poison_reported,
+            )
+        });
         for control in threads.values() {
             control.request_stop();
         }

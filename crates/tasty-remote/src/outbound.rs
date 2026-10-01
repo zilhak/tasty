@@ -91,6 +91,22 @@ impl std::hash::Hash for AttemptToken {
         std::hash::Hash::hash(&(std::sync::Arc::as_ptr(&self.0) as usize), state);
     }
 }
+/// Cancellation can race EOF or a previous shutdown of another clone of this socket.
+/// Failure does not establish a join: callers still retain and poll the worker receipt.
+fn shutdown_cancelled_socket(socket: &std::net::TcpStream) {
+    match socket.shutdown(std::net::Shutdown::Both) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotConnected => {
+            tracing::debug!("remote cancellation socket already disconnected: {error}");
+        }
+        Err(error) => {
+            tracing::warn!(
+                "remote cancellation socket shutdown failed; waiting for worker exit: {error}"
+            );
+        }
+    }
+}
+
 impl AttemptToken {
     pub fn is_active(&self) -> bool {
         self.0.active.load(std::sync::atomic::Ordering::Acquire)
@@ -106,7 +122,7 @@ impl AttemptToken {
         }
         if let Ok(mut sockets) = self.0.sockets.lock() {
             for socket in sockets.drain(..) {
-                let _ = socket.shutdown(std::net::Shutdown::Both);
+                shutdown_cancelled_socket(&socket);
             }
         }
     }
@@ -140,7 +156,7 @@ impl AttemptToken {
             .lock()
             .map_err(|_| std::io::Error::other("connection cancellation state poisoned"))?;
         if !self.is_active() {
-            let _ = control.shutdown(std::net::Shutdown::Both);
+            shutdown_cancelled_socket(&control);
             return Err(std::io::Error::new(
                 std::io::ErrorKind::Interrupted,
                 "connection attempt retired",
