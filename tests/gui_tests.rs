@@ -225,6 +225,18 @@ fn test_new_workspace_ctrl_shift_n() {
     });
 }
 
+/// Select an exact fixture workspace outside shortcut latency measurements.
+fn select_workspace_fixture(inst: &gui_common::GuiTestInstance, index: usize) {
+    assert!(
+        index < inst.ui_state().workspace_count,
+        "fixture workspace must exist"
+    );
+    inst.call("debug.switch_workspace", json!({"index":index}));
+    inst.wait_for_ui("fixture workspace selected", Duration::from_secs(3), |s| {
+        s.active_workspace == index
+    });
+}
+
 #[test]
 #[ignore]
 fn test_workspace_switch_alt_number() {
@@ -244,12 +256,12 @@ fn test_workspace_switch_alt_number() {
         s.active_workspace == 0
     });
 
-    let target = new_ws_idx + 1; // Alt+N is 1-based
-    let key = char::from_digit(target as u32, 10).unwrap();
-    inst.press_alt(Key::Unicode(key));
-    inst.wait_for_ui("switch back", Duration::from_secs(3), |s| {
-        s.active_workspace == new_ws_idx
+    // Number shortcuts address the first nine entries, not every accumulated workspace.
+    inst.press_alt(Key::Unicode('2'));
+    inst.wait_for_ui("switch to ws 1", Duration::from_secs(3), |s| {
+        s.active_workspace == 1
     });
+    select_workspace_fixture(&inst, new_ws_idx);
 
     inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
@@ -286,7 +298,7 @@ fn test_workspace_creation_speed() {
 
 #[test]
 #[ignore]
-fn test_new_tab_ctrl_shift_t() {
+fn test_new_tab_alt_t() {
     let mut inst = shared();
 
     let initial_ws = inst.ui_state().workspace_count;
@@ -298,7 +310,7 @@ fn test_new_tab_ctrl_shift_t() {
     let state = inst.ui_state();
     assert_eq!(state.tab_count, 1, "new workspace should start with 1 tab");
 
-    inst.press_ctrl_shift(Key::Unicode('t'));
+    inst.press_alt(Key::Unicode('t'));
     let state = inst.wait_for_ui("2 tabs", Duration::from_secs(3), |s| s.tab_count == 2);
     assert_eq!(state.tab_count, 2);
 
@@ -319,7 +331,7 @@ fn test_close_tab_ctrl_w() {
         s.workspace_count == initial_ws + 1
     });
 
-    inst.press_ctrl_shift(Key::Unicode('t'));
+    inst.press_alt(Key::Unicode('t'));
     inst.wait_for_ui("2 tabs", Duration::from_secs(3), |s| s.tab_count == 2);
 
     inst.press_ctrl(Key::Unicode('w'));
@@ -346,7 +358,7 @@ fn test_tab_creation_speed() {
     let elapsed = measure_ui_latency(
         &mut inst,
         "tab creation speed",
-        |i| i.press_ctrl_shift(Key::Unicode('t')),
+        |i| i.press_alt(Key::Unicode('t')),
         |s| s.tab_count == 2,
     );
 
@@ -609,7 +621,7 @@ fn test_full_workflow_workspace_pane_tab() {
     assert_eq!(state.pane_count, 1);
     assert_eq!(state.tab_count, 1);
 
-    inst.press_ctrl_shift(Key::Unicode('t'));
+    inst.press_alt(Key::Unicode('t'));
     inst.wait_for_ui("2 tabs", Duration::from_secs(3), |s| s.tab_count == 2);
 
     inst.press_alt(Key::Unicode('e'));
@@ -620,11 +632,7 @@ fn test_full_workflow_workspace_pane_tab() {
         s.workspace_count == initial_ws + 2
     });
 
-    let prev_ws_key = char::from_digit((initial_ws + 1) as u32, 10).unwrap();
-    inst.press_alt(Key::Unicode(prev_ws_key));
-    inst.wait_for_ui("switch back", Duration::from_secs(3), |s| {
-        s.active_workspace == initial_ws
-    });
+    select_workspace_fixture(&inst, initial_ws);
 
     let state = inst.ui_state();
     assert_eq!(state.pane_count, 2, "workspace should still have 2 panes");
@@ -695,23 +703,19 @@ fn test_workspace_switch_speed() {
         s.workspace_count == initial_ws + 1
     });
 
-    let ws1_key = char::from_digit(initial_ws as u32 + 1, 10).unwrap();
-    let ws0_key = char::from_digit(initial_ws as u32, 10).unwrap_or('1');
+    // Measure real Alt+1/Alt+2 transitions even after other shared tests left >9 workspaces.
+    select_workspace_fixture(&inst, 1);
 
     let mut latencies = Vec::new();
     for _ in 0..5 {
         let start = Instant::now();
-        inst.press_alt(Key::Unicode(ws0_key));
-        inst.wait_for_ui("ws 0", Duration::from_secs(3), |s| {
-            s.active_workspace == (initial_ws.saturating_sub(1))
-        });
+        inst.press_alt(Key::Unicode('1'));
+        inst.wait_for_ui("ws 0", Duration::from_secs(3), |s| s.active_workspace == 0);
         latencies.push(start.elapsed());
 
         let start = Instant::now();
-        inst.press_alt(Key::Unicode(ws1_key));
-        inst.wait_for_ui("ws 1", Duration::from_secs(3), |s| {
-            s.active_workspace == initial_ws
-        });
+        inst.press_alt(Key::Unicode('2'));
+        inst.wait_for_ui("ws 1", Duration::from_secs(3), |s| s.active_workspace == 1);
         latencies.push(start.elapsed());
     }
 
@@ -732,6 +736,7 @@ fn test_workspace_switch_speed() {
         MAX_UI_RESPONSE_MS,
     );
 
+    select_workspace_fixture(&inst, initial_ws);
     inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
@@ -749,7 +754,7 @@ fn test_tab_switch_speed() {
         s.workspace_count == initial_ws + 1
     });
 
-    inst.press_ctrl_shift(Key::Unicode('t'));
+    inst.press_alt(Key::Unicode('t'));
     inst.wait_for_ui("2 tabs", Duration::from_secs(3), |s| s.tab_count == 2);
 
     // 탭 수는 전환해도 같으므로 active_tab의 실제 변화를 기다려 시간을 측정한다.
