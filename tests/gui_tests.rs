@@ -757,12 +757,12 @@ fn test_tab_switch_speed() {
     inst.press_alt(Key::Unicode('t'));
     inst.wait_for_ui("2 tabs", Duration::from_secs(3), |s| s.tab_count == 2);
 
-    // 탭 수는 전환해도 같으므로 active_tab의 실제 변화를 기다려 시간을 측정한다.
+    // 기본 quick-switch는 Ctrl+L/H다. 탭 수 대신 active_tab의 실제 변화를 기다린다.
     let mut latencies = Vec::new();
     for _ in 0..5 {
         let from = inst.ui_state().active_tab;
         let start = Instant::now();
-        inst.press_ctrl(Key::Tab);
+        inst.press_ctrl(Key::Unicode('l'));
         inst.wait_for_ui("tab forward", Duration::from_secs(3), move |s| {
             s.active_tab != from
         });
@@ -770,7 +770,7 @@ fn test_tab_switch_speed() {
 
         let from = inst.ui_state().active_tab;
         let start = Instant::now();
-        inst.press_ctrl_shift(Key::Tab);
+        inst.press_ctrl(Key::Unicode('h'));
         inst.wait_for_ui("tab back", Duration::from_secs(3), move |s| {
             s.active_tab != from
         });
