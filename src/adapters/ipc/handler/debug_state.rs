@@ -146,9 +146,15 @@ mod tests {
 
     #[test]
     fn ui_state_answers_for_a_parked_engine_without_workspaces() {
-        let (state, mut engine_session) = crate::state::tests::test_state();
+        let (state, mut engine_session) =
+            crate::state::tests::test_state_from_model(crate::state::tests::test_model(vec![
+                tasty_core::DomainEvent::CategoryCreated {
+                    id: 0,
+                    name: "normal".into(),
+                    index: 0,
+                },
+            ]));
         let mut engine = engine_session.borrow_mut();
-        engine.replace_local_workspaces(Vec::new());
         let resp = handle_ui_state(&state, &engine, serde_json::json!(1));
         let result = resp.result.expect("성공 응답이어야 한다");
         assert_eq!(result["workspace_count"], 0);

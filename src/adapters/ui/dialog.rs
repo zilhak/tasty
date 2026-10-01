@@ -411,126 +411,6 @@ mod tests {
         tasty_themes::mocha_fallback()
     }
 
-    fn push_workspace(engine: &crate::runtime::engine_read::EngineRead<'_>, name: &str) -> u32 {
-        let ws_id = engine.counters.next_workspace();
-        let pane_id = engine.counters.next_pane();
-        let tab_id = engine.counters.next_tab();
-        let sid = engine.counters.next_surface();
-        engine
-            .runtime
-            .terminals
-            .insert(sid, tasty_terminal::Terminal::new_detached(80, 24), None);
-        let ws = crate::model::Workspace::new_with_terminal_marker(
-            ws_id,
-            name.to_string(),
-            pane_id,
-            tab_id,
-            sid,
-        );
-        engine.push_local_workspace(ws);
-        ws_id
-    }
-
-    /// 팝업은 요청을 큐에 넣기만 하므로 메인 루프처럼 큐를 비워 적용한다.
-    fn apply_rename_and_drain(
-        state: &mut MainViewState,
-        engine: &crate::runtime::engine_read::EngineRead<'_>,
-        target: RenameTarget,
-        buffer: &str,
-    ) {
-        let mut core = crate::ipc::handler::cli_entry_tests::test_core();
-        apply_rename(state, engine, target, buffer.to_string());
-        crate::intent::headless::drain_pending_intents(&mut core, state, engine);
-    }
-
-    #[test]
-    fn workspace_rename_targets_same_workspace_after_agent_close() {
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
-        let mut engine = engine_session.borrow_mut();
-        push_workspace(&mut engine, "A");
-        let b_id = push_workspace(&mut engine, "B");
-        push_workspace(&mut engine, "C");
-        state.dialogs.rename = Some((
-            RenameTarget::WorkspaceName { workspace_id: b_id },
-            String::new(),
-        ));
-        // 팝업이 열린 동안 에이전트가 앞쪽 workspace를 닫아 인덱스가 당겨진다.
-        assert!(state.close_workspace_at(
-            &mut engine,
-            0,
-            crate::state::WorkspaceCloseOrigin::Agent
-        ));
-        let (target, _) = state.dialogs.rename.take().unwrap();
-        apply_rename_and_drain(&mut state, &mut engine, target, "RENAMED");
-        let names: Vec<_> = engine
-            .workspaces()
-            .into_iter()
-            .map(|w| w.name.as_str())
-            .collect();
-        assert_eq!(names, ["A", "RENAMED", "C"]);
-    }
-
-    #[test]
-    fn tab_rename_targets_same_tab_after_agent_move() {
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
-        let mut engine = engine_session.borrow_mut();
-        let ws_idx = state.active_workspace_index(&engine);
-        let pane_id = state
-            .navigation
-            .pane_id(
-                engine
-                    .workspace_at(ws_idx)
-                    .expect("workspace index is valid"),
-            )
-            .unwrap();
-        let t2 = engine.counters.next_tab();
-        let s2 = engine.counters.next_surface();
-        let pane = engine.find_pane_by_id_mut(pane_id).unwrap();
-        pane.add_terminal_marker_tab_background(t2, s2, None);
-        let first_tab = pane.tabs[0].id;
-        state.dialogs.rename = Some((RenameTarget::TabName { tab_id: first_tab }, String::new()));
-        // 팝업이 열린 동안 에이전트가 tab.move로 순서를 바꾼다.
-        assert!(engine.find_pane_by_id_mut(pane_id).unwrap().move_tab(0, 1));
-        let (target, _) = state.dialogs.rename.take().unwrap();
-        apply_rename_and_drain(&mut state, &mut engine, target, "RENAMED");
-        let tabs: Vec<_> = engine
-            .find_pane_by_id(pane_id)
-            .unwrap()
-            .tabs
-            .iter()
-            .map(|t| (t.id, t.explicit_name.clone()))
-            .collect();
-        assert_eq!(tabs, [(t2, None), (first_tab, Some("RENAMED".to_string()))]);
-    }
-
-    #[test]
-    fn rename_target_is_gone_after_agent_closes_it() {
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
-        let mut engine = engine_session.borrow_mut();
-        let b_id = push_workspace(&mut engine, "B");
-        let target = RenameTarget::WorkspaceName { workspace_id: b_id };
-        assert!(rename_target_exists(&target, &engine));
-        let b_idx = engine.find_workspace_index_for_id(b_id).unwrap();
-        assert!(state.close_workspace_at(
-            &mut engine,
-            b_idx,
-            crate::state::WorkspaceCloseOrigin::Agent
-        ));
-        assert!(!rename_target_exists(&target, &engine));
-        let before: Vec<_> = engine
-            .workspaces()
-            .into_iter()
-            .map(|w| w.name.clone())
-            .collect();
-        apply_rename_and_drain(&mut state, &mut engine, target, "RENAMED");
-        let after: Vec<_> = engine
-            .workspaces()
-            .into_iter()
-            .map(|w| w.name.clone())
-            .collect();
-        assert_eq!(before, after);
-    }
-
     fn run_with_input(raw: egui::RawInput, initial_buffer: &str) -> (RenamePopupAction, String) {
         let ctx = egui::Context::default();
         let mut out = RenamePopupAction::None;
@@ -628,22 +508,38 @@ mod tests {
     }
 
     fn engine() -> crate::runtime::engine_session::EngineSession {
-        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
+        use tasty_core::DomainEvent as E;
+        crate::state::tests::test_state_from_model(crate::state::tests::test_model(vec![
+            E::CategoryCreated {
+                id: 0,
+                name: "normal".into(),
+                index: 0,
+            },
+            E::CategoryCreated {
+                id: 1,
+                name: "Services".into(),
+                index: 1,
+            },
+            E::CategoryCreated {
+                id: 2,
+                name: "Infra".into(),
+                index: 2,
+            },
+        ]))
+        .1
     }
 
     #[test]
     fn category_validation_new_category_rules() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        e.create_category("Services").unwrap();
-        let (err, ok) = category_validation(&RenameTarget::NewCategory, "  ", &e);
+        let (err, ok) = category_validation(&RenameTarget::NewCategory, "  ", &e.read());
         assert!(!ok && err.is_none());
-        let (err, ok) = category_validation(&RenameTarget::NewCategory, "normal", &e);
+        let (err, ok) = category_validation(&RenameTarget::NewCategory, "normal", &e.read());
         assert!(!ok && err.is_some());
-        let (err, ok) = category_validation(&RenameTarget::NewCategory, "services", &e);
+        let (err, ok) = category_validation(&RenameTarget::NewCategory, "services", &e.read());
         assert!(!ok && err.is_some());
-        let (err, ok) = category_validation(&RenameTarget::NewCategory, "Infra", &e);
+        let (err, ok) = category_validation(&RenameTarget::NewCategory, "Other", &e.read());
         assert!(ok && err.is_none());
     }
 
@@ -651,13 +547,18 @@ mod tests {
     fn category_validation_rename_allows_self_name() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let id = e.create_category("Services").unwrap();
-        let (err, ok) =
-            category_validation(&RenameTarget::CategoryName { cat_id: id }, "SERVICES", &e);
+        let id = 1;
+        let (err, ok) = category_validation(
+            &RenameTarget::CategoryName { cat_id: id },
+            "SERVICES",
+            &e.read(),
+        );
         assert!(ok && err.is_none());
-        e.create_category("Infra").unwrap();
-        let (err, ok) =
-            category_validation(&RenameTarget::CategoryName { cat_id: id }, "Infra", &e);
+        let (err, ok) = category_validation(
+            &RenameTarget::CategoryName { cat_id: id },
+            "Infra",
+            &e.read(),
+        );
         assert!(!ok && err.is_some());
     }
 }

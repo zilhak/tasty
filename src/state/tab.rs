@@ -2,8 +2,6 @@
 use crate::runtime::engine_read::EngineRead;
 #[cfg(any(feature = "gui", test))]
 use serde_json::Value;
-#[cfg(all(test, feature = "gui"))]
-use serde_json::json;
 
 #[cfg(any(feature = "gui", debug_assertions))]
 use tasty_model::TabSwitch;
@@ -200,75 +198,6 @@ impl RequestContext {
             return false;
         };
         self.close_tab_through_core(engine, tab_id)
-    }
-}
-
-#[cfg(all(test, feature = "gui"))]
-impl RequestContext {
-    /// 시험 준비용 Markdown 탭 생성. 제품 경로는 Intent/Core를 사용한다.
-    pub(crate) fn test_add_markdown_tab(
-        &mut self,
-        engine: &EngineRead<'_>,
-        file_path: String,
-    ) -> anyhow::Result<()> {
-        self.add_kind_tab(engine, "markdown", &json!({"file": file_path}))
-            .map(|_| ())
-    }
-
-    /// 시험 준비용 surface 교체. 제품 경로는 Core의 ConvertSurface를 사용한다.
-    pub(crate) fn test_convert_surface_to_kind(
-        &mut self,
-        engine: &EngineRead<'_>,
-        surface_id: u32,
-        kind: &str,
-        params: &Value,
-    ) -> bool {
-        let new_surface = match engine.create_surface_via_registry(kind, surface_id, None, params) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::warn!("test_convert_surface_to_kind('{}') failed: {}", kind, e);
-                return false;
-            }
-        };
-
-        let mut location: Option<(usize, u32, usize)> = None;
-        'outer: for (ws_idx, workspace) in engine.workspaces().into_iter().enumerate() {
-            for &pid in &workspace.pane_layout().all_pane_ids() {
-                if let Some(pane) = workspace.pane_layout().find_pane(pid) {
-                    for (tab_idx, tab) in pane.tabs.iter().enumerate() {
-                        if tab.contains_surface(surface_id) {
-                            location = Some((ws_idx, pid, tab_idx));
-                            break 'outer;
-                        }
-                    }
-                }
-            }
-        }
-        let (ws_idx, pane_id, tab_idx) = match location {
-            Some(loc) => loc,
-            None => return false,
-        };
-
-        let ws = engine
-            .workspace_at_mut(ws_idx)
-            .expect("workspace index is valid");
-        let pane = match ws.pane_layout_mut().find_pane_mut(pane_id) {
-            Some(p) => p,
-            None => return false,
-        };
-        let tab = &mut pane.tabs[tab_idx];
-
-        if tab.is_split() {
-            let replaced = tab.layout_mut().replace_surface(surface_id, new_surface);
-            if replaced {
-                engine.mark_layout_dirty();
-            }
-            return replaced;
-        }
-        tab.put_surface(new_surface);
-        tab.explicit_name = None;
-        engine.mark_layout_dirty();
-        true
     }
 }
 

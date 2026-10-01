@@ -269,11 +269,13 @@ mod tests {
     fn dispatch_rejects_a_url_in_the_path_param() {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let engine = engine_session.borrow_mut();
+        let mut scope =
+            crate::ipc::request_scope::RequestScope::capture(&mut state, engine.core, None);
         let mut out = crate::ipc::window_port::IntentOutbox::default();
         let resp = handle_dispatch(
             &mut out,
-            &mut state,
-            &engine,
+            &mut scope,
+            &engine.as_ref(),
             &tasty_ipc::caller::CallerContext::Local,
             serde_json::json!(1),
             serde_json::json!({ "path": "https://example.com/a.md" }),
@@ -284,8 +286,8 @@ mod tests {
 
         let resp = handle_dispatch(
             &mut out,
-            &mut state,
-            &engine,
+            &mut scope,
+            &engine.as_ref(),
             &tasty_ipc::caller::CallerContext::Local,
             serde_json::json!(2),
             serde_json::json!({ "path": "/tmp/a.md" }),
@@ -297,11 +299,13 @@ mod tests {
     fn dispatch_rejects_missing_origin_before_enqueueing() {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let engine = engine_session.borrow_mut();
+        let mut scope =
+            crate::ipc::request_scope::RequestScope::capture(&mut state, engine.core, None);
         let mut out = crate::ipc::window_port::IntentOutbox::default();
         let response = handle_dispatch(
             &mut out,
-            &mut state,
-            &engine,
+            &mut scope,
+            &engine.as_ref(),
             &tasty_ipc::caller::CallerContext::Local,
             serde_json::json!(42),
             serde_json::json!({"path":"/a", "origin_surface_id":u32::MAX}),

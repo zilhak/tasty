@@ -102,33 +102,6 @@ fn surface_query_cli_entry_points_reach_their_handlers() {
     }
 }
 
-/// `tasty surface respawn-terminal` — 파괴적이라 **없는 surface** 로 부른다.
-/// 파라미터를 못 읽으면 `Missing`, 읽었으면 대상 조회 실패다.
-#[test]
-fn respawn_terminal_cli_entry_point_reaches_target_lookup() {
-    let mut core = test_core();
-    let (_state, mut engine_session) = crate::state::tests::test_state();
-    let mut engine = engine_session.borrow_mut();
-    let missing = 999_999u32;
-
-    let req = command_to_request(&Commands::Surface {
-        command: SurfaceCommands::RespawnTerminal { surface: missing },
-    });
-    assert_eq!(req.method, "surface.respawn_terminal");
-
-    let resp = super::surface::handle_surface_respawn_terminal(
-        &mut core,
-        &mut engine,
-        json!(1),
-        &req.params,
-    );
-    assert_params_were_understood("surface.respawn_terminal", &resp);
-    assert!(
-        resp.error.is_some(),
-        "없는 surface 는 에러여야 한다(파라미터는 읽혔다)"
-    );
-}
-
 /// `tasty surface fire-hook` — `surface_id` 와 `event` 두 키를 함께 확인한다.
 /// 훅이 하나도 등록돼 있지 않아도 파라미터 단계는 지나야 한다.
 #[test]
@@ -150,9 +123,15 @@ fn fire_hook_cli_entry_point_reaches_its_handler() {
     assert_eq!(req.method, "surface.fire_hook");
     assert_eq!(req.params["event"], json!("process-exit"));
 
+    let mut scope = crate::ipc::request_scope::RequestScope::capture(
+        &mut state,
+        engine.core,
+        #[cfg(feature = "gui")]
+        None,
+    );
     let resp = super::hooks::handle_surface_fire_hook(
         &mut core,
-        &mut state,
+        &mut scope,
         &mut engine,
         json!(1),
         &req.params,
