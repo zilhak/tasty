@@ -155,30 +155,7 @@ impl Installation {
         mut plugins: Option<&mut crate::plugin::PluginManager>,
         retired_kind: Option<RetiringKind>,
     ) -> anyhow::Result<Installed> {
-        if let Some(registration) = &self.registration {
-            registration.validate(&engine.runtime.surface_registry)?;
-        }
-        if engine.runtime.terminals.generation(self.surface_id) != self.previous_resource {
-            anyhow::bail!("prepared installation would replace a different physical owner");
-        }
-        if let Some(child) = &self.child {
-            let existing = engine
-                .runtime
-                .child_terminals
-                .find_child(child.parent, child.index);
-            if if child.replacing {
-                existing.is_none_or(|entry| entry.child_surface_id != self.surface_id)
-            } else {
-                existing.is_some()
-                    || engine
-                        .live
-                        .occupancy
-                        .occupancy_of(self.surface_id)
-                        .is_some()
-            } {
-                anyhow::bail!("reserved child relation or occupancy was replaced");
-            }
-        }
+        self.validate_installation_owner(engine)?;
         if let Some(old) = retired_kind {
             if old.surface_id != self.surface_id {
                 anyhow::bail!("retired kind belongs to another surface");
@@ -237,26 +214,7 @@ impl Installation {
                 .terminals
                 .set_scrollback_persist_id(self.surface_id, persist_id);
         }
-        if !self.metadata.is_empty() {
-            let mut memory = crate::poison::recover_mutex(
-                engine.runtime.memory.lock(),
-                crate::core::MEMORY_WHAT,
-                &crate::core::MEMORY_POISONED,
-            );
-            for (key, value) in &self.metadata {
-                if let Err(error) = crate::surface_meta::SurfaceMetaStore::set(
-                    &mut *memory,
-                    self.surface_id,
-                    key,
-                    value,
-                ) {
-                    tracing::warn!(
-                        surface = self.surface_id,
-                        "surface_meta set failed for key '{key}': {error}"
-                    );
-                }
-            }
-        }
+        self.install_metadata(engine);
         let submit = self.child.as_ref().is_some_and(|child| !child.replacing);
         if let Some(child) = self.child.take() {
             if child.replacing {
@@ -374,5 +332,57 @@ impl Installed {
         }
         // The input receipt remains an unknown delivery outcome; disposing its exact PTY is a
         // separate process-owner result and never causes this input to be sent again.
+    }
+}
+
+impl Installation {
+    fn validate_installation_owner(&self, engine: &EngineMut<'_>) -> anyhow::Result<()> {
+        if let Some(registration) = &self.registration {
+            registration.validate(&engine.runtime.surface_registry)?;
+        }
+        if engine.runtime.terminals.generation(self.surface_id) != self.previous_resource {
+            anyhow::bail!("prepared installation would replace a different physical owner");
+        }
+        if let Some(child) = &self.child {
+            let existing = engine
+                .runtime
+                .child_terminals
+                .find_child(child.parent, child.index);
+            if if child.replacing {
+                existing.is_none_or(|entry| entry.child_surface_id != self.surface_id)
+            } else {
+                existing.is_some()
+                    || engine
+                        .live
+                        .occupancy
+                        .occupancy_of(self.surface_id)
+                        .is_some()
+            } {
+                anyhow::bail!("reserved child relation or occupancy was replaced");
+            }
+        }
+        Ok(())
+    }
+    fn install_metadata(&self, engine: &EngineMut<'_>) {
+        if !self.metadata.is_empty() {
+            let mut memory = crate::poison::recover_mutex(
+                engine.runtime.memory.lock(),
+                crate::core::MEMORY_WHAT,
+                &crate::core::MEMORY_POISONED,
+            );
+            for (key, value) in &self.metadata {
+                if let Err(error) = crate::surface_meta::SurfaceMetaStore::set(
+                    &mut *memory,
+                    self.surface_id,
+                    key,
+                    value,
+                ) {
+                    tracing::warn!(
+                        surface = self.surface_id,
+                        "surface_meta set failed for key '{key}': {error}"
+                    );
+                }
+            }
+        }
     }
 }

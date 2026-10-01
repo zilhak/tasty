@@ -52,58 +52,9 @@ impl super::App {
         let mut files_changed = false;
         let mut hooks_changed = false;
         for edit in edits.registry {
-            match edit {
-                RegistryEdit::Extension { extension, order } => {
-                    if order.is_empty() {
-                        format.clear_user_extension_priority(&extension);
-                    } else {
-                        format.set_user_extension_priority(&extension, order);
-                    }
-                    files_changed = true;
-                }
-                RegistryEdit::DetectorEnabled(id, enabled) => {
-                    format.set_user_detector_disabled(&id, !enabled);
-                    files_changed = true;
-                }
-                RegistryEdit::RemoveDetector(id) => {
-                    format.remove_user_detector(&id);
-                    files_changed = true;
-                }
-                RegistryEdit::AddDetector(value) => {
-                    if let Err(error) = format.upsert_user_detector(value) {
-                        tracing::warn!(%error,"settings detector edit failed");
-                    }
-                    files_changed = true;
-                }
-                RegistryEdit::HandlerEnabled(id, enabled) => {
-                    handler.set_user_handler_disabled(&id, !enabled);
-                    files_changed = true;
-                }
-                RegistryEdit::RemoveHandler(id) => {
-                    handler.remove_user_handler(&id);
-                    files_changed = true;
-                }
-                RegistryEdit::AddHandler(value) => {
-                    if let Err(error) = handler.upsert_user_handler(value) {
-                        tracing::warn!(%error,"settings handler edit failed");
-                    }
-                    files_changed = true;
-                }
-                RegistryEdit::HookEnabled(id, enabled) => {
-                    hook.set_user_handler_disabled(&id, !enabled);
-                    hooks_changed = true;
-                }
-                RegistryEdit::RemoveHook(id) => {
-                    hook.remove_user_handler(&id);
-                    hooks_changed = true;
-                }
-                RegistryEdit::UpsertHook(value) => {
-                    if let Err(error) = hook.upsert_user_handler(value) {
-                        tracing::warn!(%error,"settings hook edit failed");
-                    }
-                    hooks_changed = true;
-                }
-            }
+            let (files, hooks) = apply_registry_edit(&format, &handler, hook, edit);
+            files_changed |= files;
+            hooks_changed |= hooks;
         }
         if files_changed
             && let Some(path) = path
@@ -119,4 +70,68 @@ impl super::App {
             tracing::warn!(%error,"settings hook save failed");
         }
     }
+}
+
+fn apply_registry_edit(
+    format: &crate::file::format::FileFormatRegistry,
+    handler: &crate::file::handler::FileHandlerRegistry,
+    hook: &crate::hook_handler::registry::HookHandlerRegistry,
+    edit: RegistryEdit,
+) -> (bool, bool) {
+    match edit {
+        RegistryEdit::Extension { extension, order } => {
+            if order.is_empty() {
+                format.clear_user_extension_priority(&extension);
+            } else {
+                format.set_user_extension_priority(&extension, order);
+            }
+            (true, false)
+        }
+        RegistryEdit::DetectorEnabled(id, enabled) => {
+            format.set_user_detector_disabled(&id, !enabled);
+            (true, false)
+        }
+        RegistryEdit::RemoveDetector(id) => {
+            format.remove_user_detector(&id);
+            (true, false)
+        }
+        RegistryEdit::AddDetector(value) => {
+            if let Err(error) = format.upsert_user_detector(value) {
+                report_registry_edit_failure(error, "settings detector edit failed");
+            }
+            (true, false)
+        }
+        RegistryEdit::HandlerEnabled(id, enabled) => {
+            handler.set_user_handler_disabled(&id, !enabled);
+            (true, false)
+        }
+        RegistryEdit::RemoveHandler(id) => {
+            handler.remove_user_handler(&id);
+            (true, false)
+        }
+        RegistryEdit::AddHandler(value) => {
+            if let Err(error) = handler.upsert_user_handler(value) {
+                report_registry_edit_failure(error, "settings handler edit failed");
+            }
+            (true, false)
+        }
+        RegistryEdit::HookEnabled(id, enabled) => {
+            hook.set_user_handler_disabled(&id, !enabled);
+            (false, true)
+        }
+        RegistryEdit::RemoveHook(id) => {
+            hook.remove_user_handler(&id);
+            (false, true)
+        }
+        RegistryEdit::UpsertHook(value) => {
+            if let Err(error) = hook.upsert_user_handler(value) {
+                report_registry_edit_failure(error, "settings hook edit failed");
+            }
+            (false, true)
+        }
+    }
+}
+
+fn report_registry_edit_failure(error: impl std::fmt::Display, message: &str) {
+    tracing::warn!(%error, "{message}");
 }

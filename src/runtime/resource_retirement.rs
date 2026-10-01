@@ -378,8 +378,37 @@ impl EngineRelease {
     pub(crate) fn poll(
         &mut self,
         session: &mut EngineSession,
-        mut plugins: Option<&mut crate::plugin::PluginManager>,
+        plugins: Option<&mut crate::plugin::PluginManager>,
     ) -> bool {
+        if !self.begin_release(session) {
+            return false;
+        }
+        self.retire_surface_owners(plugins);
+        let failed = self
+            .ptys
+            .iter()
+            .any(|receipt| receipt.observation().phase == PtyPhase::WaitFailed)
+            || self
+                .remote
+                .iter()
+                .any(|receipt| matches!(receipt.observation(), Some(Err(_))));
+        if failed && !self.warned {
+            tracing::warn!(
+                "engine release lacks an exact resource completion receipt; owner retained"
+            );
+            self.warned = true;
+        }
+        self.owners.is_empty()
+            && self
+                .ptys
+                .iter()
+                .all(|receipt| receipt.observation().phase == PtyPhase::Reaped)
+            && self
+                .remote
+                .iter()
+                .all(|receipt| matches!(receipt.observation(), Some(Ok(()))))
+    }
+    fn begin_release(&mut self, session: &mut EngineSession) -> bool {
         if !self.started {
             if !session.pending_materializations.is_empty()
                 || !session.pending_resource_retirements.is_empty()
@@ -406,6 +435,10 @@ impl EngineRelease {
             }
             self.started = true;
         }
+        true
+    }
+
+    fn retire_surface_owners(&mut self, mut plugins: Option<&mut crate::plugin::PluginManager>) {
         let mut retained = Vec::new();
         for surface in self.owners.drain(..) {
             if let Some(remote) = surface
@@ -420,25 +453,14 @@ impl EngineRelease {
                     drop(surface);
                     continue;
                 }
-                let result = plugins
-                    .as_deref_mut()
-                    .ok_or_else(|| "plugin host unavailable during engine release".to_owned())
-                    .and_then(|plugins| {
-                        plugins.enqueue_observed_remote_retirement(
-                            remote.id,
-                            remote.handles().binding(),
-                        )
-                    });
-                match result {
-                    Ok(receipt) => self.remote.push(receipt),
-                    Err(reason) => {
-                        if !self.warned {
-                            tracing::warn!(%reason,"engine retains an unconfirmed remote owner");
-                            self.warned = true;
-                        }
-                        retained.push(surface);
-                        continue;
-                    }
+                if !retain_remote_receipt(
+                    &mut self.remote,
+                    &mut self.warned,
+                    plugins.as_deref_mut(),
+                    remote,
+                ) {
+                    retained.push(surface);
+                    continue;
                 }
             }
             if let Some(mesh) = surface
@@ -469,29 +491,6 @@ impl EngineRelease {
             drop(surface);
         }
         self.owners = retained;
-        let failed = self
-            .ptys
-            .iter()
-            .any(|receipt| receipt.observation().phase == PtyPhase::WaitFailed)
-            || self
-                .remote
-                .iter()
-                .any(|receipt| matches!(receipt.observation(), Some(Err(_))));
-        if failed && !self.warned {
-            tracing::warn!(
-                "engine release lacks an exact resource completion receipt; owner retained"
-            );
-            self.warned = true;
-        }
-        self.owners.is_empty()
-            && self
-                .ptys
-                .iter()
-                .all(|receipt| receipt.observation().phase == PtyPhase::Reaped)
-            && self
-                .remote
-                .iter()
-                .all(|receipt| matches!(receipt.observation(), Some(Ok(()))))
     }
 }
 
@@ -526,4 +525,28 @@ impl EngineRelease {
     pub(crate) fn retain_surface(&mut self, surface: Box<dyn crate::model::Surface>) {
         self.owners.push(surface);
     }
+}
+
+fn retain_remote_receipt(
+    receipts: &mut Vec<crate::plugin_bridge::host_cmd::RemoteRetirementReceipt>,
+    warned: &mut bool,
+    plugins: Option<&mut crate::plugin::PluginManager>,
+    remote: &crate::plugin_bridge::remote_surface::RemoteSurface,
+) -> bool {
+    let result = plugins
+        .ok_or_else(|| "plugin host unavailable during engine release".to_owned())
+        .and_then(|plugins| {
+            plugins.enqueue_observed_remote_retirement(remote.id, remote.handles().binding())
+        });
+    match result {
+        Ok(receipt) => receipts.push(receipt),
+        Err(reason) => {
+            if !*warned {
+                tracing::warn!(%reason,"engine retains an unconfirmed remote owner");
+                *warned = true;
+            }
+            return false;
+        }
+    }
+    true
 }

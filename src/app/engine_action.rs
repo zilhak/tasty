@@ -268,58 +268,10 @@ impl EngineAction {
                 }
             }
             #[cfg(feature = "gui")]
-            Self::Explorer { target, action } => {
-                if target.current(&engine.as_ref())
-                    && let Some(panel) =
-                        engine
-                            .runtime
-                            .surfaces
-                            .get_mut(&target.surface)
-                            .and_then(|surface| {
-                                surface
-                                    .as_any_mut()
-                                    .downcast_mut::<crate::model::ExplorerPanel>()
-                            })
-                {
-                    super::explorer_action::apply_to_explorer_panel(panel, action);
-                    engine.mark_layout_dirty();
-                }
-            }
+            Self::Explorer { .. } => self.apply_explorer(engine),
             #[cfg(feature = "gui")]
-            Self::DagSelection {
-                target,
-                dag_id,
-                direction,
-            } => {
-                if target.current(&engine.as_ref())
-                    && let Some(dag) =
-                        engine
-                            .runtime
-                            .surfaces
-                            .get_mut(&target.surface)
-                            .and_then(|surface| {
-                                surface
-                                    .as_any_mut()
-                                    .downcast_mut::<crate::model::DagGraphSurface>()
-                            })
-                {
-                    dag.dag_id = dag_id.clone();
-                    dag.direction = *direction;
-                    engine.mark_layout_dirty();
-                }
-            }
-            Self::RenameExplorerEntry { target, path, name } => {
-                if target.current(&engine.as_ref())
-                    && let Some(parent) = path.parent()
-                {
-                    let next = parent.join(name);
-                    if next != *path
-                        && let Err(error) = std::fs::rename(path, &next)
-                    {
-                        tracing::warn!(%error,"explorer rename failed");
-                    }
-                }
-            }
+            Self::DagSelection { .. } => self.apply_dag_selection(engine),
+            Self::RenameExplorerEntry { .. } => self.apply_rename_explorer_entry(engine),
             #[cfg(feature = "gui")]
             Self::Screenshot {
                 target,
@@ -343,64 +295,7 @@ impl EngineAction {
                 }
             }
             #[cfg(feature = "gui")]
-            Self::PasteImage {
-                target,
-                view,
-                bracketed,
-                file_name,
-                png_bytes,
-            } => {
-                if !target.current(&engine.as_ref()) {
-                    return;
-                }
-                if let Some((workspace, _)) = &target.mirror {
-                    engine
-                        .remote
-                        .pending_image_uploads
-                        .push(crate::core::PendingImageUpload {
-                            origin_view: view.clone(),
-                            mirror_ws_id: *workspace,
-                            surface_id: target.surface,
-                            bracketed: *bracketed,
-                            file_name: file_name.clone(),
-                            png_bytes: png_bytes.clone(),
-                        });
-                } else {
-                    let directory = match tempfile::Builder::new()
-                        .prefix("tasty-clipboard-")
-                        .tempdir()
-                    {
-                        Ok(directory) => directory,
-                        Err(error) => {
-                            tracing::warn!(%error, "clipboard image directory creation failed");
-                            return;
-                        }
-                    };
-                    let path = directory.path().join(file_name);
-                    match std::fs::write(&path, png_bytes) {
-                        Ok(()) => {
-                            // The receiving shell reads this file asynchronously, after this action.
-                            let _ = directory.keep();
-                            if engine.live.occupancy.is_hard_occupied(target.surface) {
-                                return;
-                            }
-                            if let Some(terminal) = engine.runtime.terminals.get_mut(target.surface)
-                            {
-                                let mut bytes = Vec::new();
-                                if *bracketed {
-                                    bytes.extend_from_slice(b"\x1b[200~");
-                                }
-                                bytes.extend_from_slice(path.to_string_lossy().as_bytes());
-                                if *bracketed {
-                                    bytes.extend_from_slice(b"\x1b[201~");
-                                }
-                                terminal.send_bytes(&bytes);
-                            }
-                        }
-                        Err(error) => tracing::warn!(%error,"clipboard image save failed"),
-                    }
-                }
-            }
+            Self::PasteImage { .. } => self.apply_paste_image(engine),
             #[cfg(feature = "gui")]
             Self::AddExplorerFavorite { path, label } => {
                 engine
@@ -453,25 +348,7 @@ impl EngineAction {
                     engine.force_detach_workspace(*workspace);
                 }
             }
-            Self::ExplorerCwd { target, folder } => {
-                if !target.current(&engine.as_ref()) {
-                    return;
-                }
-                if let Some(explorer) =
-                    engine
-                        .runtime
-                        .surfaces
-                        .get_mut(&target.surface)
-                        .and_then(|surface| {
-                            surface
-                                .as_any_mut()
-                                .downcast_mut::<crate::model::ExplorerPanel>()
-                        })
-                {
-                    explorer.active_tab_mut().set_cwd(folder.clone());
-                    engine.mark_layout_dirty();
-                }
-            }
+            Self::ExplorerCwd { .. } => self.apply_explorer_cwd(engine),
             #[cfg(feature = "gui")]
             Self::RemoveExplorerFavorite { path } => {
                 engine.runtime.explorer_favorites.remove(path);
@@ -489,87 +366,9 @@ impl EngineAction {
                 }
             }
             #[cfg(feature = "gui")]
-            Self::LocalMesh {
-                target,
-                plugin,
-                registration,
-                bootstrap,
-                params,
-            } => {
-                if !target.current(&engine.as_ref()) {
-                    return;
-                }
-                let Some(kind) = engine
-                    .core
-                    .find_surface_by_id(target.surface)
-                    .map(|surface| surface.kind.as_str())
-                else {
-                    return;
-                };
-                let Some(current) = engine.runtime.surface_registry.get_live(kind) else {
-                    return;
-                };
-                if !registration.matches(&current) {
-                    return;
-                }
-                let Some(manager) = plugins else {
-                    return;
-                };
-                if let Some((kind, file, name)) = bootstrap {
-                    let Some(binding) = engine
-                        .runtime
-                        .surfaces
-                        .get(&target.surface)
-                        .and_then(|surface| {
-                            surface
-                                .as_any()
-                                .downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>(
-                                )
-                        })
-                        .map(|surface| surface.retirement_binding.clone())
-                    else {
-                        return;
-                    };
-                    manager.send_egui_mesh_surface_create(
-                        plugin,
-                        target.surface,
-                        kind,
-                        file.as_deref(),
-                        name,
-                        &binding,
-                    );
-                }
-                manager.send_surface_set_context(plugin, params);
-            }
+            Self::LocalMesh { .. } => self.apply_local_mesh(engine, plugins),
             #[cfg(feature = "gui")]
-            Self::RemoteMesh {
-                target,
-                context,
-                input,
-            } => {
-                if !target.current(&engine.as_ref()) {
-                    return;
-                }
-                if let Some(context) = context {
-                    engine
-                        .remote
-                        .pending_mesh_context_forward
-                        .insert(target.surface, context.clone());
-                }
-                if let Some(input) = input {
-                    engine
-                        .remote
-                        .pending_mesh_input_forward
-                        .entry(target.surface)
-                        .and_modify(|pending| {
-                            pending.events.extend(input.events.clone());
-                            pending.focused = input.focused;
-                            pending.modifiers = input.modifiers;
-                            pending.time = input.time;
-                        })
-                        .or_insert_with(|| input.clone());
-                }
-            }
+            Self::RemoteMesh { .. } => self.apply_remote_mesh(engine),
             #[cfg(feature = "gui")]
             Self::FocusObserved { target } => {
                 if target.current(&engine.as_ref()) {
@@ -609,6 +408,248 @@ impl EngineAction {
                 #[cfg(feature = "gui")]
                 crate::app::services::AppServices::resize_terminals(engine, targets);
             }
+        }
+    }
+
+    #[cfg(feature = "gui")]
+    fn apply_paste_image(&self, engine: &mut EngineMut<'_>) {
+        let Self::PasteImage {
+            target,
+            view,
+            bracketed,
+            file_name,
+            png_bytes,
+        } = self
+        else {
+            unreachable!("variant-specific action dispatch")
+        };
+        if !target.current(&engine.as_ref()) {
+            return;
+        }
+        if let Some((workspace, _)) = &target.mirror {
+            engine
+                .remote
+                .pending_image_uploads
+                .push(crate::core::PendingImageUpload {
+                    origin_view: view.clone(),
+                    mirror_ws_id: *workspace,
+                    surface_id: target.surface,
+                    bracketed: *bracketed,
+                    file_name: file_name.clone(),
+                    png_bytes: png_bytes.clone(),
+                });
+        } else {
+            let directory = match tempfile::Builder::new()
+                .prefix("tasty-clipboard-")
+                .tempdir()
+            {
+                Ok(directory) => directory,
+                Err(error) => {
+                    tracing::warn!(%error, "clipboard image directory creation failed");
+                    return;
+                }
+            };
+            let path = directory.path().join(file_name);
+            match std::fs::write(&path, png_bytes) {
+                Ok(()) => {
+                    // The receiving shell reads this file asynchronously, after this action.
+                    let _ = directory.keep();
+                    if engine.live.occupancy.is_hard_occupied(target.surface) {
+                        return;
+                    }
+                    if let Some(terminal) = engine.runtime.terminals.get_mut(target.surface) {
+                        let mut bytes = Vec::new();
+                        if *bracketed {
+                            bytes.extend_from_slice(b"\x1b[200~");
+                        }
+                        bytes.extend_from_slice(path.to_string_lossy().as_bytes());
+                        if *bracketed {
+                            bytes.extend_from_slice(b"\x1b[201~");
+                        }
+                        terminal.send_bytes(&bytes);
+                    }
+                }
+                Err(error) => tracing::warn!(%error,"clipboard image save failed"),
+            }
+        }
+    }
+    #[cfg(feature = "gui")]
+    fn apply_local_mesh(
+        &self,
+        engine: &mut EngineMut<'_>,
+        plugins: Option<&crate::plugin::PluginManager>,
+    ) {
+        let Self::LocalMesh {
+            target,
+            plugin,
+            registration,
+            bootstrap,
+            params,
+        } = self
+        else {
+            unreachable!("variant-specific action dispatch")
+        };
+        if !target.current(&engine.as_ref()) {
+            return;
+        }
+        let Some(kind) = engine
+            .core
+            .find_surface_by_id(target.surface)
+            .map(|surface| surface.kind.as_str())
+        else {
+            return;
+        };
+        let Some(current) = engine.runtime.surface_registry.get_live(kind) else {
+            return;
+        };
+        if !registration.matches(&current) {
+            return;
+        }
+        let Some(manager) = plugins else {
+            return;
+        };
+        if let Some((kind, file, name)) = bootstrap {
+            let Some(binding) = engine
+                .runtime
+                .surfaces
+                .get(&target.surface)
+                .and_then(|surface| {
+                    surface
+                        .as_any()
+                        .downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>()
+                })
+                .map(|surface| surface.retirement_binding.clone())
+            else {
+                return;
+            };
+            manager.send_egui_mesh_surface_create(
+                plugin,
+                target.surface,
+                kind,
+                file.as_deref(),
+                name,
+                &binding,
+            );
+        }
+        manager.send_surface_set_context(plugin, params);
+    }
+    #[cfg(feature = "gui")]
+    fn apply_remote_mesh(&self, engine: &mut EngineMut<'_>) {
+        let Self::RemoteMesh {
+            target,
+            context,
+            input,
+        } = self
+        else {
+            unreachable!("variant-specific action dispatch")
+        };
+        if !target.current(&engine.as_ref()) {
+            return;
+        }
+        if let Some(context) = context {
+            engine
+                .remote
+                .pending_mesh_context_forward
+                .insert(target.surface, context.clone());
+        }
+        if let Some(input) = input {
+            engine
+                .remote
+                .pending_mesh_input_forward
+                .entry(target.surface)
+                .and_modify(|pending| {
+                    pending.events.extend(input.events.clone());
+                    pending.focused = input.focused;
+                    pending.modifiers = input.modifiers;
+                    pending.time = input.time;
+                })
+                .or_insert_with(|| input.clone());
+        }
+    }
+    #[cfg(feature = "gui")]
+    fn apply_explorer(&self, engine: &mut EngineMut<'_>) {
+        let Self::Explorer { target, action } = self else {
+            unreachable!("variant-specific action dispatch")
+        };
+        if target.current(&engine.as_ref())
+            && let Some(panel) =
+                engine
+                    .runtime
+                    .surfaces
+                    .get_mut(&target.surface)
+                    .and_then(|surface| {
+                        surface
+                            .as_any_mut()
+                            .downcast_mut::<crate::model::ExplorerPanel>()
+                    })
+        {
+            super::explorer_action::apply_to_explorer_panel(panel, action);
+            engine.mark_layout_dirty();
+        }
+    }
+    #[cfg(feature = "gui")]
+    fn apply_dag_selection(&self, engine: &mut EngineMut<'_>) {
+        let Self::DagSelection {
+            target,
+            dag_id,
+            direction,
+        } = self
+        else {
+            unreachable!("variant-specific action dispatch")
+        };
+        if target.current(&engine.as_ref())
+            && let Some(dag) =
+                engine
+                    .runtime
+                    .surfaces
+                    .get_mut(&target.surface)
+                    .and_then(|surface| {
+                        surface
+                            .as_any_mut()
+                            .downcast_mut::<crate::model::DagGraphSurface>()
+                    })
+        {
+            dag.dag_id = dag_id.clone();
+            dag.direction = *direction;
+            engine.mark_layout_dirty();
+        }
+    }
+
+    fn apply_rename_explorer_entry(&self, engine: &mut EngineMut<'_>) {
+        let Self::RenameExplorerEntry { target, path, name } = self else {
+            unreachable!("variant-specific action dispatch")
+        };
+        if target.current(&engine.as_ref())
+            && let Some(parent) = path.parent()
+        {
+            let next = parent.join(name);
+            if next != *path
+                && let Err(error) = std::fs::rename(path, &next)
+            {
+                tracing::warn!(%error,"explorer rename failed");
+            }
+        }
+    }
+    fn apply_explorer_cwd(&self, engine: &mut EngineMut<'_>) {
+        let Self::ExplorerCwd { target, folder } = self else {
+            unreachable!("variant-specific action dispatch")
+        };
+        if !target.current(&engine.as_ref()) {
+            return;
+        }
+        if let Some(explorer) =
+            engine
+                .runtime
+                .surfaces
+                .get_mut(&target.surface)
+                .and_then(|surface| {
+                    surface
+                        .as_any_mut()
+                        .downcast_mut::<crate::model::ExplorerPanel>()
+                })
+        {
+            explorer.active_tab_mut().set_cwd(folder.clone());
+            engine.mark_layout_dirty();
         }
     }
 }

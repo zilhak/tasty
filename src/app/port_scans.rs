@@ -59,6 +59,14 @@ impl Drop for PortScans {
 
 impl super::App {
     pub(crate) fn poll_port_scans(&mut self) {
+        self.collect_port_scan_results();
+        if self.port_scans.stopping {
+            return;
+        }
+        self.start_pending_port_scans();
+    }
+
+    fn collect_port_scan_results(&mut self) {
         let mut index = 0;
         while index < self.port_scans.jobs.len() {
             if !self.port_scans.jobs[index].worker.is_finished() {
@@ -98,9 +106,9 @@ impl super::App {
                 view.mark_dirty();
             }
         }
-        if self.port_scans.stopping {
-            return;
-        }
+    }
+
+    fn start_pending_port_scans(&mut self) {
         let proxy = self.view.proxy.clone();
         for (&window, view) in &mut self.view.views {
             let Some(view) = view.as_main_mut() else {

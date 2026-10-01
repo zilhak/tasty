@@ -61,45 +61,10 @@ pub(super) fn run(
         wake();
         true
     };
-    let opened = identity::open(&home)
-        .and_then(|store| Executor::open(StructureDecider, store).map_err(|e| e.to_string()));
-    let executor = match opened {
-        Ok(executor) => executor,
-        Err(error) => {
-            send(Completion::StartupFailed(error));
-            return;
-        }
-    };
-    {
-        let mut inner = executor.inner.lock().expect("new executor lock");
-        let epoch = inner.epoch;
-        if let Err(error) = inner.store.release_abandoned_admission_holders(epoch) {
-            send(Completion::StartupFailed(error.to_string()));
-            return;
-        }
-    }
-    if let Err(error) = recovery::recover(&executor) {
-        send(Completion::StartupFailed(error));
+    let Some((executor, mut published)) = open_published_executor(&home, &acknowledgements, &send)
+    else {
         return;
-    }
-    let mut published = {
-        let inner = executor.inner.lock().expect("new executor lock");
-        let cut = inner.state.batch;
-        if !send(Completion::Ready {
-            #[cfg(test)]
-            journal_id: inner.store.journal_id().to_owned(),
-            runtime_epoch: inner.epoch.0,
-            cut,
-            bootstrap: inner.state.clone(),
-        }) {
-            return;
-        }
-        cut
     };
-    if let Err(error) = acknowledge(&acknowledgements, published.unwrap_or(0)) {
-        send(Completion::StartupFailed(error));
-        return;
-    }
     let mut pending: HashMap<u64, Pending> = HashMap::new();
     let mut halted: Option<String> = None;
     while let Ok(queued) = requests.recv() {
@@ -162,29 +127,14 @@ pub(super) fn run(
             Some(reason) => Err(reason.clone()),
             None => handle(&executor, &home, &mut pending, request.ticket, request.work),
         };
-        // A failed preparation is terminal for this unresolved admission. Release its credit
-        // and notify joined callers even when App never sends a later CancelAdmission.
-        if result.is_err() && !is_admit {
-            if let Some(abandoned) = pending.remove(&request.ticket) {
-                for follower in abandoned.followers {
-                    if !followers.contains(&follower) {
-                        followers.push(follower);
-                    }
-                }
-                release_admission = true;
-            }
-        }
-        if release_admission {
-            let mut inner = executor.inner.lock().expect("worker executor lock");
-            let epoch = inner.epoch;
-            if let Err(error) = inner.store.release_payload_holder(
-                epoch,
-                &format!("admission/{}/{ticket}", epoch.0, ticket = request.ticket),
-            ) {
-                // A leaked pin is conservative; it is reclaimed by a future fenced writer.
-                tracing::warn!("admission payload pin release failed: {error}");
-            }
-        }
+        release_finished_admission(
+            &executor,
+            &mut pending,
+            request.ticket,
+            result.is_err() && !is_admit,
+            &mut followers,
+            &mut release_admission,
+        );
         if halted.is_none()
             && let Err(error) = publish(
                 &executor,
@@ -204,19 +154,7 @@ pub(super) fn run(
             result = Err(error);
         }
         if !was_halted && halted.is_some() {
-            // Publication failure ends all unresolved admissions. Their credits must not survive
-            // the terminal transport failure; committed operations already have durable pins.
-            let abandoned: Vec<_> = pending.drain().map(|(ticket, _)| ticket).collect();
-            let mut inner = executor.inner.lock().expect("worker executor lock");
-            let epoch = inner.epoch;
-            for ticket in abandoned {
-                if let Err(error) = inner
-                    .store
-                    .release_payload_holder(epoch, &format!("admission/{}/{ticket}", epoch.0))
-                {
-                    tracing::warn!(%error,"halted admission pin remains for fenced-writer cleanup");
-                }
-            }
+            release_halted_admissions(&executor, &mut pending);
         }
         if checkpoint_requested && halted.is_none() && result.is_ok() {
             checkpoint_published(&executor, published, &readers);
@@ -251,9 +189,7 @@ fn checkpoint_published(
 ) {
     match executor.with_state(|models| models.batch) {
         Ok(cut) if cut == published => {
-            if let Err(error) = capture::checkpoint(executor, readers) {
-                tracing::warn!(%error,"structure checkpoint failed; retaining previous checkpoint");
-            }
+            checkpoint_current(executor, readers);
         }
         Ok(_) => {
             tracing::warn!("structure checkpoint skipped: committed cut has not been published")
@@ -748,4 +684,112 @@ fn acknowledge(acks: &Acknowledgements, expected: u64) -> Result<(), String> {
         return Err("application acknowledged a different journal cut".into());
     }
     applied.map_err(|e| format!("committed projection halted: {e}"))
+}
+
+fn release_finished_admission(
+    executor: &Executor<StructureDecider>,
+    pending: &mut HashMap<u64, Pending>,
+    ticket: u64,
+    failed: bool,
+    followers: &mut Vec<u64>,
+    release_admission: &mut bool,
+) {
+    // A failed preparation is terminal for this unresolved admission. Release its credit
+    // and notify joined callers even when App never sends a later CancelAdmission.
+    if failed {
+        if let Some(abandoned) = pending.remove(&ticket) {
+            for follower in abandoned.followers {
+                if !followers.contains(&follower) {
+                    followers.push(follower);
+                }
+            }
+            *release_admission = true;
+        }
+    }
+    if *release_admission {
+        let mut inner = executor.inner.lock().expect("worker executor lock");
+        let epoch = inner.epoch;
+        if let Err(error) = inner.store.release_payload_holder(
+            epoch,
+            &format!("admission/{}/{ticket}", epoch.0, ticket = ticket),
+        ) {
+            // A leaked pin is conservative; it is reclaimed by a future fenced writer.
+            tracing::warn!("admission payload pin release failed: {error}");
+        }
+    }
+}
+
+fn release_halted_admissions(
+    executor: &Executor<StructureDecider>,
+    pending: &mut HashMap<u64, Pending>,
+) {
+    // Publication failure ends all unresolved admissions. Their credits must not survive
+    // the terminal transport failure; committed operations already have durable pins.
+    let abandoned: Vec<_> = pending.drain().map(|(ticket, _)| ticket).collect();
+    let mut inner = executor.inner.lock().expect("worker executor lock");
+    let epoch = inner.epoch;
+    for ticket in abandoned {
+        if let Err(error) = inner
+            .store
+            .release_payload_holder(epoch, &format!("admission/{}/{ticket}", epoch.0))
+        {
+            tracing::warn!(%error,"halted admission pin remains for fenced-writer cleanup");
+        }
+    }
+}
+
+fn open_published_executor(
+    home: &std::path::Path,
+    acknowledgements: &Acknowledgements,
+    send: &impl Fn(Completion) -> bool,
+) -> Option<(Executor<StructureDecider>, Option<u64>)> {
+    let opened = identity::open(home)
+        .and_then(|store| Executor::open(StructureDecider, store).map_err(|e| e.to_string()));
+    let executor = match opened {
+        Ok(executor) => executor,
+        Err(error) => {
+            send(Completion::StartupFailed(error));
+            return None;
+        }
+    };
+    {
+        let mut inner = executor.inner.lock().expect("new executor lock");
+        let epoch = inner.epoch;
+        if let Err(error) = inner.store.release_abandoned_admission_holders(epoch) {
+            send(Completion::StartupFailed(error.to_string()));
+            return None;
+        }
+    }
+    if let Err(error) = recovery::recover(&executor) {
+        send(Completion::StartupFailed(error));
+        return None;
+    }
+    let published = {
+        let inner = executor.inner.lock().expect("new executor lock");
+        let cut = inner.state.batch;
+        if !send(Completion::Ready {
+            #[cfg(test)]
+            journal_id: inner.store.journal_id().to_owned(),
+            runtime_epoch: inner.epoch.0,
+            cut,
+            bootstrap: inner.state.clone(),
+        }) {
+            return None;
+        }
+        cut
+    };
+    if let Err(error) = acknowledge(acknowledgements, published.unwrap_or(0)) {
+        send(Completion::StartupFailed(error));
+        return None;
+    }
+    Some((executor, published))
+}
+
+fn checkpoint_current(
+    executor: &Executor<StructureDecider>,
+    readers: &crate::runtime::journal_payload::PayloadReaders,
+) {
+    if let Err(error) = capture::checkpoint(executor, readers) {
+        tracing::warn!(%error,"structure checkpoint failed; retaining previous checkpoint");
+    }
 }

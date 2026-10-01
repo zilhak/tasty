@@ -189,13 +189,13 @@ fn route_non_domain(
         | Intent::NewTab { .. }
         | Intent::SplitPane { .. }
         | Intent::NewWorkspace { .. } => {
-            tracing::error!("structural intent bypassed journal admission")
+            reject_non_domain("structural intent bypassed journal admission")
         }
         Intent::RestoreClosedItem => {
-            tracing::error!("undo intent bypassed journal admission");
+            reject_non_domain("undo intent bypassed journal admission");
         }
         Intent::DirectRename(_) => {
-            tracing::error!("direct rename bypassed journal admission");
+            reject_non_domain("direct rename bypassed journal admission");
         }
         Intent::Domain(_) => {}
         #[cfg(feature = "gui")]
@@ -209,9 +209,13 @@ fn route_non_domain(
         | Intent::Ui(_)
         | Intent::NewTabWithFollowup { .. }
         | Intent::PrepareTutorial { .. } => {
-            tracing::error!("intent requires the GUI application adapter")
+            reject_non_domain("intent requires the GUI application adapter")
         }
     }
+}
+
+fn reject_non_domain(reason: &str) {
+    tracing::error!("{reason}");
 }
 
 /// CoreEvent에서 engine 상태 변경만 처리한다. 창 갱신과 토스트는 제외한다.

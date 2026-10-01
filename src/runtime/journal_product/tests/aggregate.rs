@@ -21,7 +21,7 @@ fn public_creation_keeps_completed_wire_parts_in_original_order() {
 
 fn exercise(public: bool, restart: bool) {
     let home = tempfile::tempdir().unwrap();
-    let mut worker = start(home.path());
+    let worker = start(home.path());
     seed_category(&worker);
     submit(&worker, 101, Work::Admit(header("second-category")));
     finished(&worker, 101).unwrap();
@@ -212,81 +212,12 @@ fn exercise(public: bool, restart: bool) {
                 publish(&worker);
                 finished(&worker, 20).unwrap();
                 if restart {
-                    // A claim without a completion receipt remains unknown after a new writer.
-                    // Recovery never reruns its factory merely to complete the aggregate reply.
-                    let (pending_stream, pending_operation) = &operations[0];
-                    submit(
-                        &worker,
-                        21,
-                        Work::ClaimPreparation {
-                            stream: pending_stream.clone(),
-                            operation: pending_operation.clone(),
-                        },
-                    );
-                    assert!(matches!(
-                        finished(&worker, 21).unwrap(),
-                        ResultValue::Claimed(_)
-                    ));
-                    let frozen = serde_json::to_vec(progress.replies[1].as_ref().unwrap()).unwrap();
-                    drop(worker);
-                    worker = start(home.path());
-                    submit(&worker, 22, Work::Admit(header("two-workspaces")));
-                    assert!(matches!(
-                        finished(&worker, 22).unwrap(),
-                        ResultValue::RecoveryRequired { replay: true, .. }
-                    ));
-                    submit(&worker, 23, Work::ReadEngine(pending_stream.clone()));
-                    let ResultValue::Engine(model) = finished(&worker, 23).unwrap() else {
-                        panic!("pending model")
-                    };
-                    assert!(matches!(
-                        model.operations[pending_operation].outcome,
-                        Some(tasty_core::OperationOutcome::Uncertain { .. })
-                    ));
-                    assert!(model.workspaces.is_empty());
-                    submit(
-                        &worker,
-                        24,
-                        Work::ClaimPreparation {
-                            stream: pending_stream.clone(),
-                            operation: pending_operation.clone(),
-                        },
-                    );
-                    assert!(
-                        finished(&worker, 24).is_err(),
-                        "old unknown work cannot be reexecuted"
-                    );
-                    let identity: serde_json::Value = serde_json::from_slice(
-                        &std::fs::read(home.path().join("structure/journal.json")).unwrap(),
-                    )
-                    .unwrap();
-                    let store = tasty_event_store::EventStore::open(
-                        &home.path().join("structure/journal.db"),
-                        identity["journal_id"].as_str().unwrap(),
-                    )
-                    .unwrap();
-                    let admission = header("two-workspaces");
-                    let tasty_event_store::CommandLookup::Hit(record) = store
-                        .lookup_command(admission.key.as_ref().unwrap(), &admission.original_digest)
-                        .unwrap()
-                    else {
-                        panic!("original command")
-                    };
-                    assert_eq!(record.status, tasty_event_store::CommandStatus::InProgress);
-                    let preserved: super::super::response::ResponseProgress =
-                        serde_json::from_slice(record.response.as_ref().unwrap()).unwrap();
-                    assert!(preserved.replies[0].is_none());
-                    assert_eq!(
-                        serde_json::to_vec(preserved.replies[1].as_ref().unwrap()).unwrap(),
-                        frozen
-                    );
-                    submit(&worker, 25, Work::ReadEngine("structure:slot-2".into()));
-                    let ResultValue::Engine(model) = finished(&worker, 25).unwrap() else {
-                        panic!("completed model")
-                    };
-                    assert_eq!(
-                        model.workspaces[&id(IdKind::Workspace, 1)].name,
-                        "later-name"
+                    assert_restart_preserves_progress(
+                        worker,
+                        home.path(),
+                        &operations,
+                        &progress,
+                        id(IdKind::Workspace, 1),
                     );
                     return;
                 }
@@ -310,20 +241,110 @@ fn exercise(public: bool, restart: bool) {
             }
             continue;
         }
-        let results: Vec<StructuralResult> =
-            serde_json::from_slice(record.response.as_ref().unwrap()).unwrap();
-        assert_eq!(results.len(), 2);
-        if index == 1 {
-            assert_eq!(record.status, tasty_event_store::CommandStatus::InProgress);
-            assert!(matches!(&results[0], StructuralResult::Pending { .. }));
-        } else {
-            assert_eq!(record.status, tasty_event_store::CommandStatus::Completed);
-            assert!(
-                matches!(&results[0],StructuralResult::Created { surface,.. } if *surface==id(IdKind::Surface,0))
-            );
-        }
+        assert_structural_progress(&record, index, &id);
+    }
+}
+
+fn assert_restart_preserves_progress(
+    worker: JournalWorker,
+    home: &std::path::Path,
+    operations: &[(String, OperationId)],
+    progress: &super::super::response::ResponseProgress,
+    completed_workspace: u32,
+) {
+    // A claim without a completion receipt remains unknown after a new writer.
+    // Recovery never reruns its factory merely to complete the aggregate reply.
+    let (pending_stream, pending_operation) = &operations[0];
+    submit(
+        &worker,
+        21,
+        Work::ClaimPreparation {
+            stream: pending_stream.clone(),
+            operation: pending_operation.clone(),
+        },
+    );
+    assert!(matches!(
+        finished(&worker, 21).unwrap(),
+        ResultValue::Claimed(_)
+    ));
+
+    let frozen = serde_json::to_vec(progress.replies[1].as_ref().unwrap()).unwrap();
+    drop(worker);
+    let worker = start(home);
+    submit(&worker, 22, Work::Admit(header("two-workspaces")));
+    assert!(matches!(
+        finished(&worker, 22).unwrap(),
+        ResultValue::RecoveryRequired { replay: true, .. }
+    ));
+    submit(&worker, 23, Work::ReadEngine(pending_stream.clone()));
+    let ResultValue::Engine(model) = finished(&worker, 23).unwrap() else {
+        panic!("pending model")
+    };
+    assert!(matches!(
+        model.operations[pending_operation].outcome,
+        Some(tasty_core::OperationOutcome::Uncertain { .. })
+    ));
+    assert!(model.workspaces.is_empty());
+    submit(
+        &worker,
+        24,
+        Work::ClaimPreparation {
+            stream: pending_stream.clone(),
+            operation: pending_operation.clone(),
+        },
+    );
+    assert!(
+        finished(&worker, 24).is_err(),
+        "old unknown work cannot be reexecuted"
+    );
+    let identity: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(home.join("structure/journal.json")).unwrap())
+            .unwrap();
+    let store = tasty_event_store::EventStore::open(
+        &home.join("structure/journal.db"),
+        identity["journal_id"].as_str().unwrap(),
+    )
+    .unwrap();
+    let admission = header("two-workspaces");
+    let tasty_event_store::CommandLookup::Hit(record) = store
+        .lookup_command(admission.key.as_ref().unwrap(), &admission.original_digest)
+        .unwrap()
+    else {
+        panic!("original command")
+    };
+    assert_eq!(record.status, tasty_event_store::CommandStatus::InProgress);
+    let preserved: super::super::response::ResponseProgress =
+        serde_json::from_slice(record.response.as_ref().unwrap()).unwrap();
+    assert!(preserved.replies[0].is_none());
+    assert_eq!(
+        serde_json::to_vec(preserved.replies[1].as_ref().unwrap()).unwrap(),
+        frozen
+    );
+    submit(&worker, 25, Work::ReadEngine("structure:slot-2".into()));
+    let ResultValue::Engine(model) = finished(&worker, 25).unwrap() else {
+        panic!("completed model")
+    };
+    assert_eq!(model.workspaces[&completed_workspace].name, "later-name");
+}
+
+fn assert_structural_progress(
+    record: &tasty_event_store::CommandRecord,
+    index: usize,
+    id: &impl Fn(IdKind, u32) -> u32,
+) {
+    let results: Vec<StructuralResult> =
+        serde_json::from_slice(record.response.as_ref().unwrap()).unwrap();
+    assert_eq!(results.len(), 2);
+    if index == 1 {
+        assert_eq!(record.status, tasty_event_store::CommandStatus::InProgress);
+        assert!(matches!(&results[0], StructuralResult::Pending { .. }));
+    } else {
+        assert_eq!(record.status, tasty_event_store::CommandStatus::Completed);
         assert!(
-            matches!(&results[1],StructuralResult::Created { workspace:Some(workspace), pane:Some(pane), tab:Some(tab), surface } if *workspace==id(IdKind::Workspace,1) && *pane==id(IdKind::Pane,1) && *tab==id(IdKind::Tab,1) && *surface==id(IdKind::Surface,1))
+            matches!(&results[0],StructuralResult::Created { surface,.. } if *surface==id(IdKind::Surface,0))
         );
     }
+    assert!(
+        matches!(&results[1],StructuralResult::Created { workspace:Some(workspace), pane:Some(pane), tab:Some(tab), surface } if *workspace==id(IdKind::Workspace,1) && *pane==id(IdKind::Pane,1) && *tab==id(IdKind::Tab,1) && *surface==id(IdKind::Surface,1))
+    );
 }

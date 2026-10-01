@@ -215,34 +215,12 @@ fn prepare_inner(
         if shell.disk_scrollback {
             terminal.enable_disk_scrollback(surface_id);
         }
-        if let Some(capture) = decoded_capture {
-            match capture {
-                crate::core::layout_persistence::import::surface_data::SurfaceData::Terminal {
-                    scrollback,
-                    scrollback_ref,
-                    ..
-                } => {
-                    scrollback_persist_id = scrollback_ref;
-                    if let Some(blob) = scrollback {
-                        if let Some(lines) =
-                            tasty_terminal::disk_scrollback::deserialize_lines(&blob)
-                        {
-                            if !lines.is_empty() {
-                                terminal.inject_scrollback(lines);
-                                let prefill = terminal.rows() / 2;
-                                terminal.prefill_visible_from_scrollback(prefill);
-                            }
-                        } else {
-                            tracing::warn!(
-                                surface_id,
-                                "stored scrollback could not be decoded; keeping its immutable capture"
-                            );
-                        }
-                    }
-                }
-                _ => anyhow::bail!("terminal activation capture belongs to another kind"),
-            }
-        }
+        restore_terminal_capture(
+            &mut terminal,
+            surface_id,
+            decoded_capture,
+            &mut scrollback_persist_id,
+        )?;
         if !shell.startup_command.trim().is_empty() {
             terminal.send_key(&format!("{}\n", shell.startup_command.trim()));
         }
@@ -471,4 +449,39 @@ impl PreparedMaterialization {
         }
         release.retain_surface(self.leaf.surface);
     }
+}
+
+fn restore_terminal_capture(
+    terminal: &mut Terminal,
+    surface_id: u32,
+    decoded_capture: Option<crate::core::layout_persistence::import::surface_data::SurfaceData>,
+    scrollback_persist_id: &mut Option<String>,
+) -> anyhow::Result<()> {
+    if let Some(capture) = decoded_capture {
+        match capture {
+            crate::core::layout_persistence::import::surface_data::SurfaceData::Terminal {
+                scrollback,
+                scrollback_ref,
+                ..
+            } => {
+                *scrollback_persist_id = scrollback_ref;
+                if let Some(blob) = scrollback {
+                    if let Some(lines) = tasty_terminal::disk_scrollback::deserialize_lines(&blob) {
+                        if !lines.is_empty() {
+                            terminal.inject_scrollback(lines);
+                            let prefill = terminal.rows() / 2;
+                            terminal.prefill_visible_from_scrollback(prefill);
+                        }
+                    } else {
+                        tracing::warn!(
+                            surface_id,
+                            "stored scrollback could not be decoded; keeping its immutable capture"
+                        );
+                    }
+                }
+            }
+            _ => anyhow::bail!("terminal activation capture belongs to another kind"),
+        }
+    }
+    Ok(())
 }
