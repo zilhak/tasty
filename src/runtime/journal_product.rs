@@ -352,8 +352,10 @@ pub(crate) fn request_size(work: &Work) -> usize {
             selection,
             normal_category_name,
             surface_floor,
-        } => serde_json::to_vec(&(selection, normal_category_name, surface_floor))
-            .map_or(usize::MAX, |bytes| bytes.len()),
+        } => {
+            let serialized=serde_json::to_vec(&(selection, normal_category_name, surface_floor)).map_or(usize::MAX, |bytes| bytes.len());
+            match selection {EngineSelection::ImportedSlot {source}=>serialized.max(source.weight().saturating_add(normal_category_name.len()).saturating_add(64)),_=>serialized}
+        },
         Work::Admit(header) => header
             .original_digest
             .len()

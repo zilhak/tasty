@@ -139,6 +139,11 @@ impl JournalApplication {
         if self.opening.contains_key(&session.id) {
             return Ok(());
         }
+        if let EngineSelection::ImportedSlot { source } = &selection {
+            if session.persistence.slot != Some(source.destination_slot) {
+                return Err("import destination must be claimed by the opening engine".into());
+            }
+        }
         let scopes = session
             .runtime.memory
             .lock()
@@ -303,6 +308,7 @@ impl JournalApplication {
                             Some(EngineSelection::Slot { slot, .. }) => {
                                 Some(format!("structure:slot-{slot}"))
                             }
+                            Some(EngineSelection::ImportedSlot { source }) => Some(format!("structure:slot-{}",source.destination_slot)),
                             Some(EngineSelection::FreshHeadless) => engine_binding
                                 .as_ref()
                                 .map(|binding| binding.stream.clone()),

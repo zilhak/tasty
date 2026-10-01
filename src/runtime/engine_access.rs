@@ -1,4 +1,4 @@
-//! 실행 경로가 필요한 원본만 빌린다. EngineSession의 수명·ID·View 관계는 노출하지 않는다.
+//! 실행 경로가 필요한 원본과 현재 journal binding을 빌린다. EngineSession의 소유권·View 관계는 노출하지 않는다.
 //! 구조만 읽거나 바꾸는 함수는 계속 CoreState를 받는다. 이 대여는 effect 분리를 대신하지 않는다.
 use crate::core::CoreState;
 use tasty_task_runtime::TaskScope;
@@ -8,6 +8,7 @@ use crate::output_observer::ObserverRouter;
 use std::ops::{Deref, DerefMut};
 
 pub(crate) struct EngineMut<'a> {
+    pub(crate) journal_binding:Option<&'a super::journal_product::EngineBinding>,
     pub(crate) core: &'a mut CoreState,
     pub(crate) persistence:&'a mut super::engine_session::EnginePersistence,
     pub(crate) remote:&'a mut crate::remote::state::RemoteState,
@@ -20,6 +21,7 @@ pub(crate) struct EngineMut<'a> {
 
 #[derive(Clone, Copy)]
 pub(crate) struct EngineRef<'a> {
+    pub(crate) journal_binding:Option<&'a super::journal_product::EngineBinding>,
     pub(crate) core: &'a CoreState,
     pub(crate) persistence:&'a super::engine_session::EnginePersistence,
     pub(crate) remote:&'a crate::remote::state::RemoteState,
@@ -35,6 +37,7 @@ impl EngineMut<'_> {
 
     pub(crate) fn as_ref(&self) -> EngineRef<'_> {
         EngineRef {
+            journal_binding:self.journal_binding,
             core: self.core,
             persistence:self.persistence,
             remote:self.remote,

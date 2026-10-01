@@ -1,4 +1,6 @@
 mod accessors;
+#[cfg(feature="gui")]
+pub(crate) mod preset_catalog;
 #[cfg(feature = "gui")]
 pub(crate) mod branch;
 #[cfg(feature = "gui")]
@@ -118,7 +120,7 @@ impl RequestContext {
         drop(preset_store);
         Self {
             #[cfg(feature = "gui")]
-            preset_store,
+            preset_store: preset_catalog::PresetCatalog::new(preset_store),
             navigation,
             #[cfg(feature="gui")]
             pending_move:None,

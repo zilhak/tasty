@@ -14,7 +14,7 @@ pub(super) fn open(
     executor
         .with_state(|_| ())
         .map_err(|error| error.to_string())?;
-    let resume_view = matches!(selection, EngineSelection::Slot { resume: true, .. });
+    let resume_view = matches!(&selection, EngineSelection::Slot { resume: true, .. } | EngineSelection::ImportedSlot { .. });
     let digest = serde_json::to_vec(&(&selection, &normal_category_name, surface_floor))
         .map_err(|error| error.to_string())?;
     let (key, stream, previous, reset) = {
@@ -66,6 +66,12 @@ pub(super) fn open(
                 )
                 .map_err(|error| error.to_string())?;
         }
+        if let EngineSelection::ImportedSlot { source } = &selection {
+            crate::runtime::journal_payload::import::transfer(&mut inner.store, epoch, source)?;
+            drop(inner);
+            executor.reload_committed().map_err(|error|error.to_string())?;
+            inner = executor.inner.lock().map_err(|error|error.to_string())?;
+        }
         if let EngineSelection::Slot { slot, resume: true } = selection {
             drop(inner);
             import_legacy(executor, home, slot)?;
@@ -73,6 +79,7 @@ pub(super) fn open(
         }
         let (stream, reset) = match selection {
             EngineSelection::Slot { slot, resume } => (format!("structure:slot-{slot}"), !resume),
+            EngineSelection::ImportedSlot { source } => (format!("structure:slot-{}", source.destination_slot), false),
             EngineSelection::FreshHeadless => {
                 let reserved = inner
                     .store
