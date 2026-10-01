@@ -50,9 +50,20 @@ impl AttachEventReceiver {
                 Ok(event)
             }
             Err(error) => {
-                if self.state.lost.swap(false, Ordering::AcqRel) {
-                    self.ended = true;
-                    Ok(AttachEvent::Loss)
+                if self.state.lost.load(Ordering::Acquire) {
+                    // The initial Empty may precede a final successful enqueue. After acquiring
+                    // loss, the sole producer cannot append again: recheck that complete prefix.
+                    // Keep loss sticky while returning it, so later polls drain every queued event.
+                    match self.receiver.try_recv() {
+                        Ok(event) => {
+                            self.state.bytes.fetch_sub(event.weight(), Ordering::AcqRel);
+                            Ok(event)
+                        }
+                        Err(_) => {
+                            self.ended = true;
+                            Ok(AttachEvent::Loss)
+                        }
+                    }
                 } else {
                     if error == mpsc::TryRecvError::Disconnected { self.ended = true; }
                     Err(error)
