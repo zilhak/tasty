@@ -14,11 +14,11 @@
 
 ### 로컬 vs mirror 판별
 
-키바인딩 매치 시점에 `state.focused_surface_id` → `CoreState::find_workspace_index_for_surface` → `Workspace.mirror` 로 대상 워크스페이스가 mirror 인지 즉시 판별한다(동기, OS 캡처 이전). mirror 면 그 워크스페이스 id 를, 아니면 `None` 을 `CoreState.pending_screenshot_captures` 큐에 push 한다 — 판별 자체는 focus 조회일 뿐 사용자 상태를 바꾸지 않는다.
+키바인딩 매치 시점에 읽기 projection에서 원 surface와 mirror workspace를 고정하고 `EngineAction::Screenshot`에 원 View를 담는다. App은 원 target이 유효한 경우에만 해당 `EngineSession.remote.pending_screenshot_captures`에 `(mirror_workspace, view)`를 넣는다. 현재 focus를 나중에 다시 조회해 목적지를 바꾸지 않는다.
 
 ### 캡처 (OS 네이티브, 인터랙티브)
 
-`about_to_wait` 에서 큐를 drain해 요청마다 백그라운드 스레드로 OS 캡처를 실행(`crate::platform::screen_capture::capture_interactive`, 블로킹 UI 스레드 방지 — `auto_attach`/`pending_gui_attach` 와 동일한 pending-queue + 스레드 위임 패턴).
+`about_to_wait` 에서 큐를 drain해 요청마다 백그라운드 스레드로 OS 캡처를 실행(`crate::platform::screen_capture::capture_interactive`, 블로킹 UI 스레드 방지 — App 소유 pending 요청과 결과 채널 사용).
 
 - **macOS**: `screencapture -i` (사용자가 영역 선택, Esc 로 취소 가능).
 - **Linux**: Wayland `grim`+`slurp`, X11 은 `gnome-screenshot -a` → `scrot -s` → ImageMagick `import` 순 폴백(첫 성공 사용, 바이너리 부재는 다음 도구로).
@@ -102,7 +102,7 @@ client 는 `capture_result` 를 받아 성공/실패 토스트(`attach.toast.mir
 
 - 캡처: `crates/tasty-platform/src/screen_capture.rs`(`capture_interactive`, 플랫폼별 `capture_to_path`).
 - App 폴링/스레딩: `src/app/screenshot_capture.rs`(`poll_screenshot_captures`/`trigger_pending_screenshot_captures`/`drain_screenshot_capture_results`), `src/app.rs`(`screenshot_capture_tx/rx`), `src/app/event.rs`(`AppEvent::ScreenshotCaptureReady`).
-- 큐: `src/core/state.rs`(`CoreState.pending_screenshot_captures: Vec<Option<u32>>`).
+- 큐: `src/remote/state.rs`의 `RemoteState.pending_screenshot_captures` — 원 mirror workspace와 View를 보관하며 `src/app/engine_action.rs`에서 채운다.
 - 키바인딩: `crates/tasty-settings/src/keybindings.rs`(`screenshot_to_clipboard` 필드 + `default_screenshot_to_clipboard`), `presets.rs`(4 프리셋 공통값), `crud.rs`(`GENERAL_BINDING_FIELDS`/`get_bindings(_mut)`), 매치는 `src/adapters/ui/input/shortcuts/keybinding.rs`(`match_capture_bindings`). Settings UI: `src/view/settings/ui/keybindings_tab.rs`(Clipboard 서브탭).
 - 원격 전송(client): `src/app/attach_client.rs` 하단 독립 블록(`forward_capture_to_remote_clipboard`, `send_capture_control_frame`, `parse_capture_result`, `MirrorEvent::CaptureResult`).
 - 원격 수신(server): `crates/tasty-ipc/src/stream_hub.rs`(`CaptureUploadMsg`, `pump_inbound` 분류), `src/remote/capture_upload.rs`(`CaptureUploadRegistry`), `src/remote/server.rs`(`finalize_capture_upload`, `save_capture_and_set_clipboard`). GUI(`src/app/event_handler.rs::apply_capture_upload_msg`)와 headless(`src/boot/headless_stream.rs::apply_capture_uploads`) 양쪽 진입점에서 동일 서버 로직을 호출.

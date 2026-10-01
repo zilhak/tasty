@@ -32,12 +32,13 @@ workspace)의 `Workspace.mirror` 플래그를 1 회 확인해 로컬/원격을 �
 기능의 `capture_chunk`/`capture_commit`/`capture_result` 와 동일한 "`StreamControl` enum 이
 인식 못 하는 `event` 태그" 패턴).
 
-1. wrapper 가 `CoreState::pending_list_dir_forward` 에 `{ local_ws_id, request_id, dir }` 를
-   push 하고 popup 상태를 `FpLoadState::Loading { request_id, sent_at }` 로 전이.
+1. wrapper는 원 mirror projection token과 `{ local_ws_id, request_id, dir }`를
+   `EngineAction::ListDirectory`로 보내고 popup을 `FpLoadState::Loading { request_id, sent_at }`로 전이한다.
+   App은 projection과 선택적 원 target이 여전히 유효할 때만 해당 `RemoteState.pending_list_dir_forward`에 넣는다.
 2. App 이 `about_to_wait` 에서 큐를 drain 해 attach 세션 writer 로 `list_dir_request` 프레임을
    전송(`src/app/attach_client.rs::send_list_dir_request`).
 3. 원격 인스턴스 서버측(`src/remote/server/content_queries.rs::handle_list_dir_request`)이
-   **attach 점유 = 신뢰**(`engine.attach.client_holds_workspace(client_id)`)만으로 인가 판정 —
+   **attach 점유 = 신뢰**(`engine.live.occupancy.client_holds_workspace(client_id)`)만으로 인가 판정 —
    별도 permission 게이트 없음. 인가되면 같은 `read_dir_entries` 로 대상 디렉토리를 읽어
    `list_dir_result` 로 회신.
 4. client 의 attach reader thread 가 `list_dir_result` 를 파싱해 `MirrorEvent::ListDirResult` 로
@@ -429,8 +430,8 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 - plugin caller: `crates/tasty-plugin-markdown/src/popup.rs`(`trigger_file_picker`,
   `FILE_PICKER_RESULT_EVENT`), `crates/tasty-plugin-markdown/src/main.rs`(`pending_file_picker`,
   `on_event` 의 `"file_picker.result"` 수신).
-- 원격 요청 큐: `src/core/mod.rs`(`PendingListDirForward`, `next_list_dir_request_id`),
-  `src/remote/state.rs`의 pending list 요청과 `src/app/engine_action.rs`의 원 projection에 묶인 `ListDirectory` 요청.
+- 원격 요청: `src/core/mod.rs`의 요청 값 `PendingListDirForward`/`next_list_dir_request_id`,
+  `src/app/engine_action.rs`의 원 projection에 묶인 `ListDirectory` → `src/remote/state.rs`의 pending list 큐.
 - 원격 전송(client): `src/app/attach_client.rs`(`send_list_dir_request`, `parse_list_dir_result`,
   `MirrorEvent::ListDirResult`, `apply_attach_client_output` 반영, `dispatch_pending_list_dir_forwards`).
 - 원격 수신(server): `crates/tasty-ipc/src/stream_hub.rs`(`ListDirRequestMsg`, `pump_inbound`

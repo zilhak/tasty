@@ -19,7 +19,7 @@ JSON-RPC 라우터는 공통 `check_request`의 권한·cap·rate 검사와 사�
 입력 재현 구현인 `src/adapters/ipc/handler/debug.rs`는 파일 단위 debug 조건을 사용한다.
 창·플러그인 실행이 필요한 요청은 아래 App-level debug adapter가 처리한다.
 
-`route_debug_handler` 함수 자체가 `#[cfg(debug_assertions)]` 라 release 바이너리엔 분기 한 줄과 함수가 모두 사라진다. release 에서 debug 메서드를 부르면 `-32601`(`method_not_found`)로 떨어진다 — 위 블록 끝의 `unrouted_for_external_caller` 는 **등록된 이름**이면 `-32017`(이 빌드 조합에 dispatch 팔이 없음)을, plugin 전용이면 `-32016` 을 답하지만, debug 메서드 표(`DEBUG_METHODS`)가 release 에서는 빈 표라 debug 메서드는 등록된 이름이 아니다. 그래서 모르는 이름과 같은 답이 된다(release 헤드리스 인스턴스에서 `debug.info` · `debug.popup.open` · `surface.raw_key` 가 전부 `-32601`, 2026-09-22 실측). `-32017` 은 release 에도 등록된 이름이 이 조합에서 빠진 경우(gui 전용 메서드를 헤드리스에 부른 것 등)의 답이다.
+`route_debug_handler` 함수 자체가 `#[cfg(debug_assertions)]` 라 release 바이너리엔 분기 한 줄과 함수가 모두 사라진다. release 에서 debug 메서드를 부르면 `-32601`(`method_not_found`)로 떨어진다 — `src/adapters/ipc/handler.rs`의 `unrouted_for_external_caller` 는 **등록된 이름**이면 `-32017`(이 빌드 조합에 dispatch 팔이 없음)을, plugin 전용이면 `-32016` 을 답하지만, debug 메서드 표(`DEBUG_METHODS`)가 release 에서는 빈 표라 debug 메서드는 등록된 이름이 아니다. 그래서 모르는 이름과 같은 답이 된다(release 헤드리스 인스턴스에서 `debug.info` · `debug.popup.open` · `surface.raw_key` 가 전부 `-32601`, 2026-09-22 실측). `-32017` 은 release 에도 등록된 이름이 이 조합에서 빠진 경우(gui 전용 메서드를 헤드리스에 부른 것 등)의 답이다.
 
 ### `MainViewState` 하나로는 부족한 debug 메서드는 App-level 에서 분기
 
