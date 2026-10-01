@@ -1,6 +1,7 @@
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{PopupAction, PopupScope};
-use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_read::EngineRead;
+use crate::runtime::engine_read::EngineRead;
 use crate::i18n::t;
 use crate::state::MainViewState;
 use crate::theme::Theme;
@@ -66,7 +67,7 @@ pub(crate) fn open_or_focus_for(
 pub fn draw_search_bar(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut EngineMut<'_>,
+    engine: &EngineRead<'_>,
 ) -> PopupAction {
     let theme = crate::theme::theme();
 
@@ -105,7 +106,7 @@ pub fn draw_search_bar(
             // find 단축키 → 검색창은 그대로 두고 포커스만 터미널로 되돌린다.
             let find_pressed = ui.input(|i| {
                 crate::adapters::ui::input::shortcuts::any_binding_pressed_egui(
-                    &engine.runtime.settings.keybindings.find,
+                    &engine.settings.keybindings.find,
                     i,
                 )
             });
@@ -341,7 +342,7 @@ fn toggle_button(
 }
 
 /// 검색 상태 필드를 빌려 검색을 실행한다.
-fn run_search(state: &mut MainViewState, engine: &EngineRef<'_>) {
+fn run_search(state: &mut MainViewState, engine: &EngineRead<'_>) {
     let surface_id = state.search.surface_id;
     let query = state.search.query.clone();
     let options = SearchOptions {
@@ -383,7 +384,7 @@ fn focused_terminal_surface_id(state: &MainViewState, engine: &crate::core::Core
         .unwrap_or(0)
 }
 
-fn scroll_to_current_match(state: &mut MainViewState, engine: &mut EngineMut<'_>) {
+fn scroll_to_current_match(state: &mut MainViewState, engine: &EngineRead<'_>) {
     let surface_id = state.search.surface_id;
     let search = &state.search;
     state

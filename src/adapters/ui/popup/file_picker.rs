@@ -12,7 +12,7 @@ mod footer;
 mod layout_tests;
 mod path_bar;
 
-use crate::runtime::engine_access::EngineRef;
+use crate::runtime::engine_read::EngineRead;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tasty_type_geometry::length::LogicalPx;
@@ -645,7 +645,7 @@ pub fn on_close_file_picker(
 pub fn draw_file_picker(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> PopupAction {
     let Some(data) = state.dialogs.file_picker.as_ref() else {
         return PopupAction::Close;
@@ -883,7 +883,7 @@ pub struct FilePickerStart {
 
 impl FilePickerStart {
     /// surface 의 cwd 에서 출발한다. mirror surface 면 원격 cwd 문자열을 그대로 싣는다.
-    pub fn from_surface(engine: &EngineRef<'_>, surface_id: Option<u32>) -> Self {
+    pub fn from_surface(engine: &EngineRead<'_>, surface_id: Option<u32>) -> Self {
         use crate::core::state::SurfaceCwd;
         let dir = surface_id
             .and_then(|sid| engine.surface_cwd(sid))

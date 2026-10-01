@@ -11,7 +11,7 @@ use tasty_type_geometry::length::LogicalPx;
 
 use crate::adapters::ui::icons::{self, Icon};
 use crate::runtime::surface_registry::{
-    PresetFieldInput, PresetFieldSpec, PresetFieldTarget, SurfaceKindRegistry,
+    PresetFieldInput, PresetFieldSpec, PresetFieldTarget,
 };
 use crate::i18n::t;
 
@@ -87,7 +87,7 @@ impl KindCatalog {
     /// - `HIDDEN_EDIT_KINDS`(`empty`) 는 제외.
     /// - 순서: builtin 우선([`EDIT_KINDS`] 순), 그 외 plugin kind 는 알파벳순.
     /// - 표시명: registry `display_name_i18n_key` 번역 우선, 미번역/미등록이면 capitalize.
-    pub fn from_registry(registry: &SurfaceKindRegistry) -> Self {
+    pub fn from_registry(registry: &crate::runtime::kind_catalog::KindCatalog) -> Self {
         let snapshot = registry.kinds_snapshot();
         let mut kinds: Vec<&'static str> = snapshot
             .iter()

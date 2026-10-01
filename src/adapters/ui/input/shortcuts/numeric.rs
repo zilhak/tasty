@@ -5,7 +5,7 @@
 //! 나머지 설정은 번호 오버레이와 같은 [`switch_target_for`]로 대상을 고른다.
 //! 사용자 포커스를 바꾸는 동작이므로 사용자 키 입력에서만 호출하며 release IPC에는 노출하지 않는다.
 
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_read::EngineRead;
 use winit::keyboard::{Key, ModifiersState};
 
 use crate::adapters::ui::switch_overlay::{SwitchTarget, switch_target_for};
@@ -28,7 +28,7 @@ impl MainView {
     #[allow(clippy::too_many_arguments)] // reason: quick-switch dispatch context(정규화된 modifier bool 4개 + 원본 ModifiersState)
     pub(super) fn handle_numeric_switch_shortcuts(
         state: &mut crate::state::MainViewState,
-        engine: &mut EngineMut<'_>,
+        engine: &EngineRead<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -66,7 +66,7 @@ impl MainView {
             if let Some(local) =
                 find_matching_individual_slot(&kb.workspace_switch_slot_keys, key, mods)
             {
-                if engine.runtime.settings.general.workspace_categories_enabled {
+                if engine.settings.general.workspace_categories_enabled {
                     state.switch_workspace_in_active_category(engine, local);
                 } else {
                     state.switch_workspace(engine, local);
@@ -75,7 +75,7 @@ impl MainView {
             }
         }
         if kb.category_switch_modifier == KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER
-            && engine.runtime.settings.general.workspace_categories_enabled
+            && engine.settings.general.workspace_categories_enabled
         {
             if matches_binding(kb.category_next_key(), key, mods) {
                 state.next_category(engine);
@@ -126,7 +126,7 @@ impl MainView {
                 }
                 if let Some(local) = kb.workspace_switch_slot_keys.iter().position(|k| k == ch) {
                     // 카테고리를 사용하면 카테고리 내 인덱스, 아니면 전역 인덱스다.
-                    if engine.runtime.settings.general.workspace_categories_enabled {
+                    if engine.settings.general.workspace_categories_enabled {
                         state.switch_workspace_in_active_category(engine, local);
                     } else {
                         state.switch_workspace(engine, local);
@@ -135,7 +135,7 @@ impl MainView {
                 }
             }
             Some(SwitchTarget::Category) => {
-                if !engine.runtime.settings.general.workspace_categories_enabled {
+                if !engine.settings.general.workspace_categories_enabled {
                     return false;
                 }
                 if ch == kb.category_next_key() {

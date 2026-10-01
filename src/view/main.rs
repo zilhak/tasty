@@ -22,7 +22,7 @@ pub(crate) mod ime;
 
 pub(crate) use divider_drag::DividerDrag;
 
-use crate::runtime::engine_access::EngineRef;
+use crate::runtime::engine_read::EngineRead;
 use std::sync::Arc;
 
 use winit::event::WindowEvent;
@@ -154,7 +154,7 @@ pub struct MainView {
 /// `MainView::pending_menu` 슬롯의 내용물.
 pub(crate) type PendingNativeMenuSlot = (
     crate::platform::native_menu::MenuHandle,
-    Box<dyn FnOnce(&mut MainView, &mut EngineRef<'_>, Option<u32>)>,
+    Box<dyn FnOnce(&mut MainView, &EngineRead<'_>, Option<u32>)>,
 );
 
 /// Ctrl+V 직후 Ctrl+C를 SIGINT로 흘려보내지 않을 보호 시간.
@@ -261,7 +261,7 @@ impl MainView {
 
     /// 현재 preedit이 있으면 원래 surface에 확정 전송하고 IME 상태를 리셋한다.
     /// 단축키 소비/포커스 전환 직전에 호출.
-    pub(crate) fn flush_ime_preedit(&mut self, engine: &mut EngineRef<'_>) {
+    pub(crate) fn flush_ime_preedit(&mut self, engine: &EngineRead<'_>) {
         ime::flush_preedit(self, engine);
     }
 
@@ -272,13 +272,13 @@ impl MainView {
     }
 
     /// PTY 출력 처리 후 cursor가 움직였을 수 있을 때 preedit anchor를 재계산한다.
-    pub(crate) fn recalc_ime_preedit_anchor(&mut self, engine: &mut EngineRef<'_>) {
+    pub(crate) fn recalc_ime_preedit_anchor(&mut self, engine: &EngineRead<'_>) {
         ime::recalc_anchor(self, engine);
     }
 
     /// 조합 입력 대상과 같은 순서로 plugin 팝업·mesh surface·터미널의 IME 후보창 위치를 고른다.
     /// plugin 위젯은 host의 PlatformOutput에 없으므로 mesh 프레임으로 받은 위치를 사용한다.
-    pub(crate) fn update_ime_cursor_area(&self, engine: &EngineRef<'_>) {
+    pub(crate) fn update_ime_cursor_area(&self, engine: &EngineRead<'_>) {
         // 무대 중에는 보이지 않는 배경 surface의 IME 위치를 사용하지 않는다.
         if self.state.fullscreen_stage_active() {
             return;
@@ -352,7 +352,7 @@ impl MainView {
     /// 창의 engine과 함께 창 이벤트를 처리한다. engine은 App registry가 창 ID로 찾아 넘긴다.
     fn handle_engine_event(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         event: WindowEvent,
         ctx: &mut ViewCtx<'_>,
     ) -> ViewAction {
@@ -475,7 +475,7 @@ impl MainView {
                 let (alt, option) = (mods.super_key(), mods.alt_key());
                 #[cfg(not(target_os = "macos"))]
                 let (alt, option) = (mods.alt_key(), false);
-                let kb = &engine.runtime.settings.keybindings;
+                let kb = &engine.settings.keybindings;
                 if self
                     .state
                     .update_switch_overlay(&*engine, kb, ctrl, shift, alt, option)
@@ -576,7 +576,7 @@ impl View for MainView {
 impl sealed::Sealed for MainView {}
 
 impl MainView {
-    pub(super) fn record_typing_intent(&mut self,engine:&crate::runtime::engine_access::EngineRef<'_>,surface:u32) {
+    pub(super) fn record_typing_intent(&mut self,engine:&crate::runtime::engine_read::EngineRead<'_>,surface:u32) {
         if let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,surface) {
             self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::RecordTyping {target,at:std::time::Instant::now()}).from_user_shortcut("typing"));
         }

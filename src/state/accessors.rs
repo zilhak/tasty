@@ -1,7 +1,7 @@
 //! 활성 워크스페이스·pane·surface 접근. 워크스페이스가 없을 수 있는 호출자는 Option 또는 빈 목록 검사를 사용한다.
 
 #[cfg(feature = "gui")]
-use crate::runtime::engine_access::EngineRef;
+use crate::runtime::engine_read::EngineRead;
 #[cfg(feature = "gui")]
 use tasty_terminal::Terminal;
 
@@ -78,23 +78,6 @@ impl RequestContext {
         engine.workspace_at(idx).expect("workspace index is valid")
     }
 
-    #[cfg(any(feature = "gui", test))]
-    pub fn active_workspace_mut<'a>(
-        &self,
-        engine: &'a mut CoreState,
-    ) -> &'a mut crate::model::Workspace {
-        debug_assert!(
-            !engine.workspaces().is_empty(),
-            "active_workspace_mut called with empty workspaces"
-        );
-        let idx = self
-            .active_workspace_index(engine)
-            .min(engine.workspaces().len().saturating_sub(1));
-        engine
-            .workspace_at_mut(idx)
-            .expect("workspace index is valid")
-    }
-
     /// Get the focused pane in the active workspace, or the first pane as fallback.
     /// Returns `None` if no workspaces exist (parked state after last-window close).
     pub fn focused_pane<'a>(&self, engine: &'a CoreState) -> Option<&'a crate::model::Pane> {
@@ -108,24 +91,6 @@ impl RequestContext {
             .or_else(|| layout.first_pane())
     }
 
-    /// Get the focused pane (mutable) in the active workspace, or the first pane as fallback.
-    /// Returns `None` if no workspaces exist (parked state after last-window close).
-    #[cfg(any(feature = "gui", debug_assertions, test))]
-    pub fn focused_pane_mut<'a>(
-        &self,
-        engine: &'a mut CoreState,
-    ) -> Option<&'a mut crate::model::Pane> {
-        if engine.workspaces().is_empty() {
-            return None;
-        }
-        let ws_id = self.active_workspace_index(engine);
-        let pane_id = self.navigation.pane_id(engine.workspace_at_mut(ws_id)?)?;
-        engine
-            .workspace_at_mut(ws_id)?
-            .pane_layout_mut()
-            .find_pane_mut(pane_id)
-    }
-
     pub fn focused_surface_id(&self, engine: &CoreState) -> Option<u32> {
         let pane = self.focused_pane(engine)?;
         let tab = pane.tabs.get(self.navigation.tab_index(pane))?;
@@ -133,9 +98,9 @@ impl RequestContext {
     }
 
     #[cfg(feature = "gui")]
-    pub fn focused_terminal<'a>(&self, engine: &EngineRef<'a>) -> Option<&'a Terminal> {
+    pub fn focused_terminal<'a>(&self, engine: &EngineRead<'a>) -> Option<&'a Terminal> {
         let id = self.focused_surface_id(engine)?;
-        engine.runtime.terminals.get(id)
+        engine.terminals.get(id)
     }
 
     pub fn focused_pane_id(&self, engine: &CoreState) -> crate::model::PaneId {
@@ -168,7 +133,7 @@ impl RequestContext {
         };
         let next = switch_target_for(kb, ctrl, shift, alt, option)
             .filter(|t| {
-                *t != SwitchTarget::Category || engine.runtime.settings.general.workspace_categories_enabled
+                *t != SwitchTarget::Category || engine.settings.general.workspace_categories_enabled
             })
             .map(|target| {
                 let pane_id = match target {

@@ -157,7 +157,6 @@ pub struct MainViewState {
     )]
     pub(crate) preset_store: std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>,
     /// Core와 공유하는 메모리 저장소. 화면 처리와 종료 정리에서도 사용한다.
-    pub(crate) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     /// surface 포커스 변경을 감지할 이전 값.
     #[cfg(feature = "gui")]
     pub(crate) last_focused_surface_id: Option<u32>,

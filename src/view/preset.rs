@@ -17,7 +17,7 @@ use tasty_settings::KeybindingSettings;
 use crate::adapters::ui::preset::demo_layout::KindCatalog;
 use crate::adapters::ui::preset::surface_settings::SurfaceCfg;
 use crate::adapters::ui::{LayoutContext, ToastManager, ToastScope};
-use crate::runtime::surface_registry::SurfaceKindRegistry;
+use crate::runtime::kind_catalog::KindCatalog as SurfaceKindCatalog;
 use crate::gpu::GpuState;
 use crate::i18n::t;
 use crate::view::ui::{View, sealed};
@@ -28,7 +28,7 @@ pub struct PresetView {
     store: Arc<Mutex<PresetStore>>,
     /// 등록된 surface kind의 공유 목록. 매 프레임 읽어 plugin 활성 상태를 반영한다.
     /// 목록이 없으면 정적 기본 목록을 사용한다.
-    surface_registry: Option<Arc<SurfaceKindRegistry>>,
+    surface_registry: Option<SurfaceKindCatalog>,
     /// 창을 열 때 가져온 편집 단축키 설정. 변경된 설정은 다시 열어야 반영된다.
     keybindings: KeybindingSettings,
     active_kind: PresetKind,
@@ -50,7 +50,7 @@ impl PresetView {
         gpu: GpuState,
         winit: Arc<winit::window::Window>,
         store: Arc<Mutex<PresetStore>>,
-        surface_registry: Option<Arc<SurfaceKindRegistry>>,
+        surface_registry: Option<SurfaceKindCatalog>,
         keybindings: KeybindingSettings,
     ) -> Self {
         Self {

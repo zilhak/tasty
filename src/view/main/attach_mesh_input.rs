@@ -154,7 +154,7 @@ impl MainView {
     }
 
     /// 변경된 영역·테마·포커스와 누적 입력을 App의 네트워크 전송 큐에 넣는다.
-    pub(super) fn forward_attach_mesh_context(&mut self, engine: &crate::runtime::engine_access::EngineRef<'_>) {
+    pub(super) fn forward_attach_mesh_context(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>) {
         let terminal_rect = self.compute_terminal_rect();
         let ppp = self.base.gpu.scale_factor();
         let focused = self.state.focused_surface_id(&*engine);

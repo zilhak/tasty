@@ -128,14 +128,7 @@ pub(crate) fn record_rss_sample(
     rss_bytes: u64,
     ts: u64,
 ) {
-    let seq = core.telemetry_seq.next();
-    let detector = core.anomaly_detector.clone();
-    let Some(anomaly) = detector.record_rss_sample(agent, rss_bytes, ts, seq) else {
-        return;
-    };
-    if let Err(e) = persist_anomaly(core, &anomaly) {
-        tracing::warn!("anomaly persist failed: {e}");
-    }
+    let Some(anomaly)=core.record_rss_sample(agent,rss_bytes,ts) else {return;};
     fire_anomaly_notification(window, out, engine, &anomaly);
 }
 

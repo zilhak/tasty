@@ -13,6 +13,5 @@ pub struct CommandContext {
     #[cfg(test)]
     pub(crate) tab_bar_height: PhysicalPx,
     pub(crate) recent_files: crate::recent_files::RecentFiles,
-    pub(crate) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     pub(crate) pending_intents: Vec<crate::intent::DispatchedIntent>,
 }

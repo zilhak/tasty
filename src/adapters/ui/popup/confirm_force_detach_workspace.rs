@@ -81,7 +81,7 @@ pub fn on_close_confirm_force_detach_workspace(
 pub fn draw_confirm_force_detach_workspace(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> PopupAction {
     let ctx = ui.ctx().clone();
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -157,17 +157,9 @@ pub fn draw_confirm_force_detach_workspace(
 
 /// 보류 대상의 점유를 해제하고 대상을 비운다. 실제 해제된 holder를 반환하며
 /// 이미 풀렸으면 None이다. 버튼 클릭 재현 없이도 해제 동작을 검사할 수 있다.
-pub(crate) fn apply_force_detach(
-    state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
-) -> Option<crate::core::attach::AttachClientId> {
-    let holder = state
-        .dialogs
-        .pending_force_detach_workspace
-        .and_then(|ws_id| engine.force_detach_workspace(ws_id));
-    if holder.is_none() {
-        tracing::debug!("force_detach_workspace: nothing to detach");
+pub(crate) fn apply_force_detach(state:&mut MainViewState,engine:&crate::runtime::engine_read::EngineRead<'_>) {
+    if let Some(workspace)=state.dialogs.pending_force_detach_workspace.take()
+        && let Some((_,lock))=engine.live.occupancy.workspaces_snapshot().into_iter().find(|(id,_)|*id==workspace) {
+        state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::DetachWorkspace {workspace,holder:lock.holder,grant:lock.granted_seq}).from_user_context_menu());
     }
-    state.dialogs.pending_force_detach_workspace = None;
-    holder
 }

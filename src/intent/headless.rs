@@ -156,9 +156,10 @@ fn route_non_domain(
                 Err(error)=>tracing::warn!("approval response failed: {error}"),
             }
         },
+        Intent::PatchSettings(_)=>tracing::error!("settings patch bypassed application resolution"),
         Intent::ForwardMirror {..}=>tracing::warn!("headless has no mirror client transport"),
         Intent::Ui(_) => crate::intent::popup::handle(state, engine, dispatched),
-        Intent::ApplyPreset { .. } | Intent::SavePreset { .. } => {
+        Intent::ApplyPreset { .. } | Intent::CapturePreset {..} | Intent::SavePreset { .. } => {
             crate::intent::preset::handle(core, state, engine, dispatched);
         }
         Intent::SplitSurface {..}|Intent::ConvertSurface {..}|Intent::NewTab {..}|Intent::NewTabWithFollowup {..}|Intent::SplitPane {..}|Intent::NewWorkspace {..}=>tracing::error!("structural intent bypassed journal admission"),

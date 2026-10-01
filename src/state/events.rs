@@ -18,11 +18,11 @@ impl FocusedSurfaceType {
     /// 등록된 kind의 capability를 조회한다. Terminal·None과 미등록 kind는 false다.
     pub fn kind_capability(
         &self,
-        engine: &CoreState,
-        f: impl Fn(&crate::runtime::surface_registry::SurfaceKindDef) -> bool,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+        f: impl Fn(&crate::runtime::kind_catalog::KindMetadata) -> bool,
     ) -> bool {
         match self {
-            Self::Kind(k) => engine.runtime.surface_registry
+            Self::Kind(k) => engine.surface_registry
                 .get(k)
                 .map(|d| f(&d))
                 .unwrap_or(false),

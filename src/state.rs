@@ -54,7 +54,7 @@ pub use events::FocusedSurfaceType;
 pub use workspace::WorkspaceCloseOrigin;
 
 use crate::core::CoreState;
-use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_read::EngineRead;
 #[cfg(feature = "gui")]
 use crate::model::LogicalPx;
 #[cfg(any(feature = "gui", test))]
@@ -108,24 +108,10 @@ pub struct ExplorerClipboard {
 }
 
 impl RequestContext {
-    /// 메모리 저장소를 잠그고 함수를 실행한다. poison은 Core와 같은 정책으로 복구한다.
-    pub(crate) fn with_memory<R>(
-        &self,
-        f: impl FnOnce(&mut dyn tasty_memory::MemoryStorage) -> R,
-    ) -> R {
-        let mut guard = crate::poison::recover_mutex(
-            self.memory.lock(),
-            crate::core::MEMORY_WHAT,
-            &crate::core::MEMORY_POISONED,
-        );
-        f(&mut *guard)
-    }
-
     /// 기존 engine의 복원된 활성 인덱스와 저장소 핸들로 화면 상태를 초기화한다.
     pub fn new(
         engine: &mut CoreState,
         preset_store: std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>,
-        memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     ) -> Self {
         let mut navigation = navigation::NavigationState::default();
         navigation.reconcile(&engine.workspaces());
@@ -134,7 +120,6 @@ impl RequestContext {
         Self {
             #[cfg(feature = "gui")]
             preset_store,
-            memory,
             navigation,
             #[cfg(feature="gui")]
             pending_move:None,
@@ -153,7 +138,7 @@ impl RequestContext {
             #[cfg(feature = "gui")]
             plugins_open: false,
             #[cfg(feature = "gui")]
-            sidebar_width: engine.runtime.settings.appearance.sidebar_width,
+            sidebar_width: engine.settings.appearance.sidebar_width,
             #[cfg(feature = "gui")]
             sidebar_visible: true,
             #[cfg(feature = "gui")]
@@ -206,7 +191,7 @@ impl RequestContext {
             #[cfg(feature = "gui")]
             popups: {
                 let mut pm = crate::adapters::ui::PopupManager::new();
-                let ui_zoom = engine.runtime.settings.appearance.ui_scale_factor();
+                let ui_zoom = engine.settings.appearance.ui_scale_factor();
                 for def in crate::adapters::ui::popup::defs::all_defs() {
                     pm.register_def(def, ui_zoom);
                 }
@@ -313,11 +298,11 @@ impl RequestContext {
     #[cfg(feature = "gui")]
     pub(crate) fn enqueue_convert_input_popup(
         &mut self,
-        engine: &EngineRef<'_>,
+        engine: &EngineRead<'_>,
         kind: &str,
         convert_surface_id: Option<u32>,
     ) -> bool {
-        let Some(popup_ref) = engine.runtime.surface_registry
+        let Some(popup_ref) = engine.surface_registry
             .get(kind)
             .and_then(|d| d.convert_input_popup.clone())
         else {
@@ -352,7 +337,7 @@ impl RequestContext {
     #[cfg(any(feature = "gui", test))]
     pub(crate) fn popup_surface_context(
         &self,
-        engine: &EngineRef<'_>,
+        engine: &EngineRead<'_>,
         surface_id: Option<u32>,
     ) -> serde_json::Value {
         use crate::core::state::SurfaceCwd;
@@ -503,31 +488,6 @@ impl RequestContext {
         }
     }
 
-    /// 닫힌 surface의 도메인 자원을 engine에서 회수하고 화면 cache를 해제한다.
-    /// persist_id가 있으면 해당 스크롤백 파일 삭제도 시도한다.
-    pub(crate) fn cleanup_surface(
-        &mut self,
-        engine: &mut EngineMut<'_>,
-        surface_id: u32,
-        persist_id: Option<String>,
-    ) {
-        let mut sink = crate::close_trace::CleanupSums::default();
-        self.cleanup_surface_traced(engine, surface_id, persist_id, &mut sink);
-    }
-
-    /// cleanup_surface와 같은 정리를 하며 도메인 단계별 시간을 sums에 합산한다.
-    pub(crate) fn cleanup_surface_traced(
-        &mut self,
-        engine: &mut EngineMut<'_>,
-        surface_id: u32,
-        persist_id: Option<String>,
-        sums: &mut crate::close_trace::CleanupSums,
-    ) {
-        engine.cleanup_surface_traced(surface_id, persist_id, sums);
-        #[cfg(feature = "gui")]
-        self.release_surface_views(surface_id);
-    }
-
     /// 닫힌 surface의 화면 전용 cache를 해제한다. 도메인 자원은 engine이 정리한다.
     #[cfg(feature = "gui")]
     pub(crate) fn release_surface_views(&mut self, surface_id: u32) {
@@ -576,8 +536,8 @@ impl RequestContext {
 
     /// cwd 상속 설정이 켜져 있으면 포커스된 surface의 로컬 경로를 반환한다.
     /// 원격 mirror의 경로는 로컬 PTY 작업 디렉터리로 사용할 수 없어 제외한다.
-    pub(crate) fn resolve_inherit_cwd(&self, engine: &EngineRef<'_>) -> Option<std::path::PathBuf> {
-        if !engine.runtime.settings.general.inherit_cwd || engine.workspaces().is_empty() {
+    pub(crate) fn resolve_inherit_cwd(&self, engine: &EngineRead<'_>) -> Option<std::path::PathBuf> {
+        if !engine.settings.general.inherit_cwd || engine.workspaces().is_empty() {
             return None;
         }
         let sid = self.focused_surface_id(engine)?;
@@ -587,10 +547,10 @@ impl RequestContext {
     /// cwd 상속 설정이 켜져 있으면 지정한 surface의 로컬 경로를 반환한다.
     pub(crate) fn resolve_inherit_cwd_from_surface(
         &self,
-        engine: &EngineRef<'_>,
+        engine: &EngineRead<'_>,
         surface_id: u32,
     ) -> Option<std::path::PathBuf> {
-        if !engine.runtime.settings.general.inherit_cwd {
+        if !engine.settings.general.inherit_cwd {
             return None;
         }
         engine.local_surface_cwd(surface_id)

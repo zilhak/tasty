@@ -113,7 +113,7 @@ pub struct PopupDef {
     pub draw_fn: fn(
         &mut egui::Ui,
         &mut MainViewState,
-        &mut crate::runtime::engine_access::EngineMut<'_>,
+        &crate::runtime::engine_read::EngineRead<'_>,
     ) -> PopupAction,
     /// 전체화면 버튼으로 열 무대 ID. None이거나 headless면 버튼이 없다.
     /// 무대는 별도 콘텐츠이며 원본 팝업은 열린 채 그 아래 남는다.

@@ -105,7 +105,7 @@ pub struct ExplorerInput<'a> {
 #[allow(clippy::too_many_arguments)]
 pub fn draw_explorer(
     ui: &mut egui::Ui,
-    panel: &mut ExplorerPanel,
+    panel: &ExplorerPanel,
     view: &mut ExplorerView,
     font: &EffectiveFont,
     id_suffix: &str,

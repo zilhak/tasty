@@ -1,6 +1,6 @@
 //! UI 전체 진입점 — sidebar 를 그리고 남은 terminal 영역 PhysicalRect 를 반환.
 
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_read::EngineRead;
 use crate::intent::Intent;
 use crate::model::PhysicalRect;
 use crate::state::MainViewState;
@@ -12,7 +12,7 @@ use super::sidebar;
 pub fn draw_ui(
     ctx: &egui::Context,
     state: &mut MainViewState,
-    engine: &mut EngineMut<'_>,
+    engine: &EngineRead<'_>,
     scale_factor: f32,
     plugin_alert: usize,
 ) -> PhysicalRect {

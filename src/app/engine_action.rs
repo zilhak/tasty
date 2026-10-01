@@ -8,10 +8,10 @@ pub(crate) struct SurfaceBinding {
     mirror:Option<(u32,std::sync::Weak<()>)>,
 }
 impl SurfaceBinding {
-    pub(crate) fn capture(engine:&EngineRef<'_>,surface:u32)->Option<Self> {
+    pub(crate) fn capture(engine:&crate::runtime::engine_read::EngineRead<'_>,surface:u32)->Option<Self> {
         let descriptor=engine.core.find_surface_by_id(surface)?;
         let mirror=engine.find_workspace_index_for_surface(surface).and_then(|(index,_)|engine.workspace_at(index)).filter(|workspace|workspace.mirror).and_then(|workspace|engine.mirror_projection_token(workspace.id).map(|token|(workspace.id,token)));
-        Some(Self {surface,activation:descriptor.activation_generation,resource:engine.runtime.terminals.generation(surface),mirror})
+        Some(Self {surface,activation:descriptor.activation_generation,resource:engine.terminals.generation(surface),mirror})
     }
     fn current(&self,engine:&EngineRef<'_>)->bool {
         engine.core.find_surface_by_id(self.surface).is_some_and(|descriptor|descriptor.activation_generation==self.activation)
@@ -20,21 +20,82 @@ impl SurfaceBinding {
     }
 }
 #[derive(Clone,Debug)]
+pub(crate) enum SettingsPatch {ExplorerMode(String),SuppressMouseHint(String),DisableMouseCapture(String)}
+impl SettingsPatch {
+    pub(crate) fn apply(&self,settings:&mut crate::settings::Settings) {match self {
+        Self::ExplorerMode(mode)=>settings.general.explorer_view_mode=mode.clone(),
+        Self::SuppressMouseHint(name)=>settings.general.mouse_capture_banner_blacklist.push(name.clone()),
+        Self::DisableMouseCapture(name)=>settings.general.mouse_capture_blacklist.push(name.clone()),
+    }}
+}
+
+#[derive(Clone,Debug)]
 pub(crate) enum EngineAction {
+    #[cfg(feature="gui")]
+    PasteImage {target:SurfaceBinding,bracketed:bool,file_name:String,png_bytes:Vec<u8>},
+    #[cfg(feature="gui")]
+    ImageUpload {target:SurfaceBinding,request:crate::core::PendingImageUpload},
+    #[cfg(feature="gui")]
+    Screenshot {target:Option<SurfaceBinding>,mirror_workspace:Option<u32>},
+    #[cfg(feature="gui")]
+    AttachUser(AttachRequest),
+    #[cfg(feature="gui")]
+    Explorer {target:SurfaceBinding,action:crate::explorer_ui::ExplorerAction},
+    #[cfg(feature="gui")]
+    DagSelection {target:SurfaceBinding,dag_id:Option<String>,direction:crate::model::DagDirection},
+    RenameExplorerEntry {target:SurfaceBinding,path:std::path::PathBuf,name:String},
     RecordTyping {target:SurfaceBinding,at:std::time::Instant},
     ExplorerCwd {target:SurfaceBinding,folder:std::path::PathBuf},
     RemoveExplorerFavorite {path:std::path::PathBuf},
+    AddExplorerFavorite {path:std::path::PathBuf,label:String},
+    TogglePortFavorite {address:std::net::IpAddr,port:u16,label:String},
+    DetachSurface {surface:u32,grant:u64},
+    DetachWorkspace {workspace:u32,holder:u32,grant:u64},
     RemoteMeshFull {targets:Vec<SurfaceBinding>},
     DefaultGrid {cols:usize,rows:usize},
     Resize {targets:Vec<(SurfaceBinding,usize,usize)>},
     #[cfg(feature="gui")]
-    LocalMesh {target:SurfaceBinding,plugin:String,registration:std::sync::Weak<crate::runtime::surface_registry::SurfaceKindDef>,bootstrap:Option<(String,Option<String>,String)>,params:tasty_plugin_protocol::protocol::SurfaceSetContextParams},
+    LocalMesh {target:SurfaceBinding,plugin:String,registration:crate::runtime::kind_catalog::Registration,bootstrap:Option<(String,Option<String>,String)>,params:tasty_plugin_protocol::protocol::SurfaceSetContextParams},
     #[cfg(feature="gui")]
     RemoteMesh {target:SurfaceBinding,context:Option<crate::core::state::AttachMeshContextForward>,input:Option<tasty_plugin_protocol::protocol::RawInputWire>},
 }
 impl EngineAction {
     pub(crate) fn apply(&self,engine:&mut EngineMut<'_>,plugins:Option<&crate::plugin::PluginManager>) {
         match self {
+            #[cfg(feature="gui")]
+            Self::AttachUser(request)=>{if let Some(request)=request.take() {engine.remote.pending_gui_attach_user.push(request);}},
+            #[cfg(feature="gui")]
+            Self::Explorer {target,action}=>{if target.current(&engine.as_ref()) && let Some(panel)=engine.runtime.surfaces.get_mut(&target.surface).and_then(|surface|surface.as_any_mut().downcast_mut::<crate::model::ExplorerPanel>()) {super::explorer_action::apply_to_explorer_panel(panel,action);engine.mark_layout_dirty();}},
+            #[cfg(feature="gui")]
+            Self::DagSelection {target,dag_id,direction}=>{if target.current(&engine.as_ref()) && let Some(dag)=engine.runtime.surfaces.get_mut(&target.surface).and_then(|surface|surface.as_any_mut().downcast_mut::<crate::model::DagGraphSurface>()) {dag.dag_id=dag_id.clone();dag.direction=*direction;engine.mark_layout_dirty();}},
+            Self::RenameExplorerEntry {target,path,name}=>{if target.current(&engine.as_ref()) && let Some(parent)=path.parent() {let next=parent.join(name);if next!=*path && let Err(error)=std::fs::rename(path,&next) {tracing::warn!(%error,"explorer rename failed");}}},
+            #[cfg(feature="gui")]
+            Self::Screenshot {target,mirror_workspace}=>{if target.as_ref().is_none_or(|target|target.current(&engine.as_ref())) {engine.remote.pending_screenshot_captures.push(*mirror_workspace);}},
+            #[cfg(feature="gui")]
+            Self::ImageUpload {target,request}=>{if target.current(&engine.as_ref()) {engine.remote.pending_image_uploads.push(request.clone());}},
+            #[cfg(feature="gui")]
+            Self::PasteImage {target,bracketed,file_name,png_bytes}=>{
+                if !target.current(&engine.as_ref()) {return;}
+                if let Some((workspace,_))=&target.mirror {
+                    engine.remote.pending_image_uploads.push(crate::core::PendingImageUpload {mirror_ws_id:*workspace,surface_id:target.surface,bracketed:*bracketed,file_name:file_name.clone(),png_bytes:png_bytes.clone()});
+                } else {
+                    let directory=std::env::temp_dir().join("tasty-clipboard");
+                    let path=directory.join(file_name);
+                    match std::fs::create_dir_all(&directory).and_then(|()|std::fs::write(&path,png_bytes)) {
+                        Ok(())=>{
+                            if engine.live.occupancy.is_hard_occupied(target.surface) {return;}
+                            if let Some(terminal)=engine.runtime.terminals.get_mut(target.surface) {
+                                let mut bytes=Vec::new();if *bracketed {bytes.extend_from_slice(b"\x1b[200~");}bytes.extend_from_slice(path.to_string_lossy().as_bytes());if *bracketed {bytes.extend_from_slice(b"\x1b[201~");}terminal.send_bytes(&bytes);
+                            }
+                        },
+                        Err(error)=>tracing::warn!(%error,"clipboard image save failed"),
+                    }
+                }
+            },
+            Self::AddExplorerFavorite {path,label}=>{engine.runtime.explorer_favorites.add(path.clone(),label.clone());engine.runtime.explorer_favorites.save();},
+            Self::TogglePortFavorite {address,port,label}=>{if engine.runtime.port_favorites.contains(*address,*port){engine.runtime.port_favorites.remove(*address,*port);}else{engine.runtime.port_favorites.add(*address,*port,label.clone());}engine.runtime.port_favorites.save();},
+            Self::DetachSurface {surface,grant}=>{if engine.live.occupancy.occupancy_of(*surface).is_some_and(|lock|lock.granted_seq==*grant) {engine.release_occupancy(*surface);}},
+            Self::DetachWorkspace {workspace,holder,grant}=>{if engine.live.occupancy.workspaces_snapshot().into_iter().any(|(id,lock)|id==*workspace && lock.holder==*holder && lock.granted_seq==*grant) {engine.force_detach_workspace(*workspace);}},
             Self::ExplorerCwd {target,folder}=> {
                 if !target.current(&engine.as_ref()) {return;}
                 if let Some(explorer)=engine.runtime.surfaces.get_mut(&target.surface).and_then(|surface|surface.as_any_mut().downcast_mut::<crate::model::ExplorerPanel>()) {
@@ -51,7 +112,7 @@ impl EngineAction {
                 if !target.current(&engine.as_ref()) {return;}
                 let Some(kind)=engine.core.find_surface_by_id(target.surface).map(|surface|surface.kind.as_str()) else {return;};
                 let Some(current)=engine.runtime.surface_registry.get_live(kind) else {return;};
-                if !registration.ptr_eq(&std::sync::Arc::downgrade(&current)) {return;}
+                if !registration.matches(&current) {return;}
                 let Some(manager)=plugins else {return;};
                 if let Some((kind,file,name))=bootstrap {manager.send_egui_mesh_surface_create(plugin,target.surface,kind,file.as_deref(),name);}
                 manager.send_surface_set_context(plugin,params);
@@ -72,4 +133,16 @@ impl EngineAction {
             },
         }
     }
+}
+
+/// The popup transfers tunnel ownership once. Cloned presentation intents cannot reuse it.
+#[cfg(feature="gui")]
+#[derive(Clone)]
+pub(crate) struct AttachRequest(std::sync::Arc<std::sync::Mutex<Option<crate::core::GuiAttachUserReq>>>);
+#[cfg(feature="gui")]
+impl std::fmt::Debug for AttachRequest {fn fmt(&self,f:&mut std::fmt::Formatter<'_>)->std::fmt::Result {f.write_str("AttachRequest")}}
+#[cfg(feature="gui")]
+impl AttachRequest {
+    pub(crate) fn new(request:crate::core::GuiAttachUserReq)->Self {Self(std::sync::Arc::new(std::sync::Mutex::new(Some(request))))}
+    fn take(&self)->Option<crate::core::GuiAttachUserReq> {match self.0.lock() {Ok(mut request)=>request.take(),Err(error)=>{tracing::warn!(%error,"attach request lock poisoned");error.into_inner().take()}}}
 }

@@ -28,10 +28,10 @@ pub(crate) fn draw_overlays(
     terminal_rect: crate::model::PhysicalRect,
     scale_factor: f32,
 ) {
-    let reduced_motion = engine.runtime.settings.accessibility.reduced_motion;
+    let reduced_motion = engine.settings.accessibility.reduced_motion;
     state
         .toasts
-        .set_lifetime_ms(engine.runtime.settings.overlay.toast_duration_ms);
+        .set_lifetime_ms(engine.settings.overlay.toast_duration_ms);
     state.toasts.draw(ctx, draw_ctx, reduced_motion);
 
     // View 배너의 기본 표시 영역은 탭바 아래다. 배너는 마우스만 소비한다.
@@ -61,7 +61,7 @@ pub(crate) fn draw_overlays(
     let hint_result = crate::adapters::ui::modifier_hint_overlay::draw_modifier_hint(
         ctx,
         &mut state.modifier_hint,
-        &engine.runtime.settings,
+        &engine.settings,
         &th,
         reduced_motion,
     );
@@ -81,7 +81,7 @@ pub(crate) fn draw_overlays(
 
     if let Some((pos, size)) = hint_result.persist {
         // 드래그를 놓았을 때 위치·크기를 저장한다. 다른 창과 공유하며 마지막 저장값이 남는다.
-        let mut new_settings = engine.runtime.settings.clone();
+        let mut new_settings = engine.settings.clone();
         new_settings.modifier_hint.pos = Some(pos);
         new_settings.modifier_hint.size = Some(size);
         state.dispatch_intent(

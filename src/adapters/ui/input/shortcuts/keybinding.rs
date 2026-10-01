@@ -1,7 +1,7 @@
 //! 설정된 키바인딩을 그룹 순서대로 비교해 처음 매칭된 액션을 실행한다.
 //! 그룹 순서도 충돌 우선순위에 영향을 준다.
 
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_read::EngineRead;
 use winit::keyboard::{Key, ModifiersState};
 
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
@@ -33,7 +33,7 @@ impl MainView {
     #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
     pub(super) fn handle_keybinding_shortcuts(
         state: &mut crate::state::MainViewState,
-        engine: &mut EngineMut<'_>,
+        engine: &EngineRead<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -109,7 +109,7 @@ impl MainView {
 
     pub(super) fn match_create_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut EngineMut<'_>,
+        engine: &EngineRead<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -137,7 +137,7 @@ impl MainView {
 
     fn match_split_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut EngineMut<'_>,
+        engine: &EngineRead<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -262,7 +262,7 @@ impl MainView {
 
     fn match_close_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut EngineMut<'_>,
+        engine: &EngineRead<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -357,7 +357,7 @@ impl MainView {
             state.sidebar_collapsed = !state.sidebar_collapsed;
             return true;
         }
-        if engine.runtime.settings.general.workspace_categories_enabled
+        if engine.settings.general.workspace_categories_enabled
             && matches_any_binding(&kb.toggle_categories_collapsed, key, mods)
         {
             state.dispatch_intent(
@@ -372,7 +372,7 @@ impl MainView {
     #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
     fn match_restore_quit_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut EngineMut<'_>,
+        engine: &EngineRead<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -410,7 +410,7 @@ impl MainView {
 
     fn match_convert_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut EngineMut<'_>,
+        engine: &EngineRead<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -483,7 +483,7 @@ impl MainView {
     #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
     fn match_window_tab_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut EngineMut<'_>,
+        engine: &EngineRead<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -677,7 +677,7 @@ impl MainView {
 
     fn match_tools_menu_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut EngineMut<'_>,
+        engine: &EngineRead<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -740,7 +740,7 @@ impl MainView {
     /// 로컬/원격 대상 정보를 준비해야 하므로 팝업 ID만 보내지 않고 메뉴와 같은 열기 함수를 쓴다.
     pub(crate) fn open_file_picker_tool(
         state: &mut crate::state::MainViewState,
-        engine: &mut EngineMut<'_>,
+        engine: &EngineRead<'_>,
     ) {
         use crate::adapters::ui::popup::file_picker;
         let start = file_picker::FilePickerStart::from_surface(
@@ -788,7 +788,8 @@ impl MainView {
             let ws = engine.workspace_at(idx)?;
             ws.mirror.then_some(ws.id)
         });
-        engine.remote.pending_screenshot_captures.push(mirror_ws_id);
+        let target=state.focused_surface_id(engine).and_then(|surface|crate::app::engine_action::SurfaceBinding::capture(engine,surface));
+        state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Screenshot {target,mirror_workspace:mirror_ws_id}).from_user_shortcut("screenshot"));
     }
 
     pub(crate) fn open_preset_apply_popup(

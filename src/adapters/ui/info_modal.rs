@@ -122,7 +122,7 @@ pub fn on_close_info_modal(
 pub fn draw_info_modal(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    _engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();

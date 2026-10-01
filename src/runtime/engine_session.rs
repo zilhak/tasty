@@ -58,6 +58,8 @@ impl EnginePersistence {
 }
 
 impl EngineSession {
+    pub(crate) fn read(&self)->super::engine_read::EngineRead<'_> {self.as_ref().read()}
+
     pub(crate) fn borrow_mut(&mut self) -> EngineMut<'_> {
         EngineMut {
             core: &mut self.core_state,

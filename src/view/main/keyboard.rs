@@ -1,4 +1,4 @@
-use crate::runtime::engine_access::EngineRef;
+use crate::runtime::engine_read::EngineRead;
 use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
@@ -70,7 +70,7 @@ impl MainView {
 
     pub(super) fn handle_keyboard_input(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         event: &winit::event::KeyEvent,
         _egui_consumed: bool,
     ) {
@@ -159,7 +159,7 @@ impl MainView {
         let key = self.shortcut_lookup_key(event);
         let decision = stage_key_decision(
             self.state.fullscreen_stage_active(),
-            &engine.runtime.settings.keybindings.fullscreen_stage_exit,
+            &engine.settings.keybindings.fullscreen_stage_exit,
             &key,
             self.base.state.modifiers,
         );
@@ -185,7 +185,7 @@ impl MainView {
     }
 
     /// double-tap 수식키 단축키를 처리했으면 true를 반환한다.
-    fn try_consume_double_tap_key(&mut self, engine: &mut EngineRef<'_>) -> bool {
+    fn try_consume_double_tap_key(&mut self, engine: &EngineRead<'_>) -> bool {
         if let Some(dt) = self.double_tap.take()
             && self.handle_double_tap_shortcut(engine, dt)
         {
@@ -246,7 +246,7 @@ impl MainView {
     /// 오버레이가 없을 때 단축키를 처리하고 IME 조합 문자를 정리한다.
     fn try_consume_shortcut_key(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         event: &winit::event::KeyEvent,
     ) -> bool {
         let shortcut_key = self.shortcut_lookup_key(event);
@@ -258,7 +258,7 @@ impl MainView {
     }
 
     /// winit과 native webview가 단축키 처리 뒤 함께 사용하는 후처리.
-    pub(crate) fn after_shortcut_consumed(&mut self, engine: &mut EngineRef<'_>) {
+    pub(crate) fn after_shortcut_consumed(&mut self, engine: &EngineRead<'_>) {
         self.reset_modifier_hint_reveal_timer();
         if self.ime_preedit.is_some() {
             // 팝업을 여는 단축키는 조합 문자를 버리고, 그 외에는 PTY로 확정 전송한다.
@@ -279,7 +279,7 @@ impl MainView {
     /// vi 복사 모드의 키를 처리한다. physical key 대체는 Ctrl만 누른 경우에 적용한다.
     fn try_consume_vi_key(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         event: &winit::event::KeyEvent,
     ) -> bool {
         let vi_key = if self.base.state.modifiers.control_key() {
@@ -298,7 +298,7 @@ impl MainView {
     /// 포커스된 터미널로 키를 보낸다. IME 조합 문자는 Commit에서 보낸다.
     fn forward_key_to_terminal(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         event: &winit::event::KeyEvent,
     ) {
         // Commit이 따로 오지 않는 ASCII 문자와 구두점은 여기서 전달한다.
@@ -315,11 +315,11 @@ impl MainView {
 
         // Option as Meta 설정은 macOS에만 있으므로 다른 플랫폼은 false를 쓴다.
         #[cfg(target_os = "macos")]
-        let option_as_meta = engine.runtime.settings.general.option_as_meta;
+        let option_as_meta = engine.settings.general.option_as_meta;
         #[cfg(not(target_os = "macos"))]
         let option_as_meta = false;
 
-        let shift_enter_newline = engine.runtime.settings.terminal_input.shift_enter_newline(
+        let shift_enter_newline = engine.settings.terminal_input.shift_enter_newline(
             self.state
                 .focused_surface_id(&*engine)
                 .and_then(|sid| engine.foreground_name(sid)),
@@ -406,7 +406,7 @@ impl MainView {
     /// 터미널의 읽기 차용이 끝난 뒤 스크롤 상태를 변경한다.
     fn apply_keyboard_scroll_action(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         action: KeyboardScrollAction,
     ) {
         let Some(sid) = self.state.focused_surface_id(engine) else {
@@ -670,7 +670,7 @@ impl MainView {
 
     pub(super) fn handle_ime(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         ime_event: winit::event::Ime,
         egui_consumed: bool,
     ) {

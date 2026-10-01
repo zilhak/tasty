@@ -1,6 +1,6 @@
 //! Double-tap modifier (Shift+Shift / Ctrl+Ctrl / Alt+Alt) 단축키 처리.
 
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_read::EngineRead;
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
 use crate::model::{PhysicalRect, SplitDirection};
 use crate::view::main::MainView;
@@ -11,7 +11,7 @@ impl MainView {
     /// 마지막 workspace가 닫혔으면 창을 닫고, 남아 있으면 레이아웃을 다시 계산한다.
     fn finish_after_possible_close(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &EngineRead<'_>,
         terminal_rect: PhysicalRect,
         cell_w: f32,
         cell_h: f32,
@@ -27,10 +27,10 @@ impl MainView {
 
     pub(crate) fn handle_double_tap_shortcut(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &EngineRead<'_>,
         dt: crate::double_tap::DoubleTapKey,
     ) -> bool {
-        let kb = engine.runtime.settings.keybindings.clone();
+        let kb = engine.settings.keybindings.clone();
         let dt_str = dt.binding_str();
 
         let has_dt = |bindings: &[String]| bindings.iter().any(|b| b == dt_str);
@@ -96,7 +96,7 @@ impl MainView {
     }
 
     /// 매칭된 액션을 실행하고 처리 여부를 반환한다.
-    fn run_double_tap_action(&mut self, engine: &mut EngineMut<'_>, action: &str) -> bool {
+    fn run_double_tap_action(&mut self, engine: &EngineRead<'_>, action: &str) -> bool {
         if self.run_double_tap_layout_action(engine, action)
             || self.run_double_tap_focus_action(engine, action)
             || self.run_double_tap_open_action(engine, action)
@@ -108,7 +108,7 @@ impl MainView {
         false
     }
 
-    fn run_double_tap_layout_action(&mut self, engine: &mut EngineMut<'_>, action: &str) -> bool {
+    fn run_double_tap_layout_action(&mut self, engine: &EngineRead<'_>, action: &str) -> bool {
         let terminal_rect = self.compute_terminal_rect();
         let cell_w = self.base.gpu.cell_width();
         let cell_h = self.base.gpu.cell_height();
@@ -239,7 +239,7 @@ impl MainView {
         true
     }
 
-    fn run_double_tap_open_action(&mut self, engine: &mut EngineMut<'_>, action: &str) -> bool {
+    fn run_double_tap_open_action(&mut self, engine: &EngineRead<'_>, action: &str) -> bool {
         match action {
             "open_markdown" => {
                 self.state

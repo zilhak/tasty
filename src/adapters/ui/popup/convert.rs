@@ -1,6 +1,6 @@
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{self, PopupAction};
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_read::EngineRead;
 use crate::i18n::t;
 use crate::state::MainViewState;
 use crate::theme;
@@ -107,7 +107,7 @@ pub fn on_close_convert_popup(
 pub fn draw_convert_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut EngineMut<'_>,
+    engine: &EngineRead<'_>,
 ) -> PopupAction {
     match draw_convert_content(ui, state, engine) {
         Some(ConvertResult::Close) => PopupAction::Close,
@@ -178,7 +178,7 @@ fn enumerate_convertible_kinds(
     state: &MainViewState,
     engine: &crate::core::CoreState,
 ) -> Vec<ConvertItem> {
-    let snapshot = engine.runtime.surface_registry.kinds_snapshot();
+    let snapshot = engine.surface_registry.kinds_snapshot();
     let mut kinds: Vec<&'static str> = snapshot
         .iter()
         .map(|(k, _)| *k)
@@ -198,7 +198,7 @@ fn enumerate_convertible_kinds(
     let mut items = Vec::with_capacity(kinds.len());
     for kind in kinds {
         let label = resolve_label(state, engine, kind);
-        let icon = engine.runtime.surface_registry
+        let icon = engine.surface_registry
             .get(kind)
             .and_then(|d| d.icon.clone())
             .map(|n| icons::from_name(&n))
@@ -219,7 +219,7 @@ fn resolve_label(_state: &MainViewState, engine: &crate::core::CoreState, kind: 
     if tr != popup_key.as_str() {
         return tr.to_string();
     }
-    if let Some(def) = engine.runtime.surface_registry.get(kind) {
+    if let Some(def) = engine.surface_registry.get(kind) {
         let key = def.display_name_i18n_key;
         let tr = t(key);
         if tr != key {
@@ -403,7 +403,7 @@ fn props_from_items(items: &[ConvertItem], selected_index: Option<usize>) -> Con
 /// Apply the convert action to the state.
 pub fn apply_convert_action(
     state: &mut MainViewState,
-    engine: &mut EngineMut<'_>,
+    engine: &EngineRead<'_>,
     action: ConvertAction,
 ) {
     let Some(surface_id) = state.dialogs.convert_popup else {
@@ -454,7 +454,7 @@ fn action_for_kind(engine: &crate::core::CoreState, kind: &str) -> ConvertAction
     if kind == "terminal" {
         return ConvertAction::Terminal;
     }
-    if engine.runtime.surface_registry
+    if engine.surface_registry
         .get(kind)
         .is_some_and(|d| d.convert_requires_input)
     {

@@ -117,7 +117,7 @@ Workspace·Pane·Tab의 구조에는 현재 사용자 선택을 저장하지 않
 
 GUI의 `MainViewState`는 `src/state/main.rs`에, GUI 없는 `CommandContext`는 `src/state/command.rs`에 별도 구조체로 정의한다. headless는 MainViewState를 생성하지 않는다. CommandContext의 navigation 값은 로컬 사용자 포커스가 아니라 기존 생략 대상 해소와 응답 호환에 필요한 기본 문맥이다. popup·sidebar·OS/GPU 자원과 설정창 열림 상태는 소유하지 않는다.
 
-공통 App adapter의 `RequestContext`는 빌드에 맞는 수신 타입을 재노출하는 이름이다. 두 원본을 공유하거나 동기화하는 wrapper가 아니며 Core 명령은 이 타입을 받지 않는다. 구조 실행과 결과 처리는 `src/app/structural_exec.rs`와 `structural_cascade.rs`에서 수행한다. 삭제/이동 결과를 받은 뒤 선택 ID와 표시 map을 보정하고, 사용자 생성 continuation만 새 대상을 선택한다.
+공통 App adapter의 `RequestContext`는 빌드에 맞는 수신 타입을 재노출하는 이름이다. 두 원본을 공유하거나 동기화하는 wrapper가 아니며 Core 명령은 이 타입을 받지 않는다. 구조 실행과 결과 처리는 App journal admission·committed projection에서 수행한다. 삭제/이동 결과를 받은 뒤 선택 ID와 표시 map을 보정하고, 사용자 생성 continuation만 새 대상을 선택한다.
 
 분할 트리의 `SplitNodeId`는 프로세스 내부에서만 사용하는 node identity다. 기존 `focus_second` wire bool은 navigation의 별도 split-hint map에서 합성한다. 노드 이동·재결합은 ID를 유지하고 새 노드는 새 ID를 받는다. split 생성의 hint 기본값은 true, layout/preset/undo 복원은 false이며 remote 입력은 받은 값을 보존한다. 이 ID는 wire나 journal의 영속 식별자가 아니다.
 
@@ -126,3 +126,5 @@ Mirror는 원격 pane/tab ID에 안정된 로컬 ID를 대응시킨다. snapshot
 사용자 탭 생성 후속 처리는 공통 App 실행 helper가 결과 ID에 적용한다. 호출자가 확인한 로컬 사용자 origin만 이 continuation을 허용하며, 원격 사용자 요청은 서버의 로컬 선택을 바꾸지 않는다. 원격 layout 파서는 immutable source 참조를 한 문맥으로 빌려 쓰고 선택/hint 적용과 리소스 데이터를 복제하지 않는다.
 
 닫힌 구조를 복원하면 새 객체의 내부 선택과 legacy split hint는 origin과 무관하게 복원 자료로 초기화한다. 이미 존재하는 선택은 보존하며, 복원된 탭·pane·workspace로 사용자를 옮기는 후속 선택만 User origin에 제한한다. attach 전송 projection은 구조 결과의 보정값을 반영하고, 원격 사용자 생성의 일회성 active 값은 서버 View 선택으로 역수입하지 않는다. 새 구독은 그 시점 서버 View/명령 기본값으로 다시 캡처한다.
+
+ViewCtx의 EngineRead는 실행 owner 자체를 감싸거나 역으로 복원하는 포트가 아니다. 순수 구조와 Live 관측을 빌리고 Terminal 내용·kind 메타데이터·DAG 목록을 조회한다. PTY 소유권·waker·ID 예약·Remote 전송 큐·TaskScope 제어는 전달하지 않는다. 렌더 중 계산한 Explorer/DAG 변경은 대상 activation/physical generation 또는 mirror projection identity를 붙인 App 명령으로 보낸다. 메뉴·드래그 탭 재정렬은 tab ID를 고정한 journal 요청이며 View가 pane의 순서를 쓰지 않는다. 프리셋 저장도 View에서 factory snapshot을 호출하지 않고 대상 ID와 presentation을 App에 전달한다.

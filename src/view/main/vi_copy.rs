@@ -4,7 +4,7 @@
 //! mode 가 활성일 때 keyboard 핸들러가 `handle_vi_key` 로 키를 가로채 PTY 송신을
 //! 차단한다. mouse drag 가 시작되면 자동 종료된다 (mouse.rs).
 
-use crate::runtime::engine_access::EngineRef;
+use crate::runtime::engine_read::EngineRead;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use crate::selection::{SelectionMode, SelectionPoint, TextSelection};
@@ -781,7 +781,7 @@ use super::MainView;
 
 impl MainView {
     /// `pending_enter_copy_mode` 플래그를 소비하고 mode 진입을 시도한다.
-    pub(crate) fn try_enter_vi_copy_mode(&mut self, engine: &mut EngineRef<'_>) {
+    pub(crate) fn try_enter_vi_copy_mode(&mut self, engine: &EngineRead<'_>) {
         if !self.state.dialogs.pending_enter_copy_mode {
             return;
         }
@@ -814,7 +814,7 @@ impl MainView {
     /// vi mode 가 활성일 때 키 이벤트를 가로채고 처리한다. true 면 키가 소비됨.
     pub(crate) fn try_handle_vi_key(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         key: &winit::keyboard::Key,
         modifiers: ModifiersState,
     ) -> bool {
@@ -899,7 +899,7 @@ impl MainView {
     }
 
     /// cursor 가 viewport 밖이면 scroll 하여 정렬.
-    fn vi_copy_viewport_align(&mut self, engine: &EngineRef<'_>) {
+    fn vi_copy_viewport_align(&mut self, engine: &EngineRead<'_>) {
         let Some(vi) = self.vi_copy.as_ref() else {
             return;
         };
@@ -921,7 +921,7 @@ impl MainView {
     }
 
     /// 현재 vi selection 을 클립보드에 복사하고 mode 종료.
-    fn vi_copy_yank(&mut self, engine: &mut EngineRef<'_>) {
+    fn vi_copy_yank(&mut self, engine: &EngineRead<'_>) {
         let Some(vi) = self.vi_copy.as_ref() else {
             return;
         };
@@ -955,7 +955,7 @@ impl MainView {
         self.vi_copy = None;
     }
 
-    fn vi_copy_search_navigate(&mut self, engine: &mut EngineRef<'_>, forward: bool) {
+    fn vi_copy_search_navigate(&mut self, engine: &EngineRead<'_>, forward: bool) {
         if self.state.search.matches.is_empty() {
             return;
         }
@@ -974,7 +974,7 @@ impl MainView {
         Self::vi_copy_jump_to_current_match(self, engine);
     }
 
-    fn vi_copy_jump_to_current_match(view: &mut Self, engine: &mut EngineRef<'_>) {
+    fn vi_copy_jump_to_current_match(view: &mut Self, engine: &EngineRead<'_>) {
         let m = match view
             .state
             .search

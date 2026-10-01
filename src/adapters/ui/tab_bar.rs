@@ -8,7 +8,7 @@ mod view;
 pub use apply::apply_tab_bar_actions;
 pub use view::{compute_drop_index, draw_pane_tab_bars_view};
 
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_read::EngineRead;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::PhysicalPx;
 use tasty_type_geometry::rect::PhysicalRect;
@@ -276,7 +276,7 @@ fn tab_move_mark(
 pub fn draw_pane_tab_bars(
     ctx: &egui::Context,
     state: &mut MainViewState,
-    engine: &mut EngineMut<'_>,
+    engine: &EngineRead<'_>,
     pane_rects: &[(u32, PhysicalRect)],
     scale_factor: f32,
 ) {
@@ -326,7 +326,7 @@ pub fn draw_pane_tab_bars(
                             .find_surface_by_id(state.navigation.surface_id(t).unwrap_or(0))
                             .map(|s| s.kind())
                             .unwrap_or("terminal");
-                        engine.runtime.surface_registry
+                        engine.surface_registry
                             .get(kind)
                             .and_then(|d| d.icon.clone())
                             .map(|n| icons::from_name(&n))
@@ -349,7 +349,7 @@ pub fn draw_pane_tab_bars(
         }
     }
 
-    let appearance = &engine.runtime.settings.appearance;
+    let appearance = &engine.settings.appearance;
     let tab_w = appearance.tab_width;
     let tab_font_size = appearance.tab_font_size;
 
@@ -368,7 +368,7 @@ pub fn draw_pane_tab_bars(
 
     let props = PaneTabBarsProps {
         theme: &th,
-        kb: &engine.runtime.settings.keybindings,
+        kb: &engine.settings.keybindings,
         panes: &panes,
         scale_factor,
         tab_width: tab_w,

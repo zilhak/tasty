@@ -67,18 +67,11 @@ pub(crate) fn disable_capture_action(settings: &mut GeneralSettings, app_name: &
     settings.mouse_capture_blacklist.push(app_name.to_string());
 }
 
-/// 별도 저장 버튼이 없는 메뉴이므로 클릭한 설정을 즉시 저장한다.
-fn persist_settings(engine: &mut crate::core::CoreState) {
-    if let Err(e) = engine.runtime.settings.save() {
-        tracing::warn!("failed to persist mouse capture blacklist: {e}");
-    }
-}
-
 /// `PopupDef.draw_fn` — 메뉴 콘텐츠만 그린다(셸은 headless popup 시스템이 그림).
 pub fn draw_menu(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
         return PopupAction::Close;
@@ -107,8 +100,7 @@ pub fn draw_menu(
     );
 
     if suppress_resp.clicked() {
-        suppress_banner_action(&mut engine.runtime.settings.general, &app_name);
-        persist_settings(engine);
+        state.dispatch_intent(crate::intent::Intent::PatchSettings(crate::app::engine_action::SettingsPatch::SuppressMouseHint(app_name.clone())).from_user_context_menu());
         state.banners.close_shown_if_id(
             &BannerScope::Surface(surface_id),
             crate::adapters::ui::banner::defs::BANNER_MOUSE_CAPTURE,
@@ -116,8 +108,7 @@ pub fn draw_menu(
         return PopupAction::Close;
     }
     if disable_resp.clicked() {
-        disable_capture_action(&mut engine.runtime.settings.general, &app_name);
-        persist_settings(engine);
+        state.dispatch_intent(crate::intent::Intent::PatchSettings(crate::app::engine_action::SettingsPatch::DisableMouseCapture(app_name)).from_user_context_menu());
         return PopupAction::Close;
     }
     PopupAction::None

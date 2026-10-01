@@ -2,7 +2,7 @@
 //! 상태바 레이어·위치는 본체에서 정하며 갤러리는 같은 공용 화면 함수를 사용한다.
 //! 표시 항목: docs/features/workspace-status-bar/index.md.
 
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_read::EngineRead;
 use egui::emath::GuiRounding as _;
 use tasty_type_geometry::length::{LogicalPx, PhysicalPx};
 use tasty_type_geometry::rect::PhysicalRect;
@@ -29,7 +29,7 @@ pub fn status_bar_bottom_inset(scale_factor: f32) -> PhysicalPx {
 pub fn draw_status_bar(
     ctx: &egui::Context,
     state: &mut MainViewState,
-    engine: &mut EngineMut<'_>,
+    engine: &EngineRead<'_>,
     terminal_rect: PhysicalRect,
     scale_factor: f32,
 ) {
@@ -45,7 +45,7 @@ pub fn draw_status_bar(
     let surface_id = state.focused_surface_id(engine);
     // 그리드·프로세스·Git 정보는 캐시에서 읽어 프레임마다 시스템·파일 조회를 반복하지 않는다.
     let grid = surface_id
-        .and_then(|sid| engine.runtime.terminals.get(sid))
+        .and_then(|sid| engine.terminals.get(sid))
         .map(|term| (term.cols(), term.rows()));
     let shell = surface_id.and_then(|sid| engine.foreground_name(sid).map(str::to_owned));
     let branch = surface_id
@@ -57,7 +57,7 @@ pub fn draw_status_bar(
         .keybindings
         .toggle_command_palette
         .first()
-        .map(|b| tasty_settings::KeybindingSettings::format_display(b, &engine.runtime.settings.general))
+        .map(|b| tasty_settings::KeybindingSettings::format_display(b, &engine.settings.general))
         .unwrap_or_default();
 
     let data = StatusBarData {
@@ -95,12 +95,12 @@ pub fn draw_status_bar(
             }
             StatusBarAction::ToggleTheme => {
                 // 디자인 onTheme: latte ↔ mocha. 그 외 테마에서 누르면 latte 로.
-                let target = if engine.runtime.settings.appearance.theme == tasty_themes::BUILTIN_LATTE_ID {
+                let target = if engine.settings.appearance.theme == tasty_themes::BUILTIN_LATTE_ID {
                     tasty_themes::BUILTIN_MOCHA_ID
                 } else {
                     tasty_themes::BUILTIN_LATTE_ID
                 };
-                let mut new_settings = engine.runtime.settings.clone();
+                let mut new_settings = engine.settings.clone();
                 tasty_themes::apply_theme(&mut new_settings.appearance, target);
                 state.dispatch_intent(
                     crate::app::command::DomainIntent::UpdateSettings(new_settings)

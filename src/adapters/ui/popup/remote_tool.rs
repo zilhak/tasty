@@ -301,7 +301,7 @@ pub fn on_close_remote_tool_popup(
 pub fn draw_remote_tool_popup(
     ui: &mut egui::Ui,
     _state: &mut MainViewState,
-    _engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();

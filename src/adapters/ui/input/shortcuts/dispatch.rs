@@ -1,6 +1,6 @@
 //! 단축키와 명령 팔레트의 액션 실행.
 
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_read::EngineRead;
 use winit::keyboard::{Key, ModifiersState};
 
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
@@ -28,7 +28,7 @@ impl MainView {
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: action_id 문자열→액션 평면 match 디스패치 — 단축키와 1:1, arm 나열
     pub(crate) fn dispatch_action_by_id(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &EngineRead<'_>,
         action_id: &str,
     ) -> bool {
         use crate::adapters::ui::popup::PopupScope;
@@ -131,7 +131,7 @@ impl MainView {
                 state.sidebar_collapsed = !state.sidebar_collapsed;
             }
             "toggle_categories_collapsed" => {
-                if engine.runtime.settings.general.workspace_categories_enabled {
+                if engine.settings.general.workspace_categories_enabled {
                     state.dispatch_intent(
                         crate::intent::UiIntent::ToggleAllCategoriesCollapsed
                             .from_user_shortcut("toggle_categories_collapsed"),
@@ -443,7 +443,7 @@ impl MainView {
     #[cfg(not(target_os = "macos"))]
     fn handle_window_control_shortcuts(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &EngineRead<'_>,
         key: &Key,
         mods: ModifiersState,
         kb: &crate::settings::KeybindingSettings,
@@ -468,7 +468,7 @@ impl MainView {
         key: &Key,
         mods: ModifiersState,
     ) -> bool {
-        let kb = &engine.runtime.settings.keybindings;
+        let kb = &engine.settings.keybindings;
         let Some(script_id) = kb
             .script_bindings
             .iter()
@@ -477,7 +477,7 @@ impl MainView {
         else {
             return false;
         };
-        let Some(entry) = engine.runtime.settings.scripts.get(&script_id) else {
+        let Some(entry) = engine.settings.scripts.get(&script_id) else {
             tracing::warn!(
                 target: "tasty_lua",
                 "script shortcut matched but script '{script_id}' not registered — ignoring"
@@ -525,7 +525,7 @@ impl MainView {
 
     pub(crate) fn handle_shortcut(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &EngineRead<'_>,
         key: &Key,
         mods: ModifiersState,
     ) -> bool {
@@ -550,7 +550,7 @@ impl MainView {
             return true;
         }
 
-        let kb = engine.runtime.settings.keybindings.clone();
+        let kb = engine.settings.keybindings.clone();
 
         // macOS는 AppKit의 메뉴 단축키가 처리하므로 winit에서 중복 실행하지 않는다.
         #[cfg(not(target_os = "macos"))]

@@ -1,125 +1,22 @@
-//! 현재 워크스페이스·탭·패널 구성을 읽어 Intent::SavePreset으로 보낸다.
-//! 저장 이름 결정, 파일 저장, 프리셋 창 열기는 src/intent/preset.rs에서 처리한다.
-
-use crate::runtime::engine_access::EngineRef;
-use anyhow::{Result, anyhow};
-
-use crate::intent::preset_capture::{
-    capture_pane_preset, capture_tab_preset, capture_workspace_preset,
-};
-use crate::intent::{ClonedPreset, Intent};
-
+//! Capture requests bind structural IDs and View choices; App owns kind snapshot and file execution.
+use crate::{runtime::engine_read::EngineRead,intent::Intent};
+use anyhow::{Result,anyhow};
 use super::MainView;
-
 impl MainView {
-    pub(crate) fn save_workspace_preset_from_idx(
-        &mut self,
-        engine: &mut EngineRef<'_>,
-        ws_idx: usize,
-    ) -> Result<()> {
-        let ws = engine
-            .workspace_at(ws_idx)
-            .ok_or_else(|| anyhow!("workspace idx {ws_idx} out of range"))?;
-        let base_name = if ws.name.is_empty() {
-            "workspace".to_string()
-        } else {
-            ws.name.clone()
-        };
-
-        let registry = engine.runtime.surface_registry.clone();
-        let preset = capture_workspace_preset(
-            &self.state.navigation,
-            &engine.as_ref(),
-            ws,
-            None,
-            &registry,
-        )
-        .ok_or_else(|| anyhow!("workspace capture failed"))?;
-
-        self.state.dispatch_intent(
-            Intent::SavePreset {
-                base_name,
-                explicit_name: None,
-                overwrite: false,
-                preset: ClonedPreset::Workspace(preset),
-            }
-            .from_user_context_menu(),
-        );
-        Ok(())
+    fn request_preset_capture(&mut self,engine:&EngineRead<'_>,kind:tasty_presets::PresetKind,source:u32) {
+        let presentation=crate::model::StructurePresentationSnapshot::capture(engine.workspaces(),engine.categories(),&self.state.navigation);
+        self.state.dispatch_intent(Intent::CapturePreset {kind,source,presentation}.from_user_context_menu());
     }
-
-    pub(crate) fn save_tab_preset_from_pane_tab(
-        &mut self,
-        engine: &mut EngineRef<'_>,
-        pane_id: u32,
-        tab_index: usize,
-    ) -> Result<()> {
-        let ws = self.state.active_workspace(engine);
-        let pane = ws
-            .pane_layout()
-            .find_pane(pane_id)
-            .ok_or_else(|| anyhow!("pane {pane_id} not found"))?;
-        let tab = pane
-            .tabs
-            .get(tab_index)
-            .ok_or_else(|| anyhow!("tab idx {tab_index} out of range"))?;
-        let base = tab
-            .explicit_name
-            .clone()
-            .unwrap_or_else(|| tab.name.clone());
-        let base_name = if base.is_empty() {
-            "tab".to_string()
-        } else {
-            base
-        };
-
-        let registry = engine.runtime.surface_registry.clone();
-        let preset = capture_tab_preset(&engine.as_ref(), tab, None, &registry)
-            .ok_or_else(|| anyhow!("tab capture failed"))?;
-
-        self.state.dispatch_intent(
-            Intent::SavePreset {
-                base_name,
-                explicit_name: None,
-                overwrite: false,
-                preset: ClonedPreset::Tab(preset),
-            }
-            .from_user_context_menu(),
-        );
-        Ok(())
+    pub(crate) fn save_workspace_preset_from_idx(&mut self,engine:&EngineRead<'_>,index:usize)->Result<()> {
+        let source=engine.workspace_at(index).ok_or_else(||anyhow!("workspace index {index} not found"))?.id;
+        self.request_preset_capture(engine,tasty_presets::PresetKind::Workspace,source);Ok(())
     }
-
-    pub(crate) fn save_pane_preset_from_pane_id(
-        &mut self,
-        engine: &mut EngineRef<'_>,
-        pane_id: u32,
-    ) -> Result<()> {
-        let ws = self.state.active_workspace(engine);
-        let pane = ws
-            .pane_layout()
-            .find_pane(pane_id)
-            .ok_or_else(|| anyhow!("pane {pane_id} not found"))?;
-        let base_name = "pane".to_string();
-
-        let registry = engine.runtime.surface_registry.clone();
-        let preset = capture_pane_preset(
-            &self.state.navigation,
-            &engine.as_ref(),
-            pane,
-            None,
-            &registry,
-        )
-        .ok_or_else(|| anyhow!("pane capture failed"))?;
-
-        self.state.dispatch_intent(
-            Intent::SavePreset {
-                base_name,
-                explicit_name: None,
-                overwrite: false,
-                preset: ClonedPreset::Pane(preset),
-            }
-            .from_user_context_menu(),
-        );
-        Ok(())
+    pub(crate) fn save_tab_preset_from_pane_tab(&mut self,engine:&EngineRead<'_>,pane:u32,index:usize)->Result<()> {
+        let source=engine.find_pane_by_id(pane).and_then(|pane|pane.tabs.get(index)).ok_or_else(||anyhow!("tab index {index} not found in pane {pane}"))?.id;
+        self.request_preset_capture(engine,tasty_presets::PresetKind::Tab,source);Ok(())
+    }
+    pub(crate) fn save_pane_preset_from_pane_id(&mut self,engine:&EngineRead<'_>,pane:u32)->Result<()> {
+        if engine.find_pane_by_id(pane).is_none() {return Err(anyhow!("pane {pane} not found"));}
+        self.request_preset_capture(engine,tasty_presets::PresetKind::Pane,pane);Ok(())
     }
 }

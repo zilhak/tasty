@@ -433,7 +433,7 @@ fn poll_create(st: &mut UiState, deadline: Duration) -> Option<u32> {
 }
 
 /// 기존·새 워크스페이스 모두 같은 사용자 연결 큐에 넣는다. 포커스 이동도 그 처리 경로에서 맡는다.
-fn push_attach(engine: &mut CoreState, st: &mut UiState, workspace: u32) {
+fn push_attach(state: &mut MainViewState, st: &mut UiState, workspace: u32) {
     let Some(ready_arc) = st.ready.take() else {
         return;
     };
@@ -445,13 +445,9 @@ fn push_attach(engine: &mut CoreState, st: &mut UiState, workspace: u32) {
     .take() else {
         return;
     };
-    engine
-        .remote.pending_gui_attach_user
-        .push(crate::core::GuiAttachUserReq {
-            port,
-            workspace,
-            tunnel,
-        });
+    state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::AttachUser(
+        crate::app::engine_action::AttachRequest::new(crate::core::GuiAttachUserReq {port,workspace,tunnel})
+    )).from_user_context_menu());
 }
 
 /// 프로필 선택 → 조회 시작(상태 리셋 + 워커 spawn).
@@ -496,8 +492,8 @@ pub fn on_close_remote_attach_popup(
 /// PopupDef.draw_fn 진입점.
 pub fn draw_remote_attach_popup(
     ui: &mut egui::Ui,
-    _state: &mut MainViewState,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    state: &mut MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();
@@ -510,7 +506,7 @@ pub fn draw_remote_attach_popup(
 
     let mut close = false;
     if let Some(new_ws) = poll_create(&mut st, CREATE_DEADLINE) {
-        push_attach(engine, &mut st, new_ws);
+        push_attach(state, &mut st, new_ws);
         close = true;
     }
 
@@ -591,7 +587,7 @@ pub fn draw_remote_attach_popup(
         match st.ws_sel {
             Some(WsSel::New) => start_create(&ctx, &mut st),
             Some(WsSel::Existing(ws)) => {
-                push_attach(engine, &mut st, ws);
+                push_attach(state, &mut st, ws);
                 close = true;
             }
             None => {}

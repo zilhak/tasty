@@ -1,4 +1,4 @@
-use crate::runtime::engine_access::EngineRef;
+use crate::runtime::engine_read::EngineRead;
 use crate::model::PhysicalRect;
 use crate::plugin::PluginManager;
 use crate::renderer::RenderPreedit;
@@ -13,7 +13,7 @@ impl GpuState {
         _state: &MainViewState,
         engine: &crate::core::CoreState,
     ) {
-        let bg_alpha = engine.runtime.settings.appearance.background_opacity as f64;
+        let bg_alpha = engine.settings.appearance.background_opacity as f64;
         let th = crate::theme::theme();
         let bg = th.bg_panel().to_gpu_rgba();
 
@@ -51,7 +51,7 @@ impl GpuState {
         &mut self,
         view: &wgpu::TextureView,
         regions: &[(u32, PhysicalRect, Vec<crate::model::SurfaceRegion<'_>>)],
-        engine: &EngineRef<'_>,
+        engine: &EngineRead<'_>,
         focused_surface_id: Option<u32>,
         selection: Option<&tasty_selection::TextSelection>,
         vi_cursor: Option<(u32, tasty_selection::SelectionPoint)>,
@@ -66,7 +66,7 @@ impl GpuState {
         // ANSI 16 팔레트는 *프레임당 1회* 만 추출 — 셀별 lock 비용 제거.
         let ansi = theme.ansi_palette();
         // DECSCNM 렌더 허용 여부 — 프레임당 1회 읽어 모든 surface 에 동일 적용.
-        let reverse_screen_enabled = engine.runtime.settings.general.reverse_screen_enabled;
+        let reverse_screen_enabled = engine.settings.general.reverse_screen_enabled;
 
         // Accumulate instance data for every surface into the renderer's
         // shared vecs, recording per-surface (rect, bg range, glyph range).

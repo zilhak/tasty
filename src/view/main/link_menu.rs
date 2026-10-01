@@ -2,7 +2,7 @@
 //! 드래그 선택이 아닌 LinkSpan을 사용하며 포커스를 옮기지 않는다.
 //! 명세: docs/features/terminal-link/index.md.
 
-use crate::runtime::engine_access::EngineRef;
+use crate::runtime::engine_read::EngineRead;
 use winit::event::ElementState;
 
 use super::MainView;
@@ -23,7 +23,7 @@ impl MainView {
     /// 메뉴를 열어도 터미널 포커스는 옮기지 않는다.
     pub(super) fn terminal_link_menu_target(
         &self,
-        engine: &EngineRef<'_>,
+        engine: &EngineRead<'_>,
         surface_id: u32,
     ) -> Option<TerminalLinkMenu> {
         // Keep the modifier/overlay eligibility established by hover handling,
@@ -54,8 +54,8 @@ impl MainView {
             ))
         })?;
         // 자식 PTY 가 없는 terminal 은 원격 attach mirror 다 — 화면 경로가 원격 호스트 경로.
-        let is_mirror = engine.runtime.terminals.contains(surface_id)
-            && engine.runtime.terminals.pty(surface_id).is_none();
+        let is_mirror = engine.terminals.contains(surface_id)
+            && !engine.terminals.has_pty(surface_id);
         let (open_with, remote_path) = link_open_target(&hovered.uri, is_mirror);
         Some(TerminalLinkMenu {
             surface_id,
@@ -90,7 +90,7 @@ impl MainView {
 
     pub(super) fn handle_terminal_link_native_menu(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         link: TerminalLinkMenu,
         x: f32,
         y: f32,
@@ -127,7 +127,7 @@ impl MainView {
 
     /// 메뉴를 연 뒤에도 같은 범위의 문자가 같을 때만 링크를 선택한다.
     /// 출력·스크롤백 정리·크기 변경으로 내용이 달라졌으면 선택하지 않는다.
-    fn apply_link_selection(&mut self, engine: &mut EngineRef<'_>, link: &TerminalLinkMenu) {
+    fn apply_link_selection(&mut self, engine: &EngineRead<'_>, link: &TerminalLinkMenu) {
         let sel = link_selection(link.surface_id, link.start, link.end);
         let Some(terminal) = engine.as_ref().visible_terminal(link.surface_id) else {
             return;
@@ -154,7 +154,7 @@ impl MainView {
                 crate::file::dispatch::open_remote_placeholder_picker(&mut self.state, file);
             }
             target => {
-                let all = engine.runtime.file_handler.all_handlers();
+                let all = engine.file_handler.all_handlers();
                 crate::file::dispatch::open_picker(
                     &mut self.state,
                     &mut *engine,

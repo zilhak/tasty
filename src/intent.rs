@@ -108,6 +108,7 @@ pub enum CreateFollowup {
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // reason: 명령마다 Box를 할당하는 비용을 피한다
 pub enum Intent {
+    PatchSettings(crate::app::engine_action::SettingsPatch),
     Engine(crate::app::engine_action::EngineAction),
     ForwardMirror {op:tasty_ipc::stream::StructuralOp,close_focus_candidates:Vec<u32>},
     RespondApproval { request_id:tasty_approval::ApprovalId, choice:String, comment:Option<String> },
@@ -123,6 +124,11 @@ pub enum Intent {
         category: Option<crate::model::WorkspaceCategoryId>,
     },
     /// explicit_name을 우선 사용하고, 없으면 base_name으로 중복되지 않는 이름을 만든다.
+    CapturePreset {
+        kind:tasty_presets::PresetKind,
+        source:u32,
+        presentation:crate::model::StructurePresentationSnapshot,
+    },
     SavePreset {
         base_name: String,
         explicit_name: Option<String>,

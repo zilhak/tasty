@@ -308,6 +308,7 @@ pub struct SurfaceKindRegistry {
 }
 
 struct KindEntry {
+    metadata:Arc<super::kind_catalog::KindMetadata>,
     def: Arc<SurfaceKindDef>,
     withdrawn_by: Option<String>,
 }
@@ -362,8 +363,11 @@ impl SurfaceKindRegistry {
     pub fn register(&self, def: SurfaceKindDef) {
         let kind = def.kind;
         let mut map = self.lock_write();
+        let def=Arc::new(def);
+        let metadata=Arc::new(super::kind_catalog::KindCatalog::metadata(def.clone()));
         let entry = KindEntry {
-            def: Arc::new(def),
+            metadata,
+            def,
             withdrawn_by: None,
         };
         match map.insert(kind, entry) {
@@ -720,3 +724,8 @@ mod tests {
 }
 pub mod egui_mesh;
 pub mod webview_kind;
+
+impl SurfaceKindRegistry {
+    pub(super) fn metadata(&self,kind:&str,live:bool)->Option<Arc<super::kind_catalog::KindMetadata>> {self.lock_read().get(kind).filter(|entry|!live||entry.withdrawn_by.is_none()).map(|entry|entry.metadata.clone())}
+    pub(super) fn metadata_snapshot(&self)->Vec<(&'static str,Arc<super::kind_catalog::KindMetadata>)> {self.lock_read().iter().filter(|(_,entry)|entry.withdrawn_by.is_none()).map(|(kind,entry)|(*kind,entry.metadata.clone())).collect()}
+}

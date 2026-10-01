@@ -251,7 +251,7 @@ pub fn on_close_approval_popup(
 pub fn draw_approval_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    _engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> PopupAction {
     let Some(current_id) = state.dialogs.pending_approval_ids.front().cloned() else {
         return PopupAction::Close;

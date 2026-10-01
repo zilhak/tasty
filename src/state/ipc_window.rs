@@ -1,6 +1,7 @@
 //! IPC의 IpcWindow 요청을 RequestContext의 창 연산에 연결한다.
 
-use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_read::EngineRead;
 use std::path::PathBuf;
 
 use super::RequestContext;
@@ -9,12 +10,12 @@ use crate::core::CoreState;
 
 impl IpcWindow for RequestContext {
     fn presentation(&self)->&dyn crate::model::StructurePresentation {&self.navigation}
-    fn resolve_inherit_cwd_from_surface(&self,engine:&EngineRef<'_>,surface:u32)->Option<PathBuf> {RequestContext::resolve_inherit_cwd_from_surface(self,engine,surface)}
+    fn resolve_inherit_cwd_from_surface(&self,engine:&EngineRead<'_>,surface:u32)->Option<PathBuf> {RequestContext::resolve_inherit_cwd_from_surface(self,engine,surface)}
     fn active_workspace_index(&self, engine: &CoreState) -> usize {
         self.active_workspace_index(engine)
     }
 
-    fn resolve_inherit_cwd(&self, engine: &EngineRef<'_>) -> Option<PathBuf> {
+    fn resolve_inherit_cwd(&self, engine: &EngineRead<'_>) -> Option<PathBuf> {
         RequestContext::resolve_inherit_cwd(self, engine)
     }
 

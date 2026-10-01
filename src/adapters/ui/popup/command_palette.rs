@@ -390,7 +390,7 @@ pub fn command_palette_sizer(
 pub fn draw_command_palette_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> PopupAction {
     let commands = command_palette::all_commands(&state.palette_plugin_commands);
     let labels: Vec<String> = commands.iter().map(label_for).collect();
@@ -406,7 +406,7 @@ pub fn draw_command_palette_popup(
                 .keybindings
                 .get_bindings(id)
                 .and_then(|b| b.first())
-                .map(|s| KeybindingSettings::format_display_parts(s, &engine.runtime.settings.general))
+                .map(|s| KeybindingSettings::format_display_parts(s, &engine.settings.general))
                 .unwrap_or_default()
         });
 
@@ -782,7 +782,7 @@ mod sizer_wiring_tests {
 
     fn run_one_frame(
         state: &mut MainViewState,
-        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
     ) {
         let ctx = egui::Context::default();
         let term = PhysicalRect {

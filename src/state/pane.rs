@@ -1,5 +1,5 @@
 use crate::core::CoreState;
-use crate::runtime::engine_access::EngineRef;
+use crate::runtime::engine_read::EngineRead;
 
 use super::RequestContext;
 
@@ -9,7 +9,7 @@ impl RequestContext {
     /// 로컬 사용자는 점유 해제 버튼으로 먼저 연결을 끊을 수 있다.
     pub(crate) fn refuse_if_hard_occupied(
         &mut self,
-        engine: &crate::runtime::engine_access::EngineRef<'_>,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         targets: impl IntoIterator<Item = u32>,
     ) -> bool {
         let Some(_occupied) = targets
@@ -129,7 +129,7 @@ impl RequestContext {
 
     /// 포커스된 pane 닫기를 처리한다. mirror 요청을 전달한 경우에도 true다.
     #[cfg(any(feature = "gui", test))]
-    pub fn close_active_pane(&mut self, engine: &mut EngineRef<'_>) -> bool {
+    pub fn close_active_pane(&mut self, engine: &EngineRead<'_>) -> bool {
         let mirror_op = self.focused_surface_id(engine).map(|sid| {
             crate::ipc::stream::StructuralOp::ClosePane {
                 anchor_surface_id: sid,
@@ -159,7 +159,7 @@ impl RequestContext {
 
     /// 포커스된 surface를 닫고 필요하면 빈 탭·pane·워크스페이스도 정리한다.
     #[cfg(any(feature = "gui", test))]
-    pub fn close_active_surface(&mut self, engine: &mut EngineRef<'_>) -> bool {
+    pub fn close_active_surface(&mut self, engine: &EngineRead<'_>) -> bool {
         let focused_sid = self.focused_surface_id(engine);
         let mirror_op = focused_sid
             .map(|sid| crate::ipc::stream::StructuralOp::CloseSurface { surface_id: sid });
@@ -187,7 +187,7 @@ impl RequestContext {
     #[cfg(any(feature = "gui", test))]
     pub fn close_surface_by_id(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         surface_id: u32,
         is_user_close: bool,
     ) -> bool {
@@ -197,7 +197,7 @@ impl RequestContext {
     /// 복원 사본 없이 닫는다. 워크스페이스가 모두 사라지면 다음 화면 처리에 필요한 기본 항목을 만든다.
     pub fn close_surface_by_id_no_snapshot(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         surface_id: u32,
         is_user_close: bool,
     ) -> bool {
@@ -205,7 +205,7 @@ impl RequestContext {
     }
 
     /// Queue fixed IDs and an explicit user snapshot request; execution and repair are App-owned.
-    fn queue_surface_close(&mut self,engine:&EngineRef<'_>,surface_id:u32,capture:bool,is_user:bool)->bool {
+    fn queue_surface_close(&mut self,engine:&EngineRead<'_>,surface_id:u32,capture:bool,is_user:bool)->bool {
         if !engine.core.has_surface(surface_id) {return false;}
         let intent=crate::app::command::DomainIntent::CloseSurface {
             surface_id,presentation:capture.then(||Box::new(crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&engine.categories(),&self.navigation))),
@@ -215,57 +215,6 @@ impl RequestContext {
         self.dispatch_intent(intent.from_agent_ipc());true
     }
 
-}
-
-#[cfg(test)]
-impl RequestContext {
-    /// 시험 준비용 직접 분할. 제품 코드는 Core의 DomainIntent::SplitPane을 사용한다.
-    pub(crate) fn test_split_pane(
-        &mut self,
-        engine: &mut EngineMut<'_>,
-        direction: crate::model::SplitDirection,
-    ) -> anyhow::Result<()> {
-        let cwd = self.resolve_inherit_cwd(&engine.as_ref());
-        let new_pane_id = engine.runtime.counters.next_pane();
-        let new_tab_id = engine.runtime.counters.next_tab();
-        let new_surface_id = engine.runtime.counters.next_surface();
-        let cols = engine.runtime.default_cols;
-        let rows = engine.runtime.default_rows;
-
-        let sh = crate::core::state::ShellConfig::from_settings(&engine.runtime.settings);
-        let terminal = crate::runtime::terminal_spawn::spawn_shell_terminal(
-            new_surface_id,
-            crate::runtime::terminal_spawn::ShellSpawnOpts {
-                cols,
-                rows,
-                shell: sh.shell_ref(),
-                shell_args: &sh.args_ref(),
-                extra_env: &sh.envs_ref(),
-                waker: engine.make_waker(new_surface_id),
-                working_dir: cwd.as_deref(),
-            },
-        )?;
-        engine
-            .runtime
-            .terminals
-            .insert(new_surface_id, terminal.0, Some(terminal.1));
-        let new_pane =
-            crate::model::Pane::new_with_terminal_marker(new_pane_id, new_tab_id, new_surface_id);
-
-        let ws = self.active_workspace_mut(engine);
-        let target_pane_id = self.navigation.pane_id(ws).unwrap_or(0);
-        ws.pane_layout_mut()
-            .split_pane_in_place(target_pane_id, direction, new_pane);
-        self.navigation.select_pane(ws, new_pane_id);
-        engine.send_fast_init(new_surface_id);
-        engine.mark_layout_dirty();
-        engine.enqueue_host_event(super::PendingHostEvent::PaneSplit {
-            original_pane: target_pane_id,
-            new_pane: new_pane_id,
-            direction,
-        });
-        Ok(())
-    }
 }
 
 #[cfg(feature = "gui")]

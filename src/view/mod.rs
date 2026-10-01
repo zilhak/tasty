@@ -58,7 +58,7 @@ pub(crate) struct ViewCtx<'a> {
     /// SharedMemory와 dirty rect에 접근하기 위해 사용한다. plugin 비활성 빌드/초기 시점에는 None.
     pub(crate) plugin_manager: Option<&'a crate::plugin::PluginManager>,
     /// 이 창에 연결된 engine. App의 engine registry가 창 ID로 찾아 넘긴다. 모달 View는 None이다.
-    pub(crate) engine: Option<crate::runtime::engine_access::EngineRef<'a>>,
+    pub(crate) engine: Option<crate::runtime::engine_read::EngineRead<'a>>,
 }
 
 /// 열린 모달의 종류. 창을 열 때 기록해 debug 조회에서 모달을 구분한다.

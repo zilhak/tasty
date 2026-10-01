@@ -36,6 +36,10 @@ pub fn handle(
 ) {
     match &intent.body {
         Intent::ApplyPreset {..}=>tracing::error!("preset application bypassed the journal command boundary"),
+        Intent::CapturePreset {kind,source,presentation}=>match capture_inner(presentation,&engine.as_ref(),*kind,*source) {
+            Ok((preset,base))=>save(core,state,engine,intent,PresetSaveRequest {base_name:&base,explicit_name:None,overwrite:false,preset:&preset}),
+            Err(error)=>tracing::warn!(%error,"preset capture failed"),
+        },
         Intent::SavePreset {
             base_name,
             explicit_name,

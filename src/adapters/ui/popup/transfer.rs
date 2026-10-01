@@ -132,7 +132,7 @@ pub fn on_close_transfer_progress(
 pub fn draw_transfer_progress(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    _engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> PopupAction {
     let th = theme::theme();
     let Some(progress) = state.dialogs.transfer_progress.as_ref() else {
@@ -206,7 +206,7 @@ pub fn on_close_transfer_error(
 pub fn draw_transfer_error(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> PopupAction {
     let th = theme::theme();
     let Some(head) = state.dialogs.transfer_error.front() else {
@@ -285,7 +285,7 @@ pub fn draw_transfer_error(
         if let Some(err) = state.dialogs.transfer_error.pop_front()
             && let Some(payload) = err.retry
         {
-            engine.remote.pending_image_uploads.push(payload);
+            if let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,payload.surface_id) {state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::ImageUpload {target,request:payload}).from_user_context_menu());}
         }
         return if state.dialogs.transfer_error.is_empty() {
             PopupAction::Close

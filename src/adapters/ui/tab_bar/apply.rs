@@ -1,7 +1,7 @@
 //! Tab bar actions → application and core state.
 
 use super::{PaneTabBarView, TabBarAction, compute_drop_index};
-use crate::runtime::engine_access::EngineRef;
+use crate::runtime::engine_read::EngineRead;
 use crate::model::LogicalPx;
 use crate::state::MainViewState;
 use egui::emath::GuiRounding as _;
@@ -9,7 +9,7 @@ use egui::emath::GuiRounding as _;
 /// 탭바 동작을 처리한다. 직접 조작은 대상 pane으로 먼저 포커스를 옮긴다.
 pub fn apply_tab_bar_actions(
     state: &mut MainViewState,
-    engine: &mut EngineRef<'_>,
+    engine: &EngineRead<'_>,
     actions: Vec<TabBarAction>,
     panes: &[PaneTabBarView],
     tab_w: f32,
@@ -203,13 +203,9 @@ fn apply_drag_end(
                     from_index: drag.tab_index,
                     to_index: target,
                 });
-            if !state.forward_mirror_structural(engine, mirror_op, Vec::new())
-                && let Some(pane) = state
-                    .active_workspace_mut(engine)
-                    .pane_layout_mut()
-                    .find_pane_mut(pane_id)
-            {
-                pane.move_tab(drag.tab_index, target);
+            if !state.forward_mirror_structural(engine,mirror_op,Vec::new())
+                && let Some(tab_id)=engine.find_pane_by_id(pane_id).and_then(|pane|pane.tabs.get(drag.tab_index)).map(|tab|tab.id) {
+                state.dispatch_intent(crate::app::command::DomainIntent::MoveTab {pane_id,tab_id,to_index:target}.from_user_menu("tab_drag"));
             }
         }
     }

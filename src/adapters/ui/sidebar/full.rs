@@ -1,6 +1,6 @@
 //! 펼친 사이드바의 입력을 만들고 화면 동작을 처리한다.
 
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_read::EngineRead;
 use crate::i18n::t;
 use crate::intent::Intent;
 use crate::state::MainViewState;
@@ -43,7 +43,7 @@ pub(super) fn build_category_sections(
     engine: &crate::core::CoreState,
     active_ws: usize,
 ) -> Option<Vec<CategorySectionView>> {
-    if !engine.runtime.settings.general.workspace_categories_enabled {
+    if !engine.settings.general.workspace_categories_enabled {
         return None;
     }
     let workspaces_heading = t("sidebar.workspaces_heading").to_string();
@@ -82,7 +82,7 @@ pub struct FullSidebarResult {
 pub fn draw_full_sidebar(
     ctx: &egui::Context,
     state: &mut MainViewState,
-    engine: &mut EngineMut<'_>,
+    engine: &EngineRead<'_>,
     sidebar_width: f32,
     plugin_alert: usize,
 ) -> FullSidebarResult {
@@ -127,14 +127,14 @@ pub fn draw_full_sidebar(
         let mods = ctx.input(|i| i.modifiers);
         crate::adapters::ui::switch_overlay::workspace_switch_held(
             mods,
-            &engine.runtime.settings.keybindings,
+            &engine.settings.keybindings,
         )
     };
-    let category_switch_held = engine.runtime.settings.general.workspace_categories_enabled && {
+    let category_switch_held = engine.settings.general.workspace_categories_enabled && {
         let mods = ctx.input(|i| i.modifiers);
         crate::adapters::ui::switch_overlay::category_switch_held(
             mods,
-            &engine.runtime.settings.keybindings,
+            &engine.settings.keybindings,
         )
     };
 
@@ -147,7 +147,7 @@ pub fn draw_full_sidebar(
         .show(ctx, |ui| {
             let props = SidebarFullProps {
                 theme: &th,
-                kb: &engine.runtime.settings.keybindings,
+                kb: &engine.settings.keybindings,
                 workspaces: &workspaces,
                 categories: sections.as_deref(),
                 drag,

@@ -1,5 +1,5 @@
 use super::MainView;
-use crate::runtime::engine_access::EngineRef;
+use crate::runtime::engine_read::EngineRead;
 use crate::app::command::{DomainIntent, SendPayload};
 
 /// bracketed paste 시작·본문·끝을 같은 큐 순서로 보낸다.
@@ -51,7 +51,7 @@ pub(crate) fn dispatch_bound_paste(view:&mut MainView,surface_id:u32,generation:
 }
 
 impl MainView {
-    pub fn paste_to_terminal(&mut self, engine: &mut EngineRef<'_>) {
+    pub fn paste_to_terminal(&mut self, engine: &EngineRead<'_>) {
         let text = match &mut self.clipboard {
             Some(cb) => cb.get_text(),
             None => None,
@@ -89,42 +89,13 @@ impl MainView {
             return;
         };
 
-        // mirror에는 로컬 파일 경로를 쓰지 않고 업로드 뒤 원격 경로를 삽입한다.
-        let mirror_ws_id = engine
-            .find_workspace_index_for_surface(sid)
-            .and_then(|(idx, _)| engine.workspace_at(idx))
-            .and_then(|ws| ws.mirror.then_some(ws.id));
-
-        match mirror_ws_id {
-            Some(ws_id) => {
-                // PNG를 메모리에서 인코딩해 App의 비동기 업로드 큐에 넣는다.
-                match encode_clipboard_image_as_png(&image) {
-                    Ok(png_bytes) => {
-                        engine
-                            .remote.pending_image_uploads
-                            .push(crate::core::PendingImageUpload {
-                                mirror_ws_id: ws_id,
-                                surface_id: sid,
-                                bracketed,
-                                file_name: clipboard_image_file_name(),
-                                png_bytes,
-                            });
-                        self.last_terminal_paste_at = Some(std::time::Instant::now());
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to encode clipboard image for mirror upload: {e}");
-                    }
-                }
-            }
-            None => match save_clipboard_image_as_png(&image) {
-                Ok(path) => {
-                    dispatch_paste(self, sid, bracketed, path);
-                    self.last_terminal_paste_at = Some(std::time::Instant::now());
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to save clipboard image: {}", e);
-                }
+        let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,sid) else {return;};
+        match encode_clipboard_image_as_png(&image) {
+            Ok(png_bytes)=>{
+                self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::PasteImage {target,bracketed,file_name:clipboard_image_file_name(),png_bytes}).from_user_shortcut("paste"));
+                self.last_terminal_paste_at=Some(std::time::Instant::now());
             },
+            Err(error)=>tracing::warn!(%error,"clipboard image encoding failed"),
         }
     }
 }
@@ -151,19 +122,6 @@ fn encode_clipboard_image_as_png(image: &arboard::ImageData<'_>) -> anyhow::Resu
         writer.finish()?;
     }
     Ok(buf)
-}
-
-/// Save clipboard image data as a PNG file in a temp directory.
-/// Returns the absolute path to the saved file.
-fn save_clipboard_image_as_png(image: &arboard::ImageData<'_>) -> anyhow::Result<String> {
-    // 이유: 이미지가 공유 디렉터리를 사용하며 파일명에 ms 시각을 붙인다.
-    // 같은 ms 안의 이름 충돌까지 막는 방식은 아니다.
-    let dir = std::env::temp_dir().join("tasty-clipboard");
-    std::fs::create_dir_all(&dir)?;
-    let path = dir.join(clipboard_image_file_name());
-    let bytes = encode_clipboard_image_as_png(image)?;
-    std::fs::write(&path, &bytes)?;
-    Ok(path.to_string_lossy().into_owned())
 }
 
 #[cfg(test)]

@@ -124,7 +124,7 @@ impl App {
         use crate::intent::{Intent, UiIntent};
         if matches!(
             intent.body,
-            Intent::ForwardMirror {..}|Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_)
+            Intent::PatchSettings(_)|Intent::ForwardMirror {..}|Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_)
                 |Intent::ApplyPreset {..}|Intent::RestoreClosedItem|Intent::NewWorkspace {..}|Intent::NewTab {..}|Intent::NewTabWithFollowup {..}|Intent::SplitPane {..}|Intent::SplitSurface {..}|Intent::ConvertSurface {..}
         ) {
             IntentClass::Domain
@@ -201,14 +201,14 @@ impl App {
             Intent::Ui(_) => {
                 crate::intent::popup::handle(state, engine, intent);
             }
-            Intent::ApplyPreset { .. } | Intent::SavePreset { .. } => {
+            Intent::ApplyPreset { .. } | Intent::CapturePreset {..} | Intent::SavePreset { .. } => {
                 crate::intent::preset::handle(core, state, engine, intent);
             }
         Intent::SplitSurface {..}|Intent::ConvertSurface {..}|Intent::NewTab {..}|Intent::NewTabWithFollowup {..}|Intent::SplitPane {..}|Intent::NewWorkspace {..}=>tracing::error!("structural intent bypassed journal admission"),
             Intent::RestoreClosedItem => {
                 tracing::error!("undo intent bypassed journal admission");
             }
-            Intent::ForwardMirror {..}|Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_) => {
+            Intent::PatchSettings(_)|Intent::ForwardMirror {..}|Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_) => {
                 tracing::error!(
                     "dispatch_one_intent reached Intent::Domain (should be handled in domain_batch)"
                 );

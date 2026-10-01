@@ -73,7 +73,7 @@ impl MainView {
     /// 합성과 같은 surface 영역으로 포인터 대상을 찾는다.
     pub(super) fn egui_mesh_target_at(
         &self,
-        engine: &crate::runtime::engine_access::EngineRef<'_>,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         x: f32,
         y: f32,
     ) -> Option<(u32, String, PhysicalRect)> {
@@ -94,12 +94,12 @@ impl MainView {
     }
 
     /// wire에 전달할 색·is_light·UI 배율. 현재 reduced_motion은 포함하지 않는다.
-    pub(super) fn mesh_theme_snapshot(&self, engine: &crate::runtime::engine_access::EngineRef<'_>) -> ThemeWire {
+    pub(super) fn mesh_theme_snapshot(&self, engine: &crate::runtime::engine_read::EngineRead<'_>) -> ThemeWire {
         let theme = crate::theme::theme();
         ThemeWire {
             colors: theme.to_colors(),
             is_light: theme.is_light,
-            ui_zoom: engine.runtime.settings.appearance.ui_scale_factor(),
+            ui_zoom: engine.settings.appearance.ui_scale_factor(),
         }
     }
 
@@ -191,7 +191,7 @@ impl MainView {
     /// 포커스된 EguiMeshSurface의 ID. 다른 종류에는 입력을 전달하지 않는다.
     pub(crate) fn focused_egui_mesh_surface_id(
         &self,
-        engine: &crate::runtime::engine_access::EngineRef<'_>,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
     ) -> Option<u32> {
         let sid = self.state.focused_surface_id(engine)?;
         let surface = engine.find_surface_by_id(sid)?;
@@ -237,7 +237,7 @@ impl MainView {
     /// 이 창의 surface가 무효화됐으면 다음 컨텍스트 전송을 요청한다. 다른 창의 ID는 무시한다.
     pub(crate) fn mark_surface_invalidated(
         &mut self,
-        engine: &mut crate::runtime::engine_access::EngineRef<'_>,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         surface_id: u32,
     ) -> bool {
         let exists = self
@@ -259,7 +259,7 @@ impl MainView {
     /// [`MainView::handle_redraw`] 가 합성(`gpu.render`) 직전에 부른다.
     pub(super) fn forward_egui_mesh_context(
         &mut self,
-        engine: &mut crate::runtime::engine_access::EngineRef<'_>,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         mgr: &PluginManager,
     ) {
         let terminal_rect = self.compute_terminal_rect();
@@ -366,8 +366,8 @@ impl MainView {
                 need_full_textures: need_full,
             };
             if let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,sid)
-                && let Some(registration)=engine.runtime.surface_registry.get_live(kind) {
-                self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::LocalMesh {target,plugin:plugin_id,registration:std::sync::Arc::downgrade(&registration),bootstrap:need_bootstrap.then(||(kind.into(),file,display_name)),params}).from_user_shortcut("mesh-frame"));
+                && let Some(registration)=engine.surface_registry.get_live(kind) {
+                self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::LocalMesh {target,plugin:plugin_id,registration:registration.registration(),bootstrap:need_bootstrap.then(||(kind.into(),file,display_name)),params}).from_user_shortcut("mesh-frame"));
             }
         }
 
@@ -399,8 +399,8 @@ impl MainView {
             };
             if let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,*sid)
                 && let Some(kind)=engine.core.find_surface_by_id(*sid)
-                && let Some(registration)=engine.runtime.surface_registry.get_live(&kind.kind) {
-                self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::LocalMesh {target,plugin:plugin_id.clone(),registration:std::sync::Arc::downgrade(&registration),bootstrap:None,params}).from_user_shortcut("mesh-frame"));
+                && let Some(registration)=engine.surface_registry.get_live(&kind.kind) {
+                self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::LocalMesh {target,plugin:plugin_id.clone(),registration:registration.registration(),bootstrap:None,params}).from_user_shortcut("mesh-frame"));
             }
         }
     }

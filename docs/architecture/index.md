@@ -272,8 +272,10 @@ ports-and-adapters 배치:
 
 탭의 OSC/CWD 제목 관측은 Engine의 LiveDomainState가 보유한다. 순수 Tab은 명시 이름·기본 이름을 가지고, 조회 때 별도로 받은 관측 값을 합성한다. 지연 surface 준비는 표시 중인 IDs를 받은 App materialization에서 실행하며 View가 PTY/factory를 직접 만들지 않는다. `image.open`의 외부 요청은 기존 plugin namespace를 거치고 소유 plugin의 host fallback에서 journal 변환을 실행한다. 외부 namespace 키 계약을 전체 경로 durable 보장으로 확대하지 않는다.
 
-현재 ViewCtx의 실행 자원 읽기 범위와 IPC/attach lazy continuation, 최종 capture/export/Recovery 소비자 이행은 진행 중이다. 이 설명은 소유·호출 변경이며 전체 빌드·실행 검증 완료를 뜻하지 않는다.
+ViewCtx는 Core/Live 관측과 표시용 query를 빌리는 EngineRead를 받는다. TerminalRead는 PTY 소유자·입력·resize·tap 쓰기를 노출하지 않으며 DAG는 목록·runner 상태 값만 조회한다. kind catalog는 등록 시 만든 immutable metadata Arc와 불투명 등록 identity만 제공하고 factory·등록·철회는 실행 owner에 남긴다. RequestContext의 저장소 잠금 bridge는 제거했다. IPC의 View 전체 의존, 설정 editor의 저장 출구, 최종 capture/export/Recovery 소비자 이행은 진행 중이며 전체 빌드·실행 검증 완료를 뜻하지 않는다.
 
 지연 입력과 attach도 App이 materialization 완료를 기다린 뒤 실행한다. public wake의 완료와 메모리에만 남는 원 입력을 구별하며, 입력은 원 Engine/PTY generation과 현재 점유를 다시 확인한다. terminal tell의 body-ack/settle/CR은 Engine이 보유하고 App deadline에서 진행한다. attach는 연결 registration과 grant readiness를 보관하여 초기 descriptor보다 delta/입력이 앞서지 않게 한다. 이 대기 관계는 journal의 구조 원본이나 과거 raw 입력 재생 목록이 아니다.
 
 탭 이동 host event는 committed projection 또는 Remote replacement의 이전/이후 값에서 생성한다. View polling에 lifecycle 통지 의무를 남기지 않으며, 사용자 생성의 tutorial/팝업·선택은 원 View가 살아 있을 때만 수행하는 별도 표시 동작이다.
+
+탐색기·DAG kind 변경, 클립보드 이미지 파일 저장·업로드, 점유 해제·즐겨찾기 저장은 View에서 고정한 대상 binding을 받아 App이 실행한다. View는 자체 선택/cache만 바꾸며 structural tab 순서는 journal 명령으로 요청한다. RSS 이상 감지·순번·저장은 창 유무와 독립적인 App 서비스이고, View가 있을 때의 알림 대상 선택은 그 뒤의 표시 정책이다.

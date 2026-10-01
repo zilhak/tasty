@@ -1,4 +1,4 @@
-use crate::runtime::engine_access::EngineRef;
+use crate::runtime::engine_read::EngineRead;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 use winit::window::CursorIcon;
 
@@ -13,13 +13,13 @@ use tasty_type_geometry::length::PhysicalPx;
 impl MainView {
     /// 현재 마우스 좌표와 수식키 상태로 hovered_link를 갱신한다.
     /// 변경이 있으면 true를 반환 (렌더 dirty 플래그를 켜기 위함).
-    pub(crate) fn update_hovered_link(&mut self, engine: &mut EngineRef<'_>) -> bool {
+    pub(crate) fn update_hovered_link(&mut self, engine: &EngineRead<'_>) -> bool {
         let prev = self
             .hovered_link
             .as_ref()
             .map(|h| (h.surface_id, h.highlight.segments.clone()));
 
-        let modifier = LinkModifier::parse(&engine.runtime.settings.general.link_click_modifier);
+        let modifier = LinkModifier::parse(&engine.settings.general.link_click_modifier);
         let mods = &self.base.state.modifiers;
         let matches_mods = modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
 
@@ -42,7 +42,7 @@ impl MainView {
         changed
     }
 
-    pub(super) fn compute_hovered_link(&self, engine: &EngineRef<'_>) -> Option<HoveredLink> {
+    pub(super) fn compute_hovered_link(&self, engine: &EngineRead<'_>) -> Option<HoveredLink> {
         let pos = self.cursor_position?;
         let terminal_rect = self.compute_terminal_rect();
         let x = pos.x as f32;
@@ -65,8 +65,8 @@ impl MainView {
             self.state
                 .surface_rect_by_id(engine, surface_id, terminal_rect, scale_factor)?;
 
-        let cwd = engine.runtime.terminals.cwd(surface_id);
-        let mirror = engine.runtime.terminals.pty(surface_id).is_none();
+        let cwd = engine.terminals.cwd(surface_id);
+        let mirror = !engine.terminals.has_pty(surface_id);
         let (span, cut) =
             terminal.with_view(&self.state.terminal_views.get(engine, surface_id), |view| {
                 let point = crate::selection::pixel_to_grid(
@@ -132,7 +132,7 @@ impl MainView {
 
     pub(super) fn handle_cursor_moved(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         position: winit::dpi::PhysicalPosition<f64>,
         egui_consumed: bool,
     ) {
@@ -328,7 +328,7 @@ impl MainView {
     /// 남은 클릭을 버튼별 핸들러에 전달한다.
     pub(super) fn handle_mouse_input(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         button_state: ElementState,
         button: MouseButton,
         egui_consumed: bool,
@@ -522,7 +522,7 @@ impl MainView {
 
     /// 우클릭 라우팅: 트래킹 ON+Shift없음이면 앱 위임(ADR-0015), 아니면 tasty 컨텍스트
     /// 메뉴(terminal/비-terminal 별도). 결정은 순수 `right_click_delegates_to_app`.
-    fn handle_right_button(&mut self, engine: &mut EngineRef<'_>, button_state: ElementState) {
+    fn handle_right_button(&mut self, engine: &EngineRead<'_>, button_state: ElementState) {
         // 링크 메뉴 스냅샷은 한 클릭 사이클의 것이다 — press 는 이전 값을 버리고, release 는
         // 아래 early return 보다 먼저 회수해 다음 사이클로 새지 않게 한다.
         let released_link = match button_state {
@@ -610,7 +610,7 @@ impl MainView {
     }
 
     /// 미들클릭 라우팅: 트래킹 ON 에서만 앱에 보고 (트래킹 OFF 는 무동작 유지).
-    fn handle_middle_button(&mut self, engine: &mut EngineRef<'_>, button_state: ElementState) {
+    fn handle_middle_button(&mut self, engine: &EngineRead<'_>, button_state: ElementState) {
         let terminal_rect = self.compute_terminal_rect();
         if let Some(pos) = self.cursor_position {
             let (x, y) = (pos.x as f32, pos.y as f32);
@@ -648,7 +648,7 @@ impl MainView {
 
     /// 좌클릭 라우팅: 상태 갱신(left_mouse_down·vi_copy 종료) 후 링크클릭 →
     /// press(divider/selection) → release 로 위임.
-    fn handle_left_button(&mut self, engine: &mut EngineRef<'_>, button_state: ElementState) {
+    fn handle_left_button(&mut self, engine: &EngineRead<'_>, button_state: ElementState) {
         if button_state == ElementState::Pressed {
             self.left_mouse_down = true;
             // 이전 클릭의 링크 실행 여부를 비운다.
@@ -681,13 +681,13 @@ impl MainView {
     /// 아니면 아무것도 안 함 — 어느 쪽이든 `true`(selection 경로로 안 샘).
     fn try_handle_link_click(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         x: f32,
         y: f32,
         terminal_rect: &crate::model::PhysicalRect,
         button_state: ElementState,
     ) -> bool {
-        let modifier = LinkModifier::parse(&engine.runtime.settings.general.link_click_modifier);
+        let modifier = LinkModifier::parse(&engine.settings.general.link_click_modifier);
         let mods = &self.base.state.modifiers;
         let link_mods_match = !matches!(modifier, LinkModifier::None)
             && modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
@@ -722,8 +722,8 @@ impl MainView {
             // 링크를 연 press는 앱에 보내지 않았으므로 release도 보내지 않는다.
             self.link_click_consumed = true;
             // 자식 PTY가 없는 mirror의 파일 경로는 원격 호스트 경로다.
-            let is_mirror = engine.runtime.terminals.contains(hovered.surface_id)
-                && engine.runtime.terminals.pty(hovered.surface_id).is_none();
+            let is_mirror = engine.terminals.contains(hovered.surface_id)
+                && !engine.terminals.has_pty(hovered.surface_id);
             match crate::file_dispatch::parse_link(&hovered.uri) {
                 crate::file_dispatch::LinkKind::FileTarget(path) => {
                     if is_mirror {
@@ -759,7 +759,7 @@ impl MainView {
     /// 좌클릭 press: divider 히트 시 드래그 시작, 아니면 selection 시작으로 위임.
     fn handle_left_press(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         x: f32,
         y: f32,
         terminal_rect: &crate::model::PhysicalRect,
@@ -790,7 +790,7 @@ impl MainView {
     /// `left_click_local_select` 결정에 따라 로컬 선택 시작 / 앱 보고 / Shift extend.
     fn begin_left_selection(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         x: f32,
         y: f32,
         terminal_rect: &crate::model::PhysicalRect,
@@ -854,11 +854,11 @@ impl MainView {
     /// 트래킹 세션의 첫 캡처 조작에 Shift 우회 안내를 표시한다(ADR-0015).
     /// 설정이 꺼져 있거나 배너 억제 목록에 해당하면 표시하지 않는다.
     /// 억제된 앱에서는 첫 조작 표지를 남겨 이후 다른 앱에서 안내할 수 있게 한다.
-    fn report_left_press_capture(&mut self, engine: &mut EngineRef<'_>, surface_id: u32) {
+    fn report_left_press_capture(&mut self, engine: &EngineRead<'_>, surface_id: u32) {
         if mouse_capture_banner_suppressed(&*engine, surface_id) {
             return;
         }
-        if engine.runtime.settings.general.mouse_capture_hint {
+        if engine.settings.general.mouse_capture_hint {
             let show = engine
                 .find_terminal_by_id(surface_id)
                 .is_some_and(|t| t.take_mouse_capture_hint());
@@ -881,7 +881,7 @@ impl MainView {
     /// (press/release 비대칭으로 인한 mouse-tracking 앱의 링크 중복 오픈 방지).
     fn handle_left_release(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         x: f32,
         y: f32,
         terminal_rect: &crate::model::PhysicalRect,
@@ -941,7 +941,7 @@ impl MainView {
     /// (마우스 리포팅 전송용). surface 를 못 찾으면 `(1, 1)`.
     fn mouse_cell_for_report(
         &self,
-        engine: &EngineRef<'_>,
+        engine: &EngineRead<'_>,
         surface_id: u32,
         x: f32,
         y: f32,
@@ -994,7 +994,7 @@ impl MainView {
     /// divider와 창 리사이즈 영역에서는 보고하지 않는다(ADR-0015).
     fn report_hover_motion(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         x: f32,
         y: f32,
         terminal_rect: &crate::model::PhysicalRect,
@@ -1052,7 +1052,7 @@ impl MainView {
     /// 보고 시점에 해당 surface 에서 조회한다.
     fn report_mouse_event(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         surface_id: u32,
         x: f32,
         y: f32,
@@ -1080,7 +1080,7 @@ impl MainView {
 
     pub(super) fn handle_mouse_wheel(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         delta: MouseScrollDelta,
         egui_consumed: bool,
     ) {

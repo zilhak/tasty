@@ -1023,3 +1023,9 @@ mod tests {
         }
     }
 }
+
+impl crate::runtime::engine_read::EngineRead<'_> {
+    pub(crate) fn attention_kind(&self,id:u32)->Option<AttentionKind> {self.live.attention.kind_of(id)}
+    pub(crate) fn attention_count_of_kind(&self,kind:AttentionKind,ids:&[u32])->usize {self.live.attention.count_of_kind(kind,ids)}
+    pub(crate) fn attention_dominant_kind(&self,ids:&[u32])->Option<AttentionKind> {self.live.attention.dominant_kind(ids)}
+}

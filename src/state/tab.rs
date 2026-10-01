@@ -1,5 +1,5 @@
 #[cfg(any(feature = "gui", test))]
-use crate::runtime::engine_access::EngineRef;
+use crate::runtime::engine_read::EngineRead;
 #[cfg(any(feature = "gui", test))]
 use serde_json::Value;
 #[cfg(all(test, feature = "gui"))]
@@ -17,7 +17,7 @@ impl RequestContext {
     #[cfg(any(feature = "gui", test))]
     pub fn add_kind_tab_by_owner(
         &mut self,
-        engine: &crate::runtime::engine_access::EngineRef<'_>,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         owner_surface_id:u32,
         kind:&str,
         params:&Value,
@@ -32,7 +32,7 @@ impl RequestContext {
     }
 
     #[cfg(any(feature = "gui", test))]
-    pub fn set_explorer_cwd(&mut self,engine:&crate::runtime::engine_access::EngineRef<'_>,sid:u32,folder:std::path::PathBuf) {
+    pub fn set_explorer_cwd(&mut self,engine:&crate::runtime::engine_read::EngineRead<'_>,sid:u32,folder:std::path::PathBuf) {
         let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,sid) else {return;};
         self.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::ExplorerCwd {target,folder}).from_user_context_menu());
         #[cfg(feature="gui")]
@@ -83,7 +83,7 @@ impl RequestContext {
     #[cfg(feature = "gui")]
     pub fn close_tab(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         pane_id: u32,
         tab_index: usize,
     ) -> bool {
@@ -134,7 +134,7 @@ impl RequestContext {
 
     /// AppServices 탭 닫기로 트리를 바꾸고 복원 기록을 남긴 뒤 창 쪽 정리와 알림을 이어서 한다.
     #[cfg(any(feature = "gui", test))]
-    fn close_tab_through_core(&mut self, engine: &mut EngineRef<'_>, tab_id: u32) -> bool {
+    fn close_tab_through_core(&mut self, engine: &EngineRead<'_>, tab_id: u32) -> bool {
         if engine.find_pane_for_tab(tab_id).is_none() {return false;}
         self.dispatch_intent(crate::app::command::DomainIntent::CloseTab {tab_id}.from_user_context_menu());
         true
@@ -142,7 +142,7 @@ impl RequestContext {
 
     /// 활성 탭 닫기를 처리한다. mirror 요청을 전달한 경우에도 true다.
     #[cfg(any(feature = "gui", test))]
-    pub fn close_active_tab(&mut self, engine: &mut EngineRef<'_>) -> bool {
+    pub fn close_active_tab(&mut self, engine: &EngineRead<'_>) -> bool {
         let mirror_op =
             self.focused_surface_id(engine)
                 .map(|sid| crate::ipc::stream::StructuralOp::CloseTab {
@@ -185,7 +185,7 @@ impl RequestContext {
     /// 시험 준비용 Markdown 탭 생성. 제품 경로는 Intent/Core를 사용한다.
     pub(crate) fn test_add_markdown_tab(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         file_path: String,
     ) -> anyhow::Result<()> {
         self.add_kind_tab(engine, "markdown", &json!({"file": file_path}))

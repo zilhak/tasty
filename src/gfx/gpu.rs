@@ -7,7 +7,8 @@ mod render_pass;
 mod screenshot;
 mod shell_setup;
 
-use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_read::EngineRead;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -373,7 +374,7 @@ impl GpuState {
         } else if state.sidebar_collapsed {
             LogicalPx(48.0) // Compact mode: narrow width for collapse button
         } else {
-            engine.runtime.settings.appearance.scaled_sidebar_width()
+            engine.settings.appearance.scaled_sidebar_width()
         };
         let terminal_rect = self.compute_terminal_rect(state.sidebar_width);
         // 표시할 placeholder의 PTY를 resize·render 전에 만든다.
@@ -400,10 +401,10 @@ impl GpuState {
         let layout_ms = render_start.elapsed().as_secs_f64() * 1000.0;
 
         // 이름 있는 폰트 family를 첫 렌더 전에 등록한다.
-        let prev_theme = engine.runtime.settings.appearance.theme.clone();
+        let prev_theme = engine.settings.appearance.theme.clone();
         crate::adapters::ui::font_registry::refresh_surface_fonts(
             &self.egui_ctx,
-            &engine.runtime.settings.appearance,
+            &engine.settings.appearance,
             &mut self.surface_font_state,
         );
 
@@ -512,7 +513,7 @@ impl GpuState {
                 &view,
                 &attach_mesh_targets,
                 &attach_mesh_existing,
-                &engine.remote.attach_mesh_frames,
+                &engine.attach_mesh_frames,
             );
         }
 
@@ -574,11 +575,11 @@ impl GpuState {
     /// Pending offscreen surface screenshot(agent action, focus-independent) 소비.
     /// A hard-occupied surface shows a readonly mirror server-side; capture what
     /// the user would see (mirror), else the live terminal.
-    fn handle_pending_surface_screenshot(&mut self, state: &MainViewState, engine: &EngineRef<'_>) {
+    fn handle_pending_surface_screenshot(&mut self, state: &MainViewState, engine: &EngineRead<'_>) {
         let Some((surface_id, path)) = self.pending_surface_screenshot.take() else {
             return;
         };
-        let reverse_screen = engine.runtime.settings.general.reverse_screen_enabled;
+        let reverse_screen = engine.settings.general.reverse_screen_enabled;
         match engine.visible_terminal(surface_id) {
             Some(t) => self.capture_surface_to_png(
                 t,

@@ -147,7 +147,7 @@ enum DecodeOutcome {
 /// 않는다 — registry 미등록 kind 의 합성을 시도하지 않는다(A1-S1 인계 점검).
 pub(super) fn collect_egui_mesh_targets(
     state: &MainViewState,
-    engine: &crate::runtime::engine_access::EngineRef<'_>,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     terminal_rect: PhysicalRect,
     scale_factor: f32,
 ) -> Vec<(u32, String, PhysicalRect)> {
@@ -169,7 +169,7 @@ pub(super) fn collect_egui_mesh_targets(
 /// 프로세스가 없어 무의미하므로 반환하지 않는다.
 pub(super) fn collect_attach_mesh_targets(
     state: &MainViewState,
-    engine: &crate::runtime::engine_access::EngineRef<'_>,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     terminal_rect: PhysicalRect,
     scale_factor: f32,
 ) -> Vec<(u32, PhysicalRect)> {

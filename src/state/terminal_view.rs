@@ -1,5 +1,5 @@
 //! Per-window display positions. Terminal resources remain in AppServices's existing store.
-use crate::runtime::engine_access::EngineRef;
+use crate::runtime::engine_read::EngineRead;
 use std::collections::HashMap;
 use tasty_terminal::{ContentCut, TerminalViewport};
 
@@ -28,7 +28,7 @@ impl TerminalViewports {
     }
     pub fn update(
         &mut self,
-        engine: &EngineRef<'_>,
+        engine: &EngineRead<'_>,
         surface_id: u32,
         apply: impl FnOnce(&mut TerminalViewport, ContentCut),
     ) {
@@ -62,7 +62,7 @@ mod tests {
         let sid = state.focused_surface_id(&engine).unwrap();
         let mut terminal = tasty_terminal::Terminal::new_detached(20, 3);
         terminal.feed_bytes(b"zero\r\none\r\ntwo\r\nthree\r\nfour");
-        engine.runtime.terminals.insert(sid, terminal, None);
+        engine.terminals.insert(sid, terminal, None);
         let second_window = TerminalViewports::default();
         state
             .terminal_views

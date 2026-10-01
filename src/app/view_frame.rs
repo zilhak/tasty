@@ -8,7 +8,7 @@ impl App {
         let Some(engine)=self.engines.of_window(id) else {return;};
         let Some(session)=self.engines.session_mut(engine) else {return;};
         let Some(view)=self.view.views.get_mut(&id).and_then(|view|view.as_main_mut()) else {return;};
-        view.prepare_redraw(&mut session.as_ref());
+        view.prepare_redraw(&mut session.read());
         let pending=view.state.take_pending_intents();
         for intent in pending {
             match intent.body {
@@ -17,7 +17,7 @@ impl App {
             }
         }
         // TerminalStore owns grid → tap → throttled OS resize. Input contexts see that cut.
-        view.prepare_render_inputs(&mut session.as_ref(),self.plugin_manager.as_ref());
+        view.prepare_render_inputs(&mut session.read(),self.plugin_manager.as_ref());
         for intent in view.state.take_pending_intents() {
             match intent.body {
                 crate::intent::Intent::Engine(action)=>action.apply(&mut session.borrow_mut(),self.plugin_manager.as_ref()),
@@ -32,7 +32,7 @@ impl App {
                 }
             }
         }
-        view.render_if_dirty(&mut session.as_ref(),self.plugin_manager.as_ref());
-        view.finish_redraw(&mut session.as_ref(),self.plugin_manager.as_ref());
+        view.render_if_dirty(&mut session.read(),self.plugin_manager.as_ref());
+        view.finish_redraw(&mut session.read(),self.plugin_manager.as_ref());
     }
 }

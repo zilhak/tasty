@@ -3,7 +3,8 @@
 //! 목록은 기본적으로 모든 워크스페이스를 포함하며 현재 워크스페이스만 고를 수도 있다.
 //! release IPC로 팝업을 강제로 열지는 않는다. 에이전트는 agent.dag_list/get으로 데이터를 읽는다.
 
-use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_read::EngineRead;
+use crate::runtime::engine_read::EngineRead;
 use std::time::Instant;
 
 use tasty_icons as icons;
@@ -103,15 +104,13 @@ impl DagListState {
             .is_none_or(|t| now.duration_since(t) >= POLL_INTERVAL)
     }
 
-    fn poll_list(&mut self, engine: &EngineRef<'_>) {
+    fn poll_list(&mut self, engine: &EngineRead<'_>) {
         let now = Instant::now();
         if !self.list_is_stale(now) {
             return;
         }
         self.last_list_poll = Some(now);
-        match tasty_task_runtime::task::dag_list_from_state(
-            &engine.runtime.memory,
-            engine.task_scope,
+        match engine.dag_list(
             &crate::app::task_completion::dag_workspaces(engine.workspaces().into_iter().map(|workspace|workspace.id),None),
         ) {
             Ok(summaries) => {
@@ -184,7 +183,7 @@ fn status_matches(selected: &[bool], rollup: DagStatus) -> bool {
 pub fn draw_dag_list_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut EngineMut<'_>,
+    engine: &EngineRead<'_>,
 ) -> PopupAction {
     let active_workspace_id = engine
         .workspace_at(state.active_workspace_index(engine))

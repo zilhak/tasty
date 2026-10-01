@@ -1,6 +1,6 @@
 use egui::emath::GuiRounding as _;
 
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_read::EngineRead;
 use crate::model::PhysicalRect;
 use crate::state::MainViewState;
 use crate::theme;
@@ -28,7 +28,7 @@ struct EguiPanelInfo {
 pub fn draw_egui_panels(
     ctx: &egui::Context,
     state: &mut MainViewState,
-    engine: &mut EngineMut<'_>,
+    engine: &EngineRead<'_>,
     pane_rects: &[(u32, PhysicalRect)],
     scale_factor: f32,
 ) {
@@ -113,7 +113,7 @@ pub fn draw_egui_panels(
     // the store at the same time as `&mut Panel` from `engine.workspaces()`.
     let mut explorer_views = std::mem::take(&mut state.explorer_views);
     let mut dag_views = std::mem::take(&mut state.dag_graph_views);
-    let explorer_favorites = engine.runtime.explorer_favorites.items.clone();
+    let explorer_favorites = engine.explorer_favorites.items.clone();
     // cut 대기 경로를 어둡게 표시한다. 복사·붙여넣기 완료·취소 후에는 빈 목록으로 해제된다.
     let explorer_cut_pending: std::collections::HashSet<std::path::PathBuf> = state
         .explorer_clipboard
@@ -132,7 +132,7 @@ pub fn draw_egui_panels(
     // 키 바인딩 전체를 파싱하는 작업이라, explorer 패널이 하나도 없는 프레임에서는
     // 만들지 않는다(`explorer_cwd`는 `ExplorerPanel`일 때만 채워진다).
     let explorer_shortcut_chars = if infos.iter().any(|i| i.explorer_cwd.is_some()) {
-        crate::explorer_ui::type_ahead::unmodified_binding_chars(&engine.runtime.settings.keybindings)
+        crate::explorer_ui::type_ahead::unmodified_binding_chars(&engine.settings.keybindings)
     } else {
         std::collections::HashSet::new()
     };
@@ -145,32 +145,12 @@ pub fn draw_egui_panels(
                 format!("surface_{}", sid)
             });
 
-        let ws = state.active_workspace_mut(engine);
-        let mirror_ws_id = ws.mirror.then_some(ws.id);
-        let pane = match ws.pane_layout_mut().find_pane_mut(info.pane_id) {
-            Some(p) => p,
-            None => continue,
-        };
-        let selected_tab = state.navigation.tab_index(pane);
-        let tab = match pane.tabs.get_mut(selected_tab) {
-            Some(t) => t,
-            None => continue,
-        };
-
-        let surface: &mut dyn crate::model::Surface = if let Some(sid) = info.surface_id {
-            match tab.layout_mut().find_leaf_mut(sid) {
-                Some(leaf) => leaf.as_mut(),
-                None => continue,
-            }
-        } else {
-            let Some(sid) = state.navigation.surface_id(tab) else {
-                continue;
-            };
-            let Some(surface) = tab.surface_mut(sid) else {
-                continue;
-            };
-            surface
-        };
+        let ws=state.active_workspace(engine);
+        let mirror_ws_id=ws.mirror.then_some(ws.id);
+        let Some(pane)=ws.pane_layout().find_pane(info.pane_id) else {continue;};
+        let Some(tab)=pane.tabs.get(state.navigation.tab_index(pane)) else {continue;};
+        let Some(sid)=info.surface_id.or_else(||state.navigation.surface_id(tab)) else {continue;};
+        let Some(surface)=engine.find_surface_by_id(sid) else {continue;};
 
         if let Some(empty) = surface
             .as_any()
@@ -182,8 +162,8 @@ pub fn draw_egui_panels(
                 }
             });
         } else if let Some(ex_panel) = surface
-            .as_any_mut()
-            .downcast_mut::<crate::model::ExplorerPanel>()
+            .as_any()
+            .downcast_ref::<crate::model::ExplorerPanel>()
         {
             let view = explorer_views.get_or_init(ex_panel, mirror_ws_id);
             let act = draw_panel_frame(
@@ -218,14 +198,16 @@ pub fn draw_egui_panels(
                 pending_explorer_action = Some((ex_panel.id, a));
             }
         } else if let Some(dag) = surface
-            .as_any_mut()
-            .downcast_mut::<crate::model::DagGraphSurface>()
+            .as_any()
+            .downcast_ref::<crate::model::DagGraphSurface>()
         {
             let view = dag_views.get_or_init(dag.id);
+            let mut dag_id=dag.dag_id.clone();
+            let mut direction=dag.direction;
             draw_panel_frame_no_margin(ctx, &format!("dag_panel_{}", id_suffix), info, |ui| {
                 let target = crate::adapters::ui::surface::dag_graph::DagTarget {
-                    dag_id: &mut dag.dag_id,
-                    direction: &mut dag.direction,
+                    dag_id: &mut dag_id,
+                    direction: &mut direction,
                 };
                 crate::adapters::ui::surface::dag_graph::draw_dag_graph(
                     ui,
@@ -234,6 +216,9 @@ pub fn draw_egui_panels(
                     crate::adapters::ui::surface::dag_graph::DagChrome::Own,
                 );
             });
+            if (dag_id.as_ref(),direction)!=(dag.dag_id.as_ref(),dag.direction) && let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,sid) {
+                state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::DagSelection {target,dag_id,direction}).from_user_context_menu());
+            }
         } else if let Some(remote) = surface
             .as_any()
             .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
@@ -369,7 +354,7 @@ fn emit_surface_menu_fallback(
 /// 모아 둔 탐색기 액션을 원래 surface ID에 적용한다.
 pub(crate) fn apply_explorer_action(
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     sid: u32,
     act: crate::explorer_ui::ExplorerAction,
 ) {
@@ -396,11 +381,8 @@ pub(crate) fn apply_explorer_action(
         A::SetViewMode(m) => {
             apply_explorer_panel_action(state, engine, sid, &act);
             let mode = m.as_str().to_string();
-            if engine.runtime.settings.general.explorer_view_mode != mode {
-                engine.runtime.settings.general.explorer_view_mode = mode;
-                if let Err(e) = engine.runtime.settings.save() {
-                    tracing::warn!("failed to persist explorer view mode: {e}");
-                }
+            if engine.settings.general.explorer_view_mode != mode {
+                state.dispatch_intent(crate::intent::Intent::PatchSettings(crate::app::engine_action::SettingsPatch::ExplorerMode(mode)).from_user_menu("explorer.view_mode"));
             }
         }
         A::ContextMenu { target, cwd, x, y } => {
@@ -460,75 +442,9 @@ pub(crate) fn apply_explorer_action(
     }
 }
 
-fn apply_explorer_panel_action(
-    state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
-    sid: u32,
-    act: &crate::explorer_ui::ExplorerAction,
-) {
-    let ws = state.active_workspace_mut(engine);
-    let pane_ids = ws.pane_layout().all_pane_ids();
-    for pid in pane_ids {
-        let Some(pane) = ws.pane_layout_mut().find_pane_mut(pid) else {
-            continue;
-        };
-        for tab in pane.tabs.iter_mut() {
-            if !tab.contains_surface(sid) {
-                continue;
-            }
-            let Some(leaf) = tab.layout_mut().find_leaf_mut(sid) else {
-                continue;
-            };
-            let Some(ex) = leaf
-                .as_any_mut()
-                .downcast_mut::<crate::model::ExplorerPanel>()
-            else {
-                continue;
-            };
-            apply_to_explorer_panel(ex, act);
-            return;
-        }
-    }
-}
-
-fn apply_to_explorer_panel(
-    ex: &mut crate::model::ExplorerPanel,
-    act: &crate::explorer_ui::ExplorerAction,
-) {
-    use crate::explorer_ui::ExplorerAction as A;
-    match act {
-        A::Navigate(p) => {
-            ex.active_tab_mut().navigate_to(p.clone());
-        }
-        A::GoBack => {
-            ex.active_tab_mut().go_back();
-        }
-        A::GoForward => {
-            ex.active_tab_mut().go_forward();
-        }
-        A::GoUp => {
-            ex.active_tab_mut().go_up();
-        }
-        A::SetViewMode(m) => {
-            ex.active_tab_mut().view_mode = *m;
-        }
-        A::SetSort(col) => {
-            let tab = ex.active_tab_mut();
-            if tab.sort_column == *col {
-                tab.sort_dir = tab.sort_dir.toggled();
-            } else {
-                tab.sort_column = *col;
-                tab.sort_dir = crate::model::SortDir::Asc;
-            }
-        }
-        A::NewTab => ex.add_tab(),
-        A::CloseTab(i) => ex.close_tab(*i),
-        A::SelectTab(i) => {
-            if *i < ex.tabs.len() {
-                ex.active = *i;
-            }
-        }
-        A::OpenFile(_) | A::Refresh | A::ContextMenu { .. } => {}
+fn apply_explorer_panel_action(state:&mut MainViewState,engine:&crate::runtime::engine_read::EngineRead<'_>,sid:u32,action:&crate::explorer_ui::ExplorerAction) {
+    if let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,sid) {
+        state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Explorer {target,action:action.clone()}).from_user_context_menu());
     }
 }
 
@@ -593,7 +509,7 @@ fn draw_occupied_overlays(
     state: &crate::state::MainViewState,
     active_ws: usize,
     tab_bar_h: tasty_type_geometry::length::PhysicalPx,
-    engine: &mut crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     pane_rects: &[(u32, PhysicalRect)],
     scale_factor: f32,
 ) {
@@ -698,7 +614,7 @@ fn draw_occupied_overlays(
     }
 
     if let Some(sid) = pending_force_detach {
-        engine.release_occupancy(sid);
+        if let Some(lock)=engine.live.occupancy.occupancy_of(sid) {state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::DetachSurface {surface:sid,grant:lock.granted_seq}).from_user_context_menu());}
     }
 }
 

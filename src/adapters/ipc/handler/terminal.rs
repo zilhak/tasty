@@ -4,6 +4,8 @@
 
 
 
+mod fixed_input;
+pub(crate) use fixed_input::{FixedInput,decode_fixed_input};
 use crate::runtime::engine_access::{EngineMut, EngineRef};
 use serde_json::{Value, json};
 

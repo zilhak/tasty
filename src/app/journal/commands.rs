@@ -346,7 +346,7 @@ impl JournalApplication {
             .pending
             .values()
             .map(|pending| pending.bytes)
-            .sum();
+            .sum::<usize>().saturating_add(self.commands.completed_live.iter().map(|(resume,_)|resume.weight()).sum::<usize>());
         if total > tasty_ipc::admission::QUEUED_BYTES_LIMIT {
             let response = JsonRpcResponse::error(
                 serde_json::Value::Null,
@@ -770,7 +770,13 @@ impl JournalApplication {
         if completed.error.is_none() && let Reply::Resume(resume)=&mut pending.reply {
             if resume.generation.is_none() {resume.generation=sessions.iter().find(|session|session.id==resume.engine).and_then(|session|session.runtime.terminals.generation(resume.surface));}
         }
-        self.commands.deliver(pending.reply, completed);
+        match pending.reply {
+            Reply::Resume(mut resume)=> {
+                if let Some((surface,activation))=resume.advance(&mut completed) {self.continue_live_resume(resume,surface,activation);}
+                else {self.commands.deliver(Reply::Resume(resume),completed);}
+            },
+            reply=>self.commands.deliver(reply,completed),
+        }
         Ok(true)
     }
 

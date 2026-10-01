@@ -405,3 +405,8 @@ mod view_frame;
 
 #[cfg(feature="gui")]
 mod view_mesh;
+
+#[cfg(feature="gui")]
+mod explorer_action;
+
+pub(crate) mod telemetry;

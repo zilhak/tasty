@@ -640,20 +640,13 @@ impl App {
         }
     }
 
-    /// 플러그인 RSS 관측은 첫 MainView의 이상 감지기에 전달한다.
+    /// Sampling and persistence belong to App. A View only selects the optional notification target.
     fn record_plugin_rss_samples_if_present(&mut self) {
-        if let Some(mgr) = self.plugin_manager.as_mut() {
-            let rss_samples = mgr.take_rss_samples();
-            if !rss_samples.is_empty()
-                && let Some((_, main, engine)) = engines_mut!(self).window_pairs().next()
-            {
-                crate::adapters::ipc::handler::record_plugin_rss_samples(
-                    &self.services,
-                    &mut main.state,
-                    engine.core,
-                    &rss_samples,
-                );
-            }
+        let samples=self.plugin_manager.as_mut().map(|manager|manager.take_rss_samples()).unwrap_or_default();
+        let time=self.services.now_unix_millis() as u64;
+        let anomalies:Vec<_>=samples.into_iter().filter_map(|(plugin,bytes)|self.services.record_rss_sample(&plugin,bytes,time)).collect();
+        if !anomalies.is_empty() && let Some((_,main,engine))=engines_mut!(self).window_pairs().next() {
+            crate::adapters::ipc::handler::display_plugin_rss_anomalies(&mut main.state,engine.core,&anomalies);
         }
     }
 
@@ -1112,7 +1105,7 @@ impl App {
                     .engines
                     .of_window(id)
                     .and_then(|e| self.engines.session_mut(e))
-                    .map(|session|session.as_ref());
+                    .map(|session|session.read());
                 let mut ctx = ViewCtx {
                     event_loop,
                     modal_active,

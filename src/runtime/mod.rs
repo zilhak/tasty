@@ -46,3 +46,7 @@ pub(crate) mod restored_presentation;
 mod structure_observation;
 
 pub(crate) mod pending_submit;
+
+pub(crate) mod engine_read;
+
+pub(crate) mod kind_catalog;

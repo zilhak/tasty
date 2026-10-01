@@ -37,7 +37,7 @@ impl App {
 
         let store = std::sync::Arc::clone(&self.services.preset_store);
         // MainView가 없으면 동적 kind 목록 없이 정적 기본값을 사용한다.
-        let registry = self.any_main_engine().map(|e| e.surface_registry.clone());
+        let registry = self.any_main_engine().map(|e| crate::runtime::kind_catalog::KindCatalog::new(e.runtime.surface_registry.clone()));
         let window_id = window.id();
         let mut preset = view::PresetView::new(gpu, window, store, registry, keybindings);
         crate::view::ui::present_first_frame(&mut preset);

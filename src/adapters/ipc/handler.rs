@@ -409,20 +409,11 @@ fn should_rate_limit(caller: &CallerContext, method: &str) -> bool {
     true
 }
 
-/// PluginManager가 측정한 plugin RSS를 이상 탐지에 전달한다.
-/// Agent의 자체 보고는 telemetry.record에서 별도로 처리한다.
-#[cfg(feature = "gui")]
-pub fn record_plugin_rss_samples(
-    core: &crate::app::services::AppServices,
-    window: &mut dyn IpcWindow,
-    engine: &mut crate::core::CoreState,
-    samples: &[(String, u64)],
-) {
-    let ts = telemetry::now_ms();
-    let mut out = crate::ipc::window_port::IntentOutbox::default();
-    for (plugin_id, rss_bytes) in samples {
-        telemetry::record_rss_sample(core, window, &mut out, engine, plugin_id, *rss_bytes, ts);
-    }
+/// Display the already persisted observations in the selected presentation, if one exists.
+#[cfg(feature="gui")]
+pub(crate) fn display_plugin_rss_anomalies(window:&mut dyn IpcWindow,engine:&mut crate::core::CoreState,anomalies:&[tasty_telemetry::Anomaly]) {
+    let mut out=crate::ipc::window_port::IntentOutbox::default();
+    for anomaly in anomalies {telemetry::fire_anomaly_notification(window,&mut out,engine,anomaly);}
     window.enqueue_intents(out);
 }
 

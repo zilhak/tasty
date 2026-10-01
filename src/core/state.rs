@@ -57,6 +57,7 @@ pub(crate) struct GuiAttachUserReq {
 
 /// 붙여넣기 시점의 mirror 대상을 고정하고 백그라운드 업로드 뒤 그 surface에 원격 경로를 입력한다.
 #[cfg(feature = "gui")]
+#[derive(Clone,Debug)]
 pub(crate) struct PendingImageUpload {
     /// attach 세션을 찾을 로컬 mirror workspace ID.
     pub(crate) mirror_ws_id: u32,

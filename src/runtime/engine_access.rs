@@ -168,6 +168,9 @@ pub(crate) struct ObservedPresentation<'a> {
     selection:&'a dyn crate::model::StructurePresentation,
     titles:&'a std::collections::HashMap<u32,tasty_model::SurfaceTitle>,
 }
+impl<'a> ObservedPresentation<'a> {
+    pub(crate) fn new(selection:&'a dyn crate::model::StructurePresentation,titles:&'a std::collections::HashMap<u32,tasty_model::SurfaceTitle>)->Self {Self {selection,titles}}
+}
 impl crate::model::StructurePresentation for ObservedPresentation<'_> {
     fn surface_title(&self,id:u32)->Option<&tasty_model::SurfaceTitle> {self.titles.get(&id)}
     fn pane_id(&self,workspace:&crate::model::Workspace)->Option<u32> {self.selection.pane_id(workspace)}

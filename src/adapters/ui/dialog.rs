@@ -60,7 +60,7 @@ pub fn on_close_rename_popup(
 pub fn draw_rename_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> PopupAction {
     let th = theme::theme();
 
@@ -262,15 +262,14 @@ fn apply_rename(
         }
         RenameTarget::TabName { tab_id } => apply_rename_tab_name(state, engine, tab_id, buffer),
         RenameTarget::ExplorerEntry { surface_id, path } => {
-            apply_rename_explorer_entry(state, surface_id, path, buffer)
+            apply_rename_explorer_entry(state, engine, surface_id, path, buffer)
         }
         RenameTarget::ExplorerAddFavorite { path } => {
-            apply_rename_explorer_add_favorite(engine, path, buffer)
+            apply_rename_explorer_add_favorite(state, path, buffer)
         }
         RenameTarget::NewCategory => apply_rename_new_category(state, buffer),
         RenameTarget::CategoryName { cat_id } => apply_rename_category_name(state, cat_id, buffer),
     }
-    engine.mark_layout_dirty();
 }
 
 fn apply_rename_workspace_name(
@@ -337,20 +336,14 @@ fn apply_rename_tab_name(
 
 fn apply_rename_explorer_entry(
     state: &mut MainViewState,
+    engine:&crate::runtime::engine_read::EngineRead<'_>,
     surface_id: u32,
     path: std::path::PathBuf,
     buffer: String,
 ) {
-    let new_name = buffer.trim();
-    if !new_name.is_empty()
-        && let Some(parent) = path.parent()
-    {
-        let new_path = parent.join(new_name);
-        if new_path != path
-            && let Err(e) = std::fs::rename(&path, &new_path)
-        {
-            tracing::warn!("explorer: rename {} failed: {e}", path.display());
-        }
+    let name=buffer.trim();
+    if !name.is_empty() && let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,surface_id) {
+        state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::RenameExplorerEntry {target,path,name:name.to_owned()}).from_user_context_menu());
     }
     if let Some(view) = state.explorer_views.get_mut(surface_id) {
         view.selected.clear();
@@ -359,13 +352,8 @@ fn apply_rename_explorer_entry(
     }
 }
 
-fn apply_rename_explorer_add_favorite(
-    engine: &mut crate::core::CoreState,
-    path: std::path::PathBuf,
-    buffer: String,
-) {
-    engine.runtime.explorer_favorites.add(path, buffer);
-    engine.runtime.explorer_favorites.save();
+fn apply_rename_explorer_add_favorite(state:&mut MainViewState,path:std::path::PathBuf,label:String) {
+    state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::AddExplorerFavorite {path,label}).from_user_context_menu());
 }
 
 fn apply_rename_new_category(state: &mut MainViewState, buffer: String) {
@@ -397,11 +385,11 @@ mod tests {
         tasty_themes::mocha_fallback()
     }
 
-    fn push_workspace(engine: &mut crate::runtime::engine_access::EngineMut<'_>, name: &str) -> u32 {
-        let ws_id = engine.runtime.counters.next_workspace();
-        let pane_id = engine.runtime.counters.next_pane();
-        let tab_id = engine.runtime.counters.next_tab();
-        let sid = engine.runtime.counters.next_surface();
+    fn push_workspace(engine: &crate::runtime::engine_read::EngineRead<'_>, name: &str) -> u32 {
+        let ws_id = engine.counters.next_workspace();
+        let pane_id = engine.counters.next_pane();
+        let tab_id = engine.counters.next_tab();
+        let sid = engine.counters.next_surface();
         engine
             .runtime
             .terminals
@@ -420,7 +408,7 @@ mod tests {
     /// 팝업은 요청을 큐에 넣기만 하므로 메인 루프처럼 큐를 비워 적용한다.
     fn apply_rename_and_drain(
         state: &mut MainViewState,
-        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         target: RenameTarget,
         buffer: &str,
     ) {
@@ -469,8 +457,8 @@ mod tests {
                     .expect("workspace index is valid"),
             )
             .unwrap();
-        let t2 = engine.runtime.counters.next_tab();
-        let s2 = engine.runtime.counters.next_surface();
+        let t2 = engine.counters.next_tab();
+        let s2 = engine.counters.next_surface();
         let pane = engine.find_pane_by_id_mut(pane_id).unwrap();
         pane.add_terminal_marker_tab_background(t2, s2, None);
         let first_tab = pane.tabs[0].id;

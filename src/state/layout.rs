@@ -1,7 +1,7 @@
 #[cfg(feature = "gui")]
 use crate::core::CoreState;
 #[cfg(feature = "gui")]
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_read::EngineRead;
 #[cfg(feature = "gui")]
 use crate::model::{PaneId, PhysicalPx, PhysicalRect, SurfaceRegion};
 
@@ -196,7 +196,7 @@ impl RequestContext {
     #[cfg(feature = "gui")]
     pub fn resize_all(
         &mut self,
-        engine: &crate::runtime::engine_access::EngineRef<'_>,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         terminal_rect: PhysicalRect,
         cell_width: f32,
         cell_height: f32,

@@ -1,4 +1,4 @@
-use crate::runtime::engine_access::EngineRef;
+use crate::runtime::engine_read::EngineRead;
 use crate::app::command::{DomainIntent, SendPayload};
 use crate::model::PhysicalRect;
 use crate::selection::{self, SelectionMode, SelectionPoint, TextSelection};
@@ -11,7 +11,7 @@ impl MainView {
     /// Used for Shift+Click range selection.
     pub(super) fn extend_selection(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         x: f32,
         y: f32,
         terminal_rect: &PhysicalRect,
@@ -42,7 +42,7 @@ impl MainView {
     /// Start a new text selection from the given pixel position.
     pub(super) fn start_selection(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         x: f32,
         y: f32,
         terminal_rect: &PhysicalRect,
@@ -186,12 +186,12 @@ impl MainView {
     /// Move the terminal cursor to the clicked position using the click_cursor module.
     pub(super) fn move_cursor_to_click(
         &mut self,
-        engine: &mut EngineRef<'_>,
+        engine: &EngineRead<'_>,
         x: f32,
         y: f32,
         terminal_rect: &PhysicalRect,
     ) {
-        if !engine.runtime.settings.general.click_to_move_cursor {
+        if !engine.settings.general.click_to_move_cursor {
             return;
         }
 
@@ -201,9 +201,8 @@ impl MainView {
         let is_shell = self
             .state
             .focused_surface_id(engine)
-            .and_then(|sid| engine.runtime.terminals.pty(sid))
-            .and_then(|pty| pty.foreground_process_info())
-            .map(|info| crate::click_cursor::is_shell_process(&info.name))
+            .and_then(|sid| engine.terminals.foreground_process_name(sid))
+            .map(|name|crate::click_cursor::is_shell_process(&name))
             .unwrap_or(false);
         if !is_shell {
             return;
@@ -291,7 +290,7 @@ impl MainView {
     /// Convert mouse physical coordinates to a grid SelectionPoint for the focused terminal.
     pub(super) fn mouse_to_grid(
         &self,
-        engine: &EngineRef<'_>,
+        engine: &EngineRead<'_>,
         x: f32,
         y: f32,
         terminal_rect: &PhysicalRect,
@@ -302,7 +301,7 @@ impl MainView {
 
     fn mouse_selection_context(
         &self,
-        engine: &EngineRef<'_>,
+        engine: &EngineRead<'_>,
         x: f32,
         y: f32,
         terminal_rect: &PhysicalRect,
@@ -337,7 +336,7 @@ impl MainView {
 
     /// 현재 선택을 복사하고 선택 범위는 유지한다. 우클릭 복사는 포커스와 무관하다.
     /// Ctrl+C의 포커스 일치 검사는 호출자인 handle_copy_shortcut에서 한다.
-    pub fn copy_selection_to_clipboard(&mut self, engine: &mut EngineRef<'_>) -> bool {
+    pub fn copy_selection_to_clipboard(&mut self, engine: &EngineRead<'_>) -> bool {
         let sel = match &self.text_selection {
             Some(s) if !s.is_empty() => s.clone(),
             _ => return false,
@@ -363,7 +362,7 @@ impl MainView {
 
     /// 현재 선택의 줄바꿈을 공백 하나로 바꿔 복사한다. soft wrap은 추출할 때 이미 연결된다.
     /// 우클릭 복사와 같이 포커스를 검사하지 않고 선택 범위도 유지한다.
-    pub fn copy_selection_no_newline(&mut self, engine: &mut EngineRef<'_>) -> bool {
+    pub fn copy_selection_no_newline(&mut self, engine: &EngineRead<'_>) -> bool {
         let sel = match &self.text_selection {
             Some(s) if !s.is_empty() => s.clone(),
             _ => return false,
