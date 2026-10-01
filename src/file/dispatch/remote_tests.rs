@@ -5,10 +5,27 @@ use crate::file::dispatch::picker_apply::tests::build_test_core;
 use crate::file::dispatch::{FileDispatchOrigin, apply_identify_result};
 use crate::file::format::{DetectDepth, DetectorId, FileTarget};
 use crate::file::handler::{FileHandler, HandlerAction, HandlerId, HandlerOwner};
-use tasty_ipc::stream::StructuralOp;
+
 use tasty_plugin_protocol::host_port::FileHandlerRegistryPort;
 
-fn register_kind(engine: &crate::core::CoreState, plugin_id: &str, kind: &str) {
+fn queued_creates(state: &crate::state::RequestContext) -> Vec<&crate::intent::DispatchedIntent> {
+    state
+        .pending_intents
+        .iter()
+        .filter(|request| {
+            matches!(
+                request.body,
+                crate::intent::Intent::Domain(DomainIntent::CreateTab { .. })
+            )
+        })
+        .collect()
+}
+
+fn register_kind(
+    engine: &crate::runtime::engine_access::EngineMut<'_>,
+    plugin_id: &str,
+    kind: &str,
+) {
     let decl: tasty_plugin_manifest::SurfaceKindDecl = serde_json::from_value(serde_json::json!({
         "kind": kind,
         "display_name_i18n_key": "surface.kind.markdown",
@@ -25,7 +42,11 @@ fn register_kind(engine: &crate::core::CoreState, plugin_id: &str, kind: &str) {
     );
 }
 
-fn install_handler(engine: &crate::core::CoreState, plugin_id: &str, action: serde_json::Value) {
+fn install_handler(
+    engine: &crate::runtime::engine_access::EngineMut<'_>,
+    plugin_id: &str,
+    action: serde_json::Value,
+) {
     FileHandlerRegistryPort::install_plugin_handlers(
         engine.runtime.file_handler.as_ref(),
         plugin_id,
@@ -64,7 +85,7 @@ fn apply_on_mirror(
     usize,
 ) {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_mirror_state();
     let mut engine = engine_session.borrow_mut();
     register_kind(&engine, "com.tasty.markdown", "markdown");
     install_handler(
@@ -72,7 +93,6 @@ fn apply_on_mirror(
         "com.tasty.markdown",
         serde_json::json!({"kind": "open_surface", "surface_kind": "markdown", "param_key": "file"}),
     );
-    engine.make_mirror_fixture(0);
     let sid = engine
         .workspace_at(0)
         .expect("workspace index is valid")
@@ -96,26 +116,25 @@ fn apply_on_mirror(
 }
 
 #[test]
-fn a_mirror_open_forwards_one_user_new_tab_without_local_effects() {
+fn a_mirror_open_queues_one_user_create_tab_without_local_effects() {
     let (state, mut engine_session, surfaces) = apply_on_mirror(FileDispatchOrigin::User);
     let engine = engine_session.borrow_mut();
-    assert_eq!(engine.remote.pending_structural_forward.len(), 1);
-    let forward = &engine.remote.pending_structural_forward[0];
-    let StructuralOp::NewTab {
-        surface_kind,
-        params,
+    assert_eq!(queued_creates(&state).len(), 1);
+    let forward = &queued_creates(&state)[0];
+    let crate::intent::Intent::Domain(DomainIntent::CreateTab {
+        kind: surface_kind,
+        surface_params: params,
         ..
-    } = &forward.op
+    }) = &forward.body
     else {
-        panic!("expected a NewTab forward, got {:?}", forward.op);
+        panic!("expected a NewTab forward, got {:?}", forward.body);
     };
     assert_eq!(surface_kind, "markdown");
     assert_eq!(params, &serde_json::json!({"file": "/remote/doc.md"}));
     assert!(
-        forward.user_triggered,
+        forward.origin.is_user(),
         "사용자 더블클릭은 원격 새 탭을 선택한다"
     );
-    assert!(!forward.silent_failure);
     assert_eq!(
         engine
             .workspace_at(0)
@@ -125,20 +144,20 @@ fn a_mirror_open_forwards_one_user_new_tab_without_local_effects() {
         surfaces
     );
     assert_eq!(state.recent_files.get("markdown"), Vec::<String>::new());
-    assert!(state.pending_intents.is_empty());
+    assert_eq!(state.pending_intents.len(), 1);
     assert!(state.dialogs.file_handler_picker.is_none());
     assert_eq!(state.toasts.len(), 0);
 }
 
 #[test]
-fn an_agent_mirror_open_is_not_marked_as_a_user_forward() {
-    let (_state, mut engine_session, _) = apply_on_mirror(FileDispatchOrigin::Agent);
+fn an_agent_mirror_open_keeps_agent_origin_on_queued_creation() {
+    let (state, mut engine_session, _) = apply_on_mirror(FileDispatchOrigin::Agent);
     let engine = engine_session.borrow_mut();
-    assert_eq!(engine.remote.pending_structural_forward.len(), 1);
-    let forward = &engine.remote.pending_structural_forward[0];
-    assert!(!forward.user_triggered);
+    assert_eq!(queued_creates(&state).len(), 1);
+    let forward = &queued_creates(&state)[0];
+    assert!(!forward.origin.is_user());
     assert!(
-        forward.silent_failure,
+        !forward.origin.is_user(),
         "에이전트 요청의 실패는 로그로만 남긴다"
     );
 }
@@ -146,16 +165,15 @@ fn an_agent_mirror_open_is_not_marked_as_a_user_forward() {
 #[test]
 fn a_mirror_open_with_only_an_ipc_handler_runs_nothing_and_toasts() {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_mirror_state();
     let mut engine = engine_session.borrow_mut();
     install_handler(
         &engine,
         "com.example.ipc",
         serde_json::json!({"kind": "ipc", "method": "example.open"}),
     );
-    engine.make_mirror_fixture(0);
     let sid = engine
-        .workspace_at_mut(0)
+        .workspace_at(0)
         .expect("workspace index is valid")
         .all_surface_ids()[0];
     apply_identify_result(
@@ -168,7 +186,7 @@ fn a_mirror_open_with_only_an_ipc_handler_runs_nothing_and_toasts() {
         FileDispatchOrigin::User,
         false,
     );
-    assert!(engine.remote.pending_structural_forward.is_empty());
+    assert!(queued_creates(&state).is_empty());
     assert!(state.pending_handler_ipc.is_empty());
     assert!(state.pending_intents.is_empty());
     assert!(
@@ -181,11 +199,10 @@ fn a_mirror_open_with_only_an_ipc_handler_runs_nothing_and_toasts() {
 #[test]
 fn a_mirror_open_without_a_detector_opens_no_picker() {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_mirror_state();
     let mut engine = engine_session.borrow_mut();
-    engine.make_mirror_fixture(0);
     let sid = engine
-        .workspace_at_mut(0)
+        .workspace_at(0)
         .expect("workspace index is valid")
         .all_surface_ids()[0];
     apply_identify_result(
@@ -198,14 +215,14 @@ fn a_mirror_open_without_a_detector_opens_no_picker() {
         FileDispatchOrigin::User,
         false,
     );
-    assert!(engine.remote.pending_structural_forward.is_empty());
+    assert!(queued_creates(&state).is_empty());
     assert!(state.dialogs.file_handler_picker.is_none());
     assert_eq!(state.toasts.len(), 1);
 }
 
 #[test]
 fn only_open_surface_kinds_that_mirror_content_are_remote_openable() {
-    let (_state, mut engine_session) = crate::state::tests::test_state();
+    let (_state, mut engine_session) = crate::state::tests::test_mirror_state();
     let engine = engine_session.borrow_mut();
     register_kind(&engine, "com.tasty.markdown", "markdown");
     register_kind(&engine, "com.tasty.html", "html");
@@ -223,12 +240,12 @@ fn only_open_surface_kinds_that_mirror_content_are_remote_openable() {
         open_surface("not_registered"),
     ] {
         assert!(
-            !is_remote_openable(&engine, &handler(action.clone())),
+            !is_remote_openable(&engine.as_ref(), &handler(action.clone())),
             "{action:?} must not open on the remote",
         );
     }
     assert!(is_remote_openable(
-        &engine,
+        &engine.as_ref(),
         &handler(open_surface("markdown"))
     ));
 }
@@ -241,7 +258,7 @@ fn mirror_with_ipc_first() -> (
     u32,
 ) {
     let (core, _) = build_test_core();
-    let (state, mut engine_session) = crate::state::tests::test_state();
+    let (state, mut engine_session) = crate::state::tests::test_mirror_state();
     let mut engine = engine_session.borrow_mut();
     register_kind(&engine, "com.tasty.markdown", "markdown");
     FileHandlerRegistryPort::install_plugin_handlers(
@@ -260,7 +277,6 @@ fn mirror_with_ipc_first() -> (
             "action": {"kind": "open_surface", "surface_kind": "markdown", "param_key": "file"}}),
         ],
     );
-    engine.make_mirror_fixture(0);
     let sid = engine
         .workspace_at(0)
         .expect("workspace index is valid")
@@ -286,7 +302,7 @@ fn a_user_open_with_an_unopenable_first_handler_shows_only_remote_candidates() {
         FileDispatchOrigin::User,
         false,
     );
-    assert!(engine.remote.pending_structural_forward.is_empty());
+    assert!(queued_creates(&state).is_empty());
     assert!(state.pending_handler_ipc.is_empty());
     let picker = state
         .dialogs
@@ -325,8 +341,8 @@ fn an_agent_open_with_an_unopenable_first_handler_runs_the_first_remote_one() {
         "에이전트 요청은 사용자 화면에 picker를 띄우지 않는다"
     );
     assert!(state.pending_handler_ipc.is_empty());
-    assert_eq!(engine.remote.pending_structural_forward.len(), 1);
-    assert!(!engine.remote.pending_structural_forward[0].user_triggered);
+    assert_eq!(queued_creates(&state).len(), 1);
+    assert!(!queued_creates(&state)[0].origin.is_user());
 }
 
 /// 사용자 입력을 증명하지 못한 plugin 중계 요청도 사용자 클릭일 수 있어 원격 picker를 연다.
@@ -345,7 +361,7 @@ fn an_unverified_plugin_open_with_an_unopenable_first_handler_shows_the_remote_p
         FileDispatchOrigin::PluginUnverified,
         false,
     );
-    assert!(engine.remote.pending_structural_forward.is_empty());
+    assert!(queued_creates(&state).is_empty());
     assert!(state.pending_handler_ipc.is_empty());
     let picker = state
         .dialogs
@@ -367,9 +383,8 @@ fn an_unopenable_remote_file_toasts_unless_an_external_ipc_asked() {
         (FileDispatchOrigin::Agent, 0),
     ] {
         let (mut core, _) = build_test_core();
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_mirror_state();
         let mut engine = engine_session.borrow_mut();
-        engine.make_mirror_fixture(0);
         let sid = engine
             .workspace_at(0)
             .expect("workspace index is valid")
@@ -385,16 +400,13 @@ fn an_unopenable_remote_file_toasts_unless_an_external_ipc_asked() {
             false,
         );
         assert!(state.dialogs.file_handler_picker.is_none(), "{origin:?}");
-        assert!(
-            engine.remote.pending_structural_forward.is_empty(),
-            "{origin:?}"
-        );
+        assert!(queued_creates(&state).is_empty(), "{origin:?}");
         assert_eq!(state.toasts.len(), toasts, "{origin:?}");
     }
 }
 
 #[test]
-fn a_remote_picker_selection_forwards_a_user_new_tab_and_rejects_local_handlers() {
+fn a_remote_picker_selection_queues_user_creation_and_rejects_local_handlers() {
     let (mut core, mut state, mut engine_session, sid) = mirror_with_ipc_first();
     let mut engine = engine_session.borrow_mut();
     let target = crate::file::dispatch::DispatchTarget::File(FileTarget::new("/remote/doc.md"));
@@ -410,7 +422,7 @@ fn a_remote_picker_selection_forwards_a_user_new_tab_and_rejects_local_handlers(
         false,
     );
     assert!(state.pending_handler_ipc.is_empty());
-    assert!(engine.remote.pending_structural_forward.is_empty());
+    assert!(queued_creates(&state).is_empty());
 
     crate::file::dispatch::apply_file_picker_result(
         &mut core,
@@ -422,19 +434,19 @@ fn a_remote_picker_selection_forwards_a_user_new_tab_and_rejects_local_handlers(
         FileDispatchOrigin::User,
         false,
     );
-    assert_eq!(engine.remote.pending_structural_forward.len(), 1);
-    let forward = &engine.remote.pending_structural_forward[0];
-    let StructuralOp::NewTab {
-        surface_kind,
-        params,
+    assert_eq!(queued_creates(&state).len(), 1);
+    let forward = &queued_creates(&state)[0];
+    let crate::intent::Intent::Domain(DomainIntent::CreateTab {
+        kind: surface_kind,
+        surface_params: params,
         ..
-    } = &forward.op
+    }) = &forward.body
     else {
-        panic!("expected a NewTab forward, got {:?}", forward.op);
+        panic!("expected a NewTab forward, got {:?}", forward.body);
     };
     assert_eq!(surface_kind, "markdown");
     assert_eq!(params, &serde_json::json!({"file": "/remote/doc.md"}));
-    assert!(forward.user_triggered);
+    assert!(forward.origin.is_user());
     assert_eq!(state.recent_files.get("markdown"), Vec::<String>::new());
 }
 
@@ -456,34 +468,32 @@ impl IdentifySpawner for RecordingSpawner {
 
 #[test]
 fn a_mirror_origin_identifies_by_name_only() {
-    let (mut core, mut engine_session) = build_test_core();
-    let mut engine = engine_session.borrow_mut();
+    let (mut core, mut local_session) = build_test_core();
+    let (_, mut mirror_session) = crate::state::tests::test_mirror_state();
     let spawner = std::sync::Arc::new(RecordingSpawner::default());
-    engine.runtime.identify_worker = Some(spawner.clone());
-    let sid = engine
-        .workspace_at(0)
-        .expect("workspace index is valid")
-        .all_surface_ids()[0];
-    let dispatch = |depth| DomainIntent::DispatchFile {
-        target: FileTarget::new("/remote/doc.md"),
-        depth,
-        origin_surface_id: Some(sid),
-        dispatch_origin: FileDispatchOrigin::User,
-        ignore_size_limit: false,
-    };
-
-    core.apply(&mut engine, dispatch(DetectDepth::Deep))
+    let mut ids = Vec::new();
+    for session in [&mut local_session, &mut mirror_session] {
+        let mut engine = session.borrow_mut();
+        engine.runtime.identify_worker = Some(spawner.clone());
+        let sid = engine.workspace_at(0).unwrap().all_surface_ids()[0];
+        ids.push(sid);
+        core.apply_live(
+            &mut engine,
+            DomainIntent::DispatchFile {
+                target: FileTarget::new("/remote/doc.md"),
+                depth: DetectDepth::Deep,
+                origin_surface_id: Some(sid),
+                dispatch_origin: FileDispatchOrigin::User,
+                ignore_size_limit: false,
+            },
+        )
         .unwrap();
-    engine.make_mirror_fixture(0);
-    core.apply(&mut engine, dispatch(DetectDepth::Deep))
-        .unwrap();
-
+    }
     assert_eq!(
         *spawner.0.lock().unwrap(),
         vec![
-            (DetectDepth::Deep, Some(sid)),
-            (DetectDepth::Name, Some(sid))
-        ],
-        "로컬 origin은 요청한 깊이를, mirror origin은 파일 이름만으로 식별한다"
+            (DetectDepth::Deep, Some(ids[0])),
+            (DetectDepth::Name, Some(ids[1]))
+        ]
     );
 }

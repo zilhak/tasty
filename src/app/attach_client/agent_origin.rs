@@ -62,36 +62,11 @@ mod tests {
     use super::super::{MirrorEvent, apply_mirror_events};
     use super::*;
 
-    fn structural(silent_failure: bool) -> crate::app::services::PendingStructuralForward {
-        crate::app::services::PendingStructuralForward {
-            op: tasty_ipc::stream::StructuralOp::NewTab {
-                anchor_surface_id: 1,
-                surface_kind: "terminal".to_string(),
-                params: serde_json::Value::Null,
-            },
-            user_triggered: false,
-            close_focus_candidates: Vec::new(),
-            silent_failure,
-        }
-    }
-
-    fn markdown(request_id: u64, agent_origin: bool) -> crate::core::PendingMarkdownContentForward {
-        crate::core::PendingMarkdownContentForward {
-            local_surface_id: 300,
-            request_id,
-            agent_origin,
-        }
-    }
-
     #[test]
     fn an_agent_forward_failure_does_not_toast() {
         let mut sess = test_session(9_000, HashMap::new());
-        sess.state
-            .agent_requests
-            .note_structural_from(&structural(true), 5);
-        sess.state
-            .agent_requests
-            .note_structural_from(&structural(false), 6);
+        sess.state.agent_requests.note_structural(true, 5);
+        sess.state.agent_requests.note_structural(false, 6);
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
@@ -130,12 +105,8 @@ mod tests {
     fn an_agent_markdown_reload_truncation_does_not_toast() {
         let mut sess = test_session(9_000, HashMap::from([(30, 300)]));
         sess.state.markdown_locals.insert(300);
-        sess.state
-            .agent_requests
-            .note_markdown_from(&markdown(11, true), 11);
-        sess.state
-            .agent_requests
-            .note_markdown_from(&markdown(12, false), 12);
+        sess.state.agent_requests.note_markdown(true, 11);
+        sess.state.agent_requests.note_markdown(false, 12);
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
@@ -163,7 +134,7 @@ mod tests {
             "에이전트 요청의 잘림은 toast 를 안 낸다"
         );
         assert!(
-            sess.state.agent_requests.markdown.is_empty(),
+            !sess.state.agent_requests.take_markdown(11),
             "회신이 오면 표시를 지운다"
         );
 

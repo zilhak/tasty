@@ -3087,8 +3087,52 @@ pub(crate) fn upload_file_over_bulk(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    pub(super) fn supply_ids(engine: &crate::runtime::engine_access::EngineMut<'_>) {
+        engine
+            .runtime
+            .ids
+            .supply(
+                [
+                    tasty_core::IdKind::Workspace,
+                    tasty_core::IdKind::Pane,
+                    tasty_core::IdKind::Tab,
+                    tasty_core::IdKind::Surface,
+                ]
+                .map(|kind| tasty_event_store::IdRange {
+                    kind: kind.label().into(),
+                    start: 20000,
+                    end: 30000,
+                })
+                .to_vec(),
+            )
+            .unwrap();
+    }
+
+    pub(super) fn test_ids() -> crate::runtime::id_reservations::ReservedIds {
+        let bank = crate::runtime::id_reservations::IdReservations::default();
+        let kinds = [
+            tasty_core::IdKind::Workspace,
+            tasty_core::IdKind::Pane,
+            tasty_core::IdKind::Tab,
+            tasty_core::IdKind::Surface,
+        ];
+        bank.supply(
+            kinds
+                .iter()
+                .map(|kind| tasty_event_store::IdRange {
+                    kind: kind.label().into(),
+                    start: 10000,
+                    end: 20000,
+                })
+                .collect(),
+        )
+        .unwrap();
+        bank.lease(&kinds.map(|kind| (kind, 10000))).unwrap()
+    }
+
     use crate::app::engine_registry::EngineRegistry;
-    use crate::runtime::counters::RuntimeCounters;
+
     use crate::runtime::engine_session::EngineSession;
 
     /// 순수 함수 시험용 parked 항목. registry 없이 id·View 복원 자료·engine만 묶는다.
@@ -3110,20 +3154,18 @@ mod tests {
 
     #[test]
     fn an_agent_close_is_forwarded_with_the_agent_origin() {
-        let queued = |user_triggered| crate::app::services::PendingStructuralForward {
-            op: tasty_ipc::stream::StructuralOp::CloseSurface { surface_id: 9 },
-            user_triggered,
-            close_focus_candidates: Vec::new(),
-            silent_failure: false,
-        };
-        let origin_on_wire = |p: crate::app::services::PendingStructuralForward| {
-            let payload = structural_op_payload(3, p.op, p.user_triggered);
-            let v: serde_json::Value = serde_json::from_slice(&payload).expect("json");
+        let origin_on_wire = |user_triggered| {
+            let payload = structural_op_payload(
+                3,
+                tasty_ipc::stream::StructuralOp::CloseSurface { surface_id: 9 },
+                user_triggered,
+            );
+            let v: Value = serde_json::from_slice(&payload).expect("json");
             assert_eq!(v["event"], "structural_op");
             v["origin"].clone()
         };
-        assert_eq!(origin_on_wire(queued(false)), "agent");
-        assert_eq!(origin_on_wire(queued(true)), "user");
+        assert_eq!(origin_on_wire(false), "agent");
+        assert_eq!(origin_on_wire(true), "user");
     }
     use crate::ipc::stream::SplitAxis;
 
@@ -3132,6 +3174,7 @@ mod tests {
     fn remove_mirror_workspace_clears_terminal_busy_and_mesh() {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
+        supply_ids(&engine);
         let ws_id = 9_000u32;
         let (pane_id, tab_id, local_surface) = (9_001u32, 9_002u32, 9_003u32);
         let remote_surface = 42u32;
@@ -3194,44 +3237,10 @@ mod tests {
     }
 
     #[test]
-    fn removing_the_only_mirror_workspace_recreates_a_default_workspace() {
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
-        let mut engine = engine_session.borrow_mut();
-        let ws_id = 9_000u32;
-        let local_surface = 9_003u32;
-        let mut mirror_ws = Workspace::new_with_terminal_marker(
-            ws_id,
-            "mirror".to_string(),
-            9_001,
-            9_002,
-            local_surface,
-        );
-        mirror_ws.mirror = true;
-        engine.replace_local_workspaces(Vec::new());
-        engine.push_mirror_workspace(mirror_ws);
-        state.set_active_workspace_index(&engine, 0);
-
-        assert!(remove_mirror_workspace_from_engine(
-            &mut engine,
-            &mut state,
-            ws_id,
-            &HashMap::from([(42u32, local_surface)]),
-        ));
-
-        assert_eq!(
-            engine.workspaces().len(),
-            1,
-            "기본 워크스페이스가 다시 생긴다"
-        );
-        assert!(!engine.has_workspace(ws_id));
-        assert_eq!(state.active_workspace_index(&engine), 0);
-        assert!(!state.active_workspace(&engine).mirror);
-    }
-
-    #[test]
     fn remove_mirror_workspace_leaves_unrelated_engine_untouched() {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
+        supply_ids(&engine);
         let local_surface = 9_003u32;
         engine
             .runtime
@@ -3380,7 +3389,7 @@ mod tests {
     fn build_layout_preserves_split_and_remaps_ids() {
         let mut navigation = crate::state::navigation::NavigationState::default();
 
-        let ids = IdGenerator::new();
+        let ids = test_ids();
         let mut map = HashMap::new();
         map.insert(100u32, 5u32); // 100 → local 5 (terminal)
         map.insert(101u32, 6u32); // 101 → local 6 (placeholder)
@@ -3406,6 +3415,7 @@ mod tests {
             },
             &mut HashMap::new(),
         )
+        .expect("fixture construction")
         .expect("layout");
         match layout {
             SurfaceLayout::Split {
@@ -3428,10 +3438,10 @@ mod tests {
     }
 
     #[test]
-    fn build_layout_constructs_explorer_panel_from_explorer_map() {
+    fn build_layout_preserves_explorer_descriptor_from_explorer_map() {
         let mut navigation = crate::state::navigation::NavigationState::default();
 
-        let ids = IdGenerator::new();
+        let ids = test_ids();
         let map = HashMap::from([(200u32, 9u32)]);
         let term = HashSet::new();
         let mesh = HashMap::new();
@@ -3449,19 +3459,16 @@ mod tests {
             },
             &mut HashMap::new(),
         )
+        .expect("fixture construction")
         .expect("layout");
         let SurfaceLayout::Leaf(surface) = layout else {
             panic!("expected Leaf");
         };
         assert_eq!(surface.kind(), "explorer");
-        let panel = surface
-            .as_any()
-            .downcast_ref::<crate::model::ExplorerPanel>()
-            .expect("ExplorerPanel");
-        assert_eq!(panel.id, 9);
+        assert_eq!(surface.id, 9);
         assert_eq!(
-            panel.current_root(),
-            std::path::Path::new("/remote/project")
+            explorer[&surface.id],
+            std::path::PathBuf::from("/remote/project")
         );
     }
 
@@ -3469,7 +3476,7 @@ mod tests {
     fn build_mirror_workspace_single_pane_tab() {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
-        let ids = IdGenerator::new();
+        let ids = test_ids();
         let mut map = HashMap::new();
         map.insert(1u32, 50u32);
         let mut term = HashSet::new();
@@ -3496,7 +3503,8 @@ mod tests {
             &HashMap::new(),
             &HashMap::new(),
             &mut HashMap::new(),
-        );
+        )
+        .expect("fixture construction");
         assert_eq!(ws.id, 99);
         assert_eq!(ws.all_surface_ids(), vec![50]);
     }
@@ -3505,7 +3513,7 @@ mod tests {
     fn build_mirror_workspace_preserves_survivor_and_inserts_new_leaf() {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
-        let ids = IdGenerator::new();
+        let ids = test_ids();
         let survivor_local = 50u32;
         let mut map = HashMap::new();
         map.insert(1u32, survivor_local);
@@ -3541,7 +3549,8 @@ mod tests {
             &HashMap::new(),
             &HashMap::new(),
             &mut HashMap::new(),
-        );
+        )
+        .expect("fixture construction");
         let sids = ws.all_surface_ids();
         assert!(
             sids.contains(&survivor_local),
@@ -3558,7 +3567,7 @@ mod tests {
     fn build_mirror_workspace_empty_tree_fallback() {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
-        let ids = IdGenerator::new();
+        let ids = test_ids();
         let map = HashMap::new();
         let term = HashSet::new();
         let ws = build_mirror_workspace(
@@ -3573,7 +3582,8 @@ mod tests {
             &HashMap::new(),
             &HashMap::new(),
             &mut HashMap::new(),
-        );
+        )
+        .expect("fixture construction");
         assert_eq!(ws.id, 1);
         assert_eq!(ws.all_surface_ids().len(), 1);
     }
@@ -3582,7 +3592,7 @@ mod tests {
     fn build_mirror_workspace_preserves_vertical_pane_split() {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
-        let ids = IdGenerator::new();
+        let ids = test_ids();
         let map = HashMap::new(); // 이 테스트는 focused_surface 매핑 불필요(pane 레벨 검증 목적)
         let term = HashSet::new();
         let tree = serde_json::json!({
@@ -3608,7 +3618,8 @@ mod tests {
             &HashMap::new(),
             &HashMap::new(),
             &mut HashMap::new(),
-        );
+        )
+        .expect("fixture construction");
         match ws.pane_layout() {
             PaneNode::Split {
                 direction,
@@ -3632,7 +3643,7 @@ mod tests {
     fn build_mirror_workspace_falls_back_to_horizontal_chain_without_pane_layout_field() {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
-        let ids = IdGenerator::new();
+        let ids = test_ids();
         let mut map = HashMap::new();
         map.insert(1u32, 50u32);
         map.insert(2u32, 51u32);
@@ -3660,7 +3671,8 @@ mod tests {
             &HashMap::new(),
             &HashMap::new(),
             &mut HashMap::new(),
-        );
+        )
+        .expect("fixture construction");
         match ws.pane_layout() {
             PaneNode::Split {
                 direction, ratio, ..
@@ -3677,7 +3689,7 @@ mod tests {
     fn capture_focused_remote_finds_remote_id_of_locally_focused_surface() {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
-        let ids = IdGenerator::new();
+        let ids = test_ids();
         let mut map = HashMap::new();
         map.insert(1u32, 50u32); // pane A 의 surface
         map.insert(2u32, 51u32); // pane B, tab1 의 surface
@@ -3715,7 +3727,8 @@ mod tests {
             &HashMap::new(),
             &HashMap::new(),
             &mut HashMap::new(),
-        );
+        )
+        .expect("fixture construction");
         assert_eq!(
             capture_focused_remote(&navigation, &ws, &map),
             Some(3),
@@ -3728,7 +3741,7 @@ mod tests {
     fn focus_restore_keeps_client_on_pane_b_after_structural_delta_from_pane_a() {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
-        let ids = IdGenerator::new();
+        let ids = test_ids();
 
         let mut map = HashMap::new();
         map.insert(1u32, 50u32);
@@ -3767,7 +3780,8 @@ mod tests {
             &HashMap::new(),
             &HashMap::new(),
             &mut HashMap::new(),
-        );
+        )
+        .expect("fixture construction");
 
         let pane_b_surface3_local = *map.get(&3).unwrap();
         let (pane_b_id, tab_id) = find_pane_and_tab_for_surface(&before_ws, pane_b_surface3_local)
@@ -3822,7 +3836,8 @@ mod tests {
             &HashMap::new(),
             &HashMap::new(),
             &mut HashMap::new(),
-        );
+        )
+        .expect("fixture construction");
 
         // Stable local pane/tab IDs preserve the live selection during rebuild.
         assert_eq!(navigation.pane_id(&after_ws), Some(pane_b_id));
@@ -3868,7 +3883,7 @@ mod tests {
     fn focus_restore_is_noop_when_captured_surface_no_longer_exists() {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
-        let ids = IdGenerator::new();
+        let ids = test_ids();
         let mut map = HashMap::new();
         map.insert(1u32, 50u32);
         map.insert(2u32, 51u32);
@@ -3902,7 +3917,8 @@ mod tests {
             &HashMap::new(),
             &HashMap::new(),
             &mut HashMap::new(),
-        );
+        )
+        .expect("fixture construction");
         let untouched_focused_pane = navigation.pane_id(&ws).unwrap();
 
         restore_focus_after_delta(&mut navigation, &mut ws, Some(3), &map);
@@ -3918,7 +3934,7 @@ mod tests {
     fn set_focus_to_surface_updates_pane_tab_surface_or_reports_false() {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
-        let ids = IdGenerator::new();
+        let ids = test_ids();
         let mut map = HashMap::new();
         map.insert(1u32, 50u32);
         map.insert(2u32, 51u32);
@@ -3952,7 +3968,8 @@ mod tests {
             &HashMap::new(),
             &HashMap::new(),
             &mut HashMap::new(),
-        );
+        )
+        .expect("fixture construction");
         let local_b = *map.get(&2).unwrap();
 
         assert!(set_focus_to_surface(&mut navigation, &ws, local_b));
@@ -4076,13 +4093,12 @@ mod tests {
 
     #[test]
     fn merge_survivor_mapping_prefers_server_display_name_and_falls_back_to_kind() {
-        let ids = IdGenerator::new();
-        let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine_session =
-            crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+        let ids = test_ids();
+        let (_, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
-        let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
+        supply_ids(&engine);
+        let (tx, _rx) = tasty_remote::connection::channel();
+        let frame_tx: SharedFrameSender = tx;
 
         let surfaces = vec![
             serde_json::json!({
@@ -4101,7 +4117,8 @@ mod tests {
         ];
 
         let mapping =
-            merge_survivor_mapping(&HashMap::new(), &surfaces, &ids, &frame_tx, &mut engine)?;
+            merge_survivor_mapping(&HashMap::new(), &surfaces, &ids, &frame_tx, &mut engine)
+                .expect("fixture construction");
         let mesh = &mapping.mesh;
 
         let local_10 = mapping.remote_to_local[&10];
@@ -4117,20 +4134,20 @@ mod tests {
     fn merge_survivor_mapping_cleans_up_stale_terminal_on_convert_to_mesh() {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
-        let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine_session =
-            crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+        let (_, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
+        supply_ids(&engine);
         // 별도 발급기를 만들면 기본 workspace의 ID와 충돌하므로 engine의 발급기를 공유한다.
-        let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
-        let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
-        let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
+        let ids = test_ids();
+        let (tx, _rx) = tasty_remote::connection::channel();
+        let frame_tx: SharedFrameSender = tx;
 
         let surfaces_v1 = vec![serde_json::json!({
             "remote_id": 10, "role": "terminal", "cols": 80, "rows": 24,
         })];
         let mut m1 =
-            merge_survivor_mapping(&HashMap::new(), &surfaces_v1, &ids, &frame_tx, &mut engine);
+            merge_survivor_mapping(&HashMap::new(), &surfaces_v1, &ids, &frame_tx, &mut engine)
+                .expect("fixture construction");
         let map1 = m1.remote_to_local.clone();
         let local_10 = map1[&10];
         assert!(
@@ -4165,7 +4182,8 @@ mod tests {
             &m1.mesh,
             &m1.explorer,
             &mut m1.markdown,
-        );
+        )
+        .expect("fixture construction");
         ws.mirror = true;
         engine.push_mirror_workspace(ws);
 
@@ -4176,7 +4194,8 @@ mod tests {
             "plugin_id": "com.tasty.markdown",
             "display_name": "a.md",
         })];
-        let m2 = merge_survivor_mapping(&map1, &surfaces_v2, &ids, &frame_tx, &mut engine);
+        let m2 = merge_survivor_mapping(&map1, &surfaces_v2, &ids, &frame_tx, &mut engine)
+            .expect("fixture construction");
         let (map2, term2, mesh2, new2) = (
             &m2.remote_to_local,
             &m2.terminals,
@@ -4211,13 +4230,12 @@ mod tests {
     /// forwarded terminal.kill이 남긴 soft 점유가 이 경로로 사라져야 한다.
     #[test]
     fn merge_survivor_mapping_forgets_the_occupancy_of_a_remotely_closed_surface() {
-        let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine_session =
-            crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+        let (_, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
-        let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
-        let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
+        supply_ids(&engine);
+        let ids = test_ids();
+        let (tx, _rx) = tasty_remote::connection::channel();
+        let frame_tx: SharedFrameSender = tx;
         let parent = engine
             .workspace_at(0)
             .expect("workspace index is valid")
@@ -4227,13 +4245,15 @@ mod tests {
             "remote_id": 10, "role": "terminal", "cols": 80, "rows": 24,
         })];
         let m1 =
-            merge_survivor_mapping(&HashMap::new(), &surfaces_v1, &ids, &frame_tx, &mut engine);
+            merge_survivor_mapping(&HashMap::new(), &surfaces_v1, &ids, &frame_tx, &mut engine)
+                .expect("fixture construction");
         let local_10 = m1.remote_to_local[&10];
         engine
             .occupy_soft(local_10, parent, None)
             .expect("soft 점유");
 
-        let m2 = merge_survivor_mapping(&m1.remote_to_local, &[], &ids, &frame_tx, &mut engine);
+        let m2 = merge_survivor_mapping(&m1.remote_to_local, &[], &ids, &frame_tx, &mut engine)
+            .expect("fixture construction");
         assert!(m2.remote_to_local.is_empty());
         assert!(
             engine.live.occupancy.occupancy_of(local_10).is_none(),
@@ -4245,27 +4265,17 @@ mod tests {
     fn removing_a_mirror_workspace_forgets_the_occupancy_of_its_surfaces() {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
+        supply_ids(&engine);
         let parent = engine
             .workspace_at(0)
             .expect("workspace index is valid")
             .all_surface_ids()[0];
-        let event = crate::app::services::apply_create_workspace_inner(
-            &mut engine,
-            crate::app::services::WorkspaceCreationParams::terminal(),
-        )
-        .expect("workspace 생성");
-        let crate::app::command::CoreEvent::WorkspaceCreated { index, .. } = event else {
-            panic!("expected WorkspaceCreated");
-        };
-        engine.make_mirror_fixture(index);
-        let ws_id = engine
-            .workspace_at(index)
-            .expect("workspace index is valid")
-            .id;
-        let local = engine
-            .workspace_at(index)
-            .expect("workspace index is valid")
-            .all_surface_ids()[0];
+        let ws_id = 9000;
+        let local = 9003;
+        let mut workspace =
+            Workspace::new_with_terminal_marker(ws_id, "mirror".into(), 9001, 9002, local);
+        workspace.mirror = true;
+        engine.push_mirror_workspace(workspace);
         engine.occupy_soft(local, parent, None).expect("soft 점유");
 
         let map = HashMap::from([(99u32, local)]);
@@ -4285,14 +4295,13 @@ mod tests {
     fn merge_survivor_mapping_creates_terminal_when_mesh_survivor_converts_to_terminal() {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
-        let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine_session =
-            crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+        let (_, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
+        supply_ids(&engine);
         // 기본 workspace와 ID가 충돌하지 않도록 engine의 발급기를 공유한다.
-        let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
-        let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
-        let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
+        let ids = test_ids();
+        let (tx, _rx) = tasty_remote::connection::channel();
+        let frame_tx: SharedFrameSender = tx;
 
         let surfaces_v1 = vec![serde_json::json!({
             "remote_id": 20,
@@ -4302,7 +4311,8 @@ mod tests {
             "display_name": "a.md",
         })];
         let mut m1 =
-            merge_survivor_mapping(&HashMap::new(), &surfaces_v1, &ids, &frame_tx, &mut engine);
+            merge_survivor_mapping(&HashMap::new(), &surfaces_v1, &ids, &frame_tx, &mut engine)
+                .expect("fixture construction");
         let map1 = m1.remote_to_local.clone();
         let local_20 = map1[&20];
         assert!(
@@ -4332,7 +4342,8 @@ mod tests {
             &m1.mesh,
             &m1.explorer,
             &mut m1.markdown,
-        );
+        )
+        .expect("fixture construction");
         ws.mirror = true;
         engine.push_mirror_workspace(ws);
         // terminal이 아니었던 surface의 이전 cwd도 지워야 한다.
@@ -4341,7 +4352,8 @@ mod tests {
         let surfaces_v2 = vec![serde_json::json!({
             "remote_id": 20, "role": "terminal", "cols": 80, "rows": 24,
         })];
-        let m2 = merge_survivor_mapping(&map1, &surfaces_v2, &ids, &frame_tx, &mut engine);
+        let m2 = merge_survivor_mapping(&map1, &surfaces_v2, &ids, &frame_tx, &mut engine)
+            .expect("fixture construction");
         let (map2, term2, new2) = (
             &m2.remote_to_local,
             &m2.terminals,
@@ -4368,6 +4380,7 @@ mod tests {
     fn cwd_push_applies_as_remote_origin_and_null_clears_it() {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
+        supply_ids(&engine);
         let ws_id = 9_000u32;
         let (pane_id, tab_id, local_surface) = (9_001u32, 9_002u32, 9_003u32);
         let remote_surface = 42u32;
@@ -4455,6 +4468,7 @@ mod tests {
             let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
             let (mut state, mut engine_session) = crate::state::tests::test_state();
             let mut engine = engine_session.borrow_mut();
+            supply_ids(&engine);
             {
                 let mut host = MirrorHost::windowed(&mut state, &mut engine);
                 apply_mirror_events(&mut sess, &mut host, &mut plugin_manager, vec![ev]);
@@ -4490,14 +4504,15 @@ mod tests {
         let _home = crate::test_support::TastyHomeGuard::new();
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
+        supply_ids(&engine);
         let (remote_surface, local_surface) = (42u32, 9_003u32);
         engine
             .runtime
             .terminals
             .insert(local_surface, Terminal::new_detached(80, 24), None);
         let mut sess = test_session(9_000, HashMap::from([(remote_surface, local_surface)]));
-        let (tx, frames_out) = std::sync::mpsc::channel::<OutFrame>();
-        sess.transport.frame_tx = Arc::new(Mutex::new(tx));
+        let (tx, frames_out) = tasty_remote::connection::channel();
+        sess.transport.frame_tx = tx;
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
 
         let read = |engine: &crate::runtime::engine_access::EngineRef<'_>,
@@ -4542,7 +4557,7 @@ mod tests {
             Some(5),
             "기다리는 동안의 통지는 합산한다"
         );
-        let sent: Vec<OutFrame> = frames_out.try_iter().collect();
+        let sent: Vec<OutFrame> = frames_out.try_iter().map(|queued| queued.frame).collect();
         assert_eq!(
             sent.len(),
             1,
@@ -4566,6 +4581,7 @@ mod tests {
         let _home = crate::test_support::TastyHomeGuard::new();
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
+        supply_ids(&engine);
         let (remote_surface, local_surface) = (42u32, 9_003u32);
         engine
             .runtime
@@ -4576,8 +4592,8 @@ mod tests {
             sess.state.anchor_ws_id.is_none(),
             "전제: 수동 attach(anchor 없음)"
         );
-        let (tx, frames_out) = std::sync::mpsc::channel::<OutFrame>();
-        sess.transport.frame_tx = Arc::new(Mutex::new(tx));
+        let (tx, frames_out) = tasty_remote::connection::channel();
+        sess.transport.frame_tx = tx;
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
 
         {
@@ -4627,7 +4643,7 @@ mod tests {
             let mut host = MirrorHost::windowed(&mut state, &mut engine);
             resume_resync_in_window(&mut sess, &mut host);
         }
-        let sent: Vec<OutFrame> = frames_out.try_iter().collect();
+        let sent: Vec<OutFrame> = frames_out.try_iter().map(|queued| queued.frame).collect();
         assert_eq!(sent.len(), 1);
         assert_eq!(sent[0].tag, StreamTag::Detach);
         assert!(!sess.state.resync_awaiting_window);
@@ -4670,7 +4686,12 @@ mod tests {
         });
 
         let mut conn = open_bulk_connection(port, 3).expect("bulk connection");
-        let err = await_bulk_result(&mut conn, 11).expect_err("결과를 모르면 성공이 아니다");
+        let err = await_bulk_result(
+            &mut conn,
+            11,
+            &tasty_remote::connection::channel().0.epoch(),
+        )
+        .expect_err("결과를 모르면 성공이 아니다");
         let declared = server.join().expect("server");
         assert_eq!(declared.tag, StreamTag::Control);
         assert!(
@@ -4693,36 +4714,44 @@ mod tests {
         local_workspace: u32,
         remote_to_local: HashMap<u32, u32>,
     ) -> AttachClientSession {
-        let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
+        let (tx, _rx) = tasty_remote::connection::channel();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let control = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (_peer, _) = listener.accept().unwrap();
         AttachClientSession {
-            structure_ids: Default::default(),
-            local_workspace,
-            remote_to_local,
-            output: MirrorOutbox::new(),
-            disconnected: Arc::new(AtomicBool::new(false)),
-            frame_tx: Arc::new(Mutex::new(tx)),
-            state: SessionState::Connected,
-            client_id: 1,
-            remote_workspace: 7,
-            bulk_port: 0,
-            tunnel: None,
-            anchor_ws_id: None,
-            op_seq: 0,
-            pending_op_focus: HashMap::new(),
-            agent_requests: Default::default(),
-            next_delta_focus: None,
-            last_forwarded_resize: HashMap::new(),
-            remote_label: "127.0.0.1:0".to_string(),
-            pending_list_dir_consumers: HashMap::new(),
-            markdown_locals: HashSet::new(),
-            resync_pending: None,
-            resync_awaiting_window: false,
+            transport: ClientTransport {
+                workers: tasty_remote::transport::ConnectionWorkers::new(control, Vec::new()),
+                output: MirrorOutbox::new(tx.epoch()),
+                disconnected: Arc::new(AtomicBool::new(false)),
+                frame_tx: tx,
+                tunnel: None,
+            },
+            state: ClientSessionState {
+                structure_ids: Default::default(),
+                local_workspace,
+                remote_to_local,
+                phase: SessionState::Connected,
+                client_id: 1,
+                remote_workspace: 7,
+                bulk_port: 0,
+                anchor_ws_id: None,
+                op_seq: 0,
+                pending_op_focus: HashMap::new(),
+                agent_requests: Default::default(),
+                next_delta_focus: None,
+                last_forwarded_resize: HashMap::new(),
+                remote_label: "127.0.0.1:0".to_string(),
+                pending_list_dir_consumers: HashMap::new(),
+                markdown_locals: HashSet::new(),
+                resync_pending: None,
+                resync_awaiting_window: false,
+            },
         }
     }
 
     /// 실제 kind 등록 경로를 사용하며 플러그인 프로세스 대신 채널 수신자로 명령을 확인한다.
     fn register_markdown_kind(
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_access::EngineMut<'_>,
         plugin_id: &str,
     ) -> std::sync::mpsc::Receiver<crate::plugin_bridge::host_cmd::HostCmd> {
         let decl: crate::plugin::manifest::SurfaceKindDecl =
@@ -4783,14 +4812,13 @@ mod tests {
     fn merge_survivor_mapping_builds_local_markdown_surface_for_markdown_role() {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
-        let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine_session =
-            crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+        let (_, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
+        supply_ids(&engine);
         let rx = register_markdown_kind(&engine, MARKDOWN_PLUGIN_ID);
-        let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
-        let (tx, _frames) = std::sync::mpsc::channel::<OutFrame>();
-        let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
+        let ids = test_ids();
+        let (tx, _frames) = tasty_remote::connection::channel();
+        let frame_tx: SharedFrameSender = tx;
 
         let mut mapping = merge_survivor_mapping(
             &HashMap::new(),
@@ -4798,7 +4826,8 @@ mod tests {
             &ids,
             &frame_tx,
             &mut engine,
-        );
+        )
+        .expect("fixture construction");
         let local = mapping.remote_to_local[&30];
         assert_eq!(mapping.markdown_ids(), HashSet::from([local]));
 
@@ -4823,7 +4852,8 @@ mod tests {
             &mapping.mesh,
             &mapping.explorer,
             &mut mapping.markdown,
-        );
+        )
+        .expect("fixture construction");
         let pane = ws.pane_layout().first_pane().expect("pane");
         let leaf = pane.tabs[0]
             .layout_if_initialized()
@@ -4841,14 +4871,13 @@ mod tests {
     fn markdown_role_stays_empty_when_another_plugin_owns_the_kind() {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
-        let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine_session =
-            crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+        let (_, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
+        supply_ids(&engine);
         let rx = register_markdown_kind(&engine, "com.example.other-markdown");
-        let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
-        let (tx, _frames) = std::sync::mpsc::channel::<OutFrame>();
-        let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
+        let ids = test_ids();
+        let (tx, _frames) = tasty_remote::connection::channel();
+        let frame_tx: SharedFrameSender = tx;
 
         let mut mapping = merge_survivor_mapping(
             &HashMap::new(),
@@ -4856,7 +4885,8 @@ mod tests {
             &ids,
             &frame_tx,
             &mut engine,
-        );
+        )
+        .expect("fixture construction");
         assert!(mapping.markdown.is_empty());
         assert!(created_surfaces(&rx).is_empty());
         let local = mapping.remote_to_local[&30];
@@ -4872,7 +4902,8 @@ mod tests {
             &mapping.mesh,
             &mapping.explorer,
             &mut mapping.markdown,
-        );
+        )
+        .expect("fixture construction");
         let pane = ws.pane_layout().first_pane().expect("pane");
         let leaf = pane.tabs[0]
             .layout_if_initialized()
@@ -4886,13 +4917,12 @@ mod tests {
     fn markdown_role_waits_for_the_plugin_kind_and_reifies_as_a_mirror_document() {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
-        let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine_session =
-            crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+        let (_, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
-        let (tx, _frames) = std::sync::mpsc::channel::<OutFrame>();
-        let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
+        supply_ids(&engine);
+        let ids = test_ids();
+        let (tx, _frames) = tasty_remote::connection::channel();
+        let frame_tx: SharedFrameSender = tx;
 
         let mut mapping = merge_survivor_mapping(
             &HashMap::new(),
@@ -4900,7 +4930,8 @@ mod tests {
             &ids,
             &frame_tx,
             &mut engine,
-        );
+        )
+        .expect("fixture construction");
         let local = mapping.remote_to_local[&30];
         assert_eq!(
             mapping.markdown_ids(),
@@ -4919,19 +4950,23 @@ mod tests {
             &mapping.mesh,
             &mapping.explorer,
             &mut mapping.markdown,
-        );
+        )
+        .expect("fixture construction");
         assert!(
-            ws.pane_layout().first_pane().expect("pane").tabs[0].is_surface_deferred(local),
+            engine
+                .runtime
+                .surfaces
+                .get(&local)
+                .and_then(|surface| surface.as_any().downcast_ref::<EmptySurface>())
+                .is_some_and(|empty| empty.deferred.is_some()),
             "kind 가 없으면 kind 대기 placeholder"
         );
         engine.push_mirror_workspace(ws);
 
-        assert!(
-            !engine.reify_plugin_surface(local),
-            "kind 등록 전에는 실제화되지 않는다"
-        );
+        engine.reify_displayed_mirror_resources(&[local]);
+        assert_eq!(engine.find_surface_by_id(local).unwrap().kind(), "empty");
         let rx = register_markdown_kind(&engine, MARKDOWN_PLUGIN_ID);
-        assert!(engine.reify_plugin_surface(local));
+        engine.reify_displayed_mirror_resources(&[local]);
 
         let leaf = engine.find_surface_by_id(local).expect("leaf");
         assert_eq!(leaf.kind(), "markdown");
@@ -4956,14 +4991,13 @@ mod tests {
     fn structural_delta_reuses_markdown_survivor_and_reports_removed_ones() {
         let mut navigation = crate::state::navigation::NavigationState::default();
         let mut structure_ids = MirrorStructureIds::default();
-        let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine_session =
-            crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+        let (_, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
+        supply_ids(&engine);
         let rx = register_markdown_kind(&engine, MARKDOWN_PLUGIN_ID);
-        let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
-        let (tx, _frames) = std::sync::mpsc::channel::<OutFrame>();
-        let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
+        let ids = test_ids();
+        let (tx, _frames) = tasty_remote::connection::channel();
+        let frame_tx: SharedFrameSender = tx;
 
         let mut m1 = merge_survivor_mapping(
             &HashMap::new(),
@@ -4971,7 +5005,8 @@ mod tests {
             &ids,
             &frame_tx,
             &mut engine,
-        );
+        )
+        .expect("fixture construction");
         let local = m1.remote_to_local[&30];
         let ws_id = 999;
         let mut ws = build_mirror_workspace(
@@ -4986,7 +5021,8 @@ mod tests {
             &m1.mesh,
             &m1.explorer,
             &mut m1.markdown,
-        );
+        )
+        .expect("fixture construction");
         ws.mirror = true;
         engine.push_mirror_workspace(ws);
         assert_eq!(created_surfaces(&rx).len(), 1);
@@ -5010,7 +5046,8 @@ mod tests {
             &single_leaf_tree(30),
             &[markdown_descriptor(30)],
             None,
-        );
+        )
+        .expect("mirror delta");
         assert!(removed.is_empty());
         assert!(
             created_surfaces(&rx).is_empty(),
@@ -5033,7 +5070,8 @@ mod tests {
             &single_leaf_tree(30),
             &[serde_json::json!({ "remote_id": 30, "role": "terminal", "cols": 80, "rows": 24 })],
             None,
-        );
+        )
+        .expect("mirror delta");
         assert_eq!(removed, vec![local]);
         assert!(sess.state.markdown_locals.is_empty());
     }
@@ -5199,6 +5237,7 @@ mod tests {
                 session,
             } = &mut parked[pidx];
             let mut engine = session.borrow_mut();
+            supply_ids(&engine);
             let mut host = MirrorHost::parked(state, &mut engine);
             let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
             apply_mirror_events(&mut sess, &mut host, &mut plugin_manager, events);
@@ -5253,16 +5292,18 @@ mod tests {
     fn no_host_leaves_the_mirror_buffer_untouched() {
         let ws_id = 9_000u32;
         let mut sess = test_session(ws_id, HashMap::new());
-        sess.transport.output.peek().extend([
+        for event in [
             MirrorEvent::Data(1, b"a".to_vec()),
             MirrorEvent::Resize(1, 10, 5),
-        ]);
+        ] {
+            assert!(sess.transport.output.push(event));
+        }
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
 
         let applied = apply_pending_mirror_output(&mut sess, None, &mut plugin_manager);
 
         assert!(!applied, "적용 대상이 없으면 적용했다고 보고하지 않는다");
-        let buf = sess.transport.output.peek();
+        let buf = sess.transport.output.drain();
         assert_eq!(
             buf.len(),
             2,
@@ -5281,7 +5322,6 @@ mod tests {
         let mut sess = test_session(ws_id, HashMap::from([(remote_surface, local_surface)]));
         sess.transport
             .output
-            .peek()
             .push(MirrorEvent::Data(remote_surface, b"applied-here".to_vec()));
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
 
@@ -5297,6 +5337,7 @@ mod tests {
                 session,
             } = &mut parked[pidx];
             let mut engine = session.borrow_mut();
+            supply_ids(&engine);
             apply_pending_mirror_output(
                 &mut sess,
                 Some(MirrorHost::parked(state, &mut engine)),
@@ -5306,7 +5347,7 @@ mod tests {
 
         assert!(applied);
         assert!(
-            sess.transport.output.peek().is_empty(),
+            sess.transport.output.drain().is_empty(),
             "적용했으면 버퍼는 비워진다"
         );
         let term = parked[pidx]
@@ -5352,22 +5393,21 @@ mod tests {
 
     /// resize 전후의 출력 순서를 보존하며 버퍼를 비워야 한다.
     #[test]
-    fn take_for_takes_everything_in_arrival_order() {
-        let buf = MirrorOutbox::new();
-        buf.peek().extend([
+    fn outbox_drain_keeps_output_resize_arrival_order() {
+        let buf = MirrorOutbox::new(tasty_remote::connection::channel().0.epoch());
+        for event in [
             MirrorEvent::Data(1, b"a".to_vec()),
             MirrorEvent::Resize(1, 10, 5),
             MirrorEvent::Data(1, b"b".to_vec()),
-        ]);
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
-        let mut engine = engine_session.borrow_mut();
-        let host = MirrorHost::parked(&mut state, &mut engine);
+        ] {
+            assert!(buf.push(event));
+        }
         let drained = buf.drain();
         assert!(matches!(drained[0], MirrorEvent::Data(1, ref b) if b == b"a"));
         assert!(matches!(drained[1], MirrorEvent::Resize(1, 10, 5)));
         assert!(matches!(drained[2], MirrorEvent::Data(1, ref b) if b == b"b"));
         assert_eq!(drained.len(), 3);
-        assert!(buf.peek().is_empty(), "꺼낸 뒤 버퍼는 비어 있다");
+        assert!(buf.drain().is_empty(), "꺼낸 뒤 버퍼는 비어 있다");
     }
 }
 

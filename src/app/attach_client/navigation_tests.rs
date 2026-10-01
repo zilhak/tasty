@@ -1,10 +1,19 @@
 use super::*;
 
-#[derive(Default)]
 struct Fixture {
     navigation: crate::state::navigation::NavigationState,
     structure_ids: MirrorStructureIds,
-    ids: crate::runtime::counters::RuntimeCounters,
+    ids: crate::runtime::id_reservations::ReservedIds,
+}
+
+impl Default for Fixture {
+    fn default() -> Self {
+        Self {
+            navigation: Default::default(),
+            structure_ids: Default::default(),
+            ids: super::tests::test_ids(),
+        }
+    }
 }
 
 impl Fixture {
@@ -23,6 +32,7 @@ impl Fixture {
             &HashMap::new(),
             &mut HashMap::new(),
         )
+        .expect("mirror fixture")
     }
 }
 
@@ -125,9 +135,9 @@ fn removed_tab_and_surface_use_wire_defaults_but_live_choices_survive() {
 
 #[test]
 fn parked_mirror_deltas_reclaim_retired_navigation_without_a_redraw() {
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = crate::state::tests::test_mirror_state();
     let mut engine = engine_session.borrow_mut();
-    engine.make_mirror_fixture(0);
+    super::tests::supply_ids(&engine);
     let workspace = engine.workspace_at(0).expect("workspace index is valid").id;
     let mut session = super::tests::test_session(workspace, HashMap::new());
     for generation in 1..=12 {
@@ -168,8 +178,8 @@ fn parked_mirror_deltas_reclaim_retired_navigation_without_a_redraw() {
                 surfaces,
             },
         );
-        assert_eq!(session.structure_ids.panes.len(), 1);
-        assert_eq!(session.structure_ids.remote_tabs.len(), 1);
+        assert_eq!(session.state.structure_ids.panes.len(), 1);
+        assert_eq!(session.state.structure_ids.remote_tabs.len(), 1);
         assert_eq!(
             state.navigation.split_hints.len(),
             1,
