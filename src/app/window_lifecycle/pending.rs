@@ -60,9 +60,9 @@ impl App {
         }
         self.poll_preserved_window_closes();
         for id in self.journal.take_retired_engines() {
-            if self.engines.session_mut(id).is_some_and(|session|session.runtime.has_pending_delivery()) {
+            if self.engines.session_mut(id).is_some_and(|session|session.runtime.has_pending_delivery() || !session.pending_materializations.is_empty() || !session.pending_resource_retirements.is_empty()) {
                 self.journal.defer_retired_engine_delivery(id);
-            } else {drop(self.engines.finish_retiring(id));}
+            } else {self.journal.forget_released_engine(id);drop(self.engines.finish_retiring(id));}
         }
     }
 
@@ -84,6 +84,20 @@ impl App {
             } else if !self.journal.has_pending_view_for(&binding.stream) {
                 drop(self.engines.finish_retiring(id));
             }
+        }
+    }
+
+    fn release_failed_pending_window(&mut self, id: EngineId) {
+        let Some(session) = self.engines.session_mut(id) else { return; };
+        crate::app::attach_activation::cancel_engine(&mut self.pending_server_attaches, id, &mut session.borrow_mut(), &self.stream_hub);
+        let Some(binding) = session.journal_binding.clone() else {
+            // Ordinary failure calls arrive only after binding. Keep an unexpected accepted opener
+            // owned rather than dropping resources whose publication status is not known.
+            tracing::error!(?id, "failed pending window has no journal binding");
+            return;
+        };
+        if self.engines.begin_retiring_pending(id) {
+            self.journal.release_failed_opening(id, binding);
         }
     }
 
@@ -137,6 +151,7 @@ impl App {
         };
         let result = self.journal.poll_restore_bootstrap(session);
         if let Err(error) = result {
+            self.release_failed_pending_window(id);
             if let Some(pending) = self.pending_window.take() {
                 if let Some(completion) = pending.completion {
                     completion.reply_window_create(Err(error.clone()));
@@ -160,6 +175,7 @@ impl App {
         let mut state = match self.assemble_app_state(presentation) {
             Ok(state) => state,
             Err(error) => {
+                self.release_failed_pending_window(id);
                 if let Some(completion) = pending.completion {
                     completion.reply_window_create(Err(error.clone()));
                 }

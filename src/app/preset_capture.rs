@@ -18,11 +18,21 @@ impl App {
     }
     pub(crate) fn finish_preset_captures(&mut self) {
         for completion in self.journal.take_preset_captures() {
-            if let Some(notice)=completion.save(&self.services) {
-                #[cfg(feature="gui")]
-                self.apply_preset_capture_notice(notice);
-                #[cfg(not(feature="gui"))]
-                if let Err(error)=notice.result {tracing::warn!(%error,"preset capture failed");}
+            match completion.save(&self.services) {
+                Some(super::journal::PresetCaptureOutput::Intent(notice)) => {
+                    #[cfg(feature="gui")]
+                    self.apply_preset_capture_notice(notice);
+                    #[cfg(not(feature="gui"))]
+                    if let Err(error)=notice.result {tracing::warn!(%error,"preset capture failed");}
+                }
+                Some(super::journal::PresetCaptureOutput::Plugin(reply)) => {
+                    if let Some(manager)=self.plugin_manager.as_mut() {
+                        if !manager.send_bound_ipc_result(&reply.plugin,&reply.binding,reply.call_id,reply.response) {
+                            tracing::warn!(plugin=%reply.plugin,"discarding preset result for retired plugin");
+                        }
+                    }
+                }
+                None => {}
             }
         }
     }

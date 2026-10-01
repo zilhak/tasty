@@ -62,6 +62,14 @@ impl EngineRegistry {
         Ok(id)
     }
 
+    /// Failed OS/View assembly releases its pending relation while retaining the execution owner.
+    pub(crate) fn begin_retiring_pending(&mut self, id: EngineId) -> bool {
+        if self.pending != Some(id) { return false; }
+        self.pending = None;
+        self.retiring.insert(id, RetiringView::Discard);
+        true
+    }
+
     pub(crate) fn retire_pending(&mut self, id: EngineId) -> Option<EngineSession> {
         if self.pending != Some(id) {
             return None;

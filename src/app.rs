@@ -416,7 +416,7 @@ pub(crate) mod remote_browser;
 pub(crate) mod plugin_display;
 
 #[cfg(feature="gui")]
-mod settings_files;
+pub(crate) mod settings_files;
 #[cfg(feature="gui")]
 mod preset_editor;
 

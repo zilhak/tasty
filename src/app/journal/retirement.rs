@@ -6,6 +6,7 @@ pub(super) struct PendingRetirement {
     binding: EngineBinding,
     ticket: Option<u64>,
     release_owner: bool,
+    preserve_stream: bool,
 }
 
 #[derive(Default)]
@@ -55,6 +56,7 @@ impl JournalApplication {
                 binding,
                 ticket: None,
                 release_owner,
+                preserve_stream: false,
             });
         (self.wake)();
     }
@@ -72,35 +74,37 @@ impl JournalApplication {
         (self.wake)();
     }
 
-    // Drain already accepted materializations while their exact owner remains hidden and alive.
-    // New activation is disabled at queue time; retirement never overtakes installation cleanup.
+    /// Failed View creation must not delete a successfully resumed slot. Only its process owner ends.
+    pub(crate) fn release_failed_opening(&mut self, id: EngineId, binding: EngineBinding) {
+        self.retire_engine(id, binding, true);
+        if let Some(pending) = self.retirements.pending.get_mut(&id) { pending.preserve_stream = true; }
+    }
+
+    pub(crate) fn forget_released_engine(&mut self, id: EngineId) {
+        self.opening.remove(&id);
+        self.restored_views.remove(&id);
+        self.restoration_boot_done.remove(&id);
+        self.restoration_ready.remove(&id);
+        self.restoration_queue.retain(|(engine, _)| *engine != id);
+    }
+
+    // Drain accepted work while its exact owner remains hidden and alive.
     pub(super) fn submit_retirements(&mut self) -> Result<(), String> {
-        for retirement in self
-            .retirements
-            .pending
-            .iter_mut()
-            .filter(|(id, pending)| {
-                pending.ticket.is_none()
-                    && !self.has_creation(*id) && !self.has_forward(*id) && !self.commands.has_remote_request(*id)
-                    && !self.commands.has_resource_request(**id)
-                    && !self.resource_cleanups.values().any(|cleanup|cleanup.engine==**id)
-                    && !self
-                        .restoration_reads
-                        .values()
-                        .any(|(engine, _)| engine == *id)
-            })
-            .map(|(_, pending)| pending)
-            .take(8)
-        {
+        let ready: Vec<_> = self.retirements.pending.iter().filter_map(|(id, pending)| {
+            (pending.ticket.is_none() && !self.has_pending_engine_effects(*id)
+                && !self.restoration_reads.values().any(|(engine, _)| engine == id))
+                .then_some(*id)
+        }).take(8).collect();
+        for id in ready {
+            if self.retirements.pending.get(&id).is_some_and(|pending| pending.preserve_stream) {
+                self.retirements.pending.remove(&id);
+                self.retirements.completed.push(id);
+                continue;
+            }
+            let retirement = self.retirements.pending.get_mut(&id).ok_or("retiring owner disappeared")?;
             let ticket = self.next_ticket;
-            match self.worker.submit(Request {
-                ticket,
-                work: Work::RetireEngine(retirement.binding.clone()),
-            }) {
-                Ok(()) => {
-                    retirement.ticket = Some(ticket);
-                    self.next_ticket += 1;
-                }
+            match self.worker.submit(Request {ticket, work: Work::RetireEngine(retirement.binding.clone())}) {
+                Ok(()) => {retirement.ticket = Some(ticket); self.next_ticket += 1;}
                 Err(crate::runtime::journal_product::SubmitError::Busy) => break,
                 Err(error) => return Err(format!("retirement submission failed: {error:?}")),
             }

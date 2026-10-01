@@ -438,6 +438,7 @@ pub(crate) fn hard_occupied_structural_guard(
     // 여기서는 소속만 찾고 잘못된 값은 handler의 require_*가 거절하게 한다.
     // 정수를 잘라 변환하면 다른 대상의 ID가 될 수 있으므로 범위를 검사한다.
     let ws_idx: usize = match method {
+        "split" => {
             let target_pane = params::read_int::<u32>(params, "target_pane")
                 .ok()
                 .flatten();
@@ -464,6 +465,7 @@ pub(crate) fn hard_occupied_structural_guard(
             let pane_id = params::read_int::<u32>(params, "pane_id").ok().flatten()?;
             engine.find_workspace_index_for_pane(pane_id)?
         }
+        "tab.close" => {
             let tab_id = params::read_int::<u32>(params, "tab_id").ok().flatten()?;
             let pane_id = engine.find_pane_for_tab(tab_id)?;
             engine.find_workspace_index_for_pane(pane_id)?

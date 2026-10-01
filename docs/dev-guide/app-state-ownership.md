@@ -112,18 +112,15 @@ IPC와 원격 forward는 같은 실행 함수를 쓰며 `Rejected`, `MissingEven
 변환한 surface의 mesh 정리는 매니저를 소유한 호출자에게 결과값으로 알린다.
 두 경로의 실패 문구 일치와 기존 외부 문구 보존은 서로 다른 검증이다.
 
-핸들러는 사용하는 상태만 인자로 받는다. 쓰지 않는 `_state: MainViewState` 인자를 공통 호출 모양에 맞추려고 남기지 않는다. memory와 대상 nickname 해석은 Core의 공유 핸들에서 읽고, 창과 무관한 출력 조회는 CoreState에서 수행한다. GUI·debug에서 창 상태 자체를 조작하는 핸들러는 창 전용 라우터에 둔다.
+핸들러는 사용하는 상태만 인자로 받는다. 쓰지 않는 `_state: MainViewState` 인자를 공통 호출 모양에 맞추려고 남기지 않는다. memory와 대상 nickname 해석은 AppServices 또는 명시 Engine 실행 문맥에서 읽고, 출력 조회는 EngineRead의 관측값으로 수행한다. CoreState는 확정 구조 projection이며 실행 저장소나 터미널 객체를 소유하지 않는다. GUI·debug에서 창 상태 자체를 조작하는 핸들러는 창 전용 라우터에 둔다.
 
-IPC engine 핸들러는 `IpcWindow`와 요청별 `IntentOutbox`로 필요한 창 연산과 intent 생성을 수행한다.
-진입점이 요청 완료 시 outbox를 창 큐 끝에 옮기며 게이트가 만든 intent가 핸들러 intent보다 앞선다.
-`EntryWindow`는 입구 본문에 창 전체를 꺼내는 접근자를 제공하지 않는다.
-창·debug 라우터는 별도 경로이며 각 창 메서드의 caller 정책을 선언·검증한다.
-포트가 상속한 활성 워크스페이스 변경까지 막는 것은 아니므로 origin과 대상 정책을 별도로 유지한다.
+IPC engine 핸들러는 동기 `RequestScope`의 borrowed presentation과 권한 근거, 요청별 `IntentOutbox`를 사용한다. `IpcWindow`에는 실행 owner나 창 전체를 꺼내는 접근자가 없다. 요청이 끝나면 App이 `RequestOutputs`의 intent와 승인 표시 요청을 원 문맥에 적용하며, 확정 구조 명령의 완료는 journal publication 경계를 따른다.
+창·debug 라우터는 별도 경로이며 각 창 메서드의 caller 정책을 선언·검증한다. 선택 변경은 originating View와 navigation generation을 확인하는 표시 continuation이며 도메인 필수 정리를 수행하지 않는다.
 헤드리스 pump는 CommandContext를 소유하고 같은 App 실행 adapter로 결과를 적용한다. GUI 전용 요청의 기존 미지원 오류를 유지한다.
 
 ### 아직 남아 있는 동작 차이
 
-헤드리스 close cascade는 workspace 전체 제거 때 memory scope를 GUI와 같이 정리하지만 `workspace.closed` 통지는 쌓지 않는다. 헤드리스에는 그 통지의 소비자가 없다. [닫기 순서](../architecture/close-sequence.md#gui-와-headless-의-차이)를 따른다.
+구조 완료의 host/lifecycle 통지는 EngineRuntime 큐가 보관하고 App이 View 유무와 별개로 해소한다. GUI 표시 cache 정리는 별도 후처리이며 engine의 필수 통지·자원 회수 완료를 대신하지 않는다.
 
 원격 pane split에서 전달된 params에 `target_pane`이 있고 서버가 `target_surface`도 채우면 두 대상 동시 지정 오류가 날 수 있다. 실행 함수 통합은 이 기존 동작을 바꾸지 않았다. 실패 문구의 경로 간 일치와 문구 자체의 호환은 별도로 검사한다.
 
@@ -160,3 +157,5 @@ EngineRef/EngineMut의 참조 필드와 Session의 암묵적 Deref를 검사한�
 타입 별칭·전이 의존이나 CoreState 전체의 순수성을 증명하지 않는다. `domain_does_not_reach_up`은 Core의
 `runtime::engine_session` 직접 의존을 막는다. Session 단위 시험은 Terminal/task 원본 공유, observer 종료 flush,
 교체된 Terminal 내용의 격리와 parked 자원의 보존을 검사한다. 실제 PTY 종료·reap과 resource generation의 계약은 별도 검증 대상이다.
+
+전역 registry의 실제 Arc 소유자는 AppServices.registries이며 EngineRuntime과 PluginManager는 같은 인스턴스를 공유한다. 등록·철회와 설정 저장은 창이 없는 상태에서도 App에서 실행한다. 추가 창의 View 조립이 실패하면 pending Engine은 retiring 관계에서 이미 수락한 실행 의무와 필수 통지를 마친 뒤 해제된다. 이 실패는 저장된 slot의 사용자 폐기가 아니므로 기존 stream을 삭제하거나 실패한 View 선택으로 checkpoint를 덮지 않는다.
