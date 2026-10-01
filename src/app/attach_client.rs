@@ -76,24 +76,15 @@ impl App {
 
     pub(crate) fn dispatch_pending_gui_attach(&mut self) {
         let mut requests = Vec::new();
-        let mut user_requests = Vec::new();
         for session in self.engines.all_sessions_mut() {
             requests.extend(
                 std::mem::take(&mut session.remote.pending_gui_attach)
                     .into_iter()
                     .map(|request| (session.id, request)),
             );
-            user_requests.extend(
-                std::mem::take(&mut session.remote.pending_gui_attach_user)
-                    .into_iter()
-                    .map(|request| (session.id, request)),
-            );
         }
         for (engine, (port, workspace)) in requests {
             self.try_dispatch_one_gui_attach_ipc(engine, port, workspace);
-        }
-        for (engine, request) in user_requests {
-            self.try_dispatch_one_gui_attach_user(engine, request);
         }
     }
 
@@ -107,53 +98,6 @@ impl App {
         {
             tracing::warn!("gui attach failed (port={port}, ws={workspace}): {e}");
         }
-    }
-
-    fn try_dispatch_one_gui_attach_user(
-        &mut self,
-        engine: EngineId,
-        mut req: crate::core::GuiAttachUserReq,
-    ) {
-        let own_port = self.hub.ipc_server.as_ref().map(|s| s.port());
-        let outcome = dispatch_attach(
-            own_port,
-            req.port,
-            req.workspace,
-            AttachSource::User,
-            || {
-                let target = self.mirror_install_target(Some(engine), None, None, true)?;
-                self.queue_mirror_connection(target, req.port, req.workspace, req.tunnel.take())
-            },
-        );
-        self.remote.retire_tunnel(req.tunnel.take());
-        match outcome {
-            Outcome::RejectedSelf => {}
-            Outcome::Connected(Ok(())) => {}
-            Outcome::Connected(Err(e)) => tracing::warn!(
-                "remote-attach failed (port={}, ws={}): {e}",
-                req.port,
-                req.workspace
-            ),
-        }
-    }
-
-    /// Capture the originating engine/View, then queue a cancellable Remote handshake.
-    /// Accepted connection work does not mean the mirror is installed yet.
-    pub(crate) fn start_gui_attach(
-        &mut self,
-        port: u16,
-        workspace: u32,
-        tunnel: Option<tasty_ssh::SshTunnel>,
-        anchor_ws_id: Option<u32>,
-    ) -> anyhow::Result<()> {
-        let target = match self.mirror_install_target(None, anchor_ws_id, None, false) {
-            Ok(target) => target,
-            Err(error) => {
-                self.remote.retire_tunnel(tunnel);
-                return Err(error);
-            }
-        };
-        self.queue_mirror_connection(target, port, workspace, tunnel)
     }
 
     fn install_new_mirror(
@@ -2989,17 +2933,6 @@ fn send_capture_control_frame(
     Ok(())
 }
 
-impl App {
-    /// 워커가 세션 전체를 빌리지 않도록 접속 포트와 원격 workspace ID만 꺼낸다.
-    pub(crate) fn bulk_target_for(&self, local_ws_id: u32) -> Option<(u16, u32)> {
-        self.remote
-            .sessions
-            .iter()
-            .find(|s| s.state.local_workspace == local_ws_id)
-            .map(|s| (s.state.bulk_port, s.state.remote_workspace))
-    }
-}
-
 /// 파일을 transfer_id·seq 헤더가 있는 청크로 나눈다. 빈 입력은 청크 없이 begin·commit만 보낸다.
 fn bulk_chunk_frames(transfer_id: u64, bytes: &[u8]) -> Vec<Vec<u8>> {
     bytes
@@ -3010,6 +2943,7 @@ fn bulk_chunk_frames(transfer_id: u64, bytes: &[u8]) -> Vec<Vec<u8>> {
 }
 
 /// 기존 workspace 점유에 연결된 bulk 채널을 연다. timeout 설정 실패는 경고만 남긴다.
+#[cfg(test)]
 fn open_bulk_connection(port: u16, remote_ws: u32) -> anyhow::Result<StreamConnection> {
     open_bulk_connection_bound(port, remote_ws, None)
 }
@@ -5635,7 +5569,6 @@ impl App {
         Ok(crate::app::journal::forward::Draft {
             engine,
             stream,
-            workspace_index: index,
             response: crate::ipc::protocol::JsonRpcResponse::success(
                 serde_json::Value::Null,
                 serde_json::json!({"forwarded":true,"workspace_index":index}),

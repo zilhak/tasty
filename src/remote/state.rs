@@ -3,7 +3,7 @@ use crate::core::attach::AttachClientId;
 use crate::core::state::AttentionKind;
 use crate::core::state::RemoteCwd;
 #[cfg(feature = "gui")]
-use crate::core::state::{AttachMeshContextForward, GuiAttachUserReq, PendingImageUpload};
+use crate::core::state::{AttachMeshContextForward, PendingImageUpload};
 use tasty_ipc::stream::{StreamFrame, StreamTag};
 pub(crate) struct RemoteState {
     pub(crate) attach_subscriptions:
@@ -11,7 +11,6 @@ pub(crate) struct RemoteState {
     pub(crate) attach_mapping_tokens: std::collections::HashMap<u32, std::sync::Arc<()>>,
     pub(crate) presentation: crate::model::StructurePresentationSnapshot,
     notifier: Option<tasty_ipc::stream_hub::StreamHub>,
-    suppress_auto_tap: bool,
     structure_changed: std::collections::BTreeSet<u32>,
     pub(crate) pending_workspace_taps:
         std::collections::HashMap<u32, (u32, tasty_terminal::ResourceGeneration)>,
@@ -60,9 +59,6 @@ pub(crate) struct RemoteState {
     #[cfg(feature = "gui")]
     pub(crate) pending_mesh_input_forward:
         std::collections::HashMap<u32, tasty_plugin_protocol::protocol::RawInputWire>,
-    /// 사용자가 직접 확정한 attach는 성공 뒤 새 mirror를 선택할 수 있어 IPC 요청과 분리한다.
-    #[cfg(feature = "gui")]
-    pub(crate) pending_gui_attach_user: Vec<GuiAttachUserReq>,
     /// 원격에서 받은 busy 상태. 로컬 폴링이 집합을 교체하므로 별도로 보관한다.
     pub(crate) mirror_busy_surfaces: std::collections::HashSet<u32>,
     /// 원격 surface의 cwd. 두 호스트의 파일시스템이 달라 로컬 Path로 해석하지 않는다.
@@ -87,7 +83,6 @@ impl RemoteState {
             attach_mapping_tokens: Default::default(),
             presentation: Default::default(),
             notifier: None,
-            suppress_auto_tap: false,
             structure_changed: Default::default(),
             pending_workspace_taps: Default::default(),
             pending_structure_replies: Default::default(),
@@ -116,8 +111,6 @@ impl RemoteState {
             pending_mesh_context_forward: std::collections::HashMap::new(),
             #[cfg(feature = "gui")]
             pending_mesh_input_forward: std::collections::HashMap::new(),
-            #[cfg(feature = "gui")]
-            pending_gui_attach_user: Vec::new(),
             mirror_busy_surfaces: std::collections::HashSet::new(),
             mirror_surface_cwd: std::collections::HashMap::new(),
             last_forwarded_busy: std::collections::HashMap::new(),
@@ -134,16 +127,10 @@ impl RemoteState {
     pub(crate) fn notifier(&self) -> Option<tasty_ipc::stream_hub::StreamHub> {
         self.notifier.clone()
     }
-    pub(crate) fn is_auto_tap_suppressed(&self) -> bool {
-        self.suppress_auto_tap
-    }
     pub(crate) fn structure_reply_pending(&self, workspace: u32) -> bool {
         self.pending_structure_replies
             .values()
             .any(|value| *value == workspace)
-    }
-    pub(crate) fn set_auto_tap_suppressed(&mut self, value: bool) {
-        self.suppress_auto_tap = value;
     }
     pub(crate) fn mark_structure_changed(&mut self, id: u32) {
         self.structure_changed.insert(id);

@@ -1,7 +1,7 @@
 //! 서버는 attach 점유 중인 터미널의 표시용 사본을 주기적으로 갱신한다.
 //! PTY를 가진 원본은 유지하고 GUI는 이 사본을 읽기 전용으로 그린다. 갱신 주기는 호출부 타이머가 정한다.
 
-use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::EngineMut;
 use tasty_terminal::Terminal;
 
 impl EngineMut<'_> {
@@ -40,12 +40,5 @@ impl EngineMut<'_> {
             any = true;
         }
         any
-    }
-}
-
-impl<'a> EngineRef<'a> {
-    /// 첫 갱신 전에는 사본이 없어 None이다. live 터미널이 없으면 이후 갱신도 건너뛴다.
-    pub(crate) fn readonly_view(&self, surface_id: u32) -> Option<&'a Terminal> {
-        self.runtime.readonly_views.get(&surface_id)
     }
 }

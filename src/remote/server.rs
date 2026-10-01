@@ -57,12 +57,6 @@ impl EngineMut<'_> {
         tracing::debug!("attach: mesh surface {surface_id} -> client {client_id}");
     }
 
-    /// 비터미널은 surface lock 없이 workspace 멤버로만 점유될 수도 있어 두 경로를 확인한다.
-    fn mesh_holder_matches(&self, surface_id: SurfaceId, client_id: AttachClientId) -> bool {
-        self.live.occupancy.holder(surface_id) == Some(client_id)
-            || self.live.occupancy.workspace_holder_of(surface_id) == Some(client_id)
-    }
-
     /// 점유 client의 mesh 구독·geometry·theme·focus 요청을 반영한다. 점유가 다르면 false다.
     #[allow(clippy::too_many_arguments)]
     pub fn apply_attached_mesh_context(
@@ -4716,41 +4710,6 @@ impl crate::runtime::engine_access::EngineMut<'_> {
         hub: &StreamHub,
     ) {
         self.subscribe_terminal(sid, client_id, hub, true, false);
-    }
-
-    /// 새 workspace 멤버의 점유를 등록한다. 로컬 생성이면 delta를 먼저 보내고 tap한다.
-    /// forward 실행 중에는 호출자가 delta 뒤에 tap하므로 여기서는 tap을 생략한다.
-    /// notifier가 없어도 점유는 등록한다.
-    pub(crate) fn tap_new_workspace_member(
-        &mut self,
-        workspace_id: WorkspaceId,
-        surface_id: SurfaceId,
-        is_terminal: bool,
-    ) {
-        if !self
-            .live
-            .occupancy
-            .add_workspace_member(workspace_id, surface_id, is_terminal)
-        {
-            return;
-        }
-        if self.remote.is_auto_tap_suppressed() || self.remote.structure_reply_pending(workspace_id)
-        {
-            return;
-        }
-        // client가 ID 매핑을 만든 뒤 snapshot을 받도록 delta를 먼저 보낸다.
-        self.remote.mark_structure_changed(workspace_id);
-        self.push_structure_changes();
-        if !is_terminal {
-            return;
-        }
-        let Some(holder) = self.live.occupancy.workspace_holder(workspace_id) else {
-            return;
-        };
-        let Some(hub) = self.remote.notifier() else {
-            return;
-        };
-        self.tap_surface_for_stream(surface_id, holder, &hub);
     }
 
     /// 해당 workspace를 점유한 client의 입력만 지정 터미널로 보낸다.
