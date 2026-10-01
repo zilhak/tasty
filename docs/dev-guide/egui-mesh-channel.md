@@ -466,15 +466,16 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
   (`MainView::forward_egui_mesh_context`)가 권위 있게 구동 중이다. 헤드리스처럼
   `forward_mesh_frames_for_engine` 으로 `PluginManager` 를 직접 구동하면 이 로컬
   authoritative loop 와 경합하므로 — attach client 가 요청한 (로컬과 다를 수 있는)
-  width_px/height_px 로 재구동해 로컬 화면이 튈 수 있다 — `MainView::forward_mesh_to_attach_subscribers`
-  (`src/view/main/egui_mesh.rs`)는 위 `relay_mesh_frame_if_new` 만 재사용해 **별도
+  width_px/height_px 로 재구동해 로컬 화면이 튈 수 있다 — App의 `relay_subscribed_mesh`
+  (`src/app/view_mesh.rs`)는 위 `relay_mesh_frame_if_new` 만 재사용해 **별도
   `set_context` 를 보내지 않고 이미 만들어진 `EguiMeshFrame` 바이트만 읽어 `StreamTag::MeshData`
   로 relay** 한다. 유일한 예외는 attach 구독 대상이 로컬 어디에서도 렌더되지 않는 surface(다른
   탭/워크스페이스에 있어 로컬 target 목록에 전혀 없어 plugin 이 그 surface_id 자체를 모름)인
-  경우뿐 — 이땐 경합할 로컬 루프가 없으므로 이 훅이 `find_egui_mesh_surface`
-  (`src/runtime/pty.rs`)로 메타데이터를 조회해 최소 `surface.create` + `set_context`
-  bootstrap 을 1 회 대신 보낸다. 이미 렌더 중인 surface 에 새 구독(또는 명시 재전송 요청)이
-  들어와 전체 텍스처가 필요하면, 직접 보내지 않고 로컬 `MeshForwardState::pending_full` 에
+  경우뿐 — 이때 App이 runtime surface의 메타데이터와 원 등록 binding을 읽어
+  최소 `surface.create` + `set_context` bootstrap을 보낸다. attach 진입에서 종류·plugin을
+  판별하는 조회는 `EngineRef::find_mesh_surface_info` (`src/runtime/pty.rs`)이며
+  `src/remote/server.rs`의 `attach_surface_for_stream`이 사용한다. 이미 렌더 중인 surface 에 새 구독(또는 명시 재전송 요청)이
+  들어와 전체 텍스처가 필요하면, 직접 보내지 않고 로컬 `MeshForwardState::set_pending_full`로
   위임해 다음 tick 의 authoritative loop 가 `need_full_textures` 를 실어 보내게 한다(그
   사이엔 캐시된 델타뿐일 수 있는 frame 을 새 구독자에 흘리지 않고 건너뛴다 — 텍스처 손상
   방지). attach client 의 입력을 로컬 plugin 에 되먹이는 축(`MeshMirrorRegistry::take_pending_events`)
