@@ -1,4 +1,5 @@
-//! Committed engine structure and pure structural queries.
+//! Host adapters for committed structure, live observations, and legacy layout import.
+//! Pure decisions and canonical models live in tasty-core; execution owners live in runtime.
 
 pub(crate) mod attach;
 pub(crate) mod command_index;

@@ -54,3 +54,5 @@ pub(crate) mod kind_catalog;
 pub(crate) mod file_catalog;
 
 pub(crate) mod registries;
+
+mod pty;

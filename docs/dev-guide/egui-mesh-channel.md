@@ -472,7 +472,7 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
   로 relay** 한다. 유일한 예외는 attach 구독 대상이 로컬 어디에서도 렌더되지 않는 surface(다른
   탭/워크스페이스에 있어 로컬 target 목록에 전혀 없어 plugin 이 그 surface_id 자체를 모름)인
   경우뿐 — 이땐 경합할 로컬 루프가 없으므로 이 훅이 `find_egui_mesh_surface`
-  (`src/core/state/pty.rs`)로 메타데이터를 조회해 최소 `surface.create` + `set_context`
+  (`src/runtime/pty.rs`)로 메타데이터를 조회해 최소 `surface.create` + `set_context`
   bootstrap 을 1 회 대신 보낸다. 이미 렌더 중인 surface 에 새 구독(또는 명시 재전송 요청)이
   들어와 전체 텍스처가 필요하면, 직접 보내지 않고 로컬 `MeshForwardState::pending_full` 에
   위임해 다음 tick 의 authoritative loop 가 `need_full_textures` 를 실어 보내게 한다(그
