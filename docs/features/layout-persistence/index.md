@@ -167,10 +167,20 @@ Batch 식별과 stream revision 헤더는 유지한다. 오래된 cursor 읽기�
 App의 읽기 lease에 잡힌 payload는 Busy 대기와 늦은 완료 동안 snapshot pin에 포함한다.
 제품 호출은 publication ACK 뒤에만 허용하며 공통 worker 연결은 이행 중이다.
 
+View checkpoint는 journal의 restore manifest가 별도 원본으로 보관한다. domain snapshot,
+View 바이트, slot binding 및 payload pin은 한 transaction으로 저장한다. incarnation·runtime
+세대·sequence가 역행하는 저장과 같은 sequence로 내용을 바꾸는 저장은 거절한다.
+DB manifest가 없을 때만 이전 sidecar를 초기 자료로 읽으며, 첫 저장 뒤에는 DB가 원본이다.
+일치하는 DB manifest가 손상돼도 sidecar로 돌아가 선택을 바꾸지 않는다. 새 incarnation은
+옛 incarnation의 손상된 View 바이트를 읽지 않는다. retirement는 해당 incarnation의
+manifest만 해제하고 미완·Uncertain domain 의무의 참조는 계속 유지한다.
+Manifest가 가리키는 snapshot은 보존 경계의 하한이며, 선택 자료만 domain event에서
+재생하거나 최신 선택으로 다시 생성하지 않는다.
+
 새 journal import의 payload 복사는 source import holder를 먼저 영속화하고 destination에
 독립 BLOB과 destination holder를 한 transaction으로 만든다. 복사 API는 source holder를
 해제하지 않는다. destination 초기 이벤트와 manifest 전환이 끝난 호출자가 해제하며,
-실패 시 source를 계속 읽을 수 있다. 이 복사 primitive의 제품 manifest 전환 연결은 이행 중이다.
+실패 시 source를 계속 읽을 수 있다. 이 복사 primitive의 source→destination import batch/manifest 전환 연결은 이행 중이다.
 
 ## 저장하지 않는 것
 

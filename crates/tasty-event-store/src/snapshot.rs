@@ -163,7 +163,7 @@ impl EventStore {
     }
 }
 
-fn insert_snapshot(conn: &Connection, snapshot: &NewSnapshot) -> StoreResult<SnapshotId> {
+pub(crate) fn insert_snapshot(conn: &Connection, snapshot: &NewSnapshot) -> StoreResult<SnapshotId> {
     cut_at(conn, snapshot.batch_id)?;
     let body = payload::insert(conn, &snapshot.bytes)?;
     conn.execute(

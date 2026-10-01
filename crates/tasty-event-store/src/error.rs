@@ -162,6 +162,9 @@ pub enum StoreError {
     #[error("projection key {0} appears twice in one write")]
     ProjectionKeyConflict(String),
 
+    #[error("restore manifest {0} would replace a newer saved View")]
+    ManifestRegression(String),
+
     #[error("stored value is out of range: {0}")]
     Corrupt(String),
 }

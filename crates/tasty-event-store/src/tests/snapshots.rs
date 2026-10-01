@@ -367,3 +367,28 @@ fn copied_payloads_have_independent_ownership_and_source_pin_survives() {
     assert_eq!(source.gc_payloads(source_epoch).expect("source retire"), 1);
     assert_eq!(destination.read_payload(copied).expect("survives source retirement"), b"source bytes");
 }
+
+#[test]
+fn view_manifest_transfer_is_atomic_and_old_incarnation_cannot_delete_it() {
+    let (_dir, mut store, epoch) = fresh();
+    commit_round(&mut store, epoch, 0);
+    let snapshot = NewSnapshot {batch_id: 1,model_version: MODEL,bytes: b"domain".to_vec(),referenced_payloads: vec![]};
+    let manifest = crate::NewRestoreManifest {
+        restore_key: "view:slot-0".into(),incarnation: 1,runtime_epoch: epoch.0,sequence: 1,
+        snapshot_id: 0,view: b"view 1".to_vec(),referenced_payloads: vec![],
+    };
+    let id = store.save_restore_checkpoint(epoch, &snapshot, &manifest).expect("atomic source");
+    assert!(store.delete_snapshot(epoch, id).is_err());
+    let invalid = crate::NewRestoreManifest {sequence: 2,referenced_payloads: vec![crate::PayloadRef(999999)],..manifest.clone()};
+    assert!(store.save_restore_checkpoint(epoch, &snapshot, &invalid).is_err());
+    let current = store.restore_manifest("view:slot-0").expect("read").expect("source");
+    assert_eq!(current.view, b"view 1");
+    assert_eq!(current.snapshot.snapshot_id, id);
+    assert!(matches!(store.save_restore_checkpoint(epoch, &snapshot, &crate::NewRestoreManifest {
+        sequence: 0,..manifest.clone()
+    }), Err(StoreError::ManifestRegression(_))));
+    let next = crate::NewRestoreManifest {incarnation: 2,sequence: 1,view: b"view 2".to_vec(),..manifest};
+    store.save_restore_checkpoint(epoch, &snapshot, &next).expect("new incarnation");
+    assert!(!store.delete_restore_manifest(epoch, "view:slot-0", 1).expect("old close"));
+    assert_eq!(store.restore_manifest("view:slot-0").expect("read").expect("source").view,b"view 2");
+}

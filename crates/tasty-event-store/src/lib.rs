@@ -22,6 +22,7 @@
 
 mod command;
 mod retention;
+mod manifest;
 mod commit;
 mod effect;
 mod error;
@@ -56,3 +57,4 @@ pub use types::{
 };
 
 pub use retention::Compaction;
+pub use manifest::{NewRestoreManifest, RestoreManifest};

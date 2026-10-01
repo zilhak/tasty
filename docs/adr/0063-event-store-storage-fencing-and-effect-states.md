@@ -37,6 +37,20 @@ domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 제품 경
 - 새 journal로 가져오는 경우 payload는 대상 journal에 복사해 독립 소유하게 한 뒤 원본의 pin을 푼다. 다른 journal의 행을 가리키지 않는다.
 - 이벤트 자체의 작은 payload는 이벤트 행에 inline BLOB으로 둔다. 불변 payload 표는 여러 기록이 참조하거나 크기가 큰 내용을 위한 것이다.
 
+### View 복원 manifest
+
+View checkpoint 바이트는 domain snapshot의 cache가 아니라 별도 원본이다. slot key와
+incarnation/runtime epoch/sequence, domain snapshot ID, View payload를 같은 journal의
+restore manifest에 둔다. 새 snapshot과 manifest 및 참조 pin은 한 transaction으로 저장한다.
+이전 sequence·incarnation의 늦은 저장은 새 record를 덮지 못하며, 같은 sequence의 다른
+내용도 거절한다. old retirement는 일치하는 incarnation의 manifest만 지운다.
+
+기존 sidecar는 DB manifest가 없을 때 최초 이관 자료로 읽는다. DB source가 생긴 뒤에는
+손상된 DB를 오래된 sidecar로 덮는 fallback을 하지 않는다. 새 incarnation을 선택한 시작은
+옛 incarnation의 View 바이트에 의존하지 않는다. manifest가 참조한 snapshot의 외부 pin은
+compaction 하한을 제한한다. View 기록을 도메인 이벤트에 넣는 안은 사용자 선택을 replay로
+다시 만들어 원본 의미가 달라지므로 사용하지 않는다.
+
 ### writer는 독점 파일 잠금과 세대 검사를 함께 쓴다
 
 - journal은 잠금 없이 열 수 있고 이 상태에서는 읽기만 한다. writer가 되려면 OS 독점 잠금을 얻은 뒤 새 세대를 등록한다.

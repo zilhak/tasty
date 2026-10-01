@@ -89,10 +89,28 @@ pub(super) fn checkpoint(executor: &Executor<StructureDecider>, readers: &crate:
     let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
     let Some(batch_id) = inner.state.batch else { return Ok(()); };
     const CONSUMER: &str = "structure-maintenance";
-    if inner.store.checkpoint(CONSUMER, tasty_core::MODEL_VERSION)
+    let epoch = inner.epoch;
+    for (key, incarnation) in inner.store.restore_manifest_bindings().map_err(|error| error.to_string())? {
+        let Some(slot) = key.strip_prefix("view:slot-") else {continue;};
+        let stream = format!("structure:slot-{slot}");
+        if inner.state.streams.get(&stream).is_some_and(|model|
+            model.engine_incarnation > incarnation || (model.engine_incarnation == incarnation && model.engine_retired)) {
+            inner.store.delete_restore_manifest(epoch, &key, incarnation).map_err(|error| error.to_string())?;
+        }
+    }
+    let current = inner.store.checkpoint(CONSUMER, tasty_core::MODEL_VERSION)
         .map_err(|error| error.to_string())?
-        .is_some_and(|cut| cut.last_batch == Some(batch_id)) {
-        return Ok(());
+        .is_some_and(|cut| cut.last_batch == Some(batch_id));
+    let epoch = inner.epoch;
+    if current {
+        return readers.with_refs(|references| {
+            inner.store.replace_payload_holder(epoch, "structure-readers", &references).map_err(|error| error.to_string())?;
+            // Snapshot success and compaction failure have separate transaction outcomes. Retry
+            // maintenance at the same cut without producing another identical domain snapshot.
+            inner.store.compact_history(epoch, tasty_core::MODEL_VERSION).map_err(|error| error.to_string())?;
+            inner.store.gc_payloads(epoch).map_err(|error| error.to_string())?;
+            Ok(())
+        });
     }
     let mut snapshot = tasty_event_store::NewSnapshot {
         batch_id,
@@ -104,6 +122,7 @@ pub(super) fn checkpoint(executor: &Executor<StructureDecider>, readers: &crate:
     };
     let epoch = inner.epoch;
     readers.with_refs(|references| {
+        inner.store.replace_payload_holder(epoch, "structure-readers", &references).map_err(|error| error.to_string())?;
         snapshot.referenced_payloads.extend(references);
         inner.store.save_live_snapshot(epoch, &snapshot, CONSUMER).map_err(|error| error.to_string())?;
         inner.store.compact_history(epoch, tasty_core::MODEL_VERSION).map_err(|error| error.to_string())?;
@@ -129,4 +148,29 @@ pub(super) fn preset(
         return Err("resolved preset exceeds response byte limit".into());
     }
     Ok(result)
+}
+
+#[cfg(feature = "gui")]
+pub(super) fn save_view(
+    executor: &Executor<StructureDecider>,
+    home: &std::path::Path,
+    view: &super::super::view_record::StoredView,
+) -> Result<ResultValue, String> {
+    let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
+    if view.binding.journal_id != inner.store.journal_id() || view.binding.runtime_epoch != inner.epoch.0
+        || inner.state.streams.get(&view.binding.stream).is_none_or(|model| model.engine_retired
+            || model.engine_incarnation != view.binding.incarnation || model.applied.revision < view.binding.revision
+            || model.applied.batch < view.binding.published_cut) {
+        return Err("View snapshot belongs to a retired engine binding".into());
+    }
+    let snapshot = tasty_event_store::NewSnapshot {
+        batch_id: inner.state.batch.ok_or("cannot save a View before domain publication")?,
+        model_version: tasty_core::MODEL_VERSION,
+        bytes: tasty_core::encode_snapshot(&inner.state).map_err(|error| error.to_string())?,
+        referenced_payloads: inner.state.streams.values().flat_map(tasty_core::JournalModel::data_refs)
+            .map(|reference| tasty_event_store::PayloadRef(reference.0)).collect(),
+    };
+    let epoch = inner.epoch;
+    super::super::view_record::save(&mut inner.store, epoch, &snapshot, home, view)?;
+    Ok(ResultValue::ViewSaved)
 }
