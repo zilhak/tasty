@@ -32,7 +32,7 @@ fn step(id: &str, from: EffectState, to: EffectState) -> EffectTransition {
 
 fn run(id: &str, from: EffectState, generation: u64) -> EffectTransition {
     EffectTransition {
-        claim: Some(claim(generation)),
+        claim: Some(crate::EffectClaim::Activation(claim(generation))),
         ..step(id, from, Running)
     }
 }
@@ -100,7 +100,7 @@ fn lifecycle_records_attempts_and_claims() {
     let outcomes: Vec<_> = attempts.iter().map(|a| a.outcome).collect();
     assert_eq!(outcomes, [Some(Failed), Some(Succeeded)]);
     assert_eq!(attempts[0].journal_id, JOURNAL);
-    assert_eq!(attempts[0].claim, claim(1));
+    assert_eq!(attempts[0].claim, crate::EffectClaim::Activation(claim(1)));
     assert_eq!(attempts[0].writer_epoch, epoch);
 }
 

@@ -166,6 +166,7 @@ fn full_request(epoch: WriterEpoch, n: u32) -> CommitRequest {
         effect_id: format!("fx-{n}"),
         operation_id: format!("op-{n}"),
         resource_generation: 1,
+        claim_kind: tasty_event_store::ClaimKind::Activation,
         payload: payload("SurfaceCreate", b"{}"),
         initial: EffectState::Pending,
     });
@@ -315,7 +316,7 @@ fn abort_after_running_leaves_a_running_attempt_for_reconciliation() {
         let (mut store, epoch) = open_writer(&db_path(&dir));
         commit(&mut store, &full_request(epoch, 1));
         let running = EffectTransition {
-            claim: Some(claim()),
+            claim: Some(tasty_event_store::EffectClaim::Activation(claim())),
             ..transition(EffectState::Pending, EffectState::Running)
         };
         store.transition_effect(epoch, &running).expect("running");
@@ -343,7 +344,10 @@ fn abort_after_running_leaves_a_running_attempt_for_reconciliation() {
     let attempts = store.effect_attempts("fx-1").expect("attempts");
     assert_eq!(attempts.len(), 1);
     assert_eq!(attempts[0].writer_epoch, child_epoch);
-    assert_eq!(attempts[0].claim, claim());
+    assert_eq!(
+        attempts[0].claim,
+        tasty_event_store::EffectClaim::Activation(claim())
+    );
     assert_eq!(attempts[0].outcome, None);
 
     // 결과를 모르는 attempt를 Uncertain으로 닫고, 실행되지 않았다는 증거로 Cancelled로 닫는다.

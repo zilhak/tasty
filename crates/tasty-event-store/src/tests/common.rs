@@ -76,6 +76,7 @@ pub fn new_effect(id: &str, generation: u64, initial: EffectState) -> NewEffect 
         effect_id: id.to_owned(),
         operation_id: format!("op-{id}"),
         resource_generation: generation,
+        claim_kind: crate::ClaimKind::Activation,
         payload: payload("SurfaceCreate", b"{}"),
         initial,
     }
