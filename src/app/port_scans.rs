@@ -6,6 +6,8 @@ use winit::window::WindowId;
 use crate::adapters::ui::popup::port_scanner::{PortRowView, ScanSnapshot, SourceTag, format_addr};
 use crate::view::ui::View;
 
+const MAX_SCAN_JOBS: usize = 8;
+
 struct ScanJob {
     window: WindowId,
     view: Weak<()>,
@@ -16,6 +18,16 @@ struct ScanJob {
 }
 #[derive(Default)]
 pub(crate) struct PortScans { jobs: Vec<ScanJob> }
+
+impl Drop for PortScans {
+    fn drop(&mut self) {
+        // OS inspection has no cancellation primitive. App retirement waits for the admitted,
+        // bounded scans; dropping a popup only discards its result identity, not its worker.
+        for job in self.jobs.drain(..) {
+            if job.worker.join().is_err() { tracing::warn!("port scan worker panicked during App retirement"); }
+        }
+    }
+}
 
 impl super::App {
     pub(crate) fn poll_port_scans(&mut self) {
@@ -39,12 +51,20 @@ impl super::App {
             let Some(view) = view.as_main_mut() else { continue; };
             let identity = view.base.state.identity();
             for favorites in [false, true] {
+                // Refresh replaces the View's pending snapshot, never an in-flight worker.
+                // Defer admission without dropping that latest request until capacity is free.
+                if self.port_scans.jobs.len() >= MAX_SCAN_JOBS
+                    || self.port_scans.jobs.iter().any(|job| {
+                        job.window == window && job.view.ptr_eq(&identity) && job.favorites == favorites
+                    })
+                { continue; }
                 let slot = if favorites { &mut view.state.port_favorites_scan } else { &mut view.state.port_scan };
                 let Some((ticket, snapshot)) = slot.take_request() else { continue; };
                 let (sender, result) = mpsc::channel();
                 let wake = proxy.clone();
                 match std::thread::Builder::new().name("port-scan".into()).spawn(move || {
-                    let result = run_scan(snapshot);
+                    let result = std::panic::catch_unwind(|| run_scan(snapshot))
+                        .unwrap_or_else(|_| Err("scan worker panicked".into()));
                     if sender.send(result).is_err() { return; } // App has retired; no result consumer remains.
                     if wake.send_event(crate::AppEvent::TimerTick).is_err() {
                         tracing::debug!("port scan completion after App event loop closed");
