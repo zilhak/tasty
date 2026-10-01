@@ -288,7 +288,7 @@ impl UiIntent {
         Intent::Ui(self).from_user_shortcut(id)
     }
 
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub fn from_user_menu(self, id: &'static str) -> DispatchedIntent {
         Intent::Ui(self).from_user_menu(id)
     }
@@ -422,7 +422,7 @@ impl Intent {
         }
     }
 
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub fn from_user_menu(self, id: &'static str) -> DispatchedIntent {
         DispatchedIntent {
             body: self,

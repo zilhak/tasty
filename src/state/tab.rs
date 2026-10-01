@@ -61,7 +61,7 @@ impl RequestContext {
         }
     }
 
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub fn next_tab_in_pane(&mut self, engine: &CoreState) {
         #[cfg(feature = "gui")]
         let before = self.tutorial_tab_snapshot(engine);

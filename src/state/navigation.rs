@@ -88,11 +88,11 @@ impl NavigationState {
             _ => {}
         }
     }
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub(crate) fn generation(&self) -> std::sync::Weak<()> {
         std::sync::Arc::downgrade(&self.generation)
     }
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub(crate) fn matches_generation(&self, generation: &std::sync::Weak<()>) -> bool {
         self.generation().ptr_eq(generation)
     }
@@ -243,7 +243,7 @@ impl NavigationState {
 
     // Mirror snapshots initialize only missing/deleted selections from the wire.
     // Surviving local choices win; a pending user close may then choose its neighbour.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub(crate) fn initialize_pane(&mut self, workspace: &Workspace, pane: u32) {
         if self
             .panes
@@ -253,7 +253,7 @@ impl NavigationState {
             self.select_pane(workspace, pane);
         }
     }
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub(crate) fn initialize_tab(&mut self, pane: &Pane, index: usize) {
         let selection = self.selected_tabs.entry(pane.id).or_default();
         if !selection
@@ -264,7 +264,7 @@ impl NavigationState {
             selection.select(tab.id, tab_ids(pane));
         }
     }
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub(crate) fn initialize_surface(&mut self, tab: &Tab, surface: u32) {
         if !self
             .surfaces
