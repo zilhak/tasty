@@ -1,13 +1,9 @@
 //! Legacy layout slot discovery and import compatibility, plus journal capture scheduling.
-//! Product persistence uses the journal worker; legacy runtime capture is a comparison fixture.
+//! Product persistence uses the journal worker; legacy files remain import inputs.
 
-#[cfg(test)]
-mod capture;
 pub(crate) mod import;
 mod restore;
 pub(crate) mod schema;
-#[cfg(test)]
-mod scrollback;
 #[cfg(test)]
 mod tests;
 

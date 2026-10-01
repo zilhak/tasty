@@ -117,7 +117,7 @@ mirror 워크스페이스의 convert 는 로컬에서 실행되지 않고 `Struc
 | `state/branch.rs` (StatusBar git 브랜치) | 로컬 디스크 상향 탐색 | `local_surface_cwd` — mirror surface 는 브랜치 미표시 |
 | `intent/preset_capture.rs` (terminal cwd) | 영속 preset → 로컬 재실행 | `local_surface_cwd` — mirror terminal 은 cwd 없이 저장 |
 
-`EngineRef::surface_cwd`를 거치지 않고 `TerminalStore::cwd`를 읽는 소비자도 원격 경로를 로컬 실행에 쓰지 않는다. `view/main/mouse.rs`의 링크 검출은 같은 항목에 Pty가 없으면 mirror로 표시해 로컬 검증을 건너뛴다. `view/main/redraw.rs`의 선택 경로 열기는 명시 Pty의 PID가 있어야 진행한다. `core/layout_persistence/capture.rs`는 mirror 워크스페이스를 저장하지 않으며, `EngineMut::refresh_tab_display_name`은 표시 전용이라 로컬 fs를 건드리지 않는다.
+`EngineRef::surface_cwd`를 거치지 않고 `TerminalStore::cwd`를 읽는 소비자도 원격 경로를 로컬 실행에 쓰지 않는다. `view/main/mouse.rs`의 링크 검출은 같은 항목에 Pty가 없으면 mirror로 표시해 로컬 검증을 건너뛴다. `view/main/redraw.rs`의 선택 경로 열기는 명시 Pty의 PID가 있어야 진행한다. journal snapshot과 호환 export는 mirror projection을 포함하지 않으며, `EngineMut::refresh_tab_display_name`은 표시 전용이라 로컬 fs를 건드리지 않는다.
 
 #### 4. Plugin SDK 계약 — `SurfaceCreateCtx.cwd`
 

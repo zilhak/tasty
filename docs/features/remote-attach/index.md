@@ -312,7 +312,7 @@ Auto 체인이 전 단계 실패하면 가장 확정적인 분류(취소 > 타�
 
 ### mirror workspace 비영속
 
-원격 attach 로 생긴 mirror workspace(`Workspace.mirror`)는 **원격 점유가 살아있는 세션 동안만** 유효하다. 슬롯 파일에 저장하면 재시작 시 원격 없는 **죽은 일반 workspace** 로 복원되므로, `SavedLayout::capture`(`src/core/layout_persistence/capture.rs`)가 캡처 순회에서 mirror workspace 를 **제외**하고 `active_workspace` 인덱스도 필터 후 위치로 remap 한다(자동 attach mirror·GUI picker mirror 공통). 팝업 세션 상태(선택 프로필/조회 결과/선택 행/생성 워커)도 egui temp 메모리(비영속)라 tasty 종료 시 함께 사라진다.
+원격 attach의 mirror workspace는 연결 세션의 projection이며 로컬 journal 구조에 포함되지 않는다. journal snapshot과 호환 export는 로컬 canonical 모델만 읽으므로 mirror를 저장하거나 재시작 시 일반 workspace로 복원하지 않는다. 팝업의 선택 프로필·목록·요청 식별자는 View의 비영속 상태다.
 
 ### 창 없는 상태(parked)에서의 세션 수명
 
@@ -433,7 +433,7 @@ bulk 파일 전송과 mirror 터미널 이미지 붙여넣기 업로드에 대�
   "+ 새 워크스페이스" 확정은 그 큐에 넣기 전에 원격 `workspace.create` 워커(`spawn_create`/`poll_create`) 한 번을 끼우고, 성공 응답의 id 로 **같은 큐**에 합류한다.
   갤러리 specimen 진입점·치수 상수: `crates/tasty-gallery/src/catalog/components/remote_attach.rs`(loaded / 새 행 5상태 / 우측 pane 상태).
   자식 `remote_attach/new_row.rs`는 새 행 5상태, `panes.rs`는 좌우 pane 조립, `rows.rs`는 프로필·workspace 행과 공용 dot 슬롯을 담당한다.
-- mirror 비영속: `src/core/layout_persistence/capture.rs`(`SavedLayout::capture` 가 `ws.mirror` 제외 + active 인덱스 remap). 회귀 테스트 `core::state` `mirror_workspace_not_persisted`.
+- mirror 비영속: 로컬 journal 모델과 Remote projection을 분리하며, 호환 export는 `src/runtime/journal_payload/legacy_export.rs`에서 로컬 모델만 읽는다.
 - mirror 이미지 붙여넣기 → 원격 업로드: `src/view/main/clipboard.rs`(이미지 분기에서 `Workspace.mirror` 판정 → `CoreState.pending_image_uploads` 큐에 PNG 바이트 push, 비-mirror 는 기존 로컬 PNG 경로 유지), `src/app/image_upload.rs`(`poll_image_uploads`: 큐 drain → 백그라운드 `upload_file_over_bulk` → 결과 채널 → `dispatch_paste`(원격 경로 삽입) 또는 전송 실패 팝업 승격). 업로드 API 는 `src/app/attach_client.rs::upload_file_over_bulk`(bulk 클라 송신, 동기 블로킹).
 - 전송 진행/실패 팝업: 호스트 팝업 `src/adapters/ui/popup/transfer.rs`(`TRANSFER_PROGRESS_POPUP_ID`/`TRANSFER_ERROR_POPUP_ID`, `TransferProgress`/`TransferRow`/`TransferError` + draw/sizer), PopupDef 등록 `defs.rs`(둘 다 headless scrim; progress `close_on_outside_click=false`), scrim/bg 매칭 `popup.rs`·`popup/draw.rs`, DialogState 슬롯 `src/state/dialogs.rs`(`transfer_progress: Option` + `transfer_error: VecDeque`), self-close cleanup `PopupDef.on_close`(`transfer.rs`의 `on_close_transfer_progress`/`on_close_transfer_error`).
   진행률 전달: `upload_file_over_bulk` 의 `on_progress(sent,total)` 콜백(bulk 송신 경로 침범 최소) → 이미지 업로드 워커가 `transfer_progress` 채널 + `AppEvent::TransferProgressTick`(`event.rs`/`event_handler.rs`) → `image_upload.rs`(`begin/drain/finish_transfer_progress_row`, `push_transfer_error`, `format_rate`; 실패 분류는 `BULK_REJECT_PREFIX` 접두로 거부 vs 전송에러).
