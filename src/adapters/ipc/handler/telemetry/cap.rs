@@ -70,7 +70,7 @@ pub(super) fn cap_to_json(cap: &CostCap) -> Value {
 
 pub fn handle_cap_set(
     core: &AppServices,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -142,7 +142,7 @@ pub fn handle_cap_set(
 /// `telemetry.cap.list` — 전체 cap. 필터: `agent`.
 pub fn handle_cap_list(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -165,7 +165,7 @@ pub fn handle_cap_list(
 
 pub fn handle_cap_remove(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -220,7 +220,7 @@ pub(super) fn compute_current_value(
 /// `telemetry.cap.status` — agent 별 cap 들의 현재 값/임계/triggered 상태.
 pub fn handle_cap_status(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -271,7 +271,7 @@ pub fn handle_cap_status(
 /// `telemetry.cap.reset` — `triggered` 상태 제거. `id` 또는 `agent` 둘 중 하나 필수.
 pub fn handle_cap_reset(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -318,7 +318,7 @@ pub(super) fn evaluate_caps_after_record(
     core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     ev: &TelemetryEvent,
 ) {
     let caps = match load_all_caps(core) {
@@ -344,7 +344,7 @@ fn try_trigger_cap(
     core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     cap: &mut CostCap,
 ) {
     let current = match compute_current_value(core, cap) {
@@ -374,7 +374,7 @@ pub(super) fn fire_cap_action(
     core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     cap: &CostCap,
     current: f64,
 ) {
@@ -405,7 +405,7 @@ pub(super) fn fire_require_approval(
     core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     cap: &CostCap,
     current: f64,
 ) {
@@ -467,7 +467,7 @@ pub(super) fn fire_require_approval(
 pub(super) fn fire_notify(
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     cap: &CostCap,
     current: f64,
 ) {

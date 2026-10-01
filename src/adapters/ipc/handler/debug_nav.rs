@@ -14,7 +14,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 /// 사용자의 탭 전환을 재현한다.
 pub(super) fn handle_debug_switch_tab(
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

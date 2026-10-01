@@ -7,7 +7,7 @@ use super::require_surface_id;
 
 pub fn handle_message_send(
     core: &mut crate::app::services::AppServices,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -32,7 +32,7 @@ pub fn handle_message_send(
 
 pub fn handle_message_read(
     core: &mut crate::app::services::AppServices,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -57,7 +57,7 @@ pub fn handle_message_read(
 }
 
 pub fn handle_message_count(
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -71,7 +71,7 @@ pub fn handle_message_count(
 
 pub fn handle_message_clear(
     core: &mut crate::app::services::AppServices,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

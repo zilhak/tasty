@@ -14,7 +14,7 @@ pub(super) use crate::app::telemetry::persist_anomaly;
 pub(super) fn fire_anomaly_notification(
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     anomaly: &Anomaly,
 ) {
     let Some(ws) = engine.workspace_at(window.active_workspace_index(engine)) else {
@@ -82,7 +82,7 @@ pub(super) fn fire_anomaly_notification(
 /// `since`, `until` (unix ms). 응답은 `detected_at` 오름차순.
 pub fn handle_anomaly_list(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

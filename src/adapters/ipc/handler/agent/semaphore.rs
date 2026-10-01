@@ -17,7 +17,7 @@ fn serialize<T: serde::Serialize>(id: Value, value: T) -> JsonRpcResponse {
 
 pub fn handle_semaphore_create(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -50,7 +50,7 @@ pub fn handle_semaphore_create(
 
 pub fn handle_semaphore_set_permits(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -83,7 +83,7 @@ pub fn handle_semaphore_set_permits(
 
 pub fn handle_semaphore_acquire(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -115,7 +115,7 @@ pub fn handle_semaphore_acquire(
 
 pub fn handle_semaphore_release(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -143,7 +143,7 @@ pub fn handle_semaphore_release(
 
 pub fn handle_semaphore_list(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -163,7 +163,7 @@ pub fn handle_semaphore_list(
 
 pub fn handle_semaphore_delete(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

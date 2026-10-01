@@ -6,10 +6,10 @@ use serde_json::json;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 pub(crate) fn handle_surface_kinds(
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
-    let mut kinds: Vec<serde_json::Value> = engine.runtime.surface_registry
+    let mut kinds: Vec<serde_json::Value> = engine.surface_registry
         .kinds_snapshot()
         .into_iter()
         .map(|(kind, def)| {

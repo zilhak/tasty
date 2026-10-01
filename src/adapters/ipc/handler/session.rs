@@ -348,7 +348,7 @@ pub fn handle_list_agent_permissions(
 pub fn handle_request_permission(
     core: &mut crate::app::services::AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     caller: &CallerContext,
     id: Value,
     params: &Value,

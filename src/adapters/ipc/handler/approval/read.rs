@@ -6,7 +6,7 @@ use crate::app::services::AppServices;
 
 pub fn handle_cancel(
     core: &mut crate::app::services::AppServices,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -92,7 +92,7 @@ pub(crate) fn spawn_approval_await(
 
 pub fn handle_get(
     core: &AppServices,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -111,7 +111,7 @@ pub fn handle_get(
 /// `workspace_id`.
 pub fn handle_list(
     core: &AppServices,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -152,7 +152,7 @@ pub fn handle_list(
 /// 응답: `{ entries: [...], count, returned }`.
 pub fn handle_history(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

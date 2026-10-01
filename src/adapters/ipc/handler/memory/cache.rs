@@ -12,7 +12,7 @@ use super::{entry_to_json, map_error, parse_value, require_str, require_workspac
 
 pub fn handle_cache_put(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -46,7 +46,7 @@ pub fn handle_cache_put(
 
 pub fn handle_cache_get(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -68,7 +68,7 @@ pub fn handle_cache_get(
 
 pub fn handle_cache_invalidate(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -90,7 +90,7 @@ pub fn handle_cache_invalidate(
 
 pub fn handle_cache_clear(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -108,7 +108,7 @@ pub fn handle_cache_clear(
 
 pub fn handle_cache_list(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

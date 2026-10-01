@@ -11,7 +11,7 @@ use super::{entry_to_json, map_error, require_str, require_surface_id};
 
 pub fn handle_goal_set(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -33,7 +33,7 @@ pub fn handle_goal_set(
 
 pub fn handle_goal_get(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -51,7 +51,7 @@ pub fn handle_goal_get(
 
 pub fn handle_goal_clear(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,

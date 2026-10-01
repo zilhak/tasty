@@ -18,7 +18,7 @@ fn serialize<T: serde::Serialize>(id: Value, value: T) -> JsonRpcResponse {
 
 pub fn handle_barrier_create(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -76,7 +76,7 @@ pub fn handle_barrier_signal(
 
 pub fn handle_barrier_state(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -98,7 +98,7 @@ pub fn handle_barrier_state(
 /// 완료까지 기다리지 않고 현재 barrier 상태를 반환한다.
 pub fn handle_barrier_await(
     core: &AppServices,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -108,7 +108,7 @@ pub fn handle_barrier_await(
 
 pub fn handle_barrier_list(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -127,7 +127,7 @@ pub fn handle_barrier_list(
 
 pub fn handle_barrier_delete(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

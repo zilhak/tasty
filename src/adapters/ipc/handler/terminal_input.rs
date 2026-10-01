@@ -1,18 +1,18 @@
 //! Global input rules use the same settings update/save path as the settings UI.
 use serde_json::{Value, json};
 
-use crate::core::CoreState;
+use crate::runtime::engine_read::EngineRead;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::ipc::window_port::IntentOutbox;
 
-pub fn get(engine: &CoreState, id: Value) -> JsonRpcResponse {
-    JsonRpcResponse::success(id, json!({ "rules": engine.runtime.settings.terminal_input.rules }))
+pub fn get(engine: &EngineRead<'_>, id: Value) -> JsonRpcResponse {
+    JsonRpcResponse::success(id, json!({ "rules": engine.settings.terminal_input.rules }))
 }
 
 pub fn handle_input_rule_update(
     out: &mut IntentOutbox,
-    engine: &CoreState,
+    engine: &EngineRead<'_>,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -21,7 +21,7 @@ pub fn handle_input_rule_update(
     let Some(app) = params.get("app").and_then(Value::as_str) else {
         return JsonRpcResponse::invalid_params(id, "'app' must be a string");
     };
-    let mut settings = engine.runtime.settings.clone();
+    let mut settings = engine.settings.clone();
     let input = &mut settings.terminal_input;
     let result = if method == "settings.remove_input_rule" {
         input.remove_rule(app);

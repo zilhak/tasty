@@ -129,7 +129,7 @@ pub(super) fn collect_events(
 /// `telemetry.summary` — (metric, agent) 별 합/카운트/min/max/last.
 pub fn handle_summary(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -164,7 +164,7 @@ pub fn handle_summary(
 /// `since` / `until` (선택, unix ms).
 pub fn handle_timeseries(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -212,7 +212,7 @@ pub fn handle_timeseries(
 /// `telemetry.top` — agent 또는 workspace 기준 sum 내림차순.
 pub fn handle_top(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

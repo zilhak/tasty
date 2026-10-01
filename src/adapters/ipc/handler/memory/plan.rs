@@ -27,7 +27,7 @@ fn parse_plan_step_state(s: &str, id: &Value) -> Result<plan_mod::PlanStepState,
 
 pub fn handle_plan_create(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -71,7 +71,7 @@ pub fn handle_plan_create(
 
 pub fn handle_plan_get(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -96,7 +96,7 @@ pub fn handle_plan_get(
 
 pub fn handle_plan_list(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -113,7 +113,7 @@ pub fn handle_plan_list(
 
 pub fn handle_plan_delete(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -135,7 +135,7 @@ pub fn handle_plan_delete(
 
 pub fn handle_plan_add_step(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -169,7 +169,7 @@ pub fn handle_plan_add_step(
 
 pub fn handle_plan_remove_step(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -198,7 +198,7 @@ pub fn handle_plan_remove_step(
 
 pub fn handle_plan_update_step(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,

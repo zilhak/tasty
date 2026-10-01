@@ -13,7 +13,7 @@ fn detect_rss_self_report(
     core: &AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     ev: &tasty_telemetry::TelemetryEvent,
 ) {
     if ev.metric != tasty_telemetry::RSS_METRIC_NAME {
@@ -34,7 +34,7 @@ pub fn handle_record(
     core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -74,7 +74,7 @@ pub fn handle_record_batch(
     core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     caller: &CallerContext,
     id: Value,
     params: &Value,

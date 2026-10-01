@@ -10,7 +10,7 @@ use tasty_terminal::OUTPUT_RETENTION_MAX_BYTES;
 
 pub(crate) fn handle_set_mark(
     out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

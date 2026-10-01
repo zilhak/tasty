@@ -7,12 +7,12 @@ use serde_json::json;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::params::require_u32;
-use crate::core::{CoreState, PendingMarkdownContentForward};
+use crate::core::{PendingMarkdownContentForward};
 
 /// 로컬 mirror surface ID로 원문을 요청한다. 원격 ID 변환은 attach 세션 매핑을 사용한다.
 /// 대상 세션이 없으면 App의 요청 처리 단계에서 플러그인에 ok:false 결과를 보낸다.
 pub fn handle_content_request(
-    engine: &mut CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

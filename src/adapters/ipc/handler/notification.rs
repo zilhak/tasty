@@ -36,7 +36,7 @@ pub(crate) fn latest_notifications(mut rows: Vec<serde_json::Value>) -> Vec<serd
 
 pub fn handle_notification_create(
     out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

@@ -84,7 +84,7 @@ pub(super) fn handle_ui_state(
 /// 알 수 없는 키는 무시하고 잘못된 타입은 거절한다. GUI 없이도 같은 설정 변경 경로를 쓴다.
 pub(super) fn handle_debug_settings_apply(
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

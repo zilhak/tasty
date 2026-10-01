@@ -6,7 +6,7 @@ use serde_json::json;
 
 use tasty_ipc::protocol::JsonRpcResponse;
 
-use crate::core::{CoreState, PendingGitQueryForward};
+use crate::core::{PendingGitQueryForward};
 use tasty_ipc::stream_hub::GitQueryKind;
 
 /// `git_viewer.query { kind, local_surface_id, worktree_path?, diff_path? }` 요청.
@@ -25,7 +25,7 @@ struct GitViewerQueryReq {
 }
 
 pub fn handle_query(
-    engine: &mut CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

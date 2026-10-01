@@ -393,7 +393,7 @@ pub(crate) fn mark_durability(core: &AppServices, mut resp: JsonRpcResponse) -> 
 
 pub fn handle_put(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -427,7 +427,7 @@ pub fn handle_put(
 
 pub fn handle_get(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -452,7 +452,7 @@ pub fn handle_get(
 
 pub fn handle_delete(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -478,7 +478,7 @@ pub fn handle_delete(
 
 pub fn handle_list(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -509,7 +509,7 @@ pub fn handle_list(
 
 pub fn handle_exists(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -533,7 +533,7 @@ pub fn handle_exists(
 
 pub fn handle_count(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -572,7 +572,7 @@ pub fn handle_count(
 
 pub fn handle_scopes(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     _params: &Value,
@@ -585,7 +585,7 @@ pub fn handle_scopes(
 
 pub fn handle_stats(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

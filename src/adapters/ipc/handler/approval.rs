@@ -141,7 +141,7 @@ pub(crate) fn elevation_error_data(
 /// 창 없이 권한 요청을 만든다. GUI 호출자는 publish_capability_elevation으로 팝업도 연다.
 pub(crate) fn publish_capability_elevation_at(
     core: &mut crate::app::services::AppServices,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     workspace_id: Option<u32>,
     agent_id: &str,
     method: &str,
@@ -224,7 +224,7 @@ pub(crate) fn publish_capability_elevation_at(
 pub(crate) fn publish_capability_elevation(
     core: &mut crate::app::services::AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     agent_id: &str,
     method: &str,
     permission: &str,

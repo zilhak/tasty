@@ -6,7 +6,7 @@ use crate::app::services::AppServices;
 
 pub fn handle_summary_set(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -39,7 +39,7 @@ pub fn handle_summary_set(
 /// `approval.summary.get` — workspace 의 요약을 반환. 없으면 `content: null`.
 pub fn handle_summary_get(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

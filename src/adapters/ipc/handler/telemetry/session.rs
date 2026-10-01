@@ -15,7 +15,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 pub fn handle_session_summary(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

@@ -9,7 +9,7 @@ use super::require_surface_id;
 /// kind가 needs_input이면 응답 필요, 그 외 값과 생략은 호환 동작으로 completion을 쓴다.
 pub(crate) fn handle_completion(
     out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

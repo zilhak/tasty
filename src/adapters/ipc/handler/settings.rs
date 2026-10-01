@@ -3,14 +3,14 @@
 use super::params::{self, p_try};
 use serde_json::{Value, json};
 
-use crate::core::CoreState;
+use crate::runtime::engine_read::EngineRead;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 /// caller.owner()와 storage_key에 해당하는 값을 반환한다. 없으면 null이다.
 /// Local은 _host, Plugin은 plugin_id, Agent는 agent_id를 키로 쓰며 별도 타입 거절은 없다.
 pub fn handle_get_plugin_setting(
-    engine: &CoreState,
+    engine: &EngineRead<'_>,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -28,8 +28,8 @@ pub fn handle_get_plugin_setting(
 
 /// `settings.get_remote_transfer {}` → `RemoteTransferSettings` 직렬화
 /// (`{ "dir": <string>, "max_mb": <u64> }`). 원격 전송 저장 정책 조회.
-pub fn handle_get_remote_transfer(engine: &CoreState, id: Value) -> JsonRpcResponse {
-    match serde_json::to_value(&engine.runtime.settings.remote_transfer) {
+pub fn handle_get_remote_transfer(engine: &EngineRead<'_>, id: Value) -> JsonRpcResponse {
+    match serde_json::to_value(&engine.settings.remote_transfer) {
         Ok(v) => JsonRpcResponse::success(id, v),
         Err(e) => JsonRpcResponse::error(id, -32603, format!("failed to serialize settings: {e}")),
     }
@@ -39,11 +39,11 @@ pub fn handle_get_remote_transfer(engine: &CoreState, id: Value) -> JsonRpcRespo
 /// 원본을 미리 바꾸면 이전 값과의 차이를 잃으므로 후속 처리에서 저장까지 맡긴다.
 pub fn handle_set_remote_transfer(
     out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &CoreState,
+    engine: &EngineRead<'_>,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let mut new_settings = engine.runtime.settings.clone();
+    let mut new_settings = engine.settings.clone();
     let mut changed = false;
 
     if let Some(dir) = params.get("dir") {

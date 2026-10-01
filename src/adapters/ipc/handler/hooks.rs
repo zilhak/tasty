@@ -12,7 +12,7 @@ const BUILTIN_HOOK_EVENTS: &str = "process-exit, bell, notification, output-matc
 
 /// parse가 Custom으로 받은 이름은 활성 플러그인이 선언한 이벤트인지 추가 확인한다.
 fn validate_hook_event(
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     event: &HookEvent,
     id: &serde_json::Value,
 ) -> Result<(), JsonRpcResponse> {
@@ -65,7 +65,7 @@ pub(crate) fn handle_hook_set(
         }
     };
 
-    if let Err(resp) = validate_hook_event(engine, &event, &id) {
+    if let Err(resp) = validate_hook_event(&engine.as_ref(), &event, &id) {
         return resp;
     }
 
@@ -267,7 +267,7 @@ pub(crate) fn handle_surface_fire_hook(
         }
     };
 
-    if let Err(resp) = validate_hook_event(engine, &event, &id) {
+    if let Err(resp) = validate_hook_event(&engine.as_ref(), &event, &id) {
         return resp;
     }
 

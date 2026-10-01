@@ -16,7 +16,7 @@ use super::{
 /// 만료 항목은 읽기에서 이미 제외된다. gc는 디스크를 정리하고 quota를 회복하며 Local만 허용한다.
 pub fn handle_gc(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     _params: &Value,
@@ -36,7 +36,7 @@ pub fn handle_gc(
 /// 그리고 list 와 동일한 `prefix`/`since`/`until`/`limit`/`offset`.
 pub fn handle_query(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -79,7 +79,7 @@ pub fn handle_query(
 /// Secret 은 export 하지 않는다. 응답: `{ entries: [...], count: N }`.
 pub fn handle_export(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -103,7 +103,7 @@ pub fn handle_export(
 /// 응답: `{ applied: N, skipped: M }`.
 pub fn handle_import(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,

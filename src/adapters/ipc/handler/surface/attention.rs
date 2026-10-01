@@ -35,7 +35,7 @@ pub(crate) fn handle_attention_get(
 /// mirror의 해제 전달은 실제 포커스나 로컬 알림 읽음 같은 사용자 확인에서만 허용한다(ADR-0024).
 pub(crate) fn handle_attention_clear(
     out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

@@ -15,7 +15,7 @@ use super::{
 
 pub fn handle_secret_put(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -46,7 +46,7 @@ pub fn handle_secret_put(
 
 pub fn handle_secret_get(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -69,7 +69,7 @@ pub fn handle_secret_get(
 
 pub fn handle_secret_delete(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -92,7 +92,7 @@ pub fn handle_secret_delete(
 
 pub fn handle_secret_list(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -123,7 +123,7 @@ pub fn handle_secret_list(
 
 pub fn handle_secret_exists(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -145,7 +145,7 @@ pub fn handle_secret_exists(
 
 pub fn handle_secret_count(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -164,7 +164,7 @@ pub fn handle_secret_count(
 
 pub fn handle_secret_scopes(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     _params: &Value,
@@ -178,7 +178,7 @@ pub fn handle_secret_scopes(
 
 pub fn handle_secret_stats(
     core: &AppServices,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,

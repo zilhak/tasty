@@ -62,7 +62,7 @@ pub(crate) fn record_ipc_call(
     core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     caller: &CallerContext,
     method: &str,
     params: &Value,
@@ -100,7 +100,7 @@ pub(crate) fn record_ipc_call(
 /// 호출 후 CallBurst/SlowLoop를 검사해 저장한다. 알림은 호출자가 담당한다.
 fn detect_anomalies_after_ipc(
     core: &AppServices,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     agent: &str,
     method: &str,
     params: &Value,
@@ -123,7 +123,7 @@ pub(crate) fn record_rss_sample(
     core: &AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     agent: &str,
     rss_bytes: u64,
     ts: u64,
@@ -195,7 +195,7 @@ fn build_event(
 /// 같은 밀리초에 들어온 이벤트는 새 seq로 키 충돌을 피한다.
 fn persist_event(
     core: &AppServices,
-    engine: &mut crate::core::CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     ev: &TelemetryEvent,
 ) -> std::result::Result<String, String> {
     let seq = core.telemetry_seq.next();
