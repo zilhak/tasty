@@ -85,7 +85,7 @@ pub enum MirrorEvent {
 /// connection is explicitly desynchronized; dropping content never masquerades as a continuous cut.
 mod outbox {
     use super::MirrorEvent;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     #[derive(Default)]
     struct Pending {
         events: Vec<MirrorEvent>,
