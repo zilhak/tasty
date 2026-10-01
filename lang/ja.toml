@@ -5887,3 +5887,7 @@ help = "規則を適用するアプリ名です"
 
 [cli.help._root.settings.set-input-rule.arg.shift_enter_newline]
 help = "Shift+EnterをLFでエンコードするか（true）、プラットフォームの既定値を使います（false）"
+
+[surface.restore]
+tab_title_fallback = "シェル"
+recovery_unresolved = "実行リソースの復旧状態を確認できませんでした。"

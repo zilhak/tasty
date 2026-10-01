@@ -5887,3 +5887,7 @@ help = "규칙에 적용할 앱 이름입니다"
 
 [cli.help._root.settings.set-input-rule.arg.shift_enter_newline]
 help = "Shift+Enter를 LF로 인코딩하거나(true) 플랫폼 기본값을 사용합니다(false)"
+
+[surface.restore]
+tab_title_fallback = "셸"
+recovery_unresolved = "실행 자원의 복구 상태를 확인하지 못했습니다."

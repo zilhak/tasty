@@ -5893,3 +5893,7 @@ help = "Application name matched by the rule"
 
 [cli.help._root.settings.set-input-rule.arg.shift_enter_newline]
 help = "Encode Shift+Enter as LF (true) or use the platform default (false)"
+
+[surface.restore]
+tab_title_fallback = "Shell"
+recovery_unresolved = "Resource recovery is unresolved."

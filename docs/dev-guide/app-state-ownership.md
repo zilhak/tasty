@@ -164,3 +164,5 @@ EngineRef/EngineMut의 참조 필드와 Session의 암묵적 Deref를 검사한�
 원격 구조 요청의 내부 durable correlation은 client·runtime epoch·op_id와 원 연결 registration을 보존한다. 128비트 registration은 JSON 숫자 범위로 잘리지 않도록 십진 문자열로 기록한다. StreamControl의 공개 wire와 원 연결의 Weak binding 검증은 이 표현 변경과 독립이며, correlation을 재시도 키로 사용하지 않는다.
 
 실행 정리의 관측값은 수명과 구분한다. runner의 첫 stop 호출 결과를 사용하지 않아도 원 receipt는 EngineSession 또는 RunnerRegistry에 남아 후속 poll이 실제 join을 관측한다. activation의 OnceLock은 최초 Ready/Failed만 전달하며, 반복 publication이나 Drop이 이미 전달한 결과를 덮어쓰지 않는다. 점유 해제의 예상 밖 실패는 로그로 남긴다.
+
+복원할 surface에 저장된 탭 제목이 없거나 복구 미확정 사유가 없는 경우의 표시 문구는 `surface.restore` 번역 키를 사용한다. 이미 기록된 제목과 원 오류 사유는 보존한다.

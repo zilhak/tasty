@@ -270,6 +270,6 @@ pub(crate) fn recovery_blocked_reason(
         placeholder
             .failure
             .as_deref()
-            .unwrap_or("resource recovery is unresolved"),
+            .unwrap_or_else(|| crate::i18n::t("surface.restore.recovery_unresolved")),
     )
 }

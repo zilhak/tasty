@@ -71,7 +71,10 @@ pub(super) fn undo(
             1,
             Tab {
                 pane: 1,
-                name: snapshot.tab_name.clone().unwrap_or_else(|| "Shell".into()),
+                name: snapshot
+                    .tab_name
+                    .clone()
+                    .unwrap_or_else(|| crate::i18n::t("surface.restore.tab_title_fallback").into()),
                 explicit_name: None,
                 layout: SplitTree::Leaf(surface),
             },
