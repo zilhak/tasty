@@ -520,11 +520,6 @@ const ROSTER: &[(&str, Why, &str)] = &[
         "이름은 list가 아니지만 창별 트리를 합쳐 응답한다. 집계 정책은 window_owned_lists_are_classified 명부에서 확인한다.",
     ),
     (
-        "workspace_category.create",
-        CreatesWithoutATarget,
-        "name을 받아 새 카테고리를 만들므로 기존 대상 ID가 없다.",
-    ),
-    (
         "pty.spawn",
         CreatesWithoutATarget,
         "새 PTY를 생성하는 요청이므로 기존 PTY ID가 없다.",
@@ -543,11 +538,6 @@ const ROSTER: &[(&str, Why, &str)] = &[
         "file_picker.trigger",
         CreatesWithoutATarget,
         "대상 창 인자가 없어 요청을 받은 창의 dialogs에 팝업을 만든다. owner_popup_instance는 플러그인 팝업 ID다.",
-    ),
-    (
-        "split",
-        RoutedOutsideRequestTarget,
-        "target_surface와 target_pane의 문자열 ID·별칭은 App::find_request_owner가 해석한다. params_resource_id 배열 밖이라 이 검색에서는 대상 키를 찾지 못한다.",
     ),
     (
         "markdown.navigate",
