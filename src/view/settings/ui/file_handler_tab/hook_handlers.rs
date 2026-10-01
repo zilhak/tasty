@@ -675,15 +675,27 @@ mod tests {
     #[test]
     fn commit_add_validates_and_steps_priority() {
         let mut hh = shell_add_draft("base", "echo", 25);
+        let rows = vec![HookHandler {
+            id: HookHandlerId::new("user/existing"),
+            source: HookSource::Hook,
+            priority: 40,
+            owner: HookHandlerOwner::User,
+            action: HookHandlerAction::ShellCommand {
+                command: "echo existing".into(),
+                args: vec![],
+            },
+            display_name_i18n_key: None,
+            disabled: false,
+        }];
         hh.form.id_input = "Bad.Name".into();
-        commit_add(&mut hh, &[]);
+        commit_add(&mut hh, &rows);
         assert!(hh.form.error.is_some());
         assert_eq!(hh.add.len(), 1);
         hh.form.id_input = "pipeline-done".into();
         hh.form.cmd_input = "tasty notify done".into();
         hh.form.error = None;
-        commit_add(&mut hh, &[]);
+        commit_add(&mut hh, &rows);
         assert_eq!(hh.add.len(), 2);
-        assert_eq!(hh.add[1].priority, 35);
+        assert_eq!(hh.add[1].priority, 50);
     }
 }
