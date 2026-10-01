@@ -233,10 +233,11 @@ IPC/CLI: `completion_strategy.list`(전 범위 조회, 비활성 포함) / `tast
 
 `RunnerContext` 는 `TaskService` 안에서만 다룬다. `RunnerRegistry` 는 `TaskService` 가 소유하고 engine 생성 때 `TaskScope` 에 같은 `Arc` 를 넘기는 것 외에는 서비스 밖으로 나가지 않는다. 바깥 코드는 서비스(`AppServices.tasks`)와 engine 의 `TaskScope` 를 통해 다음 API 만 부른다.
 
-- IPC 핸들러(`src/adapters/ipc/handler/agent/task.rs`): 구성 표의 작업 API, runner 제어 `runner_start`/`runner_stop`/`runner_status`, `AwaitExternal` 대기 정보를 읽는 `dispatch_handle`.
+- IPC 핸들러(`src/adapters/ipc/handler/agent/task.rs`): 구성 표의 작업 API, runner 제어 `runner_start`/`runner_stop_scoped`/`runner_status`, `AwaitExternal` 대기 정보를 읽는 `dispatch_handle`.
 - `agent.task_await` dispatch(GUI `src/app/ipc/app_methods/task_await.rs`, headless `src/boot/headless_dispatch.rs`): 소유 engine 범위의 `awaiter` 를 받아 워커로 넘긴다.
 - 부팅(`src/boot.rs`, `src/app/boot_machine.rs`): `purge_stale_agent_state_on_boot`.
 - engine 생성(`src/boot.rs`, `src/app/window_lifecycle.rs`): `TaskScope` 생성자는 registry `Arc` 를 필수 인자로 받는다. 첫 창·추가 창·headless engine 모두 `TaskService::runner_registry` 의 같은 `Arc` 를 넘긴다.
+- workspace 삭제와 Engine 해제: `TaskScope::request_stop_workspace` 또는 `TaskService::request_stop_scope`로 원 범위의 runner에 중지만 요청한다. `RunnerStopReceipt`와 `poll_runner_stops`는 끝난 worker만 join하며 UI에서 blocking stop을 호출하지 않는다.
 - 호스트 이벤트 소비(`src/app/dispatch/host_events.rs`, `src/intent/headless.rs`): `resolve_hook_task_wait`.
 - DAG 화면: 서비스를 받지 않으므로 runner 상태는 `TaskScope::runner_liveness`, 목록은 engine 의 memory 와 범위로 `task_list_from_state`·`dag_list_from_state` 를 읽는다.
 
@@ -245,8 +246,13 @@ IPC/CLI: `completion_strategy.list`(전 범위 조회, 비활성 포함) / `tast
 `TaskService` 의 비공개 필드다. 시작·정지·조회는 위 `runner_*` API 로만 하고, 화면은 `TaskScope::runner_liveness` 로 실행·crash 여부만 읽는다. workspace 1개당 thread 1개:
 
 - `start(ctx, ws) -> bool` — 이미 실행 중이면 false(idempotent). crashed 면 정리 후 재시작 허용.
-- `stop(ws) -> bool` — stop_tx + join.
+- 명시 IPC stop은 `runner_stop_scoped(scope, ws)`로 원 범위를 고정하고 기존 동기 stop·join 응답 의미를 유지한다.
+- 수명 종료의 stop 요청은 원 hub와 실행 control을 고정한 receipt를 반환한다. `Waiting`은 미회수, `Joined`는 정상 join, `WorkerFailed`는 실패한 worker의 실제 join이다. 옛 receipt가 같은 숫자 workspace ID의 새 owner를 지우지 않는다.
 - `status(ctx, ws)` — `running`/`crashed`/`ready_count`/`running_count`/`store_error`/`list_failures`. 두 카운트는 `Option` 이다 — store 를 못 읽으면 `None`(응답에선 `null`)이고 `store_error` 가 이유를 싣는다. `list_failures` 는 러너 스레드의 연속 조회 실패 횟수(러너가 없으면 0).
+
+TaskScope의 Drop은 task 취소가 아니다. runner stop도 task 상태나 OS 자식을 취소하지 않는다. workspace가 확정 구조에서 사라졌을 때만 해당 runner를 중지하며 같은 Engine 안의 순서 변경은 유지한다. Engine 해제는 scope의 모든 runner와 물리 자원 receipt를 기다린다. 앱 종료 대기 상한을 넘기면 남은 worker를 미회수로 기록하며 join 완료로 간주하지 않는다.
+
+scope 전체 stop 뒤에는 같은 scope의 늦은 runner 시작을 거절한다. 이미 등록된 hook wait와 awaiter는 지우지 않으며, 늦은 hook 완료도 등록 당시의 `TaskWakerHub`와 `agent_seq`로 전달한다. 현재 선택된 다른 Engine의 허브로 재해소하지 않는다.
 
 thread 본문은 `RunnerLoop::tick` + 500ms `recv_timeout`. tick 안 memory lock 은 *짧은 구간* 만(list → release → dispatch/poll(lock 밖) → re-lock for set_state) — 사용자 CLI 동시 호출과 락 경합 최소화.
 

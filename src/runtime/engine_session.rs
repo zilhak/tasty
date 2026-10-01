@@ -38,6 +38,7 @@ pub(crate) struct EngineSession {
     >,
     pub(crate) hooks: crate::hook_runtime::HookRuntimeState,
     pub(crate) task_scope: tasty_task_runtime::TaskScope,
+    pub(crate) runner_stop:Option<tasty_task_runtime::RunnerStopReceipt>,
     pub(crate) observer_router: crate::output_observer::ObserverRouter,
     pub(crate) runtime: crate::runtime::engine_runtime::EngineRuntime,
     /// 실행 자원의 Drop까지 격리 홈이 살아 있어야 한다.
@@ -59,6 +60,12 @@ impl EnginePersistence {
 }
 
 impl EngineSession {
+    /// Stop only this scope's runners; retain their receipts until the actual worker join.
+    pub(crate) fn poll_runner_stop(&mut self,tasks:&tasty_task_runtime::TaskService)->tasty_task_runtime::RunnerStopObservation {
+        let scope=&self.task_scope;
+        self.runner_stop.get_or_insert_with(||tasks.request_stop_scope(scope)).poll()
+    }
+
     pub(crate) fn read(&self)->super::engine_read::EngineRead<'_> {self.as_ref().read()}
 
     pub(crate) fn borrow_mut(&mut self) -> EngineMut<'_> {

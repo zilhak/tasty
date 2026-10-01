@@ -55,6 +55,7 @@ pub(crate) struct ShutdownState {
     port_scan_deadline: Option<Instant>,
     profile_detection_deadline:Option<Instant>,
     screenshot_deadline:Option<Instant>,
+    runner_stop_deadline:Instant,
 }
 
 enum StepOutcome {
@@ -76,8 +77,10 @@ impl App {
             port_scan_deadline: Some(Instant::now() + PORT_SCAN_RECLAIM_TIMEOUT),
             profile_detection_deadline:Some(Instant::now()+Duration::from_secs(5)),
             screenshot_deadline:Some(Instant::now()+Duration::from_secs(5)),
+            runner_stop_deadline:Instant::now()+Duration::from_secs(5),
         });
 
+        for session in self.engines.all_sessions_mut() {let _=session.poll_runner_stop(&self.services.tasks);}
         self.port_scans.begin_shutdown();
         self.services.profile_detections.begin_shutdown();
         self.screenshot_workers.begin_shutdown();
@@ -296,6 +299,11 @@ impl App {
     /// 플러그인이 닫힘에 따른 파일·자식 정리를 수행할 기회를 주기 위한 순서다.
     /// 모든 종료 요청을 여기서 보낸 뒤 S4에서 함께 기다린다. shutdown_channel_order가 호출 배치를 검사한다.
     fn shutdown_step_closing_surfaces(&mut self) -> StepOutcome {
+        let remaining=self.engines.all_sessions_mut().map(|session|session.poll_runner_stop(&self.services.tasks)).filter(|observation|matches!(observation,tasty_task_runtime::RunnerStopObservation::Waiting)).count();
+        if remaining!=0 {
+            if self.state.shutdown.as_ref().is_some_and(|state|Instant::now()<state.runner_stop_deadline) {return StepOutcome::Waiting;}
+            tracing::warn!(remaining,"runner shutdown timed out; scopes retain unjoined workers");
+        }
         self.emit_shutdown_initiated();
         self.shutdown_close_surfaces();
         self.shutdown_join_observer_sinks();

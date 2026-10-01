@@ -960,6 +960,7 @@ fn remove_mirror_workspace_from_engine(
     else {
         return false;
     };
+    let _=engine.task_scope.request_stop_workspace(local_workspace);
     for &local in remote_to_local.values() {
         engine.runtime.surfaces.remove(&local);
         engine.runtime.terminals.remove(local);

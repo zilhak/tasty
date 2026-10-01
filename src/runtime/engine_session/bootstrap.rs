@@ -134,6 +134,7 @@ impl EngineSession {
                 next_ids.global_hook_counter(),
             ),
             task_scope: tasty_task_runtime::TaskScope::new(runner_registry),
+            runner_stop:None,
             observer_router: crate::output_observer::ObserverRouter::with_counter(
                 next_ids.observer_counter(),
             ),

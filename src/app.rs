@@ -435,3 +435,10 @@ pub(crate) mod webview_sync;
 
 #[cfg(feature="gui")]
 pub(crate) mod remote_tool_files;
+
+impl App {
+    /// Reap only workers whose stop has been requested; never wait for a running thread here.
+    pub(crate) fn runner_stop_poll_deadline(&self)->Option<std::time::Instant> {
+        (self.services.tasks.poll_runner_stops()!=0).then(||std::time::Instant::now()+std::time::Duration::from_millis(10))
+    }
+}

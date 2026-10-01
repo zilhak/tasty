@@ -66,6 +66,9 @@ impl App {
     pub(crate) fn poll_retiring_engine_owners(&mut self) {
         for id in self.engines.releasing_ids() {
             let Some(session)=self.engines.session_mut(id) else {continue;};
+            if matches!(session.poll_runner_stop(&self.services.tasks),tasty_task_runtime::RunnerStopObservation::Waiting) {continue;}
+            // WorkerFailed is an actual joined worker failure, reported once by the registry.
+            // It does not cancel tasks; physical EngineRelease still needs its own receipts.
             if self.journal.is_halted() {
                 if !self.journal.release_halted_resources(session,self.plugin_manager.as_mut()) {continue;}
             } else {

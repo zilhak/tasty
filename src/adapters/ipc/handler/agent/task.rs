@@ -791,7 +791,7 @@ pub fn handle_task_run(
             core.tasks.runner_start(engine.task_scope, workspace_id);
         }
         "stop" => {
-            core.tasks.runner_stop(workspace_id);
+            core.tasks.runner_stop_scoped(engine.task_scope, workspace_id);
         }
         "status" => {}
         other => {

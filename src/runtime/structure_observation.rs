@@ -10,6 +10,12 @@ impl EngineMut<'_> {
             E::PaneSplit {..}|E::PaneMoved {..}|E::PaneClosed {..}|E::TabCreated {..}|E::TabRenamed {..}|E::TabExplicitNameSet {..}|E::TabMoved {..}|E::TabClosed {..}|
             E::SurfaceSplit {..}|E::SurfaceMoved {..}|E::SurfaceClosed {..}|E::SurfaceConverted {..}|E::SurfaceActivationChanged {..}|E::PaneRatioSet {..}|E::SurfaceRatioSet {..}));
         if !structural {return;}
+        for workspace in &before.workspace_order {
+            if !self.core.local_workspaces().iter().any(|current|current.id==*workspace) {
+                // The registry retains stop ownership even after this workspace leaves the tree.
+                let _=self.task_scope.request_stop_workspace(*workspace);
+            }
+        }
         for (tab,old) in &before.tabs {
             if let Some(pane)=self.core.find_pane_for_tab(*tab) && pane!=old.pane {
                 self.runtime.pending_host_events.push(crate::core::host_event::PendingHostEvent::TabMoved {tab_id:*tab,from_pane:old.pane,to_pane:pane});

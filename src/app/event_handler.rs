@@ -355,14 +355,14 @@ impl ApplicationHandler<AppEvent> for App {
         if self.journal.is_halted() {
             self.ipc_pacer.loop_reached_about_to_wait();
             self.process_ipc();
-            event_loop.set_control_flow(self.engine_release_poll_deadline().map_or(winit::event_loop::ControlFlow::Wait,winit::event_loop::ControlFlow::WaitUntil));
+            event_loop.set_control_flow(min_deadline(self.engine_release_poll_deadline(),self.runner_stop_poll_deadline()).map_or(winit::event_loop::ControlFlow::Wait,winit::event_loop::ControlFlow::WaitUntil));
             return;
         }
 
         self.poll_journal_application();
         if !self.journal.pauses_observation() {self.poll_pending_window();}
         if self.journal.is_halted() {
-            event_loop.set_control_flow(self.engine_release_poll_deadline().map_or(winit::event_loop::ControlFlow::Wait,winit::event_loop::ControlFlow::WaitUntil));
+            event_loop.set_control_flow(min_deadline(self.engine_release_poll_deadline(),self.runner_stop_poll_deadline()).map_or(winit::event_loop::ControlFlow::Wait,winit::event_loop::ControlFlow::WaitUntil));
             return;
         }
 
@@ -2099,6 +2099,7 @@ impl App {
         };
         let deadline = min_deadline(deadline, self.journal.cleanup_poll_deadline());
         let deadline = min_deadline(deadline, self.engine_release_poll_deadline());
+        let deadline = min_deadline(deadline, self.runner_stop_poll_deadline());
         let deadline = if self.journal.pauses_observation() {deadline} else {
             min_deadline(deadline,self.screenshot_workers.has_pending().then(||std::time::Instant::now()+std::time::Duration::from_millis(20)))
         };

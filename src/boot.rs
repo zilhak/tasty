@@ -718,6 +718,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         };
         let deadline =
             crate::app::timers::min_deadline(deadline, app.journal.cleanup_poll_deadline());
+        let deadline=crate::app::timers::min_deadline(deadline,app.runner_stop_poll_deadline());
         let deadline=if app.journal.is_halted() || app.journal.pauses_observation(){deadline}else{crate::app::timers::min_deadline(deadline,engine.runtime.input_submit_deadline())};
         let deadline=if app.journal.is_halted() || app.journal.pauses_observation() {deadline} else {
             crate::app::timers::min_deadline(deadline,app.services.profile_detections.has_pending().then(||std::time::Instant::now()+std::time::Duration::from_millis(20)))
@@ -745,6 +746,8 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
             break;
         }
     }
+    drop(engine);
+    let _=session.poll_runner_stop(&app.services.tasks);
     app.services.profile_detections.begin_shutdown();
     let deadline=std::time::Instant::now()+std::time::Duration::from_secs(5);
     loop {
@@ -752,6 +755,14 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         if remaining==0 {break;}
         if std::time::Instant::now()>=deadline {
             tracing::warn!(remaining,"headless profile detection shutdown timed out; workers remain unjoined");
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    loop {
+        if !matches!(session.poll_runner_stop(&app.services.tasks),tasty_task_runtime::RunnerStopObservation::Waiting) {break;}
+        if std::time::Instant::now()>=deadline {
+            tracing::warn!("headless runner shutdown timed out; scope retains unjoined workers");
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
