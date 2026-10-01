@@ -68,6 +68,12 @@ pub(crate) enum PresetCaptureReply {
         sender: std::sync::mpsc::SyncSender<crate::ipc::protocol::JsonRpcResponse>,
         name: Option<String>,
     },
+    Plugin {
+        plugin: String,
+        binding: std::sync::Weak<()>,
+        call_id: u64,
+        name: Option<String>,
+    },
     Intent {
         origin: crate::intent::IntentOrigin,
         view: std::sync::Weak<()>,
@@ -103,9 +109,23 @@ impl JournalApplication {
         source: u32,
         reply: PresetCaptureReply,
     ) -> Result<u64, String> {
-        if self.is_halted() { return Err("journal is halted".into()); }
         let binding = session.journal_binding.clone().ok_or("preset capture engine is unbound")?;
-        let draft = crate::intent::preset_capture::capture_draft(presentation, &session.as_ref(), kind, source)?;
+        self.queue_preset_capture_borrowed(&session.as_ref(), session.id, binding, presentation, kind, source, reply)
+    }
+
+    pub(crate) fn queue_preset_capture_borrowed(
+        &mut self,
+        engine: &crate::runtime::engine_access::EngineRef<'_>,
+        engine_id: EngineId,
+        binding: crate::runtime::journal_product::EngineBinding,
+        presentation: &dyn crate::model::StructurePresentation,
+        kind: tasty_presets::PresetKind,
+        source: u32,
+        reply: PresetCaptureReply,
+    ) -> Result<u64, String> {
+        if self.is_halted() { return Err("journal is halted".into()); }
+        if self.runtime_epoch != Some(binding.runtime_epoch) {return Err("preset capture belongs to another runtime".into());}
+        let draft = crate::intent::preset_capture::capture_draft(presentation, engine, kind, source)?;
         let reply_bytes = preset_reply_weight(&reply);
         let weight = draft.weight().saturating_add(reply_bytes).saturating_add(256);
         if self.preset_captures.pending.len() + self.preset_captures.completed.len() >= 64
@@ -117,7 +137,7 @@ impl JournalApplication {
         self.next_ticket = ticket.checked_add(1).ok_or("preset capture ticket range exhausted")?;
         self.preset_captures.bytes += weight;
         self.preset_captures.pending.insert(ticket, PendingPresetCapture {
-            engine: session.id, binding, reply, work: Some(Work::CapturePreset {draft}), weight, _lease: lease,
+            engine: engine_id, binding, reply, work: Some(Work::CapturePreset {draft}), weight, _lease: lease,
         });
         (self.wake)();
         Ok(ticket)
@@ -212,9 +232,9 @@ pub(crate) struct PresetCaptureNotice {
     pub(crate) result: Result<(tasty_presets::PresetKind, String), String>,
 }
 impl PresetCaptureCompletion {
-    pub(crate) fn save(self, services: &crate::app::services::AppServices) -> Option<PresetCaptureNotice> {
+    pub(crate) fn save(self, services: &crate::app::services::AppServices) -> Option<PresetCaptureOutput> {
         let name = match &self.reply {
-            PresetCaptureReply::Ipc {name, ..} | PresetCaptureReply::Intent {name, ..} => name.as_deref(),
+            PresetCaptureReply::Ipc {name, ..} | PresetCaptureReply::Intent {name, ..} | PresetCaptureReply::Plugin {name, ..} => name.as_deref(),
         };
         let result = self.result.map_err(PresetSaveError::Capture).and_then(|(preset, base)| {
             let kind = preset.kind();
@@ -233,10 +253,19 @@ impl PresetCaptureCompletion {
                 crate::ipc::server::send_response(&sender, response);
                 None
             },
-            PresetCaptureReply::Intent {origin, view, ..} => Some(PresetCaptureNotice {
+            PresetCaptureReply::Plugin {plugin, binding, call_id, ..} => {
+                let id = serde_json::Value::Null;
+                let response = match result {
+                    Ok((_, name)) => crate::ipc::protocol::JsonRpcResponse::success(id, serde_json::json!({"name": name})),
+                    Err(PresetSaveError::Capture(error)) => crate::ipc::protocol::JsonRpcResponse::invalid_params(id, error),
+                    Err(PresetSaveError::Store(error)) => crate::adapters::ipc::handler::preset::mutation_error(id, error),
+                };
+                Some(PresetCaptureOutput::Plugin(PresetPluginReply {plugin,binding,call_id,response}))
+            },
+            PresetCaptureReply::Intent {origin, view, ..} => Some(PresetCaptureOutput::Intent(PresetCaptureNotice {
                 engine: self.engine, binding: self.binding, origin, view,
                 result: result.map_err(|error| match error {PresetSaveError::Capture(error) => error, PresetSaveError::Store(error) => error.to_string()}),
-            }),
+            })),
         }
     }
 }
@@ -250,5 +279,17 @@ fn preset_reply_weight(reply: &PresetCaptureReply) -> usize {
     match reply {
         PresetCaptureReply::Ipc {id, name, ..} => id.to_string().len().saturating_add(name.as_ref().map_or(0, String::len)),
         PresetCaptureReply::Intent {name, ..} => name.as_ref().map_or(0, String::len),
+        PresetCaptureReply::Plugin {plugin, name, ..} => plugin.len().saturating_add(name.as_ref().map_or(0, String::len)),
     }
+}
+
+pub(crate) enum PresetCaptureOutput {
+    Intent(PresetCaptureNotice),
+    Plugin(PresetPluginReply),
+}
+pub(crate) struct PresetPluginReply {
+    pub(crate) plugin: String,
+    pub(crate) binding: std::sync::Weak<()>,
+    pub(crate) call_id: u64,
+    pub(crate) response: crate::ipc::protocol::JsonRpcResponse,
 }
