@@ -22,12 +22,8 @@ pub(super) const RESOLVE_DEPTH: u32 = 5;
 const MIN_METHODS: usize = 200;
 
 /// 한정 범위 밖에서 읽지만 라우팅이 필요 없는 (메서드, 키)와 근거. 전 창 목록 집계 여부와는 별개의 분류다.
-const PAIR_EXEMPT: &[(&str, &str, &str)] = &[(
-    "pty.attach_surface",
-    "id",
-    "같은 요청의 `pane_id` 가 범용 키라 이미 주인을 짚는다 — `request_target.rs` 가 \
-         이 메서드를 pty 한정에서 뺀 이유가 그것이다",
-)];
+// pty.attach_surface의 id/pane_id 해석은 journal create_spec으로 이동했다.
+const PAIR_EXEMPT: &[(&str, &str, &str)] = &[];
 
 /// 키 호출 뒤의 메서드 체인까지만 읽어 다른 수신자의 as_str을 이 키의 문자열 읽기로 오인하지 않도록 한다.
 fn call_chain_after(after: &str, end: usize) -> &str {

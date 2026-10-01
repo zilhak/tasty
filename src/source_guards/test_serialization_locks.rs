@@ -34,7 +34,7 @@ struct Serialized {
 
 const SERIALIZED: &[Serialized] = &[
     Serialized {
-        file: "src/core/surface_registry/webview_kind.rs",
+        file: "src/runtime/surface_registry/webview_kind.rs",
         lock: "WEBVIEW_KIND_TEST_LOCK",
         acquire: &["WEBVIEW_KIND_TEST_LOCK"],
         guarded: &[

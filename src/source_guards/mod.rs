@@ -667,7 +667,7 @@ mod frame_draw_order;
 mod frame_clock_arming;
 
 #[cfg(test)]
-mod auto_tap_suppression_window;
+mod committed_tap_order;
 
 #[cfg(test)]
 mod mesh_bootstrap_order;

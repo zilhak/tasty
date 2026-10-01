@@ -14,8 +14,23 @@ use super::{
     opaque_method_sites, opaque_sites_for, repo_root, rust_sources, strip_comments,
 };
 
-/// request.method로 분기하는 라우터 파일. 2026-09-05 측정.
+/// request.method로 분기하는 라우터 파일. 시험의 리터럴 분기도 같은 문법 검사를 받는다.
 const ROUTERS: &[&str] = &[
+    "src/app/journal.rs",
+    "src/app/journal/commands.rs",
+    "src/app/journal/commands/workspace.rs",
+    "src/app/journal/commands/forwarding.rs",
+    "src/app/journal/commands/replacement.rs",
+    "src/app/journal/commands/tests.rs",
+    "src/app/journal/commands/category.rs",
+    "src/app/journal/commands/create_spec.rs",
+    "src/app/journal/commands/assembly.rs",
+    "src/app/journal/commands/create.rs",
+    "src/app/journal/commands/live_resume.rs",
+    "src/app/journal/commands/view_completion.rs",
+    "src/app/journal/commands/close.rs",
+    "src/app/journal/commands/completion.rs",
+    "src/adapters/ipc/handler/terminal/fixed_input.rs",
     "src/adapters/ipc/handler.rs",
     "src/app/dispatch/list_global.rs",
     "src/app/ipc/app_methods.rs",

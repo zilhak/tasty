@@ -376,15 +376,62 @@ fn the_debug_layers_judge_handled_by_the_step() {
 #[test]
 fn journal_key_declarations_match_the_connected_structural_resolver() {
     use tasty_ipc::method_meta::KEY_KEPT_IN_STRUCTURE_JOURNAL;
-    let implemented: BTreeSet<_> = ["category.rs", "workspace.rs"]
-        .into_iter()
-        .flat_map(|file| {
-            method_literals(&strip_comments(shipped(&read(&format!(
-                "src/app/journal/commands/{file}"
-            )))))
-        })
-        .filter(|method| METHOD_TABLE.iter().any(|(name, _)| name == method))
-        .collect();
+    // Named resolver/dispatch bodies only: this checks literal coverage and connection tokens,
+    // not whether every branch reaches durable completion at runtime.
+    let mut implemented = BTreeSet::new();
+    for (path, function) in [
+        ("src/app/journal/commands/category.rs", "fn resolve("),
+        ("src/app/journal/commands/workspace.rs", "fn resolve("),
+        ("src/app/journal/commands.rs", "fn resolve_ipc_for_engine("),
+        (
+            "src/app/journal/commands.rs",
+            "fn resolve_headless_requests(",
+        ),
+    ] {
+        let source = strip_comments(shipped(&read(path)));
+        let body = fn_body(&source, function).expect("structural resolver body");
+        implemented.extend(method_literals(&body));
+        // split is the one public structural name without a dot.
+        if body.contains("\"split\"") {
+            implemented.insert("split".to_owned());
+        }
+    }
+    implemented.retain(|method| METHOD_TABLE.iter().any(|(name, _)| name == method));
+    // These selectors enter journal conditionally, rather than advertise unconditional v4 keys:
+    // respawn requires cwd; image.open may first require GUI host conversion.
+    for conditional in ["terminal.respawn", "image.open"] {
+        assert!(
+            implemented.remove(conditional),
+            "conditional resolver missing: {conditional}"
+        );
+    }
+    let source = strip_comments(shipped(&read("src/app/journal/commands.rs")));
+    for (function, calls) in [
+        (
+            "fn resolve_headless_requests(",
+            &[
+                "resolve_public_creation(",
+                "resolve_preset(",
+                "resolve_workspace_creation(",
+                "resolve_ipc_for_engine(",
+            ][..],
+        ),
+        (
+            "fn resolve_ipc_for_engine(",
+            &[
+                "resolve_close(",
+                "resolve_wake(",
+                "tab::move_public(",
+                "workspace::resolve(",
+                "category::resolve(",
+            ][..],
+        ),
+    ] {
+        let body = fn_body(&source, function).expect("connected resolver body");
+        for call in calls {
+            assert!(body.contains(call), "{function} no longer connects {call}");
+        }
+    }
     let advertised = declared(|contract| {
         contract
             == KeyContract::Kept {
@@ -393,7 +440,7 @@ fn journal_key_declarations_match_the_connected_structural_resolver() {
     });
     assert_eq!(
         advertised.len(),
-        6,
+        21,
         "this resolver must cover every advertised journal method"
     );
     assert_eq!(

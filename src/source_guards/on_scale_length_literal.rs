@@ -724,8 +724,9 @@ fn the_blind_spots_are_still_the_size_they_say() {
         .count();
     assert_eq!(
         (zeros, in_tests),
-        // The selection viewport fixture contributes PhysicalPx(0), PhysicalPx(0), PhysicalPx(3).
-        (185, 307),
+        // Layout preview tests add on-scale PhysicalPx(0), PhysicalPx(0),
+        // PhysicalPx(600), and the PhysicalPx(1) content-height floor; 1000 is off-scale.
+        (185, 311),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

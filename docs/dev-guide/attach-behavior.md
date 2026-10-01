@@ -329,8 +329,10 @@ hard 점유의 holder가 원격으로 전달한 구조 명령과, holder가 아�
 - 로컬 IPC의 `hard_occupied_structural_guard`는 명시 대상의 workspace를 해소해 점유를 검사한다. terminal.spawn은 pane override까지 반영한 최종 대상에서 검사한다. 대상 해소 실패는 원래 파라미터 검증 오류로 처리하며 현재 포커스로 바꾸지 않는다.
 - holder의 forward는 `src/app/journal/commands/inbound.rs`에서 원 stream client·점유·대상 범위를 검사한다. 로컬 비-holder 가드를 공통 execution 함수 안에 무조건 넣어 정당한 holder까지 막지 않는다.
 - 새 터미널의 논리 ID가 공개되기 전에 raw 출력이 도착하지 않아야 한다. 구조 observation은 멤버 등록과 pending tap의 physical generation을 기록하고, `src/remote/structure_sync.rs`가 필요한 result/delta 뒤에 새 tap을 연다.
-- `RemoteState`가 notifier·즉시 tap 억제·대기 reply/tap을 소유한다. OccupancyRegistry는 점유 판단 원본이며 socket/worker를 소유하지 않는다. forward reply가 남은 workspace의 tap을 먼저 열거나 같은 surface에 두 번 등록하지 않는다.
+- `RemoteState`가 notifier·대기 reply/tap을 소유한다. `take_structure_changed`는 reply가 남은 workspace를 보류 집합에 유지한다. OccupancyRegistry는 점유 판단 원본이며 socket/worker를 소유하지 않는다. forward reply가 남은 workspace의 tap을 먼저 열거나 같은 surface에 두 번 등록하지 않는다.
 - 실제 구독은 `src/remote/subscription.rs`가 원 grant·terminal generation·StreamHub registration을 검사한다. 큐 손실과 stale 구독은 명시적으로 끊거나 버리고, parser/PTY를 대신 종료하지 않는다.
+
+`source_guards::committed_tap_order`는 지정한 result/delta 생산자의 호출 순서와 `Sent` arm, pending reply 보류 및 tap 직전 generation 조회를 텍스트로 대조한다. 임의의 다른 생산자, 분기 도달성, 실제 송신·수신 성공까지 증명하지 않는다.
 
 이 경로의 기존 loopback·tap-count·권한 fixture는 현재 API에 맞춰 정합한 뒤 실행해야 한다. 시험 이름이나 과거 성공만으로 journal publication과 현재 bounded stream 경계가 검증됐다고 보지 않는다.
 
