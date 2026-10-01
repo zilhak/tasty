@@ -258,6 +258,9 @@ impl View for PresetView {
 
         if let Some(previous) = &mut self.pending_presentation {
             previous.toolbar.retain_input(&self.base.gpu.egui_ctx);
+            if let Some(submitted)=crate::adapters::ui::preset::take_confirmed_surface_cfg(&self.base.gpu.egui_ctx) {
+                previous.cfg=Some(submitted);
+            }
         }
 
         let has_copy = full_output

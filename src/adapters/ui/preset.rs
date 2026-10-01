@@ -661,6 +661,7 @@ fn draw_settings_detail(
                         },
                     );
                     *selected_node = Some(leaf_id);
+                    ui.ctx().data_mut(|data|data.insert_temp(egui::Id::new("preset.confirmed_surface_cfg"),cfg.clone()));
                     *surface_cfg = None;
                 }
                 Ok(QueuedLayout::Conflict) => {
@@ -1063,4 +1064,10 @@ pub fn draw_preset_panel(
     });
 
     ctx.data_mut(|d| d.insert_temp(rename_id, rename));
+}
+
+
+/// The submitted draft includes input entered in the same render pass as Confirm.
+pub(crate) fn take_confirmed_surface_cfg(ctx:&egui::Context)->Option<SurfaceCfg> {
+    ctx.data_mut(|data|data.remove_temp(egui::Id::new("preset.confirmed_surface_cfg")))
 }
