@@ -686,6 +686,7 @@ impl JournalApplication {
                 self.refresh_command_weight(ticket);
                 return Ok(true);
             }
+            Ok(ResultValue::RecoveryRequired {command_id,reason,replay})=> {let mut response=JsonRpcResponse::error(serde_json::Value::Null,crate::ipc::protocol::ERR_OPERATION_RECOVERY_REQUIRED,format!("command {command_id} requires recovery: {reason}"));response.idempotent_replay=*replay;response},
             Ok(ResultValue::Cancelled) => oversized_response(serde_json::Value::Null),
             Ok(ResultValue::Stored(record) | ResultValue::Command(record)) => {
                 let bytes = record
@@ -1077,7 +1078,7 @@ fn retry_outcome(
     match result {
         Ok(ResultValue::NeedsResolution) => Some(O::Executed),
         Ok(ResultValue::JoinedAdmission { .. }) => Some(O::InFlight),
-        Ok(ResultValue::Stored(_)) => Some(O::Replayed),
+        Ok(ResultValue::Stored(_)|ResultValue::RecoveryRequired {replay:true,..}) => Some(O::Replayed),
         Err(error) if error.contains("idempotency key") => Some(O::Conflicted),
         _ => None,
     }

@@ -122,5 +122,10 @@ impl ResourceRetirement {
             }
         }
     }
+    pub(crate) fn reconciliation_evidence(&self)->Option<Vec<u8>> {
+        if !self.start_complete || self.failure.is_some() || !self.owners.is_empty() || !self.metadata_complete || !self.receipts.iter().all(|receipt|receipt.observation().phase==PtyPhase::Reaped) {return None;}
+        let receipts:Vec<_>=self.receipts.iter().map(|receipt| {let observation=receipt.observation();serde_json::json!({"generation":receipt.generation().value(),"phase":"reaped","code":observation.exit.map(|exit|exit.code)})}).collect();
+        serde_json::to_vec(&serde_json::json!({"version":1,"source":"owned-retirement-receipts","runtime_epoch":self.runtime_epoch,"engine_incarnation":self.engine_incarnation,"metadata_complete":true,"lease":self.lease,"targets":self.plan.surfaces,"receipts":receipts})).ok()
+    }
     pub(crate) fn lease(&self)->Option<&EffectLease> {self.lease.as_ref()}
 }

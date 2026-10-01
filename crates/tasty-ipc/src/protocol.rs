@@ -39,6 +39,10 @@ pub const ERR_FIRST_LINE_IDLE: i32 = -32066;
 /// CommandLifecycle의 시작/철회 판정으로 시작 뒤 결과 불명(-32061)과 구분한다.
 pub const ERR_EXPIRED_BEFORE_RUN: i32 = -32067;
 
+/// A durable operation survived its execution owner without a known result. Retrying the same key
+/// never resends the external action; reconciliation must establish its result first.
+pub const ERR_OPERATION_RECOVERY_REQUIRED:i32=-32068;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcRequest {
     pub jsonrpc: String,

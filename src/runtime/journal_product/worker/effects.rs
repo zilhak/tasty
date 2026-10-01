@@ -302,7 +302,7 @@ fn cancel_unstarted(
         .map_err(|error| error.to_string())
 }
 
-fn validate_binding(effect:&tasty_event_store::EffectRecord,stream:&str,operation:&tasty_domain::Operation)->Result<()> {
+pub(super) fn validate_binding(effect:&tasty_event_store::EffectRecord,stream:&str,operation:&tasty_domain::Operation)->Result<()> {
     use tasty_domain::StructuralEffect;
     if effect.operation_id!=operation.id.0 || effect.command_id.as_deref()!=Some(operation.command_id.as_str())
         || effect.payload.type_tag!="structure.surface_effect" || effect.payload.schema_version!=1 {
@@ -356,7 +356,7 @@ pub(super) fn retired(executor:&Executor<StructureDecider>,lease:EffectLease,out
     finish(executor,lease,command,"retired",None)
 }
 
-fn read_original_results(
+pub(super) fn read_original_results(
     store: &tasty_event_store::EventStore,
     command_id: &str,
 ) -> Result<super::super::response::OriginalResults> {

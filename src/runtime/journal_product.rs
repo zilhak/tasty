@@ -41,6 +41,7 @@ pub(crate) struct Admission {
 
 #[derive(Debug)]
 pub(crate) enum Work {
+    ReconcileRetirement {lease:EffectLease,evidence:Vec<u8>},
     ClaimForward {stream:String,operation:tasty_domain::OperationId},
     ForwardFinished {lease:EffectLease,outcome:tasty_domain::OperationOutcome},
     PrepareSubtree {binding:EngineBinding,draft:crate::runtime::preset_plan::AssemblyDraft},
@@ -98,6 +99,7 @@ pub(crate) struct Request {
 
 #[derive(Debug, Clone)]
 pub(crate) enum ResultValue {
+    RecoveryRequired {command_id:String,reason:String,replay:bool},
     ForwardClaimed {lease:EffectLease,payload:Vec<u8>},
     AssemblyResolved {stream:String,input:Option<tasty_domain::DataRef>,plan:Option<tasty_domain::CreationAssembly>},
     #[cfg(feature = "gui")]
@@ -322,6 +324,7 @@ fn request_payload_too_large(work: &Work) -> bool {
 
 pub(crate) fn request_size(work: &Work) -> usize {
     match work {
+        Work::ReconcileRetirement {lease,evidence}=>serde_json::to_vec(lease).map_or(usize::MAX,|bytes|bytes.len()).saturating_add(evidence.capacity()),
         Work::PrepareSubtree {binding,draft}=>serde_json::to_vec(&(binding,draft)).map_or(usize::MAX,|bytes|bytes.len()),
         Work::PrepareUndo {binding,target_pane,scope,shell}=>serde_json::to_vec(&(binding,target_pane,scope,shell)).map_or(usize::MAX,|bytes|bytes.len()),
         Work::ReserveExecutionIds {binding,kinds}=>binding.stream.len()+binding.journal_id.len()+kinds.capacity()*std::mem::size_of::<(IdKind,u32)>(),

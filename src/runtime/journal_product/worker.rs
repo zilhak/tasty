@@ -2,6 +2,7 @@ mod binding;
 mod effects;
 mod capture;
 mod assembly;
+mod recovery;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -54,6 +55,7 @@ pub(super) fn run(
         let epoch=inner.epoch;
         if let Err(error)=inner.store.release_abandoned_admission_holders(epoch) {send(Completion::StartupFailed(error.to_string()));return;}
     }
+    if let Err(error)=recovery::recover(&executor) {send(Completion::StartupFailed(error));return;}
     let mut published = {
         let inner = executor.inner.lock().expect("new executor lock");
         let cut = inner.state.batch;
@@ -82,7 +84,8 @@ pub(super) fn run(
         let was_halted = halted.is_some();
         let mut predecessor = if matches!(
             request.work,
-            Work::Capture {..}
+            Work::ReconcileRetirement {..}
+                | Work::Capture {..}
                 | Work::RetirementFinished {..}
                 | Work::ForwardFinished {..}
                 | Work::OpenEngine { .. }
@@ -169,6 +172,7 @@ fn handle(
     work: Work,
 ) -> Result<ResultValue, String> {
     match work {
+        Work::ReconcileRetirement {lease,evidence}=>recovery::reconcile_retirement(executor,lease,evidence),
         Work::ReadCommand(command_id) => {
             executor
                 .with_state(|_| ())
@@ -179,7 +183,7 @@ fn handle(
                 .command(&command_id)
                 .map_err(|error| error.to_string())?
                 .ok_or("original command missing")?;
-            Ok(ResultValue::Command(record))
+            Ok(recovery::command_result(&inner.state,record,false))
         }
         Work::RetireEngine(binding) => binding::retire(executor, home, ticket, binding),
         Work::OpenEngine {
@@ -226,7 +230,7 @@ fn handle(
                     .lookup_command(key, &admission.original_digest)
                     .map_err(|e| e.to_string())?
                 {
-                    CommandLookup::Hit(record) => return Ok(ResultValue::Stored(record)),
+                    CommandLookup::Hit(record) => return Ok(recovery::command_result(&inner.state,record,true)),
                     CommandLookup::DigestMismatch(_) => {
                         return Err("idempotency key belongs to a different request".into());
                     }
@@ -262,7 +266,9 @@ fn handle(
             for change in &changes {
                 if matches!(
                     change.command,
-                    tasty_domain::StructuralCommand::RecordCapture {..}
+                    tasty_domain::StructuralCommand::ReconcileRetirement {..}
+                        | tasty_domain::StructuralCommand::RecoverOperation {..}
+                        | tasty_domain::StructuralCommand::RecordCapture {..}
                         | tasty_domain::StructuralCommand::OpenEngine { .. }
                         | tasty_domain::StructuralCommand::RetireEngine { .. }
                         | tasty_domain::StructuralCommand::FinishCreation { .. }

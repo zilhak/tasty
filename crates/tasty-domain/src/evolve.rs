@@ -256,6 +256,11 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
             prepared_data,deferred,
         } => lifecycle::await_cleanup(m, id, outcome, cleanup, prepared_data,deferred),
         DomainEvent::OperationFinished { id, outcome } => lifecycle::finish(m, id, outcome, None),
+        DomainEvent::OperationRecoveryObserved {id,evidence}=> {
+            let operation=m.operations.get_mut(&id).ok_or_else(||EvolveError::Missing(format!("operation:{}",id.0)))?;
+            if evidence.0==0 || operation.reconciliation_evidence.is_some() || !matches!(operation.outcome,Some(crate::OperationOutcome::Cancelled {..}|crate::OperationOutcome::Uncertain {..})) {return Err(EvolveError::InvalidFact("invalid recovery observation".into()));}
+            operation.reconciliation_evidence=Some(evidence);Ok(())
+        },
         DomainEvent::OperationReconciled {
             id,
             outcome,

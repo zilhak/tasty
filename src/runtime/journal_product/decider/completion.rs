@@ -11,7 +11,7 @@ pub(super) fn aggregate(
     if !decision
         .events
         .iter()
-        .any(|event| matches!(event.event, DomainEvent::OperationFinished { .. }))
+        .any(|event| matches!(event.event, DomainEvent::OperationFinished { .. }|DomainEvent::OperationReconciled {..}))
     {
         return Ok(Vec::new());
     }
@@ -28,7 +28,7 @@ pub(super) fn aggregate(
         .collect();
     let mut affected = BTreeSet::new();
     for event in &decision.events {
-        if let DomainEvent::OperationFinished { id, outcome } = &event.event {
+        if let DomainEvent::OperationFinished { id, outcome } | DomainEvent::OperationReconciled {id,outcome,..} = &event.event {
             let operation = operations
                 .get_mut(id)
                 .expect("decide checked the operation");

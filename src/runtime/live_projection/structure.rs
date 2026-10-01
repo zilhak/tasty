@@ -151,6 +151,7 @@ pub(super) fn apply_event(
         | DomainEvent::OperationResourcePrepared {..}
         | DomainEvent::OperationAwaitingCleanup { .. }
         | DomainEvent::OperationFinished { .. }
+        | DomainEvent::OperationRecoveryObserved {..}
         | DomainEvent::OperationReconciled { .. } => {}
         DomainEvent::MetadataSet { .. } | DomainEvent::MetadataRemoved { .. } => {
             return Err("service metadata has no structural writer".into());

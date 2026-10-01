@@ -221,6 +221,8 @@ pub enum DomainEvent {
         id: OperationId,
         outcome: OperationOutcome,
     },
+    #[serde(rename = "operation.recovery_observed")]
+    OperationRecoveryObserved {id:OperationId,evidence:DataRef},
     #[serde(rename = "operation.reconciled")]
     OperationReconciled {
         id: OperationId,
@@ -262,7 +264,7 @@ impl DomainEvent {
             Self::OperationAwaitingCleanup { prepared_data, .. } => {
                 prepared_data.iter().copied().collect()
             }
-            Self::OperationReconciled { evidence, .. } => vec![*evidence],
+            Self::OperationRecoveryObserved {evidence,..}|Self::OperationReconciled { evidence, .. } => vec![*evidence],
             _ => Vec::new(),
         }
     }
@@ -306,6 +308,7 @@ impl DomainEvent {
         "operation.resource_prepared",
         "operation.awaiting_cleanup",
         "operation.finished",
+        "operation.recovery_observed",
         "operation.reconciled",
         "metadata.set",
         "metadata.removed",
@@ -350,6 +353,7 @@ impl DomainEvent {
             Self::OperationResourcePrepared {..}=>"operation.resource_prepared",
             Self::OperationAwaitingCleanup { .. } => "operation.awaiting_cleanup",
             Self::OperationFinished { .. } => "operation.finished",
+            Self::OperationRecoveryObserved {..}=>"operation.recovery_observed",
             Self::OperationReconciled { .. } => "operation.reconciled",
             Self::MetadataSet { .. } => "metadata.set",
             Self::MetadataRemoved { .. } => "metadata.removed",

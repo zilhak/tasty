@@ -15,6 +15,8 @@ use crate::{DomainEvent, JournalModel, Ratio};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StructuralCommand {
+    ReconcileRetirement {operation:crate::OperationId,evidence:crate::DataRef},
+    RecoverOperation {operation:crate::OperationId,outcome:crate::OperationOutcome,evidence:crate::DataRef},
     Replace {operation:crate::OperationId,command_id:String,input:crate::DataRef,replacement:crate::Replacement,expected:Vec<crate::RetiredSurface>},
     PrepareForward {operation:crate::OperationId,command_id:String,input:crate::DataRef},
     FinishForward {operation:crate::OperationId,outcome:crate::OperationOutcome},
@@ -176,7 +178,9 @@ pub fn decide_structure(
     if model.engine_retired
         && !matches!(
             command,
-            StructuralCommand::OpenEngine { .. }
+            StructuralCommand::ReconcileRetirement {..}
+                | StructuralCommand::RecoverOperation {..}
+                | StructuralCommand::OpenEngine { .. }
                 | StructuralCommand::RetireEngine { .. }
                 | StructuralCommand::FinishRetirement { .. }
                 | StructuralCommand::FinishForward {..}
@@ -190,6 +194,16 @@ pub fn decide_structure(
         return Err(Rejection("engine binding has been retired".into()));
     }
     let decision = match command {
+        StructuralCommand::ReconcileRetirement {operation,evidence}=> {
+            let previous=model.operations.get(operation).ok_or_else(||Rejection("reconciliation operation missing".into()))?;
+            if previous.retirement.is_none() || !matches!(previous.outcome,Some(crate::OperationOutcome::Uncertain {..})) || evidence.0==0 {return Err(Rejection("retirement reconciliation needs an uncertain cleanup and evidence".into()));}
+            StructuralDecision {events:vec![DomainEvent::OperationReconciled {id:operation.clone(),outcome:crate::OperationOutcome::Succeeded,evidence:*evidence}],effects:Vec::new(),result:StructuralResult::Closed {closed:true},completed_command:Some(previous.command_id.clone())}
+        },
+        StructuralCommand::RecoverOperation {operation,outcome,evidence}=> {
+            let previous=model.operations.get(operation).ok_or_else(||Rejection("recovery operation missing".into()))?;
+            if previous.outcome.is_some() || evidence.0==0 || !matches!(outcome,crate::OperationOutcome::Cancelled {..}|crate::OperationOutcome::Uncertain {..}) {return Err(Rejection("recovery observation cannot invent a successful execution".into()));}
+            StructuralDecision {events:vec![DomainEvent::OperationFinished {id:operation.clone(),outcome:outcome.clone()},DomainEvent::OperationRecoveryObserved {id:operation.clone(),evidence:*evidence}],effects:Vec::new(),result:StructuralResult::Pending {operation:operation.clone()},completed_command:Some(previous.command_id.clone())}
+        },
         StructuralCommand::Replace {..}=>replacement::decide(model,command)?,
         StructuralCommand::PrepareForward {..}|StructuralCommand::FinishForward {..}=>forward::decide(model,command)?,
         StructuralCommand::PrepareAssembly {..}=>assembly::decide(model,command)?,

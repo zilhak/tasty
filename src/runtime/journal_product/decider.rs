@@ -189,7 +189,9 @@ impl JournalDecider for StructureDecider {
         let internal = command.changes.iter().all(|change| {
             matches!(
                 change.command,
-                StructuralCommand::FinishCreation { .. }
+                StructuralCommand::ReconcileRetirement {..}
+                    | StructuralCommand::RecoverOperation {..}
+                    | StructuralCommand::FinishCreation { .. }
                     | StructuralCommand::FinishRetirement {..}
                     | StructuralCommand::FinishCleanup { .. }
                     | StructuralCommand::CancelUnstartedCreation { .. }

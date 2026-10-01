@@ -618,13 +618,13 @@ impl JournalApplication {
     }
 
     pub(crate) fn pauses_observation(&self) -> bool {
-        self.commands.has_closing() || !self.resource_cleanups.is_empty() || self.creations
+        self.commands.has_closing() || self.cleanup_pauses_observation() || self.creations
             .values()
             .any(creation::Creation::pauses_observation)
     }
 
     pub(crate) fn cleanup_poll_deadline(&self)->Option<std::time::Instant> {
-        (!self.resource_cleanups.is_empty() || self.creations.values().any(creation::Creation::needs_cleanup_poll)).then(||std::time::Instant::now()+std::time::Duration::from_millis(10))
+        self.resource_cleanup_deadline().into_iter().chain(self.creations.values().any(creation::Creation::needs_cleanup_poll).then(||std::time::Instant::now()+std::time::Duration::from_millis(10))).min()
     }
 
     pub(crate) fn runtime_epoch(&self)->Option<u64> {self.runtime_epoch}

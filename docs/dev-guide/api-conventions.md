@@ -427,3 +427,5 @@ deprecation 기간은 "한 minor 이상"이 원칙이다. 아래 셋은 유예 �
 완료 알림 채널은 `<parent_home>/notify/<caller_surface>.log` 하나이며, notify 형제 hook의
 surface 생존 판정·재무장이 그 경로를 채운다. `auto_wait`의 작업 성공 판정과는 별개다.
 [완료 알림 로그](external-interaction.md#child-완료-알림--completion-log)를 따른다.
+
+구조 명령이 실행 owner를 잃고 결과를 확정하지 못하면 같은 key 조회는 `-32068`(recovery required)을 반환한다. 이 응답은 원 명령의 durable InProgress를 실패·성공으로 바꾸지 않으며 외부 동작을 다시 보내지 않는다. 이후 정확한 owner 영수증으로 대조가 완료되면 같은 key로 확정 결과를 읽는다. 단순 응답 대기 만료(`-32061`)와 구분한다.
