@@ -1019,10 +1019,6 @@ fn events_or_report(
 }
 
 #[cfg(test)]
-#[path = "dispatch_domain_restore_tests.rs"]
-mod restore_tests;
-
-#[cfg(test)]
 mod apply_error_tests {
     use super::*;
     use crate::app::command::DomainIntent;

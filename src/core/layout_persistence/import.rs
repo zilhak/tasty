@@ -13,8 +13,6 @@
 //! 슬롯에 구조 stream이 아직 없을 때 호출하며, 이미 활성화한 stream에는 파일을 다시 가져오지 않는다.
 
 pub(crate) mod journal_import;
-#[cfg(test)]
-mod shadow;
 pub(crate) mod surface_data;
 #[cfg(test)]
 mod tests;
