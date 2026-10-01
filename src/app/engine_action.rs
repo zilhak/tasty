@@ -366,12 +366,21 @@ impl EngineAction {
                             png_bytes: png_bytes.clone(),
                         });
                 } else {
-                    let directory = std::env::temp_dir().join("tasty-clipboard");
-                    let path = directory.join(file_name);
-                    match std::fs::create_dir_all(&directory)
-                        .and_then(|()| std::fs::write(&path, png_bytes))
+                    let directory = match tempfile::Builder::new()
+                        .prefix("tasty-clipboard-")
+                        .tempdir()
                     {
+                        Ok(directory) => directory,
+                        Err(error) => {
+                            tracing::warn!(%error, "clipboard image directory creation failed");
+                            return;
+                        }
+                    };
+                    let path = directory.path().join(file_name);
+                    match std::fs::write(&path, png_bytes) {
                         Ok(()) => {
+                            // The receiving shell reads this file asynchronously, after this action.
+                            let _ = directory.keep();
                             if engine.live.occupancy.is_hard_occupied(target.surface) {
                                 return;
                             }

@@ -20,7 +20,7 @@
 `copy`/`paste` 바인딩 목록 중 하나와 매칭되면 동작(다중 바인딩). 기본값(tasty 프리셋)은 OS 와 무관하게 세 조합을 모두 묶는다(`ctrl+c`·`alt+c`·`ctrl+shift+c`, paste 동형). OS 별 조합은 Mac/Windows/Linux 프리셋을 고를 때의 값이다. 바인딩 편집은 [keybindings](../keybindings/index.md). 위치 기반 매핑은 [key-mapping](../../design/policies/key-mapping.md).
 
 - **소프트 랩 인지 복사**: 셸이 너비에 맞춰 자동 줄바꿈한 라인은 복사 시 한 줄로 합쳐지고, 진짜 hard newline 은 보존.
-- **붙여넣기**: bracketed paste(DECSET 2004) 지원. 텍스트 없고 이미지가 있으면 PNG 로 저장 후 경로를 붙여넣기(AI 에이전트가 이미지 참조 가능).
+- **붙여넣기**: bracketed paste(DECSET 2004) 지원. 텍스트 없고 이미지가 있으면 PNG 로 저장 후 경로를 붙여넣기(AI 에이전트가 이미지 참조 가능). 로컬 이미지는 요청마다 별도 임시 디렉터리에 저장해 같은 파일명의 붙여넣기가 서로 덮어쓰지 않는다. 받는 셸이 나중에 읽을 수 있도록 성공한 파일은 임시 디렉터리 정리 시점까지 유지한다.
 - **Paste 후 Ctrl+C 보호(500ms)**: paste 직후 500ms 내 Ctrl+C 는 무시(SIGINT·복사 안 함) — Ctrl+V 옆 키 오타로 입력을 날리는 사고 방지, 무시 시 토스트.
 
 ### 선택 좌표와 내용 일관성
