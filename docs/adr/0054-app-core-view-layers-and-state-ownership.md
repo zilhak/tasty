@@ -31,14 +31,14 @@
 
 | 계층 | 객체 | 상태 | 소유하지 않는 것 |
 |---|---|---|---|
-| App | 실행 시작·종료, 외부 입력 수신, 대상 해소, Core·View·서비스 조립 | `AppState`: 실행 단계, 전역 modal, 기본 IPC 라우팅 문맥, View↔엔진 연결, 앱 수준 대기 요청. 프로세스당 하나 | 도메인 원본의 복제, VT parser, 저널 구현 |
+| App | 실행 시작·종료, 외부 입력 수신, 대상 해소, Core·View·서비스 조립 | `AppState`: 실행 단계·앱 수준 대기 요청. `ViewRegistry`: View·전역 modal·기본 IPC 라우팅 문맥. `EngineRegistry`: 엔진과 View↔엔진 관계. 공유 서비스는 `AppServices`가 소유 | 도메인 원본의 복제, VT parser, 저널 구현 |
 | Core | 명령 판단과 확정 이벤트 적용, 도메인 불변식 | `CoreState`: 엔진별 구조·kind descriptor·논리 세션 사실과 stream revision. 외부 자원 없이 재생 가능 | wire 응답, 디스크 commit, PTY 실행, 사용자 포커스, OS 창 |
 | View | 로컬 OS 창 하나에 표시하고 사용자 입력을 해석 | `ViewState`: 선택·viewport·popup·IME·draft·표시 revision. 공통 상태와 종류별 상태를 합성 | 도메인 원본, 외부 연결 수명 |
 
 엔진은 프로세스나 OS 창과 다른 도메인 실행 단위다. `EngineSession`이 한 엔진의 `CoreState`,
 현재 점유·busy 같은 연결 종속 상태(`LiveDomainState`), kind별 surface 실행 객체와 Terminal/Pty 컬렉션을 소유한다.
 엔진 목록의 원본은 App이 가진 `EngineSession` 집합 하나다. View 목록의 원본은 View registry다.
-`AppState`의 View↔엔진 연결은 관계만 보관하고 두 목록을 복제하지 않는다. `EngineSession`에 반대 방향의
+`EngineRegistry`가 엔진 원본과 View↔엔진 관계를 함께 보관하며, `AppState`에 두 목록이나 관계를 복제하지 않는다. `EngineSession`에 반대 방향의
 쓰기 가능한 연결을 따로 두지 않는다.
 
 - `Core` 인스턴스와 `CoreState`는 1:1이 아니다. 같은 Core가 여러 엔진 상태를 판단하며 `CoreState`를 전역 하나로 합치지 않는다.
@@ -73,8 +73,7 @@ AppState는 boot/shutdown·대기 요청의 값만 갖는다. 활성 모달·Vie
 타입 이름만 바꾸거나 한 단계에서 타입만 지우고 호출부를 남기는 중간 상태는 허용하지 않는다.
 이행이 끝날 때까지 현재 구조를 설명하는 문서와 이 결정이 다르며, 문서는 구현 단계마다 실제 구조로 갱신한다.
 
-같은 crate 안에서는 컴파일러가 모듈 방향을 막지 못한다. 기존 `domain_does_not_reach_up` 같은 소스 검사는
-새 경계를 확인하도록 구현 단계에서 전환해야 한다.
+순수 domain은 `tasty-core`의 crate 의존성과 private writer 경계로 분리한다. 같은 root crate 안의 adapter 방향과 지정 writer 호출은 소스 검사로 보완하며, 텍스트 검사를 전체 타입·실행 경로의 증명으로 보지 않는다.
 
 ## Alternatives Considered
 

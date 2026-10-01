@@ -99,8 +99,8 @@ forward 요청의 출처, parked 엔진의 즉시 적용을 정했다. mirror �
   새 멤버의 트리는 snapshot tap보다 먼저 보낸다. workspace가 사라지면 강제 detach하고 잠금을 정리한다. forward는 자신의 Result와 Delta를 보낸 뒤 별도 변경 표시를 지워 중복을 피한다.
 - forward 실패 사유: anchor가 없으면 모든 엔진에서 surface 생존 여부를 먼저 확인한다. client가 실제 workspace를 점유했고 surface가 서버 전체에 없을 때만
   IPC와 같은 `no live surface` 사유를 반환하고, 다른 곳에 살아 있거나 점유 workspace가 없으면 `workspace not found`를 유지한다.
-  사유에는 실제 structural_op 이름을 넣고 포커스로 대체하지 않는다. convert 실패는 `SurfaceConverted.failure`에 도메인이 남긴 사유를 그대로 전달하고,
-  사유가 없으면 'surface N was not converted'처럼 결과만 말하며 대상이 없다고 추측하지 않는다. `Core::apply`의 `replaced:false` 반환 방식은 유지한다.
+  사유에는 실제 structural_op 이름을 넣고 포커스로 대체하지 않는다. convert도 journal 생성·교체 완료 경계를 사용한다.
+  `commands/inbound.rs::deliver_result`는 원 binding이 유효하면 확정 응답의 오류를 원 요청의 실패 사유로 전달한다. 최초 성공 Result를 보낸 뒤 원 holder와 workspace가 남아 있으면 Delta 전송을 시도하며, 재시도 재생 응답에는 Delta를 다시 보내지 않는다. 실패를 대상 부재로 추측하지 않는다.
 - 연결 사건: anchor 없는 mirror가 끊겨 마지막 workspace가 사라지면 기본 터미널 workspace를 다시 만든다. 사용자 요청이 아닌 연결 사건으로 창을 닫지 않으며,
   창 있는 엔진과 parked 엔진 모두 같은 복구를 쓰고 시스템 복구에 사용자 생성 event를 내지 않는다.
 

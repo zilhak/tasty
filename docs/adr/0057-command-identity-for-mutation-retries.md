@@ -1,6 +1,6 @@
 # ADR-0057: 변경 요청 재시도는 호출자별 명령 identity로 구분하고 기록 범위에서는 이벤트와 함께 확정한다
 
-- **Status**: Accepted — 구현 상태: 단계적 이행 중. 현재는 모든 경로가 메모리 응답 저장소를 사용하며, 기록 범위의 영속 identity는 구조 저널을 활성화할 때 함께 적용한다
+- **Status**: Accepted — 구조 journal로 연결된 v4 메서드는 명령 identity와 응답을 영속 기록하며, 그 밖의 기존 멱등 경로는 제한된 메모리 응답 저장소를 사용한다. 보장 범위는 메서드별 capability로 구분한다
 - **Date**: 2026-09-30
 - **Tags**: ipc, idempotency, retry, event-sourcing
 - **Group**: foundation

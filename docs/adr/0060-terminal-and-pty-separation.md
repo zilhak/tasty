@@ -120,4 +120,4 @@ Terminal·Pty 등록과 종료 책임이 한 곳에 있어 누락·중복 정리
 - 대체 대상: [ADR-0013](0013-terminal-io-and-process-lifetime.md)
 - [ADR-0054](0054-app-core-view-layers-and-state-ownership.md) · [ADR-0055](0055-structural-domain-event-sourcing.md) · [ADR-0056](0056-crate-boundaries-for-core-event-store-and-task-runtime.md) · [ADR-0034](0034-output-cursor-contract.md)
 - [터미널](../features/terminal/index.md), [헤드리스 PTY](../features/headless-pty/index.md)
-- 현재 구현: `crates/tasty-terminal/src/lib.rs`, `crates/tasty-terminal/src/pty.rs`, `src/core/terminal_store.rs`, `src/core/terminal_store/standalone.rs`.
+- 현재 구현: `crates/tasty-terminal/src/lib.rs`, `crates/tasty-terminal/src/pty.rs`, `src/runtime/terminal_store.rs`, `src/runtime/terminal_store/standalone.rs`.

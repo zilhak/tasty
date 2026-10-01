@@ -12,6 +12,7 @@
 [ADR-0017](0017-workspace-identity-and-focus.md)은 이 요구를 당시 구조 안에서 풀었다. 사용자 선택(활성 workspace·tab 인덱스, 카테고리 복귀 기록)을
 도메인 트리와 같은 `CoreState`에 두고, 삭제 때 공용 제거 함수가 선택을 보정하며, 레이아웃은 엔진별 슬롯 파일을 원본으로 저장했다.
 선택을 도메인과 분리하면 저장 형식과 UI 전반이 함께 바뀐다는 비용 때문에 이 배치를 유지했다.
+당시 슬롯 파일은 임시 파일 뒤 rename으로 저장했고, terminal 탭의 사용자 선택은 도메인의 background 생성과 별도 `MainViewState::add_tab` 경로로 처리했다. 현재 저장 원본과 완료 후 선택은 아래 결정 및 ADR-0065를 따른다.
 
 [ADR-0054](0054-app-core-view-layers-and-state-ownership.md)와 [ADR-0055](0055-structural-domain-event-sourcing.md)에서는 전제가 다르다.
 재생 가능한 도메인 모델에 사용자 선택이 있으면 replay나 지연 완료가 과거 선택을 다시 실행한다.
@@ -24,7 +25,7 @@
 - 구조 명령은 대상을 ID로 지정한다. 대상 생략은 기존 호환 규칙에 따라 진입 계층이 해소하고, 해소한 ID를 명령에 고정한다.
 - 활성 workspace·tab·pane, 카테고리 복귀 기록, 카테고리 접힘, viewport는 `ViewState`가 소유한다. `CoreState`에는 사용자 선택을 두지 않는다.
   분할 트리의 `focus_second`는 선택의 원본이 아니라 생성·복원·wire 왕복에 쓰는 호환 hint로만 다룬다.
-- OS가 알려 준 창 focus와 App의 기본 IPC 라우팅 문맥(대상 없는 요청이 향하는 main 창)은 다른 값이다. 라우팅 문맥과 전역 modal은 `AppState` 한 곳에 둔다.
+- OS가 알려 준 창 focus와 App의 기본 IPC 라우팅 문맥(대상 없는 요청이 향하는 main 창)은 다른 값이다. 라우팅 문맥과 전역 modal은 App이 소유한 `ViewRegistry`에 둔다. View↔엔진 관계와 engine 원본은 `EngineRegistry`가 소유한다.
 - 에이전트 요청은 사용자 선택·스크롤·닫은 항목 기록을 바꾸지 않는다. 예외는 사용자가 보던 대상 자체가 삭제됐을 때의 필수 보정이다.
   보정은 View가 확정된 삭제 사실을 소비해서 한다. 도메인이 View의 선택을 직접 고치지 않는다.
 
@@ -48,7 +49,7 @@
   OS의 실제 focus·쌓임 순서는 플랫폼이 결정한다. X11에서는 초기 focus 금지와 restack 요청을 보내고, Wayland에서는 활성화를 요청하지 않는다.
   비활성 표시에 실패하면 경고를 남기고 기본 표시로 복구한다.
 - 새 탭의 선택 여부는 종류가 아니라 사용자 요청 여부로 정한다. CreateTab의 activate 값을 모든 호출자가 전달하며 에이전트 요청은 기존 탭을 보존한다.
-  도메인 CreateTab의 terminal 분기는 activate와 무관하게 background로 유지하고, 사용자의 새 terminal 탭은 별도 경로(현재 `MainViewState::add_tab`)에서 선택한다.
+  생성은 journal 경계에서 완료하고, 사용자 요청의 선택 후처리는 `commands/view_completion.rs`가 원 View identity와 선택 generation을 확인한 뒤 적용한다. terminal도 이 경계를 사용하며 도메인 생성 자체가 사용자 선택을 바꾸지 않는다.
   에이전트가 만든 새 비터미널 탭은 사용자가 선택하기 전까지 렌더되지 않는다.
 - 대상을 지정하지 않는 창 소유 자원 목록은 살아 있는 모든 엔진(창이 있는 엔진과 parked 엔진)의 결과를 합친다. 메서드 이름에 list가 있는지나 params 유무로 분류하지 않고,
   필터는 대상 지정과 다르다. tree도 `workspace.list`와 같은 workspace 집합을 반환한다. 집계한 active는 엔진별 활성 상태이므로 여러 개가 true일 수 있다.
@@ -65,14 +66,15 @@
 
 ### 레이아웃 슬롯
 
-- 슬롯은 View 복원 자료의 단위다. 엔진마다 하나의 슬롯을 쓰고, 점유 여부는 살아 있는 엔진의 슬롯에서 계산하며 별도 점유 파일이나 registry를 두지 않는다.
-  parked 엔진도 슬롯을 계속 사용한다. 새 창은 비어 있는 가장 낮은 슬롯을 복원하고, 모두 사용 중이면 새 번호를 만든다. 부팅에서는 첫 창 하나만 복원한다.
-- 슬롯 파일은 임시 파일을 쓴 뒤 rename한다. `restore_layout`을 켜면 실제 엔진 종료 때 저장하고, 끄면 삭제한다.
-- scrollback 정리는 모든 슬롯의 참조를 모아 수행하고, 읽지 못한 슬롯이 있으면 그 부팅에서는 삭제하지 않는다.
+- 슬롯이 있는 GUI 엔진은 하나의 슬롯을 사용하고, 점유 여부는 살아 있는 엔진의 슬롯에서 계산한다. parked 엔진도 슬롯을 유지한다.
+  새 창은 비어 있는 가장 낮은 슬롯을 복원하고, 모두 사용 중이면 새 번호를 만든다. 부팅에서는 첫 창 하나만 복원한다. headless의 새 stream은 로컬 View 슬롯을 갖지 않는다.
+- 현재 로컬 구조의 복원 원본은 journal이며, View 선택은 DB restore manifest와 연결된 domain checkpoint에서 복원한다([ADR-0065](0065-journal-source-and-core-state-projection.md)).
+  `restore_layout`은 복원과 capture 요청을 제어한다. 저장 실패의 후보는 재시도를 위해 유지하고, 정상 종료는 최신 final capture와 회수 완료를 구분한다.
+- legacy 슬롯 파일·sidecar는 DB 원본이 없는 최초 이관의 입력이다. DB 자료가 손상됐다고 옛 파일로 fallback하지 않는다.
+  호환 export는 고정 journal 모델과 별도 View checkpoint로 만드는 파생값이며, 슬롯 파일을 View 선택의 별도 원본으로 두지 않는다.
+- legacy scrollback의 부팅 정리는 모든 슬롯 참조를 모으고, 읽지 못한 슬롯이 있으면 삭제하지 않는다. journal payload 정리는 checkpoint·restore manifest·실행 중 reader의 pin을 따른다.
 - 복원 시 PTY 범위를 침범한 오래된 surface scope는 오류를 기록하고 삭제한다. 복원하지 않는 헤드리스·설정 비활성 실행은 이 정리를 하지 않지만 카운터도 오염된 scope에서 시작하지 않는다.
   복원할 명령은 레이아웃에 저장되고 세션 메타는 다시 생성되므로 현재는 키를 새로 발급하지 않는다.
-- 구조 저널을 활성화하기 전에는 슬롯 파일이 지금처럼 복원 원본이다. 활성화 뒤에는 최초 한 번 가져온 다음 저널이 구조 원본이 되고,
-  슬롯 파일은 View 선택 복원 자료와 호환 export로 남는다. 오래된 슬롯 파일을 다시 구조 원본으로 가져오지 않는다.
 - 같은 `TASTY_HOME`을 여러 프로세스가 공유하는 구성은 지원하지 않는다.
 
 ## Consequences
@@ -84,9 +86,9 @@ replay와 지연 완료가 사용자 선택을 다시 실행하지 않는다. �
 category ID 조회는 사용자 전환 시점에만 선형 탐색하므로 렌더 루프 비용은 늘지 않는다. 생성과 닫기만 반복하는 release 장시간 테스트는 렌더 저장소의 수명까지 검증하지 못한다.
 
 선택 보정이 도메인 제거 함수에서 View의 삭제 사실 소비로 옮겨지므로, 모든 삭제 이벤트가 View까지 전달되는지 검사해야 한다.
-이행 중에는 선택이 `CoreState`에 남아 있는 경로와 View로 옮겨진 경로가 섞인다. 한 범위의 선택을 옮길 때 그 범위의 소비자를 같은 변경에서 전부 옮긴다.
+선택은 View에 있고 구조는 journal projection에 있으므로, 두 범위의 소비자가 서로 다른 원본에 쓰지 않도록 유지한다.
 
-슬롯 파일과 저널이 공존하는 이행 기간에는 어느 쪽이 원본인지 범위별로 명확해야 한다. 저널을 읽지 못하는 옛 바이너리가 새 상태를 덮어쓰지 않도록 소유 검사가 필요하다.
+legacy 슬롯 파일과 저널이 함께 남아 있어도 파일은 최초 이관 입력이고 journal/manifest가 현재 원본이라는 구분을 유지해야 한다. 저널을 읽지 못하는 옛 바이너리가 새 상태를 덮어쓰지 않도록 소유 검사가 필요하다.
 OS의 실제 focus·쌓임 순서는 플랫폼이 결정하므로 새 창을 만든 뒤 대상 없는 명령이 새 창을 가리킨다고 가정하면 안 된다.
 
 ## Alternatives Considered
@@ -112,7 +114,7 @@ OS의 실제 focus·쌓임 순서는 플랫폼이 결정하므로 새 창을 만
 - 카테고리별 상태가 늘어 변환 계층이 복잡해지거나 다중 카테고리 동시 표시가 필요해지면 선택 표현을 다시 검토한다.
 - 슬롯 파일 누적, 창 위치·크기 저장, 여러 프로세스의 홈 공유가 필요해지면 슬롯 정책을 검토한다.
 - 제3의 ID 종류가 생기거나 범위가 고갈되면 ID 할당과 wire 표현을 재검토한다.
-- 사용자 terminal 생성이 CreateTab으로 옮겨지면 terminal 분기의 background 고정을 재검토한다. 새 창·탭 생성 경로는 요청 출처를 전달해야 한다.
+- 새 창·탭 생성 경로는 요청 출처를 전달해야 한다. 지연 완료가 다른 View나 이후 사용자 선택을 덮어쓰면 continuation의 identity·generation 검사를 재검토한다.
 - mirror를 전용 teardown으로 닫는 IPC 요구, 규모별 확인 정책, 에이전트 전용 복원 기록, hard 점유 정의 변경, `window.close` 정책 변경 시 `workspace.close`를 함께 검토한다.
 - telemetry가 workspace를 항상 지정하거나 비용 상한이 workspace별로 나뉘면 기본 귀속 정책을 검토한다. 자동 승인에 실제 대상 surface가 생기면 그 소속을 사용한다.
 - 엔진별 중복 ID나 여러 active 값이 소비자에 문제를 만들면 집계 형식을 함께 고친다. 라우팅 규칙이 바뀌면 명부의 예외를 줄인다.
@@ -131,4 +133,4 @@ OS의 실제 focus·쌓임 순서는 플랫폼이 결정하므로 새 창을 만
 - [포커스 정책](../design/policies/focus.md)
 - [워크스페이스 카테고리](../features/workspace-category/index.md)
 - [레이아웃 저장](../features/layout-persistence/index.md)
-- 현재 구현: `src/core/state.rs`, `src/core/layout_persistence`, `src/adapters/ipc/window_port.rs`.
+- 현재 구현: `src/state/navigation.rs`, `src/app/journal/commands/view_completion.rs`, `src/runtime/journal_product/view_record.rs`, `src/core/layout_persistence`, `src/adapters/ipc/request_scope.rs`.
