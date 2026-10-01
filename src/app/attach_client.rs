@@ -5181,6 +5181,10 @@ mod tests {
         mirror_ws.mirror = true;
         let mut engine = parked[1].session.borrow_mut();
         engine.push_mirror_workspace(mirror_ws);
+        engine.runtime.surfaces.insert(
+            local_surface,
+            Box::new(crate::model::TerminalSurface { id: local_surface }),
+        );
         engine
             .runtime
             .terminals
@@ -5216,6 +5220,12 @@ mod tests {
         let (survivor_remote, survivor_local, new_remote) = (42u32, 9_003u32, 43u32);
         let mut parked = parked_with_mirror(ws_id, survivor_local);
         let untouched_ws_count = parked[0].session.core_state.workspaces().len();
+        let original_generation = parked[1]
+            .session
+            .runtime
+            .terminals
+            .generation(survivor_local)
+            .expect("original mirror terminal");
         let mut sess = test_session(ws_id, HashMap::from([(survivor_remote, survivor_local)]));
 
         let tree = serde_json::json!({
@@ -5266,6 +5276,11 @@ mod tests {
         }
 
         let engine = parked[pidx].session.as_ref();
+        assert_eq!(
+            engine.runtime.terminals.generation(survivor_local),
+            Some(original_generation),
+            "a surviving mirror keeps its original terminal owner"
+        );
         let survivor = engine
             .runtime
             .terminals
