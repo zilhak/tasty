@@ -454,20 +454,7 @@ impl EngineAction {
                 Ok(()) => {
                     // The receiving shell reads this file asynchronously, after this action.
                     let _ = directory.keep();
-                    if engine.live.occupancy.is_hard_occupied(target.surface) {
-                        return;
-                    }
-                    if let Some(terminal) = engine.runtime.terminals.get_mut(target.surface) {
-                        let mut bytes = Vec::new();
-                        if *bracketed {
-                            bytes.extend_from_slice(b"\x1b[200~");
-                        }
-                        bytes.extend_from_slice(path.to_string_lossy().as_bytes());
-                        if *bracketed {
-                            bytes.extend_from_slice(b"\x1b[201~");
-                        }
-                        terminal.send_bytes(&bytes);
-                    }
+                    send_saved_image_path(engine, target.surface, *bracketed, &path);
                 }
                 Err(error) => tracing::warn!(%error,"clipboard image save failed"),
             }
@@ -651,5 +638,28 @@ impl EngineAction {
             explorer.active_tab_mut().set_cwd(folder.clone());
             engine.mark_layout_dirty();
         }
+    }
+}
+
+#[cfg(feature = "gui")]
+fn send_saved_image_path(
+    engine: &mut EngineMut<'_>,
+    surface: u32,
+    bracketed: bool,
+    path: &std::path::Path,
+) {
+    if engine.live.occupancy.is_hard_occupied(surface) {
+        return;
+    }
+    if let Some(terminal) = engine.runtime.terminals.get_mut(surface) {
+        let mut bytes = Vec::new();
+        if bracketed {
+            bytes.extend_from_slice(b"\x1b[200~");
+        }
+        bytes.extend_from_slice(path.to_string_lossy().as_bytes());
+        if bracketed {
+            bytes.extend_from_slice(b"\x1b[201~");
+        }
+        terminal.send_bytes(&bytes);
     }
 }
