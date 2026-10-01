@@ -2,9 +2,12 @@
 //! 러너가 공유 Arc에 등록하고 호스트의 HookFired 소비자가 찾아 작업을 마친다.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::atomic::AtomicU64;
+use std::sync::{Arc, Mutex};
 
 use tasty_agent::task::TaskId;
+
+use crate::task_waker::TaskWakerHub;
 
 const HOOK_WAIT_WHAT: &str = "agent hook-wait registry";
 static HOOK_WAIT_POISONED: std::sync::atomic::AtomicBool =
@@ -12,7 +15,26 @@ static HOOK_WAIT_POISONED: std::sync::atomic::AtomicBool =
 
 /// hook ID별 일회성 대기. 보고가 없으면 sweep_expired로 만료 항목을 회수해 호출자가 처리한다.
 pub struct HookTaskWaits {
-    inner: Mutex<HashMap<u64, (u32, TaskId, u64)>>,
+    inner: Mutex<HashMap<u64, HookWait>>,
+}
+
+struct HookWait {
+    workspace: u32,
+    task: TaskId,
+    deadline: u64,
+    owner: Option<HookWaitOwner>,
+}
+
+/// A global sweep can run in another engine; fallback IDs and notifications retain their owner.
+pub(crate) struct HookWaitOwner {
+    pub(crate) agent_seq: Arc<AtomicU64>,
+    pub(crate) completion: Arc<TaskWakerHub>,
+}
+
+pub(crate) struct ExpiredWait {
+    pub(crate) workspace: u32,
+    pub(crate) task: TaskId,
+    pub(crate) owner: Option<HookWaitOwner>,
 }
 
 impl HookTaskWaits {
@@ -25,30 +47,64 @@ impl HookTaskWaits {
     /// 같은 hook ID는 마지막 등록으로 바꾼다. deadline_ms는 Unix epoch 기준 절대 밀리초다.
     /// 러너는 메인 스레드의 Core를 직접 사용하지 않고 공유 Arc로 등록한다.
     pub fn register(&self, hook_id: u64, workspace_id: u32, task_id: TaskId, deadline_ms: u64) {
-        let mut guard =
-            tasty_utils::poison::recover_mutex(self.inner.lock(), HOOK_WAIT_WHAT, &HOOK_WAIT_POISONED);
-        guard.insert(hook_id, (workspace_id, task_id, deadline_ms));
+        self.insert(hook_id, workspace_id, task_id, deadline_ms, None);
     }
 
     /// 한 번 반환한 매핑은 지워 같은 훅의 재발생이 끝난 작업과 다시 연결되지 않게 한다.
     pub fn resolve(&self, hook_id: u64) -> Option<(u32, TaskId)> {
         let mut guard =
             tasty_utils::poison::recover_mutex(self.inner.lock(), HOOK_WAIT_WHAT, &HOOK_WAIT_POISONED);
-        guard.remove(&hook_id).map(|(ws, tid, _)| (ws, tid))
+        guard.remove(&hook_id).map(|wait| (wait.workspace, wait.task))
     }
 
-    /// deadline <= now_ms인 항목을 락 안에서 제거한다. 여러 러너가 호출해도 같은 항목을 중복 회수하지 않는다.
-    pub fn sweep_expired(&self, now_ms: u64) -> Vec<(u32, TaskId)> {
+    /// Another workspace's runner may expire this wait even after its own runner stopped.
+    pub(crate) fn register_owned(
+        &self,
+        hook_id: u64,
+        workspace: u32,
+        task: TaskId,
+        deadline: u64,
+        owner: HookWaitOwner,
+    ) {
+        self.insert(hook_id, workspace, task, deadline, Some(owner));
+    }
+
+    fn insert(
+        &self,
+        hook_id: u64,
+        workspace: u32,
+        task: TaskId,
+        deadline: u64,
+        owner: Option<HookWaitOwner>,
+    ) {
         let mut guard =
             tasty_utils::poison::recover_mutex(self.inner.lock(), HOOK_WAIT_WHAT, &HOOK_WAIT_POISONED);
-        let expired_ids: Vec<u64> = guard
-            .iter()
-            .filter(|(_, (_, _, deadline))| *deadline <= now_ms)
-            .map(|(hook_id, _)| *hook_id)
-            .collect();
-        expired_ids
+        guard.insert(hook_id, HookWait { workspace, task, deadline, owner });
+    }
+
+    /// deadline <= now_ms인 항목을 락 안에서 제거한다. 여러 러너가 호출해도 중복 회수하지 않는다.
+    pub fn sweep_expired(&self, now_ms: u64) -> Vec<(u32, TaskId)> {
+        self.take_expired(now_ms)
             .into_iter()
-            .filter_map(|id| guard.remove(&id).map(|(ws, tid, _)| (ws, tid)))
+            .map(|wait| (wait.workspace, wait.task))
+            .collect()
+    }
+
+    pub(crate) fn take_expired(&self, now_ms: u64) -> Vec<ExpiredWait> {
+        let mut guard =
+            tasty_utils::poison::recover_mutex(self.inner.lock(), HOOK_WAIT_WHAT, &HOOK_WAIT_POISONED);
+        let ids: Vec<_> = guard
+            .iter()
+            .filter(|(_, wait)| wait.deadline <= now_ms)
+            .map(|(id, _)| *id)
+            .collect();
+        ids.into_iter()
+            .filter_map(|id| guard.remove(&id))
+            .map(|wait| ExpiredWait {
+                workspace: wait.workspace,
+                task: wait.task,
+                owner: wait.owner,
+            })
             .collect()
     }
 
@@ -71,6 +127,38 @@ mod tests {
     use super::*;
 
     const NO_DEADLINE: u64 = u64::MAX;
+
+    #[test]
+    fn owned_wait_retains_origin_until_consumed_or_replaced() {
+        let waits = HookTaskWaits::new();
+        let completion = Arc::new(TaskWakerHub::new());
+        let agent_seq = Arc::new(AtomicU64::new(42));
+        let owner = || HookWaitOwner {
+            agent_seq: agent_seq.clone(),
+            completion: completion.clone(),
+        };
+        waits.register_owned(1, 7, "original".into(), 100, owner());
+        let expired = waits.take_expired(100).pop().unwrap();
+        assert_eq!((expired.workspace, expired.task.as_str()), (7, "original"));
+        let original = expired.owner.unwrap();
+        assert!(Arc::ptr_eq(&original.completion, &completion));
+        assert!(Arc::ptr_eq(&original.agent_seq, &agent_seq));
+        assert!(waits.take_expired(100).is_empty());
+        drop(original);
+
+        waits.register_owned(1, 7, "resolved".into(), 100, owner());
+        assert_eq!(waits.resolve(1), Some((7, "resolved".into())));
+        assert_eq!(Arc::strong_count(&completion), 1);
+        assert_eq!(Arc::strong_count(&agent_seq), 1);
+
+        waits.register_owned(1, 7, "replaced".into(), 100, owner());
+        waits.register(1, 8, "legacy".into(), 100);
+        assert_eq!(Arc::strong_count(&completion), 1);
+        assert_eq!(Arc::strong_count(&agent_seq), 1);
+        let legacy = waits.take_expired(100).pop().unwrap();
+        assert_eq!((legacy.workspace, legacy.task.as_str()), (8, "legacy"));
+        assert!(legacy.owner.is_none());
+    }
 
     #[test]
     fn register_then_resolve_removes_entry() {

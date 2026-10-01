@@ -169,7 +169,7 @@ impl RunnerRegistry {
     pub(crate) fn status(&self, ctx: &RunnerContext, workspace_id: u32) -> RunnerStatus {
         let (running, crashed) = self.liveness(workspace_id);
         let list_failures = {
-            let threads = self.threads.lock().expect("RunnerRegistry poisoned");
+            let threads = self.lock_recovering();
             threads
                 .get(&workspace_id)
                 .map_or(0, |c| c.list_failures.load(Ordering::Relaxed))
@@ -258,7 +258,8 @@ fn purge_stale_semaphore_holders(ctx: &RunnerContext, workspace_id: u32) {
     if candidates.is_empty() {
         return;
     }
-    ctx.with_memory(|mem| {
+    let transitioned = ctx.with_memory(|mem| {
+        let mut transitioned = Vec::new();
         let seq = ctx.agent_seq.clone();
         {
             let mut sem = SemaphoreStore::new(mem, HOST_OWNER);
@@ -279,7 +280,7 @@ fn purge_stale_semaphore_holders(ctx: &RunnerContext, workspace_id: u32) {
             ) {
                 tracing::warn!("purge set_result for {task_id} failed: {e}");
             }
-            if let Err(e) = store.set_state(
+            match store.set_state(
                 workspace_id,
                 task_id,
                 TaskState::Failed {
@@ -287,10 +288,16 @@ fn purge_stale_semaphore_holders(ctx: &RunnerContext, workspace_id: u32) {
                 },
                 now,
             ) {
-                tracing::warn!("purge set_state for {task_id} failed: {e}");
+                Ok((task, downstream)) => {
+                    transitioned.push(task);
+                    transitioned.extend(downstream);
+                }
+                Err(e) => tracing::warn!("purge set_state for {task_id} failed: {e}"),
             }
         }
+        transitioned
     });
+    ctx.fire_terminal_tasks(workspace_id, transitioned);
     tracing::info!(
         "agent runner ws{workspace_id}: processed {} stale semaphore holder candidate(s) during startup cleanup",
         candidates.len()
@@ -328,7 +335,8 @@ fn purge_stale_lease_holders(ctx: &RunnerContext, workspace_id: u32) {
     if candidates.is_empty() {
         return;
     }
-    ctx.with_memory(|mem| {
+    let transitioned = ctx.with_memory(|mem| {
+        let mut transitioned = Vec::new();
         let seq = ctx.agent_seq.clone();
         {
             let mut lstore = LeaseStore::new(mem, HOST_OWNER);
@@ -349,7 +357,7 @@ fn purge_stale_lease_holders(ctx: &RunnerContext, workspace_id: u32) {
             ) {
                 tracing::warn!("purge(lease) set_result for {task_id} failed: {e}");
             }
-            if let Err(e) = store.set_state(
+            match store.set_state(
                 workspace_id,
                 task_id,
                 TaskState::Failed {
@@ -357,10 +365,16 @@ fn purge_stale_lease_holders(ctx: &RunnerContext, workspace_id: u32) {
                 },
                 now,
             ) {
-                tracing::warn!("purge(lease) set_state for {task_id} failed: {e}");
+                Ok((task, downstream)) => {
+                    transitioned.push(task);
+                    transitioned.extend(downstream);
+                }
+                Err(e) => tracing::warn!("purge(lease) set_state for {task_id} failed: {e}"),
             }
         }
+        transitioned
     });
+    ctx.fire_terminal_tasks(workspace_id, transitioned);
     tracing::info!(
         "agent runner ws{workspace_id}: processed {} stale lease holder candidate(s) during startup cleanup",
         candidates.len()
@@ -512,7 +526,8 @@ fn mark_dead_tasks(
     if dead.is_empty() {
         return;
     }
-    ctx.with_memory(|mem| {
+    let transitioned = ctx.with_memory(|mem| {
+        let mut transitioned = Vec::new();
         let seq = ctx.agent_seq.clone();
         {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
@@ -528,20 +543,26 @@ fn mark_dead_tasks(
                 ) {
                     tracing::warn!("reload mark failed set_result {task_id}: {e}");
                 }
-                if let Err(e) = store.set_state(
+                match store.set_state(
                     workspace_id,
                     task_id,
                     TaskState::Failed { error: err.clone() },
                     now,
                 ) {
-                    tracing::warn!("reload mark failed set_state {task_id}: {e}");
+                    Ok((task, downstream)) => {
+                        transitioned.push(task);
+                        transitioned.extend(downstream);
+                    }
+                    Err(e) => tracing::warn!("reload mark failed set_state {task_id}: {e}"),
                 }
             }
         }
         for (task_id, _) in dead {
             let _ = mem.delete(HOST_OWNER, scope, &handle_key(task_id), None); // 삭제 실패는 무시하며 handle이 남으면 다음 reload가 다시 분류한다.
         }
+        transitioned
     });
+    ctx.fire_terminal_tasks(workspace_id, transitioned);
 }
 
 fn finalize_precise_tasks(
@@ -554,16 +575,21 @@ fn finalize_precise_tasks(
     if precise.is_empty() {
         return;
     }
-    ctx.with_memory(|mem| {
+    let transitioned = ctx.with_memory(|mem| {
+        let mut transitioned = Vec::new();
         let seq = ctx.agent_seq.clone();
         {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             for (task_id, outcome) in precise {
-                apply_precise_outcome(&mut store, workspace_id, task_id, outcome, now);
+                transitioned.extend(apply_precise_outcome(
+                    &mut store, workspace_id, task_id, outcome, now,
+                ));
             }
         }
         evict_precise_handles(mem, scope, precise);
+        transitioned
     });
+    ctx.fire_terminal_tasks(workspace_id, transitioned);
     for (task_id, _) in precise {
         evict_run_result(ctx, workspace_id, task_id);
     }
@@ -576,7 +602,7 @@ fn apply_precise_outcome(
     task_id: &TaskId,
     outcome: &PollOutcome,
     now: u64,
-) {
+) -> Vec<tasty_agent::Task> {
     let (result, next_state) = match outcome {
         PollOutcome::Done(r) => (r.clone(), TaskState::Succeeded),
         PollOutcome::Failed(err) => (
@@ -587,13 +613,17 @@ fn apply_precise_outcome(
             },
             TaskState::Failed { error: err.clone() },
         ),
-        PollOutcome::Active => return,
+        PollOutcome::Active => return Vec::new(),
     };
     if let Err(e) = store.set_result(workspace_id, task_id, result) {
         tracing::warn!("reload precise set_result {task_id}: {e}");
     }
-    if let Err(e) = store.set_state(workspace_id, task_id, next_state, now) {
-        tracing::warn!("reload precise set_state {task_id}: {e}");
+    match store.set_state(workspace_id, task_id, next_state, now) {
+        Ok((task, downstream)) => std::iter::once(task).chain(downstream).collect(),
+        Err(e) => {
+            tracing::warn!("reload precise set_state {task_id}: {e}");
+            Vec::new()
+        }
     }
 }
 
@@ -613,11 +643,17 @@ fn evict_precise_handles(
 /// 저장 실패는 경고하며 제거한 매핑을 재등록하지 않는다. 재시작으로 사라진 매핑은 대상이 아니다.
 /// 공유 매핑의 제거가 락 안에서 이뤄져 여러 workspace 러너가 같은 항목을 중복 회수하지 않는다.
 fn expire_overdue_hook_waits(ctx: &RunnerContext, now_ms: u64) {
-    let overdue = ctx.hook_task_waits.sweep_expired(now_ms);
-    for (workspace_id, task_id) in overdue {
+    let overdue = ctx.hook_task_waits.take_expired(now_ms);
+    for wait in overdue {
+        let workspace_id = wait.workspace;
+        let task_id = wait.task;
+        let owner = wait.owner.unwrap_or_else(|| crate::hook_wait::HookWaitOwner {
+            agent_seq: ctx.agent_seq.clone(),
+            completion: ctx.task_waker_hub.clone(),
+        });
         let error = "push completion strategy timed out waiting for external report".to_string();
         let fire_target = ctx.with_memory(|mem| {
-            let seq = ctx.agent_seq.clone();
+            let seq = owner.agent_seq.clone();
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             let result = TaskResult {
                 exit_code: None,
@@ -636,19 +672,28 @@ fn expire_overdue_hook_waits(ctx: &RunnerContext, now_ms: u64) {
                 },
                 now_ms,
             ) {
-                Ok((task, _downstream)) => Some((task.state, task.result)),
+                Ok((task, downstream)) => {
+                    Some(std::iter::once(task).chain(downstream).collect::<Vec<_>>())
+                }
                 Err(e) => {
                     tracing::warn!("hook wait timeout: set_state {task_id} failed: {e}");
                     None
                 }
             }
         });
-        if let Some((state, result)) = fire_target {
-            ctx.task_waker_hub.fire(
-                workspace_id,
-                &task_id,
-                crate::task_waker::TerminalSnapshot { state, result },
-            );
+        if let Some(tasks) = fire_target {
+            for task in tasks {
+                if task.state.is_terminal() {
+                    owner.completion.fire(
+                        workspace_id,
+                        &task.id,
+                        crate::task_waker::TerminalSnapshot {
+                            state: task.state,
+                            result: task.result,
+                        },
+                    );
+                }
+            }
         }
         tracing::warn!(
             "agent task {task_id} (ws {workspace_id}): push completion strategy timed out \
@@ -821,24 +866,14 @@ fn run_loop(
                     let seq = ctx_for_set.agent_seq.clone();
                     let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
                     match store.set_state(ws, id, st, n) {
-                        Ok((task, _downstream)) => {
-                            let fire = if task.state.is_terminal() {
-                                Some((task.state.clone(), task.result.clone()))
-                            } else {
-                                None
-                            };
-                            (Ok(()), fire)
-                        }
-                        Err(e) => (Err(e), None),
+                        Ok((task, downstream)) => (
+                            Ok(()),
+                            std::iter::once(task).chain(downstream).collect::<Vec<_>>(),
+                        ),
+                        Err(e) => (Err(e), Vec::new()),
                     }
                 });
-                if let Some((state, result)) = fire_target {
-                    ctx_for_set.task_waker_hub.fire(
-                        ws,
-                        id,
-                        crate::task_waker::TerminalSnapshot { state, result },
-                    );
-                }
+                ctx_for_set.fire_terminal_tasks(ws, fire_target);
                 res
             },
             move |ws, id, r| {
@@ -907,6 +942,7 @@ mod tests {
             host_ipc: Arc::new(OnceLock::new()),
             task_waker_hub: Arc::new(crate::task_waker::TaskWakerHub::new()),
             hook_task_waits: Arc::new(crate::hook_wait::HookTaskWaits::new()),
+            completion: Arc::new(crate::completion::fixture::Resolver::default()),
         };
         (td, ctx)
     }
@@ -1574,6 +1610,62 @@ mod tests {
             task.state
         );
         assert!(task.result.is_some());
+    }
+
+    #[test]
+    fn global_hook_expiry_notifies_the_origin_engine_and_its_downstream() {
+        use crate::event_feed::{AgentEvent, AgentEventQueue};
+        use crate::hook_wait::HookWaitOwner;
+        use crate::task_waker::TaskWakerHub;
+
+        let (_td, mut origin) = fresh_ctx();
+        let origin_feed = Arc::new(AgentEventQueue::new());
+        origin.task_waker_hub = Arc::new(TaskWakerHub::with_feed(origin_feed.clone()));
+        let mut sweeping = origin.clone();
+        let sweeping_feed = Arc::new(AgentEventQueue::new());
+        sweeping.task_waker_hub = Arc::new(TaskWakerHub::with_feed(sweeping_feed.clone()));
+        sweeping.agent_seq = Arc::new(AtomicU64::new(500));
+        let (parent, child) = origin.with_memory(|mem| {
+            let mut store = TaskStore::new(mem, HOST_OWNER, origin.agent_seq.as_ref());
+            let opts = |name: &str, depends_on| TaskCreateOpts {
+                workspace_id: 7,
+                name: name.into(),
+                command: TaskCommand::Custom {
+                    ipc_method: "acme.start".into(),
+                    params: serde_json::json!({}),
+                    poll: None,
+                },
+                depends_on,
+                on_failure: OnFailure::Abort,
+                metadata: serde_json::Value::Null,
+                now_ms: 1000,
+            };
+            let parent = store.create(opts("parent", vec![])).unwrap();
+            let child = store.create(opts("child", vec![parent.id.clone()])).unwrap();
+            store.set_state(7, &parent.id, TaskState::Running, 1100).unwrap();
+            (parent.id, child.id)
+        });
+        origin.hook_task_waits.register_owned(
+            1, 7, parent.clone(), 2000,
+            HookWaitOwner {
+                agent_seq: origin.agent_seq.clone(),
+                completion: origin.task_waker_hub.clone(),
+            },
+        );
+        // No origin runner is running. A process-wide sweep still expires its wait.
+        expire_overdue_hook_waits(&sweeping, 5000);
+        let (events, dropped) = origin_feed.take_pending();
+        assert_eq!(dropped, 0);
+        assert_eq!(events.len(), 2);
+        assert!(events.contains(&AgentEvent::TaskFinished {
+            workspace_id: 7, task_id: parent, state: "failed",
+        }));
+        assert!(events.contains(&AgentEvent::TaskFinished {
+            workspace_id: 7, task_id: child, state: "skipped",
+        }));
+        assert!(sweeping_feed.take_pending().0.is_empty());
+        expire_overdue_hook_waits(&sweeping, 5000);
+        assert!(origin_feed.take_pending().0.is_empty());
     }
 
     #[test]

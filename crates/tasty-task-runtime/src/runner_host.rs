@@ -16,14 +16,14 @@ use tasty_agent::{
 use tasty_memory::{HOST_OWNER, MemoryStorage, MemoryValue, PutOpts, Scope};
 
 /// 재시작 뒤 실행 중인 작업을 복원할 workspace별 handle 키. 즉시 끝나는 handle은 저장하지 않는다.
-pub const HANDLE_KEY_PREFIX: &str = "tasty.agent.handle.";
+pub(crate) const HANDLE_KEY_PREFIX: &str = "tasty.agent.handle.";
 
-pub fn handle_key(task_id: &str) -> String {
+pub(crate) fn handle_key(task_id: &str) -> String {
     format!("{HANDLE_KEY_PREFIX}{task_id}")
 }
 
 /// IPC 조회가 외부 완료 신호의 wait_key·deadline도 보여줄 수 있도록 저장된 handle을 읽는다.
-pub fn load_dispatch_handle(
+pub(crate) fn load_dispatch_handle(
     ctx: &RunnerContext,
     workspace_id: u32,
     task_id: &str,
@@ -39,9 +39,9 @@ pub fn load_dispatch_handle(
 }
 
 /// 자식 종료와 출력 수집 뒤 기록하는 결과 키. 기록 전에 호스트가 종료되거나 저장이 실패하면 남지 않을 수 있다.
-pub const RUN_RESULT_KEY_PREFIX: &str = "tasty.agent.run_result.";
+pub(crate) const RUN_RESULT_KEY_PREFIX: &str = "tasty.agent.run_result.";
 
-pub fn run_result_key(task_id: &str) -> String {
+pub(crate) fn run_result_key(task_id: &str) -> String {
     format!("{RUN_RESULT_KEY_PREFIX}{task_id}")
 }
 
@@ -82,8 +82,25 @@ static RUN_RESULT_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 impl RunnerContext {
+    /// The store transition may cancel downstream tasks as well as the requested task.
+    /// Notify after releasing the memory lock, through this engine's hub only.
+    pub(crate) fn fire_terminal_tasks(&self, workspace_id: u32, tasks: impl IntoIterator<Item = Task>) {
+        for task in tasks {
+            if task.state.is_terminal() {
+                self.task_waker_hub.fire(
+                    workspace_id,
+                    &task.id,
+                    crate::task_waker::TerminalSnapshot {
+                        state: task.state,
+                        result: task.result,
+                    },
+                );
+            }
+        }
+    }
+
     /// poison은 로그로 알리고 남은 저장소를 계속 사용한다. 임의 MemoryStorage 호출의 중간 실패를 복구하는 것은 아니다.
-    pub fn with_memory<R>(&self, f: impl FnOnce(&mut dyn MemoryStorage) -> R) -> R {
+    pub(crate) fn with_memory<R>(&self, f: impl FnOnce(&mut dyn MemoryStorage) -> R) -> R {
         let mut guard = tasty_utils::poison::recover_mutex(
             self.memory.lock(),
             "agent runner memory",
@@ -93,7 +110,7 @@ impl RunnerContext {
     }
 
     /// 큐 입장 거절을 여기서 재시도하면 적체를 늘리므로 오류를 그대로 전달한다.
-    pub fn dispatch_plugin(
+    pub(crate) fn dispatch_plugin(
         &self,
         method: &str,
         params: serde_json::Value,
@@ -114,7 +131,7 @@ struct ShellChildEntry {
     _watcher: thread::JoinHandle<()>,
 }
 
-pub struct HostExecutor {
+pub(crate) struct HostExecutor {
     ctx: RunnerContext,
     /// Child는 watcher가 소유하고 Clone 가능한 DispatchHandle에는 PID만 남긴다.
     shell_children: HashMap<u32, ShellChildEntry>,
@@ -129,7 +146,7 @@ pub struct HostExecutor {
 }
 
 impl HostExecutor {
-    pub fn new(ctx: RunnerContext) -> Self {
+    pub(crate) fn new(ctx: RunnerContext) -> Self {
         Self {
             ctx,
             shell_children: HashMap::new(),
@@ -720,9 +737,16 @@ impl HostExecutor {
             )
         })?;
         let deadline_ms = now_ms() + timeout_ms;
-        self.ctx
-            .hook_task_waits
-            .register(hook_id, task.workspace_id, task.id.clone(), deadline_ms);
+        self.ctx.hook_task_waits.register_owned(
+            hook_id,
+            task.workspace_id,
+            task.id.clone(),
+            deadline_ms,
+            crate::hook_wait::HookWaitOwner {
+                agent_seq: self.ctx.agent_seq.clone(),
+                completion: self.ctx.task_waker_hub.clone(),
+            },
+        );
         // 훅 매핑은 재시작 때 사라져도 handle의 기한으로 reload에서 만료를 판단할 수 있게 한다.
         Ok(DispatchHandle::AwaitExternal {
             wait_key: hook_id.to_string(),
@@ -1253,6 +1277,7 @@ mod tests {
             host_ipc: Arc::new(OnceLock::new()),
             task_waker_hub: Arc::new(crate::task_waker::TaskWakerHub::new()),
             hook_task_waits: Arc::new(crate::hook_wait::HookTaskWaits::new()),
+            completion: Arc::new(crate::completion::fixture::Resolver::default()),
         };
         (td, ctx)
     }
@@ -1987,25 +2012,22 @@ mod tests {
         use tasty_ipc::host_call::HostIpcInjector;
         use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
-        use tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort;
 
-        crate::completion_strategy::HostCompletionStrategyPort
-            .install_plugin_completion_strategies(
-                "rhtest1",
-                &[serde_json::json!({
-                    "id": "wait-done",
-                    "priority": 100,
-                    "spec": {
-                        "kind": "poll",
+        let (_td, mut ctx) = fresh_ctx();
+        ctx.completion = Arc::new(crate::completion::fixture::Resolver {
+            strategy: Some(crate::completion::CompletionStrategy {
+                id: "rhtest1/wait-done".into(),
+                kind: crate::completion::CompletionKind::Poll(
+                    serde_json::from_value(json!({
                         "poll_method": "rhtest1.poll",
                         "state_field": "state",
                         "terminal_states": ["done"],
                         "interval_ms": 1,
-                    },
-                })],
-            );
-
-        let (_td, ctx) = fresh_ctx();
+                    })).unwrap(),
+                ),
+            }),
+            default_method: None,
+        });
         let mut exec = HostExecutor::new(ctx.clone());
         let (tx, rx) = mpsc::channel::<IpcCommand>();
         let waker = std::sync::Arc::new(|| {});
@@ -2060,48 +2082,27 @@ mod tests {
             other => panic!("expected Done, got {other:?}"),
         }
         worker.join().unwrap();
-        crate::completion_strategy::HostCompletionStrategyPort.uninstall_plugin("rhtest1");
     }
 
     #[test]
     fn custom_with_named_push_strategy_registers_hook_and_awaits_external() {
-        use crate::hook_handler::types::{
-            HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource,
-        };
         use std::sync::mpsc;
         use tasty_agent::{OnFailure, PollSpecRef};
         use tasty_ipc::host_call::HostIpcInjector;
         use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
-        use tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort;
 
-        crate::hook_handler::global()
-            .upsert_full_handler(HookHandler {
-                id: HookHandlerId::new("rhtest-push/notify"),
-                source: HookSource::Hook,
-                priority: 100,
-                owner: HookHandlerOwner::Plugin("rhtest-push".into()),
-                action: HookHandlerAction::IpcSequence { calls: vec![] },
-                display_name_i18n_key: None,
-                disabled: false,
-            })
-            .expect("test hook handler upsert");
-
-        crate::completion_strategy::HostCompletionStrategyPort
-            .install_plugin_completion_strategies(
-                "rhtest-push",
-                &[serde_json::json!({
-                    "id": "wait-done",
-                    "priority": 100,
-                    "spec": {
-                        "kind": "push",
-                        "notify_via": "rhtest-push/notify",
-                        "timeout_ms": 60000,
-                    },
-                })],
-            );
-
-        let (_td, ctx) = fresh_ctx();
+        let (_td, mut ctx) = fresh_ctx();
+        ctx.completion = Arc::new(crate::completion::fixture::Resolver {
+            strategy: Some(crate::completion::CompletionStrategy {
+                id: "rhtest-push/wait-done".into(),
+                kind: crate::completion::CompletionKind::Push {
+                    notify_via: "rhtest-push/notify".into(),
+                    timeout_ms: 60_000,
+                },
+            }),
+            default_method: None,
+        });
         let mut exec = HostExecutor::new(ctx.clone());
         let (tx, rx) = mpsc::channel::<IpcCommand>();
         let waker = std::sync::Arc::new(|| {});
@@ -2186,49 +2187,27 @@ mod tests {
             ctx.hook_task_waits.resolve(999),
             Some((1, "t-push".to_string()))
         );
-
-        crate::completion_strategy::HostCompletionStrategyPort.uninstall_plugin("rhtest-push");
     }
 
     #[test]
     fn custom_with_push_strategy_missing_surface_id_fails_dispatch() {
-        use crate::hook_handler::types::{
-            HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource,
-        };
         use std::sync::mpsc;
         use tasty_agent::{OnFailure, PollSpecRef};
         use tasty_ipc::host_call::HostIpcInjector;
         use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
-        use tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort;
 
-        crate::hook_handler::global()
-            .upsert_full_handler(HookHandler {
-                id: HookHandlerId::new("rhtest-push2/notify"),
-                source: HookSource::Hook,
-                priority: 100,
-                owner: HookHandlerOwner::Plugin("rhtest-push2".into()),
-                action: HookHandlerAction::IpcSequence { calls: vec![] },
-                display_name_i18n_key: None,
-                disabled: false,
-            })
-            .expect("test hook handler upsert");
-
-        crate::completion_strategy::HostCompletionStrategyPort
-            .install_plugin_completion_strategies(
-                "rhtest-push2",
-                &[serde_json::json!({
-                    "id": "wait-done",
-                    "priority": 100,
-                    "spec": {
-                        "kind": "push",
-                        "notify_via": "rhtest-push2/notify",
-                        "timeout_ms": 60000,
-                    },
-                })],
-            );
-
-        let (_td, ctx) = fresh_ctx();
+        let (_td, mut ctx) = fresh_ctx();
+        ctx.completion = Arc::new(crate::completion::fixture::Resolver {
+            strategy: Some(crate::completion::CompletionStrategy {
+                id: "rhtest-push2/wait-done".into(),
+                kind: crate::completion::CompletionKind::Push {
+                    notify_via: "rhtest-push2/notify".into(),
+                    timeout_ms: 60_000,
+                },
+            }),
+            default_method: None,
+        });
         let mut exec = HostExecutor::new(ctx.clone());
         let (tx, rx) = mpsc::channel::<IpcCommand>();
         let waker = std::sync::Arc::new(|| {});
@@ -2272,7 +2251,6 @@ mod tests {
             other => panic!("expected PermanentFail, got {other:?}"),
         }
         worker.join().unwrap();
-        crate::completion_strategy::HostCompletionStrategyPort.uninstall_plugin("rhtest-push2");
     }
 
     /// 미등록 전략 오류 전에 원래 IPC는 이미 실행된다. 응답 뒤 전략 해석에서 실패하는 순서를 확인한다.
@@ -2337,26 +2315,22 @@ mod tests {
         use tasty_ipc::host_call::HostIpcInjector;
         use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
-        use tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort;
 
-        crate::completion_strategy::HostCompletionStrategyPort
-            .install_plugin_completion_strategies(
-                "rhtest3",
-                &[serde_json::json!({
-                    "id": "auto-wait",
-                    "priority": 100,
-                    "default_for_methods": ["rhtest3.start"],
-                    "spec": {
-                        "kind": "poll",
+        let (_td, mut ctx) = fresh_ctx();
+        ctx.completion = Arc::new(crate::completion::fixture::Resolver {
+            strategy: Some(crate::completion::CompletionStrategy {
+                id: "rhtest3/auto-wait".into(),
+                kind: crate::completion::CompletionKind::Poll(
+                    serde_json::from_value(json!({
                         "poll_method": "rhtest3.poll",
                         "state_field": "state",
                         "terminal_states": ["done"],
                         "interval_ms": 1,
-                    },
-                })],
-            );
-
-        let (_td, ctx) = fresh_ctx();
+                    })).unwrap(),
+                ),
+            }),
+            default_method: Some("rhtest3.start".into()),
+        });
         let mut exec = HostExecutor::new(ctx.clone());
         let (tx, rx) = mpsc::channel::<IpcCommand>();
         let waker = std::sync::Arc::new(|| {});
@@ -2410,7 +2384,6 @@ mod tests {
             other => panic!("expected Done, got {other:?}"),
         }
         worker.join().unwrap();
-        crate::completion_strategy::HostCompletionStrategyPort.uninstall_plugin("rhtest3");
     }
 
     #[test]

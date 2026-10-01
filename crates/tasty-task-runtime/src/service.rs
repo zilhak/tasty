@@ -73,7 +73,7 @@ impl TaskScope {
 /// 러너 등록부와 훅-작업 연결은 프로세스에 하나다. engine별 자원은 engine이 가진 범위로 받는다.
 pub struct TaskService {
     memory: Arc<Mutex<dyn MemoryStorage>>,
-    /// Core와 같은 Arc다. IPC 서버 시작 뒤 주입된 값을 러너 스레드가 읽는다.
+    /// App과 같은 Arc다. IPC 서버 시작 뒤 주입된 값을 러너 스레드가 읽는다.
     host_ipc: Arc<OnceLock<HostIpcInjector>>,
     runner_registry: Arc<RunnerRegistry>,
     hook_task_waits: Arc<HookTaskWaits>,
@@ -94,7 +94,7 @@ impl TaskService {
         }
     }
 
-    /// Core와 같은 poison 복구 헬퍼로 저장소 락을 얻는다. 콜백이 끝날 때까지 락을 유지한다.
+    /// 공용 poison 복구 정책으로 저장소 락을 얻는다. 콜백이 끝날 때까지 락을 유지한다.
     pub fn with_memory<R>(&self, f: impl FnOnce(&mut dyn MemoryStorage) -> R) -> R {
         let mut guard = tasty_utils::poison::recover_mutex(
             self.memory.lock(),
@@ -207,7 +207,11 @@ impl TaskAwaiter {
                     state: t.state,
                     result: t.result,
                 }),
-                Ok(None) | Err(_) => None,
+                Ok(None) => None,
+                Err(error) => {
+                    tracing::warn!(%error, workspace_id, %task_id, "task await lookup failed");
+                    None
+                }
             }
         };
         self.waker_hub
