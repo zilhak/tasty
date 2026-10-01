@@ -195,10 +195,14 @@ fn a_bypassed_pre_hook_carries_the_calling_plugin_to_the_target() {
     let (target, target_tap) = PluginProcess::stub_with_request_rx(TARGET);
     mgr.processes.insert(EXT.into(), ext);
     mgr.processes.insert(TARGET.into(), target);
+    let (caller, _caller_rx) = PluginProcess::stub_with_request_rx(CALLER);
+    let caller_binding = caller.reply_binding();
+    mgr.processes.insert(CALLER.into(), caller);
     let (mut from_plugin, _rx) = pre_hook(Instant::now());
     if let PendingRequestKind::ExtensionPreIpcHook { final_caller, .. } = &mut from_plugin.kind {
         *final_caller = FinalCaller::Plugin {
             caller_plugin_id: CALLER.into(),
+            binding: caller_binding,
             call_id: 5,
         };
     }

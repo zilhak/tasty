@@ -1034,7 +1034,11 @@ mod tests {
     fn a_call_queued_with_an_empty_permission_set_is_restamped_after_registration() {
         let mut mgr = mgr();
         mgr.set_plugin_permissions("com.example.test", HashSet::from([Permission::SurfaceRead]));
+        let (process, _requests) = PluginProcess::stub_with_request_rx("com.example.test");
+        let binding = process.reply_binding();
+        mgr.processes.insert("com.example.test".into(), process);
         let mut calls = vec![PendingPluginCall {
+            binding,
             plugin_id: "com.example.test".to_string(),
             call_id: 1,
             method: "recent.query".to_string(),
@@ -1042,6 +1046,7 @@ mod tests {
             // 수집 시점의 상태 — 아직 등록 전이라 빈 셋.
             permissions: Arc::new(HashSet::new()),
         }];
+        assert!(mgr.plugin_call_is_current(&calls[0]));
         mgr.restamp_permissions(&mut calls);
         assert!(
             calls[0].permissions.contains(&Permission::SurfaceRead),
@@ -1054,14 +1059,19 @@ mod tests {
     /// 가 아니라 "있으면 덮는다" 인지 가른다.
     #[test]
     fn an_unregistered_plugins_call_keeps_its_empty_permission_set() {
-        let mgr = mgr();
+        let mut mgr = mgr();
+        let (process, _requests) = PluginProcess::stub_with_request_rx("com.example.unknown");
+        let binding = process.reply_binding();
+        mgr.processes.insert("com.example.unknown".into(), process);
         let mut calls = vec![PendingPluginCall {
+            binding,
             plugin_id: "com.example.unknown".to_string(),
             call_id: 2,
             method: "recent.query".to_string(),
             params: json!({}),
             permissions: Arc::new(HashSet::new()),
         }];
+        assert!(mgr.plugin_call_is_current(&calls[0]));
         mgr.restamp_permissions(&mut calls);
         assert!(
             calls[0].permissions.is_empty(),

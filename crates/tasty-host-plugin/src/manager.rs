@@ -1267,10 +1267,12 @@ prefix = "{prefix}"
     fn a_host_originated_error_code_reaches_a_plugin_caller() {
         let mut mgr = PluginManager::new(empty_waker());
         let (proc, rx) = PluginProcess::stub_with_request_rx("com.example.caller");
+        let binding = proc.reply_binding();
         mgr.processes.insert("com.example.caller".into(), proc);
         mgr.send_final_error(
             FinalCaller::Plugin {
                 caller_plugin_id: "com.example.caller".into(),
+                binding,
                 call_id: 9,
             },
             -32004,
