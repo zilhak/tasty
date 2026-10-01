@@ -36,41 +36,50 @@ impl App {
             );
         }
         for (engine, (mirror_ws_id, origin_view)) in reqs {
-            let source_window = self.engines.window_of(engine);
-            let current = source_window
-                .and_then(|window| self.view.views.get(&window))
-                .and_then(|view| view.as_main())
-                .is_some_and(|main| main.base.state.matches_identity(&origin_view));
-            if !current {
-                tracing::debug!("discarding screenshot request from retired View");
-                continue;
-            }
-            let source_view = Some(origin_view);
+            self.start_screenshot_capture(engine, mirror_ws_id, origin_view);
+        }
+    }
 
-            let remote_target =
-                mirror_ws_id.and_then(|workspace| self.capture_remote_target(workspace, None));
-            if mirror_ws_id.is_some() && remote_target.is_none() {
-                tracing::debug!("capture mirror disappeared before start");
-                continue;
-            }
-            let tx = self.screenshot_capture_tx.clone();
-            let proxy = self.view.proxy.clone();
-            if let Err(error) = self.screenshot_workers.spawn(move || {
-                let result = capture_and_maybe_read(mirror_ws_id.is_some());
-                // 수신자가 사라지면 캡처 결과를 전달할 곳이 없어 오류를 무시한다.
-                let _ = tx.send(ScreenshotCaptureOutcome {
-                    engine,
-                    source_view,
-                    remote_target,
-                    mirror_ws_id,
-                    source_window,
-                    result,
-                });
-                // 이벤트 루프가 끝났으면 깨우기 실패를 무시한다.
-                let _ = proxy.send_event(crate::AppEvent::ScreenshotCaptureReady);
-            }) {
-                tracing::warn!(%error,"screenshot capture admission failed");
-            }
+    fn start_screenshot_capture(
+        &mut self,
+        engine: crate::runtime::engine_session::EngineId,
+        mirror_ws_id: Option<u32>,
+        origin_view: std::sync::Weak<()>,
+    ) {
+        let source_window = self.engines.window_of(engine);
+        let current = source_window
+            .and_then(|window| self.view.views.get(&window))
+            .and_then(|view| view.as_main())
+            .is_some_and(|main| main.base.state.matches_identity(&origin_view));
+        if !current {
+            tracing::debug!("discarding screenshot request from retired View");
+            return;
+        }
+        let source_view = Some(origin_view);
+
+        let remote_target =
+            mirror_ws_id.and_then(|workspace| self.capture_remote_target(workspace, None));
+        if mirror_ws_id.is_some() && remote_target.is_none() {
+            tracing::debug!("capture mirror disappeared before start");
+            return;
+        }
+        let tx = self.screenshot_capture_tx.clone();
+        let proxy = self.view.proxy.clone();
+        if let Err(error) = self.screenshot_workers.spawn(move || {
+            let result = capture_and_maybe_read(mirror_ws_id.is_some());
+            // 수신자가 사라지면 캡처 결과를 전달할 곳이 없어 오류를 무시한다.
+            let _ = tx.send(ScreenshotCaptureOutcome {
+                engine,
+                source_view,
+                remote_target,
+                mirror_ws_id,
+                source_window,
+                result,
+            });
+            // 이벤트 루프가 끝났으면 깨우기 실패를 무시한다.
+            let _ = proxy.send_event(crate::AppEvent::ScreenshotCaptureReady);
+        }) {
+            tracing::warn!(%error,"screenshot capture admission failed");
         }
     }
 

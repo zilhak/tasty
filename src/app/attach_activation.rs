@@ -209,6 +209,58 @@ pub(crate) fn begin(
     journal.wake_application();
 }
 
+// Poll the original activation receipt without marking the workspace ready prematurely.
+fn poll_leaf_activation(
+    leaf: &mut Leaf,
+    journal: &mut JournalApplication,
+    session: &mut EngineSession,
+) -> Result<(), &'static str> {
+    let current = session
+        .core_state
+        .find_surface_by_id(leaf.id)
+        .and_then(|surface| surface.activation_generation);
+    if let Some(generation) = leaf.physical {
+        if current != leaf.activation
+            || !session
+                .runtime
+                .terminals
+                .matches_generation(leaf.id, generation)
+        {
+            return Err("target_changed");
+        }
+        return Ok(());
+    }
+    if let Some(receipt) = &leaf.receipt {
+        match receipt.get() {
+            Some(ActivationOutcome::Ready {
+                activation,
+                physical: Some(generation),
+            }) if current == *activation
+                && session
+                    .runtime
+                    .terminals
+                    .matches_generation(leaf.id, *generation) =>
+            {
+                leaf.activation = *activation;
+                leaf.physical = Some(*generation);
+            }
+            Some(_) => return Err("spawn_failed"),
+            None => {}
+        }
+    } else if current != leaf.activation {
+        return Err("target_changed");
+    } else {
+        match journal.request_restore_receipt(session, leaf.id, leaf.activation) {
+            Ok(receipt) => leaf.receipt = receipt,
+            Err(error) => {
+                tracing::warn!("attach activation failed: {error}");
+                return Err("spawn_failed");
+            }
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn poll(
     pending: &mut Vec<PendingAttach>,
     journal: &mut JournalApplication,
@@ -236,58 +288,10 @@ pub(crate) fn poll(
             request.release(&mut session.borrow_mut());
             continue;
         }
-        let mut failure = None;
-        for leaf in &mut request.leaves {
-            let current = session
-                .core_state
-                .find_surface_by_id(leaf.id)
-                .and_then(|surface| surface.activation_generation);
-            if let Some(generation) = leaf.physical {
-                if current != leaf.activation
-                    || !session
-                        .runtime
-                        .terminals
-                        .matches_generation(leaf.id, generation)
-                {
-                    failure = Some("target_changed");
-                    break;
-                }
-                continue;
-            }
-            if let Some(receipt) = &leaf.receipt {
-                match receipt.get() {
-                    Some(ActivationOutcome::Ready {
-                        activation,
-                        physical: Some(generation),
-                    }) if current == *activation
-                        && session
-                            .runtime
-                            .terminals
-                            .matches_generation(leaf.id, *generation) =>
-                    {
-                        leaf.activation = *activation;
-                        leaf.physical = Some(*generation);
-                    }
-                    Some(_) => {
-                        failure = Some("spawn_failed");
-                        break;
-                    }
-                    None => {}
-                }
-            } else if current != leaf.activation {
-                failure = Some("target_changed");
-                break;
-            } else {
-                match journal.request_restore_receipt(session, leaf.id, leaf.activation) {
-                    Ok(receipt) => leaf.receipt = receipt,
-                    Err(error) => {
-                        tracing::warn!("attach activation failed: {error}");
-                        failure = Some("spawn_failed");
-                        break;
-                    }
-                }
-            }
-        }
+        let mut failure = request
+            .leaves
+            .iter_mut()
+            .find_map(|leaf| poll_leaf_activation(leaf, journal, session).err());
         if let Target::Workspace(workspace) = request.target {
             let current = session
                 .core_state

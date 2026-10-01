@@ -217,91 +217,100 @@ impl App {
     /// 진행 행을 지우고 성공 경로를 원래 surface에 삽입하거나 실패 popup을 연다.
     pub(crate) fn drain_image_upload_results(&mut self) {
         while let Ok(outcome) = self.image_upload_rx.try_recv() {
-            let ImageUploadOutcome {
-                attempt,
-                view,
-                remote_target,
-                mirror_ws_id,
-                surface_id,
-                bracketed,
-                transfer_id,
-                file_name,
-                png_bytes,
-                result,
-            } = outcome;
-            let accepted = self.remote.finish_attempt(&attempt).is_some();
-            self.finish_transfer_progress_row(surface_id, mirror_ws_id, transfer_id);
-            if !accepted
-                || view.as_ref().is_none_or(|(window, identity)| {
-                    self.view
-                        .views
-                        .get(window)
-                        .and_then(|view| view.as_main())
-                        .is_none_or(|main| !main.base.state.matches_identity(identity))
-                })
-            {
-                continue;
+            self.apply_image_upload_outcome(outcome);
+        }
+    }
+
+    fn apply_image_upload_outcome(&mut self, outcome: ImageUploadOutcome) {
+        let ImageUploadOutcome {
+            attempt,
+            view,
+            remote_target,
+            mirror_ws_id,
+            surface_id,
+            bracketed,
+            transfer_id,
+            file_name,
+            png_bytes,
+            result,
+        } = outcome;
+        let accepted = self.remote.finish_attempt(&attempt).is_some();
+        self.finish_transfer_progress_row(surface_id, mirror_ws_id, transfer_id);
+        if !accepted
+            || view.as_ref().is_none_or(|(window, identity)| {
+                self.view
+                    .views
+                    .get(window)
+                    .and_then(|view| view.as_main())
+                    .is_none_or(|main| !main.base.state.matches_identity(identity))
+            })
+        {
+            return;
+        }
+        if remote_target
+            .as_ref()
+            .is_some_and(|target| !self.remote_target_is_current(target))
+        {
+            tracing::debug!("discarding upload result for retired remote target");
+            return;
+        }
+        match result {
+            Ok(remote_path) => {
+                self.paste_uploaded_image_path(surface_id, bracketed, remote_path, remote_target);
             }
-            if remote_target
-                .as_ref()
-                .is_some_and(|target| !self.remote_target_is_current(target))
-            {
-                tracing::debug!("discarding upload result for retired remote target");
-                continue;
+            Err(e) => {
+                tracing::warn!("image upload to mirror workspace {mirror_ws_id} failed: {e}");
+                // 원격 정책 거절은 닫기만, 전송 오류는 재시도를 제공한다. 접두사는 표시에서 제외한다.
+                let raw = e.to_string();
+                let (retryable, reason) =
+                    match raw.strip_prefix(crate::app::attach_client::BULK_REJECT_PREFIX) {
+                        Some(clean) => (false, clean.to_string()),
+                        None => (true, raw),
+                    };
+                let name = file_name.clone();
+                let retry = if retryable {
+                    Some(crate::core::PendingImageUpload {
+                        origin_view: view.as_ref().expect("origin View checked").1.clone(),
+                        mirror_ws_id,
+                        surface_id,
+                        bracketed,
+                        file_name,
+                        png_bytes,
+                    })
+                } else {
+                    None
+                };
+                self.push_transfer_error(surface_id, mirror_ws_id, name, reason, retry);
             }
-            match result {
-                Ok(remote_path) => {
-                    let Some(target) = remote_target else {
-                        tracing::error!(
-                            "upload succeeded without its originating connection binding"
-                        );
-                        continue;
-                    };
-                    let Some(wid) = self.find_main_with_surface(surface_id) else {
-                        tracing::warn!(
-                            "image upload: mirror surface {surface_id} gone before path insertion"
-                        );
-                        continue;
-                    };
-                    if let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut())
-                    {
-                        if let Some((_, _, generation)) = target.surface {
-                            crate::view::main::clipboard::dispatch_bound_paste(
-                                main,
-                                surface_id,
-                                generation,
-                                bracketed,
-                                remote_path,
-                            );
-                        }
-                        main.mark_dirty();
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("image upload to mirror workspace {mirror_ws_id} failed: {e}");
-                    // 원격 정책 거절은 닫기만, 전송 오류는 재시도를 제공한다. 접두사는 표시에서 제외한다.
-                    let raw = e.to_string();
-                    let (retryable, reason) =
-                        match raw.strip_prefix(crate::app::attach_client::BULK_REJECT_PREFIX) {
-                            Some(clean) => (false, clean.to_string()),
-                            None => (true, raw),
-                        };
-                    let name = file_name.clone();
-                    let retry = if retryable {
-                        Some(crate::core::PendingImageUpload {
-                            origin_view: view.as_ref().expect("origin View checked").1.clone(),
-                            mirror_ws_id,
-                            surface_id,
-                            bracketed,
-                            file_name,
-                            png_bytes,
-                        })
-                    } else {
-                        None
-                    };
-                    self.push_transfer_error(surface_id, mirror_ws_id, name, reason, retry);
-                }
+        }
+    }
+
+    fn paste_uploaded_image_path(
+        &mut self,
+        surface_id: u32,
+        bracketed: bool,
+        remote_path: String,
+        remote_target: Option<crate::app::attach_client::RemoteTarget>,
+    ) {
+        let Some(target) = remote_target else {
+            tracing::error!("upload succeeded without its originating connection binding");
+            return;
+        };
+        let Some(wid) = self.find_main_with_surface(surface_id) else {
+            tracing::warn!("image upload: mirror surface {surface_id} gone before path insertion");
+            return;
+        };
+        if let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) {
+            if let Some((_, _, generation)) = target.surface {
+                crate::view::main::clipboard::dispatch_bound_paste(
+                    main,
+                    surface_id,
+                    generation,
+                    bracketed,
+                    remote_path,
+                );
             }
+            main.mark_dirty();
         }
     }
 

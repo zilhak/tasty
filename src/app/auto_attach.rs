@@ -84,20 +84,20 @@ impl App {
 
     /// 신규 매핑은 활성 상태면 연결하고, 연결 해제 뒤 대기 중인 anchor는 재활성화를 요구한다.
     /// 대상 ID는 매핑에서 가져오며 포커스를 바꾸지 않는다.
-    fn maybe_trigger_auto_attach(&mut self, current_ws_id: Option<u32>, prev_active: Option<u32>) {
+    fn auto_attach_candidate(
+        &self,
+        current_ws_id: Option<u32>,
+        prev_active: Option<u32>,
+    ) -> Option<(u32, crate::model::WorkspaceAttachMapping, u32)> {
         let candidate = {
-            let Some((main, engine)) = self.focused_pair() else {
-                return;
-            };
+            let (main, engine) = self.focused_pair()?;
             let idx = main.state.active_workspace_index(engine.core);
             match engine.workspace_at(idx) {
                 Some(ws) => ws.attach_mapping.as_ref().map(|m| (ws.id, m.clone())),
                 None => None,
             }
         };
-        let Some((anchor, mapping)) = candidate else {
-            return;
-        };
+        let (anchor, mapping) = candidate?;
         // 재연결이 맡은 anchor에 새 mirror를 중복 생성하지 않는다.
         if self
             .remote
@@ -105,16 +105,24 @@ impl App {
             .iter()
             .any(|s| s.anchor_ws_id() == Some(anchor) && s.state() == SessionState::Reconnecting)
         {
-            return;
+            return None;
         }
         let pending_reactivation = self.remote.pending_reactivation.contains(&anchor);
         if !is_attach_trigger_allowed(pending_reactivation, current_ws_id, prev_active) {
-            return;
+            return None;
         }
         if self.remote.active.contains(&anchor) {
-            return;
+            return None;
         }
-        let Some(remote_ws) = mapping.remote_workspace else {
+        let remote_ws = mapping.remote_workspace?;
+
+        Some((anchor, mapping, remote_ws))
+    }
+
+    fn maybe_trigger_auto_attach(&mut self, current_ws_id: Option<u32>, prev_active: Option<u32>) {
+        let Some((anchor, mapping, remote_ws)) =
+            self.auto_attach_candidate(current_ws_id, prev_active)
+        else {
             return;
         };
 
@@ -176,86 +184,94 @@ impl App {
             .filter_map(|s| s.anchor_ws_id())
             .collect();
         for anchor in anchors {
-            if self.remote.active.contains(&anchor) {
-                continue;
-            }
-            let edge_now =
-                current_ws_id == Some(anchor) && is_reactivation_edge(current_ws_id, prev_active);
-            let existing_slot = self.remote.reconnect.get(&anchor);
-            let due = reconnect_due(existing_slot, Instant::now());
-            if !edge_now && !due {
-                continue;
-            }
-            if should_reset_given_up(existing_slot, edge_now) {
-                self.remote.reconnect.remove(&anchor);
-            }
-            // 대기 중 워크스페이스나 매핑이 사라졌을 수 있으므로 다시 읽는다.
-            let mapping = self.engines().windows().find_map(|(_, e)| {
-                e.workspaces()
-                    .into_iter()
-                    .find(|ws| ws.id == anchor)
-                    .and_then(|ws| ws.attach_mapping.clone())
-            });
-            let Some(mapping) = mapping else {
-                self.remote.reconnect.remove(&anchor);
-                self.remote.pending_reactivation.remove(&anchor);
-                continue;
-            };
-            let Some(remote_ws) = mapping.remote_workspace else {
-                continue; // 원격 workspace id 미지정 — 자동 attach 와 동일 원칙 3.
-            };
+            self.trigger_reconnect_anchor(anchor, current_ws_id, prev_active);
+        }
+    }
 
-            let attempt = match self
-                .remote
-                .begin_attempt(Some(anchor), Some(mapping.clone()))
-            {
-                Ok(attempt) => attempt,
-                Err(error) => {
-                    tracing::warn!("{error}");
-                    continue;
-                }
+    fn trigger_reconnect_anchor(
+        &mut self,
+        anchor: u32,
+        current_ws_id: Option<u32>,
+        prev_active: Option<u32>,
+    ) {
+        if self.remote.active.contains(&anchor) {
+            return;
+        }
+        let edge_now =
+            current_ws_id == Some(anchor) && is_reactivation_edge(current_ws_id, prev_active);
+        let existing_slot = self.remote.reconnect.get(&anchor);
+        let due = reconnect_due(existing_slot, Instant::now());
+        if !edge_now && !due {
+            return;
+        }
+        if should_reset_given_up(existing_slot, edge_now) {
+            self.remote.reconnect.remove(&anchor);
+        }
+        // 대기 중 워크스페이스나 매핑이 사라졌을 수 있으므로 다시 읽는다.
+        let mapping = self.engines().windows().find_map(|(_, e)| {
+            e.workspaces()
+                .into_iter()
+                .find(|ws| ws.id == anchor)
+                .and_then(|ws| ws.attach_mapping.clone())
+        });
+        let Some(mapping) = mapping else {
+            self.remote.reconnect.remove(&anchor);
+            self.remote.pending_reactivation.remove(&anchor);
+            return;
+        };
+        let Some(remote_ws) = mapping.remote_workspace else {
+            return; // 원격 workspace id 미지정 — 자동 attach 와 동일 원칙 3.
+        };
+
+        let attempt = match self
+            .remote
+            .begin_attempt(Some(anchor), Some(mapping.clone()))
+        {
+            Ok(attempt) => attempt,
+            Err(error) => {
+                tracing::warn!("{error}");
+                return;
+            }
+        };
+        let index = self
+            .remote
+            .sessions
+            .iter()
+            .position(|session| session.state.anchor_ws_id == Some(anchor));
+        let endpoint_target = match self.mirror_install_target(None, Some(anchor), index, false) {
+            Ok(target) => target,
+            Err(error) => {
+                self.remote.finish_attempt(&attempt);
+                tracing::warn!("remote reconnect target unavailable: {error}");
+                return;
+            }
+        };
+        self.state
+            .pending_remote_endpoints
+            .insert(attempt.clone(), endpoint_target);
+        self.remote.active.insert(anchor);
+        self.remote.pending_reactivation.remove(&anchor);
+        let tx = self.remote.tx.clone();
+        let proxy = self.view.proxy.clone();
+        let target = mapping.target.clone();
+        let spawned = self.remote.spawn_attempt(attempt.clone(), move || {
+            let result = resolve_endpoint_bound(&target, &attempt);
+            let outcome = AutoAttachOutcome {
+                attempt,
+                anchor_ws_id: Some(anchor),
+                remote_ws,
+                result,
+                is_reconnect: true,
             };
-            let index = self
-                .remote
-                .sessions
-                .iter()
-                .position(|session| session.state.anchor_ws_id == Some(anchor));
-            let endpoint_target = match self.mirror_install_target(None, Some(anchor), index, false)
-            {
-                Ok(target) => target,
-                Err(error) => {
-                    self.remote.finish_attempt(&attempt);
-                    tracing::warn!("remote reconnect target unavailable: {error}");
-                    continue;
-                }
-            };
+            let _ = tx.send(outcome); // 수신자(메인 루프) drop 시 send 실패 — 무시.
+            let _ = proxy.send_event(crate::app::event::AppEvent::AutoAttachReady); // event loop 종료 시에만 실패 — 무시
+        });
+        if let Err(error) = spawned {
             self.state
                 .pending_remote_endpoints
-                .insert(attempt.clone(), endpoint_target);
-            self.remote.active.insert(anchor);
-            self.remote.pending_reactivation.remove(&anchor);
-            let tx = self.remote.tx.clone();
-            let proxy = self.view.proxy.clone();
-            let target = mapping.target.clone();
-            let spawned = self.remote.spawn_attempt(attempt.clone(), move || {
-                let result = resolve_endpoint_bound(&target, &attempt);
-                let outcome = AutoAttachOutcome {
-                    attempt,
-                    anchor_ws_id: Some(anchor),
-                    remote_ws,
-                    result,
-                    is_reconnect: true,
-                };
-                let _ = tx.send(outcome); // 수신자(메인 루프) drop 시 send 실패 — 무시.
-                let _ = proxy.send_event(crate::app::event::AppEvent::AutoAttachReady); // event loop 종료 시에만 실패 — 무시
-            });
-            if let Err(error) = spawned {
-                self.state
-                    .pending_remote_endpoints
-                    .retain(|token, _| token.is_active());
-                self.remote.active.remove(&anchor);
-                tracing::warn!("remote reconnect start rejected: {error}");
-            }
+                .retain(|token, _| token.is_active());
+            self.remote.active.remove(&anchor);
+            tracing::warn!("remote reconnect start rejected: {error}");
         }
     }
 
@@ -283,11 +299,16 @@ impl App {
         }
     }
 
-    fn apply_auto_attach_outcome(&mut self, outcome: AutoAttachOutcome) {
+    fn accept_auto_attach_outcome(
+        &mut self,
+        outcome: &AutoAttachOutcome,
+    ) -> Option<(
+        crate::app::attach_client::pending::PendingMirrorInstall,
+        tasty_remote::outbound::AttemptRecord,
+    )> {
         let Some(target) = self.state.pending_remote_endpoints.remove(&outcome.attempt) else {
             self.remote.finish_attempt(&outcome.attempt);
-            self.remote.discard_endpoint_outcome(outcome);
-            return;
+            return None;
         };
         if !self.mirror_install_target_is_current(&target) {
             if let Some(retired) = self.remote.finish_attempt(&outcome.attempt)
@@ -295,18 +316,15 @@ impl App {
             {
                 self.remote.active.remove(&anchor);
             }
-            self.remote.discard_endpoint_outcome(outcome);
-            return;
+            return None;
         }
         let Some(accepted) = self.remote.finish_attempt(&outcome.attempt) else {
             tracing::debug!("discarding result from retired remote connection attempt");
-            self.remote.discard_endpoint_outcome(outcome);
-            return;
+            return None;
         };
         if accepted.anchor != outcome.anchor_ws_id {
             tracing::error!("remote outcome belongs to another anchor");
-            self.remote.discard_endpoint_outcome(outcome);
-            return;
+            return None;
         }
         if let Some(anchor) = accepted.anchor {
             let current = self.engines.all_sessions().find_map(|session| {
@@ -320,10 +338,18 @@ impl App {
             if current != accepted.mapping {
                 self.remote.active.remove(&anchor);
                 tracing::debug!("discarding SSH result after attach mapping changed");
-                self.remote.discard_endpoint_outcome(outcome);
-                return;
+                return None;
             }
         }
+        Some((target, accepted))
+    }
+
+    fn apply_auto_attach_outcome(&mut self, outcome: AutoAttachOutcome) {
+        // Keep the accepted attempt owner through result dispatch, as before extraction.
+        let Some((target, _accepted)) = self.accept_auto_attach_outcome(&outcome) else {
+            self.remote.discard_endpoint_outcome(outcome);
+            return;
+        };
         let AutoAttachOutcome {
             attempt: _,
             anchor_ws_id,

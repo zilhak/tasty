@@ -57,6 +57,22 @@ pub(crate) fn handle_get(id: Value, params: &Value) -> JsonRpcResponse {
     }
 }
 
+fn apply_profile_fields(p: &mut RemoteProfile, params: &Value) {
+    if let Some(obj) = params.get("fields").and_then(|v| v.as_object()) {
+        for (k, v) in obj {
+            if let Some(s) = v.as_str() {
+                p.set_field(k.clone(), s.to_string());
+            } else if let Some(arr) = v.as_array() {
+                let list: Vec<String> = arr
+                    .iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect();
+                p.set_field(k.clone(), list);
+            }
+        }
+    }
+}
+
 /// 일반 fields로 프로필을 추가·수정한다. tasty-attach도 같은 입력을 쓴다.
 /// ssh의 host/user/port/identity_file/extra_options/shell 편의 인자는 fields/passkey로 변환한다.
 /// identity_file은 path passkey이고 shell에서 port_mode를 도출한다.
@@ -75,19 +91,7 @@ pub(crate) fn handle_add(
         .and_then(|v| v.as_str())
         .map(str::to_string);
 
-    if let Some(obj) = params.get("fields").and_then(|v| v.as_object()) {
-        for (k, v) in obj {
-            if let Some(s) = v.as_str() {
-                p.set_field(k.clone(), s.to_string());
-            } else if let Some(arr) = v.as_array() {
-                let list: Vec<String> = arr
-                    .iter()
-                    .filter_map(|x| x.as_str().map(str::to_string))
-                    .collect();
-                p.set_field(k.clone(), list);
-            }
-        }
-    }
+    apply_profile_fields(&mut p, params);
 
     let mut passkeys = Passkeys::load();
     let mut will_detect = false;

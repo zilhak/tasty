@@ -4,6 +4,8 @@
 
 mod agent_origin;
 mod dispatch;
+mod survivors;
+use survivors::merge_survivor_mapping;
 #[cfg(test)]
 mod navigation_tests;
 pub(crate) mod pending;
@@ -1317,180 +1319,6 @@ fn pending_op_focus_for(
 
 /// 기존 원격 surface의 로컬 ID·자원을 재사용하고 추가·삭제·kind 변경을 반영한다.
 /// markdown은 기존 핸들을 공유해 구조 변경 때마다 문서를 다시 만들지 않는다.
-fn merge_survivor_mapping(
-    old_map: &HashMap<u32, u32>,
-    surfaces: &[Value],
-    ids: &crate::runtime::id_reservations::ReservedIds,
-    frame_tx: &SharedFrameSender,
-    engine: &mut EngineMut<'_>,
-) -> anyhow::Result<SurvivorMapping> {
-    let mut new_map: HashMap<u32, u32> = HashMap::new();
-    let mut terminal_locals: HashSet<u32> = HashSet::new();
-    let mut mesh_locals: HashMap<u32, MirrorMeshInfo> = HashMap::new();
-    let mut explorer_locals: HashMap<u32, std::path::PathBuf> = HashMap::new();
-    let mut markdown_locals: MirrorMarkdownLeaves = HashMap::new();
-    let mut newly_created_remote_ids: Vec<u32> = Vec::new();
-    let markdown_available = markdown_mirror_available(&engine.as_ref());
-    for s in surfaces {
-        let remote_id = s.get("remote_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-        let role = s.get("role").and_then(|v| v.as_str());
-        let is_terminal = role == Some("terminal");
-        // 재구성할 실제 kind로 비교한다. 미등록 markdown이나 지원하지 않는 role은 empty다.
-        let new_kind: &str = if is_terminal {
-            "terminal"
-        } else if role == Some("mesh") {
-            s.get("kind").and_then(|v| v.as_str()).unwrap_or("mesh")
-        } else if role == Some("explorer") {
-            "explorer"
-        } else if role == Some("markdown") && markdown_available {
-            MARKDOWN_MIRROR_KIND
-        } else {
-            "empty"
-        };
-        let survivor_local = old_map.get(&remote_id).copied();
-        let old_kind: Option<&'static str> =
-            survivor_local.and_then(|l| engine.find_surface_by_id(l).map(|s| s.kind()));
-        let local_id = match survivor_local {
-            Some(l) => {
-                // ID가 같아도 kind가 바뀌면 옛 자원은 정리한다. markdown destroy는 호출자가 맡는다.
-                if old_kind != Some(new_kind) {
-                    engine.runtime.surfaces.remove(&l);
-                    if old_kind == Some("terminal") {
-                        engine.runtime.terminals.remove(l);
-                        engine.forget_mirror_surface_busy(l);
-                    }
-                    // cwd는 terminal뿐 아니라 explorer·markdown에도 있어 이전 kind와 함께 지운다.
-                    engine.forget_mirror_surface_cwd(l);
-                    // 새 frame이 올 때까지 이전 kind의 화면을 그리지 않게 한다.
-                    engine.remote.attach_mesh_frames.remove(l);
-                    if is_terminal {
-                        let cols = s.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
-                        let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
-                        make_mirror_surface(remote_id, l, cols, rows, frame_tx, engine);
-                    }
-                }
-                l
-            }
-            None => {
-                let l = ids.next_surface()?;
-                if is_terminal {
-                    let cols = s.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
-                    let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
-                    make_mirror_surface(remote_id, l, cols, rows, frame_tx, engine);
-                }
-                newly_created_remote_ids.push(remote_id);
-                l
-            }
-        };
-        if is_terminal {
-            terminal_locals.insert(local_id);
-        } else if role == Some("mesh") {
-            let kind = s
-                .get("kind")
-                .and_then(|v| v.as_str())
-                .unwrap_or("mesh")
-                .to_string();
-            let plugin_id = s
-                .get("plugin_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let display_name = s
-                .get("display_name")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| kind.clone());
-            mesh_locals.insert(
-                local_id,
-                MirrorMeshInfo {
-                    display_name,
-                    kind,
-                    plugin_id,
-                },
-            );
-        } else if role == Some("explorer") {
-            let root = s
-                .get("root")
-                .and_then(|v| v.as_str())
-                .map(std::path::PathBuf::from)
-                .unwrap_or_default();
-            explorer_locals.insert(local_id, root);
-        } else if new_kind == MARKDOWN_MIRROR_KIND {
-            if old_kind == Some(MARKDOWN_MIRROR_KIND) {
-                markdown_locals.insert(local_id, MARKDOWN_MIRROR_KIND.to_string());
-            } else if let Some(surface) =
-                create_mirror_markdown_surface(s, local_id, &engine.as_ref())
-            {
-                markdown_locals.insert(local_id, surface.kind().to_string());
-                engine.runtime.surfaces.insert(local_id, surface);
-            }
-        } else if role == Some("markdown")
-            && !engine
-                .runtime
-                .surface_registry
-                .contains(MARKDOWN_MIRROR_KIND)
-        {
-            // kind 등록을 기다렸다가 표시 시 실제화한다. 다른 플러그인이 같은 이름을
-            // 이미 등록했으면 허용된 소유자가 아니므로 placeholder로 기다리지 않는다.
-            let surface = deferred_mirror_markdown_surface(s, local_id);
-            markdown_locals.insert(local_id, surface.kind().to_string());
-            engine.runtime.surfaces.insert(local_id, surface);
-        }
-        // The descriptor tree never owns or clones a kind instance. Keep survivors in
-        // the existing runtime collection, replacing only instances changed by the server.
-        if is_terminal {
-            engine
-                .runtime
-                .surfaces
-                .entry(local_id)
-                .or_insert_with(|| Box::new(TerminalSurface { id: local_id }));
-        } else if let Some(info) = mesh_locals.get(&local_id) {
-            engine.runtime.surfaces.insert(
-                local_id,
-                Box::new(crate::model::AttachMeshSurface::new(
-                    local_id,
-                    &info.kind,
-                    info.plugin_id.clone(),
-                    info.display_name.clone(),
-                )),
-            );
-        } else if let Some(root) = explorer_locals.get(&local_id) {
-            engine.runtime.surfaces.insert(
-                local_id,
-                Box::new(ExplorerPanel::new(local_id, root.clone())),
-            );
-        } else if !markdown_locals.contains_key(&local_id) {
-            engine
-                .runtime
-                .surfaces
-                .insert(local_id, Box::new(EmptySurface::new(local_id)));
-        }
-        new_map.insert(remote_id, local_id);
-    }
-
-    for (&remote_id, &local_id) in old_map.iter() {
-        if !new_map.contains_key(&remote_id) {
-            engine.runtime.surfaces.remove(&local_id);
-            engine.runtime.terminals.remove(local_id);
-            engine.forget_mirror_surface_busy(local_id);
-            engine.forget_mirror_surface_attention(local_id);
-            engine.forget_mirror_surface_cwd(local_id);
-            engine.remote.attach_mesh_frames.remove(local_id);
-            // 원격이 닫은 surface도 로컬 닫기처럼 soft 점유 등 점유 기록을 남기지 않는다.
-            engine.forget_closed_surface(local_id);
-        }
-    }
-
-    Ok(SurvivorMapping {
-        remote_to_local: new_map,
-        terminals: terminal_locals,
-        mesh: mesh_locals,
-        explorer: explorer_locals,
-        markdown: markdown_locals,
-        newly_created_remote_ids,
-    })
-}
-
 fn install_mirror_fallbacks(workspace: &Workspace, engine: &mut EngineMut<'_>) {
     for id in workspace.all_surface_ids() {
         engine
@@ -1695,6 +1523,33 @@ fn release_for_resync(sess: &mut AttachClientSession, host: &mut MirrorHost<'_, 
     );
 }
 
+fn show_mirror_capture_result(
+    host: &mut MirrorHost<'_, '_>,
+    ok: bool,
+    path: Option<String>,
+    reason: Option<String>,
+) {
+    let msg = if ok {
+        format!(
+            "{} ({})",
+            crate::i18n::t("attach.toast.mirror_capture_saved"),
+            path.unwrap_or_default()
+        )
+    } else {
+        let base = crate::i18n::t("attach.toast.mirror_capture_failed");
+        match reason {
+            Some(r) if !r.is_empty() => format!("{base} ({r})"),
+            _ => base.to_string(),
+        }
+    };
+    let kind = if ok {
+        crate::adapters::ui::ToastKind::Success
+    } else {
+        crate::adapters::ui::ToastKind::Warning
+    };
+    host.toast(msg, kind);
+}
+
 fn apply_one_mirror_event(
     sess: &mut AttachClientSession,
     host: &mut MirrorHost<'_, '_>,
@@ -1775,25 +1630,7 @@ fn apply_one_mirror_event(
             }
         }
         MirrorEvent::CaptureResult { ok, path, reason } => {
-            let msg = if ok {
-                format!(
-                    "{} ({})",
-                    crate::i18n::t("attach.toast.mirror_capture_saved"),
-                    path.unwrap_or_default()
-                )
-            } else {
-                let base = crate::i18n::t("attach.toast.mirror_capture_failed");
-                match reason {
-                    Some(r) if !r.is_empty() => format!("{base} ({r})"),
-                    _ => base.to_string(),
-                }
-            };
-            let kind = if ok {
-                crate::adapters::ui::ToastKind::Success
-            } else {
-                crate::adapters::ui::ToastKind::Warning
-            };
-            host.toast(msg, kind);
+            show_mirror_capture_result(host, ok, path, reason);
         }
         MirrorEvent::ListDirResult {
             request_id,
