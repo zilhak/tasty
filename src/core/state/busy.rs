@@ -18,7 +18,7 @@ impl EngineMut<'_> {
     }
 
     /// 마지막 폴링의 전경 이름. 아직 해석하지 못한 surface는 None이다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub fn foreground_name(&self, surface_id: u32) -> Option<&str> {
         self.live
             .foreground_names

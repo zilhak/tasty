@@ -1,24 +1,24 @@
 //! forward 외의 구조 변경을 attach holder에 보내고, 찾지 못한 forward 대상의 오류를 정한다.
 
-#[cfg(any(feature = "gui", test))]
+#[cfg(feature = "gui")]
 use crate::core::attach::AttachClientId;
 use crate::runtime::engine_access::EngineMut;
-#[cfg(any(feature = "gui", test))]
+#[cfg(feature = "gui")]
 use crate::runtime::engine_access::EngineRef;
-#[cfg(any(feature = "gui", test))]
+#[cfg(feature = "gui")]
 use tasty_ipc::stream::StructuralOp;
 use tasty_ipc::stream::{StreamFrame, StreamTag};
 use tasty_ipc::stream_hub::PushResult;
 
 /// wire 오류 설명이며 client가 원문을 표시한다. 서버에서 UI 번역을 적용하지 않는다.
-#[cfg(any(feature = "gui", test))]
+#[cfg(feature = "gui")]
 fn workspace_not_found_reason() -> String {
     "workspace not found".to_string()
 }
 
 /// client가 이 engine의 실제 workspace를 점유하면 공통 surface 오류를 만든다.
 /// anchor가 살아 있는지는 호출자가 모든 engine에서 먼저 확인해야 한다.
-#[cfg(any(feature = "gui", test))]
+#[cfg(feature = "gui")]
 fn unresolved_anchor_reason(
     engine: &EngineRef<'_>,
     client_id: AttachClientId,
@@ -37,7 +37,7 @@ fn unresolved_anchor_reason(
 
 /// 모든 engine에서 anchor를 먼저 찾는다. 하나라도 살아 있으면 surface가 사라졌다고 안내하지 않는다.
 /// 어디에도 없고 점유한 workspace가 남아 있으면 surface 오류, 그 외에는 workspace 오류다.
-#[cfg(any(feature = "gui", test))]
+#[cfg(feature = "gui")]
 pub(crate) fn unresolved_forward_reason<'a>(
     engines: impl IntoIterator<Item = EngineRef<'a>>,
     client_id: AttachClientId,
