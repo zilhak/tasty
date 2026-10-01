@@ -4419,7 +4419,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            state.resolve_inherit_cwd_from_surface(&engine.as_ref(), local_surface),
+            state.resolve_inherit_cwd_from_surface(&engine.as_ref().read(), local_surface),
             None,
             "원격 cwd를 로컬 실행 경로로 사용하면 안 된다"
         );
