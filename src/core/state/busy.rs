@@ -221,7 +221,7 @@ mod tests {
 
     #[test]
     fn busy_activity_forwards_only_on_change() {
-        let mut e_session = engine();
+        let mut e_session = crate::state::tests::test_state().1;
         let mut e = e_session.borrow_mut();
         let sid = e
             .workspace_at(0)
@@ -242,7 +242,7 @@ mod tests {
 
     #[test]
     fn busy_activity_forwards_resets_on_reacquire() {
-        let mut e_session = engine();
+        let mut e_session = crate::state::tests::test_state().1;
         let mut e = e_session.borrow_mut();
         let sid = e
             .workspace_at(0)
@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn busy_activity_forwards_holder_swap_within_one_tick_pushes_to_the_new_holder() {
-        let mut e_session = engine();
+        let mut e_session = crate::state::tests::test_state().1;
         let mut e = e_session.borrow_mut();
         let sid = e
             .workspace_at(0)

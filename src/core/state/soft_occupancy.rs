@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn focus_cleanup_keeps_soft_when_parent_alive() {
-        let mut e_session = engine();
+        let mut e_session = crate::state::tests::test_state().1;
         let mut e = e_session.borrow_mut();
         let parent = e
             .workspace_at(0)
