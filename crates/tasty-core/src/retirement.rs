@@ -1,5 +1,5 @@
 //! Exact logical owners removed by a committed close. Cleanup cannot resolve a current focus.
-use crate::{DataRef, EntityId};
+use crate::EntityId;
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CloseTarget {

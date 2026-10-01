@@ -100,7 +100,7 @@ fn pane_leaves<'a>(node: &'a PaneNode, out: &mut Vec<&'a tasty_model::Pane>) {
 
 fn surface_leaves<'a>(node: &'a SurfaceLayout, out: &mut Vec<&'a SurfaceDescriptor>) {
     match node {
-        SurfaceLayout::Leaf(surface) => out.push(surface.as_ref()),
+        SurfaceLayout::Leaf(surface) => out.push(surface),
         SurfaceLayout::Split { first, second, .. } => {
             surface_leaves(first, out);
             surface_leaves(second, out);
@@ -128,7 +128,7 @@ fn pane_tree(node: &PaneNode) -> CanonTree {
 /// `focus_second`는 포커스 hint라 담지 않는다.
 fn surface_tree(node: &SurfaceLayout, defects: &mut Vec<String>) -> CanonTree {
     match node {
-        SurfaceLayout::Leaf(surface) => CanonTree::Leaf(surface_id(surface.as_ref(), defects)),
+        SurfaceLayout::Leaf(surface) => CanonTree::Leaf(surface_id(surface, defects)),
         SurfaceLayout::Split {
             direction,
             ratio,

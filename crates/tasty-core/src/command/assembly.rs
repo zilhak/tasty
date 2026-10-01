@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    CreationAssembly, CreationDestination, CreationPlan, Operation, OperationId, OperationOutcome,
+    CreationAssembly, CreationDestination, CreationPlan, Operation, OperationOutcome,
     StructuralEffect, SurfaceSpec,
 };
 use std::collections::BTreeSet;
