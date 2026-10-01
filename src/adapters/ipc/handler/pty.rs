@@ -659,7 +659,7 @@ pub(crate) mod tests {
         let (mut c, _home) = core();
         let factory = RecordingWakerFactory::new();
         let shared: crate::waker::SharedWakerFactory = factory.clone();
-        e.waker_factory = Some(shared);
+        e.runtime.waker_factory = Some(shared);
         let caller = CallerContext::Local;
 
         let a = ok(handle_spawn(&mut c, &mut e, &caller, json!(1), &json!({})))["pty_id"]
@@ -697,7 +697,7 @@ pub(crate) mod tests {
             .set_standalone_limits(8, std::time::Duration::ZERO);
         let factory = RecordingWakerFactory::new();
         let shared: crate::waker::SharedWakerFactory = factory.clone();
-        e.waker_factory = Some(shared);
+        e.runtime.waker_factory = Some(shared);
         let caller = CallerContext::Local;
 
         let a = ok(handle_spawn(&mut c, &mut e, &caller, json!(1), &json!({})))["pty_id"]
@@ -778,7 +778,7 @@ pub(crate) mod tests {
         let mut e = e_session.borrow_mut();
         let (mut c, _home) = core();
         let recorder = std::sync::Arc::new(RecordingWakerFactory::default());
-        e.waker_factory = Some(recorder.clone());
+        e.runtime.waker_factory = Some(recorder.clone());
         short_ttl(&mut e, 8);
 
         let spawned = ok(handle_spawn(

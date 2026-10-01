@@ -613,101 +613,77 @@ mod tests {
         }
     }
 
-    /// draft add → apply → save → 새 registry 로 reload 왕복이 목록에 그대로
-    /// 복원되는지 (Settings Save 영속 경로의 유닛 재현).
     #[test]
-    fn add_apply_save_reload_roundtrip() {
-        let reg = HookHandlerRegistry::new();
-        let draft = shell_add_draft("on-deploy", "~/ops/on-deploy.sh", 30);
-        draft.apply(&reg);
-
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("hook-handlers.toml");
-        reg.save_user_config(&path).expect("save");
-
-        let reg2 = HookHandlerRegistry::new();
-        reg2.install_user_config(&path);
-        let rows = reg2.all_handlers_including_disabled();
-        assert_eq!(rows.len(), 1);
-        let h = &rows[0];
-        assert_eq!(h.id.as_str(), "user/on-deploy");
-        assert_eq!(h.priority, 30);
-        assert!(!h.disabled);
-        assert!(matches!(
-            &h.action,
-            HookHandlerAction::ShellCommand { command, .. } if command == "~/ops/on-deploy.sh"
-        ));
+    fn add_preserves_shell_command_and_priority_in_owner_request() {
+        use crate::app::settings_edit::RegistryEdit;
+        let edits = shell_add_draft("on-deploy", "~/ops/on-deploy.sh", 30).into_edits();
+        assert_eq!(edits.len(), 1);
+        let RegistryEdit::UpsertHook(h) = &edits[0] else {
+            panic!("expected hook upsert")
+        };
+        assert_eq!(h.id, "user/on-deploy");
+        assert_eq!(h.priority, Some(30));
+        assert_eq!(h.disabled, Some(false));
+        assert!(
+            matches!(&h.action, Some(UserHookHandlerActionDecl::ShellCommand { command, args })
+            if command == "~/ops/on-deploy.sh" && args.is_empty())
+        );
     }
 
-    /// enabled 토글 draft 가 user-origin disabled override 로 반영·영속되는지.
     #[test]
-    fn toggle_disable_roundtrip() {
-        let reg = HookHandlerRegistry::new();
-        shell_add_draft("noisy", "echo hi", 10).apply(&reg);
-
+    fn toggle_preserves_requested_enabled_state() {
+        use crate::app::settings_edit::RegistryEdit;
         let mut draft = HookHandlerEditDraft::default();
         draft
             .enabled
             .insert(HookHandlerId::new("user/noisy"), false);
-        draft.apply(&reg);
-        assert!(reg.all_handlers_including_disabled()[0].disabled);
-
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("hook-handlers.toml");
-        reg.save_user_config(&path).expect("save");
-        let reg2 = HookHandlerRegistry::new();
-        reg2.install_user_config(&path);
-        assert!(reg2.all_handlers_including_disabled()[0].disabled);
+        let edits = draft.into_edits();
+        assert!(
+            matches!(edits.as_slice(), [RegistryEdit::HookEnabled(id, false)] if id.as_str() == "user/noisy")
+        );
     }
 
-    /// 셸 명령 인라인 편집이 user-origin action override 로 commit 되는지.
     #[test]
-    fn cmd_edit_applies_shell_override() {
-        let reg = HookHandlerRegistry::new();
-        shell_add_draft("greet", "echo hi", 10).apply(&reg);
-
+    fn command_edit_does_not_overwrite_priority_or_enabled_state() {
+        use crate::app::settings_edit::RegistryEdit;
         let mut draft = HookHandlerEditDraft::default();
         draft
             .cmd_edits
             .insert(HookHandlerId::new("user/greet"), "echo bye".into());
-        draft.apply(&reg);
-
-        let rows = crate::runtime::file_catalog::hook_handlers();
-        assert!(matches!(
-            &rows[0].action,
-            HookHandlerAction::ShellCommand { command, .. } if command == "echo bye"
-        ));
+        let edits = draft.into_edits();
+        let [RegistryEdit::UpsertHook(h)] = edits.as_slice() else {
+            panic!("expected one upsert")
+        };
+        assert_eq!(h.id, "user/greet");
+        assert_eq!(h.priority, None);
+        assert_eq!(h.disabled, None);
+        assert!(
+            matches!(&h.action, Some(UserHookHandlerActionDecl::ShellCommand { command, .. }) if command == "echo bye")
+        );
     }
 
-    /// user-origin 행 remove draft → registry 에서 사라짐.
     #[test]
-    fn remove_user_row() {
-        let reg = HookHandlerRegistry::new();
-        shell_add_draft("gone", "echo x", 10).apply(&reg);
-
+    fn remove_preserves_original_handler_id() {
+        use crate::app::settings_edit::RegistryEdit;
         let mut draft = HookHandlerEditDraft::default();
         draft.remove.insert(HookHandlerId::new("user/gone"));
-        draft.apply(&reg);
-        assert!(reg.all_handlers_including_disabled().is_empty());
+        assert!(
+            matches!(draft.into_edits().as_slice(), [RegistryEdit::RemoveHook(id)] if id.as_str() == "user/gone")
+        );
     }
 
-    /// commit_add 검증 — 잘못된 short-name 은 error, 유효하면 max+step priority.
     #[test]
     fn commit_add_validates_and_steps_priority() {
-        let reg = HookHandlerRegistry::new();
-        shell_add_draft("base", "echo", 25).apply(&reg);
-
-        let mut hh = HookHandlerEditDraft::default();
+        let mut hh = shell_add_draft("base", "echo", 25);
         hh.form.id_input = "Bad.Name".into();
-        commit_add(&mut hh, &reg);
+        commit_add(&mut hh, &[]);
         assert!(hh.form.error.is_some());
-        assert!(hh.add.is_empty());
-
+        assert_eq!(hh.add.len(), 1);
         hh.form.id_input = "pipeline-done".into();
         hh.form.cmd_input = "tasty notify done".into();
         hh.form.error = None;
-        commit_add(&mut hh, &reg);
-        assert_eq!(hh.add.len(), 1);
-        assert_eq!(hh.add[0].priority, 35); // 25 + step(10)
+        commit_add(&mut hh, &[]);
+        assert_eq!(hh.add.len(), 2);
+        assert_eq!(hh.add[1].priority, 35);
     }
 }

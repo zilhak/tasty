@@ -97,22 +97,13 @@ pub fn handle_trigger(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, Mutex};
-    use tasty_memory::MemoryStorage;
+    use std::sync::Arc;
 
     fn make_test_state() -> (
         RequestContext,
         crate::runtime::engine_session::EngineSession,
     ) {
-        let term_waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine_session =
-            crate::runtime::engine_session::EngineSession::new(80, 24, term_waker).unwrap();
-        let mut engine = engine_session.borrow_mut();
-        let preset_store = Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
-        let memory: Arc<Mutex<dyn MemoryStorage>> =
-            Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));
-        let state = RequestContext::new(&mut engine, preset_store, memory);
-        (state, engine_session)
+        crate::state::tests::test_state()
     }
 
     fn plugin_caller(id: &str) -> CallerContext {

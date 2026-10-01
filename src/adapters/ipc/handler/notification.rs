@@ -136,7 +136,7 @@ mod tests {
         let mut rows = Vec::new();
         for engine in [&b, &a] {
             rows.extend(
-                handle_notification_list(engine, json!(1))
+                handle_notification_list(&engine.as_ref(), json!(1))
                     .result
                     .unwrap()
                     .as_array()

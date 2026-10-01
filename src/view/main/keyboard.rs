@@ -876,7 +876,9 @@ mod tests {
         let mut out = Vec::new();
         for p in payloads {
             match p {
-                SendPayload::Bytes(b) => out.extend_from_slice(b),
+                SendPayload::Bytes(b) | SendPayload::Bound { bytes: b, .. } => {
+                    out.extend_from_slice(b)
+                }
                 SendPayload::Text(s) => out.extend_from_slice(s.as_bytes()),
             }
         }

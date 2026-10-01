@@ -271,7 +271,8 @@ mod tests {
     /// rule 없이 켜기/끄기만 남긴 user 항목에도 버튼이 보인다.
     #[test]
     fn a_user_rule_shared_with_a_plugin_keeps_the_user_origin_and_remove_button() {
-        let reg = FileFormatRegistry::new();
+        let reg = std::sync::Arc::new(tasty_file_format::FileFormatRegistry::new());
+        let catalog = FileFormatRegistry::new(reg.clone());
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("file-formats.toml");
         std::fs::write(
@@ -296,18 +297,18 @@ mod tests {
         let id = DetectorId("markdown".into());
 
         assert_eq!(
-            detector_row_origin(&reg, &id),
+            detector_row_origin(&catalog, &id),
             ("plugin:com.tasty.markdown, user".to_string(), true)
         );
 
         reg.remove_user_detector(&id);
         assert_eq!(
-            detector_row_origin(&reg, &id),
+            detector_row_origin(&catalog, &id),
             ("plugin:com.tasty.markdown".to_string(), false)
         );
         reg.set_user_detector_disabled(&id, true);
         assert_eq!(
-            detector_row_origin(&reg, &id),
+            detector_row_origin(&catalog, &id),
             ("plugin:com.tasty.markdown".to_string(), true)
         );
     }

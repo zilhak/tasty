@@ -64,10 +64,11 @@ mod tests {
         let _second_engine = _second_engine_session.borrow_mut();
         first.recent_files = crate::recent_files::RecentFiles::for_db(&mut db);
         second.recent_files = crate::recent_files::RecentFiles::for_db(&mut db);
-        first.record_recent("markdown", &json!({"file": "/notes/one.md"}));
-        second.record_recent("markdown", &json!({"file": "/notes/two.md"}));
-        let query = |state: &RequestContext| {
-            handle_query(state, json!(1), json!({"kind": "markdown"}))
+        first.recent_files.add("markdown", "/notes/one.md".into());
+        second.recent_files.add("markdown", "/notes/two.md".into());
+        let query = |state: &mut RequestContext, core: &crate::core::CoreState| {
+            let scope = crate::ipc::request_scope::RequestScope::capture(state, core, None);
+            handle_query(&scope, json!(1), json!({"kind": "markdown"}))
                 .result
                 .unwrap()
         };
@@ -75,9 +76,9 @@ mod tests {
             {"path": "/notes/two.md", "file_name": "two.md"},
             {"path": "/notes/one.md", "file_name": "one.md"}
         ]});
-        assert_eq!(query(&first), expected);
-        assert_eq!(query(&second), expected);
-        assert_eq!(query(&first), expected);
+        assert_eq!(query(&mut first, &_first_engine), expected);
+        assert_eq!(query(&mut second, &_second_engine), expected);
+        assert_eq!(query(&mut first, &_first_engine), expected);
     }
 
     #[test]

@@ -26,12 +26,23 @@ mod tests {
     fn surface_cleanup_forgets_only_that_surface() {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        state.shell_integration_hint_shown.extend([1, 2]);
-        engine.live.shell_integration_hint_requested.extend([1, 2]);
-        state.cleanup_surface(&mut engine, 1, None);
-        assert!(!state.shell_integration_hint_shown.contains(&1));
-        assert!(state.shell_integration_hint_shown.contains(&2));
-        assert!(!engine.live.shell_integration_hint_requested.contains(&1));
-        assert!(engine.live.shell_integration_hint_requested.contains(&2));
+        let live = engine.workspace_at(0).unwrap().all_surface_ids()[0];
+        let removed = u32::MAX;
+        state.shell_integration_hint_shown.extend([live, removed]);
+        engine
+            .live
+            .shell_integration_hint_requested
+            .extend([live, removed]);
+        engine.cleanup_surface_observations(removed);
+        state.reconcile_presentation(&engine);
+        assert!(!state.shell_integration_hint_shown.contains(&removed));
+        assert!(state.shell_integration_hint_shown.contains(&live));
+        assert!(
+            !engine
+                .live
+                .shell_integration_hint_requested
+                .contains(&removed)
+        );
+        assert!(engine.live.shell_integration_hint_requested.contains(&live));
     }
 }
