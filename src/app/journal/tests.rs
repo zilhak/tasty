@@ -63,9 +63,9 @@ fn application_bootstrap_commits_default_structure_before_installing_its_real_pt
     assert_eq!(session.core_state.local_workspaces().len(), 1);
     assert!(session.pending_materializations.is_empty());
     let sid = session.core_state.local_workspaces()[0].all_surface_ids()[0];
-    assert_eq!(
-        sid, 18,
-        "new durable IDs are above the existing numeric metadata scopes"
+    assert!(
+        sid > 17 && sid < crate::runtime::terminal_store::PTY_ID_BASE,
+        "new durable IDs exceed metadata scopes without entering the standalone PTY namespace: {sid}"
     );
     let terminal = session.runtime.terminals.get(sid).unwrap();
     while !terminal

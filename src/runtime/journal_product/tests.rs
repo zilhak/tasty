@@ -201,6 +201,10 @@ fn rejected_publication_halts_later_commands_without_returning_success() {
     worker
         .acknowledge(batch.batch_id, Err("injected live apply failure".into()))
         .unwrap();
+    let Completion::Halted(reason) = receive(&worker) else {
+        panic!("projection refusal must notify the owner before completing its request");
+    };
+    assert!(reason.contains("injected live apply failure"));
     assert!(finished(&worker, 1).unwrap_err().contains("halted"));
     submit(&worker, 2, Work::Admit(header("create")));
     assert!(finished(&worker, 2).unwrap_err().contains("halted"));

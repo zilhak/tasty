@@ -6,15 +6,20 @@ use tasty_core::{
 
 #[test]
 fn a_multi_stream_creation_completes_only_after_every_operation_and_preserves_result_order() {
-    exercise(false);
+    exercise(false, false);
 }
 
 #[test]
 fn public_creation_progress_survives_restart_and_keeps_each_completed_wire_part() {
-    exercise(true);
+    exercise(true, true);
 }
 
-fn exercise(public: bool) {
+#[test]
+fn public_creation_keeps_completed_wire_parts_in_original_order() {
+    exercise(true, false);
+}
+
+fn exercise(public: bool, restart: bool) {
     let home = tempfile::tempdir().unwrap();
     let mut worker = start(home.path());
     seed_category(&worker);
@@ -185,8 +190,7 @@ fn exercise(public: bool) {
                         .unwrap()["name"],
                     "workspace-1"
                 );
-                // A later unrelated command changes the already completed target. Restart the
-                // actual worker/DB before the other operation is allowed to finish.
+                // Later live metadata must not rewrite an already frozen wire reply.
                 submit(&worker, 20, Work::Admit(header("rename-completed")));
                 finished(&worker, 20).unwrap();
                 submit(
@@ -207,8 +211,82 @@ fn exercise(public: bool) {
                 );
                 publish(&worker);
                 finished(&worker, 20).unwrap();
-                drop(worker);
-                worker = start(home.path());
+                if restart {
+                    // A claim without a completion receipt remains unknown after a new writer.
+                    // Recovery never reruns its factory merely to complete the aggregate reply.
+                    let (pending_stream, pending_operation) = &operations[0];
+                    submit(
+                        &worker,
+                        21,
+                        Work::ClaimPreparation {
+                            stream: pending_stream.clone(),
+                            operation: pending_operation.clone(),
+                        },
+                    );
+                    assert!(matches!(
+                        finished(&worker, 21).unwrap(),
+                        ResultValue::Claimed(_)
+                    ));
+                    let frozen = progress.replies[1].clone().unwrap();
+                    drop(worker);
+                    worker = start(home.path());
+                    submit(&worker, 22, Work::Admit(header("two-workspaces")));
+                    assert!(matches!(
+                        finished(&worker, 22).unwrap(),
+                        ResultValue::RecoveryRequired { replay: true, .. }
+                    ));
+                    submit(&worker, 23, Work::ReadEngine(pending_stream.clone()));
+                    let ResultValue::Engine(model) = finished(&worker, 23).unwrap() else {
+                        panic!("pending model")
+                    };
+                    assert!(matches!(
+                        model.operations[pending_operation].outcome,
+                        Some(tasty_core::OperationOutcome::Uncertain { .. })
+                    ));
+                    assert!(model.workspaces.is_empty());
+                    submit(
+                        &worker,
+                        24,
+                        Work::ClaimPreparation {
+                            stream: pending_stream.clone(),
+                            operation: pending_operation.clone(),
+                        },
+                    );
+                    assert!(
+                        finished(&worker, 24).is_err(),
+                        "old unknown work cannot be reexecuted"
+                    );
+                    let identity: serde_json::Value = serde_json::from_slice(
+                        &std::fs::read(home.path().join("structure/journal.json")).unwrap(),
+                    )
+                    .unwrap();
+                    let store = tasty_event_store::EventStore::open(
+                        &home.path().join("structure/journal.db"),
+                        identity["journal_id"].as_str().unwrap(),
+                    )
+                    .unwrap();
+                    let admission = header("two-workspaces");
+                    let tasty_event_store::CommandLookup::Hit(record) = store
+                        .lookup_command(admission.key.as_ref().unwrap(), &admission.original_digest)
+                        .unwrap()
+                    else {
+                        panic!("original command")
+                    };
+                    assert_eq!(record.status, tasty_event_store::CommandStatus::InProgress);
+                    let preserved: super::super::response::ResponseProgress =
+                        serde_json::from_slice(record.response.as_ref().unwrap()).unwrap();
+                    assert!(preserved.replies[0].is_none());
+                    assert_eq!(preserved.replies[1].as_ref().unwrap(), &frozen);
+                    submit(&worker, 25, Work::ReadEngine("structure:slot-2".into()));
+                    let ResultValue::Engine(model) = finished(&worker, 25).unwrap() else {
+                        panic!("completed model")
+                    };
+                    assert_eq!(
+                        model.workspaces[&id(IdKind::Workspace, 1)].name,
+                        "later-name"
+                    );
+                    return;
+                }
             } else {
                 assert_eq!(record.status, tasty_event_store::CommandStatus::Completed);
                 let response: tasty_ipc::protocol::JsonRpcResponse =
