@@ -157,7 +157,7 @@ impl MainView {
                 let all = engine.file_handler.all_handlers();
                 crate::file::dispatch::open_picker(
                     &mut self.state,
-                    &mut *engine,
+                    engine,
                     target,
                     None,
                     all,

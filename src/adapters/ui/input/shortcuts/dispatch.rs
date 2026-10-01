@@ -565,7 +565,7 @@ impl MainView {
         };
         if Self::handle_keybinding_shortcuts(
             &mut self.state,
-            &mut *engine,
+            engine,
             &kb,
             key,
             mods,
@@ -587,7 +587,7 @@ impl MainView {
 
         if Self::handle_numeric_switch_shortcuts(
             &mut self.state,
-            &mut *engine,
+            engine,
             &kb,
             key,
             mods,
@@ -607,7 +607,7 @@ impl MainView {
             return true;
         }
 
-        if Self::handle_zoom_shortcut(&mut self.state, &mut *engine, key, mods) {
+        if Self::handle_zoom_shortcut(&mut self.state, engine, key, mods) {
             self.base.state.dirty = true;
             return true;
         }

@@ -8,7 +8,6 @@ mod screenshot;
 mod shell_setup;
 
 use crate::runtime::engine_read::EngineRead;
-use crate::runtime::engine_read::EngineRead;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -377,27 +376,8 @@ impl GpuState {
             engine.settings.appearance.scaled_sidebar_width()
         };
         let terminal_rect = self.compute_terminal_rect(state.sidebar_width);
-        // 표시할 placeholder의 PTY를 resize·render 전에 만든다.
-        state.reify_displayed_surfaces(engine);
-        state.resize_all(
-            engine,
-            terminal_rect,
-            self.renderer.cell_width(),
-            self.renderer.cell_height(),
-            self.scale_factor,
-        );
-
         let (pane_rects, dividers, focused_surface_id) =
             self.prepare_layout(state, engine, terminal_rect);
-
-        // 실제 사용자 포커스의 attention을 확인 처리한다.
-        if let Some(sid) = focused_surface_id {
-            if let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, sid) {
-                state.dispatch_intent(crate::intent::Intent::Engine(
-                    crate::app::engine_action::EngineAction::FocusObserved { target },
-                ).from_user_menu("render-focus"));
-            }
-        }
 
         let layout_ms = render_start.elapsed().as_secs_f64() * 1000.0;
 

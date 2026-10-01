@@ -115,7 +115,7 @@ impl MainView {
             let cell_h = self.base.gpu.cell_height();
             let scale_factor = self.base.gpu.scale_factor();
             self.state
-                .resize_all(&mut *engine, terminal_rect, cell_w, cell_h, scale_factor);
+                .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
         }
 
     }
@@ -243,6 +243,16 @@ impl MainView {
         if !self.base.state.dirty {
             return;
         }
+        // App drains these outputs before drawing this frame, including an otherwise idle
+        // terminal. Fullscreen stage rendering must not acknowledge hidden terminal content.
+        if !self.state.fullscreen_stage_active()
+            && let Some(sid) = self.state.focused_surface_id(engine)
+            && let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, sid)
+        {
+            self.state.dispatch_intent(crate::intent::Intent::Engine(
+                crate::app::engine_action::EngineAction::FocusObserved { target },
+            ).from_user_menu("render-focus"));
+        }
         // Reconcile composition for every displayed content source, including
         // global PTY wakes, direct parser injection and attach mirrors.
         self.recalc_ime_preedit_anchor(engine);
@@ -278,7 +288,7 @@ impl MainView {
         let vi_cursor = self.vi_copy.as_ref().map(|v| (v.surface_id, v.cursor));
         match self.base.gpu.render(
             &mut self.state,
-            &mut *engine,
+            engine,
             &self.base.winit,
             self.ime_preedit.as_ref(),
             active_sel.as_ref(),
@@ -1168,7 +1178,7 @@ impl MainView {
         match result {
             Some(1) => self.rename_tab(engine, pane_id, tab_index),
             Some(2) => {
-                if self.state.close_tab(&mut *engine, pane_id, tab_index)
+                if self.state.close_tab(engine, pane_id, tab_index)
                     && engine.workspaces().is_empty()
                 {
                     self.request_close();

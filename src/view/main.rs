@@ -436,7 +436,7 @@ impl MainView {
                     let cell_h = self.base.gpu.cell_height();
                     let scale_factor = self.base.gpu.scale_factor();
                     self.state.resize_all(
-                        &mut *engine,
+                        engine,
                         terminal_rect,
                         cell_w,
                         cell_h,
