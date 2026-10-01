@@ -796,32 +796,34 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         }
     }
     drop(engine);
+    app.journal.begin_process_shutdown();
     let _ = session.poll_runner_stop(&app.services.tasks);
     app.services.profile_detections.begin_shutdown();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     loop {
-        let remaining = app.services.profile_detections.poll_shutdown();
-        if remaining == 0 {
+        let profiles = app.services.profile_detections.poll_shutdown();
+        let runners = session.poll_runner_stop(&app.services.tasks);
+        // The control pump processes disposal acknowledgements only. It must never start a new
+        // plugin creation or replay input while the publication owner is shutting down.
+        let retained = app
+            .journal
+            .release_halted_resources(&mut session, app.plugin_manager.as_mut());
+        let resources = retained
+            && crate::runtime::resource_retirement::poll_engine_release(
+                &mut session,
+                app.plugin_manager.as_mut(),
+            );
+        let runners_joined = !matches!(runners, tasty_task_runtime::RunnerStopObservation::Waiting);
+        if profiles == 0 && runners_joined && resources {
             break;
         }
         if std::time::Instant::now() >= deadline {
             tracing::warn!(
-                remaining,
-                "headless profile detection shutdown timed out; workers remain unjoined"
+                profiles,
+                runners_joined,
+                resources_reaped = resources,
+                "headless shutdown timed out; unfinished owners have no completion receipt"
             );
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    loop {
-        if !matches!(
-            session.poll_runner_stop(&app.services.tasks),
-            tasty_task_runtime::RunnerStopObservation::Waiting
-        ) {
-            break;
-        }
-        if std::time::Instant::now() >= deadline {
-            tracing::warn!("headless runner shutdown timed out; scope retains unjoined workers");
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(10));

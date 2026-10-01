@@ -88,3 +88,5 @@ correlation 값으로 원 command 입력 바이트에 보존하며 중복 제거
 새 pane의 live 생성 완료는 원 target pane과 확정 split 방향으로 `pane.split`을 통지한다.
 이 통지는 최초 성공 command continuation에서만 생성한다. Stored 재시도, journal replay와
 기존 surface의 materialization은 같은 사용자 생성 통지를 다시 만들지 않는다.
+
+Headless 종료도 journal 실행을 먼저 중단한 뒤 미공개 후보와 기존 설치·PTY·plugin 회수 receipt를 같은 EngineRelease에 모은다. 종료의 5초 상한 안에서 runner join, 감지 worker join, PTY reap 및 원 plugin destroy 응답을 각각 관측한다. 시간초과는 회수 완료나 durable 명령 취소를 뜻하지 않으며, 미완 operation은 다음 시작의 Recovery 대상으로 남는다.

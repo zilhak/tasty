@@ -10,6 +10,7 @@ pub(crate) use creation::{ActivationOutcome, ActivationReceipt};
 mod capture;
 #[cfg(feature = "gui")]
 pub(crate) mod forward;
+mod process_release;
 mod resource_cleanup;
 pub(crate) use capture::{PresetCaptureNotice, PresetCaptureOutput, PresetCaptureReply};
 mod id_reservations;
