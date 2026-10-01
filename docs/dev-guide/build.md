@@ -413,20 +413,18 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 
 ### 의존 방향 규칙 — 도메인은 조립부를 부르지 않는다
 
-도메인(`src/core/` · `src/ports/`)은 **크레이트로 떼지 않았다** — 본체와 같은 크레이트에 있고,
-의존 방향은 모듈 경계와 가드로 제한한다. 떼지 않았던 이유(도메인 안의 gui 게이트 수 · 형제 모듈 폐포 ·
-`pub(crate)`로 공개한 범위)는 [ADR-0002](../adr/0002-domain-execution-and-ports.md), 분리하기로 한 결정과 단계는 [ADR-0056](../adr/0056-crate-boundaries-for-core-event-store-and-task-runtime.md),
-경계의 내용은 [아키텍처](../architecture/index.md) 의 "도메인 경계" 절이다.
+순수 명령 판단·이벤트 적용과 구조 projection은 `tasty-core`, 구조 값은 `tasty-model`에 있다.
+root의 `src/core/`·`src/ports/`는 실행 adapter와 호환 조회 경계를 포함하므로 순수 domain crate와 동일하게 취급하지 않는다.
+배치 근거는 [ADR-0054](../adr/0054-app-core-view-layers-and-state-ownership.md)와
+[ADR-0064](../adr/0064-journal-domain-model-crate.md)를 따른다.
 
-같은 크레이트 안에서는 `crate::app::…` 이 언제나 해석되므로 컴파일러가 이 방향을 못 막는다.
-`crates/tasty-doc-guards/tests/domain_does_not_reach_up.rs` 가 막는다(`doc-guards.yml` 이 경로
-필터 없이 돌린다). 위 `tasty-cli` 가드와 달리 **면제 명부가 없다** — 기대값이 0 이다. 테스트
-(파일 단위 test-only · 인라인 `#[cfg(test)]`)와 주석·문자열은 검사 대상에서 제외한다. 같은 파일이 도메인
-테스트 전용이 아닌 코드의 `feature = "gui"` 개수를 양방향으로 고정하고, gui feature 의 optional 의존(GUI 크레이트)을
-부르는 자리를 gui 게이트 뒤까지 읽어 목록으로 고정한다 — 게이트 수만 세면 이미 있는 게이트 뒤에
-`egui::…` 를 더 들여도 안 보이기 때문이다([ADR-0002](../adr/0002-domain-execution-and-ports.md), 대체: [ADR-0054](../adr/0054-app-core-view-layers-and-state-ownership.md)).
-자동화 실행부(`src/webhook/` · `src/hook_handler/` · `src/hook_runtime/`)가 inbound adapter 를 부르는 방향은
-`automation_runners_do_not_reach_inbound_adapters.rs` 가 같은 판정기로 막는다.
+`domain_does_not_reach_up.rs`는 두 crate의 제품 source에서 지정 상위 모듈·host crate 및 GUI 경로를 검사한다.
+package별 anchor와 Git 추적 Rust 파일 명부를 순회 결과와 대조하고, 제품 GUI 조건은 0으로 고정한다.
+순수 crate의 `crate::state`는 CoreState 모듈이므로 root의 View state로 오인하지 않는다.
+테스트 전용 코드·주석·문자열은 제외한다. 직접 경로를 읽는 텍스트 검사이며 타입 별칭·전이 의존을 증명하지 않는다.
+root 실행 객체 대여는 `engine_resource_ownership`, 지정 canonical/projection writer 호출은 별도 shell guard의 범위다.
+자동화 실행부(`src/webhook/` · `src/hook_handler/` · `src/hook_runtime/`)의 inbound adapter 역참조는
+`automation_runners_do_not_reach_inbound_adapters.rs`가 별도로 검사한다.
 
-그래서 이 경계를 세운다고 편집 빌드 범위가 줄지는 않는다 — 도메인을 고쳐도 GUI 를 고쳐도 같은
-컴파일 단위(`tasty` lib)가 다시 돈다. 이 범위를 줄이는 crate 분리는 [ADR-0056](../adr/0056-crate-boundaries-for-core-event-store-and-task-runtime.md)이 정했다.
+crate 분리로 바뀐 실제 재빌드 범위와 시간은 같은 profile·feature·cache 조건에서 측정한다.
+이 소스 검사의 통과만으로 편집 빌드가 빨라졌다고 판단하지 않는다.

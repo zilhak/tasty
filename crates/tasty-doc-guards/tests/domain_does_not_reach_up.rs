@@ -1,5 +1,6 @@
-//! 도메인(src/core·src/ports)의 제품 코드가 조립·어댑터·GUI를 직접 참조하는지 검사한다.
-//! 같은 크레이트 안의 의존 방향은 컴파일러가 제한하지 않으므로 별도로 확인한다(ADR-0002).
+//! 순수 tasty-core와 구조 값 tasty-model의 제품 코드가 상위 host·GUI를 참조하는지 검사한다.
+//! root src/core와 ports는 실행 adapter이므로 이 순수 crate 검사 범위가 아니다(ADR-0054/0064).
+//! root 실행 owner는 engine_resource_ownership, 지정 writer 호출은 별도 shell guard가 검사한다.
 //! 상위 모듈 참조, gui 조건의 개수, GUI 크레이트 경로를 각각 검사한다.
 //! 기존 gui 조건 안에 새 GUI 참조를 넣으면 조건 수는 그대로라 경로 검사도 필요하다.
 //!
@@ -10,6 +11,7 @@
 //! 외부 크레이트와 같은 이름의 지역 모듈도 구별하지 못한다.
 //! super 깊이는 파일 경로로 계산하므로 #[path]로 배치한 모듈에서는 실제 깊이와 다를 수 있다.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use tasty_doc_guards::cargo_manifest::feature_enabled_deps;
@@ -21,7 +23,7 @@ use tasty_doc_guards::repo_root;
 use tasty_doc_guards::shipping_scope::test_only_files;
 use tasty_doc_guards::source_text::{mask_comments, rust_sources};
 
-const DOMAIN_ROOTS: &[&str] = &["src/core/", "src/ports/"];
+const DOMAIN_ROOTS: &[&str] = &["crates/tasty-core/src/", "crates/tasty-model/src/"];
 
 /// 금지할 루트 모듈과 lib 재노출 별칭을 함께 등록한다. 별칭만 막으면 정식 경로로, 정식 경로만 막으면 별칭으로 참조할 수 있다.
 const UPPER: &[(&str, &str)] = &[
@@ -30,6 +32,7 @@ const UPPER: &[(&str, &str)] = &[
         "runtime::engine_session",
         "EngineSession 소유·저널 실행 조립; Core는 분리 대여만 받는다",
     ),
+    ("runtime", "host 실행 및 자원 adapter"),
     ("AppEvent", "`app::event::AppEvent` 의 lib 루트 별칭"),
     ("App", "`app::App` 의 lib 루트 별칭"),
     ("adapters", "어댑터 전체(IPC 핸들러 · UI · production 구현)"),
@@ -91,18 +94,28 @@ const UPPER: &[(&str, &str)] = &[
     ("debug_info", "`app::debug_info` 의 별칭"),
 ];
 
-/// 제품 도메인 코드의 gui 조건 수. gui_gates와 같은 판독으로 측정한 기준값이다.
-/// headless에 소비자가 없는 정의를 제외하는 조건 자체는 허용한다(ADR-0003).
-/// 증가·감소를 모두 확인해 변경 이유를 검토한다. GUI 동작을 조건부로 숨기는 데 사용하면 안 된다.
-// Legacy restore is test-only; journal bootstrap and category reset share both hosts.
-// Mirror collection boundaries retain their actual GUI consumers; resize geometry belongs to View.
-const GUI_GATES_IN_DOMAIN: usize = 184;
+/// 두 crate는 GUI feature gate 없이 순수 값·적용기를 제공한다.
+const GUI_GATES_IN_DOMAIN: usize = 0;
+const DOMAIN_ANCHORS: &[&str] = &[
+    "crates/tasty-core/src/lib.rs",
+    "crates/tasty-core/src/state.rs",
+    "crates/tasty-model/src/lib.rs",
+    "crates/tasty-model/src/surface_layout.rs",
+];
+/// 이 crate들은 실행 소유자를 포함하므로 순수 domain의 직접 의존이 될 수 없다.
+const HOST_CRATES: &[&str] = &[
+    "tasty",
+    "tasty_host_plugin",
+    "tasty_task_runtime",
+    "tasty_remote",
+    "tasty_terminal",
+];
 
-/// 2026-09-21 실측 92파일(core84·ports8, test 전용이 아닌 파일 91)을 기준으로 둔 수집 하한.
-const MIN_DOMAIN_FILES: usize = 80;
-
-/// 도메인 모듈 루트까지 수집됐는지 확인할 파일.
-const DOMAIN_ANCHOR: &str = "src/core/mod.rs";
+fn population_matches(found: &BTreeSet<String>, tracked: &BTreeSet<String>) -> bool {
+    !tracked.is_empty()
+        && DOMAIN_ANCHORS.iter().all(|anchor| found.contains(*anchor))
+        && tracked.is_subset(found)
+}
 
 fn in_domain(rel: &Path) -> bool {
     let rel = rel.to_string_lossy().replace('\\', "/");
@@ -118,7 +131,19 @@ fn upper_match(path: &[String]) -> Option<&'static str> {
 
 /// 제품 코드의 상위 참조를 줄 번호·이름·원문으로 반환한다.
 fn upper_references(rel: &str, text: &str) -> Vec<(usize, &'static str, String)> {
-    shipped_references(rel, text, upper_match)
+    let pure = rel.starts_with("crates/");
+    // crate_paths expects a path relative to that crate, not the workspace.
+    let local = rel
+        .split_once("/src/")
+        .map(|(_, tail)| format!("src/{tail}"));
+    shipped_references(local.as_deref().unwrap_or(rel), text, |path| {
+        // crate::state is the pure CoreState module here, not root's View state.
+        if pure && path.first().is_some_and(|part| part == "state") {
+            None
+        } else {
+            upper_match(path)
+        }
+    })
 }
 
 /// 한 파일의 test 전용이 아닌 줄에서 코드로 쓰인 `feature = "gui"` 개수.
@@ -133,32 +158,51 @@ fn gui_gates(text: &str) -> usize {
         .sum()
 }
 
-/// test 전용이 아닌 도메인 파일 `(레포 상대 경로, 원문)`. 하한·앵커를 여기서 확인한다.
+/// test 전용이 아닌 도메인 파일. package별 anchor와 Git 명부를 독립 대조한다.
 fn shipped_domain_sources() -> Vec<(PathBuf, String)> {
     let root = repo_root();
-    // 부모 선언을 따라가야 test-only 여부가 정해지므로 `src` 전체를 모은 뒤 거른다.
-    let sources = rust_sources(&root, &["src"]);
+    // 각 crate의 부모 모듈 선언도 함께 모아 test-only 여부를 판정한다.
+    let sources = rust_sources(&root, DOMAIN_ROOTS);
     let not_shipped = test_only_files(&root, &sources);
     let domain: Vec<(PathBuf, String)> = sources
         .into_iter()
         .filter(|(rel, _)| in_domain(rel))
         .collect();
+    let listed = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&root)
+        .args(["ls-files", "--"])
+        .args(DOMAIN_ROOTS)
+        .output()
+        .expect("tracked domain inventory");
+    assert!(listed.status.success(), "git domain inventory failed");
+    let tracked: BTreeSet<String> = String::from_utf8(listed.stdout)
+        .unwrap()
+        .lines()
+        .filter(|path| path.ends_with(".rs"))
+        .map(str::to_owned)
+        .collect();
+    let found = domain
+        .iter()
+        .map(|(path, _)| path.to_string_lossy().replace('\\', "/"))
+        .collect();
     assert!(
-        domain.len() >= MIN_DOMAIN_FILES,
-        "도메인 루트({})에서 Rust 파일을 {}개만 수집했다(하한 {MIN_DOMAIN_FILES}). 실제 이동이라면 DOMAIN_ROOTS를 갱신하고, 수집 실패라면 하한을 낮추지 말고 원인을 고친다.",
-        DOMAIN_ROOTS.join(" · "),
-        domain.len()
+        population_matches(&found, &tracked),
+        "domain anchors or tracked source files missing"
     );
-    assert!(
-        domain
-            .iter()
-            .any(|(rel, _)| rel.to_string_lossy().replace('\\', "/") == DOMAIN_ANCHOR),
-        "순회가 `{DOMAIN_ANCHOR}` 에 닿지 않았다 — `core` 모듈의 루트라 실재가 보장된다."
-    );
-    domain
+    let shipped: Vec<_> = domain
         .into_iter()
         .filter(|(rel, _)| !not_shipped.contains(rel))
-        .collect()
+        .collect();
+    for anchor in DOMAIN_ANCHORS {
+        assert!(
+            shipped
+                .iter()
+                .any(|(rel, _)| rel.to_string_lossy() == *anchor),
+            "product anchor was incorrectly classified as test-only: {anchor}"
+        );
+    }
+    shipped
 }
 
 #[test]
@@ -167,6 +211,9 @@ fn the_domain_does_not_name_an_upper_layer() {
     let mut offenders = Vec::new();
     for (rel, text) in &sources {
         let rel = rel.to_string_lossy().replace('\\', "/");
+        for (line, path, raw) in shipped_external_references(text, HOST_CRATES) {
+            offenders.push(format!("  {rel}:{line} — host crate {path}: {raw}"));
+        }
         for (line, name, raw) in upper_references(&rel, text) {
             let why = UPPER
                 .iter()
@@ -183,7 +230,7 @@ fn the_domain_does_not_name_an_upper_layer() {
     );
     assert!(
         offenders.is_empty(),
-        "도메인 제품 코드가 상위 계층을 참조한다:\n{}\nADR-0002에 따라 도메인 타입은 도메인에서 정의하고, 창 연산은 도메인이 선언한 trait을 창 쪽에서 구현한다. GUI 동작은 GUI 쪽으로 옮긴다. 예외 목록을 추가해 통과시키지 않는다.",
+        "도메인 제품 코드가 상위 계층을 참조한다:\n{}\nADR-0054/0064에 따라 순수 모델과 적용기는 host 실행 객체를 참조하지 않는다. 실행과 GUI adapter는 root에 둔다. 예외 목록을 추가해 통과시키지 않는다.",
         offenders.join("\n")
     );
 }
@@ -510,5 +557,38 @@ fn an_engine_session_dependency_is_rejected_but_core_borrows_are_allowed() {
             "use crate::core::engine_access::{EngineRef, EngineMut};"
         )
         .is_empty()
+    );
+}
+
+#[test]
+fn each_pure_package_anchor_and_tracked_file_is_required() {
+    let mut tracked: BTreeSet<String> = DOMAIN_ANCHORS.iter().map(|s| s.to_string()).collect();
+    tracked.insert("crates/tasty-core/src/evolve.rs".into());
+    assert!(population_matches(&tracked, &tracked));
+    assert!(!population_matches(&BTreeSet::new(), &tracked));
+    for missing in &tracked {
+        let mut found = tracked.clone();
+        found.remove(missing);
+        assert!(!population_matches(&found, &tracked), "missed {missing}");
+    }
+    let mut unanchored = tracked.clone();
+    unanchored.remove(DOMAIN_ANCHORS[0]);
+    assert!(!population_matches(&unanchored, &unanchored));
+}
+
+#[test]
+fn pure_state_is_not_host_state_but_upward_imports_remain_forbidden() {
+    let rel = "crates/tasty-core/src/command/nested.rs";
+    assert!(upper_references(rel, "use crate::state::CoreState;").is_empty());
+    for source in [
+        "use crate::app::App;",
+        "use crate::view::View;",
+        "use crate::runtime::engine_session::EngineSession;",
+    ] {
+        assert_eq!(upper_references(rel, source).len(), 1);
+    }
+    assert_eq!(
+        shipped_external_references("use tasty_host_plugin::PluginManager;", HOST_CRATES).len(),
+        1
     );
 }

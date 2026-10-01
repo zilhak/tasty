@@ -31,20 +31,14 @@ fn only_at(hay: &str, needle: &str, what: &str) -> usize {
     hay.find(needle).expect("checked above")
 }
 
-/// 함수 시작부터 4칸 들여쓰기의 다음 fn·pub fn·문서 주석 전까지 읽는 대략적인 범위다.
+/// 주석·리터럴을 마스킹한 괄호 경계로 지정 함수만 읽는다.
 fn fn_body<'a>(src: &'a str, header: &str) -> &'a str {
-    let start = src
-        .find(header)
-        .unwrap_or_else(|| panic!("no fn: {header}"));
-    let rest = &src[start + header.len()..];
-    let end = rest
-        .find("\n    fn ")
-        .into_iter()
-        .chain(rest.find("\n    pub fn "))
-        .chain(rest.find("\n    ///"))
-        .min()
-        .unwrap_or(rest.len());
-    &rest[..end]
+    let code = tasty_doc_guards::source_text::mask_non_code_aligned(src);
+    let start = only_at(&code, header, "함수 시그니처");
+    let open = start + code[start..].find('{').expect("function opening brace");
+    let close =
+        tasty_doc_guards::match_arms::matching_close(&code, open).expect("function closing brace");
+    &src[open + 1..close]
 }
 
 #[test]
@@ -56,7 +50,7 @@ fn stage_branch_sits_between_offscreen_capture_and_layout() {
         "offscreen 캡처",
     );
     let branch = only_at(&src, "if state.fullscreen_stage_active() {", "무대 분기");
-    let resize = only_at(&src, "state.resize_all(", "레이아웃 resize_all");
+    let resize = only_at(&src, "self.prepare_layout(", "배경 레이아웃 계산");
     assert!(
         screenshot < branch,
         "무대 분기가 offscreen surface 스크린샷보다 앞에 있다 — \
@@ -64,8 +58,7 @@ fn stage_branch_sits_between_offscreen_capture_and_layout() {
     );
     assert!(
         branch < resize,
-        "무대 분기가 `state.resize_all` 뒤로 밀렸다 — 무대 중 PTY grid 가 재계산돼 \
-         '원본은 진입 시점 그대로' 계약이 깨진다."
+        "무대 분기가 배경 레이아웃 계산 뒤로 밀렸다."
     );
 }
 
@@ -95,9 +88,9 @@ fn render_if_dirty_has_no_stage_early_return() {
 }
 
 #[test]
-fn terminal_resize_is_the_gated_one_in_handle_redraw() {
+fn terminal_resize_request_is_gated_in_prepare_redraw() {
     let src = read("src/view/main/redraw.rs");
-    let body = fn_body(&src, "fn handle_redraw(");
+    let body = fn_body(&src, "fn prepare_redraw(");
     assert!(
         body.contains("if !self.state.fullscreen_stage_active() {")
             && body
@@ -105,7 +98,7 @@ fn terminal_resize_is_the_gated_one_in_handle_redraw() {
                 .filter(|ch| !ch.is_whitespace())
                 .collect::<String>()
                 .contains("self.state.resize_all("),
-        "`handle_redraw` 의 `state.resize_all` 가 무대 게이트를 잃었다 — 무대 중 \
+        "`prepare_redraw` 의 `state.resize_all` 가 무대 게이트를 잃었다 — 무대 중 \
          창 크기가 바뀌면 원본 grid 가 따라가 리플로우된다."
     );
 }
@@ -116,16 +109,16 @@ fn terminal_resize_is_the_gated_one_in_handle_redraw() {
 #[test]
 fn the_modal_open_latch_is_cleared_before_the_pass_that_sets_it() {
     let src = read("src/view/main/redraw.rs");
-    let body = fn_body(&src, "fn handle_redraw(");
+    let body = fn_body(&src, "fn prepare_redraw(");
 
-    let clear = body.find("self.dispatch_pending_modal_opens();").expect(
-        "handle_redraw에서 모달 열기 요청 처리를 찾지 못했다. 요청 상태가 남아 입력을 계속 차단하지 않는지 확인한다.",
+    body.find("self.dispatch_pending_modal_opens();").expect(
+        "prepare_redraw에서 모달 열기 요청 처리를 찾지 못했다. 요청 상태가 남아 입력을 계속 차단하지 않는지 확인한다.",
     );
-    let render = body
-        .find("self.render_if_dirty(")
-        .expect("`handle_redraw` 에서 `render_if_dirty` 가 사라졌다");
+    let frame = read("src/app/view_frame.rs");
+    let prepare = only_at(&frame, "view.prepare_redraw(", "입력/레이아웃 준비");
+    let render = only_at(&frame, "view.render_if_dirty(", "렌더 호출");
     assert!(
-        clear < render,
+        prepare < render,
         "모달 열기 요청 처리가 render_if_dirty 뒤에 있다. 같은 redraw에서 요청 설정과 해제가 끝나면 다른 입력 이벤트가 요청 상태를 볼 수 없다. 순서를 복원하거나 요청 상태를 읽는 경로와 계약을 함께 재검토한다."
     );
 }
@@ -155,7 +148,7 @@ fn window_resize_does_not_touch_the_grid_during_a_stage() {
         "gpu.resize 가 무대 게이트 안으로 들어갔다 — GPU 서페이스 크기는 무대 여부와 \
          무관하게 창을 따라가야 한다."
     );
-    for after_gate in ["engine.update_grid_size(", ".resize_all("] {
+    for after_gate in ["EngineAction::DefaultGrid {", ".resize_all("] {
         let at = arm
             .find(after_gate)
             .unwrap_or_else(|| panic!("resize 이벤트 arm 에 `{after_gate}` 가 없다"));
@@ -281,4 +274,12 @@ fn the_persistence_scan_reacts_to_a_planted_reference() {
 
     // 이유: 검사 후 임시 경로 정리 실패는 판정 결과에 영향을 주지 않는다.
     let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn body_reader_does_not_borrow_calls_from_the_next_method() {
+    let source =
+        "impl X { pub(crate) fn prepare() { let _ = \"}\"; } pub(crate) fn finish() { poll(); } }";
+    assert!(!fn_body(source, "fn prepare(").contains("poll()"));
+    assert!(fn_body(source, "fn finish(").contains("poll()"));
 }

@@ -129,6 +129,16 @@ enum Kind {
 /// 검색 결과 중 현재 값 설명이 아닌 파일과 제외 근거.
 const EXCLUDED: &[(&str, Kind, &str)] = &[
     (
+        "crates/tasty-dag-layout/src/engine.rs",
+        Kind::OtherMeaning,
+        "TRANSPOSE_NODE_LIMIT 128은 교차 감소 알고리즘의 노드 수 상한이며 allow 개수가 아니다",
+    ),
+    (
+        "tests/refusals_are_told_apart_by_their_own_words.rs",
+        Kind::OtherMeaning,
+        "SCRIPT_FLOOR의 27은 e3a747ea4에서 센 shell 파일 수이며 doc-comment-bias가 아니다",
+    ),
+    (
         "docs/adr/0047-ci-and-complexity-checks.md",
         Kind::Dated,
         "임계값을 품질 공식에서 도출하지 않았다는 결정 당시의 선택 근거",

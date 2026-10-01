@@ -34,7 +34,7 @@ fn synthetic_gate_precedes_every_mode_branch() {
     );
 
     for (needle, what) in [
-        ("if self.shell_setup_mode {", "shell setup 모드 분기"),
+        ("if self.state.shell_setup_mode {", "shell setup 모드 분기"),
         (
             "self.handle_shutdown_window_event(event_loop, id, event);",
             "종료 상태 머신 분기",

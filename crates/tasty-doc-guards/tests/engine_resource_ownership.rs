@@ -46,6 +46,8 @@ fn has_execution_owner(fields: &str) -> bool {
                     | "HookRuntimeState"
                     | "TaskScope"
                     | "ObserverRouter"
+                    | "RemoteState"
+                    | "LiveDomainState"
                     | "readonly_views"
             )
         })
@@ -53,9 +55,10 @@ fn has_execution_owner(fields: &str) -> bool {
 
 #[test]
 fn core_state_does_not_regain_the_moved_resource_families() {
-    let source = std::fs::read_to_string(repo_root().join("src/core/state.rs")).unwrap();
+    let source =
+        std::fs::read_to_string(repo_root().join("crates/tasty-core/src/state.rs")).unwrap();
     assert!(!has_execution_owner(&fields(&source, "CoreState")));
-    // Other service handles, live state and Surface instances remain outside this guard's claim.
+    // Other unnamed service handles and Surface instances remain outside this guard's claim.
 }
 
 #[test]
@@ -69,22 +72,27 @@ fn session_is_the_owner_and_execution_contexts_only_borrow() {
         "TaskScope",
         "ObserverRouter",
         "CoreState",
+        "RemoteState",
+        "LiveDomainState",
     ] {
         assert!(body.contains(ty), "Session lost {ty}");
     }
-    let access = std::fs::read_to_string(root.join("src/core/engine_access.rs")).unwrap();
+    let access = std::fs::read_to_string(root.join("src/runtime/engine_access.rs")).unwrap();
     for ty in ["EngineRef", "EngineMut"] {
         let body = fields(&access, ty);
         let types: Vec<_> = body
             .split(',')
             .filter_map(|field| field.split_once(':').map(|(_, value)| value.trim()))
             .collect();
-        assert_eq!(types.len(), 5, "review the actual borrow fields of {ty}");
+        assert_eq!(types.len(), 9, "review the actual borrow fields of {ty}");
         for field in types {
-            assert!(field.starts_with('&'), "{ty} owns {field}");
+            assert!(
+                field.starts_with('&') || field.starts_with("Option<&"),
+                "{ty} owns {field}"
+            );
         }
     }
-    let runtime = std::fs::read_to_string(root.join("src/core/engine_runtime.rs")).unwrap();
+    let runtime = std::fs::read_to_string(root.join("src/runtime/engine_runtime.rs")).unwrap();
     assert!(fields(&runtime, "EngineRuntime").contains("readonly_views"));
 }
 
@@ -168,7 +176,7 @@ fn content_and_physical_resources_are_owned_separately_without_an_external_watch
     assert!(physical.contains("Child") && physical.contains("MasterPty"));
     assert!(!mask_non_code(&pty).contains("fn take_child"));
     assert!(!root.join("src/core/pty_registry.rs").exists());
-    let store = std::fs::read_to_string(root.join("src/core/terminal_store.rs")).unwrap();
+    let store = std::fs::read_to_string(root.join("src/runtime/terminal_store.rs")).unwrap();
     assert!(fields(&store, "TerminalStore").contains("(Terminal, Option<Pty>)"));
 }
 

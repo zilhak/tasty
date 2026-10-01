@@ -79,7 +79,8 @@ fn engine_failure_routes_to_the_visible_error_path_not_a_blind_exit() {
 fn event_loop_dispatches_and_renders_the_boot_error_screen() {
     let src = read("src/app/event_handler.rs");
     assert!(
-        src.contains("self.boot_error_mode") && src.contains("handle_boot_error_window_event"),
+        src.contains("self.state.boot_error_mode")
+            && src.contains("handle_boot_error_window_event"),
         "window_event 가 boot_error_mode 를 분기해 handle_boot_error_window_event 로 \
          보내야 한다 (ADR-0016)."
     );

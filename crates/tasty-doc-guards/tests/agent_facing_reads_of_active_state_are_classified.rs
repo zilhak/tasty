@@ -12,7 +12,7 @@ use tasty_doc_guards::shipping_scope::test_only_files;
 use tasty_doc_guards::source_text::{mask_non_code, rust_sources};
 
 /// 활성 상태 식별자. active_tab은 ID로 찾은 페인의 필드일 수도 있으므로
-/// 제외하지 않고 사람이 IdResolved 여부를 분류한다.
+/// 제외하지 않고 사람이 명시 ID로 해소한 값인지 분류한다.
 /// focused_pair는 포커스 창과 그 engine을 함께 돌려주는 focused_window의 짝이다.
 const NEEDLES: &[&str] = &[
     "active_workspace",
@@ -23,23 +23,28 @@ const NEEDLES: &[&str] = &[
     "active_pane",
     "presentation()",
     ".navigation",
+    ".selected_tabs",
+    ".focused_panes",
+    "focused_surface_id",
+    "focused_pane_id",
 ];
 
-/// IPC 핸들러, 호출되는 도메인 코드와 포트 구현 파일을 검사한다.
-/// 포트의 활성 상태 접근은 호출부에 드러나지 않을 수 있어 구현 파일도 필요하다(ADR-0002).
+/// IPC handler, 현재 journal resolver/completion과 RequestScope adapter를 검사한다.
+/// 순수 domain은 선택을 소유하지 않으며 이 명부는 host 진입·소비 경계를 다룬다(ADR-0059).
 /// src/state와 src/file에는 사용자 입력 경로도 있으므로 필요한 파일만 등록한다.
-/// 에이전트 경로에 포트 구현이 추가되면 이 목록도 갱신한다.
+/// 새 진입·completion adapter가 추가되면 이 목록도 갱신한다. 임의 호출 그래프를 자동 추적하지 않는다.
 const AGENT_FACING: &[&str] = &[
     "src/adapters/ipc/handler.rs",
     "src/adapters/ipc/handler/",
     "src/app/dispatch/",
     "src/app/dispatch_domain.rs",
-    "src/app/structural_cascade.rs",
-    "src/app/structural_exec.rs",
-    "src/app/attach_structure.rs",
     "src/file/identify_worker.rs",
-    "src/state/cascade_window.rs",
-    "src/state/ipc_window.rs",
+    "src/adapters/ipc/request_scope.rs",
+    "src/app/journal/commands.rs",
+    "src/app/journal/commands/",
+    "src/app/journal/forward.rs",
+    "src/app/creation_intent.rs",
+    "src/app/services/live_intent.rs",
 ];
 
 /// 파일 단위 항목은 부모 디렉터리를 순회하고 is_agent_facing에서 거른다.
@@ -57,8 +62,10 @@ enum Kind {
     Report,
     /// 저장·undo·원격 publication의 명시 선택 snapshot. 명령 대상을 고르지 않는다.
     Projection,
-    /// 호출자가 준 ID로 찾은 객체의 속성이다. 전역 포커스로 대상을 고르지 않는다.
+    /// 명시 ID로 해소한 pane/workspace 안의 선택값이다.
     IdResolved,
+    /// 기존 target 생략 호환 규칙에만 쓰는 명령 기본 문맥이다.
+    CompatibilityDefault,
     /// 권한·상한 정책을 적용할 워크스페이스다. 요청 대상을 고르는 값은 아니다.
     PolicyScope,
     /// 기록·알림·승인의 기본 워크스페이스. 호출자가 생략하면 활성 워크스페이스를 쓴다.
@@ -69,8 +76,8 @@ enum Kind {
     UserOrigin,
     /// 워크스페이스가 0 이 된 뒤의 복구 — 활성 포인터를 **다시 만든다**.
     Recovery,
-    /// focused가 없으면 다른 창을 써도 된다고 소스에 설명된 경우다.
-    AnyWindow,
+    /// navigation_proofs는 문서 권한 증거이며 사용자 선택 값이 아니다.
+    NavigationProof,
     /// 활성 상태로 대상을 고르는 결함. 해결을 막는 이유를 적는다.
     OpenDefect,
 }
@@ -80,16 +87,106 @@ use Kind::*;
 /// 줄 번호는 무관한 편집에도 바뀌므로 파일별로 집계하고 변경 시 분류를 다시 검토한다.
 const ROSTER: &[(&str, Kind, usize, &str)] = &[
     (
-        "src/app/structural_exec.rs",
-        Projection,
-        7,
-        "구조 실행 전후 attach 전송 문맥과 사용자 close 기록용 snapshot을 명시적으로 캡처한다",
+        "src/app/journal/commands/create_spec.rs",
+        IdResolved,
+        1,
+        "호출자가 지정한 pane 안의 selected tab을 원 CWD 상속 입력으로 고정하며 전역 workspace 선택으로 바꾸지 않는다",
     ),
     (
-        "src/app/attach_structure.rs",
+        "src/app/journal/commands/child.rs",
+        IdResolved,
+        1,
+        "명시 workspace와 pane으로 찾은 부모 생성 위치의 선택 tab에서 CWD를 상속한다",
+    ),
+    (
+        "src/app/journal/commands/assembly.rs",
+        IdResolved,
+        1,
+        "명시 target_workspace_id 안의 focused pane을 확인하고 같은 workspace의 첫 pane으로만 대체한다",
+    ),
+    (
+        "src/app/journal/commands/view_completion.rs",
+        CompatibilityDefault,
+        1,
+        "preset.apply의 target pane 생략 호환값을 원 engine 문맥에서 고정한다. 명시 target의 owner 해소를 대체하지 않는다",
+    ),
+    (
+        "src/app/journal/commands.rs",
+        CompatibilityDefault,
+        1,
+        "headless preset의 target pane 생략 호환값이며 로컬 GUI View를 새로 만들어 선택하지 않는다",
+    ),
+    (
+        "src/app/creation_intent.rs",
+        CompatibilityDefault,
+        5,
+        "기존 target 없는 View intent의 preset 또는 생성 입력을 현재 명령 문맥의 ID로 고정한다. 외부 구조 IPC는 별도 journal resolver를 거친다",
+    ),
+    (
+        "src/adapters/ipc/handler.rs",
+        NavigationProof,
+        1,
+        "원 HTML 문서 권한 증거 handle을 RequestScope로 전달하며 navigation 선택을 읽거나 바꾸지 않는다",
+    ),
+    (
+        "src/adapters/ipc/request_scope.rs",
+        Projection,
+        1,
+        "원 RequestContext navigation을 읽기 전용 presentation으로 빌려 응답과 capture가 소비한다",
+    ),
+    (
+        "src/adapters/ipc/request_scope.rs",
+        CompatibilityDefault,
+        3,
+        "호환 workspace 및 surface snapshot과 index accessor 선언이다. 실제 대상 선택은 각 method의 기존 기본값 규칙을 따른다",
+    ),
+    (
+        "src/adapters/ipc/request_scope.rs",
+        NavigationProof,
+        1,
+        "원 View의 문서 권한 증거를 소비하는 필드명이며 구조 navigation 선택과 무관하다",
+    ),
+    (
+        "src/app/dispatch/lua_commands.rs",
+        Report,
+        2,
+        "모든 engine의 현재 navigation과 active workspace를 Lua 읽기 snapshot tree에 보고한다",
+    ),
+    (
+        "src/app/dispatch/plugin_ipc.rs",
+        Projection,
+        1,
+        "명시 source ID의 owner engine을 먼저 찾고 preset capture에 원 View presentation snapshot을 고정한다",
+    ),
+    (
+        "src/app/journal/commands.rs",
+        Recovery,
+        1,
+        "headless의 확정 replacement 결과를 명령 기본 문맥에 적용하며 GUI 사용자 선택을 생성하지 않는다",
+    ),
+    (
+        "src/app/journal/commands.rs",
+        Projection,
+        1,
+        "확정 host notification을 현재 명령 문맥으로 해소하며 명령 실행 대상을 새로 고르지 않는다",
+    ),
+    (
+        "src/app/journal/commands/view_completion.rs",
         Projection,
         3,
-        "명시 anchor 요청의 attach 전송 문맥과 사용자 tab/pane close 기록을 캡처한다",
+        "window와 parked의 completion snapshot 두 곳 및 확정 변경 후 attach presentation 갱신 한 곳이다",
+    ),
+    (
+        "src/app/journal/commands/view_completion.rs",
+        UserOrigin,
+        10,
+        "성공 user origin과 원 View identity 및 selection generation 확인 뒤에만 저장된 선택과 생성 대상을 적용한다",
+    ),
+    (
+        "src/app/journal/commands/view_completion.rs",
+        Recovery,
+        1,
+        "확정 replacement의 원 ID 대응을 현재 navigation에 적용하여 사라진 구조 참조를 보정한다",
     ),
     (
         "src/adapters/ipc/handler.rs",
@@ -100,38 +197,8 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
     (
         "src/app/dispatch/list_global.rs",
         Report,
-        2,
+        4,
         "각 engine의 View를 함께 해소하여 pane과 category 전역 조회 결과를 합성한다",
-    ),
-    (
-        "src/state/cascade_window.rs",
-        UserOrigin,
-        3,
-        "App cascade의 origin 검사를 통과한 surface/tab/pane 결과 ID를 View 선택에 적용한다",
-    ),
-    (
-        "src/state/cascade_window.rs",
-        Projection,
-        1,
-        "공통 App adapter가 요청한 읽기 전용 presentation에 현재 navigation을 빌려 준다",
-    ),
-    (
-        "src/adapters/ipc/handler/tab.rs",
-        Report,
-        2,
-        "명시 presentation으로 계산한 생성 후 active_tab을 응답 구조분해와 결과에 싣는다",
-    ),
-    (
-        "src/app/structural_exec.rs",
-        IdResolved,
-        4,
-        "탭 생성과 split 의 cwd 상속 원본을 고를 때 호출자가 준 pane_id(split 은 resolved_pane_id)로 푼 페인의 활성 탭을 본다 — 전역 포커스가 아니다",
-    ),
-    (
-        "src/app/structural_exec.rs",
-        Report,
-        4,
-        "생성 결과와 명시 presentation으로 pane의 현재 활성 탭을 계산하고 응답 값으로 싣는다",
     ),
     (
         "src/adapters/ipc/handler/workspace.rs",
@@ -148,7 +215,7 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
     (
         "src/adapters/ipc/handler.rs",
         Report,
-        9,
+        11,
         "system_info와 workspace/category/pane/tab/tree 응답에 해당 View의 선택 상태를 보고한다",
     ),
     (
@@ -196,7 +263,7 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
     (
         "src/adapters/ipc/handler/debug.rs",
         DebugOnly,
-        1,
+        2,
         "debug 전용 핸들러 파일이므로 release 빌드의 검사 대상에서 제외된다.",
     ),
     (
@@ -207,33 +274,9 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
     ),
     (
         "src/app/dispatch_domain.rs",
-        UserOrigin,
-        4,
-        "새 탭·workspace의 사용자 continuation과 닫은 항목 복원 — 전부 origin User 검사 뒤 선택한다",
-    ),
-    (
-        "src/app/structural_cascade.rs",
-        Recovery,
-        1,
-        "마지막 워크스페이스가 닫힌 뒤 기본 워크스페이스를 다시 만들고 그 인덱스를 활성으로 둔다 — 활성이 없는 상태를 안 남기는 것",
-    ),
-    (
-        "src/state/cascade_window.rs",
-        Recovery,
+        Projection,
         2,
-        "App 포트 set_active_workspace의 구현과 ID 선택 변환 호출이며 빈 workspace 재생성의 선택 보정이다",
-    ),
-    (
-        "src/state/ipc_window.rs",
-        Attribution,
-        2,
-        "포트 메서드 active_workspace_index 의 구현 이름과 그 몸체의 읽기 — 핸들러 호출 자리의 분류를 물려받는다. 호출 자리 11 곳은 Attribution 7 · Report 3 · PolicyScope 1 로 명부에 있고 대상을 고르는 자리는 0 이다; 한 구현에 여러 분류를 적용할 수 없어 가장 많은 Attribution 에 둔다",
-    ),
-    (
-        "src/app/dispatch/intents.rs",
-        AnyWindow,
-        1,
-        "appearance 의 단일 출처를 고른다. focused 가 없으면 아무 main 이든 된다고 소스 주석이 밝히므로 결과가 포커스에 안 걸린다",
+        "지연 완료 continuation의 원 selection generation을 고정한다. 실제 선택 변경은 user origin과 원 View를 다시 검사한다",
     ),
 ];
 
@@ -431,7 +474,6 @@ fn the_extractor_counts_shipped_code_only() {
 
 #[test]
 fn view_and_projection_accesses_remain_visible_after_model_field_removal() {
-    let input =
-        "fn shipped() { state.navigation.tab_id(pane); state.presentation().surface_id(tab); }";
-    assert_eq!(count_needles(&shipped_code(input)), 2);
+    let input = "fn shipped() { state.navigation.tab_id(pane); state.presentation().surface_id(tab); view.selected_tabs.get(&pane); view.focused_panes.get(&workspace); state.focused_pane_id(engine); state.focused_surface_id(engine); }";
+    assert_eq!(count_needles(&shipped_code(input)), 6);
 }

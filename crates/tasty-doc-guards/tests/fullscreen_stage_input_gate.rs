@@ -77,7 +77,7 @@ fn stage_exit_key_has_a_single_decision_site() {
     );
     let gate_fn = only_at(
         &src,
-        "fn try_consume_fullscreen_stage_key(\n        &mut self,\n        engine: &mut crate::core::CoreState,\n        event: &winit::event::KeyEvent,\n    ) -> bool {",
+        "fn try_consume_fullscreen_stage_key(\n        &mut self,\n        engine: &crate::runtime::engine_read::EngineRead<'_>,\n        event: &winit::event::KeyEvent,\n    ) -> bool {",
         "0단계 게이트 함수",
     );
     let stage_active_guard = only_at(
@@ -184,9 +184,12 @@ fn native_menu_polling_stays_after_render() {
         "self.poll_pending_native_menu(engine);",
         "네이티브 메뉴 폴링",
     );
-    let render = only_at(&src, "self.render_if_dirty(", "렌더 호출");
+    assert!(poll > only_at(&src, "fn finish_redraw(", "렌더 후처리"));
+    let frame = read("src/app/view_frame.rs");
+    let render = only_at(&frame, "view.render_if_dirty(", "렌더 호출");
+    let finish = only_at(&frame, "view.finish_redraw(", "후처리 호출");
     assert!(
-        render < poll,
+        render < finish,
         "네이티브 메뉴 폴링 위치가 바뀌었다 — 이 가드는 렌더 뒤 폴링을 전제한다."
     );
 }
@@ -195,10 +198,7 @@ fn native_menu_polling_stays_after_render() {
 #[test]
 fn stage_entry_discards_every_in_flight_gesture() {
     let src = read("src/view/main/redraw.rs");
-    let body = fn_body(
-        &src,
-        "fn sync_fullscreen_stage_transition(&mut self, engine: &mut crate::core::CoreState) {",
-    );
+    let body = fn_body(&src, "fn sync_fullscreen_stage_transition(");
     for (line, why) in [
         (
             "self.clear_ime_preedit(engine);",
@@ -249,21 +249,12 @@ fn stage_entry_discards_every_in_flight_gesture() {
 }
 
 fn fn_body<'a>(src: &'a str, signature: &str) -> &'a str {
-    let start = only_at(src, signature, "함수 시그니처") + signature.len();
-    let mut depth = 1usize;
-    for (i, c) in src[start..].char_indices() {
-        match c {
-            '{' => depth += 1,
-            '}' => {
-                depth -= 1;
-                if depth == 0 {
-                    return &src[start..start + i];
-                }
-            }
-            _ => {}
-        }
-    }
-    panic!("함수 본문의 끝을 찾지 못했다: {signature}");
+    let code = tasty_doc_guards::source_text::mask_non_code_aligned(src);
+    let start = only_at(&code, signature, "함수 시그니처");
+    let open = start + code[start..].find('{').expect("function opening brace");
+    let close =
+        tasty_doc_guards::match_arms::matching_close(&code, open).expect("function closing brace");
+    &src[open + 1..close]
 }
 
 /// 일반 키보드 오버레이 조건에는 무대가 포함되지 않아 IME 경로에서 별도로 확인해야 한다.
@@ -406,4 +397,12 @@ fn the_gate_report_has_a_slot_for_every_predicate_parameter() {
         reporter.contains("\"gate_fullscreen_stage_active\":"),
         "무대 조건의 보고 필드가 없다. 일반 오버레이 함수의 매개변수에 없는 별도 조건이므로 직접 추가한다."
     );
+}
+
+#[test]
+fn body_reader_does_not_borrow_calls_from_the_next_method() {
+    let source =
+        "impl X { pub(crate) fn prepare() { let _ = \"}\"; } pub(crate) fn finish() { poll(); } }";
+    assert!(!fn_body(source, "fn prepare(").contains("poll()"));
+    assert!(fn_body(source, "fn finish(").contains("poll()"));
 }
