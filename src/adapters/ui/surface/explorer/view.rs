@@ -417,6 +417,10 @@ pub struct ExplorerViewStore {
 }
 
 impl ExplorerViewStore {
+    pub(crate) fn cached_surfaces(&self) -> impl Iterator<Item = SurfaceId> + '_ {
+        self.views.keys().copied()
+    }
+
     /// surface 의 뷰를 가져오고 (없으면 생성) 활성 탭 기준으로 동기화. `mirror_ws_id`
     /// 가 `Some` 이면(ADR-0022) 이 surface 가 속한 mirror workspace id — view 는 동기
     /// 로컬 IO 대신 원격 `list_dir_request` 를 큐잉한다.

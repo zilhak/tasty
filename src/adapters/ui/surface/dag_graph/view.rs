@@ -275,6 +275,10 @@ pub struct DagGraphViewStore {
 }
 
 impl DagGraphViewStore {
+    pub(crate) fn cached_surfaces(&self) -> impl Iterator<Item = SurfaceId> + '_ {
+        self.views.keys().copied()
+    }
+
     pub fn get_or_init(&mut self, surface_id: SurfaceId) -> &mut DagGraphView {
         self.views.entry(surface_id).or_default()
     }

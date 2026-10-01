@@ -39,6 +39,21 @@ impl RequestContext {
         self.layout_previews.retain(engine);
         #[cfg(feature = "gui")]
         self.terminal_views.retain(engine);
+        #[cfg(feature = "gui")]
+        {
+            // Reconcile against current structure, not delayed close notifications. In particular,
+            // a successor under the same ID still has a descriptor and keeps its View caches.
+            let removed: std::collections::HashSet<_> = self
+                .explorer_views
+                .cached_surfaces()
+                .chain(self.dag_graph_views.cached_surfaces())
+                .chain(self.shell_integration_hint_shown.iter().copied())
+                .filter(|id| !engine.has_surface(*id))
+                .collect();
+            for surface in removed {
+                self.release_surface_views(surface);
+            }
+        }
         self.navigation
             .collapsed_categories
             .retain(|id| engine.categories().iter().any(|c| c.id == *id));

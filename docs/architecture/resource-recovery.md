@@ -90,3 +90,5 @@ correlation 값으로 원 command 입력 바이트에 보존하며 중복 제거
 기존 surface의 materialization은 같은 사용자 생성 통지를 다시 만들지 않는다.
 
 Headless 종료도 journal 실행을 먼저 중단한 뒤 미공개 후보와 기존 설치·PTY·plugin 회수 receipt를 같은 EngineRelease에 모은다. 종료의 5초 상한 안에서 runner join, 감지 worker join, PTY reap 및 원 plugin destroy 응답을 각각 관측한다. 시간초과는 회수 완료나 durable 명령 취소를 뜻하지 않으며, 미완 operation은 다음 시작의 Recovery 대상으로 남는다.
+
+View의 구조 정합은 실제 Explorer·DAG cache 및 셸 안내 기록의 ID를 현재 descriptor와 대조해 사라진 항목을 회수한다. terminal viewport는 기존 retain 경로를 유지한다. 늦게 도착한 닫기 통지의 ID만으로 cache를 지우지 않으므로 동일 ID에 현재 descriptor가 있는 후속 owner의 표시 상태는 보존된다.
