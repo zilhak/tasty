@@ -393,7 +393,7 @@ fn committed_publication_failure_halts_readers_and_fails_all_pending_replies() {
             .unwrap();
     assert!(
         model
-            .categories()
+            .categories
             .values()
             .any(|category| category.name == "committed-not-published"),
         "failure is after durable commit, not an admission refusal"
