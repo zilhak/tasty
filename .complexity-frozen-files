@@ -1,0 +1,27 @@
+# Fixed aggregate corpus, separate from per-file exceptions.
+# Keep extracted modules here when splitting an entry; deletion requires an inventory review.
+crates/tasty-gallery/src/catalog.rs
+crates/tasty-host-plugin/src/builtin.rs
+crates/tasty-memory/src/lib.rs
+crates/tasty-plugin-markdown/src/render.rs
+crates/tasty-type-appearance/src/theme.rs
+src/adapters/ui/popup/port_scanner.rs
+src/adapters/ui/popup/remote_tool.rs
+src/adapters/ui/preset/demo_layout.rs
+src/adapters/ui/sidebar/view.rs
+src/adapters/ui/surface/explorer.rs
+src/app/dispatch_domain.rs
+crates/tasty-task-runtime/src/runner_host.rs
+crates/tasty-task-runtime/src/runner_host/command_inputs.rs
+src/view/main/redraw.rs
+src/view/settings/ui.rs
+src/view/settings/ui/tabs/appearance.rs
+crates/tasty-gallery/src/catalog/components/preset_editor.rs
+crates/tasty-plugin-manifest/src/validate.rs
+src/adapters/ipc/handler.rs
+src/adapters/ui/popup/remote_attach.rs
+src/app/attach_client.rs
+src/app/event_handler.rs
+src/remote/server.rs
+src/remote/server/content_queries.rs
+src/view/main/mouse.rs

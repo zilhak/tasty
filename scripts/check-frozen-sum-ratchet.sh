@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 예외 목록 파일들의 test 전용이 아닌 code SLOC 합을 예산과 비교한다.
+# 동결 명부의 test 전용이 아닌 code SLOC 합을 예산과 비교한다.
 # 파일별 증감이 상쇄되면 총합으로는 발견하지 못한다. 사본 조건·검색 범위·허용 폭은 check-file-size.sh에서 읽는다.
 # doc 주석에 따른 tokei 측정 차이와 최소 재현 결과를 먼저 확인한 뒤 합을 비교한다.
 # 정책·보정 근거: docs/dev-guide/complexity-gate.md#계측용-사본과-측정값-보정
@@ -10,6 +10,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 ALLOWLIST="$ROOT/.complexity-file-allowlist"
+FROZEN="$ROOT/.complexity-frozen-files"
 SIZE_GATE="$ROOT/scripts/check-file-size.sh"
 
 die() { echo "$1"; echo "(측정이 안 됐으므로 게이트를 통과로 읽지 않는다)"; exit 2; }
@@ -52,6 +53,8 @@ for cand in python3 python; do
 done
 [ -n "$PY" ] || die "python 미설치: tokei JSON 파싱에 python3 필요"
 
+"$PY" "$ROOT/scripts/lib/frozen_corpus.py" "$ROOT" >/dev/null || die "동결 명부가 현재 파일/예외 목록과 맞지 않는다."
+
 # 중첩 Cargo 잠금을 피하려고 이미 빌드한 도구만 찾고 최신성을 확인한다.
 . "$(cd "$(dirname "$0")" && pwd)/lib/judge-bin.sh"
 resolve_judge strip-cfg-test TASTY_STRIP_CFG_TEST_BIN "$ROOT"
@@ -64,13 +67,13 @@ trap 'rm -rf "$STRIPPED"' EXIT
 "$STRIP_BIN" "${JUDGE_FLAGS[@]}" "$STRIPPED" "$ROOT" "${SCAN_DIRS[@]}" >/dev/null \
     || die "출하 줄 판정 실패."
 
-# 예외 목록 파일에 한해 doc 주석 줄을 뺀 추가 사본을 만든다. tokei는 두 사본을 같은 호출로 측정한다.
+# 동결 명부 파일에 한해 doc 주석 줄을 뺀 추가 사본을 만든다. tokei는 두 사본을 같은 호출로 측정한다.
 while IFS= read -r p; do
     case "$p" in ''|'#'*) continue ;; esac
     [ -f "$STRIPPED/$p" ] || continue
     mkdir -p "$STRIPPED/__nodoc/$(dirname "$p")"
     grep -vE '^[[:space:]]*(///|//!)' "$STRIPPED/$p" >"$STRIPPED/__nodoc/$p" || true
-done <"$ALLOWLIST"
+done <"$FROZEN"
 
 # 이 입력의 code를 1로 세는 tokei 동작을 감시한다. 결과가 바뀌면 기존 측정 보정을 다시 검토한다.
 mkdir -p "$STRIPPED/__probe"
@@ -79,8 +82,8 @@ printf 'const A: &str = "x";\n/// doc\nconst B: u32 = 1;\n' >"$STRIPPED/__probe/
 TOKEI_JSON="$(cd "$STRIPPED" && tokei --output json "${SCAN_DIRS[@]}" __nodoc __probe)" \
     || die "tokei 실행 실패."
 
-# 목록의 파일이 실제로 있는데 측정 보고에서 빠졌으면 오류다. 삭제된 파일은 합에서 제외한다.
-REPORT="$(printf '%s' "$TOKEI_JSON" | ALLOWLIST="$ALLOWLIST" ROOT="$ROOT" "$PY" -c '
+# 명부 경로는 앞서 존재를 검증했다. 측정 보고에서 빠진 파일도 오류다.
+REPORT="$(printf '%s' "$TOKEI_JSON" | FROZEN="$FROZEN" ROOT="$ROOT" "$PY" -c '
 import json, os, sys
 sys.stdout.reconfigure(newline="\n")
 try:
@@ -96,7 +99,7 @@ if probe is None:
     print("형태 프로브가 보고에 없다 — 측정 실패로 읽는다", file=sys.stderr); sys.exit(3)
 root = os.environ["ROOT"]
 entries, missing, unmeasured, total, bias = [], [], [], 0, 0
-for line in open(os.environ["ALLOWLIST"], encoding="utf-8"):
+for line in open(os.environ["FROZEN"], encoding="utf-8"):
     p = line.strip()
     if not p or p.startswith("#"):
         continue
@@ -106,7 +109,7 @@ for line in open(os.environ["ALLOWLIST"], encoding="utf-8"):
             unmeasured.append(p); continue
         b = nodoc - sizes[p]
         entries.append((sizes[p], b, p)); total += sizes[p]; bias += b
-    elif os.path.exists(os.path.join(root, p)):
+    else:
         missing.append(p)
 if missing:
     print("목록의 파일이 디스크에 있는데 보고에 없다 — 측정 실패로 읽는다: "
@@ -177,7 +180,7 @@ if [ "$BIAS" -ne "$BIAS_PINNED" ]; then
 fi
 
 if [ "$SUM" -gt "$CEILING" ]; then
-    echo "동결 총합 래칫 위반: 예외 목록 파일들의 test 전용이 아닌 SLOC 합이 예산을 넘었다."
+    echo "동결 총합 래칫 위반: 동결 명부 파일들의 test 전용이 아닌 SLOC 합이 예산을 넘었다."
     echo "  합 $SUM  >  예산 $BUDGET + 띠 $SLACK = 천장 $CEILING"
     echo
     echo "  큰 것부터:"
@@ -236,5 +239,5 @@ if [ "$SUM" -lt "$BUDGET" ]; then
 fi
 
 # 고정 허용 폭과 현재 남은 여유를 구분해 출력한다.
-echo "동결 총합 래칫 통과 (합 $SUM / 천장 $CEILING = 예산 $BUDGET + 띠 $SLACK — 남은 여유 $((CEILING - SUM)))."
+echo "동결 총합 래칫 통과 (명시 corpus 기준, 합 $SUM / 천장 $CEILING = 예산 $BUDGET + 띠 $SLACK — 남은 여유 $((CEILING - SUM)))."
 echo "  계측 편향 $BIAS (고정값 $BIAS_PINNED · 여유 0) — 이 보정 범위에서 doc 주석을 뺀 사본의 합과 그만큼 차이 난다."
