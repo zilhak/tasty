@@ -120,31 +120,7 @@ impl PluginManager {
             return;
         }
         let pending = self.pending_requests.remove(&resp.id);
-        // 이미 만료·취소된 요청처럼 매칭되지 않은 응답은 왕복 시간에 넣지 않는다.
-        if let Some(p) = &pending {
-            let waited = p.sent_at.elapsed();
-            self.record_plugin_wait(waited);
-            let outcome = if resp.error.is_some() {
-                tasty_telemetry::slow_requests::HopOutcome::Error
-            } else {
-                tasty_telemetry::slow_requests::HopOutcome::Ok
-            };
-            // pre-hook 또는 post-hook이 남은 target 응답이면 후속 처리가 이어진다.
-            let last = !matches!(
-                p.kind,
-                PendingRequestKind::ExtensionPreIpcHook { .. }
-                    | PendingRequestKind::NamespaceInvokeWithPostHook { .. }
-            );
-            self.record_origin_hop(resp.id, p, waited, outcome, last);
-        }
-        if let Some(err) = &resp.error {
-            // 플러그인 로그와 호스트 요청을 함께 추적할 수 있도록 원 요청 번호도 남긴다.
-            tracing::warn!(
-                "plugin '{plugin_id}' response error (id={}, request_seq={}): {err}",
-                resp.id,
-                request_seq_label(pending.as_ref().and_then(|p| p.origin))
-            );
-        }
+        self.record_response_observation(plugin_id, &resp, pending.as_ref());
         let kind = match pending {
             Some(p) => p.kind,
             None => {
@@ -318,6 +294,40 @@ impl PluginManager {
                     resp.result,
                 );
             }
+        }
+    }
+
+    // Observe only the matched wait, but log both matched and late error responses.
+    fn record_response_observation(
+        &self,
+        plugin_id: &str,
+        resp: &PluginResponse,
+        pending: Option<&PendingRequest>,
+    ) {
+        // 이미 만료·취소된 요청처럼 매칭되지 않은 응답은 왕복 시간에 넣지 않는다.
+        if let Some(p) = pending {
+            let waited = p.sent_at.elapsed();
+            self.record_plugin_wait(waited);
+            let outcome = if resp.error.is_some() {
+                tasty_telemetry::slow_requests::HopOutcome::Error
+            } else {
+                tasty_telemetry::slow_requests::HopOutcome::Ok
+            };
+            // pre-hook 또는 post-hook이 남은 target 응답이면 후속 처리가 이어진다.
+            let last = !matches!(
+                p.kind,
+                PendingRequestKind::ExtensionPreIpcHook { .. }
+                    | PendingRequestKind::NamespaceInvokeWithPostHook { .. }
+            );
+            self.record_origin_hop(resp.id, p, waited, outcome, last);
+        }
+        if let Some(err) = &resp.error {
+            // 플러그인 로그와 호스트 요청을 함께 추적할 수 있도록 원 요청 번호도 남긴다.
+            tracing::warn!(
+                "plugin '{plugin_id}' response error (id={}, request_seq={}): {err}",
+                resp.id,
+                request_seq_label(pending.and_then(|p| p.origin))
+            );
         }
     }
 
