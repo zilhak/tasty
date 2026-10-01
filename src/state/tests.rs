@@ -21,7 +21,7 @@ pub(crate) fn test_state_with_memory(
     RequestContext,
     crate::runtime::engine_session::EngineSession,
 ) {
-    state_fixture(memory, false)
+    state_fixture(memory, false, None)
 }
 
 /// A display-only mirror fixture; transport/materialization tests install a real Remote session.
@@ -34,12 +34,50 @@ pub(crate) fn test_mirror_state() -> (
             tasty_memory::testing::InMemoryStorage::new(),
         )),
         true,
+        None,
     )
+}
+
+pub(crate) fn test_state_from_model(
+    model: tasty_core::JournalModel,
+) -> (
+    RequestContext,
+    crate::runtime::engine_session::EngineSession,
+) {
+    state_fixture(
+        std::sync::Arc::new(std::sync::Mutex::new(
+            tasty_memory::testing::InMemoryStorage::new(),
+        )),
+        false,
+        Some(model),
+    )
+}
+
+/// Complete canonical fixture facts, not an application command or an external effect.
+pub(crate) fn test_model(events: Vec<tasty_core::DomainEvent>) -> tasty_core::JournalModel {
+    let mut model = tasty_core::JournalModel::default();
+    tasty_core::evolve(
+        &mut model,
+        &tasty_core::DomainBatch {
+            batch_id: tasty_core::BatchId(1),
+            events: events
+                .into_iter()
+                .enumerate()
+                .map(|(index, event)| tasty_core::RecordedEvent {
+                    revision: tasty_core::Revision(index as u64 + 1),
+                    event,
+                })
+                .collect(),
+        },
+    )
+    .expect("canonical presentation fixture");
+    model
 }
 
 fn state_fixture(
     memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     mirror: bool,
+    model: Option<tasty_core::JournalModel>,
 ) -> (
     RequestContext,
     crate::runtime::engine_session::EngineSession,
@@ -85,22 +123,7 @@ fn state_fixture(
             },
         },
     ];
-    let mut model = tasty_core::JournalModel::default();
-    tasty_core::evolve(
-        &mut model,
-        &tasty_core::DomainBatch {
-            batch_id: tasty_core::BatchId(1),
-            events: events
-                .into_iter()
-                .enumerate()
-                .map(|(index, event)| tasty_core::RecordedEvent {
-                    revision: tasty_core::Revision(index as u64 + 1),
-                    event,
-                })
-                .collect(),
-        },
-    )
-    .expect("canonical presentation fixture");
+    let model = model.unwrap_or_else(|| test_model(events));
     if mirror {
         let mut workspace =
             crate::model::Workspace::new_with_terminal_marker(id, "Workspace 1".into(), id, id, id);
@@ -109,14 +132,29 @@ fn state_fixture(
     } else {
         tasty_core::projection::bootstrap::initialize(&mut engine.core_state, &model).unwrap();
     }
-    engine
-        .runtime
-        .surfaces
-        .insert(id, Box::new(crate::model::TerminalSurface { id }));
-    engine
-        .runtime
-        .terminals
-        .insert(id, tasty_terminal::Terminal::new_detached(80, 24), None);
+    for surface in model.surfaces.values() {
+        let id = surface.id;
+        match surface.kind.as_str() {
+            "terminal" => {
+                engine
+                    .runtime
+                    .surfaces
+                    .insert(id, Box::new(crate::model::TerminalSurface { id }));
+                engine.runtime.terminals.insert(
+                    id,
+                    tasty_terminal::Terminal::new_detached(80, 24),
+                    None,
+                );
+            }
+            "empty" => {
+                engine
+                    .runtime
+                    .surfaces
+                    .insert(id, Box::new(crate::model::EmptySurface::new(id)));
+            }
+            _ => {} // Kind-specific test values are installed explicitly by their fixture owner.
+        }
+    }
     // 플러그인 프로세스 없이 WebView kind와 오버레이 등록을 구성한다.
     let decl: tasty_plugin_manifest::SurfaceKindDecl = serde_json::from_value(serde_json::json!({
         "kind": "markdown",
