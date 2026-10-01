@@ -40,6 +40,14 @@ attach 는 **server**(피점유 — PTY/grid 소유)와 **client**(점유 — mi
 - **점유는 핸드셰이크가 검증된 뒤에만 잡힌다** ([ADR-0021](../adr/0021-occupancy-and-attach-admission.md)). 점유를 잡는 유일한 진입점은 `dispatch_stream_attach` → `attach_workspace_for_stream`/`attach_surface_for_stream` 인데, 그 **앞에** `tcp_ipc_server.rs::validate_stream_proto` 가 있다. `stream.open` params 의 `proto` 가 `STREAM_PROTO` 와 다르면(생략 시 serde default `0`) attach 를 dispatch 하지 않고 `StreamAck{ok:false, proto, error}` 로 거절한다 — 점유가 애초에 잡히지 않는다. 없을 때의 문제: 프로토콜이 안 맞는 client 는 그 점유를 **쓸 수 없는데도** 가져가고, 소켓을 닫지 않는 구버전/hung peer 면 아래 EOF 가 오지 않아 heartbeat TTL(20초)까지 그 workspace 가 붙잡혀 정상 attach 가 `already_attached` 로 거절됐다. 거절 ack 는 client(`StreamConnection::open_with`)가 이미 검사하는 형식이라 실패 사유가 그대로 사용자에게 전달된다.
 - **self-attach 는 그보다 앞, client 측 dispatch 에서 거절된다**: `attach_client/dispatch.rs::connect_unless_self` 가 요청 포트를 이 인스턴스의 IPC 포트와 비교한다(debug/release 공통). 이 경로의 핸드셰이크는 GUI 메인 스레드에서 동기 블로킹으로 도는데 그 응답을 만드는 것도 같은 메인 스레드라 자기 자신을 대상으로 하면 같은 스레드가 응답을 만들 수 없어 대기하다 실패하고, 실패하는 동안 대상 workspace 점유만 남는다. 서버 accept 층에서는 막을 수 없다 — 자기 자신과 `ssh -L` 로 도착하는 정상 원격 mirror 는 둘 다 loopback 연결이라 구분되지 않고, 요청 포트와 자기 IPC 포트를 함께 아는 것은 client 측 dispatch 뿐이다. 로컬 self-mirror 검증은 별도 프로세스인 `tasty debug attach` 로 한다.
 
+## 조회 팝업과 연결 시도의 소유
+
+원격 workspace 조회·생성의 socket, SSH tunnel, attempt worker는 `tasty-remote::Remote`가 소유한다. 팝업은 목록과 요청 ID만 보관한다. App은 Browse 요청이 생성된 View identity와 EngineId를 고정하고, Connect에서 같은 원본을 확인한 뒤 PendingMirrorInstall로 전달한다. 연결 결과로 표시를 바꿀 때도 원 View와 selection generation을 확인한다.
+
+자동 attach의 SSH probe는 원 AttemptToken의 취소 scope에서 실행한다. 원 engine·workspace mapping이 사라지면 진행 중 시도를 취소하며, 늦게 받은 결과로 현재 연결을 덮지 않는다. 조회 결과 큐가 가득 차면 worker가 원 결과를 보유해 기다리되 취소 시 빠져나온다. 준비된 attach 연결은 실제 I/O retirement receipt를 App이 수집하도록 별도 bounded 결과 큐로 전달한다.
+
+UI 대기 기한과 worker 종료는 별개다. 기한 만료는 취소 요청이며, Remote의 종료 관측은 실제 thread join 및 연결 retirement receipt를 사용한다. 원 raw 입력을 새 connection epoch에 재전송하지 않는다.
+
 ## 초기 스냅샷 + delta
 
 attach 직후 서버가 현재 visible 화면을 `snapshot_and_tap` 으로 tap 등록과 같은 lock 안에서 **1회** 직렬화 push(셀 속성 + 커서 + alt-screen/DECCKM/bracketed 모드 복원). 이후 변화는 output tap delta(Data 프레임). client 는 받은 바이트를 PTY 없는 mirror 터미널(`Terminal::new_detached` + `feed_bytes`)에 먹여 같은 termwiz 파서로 grid 재구성.

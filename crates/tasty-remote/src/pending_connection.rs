@@ -8,13 +8,16 @@ pub(crate) struct ConnectionOutcome {pub ticket:ConnectionTicket,pub result:Resu
 impl Remote {
     pub fn queue_connection(&mut self,port:u16,workspace:u32,tunnel:Option<tasty_ssh::SshTunnel>,anchor:Option<u32>,mapping:Option<tasty_model::WorkspaceAttachMapping>,wake:std::sync::Arc<dyn Fn()+Send+Sync>,decode:fn(&[u8])->Option<super::client_session::MirrorEvent>)->Result<ConnectionTicket,String> {
         if self.pending_connections.len()>=8 {return Err("pending remote connection capacity exhausted".into());}
-        let token=self.begin_attempt(anchor,mapping).map_err(str::to_owned)?;
         let ticket=ConnectionTicket(self.next_connection);
-        self.next_connection=self.next_connection.checked_add(1).ok_or("connection ticket exhausted")?;
+        let next=self.next_connection.checked_add(1).ok_or("connection ticket exhausted")?;
+        let token=self.begin_attempt(anchor,mapping).map_err(str::to_owned)?;
+        self.next_connection=next;
         self.pending_connections.insert(ticket,PendingConnection::Connecting(token.clone()));
         let tx=self.connection_tx.clone();let worker_wake=wake.clone();let worker_token=token.clone();
         if let Err(error)=self.spawn_attempt(token.clone(),move || {
             let result=PreparedConnection::connect(worker_token,port,workspace,tunnel,worker_wake,decode).map_err(|error|error.to_string());
+            // Deliver cancelled success too: collect_connections tracks the exact I/O retirement
+            // receipt before dropping its prepared owner. Shutdown keeps draining this bounded queue.
             if let Err(error)=tx.send(ConnectionOutcome {ticket,result}) {drop(error);}
             wake();
         }) {self.pending_connections.remove(&ticket);return Err(error);}

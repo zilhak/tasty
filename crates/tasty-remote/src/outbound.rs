@@ -63,7 +63,7 @@ impl AttemptToken {
         if let Ok(mut ssh)=self.0.ssh.lock() {for cancel in ssh.drain(..) {cancel.cancel();}}
         if let Ok(mut sockets)=self.0.sockets.lock() {for socket in sockets.drain(..) {let _=socket.shutdown(std::net::Shutdown::Both);}}
     }
-    pub(crate) fn register_ssh(&self,cancel:tasty_ssh::SshCancel)->Result<(),String> {
+    pub fn register_ssh(&self,cancel:tasty_ssh::SshCancel)->Result<(),String> {
         let mut handles=self.0.ssh.lock().map_err(|_|"SSH cancellation state poisoned".to_owned())?;
         if !self.is_active() {cancel.cancel();return Err("remote attempt retired".into());}
         handles.push(cancel);Ok(())
@@ -174,3 +174,17 @@ impl ReconnectSlot {
     pub fn new()->Self {Self {backoff:Backoff::new(),next_attempt:Instant::now(),attempts:0,given_up:false}}
 }
 impl Default for ReconnectSlot {fn default()->Self {Self::new()}}
+
+/// A full result queue retains its owned value only while the original attempt is live.
+/// Cancellation releases a blocked producer so shutdown can observe its actual join.
+pub(crate) fn send_attempt_result<T>(sender:&std::sync::mpsc::SyncSender<T>,token:&AttemptToken,mut value:T) {
+    loop {
+        if !token.is_active() {return;}
+        match sender.try_send(value) {
+            Ok(())=>return,
+            Err(std::sync::mpsc::TrySendError::Disconnected(_))=>return,
+            Err(std::sync::mpsc::TrySendError::Full(pending))=>value=pending,
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}

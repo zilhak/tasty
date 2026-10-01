@@ -13,7 +13,7 @@ use tasty_ui_widgets::{Button, ButtonVariant, CenterState, StatusKind, status_do
 
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
-use crate::core::CoreState;
+
 use crate::i18n::t;
 use crate::state::MainViewState;
 use crate::theme;
@@ -172,7 +172,7 @@ fn connect(state:&mut MainViewState,st:&mut UiState,name:String) {
     static NEXT:std::sync::atomic::AtomicU64=std::sync::atomic::AtomicU64::new(1);
     let id=NEXT.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
     st.request=Some(id);st.attach_sel=Some(name.clone());st.ws_sel=None;st.phase=NewWsPhase::Rest;st.ready=false;st.created=None;st.conn=Conn::Connecting;
-    enqueue(state,BrowserRequest::Browse {id,profile:name});
+    enqueue(state,BrowserRequest::Browse {id,profile:name,view:state.webview_identity.clone()});
 }
 fn start_create(state:&mut MainViewState,st:&mut UiState) {
     if st.creating()||!st.ready {return;}
@@ -186,7 +186,7 @@ fn cancel_browse(state:&mut MainViewState,st:&mut UiState) {
     *st=UiState::default();
 }
 fn cleanup(ctx:&egui::Context,state:&mut MainViewState) {cancel_browse(state,&mut read_ui(ctx));clear_ui(ctx);}
-pub fn on_close_remote_attach_popup(ctx:&egui::Context,state:&mut MainViewState,_engine:&CoreState) {cleanup(ctx,state);}
+pub fn on_close_remote_attach_popup(ctx:&egui::Context,state:&mut MainViewState,_engine:&crate::runtime::engine_read::EngineRead<'_>) {cleanup(ctx,state);}
 /// App applies values only to the still-open ticket. No worker handle or tunnel enters egui storage.
 pub(crate) fn receive_update(ctx:&egui::Context,id:u64,update:tasty_remote::browser::BrowserUpdate) {
     let mut state=read_ui(ctx);if state.request!=Some(id) {return;}

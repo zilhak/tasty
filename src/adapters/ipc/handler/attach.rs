@@ -5,7 +5,7 @@ use super::params::{self, p_try};
 use crate::runtime::engine_access::EngineMut;
 use serde_json::json;
 
-use crate::core::CoreState;
+use crate::runtime::engine_read::EngineRead;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
@@ -57,7 +57,7 @@ pub(crate) fn handle_acquire(
 
 /// `attach.release` { surface_id, client_id } → 정상 해제(holder 본인).
 pub(crate) fn handle_release(
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -79,7 +79,7 @@ pub(crate) fn handle_release(
 
 /// `attach.force_detach` { surface_id } → 서버 권한 강제 해제 + holder 종료 통지.
 pub(crate) fn handle_force_detach(
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -100,7 +100,7 @@ pub(crate) fn handle_force_detach(
 
 /// workspace의 점유와 멤버 제한을 해제하고 holder에게 알린다.
 pub(crate) fn handle_force_detach_workspace(
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -124,7 +124,7 @@ pub(crate) fn handle_force_detach_workspace(
 /// 지정한 port와 workspace의 mirror 생성을 GUI 큐에 요청한다.
 /// 실제 연결·생성은 App이 처리하며 헤드리스는 이 큐를 처리하지 않는다.
 pub(crate) fn handle_into_gui(
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -144,7 +144,7 @@ pub(crate) fn handle_into_gui(
 }
 
 /// surface와 workspace 점유 목록을 함께 반환한다.
-pub(crate) fn handle_list(engine: &CoreState, id: serde_json::Value) -> JsonRpcResponse {
+pub(crate) fn handle_list(engine: &EngineRead<'_>, id: serde_json::Value) -> JsonRpcResponse {
     let arr: Vec<_> = engine
         .live.occupancy
         .locks_snapshot()

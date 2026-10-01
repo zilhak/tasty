@@ -12,7 +12,7 @@ use tasty_remote_profiles::{
 
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
-use crate::core::CoreState;
+
 use crate::i18n::t;
 use crate::state::MainViewState;
 use crate::theme;
@@ -292,7 +292,7 @@ fn is_unknown_kind(kind: &str) -> bool {
 pub fn on_close_remote_tool_popup(
     ctx: &egui::Context,
     _state: &mut MainViewState,
-    _engine: &mut CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     clear_ui(ctx);
 }

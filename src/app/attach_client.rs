@@ -55,6 +55,15 @@ struct MirrorMeshInfo {
 
 
 impl App {
+    /// Keep the popup's fixed installation target through the existing user attach guard.
+    pub(crate) fn queue_browser_mirror(&mut self,target:pending::PendingMirrorInstall,port:u16,workspace:u32,tunnel:Option<tasty_ssh::SshTunnel>)->anyhow::Result<()> {
+        let own_port=self.hub.ipc_server.as_ref().map(|server|server.port());
+        match dispatch_attach(own_port,port,workspace,AttachSource::User,||self.queue_mirror_connection(target,port,workspace,tunnel)) {
+            Outcome::Connected(result)=>result,
+            Outcome::RejectedSelf=>anyhow::bail!("self attach is not supported"),
+        }
+    }
+
     pub(crate) fn dispatch_pending_gui_attach(&mut self) {
         let mut requests=Vec::new();let mut user_requests=Vec::new();
         for session in self.engines.all_sessions_mut() {

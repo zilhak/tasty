@@ -133,7 +133,7 @@ impl App {
         let target = mapping.target.clone();
         // SSH 연결 준비가 메인 루프를 막지 않게 한다.
         let spawned=self.remote.spawn_attempt(attempt.clone(),move || {
-            let result = resolve_endpoint(&target);
+            let result = resolve_endpoint_bound(&target, &attempt);
             let outcome = AutoAttachOutcome {
                 attempt,
                 anchor_ws_id: Some(anchor),
@@ -144,7 +144,7 @@ impl App {
             let _ = tx.send(outcome); // 수신자(메인 루프) drop 시 send 실패 — 무시.
             let _ = proxy.send_event(crate::app::event::AppEvent::AutoAttachReady); // event loop 종료 시에만 실패 — 무시
         });
-        if let Err(error)=spawned {self.remote.active.remove(&anchor);tracing::warn!("remote endpoint start rejected: {error}");}
+        if let Err(error)=spawned {self.state.pending_remote_endpoints.retain(|token,_|token.is_active());self.remote.active.remove(&anchor);tracing::warn!("remote endpoint start rejected: {error}");}
     }
 
     /// 시도 중이 아닌 anchor를 예약 시각 또는 해당 워크스페이스 재활성화 때 재연결한다.
@@ -199,7 +199,7 @@ impl App {
             let proxy = self.view.proxy.clone();
             let target = mapping.target.clone();
             let spawned=self.remote.spawn_attempt(attempt.clone(),move || {
-                let result = resolve_endpoint(&target);
+                let result = resolve_endpoint_bound(&target, &attempt);
                 let outcome = AutoAttachOutcome {
                     attempt,
                     anchor_ws_id: Some(anchor),
@@ -210,12 +210,18 @@ impl App {
                 let _ = tx.send(outcome); // 수신자(메인 루프) drop 시 send 실패 — 무시.
                 let _ = proxy.send_event(crate::app::event::AppEvent::AutoAttachReady); // event loop 종료 시에만 실패 — 무시
             });
-            if let Err(error)=spawned {self.remote.active.remove(&anchor);tracing::warn!("remote reconnect start rejected: {error}");}
+            if let Err(error)=spawned {self.state.pending_remote_endpoints.retain(|token,_|token.is_active());self.remote.active.remove(&anchor);tracing::warn!("remote reconnect start rejected: {error}");}
         }
     }
 
     pub(crate) fn drain_auto_attach_results(&mut self) {
         self.remote.reap_attempts();
+        let stale:Vec<_>=self.state.pending_remote_endpoints.iter().filter(|(_,target)|!self.mirror_install_target_is_current(target)).map(|(token,target)|(token.clone(),target.anchor)).collect();
+        for (token,anchor) in stale {
+            self.state.pending_remote_endpoints.remove(&token);
+            self.remote.cancel_attempt(&token);
+            if let Some(anchor)=anchor {self.remote.active.remove(&anchor);}
+        }
         self.state.pending_remote_endpoints.retain(|token,_|token.is_active());
         while let Ok(outcome) = self.remote.rx.try_recv() {
             self.apply_auto_attach_outcome(outcome);
@@ -354,6 +360,15 @@ impl App {
 }
 
 /// 워커 스레드에서 프로필과 SSH 터널 또는 loopback 포트를 준비한다.
+fn resolve_endpoint_bound(target:&WorkspaceAttachTarget,attempt:&tasty_remote::outbound::AttemptToken)->anyhow::Result<(Option<SshTunnel>,u16)> {
+    let cancel=tasty_ssh::SshCancel::new();
+    attempt.register_ssh(cancel.clone()).map_err(anyhow::Error::msg)?;
+    let _scope=cancel.scope();
+    let result=resolve_endpoint(target)?;
+    if !attempt.is_active() {anyhow::bail!("remote endpoint attempt cancelled");}
+    Ok(result)
+}
+
 fn resolve_endpoint(target: &WorkspaceAttachTarget) -> anyhow::Result<(Option<SshTunnel>, u16)> {
     let (ssh_target, remote_tasty, port_mode, port_file) = match target {
         WorkspaceAttachTarget::Profile { name } => {

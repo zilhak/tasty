@@ -25,7 +25,7 @@ impl Remote {
                 let rows=crate::browse::browse_via_port_bound(port,Some(&token))?;
                 Ok(ResultValue::Listed {port,tunnel,rows})
             })().map_err(|error|error.to_string());
-            if tx.send(Outcome {id,attempt:token,result}).is_err() {tracing::debug!("remote browser receiver closed");}
+            crate::outbound::send_attempt_result(&tx,&token,Outcome {id,attempt:token.clone(),result});
             wake();
         });
         if result.is_err() {self.cancel_browser(id);}result
@@ -38,7 +38,7 @@ impl Remote {
         if let Some(session)=self.browsers.sessions.get_mut(&id) {session.attempt=Some(attempt.clone());session.started=Instant::now();session.creating=true;}
         let result=self.spawn_attempt(attempt,move || {
             let result=crate::browse::probe_method_bound(port,"workspace.create",serde_json::json!({}),Some(&token)).map_err(|error|error.to_string()).and_then(|value|value.get("id").and_then(|id|id.as_u64()).and_then(|id|u32::try_from(id).ok()).map(ResultValue::Created).ok_or_else(||"remote workspace.create returned no ID".into()));
-            if tx.send(Outcome {id,attempt:token,result}).is_err() {tracing::debug!("remote browser receiver closed");}wake();
+            crate::outbound::send_attempt_result(&tx,&token,Outcome {id,attempt:token.clone(),result});wake();
         });
         if result.is_err() && let Some(session)=self.browsers.sessions.get_mut(&id) {session.attempt=None;}result
     }
