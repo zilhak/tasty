@@ -385,6 +385,42 @@ fn gates_before_intercept<'a>(
 /// shared_buffer.create는 직접 처리하고 나머지는 공용 handler에 전달한다.
 /// GUI popup·banner 처리는 없으며, 플러그인 사이 namespace 전달도 아직 구현하지 않았다.
 /// 후자는 창이 없어서 불가능한 기능과는 구분한다.
+fn defer_plugin_preset_capture_headless(
+    app: &mut App,
+    state: &RequestContext,
+    engine: &EngineMut<'_>,
+    call: &tasty_host_plugin::manager::PendingPluginCall,
+) -> bool {
+    if call.method != "preset.capture" { return false; }
+    let Some(process_binding) = app.plugin_manager.as_ref()
+        .and_then(|manager| manager.processes.get(&call.plugin_id))
+        .map(|process| process.reply_binding())
+    else {
+        tracing::warn!(plugin = %call.plugin_id, "preset capture caller disappeared before admission");
+        return true;
+    };
+    let id = serde_json::Value::from(call.call_id);
+    let response = match crate::ipc::handler::preset::decode_capture_request(&call.params, &id) {
+        Err(response) => Some(response),
+        Ok((kind, source, name)) => {
+            let result = match (state.engine_id, engine.journal_binding.cloned()) {
+                (Some(engine_id), Some(binding)) => app.journal.queue_preset_capture_borrowed(
+                    &engine.as_ref(), engine_id, binding, &state.navigation, kind, source,
+                    crate::app::journal::PresetCaptureReply::Plugin {
+                        plugin: call.plugin_id.clone(), binding: process_binding.clone(), call_id: call.call_id, name,
+                    },
+                ),
+                _ => Err("preset capture engine is unbound".into()),
+            };
+            result.err().map(|error| crate::ipc::protocol::JsonRpcResponse::invalid_params(id, error))
+        }
+    };
+    if let Some(response) = response && let Some(manager) = app.plugin_manager.as_mut() {
+        manager.send_bound_ipc_result(&call.plugin_id, &process_binding, call.call_id, response);
+    }
+    true
+}
+
 fn dispatch_plugin_ipc_calls_headless(
     app: &mut App,
     state: &mut RequestContext,
@@ -438,6 +474,7 @@ fn dispatch_plugin_ipc_calls_headless(
             }
             continue;
         }
+        if defer_plugin_preset_capture_headless(app, state, engine, &call) { continue; }
         if app
             .journal
             .admit_plugin(&request, &caller, &call, app.plugin_manager.as_ref())

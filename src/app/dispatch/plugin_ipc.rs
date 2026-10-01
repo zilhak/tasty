@@ -62,6 +62,7 @@ impl App {
                 );
                 continue;
             }
+            if self.defer_plugin_preset_capture(&call) { continue; }
             if self
                 .journal
                 .admit_plugin(&request, &caller, &call, self.plugin_manager.as_ref())
@@ -71,6 +72,47 @@ impl App {
             if self.defer_live_plugin(&checked,&call) {continue;}
             self.handle_ipc_default_dispatch(&call, &checked);
         }
+    }
+
+    /// Gates and cross-plugin namespace routing have already selected the host fallback.
+    fn defer_plugin_preset_capture(&mut self, call: &PendingPluginCall) -> bool {
+        if call.method != "preset.capture" { return false; }
+        let Some(binding) = self.plugin_manager.as_ref()
+            .and_then(|manager| manager.processes.get(&call.plugin_id))
+            .map(|process| process.reply_binding())
+        else {
+            tracing::warn!(plugin = %call.plugin_id, "preset capture caller disappeared before admission");
+            return true;
+        };
+        let id = serde_json::Value::from(call.call_id);
+        let response = match crate::ipc::handler::preset::decode_capture_request(&call.params, &id) {
+            Err(response) => Some(response),
+            Ok((kind, source, name)) => {
+                let owns = |engine: &crate::core::CoreState| match kind {
+                    tasty_presets::PresetKind::Workspace => engine.workspaces().into_iter().any(|workspace| workspace.id == source),
+                    tasty_presets::PresetKind::Pane => engine.find_pane_by_id(source).is_some(),
+                    tasty_presets::PresetKind::Tab => engine.find_pane_for_tab(source).is_some(),
+                };
+                let presentation = self.engines().sessions().find(|(_, engine)| owns(engine.core))
+                    .map(|(state, engine)| crate::model::StructurePresentationSnapshot::capture(
+                        engine.workspaces(), engine.categories(), &state.navigation));
+                let session = self.engines.all_sessions().find(|session| owns(&session.core_state));
+                let result = match (session, presentation) {
+                    (Some(session), Some(presentation)) => self.journal.queue_preset_capture(
+                        session, &presentation, kind, source,
+                        super::super::journal::PresetCaptureReply::Plugin {
+                            plugin: call.plugin_id.clone(), binding: binding.clone(), call_id: call.call_id, name,
+                        },
+                    ),
+                    _ => Err(format!("preset capture source {source} not found")),
+                };
+                result.err().map(|error| ipc::protocol::JsonRpcResponse::invalid_params(id, error))
+            }
+        };
+        if let Some(response) = response && let Some(manager) = self.plugin_manager.as_mut() {
+            manager.send_bound_ipc_result(&call.plugin_id, &binding, call.call_id, response);
+        }
+        true
     }
 
     /// main·보조 채널을 함께 사용하는 공유 버퍼 생성은 매니저가 처리한다.
