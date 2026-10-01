@@ -57,6 +57,7 @@ impl EventStore {
                 tx.execute("DELETE FROM payload_pins WHERE holder = ?1", [snapshot_holder(to_u64(id)?)])?;
             }
         }
+        tx.execute("INSERT INTO retained_event_ids(event_id) SELECT event_id FROM events WHERE batch_id <= ?1", [to_i64(boundary)?])?;
         tx.execute("DELETE FROM payload_pins WHERE holder IN (SELECT 'event:' || event_id FROM events WHERE batch_id <= ?1)", [to_i64(boundary)?])?;
         let removed_events = tx.execute("DELETE FROM events WHERE batch_id <= ?1", [to_i64(boundary)?])?;
         let removed_payloads = tx.execute("DELETE FROM payloads WHERE payload_id NOT IN (SELECT payload_id FROM payload_pins)", [])?;

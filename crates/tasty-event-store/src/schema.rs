@@ -198,6 +198,14 @@ CREATE TABLE retention_anchor (
     batch_id INTEGER NOT NULL REFERENCES batches(batch_id),
     snapshot_id INTEGER NOT NULL REFERENCES snapshots(snapshot_id)
 );
+CREATE TABLE retained_event_ids (
+    event_id TEXT PRIMARY KEY
+);
+CREATE TRIGGER prevent_retained_event_id_reuse BEFORE INSERT ON events
+WHEN EXISTS(SELECT 1 FROM retained_event_ids WHERE event_id = NEW.event_id)
+BEGIN
+    SELECT RAISE(ABORT, 'event identity already exists in retained history');
+END;
 CREATE TABLE retained_stream_revisions (
     stream_id TEXT PRIMARY KEY,
     revision INTEGER NOT NULL CHECK(revision > 0)

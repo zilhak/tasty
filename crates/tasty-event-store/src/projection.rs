@@ -42,6 +42,8 @@ impl EventStore {
     ) -> StoreResult<()> {
         check_keys(write)?;
         let tx = self.write_tx(epoch)?;
+        // An incremental delta cannot repair rows whose missing history was already compacted.
+        crate::retention::require_cursor(&tx, checkpoint_batch(&tx, &write.consumer_id, write.projection_version)?)?;
         apply_rows(&tx, write)?;
         advance_checkpoint(
             &tx,

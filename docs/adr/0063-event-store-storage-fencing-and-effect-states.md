@@ -137,7 +137,8 @@ journal마다 잠금 파일 하나가 옆에 남는다. 이 파일을 지우는 
 로그 보존은 batch/revision 헤더를 남기고 검증된 fallback snapshot까지의 이벤트 본문만 정리한다.
 `retention_anchor`가 snapshot과 batch cut을 연결하고 `retained_stream_revisions`가 stream별
 재동기화 하한을 보관한다. 이벤트 본문·그 event holder·보존 경계 갱신은 한 transaction이다.
-명령 identity·최초 응답·effect와 시도 기록·ID 예약은 정리하지 않는다. snapshot/live/undo/import/
+명령 identity·최초 응답·effect와 시도 기록·ID 예약은 정리하지 않는다. 삭제한 이벤트의 ID도
+별도 명부에 남기며 같은 ID를 새 이벤트로 다시 넣는 쓰기를 거절한다. snapshot/live/undo/import/
 View 및 읽기 lease의 payload pin도 남는다. snapshot 두 개의 본문과 참조 checksum을 검증하며,
 외부 holder가 잡은 더 오래된 snapshot이 있으면 보존 경계를 그 cut 이하로 제한한다.
 보존 경계 이전 cursor는 명시적 재동기화 오류다. snapshot이 손상돼도 보존 로그 없이 처음부터
