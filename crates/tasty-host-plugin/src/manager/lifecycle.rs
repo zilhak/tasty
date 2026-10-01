@@ -151,6 +151,7 @@ impl PluginManager {
             registered_plugins: std::collections::HashSet::new(),
             host_cmd_tx,
             host_cmd_rx,
+            retirement_control: Default::default(),
             surfaces: HashMap::new(),
             pending_requests: HashMap::new(),
             plugin_wait: None,
