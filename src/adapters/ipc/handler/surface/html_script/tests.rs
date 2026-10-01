@@ -7,35 +7,73 @@ fn state_with_html_tab() -> (
     crate::runtime::engine_session::EngineSession,
     u32,
 ) {
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
-    let mut engine = engine_session.borrow_mut();
-    let decl: tasty_plugin_manifest::SurfaceKindDecl = serde_json::from_value(json!({
-        "kind": "html",
-        "display_name_i18n_key": "surface.kind.html",
-        "rendering": "webview",
-    }))
-    .expect("html SurfaceKindDecl");
-    let (host_cmd_tx, _host_cmd_rx) = std::sync::mpsc::channel();
-    crate::plugin_bridge::remote_kind::register_remote_kind(
-        &engine.runtime.surface_registry,
-        "com.tasty.html",
-        &decl,
-        host_cmd_tx,
-    );
-    let (_, sid) = state
-        // intent-exempt: 시험 준비용으로 html 탭을 모델에 직접 만든다. 조회 핸들러만 검사한다.
-        .add_kind_tab(&mut engine, "html", &json!({ "file": "/docs/a.html" }))
-        .expect("html tab");
-    (state, engine_session, sid)
+    use tasty_core::{DomainEvent as E, SurfaceSpec};
+    let model = crate::state::tests::test_model(vec![
+        E::CategoryCreated {
+            id: 0,
+            name: "normal".into(),
+            index: 0,
+        },
+        E::WorkspaceCreated {
+            id: 1,
+            name: "workspace".into(),
+            category: 0,
+            index: 0,
+            pane: 1,
+        },
+        E::TabCreated {
+            id: 1,
+            pane: 1,
+            index: 0,
+            name: "html".into(),
+            surface: SurfaceSpec {
+                id: 1,
+                kind: "html".into(),
+                data: None,
+            },
+        },
+        E::TabCreated {
+            id: 2,
+            pane: 1,
+            index: 1,
+            name: "markdown".into(),
+            surface: SurfaceSpec {
+                id: 2,
+                kind: "markdown".into(),
+                data: None,
+            },
+        },
+    ]);
+    let (state, mut owner) = crate::state::tests::test_state_from_model(model);
+    for (sid, kind) in [(1, "html"), (2, "markdown")] {
+        owner.runtime.surfaces.insert(
+            sid,
+            Box::new(RemoteSurface::new(
+                sid,
+                kind,
+                format!("com.tasty.{kind}"),
+                kind.into(),
+            )),
+        );
+    }
+    (state, owner, 1)
 }
 
-fn html_script_of(engine: &crate::core::CoreState, sid: u32) -> JsonRpcResponse {
-    handle_html_script(engine, json!(1), &json!({ "surface_id": sid }))
+fn html_script_of(
+    engine: &crate::runtime::engine_access::EngineMut<'_>,
+    sid: u32,
+) -> JsonRpcResponse {
+    handle_html_script(&engine.as_ref(), json!(1), &json!({ "surface_id": sid }))
 }
 
-fn html_surface(engine: &crate::core::CoreState, sid: u32) -> &RemoteSurface {
+fn html_surface<'a>(
+    engine: &'a crate::runtime::engine_access::EngineMut<'_>,
+    sid: u32,
+) -> &'a RemoteSurface {
     engine
-        .find_surface_by_id(sid)
+        .runtime
+        .surfaces
+        .get(&sid)
         .and_then(|s| s.as_any().downcast_ref::<RemoteSurface>())
         .expect("html remote surface")
 }
@@ -125,17 +163,14 @@ fn a_surface_without_a_document_reports_null_document() {
 
 #[test]
 fn rejects_a_missing_surface_and_a_non_html_surface() {
-    let (mut state, mut engine_session, _sid) = state_with_html_tab();
+    let (_state, mut engine_session, _sid) = state_with_html_tab();
     let mut engine = engine_session.borrow_mut();
     let err = html_script_of(&engine, 999_999)
         .error
         .expect("missing surface");
     assert!(err.message.contains("not found"), "{}", err.message);
 
-    state
-        .test_add_markdown_tab(&mut engine, "/docs/readme.md".to_string())
-        .expect("markdown tab");
-    let md_sid = state.focused_surface_id(&engine).expect("focused");
+    let md_sid = 2;
     let err = html_script_of(&engine, md_sid)
         .error
         .expect("markdown surface");

@@ -95,29 +95,78 @@ mod tests {
     use crate::model::SplitDirection;
     use serde_json::json;
 
-    /// 포커스를 유지한 채 형제 surface를 추가한다. 실제 PTY를 만들지 않고 모델 변경만 재현한다.
-    fn split_in_kind_surface(
-        state: &crate::state::RequestContext,
-        engine: &mut crate::core::CoreState,
-        target_surface_id: u32,
-        kind: &str,
-        params: &Value,
-    ) -> u32 {
-        let new_sid = engine.runtime.counters.next_surface();
-        let surface = engine
-            .create_surface_via_registry(kind, new_sid, None, params)
-            .expect("create surface via registry");
-        let ws_index = state.active_workspace_index(engine);
-        let ws = engine
-            .workspace_at_mut(ws_index)
-            .expect("workspace index is valid");
-        let pane_id = state.navigation.pane_id(ws).unwrap();
-        ws.pane_layout_mut()
-            .find_pane_mut(pane_id)
-            .expect("focused pane")
-            .split_surface_by_id_with_surface(target_surface_id, SplitDirection::Vertical, surface)
-            .expect("split surface");
-        new_sid
+    fn fixture(
+        markdown_count: u32,
+        sole_markdown: bool,
+    ) -> (
+        crate::state::RequestContext,
+        crate::runtime::engine_session::EngineSession,
+    ) {
+        use tasty_core::{DomainEvent as E, Placement, Ratio, SplitSpec, SurfaceSpec};
+        let mut events = vec![
+            E::CategoryCreated {
+                id: 0,
+                name: "normal".into(),
+                index: 0,
+            },
+            E::WorkspaceCreated {
+                id: 1,
+                name: "workspace".into(),
+                category: 0,
+                index: 0,
+                pane: 1,
+            },
+            E::TabCreated {
+                id: 1,
+                pane: 1,
+                index: 0,
+                name: "tab".into(),
+                surface: SurfaceSpec {
+                    id: 1,
+                    kind: if sole_markdown {
+                        "markdown"
+                    } else {
+                        "terminal"
+                    }
+                    .into(),
+                    data: None,
+                },
+            },
+        ];
+        for index in 0..markdown_count {
+            events.push(E::SurfaceSplit {
+                target: 1,
+                surface: SurfaceSpec {
+                    id: index + 2,
+                    kind: "markdown".into(),
+                    data: None,
+                },
+                split: SplitSpec {
+                    direction: SplitDirection::Vertical,
+                    ratio: Ratio::from_f32(0.5),
+                    placement: Placement::After,
+                },
+            });
+        }
+        let (state, mut owner) =
+            crate::state::tests::test_state_from_model(crate::state::tests::test_model(events));
+        let ids: Vec<u32> = if sole_markdown {
+            vec![1]
+        } else {
+            (2..markdown_count + 2).collect()
+        };
+        for sid in ids {
+            owner.runtime.surfaces.insert(
+                sid,
+                Box::new(crate::plugin_bridge::remote_surface::RemoteSurface::new(
+                    sid,
+                    "markdown",
+                    "com.tasty.markdown".into(),
+                    "markdown".into(),
+                )),
+            );
+        }
+        (state, owner)
     }
 
     fn focused_surface_id(
@@ -161,46 +210,32 @@ mod tests {
         }
     }
 
-    fn remote_surface(
-        engine: &crate::runtime::engine_access::EngineRef<'_>,
+    fn remote_surface<'a>(
+        engine: &'a crate::runtime::engine_access::EngineRef<'_>,
         sid: u32,
-    ) -> &crate::plugin_bridge::remote_surface::RemoteSurface {
-        for ws in &engine.workspaces() {
-            for pid in ws.pane_layout().all_pane_ids() {
-                let Some(pane) = ws.pane_layout().find_pane(pid) else {
-                    continue;
-                };
-                for tab in &pane.tabs {
-                    if let Some(rs) = tab
-                        .layout_if_initialized()
-                        .and_then(|l| l.find_surface(sid))
-                        .and_then(|s| {
-                            s.as_any()
-                                .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
-                        })
-                    {
-                        return rs;
-                    }
-                }
-            }
-        }
-        panic!("remote surface {sid} not found");
+    ) -> &'a crate::plugin_bridge::remote_surface::RemoteSurface {
+        engine
+            .runtime
+            .surfaces
+            .get(&sid)
+            .and_then(|s| {
+                s.as_any()
+                    .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
+            })
+            .expect("remote surface")
     }
 
     #[test]
     fn set_url_remembers_whether_the_owning_plugin_wrote_the_page() {
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = fixture(0, true);
         let mut engine = engine_session.borrow_mut();
-        state
-            .test_add_markdown_tab(&mut engine, "/workspace/proj/readme.md".to_string())
-            .unwrap();
-        let md_sid = focused_surface_id(&state, &engine);
-        let owner = remote_surface(&engine, md_sid).plugin_id.clone();
-        assert!(!remote_surface(&engine, md_sid).webview_page_by_owner());
+        let md_sid = focused_surface_id(&state, &engine.as_ref());
+        let owner = remote_surface(&engine.as_ref(), md_sid).plugin_id.clone();
+        assert!(!remote_surface(&engine.as_ref(), md_sid).webview_page_by_owner());
 
         let written_by = |caller: &tasty_ipc::caller::CallerContext| {
-            assert!(set_url_as(&engine, caller, md_sid).error.is_none());
-            remote_surface(&engine, md_sid).webview_page_by_owner()
+            assert!(set_url_as(&engine.as_ref(), caller, md_sid).error.is_none());
+            remote_surface(&engine.as_ref(), md_sid).webview_page_by_owner()
         };
         assert!(written_by(&plugin_caller(&owner)));
         assert!(!written_by(&tasty_ipc::caller::CallerContext::Local));
@@ -211,52 +246,43 @@ mod tests {
     // 외부 작성자에서 소유 플러그인으로 바뀐 기록은 host가 읽을 때까지 유지한다.
     #[test]
     fn set_url_marks_when_the_owning_plugin_takes_the_page_back() {
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = fixture(0, true);
         let mut engine = engine_session.borrow_mut();
-        state
-            .test_add_markdown_tab(&mut engine, "/workspace/proj/readme.md".to_string())
-            .unwrap();
-        let md_sid = focused_surface_id(&state, &engine);
-        let owner = plugin_caller(&remote_surface(&engine, md_sid).plugin_id.clone());
+        let md_sid = focused_surface_id(&state, &engine.as_ref());
+        let owner = plugin_caller(&remote_surface(&engine.as_ref(), md_sid).plugin_id.clone());
         let agent = tasty_ipc::caller::CallerContext::Local;
 
         let took_over_after = |caller: &tasty_ipc::caller::CallerContext| {
-            assert!(set_url_as(&engine, caller, md_sid).error.is_none());
-            remote_surface(&engine, md_sid).take_webview_owner_takeover()
+            assert!(set_url_as(&engine.as_ref(), caller, md_sid).error.is_none());
+            remote_surface(&engine.as_ref(), md_sid).take_webview_owner_takeover()
         };
         assert!(took_over_after(&owner), "처음 쓴 페이지도 전이다");
         assert!(!took_over_after(&owner));
         assert!(!took_over_after(&agent));
         assert!(took_over_after(&owner));
         assert!(
-            !remote_surface(&engine, md_sid).take_webview_owner_takeover(),
+            !remote_surface(&engine.as_ref(), md_sid).take_webview_owner_takeover(),
             "전이 표시를 가져오면 초기화되어야 한다"
         );
         assert!(!took_over_after(&agent));
-        assert!(set_url_as(&engine, &owner, md_sid).error.is_none());
-        assert!(set_url_as(&engine, &owner, md_sid).error.is_none());
+        assert!(set_url_as(&engine.as_ref(), &owner, md_sid).error.is_none());
+        assert!(set_url_as(&engine.as_ref(), &owner, md_sid).error.is_none());
         assert!(
-            remote_surface(&engine, md_sid).take_webview_owner_takeover(),
+            remote_surface(&engine.as_ref(), md_sid).take_webview_owner_takeover(),
             "가져가기 전의 전이는 뒤에 쓴 것이 지우지 않는다"
         );
     }
 
     #[test]
     fn set_url_reaches_non_focused_split_leaf() {
-        let (state, mut engine_session) = crate::state::tests::test_state();
+        let (state, mut engine_session) = fixture(1, false);
         let mut engine = engine_session.borrow_mut();
-        let terminal_sid = focused_surface_id(&state, &engine);
-        let md_sid = split_in_kind_surface(
-            &state,
-            &mut engine,
-            terminal_sid,
-            "markdown",
-            &json!({ "file": "/workspace/proj/readme.md" }),
-        );
+        let terminal_sid = focused_surface_id(&state, &engine.as_ref());
+        let md_sid = 2;
 
-        assert_eq!(focused_surface_id(&state, &engine), terminal_sid);
+        assert_eq!(focused_surface_id(&state, &engine.as_ref()), terminal_sid);
 
-        let resp = set_url(&engine, md_sid);
+        let resp = set_url(&engine.as_ref(), md_sid);
         assert!(
             resp.error.is_none(),
             "non-focused split leaf should be reachable: {:?}",
@@ -267,27 +293,15 @@ mod tests {
 
     #[test]
     fn set_url_reaches_all_leaves_of_nested_split() {
-        let (state, mut engine_session) = crate::state::tests::test_state();
+        let (state, mut engine_session) = fixture(2, false);
         let mut engine = engine_session.borrow_mut();
-        let terminal_sid = focused_surface_id(&state, &engine);
+        let terminal_sid = focused_surface_id(&state, &engine.as_ref());
         // 1차: terminal | markdown_a → 2차: (terminal | markdown_b) | markdown_a
-        let md_a = split_in_kind_surface(
-            &state,
-            &mut engine,
-            terminal_sid,
-            "markdown",
-            &json!({ "file": "/workspace/proj/a.md" }),
-        );
-        let md_b = split_in_kind_surface(
-            &state,
-            &mut engine,
-            terminal_sid,
-            "markdown",
-            &json!({ "file": "/workspace/proj/b.md" }),
-        );
+        let md_a = 2;
+        let md_b = 3;
 
         for sid in [md_a, md_b] {
-            let resp = set_url(&engine, sid);
+            let resp = set_url(&engine.as_ref(), sid);
             assert!(
                 resp.error.is_none(),
                 "leaf {sid} should be reachable: {:?}",
@@ -298,20 +312,17 @@ mod tests {
 
     #[test]
     fn set_url_sole_leaf_ok_and_unknown_id_errors() {
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = fixture(0, true);
         let mut engine = engine_session.borrow_mut();
-        state
-            .test_add_markdown_tab(&mut engine, "/workspace/proj/readme.md".to_string())
-            .unwrap();
-        let md_sid = focused_surface_id(&state, &engine);
-        let resp = set_url(&engine, md_sid);
+        let md_sid = focused_surface_id(&state, &engine.as_ref());
+        let resp = set_url(&engine.as_ref(), md_sid);
         assert!(
             resp.error.is_none(),
             "sole leaf regression: {:?}",
             resp.error
         );
 
-        let resp = set_url(&engine, 999_999);
+        let resp = set_url(&engine.as_ref(), 999_999);
         assert_eq!(
             resp.error.map(|e| e.message),
             Some("surface_id not found".to_string())
@@ -323,16 +334,10 @@ mod tests {
     fn set_url_on_markdown_surface_signals_attached_clients() {
         use tasty_ipc::stream_hub::StreamHub;
 
-        let (state, mut engine_session) = crate::state::tests::test_state();
+        let (state, mut engine_session) = fixture(1, false);
         let mut engine = engine_session.borrow_mut();
-        let terminal_sid = focused_surface_id(&state, &engine);
-        let md_sid = split_in_kind_surface(
-            &state,
-            &mut engine,
-            terminal_sid,
-            "markdown",
-            &json!({ "file": "/workspace/proj/readme.md" }),
-        );
+        let terminal_sid = focused_surface_id(&state, &engine.as_ref());
+        let md_sid = 2;
         let hub = StreamHub::new();
         let client = hub.alloc_id();
         let rx = hub.register(client);
@@ -347,14 +352,14 @@ mod tests {
             .acquire_workspace(ws_id, &[terminal_sid], &[terminal_sid, md_sid], client)
             .expect("acquire workspace");
 
-        assert!(set_url(&engine, md_sid).error.is_none());
+        assert!(set_url(&engine.as_ref(), md_sid).error.is_none());
         let frame = rx.try_recv().expect("markdown_changed frame");
         let payload: Value = serde_json::from_slice(&frame.payload).expect("json payload");
         assert_eq!(payload["event"], "markdown_changed");
         assert_eq!(payload["surface_id"], md_sid);
         assert!(rx.try_recv().is_err(), "한 번의 set_url 에 신호는 한 번");
 
-        assert!(set_url(&engine, terminal_sid).error.is_some());
+        assert!(set_url(&engine.as_ref(), terminal_sid).error.is_some());
         assert!(
             rx.try_recv().is_err(),
             "webview surface 가 아니면 신호가 없다"
@@ -363,18 +368,11 @@ mod tests {
 
     #[test]
     fn set_url_on_terminal_leaf_reports_not_webview() {
-        let (state, mut engine_session) = crate::state::tests::test_state();
+        let (state, mut engine_session) = fixture(1, false);
         let mut engine = engine_session.borrow_mut();
-        let terminal_sid = focused_surface_id(&state, &engine);
+        let terminal_sid = focused_surface_id(&state, &engine.as_ref());
         // 분할만 준비한다. 검사 대상은 기존 터미널이며 새 surface ID는 사용하지 않는다.
-        split_in_kind_surface(
-            &state,
-            &mut engine,
-            terminal_sid,
-            "markdown",
-            &json!({ "file": "/workspace/proj/readme.md" }),
-        );
-        let resp = set_url(&engine, terminal_sid);
+        let resp = set_url(&engine.as_ref(), terminal_sid);
         assert_eq!(
             resp.error.map(|e| e.message),
             Some("surface is not a webview-enabled RemoteSurface".to_string())
