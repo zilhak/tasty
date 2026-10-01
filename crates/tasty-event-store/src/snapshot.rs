@@ -154,6 +154,7 @@ impl EventStore {
         projection_version: u32,
     ) -> StoreResult<Option<JournalCut>> {
         let tx = self.conn.unchecked_transaction()?;
+        crate::scoped_projection::require_global(&tx, consumer_id, projection_version)?;
         checkpoint_batch(&tx, consumer_id, projection_version)?
             .map(|batch| {
                 crate::retention::require_cursor(&tx, Some(batch))?;
@@ -285,6 +286,7 @@ pub(crate) fn advance_checkpoint(
     projection_version: u32,
     batch_id: BatchId,
 ) -> StoreResult<()> {
+    crate::scoped_projection::require_global(conn, consumer_id, projection_version)?;
     crate::retention::require_cursor(conn, Some(batch_id))?;
     cut_at(conn, batch_id)?;
     if let Some(current) = checkpoint_batch(conn, consumer_id, projection_version)?

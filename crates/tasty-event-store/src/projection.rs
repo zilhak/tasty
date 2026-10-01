@@ -42,6 +42,7 @@ impl EventStore {
     ) -> StoreResult<()> {
         check_keys(write)?;
         let tx = self.write_tx(epoch)?;
+        crate::scoped_projection::require_global(&tx, &write.consumer_id, write.projection_version)?;
         // An incremental delta cannot repair rows whose missing history was already compacted.
         crate::retention::require_cursor(&tx, checkpoint_batch(&tx, &write.consumer_id, write.projection_version)?)?;
         apply_rows(&tx, write)?;
@@ -64,6 +65,7 @@ impl EventStore {
     ) -> StoreResult<()> {
         check_keys(write)?;
         let tx = self.write_tx(epoch)?;
+        crate::scoped_projection::require_global(&tx, &write.consumer_id, write.projection_version)?;
         tx.execute("DELETE FROM projection_rows WHERE consumer_id = ?1 AND projection_version = ?2",
             params![write.consumer_id, write.projection_version])?;
         apply_rows(&tx, write)?;
@@ -79,6 +81,7 @@ impl EventStore {
         projection_version: u32,
     ) -> StoreResult<ProjectionState> {
         let tx = self.conn.unchecked_transaction()?;
+        crate::scoped_projection::require_global(&tx, consumer_id, projection_version)?;
         let cut = checkpoint_batch(&tx, consumer_id, projection_version)?
             .map(|batch| {
                 crate::retention::require_cursor(&tx, Some(batch))?;
@@ -98,7 +101,7 @@ impl EventStore {
     }
 }
 
-fn check_keys(write: &ProjectionWrite) -> StoreResult<()> {
+pub(crate) fn check_keys(write: &ProjectionWrite) -> StoreResult<()> {
     let deletes: BTreeSet<&str> = write.deletes.iter().map(String::as_str).collect();
     let mut upserts = BTreeSet::new();
     for (key, _) in &write.upserts {
@@ -109,7 +112,7 @@ fn check_keys(write: &ProjectionWrite) -> StoreResult<()> {
     Ok(())
 }
 
-fn apply_rows(conn: &Connection, write: &ProjectionWrite) -> StoreResult<()> {
+pub(crate) fn apply_rows(conn: &Connection, write: &ProjectionWrite) -> StoreResult<()> {
     for key in &write.deletes {
         conn.execute(
             "DELETE FROM projection_rows

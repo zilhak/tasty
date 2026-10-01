@@ -10,3 +10,5 @@ mod identity;
 mod projection;
 mod schema;
 mod snapshots;
+
+mod endpoint;

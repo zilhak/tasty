@@ -29,6 +29,17 @@ impl EventStore {
         tx.commit()?;Ok(payload)
     }
 
+    /// Cumulative preparation bound for one unresolved admission. This is not an effect-result
+    /// write: accepted effect completion continues to use put_payload_pinned under pressure.
+    pub fn put_admission_payload_pinned(&mut self,epoch:WriterEpoch,bytes:&[u8],holder:&str)->StoreResult<PayloadRef> {
+        let limit=self.admission_budget.command_credit_bytes;
+        let tx=self.write_tx(epoch)?;
+        let used:u64=tx.query_row("SELECT COALESCE(SUM(length(p.bytes)),0) FROM payloads p JOIN payload_pins h ON h.payload_id=p.payload_id WHERE h.holder=?1",[holder],|row|row.get(0))?;
+        let requested=bytes.len() as u64;
+        if used.checked_add(requested).is_none_or(|total|total>limit) {return Err(StoreError::AdmissionPayloadCapacity {used,requested,limit});}
+        let payload=insert(&tx,bytes)?;pin_in(&tx,payload,holder)?;tx.commit()?;Ok(payload)
+    }
+
     /// Release only one explicit holder; event/snapshot/undo pins are not affected.
     pub fn release_payload_holder(&mut self,epoch:WriterEpoch,holder:&str)->StoreResult<()> {
         let tx=self.write_tx(epoch)?;

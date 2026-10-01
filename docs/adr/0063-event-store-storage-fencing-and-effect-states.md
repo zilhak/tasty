@@ -1,6 +1,6 @@
 # ADR-0063: 이벤트 저장소는 payload를 journal DB에 두고 파일 잠금과 writer 세대로 쓰기를 제한한다
 
-- **Status**: Accepted — 구현 상태: payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별, 영속 ID 예약 및 projection 출력/consumer 위치 원자 확정은 `tasty-event-store`에 구현됐다. App 초기 엔진 구성·선택 slot import·자원 준비는 데이터 홈 worker에 연결 중이다. 기존 숫자 surface metadata를 피하는 예약 기준도 이 worker에서 영속 반영한다. 미이행: 일반 구조 writer 전체 합류, 효과 복구·최종 제품 활성화, 부분 consumer 위치, 모든 local/mirror ID 발급 전환. 정상 슬롯 resume와 폐기 뒤 incarnation 전환은 App bootstrap·retirement에 연결돼 있다.
+- **Status**: Accepted — 구현 상태: payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별, 영속 ID 예약 및 projection 출력/consumer 위치 원자 확정은 `tasty-event-store`에 구현됐다. App 초기 엔진 구성·선택 slot import·자원 준비는 데이터 홈 worker에 연결 중이다. 기존 숫자 surface metadata를 피하는 예약 기준도 이 worker에서 영속 반영한다. 저장 leaf는 scoped consumer 위치와 신규 admission의 활성 저장량 예산을 제공한다. 일반 writer·Recovery·ID 소비의 제품 끝점과 전체 실행 검증은 별도로 대조한다. 정상 슬롯 resume와 폐기 뒤 incarnation 전환은 App bootstrap·retirement에 연결돼 있다.
 - **Date**: 2026-09-30
 - **Tags**: event-sourcing, storage, sqlite, durability, effects, fencing
 - **Group**: foundation
@@ -10,7 +10,7 @@
 [ADR-0055](0055-structural-domain-event-sourcing.md)는 구조 도메인의 원본을 영속 이벤트로 정했고,
 [ADR-0056](0056-crate-boundaries-for-core-event-store-and-task-runtime.md)은 저장 계약을 별도 crate `tasty-event-store`에 두기로 했다.
 이 crate는 한 journal 파일(SQLite) 안에서 stream별 revision, 원자 batch, 명령 identity, effect 의무와 시도 기록,
-domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 제품 경로에는 아직 연결되지 않았다.
+domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 이 문단은 저장소를 처음 도입하던 시점의 배경이며, 현재 제품 연결 범위는 Status와 아래 결정 절에서 구분한다.
 
 구현하면서 저장 형식과 보장 범위에 관한 선택 다섯 가지가 남았다.
 
@@ -165,13 +165,67 @@ View 및 읽기 lease의 payload pin도 남는다. snapshot 두 개의 본문과
 batch/revision/명령/effect 헤더의 크기까지 제한하지 않는다.
 projection 출력은 consumer·projection version별 key→바이트 행으로 저장하고, 행 변경과 consumer 위치(batch 단위)를 한 transaction으로 확정한다.
 위치가 뒤로 가거나 batch가 없으면 행 변경도 반영하지 않는다. projection 행을 가진 consumer는 위치만 저장하는 API로 위치를 옮길 수 없고, 행 변경과 함께 확정하는 API로만 옮긴다.
-stream별 부분 소비자의 위치 표현은 아직 없다. 보존·정리와 부분 소비자 위치는 후속 설계 대상이며 이 결정이 해결하지 않는다.
+부분 stream 소비자는 `ScopedProjectionWrite`에 비어 있지 않은 stream 집합과 실제 batch ID를 지정한다.
+저장소가 그 batch의 revision vector에서 선택한 stream만 도출하므로 서로 다른 시점의 임의
+revision을 조합해 원자 cut으로 저장할 수 없다. cut에 아직 없는 stream도 거절한다.
+출력·scope·cursor·재시도 digest는 같은 transaction이다. 이 cut은 선택 범위의 적용 위치이며
+다른 stream이나 외부 DB의 적용을 보장하지 않는다.
+
+consumer ID와 projection version의 scope는 첫 기록 뒤 바꾸지 않는다. global consumer를
+같은 version의 scoped consumer로 전환하거나 반대로 읽기/쓰기할 수 없다. scope/코덱을
+변경하면 새 projection version을 쓰고 전체 snapshot으로 초기화한다. 같은 batch의 같은
+write만 retry로 받아들이며 다른 output 변경은 거절한다. digest에는 모드와 컬렉션 개수,
+각 field 길이를 넣어 upsert/delete 경계를 모호하게 합치지 않는다.
+선택 stream의 이전 cursor가 retention floor보다 뒤처지면 incremental write와 read는
+`ResyncRequired`다. `replace_scoped_projection`만 전체 선택 출력으로 재동기화할 수 있고,
+위치 역행이나 scope 변경은 허용하지 않는다. 관련 없는 stream의 compaction만으로 부분
+consumer를 재동기화시키지는 않는다. 기존 global projection API의 cut 의미는 유지한다.
+
+### 활성 저장량의 신규 admission 예산
+
+`AdmissionBudget`은 내부 기본값으로 1 GiB 운영 기준, 128 MiB 완료·정리 여유, 신규 admission
+ceiling 896 MiB, 미확정 명령당 64 MiB credit을 사용한다. `EventStore::open_with_admission_budget`
+으로 명시적으로 바꿀 수 있으며 값 검증을 거친다. 이 값은 측정된 처리량·디스크 성능이나
+filesystem quota가 아니다. SQLite `max_page_count`를 걸어 기수락 효과의 완료를 막지 않는다.
+
+과금은 `(page_count - freelist_count) * page_size + 실제 WAL 파일 바이트`다. DB 물리 파일
+크기와 재사용 가능한 freelist도 조회 결과에 별도로 제공한다. GC 뒤 DB 파일이 커도 빈 페이지는
+다음 쓰기에 재사용할 수 있어 과금에서 제외한다. 한도 판단이 실패하면 unpinned payload GC와
+busy timeout 0의 WAL TRUNCATE를 시도한 뒤 재측정한다. reader가 막으면 기다리거나 성공을
+추측하지 않고 남은 WAL을 그대로 과금한다. PASSIVE checkpoint만으로 물리 WAL이 줄었다고
+간주하지 않는다. key·최초 응답·미완료 effect·ID 기록을 예산 때문에 삭제하지 않는다.
+
+worker는 durable key hit와 현재 admission follower 합류를 먼저 처리한다. 새 명령은
+현재 과금량+기존 pending credit+새 credit이 ceiling 안일 때만 수락한다. 각 미확정 admission의
+새 준비 payload는 holder별 누적 64 MiB를 초과할 수 없고 구조 ID 예약은 총 16,384개로 제한한다.
+credit은 최초 Resolve, Cancel, 준비 오류에서 해제한다. 성공/실패로 credit을 해제해도 DB의
+payload 페이지는 계속 과금되고 pin은 기존 event/snapshot/GC 수명에 따른다.
+
+새 engine 구조/legacy import는 같은 gate를 거친다. 기존 stream resume, 이미 수락된 effect의
+결과·cleanup·Recovery·capture·checkpoint·GC는 신규 admission gate로 막지 않는다.
+그 의무가 진행하며 기준값을 넘을 수 있고 SQLite page/index/WAL 증폭도 있어 총 물리 파일의
+최대 초과량이나 1 GiB hard cap은 보장하지 않는다. 128 MiB는 완료를 보장하는 예약 디스크가
+아니다. OS FULL/IO 실패는 여전히 별도의 실제 오류다. 큰 기존 DB는 읽기/복구를 유지한 채
+신규 admission을 거절할 수 있으며 GC/freelist 재사용·reader 종료 후 WAL truncate 또는
+명시한 더 큰 내부 예산으로 다시 수락할 수 있다.
+
+기존 worker queue는 64건/64 MiB, 공개 원 요청은 8 MiB이며 App command 대기는 64건이다.
+이 한도와 별도로 DB의 Pending/Deferred/Running/Uncertain effect 총수 기본 상한은 4,096개다.
+`AdmissionBudget.max_pending_effects`로 정하며 실제 신규 `NewEffect` 개수가 고정된 commit의
+write transaction에서 기존 총수와 더해 검사한다. 같은 key의 최초 결과는 이 검사보다 먼저
+돌려준다. 기존 effect 전이만 있는 완료·cleanup·reconciliation은 상한을 넘은 기존 DB에서도
+허용한다. 기록 삭제나 task/OS 취소로 개수를 줄이지 않는다. 한 batch에서 종결과 새 효과를
+동시에 요구하면 종결 예정분을 미리 차감하지 않는 보수적 admission이다.
+
+효과 완료 Work도 기존 64 MiB queued-request 상한을 통과하지만, 저장소의 batch/event 생성
+팽창과 immutable payload 전체에 대한 단일 hard byte cap은 현재 API가 보장하지 않는다.
+이미 수락한 결과의 bytes를 잘라 완료를 기록하는 대신 실제 IO 오류/불명 관측을 보존한다.
 
 ID 예약은 이벤트 commit과 다른 transaction이므로 실패한 명령이 쓰지 않은 ID가 빈 구간으로 남는다. ID가 연속이라는 가정에 기대는 코드는 이 journal의 ID에 쓸 수 없다.
 
 데이터 홈에 구조 journal이 하나이므로 모든 엔진의 구조 쓰기가 한 파일의 writer에서 직렬화된다. 이 지연은 구조 명령 commit 지연 측정으로 확인한다.
 여러 엔진을 바꾸는 명령은 추가 장치 없이 한 transaction으로 확정할 수 있다.
-시험 전용 layout importer는 슬롯마다 해당 엔진의 구조 stream으로 가져오며, surface ID는 standalone PTY ID 기준값 아래에서 예약한다.
+legacy layout importer는 슬롯마다 해당 엔진의 구조 stream으로 가져오며, surface ID는 standalone PTY ID 기준값 아래에서 예약한다.
 
 schema 이름 기반 식별은 같은 이름의 버전 표를 가진 다른 앱 DB를 걸러내지 못한다. 이 저장소의 다른 DB는 그 표를 쓰지 않는다.
 

@@ -21,6 +21,7 @@
 //!   위치만 저장하는 [`EventStore::save_checkpoint`]는 그 consumer를 거절한다.
 
 mod command;
+mod admission_budget;
 mod retention;
 mod manifest;
 mod commit;
@@ -29,6 +30,7 @@ mod error;
 mod identity;
 mod payload;
 mod projection;
+mod scoped_projection;
 mod read;
 mod schema;
 mod snapshot;
@@ -38,6 +40,7 @@ mod types;
 #[cfg(test)]
 mod tests;
 
+pub use admission_budget::{AdmissionBudget,AdmissionUsage};
 pub use commit::{CommitOutcome, CommitRequest, event_holder};
 pub use effect::{
     ActivationClaim,ClaimKind,EffectClaim,ObligationClaim,AttemptRecord, EffectRecord, EffectState, EffectTransition, NewEffect,
@@ -45,6 +48,7 @@ pub use effect::{
 pub use error::{StoreError, StoreResult};
 pub use identity::IdRange;
 pub use projection::{ProjectionState, ProjectionWrite};
+pub use scoped_projection::{ScopedCut, ScopedProjectionState, ScopedProjectionWrite};
 pub use schema::SCHEMA_VERSION;
 pub use snapshot::{
     DomainSnapshot, NewSnapshot, RejectedSnapshot, Replay, SnapshotId, snapshot_holder,

@@ -55,6 +55,7 @@ pub enum CommitOutcome {
 impl EventStore {
     /// 요청 전체를 한 transaction으로 확정한다. 오류이면 아무것도 남지 않는다.
     pub fn commit(&mut self, request: &CommitRequest) -> StoreResult<CommitOutcome> {
+        let pending_effect_limit=self.admission_budget.max_pending_effects;
         let journal_id = self.journal_id().to_owned();
         let tx = self.write_tx(request.writer_epoch)?;
         if let Some(new) = &request.command
@@ -69,6 +70,7 @@ impl EventStore {
             }
             return Ok(CommitOutcome::Duplicate(existing));
         }
+        crate::admission_budget::require_effect_capacity(&tx,request.effects.len(),pending_effect_limit)?;
         let batch = write_all(&tx, request, &journal_id)?;
         tx.commit()?;
         Ok(CommitOutcome::Committed { batch })
@@ -81,6 +83,7 @@ impl EventStore {
         request: &CommitRequest,
         prepare: impl FnOnce(&crate::StoredBatch) -> StoreResult<(crate::NewSnapshot, crate::NewRestoreManifest)>,
     ) -> StoreResult<CommitOutcome> {
+        let pending_effect_limit=self.admission_budget.max_pending_effects;
         let journal_id = self.journal_id().to_owned();
         let tx = self.write_tx(request.writer_epoch)?;
         if let Some(new) = &request.command
@@ -91,6 +94,7 @@ impl EventStore {
             }
             return Ok(CommitOutcome::Duplicate(existing));
         }
+        crate::admission_budget::require_effect_capacity(&tx,request.effects.len(),pending_effect_limit)?;
         let batch = write_all(&tx, request, &journal_id)?.ok_or_else(|| StoreError::Corrupt("restore import has no initial event batch".into()))?;
         let stored = crate::read::load_batch(&tx, batch.batch_id)?;
         let (snapshot, mut manifest) = prepare(&stored)?;

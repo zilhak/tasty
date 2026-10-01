@@ -5,6 +5,20 @@ use crate::types::{CommandStatus, ExpectedRevision, WriterEpoch};
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
+    #[error("pending effect capacity: existing={pending}, new={new_effects}, limit={limit}")]
+    PendingEffectCapacity {pending:u64,new_effects:u64,limit:u64},
+
+    #[error("invalid journal admission budget")]
+    AdmissionBudgetInvalid,
+    #[error("journal admission usage: {0}")]
+    AdmissionUsageIo(std::io::Error),
+    #[error("journal admission capacity: used={used}, reserved={reserved}, requested={requested}, ceiling={ceiling}")]
+    AdmissionCapacity {used:u64,reserved:u64,requested:u64,ceiling:u64},
+    #[error("admission prepared payload capacity: used={used}, requested={requested}, limit={limit}")]
+    AdmissionPayloadCapacity {used:u64,requested:u64,limit:u64},
+
+    #[error("projection scope: {0}")]
+    ProjectionScope(String),
     #[error("sqlite: {0}")]
     Sqlite(#[from] rusqlite::Error),
 

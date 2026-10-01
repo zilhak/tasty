@@ -8,7 +8,7 @@ use rusqlite::{Connection, ErrorCode, OptionalExtension};
 use crate::error::{StoreError, StoreResult};
 
 /// 순서대로 적용하는 migration. 인덱스 + 1이 버전이다. 이미 배포한 항목은 고치지 않고 뒤에 추가한다.
-const MIGRATIONS: &[&str] = &[V1,V2,V3,V4,V5,V6];
+const MIGRATIONS: &[&str] = &[V1,V2,V3,V4,V5,V6,V7];
 
 /// 이 빌드가 읽고 쓸 수 있는 가장 새 스키마 버전.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
@@ -220,6 +220,20 @@ CREATE TABLE restore_manifests (
     sequence INTEGER NOT NULL,
     snapshot_id INTEGER NOT NULL REFERENCES snapshots(snapshot_id),
     payload_id INTEGER NOT NULL REFERENCES payloads(payload_id)
+);
+"#;
+
+const V7: &str = r#"
+CREATE INDEX effects_pending_count ON effects(state);
+CREATE TABLE projection_scopes (
+ consumer_id TEXT NOT NULL, projection_version INTEGER NOT NULL, last_write_digest BLOB NOT NULL,
+ PRIMARY KEY(consumer_id,projection_version)
+);
+CREATE TABLE projection_scope_streams (
+ consumer_id TEXT NOT NULL, projection_version INTEGER NOT NULL, stream_id TEXT NOT NULL,
+ PRIMARY KEY(consumer_id,projection_version,stream_id),
+ FOREIGN KEY(consumer_id,projection_version) REFERENCES projection_scopes(consumer_id,projection_version),
+ FOREIGN KEY(stream_id) REFERENCES stream_heads(stream_id)
 );
 "#;
 
