@@ -4,75 +4,33 @@
 
 ## 시퀀스
 
-```
-resumed() (src/app/event_handler.rs)
-  ├─ 창 생성: WindowAttributes .with_visible(false)     — 숨긴 상태로 생성
-  ├─ Settings::load + normalize
-  ├─ create_gpu_state (동기, pollster)                  — 이 동안 창은 hidden
-  ├─ shell 무효 시: shell setup 첫 프레임 렌더 → set_visible(true) → early return
-  └─ begin_boot(window, gpu, settings, window_hidden=true)
-       ├─ db::init + theme apply (첫 present 전 — 부팅 중 배경색 전환 방지)
-       ├─ render_loading 첫 프레임 present (theme bg_app 단색)
-       ├─ set_visible(true)                             — 실패 시에도 표시 (fallback)
-       └─ App.boot = Some(BootState { phase: GpuInit })
+```text
+resumed → 숨긴 Window/GPU 준비 → begin_boot
+  App.boot: BootResources(window, gpu, worker receiver, pending events)
+  App.state.boot: BootProgress(settings, phase, restore presentation)
+  첫 loading present 뒤 Window 표시
 
-부팅 미완(App.boot Some) 동안 매 프레임:
-  about_to_wait → drive_boot_frame() → ControlFlow::WaitUntil(+16ms) 재예약
-  RedrawRequested → drive_boot_frame()   (같은 스텝 함수 — 중복 호출 무해)
-
-  phase 스텝 (BootPhase):
-  GpuInit          엔진(CoreState)+plugin manager 원자 초기화(T2.6·T3) 워커
-                   스레드 spawn (`build_engine_and_plugins`, App-free 함수) →
-                   WaitingEngine 으로 전이. cols/rows 는 GPU cell metrics
-                   의존이라 spawn 전 메인에서 계산해 워커에 값으로 전달.
-  WaitingEngine    워커 결과 채널을 매 스텝 try_recv 폴링 — 원자 구간(T2.6+T3
-                   ≈470ms)에도 메인은 로딩 프레임만 그리므로 스피너가 멈추지
-                   않는다. 채널 payload 는 `anyhow::Result<(CoreState,
-                   PluginManager)>` 로, 결과가 셋 중 하나다.
-                   · Ok  → 장착하고 pending layout restore 있으면 →
-                     WaitingPlugins, 없으면 → Ready.
-                   · Err → engine 생성 실패(셸 spawn·PTY/fd 등). 이 단계는
-                     부팅 GPU init 이후라 **GPU·창이 살아있으므로**, 진단을
-                     `boot_error_info` 로 담아(`boot_engine_error_info`) 두고
-                     `drive_boot_frame` 이 `enter_boot_error_mode` 로 전환해
-                     **실패 화면을 창에 그려 유지**한다(사용자가 종료할 때까지 →
-                     `exit(1)`). 런처로 실행해 stderr 를 못 보는 사용자도 원인을
-                     본다. 진단 3줄은 `tracing::error!`(stderr + 파일 로그)로도
-                     남긴다. GPU 어댑터 부재·부팅 창 생성 실패는 그릴 수단이 없어
-                     이 경로가 아니다(진단 후 즉시 `exit(1)`). (ADR-0016)
-                   · disconnect → **워커 스레드 자체의 예상 밖 panic** 만
-                     여기로 온다(engine 생성 실패는 위 Err 로 온다). 메인 동기
-                     `ensure_engine_and_plugins` 재시도로 fallback 하고, 그것도
-                     실패하면 위와 같이 실패 화면으로 전환한다.
-  WaitingPlugins   pump → finalize_plugin_hello → 필요 surface kind 등록 확인.
-  (deadline 300ms) 미충족이면 다음 프레임 재시도. 충족/초과 시
-                   ApplyPendingLayoutRestore 1회 apply 후 → RestoringLayout
-  RestoringLayout  pump(조건 확인 전 무조건 1회) → RemoteSurface 복원 round-trip
-  (deadline 500ms) pending 확인. 완료/초과 시 → Ready
-
-finish_boot (Ready):
-  MainViewState 조립 → db/theme 실패 InfoModal → IPC 서버 시작 + 웹훅 init →
-  register_window(MainView 등록) → system.startup_complete 발화 →
-  부팅 중 지연된 AppEvent 재생 → 첫 실 UI 프레임 요청
+GpuInit → WaitingEngine
+  worker가 EngineSession과 PluginManager를 준비
+  결과를 pending engine 관계에 설치
+WaitingJournal
+  journal binding·초기 projection → 필요한 kind 확인
+  → WaitingPlugins(필요한 경우) → WaitingJournal로 복귀
+  → 선택한 자료의 activation/복원 완료를 poll
+RestoringLayout
+  native/plugin 복원 응답을 관측 → finish_boot
+finish_boot
+  MainViewState 조립 → IPC 서버와 window 등록 → startup_complete
+  → 보류된 AppEvent 처리 → 정상 프레임
 ```
 
-- 진입 경로는 2개이며 둘 다 `begin_boot` 로 들어온다: ① 일반 부팅(`resumed()`,
-  hidden 생성 → 첫 present 후 표시), ② shell setup 완료(`Confirmed` — 창이 이미
-  보이므로 표시 전환만 스킵, phase 구동 동일).
-- 다중 창(`create_new_window`)·parked 복원은 상태 머신을 타지 않고 동기 경로
-  (`create_app_state` → `ensure_engine_and_plugins`)를 유지한다. 동기 경로와
-  워커(`WaitingEngine`)는 초기화 본문으로 같은 App 비참조 함수
-  `build_engine_and_plugins`(첫 부팅 전용 하위 함수, `src/app/window_lifecycle.rs`)
-  를 공유하고, `boot_pump_step_*` / `boot_apply_pending_layout_restore` /
-  `assemble_app_state` 도 두 경로가 공통으로 쓰므로 대기 의미론이 이중화되지
-  않는다. 두 번째 main window 의 글로벌 Arc 공유 분기(`any_main_engine`)는
-  첫 부팅엔 source 가 없어 워커 본문 밖(동기 wrapper `ensure_engine_and_plugins`)
-  에만 존재한다.
+`BootResources`의 handle과 `BootProgress`의 값은 소유자가 다르다. worker 반환형도 CoreState 한 개가 아니라 EngineSession과 PluginManager다. journal의 초기 projection만 재생하는 단계와 실제 자원 activation을 구분한다. 오류 화면을 만들 수 있는 Window/GPU가 있으면 진단을 표시하고, 초기 View 조립 실패로 기존 journal stream을 삭제하지 않는다.
+
+일반 부팅과 shell setup 완료는 같은 begin_boot로 합류한다. 새 창·parked 복원은 `window_lifecycle/pending.rs`의 pending 관계와 journal 준비 관측을 사용한다. 공유 registry는 AppServices의 같은 Arc를 주입한다. 특정 첫 View의 실행 자원을 전역 서비스 원본으로 사용하지 않는다.
 
 ## 부팅 가드 (bootstrap 불변식)
 
-`ApplyPendingLayoutRestore` 는 "적용 전 다른 mutate 가 없다"는 bootstrap 전제를
-가진다. 상태 머신에서는 이벤트 루프가 이미 도는 중에 apply 되므로, 부팅 미완 동안:
+초기 journal projection과 activation을 공개하기 전에는 일반 입력·변경 처리를 보류한다. 부팅 미완 동안:
 
 - **window event** 는 전부 소비한다 (`handle_boot_window_event` — RedrawRequested
   = 스텝 구동, Resized = gpu.resize, CloseRequested = 종료, 그 외 무시).
@@ -83,7 +41,7 @@ finish_boot (Ready):
   이 구간의 계측은 종료 쪽 마커 `S2 boot_worker_reclaim` 이다 —
   [shutdown-sequence](shutdown-sequence.md).
 - **AppEvent** 는 종료 계열(Shutdown/QuitRequested)만 즉시 처리하고 나머지는
-  `BootState.pending_events` 에 지연 → Ready 후 도착 순서대로 재생한다. 특히
+  `BootResources.pending_events` 에 지연 → Ready 후 도착 순서대로 재생한다. 특히
   `TerminalOutput` 을 부팅 중 소비하면 대상 engine 이 아직 창에 붙기 전의 임시 관계
   (`App.engines`)에 있어 waker dedup 게이트가 닫힌 채 wake 가 유실된다.
 - **IPC** 는 서버 자체가 `finish_boot` 에서 시작하므로 부팅 중 유입이 구조적으로
@@ -167,7 +125,7 @@ warn 이라 콘솔 노이즈는 없다. release 검증은 `TASTY_LOG=info` 로 �
 | T2.5 db_theme | `begin_boot` 진입 → 첫 로딩 프레임 직전 (db::init + theme apply) |
 | T2.9 window_visible | 부팅 시작 → `set_visible(true)` (첫 로딩 프레임 present 후) |
 | resumed_total | `resumed()` 전체 (T1~T2.5 + 첫 프레임 — 메인 스레드 점유 구간) |
-| T2.6 engine_init | CoreState 생성 + 슬롯 파일 로드 (**부팅 워커 스레드**에서 계측) |
+| T2.6 engine_init | EngineSession 실행 owner 준비 (**부팅 워커 스레드**에서 계측; journal 선택·복원은 별도 대기) |
 | T3a/T3b | plugin discovery / spawn (T3b 의 total_ms = T3 전체, **부팅 워커 스레드**) |
 | T2.7 engine_wait | `WaitingEngine` 체류 — 메인이 워커 결과를 기다린 시간. `frames` 필드 = 그 동안 돈 로딩 프레임 스텝 수(로딩 프레임이 실제로 갱신됐다는 계측 증거) |
 | T4 layout_wait_plugins | WaitingPlugins 체류 (탈출 사유 satisfied/deadline) |

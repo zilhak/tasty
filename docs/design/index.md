@@ -37,4 +37,4 @@
 
 | 문서 | 내용 |
 |------|------|
-| [action-dispatch](flows/action-dispatch.md) | Intent 큐 — 호스트 내부 동작 디스패치 모델 |
+| [action-dispatch](flows/action-dispatch.md) | 원 origin·대상 binding을 가진 Intent와 journal admission/publication, View 후처리 |

@@ -67,7 +67,7 @@ park/unpark는 이 객체나 작업 대기 허브를 교체하지 않는다. 창
 headless도 같은 Session을 지역 변수로 소유하며 로컬 View를 만들지 않는다.
 
 View는 `EngineRead`(`src/runtime/engine_read.rs`)를 받는다. 실행 adapter는 `EngineMut`/`EngineRef`(`src/runtime/engine_access.rs`)로 필요한 원본을 나눠 빌린다.
-두 타입은 참조만 가지며 engine id·창 관계·종료 책임은 없다. 구조만 필요한 함수는 `CoreState`를 그대로 받는다.
+이 대여 타입들은 참조만 가지며 engine id·창 관계·종료 책임은 없다. 구조만 필요한 함수는 `CoreState`를 그대로 받는다.
 Core에 상위 `EngineSession` 전체를 전달하지 않는다. Terminal 읽기는 기존 내용 잠금과 snapshot/tap 경계를 유지한다.
 
 생성 조립은 `src/runtime/engine_session/bootstrap.rs`가 담당한다. 설정·슬롯·registry·child 관계 읽기와 기본 shell 생성은
@@ -107,7 +107,7 @@ engine의 존재 여부는 창 관계와 parked 관계를 함께 확인한다. �
 
 ## 레이아웃 슬롯
 
-창 ↔ engine ↔ **레이아웃 슬롯**은 1:1 이다. 각 EngineSession의 persistence/binding은 자기 슬롯과 journal stream을 가리킨다. 창마다 워크스페이스 목록이 독립이라는 구조적 사실이 저장소까지 이어진 형태다 — 두 창이 같은 목록을 복제하거나 서로의 저장을 덮어쓰지 않는다.
+슬롯을 가진 GUI engine은 한 **레이아웃 슬롯**에 연결되고, MainView는 연결돼 있는 동안 한 engine을 표시한다. parked·retiring처럼 창이 없는 owner도 회수가 끝날 때까지 슬롯을 유지한다. headless의 새 구조 stream은 GUI 슬롯을 갖지 않는다. 각 EngineSession의 persistence/binding은 해당 슬롯(있는 경우)과 journal stream을 가리킨다. 창마다 워크스페이스 목록이 독립이라는 구조적 사실이 저장소까지 이어진 형태다 — 두 창이 같은 목록을 복제하거나 서로의 저장을 덮어쓰지 않는다.
 
 **점유는 살아있는 engine 에서 파생된다.** 별도 슬롯 레지스트리도, 디스크 기록도 없다. 점유 집합은 sessions의 전체 owner에서 파생하며 창·parked·pending·retiring을 포함한다. 갓 만들어진 engine 은 창에 붙기 전까지 임시 관계에 머물기 때문에, 그 구간을 빠뜨리면 같은 슬롯이 두 번 배정된다. 따라서
 

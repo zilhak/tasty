@@ -12,7 +12,7 @@
 
 | 기능 | 주체 | 화면 |
 |------|------|------|
-| [main-view](main-view/index.md) — MainView (메인 윈도우) | 로컬 사용자 · AI Agent · 원격 | [전체 레이아웃](main-view/index.md#화면) |
+| [main-view](main-view/index.md) — MainView (engine을 표시하는 메인 윈도우) | 로컬 사용자 · AI Agent · 원격 | [전체 레이아웃](main-view/index.md#화면) |
 | [work-area](work-area/index.md) — 작업 영역 (Workspace/Pane/Tab/Surface 도메인) | 로컬 사용자 · AI Agent · 원격 | [화면](work-area/index.md#화면) |
 | [terminal](terminal/index.md) — 터미널 (PTY·VTE·앱별 Shift+Enter·보조키 방향키·scrollback·표시면별 viewport·GPU) | 로컬 사용자 · AI Agent · 원격 | GPU 그리드 |
 | [terminal-search](terminal-search/index.md) — 터미널 검색 (스크롤백+화면) | 로컬 사용자 | 검색 바 popup |

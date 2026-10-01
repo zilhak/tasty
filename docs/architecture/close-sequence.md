@@ -1,157 +1,52 @@
-# 워크스페이스 close 시퀀스와 계측
+# 닫기와 실행 자원 회수
 
-워크스페이스를 닫을 때의 스냅샷 캡처, 대상 수집, memory scope 삭제, surface 정리 순서와
-`tracing` 계측(`tasty::close`)을 설명한다. [부팅](boot-sequence.md)과
-[종료](shutdown-sequence.md) 계측도 같은 로그 형식을 쓴다.
+로컬 구조 닫기는 확정된 구조 변경, 원 실행 자원의 회수, 명령 완료를 구분한다. View가 사라졌다는 사실이나 논리 트리에서 surface가 빠졌다는 사실만으로 PTY·plugin 자원 회수가 끝난 것은 아니다. 계약의 근거는 [ADR-0055](../adr/0055-structural-domain-event-sourcing.md), [ADR-0063](../adr/0063-event-store-storage-fencing-and-effect-states.md), [ADR-0065](../adr/0065-journal-source-and-core-state-projection.md)다.
 
-## 세 경로
+## 명령에서 완료까지
 
-워크스페이스 close 는 진입점이 셋이고, 셋 다 렌더 루프(또는 IPC 디스패치) 안에서
-**동기** 실행된다.
+1. GUI·IPC·원격 요청은 원 대상 ID와 origin을 해소하고 App의 journal admission에 들어간다. 사용자 선택이나 현재 포커스를 나중에 다시 조회해 대상을 바꾸지 않는다.
+2. worker는 닫을 대상과 cleanup 의무를 journal에 확정한다. App의 publication은 원 descriptor의 kind·activation, engine incarnation과 runtime epoch를 검사하고, 제거할 surface box와 Terminal/Pty를 `ResourceRetirement`에 넘긴다.
+3. 논리 projection의 batch 적용과 ACK 뒤, cleanup effect의 원 attempt를 claim하여 실행한다. `ResourceRetirement`는 숫자 ID로 후속 자원을 다시 찾아 파괴하지 않고 이미 보유한 원 owner를 처리한다.
+4. PTY retirement receipt와 원 plugin process·surface instance에 묶인 ACK/retirement receipt를 관측한다. metadata 정리와 회수 결과를 확정하고 명령의 모든 member 결과를 집계한다. 필요한 batch publication까지 완료한 뒤 응답을 공개한다.
 
-| `path` | 진입점 | 트리거 | 스냅샷 |
-|--------|--------|--------|--------|
-| `gui` | `MainViewState::close_workspace_at` (`src/state/workspace.rs`) | 워크스페이스 컨텍스트 메뉴 "Close workspace" / 단축키 `close_active_workspace` | 항상 |
-| `inline` | `MainViewState::close_surface_by_id_inner` (`src/state/pane.rs`) → `Core::close_surface_recording` (`src/core/impl_close.rs`) | surface→tab→pane→workspace cascade 의 창 경로 (사용자 닫기 단축키, PTY exit 등) | `save_snapshot` 조건부 (PTY exit 는 false) |
-| `cascade` | `Core::close_case_workspace` (`src/core/impl_close.rs`) → `cascade_surface_closed` (`src/app/structural_cascade.rs`) | `DomainIntent::CloseSurface` 도메인 이벤트 경로 (IPC `surface.close` 등) | `save_snapshot` 조건부 (IPC 는 false) |
+생산 경로는 `src/app/journal/commands/close.rs`, `src/runtime/resource_retirement.rs`, `src/app/journal/resource_cleanup.rs`다. GUI의 cache·선택 보정과 toast는 이 실행 원본을 대신하지 않는다.
 
-**세 경로의 비용 구조는 근본적으로 다르다.** `gui` 만 "탭이 N 개인 워크스페이스를
-통째로" 닫는다 — 나머지 둘은 cascade 특성상 *마지막 한 개의 surface* 가 닫히면서
-workspace 까지 무너지는 경우라 cleanup 대상이 사실상 항상 1개다. UI 멈춤이
-보고되는 조건(탭 많은 워크스페이스 닫기)은 `gui` 경로에서만 재현된다.
+## 실패와 불명 결과
 
-세 경로 모두 구조 결과를 받은 App이 View navigation을 보정한다. 생존한 workspace ID는 유지하고, 선택한 workspace가 삭제됐을 때만 이전 순서에서 다음 생존 ID 또는 마지막 이전 생존 ID를 고른다. 인덱스는 응답과 표시 시점에 계산한다([포커스 정책](../design/policies/focus.md)).
+| 관측 | 의미 |
+|---|---|
+| 요청 접수·Running claim | 실행할 권한과 원 attempt를 고정했다. 회수 완료가 아니다 |
+| 실제 child reap 또는 원 plugin receipt 완료 | 해당 물리 자원의 회수 증거다. 별도 metadata·명령 완료 의무가 남을 수 있다 |
+| timeout·연결 유실·원 plugin 응답 부재 | 성공 또는 알려진 실패로 단정하지 않는다. operation의 `Uncertain`과 receipt의 불명 관측을 유지한다 |
+| 뒤늦게 도착한 정확한 원 receipt | 같은 attempt의 reconciliation 근거다. 새 자원에 cleanup을 다시 실행하는 근거가 아니다 |
 
-`inline`·`cascade` 두 경로는 트리 변경과 C1~C3 을 같은 Core 닫기 함수(`close_case_workspace`)가
-하고, C4/C5 는 호출한 쪽이 한다. `cascade` 는 cascade(`cascade_surface_closed`) 쪽이라 로그 순서가
-**C5 가 C4 보다 먼저** 나온다(cascade 쪽 1단계가 cleanup, 3단계가 workspace purge). `inline` 은
-MainViewState 가 workspace purge 뒤 cleanup 을 해서 `gui` 와 같이 C1→C2→C3→C4→C5 순이다. 두 경로는
-`CloseTracePath` 로 로그의 `path` 를 가르고, `close_total` 은 `inline` 이면 MainViewState 가,
-`cascade` 면 `cascade_surface_closed` 가 기록한다.
+`OperationOutcome`의 Succeeded/Failed/Cancelled/Superseded/Uncertain과 물리 receipt 상태는 같은 enum이 아니다. 원 실행 결과가 불명인데 자동 재실행해 성공으로 덮지 않는다. `resource_cleanup.rs`는 대조가 필요한 owner와 receipt를 계속 보유한다.
 
-## 트리 변경과 복원 기록의 소유
+## 사용자 기록과 headless
 
-surface·tab·pane 닫기의 트리 변경과 복원 기록(`push_closed_item`)은 Core 닫기 함수
-(`src/core/impl_close.rs`의 `Core::close_surface_recording` · `close_pane_recording` ·
-`close_tab_recording`)가 한다. `Core::apply` 의 close 계열과 MainViewState 의 직접 닫기
-(`close_active_surface` · `close_surface_by_id` · `close_surface_by_id_no_snapshot` ·
-`close_active_pane` · `close_active_tab` · `close_tab`)가 모두 이 함수를 부른다. 창 경로는
-`Core::apply` 를 거치지 않고 이 세 함수를 직접 부르므로 `Core::apply` 의 mirror 가드를 지나지 않는다.
+사용자 닫기·IPC/에이전트 닫기·프로세스 종료의 origin은 다르다. 사용자 선택 및 닫은 항목 복원 기록은 해당 origin과 명령의 기록 정책을 따른다. 원격 mirror의 구조 변경은 로컬 구조 writer로 실행하지 않고 서버에 전달하며, 기존 user/agent wire 호환을 유지한다([원격 attach](../features/remote-attach/index.md)).
 
-- mirror 가드와 hard 점유 검사는 사용자 입력 진입점 `close_active_surface` · `close_active_pane` ·
-  `close_active_tab` · `close_tab` 에만 있다. mirror workspace 면 `forward_mirror_structural` 이 요청을
-  `user_triggered: true` 로 전달 큐에 넣고 로컬 트리를 바꾸지 않는다.
-- `close_surface_by_id` 에는 가드가 없다. `close_active_surface` 가 검사를 마친 뒤에만 부른다.
-  `close_surface_by_id_no_snapshot` 은 로컬 PTY 종료 정리(`src/app/process_exit.rs`)에서만 부른다.
-- IPC 와 원격 forward 경로의 origin 표시는 `Core::apply` 가 아니라 `structural_exec` 의 실행 함수가 한다.
-  진입점이 넘긴 origin 으로 `Core::apply` 의 Err 에 `mark_last_forward_agent_origin` 과
-  `mark_last_forward_user_triggered` 를 적용한다. 현재 두 진입점은 모두 에이전트 origin 을 넘긴다.
-- lifecycle 의 `is_user_close` 는 창 경로에서는 사용자 닫기 여부로, `structural_exec` 경로에서는
-  넘겨받은 origin 이 사용자인지로 정한다. `save_snapshot` 과는 별개다.
+GUI와 headless 모두 동일한 domain commit·effect·회수 의무를 수행한다. headless에는 로컬 View cache·선택·popup 후처리가 없다. 일반 host-event plugin bus나 headless attach client를 추가로 지원한다는 뜻은 아니다([headless 경계](../dev-guide/headless-build-boundaries.md)).
 
-닫기가 끝나면 MainViewState 가 Core 가 돌려준 이벤트로 자원 회수·lifecycle 통지·활성 포인터 보정을 이어서
-한다.
+## Engine과 workspace 수명
 
-복원 기록 여부는 `save_snapshot` 인자로 정한다. `Core::apply` 에는 origin 이 없으므로 origin 을 아는
-진입점이 값을 정한다. 사용자 창 닫기는 true, IPC 와 `DomainIntent::{ClosePane,CloseTab}` 은 false,
-원격 holder 의 forward 는 사용자 origin 일 때만 true 다. PTY 종료 정리는 사용자 닫기로 통지하지만
-기록하지 않는다. Core 닫기 함수는 pane 의 마지막 탭처럼 닫지 못한 대상을 기록하지 않는다.
-Core 밖에서 기록하는 곳은 둘이다. workspace 전체 닫기(`MainViewState::close_workspace_at`)와 원격 holder 가
-forward 받은 tab/pane 닫기(`src/core/attach_runtime.rs`)다. holder 는 `DomainIntent::{CloseTab,ClosePane}`
-에 기록 인자가 없어 Core 닫기 전에 사본을 직접 기록하고, Core 와 같이 pane 의 마지막 탭과 유일한 pane 은
-기록하지 않는다. 복원 목록은 현재 트리에서 항목의 출처 workspace 를 찾으므로 기록은 모든 경로에서 트리를
-바꾸기 전에 한다.
+workspace가 확정 구조에서 실제로 제거되면 그 TaskScope의 해당 runner에 stop을 요청한다. 같은 engine 안의 순서 변경이나 View 개폐는 stop 사유가 아니다. runner stop, task cancel, OS 자식 kill은 별개의 계약이다.
 
-## 자원 회수의 소유
+창을 닫을 때 engine을 보존하는 park와 engine 자체를 은퇴시키는 retiring을 구분한다. retiring owner는 `EngineRegistry.sessions`에 남는다. Preserve는 final View checkpoint를 기다리고, Discard는 필요한 stream retirement를 확정한다. View 생성 실패로 owner만 회수하는 경우에는 정상적으로 열린 기존 journal stream을 삭제하지 않는다.
 
-`Core::apply` 의 close 계열(`DomainIntent::{CloseSurface,ClosePane,CloseTab}`)은 트리만
-바꾸고 닫힌 surface 목록(`cleanup_targets`)을 이벤트에 실어 **반환**한다. 실제 회수(PTY
-kill · 스크롤백 파일 삭제 · per-surface 인덱스 해제 · memory scope purge · attach 점유 흔적
-제거)와 `surface.closed` lifecycle 통지는 cascade 쪽이 한다.
+Releasing 단계는 원 runner의 실제 join과 `EngineRelease`의 물리 자원 receipt를 기다린 뒤 owner와 슬롯을 해제한다. 일반 engine 해제는 timeout으로 완료를 가장하지 않는다. 앱 전체 종료의 대기 상한은 미회수 경고와 함께 별도로 처리한다([종료 시퀀스](shutdown-sequence.md)).
 
-회수 본문은 창 상태 없이 호출할 수 있는 `EngineMut::cleanup_surface_traced`와
-`CoreState::purge_workspace_memory_scope`(`src/core/state/surface_cleanup.rs`)다. MainViewState에는
-화면 cache 해제(`MainViewState::release_surface_views` — explorer · DAG 그래프 view)와 lifecycle ·
-host 이벤트 적재만 남는다. MainViewState의 직접 닫기 경로(`gui` · `inline`)도 같은 CoreState 함수를
-부르고, `MainViewState::cleanup_surface`는 engine 회수 뒤 화면 cache를 해제하는 얇은 래퍼다.
+## 확인 범위
 
-그 회수는 **한 함수**가 소유한다 — `src/app/structural_cascade.rs` 의
-`reclaim_closed_surfaces`. close cascade 셋(`cascade_surface_closed` · `cascade_pane_closed_full` ·
-`cascade_tab_closed_full`)이 모두 그것을 부르고, 그 셋과 split / tab 생성 cascade 를 사용자
-GUI dispatcher · IPC 핸들러 · 원격 forward 실행이 함께 부른다. 두 빌드(gui / headless)가 같은
-파일을 컴파일하므로 함수 하나에 본문 하나이고, 빌드 형태의 차이는 그 본문 안의
-`#[cfg(feature = "gui")]` 블록으로만 존재한다. 근거는
-[ADR-0002](../adr/0002-domain-execution-and-ports.md)에 정리되어 있다. 이 결정은 [ADR-0054](../adr/0054-app-core-view-layers-and-state-ownership.md)가 대체했으며 이행 중이다.
+위 내용은 현재 소스의 책임과 순서다. PTY reap, plugin ACK 유실, View 소멸, crash 뒤 Recovery, GUI/headless의 응답 시점을 실행으로 확인하는 일은 별도다. 과거 cascade 계측값이나 옛 ownership fixture의 성공을 현재 경로의 검증 근거로 사용하지 않는다.
 
+## 과거 측정 기록의 해석
 
-### gui 와 headless 의 차이
+아래는 이전 cascade 구현에서 남긴 계측 정의와 실제 측정 기록이다. 수치와 조건은 이력으로 보존하지만, 옛 함수·단계 이름을 현재 실행 경로로 읽거나 이 측정으로 journal/retirement 경계가 검증됐다고 해석하지 않는다. 현재 소유와 완료 순서는 위 절을 따른다.
 
-| | gui | headless |
-|---|---|---|
-| `EngineMut::cleanup_surface_traced` (PTY · 스크롤백 · 인덱스 · surface memory scope · 점유) | 한다 | 한다 |
-| 같은 함수의 부속 맵 회수 — busy · cwd · mesh frame 은 mirror 전용, attention 은 로컬 레코드도 함께 | 한다 | attention 만 해당 — headless에는 attach client가 없어 mirror 전용 맵은 비어 있다 |
-| 화면 cache 해제 (`release_surface_views`) | 한다 | 없음 — headless에는 View가 없다 |
-| `surface.closed` lifecycle enqueue | 한다 | **안 한다** |
-| `tab.closed` / `pane.closed` / `workspace.closed` host event | 한다 | **안 한다** |
-| C4 워크스페이스 memory scope purge (`CoreState::purge_workspace_memory_scope`) | 한다 | 한다 — `workspace.closed` 통지와 분리되어 있다 |
-| 활성 포인터 보정 (`fix_workspace_pointers_after_removal`) | 한다 | 한다 |
-| 워크스페이스가 비면 재생성 | 한다 | 한다 |
-| C5 계측 · `close_total` 기록 | `cascade_surface_closed` 만 | 안 한다 |
-| `surface.created` / `pane.split` / `pane.created` / `tab.created` host event (split · 탭 생성) | 한다 | **안 한다** |
-| 사용자 origin 의 split 포커스 이동 | 한다 | 한다 — headless 에는 `User` origin을 만드는 호출자가 없어 닿지 않는다 |
-| 튜토리얼 관찰 (split) | 한다 | 안 한다 (튜토리얼이 gui 전용) |
+<a id="close-계측-target-tastyclose"></a>
 
-**차이를 가르는 것은 "그 통지에 소비자가 있는가" 하나다.** headless 에는 두 큐를 plugin
-event bus 로 내보내는 주체(plugin manager / view)가 없다. `pending_lifecycle_events` 는
-headless 에서 아무도 비우지 않아 enqueue 하면 프로세스 수명 동안 자라고,
-`pending_host_events` 는 headless drain(`drain_pending_host_events`)이 `HookFired` 만 적용하고
-나머지 종류를 버리므로 여기서 넣는 종류(`tab.*` · `pane.*` · `surface.created` ·
-`workspace.closed`)는 넣어도 닿는 곳이 없다. 반대로 자원 회수와 포인터 보정은 소비자가 상태
-자신이라 양쪽에 똑같이 필요하다. 같은 기준의 서술이
-`src/intent/headless.rs` 모듈 주석에도 있다.
-
-공통 단계와 `SurfaceCloseCascade` 생성자는 두 빌드가 같은 소스를 컴파일한다.
-다만 `#[cfg(feature = "gui")]` 안의 코드는 헤드리스 빌드에서 빠진다. 헤드리스에서
-사용하지 않는 필드·인자는 `cfg_attr(not(feature = "gui"), expect(...))`로 표시하며,
-예상과 달리 사용되면 경고가 난다. 이 파일을 고친 뒤에는 다음 두 빌드를 모두 확인한다.
-
-- `cargo check --workspace --all-targets`
-- `cargo check --workspace --no-default-features --all-targets`
-
-### forward 경로의 결과 타입
-
-원격 mirror 가 forward 한 구조 op 의 실행(`src/core/attach_runtime.rs`)은 도메인 값
-(`Result<(), String>`)으로 답하고, wire 타입(`JsonRpcResponse`)을 만들지 않는다. split /
-tab.create / tab.close / tab.move / pane.close / surface.close 는 IPC 핸들러가 부르는 것과
-**같은** 도메인 실행 함수(`src/app/structural_exec.rs`)를 부르고, 그 실패
-(`StructuralFailure`)를 `forward_result` 한 함수가 사유 문자열로 바꾼다. IPC 핸들러는 같은
-실패를 `invalid_params` / `internal_error` / `structural_apply_error` 로 감싼다 — 그래서 같은
-입력에 두 진입점의 사유 문구가 같다. 두 시험으로 사유 문구를 확인한다: 두 진입점의 결과가 같은지
-(`forward_and_ipc_fail_with_the_same_reason_for_the_same_input`), 문구가 옛 기준과 같은지
-(`failure_reasons_keep_the_base_literals` — 기대 문자열과 비교). convert / restore / move-surface 는 `Core::apply` 를
-직접 부른다. 호출자가 회신하는 것은 `StreamControl::StructuralResult` 다. 근거는
-[ADR-0002](../adr/0002-domain-execution-and-ports.md)이며 [ADR-0054](../adr/0054-app-core-view-layers-and-state-ownership.md)가 대체해 이행 중이다.
-
-## 단계
-
-```
-close 진입
- ├─ C1 snapshot            capture_workspace_snapshot — 전 surface cwd+스크롤백 캡처, 스크롤백을 디스크 형식으로 인코딩
- ├─ C2 push_closed_item    restore.command 주입 + 스크롤백 디스크 write + evict
- │   ├─ C2a restore_inject       surface 마다 surface_meta sqlite 조회
- │   ├─ C2b scrollback_persist   인코딩된 바이트를 ~/.tasty/scrollback/<id>.bin 에 write
- │   └─ C2c evict                LIFO 상한 초과분의 backing 파일 삭제
- ├─ C3 collect_targets     pane × tab × leaf 3중 순회
- ├─ C4 ws_memory_purge     purge_scope(Scope::Workspace) — sqlite 풀스캔
- └─ C5 cleanup_targets     surface 마다 EngineMut::cleanup_surface_traced (합계)
-     ├─ C5a scrollback_delete   fs::remove_file
-     ├─ C5b terminal_drop       Terminal/Pty 항목 drop → 연결 무효화 + Pty 종료 요청·master 해제 (reap은 비동기)
-     ├─ C5c indices_drop        host-side per-surface 인덱스 해제 (observer sender drop — join 은 S3b, 화면 cache 해제는 제외)
-     └─ C5d memory_purge        purge_scope(Scope::Surface) — sqlite 풀스캔 (surface 당 1회)
-close_total
-```
-
-## close 계측 (target: `tasty::close`)
+## 이전 cascade 계측 (target: `tasty::close`)
 
 부팅·종료 계측과 같이 항상 기록하며, 레벨 `info!`, 소요는 `ms` 필드(f64
 밀리초). debug 빌드는 `$TASTY_HOME/debug-dev.log`(debug 레벨 file layer)에
@@ -211,7 +106,9 @@ debug 빌드의 `debug.close_workspace`(`index`)가 그 메뉴 항목을 재현�
 경우 창까지 닫지만 debug IPC 는 창 종료를 재현하지 않아, 그대로 두면 workspace 가
 0 개인 상태로 다음 redraw 가 패닉한다.
 
-## 실측 기준선
+<a id="실측-기준선"></a>
+
+## 이전 cascade 실측 기준선
 
 Linux(X11) / debug 빌드 / 번들 plugin 전부 활성 / `TASTY_LOG=info` / 격리
 `TASTY_HOME`. `path="gui"`, `debug.close_workspace` 로 close. 스크롤백 "만재" 는
@@ -220,9 +117,9 @@ surface 마다 `seq 1 20000`(기본 상한 10000 줄까지 채워짐). 각 조�
 
 아래는 **벌크 캡처(C1) · surface purge 중복 제거(C5) ·
 [ADR-0016](../adr/0016-window-platform-and-shutdown.md)(C5b) 이 모두
-적용된 뒤의 측정 기록**이다. 현재 환경의 성능을 보장하는 값은 아니다.
+적용된 뒤의 측정 기록**이다. 당시 환경의 성능을 보장하는 값은 아니다.
 측정 당시 C1은 화면도 복제했고 스크롤백 인코딩은 C2b에서 했다. 지금은 C1이 화면을 복제하지
-않고 스크롤백 인코딩을 맡으며 C2b는 파일 쓰기만 한다. 그래서 아래 C1·C2b 값의 배분은 현재
+않고 스크롤백 인코딩을 맡으며 C2b는 파일 쓰기만 한다. 그래서 아래 C1·C2b 값의 배분은 당시
 구조에 그대로 적용되지 않는다(합계 작업량은 화면 복제만큼 줄었다, 미측정).
 
 | 탭 수 | 스크롤백 | close_total | C1 snapshot | C2b sb_persist | C3 collect | C4 ws_purge | C5 cleanup | (C5b terminal_drop) |
@@ -273,7 +170,7 @@ C1 은 surface 마다 화면(rows x cols)과 스크롤백 전량을 `ClosedItem`
 - 라인마다 state mutex — 파서 스레드가 `ingest` 로 잡는 것과 같은 lock(ADR-0060)
   이라, 만재 스크롤백 캡처가 파서와 수만 회 경합한다.
 - 디스크 영역 라인은 `line_owned` / `line_wrapped` 가 같은 인덱스를 독립적으로
-  읽어 `File::open` 이 라인당 2회가 된다(현재는 `line_full` 단일 조회로 1회).
+  읽어 `File::open` 이 라인당 2회가 된다(당시는 `line_full` 단일 조회로 1회).
 
 `layout_persistence::scrollback` 의 캡처도 같은 벌크 경로를 쓴다.
 
@@ -295,8 +192,8 @@ memory.db 를 24276 엔트리(3.6MB)까지 채우고 탭 10개·스크롤백 없
 | 기본 상태 | 0.057 | 3.1 | 0.33 |
 | 24k 엔트리 | 3.0 | 23 | 20 |
 
-현재는 surface scope purge를 C5d에서 한 번만 수행한다. 위 표는 중복 제거 전의
-기록이므로 현재 C5d 비용이나 전체 close 시간으로 환산하지 않는다. 큰 DB에서
+당시는 surface scope purge를 C5d에서 한 번만 수행한다. 위 표는 중복 제거 전의
+기록이므로 당시 C5d 비용이나 전체 close 시간으로 환산하지 않는다. 큰 DB에서
 close가 느리면 C4와 C5d를 따로 확인한다.
 
 ### `scrollback_disk_swap`
@@ -311,14 +208,9 @@ close가 느리면 C4와 C5d를 따로 확인한다.
 | on | 279622 | 1445 | 544 | 246 | 547 |
 
 > 이 표는 자식 종료 대기를 별도 스레드로 옮기기 전의 기록이다. 당시 C5b에는
-> surface당 약 50ms의 대기가 포함됐다. 현재 값은 이 수치를 단순히 빼서 구할 수 없다.
+> surface당 약 50ms의 대기가 포함됐다. 당시 값은 이 수치를 단순히 빼서 구할 수 없다.
 
 disk 영역 라인은 캡처가 메모리 복제가 아니라 **라인마다 파일 read** 라 C1 의
 라인당 단가가 memory-only 대비 한 자릿수 배 높다(10k 라인당 3ms → 19ms). 켜고
 쓸 때 캡처 비용을 비교할 때는 전체 라인 수와 디스크 영역 라인 수를 함께 확인한다.
 
-## 관련
-
-- [boot-sequence](boot-sequence.md) — 부팅 계측(T1~T7)
-- [shutdown-sequence](shutdown-sequence.md) — 종료 계측(S1~S5), C5b 와 같은 PTY drop 누적기를 S5b 로 소비
-- [debug-ipc](../dev-guide/debug-ipc.md) — `debug.close_workspace`

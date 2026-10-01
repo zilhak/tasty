@@ -8,7 +8,7 @@ attach의 서버·클라이언트 처리와 연결·점유·복구 규칙을 설
 
 attach 는 **server**(피점유 — PTY/grid 소유)와 **client**(점유 — mirror 표시) 두 쪽이다.
 
-- **서버측** (`src/core/attach_runtime.rs`, IPC `attach.*`) — **transport 를 모른다.** 항상 `127.0.0.1` 로만 client 를 받는다. 로컬에서 붙든 SSH 터널 너머에서 붙든 서버 입장엔 전부 loopback 이다. 서버는 SSH 를 전혀 모른다.
+- **서버측** (`src/remote/server.rs`, IPC `attach.*`) — **transport 를 모른다.** 항상 `127.0.0.1` 로만 client 를 받는다. 로컬에서 붙든 SSH 터널 너머에서 붙든 서버 입장엔 전부 loopback 이다. 서버는 SSH 를 전혀 모른다.
   - 연결마다의 push sink·입력 프레임 분류·bulk 연결 결속은 `StreamHub`(`crates/tasty-ipc/src/stream_hub.rs`)가 든다. sink 는 채널이라 허브도 TCP 를 모른다 — 소켓을 읽고 쓰는 accept 스레드는 본체 adapter `src/adapters/production/tcp_ipc_server.rs` 에 있다. core 는 adapter 를 거치지 않고 크레이트의 허브를 직접 부른다([ADR-0001](../adr/0001-crate-dependency-boundaries.md)).
 - **클라이언트측** — "원격성" 을 전부 흡수한다. 두 종류:
   - **로컬 client**: 포트 파일(`~/.tasty/tasty.port`)을 읽어 그 loopback 포트로 직결. **release 에서 제거 → debug 전용**(`tasty debug attach`).
@@ -34,7 +34,7 @@ attach 는 **server**(피점유 — PTY/grid 소유)와 **client**(점유 — mi
 
 - `surface_locks: HashMap<SurfaceId, AttachLock>` — surface 단위 배타(hard) lock. `acquire` 가 동시 점유를 `AlreadyAttached{holder}` 로 거부.
 - `workspace_locks` + `surface_to_workspace` — workspace 단위 점유. workspace 점유 시 멤버 *터미널* 은 `surface_locks` 에도 동일 holder 로 등록(서버측 placeholder 렌더·입력차단을 surface 단위와 동일 적용). 비-터미널은 역매핑(`surface_to_workspace`)으로만 "점유 표시".
-- `release` (holder 본인) / `force_detach` (서버 권한) / `release_all_for_client`(연결 생존 판정 실패 시 일괄 — workspace + 멤버 + 잔여 surface). 트리거는 4 종: **self-release**(holder 의 명시적 release) · **force-detach**(로컬 사용자 강제 해제) · **EOF-or-TTL**(연결 종료 EOF 또는 attach heartbeat TTL 만료 — 둘 다 `tcp_ipc_server.rs` read 루프의 `Err(_) => break` 를 거쳐 `StreamInbound::Disconnected` → `release_all_for_client` 로 합류한다; TTL 은 소켓 read timeout 이 heartbeat 미수신으로 만료되는 경우로, 실제 EOF 와 동일한 `io::Error` 취급이라 코드 경로가 갈라지지 않는다) · **forwarded-op cascade purge**(forward 된 구조 변경 자체가 workspace 를 통째로 지우는 경우 — 예: workspace 의 마지막 surface 를 forward `CloseSurface` 로 닫으면 `close_case_workspace` 의 "Case 4: last pane in workspace" 가 workspace 를 purge 한다. `execute_forwarded_structural_op`(`src/core/attach_runtime.rs`)이 실행 후 `ws_id` 로 재조회해 delta 를 만들려다 실패하면, 더 이상 존재하지 않는 workspace 를 향한 delta 대신 `force_detach_workspace` 를 호출해 holder 를 강제 detach 하고 stale lock 을 정리한다). 강한 점유 해제 사유 확장의 근거는 [ADR-0021](../adr/0021-occupancy-and-attach-admission.md).
+- `release` (holder 본인) / `force_detach` (서버 권한) / `release_all_for_client`(연결 생존 판정 실패 시 일괄 — workspace + 멤버 + 잔여 surface). 트리거는 4 종: **self-release**(holder 의 명시적 release) · **force-detach**(로컬 사용자 강제 해제) · **EOF-or-TTL**(연결 종료 EOF 또는 attach heartbeat TTL 만료 — 둘 다 `tcp_ipc_server.rs` read 루프의 `Err(_) => break` 를 거쳐 `StreamInbound::Disconnected` → `release_all_for_client` 로 합류한다; TTL 은 소켓 read timeout 이 heartbeat 미수신으로 만료되는 경우로, 실제 EOF 와 동일한 `io::Error` 취급이라 코드 경로가 갈라지지 않는다) · **forwarded-op cascade purge**(forward 된 구조 변경 자체가 workspace 를 통째로 지우는 경우 — 예: workspace 의 마지막 surface 를 forward `CloseSurface` 로 닫으면 `close_case_workspace` 의 "Case 4: last pane in workspace" 가 workspace 를 purge 한다. `execute_forwarded_structural_op`(`src/remote/server.rs`)이 실행 후 `ws_id` 로 재조회해 delta 를 만들려다 실패하면, 더 이상 존재하지 않는 workspace 를 향한 delta 대신 `force_detach_workspace` 를 호출해 holder 를 강제 detach 하고 stale lock 을 정리한다). 강한 점유 해제 사유 확장의 근거는 [ADR-0021](../adr/0021-occupancy-and-attach-admission.md).
 - **끊긴 holder 는 재attach 를 막지 못한다** ([ADR-0021](../adr/0021-occupancy-and-attach-admission.md)). inbound 한 배치(`PumpOutcome`)의 적용 순서는 attach 연결이 먼저, 연결 종료 *정리*가 마지막이다 — 끊긴 client 의 잔여 입력 프레임이 그 client 의 점유가 살아 있는 동안 적용돼야 하기 때문이다. 그래서 한 배치에 "C1 끊김" 과 "C2 attach" 가 함께 실리면 C2 가 곧 사라질 C1 의 lock 에 막힌다. 이를 막기 위해 두 pump(`App::apply_stream_outcome` · `boot::headless_stream::apply`)가 배치 **머리**에서 `mark_clients_disconnected` 로 *사실만* 먼저 알리고, `acquire`/`acquire_workspace` 는 자기를 막고 선 holder 가 그 표시를 가지면 그 자리에서 점유를 회수한다. 회수는 경쟁이 있을 때만 하므로 경쟁이 없는 잔여 입력은 그대로 처리된다. 표시는 `release_all_for_client` 가 lock 과 함께 지워 한 배치를 넘지 않는다.
 - **입력 격리**: `apply_send_to_surface` 가 `is_hard_occupied` 면 서버 로컬 입력 거부, client 입력만 `feed_attached_input` 우회 경로로 PTY 도달. (soft 점유는 write 를 막지 않는다 — hard 만 격리.)
 - **점유는 핸드셰이크가 검증된 뒤에만 잡힌다** ([ADR-0021](../adr/0021-occupancy-and-attach-admission.md)). 점유를 잡는 유일한 진입점은 `dispatch_stream_attach` → `attach_workspace_for_stream`/`attach_surface_for_stream` 인데, 그 **앞에** `tcp_ipc_server.rs::validate_stream_proto` 가 있다. `stream.open` params 의 `proto` 가 `STREAM_PROTO` 와 다르면(생략 시 serde default `0`) attach 를 dispatch 하지 않고 `StreamAck{ok:false, proto, error}` 로 거절한다 — 점유가 애초에 잡히지 않는다. 없을 때의 문제: 프로토콜이 안 맞는 client 는 그 점유를 **쓸 수 없는데도** 가져가고, 소켓을 닫지 않는 구버전/hung peer 면 아래 EOF 가 오지 않아 heartbeat TTL(20초)까지 그 workspace 가 붙잡혀 정상 attach 가 `already_attached` 로 거절됐다. 거절 ack 는 client(`StreamConnection::open_with`)가 이미 검사하는 형식이라 실패 사유가 그대로 사용자에게 전달된다.
@@ -82,7 +82,7 @@ attach 직후 서버가 현재 visible 화면을 `snapshot_and_stream` 으로 �
 - `{remote_id, role:"markdown", file, display_name}` — 원문은 안 싣고 `markdown_content` 채널로 lazy 조회(아래 절, [ADR-0022](../adr/0022-remote-mirror-content-and-queries.md)). `file` 은 표시·제목 전용 opaque 문자열이라 client 가 그 경로로 자기 로컬 파일을 열지 않는다. 값은 plugin 의 `surface.create` snapshot 에서 오는데 그 도착이 `tab.create` 반환이나 convert 직후의 역반영보다 뒤다(핸드셰이크·역반영은 동기 경로라 host 가 기다리지 않는다). 그래서 snapshot 이 오기 전에는 서버 `RemoteSurface` 가 생성 인자의 `file` 을 대신 알린다(`attach_content_info`). 이 폴백이 없으면 갓 연·갓 변환한 surface 의 `file` 이 빈 문자열로 가고, 원문 조회도 빈 문서로 답해 mirror 가 reload 전까지 빈 문서를 보인다. 생성 인자에 `file` 이 없던 surface 는 여전히 빈 값이며 wire 상 "파일 없이 열린 surface" 와 같다. 원문은 아래 채널로 가져온다.
 - `{remote_id, role:"placeholder", kind}` — 그 외 비-터미널, mirror 불가.
 
-이 role 분류는 `build_workspace_tree_surfaces`(`src/core/attach_runtime.rs`)가 만든다. mesh 와 markdown 은 **두 단**이다 — `tasty-model` 이 `Surface::attach_mesh_info()`/`attach_content_info()` 로 후보만 모으고(crate 가 화이트리스트를 모른다), 앱 계층이 `is_egui_mesh_allowed`/`is_attach_content_allowed` 로 재검증해 떨어진 후보를 placeholder 로 내린다.
+이 role 분류는 `build_workspace_tree_surfaces`(`src/remote/server.rs`)가 만든다. mesh 와 markdown 은 **두 단**이다 — `tasty-model` 이 `Surface::attach_mesh_info()`/`attach_content_info()` 로 후보만 모으고(crate 가 화이트리스트를 모른다), 앱 계층이 `is_egui_mesh_allowed`/`is_attach_content_allowed` 로 재검증해 떨어진 후보를 placeholder 로 내린다.
 
 ## 프레임 전송 지연 (Nagle 금지)
 
@@ -191,7 +191,7 @@ IME·vi 커서·링크·검색 하이라이트는 표시하지 않는다. soft �
 
 mirror grid 는 **client 가 구동(client-driven)** 한다(ADR-0022) — mirror 를 띄운 **로컬 pane 의 크기**가 grid 를 정하고, 원격 PTY 를 그 크기로 reflow 시킨다. "remote authoritative" 는 **메커니즘으로만 유지**: 원격 PTY 가 실제 크기를 확정하는 주체(reflow 담당)이고 그 settled 크기를 echo 로 되돌린다. 즉 **의도(intent)는 client, 확정(confirm)은 remote** 의 요청→확정 협상이다.
 
-- **client 구동 (forward)**: mirror 는 detached 터미널(PTY 없음)이라, 매 프레임 도는 로컬 레이아웃 리사이즈 스윕(`Core::resize_all_terminals` / `MainViewState::resize_all`)이 detached 터미널을 로컬에 적용하는 대신, 목표 grid `(cols, rows)` 를 `CoreState.pending_resize_forward`(로컬 surface id → grid)에 넣는다(목표가 이미 현재 mirror grid 면 생략). 이 한 곳에서 걸러 모든 리사이즈 진입점(창 resize·divider drag·단축키·redraw)을 커버한다. `App::dispatch_pending_resize_forwards`(`about_to_wait`, gui)가 drain 해 로컬 id 를 세션 매핑으로 원격 id 로 치환하고 `StreamControl::ClientResize{surface_id, cols, rows}` 를 `Control` 프레임으로 forward 한다. 세션의 last-forwarded dedup 이 echo 왕복(약 1 RTT) 동안의 매 프레임 재전송을 억제한다(coalesce; 서버측 동일값 `resize_grid=false` no-op 이 2차 방어).
+- **client 구동 (forward)**: mirror 는 detached 터미널(PTY 없음)이라, 매 프레임 도는 로컬 레이아웃 리사이즈 스윕(View의 resize 요청 / `AppServices::resize_terminals`)이 detached 터미널을 로컬에 적용하는 대신, 목표 grid `(cols, rows)` 를 `RemoteState.pending_resize_forward`(로컬 surface id → grid)에 넣는다(목표가 이미 현재 mirror grid 면 생략). 이 한 곳에서 걸러 모든 리사이즈 진입점(창 resize·divider drag·단축키·redraw)을 커버한다. `App::dispatch_pending_resize_forwards`(`about_to_wait`, gui)가 drain 해 로컬 id 를 세션 매핑으로 원격 id 로 치환하고 `StreamControl::ClientResize{surface_id, cols, rows}` 를 `Control` 프레임으로 forward 한다. 세션의 last-forwarded dedup 이 echo 왕복(약 1 RTT) 동안의 매 프레임 재전송을 억제한다(coalesce; 서버측 동일값 `resize_grid=false` no-op 이 2차 방어).
 - **서버 적용 (server)**: `StreamHub::pump_inbound` 이 `ClientResize` 를 `PumpOutcome.resize_requests` 로 분류 → 메인루프(gui `event_handler`/headless `boot`)가 anchor 워크스페이스의 **holder 를 검증**(hard 점유 = geometry 구동 권한, ADR-0021)한 뒤 `EngineMut::apply_attached_workspace_resize` 로 원격 **실제 PTY** 를 `Terminal::resize` 한다(reflow).
 - **로컬 grid 는 echo 로만 갱신 (desync 방지)**: client 는 목표 크기를 로컬 mirror grid 에 **낙관적으로 먼저 적용하지 않는다**. 원격 reflow 전 잘못된 grid 에 바이트가 재생되는 desync 를 막기 위해, mirror grid 는 아래 `Resize` echo 가 도착할 때만 바뀐다.
 - **원격→client 확정 echo**: 원격 터미널 grid 가 실제로 바뀌면(`TerminalState::resize_grid` 이 `true`) 서버의 resize tap(`Terminal::add_resize_tap`)이 새 `(cols, rows)` 를 fan-out 하고, attach forwarder 스레드가 `Control` 프레임에 `StreamControl::Resize{surface_id, cols, rows}` 를 실어 client 에 push 한다. workspace 모드는 `surface_id` 에 remote surface_id 를 실어 client 가 remote→local 매핑으로 해당 mirror 만 리사이즈한다. **이 echo 경로는 client-driven 전환 전과 무변경 재사용** — client 요청이 원격을 구동하면 결과가 이 경로로 되돌아온다.
@@ -202,19 +202,19 @@ mirror grid 는 **client 가 구동(client-driven)** 한다(ADR-0022) — mirror
 
 사이드바 워크스페이스 리스트의 "실행 중" status dot(`WorkspaceEntryView.busy_count`, `docs/features/remote-attach/index.md` "GUI mirror" 참조)은 surface 의 busy/idle 상태를 본다. mirror(detached) 터미널은 로컬 PTY 가 없어 `EngineMut::refresh_busy_surfaces`(foreground-process 폴링, `src/core/state/busy.rs`)가 절대 채울 수 없으므로, **원격이 직접 자기 surface 의 busy 상태를 계산해 client 로 forward** 한다 — resize 의 client-driven 협상과 반대로, busy 는 순수 **server→client** 단방향이다(원격 foreground 프로세스 이름은 애초에 client 에 존재하지 않는 정보라 client 가 요청할 수도 없다).
 
-- **서버측 계산·forward**: 서버는 1Hz `Tick::Busy`(gui/headless 공통 — `crates/tasty-timer` 의 중앙 타이머 허브가 발화, [`timer-hub.md`](timer-hub.md) 참조)마다 `CoreState::forward_busy_activity`(`core/attach_runtime.rs`)를 호출한다. 이 메서드는 `busy_activity_forwards`(`core/state/busy.rs`)가 계산한 **점유 중인 surface 의 busy 값 변화분**만 `StreamControl::Activity{surface_id, busy}` 로 그 workspace/surface 의 holder client 에 push 한다. `last_forwarded_busy` 캐시로 값이 실제로 바뀐 경우에만 forward(중복 억제)하되, surface 가 점유 해제됐다가 재점유되면(다른 client 일 수 있음) 캐시를 버려 값이 이전과 같아도 항상 fresh 하게 1회 다시 push한다. 캐시는 **(holder, 값)** 을 기억한다 — 점유 해제 엔트리를 버리는 것은 점유 공백이 tick 경계를 넘을 때만 효과가 있고, 해제와 다른 client 의 획득이 한 tick 창 안에 끝나면 엔트리가 살아남으므로 holder 가 달라진 것을 그 자체로 변화로 센다(cwd push 와 같은 규칙) — resize 의 `last_forwarded_resize` dedup 과 동형이나 방향이 반대(client→server 아닌 server→client)다.
+- **서버측 계산·forward**: 서버는 1Hz `Tick::Busy`(gui/headless 공통 — `crates/tasty-timer` 의 중앙 타이머 허브가 발화, [`timer-hub.md`](timer-hub.md) 참조)마다 `EngineMut::forward_busy_activity`(`remote/server.rs`)를 호출한다. 이 메서드는 `busy_activity_forwards`(`core/state/busy.rs`)가 계산한 **점유 중인 surface 의 busy 값 변화분**만 `StreamControl::Activity{surface_id, busy}` 로 그 workspace/surface 의 holder client 에 push 한다. `last_forwarded_busy` 캐시로 값이 실제로 바뀐 경우에만 forward(중복 억제)하되, surface 가 점유 해제됐다가 재점유되면(다른 client 일 수 있음) 캐시를 버려 값이 이전과 같아도 항상 fresh 하게 1회 다시 push한다. 캐시는 **(holder, 값)** 을 기억한다 — 점유 해제 엔트리를 버리는 것은 점유 공백이 tick 경계를 넘을 때만 효과가 있고, 해제와 다른 client 의 획득이 한 tick 창 안에 끝나면 엔트리가 살아남으므로 holder 가 달라진 것을 그 자체로 변화로 센다(cwd push 와 같은 규칙) — resize 의 `last_forwarded_resize` dedup 과 동형이나 방향이 반대(client→server 아닌 server→client)다.
 - **headless 는 별도 ticker 스레드가 필요 없다**: headless 메인 루프(`boot::run_headless`)가 `rx.recv_timeout(next_deadline)` 로 직접 타이머 허브의 다음 데드라인까지만 대기하다 `Tick::Busy` 를 스스로 드레인한다 — gui 전용 스레드나 이벤트 브리지에 의존하지 않는다([`timer-hub.md`](timer-hub.md) "headless — `run_headless`" 절 참조). **원격 attach 의 주 시나리오가 headless 서버**이므로 이 tick 이 없으면 활동 상태 forward 가 전혀 동작하지 않는다.
-- **client 적용**: reader 스레드가 `Activity` Control 프레임을 `MirrorEvent::Activity(remote_surface_id, busy)` 로 버퍼링하고, `apply_attach_client_output` 이 세션의 `remote_to_local` 매핑으로 로컬 mirror surface id 를 찾아 `CoreState::set_mirror_surface_busy` 를 호출한다. 이 값은 **`busy_surfaces`(로컬 폴링 결과)와 분리된 `mirror_busy_surfaces` 별도 집합**에 저장된다 — 같은 집합에 합쳤다면 1Hz `refresh_busy_surfaces` 가 매 tick 로컬 폴링 결과로 집합을 통째로 교체하며 mirror 값을 지워버렸을 것이다. `is_surface_busy`/`any_busy`/`busy_count`(사이드바·상태바·탭 바 busy dot·`surface.list` IPC 가 공유하는 단일 진입점)는 두 집합의 합집합을 본다.
-- **정리**: mirror surface 가 없어지면(`cleanup_mirror_workspace`, `apply_mirror_structural_delta` 의 removed 처리) `CoreState::forget_mirror_surface_busy` 로 `mirror_busy_surfaces` 에서도 제거해, 로컬 id 가 재사용될 때 stale busy 값이 새 surface 에 잘못 붙는 것을 막는다. 사용자가 mirror workspace 를 닫으면 workspace 가 먼저 사라져 `remove_mirror_workspace_from_engine` 이 아무것도 지우지 못하므로, 모든 닫기 경로가 지나는 `EngineMut::cleanup_surface_traced` 도 닫힌 surface 의 busy·cwd·attention·mesh frame 항목을 함께 지운다. 반대로 원격이 닫아 delta 로 사라진 surface 와 teardown 으로 정리되는 surface 는 이 두 경로가 `OccupancyRegistry::forget_closed_surface` 로 soft 점유 등 로컬 점유 기록도 지운다(로컬 닫기 정리와 같은 함수).
+- **client 적용**: reader 스레드가 `Activity` Control 프레임을 `MirrorEvent::Activity(remote_surface_id, busy)` 로 버퍼링하고, `apply_attach_client_output` 이 세션의 `remote_to_local` 매핑으로 로컬 mirror surface id 를 찾아 `EngineMut::set_mirror_surface_busy` 를 호출한다. 이 값은 **`busy_surfaces`(로컬 폴링 결과)와 분리된 `mirror_busy_surfaces` 별도 집합**에 저장된다 — 같은 집합에 합쳤다면 1Hz `refresh_busy_surfaces` 가 매 tick 로컬 폴링 결과로 집합을 통째로 교체하며 mirror 값을 지워버렸을 것이다. `is_surface_busy`/`any_busy`/`busy_count`(사이드바·상태바·탭 바 busy dot·`surface.list` IPC 가 공유하는 단일 진입점)는 두 집합의 합집합을 본다.
+- **정리**: mirror surface 가 없어지면(`cleanup_mirror_workspace`, `apply_mirror_structural_delta` 의 removed 처리) `EngineMut::forget_mirror_surface_busy` 로 `mirror_busy_surfaces` 에서도 제거해, 로컬 id 가 재사용될 때 stale busy 값이 새 surface 에 잘못 붙는 것을 막는다. 사용자가 mirror workspace 를 닫으면 workspace 가 먼저 사라져 `remove_mirror_workspace_from_engine` 이 아무것도 지우지 못하므로, 모든 닫기 경로가 지나는 `EngineMut::cleanup_surface_traced` 도 닫힌 surface 의 busy·cwd·attention·mesh frame 항목을 함께 지운다. 반대로 원격이 닫아 delta 로 사라진 surface 와 teardown 으로 정리되는 surface 는 이 두 경로가 `OccupancyRegistry::forget_closed_surface` 로 soft 점유 등 로컬 점유 기록도 지운다(로컬 닫기 정리와 같은 함수).
 
 ## surface cwd 전파
 
 mirror 터미널은 로컬 PTY가 없어 `TerminalStore::cwd`에서 OS PID 조회로 보완할 수 없다 — 원격 셸이 OSC 7 을 방출해 출력 바이트에 실려 올 때만 cwd 를 안다. 서버는 PTY 를 소유하므로 OSC 7 이 없어도 OS 조회로 안다. 그래서 busy·attention 과 같은 형태로 **서버가 cwd 를 push** 한다(server→client 단방향, [ADR-0022](../adr/0022-remote-mirror-content-and-queries.md)).
 
-- **서버측 계산·forward**: 같은 1Hz `Tick::Busy` 에서 `EngineMut::forward_surface_cwd`(`core/attach_runtime.rs`)가 `surface_cwd_forwards`(`core/state/surface_cwd.rs`)의 계산 결과를 `StreamControl::Cwd{surface_id, cwd}` 로 holder 에 push 한다. 값은 서버 **자기 트리** 기준의 `EngineRef::surface_cwd` — terminal 은 OSC 7 캐시 → PTY 프로세스의 OS cwd, 그 외 kind 는 `source_cwd()`(explorer root · markdown 파일 부모) — 이고 **모든 kind** 가 대상이다. `inherit_cwd` 설정은 보지 않는다(관측이지 실행이 아니다). 연결 지점은 busy/attention 과 같은 3 곳(`src/app/busy.rs` 의 main window·parked engine, `src/boot.rs` 의 headless).
+- **서버측 계산·forward**: 같은 1Hz `Tick::Busy` 에서 `EngineMut::forward_surface_cwd`(`remote/server.rs`)가 `surface_cwd_forwards`(`core/state/surface_cwd.rs`)의 계산 결과를 `StreamControl::Cwd{surface_id, cwd}` 로 holder 에 push 한다. 값은 서버 **자기 트리** 기준의 `EngineRef::surface_cwd` — terminal 은 OSC 7 캐시 → PTY 프로세스의 OS cwd, 그 외 kind 는 `source_cwd()`(explorer root · markdown 파일 부모) — 이고 **모든 kind** 가 대상이다. `inherit_cwd` 설정은 보지 않는다(관측이지 실행이 아니다). 연결 지점은 busy/attention 과 같은 3 곳(`src/app/busy.rs` 의 main window·parked engine, `src/boot.rs` 의 headless).
 - **diff 캐시는 (holder, 값)**: `last_forwarded_cwd` 는 값과 함께 holder 를 기억한다. 값만 기억하면 같은 tick 창 안에서 점유가 풀리고 다른 client 가 잡았을 때 엔트리가 점유 해제 `retain` 을 살아남아 새 holder 가 초기값을 못 받는다. 초기 push 는 값이 `None` 이어도 나간다.
 - **값 소멸은 `cwd: null`**: 원격도 cwd 를 모르게 되면 `null` 이 나가고 client 는 엔트리를 지운다 — 표현이 없으면 옛 원격 경로가 영구히 남는다.
-- **client 적용**: `MirrorEvent::Cwd(remote_surface_id, cwd)` → 세션 `remote_to_local` 치환 → `CoreState::set_mirror_surface_cwd`. 값은 `Terminal` 캐시가 아니라 **별도 맵 `mirror_surface_cwd`** 에 `RemoteCwd` 로 저장되고, `EngineRef::surface_cwd` 가 mirror surface 에 대해 이 값을 우선한다. 원격 경로라 로컬 실행 자리로는 나가지 않는다([surface-cwd §3-2](../design/policies/cwd.md#3-2-원격-출처-cwd-는-로컬-실행-경로로-새지-않는다)).
+- **client 적용**: `MirrorEvent::Cwd(remote_surface_id, cwd)` → 세션 `remote_to_local` 치환 → `EngineMut::set_mirror_surface_cwd`. 값은 `Terminal` 캐시가 아니라 **별도 맵 `mirror_surface_cwd`** 에 `RemoteCwd` 로 저장되고, `EngineRef::surface_cwd` 가 mirror surface 에 대해 이 값을 우선한다. 원격 경로라 로컬 실행 자리로는 나가지 않는다([surface-cwd §3-2](../design/policies/cwd.md#3-2-원격-출처-cwd-는-로컬-실행-경로로-새지-않는다)).
 - **정리**: busy 와 같은 teardown 두 곳(`remove_mirror_workspace_from_engine` · delta 의 removed 처리)에 더해, delta 의 survivor **kind 전환 전부**에서 `forget_mirror_surface_cwd` 를 부른다 — busy 는 terminal 에서 출발한 전환만 정리하지만 cwd 는 비-terminal kind 에도 있다.
 - **구버전 호환**: 구버전 client 는 `Cwd` 를 파싱 실패로 무시하고, 구버전 server 는 보내지 않아 맵이 빈다 — 그때 mirror convert 는 종전대로 서버측 resolve 폴백(`execute_forwarded_structural_op`)으로 동작한다.
 
@@ -246,7 +246,7 @@ raise에는 mirror 차단이 있고 clear에는 서버로 전달할 메시지 �
 
 bundled egui-mesh surface(image/mesh_demo — `is_egui_mesh_allowed` 화이트리스트. markdown 은 WebView 본문을 사용해 이 목록에 포함되지 않는다 — attach 시 mesh 가 아니라 아래 "markdown content 채널" 로 mirror 된다)가 mirror pane 에 뜨면, 원격의 실제 plugin 프로세스가 그리는 GPU mesh 프레임을 client 로 스트리밍해 렌더하고 client 입력을 원격으로 forward 한다. 개념·기능 범위는 [features/remote-attach](../features/remote-attach/index.md#surface-단위-vs-workspace-단위), 헤드리스 부트스트랩·로컬 egui-mesh 파이프라인 자체는 [egui-mesh-channel.md](egui-mesh-channel.md#attach-mesh-mirror-소비-경로), 여기엔 attach 프로토콜 전송 경로만 설명한다.
 
-- **구독 = `MeshContext` (별도 핸드셰이크 없음)**: client 가 mesh surface 를 그리기 시작하면 `StreamControl::MeshContext{surface_id, width_px, height_px, pixels_per_point, theme, focused}` 를 보내는 것 자체가 구독 신호를 겸한다 — capability negotiation 을 위한 별도 확인/ack 프레임이 없다. 서버 `MeshMirrorRegistry::upsert`(`src/core/mesh_mirror.rs`)가 이 정보를 최초 수신 시점에 등록하고, 이후 값이 실제로 바뀔 때만(geometry/theme/focus 변경 시) client 가 재전송한다(`forward_attach_mesh_context`, `src/view/main/attach_mesh_input.rs`) — 매 프레임 재전송하지 않는다.
+- **구독 = `MeshContext` (별도 핸드셰이크 없음)**: client 가 mesh surface 를 그리기 시작하면 `StreamControl::MeshContext{surface_id, width_px, height_px, pixels_per_point, theme, focused}` 를 보내는 것 자체가 구독 신호를 겸한다 — capability negotiation 을 위한 별도 확인/ack 프레임이 없다. 서버 `MeshMirrorRegistry::upsert`(`src/remote/mesh_mirror.rs`)가 이 정보를 최초 수신 시점에 등록하고, 이후 값이 실제로 바뀔 때만(geometry/theme/focus 변경 시) client 가 재전송한다(`forward_attach_mesh_context`, `src/view/main/attach_mesh_input.rs`) — 매 프레임 재전송하지 않는다.
 - **`MeshInput` 누적**: 포인터/키/스크롤/IME 이벤트는 `AttachMeshForwardState.events`(client, dedup 없이 순서 보존)에 프레임마다 쌓였다가, 다음 redraw 의 `forward_attach_mesh_context` 호출에서 `RawInputWire{modifiers, events, ..}` 로 묶여 `MeshInput{surface_id, input}` 1회 전송된다. 서버는 `MeshMirrorRegistry::push_input` 이 `pending_events` 에 extend 하고 `last_modifiers` 를 갱신 + `dirty=true` 로 표시 — 구독이 없는 surface_id 면 `false` 를 반환해 서버 dispatch 가 `MeshError` 로 회신한다(아래).
 - **frame 소비·forward (headless-as-server / gui parked engine)**: 실제 구동/relay 로직은
   `plugin_bridge::mesh_forward::forward_mesh_frames_for_engine`(`src/plugin_bridge/mesh_forward.rs`,
@@ -262,7 +262,7 @@ bundled egui-mesh surface(image/mesh_demo — `is_egui_mesh_allowed` 화이트�
   꺼내므로, 여러 window 가 동시에 최소화돼 있어도 나머지는 계속 이 순회 대상으로 남는다).
   client reader 스레드는 `tasty_ipc::mesh_stream::MeshFrameAssembler` 로 청크를 재조립해
   `MirrorEvent::Mesh(remote_surface_id, generation, frame_seq, full_textures, bytes)` 를
-  메인 스레드 버퍼에 쌓고, `AttachMeshFrameStore::update`(`src/core/attach_mesh_frames.rs`)에
+  메인 스레드 버퍼에 쌓고, `AttachMeshFrameStore::update`(`src/remote/mesh_frames.rs`)에
   저장된 것을 GPU 렌더 경로(`render_attach_mesh_surfaces`, `src/gfx/gpu/egui_mesh_prepare.rs`)
   가 소비해 화면에 그린다.
 - **frame 소비·forward (gui-as-server, 살아있는 window)**: gui 인스턴스가 attach 서버이고
@@ -283,8 +283,8 @@ bundled egui-mesh surface(image/mesh_demo — `is_egui_mesh_allowed` 화이트�
   그동안(next tick 까지) 이 훅은 캐시된(델타뿐일 수 있는) frame 을 새 구독자에 흘리지 않고
   건너뛴다.
 - **`MeshFullResendRequest` 복구**: 텍스처 델타 체인이 깨졌다고 판단되면(로컬 `EguiMeshRenderTarget` 의 generation 검증 실패 등) client 가 `attach_mesh_full_requests`(`GpuState`)에 surface_id 를 쌓고, `App::dispatch_pending_mesh_full_resend_forwards`가 `MeshFullResendRequest{surface_id}` 를 서버로 forward 한다. 서버는 이를 받으면 `MeshMirrorRegistry::request_full_resend` 로 해당 surface 의 다음 프레임을 풀 텍스처 포함(full_textures=true)으로 강제한다.
-- **`MeshError` — 명시적 단발 실패**: 구독 안 된 surface 로의 `MeshInput`(홀더 불일치 포함, `CoreState::apply_attached_mesh_input` 의 holder 검증) 등은 조용히 drop 하지 않고 `MeshError{surface_id, reason}` 를 1회 회신한다(설계 결정: 조용한 drop 보다 명시적 실패가 디버깅에 유리). client 측 소비는 현재 로그 레벨 처리만(재시도/toast 없음) — 세션이 정상이면 애초에 발생하지 않는 방어적 경로.
-- **App/CoreState 경계를 건너는 forward-queue 패턴**: `MainView`(redraw 시점)는 `App.attach_client_sessions`(소켓 writer 보유)에 접근할 수 없다. `forward_attach_mesh_context`/입력 캡처(`mouse.rs`/`keyboard.rs`/`ime.rs`)는 `CoreState.pending_mesh_context_forward`/`pending_mesh_input_forward`/`pending_mesh_full_resend_forward` 에 쌓아두기만 하고, `App::about_to_wait`(`attach_client.rs`)의 `dispatch_pending_mesh_*_forwards` 가 다음 tick 에 drain 해 세션 매핑으로 원격 id 를 치환한 뒤 실제 소켓 write 를 한다 — `pending_resize_forward`/`dispatch_pending_resize_forwards`(ADR-0022)와 동형 패턴을 3개 방향(context/input/full-resend)에 재사용한 것.
+- **`MeshError` — 명시적 단발 실패**: 구독 안 된 surface 로의 `MeshInput`(홀더 불일치 포함, `EngineMut::apply_attached_mesh_input` 의 holder 검증) 등은 조용히 drop 하지 않고 `MeshError{surface_id, reason}` 를 1회 회신한다(설계 결정: 조용한 drop 보다 명시적 실패가 디버깅에 유리). client 측 소비는 현재 로그 레벨 처리만(재시도/toast 없음) — 세션이 정상이면 애초에 발생하지 않는 방어적 경로.
+- **View/App 실행 경계를 건너는 forward-queue 패턴**: `MainView`(redraw 시점)는 `App.remote.sessions`(소켓 writer 보유)에 접근할 수 없다. `forward_attach_mesh_context`/입력 캡처(`mouse.rs`/`keyboard.rs`/`ime.rs`)는 `RemoteState.pending_mesh_context_forward`/`pending_mesh_input_forward`/`pending_mesh_full_resend_forward` 에 쌓아두기만 하고, `App::about_to_wait`(`attach_client.rs`)의 `dispatch_pending_mesh_*_forwards` 가 다음 tick 에 drain 해 세션 매핑으로 원격 id 를 치환한 뒤 실제 소켓 write 를 한다 — `pending_resize_forward`/`dispatch_pending_resize_forwards`(ADR-0022)와 동형 패턴을 3개 방향(context/input/full-resend)에 재사용한 것.
 - **gui-as-server 의 살아있는 window 는 attach client 의 입력 역방향 forward 를 아직 로컬 plugin 에 되먹이지 않는다**: 위 "gui-as-server, 살아있는 window" 훅은 mesh 바이트 forward(서버→client)만 구현한다 — `MeshInput` 으로 도착해 `MeshMirrorRegistry::push_input`/`pending_events` 에 쌓인 attach client 의 클릭/키 입력을 로컬 plugin 의 `raw_input` 에 병합하는 연결은 `forward_mesh_frames_for_engine`(`take_pending_events` 소비)에만 있다 — gui 살아있는 window 는 이 함수를 쓰지 않으므로(경합 회피, 위 참조) 후속 작업으로 남는다. **예외**: gui parked engine 은 headless 와 동일하게 `forward_mesh_frames_for_engine` 을 그대로 쓰므로, window 가 최소화돼 있는 동안은 오히려 입력 forward 가 이미 동작한다 — window 복원 후 살아있는 window 로 전환되면 다시 이 제약이 적용된다.
 - **surface 디스크립터의 display_name**: `build_workspace_tree_surfaces` 가 보내는 mesh 디스크립터는 `{remote_id, role:"mesh", kind, plugin_id, display_name}` — `Surface::attach_mesh_info()`(kind/plugin_id 만 반환)와 별개로, 이미 존재하는 `Surface::display_name()`(`EguiMeshSurface` 는 실제 파일명 등을 반환)도 함께 조회해 실어보낸다. client 의 `MirrorMeshInfo` 구성(`merge_survivor_mapping`)은 이 필드를 우선 쓰고, 필드가 없는 경우(구버전 서버 등)에만 `kind` 문자열로 fallback한다 — 과거엔 이 필드 자체가 없어 탭 타이틀이 항상 mesh kind(예: `"image"`)로 뭉뚱그려졌다(image/mesh_demo 전부 동일 증상 — 당시엔 markdown 도 이 경로를 탔으나 현재 WebView를 사용해 mesh 디스크립터 대상이 아니다).
 
@@ -294,7 +294,7 @@ markdown surface 는 webview kind 라 plugin 에 egui-mesh paint 채널이 없�
 
 - **핸드셰이크는 좌표만 싣는다**: `{remote_id, role:"markdown", file, display_name}`. 원문은 트리 디스크립터를 문서 크기만큼 부풀리므로 싣지 않는다 — client 가 필요할 때 아래 채널로 따로 가져온다(lazy).
 - **client 의 surface 구성**: `merge_survivor_mapping`(`src/app/attach_client.rs`)이 `role:"markdown"` leaf 를 `EmptySurface` 대신 registry 의 `markdown` kind 로 만든다 — 조건은 그 kind 가 **번들 plugin(`com.tasty.markdown`)의 것**인가 하나다. kind 가 **아직 등록되지 않았으면**(꺼져 있던 plugin 을 세션 중에 켜는 경우 등) leaf 는 layout 복원과 같은 kind 대기 placeholder(`EmptySurface::new_deferred_plugin`, `deferred_mirror_markdown_surface`)가 되고, 표시 시점의 reify(`EngineMut::reify_deferred_surface` 가 kind 대기 placeholder 에 대해 부르는 `reify_plugin_surface`)가 kind 등록 뒤 registry 의 `restore` 로 실제화한다 — plugin 에는 `surface.restore` 의 data 로 생성 params 와 같은 모양이 가서 plugin 은 어느 경로든 `remote` 키로 mirror 문서임을 안다(탭 제목은 그 경로에 생성 params 가 없어 plugin 이 응답의 `display_name` 으로 돌려준다). 같은 이름을 **다른** plugin 이 이미 등록했으면 대기하지 않고 빈 surface 로 남는다 — reify 는 소유자를 가리지 않아 그 plugin 으로 실제화되기 때문이다. 생성 params 는 `{display_name, remote:{file}}` 이다: 최상위 `file` 이 아니라 `remote.file` 에 싣는 것은 plugin 이 그 경로로 **자기 로컬 파일을 읽지 않게** 하려는 것이다(최상위 `file` 은 로컬 열기·cwd 도출·recent 기록을 모두 켠다). 구조 delta 로 트리가 다시 와도 이미 markdown 이던 leaf 는 `RemoteSurface::share_handles` 로 **같은 plugin surface 를 재사용**한다 — 새로 만들면 plugin 이 문서를 다시 받는다. `RemoteSurface` 는 drop 이 plugin 에 destroy 를 보내지 않으므로, 트리에서 빠진 leaf·재연결로 사라진 leaf·mirror 정리는 `destroy_mirror_markdown_surfaces` 가 명시적으로 destroy 한다. 세션이 든 로컬 markdown id 집합은 `AttachClientSession.markdown_locals` 이고 아래 요청·회신의 인가 대상도 이 집합이다.
-- **plugin → host 요청**: markdown plugin 은 `markdown_mirror.content_request {surface_id(로컬), agent_origin?}` 를 호출한다(`agent_origin: true` 는 바깥 호출자의 `markdown.reload` 가 건 요청 표시 — 아래 절단 표시 참조. `src/adapters/ipc/handler/markdown_mirror.rs`, 권한 `fs.read`). host 는 `request_id` 만 즉시 회신하고 `CoreState.pending_markdown_content_forward` 에 쌓는다 — 원문은 attach 왕복을 기다려야 해서 `git_viewer.query` 와 같은 비동기 accept 다. namespace 가 `markdown.` 이 아닌 것은 그 prefix 가 plugin 으로 forward 되기 때문이다([ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md) 참고). `App::dispatch_pending_markdown_content_forwards`(`about_to_wait`)가 drain 해 원격 id 로 치환한 뒤 아래 조회 이벤트를 보낸다. 세션을 못 찾거나 송신이 실패하면 그 자리에서 같은 `request_id` 로 `ok:false` 결과를 plugin 에 돌려준다.
+- **plugin → host 요청**: markdown plugin 은 `markdown_mirror.content_request {surface_id(로컬), agent_origin?}` 를 호출한다(`agent_origin: true` 는 바깥 호출자의 `markdown.reload` 가 건 요청 표시 — 아래 절단 표시 참조. `src/adapters/ipc/handler/markdown_mirror.rs`, 권한 `fs.read`). host 는 `request_id` 만 즉시 회신하고 `RemoteState.pending_markdown_content_forward` 에 쌓는다 — 원문은 attach 왕복을 기다려야 해서 `git_viewer.query` 와 같은 비동기 accept 다. namespace 가 `markdown.` 이 아닌 것은 그 prefix 가 plugin 으로 forward 되기 때문이다([ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md) 참고). `App::dispatch_pending_markdown_content_forwards`(`about_to_wait`)가 drain 해 원격 id 로 치환한 뒤 아래 조회 이벤트를 보낸다. 세션을 못 찾거나 송신이 실패하면 그 자리에서 같은 `request_id` 로 `ok:false` 결과를 plugin 에 돌려준다.
 - **host → plugin 결과**: 회신 이벤트는 로컬 id 로 치환돼 `markdown_mirror.content_result {surface_id, request_id, ok, file, source, truncated, reason}` host event 로 번들 plugin 에만 unicast 된다. 연결이 끊겨 Reconnecting 에 들어가면(`enter_reconnecting`) 그 세션의 모든 markdown leaf 에 `request_id: 0` + `ok:false` 를 보낸다 — `0` 은 발급되지 않는 값이라 "연결이 끊겼다" 는 abandon 신호다. plugin 은 대기 중인 요청을 끝내고, 원문을 이미 표시 중인 문서도 **끊김 상태**로 둔다(`MdDoc::apply_remote_result`) — 끊김 상태의 렌더는 로딩·실패·원문보다 앞서 끊김 문구 하나다(`render_document`). 끊김은 다음 성공 회신이 지운다. **재연결**(`reconnect_session`)은 survivor leaf 의 plugin surface 를 `share_handles` 로 이어 받아 원문 요청이 저절로 나가지 않으므로, `Connected` 로 되돌린 직후 세션의 로컬 markdown id 마다 아래 변경 신호(`markdown_mirror.changed`)를 한 번 보낸다. 근거·대안은 [ADR-0022](../adr/0022-remote-mirror-content-and-queries.md).
 - **조회 (client→server)**: `{"event":"markdown_content_request", "request_id", "surface_id"}`. `list_dir`/`git_query` 와 같은 형태 — `StreamControl` enum **밖**의 raw JSON `event` 태그를 같은 `StreamTag::Control` 채널에 싣고, 서버는 알 수 없는 event 를 조용히 무시한다(전방/후방 호환). 파싱은 `tasty_ipc::stream_hub::MarkdownContentRequestMsg`, 소비는 `event_handler.rs::apply_markdown_content_request_msg`(gui, holder engine 순회)와 `boot/headless_stream.rs`(headless, 단일 engine).
 - **회신 (server→client)**: 성공은 `{"event":"markdown_content_result", request_id, surface_id, ok:true, file, source, truncated}`, 실패는 같은 event 에 `ok:false` + `reason`. **에러 채널은 하나다** — client 가 그 `reason` 을 렌더의 `load_error` 로 옮긴다. **파일 없이 열린 markdown surface 는 에러가 아니다**: 서버에서도 빈 문서가 보이므로 `ok:true` + 빈 `file`/`source` 로 답한다.
@@ -308,106 +308,30 @@ markdown surface 는 webview kind 라 plugin 에 egui-mesh paint 채널이 없�
 
 ## mirror 구조 변경 forward
 
-mirror 워크스페이스의 구조 변경(split/new-tab/close/move-tab/닫은 항목 복원)은 로컬에서 실행하지 않고 원격(authoritative)에서 실행되도록 forward 한다. intent 로 표현되는 경로(split·CLI/IPC)는 `Core::apply` 로 수렴해 거기서 forward 큐에 쌓이고, `Core::apply` 를 우회하는 UI-layer 직접 조작(`close_active_*`/`close_tab`/`add_tab`/`add_kind_tab`, 탭 드래그·컨텍스트 메뉴 이동)은 `MainViewState::forward_mirror_structural` 가 같은 큐(`pending_structural_forward`)에 대응 op 를 직접 쌓는다 — 두 경로 모두 동일 큐로 모여 아래 전송 경로를 공유한다. 개념·정책은 [features/remote-attach](../features/remote-attach/index.md#mirror-워크스페이스-내-구조-변경), 여기서는 전송 경로를 설명한다.
+mirror workspace의 split/new-tab/close/move/convert/restore는 로컬 journal의 구조를 직접 바꾸지 않고 원격 서버로 전달한다. 로컬 mirror 트리는 원격 확정 결과의 projection이다.
 
-- **request (client→server)**: `Core::apply` 가 mirror 구조 op 를 로컬 차단(`MirrorStructuralBlocked`)하면서 `StructuralOp`(anchor = **로컬** surface id)를 `CoreState.pending_structural_forward` 에 push. `App::dispatch_pending_structural_forwards`(`about_to_wait`, gui)가 drain 해 anchor 를 세션 매핑(`AttachClientSession.remote_to_local` 역방향)으로 **원격 id 로 치환**(`StructuralOp::with_anchor_surface_id`)한 뒤 `StreamTag::Control` 로 전송. anchor 를 surface id 로 잡는 이유: client 는 pane/tab 의 원격 id 매핑을 갖지 않으므로, 원격이 surface 로부터 pane/tab/workspace 를 자기 트리에서 resolve 한다.
-- **구조 변경 응답**: intent로 표현한 GUI·CLI/IPC 요청은 Core::apply에서 원격 큐로
-  전달한다. MirrorStructuralBlocked의 forwarded=true는 로컬에서 실행하지 않고 원격 큐에
-  넣었다는 뜻이다. GUI의 report_apply_error는 이를 로컬 차단 toast로 표시하지 않는다.
-  IPC/CLI 구조 변경 핸들러는 structural_apply_error를 통해
-  `{forwarded:true, workspace_index}`를 성공 응답으로 보낸다. 원격 완료는 이후 delta로 확인한다.
-- **실패 표시**: 사용자 GUI 요청의 원격 실패는 toast로, 에이전트 요청은 silent_failure에
-  따라 warn 로그로 남긴다([ADR-0036](../adr/0036-overlay-scope-and-lifetime.md)).
-  markdown.navigate는 큐 등록 직후 `{accepted:true}`를 보내는 예외다. 로컬 surface이면 큐에 넣기 전에
-  로컬 파일 존재를 확인하고 없으면 `path not found`로 거절한다. mirror surface의 경로는 원격 파일이므로
-  로컬 존재 검사 없이 큐에 넣고, 파일이 있는지는 원격 서버가 판단한다. 이 응답에는 실행·forward
-  결과가 없으며 에이전트의 로컬/원격 실패는 warn 로그로 남는다. markdown 파일열기 팝업의 제자리
-  변환은 `owner_popup_instance`를 실어 보내고, host는 file_handler.dispatch와 같은 규칙으로 사용자
-  요청인지 판정한다. 사용자 요청의 원격 실패는 attach.toast.mirror_structural_forward_failed로 알린다.
-- **최근 목록**: mirror surface 대상 변환과 mirror pane에 여는 새 탭은 원격 경로를 로컬 최근 목록에
-  기록하지 않는다. 새 탭의 판정 대상은 탭이 만들어질 pane이며 Core::apply의 forward
-  판정(mirror_workspace_index_for_structural)과 같은 기준을 쓴다. 변환 대상 없이 연 파일열기 팝업은
-  요청에 origin을 싣지 않아 처리 시점의 활성 pane에 탭을 만든다. 확정 뒤 식별이 끝나기 전에 로컬
-  workspace로 전환하면 원격 경로가 로컬 pane에 열리고 최근 목록에 기록될 수 있다.
-- **전달할 수 없는 요청**: mirror와 local 사이의 move-surface 등은 forwarded=false로
-  오류를 반환한다. 헤드리스에는 이 큐를 보내는 GUI attach client가 없어 mirror 구조 작업을
-  forwarded=false로 거절하고 빌드 조합을 사유에 적는다. 현재 헤드리스에는 mirror workspace를
-  만드는 경로도 없다([ADR-0058](../adr/0058-headless-without-local-views.md)).
+- App은 원 EngineId·connection epoch·sender와 local↔remote mapping, origin을 요청 값으로 고정한다. `prepare_journal_forward`와 `src/app/journal/forward.rs`가 durable enqueue 명령을 claim한 뒤 같은 연결·mapping인지 다시 검사한다. 기존 raw 입력이나 구조 전송을 재연결 뒤 새 sender로 자동 재송신하지 않는다.
+- 로컬 forward operation의 Succeeded는 그 원 연결 큐에 접수됐다는 뜻이다. 원격 서버의 실행·확정 완료와 같지 않다. 서버가 해당 구조의 writer이며 원격 result/delta가 mirror 변경을 전달한다.
+- 서버의 `src/app/journal/commands/inbound.rs`가 holder와 대상 workspace를 검증하고 명령으로 실행한다. result → delta → 새 surface snapshot/tap 순서를 유지해 ID mapping보다 raw 출력이 먼저 오지 않게 한다.
+- source와 target을 함께 갖는 move는 둘 다 같은 세션 mapping으로 원격 ID를 해소한다. local↔mirror 또는 다른 mirror workspace 사이 이동은 로컬 번호를 원격 번호처럼 보내지 않는다.
+- user/agent origin은 요청과 함께 전달한다. origin이 없으면 옛 client의 user 동작을 유지하고, 모르는 값은 agent로 처리한다. 원격 user 표지가 로컬 View 포커스를 바꿀 권한을 주지는 않는다. 사용자 요청의 실패는 해당 View 정책에 따른 표시, 에이전트 실패는 로그로 처리한다.
+- 원격 RestoreClosedItem은 anchor workspace의 서버 복원 기록만 사용한다. 비어 있다고 로컬 스택으로 fallback하지 않는다. 서버 로컬 복원의 전역 LIFO와 원격 workspace 범위는 구분한다.
+- mirror 파일 경로는 원격 경로다. 로컬 존재 검사나 로컬 recent-file 기록으로 바꾸지 않는다. markdown.navigate의 accepted 응답 등 개별 비동기 API의 접수 의미는 실제 원격 실행 성공과 구별한다.
+- headless attach client는 지원하지 않는다. 원격 서버로서 명령을 받는 headless와 GUI mirror를 연결해 외부 서버로 보내는 client를 혼동하지 않는다.
 
-- **닫은 항목 복원(`RestoreClosedItem`)**: forward 대상이다 — 복원은 새 PTY spawn 이고 스냅샷의 스크롤백은 서버 디스크 참조(`ClosedScrollback::Persisted`)라 서버만 실행할 수 있다([ADR-0061](../adr/0061-external-remote-module-and-attach-sync.md)). 무엇이 복원될지는 클라이언트가 정하지 않고 **서버 스택이** 정하므로 op 에는 anchor 밖에 없다. **원격 스택이 비어도 로컬 스택으로 폴백하지 않는다** — 그 폴백의 결과가 곧 이 연결이 없애려던 버그(로컬 PTY 탭이 mirror 안에 생김)다. 실패 회신은 일반 forward 실패와 구분된 사유(`restore: nothing to restore in this workspace`)로 나가고 client 는 전용 안내 toast(`attach.toast.mirror_restore_empty`)를 띄운다.
-  - **서버 복원 스택은 워크스페이스로 스코프된다**: `ClosedItemStore` 의 각 엔트리가 닫힐 당시의 출처 워크스페이스 id 를 함께 싣고(`CoreState::push_closed_item` 이 항목의 구조 id 로 판정 — push 는 항상 트리 재배치 **전**이라 그 시점 트리가 답을 갖는다), forward 된 복원은 **anchor 워크스페이스 출처 항목만** pop 한다(`RestoreScope::Workspace`). 서버 로컬 복원은 **기존 전역 LIFO 그대로**다(`RestoreScope::Local`) — forward 된 close 는 서버 자신의 트리에서 탭을 없애므로 서버 앞 사용자에게도 undo 가 남아야 한다. 워크스페이스 통째 항목은 출처가 `None` 이라 forward 스코프에 원리적으로 안 걸린다 — 그 갈래는 anchor 밖에 새 workspace 를 만들어 delta 에 안 잡히므로, pop 뒤 거부(항목 유실)가 아니라 pop 이전 배제로 닫는다.
-  - **forward된 close는 사용자가 닫았을 때만 복원 스택에 남는다.** 사용자 GUI와
-    에이전트 CLI/IPC 요청을 구분하기 위해 `StreamControl::StructuralOp`에
-    `origin`(`"user"` 또는 `"agent"`)을 싣는다. 클라이언트는 forward 큐 항목의
-    `user_triggered`로 이 값을 정해 항상 보낸다(위 "구조 변경 응답" 항목).
-
-    서버의 `ForwardOrigin::of_wire`는 origin이 없으면 `user`로 읽어 옛 클라이언트의
-    복원 동작을 유지한다. 모르는 값은 프레임 전체를 버리지 않고 `agent`로 읽는다.
-    이 경우 복원 스택을 바꾸지 않는다. 옛 서버는 origin 필드 자체를 무시하므로
-    새 클라이언트의 에이전트 close도 복원 스택에 남을 수 있다.
-
-    `user`의 `CloseSurface`는 `structural_exec::close_surface`를
-    `save_snapshot=true`로 호출한다. 일반 IPC 핸들러는 false를 넘기며, 이 인자는
-    요청 params로 지정할 수 없다. `CloseTab`과 `ClosePane`의 도메인 함수에는 이
-    인자가 없어 `execute_forwarded_structural_op`이 먼저 `capture_closed_tab` 또는
-    `capture_closed_pane`으로 캡처하고 `push_closed_item`을 호출한다. pane은 트리를
-    재배치하기 전에 캡처해야 분할 정보를 보존할 수 있다.
-
-    `agent` close는 `save_snapshot=false`로 호출하고 별도 캡처도 하지 않는다.
-    복원 스택은 에이전트가 바꾸지 않는 사용자 상태다([identity](../identity.md) 원칙 1,
-    [ADR-0061](../adr/0061-external-remote-module-and-attach-sync.md)). forward 실행은
-    `user`와 `agent` 모두 `structural_exec`에 에이전트 origin(`AgentSource::Remote`)을
-    넘긴다. 원격 사용자의 조작이 서버 앞 사용자의 선택 pane·surface를 옮기지 않게 하기
-    위해서다. 복원 기록과 새 탭 활성화만 wire origin에서 정한다. 그래서 lifecycle의
-    `is_user_close`는 이 경로에서 항상 false다.
-  - **실행은 `Core::apply` 직접 호출이다**: 복원은 IPC/CLI 로 노출된 적이 없어 대응하는 도메인 실행 함수가 없다 — `ConvertSurface`/`MoveSurface` 와 같은 형태로 `execute_forwarded_structural_op` 이 `DomainIntent::RestoreClosedItem` 을 직접 부르고 `CoreEvent::ClosedItemRestored{restored}` 로 성공을 판정한다. 복원된 터미널은 이 함수의 기존 before/after diff 에 잡혀 `added_terminals` → 점유 편입 → tap 을 그대로 탄다(별도 연결 없음).
-  - **실행측은 cascade 를 재현하지 않는다**: 로컬 경로가 부르는 `cascade_closed_item_restored` 는 (사용자 발화이면) `MainViewState::active_workspace`/`focused_pane` 을 바꾼다 — forward 경로에서 그것을 부르면 원격 사용자의 조작이 서버 앞 로컬 사용자의 화면을 움직인다(원칙 1·3 위반). forward 실행은 engine 변경만 하고 MainViewState 를 안 만지며, client focus 는 `PendingOpFocus::NewResource` 가 delta 적용 시점에 client-only 로 보정한다.
-- **convert/move-surface**: 둘 다 forward 대상이다. convert(`ConvertSurface`)는 항상 forward. move-surface(`MoveSurface`)는 **source/target 이 같은 mirror workspace 안에 있을 때만** `build_mirror_forward_op` 가 forward 한다 — mirror↔local(또는 서로 다른 mirror) workspace 경계를 넘는 이동은 로컬 전용 surface_id 를 원격에 그대로 보내는 꼴이 되어(u32 네임스페이스 분리가 없어 원격 트리의 무관한 surface 와 우연히 겹칠 위험) 여전히 로컬 차단으로 남는다. 같은 workspace 안의 이동도 client 가 source 와 target 을 **둘 다** 같은 mirror 세션의 `remote_to_local` 역매핑으로 원격 ID 로 바꿔 보낸다(`remote_structural_op`). target 매핑이 없으면 보내지 않는다. 서버는 holder 검증이 anchor(source)만 보므로 `execute_forwarded_structural_op` 이 target 이 anchor 와 같은 workspace 인지 다시 검사하고, 아니면 IPC 와 같은 대상 없음 문구(`no live surface N (named by 'structural_op.move_surface')`)로 거절한다 — 다른 workspace 의 surface 를 덮어쓰는 것을 막는다. `execute_forwarded_structural_op` 의 move-surface 실행은 target(B) 의 PTY cleanup 을 `app::structural_cascade::cascade_surface_closed` 로 명시 재현한다(대응하는 도메인 실행 함수가 없어 이 함수가 직접 호출해야 함 — CloseSurface 가 `structural_exec::close_surface` 안에서 부르는 것과 같은 cascade). convert 실행 성공(`replaced:true`) 시 `ForwardedDelta.converted_surface` 에 대상 surface_id 를 실어, 메인루프(`event_handler.rs`/`boot/headless_stream.rs`)가 `PluginManager::drop_egui_mesh_frame` 을 호출해 egui-mesh(image 등) stale frame 을 방지한다 — 로컬(비-forward) 변환 경로의 `SurfaceConverted` cascade(`app/dispatch_domain.rs`)와 동일 처리를 forward 경로에도 재현한 것. plugin manager 는 forward 실행이 받는 상태 어디에도 없고 두 빌드 모두 호출자가 소유하므로, 결과를 값으로 돌려주고 호출자가 반영한다(ADR-0002, 대체: ADR-0054).
+wire와 origin 호환의 결정 근거는 [ADR-0061](../adr/0061-external-remote-module-and-attach-sync.md), close cleanup의 실제 완료는 [닫기 순서](../architecture/close-sequence.md)를 따른다. source 경로 정합이 구 client/server·지연·손실의 실행 검증을 대신하지 않는다.
 
 ## 서버 로컬(비-holder) 구조 변경 차단
 
-위 절이 다루는 forward 실행(`execute_forwarded_structural_op`)은 hard 점유 **holder** 가 mirror 안에서 만든 정당한 구조 변경이 서버에 도달해 실행되는 경로다. 이 절은 반대 경우 — **서버 자신의 workspace 가 hard-occupied 상태일 때, holder 가 아닌 서버 로컬 IPC/CLI/agent 가 직접** `split`/`tab.create`/`terminal.spawn`/`pane.close`/`tab.close`/`tab.move`/`surface.close`/`workspace.close`/`markdown.navigate`/`image.open`/`preset.apply`/`pty.attach_surface` 를 호출하는 경로를 다룬다. 개념·사용자 영향은 [features/remote-attach "서버(피점유)측 비-holder 구조 변경 차단"](../features/remote-attach/index.md#서버피점유측-비-holder-구조-변경-차단), 여기엔 메커니즘만.
+hard 점유의 holder가 원격으로 전달한 구조 명령과, holder가 아닌 로컬 IPC/CLI가 같은 workspace를 바꾸려는 요청을 구별한다. 사용자 영향과 허용 범위는 [원격 attach 정책](../features/remote-attach/index.md#서버피점유측-비-holder-구조-변경-차단)을 따른다.
 
-- **왜 `Core::apply` 나 핸들러 함수 내부가 아닌가**: `execute_forwarded_structural_op`(`src/core/attach_runtime.rs`)는 holder 의 forward 실행 시 split/tab.create/tab.close/pane.close/surface.close/tab.move 6종은 IPC 핸들러가 부르는 것과 같은 도메인 실행 함수(`app::structural_exec` 의 `split`/`create_tab`/`close_tab`/`close_pane`/`close_surface`/`move_tab`)를 **직접 함수 호출**하고(IPC 디스패치와 핸들러는 거치지 않는다 — ADR-0002, 대체: ADR-0054), convert/move-surface 는 대응하는 도메인 실행 함수가 없어 `Core::apply(DomainIntent)` 를 직접 호출한다 — 어느 쪽이든 이 함수 안에서, 또는 그 안에서 공통으로 거치는 `Core::apply` 에 가드를 걸면 holder 본인의 forward 요청까지 함께 막혀 위 "mirror 구조 변경 forward" 기능 전체가 회귀한다. `terminal.spawn` 은 forward 대상 8종(위 6종 + convert/move-surface)에 애초에 포함되지 않으므로([ADR-0021](../adr/0021-occupancy-and-attach-admission.md)) 이 가드를 추가해도 같은 회귀 위험이 없다.
-- **가드 위치**: `hard_occupied_structural_guard`(`src/adapters/ipc/handler.rs`) — `route_engine_handler` 의 method-string dispatch 최상단에서, `execute_forwarded_structural_op` 가 우회하는 그 dispatch 지점에서만 검사한다. params 에서 대상 pane_id/tab_id/surface_id(`split` 은 `target_pane`/`target_surface`, nickname 포함; `markdown.navigate`/`image.open` 은 `surface_id`, `pty.attach_surface` 는 `pane_id`, `preset.apply` 는 kind 가 tab 이면 `target_pane_id`·pane 이면 `target_workspace_id` 이고 생략하면 `IpcWindow::active_workspace_index` — 적용 코드 `MainViewState::resolve_target_pane`/`apply_pane_preset` 의 기본 대상과 같다. workspace preset 은 검사하지 않는다)를 뽑아 소속 workspace 를 찾고, `OccupancyRegistry::workspace_holder`(`src/core/attach.rs`)가 `Some` 이면 `invalid_params` 로 거부한다("점유 중" + "다른 workspace 사용" 안내). `terminal.spawn` 만 이 가드에 없다 — 대상이 `workspace` 파라미터가 아니라 `pane` 오버라이드까지 반영해 확정된 **최종 pane** 이라, 그것을 아는 `spawn_target_guard`(같은 파일, `handle_spawn` 이 pane 확정 직후 호출)에서 건다. 거부 문구는 `hard_occupied_denial` 로 라우터 가드와 공유한다. 이 이동으로 `--workspace <비점유 ws>` + `--pane <hard-occupied ws 의 pane>` 조합으로 가드를 우회하던 구멍도 닫혔다([ADR-0021](../adr/0021-occupancy-and-attach-admission.md)). 대상을 resolve 할 수 없으면(params 누락 등) `None`(가드 미개입) — 원래 핸들러의 통상 검증 에러로 흘려보낸다. `markdown.navigate`/`image.open` 커버는 완전하지 않다 — convert 진입점은 kind 별로 흩어져 있고(host 범용 convert 팝업은 `state.dispatch_intent` 를 직접 호출해 이 IPC 라우팅 자체를 안 탐), 향후 새 kind 가 자기 전용 convert 진입 method 를 추가하면 이 목록에 없는 한 가드가 적용되지 않는다.
-- **CLI 는 무수정**: `crates/tasty-ipc/src/client.rs` 의 `IpcConnection` 이 JSON-RPC `error.message` 를 그대로 노출하므로, `tasty new tab`/`tasty split`/`tasty close tab|pane|surface`/`tasty claude spawn`/`tasty codex spawn` 는 서버 에러 메시지를 그대로 보여준다.
-- **테스트**: `src/core/attach_runtime.rs` `forward_exec_tests` 모듈 — `dispatch_denies_structural_create_when_hard_occupied`/`dispatch_denies_structural_close_move_when_hard_occupied`(비-holder 일반 IPC 호출 거부 + 트리 불변), `dispatch_denies_terminal_spawn_when_hard_occupied`(`terminal.spawn` 거부 + tab 미생성), `dispatch_denies_terminal_spawn_into_mirror_workspace`(mirror 거부 + forward 큐 미증가), `dispatch_still_forwards_tab_create_in_mirror_workspace`(mirror 의 다른 구조 변경은 여전히 forward — 설계 보존), `dispatch_denies_terminal_spawn_when_pane_override_targets_blocked_workspace`(`--pane` 교차 워크스페이스 우회 차단, mirror·hard-occupied 양쪽), `dispatch_denies_convert_entrypoints_when_hard_occupied`(`markdown.navigate`/`image.open` 거부), `dispatch_denies_preset_apply_and_pty_attach_when_hard_occupied`(`preset.apply` 탭·pane 의 명시·생략 대상과 `pty.attach_surface` 거부, workspace preset 은 점유 사유로 거부하지 않음), `dispatch_allows_tab_create_when_not_occupied`/`dispatch_allows_markdown_navigate_when_not_occupied`(비점유 workspace 오탐 방지), `forward_*_succeeds_when_hard_occupied` 계열(holder 의 forward 는 hard-occupied 여도 정상 성공 — 회귀 방지, convert/move-surface 포함). move-surface 의 same-mirror-workspace 검증은 `src/core/impl_mirror.rs` `mirror_structural_guard_tests` 모듈의 `mirror_move_surface_enqueues_forward_when_same_workspace`/`mirror_move_surface_blocked_when_crossing_workspace_boundary` 가, target 원격 ID 변환은 `src/app/attach_client.rs` 의 `remote_structural_op_*` 시험이, 점유 밖 target 거절은 `tests/attach_structure_sync_loopback.rs` 의 `a_move_surface_target_outside_the_held_workspace_is_rejected` 가, 실제 attach 점유 중 `preset.apply`·`pty.attach_surface` 거절은 같은 파일의 `a_non_holder_cannot_insert_tabs_through_preset_or_pty_adoption` 이 커버한다.
-- **마지막 tab/pane도 같은 제한을 받는다.** 비-holder의 close는 dispatch에서 거절돼
-  트리를 바꾸지 않는다. `dispatch_denies_structural_close_move_when_hard_occupied`는
-  pane 하나·tab 하나인 fixture로 이 조건을 확인한다.
-- **`terminal.spawn`도 제한한다.** 점유된 workspace에 자식을 만들면 호출자가 바로
-  그 자식에게 입력을 보내지 못한다. 최종 pane을 결정한 뒤 `spawn_target_guard`로 거절해
-  `--workspace`와 다른 workspace의 `--pane` 조합도 검사한다(ADR-0021).
+- 로컬 IPC의 `hard_occupied_structural_guard`는 명시 대상의 workspace를 해소해 점유를 검사한다. terminal.spawn은 pane override까지 반영한 최종 대상에서 검사한다. 대상 해소 실패는 원래 파라미터 검증 오류로 처리하며 현재 포커스로 바꾸지 않는다.
+- holder의 forward는 `src/app/journal/commands/inbound.rs`에서 원 stream client·점유·대상 범위를 검사한다. 로컬 비-holder 가드를 공통 execution 함수 안에 무조건 넣어 정당한 holder까지 막지 않는다.
+- 새 터미널의 논리 ID가 공개되기 전에 raw 출력이 도착하지 않아야 한다. 구조 observation은 멤버 등록과 pending tap의 physical generation을 기록하고, `src/remote/structure_sync.rs`가 필요한 result/delta 뒤에 새 tap을 연다.
+- `RemoteState`가 notifier·즉시 tap 억제·대기 reply/tap을 소유한다. OccupancyRegistry는 점유 판단 원본이며 socket/worker를 소유하지 않는다. forward reply가 남은 workspace의 tap을 먼저 열거나 같은 surface에 두 번 등록하지 않는다.
+- 실제 구독은 `src/remote/subscription.rs`가 원 grant·terminal generation·StreamHub registration을 검사한다. 큐 손실과 stale 구독은 명시적으로 끊거나 버리고, parser/PTY를 대신 종료하지 않는다.
 
-- **mirror(원격 attach client) 워크스페이스로의 `terminal.spawn` 도 같은 자리에서 거부된다**: 이 절의 나머지는 **서버(피점유)측** 축이지만, `spawn_target_guard` 는 client 측 축인 mirror 도 함께 판정한다 — 같은 "최종 pane 이 어느 워크스페이스에 속하는가" 조회 하나로 둘 다 결정되기 때문이다. mirror 워크스페이스의 구조 변경은 원격으로 forward 되고 그 응답은 fire-and-forget 이라 생성된 surface id 를 담지 않는데, `handle_spawn` 은 그 id 를 동기로 꺼내 child registry 등록·soft 점유·command 주입까지 이어가야 한다. 막지 않으면 핸들러는 에러를 반환하지만 `pending_structural_forward` 는 IPC 응답과 무관하게 `about_to_wait` 에서 드레인되므로 **원격에만 탭이 남는 고아**가 생긴다. mirror 판정은 `terminal.spawn` 에만 적용한다 — 라우터 가드의 나머지 11종에 넣으면 mirror 구조 변경 forward 전체가 회귀한다. 근거 → [ADR-0021](../adr/0021-occupancy-and-attach-admission.md).
-- **생성이 허용된 surface에도 점유와 스트림 tap을 등록한다.** hard-occupied
-  workspace에 터미널 surface를 추가하면 기존 점유를 상속하고 attach 스트림에 연결해야
-  한다. 이를 빠뜨리면 PTY와 화면 버퍼가 있어도 클라이언트에는 출력이 전달되지 않는다.
-  대상은 `apply_create_tab`(`src/core/impl_tab.rs`), `apply_split_pane`과
-  `apply_split_surface`(`src/core/impl_split.rs`), `apply_adopt_terminal`
-  (`src/core/impl_attach.rs`)이다.
-
-  네 경로의 공통 후처리인 `EngineMut::tap_new_workspace_member`
-  (`src/core/attach_runtime.rs`)는 멤버 등록(`OccupancyRegistry::add_workspace_member`),
-  holder에게 새 트리 전송(`StructuralDelta`), 스트림 연결(`tap_surface_for_stream`)
-  순서로 실행한다([ADR-0061의 서버 쪽 변경 규칙](../adr/0061-external-remote-module-and-attach-sync.md#decision)).
-  holder의 forward 요청도 같은 순서를 따른다. forward 실행 중의 중복 tap 방지는
-  다음 항목을 참고한다.
-
-  필요한 `StreamHub`는 부팅 시 등록한 `OccupancyRegistry::notifier()`에서 얻고,
-  holder의 client ID는 `workspace_holder()`로 찾는다. `force_detach_workspace`의
-  `notify_detached`도 같은 notifier를 쓴다. `Core::apply`의 호출 경로 전체에 hub와
-  client ID를 인자로 추가할 필요는 없다.
-
-  이 후처리는 생성 차단을 통과한 요청에만 적용된다. 비-holder의 `terminal.spawn`은
-  앞의 가드가 거절하므로 여기까지 오지 않는다. 점유 등록은 `impl_mirror.rs`의
-  `mirror_structural_guard_tests::*_in_occupied_workspace_inherits_occupancy` 4개
-  단위 시험이 확인한다. delta 뒤 tap 한 번과 snapshot `Data` 프레임 순서는
-  `forward_exec_tests::local_split_in_held_workspace_sends_delta_then_taps_once`가 실제
-  `StreamHub`로 확인한다. 비-holder의 `pty.attach_surface`도 가드가 거절하므로
-  `tests/attach_local_creation_tap.rs`는 거절된 PTY가 headless로 남아 점유되지 않은
-  workspace에 입양되는지 확인한다.
-- **forward-op 경로는 이 즉시-tap 을 스킵한다(이중 tap 방지)**: 위 4개 생성 경로는 `execute_forwarded_structural_op` 가 재사용하는 `handle_split`/`handle_tab_create` 에서도 그대로 호출된다 — 즉 holder 자신의 forward 실행 중에도 (가드를 통과한 뒤) `tap_new_workspace_member` 가 타지만, 그 경로는 위 §"역반영" 이 이미 delta 전송 **후** `tap_surface_for_stream` 을 직접 걸므로 여기서 또 tap 하면 같은 surface 에 tap 이 2개 등록돼 매 PTY 청크(타이핑 echo 포함)가 client 에 2번 도착한다("tttttest" 증상). `OccupancyRegistry::set_auto_tap_suppressed(true/false)` 로 `execute_forwarded_structural_op` 가 `pane::handle_split`/`tab::handle_tab_create` 호출 구간만 감싸 이 즉시-tap 을 억제하고(멤버 편입은 그대로 진행), 로컬 생성 경로(플래그 항상 `false` — `terminal.spawn`/`pty.attach_surface` 포함, 가드를 통과했든 안 했든 무관)는 영향받지 않는다. 테스트: `forward_exec_tests::forward_split_surface_taps_exactly_once_with_real_stream_hub`(실제 `StreamHub` 주입, tap 개수 검증 — `Terminal::output_tap_count`).
+이 경로의 기존 loopback·tap-count·권한 fixture는 현재 API에 맞춰 정합한 뒤 실행해야 한다. 시험 이름이나 과거 성공만으로 journal publication과 현재 bounded stream 경계가 검증됐다고 보지 않는다.
 
 ## SSH 터널 (원격 client 공통)
 
@@ -640,7 +564,7 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
   emit_host_event_to_plugin`(Event Bus 의 owner-unicast 경로, 구독 등록 여부 무관 —
   `command.invoked` 와 동일 메커니즘)으로 `git_viewer.query_result` 이벤트를 plugin 에 전달만
   한다. 요청 트리거도 plugin→host `git_viewer.query` IPC(비동기 accept — `request_id` 만 즉시
-  회신하고 실제 forward 는 `CoreState.pending_git_query_forward` 를 다음 tick 에 drain)로 plugin
+  회신하고 실제 forward 는 `RemoteState.pending_git_query_forward` 를 다음 tick 에 drain)로 plugin
   이 직접 건다. **응답 대기 시간 제한(soft timeout)은 없다.** 파일 피커와 달리 요청을 관리하는
   플러그인이 별도 프로세스로 실행되며, 호스트의 프레임마다 대기 시간을 확인하는 처리가 없다. 세션 자체가
   끊기는 경우는 보내기 전(send-time 실패)이든 보낸 뒤(`cleanup_mirror_workspace` 가

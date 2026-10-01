@@ -13,14 +13,14 @@ winit KeyEvent / Ime
   → app/event_handler.rs (ApplicationHandler::window_event)
   → view/main/ (overlay/host-egui surface 면 egui 가 먼저 소비 — input-layer)
   → view/main/keyboard.rs (handle_keyboard_input) · view/main/ime.rs (handle_event)
-      ├── 단축키·vi·escape 매칭 → Intent 생성 (shortcuts → UiIntent/DomainIntent, action-dispatch)
+      ├── 단축키·vi·escape 매칭 → origin과 원 대상을 담은 Intent 값
       └── 그 외 키 → 포커스 surface 로 분배:
-          ├── Terminal → forward_key_to_terminal → tasty-terminal(send_key) → PTY stdin → 셸
+          ├── Terminal → 원 surface/generation에 묶인 입력 요청 → App/Engine 실행 → PTY stdin → 셸
           └── egui-mesh(image, 그리고 markdown 의 확인 팝업 2개) → egui_mesh_push_key/text/ime
               → set_context.raw_input forward → plugin egui TextEdit (egui-mesh-channel)
 ```
 
-셸 출력은 비동기로 돌아온다(흐름 2). 키 입력 중 *단축키* 만 Intent 큐를 타고, 터미널 키스트로크는 PTY 로 직접, egui-mesh surface 키/IME 는 plugin 으로 forward 된다. (`markdown` 은 [ADR-0029](../adr/0029-webview-host-integration.md) 로 webview 전환됨 — 본문은 `set_context`/`paint` 를 아예 받지 않고, 네이티브 WebView 가 자체적으로 입력을 처리한다. 위 경로는 markdown 의 대용량/파일열기 확인 팝업 2개에만 해당.)
+셸 출력은 비동기로 돌아온다(흐름 2). View는 입력 값을 만들고 App/Engine adapter가 원 binding을 검사해 Terminal 또는 plugin에 전달한다. 단축키의 구조 변경과 고빈도 raw 입력은 같은 영속 사건으로 취급하지 않는다. (`markdown` 은 [ADR-0029](../adr/0029-webview-host-integration.md) 로 webview 전환됨 — 본문은 `set_context`/`paint` 를 아예 받지 않고, 네이티브 WebView 가 자체적으로 입력을 처리한다. 위 경로는 markdown 의 대용량/파일열기 확인 팝업 2개에만 해당.)
 
 ---
 
@@ -28,10 +28,9 @@ winit KeyEvent / Ime
 
 ```
 PTY stdout
-  → tasty-terminal 리더 스레드 (mpsc) → waker → AppEvent::TerminalOutput(id)
-  → boot.rs 메인 루프 → core (PTY drain)
-  → tasty-terminal Terminal::process()
-      → termwiz Parser → vte_handler/ (CSI/OSC/ESC → Surface 변경)
+  → Pty reader → 원 resource generation의 TerminalIngest
+  → TerminalState 잠금 안에서 termwiz Parser → vte_handler/ (CSI/OSC/ESC 처리)
+  → dirty/waker → AppEvent::TerminalOutput(id) → App의 도메인 관측
           └── osc.rs: OSC 7(cwd) · OSC 133(prompt boundary) · 알림 OSC → TerminalEvent
   → view/main/redraw.rs (handle_redraw)
   → gfx/gpu/render_pass.rs — accumulator 렌더 (단일 pass):
@@ -51,7 +50,7 @@ tasty-cli (또는 외부 프로그램)
   → hub IPC 서버 (수신 스레드) → JSON-RPC 파싱 → mpsc → AppEvent::IpcReady
   → boot.rs 메인 루프 → app/ipc.rs (process_ipc)
       → adapters/ipc/handler/ (도메인별 핸들러 + 권한 게이트 + audit)
-      → 동작은 Intent 큐 또는 Core 직접 조작 (action-dispatch: origin=Agent)
+      → RequestScope로 대상 해소; 구조 변경은 journal admission/commit/publication, 실행은 EngineMut adapter (origin=Agent)
       → JsonRpcResponse → TCP 회신
   → tasty-cli 결과 포맷 출력
 ```
@@ -86,7 +85,7 @@ winit 은 사용자 이벤트를 큐가 빌 때까지 처리한 뒤에야 `about
 불명)이다([ADR-0007](../adr/0007-ipc-scheduling-and-deadlines.md)).
 
 큐에서 **꺼낸** 쪽의 누계 — 회차가 멈춘 이유 · 실행 전 만료 수 · 지금 실행 중인(in-flight) 요청
-수 — 는 `tasty_ipc::dispatch::DispatchStats`(`Core::dispatch`)에 있고, 큐에 **든** 쪽(입장 장부)과
+수 — 는 `tasty_ipc::dispatch::DispatchStats`(`AppServices`의 dispatch 계측)에 있고, 큐에 **든** 쪽(입장 장부)과
 함께 `CommandQueueSnapshot::read` 한 자리에서 읽는다. in-flight는 실행을 시작했고
 명령 처리 또는 응답 대기가 끝나지 않은 요청이다([ADR-0008](../adr/0008-ipc-pressure-observability.md)). 응답 대기가 먼저 끝나도 명령을 처리 중이면 집계에 남는다.
 두 값은 `system.pressure`(CLI `tasty list pressure`)의 `queue_admission` · `queue_dispatch` 덩어리로

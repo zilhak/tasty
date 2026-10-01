@@ -18,11 +18,11 @@ tasty 의 주 윈도우. 워크스페이스를 호스팅하고 사이드바·탭
 
 ### 멀티 윈도우
 
-`create_new_window` 로 **MainView 를 여러 개** 띄울 수 있다. 각 MainView 는 독립 winit Window(1:1)이고 자기 `MainViewState` 를 가지며 독립 `CoreState` 하나가 연결된다. View 는 `views: HashMap<WindowId, Box<dyn View>>`, engine 은 `App.engines` 가 관리한다([multi-window](../../architecture/multi-window.md#engine-registry와-parked--pty-생존)).
+`create_new_window` 로 **MainView 를 여러 개** 띄울 수 있다. 각 MainView 는 독립 winit Window(1:1)이고 자기 `MainViewState` 를 가지며 독립 EngineSession의 구조 projection이 연결된다. View 는 `views: HashMap<WindowId, Box<dyn View>>`, engine 은 `App.engines` 가 관리한다([multi-window](../../architecture/multi-window.md#engine-registry와-parked--pty-생존)).
 
 ### headless 와의 관계
 
-`MainView` 는 `CoreState` 위에 얹힌 **GUI 셸** 이다. headless 에선 MainView 가 없고 `CoreState`(Workspace/Surface/PTY) 만 동작한다 — 즉 핵심 동작은 MainView 없이도 실행되며, MainView는 그 상태를 화면에 표시한다. (→ [identity](../../identity.md) headless)
+MainView는 EngineRead와 자기 View 상태로 그리는 GUI다. headless는 MainView 없이 App·EngineSession·실행 서비스를 사용한다. CoreState에는 구조 descriptor가 있고 PTY 같은 실행 자원은 EngineRuntime에 있다. (→ [identity](../../identity.md) headless)
 
 ### 크롬 합성
 

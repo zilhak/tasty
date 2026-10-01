@@ -6,50 +6,33 @@ GUI 종료는 `App::begin_shutdown`에서 `ShutdownPhase` 상태 머신을 설�
 
 ## 시퀀스
 
+```text
+begin_shutdown
+  AppState에 ShutdownState 설치; native webview 숨김
+  원 task scope stop·profile/port scan/screenshot 신규 admission 중단
+SavingLayout
+  최신 final View capture 요청 → checkpoint/필요한 retirement 완료 관측
+ReclaimingBootWorker
+  부팅 중 worker 결과를 회수할 기회 제공
+ClosingSurfaces
+  원 runner receipt 관측 → shutdown 통지 → surface lifecycle 정리
+  observer join → plugin shutdown 요청
+StoppingPlugins
+  Remote의 socket/SSH 실제 retirement receipt
+  profile/port/screenshot worker의 실제 남은 수
+  plugin shutdown/kill/wait 관측
+Done → event_loop.exit()
+run_app 반환 → drop_app_with_trace → shutdown_total_with_drop
 ```
-종료 요청 → App::begin_shutdown
 
-begin_shutdown (src/app/shutdown_machine.rs)          [t0 확정]
-  ShutdownPhase 상태 머신 설치 → 모든 MainView 의 native webview 숨김
-  → 표시할 윈도우가 있으면 about_to_wait에서 16ms 간격으로 구동 시도
-  → 없으면 같은 상태 머신을 블로킹 루프로 진행
-  (단계 본문은 src/app/shutdown_cascade.rs, 순서·대기는 상태 머신이 소유)
+진행 중 worker의 대기 상한이 지나면 미회수 수 또는 TimedOut/WorkerFailed를 기록한다. 이것은 Joined가 아니다. 정상 EngineRegistry의 retiring owner를 해제하는 경로는 원 runner와 물리 자원 receipt를 기다리며 앱 종료의 상한과 구별한다.
 
-  SavingLayout
-  └─ S1  flush_layout_persistence(true)
-         main + parked engine 각각 SaveLayoutNow{force} → 자기 슬롯 파일
-         (surface.closed 이벤트 전에 끝나야 한다 — layout 은 *살아있는* 상태를 기록)
-  ReclaimingBootWorker                    (부팅 중 종료 전용 — 아니면 건너뛴다)
-  └─ S2  try_recv 폴링 + deadline 5s → 회수한 PluginManager 를 장착
-  ClosingSurfaces
-  ├─ ―   system.shutdown_initiated 이벤트 전송 (plugin cleanup hook 기회)
-  ├─ S3  cascade_shutdown_close_all_surfaces + dispatch_pending_surface_lifecycle
-  │      모든 workspace→pane→tab→surface를 순회해 닫기 이벤트를 큐에 넣고 전송
-  ├─ S3b observer_router.join_retired()  (창별 engine + parked engine)
-  │      surface 닫기에서 미뤄 둔 output observer sink 워커를 동기 join
-  └─ ―   begin_plugin_shutdown() — 전 plugin 에 shutdown 요청을 보낸다
-  StoppingPlugins
-  └─ S4  poll_shutdown_all() 폴링 — 대기가 겹친다
-         └─ S4a 공통 2s 정상 종료 기한 → 초과 시 kill + 동기 wait 시도
-  Done
-  ├─ shutdown_total
-  └─ event_loop.exit()
+Remote의 established tunnel과 늦은 연결 결과는 retirement worker가 child wait를 수행한다. App 스레드가 정상 Remote 세션의 SshTunnel을 직접 blocking Drop하는 경로로 설명하지 않는다. CLI의 동기 SshTunnel Drop과 예외적인 Drop tail은 별도다. observer join이나 plugin 강제 종료 후 wait 등 남은 동기 구간은 실제 지연을 측정해야 한다.
 
-  ※ 단계가 Waiting을 반환하면 종료 화면을 그리고 다음 회차에서 계속 진행
-
-run_app 반환 (src/boot.rs) — 여기부터 Drop tail. 종료 화면은 더 그리지 않는다.
-  drop_app_with_trace(app)
-    ├─ S5d TcpIpcServer::drop        accept 스레드 stop + **port 파일 제거**
-    ├─ S5a LuaEngine::drop           Shutdown send + 워커 join (블로킹)
-    ├─ S5b Pty::drop 합계            자식 셸 kill (surface 수만큼 반복)
-    ├─ S5c SshTunnel::drop 합계      child.kill + wait (attach 세션 수만큼, 블로킹)
-    ├─ S5  drop_tail                 run_app 반환 → App drop 완료 전체
-    └─ shutdown_total_with_drop      **사용자 체감에 대응하는 값**
-```
 
 - `begin_shutdown`을 공통 진입점으로 사용해 시작 시각과 단계 순서를 맞춘다. Layout 저장은 surface 닫기보다 먼저 수행한다.
 - 이미 종료 중이면 중복 요청은 바로 반환하며 단계가 처음으로 돌아가지 않는다.
-- 상태 머신으로 나눴다고 모든 단계가 짧게 끝나는 것은 아니다. Layout 파일 쓰기, observer join, 강제 종료 뒤 wait 등의 실제 대기를 함께 측정한다.
+- 상태 머신으로 나눴다고 모든 단계가 짧게 끝나는 것은 아니다. checkpoint 완료 대기, observer join, 강제 종료 뒤 wait 등의 실제 대기를 함께 측정한다.
 - S4에서 프로세스 목록을 비웠다면 `PluginProcess::drop`에 남은 대상은 없다. 예외 경로에서 남은 대상의 drop은 kill과 wait를 수행할 수 있다.
 - 정상 GUI 종료는 `event_loop.exit()`로 요청한다. 초기화 실패 등의 즉시 종료 경로와 달리 이후 객체 정리도 진행한다.
 

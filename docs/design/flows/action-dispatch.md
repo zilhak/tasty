@@ -49,7 +49,7 @@ Intent::PresetApplyCancelled → handler: …pending_preset_apply = None;
 
 `Intent`는 `Ui(UiIntent)`, `Domain(DomainIntent)`와 프리셋·탭 등 개별 작업 변종을 가진다. 정의는 `src/intent.rs`, 도메인 핸들러는 `src/intent/<domain>.rs`에 있다. 큐에 넣을 때 요청 출처를 함께 전달한다.
 
-이름 변경 팝업은 workspace 이름·부제목과 탭 이름을 `Intent::DirectRename`으로 넣는다. `src/intent/rename.rs`가 `Core::apply`로 적용한 뒤 `user_direct`를 표시한 host 이벤트를 낸다. Domain 큐의 후속 처리는 이 표시를 싣지 않는다.
+이름 변경 팝업은 workspace 이름·부제목과 탭 이름을 `Intent::DirectRename`으로 넣는다. App의 journal 명령 경로가 commit·projection 뒤 `user_direct`를 담은 완료 통지를 만든다. Domain 큐의 후속 처리는 이 표시를 싣지 않는다.
 
 ```rust
 pub struct DispatchedIntent { pub body: Intent, pub origin: IntentOrigin, pub trace_id: Option<String> }
@@ -58,7 +58,7 @@ pub enum IntentOrigin { User { source: UserSource }, Agent { source: AgentSource
 //   AgentSource: Ipc / Plugin(String) / Cli / Remote
 ```
 
-`System`은 OSC 등 자동 후속 처리다. `Remote`는 원격 client가 forward한 구조 요청이며, 원격 쪽 사용자 조작이어도 이 호스트에서는 에이전트 요청으로 실행한다. 구조 실행 함수(`src/app/structural_exec.rs`)는 origin을 고정하지 않고 진입점에서 받는다. IPC 라우터는 plugin 호출자를 `Plugin(id)`, 그 밖의 호출자를 `Ipc`로 넘긴다.
+`System`은 OSC 등 자동 후속 처리다. `Remote`는 원격 client가 forward한 요청의 출처다. 로컬 View 포커스를 바꾸지 않으며 user/agent wire 표지는 원격 닫기 기록 정책에 사용한다. 구조 명령 admission(`src/app/journal/commands`)은 원 origin과 대상 ID를 유지한다. IPC 라우터는 plugin 호출자를 `Plugin(id)`, 그 밖의 호출자를 `Ipc`로 넘긴다.
 
 팝업 A의 처리에서 B를 열면 B에도 A의 origin을 전달한다. 별도의 Cascade 출처를 만들지 않는다. `DispatchedIntent.trace_id`는 현재 생성자에서 `None`이며 Event Bus의 `trace_id`와는 별개다.
 
@@ -78,7 +78,7 @@ GUI의 `App::dispatch_pending_intents`는 창과 parked state의 큐를 처리�
 | `Intent::Domain` | 단계 C인 `run_domain_cascade`에서 FIFO로 처리 |
 | `AppearanceChanged` | 프레임 끝에 한 번만 처리 |
 
-Domain 처리는 App 전체를 대여하므로 state별 처리 뒤로 분리한다. 큐를 `mem::take`로 꺼낸 뒤 순회하며, 처리 중 새로 등록한 Intent는 재진입을 피하기 위해 다음 프레임에 처리한다. `Core::apply` 오류는 Intent를 등록한 창(또는 parked state)의 state·engine으로 `report_apply_error`에 넘긴다. 그래서 사용자 메뉴에서 고른 mirror 차단 이동도 차단 toast를 띄운다.
+Domain 처리는 App 전체를 대여하므로 state별 처리 뒤로 분리한다. 큐를 `mem::take`로 꺼낸 뒤 순회하며, 처리 중 새로 등록한 Intent는 재진입을 피하기 위해 다음 프레임에 처리한다. journal admission·완료 오류는 원 요청의 engine 및 View binding을 확인해 표시한다. 그래서 사용자 메뉴에서 고른 mirror 차단 이동도 차단 toast를 띄운다.
 
 헤드리스는 `crate::intent::headless::drain_pending_intents`로 engine 하나의 큐를 다음 시점에 처리한다.
 
