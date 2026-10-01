@@ -53,7 +53,7 @@ fn with_store<R>(core: &crate::app::services::AppServices, f: impl FnOnce(&tasty
     f(&guard)
 }
 
-fn mutation_error(id: serde_json::Value, e: PresetMutationError) -> JsonRpcResponse {
+pub(crate) fn mutation_error(id: serde_json::Value, e: PresetMutationError) -> JsonRpcResponse {
     match &e {
         PresetMutationError::NotFound { .. }
         | PresetMutationError::Store(_) => JsonRpcResponse::invalid_params(id, e.to_string()),
@@ -219,6 +219,16 @@ pub fn handle_rename(
     }
 }
 
+pub(crate) fn decode_capture_request(
+    params: &serde_json::Value,
+    id: &serde_json::Value,
+) -> Result<(PresetKind, u32, Option<String>), JsonRpcResponse> {
+    let kind = parse_kind(params, id)?;
+    let source = require_u32(params, "source_id", id)?;
+    let name = params.get("name").and_then(|value| value.as_str()).map(str::to_string);
+    Ok((kind, source, name))
+}
+
 pub fn handle_capture(
     presentation: &dyn crate::model::StructurePresentation,
     core: &crate::app::services::AppServices,
@@ -226,18 +236,10 @@ pub fn handle_capture(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let kind = match parse_kind(params, &id) {
-        Ok(k) => k,
-        Err(e) => return e,
+    let (kind, source_id, explicit_name) = match decode_capture_request(params, &id) {
+        Ok(request) => request,
+        Err(error) => return error,
     };
-    let source_id = match require_u32(params, "source_id", &id) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let explicit_name = params
-        .get("name")
-        .and_then(|v| v.as_str())
-        .map(str::to_string);
 
     let (cloned, base_name) = match capture_inner(presentation, engine, kind, source_id) {
         Ok(v) => v,

@@ -208,25 +208,32 @@ impl PresetCaptureCompletion {
         let name = match &self.reply {
             PresetCaptureReply::Ipc {name, ..} | PresetCaptureReply::Intent {name, ..} => name.as_deref(),
         };
-        let result = self.result.and_then(|(preset, base)| {
+        let result = self.result.map_err(PresetSaveError::Capture).and_then(|(preset, base)| {
             let kind = preset.kind();
-            match crate::intent::preset::save_inner(services, &base, name, false, preset).map_err(|error| error.to_string())? {
+            match crate::intent::preset::save_inner(services, &base, name, false, preset).map_err(PresetSaveError::Store)? {
                 crate::intent::preset::SaveOutcome::Saved(name) => Ok((kind, name)),
-                crate::intent::preset::SaveOutcome::SkippedExists => Err("preset name already exists (overwrite=false)".into()),
+                crate::intent::preset::SaveOutcome::SkippedExists => Err(PresetSaveError::Capture("preset name already exists (overwrite=false)".into())),
             }
         });
         match self.reply {
             PresetCaptureReply::Ipc {id, sender, ..} => {
                 let response = match result {
                     Ok((_, name)) => crate::ipc::protocol::JsonRpcResponse::success(id, serde_json::json!({"name": name})),
-                    Err(error) => crate::ipc::protocol::JsonRpcResponse::invalid_params(id, error),
+                    Err(PresetSaveError::Capture(error)) => crate::ipc::protocol::JsonRpcResponse::invalid_params(id, error),
+                    Err(PresetSaveError::Store(error)) => crate::adapters::ipc::handler::preset::mutation_error(id, error),
                 };
                 crate::ipc::server::send_response(&sender, response);
                 None
             },
             PresetCaptureReply::Intent {origin, view, ..} => Some(PresetCaptureNotice {
-                engine: self.engine, binding: self.binding, origin, view, result,
+                engine: self.engine, binding: self.binding, origin, view,
+                result: result.map_err(|error| match error {PresetSaveError::Capture(error) => error, PresetSaveError::Store(error) => error.to_string()}),
             }),
         }
     }
+}
+
+enum PresetSaveError {
+    Capture(String),
+    Store(crate::intent::preset::PresetMutationError),
 }
