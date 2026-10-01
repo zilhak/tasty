@@ -33,11 +33,15 @@ struct CategoryReservation {
 /// Live View continuation, never serialized with a structural command or replayed response.
 #[derive(Clone)]
 pub(crate) struct IntentViewContinuation {
+    #[cfg(feature = "gui")]
     pub(crate) view: std::sync::Weak<()>,
+    #[cfg(feature = "gui")]
     pub(crate) selection: std::sync::Weak<()>,
     pub(crate) activate_surface: Option<u32>,
     pub(crate) close_empty_engine: bool,
+    #[cfg(feature = "gui")]
     pub(crate) after_create: Option<crate::intent::CreateFollowup>,
+    #[cfg(feature = "gui")]
     pub(crate) tutorial: Option<create::TutorialCreated>,
     #[cfg(feature = "gui")]
     pub(crate) tutorial_preparation: Option<std::sync::Weak<()>>,
@@ -74,6 +78,7 @@ enum Reply {
 }
 
 struct IntentResult {
+    #[cfg(feature = "gui")]
     view: Option<IntentViewContinuation>,
     engine: EngineId,
     origin: crate::intent::IntentOrigin,
@@ -90,6 +95,7 @@ struct Pending {
     #[cfg(feature = "gui")]
     forward: Option<super::forward::Draft>,
     /// Reservation follows the original request until its final reply, including effect-owned copies.
+    #[cfg(feature = "gui")]
     forward_reserved: usize,
     one_shot_reserved: usize,
     closing: Option<close::Request>,
@@ -142,6 +148,7 @@ pub(super) struct Commands {
 }
 
 impl Commands {
+    #[cfg(feature = "gui")]
     pub(super) fn has_remote_request(&self, engine: EngineId) -> bool {
         self.pending
             .values()
@@ -156,6 +163,7 @@ impl Commands {
             .values()
             .any(|pending| pending.closing.is_some() || pending.replacing.is_some())
     }
+    #[cfg(feature = "gui")]
     pub(super) fn has_resource_request(&self, engine: EngineId) -> bool {
         self.completed_live
             .iter()
@@ -223,6 +231,7 @@ impl Commands {
                 origin,
                 view,
             } => self.completed_intents.push(IntentResult {
+                #[cfg(feature = "gui")]
                 view,
                 engine,
                 origin,
@@ -327,6 +336,7 @@ impl JournalApplication {
                 resource: None,
                 #[cfg(feature = "gui")]
                 forward: None,
+                #[cfg(feature = "gui")]
                 forward_reserved: 0,
                 one_shot_reserved: 0,
                 closing: None,
@@ -1001,6 +1011,7 @@ impl JournalApplication {
             && !completed.idempotent_replay
             && let Some(created) = pending.created
         {
+            #[cfg(feature = "gui")]
             if let Reply::Intent {
                 view: Some(view),
                 origin,

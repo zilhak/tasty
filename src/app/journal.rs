@@ -977,6 +977,7 @@ impl JournalApplication {
     pub(super) fn has_creation(&self, id: EngineId) -> bool {
         self.creations.keys().any(|(engine, _)| *engine == id)
     }
+    #[cfg(feature = "gui")]
     pub(super) fn has_forward(&self, id: EngineId) -> bool {
         #[cfg(feature = "gui")]
         {
@@ -988,6 +989,7 @@ impl JournalApplication {
             false
         }
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn has_pending_engine_effects(&self, id: EngineId) -> bool {
         self.commands.has_remote_request(id)
             || self.has_forward(id)

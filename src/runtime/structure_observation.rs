@@ -111,6 +111,7 @@ impl EngineMut<'_> {
 impl EngineMut<'_> {
     /// Remote replacement preserves IDs when the server keeps a tab. Initial snapshot insertion
     /// has no predecessor and therefore emits no historical movement event.
+    #[cfg(feature = "gui")]
     pub(crate) fn replace_mirror_workspace(
         &mut self,
         workspace: crate::model::Workspace,

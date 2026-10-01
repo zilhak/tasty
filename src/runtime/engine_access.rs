@@ -251,11 +251,6 @@ impl EngineRef<'_> {
     pub(crate) fn foreground_name(&self, id: u32) -> Option<&str> {
         self.live.foreground_names.get(&id).map(String::as_str)
     }
-    #[cfg(any(feature = "gui", test))]
-    #[cfg(not(feature = "gui"))]
-    pub(crate) fn foreground_generation(&self, id: u32) -> u64 {
-        self.read().foreground_generation(id)
-    }
     pub(crate) fn is_typing(&self, id: u32) -> bool {
         self.live
             .last_key_input

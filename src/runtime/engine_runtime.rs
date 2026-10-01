@@ -14,14 +14,16 @@ pub(crate) struct EngineRuntime {
     pub(crate) settings: crate::settings::Settings,
     pub(crate) default_cols: usize,
     pub(crate) default_rows: usize,
-    #[cfg(debug_assertions)]
+    #[cfg(all(feature = "gui", debug_assertions))]
     pub(crate) input_simulation_enabled: bool,
 
     pub(crate) ids: crate::runtime::id_reservations::IdReservations,
+    #[cfg(feature = "gui")]
     pub(crate) counters: super::counters::RuntimeCounters,
     pub(crate) waker: Waker,
     pub(crate) pending_host_events: Vec<crate::core::host_event::PendingHostEvent>,
     pub(crate) pending_lifecycle_events: Vec<crate::core::host_event::PendingSurfaceClosed>,
+    #[cfg(feature = "gui")]
     pub(crate) pending_plugin_retirements: Vec<(u32, tasty_host_plugin::host_cmd::SurfaceBinding)>,
     /// 대상별 출력 알림을 만드는 인터페이스. 도메인은 winit EventLoopProxy를 직접 보유하지 않는다.
     pub(crate) waker_factory: Option<crate::waker::SharedWakerFactory>,
@@ -62,6 +64,7 @@ pub(crate) struct EngineRuntime {
 }
 
 impl EngineRuntime {
+    #[cfg(feature = "gui")]
     pub(crate) fn has_pending_delivery(&self) -> bool {
         !self.pending_host_events.is_empty()
             || !self.pending_lifecycle_events.is_empty()
@@ -82,13 +85,15 @@ impl EngineRuntime {
             settings,
             default_cols: cols,
             default_rows: rows,
-            #[cfg(debug_assertions)]
+            #[cfg(all(feature = "gui", debug_assertions))]
             input_simulation_enabled: false,
             ids: Default::default(),
+            #[cfg(feature = "gui")]
             counters: counters.clone(),
             waker: waker.clone(),
             pending_host_events: Vec::new(),
             pending_lifecycle_events: Vec::new(),
+            #[cfg(feature = "gui")]
             pending_plugin_retirements: Vec::new(),
             waker_factory: None,
             surface_registry: registries.surface_registry,

@@ -401,6 +401,7 @@ impl App {
 
 pub(crate) mod task_completion;
 
+#[cfg(feature = "gui")]
 pub(crate) mod engine_action;
 
 #[cfg(feature = "gui")]

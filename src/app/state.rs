@@ -21,6 +21,7 @@ pub(crate) struct AppState {
         tasty_remote::pending_connection::ConnectionTicket,
         crate::app::attach_client::pending::PendingMirrorInstall,
     >,
+    #[cfg(feature = "gui")]
     pub(crate) pending_host_events: Vec<crate::core::host_event::PendingHostEvent>,
     #[cfg(not(feature = "gui"))]
     pub(crate) stopping: bool,

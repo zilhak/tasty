@@ -93,6 +93,7 @@ pub(crate) fn drain_pending_intents_in_app(
     }
 }
 
+#[cfg(test)]
 fn drain_with(
     core: &mut AppServices,
     state: &mut RequestContext,
@@ -180,34 +181,12 @@ fn route_non_domain(
     dispatched: &DispatchedIntent,
 ) {
     match &dispatched.body {
-        Intent::Engine(action) => action.apply(engine, None),
-        Intent::RespondApproval {
-            request_id,
-            choice,
-            comment,
-        } => {
-            match core.respond_approval(
-                request_id,
-                choice.clone(),
-                tasty_approval::Responder::User,
-                comment.clone(),
-            ) {
-                Ok(change) => crate::ipc::handler::approval::persist_record(core, &change.record),
-                Err(error) => tracing::warn!("approval response failed: {error}"),
-            }
-        }
-        Intent::PatchSettings(_) => {
-            tracing::error!("settings patch bypassed application resolution")
-        }
-        Intent::ForwardMirror { .. } => tracing::warn!("headless has no mirror client transport"),
-        Intent::Ui(_) => crate::intent::popup::handle(state, engine, dispatched),
         Intent::ApplyPreset { .. } | Intent::CapturePreset { .. } => {
             crate::intent::preset::handle(core, state, engine, dispatched);
         }
         Intent::SplitSurface { .. }
         | Intent::ConvertSurface { .. }
         | Intent::NewTab { .. }
-        | Intent::NewTabWithFollowup { .. }
         | Intent::SplitPane { .. }
         | Intent::NewWorkspace { .. } => {
             tracing::error!("structural intent bypassed journal admission")

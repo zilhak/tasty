@@ -25,6 +25,7 @@ impl PreparedKind {
     }
 
     /// Used by immediate materialization callers. Journal execution separates these two parts.
+    #[cfg(feature = "gui")]
     pub fn publish(self) -> anyhow::Result<Box<dyn Surface>> {
         if let Some(publication) = self.publication {
             publication()?;

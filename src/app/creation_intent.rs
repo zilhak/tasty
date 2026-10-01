@@ -19,6 +19,7 @@ pub(crate) fn resolve(
         }
     };
     Ok(Some(match intent {
+        #[cfg(feature = "gui")]
         Intent::PatchSettings(patch) => {
             let mut settings = engine.runtime.settings.clone();
             patch.apply(&mut settings);
@@ -68,6 +69,7 @@ pub(crate) fn resolve(
                 category: *category,
             }
         }
+        #[cfg(feature = "gui")]
         Intent::NewTabWithFollowup { pane_id, .. } => DomainIntent::CreateTab {
             pane_id: *pane_id,
             cwd: None,

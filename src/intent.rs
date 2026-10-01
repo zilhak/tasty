@@ -116,17 +116,22 @@ pub enum Intent {
     },
     #[cfg(feature = "gui")]
     RemoteBrowser(crate::app::remote_browser::BrowserRequest),
+    #[cfg(feature = "gui")]
     PatchSettings(crate::app::engine_action::SettingsPatch),
+    #[cfg(feature = "gui")]
     Engine(crate::app::engine_action::EngineAction),
+    #[cfg(feature = "gui")]
     ForwardMirror {
         op: tasty_ipc::stream::StructuralOp,
         close_focus_candidates: Vec<u32>,
     },
+    #[cfg(feature = "gui")]
     RespondApproval {
         request_id: tasty_approval::ApprovalId,
         choice: String,
         comment: Option<String>,
     },
+    #[cfg(feature = "gui")]
     Ui(UiIntent),
     /// 도메인 명령도 같은 큐에 넣고 AppServices::apply로 전달한다.
     Domain(crate::app::command::DomainIntent),
@@ -146,9 +151,7 @@ pub enum Intent {
     },
 
     /// 포커스된 surface를 분할한다. 사용자 단축키용이며 IPC는 ID를 지정한다.
-    SplitSurface {
-        direction: SplitDirection,
-    },
+    SplitSurface { direction: SplitDirection },
     /// Terminal은 호스트 내장 종류이며 나머지는 등록된 kind를 사용한다.
     ConvertSurface {
         surface_id: u32,
@@ -162,21 +165,18 @@ pub enum Intent {
     },
 
     /// Explicit pane selected by a native menu; completion belongs to the originating View.
+    #[cfg(feature = "gui")]
     NewTabWithFollowup {
         pane_id: u32,
         followup: CreateFollowup,
     },
 
     /// 포커스된 pane을 분할하는 사용자 단축키 명령.
-    SplitPane {
-        direction: SplitDirection,
-    },
+    SplitPane { direction: SplitDirection },
 
     /// Practice setup completion belongs to this original tutorial attempt.
     #[cfg(feature = "gui")]
-    PrepareTutorial {
-        ticket: std::sync::Weak<()>,
-    },
+    PrepareTutorial { ticket: std::sync::Weak<()> },
 
     /// kind가 None이면 terminal을 사용한다. 사용자 요청일 때만 새 워크스페이스를 활성화한다.
     NewWorkspace {
@@ -211,12 +211,14 @@ pub enum UiIntent {
     TogglePopup { id: PopupId, mode: OpenPopupMode },
 }
 
+#[cfg(feature = "gui")]
 impl From<UiIntent> for Intent {
     fn from(ui: UiIntent) -> Self {
         Intent::Ui(ui)
     }
 }
 
+#[cfg(feature = "gui")]
 impl UiIntent {
     #[cfg(feature = "gui")]
     pub fn from_user_shortcut(self, id: &'static str) -> DispatchedIntent {

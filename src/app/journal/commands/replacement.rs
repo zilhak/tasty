@@ -1,6 +1,7 @@
 //! Fixed source/target replacement; only overwritten runtime owners enter cleanup.
 use super::*;
 pub(super) struct Request {
+    #[cfg(feature = "gui")]
     pub engine: EngineId,
     stream: String,
     replacement: tasty_core::Replacement,
@@ -79,6 +80,7 @@ impl Request {
             })
             .collect();
         Ok(Self {
+            #[cfg(feature = "gui")]
             engine: session.id,
             stream: session
                 .journal_binding

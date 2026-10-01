@@ -11,6 +11,7 @@ pub(super) enum Cause {
     },
 }
 pub(super) struct Request {
+    #[cfg(feature = "gui")]
     pub engine: EngineId,
     pub binding: crate::runtime::journal_product::EngineBinding,
     pub target: tasty_core::CloseTarget,
@@ -221,6 +222,7 @@ impl Request {
             _ => "surface not found",
         });
         Ok(Self {
+            #[cfg(feature = "gui")]
             engine: session.id,
             binding: session.journal_binding.clone().ok_or_else(|| {
                 JsonRpcResponse::internal_error(id.clone(), "engine has no journal binding")
@@ -288,6 +290,7 @@ impl Request {
             .into()));
         }
         Ok(Self {
+            #[cfg(feature = "gui")]
             engine: session.id,
             binding: session.journal_binding.clone().ok_or_else(|| {
                 JsonRpcResponse::internal_error(id.clone(), "engine has no journal binding")

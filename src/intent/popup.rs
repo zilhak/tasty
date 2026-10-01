@@ -62,7 +62,7 @@ pub fn handle(
                 } else {
                     open(state, id, mode);
                 }
-            } // App이 별도로 처리하는 테마 변경이다.
+            }
         }
     }
     #[cfg(not(feature = "gui"))]

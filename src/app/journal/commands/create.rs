@@ -694,12 +694,14 @@ impl JournalApplication {
     }
 }
 
+#[cfg(feature = "gui")]
 #[derive(Clone)]
 pub(crate) enum TutorialCreated {
     Tab { pane: u32, tab: u32 },
     Pane { target: u32, pane: u32 },
     Surface { surface: u32 },
 }
+#[cfg(feature = "gui")]
 impl TutorialCreated {
     #[cfg(feature = "gui")]
     pub fn observe(&self, state: &mut crate::state::MainViewState, core: &crate::core::CoreState) {
@@ -723,6 +725,7 @@ impl TutorialCreated {
 }
 
 pub(super) struct Completed {
+    #[cfg(feature = "gui")]
     pub tutorial: Option<TutorialCreated>,
     pub engine: EngineId,
     pub surface: u32,
@@ -736,6 +739,7 @@ pub(super) struct Completed {
 impl Completed {
     pub fn from_request(request: &Request) -> Self {
         Self {
+            #[cfg(feature = "gui")]
             tutorial: match (&request.shape, &request.plan.destination) {
                 (Shape::Tab, CreationDestination::Tab { pane, tab, .. }) => {
                     Some(TutorialCreated::Tab {
