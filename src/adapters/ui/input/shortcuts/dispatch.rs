@@ -60,10 +60,16 @@ impl MainView {
                 state.resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
             }
             "new_tab" => {
+                let pane_id = state.focused_pane_id(engine);
+                let cwd = state.resolve_inherit_cwd(engine);
                 state.dispatch_intent(
-                    crate::intent::Intent::NewTab {
-                        kind: None,
-                        params: serde_json::Value::Null,
+                    crate::app::command::DomainIntent::CreateTab {
+                        pane_id,
+                        cwd,
+                        kind: "terminal".into(),
+                        name: None,
+                        surface_params: serde_json::json!({}),
+                        activate: true,
                     }
                     .from_user_shortcut("new_tab"),
                 );

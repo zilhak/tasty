@@ -133,10 +133,16 @@ impl MainView {
                 self.finish_after_possible_close(engine, terminal_rect, cell_w, cell_h);
             }
             "new_tab" => {
+                let pane_id = self.state.focused_pane_id(engine);
+                let cwd = self.state.resolve_inherit_cwd(engine);
                 self.state.dispatch_intent(
-                    crate::intent::Intent::NewTab {
-                        kind: None,
-                        params: serde_json::Value::Null,
+                    crate::app::command::DomainIntent::CreateTab {
+                        pane_id,
+                        cwd,
+                        kind: "terminal".into(),
+                        name: None,
+                        surface_params: serde_json::json!({}),
+                        activate: true,
                     }
                     .from_user_shortcut("new_tab"),
                 );
