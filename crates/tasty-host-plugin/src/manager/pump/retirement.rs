@@ -1,6 +1,8 @@
 //! 원 surface binding과 plugin process에 고정된 회수 요청 및 ACK 추적.
 
-use super::super::{PendingRequest, PendingRequestKind, PluginManager, RemotePublication};
+use super::super::{
+    PendingRequest, PendingRequestKind, PluginManager, RemotePublication, RemoteSurfaceEntry,
+};
 use crate::host_cmd::HostCmd;
 use crate::protocol;
 use serde_json::json;
@@ -196,26 +198,7 @@ impl PluginManager {
             self.release_plugin_buffer(&pid, bid);
         }
         if let Some(entry) = self.surfaces.remove(&surface_id) {
-            match &entry.publication {
-                RemotePublication::NeverSent => return,
-                RemotePublication::Sent(binding)
-                    if self
-                        .processes
-                        .get(&entry.plugin_id)
-                        .is_some_and(|process| process.reply_binding().ptr_eq(binding)) => {}
-                RemotePublication::Sent(_) => {
-                    tracing::warn!(surface_id, plugin = %entry.plugin_id,
-                        "original remote process is unavailable; destruction remains unconfirmed");
-                    return;
-                }
-            }
-            self.send_surface_request(
-                &entry.plugin_id,
-                protocol::METHOD_SURFACE_DESTROY,
-                json!({ "surface_id": surface_id }),
-                PendingRequestKind::Other,
-            );
-            // entry drop → SurfaceHandles(shm) 해제.
+            self.destroy_published_remote_surface(surface_id, entry);
             return;
         }
         // egui-mesh surface: 수신했던 mesh frame 의 plugin_id 가 1순위 owner 소스다 —
@@ -238,6 +221,30 @@ impl PluginManager {
                 "surface.destroy skipped (surface {surface_id}, kind {kind:?} — owner 미해석)"
             );
         }
+    }
+
+    // The caller has removed frame mappings and this exact entry before sending destruction.
+    fn destroy_published_remote_surface(&mut self, surface_id: u32, entry: RemoteSurfaceEntry) {
+        match &entry.publication {
+            RemotePublication::NeverSent => return,
+            RemotePublication::Sent(binding)
+                if self
+                    .processes
+                    .get(&entry.plugin_id)
+                    .is_some_and(|process| process.reply_binding().ptr_eq(binding)) => {}
+            RemotePublication::Sent(_) => {
+                tracing::warn!(surface_id, plugin = %entry.plugin_id,
+                        "original remote process is unavailable; destruction remains unconfirmed");
+                return;
+            }
+        }
+        self.send_surface_request(
+            &entry.plugin_id,
+            protocol::METHOD_SURFACE_DESTROY,
+            json!({ "surface_id": surface_id }),
+            PendingRequestKind::Other,
+        );
+        // entry drop → SurfaceHandles(shm) 해제.
     }
 
     /// manifest `[[surface_kinds]]` 가 `kind` 를 선언한 plugin id. egui-mesh

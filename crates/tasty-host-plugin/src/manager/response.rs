@@ -189,23 +189,7 @@ impl PluginManager {
                 completion,
                 process_binding,
             } => {
-                let current = self
-                    .processes
-                    .get(plugin_id)
-                    .map(|process| process.reply_binding());
-                if current
-                    .as_ref()
-                    .is_none_or(|current| !current.ptr_eq(&process_binding))
-                    || process_binding.upgrade().is_none()
-                {
-                    completion.finish(Err(
-                        "destruction response belongs to a retired plugin process".into(),
-                    ));
-                } else if let Some(error) = resp.error {
-                    completion.finish(Err(format!("plugin rejected surface destruction: {error}")));
-                } else {
-                    completion.finish(Ok(()));
-                }
+                self.finish_surface_retirement(plugin_id, completion, process_binding, resp);
             }
             PendingRequestKind::Other => {}
             PendingRequestKind::PopupOpen { instance_id } => {
@@ -334,6 +318,33 @@ impl PluginManager {
                     resp.result,
                 );
             }
+        }
+    }
+
+    // Only an ACK from the captured live process completes this retirement receipt.
+    fn finish_surface_retirement(
+        &self,
+        plugin_id: &str,
+        completion: crate::host_cmd::RemoteRetirementCompletion,
+        process_binding: std::sync::Weak<()>,
+        resp: PluginResponse,
+    ) {
+        let current = self
+            .processes
+            .get(plugin_id)
+            .map(|process| process.reply_binding());
+        if current
+            .as_ref()
+            .is_none_or(|current| !current.ptr_eq(&process_binding))
+            || process_binding.upgrade().is_none()
+        {
+            completion.finish(Err(
+                "destruction response belongs to a retired plugin process".into(),
+            ));
+        } else if let Some(error) = resp.error {
+            completion.finish(Err(format!("plugin rejected surface destruction: {error}")));
+        } else {
+            completion.finish(Ok(()));
         }
     }
 

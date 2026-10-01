@@ -96,22 +96,36 @@ pub fn spawn_attach_write_thread(
             if !detach && (!queued.epoch.is_active() || disconnected.load(Ordering::Acquire)) {
                 continue;
             }
-            if let Err(e) = stream::write_frame(&mut write_half, item.tag, &item.payload) {
-                tracing::warn!(
-                    "attach write thread{log_suffix}: 프레임을 쓰지 못해 연결 종료로 처리한다: {e}"
-                );
-                disconnected.store(true, Ordering::SeqCst);
-                (wake)();
-                break;
-            }
-            if detach {
-                if let Err(error) = write_half.shutdown(std::net::Shutdown::Both) {
-                    tracing::debug!("remote socket already closed: {error}");
-                }
+            if !write_attach_frame(&mut write_half, &item, &disconnected, &wake, log_suffix) {
                 break;
             }
         }
     })
+}
+
+// The queue loop owns epoch admission and byte charges; this step owns socket I/O completion.
+fn write_attach_frame(
+    write_half: &mut TcpStream,
+    item: &OutFrame,
+    disconnected: &AtomicBool,
+    wake: &Arc<dyn Fn() + Send + Sync>,
+    log_suffix: &str,
+) -> bool {
+    if let Err(e) = stream::write_frame(write_half, item.tag, &item.payload) {
+        tracing::warn!(
+            "attach write thread{log_suffix}: 프레임을 쓰지 못해 연결 종료로 처리한다: {e}"
+        );
+        disconnected.store(true, Ordering::SeqCst);
+        (wake)();
+        return false;
+    }
+    if item.tag == StreamTag::Detach {
+        if let Err(error) = write_half.shutdown(std::net::Shutdown::Both) {
+            tracing::debug!("remote socket already closed: {error}");
+        }
+        return false;
+    }
+    true
 }
 
 pub fn spawn_attach_reader_thread(

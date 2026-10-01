@@ -81,24 +81,7 @@ impl ProfileDetections {
             let result = if job.cancel.is_cancelled() || self.stopping {
                 Err("remote profile detection cancelled".into())
             } else {
-                // Re-read the file only at commit: an old probe must not replace an edited profile
-                // or restore a deleted one, nor overwrite unrelated entries from its start snapshot.
-                let mut profiles = RemoteProfiles::load();
-                if profiles.get(&job.original.name) != Some(&job.original) {
-                    Err("remote profile changed during detection".into())
-                } else {
-                    let mut profile = job.original.clone();
-                    if result.is_ok() {
-                        profile.remove_field("detect_failed");
-                    } else {
-                        profile.set_field("detect_failed", "true");
-                    }
-                    profiles.upsert(profile);
-                    match profiles.save() {
-                        Ok(()) => result,
-                        Err(error) => Err(format!("save: {error}")),
-                    }
-                }
+                commit_detection_result(&job.original, result)
             };
             match &result {
                 Ok(mode) => {
@@ -141,6 +124,31 @@ impl Drop for ProfileDetections {
                 remaining,
                 "remote profile workers still unjoined at owner drop"
             );
+        }
+    }
+}
+
+// Re-read at commit so an old worker cannot replace a changed or deleted profile.
+fn commit_detection_result(
+    original: &RemoteProfile,
+    result: Result<String, String>,
+) -> Result<String, String> {
+    // Re-read the file only at commit: an old probe must not replace an edited profile
+    // or restore a deleted one, nor overwrite unrelated entries from its start snapshot.
+    let mut profiles = RemoteProfiles::load();
+    if profiles.get(&original.name) != Some(original) {
+        Err("remote profile changed during detection".into())
+    } else {
+        let mut profile = original.clone();
+        if result.is_ok() {
+            profile.remove_field("detect_failed");
+        } else {
+            profile.set_field("detect_failed", "true");
+        }
+        profiles.upsert(profile);
+        match profiles.save() {
+            Ok(()) => result,
+            Err(error) => Err(format!("save: {error}")),
         }
     }
 }
