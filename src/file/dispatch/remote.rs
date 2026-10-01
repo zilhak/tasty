@@ -3,17 +3,16 @@
 //! 규칙은 [ADR-0022](../../../docs/adr/0022-remote-mirror-content-and-queries.md)를 따른다.
 
 use crate::app::services::AppServices;
-use crate::core::State;
 use crate::file::dispatch::{DispatchTarget, FileDispatchOrigin};
 use crate::file::format::{DetectorId, FileTarget};
 use crate::file::handler::{FileHandler, HandlerAction};
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use crate::state::RequestContext;
 
 /// 원격에 열 수 있는 핸들러인지 확인한다.
 /// OpenSurface이면서 client가 그 kind의 콘텐츠를 mirror하는 경우만 대상이다.
 /// System·Ipc는 원격 경로를 client의 OS나 plugin이 로컬 파일로 열게 되어 제외한다.
-pub(crate) fn is_remote_openable(engine: &CoreState, handler: &FileHandler) -> bool {
+pub(crate) fn is_remote_openable(engine: &EngineRef<'_>, handler: &FileHandler) -> bool {
     match &handler.action {
         HandlerAction::OpenSurface { surface_kind, .. } => mirrors_content(engine, surface_kind),
         HandlerAction::Ipc { .. } | HandlerAction::System => false,
@@ -23,7 +22,7 @@ pub(crate) fn is_remote_openable(engine: &CoreState, handler: &FileHandler) -> b
 /// mirror origin의 경로는 원격 파일이다. picker 선택 등 어느 경로로 와도 원격에 열 수 없는 핸들러는
 /// 실행하지 않는다. 막았으면 true다.
 pub(crate) fn rejects_handler_for_origin(
-    engine: &CoreState,
+    engine: &EngineRef<'_>,
     handler: &FileHandler,
     origin_surface_id: Option<u32>,
 ) -> bool {
@@ -40,7 +39,7 @@ pub(crate) fn rejects_handler_for_origin(
 
 /// kind와 client에 등록한 plugin 쌍이 원문 전달이나 mesh mirror 허용 목록에 있는지 확인한다.
 /// html처럼 mirror에서 placeholder로 보이는 kind는 원격에 열어도 내용을 볼 수 없다.
-fn mirrors_content(engine: &CoreState, kind: &str) -> bool {
+fn mirrors_content(engine: &EngineRef<'_>, kind: &str) -> bool {
     let Some(def) = engine.runtime.surface_registry.get_live(kind) else {
         return false;
     };
@@ -70,10 +69,10 @@ pub(crate) fn apply_remote_identify_result(
         .unwrap_or_default();
     let first_is_openable = handlers
         .first()
-        .is_some_and(|h| is_remote_openable(engine, h));
+        .is_some_and(|h| is_remote_openable(&engine.as_ref(), h));
     let openable: Vec<FileHandler> = handlers
         .into_iter()
-        .filter(|h| is_remote_openable(engine, h))
+        .filter(|h| is_remote_openable(&engine.as_ref(), h))
         .collect();
     let Some(first) = openable.first() else {
         report_unsupported(state, &target, dispatch_origin);
@@ -108,7 +107,7 @@ pub(crate) fn apply_remote_identify_result(
 /// 1순위는 원격에 열 수 없어 목록에 없으므로 기본 핸들러 표시는 두지 않는다.
 fn open_remote_picker(
     state: &mut RequestContext,
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     target: FileTarget,
     detector: Option<DetectorId>,
     openable: Vec<FileHandler>,
@@ -135,7 +134,7 @@ fn open_remote_picker(
             .runtime
             .file_handler
             .get(&summary.id)
-            .is_some_and(|h| is_remote_openable(engine, &h))
+            .is_some_and(|h| is_remote_openable(&engine.as_ref(), &h))
     });
 }
 

@@ -20,7 +20,7 @@ impl EngineMut<'_> {
     ) {
         self.remote.presentation = crate::model::StructurePresentationSnapshot::capture(
             &self.workspaces(),
-            &self.categories,
+            self.categories(),
             presentation,
         );
     }
@@ -799,7 +799,7 @@ pub(crate) fn handle_markdown_content_request(
     let result = if !is_holder {
         Err("client does not hold a workspace attach".to_string())
     } else {
-        markdown_content_for_request(engine, surface_id)
+        markdown_content_for_request(&engine.as_ref(), surface_id)
     };
     let payload = match result {
         Ok((file, source, truncated)) => serde_json::json!({
@@ -4582,8 +4582,10 @@ impl crate::runtime::engine_access::EngineMut<'_> {
         client_id: AttachClientId,
         hub: &StreamHub,
     ) {
-        if !self.runtime.terminals.contains(surface_id) && !self.is_surface_deferred(surface_id) {
-            if let Some((kind, plugin_id)) = self.find_mesh_surface_info(surface_id)
+        if !self.runtime.terminals.contains(surface_id)
+            && !self.as_ref().is_surface_deferred(surface_id)
+        {
+            if let Some((kind, plugin_id)) = self.as_ref().find_mesh_surface_info(surface_id)
                 && crate::runtime::surface_registry::egui_mesh::is_egui_mesh_allowed(
                     &kind, &plugin_id,
                 )

@@ -273,6 +273,7 @@ impl App {
     ) -> anyhow::Result<()> {
         let PreparedConnection {
             port,
+            remote_workspace: workspace,
             client_id,
             name,
             surfaces,
@@ -334,6 +335,7 @@ impl App {
             }
             let new_markdown = mapping.markdown_ids();
             removed_markdown = sess
+                .state
                 .markdown_locals
                 .difference(&new_markdown)
                 .copied()
@@ -1024,6 +1026,7 @@ fn find_mirror_session_and_remote_id<'a>(
         return None;
     };
     let Some(remote_sid) = sess
+        .state
         .remote_to_local
         .iter()
         .find(|&(_, &l)| l == local_sid)
@@ -1045,7 +1048,7 @@ fn remove_mirror_workspace_from_engine(
     local_workspace: u32,
     remote_to_local: &HashMap<u32, u32>,
 ) -> bool {
-    let Some(pos) = engine
+    let Some(_) = engine
         .workspaces()
         .into_iter()
         .position(|ws| ws.id == local_workspace)
@@ -1063,10 +1066,10 @@ fn remove_mirror_workspace_from_engine(
         // 로컬 닫기 정리와 같이 soft 점유 등 이 surface의 점유 기록을 지운다.
         engine.forget_closed_surface(local);
     }
-    engine.remove_workspace_at(pos);
+    engine.remove_mirror_workspace(local_workspace);
     state.reconcile_presentation(engine);
     // mirror만 남았다면 원격 끊김 때문에 사용자 창을 닫는 대신 기본 workspace를 만든다.
-    state.recreate_workspace_if_empty(engine, "mirror workspace cleanup");
+    state.recreate_workspace_if_empty(&engine.read(), "mirror workspace cleanup");
     true
 }
 
@@ -1945,6 +1948,7 @@ fn apply_list_dir_result_event(
     reason: Option<String>,
 ) {
     let consumer = sess
+        .state
         .pending_list_dir_consumers
         .remove(&request_id)
         .flatten();
@@ -2381,7 +2385,6 @@ fn build_pane_from_json(
                 .into(),
             explicit_name: None,
             layout_opt: Some(layout),
-            surface_titles: Default::default(),
         };
         if value
             .get("active")
@@ -2402,7 +2405,6 @@ fn build_pane_from_json(
                 ids.next_surface()?,
                 "empty",
             ))),
-            surface_titles: Default::default(),
         });
     }
     let remote = p.get("id").and_then(Value::as_u64).unwrap_or(0) as u32;
@@ -2916,6 +2918,7 @@ impl App {
             anyhow::bail!("no attach session for mirror surface {local_surface_id}");
         };
         let Some(remote_sid) = sess
+            .state
             .remote_to_local
             .iter()
             .find(|&(_, &l)| l == local_surface_id)
@@ -2948,6 +2951,7 @@ impl App {
             anyhow::bail!("no attach session holds mirror markdown surface {local_surface_id}");
         };
         let Some(remote_sid) = sess
+            .state
             .remote_to_local
             .iter()
             .find(|&(_, &l)| l == local_surface_id)
@@ -5278,6 +5282,7 @@ mod tests {
             survivor.screen_text(false)
         );
         let new_local = *sess
+            .state
             .remote_to_local
             .get(&new_remote)
             .expect("delta 가 새 remote surface 를 매핑에 넣어야 한다(desync 방지)");
@@ -5578,11 +5583,11 @@ impl App {
             .get(engine)
             .ok_or_else(|| anyhow::anyhow!("mirror engine retired"))?;
         let (index, _) = owner
-            .core_state
+            .core
             .find_workspace_index_for_surface(op.anchor_surface_id())
             .ok_or_else(|| anyhow::anyhow!("mirror anchor missing"))?;
         let workspace = owner
-            .core_state
+            .core
             .workspace_at(index)
             .filter(|workspace| workspace.mirror)
             .ok_or_else(|| anyhow::anyhow!("target is not a mirror"))?

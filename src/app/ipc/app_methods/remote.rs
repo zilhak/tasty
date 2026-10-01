@@ -8,7 +8,7 @@ use crate::ipc::server::{IpcCommand, send_response};
 
 impl App {
     pub(super) fn ipc_dispatch_remote_workspaces(&mut self, cmd: &IpcCommand) {
-        crate::app::services::surface::spawn_remote_workspaces(
+        crate::app::services::spawn_remote_workspaces(
             cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
             &cmd.request.params,
             &cmd.response_tx,
@@ -112,7 +112,7 @@ impl App {
     }
 }
 
-use crate::app::services::surface::RemoteConnParams;
+use crate::app::services::RemoteConnParams;
 
 impl RemoteConnParams {
     /// SSH 접속 준비는 블로킹하므로 워커에서 호출한다.
