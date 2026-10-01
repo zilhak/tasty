@@ -10,6 +10,7 @@ attach 는 **server**(피점유 — PTY/grid 소유)와 **client**(점유 — mi
 
 - **서버측** (`src/remote/server.rs`, IPC `attach.*`) — **transport 를 모른다.** 항상 `127.0.0.1` 로만 client 를 받는다. 로컬에서 붙든 SSH 터널 너머에서 붙든 서버 입장엔 전부 loopback 이다. 서버는 SSH 를 전혀 모른다.
   - 연결마다의 push sink·입력 프레임 분류·bulk 연결 결속은 `StreamHub`(`crates/tasty-ipc/src/stream_hub.rs`)가 든다. sink 는 채널이라 허브도 TCP 를 모른다 — 소켓을 읽고 쓰는 accept 스레드는 본체 adapter `src/adapters/production/tcp_ipc_server.rs` 에 있다. root Remote adapter가 원 등록 binding을 확인해 허브에 전달한다. 순수 tasty-core은 StreamHub를 소유하거나 호출하지 않는다([ADR-0001](../adr/0001-crate-dependency-boundaries.md)).
+  - 점유된 workspace의 디렉터리·Git·markdown 조회와 응답 직렬화 예산은 `src/remote/server/content_queries.rs`가 담당한다. 호출자는 기존 `server` handler 경로를 사용한다.
 - **클라이언트측** — "원격성" 을 전부 흡수한다. 두 종류:
   - **로컬 client**: 포트 파일(`~/.tasty/tasty.port`)을 읽어 그 loopback 포트로 직결. **release 에서 제거 → debug 전용**(`tasty debug attach`).
   - **원격 client**: `ssh -L 127.0.0.1:<localport>:127.0.0.1:<remoteport> -N` 터널 후 그 **localport 로 직결**. 터널은 바이트 파이프라 스트림 프로토콜에 투명 — 원격 client 도 결국 자기 머신 loopback 에 붙는다(`tasty remote attach --ssh|--profile`).

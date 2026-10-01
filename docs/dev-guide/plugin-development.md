@@ -461,6 +461,8 @@ disable·remove는 registry 정의를 삭제하지 않고 철회한다. 기존 s
 - 현재 누적은 `PluginManager::channel_bytes`(큐별 바이트·최댓값·거절·대기 누계)가 낸다. **이
   값을 읽는 IPC/CLI 는 아직 없다.**
 
+`crates/tasty-host-plugin/src/manager/pump.rs`는 이벤트 처리와 생성·회수 FIFO를 소비한다. `pump/retirement.rs`는 원 surface binding·plugin process에 고정된 회수 요청과 ACK 추적을 담당하며, publication 장벽의 제어 전용 pump와 대기 바이트 예산은 `pump.rs`에 남는다.
+
 ### 큐 포화 통지 (호스트가 버린 요청을 plugin 이 안다)
 
 호스트 → plugin 요청 큐는 유한하고, 차면(개수든 바이트든 — 위 "채널 상한") **기다리지 않고 거절**한다 — 그 방향에서
