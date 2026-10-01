@@ -37,7 +37,7 @@ pub(crate) trait IpcWindow {
     /// 호출 플러그인의 webview에서 기록한 사용자 URL인지 확인하고 기록을 소비한다.
     /// 같은 navigation은 한 번만 사용자 요청 근거로 사용할 수 있다(ADR-0031).
     #[cfg(feature = "gui")]
-    fn take_webview_user_navigation(&mut self, plugin_id: &str, surface_id: u32, url: &str)
+    fn take_webview_user_navigation(&mut self, engine:&EngineRef<'_>, plugin_id: &str, surface_id: u32, url: &str)
     -> bool;
 
     /// 요청 하나가 모은 intent 를 이 창의 큐 끝에 순서대로 옮긴다. 진입점만 부른다.

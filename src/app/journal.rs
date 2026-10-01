@@ -398,13 +398,8 @@ impl JournalApplication {
                             for (key,installation) in installations {
                                 let retiring = session.runtime.surfaces.get(&installation.surface_id())
                                     .map(|surface|crate::runtime::effect_runner::RetiringKind::capture(surface.as_ref()));
-                                let installed = installation
-                                    .install(&mut session.borrow_mut(), plugins.as_deref_mut(), retiring)
-                                    .map_err(|error| error.to_string())?;
-                                self.creations
-                                    .get_mut(&key)
-                                    .expect("materialization request")
-                                    .installed(installed);
+                                self.creations.get_mut(&key).expect("materialization request")
+                                    .install_candidate(session,plugins.as_deref_mut(),retiring,installation)?;
                             }
                         }
                         session.borrow_mut().observe_committed_structure(predecessor,events);
@@ -607,22 +602,6 @@ impl JournalApplication {
     }
 
     #[cfg(feature = "gui")]
-    pub(crate) fn abandon_halted_engine(&mut self, id: EngineId) {
-        assert!(
-            self.is_halted(),
-            "only halted bootstrap continuations can be abandoned without a result command"
-        );
-        self.opening.remove(&id);
-        self.creations.retain(|(engine,_),_|*engine!=id);
-        self.restored_views.remove(&id);
-        self.restoration_boot_done.remove(&id);
-        self.restoration_ready.remove(&id);
-        self.restoration_queue.retain(|(engine, _)| *engine != id);
-        self.restoration_reads
-            .retain(|_, (engine, _)| *engine != id);
-    }
-
-    #[cfg(feature = "gui")]
     pub(crate) fn input_generation(
         &self,
         engine: EngineId,
@@ -638,7 +617,7 @@ impl JournalApplication {
     }
 
     pub(crate) fn cleanup_poll_deadline(&self)->Option<std::time::Instant> {
-        self.resource_cleanup_deadline().into_iter().chain(self.creations.values().any(creation::Creation::needs_cleanup_poll).then(||std::time::Instant::now()+std::time::Duration::from_millis(10))).min()
+        self.resource_cleanup_deadline().into_iter().chain(self.creations.values().filter_map(creation::Creation::cleanup_deadline)).min()
     }
 
     pub(crate) fn runtime_epoch(&self)->Option<u64> {self.runtime_epoch}

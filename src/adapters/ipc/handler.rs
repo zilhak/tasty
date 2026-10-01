@@ -722,7 +722,7 @@ fn route_engine_handler(
         // 헤드리스에서는 예약 성공 뒤 요청을 버리지 않도록 라우팅하지 않는다(ADR-0031).
         #[cfg(feature = "gui")]
         "file_handler.dispatch" => {
-            file_handler::handle_dispatch(out, window, engine, caller, id, request.params.clone())
+            file_handler::handle_dispatch(out, window, &engine.as_ref(), caller, id, request.params.clone())
         }
         "hook_handler.list" => hook_handler::handle_list(id),
         "hook_handler.get" => hook_handler::handle_get(id, &request.params),
@@ -733,7 +733,7 @@ fn route_engine_handler(
         "completion_strategy.list" => completion_strategy::handle_list(id),
         #[cfg(feature = "gui")]
         "markdown.navigate" => {
-            markdown::handle_navigate(out, window, engine, caller, id, request.params.clone())
+            markdown::handle_navigate(out, window, &engine.as_ref(), caller, id, request.params.clone())
         }
         // kind에 상관없이 최근 목록만 조회하므로 GUI가 필요 없다.
         "recent.query" => recent::handle_query(window, id, request.params.clone()),

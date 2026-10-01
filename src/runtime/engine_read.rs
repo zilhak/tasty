@@ -57,9 +57,14 @@ impl<'a> EngineRef<'a> {
 impl Deref for EngineRead<'_> {type Target=CoreState;fn deref(&self)->&CoreState {self.core}}
 impl<'a> EngineRead<'a> {
     #[cfg(feature="gui")]
-    pub(crate) fn html_script(&self,sid:u32)->Option<crate::app::html_runtime::HtmlSnapshot> {crate::app::html_runtime::snapshot(self,sid)}
+    pub(crate) fn html_script(&self,sid:u32)->Option<crate::app::html_runtime::HtmlSnapshot> {
+        let remote=self.surfaces.get(&sid)?.as_any().downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()?;
+        if remote.kind_static!="html" {return None;}
+        let target=crate::app::engine_action::SurfaceBinding::capture(self,sid)?;
+        Some(crate::app::html_runtime::snapshot(remote,target))
+    }
     pub(crate) fn as_ref(&self)->Self {self.clone()}
-    pub(crate) fn find_surface_by_id(&self,id:u32)->Option<&'a dyn Surface> {self.surfaces.get(&id).map(|s|s.as_ref())}
+    pub(crate) fn find_surface_by_id(&self,id:u32)->Option<SurfaceRead<'a>> {self.surfaces.get(&id).map(|surface|SurfaceRead {inner:surface.as_ref()})}
     pub(crate) fn find_terminal_by_id(&self,id:u32)->Option<&'a tasty_terminal::Terminal> {self.terminals.get(id)}
     #[cfg(feature="gui")]
     pub(crate) fn visible_terminal(&self,id:u32)->Option<&'a tasty_terminal::Terminal> {if self.live.occupancy.is_hard_occupied(id) {self.readonly.get(&id)} else {self.terminals.get(id)}}
@@ -88,4 +93,34 @@ impl<'a> EngineRead<'a> {
 pub(crate) struct HandlerCatalog<'a>(&'a crate::file::handler::FileHandlerRegistry);
 impl HandlerCatalog<'_> {
     pub(crate) fn all_handlers(&self)->Vec<tasty_file_handler::FileHandler> {self.0.all_handlers()}
+}
+
+/// Borrowed display capability. No Any cast or runtime object reference escapes this wrapper.
+#[derive(Clone,Copy)]
+pub(crate) struct SurfaceRead<'a> {inner:&'a dyn Surface}
+impl<'a> SurfaceRead<'a> {
+    pub(crate) fn kind(&self)->&'static str {self.inner.kind()}
+    pub(crate) fn type_name(&self)->&'static str {self.inner.type_name()}
+    pub(crate) fn surface_id(&self)->Option<u32> {self.inner.surface_id()}
+    pub(crate) fn display_name(&self)->String {self.inner.display_name()}
+    pub(crate) fn source_cwd(&self)->Option<std::path::PathBuf> {self.inner.source_cwd()}
+    pub(crate) fn webview_url(&self)->Option<String> {self.inner.webview_url()}
+    pub(crate) fn to_tree_json(&self)->serde_json::Value {self.inner.to_tree_json()}
+    // These builtin models contain ordinary values; their mutation requires &mut ownership.
+    pub(crate) fn empty(&self)->Option<&'a crate::model::EmptySurface> {self.inner.as_any().downcast_ref()}
+    pub(crate) fn explorer(&self)->Option<&'a crate::model::ExplorerPanel> {self.inner.as_any().downcast_ref()}
+    pub(crate) fn dag(&self)->Option<&'a crate::model::DagGraphSurface> {self.inner.as_any().downcast_ref()}
+    pub(crate) fn mesh(&self)->Option<&'a super::egui_mesh_surface::EguiMeshSurface> {self.inner.as_any().downcast_ref()}
+    pub(crate) fn attach_mesh(&self)->Option<&'a crate::model::AttachMeshSurface> {self.inner.as_any().downcast_ref()}
+    #[cfg(feature="gui")]
+    pub(crate) fn remote_webview(&self)->Option<WebviewRead<'a>> {self.inner.as_any().downcast_ref().map(|inner|WebviewRead {inner})}
+}
+#[cfg(feature="gui")]
+#[derive(Clone,Copy)]
+pub(crate) struct WebviewRead<'a> {inner:&'a crate::plugin_bridge::remote_surface::RemoteSurface}
+#[cfg(feature="gui")]
+impl WebviewRead<'_> {
+    pub(crate) fn kind(&self)->&'static str {self.inner.kind_static}
+    pub(crate) fn url(&self)->Option<String> {self.inner.webview_url()}
+    pub(crate) fn nav_state(&self)->crate::model::NavState {self.inner.nav_state()}
 }

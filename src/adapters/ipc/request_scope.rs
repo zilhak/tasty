@@ -52,5 +52,5 @@ impl IpcWindow for RequestScope<'_> {
     #[cfg(feature="gui")]
     fn plugin_popup_user_activated(&self,plugin:&str,instance:u64)->bool {self.popup_proofs.get(&instance).is_some_and(|owner|owner==plugin)}
     #[cfg(feature="gui")]
-    fn take_webview_user_navigation(&mut self,plugin:&str,surface:u32,url:&str)->bool {self.navigation_proofs.as_ref().is_some_and(|proofs|proofs.take(&self.view,plugin,surface,url))}
+    fn take_webview_user_navigation(&mut self,engine:&EngineRef<'_>,plugin:&str,surface:u32,url:&str)->bool {self.navigation_proofs.as_ref().is_some_and(|proofs|proofs.take(&self.view,engine,plugin,surface,url))}
 }

@@ -66,10 +66,11 @@ impl App {
     pub(crate) fn poll_retiring_engine_owners(&mut self) {
         for id in self.engines.releasing_ids() {
             let Some(session)=self.engines.session_mut(id) else {continue;};
-            // Halted private owners are transferred by the Recovery leaf before EngineRelease starts.
-            if self.journal.is_halted() {continue;}
-            if self.journal.has_pending_engine_effects(id) {continue;}
-            if session.runtime.has_pending_delivery() {continue;}
+            if self.journal.is_halted() {
+                if !self.journal.release_halted_resources(session,self.plugin_manager.as_mut()) {continue;}
+            } else {
+                if self.journal.has_pending_engine_effects(id) || session.runtime.has_pending_delivery() {continue;}
+            }
             if crate::runtime::resource_retirement::poll_engine_release(session,self.plugin_manager.as_mut()) {
                 self.journal.forget_released_engine(id);
                 drop(self.engines.finish_retiring(id));
