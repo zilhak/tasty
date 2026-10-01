@@ -173,27 +173,8 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
         "{unreadable old View}"
     );
     let stale = StoredView::capture(binding, &session.core_state, None, &choice);
-    journal
-        .worker
-        .submit(Request {
-            ticket: u64::MAX,
-            work: Work::SaveView(stale),
-        })
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(3);
-    loop {
-        match journal.worker.try_recv() {
-            Ok(Completion::Finished { ticket, result }) => {
-                assert_eq!(ticket, u64::MAX);
-                assert!(result.unwrap_err().contains("retired engine binding"));
-                break;
-            }
-            Err(std::sync::mpsc::TryRecvError::Empty) => {}
-            other => panic!("unexpected stale save result: {other:?}"),
-        }
-        assert!(Instant::now() < deadline);
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    assert_stale_view_rejected(&journal, stale);
+
     assert_eq!(
         std::fs::read_to_string(home.join("structure/views/slot-1/incarnation-1.json")).unwrap(),
         "{unreadable old View}"
@@ -394,4 +375,28 @@ fn failed_legacy_import_keeps_regular_and_secret_scopes() {
     }
     assert!(session.journal_binding.is_none());
     assert_legacy_scopes(&memory.lock().unwrap(), true);
+}
+
+fn assert_stale_view_rejected(journal: &JournalApplication, stale: StoredView) {
+    journal
+        .worker
+        .submit(Request {
+            ticket: u64::MAX,
+            work: Work::SaveView(stale),
+        })
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        match journal.worker.try_recv() {
+            Ok(Completion::Finished { ticket, result }) => {
+                assert_eq!(ticket, u64::MAX);
+                assert!(result.unwrap_err().contains("retired engine binding"));
+                break;
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            other => panic!("unexpected stale save result: {other:?}"),
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
 }

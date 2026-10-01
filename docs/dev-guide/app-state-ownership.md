@@ -166,3 +166,5 @@ EngineRef/EngineMut의 참조 필드와 Session의 암묵적 Deref를 검사한�
 실행 정리의 관측값은 수명과 구분한다. runner의 첫 stop 호출 결과를 사용하지 않아도 원 receipt는 EngineSession 또는 RunnerRegistry에 남아 후속 poll이 실제 join을 관측한다. activation의 OnceLock은 최초 Ready/Failed만 전달하며, 반복 publication이나 Drop이 이미 전달한 결과를 덮어쓰지 않는다. 점유 해제의 예상 밖 실패는 로그로 남긴다.
 
 복원할 surface에 저장된 탭 제목이 없거나 복구 미확정 사유가 없는 경우의 표시 문구는 `surface.restore` 번역 키를 사용한다. 이미 기록된 제목과 원 오류 사유는 보존한다.
+
+journal 완료 pump는 bootstrap, batch 적용, 요청별 결과를 private 함수로 나눠 처리한다. 모든 대상 Engine의 projection·실행 자원 설치가 끝난 뒤 batch ACK를 보내고, 그 뒤 원 View continuation과 관측값을 적용하는 순서는 유지한다. shutdown은 port scan·profile detection·screenshot의 기존 기한과 실제 미회수 관측을 각 함수에서 확인한 뒤 plugin 종료 단계로 진행한다.

@@ -291,19 +291,7 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
-        // 첫 Focused 이벤트를 창 map의 신호로 사용해 에이전트 창의 초기 포커스 힌트를 지운다.
-        if let WindowEvent::Focused(_) = &event
-            && self.pending_focus_hint_clear.remove(&id)
-            && let Some(view) = self.view.views.get(&id)
-            && let Err(e) =
-                crate::platform::window_stacking::clear_initial_focus_hint(&view.base().winit)
-        {
-            tracing::warn!("agent window: clearing the initial focus hint failed: {e}");
-        }
-
-        if let WindowEvent::Focused(true) = &event {
-            self.handle_window_focused(id);
-        }
+        self.apply_window_focus_observation(id, &event);
 
         if self.view.is_modal_active() {
             let is_mouse_press = matches!(
@@ -549,6 +537,22 @@ impl ApplicationHandler<AppEvent> for App {
 }
 
 impl App {
+    fn apply_window_focus_observation(&mut self, id: WindowId, event: &WindowEvent) {
+        // 첫 Focused 이벤트를 창 map의 신호로 사용해 에이전트 창의 초기 포커스 힌트를 지운다.
+        if let WindowEvent::Focused(_) = event
+            && self.pending_focus_hint_clear.remove(&id)
+            && let Some(view) = self.view.views.get(&id)
+            && let Err(e) =
+                crate::platform::window_stacking::clear_initial_focus_hint(&view.base().winit)
+        {
+            tracing::warn!("agent window: clearing the initial focus hint failed: {e}");
+        }
+
+        if let WindowEvent::Focused(true) = event {
+            self.handle_window_focused(id);
+        }
+    }
+
     /// hidden 상태의 첫 창을 만든다. 로딩·shell setup 경로가 렌더를 시도한 뒤 표시한다.
     fn boot_create_hidden_window(
         event_loop: &ActiveEventLoop,

@@ -14,30 +14,7 @@ pub(crate) struct PendingWindow {
 }
 
 impl App {
-    pub(crate) fn poll_journal_application(&mut self) {
-        self.capture_published_input_targets();
-        let projections: Vec<_> = self
-            .engines()
-            .window_pairs()
-            .filter_map(|(window, main, engine)| {
-                self.engines.of_window(window).map(|id| {
-                    (
-                        id,
-                        crate::model::StructurePresentationSnapshot::capture(
-                            &engine.workspaces(),
-                            engine.categories(),
-                            &main.state.navigation,
-                        ),
-                    )
-                })
-            })
-            .collect();
-        for (id, presentation) in projections {
-            if let Some(session) = self.engines.session_mut(id) {
-                self.journal
-                    .update_completion_view(id, &session.core_state, &presentation);
-            }
-        }
+    fn activate_displayed_restorations(&mut self) {
         // Materialization belongs to App/Engine; View contributes only the displayed IDs.
         // Revisit after each completion so Busy/another activation never loses a visible leaf.
         let selected: Vec<_> = self
@@ -76,6 +53,33 @@ impl App {
                 }
             }
         }
+    }
+
+    pub(crate) fn poll_journal_application(&mut self) {
+        self.capture_published_input_targets();
+        let projections: Vec<_> = self
+            .engines()
+            .window_pairs()
+            .filter_map(|(window, main, engine)| {
+                self.engines.of_window(window).map(|id| {
+                    (
+                        id,
+                        crate::model::StructurePresentationSnapshot::capture(
+                            &engine.workspaces(),
+                            engine.categories(),
+                            &main.state.navigation,
+                        ),
+                    )
+                })
+            })
+            .collect();
+        for (id, presentation) in projections {
+            if let Some(session) = self.engines.session_mut(id) {
+                self.journal
+                    .update_completion_view(id, &session.core_state, &presentation);
+            }
+        }
+        self.activate_displayed_restorations();
         let mut sessions: Vec<_> = self.engines.all_sessions_mut().collect();
         if let Err(error) = self
             .journal

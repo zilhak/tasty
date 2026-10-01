@@ -171,6 +171,67 @@ impl App {
         }
     }
 
+    fn dispatch_mouse_capture_hint(
+        state: &mut crate::state::MainViewState,
+        engine: &mut EngineMut<'_>,
+        intent: &crate::intent::DispatchedIntent,
+        view: Option<&crate::view::ViewBase>,
+    ) {
+        use crate::intent::Intent;
+        let Intent::MouseCaptureHint {
+            target,
+            foreground_generation,
+            view: origin,
+        } = &intent.body
+        else {
+            return;
+        };
+
+        if view.is_some_and(|view| view.state.matches_identity(origin))
+            && let Some(surface) = target.take_mouse_capture_hint(engine, *foreground_generation)
+        {
+            state.banners.push(
+                crate::adapters::ui::BannerState::persistent(
+                    crate::adapters::ui::banner::defs::BANNER_MOUSE_CAPTURE,
+                    crate::adapters::ui::BannerScope::Surface(surface),
+                )
+                .with_origin_generation(*foreground_generation),
+            );
+        }
+    }
+
+    fn dispatch_approval_response(
+        core: &mut crate::app::services::AppServices,
+        state: &mut crate::state::MainViewState,
+        intent: &crate::intent::DispatchedIntent,
+    ) {
+        use crate::intent::Intent;
+        let Intent::RespondApproval {
+            request_id,
+            choice,
+            comment,
+        } = &intent.body
+        else {
+            return;
+        };
+
+        match core.respond_approval(
+            request_id,
+            choice.clone(),
+            tasty_approval::Responder::User,
+            comment.clone(),
+        ) {
+            Ok(change) => {
+                crate::ipc::handler::approval::persist_record(core, &change.record);
+                state
+                    .dialogs
+                    .approval_records
+                    .insert(request_id.clone(), change.record);
+            }
+            Err(error) => tracing::warn!("approval response failed: {error}"),
+        }
+        state.dialogs.approval_submitting = None;
+    }
     fn dispatch_one_intent(
         core: &mut crate::app::services::AppServices,
         state: &mut crate::state::MainViewState,
@@ -181,47 +242,11 @@ impl App {
     ) {
         use crate::intent::Intent;
         match &intent.body {
-            Intent::MouseCaptureHint {
-                target,
-                foreground_generation,
-                view: origin,
-            } => {
-                if view.is_some_and(|view| view.state.matches_identity(origin))
-                    && let Some(surface) =
-                        target.take_mouse_capture_hint(engine, *foreground_generation)
-                {
-                    state.banners.push(
-                        crate::adapters::ui::BannerState::persistent(
-                            crate::adapters::ui::banner::defs::BANNER_MOUSE_CAPTURE,
-                            crate::adapters::ui::BannerScope::Surface(surface),
-                        )
-                        .with_origin_generation(*foreground_generation),
-                    );
-                }
+            Intent::MouseCaptureHint { .. } => {
+                Self::dispatch_mouse_capture_hint(state, engine, intent, view)
             }
             Intent::Engine(action) => action.apply(engine, plugins),
-            Intent::RespondApproval {
-                request_id,
-                choice,
-                comment,
-            } => {
-                match core.respond_approval(
-                    request_id,
-                    choice.clone(),
-                    tasty_approval::Responder::User,
-                    comment.clone(),
-                ) {
-                    Ok(change) => {
-                        crate::ipc::handler::approval::persist_record(core, &change.record);
-                        state
-                            .dialogs
-                            .approval_records
-                            .insert(request_id.clone(), change.record);
-                    }
-                    Err(error) => tracing::warn!("approval response failed: {error}"),
-                }
-                state.dialogs.approval_submitting = None;
-            }
+            Intent::RespondApproval { .. } => Self::dispatch_approval_response(core, state, intent),
             Intent::Ui(_) => {
                 crate::intent::popup::handle(state, engine, intent);
             }

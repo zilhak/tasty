@@ -346,7 +346,7 @@ impl App {
         StepOutcome::Advanced
     }
 
-    fn shutdown_step_stopping_plugins(&mut self) -> StepOutcome {
+    fn wait_for_port_scan_shutdown(&mut self) -> bool {
         let scans_remaining = self.port_scans.poll_shutdown();
         if scans_remaining != 0
             && let Some(deadline) = self
@@ -356,7 +356,7 @@ impl App {
                 .and_then(|state| state.port_scan_deadline)
         {
             if Instant::now() < deadline {
-                return StepOutcome::Waiting;
+                return true;
             }
             tracing::warn!(
                 scans_remaining,
@@ -366,6 +366,11 @@ impl App {
                 state.port_scan_deadline = None;
             }
         }
+
+        false
+    }
+
+    fn wait_for_profile_shutdown(&mut self) -> bool {
         let detections_remaining = self.services.profile_detections.poll_shutdown();
         if detections_remaining != 0
             && let Some(deadline) = self
@@ -375,7 +380,7 @@ impl App {
                 .and_then(|state| state.profile_detection_deadline)
         {
             if Instant::now() < deadline {
-                return StepOutcome::Waiting;
+                return true;
             }
             tracing::warn!(
                 detections_remaining,
@@ -385,6 +390,11 @@ impl App {
                 state.profile_detection_deadline = None;
             }
         }
+
+        false
+    }
+
+    fn wait_for_screenshot_shutdown(&mut self) -> bool {
         let screenshots_remaining = self.screenshot_workers.poll_shutdown();
         if screenshots_remaining != 0
             && let Some(deadline) = self
@@ -394,7 +404,7 @@ impl App {
                 .and_then(|state| state.screenshot_deadline)
         {
             if Instant::now() < deadline {
-                return StepOutcome::Waiting;
+                return true;
             }
             tracing::warn!(
                 screenshots_remaining,
@@ -404,6 +414,16 @@ impl App {
                 state.screenshot_deadline = None;
             }
         }
+        false
+    }
+    fn shutdown_step_stopping_plugins(&mut self) -> StepOutcome {
+        if self.wait_for_port_scan_shutdown()
+            || self.wait_for_profile_shutdown()
+            || self.wait_for_screenshot_shutdown()
+        {
+            return StepOutcome::Waiting;
+        }
+
         let remote = self.remote.shutdown_observation();
         match remote {
             tasty_remote::outbound::ShutdownObservation::Waiting => return StepOutcome::Waiting,
