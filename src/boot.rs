@@ -534,83 +534,7 @@ fn dispatch_headless_event(
 ) -> std::ops::ControlFlow<()> {
     use crate::AppEvent;
     if matches!(event, AppEvent::JournalReady) {
-        app.journal
-            .update_completion_view(session.id, &session.core_state, &state.navigation);
-        if let Err(error) = app
-            .journal
-            .poll_bootstrap(&mut [session], app.plugin_manager.as_mut())
-        {
-            tracing::error!("committed structure publication halted: {error}");
-        }
-        if app.journal.is_halted() {
-            crate::app::attach_activation::cancel_engine(
-                &mut app.pending_server_attaches,
-                session.id,
-                &mut session.borrow_mut(),
-                &app.stream_hub,
-            );
-        }
-        if !app.journal.is_halted() && !app.journal.pauses_observation() {
-            for request in app.journal.creation_requests_needing_kind() {
-                headless_plugins::ensure_plugin_for_surface_kind(
-                    app,
-                    state,
-                    &mut session.borrow_mut(),
-                    &request,
-                );
-            }
-            crate::app::attach_activation::poll(
-                &mut app.pending_server_attaches,
-                &mut app.journal,
-                &mut [session],
-                &app.stream_hub,
-            );
-            app.journal
-                .resolve_headless_requests(session, state, &app.services);
-            app.journal.finish_headless_live_inputs(
-                session.id,
-                &mut app.services,
-                state,
-                &mut session.borrow_mut(),
-                app.plugin_manager.as_mut(),
-            );
-            session.borrow_mut().poll_input_submissions();
-            for (remote, response) in app.journal.take_remote_results() {
-                if remote.engine == session.id {
-                    crate::app::journal::commands::inbound::deliver_result(
-                        remote,
-                        response,
-                        &mut session.borrow_mut(),
-                        app.plugin_manager.as_mut(),
-                        &app.stream_hub,
-                    );
-                }
-            }
-            if !app.journal.take_changed_engines().is_empty() {
-                state.reconcile_presentation(&session.core_state);
-                session
-                    .borrow_mut()
-                    .refresh_attach_presentation(&state.navigation);
-            }
-            // A server-side close has no incoming stream event to flush its committed delta.
-            // Remote results above release their ordering fence before this ordinary observation.
-            session.borrow_mut().push_structure_changes();
-        }
-        app.finish_preset_captures();
-        app.journal
-            .deliver_plugin_replies(app.plugin_manager.as_mut());
-        while !app.journal.pauses_observation() && !app.journal.is_halted() {
-            let Some(crate::app::publication_input::DeferredEvent::App(event)) =
-                app.publication_inputs.pop()
-            else {
-                break;
-            };
-            let flow = dispatch_headless_event(app, state, session, waker, event);
-            if flow.is_break() {
-                return flow;
-            }
-        }
-        return std::ops::ControlFlow::Continue(());
+        return handle_headless_journal_ready(app, state, session, waker);
     }
     if app.journal.is_halted()
         && !matches!(
@@ -650,6 +574,93 @@ fn dispatch_headless_event(
         AppEvent::TerminalOutput(id) => handle_terminal_output(app, state, engine, id),
         AppEvent::IpcReady => unreachable!("IPC event handled above"),
         AppEvent::StreamReady => headless_stream::handle_stream_ready(app, state, engine),
+    }
+    std::ops::ControlFlow::Continue(())
+}
+
+/// Publish the committed cut and its replies before replaying deferred observation events.
+#[cfg(not(feature = "gui"))]
+fn handle_headless_journal_ready(
+    app: &mut crate::app::App,
+    state: &mut crate::state::RequestContext,
+    session: &mut crate::runtime::engine_session::EngineSession,
+    waker: &crate::adapters::production::headless_waker::HeadlessWaker,
+) -> std::ops::ControlFlow<()> {
+    app.journal
+        .update_completion_view(session.id, &session.core_state, &state.navigation);
+    if let Err(error) = app
+        .journal
+        .poll_bootstrap(&mut [session], app.plugin_manager.as_mut())
+    {
+        tracing::error!("committed structure publication halted: {error}");
+    }
+    if app.journal.is_halted() {
+        crate::app::attach_activation::cancel_engine(
+            &mut app.pending_server_attaches,
+            session.id,
+            &mut session.borrow_mut(),
+            &app.stream_hub,
+        );
+    }
+    if !app.journal.is_halted() && !app.journal.pauses_observation() {
+        for request in app.journal.creation_requests_needing_kind() {
+            headless_plugins::ensure_plugin_for_surface_kind(
+                app,
+                state,
+                &mut session.borrow_mut(),
+                &request,
+            );
+        }
+        crate::app::attach_activation::poll(
+            &mut app.pending_server_attaches,
+            &mut app.journal,
+            &mut [session],
+            &app.stream_hub,
+        );
+        app.journal
+            .resolve_headless_requests(session, state, &app.services);
+        app.journal.finish_headless_live_inputs(
+            session.id,
+            &mut app.services,
+            state,
+            &mut session.borrow_mut(),
+            app.plugin_manager.as_mut(),
+        );
+        session.borrow_mut().poll_input_submissions();
+        for (remote, response) in app.journal.take_remote_results() {
+            if remote.engine == session.id {
+                crate::app::journal::commands::inbound::deliver_result(
+                    remote,
+                    response,
+                    &mut session.borrow_mut(),
+                    app.plugin_manager.as_mut(),
+                    &app.stream_hub,
+                );
+            }
+        }
+        if !app.journal.take_changed_engines().is_empty() {
+            state.reconcile_presentation(&session.core_state);
+            session
+                .borrow_mut()
+                .refresh_attach_presentation(&state.navigation);
+        }
+        // A server-side close has no incoming stream event to flush its committed delta.
+        // Remote results above release their ordering fence before this ordinary observation.
+        session.borrow_mut().push_structure_changes();
+    }
+    app.finish_preset_captures();
+    app.journal
+        .deliver_plugin_replies(app.plugin_manager.as_mut());
+    while !app.journal.pauses_observation() && !app.journal.is_halted() {
+        let Some(crate::app::publication_input::DeferredEvent::App(event)) =
+            app.publication_inputs.pop()
+        else {
+            break;
+        };
+        let flow = dispatch_headless_event(app, state, session, waker, event);
+        if flow.is_break() {
+            return flow;
+        }
     }
     std::ops::ControlFlow::Continue(())
 }
@@ -800,6 +811,16 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         }
     }
     drop(engine);
+    finish_headless_shutdown(&mut app, &mut session);
+    Ok(())
+}
+
+/// Stop admission and retain the original owners while observing shutdown receipts.
+#[cfg(not(feature = "gui"))]
+fn finish_headless_shutdown(
+    app: &mut crate::app::App,
+    session: &mut crate::runtime::engine_session::EngineSession,
+) {
     app.journal.begin_process_shutdown();
     // Begin stop now; the loop below observes this same retained receipt until its deadline.
     let _ = session.poll_runner_stop(&app.services.tasks);
@@ -812,10 +833,10 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         // plugin creation or replay input while the publication owner is shutting down.
         let retained = app
             .journal
-            .release_halted_resources(&mut session, app.plugin_manager.as_mut());
+            .release_halted_resources(session, app.plugin_manager.as_mut());
         let resources = retained
             && crate::runtime::resource_retirement::poll_engine_release(
-                &mut session,
+                session,
                 app.plugin_manager.as_mut(),
             );
         let runners_joined = !matches!(runners, tasty_task_runtime::RunnerStopObservation::Waiting);
@@ -833,7 +854,6 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    Ok(())
 }
 
 #[cfg(all(test, not(feature = "gui")))]
