@@ -254,13 +254,9 @@ fn gui_gates_in_the_domain_are_pinned() {
         .map(|(f, n)| format!("  {n:>3}  {f}"))
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(
-        total <= GUI_GATES_IN_DOMAIN,
-        "도메인의 gui 조건이 {total}개로 기준 {GUI_GATES_IN_DOMAIN}보다 늘었다.\n{listing}\nheadless 소비자가 없는 정의를 제외하는 조건인지(ADR-0003), GUI 동작을 숨긴 것인지 확인한다. 정당한 조건이면 기준을 {total}로 갱신하고 이유를 남긴다.",
-    );
-    assert!(
-        total >= GUI_GATES_IN_DOMAIN,
-        "도메인의 gui 조건이 {total}개로 기준 {GUI_GATES_IN_DOMAIN}보다 줄었다. 실제 감소인지 확인한 뒤 기준을 {total}로 낮춘다.\n{listing}",
+    assert_eq!(
+        total, GUI_GATES_IN_DOMAIN,
+        "순수 도메인에는 gui 조건이 없어야 한다(고정값 {GUI_GATES_IN_DOMAIN}). {total}개를 발견했다.\n{listing}\nGUI 조건과 동작을 상위 adapter로 옮기고 도메인은 GUI/headless 공통 정의로 유지한다.",
     );
 }
 
