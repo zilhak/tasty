@@ -83,6 +83,26 @@ fn prepared() -> (JournalModel, OperationId, OperationId, OperationId) {
     (model, group, first, second)
 }
 
+#[test]
+fn prepared_assembly_round_trips_through_the_durable_event_codec() {
+    let (model, group, _, _) = prepared();
+    let mut operation = model.operations[&group].clone();
+    let plan = operation.assembly.as_mut().expect("assembly coordinator");
+    plan.snapshot.presentation = UndoPresentation {
+        focused_panes: [(1, 1)].into(),
+        selected_tabs: [(1, 10)].into(),
+        selected_surfaces: [(10, 11)].into(),
+    };
+    let event = DomainEvent::OperationPrepared { operation };
+    let encoded = encode_event(&event).expect("encode nonempty numeric maps");
+    let decoded = decode_event(&encoded.type_tag, encoded.schema_version, &encoded.bytes)
+        .unwrap_or_else(|error| {
+            panic!("{error}; body={}", String::from_utf8_lossy(&encoded.bytes))
+        });
+    assert_eq!(decoded, event);
+    assert_eq!(encode_event(&decoded).unwrap().bytes, encoded.bytes);
+}
+
 fn remove_target(model: &mut JournalModel) {
     evolve(
         model,
