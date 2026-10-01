@@ -1,6 +1,7 @@
 //! attach 점유를 터미널 출력·입력, mesh·문서 조회, 구조 변경과 파일 전송에 연결한다.
 //! GUI와 헤드리스 메인 루프가 StreamHub의 수신 결과를 이 모듈에 전달한다.
 use crate::runtime::engine_access::EngineMut;
+use super::transfer_spool::{Spool,TransferOwner};
 
 use crate::runtime::engine_access::EngineRef;
 use std::collections::HashMap;
@@ -179,7 +180,8 @@ pub(crate) fn finalize_capture_upload(
     let result = match (is_holder, bytes) {
         (false, _) => Err("client does not hold a workspace attach".to_string()),
         (true, None) => Err("no uploaded bytes for this upload_id".to_string()),
-        (true, Some(bytes)) => save_capture_and_set_clipboard(core, file_name, &bytes),
+        (true, Some((owner,bytes))) if owner.current(&engine.as_ref(),hub,client_id)=>save_capture_and_set_clipboard(core,file_name,bytes),
+        (true, Some(_))=>Err("capture origin grant or registration retired".into()),
     };
     let payload = match &result {
         Ok(path) => serde_json::json!({
@@ -206,7 +208,7 @@ pub(crate) fn finalize_capture_upload(
 fn save_capture_and_set_clipboard(
     core: &AppServices,
     file_name: &str,
-    bytes: &[u8],
+    bytes: Spool,
 ) -> Result<String, String> {
     let dir = crate::paths::tasty_home()
         .map(|h| h.join("screenshots"))
@@ -225,7 +227,7 @@ fn save_bulk_file(
     dir: &std::path::Path,
     file_name: &str,
     fallback_name: &str,
-    bytes: &[u8],
+    bytes: Spool,
 ) -> Result<String, String> {
     let safe_name = std::path::Path::new(file_name)
         .file_name()
@@ -234,7 +236,7 @@ fn save_bulk_file(
         .unwrap_or_else(|| fallback_name.to_string());
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let path = dir.join(safe_name);
-    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    bytes.save_to(&path)?;
     Ok(path.to_string_lossy().to_string())
 }
 
@@ -283,7 +285,7 @@ pub(crate) fn begin_bulk_transfer(
 ) {
     let dir = resolve_bulk_transfer_dir(&engine.runtime.settings);
     let max_bytes = engine
-        .settings
+        .runtime.settings
         .remote_transfer
         .max_mb
         .saturating_mul(1024 * 1024);
@@ -305,9 +307,12 @@ pub(crate) fn begin_bulk_transfer(
         let _ = hub.push(client_id, frame); // 손실·끊김 처리는 허브에 맡기고 여기서는 재전송하지 않는다.
         return;
     }
-    engine
-        .remote.bulk_transfers
-        .begin(client_id, transfer_id, filename, total_size);
+    let Some(owner)=TransferOwner::capture(&engine.as_ref(),hub,client_id,true) else {
+        reject_bulk_transfer(hub,client_id,transfer_id,"bulk origin is no longer attached");return;
+    };
+    if let Err(error)=engine.remote.bulk_transfers.begin(client_id,transfer_id,filename,total_size,owner) {
+        reject_bulk_transfer(hub,client_id,transfer_id,&error);
+    }
 }
 
 /// 연결에 지정된 bulk_workspace를 누군가 점유하고 있는지 확인한 뒤 저장하고 경로를 회신한다.
@@ -330,9 +335,8 @@ pub(crate) fn finalize_bulk_transfer(
         match (taken, dir) {
             (None, _) => Err("no uploaded bytes for this transfer_id".to_string()),
             (Some(_), None) => Err("no tasty home directory".to_string()),
-            (Some((filename, bytes)), Some(d)) => {
-                save_bulk_file(&d, &filename, "bulk-file", &bytes)
-            }
+            (Some((filename,owner,bytes)),Some(d)) if owner.current(&engine.as_ref(),hub,client_id)=>save_bulk_file(&d,&filename,"bulk-file",bytes),
+            (Some(_),Some(_))=>Err("bulk origin grant or registration retired".into()),
         }
     };
     let reply = match result {
@@ -4727,5 +4731,32 @@ impl EngineRef<'_> {
                 && hub.matches_client_binding(ctx.client_id,&ctx.binding)
                 && self.core.find_surface_by_id(surface).is_some_and(|descriptor|descriptor.activation_generation==ctx.activation)
         })
+    }
+}
+
+
+fn reject_bulk_transfer(hub:&StreamHub,client:u32,transfer:u64,reason:&str) {
+    let Some(binding)=hub.client_binding(client) else {return;};
+    let reply=StreamControl::BulkResult {transfer_id:transfer,ok:false,path:None,reason:Some(reason.into())};
+    hub.push_bound(client,&binding,StreamFrame::new(StreamTag::Control,serde_json::to_vec(&reply).unwrap_or_default()));
+}
+pub(crate) fn append_bulk_transfer(engine:&mut EngineMut<'_>,hub:&StreamHub,client:u32,transfer:u64,seq:u32,bytes:&[u8])->bool {
+    let accepted=TransferOwner::capture(&engine.as_ref(),hub,client,true).is_some_and(|owner|engine.remote.bulk_transfers.append(client,transfer,seq,bytes,&owner));
+    if !accepted {
+        reject_bulk_transfer(hub,client,transfer,"bulk transfer rejected: stale origin, invalid sequence/length, or spool failure");
+        if let Some(binding)=hub.client_binding(client) {hub.unregister_bound(client,&binding);}
+        engine.remote.bulk_transfers.clear_client(client);
+    }
+    accepted
+}
+pub(crate) fn append_capture_upload(engine:&mut EngineMut<'_>,hub:&StreamHub,client:u32,upload:u64,bytes:&[u8],now:std::time::Instant) {
+    let accepted=TransferOwner::capture(&engine.as_ref(),hub,client,false).is_some_and(|owner|engine.remote.capture_uploads.append(client,upload,bytes,now,owner));
+    if !accepted {
+        if let Some(binding)=hub.client_binding(client) {
+            let response=serde_json::json!({"event":"capture_result","upload_id":upload,"ok":false,"reason":"capture transfer origin or spool unavailable"});
+            hub.push_bound(client,&binding,StreamFrame::new(StreamTag::Control,serde_json::to_vec(&response).unwrap_or_default()));
+            hub.unregister_bound(client,&binding);
+        }
+        engine.remote.capture_uploads.clear_client(client);
     }
 }

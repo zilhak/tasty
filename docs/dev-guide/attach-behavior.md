@@ -64,6 +64,10 @@ OS 화면 캡처는 App의 ScreenshotWorkers가 최대4개 worker를 소유한�
 
 mesh context도 원 granted_seq·StreamHub registration·activation에 묶는다. holder나 grant가 바뀌면 이전 raw 입력과 texture/frame dedup 상태를 버린다. 누적 입력은1024 events/1MiB로 제한하고 초과 시 원 연결을 명시적으로 끊는다. window의 로컬 geometry와 parked/headless의 context pump 역할은 유지한다.
 
+bulk·capture 수신 내용은 연결별 owned 임시 파일에 순서대로 기록하고 commit에서 목적 파일로 복사한다. 파일 전체를 Vec에 누적하지 않으며 IPC 큐 바이트 상한을 새 파일 크기 제한으로 사용하지 않는다. bulk의 기존 `remote_transfer.max_mb` 폴더 용량 정책은 유지한다. bulk는 declared total_size와 연속 seq를 검사하고, 잘못된 순서·길이·임시파일 I/O 실패는 명시 실패와 원 연결 종료로 처리한다. 동시에 열어 둔 미완 전송의 내부 입장 예산은 종류별256개다.
+
+전송은 시작 때의 StreamHub registration과 workspace holder/granted_seq에 묶인다. commit 시 그 관계가 사라졌으면 이전 전송을 현재 holder의 성공으로 저장하지 않는다. 취소·TTL·disconnect·engine 소멸은 owned 임시 파일을 지운다. 프로세스가 강제 종료되면 OS 임시 폴더에 파일이 남을 수 있으며, 이 경로는 재시작 복원용 영속 전송으로 취급하지 않는다.
+
 ## 초기 스냅샷 + delta
 
 attach 직후 서버가 현재 visible 화면을 `snapshot_and_tap` 으로 tap 등록과 같은 lock 안에서 **1회** 직렬화 push(셀 속성 + 커서 + alt-screen/DECCKM/bracketed 모드 복원). 이후 변화는 output tap delta(Data 프레임). client 는 받은 바이트를 PTY 없는 mirror 터미널(`Terminal::new_detached` + `feed_bytes`)에 먹여 같은 termwiz 파서로 grid 재구성.
