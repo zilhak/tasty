@@ -21,6 +21,7 @@ crates/tasty-plugin-manifest/src/validate.rs
 src/adapters/ipc/handler.rs
 src/adapters/ui/popup/remote_attach.rs
 src/app/attach_client.rs
+src/app/attach_client/survivors.rs
 src/app/event_handler.rs
 src/remote/server.rs
 src/remote/server/content_queries.rs

@@ -98,10 +98,14 @@ BOUNDARY_LIMITS = {
     # Pure candidate models for deciding a batch/completion.
     ("src/runtime/journal_product/decider.rs", "decide_changes", "evolve"): 1,
     ("src/runtime/journal_product/decider/completion.rs", "projected_after", "evolve"): 1,
-    # One publication pump owns bootstrap, live projection and validation copies.
-    ("src/app/journal/publication.rs", "poll_initial", "projection::bootstrap::initialize"): 3,
-    ("src/app/journal/publication.rs", "poll_initial", "projection::apply"): 1,
-    ("src/app/journal/publication.rs", "poll_initial", "evolve"): 2,
+    # Private leaves of the same publication pump: bootstrap, live projection and
+    # validation copies. Preserve the former totals (bootstrap 3, apply 1, evolve 2).
+    ("src/app/journal/publication.rs", "accept_bootstrap", "projection::bootstrap::initialize"): 1,
+    ("src/app/journal/publication.rs", "install_published_leaf", "evolve"): 1,
+    ("src/app/journal/publication.rs", "apply_live_batch", "projection::apply"): 1,
+    ("src/app/journal/publication.rs", "publish_session", "evolve"): 1,
+    ("src/app/journal/publication.rs", "publish_session", "projection::bootstrap::initialize"): 1,
+    ("src/app/journal/publication.rs", "complete_opening", "projection::bootstrap::initialize"): 1,
     # Non-durable remote model install/reconnect/delta/removal, never local canonical writes.
     ("src/app/attach_client.rs", "install_new_mirror", "push_mirror_workspace"): 1,
     ("src/app/attach_client.rs", "install_reconnected_mirror", "replace_mirror_workspace"): 1,

@@ -1,3 +1,4 @@
+// reason: Test fixtures intentionally discard setup/cleanup results; production builds retain the must-use lint.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 //! Task execution and completion ownership. TaskStore remains the sole durable task source.
 //! Stopping a runner or dropping an engine scope neither cancels tasks nor kills running children.

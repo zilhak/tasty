@@ -90,8 +90,11 @@ class CurrentEntryBoundary(unittest.TestCase):
 
     def test_existing_entry_has_a_call_count_ceiling(self):
         path = "src/app/journal/publication.rs"
-        self.assertEqual(self.hits("fn poll_initial() { projection::apply(a,b,c,d); }", path), [])
-        self.assertEqual(len(self.hits("fn poll_initial() { projection::apply(a,b,c,d); projection::apply(a,b,c,d); }", path)), 1)
+        self.assertEqual(self.hits("fn apply_live_batch() { projection::apply(a,b,c,d); }", path), [])
+        self.assertEqual(len(self.hits("fn apply_live_batch() { projection::apply(a,b,c,d); projection::apply(a,b,c,d); }", path)), 1)
+
+    def test_retired_publication_name_is_not_an_entry(self):
+        self.assertEqual(len(self.hits("fn poll_initial() { projection::apply(a,b,c,d); }", "src/app/journal/publication.rs")), 1)
 
     def test_new_canonical_module_cannot_evolve_a_model(self):
         self.assertEqual(len(self.hits("fn decide() { crate::evolve(model, batch); }", "crates/tasty-core/src/command/new.rs")), 1)
