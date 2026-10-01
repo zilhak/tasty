@@ -136,6 +136,21 @@ Claude 프로필이 붙은 경우 `claude -r <id> --settings "<프로필 경로>
 
 앱 재시작과 [닫힌 항목 복원](../closed-tab-restore/index.md)(Ctrl+Shift+T)에서 사용한다.
 
+### Journal snapshot 보존
+
+Journal의 domain snapshot은 구조 이벤트의 파생 cache이며 terminal·plugin 콘텐츠와
+View 선택 checkpoint의 원본을 대신하지 않는다. 저장 worker의 maintenance는 확정된
+모든 엔진 모델의 payload 참조, snapshot, maintenance cursor를 한 transaction으로
+교체한다. 실패하면 이전 참조와 cursor를 유지한다. 참조 집합에는 미완·Uncertain
+operation, assembly, 소비하지 않은 undo가 포함된다.
+
+최근 checksum 검증을 통과한 snapshot 두 개를 남기며, snapshot 본문에 외부 holder가
+있으면 해당 snapshot도 보존한다. 본문뿐 아니라 그 snapshot이 pin한 콘텐츠도 검증한다.
+Admission·import·View·event holder는 이 정리에서 해제하지 않으며, 모든 pin이 사라진
+payload만 지운다. 구조 이벤트, 원 요청 키, 최초 최종 응답 및 effect 시도 기록은
+현재 maintenance에서 삭제하지 않는다. 이벤트 prefix를 줄이는 compaction은 이 경계에
+포함되지 않는다. publication 뒤 제품 scheduling은 이행 중이다.
+
 ## 저장하지 않는 것
 
 실행 중인 PTY 프로세스와 환경변수, 팝업 상태는 저장하지 않는다. `restore.command`는 기존 프로세스를 보존하는 기능이 아니라 새 터미널에서 명령을 다시 실행하기 위한 정보다.

@@ -56,22 +56,33 @@ impl EventStore {
         snapshot: &NewSnapshot,
     ) -> StoreResult<SnapshotId> {
         let tx = self.write_tx(epoch)?;
-        cut_at(&tx, snapshot.batch_id)?;
-        let body = payload::insert(&tx, &snapshot.bytes)?;
-        tx.execute(
-            "INSERT INTO snapshots (batch_id, model_version, payload_id) VALUES (?1, ?2, ?3)",
-            params![
-                to_i64(snapshot.batch_id)?,
-                snapshot.model_version,
-                to_i64(body.0)?
-            ],
-        )?;
-        let id = to_u64(tx.last_insert_rowid())?;
-        let holder = snapshot_holder(id);
-        payload::pin_in(&tx, body, &holder)?;
-        for referenced in &snapshot.referenced_payloads {
-            payload::pin_in(&tx, *referenced, &holder)?;
+        let id = insert_snapshot(&tx, snapshot)?;
+        tx.commit()?;
+        Ok(id)
+    }
+
+    /// Save a published domain cut, its complete live reference set and maintenance cursor in one
+    /// transaction. Retain two checksum-valid snapshots before releasing older cache-only pins.
+    /// Event history, command identities/results, admission/import and View holders are untouched.
+    pub fn save_live_snapshot(
+        &mut self,
+        epoch: WriterEpoch,
+        snapshot: &NewSnapshot,
+        consumer: &str,
+    ) -> StoreResult<SnapshotId> {
+        let tx = self.write_tx(epoch)?;
+        if has_projection_rows(&tx, consumer)? {
+            return Err(StoreError::CheckpointOwnedByProjection(consumer.to_owned()));
         }
+        advance_checkpoint(&tx, consumer, snapshot.model_version, snapshot.batch_id)?;
+        let id = insert_snapshot(&tx, snapshot)?;
+        let holder = format!("live:{consumer}");
+        payload::replace_holder_in(&tx, &holder, &snapshot.referenced_payloads)?;
+        retain_snapshots(&tx, snapshot.model_version, 2)?;
+        tx.execute(
+            "DELETE FROM payloads WHERE payload_id NOT IN (SELECT payload_id FROM payload_pins)",
+            [],
+        )?;
         tx.commit()?;
         Ok(id)
     }
@@ -140,6 +151,68 @@ impl EventStore {
     }
 }
 
+fn insert_snapshot(conn: &Connection, snapshot: &NewSnapshot) -> StoreResult<SnapshotId> {
+    cut_at(conn, snapshot.batch_id)?;
+    let body = payload::insert(conn, &snapshot.bytes)?;
+    conn.execute(
+        "INSERT INTO snapshots (batch_id, model_version, payload_id) VALUES (?1, ?2, ?3)",
+        params![
+            to_i64(snapshot.batch_id)?,
+            snapshot.model_version,
+            to_i64(body.0)?
+        ],
+    )?;
+    let id = to_u64(conn.last_insert_rowid())?;
+    let holder = snapshot_holder(id);
+    payload::pin_in(conn, body, &holder)?;
+    for referenced in &snapshot.referenced_payloads {
+        payload::pin_in(conn, *referenced, &holder)?;
+    }
+    Ok(id)
+}
+
+/// A valid fallback must include every opaque payload, not merely its serialized domain body.
+fn verify_snapshot(conn: &Connection, id: SnapshotId, body: PayloadRef) -> StoreResult<Vec<u8>> {
+    let bytes = payload::read_verified(conn, body)?;
+    let mut stmt = conn.prepare("SELECT payload_id FROM payload_pins WHERE holder = ?1")?;
+    let rows = stmt.query_map([snapshot_holder(id)], |row| row.get::<_, i64>(0))?;
+    for reference in rows {
+        payload::read_verified(conn, PayloadRef(to_u64(reference?)?))?;
+    }
+    Ok(bytes)
+}
+
+fn retain_snapshots(conn: &Connection, version: u32, keep: usize) -> StoreResult<()> {
+    let mut stmt = conn.prepare(
+        "SELECT snapshot_id, payload_id FROM snapshots WHERE model_version = ?1
+         ORDER BY batch_id DESC, snapshot_id DESC",
+    )?;
+    let rows = stmt.query_map([version], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?;
+    let candidates = rows.collect::<Result<Vec<_>, _>>()?;
+    let mut verified = 0;
+    for (id, body) in candidates {
+        let id = to_u64(id)?;
+        if verified < keep {
+            match verify_snapshot(conn, id, PayloadRef(to_u64(body)?)) {
+                Ok(_) => verified += 1,
+                Err(StoreError::PayloadCorrupt(_) | StoreError::PayloadMissing(_)) => {},
+                Err(error) => return Err(error),
+            }
+            // Retain damaged recent snapshots for diagnosis until enough fallbacks are available.
+            continue;
+        }
+        let holder = snapshot_holder(id);
+        let external: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM payload_pins WHERE payload_id = ?1 AND holder != ?2)",
+            params![body, holder], |row| row.get(0),
+        )?;
+        if external { continue; }
+        conn.execute("DELETE FROM snapshots WHERE snapshot_id = ?1", [to_i64(id)?])?;
+        conn.execute("DELETE FROM payload_pins WHERE holder = ?1", [holder])?;
+    }
+    Ok(())
+}
+
 /// snapshot이 payload를 참조할 때 쓰는 pin holder 이름.
 pub fn snapshot_holder(id: SnapshotId) -> String {
     format!("snapshot:{id}")
@@ -164,7 +237,7 @@ fn latest_valid(
     for row in rows {
         let (id, batch, body) = row?;
         let snapshot_id = to_u64(id)?;
-        match payload::read_verified(conn, PayloadRef(to_u64(body)?)) {
+        match verify_snapshot(conn, snapshot_id, PayloadRef(to_u64(body)?)) {
             Ok(bytes) => {
                 let snapshot = DomainSnapshot {
                     snapshot_id,

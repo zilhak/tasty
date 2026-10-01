@@ -82,3 +82,28 @@ pub(super) fn closed(executor:&Executor<StructureDecider>,ticket:u64,binding:Eng
     let reference=inner.store.put_payload_pinned(epoch,&bytes,&holder).map_err(|error|error.to_string())?;
     Ok((tasty_core::DataRef(input.0),Some(tasty_core::UndoCapture {snapshot:tasty_core::DataRef(reference.0),retained})))
 }
+
+/// Called only after the entire publication batch has been acknowledged. A failed transaction
+/// leaves the previous checkpoint, snapshots and live pins intact; it does not undo domain commit.
+pub(super) fn checkpoint(executor: &Executor<StructureDecider>) -> Result<(), String> {
+    let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
+    let Some(batch_id) = inner.state.batch else { return Ok(()); };
+    const CONSUMER: &str = "structure-maintenance";
+    if inner.store.checkpoint(CONSUMER, tasty_core::MODEL_VERSION)
+        .map_err(|error| error.to_string())?
+        .is_some_and(|cut| cut.last_batch == Some(batch_id)) {
+        return Ok(());
+    }
+    let snapshot = tasty_event_store::NewSnapshot {
+        batch_id,
+        model_version: tasty_core::MODEL_VERSION,
+        bytes: tasty_core::encode_snapshot(&inner.state).map_err(|error| error.to_string())?,
+        referenced_payloads: inner.state.streams.values()
+            .flat_map(tasty_core::JournalModel::data_refs)
+            .map(|reference| tasty_event_store::PayloadRef(reference.0)).collect(),
+    };
+    let epoch = inner.epoch;
+    inner.store.save_live_snapshot(epoch, &snapshot, CONSUMER)
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}

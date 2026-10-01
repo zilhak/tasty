@@ -281,3 +281,53 @@ fn checkpoints_carry_a_revision_vector_and_never_move_back() {
         Err(StoreError::UnknownBatch(42))
     ));
 }
+
+#[test]
+fn live_snapshot_transfer_rolls_back_invalid_references_and_keeps_history() {
+    let (_dir, mut store, epoch) = fresh();
+    let first = store.put_payload_pinned(epoch, b"old", "admission/1/1").expect("put");
+    let second = store.put_payload_pinned(epoch, b"new", "import/source").expect("put");
+    let consumer = "structure-maintenance";
+    let first_batch = commit_round(&mut store, epoch, 0);
+    let snapshot = NewSnapshot {
+        batch_id: first_batch, model_version: MODEL, bytes: b"first".to_vec(),
+        referenced_payloads: vec![first],
+    };
+    let first_snapshot = store.save_live_snapshot(epoch, &snapshot, consumer).expect("save");
+    store.release_payload_holder(epoch, "admission/1/1").expect("release");
+    let second_batch = commit_round(&mut store, epoch, 1);
+    let invalid = NewSnapshot {
+        batch_id: second_batch, bytes: b"invalid".to_vec(),
+        referenced_payloads: vec![crate::PayloadRef(u64::MAX / 2)], ..snapshot.clone()
+    };
+    assert!(matches!(store.save_live_snapshot(epoch, &invalid, consumer), Err(StoreError::PayloadMissing(_))));
+    assert_eq!(store.checkpoint(consumer, MODEL).expect("cursor").expect("cut").last_batch, Some(first_batch));
+    assert!(store.payload_holders(first).expect("pins").contains(&format!("live:{consumer}")));
+    let valid = NewSnapshot { referenced_payloads: vec![second], ..invalid };
+    store.save_live_snapshot(epoch, &valid, consumer).expect("replace");
+    assert!(store.payload_holders(first).expect("pins").contains(&snapshot_holder(first_snapshot)));
+    assert!(!store.payload_holders(first).expect("pins").contains(&format!("live:{consumer}")));
+    assert!(store.payload_holders(second).expect("pins").contains(&"import/source".to_owned()));
+    let third_batch = commit_round(&mut store, epoch, 2);
+    store.save_live_snapshot(epoch, &NewSnapshot { batch_id: third_batch, ..valid }, consumer).expect("retention");
+    assert!(matches!(store.read_payload(first), Err(StoreError::PayloadMissing(_))));
+    assert_eq!(store.read_batches_after(None, usize::MAX).expect("history").len(), 3);
+}
+
+#[test]
+fn damaged_snapshot_dependency_uses_previous_snapshot() {
+    let dir = tempfile::tempdir().expect("directory");
+    let path = db_path(&dir);
+    let (mut store, epoch) = open(&path);
+    commit_round(&mut store, epoch, 0);
+    let older = snapshot_now(&mut store, epoch, 1);
+    let dependency = store.put_payload(epoch, b"surface").expect("payload");
+    commit_round(&mut store, epoch, 1);
+    store.save_snapshot(epoch, &NewSnapshot {
+        batch_id: 2, model_version: MODEL, bytes: b"newer".to_vec(), referenced_payloads: vec![dependency],
+    }).expect("snapshot");
+    raw(&path).execute("UPDATE payloads SET bytes = X'00' WHERE payload_id = ?1", [dependency.0 as i64]).expect("corrupt");
+    let replay = store.snapshot_and_tail(MODEL).expect("replay");
+    assert_eq!(replay.snapshot.expect("fallback").snapshot_id, older);
+    assert_eq!(replay.rejected.len(), 1);
+}

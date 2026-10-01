@@ -45,6 +45,20 @@ impl EventStore {
         tx.commit()?;Ok(())
     }
 
+    /// Atomically transfer an owner's complete reference set. An invalid replacement rolls back
+    /// the release as well, so a failed capture/import cannot expose the previous data to GC.
+    pub fn replace_payload_holder(
+        &mut self,
+        epoch: WriterEpoch,
+        holder: &str,
+        references: &[PayloadRef],
+    ) -> StoreResult<()> {
+        let tx = self.write_tx(epoch)?;
+        replace_holder_in(&tx, holder, references)?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// 내용을 읽고 checksum을 검증한다.
     pub fn read_payload(&self, payload: PayloadRef) -> StoreResult<Vec<u8>> {
         read_verified(&self.conn, payload)
@@ -144,4 +158,20 @@ pub(crate) fn read_verified(conn: &Connection, payload: PayloadRef) -> StoreResu
         return Err(StoreError::PayloadCorrupt(payload.0));
     }
     Ok(bytes)
+}
+
+pub(crate) fn replace_holder_in(
+    conn: &Connection,
+    holder: &str,
+    references: &[PayloadRef],
+) -> StoreResult<()> {
+    // Verify before replacing: checksum damage is not a valid ownership transfer either.
+    for reference in references {
+        read_verified(conn, *reference)?;
+    }
+    conn.execute("DELETE FROM payload_pins WHERE holder = ?1", [holder])?;
+    for reference in references {
+        pin_in(conn, *reference, holder)?;
+    }
+    Ok(())
 }
