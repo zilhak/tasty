@@ -85,7 +85,7 @@ pub(super) fn closed(executor:&Executor<StructureDecider>,ticket:u64,binding:Eng
 
 /// Called only after the entire publication batch has been acknowledged. A failed transaction
 /// leaves the previous checkpoint, snapshots and live pins intact; it does not undo domain commit.
-pub(super) fn checkpoint(executor: &Executor<StructureDecider>) -> Result<(), String> {
+pub(super) fn checkpoint(executor: &Executor<StructureDecider>, readers: &crate::runtime::journal_payload::PayloadReaders) -> Result<(), String> {
     let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
     let Some(batch_id) = inner.state.batch else { return Ok(()); };
     const CONSUMER: &str = "structure-maintenance";
@@ -94,7 +94,7 @@ pub(super) fn checkpoint(executor: &Executor<StructureDecider>) -> Result<(), St
         .is_some_and(|cut| cut.last_batch == Some(batch_id)) {
         return Ok(());
     }
-    let snapshot = tasty_event_store::NewSnapshot {
+    let mut snapshot = tasty_event_store::NewSnapshot {
         batch_id,
         model_version: tasty_core::MODEL_VERSION,
         bytes: tasty_core::encode_snapshot(&inner.state).map_err(|error| error.to_string())?,
@@ -103,7 +103,30 @@ pub(super) fn checkpoint(executor: &Executor<StructureDecider>) -> Result<(), St
             .map(|reference| tasty_event_store::PayloadRef(reference.0)).collect(),
     };
     let epoch = inner.epoch;
-    inner.store.save_live_snapshot(epoch, &snapshot, CONSUMER)
-        .map_err(|error| error.to_string())?;
+    readers.with_refs(|references| {
+        snapshot.referenced_payloads.extend(references);
+        inner.store.save_live_snapshot(epoch, &snapshot, CONSUMER).map_err(|error| error.to_string())?;
+        inner.store.compact_history(epoch, tasty_core::MODEL_VERSION).map_err(|error| error.to_string())?;
+        Ok(())
+    })?;
     Ok(())
+}
+
+/// The draft owns structure/live values and immutable refs, so late completion cannot capture a
+/// successor surface or change the originating View's selection.
+pub(super) fn preset(
+    executor: &Executor<StructureDecider>,
+    draft: crate::intent::preset_capture::PresetCaptureDraft,
+) -> Result<(crate::intent::ClonedPreset, String), String> {
+    let inner = executor.inner.lock().map_err(|error| error.to_string())?;
+    let result = draft.resolve(&inner.store)?;
+    let bytes = match &result.0 {
+        crate::intent::ClonedPreset::Workspace(value) => serde_json::to_vec(value),
+        crate::intent::ClonedPreset::Pane(value) => serde_json::to_vec(value),
+        crate::intent::ClonedPreset::Tab(value) => serde_json::to_vec(value),
+    }.map_err(|error| error.to_string())?;
+    if bytes.len().saturating_add(result.1.len()) > crate::adapters::production::tcp_ipc_server::MAX_REQUEST_LINE_BYTES {
+        return Err("resolved preset exceeds response byte limit".into());
+    }
+    Ok(result)
 }

@@ -53,6 +53,23 @@ impl EventStore {
         Ok(())
     }
 
+    /// Replace the complete projection after an explicit snapshot resynchronization. Stale rows
+    /// and the old cursor are replaced in the same transaction; incremental writes cannot imply it.
+    pub fn replace_projection(
+        &mut self,
+        epoch: WriterEpoch,
+        write: &ProjectionWrite,
+    ) -> StoreResult<()> {
+        check_keys(write)?;
+        let tx = self.write_tx(epoch)?;
+        tx.execute("DELETE FROM projection_rows WHERE consumer_id = ?1 AND projection_version = ?2",
+            params![write.consumer_id, write.projection_version])?;
+        apply_rows(&tx, write)?;
+        advance_checkpoint(&tx, &write.consumer_id, write.projection_version, write.batch_id)?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// 출력 전체와 위치를 같은 시점으로 읽는다.
     pub fn projection_state(
         &self,
@@ -61,7 +78,10 @@ impl EventStore {
     ) -> StoreResult<ProjectionState> {
         let tx = self.conn.unchecked_transaction()?;
         let cut = checkpoint_batch(&tx, consumer_id, projection_version)?
-            .map(|batch| cut_at(&tx, batch))
+            .map(|batch| {
+                crate::retention::require_cursor(&tx, Some(batch))?;
+                cut_at(&tx, batch)
+            })
             .transpose()?;
         let mut stmt = tx.prepare(
             "SELECT key, payload FROM projection_rows

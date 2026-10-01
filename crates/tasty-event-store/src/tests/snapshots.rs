@@ -331,3 +331,24 @@ fn damaged_snapshot_dependency_uses_previous_snapshot() {
     assert_eq!(replay.snapshot.expect("fallback").snapshot_id, older);
     assert_eq!(replay.rejected.len(), 1);
 }
+
+#[test]
+fn compaction_retains_fallback_tail_and_rejects_old_cursors() {
+    let (dir, mut store, epoch) = fresh();
+    for round in 0..5 {commit_round(&mut store, epoch, round);}
+    store.save_checkpoint(epoch, "slow", MODEL, 1).expect("slow cursor");
+    let older = snapshot_now(&mut store, epoch, 2);
+    let newer = snapshot_now(&mut store, epoch, 4);
+    let before = full_replay(&store);
+    let result = store.compact_history(epoch, MODEL).expect("compact").expect("boundary");
+    assert_eq!(result.retained_after_batch, 2);
+    assert!(matches!(store.read_batches_after(None, 10), Err(StoreError::ResyncRequired {..})));
+    assert!(matches!(store.read_stream(&StreamId::new("engine-a"), Some(1), 10), Err(StoreError::ResyncRequired {..})));
+    assert!(matches!(store.checkpoint("slow", MODEL), Err(StoreError::ResyncRequired {..})));
+    assert!(store.delete_snapshot(epoch, older).is_err());
+    assert_eq!(rebuild(&store).0, before);
+    raw(&db_path(&dir)).execute("UPDATE payloads SET bytes = X'00' WHERE payload_id = (SELECT payload_id FROM snapshots WHERE snapshot_id = ?1)", [newer as i64]).expect("damage new");
+    assert_eq!(rebuild(&store).0, before);
+    raw(&db_path(&dir)).execute("UPDATE payloads SET bytes = X'00' WHERE payload_id = (SELECT payload_id FROM snapshots WHERE snapshot_id = ?1)", [older as i64]).expect("damage anchor");
+    assert!(matches!(store.snapshot_and_tail(MODEL), Err(StoreError::ResyncRequired {..})));
+}

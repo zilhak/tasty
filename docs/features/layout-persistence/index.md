@@ -136,6 +136,16 @@ Claude 프로필이 붙은 경우 `claude -r <id> --settings "<프로필 경로>
 
 앱 재시작과 [닫힌 항목 복원](../closed-tab-restore/index.md)(Ctrl+Shift+T)에서 사용한다.
 
+### Journal의 지연 surface 캡처
+
+Preset 캡처 초안은 구조·선택·실행 중 kind snapshot을 동결하고, 지연 placeholder는
+기존 불변 payload 참조를 worker에 넘긴다. worker는 최신 캡처를 우선 읽으며 없으면
+생성 seed의 원래 kind·params·CWD를 해석한다. 터미널의 과거 시작 입력·복원 명령·
+scrollback은 preset에 복사하지 않는다. 등록되지 않은 지연 plugin의 opaque snapshot도
+빈 surface로 치환하지 않는다. 이 읽기는 PTY나 plugin을 활성화하지 않는다.
+동기 캡처 경로는 아직 해석하지 않은 참조를 저장하지 않고 오류로 반환한다.
+비동기 제품 continuation 연결은 이행 중이다.
+
 ### Journal snapshot 보존
 
 Journal의 domain snapshot은 구조 이벤트의 파생 cache이며 terminal·plugin 콘텐츠와
@@ -146,10 +156,13 @@ operation, assembly, 소비하지 않은 undo가 포함된다.
 
 최근 checksum 검증을 통과한 snapshot 두 개를 남기며, snapshot 본문에 외부 holder가
 있으면 해당 snapshot도 보존한다. 본문뿐 아니라 그 snapshot이 pin한 콘텐츠도 검증한다.
-Admission·import·View·event holder는 이 정리에서 해제하지 않으며, 모든 pin이 사라진
-payload만 지운다. 구조 이벤트, 원 요청 키, 최초 최종 응답 및 effect 시도 기록은
-현재 maintenance에서 삭제하지 않는다. 이벤트 prefix를 줄이는 compaction은 이 경계에
-포함되지 않는다. publication 뒤 제품 scheduling은 이행 중이다.
+Admission·import·View holder는 이 정리에서 해제하지 않으며, event holder는 보존 경계
+이전의 이벤트 본문을 지우는 transaction에서만 해제한다. 모든 pin이 사라진 payload만 지운다. 원 요청 키, 최초 최종 응답 및 effect 시도 기록은 삭제하지 않는다. 이벤트 본문은 두 번째 유효 snapshot cut까지의 연속 prefix만 정리한다.
+Batch 식별과 stream revision 헤더는 유지한다. 오래된 cursor 읽기는 빈 성공 대신
+`ResyncRequired`를 반환하며, projection은 snapshot의 전체 출력과 cursor를 함께 교체해
+재동기화한다. anchor snapshot과 이후 tail이 모두 손상되면 부분 모델로 열지 않는다.
+App의 읽기 lease에 잡힌 payload는 Busy 대기와 늦은 완료 동안 snapshot pin에 포함한다.
+제품 호출은 publication ACK 뒤에만 허용하며 공통 worker 연결은 이행 중이다.
 
 ## 저장하지 않는 것
 

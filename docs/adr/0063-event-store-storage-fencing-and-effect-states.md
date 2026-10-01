@@ -1,6 +1,6 @@
 # ADR-0063: 이벤트 저장소는 payload를 journal DB에 두고 파일 잠금과 writer 세대로 쓰기를 제한한다
 
-- **Status**: Accepted — 구현 상태: payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별, 영속 ID 예약 및 projection 출력/consumer 위치 원자 확정은 `tasty-event-store`에 구현됐다. App 초기 엔진 구성·선택 slot import·자원 준비는 데이터 홈 worker에 연결 중이다. 기존 숫자 surface metadata를 피하는 예약 기준도 이 worker에서 영속 반영한다. 미이행: 일반 구조 writer 전체 합류, 효과 복구·최종 제품 활성화, 새 journal로의 payload 복사, 로그 보존·정리, 부분 consumer 위치, 모든 local/mirror ID 발급 전환. 정상 슬롯 resume와 폐기 뒤 incarnation 전환은 App bootstrap·retirement에 연결돼 있다.
+- **Status**: Accepted — 구현 상태: payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별, 영속 ID 예약 및 projection 출력/consumer 위치 원자 확정은 `tasty-event-store`에 구현됐다. App 초기 엔진 구성·선택 slot import·자원 준비는 데이터 홈 worker에 연결 중이다. 기존 숫자 surface metadata를 피하는 예약 기준도 이 worker에서 영속 반영한다. 미이행: 일반 구조 writer 전체 합류, 효과 복구·최종 제품 활성화, 새 journal로의 payload 복사, 부분 consumer 위치, 모든 local/mirror ID 발급 전환. 정상 슬롯 resume와 폐기 뒤 incarnation 전환은 App bootstrap·retirement에 연결돼 있다.
 - **Date**: 2026-09-30
 - **Tags**: event-sourcing, storage, sqlite, durability, effects, fencing
 - **Group**: foundation
@@ -134,8 +134,16 @@ journal마다 잠금 파일 하나가 옆에 남는다. 이 파일을 지우는 
 전이표를 고정하면 복구기가 상태 이름만으로 다음 동작을 정할 수 있다. Uncertain에서 Cancelled로 가려면 실행되지 않았다는 증거가 필요하므로
 대조 수단이 없는 effect는 Uncertain으로 오래 남을 수 있다. 이는 결과를 아는 척하지 않기 위해 감수한다.
 
-로그 보존·정리는 아직 설계하지 않았다. 현재 schema는 batch를 참조하는 외래 키, 앞 구간 전체를 가정하는 cut 계산,
-유효한 snapshot이 없으면 처음부터 읽는 재구성을 전제로 한다. 오래된 구간을 지우려면 보존 경계 표와 schema migration이 필요하다.
+로그 보존은 batch/revision 헤더를 남기고 검증된 fallback snapshot까지의 이벤트 본문만 정리한다.
+`retention_anchor`가 snapshot과 batch cut을 연결하고 `retained_stream_revisions`가 stream별
+재동기화 하한을 보관한다. 이벤트 본문·그 event holder·보존 경계 갱신은 한 transaction이다.
+명령 identity·최초 응답·effect와 시도 기록·ID 예약은 정리하지 않는다. snapshot/live/undo/import/
+View 및 읽기 lease의 payload pin도 남는다. snapshot 두 개의 본문과 참조 checksum을 검증하며,
+외부 holder가 잡은 더 오래된 snapshot이 있으면 보존 경계를 그 cut 이하로 제한한다.
+보존 경계 이전 cursor는 명시적 재동기화 오류다. snapshot이 손상돼도 보존 로그 없이 처음부터
+재생하는 성공 fallback을 만들지 않는다. 헤더까지 제거하는 안은 역사 cut과 effect 외래 키를
+다시 쓰게 하므로 채택하지 않았다. 이 방식은 이벤트 본문과 고아 payload 공간을 회수하지만
+batch/revision/명령/effect 헤더의 크기까지 제한하지 않는다.
 projection 출력은 consumer·projection version별 key→바이트 행으로 저장하고, 행 변경과 consumer 위치(batch 단위)를 한 transaction으로 확정한다.
 위치가 뒤로 가거나 batch가 없으면 행 변경도 반영하지 않는다. projection 행을 가진 consumer는 위치만 저장하는 API로 위치를 옮길 수 없고, 행 변경과 함께 확정하는 API로만 옮긴다.
 stream별 부분 소비자의 위치 표현은 아직 없다. 보존·정리와 부분 소비자 위치는 후속 설계 대상이며 이 결정이 해결하지 않는다.
@@ -174,7 +182,8 @@ transaction 내부 지점의 abort와 전원 차단 수준의 쓰기 유실은 �
 ### 코드와 설정에서 확인
 
 - 제품에 연결할 때 모든 쓰기 경로가 잠금을 얻은 writer를 거치는지 확인한다. 잠금 없이 쓰는 경로가 생기면 연결하지 않는다.
-- 로그 보존·정리를 설계하면 외래 키, cut 계산, snapshot+tail 재구성의 보존 경계를 함께 바꾸고 이 ADR의 schema 절을 다시 본다.
+- batch/revision 헤더까지 줄일 필요가 생기면 effect 외래 키와 역사 cut 재구성을 함께 다시 설계한다.
+- snapshot 참조를 가진 독자·import가 추가되면 해당 holder가 compaction 전에 등록되고 실제 읽기 완료까지 유지되는지 확인한다.
 - stream별 부분 소비자나 외부 projection 저장소가 필요해지면 checkpoint 키 형태(batch 단위 또는 stream별)와 출력 행 형식을 다시 정한다.
 - 엔진마다 journal 파일을 나눠야 하거나 여러 journal이 구조 ID를 나눠 써야 하는 요구가 생기면 ID 예약 절의 journal 배치와 발급 범위를 다시 정한다.
 - 슬롯 선택·폐기 정책이 바뀌면 위 incarnation 규칙과 View checkpoint의 binding 검사를 함께 다시 본다. 과거 명령 identity·미완 효과를 슬롯 재사용 때문에 지우지 않는다.

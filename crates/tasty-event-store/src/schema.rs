@@ -8,7 +8,7 @@ use rusqlite::{Connection, ErrorCode, OptionalExtension};
 use crate::error::{StoreError, StoreResult};
 
 /// 순서대로 적용하는 migration. 인덱스 + 1이 버전이다. 이미 배포한 항목은 고치지 않고 뒤에 추가한다.
-const MIGRATIONS: &[&str] = &[V1,V2,V3,V4];
+const MIGRATIONS: &[&str] = &[V1,V2,V3,V4,V5];
 
 /// 이 빌드가 읽고 쓸 수 있는 가장 새 스키마 버전.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
@@ -187,6 +187,20 @@ CREATE TABLE obligation_claims (
     engine_id TEXT NOT NULL,engine_incarnation INTEGER NOT NULL,operation_id TEXT NOT NULL,
     runtime_epoch INTEGER NOT NULL,effect_id TEXT NOT NULL REFERENCES effects(effect_id),
     PRIMARY KEY(engine_id,engine_incarnation,operation_id,runtime_epoch)
+);
+"#;
+
+// Batch headers/revision vectors remain as historical identity and foreign-key anchors. Only
+// event bodies at or before this verified snapshot are compacted.
+const V5: &str = r#"
+CREATE TABLE retention_anchor (
+    singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+    batch_id INTEGER NOT NULL REFERENCES batches(batch_id),
+    snapshot_id INTEGER NOT NULL REFERENCES snapshots(snapshot_id)
+);
+CREATE TABLE retained_stream_revisions (
+    stream_id TEXT PRIMARY KEY,
+    revision INTEGER NOT NULL CHECK(revision > 0)
 );
 "#;
 

@@ -137,11 +137,17 @@ pub enum StoreError {
     #[error("payload {0} does not exist")]
     PayloadMissing(u64),
 
+    #[error("payload {payload} has {size} bytes, exceeding read limit {limit}")]
+    PayloadTooLarge { payload: u64, size: u64, limit: usize },
+
     #[error("payload {0} failed checksum verification")]
     PayloadCorrupt(u64),
 
     #[error("batch {0} does not exist")]
     UnknownBatch(u64),
+
+    #[error("history at or before batch {retained_after_batch} was compacted; resynchronize from a snapshot")]
+    ResyncRequired { retained_after_batch: u64 },
 
     #[error("checkpoint for {consumer_id} would move back from batch {current} to {requested}")]
     CheckpointRegression {

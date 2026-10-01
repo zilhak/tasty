@@ -22,9 +22,6 @@ impl ClonedPreset {
     }
 }
 
-use crate::intent::preset_capture::{
-    capture_pane_preset, capture_tab_preset, capture_workspace_preset,
-};
 use crate::state::RequestContext;
 use tasty_presets::{PresetError, PresetKind};
 
@@ -64,7 +61,7 @@ pub fn handle(
 fn save(
     core: &crate::app::services::AppServices,
     state: &mut RequestContext,
-    _engine: &mut crate::core::CoreState,
+    _engine: &mut EngineMut<'_>,
     intent: &DispatchedIntent,
     request: PresetSaveRequest,
 ) {
@@ -302,60 +299,5 @@ pub fn capture_inner(
     kind: PresetKind,
     source_id: u32,
 ) -> Result<(ClonedPreset, String), String> {
-    let registry = engine.runtime.surface_registry.clone();
-
-    match kind {
-        PresetKind::Workspace => {
-            let ws = engine
-                .workspaces()
-                .into_iter()
-                .find(|w| w.id == source_id)
-                .ok_or_else(|| format!("Workspace id {source_id} not found"))?;
-            let base = if ws.name.is_empty() {
-                "workspace".to_string()
-            } else {
-                ws.name.clone()
-            };
-            let preset = capture_workspace_preset(presentation, engine, ws, None, &registry)
-                .ok_or_else(|| "workspace capture failed".to_string())?;
-            Ok((ClonedPreset::Workspace(preset), base))
-        }
-        PresetKind::Tab => {
-            let pane_id = engine
-                .find_pane_for_tab(source_id)
-                .ok_or_else(|| format!("Tab id {source_id} not found"))?;
-            for ws in &engine.workspaces() {
-                if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
-                    for tab in &pane.tabs {
-                        if tab.id == source_id {
-                            let base = tab
-                                .explicit_name
-                                .clone()
-                                .unwrap_or_else(|| tab.name.clone());
-                            let base = if base.is_empty() {
-                                "tab".to_string()
-                            } else {
-                                base
-                            };
-                            let preset = capture_tab_preset(engine, tab, None, &registry)
-                                .ok_or_else(|| "tab capture failed".to_string())?;
-                            return Ok((ClonedPreset::Tab(preset), base));
-                        }
-                    }
-                }
-            }
-            Err(format!("Tab id {source_id} not found"))
-        }
-        PresetKind::Pane => {
-            for ws in &engine.workspaces() {
-                if let Some(pane) = ws.pane_layout().find_pane(source_id) {
-                    let preset = capture_pane_preset(presentation, engine, pane, None, &registry)
-                        .ok_or_else(|| "pane capture failed".to_string())?;
-                    return Ok((ClonedPreset::Pane(preset), "pane".to_string()));
-                }
-            }
-            Err(format!("Pane id {source_id} not found"))
-        }
-    }
+    crate::intent::preset_capture::capture_draft(presentation, engine, kind, source_id)?.finish_live()
 }
-

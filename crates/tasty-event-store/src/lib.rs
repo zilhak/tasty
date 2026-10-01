@@ -21,6 +21,7 @@
 //!   위치만 저장하는 [`EventStore::save_checkpoint`]는 그 consumer를 거절한다.
 
 mod command;
+mod retention;
 mod commit;
 mod effect;
 mod error;
@@ -53,3 +54,5 @@ pub use types::{
     ExpectedRevision, JournalCut, NewCommand, NewEvent, OpaquePayload, PayloadRef, Revision,
     StoredBatch, StoredEvent, StreamAppend, StreamId, WriterEpoch,
 };
+
+pub use retention::Compaction;

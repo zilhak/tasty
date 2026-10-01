@@ -22,7 +22,9 @@ impl EventStore {
         after: Option<Revision>,
         limit: usize,
     ) -> StoreResult<Vec<StoredEvent>> {
-        let mut stmt = self.conn.prepare(&format!(
+        let tx = self.conn.unchecked_transaction()?;
+        crate::retention::require_stream_cursor(&tx, stream, after)?;
+        let mut stmt = tx.prepare(&format!(
             "{SELECT_EVENT} WHERE stream_id = ?1 AND stream_revision > ?2
              ORDER BY stream_revision LIMIT ?3"
         ))?;
@@ -65,6 +67,7 @@ pub(crate) fn batches_after(
     after: Option<BatchId>,
     limit: usize,
 ) -> StoreResult<Vec<StoredBatch>> {
+    crate::retention::require_cursor(conn, after)?;
     let mut stmt = conn
         .prepare("SELECT batch_id FROM batches WHERE batch_id > ?1 ORDER BY batch_id LIMIT ?2")?;
     let ids = stmt.query_map(
@@ -79,6 +82,9 @@ pub(crate) fn batches_after(
 }
 
 pub(crate) fn load_batch(conn: &Connection, batch_id: BatchId) -> StoreResult<StoredBatch> {
+    if crate::retention::floor(conn)?.is_some_and(|floor| batch_id <= floor) {
+        return Err(StoreError::ResyncRequired {retained_after_batch: crate::retention::floor(conn)?.expect("checked floor")});
+    }
     let id = to_i64(batch_id)?;
     let command_id: Option<Option<String>> = conn
         .query_row(

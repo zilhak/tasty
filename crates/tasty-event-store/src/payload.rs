@@ -64,6 +64,16 @@ impl EventStore {
         read_verified(&self.conn, payload)
     }
 
+    /// Check size in the same read snapshot before allocating the BLOB buffer.
+    pub fn read_payload_bounded(&self, payload: PayloadRef, limit: usize) -> StoreResult<Vec<u8>> {
+        let tx = self.conn.unchecked_transaction()?;
+        let size: Option<i64> = tx.query_row("SELECT length(bytes) FROM payloads WHERE payload_id = ?1",
+            [to_i64(payload.0)?], |row| row.get(0)).optional()?;
+        let size = to_u64(size.ok_or(StoreError::PayloadMissing(payload.0))?)?;
+        if size > limit as u64 {return Err(StoreError::PayloadTooLarge {payload: payload.0, size, limit});}
+        read_verified(&tx, payload)
+    }
+
     /// 외부 보유자(undo·View 복원 기록·import 등)의 참조를 건다.
     pub fn pin_payload(
         &mut self,

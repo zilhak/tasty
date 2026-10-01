@@ -90,6 +90,9 @@ impl EventStore {
     /// snapshot을 지운다. 참조만 풀리고 payload 내용은 GC 때 지워진다.
     pub fn delete_snapshot(&mut self, epoch: WriterEpoch, id: SnapshotId) -> StoreResult<()> {
         let tx = self.write_tx(epoch)?;
+        if crate::retention::anchor_snapshot(&tx)? == Some(id) {
+            return Err(StoreError::Corrupt("cannot delete the retained history anchor snapshot".into()));
+        }
         tx.execute(
             "DELETE FROM snapshots WHERE snapshot_id = ?1",
             [to_i64(id)?],
@@ -146,7 +149,10 @@ impl EventStore {
     ) -> StoreResult<Option<JournalCut>> {
         let tx = self.conn.unchecked_transaction()?;
         checkpoint_batch(&tx, consumer_id, projection_version)?
-            .map(|batch| cut_at(&tx, batch))
+            .map(|batch| {
+                crate::retention::require_cursor(&tx, Some(batch))?;
+                cut_at(&tx, batch)
+            })
             .transpose()
     }
 }
@@ -172,7 +178,7 @@ fn insert_snapshot(conn: &Connection, snapshot: &NewSnapshot) -> StoreResult<Sna
 }
 
 /// A valid fallback must include every opaque payload, not merely its serialized domain body.
-fn verify_snapshot(conn: &Connection, id: SnapshotId, body: PayloadRef) -> StoreResult<Vec<u8>> {
+pub(crate) fn verify_snapshot(conn: &Connection, id: SnapshotId, body: PayloadRef) -> StoreResult<Vec<u8>> {
     let bytes = payload::read_verified(conn, body)?;
     let mut stmt = conn.prepare("SELECT payload_id FROM payload_pins WHERE holder = ?1")?;
     let rows = stmt.query_map([snapshot_holder(id)], |row| row.get::<_, i64>(0))?;
@@ -206,7 +212,7 @@ fn retain_snapshots(conn: &Connection, version: u32, keep: usize) -> StoreResult
             "SELECT EXISTS(SELECT 1 FROM payload_pins WHERE payload_id = ?1 AND holder != ?2)",
             params![body, holder], |row| row.get(0),
         )?;
-        if external { continue; }
+        if external || crate::retention::anchor_snapshot(conn)? == Some(id) { continue; }
         conn.execute("DELETE FROM snapshots WHERE snapshot_id = ?1", [to_i64(id)?])?;
         conn.execute("DELETE FROM payload_pins WHERE holder = ?1", [holder])?;
     }
@@ -233,10 +239,14 @@ fn latest_valid(
             r.get::<_, i64>(2)?,
         ))
     })?;
+    let floor = crate::retention::floor(conn)?;
     let mut rejected = Vec::new();
     for row in rows {
         let (id, batch, body) = row?;
         let snapshot_id = to_u64(id)?;
+        if floor.is_some_and(|floor| to_u64(batch).is_ok_and(|batch| batch < floor)) {
+            continue;
+        }
         match verify_snapshot(conn, snapshot_id, PayloadRef(to_u64(body)?)) {
             Ok(bytes) => {
                 let snapshot = DomainSnapshot {
@@ -256,6 +266,9 @@ fn latest_valid(
             Err(err) => return Err(err),
         }
     }
+    if let Some(retained_after_batch) = floor {
+        return Err(StoreError::ResyncRequired {retained_after_batch});
+    }
     Ok((None, rejected))
 }
 
@@ -266,6 +279,7 @@ pub(crate) fn advance_checkpoint(
     projection_version: u32,
     batch_id: BatchId,
 ) -> StoreResult<()> {
+    crate::retention::require_cursor(conn, Some(batch_id))?;
     cut_at(conn, batch_id)?;
     if let Some(current) = checkpoint_batch(conn, consumer_id, projection_version)?
         && current > batch_id
