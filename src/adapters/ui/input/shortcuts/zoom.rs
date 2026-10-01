@@ -41,8 +41,13 @@ impl MainView {
     ) -> bool {
         use crate::state::FocusedSurfaceType;
         let focus = state.focused_surface_type(engine);
-        // appearance를 가변 대여하기 전에 registry의 zoomable 값을 읽는다.
+        // Fix the target now; the execution owner applies each queued change in order.
         let kind_zoomable = focus.kind_capability(engine, |d| d.zoomable);
+        let change = match action {
+            ZoomAction::In => crate::app::engine_action::ZoomChange::In,
+            ZoomAction::Out => crate::app::engine_action::ZoomChange::Out,
+            ZoomAction::Reset => crate::app::engine_action::ZoomChange::Reset,
+        };
 
         // webview는 plugin_settings의 zoom을 sync_webviews에서 backend에 적용한다.
         // egui로 그리는 surface는 아래에서 font_size를 조정한다.
@@ -51,21 +56,11 @@ impl MainView {
             && crate::runtime::surface_registry::webview_kind::is_webview_kind(k)
             && let Some(plugin_id) = crate::webview::webview_settings_plugin_id(k)
         {
-            use crate::settings::PluginSettingValue;
-            let current = match engine.settings.plugin_setting(plugin_id, "zoom") {
-                Some(PluginSettingValue::Number(n)) => *n,
-                _ => 100.0,
-            };
-            let next = match action {
-                ZoomAction::Reset => 100.0,
-                ZoomAction::In => (current + 10.0).min(500.0),
-                ZoomAction::Out => (current - 10.0).max(25.0),
-            };
             state.dispatch_intent(
                 crate::intent::Intent::PatchSettings(
                     crate::app::engine_action::SettingsPatch::PluginZoom {
                         plugin: plugin_id.to_owned(),
-                        value: next,
+                        change,
                     },
                 )
                 .from_user_shortcut("zoom"),
@@ -73,29 +68,14 @@ impl MainView {
             return true;
         }
 
-        let appearance = &engine.settings.appearance;
-        let (kind, current_effective_size) = match &focus {
-            FocusedSurfaceType::Terminal => (
-                None,
-                appearance
-                    .default_font
-                    .apply_override(&appearance.terminal_font)
-                    .font_size,
-            ),
-            FocusedSurfaceType::Kind(kind) if kind_zoomable => (
-                Some(kind.to_string()),
-                appearance.effective_font_for_kind(kind).font_size,
-            ),
+        let kind = match &focus {
+            FocusedSurfaceType::Terminal => None,
+            FocusedSurfaceType::Kind(kind) if kind_zoomable => Some(kind.to_string()),
             _ => return false,
-        };
-        let size = match action {
-            ZoomAction::Reset => None,
-            ZoomAction::In => Some((current_effective_size + 1.0).min(72.0)),
-            ZoomAction::Out => Some((current_effective_size - 1.0).max(6.0)),
         };
         state.dispatch_intent(
             crate::intent::Intent::PatchSettings(
-                crate::app::engine_action::SettingsPatch::FontSize { kind, size },
+                crate::app::engine_action::SettingsPatch::FontSize { kind, change },
             )
             .from_user_shortcut("zoom"),
         );
