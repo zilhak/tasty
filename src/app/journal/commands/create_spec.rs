@@ -161,14 +161,13 @@ impl Spec {
 impl Spec {
     pub fn from_public(
         request: &crate::ipc::protocol::JsonRpcRequest,
-        session: &crate::runtime::engine_session::EngineSession,
+        engine: &crate::runtime::engine_access::EngineRef<'_>,
         view: &crate::runtime::journal_product::CompletionView,
         services: &crate::app::services::AppServices,
     ) -> Result<Self, crate::ipc::protocol::JsonRpcResponse> {
         use crate::ipc::{handler::params, protocol::JsonRpcResponse};
         let id = serde_json::Value::Null;
         let bad = |message: String| JsonRpcResponse::invalid_params(id.clone(), message);
-        let engine = session.as_ref();
         let mut input = request.params.clone();
         let mut kind = input
             .get("type")

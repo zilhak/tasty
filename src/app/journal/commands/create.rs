@@ -576,7 +576,7 @@ impl JournalApplication {
         } else if pending.request.method == "terminal.respawn" {
             super::child::resolve_respawn(&pending.request, session)
         } else {
-            super::create_spec::Spec::from_public(&pending.request, session, &view, services)
+            super::create_spec::Spec::from_public(&pending.request, &session.as_ref(), &view, services)
                 .and_then(|spec| Request::from_spec(spec, session))
         };
         match resolved {
