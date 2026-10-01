@@ -301,6 +301,16 @@ impl PluginManager {
     /// 첫 set_context보다 먼저 surface.create를 보내 생성 인자를 전달한다.
     /// 두 요청은 같은 plugin 채널의 FIFO 순서를 따른다. 응답은 별도로 기다리지 않는다.
     /// 호출 순서는 src/source_guards/mesh_bootstrap_order.rs에서 검사한다.
+    pub fn needs_egui_mesh_bootstrap(&self, plugin_id:&str, binding:&crate::host_cmd::MeshBinding)->bool {
+        let Some(process)=self.processes.get(plugin_id) else {return false;};
+        let publication=binding.publication.lock().expect("mesh binding poisoned");
+        match &*publication {
+            crate::host_cmd::MeshPublication::NeverSent=>true,
+            crate::host_cmd::MeshPublication::Sent(generations)=>!generations.iter().any(|generation|generation.process.ptr_eq(&process.reply_binding())),
+            crate::host_cmd::MeshPublication::Retiring(_)=>false,
+        }
+    }
+
     pub fn send_egui_mesh_surface_create(
         &self,
         plugin_id: &str,
@@ -311,10 +321,13 @@ impl PluginManager {
         binding: &crate::host_cmd::MeshBinding,
     ) {
         let mut publication = binding.publication.lock().expect("mesh binding poisoned");
-        if !matches!(*publication, crate::host_cmd::MeshPublication::NeverSent) { return; }
+        if matches!(*publication, crate::host_cmd::MeshPublication::Retiring(_)) { return; }
         let Some(proc) = self.processes.get(plugin_id) else {
             return;
         };
+        if let crate::host_cmd::MeshPublication::Sent(generations)=&*publication {
+            if generations.iter().any(|generation|generation.process.ptr_eq(&proc.reply_binding())) {return;}
+        }
         let request = self.next_request_id.fetch_add(1, Ordering::Relaxed);
         let req = crate::protocol::PluginRequest::new(
             protocol::METHOD_SURFACE_CREATE,
@@ -329,9 +342,11 @@ impl PluginManager {
         if let Err(e) = proc.try_send_request(req) {
             tracing::warn!("plugin '{plugin_id}' surface.create (egui-mesh) send failed: {e}");
         } else {
-            *publication = crate::host_cmd::MeshPublication::Sent {
-                plugin: plugin_id.to_owned(), process: proc.reply_binding(), request,
-            };
+            let generation=crate::host_cmd::MeshBootstrap {plugin:plugin_id.to_owned(),process:proc.reply_binding(),request};
+            match &mut *publication {
+                crate::host_cmd::MeshPublication::Sent(generations)=>generations.push(generation),
+                _=>*publication=crate::host_cmd::MeshPublication::Sent(vec![generation]),
+            }
         }
     }
 

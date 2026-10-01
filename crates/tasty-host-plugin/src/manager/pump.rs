@@ -697,10 +697,15 @@ impl PluginManager {
         use crate::host_cmd::{MeshPublication,RemoteRetirementReceipt};
         let mut publication=binding.publication.lock().map_err(|_| "mesh binding poisoned")?;
         if let MeshPublication::Retiring(receipt)=&*publication {return Ok(receipt.clone());}
-        let (receipt,completion)=RemoteRetirementReceipt::pending(surface_id,binding.binding());
+        let mut receipts=Vec::new();
         match &*publication {
-            MeshPublication::NeverSent => completion.finish(Ok(())),
-            MeshPublication::Sent {plugin,process,request:bootstrap} => {
+            MeshPublication::NeverSent => {
+                let (receipt,completion)=RemoteRetirementReceipt::pending(surface_id,binding.binding());
+                completion.finish(Ok(()));receipts.push(receipt);
+            },
+            MeshPublication::Sent(generations) => for generation in generations {
+                let (receipt,completion)=RemoteRetirementReceipt::pending(surface_id,binding.binding());
+                let crate::host_cmd::MeshBootstrap {plugin,process,request:bootstrap}=generation;
                 if let Some(owner)=self.processes.get(plugin).filter(|owner|owner.reply_binding().ptr_eq(process)) {
                     let id=self.next_request_id.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
                     let request=protocol::PluginRequest::new(protocol::METHOD_SURFACE_DESTROY,json!({"surface_id":surface_id}),id);
@@ -709,9 +714,11 @@ impl PluginManager {
                         Err(error) => completion.finish(Err(format!("mesh bootstrap {bootstrap} destruction was not acknowledged: {error}"))),
                     }
                 } else {completion.finish(Err(format!("mesh bootstrap {bootstrap} original process is unavailable")));}
+                receipts.push(receipt);
             },
             MeshPublication::Retiring(_) => unreachable!(),
         }
+        let receipt=RemoteRetirementReceipt::group(surface_id,binding.binding(),receipts);
         *publication=MeshPublication::Retiring(receipt.clone());
         Ok(receipt)
     }

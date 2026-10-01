@@ -18,7 +18,9 @@ pending 응답을 없애지 않는다. 이후 실제 응답이 오면 같은 ret
 
 Mesh도 각 runtime 인스턴스의 불투명 binding으로 bootstrap을 추적한다. 큐에 제출하지
 못한 create는 미실행으로 구별하며, 제출된 create는 원 process와 request identity를
-고정한다. 회수는 그 process에만 destroy를 보내고 실제 응답을 기다린다. 같은 surface
+고정한다. 명시 bootstrap 요청이 새 process에 도착하면 별도 세대를 추가한다. 이전
+세대도 보존하며 process 교체를 회수 성공으로 취급하지 않는다. 회수는 각 원 process에만
+destroy를 보내고 모든 세대의 실제 응답을 기다린다. 같은 surface
 ID의 새 인스턴스나 새 process를 찾아 대신 종료하지 않는다. View는 binding을 전달할
 수 있지만 내부 상태는 plugin manager만 변경한다.
 

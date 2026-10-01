@@ -47,8 +47,13 @@ pub struct MeshBinding {
 pub(crate) enum MeshPublication {
     #[default]
     NeverSent,
-    Sent { plugin: String, process: std::sync::Weak<()>, request: u64 },
+    Sent(Vec<MeshBootstrap>),
     Retiring(RemoteRetirementReceipt),
+}
+pub(crate) struct MeshBootstrap {
+    pub(crate) plugin: String,
+    pub(crate) process: std::sync::Weak<()>,
+    pub(crate) request: u64,
 }
 impl MeshBinding {
     pub fn binding(&self) -> SurfaceBinding { SurfaceBinding(Arc::downgrade(&self.identity)) }
@@ -60,14 +65,25 @@ pub struct RemoteRetirementReceipt {
     state: Arc<std::sync::OnceLock<Result<(), String>>>,
     surface_id: u32,
     binding: SurfaceBinding,
+    children: Vec<RemoteRetirementReceipt>,
 }
 pub struct RemoteRetirementCompletion(Arc<std::sync::OnceLock<Result<(), String>>>);
 impl RemoteRetirementReceipt {
     pub fn pending(surface_id:u32,binding:SurfaceBinding) -> (Self, RemoteRetirementCompletion) {
         let state = Arc::new(std::sync::OnceLock::new());
-        (Self {state:state.clone(),surface_id,binding}, RemoteRetirementCompletion(state))
+        (Self {state:state.clone(),surface_id,binding,children:Vec::new()}, RemoteRetirementCompletion(state))
     }
-    pub fn observation(&self) -> Option<Result<(), String>> { self.state.get().cloned() }
+    pub(crate) fn group(surface_id:u32,binding:SurfaceBinding,children:Vec<Self>)->Self {
+        Self {state:Arc::new(std::sync::OnceLock::new()),surface_id,binding,children}
+    }
+    pub fn observation(&self) -> Option<Result<(), String>> {
+        if self.children.is_empty() {return self.state.get().cloned();}
+        let mut pending=false;
+        for child in &self.children {
+            match child.observation() {Some(Err(reason))=>return Some(Err(reason)),None=>pending=true,Some(Ok(()))=>{}}
+        }
+        if pending {None} else {Some(Ok(()))}
+    }
     pub fn matches(&self,surface_id:u32,binding:&SurfaceBinding)->bool {
         self.surface_id==surface_id && self.binding.0.ptr_eq(&binding.0)
     }
