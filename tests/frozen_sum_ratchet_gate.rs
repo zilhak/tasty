@@ -1,4 +1,4 @@
-//! 허용 목록 파일의 SLOC 합에 대한 예산 검사를 합성 저장소와 스텁으로 검증한다.
+//! 동결 명부 파일의 SLOC 합에 대한 예산 검사를 합성 저장소와 스텁으로 검증한다.
 //! 개별 파일 검사의 예외도 총합 성장 제한을 받는다. 통과·위반·측정 실패의 종료 코드는 구별한다.
 //! 실제 판정기를 여기서 빌드하면 바깥 Cargo 시험과 빌드 잠금을 기다릴 수 있어 스텁을 사용한다.
 
@@ -83,6 +83,11 @@ fn root_with_bias(
         root.join("scripts/lib/judge-bin.sh"),
     )
     .expect("판정기 찾기 공용 복사");
+    fs::copy(
+        format!("{here}/scripts/lib/frozen_corpus.py"),
+        root.join("scripts/lib/frozen_corpus.py"),
+    )
+    .expect("동결 명부 검증기 복사");
     write_sibling(root, Some(SLACK), Some("src crates"));
 
     let mut al = String::from("# 합성 목록\n");
@@ -97,6 +102,12 @@ fn root_with_bias(
         al.push('\n');
     }
     fs::write(root.join(".complexity-file-allowlist"), al).expect("allowlist");
+    fs::write(root.join(".complexity-frozen-files"), entries.join("\n")).expect("frozen corpus");
+    for entry in entries {
+        let path = root.join(entry);
+        fs::create_dir_all(path.parent().expect("명부 경로 부모")).expect("명부 디렉터리");
+        fs::write(path, "fn fixture() {}\n").expect("실재하는 동결 파일");
+    }
     dir
 }
 
@@ -246,17 +257,60 @@ fn a_listed_file_that_exists_but_is_unreported_is_a_measurement_failure() {
 }
 
 #[test]
-fn a_deleted_listed_file_just_counts_as_zero() {
+fn a_deleted_frozen_file_is_undecidable() {
     let d = root_with(Some(BUDGET), &[P, "src/frozen_gone.rs"]);
+    fs::remove_file(d.path().join("src/frozen_gone.rs")).expect("명부 파일 삭제");
+    let output = run(d.path(), &reports(P, BUDGET));
     assert_eq!(
-        run(d.path(), &reports(P, BUDGET)),
-        0,
-        "목록에 있으나 디스크에 없는 경로는 0 으로 세고 통과여야 한다"
+        output, 2,
+        "사라진 동결 파일을 0으로 세어 예산을 낮춰서는 안 된다"
+    );
+    assert!(
+        output
+            .output
+            .contains("동결 명부가 현재 파일/예외 목록과 맞지 않는다."),
+        "{output:?}"
+    );
+    assert!(
+        output
+            .output
+            .contains("frozen corpus path is invalid or missing: src/frozen_gone.rs"),
+        "{output:?}"
     );
 }
 
 #[test]
-fn files_outside_the_allowlist_do_not_count() {
+fn a_file_exemption_outside_the_frozen_corpus_is_undecidable() {
+    let d = root_with(Some(BUDGET), &[P, "src/extra_exempt.rs"]);
+    fs::write(d.path().join(".complexity-frozen-files"), P).expect("불완전 명부");
+    let output = run(d.path(), &reports(P, BUDGET));
+    assert_eq!(
+        output, 2,
+        "개별 예외를 총합 명부에서 빠뜨리면 판정할 수 없다"
+    );
+    assert!(
+        output
+            .output
+            .contains("file exemptions missing from frozen corpus: src/extra_exempt.rs"),
+        "{output:?}"
+    );
+}
+
+#[test]
+fn removing_a_file_exemption_keeps_its_frozen_measurement() {
+    let d = root_with(Some(BUDGET), &[P]);
+    let path = d.path().join(".complexity-file-allowlist");
+    let old = fs::read_to_string(&path).expect("예외 목록");
+    fs::write(path, old.replace(&format!("{P}\n"), "")).expect("예외 해제");
+    assert_eq!(
+        run(d.path(), &reports(P, BUDGET)),
+        0,
+        "개별 예외 해제로 같은 총량의 동결 명부가 줄어서는 안 된다"
+    );
+}
+
+#[test]
+fn files_outside_the_frozen_corpus_do_not_count() {
     let d = root_with(Some(BUDGET), &[P]);
     let body = format!(
         r#"echo '{{"Rust":{{"reports":[{{"name":"{P}","stats":{{"code":{BUDGET}}}}},{{"name":"__nodoc/{P}","stats":{{"code":{BUDGET}}}}},{{"name":"__probe/probe.rs","stats":{{"code":1}}}},{{"name":"src/not_frozen.rs","stats":{{"code":900000}}}}]}}}}'"#
@@ -268,7 +322,7 @@ fn files_outside_the_allowlist_do_not_count() {
     );
 }
 
-/// 범위에 extra가 들어오면 보고를 추가한다. 파일을 실제로 만들면 보고 누락 검사가 먼저 실패하므로 여기서는 만들지 않는다.
+/// 범위에 extra가 들어오면 보고를 추가한다. 명부 파일은 fixture가 만들고 범위가 누락되면 보고 누락으로 실패한다.
 fn reports_sensitive_to_scan_dirs(base: i64, extra: i64) -> String {
     format!(
         "case \" $* \" in\n\

@@ -61,6 +61,11 @@ fn synth_root() -> tempfile::TempDir {
         root.join("scripts/lib/intent_discipline_scan.py"),
     )
     .expect("호출 탐지 스캐너 복사");
+    fs::copy(
+        format!("{here}/scripts/lib/core_writer_scan.py"),
+        root.join("scripts/lib/core_writer_scan.py"),
+    )
+    .expect("호출 위치를 해석하는 공용 스캐너 복사");
     for p in exempt_paths() {
         let f = root.join(&p);
         fs::create_dir_all(f.parent().expect("면제 경로의 부모")).expect("면제 경로 디렉토리");
