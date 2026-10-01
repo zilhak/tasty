@@ -40,6 +40,7 @@ impl EventStore {
         epoch: WriterEpoch,
         write: &ProjectionWrite,
     ) -> StoreResult<()> {
+        crate::write_limits::projection(write,None)?;
         check_keys(write)?;
         let tx = self.write_tx(epoch)?;
         crate::scoped_projection::require_global(
@@ -70,6 +71,7 @@ impl EventStore {
         epoch: WriterEpoch,
         write: &ProjectionWrite,
     ) -> StoreResult<()> {
+        crate::write_limits::projection(write,None)?;
         check_keys(write)?;
         let tx = self.write_tx(epoch)?;
         crate::scoped_projection::require_global(

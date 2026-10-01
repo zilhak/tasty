@@ -227,6 +227,10 @@ CommitRequest의 모든 문자열·바이트 필드와 참조당 8 bytes, envelo
 검사하므로 capture·snapshot·View manifest·import도 우회하지 않는다. snapshot/manifest는
 본문과 참조 목록의 논리 합계도 검사하고, import의 commit+snapshot+manifest 및 payload 복사
 transaction도 합계를 제한한다. 단독 effect 전이도 같은 논리 상한을 적용한다.
+Global/scoped projection의 incremental/replace도 같은 64 MiB 논리 쓰기 상한을 쓴다.
+consumer·scope 이름·upsert key와 row payload·모든 delete key를 합산하고 각 항목의
+고정 비용도 센다. row payload는 단일 BLOB 상한도 검사한다. scope/digest 구성과 기존
+출력 삭제 전에 거절하므로 초과 요청이 cursor나 이전 출력을 바꾸지 않는다.
 이 제한은 SQLite 파일이나 메모리 할당의 hard cap이 아니며 이미 생성한 입력을 쓰기 전에
 거절하는 경계다. 초과하면 WriteSizeExceeded로 transaction을 되돌린다. 기존 의무/claim을
 없애거나 결과 bytes를 잘라 성공으로 저장하지 않는다. effect 오류·Uncertain 대조와
