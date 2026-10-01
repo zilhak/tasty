@@ -325,6 +325,39 @@ mod tests {
     }
 
     #[test]
+    fn publication_global_drain_keeps_a_racing_reader_wake_observable() {
+        for _ in 0..128 {
+            let (tx, rx) = mpsc::channel();
+            let factory = HeadlessWaker::new(tx).waker_factory();
+            let wake = factory.make_targeted_waker(11);
+            wake();
+            assert_eq!(drain_counts(&rx), (0, 1));
+            // The original wake was merged into the pending global drain. Payload stays
+            // at its source; a reader can publish another payload while that drain begins.
+            let pending = Arc::new(AtomicBool::new(false));
+            let start = Arc::new(std::sync::Barrier::new(2));
+            let reader = {
+                let pending = pending.clone();
+                let start = start.clone();
+                std::thread::spawn(move || {
+                    start.wait();
+                    pending.store(true, Ordering::SeqCst);
+                    wake();
+                })
+            };
+            start.wait();
+            factory.note_drained(None);
+            let observed_by_global_drain = pending.swap(false, Ordering::SeqCst);
+            reader.join().unwrap();
+            let later_wake = drain_counts(&rx).1;
+            assert!(
+                observed_by_global_drain || (pending.load(Ordering::SeqCst) && later_wake == 1),
+                "payload arriving after global observation must retain a later wake"
+            );
+        }
+    }
+
+    #[test]
     fn forget_surface_removes_gate() {
         let (tx, rx) = mpsc::channel();
         let factory = HeadlessWaker::new(tx).waker_factory();
