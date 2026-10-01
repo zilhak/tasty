@@ -71,15 +71,22 @@ impl SurfaceBinding {
             })
     }
 }
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ZoomChange {
+    In,
+    Out,
+    Reset,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) enum SettingsPatch {
     PluginZoom {
         plugin: String,
-        value: f64,
+        change: ZoomChange,
     },
     FontSize {
         kind: Option<String>,
-        size: Option<f32>,
+        change: ZoomChange,
     },
     ExplorerMode(String),
     SuppressMouseHint(String),
@@ -88,21 +95,38 @@ pub(crate) enum SettingsPatch {
 impl SettingsPatch {
     pub(crate) fn apply(&self, settings: &mut crate::settings::Settings) {
         match self {
-            Self::PluginZoom { plugin, value } => settings.set_plugin_setting(
-                plugin,
-                "zoom",
-                crate::settings::PluginSettingValue::Number(*value),
-            ),
-            Self::FontSize { kind, size } => {
+            Self::PluginZoom { plugin, change } => {
+                use crate::settings::PluginSettingValue;
+                let current = match settings.plugin_setting(plugin, "zoom") {
+                    Some(PluginSettingValue::Number(value)) => *value,
+                    _ => 100.0,
+                };
+                let value = match change {
+                    ZoomChange::In => (current + 10.0).min(500.0),
+                    ZoomChange::Out => (current - 10.0).max(25.0),
+                    ZoomChange::Reset => 100.0,
+                };
+                settings.set_plugin_setting(plugin, "zoom", PluginSettingValue::Number(value));
+            }
+            Self::FontSize { kind, change } => {
+                let appearance = &mut settings.appearance;
+                let current = match kind {
+                    Some(kind) => appearance.effective_font_for_kind(kind).font_size,
+                    None => appearance.effective_terminal_font().font_size,
+                };
+                let size = match change {
+                    ZoomChange::In => Some((current + 1.0).min(72.0)),
+                    ZoomChange::Out => Some((current - 1.0).max(6.0)),
+                    ZoomChange::Reset => None,
+                };
                 let font = match kind {
-                    Some(kind) => settings
-                        .appearance
+                    Some(kind) => appearance
                         .plugin_font_overrides
                         .entry(kind.clone())
                         .or_default(),
-                    None => &mut settings.appearance.terminal_font,
+                    None => &mut appearance.terminal_font,
                 };
-                font.font_size = *size;
+                font.font_size = size;
             }
             Self::ExplorerMode(mode) => settings.general.explorer_view_mode = mode.clone(),
             Self::SuppressMouseHint(name) => settings
