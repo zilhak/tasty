@@ -11,7 +11,7 @@ use crate::core::CoreState;
 use crate::core::attach::{AttachClientId, AttachError};
 use crate::model::{AttachSurfaceClass, SurfaceId, WorkspaceId};
 use tasty_ipc::stream::{StreamControl, StreamFrame, StreamTag, encode_mux};
-use tasty_ipc::stream_hub::StreamHub;
+use tasty_ipc::stream_hub::{PushResult, StreamHub};
 
 mod content_queries;
 
