@@ -73,6 +73,64 @@ fn apply_profile_fields(p: &mut RemoteProfile, params: &Value) {
     }
 }
 
+fn apply_ssh_profile(
+    p: &mut RemoteProfile,
+    params: &Value,
+    id: &Value,
+) -> Result<bool, JsonRpcResponse> {
+    let mut will_detect = false;
+    if let Some(host) = params.get("host").and_then(|v| v.as_str()) {
+        p.set_field("host", host.to_string());
+    }
+    if p.as_ssh().and_then(|v| v.host()).is_none() {
+        return Err(JsonRpcResponse::invalid_params(
+            id.clone(),
+            "ssh kind requires 'host'",
+        ));
+    }
+    if let Some(user) = params.get("user").and_then(|v| v.as_str()) {
+        p.set_field("user", user.to_string());
+    }
+    if let Some(port) =
+        params::opt_int::<u64>(params, "port", id)?.filter(|v| *v <= u16::MAX as u64)
+    {
+        p.set_field("port", port.to_string());
+    }
+    if let Some(opts) = params.get("extra_options").and_then(|v| v.as_array()) {
+        let list: Vec<String> = opts
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect();
+        if !list.is_empty() {
+            p.set_field("extra_options", list);
+        }
+    }
+    if let Some(rt) = params.get("remote_tasty").and_then(|v| v.as_str()) {
+        p.set_field("remote_tasty", rt.to_string());
+    }
+    if let Some(pm) = params.get("port_mode").and_then(|v| v.as_str()) {
+        p.set_field("port_mode", pm.to_string());
+    }
+    let shell = params
+        .get("shell")
+        .and_then(|v| v.as_str())
+        .unwrap_or("auto");
+    if !is_valid_shell(shell) {
+        return Err(JsonRpcResponse::invalid_params(
+            id.clone(),
+            "invalid 'shell' (powershell|cmd|bash|zsh|auto)",
+        ));
+    }
+    p.set_field("shell", shell.to_string());
+    if let Some(mode) = shell_to_port_mode(shell) {
+        p.set_field("port_mode", mode.to_string());
+        p.remove_field("detect_failed");
+    } else {
+        will_detect = true; // auto → 등록 후 워커 감지
+    }
+    Ok(will_detect)
+}
+
 /// 일반 fields로 프로필을 추가·수정한다. tasty-attach도 같은 입력을 쓴다.
 /// ssh의 host/user/port/identity_file/extra_options/shell 편의 인자는 fields/passkey로 변환한다.
 /// identity_file은 path passkey이고 shell에서 port_mode를 도출한다.
@@ -94,56 +152,11 @@ pub(crate) fn handle_add(
     apply_profile_fields(&mut p, params);
 
     let mut passkeys = Passkeys::load();
-    let mut will_detect = false;
-
-    if kind == "ssh" {
-        if let Some(host) = params.get("host").and_then(|v| v.as_str()) {
-            p.set_field("host", host.to_string());
-        }
-        if p.as_ssh().and_then(|v| v.host()).is_none() {
-            return JsonRpcResponse::invalid_params(id, "ssh kind requires 'host'");
-        }
-        if let Some(user) = params.get("user").and_then(|v| v.as_str()) {
-            p.set_field("user", user.to_string());
-        }
-        if let Some(port) =
-            p_try!(params::opt_int::<u64>(params, "port", &id)).filter(|v| *v <= u16::MAX as u64)
-        {
-            p.set_field("port", port.to_string());
-        }
-        if let Some(opts) = params.get("extra_options").and_then(|v| v.as_array()) {
-            let list: Vec<String> = opts
-                .iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect();
-            if !list.is_empty() {
-                p.set_field("extra_options", list);
-            }
-        }
-        if let Some(rt) = params.get("remote_tasty").and_then(|v| v.as_str()) {
-            p.set_field("remote_tasty", rt.to_string());
-        }
-        if let Some(pm) = params.get("port_mode").and_then(|v| v.as_str()) {
-            p.set_field("port_mode", pm.to_string());
-        }
-        let shell = params
-            .get("shell")
-            .and_then(|v| v.as_str())
-            .unwrap_or("auto");
-        if !is_valid_shell(shell) {
-            return JsonRpcResponse::invalid_params(
-                id,
-                "invalid 'shell' (powershell|cmd|bash|zsh|auto)",
-            );
-        }
-        p.set_field("shell", shell.to_string());
-        if let Some(mode) = shell_to_port_mode(shell) {
-            p.set_field("port_mode", mode.to_string());
-            p.remove_field("detect_failed");
-        } else {
-            will_detect = true; // auto → 등록 후 워커 감지
-        }
-    }
+    let will_detect = if kind == "ssh" {
+        p_try!(apply_ssh_profile(&mut p, params, &id))
+    } else {
+        false
+    };
 
     // 자격증명: passkey_ref 직접 지정 우선, 아니면 identity_file → path passkey.
     if let Some(pr) = params.get("passkey_ref").and_then(|v| v.as_str()) {

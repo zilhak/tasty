@@ -40,6 +40,17 @@ impl App {
         }
     }
 
+    fn screenshot_view_is_current(
+        &self,
+        source_window: Option<WindowId>,
+        origin_view: &std::sync::Weak<()>,
+    ) -> bool {
+        source_window
+            .and_then(|window| self.view.views.get(&window))
+            .and_then(|view| view.as_main())
+            .is_some_and(|main| main.base.state.matches_identity(origin_view))
+    }
+
     fn start_screenshot_capture(
         &mut self,
         engine: crate::runtime::engine_session::EngineId,
@@ -47,11 +58,7 @@ impl App {
         origin_view: std::sync::Weak<()>,
     ) {
         let source_window = self.engines.window_of(engine);
-        let current = source_window
-            .and_then(|window| self.view.views.get(&window))
-            .and_then(|view| view.as_main())
-            .is_some_and(|main| main.base.state.matches_identity(&origin_view));
-        if !current {
+        if !self.screenshot_view_is_current(source_window, &origin_view) {
             tracing::debug!("discarding screenshot request from retired View");
             return;
         }
@@ -63,6 +70,23 @@ impl App {
             tracing::debug!("capture mirror disappeared before start");
             return;
         }
+        self.spawn_screenshot_capture(
+            engine,
+            source_view,
+            remote_target,
+            mirror_ws_id,
+            source_window,
+        );
+    }
+
+    fn spawn_screenshot_capture(
+        &mut self,
+        engine: crate::runtime::engine_session::EngineId,
+        source_view: Option<std::sync::Weak<()>>,
+        remote_target: Option<crate::app::attach_client::RemoteTarget>,
+        mirror_ws_id: Option<u32>,
+        source_window: Option<WindowId>,
+    ) {
         let tx = self.screenshot_capture_tx.clone();
         let proxy = self.view.proxy.clone();
         if let Err(error) = self.screenshot_workers.spawn(move || {

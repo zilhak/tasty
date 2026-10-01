@@ -149,28 +149,10 @@ impl App {
             .insert(attempt.clone(), endpoint_target);
         self.remote.active.insert(anchor);
         self.remote.pending_reactivation.remove(&anchor);
-        let tx = self.remote.tx.clone();
-        let proxy = self.view.proxy.clone();
-        let target = mapping.target.clone();
-        // SSH 연결 준비가 메인 루프를 막지 않게 한다.
-        let spawned = self.remote.spawn_attempt(attempt.clone(), move || {
-            let result = resolve_endpoint_bound(&target, &attempt);
-            let outcome = AutoAttachOutcome {
-                attempt,
-                anchor_ws_id: Some(anchor),
-                remote_ws,
-                result,
-                is_reconnect: false,
-            };
-            let _ = tx.send(outcome); // 수신자(메인 루프) drop 시 send 실패 — 무시.
-            let _ = proxy.send_event(crate::app::event::AppEvent::AutoAttachReady); // event loop 종료 시에만 실패 — 무시
-        });
+        let spawned =
+            self.spawn_endpoint_attempt(attempt, anchor, remote_ws, mapping.target.clone(), false);
         if let Err(error) = spawned {
-            self.state
-                .pending_remote_endpoints
-                .retain(|token, _| token.is_active());
-            self.remote.active.remove(&anchor);
-            tracing::warn!("remote endpoint start rejected: {error}");
+            self.reject_endpoint_start(anchor, error, false);
         }
     }
 
@@ -251,28 +233,45 @@ impl App {
             .insert(attempt.clone(), endpoint_target);
         self.remote.active.insert(anchor);
         self.remote.pending_reactivation.remove(&anchor);
+        let spawned =
+            self.spawn_endpoint_attempt(attempt, anchor, remote_ws, mapping.target.clone(), true);
+        if let Err(error) = spawned {
+            self.reject_endpoint_start(anchor, error, true);
+        }
+    }
+
+    fn reject_endpoint_start(&mut self, anchor: u32, error: String, reconnect: bool) {
+        self.state
+            .pending_remote_endpoints
+            .retain(|token, _| token.is_active());
+        self.remote.active.remove(&anchor);
+        let stage = if reconnect { "reconnect" } else { "endpoint" };
+        tracing::warn!("remote {stage} start rejected: {error}");
+    }
+
+    // Both entry paths have already fixed the original target and registered the attempt.
+    fn spawn_endpoint_attempt(
+        &mut self,
+        attempt: tasty_remote::outbound::AttemptToken,
+        anchor: u32,
+        remote_ws: u32,
+        target: WorkspaceAttachTarget,
+        is_reconnect: bool,
+    ) -> Result<(), String> {
         let tx = self.remote.tx.clone();
         let proxy = self.view.proxy.clone();
-        let target = mapping.target.clone();
-        let spawned = self.remote.spawn_attempt(attempt.clone(), move || {
+        self.remote.spawn_attempt(attempt.clone(), move || {
             let result = resolve_endpoint_bound(&target, &attempt);
             let outcome = AutoAttachOutcome {
                 attempt,
                 anchor_ws_id: Some(anchor),
                 remote_ws,
                 result,
-                is_reconnect: true,
+                is_reconnect,
             };
-            let _ = tx.send(outcome); // 수신자(메인 루프) drop 시 send 실패 — 무시.
-            let _ = proxy.send_event(crate::app::event::AppEvent::AutoAttachReady); // event loop 종료 시에만 실패 — 무시
-        });
-        if let Err(error) = spawned {
-            self.state
-                .pending_remote_endpoints
-                .retain(|token, _| token.is_active());
-            self.remote.active.remove(&anchor);
-            tracing::warn!("remote reconnect start rejected: {error}");
-        }
+            let _ = tx.send(outcome); // 수신자가 종료되면 결과를 전달할 수 없다.
+            let _ = proxy.send_event(crate::app::event::AppEvent::AutoAttachReady); // 이벤트 루프 종료 시 깨움 실패를 무시한다.
+        })
     }
 
     pub(crate) fn drain_auto_attach_results(&mut self) {
@@ -299,13 +298,10 @@ impl App {
         }
     }
 
-    fn accept_auto_attach_outcome(
+    fn take_current_endpoint_target(
         &mut self,
         outcome: &AutoAttachOutcome,
-    ) -> Option<(
-        crate::app::attach_client::pending::PendingMirrorInstall,
-        tasty_remote::outbound::AttemptRecord,
-    )> {
+    ) -> Option<crate::app::attach_client::pending::PendingMirrorInstall> {
         let Some(target) = self.state.pending_remote_endpoints.remove(&outcome.attempt) else {
             self.remote.finish_attempt(&outcome.attempt);
             return None;
@@ -318,14 +314,13 @@ impl App {
             }
             return None;
         }
-        let Some(accepted) = self.remote.finish_attempt(&outcome.attempt) else {
-            tracing::debug!("discarding result from retired remote connection attempt");
-            return None;
-        };
-        if accepted.anchor != outcome.anchor_ws_id {
-            tracing::error!("remote outcome belongs to another anchor");
-            return None;
-        }
+        Some(target)
+    }
+
+    fn accepted_mapping_is_current(
+        &mut self,
+        accepted: &tasty_remote::outbound::AttemptRecord,
+    ) -> bool {
         if let Some(anchor) = accepted.anchor {
             let current = self.engines.all_sessions().find_map(|session| {
                 session
@@ -338,8 +333,30 @@ impl App {
             if current != accepted.mapping {
                 self.remote.active.remove(&anchor);
                 tracing::debug!("discarding SSH result after attach mapping changed");
-                return None;
+                return false;
             }
+        }
+        true
+    }
+
+    fn accept_auto_attach_outcome(
+        &mut self,
+        outcome: &AutoAttachOutcome,
+    ) -> Option<(
+        crate::app::attach_client::pending::PendingMirrorInstall,
+        tasty_remote::outbound::AttemptRecord,
+    )> {
+        let target = self.take_current_endpoint_target(outcome)?;
+        let Some(accepted) = self.remote.finish_attempt(&outcome.attempt) else {
+            tracing::debug!("discarding result from retired remote connection attempt");
+            return None;
+        };
+        if accepted.anchor != outcome.anchor_ws_id {
+            tracing::error!("remote outcome belongs to another anchor");
+            return None;
+        }
+        if !self.accepted_mapping_is_current(&accepted) {
+            return None;
         }
         Some((target, accepted))
     }
