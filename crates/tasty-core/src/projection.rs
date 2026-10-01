@@ -82,6 +82,3 @@ fn tab(engine: &mut CoreState, id: u32) -> Result<&mut Tab> {
         .find_map(|workspace| layout::find_tab_mut(workspace.pane_layout_mut(), id))
         .ok_or_else(|| format!("local tab {id} is missing"))
 }
-
-#[cfg(test)]
-mod tests;

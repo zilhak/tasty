@@ -7,6 +7,9 @@ fn operation() -> Operation {
         command_id: "command/1".into(),
         engine_incarnation: 0,
         creation: None,
+        assembly: None,
+        retirement: None,
+        forward: false,
         targets: vec![EntityId {
             kind: IdKind::Pane,
             id: 1,
@@ -21,6 +24,8 @@ fn operation() -> Operation {
         pending_outcome: None,
         cleanup: None,
         prepared_data: None,
+        prepared_deferred: false,
+        resource_prepared: false,
         reconciliation_evidence: None,
     }
 }
@@ -43,6 +48,7 @@ pub(super) fn examples() -> Vec<DomainEvent> {
                 activation_generation: 1,
             },
             prepared_data: None,
+            deferred: false,
         },
         DomainEvent::OperationFinished {
             id: operation().id,
