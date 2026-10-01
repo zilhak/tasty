@@ -161,20 +161,6 @@ impl<'a> EngineScanMut<'a> {
         }
     }
 
-    pub(crate) fn windows(self) -> impl Iterator<Item = (WindowId, EngineMut<'a>)> {
-        let SplitMut {
-            views,
-            mut by_id,
-            by_window,
-            ..
-        } = self.split();
-        let views: &'a ViewMap = views;
-        views.keys().filter_map(move |wid| {
-            let id = by_window.get(wid)?;
-            by_id.remove(id).map(|e| (*wid, e))
-        })
-    }
-
     /// 창 MainView와 그 engine. 창 순회 순서다.
     pub(crate) fn window_pairs(
         self,
@@ -213,13 +199,6 @@ impl<'a> EngineScanMut<'a> {
     pub(crate) fn window_pair(self, wid: WindowId) -> Option<(&'a mut MainView, EngineMut<'a>)> {
         let main = self.views.get_mut(&wid)?.as_main_mut()?;
         self.engines.window_engine_mut(wid).map(|e| (main, e))
-    }
-
-    /// 창의 MainViewState·engine 쌍.
-    pub(crate) fn window_sessions(
-        self,
-    ) -> impl Iterator<Item = (&'a mut MainViewState, EngineMut<'a>)> {
-        self.window_pairs().map(|(_, m, e)| (&mut m.state, e))
     }
 
     /// 창과 parked 항목의 MainViewState·engine 쌍. 창 → parked 순서다.
@@ -284,10 +263,6 @@ impl<'a> EngineScanMut<'a> {
     ) -> Option<(&'a mut MainViewState, EngineMut<'a>)> {
         self.parked_sessions()
             .find(|(_, e)| crate::core::request_target::engine_has_resource(&e.as_ref(), rid))
-    }
-
-    pub(crate) fn pending(self) -> Option<EngineMut<'a>> {
-        self.engines.pending_mut()
     }
 
     /// 창 → 임시 순서. parked engine은 제외한다.

@@ -44,15 +44,6 @@ pub(super) struct Spec {
 impl Spec {
     pub fn from_intent(intent: &DomainIntent) -> Option<Self> {
         let (destination, kind, cwd, params) = match intent {
-            DomainIntent::AdoptTerminal { pane_id, pty_id } => (
-                Destination::Adopt {
-                    pane: *pane_id,
-                    pty: *pty_id,
-                },
-                "terminal".into(),
-                None,
-                serde_json::json!({}),
-            ),
             DomainIntent::CreateWorkspace {
                 cwd,
                 kind,
@@ -138,15 +129,6 @@ impl Spec {
                     params,
                 )
             }
-            DomainIntent::RespawnTerminal { surface_id, cwd } => (
-                Destination::Convert {
-                    surface: *surface_id,
-                    respawn: true,
-                },
-                "terminal".into(),
-                cwd.clone(),
-                serde_json::json!({}),
-            ),
             _ => return None,
         };
         Some(Self {

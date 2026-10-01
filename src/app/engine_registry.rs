@@ -125,12 +125,6 @@ impl EngineRegistry {
         Some((engine, state))
     }
 
-    /// 창 관계를 끊고 engine을 꺼낸다. 호출자가 저장이나 슬롯 파일 삭제를 마친 뒤 drop 시점을 정한다.
-    pub(crate) fn retire_window(&mut self, wid: WindowId) -> Option<EngineSession> {
-        let id = self.by_window.remove(&wid)?;
-        self.sessions.remove(&id)
-    }
-
     /// Keep the sole resource owner while its slot retirement is awaiting durable publication.
     pub(crate) fn begin_retiring_window(&mut self, wid: WindowId) -> Option<EngineId> {
         let id = self.by_window.remove(&wid)?;
@@ -451,10 +445,13 @@ mod tests {
         assert_relations_partition_sessions(&reg);
         reg.attach_window(wid(4), pending);
 
-        // 은퇴는 창 관계와 engine을 함께 없앤다.
-        let retired = reg.retire_window(wid(3)).expect("창 engine");
+        // Retirement first removes the View relation; the process owner remains until release.
+        assert_eq!(reg.begin_retiring_window(wid(3)), Some(a));
+        assert!(reg.session_mut(a).is_some());
+        reg.mark_retiring_release(a);
+        let retired = reg.finish_retiring(a).expect("released owner");
         assert_eq!(retired.id, a);
-        assert!(reg.retire_window(wid(3)).is_none(), "두 번 은퇴하지 않는다");
+        assert!(reg.begin_retiring_window(wid(3)).is_none());
         assert_relations_partition_sessions(&reg);
         assert_eq!(slots(&reg), [2, 5]);
         assert_eq!(reg.window_of(pending), Some(wid(4)));

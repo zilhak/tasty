@@ -37,8 +37,6 @@ pub(crate) enum SendPayload {
 pub(crate) enum RestoreScope {
     /// 원격 사용자 요청으로 닫힌 항목도 포함한 인스턴스 전체의 최신 항목.
     Local,
-    /// 결과를 같은 workspace의 delta로 보낼 수 있도록 해당 workspace의 항목만 고른다.
-    Workspace(u32),
 }
 
 #[derive(Debug, Clone)]
@@ -64,13 +62,6 @@ pub(crate) enum DomainIntent {
         /// 카테고리가 없거나 찾지 못하면 기본 분류에 둔다.
         category: Option<crate::model::WorkspaceCategoryId>,
     },
-    /// None인 메타데이터 필드는 바꾸지 않는다.
-    UpdateWorkspaceMeta {
-        workspace_id: u32,
-        name: Option<String>,
-        subtitle: Option<String>,
-        description: Option<String>,
-    },
     /// Source identity is fixed at admission; the destination is an order coordinate.
     MoveWorkspace {
         workspace_id: u32,
@@ -81,11 +72,6 @@ pub(crate) enum DomainIntent {
     SetWorkspaceCategory {
         workspace_id: u32,
         category: crate::model::WorkspaceCategoryId,
-    },
-    /// None이면 attach 매핑을 지운다. 값 검증은 호출자가 먼저 한다.
-    SetWorkspaceAttachMapping {
-        workspace_id: u32,
-        mapping: Option<crate::model::WorkspaceAttachMapping>,
     },
 
     /// 이름을 검증해 목록 끝에 추가한다.
@@ -100,11 +86,6 @@ pub(crate) enum DomainIntent {
     /// normal은 지울 수 없다. 안의 workspace는 normal로 옮긴다.
     DeleteCategory {
         id: crate::model::WorkspaceCategoryId,
-    },
-    /// normal은 첫 위치에 고정한다.
-    ReorderCategory {
-        from_index: usize,
-        to_index: usize,
     },
     CreateTab {
         pane_id: u32,
@@ -138,11 +119,6 @@ pub(crate) enum DomainIntent {
     RenameTab {
         tab_id: u32,
         name: Option<String>,
-    },
-    /// 기존 headless Terminal을 새 surface ID로 옮긴다. PTY를 다시 만들지 않고 registry에서 제거한다.
-    AdoptTerminal {
-        pane_id: u32,
-        pty_id: u32,
     },
 
     /// pane을 분할한다. 사용자 요청의 새 pane 선택은 App 후속 처리에서 맡는다.
@@ -205,10 +181,6 @@ pub(crate) enum DomainIntent {
     SendToSurface {
         surface_id: u32,
         payload: SendPayload,
-    },
-    RespawnTerminal {
-        surface_id: u32,
-        cwd: Option<PathBuf>,
     },
 
     /// workspace ID로 알림을 라우팅한다. source는 생성 주체를 구별하는 태그다.

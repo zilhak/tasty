@@ -29,9 +29,8 @@ impl JournalApplication {
             if crate::core::state::mirror_workspace_index_for_structural(core, intent).is_some() {
                 return false;
             }
-            let scope = match scope {
+            let scope: Option<u32> = match scope {
                 crate::app::command::RestoreScope::Local => None,
-                crate::app::command::RestoreScope::Workspace(id) => Some(*id),
             };
             self.admit_intent_request(
                 engine_id,
@@ -156,39 +155,6 @@ impl JournalApplication {
                 serde_json::json!({"id":id,"name":name}),
             ),
             I::DeleteCategory { id } => ("workspace_category.delete", serde_json::json!({"id":id})),
-            I::ReorderCategory {
-                from_index,
-                to_index,
-            } => {
-                let Some(category) = core.categories().get(*from_index) else {
-                    self.commands.deliver(
-                        Reply::Intent {
-                            engine: engine_id,
-                            origin: origin.clone(),
-                            view: None,
-                        },
-                        JsonRpcResponse::invalid_params(
-                            serde_json::Value::Null,
-                            "category index out of range",
-                        ),
-                    );
-                    (self.wake)();
-                    return true;
-                };
-                (
-                    "workspace_category.move",
-                    serde_json::json!({"id":category.id,"to_index":to_index}),
-                )
-            }
-            I::UpdateWorkspaceMeta {
-                workspace_id,
-                name,
-                subtitle,
-                description,
-            } => (
-                "workspace.update",
-                serde_json::json!({"id":workspace_id,"name":name,"subtitle":subtitle,"description":description}),
-            ),
             I::MoveWorkspace {
                 workspace_id,
                 to_index,
@@ -202,13 +168,6 @@ impl JournalApplication {
             } => (
                 "workspace.update",
                 serde_json::json!({"id":workspace_id,"category":category}),
-            ),
-            I::SetWorkspaceAttachMapping {
-                workspace_id,
-                mapping,
-            } => (
-                "intent.workspace-mapping",
-                serde_json::json!({"id":workspace_id,"mapping":mapping}),
             ),
             I::MoveTab {
                 pane_id,
