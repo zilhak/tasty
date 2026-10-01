@@ -368,7 +368,7 @@ fn items_from_state(
 pub fn on_close_command_palette_popup(
     _ctx: &egui::Context,
     state: &mut MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     state.command_palette.reset();
 }
@@ -377,7 +377,7 @@ pub fn on_close_command_palette_popup(
 /// 표시 항목 전체를 만들지는 않고 검색 결과 수로 높이를 정한다. 폭에는 UI 배율을 적용한다.
 pub fn command_palette_sizer(
     state: &MainViewState,
-    _engine: &crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> egui::Vec2 {
     let commands = command_palette::all_commands(&state.palette_plugin_commands);
     let labels: Vec<String> = commands.iter().map(label_for).collect();

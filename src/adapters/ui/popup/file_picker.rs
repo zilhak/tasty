@@ -42,7 +42,7 @@ const MOD_COL_W: LogicalPx = LogicalPx(108.0);
 const LIST_DIR_SOFT_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// PopupDef.sizer — 고정 640×480(gallery specimen `FRAME_W`/`FRAME_H`).
-pub fn picker_sizer(_state: &MainViewState, _engine: &crate::core::CoreState) -> egui::Vec2 {
+pub fn picker_sizer(_state: &MainViewState, _engine: &crate::runtime::engine_read::EngineRead<'_>) -> egui::Vec2 {
     egui::vec2(POPUP_WIDTH.value(), POPUP_HEIGHT.value())
 }
 
@@ -632,7 +632,7 @@ fn hline(ui: &egui::Ui, th: &Theme, x: egui::Rangef, y: f32) {
 pub fn on_close_file_picker(
     _ctx: &egui::Context,
     state: &mut MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     if let Some(p) = state.dialogs.file_picker.as_mut()
         && p.result.is_none()
@@ -769,7 +769,7 @@ pub fn draw_file_picker(
 
 fn apply_action(
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     action: FilePickerAction,
 ) -> PopupAction {
     match action {
@@ -922,7 +922,7 @@ fn initial_dir(is_remote: bool, requested: Option<String>) -> String {
 /// requester가 있으면 결과를 해당 플러그인에만 보낸다. filters가 비면 확장자를 제한하지 않는다.
 pub fn open(
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     requester: Option<crate::state::FilePickerRequester>,
     filters: Vec<String>,
     start: FilePickerStart,
@@ -984,7 +984,7 @@ pub(crate) fn matches_filters(filters: &[String], name: &str) -> bool {
 /// `pending_list_dir_forward` 큐잉 + `Loading` 전이.
 fn navigate(
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     target_of: impl FnOnce(&str, bool) -> String,
 ) {
     let Some(d) = state.dialogs.file_picker.as_mut() else {

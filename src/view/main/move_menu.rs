@@ -19,7 +19,7 @@ impl MainView {
     /// "서피스 이동"과, 서피스가 대기 중일 때만 "서피스를 이곳으로 이동"을 붙인다.
     pub(super) fn push_surface_move_items(
         &self,
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         items: &mut Vec<MenuItem>,
     ) {
         items.push(MenuItem::new(
@@ -37,7 +37,7 @@ impl MainView {
     /// surface 메뉴의 이동 항목을 처리한다. 이동 항목이 아니면 false를 반환한다.
     pub(super) fn apply_surface_move_selection(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         surface_id: u32,
         item: u32,
     ) -> bool {
@@ -72,7 +72,7 @@ impl MainView {
     /// 이어서 구분선과 그 탭이 속한 페인의 "페인 이동"을, 다른 페인이 대기 중일 때만 "페인을 이곳으로 이동"을 붙인다.
     pub(super) fn push_tab_move_items(
         &self,
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         items: &mut Vec<MenuItem>,
         tab_id: u32,
     ) {
@@ -107,7 +107,7 @@ impl MainView {
     /// 페인 항목의 대상은 우클릭한 탭이 지금 속한 페인이다. 메뉴가 열린 동안 탭이 닫혔으면 아무것도 하지 않는다.
     pub(super) fn apply_tab_move_selection(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         tab_id: u32,
         item: u32,
     ) -> bool {

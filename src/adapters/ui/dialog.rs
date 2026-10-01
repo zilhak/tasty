@@ -18,7 +18,7 @@ pub fn rename_popup_default_size() -> egui::Vec2 {
     )
 }
 
-pub fn rename_popup_title(state: &MainViewState, _engine: &crate::core::CoreState) -> String {
+pub fn rename_popup_title(state: &MainViewState, _engine: &crate::runtime::engine_read::EngineRead<'_>) -> String {
     state
         .dialogs
         .rename
@@ -52,7 +52,7 @@ pub enum RenamePopupAction {
 pub fn on_close_rename_popup(
     _ctx: &egui::Context,
     state: &mut MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     state.dialogs.rename = None;
 }
@@ -198,7 +198,7 @@ pub fn draw_rename_popup_view(
 fn category_validation(
     target: &RenameTarget,
     buffer: &str,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> (Option<String>, bool) {
     let result = match target {
         RenameTarget::NewCategory => {
@@ -233,7 +233,7 @@ fn category_validation(
     }
 }
 
-fn rename_target_exists(target: &RenameTarget, engine: &crate::core::CoreState) -> bool {
+fn rename_target_exists(target: &RenameTarget, engine: &crate::runtime::engine_read::EngineRead<'_>) -> bool {
     match target {
         RenameTarget::WorkspaceName { workspace_id }
         | RenameTarget::WorkspaceSubtitle { workspace_id } => {
@@ -249,7 +249,7 @@ fn rename_target_exists(target: &RenameTarget, engine: &crate::core::CoreState) 
 
 fn apply_rename(
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     target: RenameTarget,
     buffer: String,
 ) {
@@ -274,7 +274,7 @@ fn apply_rename(
 
 fn apply_rename_workspace_name(
     state: &mut MainViewState,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     workspace_id: u32,
     buffer: String,
 ) {
@@ -296,7 +296,7 @@ fn apply_rename_workspace_name(
 
 fn apply_rename_workspace_subtitle(
     state: &mut MainViewState,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     workspace_id: u32,
     buffer: String,
 ) {
@@ -315,7 +315,7 @@ fn apply_rename_workspace_subtitle(
 
 fn apply_rename_tab_name(
     state: &mut MainViewState,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     tab_id: u32,
     buffer: String,
 ) {

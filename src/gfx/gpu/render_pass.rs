@@ -1,6 +1,6 @@
 use crate::runtime::engine_read::EngineRead;
 use crate::model::PhysicalRect;
-use crate::plugin::PluginManager;
+use crate::app::plugin_display::PluginDisplay;
 use crate::renderer::RenderPreedit;
 use crate::state::MainViewState;
 
@@ -11,7 +11,7 @@ impl GpuState {
         &self,
         view: &wgpu::TextureView,
         _state: &MainViewState,
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
     ) {
         let bg_alpha = engine.settings.appearance.background_opacity as f64;
         let th = crate::theme::theme();
@@ -253,7 +253,7 @@ impl GpuState {
         paint_jobs: &[egui::ClippedPrimitive],
         screen_descriptor: &egui_wgpu::ScreenDescriptor,
         mesh_popup_regions: &[(u64, PhysicalRect)],
-        plugin_manager: Option<&PluginManager>,
+        plugin_manager: Option<PluginDisplay<'_>>,
         host_popup_on_top: bool,
     ) {
         let render_mesh_popups = |this: &mut Self| {

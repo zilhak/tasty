@@ -72,7 +72,7 @@ impl MainView {
     /// 파일 작업은 context menu와 같은 함수를 호출해 충돌·잘못된 붙여넣기 처리를 공유한다.
     pub(super) fn handle_explorer_shortcut(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         key: &Key,
         mods: ModifiersState,
     ) -> bool {
@@ -103,7 +103,7 @@ impl MainView {
     /// 팔레트는 키보드 앞단 검사를 거치지 않으므로 여기서도 capability를 확인한다.
     pub(crate) fn run_explorer_action(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         action: ExplorerAction,
     ) -> bool {
         if !self

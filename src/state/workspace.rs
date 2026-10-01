@@ -169,7 +169,7 @@ impl RequestContext {
     #[cfg(any(feature = "gui", test))]
     fn relative_workspace_in_active_category(
         &self,
-        engine: &CoreState,
+        engine: &EngineRead<'_>,
         delta: isize,
     ) -> Option<usize> {
         if self.active_workspace_index(engine) >= engine.workspaces().len() {
@@ -259,7 +259,7 @@ impl RequestContext {
 
     /// 순서를 바꾸고 활성 대상을 유지한다. 범위 밖이거나 같은 위치면 false다.
     #[cfg(any(feature = "gui", test))]
-    pub fn move_workspace(&mut self, engine: &mut CoreState, from: usize, to: usize) -> bool {
+    pub fn move_workspace(&mut self, engine: &EngineRead<'_>, from: usize, to: usize) -> bool {
         let len = engine.workspaces().len();
         if from == to || from >= len || to >= len {
             return false;

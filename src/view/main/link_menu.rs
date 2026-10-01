@@ -143,7 +143,7 @@ impl MainView {
     /// 원격 경로에는 후보와 최근 사용 목록을 표시하지 않는다.
     fn open_link_handler_picker(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         link: &TerminalLinkMenu,
     ) {
         let Some(target) = link.open_with.clone() else {

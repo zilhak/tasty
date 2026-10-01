@@ -205,7 +205,7 @@ pub struct PaneTabBarsOutput {
 
 /// 탭별 busy(녹색 점) 여부 계산. `is_surface_busy()`(로컬 ∪ mirror busy 합집합)를
 /// 거쳐야 원격 attach mirror surface 를 담은 탭도 dot 이 뜬다.
-fn compute_tab_is_busy(engine: &crate::core::CoreState, tabs: &[crate::model::Tab]) -> Vec<bool> {
+fn compute_tab_is_busy(engine: &crate::runtime::engine_read::EngineRead<'_>, tabs: &[crate::model::Tab]) -> Vec<bool> {
     tabs.iter()
         .map(|t| {
             let sids = t.all_surface_ids();
@@ -216,7 +216,7 @@ fn compute_tab_is_busy(engine: &crate::core::CoreState, tabs: &[crate::model::Ta
 
 /// 탭별 html 스크립트 표지. 탭 안의 html surface 중 닫힌 차단 표지(lock)를 허용 표지보다 먼저 고른다.
 fn compute_tab_html_script_markers(
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     tabs: &[crate::model::Tab],
 ) -> Vec<Option<TabScriptMarker>> {
     use tasty_model::html_script::ScriptMarker;

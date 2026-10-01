@@ -29,7 +29,7 @@ impl MainView {
     /// 포인터 위치의 원격 mesh surface와 영역.
     pub(super) fn attach_mesh_target_at(
         &self,
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         x: f32,
         y: f32,
     ) -> Option<(u32, PhysicalRect)> {
@@ -40,10 +40,8 @@ impl MainView {
         {
             for r in regions {
                 if r.rect.contains(PhysicalPx(x), PhysicalPx(y))
-                    && r.surface
-                        .as_any()
-                        .downcast_ref::<AttachMeshSurface>()
-                        .is_some()
+                    && engine.find_surface_by_id(r.id)
+                        .is_some_and(|surface| surface.as_any().is::<AttachMeshSurface>())
                 {
                     return Some((r.id, r.rect));
                 }
@@ -55,7 +53,7 @@ impl MainView {
     /// 포커스된 원격 mesh surface ID.
     pub(super) fn focused_attach_mesh_surface_id(
         &self,
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
     ) -> Option<u32> {
         let sid = self.state.focused_surface_id(engine)?;
         let surface = engine.find_surface_by_id(sid)?;
@@ -167,10 +165,8 @@ impl MainView {
                 .surface_regions(&*engine, terminal_rect, self.base.gpu.scale_factor())
         {
             for r in regions {
-                if r.surface
-                    .as_any()
-                    .downcast_ref::<AttachMeshSurface>()
-                    .is_some()
+                if engine.find_surface_by_id(r.id)
+                    .is_some_and(|surface| surface.as_any().is::<AttachMeshSurface>())
                 {
                     targets.push((r.id, r.rect));
                 }

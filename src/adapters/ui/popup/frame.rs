@@ -20,7 +20,7 @@ const ON_CLOSE_DRAIN_MAX_ROUNDS: u32 = 8;
 fn drain_on_close_hooks(
     ctx: &egui::Context,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     drain_on_close_hooks_with_lookup(ctx, state, engine, |id| {
         crate::adapters::ui::popup::defs::find(id).and_then(|def| def.on_close)
@@ -31,7 +31,7 @@ fn drain_on_close_hooks(
 /// surface는 비활성 탭에 있어도 살아 있는 것으로 본다. 변환은 같은 surface ID를 유지한다.
 fn scope_target_exists(
     scope: &crate::adapters::ui::popup::PopupScope,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> bool {
     use crate::adapters::ui::popup::PopupScope;
     match scope {
@@ -46,10 +46,10 @@ fn scope_target_exists(
 fn drain_on_close_hooks_with_lookup(
     ctx: &egui::Context,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     lookup: impl Fn(
         crate::adapters::ui::popup::PopupId,
-    ) -> Option<fn(&egui::Context, &mut MainViewState, &mut crate::core::CoreState)>,
+    ) -> Option<fn(&egui::Context, &mut MainViewState, &crate::runtime::engine_read::EngineRead<'_>)>,
 ) {
     let mut round = 0u32;
     loop {
@@ -176,14 +176,14 @@ mod on_close_drain_tests {
     /// 실제 정의 목록 대신 테스트용 조회 함수를 넣어 닫기 반복·상한을 검사한다.
     type Lookup = HashMap<
         crate::adapters::ui::popup::PopupId,
-        fn(&egui::Context, &mut MainViewState, &mut crate::core::CoreState),
+        fn(&egui::Context, &mut MainViewState, &crate::runtime::engine_read::EngineRead<'_>),
     >;
 
     fn lookup_from(
         map: Lookup,
     ) -> impl Fn(
         crate::adapters::ui::popup::PopupId,
-    ) -> Option<fn(&egui::Context, &mut MainViewState, &mut crate::core::CoreState)> {
+    ) -> Option<fn(&egui::Context, &mut MainViewState, &crate::runtime::engine_read::EngineRead<'_>)> {
         move |id| map.get(id).copied()
     }
 
@@ -191,7 +191,7 @@ mod on_close_drain_tests {
     fn plain_hook(
         _ctx: &egui::Context,
         _state: &mut MainViewState,
-        _engine: &mut crate::core::CoreState,
+        _engine: &crate::runtime::engine_read::EngineRead<'_>,
     ) {
         PLAIN_HOOK_FIRES.fetch_add(1, Ordering::SeqCst);
     }
@@ -221,7 +221,7 @@ mod on_close_drain_tests {
         fn hook_a(
             _ctx: &egui::Context,
             state: &mut MainViewState,
-            _engine: &mut crate::core::CoreState,
+            _engine: &crate::runtime::engine_read::EngineRead<'_>,
         ) {
             A_FIRES.fetch_add(1, Ordering::SeqCst);
             state.popups.close("search_bar");
@@ -229,7 +229,7 @@ mod on_close_drain_tests {
         fn hook_b(
             _ctx: &egui::Context,
             _state: &mut MainViewState,
-            _engine: &mut crate::core::CoreState,
+            _engine: &crate::runtime::engine_read::EngineRead<'_>,
         ) {
             B_FIRES.fetch_add(1, Ordering::SeqCst);
         }
@@ -259,7 +259,7 @@ mod on_close_drain_tests {
         fn looping_hook(
             _ctx: &egui::Context,
             state: &mut MainViewState,
-            _engine: &mut crate::core::CoreState,
+            _engine: &crate::runtime::engine_read::EngineRead<'_>,
         ) {
             LOOP_FIRES.fetch_add(1, Ordering::SeqCst);
             state.popups.open("notifications");

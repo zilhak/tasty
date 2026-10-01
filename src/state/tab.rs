@@ -195,7 +195,7 @@ impl RequestContext {
     /// 시험 준비용 surface 교체. 제품 경로는 Core의 ConvertSurface를 사용한다.
     pub(crate) fn test_convert_surface_to_kind(
         &mut self,
-        engine: &mut CoreState,
+        engine: &EngineRead<'_>,
         surface_id: u32,
         kind: &str,
         params: &Value,

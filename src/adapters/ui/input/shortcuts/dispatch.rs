@@ -464,7 +464,7 @@ impl MainView {
     /// 등록이 없거나 파일을 못 읽어도 매칭된 키는 소비해 다른 액션으로 넘어가지 않게 한다.
     fn try_dispatch_script_shortcut(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         key: &Key,
         mods: ModifiersState,
     ) -> bool {

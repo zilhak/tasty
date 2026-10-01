@@ -38,7 +38,7 @@ impl MainView {
     }
 
     /// 쌓인 파일을 DispatchFile로 보낸다. 터미널 영역 밖이면 안내하고 무시한다.
-    pub(crate) fn process_pending_file_drops(&mut self, engine: &mut crate::core::CoreState) {
+    pub(crate) fn process_pending_file_drops(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>) {
         let drops = std::mem::take(&mut self.state.pending_file_drops);
         if drops.is_empty() {
             return;

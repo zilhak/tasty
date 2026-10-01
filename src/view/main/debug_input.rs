@@ -122,7 +122,7 @@ impl MainView {
     /// 정규화 좌표를 egui의 다음 프레임 입력에 넣어 plugin 팝업 전달을 검사한다.
     pub(crate) fn debug_inject_egui_pointer(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         fx: f32,
         fy: f32,
         surface_id: Option<u32>,

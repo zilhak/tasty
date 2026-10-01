@@ -121,7 +121,7 @@ pub fn apply_tab_bar_actions(
 }
 
 /// 사용자가 탭의 lock 표지를 눌렀다. 표지를 누른 것 자체가 문서를 본 것이다.
-fn show_html_script_banner(engine: &crate::core::CoreState, surface_id: u32) {
+fn show_html_script_banner(engine: &crate::runtime::engine_read::EngineRead<'_>, surface_id: u32) {
     let Some(rs) = engine.find_surface_by_id(surface_id).and_then(|s| {
         s.as_any()
             .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
@@ -136,7 +136,7 @@ fn show_html_script_banner(engine: &crate::core::CoreState, surface_id: u32) {
 /// 검색 버튼은 터미널에서만 동작한다. 검색창은 terminal 데이터만 읽는다.
 fn open_search_for_focused_terminal(
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     if !matches!(
         state.focused_surface_type(engine),
@@ -151,7 +151,7 @@ fn open_search_for_focused_terminal(
 /// 화면에서 계산한 자동 스크롤 오프셋을 pane에 반영한다.
 fn apply_auto_scroll(
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     pane_id: u32,
     offset: f32,
 ) {
@@ -168,7 +168,7 @@ fn apply_auto_scroll(
 /// 드래그한 탭을 놓은 위치로 옮긴다.
 fn apply_drag_end(
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     panes: &[PaneTabBarView],
     tab_w: f32,
     scale_factor: f32,

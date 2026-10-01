@@ -15,7 +15,7 @@ struct SurfaceViewports {
 pub(crate) struct TerminalViewports(HashMap<u32, SurfaceViewports>);
 
 impl TerminalViewports {
-    pub fn get(&self, engine: &CoreState, surface_id: u32) -> TerminalViewport {
+    pub fn get(&self, engine: &EngineRead<'_>, surface_id: u32) -> TerminalViewport {
         self.0
             .get(&surface_id)
             .map_or(TerminalViewport::LIVE, |entry| {

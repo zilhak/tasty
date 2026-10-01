@@ -73,7 +73,7 @@ pub fn draw_surface_highlights_view(ctx: &egui::Context, props: &SurfaceHighligh
 
 pub(crate) fn regions_from_state(
     state: &MainViewState,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     terminal_rect: PhysicalRect,
     scale_factor: f32,
 ) -> Vec<SurfaceHighlightRegion> {
@@ -97,7 +97,7 @@ pub(crate) fn regions_from_state(
 pub fn draw_surface_highlights(
     ctx: &egui::Context,
     state: &MainViewState,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     terminal_rect: PhysicalRect,
     scale_factor: f32,
 ) {

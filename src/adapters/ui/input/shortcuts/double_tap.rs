@@ -212,7 +212,7 @@ impl MainView {
 
     fn run_double_tap_focus_action(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         action: &str,
     ) -> bool {
         match action {

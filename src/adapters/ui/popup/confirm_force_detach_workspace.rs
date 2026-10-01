@@ -21,7 +21,7 @@ struct Target {
 }
 
 /// 대상이 없거나 점유가 이미 풀렸으면 None을 반환한다.
-fn resolve_target(state: &MainViewState, engine: &crate::core::CoreState) -> Option<Target> {
+fn resolve_target(state: &MainViewState, engine: &crate::runtime::engine_read::EngineRead<'_>) -> Option<Target> {
     let ws_id = state.dialogs.pending_force_detach_workspace?;
     let ws = engine.workspaces().into_iter().find(|w| w.id == ws_id)?;
     engine.live.occupancy.workspace_holder(ws_id)?;
@@ -33,7 +33,7 @@ fn resolve_target(state: &MainViewState, engine: &crate::core::CoreState) -> Opt
 /// PopupDef.title_fn — headless 라 실제 타이틀바는 없지만, 접근성/디버그용 라벨.
 pub fn confirm_force_detach_workspace_title(
     _state: &MainViewState,
-    _engine: &crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> String {
     t("attach.force_detach_confirm_title").to_string()
 }
@@ -61,7 +61,7 @@ pub fn confirm_force_detach_workspace_default_size() -> egui::Vec2 {
 /// PopupDef.sizer — 본문 길이에 따라 height 조정(소형 모달).
 pub fn confirm_force_detach_workspace_sizer(
     state: &MainViewState,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> egui::Vec2 {
     let body_len = resolve_target(state, engine)
         .map(|tgt| tgt.name.chars().count() + BASE_BODY_LEN)
@@ -73,7 +73,7 @@ pub fn confirm_force_detach_workspace_sizer(
 pub fn on_close_confirm_force_detach_workspace(
     _ctx: &egui::Context,
     state: &mut MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     state.dialogs.pending_force_detach_workspace = None;
 }

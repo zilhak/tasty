@@ -58,7 +58,7 @@ pub fn interrupt_and_reopen(state: &mut MainViewState) {
 pub fn draw_tutorial_overlay(
     ctx: &egui::Context,
     state: &mut MainViewState,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     layout: &LayoutContext,
     content: egui::Rect,
     theme: &Theme,

@@ -18,7 +18,7 @@ const DEFAULT_KIND_COUNT: usize = 5;
 /// Sizer: 현재 kind 를 뺀 변환 가능 kind 수에 맞춰 popup 크기를 계산.
 /// `popup::frame::draw_popup_layer`가 프레임마다 호출하므로 plugin이 새 kind를
 /// 등록한 직후나 UI 배율이 바뀐 직후 자동으로 popup 크기가 맞춰진다.
-pub fn convert_popup_sizer(state: &MainViewState, engine: &crate::core::CoreState) -> egui::Vec2 {
+pub fn convert_popup_sizer(state: &MainViewState, engine: &crate::runtime::engine_read::EngineRead<'_>) -> egui::Vec2 {
     convert_popup_size_for(&theme::theme(), listed_kinds(state, engine).len())
 }
 
@@ -97,7 +97,7 @@ mod size_tests {
 pub fn on_close_convert_popup(
     _ctx: &egui::Context,
     state: &mut MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     state.dialogs.convert_popup = None;
     state.dialogs.convert_popup_selected = None;
@@ -128,7 +128,7 @@ struct ConvertItem {
 }
 
 /// 팝업에 나열할 항목 — 대상 surface 의 현재 kind 는 바꿀 대상이 아니라 뺀다.
-fn listed_kinds(state: &MainViewState, engine: &crate::core::CoreState) -> Vec<ConvertItem> {
+fn listed_kinds(state: &MainViewState, engine: &crate::runtime::engine_read::EngineRead<'_>) -> Vec<ConvertItem> {
     let current = state
         .dialogs
         .convert_popup
@@ -176,7 +176,7 @@ fn without_current(items: Vec<ConvertItem>, current: Option<&str>) -> Vec<Conver
 /// - icon: registry 의 아이콘 이름. 없으면 FILE.
 fn enumerate_convertible_kinds(
     state: &MainViewState,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> Vec<ConvertItem> {
     let snapshot = engine.surface_registry.kinds_snapshot();
     let mut kinds: Vec<&'static str> = snapshot
@@ -213,7 +213,7 @@ fn enumerate_convertible_kinds(
     items
 }
 
-fn resolve_label(_state: &MainViewState, engine: &crate::core::CoreState, kind: &str) -> String {
+fn resolve_label(_state: &MainViewState, engine: &crate::runtime::engine_read::EngineRead<'_>, kind: &str) -> String {
     let popup_key = format!("convert_popup.{kind}");
     let tr = t(&popup_key);
     if tr != popup_key.as_str() {
@@ -315,7 +315,7 @@ pub fn draw_convert_view(
 pub fn draw_convert_content(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> Option<ConvertResult> {
     state.dialogs.convert_popup?;
 
@@ -450,7 +450,7 @@ pub enum ConvertAction {
     Kind(String),
 }
 
-fn action_for_kind(engine: &crate::core::CoreState, kind: &str) -> ConvertAction {
+fn action_for_kind(engine: &crate::runtime::engine_read::EngineRead<'_>, kind: &str) -> ConvertAction {
     if kind == "terminal" {
         return ConvertAction::Terminal;
     }
@@ -500,7 +500,7 @@ fn letter_key_to_char(key: &egui::Key) -> Option<char> {
 /// Split tab의 leaf surface도 정확히 식별한다.
 fn current_surface_kind(
     _state: &MainViewState,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     surface_id: u32,
 ) -> Option<&'static str> {
     for ws in &engine.workspaces() {

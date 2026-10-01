@@ -267,7 +267,7 @@ impl MainView {
 
     /// 현재 preedit을 PTY로 보내지 않고 버린다.
     /// 팝업/오버레이가 열릴 때 사용.
-    pub(crate) fn clear_ime_preedit(&mut self, engine: &mut crate::core::CoreState) {
+    pub(crate) fn clear_ime_preedit(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>) {
         ime::clear_preedit(self, engine);
     }
 

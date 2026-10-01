@@ -54,7 +54,7 @@ pub(crate) fn recorded_scroll_id(ctx: &egui::Context) -> Option<egui::Id> {
 pub(crate) fn on_close(
     ctx: &egui::Context,
     _state: &mut crate::state::MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     ctx.memory_mut(|m| {
         if let Some(id) = m.data.get_temp::<egui::Id>(scroll_id_slot()) {

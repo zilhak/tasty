@@ -270,7 +270,7 @@ pub fn picker_default_size() -> egui::Vec2 {
     picker_size_for(&theme::theme(), 4, 0, false)
 }
 
-pub fn picker_sizer(state: &MainViewState, _engine: &crate::core::CoreState) -> egui::Vec2 {
+pub fn picker_sizer(state: &MainViewState, _engine: &crate::runtime::engine_read::EngineRead<'_>) -> egui::Vec2 {
     let th = theme::theme();
     let (c, r, fallback) = state
         .dialogs
@@ -844,7 +844,7 @@ pub fn draw_file_handler_picker_view(
 pub fn on_close_file_handler_picker(
     _ctx: &egui::Context,
     state: &mut MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     if let Some(p) = state.dialogs.file_handler_picker.as_mut()
         && p.result.is_none()

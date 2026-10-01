@@ -5,7 +5,7 @@ use crate::state::MainViewState;
 /// 버튼 왼쪽에 맞춰 위로 연다. 위치는 열 때 정해지므로 현재 플러그인 항목까지 포함한 메뉴 크기를 받는다.
 pub(crate) fn open_tools_menu(
     state: &mut MainViewState,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     btn_rect: egui::Rect,
 ) {
     let menu_size = crate::adapters::ui::tools_menu::tools_menu_current_size(state, engine);

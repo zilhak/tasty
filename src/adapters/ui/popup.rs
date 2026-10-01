@@ -90,11 +90,11 @@ pub struct PopupDef {
     pub title_key: &'static str,
     /// 동적 타이틀. 매 프레임 호출. `title_key` 대신 사용된다. (예: rename popup의
     /// 대상별 제목)
-    pub title_fn: Option<fn(&MainViewState, &crate::core::CoreState) -> String>,
+    pub title_fn: Option<fn(&MainViewState, &crate::runtime::engine_read::EngineRead<'_>) -> String>,
     /// 기본 크기. 동적 크기가 필요하면 `sizer`로 덮어쓸 수 있다.
     pub default_size: egui::Vec2,
     /// 매 프레임 크기를 계산한다. 사용자가 크기를 지정한 팝업에는 적용하지 않는다.
-    pub sizer: Option<fn(&MainViewState, &crate::core::CoreState) -> egui::Vec2>,
+    pub sizer: Option<fn(&MainViewState, &crate::runtime::engine_read::EngineRead<'_>) -> egui::Vec2>,
     pub default_scope: PopupScope,
     pub close_on_outside_click: bool,
     /// true면 타이틀바·닫기 버튼 없이 콘텐츠만 렌더링한다 (컨텍스트 메뉴 스타일).
@@ -120,7 +120,7 @@ pub struct PopupDef {
     pub fullscreen_stage: Option<crate::adapters::ui::fullscreen::StageId>,
     /// 열린 팝업이 close()를 통해 닫히면 closed_queue에 기록하고 frame에서 훅을 호출한다.
     /// egui 임시 상태를 지울 수 있도록 Context를 받는다.
-    pub on_close: Option<fn(&egui::Context, &mut MainViewState, &mut crate::core::CoreState)>,
+    pub on_close: Option<fn(&egui::Context, &mut MainViewState, &crate::runtime::engine_read::EngineRead<'_>)>,
 }
 
 /// State for a single popup instance.

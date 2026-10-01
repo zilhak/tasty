@@ -41,7 +41,7 @@ pub(super) fn handle_event(
     event: Ime,
     egui_consumed: bool,
 ) {
-    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
+    let _ = engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     if egui_consumed {
         w.mark_dirty();
         return;
@@ -123,7 +123,7 @@ fn forward_ime_to_attach_mesh(w: &mut MainView, surface_id: u32, event: Ime) {
 /// 때 호출. advance가 차감되어 0이 되거나, fake cursor가 최신 위치로 갱신된 순간을
 /// 포착해 preedit anchor를 재계산한다.
 pub(super) fn recalc_anchor(w: &mut MainView, engine: &EngineRead<'_>) {
-    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
+    let _ = engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     let Some(preedit) = &w.ime_preedit else {
         return;
     };
@@ -171,7 +171,7 @@ pub(super) fn recalc_anchor(w: &mut MainView, engine: &EngineRead<'_>) {
 
 /// 현재 preedit이 있으면 확정해서 PTY로 보낸다 (단축키 소비 전 호출).
 pub(super) fn flush_preedit(w: &mut MainView, engine: &EngineRead<'_>) {
-    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
+    let _ = engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     let preedit = match w.ime_preedit.take() {
         Some(p) if !p.text.is_empty() => p,
         _ => {
@@ -189,8 +189,8 @@ pub(super) fn flush_preedit(w: &mut MainView, engine: &EngineRead<'_>) {
 
 /// 현재 preedit을 PTY로 보내지 않고 버린다.
 /// 팝업/오버레이가 열릴 때 조합 중 문자가 터미널로 전달되지 않도록 사용.
-pub(super) fn clear_preedit(w: &mut MainView, engine: &mut crate::core::CoreState) {
-    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
+pub(super) fn clear_preedit(w: &mut MainView, engine: &crate::runtime::engine_read::EngineRead<'_>) {
+    let _ = engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     w.ime_preedit = None;
     w.ime_cursor_advance = 0;
     w.ime_advance_base = (0, 0);
@@ -200,8 +200,8 @@ pub(super) fn clear_preedit(w: &mut MainView, engine: &mut crate::core::CoreStat
 /// 완전 리셋 — composition 세션 종료(`Disabled`/`Preedit("")`)에서 advance까지 0으로 미는 경로.
 /// macOS만 호출한다 (Windows/Linux는 매 글자마다 빈 시그널이 들어와 advance를 보존해야 함).
 #[cfg(target_os = "macos")]
-fn clear_all(w: &mut MainView, engine: &mut crate::core::CoreState) {
-    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
+fn clear_all(w: &mut MainView, engine: &crate::runtime::engine_read::EngineRead<'_>) {
+    let _ = engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     w.ime_preedit = None;
     w.ime_cursor_advance = 0;
     w.ime_advance_base = (0, 0);
@@ -216,7 +216,7 @@ pub(crate) fn ipc_set_preedit(
     text: String,
     cursor: Option<(usize, usize)>,
 ) -> Option<(usize, usize, u32)> {
-    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
+    let _ = engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     let surface_id = w.state.focused_surface_id(engine)?;
     let terminal = w.state.focused_terminal(&engine.as_ref())?;
     let (col, row, cut) = terminal.with_content(|view| {
@@ -254,7 +254,7 @@ pub(crate) fn ipc_set_preedit(
 
 #[cfg(debug_assertions)]
 pub(crate) fn ipc_commit(w: &mut MainView, engine: &EngineRead<'_>, text: &str) {
-    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
+    let _ = engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     if w.ime_cursor_advance == 0
         && let Some(terminal) = w.state.focused_terminal(&engine.as_ref())
     {
@@ -273,8 +273,8 @@ pub(crate) fn ipc_commit(w: &mut MainView, engine: &EngineRead<'_>, text: &str) 
 }
 
 /// 종료 시 macOS는 위치 보정도 초기화하고 Windows·Linux는 다음 글자의 에코 보정을 위해 유지한다.
-fn on_composition_end(w: &mut MainView, engine: &mut crate::core::CoreState) {
-    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
+fn on_composition_end(w: &mut MainView, engine: &crate::runtime::engine_read::EngineRead<'_>) {
+    let _ = engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     #[cfg(windows)]
     {
         w.ime_preedit = None;
@@ -289,8 +289,8 @@ fn on_composition_end(w: &mut MainView, engine: &mut crate::core::CoreState) {
     }
 }
 
-fn on_disabled(w: &mut MainView, engine: &mut crate::core::CoreState) {
-    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
+fn on_disabled(w: &mut MainView, engine: &crate::runtime::engine_read::EngineRead<'_>) {
+    let _ = engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     w.ime_active = false;
     on_composition_end(w, engine);
 }
@@ -301,7 +301,7 @@ fn on_preedit(
     text: String,
     cursor: Option<(usize, usize)>,
 ) {
-    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
+    let _ = engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     if text.is_empty() {
         on_composition_end(w, engine);
         w.mark_dirty();
@@ -325,7 +325,7 @@ fn on_preedit(
 }
 
 fn on_commit(w: &mut MainView, engine: &EngineRead<'_>, text: String) {
-    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
+    let _ = engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     if w.ime_cursor_advance == 0
         && let Some(terminal) = w.state.focused_terminal(&engine.as_ref())
     {
@@ -371,7 +371,7 @@ fn reconcile_and_compute_anchor(
     w: &mut MainView,
     engine: &EngineRead<'_>,
 ) -> Option<tasty_selection::SelectionPoint> {
-    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
+    let _ = engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     let terminal = w.state.focused_terminal(&engine.as_ref())?;
     let (ref_col, ref_row, cut) = terminal.with_content(|view| {
         let (col, row) = reference_cursor(&view);

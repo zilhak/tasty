@@ -67,7 +67,7 @@ pub fn show_info_modal(state: &mut MainViewState, modal: InfoModal) {
     );
 }
 
-pub fn info_modal_title(state: &MainViewState, _engine: &crate::core::CoreState) -> String {
+pub fn info_modal_title(state: &MainViewState, _engine: &crate::runtime::engine_read::EngineRead<'_>) -> String {
     state
         .dialogs
         .info_modal_queue
@@ -78,7 +78,7 @@ pub fn info_modal_title(state: &MainViewState, _engine: &crate::core::CoreState)
 
 /// 셸 높이는 직전 프레임에 잰 본문 높이로 정한다. 처음 여는 프레임은 아직 잰 값이 없어
 /// 글자 수로 줄 수를 어림한다. 어림이 틀려도 다음 프레임에 맞춰진다.
-pub fn info_modal_sizer(state: &MainViewState, _engine: &crate::core::CoreState) -> egui::Vec2 {
+pub fn info_modal_sizer(state: &MainViewState, _engine: &crate::runtime::engine_read::EngineRead<'_>) -> egui::Vec2 {
     let th = theme::theme();
     let body_h = state.dialogs.info_modal_body_height.unwrap_or_else(|| {
         let (chars, paragraphs) = state
@@ -103,7 +103,7 @@ pub fn info_modal_sizer(state: &MainViewState, _engine: &crate::core::CoreState)
 pub fn on_close_info_modal(
     _ctx: &egui::Context,
     state: &mut MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     let Some(modal) = state.dialogs.info_modal_queue.pop_front() else {
         return;

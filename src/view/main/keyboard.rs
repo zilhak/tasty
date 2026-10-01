@@ -152,7 +152,7 @@ impl MainView {
     /// 무대 콘텐츠로의 키·IME 전달은 handle_event의 egui 입력 경로에서 처리한다.
     fn try_consume_fullscreen_stage_key(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         event: &winit::event::KeyEvent,
     ) -> bool {
         // 사용자 지정 종료 키도 일반 단축키와 같은 규칙으로 찾는다.

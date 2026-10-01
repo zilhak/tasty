@@ -7,7 +7,7 @@ mod render_pass;
 mod screenshot;
 mod shell_setup;
 
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_read::EngineRead;
 use crate::runtime::engine_read::EngineRead;
 use std::sync::Arc;
 
@@ -348,13 +348,13 @@ impl GpuState {
     pub fn render(
         &mut self,
         state: &mut MainViewState,
-        engine: &mut EngineMut<'_>,
+        engine: &EngineRead<'_>,
         window: &Window,
         preedit: Option<&ImePreeditState>,
         selection: Option<&tasty_selection::TextSelection>,
         vi_cursor: Option<(u32, tasty_selection::SelectionPoint)>,
         link_hover: Option<(u32, &tasty_terminal_link::LinkHighlight)>,
-        plugin_manager: Option<&crate::plugin::PluginManager>,
+        plugin_manager: Option<crate::app::plugin_display::PluginDisplay<'_>>,
     ) -> Result<(), wgpu::SurfaceError> {
         let render_start = std::time::Instant::now();
 
@@ -392,10 +392,11 @@ impl GpuState {
 
         // 실제 사용자 포커스의 attention을 확인 처리한다.
         if let Some(sid) = focused_surface_id {
-            // hard 점유 중에는 로컬 포커스로 attention을 해제하지 않는다.
-            engine.clear_attention_local(sid);
-            // 부모가 사라진 soft 점유 정리는 attention 권한과 별개다. hard 점유는 자체 검사로 제외한다.
-            engine.reconcile_soft_occupancy_on_focus(sid);
+            if let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, sid) {
+                state.dispatch_intent(crate::intent::Intent::Engine(
+                    crate::app::engine_action::EngineAction::FocusObserved { target },
+                ).from_user_menu("render-focus"));
+            }
         }
 
         let layout_ms = render_start.elapsed().as_secs_f64() * 1000.0;
@@ -600,7 +601,7 @@ impl GpuState {
     fn resolve_cursor_icon(
         &self,
         state: &MainViewState,
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         terminal_rect: PhysicalRect,
         link_hover: Option<(u32, &tasty_terminal_link::LinkHighlight)>,
     ) -> Option<egui::CursorIcon> {
@@ -633,7 +634,7 @@ impl GpuState {
     fn render_fullscreen_stage(
         &mut self,
         state: &mut MainViewState,
-        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         window: &Window,
     ) -> Result<(), wgpu::SurfaceError> {
         // 무대에서도 입력을 소비해 나간 뒤 한꺼번에 전달되지 않게 한다.
@@ -730,7 +731,7 @@ impl GpuState {
     fn prepare_layout(
         &self,
         state: &MainViewState,
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         terminal_rect: PhysicalRect,
     ) -> (Vec<(u32, PhysicalRect)>, Vec<PhysicalRect>, Option<u32>) {
         let workspace = state.active_workspace(engine);

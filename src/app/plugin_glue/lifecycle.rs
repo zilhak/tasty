@@ -187,8 +187,8 @@ impl App {
     }
 
     pub(crate) fn plugin_remove(&mut self, plugin_id: String) -> anyhow::Result<Vec<CoreEvent>> {
-        let hook_event_registry = self.engine_runtime().plugin_hook_events.clone();
-        let surface_registry = self.engine_runtime().surface_registry.clone();
+        let hook_event_registry = self.services.registries.plugin_hook_events.clone();
+        let surface_registry = self.services.registries.surface_registry.clone();
         let Some(mgr) = self.plugin_manager.as_mut() else {
             anyhow::bail!("plugin manager not initialized");
         };
@@ -232,7 +232,7 @@ impl App {
 
     /// GUI와 헤드리스가 같은 disable 구현을 사용한다.
     pub(crate) fn plugin_disable(&mut self, plugin_id: String) -> anyhow::Result<Vec<CoreEvent>> {
-        let surface_registry = self.engine_runtime().surface_registry.clone();
+        let surface_registry = self.services.registries.surface_registry.clone();
         crate::ipc::handler::plugin::disable(
             self.plugin_manager.as_mut(),
             &surface_registry,
@@ -342,10 +342,10 @@ impl App {
         if hello_pairs.is_empty() {
             return;
         }
-        // 등록 함수는 구체 타입을 요구하므로 engine 실행 owner가 공유한 registry를 사용한다.
-        let core_registry = self.engine_runtime().surface_registry.clone();
+        // 창이 없어도 같은 process registry에 등록한다.
+        let core_registry = self.services.registries.surface_registry.clone();
         // hook 검증은 화면 렌더링과 독립적이어서 surface_registry가 없어도 등록한다.
-        let hook_event_registry = self.engine_runtime().plugin_hook_events.clone();
+        let hook_event_registry = self.services.registries.plugin_hook_events.clone();
         let Some(mgr) = self.plugin_manager.as_mut() else {
             return;
         };

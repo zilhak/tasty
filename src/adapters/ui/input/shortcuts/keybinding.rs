@@ -213,7 +213,7 @@ impl MainView {
 
     fn match_panel_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -318,7 +318,7 @@ impl MainView {
 
     fn match_focus_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -344,7 +344,7 @@ impl MainView {
 
     fn match_sidebar_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -468,7 +468,7 @@ impl MainView {
     /// 실제 캡처는 App의 백그라운드 작업이 수행한다.
     fn match_capture_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -526,7 +526,7 @@ impl MainView {
 
     fn match_rename_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -578,7 +578,7 @@ impl MainView {
 
     fn match_explorer_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -645,7 +645,7 @@ impl MainView {
 
     fn match_copy_rename_bindings(
         state: &mut crate::state::MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,
@@ -765,7 +765,7 @@ impl MainView {
     /// 열 때의 활성 workspace에 연결한다. 다른 workspace로 가면 숨고 돌아오면 다시 보인다.
     pub(crate) fn toggle_dag_list_popup(
         state: &mut crate::state::MainViewState,
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
     ) {
         let workspace_id = state.active_workspace(engine).id;
         state.dispatch_intent(
@@ -781,7 +781,7 @@ impl MainView {
 
     pub(crate) fn queue_screenshot_to_clipboard(
         state: &mut crate::state::MainViewState,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
     ) {
         let mirror_ws_id = state.focused_surface_id(engine).and_then(|sid| {
             let (idx, _pane_id) = engine.find_workspace_index_for_surface(sid)?;

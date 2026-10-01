@@ -121,7 +121,7 @@ impl RequestContext {
     #[cfg(feature = "gui")]
     pub(crate) fn update_switch_overlay(
         &mut self,
-        engine: &CoreState,
+        engine: &EngineRead<'_>,
         kb: &crate::settings::KeybindingSettings,
         ctrl: bool,
         shift: bool,

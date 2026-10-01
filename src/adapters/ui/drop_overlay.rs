@@ -11,7 +11,7 @@ use crate::state::MainViewState;
 pub fn draw_drop_overlay(
     ctx: &egui::Context,
     state: &MainViewState,
-    _engine: &crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
     terminal_rect: PhysicalRect,
     scale_factor: f32,
 ) {

@@ -237,7 +237,7 @@ pub fn invoke_tool(state: &mut MainViewState, engine: &EngineRead<'_>, item: &To
 }
 
 /// 실제 렌더링과 같은 항목 간격. Theme에 이미 배율이 적용돼 있다.
-fn effective_item_spacing(_engine: &crate::core::CoreState) -> f32 {
+fn effective_item_spacing(_engine: &crate::runtime::engine_read::EngineRead<'_>) -> f32 {
     theme::theme().spacing_xs.value().round_ui()
 }
 
@@ -259,7 +259,7 @@ fn tools_menu_size_for(builtin_count: usize, plugin_count: usize, item_spacing: 
 }
 
 /// PopupDef.sizer — 매 프레임 plugin tool registry 의 실제 항목 수로 height 재계산.
-pub fn tools_menu_sizer(state: &MainViewState, engine: &crate::core::CoreState) -> egui::Vec2 {
+pub fn tools_menu_sizer(state: &MainViewState, engine: &crate::runtime::engine_read::EngineRead<'_>) -> egui::Vec2 {
     let plugin_count = state.tool_registry.visible_items().len();
     tools_menu_size_for(
         BUILTIN_TOOLS.len(),
@@ -276,7 +276,7 @@ pub fn tools_menu_default_size() -> egui::Vec2 {
 /// 메뉴 위치 계산에 사용할 현재 본체·플러그인 항목의 크기.
 pub fn tools_menu_current_size(
     state: &MainViewState,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> egui::Vec2 {
     tools_menu_sizer(state, engine)
 }

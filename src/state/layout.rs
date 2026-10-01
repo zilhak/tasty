@@ -43,7 +43,7 @@ impl RequestContext {
     /// 보이지 않는 탭도 포함해 모든 egui-mesh surface의 ID와 소유 플러그인을 반환한다.
     /// 텍스처·전송 상태는 가시성이 아니라 surface 수명에 맞춰 유지해야 한다.
     #[cfg(feature = "gui")]
-    pub fn egui_mesh_surfaces_existing(&self, engine: &CoreState) -> Vec<(u32, String)> {
+    pub fn egui_mesh_surfaces_existing(&self, engine: &EngineRead<'_>) -> Vec<(u32, String)> {
         use crate::runtime::egui_mesh_surface::EguiMeshSurface;
         let mut out: Vec<(u32, String)> = Vec::new();
         for ws in &engine.workspaces() {
@@ -56,7 +56,7 @@ impl RequestContext {
                         continue;
                     };
                     for sid in layout.all_surface_ids() {
-                        if let Some(s) = layout.find_surface(sid)
+                        if let Some(s) = engine.find_surface_by_id(sid)
                             && let Some(ms) = s.as_any().downcast_ref::<EguiMeshSurface>()
                         {
                             out.push((sid, ms.plugin_id.clone()));
@@ -70,7 +70,7 @@ impl RequestContext {
 
     /// 모든 탭에 있는 attach mesh mirror의 로컬 ID. 로컬 플러그인 프로세스는 조회하지 않는다.
     #[cfg(feature = "gui")]
-    pub fn attach_mesh_surfaces_existing(&self, engine: &CoreState) -> Vec<u32> {
+    pub fn attach_mesh_surfaces_existing(&self, engine: &EngineRead<'_>) -> Vec<u32> {
         use crate::model::AttachMeshSurface;
         let mut out: Vec<u32> = Vec::new();
         for ws in &engine.workspaces() {
@@ -83,7 +83,7 @@ impl RequestContext {
                         continue;
                     };
                     for sid in layout.all_surface_ids() {
-                        if let Some(s) = layout.find_surface(sid)
+                        if let Some(s) = engine.find_surface_by_id(sid)
                             && s.as_any().downcast_ref::<AttachMeshSurface>().is_some()
                         {
                             out.push(sid);

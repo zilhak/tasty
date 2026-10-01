@@ -18,7 +18,7 @@ use crate::adapters::ui::LayoutContext;
 use crate::adapters::ui::popup::occlusion::{Occluder, PointOwnership, point_ownership};
 use crate::adapters::ui::popup::{self, PopupManager, PopupScope};
 use crate::model::LogicalPx;
-use crate::plugin::PluginManager;
+use crate::app::plugin_display::PluginDisplay;
 use crate::plugin::manifest::PopupAnchor;
 use crate::plugin_bridge::wire_scroll;
 use crate::state::RequestContext;
@@ -31,8 +31,8 @@ const DEFAULT_POPUP_SIZE: Vec2 = Vec2::new(360.0, 200.0);
 pub fn draw_plugin_popups(
     ctx: &Context,
     state: &mut RequestContext,
-    _engine: &mut crate::core::CoreState,
-    plugin_manager: Option<&PluginManager>,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
+    plugin_manager: Option<PluginDisplay<'_>>,
     layout: Option<&LayoutContext>,
 ) {
     // 조기 반환 때도 이전 프레임의 합성·입력·IME 상태가 남지 않도록 먼저 비운다.
@@ -211,9 +211,11 @@ pub fn draw_plugin_popups(
                 .entry(snap.instance_id)
                 .or_default()
                 .record_sent(geom, &current_theme, has_frame);
-            mgr.send_popup_set_context(
-                &snap.plugin_id,
-                &PopupSetContextParams {
+            state.dispatch_intent(crate::intent::Intent::Engine(
+                crate::app::engine_action::EngineAction::PluginDisplay(
+                    crate::app::plugin_display::PluginDisplayRequest::Popup {
+                        plugin: snap.plugin_id.clone(),
+                        params: PopupSetContextParams {
                     instance_id: snap.instance_id,
                     width_px: w_px,
                     height_px: h_px,
@@ -221,8 +223,10 @@ pub fn draw_plugin_popups(
                     raw_input,
                     theme: Some(current_theme.clone()),
                     need_full_textures: need_full,
-                },
-            );
+                        },
+                    },
+                ),
+            ).from_user_menu("plugin-render-context"));
         }
 
         state

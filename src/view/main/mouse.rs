@@ -439,7 +439,7 @@ impl MainView {
     /// docs/architecture/input-layer.md.
     fn try_click_to_activate(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         button: MouseButton,
         button_state: ElementState,
         overlay_open: bool,
@@ -479,7 +479,7 @@ impl MainView {
     /// 이벤트를 surface-local 좌표로 누적해 다음 set_context 로 보내고 소비(`true`).
     fn try_forward_egui_mesh_button(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         button: MouseButton,
         button_state: ElementState,
     ) -> bool {
@@ -501,7 +501,7 @@ impl MainView {
     /// attach mesh mirror surface 입력 forward — 위와 동형이되 목적지가 원격.
     fn try_forward_attach_mesh_button(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         button: MouseButton,
         button_state: ElementState,
     ) -> bool {
@@ -978,7 +978,7 @@ impl MainView {
     /// 휠은 이 함수를 쓰지 않고 별도로 hard 점유를 차단한다.
     fn effective_click_tracking(
         &self,
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         surface_id: u32,
         actual: tasty_terminal::MouseTrackingMode,
     ) -> tasty_terminal::MouseTrackingMode {
@@ -2056,7 +2056,7 @@ mod hover_motion_tests {
 
 /// 캡처 동작은 유지하면서 안내 배너만 숨기는 설정인지 확인한다.
 /// busy 폴링이 마지막으로 관측한 전경 이름을 현재 설정과 대조하며, 이름을 모르면 숨기지 않는다.
-fn mouse_capture_banner_suppressed(engine: &crate::core::CoreState, surface_id: u32) -> bool {
+fn mouse_capture_banner_suppressed(engine: &crate::runtime::engine_read::EngineRead<'_>, surface_id: u32) -> bool {
     engine.foreground_name(surface_id).is_some_and(|name| {
         engine
             .settings

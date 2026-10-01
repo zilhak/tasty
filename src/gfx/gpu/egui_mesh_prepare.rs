@@ -20,7 +20,7 @@ use egui::epaint::{ClippedPrimitive, Primitive, TextureId};
 use super::GpuState;
 use crate::runtime::egui_mesh_surface::EguiMeshSurface;
 use crate::model::PhysicalRect;
-use crate::plugin::PluginManager;
+use crate::app::plugin_display::PluginDisplay;
 use crate::state::MainViewState;
 
 /// 디코드 ppp 와 host ppp 의 허용 오차. float 비교라 작은 epsilon.
@@ -178,10 +178,8 @@ pub(super) fn collect_attach_mesh_targets(
         state.surface_regions(engine, terminal_rect, scale_factor)
     {
         for r in regions {
-            if r.surface
-                .as_any()
-                .downcast_ref::<crate::model::AttachMeshSurface>()
-                .is_some()
+            if engine.find_surface_by_id(r.id)
+                .is_some_and(|surface| surface.as_any().is::<crate::model::AttachMeshSurface>())
             {
                 out.push((r.id, r.rect));
             }
@@ -467,7 +465,7 @@ fn ensure_mesh_target<K: std::hash::Hash + Eq + Copy>(
 fn decode_and_track<K: std::hash::Hash + Eq + Copy>(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    plugin_manager: &PluginManager,
+    plugin_manager: PluginDisplay<'_>,
     targets: &mut HashMap<K, EguiMeshRenderTarget>,
     full_requests: &mut HashSet<K>,
     key: K,
@@ -482,13 +480,10 @@ fn decode_and_track<K: std::hash::Hash + Eq + Copy>(
     log_not_registered: impl FnOnce(),
     log_chain_broken: impl FnOnce(),
 ) {
-    let Some(mem) = plugin_manager.plugin_buffer(plugin_id, buffer_id) else {
+    let Some(raw) = plugin_manager.mesh_bytes(plugin_id, buffer_id) else {
         log_not_registered();
         return;
     };
-    // SAFETY: mem이 읽는 동안 매핑의 수명을 유지한다. 다만 이후 Acquire-load만으로
-    // payload 동시 쓰기가 배제되지는 않으며, 이 경로에는 별도 배제 절차가 없다.
-    let raw = unsafe { mem.as_slice() };
     let outcome = decode_mesh_into_target(
         device,
         queue,
@@ -536,7 +531,7 @@ impl GpuState {
         view: &wgpu::TextureView,
         targets: &[(u32, String, PhysicalRect)],
         existing: &[(u32, String)],
-        plugin_manager: &PluginManager,
+        plugin_manager: PluginDisplay<'_>,
     ) {
         if targets.is_empty() && existing.is_empty() && self.egui_mesh_targets.is_empty() {
             return;
@@ -707,7 +702,7 @@ impl GpuState {
         &mut self,
         view: &wgpu::TextureView,
         regions: &[(u64, PhysicalRect)],
-        plugin_manager: &PluginManager,
+        plugin_manager: PluginDisplay<'_>,
     ) {
         if !prune_mesh_targets(&mut self.egui_mesh_popup_targets, regions) {
             return;
@@ -787,7 +782,7 @@ impl GpuState {
         &mut self,
         view: &wgpu::TextureView,
         regions: &[(u64, PhysicalRect)],
-        plugin_manager: &PluginManager,
+        plugin_manager: PluginDisplay<'_>,
     ) {
         if !prune_mesh_targets(&mut self.egui_mesh_banner_targets, regions) {
             return;

@@ -17,7 +17,7 @@ use tasty_plugin_protocol::{
 
 use crate::runtime::egui_mesh_surface::EguiMeshSurface;
 use crate::model::{PhysicalPx, PhysicalRect};
-use crate::plugin::PluginManager;
+use crate::app::plugin_display::PluginDisplay;
 use crate::plugin_bridge::MeshForwardCommon;
 use tasty_ipc::stream_hub::StreamHub;
 
@@ -260,7 +260,7 @@ impl MainView {
     pub(super) fn forward_egui_mesh_context(
         &mut self,
         engine: &crate::runtime::engine_read::EngineRead<'_>,
-        mgr: &PluginManager,
+        mgr: PluginDisplay<'_>,
     ) {
         let terminal_rect = self.compute_terminal_rect();
         let ppp = self.base.gpu.scale_factor();

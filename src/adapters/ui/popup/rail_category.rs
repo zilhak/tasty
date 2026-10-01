@@ -27,7 +27,7 @@ struct Target {
 }
 
 /// `state.dialogs.rail_category_popup` 의 대상 카테고리를 engine 에서 해석.
-fn resolve_target(state: &MainViewState, engine: &crate::core::CoreState) -> Option<Target> {
+fn resolve_target(state: &MainViewState, engine: &crate::runtime::engine_read::EngineRead<'_>) -> Option<Target> {
     let cat_id = state.dialogs.rail_category_popup?;
     let cat = engine.categories().iter().find(|c| c.id == cat_id)?;
     let label = if cat.is_normal() {
@@ -91,7 +91,7 @@ fn menu_row(
 pub fn on_close_rail_category_popup(
     _ctx: &egui::Context,
     state: &mut MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     state.dialogs.rail_category_popup = None;
 }
@@ -205,7 +205,7 @@ pub fn draw_rail_category_popup(
 
 /// PopupDef.sizer — 헤더 + 행 수로 height 계산. normal 은 Add/Collapse 2행, 비-normal 은
 /// separator + Rename/Delete 를 더한 4행.
-pub fn rail_category_sizer(state: &MainViewState, engine: &crate::core::CoreState) -> egui::Vec2 {
+pub fn rail_category_sizer(state: &MainViewState, engine: &crate::runtime::engine_read::EngineRead<'_>) -> egui::Vec2 {
     let th = theme::theme();
     let reserved = resolve_target(state, engine)
         .map(|t| t.is_reserved)

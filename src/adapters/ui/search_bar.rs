@@ -19,7 +19,7 @@ const SEARCH_BAR_POPUP_ID: &str = "search_bar";
 pub fn on_close_search_bar(
     _ctx: &egui::Context,
     state: &mut MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     state.search.clear();
 }
@@ -374,7 +374,7 @@ fn run_search(state: &mut MainViewState, engine: &EngineRead<'_>) {
     }
 }
 
-fn focused_terminal_surface_id(state: &MainViewState, engine: &crate::core::CoreState) -> u32 {
+fn focused_terminal_surface_id(state: &MainViewState, engine: &crate::runtime::engine_read::EngineRead<'_>) -> u32 {
     let ws = state.active_workspace(engine);
     let pane_id = state.navigation.pane_id(ws).unwrap_or(0);
     ws.pane_layout()

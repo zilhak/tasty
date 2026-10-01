@@ -252,7 +252,7 @@ fn hsep(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme, width: f32)
 pub fn on_close(
     _ctx: &egui::Context,
     state: &mut MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     state.tutorial.catalog_loaded = false;
 }

@@ -1,7 +1,7 @@
 use winit::window::Window;
 
 use crate::adapters::ui;
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_read::EngineRead;
 use crate::model::PhysicalRect;
 use crate::settings::EffectiveFont;
 use crate::state::MainViewState;
@@ -84,17 +84,17 @@ impl GpuState {
     pub(super) fn run_egui_frame(
         &mut self,
         state: &mut MainViewState,
-        engine: &mut EngineMut<'_>,
+        engine: &EngineRead<'_>,
         window: &Window,
         pane_rects: &[(u32, PhysicalRect)],
         dividers: &[PhysicalRect],
         terminal_rect: PhysicalRect,
-        plugin_manager: Option<&crate::plugin::PluginManager>,
+        plugin_manager: Option<crate::app::plugin_display::PluginDisplay<'_>>,
         host_popup_on_top: bool,
     ) -> egui::FullOutput {
         let raw_input = self.egui_state.take_egui_input(window);
         self.egui_ctx.options_mut(|o| {
-            o.line_scroll_speed = engine.runtime.settings.general.wheel_line_scroll;
+            o.line_scroll_speed = engine.settings.general.wheel_line_scroll;
         });
         let scale_factor = self.scale_factor;
         let proxy = &self.proxy;
@@ -169,11 +169,11 @@ impl GpuState {
         })
     }
 
-    pub(super) fn post_egui_update(&mut self, engine: &crate::core::CoreState, _prev_theme: &str) {
+    pub(super) fn post_egui_update(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>, _prev_theme: &str) {
         // 설정 변경은 AppearanceChanged에서 전달받고, 여기서는 현재 Theme의 스타일을 다시 적용한다.
         tasty_egui_theme::apply_theme_to_egui(&crate::theme::theme(), &self.egui_ctx);
 
-        let term_font = engine.runtime.settings.appearance.effective_terminal_font();
+        let term_font = engine.settings.appearance.effective_terminal_font();
         let effective_font_size = term_font.effective_font_size(self.scale_factor);
         let new_sig = term_font_signature(&term_font, effective_font_size);
         if new_sig != self.last_term_font_sig {

@@ -36,7 +36,7 @@ impl RequestContext {
     #[cfg(any(feature = "gui", test))]
     pub(crate) fn forward_mirror_structural(
         &mut self,
-        engine: &mut CoreState,
+        engine: &EngineRead<'_>,
         op: Option<crate::ipc::stream::StructuralOp>,
         close_focus_candidates: Vec<u32>,
     ) -> bool {

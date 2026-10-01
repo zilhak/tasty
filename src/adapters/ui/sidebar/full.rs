@@ -14,7 +14,7 @@ use super::view::{
 /// 워크스페이스 1개를 `WorkspaceEntryView` snapshot 으로 변환. collapsed 레일도 공유.
 pub(super) fn entry_view(
     pending:Option<crate::state::PendingMove>,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     global_idx: usize,
     ws: &crate::model::Workspace,
     active_ws: usize,
@@ -40,7 +40,7 @@ pub(super) fn entry_view(
 /// 카테고리 표시가 켜져 있으면 저장된 순서로 그룹을 만든다. 행은 전역 워크스페이스 인덱스를 유지한다.
 pub(super) fn build_category_sections(
     presentation: &dyn crate::model::StructurePresentation,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     active_ws: usize,
 ) -> Option<Vec<CategorySectionView>> {
     if !engine.settings.general.workspace_categories_enabled {

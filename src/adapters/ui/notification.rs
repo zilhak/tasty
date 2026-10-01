@@ -183,7 +183,7 @@ pub fn notifications_popup_size() -> egui::Vec2 {
 /// PopupDef.sizer — 배율이 바뀌어도 폭 토큰을 다시 계산한다.
 pub fn notifications_popup_sizer(
     _state: &MainViewState,
-    _engine: &crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> egui::Vec2 {
     notifications_popup_size()
 }

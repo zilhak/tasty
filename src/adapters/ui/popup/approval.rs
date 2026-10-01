@@ -18,7 +18,7 @@ const MIN_HEIGHT: LogicalPx = LogicalPx(180.0);
 const MAX_HEIGHT: LogicalPx = LogicalPx(480.0);
 
 /// PopupDef.title_fn — 큐 head 의 title 을 popup 타이틀로 사용.
-pub fn approval_popup_title(state: &MainViewState, _engine: &crate::core::CoreState) -> String {
+pub fn approval_popup_title(state: &MainViewState, _engine: &crate::runtime::engine_read::EngineRead<'_>) -> String {
     let Some(id) = state.dialogs.pending_approval_ids.front() else {
         return t("approval.popup.title").to_string();
     };
@@ -28,7 +28,7 @@ pub fn approval_popup_title(state: &MainViewState, _engine: &crate::core::CoreSt
 }
 
 /// PopupDef.sizer — body 길이 + 선택지 수에 따라 height 추정.
-pub fn approval_popup_sizer(state: &MainViewState, _engine: &crate::core::CoreState) -> egui::Vec2 {
+pub fn approval_popup_sizer(state: &MainViewState, _engine: &crate::runtime::engine_read::EngineRead<'_>) -> egui::Vec2 {
     let Some(id) = state.dialogs.pending_approval_ids.front() else {
         return egui::vec2(DEFAULT_WIDTH.value(), MIN_HEIGHT.value());
     };
@@ -231,7 +231,7 @@ fn props_from_record<'a>(
 pub fn on_close_approval_popup(
     _ctx: &egui::Context,
     state: &mut MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     state.dialogs.approval_comment_buffer.clear();
     if !state.dialogs.pending_approval_ids.is_empty() {

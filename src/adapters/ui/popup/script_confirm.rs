@@ -103,7 +103,7 @@ pub fn draw_script_confirm_view(
 pub fn on_close_script_confirm_popup(
     _ctx: &egui::Context,
     state: &mut MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     if let Some(pending) = state.dialogs.pending_script_confirm.as_ref()
         && pending.result.is_none()

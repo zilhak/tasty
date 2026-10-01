@@ -1,7 +1,7 @@
 use winit::event_loop::ActiveEventLoop;
 
 use crate::runtime::engine_read::EngineRead;
-use crate::plugin::PluginManager;
+use crate::app::plugin_display::PluginDisplay;
 use crate::view::ui::View;
 
 use super::MainView;
@@ -120,7 +120,7 @@ impl MainView {
 
     }
 
-    pub(crate) fn finish_redraw(&mut self,engine:&EngineRead<'_>,plugin_manager:Option<&PluginManager>) {
+    pub(crate) fn finish_redraw(&mut self,engine:&EngineRead<'_>,plugin_manager:Option<PluginDisplay<'_>>) {
         // 무대가 draw 중 닫힐 수 있으므로 렌더 뒤 OS 전체화면 상태를 맞춘다.
         self.sync_window_fullscreen();
 
@@ -159,7 +159,7 @@ impl MainView {
     /// 전체화면 무대 진입 시 진행 중인 드래그·IME·native 메뉴를 취소한다.
     /// 배경으로 release가 전달되지 않으므로 드래그를 확정하지 않고 버린다.
     /// 이미 확정된 텍스트 선택과 vi 복사 모드는 유지한다.
-    fn sync_fullscreen_stage_transition(&mut self, engine: &mut crate::core::CoreState) {
+    fn sync_fullscreen_stage_transition(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>) {
         let active = self.state.fullscreen_stage_active();
         if active == self.stage_was_active {
             return;
@@ -210,7 +210,7 @@ impl MainView {
 
     /// Re-sync scale factor before render — macOS may not fire
     /// ScaleFactorChanged reliably during monitor hot-swap or sleep/wake.
-    fn resync_scale_factor(&mut self, engine: &mut crate::core::CoreState) {
+    fn resync_scale_factor(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>) {
         if self.base.gpu.sync_scale_factor(&self.base.winit) {
             let new_size = self.base.winit.inner_size();
             self.base.gpu.resize(new_size);
@@ -239,7 +239,7 @@ impl MainView {
 
     /// dirty일 때 입력·mesh 중계와 GPU 렌더링, full 재전송 요청을 처리한다.
     /// 로컬 무대 중에도 attach 구독자에게 mesh를 중계해야 하므로 조기 반환하지 않는다.
-    pub(crate) fn prepare_render_inputs(&mut self,engine:&EngineRead<'_>,plugin_manager:Option<&PluginManager>) {
+    pub(crate) fn prepare_render_inputs(&mut self,engine:&EngineRead<'_>,plugin_manager:Option<PluginDisplay<'_>>) {
         if !self.base.state.dirty {
             return;
         }
@@ -258,7 +258,7 @@ impl MainView {
         self.forward_attach_mesh_context(engine);
     }
 
-    pub(crate) fn render_if_dirty(&mut self,engine:&EngineRead<'_>,plugin_manager:Option<&PluginManager>) {
+    pub(crate) fn render_if_dirty(&mut self,engine:&EngineRead<'_>,plugin_manager:Option<PluginDisplay<'_>>) {
         if !self.base.state.dirty {return;}
         self.submit_gpu_frame(engine, plugin_manager);
         self.drain_full_texture_requests(engine);
@@ -268,7 +268,7 @@ impl MainView {
     fn submit_gpu_frame(
         &mut self,
         engine: &EngineRead<'_>,
-        plugin_manager: Option<&PluginManager>,
+        plugin_manager: Option<PluginDisplay<'_>>,
     ) {
         let link_hover = self
             .hovered_link
@@ -381,7 +381,7 @@ impl MainView {
     /// 분할된 탭은 모든 leaf가 보인다. 숨겨진 surface의 출력도 읽되 redraw만 생략한다.
     pub(crate) fn is_surface_visible(
         &self,
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         surface_id: u32,
     ) -> bool {
         let Some(ws) = engine.workspace_at(self.state.active_workspace_index(engine)) else {
@@ -401,7 +401,7 @@ impl MainView {
     /// HTML surface 전체와 활성 surface의 영역을 수집한다. native 호출은 하지 않는다.
     fn collect_html_surfaces(
         &self,
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         scale_factor: f64,
     ) -> (
         std::collections::HashMap<u32, crate::webview::WebViewBounds>,
@@ -510,7 +510,7 @@ impl MainView {
     /// 필요한 설정을 읽은 뒤 HTML surface의 native WebView를 만들고 페이지를 연다.
     fn create_missing_webviews(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         all_html_ids: &[u32],
         active_html: &std::collections::HashMap<u32, crate::webview::WebViewBounds>,
         scale_factor: f64,
@@ -571,7 +571,7 @@ impl MainView {
     /// html surface에 문서 단위 스크립트 허용을 붙인다(ADR-0053). 첫 로드 전에 sandbox 값을 맞춘다.
     fn attach_script_gate(
         &self,
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         sid: u32,
         wv: &crate::webview::PlatformWebView,
         settings: &crate::webview::HtmlWebViewSettings,
@@ -591,7 +591,7 @@ impl MainView {
     }
 
     /// 허용 직후의 재로드와 debug 탐색 조작을 native webview에 전달한다.
-    fn apply_webview_requests(&mut self, engine: &mut crate::core::CoreState) {
+    fn apply_webview_requests(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>) {
         for (sid, wv) in &self.webviews {
             let reload = self
                 .find_remote_surface(engine, *sid)
@@ -641,7 +641,7 @@ impl MainView {
     /// URL scheme이 있으면 페이지를 열고, 없으면 HTML 본문으로 로드한다.
     fn load_initial_url(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         sid: u32,
         wv: &crate::webview::PlatformWebView,
         url: Option<&String>,
@@ -685,7 +685,7 @@ impl MainView {
             .retain(|sid, _| pending.iter().any(|(p, _)| p == sid));
     }
 
-    fn resync_webview_urls(&mut self, engine: &mut crate::core::CoreState, all_html_ids: &[u32]) {
+    fn resync_webview_urls(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>, all_html_ids: &[u32]) {
         for &sid in all_html_ids {
             let Some(url) = self.find_webview_url(engine, sid) else {
                 continue;
@@ -713,8 +713,8 @@ impl MainView {
     /// updates bounds and visibility based on active workspace/tab.
     fn sync_webviews(
         &mut self,
-        engine: &mut crate::core::CoreState,
-        plugin_manager: Option<&PluginManager>,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+        plugin_manager: Option<PluginDisplay<'_>>,
     ) {
         let scale_factor = self.base.gpu.scale_factor() as f64;
         let (active_html, all_html_ids) = self.collect_html_surfaces(engine, scale_factor);
@@ -730,13 +730,13 @@ impl MainView {
         // 호스트 키 설정 또는 plugin 명령·override의 revision이 바뀔 때만
         // native 콜백이 사용할 단축키 스냅샷을 다시 만든다.
         let plugin_epoch =
-            plugin_manager.map(|m| (m.command_registry.revision(), m.config.shortcut_revision()));
+            plugin_manager.map(|m| m.shortcut_epoch());
         if self.webview_policy_src.as_ref() != Some(&engine.settings.keybindings)
             || self.webview_policy_plugin_epoch != plugin_epoch
         {
             let kb = &engine.settings.keybindings;
             let plugin_combos = plugin_manager
-                .map(|m| crate::plugin_bridge::key_dispatch::all_command_bindings(m, kb))
+                .map(|m| m.command_bindings(kb))
                 .unwrap_or_default();
             self.webview_key_bridge.set_policy(
                 crate::adapters::ui::input::shortcuts::webview_shortcut_policy(kb, plugin_combos),
@@ -900,29 +900,16 @@ impl MainView {
     /// 훑으므로, 탭 내부 분할(SurfaceGroup)의 비포커스 leaf 도 도달한다.
     fn find_surface_anywhere<'e>(
         &self,
-        engine: &'e crate::core::CoreState,
+        engine: &EngineRead<'e>,
         surface_id: u32,
     ) -> Option<&'e dyn crate::model::Surface> {
-        for ws in &engine.workspaces() {
-            for &pid in &ws.pane_layout().all_pane_ids() {
-                if let Some(pane) = ws.pane_layout().find_pane(pid) {
-                    for tab in &pane.tabs {
-                        if let Some(layout) = tab.layout_if_initialized()
-                            && let Some(surface) = layout.find_surface(surface_id)
-                        {
-                            return Some(surface);
-                        }
-                    }
-                }
-            }
-        }
-        None
+        engine.find_surface_by_id(surface_id)
     }
 
     /// surface_id 로 RemoteSurface 를 찾아 반환. nav_state mirror 기록에 쓴다.
     pub(super) fn find_remote_surface<'e>(
         &self,
-        engine: &'e crate::core::CoreState,
+        engine: &EngineRead<'e>,
         surface_id: u32,
     ) -> Option<&'e crate::plugin_bridge::remote_surface::RemoteSurface> {
         self.find_surface_anywhere(engine, surface_id)?
@@ -933,7 +920,7 @@ impl MainView {
     /// webview surface 의 kind.
     fn webview_surface_kind(
         &self,
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         surface_id: u32,
     ) -> Option<&'static str> {
         self.find_surface_anywhere(engine, surface_id)
@@ -943,7 +930,7 @@ impl MainView {
     /// surface 소유 plugin의 WebView 설정을 읽는다. 저장된 값이 없으면 기본값을 쓴다.
     fn resolve_webview_settings(
         &self,
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         surface_id: u32,
     ) -> crate::webview::HtmlWebViewSettings {
         use crate::settings::PluginSettingValue;
@@ -991,7 +978,7 @@ impl MainView {
     }
 
     /// Find the URL for an Html panel by surface ID.
-    fn find_webview_url(&self, engine: &crate::core::CoreState, surface_id: u32) -> Option<String> {
+    fn find_webview_url(&self, engine: &crate::runtime::engine_read::EngineRead<'_>, surface_id: u32) -> Option<String> {
         self.find_surface_anywhere(engine, surface_id)?
             .webview_url()
             .map(|u| u.to_string())
@@ -1227,7 +1214,7 @@ impl MainView {
     /// 존재 여부로 활성/비활성을 미리 계산하고, 이동 항목은 대기 슬롯에 따라 붙인다.
     fn build_tab_context_menu_items(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         pane_id: u32,
         tab_index: usize,
         tab_id: Option<u32>,
@@ -1273,7 +1260,7 @@ impl MainView {
     /// mirror의 탭 이동은 원격으로 보내고, 그 외에는 로컬 탭 순서를 변경한다.
     fn move_tab_via_mirror_or_local(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         pane_id: u32,
         from_index: usize,
         to_index: usize,
@@ -1295,7 +1282,7 @@ impl MainView {
 
     /// tab rename 팝업을 연다 — 현재 표시명을 prefill 하고 `RenameTarget::TabName`
     /// scope 로 `rename` 팝업을 dispatch.
-    fn rename_tab(&mut self, engine: &mut crate::core::CoreState, pane_id: u32, tab_index: usize) {
+    fn rename_tab(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>, pane_id: u32, tab_index: usize) {
         let Some((tab_id, current_name)) = self
             .state
             .active_workspace(engine)
@@ -1510,7 +1497,7 @@ impl MainView {
     /// 대응한다(카테고리 토글이 꺼져 있으면 빈 벡터).
     fn build_workspace_context_menu_items(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         ws_idx: usize,
     ) -> (
         Vec<crate::platform::native_menu::MenuItem>,
@@ -1606,7 +1593,7 @@ impl MainView {
     /// scope 로 `rename` 팝업을 dispatch(제목/부제 공용 — 값과 target 만 다르다).
     fn open_rename_workspace_dialog(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         target: crate::state::RenameTarget,
         current_value: String,
     ) {
@@ -1626,7 +1613,7 @@ impl MainView {
     /// 참고) 그대로 받는다.
     fn move_workspace_to_category(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         ws_idx: usize,
         move_targets: &[crate::model::WorkspaceCategoryId],
         id: u32,
@@ -1636,10 +1623,12 @@ impl MainView {
                 .workspace_at(ws_idx)
                 .expect("workspace index is valid")
                 .id;
-            if let Err(e) = engine.set_workspace_category(ws_id, cat_id) {
-                tracing::warn!("set_workspace_category failed: {e:?}");
-            }
-            engine.mark_layout_dirty();
+            self.state.dispatch_intent(crate::intent::Intent::Domain(
+                crate::app::command::DomainIntent::SetWorkspaceCategory {
+                    workspace_id: ws_id,
+                    category: cat_id,
+                },
+            ).from_user_context_menu());
         }
     }
 
@@ -2111,7 +2100,7 @@ impl MainView {
     /// 없어 무해하므로 그대로 둔다.
     pub(crate) fn explorer_menu_set_clipboard(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         surface_id: u32,
         paths: &[std::path::PathBuf],
         cut: bool,
@@ -2129,7 +2118,7 @@ impl MainView {
     /// 붙여넣기 (아이템 12). 컨텍스트 메뉴와 키보드 단축키 양쪽에서 공유한다.
     pub(crate) fn explorer_menu_paste(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         surface_id: u32,
         paths: &[std::path::PathBuf],
         cwd: &std::path::Path,
@@ -2165,7 +2154,7 @@ impl MainView {
     /// 휴지통으로 이동 (아이템 30, 가역적이라 별도 확인 모달 없음).
     fn explorer_menu_trash(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         surface_id: u32,
         paths: &[std::path::PathBuf],
     ) {
@@ -2187,7 +2176,7 @@ impl MainView {
     /// 시스템에서 열기 (아이템 20).
     fn explorer_menu_open_in_system(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         surface_id: u32,
         paths: &[std::path::PathBuf],
         cwd: &std::path::Path,
@@ -2206,7 +2195,7 @@ impl MainView {
     /// 이름 변경 (아이템 40).
     fn explorer_menu_rename(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         surface_id: u32,
         paths: &[std::path::PathBuf],
     ) {
@@ -2238,7 +2227,7 @@ impl MainView {
     /// 즐겨찾기 추가 (아이템 50) — 대상: 단일 폴더면 그 폴더, 빈 영역이면 cwd.
     fn explorer_menu_add_favorite(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         surface_id: u32,
         paths: &[std::path::PathBuf],
         cwd: &std::path::Path,

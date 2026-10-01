@@ -21,7 +21,7 @@ pub struct CollapsedSidebarResult {
 pub fn draw_collapsed_sidebar(
     ctx: &egui::Context,
     state: &mut MainViewState,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     sidebar_width: f32,
     plugin_alert: usize,
 ) -> CollapsedSidebarResult {

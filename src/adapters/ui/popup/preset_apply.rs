@@ -42,7 +42,7 @@ pub enum ApplyPresetAction {
 pub fn on_close_apply_preset_popup(
     _ctx: &egui::Context,
     state: &mut MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     state.dialogs.preset_picker_selected = None;
     state.dialogs.preset_apply_target_category = None;
@@ -75,7 +75,7 @@ pub fn draw_apply_pane_popup(
 fn draw_apply_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
     kind: PresetKind,
 ) -> PopupAction {
     let th = theme::theme();

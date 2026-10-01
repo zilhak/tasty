@@ -23,7 +23,7 @@ fn mouse_capture_more_menu_open_for(
 pub(crate) fn draw_overlays(
     ctx: &egui::Context,
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     draw_ctx: &crate::adapters::ui::LayoutContext,
     terminal_rect: crate::model::PhysicalRect,
     scale_factor: f32,

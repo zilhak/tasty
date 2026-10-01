@@ -20,7 +20,7 @@ struct Target {
 }
 
 /// `pending_category_delete` 의 대상 카테고리를 해석. 없거나 normal 이면 None(닫힘).
-fn resolve_target(state: &MainViewState, engine: &crate::core::CoreState) -> Option<Target> {
+fn resolve_target(state: &MainViewState, engine: &crate::runtime::engine_read::EngineRead<'_>) -> Option<Target> {
     let cat_id = state.dialogs.pending_category_delete?;
     let cat = engine.categories().iter().find(|c| c.id == cat_id)?;
     if cat.is_normal() {
@@ -35,7 +35,7 @@ fn resolve_target(state: &MainViewState, engine: &crate::core::CoreState) -> Opt
 /// PopupDef.title_fn — headless 라 실제 타이틀바는 없지만, 접근성/디버그용 라벨.
 pub fn confirm_delete_category_title(
     _state: &MainViewState,
-    _engine: &crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> String {
     t("workspace_category.delete_confirm_title").to_string()
 }
@@ -63,7 +63,7 @@ pub fn confirm_delete_category_default_size() -> egui::Vec2 {
 /// PopupDef.sizer — 본문 길이에 따라 height 조정(소형 모달).
 pub fn confirm_delete_category_sizer(
     state: &MainViewState,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> egui::Vec2 {
     let body_len = resolve_target(state, engine)
         .map(|tgt| tgt.name.chars().count() + BASE_BODY_LEN)
@@ -75,7 +75,7 @@ pub fn confirm_delete_category_sizer(
 pub fn on_close_confirm_delete_category(
     _ctx: &egui::Context,
     state: &mut MainViewState,
-    _engine: &mut crate::core::CoreState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     state.dialogs.pending_category_delete = None;
 }

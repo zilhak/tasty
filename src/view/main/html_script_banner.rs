@@ -13,7 +13,7 @@ use super::MainView;
 
 impl MainView {
     /// 호스트가 이 surface의 webview에 URL을 넣었다.
-    pub(super) fn note_host_webview_load(&self, engine: &crate::core::CoreState, sid: u32) {
+    pub(super) fn note_host_webview_load(&self, engine: &crate::runtime::engine_read::EngineRead<'_>, sid: u32) {
         if let Some(rs) = self.find_remote_surface(engine, sid) {
             rs.with_html_script(|st| st.on_host_load_requested());
         }
@@ -34,7 +34,7 @@ impl MainView {
     /// 단계가 바뀌면 다음 프레임에 egui가 배너를 다시 그리도록 dirty를 세운다.
     pub(super) fn update_html_script_banners(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         all_html_ids: &[u32],
     ) {
         self.note_user_selection(engine);
@@ -54,7 +54,7 @@ impl MainView {
     }
 
     /// 포커스된 surface가 바뀌었으면 새 surface에 사용자 선택을 알린다.
-    fn note_user_selection(&mut self, engine: &mut crate::core::CoreState) {
+    fn note_user_selection(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>) {
         let focused = self.state.focused_surface_id(&*engine);
         let selected = match self.html_script_seen_focus.replace(focused) {
             Some(prev) if prev != focused => focused,
@@ -72,7 +72,7 @@ impl MainView {
     /// html surface 하나의 배너 단계를 갱신하고 바뀌었으면 기록한다.
     fn update_html_script_banner(
         &self,
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
         sid: u32,
     ) -> Option<BannerPhase> {
         let rs = self
