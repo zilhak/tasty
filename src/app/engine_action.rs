@@ -167,8 +167,6 @@ pub(crate) enum EngineAction {
         view: std::sync::Weak<()>,
     },
     #[cfg(feature = "gui")]
-    AttachUser(AttachRequest),
-    #[cfg(feature = "gui")]
     Explorer {
         target: SurfaceBinding,
         action: crate::explorer_ui::ExplorerAction,
@@ -267,12 +265,6 @@ impl EngineAction {
             Self::PluginDisplay(request) => {
                 if let Some(manager) = plugins {
                     request.apply(manager);
-                }
-            }
-            #[cfg(feature = "gui")]
-            Self::AttachUser(request) => {
-                if let Some(request) = request.take() {
-                    engine.remote.pending_gui_attach_user.push(request);
                 }
             }
             #[cfg(feature = "gui")]
@@ -607,34 +599,6 @@ impl EngineAction {
                     .collect();
                 #[cfg(feature = "gui")]
                 crate::app::services::AppServices::resize_terminals(engine, targets);
-            }
-        }
-    }
-}
-
-/// The popup transfers tunnel ownership once. Cloned presentation intents cannot reuse it.
-#[cfg(feature = "gui")]
-#[derive(Clone)]
-pub(crate) struct AttachRequest(
-    std::sync::Arc<std::sync::Mutex<Option<crate::core::GuiAttachUserReq>>>,
-);
-#[cfg(feature = "gui")]
-impl std::fmt::Debug for AttachRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("AttachRequest")
-    }
-}
-#[cfg(feature = "gui")]
-impl AttachRequest {
-    pub(crate) fn new(request: crate::core::GuiAttachUserReq) -> Self {
-        Self(std::sync::Arc::new(std::sync::Mutex::new(Some(request))))
-    }
-    fn take(&self) -> Option<crate::core::GuiAttachUserReq> {
-        match self.0.lock() {
-            Ok(mut request) => request.take(),
-            Err(error) => {
-                tracing::warn!(%error,"attach request lock poisoned");
-                error.into_inner().take()
             }
         }
     }

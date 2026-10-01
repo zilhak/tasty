@@ -42,15 +42,6 @@ impl ShellConfig {
     }
 }
 
-/// 사용자가 원격 연결 팝업에서 확정한 요청. 조회에 쓴 SSH 터널을 함께 넘길 수 있다.
-/// IPC 요청과 달리 연결 성공 후 새 mirror를 선택할 수 있어 별도 큐다.
-#[cfg(feature = "gui")]
-pub(crate) struct GuiAttachUserReq {
-    pub(crate) port: u16,
-    pub(crate) workspace: u32,
-    pub(crate) tunnel: Option<tasty_ssh::SshTunnel>,
-}
-
 /// 붙여넣기 시점의 mirror 대상을 고정하고 백그라운드 업로드 뒤 그 surface에 원격 경로를 입력한다.
 #[cfg(feature = "gui")]
 #[derive(Clone, Debug)]

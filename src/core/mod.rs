@@ -20,7 +20,7 @@ pub(crate) mod request_target;
 
 pub(crate) use state::AttentionKind;
 #[cfg(feature = "gui")]
-pub(crate) use state::{AttachMeshContextForward, GuiAttachUserReq, PendingImageUpload};
+pub(crate) use state::{AttachMeshContextForward, PendingImageUpload};
 pub(crate) use tasty_core::CoreState;
 
 #[cfg(feature = "gui")]

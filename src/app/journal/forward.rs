@@ -6,7 +6,6 @@ use tasty_core::{OperationId, OperationOutcome};
 pub(crate) struct Draft {
     pub engine: EngineId,
     pub stream: String,
-    pub workspace_index: usize,
     pub response: crate::ipc::protocol::JsonRpcResponse,
     pub target: crate::app::attach_client::RemoteTarget,
     pub local_anchor: u32,
