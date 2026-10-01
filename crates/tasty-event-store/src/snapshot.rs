@@ -194,7 +194,7 @@ pub(crate) fn verify_snapshot(conn: &Connection, id: SnapshotId, body: PayloadRe
     Ok(bytes)
 }
 
-fn retain_snapshots(conn: &Connection, version: u32, keep: usize) -> StoreResult<()> {
+pub(crate) fn retain_snapshots(conn: &Connection, version: u32, keep: usize) -> StoreResult<()> {
     let mut stmt = conn.prepare(
         "SELECT snapshot_id, payload_id FROM snapshots WHERE model_version = ?1
          ORDER BY batch_id DESC, snapshot_id DESC",

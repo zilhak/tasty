@@ -44,6 +44,8 @@ impl EventStore {
         let id = crate::snapshot::insert_snapshot(&tx, snapshot)?;
         let manifest = NewRestoreManifest {snapshot_id: id, ..manifest.clone()};
         save_in(&tx, &manifest)?;
+        crate::snapshot::retain_snapshots(&tx, snapshot.model_version, 2)?;
+        tx.execute("DELETE FROM payloads WHERE payload_id NOT IN (SELECT payload_id FROM payload_pins)", [])?;
         tx.commit()?;
         Ok(id)
     }
@@ -104,7 +106,7 @@ fn snapshot_row(conn: &rusqlite::Connection, id: SnapshotId) -> StoreResult<(i64
         |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional()?.ok_or_else(|| StoreError::Corrupt(format!("restore snapshot {id} is missing")))
 }
 
-fn save_in(conn: &rusqlite::Connection, manifest: &NewRestoreManifest) -> StoreResult<()> {
+pub(crate) fn save_in(conn: &rusqlite::Connection, manifest: &NewRestoreManifest) -> StoreResult<()> {
         let previous: Option<(i64, i64, i64)> = conn.query_row(
             "SELECT incarnation,runtime_epoch,sequence FROM restore_manifests WHERE restore_key = ?1",
             [&manifest.restore_key], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?)),
