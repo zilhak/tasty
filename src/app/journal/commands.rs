@@ -471,7 +471,11 @@ impl JournalApplication {
             .values()
             .take(1)
             .filter(|pending| {
-                pending.needs_resolution && pending.request.method == "workspace.create"
+                pending.needs_resolution
+                    && matches!(
+                        pending.request.method.as_str(),
+                        "workspace.create" | "tab.create" | "split"
+                    )
             })
             .map(|pending| pending.request.clone())
             .collect()
