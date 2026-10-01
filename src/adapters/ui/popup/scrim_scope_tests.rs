@@ -3,7 +3,6 @@
 use crate::adapters::ui::LayoutContext;
 use crate::adapters::ui::popup::{PopupScope, defs, frame::draw_popup_layer};
 use crate::state::MainViewState;
-use crate::state::tests::test_state;
 
 /// 범위 대상이 사라진 팝업은 그리기 전에 닫히므로 엔진에 실제로 있는 surface를 쓴다.
 #[derive(Clone, Copy)]
@@ -48,21 +47,55 @@ fn prepared() -> (
     crate::runtime::engine_session::EngineSession,
     Ids,
 ) {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
+    use tasty_core::{DomainEvent as E, SurfaceSpec};
+    let model = crate::state::tests::test_model(vec![
+        E::CategoryCreated {
+            id: 0,
+            name: "normal".into(),
+            index: 0,
+        },
+        E::WorkspaceCreated {
+            id: 1,
+            name: "workspace".into(),
+            category: 0,
+            index: 0,
+            pane: 1,
+        },
+        E::TabCreated {
+            id: 1,
+            pane: 1,
+            index: 0,
+            name: "first".into(),
+            surface: SurfaceSpec {
+                id: 1,
+                kind: "terminal".into(),
+                data: None,
+            },
+        },
+        E::TabCreated {
+            id: 2,
+            pane: 1,
+            index: 1,
+            name: "second".into(),
+            surface: SurfaceSpec {
+                id: 2,
+                kind: "terminal".into(),
+                data: None,
+            },
+        },
+    ]);
+    let (mut state, engine_session) = crate::state::tests::test_state_from_model(model);
     for def in defs::all_defs() {
         state.popups.register_def(def, 1.0);
     }
-    let surface = state.focused_surface_id(&engine).expect("first surface");
-    state.add_tab(&mut engine).expect("second tab");
-    let narrow = state.focused_surface_id(&engine).expect("second surface");
+    let (surface, narrow) = (1, 2);
     (state, engine_session, Ids { surface, narrow })
 }
 
 /// 한 프레임을 그려 나온 도형을 그대로 돌려준다.
 fn painted_shapes(
     state: &mut MainViewState,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     ids: Ids,
 ) -> Vec<egui::epaint::ClippedShape> {
     let ctx = egui::Context::default();
@@ -79,7 +112,7 @@ fn painted_shapes(
 /// 한 프레임을 그려 scrim 색으로 칠해진 사각형들의 rect 를 모은다.
 fn scrim_rects(
     state: &mut MainViewState,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     ids: Ids,
 ) -> Vec<egui::Rect> {
     let scrim = egui::Color32::from(crate::theme::theme().scrim());
@@ -103,7 +136,7 @@ fn a_surface_scoped_popup_dims_only_its_own_surface() {
     state
         .popups
         .open_with_scope("convert_surface", PopupScope::Surface(ids.surface));
-    let rects = scrim_rects(&mut state, &mut engine, ids);
+    let rects = scrim_rects(&mut state, &engine.read(), ids);
     assert_eq!(rects, vec![surface_rect()]);
 }
 
@@ -115,7 +148,7 @@ fn a_window_scoped_popup_still_dims_the_whole_window() {
     state
         .popups
         .open_with_scope("command_palette", PopupScope::Window);
-    let rects = scrim_rects(&mut state, &mut engine, ids);
+    let rects = scrim_rects(&mut state, &engine.read(), ids);
     assert_eq!(rects, vec![screen()]);
 }
 
@@ -132,7 +165,7 @@ fn a_parent_and_its_child_picker_share_one_scrim() {
         super::file_picker::FILE_PICKER_POPUP_ID,
         PopupScope::Surface(ids.surface),
     );
-    let rects = scrim_rects(&mut state, &mut engine, ids);
+    let rects = scrim_rects(&mut state, &engine.read(), ids);
     assert_eq!(rects, vec![surface_rect()]);
 }
 
@@ -148,7 +181,7 @@ fn two_scrim_popups_in_one_scope_still_paint_one_scrim() {
     state
         .popups
         .open_with_scope("port_scanner", PopupScope::Surface(ids.surface));
-    let rects = scrim_rects(&mut state, &mut engine, ids);
+    let rects = scrim_rects(&mut state, &engine.read(), ids);
     assert_eq!(rects, vec![surface_rect()]);
 }
 
@@ -164,7 +197,7 @@ fn a_window_scrim_absorbs_the_surface_scrim_under_it() {
     state
         .popups
         .open_with_scope("command_palette", PopupScope::Window);
-    let rects = scrim_rects(&mut state, &mut engine, ids);
+    let rects = scrim_rects(&mut state, &engine.read(), ids);
     assert_eq!(rects, vec![screen()]);
 }
 
@@ -179,7 +212,7 @@ fn nothing_a_surface_scoped_popup_paints_lands_outside_its_surface() {
         .open_with_scope("convert_surface", PopupScope::Surface(ids.narrow));
     // 경계 자신은 안쪽이다 — 반올림 한 칸까지만 봐준다.
     let bound = narrow_rect().expand(0.5);
-    let shapes = painted_shapes(&mut state, &mut engine, ids);
+    let shapes = painted_shapes(&mut state, &engine.read(), ids);
     assert!(
         state.popups.is_open("convert_surface"),
         "the popup must be drawn for the bound check to mean anything"

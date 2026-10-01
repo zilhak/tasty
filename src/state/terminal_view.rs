@@ -62,11 +62,11 @@ mod tests {
         let sid = state.focused_surface_id(&engine).unwrap();
         let mut terminal = tasty_terminal::Terminal::new_detached(20, 3);
         terminal.feed_bytes(b"zero\r\none\r\ntwo\r\nthree\r\nfour");
-        engine.terminals.insert(sid, terminal, None);
+        engine.runtime.terminals.insert(sid, terminal, None);
         let second_window = TerminalViewports::default();
         state
             .terminal_views
-            .update(&engine.as_ref(), sid, |viewport, cut| {
+            .update(&engine.read(), sid, |viewport, cut| {
                 viewport.scroll_up(cut, 1)
             });
         engine
@@ -75,11 +75,18 @@ mod tests {
             .feed_bytes(b"\r\nfive");
         let cut = engine.find_terminal_by_id(sid).unwrap().content_cut();
         assert_eq!(
-            state.terminal_views.get(&engine, sid).resolve(cut).top_row,
+            state
+                .terminal_views
+                .get(&engine.read(), sid)
+                .resolve(cut)
+                .top_row,
             1
         );
         assert_eq!(
-            second_window.get(&engine, sid).resolve(cut).scroll_offset(),
+            second_window
+                .get(&engine.read(), sid)
+                .resolve(cut)
+                .scroll_offset(),
             0
         );
         state

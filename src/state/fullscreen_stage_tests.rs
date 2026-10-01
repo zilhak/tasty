@@ -7,7 +7,7 @@ use crate::adapters::ui::fullscreen;
 
 fn run_stage_frame(
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     let ctx = egui::Context::default();
     // 렌더 결과 대신 프레임 후 상태를 검사한다.
@@ -18,7 +18,7 @@ fn run_stage_frame(
 
 fn run_normal_frame(
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     let ctx = egui::Context::default();
     // 렌더 결과 대신 프레임 후 상태를 검사한다.
@@ -74,7 +74,7 @@ fn only_one_stage_at_a_time() {
     assert_eq!(state.fullscreen_stage_id(), Some("blank"));
     assert_eq!(state.stage_closed_queue, vec![b]);
 
-    run_stage_frame(&mut state, &mut engine);
+    run_stage_frame(&mut state, &engine.read());
     assert!(state.stage_closed_queue.is_empty());
     assert_eq!(
         fullscreen::defs::TEST_STAGE_CLOSES.load(Ordering::Relaxed),
@@ -111,7 +111,7 @@ fn normal_frame_drains_the_close_hook_queue() {
     state.open_fullscreen_stage("blank");
     state.close_fullscreen_stage();
     assert!(!state.stage_closed_queue.is_empty());
-    run_normal_frame(&mut state, &mut engine);
+    run_normal_frame(&mut state, &engine.read());
     assert!(state.stage_closed_queue.is_empty());
 }
 
@@ -122,7 +122,7 @@ fn stage_frame_drains_the_close_hook_queue() {
     let mut engine = engine_session.borrow_mut();
     state.open_fullscreen_stage("blank");
     state.stage_closed_queue.push("blank");
-    run_stage_frame(&mut state, &mut engine);
+    run_stage_frame(&mut state, &engine.read());
     assert!(state.stage_closed_queue.is_empty());
 }
 
@@ -131,21 +131,21 @@ fn stage_frame_paints_only_when_a_stage_is_up() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
     let painted = |state: &mut crate::state::RequestContext,
-                   engine: &mut crate::runtime::engine_access::EngineMut<'_>| {
+                   engine: &crate::runtime::engine_read::EngineRead<'_>| {
         let ctx = egui::Context::default();
         let out = ctx.run(egui::RawInput::default(), |ctx| {
             crate::adapters::ui::draw_fullscreen_stage(ctx, state, engine);
         });
         out.shapes.len()
     };
-    assert_eq!(painted(&mut state, &mut engine), 0);
+    assert_eq!(painted(&mut state, &engine.read()), 0);
     state.open_fullscreen_stage("blank");
-    assert!(painted(&mut state, &mut engine) > 0);
+    assert!(painted(&mut state, &engine.read()) > 0);
 }
 
 fn run_normal_frame_with_input(
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     raw: egui::RawInput,
 ) {
     let ctx = egui::Context::default();
@@ -208,7 +208,7 @@ fn clicking_the_popup_fullscreen_button_opens_the_stage_and_keeps_the_popup() {
         pressed: true,
         modifiers: egui::Modifiers::default(),
     });
-    run_normal_frame_with_input(&mut state, &mut engine, raw);
+    run_normal_frame_with_input(&mut state, &engine.read(), raw);
 
     assert_eq!(
         state.fullscreen_stage_id(),
@@ -239,7 +239,7 @@ fn the_same_click_on_a_popup_without_the_flag_does_nothing() {
         pressed: true,
         modifiers: egui::Modifiers::default(),
     });
-    run_normal_frame_with_input(&mut state, &mut engine, raw);
+    run_normal_frame_with_input(&mut state, &engine.read(), raw);
 
     assert!(!state.fullscreen_stage_active());
 }
@@ -261,7 +261,7 @@ fn the_stage_scroll_state_is_a_different_entry_from_the_popups() {
         draw_popups(
             ctx,
             &mut state,
-            &mut engine,
+            &engine.read(),
             &[],
             crate::model::PhysicalRect {
                 x: crate::model::PhysicalPx(0.0),
@@ -280,7 +280,7 @@ fn the_stage_scroll_state_is_a_different_entry_from_the_popups() {
 
     assert!(state.open_fullscreen_stage(fullscreen::notifications::NOTIFICATIONS_STAGE_ID));
     drop(ctx.run(screen_input(), |ctx| {
-        crate::adapters::ui::draw_fullscreen_stage(ctx, &mut state, &mut engine);
+        crate::adapters::ui::draw_fullscreen_stage(ctx, &mut state, &engine.read());
     }));
     let stage_scroll_id = fullscreen::notifications::recorded_scroll_id(&ctx)
         .expect("무대 콘텐츠가 자기 스크롤 상태 id 를 기록해야 한다");
@@ -302,7 +302,7 @@ fn two_stages_with_the_same_content_do_not_share_scroll_state() {
     let mut engine = engine_session.borrow_mut();
     let ctx = egui::Context::default();
     let draw_stage = |state: &mut crate::state::RequestContext,
-                      engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+                      engine: &crate::runtime::engine_read::EngineRead<'_>,
                       id: &'static str| {
         assert!(state.open_fullscreen_stage(id));
         drop(ctx.run(screen_input(), |ctx| {
@@ -313,12 +313,12 @@ fn two_stages_with_the_same_content_do_not_share_scroll_state() {
 
     let a = draw_stage(
         &mut state,
-        &mut engine,
+        &engine.read(),
         fullscreen::notifications::NOTIFICATIONS_STAGE_ID,
     );
     let b = draw_stage(
         &mut state,
-        &mut engine,
+        &engine.read(),
         fullscreen::defs::TEST_TWIN_STAGE_ID,
     );
     assert_ne!(a, b, "서로 다른 무대가 같은 스크롤 상태를 사용한다");
@@ -332,7 +332,7 @@ fn notifications_stage_clears_its_own_scroll_state_on_close() {
 
     let ctx = egui::Context::default();
     drop(ctx.run(screen_input(), |ctx| {
-        crate::adapters::ui::draw_fullscreen_stage(ctx, &mut state, &mut engine);
+        crate::adapters::ui::draw_fullscreen_stage(ctx, &mut state, &engine.read());
     }));
     let scroll_id = fullscreen::notifications::recorded_scroll_id(&ctx)
         .expect("무대 콘텐츠가 자기 스크롤 상태 id 를 기록해야 한다");
@@ -347,7 +347,7 @@ fn notifications_stage_clears_its_own_scroll_state_on_close() {
         crate::adapters::ui::draw_popups(
             ctx,
             &mut state,
-            &mut engine,
+            &engine.read(),
             &[],
             crate::model::PhysicalRect {
                 x: crate::model::PhysicalPx(0.0),

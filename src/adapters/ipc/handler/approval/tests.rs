@@ -103,13 +103,35 @@ fn the_elevation_envelope_carries_what_the_agent_needs_to_recover() {
 fn requested_workspace(params: Value, active: usize) -> (Option<u64>, Vec<u32>) {
     let _home = crate::test_support::TastyHomeGuard::new();
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    use tasty_core::{DomainEvent as E, SurfaceSpec};
+    let mut events = vec![E::CategoryCreated {
+        id: 0,
+        name: "normal".into(),
+        index: 0,
+    }];
+    for id in 1..=2 {
+        events.push(E::WorkspaceCreated {
+            id,
+            name: format!("workspace {id}"),
+            category: 0,
+            index: (id - 1) as usize,
+            pane: id,
+        });
+        events.push(E::TabCreated {
+            id,
+            pane: id,
+            index: 0,
+            name: "terminal".into(),
+            surface: SurfaceSpec {
+                id,
+                kind: "terminal".into(),
+                data: None,
+            },
+        });
+    }
+    let (mut state, mut engine_session) =
+        crate::state::tests::test_state_from_model(crate::state::tests::test_model(events));
     let mut engine = engine_session.borrow_mut();
-    crate::app::services::apply_create_workspace_inner(
-        &mut engine,
-        crate::app::services::WorkspaceCreationParams::terminal(),
-    )
-    .expect("두 번째 워크스페이스");
     let ids: Vec<u32> = engine.workspaces().into_iter().map(|w| w.id).collect();
     state.set_active_workspace_index(&engine, active);
     let mut params = params;
@@ -122,9 +144,15 @@ fn requested_workspace(params: Value, active: usize) -> (Option<u64>, Vec<u32>) 
         );
     }
     params["title"] = json!("t");
+    let mut scope = crate::ipc::request_scope::RequestScope::capture(
+        &mut state,
+        engine.core,
+        #[cfg(feature = "gui")]
+        None,
+    );
     let res = handle_request(
         &mut core,
-        &mut state,
+        &mut scope,
         &mut engine,
         &CallerContext::Local,
         json!(1),

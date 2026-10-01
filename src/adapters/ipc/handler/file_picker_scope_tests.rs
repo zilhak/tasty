@@ -165,7 +165,9 @@ fn hidden_child_keeps_selection_and_request_without_paint_hit_or_keyboard_gate()
             events,
             ..Default::default()
         };
-        drop(ctx.run(raw, |ctx| draw_popup_layer(ctx, state, &mut engine, layout)));
+        drop(ctx.run(raw, |ctx| {
+            draw_popup_layer(ctx, state, &engine.read(), layout)
+        }));
     };
     draw(&mut state, &layout, vec![]);
     assert_visible_gates(&state);
