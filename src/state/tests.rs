@@ -197,6 +197,12 @@ fn state_fixture(
         tasty_presets::PresetStore::load_default(),
     ));
     let state = RequestContext::new(&engine.as_ref().read(), preset_store);
+    #[cfg(not(feature = "gui"))]
+    let state = {
+        let mut state = state;
+        state.engine_id = Some(engine.id);
+        state
+    };
     (state, engine)
 }
 
