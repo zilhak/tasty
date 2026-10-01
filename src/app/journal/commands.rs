@@ -770,6 +770,15 @@ impl JournalApplication {
                 self.resolve_ipc_for_engine(ticket, session);
             }
         }
+        self.finish_headless_completions(session, state);
+    }
+
+    #[cfg(not(feature = "gui"))]
+    fn finish_headless_completions(
+        &mut self,
+        session: &mut EngineSession,
+        state: &mut crate::state::RequestContext,
+    ) {
         for (engine, replacement) in std::mem::take(&mut self.replacements) {
             if engine == session.id {
                 state.navigation.apply_replacement(replacement);
