@@ -19,6 +19,9 @@ const HEADLESS_POLL_INTERVAL: Duration = Duration::from_millis(10);
 /// 부팅 워커 결과를 기다릴 기한. 실제 확인 시점은 종료 단계가 다시 실행되는 때다.
 const BOOT_WORKER_RECLAIM_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// OS port queries are not cancellable; expiry permits exit without claiming a joined worker.
+const PORT_SCAN_RECLAIM_TIMEOUT: Duration = Duration::from_secs(5);
+
 pub(crate) enum ShutdownPhase {
     /// 살아 있는 상태를 복원할 수 있도록 닫힘 알림보다 먼저 레이아웃을 저장한다.
     SavingLayout,
@@ -49,6 +52,7 @@ impl ShutdownPhase {
 pub(crate) struct ShutdownState {
     pub(crate) phase: ShutdownPhase,
     final_view_sequence: Option<u64>,
+    port_scan_deadline: Option<Instant>,
 }
 
 enum StepOutcome {
@@ -67,7 +71,10 @@ impl App {
         self.state.shutdown = Some(ShutdownState {
             phase: ShutdownPhase::SavingLayout,
             final_view_sequence: None,
+            port_scan_deadline: Some(Instant::now() + PORT_SCAN_RECLAIM_TIMEOUT),
         });
+
+        self.port_scans.begin_shutdown();
 
         // Native child views sit above the GPU loading frame. Normal redraws no
         // longer run after shutdown starts, so hide them before the first frame.
@@ -194,7 +201,7 @@ impl App {
         }
         let t_flush = Instant::now();
         if self
-            .shutdown
+            .state.shutdown
             .as_ref()
             .is_some_and(|shutdown| shutdown.final_view_sequence.is_none())
         {
@@ -293,6 +300,14 @@ impl App {
     }
 
     fn shutdown_step_stopping_plugins(&mut self) -> StepOutcome {
+        let scans_remaining = self.port_scans.poll_shutdown();
+        if scans_remaining != 0
+            && let Some(deadline) = self.state.shutdown.as_ref().and_then(|state| state.port_scan_deadline)
+        {
+            if Instant::now() < deadline { return StepOutcome::Waiting; }
+            tracing::warn!(scans_remaining, "port scan shutdown timed out; workers remain unjoined");
+            if let Some(state) = self.state.shutdown.as_mut() { state.port_scan_deadline = None; }
+        }
         let remote=self.remote.shutdown_observation();
         match remote {
             tasty_remote::outbound::ShutdownObservation::Waiting=>return StepOutcome::Waiting,
