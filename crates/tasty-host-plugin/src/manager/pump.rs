@@ -960,6 +960,7 @@ mod tests {
     use tasty_terminal::waker_factory::NoopWakerFactory;
 
     use super::*;
+    use crate::PluginProcess;
     use crate::protocol::PluginEvent;
 
     fn mgr() -> PluginManager {
