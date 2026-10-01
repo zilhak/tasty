@@ -59,8 +59,8 @@ impl AppServices {
             anyhow::bail!("pane {pane_id} not found");
         }
 
-        let tab_id = engine.next_ids.next_tab();
-        let surface_id = engine.next_ids.next_surface();
+        let tab_id = engine.runtime.counters.next_tab();
+        let surface_id = engine.runtime.counters.next_surface();
 
         // Move the same content/Pty pair and physical generation; only its host key changes.
         let waker = engine.make_waker(surface_id);

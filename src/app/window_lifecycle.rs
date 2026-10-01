@@ -117,9 +117,9 @@ fn build_core_state_first_boot(
         memory,
         runner_registry,
     )?;
-    engine.core_state.runtime.waker_factory = Some(factory);
-    engine.core_state.runtime.identify_worker = Some(Arc::new(
-        crate::identify_worker::IdentifyWorker::new(engine.core_state.runtime.file_format.clone(), proxy),
+    engine.runtime.waker_factory = Some(factory);
+    engine.runtime.identify_worker = Some(Arc::new(
+        crate::identify_worker::IdentifyWorker::new(engine.runtime.file_format.clone(), proxy),
     ));
     #[cfg(debug_assertions)]
     {
@@ -226,7 +226,7 @@ impl App {
                     src.telemetry_seq.clone(),
                     src.anomaly_detector.clone(),
                     additional_window_task_scope(src.task_scope, &self.services.tasks),
-                    src.next_ids.clone(),
+                    src.runtime.counters.clone(),
                 )
             });
 
@@ -255,11 +255,11 @@ impl App {
                     self.services.memory_arc(),
                     Arc::clone(self.services.tasks.runner_registry()),
                 )?;
-                engine.core_state.runtime.waker_factory = Some(factory.clone());
-                engine.core_state.runtime.surface_registry = surface_registry;
-                engine.core_state.runtime.file_format = file_format;
-                engine.core_state.runtime.file_handler = file_handler;
-                engine.core_state.runtime.identify_worker = identify_worker;
+                engine.runtime.waker_factory = Some(factory.clone());
+                engine.runtime.surface_registry = surface_registry;
+                engine.runtime.file_format = file_format;
+                engine.runtime.file_handler = file_handler;
+                engine.runtime.identify_worker = identify_worker;
                 engine.core_state.approval_store = approval_store;
                 engine.core_state.telemetry_seq = telemetry_seq;
                 engine.core_state.anomaly_detector = anomaly_detector;

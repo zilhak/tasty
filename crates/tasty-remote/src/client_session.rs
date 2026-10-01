@@ -107,6 +107,17 @@ mod outbox {
             } else {pending.bytes+=bytes;pending.events.push(event);}
             true
         }
+        /// A blocked structural delta and its complete tail precede arrivals received meanwhile.
+        /// If preserving the combined tail exceeds the same budget, report loss explicitly.
+        pub fn restore_front(&self,mut events:Vec<MirrorEvent>) {
+            if !self.epoch.is_active() {return;}
+            let mut pending=tasty_utils::poison::recover_mutex(self.pending.lock(),super::MIRROR_OUTBOX_WHAT,&super::MIRROR_OUTBOX_POISONED);
+            let bytes=events.iter().fold(0usize,|sum,event|sum.saturating_add(event.retained_bytes()));
+            if events.len().saturating_add(pending.events.len())>1024 || bytes.saturating_add(pending.bytes)>tasty_ipc::admission::QUEUED_BYTES_LIMIT {
+                let frames=events.len().saturating_add(pending.events.len()) as u64;
+                pending.events.clear();pending.events.push(MirrorEvent::Desynced {frames});pending.bytes=std::mem::size_of::<MirrorEvent>();
+            } else {events.append(&mut pending.events);pending.events=events;pending.bytes+=bytes;}
+        }
         pub fn drain(&self)->Vec<MirrorEvent> {
             let mut pending=tasty_utils::poison::recover_mutex(self.pending.lock(),super::MIRROR_OUTBOX_WHAT,&super::MIRROR_OUTBOX_POISONED);
             pending.bytes=0;

@@ -1,6 +1,7 @@
 use super::{EngineId, EngineSession};
 use crate::core::CoreState;
-use crate::core::state::{IdGenerator, ShellConfig};
+use crate::runtime::counters::RuntimeCounters;
+use crate::core::state::ShellConfig;
 use crate::model::Workspace;
 use crate::settings::Settings;
 use std::sync::Arc;
@@ -34,7 +35,7 @@ impl EngineSession {
         cols: usize,
         rows: usize,
         waker: Waker,
-        shared_ids: Option<IdGenerator>,
+        shared_ids: Option<RuntimeCounters>,
         layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
         memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
         runner_registry: std::sync::Arc<crate::runtime::agent::runner_thread::RunnerRegistry>,
@@ -57,7 +58,7 @@ impl EngineSession {
         cols: usize,
         rows: usize,
         waker: Waker,
-        shared_ids: Option<IdGenerator>,
+        shared_ids: Option<RuntimeCounters>,
         layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
         memory: Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
         runner_registry: Arc<crate::runtime::agent::runner_thread::RunnerRegistry>,
@@ -81,7 +82,7 @@ impl EngineSession {
         cols: usize,
         rows: usize,
         waker: Waker,
-        shared_ids: Option<IdGenerator>,
+        shared_ids: Option<RuntimeCounters>,
         layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
         memory: Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
         runner_registry: Arc<crate::runtime::agent::runner_thread::RunnerRegistry>,
@@ -104,7 +105,7 @@ impl EngineSession {
         cols: usize,
         rows: usize,
         waker: Waker,
-        shared_ids: Option<IdGenerator>,
+        shared_ids: Option<RuntimeCounters>,
         layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
         memory: Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
         runner_registry: Arc<crate::runtime::agent::runner_thread::RunnerRegistry>,
@@ -118,14 +119,13 @@ impl EngineSession {
         let mut session = Self {
             id: EngineId::issue(),
             remote:crate::remote::state::RemoteState::new(),
-            live:Default::default(),
+            live:crate::core::live::LiveDomainState::with_notifications(next_ids.notification_counter(),settings.notification.coalesce_ms),
             journal_binding: None,
             pending_materializations: Default::default(),
             pending_resource_retirements:Default::default(),
             core_state: CoreState::new_base(
                 cols,
                 rows,
-                next_ids.clone(),
                 layout_slot,
                 settings,
             ),
@@ -137,7 +137,7 @@ impl EngineSession {
             observer_router: crate::output_observer::ObserverRouter::with_counter(
                 next_ids.observer_counter(),
             ),
-            runtime: crate::runtime::engine_runtime::EngineRuntime::new(next_ids.pty_counter(),waker.clone(),memory),
+            runtime: crate::runtime::engine_runtime::EngineRuntime::new(next_ids.clone(),waker.clone(),memory),
             #[cfg(test)]
             _isolated_home: isolated_home,
             #[cfg(all(test, feature = "gui"))]
@@ -155,10 +155,10 @@ impl EngineSession {
         let mut engine = session.borrow_mut();
         // 복원할 레이아웃이 있으면 기본 PTY를 먼저 만들지 않는다. 복원이 트리를 교체해도 별도 store의 PTY는 남기 때문이다.
         if materialize_default && engine.pending_layout_restore.is_none() {
-            let ws_id = engine.next_ids.next_workspace();
-            let pane_id = engine.next_ids.next_pane();
-            let tab_id = engine.next_ids.next_tab();
-            let surface_id = engine.next_ids.next_surface();
+            let ws_id = engine.runtime.counters.next_workspace();
+            let pane_id = engine.runtime.counters.next_pane();
+            let tab_id = engine.runtime.counters.next_tab();
+            let surface_id = engine.runtime.counters.next_surface();
             let sh = ShellConfig::from_settings(&engine.settings);
             let (terminal, pty) = crate::runtime::terminal_spawn::spawn_shell_terminal(
                 surface_id,

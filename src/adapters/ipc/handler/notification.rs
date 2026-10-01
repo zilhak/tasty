@@ -119,16 +119,16 @@ mod tests {
         let mut a = a_session.borrow_mut();
         let (_state_b, mut b_session) = crate::state::tests::test_state();
         let mut b = b_session.borrow_mut();
-        let ids = crate::core::state::IdGenerator::new();
-        a.notifications =
+        let ids = crate::runtime::counters::RuntimeCounters::new();
+        a.live.notifications =
             crate::notification::NotificationStore::with_counter(0, ids.notification_counter());
-        b.notifications =
+        b.live.notifications =
             crate::notification::NotificationStore::with_counter(0, ids.notification_counter());
         for i in 0..120 {
             let store = if i % 2 == 0 {
-                &mut a.notifications
+                &mut a.live.notifications
             } else {
-                &mut b.notifications
+                &mut b.live.notifications
             };
             store.add(1, 1, format!("entry-{i}"), String::new());
         }

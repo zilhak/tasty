@@ -54,7 +54,7 @@ pub(crate) fn rebuild_surface(
             Some(RebuildResult::Layout(rebuilt_layout, first_id))
         }
         ClosedPanel::Generic { kind, snapshot } => {
-            let id = engine.next_ids.next_surface();
+            let id = engine.runtime.counters.next_surface();
             // 미등록 kind는 원래 정보의 placeholder로 남긴다. None을 반환하면 ? 전파로 형제 tab·pane까지 버릴 수 있다.
             match engine.runtime.surface_registry.get_live(&kind) {
                 None => {
@@ -80,7 +80,7 @@ pub(crate) fn rebuild_surface_node(
     engine: &mut EngineMut<'_>,
     closed: ClosedSurface,
 ) -> Option<TerminalSurface> {
-    let surface_id = engine.next_ids.next_surface();
+    let surface_id = engine.runtime.counters.next_surface();
     let cols = engine.default_cols;
     let rows = engine.default_rows;
     let shell = if engine.settings.general.shell.is_empty() {
@@ -229,11 +229,11 @@ pub(crate) fn rebuild_pane(
     closed: ClosedPane,
     presentation: &mut crate::model::StructurePresentationSnapshot,
 ) -> Option<Pane> {
-    let pane_id = engine.next_ids.next_pane();
+    let pane_id = engine.runtime.counters.next_pane();
     let mut tabs = Vec::new();
     for closed_tab in closed.tabs {
         let result = rebuild_surface(engine, closed_tab.panel, presentation)?;
-        let tab_id = engine.next_ids.next_tab();
+        let tab_id = engine.runtime.counters.next_tab();
         let name = closed_tab.explicit_name.unwrap_or(closed_tab.name);
         tabs.push(result.into_tab(tab_id, name, presentation));
     }

@@ -27,8 +27,8 @@ impl RequestContext {
             return Ok(());
         }
         let cwd = self.resolve_inherit_cwd(&engine.as_ref());
-        let tab_id = engine.next_ids.next_tab();
-        let surface_id = engine.next_ids.next_surface();
+        let tab_id = engine.runtime.counters.next_tab();
+        let surface_id = engine.runtime.counters.next_surface();
         let cols = engine.default_cols;
         let rows = engine.default_rows;
         let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
@@ -81,8 +81,8 @@ impl RequestContext {
         if self.forward_mirror_structural(engine, mirror_op, Vec::new()) {
             anyhow::bail!("mirror workspace: structural change forwarded to remote");
         }
-        let tab_id = engine.next_ids.next_tab();
-        let surface_id = engine.next_ids.next_surface();
+        let tab_id = engine.runtime.counters.next_tab();
+        let surface_id = engine.runtime.counters.next_surface();
         let cwd = self.resolve_inherit_cwd(&engine.as_ref());
         let surface =
             engine.create_surface_via_registry(kind, surface_id, cwd.as_deref(), params)?;
@@ -127,8 +127,8 @@ impl RequestContext {
         let Some(pane_id) = target_pane else {
             anyhow::bail!("owner surface {owner_surface_id} not found in active workspace");
         };
-        let tab_id = engine.next_ids.next_tab();
-        let surface_id = engine.next_ids.next_surface();
+        let tab_id = engine.runtime.counters.next_tab();
+        let surface_id = engine.runtime.counters.next_surface();
         let cwd = self.resolve_inherit_cwd(&engine.as_ref());
         let surface =
             engine.create_surface_via_registry(kind, surface_id, cwd.as_deref(), params)?;

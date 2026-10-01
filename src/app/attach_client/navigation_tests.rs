@@ -4,7 +4,7 @@ use super::*;
 struct Fixture {
     navigation: crate::state::navigation::NavigationState,
     structure_ids: MirrorStructureIds,
-    ids: crate::core::state::IdGenerator,
+    ids: crate::runtime::counters::RuntimeCounters,
 }
 
 impl Fixture {

@@ -1021,7 +1021,7 @@ mod tests {
             .pane_layout()
             .all_pane_ids()[0];
         let tab = crate::model::Tab::new_with_surface(
-            e.next_ids.next_tab(),
+            e.runtime.counters.next_tab(),
             "extra".to_string(),
             Box::new(crate::model::TerminalSurface { id: surface_id }),
         );

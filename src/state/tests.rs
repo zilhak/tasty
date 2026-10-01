@@ -401,7 +401,7 @@ fn mirror_close_active_surface_split_computes_sibling_candidate() {
     let sid_a = state.focused_surface_id(&engine).unwrap();
     let pane_id = state.focused_pane_id(&engine);
     let (ws_idx, _) = engine.find_workspace_index_for_surface(sid_a).unwrap();
-    let sid_b = engine.next_ids.next_surface();
+    let sid_b = engine.runtime.counters.next_surface();
     engine
         .workspace_at_mut(ws_idx)
         .expect("workspace index is valid")
@@ -440,7 +440,7 @@ fn close_active_surface_split_saves_closed_item_snapshot() {
     let sid_a = state.focused_surface_id(&engine).unwrap();
     let pane_id = state.focused_pane_id(&engine);
     let (ws_idx, _) = engine.find_workspace_index_for_surface(sid_a).unwrap();
-    let sid_b = engine.next_ids.next_surface();
+    let sid_b = engine.runtime.counters.next_surface();
     engine
         .workspace_at_mut(ws_idx)
         .expect("workspace index is valid")
@@ -655,7 +655,7 @@ fn c3_case1_split_surface_close_cleans_up_and_keeps_sibling() {
     let sid_a = collect_surface_ids(&mut state, &mut engine)[0];
     let pane_id = state.focused_pane_id(&engine);
     let (ws_idx, _) = engine.find_workspace_index_for_surface(sid_a).unwrap();
-    let sid_b = engine.next_ids.next_surface();
+    let sid_b = engine.runtime.counters.next_surface();
     engine
         .workspace_at_mut(ws_idx)
         .expect("workspace index is valid")
@@ -787,8 +787,8 @@ fn c3_case3_pane_close_removes_pane_and_reassigns_focus() {
 
 /// 지연된 터미널 placeholder 탭을 추가하고 surface ID를 반환한다.
 fn add_deferred_tab(state: &mut RequestContext, engine: &mut crate::core::CoreState) -> u32 {
-    let tab_id = engine.next_ids.next_tab();
-    let surface_id = engine.next_ids.next_surface();
+    let tab_id = engine.runtime.counters.next_tab();
+    let surface_id = engine.runtime.counters.next_surface();
     let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
     let spawn = crate::model::DeferredSpawn {
         shell: sh.shell_ref().map(|s| s.to_string()),
@@ -2589,7 +2589,7 @@ mod close_refuses_hard_occupied {
         let (ws_idx, _) = engine
             .find_workspace_index_for_surface(sid_a)
             .expect("워크스페이스");
-        let sid_b = engine.next_ids.next_surface();
+        let sid_b = engine.runtime.counters.next_surface();
         engine
             .workspace_at_mut(ws_idx)
             .expect("workspace index is valid")
@@ -2618,7 +2618,7 @@ mod close_refuses_hard_occupied {
         let (ws_idx, _) = engine
             .find_workspace_index_for_surface(sid_a)
             .expect("워크스페이스");
-        let sid_b = engine.next_ids.next_surface();
+        let sid_b = engine.runtime.counters.next_surface();
         engine
             .workspace_at_mut(ws_idx)
             .expect("workspace index is valid")

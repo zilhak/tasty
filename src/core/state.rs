@@ -9,110 +9,9 @@ use crate::settings::Settings;
 pub(crate) use message::SurfaceMessage;
 use tasty_terminal::Waker;
 
-/// 여러 engine이 같은 Arc 카운터를 써 ID가 겹치지 않게 한다. Clone도 카운터를 공유한다.
-/// u32·u64 카운터의 overflow나 ID 범위 소진을 여기서 별도로 막지는 않는다.
-#[derive(Clone)]
-pub struct IdGenerator {
-    workspace: Arc<std::sync::atomic::AtomicU32>,
-    /// normal 카테고리의 0을 예약하고 1에서 시작한다.
-    category: Arc<std::sync::atomic::AtomicU32>,
-    pane: Arc<std::sync::atomic::AtomicU32>,
-    tab: Arc<std::sync::atomic::AtomicU32>,
-    surface: Arc<std::sync::atomic::AtomicU32>,
-    /// 같은 TerminalStore에 넣는 PTY ID는 PTY_ID_BASE에서 시작한다.
-    pty: Arc<std::sync::atomic::AtomicU32>,
-    observer: Arc<std::sync::atomic::AtomicU64>,
-    hook: Arc<std::sync::atomic::AtomicU64>,
-    global_hook: Arc<std::sync::atomic::AtomicU32>,
-    /// 알림 저장소는 engine별이며 ID·생성 순번은 프로세스에서 공유한다.
-    notification: Arc<std::sync::atomic::AtomicU64>,
-}
-
-impl Default for IdGenerator {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl IdGenerator {
-    pub fn new() -> Self {
-        use std::sync::atomic::{AtomicU32, AtomicU64};
-        Self {
-            workspace: Arc::new(AtomicU32::new(1)),
-            category: Arc::new(AtomicU32::new(1)),
-            pane: Arc::new(AtomicU32::new(1)),
-            tab: Arc::new(AtomicU32::new(1)),
-            surface: Arc::new(AtomicU32::new(1)),
-            pty: Arc::new(AtomicU32::new(crate::runtime::terminal_store::PTY_ID_BASE)),
-            observer: Arc::new(AtomicU64::new(1)),
-            hook: Arc::new(AtomicU64::new(1)),
-            global_hook: Arc::new(AtomicU32::new(0)),
-            notification: Arc::new(AtomicU64::new(1)),
-        }
-    }
-
-    pub fn pty_counter(&self) -> Arc<std::sync::atomic::AtomicU32> {
-        Arc::clone(&self.pty)
-    }
-
-    pub fn observer_counter(&self) -> Arc<std::sync::atomic::AtomicU64> {
-        Arc::clone(&self.observer)
-    }
-
-    pub fn hook_counter(&self) -> Arc<std::sync::atomic::AtomicU64> {
-        Arc::clone(&self.hook)
-    }
-
-    pub fn global_hook_counter(&self) -> Arc<std::sync::atomic::AtomicU32> {
-        Arc::clone(&self.global_hook)
-    }
-
-    pub fn notification_counter(&self) -> Arc<std::sync::atomic::AtomicU64> {
-        Arc::clone(&self.notification)
-    }
-
-    pub fn next_workspace(&self) -> u32 {
-        self.workspace
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    }
-
-    pub fn next_category(&self) -> u32 {
-        self.category
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// 복원한 카테고리 ID를 재사용하지 않도록 다음 발급 기준을 높인다. 이미 더 크면 유지한다.
-    #[cfg(test)]
-    pub fn bump_category_floor(&self, min_next: u32) {
-        self.category
-            .fetch_max(min_next, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    pub fn next_pane(&self) -> u32 {
-        self.pane.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    }
-
-    pub fn next_tab(&self) -> u32 {
-        self.tab.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    }
-
-    pub fn next_surface(&self) -> u32 {
-        self.surface
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// 이전 실행의 surface 메타데이터 ID를 피하도록 다음 발급 기준을 높인다.
-    /// 현재 기준을 낮추지 않으며 이후 overflow까지 막는 함수는 아니다.
-    #[cfg(test)]
-    pub fn bump_surface_floor(&self, min_next: u32) {
-        self.surface
-            .fetch_max(min_next, std::sync::atomic::Ordering::Relaxed);
-    }
-}
-
 pub struct ShellConfig {
-    pub shell: String,
-    pub args: Vec<String>,
+    pub shell:String,
+    pub args:Vec<String>,
     /// 셸 초기화에 필요한 추가 환경변수. bash의 rcfile 설정은 args로 전달한다.
     pub envs: Vec<(String, String)>,
 }
@@ -207,12 +106,10 @@ pub struct CoreState {
     mirror_projection_tokens: std::collections::HashMap<u32, std::sync::Arc<()>>,
     /// 표시 순서의 카테고리. 생성·복원 뒤 기본 normal 항목을 앞에 두도록 정규화한다.
     pub(crate) categories: Vec<crate::model::WorkspaceCategory>,
-    pub(crate) next_ids: IdGenerator,
     pub(crate) default_cols: usize,
     pub(crate) default_rows: usize,
     pub(crate) settings: Settings,
 
-    pub(crate) notifications: NotificationStore,
     pub(crate) closed_items: crate::model::ClosedItemStore,
 
     pub(crate) approval_store: std::sync::Arc<tasty_approval::ApprovalStore>,
@@ -296,7 +193,6 @@ impl CoreState {
     pub(crate) fn new_base(
         cols: usize,
         rows: usize,
-        next_ids: IdGenerator,
         layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
         settings: Settings,
     ) -> Self {
@@ -307,11 +203,9 @@ impl CoreState {
             workspace_display_order: Vec::new(),
             mirror_projection_tokens: Default::default(),
             categories: vec![crate::model::WorkspaceCategory::normal()],
-            next_ids: next_ids.clone(),
             default_cols: cols,
             default_rows: rows,
             settings,
-            notifications: NotificationStore::with_counter(500, next_ids.notification_counter()),
             closed_items: crate::model::ClosedItemStore::new(),
             approval_store: std::sync::Arc::new(tasty_approval::ApprovalStore::new()),
             telemetry_seq: std::sync::Arc::new(tasty_telemetry::TelemetrySeq::new()),
@@ -331,11 +225,6 @@ impl CoreState {
             #[cfg(debug_assertions)]
             input_simulation_enabled: false,
         };
-
-        engine.notifications = NotificationStore::with_counter(
-            engine.settings.notification.coalesce_ms,
-            next_ids.notification_counter(),
-        );
 
         engine
     }

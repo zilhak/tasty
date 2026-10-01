@@ -45,14 +45,19 @@ impl App {
             Ok(attempt)=>attempt,
             Err(error)=> {send_response(&cmd.response_tx,host_ipc::protocol::JsonRpcResponse::error(rpc_id,-32050,error));return;},
         };
+        let target_binding=match self.mirror_install_target(None,None,None,false) {
+            Ok(target)=>target,
+            Err(error)=>{self.remote.finish_attempt(&attempt);send_response(&cmd.response_tx,host_ipc::protocol::JsonRpcResponse::invalid_params(rpc_id,error.to_string()));return;},
+        };
+        self.state.pending_remote_endpoints.insert(attempt.clone(),target_binding);
         let tx = self.remote.tx.clone();
         let proxy = self.view.proxy.clone();
         match target {
             RemoteAttachTarget::Existing(remote_ws) => {
-                self.remote.spawn_attempt(move || {
+                if let Err(error)=self.remote.spawn_attempt(attempt.clone(),move || {
                     let result = conn.resolve_endpoint();
                     send_attach_outcome(&tx, &proxy, attempt,remote_ws, result);
-                });
+                }) {send_response(&cmd.response_tx,host_ipc::protocol::JsonRpcResponse::internal_error(rpc_id,error));return;}
                 send_response(
                     &cmd.response_tx,
                     host_ipc::protocol::JsonRpcResponse::success(
@@ -63,9 +68,10 @@ impl App {
             }
             RemoteAttachTarget::Create { name, cwd } => {
                 let response_tx = cmd.response_tx.clone();
-                self.remote.spawn_attempt(move || {
+                let failure_id=rpc_id.clone();
+                if let Err(error)=self.remote.spawn_attempt(attempt.clone(),move || {
                     remote_attach_create_worker(conn,name,cwd,rpc_id,&response_tx,&tx,&proxy,attempt);
-                });
+                }) {send_response(&cmd.response_tx,host_ipc::protocol::JsonRpcResponse::internal_error(failure_id,error));}
             }
         }
     }

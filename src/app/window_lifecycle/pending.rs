@@ -26,6 +26,7 @@ impl App {
         }
         if !self.journal.pauses_observation() {
             self.resolve_journal_requests();
+            self.apply_attach_client_output();
         }
         if !self.journal.pauses_observation() && !self.journal.is_halted() {
             self.dispatch_pending_surface_lifecycle();

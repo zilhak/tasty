@@ -10,8 +10,12 @@ pub fn attach_handshake(
     port: u16,
     workspace: u32,
     log_prefix: &str,
+    cancel:&super::outbound::AttemptToken,
 ) -> anyhow::Result<(StreamConnection, u32, TcpStream, String, Vec<Value>, Value)> {
-    let sock = TcpStream::connect(("127.0.0.1", port))?;
+    if !cancel.is_active() {anyhow::bail!("connection attempt retired");}
+    let address=std::net::SocketAddr::from(([127,0,0,1],port));
+    let sock=TcpStream::connect_timeout(&address,std::time::Duration::from_millis(250))?;
+    cancel.register_socket(&sock)?;
     arm_attach_timeouts(&sock, log_prefix);
     let (mut conn, client_id) =
         StreamConnection::open_attach_workspace(sock, STREAM_PROTO, workspace)?;
@@ -235,4 +239,31 @@ pub(crate) fn join_attempt_workers(handles:Vec<std::thread::JoinHandle<()>>)->Re
         result.0.store(if failed {2}else {1},Ordering::Release);
     });
     receipt
+}
+
+/// A connected socket and its bounded snapshot tail before the application installs a mirror.
+/// There is no App/View or local engine lookup here.
+pub struct PreparedConnection {
+    pub port:u16,
+    pub remote_workspace:u32,
+    pub client_id:u32,
+    pub name:String,
+    pub surfaces:Vec<Value>,
+    pub tree:Value,
+    pub transport:super::client_session::ClientTransport,
+}
+impl PreparedConnection {
+    pub fn connect(cancel:super::outbound::AttemptToken,port:u16,workspace:u32,tunnel:Option<tasty_ssh::SshTunnel>,wake:Arc<dyn Fn()+Send+Sync>,decode:fn(&[u8])->Option<MirrorEvent>)->anyhow::Result<Self> {
+        let (conn,client_id,write_half,name,surfaces,tree)=attach_handshake(port,workspace,"remote pending connection",&cancel)?;
+        let control=write_half.try_clone()?;
+        let (frame_tx,frame_rx)=super::connection::channel();
+        let disconnected=Arc::new(AtomicBool::new(false));
+        frame_tx.bind_failure(disconnected.clone(),wake.clone());
+        let output=MirrorOutbox::new(frame_tx.epoch());
+        let writer=spawn_attach_write_thread(write_half,frame_rx,disconnected.clone(),wake.clone(),"");
+        let reader=spawn_attach_reader_thread(conn,output.clone(),disconnected.clone(),wake,workspace,"",decode);
+        let heartbeat=spawn_attach_heartbeat_thread(frame_tx.clone(),disconnected.clone());
+        let workers=ConnectionWorkers::new(control,vec![writer,reader,heartbeat]);
+        Ok(Self {port,remote_workspace:workspace,client_id,name,surfaces,tree,transport:super::client_session::ClientTransport {workers,output,disconnected,frame_tx,tunnel}})
+    }
 }

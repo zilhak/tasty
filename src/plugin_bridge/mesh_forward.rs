@@ -214,8 +214,8 @@ mod tests {
         // 플러그인 프로세스는 실행하지 않으며 구독 상태가 처리되는지만 검사한다.
         let mgr = PluginManager::with_registries(
             Arc::new(NoopWakerFactory),
-            parked[0].0.core_state.runtime.file_format.clone(),
-            parked[0].0.core_state.runtime.file_handler.clone(),
+            parked[0].0.runtime.file_format.clone(),
+            parked[0].0.runtime.file_handler.clone(),
         );
 
         for (engine, _sid) in parked.iter_mut() {

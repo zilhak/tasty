@@ -253,9 +253,9 @@ impl EngineMut<'_> {
             .all()
             .find(|n| n.id == id)
             .map(|n| n.source_surface);
-        self.notifications.mark_read(id);
+        self.live.notifications.mark_read(id);
         if let Some(surface_id) = source_surface {
-            if !self.notifications.has_unread_for_surface(surface_id) {
+            if !self.live.notifications.has_unread_for_surface(surface_id) {
                 self.clear_attention_local(surface_id);
             }
         }
@@ -271,7 +271,7 @@ impl EngineMut<'_> {
             .filter(|n| !n.read)
             .map(|n| n.source_surface)
             .collect();
-        self.notifications.mark_all_read();
+        self.live.notifications.mark_all_read();
         for surface_id in unread_surfaces {
             self.clear_attention_local(surface_id);
         }
@@ -291,7 +291,7 @@ mod tests {
     fn state_no_coalesce() -> crate::runtime::engine_session::EngineSession {
         let mut s_session = state();
         let mut s = s_session.borrow_mut();
-        s.notifications = crate::notification::NotificationStore::with_coalesce_ms(0);
+        s.live.notifications = crate::notification::NotificationStore::with_coalesce_ms(0);
         s_session
     }
 
@@ -349,7 +349,7 @@ mod tests {
     fn mark_notification_read_clears_attention_when_no_unread_left() {
         let mut s_session = state();
         let mut s = s_session.borrow_mut();
-        let id = s.notifications.add(1, 100, "t".into(), "b".into()).unwrap();
+        let id = s.live.notifications.add(1, 100, "t".into(), "b".into()).unwrap();
         s.raise_attention(100, AttentionKind::Completion);
         assert!(s.attention_dominant_kind(&[100]).is_some());
 
@@ -399,9 +399,9 @@ mod tests {
     fn mark_all_notifications_read_clears_all_unread_surfaces() {
         let mut s_session = state_no_coalesce();
         let mut s = s_session.borrow_mut();
-        s.notifications.add(1, 100, "t1".into(), "b1".into());
-        s.notifications.add(1, 100, "t2".into(), "b2".into());
-        s.notifications.add(1, 200, "t3".into(), "b3".into());
+        s.live.notifications.add(1, 100, "t1".into(), "b1".into());
+        s.live.notifications.add(1, 100, "t2".into(), "b2".into());
+        s.live.notifications.add(1, 200, "t3".into(), "b3".into());
         s.raise_attention(100, AttentionKind::Completion);
         s.raise_attention(200, AttentionKind::Completion);
 
@@ -415,11 +415,11 @@ mod tests {
     fn mark_all_notifications_read_leaves_unrelated_surface_attention_untouched() {
         let mut s_session = state();
         let mut s = s_session.borrow_mut();
-        let id = s.notifications.add(1, 100, "t".into(), "b".into()).unwrap();
-        s.notifications.mark_read(id); // 이미 읽음 처리된 알림
+        let id = s.live.notifications.add(1, 100, "t".into(), "b".into()).unwrap();
+        s.live.notifications.mark_read(id); // 이미 읽음 처리된 알림
         s.raise_attention(100, AttentionKind::Completion); // 알림과 무관한 producer(toast 등)가 건 attention
         s.raise_attention(200, AttentionKind::Completion);
-        s.notifications.add(1, 200, "t2".into(), "b2".into());
+        s.live.notifications.add(1, 200, "t2".into(), "b2".into());
 
         s.mark_all_notifications_read();
 
@@ -744,7 +744,7 @@ mod tests {
         let (mut s_session, sid) = mirror_state();
         let mut s = s_session.borrow_mut();
         let ws_id = s.workspace_at(0).expect("workspace index is valid").id;
-        s.notifications.add(ws_id, sid, "t".into(), "b".into());
+        s.live.notifications.add(ws_id, sid, "t".into(), "b".into());
         s.set_mirror_surface_attention(sid, Some(AttentionKind::Completion));
 
         s.mark_all_notifications_read();
@@ -893,7 +893,7 @@ mod tests {
             "점유 중 알림 읽음은 홀더의 신호를 지우지 못한다"
         );
         assert!(
-            s.notifications
+            s.live.notifications
                 .all()
                 .find(|n| n.id == occupied_read)
                 .unwrap()
@@ -945,14 +945,14 @@ mod tests {
         );
         for id in [occupied, free] {
             assert!(
-                s.notifications.all().find(|n| n.id == id).unwrap().read,
+                s.live.notifications.all().find(|n| n.id == id).unwrap().read,
                 "모든 알림의 read 플래그는 점유 여부와 무관하게 세워진다(회귀 방지)"
             );
         }
 
         // 앞선 알림은 모두 읽었으므로 새 안읽음 알림으로 같은 경로를 다시 검사한다.
         s.live.occupancy.release(100, 1).expect("release");
-        s.notifications.add(1, 100, "t3".into(), "b3".into());
+        s.live.notifications.add(1, 100, "t3".into(), "b3".into());
         s.mark_all_notifications_read();
         assert_eq!(
             s.attention_kind(100),

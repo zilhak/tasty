@@ -241,9 +241,9 @@ impl RequestContext {
         direction: crate::model::SplitDirection,
     ) -> anyhow::Result<()> {
         let cwd = self.resolve_inherit_cwd(&engine.as_ref());
-        let new_pane_id = engine.next_ids.next_pane();
-        let new_tab_id = engine.next_ids.next_tab();
-        let new_surface_id = engine.next_ids.next_surface();
+        let new_pane_id = engine.runtime.counters.next_pane();
+        let new_tab_id = engine.runtime.counters.next_tab();
+        let new_surface_id = engine.runtime.counters.next_surface();
         let cols = engine.default_cols;
         let rows = engine.default_rows;
 

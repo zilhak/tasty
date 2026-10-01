@@ -3866,8 +3866,8 @@ mod forward_exec_tests {
             .expect("workspace index is valid")
             .pane_layout()
             .all_pane_ids()[0];
-        let child = engine.next_ids.next_surface();
-        let tab_id = engine.next_ids.next_tab();
+        let child = engine.runtime.counters.next_surface();
+        let tab_id = engine.runtime.counters.next_tab();
         engine
             .runtime
             .terminals
@@ -3949,8 +3949,8 @@ mod forward_exec_tests {
             .expect("workspace index is valid")
             .pane_layout()
             .all_pane_ids()[0];
-        let child = engine.next_ids.next_surface();
-        let tab_id = engine.next_ids.next_tab();
+        let child = engine.runtime.counters.next_surface();
+        let tab_id = engine.runtime.counters.next_tab();
         engine
             .runtime
             .terminals

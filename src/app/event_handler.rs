@@ -1242,7 +1242,7 @@ impl App {
                 .unwrap_or(0);
             let title = crate::i18n::t("resume.suspect.title").to_string();
             let body = crate::i18n::t("resume.suspect.body").to_string();
-            if engine.notifications.add(ws_id, sid, title, body).is_some() {
+            if engine.live.notifications.add(ws_id, sid, title, body).is_some() {
                 engine.raise_attention(sid, crate::core::AttentionKind::Completion);
             }
         }

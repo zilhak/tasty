@@ -332,6 +332,20 @@ fn handle(
             if let Some(capture)=&undo {admitted.inputs.extend(capture.data_refs());}
             Ok(ResultValue::ClosedCaptured {input,undo})
         },
+        Work::ReserveExecutionIds {binding,kinds}=>{
+            executor.with_state(|_|()).map_err(|error|error.to_string())?;
+            let mut inner=executor.inner.lock().map_err(|error|error.to_string())?;
+            let epoch=inner.epoch;
+            if binding.journal_id!=inner.store.journal_id() || binding.runtime_epoch!=epoch.0 || inner.state.streams.get(&binding.stream).is_none_or(|model|model.engine_retired || model.engine_incarnation!=binding.incarnation) {return Err("execution reservation belongs to a retired engine".into());}
+            if kinds.len()>4 {return Err("invalid execution reservation kind count".into());}
+            let mut ranges=Vec::new();
+            for (kind,count) in kinds {
+                if kind==tasty_domain::IdKind::Category || count==0 {return Err("execution reservation has invalid kind/count".into());}
+                let max=if kind==tasty_domain::IdKind::Surface {0x7fff_ffff}else {u32::MAX};
+                ranges.push(inner.store.reserve_ids(epoch,kind.label(),u64::from(count),u64::from(max)).map_err(|error|error.to_string())?);
+            }
+            Ok(ResultValue::ExecutionIds {binding,ranges})
+        },
         Work::Reserve(kinds) => {
             if !pending.contains_key(&ticket) {
                 return Err("ID reservation requires an admitted request".into());

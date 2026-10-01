@@ -349,8 +349,8 @@ mod tests {
 
     /// 첫 pane에 지연 터미널 탭을 넣고 surface ID를 반환한다. 활성 탭은 바꾸지 않는다.
     fn push_deferred_tab(engine: &mut CoreState, shell: Option<&str>) -> u32 {
-        let tab_id = engine.next_ids.next_tab();
-        let surface_id = engine.next_ids.next_surface();
+        let tab_id = engine.runtime.counters.next_tab();
+        let surface_id = engine.runtime.counters.next_surface();
         let spawn = DeferredSpawn {
             shell: shell.map(str::to_string),
             shell_args: Vec::new(),
@@ -377,8 +377,8 @@ mod tests {
     }
 
     fn push_deferred_plugin_tab(engine: &mut CoreState, kind: &str) -> u32 {
-        let tab_id = engine.next_ids.next_tab();
-        let surface_id = engine.next_ids.next_surface();
+        let tab_id = engine.runtime.counters.next_tab();
+        let surface_id = engine.runtime.counters.next_surface();
         let placeholder = EmptySurface::new_deferred_plugin(
             surface_id,
             crate::model::DeferredPlugin {

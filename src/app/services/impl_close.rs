@@ -573,8 +573,8 @@ mod close_surface_cascade_tests {
             .expect("workspace index is valid")
             .all_surface_ids()[0];
         let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(sid0).unwrap();
-        let tab1_id = engine.next_ids.next_tab();
-        let sid1 = engine.next_ids.next_surface();
+        let tab1_id = engine.runtime.counters.next_tab();
+        let sid1 = engine.runtime.counters.next_surface();
         insert_detached(&mut engine, sid1);
         engine
             .workspace_at_mut(ws_idx)
@@ -628,9 +628,9 @@ mod close_surface_cascade_tests {
             .expect("workspace index is valid")
             .all_surface_ids()[0];
         let (ws_idx, pane0) = engine.find_workspace_index_for_surface(sid0).unwrap();
-        let pane1_id = engine.next_ids.next_pane();
-        let tab1_id = engine.next_ids.next_tab();
-        let sid1 = engine.next_ids.next_surface();
+        let pane1_id = engine.runtime.counters.next_pane();
+        let tab1_id = engine.runtime.counters.next_tab();
+        let sid1 = engine.runtime.counters.next_surface();
         insert_detached(&mut engine, sid1);
         let new_pane = crate::model::Pane::new_with_terminal_marker(pane1_id, tab1_id, sid1);
         let leftover = engine
@@ -677,10 +677,10 @@ mod close_surface_cascade_tests {
     fn case4_workspace_close_returns_workspace_level_fields() {
         let mut engine_session = test_engine();
         let mut engine = engine_session.borrow_mut();
-        let ws1_id = engine.next_ids.next_workspace();
-        let pane1_id = engine.next_ids.next_pane();
-        let tab1_id = engine.next_ids.next_tab();
-        let sid1 = engine.next_ids.next_surface();
+        let ws1_id = engine.runtime.counters.next_workspace();
+        let pane1_id = engine.runtime.counters.next_pane();
+        let tab1_id = engine.runtime.counters.next_tab();
+        let sid1 = engine.runtime.counters.next_surface();
         insert_detached(&mut engine, sid1);
         let ws1 = crate::model::Workspace::new_with_terminal_marker(
             ws1_id,
@@ -730,8 +730,8 @@ mod close_surface_cascade_tests {
         let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(sid0).unwrap();
         let mut tab_ids = vec![];
         for _ in 0..2 {
-            let tab_id = engine.next_ids.next_tab();
-            let sid = engine.next_ids.next_surface();
+            let tab_id = engine.runtime.counters.next_tab();
+            let sid = engine.runtime.counters.next_surface();
             insert_detached(&mut engine, sid);
             engine
                 .workspace_at_mut(ws_idx)
@@ -778,9 +778,9 @@ mod close_surface_cascade_tests {
             .expect("workspace index is valid")
             .all_surface_ids()[0];
         let (ws_idx, pane0) = engine.find_workspace_index_for_surface(sid0).unwrap();
-        let pane1_id = engine.next_ids.next_pane();
-        let tab1_id = engine.next_ids.next_tab();
-        let sid1 = engine.next_ids.next_surface();
+        let pane1_id = engine.runtime.counters.next_pane();
+        let tab1_id = engine.runtime.counters.next_tab();
+        let sid1 = engine.runtime.counters.next_surface();
         insert_detached(&mut engine, sid1);
         let new_pane = crate::model::Pane::new_with_terminal_marker(pane1_id, tab1_id, sid1);
         let leftover = engine
@@ -790,9 +790,9 @@ mod close_surface_cascade_tests {
             .split_pane_in_place(pane0, crate::model::SplitDirection::Horizontal, new_pane);
         assert!(leftover.is_none());
         // 첫 pane으로 무조건 옮기는 오류를 잡으려면 포커스를 다른 pane에 두어야 한다.
-        let pane2_id = engine.next_ids.next_pane();
-        let tab2_id = engine.next_ids.next_tab();
-        let sid2 = engine.next_ids.next_surface();
+        let pane2_id = engine.runtime.counters.next_pane();
+        let tab2_id = engine.runtime.counters.next_tab();
+        let sid2 = engine.runtime.counters.next_surface();
         insert_detached(&mut engine, sid2);
         let third = crate::model::Pane::new_with_terminal_marker(pane2_id, tab2_id, sid2);
         let leftover = engine
@@ -839,10 +839,10 @@ mod close_surface_cascade_tests {
     fn case4_workspace_close_reports_the_removed_index() {
         let mut engine_session = test_engine();
         let mut engine = engine_session.borrow_mut();
-        let ws1_id = engine.next_ids.next_workspace();
-        let pane1_id = engine.next_ids.next_pane();
-        let tab1_id = engine.next_ids.next_tab();
-        let sid1 = engine.next_ids.next_surface();
+        let ws1_id = engine.runtime.counters.next_workspace();
+        let pane1_id = engine.runtime.counters.next_pane();
+        let tab1_id = engine.runtime.counters.next_tab();
+        let sid1 = engine.runtime.counters.next_surface();
         insert_detached(&mut engine, sid1);
         engine.insert_local_workspace(
             0,
@@ -906,7 +906,7 @@ mod close_surface_cascade_tests {
             .all_surface_ids()[0];
         insert_detached(&mut engine, sid_a);
         let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(sid_a).unwrap();
-        let sid_b = engine.next_ids.next_surface();
+        let sid_b = engine.runtime.counters.next_surface();
         engine
             .workspace_at_mut(ws_idx)
             .expect("workspace index is valid")

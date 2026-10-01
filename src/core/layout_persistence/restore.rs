@@ -124,7 +124,7 @@ impl SavedWorkspace {
         is_active: bool,
         presentation: &mut crate::model::StructurePresentationSnapshot,
     ) -> Option<Workspace> {
-        let ws_id = engine.next_ids.next_workspace();
+        let ws_id = engine.runtime.counters.next_workspace();
         let pane_layout = self.pane_layout.restore(engine, is_active, presentation)?;
 
         let all_ids = pane_layout.all_pane_ids();
@@ -184,7 +184,7 @@ impl SavedPane {
         is_active_workspace: bool,
         presentation: &mut crate::model::StructurePresentationSnapshot,
     ) -> Option<Pane> {
-        let pane_id = engine.next_ids.next_pane();
+        let pane_id = engine.runtime.counters.next_pane();
         let saved_active_tab = self.active_tab.min(self.tabs.len().saturating_sub(1));
         let tab_count = self.tabs.len();
         let mut tabs = Vec::new();
@@ -223,7 +223,7 @@ impl SavedTab {
         is_active: bool,
         presentation: &mut crate::model::StructurePresentationSnapshot,
     ) -> Option<Tab> {
-        let tab_id = engine.next_ids.next_tab();
+        let tab_id = engine.runtime.counters.next_tab();
         let layout = self.surface.restore(engine, is_active, presentation)?;
         Some(Tab {
             id: tab_id,
@@ -274,7 +274,7 @@ impl SavedSurfaceLayout {
 impl SavedSurface {
     #[cfg(test)]
     fn restore_leaf(self, engine: &mut EngineMut<'_>, is_active: bool) -> Option<Box<dyn Surface>> {
-        let surface_id = engine.next_ids.next_surface();
+        let surface_id = engine.runtime.counters.next_surface();
         match self {
             SavedSurface::Terminal {
                 cwd,

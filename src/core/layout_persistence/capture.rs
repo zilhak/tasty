@@ -288,10 +288,10 @@ mod tests {
 
     /// 내용 대신 TerminalSurface marker만 넣어 workspace 필터·인덱스 처리를 확인한다.
     fn mirror_marker_ws(engine: &mut EngineMut<'_>, name: &str, mirror: bool) -> Workspace {
-        let ws_id = engine.next_ids.next_workspace();
-        let pane_id = engine.next_ids.next_pane();
-        let tab_id = engine.next_ids.next_tab();
-        let surface_id = engine.next_ids.next_surface();
+        let ws_id = engine.runtime.counters.next_workspace();
+        let pane_id = engine.runtime.counters.next_pane();
+        let tab_id = engine.runtime.counters.next_tab();
+        let surface_id = engine.runtime.counters.next_surface();
         let mut ws = Workspace::new_with_terminal_marker(
             ws_id,
             name.to_string(),

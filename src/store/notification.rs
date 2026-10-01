@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn shared_notification_ids_keep_creation_order_and_coalescing_identity() {
-        let ids = crate::core::state::IdGenerator::new();
+        let ids = crate::runtime::counters::RuntimeCounters::new();
         let mut a = NotificationStore::with_counter(60_000, ids.notification_counter());
         let mut b = NotificationStore::with_counter(60_000, ids.notification_counter());
         let first = a.add(1, 1, "A".into(), "one".into()).unwrap();

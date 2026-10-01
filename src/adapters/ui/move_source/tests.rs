@@ -34,8 +34,8 @@ fn first_pane(engine: &CoreState) -> (u32, u32, u32) {
 }
 
 fn add_tab(engine: &mut CoreState, pane_id: u32) -> (u32, u32) {
-    let tab_id = engine.next_ids.next_tab();
-    let sid = engine.next_ids.next_surface();
+    let tab_id = engine.runtime.counters.next_tab();
+    let sid = engine.runtime.counters.next_surface();
     engine
         .find_pane_by_id_mut(pane_id)
         .unwrap()
@@ -44,9 +44,9 @@ fn add_tab(engine: &mut CoreState, pane_id: u32) -> (u32, u32) {
 }
 
 fn split_new_pane(engine: &mut CoreState, pane_id: u32) -> (u32, u32) {
-    let new_pane_id = engine.next_ids.next_pane();
-    let tab_id = engine.next_ids.next_tab();
-    let sid = engine.next_ids.next_surface();
+    let new_pane_id = engine.runtime.counters.next_pane();
+    let tab_id = engine.runtime.counters.next_tab();
+    let sid = engine.runtime.counters.next_surface();
     let pane = crate::model::Pane::new_with_terminal_marker(new_pane_id, tab_id, sid);
     let ws_idx = engine.find_workspace_index_for_pane(pane_id).unwrap();
     assert!(
@@ -61,10 +61,10 @@ fn split_new_pane(engine: &mut CoreState, pane_id: u32) -> (u32, u32) {
 }
 
 fn push_workspace(engine: &mut CoreState) -> (u32, u32, u32) {
-    let ws_id = engine.next_ids.next_workspace();
-    let pane_id = engine.next_ids.next_pane();
-    let tab_id = engine.next_ids.next_tab();
-    let sid = engine.next_ids.next_surface();
+    let ws_id = engine.runtime.counters.next_workspace();
+    let pane_id = engine.runtime.counters.next_pane();
+    let tab_id = engine.runtime.counters.next_tab();
+    let sid = engine.runtime.counters.next_surface();
     engine.push_local_workspace(crate::model::Workspace::new_with_terminal_marker(
         ws_id,
         "ws1".to_string(),

@@ -17,7 +17,7 @@ pub(crate) fn draw_notification_content_inner(
     let th = theme::theme();
 
     ui.horizontal(|ui| {
-        let unread = engine.notifications.unread_count();
+        let unread = engine.live.notifications.unread_count();
         ui.label(
             egui::RichText::new(t_fmt(
                 "notification_panel.unread_count",
@@ -41,7 +41,7 @@ pub(crate) fn draw_notification_content_inner(
         .auto_shrink([false, false])
         .drag_to_scroll(false)
         .show(ui, |ui| {
-            let notification_count = engine.notifications.all().len();
+            let notification_count = engine.live.notifications.all().len();
             if notification_count == 0 {
                 ui.centered_and_justified(|ui| {
                     ui.label(

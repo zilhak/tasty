@@ -17,9 +17,9 @@ fn active_after_restoring_a_closed_workspace(intent: crate::intent::DispatchedIn
         panic!("apply_create_workspace_inner가 WorkspaceCreated를 반환해야 한다");
     };
     assert_eq!(index, 1);
-    let second = engine.next_ids.next_surface();
-    let added_tab = engine.next_ids.next_tab();
-    let added_surface = engine.next_ids.next_surface();
+    let second = engine.runtime.counters.next_surface();
+    let added_tab = engine.runtime.counters.next_tab();
+    let added_surface = engine.runtime.counters.next_surface();
     let pid = engine
         .workspace_at(1)
         .expect("workspace index is valid")

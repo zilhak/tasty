@@ -23,7 +23,7 @@ impl CoreState {
             .filter(|&id| id != NORMAL_CATEGORY_ID)
             .max();
         if let Some(max_id) = max_id {
-            self.next_ids.bump_category_floor(max_id + 1);
+            self.runtime.counters.bump_category_floor(max_id + 1);
         }
         let valid: std::collections::HashSet<u32> = self.categories.iter().map(|c| c.id).collect();
         for ws in self.workspaces_mut() {
@@ -44,7 +44,7 @@ impl CoreState {
     ) -> Result<crate::model::WorkspaceCategoryId, crate::model::CategoryNameError> {
         let existing: Vec<&str> = self.categories.iter().map(|c| c.name.as_str()).collect();
         let name = crate::model::validate_new_category_name(raw_name, existing)?;
-        let id = self.next_ids.next_category();
+        let id = self.runtime.counters.next_category();
         self.categories
             .push(crate::model::WorkspaceCategory::new(id, name));
         Ok(id)

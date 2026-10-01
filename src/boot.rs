@@ -452,7 +452,7 @@ fn bootstrap_engine(
         app.services.memory_arc(),
         std::sync::Arc::clone(app.services.tasks.runner_registry()),
     )?;
-    engine.core_state.runtime.waker_factory = Some(factory);
+    engine.runtime.waker_factory = Some(factory);
     app.journal
         .begin_engine(
             &engine,

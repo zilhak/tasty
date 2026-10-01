@@ -47,8 +47,8 @@ impl AppServices {
         surface_params: serde_json::Value,
         activate: bool,
     ) -> anyhow::Result<Vec<CoreEvent>> {
-        let tab_id = engine.next_ids.next_tab();
-        let surface_id = engine.next_ids.next_surface();
+        let tab_id = engine.runtime.counters.next_tab();
+        let surface_id = engine.runtime.counters.next_surface();
         let is_terminal = kind == "terminal";
 
         let cols = engine.default_cols;

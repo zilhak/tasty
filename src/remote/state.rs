@@ -6,6 +6,7 @@ use crate::core::state::AttentionKind;
 use tasty_ipc::stream::{StreamFrame,StreamTag};
 use crate::core::attach::AttachClientId;
 pub(crate) struct RemoteState {
+    pub(crate) attach_mapping_tokens:std::collections::HashMap<u32,std::sync::Arc<()>>,
     pub(crate) presentation:crate::model::StructurePresentationSnapshot,
     notifier:Option<tasty_ipc::stream_hub::StreamHub>,
     suppress_auto_tap:bool,
@@ -80,6 +81,7 @@ pub(crate) struct RemoteState {
 }
 impl RemoteState {
     pub(crate) fn new()->Self {Self {
+            attach_mapping_tokens:Default::default(),
             presentation:Default::default(),notifier:None,suppress_auto_tap:false,structure_changed:Default::default(),
             mesh_mirror: crate::remote::mesh_mirror::MeshMirrorRegistry::default(),
             #[cfg(feature = "gui")]

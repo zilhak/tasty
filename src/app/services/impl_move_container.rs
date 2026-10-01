@@ -350,8 +350,8 @@ mod move_container_tests {
 
     /// pane에 detached Terminal을 가진 탭을 하나 더 붙인다.
     fn add_tab(engine: &mut EngineMut<'_>, pane_id: u32) -> (u32, u32) {
-        let tab_id = engine.next_ids.next_tab();
-        let sid = engine.next_ids.next_surface();
+        let tab_id = engine.runtime.counters.next_tab();
+        let sid = engine.runtime.counters.next_surface();
         engine
             .runtime
             .terminals
@@ -365,9 +365,9 @@ mod move_container_tests {
 
     /// 첫 workspace의 pane을 나눠 새 pane(탭 하나)을 만든다.
     fn split_new_pane(engine: &mut EngineMut<'_>, pane_id: u32) -> (u32, u32, u32) {
-        let new_pane_id = engine.next_ids.next_pane();
-        let tab_id = engine.next_ids.next_tab();
-        let sid = engine.next_ids.next_surface();
+        let new_pane_id = engine.runtime.counters.next_pane();
+        let tab_id = engine.runtime.counters.next_tab();
+        let sid = engine.runtime.counters.next_surface();
         engine
             .runtime
             .terminals
@@ -387,10 +387,10 @@ mod move_container_tests {
 
     /// 새 workspace(pane 하나, 탭 하나)를 붙인다.
     fn push_workspace(engine: &mut EngineMut<'_>) -> (u32, u32, u32) {
-        let ws_id = engine.next_ids.next_workspace();
-        let pane_id = engine.next_ids.next_pane();
-        let tab_id = engine.next_ids.next_tab();
-        let sid = engine.next_ids.next_surface();
+        let ws_id = engine.runtime.counters.next_workspace();
+        let pane_id = engine.runtime.counters.next_pane();
+        let tab_id = engine.runtime.counters.next_tab();
+        let sid = engine.runtime.counters.next_surface();
         engine
             .runtime
             .terminals
@@ -784,9 +784,9 @@ mod move_container_tests {
             .expect("workspace index is valid")
             .pane_layout()
             .all_pane_ids()[0];
-        let new_pane_id = engine.next_ids.next_pane();
-        let tab_id = engine.next_ids.next_tab();
-        let sid = engine.next_ids.next_surface();
+        let new_pane_id = engine.runtime.counters.next_pane();
+        let tab_id = engine.runtime.counters.next_tab();
+        let sid = engine.runtime.counters.next_surface();
         let r = crate::model::Pane::new_with_terminal_marker(new_pane_id, tab_id, sid);
         assert!(
             engine

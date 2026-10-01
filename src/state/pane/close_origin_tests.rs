@@ -45,7 +45,7 @@ fn arrange(
     let pane_id = state.focused_pane_id(&engine);
     let target = match case {
         Case::Surface => {
-            let sid_b = engine.next_ids.next_surface();
+            let sid_b = engine.runtime.counters.next_surface();
             engine
                 .workspace_at_mut(ws_idx)
                 .expect("workspace index is valid")
@@ -62,9 +62,9 @@ fn arrange(
             state.focused_surface_id(&engine).unwrap()
         }
         Case::Pane => {
-            let new_pane_id = engine.next_ids.next_pane();
-            let new_tab_id = engine.next_ids.next_tab();
-            let sid_b = engine.next_ids.next_surface();
+            let new_pane_id = engine.runtime.counters.next_pane();
+            let new_tab_id = engine.runtime.counters.next_tab();
+            let sid_b = engine.runtime.counters.next_surface();
             insert_detached(&mut engine, sid_b);
             let pane = crate::model::Pane::new_with_terminal_marker(new_pane_id, new_tab_id, sid_b);
             engine

@@ -11,6 +11,8 @@ use crate::runtime::terminal_store::TerminalStore;
 
 /// Kind instances retire before terminal/Pty owners. Shared service references do not cancel tasks.
 pub(crate) struct EngineRuntime {
+    pub(crate) ids:crate::runtime::id_reservations::IdReservations,
+    pub(crate) counters:super::counters::RuntimeCounters,
     pub(crate) waker: Waker,
     pub(crate) pending_host_events: Vec<crate::core::host_event::PendingHostEvent>,
     pub(crate) pending_lifecycle_events: Vec<crate::core::host_event::PendingSurfaceClosed>,
@@ -59,8 +61,10 @@ impl EngineRuntime {
     }
 
     /// PTY ID 발급기는 같은 프로세스의 engine들이 공유해야 ID가 겹치지 않는다.
-    pub(crate) fn new(pty_counter: Arc<AtomicU32>,waker:Waker,memory:Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>) -> Self {
+    pub(crate) fn new(counters:super::counters::RuntimeCounters,waker:Waker,memory:Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>) -> Self {
         let runtime=Self {
+            ids:Default::default(),
+            counters:counters.clone(),
             waker: waker.clone(),
             pending_host_events:Vec::new(),pending_lifecycle_events:Vec::new(),pending_plugin_retirements:Vec::new(),
             waker_factory: None,
@@ -97,7 +101,7 @@ impl EngineRuntime {
             memory,
 
             surfaces:Default::default(),
-            terminals: TerminalStore::new(pty_counter),
+            terminals: TerminalStore::new(counters.pty_counter()),
             pending_scrollback_inject: Default::default(),
             child_terminals: ChildTerminalRegistry::load(),
             #[cfg(feature="gui")]

@@ -122,13 +122,17 @@ impl App {
         let attempt=match self.remote.begin_attempt(Some(anchor),Some(mapping.clone())) {
             Ok(attempt)=>attempt,Err(error)=>{tracing::warn!("{error}");return;},
         };
+        let endpoint_target=match self.mirror_install_target(None,Some(anchor),None,false) {
+            Ok(target)=>target,Err(error)=>{self.remote.finish_attempt(&attempt);tracing::warn!("remote target unavailable: {error}");return;},
+        };
+        self.state.pending_remote_endpoints.insert(attempt.clone(),endpoint_target);
         self.remote.active.insert(anchor);
         self.remote.pending_reactivation.remove(&anchor);
         let tx = self.remote.tx.clone();
         let proxy = self.view.proxy.clone();
         let target = mapping.target.clone();
         // SSH 연결 준비가 메인 루프를 막지 않게 한다.
-        self.remote.spawn_attempt(move || {
+        let spawned=self.remote.spawn_attempt(attempt.clone(),move || {
             let result = resolve_endpoint(&target);
             let outcome = AutoAttachOutcome {
                 attempt,
@@ -140,6 +144,7 @@ impl App {
             let _ = tx.send(outcome); // 수신자(메인 루프) drop 시 send 실패 — 무시.
             let _ = proxy.send_event(crate::app::event::AppEvent::AutoAttachReady); // event loop 종료 시에만 실패 — 무시
         });
+        if let Err(error)=spawned {self.remote.active.remove(&anchor);tracing::warn!("remote endpoint start rejected: {error}");}
     }
 
     /// 시도 중이 아닌 anchor를 예약 시각 또는 해당 워크스페이스 재활성화 때 재연결한다.
@@ -183,12 +188,17 @@ impl App {
             let attempt=match self.remote.begin_attempt(Some(anchor),Some(mapping.clone())) {
                 Ok(attempt)=>attempt,Err(error)=>{tracing::warn!("{error}");continue;},
             };
+            let index=self.remote.sessions.iter().position(|session|session.state.anchor_ws_id==Some(anchor));
+            let endpoint_target=match self.mirror_install_target(None,Some(anchor),index,false) {
+                Ok(target)=>target,Err(error)=>{self.remote.finish_attempt(&attempt);tracing::warn!("remote reconnect target unavailable: {error}");continue;},
+            };
+            self.state.pending_remote_endpoints.insert(attempt.clone(),endpoint_target);
             self.remote.active.insert(anchor);
             self.remote.pending_reactivation.remove(&anchor);
             let tx = self.remote.tx.clone();
             let proxy = self.view.proxy.clone();
             let target = mapping.target.clone();
-            self.remote.spawn_attempt(move || {
+            let spawned=self.remote.spawn_attempt(attempt.clone(),move || {
                 let result = resolve_endpoint(&target);
                 let outcome = AutoAttachOutcome {
                     attempt,
@@ -200,17 +210,21 @@ impl App {
                 let _ = tx.send(outcome); // 수신자(메인 루프) drop 시 send 실패 — 무시.
                 let _ = proxy.send_event(crate::app::event::AppEvent::AutoAttachReady); // event loop 종료 시에만 실패 — 무시
             });
+            if let Err(error)=spawned {self.remote.active.remove(&anchor);tracing::warn!("remote reconnect start rejected: {error}");}
         }
     }
 
     pub(crate) fn drain_auto_attach_results(&mut self) {
         self.remote.reap_attempts();
+        self.state.pending_remote_endpoints.retain(|token,_|token.is_active());
         while let Ok(outcome) = self.remote.rx.try_recv() {
             self.apply_auto_attach_outcome(outcome);
         }
     }
 
     fn apply_auto_attach_outcome(&mut self, outcome: AutoAttachOutcome) {
+        let Some(target)=self.state.pending_remote_endpoints.remove(&outcome.attempt) else {self.remote.finish_attempt(&outcome.attempt);return;};
+        if !self.mirror_install_target_is_current(&target) {if let Some(retired)=self.remote.finish_attempt(&outcome.attempt) && let Some(anchor)=retired.anchor {self.remote.active.remove(&anchor);}return;}
         let Some(accepted)=self.remote.finish_attempt(&outcome.attempt) else {
             tracing::debug!("discarding result from retired remote connection attempt");return;
         };
@@ -232,6 +246,7 @@ impl App {
         match result {
             Ok((tunnel, port)) => {
                 self.handle_auto_attach_connected(
+                    target,
                     anchor_ws_id,
                     remote_ws,
                     is_reconnect,
@@ -255,6 +270,7 @@ impl App {
 
     fn handle_auto_attach_connected(
         &mut self,
+        target:crate::app::attach_client::pending::PendingMirrorInstall,
         anchor_ws_id: Option<u32>,
         remote_ws: u32,
         is_reconnect: bool,
@@ -273,21 +289,7 @@ impl App {
             }
             return;
         }
-        let attach_result = if is_reconnect {
-            let idx = anchor_ws_id.and_then(|anchor| {
-                self.remote.sessions.iter().position(|s| {
-                    s.anchor_ws_id() == Some(anchor) && s.state() == SessionState::Reconnecting
-                })
-            });
-            match idx {
-                Some(idx) => self.reconnect_session(idx, port, tunnel),
-                // 사용자가 기다리는 동안 mirror를 닫았으면 연결할 세션이 없다.
-                None => Ok(()),
-            }
-        } else {
-            self.start_gui_attach(port, remote_ws, tunnel, anchor_ws_id)
-                .map(|_| ())
-        };
+        let attach_result=self.queue_mirror_connection(target,port,remote_ws,tunnel);
         match attach_result {
             Ok(()) => {
                 if let Some(anchor) = anchor_ws_id {
@@ -310,7 +312,7 @@ impl App {
 
     /// already_attached는 긴 고정 간격, 나머지 실패는 지수 백오프로 재시도한다.
     /// jitter로 동시 재시도 집중을 줄이며 상한에 도달하면 자동 재시도만 멈춘다.
-    fn on_reconnect_attempt_failed(&mut self, anchor: u32, err: &anyhow::Error) {
+    pub(super) fn on_reconnect_attempt_failed(&mut self, anchor: u32, err: &anyhow::Error) {
         let permanent_conflict = err.to_string().contains("already_attached");
         let slot = self
             .remote.reconnect

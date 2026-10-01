@@ -37,7 +37,7 @@ impl AppServices {
                 let Some(pane_id) = target_pane_id else {
                     return nothing();
                 };
-                let tab_id = engine.next_ids.next_tab();
+                let tab_id = engine.runtime.counters.next_tab();
                 let surface_box: Box<dyn Surface> = Box::new(node);
                 let tab = Tab::new_with_surface(tab_id, tab_name, surface_box);
                 if !push_tab_to_pane(engine, pane_id, tab) {
@@ -55,7 +55,7 @@ impl AppServices {
                 let Some(pane_id) = target_pane_id else {
                     return nothing();
                 };
-                let tab_id = engine.next_ids.next_tab();
+                let tab_id = engine.runtime.counters.next_tab();
                 let name = closed_tab.explicit_name.unwrap_or(closed_tab.name);
                 let tab = result.into_tab(tab_id, name, &mut presentation);
                 if !push_tab_to_pane(engine, pane_id, tab) {
@@ -118,7 +118,7 @@ impl AppServices {
                 focused_pane,
                 ..
             } => {
-                let ws_id = engine.next_ids.next_workspace();
+                let ws_id = engine.runtime.counters.next_workspace();
                 let Some(pane_node) =
                     restore_rebuild::rebuild_pane_node(engine, pane_layout, &mut presentation)
                 else {
@@ -332,10 +332,10 @@ pub(crate) fn apply_create_workspace_inner(
         anyhow::bail!("Cannot create workspace with empty surface kind");
     }
 
-    let ws_id = engine.next_ids.next_workspace();
-    let pane_id = engine.next_ids.next_pane();
-    let tab_id = engine.next_ids.next_tab();
-    let surface_id = engine.next_ids.next_surface();
+    let ws_id = engine.runtime.counters.next_workspace();
+    let pane_id = engine.runtime.counters.next_pane();
+    let tab_id = engine.runtime.counters.next_tab();
+    let surface_id = engine.runtime.counters.next_surface();
     let auto_name = name
         .clone()
         .unwrap_or_else(|| format!("Workspace {}", engine.workspaces().len() + 1));
@@ -469,7 +469,7 @@ fn push_tab_to_pane(
 #[cfg(test)]
 pub(crate) fn seed_surface_id_floor(
     mem: &mut dyn tasty_memory::MemoryStorage,
-    ids: &crate::core::state::IdGenerator,
+    ids: &crate::runtime::counters::RuntimeCounters,
 ) {
     use crate::runtime::terminal_store::PTY_ID_BASE;
     let purged = crate::surface_meta::SurfaceMetaStore::purge_out_of_range_surfaces(mem);
@@ -487,7 +487,7 @@ pub(crate) fn seed_surface_id_floor(
 #[cfg(test)]
 mod surface_id_floor_tests {
     use super::seed_surface_id_floor;
-    use crate::core::state::IdGenerator;
+    use crate::runtime::counters::RuntimeCounters;
     use crate::runtime::terminal_store::PTY_ID_BASE;
     use crate::surface_meta::SurfaceMetaStore;
     use tasty_memory::testing::InMemoryStorage;

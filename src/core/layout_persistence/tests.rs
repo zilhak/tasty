@@ -940,18 +940,18 @@ fn moved_tab_is_saved_at_its_new_position() {
     let pane0 = engine.find_pane_by_id_mut(p0).unwrap();
     pane0.tabs[0].explicit_name = Some("MOVED".to_string());
     let tab_a = pane0.tabs[0].id;
-    let keep_tab = engine.next_ids.next_tab();
-    let keep_sid = engine.next_ids.next_surface();
+    let keep_tab = engine.runtime.counters.next_tab();
+    let keep_sid = engine.runtime.counters.next_surface();
     engine
         .find_pane_by_id_mut(p0)
         .unwrap()
         .add_terminal_marker_tab(keep_tab, keep_sid);
     let ws1 = crate::model::Workspace::new_with_terminal_marker(
-        engine.next_ids.next_workspace(),
+        engine.runtime.counters.next_workspace(),
         "ws1".to_string(),
-        engine.next_ids.next_pane(),
-        engine.next_ids.next_tab(),
-        engine.next_ids.next_surface(),
+        engine.runtime.counters.next_pane(),
+        engine.runtime.counters.next_tab(),
+        engine.runtime.counters.next_surface(),
     );
     let q = ws1.pane_layout().all_pane_ids()[0];
     let tab_q = ws1.pane_layout().find_pane(q).unwrap().tabs[0].id;
@@ -1006,9 +1006,9 @@ fn moved_pane_is_saved_at_its_new_position() {
         .all_pane_ids()[0];
     engine.find_pane_by_id_mut(p0).unwrap().tabs[0].explicit_name = Some("MOVED".to_string());
     let extra = crate::model::Pane::new_with_terminal_marker(
-        engine.next_ids.next_pane(),
-        engine.next_ids.next_tab(),
-        engine.next_ids.next_surface(),
+        engine.runtime.counters.next_pane(),
+        engine.runtime.counters.next_tab(),
+        engine.runtime.counters.next_surface(),
     );
     assert!(
         engine
@@ -1019,11 +1019,11 @@ fn moved_pane_is_saved_at_its_new_position() {
             .is_none()
     );
     let ws1 = crate::model::Workspace::new_with_terminal_marker(
-        engine.next_ids.next_workspace(),
+        engine.runtime.counters.next_workspace(),
         "ws1".to_string(),
-        engine.next_ids.next_pane(),
-        engine.next_ids.next_tab(),
-        engine.next_ids.next_surface(),
+        engine.runtime.counters.next_pane(),
+        engine.runtime.counters.next_tab(),
+        engine.runtime.counters.next_surface(),
     );
     let q = ws1.pane_layout().all_pane_ids()[0];
     engine.push_local_workspace(ws1);

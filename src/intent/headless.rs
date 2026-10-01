@@ -398,7 +398,7 @@ mod tests {
             "surface.completion 은 headless 에서도 attention 을 올려야 한다"
         );
 
-        let before = engine.notifications.unread_count();
+        let before = engine.live.notifications.unread_count();
         send(
             &mut core,
             &mut state,
@@ -408,7 +408,7 @@ mod tests {
         );
         drain_pending_intents(&mut core, &mut state, &mut engine);
         assert!(
-            engine.notifications.unread_count() > before,
+            engine.live.notifications.unread_count() > before,
             "notification.create 는 headless 에서도 알림을 적재해야 한다"
         );
     }

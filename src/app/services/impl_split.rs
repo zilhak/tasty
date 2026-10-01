@@ -16,9 +16,9 @@ impl AppServices {
             .find_workspace_index_for_pane(target_pane_id)
             .ok_or_else(|| anyhow::anyhow!("pane {} not found", target_pane_id))?;
 
-        let new_pane_id = engine.next_ids.next_pane();
-        let new_tab_id = engine.next_ids.next_tab();
-        let new_surface_id = engine.next_ids.next_surface();
+        let new_pane_id = engine.runtime.counters.next_pane();
+        let new_tab_id = engine.runtime.counters.next_tab();
+        let new_surface_id = engine.runtime.counters.next_surface();
         let is_terminal = kind == "terminal";
 
         let cols = engine.default_cols;
@@ -92,7 +92,7 @@ impl AppServices {
         kind: String,
         surface_params: serde_json::Value,
     ) -> anyhow::Result<Vec<CoreEvent>> {
-        let new_surface_id = engine.next_ids.next_surface();
+        let new_surface_id = engine.runtime.counters.next_surface();
         let is_terminal = kind == "terminal";
 
         let new_surface: Box<dyn crate::model::Surface> = if is_terminal {

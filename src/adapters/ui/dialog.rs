@@ -398,10 +398,10 @@ mod tests {
     }
 
     fn push_workspace(engine: &mut crate::runtime::engine_access::EngineMut<'_>, name: &str) -> u32 {
-        let ws_id = engine.next_ids.next_workspace();
-        let pane_id = engine.next_ids.next_pane();
-        let tab_id = engine.next_ids.next_tab();
-        let sid = engine.next_ids.next_surface();
+        let ws_id = engine.runtime.counters.next_workspace();
+        let pane_id = engine.runtime.counters.next_pane();
+        let tab_id = engine.runtime.counters.next_tab();
+        let sid = engine.runtime.counters.next_surface();
         engine
             .runtime
             .terminals
@@ -469,8 +469,8 @@ mod tests {
                     .expect("workspace index is valid"),
             )
             .unwrap();
-        let t2 = engine.next_ids.next_tab();
-        let s2 = engine.next_ids.next_surface();
+        let t2 = engine.runtime.counters.next_tab();
+        let s2 = engine.runtime.counters.next_surface();
         let pane = engine.find_pane_by_id_mut(pane_id).unwrap();
         pane.add_terminal_marker_tab_background(t2, s2, None);
         let first_tab = pane.tabs[0].id;

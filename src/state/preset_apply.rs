@@ -77,7 +77,7 @@ impl RequestContext {
         category: Option<crate::model::WorkspaceCategoryId>,
         opts: ApplyOptions,
     ) -> Result<usize, ApplyError> {
-        let ws_id = engine.next_ids.next_workspace();
+        let ws_id = engine.runtime.counters.next_workspace();
         let pane_node = self.build_pane_node(engine, &preset.layout)?;
 
         let all_pane_ids = pane_node.all_pane_ids();
@@ -259,7 +259,7 @@ impl RequestContext {
         if preset.tabs.is_empty() {
             return Err(ApplyError::Empty);
         }
-        let pane_id = engine.next_ids.next_pane();
+        let pane_id = engine.runtime.counters.next_pane();
         let mut tabs = Vec::with_capacity(preset.tabs.len());
         for preset_tab in &preset.tabs {
             tabs.push(self.build_tab(engine, preset_tab)?);
@@ -275,7 +275,7 @@ impl RequestContext {
         engine: &mut EngineMut<'_>,
         preset: &PresetTab,
     ) -> Result<Tab, ApplyError> {
-        let tab_id = engine.next_ids.next_tab();
+        let tab_id = engine.runtime.counters.next_tab();
         let layout = self.build_surface_layout(engine, &preset.layout)?;
         layout.first_surface_id().ok_or(ApplyError::Empty)?;
 
@@ -337,7 +337,7 @@ impl RequestContext {
         engine: &mut EngineMut<'_>,
         preset: &PresetSurface,
     ) -> Result<Box<dyn Surface>, ApplyError> {
-        let surface_id = engine.next_ids.next_surface();
+        let surface_id = engine.runtime.counters.next_surface();
         if preset.kind == "terminal" {
             let (terminal, pty) = self.build_terminal(engine, surface_id, preset)?;
             engine

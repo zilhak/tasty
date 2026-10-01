@@ -1072,8 +1072,8 @@ mod mirror_structural_guard_tests {
         let (_core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let (a, pane) = seed(&mut engine);
-        let tab_id = engine.next_ids.next_tab();
-        let sid1 = engine.next_ids.next_surface();
+        let tab_id = engine.runtime.counters.next_tab();
+        let sid1 = engine.runtime.counters.next_surface();
         engine
             .runtime
             .terminals
@@ -1444,10 +1444,10 @@ mod mirror_structural_guard_tests {
         let (a, _pane) = seed(&mut engine);
         engine.make_mirror_fixture(0);
 
-        let ws1_id = engine.next_ids.next_workspace();
-        let pane1_id = engine.next_ids.next_pane();
-        let tab1_id = engine.next_ids.next_tab();
-        let sid1 = engine.next_ids.next_surface();
+        let ws1_id = engine.runtime.counters.next_workspace();
+        let pane1_id = engine.runtime.counters.next_pane();
+        let tab1_id = engine.runtime.counters.next_tab();
+        let sid1 = engine.runtime.counters.next_surface();
         engine
             .runtime
             .terminals
@@ -1560,10 +1560,10 @@ mod mirror_structural_guard_tests {
         let (a, _pane) = seed(&mut engine);
         engine.make_mirror_fixture(0);
 
-        let ws1_id = engine.next_ids.next_workspace();
-        let pane1_id = engine.next_ids.next_pane();
-        let tab1_id = engine.next_ids.next_tab();
-        let sid1 = engine.next_ids.next_surface();
+        let ws1_id = engine.runtime.counters.next_workspace();
+        let pane1_id = engine.runtime.counters.next_pane();
+        let tab1_id = engine.runtime.counters.next_tab();
+        let sid1 = engine.runtime.counters.next_surface();
         engine
             .runtime
             .terminals

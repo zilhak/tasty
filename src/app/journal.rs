@@ -8,6 +8,7 @@ pub(crate) mod commands;
 mod creation;
 mod resource_cleanup;
 mod capture;
+mod id_reservations;
 #[cfg(feature = "gui")]
 mod retirement;
 
@@ -27,6 +28,7 @@ pub(crate) struct JournalApplication {
     commands: commands::Commands,
     captures:std::collections::BTreeMap<u64,capture::PendingCapture>,
     capture_requests:HashMap<EngineId,bool>,
+    execution_id_requests:HashMap<u64,EngineId>,
     changed_engines: std::collections::HashSet<EngineId>,
     completion_views:HashMap<EngineId,crate::runtime::journal_product::CompletionView>,
     wake: Arc<dyn Fn() + Send + Sync>,
@@ -84,6 +86,7 @@ impl JournalApplication {
             commands: Default::default(),
             captures:Default::default(),
             capture_requests:Default::default(),
+            execution_id_requests:Default::default(),
             changed_engines: Default::default(),
             completion_views:Default::default(),
             wake,
@@ -121,7 +124,7 @@ impl JournalApplication {
             return Ok(());
         }
         let scopes = session
-            .core_state.runtime.memory
+            .runtime.memory
             .lock()
             .map_err(|error| error.to_string())?
             .scopes()
@@ -186,6 +189,7 @@ impl JournalApplication {
                 self.submit_commands()?;
                 self.poll_resource_cleanup(sessions)?;
                 self.submit_captures(sessions)?;
+                self.refill_execution_ids(sessions)?;
                 self.submit_restore_reads()?;
                 #[cfg(feature = "gui")]
                 self.submit_retirements()?;
@@ -292,6 +296,13 @@ impl JournalApplication {
                         let Some(stream) = stream else {
                             continue;
                         };
+                        for recorded in events {
+                            match &recorded.event {
+                                tasty_domain::DomainEvent::WorkspaceAttachMappingSet {id,..}=>{session.remote.attach_mapping_tokens.insert(*id,Arc::new(()));},
+                                tasty_domain::DomainEvent::WorkspaceClosed {id}=>{session.remote.attach_mapping_tokens.remove(id);},
+                                _=>{},
+                            }
+                        }
                         if let Some(slot) = stream
                             .strip_prefix("structure:slot-")
                             .and_then(|slot| slot.parse::<u32>().ok())
@@ -366,6 +377,13 @@ impl JournalApplication {
                                     .installed(installed);
                             }
                         }
+                        for recorded in events {
+                            match &recorded.event {
+                                tasty_domain::DomainEvent::WorkspaceAttachMappingSet {id,..}=>{session.remote.attach_mapping_tokens.insert(*id,Arc::new(()));},
+                                tasty_domain::DomainEvent::WorkspaceClosed {id}=>{session.remote.attach_mapping_tokens.remove(id);},
+                                _=>{},
+                            }
+                        }
                         if let Some(slot) = stream
                             .strip_prefix("structure:slot-")
                             .and_then(|slot| slot.parse::<u32>().ok())
@@ -400,6 +418,7 @@ impl JournalApplication {
                         .map_err(|error| format!("bootstrap publication ACK: {error:?}"))?;
                 }
                 Completion::Finished { ticket, result } => {
+                    if self.answer_execution_ids(ticket,&result,sessions)? {continue;}
                     if self.answer_capture(ticket,&result,sessions) {continue;}
                     if self.answer_resource_cleanup(ticket,&result,sessions,plugins.as_deref_mut())? {continue;}
                     if self.answer_command(ticket, &result, sessions)? {
@@ -508,6 +527,9 @@ impl JournalApplication {
                         ),
                     );
                     session.core_state.pending_layout_restore = None;
+                    for workspace in &session.core_state.local_workspaces {
+                        if workspace.attach_mapping.is_some() {session.remote.attach_mapping_tokens.entry(workspace.id).or_insert_with(||Arc::new(()));}
+                    }
                     session.journal_binding = Some(bound.binding);
                     if session.core_state.local_workspaces.is_empty() {
                         let ticket = self.next_ticket;
@@ -634,7 +656,7 @@ impl JournalApplication {
                         selected.contains(&item.surface_id)
                     } else {
                         session
-                            .core_state.runtime.surface_registry
+                            .runtime.surface_registry
                             .get_live(&item.input.kind)
                             .is_some()
                     }

@@ -138,7 +138,7 @@ mod tests {
         kind: &str,
         params: &Value,
     ) -> u32 {
-        let new_sid = engine.next_ids.next_surface();
+        let new_sid = engine.runtime.counters.next_surface();
         let surface = engine
             .create_surface_via_registry(kind, new_sid, None, params)
             .expect("create surface via registry");

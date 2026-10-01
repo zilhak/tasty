@@ -2,6 +2,7 @@
 use std::collections::HashMap;
 use crate::core::state::SurfaceMessage;
 pub(crate) struct LiveDomainState {
+    pub(crate) notifications:crate::notification::NotificationStore,
     pub(crate) occupancy:crate::core::attach::OccupancyRegistry,
     pub(crate) last_key_input: HashMap<u32, std::time::Instant>,
     pub(crate) busy_surfaces: std::collections::HashSet<u32>,
@@ -26,7 +27,7 @@ pub(crate) struct LiveDomainState {
 
 }
 
-impl Default for LiveDomainState {fn default()->Self {Self {occupancy:Default::default(),
+impl Default for LiveDomainState {fn default()->Self {Self {notifications:crate::notification::NotificationStore::with_coalesce_ms(500),occupancy:Default::default(),
             last_key_input: HashMap::new(),
             busy_surfaces: std::collections::HashSet::new(),
             attention: crate::core::state::attention::AttentionStore::default(),
@@ -40,3 +41,9 @@ impl Default for LiveDomainState {fn default()->Self {Self {occupancy:Default::d
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,
 }}}
+
+impl LiveDomainState {
+    pub(crate) fn with_notifications(counter:std::sync::Arc<std::sync::atomic::AtomicU64>,coalesce:u64)->Self {
+        Self {notifications:crate::notification::NotificationStore::with_counter(coalesce,counter),..Default::default()}
+    }
+}
