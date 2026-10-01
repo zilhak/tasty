@@ -66,7 +66,7 @@ fn recover_one(executor:&Executor<StructureDecider>,stream:&str,id:&OperationId)
     };
     executor.execute(&request).map_err(|error|error.to_string())?;
     let mut inner=executor.inner.lock().map_err(|error|error.to_string())?;let epoch=inner.epoch;
-    inner.store.release_payload_holder(epoch,&holder).map_err(|error|error.to_string())?;
+    if let Err(error)=inner.store.release_payload_holder(epoch,&holder) {tracing::warn!(%error,"recovery committed; evidence pin cleanup deferred");}
     Ok(())
 }
 
@@ -112,5 +112,65 @@ pub(super) fn reconcile_retirement(executor:&Executor<StructureDecider>,lease:cr
     };
     let result=executor.execute(&request).map(ResultValue::Executed).map_err(|error|error.to_string())?;
     let mut inner=executor.inner.lock().map_err(|error|error.to_string())?;let epoch=inner.epoch;
-    inner.store.release_payload_holder(epoch,&holder).map_err(|error|error.to_string())?;Ok(result)
+    if let Err(error)=inner.store.release_payload_holder(epoch,&holder) {tracing::warn!(%error,"retirement reconciled; evidence pin cleanup deferred");}Ok(result)
+}
+
+/// Only the retained owner in this runtime can turn an uncertain preparation into a known result.
+/// Restart never fabricates this receipt from a PID, writer lease, timeout, or domain activation.
+pub(super) fn reconcile_preparation(
+    executor:&Executor<StructureDecider>,
+    lease:crate::runtime::journal_product::EffectLease,
+    evidence:Vec<u8>,
+    discarded:Option<String>,
+    view:super::super::CompletionView,
+)->Result<ResultValue,String> {
+    let (request,holder)={
+        let mut inner=executor.inner.lock().map_err(|error|error.to_string())?;
+        let epoch=inner.epoch;
+        if lease.runtime_epoch!=epoch.0 {return Err("preparation receipt belongs to another runtime".into());}
+        let observation:serde_json::Value=serde_json::from_slice(&evidence).map_err(|error|error.to_string())?;
+        let observed:crate::runtime::journal_product::EffectLease=serde_json::from_value(observation["lease"].clone()).map_err(|error|error.to_string())?;
+        if observed!=lease || observation["version"]!=1 || observation["source"]!="owned-preparation-receipts"
+            || observation["runtime_epoch"].as_u64()!=Some(epoch.0) {return Err("preparation receipt does not identify its exact owner".into());}
+        use sha2::Digest;
+        let digest=sha2::Sha256::digest(serde_json::to_vec(&(&lease,&evidence,&discarded,&view)).map_err(|error|error.to_string())?).to_vec();
+        let key=CommandKey {caller_scope:"preparation-reconciliation".into(),idempotency_key:format!("{}/{}/{}",lease.effect_id,lease.attempt,epoch.0)};
+        match inner.store.lookup_command(&key,&digest).map_err(|error|error.to_string())? {
+            CommandLookup::Hit(record)=>return Ok(ResultValue::Stored(record)),
+            CommandLookup::DigestMismatch(_)=>return Err("preparation reconciliation has a different receipt".into()),
+            CommandLookup::Miss=>{},
+        }
+        let operation=inner.state.streams.get(&lease.stream).and_then(|model|model.operations.get(&lease.operation)).ok_or("preparation reconciliation operation missing")?.clone();
+        let plan=operation.creation.as_ref().ok_or("reconciliation has no preparation")?;
+        if !matches!(operation.outcome,Some(OperationOutcome::Uncertain {..}))
+            || observation["engine_incarnation"].as_u64()!=Some(operation.engine_incarnation) {return Err("preparation reconciliation belongs to another obligation".into());}
+        let outcome=if discarded.is_some() {
+            if observation["discard_complete"]!=true {return Err("private candidate disposal is unconfirmed".into());}
+            OperationOutcome::Failed {reason:discarded.clone().expect("checked discard reason")}
+        } else {
+            match &operation.cleanup {
+                Some(tasty_core::CleanupPlan::InstallPrepared {..}) if observation["installation_complete"]==true
+                    && observation["cleanup_complete"]==true && observation["surface"].as_u64()==Some(u64::from(plan.surface.id))=>{},
+                Some(tasty_core::CleanupPlan::DiscardPrepared {..}) if observation["discard_complete"]==true=>{},
+                _=>return Err("preparation receipt does not complete its original cleanup plan".into()),
+            }
+            operation.pending_outcome.clone().ok_or("preparation has no authorized pending result")?
+        };
+        let to=match outcome {OperationOutcome::Succeeded=>EffectState::Succeeded,OperationOutcome::Failed {..}=>EffectState::Failed,OperationOutcome::Cancelled {..}=>EffectState::Cancelled,_=>return Err("receipt cannot settle an unknown or superseded execution".into())};
+        let effect=inner.store.effect(&lease.effect_id).map_err(|error|error.to_string())?.ok_or("preparation effect missing")?;
+        effects::validate_binding(&effect,&lease.stream,&operation)?;
+        if effect.state!=EffectState::Uncertain || effect.attempt!=lease.attempt || effect.resource_generation!=lease.resource_generation {return Err("preparation receipt names an obsolete attempt".into());}
+        let holder=format!("recovery-receipt/{}/{}",epoch.0,lease.effect_id);
+        let reference=inner.store.put_payload_pinned(epoch,&evidence,&holder).map_err(|error|error.to_string())?;
+        let originals=std::collections::BTreeMap::from([(operation.command_id.clone(),effects::read_original_results(&inner.store,&operation.command_id)?)]);
+        let request=ExecuteRequest {key:Some(key),actor:"system".into(),origin:"owned-preparation-reconciliation".into(),causation_id:Some(operation.command_id),command:ResolvedCommand {
+            original_digest:digest,response:None,changes:vec![crate::runtime::journal_product::StreamCommand {stream:lease.stream.clone(),command:StructuralCommand::ReconcilePreparation {operation:lease.operation.clone(),evidence:tasty_core::DataRef(reference.0),discarded}}],
+            effect_result:None,cancellation:Some(EffectTransition {effect_id:lease.effect_id,from:EffectState::Uncertain,to,resource_generation:lease.resource_generation,attempt:Some(lease.attempt),claim:None,result:Some(evidence)}),completion_view:Some(view),original_results:originals,
+        }};
+        (request,holder)
+    };
+    let result=executor.execute(&request).map(ResultValue::Executed).map_err(|error|error.to_string())?;
+    let mut inner=executor.inner.lock().map_err(|error|error.to_string())?;let epoch=inner.epoch;
+    if let Err(error)=inner.store.release_payload_holder(epoch,&holder) {tracing::warn!(%error,"preparation reconciled; evidence pin cleanup deferred");}
+    Ok(result)
 }

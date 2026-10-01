@@ -14,6 +14,7 @@ pub(crate) struct ResourceRetirement {
     runtime_epoch:u64,
     owners:Vec<RemovedOwner>,
     receipts:Vec<PtyRetirement>,
+    remote_receipts:Vec<crate::plugin_bridge::host_cmd::RemoteRetirementReceipt>,
     started:Option<std::time::Instant>,
     lease:Option<EffectLease>,
     start_complete:bool,
@@ -38,7 +39,7 @@ impl ResourceRetirement {
             let scrollback=session.runtime.terminals.scrollback_persist_id(target.id).map(str::to_owned);
             RemovedOwner {surface:session.runtime.surfaces.remove(&target.id).expect("preflight retained the owner"),pair:session.runtime.terminals.remove(target.id),scrollback}
         }).collect();
-        Ok(Self {plan,engine_incarnation:operation.engine_incarnation,runtime_epoch,owners,receipts:Vec::new(),started:None,lease:None,start_complete:false,failure:None,metadata_complete:false})
+        Ok(Self {plan,engine_incarnation:operation.engine_incarnation,runtime_epoch,owners,receipts:Vec::new(),remote_receipts:Vec::new(),started:None,lease:None,start_complete:false,failure:None,metadata_complete:false})
     }
     pub(crate) fn start(&mut self,claim:ClaimedRetirement,engine:&mut crate::runtime::engine_access::EngineMut<'_>,mut plugins:Option<&mut crate::plugin::PluginManager>)->Result<(),String> {
         if self.started.is_some() || claim.plan!=self.plan || claim.engine_incarnation!=self.engine_incarnation || claim.lease.runtime_epoch!=self.runtime_epoch {
@@ -59,7 +60,7 @@ impl ResourceRetirement {
         // retarget destruction to a replacement installed later under the same logical identity.
         for owner in &self.owners {
             if let Some(remote)=owner.surface.as_any().downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>() {
-                plugins.as_deref_mut().ok_or("plugin host disappeared")?.enqueue_bound_remote_retirement(remote.id,remote.handles().binding())?;
+                self.remote_receipts.push(plugins.as_deref_mut().ok_or("plugin host disappeared")?.enqueue_observed_remote_retirement(remote.id,remote.handles().binding())?);
             }
         }
         for mut owner in self.owners.drain(..) {
@@ -79,7 +80,11 @@ impl ResourceRetirement {
         if self.receipts.iter().any(|receipt|receipt.observation().phase==PtyPhase::WaitFailed) {
             return Some(OperationOutcome::Uncertain {reason:"closed PTY owner has no confirmed reap".into()});
         }
-        if self.receipts.iter().all(|receipt|receipt.observation().phase==PtyPhase::Reaped) {return Some(OperationOutcome::Succeeded);}
+        if let Some(reason)=self.remote_receipts.iter().find_map(|receipt|receipt.observation().and_then(Result::err)) {
+            return Some(OperationOutcome::Uncertain {reason});
+        }
+        if self.receipts.iter().all(|receipt|receipt.observation().phase==PtyPhase::Reaped)
+            && self.remote_receipts.iter().all(|receipt|matches!(receipt.observation(),Some(Ok(())))) {return Some(OperationOutcome::Succeeded);}
         if started.elapsed()>=std::time::Duration::from_secs(5) {return Some(OperationOutcome::Uncertain {reason:"closed PTY owner reap deadline elapsed".into()});}
         None
     }
@@ -123,9 +128,94 @@ impl ResourceRetirement {
         }
     }
     pub(crate) fn reconciliation_evidence(&self)->Option<Vec<u8>> {
-        if !self.start_complete || self.failure.is_some() || !self.owners.is_empty() || !self.metadata_complete || !self.receipts.iter().all(|receipt|receipt.observation().phase==PtyPhase::Reaped) {return None;}
+        if !self.start_complete || self.failure.is_some() || !self.owners.is_empty() || !self.metadata_complete || !self.receipts.iter().all(|receipt|receipt.observation().phase==PtyPhase::Reaped)
+            || !self.remote_receipts.iter().all(|receipt|matches!(receipt.observation(),Some(Ok(())))) {return None;}
         let receipts:Vec<_>=self.receipts.iter().map(|receipt| {let observation=receipt.observation();serde_json::json!({"generation":receipt.generation().value(),"phase":"reaped","code":observation.exit.map(|exit|exit.code)})}).collect();
-        serde_json::to_vec(&serde_json::json!({"version":1,"source":"owned-retirement-receipts","runtime_epoch":self.runtime_epoch,"engine_incarnation":self.engine_incarnation,"metadata_complete":true,"lease":self.lease,"targets":self.plan.surfaces,"receipts":receipts})).ok()
+        serde_json::to_vec(&serde_json::json!({"version":1,"source":"owned-retirement-receipts","runtime_epoch":self.runtime_epoch,"engine_incarnation":self.engine_incarnation,"metadata_complete":true,"lease":self.lease,"targets":self.plan.surfaces,"receipts":receipts,"remote_destroy_acknowledged":self.remote_receipts.len()})).ok()
     }
     pub(crate) fn lease(&self)->Option<&EffectLease> {self.lease.as_ref()}
+}
+
+/// Process-owner disposal after the View/slot continuation has drained. It never changes structure,
+/// purges stored metadata, cancels TaskScope work, or turns a timeout into a successful receipt.
+#[derive(Default)]
+pub(crate) struct EngineRelease {
+    started: bool,
+    owners: Vec<Box<dyn crate::model::Surface>>,
+    ptys: Vec<PtyRetirement>,
+    remote: Vec<crate::plugin_bridge::host_cmd::RemoteRetirementReceipt>,
+    warned: bool,
+}
+impl EngineRelease {
+    pub(crate) fn retain_installation(&mut self, installed:crate::runtime::effect_runner::Installed) {
+        installed.retire_for_release(self);
+    }
+    pub(crate) fn retain_pty(&mut self, receipt:PtyRetirement) {self.ptys.push(receipt);}
+    pub(crate) fn retain_remote(&mut self, receipt:crate::plugin_bridge::host_cmd::RemoteRetirementReceipt) {self.remote.push(receipt);}
+    pub(crate) fn poll(&mut self, session:&mut EngineSession, mut plugins:Option<&mut crate::plugin::PluginManager>) -> bool {
+        if !self.started {
+            if !session.pending_materializations.is_empty() || !session.pending_resource_retirements.is_empty() {
+                return false;
+            }
+            // TaskScope Drop remains non-cancelling. Hooks/observers retain their existing owner
+            // lifetime until this exact terminal retirement finishes; no runner stop is synthesized.
+            self.owners.extend(session.runtime.surfaces.drain().map(|(_,surface)|surface));
+            let ids:Vec<_>=session.runtime.terminals.iter().map(|(id,_)|id).collect();
+            for id in ids {
+                session.observer_router.drop_surface(id);
+                session.hooks.forget_surface(id);
+                if let Some(factory)=session.runtime.waker_factory.as_ref() {factory.forget_surface(id);}
+                if let Some((terminal,pty))=session.runtime.terminals.remove(id) {
+                    drop(terminal);
+                    if let Some(pty)=pty {self.ptys.push(pty.retire());}
+                }
+            }
+            self.started=true;
+        }
+        let mut retained=Vec::new();
+        for surface in self.owners.drain(..) {
+            if let Some(remote)=surface.as_any().downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>() {
+                if self.remote.iter().any(|receipt|receipt.matches(remote.id,&remote.handles().binding())) {drop(surface);continue;}
+                let result=plugins.as_deref_mut().ok_or_else(||"plugin host unavailable during engine release".to_owned())
+                    .and_then(|plugins|plugins.enqueue_observed_remote_retirement(remote.id,remote.handles().binding()));
+                match result {
+                    Ok(receipt)=>self.remote.push(receipt),
+                    Err(reason)=>{
+                        if !self.warned {tracing::warn!(%reason,"engine retains an unconfirmed remote owner");self.warned=true;}
+                        retained.push(surface);continue;
+                    },
+                }
+            }
+            drop(surface);
+        }
+        self.owners=retained;
+        let failed=self.ptys.iter().any(|receipt|receipt.observation().phase==PtyPhase::WaitFailed)
+            || self.remote.iter().any(|receipt|matches!(receipt.observation(),Some(Err(_))));
+        if failed && !self.warned {tracing::warn!("engine release lacks an exact resource completion receipt; owner retained");self.warned=true;}
+        self.owners.is_empty() && self.ptys.iter().all(|receipt|receipt.observation().phase==PtyPhase::Reaped)
+            && self.remote.iter().all(|receipt|matches!(receipt.observation(),Some(Ok(()))))
+    }
+}
+
+/// Take/restore avoids lending the session and one of its resource fields mutably at once.
+pub(crate) fn poll_engine_release(session:&mut EngineSession,plugins:Option<&mut crate::plugin::PluginManager>)->bool {
+    let mut release=session.engine_release.take().unwrap_or_default();
+    let complete=release.poll(session,plugins);
+    session.engine_release=Some(release);
+    complete
+}
+
+impl ResourceRetirement {
+    pub(crate) fn retain_for_release(mut self,release:&mut EngineRelease) {
+        release.ptys.append(&mut self.receipts);
+        release.remote.append(&mut self.remote_receipts);
+        for mut owner in self.owners.drain(..) {
+            if let Some((terminal,pty))=owner.pair.take() {drop(terminal);if let Some(pty)=pty {release.ptys.push(pty.retire());}}
+            release.owners.push(owner.surface);
+        }
+        // Halt disposal cannot publish the old command outcome or repeat lifecycle notifications.
+    }
+}
+impl EngineRelease {
+    pub(crate) fn retain_surface(&mut self,surface:Box<dyn crate::model::Surface>) {self.owners.push(surface);}
 }

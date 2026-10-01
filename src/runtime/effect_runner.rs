@@ -264,6 +264,7 @@ impl PreparedMaterialization {
             scrollback_persist_id: self.scrollback_persist_id.take(),
             metadata:std::mem::take(&mut self.metadata),
             adoption:self.adoption.clone(),child:self.child.clone(),one_shot_input:self.one_shot_input.take(),
+            retirement:None,remote_retirements:Vec::new(),
         })
     }
 
@@ -289,5 +290,13 @@ impl PreparedMaterialization {
             anyhow::bail!("uninstalled materialization cannot be published");
         }
         Ok(self.leaf)
+    }
+}
+
+impl PreparedMaterialization {
+    pub(crate) fn retire_for_release(mut self,release:&mut crate::runtime::resource_retirement::EngineRelease) {
+        if let Some((terminal,pty))=self.connection.take() {drop(terminal);release.retain_pty(pty.retire());}
+        release.retain_surface(self.leaf.surface);
+        // Pending publication actions are dropped without executing them during a halted release.
     }
 }

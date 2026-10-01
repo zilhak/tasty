@@ -34,6 +34,11 @@ pub(super) struct Creation {
     preparation_acked:bool,
     one_shot_input:Option<String>,
     queued: Option<Work>,
+    uncertain_installed: Option<Installed>,
+    uncertain_discard: Option<(crate::runtime::journal_product::EffectLease, Option<tasty_terminal::PtyRetirement>, bool, String)>,
+    failed_installation: Option<effect_runner::Installation>,
+    uncertain_committed: bool,
+    next_reconcile: std::time::Instant,
 }
 
 enum Stage {
@@ -79,6 +84,7 @@ impl Creation {
             stage: Stage::Claim,
             fixed_plan: None,requested_restore:None,receipt:Default::default(),restore_retry:None,restore_failure:None,
             queued: None,
+            uncertain_installed:None,uncertain_discard:None,failed_installation:None,uncertain_committed:false,next_reconcile:std::time::Instant::now(),
             input: PreparationInput {adopt:None,child:None,
                 kind: String::new(),
                 cwd: None,
@@ -127,6 +133,7 @@ impl Creation {
             public: false,
             assembly_member:false,published:false,transfers_existing:false,preparation_acked:false,one_shot_input:None,
             queued: None,
+            uncertain_installed:None,uncertain_discard:None,failed_installation:None,uncertain_committed:false,next_reconcile:std::time::Instant::now(),
             fixed_plan: None,requested_restore:None,receipt:Default::default(),restore_retry:None,restore_failure:None,
             input: PreparationInput {adopt:None,child:None,
                 kind: "terminal".into(),
@@ -182,6 +189,7 @@ impl Creation {
             public: false,
             assembly_member:false,published:false,transfers_existing:false,preparation_acked:false,one_shot_input:None,
             queued: Some(admission),
+            uncertain_installed:None,uncertain_discard:None,failed_installation:None,uncertain_committed:false,next_reconcile:std::time::Instant::now(),
         })
     }
 
@@ -354,7 +362,10 @@ impl Creation {
                 answered: true,
                 started,
             },
-            (Stage::Uncertain {reason},ResultValue::Executed(_))=>return Err(format!("resource publication is uncertain: {reason}")),
+            (Stage::Uncertain {reason},ResultValue::Executed(_)|ResultValue::Stored(_))=> {
+                self.uncertain_committed=true;
+                Stage::Uncertain {reason}
+            },
             (Stage::Finish(installed), ResultValue::Executed(_)) if self.assembly_member && !self.published => Stage::AwaitPublication(installed),
             (Stage::Finish(_), ResultValue::Executed(_)) => return Ok(true),
             (
@@ -433,7 +444,7 @@ impl Creation {
             Ok(receipt)=>Some(receipt),
             Err((candidate,reason))=> {
                 let lease=candidate.lease.clone();session.pending_materializations.insert(lease.operation.clone(),candidate);
-                self.queued=Some(Work::PreparationUncertain {lease,reason:reason.clone()});self.stage=Stage::Uncertain {reason};None
+                self.queued=Some(Work::PreparationUncertain {lease,reason:reason.clone()});self.retain_uncertain(reason);None
             },
         }
     }
@@ -478,6 +489,74 @@ impl Creation {
     }
     pub(super) fn publication_released(&self)->bool {self.published && matches!(self.stage,Stage::AwaitPublication(_))}
 
+    /// A failed install still owns any candidate handles and already-issued retirement receipts.
+    pub(super) fn install_candidate(
+        &mut self,
+        session:&mut EngineSession,
+        plugins:Option<&mut crate::plugin::PluginManager>,
+        retiring:Option<effect_runner::RetiringKind>,
+        mut installation:effect_runner::Installation,
+    )->Result<(),String> {
+        match installation.install(&mut session.borrow_mut(),plugins,retiring) {
+            Ok(installed)=>self.installed(installed),
+            Err(error)=> {
+                let reason=error.to_string();
+                let lease=installation.lease.clone();
+                self.failed_installation=Some(installation);
+                self.queued=Some(Work::PreparationUncertain {lease,reason:reason.clone()});
+                self.retain_uncertain(reason);
+            },
+        }
+        Ok(())
+    }
+
+    fn retain_uncertain(&mut self,reason:String) {
+        match std::mem::replace(&mut self.stage,Stage::Transition) {
+            Stage::Installing {installed,..}|Stage::Finish(installed)|Stage::AwaitPublication(installed)=>self.uncertain_installed=Some(installed),
+            Stage::Rejected {lease,retirement,discard_committed,reason,..}=>self.uncertain_discard=Some((lease,retirement,discard_committed,reason)),
+            _=>{},
+        }
+        self.uncertain_committed=false;
+        self.next_reconcile=std::time::Instant::now()+std::time::Duration::from_secs(1);
+        self.stage=Stage::Uncertain {reason};
+    }
+    pub(super) fn cleanup_deadline(&self)->Option<std::time::Instant> {
+        if matches!(self.stage,Stage::Uncertain {..}) {Some(self.next_reconcile)}
+        else {self.needs_cleanup_poll().then(||std::time::Instant::now()+std::time::Duration::from_millis(10))}
+    }
+    fn poll_reconciliation(&mut self,worker:&JournalWorker,view:crate::runtime::journal_product::CompletionView,session:&mut EngineSession)->Result<(),String> {
+        if !self.uncertain_committed || std::time::Instant::now()<self.next_reconcile {return Ok(());}
+        self.next_reconcile=std::time::Instant::now()+std::time::Duration::from_secs(1);
+        if let Some(installed)=self.uncertain_installed.as_ref() {
+            if let Some(evidence)=installed.reconciliation_evidence(&session.as_ref(),self.binding.incarnation) {
+                let lease=installed.lease.clone();
+                self.submit(worker,Work::ReconcilePreparation {lease,evidence,discarded:None,view})?;
+                self.stage=Stage::Finish(self.uncertain_installed.take().expect("checked installation owner"));
+            }
+        } else if let Some((lease,retirement,discard_committed,reason))=&self.uncertain_discard {
+            if retirement.as_ref().is_none_or(|receipt|receipt.observation().phase==tasty_terminal::PtyPhase::Reaped) {
+                let evidence=serde_json::to_vec(&serde_json::json!({"version":1,"source":"owned-preparation-receipts","runtime_epoch":self.binding.runtime_epoch,"engine_incarnation":self.binding.incarnation,"lease":lease,"discard_complete":true,"physical_generation":retirement.as_ref().map(|receipt|receipt.generation().value())})).map_err(|error|error.to_string())?;
+                let discarded=(!*discard_committed).then(||reason.clone());
+                let lease=lease.clone();let reason=reason.clone();
+                self.submit(worker,Work::ReconcilePreparation {lease,evidence,discarded,view})?;
+                self.stage=Stage::Failed(reason);
+            }
+        }
+        self.flush(worker)?;
+        Ok(())
+    }
+
+    pub(super) fn retain_for_release(mut self,release:&mut crate::runtime::resource_retirement::EngineRelease) {
+        match std::mem::replace(&mut self.stage,Stage::Transition) {
+            Stage::Installing {installed,..}|Stage::Finish(installed)|Stage::AwaitPublication(installed)=>release.retain_installation(installed),
+            Stage::Rejected {retirement:Some(receipt),..}=>release.retain_pty(receipt),
+            _=>{},
+        }
+        if let Some(installed)=self.uncertain_installed.take() {release.retain_installation(installed);}
+        if let Some((_,Some(receipt),_,_))=self.uncertain_discard.take() {release.retain_pty(receipt);}
+        if let Some(installation)=self.failed_installation.take() {installation.retire_for_release(release);}
+    }
+
     pub(super) fn installed(&mut self, installed: Installed) {
         self.stage = Stage::Installing {
             installed,
@@ -521,6 +600,10 @@ impl Creation {
         if !self.flush(worker)? {
             return Ok(());
         }
+        if matches!(self.stage,Stage::Uncertain {..}) {
+            self.poll_reconciliation(worker,view,session)?;
+            return Ok(());
+        }
         if let Stage::Rejected {
             lease,
             reason,
@@ -535,7 +618,7 @@ impl Creation {
             if !complete && (phase==Some(tasty_terminal::PtyPhase::WaitFailed) || started.elapsed()>=std::time::Duration::from_secs(5)) {
                 let reason="private preparation owner could not confirm reap before its deadline".to_owned();
                 self.submit(worker,Work::PreparationUncertain {lease:lease.clone(),reason:reason.clone()})?;
-                self.stage=Stage::Uncertain {reason};
+                self.retain_uncertain(reason);
                 self.flush(worker)?;
                 return Ok(());
             }
@@ -557,7 +640,7 @@ impl Creation {
             if let Err(error)=installed.poll_input(&mut session.borrow_mut()) {
                 let reason=error.to_string();let lease=installed.lease.clone();
                 self.submit(worker,Work::PreparationUncertain {lease,reason:reason.clone()})?;
-                self.stage=Stage::Uncertain {reason};self.flush(worker)?;return Ok(());
+                self.retain_uncertain(reason);self.flush(worker)?;return Ok(());
             }
             if installed.waiting_input() {return Ok(());}
             let uncertain=match installed.cleanup_complete() {
@@ -568,7 +651,7 @@ impl Creation {
             };
             if let Some(reason)=uncertain {
                 self.submit(worker,Work::PreparationUncertain {lease:installed.lease.clone(),reason:reason.clone()})?;
-                self.stage=Stage::Uncertain {reason};
+                self.retain_uncertain(reason);
                 self.flush(worker)?;
                 return Ok(());
             }

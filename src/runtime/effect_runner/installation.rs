@@ -4,7 +4,7 @@ use super::*;
 use tasty_terminal::{PtyPhase, PtyRetirement};
 
 pub(crate) struct Installation {
-    pub(super) lease: EffectLease,
+    pub(crate) lease: EffectLease,
     pub(super) surface_id: u32,
     pub(super) previous_resource: Option<ResourceGeneration>,
     pub(super) connection: Option<(Terminal, Pty)>,
@@ -15,6 +15,8 @@ pub(crate) struct Installation {
     pub(super) adoption:Option<crate::runtime::journal_product::AdoptRecipe>,
     pub(super) child:Option<crate::runtime::journal_product::ChildRecipe>,
     pub(super) one_shot_input:Option<String>,
+    pub(super) retirement: Option<PtyRetirement>,
+    pub(super) remote_retirements: Vec<crate::plugin_bridge::host_cmd::RemoteRetirementReceipt>,
 }
 
 pub(crate) struct RetiringKind {
@@ -40,9 +42,10 @@ pub(crate) struct Installed {
     pub(crate) lease: EffectLease,
     #[cfg(feature = "gui")]
     pub(crate) previous_resource: Option<ResourceGeneration>,
-    #[cfg(feature = "gui")]
     pub(crate) surface_id: u32,
     retirement: Option<PtyRetirement>,
+    remote_retirements: Vec<crate::plugin_bridge::host_cmd::RemoteRetirementReceipt>,
+    installed_generation:Option<ResourceGeneration>,
     input:Option<PendingSubmit>,
 }
 
@@ -52,6 +55,10 @@ struct PendingSubmit {
 }
 
 impl Installed {
+    pub(crate) fn reconciliation_evidence(&self,engine:&crate::runtime::engine_access::EngineRef<'_>,incarnation:u64)->Option<Vec<u8>> {
+        if !matches!(self.cleanup_complete(),Ok(true)) || engine.runtime.terminals.generation(self.surface_id)!=self.installed_generation {return None;}
+        serde_json::to_vec(&serde_json::json!({"version":1,"source":"owned-preparation-receipts","runtime_epoch":self.lease.runtime_epoch,"engine_incarnation":incarnation,"lease":self.lease,"installation_complete":true,"cleanup_complete":true,"surface":self.surface_id,"physical_generation":self.installed_generation.map(|generation|generation.value()),"remote_destroy_acknowledged":self.remote_retirements.len()})).ok()
+    }
     pub(crate) fn waiting_input(&self)->bool {self.input.is_some()}
     pub(crate) fn poll_input(&mut self,engine:&mut EngineMut<'_>)->anyhow::Result<()> {
         let Some(input)=self.input.as_mut() else {return Ok(());};
@@ -71,6 +78,18 @@ impl Installed {
     /// Signalling/removing an old owner is not evidence that the OS child was reaped.
     pub(crate) fn cleanup_complete(&self) -> anyhow::Result<bool> {
         if self.input.is_some() {return Ok(false);}
+        self.release_complete()
+    }
+
+    /// Disposal can finish without claiming that an interrupted one-shot input was delivered.
+    pub(crate) fn release_complete(&self) -> anyhow::Result<bool> {
+        for receipt in &self.remote_retirements {
+            match receipt.observation() {
+                Some(Ok(())) => {},
+                Some(Err(reason)) => anyhow::bail!(reason),
+                None => return Ok(false),
+            }
+        }
         match self
             .retirement
             .as_ref()
@@ -93,7 +112,7 @@ impl Installation {
     /// The caller keeps the entire affected batch hidden until the completion commit is applied.
     /// A failure after external registration requires halt/reconciliation, never legacy fallback.
     pub(crate) fn install(
-        self,
+        &mut self,
         engine: &mut EngineMut<'_>,
         mut plugins: Option<&mut crate::plugin::PluginManager>,
         retired_kind: Option<RetiringKind>,
@@ -118,18 +137,18 @@ impl Installation {
                 let manager = plugins
                     .as_deref_mut()
                     .ok_or_else(|| anyhow::anyhow!("remote retirement has no plugin host"))?;
-                manager
-                    .enqueue_bound_remote_retirement(self.surface_id, binding)
-                    .map_err(anyhow::Error::msg)?;
+                self.remote_retirements.push(manager
+                    .enqueue_observed_remote_retirement(self.surface_id, binding)
+                    .map_err(anyhow::Error::msg)?);
             } else if let Some(manager) = plugins.as_deref_mut() {
                 manager.destroy_remote_surface(self.surface_id, Some(old.kind));
             }
         }
         // Destroy of the old registration precedes enqueueing Created/Restored for the new one.
-        if let Some(publication) = self.publication {
+        if let Some(publication) = self.publication.take() {
             publication()?;
         }
-        let previous = match self.connection {
+        let previous = match self.connection.take() {
             Some((terminal, mut pty)) => {
                 if let Some(adoption)=&self.adoption {
                     if pty.generation().value()!=adoption.resource_generation {anyhow::bail!("standalone installation has another physical owner");}
@@ -143,7 +162,9 @@ impl Installation {
             }
             None => engine.runtime.terminals.remove(self.surface_id),
         };
-        if let Some(persist_id) = self.scrollback_persist_id {
+        // Own the old receipt before any later metadata/input step can fail.
+        self.retirement = previous.and_then(|(terminal,pty)| {drop(terminal);pty.map(Pty::retire)});
+        if let Some(persist_id) = self.scrollback_persist_id.take() {
             engine
                 .runtime
                 .terminals
@@ -156,7 +177,7 @@ impl Installation {
             }
         }
         let submit=self.child.as_ref().is_some_and(|child|!child.replacing);
-        if let Some(child)=self.child {
+        if let Some(child)=self.child.take() {
             if child.replacing {
                 engine.runtime.child_terminals.update_child(child.parent,child.index,|entry| {entry.cwd=child.cwd;entry.role=child.role;entry.nickname=child.nickname;});
                 engine.runtime.child_terminals.set_idle(self.surface_id,false);
@@ -169,25 +190,39 @@ impl Installation {
             }
             engine.runtime.child_terminals.save();
         }
-        let input=if let Some(body)=self.one_shot_input {
+        let input=if let Some(body)=self.one_shot_input.take() {
             let generation=engine.runtime.terminals.generation(self.surface_id).ok_or_else(||anyhow::anyhow!("child input has no PTY owner"))?;
             let ack=engine.runtime.terminals.get_mut(self.surface_id).ok_or_else(||anyhow::anyhow!("child input has no terminal"))?.try_send_key_with_ack(&body).map_err(|_|anyhow::anyhow!("child body queue closed after installation"))?;
             submit.then_some(PendingSubmit {surface:self.surface_id,generation,ack,started:std::time::Instant::now(),settled:None})
         } else {None};
-        let retirement = previous.and_then(|(terminal, pty)| {
-            drop(terminal);
-            pty.map(Pty::retire)
-        });
         // A candidate may have become quiet or exited before its earlier wake was handled.
         // Processing the installed owner preserves its queued OSC/output events for the ordinary drain.
         engine.runtime.terminals.process_surface(self.surface_id);
         Ok(Installed {
-            lease: self.lease,
+            lease: self.lease.clone(),
             #[cfg(feature = "gui")]
             previous_resource: self.previous_resource,
-            #[cfg(feature = "gui")]
             surface_id: self.surface_id,
-            retirement,input,
+            installed_generation:engine.runtime.terminals.generation(self.surface_id),
+            retirement:self.retirement.take(),remote_retirements:std::mem::take(&mut self.remote_retirements),input,
         })
+    }
+}
+
+impl Installation {
+    pub(crate) fn retire_for_release(mut self,release:&mut crate::runtime::resource_retirement::EngineRelease) {
+        if let Some((terminal,pty))=self.connection.take() {drop(terminal);release.retain_pty(pty.retire());}
+        if let Some(receipt)=self.retirement.take() {release.retain_pty(receipt);}
+        for receipt in self.remote_retirements {release.retain_remote(receipt);}
+        // A consumed publication or one-shot input is never reconstructed or resent here.
+    }
+}
+
+impl Installed {
+    pub(crate) fn retire_for_release(mut self,release:&mut crate::runtime::resource_retirement::EngineRelease) {
+        if let Some(receipt)=self.retirement.take() {release.retain_pty(receipt);}
+        for receipt in self.remote_retirements {release.retain_remote(receipt);}
+        // The input receipt remains an unknown delivery outcome; disposing its exact PTY is a
+        // separate process-owner result and never causes this input to be sent again.
     }
 }
