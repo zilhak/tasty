@@ -234,6 +234,7 @@ pub(crate) enum EngineAction {
         cols: usize,
         rows: usize,
     },
+    #[cfg(feature = "gui")]
     Resize {
         targets: Vec<(SurfaceBinding, usize, usize)>,
     },
@@ -596,6 +597,7 @@ impl EngineAction {
                 engine.runtime.default_cols = *cols;
                 engine.runtime.default_rows = *rows;
             }
+            #[cfg(feature = "gui")]
             Self::Resize { targets } => {
                 let targets = targets
                     .iter()

@@ -708,7 +708,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     );
 
     // 처음 만든 홈에도 namespace 선언이 있어야 하므로 번들은 부팅 때 설치한다. 프로세스 시작은 지연한다.
-    headless_plugins::ensure_plugin_manager_metadata(&mut app, &engine);
+    headless_plugins::ensure_plugin_manager_metadata(&mut app, &engine.as_ref());
     if let Some(mgr) = app.plugin_manager.as_mut() {
         crate::plugin::install_builtins_if_needed(mgr);
         // 권한 판정과 매니저가 같은 namespace 표를 공유하며 refresh_packages가 내용을 채운다.
