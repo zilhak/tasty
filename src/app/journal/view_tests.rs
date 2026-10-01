@@ -194,7 +194,7 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
     );
     let current = session.journal_binding.clone().unwrap();
     journal.queue_view(StoredView::capture(
-        current,
+        current.clone(),
         &session.core_state,
         None,
         &choice,
@@ -203,10 +203,18 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
         !journal.has_pending_view_writes()
     });
     assert!(journal.failed_view_writes.is_empty());
-    assert!(
-        home.join("structure/views/slot-1/incarnation-2.json")
-            .is_file()
-    );
+    let store = tasty_event_store::EventStore::open(
+        &home.join("structure/journal.db"),
+        &current.journal_id,
+    )
+    .unwrap();
+    let manifest = store.restore_manifest("view:slot-1").unwrap().unwrap();
+    assert_eq!(manifest.incarnation, current.incarnation);
+    assert_eq!(manifest.sequence, journal.latest_view_sequence());
+    let saved: serde_json::Value = serde_json::from_slice(&manifest.view).unwrap();
+    assert_eq!(saved["binding"]["incarnation"], current.incarnation);
+    assert_eq!(saved["sequence"], manifest.sequence);
+
     assert_eq!(
         std::fs::read_to_string(home.join("structure/views/slot-1/incarnation-1.json")).unwrap(),
         "{unreadable old View}"
@@ -247,9 +255,10 @@ fn failed_view_write_retains_the_checkpoint_and_marks_its_engine_dirty() {
         journal.is_ready(session.id)
     });
     let home = tasty_utils::path::tasty_home().unwrap();
-    let path = home.join("structure/views/slot-1/incarnation-1.json");
-    std::fs::create_dir_all(&path).unwrap();
     let binding = session.journal_binding.clone().unwrap();
+    let path = home.join("structure/views/slot-1/incarnation-1.json");
+    // A fresh slot has no View manifest, so its initial legacy read still fails here.
+    std::fs::create_dir_all(&path).unwrap();
     session.persistence.dirty.clear();
     let choice = crate::model::StructurePresentationSnapshot::default();
     journal.queue_view(StoredView::capture(
@@ -269,7 +278,7 @@ fn failed_view_write_retains_the_checkpoint_and_marks_its_engine_dirty() {
     );
     std::fs::remove_dir(&path).unwrap();
     journal.queue_view(StoredView::capture(
-        binding,
+        binding.clone(),
         &session.core_state,
         None,
         &choice,
@@ -278,5 +287,15 @@ fn failed_view_write_retains_the_checkpoint_and_marks_its_engine_dirty() {
         !journal.has_pending_view_writes()
     });
     assert!(journal.failed_view_writes.is_empty());
-    assert!(path.is_file());
+    let store = tasty_event_store::EventStore::open(
+        &home.join("structure/journal.db"),
+        &binding.journal_id,
+    )
+    .unwrap();
+    let manifest = store.restore_manifest("view:slot-1").unwrap().unwrap();
+    assert_eq!(manifest.incarnation, binding.incarnation);
+    assert_eq!(manifest.sequence, journal.latest_view_sequence());
+    let saved: serde_json::Value = serde_json::from_slice(&manifest.view).unwrap();
+    assert_eq!(saved["sequence"], manifest.sequence);
+    assert_eq!(saved["binding"]["runtime_epoch"], binding.runtime_epoch);
 }
