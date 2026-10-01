@@ -206,7 +206,13 @@ impl FileAction {
         match self {
             Self::SaveProfile(form)=>{
                 let detect=save_profile(form,&mut RemoteProfiles::load())?;
-                match detect {Some(name)=>detectors.enqueue(name.clone()).map(|id|FileValue::Detection(id,name)),None=>Ok(FileValue::Saved)}
+                match detect {
+                    Some(name)=>match detectors.enqueue(name.clone()) {
+                        Ok(id)=>Ok(FileValue::Detection(id,name)),
+                        Err(error)=>{tracing::warn!(%error,profile=%name,"profile saved but detection admission failed");Ok(FileValue::Saved)},
+                    },
+                    None=>Ok(FileValue::Saved),
+                }
             },
             Self::SaveAttach(form)=>save_attach(form,&mut RemoteProfiles::load()).map(|()|FileValue::Saved),
             Self::SavePasskey(form)=>save_passkey(form).map(|()|FileValue::Saved),

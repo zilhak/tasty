@@ -156,12 +156,13 @@ pub(crate) fn handle_add(core:&mut crate::app::services::AppServices,id: Value, 
     }
     match profiles.save() {
         Ok(()) => {
-            if will_detect {
-                if let Err(error)=core.profile_detections.enqueue(name.to_string()) {return JsonRpcResponse::internal_error(id,error);}
-            }
+            let detecting=will_detect && match core.profile_detections.enqueue(name.to_string()) {
+                Ok(_)=>true,
+                Err(error)=>{tracing::warn!(%error,profile=name,"profile saved but detection admission failed");false},
+            };
             JsonRpcResponse::success(
                 id,
-                json!({ "saved": true, "name": name, "replaced": replaced, "detecting": will_detect }),
+                json!({ "saved": true, "name": name, "replaced": replaced, "detecting": detecting }),
             )
         }
         Err(e) => {
