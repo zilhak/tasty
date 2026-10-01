@@ -4,10 +4,9 @@
 //! 화면 함수는 앱 상태 없이 입력을 받아 사용자 동작을 반환한다.
 
 use crate::runtime::engine_read::EngineRead;
-use crate::runtime::engine_read::EngineRead;
 use std::collections::HashSet;
 use std::net::IpAddr;
-use std::sync::mpsc;
+use std::sync::{Arc, Weak};
 use tasty_type_geometry::length::LogicalPx;
 
 use crate::adapters::ui::icons;
@@ -93,7 +92,8 @@ pub struct FavoriteMatch {
 pub enum PortScanState {
     Idle,
     Loading {
-        rx: mpsc::Receiver<Result<Vec<PortRowView>, String>>,
+        ticket: Arc<()>,
+        request: Option<ScanSnapshot>,
         scope: ScanScope,
     },
     Ready {
@@ -421,7 +421,6 @@ pub fn draw_port_scanner_popup(
     let mut filter_state = read_filter_state(&ctx);
     let target_show_all_system = filter_state.show_all_system;
 
-    poll_scan(state);
 
     let need_kick = match &state.port_scan {
         PortScanState::Idle => true,
@@ -569,7 +568,7 @@ pub fn draw_port_scanner_popup(
     match action {
         PortScannerAction::None => PopupAction::None,
         PortScannerAction::Close => {
-            // 수신자를 버리면 진행 중 워커의 send가 실패하고 워커는 종료한다.
+            // 요청 identity를 버려 App이 이전 스캔 결과를 새 popup에 적용하지 않게 한다.
             state.port_scan = PortScanState::Idle;
             state.port_favorites_scan = PortScanState::Idle;
             PopupAction::Close
@@ -806,7 +805,7 @@ fn build_snapshot(
     }
 }
 
-/// 백그라운드 조회 후 채널로 결과를 보내고 다시 그리기를 요청한다.
+/// 원 표시 요청의 snapshot을 App에 넘긴다. worker와 결과 채널은 App이 소유한다.
 /// 메인 조회와 즐겨찾기 조회는 각각 독립된 상태를 사용한다.
 pub fn kick_off_scan(
     slot: &mut PortScanState,
@@ -816,81 +815,9 @@ pub fn kick_off_scan(
     show_all_system: bool,
 ) {
     let snapshot = build_snapshot(engine, presentation, show_all_system);
-    let (tx, rx) = mpsc::channel::<Result<Vec<PortRowView>, String>>();
     let scope = scope_from_flag(show_all_system);
-    *slot = PortScanState::Loading { rx, scope };
-    let ctx = ctx.clone();
-    std::thread::spawn(move || {
-        let result = run_scan(snapshot);
-        let _ = tx.send(result); // popup 이 먼저 닫혀 rx 가 drop 됐다면 send 실패 — 스레드는 자연 종료.
-        ctx.request_repaint();
-    });
-}
-
-/// Tasty 하위 프로세스의 소속을 모은 뒤 선택한 범위의 TCP 소켓을 조회한다.
-fn run_scan(snapshot: ScanSnapshot) -> Result<Vec<PortRowView>, String> {
-    let mut pid_to_source: std::collections::HashMap<u32, (String, Option<String>)> =
-        std::collections::HashMap::new();
-    for (_sid, shell_pid, path) in &snapshot.surfaces {
-        let descendants = tasty_portscan::collect_descendant_pids(*shell_pid);
-        for pid in descendants {
-            pid_to_source
-                .entry(pid)
-                .or_insert_with(|| (path.workspace_name.clone(), path.tab_name.clone()));
-        }
-    }
-
-    if snapshot.show_all_system {
-        let all = tasty_portscan::scan_all();
-        let rows: Vec<PortRowView> = all
-            .into_iter()
-            .map(|p| {
-                let source = p
-                    .pid
-                    .and_then(|pid| pid_to_source.get(&pid))
-                    .map(|(ws, tab)| SourceTag::Tasty {
-                        workspace_name: ws.clone(),
-                        tab_name: tab.clone(),
-                    })
-                    .unwrap_or(SourceTag::External);
-                PortRowView {
-                    port: p.port,
-                    addr_display: format_addr(p.addr),
-                    pid: p.pid,
-                    process_name: p.process_name,
-                    source,
-                    state: p.state,
-                    favorited: false,
-                }
-            })
-            .collect();
-        Ok(rows)
-    } else {
-        let tasty_pids: HashSet<u32> = pid_to_source.keys().copied().collect();
-        let ports = tasty_portscan::scan_for_pids(&tasty_pids);
-        let rows: Vec<PortRowView> = ports
-            .into_iter()
-            .map(|p| {
-                let source = pid_to_source
-                    .get(&p.pid)
-                    .map(|(ws, tab)| SourceTag::Tasty {
-                        workspace_name: ws.clone(),
-                        tab_name: tab.clone(),
-                    })
-                    .unwrap_or(SourceTag::External);
-                PortRowView {
-                    port: p.port,
-                    addr_display: format_addr(p.addr),
-                    pid: Some(p.pid),
-                    process_name: p.process_name,
-                    source,
-                    state: p.state,
-                    favorited: false,
-                }
-            })
-            .collect();
-        Ok(rows)
-    }
+    *slot = PortScanState::Loading { ticket: Arc::new(()), request: Some(snapshot), scope };
+    ctx.request_repaint();
 }
 
 /// Project `favorites` into display rows, matching each `(addr, port)`
@@ -931,29 +858,22 @@ fn build_favorite_rows(
 }
 
 /// Drain a pending result from the channel for both scan slots (main +
-/// favorites). No-op for a slot that isn't `Loading`.
-pub fn poll_scan(state: &mut MainViewState) {
-    poll_state(&mut state.port_scan);
-    poll_state(&mut state.port_favorites_scan);
-}
-
-/// Pure state-machine step on `PortScanState` — exposed so unit tests can
-/// drive the transition without building an `MainViewState`.
-fn poll_state(state: &mut PortScanState) {
-    if let PortScanState::Loading { rx, scope } = state {
-        match rx.try_recv() {
-            Ok(Ok(rows)) => {
-                let scope = *scope;
-                *state = PortScanState::Ready { rows, scope };
-            }
-            Ok(Err(e)) => {
-                *state = PortScanState::Failed(e);
-            }
-            Err(mpsc::TryRecvError::Empty) => {}
-            Err(mpsc::TryRecvError::Disconnected) => {
-                *state = PortScanState::Failed("scan worker disconnected".to_string());
-            }
+impl PortScanState {
+    pub(crate) fn take_request(&mut self) -> Option<(Weak<()>, ScanSnapshot)> {
+        match self {
+            Self::Loading { ticket, request, .. } => request.take().map(|request| (Arc::downgrade(ticket), request)),
+            _ => None,
         }
+    }
+
+    pub(crate) fn accept(&mut self, request: &Weak<()>, result: Result<Vec<PortRowView>, String>) -> bool {
+        let Self::Loading { ticket, scope, .. } = self else { return false; };
+        if !Arc::downgrade(ticket).ptr_eq(request) { return false; }
+        *self = match result {
+            Ok(rows) => Self::Ready { rows, scope: *scope },
+            Err(error) => Self::Failed(error),
+        };
+        true
     }
 }
 
@@ -2120,7 +2040,7 @@ fn draw_state_cell(ui: &mut egui::Ui, th: &Theme, reduced_motion: bool, state: P
 /// Bracketless display form. IPv6 is shown bare (e.g. wildcard `::`) per the
 /// design table; brackets are added later in [`row_copy_address`] when building
 /// the copyable `host:port` string.
-fn format_addr(addr: IpAddr) -> String {
+pub(crate) fn format_addr(addr: IpAddr) -> String {
     match addr {
         IpAddr::V4(v4) if v4.is_unspecified() => "0.0.0.0".to_string(),
         IpAddr::V6(v6) if v6.is_unspecified() => "::".to_string(),
@@ -2258,52 +2178,15 @@ mod tests {
     }
 
     #[test]
-    fn scan_state_transitions_idle_loading_ready() {
-        let (tx, rx) = mpsc::channel::<Result<Vec<PortRowView>, String>>();
-        let mut state = PortScanState::Loading {
-            rx,
-            scope: ScanScope::Tasty,
-        };
-
-        poll_state(&mut state);
-        assert!(matches!(state, PortScanState::Loading { .. }));
-
-        tx.send(Ok(vec![dummy_row(3000)])).unwrap();
-        poll_state(&mut state);
-        match state {
-            PortScanState::Ready { rows, scope } => {
-                assert_eq!(rows.len(), 1);
-                assert_eq!(scope, ScanScope::Tasty);
-            }
-            other => panic!("expected Ready, got {:?}", std::mem::discriminant(&other)),
-        }
-    }
-
-    #[test]
-    fn scan_state_failed_on_worker_error() {
-        let (tx, rx) = mpsc::channel::<Result<Vec<PortRowView>, String>>();
-        let mut state = PortScanState::Loading {
-            rx,
-            scope: ScanScope::System,
-        };
-        tx.send(Err("boom".to_string())).unwrap();
-        poll_state(&mut state);
-        match state {
-            PortScanState::Failed(msg) => assert_eq!(msg, "boom"),
-            _ => panic!("expected Failed"),
-        }
-    }
-
-    #[test]
-    fn scan_state_failed_on_disconnect() {
-        let (tx, rx) = mpsc::channel::<Result<Vec<PortRowView>, String>>();
-        let mut state = PortScanState::Loading {
-            rx,
-            scope: ScanScope::Tasty,
-        };
-        drop(tx);
-        poll_state(&mut state);
-        assert!(matches!(state, PortScanState::Failed(_)));
+    fn only_the_current_scan_can_replace_the_displayed_result() {
+        let ticket = Arc::new(());
+        let token = Arc::downgrade(&ticket);
+        let mut state = PortScanState::Loading { ticket, request: None, scope: ScanScope::Tasty };
+        let stale = Arc::new(());
+        assert!(!state.accept(&Arc::downgrade(&stale), Ok(vec![dummy_row(1)])));
+        assert!(state.accept(&token, Ok(vec![dummy_row(3000)])));
+        assert!(matches!(&state, PortScanState::Ready { rows, .. } if rows.len() == 1));
+        assert!(!state.accept(&token, Err("late failure".into())));
     }
 
     #[test]
