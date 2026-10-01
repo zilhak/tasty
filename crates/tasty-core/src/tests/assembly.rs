@@ -103,6 +103,30 @@ fn prepared_assembly_round_trips_through_the_durable_event_codec() {
     assert_eq!(encode_event(&decoded).unwrap().bytes, encoded.bytes);
 }
 
+#[test]
+fn prepared_assembly_rejects_invalid_identity_map_keys() {
+    let (model, group, _, _) = prepared();
+    let event = DomainEvent::OperationPrepared {
+        operation: model.operations[&group].clone(),
+    };
+    for key in ["-1", "4294967296", "not-an-id", "1.5", "+1"] {
+        let mut value = serde_json::to_value(&event).unwrap();
+        let inputs = value["operation"]["assembly"]["inputs"]
+            .as_object_mut()
+            .unwrap();
+        let input = inputs.remove("10").unwrap();
+        inputs.insert(key.to_owned(), input);
+        let bytes = serde_json::to_vec(&value).unwrap();
+        assert!(
+            matches!(
+                decode_event(event.type_tag(), EVENT_SCHEMA_VERSION, &bytes),
+                Err(CodecError::Body { .. })
+            ),
+            "accepted invalid identity key {key}"
+        );
+    }
+}
+
 fn remove_target(model: &mut JournalModel) {
     evolve(
         model,

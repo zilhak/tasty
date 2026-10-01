@@ -14,6 +14,7 @@ pub struct CreationAssembly {
     /// Every identity has already been remapped from the capture using durable reservations.
     pub snapshot: ClosedSnapshot,
     pub destination: AssemblyDestination,
+    #[serde(deserialize_with = "crate::codec::u32_keyed_map")]
     pub inputs: BTreeMap<u32, DataRef>,
     pub undo: Option<OperationId>,
     /// Existing restore policy can omit unavailable leaves, but never uncertain external effects.

@@ -25,8 +25,11 @@ pub struct UndoRecord {
 }
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct UndoPresentation {
+    #[serde(deserialize_with = "crate::codec::u32_keyed_map")]
     pub focused_panes: BTreeMap<u32, u32>,
+    #[serde(deserialize_with = "crate::codec::u32_keyed_map")]
     pub selected_tabs: BTreeMap<u32, u32>,
+    #[serde(deserialize_with = "crate::codec::u32_keyed_map")]
     pub selected_surfaces: BTreeMap<u32, u32>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -43,9 +46,13 @@ pub struct ClosedSnapshot {
     pub pane_position: Option<ClosedPanePosition>,
     pub root: EntityId,
     pub origin_workspace: Option<u32>,
+    #[serde(deserialize_with = "crate::codec::u32_keyed_map")]
     pub workspaces: BTreeMap<u32, Workspace>,
+    #[serde(deserialize_with = "crate::codec::u32_keyed_map")]
     pub panes: BTreeMap<u32, Pane>,
+    #[serde(deserialize_with = "crate::codec::u32_keyed_map")]
     pub tabs: BTreeMap<u32, Tab>,
+    #[serde(deserialize_with = "crate::codec::u32_keyed_map")]
     pub surfaces: BTreeMap<u32, Surface>,
     /// A surface-only close keeps its containing tab's presentation name for restore-as-tab.
     pub tab_name: Option<String>,
