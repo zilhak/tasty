@@ -299,7 +299,7 @@ impl App {
             .engines
             .pending_mut()
             .ok_or("no pending engine is available to assemble the View")?;
-        let mut state = crate::state::MainViewState::new(engine.core, preset_store);
+        let mut state = crate::state::MainViewState::new(&engine.read(), preset_store);
         if let Some(restored_idx) = restored_idx_after_layout {
             state
                 .navigation

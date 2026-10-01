@@ -283,3 +283,5 @@ ViewCtx는 Core/Live 관측과 표시용 query를 빌리는 EngineRead를 받는
 App의 window event provider는 EngineRegistry에서 불변 EngineRead를 만든다. 프레임은 View의 geometry 계산과 App 실행 적용을 분리하며, 설정·registry·kind owner가 필요한 부팅/추가 창 경로는 EngineRuntime을 명시적으로 사용한다. system.info와 tree/Lua snapshot의 공통 query는 표시 선택·active index와 EngineRead를 받아 pure Core에 실행 필드를 다시 넣지 않는다.
 
 저장 checkpoint는 성공한 capture/engine retirement의 전체 publication ACK 뒤와 정상 worker 종료에 실행한다. canonical cut과 published cut이 다르거나 projection이 halted면 수행하지 않는다. checkpoint 오류는 이전 snapshot/live pin을 유지한 유지보수 실패이며 이미 확정된 명령 결과를 바꾸지 않는다. 다음 capture/retirement/정상 종료에서 다시 시도한다.
+
+비동기 프리셋 draft의 immutable payload 참조는 App이 freeze와 같은 turn에 JournalWorker의 read lease로 보유한다. worker checkpoint는 같은 reader 집합의 락을 유지하며 snapshot pin에 참조를 포함한 뒤 GC/retention을 적용한다. 단순 capture cut이나 DataRef 값 복사만으로 payload 보존을 대신하지 않는다. View의 포커스 관측도 bound EngineAction으로 전달하고 App이 같은 대상 세대일 때 attention/soft occupancy를 갱신한다.

@@ -848,7 +848,7 @@ impl JournalApplication {
 
     #[cfg(feature = "gui")]
     pub(crate) fn has_pending_view_writes(&self) -> bool {
-        !self.is_halted() && (!self.capture_requests.is_empty() || !self.captures.is_empty() || !self.queued_view_writes.is_empty() || !self.view_writes.is_empty())
+        !self.is_halted() && (self.has_pending_preset_captures() || !self.capture_requests.is_empty() || !self.captures.is_empty() || !self.queued_view_writes.is_empty() || !self.view_writes.is_empty())
     }
 
     #[cfg(feature = "gui")]

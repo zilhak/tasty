@@ -177,6 +177,7 @@ impl Drop for QueuedBytes {
 }
 
 pub(crate) struct JournalWorker {
+    readers: Arc<super::journal_payload::PayloadReaders>,
     requests: Option<mpsc::SyncSender<QueuedRequest>>,
     queued_bytes: Arc<AtomicUsize>,
     completions: Option<mpsc::Receiver<Completion>>,
@@ -196,6 +197,8 @@ impl JournalWorker {
         let (acknowledgements, acks) = mpsc::sync_channel(1);
         let closed = Arc::new(AtomicBool::new(false));
         let stopped = closed.clone();
+        let readers=Arc::new(super::journal_payload::PayloadReaders::default());
+        let worker_readers=readers.clone();
         #[cfg(test)]
         let fail_next_publication = Arc::new(AtomicBool::new(false));
         #[cfg(test)]
@@ -205,6 +208,7 @@ impl JournalWorker {
             .spawn(move || {
                 worker::run(
                     home,
+                    worker_readers,
                     incoming,
                     outgoing,
                     acks,
@@ -216,6 +220,7 @@ impl JournalWorker {
             })
             .map_err(|e| e.to_string())?;
         Ok(Self {
+            readers,
             requests: Some(requests),
             queued_bytes: Arc::new(AtomicUsize::new(0)),
             completions: Some(completions),
@@ -225,6 +230,13 @@ impl JournalWorker {
             #[cfg(test)]
             fail_next_publication,
         })
+    }
+
+    /// Retain references synchronously with draft freezing, before another projection can ACK.
+    /// The storage worker holds the same readers lock while transferring snapshot pins and GC.
+    pub(crate) fn retain_payloads(&self,refs:Vec<tasty_core::DataRef>)->Result<super::journal_payload::PayloadReadLease,String> {
+        if self.closed.load(Ordering::Acquire) {return Err("structure journal stopped".into());}
+        self.readers.lease(refs)
     }
 
     pub(crate) fn submit(&self, request: Request) -> Result<(), SubmitError> {

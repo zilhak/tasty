@@ -656,8 +656,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     let engine_id = session.id;
     let mut engine = session.borrow_mut();
     let preset_store = app.services.preset_store.clone();
-    let memory = app.services.memory_arc();
-    let mut state = crate::state::CommandContext::new(&mut engine, preset_store);
+    let mut state = crate::state::CommandContext::new(&engine.read(), preset_store);
     state.engine_id = Some(engine_id);
 
     hooks::lua::fire(
@@ -793,7 +792,7 @@ mod journal_event_tests {
         settings.general.startup_command="exec sleep 60".into();
         let mut session=crate::runtime::engine_session::EngineSession::for_journal(80,24,waker.waker_factory().make_default_waker(),None,None,memory,Arc::clone(app.services.tasks.runner_registry()),settings).unwrap();
         app.journal.begin_engine(&session,crate::runtime::journal_product::EngineSelection::FreshHeadless).unwrap();
-        let mut state=crate::state::CommandContext::new(&mut session.borrow_mut(),app.services.preset_store.clone());
+        let mut state=crate::state::CommandContext::new(&session.read(),app.services.preset_store.clone());
         state.engine_id=Some(session.id);
         let until=Instant::now()+Duration::from_secs(10);
         while !app.journal.is_ready(session.id) {

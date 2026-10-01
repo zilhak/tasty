@@ -27,6 +27,7 @@ type Acknowledgements = mpsc::Receiver<(u64, Result<(), String>)>;
 
 pub(super) fn run(
     home: PathBuf,
+    readers:Arc<crate::runtime::journal_payload::PayloadReaders>,
     requests: mpsc::Receiver<super::QueuedRequest>,
     completions: mpsc::SyncSender<Completion>,
     acknowledgements: Acknowledgements,
@@ -149,7 +150,7 @@ pub(super) fn run(
             result = Err(error);
         }
         if checkpoint_requested && halted.is_none() && result.is_ok() {
-            checkpoint_published(&executor,published);
+            checkpoint_published(&executor,published,&readers);
         }
         if !was_halted
             && let Some(reason) = &halted
@@ -166,16 +167,16 @@ pub(super) fn run(
             }
         }
     }
-    if halted.is_none() {checkpoint_published(&executor,published);}
+    if halted.is_none() {checkpoint_published(&executor,published,&readers);}
 }
 
 /// Maintenance cannot change an already committed command response. The leaf atomically replaces
 /// snapshot/live pins and preserves the previous checkpoint on failure; retry at the next capture,
 /// retirement or graceful worker stop, never by waking an unbounded maintenance loop.
-fn checkpoint_published(executor:&Executor<StructureDecider>,published:Option<u64>) {
+fn checkpoint_published(executor:&Executor<StructureDecider>,published:Option<u64>,readers:&crate::runtime::journal_payload::PayloadReaders) {
     match executor.with_state(|models|models.batch) {
         Ok(cut) if cut==published=>{
-            if let Err(error)=capture::checkpoint(executor) {tracing::warn!(%error,"structure checkpoint failed; retaining previous checkpoint");}
+            if let Err(error)=capture::checkpoint(executor,readers) {tracing::warn!(%error,"structure checkpoint failed; retaining previous checkpoint");}
         },
         Ok(_)=>tracing::warn!("structure checkpoint skipped: committed cut has not been published"),
         Err(error)=>tracing::warn!(%error,"structure checkpoint skipped: canonical state unavailable"),

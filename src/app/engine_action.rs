@@ -44,6 +44,7 @@ pub(crate) enum EngineAction {
     #[cfg(feature="gui")]
     DagSelection {target:SurfaceBinding,dag_id:Option<String>,direction:crate::model::DagDirection},
     RenameExplorerEntry {target:SurfaceBinding,path:std::path::PathBuf,name:String},
+    FocusObserved {target:SurfaceBinding},
     RecordTyping {target:SurfaceBinding,at:std::time::Instant},
     ExplorerCwd {target:SurfaceBinding,folder:std::path::PathBuf},
     RemoveExplorerFavorite {path:std::path::PathBuf},
@@ -122,6 +123,12 @@ impl EngineAction {
                 if !target.current(&engine.as_ref()) {return;}
                 if let Some(context)=context {engine.remote.pending_mesh_context_forward.insert(target.surface,context.clone());}
                 if let Some(input)=input {engine.remote.pending_mesh_input_forward.entry(target.surface).and_modify(|pending| {pending.events.extend(input.events.clone());pending.focused=input.focused;pending.modifiers=input.modifiers;pending.time=input.time;}).or_insert_with(||input.clone());}
+            },
+            Self::FocusObserved {target}=>{
+                if target.current(&engine.as_ref()) {
+                    engine.clear_attention_local(target.surface);
+                    engine.reconcile_soft_occupancy_on_focus(target.surface);
+                }
             },
             Self::RecordTyping {target,at} if target.current(&engine.as_ref())=> {engine.live.last_key_input.insert(target.surface,*at);},
             Self::RecordTyping {..}=>{},

@@ -109,7 +109,7 @@ pub struct ExplorerClipboard {
 impl RequestContext {
     /// 기존 engine의 복원된 활성 인덱스와 저장소 핸들로 화면 상태를 초기화한다.
     pub fn new(
-        engine: &CoreState,
+        engine: &EngineRead<'_>,
         preset_store: std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>,
     ) -> Self {
         let mut navigation = navigation::NavigationState::default();
