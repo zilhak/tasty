@@ -50,7 +50,7 @@ pub(crate) mod output;
 pub(crate) mod pane;
 pub(crate) mod params;
 mod passkey;
-mod preset;
+pub(crate) mod preset;
 mod pressure;
 pub(crate) mod pty;
 mod recent;
@@ -412,7 +412,7 @@ fn should_rate_limit(caller: &CallerContext, method: &str) -> bool {
 
 /// Display the already persisted observations in the selected presentation, if one exists.
 #[cfg(feature="gui")]
-pub(crate) fn display_plugin_rss_anomalies(state:&mut RequestContext,engine:&mut crate::core::CoreState,anomalies:&[tasty_telemetry::Anomaly]) {
+pub(crate) fn display_plugin_rss_anomalies(state:&mut RequestContext,engine:&mut crate::runtime::engine_access::EngineMut<'_>,anomalies:&[tasty_telemetry::Anomaly]) {
     let mut out=crate::ipc::window_port::IntentOutbox::default();
     let mut scope=crate::ipc::request_scope::RequestScope::capture(state,engine);
     for anomaly in anomalies {telemetry::fire_anomaly_notification(&mut scope,&mut out,engine,anomaly);}
@@ -636,7 +636,7 @@ fn route_engine_handler(
         ),
         "preset.apply" => JsonRpcResponse::internal_error(id,"preset application bypassed the journal command boundary"),
         "surface.list" => surface::handle_surface_list(&engine.as_ref(), id),
-        "surface.kinds" => surface::handle_surface_kinds(engine, id),
+        "surface.kinds" => surface::handle_surface_kinds(&engine.read(), id),
         "surface.send" => surface::handle_surface_send(core, engine, id, &request.params),
         "surface.send_key" => surface::handle_surface_send_key(core, engine, id, &request.params),
         "surface.send_combo" => {
@@ -704,7 +704,7 @@ fn route_engine_handler(
         #[cfg(feature = "gui")]
         "surface.html_script" => surface::handle_html_script(engine, id, &request.params),
         // WebView는 surface.set_context를 받지 않아 이 조회로 Theme를 읽는다.
-        "theme.query" => theme::handle_query(engine, id),
+        "theme.query" => theme::handle_query(&engine.read(), id),
         "tree" => handle_tree(window, &engine.read(), id),
         "message.send" => message::handle_message_send(core, engine, id, &request.params),
         "message.read" => message::handle_message_read(core, engine, id, &request.params),
@@ -714,8 +714,8 @@ fn route_engine_handler(
         "notification.create" => {
             notification::handle_notification_create(out, engine, id, &request.params)
         }
-        "file_handler.reload" => file_handler::handle_reload(core, engine, id),
-        "file_handler.detectors" => file_handler::handle_detectors(engine, id),
+        "file_handler.reload" => file_handler::handle_reload(core, id),
+        "file_handler.detectors" => file_handler::handle_detectors(core, id),
         // identify worker와 결과를 여는 창이 GUI에만 있다.
         // 헤드리스에서는 예약 성공 뒤 요청을 버리지 않도록 라우팅하지 않는다(ADR-0031).
         #[cfg(feature = "gui")]
@@ -838,22 +838,22 @@ fn route_engine_handler(
         "memory.goal_get" => memory::handle_goal_get(core, engine, caller, id, &request.params),
         "memory.goal_clear" => memory::handle_goal_clear(core, engine, caller, id, &request.params),
         "settings.get_plugin_setting" => {
-            settings::handle_get_plugin_setting(engine, caller, id, &request.params)
+            settings::handle_get_plugin_setting(&engine.read(), caller, id, &request.params)
         }
-        "settings.get_remote_transfer" => settings::handle_get_remote_transfer(engine, id),
-        "settings.get_input_rules" => terminal_input::get(engine, id),
+        "settings.get_remote_transfer" => settings::handle_get_remote_transfer(&engine.read(), id),
+        "settings.get_input_rules" => terminal_input::get(&engine.read(), id),
         "settings.set_input_rule"
         | "settings.remove_input_rule"
         | "settings.initialize_input_rule" => terminal_input::handle_input_rule_update(
             out,
-            engine,
+            &engine.read(),
             caller,
             id,
             &request.params,
             &request.method,
         ),
         "settings.set_remote_transfer" => {
-            settings::handle_set_remote_transfer(out, engine, id, &request.params)
+            settings::handle_set_remote_transfer(out, &engine.read(), id, &request.params)
         }
         // approval.await는 별도 워커에서 대기한다.
         "approval.request" => {

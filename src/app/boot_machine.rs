@@ -266,6 +266,7 @@ impl App {
         let memory = self.services.memory_arc();
         let runner_registry = Arc::clone(self.services.tasks.runner_registry());
         let gauges = self.services.plugin_gauges();
+        let registries=self.services.registries.clone();
         // 점유 중인 슬롯을 확인해야 하므로 메인 스레드에서 선택해 워커로 전달한다.
         let layout_slot = self.claim_free_layout_slot();
         #[cfg(debug_assertions)]
@@ -283,6 +284,7 @@ impl App {
                     runner_registry,
                     layout_slot,
                     gauges,
+                    registries,
                     #[cfg(debug_assertions)]
                     input_simulation_enabled,
                 );

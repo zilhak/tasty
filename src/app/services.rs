@@ -21,6 +21,7 @@ pub(crate) mod impl_tab;
 /// 프로세스가 공유하는 port와 저장소 핸들. 창별 데이터는 CoreState에 있다.
 #[allow(dead_code)] // 이유: 일부 port는 아직 읽지 않지만 AppServicesBuilder가 같은 port 묶음을 주입하는 인터페이스를 유지한다.
 pub(crate) struct AppServices {
+    pub(crate) registries:crate::runtime::registries::RuntimeRegistries,
     /// Process-wide services. Engine and View owners carry neither copies nor lookup authority.
     pub(crate) approval_store: Arc<tasty_approval::ApprovalStore>,
     pub(crate) telemetry_seq: Arc<tasty_telemetry::TelemetrySeq>,
@@ -137,7 +138,7 @@ impl AppServices {
 
     pub(crate) fn send_surface_message(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         from: u32,
         to: u32,
         content: String,
@@ -147,7 +148,7 @@ impl AppServices {
 
     pub(crate) fn read_surface_messages(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         sid: u32,
         from: Option<u32>,
         peek: bool,
@@ -155,7 +156,7 @@ impl AppServices {
         engine.read_messages(sid, from, peek)
     }
 
-    pub(crate) fn clear_surface_messages(&mut self, engine: &mut crate::core::CoreState, sid: u32) {
+    pub(crate) fn clear_surface_messages(&mut self, engine: &mut EngineMut<'_>, sid: u32) {
         engine.clear_messages(sid);
     }
 

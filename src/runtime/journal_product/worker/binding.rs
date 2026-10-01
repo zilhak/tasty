@@ -140,7 +140,7 @@ fn bound(
         revision: model.applied.revision,
     };
     let restored_view = if resume_view {
-        match super::super::view_record::load(home, &binding)? {
+        match super::super::view_record::load(store, home, &binding)? {
             Some(view) => Some(view),
             None if model.engine_incarnation == 1 => imported_view(store, stream)?,
             None => None,

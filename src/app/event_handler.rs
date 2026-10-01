@@ -647,8 +647,8 @@ impl App {
         let samples=self.plugin_manager.as_mut().map(|manager|manager.take_rss_samples()).unwrap_or_default();
         let time=self.services.now_unix_millis() as u64;
         let anomalies:Vec<_>=samples.into_iter().filter_map(|(plugin,bytes)|self.services.record_rss_sample(&plugin,bytes,time)).collect();
-        if !anomalies.is_empty() && let Some((_,main,engine))=engines_mut!(self).window_pairs().next() {
-            crate::adapters::ipc::handler::display_plugin_rss_anomalies(&mut main.state,engine.core,&anomalies);
+        if !anomalies.is_empty() && let Some((_,main,mut engine))=engines_mut!(self).window_pairs().next() {
+            crate::adapters::ipc::handler::display_plugin_rss_anomalies(&mut main.state,&mut engine,&anomalies);
         }
     }
 
@@ -1045,13 +1045,14 @@ impl App {
                 event_loop,
                 modal_active: false,
                 engine: None,
-                plugin_manager: self.plugin_manager.as_ref(),
+                plugin_manager: self.plugin_manager.as_ref().map(super::plugin_display::PluginDisplay::new),
             };
             modal.handle_event(event, &mut ctx)
         } else {
             ViewAction::None
         };
 
+        self.process_settings_file_requests(id);
         match action {
             ViewAction::None => {}
             ViewAction::Close => {
@@ -1100,6 +1101,7 @@ impl App {
             self.redraw_main_window(id);return;
         }
         self.refresh_approval_presentations();
+        self.refresh_preset_editor(id);
         let modal_active = self.view.is_modal_active();
         let action = {
             if let Some(w) = self.view.views.get_mut(&id) {
@@ -1108,7 +1110,7 @@ impl App {
                     event_loop,
                     modal_active,
                     engine,
-                    plugin_manager: self.plugin_manager.as_ref(),
+                    plugin_manager: self.plugin_manager.as_ref().map(super::plugin_display::PluginDisplay::new),
                     };
                 // modeless PresetView의 닫기는 여기서 처리하며 모달은 앞의 전용 경로가 처리한다.
                 w.handle_event(event, &mut ctx)
@@ -1116,6 +1118,7 @@ impl App {
                 ViewAction::None
             }
         };
+        self.process_preset_edits(id);
         if self.view.views.contains_key(&id) {
             match action {
                 ViewAction::None => {}

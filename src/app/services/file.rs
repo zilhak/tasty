@@ -3,7 +3,6 @@
 use std::path::PathBuf;
 
 use crate::app::services::AppServices;
-use crate::core::CoreState;
 
 pub(crate) struct ReloadFileHandlersOutcome {
     pub(crate) path: PathBuf,
@@ -13,10 +12,10 @@ pub(crate) struct ReloadFileHandlersOutcome {
 }
 
 impl AppServices {
-    pub(crate) fn reload_file_handlers(&self, engine: &CoreState) -> ReloadFileHandlersOutcome {
+    pub(crate) fn reload_file_handlers(&self) -> ReloadFileHandlersOutcome {
         let path = user_config_path();
-        engine.runtime.file_format.reload_user_config(&path);
-        let rejected = engine.runtime.file_handler.reload_user_config(&path);
+        self.registries.file_format.reload_user_config(&path);
+        let rejected = self.registries.file_handler.reload_user_config(&path);
         let exists = path.exists();
         ReloadFileHandlersOutcome {
             path,

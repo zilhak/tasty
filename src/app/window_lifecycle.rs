@@ -64,6 +64,7 @@ pub(super) fn build_engine_and_plugins(
     runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
     layout_slot: crate::core::layout_persistence::LayoutSlotId,
     gauges: crate::app::services::PluginGauges,
+    registries:crate::runtime::registries::RuntimeRegistries,
     #[cfg(debug_assertions)] input_simulation_enabled: bool,
 ) -> anyhow::Result<(
     crate::runtime::engine_session::EngineSession,
@@ -77,10 +78,11 @@ pub(super) fn build_engine_and_plugins(
         memory,
         runner_registry,
         layout_slot,
+        registries.clone(),
         #[cfg(debug_assertions)]
         input_simulation_enabled,
     )?;
-    let mgr = build_plugin_manager(factory, &engine.runtime, gauges);
+    let mgr = build_plugin_manager(factory, &registries, gauges);
     Ok((engine, mgr))
 }
 
@@ -103,6 +105,7 @@ fn build_core_state_first_boot(
     memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
     layout_slot: crate::core::layout_persistence::LayoutSlotId,
+    registries:crate::runtime::registries::RuntimeRegistries,
     #[cfg(debug_assertions)] input_simulation_enabled: bool,
 ) -> anyhow::Result<crate::runtime::engine_session::EngineSession> {
     // 슬롯 로드 시간도 포함한다. scrollback GC는 창마다 하지 않고 부팅 때 전체 슬롯을 대상으로 한다.
@@ -116,6 +119,7 @@ fn build_core_state_first_boot(
         Some(layout_slot),
         memory,
         runner_registry,
+        registries,
     )?;
     engine.runtime.waker_factory = Some(factory);
     engine.runtime.identify_worker = Some(Arc::new(
@@ -135,18 +139,18 @@ fn build_core_state_first_boot(
 
 fn build_plugin_manager(
     factory: crate::waker::SharedWakerFactory,
-    runtime: &crate::runtime::engine_runtime::EngineRuntime,
+    registries: &crate::runtime::registries::RuntimeRegistries,
     gauges: crate::app::services::PluginGauges,
 ) -> plugin::PluginManager {
     let mut mgr = plugin::PluginManager::with_registries(
         factory,
-        runtime.file_format.clone(),
-        runtime.file_handler.clone(),
+        registries.file_format.clone(),
+        registries.file_handler.clone(),
     );
     // 호스트와 같은 게이지를 써야 플러그인 대기 시간도 원래 요청의 pressure 기록에 연결된다.
     mgr.set_plugin_wait(gauges.plugin_wait);
     mgr.set_slow_requests(gauges.slow_requests);
-    mgr.set_surface_registry(runtime.surface_registry.clone());
+    mgr.set_surface_registry(registries.surface_registry.clone());
     mgr.set_i18n_registrar(std::sync::Arc::new(crate::i18n::BinI18nRegistrar));
     mgr.set_hook_handler_registry(std::sync::Arc::new(
         crate::hook_handler::HostHookHandlerPort,
@@ -218,9 +222,6 @@ impl App {
             // 플러그인이 등록한 kind·파일 처리기와 ID 발급기를 창마다 새로 만들지 않는다.
             let shared = self.any_main_engine().map(|src| {
                 (
-                    src.runtime.surface_registry.clone(),
-                    src.runtime.file_format.clone(),
-                    src.runtime.file_handler.clone(),
                     src.runtime.identify_worker.clone(),
                     additional_window_task_scope(src.task_scope, &self.services.tasks),
                     src.runtime.counters.clone(),
@@ -228,9 +229,6 @@ impl App {
             });
 
             let engine = if let Some((
-                surface_registry,
-                file_format,
-                file_handler,
                 identify_worker,
                 task_scope,
                 next_ids,
@@ -248,11 +246,9 @@ impl App {
                     Some(layout_slot),
                     self.services.memory_arc(),
                     Arc::clone(self.services.tasks.runner_registry()),
+                    self.services.registries.clone(),
                 )?;
                 engine.runtime.waker_factory = Some(factory.clone());
-                engine.runtime.surface_registry = surface_registry;
-                engine.runtime.file_format = file_format;
-                engine.runtime.file_handler = file_handler;
                 engine.runtime.identify_worker = identify_worker;
                 engine.task_scope = task_scope;
                 #[cfg(debug_assertions)]
@@ -274,6 +270,7 @@ impl App {
                     self.services.memory_arc(),
                     Arc::clone(self.services.tasks.runner_registry()),
                     layout_slot,
+                    self.services.registries.clone(),
                     #[cfg(debug_assertions)]
                     self.state.input_simulation_enabled,
                 )?
@@ -283,8 +280,7 @@ impl App {
 
         if self.plugin_manager.is_none() {
             let gauges = self.services.plugin_gauges();
-            let engine=self.engines.pending().ok_or_else(||anyhow::anyhow!("pending engine missing for plugin initialization"))?;
-            let mgr = build_plugin_manager(factory, engine.runtime, gauges);
+            let mgr = build_plugin_manager(factory, &self.services.registries, gauges);
             self.plugin_manager = Some(mgr);
         }
         Ok(())

@@ -26,7 +26,7 @@ pub(crate) trait IpcWindow {
     #[cfg(feature = "gui")]
     fn enqueue_approval_popup(
         &mut self,
-        engine: &mut CoreState,
+        engine: &CoreState,
         record: &tasty_approval::ApprovalRecord,
     );
 

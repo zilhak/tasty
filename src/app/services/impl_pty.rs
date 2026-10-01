@@ -123,7 +123,7 @@ impl AppServices {
 
     fn handle_prompt_boundary(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut EngineMut<'_>,
         sid: u32,
         generation: tasty_terminal::ResourceGeneration,
         phase: char,

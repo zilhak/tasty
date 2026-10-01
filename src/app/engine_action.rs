@@ -32,6 +32,8 @@ impl SettingsPatch {
 #[derive(Clone,Debug)]
 pub(crate) enum EngineAction {
     #[cfg(feature="gui")]
+    PluginDisplay(super::plugin_display::PluginDisplayRequest),
+    #[cfg(feature="gui")]
     PasteImage {target:SurfaceBinding,bracketed:bool,file_name:String,png_bytes:Vec<u8>},
     #[cfg(feature="gui")]
     ImageUpload {target:SurfaceBinding,request:crate::core::PendingImageUpload},
@@ -63,6 +65,8 @@ pub(crate) enum EngineAction {
 impl EngineAction {
     pub(crate) fn apply(&self,engine:&mut EngineMut<'_>,plugins:Option<&crate::plugin::PluginManager>) {
         match self {
+            #[cfg(feature="gui")]
+            Self::PluginDisplay(request)=>{if let Some(manager)=plugins {request.apply(manager);}},
             #[cfg(feature="gui")]
             Self::AttachUser(request)=>{if let Some(request)=request.take() {engine.remote.pending_gui_attach_user.push(request);}},
             #[cfg(feature="gui")]

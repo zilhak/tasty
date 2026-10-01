@@ -974,6 +974,7 @@ impl crate::app::App {
             }
         }
         self.finish_live_inputs();
+        self.finish_preset_captures();
         self.deliver_remote_journal_results();
         self.journal
             .deliver_plugin_replies(self.plugin_manager.as_mut());

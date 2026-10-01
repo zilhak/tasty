@@ -67,7 +67,7 @@ pub(crate) fn zoomed_px(
 pub fn draw_fullscreen_stage(
     ctx: &egui::Context,
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     fullscreen::draw_fullscreen_stage(ctx, state, engine);
 }
@@ -76,7 +76,7 @@ pub fn draw_fullscreen_stage(
 pub fn draw_popups(
     ctx: &egui::Context,
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     pane_rects: &[(u32, crate::model::PhysicalRect)],
     terminal_rect: crate::model::PhysicalRect,
     scale_factor: f32,

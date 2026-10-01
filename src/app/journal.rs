@@ -11,6 +11,7 @@ mod resource_cleanup;
 #[cfg(feature="gui")]
 pub(crate) mod forward;
 mod capture;
+pub(crate) use capture::{PresetCaptureReply,PresetCaptureNotice};
 mod id_reservations;
 #[cfg(feature = "gui")]
 mod retirement;

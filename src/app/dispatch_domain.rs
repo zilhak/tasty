@@ -35,6 +35,7 @@ impl App {
         mut dispatched: DispatchedIntent,
     ) -> anyhow::Result<()> {
         if let Intent::RemoteBrowser(request)=&dispatched.body {return self.remote_browser_request(source.engine(),request.clone()).map_err(anyhow::Error::msg);}
+        if let Intent::CapturePreset {kind,source:target,presentation}=&dispatched.body {return self.queue_preset_capture_intent(source.engine(),*kind,*target,presentation,&dispatched.origin).map_err(anyhow::Error::msg);}
         let after_create=match &dispatched.body {Intent::NewTabWithFollowup {followup,..}=>Some(followup.clone()),_=>None};
         if let Some(context)=self.engines_mut().resolve(source.engine())
             && let Some(intent)=crate::app::creation_intent::resolve(context.state,&context.engine.as_ref(),&dispatched.body,&dispatched.origin)? {
@@ -585,7 +586,7 @@ impl App {
             tasty_plugin_protocol::events::LifecycleReason::Crash => "crash",
         };
         // 비활성 플러그인이 선언한 훅 이벤트는 새 등록에 사용할 수 없게 한다.
-        self.engine_runtime().plugin_hook_events.unregister(&plugin_id);
+        self.services.registries.plugin_hook_events.unregister(&plugin_id);
         self.enqueue_plugin_host_event(crate::state::PendingHostEvent::PluginUnloaded {
             plugin_id,
             reason: reason_str.to_string(),

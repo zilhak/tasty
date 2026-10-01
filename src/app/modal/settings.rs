@@ -91,14 +91,8 @@ impl App {
             crate::settings::Settings::load()
         };
 
-        let (file_format, file_handler) = if let Some((_, engine)) = self.focused_pair() {
-            (engine.runtime.file_format.clone(), engine.runtime.file_handler.clone())
-        } else {
-            (
-                Arc::new(crate::file::format::FileFormatRegistry::new()),
-                Arc::new(crate::file::handler::FileHandlerRegistry::new()),
-            )
-        };
+        let file_format=self.services.registries.file_format.clone();
+        let file_handler=self.services.registries.file_handler.clone();
         let user_config_path =
             tasty_utils::path::tasty_home().map(|d| d.join("file-handlers.toml"));
         let plugin_pages: Vec<tasty_host_plugin::SettingsPageEntry> = self

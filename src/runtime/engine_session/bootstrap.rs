@@ -38,6 +38,7 @@ impl EngineSession {
         layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
         memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
         runner_registry: std::sync::Arc<tasty_task_runtime::RunnerRegistry>,
+        registries:super::super::registries::RuntimeRegistries,
     ) -> anyhow::Result<Self> {
         let state = Self::for_journal(
             cols,
@@ -48,6 +49,7 @@ impl EngineSession {
             memory,
             runner_registry,
             Settings::load(),
+            registries,
         )?;
         Ok(state)
     }
@@ -62,6 +64,7 @@ impl EngineSession {
         memory: Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
         runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
         settings: Settings,
+        registries:super::super::registries::RuntimeRegistries,
     ) -> anyhow::Result<Self> {
         Self::assemble(
             cols,
@@ -72,6 +75,7 @@ impl EngineSession {
             memory,
             runner_registry,
             settings,
+            Some(registries),
         )
     }
 
@@ -95,6 +99,7 @@ impl EngineSession {
             memory,
             runner_registry,
             settings,
+            None,
         )
     }
 
@@ -107,11 +112,13 @@ impl EngineSession {
         memory: Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
         runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
         settings: Settings,
+        registries:Option<super::super::registries::RuntimeRegistries>,
     ) -> anyhow::Result<Self> {
         // CoreState와 실행 자원이 파일을 읽기 전에 검사 홈을 설정한다.
         #[cfg(test)]
         let isolated_home = Some(crate::test_support::IsolatedHome::new());
         let next_ids = shared_ids.unwrap_or_default();
+        let registries=registries.unwrap_or_else(||super::super::registries::RuntimeRegistries::new(None));
         let session = Self {
             id: EngineId::issue(),
             remote:crate::remote::state::RemoteState::new(),
@@ -129,7 +136,7 @@ impl EngineSession {
             observer_router: crate::output_observer::ObserverRouter::with_counter(
                 next_ids.observer_counter(),
             ),
-            runtime: crate::runtime::engine_runtime::EngineRuntime::new(next_ids.clone(),waker.clone(),memory,settings,cols,rows),
+            runtime: crate::runtime::engine_runtime::EngineRuntime::new(next_ids.clone(),waker.clone(),memory,settings,cols,rows,registries),
             #[cfg(test)]
             _isolated_home: isolated_home,
             #[cfg(all(test, feature = "gui"))]

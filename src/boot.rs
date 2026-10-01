@@ -451,6 +451,7 @@ fn bootstrap_engine(
         None,
         app.services.memory_arc(),
         std::sync::Arc::clone(app.services.tasks.runner_registry()),
+        app.services.registries.clone(),
     )?;
     engine.runtime.waker_factory = Some(factory);
     app.journal
@@ -562,6 +563,7 @@ fn dispatch_headless_event(
                     .refresh_attach_presentation(&state.navigation);
             }
         }
+        app.finish_preset_captures();
         app.journal
             .deliver_plugin_replies(app.plugin_manager.as_mut());
         while !app.journal.pauses_observation() && !app.journal.is_halted() {
@@ -595,19 +597,18 @@ fn dispatch_headless_event(
         }
         return std::ops::ControlFlow::Continue(());
     }
+    if matches!(event,AppEvent::IpcReady) {
+        waker.note_ipc_drained();
+        let flow=headless_dispatch::pump_ipc(app,state,session);
+        rewake_if_left(flow,||ipc_commands_left(&app.services),||waker.wake_ipc());
+        return flow;
+    }
     let engine = &mut session.borrow_mut();
     match event {
         AppEvent::JournalReady => unreachable!("journal event handled above"),
         AppEvent::Shutdown | AppEvent::QuitRequested => {app.state.stopping=true;return std::ops::ControlFlow::Break(());},
         AppEvent::TerminalOutput(id) => handle_terminal_output(app, state, engine, id),
-        AppEvent::IpcReady => {
-            // 회차 도중 새 명령이 다음 깨움을 예약할 수 있도록 표지를 먼저 푼다.
-            waker.note_ipc_drained();
-            let flow = headless_dispatch::pump_ipc(app, state, engine);
-            // 예산에서 남긴 명령은 깨움이 이미 합쳐졌을 수 있어 채널 뒤에 다시 예약한다.
-            rewake_if_left(flow, || ipc_commands_left(&app.services), || waker.wake_ipc());
-            return flow;
-        }
+        AppEvent::IpcReady => unreachable!("IPC event handled above"),
         AppEvent::StreamReady => headless_stream::handle_stream_ready(app, state, engine),
     }
     std::ops::ControlFlow::Continue(())
@@ -790,7 +791,7 @@ mod journal_event_tests {
         let mut settings=crate::settings::Settings::default();
         settings.general.shell="/bin/sh".into();
         settings.general.startup_command="exec sleep 60".into();
-        let mut session=crate::runtime::engine_session::EngineSession::for_journal(80,24,waker.waker_factory().make_default_waker(),None,None,memory,Arc::clone(app.services.tasks.runner_registry()),settings).unwrap();
+        let mut session=crate::runtime::engine_session::EngineSession::for_journal(80,24,waker.waker_factory().make_default_waker(),None,None,memory,Arc::clone(app.services.tasks.runner_registry()),settings,app.services.registries.clone()).unwrap();
         app.journal.begin_engine(&session,crate::runtime::journal_product::EngineSelection::FreshHeadless).unwrap();
         let mut state=crate::state::CommandContext::new(&session.read(),app.services.preset_store.clone());
         state.engine_id=Some(session.id);

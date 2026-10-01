@@ -17,7 +17,7 @@ use std::time::Instant;
 
 pub use schema::SavedLayout;
 
-pub(super) const LAYOUT_VERSION: u32 = 2;
+pub(crate) const LAYOUT_VERSION: u32 = 2;
 
 pub(crate) type LayoutSlotId = u32;
 

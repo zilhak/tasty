@@ -311,15 +311,6 @@ impl App {
         })
     }
 
-    /// Initialized App execution paths borrow services from the pending or first window owner.
-    #[cfg(feature = "gui")]
-    pub(crate) fn engine_runtime(&self) -> &crate::runtime::engine_runtime::EngineRuntime {
-        self.engines()
-            .primary()
-            .expect("App engine accessed before initialization")
-            .runtime
-    }
-
     /// 자동실행은 CoreState 초기화 전에도 호출될 수 있어 그때는 빈 레지스트리를 반환한다.
     #[cfg(feature = "gui")]
     pub(crate) fn autofire_scripts(&self) -> tasty_settings::ScriptRegistry {
@@ -418,3 +409,13 @@ pub(crate) mod settings_edit;
 
 #[cfg(feature="gui")]
 pub(crate) mod remote_browser;
+
+#[cfg(feature="gui")]
+pub(crate) mod plugin_display;
+
+#[cfg(feature="gui")]
+mod settings_files;
+#[cfg(feature="gui")]
+mod preset_editor;
+
+mod preset_capture;

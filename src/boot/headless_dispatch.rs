@@ -14,12 +14,12 @@ use crate::state::RequestContext;
 pub(crate) fn pump_ipc(
     app: &mut App,
     state: &mut RequestContext,
-    engine: &mut EngineMut<'_>,
+    session: &mut crate::runtime::engine_session::EngineSession,
 ) -> std::ops::ControlFlow<()> {
     let mut round = crate::app::ipc_round::IpcRound::begin();
     while let Some(cmd) = round.next(app.hub.ipc_server.as_deref()) {
         let observed = crate::app::ipc_round::CommandObservation::begin(app.services.pressure(), &cmd);
-        let flow = dispatch_command(app, state, engine, cmd);
+        let flow = dispatch_command(app, state, session, cmd);
         observed.finish(app.services.slow_requests());
         if flow.is_break() {
             round.finish(app.services.pressure(), app.services.dispatch());
@@ -34,7 +34,7 @@ pub(crate) fn pump_ipc(
 fn dispatch_command(
     app: &mut App,
     state: &mut RequestContext,
-    engine: &mut EngineMut<'_>,
+    session: &mut crate::runtime::engine_session::EngineSession,
     cmd: crate::ipc::server::IpcCommand,
 ) -> std::ops::ControlFlow<()> {
     // 큐 대기는 이미 계측했다. 실행 기한이 지났으면 권한·rate limit을 소비하기 전에 응답한다.
@@ -56,7 +56,7 @@ fn dispatch_command(
     let checked = match crate::ipc::handler::check_request(
         &mut app.services,
         state,
-        engine,
+        &mut session.core_state,
         &cmd.request,
         &caller,
     ) {
@@ -66,6 +66,9 @@ fn dispatch_command(
             return std::ops::ControlFlow::Continue(());
         }
     };
+    if app.preset_capture_on_session(&cmd,&checked,session,&state.navigation) {return std::ops::ControlFlow::Continue(());}
+    let mut owner=session.borrow_mut();
+    let engine=&mut owner;
     if app.journal.admit_ipc(&cmd, &caller) {
         return std::ops::ControlFlow::Continue(());
     }

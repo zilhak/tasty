@@ -45,7 +45,7 @@ impl IpcWindow for RequestScope<'_> {
     fn recent_files(&self,kind:&str)->Vec<String> {self.recent.get(kind)}
     fn enqueue_intents(&mut self,intents:IntentOutbox) {self.intents.extend(intents.into_vec());}
     #[cfg(feature="gui")]
-    fn enqueue_approval_popup(&mut self,_engine:&mut CoreState,record:&tasty_approval::ApprovalRecord) {self.approvals.push(record.clone());}
+    fn enqueue_approval_popup(&mut self,_engine:&CoreState,record:&tasty_approval::ApprovalRecord) {self.approvals.push(record.clone());}
     #[cfg(feature="gui")]
     fn plugin_popup_user_activated(&self,plugin:&str,instance:u64)->bool {self.popup_proofs.get(&instance).is_some_and(|owner|owner==plugin)}
     #[cfg(feature="gui")]

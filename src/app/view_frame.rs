@@ -17,7 +17,7 @@ impl App {
             }
         }
         // TerminalStore owns grid → tap → throttled OS resize. Input contexts see that cut.
-        view.prepare_render_inputs(&session.read(),self.plugin_manager.as_ref());
+        view.prepare_render_inputs(&session.read(),self.plugin_manager.as_ref().map(super::plugin_display::PluginDisplay::new));
         for intent in view.state.take_pending_intents() {
             match intent.body {
                 crate::intent::Intent::Engine(action)=>action.apply(&mut session.borrow_mut(),self.plugin_manager.as_ref()),
@@ -32,7 +32,7 @@ impl App {
                 }
             }
         }
-        view.render_if_dirty(&session.read(),self.plugin_manager.as_ref());
-        view.finish_redraw(&session.read(),self.plugin_manager.as_ref());
+        view.render_if_dirty(&session.read(),self.plugin_manager.as_ref().map(super::plugin_display::PluginDisplay::new));
+        view.finish_redraw(&session.read(),self.plugin_manager.as_ref().map(super::plugin_display::PluginDisplay::new));
     }
 }

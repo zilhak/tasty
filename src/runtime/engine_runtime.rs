@@ -68,7 +68,7 @@ impl EngineRuntime {
     }
 
     /// PTY ID 발급기는 같은 프로세스의 engine들이 공유해야 ID가 겹치지 않는다.
-    pub(crate) fn new(counters:super::counters::RuntimeCounters,waker:Waker,memory:Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,settings:crate::settings::Settings,cols:usize,rows:usize) -> Self {
+    pub(crate) fn new(counters:super::counters::RuntimeCounters,waker:Waker,memory:Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,settings:crate::settings::Settings,cols:usize,rows:usize,registries:super::registries::RuntimeRegistries) -> Self {
         let runtime=Self {
             settings,default_cols:cols,default_rows:rows,
             #[cfg(debug_assertions)] input_simulation_enabled:false,
@@ -77,30 +77,10 @@ impl EngineRuntime {
             waker: waker.clone(),
             pending_host_events:Vec::new(),pending_lifecycle_events:Vec::new(),pending_plugin_retirements:Vec::new(),
             waker_factory: None,
-            surface_registry: {
-                let reg = SurfaceKindRegistry::new();
-                crate::runtime::surface_registry::register_builtin_kinds(&reg);
-                Arc::new(reg)
-            },
-            plugin_hook_events: Arc::new(
-                crate::core::hook_event_registry::PluginHookEventRegistry::new(),
-            ),
-            file_format: {
-                let reg = crate::file::format::FileFormatRegistry::new();
-                reg.install_host_defaults(crate::file::format::HOST_DEFAULTS_TOML);
-                if let Some(path) = file_handler_user_config_path() {
-                    reg.install_user_config(&path);
-                }
-                Arc::new(reg)
-            },
-            file_handler: {
-                let reg = crate::file::handler::FileHandlerRegistry::new();
-                reg.install_host_defaults(crate::file::handler::HOST_DEFAULTS_TOML);
-                if let Some(path) = file_handler_user_config_path() {
-                    reg.install_user_config(&path);
-                }
-                Arc::new(reg)
-            },
+            surface_registry:registries.surface_registry,
+            plugin_hook_events:registries.plugin_hook_events,
+            file_format:registries.file_format,
+            file_handler:registries.file_handler,
             #[cfg(feature = "gui")]
             identify_worker: None,
             #[cfg(feature = "gui")]
@@ -117,12 +97,7 @@ impl EngineRuntime {
             #[cfg(feature="gui")]
             readonly_views:Default::default(),
         };
-        runtime.file_handler.attach_detector_info(runtime.file_format.clone());
         runtime
     }
-}
-
-fn file_handler_user_config_path() -> Option<std::path::PathBuf> {
-    tasty_utils::path::tasty_home().map(|d| d.join("file-handlers.toml"))
 }
 

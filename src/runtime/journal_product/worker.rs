@@ -418,26 +418,7 @@ fn handle(
             Ok(ResultValue::Reserved(ranges))
         }
         #[cfg(feature = "gui")]
-        Work::SaveView(view) => {
-            let inner = executor.inner.lock().map_err(|error| error.to_string())?;
-            if view.binding.journal_id != inner.store.journal_id()
-                || view.binding.runtime_epoch != inner.epoch.0
-                || inner
-                    .state
-                    .streams
-                    .get(&view.binding.stream)
-                    .is_none_or(|model| {
-                        model.engine_retired
-                            || model.engine_incarnation != view.binding.incarnation
-                            || model.applied.revision < view.binding.revision
-                            || model.applied.batch < view.binding.published_cut
-                    })
-            {
-                return Err("View snapshot belongs to a retired engine binding".into());
-            }
-            super::view_record::save(home, &view)?;
-            Ok(ResultValue::ViewSaved)
-        }
+        Work::SaveView(view) => capture::save_view(executor, home, &view),
         Work::ReadPayload(reference) => {
             let inner = executor.inner.lock().map_err(|error| error.to_string())?;
             let bytes = inner

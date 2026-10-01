@@ -430,7 +430,7 @@ impl App {
     ) -> IpcStep {
         let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         // 읽기 전용 메서드 표는 헤드리스와 공유한다.
-        let surface_registry = self.engine_runtime().surface_registry.clone();
+        let surface_registry = self.services.registries.surface_registry.clone();
         if let Some(response) = host_ipc::handler::plugin::dispatch_readonly(
             &self.services,
             self.plugin_manager.as_ref(),
@@ -506,7 +506,7 @@ impl App {
             }
             // 상태 변경은 헤드리스와 공유하고 결과 이벤트의 전달만 빌드별로 처리한다.
             "plugin.enable" | "plugin.disable" => {
-                let surface_registry = self.engine_runtime().surface_registry.clone();
+                let surface_registry = self.services.registries.surface_registry.clone();
                 let Some((response, events)) = host_ipc::handler::plugin::dispatch_lifecycle_toggle(
                     self.plugin_manager.as_mut(),
                     &surface_registry,
