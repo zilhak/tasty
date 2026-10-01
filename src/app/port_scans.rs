@@ -17,14 +17,32 @@ struct ScanJob {
     worker: JoinHandle<()>,
 }
 #[derive(Default)]
-pub(crate) struct PortScans { jobs: Vec<ScanJob> }
+pub(crate) struct PortScans {
+    jobs: Vec<ScanJob>,
+    stopping: bool,
+}
+impl PortScans {
+    pub(crate) fn begin_shutdown(&mut self) { self.stopping = true; }
 
+    /// Returns the count still owned, not an elapsed-time approximation of completion.
+    pub(crate) fn poll_shutdown(&mut self) -> usize {
+        self.stopping = true;
+        let mut index = 0;
+        while index < self.jobs.len() {
+            if !self.jobs[index].worker.is_finished() { index += 1; continue; }
+            let job = self.jobs.swap_remove(index);
+            if job.worker.join().is_err() { tracing::warn!("port scan worker panicked during App retirement"); }
+        }
+        self.jobs.len()
+    }
+}
 impl Drop for PortScans {
     fn drop(&mut self) {
-        // OS inspection has no cancellation primitive. App retirement waits for the admitted,
-        // bounded scans; dropping a popup only discards its result identity, not its worker.
-        for job in self.jobs.drain(..) {
-            if job.worker.join().is_err() { tracing::warn!("port scan worker panicked during App retirement"); }
+        let pending = self.poll_shutdown();
+        if pending != 0 {
+            // Forced App teardown may abandon observation. Dropping JoinHandle detaches these
+            // workers; it neither cancels OS inspection nor establishes that they joined.
+            tracing::warn!(pending, "App dropped while port scan workers remain unjoined");
         }
     }
 }
@@ -33,19 +51,21 @@ impl super::App {
     pub(crate) fn poll_port_scans(&mut self) {
         let mut index = 0;
         while index < self.port_scans.jobs.len() {
+            if !self.port_scans.jobs[index].worker.is_finished() { index += 1; continue; }
             let result = match self.port_scans.jobs[index].result.try_recv() {
                 Ok(result) => result,
                 Err(mpsc::TryRecvError::Empty) => { index += 1; continue; }
                 Err(mpsc::TryRecvError::Disconnected) => Err("scan worker disconnected".into()),
             };
             let job = self.port_scans.jobs.swap_remove(index);
-            // Receiving the result means the scan itself is finished. Join only its final wakeup.
+            // is_finished above proves the thread ended; a result alone does not prove a join.
             if job.worker.join().is_err() { tracing::warn!("port scan worker panicked"); }
             let Some(view) = self.view.views.get_mut(&job.window).and_then(|view| view.as_main_mut()) else { continue; };
             if !view.base.state.matches_identity(&job.view) { continue; }
             let slot = if job.favorites { &mut view.state.port_favorites_scan } else { &mut view.state.port_scan };
             if slot.accept(&job.ticket, result) { view.mark_dirty(); }
         }
+        if self.port_scans.stopping { return; }
         let proxy = self.view.proxy.clone();
         for (&window, view) in &mut self.view.views {
             let Some(view) = view.as_main_mut() else { continue; };
