@@ -729,7 +729,7 @@ fn a_host_method_declaration_follows_its_effect() {
     assert_eq!(
         crate::method_meta::key_contract("workspace.create"),
         KeyContract::Kept {
-            since: KEY_KEPT_BY_ROUTER
+            since: crate::method_meta::KEY_KEPT_IN_STRUCTURE_JOURNAL
         }
     );
     assert_eq!(

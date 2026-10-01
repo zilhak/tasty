@@ -360,8 +360,8 @@ mod tests {
         assert!(refused.to_string().contains("nothing was sent"));
 
         assert_eq!(
-            required_key_version("workspace.create").expect("engine 라우터 메서드"),
-            crate::method_meta::KEY_KEPT_BY_ROUTER
+            required_key_version("workspace.create").expect("구조 journal 메서드"),
+            crate::method_meta::KEY_KEPT_IN_STRUCTURE_JOURNAL
         );
         assert_eq!(
             required_key_version("window.create").expect("App 층 메서드"),

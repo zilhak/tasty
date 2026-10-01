@@ -282,7 +282,7 @@ fn attention_clear_is_rejected_while_hard_occupied() {
     assert_eq!(raised["kind"], "needs_input");
 
     let denied = server.call_raw(
-        "surface.live.attention.clear",
+        "surface.attention.clear",
         json!({ "surface_id": ws.surface_id }),
     );
     let message = denied["error"]["message"]
@@ -294,7 +294,7 @@ fn attention_clear_is_rejected_while_hard_occupied() {
     );
 
     let after = server.call(
-        "surface.live.attention.get",
+        "surface.attention.get",
         json!({ "surface_id": ws.surface_id }),
     );
     assert_eq!(after["kind"], "needs_input", "{after:?}");
