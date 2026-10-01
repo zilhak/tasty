@@ -12,7 +12,6 @@ pub mod boot;
 #[cfg(any(feature = "gui", debug_assertions))]
 mod cell_palette;
 mod clipboard;
-mod close_trace;
 mod completion_strategy;
 mod core;
 mod db;
