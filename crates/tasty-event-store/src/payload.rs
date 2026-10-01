@@ -59,6 +59,40 @@ impl EventStore {
         Ok(())
     }
 
+    /// Copy into independently owned immutable generations. The source holder is durable before
+    /// the destination transaction starts and is deliberately not released here: only a successful
+    /// destination import plus manifest handoff authorizes the caller to release it.
+    pub fn import_payloads(
+        &mut self,
+        epoch: WriterEpoch,
+        source: &mut EventStore,
+        source_epoch: WriterEpoch,
+        references: &[PayloadRef],
+        source_holder: &str,
+        destination_holder: &str,
+    ) -> StoreResult<Vec<(PayloadRef, PayloadRef)>> {
+        let source_tx = source.write_tx(source_epoch)?;
+        let mut contents = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
+        for reference in references {
+            if seen.insert(reference.0) {
+                let bytes = read_verified(&source_tx, *reference)?;
+                pin_in(&source_tx, *reference, source_holder)?;
+                contents.push((*reference, bytes));
+            }
+        }
+        source_tx.commit()?;
+        let tx = self.write_tx(epoch)?;
+        let mut mapping = Vec::new();
+        for (reference, bytes) in contents {
+            let copied = insert(&tx, &bytes)?;
+            pin_in(&tx, copied, destination_holder)?;
+            mapping.push((reference, copied));
+        }
+        tx.commit()?;
+        Ok(mapping)
+    }
+
     /// 내용을 읽고 checksum을 검증한다.
     pub fn read_payload(&self, payload: PayloadRef) -> StoreResult<Vec<u8>> {
         read_verified(&self.conn, payload)

@@ -164,6 +164,11 @@ Batch 식별과 stream revision 헤더는 유지한다. 오래된 cursor 읽기�
 App의 읽기 lease에 잡힌 payload는 Busy 대기와 늦은 완료 동안 snapshot pin에 포함한다.
 제품 호출은 publication ACK 뒤에만 허용하며 공통 worker 연결은 이행 중이다.
 
+새 journal import의 payload 복사는 source import holder를 먼저 영속화하고 destination에
+독립 BLOB과 destination holder를 한 transaction으로 만든다. 복사 API는 source holder를
+해제하지 않는다. destination 초기 이벤트와 manifest 전환이 끝난 호출자가 해제하며,
+실패 시 source를 계속 읽을 수 있다. 이 복사 primitive의 제품 manifest 전환 연결은 이행 중이다.
+
 ## 저장하지 않는 것
 
 실행 중인 PTY 프로세스와 환경변수, 팝업 상태는 저장하지 않는다. `restore.command`는 기존 프로세스를 보존하는 기능이 아니라 새 터미널에서 명령을 다시 실행하기 위한 정보다.

@@ -352,3 +352,18 @@ fn compaction_retains_fallback_tail_and_rejects_old_cursors() {
     raw(&db_path(&dir)).execute("UPDATE payloads SET bytes = X'00' WHERE payload_id = (SELECT payload_id FROM snapshots WHERE snapshot_id = ?1)", [older as i64]).expect("damage anchor");
     assert!(matches!(store.snapshot_and_tail(MODEL), Err(StoreError::ResyncRequired {..})));
 }
+
+#[test]
+fn copied_payloads_have_independent_ownership_and_source_pin_survives() {
+    let (_source_dir, mut source, source_epoch) = fresh();
+    let (_destination_dir, mut destination, destination_epoch) = fresh();
+    let original = source.put_payload(source_epoch, b"source bytes").expect("source");
+    let mapping = destination.import_payloads(destination_epoch, &mut source, source_epoch,
+        &[original], "import/source", "import/destination").expect("copy");
+    let copied = mapping[0].1;
+    assert_eq!(source.gc_payloads(source_epoch).expect("source GC"), 0);
+    assert_eq!(destination.read_payload(copied).expect("independent bytes"), b"source bytes");
+    source.release_payload_holder(source_epoch, "import/source").expect("manifest handed off");
+    assert_eq!(source.gc_payloads(source_epoch).expect("source retire"), 1);
+    assert_eq!(destination.read_payload(copied).expect("survives source retirement"), b"source bytes");
+}
