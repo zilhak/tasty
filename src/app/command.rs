@@ -239,14 +239,14 @@ pub(crate) enum DomainIntent {
     /// 지정 surface에 attention을 요청한다. 기본 kind는 IPC 핸들러에서 정한다.
     SurfaceCompletion {
         surface_id: u32,
-        kind: super::AttentionKind,
+        kind: crate::core::AttentionKind,
     },
 
     /// kind가 None이면 현재 attention을 지우고 Some이면 같은 종류만 지운다.
     /// 뒤늦은 완료 해제가 더 최근의 입력 대기 표시를 지우지 않도록 종류를 지정할 수 있다.
     SurfaceAttentionClear {
         surface_id: u32,
-        kind: Option<super::AttentionKind>,
+        kind: Option<crate::core::AttentionKind>,
     },
 
     /// scope에 맞는 최신 항목을 꺼내 복원한다. workspace 자체를 복원할 때는 target_pane_id를 쓰지 않는다.
@@ -444,7 +444,7 @@ pub(crate) enum CoreEvent {
 
     SurfaceCompletionRequested {
         surface_id: u32,
-        kind: super::AttentionKind,
+        kind: crate::core::AttentionKind,
     },
 
     #[cfg_attr(
@@ -456,7 +456,7 @@ pub(crate) enum CoreEvent {
     )]
     SurfaceAttentionClearRequested {
         surface_id: u32,
-        kind: Option<super::AttentionKind>,
+        kind: Option<crate::core::AttentionKind>,
     },
 
     /// restored=false는 후보 부재나 복원 실패다. kind는 복원 종류와 후속 처리에 필요한 위치다.

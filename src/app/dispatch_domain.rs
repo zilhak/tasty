@@ -447,7 +447,7 @@ impl App {
     ) {
         let Some(DispatchCtx {
             state,
-            engine: _,
+            mut engine,
             view: dirty_main,
             ..
         }) = engines_mut!(self).resolve(source.engine())
@@ -949,9 +949,11 @@ impl App {
             return;
         };
 
-        let created_id = engine
-            .notifications
-            .add(ws_id, surface_id, title.clone(), body.clone());
+        let created_id =
+            engine
+                .live
+                .notifications
+                .add(ws_id, surface_id, title.clone(), body.clone());
         if let Some(nid) = created_id {
             engine.raise_attention(surface_id, AttentionKind::Completion);
             // OS 벨과의 중복을 피하려는 TerminalBellRing 표지는 사운드에서 제외한다.

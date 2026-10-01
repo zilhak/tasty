@@ -14,7 +14,7 @@ impl App {
         if engines().next().is_none() {
             send_response(
                 &cmd.response_tx,
-                crate::app::services::surface::no_application_state(rpc_id),
+                crate::app::services::no_application_state(rpc_id),
             );
             return;
         }

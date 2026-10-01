@@ -57,7 +57,7 @@ pub(super) fn resolve_spawn(
         return Err(bad(format!("cwd does not exist: {path}")));
     }
     let launch_cwd = cwd.as_ref().map(std::path::PathBuf::from).or_else(|| {
-        if !core.runtime.settings.general.inherit_cwd {
+        if !session.runtime.settings.general.inherit_cwd {
             return None;
         }
         let tab = view

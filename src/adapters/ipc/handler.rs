@@ -1175,7 +1175,7 @@ fn require_pane_id(
 
 /// 알림을 돌려줄 caller_surface_id는 부가 정보다.
 /// 범위는 검사하되 잘못된 값 때문에 본 요청을 거절하지는 않는다.
-pub(super) fn caller_surface_id(params: &serde_json::Value) -> Option<u32> {
+pub(crate) fn caller_surface_id(params: &serde_json::Value) -> Option<u32> {
     params::read_int::<u32>(params, "caller_surface_id")
         .ok()
         .flatten()

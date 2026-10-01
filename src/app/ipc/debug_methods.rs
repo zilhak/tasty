@@ -43,11 +43,8 @@ impl App {
         // 임의 Lua 실행은 debug 전용이며 헤드리스와 같은 함수를 사용한다.
         if cmd.request.method == "debug.lua.eval" {
             let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-            let response = crate::app::services::surface_debug::lua_eval(
-                self.lua_engine.as_ref(),
-                id,
-                &cmd.request.params,
-            );
+            let response =
+                crate::app::services::lua_eval(self.lua_engine.as_ref(), id, &cmd.request.params);
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
@@ -196,7 +193,7 @@ impl App {
         id: serde_json::Value,
     ) -> host_ipc::protocol::JsonRpcResponse {
         match method {
-            "debug.fullscreen.list" => crate::app::services::surface_debug::fullscreen_list(id),
+            "debug.fullscreen.list" => crate::app::services::fullscreen_list(id),
             "debug.fullscreen.open" => self.debug_fullscreen_open(params, id),
             "debug.fullscreen.close" => self.debug_fullscreen_close(params, id),
             "debug.fullscreen.state" => self.debug_fullscreen_state(params, id),

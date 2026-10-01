@@ -367,7 +367,7 @@ impl App {
     }
     fn ipc_handle_clipboard_set_text(&mut self, cmd: &IpcCommand) -> IpcStep {
         let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-        let resp = crate::app::services::surface::clipboard_set_text(
+        let resp = crate::app::services::clipboard_set_text(
             &self.services,
             response_id,
             &cmd.request.params,

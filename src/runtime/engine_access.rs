@@ -191,7 +191,7 @@ impl EngineMut<'_> {
 impl EngineRef<'_> {
     /// 설정과 factory가 있으면 surface별 waker, 아니면 공용 waker를 반환한다.
     pub fn make_waker(&self, surface_id: u32) -> tasty_terminal::Waker {
-        if self.settings.performance.targeted_pty_polling
+        if self.runtime.settings.performance.targeted_pty_polling
             && let Some(factory) = &self.runtime.waker_factory
         {
             return factory.make_targeted_waker(surface_id);

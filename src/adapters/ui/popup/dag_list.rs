@@ -4,7 +4,6 @@
 //! release IPC로 팝업을 강제로 열지는 않는다. 에이전트는 agent.dag_list/get으로 데이터를 읽는다.
 
 use crate::runtime::engine_read::EngineRead;
-use crate::runtime::engine_read::EngineRead;
 use std::time::Instant;
 
 use tasty_icons as icons;

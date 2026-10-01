@@ -139,15 +139,20 @@ impl EngineMut<'_> {
                 busy.insert(sid);
             }
             if let Some(f) = fg.as_ref() {
-                if self.settings.general.mouse_capture_disabled_for(&f.name) {
+                if self
+                    .runtime
+                    .settings
+                    .general
+                    .mouse_capture_disabled_for(&f.name)
+                {
                     mouse_capture_disabled.insert(sid);
                 }
                 names.insert(sid, f.name.clone());
             }
         }
         bump_foreground_generations(
-            &mut self.core.live.foreground_generation,
-            &self.core.live.foreground_names,
+            &mut self.live.foreground_generation,
+            &self.live.foreground_names,
             &names,
         );
 

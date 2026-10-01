@@ -1947,7 +1947,7 @@ impl App {
         let ListDirRequestMsg::ListDirRequest { request_id, dir } = msg;
         if let Some(engine) = find_workspace_holder_engine_mut(self.engines_mut(), client_id) {
             crate::remote::server::handle_list_dir_request(
-                engine.core,
+                &mut engine,
                 hub,
                 client_id,
                 request_id,
@@ -1981,7 +1981,7 @@ impl App {
         } = msg;
         if let Some(engine) = find_workspace_holder_engine_mut(self.engines_mut(), client_id) {
             crate::remote::server::handle_markdown_content_request(
-                engine.core,
+                &mut engine,
                 hub,
                 client_id,
                 request_id,

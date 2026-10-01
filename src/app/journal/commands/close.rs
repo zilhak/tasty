@@ -344,8 +344,8 @@ impl Request {
                 .map(|tab| tab.all_surface_ids())
                 .unwrap_or_default(),
             tasty_core::CloseTarget::Surface(id) => {
-                crate::app::services::locate_surface_in_pane(core, id)
-                    .and_then(|location| core.workspace_at(location.ws_idx))
+                core.find_workspace_index_for_surface(id)
+                    .and_then(|(index, _)| core.workspace_at(index))
                     .map(|workspace| {
                         // Closing its last leaf cascades through the containing structures, but all removed
                         // leaves still consist of this one ID.

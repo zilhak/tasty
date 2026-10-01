@@ -135,7 +135,7 @@ impl Creation {
         worker: &JournalWorker,
     ) -> Result<Self, String> {
         let core = &session.core_state;
-        let shell = crate::core::state::ShellConfig::from_settings(&core.runtime.settings);
+        let shell = crate::core::state::ShellConfig::from_settings(&session.runtime.settings);
         let binding = session
             .journal_binding
             .clone()
@@ -184,11 +184,11 @@ impl Creation {
                     executable: shell.shell,
                     arguments: shell.args,
                     environment: shell.envs,
-                    cols: core.runtime.default_cols,
-                    rows: core.runtime.default_rows,
-                    scrollback_lines: core.runtime.settings.general.scrollback_lines,
-                    disk_scrollback: core.runtime.settings.performance.scrollback_disk_swap,
-                    startup_command: core.runtime.settings.general.startup_command.clone(),
+                    cols: session.runtime.default_cols,
+                    rows: session.runtime.default_rows,
+                    scrollback_lines: session.runtime.settings.general.scrollback_lines,
+                    disk_scrollback: session.runtime.settings.performance.scrollback_disk_swap,
+                    startup_command: session.runtime.settings.general.startup_command.clone(),
                     restore_command: None,
                 }),
             },

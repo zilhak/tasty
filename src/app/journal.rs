@@ -716,7 +716,7 @@ impl JournalApplication {
                             bound.imported_view,
                         ),
                     );
-                    for workspace in &session.core_state.local_workspaces() {
+                    for workspace in session.core_state.local_workspaces() {
                         if workspace.attach_mapping.is_some() {
                             session
                                 .remote

@@ -48,8 +48,8 @@ impl EngineMut<'_> {
         if let Err(e) = crate::surface_meta::SurfaceMetaStore::ensure_created(surface_id) {
             tracing::warn!("surface_meta ensure_created failed for surface {surface_id}: {e}");
         }
-        let scrollback_limit = self.settings.general.scrollback_lines;
-        let disk_swap = self.settings.performance.scrollback_disk_swap;
+        let scrollback_limit = self.runtime.settings.general.scrollback_lines;
+        let disk_swap = self.runtime.settings.performance.scrollback_disk_swap;
         if let Some(terminal) = self.find_terminal_by_id_mut(surface_id) {
             terminal.set_scrollback_limit(scrollback_limit);
             if disk_swap {
@@ -57,7 +57,7 @@ impl EngineMut<'_> {
             }
         }
         // bash 초기화 파일은 rcfile 인자로 전달한다. 여기서는 사용자 startup_command만 입력한다.
-        let startup = self.settings.general.startup_command.trim();
+        let startup = self.runtime.settings.general.startup_command.trim();
         if !startup.is_empty() {
             let line = format!("{startup}\n");
             if let Some(terminal) = self.find_terminal_by_id_mut(surface_id) {

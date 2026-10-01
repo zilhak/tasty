@@ -47,7 +47,7 @@ impl PortFavorites {
             tracing::warn!("port_scanner: no favorites path available; not saving");
             return;
         };
-        if let Some(contents) = self.serialize() {
+        if let Some(contents) = Self::serialize(self) {
             Self::persist_to_disk(&path, &contents);
         }
     }

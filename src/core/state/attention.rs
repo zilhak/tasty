@@ -252,6 +252,7 @@ impl EngineMut<'_> {
     #[cfg(any(feature = "gui", test))]
     pub(crate) fn mark_notification_read(&mut self, id: u64) {
         let source_surface = self
+            .live
             .notifications
             .all()
             .find(|n| n.id == id)
@@ -269,6 +270,7 @@ impl EngineMut<'_> {
     #[cfg(any(feature = "gui", test))]
     pub(crate) fn mark_all_notifications_read(&mut self) {
         let unread_surfaces: std::collections::HashSet<u32> = self
+            .live
             .notifications
             .all()
             .filter(|n| !n.read)

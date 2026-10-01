@@ -2,7 +2,6 @@ use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{PopupAction, PopupScope};
 use crate::i18n::t;
 use crate::runtime::engine_read::EngineRead;
-use crate::runtime::engine_read::EngineRead;
 use crate::state::MainViewState;
 use crate::theme::Theme;
 use tasty_terminal::search::{SearchError, SearchOptions};

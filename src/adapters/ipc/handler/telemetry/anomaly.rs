@@ -11,7 +11,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 pub(super) use crate::app::telemetry::persist_anomaly;
 
-pub(super) fn fire_anomaly_notification(
+pub(in crate::adapters::ipc::handler) fn fire_anomaly_notification(
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::runtime::engine_access::EngineMut<'_>,

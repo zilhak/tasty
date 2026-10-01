@@ -26,7 +26,7 @@ pub(crate) fn presentation(
         .selection
         .collapsed_categories
         .extend(view.collapsed_categories);
-    for workspace in &core.local_workspaces() {
+    for workspace in core.local_workspaces() {
         for id in workspace.pane_layout().all_pane_ids() {
             if let Some(pane) = workspace.pane_layout().find_pane(id) {
                 for tab in &pane.tabs {

@@ -214,7 +214,7 @@ impl StoredView {
         presentation: &dyn crate::model::StructurePresentation,
     ) -> Self {
         let captured = crate::model::StructurePresentationSnapshot::capture(
-            &core.local_workspaces(),
+            core.local_workspaces(),
             &core.categories(),
             presentation,
         );

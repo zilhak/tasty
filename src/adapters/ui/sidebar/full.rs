@@ -40,6 +40,7 @@ pub(super) fn entry_view(
 /// 카테고리 표시가 켜져 있으면 저장된 순서로 그룹을 만든다. 행은 전역 워크스페이스 인덱스를 유지한다.
 pub(super) fn build_category_sections(
     presentation: &dyn crate::model::StructurePresentation,
+    pending: Option<crate::state::PendingMove>,
     engine: &crate::runtime::engine_read::EngineRead<'_>,
     active_ws: usize,
 ) -> Option<Vec<CategorySectionView>> {
@@ -55,12 +56,7 @@ pub(super) fn build_category_sections(
                 let entries = engine
                     .workspaces_in_category(cat.id)
                     .into_iter()
-                    .map(|(gi, ws)| {
-                        (
-                            gi,
-                            entry_view(state.pending_move, engine, gi, ws, active_ws),
-                        )
-                    })
+                    .map(|(gi, ws)| (gi, entry_view(pending, engine, gi, ws, active_ws)))
                     .collect();
                 CategorySectionView {
                     id: cat.id,
@@ -100,7 +96,8 @@ pub fn draw_full_sidebar(
         .map(|(i, ws)| entry_view(state.pending_move, engine, i, ws, active_ws))
         .collect();
 
-    let sections = build_category_sections(&state.navigation, engine, active_ws);
+    let sections =
+        build_category_sections(&state.navigation, state.pending_move, engine, active_ws);
 
     let drag = state.dialogs.ws_drag.as_ref().map(|d| DragSnapshot {
         ws_idx: d.ws_idx,
