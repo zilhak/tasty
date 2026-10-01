@@ -569,6 +569,7 @@ impl PluginManager {
             .pending_requests
             .iter()
             .filter_map(|(id, p)| match &p.kind {
+                PendingRequestKind::SurfaceRetire {..} if p.to == plugin_id => Some(*id),
                 PendingRequestKind::NamespaceInvoke { plugin_id: pid, .. }
                 | PendingRequestKind::PluginToPluginNamespace { plugin_id: pid, .. }
                 | PendingRequestKind::NamespaceInvokeWithPostHook {
@@ -610,6 +611,7 @@ impl PluginManager {
                 );
             }
             match removed.map(|p| p.kind) {
+                Some(PendingRequestKind::SurfaceRetire {completion,..}) => completion.finish(Err(msg)),
                 Some(PendingRequestKind::NamespaceInvoke {
                     response_tx,
                     original_id,

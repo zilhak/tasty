@@ -141,6 +141,10 @@ pub(super) enum PendingRequestKind {
         surface_id: u32,
         binding: crate::host_cmd::SurfaceBinding,
     },
+    SurfaceRetire {
+        completion: crate::host_cmd::RemoteRetirementCompletion,
+        process_binding: std::sync::Weak<()>,
+    },
     /// 단축키로 실행한 plugin 명령. SurfaceResult로 표시 이름을 갱신할 수 있다.
     CommandInvoke {
         surface_id: u32,
@@ -358,6 +362,7 @@ pub struct PluginManager {
     /// registry create/restore closure가 새 RemoteSurface 등록을 보내는 채널.
     pub host_cmd_tx: Sender<HostCmd>,
     pub(super) host_cmd_rx: Receiver<HostCmd>,
+    pub(super) retirement_control: pump::RetirementControl,
     /// surface_id → RemoteSurface handle. 라이프사이클 동안 유지.
     pub(super) surfaces: HashMap<u32, RemoteSurfaceEntry>,
     /// host → plugin 요청 ID → 종류. 응답 수신 시 후처리 dispatch용.

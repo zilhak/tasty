@@ -112,6 +112,12 @@ impl PluginManager {
     }
 
     pub(super) fn handle_plugin_response(&mut self, plugin_id: &str, resp: PluginResponse) {
+        if self.pending_requests.get(&resp.id).is_some_and(|pending| {
+            matches!(pending.kind, PendingRequestKind::SurfaceRetire {..}) && pending.to != plugin_id
+        }) {
+            tracing::warn!("remote retirement response came from another plugin");
+            return;
+        }
         let pending = self.pending_requests.remove(&resp.id);
         // 이미 만료·취소된 요청처럼 매칭되지 않은 응답은 왕복 시간에 넣지 않는다.
         if let Some(p) = &pending {
@@ -177,6 +183,14 @@ impl PluginManager {
                 if let Some(binding) = binding {
                     self.apply_surface_response(plugin_id, surface_id, &binding, resp.result);
                 }
+            }
+            PendingRequestKind::SurfaceRetire {completion,process_binding} => {
+                let current = self.processes.get(plugin_id).map(|process|process.reply_binding());
+                if current.as_ref().is_none_or(|current|!current.ptr_eq(&process_binding)) || process_binding.upgrade().is_none() {
+                    completion.finish(Err("destruction response belongs to a retired plugin process".into()));
+                } else if let Some(error) = resp.error {
+                    completion.finish(Err(format!("plugin rejected surface destruction: {error}")));
+                } else {completion.finish(Ok(()));}
             }
             PendingRequestKind::Other => {}
             PendingRequestKind::PopupOpen { instance_id } => {

@@ -30,8 +30,44 @@ impl SurfaceBinding {
     /// has been dropped. This is evidence of disposal, not a lookup by reusable surface ID.
     pub fn is_alive(&self)->bool {self.0.strong_count()!=0}
 
+    pub fn same_instance(&self, other:&Self)->bool {self.0.ptr_eq(&other.0)}
+
     pub fn matches(&self, handles: &SurfaceHandles) -> bool {
         self.0.ptr_eq(&Arc::downgrade(&handles.snapshot_cache))
+    }
+}
+
+/// Exact destroy-RPC observation. Neither FIFO enqueue nor dropping the host kind is an ACK.
+#[derive(Clone)]
+pub struct RemoteRetirementReceipt {
+    state: Arc<std::sync::OnceLock<Result<(), String>>>,
+    surface_id: u32,
+    binding: SurfaceBinding,
+}
+pub struct RemoteRetirementCompletion(Arc<std::sync::OnceLock<Result<(), String>>>);
+impl RemoteRetirementReceipt {
+    pub fn pending(surface_id:u32,binding:SurfaceBinding) -> (Self, RemoteRetirementCompletion) {
+        let state = Arc::new(std::sync::OnceLock::new());
+        (Self {state:state.clone(),surface_id,binding}, RemoteRetirementCompletion(state))
+    }
+    pub fn observation(&self) -> Option<Result<(), String>> { self.state.get().cloned() }
+    pub fn matches(&self,surface_id:u32,binding:&SurfaceBinding)->bool {
+        self.surface_id==surface_id && self.binding.0.ptr_eq(&binding.0)
+    }
+}
+impl RemoteRetirementCompletion {
+    pub fn finish(self, result: Result<(), String>) {
+        if self.0.set(result).is_err() {tracing::warn!("remote retirement receipt was already settled");}
+    }
+}
+impl Drop for RemoteRetirementCompletion {
+    fn drop(&mut self) {
+        if self.0.get().is_none() {
+            // A cancelled request/connection is not evidence that the plugin destroyed its owner.
+            if self.0.set(Err("remote retirement acknowledgement was lost".into())).is_err() {
+                tracing::warn!("remote retirement producer ended during settlement");
+            }
+        }
     }
 }
 
@@ -40,6 +76,7 @@ pub enum HostCmd {
     RemoteSurfaceRetired {
         surface_id: u32,
         binding: SurfaceBinding,
+        completion: Option<RemoteRetirementCompletion>,
     },
     RemoteSurfaceCreated {
         surface_id: u32,

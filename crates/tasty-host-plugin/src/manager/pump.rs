@@ -87,11 +87,19 @@ struct RestartCause {
     message: String,
 }
 
+#[derive(Default)]
+pub(super) struct RetirementControl {
+    cancelled: Vec<(u32,crate::host_cmd::SurfaceBinding)>,
+    responses: std::collections::VecDeque<(String,std::sync::Weak<()>,protocol::PluginResponse)>,
+    bytes: usize,
+}
+
 impl PluginManager {
     /// 플러그인 이벤트와 주기 작업을 처리하고 응답이 없는 프로세스를 재시작한다.
     /// TimerHub의 주기 판정에는 호출자가 준 now를 사용한다.
     /// 처음 등록한 hello 목록을 반환하면 호스트가 surface 종류 등록과 상태 알림을 마친다.
     pub fn pump(&mut self, now: Instant) -> Vec<(String, String)> {
+        self.restore_retirement_control_responses();
         self.settle_connections();
 
         let collected = self.collect_plugin_events();
@@ -118,6 +126,71 @@ impl PluginManager {
         }
 
         hello_pairs
+    }
+
+    /// A halted journal may dispose already-owned resources, but must not run queued creation,
+    /// hooks, namespace continuations, restart timers or historical plugin calls.
+    pub fn poll_retirement_control(&mut self) {
+        for _ in 0..64 {
+            let Ok(command)=self.host_cmd_rx.try_recv() else {break;};
+            match command {
+                HostCmd::RemoteSurfaceCreated {surface_id,handles,..}|HostCmd::RemoteSurfaceRestored {surface_id,handles,..}=> {
+                    self.retirement_control.cancelled.push((surface_id,handles.binding()));
+                    // The factory publication never reached a plugin. Record that exact binding,
+                    // rather than treating absence of an arbitrary same-ID registry entry as proof.
+                },
+                HostCmd::RemoteSurfaceRetired {surface_id,binding,completion}=> {
+                    if let Some(index)=self.retirement_control.cancelled.iter().position(|(id,old)|*id==surface_id && old.same_instance(&binding)) {
+                        self.retirement_control.cancelled.swap_remove(index);
+                        if let Some(completion)=completion {completion.finish(Ok(()));}
+                    } else if let Some(completion)=completion {self.destroy_observed_remote_surface(surface_id,binding,completion);}
+                    else {self.destroy_bound_remote_surface(surface_id,&binding);}
+                },
+            }
+        }
+        let plugins:Vec<_>=self.processes.keys().cloned().collect();
+        let mut remaining=64usize;
+        for plugin in plugins {
+            while remaining>0 && self.retirement_control.bytes<crate::process::channel_bytes::QUEUE_BYTES_LIMIT {
+                let Some(process)=self.processes.get(&plugin) else {break;};
+                let binding=process.reply_binding();
+                let response=match process.resp_rx.try_recv() {
+                    Ok(response)=>response,
+                    Err(std::sync::mpsc::TryRecvError::Empty)=>break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected)=> {
+                        let ids:Vec<_>=self.pending_requests.iter().filter_map(|(id,pending)|
+                            (pending.to==plugin && matches!(pending.kind,PendingRequestKind::SurfaceRetire {..})).then_some(*id)).collect();
+                        for id in ids {self.pending_requests.remove(&id);}
+                        break;
+                    },
+                };
+                remaining-=1;
+                if self.pending_requests.get(&response.id).is_some_and(|pending|matches!(pending.kind,PendingRequestKind::SurfaceRetire {..})) {
+                    self.handle_plugin_response(&plugin,response);
+                } else {
+                    // Match the channel policy: one already-received oversized response may be
+                    // retained, then further reads stop. Ordinary callbacks are never run here.
+                    let bytes=serde_json::to_vec(&response).map_or(crate::process::channel_bytes::QUEUE_BYTES_LIMIT,|bytes|bytes.len());
+                    self.retirement_control.bytes=self.retirement_control.bytes.saturating_add(bytes).saturating_add(plugin.len());
+                    self.retirement_control.responses.push_back((plugin.clone(),binding,response));
+                }
+            }
+        }
+        let obsolete:Vec<_>=self.pending_requests.iter().filter_map(|(id,pending)|match &pending.kind {
+            PendingRequestKind::SurfaceRetire {process_binding,..} if self.processes.get(&pending.to)
+                .is_none_or(|process|!process.reply_binding().ptr_eq(process_binding))=>Some(*id),
+            _=>None,
+        }).collect();
+        for id in obsolete {self.pending_requests.remove(&id);}
+    }
+    fn restore_retirement_control_responses(&mut self) {
+        let responses=std::mem::take(&mut self.retirement_control.responses);
+        self.retirement_control.bytes=0;
+        for (plugin,binding,response) in responses {
+            if self.processes.get(&plugin).is_some_and(|process|process.reply_binding().ptr_eq(&binding)) {
+                self.handle_plugin_response(&plugin,response);
+            }
+        }
     }
 
     /// surface 갱신 요청을 가져간다. 호스트가 해당 View를 다시 그리는 데 쓴다.
@@ -602,8 +675,52 @@ impl PluginManager {
             .send(HostCmd::RemoteSurfaceRetired {
                 surface_id,
                 binding,
+                completion: None,
             })
             .map_err(|error| error.to_string())
+    }
+
+    pub fn enqueue_observed_remote_retirement(
+        &self,
+        surface_id: u32,
+        binding: crate::host_cmd::SurfaceBinding,
+    ) -> Result<crate::host_cmd::RemoteRetirementReceipt, String> {
+        let (receipt, completion) = crate::host_cmd::RemoteRetirementReceipt::pending(surface_id,binding.clone());
+        self.host_cmd_tx.send(HostCmd::RemoteSurfaceRetired {surface_id,binding,completion:Some(completion)})
+            .map_err(|error| error.to_string())?;
+        Ok(receipt)
+    }
+
+    fn destroy_observed_remote_surface(
+        &mut self,
+        surface_id: u32,
+        binding: crate::host_cmd::SurfaceBinding,
+        completion: crate::host_cmd::RemoteRetirementCompletion,
+    ) {
+        let Some(entry) = self.surfaces.get(&surface_id) else {
+            completion.finish(Err("original remote registration is absent; destruction is unconfirmed".into()));
+            return;
+        };
+        if !binding.matches(&entry.handles) {
+            completion.finish(Err("remote registration changed before destruction acknowledgement".into()));
+            return;
+        }
+        let plugin_id = entry.plugin_id.clone();
+        if let Some(frame) = self.egui_mesh_frames.remove(&surface_id) {
+            self.release_plugin_buffer(&frame.plugin_id,frame.buffer_id);
+        }
+        self.surfaces.remove(&surface_id);
+        let Some(process) = self.processes.get(&plugin_id) else {
+            completion.finish(Err("original plugin process is unavailable for destruction".into()));
+            return;
+        };
+        let process_binding = process.reply_binding();
+        let id = self.next_request_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let request = protocol::PluginRequest::new(protocol::METHOD_SURFACE_DESTROY,json!({"surface_id":surface_id}),id);
+        match process.try_send_request(request) {
+            Ok(()) => {self.pending_requests.insert(id,super::PendingRequest::now(&plugin_id,PendingRequestKind::SurfaceRetire {completion,process_binding}));},
+            Err(error) => completion.finish(Err(format!("remote destruction request was not acknowledged: {error}"))),
+        }
     }
 
     /// Retire only the instance captured before replacement, never a newer same-ID registration.
@@ -684,8 +801,11 @@ impl PluginManager {
                 HostCmd::RemoteSurfaceRetired {
                     surface_id,
                     binding,
+                    completion,
                 } => {
-                    self.destroy_bound_remote_surface(surface_id, &binding);
+                    if let Some(completion) = completion {
+                        self.destroy_observed_remote_surface(surface_id,binding,completion);
+                    } else {self.destroy_bound_remote_surface(surface_id, &binding);}
                 }
                 HostCmd::RemoteSurfaceCreated {
                     surface_id,
