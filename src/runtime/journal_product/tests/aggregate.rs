@@ -227,7 +227,7 @@ fn exercise(public: bool, restart: bool) {
                         finished(&worker, 21).unwrap(),
                         ResultValue::Claimed(_)
                     ));
-                    let frozen = progress.replies[1].clone().unwrap();
+                    let frozen = serde_json::to_vec(progress.replies[1].as_ref().unwrap()).unwrap();
                     drop(worker);
                     worker = start(home.path());
                     submit(&worker, 22, Work::Admit(header("two-workspaces")));
@@ -276,7 +276,10 @@ fn exercise(public: bool, restart: bool) {
                     let preserved: super::super::response::ResponseProgress =
                         serde_json::from_slice(record.response.as_ref().unwrap()).unwrap();
                     assert!(preserved.replies[0].is_none());
-                    assert_eq!(preserved.replies[1].as_ref().unwrap(), &frozen);
+                    assert_eq!(
+                        serde_json::to_vec(preserved.replies[1].as_ref().unwrap()).unwrap(),
+                        frozen
+                    );
                     submit(&worker, 25, Work::ReadEngine("structure:slot-2".into()));
                     let ResultValue::Engine(model) = finished(&worker, 25).unwrap() else {
                         panic!("completed model")
