@@ -289,7 +289,7 @@ Auto 체인이 전 단계 실패하면 가장 확정적인 분류(취소 > 타�
 조회 워커와 SSH 터널은 `tasty_remote::browser`의 세션이 소유한다. 팝업은 요청 ID와 표시 값만 보관하고, App이 원 engine·View를 확인한 결과를 전달받는다.
 이미 타 client 가 점유한 원격 ws 는 lavender `in use` 배지 + 선택 불가(중복 mirror 방지).
 
-**Connect 확정 = 사용자 동작 → focus 이동**: 원격 workspace를 골라 Connect하면 팝업은 `BrowserRequest::Connect`를 사용자 의도로 전달한다. App은 원 browse의 engine·window·View identity를 확인하고, 그 대상의 mirror 설치 요청에 사용자 활성화 의도를 고정한다. Remote가 보관한 조회 터널은 연결에 재사용된다. 설치가 완료되면 원 사용자 View에서 새 mirror를 선택하며, IPC `remote.attach`의 선택 중립 경로와 구분한다. 자기 인스턴스 연결은 공용 `dispatch_attach` 입구에서 거절한다.
+**Connect 확정 = 사용자 동작 → focus 이동**: 원격 workspace를 골라 Connect하면 팝업은 `BrowserRequest::Connect`를 사용자 의도로 전달한다. App은 원 browse의 engine·window·View identity를 확인하고, 그 대상의 mirror 설치 요청에 사용자 활성화 의도를 고정한다. Remote가 보관한 조회 터널은 연결에 재사용된다. 설치가 완료되고 원 View와 선택 generation이 여전히 유효할 때 새 mirror를 선택하며, IPC `remote.attach`의 선택 중립 경로와 구분한다. 자기 인스턴스 연결은 공용 `dispatch_attach` 입구에서 거절한다.
 
 **조회 중(connecting) 사용자 조작 + 정리 계약**: Remote의 `poll_browsers`가 조회 시작 뒤 **20초**(`BROWSE_DEADLINE`) 경과를 관측하면 원 attempt에 취소를 요청하고 timeout 실패 값으로 전환한다. App과 팝업은 원 View·요청 ID가 일치하는 결과만 error 상태(+ Retry)로 표시한다. UI의 경과 표시도 같은 기한 상수를 사용하지만 취소와 worker 수명의 소유자는 Remote다.
 그 전에 사용자가 직접 중단할 수 있다. 조회 중 footer의 "중단"은 팝업을 닫지 않고 원 요청을 취소해 initial로 돌아간다. 헤더 × / Esc, 다른 프로필 선택도 해당 요청의 취소를 보낸다.
