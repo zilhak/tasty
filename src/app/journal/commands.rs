@@ -39,6 +39,10 @@ pub(crate) struct IntentViewContinuation {
     pub(crate) close_empty_engine: bool,
     pub(crate) after_create: Option<crate::intent::CreateFollowup>,
     pub(crate) tutorial: Option<create::TutorialCreated>,
+    #[cfg(feature = "gui")]
+    pub(crate) tutorial_preparation: Option<std::sync::Weak<()>>,
+    #[cfg(feature = "gui")]
+    pub(crate) tutorial_surface: Option<(u32, crate::app::engine_action::SurfaceBinding)>,
 }
 
 enum Reply {
@@ -1005,6 +1009,19 @@ impl JournalApplication {
                 && origin.is_user()
             {
                 view.tutorial = created.tutorial.clone();
+                #[cfg(feature = "gui")]
+                if view.tutorial_preparation.is_some() {
+                    view.tutorial_surface = sessions
+                        .iter()
+                        .find(|session| session.id == created.engine)
+                        .and_then(|session| {
+                            crate::app::engine_action::SurfaceBinding::capture(
+                                &session.as_ref().read(),
+                                created.surface,
+                            )
+                            .map(|target| (created.surface, target))
+                        });
+                }
             }
             if created.activate
                 && let Reply::Intent {
@@ -1412,6 +1429,43 @@ impl crate::app::App {
                 && let Some(view) = result.view.as_mut()
             {
                 view.activate_surface = Some(surface);
+            }
+            if result.origin.is_user()
+                && !result.response.idempotent_replay
+                && let Some(continuation) = result.view.as_ref()
+                && let Some(ticket) = continuation.tutorial_preparation.as_ref()
+                && let Some(context) = self.engines_mut().resolve(result.engine)
+                && context
+                    .view
+                    .as_ref()
+                    .is_some_and(|view| view.state.matches_identity(&continuation.view))
+                && context.state.tutorial.matches_preparation(ticket)
+            {
+                let practice = continuation
+                    .tutorial_surface
+                    .as_ref()
+                    .filter(|(_, target)| {
+                        result.response.error.is_none() && target.current(&context.engine.as_ref())
+                    })
+                    .and_then(|(surface, _)| {
+                        let (index, pane) =
+                            context.engine.find_workspace_index_for_surface(*surface)?;
+                        let workspace = context.engine.workspace_at(index)?.id;
+                        let tab = context.engine.find_tab_for_surface(*surface)?;
+                        Some(crate::adapters::ui::tutorial::PracticeContext {
+                            workspace,
+                            pane,
+                            tab,
+                        })
+                    });
+                if let Some(practice) = practice {
+                    context.state.tutorial.prepared(practice);
+                } else {
+                    context.state.tutorial.preparation_failed();
+                }
+                if let Some(view) = context.view {
+                    view.mark_dirty();
+                }
             }
             if result.response.error.is_none()
                 && result.origin.is_user()

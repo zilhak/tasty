@@ -38,6 +38,15 @@ pub(crate) fn resolve(
             target_pane_id: Some(state.focused_pane_id(&read)),
             scope: crate::app::command::RestoreScope::Local,
         },
+        Intent::PrepareTutorial { .. } => DomainIntent::CreateWorkspace {
+            cwd: state.resolve_inherit_cwd(&read),
+            kind: "terminal".into(),
+            surface_params: serde_json::json!({}),
+            name: None,
+            subtitle: None,
+            description: None,
+            category: None,
+        },
         Intent::NewWorkspace {
             kind,
             params,

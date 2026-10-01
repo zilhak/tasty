@@ -178,8 +178,13 @@ pub enum Intent {
         direction: SplitDirection,
     },
 
+    /// Practice setup completion belongs to this original tutorial attempt.
+    #[cfg(feature = "gui")]
+    PrepareTutorial {
+        ticket: std::sync::Weak<()>,
+    },
+
     /// kind가 None이면 terminal을 사용한다. 사용자 요청일 때만 새 워크스페이스를 활성화한다.
-    /// IPC workspace.create는 동기 응답을 위해 직접 처리한다.
     NewWorkspace {
         kind: Option<String>,
         params: serde_json::Value,

@@ -55,6 +55,10 @@ impl App {
                 )
                 .map_err(anyhow::Error::msg);
         }
+        let tutorial_preparation = match &dispatched.body {
+            Intent::PrepareTutorial { ticket } => Some(ticket.clone()),
+            _ => None,
+        };
         let after_create = match &dispatched.body {
             Intent::NewTabWithFollowup { followup, .. } => Some(followup.clone()),
             _ => None,
@@ -104,6 +108,8 @@ impl App {
                         close_empty_engine: false,
                         after_create: after_create.clone(),
                         tutorial: None,
+                        tutorial_preparation: None,
+                        tutorial_surface: None,
                     },
                 )
             });
@@ -149,6 +155,8 @@ impl App {
                     close_empty_engine: false,
                     after_create: after_create.clone(),
                     tutorial: None,
+                    tutorial_preparation: tutorial_preparation.clone(),
+                    tutorial_surface: None,
                 },
             )
         });

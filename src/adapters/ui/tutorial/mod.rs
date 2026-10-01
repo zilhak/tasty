@@ -194,15 +194,10 @@ pub fn draw_tutorial_overlay(
     }
     match click.action {
         callout::CalloutClick::Next if prepare => {
-            state.tutorial.preparing = true;
-            state.tutorial.setup_error = false;
+            let ticket = state.tutorial.begin_preparation();
             state.dispatch_intent(
-                crate::intent::Intent::NewWorkspace {
-                    kind: Some("terminal".into()),
-                    params: serde_json::Value::Null,
-                    category: None,
-                }
-                .from_user_menu("tutorial.prepare"),
+                crate::intent::Intent::PrepareTutorial { ticket }
+                    .from_user_menu("tutorial.prepare"),
             );
         }
         callout::CalloutClick::Next => {

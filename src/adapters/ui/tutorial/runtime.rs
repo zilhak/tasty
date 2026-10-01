@@ -56,6 +56,7 @@ pub struct TutorialRuntime {
     pub progress: Vec<Progress>,
     pub practice: Option<PracticeContext>,
     pub preparing: bool,
+    preparation: Option<std::sync::Arc<()>>,
     pub keyboard_focus: bool,
     pub callout_rect: Option<egui::Rect>,
     pub save_error: bool,
@@ -73,6 +74,7 @@ impl Default for TutorialRuntime {
             progress: vec![Progress::default(); all_topics().len()],
             practice: None,
             preparing: false,
+            preparation: None,
             keyboard_focus: false,
             callout_rect: None,
             save_error: false,
@@ -84,6 +86,26 @@ impl Default for TutorialRuntime {
 }
 
 impl TutorialRuntime {
+    pub(crate) fn begin_preparation(&mut self) -> std::sync::Weak<()> {
+        let owner = std::sync::Arc::new(());
+        let ticket = std::sync::Arc::downgrade(&owner);
+        self.preparation = Some(owner);
+        self.preparing = true;
+        self.setup_error = false;
+        ticket
+    }
+    pub(crate) fn matches_preparation(&self, ticket: &std::sync::Weak<()>) -> bool {
+        self.preparing
+            && self.preparation.as_ref().is_some_and(|owner| {
+                std::sync::Weak::ptr_eq(&std::sync::Arc::downgrade(owner), ticket)
+            })
+    }
+    pub(crate) fn preparation_failed(&mut self) {
+        self.preparation = None;
+        self.preparing = false;
+        self.setup_error = true;
+    }
+
     pub fn request_start(&mut self, topic: usize) {
         if topic < all_topics().len() {
             self.pending_start = Some(topic);
@@ -105,6 +127,7 @@ impl TutorialRuntime {
         self.progress[topic].started = true;
         self.fulfilled = vec![false; def.steps.len()];
         self.practice = None;
+        self.preparation = None;
         self.preparing = false;
         self.setup_error = false;
         self.keyboard_focus = true;
@@ -152,6 +175,7 @@ impl TutorialRuntime {
             self.progress[a.topic].resume = a.step;
             self.progress[a.topic].dirty = true;
         }
+        self.preparation = None;
         self.preparing = false;
         self.practice = None;
         self.keyboard_focus = false;
@@ -162,6 +186,7 @@ impl TutorialRuntime {
         if !self.preparing {
             return;
         }
+        self.preparation = None;
         self.preparing = false;
         self.practice = Some(context);
         if let Some(a) = self.active {
@@ -224,6 +249,20 @@ impl TutorialRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn interrupted_preparation_cannot_complete_a_new_attempt() {
+        let mut runtime = TutorialRuntime::default();
+        let old = runtime.begin_preparation();
+        assert!(runtime.matches_preparation(&old));
+        runtime.interrupt();
+        let current = runtime.begin_preparation();
+        assert!(!runtime.matches_preparation(&old));
+        assert!(runtime.matches_preparation(&current));
+        runtime.preparation_failed();
+        assert!(!runtime.matches_preparation(&current));
+        assert!(runtime.setup_error);
+    }
+
     #[test]
     fn completion_survives_replay_and_interruption() {
         let mut r = TutorialRuntime::default();

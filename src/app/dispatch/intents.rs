@@ -151,6 +151,7 @@ impl App {
                 | Intent::CapturePreset { .. }
                 | Intent::RestoreClosedItem
                 | Intent::NewWorkspace { .. }
+                | Intent::PrepareTutorial { .. }
                 | Intent::NewTab { .. }
                 | Intent::NewTabWithFollowup { .. }
                 | Intent::SplitPane { .. }
@@ -270,7 +271,8 @@ impl App {
             | Intent::NewTab { .. }
             | Intent::NewTabWithFollowup { .. }
             | Intent::SplitPane { .. }
-            | Intent::NewWorkspace { .. } => {
+            | Intent::NewWorkspace { .. }
+            | Intent::PrepareTutorial { .. } => {
                 tracing::error!("structural intent bypassed journal admission")
             }
             Intent::RestoreClosedItem => {
