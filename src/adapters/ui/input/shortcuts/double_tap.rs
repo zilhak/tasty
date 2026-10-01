@@ -133,9 +133,13 @@ impl MainView {
                 self.finish_after_possible_close(engine, terminal_rect, cell_w, cell_h);
             }
             "new_tab" => {
-                if let Err(e) = self.state.add_tab(engine) {
-                    tracing::warn!("add_tab failed: {e}");
-                }
+                self.state.dispatch_intent(
+                    crate::intent::Intent::NewTab {
+                        kind: None,
+                        params: serde_json::Value::Null,
+                    }
+                    .from_user_shortcut("new_tab"),
+                );
                 self.state
                     .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
             }

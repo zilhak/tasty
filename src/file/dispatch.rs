@@ -6,7 +6,7 @@ pub(crate) mod picker_apply;
 pub(crate) mod remote;
 
 #[cfg(feature = "gui")]
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::path::PathBuf;
 
 #[cfg(feature = "gui")]
@@ -150,7 +150,31 @@ fn hex_val(b: u8) -> Option<u8> {
 #[cfg(feature = "gui")]
 pub(crate) fn open_picker(
     state: &mut RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &mut EngineMut<'_>,
+    target: DispatchTarget,
+    detector: Option<DetectorId>,
+    candidates: Vec<FileHandler>,
+    candidates_are_fallback: bool,
+    dispatch_origin: FileDispatchOrigin,
+    ignore_size_limit: bool,
+) {
+    open_picker_from_read(
+        state,
+        &engine.read(),
+        target,
+        detector,
+        candidates,
+        candidates_are_fallback,
+        dispatch_origin,
+        ignore_size_limit,
+    );
+}
+
+/// Build only popup presentation from the borrowed handler catalog.
+#[cfg(feature = "gui")]
+pub(crate) fn open_picker_from_read(
+    state: &mut RequestContext,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     target: DispatchTarget,
     detector: Option<DetectorId>,
     candidates: Vec<FileHandler>,
@@ -166,7 +190,12 @@ pub(crate) fn open_picker(
         .collect();
     let recent_handlers: Vec<(FileHandler, i64)> = recent_entries
         .iter()
-        .filter_map(|(id, at)| engine.runtime.file_handler.get(id).map(|h| (h, *at)))
+        .filter_map(|(id, at)| {
+            engine
+                .file_handler
+                .handler(id)
+                .map(|handler| (handler, *at))
+        })
         .collect();
     let (recent, cand) = picker_lists(&target, &recent_handlers, &candidates);
     // 전체 목록을 대체 후보로 쓴 경우에는 자동 실행할 기본 핸들러가 없다.
@@ -281,7 +310,7 @@ pub fn execute_handler_action(
     dispatch_origin: FileDispatchOrigin,
     ignore_size_limit: bool,
 ) -> bool {
-    if !handler_may_run(engine, handler, target, origin_surface_id) {
+    if !handler_may_run(&engine.as_ref(), handler, target, origin_surface_id) {
         return false;
     }
     match &handler.action {
@@ -313,7 +342,7 @@ pub fn execute_handler_action(
 
 #[cfg(feature = "gui")]
 fn handler_may_run(
-    engine: &crate::core::CoreState,
+    engine: &EngineRef<'_>,
     handler: &FileHandler,
     target: &DispatchTarget,
     origin_surface_id: Option<u32>,

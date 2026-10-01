@@ -439,7 +439,12 @@ impl MainView {
                 } else {
                     let terminal_rect = self.compute_terminal_rect();
                     let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
-                    engine.update_grid_size(cols, rows);
+                    self.state.dispatch_intent(
+                        crate::intent::Intent::Engine(
+                            crate::app::engine_action::EngineAction::DefaultGrid { cols, rows },
+                        )
+                        .from_user_shortcut("window-resize"),
+                    );
                     let cell_w = self.base.gpu.cell_width();
                     let cell_h = self.base.gpu.cell_height();
                     let scale_factor = self.base.gpu.scale_factor();

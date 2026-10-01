@@ -145,7 +145,7 @@ pub(super) fn draw_hook_handlers(ui: &mut egui::Ui, hh: &mut HookHandlerEditDraf
 
     // ── "Add handler" 인라인 draft 카드 (jsx `adding && …`) ──
     if hh.form.open {
-        draw_add_card(ui, &th, hh, reg);
+        draw_add_card(ui, &th, hh, &crate::runtime::file_catalog::hook_handlers());
         vspace(ui, th.spacing_md);
     }
 
@@ -488,7 +488,7 @@ fn draw_add_card(
     ui: &mut egui::Ui,
     th: &tasty_type_appearance::theme::Theme,
     hh: &mut HookHandlerEditDraft,
-    reg: &HookHandlerRegistry,
+    handlers: &[HookHandler],
 ) {
     egui::Frame::new()
         .fill(th.surface_raised().to_egui())
@@ -534,7 +534,7 @@ fn draw_add_card(
                     .show(ui, th)
                     .clicked()
                 {
-                    commit_add(hh, reg);
+                    commit_add(hh, handlers);
                 }
                 if Button::new(t("button.cancel"))
                     .variant(ButtonVariant::Ghost)
@@ -581,7 +581,7 @@ fn add_field_row(
 
 /// add 폼 확정 (jsx `commitAdd`) — short-name 검증 후 draft 에 push.
 /// priority 는 현재 registry rows + pending adds 의 max + step (jsx `maxPrio + 10`).
-fn commit_add(hh: &mut HookHandlerEditDraft, reg: &HookHandlerRegistry) {
+fn commit_add(hh: &mut HookHandlerEditDraft, handlers: &[HookHandler]) {
     let short = hh.form.id_input.trim().to_string();
     if short.is_empty() {
         hh.form.error = Some(t("settings.file_handler.hook_handlers.err_id_empty").to_string());
@@ -591,8 +591,7 @@ fn commit_add(hh: &mut HookHandlerEditDraft, reg: &HookHandlerRegistry) {
         hh.form.error = Some(t("settings.file_handler.hook_handlers.err_id_invalid").to_string());
         return;
     }
-    let max_prio = reg
-        .all_handlers_including_disabled()
+    let max_prio = handlers
         .iter()
         .map(|h| h.priority)
         .chain(hh.add.iter().map(|a| a.priority))

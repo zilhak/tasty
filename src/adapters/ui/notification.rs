@@ -54,6 +54,7 @@ pub(crate) fn draw_notification_content_inner(
 
             let now = Instant::now();
             let entries: Vec<_> = engine
+                .live
                 .notifications
                 .all()
                 .rev()

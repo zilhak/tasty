@@ -1092,5 +1092,10 @@ pub fn draw_preset_panel(
 
 /// The submitted draft includes input entered in the same render pass as Confirm.
 pub(crate) fn take_confirmed_surface_cfg(ctx: &egui::Context) -> Option<SurfaceCfg> {
-    ctx.data_mut(|data| data.remove_temp(egui::Id::new("preset.confirmed_surface_cfg")))
+    ctx.data_mut(|data| {
+        let id = egui::Id::new("preset.confirmed_surface_cfg");
+        let draft = data.get_temp::<SurfaceCfg>(id);
+        data.remove::<SurfaceCfg>(id);
+        draft
+    })
 }

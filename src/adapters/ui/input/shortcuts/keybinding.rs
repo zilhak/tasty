@@ -127,9 +127,13 @@ impl MainView {
             return true;
         }
         if matches_any_binding(&kb.new_tab, key, mods) {
-            if let Err(e) = state.add_tab(engine) {
-                tracing::warn!("add_tab failed: {e}");
-            }
+            state.dispatch_intent(
+                crate::intent::Intent::NewTab {
+                    kind: None,
+                    params: serde_json::Value::Null,
+                }
+                .from_user_shortcut("new_tab"),
+            );
             return true;
         }
         false

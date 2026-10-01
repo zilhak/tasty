@@ -60,9 +60,13 @@ impl MainView {
                 state.resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
             }
             "new_tab" => {
-                if let Err(e) = state.add_tab(engine) {
-                    tracing::warn!("add_tab failed: {e}");
-                }
+                state.dispatch_intent(
+                    crate::intent::Intent::NewTab {
+                        kind: None,
+                        params: serde_json::Value::Null,
+                    }
+                    .from_user_shortcut("new_tab"),
+                );
                 state.resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
             }
             "split_pane_vertical" => {

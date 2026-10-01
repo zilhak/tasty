@@ -1004,15 +1004,23 @@ fn navigate(
             request_id,
             sent_at: Instant::now(),
         };
-        engine
-            .remote
-            .pending_list_dir_forward
-            .push(crate::core::PendingListDirForward {
-                local_ws_id: mirror_ws_id,
-                request_id,
-                dir: target,
-                consumer: None,
-            });
+        if let Some(projection) = engine.mirror_projection_token(mirror_ws_id) {
+            state.dispatch_intent(
+                crate::intent::Intent::Engine(
+                    crate::app::engine_action::EngineAction::ListDirectory {
+                        request: crate::core::PendingListDirForward {
+                            local_ws_id: mirror_ws_id,
+                            request_id,
+                            dir: target,
+                            consumer: None,
+                        },
+                        projection,
+                        target: None,
+                    },
+                )
+                .from_user_menu("file_picker.list_directory"),
+            );
+        }
         return;
     }
 

@@ -61,41 +61,44 @@ impl MainView {
                 ZoomAction::In => (current + 10.0).min(500.0),
                 ZoomAction::Out => (current - 10.0).max(25.0),
             };
-            engine
-                .settings
-                .set_plugin_setting(plugin_id, "zoom", PluginSettingValue::Number(next));
+            state.dispatch_intent(
+                crate::intent::Intent::PatchSettings(
+                    crate::app::engine_action::SettingsPatch::PluginZoom {
+                        plugin: plugin_id.to_owned(),
+                        value: next,
+                    },
+                )
+                .from_user_shortcut("zoom"),
+            );
             return true;
         }
 
-        let appearance = &mut engine.settings.appearance;
-        let (override_ref, current_effective_size) = match &focus {
-            FocusedSurfaceType::Terminal => {
-                let size = appearance
+        let appearance = &engine.settings.appearance;
+        let (kind, current_effective_size) = match &focus {
+            FocusedSurfaceType::Terminal => (
+                None,
+                appearance
                     .default_font
                     .apply_override(&appearance.terminal_font)
-                    .font_size;
-                (&mut appearance.terminal_font, size)
-            }
-            FocusedSurfaceType::Kind(k) if kind_zoomable => {
-                let size = appearance.effective_font_for_kind(k).font_size;
-                let ov = appearance
-                    .plugin_font_overrides
-                    .entry(k.to_string())
-                    .or_default();
-                (ov, size)
-            }
+                    .font_size,
+            ),
+            FocusedSurfaceType::Kind(kind) if kind_zoomable => (
+                Some(kind.to_string()),
+                appearance.effective_font_for_kind(kind).font_size,
+            ),
             _ => return false,
         };
-
-        match action {
-            ZoomAction::Reset => override_ref.font_size = None,
-            ZoomAction::In => {
-                override_ref.font_size = Some((current_effective_size + 1.0).min(72.0));
-            }
-            ZoomAction::Out => {
-                override_ref.font_size = Some((current_effective_size - 1.0).max(6.0));
-            }
-        }
+        let size = match action {
+            ZoomAction::Reset => None,
+            ZoomAction::In => Some((current_effective_size + 1.0).min(72.0)),
+            ZoomAction::Out => Some((current_effective_size - 1.0).max(6.0)),
+        };
+        state.dispatch_intent(
+            crate::intent::Intent::PatchSettings(
+                crate::app::engine_action::SettingsPatch::FontSize { kind, size },
+            )
+            .from_user_shortcut("zoom"),
+        );
         true
     }
 }

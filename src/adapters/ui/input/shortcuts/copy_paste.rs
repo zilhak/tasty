@@ -170,7 +170,17 @@ impl MainView {
     pub(crate) fn run_paste(&mut self, engine: &EngineRead<'_>) -> bool {
         // 키보드와 팔레트 붙여넣기 모두 사용자 입력으로 기록한다.
         if let Some(sid) = self.state.focused_surface_id(&*engine) {
-            engine.record_typing(sid);
+            if let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, sid) {
+                self.state.dispatch_intent(
+                    crate::intent::Intent::Engine(
+                        crate::app::engine_action::EngineAction::RecordTyping {
+                            target,
+                            at: std::time::Instant::now(),
+                        },
+                    )
+                    .from_user_shortcut("paste"),
+                );
+            }
         }
         let st = self.state.focused_surface_type(&*engine);
         // egui_paste는 플러그인이 처리하므로 터미널 입력으로 넘기지 않는다.

@@ -8,8 +8,8 @@ use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
 
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
-use crate::core::CoreState;
 use crate::i18n::t;
+use crate::runtime::engine_read::EngineRead;
 use crate::state::MainViewState;
 use crate::theme;
 
@@ -72,7 +72,7 @@ pub struct TransferError {
 }
 
 /// 진행 팝업 높이 = header + body(행 N개) + footer. 행 수에 맞춰 딱 맞게(빈 하단 방지).
-pub fn transfer_progress_sizer(state: &MainViewState, _e: &CoreState) -> egui::Vec2 {
+pub fn transfer_progress_sizer(state: &MainViewState, _e: &EngineRead<'_>) -> egui::Vec2 {
     let n = state
         .dialogs
         .transfer_progress
@@ -95,7 +95,7 @@ pub fn transfer_progress_sizer(state: &MainViewState, _e: &CoreState) -> egui::V
 }
 
 /// 실패 팝업 높이 = header + body(prose + reason well) + footer. reason 길이로 well 줄수 추정.
-pub fn transfer_error_sizer(state: &MainViewState, _e: &CoreState) -> egui::Vec2 {
+pub fn transfer_error_sizer(state: &MainViewState, _e: &EngineRead<'_>) -> egui::Vec2 {
     let th = theme::theme();
     let header_h = HEADER_PAD_Y.scaled(2.0) + HEADER_CONTENT_H;
     let footer_h = FOOTER_PAD_Y.scaled(2.0) + LogicalPx(ControlSize::Sm.height(&th));
@@ -122,7 +122,7 @@ pub fn transfer_error_sizer(state: &MainViewState, _e: &CoreState) -> egui::Vec2
 pub fn on_close_transfer_progress(
     _ctx: &egui::Context,
     state: &mut MainViewState,
-    _engine: &mut CoreState,
+    _engine: &EngineRead<'_>,
 ) {
     state.dialogs.transfer_progress = None;
 }
@@ -189,7 +189,7 @@ pub fn draw_transfer_progress(
 pub fn on_close_transfer_error(
     _ctx: &egui::Context,
     state: &mut MainViewState,
-    _engine: &mut CoreState,
+    _engine: &EngineRead<'_>,
 ) {
     if state.dialogs.transfer_error.is_empty() {
         return;

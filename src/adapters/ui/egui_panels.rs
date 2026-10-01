@@ -288,16 +288,27 @@ pub fn draw_egui_panels(
     state.html_script_banner_insets = html_script_insets;
 
     // engine의 하위 항목을 빌린 동안 모은 원격 목록 조회를 큐로 옮긴다.
-    for (sid, req) in state.explorer_views.drain_outbox() {
-        engine
-            .remote
-            .pending_list_dir_forward
-            .push(crate::core::PendingListDirForward {
-                local_ws_id: req.local_ws_id,
-                request_id: req.request_id,
-                dir: req.dir.to_string_lossy().to_string(),
-                consumer: Some(sid),
-            });
+    let requests = state.explorer_views.drain_outbox();
+    for (sid, req) in requests {
+        let Some(projection) = engine.mirror_projection_token(req.local_ws_id) else {
+            continue;
+        };
+        let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, sid) else {
+            continue;
+        };
+        state.dispatch_intent(
+            crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::ListDirectory {
+                request: crate::core::PendingListDirForward {
+                    local_ws_id: req.local_ws_id,
+                    request_id: req.request_id,
+                    dir: req.dir.to_string_lossy().to_string(),
+                    consumer: Some(sid),
+                },
+                projection,
+                target: Some(target),
+            })
+            .from_user_menu("explorer.list_directory"),
+        );
     }
 
     if let Some((sid, act)) = pending_explorer_action {
@@ -538,7 +549,7 @@ where
 /// 포커스와 관계없이 표시하며 강제 해제 버튼은 hard 점유에만 제공한다.
 fn draw_occupied_overlays(
     ctx: &egui::Context,
-    state: &crate::state::MainViewState,
+    state: &mut crate::state::MainViewState,
     active_ws: usize,
     tab_bar_h: tasty_type_geometry::length::PhysicalPx,
     engine: &crate::runtime::engine_read::EngineRead<'_>,

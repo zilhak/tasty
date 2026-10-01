@@ -525,7 +525,7 @@ fn current_surface_kind(
                     if !tab.contains_surface(surface_id) {
                         continue;
                     }
-                    if let Some(leaf) = tab.layout().find_surface(surface_id) {
+                    if let Some(leaf) = engine.find_surface_by_id(surface_id) {
                         return Some(leaf.kind());
                     }
                     return None;
