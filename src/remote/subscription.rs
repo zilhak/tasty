@@ -28,18 +28,23 @@ impl EngineMut<'_> {
     }
     pub(crate) fn poll_attach_subscriptions(&mut self) {
         let grants:std::collections::HashMap<_,_>=self.live.occupancy.locks_snapshot().into_iter().collect();
+        let mut budget=128usize;
+        let mut byte_budget=1024*1024usize;
+        let mut needs_poll=false;
         for (key,mut subscription) in std::mem::take(&mut self.remote.attach_subscriptions) {
             let current=grants.get(&subscription.surface).is_some_and(|grant|grant.ready && grant.holder==subscription.client && grant.granted_seq==subscription.grant)
                 && self.runtime.terminals.matches_generation(subscription.surface,subscription.generation)
                 && subscription.hub.matches_client_binding(subscription.client,&subscription.binding);
             if !current {continue;}
-            let mut keep=true;let mut used=0;
-            while used<128 {
+            let mut keep=true;
+            while budget!=0 && byte_budget!=0 {
                 let event=match subscription.events.try_recv() {
                     Ok(event)=>event,
                     Err(std::sync::mpsc::TryRecvError::Empty)=>break,
                     Err(std::sync::mpsc::TryRecvError::Disconnected)=>{keep=false;break;},
-                };used+=1;
+                };budget-=1;
+                let bytes=match &event {tasty_terminal::AttachEvent::Output(bytes)=>bytes.len(),_=>32};
+                byte_budget=byte_budget.saturating_sub(bytes);
                 let frame=match event {
                     tasty_terminal::AttachEvent::Output(bytes)=>StreamFrame::new(StreamTag::Data,if subscription.mux {encode_mux(subscription.surface,&bytes)} else {bytes}),
                     tasty_terminal::AttachEvent::Resize {cols,rows}=>StreamFrame::new(StreamTag::Control,serde_json::to_vec(&StreamControl::Resize {surface_id:subscription.surface,cols,rows}).unwrap_or_default()),
@@ -53,8 +58,9 @@ impl EngineMut<'_> {
             }
             if keep {
                 self.remote.attach_subscriptions.insert(key,subscription);
-                if used==128 {(self.runtime.waker)();}
+                needs_poll|=budget==0 || byte_budget==0;
             }
         }
+        if needs_poll {(self.runtime.waker)();}
     }
 }
