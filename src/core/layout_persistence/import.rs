@@ -346,7 +346,9 @@ pub(crate) fn import_slot(
         }
     };
     let view = view_of(&layout, &mapping);
-    store.release_payload_holder(epoch, &format!("admission/{}/legacy-slot-{slot}", epoch.0))?;
+    if let Err(error) = store.release_payload_holder(epoch, &format!("admission/{}/legacy-slot-{slot}", epoch.0)) {
+        tracing::warn!(%error, "legacy import committed; admission pin cleanup deferred");
+    }
     Ok(ImportOutcome {
         mapping,
         view,

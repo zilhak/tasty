@@ -18,8 +18,12 @@ pub(crate) fn import(
     epoch: WriterEpoch,
     request: JournalImport<'_>,
 ) -> Result<ImportOutcome, ImportError> {
+    let holder = format!("admission/{}/journal-import/{}", epoch.0, request.key.idempotency_key);
     match destination.lookup_command(&request.key, &request.digest)? {
-        CommandLookup::Hit(record) => return outcome(record),
+        CommandLookup::Hit(record) => {
+            release_preparation(destination,epoch,&holder);
+            return outcome(record);
+        },
         CommandLookup::DigestMismatch(_) => return Err(ImportError::AlreadyImportedDifferently(request.slot)),
         CommandLookup::Miss => {},
     }
@@ -47,7 +51,6 @@ pub(crate) fn import(
         if next < source_next {destination.reserve_ids(epoch,kind.label(),source_next-next,max_id(kind))?;}
     }
     let ids = IdPools::reserve(destination, epoch, &layout, &categories)?;
-    let holder = format!("admission/{}/journal-import/{}", epoch.0, request.key.idempotency_key);
     let references: Vec<_> = request.model.surfaces.values()
         .flat_map(|surface| surface.data.into_iter().chain(surface.creation_seed))
         .map(|reference| PayloadRef(reference.0)).collect();
@@ -93,7 +96,7 @@ pub(crate) fn import(
             view:serde_json::to_vec(&saved).map_err(|error| StoreError::Corrupt(error.to_string()))?,referenced_payloads:Vec::new(),
         }))
     })?;
-    destination.release_payload_holder(epoch,&holder)?;
+    release_preparation(destination,epoch,&holder);
     match result {
         CommitOutcome::Committed {batch} => Ok(ImportOutcome {mapping,view,batch:batch.map(|batch|batch.batch_id),missing_scrollback:Vec::new(),moved_to_normal:plan.moved_to_normal}),
         CommitOutcome::Duplicate(record) => outcome(record),
@@ -147,4 +150,10 @@ fn enrich(
         for (key,value) in &surface.metadata {plan.push(DomainEvent::MetadataSet {target:tasty_core::MetadataTarget::Surface(*new),key:key.clone(),value:value.clone()});}
     }
     Ok(surfaces)
+}
+
+fn release_preparation(destination:&mut EventStore,epoch:WriterEpoch,holder:&str) {
+    if let Err(error)=destination.release_payload_holder(epoch,holder) {
+        tracing::warn!(%error,"journal import committed; admission pin cleanup deferred");
+    }
 }

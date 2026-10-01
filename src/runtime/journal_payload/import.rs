@@ -28,6 +28,9 @@ pub(crate) fn transfer(destination: &mut EventStore, epoch: WriterEpoch, request
     let alias = format!("import-source:{}/{}", destination.journal_id(), request.transfer_id);
     match destination.lookup_command(&key,&digest).map_err(|error| error.to_string())? {
         CommandLookup::Hit(record) => {
+            if let Err(error) = destination.release_payload_holder(epoch,&format!("admission/{}/journal-import/{}",epoch.0,request.transfer_id)) {
+                tracing::warn!(%error,"completed import admission cleanup deferred");
+            }
             // The destination is already complete even when the old source was moved, is busy, or
             // vanished after handoff. Never rerun the import to manufacture a new mapping.
             cleanup_source(request,&alias);
