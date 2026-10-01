@@ -72,7 +72,8 @@ impl JournalApplication {
             id: None,
             session_token: None,
             response_timeout_ms: None,
-            idempotency_key: Some(format!("{runtime_epoch}/{registration}/{op_id}")),
+            // Remote op_id correlates Result/Delta; it is not an explicit retry key.
+            idempotency_key: None,
         };
         self.admit_request(
             &request,

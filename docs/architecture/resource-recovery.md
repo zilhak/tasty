@@ -78,3 +78,7 @@ runtime epoch, engine incarnation, activation 및 physical generation을 구분�
 원격 user close의 undo 권한은 로컬 사용자 lifecycle origin과 별도로 저장한다.
 원격 사용자가 닫은 항목은 undo에 남길 수 있지만 plugin의 `is_user_close` 통지는
 로컬 사용자 동작으로 바뀌지 않는다. 기존 저장 기록에는 원격 flag가 없으므로 false로 읽는다.
+
+원격 forward의 `op_id`는 Result/Delta 상관관계 값이며 durable 멱등 키를 만들지 않는다.
+서버 journal은 각 접수의 command identity를 발급하고 원 connection registration과
+응답 binding을 유지한다. 공개 IPC에서 명시한 멱등 키의 기존 계약과는 별개다.
