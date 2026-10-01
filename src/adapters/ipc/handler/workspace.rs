@@ -143,7 +143,7 @@ fn inherit_cwd_for_create(
 /// terminal 생성의 cwd를 정한다. 명시값이 우선하고 다른 kind에서는 사용하지 않는다.
 /// 원격 mirror의 경로는 로컬 workspace에 상속하지 않는다.
 /// 잘못된 surface_id는 포커스 대상으로 대체하지 않고 거절한다.
-fn resolve_create_cwd(
+pub(crate) fn resolve_create_cwd(
     params: &serde_json::Value,
     kind: &str,
     window: &dyn crate::ipc::window_port::IpcWindow,

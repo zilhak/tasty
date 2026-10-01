@@ -7,6 +7,7 @@ pub(crate) mod attach_client;
 #[cfg(feature = "gui")]
 pub(crate) mod attach_poll;
 pub(crate) mod attach_structure;
+pub(crate) mod creation_intent;
 #[cfg(feature = "gui")]
 pub(crate) mod auto_attach;
 #[cfg(feature = "gui")]
@@ -46,6 +47,7 @@ pub(crate) mod persistence;
 #[cfg(feature = "gui")]
 pub(crate) mod plugin_glue;
 pub(crate) mod process_exit;
+pub(crate) mod publication_input;
 #[cfg(feature = "gui")]
 pub(crate) mod request_owner;
 #[cfg(feature = "gui")]
@@ -109,6 +111,7 @@ impl std::error::Error for NoGpuAdapter {}
 
 pub(crate) struct App {
     pub(crate) journal: journal::JournalApplication,
+    pub(crate) publication_inputs: publication_input::PublicationInputs,
     pub(crate) core: Core,
     pub(crate) hub: Hub,
     /// IPC 연결 스레드가 수신자를 등록하고 메인 루프가 출력을 전송한다.
@@ -299,6 +302,7 @@ impl App {
         })?;
         Ok(Self {
             journal,
+            publication_inputs: Default::default(),
             core: crate::boot::wiring::build_production_core(memory)?,
             hub: Hub::new(port_file),
             stream_hub: tasty_ipc::stream_hub::StreamHub::new(),
@@ -379,6 +383,7 @@ impl App {
         timers::register_steady_state(&mut timers, std::time::Instant::now());
         Ok(Self {
             journal: journal::JournalApplication::new(journal_wake)?,
+            publication_inputs: Default::default(),
             core: crate::boot::wiring::build_production_core_headless(memory)?,
             hub: Hub::new(port_file),
             stream_hub: tasty_ipc::stream_hub::StreamHub::new(),

@@ -157,9 +157,9 @@ impl JournalDecider for Fake {
         _state: &JournalModel,
         _command: &Cmd,
         decision: &Decision<DomainEvent, NewEffect>,
-    ) -> crate::runtime::command_executor::CommandRecordPlan {
+    ) -> Result<crate::runtime::command_executor::CommandRecordPlan, String> {
         let pending = !decision.effects.is_empty();
-        crate::runtime::command_executor::CommandRecordPlan {
+        Ok(crate::runtime::command_executor::CommandRecordPlan {
             status: if pending {
                 tasty_event_store::CommandStatus::InProgress
             } else {
@@ -172,7 +172,7 @@ impl JournalDecider for Fake {
             },
             command_updates: Vec::new(),
             effect_transitions: Vec::new(),
-        }
+        })
     }
 
     fn encode(&self, event: &DomainEvent) -> Result<OpaquePayload, String> {

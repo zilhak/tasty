@@ -47,8 +47,12 @@ impl App {
     pub(crate) fn dispatch_domain_intent(
         &mut self,
         source: DispatchSource,
-        dispatched: DispatchedIntent,
+        mut dispatched: DispatchedIntent,
     ) -> anyhow::Result<()> {
+        if let Some(context)=self.engines_mut().resolve(source.engine())
+            && let Some(intent)=crate::app::creation_intent::resolve(context.state,&context.engine.as_ref(),&dispatched.body,&dispatched.origin)? {
+                dispatched.body=Intent::Domain(intent);
+            }
         if let Intent::CommitDivider(commit) = &dispatched.body {
             let id = source.engine();
             let result = self

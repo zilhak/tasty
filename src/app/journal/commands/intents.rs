@@ -10,6 +10,11 @@ impl JournalApplication {
         origin: &crate::intent::IntentOrigin,
     ) -> bool {
         use crate::core::intent::DomainIntent as I;
+        if let Some(spec)=super::create_spec::Spec::from_intent(intent) {
+            if core.mirror_workspace_index_for_structural(intent).is_some() {return false;}
+            self.admit_intent_request(engine_id,"intent.create",serde_json::to_value(spec).expect("fixed creation spec serializes"),origin);
+            return true;
+        }
         let (method, params) = match intent {
             I::CreateCategory { name } => (
                 "workspace_category.create",

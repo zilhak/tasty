@@ -7,7 +7,15 @@ pub(super) fn aggregate(
     state: &StructureModels,
     command: &ResolvedCommand,
     decision: &Decision<StreamEvent, NewEffect>,
-) -> Vec<tasty_event_store::CommandUpdate> {
+) -> Result<Vec<tasty_event_store::CommandUpdate>, String> {
+    if !decision
+        .events
+        .iter()
+        .any(|event| matches!(event.event, DomainEvent::OperationFinished { .. }))
+    {
+        return Ok(Vec::new());
+    }
+    let after = projected_after(state, decision)?;
     let mut operations: BTreeMap<OperationId, Operation> = state
         .streams
         .values()
@@ -55,12 +63,12 @@ pub(super) fn aggregate(
             } else {
                 CommandStatus::Completed
             };
-            let mut results = command
+            let original = command
                 .original_results
                 .get(&command_id)
-                .expect("result admission loaded the original template")
-                .clone();
-            for result in &mut results {
+                .ok_or("original command response template missing")?;
+            let mut progress = original.progress.clone();
+            for result in &mut progress.results {
                 if let StructuralResult::Pending { operation: id } = result {
                     let operation = operations
                         .get(id)
@@ -82,13 +90,61 @@ pub(super) fn aggregate(
                     };
                 }
             }
-            tasty_event_store::CommandUpdate {
+            let response = if let Some(plan) = &original.response {
+                let complete =
+                    progress.freeze(plan, &after, command.completion_mirrors.unwrap_or(0))?;
+                if status == CommandStatus::InProgress {
+                    Some(serde_json::to_vec(&progress).map_err(|error| error.to_string())?)
+                } else {
+                    Some(complete.ok_or("terminal command still has pending public result parts")?)
+                }
+            } else {
+                Some(serde_json::to_vec(&progress.results).map_err(|error| error.to_string())?)
+            };
+            Ok(tasty_event_store::CommandUpdate {
                 command_id,
                 status,
-                response: Some(
-                    serde_json::to_vec(&results).expect("typed structural results serialize"),
-                ),
-            }
+                response,
+            })
         })
         .collect()
+}
+
+fn projected_after(
+    state: &StructureModels,
+    decision: &Decision<StreamEvent, NewEffect>,
+) -> Result<StructureModels, String> {
+    let mut after = state.clone();
+    let mut streams: BTreeMap<&str, Vec<DomainEvent>> = BTreeMap::new();
+    for event in &decision.events {
+        streams
+            .entry(event.stream.as_str())
+            .or_default()
+            .push(event.event.clone());
+    }
+    for (stream, events) in streams {
+        let model = after.streams.entry(stream.into()).or_default();
+        let revision = model.applied.revision.unwrap_or(0);
+        let batch_id = model
+            .applied
+            .batch
+            .unwrap_or(0)
+            .checked_add(1)
+            .ok_or("projection batch exhausted")?;
+        let events = events
+            .into_iter()
+            .enumerate()
+            .map(|(index, event)| {
+                Ok(tasty_domain::RecordedEvent {
+                    revision: revision
+                        .checked_add(index as u64 + 1)
+                        .ok_or("projection revision exhausted")?,
+                    event,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        tasty_domain::evolve(model, &tasty_domain::DomainBatch { batch_id, events })
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(after)
 }

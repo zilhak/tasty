@@ -1,5 +1,7 @@
 //! Accepted structural requests retain their original identity until a committed wire reply exists.
 mod category;
+mod create;
+mod create_spec;
 mod display;
 #[cfg(feature = "gui")]
 mod divider;
@@ -56,6 +58,9 @@ struct Pending {
     queued: Option<Work>,
     needs_resolution: bool,
     category: Option<CategoryReservation>,
+    resource: Option<create::Request>,
+    waiting_command: Option<String>,
+    created: Option<create::Completed>,
     bytes: usize,
     replay: bool,
     admitted: bool,
@@ -219,6 +224,9 @@ impl JournalApplication {
                 queued: Some(work),
                 needs_resolution: false,
                 category: None,
+                resource: None,
+                waiting_command: None,
+                created: None,
                 bytes,
                 replay: false,
                 admitted: false,
@@ -310,6 +318,7 @@ impl JournalApplication {
                 .get_mut(&ticket)
                 .expect("sized command");
             pending.category = None;
+            pending.resource = None;
             pending.fixed = None;
             pending.display = None;
             pending.request.params = serde_json::Value::Null;
@@ -325,10 +334,24 @@ impl JournalApplication {
         }
     }
 
+    #[cfg(not(feature = "gui"))]
+    pub(crate) fn creation_requests_needing_kind(&self) -> Vec<JsonRpcRequest> {
+        self.commands
+            .pending
+            .values()
+            .take(1)
+            .filter(|pending| {
+                pending.needs_resolution && pending.request.method == "workspace.create"
+            })
+            .map(|pending| pending.request.clone())
+            .collect()
+    }
+
     pub(crate) fn requests_needing_resolution(&mut self) -> Vec<(u64, JsonRpcRequest)> {
         self.commands
             .pending
             .iter_mut()
+            .take(1)
             .filter_map(|(ticket, pending)| {
                 if !pending.needs_resolution {
                     return None;
@@ -353,6 +376,10 @@ impl JournalApplication {
     }
 
     pub(crate) fn resolve_ipc_for_engine(&mut self, ticket: u64, session: &EngineSession) {
+        if self.commands.pending.get(&ticket).is_some_and(|pending|pending.request.method=="intent.create") {
+            self.resolve_fixed_creation(ticket,session);
+            return;
+        }
         let Some(pending) = self.commands.pending.get_mut(&ticket) else {
             return;
         };
@@ -464,6 +491,71 @@ impl JournalApplication {
                 pending.admitted = true;
                 return Ok(true);
             }
+            Ok(ResultValue::Reserved(ids)) if pending.resource.is_some() => {
+                pending.queued = Some(
+                    pending
+                        .resource
+                        .as_mut()
+                        .expect("resource reservation")
+                        .reserved(ids)?,
+                );
+                self.refresh_command_weight(ticket);
+                return Ok(true);
+            }
+            Ok(ResultValue::InputStored(input)) if pending.resource.is_some() => {
+                pending.queued = Some(
+                    pending
+                        .resource
+                        .as_ref()
+                        .expect("resource input")
+                        .stored(*input),
+                );
+                self.refresh_command_weight(ticket);
+                return Ok(true);
+            }
+            Ok(ResultValue::Executed(executed))
+                if executed.status == tasty_event_store::CommandStatus::InProgress =>
+            {
+                pending.waiting_command = Some(executed.command_id.clone());
+                if !pending.replay
+                    && let Some(request) = pending.resource.take()
+                {
+                    let progress: crate::runtime::journal_product::ResponseProgress =
+                        serde_json::from_slice(
+                            executed
+                                .response
+                                .as_deref()
+                                .ok_or("public creation progress missing")?,
+                        )
+                        .map_err(|error| error.to_string())?;
+                    let [tasty_domain::StructuralResult::Pending { operation }] =
+                        progress.results.as_slice()
+                    else {
+                        return Err("public creation operation missing".into());
+                    };
+                    pending.created = Some(create::Completed::from_request(&request));
+                    let creation_ticket = self.next_ticket;
+                    self.next_ticket += 1;
+                    let creation = super::creation::Creation::committed(
+                        creation_ticket,
+                        request.binding,
+                        &self.worker,
+                        operation.clone(),
+                    )?;
+                    if self.creations.insert(request.engine, creation).is_some() {
+                        return Err("engine already owns a materialization continuation".into());
+                    }
+                }
+                self.refresh_command_weight(ticket);
+                return Ok(true);
+            }
+            Ok(ResultValue::Stored(record) | ResultValue::Command(record))
+                if record.status == tasty_event_store::CommandStatus::InProgress =>
+            {
+                pending.replay |= matches!(result, Ok(ResultValue::Stored(_)));
+                pending.waiting_command = Some(record.command_id.clone());
+                return Ok(true);
+            }
             Ok(ResultValue::Reserved(ids)) => {
                 let CategoryReservation { stream, name } = pending
                     .category
@@ -490,14 +582,14 @@ impl JournalApplication {
                 return Ok(true);
             }
             Ok(ResultValue::Cancelled) => oversized_response(serde_json::Value::Null),
-            Ok(ResultValue::Stored(record)) => {
+            Ok(ResultValue::Stored(record) | ResultValue::Command(record)) => {
                 let bytes = record
                     .response
                     .as_ref()
                     .ok_or("stored structure result has no response")?;
                 let mut reply: JsonRpcResponse =
                     serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
-                reply.idempotent_replay = true;
+                reply.idempotent_replay = matches!(result, Ok(ResultValue::Stored(_)));
                 reply
             }
             Ok(ResultValue::Executed(executed)) => {
@@ -543,6 +635,12 @@ impl JournalApplication {
             if let Some(event) = event {
                 self.commands.completed_host_events.push((engine, event));
             }
+        }
+        if completed.error.is_none()
+            && !completed.idempotent_replay
+            && let Some(created) = pending.created
+        {
+            created.notify(sessions, &mut self.commands.completed_host_events);
         }
         self.commands.deliver(pending.reply, completed);
         Ok(true)
@@ -592,7 +690,25 @@ impl JournalApplication {
                 );
                 continue;
             }
-            self.resolve_ipc_for_engine(ticket, session);
+            if request.method == "workspace.create" {
+                let kind = request
+                    .params
+                    .get("type")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("terminal");
+                match crate::ipc::handler::workspace::resolve_create_cwd(
+                    &request.params,
+                    kind,
+                    state,
+                    &session.as_ref(),
+                    &serde_json::Value::Null,
+                ) {
+                    Ok(cwd) => self.resolve_workspace_creation(ticket, session, cwd),
+                    Err(response) => self.reject_resolved_request(ticket, response),
+                }
+            } else {
+                self.resolve_ipc_for_engine(ticket, session);
+            }
         }
         for (engine, event) in std::mem::take(&mut self.commands.completed_host_events) {
             if engine == session.id
@@ -661,6 +777,25 @@ impl crate::app::App {
                         })
                         .map(|(id, _)| id)
                 });
+            let creation_cwd = if request.method == "workspace.create" {
+                id.and_then(|engine| self.engines_mut().resolve(engine))
+                    .map(|context| {
+                        let kind = request
+                            .params
+                            .get("type")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("terminal");
+                        crate::ipc::handler::workspace::resolve_create_cwd(
+                            &request.params,
+                            kind,
+                            context.state,
+                            &context.engine.as_ref(),
+                            &serde_json::Value::Null,
+                        )
+                    })
+            } else {
+                None
+            };
             let Some(session) = id.and_then(|id| self.engines.session_mut(id)) else {
                 let response = match named {
                     Some(resource) => JsonRpcResponse::invalid_params(
@@ -678,7 +813,16 @@ impl crate::app::App {
                 self.journal.reject_resolved_request(ticket, response);
                 continue;
             };
-            self.journal.resolve_ipc_for_engine(ticket, session);
+            if let Some(cwd) = creation_cwd {
+                match cwd {
+                    Ok(cwd) => self
+                        .journal
+                        .resolve_workspace_creation(ticket, session, cwd),
+                    Err(response) => self.journal.reject_resolved_request(ticket, response),
+                }
+            } else {
+                self.journal.resolve_ipc_for_engine(ticket, session);
+            }
         }
         self.journal
             .deliver_plugin_replies(self.plugin_manager.as_mut());
@@ -838,6 +982,14 @@ fn pending_weight(pending: &Pending) -> usize {
                 .display
                 .as_ref()
                 .map_or(0, display::DisplayContinuation::weight),
+        )
+        .saturating_add(pending.resource.as_ref().map_or(0, create::Request::weight))
+        .saturating_add(pending.waiting_command.as_ref().map_or(0, String::len))
+        .saturating_add(
+            pending
+                .created
+                .as_ref()
+                .map_or(0, create::Completed::weight),
         )
         .saturating_add(reply_weight(&pending.reply))
         .saturating_add(

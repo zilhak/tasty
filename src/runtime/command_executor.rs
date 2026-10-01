@@ -31,7 +31,7 @@ pub(crate) trait JournalDecider:
         state: &Self::State,
         command: &Self::Command,
         decision: &Decision<Self::Event, NewEffect>,
-    ) -> CommandRecordPlan;
+    ) -> Result<CommandRecordPlan, String>;
     fn encode(&self, event: &Self::Event) -> Result<OpaquePayload, String>;
     /// 이벤트가 참조하는 불변 payload. 같은 transaction에서 pin된다.
     fn payload_refs(&self, _event: &Self::Event) -> Vec<PayloadRef> {
@@ -89,6 +89,8 @@ pub(crate) enum ExecError<R: fmt::Debug> {
     Halted,
     /// 상태 적용·재구성·인코딩 실패.
     Apply(String),
+    /// Completion/template validation failed before appending any facts.
+    Record(String),
     /// revision 충돌이 정해진 횟수 동안 계속됐다.
     RetriesExhausted(u32),
     NoStoredResponse {
@@ -114,6 +116,7 @@ impl<R: fmt::Debug> fmt::Display for ExecError<R> {
                 f.write_str("writing stopped because the writer lock or epoch was lost")
             }
             Self::Apply(reason) => write!(f, "state could not be applied: {reason}"),
+            Self::Record(reason) => write!(f, "command result could not be recorded: {reason}"),
             Self::RetriesExhausted(n) => {
                 write!(f, "revision conflict persisted after {n} attempts")
             }
@@ -375,7 +378,10 @@ impl<D: JournalDecider> Executor<D> {
                     payload_refs: self.decider.payload_refs(event),
                 });
         }
-        let plan = self.decider.record(state, &request.command, decision);
+        let plan = self
+            .decider
+            .record(state, &request.command, decision)
+            .map_err(ExecError::Record)?;
         let mut commit = CommitRequest::new(epoch);
         commit.command = Some(NewCommand {
             command_id: command_id.to_owned(),

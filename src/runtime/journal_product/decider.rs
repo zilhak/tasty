@@ -28,8 +28,10 @@ pub(crate) struct ResolvedCommand {
     pub(crate) changes: Vec<StreamCommand>,
     pub(crate) effect_result: Option<super::EffectLease>,
     pub(crate) cancellation: Option<tasty_event_store::EffectTransition>,
+    pub(crate) completion_mirrors: Option<usize>,
     /// Result templates read before deciding a completion, never fetched from storage inside decide.
-    pub(crate) original_results: std::collections::BTreeMap<String, Vec<StructuralResult>>,
+    pub(crate) original_results:
+        std::collections::BTreeMap<String, super::response::OriginalResults>,
 }
 
 #[derive(Debug, Clone)]
@@ -61,8 +63,11 @@ impl Decider for StructureDecider {
             Err(error) if command.response.is_some() => Ok(Decision {
                 events: Vec::new(),
                 effects: Vec::new(),
-                resolved: serde_json::to_vec(&command.changes)
-                    .map_err(|error| Rejection(error.to_string()))?,
+                resolved: encoded_resolution(
+                    &command.changes,
+                    &command.response,
+                    command.completion_mirrors,
+                )?,
                 response: super::ResponsePlan::rejected(&error),
             }),
             result => result,
@@ -143,10 +148,24 @@ impl StructureDecider {
         Ok(Decision {
             events,
             effects,
-            resolved: serde_json::to_vec(&resolved_changes)
-                .map_err(|e| Rejection(e.to_string()))?,
+            resolved: encoded_resolution(
+                &resolved_changes,
+                &command.response,
+                command.completion_mirrors,
+            )?,
             response: match &command.response {
-                Some(response) => response.render(&candidate)?,
+                Some(response)
+                    if results
+                        .iter()
+                        .any(|result| matches!(result, StructuralResult::Pending { .. })) =>
+                {
+                    let mut progress = super::response::ResponseProgress::new(results);
+                    progress
+                        .freeze(response, &candidate, 0)
+                        .map_err(Rejection)?;
+                    serde_json::to_vec(&progress).map_err(|error| Rejection(error.to_string()))?
+                }
+                Some(response) => response.render(&candidate, 0)?,
                 None => serde_json::to_vec(&results).map_err(|e| Rejection(e.to_string()))?,
             },
         })
@@ -170,8 +189,8 @@ impl JournalDecider for StructureDecider {
         state: &StructureModels,
         command: &ResolvedCommand,
         decision: &Decision<StreamEvent, NewEffect>,
-    ) -> CommandRecordPlan {
-        let command_updates = completion::aggregate(state, command, decision);
+    ) -> Result<CommandRecordPlan, String> {
+        let command_updates = completion::aggregate(state, command, decision)?;
         let internal = command.changes.iter().all(|change| {
             matches!(
                 change.command,
@@ -179,15 +198,17 @@ impl JournalDecider for StructureDecider {
                     | StructuralCommand::FinishCleanup { .. }
                     | StructuralCommand::CancelUnstartedCreation { .. }
                     | StructuralCommand::RejectInstallation { .. }
+                    | StructuralCommand::MarkPreparationUncertain { .. }
             )
         });
         let pending = !internal && !decision.effects.is_empty();
-        let failed = command.response.is_some()
+        let failed = !pending
+            && command.response.is_some()
             && serde_json::from_slice::<tasty_ipc::protocol::JsonRpcResponse>(&decision.response)
                 .expect("public structural response serializes")
                 .error
                 .is_some();
-        CommandRecordPlan {
+        Ok(CommandRecordPlan {
             status: if pending {
                 CommandStatus::InProgress
             } else if failed {
@@ -234,7 +255,7 @@ impl JournalDecider for StructureDecider {
                 })
                 .chain(command.cancellation.iter().cloned())
                 .collect(),
-        }
+        })
     }
 
     fn encode(&self, event: &StreamEvent) -> Result<OpaquePayload, String> {
@@ -287,4 +308,21 @@ fn new_effect(
         },
         initial: tasty_event_store::EffectState::Pending,
     })
+}
+
+fn encoded_resolution(
+    changes: &[StreamCommand],
+    response: &Option<super::ResponsePlan>,
+    completion_mirrors: Option<usize>,
+) -> Result<Vec<u8>, Rejection> {
+    if response.is_none() && completion_mirrors.is_none() {
+        return serde_json::to_vec(changes).map_err(|error| Rejection(error.to_string()));
+    }
+    serde_json::to_vec(&super::response::RecordedResolution {
+        version: 1,
+        changes: changes.to_vec(),
+        response: response.clone(),
+        completion_mirrors,
+    })
+    .map_err(|error| Rejection(error.to_string()))
 }

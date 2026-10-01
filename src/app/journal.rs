@@ -165,8 +165,15 @@ impl JournalApplication {
                 self.submit_retirements()?;
                 #[cfg(feature = "gui")]
                 self.submit_view_writes()?;
-                for creation in self.creations.values_mut() {
-                    creation.poll_cleanup(&self.worker)?;
+                for (engine, creation) in &mut self.creations {
+                    let mirror_count = sessions
+                        .iter()
+                        .find(|session| session.id == *engine)
+                        .ok_or("materializing engine disappeared")?
+                        .core_state
+                        .mirror_workspaces
+                        .len();
+                    creation.poll_cleanup(&self.worker, mirror_count)?;
                 }
             }
             let completion = match self.worker.try_recv() {
@@ -425,6 +432,7 @@ impl JournalApplication {
                             .answered(&self.worker, session, result?)?
                         {
                             self.creations.remove(&id);
+                            self.refresh_in_progress_commands();
                         }
                         continue;
                     }
@@ -506,6 +514,30 @@ impl JournalApplication {
         self.restoration_queue.retain(|(engine, _)| *engine != id);
         self.restoration_reads
             .retain(|_, (engine, _)| *engine != id);
+    }
+
+    #[cfg(feature = "gui")]
+    pub(crate) fn input_generation(
+        &self,
+        engine: EngineId,
+        surface: u32,
+    ) -> Option<Option<tasty_terminal::ResourceGeneration>> {
+        self.creations
+            .get(&engine)
+            .and_then(|creation| creation.input_generation(surface))
+    }
+
+    pub(crate) fn pauses_observation(&self) -> bool {
+        self.creations
+            .values()
+            .any(creation::Creation::pauses_observation)
+    }
+
+    pub(crate) fn cleanup_poll_deadline(&self) -> Option<std::time::Instant> {
+        self.creations
+            .values()
+            .any(creation::Creation::needs_cleanup_poll)
+            .then(|| std::time::Instant::now() + std::time::Duration::from_millis(10))
     }
 
     pub(crate) fn is_halted(&self) -> bool {

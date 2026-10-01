@@ -199,6 +199,8 @@ pub(crate) struct AttachMeshContextForward {
 pub struct CoreState {
     /// Revision of this committed live projection, never a command-decision source.
     pub(crate) committed_structure_revision: Option<u64>,
+    /// Read-only activation metadata of the committed local projection, never a runtime owner.
+    pub(crate) committed_surface_activations: std::collections::BTreeMap<u32, u64>,
     pub(crate) local_workspaces: Vec<Workspace>,
     pub(crate) mirror_workspaces: Vec<Workspace>,
     /// Composite display projection; local relative order comes from the committed model.
@@ -452,6 +454,7 @@ impl CoreState {
     ) -> Self {
         let mut engine = Self {
             committed_structure_revision: None,
+            committed_surface_activations: Default::default(),
             local_workspaces: Vec::new(),
             mirror_workspaces: Vec::new(),
             workspace_display_order: Vec::new(),

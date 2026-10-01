@@ -33,6 +33,14 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
+        if self.journal.pauses_observation()
+            && !self.journal.is_halted()
+            && !matches!(event, AppEvent::JournalReady|AppEvent::Shutdown|AppEvent::QuitRequested|AppEvent::CloseWindow(_))
+        {
+            self.defer_publication_event(crate::app::publication_input::DeferredEvent::App(event));
+            return;
+        }
+
         // 부팅 중 출력 이벤트를 소비하면 engine이 아직 views에 없어 wake를 잃을 수 있다. 완료 뒤 재생한다.
         if let Some(boot) = self.boot.as_mut()
             && !matches!(
@@ -241,6 +249,16 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
+        if self.journal.pauses_observation() && !self.journal.is_halted() && !matches!(event,WindowEvent::CloseRequested) {
+            let target = self.capture_publication_input(id, &event);
+            self.defer_publication_event(crate::app::publication_input::DeferredEvent::Window {
+                window: id,
+                event,
+                target,
+            });
+            return;
+        }
+
         if self.journal.is_halted() && !matches!(event, WindowEvent::CloseRequested) {
             return;
         }
@@ -338,9 +356,19 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         self.poll_journal_application();
-        self.poll_pending_window();
+        if !self.journal.pauses_observation() {self.poll_pending_window();}
         if self.journal.is_halted() {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+            return;
+        }
+
+        if self.journal.pauses_observation() {
+            self.sync_timer_control_flow(event_loop);
+            return;
+        }
+        self.resume_publication_events(event_loop);
+        if self.shutdown.is_some() || self.journal.is_halted() || self.journal.pauses_observation()
+        {
             return;
         }
 
@@ -2131,10 +2159,15 @@ impl App {
 
     /// 본체·플러그인 타이머의 가장 이른 기한을 WaitUntil과 별도 waker에 함께 전달한다.
     fn sync_timer_control_flow(&mut self, event_loop: &ActiveEventLoop) {
-        let deadline = min_deadline(
-            self.timers.next_deadline(),
-            self.plugin_manager.as_ref().and_then(|m| m.next_deadline()),
-        );
+        let deadline = if self.journal.pauses_observation() {
+            None
+        } else {
+            min_deadline(
+                self.timers.next_deadline(),
+                self.plugin_manager.as_ref().and_then(|m| m.next_deadline()),
+            )
+        };
+        let deadline = min_deadline(deadline, self.journal.cleanup_poll_deadline());
         self.timer_waker.set_deadline(deadline);
         let deadline = if self.pending_window.is_some() {
             let opening = std::time::Instant::now() + crate::app::boot_machine::BOOT_FRAME_INTERVAL;

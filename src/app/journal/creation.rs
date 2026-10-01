@@ -13,6 +13,8 @@ pub(super) struct Creation {
     input: PreparationInput,
     fixed_plan: Option<CreationPlan>,
     stage: Stage,
+    public: bool,
+    queued: Option<Work>,
 }
 
 enum Stage {
@@ -25,19 +27,53 @@ enum Stage {
     Installing {
         installed: Installed,
         answered: bool,
+        started:std::time::Instant,
     },
+    Uncertain {reason:String},
     Finish(Installed),
     Rejected {
         lease: crate::runtime::journal_product::EffectLease,
         reason: String,
         retirement: Option<tasty_terminal::PtyRetirement>,
         answered: bool,
+        started:std::time::Instant,
     },
     Failed(String),
     Transition,
 }
 
 impl Creation {
+    pub(super) fn committed(
+        ticket: u64,
+        binding: crate::runtime::journal_product::EngineBinding,
+        worker: &JournalWorker,
+        operation: OperationId,
+    ) -> Result<Self, String> {
+        let mut creation = Self {
+            ticket,
+            binding,
+            public: true,
+            stage: Stage::Claim,
+            fixed_plan: None,
+            queued: None,
+            input: PreparationInput {
+                kind: String::new(),
+                cwd: None,
+                params: serde_json::Value::Null,
+                restore: None,
+                shell: None,
+            },
+        };
+        creation.submit(
+            worker,
+            Work::ClaimPreparation {
+                stream: creation.binding.stream.clone(),
+                operation,
+            },
+        )?;
+        Ok(creation)
+    }
+
     pub(super) fn default_workspace(
         ticket: u64,
         session: &EngineSession,
@@ -65,6 +101,8 @@ impl Creation {
             ticket,
             binding,
             stage: Stage::Admit,
+            public: false,
+            queued: None,
             fixed_plan: None,
             input: PreparationInput {
                 kind: "terminal".into(),
@@ -120,16 +158,34 @@ impl Creation {
             input: request.input,
             fixed_plan: Some(request.plan),
             stage: Stage::Admit,
+            public: false,
+            queued: None,
         })
     }
 
-    fn submit(&self, worker: &JournalWorker, work: Work) -> Result<(), String> {
-        worker
-            .submit(Request {
-                ticket: self.ticket,
-                work,
-            })
-            .map_err(|error| format!("materialization submission: {error:?}"))
+    fn submit(&mut self, _worker: &JournalWorker, work: Work) -> Result<(), String> {
+        if self.queued.is_some() {
+            return Err("materialization already has a pending worker step".into());
+        }
+        self.queued = Some(work);
+        Ok(())
+    }
+
+    fn flush(&mut self, worker: &JournalWorker) -> Result<bool, String> {
+        let Some(work) = self.queued.take() else {
+            return Ok(true);
+        };
+        match worker.submit_owned(Request {
+            ticket: self.ticket,
+            work,
+        }) {
+            Ok(()) => Ok(true),
+            Err((crate::runtime::journal_product::SubmitError::Busy, request)) => {
+                self.queued = Some(request.work);
+                Ok(false)
+            }
+            Err((error, _)) => Err(format!("materialization submission: {error:?}")),
+        }
     }
 
     pub(super) fn answered(
@@ -180,6 +236,7 @@ impl Creation {
                             category: 0,
                             subtitle: String::new(),
                             description: String::new(),
+                            attach_mapping: None,
                         },
                         surface: SurfaceSpec {
                             id: id(IdKind::Surface)?,
@@ -264,16 +321,19 @@ impl Creation {
                     }
                 }
             }
-            (Stage::Installing { installed, .. }, ResultValue::Executed(_)) => Stage::Installing {
+            (Stage::Installing { installed,started,.. }, ResultValue::Executed(_)) => Stage::Installing {
                 installed,
                 answered: true,
+                started,
             },
+            (Stage::Uncertain {reason},ResultValue::Executed(_))=>return Err(format!("resource publication is uncertain: {reason}")),
             (Stage::Finish(_), ResultValue::Executed(_)) => return Ok(true),
             (
                 Stage::Rejected {
                     lease,
                     reason,
                     retirement,
+                    started,
                     ..
                 },
                 ResultValue::Executed(_),
@@ -282,7 +342,10 @@ impl Creation {
                 reason,
                 retirement,
                 answered: true,
+                started,
             },
+            (Stage::Failed(_), _) if self.public => return Ok(true),
+            (Stage::Claim, ResultValue::Executed(_)) if self.public => return Ok(true),
             (Stage::Failed(reason), _) => return Err(reason),
             _ => return Err("materialization completion arrived outside its request phase".into()),
         };
@@ -319,6 +382,7 @@ impl Creation {
                     reason: error.to_string(),
                     retirement,
                     answered: false,
+                    started:std::time::Instant::now(),
                 };
                 Ok(None)
             }
@@ -349,27 +413,61 @@ impl Creation {
         self.stage = Stage::Installing {
             installed,
             answered: false,
+            started:std::time::Instant::now(),
         };
     }
 
-    pub(super) fn poll_cleanup(&mut self, worker: &JournalWorker) -> Result<(), String> {
+    #[cfg(feature = "gui")]
+    pub(super) fn input_generation(
+        &self,
+        surface: u32,
+    ) -> Option<Option<tasty_terminal::ResourceGeneration>> {
+        match &self.stage {
+            Stage::Installing { installed, .. } | Stage::Finish(installed)
+                if installed.surface_id == surface =>
+            {
+                Some(installed.previous_resource)
+            }
+            _ => None,
+        }
+    }
+
+    pub(super) fn pauses_observation(&self) -> bool {
+        matches!(self.stage, Stage::Installing { .. } | Stage::Finish(_) | Stage::Uncertain {..})
+    }
+
+    pub(super) fn needs_cleanup_poll(&self) -> bool {
+        matches!(
+            self.stage,
+            Stage::Installing { answered: true, .. } | Stage::Rejected { answered: true, .. }
+        )
+    }
+
+    pub(super) fn poll_cleanup(
+        &mut self,
+        worker: &JournalWorker,
+        mirror_count: usize,
+    ) -> Result<(), String> {
+        if !self.flush(worker)? {
+            return Ok(());
+        }
         if let Stage::Rejected {
             lease,
             reason,
             retirement,
             answered: true,
+            started,
         } = &self.stage
         {
-            let complete = match retirement
-                .as_ref()
-                .map(|receipt| receipt.observation().phase)
-            {
-                None | Some(tasty_terminal::PtyPhase::Reaped) => true,
-                Some(tasty_terminal::PtyPhase::WaitFailed) => {
-                    return Err("private preparation owner could not confirm reap".into());
-                }
-                _ => false,
-            };
+            let phase=retirement.as_ref().map(|receipt|receipt.observation().phase);
+            let complete=matches!(phase,None|Some(tasty_terminal::PtyPhase::Reaped));
+            if !complete && (phase==Some(tasty_terminal::PtyPhase::WaitFailed) || started.elapsed()>=std::time::Duration::from_secs(5)) {
+                let reason="private preparation owner could not confirm reap before its deadline".to_owned();
+                self.submit(worker,Work::PreparationUncertain {lease:lease.clone(),reason:reason.clone()})?;
+                self.stage=Stage::Uncertain {reason};
+                self.flush(worker)?;
+                return Ok(());
+            }
             if complete {
                 let reason = reason.clone();
                 self.submit(
@@ -380,21 +478,31 @@ impl Creation {
                     },
                 )?;
                 self.stage = Stage::Failed(reason);
+                self.flush(worker)?;
             }
             return Ok(());
         }
-        if let Stage::Installing {
-            installed,
-            answered: true,
-        } = &self.stage
-            && installed
-                .cleanup_complete()
-                .map_err(|error| error.to_string())?
-        {
+        let ready=if let Stage::Installing {installed,answered:true,started}=&self.stage {
+            let uncertain=match installed.cleanup_complete() {
+                Ok(true)=>None,
+                Ok(false) if started.elapsed()<std::time::Duration::from_secs(5)=>return Ok(()),
+                Ok(false)=>Some("old resource cleanup did not complete before its deadline".to_owned()),
+                Err(error)=>Some(error.to_string()),
+            };
+            if let Some(reason)=uncertain {
+                self.submit(worker,Work::PreparationUncertain {lease:installed.lease.clone(),reason:reason.clone()})?;
+                self.stage=Stage::Uncertain {reason};
+                self.flush(worker)?;
+                return Ok(());
+            }
+            true
+        } else {false};
+        if ready && let Stage::Installing {installed,..}=&self.stage {
             self.submit(
                 worker,
                 Work::CleanupFinished {
                     lease: installed.lease.clone(),
+                    mirror_count,
                 },
             )?;
             let Stage::Installing { installed, .. } =
@@ -403,6 +511,7 @@ impl Creation {
                 unreachable!("checked installation phase")
             };
             self.stage = Stage::Finish(installed);
+            self.flush(worker)?;
         }
         Ok(())
     }

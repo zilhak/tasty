@@ -183,6 +183,12 @@ impl App {
 
     /// 부팅 중에는 저장 대상 engine이 아직 없어 빈 레이아웃으로 덮어쓰지 않는다.
     fn shutdown_step_saving_layout(&mut self) -> StepOutcome {
+        // Do not capture an authorized installation as though it were a committed surface.
+        // Cleanup has a bounded receipt deadline and records Uncertain before the halt path.
+        if self.journal.pauses_observation() && !self.journal.is_halted() {
+            self.poll_journal_application();
+            if self.journal.pauses_observation() && !self.journal.is_halted() {return StepOutcome::Waiting;}
+        }
         let t_flush = Instant::now();
         if self
             .shutdown

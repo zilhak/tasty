@@ -29,6 +29,13 @@ impl IpcCompletion {
         }
     }
 
+    pub(crate) fn retained_bytes(&self) -> usize {
+        std::mem::size_of::<Self>()
+            + serde_json::to_vec(&self.request_id)
+                .expect("request ID serializes")
+                .len()
+    }
+
     pub(crate) fn reply_ok(self, result: serde_json::Value) {
         crate::ipc::server::send_response(
             &self.response_tx,

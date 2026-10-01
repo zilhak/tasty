@@ -50,6 +50,15 @@ pub(crate) fn apply(
         return Err("committed live projection differs from the canonical result".into());
     }
     engine.committed_structure_revision = after.applied.revision;
+    engine.committed_surface_activations = after
+        .surfaces
+        .iter()
+        .filter_map(|(id, surface)| {
+            surface
+                .activation
+                .map(|activation| (*id, activation.generation))
+        })
+        .collect();
     Ok(())
 }
 

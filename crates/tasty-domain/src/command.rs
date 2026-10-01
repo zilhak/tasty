@@ -36,6 +36,10 @@ pub enum StructuralCommand {
     FinishCleanup {
         operation: crate::OperationId,
     },
+    MarkPreparationUncertain {
+        operation:crate::OperationId,
+        reason:String,
+    },
     FinishCreation {
         operation: crate::OperationId,
         result: crate::PreparationResult,
@@ -164,6 +168,7 @@ pub fn decide_structure(
                 | StructuralCommand::FinishCreation { .. }
                 | StructuralCommand::FinishCleanup { .. }
                 | StructuralCommand::RejectInstallation { .. }
+                | StructuralCommand::MarkPreparationUncertain { .. }
                 | StructuralCommand::CancelUnstartedCreation { .. }
         )
     {
@@ -177,7 +182,8 @@ pub fn decide_structure(
         | StructuralCommand::FinishCreation { .. }
         | StructuralCommand::FinishCleanup { .. }
         | StructuralCommand::CancelUnstartedCreation { .. }
-        | StructuralCommand::RejectInstallation { .. } => creation::decide(model, command)?,
+        | StructuralCommand::RejectInstallation { .. }
+                | StructuralCommand::MarkPreparationUncertain { .. } => creation::decide(model, command)?,
         _ => metadata::decide(model, command)?,
     };
     let mut candidate = model.clone();

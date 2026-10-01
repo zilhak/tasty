@@ -34,23 +34,26 @@ pub(crate) fn drain_pending_intents_in_app(
     engine: &mut EngineMut<'_>,
     journal: &mut crate::app::journal::JournalApplication,
 ) {
-    let engine_id = state.engine_id;
-    drain_with(core, state, engine, |core, dispatched| {
-        let Some(id) = engine_id else {
-            tracing::error!("headless structural intent has no application engine owner");
-            return true;
-        };
-        match &dispatched.body {
-            Intent::Domain(intent) => {
-                journal.admit_metadata_intent(id, core, intent, &dispatched.origin)
+    let engine_id=state.engine_id;
+    for _ in 0..MAX_DRAIN_ROUNDS {
+        let batch=state.take_pending_intents();
+        if batch.is_empty() {return;}
+        for mut dispatched in batch {
+            match crate::app::creation_intent::resolve(state,&engine.as_ref(),&dispatched.body,&dispatched.origin) {
+                Ok(Some(intent))=>dispatched.body=Intent::Domain(intent),
+                Ok(None)=>{},
+                Err(error)=> {super::report_apply_error(state,engine.core,&dispatched.origin,"creation input",&error);continue;},
             }
-            Intent::DirectRename(rename) => {
-                journal.admit_direct_rename(id, rename, &dispatched.origin);
-                true
-            }
-            _ => false,
+            let handled=match (engine_id,&dispatched.body) {
+                (Some(id),Intent::Domain(intent))=>journal.admit_metadata_intent(id,engine.core,intent,&dispatched.origin),
+                (Some(id),Intent::DirectRename(rename))=>{journal.admit_direct_rename(id,rename,&dispatched.origin);true},
+                (None,Intent::Domain(_)|Intent::DirectRename(_))=>{tracing::error!("headless structural intent has no application engine owner");true},
+                _=>false,
+            };
+            if !handled {apply_one(core,state,engine,dispatched);}
         }
-    });
+    }
+
 }
 
 fn drain_with(

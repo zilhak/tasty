@@ -6,8 +6,17 @@ use tasty_domain::{
 
 #[test]
 fn a_multi_stream_creation_completes_only_after_every_operation_and_preserves_result_order() {
+    exercise(false);
+}
+
+#[test]
+fn public_creation_progress_survives_restart_and_keeps_each_completed_wire_part() {
+    exercise(true);
+}
+
+fn exercise(public: bool) {
     let home = tempfile::tempdir().unwrap();
-    let worker = start(home.path());
+    let mut worker = start(home.path());
     seed_category(&worker);
     submit(&worker, 101, Work::Admit(header("second-category")));
     finished(&worker, 101).unwrap();
@@ -79,6 +88,7 @@ fn a_multi_stream_creation_completes_only_after_every_operation_and_preserves_re
                                 category: index + 1,
                                 subtitle: String::new(),
                                 description: String::new(),
+                                attach_mapping: None,
                             },
                             surface: SurfaceSpec {
                                 id: id(IdKind::Surface, index),
@@ -91,7 +101,17 @@ fn a_multi_stream_creation_completes_only_after_every_operation_and_preserves_re
                     },
                 })
                 .collect(),
-            response: None,
+            response: public.then(|| {
+                ResponsePlan::Multiple(
+                    (0..2)
+                        .map(|index| ResponsePlan::WorkspaceCreated {
+                            stream: format!("structure:slot-{}", index + 1),
+                            id: id(IdKind::Workspace, index),
+                            surface_id: id(IdKind::Surface, index),
+                        })
+                        .collect(),
+                )
+            }),
         },
     );
     let prepared = publish(&worker);
@@ -138,6 +158,7 @@ fn a_multi_stream_creation_completes_only_after_every_operation_and_preserves_re
             &worker,
             12,
             Work::CleanupFinished {
+                mirror_count: 0,
                 lease: claimed.lease,
             },
         );
@@ -147,6 +168,65 @@ fn a_multi_stream_creation_completes_only_after_every_operation_and_preserves_re
         let ResultValue::Stored(record) = finished(&worker, 13).unwrap() else {
             panic!("record")
         };
+        if public {
+            if index == 1 {
+                assert_eq!(record.status, tasty_event_store::CommandStatus::InProgress);
+                let progress: super::super::response::ResponseProgress =
+                    serde_json::from_slice(record.response.as_ref().unwrap()).unwrap();
+                assert!(progress.replies[0].is_none());
+                assert_eq!(
+                    progress.replies[1]
+                        .as_ref()
+                        .unwrap()
+                        .result
+                        .as_ref()
+                        .unwrap()["name"],
+                    "workspace-1"
+                );
+                // A later unrelated command changes the already completed target. Restart the
+                // actual worker/DB before the other operation is allowed to finish.
+                submit(&worker, 20, Work::Admit(header("rename-completed")));
+                finished(&worker, 20).unwrap();
+                submit(
+                    &worker,
+                    20,
+                    Work::Resolve {
+                        changes: vec![StreamCommand {
+                            stream: "structure:slot-2".into(),
+                            command: StructuralCommand::UpdateWorkspaceMeta {
+                                workspace_id: id(IdKind::Workspace, 1),
+                                name: Some("later-name".into()),
+                                subtitle: None,
+                                description: None,
+                            },
+                        }],
+                        response: None,
+                    },
+                );
+                publish(&worker);
+                finished(&worker, 20).unwrap();
+                drop(worker);
+                worker = start(home.path());
+            } else {
+                assert_eq!(record.status, tasty_event_store::CommandStatus::Completed);
+                let response: tasty_ipc::protocol::JsonRpcResponse =
+                    serde_json::from_slice(record.response.as_ref().unwrap()).unwrap();
+                let results = response.result.unwrap();
+                assert_eq!(results[0]["name"], "workspace-0");
+                assert_eq!(results[1]["name"], "workspace-1");
+                assert_eq!(results[0]["surface_id"], id(IdKind::Surface, 0));
+                assert_eq!(results[1]["surface_id"], id(IdKind::Surface, 1));
+                submit(&worker, 21, Work::ReadEngine("structure:slot-2".into()));
+                let ResultValue::Engine(model) = finished(&worker, 21).unwrap() else {
+                    panic!("model")
+                };
+                assert_eq!(
+                    model.workspaces[&id(IdKind::Workspace, 1)].name,
+                    "later-name"
+                );
+            }
+            continue;
+        }
         let results: Vec<StructuralResult> =
             serde_json::from_slice(record.response.as_ref().unwrap()).unwrap();
         assert_eq!(results.len(), 2);

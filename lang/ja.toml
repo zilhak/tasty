@@ -921,6 +921,7 @@ undo = "元に戻す"
 redo = "やり直し"
 
 [toast]
+input_queue_full = "処理中に入力が多く届いたため、一部を受け付けられませんでした。もう一度入力してください。"
 bashrc_save_failed = "Tastyモードの bashrc を保存できませんでした — 編集は反映されていません: {}"
 char_limit_notice = "({}文字制限)"
 copied = "コピーしました"

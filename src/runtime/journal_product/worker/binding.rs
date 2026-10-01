@@ -107,6 +107,7 @@ pub(super) fn open(
                 }],
                 effect_result: None,
                 cancellation: None,
+                completion_mirrors: None,
                 original_results: Default::default(),
             },
         })
@@ -266,6 +267,7 @@ pub(super) fn retire(
                 }],
                 effect_result: None,
                 cancellation: None,
+                completion_mirrors: None,
                 original_results: Default::default(),
             },
         })

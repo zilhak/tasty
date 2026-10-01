@@ -141,7 +141,7 @@ pub(super) fn prepared(
         operation: lease.operation.clone(),
         result,
     };
-    finish(executor, lease, command, "prepared")
+    finish(executor, lease, command, "prepared", None)
 }
 
 pub(super) fn rejected(
@@ -153,17 +153,23 @@ pub(super) fn rejected(
         operation: lease.operation.clone(),
         reason,
     };
-    finish(executor, lease, command, "installation-rejected")
+    finish(executor, lease, command, "installation-rejected", None)
+}
+
+pub(super) fn uncertain(executor:&Executor<StructureDecider>,lease:EffectLease,reason:String)->Result<ResultValue> {
+    let command=StructuralCommand::MarkPreparationUncertain {operation:lease.operation.clone(),reason};
+    finish(executor,lease,command,"uncertain",None)
 }
 
 pub(super) fn cleaned(
     executor: &Executor<StructureDecider>,
     lease: EffectLease,
+    mirror_count: usize,
 ) -> Result<ResultValue> {
     let command = StructuralCommand::FinishCleanup {
         operation: lease.operation.clone(),
     };
-    finish(executor, lease, command, "cleaned")
+    finish(executor, lease, command, "cleaned", Some(mirror_count))
 }
 
 fn finish(
@@ -171,12 +177,14 @@ fn finish(
     lease: EffectLease,
     command: StructuralCommand,
     phase: &str,
+    completion_mirrors: Option<usize>,
 ) -> Result<ResultValue> {
     let key = CommandKey {
         caller_scope: "journal-effect-result".into(),
         idempotency_key: format!("{}/{}/{phase}", lease.effect_id, lease.attempt),
     };
-    let digest = serde_json::to_vec(&(&lease, &command)).map_err(|error| error.to_string())?;
+    let digest = serde_json::to_vec(&(&lease, &command, completion_mirrors))
+        .map_err(|error| error.to_string())?;
     executor
         .with_state(|_| ())
         .map_err(|error| error.to_string())?;
@@ -236,6 +244,7 @@ fn finish(
             }],
             effect_result: Some(lease),
             cancellation: None,
+            completion_mirrors,
             original_results,
         },
     };
@@ -281,6 +290,7 @@ fn cancel_unstarted(
             }],
             effect_result: None,
             cancellation: Some(transition),
+            completion_mirrors: None,
             original_results,
         },
     };
@@ -334,13 +344,10 @@ fn validate_binding(
 fn read_original_results(
     store: &tasty_event_store::EventStore,
     command_id: &str,
-) -> Result<Vec<tasty_domain::StructuralResult>> {
+) -> Result<super::super::response::OriginalResults> {
     let record = store
         .command(command_id)
         .map_err(|error| error.to_string())?
         .ok_or("original command record missing")?;
-    let response = record
-        .response
-        .ok_or("original command progress results missing")?;
-    serde_json::from_slice(&response).map_err(|error| error.to_string())
+    super::super::response::OriginalResults::from_record(&record)
 }

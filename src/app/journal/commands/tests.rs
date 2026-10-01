@@ -13,8 +13,12 @@ fn finish(
     let until = Instant::now() + Duration::from_secs(10);
     loop {
         journal.poll_bootstrap(&mut [session]).unwrap();
-        for (ticket, _) in journal.requests_needing_resolution() {
-            journal.resolve_ipc_for_engine(ticket, session);
+        for (ticket, request) in journal.requests_needing_resolution() {
+            if request.method == "workspace.create" {
+                journal.resolve_workspace_creation(ticket, session, None);
+            } else {
+                journal.resolve_ipc_for_engine(ticket, session);
+            }
         }
         if let Ok(response) = receiver.try_recv() {
             return response;
@@ -624,3 +628,133 @@ fn each_keyed_journal_request_reports_only_its_initial_retry_decision() {
 #[cfg(feature = "gui")]
 #[path = "divider_tests.rs"]
 mod divider;
+
+#[test]
+fn workspace_create_waits_for_final_wire_and_replays_without_a_second_resource() {
+    let (mut session, mut journal) = boot();
+    let before = session.core_state.workspaces().len();
+    let initial = request(
+        "workspace.create",
+        serde_json::json!({"name":"durable-created","subtitle":"sub","description":"desc","attach_profile":"work-profile"}),
+        Some("workspace-created"),
+        501,
+    );
+    let rx = send(&mut journal, initial.clone());
+    let follower = send(&mut journal, initial.clone());
+    let response = finish(&mut journal, &mut session, &rx);
+    assert!(response.error.is_none(), "{response:?}");
+    let body = response.result.as_ref().unwrap();
+    let sid = body["surface_id"].as_u64().unwrap() as u32;
+    assert_eq!(body["name"], "durable-created");
+    assert_eq!(body["subtitle"], "sub");
+    assert_eq!(body["description"], "desc");
+    assert_eq!(body["index"], before);
+    assert_eq!(session.core_state.workspaces().len(), before + 1);
+    assert!(session.runtime.terminals.generation(sid).is_some());
+    let generation = session.runtime.terminals.generation(sid);
+    let joined = finish(&mut journal, &mut session, &follower);
+    assert!(joined.idempotent_replay);
+    assert_eq!(joined.result, response.result);
+    use crate::core::host_event::PendingHostEvent as E;
+    assert_eq!(
+        journal
+            .commands
+            .completed_host_events
+            .iter()
+            .filter(|(_, event)| matches!(
+                event,
+                notification::Notification::Ready(E::WorkspaceCreated { .. })
+            ))
+            .count(),
+        1
+    );
+    assert_eq!(
+        journal
+            .commands
+            .completed_host_events
+            .iter()
+            .filter(|(_, event)| matches!(
+                event,
+                notification::Notification::Ready(E::WorkspaceRenamed { .. })
+            ))
+            .count(),
+        1
+    );
+    assert_eq!(
+        journal
+            .commands
+            .completed_host_events
+            .iter()
+            .filter(|(_, event)| matches!(
+                event,
+                notification::Notification::Ready(E::SurfaceCreated { .. })
+            ))
+            .count(),
+        1
+    );
+    journal.commands.completed_host_events.clear();
+    let ws = body["id"].as_u64().unwrap() as u32;
+    let rename = send(
+        &mut journal,
+        request(
+            "workspace.update",
+            serde_json::json!({"id":ws,"name":"later"}),
+            None,
+            502,
+        ),
+    );
+    assert!(finish(&mut journal, &mut session, &rename).error.is_none());
+    journal.commands.completed_host_events.clear();
+    let retry = send(&mut journal, initial);
+    let replay = finish(&mut journal, &mut session, &retry);
+    assert!(replay.idempotent_replay);
+    assert_eq!(replay.result, response.result);
+    assert_eq!(session.runtime.terminals.generation(sid), generation);
+    assert!(journal.commands.completed_host_events.is_empty());
+}
+
+#[test]
+fn workspace_create_uses_completion_mirror_count_and_serialized_local_append_order() {
+    let (mut session,mut journal)=boot();
+    let first=send(&mut journal,request("workspace.create",serde_json::json!({}),Some("create-index-1"),1));
+    let second=send(&mut journal,request("workspace.create",serde_json::json!({}),Some("create-index-2"),2));
+    let until=Instant::now()+Duration::from_secs(10);
+    loop {
+        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        let requests=journal.requests_needing_resolution();
+        if let Some((ticket,_))=requests.first() {
+            journal.resolve_workspace_creation(*ticket,&session,None);
+            break;
+        }
+        assert!(Instant::now()<until);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    // The remote display changes after admission but before the resource publication barrier.
+    let mut mirror=crate::model::Workspace::new_with_terminal_marker(900,"remote".into(),901,902,903);
+    mirror.mirror=true;
+    session.core_state.push_mirror_workspace(mirror);
+    let a=finish(&mut journal,&mut session,&first).result.unwrap();
+    let b=finish(&mut journal,&mut session,&second).result.unwrap();
+    assert_eq!(a["name"],"Workspace 2");
+    assert_eq!(a["index"],2);
+    assert_eq!(b["name"],"Workspace 4");
+    assert_eq!(b["index"],3);
+    assert_eq!(session.core_state.workspace_at(2).unwrap().id,a["id"].as_u64().unwrap() as u32);
+    assert_eq!(session.core_state.workspace_at(3).unwrap().id,b["id"].as_u64().unwrap() as u32);
+    let retry=send(&mut journal,request("workspace.create",serde_json::json!({}),Some("create-index-1"),3));
+    assert_eq!(finish(&mut journal,&mut session,&retry).result,Some(a));
+}
+
+#[test]
+fn a_failed_public_factory_completes_the_request_without_halting_the_engine() {
+    let (mut session,mut journal)=boot();
+    let before=session.core_state.workspaces().len();
+    let bad=send(&mut journal,request("workspace.create",serde_json::json!({"type":"not-registered"}),Some("bad-kind"),1));
+    let response=finish(&mut journal,&mut session,&bad);
+    assert!(response.error.is_some());
+    assert!(!journal.is_halted());
+    assert_eq!(session.core_state.workspaces().len(),before);
+    assert!(session.pending_materializations.is_empty());
+    let good=send(&mut journal,request("workspace.create",serde_json::json!({}),None,2));
+    assert!(finish(&mut journal,&mut session,&good).error.is_none());
+}

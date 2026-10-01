@@ -13,6 +13,8 @@ pub enum CreationDestination {
         category: u32,
         subtitle: String,
         description: String,
+        #[serde(default)]
+        attach_mapping: Option<tasty_model::WorkspaceAttachMapping>,
     },
     Tab {
         pane: u32,

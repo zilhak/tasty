@@ -10,7 +10,7 @@ impl App {
     /// force이면 내용 복원 설정에 따라 dirty가 없어도 저장할 수 있다.
     /// 저장 가능 여부와 dirty 해제는 Core가 판단한다.
     pub(crate) fn flush_layout_persistence(&mut self, force: bool) {
-        if self.journal.is_halted() {
+        if self.journal.is_halted() || self.journal.pauses_observation() {
             return;
         }
         let mut captures = Vec::new();

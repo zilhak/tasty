@@ -1,0 +1,425 @@
+//! Creation inputs are fixed only after the original key misses. Factories run after effect commit.
+use super::*;
+use crate::runtime::journal_product::{EngineBinding, PreparationInput, ShellRecipe};
+use tasty_domain::{CreationDestination, CreationPlan, IdKind, SurfaceSpec};
+
+pub(super) struct Request {
+    pub engine: EngineId,
+    pub binding: EngineBinding,
+    pub input: Option<PreparationInput>,
+    pub plan: CreationPlan,
+    pub renamed_name: Option<String>,
+    pub renamed_subtitle: Option<String>,
+    pub renamed_description: Option<String>,
+    pub shape:Shape,
+    pub activate:bool,
+}
+
+pub(super) enum Shape {Workspace,Tab {pane:u32},Pane {target:u32,direction:crate::model::SplitDirection},Surface {target:u32},Convert {surface:u32,respawn:bool}}
+
+impl Request {
+    pub fn resolve(
+        request: &JsonRpcRequest,
+        session: &EngineSession,
+        cwd: Option<std::path::PathBuf>,
+    ) -> Result<Self, JsonRpcResponse> {
+        let core = &session.core_state;
+        let params = &request.params;
+        let id = serde_json::Value::Null;
+        let bad = |message| JsonRpcResponse::invalid_params(id.clone(), message);
+        let internal = |message: String| JsonRpcResponse::internal_error(id.clone(), message);
+        #[cfg(not(debug_assertions))]
+        if let Some(response) = crate::ipc::handler::workspace::reject_loopback_attach(params, &id)
+        {
+            return Err(response);
+        }
+        let kind = params
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("terminal");
+        if let Some(definition) = core.surface_registry.get_live(kind)
+            && let Some(missing) = definition.first_missing_required_param(params)
+        {
+            return Err(bad(format!(
+                "Missing '{missing}' parameter for {kind} type"
+            )));
+        }
+        let category = crate::ipc::handler::workspace::resolve_category_param(core, params)
+            .map_err(&bad)?
+            .unwrap_or(0);
+        let attach_mapping =
+            crate::ipc::handler::workspace::parse_attach_mapping(params).map_err(&bad)?;
+        if kind == "empty" {
+            return Err(internal(
+                "Cannot create workspace with empty surface kind".into(),
+            ));
+        }
+        let mut request=Self::base(session,kind,params,cwd)?;
+        if let CreationDestination::Workspace {category:current,attach_mapping:current_mapping,..}=&mut request.plan.destination {
+            *current=category;*current_mapping=attach_mapping;
+        }
+        Ok(request)
+    }
+
+    fn base(session:&EngineSession,kind:&str,params:&serde_json::Value,cwd:Option<std::path::PathBuf>)->Result<Self,JsonRpcResponse> {
+        let core=&session.core_state;
+        let internal=|message:String|JsonRpcResponse::internal_error(serde_json::Value::Null,message);
+        let category=0;
+        let attach_mapping=None;
+        let shell = crate::core::state::ShellConfig::from_settings(&core.settings);
+        let display_index = core.workspaces().len();
+        let tab_name = if kind == "terminal" {
+            "Shell".into()
+        } else {
+            crate::core::surface_registry::default_tab_name_for_kind(
+                kind,
+                params,
+                core.surface_registry.get_live(kind).as_deref(),
+            )
+        };
+        Ok(Self {
+            engine: session.id,
+            binding: session
+                .journal_binding
+                .clone()
+                .ok_or_else(|| internal("engine has no journal binding".into()))?,
+            input: Some(PreparationInput {
+                kind: kind.into(),
+                cwd,
+                params: params.clone(),
+                restore: None,
+                shell: (kind == "terminal").then_some(ShellRecipe {
+                    executable: shell.shell,
+                    arguments: shell.args,
+                    environment: shell.envs,
+                    cols: core.default_cols,
+                    rows: core.default_rows,
+                    scrollback_lines: core.settings.general.scrollback_lines,
+                    disk_scrollback: core.settings.performance.scrollback_disk_swap,
+                    startup_command: core.settings.general.startup_command.clone(),
+                    restore_command: None,
+                }),
+            }),
+            plan: CreationPlan {
+                destination: CreationDestination::Workspace {
+                    workspace: 0,
+                    pane: 0,
+                    tab: 0,
+                    name: params
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .filter(|v| !v.is_empty())
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| format!("Workspace {}", display_index + 1)),
+                    category,
+                    subtitle: params
+                        .get("subtitle")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .into(),
+                    description: params
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .into(),
+                    attach_mapping,
+                },
+                surface: SurfaceSpec {
+                    id: 0,
+                    kind: kind.into(),
+                    data: None,
+                },
+                tab_name,
+                explicit_name: None,
+            },
+            renamed_name: params
+                .get("name")
+                .and_then(|v| v.as_str())
+                .filter(|v| !v.is_empty())
+                .map(str::to_owned),
+            renamed_subtitle: params
+                .get("subtitle")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned),
+            shape:Shape::Workspace,
+            activate:false,
+            renamed_description: params
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned),
+        })
+    }
+
+    pub fn from_spec(spec:super::create_spec::Spec,session:&EngineSession)->Result<Self,JsonRpcResponse> {
+        use super::create_spec::Destination as D;
+        let mut result=Self::base(session,&spec.kind,&spec.params,spec.cwd)?;
+        let core=&session.core_state;
+        let bad=|reason:String|JsonRpcResponse::invalid_params(serde_json::Value::Null,reason);
+        result.plan.destination=match spec.destination {
+            D::Workspace {name,subtitle,description,category}=> {
+                if spec.kind=="empty" {return Err(bad("Cannot create workspace with empty surface kind".into()));}
+
+                let CreationDestination::Workspace {name:auto,category:cat,subtitle:sub,description:desc,..}=&mut result.plan.destination else {unreachable!("workspace draft")};
+                if let Some(name)=name.clone() {*auto=name;}
+                if let Some(category)=category.filter(|category|core.category_index(*category).is_some()) {*cat=category;}
+                if let Some(subtitle)=subtitle.clone() {*sub=subtitle;}
+                if let Some(description)=description.clone() {*desc=description;}
+                result.renamed_name=name;result.renamed_subtitle=subtitle;result.renamed_description=description;
+                return Ok(result);
+            },
+            D::Tab {pane,name,activate}=> {
+                let target=core.find_pane_by_id(pane).ok_or_else(||bad(format!("Pane {pane} not found")))?;
+                result.shape=Shape::Tab {pane};result.activate=activate;
+                result.plan.explicit_name=name.clone();
+                if let Some(name)=name {result.plan.tab_name=name;}
+                CreationDestination::Tab {pane,tab:0,index:target.tabs.len()}
+            },
+            D::Pane {target,direction}=> {
+                if core.find_pane_by_id(target).is_none() {return Err(bad(format!("Pane {target} not found")));}
+                result.shape=Shape::Pane {target,direction};
+                CreationDestination::Pane {target,pane:0,tab:0,split:tasty_domain::SplitSpec {direction,ratio:tasty_domain::Ratio::from_f32(0.5),placement:tasty_domain::Placement::After}}
+            },
+            D::Surface {target,direction}=> {
+                if core.find_surface_by_id(target).is_none() {return Err(bad(format!("Surface {target} not found")));}
+                result.shape=Shape::Surface {target};
+                CreationDestination::Split {target,split:tasty_domain::SplitSpec {direction,ratio:tasty_domain::Ratio::from_f32(0.5),placement:tasty_domain::Placement::After}}
+            },
+            D::Convert {surface,respawn}=> {
+                if core.find_surface_by_id(surface).is_none() {return Err(bad(format!("Surface {surface} not found")));}
+                result.shape=Shape::Convert {surface,respawn};
+                result.plan.surface.id=surface;
+                let tab=core.find_tab_for_surface(surface).and_then(|tab|core.find_pane_for_tab(tab).and_then(|pane|core.find_pane_by_id(pane)).and_then(|pane|pane.tabs.iter().find(|candidate|candidate.id==tab)));
+                let explicit_name=if respawn {None} else {tab.filter(|tab|tab.all_surface_ids().len()==1).map(|_|if spec.kind=="terminal" {None} else {Some(result.plan.tab_name.clone())})};
+                // Zero is an admission marker. Only the worker resolves it from canonical state,
+                // before decide and before persisting the immutable operation plan.
+                CreationDestination::Convert {surface,previous_activation:Some(0),explicit_name}
+            },
+        };
+        Ok(result)
+    }
+
+    pub fn reservation(&mut self)->Result<Work,String> {
+        let mut kinds=match self.plan.destination {
+            CreationDestination::Workspace {..}=>vec![(IdKind::Workspace,1),(IdKind::Pane,1),(IdKind::Tab,1)],
+            CreationDestination::Tab {..}=>vec![(IdKind::Tab,1)],
+            CreationDestination::Pane {..}=>vec![(IdKind::Pane,1),(IdKind::Tab,1)],
+            CreationDestination::Split {..}=>Vec::new(),
+            CreationDestination::Convert {..}|CreationDestination::Restore {..}=>return Ok(Work::PutPreparation(self.input.take().ok_or("creation input missing")?)),
+        };
+        kinds.push((IdKind::Surface,1));
+        Ok(Work::Reserve(kinds))
+    }
+
+    pub fn reserved(&mut self, ranges: &[tasty_event_store::IdRange]) -> Result<Work, String> {
+        let id = |kind: IdKind| {
+            ranges
+                .iter()
+                .find(|range| range.kind == kind.label() && range.end == range.start + 1)
+                .ok_or_else(|| format!("missing reserved {} identity", kind.label()))
+                .and_then(|range| u32::try_from(range.start).map_err(|error| error.to_string()))
+        };
+        match &mut self.plan.destination {
+            CreationDestination::Workspace {workspace,pane,tab,..}=> {*workspace=id(IdKind::Workspace)?;*pane=id(IdKind::Pane)?;*tab=id(IdKind::Tab)?;},
+            CreationDestination::Tab {tab,..}=>*tab=id(IdKind::Tab)?,
+            CreationDestination::Pane {pane,tab,..}=>{*pane=id(IdKind::Pane)?;*tab=id(IdKind::Tab)?;},
+            _=>{},
+        }
+        if !matches!(self.plan.destination,CreationDestination::Convert {..}|CreationDestination::Restore {..}) {self.plan.surface.id=id(IdKind::Surface)?;}
+        Ok(Work::PutPreparation(
+            self.input
+                .take()
+                .ok_or("creation input already submitted")?,
+        ))
+    }
+
+    pub fn stored(&self, input: tasty_domain::DataRef) -> Work {
+        let response=match &self.plan.destination {
+            CreationDestination::Workspace {workspace,..}=>ResponsePlan::WorkspaceCreated {stream:self.binding.stream.clone(),id:*workspace,surface_id:self.plan.surface.id},
+            CreationDestination::Tab {pane,tab,..}=>ResponsePlan::TabCreated {stream:self.binding.stream.clone(),pane:*pane,tab:*tab,surface:self.plan.surface.id,activate:self.activate},
+            CreationDestination::Pane {pane,..}=>ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"new_pane_id":pane,"new_surface_id":self.plan.surface.id}))),
+            CreationDestination::Split {..}=>ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"new_surface_id":self.plan.surface.id}))),
+            _=>ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"ok":true,"surface_id":self.plan.surface.id}))),
+        };
+        Work::Resolve {
+            changes: vec![StreamCommand {
+                stream: self.binding.stream.clone(),
+                command: tasty_domain::StructuralCommand::PrepareCreation {
+                    operation: tasty_domain::OperationId(String::new()),
+                    command_id: String::new(),
+                    input,
+                    plan: self.plan.clone(),
+                },
+            }],
+            response:Some(response),
+        }
+    }
+
+    pub fn weight(&self) -> usize {
+        serde_json::to_vec(&(
+            &self.input,
+            &self.plan,
+            &self.binding.stream,
+            &self.renamed_name,
+            &self.renamed_subtitle,
+            &self.renamed_description,
+        ))
+        .expect("creation input serializes")
+        .len()
+    }
+}
+
+impl JournalApplication {
+    pub(crate) fn resolve_workspace_creation(
+        &mut self,
+        ticket: u64,
+        session: &EngineSession,
+        cwd: Option<std::path::PathBuf>,
+    ) {
+        let Some(pending) = self.commands.pending.get_mut(&ticket) else {
+            return;
+        };
+        if self.creations.contains_key(&session.id) {
+            pending.needs_resolution = true;
+            return;
+        }
+        match Request::resolve(&pending.request, session, cwd) {
+            Ok(request) => {
+                pending.resource = Some(request);
+                pending.request.params = serde_json::Value::Null;
+                pending.queued = Some(Work::Reserve(vec![
+                    (IdKind::Workspace, 1),
+                    (IdKind::Pane, 1),
+                    (IdKind::Tab, 1),
+                    (IdKind::Surface, 1),
+                ]));
+                self.refresh_command_weight(ticket);
+                (self.wake)();
+            }
+            Err(response) => self.reject_resolved_request(ticket, response),
+        }
+    }
+
+    pub(crate) fn resolve_fixed_creation(&mut self,ticket:u64,session:&EngineSession) {
+        let Some(pending)=self.commands.pending.get_mut(&ticket) else {return;};
+        if self.creations.contains_key(&session.id) {pending.needs_resolution=true;return;}
+        let result=serde_json::from_value::<super::create_spec::Spec>(pending.request.params.clone()).map_err(|error|JsonRpcResponse::invalid_params(serde_json::Value::Null,error.to_string())).and_then(|spec|Request::from_spec(spec,session));
+        match result {
+            Ok(mut resource)=> {
+                match resource.reservation() {
+                    Ok(work)=>pending.queued=Some(work),
+                    Err(error)=> {self.reject_resolved_request(ticket,JsonRpcResponse::internal_error(serde_json::Value::Null,error));return;},
+                }
+                pending.resource=Some(resource);pending.request.params=serde_json::Value::Null;
+                self.refresh_command_weight(ticket);(self.wake)();
+            },
+            Err(error)=>self.reject_resolved_request(ticket,error),
+        }
+    }
+
+    pub(in crate::app::journal) fn refresh_in_progress_commands(&mut self) {
+        for pending in self.commands.pending.values_mut() {
+            if pending.queued.is_none()
+                && let Some(command) = &pending.waiting_command
+            {
+                pending.queued = Some(Work::ReadCommand(command.clone()));
+            }
+        }
+    }
+}
+
+pub(super) struct Completed {
+    pub engine: EngineId,
+    pub workspace: u32,
+    pub pane: u32,
+    pub tab: u32,
+    pub surface: u32,
+    pub name: Option<String>,
+    pub subtitle: Option<String>,
+    pub description: Option<String>,
+}
+
+impl Completed {
+    pub fn from_request(request: &Request) -> Self {
+        let CreationDestination::Workspace {
+            workspace,
+            pane,
+            tab,
+            ..
+        } = request.plan.destination
+        else {
+            unreachable!("workspace continuation")
+        };
+        Self {
+            engine: request.engine,
+            workspace,
+            pane,
+            tab,
+            surface: request.plan.surface.id,
+            name: request.renamed_name.clone(),
+            subtitle: request.renamed_subtitle.clone(),
+            description: request.renamed_description.clone(),
+        }
+    }
+    pub fn weight(&self) -> usize {
+        self.name.as_ref().map_or(0, String::len)
+            + self.subtitle.as_ref().map_or(0, String::len)
+            + self.description.as_ref().map_or(0, String::len)
+    }
+    pub fn notify(
+        self,
+        sessions: &mut [&mut EngineSession],
+        queue: &mut Vec<(EngineId, notification::Notification)>,
+    ) {
+        use crate::core::host_event::PendingHostEvent as E;
+        let Some(session) = sessions
+            .iter_mut()
+            .find(|session| session.id == self.engine)
+        else {
+            return;
+        };
+        let Some(index) = session
+            .core_state
+            .find_workspace_index_for_id(self.workspace)
+        else {
+            return;
+        };
+        let name = session
+            .core_state
+            .workspace_at(index)
+            .expect("completed workspace")
+            .name
+            .clone();
+        queue.push((
+            self.engine,
+            notification::Notification::Ready(E::WorkspaceCreated {
+                workspace_id: self.workspace,
+                name,
+            }),
+        ));
+        if self.name.is_some() || self.subtitle.is_some() || self.description.is_some() {
+            queue.push((
+                self.engine,
+                notification::Notification::Ready(E::WorkspaceRenamed {
+                    workspace_id: self.workspace,
+                    name: self.name,
+                    subtitle: self.subtitle,
+                    description: self.description,
+                    user_direct: false,
+                }),
+            ));
+        }
+        if let Some(surface) = session.core_state.find_surface_by_id(self.surface) {
+            queue.push((
+                self.engine,
+                notification::Notification::Ready(E::SurfaceCreated {
+                    surface_id: self.surface,
+                    kind: surface.kind(),
+                    tab_id: self.tab,
+                    pane_id: self.pane,
+                    workspace_id: self.workspace,
+                    created_by_plugin: None,
+                }),
+            ));
+        }
+    }
+}

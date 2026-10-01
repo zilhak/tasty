@@ -15,11 +15,14 @@ pub(crate) struct PendingWindow {
 
 impl App {
     pub(crate) fn poll_journal_application(&mut self) {
+        self.capture_published_input_targets();
         let mut sessions: Vec<_> = self.engines.all_sessions_mut().collect();
         if let Err(error) = self.journal.poll_bootstrap(&mut sessions) {
             tracing::error!("journal publication halted: {error}");
         }
-        self.resolve_journal_requests();
+        if !self.journal.pauses_observation() {
+            self.resolve_journal_requests();
+        }
         for id in self.journal.take_retired_engines() {
             drop(self.engines.finish_retiring(id));
         }

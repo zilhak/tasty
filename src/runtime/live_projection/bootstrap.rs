@@ -72,6 +72,15 @@ pub(crate) fn initialize(core: &mut CoreState, model: &JournalModel) -> Result<(
         return Err("bootstrap live projection differs from journal structure".into());
     }
     core.committed_structure_revision = model.applied.revision;
+    core.committed_surface_activations = model
+        .surfaces
+        .iter()
+        .filter_map(|(id, surface)| {
+            surface
+                .activation
+                .map(|activation| (*id, activation.generation))
+        })
+        .collect();
     Ok(())
 }
 

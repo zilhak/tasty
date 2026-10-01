@@ -925,6 +925,7 @@ undo = "Undo"
 redo = "Redo"
 
 [toast]
+input_queue_full = "Too many inputs arrived while Tasty was busy. Some were not accepted. Please try again."
 bashrc_save_failed = "Tasty-mode bashrc was not saved — your edit is not in effect: {}"
 char_limit_notice = "({} character limit)"
 copied = "Copied"

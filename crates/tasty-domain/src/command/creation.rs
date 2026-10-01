@@ -129,6 +129,14 @@ pub(super) fn decide(
                 },
             })
         }
+        StructuralCommand::MarkPreparationUncertain {operation:id,reason} => {
+            let operation=model.operations.get(id).ok_or_else(||Rejection("uncertain operation not found".into()))?;
+            if operation.outcome.is_some() {return Err(Rejection("operation already has an outcome".into()));}
+            Ok(StructuralDecision {
+                events:vec![DomainEvent::OperationFinished {id:id.clone(),outcome:OperationOutcome::Uncertain {reason:reason.clone()}}],
+                effects:Vec::new(),result:StructuralResult::Pending {operation:id.clone()},completed_command:None,
+            })
+        }
         StructuralCommand::FinishCleanup { operation: id } => {
             let operation = model
                 .operations
@@ -322,6 +330,7 @@ fn creation_events(model: &JournalModel, plan: &CreationPlan) -> Vec<DomainEvent
             category,
             subtitle,
             description,
+            attach_mapping,
         } => {
             events.push(DomainEvent::WorkspaceCreated {
                 id: *workspace,
@@ -335,6 +344,12 @@ fn creation_events(model: &JournalModel, plan: &CreationPlan) -> Vec<DomainEvent
                 subtitle: subtitle.clone(),
                 description: description.clone(),
             });
+            if attach_mapping.is_some() {
+                events.push(DomainEvent::WorkspaceAttachMappingSet {
+                    id: *workspace,
+                    mapping: attach_mapping.clone(),
+                });
+            }
             Some((*pane, *tab, 0))
         }
         Destination::Tab { pane, tab, index } => Some((*pane, *tab, *index)),

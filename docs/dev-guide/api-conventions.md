@@ -243,7 +243,7 @@ host injector·plugin host-call·구조 stream op에는 현재 호출자 멱등 
 
 호스트 표가 모르는 plugin 고유 이름은 Outside다. send_idempotent는 이런 이름을 연결에 쓰기 전에 KeyOutsideContract로 거절한다. 구 client가 직접 키를 실어 보내면 plugin 고유 호출의 중복 실행을 호스트가 막아주지는 않는다. 플러그인이 정확히 한 번의 실행을 요구하면 자체 요청 ID 계약이 필요하다. 낡은 client가 새 호스트 이름을 모를 때도 안전하게 거절하므로 이 경우 client 업데이트가 필요하다.
 
-버전 4의 `structure_journal.methods`는 현재 `workspace_category.create/rename/delete/move`와 `workspace.update/move`다. GUI·headless 요청에 키가 있으면 현재 권한 검사 뒤 원본 key를 조회하고, 처음 실행할 때만 ID·index를 해소한다. plugin host-call도 같은 admission을 거치지만 현재 caller key는 없다. 같은 key의 진행 중 요청은 ID 예약 전에도 합류한다. 최종 JSON-RPC 본문은 확정 기록으로 보존하며 재시도에서는 요청 id만 바꾼다. 대상이 이동·삭제되거나 worker가 재시작해도 최초 결과를 돌려준다. 도메인 거절도 Failed 응답으로 남고, admission 크기·큐 거절은 해당 요청만 종료한다. 이 목록 밖의 이름은 기존 메모리/Outside 계약을 따른다.
+버전 4의 `structure_journal.methods`는 현재 `workspace_category.create/rename/delete/move`와 `workspace.create/update/move`다. GUI·headless 요청에 키가 있으면 현재 권한 검사 뒤 원본 key를 조회하고, 처음 실행할 때만 ID·index를 해소한다. plugin host-call도 같은 admission을 거치지만 현재 caller key는 없다. 같은 key의 진행 중 요청은 ID 예약 전에도 합류한다. 최종 JSON-RPC 본문은 확정 기록으로 보존하며 재시도에서는 요청 id만 바꾼다. 대상이 이동·삭제되거나 worker가 재시작해도 최초 결과를 돌려준다. 도메인 거절도 Failed 응답으로 남고, admission 크기·큐 거절은 해당 요청만 종료한다. 이 목록 밖의 이름은 기존 메모리/Outside 계약을 따른다.
 
 mirror metadata와 혼합 목록의 mirror 위치는 비영속 표시 상태다. 로컬 구조 commit·projection 뒤 최초 완료에서만 표시 continuation을 적용하고 응답을 보낸다. delta·재연결로 같은 ID의 mirror 구조가 교체되면 이전 continuation을 버린다. 저장 응답 재시도는 과거 표시 변경이나 host 알림을 다시 내지 않는다. 이 process-local token은 원격 전송 큐의 connection epoch 보장을 대신하지 않는다.
 

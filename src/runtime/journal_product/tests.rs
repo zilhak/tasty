@@ -340,6 +340,7 @@ fn prepare_workspace(
                             category: 1,
                             subtitle: String::new(),
                             description: String::new(),
+                            attach_mapping: None,
                         },
                         surface: SurfaceSpec {
                             id: id(IdKind::Surface),
@@ -477,6 +478,7 @@ fn mixed_operation_leases_are_rejected_before_either_effect_or_model_changes() {
         &worker,
         32,
         Work::CleanupFinished {
+            mirror_count: 0,
             lease: EffectLease {
                 effect_id: "missing".into(),
                 operation: OperationId("missing".into()),
@@ -644,6 +646,7 @@ fn committed_installation_preserves_initial_observations_and_defers_command_comp
         &worker,
         5,
         Work::CleanupFinished {
+            mirror_count: 0,
             lease: installed.lease.clone(),
         },
     );
@@ -857,6 +860,7 @@ fn complete_conversion_and_reap(
         worker,
         14,
         Work::CleanupFinished {
+            mirror_count: 0,
             lease: installed.lease.clone(),
         },
     );

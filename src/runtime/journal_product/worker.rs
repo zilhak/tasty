@@ -81,6 +81,7 @@ pub(super) fn run(
                 | Work::Prepared { .. }
                 | Work::CleanupFinished { .. }
                 | Work::InstallationRejected { .. }
+                | Work::PreparationUncertain { .. }
                 | Work::ClaimPreparation { .. }
         ) && halted.is_none()
         {
@@ -149,6 +150,18 @@ fn handle(
     work: Work,
 ) -> Result<ResultValue, String> {
     match work {
+        Work::ReadCommand(command_id) => {
+            executor
+                .with_state(|_| ())
+                .map_err(|error| error.to_string())?;
+            let inner = executor.inner.lock().map_err(|error| error.to_string())?;
+            let record = inner
+                .store
+                .command(&command_id)
+                .map_err(|error| error.to_string())?
+                .ok_or("original command missing")?;
+            Ok(ResultValue::Command(record))
+        }
         Work::RetireEngine(binding) => binding::retire(executor, home, ticket, binding),
         Work::OpenEngine {
             selection,
@@ -223,21 +236,11 @@ fn handle(
             );
             Ok(ResultValue::NeedsResolution)
         }
-        Work::Resolve { changes, response } => {
+        Work::Resolve { mut changes, response } => {
             let admitted = pending
                 .remove(&ticket)
                 .ok_or("journal request was not admitted")?;
             for change in &changes {
-                if response.is_some()
-                    && matches!(
-                        change.command,
-                        tasty_domain::StructuralCommand::PrepareCreation { .. }
-                    )
-                {
-                    return Err(
-                        "creation wire response requires its operation completion template".into(),
-                    );
-                }
                 if matches!(
                     change.command,
                     tasty_domain::StructuralCommand::OpenEngine { .. }
@@ -246,6 +249,7 @@ fn handle(
                         | tasty_domain::StructuralCommand::FinishCleanup { .. }
                         | tasty_domain::StructuralCommand::CancelUnstartedCreation { .. }
                         | tasty_domain::StructuralCommand::RejectInstallation { .. }
+                            | tasty_domain::StructuralCommand::MarkPreparationUncertain { .. }
                 ) {
                     return Err("effect results require their validated lease endpoint".into());
                 }
@@ -266,6 +270,17 @@ fn handle(
                     }
                 }
             }
+            // Resolve admission-only activation markers against the sole canonical source.
+            // The decider receives a fixed plan and cannot read a live projection or the database.
+            executor.with_state(|models| {
+                for change in &mut changes {
+                    if let tasty_domain::StructuralCommand::PrepareCreation {plan,..}=&mut change.command
+                        && let tasty_domain::CreationDestination::Convert {surface,previous_activation,..}=&mut plan.destination
+                        && *previous_activation==Some(0) {
+                            *previous_activation=models.streams.get(&change.stream).and_then(|model|model.surfaces.get(surface)).and_then(|surface|surface.activation.map(|activation|activation.generation));
+                        }
+                }
+            }).map_err(|error|error.to_string())?;
             let admission = admitted.admission;
             let executed = executor
                 .execute(&ExecuteRequest {
@@ -279,6 +294,7 @@ fn handle(
                         changes,
                         effect_result: None,
                         cancellation: None,
+                        completion_mirrors: None,
                         original_results: Default::default(),
                     },
                 })
@@ -366,7 +382,11 @@ fn handle(
         }
         Work::Prepared { lease, result } => effects::prepared(executor, lease, result),
         Work::InstallationRejected { lease, reason } => effects::rejected(executor, lease, reason),
-        Work::CleanupFinished { lease } => effects::cleaned(executor, lease),
+        Work::PreparationUncertain {lease,reason}=>effects::uncertain(executor,lease,reason),
+        Work::CleanupFinished {
+            lease,
+            mirror_count,
+        } => effects::cleaned(executor, lease, mirror_count),
         Work::CancelAdmission => {
             if pending.remove(&ticket).is_none() {
                 for p in pending.values_mut() {

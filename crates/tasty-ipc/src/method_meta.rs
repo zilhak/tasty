@@ -181,7 +181,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("timer.list", local_only(Read)),
         // ── workspace (read/write) ────────────────────────────────────
         ("workspace.list", plugin(Read, &[SurfaceRead])),
-        ("workspace.create", plugin(Mutate, &[SurfaceWrite])),
+        (
+            "workspace.create",
+            plugin(Mutate, &[SurfaceWrite]).kept_in_structure_journal(),
+        ),
         (
             "workspace.update",
             plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal(),

@@ -34,6 +34,10 @@ impl RetiringKind {
 
 pub(crate) struct Installed {
     pub(crate) lease: EffectLease,
+    #[cfg(feature = "gui")]
+    pub(crate) previous_resource: Option<ResourceGeneration>,
+    #[cfg(feature = "gui")]
+    pub(crate) surface_id: u32,
     retirement: Option<PtyRetirement>,
 }
 
@@ -116,6 +120,10 @@ impl Installation {
         engine.runtime.terminals.process_surface(self.surface_id);
         Ok(Installed {
             lease: self.lease,
+            #[cfg(feature = "gui")]
+            previous_resource: self.previous_resource,
+            #[cfg(feature = "gui")]
+            surface_id: self.surface_id,
             retirement,
         })
     }
