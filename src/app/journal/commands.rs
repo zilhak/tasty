@@ -681,6 +681,35 @@ impl JournalApplication {
     }
 
     #[cfg(not(feature = "gui"))]
+    fn reject_headless_owner(
+        &mut self,
+        ticket: u64,
+        request: &JsonRpcRequest,
+        session: &EngineSession,
+    ) -> bool {
+        if self.commands.pending.get(&ticket).is_some_and(|pending| matches!(&pending.reply, Reply::Intent { engine, .. } if *engine != session.id)) {
+        self.reject_resolved_request(ticket, JsonRpcResponse::invalid_params(serde_json::Value::Null, "intent engine no longer exists"));
+        return true;
+    }
+
+        let named =
+            crate::core::request_target::request_resource_id(&request.method, &request.params);
+        if let Some(resource) = named
+            && !crate::core::request_target::engine_has_resource(&session.as_ref(), resource)
+        {
+            self.reject_resolved_request(
+                ticket,
+                JsonRpcResponse::invalid_params(
+                    serde_json::Value::Null,
+                    crate::core::request_target::unowned_target_message(resource, &request.method),
+                ),
+            );
+            return true;
+        }
+        false
+    }
+
+    #[cfg(not(feature = "gui"))]
     pub(crate) fn resolve_headless_requests(
         &mut self,
         session: &mut EngineSession,
@@ -688,26 +717,7 @@ impl JournalApplication {
         services: &crate::app::services::AppServices,
     ) {
         for (ticket, request) in self.requests_needing_resolution() {
-            if self.commands.pending.get(&ticket).is_some_and(|pending| matches!(&pending.reply, Reply::Intent { engine, .. } if *engine != session.id)) {
-                self.reject_resolved_request(ticket, JsonRpcResponse::invalid_params(serde_json::Value::Null, "intent engine no longer exists"));
-                continue;
-            }
-
-            let named =
-                crate::core::request_target::request_resource_id(&request.method, &request.params);
-            if let Some(resource) = named
-                && !crate::core::request_target::engine_has_resource(&session.as_ref(), resource)
-            {
-                self.reject_resolved_request(
-                    ticket,
-                    JsonRpcResponse::invalid_params(
-                        serde_json::Value::Null,
-                        crate::core::request_target::unowned_target_message(
-                            resource,
-                            &request.method,
-                        ),
-                    ),
-                );
+            if self.reject_headless_owner(ticket, &request, session) {
                 continue;
             }
             if request.method == "remote.structural" {
