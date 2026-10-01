@@ -14,7 +14,8 @@ pub trait WakerFactory: Send + Sync + 'static {
     fn make_default_waker(&self) -> Waker;
 
     /// dedup 게이트 리셋: `Some(sid)` 면 해당 surface 의 게이트, `None` 이면 글로벌
-    /// default 게이트를 푼다. event handler 가 PTY 채널 drain *직전* 에 호출해야,
+    /// default와 모든 surface 게이트를 푼다(전체 drain은 publication 중 합쳐진 개별 깨움도 처리한다).
+    /// event handler 가 PTY 채널 drain *직전* 에 호출해야,
     /// drain 과 경합하는 wake 가 스킵되어 유실되는 것을 막는다.
     fn note_drained(&self, surface_id: Option<u32>);
 

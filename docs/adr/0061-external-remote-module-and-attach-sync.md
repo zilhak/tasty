@@ -120,7 +120,7 @@ Loss 재시도와 데이터 삽입의 경합으로 데이터 프레임 하나가
 survivor scrollback에 화면이 한 번 더 남을 수 있고, 창에서 시작한 재attach의 EOF 대기 중 그 창이 park되면 anchor 없는 세션이 정리될 수 있는 한계가 있다.
 로컬 사용자는 서버에서 원격 사용자가 닫은 항목도 복원할 수 있어 한 방향의 기록 간섭이 남는다. 구 server가 모르는 복원 op는 응답 없이 무시될 수 있다.
 통지도 큐 한 칸을 쓰므로 매 push마다 한 칸만 비우는 client는 lag 한도에서 끊길 수 있다. 5초 이하 dump에는 Ping이 추가되지 않는다.
-StreamReady만으로 전송하는 기타 구조 변경은 다음 stream 활동까지 지연될 수 있다.
+확정된 서버 로컬 구조 변경은 publication 완료 뒤 전송을 시도하므로 다음 StreamReady를 기다리지 않는다. 원격 Result가 대기 중이거나 publication이 막힌 workspace는 계속 보류하며, 연결·송신 실패까지 전달 성공으로 보장하지 않는다.
 
 현재 outbound transport·연결 상태는 `tasty-remote`, engine별 서버 구독·표시·전송 상태는 `src/remote`, 구조 적용과 View 후처리는 App adapter가 맡는다. CoreState의 별도 mirror 필드는 이 ADR이 허용한 읽기 projection이며 추가 저장소로의 이동을 현재 기능 완료의 조건으로 삼지 않는다.
 

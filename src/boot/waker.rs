@@ -75,7 +75,20 @@ impl WakerFactory for WinitWakerFactory {
                     gate.store(false, Ordering::Release);
                 }
             }
-            None => self.default_gate.store(false, Ordering::Release),
+            None => {
+                self.default_gate.store(false, Ordering::Release);
+                // Publication coalesces targeted wakes into a global drain. Re-arm every
+                // covered source before polling so later output/EOF can wake the owner again.
+                for gate in crate::waker::recover_gate_lock(
+                    self.targeted_gates.lock(),
+                    "WinitWakerFactory targeted_gates",
+                    &self.poison_reported,
+                )
+                .values()
+                {
+                    gate.store(false, Ordering::Release);
+                }
+            }
         }
     }
 

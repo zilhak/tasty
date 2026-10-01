@@ -129,7 +129,20 @@ impl WakerFactory for HeadlessWakerFactory {
                     gate.store(false, Ordering::Release);
                 }
             }
-            None => self.default_gate.store(false, Ordering::Release),
+            None => {
+                self.default_gate.store(false, Ordering::Release);
+                // Publication coalesces targeted wakes into a global drain. Re-arm every
+                // covered source before polling so later output/EOF can wake the owner again.
+                for gate in crate::waker::recover_gate_lock(
+                    self.targeted_gates.lock(),
+                    "HeadlessWakerFactory targeted_gates",
+                    &self.poison_reported,
+                )
+                .values()
+                {
+                    gate.store(false, Ordering::Release);
+                }
+            }
         }
     }
 
@@ -284,6 +297,31 @@ mod tests {
         waker_a();
         waker_b();
         assert_eq!(drain_counts(&rx), (0, 1), "only surface 1 re-armed");
+    }
+
+    #[test]
+    fn publication_global_drain_rearms_original_targeted_wakers() {
+        use crate::app::publication_input::{DeferredEvent, PublicationInputs};
+        let (tx, rx) = mpsc::channel();
+        let factory = HeadlessWaker::new(tx).waker_factory();
+        let a = factory.make_targeted_waker(11);
+        let b = factory.make_targeted_waker(12);
+        a();
+        b();
+        let mut pending = PublicationInputs::default();
+        for event in rx.try_iter() {
+            assert!(pending.push(DeferredEvent::App(event)).is_ok());
+        }
+        let Some(DeferredEvent::App(AppEvent::TerminalOutput(id))) = pending.pop() else {
+            panic!("publication must retain the coalesced output wake");
+        };
+        assert_eq!(id, None);
+        assert!(pending.pop().is_none());
+        factory.note_drained(id);
+        // These are the original callbacks retained by PTY readers, including post-EOF wakes.
+        a();
+        b();
+        assert_eq!(drain_counts(&rx), (0, 2));
     }
 
     #[test]

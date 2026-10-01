@@ -273,3 +273,5 @@ plugin에 보내는 Scroll도 논리 포인트이므로 재현 로그에서 50�
 `--wait-idle` 전송과 자동 재개는 이 기록으로 사용자의 입력을 보호한다.
 새 붙여넣기 경로는 `run_paste`를 사용하며, 명령 팔레트 회귀 검증은
 `tests/gui_tests.rs`의 `test_palette_paste_records_user_typing`으로 수행한다.
+
+publication 동안 surface별 출력 깨움을 하나의 전체 drain으로 합칠 때, GUI·headless는 전체 drain 직전에 default와 모든 surface dedup 표지를 함께 푼다. 원 PTY reader가 보관한 콜백은 이후 출력과 EOF를 다시 알릴 수 있다. 전체 drain은 대상 자원이나 실행 세대를 바꾸지 않는다.
