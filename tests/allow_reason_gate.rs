@@ -5,9 +5,11 @@
 //! 마스킹 결과가 없는 파일은 원문으로 세므로 단순한 숫자 비교로 누락을 찾지 못할 수 있다.
 //! 문자열 안의 억제와 근거 표지를 입력에 넣어 원문·마스킹 결과가 달라지게 한다.
 //! 수집 범위 검사와 별도로, 억제 수가 기록보다 크거나 작을 때 실패하고 같을 때 통과하는지도 검증한다.
-//! Git 분기 시험은 PATH에 rg가 없다는 전제가 있다. rg 분기는 별도 스텁으로 실행한다.
+//! Git 분기 시험은 필요한 도구만 연결한 고유 PATH로 rg를 제외한다. rg 분기는 별도 스텁으로 실행한다.
 
 #![cfg(unix)]
+
+mod gate_env;
 
 use std::fs;
 use std::path::Path;
@@ -107,24 +109,25 @@ fn install_stub_rg(root: &Path) -> std::path::PathBuf {
 
 fn run_inner(root: &Path, with_rg: bool) -> (i32, String) {
     let stub = install_stub_masker(root);
+    // Keep the fallback independent of whether the developer machine has ripgrep installed.
+    let tools = gate_env::only(&[
+        "bash", "git", "dirname", "wc", "mktemp", "rm", "mkdir", "cp", "find", "sed", "awk",
+    ]);
     let mut cmd = Command::new("bash");
     cmd.arg(root.join("scripts/check-allow-reason.sh"))
         .current_dir(root)
-        .env("TASTY_MASK_SOURCE_BIN", &stub);
+        .env("TASTY_MASK_SOURCE_BIN", &stub)
+        .env("PATH", tools.path());
     if with_rg {
         let dir = install_stub_rg(root);
-        let path = std::env::var("PATH").unwrap_or_default();
-        cmd.env("PATH", format!("{}:{path}", dir.display()));
+        cmd.env(
+            "PATH",
+            std::env::join_paths([dir.as_path(), tools.path()]).expect("스텁 PATH"),
+        );
     }
     let out = cmd.output().expect("게이트 실행");
-    (
-        out.status.code().unwrap_or(-1),
-        format!(
-            "{}{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
-        ),
-    )
+    let run = gate_env::GateRun::from_output(&out);
+    (run.code, run.output)
 }
 
 fn run(root: &Path) -> (i32, String) {
