@@ -232,6 +232,10 @@ impl App {
         }
         state.dialogs.approval_submitting = None;
     }
+    fn report_intent_dispatch_error(message: &'static str) {
+        tracing::error!("{message}");
+    }
+
     fn dispatch_one_intent(
         core: &mut crate::app::services::AppServices,
         state: &mut crate::state::MainViewState,
@@ -260,10 +264,10 @@ impl App {
             | Intent::SplitPane { .. }
             | Intent::NewWorkspace { .. }
             | Intent::PrepareTutorial { .. } => {
-                tracing::error!("structural intent bypassed journal admission")
+                Self::report_intent_dispatch_error("structural intent bypassed journal admission")
             }
             Intent::RestoreClosedItem => {
-                tracing::error!("undo intent bypassed journal admission");
+                Self::report_intent_dispatch_error("undo intent bypassed journal admission");
             }
             Intent::CapturePreset { .. }
             | Intent::RemoteBrowser(_)
@@ -272,8 +276,8 @@ impl App {
             | Intent::Domain(_)
             | Intent::DirectRename(_)
             | Intent::CommitDivider(_) => {
-                tracing::error!(
-                    "dispatch_one_intent reached Intent::Domain (should be handled in domain_batch)"
+                Self::report_intent_dispatch_error(
+                    "dispatch_one_intent reached Intent::Domain (should be handled in domain_batch)",
                 );
             }
         }
