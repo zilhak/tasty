@@ -434,9 +434,9 @@ pub fn record_plugin_rss_samples(
 /// convert는 아래 열거한 메서드만 검사하며 GUI의 직접 intent나 새 kind의 진입점은 포함하지 않는다.
 /// 대상이 없거나 파라미터가 잘못되면 실제 핸들러가 오류를 반환하도록 넘긴다.
 /// 대상을 생략한 preset.apply는 적용 코드와 같게 이 창의 활성 workspace를 대상으로 본다.
-fn hard_occupied_structural_guard(
+pub(crate) fn hard_occupied_structural_guard(
     core: &crate::app::services::AppServices,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     active_ws_idx: usize,
     method: &str,
     params: &serde_json::Value,
@@ -516,7 +516,7 @@ fn hard_occupied_structural_guard(
 }
 
 /// 라우터와 spawn 가드가 같은 점유 거절 응답을 사용한다.
-fn hard_occupied_denial(ws_id: u32, id: &serde_json::Value) -> JsonRpcResponse {
+pub(crate) fn hard_occupied_denial(ws_id: u32, id: &serde_json::Value) -> JsonRpcResponse {
     JsonRpcResponse::invalid_params(
         id.clone(),
         format!(
@@ -532,8 +532,8 @@ fn hard_occupied_denial(ws_id: u32, id: &serde_json::Value) -> JsonRpcResponse {
 ///
 /// spawn은 holder가 forward하는 구조 변경에 포함되지 않아 이 위치에서 거절해도 된다.
 /// 나머지 mirror 구조 변경은 원격 전달을 허용하므로 mirror 검사를 공통 라우터에 넣지 않는다(ADR-0021).
-fn spawn_target_guard(
-    engine: &crate::core::CoreState,
+pub(crate) fn spawn_target_guard(
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     pane_id: u32,
     id: &serde_json::Value,
 ) -> Option<JsonRpcResponse> {
@@ -583,7 +583,7 @@ fn route_engine_handler(
 ) -> Option<JsonRpcResponse> {
     if let Some(resp) = hard_occupied_structural_guard(
         core,
-        engine,
+        &engine.as_ref(),
         window.active_workspace_index(engine),
         &request.method,
         &request.params,
@@ -630,14 +630,14 @@ fn route_engine_handler(
         "tab.move" => tab::handle_tab_move(core, window, engine, id, &request.params, &origin),
         // terminal: child-terminal 관리와 점유 검사 (ADR-0021)
         "terminal.spawn" => {
-            terminal::handle_spawn(core, window, engine, id, &request.params, &origin)
+            JsonRpcResponse::internal_error(id,"terminal.spawn requires committed structure admission")
         }
         "terminal.tell" => terminal::handle_tell(core, engine, id, &request.params),
         "terminal.children" => terminal::handle_children(engine, id, &request.params),
         "terminal.parent" => terminal::handle_parent(engine, id, &request.params),
         "terminal.state" => terminal::handle_state(engine, id, &request.params),
         "terminal.kill" => {
-            terminal::handle_kill(core, window, engine, id, &request.params, &origin)
+            JsonRpcResponse::internal_error(id,"terminal.kill requires committed structure admission")
         }
         "terminal.respawn" => terminal::handle_respawn(core, engine, id, &request.params),
         "terminal.broadcast" => terminal::handle_broadcast(core, engine, id, &request.params),
@@ -652,7 +652,7 @@ fn route_engine_handler(
         "pty.kill" => pty::handle_kill(engine, id, &request.params),
         "pty.list" => pty::handle_list(engine, id),
         "pty.attach_surface" => {
-            pty::handle_attach_surface(core, window, engine, id, &request.params)
+            JsonRpcResponse::internal_error(id,"pty.attach_surface requires committed structure admission")
         }
         // preset (layout preset CRUD + apply)
         "preset.list" => preset::handle_list(core, id, &request.params),
@@ -715,7 +715,7 @@ fn route_engine_handler(
         }
         "surface.locate" => surface::handle_surface_locate(engine, id, &request.params),
         "surface.respawn_terminal" => {
-            surface::handle_surface_respawn_terminal(core, engine, id, &request.params)
+            JsonRpcResponse::internal_error(id,"surface.respawn_terminal requires committed structure admission")
         }
         "surface.is_typing" => handle_is_typing(engine, id, &request.params),
         "surface.send_wait_idle" => handle_send_wait_idle(engine, id, &request.params),

@@ -199,45 +199,6 @@ pub(crate) fn handle_foreground_process(
 
 /// surface ID를 유지하면서 터미널을 교체한다. 기존 Terminal은 drop으로 정리한다.
 /// cwd가 있으면 새 프로세스의 작업 폴더로 사용한다.
-pub(crate) fn handle_surface_respawn_terminal(
-    core: &mut crate::app::services::AppServices,
-    engine: &mut EngineMut<'_>,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let surface_id = match require_surface_id(params, &id) {
-        Ok(sid) => sid,
-        Err(e) => return e,
-    };
-    let cwd = params
-        .get("cwd")
-        .and_then(|v| v.as_str())
-        .map(std::path::PathBuf::from);
-    if let Some(p) = &cwd
-        && !p.is_dir()
-    {
-        return JsonRpcResponse::invalid_params(id, format!("cwd does not exist: {}", p.display()));
-    }
-
-    let intent = crate::app::command::DomainIntent::RespawnTerminal { surface_id, cwd };
-    let events = match core.apply(engine, intent) {
-        Ok(e) => e,
-        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
-    };
-    let Some(crate::app::command::CoreEvent::TerminalRespawned { surface_id, error }) =
-        events.into_iter().next()
-    else {
-        return JsonRpcResponse::internal_error(
-            id,
-            "AppServices::apply returned no TerminalRespawned event",
-        );
-    };
-    match error {
-        None => JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": surface_id })),
-        Some(e) => JsonRpcResponse::invalid_params(id, e),
-    }
-}
-
 /// surface가 속한 pane과 트리에 존재하는지를 반환한다.
 pub(crate) fn handle_surface_locate(
     engine: &crate::core::CoreState,

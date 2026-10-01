@@ -28,7 +28,7 @@ pub(crate) use mark::{
 };
 pub(crate) use query::{
     handle_cursor_position, handle_foreground_process, handle_mouse_tracking, handle_screen_text,
-    handle_surface_locate, handle_surface_respawn_terminal,
+    handle_surface_locate,
 };
 pub(crate) use send::{
     handle_surface_send, handle_surface_send_combo, handle_surface_send_key,

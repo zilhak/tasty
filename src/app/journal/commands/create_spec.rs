@@ -4,6 +4,7 @@ use crate::app::command::{ConvertSurfaceTarget,DomainIntent};
 
 #[derive(Clone,Debug,Serialize,Deserialize)]
 pub(super) enum Destination {
+    Adopt {pane:u32,pty:u32},
     Workspace { name:Option<String>,subtitle:Option<String>,description:Option<String>,category:Option<u32> },
     Tab { pane:u32,name:Option<String>,activate:bool },
     Pane { target:u32,direction:crate::model::SplitDirection },
@@ -22,6 +23,7 @@ pub(super) struct Spec {
 impl Spec {
     pub fn from_intent(intent:&DomainIntent)->Option<Self> {
         let (destination,kind,cwd,params)=match intent {
+            DomainIntent::AdoptTerminal {pane_id,pty_id}=>(Destination::Adopt {pane:*pane_id,pty:*pty_id},"terminal".into(),None,serde_json::json!({})),
             DomainIntent::CreateWorkspace {cwd,kind,surface_params,name,subtitle,description,category}=>(Destination::Workspace {name:name.clone(),subtitle:subtitle.clone(),description:description.clone(),category:*category},kind.clone(),cwd.clone(),surface_params.clone()),
             DomainIntent::CreateTab {pane_id,cwd,kind,name,surface_params,activate}=>(Destination::Tab {pane:*pane_id,name:name.clone(),activate:*activate},kind.clone(),cwd.clone(),surface_params.clone()),
             DomainIntent::SplitPane {target_pane_id,direction,cwd,kind,surface_params}=>(Destination::Pane {target:*target_pane_id,direction:*direction},kind.clone(),cwd.clone(),surface_params.clone()),
@@ -52,6 +54,7 @@ impl Spec {
         }).and_then(|tab|view.selected_surfaces.get(&tab.id).copied().filter(|id|tab.contains_surface(*id)).or_else(||tab.first_surface_id()));
         let inherit=|surface:Option<u32>|if engine.settings.general.inherit_cwd {surface.and_then(|surface|engine.local_surface_cwd(surface))}else {None};
         let (destination,cwd)=match request.method.as_str() {
+            "pty.attach_surface"=> {kind="terminal".into();(Destination::Adopt {pane:params::require_u32(&input,"pane_id",&id)?,pty:params::require_u32(&input,"id",&id)?},None)},
             "tab.create"=> {
                 let pane=params::require_u32(&input,"pane_id",&id)?;
                 if engine.find_pane_by_id(pane).is_none() {return Err(bad(format!("Pane {pane} not found")));}

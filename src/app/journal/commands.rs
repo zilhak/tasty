@@ -1,6 +1,7 @@
 //! Accepted structural requests retain their original identity until a committed wire reply exists.
 mod category;
 mod create;
+mod child;
 mod close;
 mod replacement;
 mod assembly;
@@ -81,6 +82,7 @@ struct Pending {
     forward:Option<super::forward::Draft>,
     /// Reservation follows the original request until its final reply, including effect-owned copies.
     forward_reserved:usize,
+    one_shot_reserved:usize,
     closing:Option<close::Request>,
     replacing:Option<replacement::Request>,
     close_cause:close::Cause,
@@ -182,6 +184,10 @@ pub(crate) fn handles(method: &str) -> bool {
     tasty_ipc::method_meta::has_structure_journal_contract(method)
 }
 
+fn handles_request(request:&JsonRpcRequest)->bool {
+    handles(&request.method) || (request.method=="terminal.respawn" && request.params.get("cwd").is_some_and(|cwd|cwd.is_string()))
+}
+
 impl JournalApplication {
     /// Authentication and current permissions precede this call. No implicit target has been read.
     pub(crate) fn admit_ipc(
@@ -189,7 +195,7 @@ impl JournalApplication {
         command: &crate::ipc::server::IpcCommand,
         caller: &crate::ipc::caller::CallerContext,
     ) -> bool {
-        if !handles(&command.request.method) {
+        if !handles_request(&command.request) {
             return false;
         }
         self.admit_request(
@@ -216,8 +222,7 @@ impl JournalApplication {
                     caller_scope: scope.clone(),
                     idempotency_key: key.clone(),
                 }),
-            original_digest: serde_json::to_vec(&(&request.method, &request.params))
-                .expect("JSON request serializes"),
+            original_digest: request_digest(request),
             actor: scope,
             origin: origin.into(),
             causation_id: None,
@@ -261,7 +266,7 @@ impl JournalApplication {
                 resource: None,
                 #[cfg(feature="gui")]
                 forward:None,
-                forward_reserved:0,
+                forward_reserved:0,one_shot_reserved:0,
                 closing:None,
                 replacing:None,
                 close_cause:Default::default(),
@@ -416,9 +421,15 @@ impl JournalApplication {
     }
 
     pub(crate) fn resolve_ipc_for_engine(&mut self, ticket: u64, session: &EngineSession) {
+        if let Some(pending)=self.commands.pending.get(&ticket) && pending.request.method=="tab.move" && !matches!(pending.close_cause,close::Cause::RemoteHolder {..}) {
+            let workspace=pending.request.params["pane_id"].as_u64().and_then(|id|u32::try_from(id).ok()).and_then(|pane|session.core_state.find_workspace_index_for_pane(pane)).and_then(|index|session.core_state.workspace_at(index));
+            if let Some(workspace)=workspace && session.live.occupancy.workspace_holder(workspace.id).is_some() {
+                self.reject_resolved_request(ticket,crate::ipc::handler::hard_occupied_denial(workspace.id,&serde_json::Value::Null));return;
+            }
+        }
         if self.commands.pending.get(&ticket).is_some_and(|pending|matches!(pending.request.method.as_str(),"intent.replace"|"intent.move-surface")) {self.resolve_replacement(ticket,session);return;}
         if self.commands.pending.get(&ticket).is_some_and(|pending|pending.request.method=="intent.restore-closed") {self.resolve_undo(ticket,session);return;}
-        if self.commands.pending.get(&ticket).is_some_and(|pending|matches!(pending.request.method.as_str(),"workspace.close"|"tab.close"|"pane.close"|"surface.close"|"surface.close_self"|"intent.close")) {self.resolve_close(ticket,session);return;}
+        if self.commands.pending.get(&ticket).is_some_and(|pending|matches!(pending.request.method.as_str(),"terminal.kill"|"workspace.close"|"tab.close"|"pane.close"|"surface.close"|"surface.close_self"|"intent.close")) {self.resolve_close(ticket,session);return;}
         if self.commands.pending.get(&ticket).is_some_and(|pending|pending.request.method=="intent.create") {
             self.resolve_fixed_creation(ticket,session);
             return;
@@ -554,7 +565,7 @@ impl JournalApplication {
             #[cfg(feature="gui")]
             Ok(ResultValue::InputStored(input)) if pending.forward.is_some()=> {
                 let draft=pending.forward.as_ref().expect("forward input owner");
-                pending.queued=Some(Work::Resolve {changes:vec![StreamCommand {stream:draft.stream.clone(),command:tasty_domain::StructuralCommand::PrepareForward {operation:tasty_domain::OperationId(String::new()),command_id:String::new(),input:*input}}],response:Some(ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"forwarded":true,"workspace_index":draft.workspace_index}))))});
+                pending.queued=Some(Work::Resolve {changes:vec![StreamCommand {stream:draft.stream.clone(),command:tasty_domain::StructuralCommand::PrepareForward {operation:tasty_domain::OperationId(String::new()),command_id:String::new(),input:*input}}],response:Some(ResponsePlan::Fixed(draft.response.clone()))});
                 self.refresh_command_weight(ticket);return Ok(true);
             }
             Ok(ResultValue::InputStored(input)) if pending.replacing.is_some()=> {
@@ -625,15 +636,17 @@ impl JournalApplication {
                     else {
                         return Err("public creation operation missing".into());
                     };
+                    pending.one_shot_reserved=request.one_shot_input.as_ref().map_or(0,String::len);
                     pending.created = Some(create::Completed::from_request(&request));
                     let creation_ticket = self.next_ticket;
                     self.next_ticket += 1;
-                    let creation = super::creation::Creation::committed(
+                    let mut creation = super::creation::Creation::committed(
                         creation_ticket,
                         request.binding,
                         &self.worker,
                         operation.clone(),
                     )?;
+                    creation.set_one_shot_input(request.one_shot_input);
                     if self.creations.insert((request.engine,creation.ticket), creation).is_some() {
                         return Err("engine already owns a materialization continuation".into());
                     }
@@ -762,7 +775,7 @@ impl JournalApplication {
     #[cfg(not(feature = "gui"))]
     pub(crate) fn resolve_headless_requests(
         &mut self,
-        session: &EngineSession,
+        session: &mut EngineSession,
         state: &mut crate::state::RequestContext,
         services:&crate::app::services::AppServices,
     ) {
@@ -790,7 +803,7 @@ impl JournalApplication {
                 continue;
             }
             if request.method=="remote.structural" {self.resolve_remote_request(ticket,session,services);continue;}
-            if matches!(request.method.as_str(),"tab.create"|"split"|"surface.respawn_terminal") {self.resolve_public_creation(ticket,session,services);continue;}
+            if matches!(request.method.as_str(),"terminal.spawn"|"terminal.respawn"|"pty.attach_surface"|"tab.create"|"split"|"surface.respawn_terminal") {self.resolve_public_creation(ticket,session,services);continue;}
             if matches!(request.method.as_str(),"preset.apply"|"intent.preset-apply") {
                 self.resolve_preset(ticket,session,services,state.focused_pane_id(&session.core_state));continue;
             }
@@ -923,7 +936,7 @@ impl crate::app::App {
                 self.journal.reject_resolved_request(ticket, response);
                 continue;
             };
-            if matches!(request.method.as_str(),"tab.create"|"split"|"surface.respawn_terminal") {self.journal.resolve_public_creation(ticket,session,&self.services);continue;}
+            if matches!(request.method.as_str(),"terminal.spawn"|"terminal.respawn"|"pty.attach_surface"|"tab.create"|"split"|"surface.respawn_terminal") {self.journal.resolve_public_creation(ticket,session,&self.services);continue;}
             if request.method=="preset.apply" {self.journal.resolve_preset(ticket,session,&self.services,preset_pane);continue;}
             if let Some(cwd) = creation_cwd {
                 match cwd {
@@ -1086,7 +1099,7 @@ impl JournalApplication {
         call: &tasty_host_plugin::manager::PendingPluginCall,
         manager: Option<&crate::plugin::PluginManager>,
     ) -> bool {
-        if !handles(&request.method) {
+        if !handles_request(request) {
             return false;
         }
         let Some(process) = manager.and_then(|manager| manager.processes.get(&call.plugin_id))
@@ -1128,7 +1141,7 @@ fn pending_weight(pending: &Pending) -> usize {
     let forward_bytes=pending.forward_reserved.max(pending.forward.as_ref().map_or(0,super::forward::Draft::weight));
     #[cfg(not(feature="gui"))]
     let forward_bytes=0;
-    forward_bytes.saturating_add(serde_json::to_vec(&pending.request)
+    forward_bytes.saturating_add(pending.one_shot_reserved).saturating_add(serde_json::to_vec(&pending.request)
         .expect("request JSON serializes")
         .len()
         .saturating_add(
@@ -1180,3 +1193,19 @@ fn reply_weight(_reply: &Reply) -> usize {
 
 #[cfg(test)]
 mod tests;
+
+// Stream JSON through a hash so raw terminal input is never retained as a command digest.
+fn request_digest(request:&JsonRpcRequest)->Vec<u8> {
+    // Existing keys retain their original comparison representation. Only the newly journaled
+    // raw-input composite uses a hash; upgrading must not turn old Stored replies into conflicts.
+    if !matches!(request.method.as_str(),"terminal.spawn"|"terminal.respawn") {return serde_json::to_vec(&(&request.method,&request.params)).expect("JSON request serializes");}
+    use sha2::Digest;
+    struct HashWriter(sha2::Sha256);
+    impl std::io::Write for HashWriter {
+        fn write(&mut self,bytes:&[u8])->std::io::Result<usize> {self.0.update(bytes);Ok(bytes.len())}
+        fn flush(&mut self)->std::io::Result<()> {Ok(())}
+    }
+    let mut writer=HashWriter(sha2::Sha256::new());
+    serde_json::to_writer(&mut writer,&(&request.method,&request.params)).expect("JSON request serializes");
+    writer.0.finalize().to_vec()
+}

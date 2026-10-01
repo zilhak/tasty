@@ -210,16 +210,14 @@ impl JournalApplication {
                 #[cfg(feature = "gui")]
                 self.submit_view_writes()?;
                 for ((engine,_), creation) in &mut self.creations {
-                    let mirror_count = sessions
-                        .iter()
+                    let session = sessions
+                        .iter_mut()
                         .find(|session| session.id == *engine)
-                        .ok_or("materializing engine disappeared")?
-                        .core_state
-                        .mirror_workspaces
-                        .len();
+                        .ok_or("materializing engine disappeared")?;
+                    let mirror_count=session.core_state.mirror_workspaces.len();
                     let mut view=self.completion_views.get(engine).cloned().unwrap_or_default();
                     view.mirror_count=mirror_count;
-                    creation.poll_cleanup(&self.worker,view)?;
+                    creation.poll_cleanup(&self.worker,view,session)?;
                 }
             }
             let completion = match self.worker.try_recv() {
@@ -387,10 +385,8 @@ impl JournalApplication {
                                 }
                             }
                             for (key,installation) in installations {
-                                let retiring = session
-                                    .as_ref()
-                                    .find_surface_by_id(installation.surface_id())
-                                    .map(crate::runtime::effect_runner::RetiringKind::capture);
+                                let retiring = session.runtime.surfaces.get(&installation.surface_id())
+                                    .map(|surface|crate::runtime::effect_runner::RetiringKind::capture(surface.as_ref()));
                                 let installed = installation
                                     .install(&mut session.borrow_mut(), plugins.as_deref_mut(), retiring)
                                     .map_err(|error| error.to_string())?;
@@ -400,6 +396,7 @@ impl JournalApplication {
                                     .installed(installed);
                             }
                         }
+                        session.borrow_mut().observe_committed_structure(predecessor,events);
                         for recorded in events {
                             match &recorded.event {
                                 tasty_domain::DomainEvent::StructureReplaced {replacement,..}=>self.replacements.push((session.id,*replacement)),

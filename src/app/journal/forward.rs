@@ -7,6 +7,7 @@ pub(crate) struct Draft {
     pub engine:EngineId,
     pub stream:String,
     pub workspace_index:usize,
+    pub response:crate::ipc::protocol::JsonRpcResponse,
     pub target:crate::app::attach_client::RemoteTarget,
     pub local_anchor:u32,
     pub remote_anchor:u32,
@@ -16,7 +17,7 @@ pub(crate) struct Draft {
     pub silent_failure:bool,
 }
 impl Draft {
-    pub fn weight(&self)->usize {self.payload.capacity()+self.stream.len()+self.focus.as_ref().map_or(0,|focus|match focus {tasty_remote::client_session::PendingOpFocus::Close {candidates}=>candidates.capacity()*4,_=>0})+std::mem::size_of::<Self>()}
+    pub fn weight(&self)->usize {serde_json::to_vec(&self.response).map_or(0,|bytes|bytes.len())+self.payload.capacity()+self.stream.len()+self.focus.as_ref().map_or(0,|focus|match focus {tasty_remote::client_session::PendingOpFocus::Close {candidates}=>candidates.capacity()*4,_=>0})+std::mem::size_of::<Self>()}
 }
 pub(super) struct Forward {
     pub engine:EngineId,

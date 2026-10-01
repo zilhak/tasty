@@ -73,7 +73,9 @@ pub(super) fn claim(
         .streams
         .get(stream)
         .ok_or("engine stream missing")?;
-    if model.engine_retired
+    if input.adopt.as_ref().is_some_and(|recipe|recipe.runtime_epoch!=inner.epoch.0)
+        || input.child.as_ref().is_some_and(|recipe|recipe.runtime_epoch!=inner.epoch.0)
+        || model.engine_retired
         || operation.engine_incarnation != model.engine_incarnation
         || !plan.target_is_live(model)
     {

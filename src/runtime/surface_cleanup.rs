@@ -98,6 +98,8 @@ impl EngineMut<'_> {
     /// Call only for the captured old owner, while publication excludes replacement installation.
     pub(crate) fn cleanup_surface_observations(&mut self, surface_id: u32) {
         self.runtime.pending_scrollback_inject.remove(&surface_id);
+        self.remote.pending_workspace_taps.remove(&surface_id);
+        if self.runtime.child_terminals.unregister_child_by_surface(surface_id) {self.runtime.child_terminals.save();}
         #[cfg(feature = "gui")]
         self.runtime.readonly_views.remove(&surface_id);
         self.live.last_key_input.remove(&surface_id);

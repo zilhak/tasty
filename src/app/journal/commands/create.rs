@@ -13,9 +13,10 @@ pub(super) struct Request {
     pub renamed_description: Option<String>,
     pub shape:Shape,
     pub activate:bool,
+    pub one_shot_input:Option<String>,
 }
 
-pub(super) enum Shape {Workspace,Tab {pane:u32},Pane {target:u32,direction:crate::model::SplitDirection},Surface {target:u32},Convert {surface:u32,respawn:bool}}
+pub(super) enum Shape {ChildRespawn {index:u32},Child {index:u32,workspace:u32},Adopt,Workspace,Tab {pane:u32},Pane {target:u32,direction:crate::model::SplitDirection},Surface {target:u32},Convert {surface:u32,respawn:bool}}
 
 impl Request {
     pub fn resolve(
@@ -61,7 +62,7 @@ impl Request {
         Ok(request)
     }
 
-    fn base(session:&EngineSession,kind:&str,params:&serde_json::Value,cwd:Option<std::path::PathBuf>)->Result<Self,JsonRpcResponse> {
+    pub(super) fn base(session:&EngineSession,kind:&str,params:&serde_json::Value,cwd:Option<std::path::PathBuf>)->Result<Self,JsonRpcResponse> {
         let core=&session.core_state;
         let internal=|message:String|JsonRpcResponse::internal_error(serde_json::Value::Null,message);
         let category=0;
@@ -83,7 +84,7 @@ impl Request {
                 .journal_binding
                 .clone()
                 .ok_or_else(|| internal("engine has no journal binding".into()))?,
-            input: Some(PreparationInput {
+            input: Some(PreparationInput {adopt:None,child:None,
                 kind: kind.into(),
                 cwd,
                 params: params.clone(),
@@ -141,7 +142,7 @@ impl Request {
                 .get("subtitle")
                 .and_then(|v| v.as_str())
                 .map(str::to_owned),
-            shape:Shape::Workspace,
+            shape:Shape::Workspace,one_shot_input:None,
             activate:false,
             renamed_description: params
                 .get("description")
@@ -156,6 +157,16 @@ impl Request {
         let core=&session.core_state;
         let bad=|reason:String|JsonRpcResponse::invalid_params(serde_json::Value::Null,reason);
         result.plan.destination=match spec.destination {
+            D::Adopt {pane,pty}=> {
+                let target=core.find_pane_by_id(pane).ok_or_else(||bad(format!("pane {pane} not found")))?;
+                if core.find_workspace_index_for_pane(pane).and_then(|index|core.workspace_at(index)).is_some_and(|workspace|workspace.mirror) {return Err(bad("cannot adopt a local PTY into a remote mirror".into()));}
+                let owner=session.runtime.terminals.standalone(pty).ok_or_else(||bad(format!("headless pty {pty} not found")))?;
+                if owner.state().exit().is_some() {return Err(bad(format!("headless pty {pty} already exited")));}
+                let input=result.input.as_mut().ok_or_else(||bad("adoption input missing".into()))?;
+                input.shell=None;input.adopt=Some(crate::runtime::journal_product::AdoptRecipe {pty_id:pty,resource_generation:owner.generation().value(),runtime_epoch:result.binding.runtime_epoch});
+                result.shape=Shape::Adopt;result.activate=false;
+                CreationDestination::Tab {pane,tab:0,index:target.tabs.len()}
+            },
             D::Workspace {name,subtitle,description,category}=> {
                 result.activate=true;
                 if spec.kind=="empty" {return Err(bad("Cannot create workspace with empty surface kind".into()));}
@@ -236,6 +247,15 @@ impl Request {
 
     pub fn stored(&self, input: tasty_domain::DataRef) -> Work {
         let response=match &self.plan.destination {
+            CreationDestination::Convert {..} if matches!(self.shape,Shape::ChildRespawn {..})=> {
+                let Shape::ChildRespawn {index}=self.shape else {unreachable!("child respawn response")};
+                ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"child_surface_id":self.plan.surface.id,"child_index":index})))
+            },
+            CreationDestination::Tab {pane,..} if matches!(self.shape,Shape::Child {..})=> {
+                let Shape::Child {index,workspace}=self.shape else {unreachable!("child response")};
+                ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"child_surface_id":self.plan.surface.id,"child_index":index,"pane_id":pane,"workspace_id":workspace})))
+            },
+            CreationDestination::Tab {pane,tab,..} if matches!(self.shape,Shape::Adopt)=>ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"pane_id":pane,"tab_id":tab,"surface_id":self.plan.surface.id}))),
             CreationDestination::Workspace {workspace,..}=>ResponsePlan::WorkspaceCreated {stream:self.binding.stream.clone(),id:*workspace,surface_id:self.plan.surface.id},
             CreationDestination::Tab {pane,tab,..}=>ResponsePlan::TabCreated {stream:self.binding.stream.clone(),pane:*pane,tab:*tab,surface:self.plan.surface.id,activate:self.activate},
             CreationDestination::Pane {pane,..}=>ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"new_pane_id":pane,"new_surface_id":self.plan.surface.id}))),
@@ -266,15 +286,20 @@ impl Request {
             &self.renamed_description,
         ))
         .expect("creation input serializes")
-        .len()
+        .len().saturating_add(self.one_shot_input.as_ref().map_or(0,String::len))
     }
 }
 
 impl JournalApplication {
-    pub(crate) fn resolve_public_creation(&mut self,ticket:u64,session:&EngineSession,services:&crate::app::services::AppServices) {
+    pub(crate) fn resolve_public_creation(&mut self,ticket:u64,session:&mut EngineSession,services:&crate::app::services::AppServices) {
         let Some(pending)=self.commands.pending.get(&ticket) else {return;};
+        if !matches!(pending.close_cause,super::close::Cause::RemoteHolder {..}) {
+            if let Some(response)=crate::ipc::handler::hard_occupied_structural_guard(services,&session.as_ref(),0,&pending.request.method,&pending.request.params,&serde_json::Value::Null) {
+                self.reject_resolved_request(ticket,response);return;
+            }
+        }
         let view=self.completion_views.get(&session.id).cloned().unwrap_or_default();
-        let resolved=super::create_spec::Spec::from_public(&pending.request,session,&view,services).and_then(|spec|Request::from_spec(spec,session));
+        let resolved=if pending.request.method=="terminal.spawn" {super::child::resolve_spawn(&pending.request,session,&view)} else if pending.request.method=="terminal.respawn" {super::child::resolve_respawn(&pending.request,session)} else {super::create_spec::Spec::from_public(&pending.request,session,&view,services).and_then(|spec|Request::from_spec(spec,session))};
         match resolved {
             Ok(mut resource)=> {
                 resource.activate=false;

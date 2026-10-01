@@ -16,6 +16,9 @@ pub(super) struct Creation {
     public: bool,
     assembly_member:bool,
     published:bool,
+    transfers_existing:bool,
+    preparation_acked:bool,
+    one_shot_input:Option<String>,
     queued: Option<Work>,
 }
 
@@ -47,6 +50,7 @@ enum Stage {
 }
 
 impl Creation {
+    pub(super) fn set_one_shot_input(&mut self,input:Option<String>) {self.one_shot_input=input;}
     pub(super) fn committed(
         ticket: u64,
         binding: crate::runtime::journal_product::EngineBinding,
@@ -57,11 +61,11 @@ impl Creation {
             ticket,
             binding,
             public: true,
-            assembly_member:false,published:false,
+            assembly_member:false,published:false,transfers_existing:false,preparation_acked:false,one_shot_input:None,
             stage: Stage::Claim,
             fixed_plan: None,
             queued: None,
-            input: PreparationInput {
+            input: PreparationInput {adopt:None,child:None,
                 kind: String::new(),
                 cwd: None,
                 params: serde_json::Value::Null,
@@ -107,10 +111,10 @@ impl Creation {
             binding,
             stage: Stage::Admit,
             public: false,
-            assembly_member:false,published:false,
+            assembly_member:false,published:false,transfers_existing:false,preparation_acked:false,one_shot_input:None,
             queued: None,
             fixed_plan: None,
-            input: PreparationInput {
+            input: PreparationInput {adopt:None,child:None,
                 kind: "terminal".into(),
                 cwd: None,
                 params: serde_json::json!({}),
@@ -165,7 +169,7 @@ impl Creation {
             fixed_plan: Some(request.plan),
             stage: Stage::Admit,
             public: false,
-            assembly_member:false,published:false,
+            assembly_member:false,published:false,transfers_existing:false,preparation_acked:false,one_shot_input:None,
             queued: None,
         })
     }
@@ -292,6 +296,7 @@ impl Creation {
                 Stage::Claim
             }
             (Stage::Claim, ResultValue::Claimed(claimed)) => {
+                self.transfers_existing=claimed.input.adopt.is_some();
                 self.assembly_member=matches!(claimed.plan.destination,CreationDestination::Assembly {..});
                 let lease = claimed.lease.clone();
                 let binding = ExecutionBinding {
@@ -300,7 +305,8 @@ impl Creation {
                     engine_incarnation: self.binding.incarnation,
                 };
                 match effect_runner::prepare(&mut session.borrow_mut(), &binding, claimed) {
-                    Ok(prepared) => {
+                    Ok(mut prepared) => {
+                        prepared.set_one_shot_input(self.one_shot_input.take());
                         let preparation_result=if prepared.is_deferred() {PreparationResult::Deferred {data:None}}else {PreparationResult::Ready {data:None}};
                         let operation = prepared.lease.operation.clone();
                         session
@@ -330,7 +336,7 @@ impl Creation {
                     }
                 }
             }
-            (Stage::Prepared(operation),ResultValue::Executed(_))=>Stage::Prepared(operation),
+            (Stage::Prepared(operation),ResultValue::Executed(_))=>{self.preparation_acked=true;Stage::Prepared(operation)},
             (Stage::Installing { installed,started,.. }, ResultValue::Executed(_)) => Stage::Installing {
                 installed,
                 answered: true,
@@ -375,8 +381,8 @@ impl Creation {
         };
         if events.iter().any(|recorded|matches!(&recorded.event,tasty_domain::DomainEvent::OperationAwaitingCleanup {id,cleanup:tasty_domain::CleanupPlan::DiscardPrepared {..},..} if id==operation)) {
             let candidate=session.pending_materializations.remove(operation).ok_or("discarded assembly member lost its private owner")?;
-            let lease=candidate.lease.clone();let retirement=candidate.discard();
-            self.stage=Stage::Rejected {discard_committed:true,lease,reason:"assembly cancelled before installation".into(),retirement,answered:true,started:std::time::Instant::now()};
+            let lease=candidate.lease.clone();let retirement=match self.discard_candidate(session,candidate) {Some(receipt)=>receipt,None=>return Ok(None)};
+            self.stage=Stage::Rejected {discard_committed:true,lease,reason:"assembly cancelled before installation".into(),retirement,answered:self.preparation_acked,started:std::time::Instant::now()};
             return Ok(None);
         }
         if !events.iter().any(|recorded|matches!(&recorded.event,
@@ -386,7 +392,7 @@ impl Creation {
             .pending_materializations
             .get_mut(&operation)
             .ok_or("prepared operation lost its resource owner")?
-            .begin_installation(&session.core_state);
+            .begin_installation(&session.runtime.surface_registry);
         match result {
             Ok(installation) => Ok(Some(installation)),
             Err(error) => {
@@ -395,17 +401,27 @@ impl Creation {
                     .remove(&operation)
                     .expect("checked candidate");
                 let lease = candidate.lease.clone();
-                let retirement = candidate.discard();
+                let retirement=match self.discard_candidate(session,candidate) {Some(receipt)=>receipt,None=>return Ok(None)};
                 self.stage = Stage::Rejected {
                     discard_committed:false,
                     lease,
                     reason: error.to_string(),
                     retirement,
-                    answered: false,
+                    answered: self.preparation_acked,
                     started:std::time::Instant::now(),
                 };
                 Ok(None)
             }
+        }
+    }
+
+    fn discard_candidate(&mut self,session:&mut EngineSession,candidate:effect_runner::PreparedMaterialization)->Option<Option<tasty_terminal::PtyRetirement>> {
+        match candidate.discard(&mut session.borrow_mut()) {
+            Ok(receipt)=>Some(receipt),
+            Err((candidate,reason))=> {
+                let lease=candidate.lease.clone();session.pending_materializations.insert(lease.operation.clone(),candidate);
+                self.queued=Some(Work::PreparationUncertain {lease,reason:reason.clone()});self.stage=Stage::Uncertain {reason};None
+            },
         }
     }
 
@@ -434,7 +450,7 @@ impl Creation {
     pub(super) fn installed(&mut self, installed: Installed) {
         self.stage = Stage::Installing {
             installed,
-            answered: false,
+            answered: self.preparation_acked,
             started:std::time::Instant::now(),
         };
     }
@@ -455,7 +471,7 @@ impl Creation {
     }
 
     pub(super) fn pauses_observation(&self) -> bool {
-        matches!(self.stage, Stage::Installing { .. } | Stage::Finish(_) | Stage::AwaitPublication(_) | Stage::Uncertain {..})
+        (self.transfers_existing && matches!(self.stage,Stage::Prepared(_)|Stage::Rejected {..})) || matches!(self.stage, Stage::Installing { .. } | Stage::Finish(_) | Stage::AwaitPublication(_) | Stage::Uncertain {..})
     }
 
     pub(super) fn needs_cleanup_poll(&self) -> bool {
@@ -469,6 +485,7 @@ impl Creation {
         &mut self,
         worker: &JournalWorker,
         view:crate::runtime::journal_product::CompletionView,
+        session:&mut EngineSession,
     ) -> Result<(), String> {
         if !self.flush(worker)? {
             return Ok(());
@@ -505,7 +522,13 @@ impl Creation {
             }
             return Ok(());
         }
-        let ready=if let Stage::Installing {installed,answered:true,started}=&self.stage {
+        let ready=if let Stage::Installing {installed,answered:true,started}=&mut self.stage {
+            if let Err(error)=installed.poll_input(&mut session.borrow_mut()) {
+                let reason=error.to_string();let lease=installed.lease.clone();
+                self.submit(worker,Work::PreparationUncertain {lease,reason:reason.clone()})?;
+                self.stage=Stage::Uncertain {reason};self.flush(worker)?;return Ok(());
+            }
+            if installed.waiting_input() {return Ok(());}
             let uncertain=match installed.cleanup_complete() {
                 Ok(true)=>None,
                 Ok(false) if started.elapsed()<std::time::Duration::from_secs(5)=>return Ok(()),

@@ -17,6 +17,9 @@ pub struct WriteAck {
 }
 
 impl WriteAck {
+    /// Nonblocking flush observation for event-loop-owned input continuations.
+    pub fn is_complete(&self)->bool {*sink::lock_write_progress(&self.progress.0)>=self.target}
+
     /// writer의 완료 횟수가 target에 도달하면 true를 반환한다.
     /// detached 터미널처럼 writer가 없거나 대기 제한 안에 완료하지 못하면 false다.
     pub fn wait(&self, timeout: Duration) -> bool {
@@ -213,6 +216,17 @@ impl Terminal {
         }
         state.enqueue_to_pty(bytes.to_vec());
         true
+    }
+
+    /// Queue input against this exact physical connection, reporting admission failure.
+    pub fn try_send_key_with_ack(&mut self,text:&str)->Result<WriteAck,mpsc::SendError<Vec<u8>>> {
+        let mut state=self.lock_state();
+        let bytes=text.as_bytes().to_vec();
+        let sink=state.sink.as_ref().ok_or_else(||mpsc::SendError(bytes.clone()))?;
+        sink.send(bytes)?;
+        let progress=sink.progress().clone();
+        state.enqueued_count+=1;state.last_input_at=std::time::Instant::now();
+        Ok(WriteAck {progress,target:state.enqueued_count})
     }
 
     /// Send keyboard input to PTY (non-blocking, queued to writer thread).

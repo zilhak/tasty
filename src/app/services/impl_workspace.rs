@@ -147,48 +147,6 @@ impl AppServices {
         }
     }
 
-    pub(super) fn apply_respawn_terminal(
-        engine: &mut EngineMut<'_>,
-        surface_id: u32,
-        cwd: Option<std::path::PathBuf>,
-    ) -> CoreEvent {
-        let cols = engine.default_cols;
-        let rows = engine.default_rows;
-        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
-        let waker = engine.make_waker(surface_id);
-        let new_terminal = match tasty_terminal::spawn_terminal(
-            tasty_terminal::TerminalConfig {
-                cols,
-                rows,
-                shell: sh.shell_ref(),
-                args: &sh.args_ref(),
-                extra_env: &sh.envs_ref(),
-                surface_id,
-                working_dir: cwd.as_deref(),
-                initial_input: None,
-            },
-            waker,
-        ) {
-            Ok(t) => t,
-            Err(e) => {
-                return CoreEvent::TerminalRespawned {
-                    surface_id,
-                    error: Some(e.to_string()),
-                };
-            }
-        };
-        match engine.replace_terminal_by_id(surface_id, new_terminal) {
-            Ok(()) => CoreEvent::TerminalRespawned {
-                surface_id,
-                error: None,
-            },
-            Err(e) => CoreEvent::TerminalRespawned {
-                surface_id,
-                error: Some(e.to_string()),
-            },
-        }
-    }
-
     /// 벡터의 위치를 바꾸며 App의 활성 workspace 인덱스는 호출자가 보정한다.
     pub(super) fn apply_move_workspace(
         &mut self,

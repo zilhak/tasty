@@ -288,13 +288,13 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 자식 터미널 작업이 사용하는 생성·입력·닫기 권한을 함께 요구한다.
         (
             "terminal.spawn",
-            plugin(Mutate, &[SurfaceWrite, TerminalWrite, TerminalSpawn]),
+            plugin(Mutate, &[SurfaceWrite, TerminalWrite, TerminalSpawn]).kept_in_structure_journal(),
         ),
         ("terminal.tell", plugin(Mutate, &[TerminalWrite])),
         ("terminal.children", plugin(Read, &[SurfaceRead])),
         ("terminal.parent", plugin(Read, &[SurfaceRead])),
         ("terminal.state", plugin(Read, &[SurfaceRead])),
-        ("terminal.kill", plugin(Idempotent, &[SurfaceWrite])),
+        ("terminal.kill", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
         (
             "terminal.respawn",
             plugin(Mutate, &[TerminalWrite, TerminalSpawn]),
@@ -317,7 +317,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // PTY를 실제 surface로 만들므로 생성 권한에 SurfaceWrite를 추가한다.
         (
             "pty.attach_surface",
-            plugin(Mutate, &[SurfaceWrite, TerminalSpawn]),
+            plugin(Mutate, &[SurfaceWrite, TerminalSpawn]).kept_in_structure_journal(),
         ),
         ("surface.fire_hook", plugin(Mutate, &[SurfaceWrite])),
         // ── hooks ─────────────────────────────────────────────────────

@@ -2,7 +2,6 @@
 use super::*;
 use tasty_ipc::stream::{StructuralOp,ForwardOrigin,StreamControl,StreamFrame,StreamTag};
 use tasty_ipc::stream_hub::StreamHub;
-use std::collections::HashSet;
 
 pub(crate) struct RemoteReply {
     pub engine:EngineId,
@@ -11,7 +10,6 @@ pub(crate) struct RemoteReply {
     pub op_id:u64,
     pub workspace:u32,
     pub binding:std::sync::Weak<()>,
-    pub before:HashSet<u32>,
     pub user:bool,
     pub restore:bool,
     pub converted:Option<u32>,
@@ -20,14 +18,13 @@ impl JournalApplication {
     pub(crate) fn admit_remote(&mut self,engine:EngineId,core:&crate::core::CoreState,live:&crate::core::live::LiveDomainState,runtime_epoch:u64,hub:&StreamHub,client:u32,op_id:u64,op:StructuralOp,origin:ForwardOrigin)->Option<(u64,u32)> {
         let Some((registration,binding))=hub.client_identity(client) else{return None;};
         let Some(workspace)=live.occupancy.workspace_held_by(client) else {reply(hub,client,op_id,false,Some("not workspace holder".into()));return None;};
-        let before=core.find_workspace_index_for_id(workspace).and_then(|index|core.workspace_at(index)).map(|workspace|workspace.all_surface_ids().into_iter().collect()).unwrap_or_default();
         let ticket=self.next_ticket;
-        let remote=RemoteReply {engine,ticket,client,op_id,workspace,binding,before,user:origin==ForwardOrigin::User,restore:matches!(op,StructuralOp::RestoreClosedItem {..}),converted:match &op {StructuralOp::ConvertSurface {surface_id,..}=>Some(*surface_id),_=>None}};
+        let remote=RemoteReply {engine,ticket,client,op_id,workspace,binding,user:origin==ForwardOrigin::User,restore:matches!(op,StructuralOp::RestoreClosedItem {..}),converted:match &op {StructuralOp::ConvertSurface {surface_id,..}=>Some(*surface_id),_=>None}};
         let request=JsonRpcRequest {jsonrpc:"2.0".into(),method:"remote.structural".into(),params:serde_json::json!({"op":op,"origin":origin}),id:None,session_token:None,response_timeout_ms:None,idempotency_key:Some(format!("{runtime_epoch}/{registration}/{op_id}"))};
         self.admit_request(&request,Reply::Remote(remote),format!("remote-holder:{runtime_epoch}/{registration}"),"remote-structure");
         self.commands.pending.contains_key(&ticket).then_some((ticket,workspace))
     }
-    pub(crate) fn resolve_remote_request(&mut self,ticket:u64,session:&EngineSession,services:&crate::app::services::AppServices) {
+    pub(crate) fn resolve_remote_request(&mut self,ticket:u64,session:&mut EngineSession,services:&crate::app::services::AppServices) {
         let Some(pending)=self.commands.pending.get(&ticket) else{return;};
         let Reply::Remote(remote)=&pending.reply else{return;};
         if remote.binding.upgrade().is_none() || session.live.occupancy.workspace_holder(remote.workspace)!=Some(remote.client) {
@@ -73,9 +70,9 @@ impl JournalApplication {
     }
     pub(crate) fn take_remote_results(&mut self)->Vec<(RemoteReply,JsonRpcResponse)> {std::mem::take(&mut self.commands.completed_remote)}
 }
-pub(crate) fn reply(hub:&StreamHub,client:u32,op_id:u64,ok:bool,reason:Option<String>) {
+pub(crate) fn reply(hub:&StreamHub,client:u32,op_id:u64,ok:bool,reason:Option<String>)->bool {
     let result=StreamControl::StructuralResult {op_id,ok,reason};
-    if let Ok(payload)=serde_json::to_vec(&result) {let _=hub.push(client,StreamFrame::new(StreamTag::Control,payload));}
+    match serde_json::to_vec(&result) {Ok(payload)=>hub.push(client,StreamFrame::new(StreamTag::Control,payload))==tasty_ipc::stream_hub::PushResult::Sent,Err(error)=>{tracing::error!("remote result encoding failed: {error}");false}}
 }
 
 pub(crate) fn deliver_result(remote:RemoteReply,response:JsonRpcResponse,engine:&mut crate::runtime::engine_access::EngineMut<'_>,plugins:Option<&mut crate::plugin::PluginManager>,hub:&StreamHub) {
@@ -83,18 +80,22 @@ pub(crate) fn deliver_result(remote:RemoteReply,response:JsonRpcResponse,engine:
     if !hub.matches_client_binding(remote.client,&remote.binding) {return;}
     if let Some(error)=response.error {reply(hub,remote.client,remote.op_id,false,Some(error.message));return;}
     if remote.restore && response.result.as_ref().is_some_and(|value|value.get("restored").and_then(|value|value.as_bool())==Some(false)) {reply(hub,remote.client,remote.op_id,false,Some(tasty_ipc::stream::STRUCTURAL_REASON_RESTORE_EMPTY.into()));return;}
-    reply(hub,remote.client,remote.op_id,true,None);
+    if !reply(hub,remote.client,remote.op_id,true,None) {hub.unregister(remote.client);return;}
     if response.idempotent_replay {return;}
     let Some(index)=engine.find_workspace_index_for_id(remote.workspace) else {engine.force_detach_workspace(remote.workspace);return;};
     if engine.live.occupancy.workspace_holder(remote.workspace)!=Some(remote.client) {return;}
     engine.remote.clear_structure_changed(remote.workspace);
     let class=engine.classify_attach_surfaces(remote.workspace);
-    let added:Vec<_>=class.terminals.iter().filter(|surface|!remote.before.contains(surface)||remote.converted==Some(**surface)).copied().collect();
-    for surface in &added {engine.live.occupancy.add_workspace_member(remote.workspace,*surface,true);}
     let (tree,surfaces)=engine.build_workspace_tree_surfaces(index,&class);
     let delta=StreamControl::StructuralDelta {workspace_id:remote.workspace,tree,surfaces};
-    if let Ok(bytes)=serde_json::to_vec(&delta) {let _=hub.push(remote.client,StreamFrame::new(StreamTag::Control,bytes));}
-    for surface in added {engine.tap_surface_for_stream(surface,remote.client,hub);}
+    match serde_json::to_vec(&delta) {
+        Ok(bytes)=>match hub.push(remote.client,StreamFrame::new(StreamTag::Control,bytes)) {
+            tasty_ipc::stream_hub::PushResult::Sent=>engine.flush_committed_workspace_taps(remote.workspace,remote.client,hub),
+            tasty_ipc::stream_hub::PushResult::Dropped=>engine.remote.mark_structure_changed(remote.workspace),
+            _=>engine.remote.pending_workspace_taps.retain(|_,value|value.0!=remote.workspace),
+        },
+        Err(error)=>{tracing::error!("remote committed delta encoding failed: {error}");engine.remote.mark_structure_changed(remote.workspace);},
+    }
     if let Some(surface)=remote.converted && let Some(plugins)=plugins {plugins.drop_egui_mesh_frame(surface);}
 }
 

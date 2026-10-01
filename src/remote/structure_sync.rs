@@ -51,6 +51,38 @@ pub(crate) fn unresolved_forward_reason<'a>(
 }
 
 impl EngineMut<'_> {
+    /// Project transport obligations only after the entire structural batch has been installed.
+    /// Sending remains in the ordinary observation pump, behind its publication/result barrier.
+    pub(crate) fn observe_committed_structure(&mut self,before:&tasty_domain::JournalModel,events:&[tasty_domain::RecordedEvent]) {
+        use tasty_domain::DomainEvent as E;
+        let structural=events.iter().any(|record|matches!(record.event,
+            E::StructureReplaced {..}|E::WorkspaceCreated {..}|E::WorkspaceRenamed {..}|E::WorkspaceDetailsSet {..}|E::WorkspaceMoved {..}|E::WorkspaceClosed {..}|
+            E::PaneSplit {..}|E::PaneMoved {..}|E::PaneClosed {..}|E::TabCreated {..}|E::TabRenamed {..}|E::TabExplicitNameSet {..}|E::TabMoved {..}|E::TabClosed {..}|
+            E::SurfaceSplit {..}|E::SurfaceMoved {..}|E::SurfaceClosed {..}|E::SurfaceConverted {..}|E::SurfaceActivationChanged {..}|E::PaneRatioSet {..}|E::SurfaceRatioSet {..}));
+        if !structural {return;}
+        let workspaces:std::collections::BTreeSet<_>=before.workspace_order.iter().copied().chain(self.core.local_workspaces.iter().map(|workspace|workspace.id)).collect();
+        for workspace in workspaces {if self.live.occupancy.workspace_holder(workspace).is_some() {self.remote.mark_structure_changed(workspace);}}
+        for record in events {
+            let E::SurfaceActivationChanged {id,activation,..}=&record.event else {continue;};
+            if activation.phase!=tasty_domain::ActivationPhase::Ready {continue;}
+            let Some(workspace)=self.find_workspace_index_for_surface(*id).and_then(|(index,_)|self.workspace_at(index)).map(|workspace|workspace.id) else {continue;};
+            if self.live.occupancy.workspace_holder(workspace).is_none() {continue;}
+            let generation=self.runtime.terminals.generation(*id);
+            self.live.occupancy.add_workspace_member(workspace,*id,generation.is_some());
+            if let Some(generation)=generation {self.remote.pending_workspace_taps.insert(*id,(workspace,generation));}
+        }
+    }
+
+    pub(crate) fn flush_committed_workspace_taps(&mut self,workspace:u32,holder:u32,hub:&tasty_ipc::stream_hub::StreamHub) {
+        let targets:Vec<_>=self.remote.pending_workspace_taps.iter().filter(|(_,value)|value.0==workspace).map(|(id,value)|(*id,value.1)).collect();
+        for (surface,generation) in targets {
+            self.remote.pending_workspace_taps.remove(&surface);
+            if self.live.occupancy.workspace_holder(workspace)==Some(holder) && self.runtime.terminals.matches_generation(surface,generation) && self.find_workspace_index_for_surface(surface).and_then(|(index,_)|self.workspace_at(index)).is_some_and(|value|value.id==workspace) {
+                self.tap_surface_for_stream(surface,holder,hub);
+            }
+        }
+    }
+
     /// 변경 표시가 있는 workspace의 전체 트리를 holder에 보낸다. 사라진 workspace는 강제 분리한다.
     /// forward 실행은 자체 delta를 보내고 표시를 지워 중복 통지를 피한다.
     /// notifier가 없거나 송신에 실패해도 여기서는 변경 표시를 다시 쌓지 않는다.
@@ -77,8 +109,13 @@ impl EngineMut<'_> {
                 StreamTag::Control,
                 serde_json::to_vec(&delta).unwrap_or_default(),
             );
-            if let PushResult::Unknown | PushResult::Disconnected = hub.push(holder, frame) {
-                tracing::debug!("structure change: holder {holder} of workspace {ws_id} is gone");
+            match hub.push(holder,frame) {
+                PushResult::Sent=>self.flush_committed_workspace_taps(ws_id,holder,&hub),
+                PushResult::Dropped=>self.remote.mark_structure_changed(ws_id),
+                PushResult::Unknown|PushResult::Disconnected=> {
+                    self.remote.pending_workspace_taps.retain(|_,value|value.0!=ws_id);
+                    tracing::debug!("structure change: holder {holder} of workspace {ws_id} is gone");
+                },
             }
         }
     }

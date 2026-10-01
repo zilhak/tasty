@@ -104,19 +104,18 @@ impl TerminalStore {
             })
     }
 
-    /// Re-key an existing pair. Unlike remove/replace, this preserves its connection lease.
-    pub(crate) fn adopt(&mut self, old_id: u32, new_id: u32, waker: Waker) -> bool {
-        if self.terminals.contains_key(&new_id) || !self.is_standalone(old_id) {
-            return false;
-        }
-        let Some((terminal, mut pty)) = self.terminals.remove(&old_id) else {
-            return false;
-        };
-        pty.as_mut().expect("standalone has a Pty").adopt();
-        self.scrollback_persist_ids.remove(&old_id);
-        self.terminals.insert(new_id, (terminal, pty));
-        self.terminals[&new_id].0.rewire_waker(waker);
-        true
+    /// Transfer to a committed adoption operation without revoking its content/I/O lease.
+    pub(crate) fn take_standalone_for_adoption(&mut self,id:u32,generation:u64)->Option<(Terminal,Pty,Option<String>)> {
+        let owner=self.standalone(id)?;
+        if owner.generation().value()!=generation || owner.state().exit().is_some() {return None;}
+        let (terminal,pty)=self.terminals.remove(&id)?;
+        Some((terminal,pty?,self.scrollback_persist_ids.remove(&id)))
+    }
+    pub(crate) fn restore_standalone_adoption(&mut self,id:u32,terminal:Terminal,pty:Pty,persist_id:Option<String>)->Result<(),(Terminal,Pty,Option<String>)> {
+        if self.terminals.contains_key(&id) || pty.state().standalone().is_none() {return Err((terminal,pty,persist_id));}
+        self.terminals.insert(id,(terminal,Some(pty)));
+        if let Some(persist_id)=persist_id {self.scrollback_persist_ids.insert(id,persist_id);}
+        Ok(())
     }
 
     pub(crate) fn pty(&self, id: u32) -> Option<&Pty> {

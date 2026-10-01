@@ -412,9 +412,7 @@ impl AppServices {
             DomainIntent::RenameTab { tab_id, name } => {
                 Self::apply_rename_tab(engine, tab_id, name)
             }
-            DomainIntent::AdoptTerminal { pane_id, pty_id } => {
-                Self::apply_adopt_terminal(engine, pane_id, pty_id)
-            }
+
             DomainIntent::SplitPane {
                 target_pane_id,
                 direction,
@@ -462,9 +460,7 @@ impl AppServices {
             } => Ok(vec![Self::apply_send_to_surface(
                 engine, surface_id, payload,
             )]),
-            DomainIntent::RespawnTerminal { surface_id, cwd } => {
-                Ok(vec![Self::apply_respawn_terminal(engine, surface_id, cwd)])
-            }
+
             DomainIntent::RestoreClosedItem {
                 target_pane_id,
                 scope,

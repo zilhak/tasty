@@ -22,7 +22,7 @@ use tasty_event_store::{CommandKey, CommandRecord, IdRange};
 use super::command_executor::Executed;
 pub(crate) use binding::{BoundEngine, EngineBinding, EngineSelection};
 pub(crate) use decider::StreamCommand;
-pub(crate) use preparation::{ClaimedPreparation,ClaimedRetirement,EffectLease, PreparationInput, ShellRecipe};
+pub(crate) use preparation::{AdoptRecipe, ChildRecipe,ClaimedPreparation,ClaimedRetirement,EffectLease, PreparationInput, ShellRecipe};
 pub(crate) use response::{CompletionView,ResponsePlan, ResponseProgress};
 
 const QUEUE_CAPACITY: usize = 64;

@@ -17,6 +17,17 @@ pub(super) struct Request {
 }
 impl Request {
     pub fn resolve(request:&JsonRpcRequest,session:&EngineSession,cause:Cause)->Result<Self,JsonRpcResponse> {
+        if request.method=="terminal.kill" {
+            let id=serde_json::Value::Null;
+            let parent=crate::ipc::handler::params::optional_u32(&request.params,"surface",&id)?.or_else(||session.runtime.child_terminals.single_parent()).ok_or_else(||JsonRpcResponse::invalid_params(id.clone(),"missing 'surface' parameter (0 or >1 parents — specify --surface)"))?;
+            let index=crate::ipc::handler::params::require_u32(&request.params,"child",&id)?;
+            let child=session.runtime.child_terminals.find_child(parent,index).ok_or_else(||JsonRpcResponse::invalid_params(id.clone(),format!("child {index} not found for parent {parent}")))?;
+            let mut normalized=request.clone();normalized.method="surface.close".into();
+            normalized.params["surface_id"]=serde_json::json!(child.child_surface_id);
+            let mut resolved=Self::resolve(&normalized,session,cause)?;
+            resolved.response=JsonRpcResponse::success(id,serde_json::json!({"killed_surface_id":child.child_surface_id,"child_index":index}));
+            return Ok(resolved);
+        }
         if request.method=="intent.close" {
             let target:tasty_domain::CloseTarget=serde_json::from_value(request.params["target"].clone()).map_err(|error|JsonRpcResponse::invalid_params(serde_json::Value::Null,error.to_string()))?;
             let mut normalized=request.clone();

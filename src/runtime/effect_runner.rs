@@ -31,8 +31,11 @@ pub(crate) struct PreparedMaterialization {
     registration: Option<KindRegistration>,
     installed: bool,
     deferred:bool,
+    adoption:Option<crate::runtime::journal_product::AdoptRecipe>,
     scrollback_persist_id: Option<String>,
     metadata:Vec<(String,String)>,
+    child:Option<crate::runtime::journal_product::ChildRecipe>,
+    one_shot_input:Option<String>,
 }
 
 #[derive(Clone)]
@@ -42,15 +45,15 @@ pub(super) struct KindRegistration {
 }
 
 impl KindRegistration {
-    fn validate(&self, engine: &crate::core::CoreState) -> anyhow::Result<()> {
-        if let Some(plugin_id) = engine.runtime.surface_registry.withdrawn_by(&self.kind) {
+    fn validate(&self, registry: &crate::runtime::surface_registry::SurfaceKindRegistry) -> anyhow::Result<()> {
+        if let Some(plugin_id) = registry.withdrawn_by(&self.kind) {
             return Err(crate::runtime::surface_registry::SurfaceKindWithdrawn {
                 kind: self.kind.clone(),
                 plugin_id,
             }
             .into());
         }
-        let current = engine.runtime.surface_registry
+        let current = registry
             .get_live(&self.kind)
             .ok_or_else(|| anyhow::anyhow!("prepared kind is no longer registered"))?;
         if !self.definition.ptr_eq(&std::sync::Arc::downgrade(&current)) {
@@ -87,8 +90,16 @@ pub(crate) fn prepare(
         claimed.input.params.get("meta").and_then(|value|value.as_object()).into_iter().flatten().filter_map(|(key,value)|value.as_str().map(|value|(key.clone(),value.to_owned()))).collect()
     } else {Vec::new()};
     let input = claimed.input;
+    let adoption=input.adopt.clone();
+    let child=input.child.clone();
+    if child.as_ref().is_some_and(|child|child.runtime_epoch!=binding.runtime_epoch) {anyhow::bail!("child creation belongs to an earlier runtime; one-shot input cannot be replayed");}
     let deferred=matches!(claimed.plan.destination,tasty_domain::CreationDestination::Assembly {..}) && input.kind!="terminal" && engine.runtime.surface_registry.get_live(&input.kind).is_none();
-    let (surface, connection, publication, registration) = if input.kind == "terminal" {
+    let (surface, connection, publication, registration) = if let Some(adoption)=&adoption {
+        if input.kind!="terminal" || adoption.runtime_epoch!=binding.runtime_epoch {anyhow::bail!("standalone transfer belongs to another runtime or kind");}
+        let (terminal,pty,persist_id)=engine.runtime.terminals.take_standalone_for_adoption(adoption.pty_id,adoption.resource_generation).ok_or_else(||anyhow::anyhow!("standalone owner exited or changed before transfer"))?;
+        scrollback_persist_id=persist_id;
+        (Box::new(TerminalSurface {id:surface_id}) as Box<dyn crate::model::Surface>,Some((terminal,pty)),None,None)
+    } else if input.kind == "terminal" {
         let shell = input
             .shell
             .ok_or_else(|| anyhow::anyhow!("terminal preparation has no shell recipe"))?;
@@ -203,25 +214,40 @@ pub(crate) fn prepare(
         publication,
         previous_resource,
         registration,
-        installed: false,deferred,
-        scrollback_persist_id,metadata,
+        installed: false,deferred,adoption,
+        scrollback_persist_id,metadata,child,one_shot_input:None,
     })
 }
 
 impl PreparedMaterialization {
     /// Installation consumes external handles while the engine keeps the unpublished kind leaf.
+    pub(crate) fn set_one_shot_input(&mut self,input:Option<String>) {self.one_shot_input=input;}
     pub(crate) fn is_deferred(&self)->bool {self.deferred}
     pub(crate) fn surface_id(&self)->Option<u32> {self.leaf.surface.surface_id()}
 
     pub(crate) fn begin_installation(
         &mut self,
-        engine: &crate::core::CoreState,
+        registry: &crate::runtime::surface_registry::SurfaceKindRegistry,
     ) -> anyhow::Result<Installation> {
         if self.installed {
             anyhow::bail!("prepared materialization was already installed");
         }
         if let Some(registration) = &self.registration {
-            registration.validate(engine)?;
+            registration.validate(registry)?;
+        }
+        if let Some(adoption)=&self.adoption {
+            let (_,pty)=self.connection.as_mut().ok_or_else(||anyhow::anyhow!("standalone transfer has no physical owner"))?;
+            if pty.generation().value()!=adoption.resource_generation || pty.state().standalone().is_none() {
+                anyhow::bail!("standalone transfer binding changed before installation");
+            }
+            // check_alive records reap without consuming the once-only exit notification.
+            // Rejection keeps this exact pair available for rollback to its standalone key.
+            if !pty.check_alive() || pty.state().observation().phase==tasty_terminal::PtyPhase::WaitFailed {
+                anyhow::bail!("standalone owner exited or could not be observed before installation");
+            }
+        }
+        if self.child.as_ref().is_some_and(|child|child.has_command) && self.one_shot_input.is_none() {
+            anyhow::bail!("child command continuation is unavailable; input cannot be replayed");
         }
         self.installed = true;
         Ok(Installation {
@@ -237,14 +263,20 @@ impl PreparedMaterialization {
             registration: self.registration.take(),
             scrollback_persist_id: self.scrollback_persist_id.take(),
             metadata:std::mem::take(&mut self.metadata),
+            adoption:self.adoption.clone(),child:self.child.clone(),one_shot_input:self.one_shot_input.take(),
         })
     }
 
-    pub(crate) fn discard(self) -> Option<tasty_terminal::PtyRetirement> {
-        self.connection.map(|(terminal, pty)| {
-            drop(terminal);
-            pty.retire()
-        })
+    pub(crate) fn discard(mut self,engine:&mut EngineMut<'_>)->Result<Option<tasty_terminal::PtyRetirement>,(Self,String)> {
+        let Some((terminal,pty))=self.connection.take() else {return Ok(None);};
+        if let Some(adoption)=&self.adoption {
+            if let Err(pair)=engine.runtime.terminals.restore_standalone_adoption(adoption.pty_id,terminal,pty,self.scrollback_persist_id.take()) {
+                self.connection=Some((pair.0,pair.1));self.scrollback_persist_id=pair.2;
+                return Err((self,"original standalone binding cannot be restored; reconciliation required".into()));
+            }
+            return Ok(None);
+        }
+        drop(terminal);Ok(Some(pty.retire()))
     }
 
     pub(crate) fn into_leaf(self, installed: &Installed) -> anyhow::Result<PreparedLeaf> {

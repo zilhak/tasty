@@ -8,6 +8,11 @@ fn local_op(request:&JsonRpcRequest,session:&EngineSession,services:&crate::app:
     let tab_anchor=|id|core.find_pane_for_tab(id).and_then(|pane|core.find_pane_by_id(pane)).and_then(|pane|pane.tabs.iter().find(|tab|tab.id==id)).and_then(|tab|tab.first_surface_id());
     let id=|field|request.params.get(field).and_then(|value|value.as_u64()).and_then(|id|u32::try_from(id).ok());
     match request.method.as_str() {
+        "terminal.kill"=> {
+            let parent=id("surface").or_else(||session.runtime.child_terminals.single_parent())?;
+            let entry=session.runtime.child_terminals.find_child(parent,id("child")?)?;
+            Some(StructuralOp::CloseSurface {surface_id:entry.child_surface_id})
+        },
         "intent.remote-structural"=>serde_json::from_value(request.params["op"].clone()).ok(),
         "surface.close"|"surface.close_self"=>Some(StructuralOp::CloseSurface {surface_id:id("surface_id")?}),
         "tab.close"=>Some(StructuralOp::CloseTab {anchor_surface_id:tab_anchor(id("tab_id")?)?}),
@@ -50,11 +55,16 @@ impl crate::app::App {
         let Some(op)=local_op(request,session,&self.services,&view) else{return false;};
         let mirrored=session.core_state.find_workspace_index_for_surface(op.anchor_surface_id()).and_then(|(index,_)|session.core_state.workspace_at(index)).is_some_and(|workspace|workspace.mirror);
         if !mirrored {return false;}
-        if let Some(response)=super::close::caller_refusal(request,&session.core_state) {self.journal.reject_resolved_request(ticket,response);return true;}
+        let mut protected=request.clone();
+        if request.method=="terminal.kill" {protected.method="surface.close".into();protected.params["surface_id"]=serde_json::json!(op.anchor_surface_id());}
+        if let Some(response)=super::close::caller_refusal(&protected,&session.core_state) {self.journal.reject_resolved_request(ticket,response);return true;}
         let user=self.journal.commands.pending.get(&ticket).is_some_and(|pending|matches!(&pending.reply,Reply::Intent {origin,..} if origin.is_user()));
         let candidates=serde_json::from_value::<Vec<u32>>(request.params["close_focus_candidates"].clone()).unwrap_or_default();
         match self.prepare_journal_forward(engine,&op,user,&candidates) {
-            Ok(draft)=>self.journal.prepare_forward(ticket,draft),
+            Ok(mut draft)=> {
+                if request.method=="terminal.kill" {draft.response=JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"forwarded":true,"surface_id":op.anchor_surface_id(),"child_index":request.params["child"]}));}
+                self.journal.prepare_forward(ticket,draft)
+            },
             Err(error)=>self.journal.reject_resolved_request(ticket,JsonRpcResponse::internal_error(serde_json::Value::Null,error.to_string())),
         }
         true

@@ -5,6 +5,10 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct PreparationInput {
+    #[serde(default)]
+    pub(crate) adopt:Option<AdoptRecipe>,
+    #[serde(default)]
+    pub(crate) child:Option<ChildRecipe>,
     pub(crate) kind: String,
     pub(crate) cwd: Option<PathBuf>,
     pub(crate) params: serde_json::Value,
@@ -56,4 +60,19 @@ pub(crate) struct ClaimedRetirement {
     pub(crate) lease:EffectLease,
     pub(crate) plan:tasty_domain::RetirementPlan,
     pub(crate) engine_incarnation:u64,
+}
+
+/// Process-local transfer proof. Recovery never turns an earlier epoch's PTY number into a launch.
+#[derive(Debug,Clone,Serialize,Deserialize)]
+pub(crate) struct AdoptRecipe {pub pty_id:u32,pub resource_generation:u64,pub runtime_epoch:u64}
+
+/// Registry relation metadata is a service obligation, not a duplicate domain tree.
+#[derive(Debug,Clone,Serialize,Deserialize)]
+pub(crate) struct ChildRecipe {
+    pub parent:u32,pub index:u32,pub workspace:u32,pub runtime_epoch:u64,
+    pub cwd:Option<String>,pub role:Option<String>,pub nickname:Option<String>,
+    /// The bytes live only in the original bounded request continuation.
+    pub has_command:bool,
+    #[serde(default)]
+    pub replacing:bool,
 }

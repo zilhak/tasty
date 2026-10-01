@@ -5041,6 +5041,6 @@ impl App {
         let op_id=session.state.op_seq;session.state.op_seq=op_id.checked_add(1).ok_or_else(||anyhow::anyhow!("remote operation sequence exhausted"))?;
         let focus=user.then(||pending_op_focus_for(op,candidates,&session.state.remote_to_local)).flatten();
         let payload=structural_op_payload(op_id,wire,user);
-        Ok(crate::app::journal::forward::Draft {engine,stream,workspace_index:index,target,local_anchor,remote_anchor,op_id,payload,focus,silent_failure:!user})
+        Ok(crate::app::journal::forward::Draft {engine,stream,workspace_index:index,response:crate::ipc::protocol::JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"forwarded":true,"workspace_index":index})),target,local_anchor,remote_anchor,op_id,payload,focus,silent_failure:!user})
     }
 }

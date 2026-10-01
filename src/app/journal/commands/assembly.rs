@@ -33,6 +33,11 @@ impl JournalApplication {
                 target=self.completion_views.get(&session.id).and_then(|view|view.focused_panes.get(&workspace.id).copied()).filter(|pane|workspace.pane_layout().find_pane(*pane).is_some()).or_else(||workspace.pane_layout().first_pane().map(|pane|pane.id));
             }
             if kind!=tasty_presets::PresetKind::Workspace && target.and_then(|pane|session.core_state.find_workspace_index_for_pane(pane)).and_then(|index|session.core_state.workspace_at(index)).is_some_and(|workspace|workspace.mirror) {return Err("preset cannot be applied to a remote mirror".into());}
+            if pending.request.method=="preset.apply" && kind!=tasty_presets::PresetKind::Workspace
+                && let Some(workspace)=target.and_then(|pane|session.core_state.find_workspace_index_for_pane(pane)).and_then(|index|session.core_state.workspace_at(index))
+                && session.live.occupancy.workspace_holder(workspace.id).is_some() {
+                return Err(crate::ipc::handler::hard_occupied_denial(workspace.id,&serde_json::Value::Null).error.map_or_else(||"workspace is occupied".into(),|error|error.message));
+            }
             let category=if pending.request.method=="intent.preset-apply" {parse("category")?}else {None};
             let draft=crate::runtime::preset_plan::draft(&session.as_ref(),&preset,target,category)?;
             let binding=session.journal_binding.clone().ok_or("preset engine has no journal binding")?;

@@ -47,7 +47,7 @@ impl Builder<'_,'_> {
                     cwd=None;
                     Some(ShellRecipe {executable:current.shell,arguments:current.args,environment:current.envs,cols:self.engine.default_cols,rows:self.engine.default_rows,scrollback_lines:self.engine.settings.general.scrollback_lines,disk_scrollback:self.engine.settings.performance.scrollback_disk_swap,startup_command:initial,restore_command:None})
                 } else {None};
-                self.inputs.insert(id,PreparationInput {kind:surface.kind.clone(),cwd,params,shell,restore:None});
+                self.inputs.insert(id,PreparationInput {adopt:None,child:None,kind:surface.kind.clone(),cwd,params,shell,restore:None});
                 self.snapshot.surfaces.insert(id,Surface {tab,kind:surface.kind.clone(),data:None,creation_seed:None,metadata:Default::default(),activation:None,content_generation:0,snapshot_schema:0});
                 SplitTree::Leaf(id)
             },

@@ -11,6 +11,7 @@ pub(crate) struct RemoteState {
     notifier:Option<tasty_ipc::stream_hub::StreamHub>,
     suppress_auto_tap:bool,
     structure_changed:std::collections::BTreeSet<u32>,
+    pub(crate) pending_workspace_taps:std::collections::HashMap<u32,(u32,tasty_terminal::ResourceGeneration)>,
     pub(crate) pending_structure_replies:std::collections::BTreeMap<u64,u32>,
     /// 서버의 mesh 구독 상태. 실제 전송은 PluginManager를 가진 GUI·헤드리스 계층이 맡는다.
     pub(crate) mesh_mirror: crate::remote::mesh_mirror::MeshMirrorRegistry,
@@ -83,7 +84,7 @@ pub(crate) struct RemoteState {
 impl RemoteState {
     pub(crate) fn new()->Self {Self {
             attach_mapping_tokens:Default::default(),
-            presentation:Default::default(),notifier:None,suppress_auto_tap:false,structure_changed:Default::default(),pending_structure_replies:Default::default(),
+            presentation:Default::default(),notifier:None,suppress_auto_tap:false,structure_changed:Default::default(),pending_workspace_taps:Default::default(),pending_structure_replies:Default::default(),
             mesh_mirror: crate::remote::mesh_mirror::MeshMirrorRegistry::default(),
             #[cfg(feature = "gui")]
             attach_mesh_frames: crate::remote::mesh_frames::AttachMeshFrameStore::default(),

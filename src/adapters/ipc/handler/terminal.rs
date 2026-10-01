@@ -1,8 +1,8 @@
 //! 자식 터미널의 생성·입력·조회·종료를 관리한다. 에이전트별 명령 구성과 훅은 플러그인이 맡는다.
-//! 탭 생성·입력·닫기 등은 같은 프로세스의 공용 핸들러를 호출한다.
+//! 구조 생성·닫기는 App의 journal admission에서 처리하며 여기에는 입력·관계 서비스가 남는다.
 //! 부모·자식 관계와 soft 점유를 함께 관리한다(ADR-0021).
 
-mod spawn_transaction;
+
 
 use crate::runtime::engine_access::{EngineMut, EngineRef};
 use serde_json::{Value, json};
@@ -11,7 +11,7 @@ use crate::runtime::child_terminal::ChildEntry;
 use crate::core::state::child_liveness::ChildLiveness;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-use super::{surface, tab};
+use super::surface;
 
 type AppServices = crate::app::services::AppServices;
 type CoreState = crate::core::CoreState;
@@ -215,155 +215,6 @@ fn send_body_then_submit(
     Ok(())
 }
 
-/// 숫자 ID를 먼저 찾고 없으면 실제 name과 비교한다.
-fn resolve_workspace_id(engine: &CoreState, target: &str) -> Option<u32> {
-    if let Ok(target_id) = target.parse::<u32>()
-        && engine.workspaces().into_iter().any(|w| w.id == target_id)
-    {
-        return Some(target_id);
-    }
-    engine
-        .workspaces()
-        .into_iter()
-        .find(|w| w.name == target)
-        .map(|w| w.id)
-}
-
-/// 표시 이름은 실제 name/ID와 다를 수 있어 실패 시 숫자 ID 조회 방법을 안내한다.
-fn workspace_not_found_message(workspace_param: &str) -> String {
-    format!(
-        "workspace '{workspace_param}' not found — pass the numeric workspace id \
-         (see `tasty list workspaces`), not a displayed name (a name shown in the UI \
-         may not match the underlying id)"
-    )
-}
-
-fn first_pane_in_workspace(engine: &CoreState, ws_id: u32) -> Option<u32> {
-    let idx = engine.find_workspace_index_for_id(ws_id)?;
-    engine
-        .workspace_at(idx)
-        .expect("workspace index is valid")
-        .pane_layout()
-        .all_pane_ids()
-        .into_iter()
-        .next()
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn handle_spawn(
-    core: &mut AppServices,
-    window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut EngineMut<'_>,
-    id: Value,
-    params: &Value,
-    origin: &crate::core::origin::IntentOrigin,
-) -> JsonRpcResponse {
-    engine.reconcile_child_terminals();
-
-    let parent = match require_u32(params, "parent", &id) {
-        Ok(p) => p,
-        // `surface` alias 도 허용 — CLI 는 parent 를 caller surface 로 채운다.
-        Err(_) => match require_u32(params, "surface", &id) {
-            Ok(p) => p,
-            Err(e) => return e,
-        },
-    };
-    let workspace_param = match require_str(params, "workspace", &id) {
-        Ok(w) => w,
-        Err(e) => return e,
-    };
-    // command를 생략하면 자식만 등록한다. 플러그인은 받은 surface ID로 명령을 구성해 나중에 보낼 수 있다.
-    let command = optional_str(params, "command");
-    let pane_override = match optional_u32(params, "pane", &id) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let cwd = optional_str(params, "cwd");
-    let role = optional_str(params, "role");
-    let nickname = optional_str(params, "nickname");
-
-    let Some(ws_id) = resolve_workspace_id(engine, &workspace_param) else {
-        return JsonRpcResponse::invalid_params(id, workspace_not_found_message(&workspace_param));
-    };
-    let pane_id = match pane_override {
-        Some(p) => p,
-        None => match first_pane_in_workspace(engine, ws_id) {
-            Some(p) => p,
-            None => {
-                return JsonRpcResponse::invalid_params(
-                    id,
-                    format!("No panes in workspace {ws_id}"),
-                );
-            }
-        },
-    };
-    // pane 지정이 workspace 인자를 덮을 수 있으므로 실제 생성 위치의 점유를 검사한다.
-    // 원격 전달로 탭만 남는 일이 없도록 생성 전에 mirror 대상도 거절한다.
-    if let Some(denied) = super::spawn_target_guard(engine, pane_id, &id) {
-        return denied;
-    }
-    let ws_id = engine
-        .find_workspace_index_for_pane(pane_id)
-        .and_then(|i| engine.workspace_at(i))
-        .map(|w| w.id)
-        .unwrap_or(ws_id);
-
-    let index = engine.runtime.child_terminals.next_index_for(parent);
-    let tab_name = format!("child{index}");
-    let mut tab_params = json!({
-        "pane_id": pane_id,
-        "type": "terminal",
-        "name": tab_name,
-    });
-    if let Some(c) = &cwd {
-        tab_params["cwd"] = Value::String(c.clone());
-    }
-    let tab_resp = tab::handle_tab_create(core, window, engine, id.clone(), &tab_params, origin);
-    let tab_val = match unwrap_ok(tab_resp, &id) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let Some(new_surface_id) = tab_val
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-    else {
-        return JsonRpcResponse::internal_error(
-            id,
-            format!("tab.create response missing 'surface_id': {tab_val}"),
-        );
-    };
-
-    if let Err(error) = spawn_transaction::finish(
-        core,
-        window,
-        engine,
-        &id,
-        parent,
-        ChildEntry {
-            child_surface_id: new_surface_id,
-            index,
-            cwd,
-            role,
-            nickname,
-        },
-        command.as_deref(),
-        origin,
-    ) {
-        return error;
-    }
-
-    JsonRpcResponse::success(
-        id,
-        json!({
-            "child_surface_id": new_surface_id,
-            "child_index": index,
-            "pane_id": pane_id,
-            "workspace_id": ws_id,
-        }),
-    )
-}
-
 pub(crate) fn handle_tell(
     core: &mut AppServices,
     engine: &mut EngineMut<'_>,
@@ -485,92 +336,6 @@ pub(crate) fn handle_parent(
     }
 }
 
-pub(crate) fn handle_kill(
-    core: &mut AppServices,
-    window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut EngineMut<'_>,
-    id: Value,
-    params: &Value,
-    origin: &crate::core::origin::IntentOrigin,
-) -> JsonRpcResponse {
-    engine.reconcile_child_terminals();
-    let parent = match resolve_parent(&engine.as_ref(), params, &id) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
-    let child_index = match require_u32(params, "child", &id) {
-        Ok(c) => c,
-        Err(e) => return e,
-    };
-    let Some(child_surface_id) = engine
-        .runtime
-        .child_terminals
-        .find_child(parent, child_index)
-        .map(|c| c.child_surface_id)
-    else {
-        return JsonRpcResponse::invalid_params(
-            id,
-            child_not_found_message(&engine.runtime.child_terminals, parent, child_index),
-        );
-    };
-    // 원격 holder의 점유를 강제로 풀지 않는다. surface.close와 같은 이유로 거절하고 관계는 그대로 둔다.
-    if let Some(resp) = surface::refuse_if_hard_occupied(engine, &id, child_surface_id) {
-        return resp;
-    }
-    // 닫기를 먼저 시도한다. 원격 전달이나 실패로 surface가 남으면 관계와 soft 점유를 그대로 둔다.
-    let close_params = json!({ "surface_id": child_surface_id });
-    let closed = match unwrap_ok(
-        surface::handle_surface_close(core, window, engine, id.clone(), &close_params, origin),
-        &id,
-    ) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    // mirror child는 원격 실행 큐에 들어갔을 뿐이다. 관계는 surface가 사라진 뒤 reconcile이 정리한다.
-    if closed.get("forwarded").and_then(Value::as_bool) == Some(true) {
-        return JsonRpcResponse::success(
-            id,
-            json!({
-                "forwarded": true,
-                "surface_id": child_surface_id,
-                "child_index": child_index,
-            }),
-        );
-    }
-
-    let Some(removed) = engine
-        .runtime
-        .child_terminals
-        .remove_child(parent, child_index)
-    else {
-        return JsonRpcResponse::invalid_params(
-            id,
-            child_not_found_message(&engine.runtime.child_terminals, parent, child_index),
-        );
-    };
-    engine.runtime.child_terminals.save();
-
-    // 닫기 정리가 soft 점유도 지우므로 남아 있을 때만 해제한다.
-    match engine.release_soft_occupancy(removed.child_surface_id, parent) {
-        Ok(()) | Err(crate::core::attach::OccupancyError::NotOccupied) => {}
-        Err(e) => tracing::warn!(
-            "terminal.kill: soft occupancy release failed for surface {} \
-             (parent {parent}): {e:?}",
-            removed.child_surface_id
-        ),
-    }
-
-    JsonRpcResponse::success(
-        id,
-        json!({
-            "killed_surface_id": removed.child_surface_id,
-            "child_index": removed.index,
-        }),
-    )
-}
-
-/// surface를 닫지 않고 부모·자식 관계와 soft 점유를 해제한다. hard 점유는 건드리지 않는다.
-/// soft 점유가 이미 없어도 관계 제거는 성공으로 처리한다.
 pub(crate) fn handle_release(
     engine: &mut EngineMut<'_>,
     id: Value,
@@ -616,7 +381,7 @@ pub(crate) fn handle_release(
 
 /// 기존 surface를 자식으로 등록한다. 임의의 기존 대상이므로 soft 점유를 먼저 확보한다.
 /// 실패하면 관계를 추가하지 않는다. 새 surface를 만드는 spawn은 관계 등록 후 점유하며
-/// 실패 시 spawn_transaction이 이번에 만든 surface와 관계를 정리한다.
+/// 기존 surface에 자식 관계와 soft 점유를 연결한다. 구조 생성은 수행하지 않는다.
 pub(crate) fn handle_adopt(
     engine: &mut EngineMut<'_>,
     id: Value,
@@ -725,16 +490,7 @@ pub(crate) fn handle_respawn(
 
     // cwd가 바뀌면 PTY를 교체하고, 아니면 Ctrl-C를 보낸다. Ctrl-C가 종료 완료를 보장하지는 않는다.
     if new_cwd.is_some() {
-        let mut respawn_params = json!({ "surface_id": entry.child_surface_id });
-        if let Some(c) = new_cwd.as_deref() {
-            respawn_params["cwd"] = Value::String(c.to_string());
-        }
-        if let Err(e) = unwrap_ok(
-            surface::handle_surface_respawn_terminal(core, engine, id.clone(), &respawn_params),
-            &id,
-        ) {
-            return e;
-        }
+        return JsonRpcResponse::internal_error(id,"child resource respawn requires committed structure admission");
     } else {
         let combo = json!({
             "surface_id": entry.child_surface_id,
@@ -939,13 +695,6 @@ mod tests {
         assert_eq!(format_index_ranges(&[0, 57]), "0, 57");
     }
 
-    #[test]
-    fn workspace_not_found_message_hints_numeric_id() {
-        let msg = workspace_not_found_message("1");
-        assert!(msg.contains("workspace '1' not found"), "{msg}");
-        assert!(msg.contains("numeric workspace id"), "{msg}");
-        assert!(msg.contains("tasty list workspaces"), "{msg}");
-    }
 
     #[test]
     fn child_not_found_points_at_index_when_given_a_surface_id() {

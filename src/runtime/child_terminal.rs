@@ -80,6 +80,12 @@ impl ChildTerminalRegistry {
         }
     }
 
+    pub(crate) fn reserve_index(&mut self,parent:u32)->Result<u32,String> {
+        let entry=self.next_index.entry(parent).or_insert(0);
+        let index=*entry;*entry=entry.checked_add(1).ok_or("child index space exhausted")?;
+        self.save();Ok(index)
+    }
+
     pub fn next_index_for(&mut self, parent: u32) -> u32 {
         let entry = self.next_index.entry(parent).or_insert(0);
         let idx = *entry;
@@ -136,7 +142,6 @@ impl ChildTerminalRegistry {
     }
 
     /// surface ID로 자식을 제거한다. 항목이 없으면 false다.
-    #[allow(dead_code)]
     pub fn unregister_child_by_surface(&mut self, surface_id: u32) -> bool {
         let Some(parent) = self.parent_of.get(&surface_id).copied() else {
             return false;
