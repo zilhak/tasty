@@ -5,7 +5,6 @@
 #![cfg(not(feature = "gui"))]
 
 use crate::app::App;
-use crate::core::CoreState;
 use crate::runtime::engine_access::EngineMut;
 use crate::state::RequestContext;
 use tasty_ipc::stream_hub::{PumpOutcome, StreamClientId};
@@ -26,7 +25,7 @@ fn apply(
     outcome: &mut PumpOutcome,
 ) {
     if !outcome.attach_requests.is_empty() || !outcome.workspace_attach_requests.is_empty() {
-        super::headless_plugins::ensure_plugin_manager(app, engine);
+        super::headless_plugins::ensure_plugin_manager(app, &engine.as_ref());
     }
     engine.refresh_attach_presentation(&state.navigation);
     engine
@@ -174,7 +173,7 @@ fn apply_mirror_state(engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
     }
 }
 
-fn apply_mesh_requests(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOutcome) {
+fn apply_mesh_requests(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
     for (client_id, surface_id, width_px, height_px, pixels_per_point, theme, focused) in
         std::mem::take(&mut outcome.mesh_context_requests)
     {
@@ -220,7 +219,7 @@ fn push_mesh_error(app: &App, client_id: StreamClientId, surface_id: u32) {
 }
 
 fn apply_capture_uploads(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
-    for (client_id, msg) in std::mem::take(&mut outcome.remote.capture_uploads) {
+    for (client_id, msg) in std::mem::take(&mut outcome.capture_uploads) {
         use tasty_ipc::stream_hub::CaptureUploadMsg;
         match msg {
             CaptureUploadMsg::CaptureChunk {
@@ -371,7 +370,7 @@ fn apply_bulk_events(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mut Pu
     }
 }
 
-fn apply_disconnects(engine: &mut CoreState, outcome: &mut PumpOutcome) {
+fn apply_disconnects(engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
     for client_id in std::mem::take(&mut outcome.disconnected) {
         engine.live.occupancy.release_all_for_client(client_id);
         engine.remote.bulk_transfers.clear_client(client_id);

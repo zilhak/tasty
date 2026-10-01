@@ -3,13 +3,12 @@
 //! 입력은 TerminalOutput(None)으로 깨우며 플러그인 타이머와 Busy 주기에서도 pump한다.
 
 use crate::app::App;
-use crate::core::CoreState;
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use crate::state::RequestContext;
 
 /// 조회에 필요한 매니저와 설치 목록을 준비한다. 플러그인 설치·권한 부여·프로세스 실행은 하지 않는다.
 /// 매니저 생성 과정에서 로그 디렉터리는 만들어질 수 있다. waker_factory가 없으면 경고 후 생략한다.
-pub(crate) fn ensure_plugin_manager_metadata(app: &mut App, engine: &CoreState) {
+pub(crate) fn ensure_plugin_manager_metadata(app: &mut App, engine: &EngineRef<'_>) {
     if app.plugin_manager.is_some() {
         return;
     }
@@ -42,7 +41,7 @@ pub(crate) fn ensure_plugin_manager_metadata(app: &mut App, engine: &CoreState) 
 }
 
 /// attach에서 필요한 전체 활성 플러그인을 시작한다. 조회·namespace 요청은 이 경로를 쓰지 않는다.
-pub(crate) fn ensure_plugin_manager(app: &mut App, engine: &CoreState) {
+pub(crate) fn ensure_plugin_manager(app: &mut App, engine: &EngineRef<'_>) {
     if app.state.plugin_started {
         return;
     }
@@ -66,7 +65,7 @@ pub(crate) fn pump_plugins(app: &mut App, state: &mut RequestContext, engine: &m
         mgr.pump(std::time::Instant::now())
     };
     if !hello_pairs.is_empty() {
-        finalize_plugin_hello_headless(app, engine, hello_pairs);
+        finalize_plugin_hello_headless(app, &engine.as_ref(), hello_pairs);
     }
     dispatch_plugin_ipc_calls_headless(app, state, engine);
     forward_mesh_frames(app, engine);
@@ -124,7 +123,7 @@ pub(crate) fn ensure_plugin_for_surface_kind(
     if engine.runtime.surface_registry.get_live(kind).is_some() {
         return;
     }
-    ensure_plugin_manager_metadata(app, engine);
+    ensure_plugin_manager_metadata(app, &engine.as_ref());
     let Some(owner) = app
         .plugin_manager
         .as_ref()
@@ -255,7 +254,7 @@ const KIND_REGISTRATION_WAIT: std::time::Duration = std::time::Duration::from_se
 /// surface_registry가 없으면 surface 등록을 생략하고도 registered_plugins에 표시하므로 재시도를 예약하지 않는다.
 fn finalize_plugin_hello_headless(
     app: &mut App,
-    engine: &CoreState,
+    engine: &EngineRef<'_>,
     hello_pairs: Vec<(String, String)>,
 ) {
     let core_registry = engine.runtime.surface_registry.clone();
@@ -526,7 +525,7 @@ fn dispatch_plugin_ipc_calls_headless(
             engine,
             &mut app.journal,
         );
-        crate::intent::headless::drain_pending_host_events(&app.services, &mut engine);
+        crate::intent::headless::drain_pending_host_events(&app.services, engine);
         // 오류 코드도 함께 전달해 플러그인이 원래 실패 종류를 알 수 있게 한다.
         let (result, error, code) = match response.error {
             Some(err) => (None, Some(err.message), Some(err.code)),
