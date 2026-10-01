@@ -9,7 +9,7 @@ impl App {
     pub(crate) fn poll_busy_states(&mut self) {
         let hub = self.stream_hub.clone();
         for (_, main, mut engine) in self.engines_mut().window_pairs() {
-            let mut changed = crate::core::Core::update_busy_surfaces(&mut engine);
+            let mut changed = crate::app::services::AppServices::update_busy_surfaces(&mut engine);
             // 상태바는 포커스된 surface만 표시하므로 불필요한 Git 조회를 피한다.
             let focused = main.state.focused_surface_id(engine.core);
             changed |= main
@@ -25,7 +25,7 @@ impl App {
         }
         for mut engine in self.engines_mut().parked() {
             // 창이 없는 상태에서는 상태바용 브랜치 조회와 redraw가 필요 없다.
-            crate::core::Core::update_busy_surfaces(&mut engine);
+            crate::app::services::AppServices::update_busy_surfaces(&mut engine);
             engine.forward_busy_activity(&hub);
             engine.forward_attention(&hub);
             engine.forward_surface_cwd(&hub);

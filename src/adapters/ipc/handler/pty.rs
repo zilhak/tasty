@@ -3,7 +3,7 @@
 //! PTY_ID_BASE 이상의 ID를 사용해 surface ID와 구분하고 회수할 때 내용과 물리 owner를 함께 제거한다.
 
 use super::params::{self, p_try};
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use std::time::Instant;
 
 use serde_json::{Value, json};
@@ -48,7 +48,7 @@ fn lazy_sweep(engine: &mut EngineMut<'_>) {
 }
 
 pub(crate) fn handle_spawn(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut EngineMut<'_>,
     caller: &CallerContext,
     id: Value,
@@ -245,7 +245,7 @@ pub(crate) fn handle_kill(
     }
     engine.runtime.terminals.remove(pty_id);
     // PTY별 waker 기록도 지워 반복 생성·삭제 시 누적되지 않게 한다.
-    if let Some(factory) = engine.waker_factory.as_ref() {
+    if let Some(factory) = engine.runtime.waker_factory.as_ref() {
         factory.forget_surface(pty_id);
     }
     JsonRpcResponse::success(id, json!({ "id": pty_id, "killed": true }))
@@ -255,7 +255,7 @@ pub(crate) fn handle_kill(
 /// PTY registry에서는 제거한다. SurfaceWrite/TerminalSpawn 권한이 필요하다.
 /// tab.create와 같은 후속 처리로 생성 이벤트와 화면 갱신도 수행한다.
 pub(crate) fn handle_attach_surface(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut EngineMut<'_>,
     id: Value,
@@ -286,20 +286,20 @@ pub(crate) fn handle_attach_surface(
         return JsonRpcResponse::invalid_params(id, format!("pane {pane_id} not found"));
     }
 
-    let intent = crate::core::intent::DomainIntent::AdoptTerminal { pane_id, pty_id };
+    let intent = crate::app::command::DomainIntent::AdoptTerminal { pane_id, pty_id };
     let events = match core.apply(engine, intent) {
         Ok(events) => events,
         Err(e) => return super::structural_apply_error(id, &e),
     };
 
-    let Some(crate::core::intent::CoreEvent::TabCreated {
+    let Some(crate::app::command::CoreEvent::TabCreated {
         pane_id,
         tab_id,
         surface_id,
         ..
     }) = events.into_iter().next()
     else {
-        return JsonRpcResponse::internal_error(id, "Core::apply returned no TabCreated event");
+        return JsonRpcResponse::internal_error(id, "AppServices::apply returned no TabCreated event");
     };
 
     // 생성 이벤트와 polling 기준 상태를 함께 갱신한다.
@@ -357,7 +357,7 @@ pub(crate) mod tests {
     }
 
     // Clock이 포함된 Core를 준비하고 TempDir을 호출자에게 넘겨 시험 동안 유지한다.
-    pub(crate) fn core() -> (crate::core::Core, tempfile::TempDir) {
+    pub(crate) fn core() -> (crate::app::services::AppServices, tempfile::TempDir) {
         use std::sync::{Arc, Mutex};
 
         use tasty_memory::MemoryStorage;
@@ -367,7 +367,7 @@ pub(crate) mod tests {
             fake_clock::FakeClock, mem_fs::MemFileSystem, mock_clipboard::MockClipboard,
             mock_process::MockProcessSpawner, tmp_home::TmpHome,
         };
-        use crate::core::builder::CoreBuilder;
+        use crate::app::services::builder::AppServicesBuilder;
         use crate::ports::notification_sound::NoopPlayer;
 
         let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
@@ -378,7 +378,7 @@ pub(crate) mod tests {
         let home_tmp = tempfile::tempdir().expect("test tempdir");
         let home = TmpHome::new(home_tmp.path().to_path_buf());
 
-        let core = CoreBuilder::new()
+        let core = AppServicesBuilder::new()
             .with_fs(Arc::new(MemFileSystem::new()))
             .with_clock(Arc::new(FakeClock::default()))
             .with_clipboard(Arc::new(MockClipboard::default()))
@@ -390,7 +390,7 @@ pub(crate) mod tests {
             .with_preset_store(preset_store)
             .with_settings_storage(Arc::new(tasty_settings::FileSettingsStorage))
             .build()
-            .expect("test Core build");
+            .expect("test AppServices build");
 
         (core, home_tmp)
     }
@@ -470,7 +470,7 @@ pub(crate) mod tests {
         }
     }
 
-    pub(crate) fn spawn_test_pty(core: &mut crate::core::Core, engine: &mut EngineMut<'_>) -> u32 {
+    pub(crate) fn spawn_test_pty(core: &mut crate::app::services::AppServices, engine: &mut EngineMut<'_>) -> u32 {
         ok(handle_spawn(
             core,
             engine,
@@ -499,7 +499,7 @@ pub(crate) mod tests {
     /// 실패 시 owner 상태와 화면 꼬리를 수집한다. raw 읽기/쓰기 바이트 계수는 없다.
     /// 화면과 에코 비교는 관측 보조 자료이며 자식의 생사나 실행 이력을 보장하지 않는다.
     fn observed_pty_state(
-        engine: &crate::core::engine_access::EngineRef<'_>,
+        engine: &crate::runtime::engine_access::EngineRef<'_>,
         pty_id: u32,
         sent: &str,
     ) -> String {
@@ -633,7 +633,7 @@ pub(crate) mod tests {
         let resp = handle_spawn(&mut c, &mut e, &caller, json!(1), &json!({}));
         let spawned = ok(resp);
         let pty_id = spawned["pty_id"].as_u64().unwrap() as u32;
-        assert!(pty_id >= crate::core::terminal_store::PTY_ID_BASE);
+        assert!(pty_id >= crate::runtime::terminal_store::PTY_ID_BASE);
 
         let listed = ok(handle_list(&mut e, json!(2)));
         let arr = listed["ptys"].as_array().unwrap();
@@ -690,7 +690,7 @@ pub(crate) mod tests {
         let (mut c, _home) = core();
         e.runtime
             .terminals
-            .set_standalone_limits(2, crate::core::terminal_store::DEFAULT_IDLE_TTL);
+            .set_standalone_limits(2, crate::runtime::terminal_store::DEFAULT_IDLE_TTL);
         let caller = CallerContext::Local;
         let a = handle_spawn(&mut c, &mut e, &caller, json!(1), &json!({}));
         let b = handle_spawn(&mut c, &mut e, &caller, json!(2), &json!({}));
@@ -787,7 +787,7 @@ pub(crate) mod tests {
     fn write_read_wait_on_unknown_id_errors() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        let bogus = crate::core::terminal_store::PTY_ID_BASE + 999;
+        let bogus = crate::runtime::terminal_store::PTY_ID_BASE + 999;
         assert!(
             handle_write(&mut e, json!(1), &json!({ "id": bogus, "text": "x" }))
                 .error

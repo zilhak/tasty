@@ -290,7 +290,7 @@ impl App {
                 id,
             );
             send_response(&cmd.response_tx, response);
-            w.base.dirty = true;
+            w.base.state.dirty = true;
         }
         IpcStep::Handled
     }

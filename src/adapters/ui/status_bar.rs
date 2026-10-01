@@ -2,7 +2,7 @@
 //! 상태바 레이어·위치는 본체에서 정하며 갤러리는 같은 공용 화면 함수를 사용한다.
 //! 표시 항목: docs/features/workspace-status-bar/index.md.
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use egui::emath::GuiRounding as _;
 use tasty_type_geometry::length::{LogicalPx, PhysicalPx};
 use tasty_type_geometry::rect::PhysicalRect;
@@ -103,7 +103,7 @@ pub fn draw_status_bar(
                 let mut new_settings = engine.settings.clone();
                 tasty_themes::apply_theme(&mut new_settings.appearance, target);
                 state.dispatch_intent(
-                    crate::core::intent::DomainIntent::UpdateSettings(new_settings)
+                    crate::app::command::DomainIntent::UpdateSettings(new_settings)
                         .from_user_menu("status_bar.theme_toggle"),
                 );
             }

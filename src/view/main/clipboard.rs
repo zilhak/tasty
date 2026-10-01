@@ -1,6 +1,6 @@
 use super::MainView;
-use crate::core::engine_access::EngineMut;
-use crate::core::intent::{DomainIntent, SendPayload};
+use crate::runtime::engine_access::EngineMut;
+use crate::app::command::{DomainIntent, SendPayload};
 
 /// bracketed paste 시작·본문·끝을 같은 큐 순서로 보낸다.
 /// mirror 입력도 원격 PTY로 전달하므로 이미지 업로드 뒤 원격 경로 삽입에 재사용한다.
@@ -92,7 +92,7 @@ impl MainView {
                 match encode_clipboard_image_as_png(&image) {
                     Ok(png_bytes) => {
                         engine
-                            .pending_image_uploads
+                            .remote.pending_image_uploads
                             .push(crate::core::PendingImageUpload {
                                 mirror_ws_id: ws_id,
                                 surface_id: sid,

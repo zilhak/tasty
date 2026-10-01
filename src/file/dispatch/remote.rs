@@ -2,8 +2,9 @@
 //! 식별은 파일 이름만 보는 DetectDepth::Name으로 끝나며, 원격 NewTab으로 보낼 수 있는 핸들러만 실행한다.
 //! 규칙은 [ADR-0022](../../../docs/adr/0022-remote-mirror-content-and-queries.md)를 따른다.
 
-use crate::core::engine_access::EngineMut;
-use crate::core::{Core, CoreState};
+use crate::runtime::engine_access::EngineMut;
+use crate::core::{State};
+use crate::app::services::AppServices;
 use crate::file::dispatch::{DispatchTarget, FileDispatchOrigin};
 use crate::file::format::{DetectorId, FileTarget};
 use crate::file::handler::{FileHandler, HandlerAction};
@@ -40,14 +41,14 @@ pub(crate) fn rejects_handler_for_origin(
 /// kind와 client에 등록한 plugin 쌍이 원문 전달이나 mesh mirror 허용 목록에 있는지 확인한다.
 /// html처럼 mirror에서 placeholder로 보이는 kind는 원격에 열어도 내용을 볼 수 없다.
 fn mirrors_content(engine: &CoreState, kind: &str) -> bool {
-    let Some(def) = engine.surface_registry.get_live(kind) else {
+    let Some(def) = engine.runtime.surface_registry.get_live(kind) else {
         return false;
     };
     let Some(plugin_id) = def.source.plugin_id() else {
         return false;
     };
-    crate::core::attach_runtime::is_attach_content_allowed(kind, plugin_id)
-        || crate::core::surface_registry::egui_mesh::is_egui_mesh_allowed(kind, plugin_id)
+    crate::remote::server::is_attach_content_allowed(kind, plugin_id)
+        || crate::runtime::surface_registry::egui_mesh::is_egui_mesh_allowed(kind, plugin_id)
 }
 
 /// mirror origin의 식별 결과를 적용한다. 로컬 핸들러 전체 picker는 띄우지 않는다.
@@ -55,7 +56,7 @@ fn mirrors_content(engine: &CoreState, kind: &str) -> bool {
 /// 원격에 열 수 있는 핸들러만 담은 picker를 띄우고, 외부 IPC 요청은 사용자 화면에 팝업을 만들지 않도록
 /// 그중 첫 핸들러를 실행한다.
 pub(crate) fn apply_remote_identify_result(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     target: FileTarget,
@@ -65,7 +66,7 @@ pub(crate) fn apply_remote_identify_result(
 ) {
     let handlers = detector
         .as_ref()
-        .map(|d| engine.file_handler.handlers_for(d))
+        .map(|d| engine.runtime.file_handler.handlers_for(d))
         .unwrap_or_default();
     let first_is_openable = handlers
         .first()
@@ -130,8 +131,7 @@ fn open_remote_picker(
     picker.origin_surface_id = Some(origin_surface_id);
     picker.default_handler = None;
     picker.recent.retain(|summary| {
-        engine
-            .file_handler
+        engine.runtime.file_handler
             .get(&summary.id)
             .is_some_and(|h| is_remote_openable(engine, &h))
     });

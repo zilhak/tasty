@@ -65,7 +65,7 @@ pub fn handle_set_remote_transfer(
     }
 
     let applied = serde_json::to_value(&new_settings.remote_transfer).unwrap_or(Value::Null);
-    out.push(crate::core::intent::DomainIntent::UpdateSettings(new_settings).from_agent_ipc());
+    out.push(crate::app::command::DomainIntent::UpdateSettings(new_settings).from_agent_ipc());
     JsonRpcResponse::success(id, json!({ "applied": true, "remote_transfer": applied }))
 }
 

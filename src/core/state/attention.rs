@@ -1,5 +1,6 @@
 //! Surface의 attention은 알림 패널과 별도 상태다. 생성은 raise_attention,
 //! 로컬 사용자 확인은 clear_attention_local을 거친다. mirror는 서버 push만 반영한다.
+use crate::runtime::engine_access::EngineMut;
 
 use std::collections::HashMap;
 use std::time::Instant;
@@ -119,7 +120,7 @@ impl AttentionStore {
     }
 }
 
-impl CoreState {
+impl EngineMut<'_> {
     /// ID 0과 mirror는 제외한다. mirror 바이트를 다시 파싱해도 로컬 attention은 만들지 않는다.
     /// 이 제한은 별도로 만드는 알림 패널 항목·토스트·훅에는 적용되지 않는다.
     pub(crate) fn raise_attention(&mut self, surface_id: u32, kind: AttentionKind) {
@@ -141,19 +142,19 @@ impl CoreState {
             sound = effects.sound,
             "attention raised"
         );
-        self.attention.raise(surface_id, kind);
+        self.live.attention.raise(surface_id, kind);
     }
 
     /// 실제로 제거했으면 true다. mirror의 제거는 서버에 보낼 큐에도 넣는다.
     /// 포커스와 알림 읽음 처리가 같은 경로를 사용하도록 여기서 큐에 넣는다.
     pub fn clear_attention(&mut self, surface_id: u32) -> bool {
-        let removed = self.attention.clear(surface_id);
+        let removed = self.live.attention.clear(surface_id);
         if removed && self.is_mirror_surface(surface_id) {
             tracing::trace!(
                 surface_id,
                 "mirror attention cleared — queueing clear forward to the owning instance"
             );
-            self.pending_attention_clear_forward.insert(surface_id);
+            self.remote.pending_attention_clear_forward.insert(surface_id);
         }
         removed
     }
@@ -161,7 +162,7 @@ impl CoreState {
     /// 하드 점유 중에는 로컬 사용자가 확인 처리할 수 없다. soft 점유는 제외한다.
     #[cfg(any(feature = "gui", test))]
     pub(crate) fn local_attention_clear_allowed(&self, surface_id: u32) -> bool {
-        !self.attach.is_hard_occupied(surface_id)
+        !self.live.occupancy.is_hard_occupied(surface_id)
     }
 
     /// 로컬 사용자 확인에만 하드 점유 제한을 적용한다. 검증된 holder의 요청까지
@@ -186,9 +187,9 @@ impl CoreState {
         kind: Option<AttentionKind>,
     ) {
         match kind {
-            Some(k) => self.attention.raise(surface_id, k),
+            Some(k) => self.live.attention.raise(surface_id, k),
             None => {
-                self.attention.clear(surface_id);
+                self.live.attention.clear(surface_id);
             }
         }
     }
@@ -196,7 +197,7 @@ impl CoreState {
     /// 사라진 mirror의 레코드를 버린다. 사용자 확인이 아니므로 서버로 해제를 보내지 않는다.
     /// 닫기 정리가 두 빌드에서 부르므로 gui 조건을 두지 않는다.
     pub(crate) fn forget_mirror_surface_attention(&mut self, surface_id: u32) {
-        self.attention.clear(surface_id);
+        self.live.attention.clear(surface_id);
     }
 
     /// 하드 점유한 surface의 (holder, ID, kind) 전송 후보. 최초 값과 holder·kind 변경을 담는다.
@@ -209,15 +210,15 @@ impl CoreState {
         u32,
         Option<AttentionKind>,
     )> {
-        let locks = self.attach.locks_snapshot();
+        let locks = self.live.occupancy.locks_snapshot();
         let occupied: std::collections::HashSet<u32> = locks.iter().map(|&(sid, _)| sid).collect();
-        self.last_forwarded_attention
+        self.remote.last_forwarded_attention
             .retain(|sid, _| occupied.contains(sid));
         let mut out = Vec::new();
         for (sid, lock) in locks {
-            let record = (lock.holder, self.attention.kind_of(sid));
-            if self.last_forwarded_attention.get(&sid) != Some(&record) {
-                self.last_forwarded_attention.insert(sid, record);
+            let record = (lock.holder, self.live.attention.kind_of(sid));
+            if self.remote.last_forwarded_attention.get(&sid) != Some(&record) {
+                self.remote.last_forwarded_attention.insert(sid, record);
                 out.push((record.0, sid, record.1));
             }
         }
@@ -225,7 +226,7 @@ impl CoreState {
     }
 
     pub(crate) fn attention_kind(&self, surface_id: u32) -> Option<AttentionKind> {
-        self.attention.kind_of(surface_id)
+        self.live.attention.kind_of(surface_id)
     }
 
     #[cfg(any(feature = "gui", test))]
@@ -234,13 +235,13 @@ impl CoreState {
         kind: AttentionKind,
         surface_ids: &[u32],
     ) -> usize {
-        self.attention.count_of_kind(kind, surface_ids)
+        self.live.attention.count_of_kind(kind, surface_ids)
     }
 
     /// 목록의 대표 kind. NeedsInput을 Completion보다 우선한다.
     #[cfg(any(feature = "gui", test))]
     pub fn attention_dominant_kind(&self, surface_ids: &[u32]) -> Option<AttentionKind> {
-        self.attention.dominant_kind(surface_ids)
+        self.live.attention.dominant_kind(surface_ids)
     }
 
     /// 알림을 읽음 처리하고 같은 surface의 안읽음 알림이 없으면 로컬 attention 해제를 요청한다.
@@ -437,7 +438,7 @@ mod tests {
             .workspace_at(0)
             .expect("workspace index is valid")
             .all_surface_ids()[0];
-        e.attach.acquire(sid, 7).expect("lock 획득");
+        e.live.occupancy.acquire(sid, 7).expect("lock 획득");
 
         assert_eq!(e.attention_forwards(), vec![(7, sid, None)]);
 
@@ -482,7 +483,7 @@ mod tests {
             .workspace_at(0)
             .expect("workspace index is valid")
             .all_surface_ids()[0];
-        e.attach.acquire(sid, 7).expect("lock 획득");
+        e.live.occupancy.acquire(sid, 7).expect("lock 획득");
         e.raise_attention(sid, AttentionKind::NeedsInput);
         assert_eq!(
             e.attention_forwards(),
@@ -490,10 +491,10 @@ mod tests {
         );
         assert!(e.attention_forwards().is_empty());
 
-        e.attach.release(sid, 7).expect("release");
+        e.live.occupancy.release(sid, 7).expect("release");
         assert!(e.attention_forwards().is_empty());
 
-        e.attach.acquire(sid, 9).expect("다른 client 재획득");
+        e.live.occupancy.acquire(sid, 9).expect("다른 client 재획득");
         assert_eq!(
             e.attention_forwards(),
             vec![(9, sid, Some(AttentionKind::NeedsInput))],
@@ -510,15 +511,15 @@ mod tests {
             .workspace_at(0)
             .expect("workspace index is valid")
             .all_surface_ids()[0];
-        e.attach.acquire(sid, 7).expect("lock 획득");
+        e.live.occupancy.acquire(sid, 7).expect("lock 획득");
         e.raise_attention(sid, AttentionKind::NeedsInput);
         assert_eq!(
             e.attention_forwards(),
             vec![(7, sid, Some(AttentionKind::NeedsInput))]
         );
 
-        e.attach.release(sid, 7).expect("release");
-        e.attach
+        e.live.occupancy.release(sid, 7).expect("release");
+        e.live.occupancy
             .acquire(sid, 9)
             .expect("같은 tick 창 안의 다른 client 획득");
         assert_eq!(
@@ -562,9 +563,9 @@ mod tests {
         let mut s_session = state();
         let mut s = s_session.borrow_mut();
         s.set_mirror_surface_attention(13, Some(AttentionKind::NeedsInput));
-        assert!(s.last_forwarded_attention.is_empty());
+        assert!(s.remote.last_forwarded_attention.is_empty());
         s.forget_mirror_surface_attention(13);
-        assert!(s.last_forwarded_attention.is_empty());
+        assert!(s.remote.last_forwarded_attention.is_empty());
     }
 
     #[test]
@@ -677,11 +678,11 @@ mod tests {
         let (mut s_session, sid) = mirror_state();
         let mut s = s_session.borrow_mut();
         s.set_mirror_surface_attention(sid, Some(AttentionKind::NeedsInput));
-        assert!(s.pending_attention_clear_forward.is_empty());
+        assert!(s.remote.pending_attention_clear_forward.is_empty());
 
         assert!(s.clear_attention(sid));
         assert_eq!(
-            s.pending_attention_clear_forward
+            s.remote.pending_attention_clear_forward
                 .iter()
                 .copied()
                 .collect::<Vec<_>>(),
@@ -689,10 +690,10 @@ mod tests {
             "mirror를 해제하면 서버에 보낼 큐에 들어가야 한다"
         );
 
-        s.pending_attention_clear_forward.clear(); // App 이 drain 한 상태를 모사
+        s.remote.pending_attention_clear_forward.clear(); // App 이 drain 한 상태를 모사
         assert!(!s.clear_attention(sid));
         assert!(
-            s.pending_attention_clear_forward.is_empty(),
+            s.remote.pending_attention_clear_forward.is_empty(),
             "레코드가 없으면 프레임이 다시 나가지 않는다"
         );
     }
@@ -709,7 +710,7 @@ mod tests {
 
         assert!(s.clear_attention(sid));
         assert!(
-            s.pending_attention_clear_forward.is_empty(),
+            s.remote.pending_attention_clear_forward.is_empty(),
             "소유 인스턴스의 해제는 전달할 곳이 없다"
         );
     }
@@ -729,7 +730,7 @@ mod tests {
 
         assert_eq!(s.attention_kind(sid), None);
         assert_eq!(
-            s.pending_attention_clear_forward
+            s.remote.pending_attention_clear_forward
                 .iter()
                 .copied()
                 .collect::<Vec<_>>(),
@@ -749,7 +750,7 @@ mod tests {
         s.mark_all_notifications_read();
 
         assert_eq!(
-            s.pending_attention_clear_forward
+            s.remote.pending_attention_clear_forward
                 .iter()
                 .copied()
                 .collect::<Vec<_>>(),
@@ -766,14 +767,14 @@ mod tests {
         s.set_mirror_surface_attention(sid, None); // 서버가 내려준 해제
         assert_eq!(s.attention_kind(sid), None);
         assert!(
-            s.pending_attention_clear_forward.is_empty(),
+            s.remote.pending_attention_clear_forward.is_empty(),
             "서버가 내려준 해제를 서버로 되돌리면 에코가 된다"
         );
 
         s.set_mirror_surface_attention(sid, Some(AttentionKind::NeedsInput));
         s.forget_mirror_surface_attention(sid); // surface 소멸 teardown
         assert!(
-            s.pending_attention_clear_forward.is_empty(),
+            s.remote.pending_attention_clear_forward.is_empty(),
             "teardown 은 사용자의 확인이 아니다"
         );
     }
@@ -788,7 +789,7 @@ mod tests {
             "점유 없는 surface 는 로컬 해제 대상이다"
         );
 
-        s.attach.acquire(42, 1).expect("hard lock");
+        s.live.occupancy.acquire(42, 1).expect("hard lock");
         assert!(
             !s.local_attention_clear_allowed(42),
             "하드 점유 중에는 로컬 사용자가 주체가 아니다"
@@ -798,7 +799,7 @@ mod tests {
             "게이트는 점유된 surface 에만 걸린다"
         );
 
-        s.attach.release(42, 1).expect("release");
+        s.live.occupancy.release(42, 1).expect("release");
         assert!(
             s.local_attention_clear_allowed(42),
             "점유가 풀리면 로컬 포커스가 해제 주체로 복귀한다"
@@ -809,7 +810,7 @@ mod tests {
     fn soft_occupancy_does_not_gate_the_local_clear() {
         let mut s_session = state();
         let mut s = s_session.borrow_mut();
-        s.attach
+        s.live.occupancy
             .acquire_soft(42, 7, Some("child".into()))
             .expect("soft lock");
         assert!(
@@ -827,7 +828,7 @@ mod tests {
         let mut s_session = state();
         let mut s = s_session.borrow_mut();
         s.raise_attention(42, AttentionKind::NeedsInput);
-        s.attach.acquire(42, 1).expect("hard lock");
+        s.live.occupancy.acquire(42, 1).expect("hard lock");
 
         assert!(
             !s.clear_attention_local(42),
@@ -839,7 +840,7 @@ mod tests {
             "점유 중 서버 로컬 포커스는 홀더의 신호를 지우지 못한다"
         );
 
-        s.attach.release(42, 1).expect("release");
+        s.live.occupancy.release(42, 1).expect("release");
         assert!(s.clear_attention_local(42), "점유 해제 후에는 지워진다");
         assert_eq!(s.attention_kind(42), None);
     }
@@ -853,7 +854,7 @@ mod tests {
             .expect("workspace index is valid")
             .all_surface_ids()[0];
         let ws = s.workspace_at(0).expect("workspace index is valid").id;
-        s.attach
+        s.live.occupancy
             .acquire_workspace(ws, &[sid], &[sid], 1)
             .expect("workspace hard lock");
         s.raise_attention(sid, AttentionKind::NeedsInput);
@@ -882,7 +883,7 @@ mod tests {
             .add(1, 100, "t1".into(), "b1".into())
             .unwrap();
         s.raise_attention(100, AttentionKind::Completion);
-        s.attach.acquire(100, 1).expect("hard lock");
+        s.live.occupancy.acquire(100, 1).expect("hard lock");
 
         s.mark_notification_read(occupied_read);
 
@@ -901,7 +902,7 @@ mod tests {
         );
 
         // 앞선 알림은 이미 읽었으므로 새 안읽음 알림으로 같은 경로를 다시 검사한다.
-        s.attach.release(100, 1).expect("release");
+        s.live.occupancy.release(100, 1).expect("release");
         let after_release = s
             .notifications
             .add(1, 100, "t2".into(), "b2".into())
@@ -928,7 +929,7 @@ mod tests {
             .unwrap();
         s.raise_attention(100, AttentionKind::NeedsInput);
         s.raise_attention(200, AttentionKind::Completion);
-        s.attach.acquire(100, 1).expect("hard lock");
+        s.live.occupancy.acquire(100, 1).expect("hard lock");
 
         s.mark_all_notifications_read();
 
@@ -950,7 +951,7 @@ mod tests {
         }
 
         // 앞선 알림은 모두 읽었으므로 새 안읽음 알림으로 같은 경로를 다시 검사한다.
-        s.attach.release(100, 1).expect("release");
+        s.live.occupancy.release(100, 1).expect("release");
         s.notifications.add(1, 100, "t3".into(), "b3".into());
         s.mark_all_notifications_read();
         assert_eq!(
@@ -975,7 +976,7 @@ mod tests {
             "미러 사용자의 확인은 성립한다"
         );
         assert!(
-            s.pending_attention_clear_forward.contains(&sid),
+            s.remote.pending_attention_clear_forward.contains(&sid),
             "mirror의 해제 요청은 서버에 보낼 큐에 들어가야 한다"
         );
     }

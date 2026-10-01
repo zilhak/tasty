@@ -153,7 +153,7 @@ pub(crate) fn slot_preservation_is_blocked(slot: LayoutSlotId) -> bool {
 /// capture가 새 scrollback 저장 ID를 터미널에도 기록하므로 engine을 변경할 수 있다.
 #[cfg(any(feature = "gui", test))]
 pub(crate) fn save_slot(
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     active_workspace: usize,
     slot: LayoutSlotId,
     presentation: &dyn crate::model::StructurePresentation,
@@ -176,10 +176,10 @@ pub(crate) fn save_slot(
 }
 
 /// 손상 원본 보존과 쓰기를 함께 실행한다. 읽지 못한 슬롯의 보호 검사는 이 함수에 없으므로
-/// 제품 호출은 Core::apply의 SaveLayoutNow 검사를 거쳐야 한다.
+/// 제품 호출은 AppServices::apply의 SaveLayoutNow 검사를 거쳐야 한다.
 #[cfg(any(feature = "gui", test))]
 pub(crate) fn save_slot_in_dir(
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     active_workspace: usize,
     slot: LayoutSlotId,
     dir: &Path,
@@ -275,7 +275,7 @@ fn preserve_unparsable_slot(dir: &Path, slot: LayoutSlotId) -> bool {
 
 #[cfg(any(feature = "gui", test))]
 fn serialize_layout(
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     active_workspace: usize,
     presentation: &dyn crate::model::StructurePresentation,
 ) -> Option<String> {

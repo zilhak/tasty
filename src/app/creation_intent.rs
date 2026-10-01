@@ -1,6 +1,6 @@
 //! Resolve View input once into explicit application targets. No structure or resource is changed.
-use crate::core::engine_access::EngineRef;
-use crate::core::intent::{ConvertSurfaceTarget,DomainIntent};
+use crate::runtime::engine_access::EngineRef;
+use crate::app::command::{ConvertSurfaceTarget,DomainIntent};
 use crate::intent::{ConvertTarget,Intent,IntentOrigin};
 use crate::state::RequestContext;
 

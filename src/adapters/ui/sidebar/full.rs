@@ -1,6 +1,6 @@
 //! 펼친 사이드바의 입력을 만들고 화면 동작을 처리한다.
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::i18n::t;
 use crate::intent::Intent;
 use crate::state::MainViewState;
@@ -28,7 +28,7 @@ pub(super) fn entry_view(
             .attention_count_of_kind(crate::core::AttentionKind::Completion, &surface_ids),
         needs_input_count: engine
             .attention_count_of_kind(crate::core::AttentionKind::NeedsInput, &surface_ids),
-        attached: engine.attach.workspace_holder(ws.id).is_some(),
+        attached: engine.live.occupancy.workspace_holder(ws.id).is_some(),
         is_mirror: ws.mirror,
         is_active: global_idx == active_ws,
         move_source: crate::adapters::ui::move_source::workspace_cue(engine, active_ws)
@@ -223,7 +223,7 @@ pub fn draw_full_sidebar(
                     match target_category {
                         Some(target_cat) if target_cat != src_cat => {
                             state.dispatch_intent(
-                                crate::core::intent::DomainIntent::SetWorkspaceCategory {
+                                crate::app::command::DomainIntent::SetWorkspaceCategory {
                                     workspace_id: engine
                                         .workspace_at(from)
                                         .expect("workspace index is valid")

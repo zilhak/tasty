@@ -1,13 +1,13 @@
 //! 비동기 식별·picker 결과를 GUI 상태에 적용한다.
 
-use crate::core::Core;
-use crate::core::engine_access::EngineMut;
+use crate::app::services::AppServices;
+use crate::runtime::engine_access::EngineMut;
 use crate::file::dispatch::DispatchTarget;
 use crate::file::format::{DetectorId, FileTarget};
 use crate::state::{FileHandlerPickerResult, RequestContext};
 
 pub(crate) fn apply_identify_result(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     target: FileTarget,
@@ -37,7 +37,7 @@ pub(crate) fn apply_identify_result(
         return;
     }
     let handlers = match &detector {
-        Some(d) => engine.file_handler.handlers_for(d),
+        Some(d) => engine.runtime.file_handler.handlers_for(d),
         None => Vec::new(),
     };
     if handlers.is_empty() && dispatch_origin == crate::file::dispatch::FileDispatchOrigin::Agent {
@@ -49,7 +49,7 @@ pub(crate) fn apply_identify_result(
     let target = DispatchTarget::File(target);
     if handlers.is_empty() {
         // 매칭이 없으면 전체 핸들러를 일회성 선택지로 보여준다. detector 연결을 저장하지 않는다.
-        let fallback = engine.file_handler.all_handlers();
+        let fallback = engine.runtime.file_handler.all_handlers();
         crate::file::dispatch::open_picker(
             state,
             engine,
@@ -81,7 +81,7 @@ pub(crate) fn apply_identify_result(
 /// 선택된 핸들러 실행을 요청한다. picker 상태 해제는 호출자가 먼저 처리한다.
 /// 핸들러가 사라진 경우에도 선택 이력을 기록하는 현재 동작이 있다.
 pub(crate) fn apply_file_picker_result(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     target: DispatchTarget,
@@ -99,7 +99,7 @@ pub(crate) fn apply_file_picker_result(
         tracing::warn!("{message}");
         return;
     }
-    let Some(handler) = engine.file_handler.get(&handler_id) else {
+    let Some(handler) = engine.runtime.file_handler.get(&handler_id) else {
         tracing::warn!(handler_id = %handler_id,
             "apply_file_picker_result: handler id from picker no longer in registry");
         state.record_file_handler_pick(&handler_id);
@@ -126,7 +126,7 @@ fn selected_handler_id(result: FileHandlerPickerResult) -> Option<crate::file::h
         FileHandlerPickerResult::Cancelled => None,
         FileHandlerPickerResult::OpenSettings => {
             tracing::warn!(
-                "apply_file_picker_result: OpenSettings should be intercepted by the App layer before reaching Core",
+                "apply_file_picker_result: OpenSettings should be intercepted by the App layer before reaching AppServices",
             );
             None
         }
@@ -144,11 +144,11 @@ pub(super) mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::core::builder::CoreBuilder;
+    use crate::app::services::builder::AppServicesBuilder;
 
-    /// 직접 쓰지 않는 port도 Core 생성에 필요하므로 검사 대역을 주입한다.
+    /// 직접 쓰지 않는 port도 AppServices 생성에 필요하므로 검사 대역을 주입한다.
     pub(in crate::file::dispatch) fn build_test_core()
-    -> (Core, crate::runtime::engine_session::EngineSession) {
+    -> (AppServices, crate::runtime::engine_session::EngineSession) {
         use crate::adapters::test::{
             fake_clock::FakeClock, mem_fs::MemFileSystem, mock_clipboard::MockClipboard,
             mock_process::MockProcessSpawner, tmp_home::TmpHome,
@@ -165,7 +165,7 @@ pub(super) mod tests {
             Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));
         let themes: Arc<dyn tasty_themes::ThemeStorage> = Arc::new(tasty_themes::ThemeStore::new());
 
-        let core = CoreBuilder::new()
+        let core = AppServicesBuilder::new()
             .with_fs(Arc::new(MemFileSystem::new()))
             .with_clock(Arc::new(FakeClock::default()))
             .with_clipboard(Arc::new(MockClipboard::default()))
@@ -179,7 +179,7 @@ pub(super) mod tests {
             .with_preset_store(preset_store)
             .with_settings_storage(Arc::new(tasty_settings::FileSettingsStorage))
             .build()
-            .expect("test Core");
+            .expect("test AppServices");
         (core, engine_session)
     }
 
@@ -188,9 +188,9 @@ pub(super) mod tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let unmatched = DetectorId::new("no-such-detector");
-        assert!(engine.file_handler.handlers_for(&unmatched).is_empty());
+        assert!(engine.runtime.file_handler.handlers_for(&unmatched).is_empty());
         assert!(
-            !engine.file_handler.all_handlers().is_empty(),
+            !engine.runtime.file_handler.all_handlers().is_empty(),
             "host defaults (html-system/directory-system) should give a non-empty fallback pool"
         );
 
@@ -232,7 +232,7 @@ pub(super) mod tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         FileHandlerRegistryPort::install_plugin_handlers(
-            engine.file_handler.as_ref(),
+            engine.runtime.file_handler.as_ref(),
             "com.example.urlprobe",
             &[serde_json::json!({
                 "id": "open",
@@ -242,7 +242,7 @@ pub(super) mod tests {
             })],
         );
         let handler_id = crate::file::handler::HandlerId::new("com.example.urlprobe/open");
-        assert!(engine.file_handler.get(&handler_id).is_some());
+        assert!(engine.runtime.file_handler.get(&handler_id).is_some());
         let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
             Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
         let memory: Arc<Mutex<dyn tasty_memory::MemoryStorage>> =

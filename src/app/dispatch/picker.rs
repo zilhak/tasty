@@ -18,7 +18,7 @@ impl App {
             })
             .collect();
         for id in pending {
-            let core = &mut self.core;
+            let core = &mut self.services;
             let Some((main, mut engine)) = engines_mut!(self).window_pair(id) else {
                 continue;
             };
@@ -35,7 +35,7 @@ impl App {
             main.state.dialogs.file_handler_picker = None;
             // 설정 창 열기는 ActiveEventLoop가 필요해 App에서 처리한다.
             if matches!(result, crate::state::FileHandlerPickerResult::OpenSettings) {
-                self.pending_settings_file_handler_tab = true;
+                self.state.pending_settings_file_handler_tab = true;
                 crate::shortcuts::send_app_event(&self.view.proxy, crate::AppEvent::OpenSettings);
             } else {
                 crate::file::dispatch::apply_file_picker_result(

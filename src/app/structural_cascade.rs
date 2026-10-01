@@ -2,10 +2,11 @@
 //! GUI dispatcher, IPC, 원격 forward가 공유한다. 알림 큐와 화면 계측은 GUI에서만 사용한다.
 
 use crate::app::structure_context::CascadeWindow;
-use crate::core::engine_access::{EngineMut, EngineRef};
-use crate::core::intent::CascadeLevel;
+use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::app::command::CascadeLevel;
 use crate::core::origin::IntentOrigin;
-use crate::core::{Core, CoreState};
+use crate::core::{State};
+use crate::app::services::AppServices;
 
 pub(crate) struct SurfaceCloseCascade {
     pub(crate) cascade_level: CascadeLevel,
@@ -44,10 +45,10 @@ pub(crate) struct SurfaceCloseCascade {
 impl SurfaceCloseCascade {
     /// 성공한 SurfaceClosed의 후속 처리 입력. 실제 정리 대상은 cleanup_targets로 받는다.
     pub(crate) fn from_surface_closed(
-        event: crate::core::intent::CoreEvent,
+        event: crate::app::command::CoreEvent,
         is_user_close: bool,
     ) -> Option<Self> {
-        let crate::core::intent::CoreEvent::SurfaceClosed {
+        let crate::app::command::CoreEvent::SurfaceClosed {
             surface_id: _,
             closed,
             cascade_level,
@@ -79,10 +80,10 @@ impl SurfaceCloseCascade {
     /// 이동하는 A는 살려 두고 교체된 B만 정리한다. 닫힌 구조 정보는 A의 이전 위치를 나타낸다.
     /// 다른 이벤트나 moved=false이면 None이다.
     pub(crate) fn from_move_surface_applied(
-        event: crate::core::intent::CoreEvent,
+        event: crate::app::command::CoreEvent,
         is_user_close: bool,
     ) -> Option<Self> {
-        let crate::core::intent::CoreEvent::MoveSurfaceApplied {
+        let crate::app::command::CoreEvent::MoveSurfaceApplied {
             moved,
             b_cleanup,
             cascade_level,
@@ -114,10 +115,10 @@ impl SurfaceCloseCascade {
     /// 다른 이벤트나 moved=false이면 None이다.
     #[cfg(feature = "gui")]
     pub(crate) fn from_container_move_applied(
-        event: crate::core::intent::CoreEvent,
+        event: crate::app::command::CoreEvent,
         is_user_close: bool,
     ) -> Option<Self> {
-        let crate::core::intent::CoreEvent::ContainerMoveApplied {
+        let crate::app::command::CoreEvent::ContainerMoveApplied {
             moved,
             cleanup_targets,
             cascade_level,
@@ -183,7 +184,7 @@ pub(crate) struct PaneSplitCascade {
 /// surface 자원을 정리하고 구조별 알림을 등록한다. 삭제 위치에 맞춰 활성 인덱스를 보정해야
 /// 앞쪽 workspace가 빠져도 다른 workspace로 선택이 옮겨가지 않는다.
 pub(crate) fn cascade_surface_closed(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut dyn CascadeWindow,
     engine: &mut EngineMut<'_>,
     c: SurfaceCloseCascade,
@@ -300,7 +301,7 @@ fn enqueue_closed_pane_events(state: &mut dyn CascadeWindow, closed_pane_ids: &[
 
 /// 모든 workspace가 사라졌으면 기본 workspace 생성을 시도한다. 실패는 로그로 남긴다.
 fn recreate_workspace_if_now_empty(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut dyn CascadeWindow,
     engine: &mut EngineMut<'_>,
     workspaces_now_empty: bool,

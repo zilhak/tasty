@@ -1,7 +1,7 @@
 //! Tab bar actions → application and core state.
 
 use super::{PaneTabBarView, TabBarAction, compute_drop_index};
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::model::LogicalPx;
 use crate::state::MainViewState;
 use egui::emath::GuiRounding as _;

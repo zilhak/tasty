@@ -2,7 +2,7 @@
 //! stale은 출력용 추정값이며 정지·긴 추론·무출력 명령을 구별하지 못한다.
 //! confidence는 분류 이름이다. surface 부재나 전경 셸 관측만으로 프로세스 종료를 증명하지 않는다.
 
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::collections::HashSet;
 use std::time::Duration;
 
@@ -186,7 +186,7 @@ impl EngineRef<'_> {
             hook_silence: self
                 .runtime
                 .child_terminals
-                .hook_silence(child_surface, crate::core::child_terminal::now_epoch_ms()),
+                .hook_silence(child_surface, crate::runtime::child_terminal::now_epoch_ms()),
         }
     }
 

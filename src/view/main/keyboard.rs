@@ -1,9 +1,9 @@
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use super::MainView;
-use crate::core::intent::{DomainIntent, SendPayload};
+use crate::app::command::{DomainIntent, SendPayload};
 use crate::state::FocusedSurfaceType;
 use crate::view::ui::View;
 
@@ -137,9 +137,9 @@ impl MainView {
 
     /// 수식키를 누른 동안 IME가 logical_key를 바꿔도 physical key에서 US 문자를 찾는다.
     fn shortcut_lookup_key(&self, event: &winit::event::KeyEvent) -> Key {
-        if self.base.modifiers.control_key()
-            || self.base.modifiers.super_key()
-            || self.base.modifiers.alt_key()
+        if self.base.state.modifiers.control_key()
+            || self.base.state.modifiers.super_key()
+            || self.base.state.modifiers.alt_key()
         {
             crate::shortcuts::physical_key_to_logical(&event.physical_key)
                 .unwrap_or_else(|| event.logical_key.clone())
@@ -161,7 +161,7 @@ impl MainView {
             self.state.fullscreen_stage_active(),
             &engine.settings.keybindings.fullscreen_stage_exit,
             &key,
-            self.base.modifiers,
+            self.base.state.modifiers,
         );
         match decision {
             StageKeyDecision::PassThrough => false,
@@ -250,7 +250,7 @@ impl MainView {
         event: &winit::event::KeyEvent,
     ) -> bool {
         let shortcut_key = self.shortcut_lookup_key(event);
-        if self.handle_shortcut(engine, &shortcut_key, self.base.modifiers) {
+        if self.handle_shortcut(engine, &shortcut_key, self.base.state.modifiers) {
             self.after_shortcut_consumed(engine);
             return true;
         }
@@ -282,13 +282,13 @@ impl MainView {
         engine: &mut EngineMut<'_>,
         event: &winit::event::KeyEvent,
     ) -> bool {
-        let vi_key = if self.base.modifiers.control_key() {
+        let vi_key = if self.base.state.modifiers.control_key() {
             crate::shortcuts::physical_key_to_logical(&event.physical_key)
                 .unwrap_or_else(|| event.logical_key.clone())
         } else {
             event.logical_key.clone()
         };
-        if self.try_handle_vi_key(engine, &vi_key, self.base.modifiers) {
+        if self.try_handle_vi_key(engine, &vi_key, self.base.state.modifiers) {
             self.mark_dirty();
             return true;
         }
@@ -346,7 +346,7 @@ impl MainView {
                 rs,
                 &terminal_key,
                 text_for_terminal,
-                self.base.modifiers,
+                self.base.state.modifiers,
             );
 
             for payload in outcome.payloads {
@@ -362,14 +362,14 @@ impl MainView {
             self.apply_keyboard_scroll_action(engine, outcome.scroll_action);
 
             if outcome.dirty {
-                self.base.dirty = true;
+                self.base.state.dirty = true;
             }
 
             if outcome.sent {
                 self.ime_cursor_advance = 0;
                 if self.text_selection.is_some() {
                     self.text_selection = None;
-                    self.base.dirty = true;
+                    self.base.state.dirty = true;
                 }
             }
         }
@@ -381,7 +381,7 @@ impl MainView {
         self.egui_mesh_push_key(surface_id, event);
 
         if let Some(text) = &event.text {
-            let is_cmd = self.base.modifiers.control_key() || self.base.modifiers.super_key();
+            let is_cmd = self.base.state.modifiers.control_key() || self.base.state.modifiers.super_key();
             if should_forward_text(text.as_str(), is_cmd, self.ime_active) {
                 self.egui_mesh_push_text(surface_id, text.as_str());
             }
@@ -395,7 +395,7 @@ impl MainView {
         self.attach_mesh_push_key(surface_id, event);
 
         if let Some(text) = &event.text {
-            let is_cmd = self.base.modifiers.control_key() || self.base.modifiers.super_key();
+            let is_cmd = self.base.state.modifiers.control_key() || self.base.state.modifiers.super_key();
             if should_forward_text(text.as_str(), is_cmd, self.ime_active) {
                 self.attach_mesh_push_text(surface_id, text.as_str());
             }

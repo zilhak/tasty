@@ -46,7 +46,7 @@ pub fn handle_query(
     };
     let request_id = crate::core::next_git_query_request_id();
     engine
-        .pending_git_query_forward
+        .remote.pending_git_query_forward
         .push(PendingGitQueryForward {
             local_surface_id: req.local_surface_id,
             request_id,

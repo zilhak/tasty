@@ -21,6 +21,14 @@ struct CategoryReservation {
     name: String,
 }
 
+/// Live View continuation, never serialized with a structural command or replayed response.
+#[derive(Clone)]
+pub(crate) struct IntentViewContinuation {
+    pub(crate) view:std::sync::Weak<()>,
+    pub(crate) selection:std::sync::Weak<()>,
+    pub(crate) activate_surface:Option<u32>,
+}
+
 enum Reply {
     #[cfg(feature = "gui")]
     Divider {
@@ -41,12 +49,14 @@ enum Reply {
         binding: std::sync::Weak<()>,
     },
     Intent {
-        engine: EngineId,
-        origin: crate::intent::IntentOrigin,
+        engine:EngineId,
+        origin:crate::intent::IntentOrigin,
+        view:Option<IntentViewContinuation>,
     },
 }
 
 struct IntentResult {
+    view:Option<IntentViewContinuation>,
     engine: EngineId,
     origin: crate::intent::IntentOrigin,
     response: JsonRpcResponse,
@@ -135,7 +145,8 @@ impl Commands {
             } => self
                 .completed_plugins
                 .push((plugin_id, call_id, binding, response)),
-            Reply::Intent { engine, origin } => self.completed_intents.push(IntentResult {
+            Reply::Intent { engine, origin,view } => self.completed_intents.push(IntentResult {
+                view,
                 engine,
                 origin,
                 response,
@@ -616,7 +627,7 @@ impl JournalApplication {
                 ));
             }
         };
-        let pending = self
+        let mut pending = self
             .commands
             .pending
             .remove(&ticket)
@@ -640,6 +651,11 @@ impl JournalApplication {
             && !completed.idempotent_replay
             && let Some(created) = pending.created
         {
+            if created.activate
+                && let Reply::Intent {view:Some(view),origin,..}=&mut pending.reply
+                && origin.is_user() {
+                view.activate_surface=Some(created.surface);
+            }
             created.notify(sessions, &mut self.commands.completed_host_events);
         }
         self.commands.deliver(pending.reply, completed);
@@ -870,6 +886,22 @@ impl crate::app::App {
             }
         }
         for result in std::mem::take(&mut self.journal.commands.completed_intents) {
+            if result.response.error.is_none() && result.origin.is_user()
+                && let Some(continuation)=result.view
+                && let Some(surface)=continuation.activate_surface
+                && let Some(context)=self.engines_mut().resolve(result.engine)
+                && context.view.as_ref().is_some_and(|view|view.state.matches_identity(&continuation.view))
+                && context.state.navigation.matches_generation(&continuation.selection)
+                && let Some((index,pane_id))=context.engine.find_workspace_index_for_surface(surface)
+                && let Some(workspace)=context.engine.workspace_at(index)
+                && let Some(pane)=workspace.pane_layout().find_pane(pane_id)
+                && let Some(tab)=pane.tabs.iter().find(|tab|tab.contains_surface(surface)) {
+                context.state.navigation.select_workspace(&context.engine.workspaces(),workspace.id);
+                context.state.navigation.select_pane(workspace,pane.id);
+                context.state.navigation.select_tab(pane,tab.id);
+                context.state.navigation.select_surface(tab,surface);
+                if let Some(view)=context.view {view.mark_dirty();}
+            }
             if let Some(error) = result.response.error
                 && let Some(context) = self.engines_mut().resolve(result.engine)
             {

@@ -1,6 +1,6 @@
 //! shortcuts 모듈 단위 테스트 — binding parsing/matching + zoom 단축키.
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey, SmolStr};
 
 use super::physical_key_to_logical;
@@ -393,12 +393,12 @@ fn zoom_out_clamps_at_6px() {
 // 사용자 설정과 무관하게 기본 quick-switch 설정을 사용한다.
 
 fn add_test_workspace(state: &mut crate::state::MainViewState, engine: &mut EngineMut<'_>) {
-    let event = crate::core::apply_create_workspace_inner(
+    let event = crate::app::services::apply_create_workspace_inner(
         engine,
-        crate::core::WorkspaceCreationParams::terminal(),
+        crate::app::services::WorkspaceCreationParams::terminal(),
     )
     .unwrap();
-    let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
+    let crate::app::command::CoreEvent::WorkspaceCreated { index, .. } = event else {
         panic!("apply_create_workspace_inner did not return WorkspaceCreated");
     };
     state.set_active_workspace_index(engine, index);

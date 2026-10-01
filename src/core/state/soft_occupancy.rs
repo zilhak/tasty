@@ -4,7 +4,7 @@
 use super::CoreState;
 use crate::core::attach::OccupancyError;
 
-impl CoreState {
+impl crate::runtime::engine_access::EngineMut<'_> {
     /// 같은 parent는 라벨을 갱신하고 다른 점유자가 있으면 오류다. 대상 ID는 호출자가 지정한다.
     pub fn occupy_soft(
         &mut self,
@@ -12,7 +12,7 @@ impl CoreState {
         parent: u32,
         label: Option<String>,
     ) -> Result<(), OccupancyError> {
-        self.attach.acquire_soft(surface_id, parent, label)
+        self.live.occupancy.acquire_soft(surface_id, parent, label)
     }
 
     /// 기록된 parent만 해제할 수 있다. 점유 부재와 parent 불일치는 오류로 구분한다.
@@ -21,7 +21,7 @@ impl CoreState {
         surface_id: u32,
         parent: u32,
     ) -> Result<(), OccupancyError> {
-        self.attach.release_soft(surface_id, parent)
+        self.live.occupancy.release_soft(surface_id, parent)
     }
 
     /// 로컬 사용자 강제 해제. workspace의 hard 점유이면 멤버를 함께 해제한다.
@@ -29,20 +29,20 @@ impl CoreState {
     /// 사용자 조작 전용이며 에이전트 경로(terminal.kill 등)는 hard 점유를 풀지 않는다.
     #[cfg(any(feature = "gui", test))]
     pub fn release_occupancy(&mut self, surface_id: u32) -> bool {
-        if let Some(ws) = self.attach.workspace_of_surface(surface_id) {
-            return self.attach.force_detach_workspace(ws).is_some();
+        if let Some(ws) = self.live.occupancy.workspace_of_surface(surface_id) {
+            return self.force_detach_workspace(ws).is_some();
         }
-        if self.attach.force_detach(surface_id).is_some() {
+        if self.force_detach(surface_id).is_some() {
             return true;
         }
-        self.attach.clear_soft(surface_id)
+        self.live.occupancy.clear_soft(surface_id)
     }
 
     /// 사용자 포커스 때 parent가 트리에 없는 soft 점유를 정리한다.
     /// 연결 EOF로 수명을 알 수 없는 점유이므로 이 시점에 확인한다.
     #[cfg(any(feature = "gui", test))]
     pub fn reconcile_soft_occupancy_on_focus(&mut self, surface_id: u32) {
-        let Some(occ) = self.attach.occupancy_of(surface_id) else {
+        let Some(occ) = self.live.occupancy.occupancy_of(surface_id) else {
             return;
         };
         if occ.tier != crate::core::attach::OccupancyTier::Soft {
@@ -51,7 +51,7 @@ impl CoreState {
         if let Some(parent) = occ.parent
             && self.find_surface_by_id(parent).is_none()
         {
-            self.attach.clear_soft(surface_id);
+            self.live.occupancy.clear_soft(surface_id);
         }
     }
 }
@@ -69,8 +69,8 @@ mod tests {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
         e.occupy_soft(5000, 99, Some("agent".into())).unwrap();
-        assert!(!e.attach.is_hard_occupied(5000));
-        let occ = e.attach.occupancy_of(5000).unwrap();
+        assert!(!e.live.occupancy.is_hard_occupied(5000));
+        let occ = e.live.occupancy.occupancy_of(5000).unwrap();
         assert_eq!(occ.parent, Some(99));
     }
 
@@ -80,9 +80,9 @@ mod tests {
         let mut e = e_session.borrow_mut();
         e.occupy_soft(5000, 99, None).unwrap();
         assert!(e.release_soft_occupancy(5000, 77).is_err());
-        assert!(e.attach.occupancy_of(5000).is_some());
+        assert!(e.live.occupancy.occupancy_of(5000).is_some());
         e.release_soft_occupancy(5000, 99).unwrap();
-        assert!(e.attach.occupancy_of(5000).is_none());
+        assert!(e.live.occupancy.occupancy_of(5000).is_none());
     }
 
     #[test]
@@ -91,16 +91,16 @@ mod tests {
         let mut e = e_session.borrow_mut();
         e.occupy_soft(5000, 99, None).unwrap();
         assert!(e.release_occupancy(5000)); // 로컬 force-detach tier 공용
-        assert!(e.attach.occupancy_of(5000).is_none());
+        assert!(e.live.occupancy.occupancy_of(5000).is_none());
     }
 
     #[test]
     fn release_occupancy_clears_hard() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        e.attach.acquire(5000, 1).unwrap();
+        e.live.occupancy.acquire(5000, 1).unwrap();
         assert!(e.release_occupancy(5000));
-        assert!(!e.attach.is_hard_occupied(5000));
+        assert!(!e.live.occupancy.is_hard_occupied(5000));
     }
 
     #[test]
@@ -109,7 +109,7 @@ mod tests {
         let mut e = e_session.borrow_mut();
         e.occupy_soft(5000, 99999, None).unwrap();
         e.reconcile_soft_occupancy_on_focus(5000);
-        assert!(e.attach.occupancy_of(5000).is_none()); // 지연 청소.
+        assert!(e.live.occupancy.occupancy_of(5000).is_none()); // 지연 청소.
     }
 
     #[test]
@@ -122,15 +122,15 @@ mod tests {
             .all_surface_ids()[0]; // 기본 워크스페이스 live surface
         e.occupy_soft(5000, parent, None).unwrap();
         e.reconcile_soft_occupancy_on_focus(5000);
-        assert!(e.attach.occupancy_of(5000).is_some()); // parent 생존 → 유지.
+        assert!(e.live.occupancy.occupancy_of(5000).is_some()); // parent 생존 → 유지.
     }
 
     #[test]
     fn focus_cleanup_ignores_hard_occupancy() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        e.attach.acquire(5000, 1).unwrap();
+        e.live.occupancy.acquire(5000, 1).unwrap();
         e.reconcile_soft_occupancy_on_focus(5000);
-        assert!(e.attach.is_hard_occupied(5000)); // hard 는 이 경로 무관 — 유지.
+        assert!(e.live.occupancy.is_hard_occupied(5000)); // hard 는 이 경로 무관 — 유지.
     }
 }

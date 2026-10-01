@@ -4,16 +4,16 @@
 
 mod spawn_transaction;
 
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use serde_json::{Value, json};
 
-use crate::core::child_terminal::ChildEntry;
+use crate::runtime::child_terminal::ChildEntry;
 use crate::core::state::child_liveness::ChildLiveness;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::{surface, tab};
 
-type Core = crate::core::Core;
+type AppServices = crate::app::services::AppServices;
 type CoreState = crate::core::CoreState;
 
 use super::params::{optional_u32, require_u32};
@@ -33,7 +33,7 @@ fn require_str(params: &Value, key: &str, id: &Value) -> Result<String, JsonRpcR
 /// child는 surface ID가 아니라 부모별 index다. 잘못 지정했으면 올바른 인자를 안내한다.
 /// 두 번호가 겹칠 수 있으므로 surface ID로 자동 해석하지 않는다.
 fn child_not_found_message(
-    reg: &crate::core::child_terminal::ChildTerminalRegistry,
+    reg: &crate::runtime::child_terminal::ChildTerminalRegistry,
     parent: u32,
     given: u32,
 ) -> String {
@@ -163,7 +163,7 @@ fn send_text_to_surface_with_ack(
     surface_id: u32,
     text: &str,
 ) -> Result<tasty_terminal::WriteAck, SendTextError> {
-    if engine.attach.is_hard_occupied(surface_id) {
+    if engine.live.occupancy.is_hard_occupied(surface_id) {
         return Err(SendTextError::HardOccupied);
     }
     engine.ensure_surface_initialized(surface_id);
@@ -177,7 +177,7 @@ fn send_text_to_surface_with_ack(
 /// CR도 surface.send를 거쳐 점유 검사를 받는다. ack 대기 만료 뒤에도 제출을 시도한다.
 fn send_body_then_submit(
     engine: &mut EngineMut<'_>,
-    core: &Core,
+    core: &AppServices,
     id: &Value,
     surface_id: u32,
     body: String,
@@ -251,7 +251,7 @@ fn first_pane_in_workspace(engine: &CoreState, ws_id: u32) -> Option<u32> {
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn handle_spawn(
-    core: &mut Core,
+    core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut EngineMut<'_>,
     id: Value,
@@ -365,7 +365,7 @@ pub(crate) fn handle_spawn(
 }
 
 pub(crate) fn handle_tell(
-    core: &mut Core,
+    core: &mut AppServices,
     engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
@@ -392,7 +392,7 @@ pub(crate) fn handle_tell(
 /// 읽지 않도록 입력을 보낸 쪽에서 바로 갱신한다. 상태가 바뀌면 호출자가 저장한다.
 /// 미등록 surface에는 잘못된 상태 보고 기록을 새로 만들지 않는다.
 fn clear_idle_for_new_prompt(
-    registry: &mut crate::core::child_terminal::ChildTerminalRegistry,
+    registry: &mut crate::runtime::child_terminal::ChildTerminalRegistry,
     surface_id: u32,
 ) -> bool {
     if registry.parent_of_child(surface_id).is_none() {
@@ -486,7 +486,7 @@ pub(crate) fn handle_parent(
 }
 
 pub(crate) fn handle_kill(
-    core: &mut Core,
+    core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut EngineMut<'_>,
     id: Value,
@@ -651,7 +651,7 @@ pub(crate) fn handle_adopt(
         );
     }
     // soft 점유 함수는 hard 점유를 검사하지 않으므로 여기서 먼저 거절한다.
-    if engine.attach.is_hard_occupied(target) {
+    if engine.live.occupancy.is_hard_occupied(target) {
         return JsonRpcResponse::invalid_params(
             id,
             format!("surface {target} is hard-occupied (remote attach) — cannot adopt"),
@@ -664,7 +664,7 @@ pub(crate) fn handle_adopt(
     let label = nickname.clone().or_else(|| role.clone());
     // Check the existing owner without changing its label or releasing its lock
     // if the following relationship commit fails.
-    if let Some(occupancy) = engine.attach.occupancy_of(target)
+    if let Some(occupancy) = engine.live.occupancy.occupancy_of(target)
         && occupancy.parent != Some(parent)
     {
         return JsonRpcResponse::error(id, -32020, "occupy_soft failed: another owner");
@@ -695,7 +695,7 @@ pub(crate) fn handle_adopt(
 }
 
 pub(crate) fn handle_respawn(
-    core: &mut Core,
+    core: &mut AppServices,
     engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
@@ -792,7 +792,7 @@ pub(crate) fn handle_respawn(
 /// 본문 전송 실패는 해당 자식만 건너뛰며, 성공한 자식의 상태만 갱신한다.
 #[allow(clippy::too_many_arguments)]
 fn send_broadcast_to_child(
-    core: &mut Core,
+    core: &mut AppServices,
     engine: &mut EngineMut<'_>,
     id: &Value,
     sid: u32,
@@ -820,7 +820,7 @@ fn send_broadcast_to_child(
 }
 
 pub(crate) fn handle_broadcast(
-    core: &mut Core,
+    core: &mut AppServices,
     engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
@@ -949,7 +949,7 @@ mod tests {
 
     #[test]
     fn child_not_found_points_at_index_when_given_a_surface_id() {
-        let mut reg = crate::core::child_terminal::ChildTerminalRegistry::default();
+        let mut reg = crate::runtime::child_terminal::ChildTerminalRegistry::default();
         reg.register_child(3157, child(3204, 31));
         let msg = child_not_found_message(&reg, 3157, 3204);
         assert!(msg.contains("child_surface_id, not a child index"), "{msg}");
@@ -958,7 +958,7 @@ mod tests {
 
     #[test]
     fn child_not_found_points_at_other_parent() {
-        let mut reg = crate::core::child_terminal::ChildTerminalRegistry::default();
+        let mut reg = crate::runtime::child_terminal::ChildTerminalRegistry::default();
         reg.register_child(9000, child(3204, 4));
         let msg = child_not_found_message(&reg, 3157, 3204);
         assert!(msg.contains("under a different parent"), "{msg}");
@@ -967,7 +967,7 @@ mod tests {
 
     #[test]
     fn child_not_found_lists_valid_indices() {
-        let mut reg = crate::core::child_terminal::ChildTerminalRegistry::default();
+        let mut reg = crate::runtime::child_terminal::ChildTerminalRegistry::default();
         for i in 0..3 {
             reg.register_child(3157, child(100 + i, i));
         }
@@ -978,14 +978,14 @@ mod tests {
 
     #[test]
     fn child_not_found_reports_empty_parent() {
-        let reg = crate::core::child_terminal::ChildTerminalRegistry::default();
+        let reg = crate::runtime::child_terminal::ChildTerminalRegistry::default();
         let msg = child_not_found_message(&reg, 3157, 0);
         assert!(msg.contains("no children registered"), "{msg}");
     }
 
     #[test]
     fn tell_clears_idle_flag_on_target_child() {
-        let mut reg = crate::core::child_terminal::ChildTerminalRegistry::default();
+        let mut reg = crate::runtime::child_terminal::ChildTerminalRegistry::default();
         reg.register_child(10, child(50, 0));
         reg.set_idle(50, true);
         assert_eq!(reg.state_of(50), "idle");
@@ -996,7 +996,7 @@ mod tests {
 
     #[test]
     fn tell_clears_needs_input_too() {
-        let mut reg = crate::core::child_terminal::ChildTerminalRegistry::default();
+        let mut reg = crate::runtime::child_terminal::ChildTerminalRegistry::default();
         reg.register_child(10, child(50, 0));
         reg.set_needs_input(50, true);
         assert_eq!(reg.state_of(50), "needs_input");
@@ -1007,7 +1007,7 @@ mod tests {
 
     #[test]
     fn tell_does_not_touch_registry_for_non_child_surface() {
-        let mut reg = crate::core::child_terminal::ChildTerminalRegistry::default();
+        let mut reg = crate::runtime::child_terminal::ChildTerminalRegistry::default();
         assert!(!clear_idle_for_new_prompt(&mut reg, 777));
         assert_eq!(reg.state_of(777), "active");
         assert_eq!(reg.last_state_report_at(777), None);
@@ -1050,10 +1050,10 @@ mod tests {
             .child_terminals
             .register_child(parent, child(c, idx));
         e.occupy_soft(c, parent, Some("worker".into())).unwrap();
-        let occ = e.attach.occupancy_of(c).expect("soft occupancy present");
+        let occ = e.live.occupancy.occupancy_of(c).expect("soft occupancy present");
         assert_eq!(occ.tier, OccupancyTier::Soft);
         assert_eq!(occ.parent, Some(parent));
-        assert!(!e.attach.is_hard_occupied(c));
+        assert!(!e.live.occupancy.is_hard_occupied(c));
 
         assert!(
             e.runtime
@@ -1062,7 +1062,7 @@ mod tests {
                 .is_some()
         );
         e.release_soft_occupancy(c, parent).unwrap();
-        assert!(e.attach.occupancy_of(c).is_none());
+        assert!(e.live.occupancy.occupancy_of(c).is_none());
     }
 
     #[test]
@@ -1084,7 +1084,7 @@ mod tests {
         assert!(resp.error.is_none());
 
         let occ = e
-            .attach
+            .live.occupancy
             .occupancy_of(target)
             .expect("soft occupancy present");
         assert_eq!(occ.tier, OccupancyTier::Soft);
@@ -1161,7 +1161,7 @@ mod tests {
             .all_surface_ids()[0];
         let target = 6103u32;
         add_extra_surface(&mut e, target);
-        e.attach
+        e.live.occupancy
             .acquire(target, /* hard occupancy client id */ 1)
             .unwrap();
 
@@ -1172,7 +1172,7 @@ mod tests {
         );
         assert!(resp.error.is_some());
         assert!(e.runtime.child_terminals.parent_of_child(target).is_none());
-        assert!(e.attach.is_hard_occupied(target)); // 기존 hard 점유는 건드리지 않음
+        assert!(e.live.occupancy.is_hard_occupied(target)); // 기존 hard 점유는 건드리지 않음
     }
 
     #[test]
@@ -1200,7 +1200,7 @@ mod tests {
         assert!(resp.error.is_none());
 
         assert!(e.runtime.child_terminals.find_child(parent, idx).is_none());
-        assert!(e.attach.occupancy_of(c).is_none());
+        assert!(e.live.occupancy.occupancy_of(c).is_none());
     }
 
     #[test]
@@ -1235,7 +1235,7 @@ mod tests {
             .register_child(parent, child(c, idx));
         e.occupy_soft(c, parent, None).unwrap();
         let other = 5703u32;
-        e.attach.acquire(other, 1).unwrap();
+        e.live.occupancy.acquire(other, 1).unwrap();
 
         let resp = handle_release(
             &mut e,
@@ -1243,8 +1243,8 @@ mod tests {
             &json!({ "surface": parent, "child": idx }),
         );
         assert!(resp.error.is_none());
-        assert!(e.attach.occupancy_of(c).is_none()); // soft 는 정상 해제
-        assert!(e.attach.is_hard_occupied(other)); // 무관한 hard 점유는 그대로
+        assert!(e.live.occupancy.occupancy_of(c).is_none()); // soft 는 정상 해제
+        assert!(e.live.occupancy.is_hard_occupied(other)); // 무관한 hard 점유는 그대로
     }
 
     // 이 시험은 단일 engine의 부모 선택만 확인한다. 창 간 모호성은 App::find_request_owner에서 거절한다.
@@ -1296,7 +1296,7 @@ mod tests {
         let mut e = e_session.borrow_mut();
         let target = 5801u32;
         add_extra_surface(&mut e, target);
-        e.attach.acquire(target, 1).unwrap();
+        e.live.occupancy.acquire(target, 1).unwrap();
 
         let err = send_text_to_surface_with_ack(&mut e, target, "hi")
             .err()

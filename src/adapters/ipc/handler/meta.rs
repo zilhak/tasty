@@ -1,12 +1,12 @@
 use serde_json::json;
 
-use crate::core::Core;
+use crate::app::services::AppServices;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
 
 pub fn handle_surface_meta_set(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -36,7 +36,7 @@ pub fn handle_surface_meta_set(
 }
 
 pub fn handle_surface_meta_get(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -55,7 +55,7 @@ pub fn handle_surface_meta_get(
 }
 
 pub fn handle_surface_meta_unset(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -81,7 +81,7 @@ pub fn handle_surface_meta_unset(
 }
 
 pub fn handle_surface_meta_list(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,

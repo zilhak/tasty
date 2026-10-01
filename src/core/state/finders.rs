@@ -1,10 +1,10 @@
 //! 포커스와 무관하게 모든 workspace에서 ID의 소속과 객체를 찾는다.
 
 use super::CoreState;
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 
 impl CoreState {
-    pub fn find_surface_by_id(&self, surface_id: u32) -> Option<&dyn crate::model::Surface> {
+    pub fn find_surface_by_id(&self, surface_id: u32) -> Option<&crate::model::SurfaceDescriptor> {
         for workspace in &self.workspaces() {
             for pid in workspace.pane_layout().all_pane_ids() {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
@@ -20,6 +20,11 @@ impl CoreState {
             }
         }
         None
+    }
+
+    pub(crate) fn find_surface_descriptor_mut(&mut self,id:u32)->Option<&mut crate::model::SurfaceDescriptor> {
+        let pane=self.find_pane_for_surface(id)?;
+        self.find_pane_by_id_mut(pane)?.tabs.iter_mut().find_map(|tab|tab.layout_opt.as_mut().and_then(|layout|layout.find_leaf_mut(id)))
     }
 
     pub fn live_surface_ids(&self) -> std::collections::HashSet<u32> {
@@ -133,9 +138,9 @@ impl CoreState {
     /// 로컬 구조 변경을 막을 mirror workspace를 찾는다. 비구조 요청이나 없는 대상은 None이다.
     pub(crate) fn mirror_workspace_index_for_structural(
         &self,
-        intent: &crate::core::intent::DomainIntent,
+        intent: &crate::app::command::DomainIntent,
     ) -> Option<usize> {
-        use crate::core::intent::DomainIntent as D;
+        use crate::app::command::DomainIntent as D;
         let ws_idx = match intent {
             D::SplitSurface {
                 target_surface_id: sid,

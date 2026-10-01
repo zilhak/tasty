@@ -88,7 +88,7 @@ pub mod session;
 pub(crate) use checked::check_without_engine;
 pub(crate) use checked::{CheckedRequest, check_request};
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use std::borrow::Cow;
 
 use serde_json::json;
@@ -113,7 +113,7 @@ use crate::state::RequestContext;
 /// 창 자체를 조작하는 GUI·debug 핸들러만 RequestContext를 받는다(ADR-0002).
 #[cfg(test)]
 pub fn handle_with_caller(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     request: &JsonRpcRequest,
@@ -128,7 +128,7 @@ pub fn handle_with_caller(
 /// 검사한 요청을 실행하고 소요 시간을 기록한다. 예산과 사용량은 다시 집계하지 않는다.
 /// RequestContext는 EntryWindow로 감싸고 요청의 intent를 해당 창 큐로 전달한다(ADR-0002).
 pub(crate) fn handle_checked_request(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     checked: &CheckedRequest<'_>,
@@ -147,7 +147,7 @@ pub(crate) fn handle_checked_request(
 
 /// 조기 반환도 계측되도록 실행 시간은 이 함수 밖에서 기록한다.
 fn route_checked_request(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     window: &mut entry_window::EntryWindow<'_>,
     engine: &mut EngineMut<'_>,
     checked: &CheckedRequest<'_>,
@@ -170,7 +170,7 @@ fn route_checked_request(
 
 /// 모든 반환값을 기록할 수 있도록 멱등 저장소 처리는 이 함수 밖에 둔다.
 fn dispatch_routed(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     window: &mut entry_window::EntryWindow<'_>,
     engine: &mut EngineMut<'_>,
     caller: &CallerContext,
@@ -236,7 +236,7 @@ fn canonicalize_and_route(request: &JsonRpcRequest) -> (&str, Cow<'_, JsonRpcReq
 /// 권한 부족을 감사 기록과 오류로 반환한다.
 /// Agent의 권한 부족은 공유 approval store에 승인 요청도 만든다.
 pub(crate) fn check_permission_gate(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     window: &mut dyn IpcWindow,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
@@ -291,7 +291,7 @@ pub(crate) fn check_permission_gate(
 /// Pause·RequireApproval cap이 적용된 agent를 차단한다.
 /// Local은 제외하므로 telemetry.cap.reset으로 해제할 수 있다.
 pub(crate) fn check_cap_gate(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     canonical: &str,
@@ -322,7 +322,7 @@ pub(crate) fn check_cap_gate(
 /// ipc_calls 한도 초과를 -32010과 Deny로 반환한다. 복구 메서드는 제외한다.
 /// 거절된 호출은 ipc_calls 대신 RateLimit.throttled_count에 집계한다.
 pub(crate) fn check_rate_limit_gate(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     canonical: &str,
@@ -362,7 +362,7 @@ pub(crate) fn check_rate_limit_gate(
 /// 허용된 비-host 호출을 집계한다. telemetry 자체 호출은 재귀 집계를 막기 위해 제외한다.
 /// Allow 감사 기록의 보존 여부는 audit 모듈이 결정한다(ADR-0009).
 fn record_telemetry_and_audit(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     window: &mut dyn IpcWindow,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
@@ -413,7 +413,7 @@ fn should_rate_limit(caller: &CallerContext, method: &str) -> bool {
 /// Agent의 자체 보고는 telemetry.record에서 별도로 처리한다.
 #[cfg(feature = "gui")]
 pub fn record_plugin_rss_samples(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     window: &mut dyn IpcWindow,
     engine: &mut crate::core::CoreState,
     samples: &[(String, u64)],
@@ -435,7 +435,7 @@ pub fn record_plugin_rss_samples(
 /// 대상이 없거나 파라미터가 잘못되면 실제 핸들러가 오류를 반환하도록 넘긴다.
 /// 대상을 생략한 preset.apply는 적용 코드와 같게 이 창의 활성 workspace를 대상으로 본다.
 fn hard_occupied_structural_guard(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     engine: &crate::core::CoreState,
     active_ws_idx: usize,
     method: &str,
@@ -509,7 +509,7 @@ fn hard_occupied_structural_guard(
         _ => return None,
     };
     let ws_id = engine.workspace_at(ws_idx)?.id;
-    if engine.attach.workspace_holder(ws_id).is_some() {
+    if engine.live.occupancy.workspace_holder(ws_id).is_some() {
         return Some(hard_occupied_denial(ws_id, id));
     }
     None
@@ -551,7 +551,7 @@ fn spawn_target_guard(
             ),
         ));
     }
-    if engine.attach.workspace_holder(ws_id).is_some() {
+    if engine.live.occupancy.workspace_holder(ws_id).is_some() {
         return Some(hard_occupied_denial(ws_id, id));
     }
     None
@@ -573,7 +573,7 @@ fn intent_origin_of(caller: &CallerContext) -> crate::core::origin::IntentOrigin
 }
 
 fn route_engine_handler(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     window: &mut dyn IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut EngineMut<'_>,
@@ -1162,7 +1162,7 @@ pub(super) fn require_surface_id(
         Ok(v) => v,
         Err(e) => return Err(e),
     };
-    if !crate::core::terminal_store::is_surface_id_space(raw) {
+    if !crate::runtime::terminal_store::is_surface_id_space(raw) {
         return Err(JsonRpcResponse::invalid_params(
             id.clone(),
             format!("'surface_id' {raw} is inside the headless PTY id space"),
@@ -1194,7 +1194,7 @@ fn surface_belongs_to_pane(engine: &CoreState, surface_id: u32, pane_id: u32) ->
 /// 원격 결과는 이후 delta로 확인하며 전달 불가·일반 오류는 internal_error로 반환한다.
 /// 헤드리스에는 전달 큐 소비자가 없어 mirror 구조 변경을 거절한다(ADR-0003).
 pub(super) fn structural_apply_error(id: serde_json::Value, e: &anyhow::Error) -> JsonRpcResponse {
-    if let Some(blocked) = e.downcast_ref::<crate::core::MirrorStructuralBlocked>()
+    if let Some(blocked) = e.downcast_ref::<crate::app::services::MirrorStructuralBlocked>()
         && blocked.forwarded
     {
         return JsonRpcResponse::success(
@@ -1268,7 +1268,7 @@ pub(crate) fn build_engine_tree(
         .into_iter()
         .enumerate()
         .map(|(i, ws)| {
-            let mut t = ws.to_tree_json(window.presentation());
+            let mut t = ws.to_tree_json(window.presentation(),&|id|engine.find_surface_by_id(id).map(|surface|surface.to_tree_json()).unwrap_or_else(||serde_json::json!({"id":id,"type":"Pending"})));
             t["active"] = json!(i == window.active_workspace_index(engine));
             t["busy_count"] = json!(engine.busy_count(&ws.all_surface_ids()));
             annotate_tree_busy(&mut t, engine);
@@ -1353,7 +1353,7 @@ fn handle_is_typing(
         Err(e) => return e,
     };
     let typing = engine.is_typing(surface_id);
-    let idle_seconds = if let Some(last) = engine.last_key_input.get(&surface_id) {
+    let idle_seconds = if let Some(last) = engine.live.last_key_input.get(&surface_id) {
         last.elapsed().as_secs_f64()
     } else {
         f64::MAX
@@ -1405,7 +1405,7 @@ mod structural_apply_error_tests {
 
     #[test]
     fn forwarded_op_returns_success_not_error() {
-        let err = anyhow::Error::new(crate::core::MirrorStructuralBlocked {
+        let err = anyhow::Error::new(crate::app::services::MirrorStructuralBlocked {
             workspace_index: 3,
             forwarded: true,
         });
@@ -1423,7 +1423,7 @@ mod structural_apply_error_tests {
 
     #[test]
     fn non_forwarded_mirror_block_stays_internal_error() {
-        let err = anyhow::Error::new(crate::core::MirrorStructuralBlocked {
+        let err = anyhow::Error::new(crate::app::services::MirrorStructuralBlocked {
             workspace_index: 0,
             forwarded: false,
         });
@@ -1444,7 +1444,7 @@ mod structural_apply_error_tests {
 #[cfg(test)]
 mod require_surface_id_tests {
     use super::require_surface_id;
-    use crate::core::terminal_store::PTY_ID_BASE;
+    use crate::runtime::terminal_store::PTY_ID_BASE;
     use serde_json::json;
 
     #[test]

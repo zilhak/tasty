@@ -7,7 +7,7 @@ use crate::adapters::ui::fullscreen;
 
 fn run_stage_frame(
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) {
     let ctx = egui::Context::default();
     // 렌더 결과 대신 프레임 후 상태를 검사한다.
@@ -18,7 +18,7 @@ fn run_stage_frame(
 
 fn run_normal_frame(
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) {
     let ctx = egui::Context::default();
     // 렌더 결과 대신 프레임 후 상태를 검사한다.
@@ -131,7 +131,7 @@ fn stage_frame_paints_only_when_a_stage_is_up() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
     let painted = |state: &mut crate::state::RequestContext,
-                   engine: &mut crate::core::engine_access::EngineMut<'_>| {
+                   engine: &mut crate::runtime::engine_access::EngineMut<'_>| {
         let ctx = egui::Context::default();
         let out = ctx.run(egui::RawInput::default(), |ctx| {
             crate::adapters::ui::draw_fullscreen_stage(ctx, state, engine);
@@ -145,7 +145,7 @@ fn stage_frame_paints_only_when_a_stage_is_up() {
 
 fn run_normal_frame_with_input(
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     raw: egui::RawInput,
 ) {
     let ctx = egui::Context::default();
@@ -302,7 +302,7 @@ fn two_stages_with_the_same_content_do_not_share_scroll_state() {
     let mut engine = engine_session.borrow_mut();
     let ctx = egui::Context::default();
     let draw_stage = |state: &mut crate::state::RequestContext,
-                      engine: &mut crate::core::engine_access::EngineMut<'_>,
+                      engine: &mut crate::runtime::engine_access::EngineMut<'_>,
                       id: &'static str| {
         assert!(state.open_fullscreen_stage(id));
         drop(ctx.run(screen_input(), |ctx| {

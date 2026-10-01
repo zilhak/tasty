@@ -5,16 +5,12 @@ use winit::keyboard::ModifiersState;
 use crate::gpu::GpuState;
 use crate::view::repaint::RepaintGate;
 
-/// 모든 창의 공통 상태. 각 창이 보관하고 View 접근자로 제공한다.
+/// Per-View OS/GPU resource owner, composed with common display values.
 pub struct ViewBase {
     pub gpu: GpuState,
     pub winit: Arc<winit::window::Window>,
-    pub dirty: bool,
-    /// 리페인트 요청 상한(창별 독립). 근거·분류는 [`crate::view::repaint`] 모듈 문서.
-    pub repaint: RepaintGate,
-    pub focused: bool,
-    pub modifiers: ModifiersState,
-    pub close_requested: bool,
+    pub(crate) state:crate::view::state::ViewState,
+
 }
 
 impl ViewBase {
@@ -22,11 +18,7 @@ impl ViewBase {
         Self {
             gpu,
             winit,
-            dirty: true,
-            repaint: RepaintGate::new(),
-            focused: true,
-            modifiers: ModifiersState::empty(),
-            close_requested: false,
+            state:Default::default(),
         }
     }
 
@@ -38,9 +30,8 @@ impl ViewBase {
     /// 요청 원인에 따라 redraw를 미루되 dirty는 즉시 설정한다.
     /// 미룬 시각은 about_to_wait에서 WaitUntil로 예약한다.
     pub fn mark_dirty_from(&mut self, source: crate::view::RepaintSource) {
-        self.dirty = true;
-        if self
-            .repaint
+        self.state.dirty = true;
+        if self.state.repaint
             .admit(source, std::time::Instant::now(), &self.winit)
         {
             self.winit.request_redraw();
@@ -49,7 +40,7 @@ impl ViewBase {
 
     /// 프레임을 그릴 때 dirty 해제와 다시 그리기 시간 기준 갱신을 함께 처리한다.
     pub fn begin_frame(&mut self) {
-        self.dirty = false;
-        self.repaint.note_present(std::time::Instant::now());
+        self.state.dirty = false;
+        self.state.repaint.note_present(std::time::Instant::now());
     }
 }

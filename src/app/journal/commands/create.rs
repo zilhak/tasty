@@ -37,7 +37,7 @@ impl Request {
             .get("type")
             .and_then(|v| v.as_str())
             .unwrap_or("terminal");
-        if let Some(definition) = core.surface_registry.get_live(kind)
+        if let Some(definition) = session.runtime.surface_registry.get_live(kind)
             && let Some(missing) = definition.first_missing_required_param(params)
         {
             return Err(bad(format!(
@@ -71,10 +71,10 @@ impl Request {
         let tab_name = if kind == "terminal" {
             "Shell".into()
         } else {
-            crate::core::surface_registry::default_tab_name_for_kind(
+            crate::runtime::surface_registry::default_tab_name_for_kind(
                 kind,
                 params,
-                core.surface_registry.get_live(kind).as_deref(),
+                session.runtime.surface_registry.get_live(kind).as_deref(),
             )
         };
         Ok(Self {
@@ -157,6 +157,7 @@ impl Request {
         let bad=|reason:String|JsonRpcResponse::invalid_params(serde_json::Value::Null,reason);
         result.plan.destination=match spec.destination {
             D::Workspace {name,subtitle,description,category}=> {
+                result.activate=true;
                 if spec.kind=="empty" {return Err(bad("Cannot create workspace with empty surface kind".into()));}
 
                 let CreationDestination::Workspace {name:auto,category:cat,subtitle:sub,description:desc,..}=&mut result.plan.destination else {unreachable!("workspace draft")};
@@ -176,12 +177,12 @@ impl Request {
             },
             D::Pane {target,direction}=> {
                 if core.find_pane_by_id(target).is_none() {return Err(bad(format!("Pane {target} not found")));}
-                result.shape=Shape::Pane {target,direction};
+                result.shape=Shape::Pane {target,direction};result.activate=true;
                 CreationDestination::Pane {target,pane:0,tab:0,split:tasty_domain::SplitSpec {direction,ratio:tasty_domain::Ratio::from_f32(0.5),placement:tasty_domain::Placement::After}}
             },
             D::Surface {target,direction}=> {
                 if core.find_surface_by_id(target).is_none() {return Err(bad(format!("Surface {target} not found")));}
-                result.shape=Shape::Surface {target};
+                result.shape=Shape::Surface {target};result.activate=true;
                 CreationDestination::Split {target,split:tasty_domain::SplitSpec {direction,ratio:tasty_domain::Ratio::from_f32(0.5),placement:tasty_domain::Placement::After}}
             },
             D::Convert {surface,respawn}=> {
@@ -328,98 +329,42 @@ impl JournalApplication {
 }
 
 pub(super) struct Completed {
-    pub engine: EngineId,
-    pub workspace: u32,
-    pub pane: u32,
-    pub tab: u32,
-    pub surface: u32,
-    pub name: Option<String>,
-    pub subtitle: Option<String>,
-    pub description: Option<String>,
+    pub engine:EngineId,
+    pub surface:u32,
+    pub destination:CreationDestination,
+    pub activate:bool,
+    pub name:Option<String>,pub subtitle:Option<String>,pub description:Option<String>,
 }
-
 impl Completed {
-    pub fn from_request(request: &Request) -> Self {
-        let CreationDestination::Workspace {
-            workspace,
-            pane,
-            tab,
-            ..
-        } = request.plan.destination
-        else {
-            unreachable!("workspace continuation")
-        };
-        Self {
-            engine: request.engine,
-            workspace,
-            pane,
-            tab,
-            surface: request.plan.surface.id,
-            name: request.renamed_name.clone(),
-            subtitle: request.renamed_subtitle.clone(),
-            description: request.renamed_description.clone(),
-        }
+    pub fn from_request(request:&Request)->Self {Self {
+        engine:request.engine,surface:request.plan.surface.id,destination:request.plan.destination.clone(),activate:request.activate,
+        name:request.renamed_name.clone(),subtitle:request.renamed_subtitle.clone(),description:request.renamed_description.clone(),
+    }}
+    pub fn weight(&self)->usize {
+        serde_json::to_vec(&self.destination).map_or(0,|bytes|bytes.len())+
+        self.name.as_ref().map_or(0,String::len)+self.subtitle.as_ref().map_or(0,String::len)+self.description.as_ref().map_or(0,String::len)
     }
-    pub fn weight(&self) -> usize {
-        self.name.as_ref().map_or(0, String::len)
-            + self.subtitle.as_ref().map_or(0, String::len)
-            + self.description.as_ref().map_or(0, String::len)
-    }
-    pub fn notify(
-        self,
-        sessions: &mut [&mut EngineSession],
-        queue: &mut Vec<(EngineId, notification::Notification)>,
-    ) {
+    pub fn notify(self,sessions:&mut [&mut EngineSession],queue:&mut Vec<(EngineId,notification::Notification)>) {
         use crate::core::host_event::PendingHostEvent as E;
-        let Some(session) = sessions
-            .iter_mut()
-            .find(|session| session.id == self.engine)
-        else {
-            return;
-        };
-        let Some(index) = session
-            .core_state
-            .find_workspace_index_for_id(self.workspace)
-        else {
-            return;
-        };
-        let name = session
-            .core_state
-            .workspace_at(index)
-            .expect("completed workspace")
-            .name
-            .clone();
-        queue.push((
-            self.engine,
-            notification::Notification::Ready(E::WorkspaceCreated {
-                workspace_id: self.workspace,
-                name,
-            }),
-        ));
-        if self.name.is_some() || self.subtitle.is_some() || self.description.is_some() {
-            queue.push((
-                self.engine,
-                notification::Notification::Ready(E::WorkspaceRenamed {
-                    workspace_id: self.workspace,
-                    name: self.name,
-                    subtitle: self.subtitle,
-                    description: self.description,
-                    user_direct: false,
-                }),
-            ));
+        let Some(session)=sessions.iter().find(|session|session.id==self.engine) else{return;};
+        let engine=session.as_ref();
+        let Some((index,pane_id))=engine.find_workspace_index_for_surface(self.surface) else{return;};
+        let Some(workspace)=engine.workspace_at(index) else{return;};
+        let Some(tab_id)=engine.find_tab_for_surface(self.surface) else{return;};
+        let Some(surface)=engine.find_surface_by_id(self.surface) else{return;};
+        let mut push=|event|queue.push((self.engine,notification::Notification::Ready(event)));
+        if matches!(self.destination,CreationDestination::Workspace {..}) {
+            push(E::WorkspaceCreated {workspace_id:workspace.id,name:workspace.name.clone()});
+            if self.name.is_some()||self.subtitle.is_some()||self.description.is_some() {
+                push(E::WorkspaceRenamed {workspace_id:workspace.id,name:self.name,subtitle:self.subtitle,description:self.description,user_direct:false});
+            }
         }
-        if let Some(surface) = session.core_state.find_surface_by_id(self.surface) {
-            queue.push((
-                self.engine,
-                notification::Notification::Ready(E::SurfaceCreated {
-                    surface_id: self.surface,
-                    kind: surface.kind(),
-                    tab_id: self.tab,
-                    pane_id: self.pane,
-                    workspace_id: self.workspace,
-                    created_by_plugin: None,
-                }),
-            ));
+        if matches!(self.destination,CreationDestination::Tab {..}|CreationDestination::Pane {..}) {
+            push(E::TabCreated {tab_id,pane_id,workspace_id:workspace.id,kind:surface.kind().into()});
+        }
+        if matches!(self.destination,CreationDestination::Pane {..}) {push(E::PaneCreated {pane_id,workspace_id:workspace.id});}
+        if !matches!(self.destination,CreationDestination::Restore {..}|CreationDestination::Convert {..}) {
+            push(E::SurfaceCreated {surface_id:self.surface,kind:surface.kind(),tab_id,pane_id,workspace_id:workspace.id,created_by_plugin:None});
         }
     }
 }

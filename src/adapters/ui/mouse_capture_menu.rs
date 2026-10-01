@@ -78,7 +78,7 @@ fn persist_settings(engine: &mut crate::core::CoreState) {
 pub fn draw_menu(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
         return PopupAction::Close;

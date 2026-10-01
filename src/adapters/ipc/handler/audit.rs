@@ -79,7 +79,7 @@ fn build_query(params: &Value, id: &Value) -> std::result::Result<AuditQuery, Js
     Ok(q)
 }
 
-pub fn handle_query(core: &crate::core::Core, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_query(core: &crate::app::services::AppServices, id: Value, params: &Value) -> JsonRpcResponse {
     let q = match build_query(params, &id) {
         Ok(q) => q,
         Err(resp) => return resp,
@@ -105,7 +105,7 @@ pub fn handle_query(core: &crate::core::Core, id: Value, params: &Value) -> Json
 }
 
 /// `top_n`은 호출자별·메서드별 상위 항목 수를 제한한다. 기본값은 10이다.
-pub fn handle_summary(core: &crate::core::Core, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_summary(core: &crate::app::services::AppServices, id: Value, params: &Value) -> JsonRpcResponse {
     let q = match build_query(params, &id) {
         Ok(q) => q,
         Err(resp) => return resp,
@@ -136,7 +136,7 @@ pub fn handle_summary(core: &crate::core::Core, id: Value, params: &Value) -> Js
 /// 커서 이후의 기록을 반환한다. 커서가 없으면 빈 목록과 최신 커서를 반환해
 /// 다음 호출부터 새 기록을 조회하게 한다.
 #[cfg(feature = "gui")]
-pub fn handle_follow(core: &crate::core::Core, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_follow(core: &crate::app::services::AppServices, id: Value, params: &Value) -> JsonRpcResponse {
     let q = match build_query(params, &id) {
         Ok(q) => q,
         Err(resp) => return resp,
@@ -168,7 +168,7 @@ pub fn handle_follow(core: &crate::core::Core, id: Value, params: &Value) -> Jso
 
 /// `before_ms` 이전 기록을 삭제한다. 생략하면 모두 삭제한다.
 #[cfg(feature = "gui")]
-pub fn handle_clear(core: &crate::core::Core, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_clear(core: &crate::app::services::AppServices, id: Value, params: &Value) -> JsonRpcResponse {
     let before_ms = p_try!(params::opt_int::<u64>(params, "before_ms", &id));
     let result = core.with_memory(|mem| {
         let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);

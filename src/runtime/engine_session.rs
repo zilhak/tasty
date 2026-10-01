@@ -3,8 +3,8 @@
 // 상위 모듈의 dead_code 허용은 시험 전용 journal 때문이다. 이 모듈은 제품 경로라 검사를 되살린다.
 #![warn(dead_code)]
 
-use crate::core::engine_access::EngineMut;
-use crate::core::engine_access::EngineRef;
+use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineRef;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::core::CoreState;
@@ -26,15 +26,17 @@ impl EngineId {
 pub(crate) struct EngineSession {
     pub(crate) id: EngineId,
     pub(crate) core_state: CoreState,
+    pub(crate) remote:crate::remote::state::RemoteState,
+    pub(crate) live:crate::core::live::LiveDomainState,
     pub(crate) journal_binding: Option<crate::runtime::journal_product::EngineBinding>,
     pub(crate) pending_materializations: std::collections::HashMap<
         tasty_domain::OperationId,
         crate::runtime::effect_runner::PreparedMaterialization,
     >,
     pub(crate) hooks: crate::hook_runtime::HookRuntimeState,
-    pub(crate) task_scope: crate::core::task_service::TaskScope,
+    pub(crate) task_scope: crate::runtime::task_service::TaskScope,
     pub(crate) observer_router: crate::output_observer::ObserverRouter,
-    pub(crate) runtime: crate::core::engine_runtime::EngineRuntime,
+    pub(crate) runtime: crate::runtime::engine_runtime::EngineRuntime,
     /// 실행 자원의 Drop까지 격리 홈이 살아 있어야 한다.
     #[cfg(test)]
     _isolated_home: Option<crate::test_support::IsolatedHome>,
@@ -48,6 +50,8 @@ impl EngineSession {
         EngineMut {
             core: &mut self.core_state,
             runtime: &mut self.runtime,
+            remote:&mut self.remote,
+            live:&mut self.live,
             hooks: &mut self.hooks,
             task_scope: &mut self.task_scope,
             observer_router: &mut self.observer_router,
@@ -58,6 +62,8 @@ impl EngineSession {
         EngineRef {
             core: &self.core_state,
             runtime: &self.runtime,
+            remote:&self.remote,
+            live:&self.live,
             hooks: &self.hooks,
             task_scope: &self.task_scope,
             observer_router: &self.observer_router,

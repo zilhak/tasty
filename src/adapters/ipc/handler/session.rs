@@ -63,7 +63,7 @@ fn caller_may_grant(
 ///
 /// 응답: `{ token, agent_id, expires_at_ms? }`.
 pub fn handle_issue(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -152,7 +152,7 @@ pub fn handle_issue(
 /// `session.revoke` — 주어진 토큰 무효화.
 ///
 /// params: `{ token: str }`. 응답: `{ revoked: bool }` (없으면 false).
-pub fn handle_revoke(core: &crate::core::Core, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_revoke(core: &crate::app::services::AppServices, id: Value, params: &Value) -> JsonRpcResponse {
     let token_str = match params.get("token").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
         None => {
@@ -175,7 +175,7 @@ pub fn handle_revoke(core: &crate::core::Core, id: Value, params: &Value) -> Jso
 }
 
 /// `session.list` — 활성 세션 목록 (host 전용, 디버깅/감사용).
-pub fn handle_list(core: &crate::core::Core, id: Value) -> JsonRpcResponse {
+pub fn handle_list(core: &crate::app::services::AppServices, id: Value) -> JsonRpcResponse {
     let now = now_ms();
     let result = core.session_list(now);
     match result {
@@ -213,7 +213,7 @@ pub fn handle_list(core: &crate::core::Core, id: Value) -> JsonRpcResponse {
 /// 응답: `{ agent_id, permission, added, expires_at_ms? }`.
 #[cfg(feature = "gui")]
 pub fn handle_grant_agent_permission(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -263,7 +263,7 @@ pub fn handle_grant_agent_permission(
 /// 응답: `{ agent_id, permission, removed }`.
 #[cfg(feature = "gui")]
 pub fn handle_revoke_agent_permission(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -297,7 +297,7 @@ pub fn handle_revoke_agent_permission(
 ///
 /// 응답: `{ agents: [{ agent_id, parent, base_permissions, temp_grants: [{permission, expires_at_ms?}] }] }`.
 pub fn handle_list_agent_permissions(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -346,7 +346,7 @@ pub fn handle_list_agent_permissions(
 /// 응답: `{ approval_id }`. dedupe 로직 (같은 agent+permission Pending 재사용)
 /// 은 publish_capability_elevation 안에서 처리.
 pub fn handle_request_permission(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,

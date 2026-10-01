@@ -314,7 +314,7 @@ fn scenarios() -> Vec<(&'static str, crate::runtime::engine_session::EngineSessi
 
 /// CoreState를 가져온 journal과 그 모델의 정규 표현(자료 해석 포함).
 fn imported(
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     dir: &tempfile::TempDir,
 ) -> (EventStore, WriterEpoch, Canonical) {
     let (mut store, epoch) = open(&dir.path().join("journal.db"));

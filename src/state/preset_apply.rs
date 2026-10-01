@@ -1,7 +1,7 @@
 //! 프리셋 데이터로 워크스페이스·탭·pane을 만든다.
 //! 활성 전환은 ApplyOptions.focus로 정하며 IPC에서는 false를 사용한다.
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use tasty_presets::{
     PanePreset, PresetPane, PresetPaneNode, PresetSplitDirection, PresetSurface,
     PresetSurfaceLayout, PresetTab, TabPreset, WorkspacePreset,
@@ -348,7 +348,7 @@ impl RequestContext {
             return Ok(Box::new(TerminalSurface { id: surface_id }));
         }
 
-        let Some(def) = engine.surface_registry.get_live(&preset.kind) else {
+        let Some(def) = engine.runtime.surface_registry.get_live(&preset.kind) else {
             // 없는 kind 때문에 다른 surface까지 버리지 않도록 지연 복원 상태로 남긴다.
             // 플러그인이 설치되지 않았으면 이후에도 복원되지 않을 수 있다.
             return Ok(Box::new(EmptySurface::new_deferred_plugin(
@@ -365,7 +365,7 @@ impl RequestContext {
             .as_ref()
             .map(std::path::PathBuf::from)
             .or_else(|| {
-                crate::core::surface_registry::PresetFieldSpec::derive_cwd(
+                crate::runtime::surface_registry::PresetFieldSpec::derive_cwd(
                     &def.preset_fields,
                     &preset.params,
                 )
@@ -436,10 +436,10 @@ impl RequestContext {
 /// 프리셋 트리의 첫 surface kind로 기본 탭 이름을 정한다.
 fn preset_default_tab_name(engine: &CoreState, layout: &PresetSurfaceLayout) -> String {
     let first = first_preset_leaf(layout);
-    crate::core::surface_registry::default_tab_name_for_kind(
+    crate::runtime::surface_registry::default_tab_name_for_kind(
         &first.kind,
         &first.params,
-        engine.surface_registry.get(&first.kind).as_deref(),
+        engine.runtime.surface_registry.get(&first.kind).as_deref(),
     )
 }
 
@@ -463,7 +463,7 @@ fn shell_escape(s: &str) -> String {
 mod tests {
     use super::ApplyOptions;
 
-    use crate::core::surface_registry::{PresetFieldInput, PresetFieldSpec, PresetFieldTarget};
+    use crate::runtime::surface_registry::{PresetFieldInput, PresetFieldSpec, PresetFieldTarget};
     use serde_json::json;
     use tasty_presets::{
         PresetPane, PresetPaneNode, PresetSurface, PresetSurfaceLayout, PresetTab, WorkspacePreset,

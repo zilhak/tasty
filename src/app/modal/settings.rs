@@ -91,7 +91,7 @@ impl App {
         };
 
         let (file_format, file_handler) = if let Some((_, engine)) = self.focused_pair() {
-            (engine.file_format.clone(), engine.file_handler.clone())
+            (engine.runtime.file_format.clone(), engine.runtime.file_handler.clone())
         } else {
             (
                 Arc::new(crate::file::format::FileFormatRegistry::new()),
@@ -133,24 +133,24 @@ impl App {
     /// 플러그인 Configure, 파일 핸들러, 권한 화면 진입 요청과 debug 빌드에서 지정한
     /// 초기 탭·하위 탭을 적용한다.
     fn apply_pending_tab_overrides(&mut self, modal: &mut view::SettingsView) {
-        if std::mem::take(&mut self.pending_settings_plugin_tab) {
+        if std::mem::take(&mut self.state.pending_settings_plugin_tab) {
             modal.focus_plugin_tab();
         }
-        if std::mem::take(&mut self.pending_settings_file_handler_tab) {
+        if std::mem::take(&mut self.state.pending_settings_file_handler_tab) {
             modal.focus_file_handler_tab();
         }
-        if std::mem::take(&mut self.pending_settings_macos_permissions_tab) {
+        if std::mem::take(&mut self.state.pending_settings_macos_permissions_tab) {
             modal.focus_macos_permissions_tab();
         }
         #[cfg(debug_assertions)]
-        if let Some(tab_key) = self.pending_settings_tab.take()
+        if let Some(tab_key) = self.state.pending_settings_tab.take()
             && !modal.focus_tab(&tab_key)
         {
             tracing::warn!("debug.settings.open: unknown settings tab '{tab_key}'");
         }
         // 상위 탭을 고른 뒤 하위 탭을 적용한다. 알 수 없는 키면 기본 선택을 유지한다.
         #[cfg(debug_assertions)]
-        if let Some(subtab_key) = self.pending_settings_subtab.take()
+        if let Some(subtab_key) = self.state.pending_settings_subtab.take()
             && !modal.focus_subtab(&subtab_key)
         {
             tracing::warn!("debug.settings.open: unknown settings subtab '{subtab_key}'");

@@ -2,7 +2,7 @@
 //! 호출자가 required_plugin_kinds로 필요한 종류를 확인하고 plugin 준비를 기다린다.
 
 #[cfg(test)]
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 #[cfg(test)]
 use std::path::PathBuf;
 
@@ -286,7 +286,7 @@ impl SavedSurface {
                 // 아직 deferred인 동안의 capture는 DeferredSpawn 값을 읽는다.
                 if let Some(cmd) = restore_command.as_deref() {
                     let mut guard = crate::poison::recover_mutex(
-                        engine.memory.lock(),
+                        engine.runtime.memory.lock(),
                         crate::core::MEMORY_WHAT,
                         &crate::core::MEMORY_POISONED,
                     );
@@ -412,7 +412,7 @@ fn restore_generic_immediate(
     kind: String,
     data: serde_json::Value,
 ) -> Option<Box<dyn Surface>> {
-    let registry = engine.surface_registry.clone();
+    let registry = engine.runtime.surface_registry.clone();
     let def = match registry.get_live(&kind) {
         Some(d) => d,
         None => {

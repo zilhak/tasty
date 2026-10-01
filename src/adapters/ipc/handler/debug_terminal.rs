@@ -4,7 +4,7 @@
 #![cfg(debug_assertions)]
 
 use super::params::{self, p_try};
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use serde_json::json;
 
 use tasty_ipc::protocol::JsonRpcResponse;

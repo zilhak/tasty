@@ -3,7 +3,7 @@
 
 #![cfg(debug_assertions)]
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::model::PhysicalPx;
 use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};

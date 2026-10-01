@@ -8,13 +8,13 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 /// 문서 변경을 attach 클라이언트에 알린다. 대상과 허용 종류는 attach_runtime이 검사한다.
 fn notify_content_changed(
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     surface: &crate::plugin_bridge::remote_surface::RemoteSurface,
     sid: u32,
 ) {
     use crate::model::Surface;
     if let Some((kind, plugin_id, _)) = surface.attach_content_info() {
-        crate::core::attach_runtime::notify_markdown_changed(&engine.attach, kind, plugin_id, sid);
+        crate::remote::server::notify_markdown_changed(&engine.live.occupancy,engine.remote,kind,plugin_id,sid);
     }
 }
 
@@ -22,7 +22,7 @@ fn notify_content_changed(
 /// 외부 호출도 URL을 설정할 수 있지만 소유 플러그인이 쓴 페이지의 클릭만
 /// 파일 열기의 사용자 행동으로 인정한다(ADR-0031).
 pub fn handle_set_url(
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     caller: &tasty_ipc::caller::CallerContext,
     id: Value,
     params: &Value,
@@ -86,7 +86,7 @@ fn is_owner(
 /// 호출자는 사용자 제스처 기록을 해당 플러그인에 연결하고 아닌 경우 이전 기록을 지운다(ADR-0031).
 pub fn notify_navigation_attempt(
     mgr: &PluginManager,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     surface_id: u32,
     url: &str,
 ) -> Option<crate::plugin_bridge::user_navigation::NavigationOwner> {
@@ -157,7 +157,7 @@ mod tests {
 
     fn focused_surface_id(
         state: &crate::state::RequestContext,
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_access::EngineRef<'_>,
     ) -> u32 {
         let ws = engine
             .workspace_at(state.active_workspace_index(engine))
@@ -172,12 +172,12 @@ mod tests {
             .unwrap()
     }
 
-    fn set_url(engine: &crate::core::CoreState, sid: u32) -> JsonRpcResponse {
+    fn set_url(engine: &crate::runtime::engine_access::EngineRef<'_>, sid: u32) -> JsonRpcResponse {
         set_url_as(engine, &tasty_ipc::caller::CallerContext::Local, sid)
     }
 
     fn set_url_as(
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_access::EngineRef<'_>,
         caller: &tasty_ipc::caller::CallerContext,
         sid: u32,
     ) -> JsonRpcResponse {
@@ -197,7 +197,7 @@ mod tests {
     }
 
     fn remote_surface(
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_access::EngineRef<'_>,
         sid: u32,
     ) -> &crate::plugin_bridge::remote_surface::RemoteSurface {
         for ws in &engine.workspaces() {
@@ -371,13 +371,13 @@ mod tests {
         let hub = StreamHub::new();
         let client = hub.alloc_id();
         let rx = hub.register(client);
-        engine.attach.set_notifier(hub);
+        engine.remote.set_notifier(hub);
         let ws_id = engine
             .workspace_at(state.active_workspace_index(&engine))
             .expect("workspace index is valid")
             .id;
         engine
-            .attach
+            .live.occupancy
             .acquire_workspace(ws_id, &[terminal_sid], &[terminal_sid, md_sid], client)
             .expect("acquire workspace");
 

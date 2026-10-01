@@ -59,13 +59,13 @@ mod tests {
     use super::*;
     use crate::state::tests::test_state;
 
-    fn push_workspace(engine: &mut crate::core::engine_access::EngineMut<'_>) -> u32 {
-        let event = crate::core::apply_create_workspace_inner(
+    fn push_workspace(engine: &mut crate::runtime::engine_access::EngineMut<'_>) -> u32 {
+        let event = crate::app::services::apply_create_workspace_inner(
             engine,
-            crate::core::WorkspaceCreationParams::terminal(),
+            crate::app::services::WorkspaceCreationParams::terminal(),
         )
         .expect("create workspace");
-        let crate::core::intent::CoreEvent::WorkspaceCreated { id, .. } = event else {
+        let crate::app::command::CoreEvent::WorkspaceCreated { id, .. } = event else {
             panic!("apply_create_workspace_inner must return WorkspaceCreated");
         };
         id
@@ -142,7 +142,7 @@ mod tests {
         let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
         core.apply(
             &mut engine,
-            crate::core::intent::DomainIntent::MoveTab {
+            crate::app::command::DomainIntent::MoveTab {
                 pane_id,
                 tab_id: first,
                 to_index: 2,
@@ -167,7 +167,7 @@ mod tests {
         let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
         core.apply(
             &mut engine,
-            crate::core::intent::DomainIntent::CloseTab { tab_id: first },
+            crate::app::command::DomainIntent::CloseTab { tab_id: first },
         )
         .expect("close tab");
         assert_eq!(target.resolve(&engine), None);

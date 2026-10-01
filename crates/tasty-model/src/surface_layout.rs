@@ -1,22 +1,20 @@
 use super::FocusDirection;
-use super::surface_trait::Surface;
-use super::terminal_surface::TerminalSurface;
+use super::SurfaceDescriptor;
 use super::{
     BinaryTree, DividerInfo, PhysicalPx, PhysicalRect, SURFACE_BORDER_WIDTH, SplitDirection,
     SurfaceId,
 };
-use std::any::Any;
 
 /// A surface and its screen region, returned by `surface_regions()`.
 pub struct SurfaceRegion<'a> {
     pub id: SurfaceId,
     pub rect: PhysicalRect,
-    pub surface: &'a dyn Surface,
+    pub surface: &'a SurfaceDescriptor,
 }
 
 pub enum SurfaceLayout {
     /// A single surface leaf node. Can be any surface type (Terminal, Markdown, Explorer, etc.).
-    Leaf(Box<dyn Surface>),
+    Leaf(SurfaceDescriptor),
     Split {
         direction: SplitDirection,
         ratio: f32,
@@ -84,7 +82,7 @@ impl SurfaceLayout {
     }
 
     /// Helper: get the surface ID of a Leaf node.
-    fn leaf_surface_id(surface: &dyn Surface) -> SurfaceId {
+    fn leaf_surface_id(surface: &SurfaceDescriptor) -> SurfaceId {
         surface
             .surface_id()
             .expect("BUG: Leaf surface must have an ID")
@@ -96,10 +94,10 @@ impl SurfaceLayout {
         self,
         target_id: SurfaceId,
         direction: SplitDirection,
-        new_surface: Box<dyn Surface>,
-    ) -> (Self, Option<Box<dyn Surface>>) {
+        new_surface: SurfaceDescriptor,
+    ) -> (Self, Option<SurfaceDescriptor>) {
         match self {
-            SurfaceLayout::Leaf(surface) if Self::leaf_surface_id(&*surface) == target_id => (
+            SurfaceLayout::Leaf(surface) if Self::leaf_surface_id(&surface) == target_id => (
                 SurfaceLayout::Split {
                     direction,
                     ratio: 0.5,
@@ -148,24 +146,6 @@ impl SurfaceLayout {
         }
     }
 
-    /// Split a specific surface with a TerminalSurface node (convenience wrapper).
-    pub fn split_with_node(
-        self,
-        target_id: SurfaceId,
-        direction: SplitDirection,
-        new_node: TerminalSurface,
-    ) -> (Self, Option<TerminalSurface>) {
-        let (result, remaining) = self.split_with_surface(target_id, direction, Box::new(new_node));
-        // `Box<dyn Surface>` 를 다시 TerminalSurface 로 복원 — Any downcast 사용.
-        let remaining_node = remaining.and_then(|s| {
-            (s as Box<dyn Any>)
-                .downcast::<TerminalSurface>()
-                .ok()
-                .map(|b| *b)
-        });
-        (result, remaining_node)
-    }
-
     /// Remove a surface from the tree by promoting its sibling.
     pub fn close_surface(self, target_id: SurfaceId) -> (Self, bool) {
         match self {
@@ -177,8 +157,8 @@ impl SurfaceLayout {
                 second,
                 node_id,
             } => {
-                let first_is_target = matches!(first.as_ref(), SurfaceLayout::Leaf(s) if Self::leaf_surface_id(&**s) == target_id);
-                let second_is_target = matches!(second.as_ref(), SurfaceLayout::Leaf(s) if Self::leaf_surface_id(&**s) == target_id);
+                let first_is_target = matches!(first.as_ref(), SurfaceLayout::Leaf(s) if Self::leaf_surface_id(s) == target_id);
+                let second_is_target = matches!(second.as_ref(), SurfaceLayout::Leaf(s) if Self::leaf_surface_id(s) == target_id);
 
                 if first_is_target {
                     return (*second, true);
@@ -218,7 +198,7 @@ impl SurfaceLayout {
     /// removed surface alive** (Box not dropped).
     ///
     /// Mirrors [`close_surface`] structurally but hands back the extracted
-    /// `Box<dyn Surface>` so the caller can re-attach it elsewhere (surface
+    /// `SurfaceDescriptor` so the caller can re-attach it elsewhere (surface
     /// *move* / cut path). The surface keeps its `surface_id`, so for a terminal
     /// the `TerminalStore` entry (PTY/scrollback) stays attached automatically —
     /// **this method never touches the store, only the tree.**
@@ -226,7 +206,7 @@ impl SurfaceLayout {
     /// Returns `(self, None)` when `self` is a sole `Leaf` (the tab's only
     /// surface): there is no sibling to promote, so the caller must handle the
     /// tab/pane/workspace-level cascade instead.
-    pub fn extract_surface(self, target_id: SurfaceId) -> (Self, Option<Box<dyn Surface>>) {
+    pub fn extract_surface(self, target_id: SurfaceId) -> (Self, Option<SurfaceDescriptor>) {
         match self {
             SurfaceLayout::Leaf(_) => (self, None),
             SurfaceLayout::Split {
@@ -236,8 +216,8 @@ impl SurfaceLayout {
                 second,
                 node_id,
             } => {
-                let first_is_target = matches!(first.as_ref(), SurfaceLayout::Leaf(s) if Self::leaf_surface_id(&**s) == target_id);
-                let second_is_target = matches!(second.as_ref(), SurfaceLayout::Leaf(s) if Self::leaf_surface_id(&**s) == target_id);
+                let first_is_target = matches!(first.as_ref(), SurfaceLayout::Leaf(s) if Self::leaf_surface_id(s) == target_id);
+                let second_is_target = matches!(second.as_ref(), SurfaceLayout::Leaf(s) if Self::leaf_surface_id(s) == target_id);
 
                 if first_is_target {
                     let extracted = match *first {
@@ -307,10 +287,10 @@ impl SurfaceLayout {
     }
 
     /// Replace a leaf surface by ID with a new surface. Returns true if found and replaced.
-    pub fn replace_surface(&mut self, target_id: SurfaceId, new_surface: Box<dyn Surface>) -> bool {
+    pub fn replace_surface(&mut self, target_id: SurfaceId, new_surface: SurfaceDescriptor) -> bool {
         match self {
             SurfaceLayout::Leaf(surface) => {
-                if Self::leaf_surface_id(&**surface) == target_id {
+                if Self::leaf_surface_id(surface) == target_id {
                     *surface = new_surface;
                     true
                 } else {
@@ -338,11 +318,11 @@ impl SurfaceLayout {
     }
 
     /// Find a leaf surface by ID (any type, not just Terminal).
-    pub fn find_surface(&self, id: SurfaceId) -> Option<&dyn Surface> {
+    pub fn find_surface(&self, id: SurfaceId) -> Option<&SurfaceDescriptor> {
         match self {
             SurfaceLayout::Leaf(surface) => {
-                if Self::leaf_surface_id(&**surface) == id {
-                    Some(&**surface)
+                if Self::leaf_surface_id(surface) == id {
+                    Some(surface)
                 } else {
                     None
                 }
@@ -354,10 +334,10 @@ impl SurfaceLayout {
     }
 
     /// Find a mutable reference to a leaf surface by ID (any type).
-    pub fn find_leaf_mut(&mut self, id: SurfaceId) -> Option<&mut Box<dyn Surface>> {
+    pub fn find_leaf_mut(&mut self, id: SurfaceId) -> Option<&mut SurfaceDescriptor> {
         match self {
             SurfaceLayout::Leaf(surface) => {
-                if Self::leaf_surface_id(&**surface) == id {
+                if Self::leaf_surface_id(surface) == id {
                     Some(surface)
                 } else {
                     None
@@ -373,52 +353,9 @@ impl SurfaceLayout {
         }
     }
 
-    /// Collect regions for all surfaces with their Surface trait references.
-    pub fn surface_regions(&self, rect: PhysicalRect) -> Vec<SurfaceRegion<'_>> {
-        match self {
-            SurfaceLayout::Leaf(surface) => {
-                if let Some(id) = surface.surface_id() {
-                    vec![SurfaceRegion {
-                        id,
-                        rect,
-                        surface: &**surface,
-                    }]
-                } else {
-                    vec![]
-                }
-            }
-            SurfaceLayout::Split {
-                direction,
-                ratio,
-                first,
-                second,
-                ..
-            } => {
-                let (r1, r2) = rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
-                let mut result = first.surface_regions(r1);
-                result.extend(second.surface_regions(r2));
-                result
-            }
-        }
-    }
-
-    pub fn resize_all(&mut self, rect: PhysicalRect, cell_width: f32, cell_height: f32) {
-        match self {
-            SurfaceLayout::Leaf(surface) => {
-                surface.resize_all(rect, cell_width, cell_height);
-            }
-            SurfaceLayout::Split {
-                direction,
-                ratio,
-                first,
-                second,
-                ..
-            } => {
-                let (r1, r2) = rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
-                first.resize_all(r1, cell_width, cell_height);
-                second.resize_all(r2, cell_width, cell_height);
-            }
-        }
+    /// Geometry borrows logical descriptors; callers obtain kind instances from their engine.
+    pub fn surface_regions(&self,rect:PhysicalRect)->Vec<SurfaceRegion<'_>> {
+        self.compute_rects(rect).into_iter().filter_map(|(id,rect)|self.find_surface(id).map(|surface|SurfaceRegion {id,rect,surface})).collect()
     }
 
     /// 원격 mirror가 구조를 복원할 수 있도록 분할 방향·비율·포커스와 surface ID를 보낸다.
@@ -455,9 +392,9 @@ impl SurfaceLayout {
     /// Visit every leaf Surface (Terminal/Empty/Markdown/etc.) for read-only inspection.
     /// 닫기 경로에서 leaf 들의 `scrollback_persist_id` 를 추출해 디스크 정리하는 용도로
     /// 쓰인다.
-    pub fn for_each_surface(&self, f: &mut dyn FnMut(&dyn Surface)) {
+    pub fn for_each_surface(&self, f: &mut dyn FnMut(&SurfaceDescriptor)) {
         match self {
-            SurfaceLayout::Leaf(surface) => f(&**surface),
+            SurfaceLayout::Leaf(surface) => f(surface),
             SurfaceLayout::Split { first, second, .. } => {
                 first.for_each_surface(f);
                 second.for_each_surface(f);

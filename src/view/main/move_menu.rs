@@ -55,7 +55,7 @@ impl MainView {
                 if let Some(PendingMove::Surface(source)) = engine.pending_move {
                     engine.pending_move = None;
                     self.state.dispatch_intent(
-                        crate::core::intent::DomainIntent::MoveSurface {
+                        crate::app::command::DomainIntent::MoveSurface {
                             source_surface_id: source,
                             target_surface_id: surface_id,
                         }
@@ -128,7 +128,7 @@ impl MainView {
                 {
                     engine.pending_move = None;
                     self.state.dispatch_intent(
-                        crate::core::intent::DomainIntent::ReplaceTabWithTab {
+                        crate::app::command::DomainIntent::ReplaceTabWithTab {
                             source_tab_id: source,
                             target_tab_id: tab_id,
                         }
@@ -153,7 +153,7 @@ impl MainView {
                 {
                     engine.pending_move = None;
                     self.state.dispatch_intent(
-                        crate::core::intent::DomainIntent::ReplacePaneWithPane {
+                        crate::app::command::DomainIntent::ReplacePaneWithPane {
                             source_pane_id: source,
                             target_pane_id: pane_id,
                         }

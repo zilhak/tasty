@@ -24,14 +24,14 @@ fn assert_params_were_understood(method: &str, resp: &tasty_ipc::protocol::JsonR
 }
 
 /// 다른 핸들러 시험에서도 재사용하는 테스트 어댑터 구성.
-pub(crate) fn test_core() -> crate::core::Core {
-    test_core_builder().build().expect("test Core")
+pub(crate) fn test_core() -> crate::app::services::AppServices {
+    test_core_builder().build().expect("test AppServices")
 }
 
 /// 일부 어댑터만 바꿔야 하는 시험을 위해 build 전의 구성을 반환한다.
-pub(crate) fn test_core_builder() -> crate::core::builder::CoreBuilder {
+pub(crate) fn test_core_builder() -> crate::app::services::builder::AppServicesBuilder {
     use std::sync::{Arc, Mutex};
-    crate::core::builder::CoreBuilder::new()
+    crate::app::services::builder::AppServicesBuilder::new()
         .with_fs(Arc::new(crate::adapters::test::mem_fs::MemFileSystem::new()))
         .with_clock(Arc::new(
             crate::adapters::test::fake_clock::FakeClock::default(),

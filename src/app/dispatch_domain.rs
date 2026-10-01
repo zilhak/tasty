@@ -13,7 +13,7 @@ use crate::app::structural_cascade::{
 };
 use crate::app::window_access::{DispatchCtx, engines_mut};
 use crate::core::AttentionKind;
-use crate::core::intent::CoreEvent;
+use crate::app::command::CoreEvent;
 use crate::intent::{DispatchedIntent, Intent, IntentOrigin};
 use crate::view::ui::View as _;
 
@@ -82,15 +82,18 @@ impl App {
             anyhow::bail!("dispatch_domain_intent: non-Domain Intent");
         };
         let origin = dispatched.origin;
-        let id = source.engine();
+        let id=source.engine();
+        let continuation=self.engines_mut().resolve(id).and_then(|context|context.view.map(|view|crate::app::journal::commands::IntentViewContinuation {
+            view:view.state.identity(),selection:context.state.navigation.generation(),activate_surface:None,
+        }));
         if let Some(session) = self.engines.session_mut(id)
             && self
                 .journal
-                .admit_metadata_intent(session.id, &session.core_state, &intent, &origin)
+                .admit_metadata_intent(session.id, &session.core_state, &intent, &origin,continuation)
         {
             return Ok(());
         }
-        let core = &mut self.core;
+        let core = &mut self.services;
         let Some(DispatchCtx {
             state, mut engine, ..
         }) = engines_mut!(self).resolve(id)
@@ -416,7 +419,7 @@ impl App {
         &mut self,
         source: DispatchSource,
         origin: &IntentOrigin,
-        kind: crate::core::intent::RestoredKind,
+        kind: crate::app::command::RestoredKind,
         presentation: &crate::model::StructurePresentationSnapshot,
     ) {
         let Some(DispatchCtx {
@@ -453,7 +456,7 @@ impl App {
         if engine.settings.notification.enabled {
             let ws_id = state.active_workspace(engine.core).id;
             state.dispatch_intent(
-                crate::core::intent::DomainIntent::PushNotification {
+                crate::app::command::DomainIntent::PushNotification {
                     ws_id,
                     surface_id,
                     title,
@@ -463,7 +466,7 @@ impl App {
                 .from_system(),
             );
         }
-        let exec = self.core.hook_executor();
+        let exec = self.services.hook_executor();
         for fired in engine
             .hooks
             .fire(&exec, surface_id, tasty_hooks::HookEvent::Notification)
@@ -471,7 +474,7 @@ impl App {
             state.enqueue_host_event(fired);
         }
         if let Some(base) = dirty_main {
-            base.dirty = true;
+            base.state.dirty = true;
         }
     }
 
@@ -489,7 +492,7 @@ impl App {
         if engine.settings.notification.enabled && engine.settings.general.bell_notification {
             let ws_id = state.active_workspace(engine.core).id;
             state.dispatch_intent(
-                crate::core::intent::DomainIntent::PushNotification {
+                crate::app::command::DomainIntent::PushNotification {
                     ws_id,
                     surface_id,
                     title: crate::i18n::t("notification.bell_title").to_string(),
@@ -499,7 +502,7 @@ impl App {
                 .from_system(),
             );
         }
-        let exec = self.core.hook_executor();
+        let exec = self.services.hook_executor();
         for fired in engine
             .hooks
             .fire(&exec, surface_id, tasty_hooks::HookEvent::Bell)
@@ -507,7 +510,7 @@ impl App {
             state.enqueue_host_event(fired);
         }
         if let Some(base) = dirty_main {
-            base.dirty = true;
+            base.state.dirty = true;
         }
     }
 
@@ -527,7 +530,7 @@ impl App {
         else {
             return;
         };
-        let exec = self.core.hook_executor();
+        let exec = self.services.hook_executor();
         for fired in engine
             .hooks
             .fire(&exec, surface_id, tasty_hooks::HookEvent::OutputMatch(text))
@@ -535,7 +538,7 @@ impl App {
             state.enqueue_host_event(fired);
         }
         if let Some(base) = dirty_main {
-            base.dirty = true;
+            base.state.dirty = true;
         }
     }
 
@@ -561,7 +564,7 @@ impl App {
             title: title.clone(),
         });
         state.dispatch_intent(
-            crate::core::intent::DomainIntent::UpdateTabName {
+            crate::app::command::DomainIntent::UpdateTabName {
                 surface_id,
                 generation,
                 name: title,
@@ -569,7 +572,7 @@ impl App {
             .from_system(),
         );
         if let Some(base) = dirty_main {
-            base.dirty = true;
+            base.state.dirty = true;
         }
     }
 
@@ -589,14 +592,14 @@ impl App {
             return;
         };
         state.dispatch_intent(
-            crate::core::intent::DomainIntent::SurfaceCwdChanged {
+            crate::app::command::DomainIntent::SurfaceCwdChanged {
                 surface_id,
                 generation,
             }
             .from_system(),
         );
         if let Some(base) = dirty_main {
-            base.dirty = true;
+            base.state.dirty = true;
         }
     }
 
@@ -624,7 +627,7 @@ impl App {
         );
         engine.raise_attention(surface_id, AttentionKind::Completion);
         engine.mark_layout_dirty();
-        let exec = self.core.hook_executor();
+        let exec = self.services.hook_executor();
         for fired in engine.hooks.fire(
             &exec,
             surface_id,
@@ -633,7 +636,7 @@ impl App {
             state.enqueue_host_event(fired);
         }
         if let Some(base) = dirty_main {
-            base.dirty = true;
+            base.state.dirty = true;
         }
     }
 
@@ -658,7 +661,7 @@ impl App {
                 crate::adapters::ui::BannerScope::Surface(surface_id),
             ));
         if let Some(base) = dirty_main {
-            base.dirty = true;
+            base.state.dirty = true;
         }
     }
 
@@ -695,14 +698,14 @@ impl App {
         else {
             return;
         };
-        super::process_exit::handle(&mut self.core, state, &mut engine, surface_id, generation);
+        super::process_exit::handle(&mut self.services, state, &mut engine, surface_id, generation);
         if let Some(base) = dirty_main {
-            base.dirty = true;
+            base.state.dirty = true;
         }
     }
 
     fn dispatch_surface_closed_cascade(&mut self, source: DispatchSource, c: SurfaceCloseCascade) {
-        let core = &mut self.core;
+        let core = &mut self.services;
         let Some(DispatchCtx {
             state,
             mut engine,
@@ -998,9 +1001,9 @@ impl App {
     fn cascade_plugin_registry_changed(
         &mut self,
         plugin_id: String,
-        change: crate::core::intent::PluginRegistryChange,
+        change: crate::app::command::PluginRegistryChange,
     ) {
-        use crate::core::intent::PluginRegistryChange;
+        use crate::app::command::PluginRegistryChange;
         let (change_kind, detail) = match change {
             PluginRegistryChange::Installed { version } => {
                 ("installed", serde_json::json!({ "version": version }))
@@ -1239,7 +1242,7 @@ impl App {
             engine.raise_attention(surface_id, AttentionKind::Completion);
             // OS 벨과의 중복을 피하려는 TerminalBellRing 표지는 사운드에서 제외한다.
             if engine.settings.notification.sound && source != "TerminalBellRing" {
-                self.core.sound_player().play();
+                self.services.sound_player().play();
             }
             main.state
                 .enqueue_host_event(crate::state::PendingHostEvent::NotificationCreated {
@@ -1312,10 +1315,10 @@ pub(crate) fn cascade_closed_item_restored(
     state: &mut crate::state::MainViewState,
     engine: &mut crate::core::CoreState,
     origin: &IntentOrigin,
-    kind: crate::core::intent::RestoredKind,
+    kind: crate::app::command::RestoredKind,
     presentation: &crate::model::StructurePresentationSnapshot,
 ) {
-    use crate::core::intent::RestoredKind;
+    use crate::app::command::RestoredKind;
     if !origin.is_user() {
         return;
     }
@@ -1373,7 +1376,7 @@ mod restore_tests;
 #[cfg(test)]
 mod apply_error_tests {
     use super::*;
-    use crate::core::intent::DomainIntent;
+    use crate::app::command::DomainIntent;
     use crate::intent::{AgentSource, UserSource};
 
     fn blocked_tab_replace() -> (

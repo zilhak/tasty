@@ -21,12 +21,12 @@ impl MainView {
                 });
             }
         }
-        self.base.dirty = true;
+        self.base.state.dirty = true;
     }
 
     pub(crate) fn handle_hovered_file_cancelled(&mut self) {
         if self.state.drop_hover.take().is_some() {
-            self.base.dirty = true;
+            self.base.state.dirty = true;
         }
     }
 
@@ -34,7 +34,7 @@ impl MainView {
         self.state.pending_file_drops.push(path);
         // OS가 취소 이벤트를 보내지 않아도 hover 표시를 지운다.
         self.state.drop_hover = None;
-        self.base.dirty = true;
+        self.base.state.dirty = true;
     }
 
     /// 쌓인 파일을 DispatchFile로 보낸다. 터미널 영역 밖이면 안내하고 무시한다.
@@ -70,7 +70,7 @@ impl MainView {
         }
         for path in drops {
             self.state.dispatch_intent(
-                crate::core::intent::DomainIntent::DispatchFile {
+                crate::app::command::DomainIntent::DispatchFile {
                     target: crate::file::format::FileTarget::new(path),
                     depth: crate::file::format::DetectDepth::Deep,
                     origin_surface_id: None,

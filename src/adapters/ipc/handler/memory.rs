@@ -31,7 +31,7 @@ pub(super) fn require_workspace_id(params: &Value, id: &Value) -> Result<u32, Js
 pub(super) fn require_surface_id(params: &Value, id: &Value) -> Result<u32, JsonRpcResponse> {
     params::opt_int::<u64>(params, "surface_id", id)?
         .and_then(|n| u32::try_from(n).ok())
-        .filter(|n| crate::core::terminal_store::is_surface_id_space(*n))
+        .filter(|n| crate::runtime::terminal_store::is_surface_id_space(*n))
         .ok_or_else(|| {
             JsonRpcResponse::invalid_params(id.clone(), "Missing or invalid 'surface_id'")
         })
@@ -54,7 +54,7 @@ use tasty_memory::{
     ListOpts, MemoryArea, MemoryEntry, MemoryError, MemoryStats, MemoryValue, PutOpts, Scope,
 };
 
-use crate::core::Core;
+use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -72,7 +72,7 @@ fn require_scope(params: &Value, id: &Value) -> Result<Scope, JsonRpcResponse> {
 /// scope 문자열로 들어온 surface ID도 검사해 PTY ID가 surface scope로 저장되지 않게 한다.
 fn reject_pty_space_surface_scope(scope: &Scope, id: &Value) -> Result<(), JsonRpcResponse> {
     match scope {
-        Scope::Surface(sid) if !crate::core::terminal_store::is_surface_id_space(*sid) => {
+        Scope::Surface(sid) if !crate::runtime::terminal_store::is_surface_id_space(*sid) => {
             Err(JsonRpcResponse::invalid_params(
                 id.clone(),
                 format!("invalid scope: surface id {sid} is inside the headless PTY id space"),
@@ -377,12 +377,12 @@ fn map_error(id: Value, err: MemoryError) -> JsonRpcResponse {
 
 /// 대체 메모리 저장소의 쓰기에는 durable:false를 붙인다. 정상 저장소에서는 생략한다.
 /// 같은 저장소를 쓰는 agent/approval/meta/telemetry/session도 이 규칙을 따른다(ADR-0010).
-pub(crate) fn written(core: &Core, id: Value, body: Value) -> JsonRpcResponse {
+pub(crate) fn written(core: &AppServices, id: Value, body: Value) -> JsonRpcResponse {
     mark_durability(core, JsonRpcResponse::success(id, body))
 }
 
 /// 성공 응답의 객체에만 durable 표시를 더한다. 오류 응답은 그대로 둔다.
-pub(crate) fn mark_durability(core: &Core, mut resp: JsonRpcResponse) -> JsonRpcResponse {
+pub(crate) fn mark_durability(core: &AppServices, mut resp: JsonRpcResponse) -> JsonRpcResponse {
     if core.memory_init_fallback().is_some()
         && let Some(Value::Object(obj)) = resp.result.as_mut()
     {
@@ -392,7 +392,7 @@ pub(crate) fn mark_durability(core: &Core, mut resp: JsonRpcResponse) -> JsonRpc
 }
 
 pub fn handle_put(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -426,7 +426,7 @@ pub fn handle_put(
 }
 
 pub fn handle_get(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -451,7 +451,7 @@ pub fn handle_get(
 }
 
 pub fn handle_delete(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -477,7 +477,7 @@ pub fn handle_delete(
 }
 
 pub fn handle_list(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -508,7 +508,7 @@ pub fn handle_list(
 }
 
 pub fn handle_exists(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -532,7 +532,7 @@ pub fn handle_exists(
 }
 
 pub fn handle_count(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -571,7 +571,7 @@ pub fn handle_count(
 }
 
 pub fn handle_scopes(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -584,7 +584,7 @@ pub fn handle_scopes(
 }
 
 pub fn handle_stats(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,

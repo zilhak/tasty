@@ -1,6 +1,6 @@
 //! 공용 busy 타이머에서 IdleTimeout 훅을 확인한다.
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::core::host_event::PendingHostEvent;
 
 impl EngineMut<'_> {

@@ -1,17 +1,17 @@
 //! 출력 관찰의 조회·변경은 Core의 observer_* 함수를 통해 수행한다.
 
 use super::params::{self, p_try};
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::path::PathBuf;
 
 use serde_json::{Value, json};
 
-use crate::core::Core;
+use crate::app::services::AppServices;
 use crate::output_observer::{ObserverError, ObserverSpec, SinkSpec};
 use tasty_ipc::protocol::JsonRpcResponse;
 
 pub fn handle_observe_start(
-    core: &mut Core,
+    core: &mut AppServices,
     engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
@@ -32,7 +32,7 @@ pub fn handle_observe_start(
 }
 
 pub fn handle_observe_stop(
-    core: &mut Core,
+    core: &mut AppServices,
     engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
@@ -47,13 +47,13 @@ pub fn handle_observe_stop(
     }
 }
 
-pub fn handle_observe_list(core: &Core, engine: &EngineRef<'_>, id: Value) -> JsonRpcResponse {
+pub fn handle_observe_list(core: &AppServices, engine: &EngineRef<'_>, id: Value) -> JsonRpcResponse {
     let items = core.observer_list(engine);
     JsonRpcResponse::success(id, json!({ "observers": items }))
 }
 
 pub fn handle_observe_info(
-    core: &Core,
+    core: &AppServices,
     engine: &EngineRef<'_>,
     id: Value,
     params: &Value,

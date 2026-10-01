@@ -1,5 +1,5 @@
-//! Per-window display positions. Terminal resources remain in Core's existing store.
-use crate::core::engine_access::EngineRef;
+//! Per-window display positions. Terminal resources remain in AppServices's existing store.
+use crate::runtime::engine_access::EngineRef;
 use std::collections::HashMap;
 use tasty_terminal::{ContentCut, TerminalViewport};
 
@@ -19,7 +19,7 @@ impl TerminalViewports {
         self.0
             .get(&surface_id)
             .map_or(TerminalViewport::LIVE, |entry| {
-                if engine.attach.is_hard_occupied(surface_id) {
+                if engine.live.occupancy.is_hard_occupied(surface_id) {
                     entry.readonly
                 } else {
                     entry.local
@@ -36,7 +36,7 @@ impl TerminalViewports {
             return;
         };
         let entry = self.0.entry(surface_id).or_default();
-        let viewport = if engine.attach.is_hard_occupied(surface_id) {
+        let viewport = if engine.live.occupancy.is_hard_occupied(surface_id) {
             &mut entry.readonly
         } else {
             &mut entry.local

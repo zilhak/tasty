@@ -95,7 +95,7 @@ impl View for PluginsView {
                 self.mark_dirty();
             }
             WindowEvent::ModifiersChanged(modifiers) => {
-                self.base.modifiers = modifiers.state();
+                self.base.state.modifiers = modifiers.state();
             }
             _ => {}
         }
@@ -108,7 +108,7 @@ impl View for PluginsView {
     }
 
     fn render(&mut self) {
-        if !self.base.dirty {
+        if !self.base.state.dirty {
             return;
         }
         self.base.begin_frame();
@@ -144,7 +144,7 @@ impl View for PluginsView {
             self.base.winit.request_redraw();
         }
 
-        if self.base.dirty {
+        if self.base.state.dirty {
             self.base.winit.request_redraw();
         }
     }

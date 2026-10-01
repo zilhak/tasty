@@ -3,7 +3,7 @@
 //! 이미 열린 피커는 대체하지 않고 두 번째 요청을 거절한다.
 //! 대체하면 기존 요청자에게 취소를 통지할 수 없어 결과를 기다리는 요청이 남기 때문이다.
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -318,7 +318,7 @@ mod tests {
         assert_eq!(data.mirror_ws_id, Some(ws_id));
         assert_eq!(data.current_dir, "/srv/remote/proj");
         let forward = engine
-            .pending_list_dir_forward
+            .remote.pending_list_dir_forward
             .last()
             .expect("원격 조회가 큐잉된다");
         assert_eq!(

@@ -1,7 +1,7 @@
 //! 상태바가 표시할 한 surface의 Git HEAD 캐시. 창마다 두며 GUI의 busy 폴링에서 갱신한다.
 //! 매 렌더링마다 디스크를 읽지 않으며 원격 cwd를 로컬 경로로 해석하지 않는다.
 
-use crate::core::engine_access::EngineRef;
+use crate::runtime::engine_access::EngineRef;
 use std::path::{Path, PathBuf};
 
 use super::RequestContext;

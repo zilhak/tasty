@@ -1,7 +1,7 @@
 use winit::window::Window;
 
 use crate::adapters::ui;
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::model::PhysicalRect;
 use crate::settings::EffectiveFont;
 use crate::state::MainViewState;

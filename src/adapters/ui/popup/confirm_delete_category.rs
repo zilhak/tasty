@@ -83,7 +83,7 @@ pub fn on_close_confirm_delete_category(
 pub fn draw_confirm_delete_category(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     let ctx = ui.ctx().clone();
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -161,7 +161,7 @@ pub fn draw_confirm_delete_category(
     }
     if confirm {
         state.dispatch_intent(
-            crate::core::intent::DomainIntent::DeleteCategory { id: cat_id }
+            crate::app::command::DomainIntent::DeleteCategory { id: cat_id }
                 .from_user_menu("confirm_delete_category"),
         );
         state.dialogs.pending_category_delete = None;

@@ -7,7 +7,7 @@ use tasty_telemetry::{
     validate_agent_id, validate_metric,
 };
 
-use crate::core::Core;
+use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -21,7 +21,7 @@ pub(super) fn generate_cap_id(engine: &mut crate::core::CoreState) -> String {
 }
 
 /// 모든 cap 을 memory 에서 읽어온다. cap 은 global scope 에만 저장.
-pub(super) fn load_all_caps(core: &Core) -> std::result::Result<Vec<CostCap>, String> {
+pub(super) fn load_all_caps(core: &AppServices) -> std::result::Result<Vec<CostCap>, String> {
     let list_opts = ListOpts {
         prefix: Some(CAP_KEY_PREFIX.to_string()),
         limit: None,
@@ -44,7 +44,7 @@ pub(super) fn load_all_caps(core: &Core) -> std::result::Result<Vec<CostCap>, St
     Ok(out)
 }
 
-pub(super) fn save_cap(core: &Core, cap: &CostCap) -> std::result::Result<(), String> {
+pub(super) fn save_cap(core: &AppServices, cap: &CostCap) -> std::result::Result<(), String> {
     let key = cap_key(&cap.id);
     let value = MemoryValue::Json(serde_json::to_value(cap).map_err(|e| e.to_string())?);
     let opts = PutOpts {
@@ -69,7 +69,7 @@ pub(super) fn cap_to_json(cap: &CostCap) -> Value {
 }
 
 pub fn handle_cap_set(
-    core: &Core,
+    core: &AppServices,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -141,7 +141,7 @@ pub fn handle_cap_set(
 
 /// `telemetry.cap.list` — 전체 cap. 필터: `agent`.
 pub fn handle_cap_list(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -164,7 +164,7 @@ pub fn handle_cap_list(
 }
 
 pub fn handle_cap_remove(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -192,7 +192,7 @@ pub fn handle_cap_remove(
 
 /// agent/metric/window의 이벤트를 집계한다. Set은 값을 교체하고 Inc/Dec는 더하거나 뺀다.
 pub(super) fn compute_current_value(
-    core: &Core,
+    core: &AppServices,
     cap: &CostCap,
 ) -> std::result::Result<f64, String> {
     let now = now_ms();
@@ -219,7 +219,7 @@ pub(super) fn compute_current_value(
 
 /// `telemetry.cap.status` — agent 별 cap 들의 현재 값/임계/triggered 상태.
 pub fn handle_cap_status(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -270,7 +270,7 @@ pub fn handle_cap_status(
 
 /// `telemetry.cap.reset` — `triggered` 상태 제거. `id` 또는 `agent` 둘 중 하나 필수.
 pub fn handle_cap_reset(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -315,7 +315,7 @@ pub fn handle_cap_reset(
 /// 기록 후 상한을 검사해 triggered를 저장하고 액션을 실행한다. 실패는 경고로 남긴다.
 /// 실제 IPC 차단은 호출 전 check_cap_block에서 수행한다.
 pub(super) fn evaluate_caps_after_record(
-    core: &mut Core,
+    core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
@@ -341,7 +341,7 @@ fn cap_matches_untriggered(cap: &CostCap, ev: &TelemetryEvent) -> bool {
 }
 
 fn try_trigger_cap(
-    core: &mut Core,
+    core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
@@ -371,7 +371,7 @@ fn try_trigger_cap(
 /// Notify는 알림, RequireApproval은 승인 요청, Pause는 알림을 만든다.
 /// Pause/RequireApproval의 이후 IPC 차단은 check_cap_block이 담당한다.
 pub(super) fn fire_cap_action(
-    core: &mut Core,
+    core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
@@ -402,7 +402,7 @@ pub(super) fn fire_cap_action(
 /// 처음 상한에 도달하면 승인을 요청한다. 승인 후 cap.reset으로 해제해야 호출을 재개한다.
 /// triggered가 있는 동안 재발행하지 않는다. reset 후 다시 상한에 도달하면 새로 요청한다.
 pub(super) fn fire_require_approval(
-    core: &mut Core,
+    core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
@@ -482,7 +482,7 @@ pub(super) fn fire_notify(
         cap.agent, cap.metric, current, cap.threshold, cap.window, cap.id,
     );
     out.push(
-        crate::core::intent::DomainIntent::PushNotification {
+        crate::app::command::DomainIntent::PushNotification {
             ws_id,
             surface_id: 0,
             title,

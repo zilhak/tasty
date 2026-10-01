@@ -1,5 +1,5 @@
 //! agent.*의 인자를 읽고 협업 기능의 결과를 IPC 응답으로 변환한다.
-//! 저장소 조립과 workspace별 영속 처리는 src/core/agent/의 Core 메서드가 맡는다.
+//! 저장소 조립과 workspace별 영속 처리는 src/core/agent/의 AppServices 메서드가 맡는다.
 //! task 실행은 별도의 작업 러너가 담당한다.
 
 use std::time::{SystemTime, UNIX_EPOCH};

@@ -1,7 +1,7 @@
 use serde_json::json;
 
 use crate::app::structural_exec::{self, Closed, SplitLevel, SplitOutcome, SplitRequest};
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::model::SplitDirection;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -35,7 +35,7 @@ pub fn handle_pane_list(
 }
 
 pub fn handle_pane_close(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
@@ -71,7 +71,7 @@ pub fn handle_pane_close(
 
 /// 숫자 ID나 별칭으로 surface를 찾는다. 점유 검사도 같은 해석을 사용한다.
 pub(super) fn resolve_surface_target(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     params: &serde_json::Value,
 ) -> Option<u32> {
     let val = params.get("target_surface");
@@ -100,7 +100,7 @@ pub(super) fn resolve_surface_target(
 }
 
 pub fn handle_split(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,

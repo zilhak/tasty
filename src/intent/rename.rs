@@ -4,11 +4,11 @@
 #[cfg(test)]
 use super::{DispatchedIntent, Intent, IntentOrigin};
 #[cfg(test)]
-use crate::core::Core;
+use crate::app::services::AppServices;
 #[cfg(test)]
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 #[cfg(test)]
-use crate::core::intent::DomainIntent;
+use crate::app::command::DomainIntent;
 #[cfg(test)]
 use crate::state::RequestContext;
 
@@ -36,7 +36,7 @@ pub enum DirectRename {
 
 #[cfg(test)]
 pub fn handle(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     intent: &DispatchedIntent,
@@ -74,7 +74,7 @@ pub fn handle(
 
 #[cfg(test)]
 fn rename_tab(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     tab_id: u32,
@@ -108,7 +108,7 @@ fn rename_tab(
 
 #[cfg(test)]
 fn rename_workspace(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     workspace_id: u32,

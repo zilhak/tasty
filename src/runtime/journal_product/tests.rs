@@ -705,20 +705,20 @@ fn kind_withdrawal_after_claim_prevents_factory_execution() {
     let (sender, receiver) = std::sync::mpsc::channel();
     let declaration = serde_json::from_value(serde_json::json!({"kind":"late-kind", "display_name_i18n_key":"surface.kind.markdown", "rendering":"remote"})).unwrap();
     crate::plugin_bridge::remote_kind::register_remote_kind(
-        &engine.surface_registry,
+        &engine.runtime.surface_registry,
         "com.test.late",
         &declaration,
         sender,
     );
-    engine.surface_registry.withdraw_plugin("com.test.late");
-    assert!(engine.surface_registry.get("late-kind").is_some());
+    engine.runtime.surface_registry.withdraw_plugin("com.test.late");
+    assert!(engine.runtime.surface_registry.get("late-kind").is_some());
     let error = match effect_runner::prepare(&mut engine, &binding, claimed) {
         Ok(_) => panic!("withdrawn kind prepared"),
         Err(error) => error,
     };
     assert!(
         error
-            .downcast_ref::<crate::core::surface_registry::SurfaceKindWithdrawn>()
+            .downcast_ref::<crate::runtime::surface_registry::SurfaceKindWithdrawn>()
             .is_some()
     );
     assert!(receiver.try_recv().is_err());
@@ -727,7 +727,7 @@ fn kind_withdrawal_after_claim_prevents_factory_execution() {
 #[cfg(unix)]
 fn complete_conversion_and_reap(
     worker: &JournalWorker,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     binding: &crate::runtime::effect_runner::ExecutionBinding,
     sid: u32,
 ) {
@@ -910,7 +910,7 @@ fn kind_withdrawal_or_replacement_after_prepare_rejects_installation_before_publ
         let (sender, receiver) = std::sync::mpsc::channel();
         let declaration = serde_json::from_value(serde_json::json!({"kind":"late-kind","display_name_i18n_key":"surface.kind.markdown","rendering":"remote"})).unwrap();
         crate::plugin_bridge::remote_kind::register_remote_kind(
-            &engine.surface_registry,
+            &engine.runtime.surface_registry,
             "com.test.late",
             &declaration,
             sender.clone(),
@@ -927,10 +927,10 @@ fn kind_withdrawal_or_replacement_after_prepare_rejects_installation_before_publ
         );
         publish(&worker);
         finished(&worker, 3).unwrap();
-        engine.surface_registry.withdraw_plugin("com.test.late");
+        engine.runtime.surface_registry.withdraw_plugin("com.test.late");
         if reload {
             crate::plugin_bridge::remote_kind::register_remote_kind(
-                &engine.surface_registry,
+                &engine.runtime.surface_registry,
                 "com.test.late",
                 &declaration,
                 sender,

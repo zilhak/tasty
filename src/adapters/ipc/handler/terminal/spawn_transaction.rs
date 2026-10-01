@@ -1,6 +1,6 @@
 //! Commit the newly created child's relationship before any command reaches its PTY.
 use super::*;
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 
 /// `child` must be the fresh surface returned by this spawn's tab.create.
 /// `origin` is the spawn request's origin; the rollback close runs with it.
@@ -9,7 +9,7 @@ use crate::core::engine_access::EngineMut;
     reason = "the rollback close needs the spawn request's origin next to the handler context"
 )]
 pub(super) fn finish(
-    core: &mut Core,
+    core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut EngineMut<'_>,
     id: &Value,
@@ -45,7 +45,7 @@ pub(super) fn finish(
 }
 
 fn rollback(
-    core: &mut Core,
+    core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut EngineMut<'_>,
     parent: u32,

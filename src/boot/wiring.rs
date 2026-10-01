@@ -15,14 +15,14 @@ use crate::adapters::production::{
     directories_home::DirectoriesHome, std_clock::SystemClock, std_fs::StdFileSystem,
     std_process::StdProcessSpawner,
 };
-use crate::core::Core;
-use crate::core::builder::CoreBuilder;
+use crate::app::services::AppServices;
+use crate::app::services::builder::AppServicesBuilder;
 
 /// 부팅에서 연 저장소 Arc를 Core와 하위 사용자가 공유한다. 없으면 메모리 대체 저장소를 시도한다.
 #[cfg(feature = "gui")]
 pub(crate) fn build_production_core(
     memory_arc: Option<Arc<Mutex<tasty_memory::MemoryStore>>>,
-) -> anyhow::Result<Core> {
+) -> anyhow::Result<AppServices> {
     let clipboard: Arc<dyn crate::ports::clipboard::ClipboardSystem> = Arc::new(ArboardClipboard);
     let sound_player: Arc<dyn crate::ports::notification_sound::NotificationSoundPlayer> =
         Arc::new(PlatformPlayer);
@@ -33,7 +33,7 @@ pub(crate) fn build_production_core(
 #[cfg(not(feature = "gui"))]
 pub(crate) fn build_production_core_headless(
     memory_arc: Option<Arc<Mutex<tasty_memory::MemoryStore>>>,
-) -> anyhow::Result<Core> {
+) -> anyhow::Result<AppServices> {
     let clipboard: Arc<dyn crate::ports::clipboard::ClipboardSystem> = Arc::new(NullClipboard);
     let sound_player: Arc<dyn crate::ports::notification_sound::NotificationSoundPlayer> =
         Arc::new(crate::ports::notification_sound::NoopPlayer);
@@ -44,7 +44,7 @@ fn build_production_core_inner(
     clipboard: Arc<dyn crate::ports::clipboard::ClipboardSystem>,
     sound_player: Arc<dyn crate::ports::notification_sound::NotificationSoundPlayer>,
     memory_arc: Option<Arc<Mutex<tasty_memory::MemoryStore>>>,
-) -> anyhow::Result<Core> {
+) -> anyhow::Result<AppServices> {
     let fs: Arc<dyn crate::ports::fs::FileSystem> = Arc::new(StdFileSystem);
     let clock: Arc<dyn crate::ports::clock::Clock> = Arc::new(SystemClock);
     let process: Arc<dyn crate::ports::process::ProcessSpawner> = Arc::new(StdProcessSpawner);
@@ -71,7 +71,7 @@ fn build_production_core_inner(
     let preset_store: Arc<Mutex<PresetStore>> = Arc::new(Mutex::new(PresetStore::load_default()));
     let settings_storage: Arc<dyn SettingsStorage> = Arc::new(FileSettingsStorage);
 
-    CoreBuilder::new()
+    AppServicesBuilder::new()
         .with_fs(fs)
         .with_clock(clock)
         .with_clipboard(clipboard)
@@ -114,7 +114,7 @@ fn memory_init_fallback_of(
 }
 
 /// 파일 저장소 실패 시 메모리 저장소로 계속할 수 있게 한다. 쓰기는 재시작 후 남지 않는다.
-/// 대체 저장소도 열지 못하면 None이며 Core 구성 단계에서 한 번 더 시도한다.
+/// 대체 저장소도 열지 못하면 None이며 AppServices 구성 단계에서 한 번 더 시도한다.
 pub(crate) fn memory_fallback_after(
     err: &tasty_memory::MemoryInitError,
 ) -> Option<Arc<Mutex<tasty_memory::MemoryStore>>> {

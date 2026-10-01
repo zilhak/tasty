@@ -10,14 +10,14 @@ pub struct SurfaceMessage {
 impl CoreState {
     /// Send a message from one surface to another. Returns the assigned message ID.
     pub fn send_message(&mut self, from: u32, to: u32, content: String) -> u32 {
-        self.surface_next_message_id += 1;
-        let id = self.surface_next_message_id;
+        self.live.surface_next_message_id += 1;
+        let id = self.live.surface_next_message_id;
         let msg = SurfaceMessage {
             id,
             from_surface_id: from,
             content,
         };
-        self.surface_messages.entry(to).or_default().push(msg);
+        self.live.surface_messages.entry(to).or_default().push(msg);
         id
     }
 
@@ -30,7 +30,7 @@ impl CoreState {
         from: Option<u32>,
         peek: bool,
     ) -> Vec<SurfaceMessage> {
-        let queue = match self.surface_messages.get_mut(&surface_id) {
+        let queue = match self.live.surface_messages.get_mut(&surface_id) {
             Some(q) => q,
             None => return vec![],
         };
@@ -58,7 +58,7 @@ impl CoreState {
 
     /// Count messages queued for a surface.
     pub fn message_count(&self, surface_id: u32) -> usize {
-        self.surface_messages
+        self.live.surface_messages
             .get(&surface_id)
             .map(|v| v.len())
             .unwrap_or(0)
@@ -66,6 +66,6 @@ impl CoreState {
 
     /// Clear all messages queued for a surface.
     pub fn clear_messages(&mut self, surface_id: u32) {
-        self.surface_messages.remove(&surface_id);
+        self.live.surface_messages.remove(&surface_id);
     }
 }

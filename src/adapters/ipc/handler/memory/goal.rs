@@ -3,14 +3,14 @@
 use serde_json::{Value, json};
 use tasty_memory::goal as goal_mod;
 
-use crate::core::Core;
+use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::{entry_to_json, map_error, require_str, require_surface_id};
 
 pub fn handle_goal_set(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -32,7 +32,7 @@ pub fn handle_goal_set(
 }
 
 pub fn handle_goal_get(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -50,7 +50,7 @@ pub fn handle_goal_get(
 }
 
 pub fn handle_goal_clear(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn require_surface_id_rejects_pty_id_space() {
-        use crate::core::terminal_store::PTY_ID_BASE;
+        use crate::runtime::terminal_store::PTY_ID_BASE;
         let id = json!(1);
         assert!(require_surface_id(&json!({ "surface_id": PTY_ID_BASE }), &id).is_err());
         assert!(require_surface_id(&json!({ "surface_id": 2147484147u64 }), &id).is_err());
@@ -107,7 +107,7 @@ mod tests {
     #[test]
     fn scope_param_rejects_pty_id_space_surface() {
         use super::super::{optional_scope, require_scope};
-        use crate::core::terminal_store::PTY_ID_BASE;
+        use crate::runtime::terminal_store::PTY_ID_BASE;
         let id = json!(1);
         let polluted = json!({ "scope": format!("surface:{}", PTY_ID_BASE) });
         assert!(require_scope(&polluted, &id).is_err());

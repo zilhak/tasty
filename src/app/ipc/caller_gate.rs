@@ -9,7 +9,7 @@ impl App {
         &mut self,
         cmd: &IpcCommand,
     ) -> Option<host_ipc::caller::CallerContext> {
-        match resolve_caller_from_envelope(&self.core, &cmd.request) {
+        match resolve_caller_from_envelope(&self.services, &cmd.request) {
             Ok(caller) => Some(caller),
             Err(response) => {
                 send_response(&cmd.response_tx, response);

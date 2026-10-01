@@ -6,7 +6,7 @@
 //! 창 ID로 고른 engine 접근은 `window_pairs`·`window_pair`로 MainView와 engine을 함께 빌린다.
 //! engine 소유 구조가 바뀌면 이 두 타입과 [`engines_mut!`]를 함께 고친다.
 
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::collections::{HashMap, HashSet};
 
 use winit::window::WindowId;
@@ -22,7 +22,7 @@ use crate::view::main::MainView;
 type ViewMap = HashMap<WindowId, Box<dyn view::ui::View>>;
 
 /// App의 View·engine 필드만 가변으로 빌린다.
-/// `&mut self` 메서드와 달리 같은 함수에서 `self.core` 같은 다른 필드를 함께 빌릴 수 있다.
+/// `&mut self` 메서드와 달리 같은 함수에서 `self.services` 같은 다른 필드를 함께 빌릴 수 있다.
 macro_rules! engines_mut {
     ($app:expr) => {
         $crate::app::window_access::EngineScanMut::from_fields(
@@ -947,7 +947,7 @@ mod tests {
 
     #[test]
     fn parked_navigation_survives_application_mutations_and_unpark() {
-        use crate::core::intent::DomainIntent;
+        use crate::app::command::DomainIntent;
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         let pane_id = engine

@@ -105,9 +105,9 @@ fn requested_workspace(params: Value, active: usize) -> (Option<u64>, Vec<u32>) 
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
-    crate::core::apply_create_workspace_inner(
+    crate::app::services::apply_create_workspace_inner(
         &mut engine,
-        crate::core::WorkspaceCreationParams::terminal(),
+        crate::app::services::WorkspaceCreationParams::terminal(),
     )
     .expect("두 번째 워크스페이스");
     let ids: Vec<u32> = engine.workspaces().into_iter().map(|w| w.id).collect();

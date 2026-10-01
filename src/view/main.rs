@@ -22,7 +22,7 @@ pub(crate) mod ime;
 
 pub(crate) use divider_drag::DividerDrag;
 
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::sync::Arc;
 
 use winit::event::WindowEvent;
@@ -244,7 +244,7 @@ impl MainView {
 
     /// Request this window to close (will be handled by the event loop).
     pub(crate) fn request_close(&mut self) {
-        self.base.close_requested = true;
+        self.base.state.close_requested = true;
     }
 
     pub fn compute_terminal_rect(&self) -> PhysicalRect {
@@ -418,7 +418,7 @@ impl MainView {
             self.mark_dirty();
         }
 
-        let was_dirty = self.base.dirty;
+        let was_dirty = self.base.state.dirty;
 
         match event {
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
@@ -446,14 +446,14 @@ impl MainView {
                 self.mark_dirty();
             }
             WindowEvent::Focused(focused) => {
-                self.base.focused = focused;
+                self.base.state.focused = focused;
                 // 포커스가 바뀌면 누름·뗌 짝이 끊길 수 있어 double-tap 추적을 초기화한다.
                 self.double_tap.reset();
                 if !focused {
                     if self.ime_preedit.is_some() {
                         self.flush_ime_preedit(engine);
                     }
-                    self.base.modifiers = ModifiersState::empty();
+                    self.base.state.modifiers = ModifiersState::empty();
                     self.state.clear_switch_overlay();
                     self.state.modifier_hint.clear();
                 }
@@ -463,10 +463,10 @@ impl MainView {
                 self.mark_dirty();
             }
             WindowEvent::ModifiersChanged(modifiers) => {
-                self.base.modifiers = modifiers.state();
+                self.base.state.modifiers = modifiers.state();
                 let mut dirty = self.update_hovered_link(engine);
                 // modifier 변화에 따라 키캡 표시 대상과 다시 그리기를 갱신한다.
-                let mods = self.base.modifiers;
+                let mods = self.base.state.modifiers;
                 let ctrl = mods.control_key();
                 let shift = mods.shift_key();
                 // `alt` = "alt" 토큰(macOS super/그 외 alt), `option` = "option" 토큰
@@ -537,7 +537,7 @@ impl MainView {
             _ => {}
         }
 
-        if self.base.dirty && !was_dirty {
+        if self.base.state.dirty && !was_dirty {
             self.base.winit.request_redraw();
         }
 
@@ -560,11 +560,11 @@ impl View for MainView {
     }
 
     fn handle_event(&mut self, event: WindowEvent, ctx: &mut ViewCtx<'_>) -> ViewAction {
-        let Some(session) = ctx.engine.take() else {
+        let Some(mut engine) = ctx.engine.take() else {
             tracing::warn!("main window event without an engine: {event:?}");
             return ViewAction::None;
         };
-        self.handle_engine_event(&mut session.borrow_mut(), event, ctx)
+        self.handle_engine_event(&mut engine,event,ctx)
     }
 
     fn render(&mut self) {

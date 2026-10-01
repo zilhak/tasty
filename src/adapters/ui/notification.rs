@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::i18n::{t, t_fmt};
 use crate::state::MainViewState;
 use crate::theme;
@@ -29,7 +29,7 @@ pub(crate) fn draw_notification_content_inner(
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.small_button(t("button.mark_all_read")).clicked() {
                 state.dispatch_intent(
-                    crate::core::intent::DomainIntent::MarkAllNotificationsRead
+                    crate::app::command::DomainIntent::MarkAllNotificationsRead
                         .from_user_menu("notification_panel.mark_all_read"),
                 );
             }
@@ -152,7 +152,7 @@ pub(crate) fn draw_notification_content_inner(
 
             if let Some(id) = mark_read_id {
                 state.dispatch_intent(
-                    crate::core::intent::DomainIntent::MarkNotificationRead { id }
+                    crate::app::command::DomainIntent::MarkNotificationRead { id }
                         .from_user_menu("notification_panel.mark_read"),
                 );
             }

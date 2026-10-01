@@ -4,7 +4,6 @@ use crate::model::WorkspaceCategory;
 pub(super) fn apply_event(
     engine: &mut CoreState,
     event: &DomainEvent,
-    prepared: &mut PreparedLeaves,
     retired: &mut Vec<Retired>,
 ) -> Result<()> {
     match event {
@@ -104,7 +103,7 @@ pub(super) fn apply_event(
             name,
             surface,
         } => {
-            let leaf = take_prepared(prepared, surface.id)?;
+            let leaf = SurfaceDescriptor::new(surface.id,surface.kind.clone());
             pane(engine, *pane_id)?
                 .tabs
                 .insert(*index, Tab::new_with_surface(*id, name.clone(), leaf));
@@ -124,8 +123,8 @@ pub(super) fn apply_event(
         DomainEvent::TabClosed { id } => {
             retired.push(Retired::Tab(layout::detach_tab(engine, *id)?))
         }
-        DomainEvent::SurfaceConverted { id, .. } => {
-            let leaf = take_prepared(prepared, *id)?;
+        DomainEvent::SurfaceConverted { id,kind,.. } => {
+            let leaf = SurfaceDescriptor::new(*id,kind.clone());
             let target_tab = engine.find_tab_for_surface(*id).ok_or("surface missing")?;
             let slot = tab(engine, target_tab)?
                 .layout_mut()
@@ -141,24 +140,7 @@ pub(super) fn apply_event(
         | DomainEvent::SurfaceClosed { .. }
         | DomainEvent::PaneRatioSet { .. }
         | DomainEvent::SurfaceRatioSet { .. } => {
-            layout::apply_event(engine, event, prepared, retired)?
-        }
-        DomainEvent::SurfaceActivationChanged { id, activation, .. }
-            if activation.phase == tasty_domain::ActivationPhase::Ready
-                && prepared.contains_key(id) =>
-        {
-            let leaf = take_prepared(prepared, *id)?;
-            let target_tab = engine
-                .find_tab_for_surface(*id)
-                .ok_or("restoring surface missing")?;
-            let slot = tab(engine, target_tab)?
-                .layout_mut()
-                .find_leaf_mut(*id)
-                .ok_or("restoring leaf missing")?;
-            if !slot.as_any().is::<bootstrap::JournalPlaceholder>() {
-                return Err("activation cannot replace a live kind without conversion".into());
-            }
-            retired.push(Retired::Surface(std::mem::replace(slot, leaf)));
+            layout::apply_event(engine, event, retired)?
         }
         DomainEvent::SurfaceCreationSeeded { .. }
         | DomainEvent::SurfaceDataRecorded { .. }

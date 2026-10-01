@@ -1,9 +1,9 @@
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 use winit::window::CursorIcon;
 
 use super::{DividerDrag, HoveredLink, MainView, MeshHoverTarget};
-use crate::core::intent::{DomainIntent, SendPayload};
+use crate::app::command::{DomainIntent, SendPayload};
 use crate::settings::LinkModifier;
 use crate::terminal_link::{self, LinkHighlight};
 use crate::theme;
@@ -20,7 +20,7 @@ impl MainView {
             .map(|h| (h.surface_id, h.highlight.segments.clone()));
 
         let modifier = LinkModifier::parse(&engine.settings.general.link_click_modifier);
-        let mods = &self.base.modifiers;
+        let mods = &self.base.state.modifiers;
         let matches_mods = modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
 
         // 수식키 변경 때도 호출되므로 무대 중에는 배경 링크를 조회하지 않는다.
@@ -57,7 +57,7 @@ impl MainView {
         let surface_id =
             self.state
                 .surface_id_at_position(engine, x, y, terminal_rect, scale_factor)?;
-        if engine.attach.is_hard_occupied(surface_id) {
+        if engine.live.occupancy.is_hard_occupied(surface_id) {
             return None;
         }
         let terminal = engine.visible_terminal(surface_id)?;
@@ -466,7 +466,7 @@ impl MainView {
                     self.state
                         .focus_surface_at_position(engine, x, y, terminal_rect, scale_factor);
                 if changed_pane || changed_surf {
-                    self.base.dirty = true;
+                    self.base.state.dirty = true;
                 }
                 self.mark_dirty();
                 return true;
@@ -573,7 +573,7 @@ impl MainView {
         }
         // 블랙리스트면 None 으로 격하 → 우클릭이 tasty 컨텍스트 메뉴로 빠진다.
         let tracking = self.effective_click_tracking(engine, surface_id, tracking);
-        let shift = self.base.modifiers.shift_key();
+        let shift = self.base.state.modifiers.shift_key();
         if right_click_delegates_to_app(tracking, shift) {
             // 트래킹 앱이 마우스를 캡처 중이라 우클릭이 앱으로 간다 — Shift+드래그/
             // Shift+우클릭 우회 안내를 트래킹 세션당 1회(Pressed, 설정 ON, ADR-0015).
@@ -656,7 +656,7 @@ impl MainView {
             // mouse drag 시작은 vi copy mode 와 충돌 — 자동 종료. (R7)
             if self.vi_copy.is_some() {
                 self.vi_copy = None;
-                self.base.dirty = true;
+                self.base.state.dirty = true;
             }
         } else {
             self.left_mouse_down = false;
@@ -688,7 +688,7 @@ impl MainView {
         button_state: ElementState,
     ) -> bool {
         let modifier = LinkModifier::parse(&engine.settings.general.link_click_modifier);
-        let mods = &self.base.modifiers;
+        let mods = &self.base.state.modifiers;
         let link_mods_match = !matches!(modifier, LinkModifier::None)
             && modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
         if !(link_mods_match && button_state == ElementState::Pressed) {
@@ -702,7 +702,7 @@ impl MainView {
             y,
             *terminal_rect,
             self.base.gpu.scale_factor(),
-        ) && engine.attach.is_hard_occupied(sid)
+        ) && engine.live.occupancy.is_hard_occupied(sid)
         {
             return false;
         }
@@ -715,7 +715,7 @@ impl MainView {
                 self.state
                     .focus_surface_at_position(engine, x, y, *terminal_rect, scale_factor);
             if changed_pane || changed_surf {
-                self.base.dirty = true;
+                self.base.state.dirty = true;
             }
         }
         if let Some(hovered) = self.compute_hovered_link(&engine.as_ref()) {
@@ -735,7 +735,7 @@ impl MainView {
                         );
                     } else {
                         self.state.dispatch_intent(
-                            crate::core::intent::DomainIntent::DispatchFile {
+                            crate::app::command::DomainIntent::DispatchFile {
                                 target: crate::file::format::FileTarget::new(path),
                                 depth: crate::file::format::DetectDepth::Deep,
                                 origin_surface_id: None,
@@ -805,7 +805,7 @@ impl MainView {
                 self.state
                     .focus_surface_at_position(engine, x, y, *terminal_rect, scale_factor);
             if changed_pane || changed_surf {
-                self.base.dirty = true;
+                self.base.state.dirty = true;
             }
             let ime_active = self.ime_preedit.is_some();
             let need_flush = ime_active && self.state.focused_surface_id(engine) != old_surface;
@@ -827,7 +827,7 @@ impl MainView {
             .focused_surface_id(&*engine)
             .map(|sid| self.effective_click_tracking(engine, sid, mouse_tracking))
             .unwrap_or(mouse_tracking);
-        let shift = self.base.modifiers.shift_key();
+        let shift = self.base.state.modifiers.shift_key();
         if mouse_tracking != tasty_terminal::MouseTrackingMode::None {
             if left_click_local_select(mouse_tracking, shift, false) {
                 // Shift 우회는 press에서 결정하고 release까지 유지한다.
@@ -892,7 +892,7 @@ impl MainView {
             let scale_factor = self.base.gpu.scale_factor();
             self.state
                 .resize_all(engine, *terminal_rect, cell_w, cell_h, scale_factor);
-            self.base.dirty = true;
+            self.base.state.dirty = true;
         }
         // 트래킹 ON 이면 release 를 앱에 보고, 아니면 로컬 선택 완료. 단, Shift+좌클릭
         // 우회 시퀀스(left_select_bypass)면 — dragging 여부와 무관하게(멀티클릭 word/line
@@ -983,7 +983,7 @@ impl MainView {
         actual: tasty_terminal::MouseTrackingMode,
     ) -> tasty_terminal::MouseTrackingMode {
         crate::state::mouse::effective_click_tracking_decision(
-            engine.attach.is_hard_occupied(surface_id),
+            engine.live.occupancy.is_hard_occupied(surface_id),
             engine.is_surface_mouse_capture_disabled(surface_id),
             actual,
         )
@@ -1030,7 +1030,7 @@ impl MainView {
             self.base.gpu.scale_factor(),
         ) == Some(sid);
         if !should_report_hover_motion(HoverReportInput {
-            window_focused: self.base.focused,
+            window_focused: self.base.state.focused,
             over_focused_surface,
             on_divider_band,
             // macOS 는 네이티브 데코가 가장자리를 처리해 이 값이 항상 None 이다 —
@@ -1065,7 +1065,7 @@ impl MainView {
             .find_terminal_by_id(surface_id)
             .map(|t| t.sgr_mouse())
             .unwrap_or(false);
-        let m = &self.base.modifiers;
+        let m = &self.base.state.modifiers;
         let cb = mouse_report_cb(button, motion, m.shift_key(), m.alt_key(), m.control_key());
         let bytes = tasty_terminal::encode_mouse_report(sgr, cb, col, row, release);
         self.state.dispatch_intent(
@@ -1159,7 +1159,7 @@ impl MainView {
             if let Some(surface_id) = target_id {
                 // hard 점유에서는 휠을 막는다. 표시 중인 mirror 대신 live 터미널에
                 // 보고하거나 스크롤 위치를 바꾸면 점유 해제 뒤 화면이 달라질 수 있다.
-                if engine.attach.is_hard_occupied(surface_id) {
+                if engine.live.occupancy.is_hard_occupied(surface_id) {
                     return;
                 }
                 let lines = match delta {
@@ -1257,7 +1257,7 @@ impl MainView {
                             }
                         },
                     );
-                    self.base.dirty = true;
+                    self.base.state.dirty = true;
                 }
             }
         }
@@ -2077,8 +2077,8 @@ mod mouse_capture_banner_tests {
         let mut e = e_session.borrow_mut();
         e.settings.general.mouse_capture_banner_blacklist = vec!["vim".to_string()];
         assert!(!mouse_capture_banner_suppressed(&e, 42));
-        e.foreground_names.insert(42, "vim".to_string());
-        e.foreground_names.insert(43, "htop".to_string());
+        e.live.foreground_names.insert(42, "vim".to_string());
+        e.live.foreground_names.insert(43, "htop".to_string());
         assert!(mouse_capture_banner_suppressed(&e, 42));
         assert!(!mouse_capture_banner_suppressed(&e, 43));
     }

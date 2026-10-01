@@ -36,7 +36,7 @@ impl Pane {
         id: PaneId,
         tab_id: TabId,
         name: String,
-        surface: Box<dyn super::Surface>,
+        surface: super::SurfaceDescriptor,
     ) -> Self {
         let tab = super::tab::Tab::new_with_surface(tab_id, name, surface);
         Self {
@@ -48,7 +48,7 @@ impl Pane {
     /// Create a Pane with a TerminalSurface marker. Caller must have already
     /// `engine.runtime.terminals.insert(surface_id, terminal)` for the spawned Terminal.
     pub fn new_with_terminal_marker(id: PaneId, tab_id: TabId, surface_id: SurfaceId) -> Self {
-        let surface: Box<dyn super::Surface> = Box::new(TerminalSurface { id: surface_id });
+        let surface: super::SurfaceDescriptor = super::SurfaceDescriptor::new(surface_id,"terminal");
         let tab = Tab::new_with_surface(tab_id, "Shell".to_string(), surface);
         Self {
             id,
@@ -59,7 +59,7 @@ impl Pane {
     /// Add a TerminalSurface-marker tab (active). Caller must have already
     /// inserted the spawned Terminal into the store.
     pub fn add_terminal_marker_tab(&mut self, tab_id: TabId, surface_id: SurfaceId) {
-        let surface: Box<dyn super::Surface> = Box::new(TerminalSurface { id: surface_id });
+        let surface: super::SurfaceDescriptor = super::SurfaceDescriptor::new(surface_id,"terminal");
         let tab = Tab::new_with_surface(tab_id, "Shell".to_string(), surface);
         self.tabs.push(tab);
     }
@@ -71,7 +71,7 @@ impl Pane {
         surface_id: SurfaceId,
         explicit_name: Option<String>,
     ) {
-        let surface: Box<dyn super::Surface> = Box::new(TerminalSurface { id: surface_id });
+        let surface: super::SurfaceDescriptor = super::SurfaceDescriptor::new(surface_id,"terminal");
         let tab = Tab::new_named(tab_id, "Shell".to_string(), explicit_name, surface);
         self.tabs.push(tab);
     }
@@ -107,7 +107,7 @@ impl Pane {
         &mut self,
         target_surface_id: SurfaceId,
         direction: SplitDirection,
-        new_surface: Box<dyn super::Surface>,
+        new_surface: super::SurfaceDescriptor,
     ) -> anyhow::Result<()> {
         for tab in &mut self.tabs {
             if tab.contains_surface(target_surface_id) {
@@ -169,7 +169,7 @@ impl Pane {
         tab_id: TabId,
         name: String,
         explicit_name: Option<String>,
-        surface: Box<dyn super::Surface>,
+        surface: super::SurfaceDescriptor,
     ) {
         let tab = super::tab::Tab::new_named(tab_id, name, explicit_name, surface);
         self.tabs.push(tab);
@@ -181,7 +181,7 @@ impl Pane {
         tab_id: TabId,
         name: String,
         explicit_name: Option<String>,
-        surface: Box<dyn super::Surface>,
+        surface: super::SurfaceDescriptor,
     ) {
         let tab = super::tab::Tab::new_named(tab_id, name, explicit_name, surface);
         self.tabs.push(tab);
@@ -202,13 +202,14 @@ impl Pane {
     pub fn to_tree_json(
         &self,
         presentation: &(impl crate::StructurePresentation + ?Sized),
+        surface_json:&dyn Fn(SurfaceId)->serde_json::Value,
     ) -> serde_json::Value {
         let tabs: Vec<_> = self
             .tabs
             .iter()
             .enumerate()
             .map(|(i, tab)| {
-                let mut t = tab.to_tree_json(presentation);
+                let mut t = tab.to_tree_json(presentation,surface_json);
                 t["active"] = serde_json::json!(i == presentation.tab_index(self));
                 t
             })

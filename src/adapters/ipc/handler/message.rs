@@ -6,7 +6,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 use super::require_surface_id;
 
 pub fn handle_message_send(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -31,7 +31,7 @@ pub fn handle_message_send(
 }
 
 pub fn handle_message_read(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -70,7 +70,7 @@ pub fn handle_message_count(
 }
 
 pub fn handle_message_clear(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,

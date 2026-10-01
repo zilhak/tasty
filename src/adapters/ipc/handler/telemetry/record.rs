@@ -2,7 +2,7 @@
 
 use serde_json::{Value, json};
 
-use crate::core::Core;
+use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -10,7 +10,7 @@ use super::{build_event, evaluate_caps_after_record, now_ms, persist_event, reco
 
 /// Agent가 보고한 RSS 이벤트를 이상 탐지에 전달한다. Plugin의 RSS는 호스트가 직접 측정한다.
 fn detect_rss_self_report(
-    core: &Core,
+    core: &AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
@@ -31,7 +31,7 @@ fn detect_rss_self_report(
 }
 
 pub fn handle_record(
-    core: &mut Core,
+    core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
@@ -71,7 +71,7 @@ pub fn handle_record(
 /// 입력: `{ events: [<event-params>, ...] }`. 각 항목은 record 와 동일한 스키마.
 /// 모든 이벤트는 동일한 호출 ts 를 공유하며, seq 만 단조 증가하여 정렬을 보장한다.
 pub fn handle_record_batch(
-    core: &mut Core,
+    core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,

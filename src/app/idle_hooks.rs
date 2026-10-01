@@ -6,7 +6,7 @@ use crate::app::App;
 
 impl App {
     pub(crate) fn poll_idle_timeout_hooks(&mut self) {
-        let exec = self.core.hook_executor();
+        let exec = self.services.hook_executor();
 
         for (_, main, mut engine) in self.engines_mut().window_pairs() {
             let fired = engine.fire_idle_timeout_hooks(&exec);
@@ -16,7 +16,7 @@ impl App {
             for event in fired {
                 main.state.enqueue_host_event(event);
             }
-            main.base.dirty = true;
+            main.base.state.dirty = true;
         }
 
         // 화면이 없는 parked engine도 계속 판정한다.

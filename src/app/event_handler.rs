@@ -1,4 +1,4 @@
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
@@ -17,7 +17,7 @@ impl ApplicationHandler<AppEvent> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
         let _stall_guard = stall_watchdog::Guard::enter(Site::UserEvent);
         // 종료 중에는 정리된 상태를 다시 건드리지 않도록 새 이벤트를 버린다.
-        if self.shutdown.is_some() {
+        if self.state.shutdown.is_some() {
             return;
         }
 
@@ -229,17 +229,17 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
-        if self.boot_error_mode {
+        if self.state.boot_error_mode {
             self.handle_boot_error_window_event(event);
             return;
         }
 
-        if self.shell_setup_mode {
+        if self.state.shell_setup_mode {
             self.handle_shell_setup_window_event(event_loop, event);
             return;
         }
 
-        if self.shutdown.is_some() {
+        if self.state.shutdown.is_some() {
             self.handle_shutdown_window_event(event_loop, id, event);
             return;
         }
@@ -322,7 +322,7 @@ impl ApplicationHandler<AppEvent> for App {
 
         // exit 요청 뒤에도 콜백이 올 수 있어 종료 가드를 유지한다.
         // 종료 단계는 새 IPC를 실행하지 않고 종료 중이라는 응답을 보낸다.
-        if self.shutdown.is_some() {
+        if self.state.shutdown.is_some() {
             self.drive_shutdown_frame(event_loop);
             event_loop.set_control_flow(if self.shutdown_needs_frames() {
                 winit::event_loop::ControlFlow::WaitUntil(
@@ -367,7 +367,7 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
         self.resume_publication_events(event_loop);
-        if self.shutdown.is_some() || self.journal.is_halted() || self.journal.pauses_observation()
+        if self.state.shutdown.is_some() || self.journal.is_halted() || self.journal.pauses_observation()
         {
             return;
         }
@@ -615,9 +615,9 @@ impl App {
         mut gpu: crate::gpu::GpuState,
     ) {
         tracing::warn!("bash not found; entering shell setup mode");
-        self.shell_setup_mode = true;
-        self.shell_setup_path = String::new();
-        if let Err(e) = gpu.render_shell_setup(&window, &mut self.shell_setup_path) {
+        self.state.shell_setup_mode = true;
+        self.state.shell_setup_path = String::new();
+        if let Err(e) = gpu.render_shell_setup(&window, &mut self.state.shell_setup_path) {
             tracing::warn!("shell setup first frame render failed: {e} — showing window anyway");
         }
         window.set_visible(true);
@@ -647,7 +647,7 @@ impl App {
                 && let Some((_, main, engine)) = engines_mut!(self).window_pairs().next()
             {
                 crate::adapters::ipc::handler::record_plugin_rss_samples(
-                    &self.core,
+                    &self.services,
                     &mut main.state,
                     engine.core,
                     &rss_samples,
@@ -800,7 +800,7 @@ impl App {
     fn flush_pending_pty_resizes(&mut self) {
         let mut any_pending = false;
         for mut engine in self.engines_mut().windowed_and_parked() {
-            if crate::core::Core::flush_pty_resizes(&mut engine) {
+            if crate::app::services::AppServices::flush_pty_resizes(&mut engine) {
                 any_pending = true;
             }
         }
@@ -814,7 +814,7 @@ impl App {
     /// 출력을 비우기 전에 해당 surface 또는 전역 wake 중복 방지를 해제한다.
     fn note_drained_all(&self, surface_id: Option<u32>) {
         for engine in self.engines().windowed_and_parked() {
-            if let Some(factory) = engine.waker_factory.as_ref() {
+            if let Some(factory) = engine.runtime.waker_factory.as_ref() {
                 factory.note_drained(surface_id);
             }
         }
@@ -823,10 +823,10 @@ impl App {
     /// surface ID가 있으면 해당 engine을, 없으면 모든 창·parked engine의 출력을 처리한다.
     fn handle_terminal_output(&mut self, surface_id: Option<u32>) {
         use crate::app::dispatch_domain::DispatchSource;
-        use crate::core::intent::CoreEvent;
+        use crate::app::command::CoreEvent;
         // 비우는 동안 도착한 wake가 중복으로 버려지지 않도록 먼저 해제한다.
         self.note_drained_all(surface_id);
-        let core = &mut self.core;
+        let core = &mut self.services;
         let mut pending: Vec<(DispatchSource, Vec<CoreEvent>)> = Vec::new();
         if let Some(sid) = surface_id {
             let mut found = false;
@@ -931,11 +931,11 @@ impl App {
     fn finish_shell_setup_confirmed(&mut self) {
         let mut settings = crate::settings::Settings::load();
         let normalize_report = settings.normalize();
-        settings.general.shell = self.shell_setup_path.clone();
+        settings.general.shell = self.state.shell_setup_path.clone();
         if let Err(e) = settings.save() {
             tracing::error!("failed to save settings: {e}");
         }
-        self.shell_setup_mode = false;
+        self.state.shell_setup_mode = false;
         let window = self.shell_setup_window.take().unwrap();
         let gpu = self.shell_setup_gpu.take().unwrap();
         self.begin_boot(window, gpu, settings, std::time::Instant::now(), false);
@@ -950,7 +950,7 @@ impl App {
         if let WindowEvent::RedrawRequested = &event {
             if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window)
             {
-                let result = gpu.render_shell_setup(window, &mut self.shell_setup_path);
+                let result = gpu.render_shell_setup(window, &mut self.state.shell_setup_path);
                 match result {
                     Ok(crate::gpu::ShellSetupAction::None) => {}
                     Ok(crate::gpu::ShellSetupAction::Confirmed) => {
@@ -987,9 +987,9 @@ impl App {
         mut gpu: crate::gpu::GpuState,
     ) {
         tracing::warn!("boot failed with a live GPU — showing the boot error screen");
-        self.boot_error_mode = true;
+        self.state.boot_error_mode = true;
         // 렌더 실패 시에도 창은 표시한다.
-        if let Some(info) = &self.boot_error_info
+        if let Some(info) = &self.state.boot_error_info
             && let Err(e) = gpu.render_boot_error(&window, info)
         {
             tracing::warn!("boot error first frame render failed: {e} — showing window anyway");
@@ -1005,7 +1005,7 @@ impl App {
             let quit = if let (Some(gpu), Some(window), Some(info)) = (
                 &mut self.boot_error_gpu,
                 &self.boot_error_window,
-                &self.boot_error_info,
+                &self.state.boot_error_info,
             ) {
                 match gpu.render_boot_error(window, info) {
                     Ok(quit) => quit,
@@ -1107,7 +1107,8 @@ impl App {
                 let engine = self
                     .engines
                     .of_window(id)
-                    .and_then(|e| self.engines.session_mut(e));
+                    .and_then(|e| self.engines.session_mut(e))
+                    .map(|session|session.borrow_mut());
                 let mut ctx = ViewCtx {
                     event_loop,
                     modal_active,
@@ -1125,14 +1126,14 @@ impl App {
             match action {
                 ViewAction::None => {}
                 ViewAction::Close => {
-                    if self.preset_view_id == Some(id) {
+                    if self.state.preset_view_id == Some(id) {
                         self.on_preset_window_closed(id);
                         return;
                     }
                     debug_assert!(false, "non-modal window returned Close unexpectedly");
                 }
                 ViewAction::CloseWithEvent(app_event) => {
-                    if self.preset_view_id == Some(id) {
+                    if self.state.preset_view_id == Some(id) {
                         self.on_preset_window_closed(id);
                         crate::shortcuts::send_app_event(&self.view.proxy, app_event);
                         return;
@@ -1148,7 +1149,7 @@ impl App {
                 .view
                 .views
                 .get(&id)
-                .map(|w| w.base().close_requested)
+                .map(|w| w.base().state.close_requested)
                 .unwrap_or(false);
             if close_requested {
                 self.close_self_requesting_window(id);
@@ -1164,7 +1165,7 @@ impl App {
             .view
             .views
             .iter()
-            .filter(|(_, w)| w.base().close_requested)
+            .filter(|(_, w)| w.base().state.close_requested)
             .map(|(id, _)| *id)
             .collect();
         for id in ids {
@@ -1202,9 +1203,9 @@ impl App {
     #[cfg(all(windows, feature = "gui"))]
     pub(crate) fn resume_health_pass(&mut self) {
         use crate::app::dispatch_domain::DispatchSource;
-        use crate::core::intent::CoreEvent;
+        use crate::app::command::CoreEvent;
         tracing::info!("system resumed — running PTY health pass (ADR-0013)");
-        let core = &mut self.core;
+        let core = &mut self.services;
         let mut pending: Vec<(DispatchSource, Vec<CoreEvent>)> = Vec::new();
         for (id, main, engine) in engines_mut!(self).window_entries() {
             let suspects = engine.wake_terminals_after_resume();
@@ -1249,7 +1250,7 @@ impl App {
 
     /// PresetView는 바로 닫고 MainView는 남은 개수에 따라 해당 창 닫기 또는 종료 흐름으로 보낸다.
     pub(crate) fn request_close_window(&mut self, id: WindowId, event_loop: &ActiveEventLoop) {
-        if self.preset_view_id == Some(id) {
+        if self.state.preset_view_id == Some(id) {
             self.on_preset_window_closed(id);
             return;
         }
@@ -1309,17 +1310,17 @@ impl App {
             return;
         }
         for mut engine in self.engines_mut().windowed_and_parked() {
-            engine.attach.mark_clients_disconnected(clients);
+            engine.live.occupancy.mark_clients_disconnected(clients);
         }
     }
 
     pub(crate) fn release_attach_for_disconnected(&mut self, clients: &[u32]) {
         for mut engine in self.engines_mut().windowed_and_parked() {
             for &cid in clients {
-                engine.attach.release_all_for_client(cid);
-                engine.bulk_transfers.clear_client(cid);
-                engine.capture_uploads.clear_client(cid);
-                engine.mesh_mirror.remove_for_client(cid);
+                engine.live.occupancy.release_all_for_client(cid);
+                engine.remote.bulk_transfers.clear_client(cid);
+                engine.remote.capture_uploads.clear_client(cid);
+                engine.remote.mesh_mirror.remove_for_client(cid);
             }
         }
     }
@@ -1339,7 +1340,7 @@ impl App {
         self.apply_mesh_full_resend_requests_batch(outcome.mesh_full_resend_requests, &hub);
         self.apply_mesh_input_events_batch(outcome.mesh_input_events, &hub);
 
-        self.apply_capture_uploads_batch(outcome.capture_uploads, &hub);
+        self.apply_capture_uploads_batch(outcome.remote.capture_uploads, &hub);
         self.apply_list_dir_requests_batch(outcome.list_dir_requests, &hub);
         self.apply_git_query_requests_batch(outcome.git_query_requests, &hub);
         self.apply_markdown_content_requests_batch(outcome.markdown_content_requests, &hub);
@@ -1373,7 +1374,7 @@ impl App {
     ) {
         for (client_id, surface_id) in requests {
             if !self.attach_on_owning_engine(surface_id, client_id, hub) {
-                crate::core::attach_runtime::reject_attach(hub, client_id, "not_found", None);
+                crate::remote::server::reject_attach(hub, client_id, "not_found", None);
             }
         }
     }
@@ -1385,7 +1386,7 @@ impl App {
     ) {
         for (client_id, workspace_id) in requests {
             if !self.attach_workspace_on_owning_engine(workspace_id, client_id, hub) {
-                crate::core::attach_runtime::reject_attach(
+                crate::remote::server::reject_attach(
                     hub,
                     client_id,
                     "workspace_not_found",
@@ -1621,7 +1622,7 @@ impl App {
     /// workspace 점유는 surface ID가 붙은 입력, 단일 surface 점유는 원시 입력으로 전달한다.
     fn feed_stream_input(&mut self, client_id: u32, bytes: &[u8]) -> bool {
         for mut engine in self.engines_mut().windowed_and_parked() {
-            if engine.attach.client_holds_workspace(client_id) {
+            if engine.live.occupancy.client_holds_workspace(client_id) {
                 return Self::demux_workspace_input(&mut engine, client_id, bytes);
             }
         }
@@ -1706,14 +1707,14 @@ impl App {
         hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
         let anchor = op.anchor_surface_id();
-        let core = &mut self.core;
+        let core = &mut self.services;
         let mut handled = false;
         for (_, main, mut engine) in engines_mut!(self).window_pairs() {
-            let Some(ws) = engine.attach.workspace_of_surface(anchor) else {
+            let Some(ws) = engine.live.occupancy.workspace_of_surface(anchor) else {
                 continue;
             };
             handled = true;
-            let (ok, reason, delta) = if engine.attach.workspace_holder(ws) != Some(client_id) {
+            let (ok, reason, delta) = if engine.live.occupancy.workspace_holder(ws) != Some(client_id) {
                 (false, Some("not workspace holder".to_string()), None)
             } else {
                 match crate::app::attach_structure::execute_forwarded_structural_op(
@@ -1747,7 +1748,7 @@ impl App {
         if !handled {
             // workspace 점유는 있지만 anchor가 사라진 경우도 구별해 거절한다.
             let engines = self.engines().windowed_and_parked();
-            let reason = crate::core::attach_structure_sync::unresolved_forward_reason(
+            let reason = crate::remote::structure_sync::unresolved_forward_reason(
                 engines.map(|e| e.core),
                 client_id,
                 op,
@@ -1800,7 +1801,7 @@ impl App {
                     return;
                 };
                 match find_workspace_holder_engine_mut(engines_mut!(self), client_id) {
-                    Some(mut engine) => engine.capture_uploads.append(
+                    Some(mut engine) => engine.remote.capture_uploads.append(
                         client_id,
                         upload_id,
                         &bytes,
@@ -1815,10 +1816,10 @@ impl App {
                 upload_id,
                 file_name,
             } => {
-                let core = &self.core;
+                let core = &self.services;
                 match find_workspace_holder_engine_mut(engines_mut!(self), client_id) {
                     Some(engine) => {
-                        crate::core::attach_runtime::finalize_capture_upload(
+                        crate::remote::server::finalize_capture_upload(
                             engine.core,
                             core,
                             hub,
@@ -1854,7 +1855,7 @@ impl App {
         use tasty_ipc::stream_hub::ListDirRequestMsg;
         let ListDirRequestMsg::ListDirRequest { request_id, dir } = msg;
         if let Some(engine) = find_workspace_holder_engine_mut(self.engines_mut(), client_id) {
-            crate::core::attach_runtime::handle_list_dir_request(
+            crate::remote::server::handle_list_dir_request(
                 engine.core,
                 hub,
                 client_id,
@@ -1888,7 +1889,7 @@ impl App {
             surface_id,
         } = msg;
         if let Some(engine) = find_workspace_holder_engine_mut(self.engines_mut(), client_id) {
-            crate::core::attach_runtime::handle_markdown_content_request(
+            crate::remote::server::handle_markdown_content_request(
                 engine.core,
                 hub,
                 client_id,
@@ -1926,7 +1927,7 @@ impl App {
             diff_path,
         } = msg;
         if let Some(mut engine) = find_workspace_holder_engine_mut(self.engines_mut(), client_id) {
-            crate::core::attach_runtime::handle_git_query_request(
+            crate::remote::server::handle_git_query_request(
                 &mut engine,
                 hub,
                 client_id,
@@ -1970,7 +1971,7 @@ impl App {
             } => {
                 if self
                     .with_bulk_ws_engine(bulk_ws, |engine| {
-                        crate::core::attach_runtime::begin_bulk_transfer(
+                        crate::remote::server::begin_bulk_transfer(
                             engine,
                             hub,
                             client_id,
@@ -1993,7 +1994,7 @@ impl App {
             } => {
                 let found = self.with_bulk_ws_engine(bulk_ws, |engine| {
                     engine
-                        .bulk_transfers
+                        .remote.bulk_transfers
                         .append(client_id, transfer_id, seq, &bytes)
                 });
                 log_bulk_chunk_result(found, client_id, transfer_id, bulk_ws);
@@ -2002,8 +2003,8 @@ impl App {
                 let found = self.with_bulk_ws_engine(bulk_ws, |engine| {
                     // begin의 용량 검사와 같은 소유 engine 설정에서 저장 폴더를 구한다.
                     let dir =
-                        crate::core::attach_runtime::resolve_bulk_transfer_dir(&engine.settings);
-                    crate::core::attach_runtime::finalize_bulk_transfer(
+                        crate::remote::server::resolve_bulk_transfer_dir(&engine.settings);
+                    crate::remote::server::finalize_bulk_transfer(
                         engine,
                         hub,
                         client_id,
@@ -2039,7 +2040,7 @@ fn find_workspace_holder_engine_mut(
 ) -> Option<EngineMut<'_>> {
     engines
         .windowed_and_parked()
-        .find(|engine| engine.attach.client_holds_workspace(client_id))
+        .find(|engine| engine.live.occupancy.client_holds_workspace(client_id))
 }
 
 /// transfer가 등록되지 않은 경우와 workspace 소유 engine이 없는 경우를 구별해 기록한다.
@@ -2139,9 +2140,9 @@ impl App {
         let mut earliest: Option<std::time::Instant> = None;
         for w in self.view.views.values_mut() {
             let base = w.base_mut();
-            if base.repaint.take_due(now) {
+            if base.state.repaint.take_due(now) {
                 base.winit.request_redraw();
-            } else if let Some(at) = base.repaint.deferred_deadline() {
+            } else if let Some(at) = base.state.repaint.deferred_deadline() {
                 earliest = Some(earliest.map_or(at, |cur: std::time::Instant| cur.min(at)));
             }
         }

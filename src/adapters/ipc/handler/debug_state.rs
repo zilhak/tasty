@@ -116,7 +116,7 @@ pub(super) fn handle_debug_settings_apply(
     };
 
     state.dispatch_intent(
-        crate::core::intent::DomainIntent::UpdateSettings(new_settings).from_agent_ipc(),
+        crate::app::command::DomainIntent::UpdateSettings(new_settings).from_agent_ipc(),
     );
     JsonRpcResponse::success(id, json!({ "applied": true }))
 }

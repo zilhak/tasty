@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use super::{
-    EmptySurface, ExplorerPanel, NORMAL_CATEGORY_ID, Pane, PaneId, PaneNode, SurfaceId, TabId,
+    NORMAL_CATEGORY_ID, Pane, PaneId, PaneNode, SurfaceId, TabId,
     WorkspaceAttachMapping, WorkspaceCategoryId, WorkspaceId,
 };
 
@@ -137,56 +137,6 @@ impl Workspace {
         self.pane_layout().all_surface_ids()
     }
 
-    /// leaf를 조회해 attach 후보를 분류한다. Deferred::Terminal만 터미널로 취급하며
-    /// Deferred::Plugin은 PTY 생성 대상이 아닌 플러그인 placeholder다.
-    pub fn classify_attach_surfaces(&self) -> AttachSurfaceClass {
-        let mut class = AttachSurfaceClass::default();
-        for pane_id in self.pane_layout().all_pane_ids() {
-            if let Some(pane) = self.pane_layout().find_pane(pane_id) {
-                for tab in &pane.tabs {
-                    tab.for_each_surface(&mut |s| {
-                        let Some(id) = s.surface_id() else { return };
-                        if let Some((kind, plugin_id)) = s.attach_mesh_info() {
-                            class.mesh_candidates.push((
-                                id,
-                                kind.to_string(),
-                                plugin_id.to_string(),
-                            ));
-                            return;
-                        }
-                        // 두 신호를 모두 내면 기존 mesh 경로를 우선한다.
-                        if let Some((kind, plugin_id, file)) = s.attach_content_info() {
-                            class.content_candidates.push((
-                                id,
-                                kind.to_string(),
-                                plugin_id.to_string(),
-                                file,
-                            ));
-                            return;
-                        }
-                        if let Some(explorer) = s.as_any().downcast_ref::<ExplorerPanel>() {
-                            class
-                                .explorers
-                                .push((id, explorer.current_root().to_path_buf()));
-                            return;
-                        }
-                        let is_terminal = s.kind() == "terminal"
-                            || s.as_any()
-                                .downcast_ref::<EmptySurface>()
-                                .map(|e| e.deferred_spawn().is_some())
-                                .unwrap_or(false);
-                        if is_terminal {
-                            class.terminals.push(id);
-                        } else {
-                            class.non_terminals.push(id);
-                        }
-                    });
-                }
-            }
-        }
-        class
-    }
-
     /// client mirror 복원용 전체 pane·tab·surface 트리. 분할 방향과 비율을 보존한다.
     pub fn to_attach_tree_json(
         &self,
@@ -212,6 +162,7 @@ impl Workspace {
     pub fn to_tree_json(
         &self,
         presentation: &(impl crate::StructurePresentation + ?Sized),
+        surface_json:&dyn Fn(SurfaceId)->serde_json::Value,
     ) -> serde_json::Value {
         let panes: Vec<_> = self
             .pane_layout()
@@ -219,7 +170,7 @@ impl Workspace {
             .iter()
             .filter_map(|&pid| self.pane_layout().find_pane(pid))
             .map(|pane| {
-                let mut p = pane.to_tree_json(presentation);
+                let mut p = pane.to_tree_json(presentation,surface_json);
                 p["focused"] = serde_json::json!(Some(pane.id) == presentation.pane_id(self));
                 p
             })

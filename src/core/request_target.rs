@@ -19,7 +19,7 @@ pub(crate) enum Kind {
     Category,
 }
 
-use crate::core::engine_access::EngineRef;
+use crate::runtime::engine_access::EngineRef;
 
 impl Kind {
     pub(crate) fn label(self) -> &'static str {

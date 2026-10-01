@@ -62,7 +62,7 @@ pub(super) fn open(
                     epoch,
                     "surface",
                     count,
-                    u64::from(crate::core::terminal_store::PTY_ID_BASE - 1),
+                    u64::from(crate::runtime::terminal_store::PTY_ID_BASE - 1),
                 )
                 .map_err(|error| error.to_string())?;
         }
@@ -107,7 +107,7 @@ pub(super) fn open(
                 }],
                 effect_result: None,
                 cancellation: None,
-                completion_mirrors: None,
+                completion_view: None,
                 original_results: Default::default(),
             },
         })
@@ -267,7 +267,7 @@ pub(super) fn retire(
                 }],
                 effect_result: None,
                 cancellation: None,
-                completion_mirrors: None,
+                completion_view: None,
                 original_results: Default::default(),
             },
         })

@@ -1,8 +1,8 @@
-//! 창 경로(사용자)와 IPC 경로(에이전트)가 같은 Core 닫기를 타고,
+//! 창 경로(사용자)와 IPC 경로(에이전트)가 같은 AppServices 닫기를 타고,
 //! 사용자 닫기만 복원 기록을 남기는지 검사한다.
 
-use crate::core::engine_access::EngineMut;
-use crate::core::intent::{CascadeLevel, CoreEvent, DomainIntent};
+use crate::runtime::engine_access::EngineMut;
+use crate::app::command::{CascadeLevel, CoreEvent, DomainIntent};
 use crate::model::{ClosedItem, SplitDirection};
 use crate::state::RequestContext;
 use crate::state::tests::test_state;
@@ -81,9 +81,9 @@ fn arrange(
             sid_b
         }
         Case::Workspace => {
-            let event = crate::core::apply_create_workspace_inner(
+            let event = crate::app::services::apply_create_workspace_inner(
                 &mut engine,
-                crate::core::WorkspaceCreationParams::terminal(),
+                crate::app::services::WorkspaceCreationParams::terminal(),
             )
             .unwrap();
             let CoreEvent::WorkspaceCreated { index, .. } = event else {
@@ -220,7 +220,7 @@ fn closing_the_only_tab_fails_without_a_record() {
     assert_eq!(engine.closed_items.len(), 0);
 }
 
-/// 같은 시나리오를 창 경로와 Core::apply(IPC와 같은 입구)로 닫아 결과 이벤트를 비교한다.
+/// 같은 시나리오를 창 경로와 AppServices::apply(IPC와 같은 입구)로 닫아 결과 이벤트를 비교한다.
 #[test]
 fn the_window_path_and_core_apply_return_the_same_surface_closed_event() {
     for case in CASES {
@@ -242,7 +242,7 @@ fn the_window_path_and_core_apply_return_the_same_surface_closed_event() {
                     presentation: None,
                 },
             )
-            .expect("Core::apply CloseSurface");
+            .expect("AppServices::apply CloseSurface");
 
         assert_eq!(core_events.len(), 1, "{case:?}");
         assert_eq!(
@@ -269,11 +269,11 @@ fn a_mirror_close_active_surface_from_the_window_forwards_as_user_triggered() {
 
     assert!(engine.find_terminal_by_id(sid).is_some());
     assert_eq!(engine.closed_items.len(), 0);
-    assert_eq!(engine.pending_structural_forward.len(), 1);
-    assert!(engine.pending_structural_forward[0].user_triggered);
+    assert_eq!(engine.remote.pending_structural_forward.len(), 1);
+    assert!(engine.remote.pending_structural_forward[0].user_triggered);
 }
 
-/// 에이전트의 mirror 닫기는 Core 입구에서 에이전트 요청으로 전달한다.
+/// 에이전트의 mirror 닫기는 AppServices 입구에서 에이전트 요청으로 전달한다.
 #[cfg(feature = "gui")] // headless에는 전달 큐를 보내는 루프가 없어 거절한다
 #[test]
 fn a_mirror_close_from_an_agent_forwards_as_not_user_triggered() {
@@ -297,6 +297,6 @@ fn a_mirror_close_from_an_agent_forwards_as_not_user_triggered() {
         "mirror 구조 변경은 로컬에서 실행하지 않는다"
     );
     assert!(engine.find_terminal_by_id(sid).is_some());
-    assert_eq!(engine.pending_structural_forward.len(), 1);
-    assert!(!engine.pending_structural_forward[0].user_triggered);
+    assert_eq!(engine.remote.pending_structural_forward.len(), 1);
+    assert!(!engine.remote.pending_structural_forward[0].user_triggered);
 }

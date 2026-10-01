@@ -2,18 +2,18 @@
 //! 창 상태 없이 호출할 수 있어 GUI와 headless의 모든 닫기 경로가 같은 정리를 쓴다.
 
 use super::CoreState;
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 
-impl CoreState {
+impl EngineMut<'_> {
     /// 닫힌 surface의 busy·cwd·mesh frame(mirror 전용)과 attention 레코드를 지운다.
     /// attention은 로컬 surface도 두 빌드에서 가지므로 로컬 레코드도 함께 지운다.
     /// client 쪽 정리는 workspace가 이미 없으면 건너뛰므로 사용자 닫기 경로도 여기서 회수한다.
     fn forget_mirror_surface_extras(&mut self, surface_id: u32) {
-        self.mirror_busy_surfaces.remove(&surface_id);
-        self.mirror_surface_cwd.remove(&surface_id);
+        self.remote.mirror_busy_surfaces.remove(&surface_id);
+        self.remote.mirror_surface_cwd.remove(&surface_id);
         self.forget_mirror_surface_attention(surface_id);
         #[cfg(feature = "gui")]
-        self.attach_mesh_frames.remove(surface_id);
+        self.remote.attach_mesh_frames.remove(surface_id);
     }
 
     fn delete_scrollback_persist(persist_id: Option<String>) {
@@ -60,7 +60,7 @@ impl CoreState {
     /// 메모리 저장소를 잠그고 함수를 실행한다. poison은 RequestContext와 같은 정책으로 복구한다.
     fn with_memory<R>(&self, f: impl FnOnce(&mut dyn tasty_memory::MemoryStorage) -> R) -> R {
         let mut guard = crate::poison::recover_mutex(
-            self.memory.lock(),
+            self.runtime.memory.lock(),
             crate::core::MEMORY_WHAT,
             &crate::core::MEMORY_POISONED,
         );
@@ -92,7 +92,7 @@ impl EngineMut<'_> {
         self.purge_surface_memory_scope(surface_id);
         sums.memory_purge += t.elapsed();
         // 닫힌 surface 점유만 지운다. 다른 surface가 남은 workspace 점유는 유지한다.
-        self.attach.forget_closed_surface(surface_id);
+        self.forget_closed_surface(surface_id);
         self.forget_mirror_surface_extras(surface_id);
     }
 
@@ -105,11 +105,11 @@ impl EngineMut<'_> {
     }
 
     fn drop_surface_indices(&mut self, surface_id: u32) {
-        self.command_index.drop_surface(surface_id);
+        self.live.command_index.drop_surface(surface_id);
         self.observer_router.drop_surface(surface_id);
         self.hooks.forget_surface(surface_id);
         self.forget_shell_integration_hint(surface_id);
-        if let Some(factory) = self.waker_factory.as_ref() {
+        if let Some(factory) = self.runtime.waker_factory.as_ref() {
             factory.forget_surface(surface_id);
         }
     }
@@ -123,12 +123,12 @@ mod tests {
     fn user_close_of_a_mirror_workspace_forgets_the_mirror_maps() {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        let event = crate::core::apply_create_workspace_inner(
+        let event = crate::app::services::apply_create_workspace_inner(
             &mut engine,
-            crate::core::WorkspaceCreationParams::terminal(),
+            crate::app::services::WorkspaceCreationParams::terminal(),
         )
         .expect("workspace 생성");
-        let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
+        let crate::app::command::CoreEvent::WorkspaceCreated { index, .. } = event else {
             panic!("expected WorkspaceCreated");
         };
         engine.make_mirror_fixture(index);
@@ -145,7 +145,7 @@ mod tests {
         engine.set_mirror_surface_attention(sid, Some(crate::core::AttentionKind::NeedsInput));
         #[cfg(feature = "gui")]
         engine
-            .attach_mesh_frames
+            .remote.attach_mesh_frames
             .update(sid, vec![1, 2, 3], 1, 1, true);
 
         assert!(state.close_workspace_at(
@@ -154,12 +154,12 @@ mod tests {
             crate::state::WorkspaceCloseOrigin::User
         ));
 
-        assert!(!engine.mirror_busy_surfaces.contains(&sid), "busy 남음");
-        assert!(!engine.mirror_surface_cwd.contains_key(&sid), "cwd 남음");
+        assert!(!engine.remote.mirror_busy_surfaces.contains(&sid), "busy 남음");
+        assert!(!engine.remote.mirror_surface_cwd.contains_key(&sid), "cwd 남음");
         assert!(engine.attention_kind(sid).is_none(), "attention 남음");
         #[cfg(feature = "gui")]
         assert!(
-            engine.attach_mesh_frames.get(sid).is_none(),
+            engine.remote.attach_mesh_frames.get(sid).is_none(),
             "mesh frame 남음"
         );
     }

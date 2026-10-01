@@ -22,7 +22,7 @@ pub fn tutorial_topics_default_size() -> egui::Vec2 {
 pub fn draw_tutorial_topics_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    _engine: &mut crate::core::engine_access::EngineMut<'_>,
+    _engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     if !state.tutorial.catalog_loaded {
         crate::adapters::ui::tutorial::open_catalog(state);

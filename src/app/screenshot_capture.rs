@@ -26,17 +26,17 @@ impl App {
         let mut reqs: Vec<(Option<WindowId>, Option<u32>)> = Vec::new();
         let mut engines = self.engines_mut();
         for (wid, mut engine) in engines.reborrow().windows() {
-            for mirror_ws_id in engine.pending_screenshot_captures.drain(..) {
+            for mirror_ws_id in engine.remote.pending_screenshot_captures.drain(..) {
                 reqs.push((Some(wid), mirror_ws_id));
             }
         }
         if let Some(mut e) = engines.reborrow().pending() {
-            for mirror_ws_id in e.pending_screenshot_captures.drain(..) {
+            for mirror_ws_id in e.remote.pending_screenshot_captures.drain(..) {
                 reqs.push((None, mirror_ws_id));
             }
         }
         for mut engine in engines.parked() {
-            for mirror_ws_id in engine.pending_screenshot_captures.drain(..) {
+            for mirror_ws_id in engine.remote.pending_screenshot_captures.drain(..) {
                 reqs.push((None, mirror_ws_id));
             }
         }
@@ -115,7 +115,7 @@ impl App {
 
     fn write_capture_to_local_clipboard(&mut self, path: &std::path::Path) {
         let path_str = path.to_string_lossy().to_string();
-        if let Err(e) = self.core.clipboard_arc().write_text(&path_str) {
+        if let Err(e) = self.services.clipboard_arc().write_text(&path_str) {
             tracing::warn!("screenshot capture: local clipboard write failed: {e}");
         }
     }

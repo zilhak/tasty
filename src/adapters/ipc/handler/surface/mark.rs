@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use tasty_ipc::output_cursor;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -19,7 +19,7 @@ pub(crate) fn handle_set_mark(
         Err(e) => return e,
     };
     let _ = engine; // handler 는 enqueue 만. cascade 가 적용.
-    out.push(crate::core::intent::DomainIntent::SetTerminalMark { surface_id }.from_agent_ipc());
+    out.push(crate::app::command::DomainIntent::SetTerminalMark { surface_id }.from_agent_ipc());
     JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": surface_id }))
 }
 

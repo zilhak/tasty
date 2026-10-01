@@ -3,7 +3,7 @@
 use super::*;
 
 pub fn handle_respond(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,

@@ -1,6 +1,6 @@
 //! 단축키와 명령 팔레트의 액션 실행.
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use winit::keyboard::{Key, ModifiersState};
 
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
@@ -115,7 +115,7 @@ impl MainView {
                 );
                 if will_open {
                     state.dispatch_intent(
-                        crate::core::intent::DomainIntent::MarkAllNotificationsRead
+                        crate::app::command::DomainIntent::MarkAllNotificationsRead
                             .from_user_shortcut("toggle_notifications"),
                     );
                 }
@@ -435,7 +435,7 @@ impl MainView {
                 );
             }
         }
-        self.base.dirty = true;
+        self.base.state.dirty = true;
         true
     }
 
@@ -546,7 +546,7 @@ impl MainView {
         }
 
         if self.handle_explorer_shortcut(engine, key, mods) {
-            self.base.dirty = true;
+            self.base.state.dirty = true;
             return true;
         }
 
@@ -576,12 +576,12 @@ impl MainView {
             if engine.workspaces().is_empty() {
                 self.request_close();
             }
-            self.base.dirty = true;
+            self.base.state.dirty = true;
             return true;
         }
 
         if self.try_dispatch_script_shortcut(engine, key, mods) {
-            self.base.dirty = true;
+            self.base.state.dirty = true;
             return true;
         }
 
@@ -599,7 +599,7 @@ impl MainView {
             if engine.workspaces().is_empty() {
                 self.request_close();
             }
-            self.base.dirty = true;
+            self.base.state.dirty = true;
             return true;
         }
 
@@ -608,7 +608,7 @@ impl MainView {
         }
 
         if Self::handle_zoom_shortcut(&mut self.state, &mut *engine, key, mods) {
-            self.base.dirty = true;
+            self.base.state.dirty = true;
             return true;
         }
 

@@ -2,10 +2,10 @@
 //! 토스트와 attach 클라이언트가 필요한 GUI 전용 시험이다.
 
 use super::*;
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 
 fn fixture() -> (
-    crate::core::Core,
+    crate::app::services::AppServices,
     crate::state::RequestContext,
     crate::runtime::engine_session::EngineSession,
 ) {
@@ -18,7 +18,7 @@ fn fixture() -> (
 }
 
 fn blocked(forwarded: bool) -> anyhow::Error {
-    anyhow::Error::new(crate::core::MirrorStructuralBlocked {
+    anyhow::Error::new(crate::app::services::MirrorStructuralBlocked {
         workspace_index: 0,
         forwarded,
     })
@@ -59,7 +59,7 @@ fn an_unforwardable_block_toasts_only_for_the_user() {
 fn a_withdrawn_kind_refusal_toasts_only_for_the_user() {
     let (_core, mut state, mut engine_session) = fixture();
     let mut engine = engine_session.borrow_mut();
-    let err = anyhow::Error::new(crate::core::surface_registry::SurfaceKindWithdrawn {
+    let err = anyhow::Error::new(crate::runtime::surface_registry::SurfaceKindWithdrawn {
         kind: "markdown".to_string(),
         plugin_id: "com.tasty.markdown".to_string(),
     });
@@ -114,17 +114,17 @@ fn an_agent_forward_is_marked_for_a_silent_failure() {
     crate::intent::headless::drain_pending_intents(&mut core, &mut state, &mut engine);
 
     assert_eq!(
-        engine.pending_structural_forward.len(),
+        engine.remote.pending_structural_forward.len(),
         1,
         "변환 요청을 원격으로 전달한다"
     );
     assert!(
-        engine.pending_structural_forward[0].silent_failure,
+        engine.remote.pending_structural_forward[0].silent_failure,
         "에이전트 요청의 원격 실패는 로그로 남긴다"
     );
     assert_eq!(state.toasts.len(), 0);
 
-    engine.pending_structural_forward.clear();
+    engine.remote.pending_structural_forward.clear();
     crate::intent::surface::handle(
         &mut core,
         &mut state,
@@ -135,8 +135,8 @@ fn an_agent_forward_is_marked_for_a_silent_failure() {
         }
         .from_user_menu("test"),
     );
-    assert_eq!(engine.pending_structural_forward.len(), 1);
-    assert!(!engine.pending_structural_forward[0].silent_failure);
+    assert_eq!(engine.remote.pending_structural_forward.len(), 1);
+    assert!(!engine.remote.pending_structural_forward[0].silent_failure);
 }
 
 /// mirror workspace의 MoveSurface를 전달한 뒤 events_or_report처럼 apply 오류를 그대로 넘긴다.
@@ -155,22 +155,22 @@ fn a_forwarded_block_is_user_triggered_only_for_the_user() {
         let err = core
             .apply(
                 &mut engine,
-                crate::core::intent::DomainIntent::MoveSurface {
+                crate::app::command::DomainIntent::MoveSurface {
                     source_surface_id: source,
                     target_surface_id: target,
                 },
             )
             .expect_err("mirror workspace는 로컬에서 옮기지 않는다");
         assert!(
-            err.downcast_ref::<crate::core::MirrorStructuralBlocked>()
+            err.downcast_ref::<crate::app::services::MirrorStructuralBlocked>()
                 .is_some_and(|b| b.forwarded),
             "원격으로 전달한 차단이어야 한다: {err}"
         );
-        assert_eq!(engine.pending_structural_forward.len(), 1);
-        assert!(!engine.pending_structural_forward[0].user_triggered);
+        assert_eq!(engine.remote.pending_structural_forward.len(), 1);
+        assert!(!engine.remote.pending_structural_forward[0].user_triggered);
 
         report_apply_error(&mut state, &mut engine, &origin, "t", &err);
-        let queued = &engine.pending_structural_forward[0];
+        let queued = &engine.remote.pending_structural_forward[0];
         assert_eq!(
             queued.user_triggered, expect_user,
             "{origin:?}: 사용자 요청만 사용자 조작으로 전달한다"
@@ -227,7 +227,7 @@ fn a_preset_save_failure_toasts_only_for_the_user() {
         &engine.as_ref(),
         ws,
         None,
-        &engine.surface_registry,
+        &engine.runtime.surface_registry,
     )
     .expect("capture");
     let save = || Intent::SavePreset {
@@ -272,7 +272,7 @@ fn a_convert_to_a_withdrawn_kind_leaves_no_recent_entry() {
     let register = |engine: &crate::core::CoreState| {
         let (host_cmd_tx, _host_cmd_rx) = std::sync::mpsc::channel();
         crate::plugin_bridge::remote_kind::register_remote_kind(
-            &engine.surface_registry,
+            &engine.runtime.surface_registry,
             "com.x.probe",
             &decl,
             host_cmd_tx,
@@ -280,7 +280,7 @@ fn a_convert_to_a_withdrawn_kind_leaves_no_recent_entry() {
     };
     register(&engine);
     assert_eq!(
-        engine.surface_registry.withdraw_plugin("com.x.probe"),
+        engine.runtime.surface_registry.withdraw_plugin("com.x.probe"),
         vec!["probe_recent"]
     );
     let surface_id = *state
@@ -340,7 +340,7 @@ fn a_convert_on_a_mirror_surface_leaves_no_local_recent_entry() {
     .expect("probe decl");
     let (host_cmd_tx, _host_cmd_rx) = std::sync::mpsc::channel();
     crate::plugin_bridge::remote_kind::register_remote_kind(
-        &engine.surface_registry,
+        &engine.runtime.surface_registry,
         "com.x.probe_mirror",
         &decl,
         host_cmd_tx,
@@ -367,7 +367,7 @@ fn a_convert_on_a_mirror_surface_leaves_no_local_recent_entry() {
         .from_user_menu("test"),
     );
     assert_eq!(
-        engine.pending_structural_forward.len(),
+        engine.remote.pending_structural_forward.len(),
         1,
         "변환 요청을 원격으로 전달한다"
     );
@@ -388,7 +388,7 @@ fn register_recent_probe(engine: &crate::core::CoreState, kind: &str, plugin_id:
     .expect("probe decl");
     let (host_cmd_tx, _host_cmd_rx) = std::sync::mpsc::channel();
     crate::plugin_bridge::remote_kind::register_remote_kind(
-        &engine.surface_registry,
+        &engine.runtime.surface_registry,
         plugin_id,
         &decl,
         host_cmd_tx,
@@ -396,7 +396,7 @@ fn register_recent_probe(engine: &crate::core::CoreState, kind: &str, plugin_id:
 }
 
 fn new_tab_with_file(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     state: &mut crate::state::RequestContext,
     engine: &mut EngineMut<'_>,
     kind: &str,
@@ -430,7 +430,7 @@ fn a_new_tab_in_a_mirror_pane_leaves_no_local_recent_entry() {
         "/remote/only.md",
     );
     assert_eq!(
-        engine.pending_structural_forward.len(),
+        engine.remote.pending_structural_forward.len(),
         1,
         "새 탭 요청을 원격으로 전달한다"
     );
@@ -460,7 +460,7 @@ fn a_new_tab_in_a_local_pane_records_the_recent_entry() {
         "/local/only.md",
     );
     assert!(
-        engine.pending_structural_forward.is_empty(),
+        engine.remote.pending_structural_forward.is_empty(),
         "로컬 pane은 원격으로 전달하지 않는다"
     );
     assert_eq!(
@@ -511,7 +511,7 @@ fn an_ipc_direct_structural_forward_is_marked_for_a_silent_failure() {
         ),
     ];
     for (method, params) in requests {
-        engine.pending_structural_forward.clear();
+        engine.remote.pending_structural_forward.clear();
         let req = crate::ipc::protocol::JsonRpcRequest {
             response_timeout_ms: None,
             idempotency_key: None,
@@ -535,12 +535,12 @@ fn an_ipc_direct_structural_forward_is_marked_for_a_silent_failure() {
             "{method} {params}: 원격으로 전달한다"
         );
         assert_eq!(
-            engine.pending_structural_forward.len(),
+            engine.remote.pending_structural_forward.len(),
             1,
             "{method} {params}"
         );
         assert!(
-            engine.pending_structural_forward[0].silent_failure,
+            engine.remote.pending_structural_forward[0].silent_failure,
             "{method} {params}: 에이전트 요청의 원격 실패는 로그로 간다"
         );
     }

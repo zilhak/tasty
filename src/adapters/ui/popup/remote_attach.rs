@@ -446,7 +446,7 @@ fn push_attach(engine: &mut CoreState, st: &mut UiState, workspace: u32) {
         return;
     };
     engine
-        .pending_gui_attach_user
+        .remote.pending_gui_attach_user
         .push(crate::core::GuiAttachUserReq {
             port,
             workspace,
@@ -497,7 +497,7 @@ pub fn on_close_remote_attach_popup(
 pub fn draw_remote_attach_popup(
     ui: &mut egui::Ui,
     _state: &mut MainViewState,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();
@@ -1629,13 +1629,13 @@ mod tests {
         assert_eq!(new_ws, 99, "응답의 id 를 그대로 attach 대상으로 쓴다");
         push_attach(&mut engine, &mut st, new_ws);
 
-        assert_eq!(engine.pending_gui_attach_user.len(), 1);
-        let req = &engine.pending_gui_attach_user[0];
+        assert_eq!(engine.remote.pending_gui_attach_user.len(), 1);
+        let req = &engine.remote.pending_gui_attach_user[0];
         assert_eq!(req.port, 4321, "조회에 쓴 터널 포트를 그대로 재사용한다");
         assert_eq!(req.workspace, 99);
 
         push_attach(&mut engine, &mut st, new_ws);
-        assert_eq!(engine.pending_gui_attach_user.len(), 1);
+        assert_eq!(engine.remote.pending_gui_attach_user.len(), 1);
     }
 
     /// 닫기 훅이 UI의 생성 슬롯과 터널 핸들을 정리한다.

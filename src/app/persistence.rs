@@ -2,8 +2,8 @@
 
 use crate::app::App;
 use crate::app::window_access::engines_mut;
-use crate::core::engine_access::EngineMut;
-use crate::core::intent::DomainIntent;
+use crate::runtime::engine_access::EngineMut;
+use crate::app::command::DomainIntent;
 
 impl App {
     /// 창과 parked engine을 저장한다. debounce는 호출자가 처리한다.
@@ -59,7 +59,7 @@ impl App {
         for (state, mut engine) in engines.reborrow().window_sessions() {
             let active_workspace = state.active_workspace_index(engine.core);
             Self::flush_one_engine(
-                &mut self.core,
+                &mut self.services,
                 &mut engine,
                 active_workspace,
                 &state.navigation,
@@ -71,7 +71,7 @@ impl App {
         for (state, mut engine) in engines.parked_sessions() {
             let active_workspace = state.active_workspace_index(engine.core);
             Self::flush_one_engine(
-                &mut self.core,
+                &mut self.services,
                 &mut engine,
                 active_workspace,
                 &state.navigation,
@@ -87,7 +87,7 @@ impl App {
     /// 타이머를 기다릴 수 없으므로 force로 마지막 변경과 복원할 내용을 저장한다.
     /// 참조가 사라진 scrollback 파일은 다음 부팅의 전체 슬롯 GC가 회수한다.
     pub(crate) fn retire_main_engine(
-        core: &mut crate::core::Core,
+        core: &mut crate::app::services::AppServices,
         engine: &mut EngineMut<'_>,
         active_workspace: usize,
         presentation: &dyn crate::model::StructurePresentation,
@@ -129,7 +129,7 @@ impl App {
     }
 
     fn flush_one_engine(
-        core: &mut crate::core::Core,
+        core: &mut crate::app::services::AppServices,
         engine: &mut EngineMut<'_>,
         active_workspace: usize,
         presentation: &dyn crate::model::StructurePresentation,

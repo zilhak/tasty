@@ -35,7 +35,7 @@ pub fn handle_list(mgr: Option<&PluginManager>, id: Value) -> JsonRpcResponse {
 /// declared_rendering은 선언 값이고 effective_rendering은 이 플러그인 소유로 등록된 경로다.
 /// 다른 소유자가 같은 kind를 등록했다면 registered는 false이고 registered_by로 그 소유자를 알린다.
 fn surface_kind_json(
-    registry: &crate::core::surface_registry::SurfaceKindRegistry,
+    registry: &crate::runtime::surface_registry::SurfaceKindRegistry,
     plugin_id: &str,
     k: &tasty_plugin_manifest::SurfaceKindDecl,
 ) -> Value {
@@ -43,7 +43,7 @@ fn surface_kind_json(
     let owner = def.as_ref().map(|d| d.source.clone());
     let mine = matches!(
         &owner,
-        Some(crate::core::surface_registry::KindSource::Plugin(id)) if id == plugin_id
+        Some(crate::runtime::surface_registry::KindSource::Plugin(id)) if id == plugin_id
     );
     json!({
         "kind": k.kind,
@@ -57,15 +57,15 @@ fn surface_kind_json(
             None
         },
         "registered_by": owner.as_ref().map(|o| match o {
-            crate::core::surface_registry::KindSource::HostBuiltin => "host",
-            crate::core::surface_registry::KindSource::Plugin(id) => id.as_str(),
+            crate::runtime::surface_registry::KindSource::HostBuiltin => "host",
+            crate::runtime::surface_registry::KindSource::Plugin(id) => id.as_str(),
         }),
     })
 }
 
 pub fn handle_show(
     mgr: Option<&PluginManager>,
-    registry: &crate::core::surface_registry::SurfaceKindRegistry,
+    registry: &crate::runtime::surface_registry::SurfaceKindRegistry,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -384,9 +384,9 @@ pub fn is_readonly_method(method: &str) -> bool {
 /// GUI와 헤드리스의 공용 조회 라우터. 처리하지 않는 메서드는 None으로 반환한다.
 /// 쓰기·플러그인 생명주기·창이 필요한 요청은 각각의 별도 경로에서 처리한다.
 pub fn dispatch_readonly(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     mgr: Option<&PluginManager>,
-    registry: &crate::core::surface_registry::SurfaceKindRegistry,
+    registry: &crate::runtime::surface_registry::SurfaceKindRegistry,
     method: &str,
     id: Value,
     params: &Value,
@@ -427,12 +427,12 @@ pub fn is_lifecycle_toggle_method(method: &str) -> bool {
 pub fn enable(
     mgr: Option<&mut PluginManager>,
     plugin_id: String,
-) -> anyhow::Result<Vec<crate::core::intent::CoreEvent>> {
+) -> anyhow::Result<Vec<crate::app::command::CoreEvent>> {
     let Some(mgr) = mgr else {
         anyhow::bail!("plugin manager not initialized");
     };
     mgr.enable(&plugin_id)?;
-    Ok(vec![crate::core::intent::CoreEvent::PluginEnableToggled {
+    Ok(vec![crate::app::command::CoreEvent::PluginEnableToggled {
         plugin_id,
         enabled: true,
     }])
@@ -442,21 +442,21 @@ pub fn enable(
 /// 종료 이유는 User다. remove는 매니저를 직접 호출하므로 App::plugin_remove에서 종류를 해제한다.
 pub fn disable(
     mgr: Option<&mut PluginManager>,
-    registry: &crate::core::surface_registry::SurfaceKindRegistry,
+    registry: &crate::runtime::surface_registry::SurfaceKindRegistry,
     plugin_id: String,
-) -> anyhow::Result<Vec<crate::core::intent::CoreEvent>> {
+) -> anyhow::Result<Vec<crate::app::command::CoreEvent>> {
     let Some(mgr) = mgr else {
         anyhow::bail!("plugin manager not initialized");
     };
     let was_running = mgr.is_running(&plugin_id);
     mgr.disable(&plugin_id)?;
     registry.withdraw_plugin(&plugin_id);
-    let mut events = vec![crate::core::intent::CoreEvent::PluginEnableToggled {
+    let mut events = vec![crate::app::command::CoreEvent::PluginEnableToggled {
         plugin_id: plugin_id.clone(),
         enabled: false,
     }];
     if was_running {
-        events.push(crate::core::intent::CoreEvent::PluginUnloaded {
+        events.push(crate::app::command::CoreEvent::PluginUnloaded {
             plugin_id,
             reason: tasty_plugin_protocol::events::LifecycleReason::User,
         });
@@ -467,11 +467,11 @@ pub fn disable(
 /// 생명주기 토글을 처리하고 CoreEvent의 후속 처리는 호출자에게 맡긴다.
 pub fn dispatch_lifecycle_toggle(
     mgr: Option<&mut PluginManager>,
-    registry: &crate::core::surface_registry::SurfaceKindRegistry,
+    registry: &crate::runtime::surface_registry::SurfaceKindRegistry,
     method: &str,
     id: Value,
     params: &Value,
-) -> Option<(JsonRpcResponse, Vec<crate::core::intent::CoreEvent>)> {
+) -> Option<(JsonRpcResponse, Vec<crate::app::command::CoreEvent>)> {
     if !is_lifecycle_toggle_method(method) {
         return None;
     }
@@ -540,9 +540,9 @@ pub fn emit_unloaded(
 pub fn cascade_toggle_events_headless(
     mgr: &mut PluginManager,
     hook_events: &crate::core::hook_event_registry::PluginHookEventRegistry,
-    events: Vec<crate::core::intent::CoreEvent>,
+    events: Vec<crate::app::command::CoreEvent>,
 ) {
-    use crate::core::intent::CoreEvent;
+    use crate::app::command::CoreEvent;
     for ev in events {
         match ev {
             CoreEvent::PluginEnableToggled { plugin_id, enabled } => {
@@ -567,8 +567,8 @@ mod tests {
     // 미등록 선언과 다른 소유자가 이미 등록한 경우를 확인한다. 정상 등록 경로는 포함하지 않는다.
     #[test]
     fn a_declaration_that_did_not_register_says_so() {
-        let registry = crate::core::surface_registry::SurfaceKindRegistry::new();
-        crate::core::surface_registry::register_builtin_kinds(&registry);
+        let registry = crate::runtime::surface_registry::SurfaceKindRegistry::new();
+        crate::runtime::surface_registry::register_builtin_kinds(&registry);
         let decl = |kind: &str| -> tasty_plugin_manifest::SurfaceKindDecl {
             serde_json::from_value(json!({
                 "kind": kind,
@@ -598,7 +598,7 @@ mod tests {
                 "plugin.show",
                 handle_show(
                     None,
-                    &crate::core::surface_registry::SurfaceKindRegistry::new(),
+                    &crate::runtime::surface_registry::SurfaceKindRegistry::new(),
                     id(),
                     &params,
                 ),

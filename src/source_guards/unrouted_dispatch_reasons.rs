@@ -437,7 +437,7 @@ const ROSTER: &[(&str, Why, &str)] = &[
     (
         "file_handler.detectors",
         NotWindowOwned,
-        "모든 창이 공유하는 engine.file_format Arc를 조회한다.",
+        "모든 창이 공유하는 engine.runtime.file_format Arc를 조회한다.",
     ),
     (
         "workspace.list",

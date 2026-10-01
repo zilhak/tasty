@@ -3,7 +3,7 @@
 //! 행을 선택하면 주소를 복사할 수 있고 즐겨찾기는 별도 시스템 조회 결과와 함께 표시한다.
 //! 화면 함수는 앱 상태 없이 입력을 받아 사용자 동작을 반환한다.
 
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::sync::mpsc;
@@ -62,7 +62,7 @@ pub struct PortRowView {
     pub source: SourceTag,
     /// TCP connection state, drives the STATE column dot color/pulse + label.
     pub state: PortState,
-    /// Whether `(addr_display, port)` is in `engine.port_favorites`. Filled by
+    /// Whether `(addr_display, port)` is in `engine.runtime.port_favorites`. Filled by
     /// the wrapper after the background scan returns (`run_scan` has no
     /// `CoreState` access) — always `false` fresh off the scan thread.
     pub favorited: bool,
@@ -438,7 +438,7 @@ pub fn draw_port_scanner_popup(
     }
 
     // 즐겨찾기는 메인 범위와 별개로 시스템 전체를 조회한다. 항목이 없으면 조회하지 않는다.
-    let has_favorites = !engine.port_favorites.items.is_empty();
+    let has_favorites = !engine.runtime.port_favorites.items.is_empty();
     if has_favorites && matches!(state.port_favorites_scan, PortScanState::Idle) {
         kick_off_scan(
             &mut state.port_favorites_scan,
@@ -465,7 +465,7 @@ pub fn draw_port_scanner_popup(
             sort_rows(&mut v, filter_state.sort_key, filter_state.sort_dir);
             for row in &mut v {
                 if let Ok(addr) = row.addr_display.parse::<IpAddr>() {
-                    row.favorited = engine.port_favorites.contains(addr, row.port);
+                    row.favorited = engine.runtime.port_favorites.contains(addr, row.port);
                 }
             }
             (v, state_total)
@@ -477,7 +477,7 @@ pub fn draw_port_scanner_popup(
         PortScanState::Ready { rows, .. } => Some(rows.as_slice()),
         _ => None,
     };
-    let favorite_rows = build_favorite_rows(&engine.port_favorites, favorite_system_rows);
+    let favorite_rows = build_favorite_rows(&engine.runtime.port_favorites, favorite_system_rows);
 
     let present_states: Vec<PortState> = match &state.port_scan {
         PortScanState::Ready { rows, .. } => present_states(rows),
@@ -642,13 +642,13 @@ pub fn draw_port_scanner_popup(
         }
         PortScannerAction::ToggleFavorite(addr_display, port) => {
             if let Ok(addr) = addr_display.parse::<IpAddr>() {
-                if engine.port_favorites.contains(addr, port) {
-                    engine.port_favorites.remove(addr, port);
+                if engine.runtime.port_favorites.contains(addr, port) {
+                    engine.runtime.port_favorites.remove(addr, port);
                 } else {
                     let label = format_host_port(&addr_display, port);
-                    engine.port_favorites.add(addr, port, label);
+                    engine.runtime.port_favorites.add(addr, port, label);
                 }
-                engine.port_favorites.save();
+                engine.runtime.port_favorites.save();
             }
             PopupAction::None
         }

@@ -630,7 +630,7 @@ mod wiring {
     use std::path::Path;
 
     use super::super::{SlotLoad, load_slot_in, save_slot_in_dir, slot_path_in};
-    use crate::core::Core;
+    use crate::app::services::AppServices;
 
     fn engine_with_layouts(dir: &Path) -> crate::runtime::engine_session::EngineSession {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
@@ -870,7 +870,7 @@ mod wiring {
         engine.accept_slot_load(SlotLoad::Unreadable, 1);
         engine.mark_layout_dirty();
 
-        Core::apply_save_layout_now(
+        AppServices::apply_save_layout_now(
             &mut engine,
             0,
             true,
@@ -901,7 +901,7 @@ mod wiring {
         engine.accept_slot_load(SlotLoad::Absent, 1);
         engine.mark_layout_dirty();
 
-        Core::apply_save_layout_now(
+        AppServices::apply_save_layout_now(
             &mut engine,
             0,
             true,
@@ -923,7 +923,7 @@ mod wiring {
 #[test]
 fn moved_tab_is_saved_at_its_new_position() {
     use super::SavedLayout;
-    use crate::core::Core;
+    use crate::app::services::AppServices;
     use crate::core::state::PendingMove;
 
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
@@ -957,7 +957,7 @@ fn moved_tab_is_saved_at_its_new_position() {
     let tab_q = ws1.pane_layout().find_pane(q).unwrap().tabs[0].id;
     engine.push_local_workspace(ws1);
 
-    Core::apply_replace_tab_with_tab(&mut engine, tab_a, tab_q);
+    AppServices::apply_replace_tab_with_tab(&mut engine, tab_a, tab_q);
     engine.pending_move = Some(PendingMove::Tab(keep_tab));
     let saved = SavedLayout::capture(
         &mut engine,
@@ -991,7 +991,7 @@ fn moved_tab_is_saved_at_its_new_position() {
 #[test]
 fn moved_pane_is_saved_at_its_new_position() {
     use super::SavedLayout;
-    use crate::core::Core;
+    use crate::app::services::AppServices;
 
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
     let new_engine = || {
@@ -1028,7 +1028,7 @@ fn moved_pane_is_saved_at_its_new_position() {
     let q = ws1.pane_layout().all_pane_ids()[0];
     engine.push_local_workspace(ws1);
 
-    Core::apply_replace_pane_with_pane(&mut engine, p0, q);
+    AppServices::apply_replace_pane_with_pane(&mut engine, p0, q);
     let saved = SavedLayout::capture(
         &mut engine,
         0,

@@ -62,7 +62,7 @@ pub(crate) fn handle_attention_clear(
             ),
         );
     }
-    if engine.attach.is_hard_occupied(surface_id) {
+    if engine.live.occupancy.is_hard_occupied(surface_id) {
         return JsonRpcResponse::invalid_params(
             id,
             format!(
@@ -80,7 +80,7 @@ pub(crate) fn handle_attention_clear(
     }
     // GUI는 후속 처리에서 화면을 갱신한다. 이미 지운 상태를 다시 지워도 결과는 같다.
     out.push(
-        crate::core::intent::DomainIntent::SurfaceAttentionClear { surface_id, kind }
+        crate::app::command::DomainIntent::SurfaceAttentionClear { surface_id, kind }
             .from_agent_ipc(),
     );
     JsonRpcResponse::success(

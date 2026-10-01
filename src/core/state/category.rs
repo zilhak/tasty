@@ -280,13 +280,13 @@ mod category_tests {
         let mut e = e_session.borrow_mut();
         let base_count = e.workspaces().len();
         assert!(base_count >= 1, "엔진은 기본 workspace 를 하나 이상 가진다");
-        let idx = match crate::core::apply_create_workspace_inner(
+        let idx = match crate::app::services::apply_create_workspace_inner(
             &mut e,
-            crate::core::WorkspaceCreationParams::terminal(),
+            crate::app::services::WorkspaceCreationParams::terminal(),
         )
         .unwrap()
         {
-            crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } => index,
+            crate::app::command::CoreEvent::WorkspaceCreated { index, .. } => index,
             _ => panic!("expected WorkspaceCreated"),
         };
         e.make_mirror_fixture(idx);
@@ -321,16 +321,16 @@ mod category_tests {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
         let cat = e.create_category("Services").unwrap();
-        let idx = match crate::core::apply_create_workspace_inner(
+        let idx = match crate::app::services::apply_create_workspace_inner(
             &mut e,
-            crate::core::WorkspaceCreationParams {
+            crate::app::services::WorkspaceCreationParams {
                 category: Some(cat),
-                ..crate::core::WorkspaceCreationParams::terminal()
+                ..crate::app::services::WorkspaceCreationParams::terminal()
             },
         )
         .unwrap()
         {
-            crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } => index,
+            crate::app::command::CoreEvent::WorkspaceCreated { index, .. } => index,
             _ => panic!("expected WorkspaceCreated"),
         };
         assert_eq!(
@@ -340,16 +340,16 @@ mod category_tests {
             cat
         );
 
-        let idx2 = match crate::core::apply_create_workspace_inner(
+        let idx2 = match crate::app::services::apply_create_workspace_inner(
             &mut e,
-            crate::core::WorkspaceCreationParams {
+            crate::app::services::WorkspaceCreationParams {
                 category: Some(9999),
-                ..crate::core::WorkspaceCreationParams::terminal()
+                ..crate::app::services::WorkspaceCreationParams::terminal()
             },
         )
         .unwrap()
         {
-            crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } => index,
+            crate::app::command::CoreEvent::WorkspaceCreated { index, .. } => index,
             _ => unreachable!(),
         };
         assert_eq!(

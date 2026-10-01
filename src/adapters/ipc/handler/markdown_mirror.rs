@@ -27,7 +27,7 @@ pub fn handle_content_request(
         .unwrap_or(false);
     let request_id = crate::core::next_markdown_content_request_id();
     engine
-        .pending_markdown_content_forward
+        .remote.pending_markdown_content_forward
         .push(PendingMarkdownContentForward {
             local_surface_id: surface_id,
             request_id,
@@ -55,14 +55,14 @@ mod tests {
             .expect("request_id");
         // 0은 요청 취소 신호로 예약된 값이다.
         assert_ne!(rid, 0);
-        assert_eq!(engine.pending_markdown_content_forward.len(), 1);
+        assert_eq!(engine.remote.pending_markdown_content_forward.len(), 1);
         assert_eq!(
-            engine.pending_markdown_content_forward[0].local_surface_id,
+            engine.remote.pending_markdown_content_forward[0].local_surface_id,
             7
         );
-        assert_eq!(engine.pending_markdown_content_forward[0].request_id, rid);
+        assert_eq!(engine.remote.pending_markdown_content_forward[0].request_id, rid);
         assert!(
-            !engine.pending_markdown_content_forward[0].agent_origin,
+            !engine.remote.pending_markdown_content_forward[0].agent_origin,
             "요청 출처가 없으면 plugin 자체 요청으로 처리한다"
         );
     }
@@ -79,7 +79,7 @@ mod tests {
             &json!({ "surface_id": 7, "agent_origin": true }),
         );
         assert!(resp.error.is_none());
-        assert!(engine.pending_markdown_content_forward[0].agent_origin);
+        assert!(engine.remote.pending_markdown_content_forward[0].agent_origin);
     }
 
     #[test]
@@ -90,6 +90,6 @@ mod tests {
         let mut engine = engine_session.borrow_mut();
         let resp = handle_content_request(&mut engine, json!(1), &json!({}));
         assert!(resp.error.is_some());
-        assert!(engine.pending_markdown_content_forward.is_empty());
+        assert!(engine.remote.pending_markdown_content_forward.is_empty());
     }
 }

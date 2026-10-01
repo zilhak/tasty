@@ -179,7 +179,7 @@ impl crate::app::App {
                 .unwrap_or_else(|| owner.runtime.terminals.generation(id))
         });
         let remote = surface
-            .and_then(|id| owner.core.find_surface_by_id(id))
+            .and_then(|id| owner.find_surface_by_id(id))
             .and_then(|surface| {
                 surface
                     .as_any()
@@ -194,7 +194,7 @@ impl crate::app::App {
             revision: owner.core.committed_structure_revision,
             host_focus:host_keyboard_focus(view),
             activation: surface
-                .and_then(|id| owner.core.committed_surface_activations.get(&id).copied()),
+                .and_then(|id| owner.core.find_surface_by_id(id).and_then(|surface|surface.activation_generation)),
         })
     }
 
@@ -229,7 +229,7 @@ impl crate::app::App {
         if let Some(binding) = &target.remote {
             let Some(remote) = target
                 .surface
-                .and_then(|id| owner.core.find_surface_by_id(id))
+                .and_then(|id| owner.find_surface_by_id(id))
                 .and_then(|surface| {
                     surface
                         .as_any()
@@ -252,7 +252,7 @@ impl crate::app::App {
         );
         if target
             .surface
-            .and_then(|id| owner.core.committed_surface_activations.get(&id).copied())
+            .and_then(|id| owner.core.find_surface_by_id(id).and_then(|surface|surface.activation_generation))
             != target.activation
         {
             return false;
@@ -300,7 +300,7 @@ impl crate::app::App {
         use winit::application::ApplicationHandler;
         while !self.journal.pauses_observation()
             && !self.journal.is_halted()
-            && self.shutdown.is_none()
+            && self.state.shutdown.is_none()
         {
             let Some(event) = self.publication_inputs.pop() else {
                 break;
@@ -334,7 +334,7 @@ impl crate::app::App {
             for window in windows {self.cancel_publication_gesture(window);}
             for view in self.view.views.values_mut() {
                 // An overflow cannot leave a modifier latched from a discarded release event.
-                view.base_mut().modifiers = winit::keyboard::ModifiersState::empty();
+                view.base_mut().state.modifiers = winit::keyboard::ModifiersState::empty();
                 if let Some(main) = view.as_main_mut() {
                     main.state.toasts.push_info(
                         crate::i18n::t("toast.input_queue_full").to_string(),
@@ -374,7 +374,7 @@ impl crate::app::App {
         }
         main.ime_preedit = None;
         main.ime_cursor_advance = 0;
-        main.base.dirty = true;
+        main.base.state.dirty = true;
     }
 }
 

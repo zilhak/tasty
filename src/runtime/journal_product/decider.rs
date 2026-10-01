@@ -28,7 +28,7 @@ pub(crate) struct ResolvedCommand {
     pub(crate) changes: Vec<StreamCommand>,
     pub(crate) effect_result: Option<super::EffectLease>,
     pub(crate) cancellation: Option<tasty_event_store::EffectTransition>,
-    pub(crate) completion_mirrors: Option<usize>,
+    pub(crate) completion_view: Option<super::CompletionView>,
     /// Result templates read before deciding a completion, never fetched from storage inside decide.
     pub(crate) original_results:
         std::collections::BTreeMap<String, super::response::OriginalResults>,
@@ -66,7 +66,7 @@ impl Decider for StructureDecider {
                 resolved: encoded_resolution(
                     &command.changes,
                     &command.response,
-                    command.completion_mirrors,
+                    command.completion_view,
                 )?,
                 response: super::ResponsePlan::rejected(&error),
             }),
@@ -151,7 +151,7 @@ impl StructureDecider {
             resolved: encoded_resolution(
                 &resolved_changes,
                 &command.response,
-                command.completion_mirrors,
+                command.completion_view,
             )?,
             response: match &command.response {
                 Some(response)
@@ -165,7 +165,7 @@ impl StructureDecider {
                         .map_err(Rejection)?;
                     serde_json::to_vec(&progress).map_err(|error| Rejection(error.to_string()))?
                 }
-                Some(response) => response.render(&candidate, 0)?,
+                Some(response) => response.render(&candidate, &super::CompletionView::default())?,
                 None => serde_json::to_vec(&results).map_err(|e| Rejection(e.to_string()))?,
             },
         })
@@ -313,16 +313,16 @@ fn new_effect(
 fn encoded_resolution(
     changes: &[StreamCommand],
     response: &Option<super::ResponsePlan>,
-    completion_mirrors: Option<usize>,
+    completion_view: Option<super::CompletionView>,
 ) -> Result<Vec<u8>, Rejection> {
-    if response.is_none() && completion_mirrors.is_none() {
+    if response.is_none() && completion_view.is_none() {
         return serde_json::to_vec(changes).map_err(|error| Rejection(error.to_string()));
     }
     serde_json::to_vec(&super::response::RecordedResolution {
         version: 1,
         changes: changes.to_vec(),
         response: response.clone(),
-        completion_mirrors,
+        completion_view,
     })
     .map_err(|error| Rejection(error.to_string()))
 }

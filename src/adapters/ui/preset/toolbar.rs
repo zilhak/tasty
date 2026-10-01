@@ -118,7 +118,7 @@ fn commit_editing_subtitle(
         return;
     };
     p.subtitle = meta.subtitle.clone();
-    // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
+    // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
     if let Err(e) = store.save_workspace_overwrite(p) {
         tracing::warn!("preset subtitle save failed: {e}");
         toasts.push(

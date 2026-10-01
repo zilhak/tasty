@@ -2,7 +2,7 @@
 //! 드래그 선택이 아닌 LinkSpan을 사용하며 포커스를 옮기지 않는다.
 //! 명세: docs/features/terminal-link/index.md.
 
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use winit::event::ElementState;
 
 use super::MainView;
@@ -34,7 +34,7 @@ impl MainView {
         if !link_menu_gate(
             hovered.map(|h| h.surface_id),
             surface_id,
-            engine.attach.is_hard_occupied(surface_id),
+            engine.live.occupancy.is_hard_occupied(surface_id),
         ) {
             return None;
         }
@@ -154,7 +154,7 @@ impl MainView {
                 crate::file::dispatch::open_remote_placeholder_picker(&mut self.state, file);
             }
             target => {
-                let all = engine.file_handler.all_handlers();
+                let all = engine.runtime.file_handler.all_handlers();
                 crate::file::dispatch::open_picker(
                     &mut self.state,
                     &mut *engine,

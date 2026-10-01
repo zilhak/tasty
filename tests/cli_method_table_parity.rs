@@ -46,7 +46,7 @@ const NOT_SENT_SENTINELS: &[(&str, &str)] = &[
         "`tasty tool remote-profile` 은 dispatch::classify 가 가져간다(에이전트 조작은 remote.profile.* IPC)",
     ),
     (
-        "tool.attach.noop",
+        "tool.live.occupancy.noop",
         "`tasty tool attach` 는 dispatch::classify 가 가져간다",
     ),
     (

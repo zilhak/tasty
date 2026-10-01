@@ -7,7 +7,7 @@ mod render_pass;
 mod screenshot;
 mod shell_setup;
 
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -512,7 +512,7 @@ impl GpuState {
                 &view,
                 &attach_mesh_targets,
                 &attach_mesh_existing,
-                &engine.attach_mesh_frames,
+                &engine.remote.attach_mesh_frames,
             );
         }
 
@@ -632,7 +632,7 @@ impl GpuState {
     fn render_fullscreen_stage(
         &mut self,
         state: &mut MainViewState,
-        engine: &mut crate::core::engine_access::EngineMut<'_>,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
         window: &Window,
     ) -> Result<(), wgpu::SurfaceError> {
         // 무대에서도 입력을 소비해 나간 뒤 한꺼번에 전달되지 않게 한다.

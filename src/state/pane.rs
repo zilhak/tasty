@@ -1,5 +1,5 @@
 use crate::core::CoreState;
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 
 use super::RequestContext;
 
@@ -14,7 +14,7 @@ impl RequestContext {
     ) -> bool {
         let Some(_occupied) = targets
             .into_iter()
-            .find(|sid| engine.attach.is_hard_occupied(*sid))
+            .find(|sid| engine.live.occupancy.is_hard_occupied(*sid))
         else {
             return false;
         };
@@ -46,8 +46,8 @@ impl RequestContext {
         match op {
             Some(op) => {
                 engine
-                    .pending_structural_forward
-                    .push(crate::core::PendingStructuralForward {
+                    .remote.pending_structural_forward
+                    .push(crate::app::services::PendingStructuralForward {
                         op,
                         user_triggered: true,
                         close_focus_candidates,
@@ -154,7 +154,7 @@ impl RequestContext {
                 .map(|pane| {
                     let mut t: Vec<(u32, Option<String>)> = Vec::new();
                     for tab in &pane.tabs {
-                        crate::core::impl_close::collect_close_targets(
+                        crate::app::services::impl_close::collect_close_targets(
                             tab,
                             &engine.as_ref(),
                             &mut t,
@@ -169,11 +169,11 @@ impl RequestContext {
         }
 
         // 대상이 포커스 pane이므로 Core의 포커스 보정이 첫 pane으로 옮긴다.
-        let crate::core::intent::CoreEvent::PaneClosed {
+        let crate::app::command::CoreEvent::PaneClosed {
             closed,
             cleanup_targets,
             ..
-        } = crate::core::Core::close_pane_recording(engine, target_id, Some(&self.navigation))
+        } = crate::app::services::AppServices::close_pane_recording(engine, target_id, Some(&self.navigation))
         else {
             return false;
         };
@@ -242,7 +242,7 @@ impl RequestContext {
         closed
     }
 
-    /// Core 닫기로 트리를 바꾸고 복원 기록을 남긴 뒤 창 쪽 정리와 알림을 이어서 한다.
+    /// AppServices 닫기로 트리를 바꾸고 복원 기록을 남긴 뒤 창 쪽 정리와 알림을 이어서 한다.
     /// 닫았으면 Core가 돌려준 SurfaceClosed를 돌려준다.
     /// 복원 사본 저장 여부와 사용자 닫기 표시는 별개다.
     /// PTY 종료 정리는 save_snapshot=false이지만 is_user_close=true로 보고한다.
@@ -253,9 +253,9 @@ impl RequestContext {
         surface_id: u32,
         save_snapshot: bool,
         is_user_close: bool,
-    ) -> Option<crate::core::intent::CoreEvent> {
+    ) -> Option<crate::app::command::CoreEvent> {
         use crate::close_trace;
-        use crate::core::intent::{CascadeLevel, CoreEvent};
+        use crate::app::command::{CascadeLevel, CoreEvent};
         use std::time::Instant;
 
         const PATH: &str = "inline";
@@ -272,11 +272,11 @@ impl RequestContext {
         let kind_before = |sid: u32| kinds.get(&sid).copied().flatten();
 
         let t_close = Instant::now();
-        let event = crate::core::Core::close_surface_recording(
+        let event = crate::app::services::AppServices::close_surface_recording(
             engine,
             surface_id,
             save_snapshot.then_some(&self.navigation as &dyn crate::model::StructurePresentation),
-            crate::core::CloseTracePath::Inline,
+            crate::app::services::CloseTracePath::Inline,
         );
         self.apply_structure_result(engine, &event);
         let CoreEvent::SurfaceClosed {
@@ -297,7 +297,7 @@ impl RequestContext {
                     self.enqueue_surface_closed(sid, kind_before(sid), is_user_close);
                 }
             }
-            // 탭·pane 닫기는 트리에서 빠진 뒤 kind를 찾는다. Core cascade 경로와 같다.
+            // 탭·pane 닫기는 트리에서 빠진 뒤 kind를 찾는다. AppServices cascade 경로와 같다.
             CascadeLevel::Tab | CascadeLevel::Pane => {
                 for (sid, pid) in targets {
                     let kind = self.surface_kind(engine, sid);
@@ -339,9 +339,9 @@ impl RequestContext {
         let rows = engine.default_rows;
 
         let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
-        let terminal = crate::core::terminal_spawn::spawn_shell_terminal(
+        let terminal = crate::runtime::terminal_spawn::spawn_shell_terminal(
             new_surface_id,
-            crate::core::terminal_spawn::ShellSpawnOpts {
+            crate::runtime::terminal_spawn::ShellSpawnOpts {
                 cols,
                 rows,
                 shell: sh.shell_ref(),

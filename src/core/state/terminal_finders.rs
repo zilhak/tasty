@@ -1,7 +1,7 @@
 use tasty_terminal::Terminal;
 
 use super::CoreState;
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 
 impl CoreState {
     pub fn has_surface(&self, surface_id: u32) -> bool {
@@ -38,7 +38,7 @@ impl<'a> EngineRef<'a> {
     /// hard 점유 중에는 readonly 사본만 반환하며 없다고 원본으로 대체하지 않는다.
     #[cfg(feature = "gui")]
     pub fn visible_terminal(&self, surface_id: u32) -> Option<&'a Terminal> {
-        if self.attach.is_hard_occupied(surface_id) {
+        if self.live.occupancy.is_hard_occupied(surface_id) {
             self.readonly_view(surface_id)
         } else {
             self.runtime.terminals.get(surface_id)

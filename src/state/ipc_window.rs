@@ -1,6 +1,6 @@
 //! IPC의 IpcWindow 요청을 RequestContext의 창 연산에 연결한다.
 
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::path::PathBuf;
 
 use super::RequestContext;
@@ -60,7 +60,7 @@ impl IpcWindow for RequestContext {
 
     fn apply_preset(
         &mut self,
-        core: &crate::core::Core,
+        core: &crate::app::services::AppServices,
         engine: &mut EngineMut<'_>,
         target: crate::intent::preset::PresetApplyTarget,
         options: super::preset_apply::ApplyOptions,

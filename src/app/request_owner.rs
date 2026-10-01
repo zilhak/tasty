@@ -37,7 +37,7 @@ impl App {
         params: &serde_json::Value,
     ) -> Option<WindowId> {
         let nick = surface_nickname_target(method, params)?;
-        let sid = self.core.with_memory(|m| {
+        let sid = self.services.with_memory(|m| {
             crate::surface_meta::SurfaceMetaStore::find_by_value(m, "nickname", nick)
         })?;
         self.find_main_with_resource(crate::core::request_target::ResourceId {

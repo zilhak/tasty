@@ -4,7 +4,7 @@
 //! mode 가 활성일 때 keyboard 핸들러가 `handle_vi_key` 로 키를 가로채 PTY 송신을
 //! 차단한다. mouse drag 가 시작되면 자동 종료된다 (mouse.rs).
 
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use crate::selection::{SelectionMode, SelectionPoint, TextSelection};
@@ -808,7 +808,7 @@ impl MainView {
         };
         self.vi_copy = Some(mode);
         self.text_selection = None;
-        self.base.dirty = true;
+        self.base.state.dirty = true;
     }
 
     /// vi mode 가 활성일 때 키 이벤트를 가로채고 처리한다. true 면 키가 소비됨.
@@ -894,7 +894,7 @@ impl MainView {
                 );
             }
         }
-        self.base.dirty = true;
+        self.base.state.dirty = true;
         true
     }
 

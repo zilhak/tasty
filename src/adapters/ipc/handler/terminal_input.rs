@@ -41,7 +41,7 @@ pub fn handle_input_rule_update(
         Ok(changed) => {
             if changed {
                 out.push(
-                    crate::core::intent::DomainIntent::UpdateSettings(settings).from_agent_ipc(),
+                    crate::app::command::DomainIntent::UpdateSettings(settings).from_agent_ipc(),
                 );
             }
             JsonRpcResponse::success(id, json!({ "changed": changed }))
@@ -52,7 +52,7 @@ pub fn handle_input_rule_update(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::intent::DomainIntent;
+    use crate::app::command::DomainIntent;
     use crate::intent::Intent;
 
     #[test]

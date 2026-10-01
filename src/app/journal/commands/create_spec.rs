@@ -1,6 +1,6 @@
 //! Application inputs for kind materialization. Surface IDs are targets, never focus aliases.
 use serde::{Deserialize,Serialize};
-use crate::core::intent::{ConvertSurfaceTarget,DomainIntent};
+use crate::app::command::{ConvertSurfaceTarget,DomainIntent};
 
 #[derive(Clone,Debug,Serialize,Deserialize)]
 pub(super) enum Destination {

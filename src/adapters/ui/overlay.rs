@@ -85,7 +85,7 @@ pub(crate) fn draw_overlays(
         new_settings.modifier_hint.pos = Some(pos);
         new_settings.modifier_hint.size = Some(size);
         state.dispatch_intent(
-            crate::core::intent::DomainIntent::UpdateSettings(new_settings)
+            crate::app::command::DomainIntent::UpdateSettings(new_settings)
                 .from_user_menu("modifier_hint.geometry"),
         );
     }

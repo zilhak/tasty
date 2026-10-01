@@ -9,7 +9,7 @@ use tasty_telemetry::{
     CapAction, Op, TelemetryEvent, event_key, validate_agent_id, validate_metric,
 };
 
-use crate::core::Core;
+use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 
 pub(crate) fn now_ms() -> u64 {
@@ -22,7 +22,7 @@ pub(crate) fn now_ms() -> u64 {
 /// Pause/RequireApproval cap이 발동한 플러그인의 모든 IPC를 차단한다.
 /// Local은 이 검사 대상이 아니므로 cap.reset으로 해제할 수 있다.
 pub(crate) fn check_cap_block(
-    core: &Core,
+    core: &AppServices,
     caller: &CallerContext,
     _method: &str,
 ) -> Option<String> {
@@ -59,7 +59,7 @@ pub(crate) fn check_cap_block(
 /// IPC 호출을 ipc_calls로 기록하고 메서드는 태그에 담는다.
 /// _host와 telemetry.*는 자기 집계를 피하려고 제외하며 기록 실패가 원래 호출을 막지는 않는다.
 pub(crate) fn record_ipc_call(
-    core: &mut Core,
+    core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
@@ -99,7 +99,7 @@ pub(crate) fn record_ipc_call(
 
 /// 호출 후 CallBurst/SlowLoop를 검사해 저장한다. 알림은 호출자가 담당한다.
 fn detect_anomalies_after_ipc(
-    core: &Core,
+    core: &AppServices,
     engine: &mut crate::core::CoreState,
     agent: &str,
     method: &str,
@@ -120,7 +120,7 @@ fn detect_anomalies_after_ipc(
 /// RSS 증가를 검사한다. Agent는 record/record_batch의 자기 보고를,
 /// Plugin은 호스트가 sysinfo로 수집한 샘플을 사용한다.
 pub(crate) fn record_rss_sample(
-    core: &Core,
+    core: &AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
@@ -201,7 +201,7 @@ fn build_event(
 
 /// 같은 밀리초에 들어온 이벤트는 새 seq로 키 충돌을 피한다.
 fn persist_event(
-    core: &Core,
+    core: &AppServices,
     engine: &mut crate::core::CoreState,
     ev: &TelemetryEvent,
 ) -> std::result::Result<String, String> {

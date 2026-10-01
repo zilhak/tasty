@@ -1,7 +1,7 @@
 use serde_json::json;
 
 use super::params::{self, p_try};
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use crate::model::{WorkspaceAttachMapping, WorkspaceAttachTarget};
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -171,7 +171,7 @@ pub(crate) fn resolve_create_cwd(
 }
 
 pub fn handle_workspace_create(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
@@ -193,7 +193,7 @@ pub fn handle_workspace_create(
         &id
     ));
 
-    if let Some(def) = engine.surface_registry.get_live(kind)
+    if let Some(def) = engine.runtime.surface_registry.get_live(kind)
         && let Some(missing) = def.first_missing_required_param(params)
     {
         return JsonRpcResponse::invalid_params(
@@ -228,7 +228,7 @@ pub fn handle_workspace_create(
         .and_then(|v| v.as_str())
         .map(str::to_string);
 
-    let intent = crate::core::intent::DomainIntent::CreateWorkspace {
+    let intent = crate::app::command::DomainIntent::CreateWorkspace {
         cwd: resolved_cwd,
         kind: kind.to_string(),
         surface_params: params.clone(),
@@ -243,7 +243,7 @@ pub fn handle_workspace_create(
         Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
     };
 
-    let Some(crate::core::intent::CoreEvent::WorkspaceCreated {
+    let Some(crate::app::command::CoreEvent::WorkspaceCreated {
         id: workspace_id,
         index,
         surface_id,
@@ -254,7 +254,7 @@ pub fn handle_workspace_create(
     else {
         return JsonRpcResponse::internal_error(
             id,
-            "Core::apply returned no WorkspaceCreated event",
+            "AppServices::apply returned no WorkspaceCreated event",
         );
     };
 
@@ -278,7 +278,7 @@ pub fn handle_workspace_create(
     if let Some(category) = category
         && let Err(e) = core.apply(
             engine,
-            crate::core::intent::DomainIntent::SetWorkspaceCategory {
+            crate::app::command::DomainIntent::SetWorkspaceCategory {
                 workspace_id,
                 category,
             },
@@ -289,7 +289,7 @@ pub fn handle_workspace_create(
     if let Some(mapping) = attach_mapping
         && let Err(e) = core.apply(
             engine,
-            crate::core::intent::DomainIntent::SetWorkspaceAttachMapping {
+            crate::app::command::DomainIntent::SetWorkspaceAttachMapping {
                 workspace_id,
                 mapping: Some(mapping),
             },
@@ -317,7 +317,7 @@ pub fn handle_workspace_create(
 }
 
 pub fn handle_workspace_update(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
@@ -386,7 +386,7 @@ pub fn handle_workspace_update(
         }
     };
 
-    let intent = crate::core::intent::DomainIntent::UpdateWorkspaceMeta {
+    let intent = crate::app::command::DomainIntent::UpdateWorkspaceMeta {
         workspace_id,
         name,
         subtitle,
@@ -398,7 +398,7 @@ pub fn handle_workspace_update(
         Err(e) => return JsonRpcResponse::invalid_params(id, e.to_string()),
     };
 
-    let Some(crate::core::intent::CoreEvent::WorkspaceMetaUpdated {
+    let Some(crate::app::command::CoreEvent::WorkspaceMetaUpdated {
         workspace_id,
         index,
         name,
@@ -408,7 +408,7 @@ pub fn handle_workspace_update(
     else {
         return JsonRpcResponse::internal_error(
             id,
-            "Core::apply returned no WorkspaceMetaUpdated event",
+            "AppServices::apply returned no WorkspaceMetaUpdated event",
         );
     };
 
@@ -418,7 +418,7 @@ pub fn handle_workspace_update(
     if let Some(category) = category
         && let Err(e) = core.apply(
             engine,
-            crate::core::intent::DomainIntent::SetWorkspaceCategory {
+            crate::app::command::DomainIntent::SetWorkspaceCategory {
                 workspace_id,
                 category,
             },
@@ -434,7 +434,7 @@ pub fn handle_workspace_update(
     if let Some(mapping) = mapping_change
         && let Err(e) = core.apply(
             engine,
-            crate::core::intent::DomainIntent::SetWorkspaceAttachMapping {
+            crate::app::command::DomainIntent::SetWorkspaceAttachMapping {
                 workspace_id,
                 mapping,
             },
@@ -531,7 +531,7 @@ pub fn handle_workspace_close(
         .expect("workspace index is valid")
         .all_surface_ids()
         .into_iter()
-        .find(|sid| engine.attach.is_hard_occupied(*sid))
+        .find(|sid| engine.live.occupancy.is_hard_occupied(*sid))
     {
         return JsonRpcResponse::invalid_params(
             id,
@@ -570,7 +570,7 @@ fn last_workspace_refusal() -> &'static str {
 /// id로 소유 창과 workspace를 선택한다. from_index는 호환 입력으로 포커스된 창을 사용한다.
 /// 둘을 함께 지정하면 거절한다. to_index는 선택된 창 안의 목적지다.
 pub fn handle_workspace_move(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
@@ -604,7 +604,7 @@ pub fn handle_workspace_move(
     let Some(workspace_id) = engine.workspace_at(from).map(|ws| ws.id) else {
         return JsonRpcResponse::success(id, json!({ "moved": false }));
     };
-    let intent = crate::core::intent::DomainIntent::MoveWorkspace {
+    let intent = crate::app::command::DomainIntent::MoveWorkspace {
         workspace_id,
         to_index: to,
     };
@@ -615,7 +615,7 @@ pub fn handle_workspace_move(
 
     let moved = matches!(
         events.first(),
-        Some(crate::core::intent::CoreEvent::WorkspaceMoved { moved: true, .. })
+        Some(crate::app::command::CoreEvent::WorkspaceMoved { moved: true, .. })
     );
     if moved {
         window.reconcile_presentation(engine);
@@ -629,12 +629,12 @@ mod close_tests {
     use serde_json::json;
 
     fn add_workspace(engine: &mut EngineMut<'_>) -> u32 {
-        let event = crate::core::apply_create_workspace_inner(
+        let event = crate::app::services::apply_create_workspace_inner(
             engine,
-            crate::core::WorkspaceCreationParams::terminal(),
+            crate::app::services::WorkspaceCreationParams::terminal(),
         )
         .unwrap();
-        let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
+        let crate::app::command::CoreEvent::WorkspaceCreated { index, .. } = event else {
             panic!("expected WorkspaceCreated");
         };
         engine
@@ -697,7 +697,7 @@ mod close_tests {
             .copied()
             .expect("워크스페이스에 surface 가 있어야 한다");
         engine
-            .attach
+            .live.occupancy
             .acquire(occupied, 1)
             .expect("하드 점유를 잡을 수 있어야 한다");
 
@@ -718,7 +718,7 @@ mod close_tests {
             "거절이면 아무것도 닫히지 않는다"
         );
         assert!(
-            engine.attach.is_hard_occupied(occupied),
+            engine.live.occupancy.is_hard_occupied(occupied),
             "거절 경로가 점유 상태를 건드리면 안 된다"
         );
     }

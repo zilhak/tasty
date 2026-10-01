@@ -20,7 +20,7 @@ use crate::adapters::ui::popup::transfer::{
     TRANSFER_ERROR_POPUP_ID, TRANSFER_PROGRESS_POPUP_ID, TransferError, TransferProgress,
 };
 use crate::adapters::ui::popup::{PopupId, title_bar_height};
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::intent::{Intent, UiIntent};
 use crate::model::{PhysicalPx, PhysicalRect};
 use crate::state::{
@@ -94,7 +94,7 @@ fn close_button_point(popup_pos: egui::Pos2, popup_size: egui::Vec2) -> egui::Po
 fn run_frame(
     raw: egui::RawInput,
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) {
     let ctx = egui::Context::default();
     drop(ctx.run(raw, |ctx| {
@@ -105,7 +105,7 @@ fn run_frame(
 fn primed_popup_geometry(
     id: PopupId,
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> (egui::Pos2, egui::Vec2) {
     run_frame(empty_input(), state, engine);
     let p = state.popups.get_mut(id).expect("popup registered");
@@ -662,7 +662,7 @@ fn confirm_delete_category_close_intent_now_clears_dialog_state() {
 /// client 7이 워크스페이스를 hard 점유하고 확인 팝업이 열린 상태를 만든다.
 fn occupied_workspace_with_popup(
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> (crate::model::WorkspaceId, Vec<u32>) {
     let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
     let members = engine
@@ -670,7 +670,7 @@ fn occupied_workspace_with_popup(
         .expect("workspace index is valid")
         .all_surface_ids();
     engine
-        .attach
+        .live.occupancy
         .acquire_workspace(ws_id, &members, &members, 7)
         .expect("workspace is free in the fixture");
     state.dialogs.pending_force_detach_workspace = Some(ws_id);
@@ -694,10 +694,10 @@ fn confirm_force_detach_escape_clears_state_and_keeps_the_occupancy() {
             .is_open(CONFIRM_FORCE_DETACH_WORKSPACE_POPUP_ID)
     );
     assert!(state.dialogs.pending_force_detach_workspace.is_none());
-    assert_eq!(engine.attach.workspace_holder(ws_id), Some(7));
+    assert_eq!(engine.live.occupancy.workspace_holder(ws_id), Some(7));
     for sid in &members {
         assert!(
-            engine.attach.is_hard_occupied(*sid),
+            engine.live.occupancy.is_hard_occupied(*sid),
             "surface {sid} 가 풀렸다"
         );
     }
@@ -721,7 +721,7 @@ fn confirm_force_detach_outside_click_clears_state_and_keeps_the_occupancy() {
             .is_open(CONFIRM_FORCE_DETACH_WORKSPACE_POPUP_ID)
     );
     assert!(state.dialogs.pending_force_detach_workspace.is_none());
-    assert_eq!(engine.attach.workspace_holder(ws_id), Some(7));
+    assert_eq!(engine.live.occupancy.workspace_holder(ws_id), Some(7));
 }
 
 #[test]
@@ -748,7 +748,7 @@ fn confirm_force_detach_close_intent_clears_state_after_next_frame() {
     run_frame(empty_input(), &mut state, &mut engine);
 
     assert!(state.dialogs.pending_force_detach_workspace.is_none());
-    assert_eq!(engine.attach.workspace_holder(ws_id), Some(7));
+    assert_eq!(engine.live.occupancy.workspace_holder(ws_id), Some(7));
 }
 
 #[test]
@@ -757,7 +757,7 @@ fn confirm_force_detach_closes_when_the_occupancy_is_already_gone() {
     let mut engine = engine_session.borrow_mut();
     let (ws_id, _) = occupied_workspace_with_popup(&mut state, &mut engine);
 
-    assert_eq!(engine.attach.force_detach_workspace(ws_id), Some(7));
+    assert_eq!(engine.force_detach_workspace(ws_id), Some(7));
     assert!(
         state
             .popups
@@ -807,10 +807,10 @@ fn confirm_force_detach_confirm_releases_the_workspace_and_its_members() {
     );
 
     assert_eq!(holder, Some(7));
-    assert!(engine.attach.workspace_holder(ws_id).is_none());
+    assert!(engine.live.occupancy.workspace_holder(ws_id).is_none());
     for sid in &members {
         assert!(
-            !engine.attach.is_hard_occupied(*sid),
+            !engine.live.occupancy.is_hard_occupied(*sid),
             "surface {sid} 가 아직 점유 중이다"
         );
     }
@@ -830,7 +830,7 @@ fn confirm_force_detach_with_no_pending_target_detaches_nothing() {
     );
 
     assert_eq!(holder, None);
-    assert_eq!(engine.attach.workspace_holder(ws_id), Some(7));
+    assert_eq!(engine.live.occupancy.workspace_holder(ws_id), Some(7));
 }
 
 // 파일 핸들러 피커는 타이틀바와 바깥 클릭 닫기가 없어 해당 포인터 경로 시험은 없다.
@@ -939,7 +939,7 @@ fn file_picker_escape_close_marks_cancelled() {
 fn run_frames(
     inputs: Vec<egui::RawInput>,
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> egui::Context {
     let ctx = egui::Context::default();
     for raw in inputs {
@@ -967,7 +967,7 @@ fn pointer_input(pos: egui::Pos2, pressed: Option<bool>) -> egui::RawInput {
 /// 뷰가 첫 프레임에 보고한 file picker 헤더 줄.
 fn file_picker_header_rect(
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> egui::Rect {
     let ctx = run_frames(vec![empty_input()], state, engine);
     crate::adapters::ui::popup::reported_header_drag_rect(&ctx, FILE_PICKER_POPUP_ID)
@@ -1069,7 +1069,7 @@ fn file_picker_close_intent_now_marks_cancelled() {
 }
 
 fn push_approval(
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     state: &mut crate::state::RequestContext,
     id: &str,
 ) {
@@ -1394,7 +1394,7 @@ fn tab_rename_popup_closes_with_its_tab() {
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
     core.apply(
         &mut engine,
-        crate::core::intent::DomainIntent::CloseTab { tab_id },
+        crate::app::command::DomainIntent::CloseTab { tab_id },
     )
     .expect("close tab");
     run_frame(empty_input(), &mut state, &mut engine);
@@ -1421,7 +1421,7 @@ fn close_tab(engine: &mut EngineMut<'_>, tab_id: u32) {
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
     core.apply(
         engine,
-        crate::core::intent::DomainIntent::CloseTab { tab_id },
+        crate::app::command::DomainIntent::CloseTab { tab_id },
     )
     .expect("close tab");
 }
@@ -1611,7 +1611,7 @@ fn find_in_a_split_sibling_moves_the_search_bar_to_it() {
     let events = core
         .apply(
             &mut engine,
-            crate::core::intent::DomainIntent::SplitSurface {
+            crate::app::command::DomainIntent::SplitSurface {
                 target_surface_id: a,
                 direction: crate::model::SplitDirection::Vertical,
                 cwd: None,
@@ -1620,7 +1620,7 @@ fn find_in_a_split_sibling_moves_the_search_bar_to_it() {
             },
         )
         .expect("split surface");
-    let Some(crate::core::intent::CoreEvent::SurfaceSplit {
+    let Some(crate::app::command::CoreEvent::SurfaceSplit {
         new_surface_id: b, ..
     }) = events.into_iter().next()
     else {

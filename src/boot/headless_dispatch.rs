@@ -5,7 +5,7 @@
 
 use crate::app::App;
 use crate::core::CoreState;
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::ipc::caller::resolve_caller_from_envelope;
 use crate::ipc::server::send_response;
 use crate::state::RequestContext;
@@ -18,16 +18,16 @@ pub(crate) fn pump_ipc(
 ) -> std::ops::ControlFlow<()> {
     let mut round = crate::app::ipc_round::IpcRound::begin();
     while let Some(cmd) = round.next(app.hub.ipc_server.as_deref()) {
-        let observed = crate::app::ipc_round::CommandObservation::begin(app.core.pressure(), &cmd);
+        let observed = crate::app::ipc_round::CommandObservation::begin(app.services.pressure(), &cmd);
         let flow = dispatch_command(app, state, engine, cmd);
-        observed.finish(app.core.slow_requests());
+        observed.finish(app.services.slow_requests());
         if flow.is_break() {
-            round.finish(app.core.pressure(), app.core.dispatch());
+            round.finish(app.services.pressure(), app.services.dispatch());
             return std::ops::ControlFlow::Break(());
         }
     }
     // 남은 명령을 보고 다시 깨우는 일은 호출자가 맡는다.
-    round.finish(app.core.pressure(), app.core.dispatch());
+    round.finish(app.services.pressure(), app.services.dispatch());
     std::ops::ControlFlow::Continue(())
 }
 
@@ -38,10 +38,10 @@ fn dispatch_command(
     cmd: crate::ipc::server::IpcCommand,
 ) -> std::ops::ControlFlow<()> {
     // 큐 대기는 이미 계측했다. 실행 기한이 지났으면 권한·rate limit을 소비하기 전에 응답한다.
-    if !crate::app::ipc_round::claim_or_answer(&cmd, app.core.dispatch()) {
+    if !crate::app::ipc_round::claim_or_answer(&cmd, app.services.dispatch()) {
         return std::ops::ControlFlow::Continue(());
     }
-    let caller = match resolve_caller_from_envelope(&app.core, &cmd.request) {
+    let caller = match resolve_caller_from_envelope(&app.services, &cmd.request) {
         Ok(c) => c,
         Err(resp) => {
             send_response(&cmd.response_tx, resp);
@@ -54,7 +54,7 @@ fn dispatch_command(
     }
     // App 전용 응답도 공용 검사 뒤에 처리한다. checked 요청은 다시 검사하지 않는다.
     let checked = match crate::ipc::handler::check_request(
-        &mut app.core,
+        &mut app.services,
         state,
         engine,
         &cmd.request,
@@ -98,15 +98,15 @@ fn dispatch_command(
     }
     // kind 소유자만 준비한다. namespace 전달과 달리 IPC hook extension은 여기서 시작하지 않는다.
     super::headless_plugins::ensure_plugin_for_surface_kind(app, state, engine, &cmd.request);
-    let resp = crate::ipc::handler::handle_checked_request(&mut app.core, state, engine, &checked);
+    let resp = crate::ipc::handler::handle_checked_request(&mut app.services, state, engine, &checked);
     // 응답 전에 요청의 Intent와 후속 이벤트를 적용한다.
     crate::intent::headless::drain_pending_intents_in_app(
-        &mut app.core,
+        &mut app.services,
         state,
         engine,
         &mut app.journal,
     );
-    crate::intent::headless::drain_pending_host_events(&app.core, state, &engine.as_ref());
+    crate::intent::headless::drain_pending_host_events(&app.services, state, &engine.as_ref());
     send_response(&cmd.response_tx, resp);
     std::ops::ControlFlow::Continue(())
 }
@@ -147,9 +147,9 @@ fn intercept_app_layer(
     // 조회에는 매니저 메타데이터만 필요하다. 플러그인 설치·권한 부여·실행을 하지 않는다.
     if crate::ipc::handler::plugin::is_readonly_method(&cmd.request.method) {
         super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
-        let surface_registry = engine.surface_registry.clone();
+        let surface_registry = engine.runtime.surface_registry.clone();
         if let Some(resp) = crate::ipc::handler::plugin::dispatch_readonly(
-            &app.core,
+            &app.services,
             app.plugin_manager.as_ref(),
             &surface_registry,
             &cmd.request.method,
@@ -163,8 +163,8 @@ fn intercept_app_layer(
     // 지정한 플러그인만 켜야 하므로 전체 discover_and_start 대신 공용 enable/disable을 사용한다.
     if crate::ipc::handler::plugin::is_lifecycle_toggle_method(&cmd.request.method) {
         super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
-        let hook_events = engine.plugin_hook_events.clone();
-        let surface_registry = engine.surface_registry.clone();
+        let hook_events = engine.runtime.plugin_hook_events.clone();
+        let surface_registry = engine.runtime.surface_registry.clone();
         if let Some((resp, events)) = crate::ipc::handler::plugin::dispatch_lifecycle_toggle(
             app.plugin_manager.as_mut(),
             &surface_registry,
@@ -187,7 +187,7 @@ fn intercept_app_layer(
     if cmd.request.method == "plugin.request_permission" {
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         let resp = crate::ipc::handler::session::handle_request_permission(
-            &mut app.core,
+            &mut app.services,
             window,
             engine,
             &caller,
@@ -242,8 +242,8 @@ fn intercept_app_layer(
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         match cmd.request.method.as_str() {
             "clipboard.set_text" => {
-                let resp = crate::core::app_surface::clipboard_set_text(
-                    &app.core,
+                let resp = crate::app::services::surface::clipboard_set_text(
+                    &app.services,
                     rpc_id,
                     &cmd.request.params,
                 );
@@ -251,7 +251,7 @@ fn intercept_app_layer(
                 return Some(Intercepted::Answered);
             }
             "remote.workspaces" => {
-                crate::core::app_surface::spawn_remote_workspaces(
+                crate::app::services::surface::spawn_remote_workspaces(
                     rpc_id,
                     &cmd.request.params,
                     &cmd.response_tx,
@@ -276,7 +276,7 @@ fn intercept_app_layer(
                     return Some(Intercepted::Answered);
                 }
                 crate::ipc::handler::agent::task::spawn_task_await(
-                    app.core.tasks.awaiter(engine.task_scope),
+                    app.services.tasks.awaiter(engine.task_scope),
                     rpc_id,
                     cmd.request.params.clone(),
                     &cmd.response_tx,
@@ -286,7 +286,7 @@ fn intercept_app_layer(
             "approval.await" => {
                 crate::ipc::handler::approval::spawn_approval_await(
                     engine.approval_store.clone(),
-                    app.core.memory_arc(),
+                    app.services.memory_arc(),
                     rpc_id,
                     cmd.request.params.clone(),
                     &cmd.response_tx,
@@ -320,7 +320,7 @@ fn intercept_debug_app_layer(
 ) -> Option<Intercepted> {
     let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
     if cmd.request.method == "debug.lua.eval" {
-        let resp = crate::core::app_surface_debug::lua_eval(
+        let resp = crate::app::services::surface_debug::lua_eval(
             app.lua_engine.as_ref(),
             rpc_id,
             &cmd.request.params,
@@ -349,7 +349,7 @@ fn intercept_debug_app_layer(
     }
     // 전체화면 무대 선언은 조회할 수 있지만 창이 필요한 open·close·state는 처리하지 않는다.
     if cmd.request.method == "debug.fullscreen.list" {
-        let resp = crate::core::app_surface_debug::fullscreen_list(rpc_id);
+        let resp = crate::app::services::surface_debug::fullscreen_list(rpc_id);
         send_response(&cmd.response_tx, resp);
         return Some(Intercepted::Answered);
     }

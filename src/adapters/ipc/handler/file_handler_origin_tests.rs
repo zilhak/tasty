@@ -8,7 +8,7 @@ use serde_json::json;
 use tasty_ipc::caller::CallerContext;
 
 use super::handle_dispatch;
-use crate::core::intent::DomainIntent;
+use crate::app::command::DomainIntent;
 use crate::file::dispatch::FileDispatchOrigin;
 use crate::file::format::DetectorId;
 use crate::intent::Intent;
@@ -57,7 +57,7 @@ fn dispatch_through_with(
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
     FileHandlerRegistryPort::install_plugin_handlers(
-        engine.file_handler.as_ref(),
+        engine.runtime.file_handler.as_ref(),
         PLUGIN,
         &[json!({"id":"open", "detector":"origin-test", "priority":0,
             "action":{"kind":"open_surface", "surface_kind":"empty", "param_key":"file"}})],
@@ -238,12 +238,12 @@ fn a_mirror_tab_from_the_users_popup_keeps_its_remote_failure_toast() {
     );
     assert_eq!(origin, FileDispatchOrigin::User);
     assert_eq!(
-        engine.core_state.pending_structural_forward.len(),
+        engine.core_state.remote.pending_structural_forward.len(),
         1,
         "새 탭은 forward 된다"
     );
     assert!(
-        !engine.core_state.pending_structural_forward[0].silent_failure,
+        !engine.core_state.remote.pending_structural_forward[0].silent_failure,
         "사용자가 요청한 원격 작업의 거절은 토스트로 표시한다"
     );
     assert_eq!(state.toasts.len(), 0);
@@ -256,9 +256,9 @@ fn a_mirror_tab_from_the_users_popup_keeps_its_remote_failure_toast() {
         true,
     );
     assert_eq!(origin, FileDispatchOrigin::PluginUnverified);
-    assert_eq!(engine.core_state.pending_structural_forward.len(), 1);
+    assert_eq!(engine.core_state.remote.pending_structural_forward.len(), 1);
     assert!(
-        engine.core_state.pending_structural_forward[0].silent_failure,
+        engine.core_state.remote.pending_structural_forward[0].silent_failure,
         "에이전트가 요청한 원격 작업의 거절은 로그에 기록한다"
     );
 }

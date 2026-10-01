@@ -20,13 +20,13 @@ pub(crate) fn forward_mesh_frames_for_engine(
     mgr: &PluginManager,
     stream_hub: &StreamHub,
 ) {
-    for sid in engine.mesh_mirror.active_surface_ids() {
-        if !engine.attach.is_hard_occupied(sid) {
-            engine.mesh_mirror.remove(sid);
+    for sid in engine.remote.mesh_mirror.active_surface_ids() {
+        if !engine.live.occupancy.is_hard_occupied(sid) {
+            engine.remote.mesh_mirror.remove(sid);
             continue;
         }
         let Some(ms) = engine.find_egui_mesh_surface(sid) else {
-            engine.mesh_mirror.remove(sid);
+            engine.remote.mesh_mirror.remove(sid);
             continue;
         };
         let plugin_id = ms.plugin_id.clone();
@@ -34,7 +34,7 @@ pub(crate) fn forward_mesh_frames_for_engine(
         let file = ms.file.clone();
         let display_name = ms.display_name.clone();
 
-        let Some(ctx) = engine.mesh_mirror.get(sid) else {
+        let Some(ctx) = engine.remote.mesh_mirror.get(sid) else {
             continue;
         };
         let client_id = ctx.client_id;
@@ -45,10 +45,10 @@ pub(crate) fn forward_mesh_frames_for_engine(
         let focused = ctx.focused;
         let modifiers = ctx.last_modifiers;
 
-        let dirty = engine.mesh_mirror.take_dirty(sid);
-        let need_full = engine.mesh_mirror.take_need_full_textures(sid);
+        let dirty = engine.remote.mesh_mirror.take_dirty(sid);
+        let need_full = engine.remote.mesh_mirror.take_need_full_textures(sid);
         // 입력 추가도 dirty를 설정하므로 크기나 테마가 그대로여도 아래에서 전달한다.
-        let events = engine.mesh_mirror.take_pending_events(sid);
+        let events = engine.remote.mesh_mirror.take_pending_events(sid);
 
         if dirty {
             let has_frame = mgr.egui_mesh_frame(sid).is_some();
@@ -94,7 +94,7 @@ pub(crate) fn relay_mesh_frame_if_new(
         return;
     };
     if !engine
-        .mesh_mirror
+        .remote.mesh_mirror
         .should_forward_generation(sid, frame.generation)
     {
         return;
@@ -125,7 +125,7 @@ pub(crate) fn relay_mesh_frame_if_new(
         user
     };
 
-    let Some(frame_id) = engine.mesh_mirror.mark_forwarded(sid, frame.generation) else {
+    let Some(frame_id) = engine.remote.mesh_mirror.mark_forwarded(sid, frame.generation) else {
         return;
     };
     for payload in tasty_ipc::mesh_stream::split_mesh_frame(
@@ -147,7 +147,7 @@ pub(crate) fn relay_mesh_frame_if_new(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::egui_mesh_surface::EguiMeshSurface;
+    use crate::runtime::egui_mesh_surface::EguiMeshSurface;
     use std::sync::Arc;
     use tasty_terminal::waker_factory::NoopWakerFactory;
 
@@ -194,11 +194,11 @@ mod tests {
         );
 
         engine
-            .attach
+            .live.occupancy
             .acquire(surface_id, client_id)
             .expect("hard-occupy for mesh mirror subscription");
         engine
-            .mesh_mirror
+            .remote.mesh_mirror
             .upsert(surface_id, client_id, 800, 600, 2.0, None, true);
 
         (engine_session, surface_id)
@@ -214,8 +214,8 @@ mod tests {
         // 플러그인 프로세스는 실행하지 않으며 구독 상태가 처리되는지만 검사한다.
         let mgr = PluginManager::with_registries(
             Arc::new(NoopWakerFactory),
-            parked[0].0.core_state.file_format.clone(),
-            parked[0].0.core_state.file_handler.clone(),
+            parked[0].0.core_state.runtime.file_format.clone(),
+            parked[0].0.core_state.runtime.file_handler.clone(),
         );
 
         for (engine, _sid) in parked.iter_mut() {
@@ -224,14 +224,14 @@ mod tests {
 
         for (engine, sid) in parked.iter_mut() {
             assert!(
-                !engine.core_state.mesh_mirror.take_dirty(*sid),
+                !engine.core_state.remote.mesh_mirror.take_dirty(*sid),
                 "parked engine's mesh mirror subscription should have been driven"
             );
             assert!(
-                !engine.core_state.mesh_mirror.take_need_full_textures(*sid),
+                !engine.core_state.remote.mesh_mirror.take_need_full_textures(*sid),
                 "parked engine's need_full_textures should have been consumed"
             );
-            assert!(engine.core_state.attach.is_hard_occupied(*sid));
+            assert!(engine.core_state.live.occupancy.is_hard_occupied(*sid));
         }
     }
 }

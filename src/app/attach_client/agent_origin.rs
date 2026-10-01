@@ -17,7 +17,7 @@ pub(super) struct AgentRequests {
 impl AgentRequests {
     pub(super) fn note_structural_from(
         &mut self,
-        pending: &crate::core::PendingStructuralForward,
+        pending: &crate::app::services::PendingStructuralForward,
         op_id: u64,
     ) {
         if pending.silent_failure {
@@ -106,8 +106,8 @@ mod tests {
     use super::super::{MirrorEvent, apply_mirror_events};
     use super::*;
 
-    fn structural(silent_failure: bool) -> crate::core::PendingStructuralForward {
-        crate::core::PendingStructuralForward {
+    fn structural(silent_failure: bool) -> crate::app::services::PendingStructuralForward {
+        crate::app::services::PendingStructuralForward {
             op: tasty_ipc::stream::StructuralOp::NewTab {
                 anchor_surface_id: 1,
                 surface_kind: "terminal".to_string(),

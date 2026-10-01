@@ -1,7 +1,7 @@
 use serde_json::json;
 
 use crate::adapters::ipc::handler::params::{self, p_try};
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
@@ -118,7 +118,7 @@ pub(crate) fn handle_mouse_tracking(
             surface_id,
             terminal.mouse_tracking(),
             terminal.sgr_mouse(),
-            engine.attach.is_hard_occupied(surface_id),
+            engine.live.occupancy.is_hard_occupied(surface_id),
             engine.is_surface_mouse_capture_disabled(surface_id),
         ),
     )
@@ -200,7 +200,7 @@ pub(crate) fn handle_foreground_process(
 /// surface ID를 유지하면서 터미널을 교체한다. 기존 Terminal은 drop으로 정리한다.
 /// cwd가 있으면 새 프로세스의 작업 폴더로 사용한다.
 pub(crate) fn handle_surface_respawn_terminal(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -219,17 +219,17 @@ pub(crate) fn handle_surface_respawn_terminal(
         return JsonRpcResponse::invalid_params(id, format!("cwd does not exist: {}", p.display()));
     }
 
-    let intent = crate::core::intent::DomainIntent::RespawnTerminal { surface_id, cwd };
+    let intent = crate::app::command::DomainIntent::RespawnTerminal { surface_id, cwd };
     let events = match core.apply(engine, intent) {
         Ok(e) => e,
         Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
     };
-    let Some(crate::core::intent::CoreEvent::TerminalRespawned { surface_id, error }) =
+    let Some(crate::app::command::CoreEvent::TerminalRespawned { surface_id, error }) =
         events.into_iter().next()
     else {
         return JsonRpcResponse::internal_error(
             id,
-            "Core::apply returned no TerminalRespawned event",
+            "AppServices::apply returned no TerminalRespawned event",
         );
     };
     match error {

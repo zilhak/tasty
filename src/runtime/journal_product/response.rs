@@ -3,6 +3,12 @@ use serde::{Deserialize, Serialize};
 use tasty_domain::{Rejection, StructureModels};
 use tasty_ipc::protocol::JsonRpcResponse;
 
+#[derive(Debug,Clone,Default,Serialize,Deserialize)]
+pub(crate) struct CompletionView {
+    pub mirror_count:usize,
+    pub selected_tabs:std::collections::BTreeMap<u32,u32>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) enum ResponsePlan {
     Fixed(JsonRpcResponse),
@@ -11,6 +17,7 @@ pub(crate) enum ResponsePlan {
         id: u32,
         surface_id: u32,
     },
+    TabCreated {stream:String,pane:u32,tab:u32,surface:u32,activate:bool},
     Multiple(Vec<ResponsePlan>),
     CategoryCreated {
         stream: String,
@@ -27,7 +34,7 @@ impl ResponsePlan {
     pub(super) fn render(
         &self,
         after: &StructureModels,
-        mirror_count: usize,
+        view: &CompletionView,
     ) -> Result<Vec<u8>, Rejection> {
         let response = match self {
             Self::Fixed(response) => response.clone(),
@@ -35,7 +42,7 @@ impl ResponsePlan {
                 let results = plans
                     .iter()
                     .map(|plan| {
-                        plan.render(after, mirror_count).and_then(|bytes| {
+                        plan.render(after, view).and_then(|bytes| {
                             serde_json::from_slice::<JsonRpcResponse>(&bytes)
                                 .map_err(|error| Rejection(error.to_string()))
                         })
@@ -70,7 +77,7 @@ impl ResponsePlan {
                     .iter()
                     .position(|workspace| workspace == id)
                     .ok_or_else(|| Rejection("created workspace order missing".into()))?
-                    .checked_add(mirror_count)
+                    .checked_add(view.mirror_count)
                     .ok_or_else(|| Rejection("workspace display index overflow".into()))?;
                 JsonRpcResponse::success(
                     serde_json::Value::Null,
@@ -80,6 +87,13 @@ impl ResponsePlan {
                         "category":workspace.category,"attach_mapping":workspace.attach_mapping,
                     }),
                 )
+            }
+            Self::TabCreated {stream,pane,tab,surface,activate}=> {
+                let model=after.streams.get(stream).ok_or_else(||Rejection("created tab stream missing".into()))?;
+                let pane_model=model.panes.get(pane).ok_or_else(||Rejection("created tab pane missing".into()))?;
+                let selected=if *activate {Some(*tab)} else {view.selected_tabs.get(pane).copied()};
+                let active_tab=selected.and_then(|selected|pane_model.tabs.iter().position(|id|*id==selected)).unwrap_or(0);
+                JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"pane_id":pane,"surface_id":surface,"tab_count":pane_model.tabs.len(),"active_tab":active_tab}))
             }
             Self::WorkspaceUpdated {
                 stream,
@@ -131,7 +145,7 @@ pub(crate) struct RecordedResolution {
     pub changes: Vec<super::StreamCommand>,
     pub response: Option<ResponsePlan>,
     #[serde(default)]
-    pub completion_mirrors: Option<usize>,
+    pub completion_view: Option<CompletionView>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -161,7 +175,7 @@ impl ResponseProgress {
         &mut self,
         plan: &ResponsePlan,
         model: &StructureModels,
-        mirror_count: usize,
+        view: &CompletionView,
     ) -> Result<Option<Vec<u8>>, String> {
         use tasty_domain::StructuralResult as R;
         let render = |plan: &ResponsePlan, result: Option<&R>| -> Result<JsonRpcResponse, String> {

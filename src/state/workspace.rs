@@ -2,7 +2,7 @@
 use crate::core::CoreState;
 
 use super::RequestContext;
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 
 /// 닫기 요청 출처. 복원 사본 저장, surface.closed의 reason, 계측 구분값을 정한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,11 +56,11 @@ impl RequestContext {
         if !engine.workspaces().is_empty() {
             return false;
         }
-        match crate::core::apply_create_workspace_inner(
+        match crate::app::services::apply_create_workspace_inner(
             engine,
-            crate::core::WorkspaceCreationParams::terminal(),
+            crate::app::services::WorkspaceCreationParams::terminal(),
         ) {
-            Ok(crate::core::intent::CoreEvent::WorkspaceCreated { index, .. }) => {
+            Ok(crate::app::command::CoreEvent::WorkspaceCreated { index, .. }) => {
                 self.set_active_workspace_index(engine, index);
                 true
             }
@@ -411,9 +411,9 @@ mod workspace_pointer_tests {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         while engine.workspaces().len() < 4 {
-            crate::core::apply_create_workspace_inner(
+            crate::app::services::apply_create_workspace_inner(
                 &mut engine,
-                crate::core::WorkspaceCreationParams::terminal(),
+                crate::app::services::WorkspaceCreationParams::terminal(),
             )
             .unwrap();
         }
@@ -447,9 +447,9 @@ mod workspace_pointer_tests {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         for _ in 0..3 {
-            crate::core::apply_create_workspace_inner(
+            crate::app::services::apply_create_workspace_inner(
                 &mut engine,
-                crate::core::WorkspaceCreationParams::terminal(),
+                crate::app::services::WorkspaceCreationParams::terminal(),
             )
             .unwrap();
         }
@@ -466,9 +466,9 @@ mod workspace_pointer_tests {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         while engine.workspaces().len() < 4 {
-            crate::core::apply_create_workspace_inner(
+            crate::app::services::apply_create_workspace_inner(
                 &mut engine,
-                crate::core::WorkspaceCreationParams::terminal(),
+                crate::app::services::WorkspaceCreationParams::terminal(),
             )
             .unwrap();
         }
@@ -510,9 +510,9 @@ mod workspace_pointer_tests {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         while engine.workspaces().len() < 3 {
-            crate::core::apply_create_workspace_inner(
+            crate::app::services::apply_create_workspace_inner(
                 &mut engine,
-                crate::core::WorkspaceCreationParams::terminal(),
+                crate::app::services::WorkspaceCreationParams::terminal(),
             )
             .unwrap();
         }

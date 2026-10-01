@@ -20,7 +20,7 @@ impl App {
             }
             any_webview = true;
             if main.webview_any_visible
-                && main.base.focused
+                && main.base.state.focused
                 && main.base.winit.is_minimized() != Some(true)
             {
                 needs_poll = true;

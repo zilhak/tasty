@@ -6,7 +6,7 @@ use std::sync::mpsc::Sender;
 
 use crate::model::Surface;
 
-use crate::core::surface_registry::{
+use crate::runtime::surface_registry::{
     KindSource, RegisteredRendering, SurfaceKindDef, SurfaceKindRegistry,
 };
 use crate::plugin::manifest::SurfaceKindDecl;
@@ -37,7 +37,7 @@ pub fn register_remote_kind(
     decl: &SurfaceKindDecl,
     host_cmd_tx: Sender<HostCmd>,
 ) {
-    if crate::core::surface_registry::builtins::is_host_builtin_kind(&decl.kind) {
+    if crate::runtime::surface_registry::builtins::is_host_builtin_kind(&decl.kind) {
         tracing::warn!(
             "plugin '{}' declared remote kind '{}' which is a host builtin; ignoring \
              (host-rendered surface takes precedence)",
@@ -56,7 +56,7 @@ pub fn register_remote_kind(
     let tx_create = host_cmd_tx.clone();
     let tx_restore = host_cmd_tx;
     let preset_fields =
-        crate::core::surface_registry::PresetFieldSpec::from_decls(&decl.preset_fields);
+        crate::runtime::surface_registry::PresetFieldSpec::from_decls(&decl.preset_fields);
     let preset_fields_for_create = preset_fields.clone();
 
     registry.register(SurfaceKindDef {
@@ -76,7 +76,7 @@ pub fn register_remote_kind(
                     .with_initial_file(params);
             // 선언한 파일 경로에서 얻은 cwd를 상속 cwd보다 우선한다.
             // 이 값은 호스트 source_cwd용이며 플러그인에 보내는 cwd는 원래 인자를 유지한다.
-            let surface_cwd = crate::core::surface_registry::PresetFieldSpec::derive_cwd(
+            let surface_cwd = crate::runtime::surface_registry::PresetFieldSpec::derive_cwd(
                 &preset_fields_for_create,
                 params,
             )
@@ -92,7 +92,7 @@ pub fn register_remote_kind(
                 handles,
             };
             let sender = tx_create.clone();
-            Ok(crate::core::surface_registry::PreparedKind::deferred(
+            Ok(crate::runtime::surface_registry::PreparedKind::deferred(
                 Box::new(surface),
                 Box::new(move || {
                     sender.send(command).map_err(|error| {
@@ -119,7 +119,7 @@ pub fn register_remote_kind(
                 handles,
             };
             let sender = tx_restore.clone();
-            Ok(crate::core::surface_registry::PreparedKind::deferred(
+            Ok(crate::runtime::surface_registry::PreparedKind::deferred(
                 Box::new(surface),
                 Box::new(move || {
                     sender.send(command).map_err(|error| {

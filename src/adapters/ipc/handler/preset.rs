@@ -2,7 +2,7 @@
 //! IPC는 성공/실패를 동기로 응답해야 하므로 intent 큐를 거치지 않는다.
 //! 적용할 때 focus:false로 사용자 포커스를 유지한다.
 
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use serde_json::json;
 use tasty_presets::{PanePreset, PresetKind, TabPreset, WorkspacePreset};
 
@@ -45,7 +45,7 @@ fn require_str<'a>(
 
 use super::params::require_u32;
 
-fn with_store<R>(core: &crate::core::Core, f: impl FnOnce(&tasty_presets::PresetStore) -> R) -> R {
+fn with_store<R>(core: &crate::app::services::AppServices, f: impl FnOnce(&tasty_presets::PresetStore) -> R) -> R {
     let guard = crate::poison::recover_mutex(
         core.preset_store.lock(),
         crate::core::PRESET_STORE_WHAT,
@@ -63,7 +63,7 @@ fn mutation_error(id: serde_json::Value, e: PresetMutationError) -> JsonRpcRespo
 }
 
 pub fn handle_list(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -76,7 +76,7 @@ pub fn handle_list(
 }
 
 pub fn handle_get(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -120,7 +120,7 @@ pub fn handle_get(
 }
 
 pub fn handle_save(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -178,7 +178,7 @@ pub fn handle_save(
 }
 
 pub fn handle_delete(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -198,7 +198,7 @@ pub fn handle_delete(
 }
 
 pub fn handle_rename(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -223,7 +223,7 @@ pub fn handle_rename(
 
 pub fn handle_capture(
     presentation: &dyn crate::model::StructurePresentation,
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     engine: &EngineRef<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -257,7 +257,7 @@ pub fn handle_capture(
 }
 
 pub fn handle_apply(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,

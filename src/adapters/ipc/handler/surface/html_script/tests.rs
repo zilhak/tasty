@@ -17,7 +17,7 @@ fn state_with_html_tab() -> (
     .expect("html SurfaceKindDecl");
     let (host_cmd_tx, _host_cmd_rx) = std::sync::mpsc::channel();
     crate::plugin_bridge::remote_kind::register_remote_kind(
-        &engine.surface_registry,
+        &engine.runtime.surface_registry,
         "com.tasty.html",
         &decl,
         host_cmd_tx,

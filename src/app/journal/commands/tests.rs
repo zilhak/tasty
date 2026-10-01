@@ -150,7 +150,7 @@ fn boot_with_layout(layout: Option<serde_json::Value>) -> (EngineSession, Journa
         Arc::new(std::sync::Mutex::new(
             tasty_memory::testing::InMemoryStorage::new(),
         )),
-        Arc::new(crate::core::agent::runner_thread::RunnerRegistry::new()),
+        Arc::new(crate::runtime::agent::runner_thread::RunnerRegistry::new()),
         settings,
     )
     .unwrap();
@@ -542,7 +542,7 @@ fn headless_pending_category_intent_uses_the_explicit_engine_journal_admission()
     );
     state.engine_id = Some(session.id);
     state.dispatch_intent(
-        crate::core::intent::DomainIntent::CreateCategory {
+        crate::app::command::DomainIntent::CreateCategory {
             name: "headless-queued".into(),
         }
         .from_agent_ipc(),

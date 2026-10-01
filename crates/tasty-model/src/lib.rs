@@ -81,6 +81,8 @@ mod pane;
 mod pane_tree;
 pub mod popup_kind;
 mod surface_layout;
+mod surface_descriptor;
+pub use surface_descriptor::SurfaceDescriptor;
 mod surface_trait;
 mod tab;
 mod terminal_surface;

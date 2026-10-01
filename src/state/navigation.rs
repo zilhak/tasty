@@ -61,6 +61,8 @@ impl Selection {
 /// One owner's navigation, independent from the shared structural model.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct NavigationState {
+    /// Selection intent generation; never a structural revision or journal input.
+    generation:std::sync::Arc<()>,
     pub(crate) split_hints: HashMap<crate::model::SplitNodeId, bool>,
     pub(crate) collapsed_categories: std::collections::HashSet<u32>,
     workspace: Selection,
@@ -70,6 +72,13 @@ pub(crate) struct NavigationState {
 }
 
 impl NavigationState {
+    pub(crate) fn generation(&self)->std::sync::Weak<()> {std::sync::Arc::downgrade(&self.generation)}
+    pub(crate) fn matches_generation(&self,generation:&std::sync::Weak<()>)->bool {self.generation().ptr_eq(generation)}
+    fn note_selection_change(&mut self,changed:bool)->bool {
+        if changed {self.generation=std::sync::Arc::new(());}
+        changed
+    }
+
     #[cfg(feature = "gui")]
     pub(crate) fn restore(
         &mut self,
@@ -158,7 +167,8 @@ impl NavigationState {
         workspaces: &WorkspaceRead<'_>,
         id: WorkspaceId,
     ) -> bool {
-        self.workspace.select(id, workspace_ids(workspaces))
+        let changed=self.workspace.select(id,workspace_ids(workspaces));
+        self.note_selection_change(changed)
     }
 
     pub(crate) fn select_pane(&mut self, workspace: &Workspace, id: u32) -> bool {
@@ -166,15 +176,13 @@ impl NavigationState {
             return false;
         }
         let changed = self.pane_id(workspace) != Some(id);
-        self.panes.insert(workspace.id, id);
-        changed
+        self.panes.insert(workspace.id,id);
+        self.note_selection_change(changed)
     }
 
     pub(crate) fn select_tab(&mut self, pane: &Pane, id: u32) -> bool {
-        self.selected_tabs
-            .entry(pane.id)
-            .or_default()
-            .select(id, tab_ids(pane))
+        let changed=self.selected_tabs.entry(pane.id).or_default().select(id,tab_ids(pane));
+        self.note_selection_change(changed)
     }
 
     pub(crate) fn select_surface(&mut self, tab: &Tab, id: SurfaceId) -> bool {
@@ -182,8 +190,8 @@ impl NavigationState {
             return false;
         }
         let changed = self.surface_id(tab) != Some(id);
-        self.surfaces.insert(tab.id, id);
-        changed
+        self.surfaces.insert(tab.id,id);
+        self.note_selection_change(changed)
     }
 
     pub(crate) fn goto_tab(&mut self, pane: &Pane, index: usize) -> crate::model::TabSwitch {
@@ -262,9 +270,9 @@ impl NavigationState {
     pub(crate) fn apply_result(
         &mut self,
         workspaces: &WorkspaceRead<'_>,
-        event: &crate::core::intent::CoreEvent,
+        event: &crate::app::command::CoreEvent,
     ) {
-        use crate::core::intent::CoreEvent;
+        use crate::app::command::CoreEvent;
         match event {
             CoreEvent::ClosedItemRestored { presentation, .. } => {
                 // New objects inherit stored internal defaults for every origin.

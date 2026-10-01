@@ -2,7 +2,7 @@
 //! 별도 토큰 대신 SSH와 loopback 연결을 신뢰한다. client_id는 stream.open에서 발급한다.
 
 use super::params::{self, p_try};
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use serde_json::json;
 
 use crate::core::CoreState;
@@ -38,7 +38,7 @@ pub(crate) fn handle_acquire(
             format!("Surface {surface_id} not found or not attachable"),
         );
     }
-    match engine.attach.acquire(surface_id, client_id) {
+    match engine.live.occupancy.acquire(surface_id, client_id) {
         Ok(lock) => JsonRpcResponse::success(
             id,
             json!({
@@ -69,7 +69,7 @@ pub(crate) fn handle_release(
         Ok(v) => v,
         Err(e) => return e,
     };
-    match engine.attach.release(surface_id, client_id) {
+    match engine.live.occupancy.release(surface_id, client_id) {
         Ok(()) => {
             JsonRpcResponse::success(id, json!({ "released": true, "surface_id": surface_id }))
         }
@@ -87,7 +87,7 @@ pub(crate) fn handle_force_detach(
         Ok(v) => v,
         Err(e) => return e,
     };
-    let holder = engine.attach.force_detach(surface_id);
+    let holder = engine.force_detach(surface_id);
     JsonRpcResponse::success(
         id,
         json!({
@@ -110,7 +110,7 @@ pub(crate) fn handle_force_detach_workspace(
             return e;
         }
     };
-    let holder = engine.attach.force_detach_workspace(workspace_id);
+    let holder = engine.force_detach_workspace(workspace_id);
     JsonRpcResponse::success(
         id,
         json!({
@@ -136,7 +136,7 @@ pub(crate) fn handle_into_gui(
         Ok(v) => v,
         Err(e) => return e,
     };
-    engine.pending_gui_attach.push((port, workspace));
+    engine.remote.pending_gui_attach.push((port, workspace));
     JsonRpcResponse::success(
         id,
         json!({ "queued": true, "port": port, "workspace": workspace }),
@@ -146,7 +146,7 @@ pub(crate) fn handle_into_gui(
 /// surface와 workspace 점유 목록을 함께 반환한다.
 pub(crate) fn handle_list(engine: &CoreState, id: serde_json::Value) -> JsonRpcResponse {
     let arr: Vec<_> = engine
-        .attach
+        .live.occupancy
         .locks_snapshot()
         .into_iter()
         .map(|(sid, l)| {
@@ -158,7 +158,7 @@ pub(crate) fn handle_list(engine: &CoreState, id: serde_json::Value) -> JsonRpcR
         })
         .collect();
     let workspaces: Vec<_> = engine
-        .attach
+        .live.occupancy
         .workspaces_snapshot()
         .into_iter()
         .map(|(ws, l)| {

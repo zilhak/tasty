@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use tasty_terminal::{Terminal, TerminalEvent};
 
 use super::CoreState;
@@ -46,7 +46,7 @@ impl CoreState {
     pub(crate) fn find_egui_mesh_surface(
         &self,
         surface_id: u32,
-    ) -> Option<&crate::core::egui_mesh_surface::EguiMeshSurface> {
+    ) -> Option<&crate::runtime::egui_mesh_surface::EguiMeshSurface> {
         for ws in &self.workspaces() {
             let pane_ids = ws.pane_layout().all_pane_ids();
             for pane_id in pane_ids {
@@ -56,7 +56,7 @@ impl CoreState {
                             && let Some(surface) = layout.find_surface(surface_id)
                             && let Some(ms) = surface
                                 .as_any()
-                                .downcast_ref::<crate::core::egui_mesh_surface::EguiMeshSurface>(
+                                .downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>(
                             )
                         {
                             return Some(ms);
@@ -120,7 +120,7 @@ impl EngineMut<'_> {
     }
     /// 등록된 종류로 placeholder 복원을 시도한다. 종류가 없거나 복원에 실패하면 placeholder가 남는다.
     pub fn reify_plugin_surface(&mut self, surface_id: u32) -> bool {
-        let registry = self.surface_registry.clone();
+        let registry = self.runtime.surface_registry.clone();
         for ws in self.workspaces_mut() {
             let pane_ids: Vec<u32> = ws.pane_layout().all_pane_ids();
             for pane_id in pane_ids {
@@ -150,7 +150,7 @@ impl EngineMut<'_> {
         for pty_id in &expired {
             let pty_id = *pty_id;
             self.runtime.terminals.remove(pty_id);
-            if let Some(factory) = self.waker_factory.as_ref() {
+            if let Some(factory) = self.runtime.waker_factory.as_ref() {
                 factory.forget_surface(pty_id);
             }
             tracing::debug!("headless pty {pty_id} swept (idle TTL exceeded)");
@@ -191,7 +191,7 @@ impl EngineMut<'_> {
         };
         let waker = self.make_waker(surface_id);
         let result =
-            crate::core::terminal_spawn::spawn_deferred_terminal(surface_id, &spawn, waker);
+            crate::runtime::terminal_spawn::spawn_deferred_terminal(surface_id, &spawn, waker);
         let Some(tab) = self.deferred_tab_mut(surface_id) else {
             return false;
         };

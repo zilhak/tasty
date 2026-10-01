@@ -4,7 +4,7 @@ use super::{
     Canonical, IdMode, direction_name, sorted_value,
 };
 use crate::core::CoreState;
-use crate::model::{Deferred, EmptySurface, PaneNode, Surface, SurfaceLayout, TerminalSurface};
+use crate::model::{PaneNode, SurfaceDescriptor, SurfaceLayout};
 
 /// CoreState의 정규 표현. ID는 원래 값이고 surface 저장 자료는 비교하지 않는다.
 /// mirror workspace와 선택·파생 값은 뺀다.
@@ -77,28 +77,9 @@ pub(crate) fn core_canonical(engine: &CoreState) -> Canonical {
 }
 
 /// 저장 형식이 정하는 kind. 대기 중인 terminal은 terminal, plugin 대기는 기다리는 kind다.
-pub(crate) fn core_kind(surface: &dyn Surface) -> String {
-    if let Some(pending) = surface
-        .as_any()
-        .downcast_ref::<crate::runtime::live_projection::bootstrap::JournalPlaceholder>(
-    ) {
-        return pending.kind.clone();
-    }
+pub(crate) fn core_kind(surface:&SurfaceDescriptor)->String {surface.kind.clone()}
 
-    if surface.as_any().is::<TerminalSurface>() {
-        return "terminal".to_owned();
-    }
-    if let Some(empty) = surface.as_any().downcast_ref::<EmptySurface>() {
-        match &empty.deferred {
-            Some(Deferred::Terminal(_)) => return "terminal".to_owned(),
-            Some(Deferred::Plugin(plugin)) => return plugin.kind.clone(),
-            None => {}
-        }
-    }
-    surface.kind().to_owned()
-}
-
-fn surface_id(surface: &dyn Surface, defects: &mut Vec<String>) -> u32 {
+fn surface_id(surface: &SurfaceDescriptor, defects: &mut Vec<String>) -> u32 {
     surface.surface_id().unwrap_or_else(|| {
         defects.push(format!("a {} surface has no id", surface.kind()));
         u32::MAX
@@ -115,7 +96,7 @@ fn pane_leaves<'a>(node: &'a PaneNode, out: &mut Vec<&'a crate::model::Pane>) {
     }
 }
 
-fn surface_leaves<'a>(node: &'a SurfaceLayout, out: &mut Vec<&'a dyn Surface>) {
+fn surface_leaves<'a>(node: &'a SurfaceLayout, out: &mut Vec<&'a SurfaceDescriptor>) {
     match node {
         SurfaceLayout::Leaf(surface) => out.push(surface.as_ref()),
         SurfaceLayout::Split { first, second, .. } => {

@@ -3,7 +3,7 @@
 //! 목록은 기본적으로 모든 워크스페이스를 포함하며 현재 워크스페이스만 고를 수도 있다.
 //! release IPC로 팝업을 강제로 열지는 않는다. 에이전트는 agent.dag_list/get으로 데이터를 읽는다.
 
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::time::Instant;
 
 use tasty_icons as icons;
@@ -109,10 +109,10 @@ impl DagListState {
             return;
         }
         self.last_list_poll = Some(now);
-        match crate::core::agent::task::dag_list_from_state(
-            &engine.memory,
+        match crate::runtime::agent::task::dag_list_from_state(
+            &engine.runtime.memory,
             engine.task_scope,
-            &crate::core::agent::task::dag_scan_workspaces(engine, None),
+            &crate::runtime::agent::task::dag_scan_workspaces(engine, None),
         ) {
             Ok(summaries) => {
                 self.rows = summaries

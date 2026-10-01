@@ -12,7 +12,7 @@ mod footer;
 mod layout_tests;
 mod path_bar;
 
-use crate::core::engine_access::EngineRef;
+use crate::runtime::engine_access::EngineRef;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tasty_type_geometry::length::LogicalPx;
@@ -645,7 +645,7 @@ pub fn on_close_file_picker(
 pub fn draw_file_picker(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     let Some(data) = state.dialogs.file_picker.as_ref() else {
         return PopupAction::Close;
@@ -1002,7 +1002,7 @@ fn navigate(
             sent_at: Instant::now(),
         };
         engine
-            .pending_list_dir_forward
+            .remote.pending_list_dir_forward
             .push(crate::core::PendingListDirForward {
                 local_ws_id: mirror_ws_id,
                 request_id,

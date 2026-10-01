@@ -2,8 +2,8 @@
 
 use serde_json::json;
 
-use crate::core::engine_access::EngineMut;
-use crate::core::surface_registry::SurfaceKindRegistry;
+use crate::runtime::engine_access::EngineMut;
+use crate::runtime::surface_registry::SurfaceKindRegistry;
 use crate::model::{Deferred, Pane, PaneNode, Surface, SurfaceLayout, Tab, Workspace};
 
 use super::LAYOUT_VERSION;
@@ -25,7 +25,7 @@ struct CaptureCtx<'a> {
     capture_scrollback: bool,
     memory: &'a MemArc,
     seen_refs: &'a mut SeenRefs,
-    terminals: &'a mut crate::core::terminal_store::TerminalStore,
+    terminals: &'a mut crate::runtime::terminal_store::TerminalStore,
 }
 
 impl SavedLayout {
@@ -35,9 +35,9 @@ impl SavedLayout {
         active_workspace: usize,
         presentation: &dyn crate::model::StructurePresentation,
     ) -> Self {
-        let registry = engine.surface_registry.clone();
+        let registry = engine.runtime.surface_registry.clone();
         let capture_scrollback = engine.settings.general.restore_surface_content;
-        let memory = engine.memory.clone();
+        let memory = engine.runtime.memory.clone();
         let categories: Vec<SavedCategory> = engine
             .categories
             .iter()
@@ -312,7 +312,7 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
 
-    use crate::core::surface_registry::SurfaceKindRegistry;
+    use crate::runtime::surface_registry::SurfaceKindRegistry;
 
     #[test]
     fn deferred_capture_ignores_surface_meta_restore_command() {
@@ -344,8 +344,8 @@ mod tests {
 
         let registry = SurfaceKindRegistry::new();
         let mut seen_refs = SeenRefs::new();
-        let mut terminals = crate::core::terminal_store::TerminalStore::new(std::sync::Arc::new(
-            std::sync::atomic::AtomicU32::new(crate::core::terminal_store::PTY_ID_BASE),
+        let mut terminals = crate::runtime::terminal_store::TerminalStore::new(std::sync::Arc::new(
+            std::sync::atomic::AtomicU32::new(crate::runtime::terminal_store::PTY_ID_BASE),
         ));
         let mut ctx = CaptureCtx {
             presentation: &crate::model::StructurePresentationSnapshot::default(),

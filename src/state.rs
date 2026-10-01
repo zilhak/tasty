@@ -56,7 +56,7 @@ pub use events::FocusedSurfaceType;
 pub use workspace::WorkspaceCloseOrigin;
 
 use crate::core::CoreState;
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 #[cfg(feature = "gui")]
 use crate::model::LogicalPx;
 #[cfg(any(feature = "gui", test))]
@@ -320,8 +320,7 @@ impl RequestContext {
         kind: &str,
         convert_surface_id: Option<u32>,
     ) -> bool {
-        let Some(popup_ref) = engine
-            .surface_registry
+        let Some(popup_ref) = engine.runtime.surface_registry
             .get(kind)
             .and_then(|d| d.convert_input_popup.clone())
         else {
@@ -547,7 +546,7 @@ impl RequestContext {
         engine: &EngineRef<'_>,
         ws_idx: usize,
     ) -> crate::model::ClosedItem {
-        let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
+        let mut snap_fn = crate::runtime::surface_registry::snapshot_fn_for(&engine.runtime.surface_registry);
         let ws = engine
             .workspace_at(ws_idx)
             .expect("workspace index is valid");
@@ -572,7 +571,7 @@ impl RequestContext {
         for pid in ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
                 for tab in &pane.tabs {
-                    crate::core::impl_close::collect_close_targets(tab, engine, &mut targets);
+                    crate::app::services::impl_close::collect_close_targets(tab, engine, &mut targets);
                 }
             }
         }

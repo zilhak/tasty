@@ -1,12 +1,12 @@
 //! PTY 전경 이름으로 busy·마우스 캡처 설정을 계산하고 원격 busy 값은 따로 보관한다.
 
 use super::CoreState;
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 
-impl CoreState {
+impl EngineMut<'_> {
     /// 마지막 폴링의 캡처 제외 설정. 클릭·드래그를 로컬 선택으로 처리하고 휠은 그대로 둔다.
     pub fn is_surface_mouse_capture_disabled(&self, surface_id: u32) -> bool {
-        self.mouse_capture_disabled_surfaces.contains(&surface_id)
+        self.live.mouse_capture_disabled_surfaces.contains(&surface_id)
     }
 
     /// 로컬 폴링 또는 원격 push 중 하나가 busy이면 true다.
@@ -16,14 +16,14 @@ impl CoreState {
 
     /// 마지막 폴링의 전경 이름. 아직 해석하지 못한 surface는 None이다.
     pub fn foreground_name(&self, surface_id: u32) -> Option<&str> {
-        self.foreground_names.get(&surface_id).map(String::as_str)
+        self.live.foreground_names.get(&surface_id).map(String::as_str)
     }
 
     /// 관측한 전경 이름이 바뀔 때 증가한다. 배너가 이전 프로그램의 것인지 판단하는 데 쓴다.
     /// 같은 이름의 프로그램이 폴링 사이에 재실행된 경우는 구분하지 못한다.
     #[cfg(any(feature = "gui", test))]
     pub fn foreground_generation(&self, surface_id: u32) -> u64 {
-        self.foreground_generation
+        self.live.foreground_generation
             .get(&surface_id)
             .copied()
             .unwrap_or(0)
@@ -31,7 +31,7 @@ impl CoreState {
 
     /// 로컬 폴링 결과와 원격 push 결과의 합집합.
     fn is_locally_or_mirror_busy(&self, surface_id: u32) -> bool {
-        self.busy_surfaces.contains(&surface_id) || self.mirror_busy_surfaces.contains(&surface_id)
+        self.live.busy_surfaces.contains(&surface_id) || self.remote.mirror_busy_surfaces.contains(&surface_id)
     }
 
     // 이유: 현재 호출자는 test 전용 코드다.
@@ -53,15 +53,15 @@ impl CoreState {
     #[cfg(any(feature = "gui", test))]
     pub fn set_mirror_surface_busy(&mut self, surface_id: u32, busy: bool) {
         if busy {
-            self.mirror_busy_surfaces.insert(surface_id);
+            self.remote.mirror_busy_surfaces.insert(surface_id);
         } else {
-            self.mirror_busy_surfaces.remove(&surface_id);
+            self.remote.mirror_busy_surfaces.remove(&surface_id);
         }
     }
 
     #[cfg(any(feature = "gui", test))]
     pub fn forget_mirror_surface_busy(&mut self, surface_id: u32) {
-        self.mirror_busy_surfaces.remove(&surface_id);
+        self.remote.mirror_busy_surfaces.remove(&surface_id);
     }
 
     /// 하드 점유한 surface의 로컬 busy 전송 후보. 최초 값과 holder·busy 변경을 담는다.
@@ -70,15 +70,15 @@ impl CoreState {
     pub fn busy_activity_forwards(
         &mut self,
     ) -> Vec<(crate::core::attach::AttachClientId, u32, bool)> {
-        let locks = self.attach.locks_snapshot();
+        let locks = self.live.occupancy.locks_snapshot();
         let occupied: std::collections::HashSet<u32> = locks.iter().map(|&(sid, _)| sid).collect();
-        self.last_forwarded_busy
+        self.remote.last_forwarded_busy
             .retain(|sid, _| occupied.contains(sid));
         let mut out = Vec::new();
         for (sid, lock) in locks {
-            let record = (lock.holder, self.busy_surfaces.contains(&sid));
-            if self.last_forwarded_busy.get(&sid) != Some(&record) {
-                self.last_forwarded_busy.insert(sid, record);
+            let record = (lock.holder, self.live.busy_surfaces.contains(&sid));
+            if self.remote.last_forwarded_busy.get(&sid) != Some(&record) {
+                self.remote.last_forwarded_busy.insert(sid, record);
                 out.push((record.0, sid, record.1));
             }
         }
@@ -138,15 +138,15 @@ impl EngineMut<'_> {
             }
         }
         bump_foreground_generations(
-            &mut self.core.foreground_generation,
-            &self.core.foreground_names,
+            &mut self.core.live.foreground_generation,
+            &self.core.live.foreground_names,
             &names,
         );
 
-        self.mouse_capture_disabled_surfaces = mouse_capture_disabled;
-        self.foreground_names = names;
-        let changed = self.busy_surfaces != busy;
-        self.busy_surfaces = busy;
+        self.live.mouse_capture_disabled_surfaces = mouse_capture_disabled;
+        self.live.foreground_names = names;
+        let changed = self.live.busy_surfaces != busy;
+        self.live.busy_surfaces = busy;
         changed
     }
 }
@@ -198,7 +198,7 @@ mod tests {
     fn refresh_busy_surfaces_replaces_the_mouse_capture_cache() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        e.mouse_capture_disabled_surfaces.insert(99);
+        e.live.mouse_capture_disabled_surfaces.insert(99);
         e.refresh_busy_surfaces(); // 로컬 터미널이 없으니 빈 채로 재계산.
         assert!(!e.is_surface_mouse_capture_disabled(99));
     }
@@ -211,14 +211,14 @@ mod tests {
             .workspace_at(0)
             .expect("workspace index is valid")
             .all_surface_ids()[0];
-        e.attach.acquire(sid, 7).expect("lock 획득");
+        e.live.occupancy.acquire(sid, 7).expect("lock 획득");
 
         let first = e.busy_activity_forwards();
         assert_eq!(first, vec![(7, sid, false)]);
 
         assert!(e.busy_activity_forwards().is_empty());
 
-        e.busy_surfaces.insert(sid);
+        e.live.busy_surfaces.insert(sid);
         assert_eq!(e.busy_activity_forwards(), vec![(7, sid, true)]);
 
         assert!(e.busy_activity_forwards().is_empty());
@@ -232,14 +232,14 @@ mod tests {
             .workspace_at(0)
             .expect("workspace index is valid")
             .all_surface_ids()[0];
-        e.attach.acquire(sid, 7).expect("lock 획득");
+        e.live.occupancy.acquire(sid, 7).expect("lock 획득");
         assert_eq!(e.busy_activity_forwards(), vec![(7, sid, false)]);
         assert!(e.busy_activity_forwards().is_empty());
 
-        e.attach.release(sid, 7).expect("release");
+        e.live.occupancy.release(sid, 7).expect("release");
         assert!(e.busy_activity_forwards().is_empty());
 
-        e.attach.acquire(sid, 9).expect("다른 client 재획득");
+        e.live.occupancy.acquire(sid, 9).expect("다른 client 재획득");
         assert_eq!(
             e.busy_activity_forwards(),
             vec![(9, sid, false)],
@@ -255,12 +255,12 @@ mod tests {
             .workspace_at(0)
             .expect("workspace index is valid")
             .all_surface_ids()[0];
-        e.busy_surfaces.insert(sid);
-        e.attach.acquire(sid, 7).expect("lock 획득");
+        e.live.busy_surfaces.insert(sid);
+        e.live.occupancy.acquire(sid, 7).expect("lock 획득");
         assert_eq!(e.busy_activity_forwards(), vec![(7, sid, true)]);
 
-        e.attach.release(sid, 7).expect("release");
-        e.attach
+        e.live.occupancy.release(sid, 7).expect("release");
+        e.live.occupancy
             .acquire(sid, 9)
             .expect("같은 tick 창 안의 다른 client 획득");
         assert_eq!(
@@ -314,7 +314,7 @@ mod tests {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
         assert_eq!(e.foreground_generation(42), 0);
-        e.foreground_generation.insert(42, 5);
+        e.live.foreground_generation.insert(42, 5);
         assert_eq!(e.foreground_generation(42), 5);
     }
 }

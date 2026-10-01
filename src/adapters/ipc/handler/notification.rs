@@ -97,7 +97,7 @@ pub fn handle_notification_create(
     };
     // 저장과 이벤트 통지는 후속 intent 처리에 맡긴다.
     out.push(
-        crate::core::intent::DomainIntent::PushNotification {
+        crate::app::command::DomainIntent::PushNotification {
             ws_id,
             surface_id,
             title,

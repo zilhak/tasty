@@ -500,7 +500,7 @@ fn each_slot_goes_to_its_own_engine_stream_with_global_ids() {
         one.surfaces
             .keys()
             .chain(two.surfaces.keys())
-            .all(|id| *id < crate::core::terminal_store::PTY_ID_BASE)
+            .all(|id| *id < crate::runtime::terminal_store::PTY_ID_BASE)
     );
 }
 

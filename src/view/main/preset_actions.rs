@@ -1,7 +1,7 @@
 //! 현재 워크스페이스·탭·패널 구성을 읽어 Intent::SavePreset으로 보낸다.
 //! 저장 이름 결정, 파일 저장, 프리셋 창 열기는 src/intent/preset.rs에서 처리한다.
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use anyhow::{Result, anyhow};
 
 use crate::intent::preset_capture::{
@@ -26,7 +26,7 @@ impl MainView {
             ws.name.clone()
         };
 
-        let registry = engine.surface_registry.clone();
+        let registry = engine.runtime.surface_registry.clone();
         let preset = capture_workspace_preset(
             &self.state.navigation,
             &engine.as_ref(),
@@ -73,7 +73,7 @@ impl MainView {
             base
         };
 
-        let registry = engine.surface_registry.clone();
+        let registry = engine.runtime.surface_registry.clone();
         let preset = capture_tab_preset(&engine.as_ref(), tab, None, &registry)
             .ok_or_else(|| anyhow!("tab capture failed"))?;
 
@@ -101,7 +101,7 @@ impl MainView {
             .ok_or_else(|| anyhow!("pane {pane_id} not found"))?;
         let base_name = "pane".to_string();
 
-        let registry = engine.surface_registry.clone();
+        let registry = engine.runtime.surface_registry.clone();
         let preset = capture_pane_preset(
             &self.state.navigation,
             &engine.as_ref(),

@@ -2,7 +2,7 @@
 //! 권한·요청자·점유 검사는 각 진입점이 먼저 수행해야 한다. wire 응답 조립도 진입점 몫이다.
 //! forward의 대상 해석·복원 snapshot·출력 tap 제어는 attach_runtime이 맡는다.
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use std::path::PathBuf;
 
 use serde_json::Value;
@@ -12,9 +12,10 @@ use crate::app::structural_cascade::{
     cascade_surface_closed, cascade_surface_split, cascade_tab_closed_full, cascade_tab_created,
 };
 use crate::app::structure_context::CascadeWindow;
-use crate::core::intent::{CoreEvent, DomainIntent};
+use crate::app::command::{CoreEvent, DomainIntent};
 use crate::core::origin::IntentOrigin;
-use crate::core::{Core, CoreState};
+use crate::core::{State};
+use crate::app::services::AppServices;
 use crate::model::SplitDirection;
 
 /// IPC 오류 코드에 대응하는 실패 종류. 두 진입점은 같은 실행 오류 문구를 받는다.
@@ -34,7 +35,7 @@ impl From<anyhow::Error> for StructuralFailure {
 /// Resolve publication context before mutation and apply only the resulting
 /// structural repair afterward. User activation is a separate continuation.
 pub(crate) fn execute(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut dyn CascadeWindow,
     engine: &mut EngineMut<'_>,
     intent: DomainIntent,
@@ -56,8 +57,7 @@ pub(crate) fn execute(
         } = event
         {
             engine
-                .attach
-                .presentation
+                .remote.presentation
                 .selected_tabs
                 .insert(*pane_id, *tab_id);
         }
@@ -92,15 +92,15 @@ pub(crate) fn select_created_tabs(
 /// 요청 출처는 진입점이 정해 넘긴다(ADR-0057). 다른 mirror로 다시 전달한 요청이 실패하면
 /// Agent는 사용자 toast 대신 로그로, User는 사용자 조작 실패로 표시한다.
 fn apply(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut dyn CascadeWindow,
     engine: &mut EngineMut<'_>,
     intent: DomainIntent,
     origin: &IntentOrigin,
 ) -> Result<Vec<CoreEvent>, StructuralFailure> {
     let events = execute(core, state, engine, intent).map_err(|e| {
-        crate::core::mark_last_forward_agent_origin(engine, &e, origin);
-        crate::core::mark_last_forward_user_triggered(engine, &e, origin);
+        crate::app::services::mark_last_forward_agent_origin(engine, &e, origin);
+        crate::app::services::mark_last_forward_user_triggered(engine, &e, origin);
         StructuralFailure::Apply(e)
     })?;
     Ok(events)
@@ -134,7 +134,7 @@ pub(crate) enum SplitOutcome {
 
 /// 대상을 검증하고 구조 변경·후속 처리 뒤 문자열 meta를 적용한다. meta 저장 실패는 로그로 남긴다.
 pub(crate) fn split(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut dyn CascadeWindow,
     engine: &mut EngineMut<'_>,
     req: SplitRequest<'_>,
@@ -178,7 +178,7 @@ pub(crate) fn split(
         .and_then(|v| v.as_str())
         .unwrap_or("terminal");
 
-    if let Some(def) = engine.surface_registry.get_live(kind)
+    if let Some(def) = engine.runtime.surface_registry.get_live(kind)
         && let Some(missing) = def.first_missing_required_param(params)
     {
         return Err(StructuralFailure::Rejected(format!(
@@ -235,7 +235,7 @@ pub(crate) fn split(
             }) = events.into_iter().next()
             else {
                 return Err(StructuralFailure::MissingEvent(
-                    "Core::apply returned no PaneSplit event",
+                    "AppServices::apply returned no PaneSplit event",
                 ));
             };
 
@@ -285,7 +285,7 @@ pub(crate) fn split(
             }) = events.into_iter().next()
             else {
                 return Err(StructuralFailure::MissingEvent(
-                    "Core::apply returned no SurfaceSplit event",
+                    "AppServices::apply returned no SurfaceSplit event",
                 ));
             };
 
@@ -339,7 +339,7 @@ pub(crate) struct TabCreated {
 
 /// 종류별 기본 파라미터를 보충해 탭을 만든다. 에이전트 진입점은 activate=false를 넘긴다.
 pub(crate) fn create_tab(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut dyn CascadeWindow,
     engine: &mut EngineMut<'_>,
     pane_id: u32,
@@ -361,7 +361,7 @@ pub(crate) fn create_tab(
 
     // 새 탭은 상속된 params가 없으므로 @home 등 종류별 기본값을 여기서 보충한다.
     let mut params = params.clone();
-    if let Some(def) = engine.surface_registry.get(surface_type) {
+    if let Some(def) = engine.runtime.surface_registry.get(surface_type) {
         let home = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf());
         engine.apply_kind_default_params(&def, &mut params, home.as_deref());
     }
@@ -414,7 +414,7 @@ pub(crate) fn create_tab(
     }) = events.into_iter().next()
     else {
         return Err(StructuralFailure::MissingEvent(
-            "Core::apply returned no TabCreated event",
+            "AppServices::apply returned no TabCreated event",
         ));
     };
 
@@ -443,7 +443,7 @@ pub(crate) struct Closed {
 }
 
 pub(crate) fn close_tab(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut dyn CascadeWindow,
     engine: &mut EngineMut<'_>,
     tab_id: u32,
@@ -465,7 +465,7 @@ pub(crate) fn close_tab(
     }) = events.into_iter().next()
     else {
         return Err(StructuralFailure::MissingEvent(
-            "Core::apply returned no TabClosed event",
+            "AppServices::apply returned no TabClosed event",
         ));
     };
 
@@ -482,9 +482,9 @@ pub(crate) fn close_tab(
     Ok(Closed { id: tab_id, closed })
 }
 
-/// 없는 pane은 Core 호출 전에 오류로 돌려준다. 없는 tab의 처리와 다르다.
+/// 없는 pane은 AppServices 호출 전에 오류로 돌려준다. 없는 tab의 처리와 다르다.
 pub(crate) fn close_pane(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut dyn CascadeWindow,
     engine: &mut EngineMut<'_>,
     pane_id: u32,
@@ -511,7 +511,7 @@ pub(crate) fn close_pane(
     }) = events.into_iter().next()
     else {
         return Err(StructuralFailure::MissingEvent(
-            "Core::apply returned no PaneClosed event",
+            "AppServices::apply returned no PaneClosed event",
         ));
     };
 
@@ -525,7 +525,7 @@ pub(crate) fn close_pane(
 }
 
 pub(crate) fn move_tab(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut dyn CascadeWindow,
     engine: &mut EngineMut<'_>,
     pane_id: u32,
@@ -562,7 +562,7 @@ pub(crate) fn move_tab(
 /// 요청자가 만든 params에서 직접 읽으면 에이전트가 사용자 복원 목록을 채울 수 있다.
 /// lifecycle의 is_user_close는 origin에서 정한다. save_snapshot과는 별개다.
 pub(crate) fn close_surface(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut dyn CascadeWindow,
     engine: &mut EngineMut<'_>,
     surface_id: u32,
@@ -584,7 +584,7 @@ pub(crate) fn close_surface(
     let Some(event @ CoreEvent::SurfaceClosed { surface_id, .. }) = events.into_iter().next()
     else {
         return Err(StructuralFailure::MissingEvent(
-            "Core::apply returned no SurfaceClosed event",
+            "AppServices::apply returned no SurfaceClosed event",
         ));
     };
 

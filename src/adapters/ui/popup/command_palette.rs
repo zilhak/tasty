@@ -390,7 +390,7 @@ pub fn command_palette_sizer(
 pub fn draw_command_palette_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     let commands = command_palette::all_commands(&state.palette_plugin_commands);
     let labels: Vec<String> = commands.iter().map(label_for).collect();
@@ -782,7 +782,7 @@ mod sizer_wiring_tests {
 
     fn run_one_frame(
         state: &mut MainViewState,
-        engine: &mut crate::core::engine_access::EngineMut<'_>,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     ) {
         let ctx = egui::Context::default();
         let term = PhysicalRect {

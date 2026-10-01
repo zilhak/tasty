@@ -1,12 +1,12 @@
 //! 새 워크스페이스를 만들고 사용자 요청일 때만 활성화한다.
 
 use super::{DispatchedIntent, Intent};
-use crate::core::Core;
-use crate::core::engine_access::EngineMut;
+use crate::app::services::AppServices;
+use crate::runtime::engine_access::EngineMut;
 use crate::state::RequestContext;
 
 pub fn handle(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     intent: &DispatchedIntent,
@@ -30,7 +30,7 @@ pub fn handle(
 }
 
 fn new_workspace(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     kind: Option<&str>,
@@ -62,7 +62,7 @@ fn new_workspace(
         params.clone()
     };
 
-    let intent = crate::core::intent::DomainIntent::CreateWorkspace {
+    let intent = crate::app::command::DomainIntent::CreateWorkspace {
         cwd,
         kind: kind.to_string(),
         surface_params,
@@ -86,7 +86,7 @@ fn new_workspace(
     };
 
     for event in events {
-        if let crate::core::intent::CoreEvent::WorkspaceCreated {
+        if let crate::app::command::CoreEvent::WorkspaceCreated {
             id: workspace_id,
             index,
             surface_id,

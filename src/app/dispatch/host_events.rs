@@ -11,7 +11,7 @@ mod created_window_tests;
 
 use crate::app::App;
 use crate::app::window_access::engines_mut;
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use crate::state::PendingHostEvent;
 
 fn take_current_host_events(
@@ -43,7 +43,7 @@ impl App {
             s.detect_tab_lifecycle(engine.core);
             let events = take_current_host_events(s, &engine.as_ref());
             reproject_osc_title_on_focus(&mut engine, &events);
-            resolve_hook_fired_task_waits(&self.core, &engine.as_ref(), &events);
+            resolve_hook_fired_task_waits(&self.services, &engine.as_ref(), &events);
             drained.extend(events);
         }
         if drained.is_empty() {
@@ -220,7 +220,7 @@ fn reproject_osc_title_on_focus(engine: &mut EngineMut<'_>, events: &[PendingHos
 /// 이벤트를 다른 창의 이벤트와 합치기 전에 해당 engine으로 대기 작업을 완료한다.
 /// 다른 engine을 넘기면 대기자를 깨울 waker hub가 달라진다.
 fn resolve_hook_fired_task_waits(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     engine: &EngineRef<'_>,
     events: &[PendingHostEvent],
 ) {

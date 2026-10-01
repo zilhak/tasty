@@ -40,6 +40,9 @@ pub(crate) mod image_upload;
 pub(crate) mod ipc;
 pub(crate) mod ipc_round;
 pub(crate) mod journal;
+pub(crate) mod services;
+pub(crate) mod state;
+pub(crate) mod command;
 #[cfg(feature = "gui")]
 pub(crate) mod modal;
 #[cfg(feature = "gui")]
@@ -80,7 +83,7 @@ use winit::event_loop::EventLoopProxy;
 #[cfg(feature = "gui")]
 use winit::window::{Window, WindowId};
 
-use crate::core::Core;
+use crate::app::services::AppServices;
 #[cfg(feature = "gui")]
 use crate::gpu::GpuState;
 use crate::hub::Hub;
@@ -112,7 +115,8 @@ impl std::error::Error for NoGpuAdapter {}
 pub(crate) struct App {
     pub(crate) journal: journal::JournalApplication,
     pub(crate) publication_inputs: publication_input::PublicationInputs,
-    pub(crate) core: Core,
+    pub(crate) services: AppServices,
+    pub(crate) state:state::AppState,
     pub(crate) hub: Hub,
     /// IPC 연결 스레드가 수신자를 등록하고 메인 루프가 출력을 전송한다.
     pub(crate) stream_hub: tasty_ipc::stream_hub::StreamHub,
@@ -129,31 +133,17 @@ pub(crate) struct App {
     pub(crate) engines: engine_registry::EngineRegistry,
     /// 첫 창의 부팅 중에만 보유한다. 완료 시 상태를 MainView로 옮긴다.
     #[cfg(feature = "gui")]
-    pub(crate) boot: Option<boot_machine::BootState>,
+    pub(crate) boot: Option<boot_machine::BootResources>,
     #[cfg(feature = "gui")]
     pub(crate) pending_window: Option<window_lifecycle::PendingWindow>,
-    /// 종료를 시작한 뒤 이벤트 루프를 나갈 때까지 보유한다.
-    #[cfg(feature = "gui")]
-    pub(crate) shutdown: Option<shutdown_machine::ShutdownState>,
-    #[cfg(feature = "gui")]
-    pub(crate) shell_setup_mode: bool,
-    #[cfg(feature = "gui")]
-    pub(crate) shell_setup_path: String,
     #[cfg(feature = "gui")]
     pub(crate) shell_setup_gpu: Option<GpuState>,
     #[cfg(feature = "gui")]
     pub(crate) shell_setup_window: Option<Arc<Window>>,
-    // 엔진 생성 실패 시 창과 GPU가 남아 있으면 종료 버튼이 있는 오류 화면을 유지한다.
-    // 창이나 GPU도 없으면 이 경로로 화면을 표시할 수 없다.
-    #[cfg(feature = "gui")]
-    pub(crate) boot_error_mode: bool,
     #[cfg(feature = "gui")]
     pub(crate) boot_error_gpu: Option<GpuState>,
     #[cfg(feature = "gui")]
     pub(crate) boot_error_window: Option<Arc<Window>>,
-    /// `drive_boot_frame`이 오류 화면으로 전환할 때 표시할 진단.
-    #[cfg(feature = "gui")]
-    pub(crate) boot_error_info: Option<crate::gpu::BootErrorInfo>,
     /// System tray / status item. Must be kept alive for the tray to remain visible.
     /// `None` when the platform tray is unavailable (graceful degradation, ADR-0016).
     #[cfg(all(
@@ -168,20 +158,7 @@ pub(crate) struct App {
     pub(crate) tray_menu_ids: Option<crate::system_tray::TrayMenuIds>,
     #[cfg(feature = "gui")]
     pub(crate) modal_shake: Option<ModalShake>,
-    #[cfg(debug_assertions)]
-    #[cfg_attr(
-        not(feature = "gui"),
-        expect(
-            dead_code,
-            reason = "read only by the gui event loop; headless has no reader"
-        )
-    )]
-    pub(crate) input_simulation_enabled: bool,
     pub(crate) plugin_manager: Option<plugin::PluginManager>,
-    /// 헤드리스의 전체 플러그인 설치·기동을 수행했는지 구별한다.
-    /// 메타데이터 조회만으로도 매니저는 만들어지므로 Some 여부로 대신할 수 없다.
-    #[cfg(not(feature = "gui"))]
-    pub(crate) plugin_started: bool,
     /// VM은 전용 워커 스레드가 소유한다. 초기화 실패 시 None.
     pub(crate) lua_engine: Option<tasty_lua::LuaEngine>,
     /// 자동실행 스크립트가 일으킨 이벤트로 같은 스크립트를 다시 실행하지 않게 한다.
@@ -195,29 +172,10 @@ pub(crate) struct App {
     /// IPC 회차 사이에 대기 시간을 두어 타이머·사용자 이벤트 처리가 계속되게 한다.
     #[cfg(feature = "gui")]
     pub(crate) ipc_pacer: crate::app::ipc::IpcPacer,
-    /// PresetView는 하나만 열며, 다시 열기를 요청하면 기존 창에 포커스를 준다.
-    #[cfg(feature = "gui")]
-    pub(crate) preset_view_id: Option<WindowId>,
     /// 첫 Focused 이벤트 뒤 X11 초기 포커스 힌트를 지울 에이전트 창.
     /// 그 전에 닫힌 창은 닫기 경로에서 제거한다.
     #[cfg(feature = "gui")]
     pub(crate) pending_focus_hint_clear: std::collections::HashSet<WindowId>,
-    /// Plugins의 Configure에서 설정을 열 때 Plugin 탭을 한 번 선택한다.
-    #[cfg(feature = "gui")]
-    pub(crate) pending_settings_plugin_tab: bool,
-    /// 파일 핸들러 등록 안내에서 설정을 열 때 FileHandler 탭을 한 번 선택한다.
-    #[cfg(feature = "gui")]
-    pub(crate) pending_settings_file_handler_tab: bool,
-    /// 부팅 권한 안내에서 설정 창을 열 때 일반 > 권한 탭으로 바로 들어가게 하는
-    /// 일회성 표시. `open_settings_modal`이 읽고 지운다.
-    #[cfg(feature = "gui")]
-    pub(crate) pending_settings_macos_permissions_tab: bool,
-    /// debug.settings.open이 지정한 초기 탭. 다음 설정 창 열기에서 소비한다.
-    #[cfg(all(feature = "gui", debug_assertions))]
-    pub(crate) pending_settings_tab: Option<String>,
-    /// debug.settings.open이 지정한 초기 하위 탭. 다음 설정 창 열기에서 소비한다.
-    #[cfg(all(feature = "gui", debug_assertions))]
-    pub(crate) pending_settings_subtab: Option<String>,
     /// 원격 워크스페이스의 mirror 세션. 연결 스레드와 remote↔local ID 매핑을 보유한다.
     #[cfg(feature = "gui")]
     pub(crate) attach_client_sessions: Vec<attach_client::AttachClientSession>,
@@ -303,7 +261,8 @@ impl App {
         Ok(Self {
             journal,
             publication_inputs: Default::default(),
-            core: crate::boot::wiring::build_production_core(memory)?,
+            services: crate::boot::wiring::build_production_core(memory)?,
+            state:state::AppState {#[cfg(debug_assertions)] input_simulation_enabled,..Default::default()},
             hub: Hub::new(port_file),
             stream_hub: tasty_ipc::stream_hub::StreamHub::new(),
             stream_inbound_tx,
@@ -312,25 +271,16 @@ impl App {
             engines: engine_registry::EngineRegistry::default(),
             boot: None,
             pending_window: None,
-            shutdown: None,
-            shell_setup_mode: false,
-            shell_setup_path: String::new(),
             shell_setup_gpu: None,
             shell_setup_window: None,
-            boot_error_mode: false,
             boot_error_gpu: None,
             boot_error_window: None,
-            boot_error_info: None,
             #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
             tray_icon: None,
             #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
             tray_menu_ids: None,
             modal_shake: None,
-            #[cfg(debug_assertions)]
-            input_simulation_enabled,
             plugin_manager: None,
-            #[cfg(not(feature = "gui"))]
-            plugin_started: false,
             lua_engine: crate::hooks::lua::init_engine(),
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
             timers,
@@ -341,15 +291,7 @@ impl App {
                     crate::shortcuts::send_app_event(&proxy, AppEvent::IpcReady);
                 })
             }),
-            preset_view_id: None,
             pending_focus_hint_clear: std::collections::HashSet::new(),
-            pending_settings_plugin_tab: false,
-            pending_settings_file_handler_tab: false,
-            pending_settings_macos_permissions_tab: false,
-            #[cfg(debug_assertions)]
-            pending_settings_tab: None,
-            #[cfg(debug_assertions)]
-            pending_settings_subtab: None,
             attach_client_sessions: Vec::new(),
             auto_attach_active: std::collections::HashSet::new(),
             auto_attach_last_active_ws: None,
@@ -384,16 +326,13 @@ impl App {
         Ok(Self {
             journal: journal::JournalApplication::new(journal_wake)?,
             publication_inputs: Default::default(),
-            core: crate::boot::wiring::build_production_core_headless(memory)?,
+            services: crate::boot::wiring::build_production_core_headless(memory)?,
+            state:state::AppState::default(),
             hub: Hub::new(port_file),
             stream_hub: tasty_ipc::stream_hub::StreamHub::new(),
             stream_inbound_tx,
             stream_inbound_rx,
-            #[cfg(debug_assertions)]
-            input_simulation_enabled: false,
             plugin_manager: None,
-            #[cfg(not(feature = "gui"))]
-            plugin_started: false,
             lua_engine: crate::hooks::lua::init_engine(),
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
             timers,

@@ -1,6 +1,6 @@
 use super::is_remote_openable;
 use crate::core::identify_port::IdentifySpawner;
-use crate::core::intent::DomainIntent;
+use crate::app::command::DomainIntent;
 use crate::file::dispatch::picker_apply::tests::build_test_core;
 use crate::file::dispatch::{FileDispatchOrigin, apply_identify_result};
 use crate::file::format::{DetectDepth, DetectorId, FileTarget};
@@ -18,7 +18,7 @@ fn register_kind(engine: &crate::core::CoreState, plugin_id: &str, kind: &str) {
     .expect("kind decl");
     let (host_cmd_tx, _host_cmd_rx) = std::sync::mpsc::channel();
     crate::plugin_bridge::remote_kind::register_remote_kind(
-        &engine.surface_registry,
+        &engine.runtime.surface_registry,
         plugin_id,
         &decl,
         host_cmd_tx,
@@ -27,7 +27,7 @@ fn register_kind(engine: &crate::core::CoreState, plugin_id: &str, kind: &str) {
 
 fn install_handler(engine: &crate::core::CoreState, plugin_id: &str, action: serde_json::Value) {
     FileHandlerRegistryPort::install_plugin_handlers(
-        engine.file_handler.as_ref(),
+        engine.runtime.file_handler.as_ref(),
         plugin_id,
         &[
             serde_json::json!({"id": "open", "detector": "remote-test", "priority": 0,
@@ -99,8 +99,8 @@ fn apply_on_mirror(
 fn a_mirror_open_forwards_one_user_new_tab_without_local_effects() {
     let (state, mut engine_session, surfaces) = apply_on_mirror(FileDispatchOrigin::User);
     let engine = engine_session.borrow_mut();
-    assert_eq!(engine.pending_structural_forward.len(), 1);
-    let forward = &engine.pending_structural_forward[0];
+    assert_eq!(engine.remote.pending_structural_forward.len(), 1);
+    let forward = &engine.remote.pending_structural_forward[0];
     let StructuralOp::NewTab {
         surface_kind,
         params,
@@ -134,8 +134,8 @@ fn a_mirror_open_forwards_one_user_new_tab_without_local_effects() {
 fn an_agent_mirror_open_is_not_marked_as_a_user_forward() {
     let (_state, mut engine_session, _) = apply_on_mirror(FileDispatchOrigin::Agent);
     let engine = engine_session.borrow_mut();
-    assert_eq!(engine.pending_structural_forward.len(), 1);
-    let forward = &engine.pending_structural_forward[0];
+    assert_eq!(engine.remote.pending_structural_forward.len(), 1);
+    let forward = &engine.remote.pending_structural_forward[0];
     assert!(!forward.user_triggered);
     assert!(
         forward.silent_failure,
@@ -168,7 +168,7 @@ fn a_mirror_open_with_only_an_ipc_handler_runs_nothing_and_toasts() {
         FileDispatchOrigin::User,
         false,
     );
-    assert!(engine.pending_structural_forward.is_empty());
+    assert!(engine.remote.pending_structural_forward.is_empty());
     assert!(state.pending_handler_ipc.is_empty());
     assert!(state.pending_intents.is_empty());
     assert!(
@@ -198,7 +198,7 @@ fn a_mirror_open_without_a_detector_opens_no_picker() {
         FileDispatchOrigin::User,
         false,
     );
-    assert!(engine.pending_structural_forward.is_empty());
+    assert!(engine.remote.pending_structural_forward.is_empty());
     assert!(state.dialogs.file_handler_picker.is_none());
     assert_eq!(state.toasts.len(), 1);
 }
@@ -235,7 +235,7 @@ fn only_open_surface_kinds_that_mirror_content_are_remote_openable() {
 
 /// 1순위가 원격에 열 수 없는 Ipc이고 2순위가 markdown인 mirror 환경을 만든다.
 fn mirror_with_ipc_first() -> (
-    crate::core::Core,
+    crate::app::services::AppServices,
     crate::state::RequestContext,
     crate::runtime::engine_session::EngineSession,
     u32,
@@ -245,7 +245,7 @@ fn mirror_with_ipc_first() -> (
     let mut engine = engine_session.borrow_mut();
     register_kind(&engine, "com.tasty.markdown", "markdown");
     FileHandlerRegistryPort::install_plugin_handlers(
-        engine.file_handler.as_ref(),
+        engine.runtime.file_handler.as_ref(),
         "com.example.ipc",
         &[
             serde_json::json!({"id": "open", "detector": "remote-test", "priority": 0,
@@ -253,7 +253,7 @@ fn mirror_with_ipc_first() -> (
         ],
     );
     FileHandlerRegistryPort::install_plugin_handlers(
-        engine.file_handler.as_ref(),
+        engine.runtime.file_handler.as_ref(),
         "com.tasty.markdown",
         &[
             serde_json::json!({"id": "open", "detector": "remote-test", "priority": 10,
@@ -286,7 +286,7 @@ fn a_user_open_with_an_unopenable_first_handler_shows_only_remote_candidates() {
         FileDispatchOrigin::User,
         false,
     );
-    assert!(engine.pending_structural_forward.is_empty());
+    assert!(engine.remote.pending_structural_forward.is_empty());
     assert!(state.pending_handler_ipc.is_empty());
     let picker = state
         .dialogs
@@ -325,8 +325,8 @@ fn an_agent_open_with_an_unopenable_first_handler_runs_the_first_remote_one() {
         "에이전트 요청은 사용자 화면에 picker를 띄우지 않는다"
     );
     assert!(state.pending_handler_ipc.is_empty());
-    assert_eq!(engine.pending_structural_forward.len(), 1);
-    assert!(!engine.pending_structural_forward[0].user_triggered);
+    assert_eq!(engine.remote.pending_structural_forward.len(), 1);
+    assert!(!engine.remote.pending_structural_forward[0].user_triggered);
 }
 
 /// 사용자 입력을 증명하지 못한 plugin 중계 요청도 사용자 클릭일 수 있어 원격 picker를 연다.
@@ -345,7 +345,7 @@ fn an_unverified_plugin_open_with_an_unopenable_first_handler_shows_the_remote_p
         FileDispatchOrigin::PluginUnverified,
         false,
     );
-    assert!(engine.pending_structural_forward.is_empty());
+    assert!(engine.remote.pending_structural_forward.is_empty());
     assert!(state.pending_handler_ipc.is_empty());
     let picker = state
         .dialogs
@@ -385,7 +385,7 @@ fn an_unopenable_remote_file_toasts_unless_an_external_ipc_asked() {
             false,
         );
         assert!(state.dialogs.file_handler_picker.is_none(), "{origin:?}");
-        assert!(engine.pending_structural_forward.is_empty(), "{origin:?}");
+        assert!(engine.remote.pending_structural_forward.is_empty(), "{origin:?}");
         assert_eq!(state.toasts.len(), toasts, "{origin:?}");
     }
 }
@@ -407,7 +407,7 @@ fn a_remote_picker_selection_forwards_a_user_new_tab_and_rejects_local_handlers(
         false,
     );
     assert!(state.pending_handler_ipc.is_empty());
-    assert!(engine.pending_structural_forward.is_empty());
+    assert!(engine.remote.pending_structural_forward.is_empty());
 
     crate::file::dispatch::apply_file_picker_result(
         &mut core,
@@ -419,8 +419,8 @@ fn a_remote_picker_selection_forwards_a_user_new_tab_and_rejects_local_handlers(
         FileDispatchOrigin::User,
         false,
     );
-    assert_eq!(engine.pending_structural_forward.len(), 1);
-    let forward = &engine.pending_structural_forward[0];
+    assert_eq!(engine.remote.pending_structural_forward.len(), 1);
+    let forward = &engine.remote.pending_structural_forward[0];
     let StructuralOp::NewTab {
         surface_kind,
         params,
@@ -456,7 +456,7 @@ fn a_mirror_origin_identifies_by_name_only() {
     let (mut core, mut engine_session) = build_test_core();
     let mut engine = engine_session.borrow_mut();
     let spawner = std::sync::Arc::new(RecordingSpawner::default());
-    engine.identify_worker = Some(spawner.clone());
+    engine.runtime.identify_worker = Some(spawner.clone());
     let sid = engine
         .workspace_at(0)
         .expect("workspace index is valid")

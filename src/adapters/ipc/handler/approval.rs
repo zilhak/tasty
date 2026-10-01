@@ -8,7 +8,7 @@ use tasty_approval::{
 };
 use tasty_memory::{MemoryValue, PutOpts, Scope};
 
-use crate::core::Core;
+use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -99,7 +99,7 @@ pub(super) fn persist_record_via_arc(
     }
 }
 
-pub(crate) fn persist_record(core: &Core, record: &ApprovalRecord) {
+pub(crate) fn persist_record(core: &AppServices, record: &ApprovalRecord) {
     let scope = scope_for(record);
     let key = format!("{}{}", APPROVAL_KEY_PREFIX, record.request.id);
     let value = match serde_json::to_value(record) {
@@ -140,7 +140,7 @@ pub(crate) fn elevation_error_data(
 
 /// 창 없이 권한 요청을 만든다. GUI 호출자는 publish_capability_elevation으로 팝업도 연다.
 pub(crate) fn publish_capability_elevation_at(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut crate::core::CoreState,
     workspace_id: Option<u32>,
     agent_id: &str,
@@ -222,7 +222,7 @@ pub(crate) fn publish_capability_elevation_at(
 
 /// 창을 가진 경계용 — [`publish_capability_elevation_at`] 에 팝업 enqueue 를 더한다.
 pub(crate) fn publish_capability_elevation(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     agent_id: &str,
@@ -282,7 +282,7 @@ pub(crate) fn elevation_grant_decision(
 }
 
 /// I/O wrapper — `elevation_grant_decision` 결과를 SessionStore 에 적용.
-pub(super) fn apply_elevation_grant_if_any(core: &Core, record: &ApprovalRecord, choice: &str) {
+pub(super) fn apply_elevation_grant_if_any(core: &AppServices, record: &ApprovalRecord, choice: &str) {
     let Some((agent_id, permission, ttl_ms)) = elevation_grant_decision(record, choice) else {
         return;
     };

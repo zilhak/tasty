@@ -7,27 +7,19 @@ pub(crate) mod bootstrap;
 mod layout;
 mod structure;
 
-use std::collections::HashMap;
 
 use tasty_domain::{DomainBatch, DomainEvent, JournalModel};
 
 use super::shadow_digest::{Canonical, SkipData, live};
 use crate::core::CoreState;
-use crate::model::{Pane, Surface, Tab, Workspace};
+use crate::model::{Pane, SurfaceDescriptor, Tab, Workspace};
 
 pub(crate) enum Retired {
     Workspace(Workspace),
     Pane(Pane),
     Tab(Tab),
-    Surface(Box<dyn Surface>),
+    Surface(SurfaceDescriptor),
 }
-
-pub(crate) struct PreparedLeaf {
-    pub(crate) logical_kind: String,
-    pub(crate) surface: Box<dyn Surface>,
-}
-
-pub(crate) type PreparedLeaves = HashMap<u32, PreparedLeaf>;
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -37,12 +29,11 @@ pub(crate) fn apply(
     engine: &mut CoreState,
     before: &JournalModel,
     batch: &DomainBatch,
-    prepared: &mut PreparedLeaves,
     retired: &mut Vec<Retired>,
 ) -> Result<()> {
-    preflight(engine, before, batch, prepared)?;
+    preflight(engine, before, batch)?;
     for recorded in &batch.events {
-        structure::apply_event(engine, &recorded.event, prepared, retired)?;
+        structure::apply_event(engine, &recorded.event, retired)?;
     }
     let mut after = before.clone();
     tasty_domain::evolve(&mut after, batch).map_err(|error| error.to_string())?;
@@ -50,75 +41,21 @@ pub(crate) fn apply(
         return Err("committed live projection differs from the canonical result".into());
     }
     engine.committed_structure_revision = after.applied.revision;
-    engine.committed_surface_activations = after
-        .surfaces
-        .iter()
-        .filter_map(|(id, surface)| {
-            surface
-                .activation
-                .map(|activation| (*id, activation.generation))
-        })
-        .collect();
-    Ok(())
-}
-
-fn preflight(
-    engine: &CoreState,
-    before: &JournalModel,
-    batch: &DomainBatch,
-    prepared: &PreparedLeaves,
-) -> Result<()> {
-    if live::core_canonical(engine) != Canonical::of_journal(before, &SkipData) {
-        return Err("live projection is not at the command's committed predecessor".into());
-    }
-    let mut after = before.clone();
-    tasty_domain::evolve(&mut after, batch).map_err(|error| error.to_string())?;
-    for event in batch.events.iter().map(|recorded| &recorded.event) {
-        let required = match event {
-            DomainEvent::TabCreated { surface, .. } | DomainEvent::SurfaceSplit { surface, .. } => {
-                Some((surface.id, surface.kind.as_str()))
-            }
-            DomainEvent::SurfaceConverted { id, kind, .. } => Some((*id, kind.as_str())),
-            DomainEvent::SurfaceActivationChanged { id, activation, .. }
-                if activation.phase == tasty_domain::ActivationPhase::Ready
-                    && engine.find_surface_by_id(*id).is_some_and(|surface| {
-                        surface.as_any().is::<bootstrap::JournalPlaceholder>()
-                    }) =>
-            {
-                Some((
-                    *id,
-                    after
-                        .surfaces
-                        .get(id)
-                        .ok_or("restoring logical surface missing")?
-                        .kind
-                        .as_str(),
-                ))
-            }
-            DomainEvent::MetadataSet { .. } | DomainEvent::MetadataRemoved { .. } => {
-                return Err("service metadata is not part of the live structure projection".into());
-            }
-            _ => None,
-        };
-        if let Some((id, kind)) = required {
-            let leaf = prepared
-                .get(&id)
-                .ok_or_else(|| format!("surface {id} has no prepared kind instance"))?;
-            if leaf.surface.surface_id() != Some(id) || leaf.logical_kind != kind {
-                return Err(format!(
-                    "surface {id} preparation belongs to another identity or kind"
-                ));
-            }
+    for (id,surface) in &after.surfaces {
+        if let Some(descriptor)=engine.find_surface_descriptor_mut(*id) {
+            descriptor.activation_generation=surface.activation.map(|activation|activation.generation);
         }
     }
     Ok(())
 }
 
-fn take_prepared(prepared: &mut PreparedLeaves, id: u32) -> Result<Box<dyn Surface>> {
-    prepared
-        .remove(&id)
-        .map(|leaf| leaf.surface)
-        .ok_or_else(|| format!("prepared surface {id} was already consumed"))
+fn preflight(engine:&CoreState,before:&JournalModel,batch:&DomainBatch)->Result<()> {
+    if live::core_canonical(engine)!=Canonical::of_journal(before,&SkipData) {
+        return Err("live projection is not at the command's committed predecessor".into());
+    }
+    let mut after=before.clone();
+    tasty_domain::evolve(&mut after,batch).map_err(|error|error.to_string())?;
+    Ok(())
 }
 
 fn workspace(engine: &mut CoreState, id: u32) -> Result<&mut Workspace> {

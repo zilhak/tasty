@@ -9,7 +9,7 @@ impl App {
         use tasty_plugin_protocol::events::payloads::{
             MemoryChangeKind as ProtoKind, MemoryChanged,
         };
-        let changes = self.core.with_memory(|s| s.take_pending_changes());
+        let changes = self.services.with_memory(|s| s.take_pending_changes());
         if changes.is_empty() {
             return;
         }

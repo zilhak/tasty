@@ -2,12 +2,12 @@
 //! Windows·Linux는 빈 Preedit이나 Disabled가 글자마다 올 수 있어 화면만 지우고
 //! PTY 에코 위치 보정은 유지한다. 공통 처리는 Commit 문자 폭을 더하고 에코가 따라온 만큼 뺀다.
 
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use tasty_plugin_protocol::ImeWire;
 use winit::event::Ime;
 
 use super::MainView;
-use crate::core::intent::{DomainIntent, SendPayload};
+use crate::app::command::{DomainIntent, SendPayload};
 use crate::gpu::ImePreeditState;
 use crate::view::ui::View as _;
 

@@ -8,7 +8,7 @@
 //!
 //! 창 자체를 조작하는 GUI·debug 핸들러는 별도 라우터가 EntryWindow를 통해 호출한다(ADR-0002).
 
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::path::PathBuf;
 
 use crate::app::structure_context::CascadeWindow;
@@ -58,7 +58,7 @@ pub(crate) trait IpcWindow: CascadeWindow {
     /// preset 을 이 창에 적용한다. 워크스페이스 preset 은 이 창의 워크스페이스 목록에 붙는다.
     fn apply_preset(
         &mut self,
-        core: &crate::core::Core,
+        core: &crate::app::services::AppServices,
         engine: &mut EngineMut<'_>,
         target: crate::intent::preset::PresetApplyTarget,
         options: crate::state::preset_apply::ApplyOptions,

@@ -22,7 +22,7 @@ pub struct StageDef {
     pub draw_fn: fn(
         &mut egui::Ui,
         &mut MainViewState,
-        &mut crate::core::engine_access::EngineMut<'_>,
+        &mut crate::runtime::engine_access::EngineMut<'_>,
     ) -> StageAction,
     /// 닫기 큐에서 호출할 정리 훅. 임시 egui 상태를 지울 수 있도록 Context를 받는다.
     pub on_close: Option<fn(&egui::Context, &mut MainViewState, &mut crate::core::CoreState)>,
@@ -80,7 +80,7 @@ pub fn drain_on_close_hooks(
 pub fn draw_fullscreen_stage(
     ctx: &egui::Context,
     state: &mut MainViewState,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) {
     drain_on_close_hooks(ctx, state, engine);
     let Some(id) = state.fullscreen_stage_id() else {

@@ -48,7 +48,7 @@ impl MainView {
             }
         }
         if phases != self.html_script_phases {
-            self.base.dirty = true;
+            self.base.state.dirty = true;
         }
         self.html_script_phases = phases;
     }

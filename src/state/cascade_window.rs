@@ -1,6 +1,6 @@
 //! App adapter의 결과 처리를 View 또는 headless 명령 문맥에 연결한다.
 
-use crate::core::engine_access::EngineRef;
+use crate::runtime::engine_access::EngineRef;
 use std::path::PathBuf;
 
 use super::RequestContext;
@@ -13,7 +13,7 @@ impl CascadeWindow for RequestContext {
     fn apply_structure_result(
         &mut self,
         engine: &CoreState,
-        event: &crate::core::intent::CoreEvent,
+        event: &crate::app::command::CoreEvent,
     ) {
         RequestContext::apply_structure_result(self, engine, event);
     }

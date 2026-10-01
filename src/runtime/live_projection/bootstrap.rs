@@ -3,32 +3,6 @@ use super::*;
 use crate::model::{PaneNode, SplitNodeId, SurfaceLayout, WorkspaceCategory};
 use tasty_domain::SplitTree;
 
-/// Exists only behind the bootstrap read/render barrier. SurfaceRestorer replaces this with the
-/// selected kind or its ordinary lazy/plugin placeholder after reading the referenced payload.
-pub(crate) struct JournalPlaceholder {
-    pub(crate) id: u32,
-    pub(crate) kind: String,
-    pub(crate) data: Option<tasty_domain::DataRef>,
-    pub(crate) creation_seed: Option<tasty_domain::DataRef>,
-    pub(crate) activation: Option<tasty_domain::Activation>,
-}
-
-impl Surface for JournalPlaceholder {
-    tasty_model::impl_surface_any!();
-    fn kind(&self) -> &'static str {
-        "empty"
-    }
-    fn type_name(&self) -> &'static str {
-        "Pending"
-    }
-    fn surface_id(&self) -> Option<u32> {
-        Some(self.id)
-    }
-    fn source_cwd(&self) -> Option<std::path::PathBuf> {
-        None
-    }
-}
-
 pub(crate) fn initialize(core: &mut CoreState, model: &JournalModel) -> Result<()> {
     if !core.local_workspaces.is_empty() {
         return Err("bootstrap cannot replace an already published local tree".into());
@@ -72,15 +46,6 @@ pub(crate) fn initialize(core: &mut CoreState, model: &JournalModel) -> Result<(
         return Err("bootstrap live projection differs from journal structure".into());
     }
     core.committed_structure_revision = model.applied.revision;
-    core.committed_surface_activations = model
-        .surfaces
-        .iter()
-        .filter_map(|(id, surface)| {
-            surface
-                .activation
-                .map(|activation| (*id, activation.generation))
-        })
-        .collect();
     Ok(())
 }
 
@@ -122,13 +87,9 @@ fn surface_tree(model: &JournalModel, tree: &SplitTree<u32>) -> Result<SurfaceLa
     match tree {
         SplitTree::Leaf(id) => {
             let source = model.surfaces.get(id).ok_or("bootstrap surface missing")?;
-            Ok(SurfaceLayout::Leaf(Box::new(JournalPlaceholder {
-                id: *id,
-                kind: source.kind.clone(),
-                data: source.data,
-                creation_seed: source.creation_seed,
-                activation: source.activation,
-            })))
+            Ok(SurfaceLayout::Leaf(crate::model::SurfaceDescriptor {
+                id:*id,kind:source.kind.clone(),activation_generation:source.activation.map(|activation|activation.generation),
+            }))
         }
         SplitTree::Split {
             direction,

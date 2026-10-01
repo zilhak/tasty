@@ -1,13 +1,13 @@
 //! 포커스된 pane의 분할을 Core에 요청하고 origin에 따라 후속 포커스를 처리한다.
 
 use super::{DispatchedIntent, Intent, IntentOrigin};
-use crate::core::Core;
-use crate::core::engine_access::EngineMut;
+use crate::app::services::AppServices;
+use crate::runtime::engine_access::EngineMut;
 use crate::model::SplitDirection;
 use crate::state::RequestContext;
 
 pub fn handle(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     intent: &DispatchedIntent,
@@ -18,7 +18,7 @@ pub fn handle(
 }
 
 fn split(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     direction: SplitDirection,
@@ -26,7 +26,7 @@ fn split(
 ) {
     let pane_id = state.focused_pane_id(engine);
     let cwd = state.resolve_inherit_cwd(&engine.as_ref());
-    let intent = crate::core::intent::DomainIntent::SplitPane {
+    let intent = crate::app::command::DomainIntent::SplitPane {
         target_pane_id: pane_id,
         direction,
         cwd,
@@ -36,13 +36,13 @@ fn split(
     let events = match crate::app::structural_exec::execute(core, state, engine, intent) {
         Ok(e) => e,
         Err(e) => {
-            crate::core::mark_last_forward_user_triggered(engine, &e, origin);
+            crate::app::services::mark_last_forward_user_triggered(engine, &e, origin);
             super::report_apply_error(state, engine, origin, "SplitPane", &e);
             return;
         }
     };
     for ev in events {
-        if let crate::core::intent::CoreEvent::PaneSplit {
+        if let crate::app::command::CoreEvent::PaneSplit {
             workspace_index,
             original_pane_id,
             new_pane_id,

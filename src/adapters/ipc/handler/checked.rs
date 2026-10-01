@@ -1,6 +1,7 @@
 //! 호출 경로에 필요한 진입 검사를 마친 요청. 외부 입력을 역직렬화해 만들 수 없다.
 use super::{CallerContext, JsonRpcRequest, JsonRpcResponse};
-use crate::core::{Core, CoreState};
+use crate::core::{State};
+use crate::app::services::AppServices;
 
 /// 진입 검사를 통과한 요청. engine이 없는 GUI 부팅·종료 구간의 Local 호출은
 /// 멱등성 봉투만 검사하며 권한·cap·호출 빈도 검사와 집계는 생략한다.
@@ -21,7 +22,7 @@ impl<'a> CheckedRequest<'a> {
 
 /// engine이 있는 진입점의 권한·사용량 제한·호출 빈도를 검사하고 결과를 한 번 기록한다.
 pub(crate) fn check_request<'a>(
-    core: &mut Core,
+    core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut CoreState,
     request: &'a JsonRpcRequest,
@@ -102,7 +103,7 @@ mod tests {
         }
     }
 
-    fn budget(core: &Core) {
+    fn budget(core: &AppServices) {
         core.rate_limit_set(
             "gate-probe".into(),
             "ipc_calls".into(),
@@ -115,9 +116,9 @@ mod tests {
     }
 
     fn observations(
-        core: &mut Core,
+        core: &mut AppServices,
         state: &mut RequestContext,
-        engine: &mut crate::core::engine_access::EngineMut<'_>,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     ) -> usize {
         let mut req = request("telemetry.summary");
         req.params = json!({"agent": "gate-probe", "metric": "ipc_calls"});
@@ -221,7 +222,7 @@ mod tests {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         let req = request("surface.kinds");
-        let mut call = |core: &mut Core, caller: &CallerContext| {
+        let mut call = |core: &mut AppServices, caller: &CallerContext| {
             super::super::handle_with_caller(core, &mut state, &mut engine, &req, caller)
                 .error
                 .map(|e| e.code)

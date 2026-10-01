@@ -1,6 +1,6 @@
 //! UI 전체 진입점 — sidebar 를 그리고 남은 terminal 영역 PhysicalRect 를 반환.
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::intent::Intent;
 use crate::model::PhysicalRect;
 use crate::state::MainViewState;

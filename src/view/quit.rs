@@ -82,7 +82,7 @@ impl View for QuitView {
     }
 
     fn render(&mut self) {
-        if !self.base.dirty {
+        if !self.base.state.dirty {
             return;
         }
         self.base.begin_frame();
@@ -144,7 +144,7 @@ impl View for QuitView {
 
         self.reveal_after_first_render();
 
-        if self.base.dirty {
+        if self.base.state.dirty {
             self.base.winit.request_redraw();
         }
     }

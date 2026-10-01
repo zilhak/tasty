@@ -1,6 +1,6 @@
 //! Remote structural requests are resolved and applied at the shared application boundary.
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::model::SurfaceId;
 use tasty_ipc::stream::StructuralOp;
 
@@ -26,7 +26,7 @@ pub(crate) fn forward_intent_origin(
 
 /// mirror의 구조 변경을 서버에서 실행한다. 호출자가 holder를 검증해야 한다.
 /// IPC의 권한·자기 대상·hard 점유 검사는 여기서 실행하지 않는다. split·tab·close는
-/// structural_exec를 공유하고 convert·restore·move-surface는 Core::apply를 직접 호출한다.
+/// structural_exec를 공유하고 convert·restore·move-surface는 AppServices::apply를 직접 호출한다.
 ///
 /// anchor workspace의 실행 전후 차이로 새 터미널을 찾고 현재 트리를 반환한다.
 /// workspace가 사라지면 점유를 해제하고 Ok(None), 실행 실패는 Err(reason)이다.
@@ -34,7 +34,7 @@ pub(crate) fn forward_intent_origin(
 /// 이 함수의 강제 분리 통지가 result보다 먼저 나간다.
 /// origin이 User인 close만 복원 스택에 남기고 Agent의 close는 남기지 않는다.
 pub(crate) fn execute_forwarded_structural_op(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     state: &mut dyn crate::app::structure_context::CascadeWindow,
     engine: &mut EngineMut<'_>,
     op: &StructuralOp,
@@ -96,9 +96,9 @@ pub(crate) fn execute_forwarded_structural_op(
                 params: &p,
             };
             // 결과를 판정하기 전에 자동 tap 억제를 해제해야 오류가 나도 다음 생성에 영향을 주지 않는다.
-            engine.attach.set_auto_tap_suppressed(true);
+            engine.remote.set_auto_tap_suppressed(true);
             let result = exec::split(core, state, engine, req, &intent_origin);
-            engine.attach.set_auto_tap_suppressed(false);
+            engine.remote.set_auto_tap_suppressed(false);
             forward_result(result)
         }
         StructuralOp::SplitPane {
@@ -124,9 +124,9 @@ pub(crate) fn execute_forwarded_structural_op(
                 target_pane,
                 params: &p,
             };
-            engine.attach.set_auto_tap_suppressed(true);
+            engine.remote.set_auto_tap_suppressed(true);
             let result = exec::split(core, state, engine, req, &intent_origin);
-            engine.attach.set_auto_tap_suppressed(false);
+            engine.remote.set_auto_tap_suppressed(false);
             forward_result(result)
         }
         StructuralOp::NewTab {
@@ -138,11 +138,11 @@ pub(crate) fn execute_forwarded_structural_op(
                 .find_pane_for_surface(*anchor_surface_id)
                 .ok_or_else(|| format!("anchor surface {anchor_surface_id} not found"))?;
             let p = structural_params(params, json!({ "pane_id": pane_id, "type": surface_kind }));
-            engine.attach.set_auto_tap_suppressed(true);
+            engine.remote.set_auto_tap_suppressed(true);
             let activate = origin == tasty_ipc::stream::ForwardOrigin::User;
             let result =
                 exec::create_tab(core, state, engine, pane_id, &p, activate, &intent_origin);
-            engine.attach.set_auto_tap_suppressed(false);
+            engine.remote.set_auto_tap_suppressed(false);
             forward_result(result)
         }
         StructuralOp::CloseSurface { surface_id } => {
@@ -161,7 +161,7 @@ pub(crate) fn execute_forwarded_structural_op(
                 .find_tab_for_surface(*anchor_surface_id)
                 .ok_or_else(|| format!("anchor surface {anchor_surface_id} tab not found"))?;
             // 기록은 출처 workspace를 트리에서 찾으므로 닫기 전에 한다.
-            // pane의 마지막 탭은 닫히지 않으므로 기록하지 않는다. Core 탭 닫기와 같은 규칙이다.
+            // pane의 마지막 탭은 닫히지 않으므로 기록하지 않는다. AppServices 탭 닫기와 같은 규칙이다.
             if let Some(item) = restorable
                 .then(|| engine.find_pane_for_tab(tab_id))
                 .flatten()
@@ -226,7 +226,7 @@ pub(crate) fn execute_forwarded_structural_op(
             cwd,
         } => {
             // 요청 cwd가 우선이다. 없으면 서버의 inherit_cwd 설정에 따라 실제 터미널 cwd를 조회한다.
-            use crate::core::intent::ConvertSurfaceTarget;
+            use crate::app::command::ConvertSurfaceTarget;
             let carried_cwd = cwd
                 .as_ref()
                 .filter(|s| !s.trim().is_empty())
@@ -241,13 +241,13 @@ pub(crate) fn execute_forwarded_structural_op(
                     params: params.clone(),
                 }
             };
-            let intent = crate::core::intent::DomainIntent::ConvertSurface {
+            let intent = crate::app::command::DomainIntent::ConvertSurface {
                 surface_id: *surface_id,
                 target,
             };
             match crate::app::structural_exec::execute(core, state, engine, intent) {
                 Ok(events) => match events.into_iter().next() {
-                    Some(crate::core::intent::CoreEvent::SurfaceConverted {
+                    Some(crate::app::command::CoreEvent::SurfaceConverted {
                         replaced: true,
                         ..
                     }) => {
@@ -255,7 +255,7 @@ pub(crate) fn execute_forwarded_structural_op(
                         Ok(())
                     }
                     // 도메인이 낸 실패 이유를 그대로 보내 원인을 다른 오류로 바꾸지 않는다.
-                    Some(crate::core::intent::CoreEvent::SurfaceConverted {
+                    Some(crate::app::command::CoreEvent::SurfaceConverted {
                         failure: Some(reason),
                         ..
                     }) => Err(reason),
@@ -277,16 +277,16 @@ pub(crate) fn execute_forwarded_structural_op(
                         .id
                 })
                 .ok_or_else(|| format!("pane {pane_id} workspace not found"))?;
-            let intent = crate::core::intent::DomainIntent::RestoreClosedItem {
+            let intent = crate::app::command::DomainIntent::RestoreClosedItem {
                 target_pane_id: Some(pane_id),
                 // 다른 workspace에서 닫힌 항목은 복원하지 않는다.
-                scope: crate::core::intent::RestoreScope::Workspace(ws_id),
+                scope: crate::app::command::RestoreScope::Workspace(ws_id),
             };
             match crate::app::structural_exec::execute(core, state, engine, intent) {
                 Ok(events) => {
                     let restored = matches!(
                         events.into_iter().next(),
-                        Some(crate::core::intent::CoreEvent::ClosedItemRestored {
+                        Some(crate::app::command::CoreEvent::ClosedItemRestored {
                             restored: true,
                             ..
                         })
@@ -326,7 +326,7 @@ pub(crate) fn execute_forwarded_structural_op(
                     &format!("structural_op.{}", op.wire_kind()),
                 ));
             }
-            let intent = crate::core::intent::DomainIntent::MoveSurface {
+            let intent = crate::app::command::DomainIntent::MoveSurface {
                 source_surface_id: *source_surface_id,
                 target_surface_id: *target_surface_id,
             };
@@ -335,9 +335,9 @@ pub(crate) fn execute_forwarded_structural_op(
                     let ev = events.into_iter().next();
                     if !matches!(
                         ev,
-                        Some(crate::core::intent::CoreEvent::MoveSurfaceApplied { .. })
+                        Some(crate::app::command::CoreEvent::MoveSurfaceApplied { .. })
                     ) {
-                        return Err("Core::apply returned no MoveSurfaceApplied event".to_string());
+                        return Err("AppServices::apply returned no MoveSurfaceApplied event".to_string());
                     }
                     match ev.and_then(|ev| {
                         crate::app::structural_cascade::SurfaceCloseCascade::from_move_surface_applied(
@@ -364,7 +364,7 @@ pub(crate) fn execute_forwarded_structural_op(
 
     // 이 경로가 delta를 반환하므로 일반 구조 변경 통지가 같은 트리를 다시 보내지 않게 한다.
     if let Some(ws_id) = ws_id {
-        engine.attach.clear_structure_changed(ws_id);
+        engine.remote.clear_structure_changed(ws_id);
     }
 
     let Some(ws_id) = ws_id else {
@@ -373,13 +373,10 @@ pub(crate) fn execute_forwarded_structural_op(
     let Some(idx_after) = engine.find_workspace_index_for_id(ws_id) else {
         // 보낼 트리가 없으므로 점유를 지우고 강제 분리한다. 호출자의 StructuralResult보다
         // 이 통지가 먼저 나가며, client는 분리 뒤의 결과 프레임을 읽지 않을 수 있다.
-        engine.attach.force_detach_workspace(ws_id);
+        engine.force_detach_workspace(ws_id);
         return Ok(None);
     };
-    let class = engine
-        .workspace_at(idx_after)
-        .expect("workspace index is valid")
-        .classify_attach_surfaces();
+    let class = engine.classify_attach_surfaces(engine.workspace_at(idx_after).expect("workspace index is valid").id);
     let added_terminals: Vec<SurfaceId> = class
         .terminals
         .iter()
@@ -388,7 +385,7 @@ pub(crate) fn execute_forwarded_structural_op(
         .collect();
     // 새 터미널도 workspace 점유에 넣어 입력·resize의 holder 검사와 서버 읽기 전용 표시를 유지한다.
     for sid in &added_terminals {
-        engine.attach.add_workspace_member(ws_id, *sid, true);
+        engine.live.occupancy.add_workspace_member(ws_id, *sid, true);
     }
     let (tree, surfaces) = engine.build_workspace_tree_surfaces(idx_after, &class);
     let delta = tasty_ipc::stream::StreamControl::StructuralDelta {
@@ -413,7 +410,7 @@ fn forward_result<T>(
         Err(StructuralFailure::Rejected(msg)) => Err(msg),
         Err(StructuralFailure::MissingEvent(msg)) => Err(msg.to_string()),
         Err(StructuralFailure::Apply(e)) => {
-            if e.downcast_ref::<crate::core::MirrorStructuralBlocked>()
+            if e.downcast_ref::<crate::app::services::MirrorStructuralBlocked>()
                 .is_some_and(|blocked| blocked.forwarded)
             {
                 Ok(())

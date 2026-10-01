@@ -25,7 +25,6 @@ pub(super) fn detach_tab(engine: &mut CoreState, id: u32) -> Result<Tab> {
 pub(super) fn apply_event(
     engine: &mut CoreState,
     event: &DomainEvent,
-    prepared: &mut PreparedLeaves,
     retired: &mut Vec<Retired>,
 ) -> Result<()> {
     match event {
@@ -52,7 +51,7 @@ pub(super) fn apply_event(
             surface,
             split,
         } => {
-            let surface = take_prepared(prepared, surface.id)?;
+            let surface = SurfaceDescriptor::new(surface.id,surface.kind.clone());
             insert_surface(engine, *target, surface, split)?;
         }
         DomainEvent::SurfaceMoved { id, target, split } => {
@@ -156,7 +155,7 @@ fn insert_pane(engine: &mut CoreState, target: u32, pane: Pane, split: &SplitSpe
     Ok(())
 }
 
-fn detach_surface(engine: &mut CoreState, id: u32) -> Result<Box<dyn Surface>> {
+fn detach_surface(engine: &mut CoreState, id: u32) -> Result<SurfaceDescriptor> {
     let tab_id = engine.find_tab_for_surface(id).ok_or("surface missing")?;
     let tab = tab(engine, tab_id)?;
     let (remaining, removed) = tab.take_layout().extract_surface(id);
@@ -167,7 +166,7 @@ fn detach_surface(engine: &mut CoreState, id: u32) -> Result<Box<dyn Surface>> {
 fn insert_surface(
     engine: &mut CoreState,
     target: u32,
-    surface: Box<dyn Surface>,
+    surface: SurfaceDescriptor,
     split: &SplitSpec,
 ) -> Result<()> {
     let tab_id = engine

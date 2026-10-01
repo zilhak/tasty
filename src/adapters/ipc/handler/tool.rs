@@ -2,7 +2,7 @@
 
 #![cfg(debug_assertions)]
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use serde_json::json;
 
 use crate::plugin::manifest::ToolAction;

@@ -144,7 +144,7 @@ fn write_layout(
                 return Ok(());
             };
             p.layout = node;
-            // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
+            // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
             store.save_workspace_overwrite(p)
         }
         PresetKind::Tab => {
@@ -155,7 +155,7 @@ fn write_layout(
                 return Ok(());
             };
             p.tab.layout = surf;
-            // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
+            // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
             store.save_tab_overwrite(p)
         }
         PresetKind::Pane => {
@@ -166,7 +166,7 @@ fn write_layout(
                 return Ok(());
             };
             p.pane = pane;
-            // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
+            // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
             store.save_pane_overwrite(p)
         }
     }
@@ -298,7 +298,7 @@ fn create_minimal(store: &mut PresetStore, kind: PresetKind) -> Option<String> {
     use tasty_presets::{PanePreset, TabPreset, WorkspacePreset};
     let name = store.unique_name(kind, kind.as_str());
     let result = match kind {
-        // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
+        // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
         PresetKind::Workspace => store.save_workspace(WorkspacePreset {
             name: name.clone(),
             subtitle: String::new(),
@@ -307,7 +307,7 @@ fn create_minimal(store: &mut PresetStore, kind: PresetKind) -> Option<String> {
                 pane: minimal_pane(),
             },
         }),
-        // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
+        // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
         PresetKind::Tab => store.save_tab(TabPreset {
             name: name.clone(),
             tab: tasty_presets::PresetTab {
@@ -315,7 +315,7 @@ fn create_minimal(store: &mut PresetStore, kind: PresetKind) -> Option<String> {
                 layout: minimal_surface(),
             },
         }),
-        // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
+        // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
         PresetKind::Pane => store.save_pane(PanePreset {
             name: name.clone(),
             pane: minimal_pane(),
@@ -341,7 +341,7 @@ pub(super) fn duplicate_preset(
         PresetKind::Workspace => match store.get_workspace(name).cloned() {
             Some(mut p) => {
                 p.name = new_name.clone();
-                // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
+                // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
                 store.save_workspace(p)
             }
             None => return None,
@@ -349,7 +349,7 @@ pub(super) fn duplicate_preset(
         PresetKind::Tab => match store.get_tab(name).cloned() {
             Some(mut p) => {
                 p.name = new_name.clone();
-                // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
+                // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
                 store.save_tab(p)
             }
             None => return None,
@@ -357,7 +357,7 @@ pub(super) fn duplicate_preset(
         PresetKind::Pane => match store.get_pane(name).cloned() {
             Some(mut p) => {
                 p.name = new_name.clone();
-                // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
+                // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
                 store.save_pane(p)
             }
             None => return None,

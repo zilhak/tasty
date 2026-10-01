@@ -1,6 +1,6 @@
 //! 원격 cwd를 로컬 파일 작업에 잘못 쓰지 않도록 출처를 구분한다.
 
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::path::PathBuf;
 
 use super::CoreState;
@@ -44,24 +44,24 @@ impl SurfaceCwd {
     }
 }
 
-impl CoreState {
+impl EngineMut<'_> {
     /// 원격 push 캐시를 설정한다. None은 캐시를 지우지만 surface_cwd의 대체 조회까지 막지는 않는다.
     #[cfg(any(feature = "gui", test))]
     pub fn set_mirror_surface_cwd(&mut self, surface_id: u32, cwd: Option<String>) {
         match cwd {
             Some(path) => {
-                self.mirror_surface_cwd
+                self.remote.mirror_surface_cwd
                     .insert(surface_id, RemoteCwd::new(path));
             }
             None => {
-                self.mirror_surface_cwd.remove(&surface_id);
+                self.remote.mirror_surface_cwd.remove(&surface_id);
             }
         }
     }
 
     #[cfg(any(feature = "gui", test))]
     pub fn forget_mirror_surface_cwd(&mut self, surface_id: u32) {
-        self.mirror_surface_cwd.remove(&surface_id);
+        self.remote.mirror_surface_cwd.remove(&surface_id);
     }
 }
 
@@ -72,17 +72,17 @@ impl EngineMut<'_> {
     pub fn surface_cwd_forwards(
         &mut self,
     ) -> Vec<(crate::core::attach::AttachClientId, u32, Option<String>)> {
-        let locks = self.attach.locks_snapshot();
+        let locks = self.live.occupancy.locks_snapshot();
         let occupied: std::collections::HashSet<u32> = locks.iter().map(|&(sid, _)| sid).collect();
-        self.last_forwarded_cwd
+        self.remote.last_forwarded_cwd
             .retain(|sid, _| occupied.contains(sid));
         let mut out = Vec::new();
         for (sid, lock) in locks {
             let cwd = self.surface_cwd(sid).map(SurfaceCwd::into_wire);
             let record = (lock.holder, cwd);
-            if self.last_forwarded_cwd.get(&sid) != Some(&record) {
+            if self.remote.last_forwarded_cwd.get(&sid) != Some(&record) {
                 out.push((record.0, sid, record.1.clone()));
-                self.last_forwarded_cwd.insert(sid, record);
+                self.remote.last_forwarded_cwd.insert(sid, record);
             }
         }
         out
@@ -93,7 +93,7 @@ impl EngineRef<'_> {
     /// mirror push 값이 있으면 우선한다. 없으면 Terminal 또는 surface에서 찾는다.
     /// mirror 소속이면 대체 조회한 값도 Remote다. inherit_cwd 설정은 소비자가 적용한다.
     pub(crate) fn surface_cwd(&self, surface_id: u32) -> Option<SurfaceCwd> {
-        if let Some(pushed) = self.mirror_surface_cwd.get(&surface_id) {
+        if let Some(pushed) = self.remote.mirror_surface_cwd.get(&surface_id) {
             return Some(SurfaceCwd::Remote(pushed.clone()));
         }
         let surface = self.find_surface_by_id(surface_id)?;
@@ -142,7 +142,7 @@ mod tests {
             .workspace_at(0)
             .expect("workspace index is valid")
             .all_surface_ids()[0];
-        e.attach.acquire(sid, 7).expect("lock");
+        e.live.occupancy.acquire(sid, 7).expect("lock");
 
         let first = e.surface_cwd_forwards();
         assert_eq!(first.len(), 1, "최초 호출은 전송 후보 1건");
@@ -162,17 +162,17 @@ mod tests {
             .workspace_at(0)
             .expect("workspace index is valid")
             .all_surface_ids()[0];
-        e.attach.acquire(sid, 7).expect("lock");
+        e.live.occupancy.acquire(sid, 7).expect("lock");
         assert_eq!(e.surface_cwd_forwards().len(), 1);
 
-        e.attach.release(sid, 7).expect("release");
+        e.live.occupancy.release(sid, 7).expect("release");
         assert!(e.surface_cwd_forwards().is_empty(), "점유 없음 → push 없음");
         assert!(
-            e.last_forwarded_cwd.is_empty(),
+            e.remote.last_forwarded_cwd.is_empty(),
             "점유 해제분은 캐시에서 빠진다"
         );
 
-        e.attach.acquire(sid, 7).expect("re-lock");
+        e.live.occupancy.acquire(sid, 7).expect("re-lock");
         assert_eq!(
             e.surface_cwd_forwards().len(),
             1,
@@ -188,11 +188,11 @@ mod tests {
             .workspace_at(0)
             .expect("workspace index is valid")
             .all_surface_ids()[0];
-        e.attach.acquire(sid, 7).expect("lock");
+        e.live.occupancy.acquire(sid, 7).expect("lock");
         assert_eq!(e.surface_cwd_forwards().len(), 1);
 
-        e.attach.release(sid, 7).expect("release");
-        e.attach.acquire(sid, 8).expect("lock by another client");
+        e.live.occupancy.release(sid, 7).expect("release");
+        e.live.occupancy.acquire(sid, 8).expect("lock by another client");
         let swapped = e.surface_cwd_forwards();
         assert_eq!(swapped.len(), 1);
         assert_eq!((swapped[0].0, swapped[0].1), (8, sid));
@@ -221,7 +221,7 @@ mod tests {
 
         e.set_mirror_surface_cwd(sid, None);
         assert!(
-            !e.mirror_surface_cwd.contains_key(&sid),
+            !e.remote.mirror_surface_cwd.contains_key(&sid),
             "None push 는 값을 지운다"
         );
     }
@@ -232,6 +232,6 @@ mod tests {
         let mut e = e_session.borrow_mut();
         e.set_mirror_surface_cwd(42, Some("/srv/remote".to_string()));
         e.forget_mirror_surface_cwd(42);
-        assert!(e.mirror_surface_cwd.is_empty());
+        assert!(e.remote.mirror_surface_cwd.is_empty());
     }
 }

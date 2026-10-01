@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use crate::core::engine_access::EngineRef;
+use crate::runtime::engine_access::EngineRef;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 pub(crate) fn handle_surface_list(
@@ -49,7 +49,7 @@ fn collect_tab_surface_info(
                 "rows": t.map(|x| x.rows()).unwrap_or(0),
                 "busy": engine.is_surface_busy(node.id),
                 "pty_ready": engine.runtime.terminals.contains(node.id),
-                "attached": engine.attach.is_hard_occupied(node.id),
+                "attached": engine.live.occupancy.is_hard_occupied(node.id),
             });
             if let Some(fg) = engine
                 .runtime
@@ -102,7 +102,7 @@ fn collect_surface_layout_info(
                 "tab_index": tab_idx,
                 "type": surface.type_name(),
                 "busy": engine.is_surface_busy(id),
-                "attached": engine.attach.is_hard_occupied(id),
+                "attached": engine.live.occupancy.is_hard_occupied(id),
             });
             if let Some(terminal) = engine.runtime.terminals.get(id) {
                 entry["cols"] = json!(terminal.cols());

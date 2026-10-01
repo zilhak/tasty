@@ -6,7 +6,7 @@
 
 use crate::app::App;
 use crate::core::CoreState;
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::state::RequestContext;
 use tasty_ipc::stream_hub::{PumpOutcome, StreamClientId};
 
@@ -30,7 +30,7 @@ fn apply(
     }
     engine.refresh_attach_presentation(&state.navigation);
     engine
-        .attach
+        .live.occupancy
         .mark_clients_disconnected(&outcome.disconnected);
     apply_attach_requests(app, engine, outcome);
     apply_input_frames(app, engine, outcome);
@@ -70,7 +70,7 @@ fn apply_input_frames(
 ) {
     for (client_id, bytes) in std::mem::take(&mut outcome.input_frames) {
         // workspace 입력은 surface ID로 나누고 단일 surface 입력은 그대로 전달한다.
-        let routed = if engine.attach.client_holds_workspace(client_id) {
+        let routed = if engine.live.occupancy.client_holds_workspace(client_id) {
             match crate::ipc::stream::decode_mux(&bytes) {
                 Some((sid, payload)) => {
                     engine.feed_attached_workspace_input(client_id, sid, payload)
@@ -101,10 +101,10 @@ fn apply_structural_ops(
         // 점유자를 확인한 뒤 result → delta → 새 surface tap 순으로 보낸다.
         // client가 ID 매핑을 만든 뒤 스냅샷을 받아야 한다.
         let anchor = op.anchor_surface_id();
-        let (ok, reason, delta) = match engine.attach.workspace_of_surface(anchor) {
-            Some(ws) if engine.attach.workspace_holder(ws) == Some(client_id) => {
+        let (ok, reason, delta) = match engine.live.occupancy.workspace_of_surface(anchor) {
+            Some(ws) if engine.live.occupancy.workspace_holder(ws) == Some(client_id) => {
                 match crate::app::attach_structure::execute_forwarded_structural_op(
-                    &mut app.core,
+                    &mut app.services,
                     state,
                     engine,
                     &op,
@@ -118,7 +118,7 @@ fn apply_structural_ops(
             None => (
                 false,
                 Some(
-                    crate::core::attach_structure_sync::unresolved_forward_reason(
+                    crate::remote::structure_sync::unresolved_forward_reason(
                         [&*engine.core],
                         client_id,
                         &op,
@@ -209,7 +209,7 @@ fn push_mesh_error(app: &App, client_id: StreamClientId, surface_id: u32) {
 }
 
 fn apply_capture_uploads(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOutcome) {
-    for (client_id, msg) in std::mem::take(&mut outcome.capture_uploads) {
+    for (client_id, msg) in std::mem::take(&mut outcome.remote.capture_uploads) {
         use tasty_ipc::stream_hub::CaptureUploadMsg;
         match msg {
             CaptureUploadMsg::CaptureChunk {
@@ -219,8 +219,8 @@ fn apply_capture_uploads(app: &mut App, engine: &mut CoreState, outcome: &mut Pu
             } => {
                 use base64::Engine as _;
                 match base64::engine::general_purpose::STANDARD.decode(&data_b64) {
-                    Ok(bytes) if engine.attach.client_holds_workspace(client_id) => {
-                        engine.capture_uploads.append(
+                    Ok(bytes) if engine.live.occupancy.client_holds_workspace(client_id) => {
+                        engine.remote.capture_uploads.append(
                             client_id,
                             upload_id,
                             &bytes,
@@ -239,9 +239,9 @@ fn apply_capture_uploads(app: &mut App, engine: &mut CoreState, outcome: &mut Pu
                 upload_id,
                 file_name,
             } => {
-                crate::core::attach_runtime::finalize_capture_upload(
+                crate::remote::server::finalize_capture_upload(
                     engine,
-                    &app.core,
+                    &app.services,
                     &app.stream_hub,
                     client_id,
                     upload_id,
@@ -256,7 +256,7 @@ fn apply_file_requests(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mut 
     for (client_id, msg) in std::mem::take(&mut outcome.list_dir_requests) {
         use tasty_ipc::stream_hub::ListDirRequestMsg;
         let ListDirRequestMsg::ListDirRequest { request_id, dir } = msg;
-        crate::core::attach_runtime::handle_list_dir_request(
+        crate::remote::server::handle_list_dir_request(
             engine,
             &app.stream_hub,
             client_id,
@@ -273,7 +273,7 @@ fn apply_file_requests(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mut 
             worktree_path,
             diff_path,
         } = msg;
-        crate::core::attach_runtime::handle_git_query_request(
+        crate::remote::server::handle_git_query_request(
             engine,
             &app.stream_hub,
             client_id,
@@ -290,7 +290,7 @@ fn apply_file_requests(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mut 
             request_id,
             surface_id,
         } = msg;
-        crate::core::attach_runtime::handle_markdown_content_request(
+        crate::remote::server::handle_markdown_content_request(
             engine,
             &app.stream_hub,
             client_id,
@@ -314,7 +314,7 @@ fn apply_bulk_events(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOu
                 filename,
                 total_size,
             } => {
-                crate::core::attach_runtime::begin_bulk_transfer(
+                crate::remote::server::begin_bulk_transfer(
                     engine,
                     &app.stream_hub,
                     client_id,
@@ -329,7 +329,7 @@ fn apply_bulk_events(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOu
                 bytes,
             } => {
                 if !engine
-                    .bulk_transfers
+                    .remote.bulk_transfers
                     .append(client_id, transfer_id, seq, &bytes)
                 {
                     tracing::warn!(
@@ -339,8 +339,8 @@ fn apply_bulk_events(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOu
             }
             BulkEvent::Commit { transfer_id } => {
                 // 용량 사전판정과 같은 저장 폴더를 사용한다.
-                let dir = crate::core::attach_runtime::resolve_bulk_transfer_dir(&engine.settings);
-                crate::core::attach_runtime::finalize_bulk_transfer(
+                let dir = crate::remote::server::resolve_bulk_transfer_dir(&engine.settings);
+                crate::remote::server::finalize_bulk_transfer(
                     engine,
                     &app.stream_hub,
                     client_id,
@@ -355,9 +355,9 @@ fn apply_bulk_events(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOu
 
 fn apply_disconnects(engine: &mut CoreState, outcome: &mut PumpOutcome) {
     for client_id in std::mem::take(&mut outcome.disconnected) {
-        engine.attach.release_all_for_client(client_id);
-        engine.bulk_transfers.clear_client(client_id);
-        engine.capture_uploads.clear_client(client_id);
-        engine.mesh_mirror.remove_for_client(client_id);
+        engine.live.occupancy.release_all_for_client(client_id);
+        engine.remote.bulk_transfers.clear_client(client_id);
+        engine.remote.capture_uploads.clear_client(client_id);
+        engine.remote.mesh_mirror.remove_for_client(client_id);
     }
 }

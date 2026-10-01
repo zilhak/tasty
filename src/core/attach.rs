@@ -1,12 +1,10 @@
 //! surface·workspace의 hard attach 점유와 표시용 soft 점유를 관리한다.
 //! 상태는 저장하지 않으며 재시작하면 비어 있다. 인증은 이 레지스트리 밖에서 처리한다.
-//! hard 통지는 IPC 서버와 같은 StreamHub를 사용하고 soft는 입력을 차단하지 않는다.
+//! 값 변경은 전송을 수행하지 않는다. App/Remote 실행 경계가 반환된 holder에게 통지한다.
 
 use std::collections::HashMap;
 
 use crate::model::{SurfaceId, WorkspaceId};
-use tasty_ipc::stream::{StreamFrame, StreamTag};
-use tasty_ipc::stream_hub::StreamHub;
 
 /// StreamClientId와 같은 연결 식별자.
 pub type AttachClientId = u32;
@@ -63,9 +61,6 @@ struct SoftEntry {
 
 #[derive(Default)]
 pub struct OccupancyRegistry {
-    /// Read-only publication projection supplied by the application boundary.
-    /// It is replaced before subscribe/command handling, never imported into a View.
-    pub(crate) presentation: crate::model::StructurePresentationSnapshot,
     surface_locks: HashMap<SurfaceId, AttachLock>,
     /// workspace 터미널은 surface_locks에도 등록해 단일 surface 입력 검사를 공유한다.
     workspace_locks: HashMap<WorkspaceId, AttachLock>,
@@ -74,37 +69,13 @@ pub struct OccupancyRegistry {
     next_seq: u64,
     /// 이번 배치에서 끊김을 확인한 client. 점유 정리는 뒤에서 하되 새 acquire가 이를 구별할 수 있게 한다.
     dead_clients: std::collections::HashSet<AttachClientId>,
-    /// 미주입 상태에서는 통지를 생략하고 점유만 해제한다. soft에는 사용하지 않는다.
-    notifier: Option<StreamHub>,
     soft: HashMap<SurfaceId, SoftEntry>,
-    /// forward 실행 중에는 멤버만 편입하고 tap을 미룬다.
-    /// 호출자가 StructuralDelta 뒤에 tap해야 client가 먼저 ID 매핑을 만들 수 있고 중복 tap도 피한다.
-    suppress_auto_tap: bool,
-    /// forward 외 경로의 구조 변경을 모은다. 전체 트리를 보내므로 workspace별 한 번으로 합친다.
-    structure_changed: std::collections::BTreeSet<WorkspaceId>,
+
 }
 
 impl OccupancyRegistry {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// 연결 ID를 발급한 IPC 서버와 같은 허브를 주입해야 해당 연결에 통지가 전달된다.
-    pub fn set_notifier(&mut self, hub: StreamHub) {
-        self.notifier = Some(hub);
-    }
-
-    pub(crate) fn notifier(&self) -> Option<StreamHub> {
-        self.notifier.clone()
-    }
-
-    pub(crate) fn is_auto_tap_suppressed(&self) -> bool {
-        self.suppress_auto_tap
-    }
-
-    /// forward 실행 전후의 자동 tap 억제. 실행 Result를 판정하기 전에 해제해야 한다.
-    pub(crate) fn set_auto_tap_suppressed(&mut self, suppressed: bool) {
-        self.suppress_auto_tap = suppressed;
     }
 
     /// hard 점유만 확인한다. soft 표시는 입력 차단으로 해석하지 않는다.
@@ -224,10 +195,9 @@ impl OccupancyRegistry {
         }
     }
 
-    /// holder 확인 없이 점유를 해제하고 분리 통지를 시도한다. 송신 성공을 보장하지는 않는다.
+    /// holder 확인 없이 점유를 해제하고 통지 대상 holder를 반환한다.
     pub fn force_detach(&mut self, surface_id: SurfaceId) -> Option<AttachClientId> {
         let lock = self.surface_locks.remove(&surface_id)?;
-        self.notify_detached(lock.holder, "force_detach");
         Some(lock.holder)
     }
 
@@ -294,32 +264,8 @@ impl OccupancyRegistry {
         let had_lock = self.surface_locks.remove(&surface_id).is_some();
         let member_of = self.surface_to_workspace.remove(&surface_id);
         let had_member = member_of.is_some();
-        // forward가 닫은 경우에는 그 경로가 delta를 보내고 이 표시를 해제한다.
-        if let Some(ws) = member_of
-            && self.workspace_locks.contains_key(&ws)
-        {
-            self.structure_changed.insert(ws);
-        }
         let had_soft = self.clear_soft(surface_id);
         had_lock || had_member || had_soft
-    }
-
-    /// 점유된 workspace의 구조 변경을 표시한다. 점유자가 없으면 생략한다.
-    pub(crate) fn mark_structure_changed(&mut self, workspace_id: WorkspaceId) {
-        if self.workspace_locks.contains_key(&workspace_id) {
-            self.structure_changed.insert(workspace_id);
-        }
-    }
-
-    /// 전체 트리를 보낸 경로가 중복 전송하지 않도록 표시를 지운다.
-    pub(crate) fn clear_structure_changed(&mut self, workspace_id: WorkspaceId) {
-        self.structure_changed.remove(&workspace_id);
-    }
-
-    pub(crate) fn take_structure_changed(&mut self) -> Vec<WorkspaceId> {
-        std::mem::take(&mut self.structure_changed)
-            .into_iter()
-            .collect()
     }
 
     /// client가 점유한 workspace 하나를 반환한다. 여러 항목이면 HashMap에서 먼저 찾은 항목이다.
@@ -438,7 +384,7 @@ impl OccupancyRegistry {
         holders
     }
 
-    /// workspace와 멤버 점유를 지운 뒤 holder에 분리 통지를 시도한다.
+    /// workspace와 멤버 점유를 지우고 통지 대상 holder를 반환한다.
     pub fn force_detach_workspace(&mut self, workspace_id: WorkspaceId) -> Option<AttachClientId> {
         let lock = self.workspace_locks.remove(&workspace_id)?;
         self.clear_workspace_members(workspace_id);
@@ -446,7 +392,6 @@ impl OccupancyRegistry {
             "attach: force_detach_workspace workspace={workspace_id:?} holder={:?}",
             lock.holder
         );
-        self.notify_detached(lock.holder, "force_detach_workspace");
         Some(lock.holder)
     }
 
@@ -467,16 +412,7 @@ impl OccupancyRegistry {
         }
     }
 
-    /// Control 사유와 Detach를 차례로 push한다. 허브가 없거나 송신에 실패해도 점유 해제는 되돌리지 않는다.
-    fn notify_detached(&self, holder: AttachClientId, reason: &str) {
-        let Some(hub) = &self.notifier else {
-            return;
-        };
-        let msg = serde_json::json!({ "event": "force_detached", "reason": reason });
-        let payload = serde_json::to_vec(&msg).unwrap_or_default();
-        let _ = hub.push(holder, StreamFrame::new(StreamTag::Control, payload)); // 손실·연결 종료는 허브에 맡기며 여기서 재시도하지 않는다.
-        let _ = hub.push(holder, StreamFrame::new(StreamTag::Detach, Vec::new())); // 송신 실패에도 점유 해제는 유지한다.
-    }
+
 }
 
 #[cfg(test)]

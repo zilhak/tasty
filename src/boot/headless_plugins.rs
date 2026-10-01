@@ -4,7 +4,7 @@
 
 use crate::app::App;
 use crate::core::CoreState;
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::state::RequestContext;
 
 /// 조회에 필요한 매니저와 설치 목록을 준비한다. 플러그인 설치·권한 부여·프로세스 실행은 하지 않는다.
@@ -13,7 +13,7 @@ pub(crate) fn ensure_plugin_manager_metadata(app: &mut App, engine: &CoreState) 
     if app.plugin_manager.is_some() {
         return;
     }
-    let Some(factory) = engine.waker_factory.clone() else {
+    let Some(factory) = engine.runtime.waker_factory.clone() else {
         tracing::warn!(
             "headless plugin manager bootstrap skipped: engine has no waker_factory (invariant violated)"
         );
@@ -21,12 +21,12 @@ pub(crate) fn ensure_plugin_manager_metadata(app: &mut App, engine: &CoreState) 
     };
     let mut mgr = crate::plugin::PluginManager::with_registries(
         factory,
-        engine.file_format.clone(),
-        engine.file_handler.clone(),
+        engine.runtime.file_format.clone(),
+        engine.runtime.file_handler.clone(),
     );
-    mgr.set_surface_registry(engine.surface_registry.clone());
+    mgr.set_surface_registry(engine.runtime.surface_registry.clone());
     // 호스트 요청과 플러그인 대기를 같은 게이지에 기록한다.
-    let gauges = app.core.plugin_gauges();
+    let gauges = app.services.plugin_gauges();
     mgr.set_plugin_wait(gauges.plugin_wait);
     mgr.set_slow_requests(gauges.slow_requests);
     mgr.set_i18n_registrar(std::sync::Arc::new(crate::i18n::BinI18nRegistrar));
@@ -43,7 +43,7 @@ pub(crate) fn ensure_plugin_manager_metadata(app: &mut App, engine: &CoreState) 
 
 /// attach에서 필요한 전체 활성 플러그인을 시작한다. 조회·namespace 요청은 이 경로를 쓰지 않는다.
 pub(crate) fn ensure_plugin_manager(app: &mut App, engine: &CoreState) {
-    if app.plugin_started {
+    if app.state.plugin_started {
         return;
     }
     ensure_plugin_manager_metadata(app, engine);
@@ -52,7 +52,7 @@ pub(crate) fn ensure_plugin_manager(app: &mut App, engine: &CoreState) {
     };
     crate::plugin::install_builtins_if_needed(mgr);
     mgr.discover_and_start();
-    app.plugin_started = true;
+    app.state.plugin_started = true;
     tracing::info!("headless plugin manager started (attach mesh mirror session)");
 }
 
@@ -121,7 +121,7 @@ pub(crate) fn ensure_plugin_for_surface_kind(
     let Some(kind) = request.params.get("type").and_then(|v| v.as_str()) else {
         return;
     };
-    if engine.surface_registry.get_live(kind).is_some() {
+    if engine.runtime.surface_registry.get_live(kind).is_some() {
         return;
     }
     ensure_plugin_manager_metadata(app, engine);
@@ -162,7 +162,7 @@ fn wait_for_started_owner(
         .map_or(std::time::Duration::ZERO, |mgr| mgr.connection_wait_limit());
     let outcome = wait_for_kind_registration(connect_limit, KIND_REGISTRATION_WAIT, || {
         pump_plugins(app, state, engine);
-        if engine.surface_registry.get_live(kind).is_some() {
+        if engine.runtime.surface_registry.get_live(kind).is_some() {
             return OwnerPoll::Registered;
         }
         match app.plugin_manager.as_ref() {
@@ -258,8 +258,8 @@ fn finalize_plugin_hello_headless(
     engine: &CoreState,
     hello_pairs: Vec<(String, String)>,
 ) {
-    let core_registry = engine.surface_registry.clone();
-    let hook_event_registry = engine.plugin_hook_events.clone();
+    let core_registry = engine.runtime.surface_registry.clone();
+    let hook_event_registry = engine.runtime.plugin_hook_events.clone();
     let Some(mgr) = app.plugin_manager.as_mut() else {
         return;
     };
@@ -304,7 +304,7 @@ fn register_hook_events(
 
 fn register_surface_kinds(
     mgr: &mut crate::plugin::PluginManager,
-    registry: &std::sync::Arc<crate::core::surface_registry::SurfaceKindRegistry>,
+    registry: &std::sync::Arc<crate::runtime::surface_registry::SurfaceKindRegistry>,
     hello_pairs: &[(String, String)],
 ) {
     let host_cmd_tx = mgr.host_cmd_tx.clone();
@@ -334,7 +334,7 @@ fn register_surface_kinds(
 
 /// remote·webview·egui-mesh를 모두 등록한다. 서버는 원문·제어를 제공하고 실제 렌더는 클라이언트가 할 수 있다.
 fn register_one_surface_kind(
-    registry: &std::sync::Arc<crate::core::surface_registry::SurfaceKindRegistry>,
+    registry: &std::sync::Arc<crate::runtime::surface_registry::SurfaceKindRegistry>,
     plugin_id: &str,
     api_version: &str,
     decl: &crate::plugin::manifest::SurfaceKindDecl,
@@ -342,7 +342,7 @@ fn register_one_surface_kind(
 ) {
     match decl.rendering {
         crate::plugin::manifest::SurfaceKindRendering::Webview => {
-            crate::core::surface_registry::webview_kind::register_webview_kind(
+            crate::runtime::surface_registry::webview_kind::register_webview_kind(
                 plugin_id, &decl.kind,
             );
             crate::plugin_bridge::remote_kind::register_remote_kind(
@@ -361,7 +361,7 @@ fn register_one_surface_kind(
             );
         }
         crate::plugin::manifest::SurfaceKindRendering::EguiMesh => {
-            crate::core::surface_registry::egui_mesh::register_egui_mesh_kind(
+            crate::runtime::surface_registry::egui_mesh::register_egui_mesh_kind(
                 registry,
                 plugin_id,
                 decl,
@@ -379,7 +379,7 @@ fn gates_before_intercept<'a>(
     request: &'a crate::ipc::protocol::JsonRpcRequest,
     caller: &'a crate::ipc::caller::CallerContext,
 ) -> Result<crate::ipc::handler::CheckedRequest<'a>, crate::ipc::protocol::JsonRpcResponse> {
-    crate::ipc::handler::check_request(&mut app.core, window, engine, request, caller)
+    crate::ipc::handler::check_request(&mut app.services, window, engine, request, caller)
 }
 
 /// shared_buffer.create는 직접 처리하고 나머지는 공용 handler에 전달한다.
@@ -445,15 +445,15 @@ fn dispatch_plugin_ipc_calls_headless(
             continue;
         }
         let response =
-            crate::ipc::handler::handle_checked_request(&mut app.core, state, engine, &checked);
+            crate::ipc::handler::handle_checked_request(&mut app.services, state, engine, &checked);
         // 결과를 보내기 전에 요청의 Intent와 후속 이벤트를 적용한다.
         crate::intent::headless::drain_pending_intents_in_app(
-            &mut app.core,
+            &mut app.services,
             state,
             engine,
             &mut app.journal,
         );
-        crate::intent::headless::drain_pending_host_events(&app.core, state, &engine.as_ref());
+        crate::intent::headless::drain_pending_host_events(&app.services, state, &engine.as_ref());
         // 오류 코드도 함께 전달해 플러그인이 원래 실패 종류를 알 수 있게 한다.
         let (result, error, code) = match response.error {
             Some(err) => (None, Some(err.message), Some(err.code)),

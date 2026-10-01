@@ -3,7 +3,7 @@
 use winit::window::Window;
 
 use super::GpuState;
-use crate::app::boot_machine::BootPhase;
+use crate::app::state::BootPhase;
 
 /// WaitingEngine은 GpuInit과 같은 진행 문구를 사용한다.
 pub fn boot_phase_text_key(phase: &BootPhase) -> &'static str {

@@ -2,11 +2,14 @@
 
 mod installation;
 
-use crate::core::engine_access::EngineMut;
-use crate::core::surface_registry::PublicationAction;
+use crate::runtime::engine_access::EngineMut;
+use crate::runtime::surface_registry::PublicationAction;
 use crate::model::TerminalSurface;
 use crate::runtime::journal_product::{ClaimedPreparation, EffectLease};
-use crate::runtime::live_projection::PreparedLeaf;
+pub(crate) struct PreparedLeaf {
+    pub(crate) logical_kind:String,
+    pub(crate) surface:Box<dyn crate::model::Surface>,
+}
 use tasty_terminal::{Pty, ResourceGeneration, Terminal};
 
 pub(crate) use installation::{Installation, Installed, RetiringKind};
@@ -33,20 +36,19 @@ pub(crate) struct PreparedMaterialization {
 #[derive(Clone)]
 pub(super) struct KindRegistration {
     kind: String,
-    definition: std::sync::Weak<crate::core::surface_registry::SurfaceKindDef>,
+    definition: std::sync::Weak<crate::runtime::surface_registry::SurfaceKindDef>,
 }
 
 impl KindRegistration {
     fn validate(&self, engine: &crate::core::CoreState) -> anyhow::Result<()> {
-        if let Some(plugin_id) = engine.surface_registry.withdrawn_by(&self.kind) {
-            return Err(crate::core::surface_registry::SurfaceKindWithdrawn {
+        if let Some(plugin_id) = engine.runtime.surface_registry.withdrawn_by(&self.kind) {
+            return Err(crate::runtime::surface_registry::SurfaceKindWithdrawn {
                 kind: self.kind.clone(),
                 plugin_id,
             }
             .into());
         }
-        let current = engine
-            .surface_registry
+        let current = engine.runtime.surface_registry
             .get_live(&self.kind)
             .ok_or_else(|| anyhow::anyhow!("prepared kind is no longer registered"))?;
         if !self.definition.ptr_eq(&std::sync::Arc::downgrade(&current)) {
@@ -107,7 +109,7 @@ pub(crate) fn prepare(
             },
             engine.make_waker(surface_id),
         )?;
-        terminal.set_color_palette(crate::core::terminal_store::current_terminal_palette());
+        terminal.set_color_palette(crate::runtime::terminal_store::current_terminal_palette());
         terminal.set_scrollback_limit(shell.scrollback_lines);
         if shell.disk_scrollback {
             terminal.enable_disk_scrollback(surface_id);
@@ -151,15 +153,14 @@ pub(crate) fn prepare(
             None,
         )
     } else {
-        if let Some(plugin_id) = engine.surface_registry.withdrawn_by(&input.kind) {
-            return Err(crate::core::surface_registry::SurfaceKindWithdrawn {
+        if let Some(plugin_id) = engine.runtime.surface_registry.withdrawn_by(&input.kind) {
+            return Err(crate::runtime::surface_registry::SurfaceKindWithdrawn {
                 kind: input.kind,
                 plugin_id,
             }
             .into());
         }
-        let definition = engine
-            .surface_registry
+        let definition = engine.runtime.surface_registry
             .get_live(&input.kind)
             .ok_or_else(|| anyhow::anyhow!("surface kind {} is not registered", input.kind))?;
         let restore = match claimed.capture.as_deref() {

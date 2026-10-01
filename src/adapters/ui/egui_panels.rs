@@ -1,6 +1,6 @@
 use egui::emath::GuiRounding as _;
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::model::PhysicalRect;
 use crate::state::MainViewState;
 use crate::theme;
@@ -113,7 +113,7 @@ pub fn draw_egui_panels(
     // the store at the same time as `&mut Panel` from `engine.workspaces()`.
     let mut explorer_views = std::mem::take(&mut state.explorer_views);
     let mut dag_views = std::mem::take(&mut state.dag_graph_views);
-    let explorer_favorites = engine.explorer_favorites.items.clone();
+    let explorer_favorites = engine.runtime.explorer_favorites.items.clone();
     // cut 대기 경로를 어둡게 표시한다. 복사·붙여넣기 완료·취소 후에는 빈 목록으로 해제된다.
     let explorer_cut_pending: std::collections::HashSet<std::path::PathBuf> = state
         .explorer_clipboard
@@ -239,7 +239,7 @@ pub fn draw_egui_panels(
             .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
         ) {
             // webview 내용은 native overlay가 그린다. 여기서는 URL 부재나 overlay 숨김 때 보일 배경을 그린다.
-            if crate::core::surface_registry::webview_kind::is_webview_kind(remote.kind_static) {
+            if crate::runtime::surface_registry::webview_kind::is_webview_kind(remote.kind_static) {
                 let url = crate::model::Surface::webview_url(remote);
                 let nav = remote.nav_state();
                 let banner_inset = draw_panel_frame(
@@ -290,7 +290,7 @@ pub fn draw_egui_panels(
     // engine의 하위 항목을 빌린 동안 모은 원격 목록 조회를 큐로 옮긴다.
     for (sid, req) in state.explorer_views.drain_outbox() {
         engine
-            .pending_list_dir_forward
+            .remote.pending_list_dir_forward
             .push(crate::core::PendingListDirForward {
                 local_ws_id: req.local_ws_id,
                 request_id: req.request_id,
@@ -378,7 +378,7 @@ pub(crate) fn apply_explorer_action(
         A::OpenFile(path) => {
             // mirror 탐색기의 경로는 원격 파일이다. 식별과 핸들러 선택은 file::dispatch::remote가 맡는다.
             state.dispatch_intent(
-                crate::core::intent::DomainIntent::DispatchFile {
+                crate::app::command::DomainIntent::DispatchFile {
                     target: crate::file::format::FileTarget::new(path.clone()),
                     depth: crate::file::format::DetectDepth::Deep,
                     origin_surface_id: Some(sid),
@@ -628,10 +628,10 @@ fn draw_occupied_overlays(
                     .max(tasty_type_geometry::length::PhysicalPx(1.0)),
             };
             for r in state.tab_surface_regions(engine, tab, content_rect, scale_factor) {
-                let hard = if engine.attach.is_content_hidden(r.id) {
+                let hard = if engine.live.occupancy.is_content_hidden(r.id) {
                     true
                 } else {
-                    match engine.attach.occupancy_of(r.id) {
+                    match engine.live.occupancy.occupancy_of(r.id) {
                         Some(occ) => occ.tier == crate::core::attach::OccupancyTier::Hard,
                         None => continue,
                     }
@@ -724,7 +724,7 @@ mod explorer_open_tests {
             assert_eq!(state.toasts.len(), 0, "mirror={mirror}");
             let intents = state.take_pending_intents();
             assert_eq!(intents.len(), 1, "mirror={mirror}");
-            let crate::intent::Intent::Domain(crate::core::intent::DomainIntent::DispatchFile {
+            let crate::intent::Intent::Domain(crate::app::command::DomainIntent::DispatchFile {
                 origin_surface_id,
                 dispatch_origin,
                 ..

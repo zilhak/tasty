@@ -2,7 +2,34 @@
 use crate::core::CoreState;
 use crate::core::layout_persistence::import::surface_data::SurfaceData;
 use crate::runtime::journal_product::{PreparationInput, ShellRecipe};
-use crate::runtime::live_projection::bootstrap::JournalPlaceholder;
+use crate::model::Surface;
+/// Exists only behind the bootstrap read/render barrier. SurfaceRestorer replaces this with the
+/// selected kind or its ordinary lazy/plugin placeholder after reading the referenced payload.
+pub(crate) struct JournalPlaceholder {
+    pub(crate) id: u32,
+    pub(crate) kind: String,
+    pub(crate) data: Option<tasty_domain::DataRef>,
+    pub(crate) creation_seed: Option<tasty_domain::DataRef>,
+    pub(crate) activation: Option<tasty_domain::Activation>,
+}
+
+impl Surface for JournalPlaceholder {
+    tasty_model::impl_surface_any!();
+    fn kind(&self) -> &'static str {
+        "empty"
+    }
+    fn type_name(&self) -> &'static str {
+        "Pending"
+    }
+    fn surface_id(&self) -> Option<u32> {
+        Some(self.id)
+    }
+    fn source_cwd(&self) -> Option<std::path::PathBuf> {
+        None
+    }
+}
+
+
 
 pub(crate) struct RestoreInput {
     pub(crate) surface_id: u32,
@@ -12,13 +39,14 @@ pub(crate) struct RestoreInput {
     pub(crate) plan: tasty_domain::CreationPlan,
 }
 
-pub(crate) fn describe(core: &CoreState) -> Vec<RestoreInput> {
+pub(crate) fn describe(engine: &crate::runtime::engine_access::EngineRef<'_>) -> Vec<RestoreInput> {
+    let core=engine.core;
     let shell = crate::core::state::ShellConfig::from_settings(&core.settings);
     core.local_workspaces
         .iter()
         .flat_map(|workspace| workspace.all_surface_ids())
         .filter_map(|id| {
-            let placeholder = core
+            let placeholder = engine
                 .find_surface_by_id(id)?
                 .as_any()
                 .downcast_ref::<JournalPlaceholder>()?;
@@ -141,4 +169,13 @@ pub(crate) fn initial_terminal_selection(
                 .unwrap_or_default()
         })
         .collect()
+}
+
+/// Install only logical placeholders; selected activation is a separate committed operation.
+pub(crate) fn initialize_instances(session:&mut crate::runtime::engine_session::EngineSession,model:&tasty_domain::JournalModel) {
+    for (id,surface) in &model.surfaces {
+        session.runtime.surfaces.entry(*id).or_insert_with(||Box::new(JournalPlaceholder {
+            id:*id,kind:surface.kind.clone(),data:surface.data,creation_seed:surface.creation_seed,activation:surface.activation,
+        }));
+    }
 }

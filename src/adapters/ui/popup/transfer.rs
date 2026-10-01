@@ -132,7 +132,7 @@ pub fn on_close_transfer_progress(
 pub fn draw_transfer_progress(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    _engine: &mut crate::core::engine_access::EngineMut<'_>,
+    _engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     let th = theme::theme();
     let Some(progress) = state.dialogs.transfer_progress.as_ref() else {
@@ -206,7 +206,7 @@ pub fn on_close_transfer_error(
 pub fn draw_transfer_error(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     let th = theme::theme();
     let Some(head) = state.dialogs.transfer_error.front() else {
@@ -285,7 +285,7 @@ pub fn draw_transfer_error(
         if let Some(err) = state.dialogs.transfer_error.pop_front()
             && let Some(payload) = err.retry
         {
-            engine.pending_image_uploads.push(payload);
+            engine.remote.pending_image_uploads.push(payload);
         }
         return if state.dialogs.transfer_error.is_empty() {
             PopupAction::Close

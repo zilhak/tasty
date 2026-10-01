@@ -92,7 +92,7 @@ pub(super) fn aggregate(
             }
             let response = if let Some(plan) = &original.response {
                 let complete =
-                    progress.freeze(plan, &after, command.completion_mirrors.unwrap_or(0))?;
+                    progress.freeze(plan, &after, command.completion_view.as_ref().unwrap_or(&super::super::CompletionView::default()))?;
                 if status == CommandStatus::InProgress {
                     Some(serde_json::to_vec(&progress).map_err(|error| error.to_string())?)
                 } else {

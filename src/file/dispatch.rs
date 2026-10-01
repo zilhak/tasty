@@ -6,7 +6,7 @@ pub(crate) mod picker_apply;
 pub(crate) mod remote;
 
 #[cfg(feature = "gui")]
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use std::path::PathBuf;
 
 #[cfg(feature = "gui")]
@@ -166,7 +166,7 @@ pub(crate) fn open_picker(
         .collect();
     let recent_handlers: Vec<(FileHandler, i64)> = recent_entries
         .iter()
-        .filter_map(|(id, at)| engine.file_handler.get(id).map(|h| (h, *at)))
+        .filter_map(|(id, at)| engine.runtime.file_handler.get(id).map(|h| (h, *at)))
         .collect();
     let (recent, cand) = picker_lists(&target, &recent_handlers, &candidates);
     // 전체 목록을 대체 후보로 쓴 경우에는 자동 실행할 기본 핸들러가 없다.
@@ -272,7 +272,7 @@ fn handler_to_summary(h: &FileHandler, last_used_at: Option<i64>) -> PickerHandl
 /// 명시 origin이 사라졌거나 대상 종류를 받지 못하면 false다.
 #[cfg(feature = "gui")]
 pub fn execute_handler_action(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     handler: &FileHandler,
@@ -363,7 +363,7 @@ fn open_surface_params(param_key: &str, target: &DispatchTarget) -> serde_json::
 /// origin이 있으면 그 pane에, 없으면 현재 pane에 탭 생성을 요청한다.
 #[cfg(feature = "gui")]
 pub(crate) fn open_surface_tab(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     surface_kind: &str,
@@ -383,13 +383,12 @@ pub(crate) fn open_surface_tab(
     };
     match origin_pane {
         Some(pane_id) => {
-            // Core 직접 호출은 최근 목록을 여기서 기록한다. Intent 위임 경로는 tab 핸들러가 맡는다.
-            let records_recent = engine
-                .surface_registry
+            // AppServices 직접 호출은 최근 목록을 여기서 기록한다. Intent 위임 경로는 tab 핸들러가 맡는다.
+            let records_recent = engine.runtime.surface_registry
                 .get(surface_kind)
                 .is_some_and(|d| d.records_recent);
             // 비동기 에이전트 결과가 사용자 선택을 바꾸지 않도록 origin에 따라 선택 여부를 정한다.
-            let intent = crate::core::intent::DomainIntent::CreateTab {
+            let intent = crate::app::command::DomainIntent::CreateTab {
                 pane_id,
                 cwd: None,
                 kind: surface_kind.to_string(),
@@ -398,7 +397,7 @@ pub(crate) fn open_surface_tab(
                 activate: dispatch_origin.selects_result(),
             };
             // mirror pane에 여는 경로는 원격 파일이다. forward가 성공으로 처리되더라도 기록하지 않도록
-            // Core::apply의 forward 판정과 같은 기준으로 먼저 거른다.
+            // AppServices::apply의 forward 판정과 같은 기준으로 먼저 거른다.
             let records_recent = records_recent
                 && engine
                     .mirror_workspace_index_for_structural(&intent)
@@ -454,7 +453,7 @@ fn mark_remote_forward(
     dispatch_origin: FileDispatchOrigin,
 ) -> bool {
     if !err
-        .downcast_ref::<crate::core::MirrorStructuralBlocked>()
+        .downcast_ref::<crate::app::services::MirrorStructuralBlocked>()
         .is_some_and(|b| b.forwarded)
     {
         return false;
@@ -469,8 +468,8 @@ fn mark_remote_forward(
             }
         }
     };
-    crate::core::mark_last_forward_user_triggered(engine, err, &origin);
-    crate::core::mark_last_forward_agent_origin(engine, err, &origin);
+    crate::app::services::mark_last_forward_user_triggered(engine, err, &origin);
+    crate::app::services::mark_last_forward_agent_origin(engine, err, &origin);
     true
 }
 
@@ -660,8 +659,7 @@ mod tests {
     fn remote_placeholder_picker_carries_no_recent_even_when_recent_is_populated() {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        let any = engine
-            .file_handler
+        let any = engine.runtime.file_handler
             .all_handlers()
             .into_iter()
             .next()

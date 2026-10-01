@@ -22,7 +22,7 @@ pub(crate) mod wiring;
 #[cfg(feature = "gui")]
 use crate::App;
 #[cfg(not(feature = "gui"))]
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::{cli, hooks};
 
 fn log_vacuum_result(result: tasty_memory::Result<bool>) {
@@ -260,7 +260,7 @@ fn run_due_timers(
                 engine.forward_attention(&app.stream_hub);
                 engine.forward_surface_cwd(&app.stream_hub);
                 engine.poll_global_hooks();
-                let exec = app.core.hook_executor();
+                let exec = app.services.hook_executor();
                 for event in engine.fire_idle_timeout_hooks(&exec) {
                     state.enqueue_host_event(event);
                 }
@@ -272,11 +272,11 @@ fn run_due_timers(
                 let _ = engine.sweep_idle_ptys(Instant::now());
             }
             crate::app::timers::Tick::CaptureSweep => {
-                engine.capture_uploads.sweep_expired(Instant::now());
+                engine.remote.capture_uploads.sweep_expired(Instant::now());
             }
             crate::app::timers::Tick::LogPrune => {
-                let now_ms = u64::try_from(app.core.now_unix_millis()).unwrap_or(0);
-                app.core.with_memory(|mem| {
+                let now_ms = u64::try_from(app.services.now_unix_millis()).unwrap_or(0);
+                app.services.with_memory(|mem| {
                     crate::store::log_retention::maybe_prune(mem, now_ms);
                 });
             }
@@ -294,13 +294,13 @@ fn handle_terminal_output(
     id: Option<u32>,
 ) {
     // drain 전에 깨움 중복 방지 표지를 풀어 처리 도중 새 출력의 깨움을 잃지 않게 한다.
-    if let Some(factory) = engine.waker_factory.as_ref() {
+    if let Some(factory) = engine.runtime.waker_factory.as_ref() {
         factory.note_drained(id);
     }
     let outcome = match id {
-        Some(sid) => app.core.process_pty_output(engine, sid),
+        Some(sid) => app.services.process_pty_output(engine, sid),
         None => {
-            let outcome = app.core.process_all_pty_output(engine);
+            let outcome = app.services.process_all_pty_output(engine);
             // 플러그인 수신도 이 기본 waker를 공유하므로 함께 처리한다.
             headless_plugins::pump_plugins(app, state, engine);
             outcome
@@ -316,25 +316,25 @@ fn handle_terminal_output(
             continue;
         }
         match event {
-            crate::core::intent::CoreEvent::TerminalProcessExited {
+            crate::app::command::CoreEvent::TerminalProcessExited {
                 surface_id,
                 generation,
             } => {
                 crate::app::process_exit::handle(
-                    &mut app.core,
+                    &mut app.services,
                     state,
                     engine,
                     surface_id,
                     generation,
                 );
             }
-            crate::core::intent::CoreEvent::TerminalCwdChanged { surface_id, .. } => {
+            crate::app::command::CoreEvent::TerminalCwdChanged { surface_id, .. } => {
                 crate::intent::headless::apply_terminal_cwd_changed(engine, surface_id);
             }
             event => fire_terminal_hooks(app, state, engine, vec![event]),
         }
     }
-    crate::intent::headless::drain_pending_host_events(&app.core, state, &engine.as_ref());
+    crate::intent::headless::drain_pending_host_events(&app.services, state, &engine.as_ref());
 }
 
 /// output-match 훅을 발화하고 HookFired를 큐에 넣는다. PTY 종료는 호출자가 먼저 공용 process_exit 처리로 분기한다.
@@ -343,11 +343,11 @@ fn fire_terminal_hooks(
     app: &crate::app::App,
     state: &mut crate::state::RequestContext,
     engine: &mut EngineMut<'_>,
-    events: Vec<crate::core::intent::CoreEvent>,
+    events: Vec<crate::app::command::CoreEvent>,
 ) {
-    let exec = app.core.hook_executor();
+    let exec = app.services.hook_executor();
     for event in events {
-        let crate::core::intent::CoreEvent::TerminalOutputMatch {
+        let crate::app::command::CoreEvent::TerminalOutputMatch {
             surface_id,
             text,
             generation,
@@ -414,7 +414,7 @@ fn start_ipc_and_seed(
         inbound_tx: app.stream_inbound_tx.clone(),
         waker: waker.stream_waker(),
     };
-    let connections = app.core.connections().clone();
+    let connections = app.services.connections().clone();
     if let Some(injector) = app
         .hub
         .start_ipc(waker.ipc_waker(), stream_ctx, connections)
@@ -425,7 +425,7 @@ fn start_ipc_and_seed(
         crate::completion_strategy::install_default_sources();
         // 헤드리스에는 toast가 없어 초기화 실패는 함수 내부 경고 로그로만 알린다.
         let _ = crate::webhook::init_from_config(injector.clone());
-        app.core.set_host_ipc_injector(injector);
+        app.services.set_host_ipc_injector(injector);
     }
 }
 
@@ -449,10 +449,10 @@ fn bootstrap_engine(
         base_waker,
         None,
         None,
-        app.core.memory_arc(),
-        std::sync::Arc::clone(app.core.tasks.runner_registry()),
+        app.services.memory_arc(),
+        std::sync::Arc::clone(app.services.tasks.runner_registry()),
     )?;
-    engine.core_state.waker_factory = Some(factory);
+    engine.core_state.runtime.waker_factory = Some(factory);
     app.journal
         .begin_engine(
             &engine,
@@ -471,7 +471,7 @@ fn bootstrap_engine(
         }
     }
     // 이전 실행의 agent 상태를 정리하되 작업을 자동 재시작하지는 않는다.
-    app.core.tasks.purge_stale_agent_state_on_boot(
+    app.services.tasks.purge_stale_agent_state_on_boot(
         &engine.task_scope,
         &engine
             .core_state
@@ -482,9 +482,7 @@ fn bootstrap_engine(
     );
     // force-detach 통지에 IPC 서버와 같은 스트림 허브를 사용한다.
     engine
-        .core_state
-        .attach
-        .set_notifier(app.stream_hub.clone());
+        .remote.set_notifier(app.stream_hub.clone());
     Ok(engine)
 }
 
@@ -536,6 +534,7 @@ fn dispatch_headless_event(
 ) -> std::ops::ControlFlow<()> {
     use crate::AppEvent;
     if matches!(event, AppEvent::JournalReady) {
+        app.journal.update_completion_view(session.id,&session.core_state,&state.navigation);
         if let Err(error) = app.journal.poll_bootstrap(&mut [session]) {
             tracing::error!("committed structure publication halted: {error}");
         }
@@ -592,14 +591,14 @@ fn dispatch_headless_event(
     let engine = &mut session.borrow_mut();
     match event {
         AppEvent::JournalReady => unreachable!("journal event handled above"),
-        AppEvent::Shutdown | AppEvent::QuitRequested => return std::ops::ControlFlow::Break(()),
+        AppEvent::Shutdown | AppEvent::QuitRequested => {app.state.stopping=true;return std::ops::ControlFlow::Break(());},
         AppEvent::TerminalOutput(id) => handle_terminal_output(app, state, engine, id),
         AppEvent::IpcReady => {
             // 회차 도중 새 명령이 다음 깨움을 예약할 수 있도록 표지를 먼저 푼다.
             waker.note_ipc_drained();
             let flow = headless_dispatch::pump_ipc(app, state, engine);
             // 예산에서 남긴 명령은 깨움이 이미 합쳐졌을 수 있어 채널 뒤에 다시 예약한다.
-            rewake_if_left(flow, || ipc_commands_left(&app.core), || waker.wake_ipc());
+            rewake_if_left(flow, || ipc_commands_left(&app.services), || waker.wake_ipc());
             return flow;
         }
         AppEvent::StreamReady => headless_stream::handle_stream_ready(app, state, engine),
@@ -620,7 +619,7 @@ fn rewake_if_left(
 
 /// 아직 꺼내지 않은 명령이 있는지 확인한다. 입장 장부가 없으면 false다.
 #[cfg(not(feature = "gui"))]
-fn ipc_commands_left(core: &crate::core::Core) -> bool {
+fn ipc_commands_left(core: &crate::app::services::AppServices) -> bool {
     core.host_ipc_injector
         .get()
         .and_then(|injector| injector.admission())
@@ -649,8 +648,8 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     let mut session = bootstrap_engine(&mut app, &boot_settings, &waker)?;
     let engine_id = session.id;
     let mut engine = session.borrow_mut();
-    let preset_store = app.core.preset_store.clone();
-    let memory = app.core.memory_arc();
+    let preset_store = app.services.preset_store.clone();
+    let memory = app.services.memory_arc();
     let mut state = crate::state::CommandContext::new(&mut engine, preset_store, memory);
     state.engine_id = Some(engine_id);
 
@@ -673,18 +672,19 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         mgr.refresh_packages();
     }
 
+    app.state.started=true;
     tracing::info!("headless daemon ready; PTY pump + IPC dispatch active");
 
     loop {
         if !app.journal.is_halted() && !app.journal.pauses_observation() {
             crate::intent::headless::drain_pending_intents_in_app(
-                &mut app.core,
+                &mut app.services,
                 &mut state,
                 &mut engine,
                 &mut app.journal,
             );
             crate::intent::headless::drain_pending_host_events(
-                &app.core,
+                &app.services,
                 &mut state,
                 &engine.as_ref(),
             );
@@ -784,9 +784,9 @@ mod journal_event_tests {
         let mut settings=crate::settings::Settings::default();
         settings.general.shell="/bin/sh".into();
         settings.general.startup_command="exec sleep 60".into();
-        let mut session=crate::runtime::engine_session::EngineSession::for_journal(80,24,waker.waker_factory().make_default_waker(),None,None,memory,Arc::clone(app.core.tasks.runner_registry()),settings).unwrap();
+        let mut session=crate::runtime::engine_session::EngineSession::for_journal(80,24,waker.waker_factory().make_default_waker(),None,None,memory,Arc::clone(app.services.tasks.runner_registry()),settings).unwrap();
         app.journal.begin_engine(&session,crate::runtime::journal_product::EngineSelection::FreshHeadless).unwrap();
-        let mut state=crate::state::CommandContext::new(&mut session.borrow_mut(),app.core.preset_store.clone(),app.core.memory_arc());
+        let mut state=crate::state::CommandContext::new(&mut session.borrow_mut(),app.services.preset_store.clone(),app.services.memory_arc());
         state.engine_id=Some(session.id);
         let until=Instant::now()+Duration::from_secs(10);
         while !app.journal.is_ready(session.id) {

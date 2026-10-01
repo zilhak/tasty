@@ -8,7 +8,7 @@ mod view;
 pub use apply::apply_tab_bar_actions;
 pub use view::{compute_drop_index, draw_pane_tab_bars_view};
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::PhysicalPx;
 use tasty_type_geometry::rect::PhysicalRect;
@@ -326,8 +326,7 @@ pub fn draw_pane_tab_bars(
                             .find_surface_by_id(state.navigation.surface_id(t).unwrap_or(0))
                             .map(|s| s.kind())
                             .unwrap_or("terminal");
-                        engine
-                            .surface_registry
+                        engine.runtime.surface_registry
                             .get(kind)
                             .and_then(|d| d.icon.clone())
                             .map(|n| icons::from_name(&n))

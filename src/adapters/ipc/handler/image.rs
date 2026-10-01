@@ -1,7 +1,7 @@
 //! image.open과 image.list는 호스트에서 처리한다. 픽셀 편집은 image 플러그인으로 전달한다.
 //! open은 surface_id를 명시하고 list는 모든 이미지 surface를 조회한다.
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use serde_json::{Value, json};
 
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -10,7 +10,7 @@ use super::require_surface_id;
 
 /// `image.open { surface_id, path }` — surface를 image kind로 (재)설정 + 파일 로드.
 pub fn handle_open(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
@@ -23,9 +23,9 @@ pub fn handle_open(
         Some(p) => p.to_string(),
         None => return JsonRpcResponse::invalid_params(id, "Missing required 'path' parameter"),
     };
-    let intent = crate::core::intent::DomainIntent::ConvertSurface {
+    let intent = crate::app::command::DomainIntent::ConvertSurface {
         surface_id: sid,
-        target: crate::core::intent::ConvertSurfaceTarget::Kind {
+        target: crate::app::command::ConvertSurfaceTarget::Kind {
             cwd: None,
             kind: "image".to_string(),
             params: json!({ "file": path.clone() }),
@@ -36,7 +36,7 @@ pub fn handle_open(
         // mirror 변환도 원격 전달 접수는 성공으로 답한다. 원격 실행 완료를 뜻하지는 않는다.
         // 에이전트 요청의 원격 실패는 사용자 toast 대신 로그로 남긴다.
         Err(e) => {
-            crate::core::mark_last_forward_agent_origin(
+            crate::app::services::mark_last_forward_agent_origin(
                 engine,
                 &e,
                 &crate::core::origin::IntentOrigin::Agent {
@@ -48,7 +48,7 @@ pub fn handle_open(
     };
     let replaced = matches!(
         events.into_iter().next(),
-        Some(crate::core::intent::CoreEvent::SurfaceConverted { replaced: true, .. })
+        Some(crate::app::command::CoreEvent::SurfaceConverted { replaced: true, .. })
     );
     if !replaced {
         return JsonRpcResponse::invalid_params(id, format!("Surface {sid} not found"));
@@ -76,7 +76,7 @@ fn collect_image_panels(layout: &crate::model::SurfaceLayout, out: &mut Vec<Valu
             // dir_count/current_index는 플러그인이 관리하므로 여기서는 surface_id/path만 반환한다.
             if let Some(ms) = surface
                 .as_any()
-                .downcast_ref::<crate::core::egui_mesh_surface::EguiMeshSurface>()
+                .downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>()
                 && ms.kind_static == "image"
             {
                 out.push(json!({
@@ -100,7 +100,7 @@ mod tests {
     // TempDir을 유지해야 시험 도중 파일이 사라지지 않는다.
     // 플러그인을 실행하지 않으므로 image kind는 시험에서 직접 등록한다.
     fn make_test_core_state() -> (
-        crate::core::Core,
+        crate::app::services::AppServices,
         RequestContext,
         crate::runtime::engine_session::EngineSession,
         tempfile::TempDir,
@@ -113,7 +113,7 @@ mod tests {
             fake_clock::FakeClock, mem_fs::MemFileSystem, mock_clipboard::MockClipboard,
             mock_process::MockProcessSpawner, tmp_home::TmpHome,
         };
-        use crate::core::builder::CoreBuilder;
+        use crate::app::services::builder::AppServicesBuilder;
         use crate::ports::notification_sound::NoopPlayer;
 
         let term_waker: crate::terminal::Waker = Arc::new(|| {});
@@ -136,8 +136,8 @@ mod tests {
         }))
         .expect("test SurfaceKindDecl");
         assert!(
-            crate::core::surface_registry::egui_mesh::register_egui_mesh_kind(
-                &engine.surface_registry,
+            crate::runtime::surface_registry::egui_mesh::register_egui_mesh_kind(
+                &engine.runtime.surface_registry,
                 "com.tasty.image",
                 &decl,
                 crate::plugin::manifest::HOST_API_VERSION,
@@ -147,7 +147,7 @@ mod tests {
         let home_tmp = tempfile::tempdir().expect("test tempdir");
         let home = TmpHome::new(home_tmp.path().to_path_buf());
 
-        let core = CoreBuilder::new()
+        let core = AppServicesBuilder::new()
             .with_fs(Arc::new(MemFileSystem::new()))
             .with_clock(Arc::new(FakeClock::default()))
             .with_clipboard(Arc::new(MockClipboard::default()))
@@ -159,7 +159,7 @@ mod tests {
             .with_preset_store(preset_store)
             .with_settings_storage(Arc::new(tasty_settings::FileSettingsStorage))
             .build()
-            .expect("test Core build");
+            .expect("test AppServices build");
 
         (core, state, engine_session, home_tmp)
     }

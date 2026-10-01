@@ -88,9 +88,9 @@ impl App {
     fn collect_list<F>(&mut self, id: serde_json::Value, f: F) -> JsonRpcResponse
     where
         F: FnMut(
-            &crate::core::Core,
+            &crate::app::services::AppServices,
             &mut crate::state::MainViewState,
-            &mut crate::core::engine_access::EngineMut<'_>,
+            &mut crate::runtime::engine_access::EngineMut<'_>,
             serde_json::Value,
         ) -> JsonRpcResponse,
     {
@@ -102,9 +102,9 @@ impl App {
     fn collect_field<F>(&mut self, id: serde_json::Value, field: &str, f: F) -> JsonRpcResponse
     where
         F: FnMut(
-            &crate::core::Core,
+            &crate::app::services::AppServices,
             &mut crate::state::MainViewState,
-            &mut crate::core::engine_access::EngineMut<'_>,
+            &mut crate::runtime::engine_access::EngineMut<'_>,
             serde_json::Value,
         ) -> JsonRpcResponse,
     {
@@ -121,9 +121,9 @@ impl App {
     ) -> JsonRpcResponse
     where
         F: FnMut(
-            &crate::core::Core,
+            &crate::app::services::AppServices,
             &mut crate::state::MainViewState,
-            &mut crate::core::engine_access::EngineMut<'_>,
+            &mut crate::runtime::engine_access::EngineMut<'_>,
             serde_json::Value,
         ) -> JsonRpcResponse,
     {
@@ -144,9 +144,9 @@ impl App {
     ) -> Vec<Vec<serde_json::Value>>
     where
         F: FnMut(
-            &crate::core::Core,
+            &crate::app::services::AppServices,
             &mut crate::state::MainViewState,
-            &mut crate::core::engine_access::EngineMut<'_>,
+            &mut crate::runtime::engine_access::EngineMut<'_>,
             serde_json::Value,
         ) -> JsonRpcResponse,
     {
@@ -165,7 +165,7 @@ impl App {
         };
         // pty.list는 종료한 PTY도 정리하므로 engine을 가변으로 빌린다.
         // 창과 parked engine을 한 번씩 방문하므로 같은 자원이 두 번 합산되지 않는다.
-        let core = &mut self.core;
+        let core = &mut self.services;
         let mut combined: Vec<Vec<serde_json::Value>> = vec![Vec::new(); fields.len().max(1)];
         for (s, mut e) in engines_mut!(self).sessions() {
             take(f(core, s, &mut e, id.clone()), &mut combined);

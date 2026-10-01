@@ -14,9 +14,9 @@ fn fallback() -> tasty_memory::InitFallback {
     }
 }
 
-/// 실제 스토어(in-memory SQLite)를 넣은 `Core`. 시험용 fake 는 `import_regular` 를
+/// 실제 스토어(in-memory SQLite)를 넣은 `AppServices`. 시험용 fake 는 `import_regular` 를
 /// 구현하지 않는다.
-fn core_with(fallback: Option<tasty_memory::InitFallback>) -> crate::core::Core {
+fn core_with(fallback: Option<tasty_memory::InitFallback>) -> crate::app::services::AppServices {
     let store = tasty_memory::MemoryStore::open_in_memory().expect("store");
     test_core_builder()
         .with_memory(std::sync::Arc::new(std::sync::Mutex::new(store)))
@@ -25,7 +25,7 @@ fn core_with(fallback: Option<tasty_memory::InitFallback>) -> crate::core::Core 
         .expect("core")
 }
 
-fn call(core: &mut crate::core::Core, method: &str, params: Value) -> Value {
+fn call(core: &mut crate::app::services::AppServices, method: &str, params: Value) -> Value {
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
     let req = tasty_ipc::protocol::JsonRpcRequest {

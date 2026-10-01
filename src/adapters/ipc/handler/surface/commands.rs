@@ -1,7 +1,7 @@
 use serde_json::json;
 
 use crate::adapters::ipc::handler::params::{self, p_try};
-use crate::core::Core;
+use crate::app::services::AppServices;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
@@ -9,7 +9,7 @@ use super::require_surface_id;
 /// `surface.commands` — OSC 133 으로 인덱싱된 명령 record 들 (오름차순 시간).
 /// `limit` (기본 50), `since` (unix ms updated_at 하한) 지원.
 pub(crate) fn handle_commands(
-    core: &Core,
+    core: &AppServices,
     _engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -29,7 +29,7 @@ pub(crate) fn handle_commands(
 
 /// `surface.last_command` — 가장 최근 record. 없으면 `null`.
 pub(crate) fn handle_last_command(
-    core: &Core,
+    core: &AppServices,
     _engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -48,7 +48,7 @@ pub(crate) fn handle_last_command(
 
 /// `surface.command_at` — 0-based 인덱스 (음수면 끝에서부터). 범위 밖이면 `null`.
 pub(crate) fn handle_command_at(
-    core: &Core,
+    core: &AppServices,
     _engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -88,7 +88,7 @@ impl CommandsReadError {
 }
 
 fn read_command_entries(
-    core: &Core,
+    core: &AppServices,
     surface_id: u32,
     limit: Option<usize>,
     since: Option<i64>,

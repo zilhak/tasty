@@ -13,7 +13,7 @@ fn more_than_one_channel_capacity_of_captures_are_read_without_halting_bootstrap
     let memory = Arc::new(std::sync::Mutex::new(
         tasty_memory::testing::InMemoryStorage::new(),
     ));
-    let runners = Arc::new(crate::core::agent::runner_thread::RunnerRegistry::new());
+    let runners = Arc::new(crate::runtime::agent::runner_thread::RunnerRegistry::new());
     let mut session = EngineSession::for_journal(
         80,
         24,
@@ -129,7 +129,7 @@ fn selected_terminal_restores_capture_while_other_tabs_remain_resource_free() {
     let memory = Arc::new(std::sync::Mutex::new(
         tasty_memory::testing::InMemoryStorage::new(),
     ));
-    let runners = Arc::new(crate::core::agent::runner_thread::RunnerRegistry::new());
+    let runners = Arc::new(crate::runtime::agent::runner_thread::RunnerRegistry::new());
     let mut settings = crate::settings::Settings::default();
     settings.general.shell = "/bin/sh".into();
     settings.general.startup_command = String::new();
@@ -230,7 +230,7 @@ fn selected_terminal_restores_capture_while_other_tabs_remain_resource_free() {
                 .find_surface_by_id(sid)
                 .unwrap()
                 .as_any()
-                .is::<live_projection::bootstrap::JournalPlaceholder>()
+                .is::<crate::runtime::surface_restorer::JournalPlaceholder>()
         );
     }
     assert_eq!(journal.restoration_ready[&session.id].len(), 2);
@@ -256,7 +256,7 @@ fn large_generic_capture_waits_for_registration_and_reaches_restore_factory_unch
     let memory = Arc::new(std::sync::Mutex::new(
         tasty_memory::testing::InMemoryStorage::new(),
     ));
-    let runners = Arc::new(crate::core::agent::runner_thread::RunnerRegistry::new());
+    let runners = Arc::new(crate::runtime::agent::runner_thread::RunnerRegistry::new());
     let mut session = EngineSession::for_journal(
         80,
         24,
@@ -334,12 +334,12 @@ fn large_generic_capture_waits_for_registration_and_reaches_restore_factory_unch
             .find_surface_by_id(sid)
             .unwrap()
             .as_any()
-            .is::<live_projection::bootstrap::JournalPlaceholder>()
+            .is::<crate::runtime::surface_restorer::JournalPlaceholder>()
     );
     let (sender, receiver) = std::sync::mpsc::channel();
     let declaration=serde_json::from_value(serde_json::json!({"kind":"late-restore","display_name_i18n_key":"surface.kind.markdown","rendering":"remote"})).unwrap();
     crate::plugin_bridge::remote_kind::register_remote_kind(
-        &session.core_state.surface_registry,
+        &session.core_state.runtime.surface_registry,
         "com.test.late-restore",
         &declaration,
         sender,
@@ -390,7 +390,7 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
         "old unrelated scope",
     )
     .unwrap();
-    let runners = Arc::new(crate::core::agent::runner_thread::RunnerRegistry::new());
+    let runners = Arc::new(crate::runtime::agent::runner_thread::RunnerRegistry::new());
     let mut session = EngineSession::for_journal(
         80,
         24,
@@ -410,7 +410,7 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
     let (sender, receiver) = std::sync::mpsc::channel();
     let declaration=serde_json::from_value(serde_json::json!({"kind":"import-null","display_name_i18n_key":"surface.kind.markdown","rendering":"remote"})).unwrap();
     crate::plugin_bridge::remote_kind::register_remote_kind(
-        &session.core_state.surface_registry,
+        &session.core_state.runtime.surface_registry,
         "com.test.import-null",
         &declaration,
         sender,
@@ -453,7 +453,7 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
     }
     assert!(session.core_state.pending_layout_restore.is_none());
     crate::surface_meta::SurfaceMetaStore::set(
-        &mut *session.core_state.memory.lock().unwrap(),
+        &mut *session.core_state.runtime.memory.lock().unwrap(),
         ids[0],
         "restore.command",
         "keep live metadata",
@@ -490,7 +490,7 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
     );
     assert_eq!(
         crate::surface_meta::SurfaceMetaStore::get(
-            &mut *session.core_state.memory.lock().unwrap(),
+            &mut *session.core_state.runtime.memory.lock().unwrap(),
             ids[0],
             "restore.command"
         )

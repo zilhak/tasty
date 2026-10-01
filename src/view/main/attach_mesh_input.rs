@@ -197,7 +197,7 @@ impl MainView {
                 st.last_geom = Some(geom);
                 st.last_theme = Some(current_theme.clone());
                 st.last_focused = Some(is_focused);
-                engine.pending_mesh_context_forward.insert(
+                engine.remote.pending_mesh_context_forward.insert(
                     sid,
                     AttachMeshContextForward {
                         width_px: w,
@@ -211,7 +211,7 @@ impl MainView {
 
             if has_input {
                 let events = std::mem::take(&mut st.events);
-                engine.pending_mesh_input_forward.insert(
+                engine.remote.pending_mesh_input_forward.insert(
                     sid,
                     RawInputWire {
                         time: None,

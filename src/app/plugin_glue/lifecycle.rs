@@ -2,7 +2,7 @@
 //! 결과 이벤트의 후속 처리는 App이 담당한다.
 
 use crate::app::App;
-use crate::core::intent::{CoreEvent, PluginRegistryChange};
+use crate::app::command::{CoreEvent, PluginRegistryChange};
 use crate::plugin::manifest::{Permission, SurfaceKindRendering};
 use crate::plugin::{Manifest, PluginManager, PluginPackage};
 
@@ -43,7 +43,7 @@ fn refresh_plugin_permissions(mgr: &mut PluginManager, plugin_id: &str) {
 }
 
 fn register_plugin_surface_kinds(
-    registry: &crate::core::surface_registry::SurfaceKindRegistry,
+    registry: &crate::runtime::surface_registry::SurfaceKindRegistry,
     plugin_id: &str,
     pkg: &PluginPackage,
     tx: &std::sync::mpsc::Sender<crate::plugin_bridge::host_cmd::HostCmd>,
@@ -64,7 +64,7 @@ fn register_plugin_surface_kinds(
                 "remote"
             }
             SurfaceKindRendering::Webview => {
-                crate::core::surface_registry::webview_kind::register_webview_kind(
+                crate::runtime::surface_registry::webview_kind::register_webview_kind(
                     plugin_id, &decl.kind,
                 );
                 crate::plugin_bridge::remote_kind::register_remote_kind(
@@ -76,7 +76,7 @@ fn register_plugin_surface_kinds(
                 "webview"
             }
             SurfaceKindRendering::EguiMesh => {
-                crate::core::surface_registry::egui_mesh::register_egui_mesh_kind(
+                crate::runtime::surface_registry::egui_mesh::register_egui_mesh_kind(
                     registry,
                     plugin_id,
                     decl,

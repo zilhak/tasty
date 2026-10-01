@@ -4,7 +4,7 @@ use crate::adapters::ipc::handler::params::{self, p_try};
 use serde_json::{Value, json};
 use tasty_memory::{ListOpts, MemoryEntry, MemoryValue};
 
-use crate::core::Core;
+use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -15,7 +15,7 @@ use super::{
 
 /// 만료 항목은 읽기에서 이미 제외된다. gc는 디스크를 정리하고 quota를 회복하며 Local만 허용한다.
 pub fn handle_gc(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -35,7 +35,7 @@ pub fn handle_gc(
 /// 파라미터: `scope`, `path` (예: `"task.status"`), `equals` (임의 JSON value),
 /// 그리고 list 와 동일한 `prefix`/`since`/`until`/`limit`/`offset`.
 pub fn handle_query(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -78,7 +78,7 @@ pub fn handle_query(
 /// `memory.export` — regular 영역 entry 를 dump. `scope` 가 옵션 (없으면 전체).
 /// Secret 은 export 하지 않는다. 응답: `{ entries: [...], count: N }`.
 pub fn handle_export(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -102,7 +102,7 @@ pub fn handle_export(
 /// 형태의 배열. `replace` (기본 false) 면 기존 key 덮어쓰기. CAS 는 적용하지 않는다.
 /// 응답: `{ applied: N, skipped: M }`.
 pub fn handle_import(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,

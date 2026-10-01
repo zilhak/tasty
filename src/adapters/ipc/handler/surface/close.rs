@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
@@ -8,7 +8,7 @@ use super::require_surface_id;
 /// 도메인 close 함수를 호출하고 JSON 응답을 만든다. IPC는 복원 기록을 남기지 않는다.
 /// 원격 holder 경로는 여기 대신 도메인을 직접 호출해 요청 출처별로 복원 여부를 정한다(ADR-0023).
 fn close_surface_via_intent(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
@@ -40,7 +40,7 @@ pub(in crate::adapters::ipc::handler) fn refuse_if_hard_occupied(
     id: &serde_json::Value,
     surface_id: u32,
 ) -> Option<JsonRpcResponse> {
-    if !engine.attach.is_hard_occupied(surface_id) {
+    if !engine.live.occupancy.is_hard_occupied(surface_id) {
         return None;
     }
     Some(JsonRpcResponse::invalid_params(
@@ -54,7 +54,7 @@ pub(in crate::adapters::ipc::handler) fn refuse_if_hard_occupied(
 }
 
 pub(crate) fn handle_surface_close(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
@@ -82,7 +82,7 @@ pub(crate) fn handle_surface_close(
 
 /// 일반 close의 자기 대상 방지를 거치지 않고 닫는다. 점유 검사는 동일하게 적용한다.
 pub(crate) fn handle_surface_close_self(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
@@ -113,16 +113,16 @@ mod hard_occupancy_tests {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         // 두 번째 워크스페이스 — 마지막 워크스페이스 cascade 와 얽히지 않게 한다.
-        crate::core::apply_create_workspace_inner(
+        crate::app::services::apply_create_workspace_inner(
             &mut engine,
-            crate::core::WorkspaceCreationParams::terminal(),
+            crate::app::services::WorkspaceCreationParams::terminal(),
         )
         .expect("워크스페이스 생성");
         let target = engine
             .workspace_at(1)
             .expect("workspace index is valid")
             .all_surface_ids()[0];
-        engine.attach.acquire(target, HOLDER).expect("하드 점유");
+        engine.live.occupancy.acquire(target, HOLDER).expect("하드 점유");
 
         let res = handle_surface_close(
             &mut core,
@@ -147,7 +147,7 @@ mod hard_occupancy_tests {
             "거절이면 surface 가 살아 있어야 한다"
         );
         assert!(
-            engine.attach.is_hard_occupied(target),
+            engine.live.occupancy.is_hard_occupied(target),
             "거절 경로가 점유 상태를 건드리면 안 된다"
         );
     }
@@ -157,16 +157,16 @@ mod hard_occupancy_tests {
         let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        crate::core::apply_create_workspace_inner(
+        crate::app::services::apply_create_workspace_inner(
             &mut engine,
-            crate::core::WorkspaceCreationParams::terminal(),
+            crate::app::services::WorkspaceCreationParams::terminal(),
         )
         .expect("워크스페이스 생성");
         let target = engine
             .workspace_at(1)
             .expect("workspace index is valid")
             .all_surface_ids()[0];
-        engine.attach.acquire(target, HOLDER).expect("하드 점유");
+        engine.live.occupancy.acquire(target, HOLDER).expect("하드 점유");
 
         let res = handle_surface_close_self(
             &mut core,
@@ -188,9 +188,9 @@ mod hard_occupancy_tests {
         let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        crate::core::apply_create_workspace_inner(
+        crate::app::services::apply_create_workspace_inner(
             &mut engine,
-            crate::core::WorkspaceCreationParams::terminal(),
+            crate::app::services::WorkspaceCreationParams::terminal(),
         )
         .expect("워크스페이스 생성");
         let target = engine

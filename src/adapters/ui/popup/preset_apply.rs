@@ -51,7 +51,7 @@ pub fn on_close_apply_preset_popup(
 pub fn draw_apply_workspace_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     draw_apply_popup(ui, state, engine, PresetKind::Workspace)
 }
@@ -59,7 +59,7 @@ pub fn draw_apply_workspace_popup(
 pub fn draw_apply_tab_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     draw_apply_popup(ui, state, engine, PresetKind::Tab)
 }
@@ -67,7 +67,7 @@ pub fn draw_apply_tab_popup(
 pub fn draw_apply_pane_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     draw_apply_popup(ui, state, engine, PresetKind::Pane)
 }

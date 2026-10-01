@@ -1,6 +1,6 @@
 use super::tests::build_test_core;
 use super::{apply_file_picker_result, apply_identify_result};
-use crate::core::intent::DomainIntent;
+use crate::app::command::DomainIntent;
 use crate::file::dispatch::{
     DispatchTarget, FileDispatchOrigin, execute_handler_action, open_surface_tab,
 };
@@ -44,7 +44,7 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
         .all_surface_ids()[0];
     let pane = engine.find_pane_for_surface(sid).unwrap();
     FileHandlerRegistryPort::install_plugin_handlers(
-        engine.file_handler.as_ref(),
+        engine.runtime.file_handler.as_ref(),
         "com.example.origin",
         &[
             serde_json::json!({"id":"open", "detector":"origin-test", "priority":0,
@@ -256,8 +256,7 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
         false,
     );
     assert!(state.dialogs.file_handler_picker.is_none());
-    let h = engine
-        .file_handler
+    let h = engine.runtime.file_handler
         .all_handlers()
         .into_iter()
         .next()
@@ -444,7 +443,7 @@ fn an_unverified_plugin_dispatch_without_a_matching_handler_opens_the_fallback_p
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
     FileHandlerRegistryPort::install_plugin_handlers(
-        engine.file_handler.as_ref(),
+        engine.runtime.file_handler.as_ref(),
         "com.example.picker",
         &[
             serde_json::json!({"id": "open", "detector": "picker-test", "priority": 0,
@@ -481,8 +480,7 @@ fn an_unverified_plugin_dispatch_without_a_matching_handler_opens_the_fallback_p
     let before = engine.find_pane_by_id(pane_id).unwrap();
     let selected_id = before.tabs[state.navigation.tab_index(before)].id;
     let count = before.tabs.len();
-    let picked = engine
-        .file_handler
+    let picked = engine.runtime.file_handler
         .all_handlers()
         .into_iter()
         .find(|h| {

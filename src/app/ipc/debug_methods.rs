@@ -25,8 +25,8 @@ impl App {
                 .get("subtab")
                 .and_then(|v| v.as_str())
                 .map(str::to_string);
-            self.pending_settings_tab = tab.clone();
-            self.pending_settings_subtab = subtab.clone();
+            self.state.pending_settings_tab = tab.clone();
+            self.state.pending_settings_subtab = subtab.clone();
             crate::shortcuts::send_app_event(&self.view.proxy, crate::AppEvent::OpenSettings);
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 id,
@@ -43,7 +43,7 @@ impl App {
         // 임의 Lua 실행은 debug 전용이며 헤드리스와 같은 함수를 사용한다.
         if cmd.request.method == "debug.lua.eval" {
             let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-            let response = crate::core::app_surface_debug::lua_eval(
+            let response = crate::app::services::surface_debug::lua_eval(
                 self.lua_engine.as_ref(),
                 id,
                 &cmd.request.params,
@@ -196,7 +196,7 @@ impl App {
         id: serde_json::Value,
     ) -> host_ipc::protocol::JsonRpcResponse {
         match method {
-            "debug.fullscreen.list" => crate::core::app_surface_debug::fullscreen_list(id),
+            "debug.fullscreen.list" => crate::app::services::surface_debug::fullscreen_list(id),
             "debug.fullscreen.open" => self.debug_fullscreen_open(params, id),
             "debug.fullscreen.close" => self.debug_fullscreen_close(params, id),
             "debug.fullscreen.state" => self.debug_fullscreen_state(params, id),
@@ -254,7 +254,7 @@ impl App {
         }
         let opened = main.state.fullscreen_stage_id();
         // 일반 라우터를 거치지 않아 무대와 OS 전체화면 동기화에 필요한 repaint를 직접 요청한다.
-        main.base.dirty = true;
+        main.base.state.dirty = true;
         main.base.winit.request_redraw();
         host_ipc::protocol::JsonRpcResponse::success(
             id,
@@ -311,7 +311,7 @@ impl App {
         };
         let previous = main.state.fullscreen_stage_id();
         let closed = main.state.close_fullscreen_stage();
-        main.base.dirty = true;
+        main.base.state.dirty = true;
         main.base.winit.request_redraw();
         host_ipc::protocol::JsonRpcResponse::success(
             id,

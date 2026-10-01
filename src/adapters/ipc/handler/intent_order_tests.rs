@@ -1,12 +1,12 @@
 //! 요청별 IntentOutbox를 창 큐로 옮겨도 순서가 유지되는지 확인한다.
 //! 기존 항목 뒤에, 진입 검사와 핸들러가 만든 intent를 요청 순서대로 추가해야 한다.
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use serde_json::json;
 use std::sync::Arc;
 use tasty_plugin_manifest::Permission;
 
-use crate::core::intent::DomainIntent;
+use crate::app::command::DomainIntent;
 use crate::intent::{DispatchedIntent, Intent};
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcRequest;
@@ -171,16 +171,16 @@ fn detailed_labels(state: &crate::state::RequestContext) -> Vec<String> {
 }
 
 // 실제 SQLite 저장소로 상한 평가 순서를 확인한다.
-fn core_with_ordered_memory() -> crate::core::Core {
+fn core_with_ordered_memory() -> crate::app::services::AppServices {
     let store = tasty_memory::MemoryStore::open_in_memory().expect("in-memory sqlite");
     super::cli_entry_tests::test_core_builder()
         .with_memory(Arc::new(std::sync::Mutex::new(store)))
         .build()
-        .expect("test Core")
+        .expect("test AppServices")
 }
 
 fn set_notify_and_approval_caps(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     state: &mut crate::state::RequestContext,
     engine: &mut EngineMut<'_>,
     agent: &str,

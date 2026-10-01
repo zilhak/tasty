@@ -8,7 +8,7 @@
 mod debug;
 
 #[cfg(feature = "gui")]
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::ipc::window_port::IpcWindow;
 use crate::state::RequestContext;
 

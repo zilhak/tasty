@@ -1,8 +1,8 @@
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::core::surface_registry::SurfaceKindRegistry;
+use crate::runtime::surface_registry::SurfaceKindRegistry;
 use crate::model::Workspace;
 use crate::notification::NotificationStore;
 use crate::settings::Settings;
@@ -43,7 +43,7 @@ impl IdGenerator {
             pane: Arc::new(AtomicU32::new(1)),
             tab: Arc::new(AtomicU32::new(1)),
             surface: Arc::new(AtomicU32::new(1)),
-            pty: Arc::new(AtomicU32::new(crate::core::terminal_store::PTY_ID_BASE)),
+            pty: Arc::new(AtomicU32::new(crate::runtime::terminal_store::PTY_ID_BASE)),
             observer: Arc::new(AtomicU64::new(1)),
             hook: Arc::new(AtomicU64::new(1)),
             global_hook: Arc::new(AtomicU32::new(0)),
@@ -199,8 +199,6 @@ pub(crate) struct AttachMeshContextForward {
 pub struct CoreState {
     /// Revision of this committed live projection, never a command-decision source.
     pub(crate) committed_structure_revision: Option<u64>,
-    /// Read-only activation metadata of the committed local projection, never a runtime owner.
-    pub(crate) committed_surface_activations: std::collections::BTreeMap<u32, u64>,
     pub(crate) local_workspaces: Vec<Workspace>,
     pub(crate) mirror_workspaces: Vec<Workspace>,
     /// Composite display projection; local relative order comes from the committed model.
@@ -212,14 +210,10 @@ pub struct CoreState {
     pub(crate) next_ids: IdGenerator,
     pub(crate) default_cols: usize,
     pub(crate) default_rows: usize,
-    pub(crate) waker: Waker,
-
     pub(crate) settings: Settings,
 
     pub(crate) notifications: NotificationStore,
     pub(crate) closed_items: crate::model::ClosedItemStore,
-
-    pub(crate) command_index: crate::core::command_index::CommandIndex,
 
     pub(crate) approval_store: std::sync::Arc<tasty_approval::ApprovalStore>,
 
@@ -229,149 +223,8 @@ pub struct CoreState {
     /// 이 engine의 메모리 내 이상 탐지 상태. 탐지 기록 저장은 호출자가 맡는다.
     pub(crate) anomaly_detector: std::sync::Arc<tasty_telemetry::AnomalyDetector>,
 
-    pub(crate) surface_messages: HashMap<u32, Vec<SurfaceMessage>>,
-    pub(crate) surface_next_message_id: u32,
-    pub(crate) last_key_input: HashMap<u32, std::time::Instant>,
-
-    pub(crate) busy_surfaces: std::collections::HashSet<u32>,
-
-    /// 원격에서 받은 busy 상태. 로컬 폴링이 집합을 교체하므로 별도로 보관한다.
-    pub(crate) mirror_busy_surfaces: std::collections::HashSet<u32>,
-
-    /// busy 전송 후보를 마지막으로 만든 (holder, 값). 송신 성공 기록은 아니다.
-    /// holder도 비교해야 같은 값으로 점유자가 바뀌어도 새 client에 초기 상태를 보낸다.
-    pub(crate) last_forwarded_busy:
-        std::collections::HashMap<u32, (crate::core::attach::AttachClientId, bool)>,
-
-    /// attention 전송 후보의 (holder, kind). None은 해제이며 송신 성공과는 별개다.
-    pub(crate) last_forwarded_attention: std::collections::HashMap<
-        u32,
-        (
-            crate::core::attach::AttachClientId,
-            Option<attention::AttentionKind>,
-        ),
-    >,
-
-    /// 원격 surface의 cwd. 두 호스트의 파일시스템이 달라 로컬 Path로 해석하지 않는다.
-    pub(crate) mirror_surface_cwd: std::collections::HashMap<u32, RemoteCwd>,
-
-    /// cwd 전송 후보의 (holder, 값). 같은 값이어도 holder가 바뀌면 새 후보를 만든다.
-    pub(crate) last_forwarded_cwd:
-        std::collections::HashMap<u32, (crate::core::attach::AttachClientId, Option<String>)>,
-
-    // attention은 여러 알림 원인이 공유하며 알림 패널 항목과는 별도 상태다.
-    pub(crate) attention: attention::AttentionStore,
-
-    // busy 폴링에서 얻은 전경 이름으로 마우스 캡처 제한도 계산한다.
-    pub(crate) mouse_capture_disabled_surfaces: std::collections::HashSet<u32>,
-
-    /// 첫 출력 뒤 OSC 133 경계가 없는 surface에 셸 통합 안내를 고려할 기준 시각.
-    pub(crate) shell_integration_first_output_at:
-        std::collections::HashMap<u32, std::time::Instant>,
-    /// OSC 133 경계를 한 번이라도 받아 안내 대상에서 제외한 surface.
-    pub(crate) shell_integration_boundary_seen: std::collections::HashSet<u32>,
-    /// 안내 요청 이벤트를 이미 보낸 surface. 배너를 보여줬는지는 창 상태가 따로 기록한다.
-    pub(crate) shell_integration_hint_requested: std::collections::HashSet<u32>,
-
-    // 매 프레임 OS 프로세스를 조회하지 않도록 busy 폴링의 전경 이름을 재사용한다.
-    pub(crate) foreground_names: std::collections::HashMap<u32, String>,
-
-    /// 폴링에서 전경 이름이 바뀔 때 올리는 번호. PID나 실제 프로세스 동일성을 판별하는 값은 아니다.
-    pub(crate) foreground_generation: std::collections::HashMap<u32, u64>,
-
     /// "이동"으로 지정한 대상. 종류와 관계없이 하나만 대기하며 새로 지정하면 덮어쓴다. 저장하지 않는다.
     pub(crate) pending_move: Option<PendingMove>,
-
-    /// 공용 설정 파일에서 읽은 Explorer 즐겨찾기. 변경 뒤 저장은 호출자가 요청한다.
-    #[cfg(feature = "gui")]
-    pub(crate) explorer_favorites: crate::core::explorer_favorites::ExplorerFavorites,
-
-    /// 공용 설정 파일에서 읽은 주소·포트 즐겨찾기. 변경 뒤 저장은 호출자가 요청한다.
-    #[cfg(feature = "gui")]
-    pub(crate) port_favorites: crate::core::port_favorites::PortFavorites,
-
-    /// attach 점유는 연결 수명 동안만 유지하며 저장·복원하지 않는다.
-    pub(crate) attach: crate::core::attach::OccupancyRegistry,
-
-    /// 서버의 mesh 구독 상태. 실제 전송은 PluginManager를 가진 GUI·헤드리스 계층이 맡는다.
-    pub(crate) mesh_mirror: crate::core::mesh_mirror::MeshMirrorRegistry,
-
-    /// client가 조립한 mesh frame을 로컬 surface ID로 보관한다. 서버 구독 상태와는 별개다.
-    #[cfg(feature = "gui")]
-    pub(crate) attach_mesh_frames: crate::core::attach_mesh_frames::AttachMeshFrameStore,
-
-    /// IPC가 요청한 GUI attach 대기열. 처리 후 사용자의 선택을 옮기지 않는다.
-    pub(crate) pending_gui_attach: Vec<(u16, u32)>,
-
-    /// 캡처 시점에 정한 mirror workspace. None이면 로컬 클립보드에 기록한다.
-    /// 캡처 도중 포커스가 바뀌어도 업로드 대상은 바뀌지 않는다.
-    #[cfg(feature = "gui")]
-    pub(crate) pending_screenshot_captures: Vec<Option<u32>>,
-
-    /// mirror 이미지 붙여넣기 요청. App이 업로드하고 저장 경로를 미리 정한 surface로 보낸다.
-    #[cfg(feature = "gui")]
-    pub(crate) pending_image_uploads: Vec<PendingImageUpload>,
-
-    /// GUI·헤드리스 attach 서버가 공유하는 캡처 업로드 버퍼.
-    pub(crate) capture_uploads: crate::core::capture_upload::CaptureUploadRegistry,
-
-    /// 전용 bulk 연결의 (client_id, transfer_id)별 메타데이터·바이트 버퍼.
-    pub(crate) bulk_transfers: crate::core::bulk_transfer::BulkTransferRegistry,
-
-    /// 원격 실행 요청과 사용자 선택 보정 태그. anchor는 로컬 ID이며 전송 직전에 원격 ID로 바꾼다.
-    pub(crate) pending_structural_forward: Vec<crate::core::PendingStructuralForward>,
-
-    /// 로컬 mirror ID별 최신 resize 목표. 로컬에 먼저 적용하지 않고 서버 echo를 기다린다.
-    #[cfg(feature = "gui")]
-    pub(crate) pending_resize_forward: std::collections::HashMap<u32, (usize, usize)>,
-
-    /// mirror에서 실제 attention을 지웠을 때의 로컬 ID를 모아 서버에 해제를 요청한다.
-    pub(crate) pending_attention_clear_forward: std::collections::HashSet<u32>,
-
-    /// 원격 디렉터리 조회 요청만 담는다. 응답은 MirrorEvent로 따로 들어온다.
-    #[cfg(feature = "gui")]
-    pub(crate) pending_list_dir_forward: Vec<crate::core::PendingListDirForward>,
-    /// 원격 Git 조회 요청. 응답은 MirrorEvent로 따로 들어온다.
-    #[cfg(feature = "gui")]
-    pub(crate) pending_git_query_forward: Vec<crate::core::PendingGitQueryForward>,
-    /// 원격 markdown 원문 조회 요청. 응답은 MirrorEvent로 따로 들어온다.
-    #[cfg(feature = "gui")]
-    pub(crate) pending_markdown_content_forward: Vec<crate::core::PendingMarkdownContentForward>,
-    /// texture 복구가 필요한 로컬 surface ID. 전송 때 원격 ID로 바꾼다.
-    #[cfg(feature = "gui")]
-    pub(crate) pending_mesh_full_resend_forward: std::collections::HashSet<u32>,
-
-    /// 로컬 mesh surface별 최신 geometry·theme·focus. 같은 surface의 변경은 합친다.
-    #[cfg(feature = "gui")]
-    pub(crate) pending_mesh_context_forward:
-        std::collections::HashMap<u32, AttachMeshContextForward>,
-
-    /// 로컬 mesh surface별 누적 입력. App이 원격으로 보낸다.
-    #[cfg(feature = "gui")]
-    pub(crate) pending_mesh_input_forward:
-        std::collections::HashMap<u32, tasty_plugin_protocol::protocol::RawInputWire>,
-
-    /// 사용자가 직접 확정한 attach는 성공 뒤 새 mirror를 선택할 수 있어 IPC 요청과 분리한다.
-    #[cfg(feature = "gui")]
-    pub(crate) pending_gui_attach_user: Vec<GuiAttachUserReq>,
-
-    /// 대상별 출력 알림을 만드는 인터페이스. 도메인은 winit EventLoopProxy를 직접 보유하지 않는다.
-    pub(crate) waker_factory: Option<crate::waker::SharedWakerFactory>,
-
-    /// surface 종류와 생성·복원 동작의 등록부.
-    pub(crate) surface_registry: Arc<SurfaceKindRegistry>,
-
-    /// 내장 키 외에 plugin이 선언한 hook 키를 검증할 때 사용한다.
-    pub(crate) plugin_hook_events: Arc<crate::core::hook_event_registry::PluginHookEventRegistry>,
-
-    /// 기본·plugin·사용자 파일 형식 등록부. PluginManager와 같은 Arc를 쓴다.
-    pub(crate) file_format: Arc<crate::file::format::FileFormatRegistry>,
-    /// PluginManager와 공유하는 파일 처리기 등록부.
-    pub(crate) file_handler: Arc<crate::file::handler::FileHandlerRegistry>,
-    /// App이 GUI 이벤트 루프를 준비한 뒤 주입하는 파일 식별 worker 인터페이스.
-    #[cfg(feature = "gui")]
-    pub(crate) identify_worker:
-        Option<std::sync::Arc<dyn crate::core::identify_port::IdentifySpawner>>,
 
     pub(crate) layout_dirty: crate::core::layout_persistence::LayoutDirtyTracker,
     /// 복원한 활성 workspace 인덱스. 창 상태를 만들 때 한 번 소비한다.
@@ -405,8 +258,6 @@ pub struct CoreState {
     )]
     pub(crate) input_simulation_enabled: bool,
 
-    /// Core와 공유하는 저장소. engine 내부에서 직접 메타데이터를 기록할 때 쓴다.
-    pub(crate) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
 }
 
 impl CoreState {
@@ -446,15 +297,12 @@ impl CoreState {
     pub(crate) fn new_base(
         cols: usize,
         rows: usize,
-        waker: Waker,
         next_ids: IdGenerator,
         layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
-        memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
         settings: Settings,
     ) -> Self {
         let mut engine = Self {
             committed_structure_revision: None,
-            committed_surface_activations: Default::default(),
             local_workspaces: Vec::new(),
             mirror_workspaces: Vec::new(),
             workspace_display_order: Vec::new(),
@@ -463,91 +311,13 @@ impl CoreState {
             next_ids: next_ids.clone(),
             default_cols: cols,
             default_rows: rows,
-            waker: waker.clone(),
             settings,
             notifications: NotificationStore::with_counter(500, next_ids.notification_counter()),
             closed_items: crate::model::ClosedItemStore::new(),
-            command_index: crate::core::command_index::CommandIndex::new(),
             approval_store: std::sync::Arc::new(tasty_approval::ApprovalStore::new()),
             telemetry_seq: std::sync::Arc::new(tasty_telemetry::TelemetrySeq::new()),
             anomaly_detector: std::sync::Arc::new(tasty_telemetry::AnomalyDetector::new()),
-            surface_messages: HashMap::new(),
-            surface_next_message_id: 0,
-            last_key_input: HashMap::new(),
-            busy_surfaces: std::collections::HashSet::new(),
-            mirror_busy_surfaces: std::collections::HashSet::new(),
-            last_forwarded_busy: std::collections::HashMap::new(),
-            mirror_surface_cwd: std::collections::HashMap::new(),
-            last_forwarded_cwd: std::collections::HashMap::new(),
-            last_forwarded_attention: std::collections::HashMap::new(),
-            attention: attention::AttentionStore::default(),
-            mouse_capture_disabled_surfaces: std::collections::HashSet::new(),
-            shell_integration_first_output_at: std::collections::HashMap::new(),
-            shell_integration_boundary_seen: std::collections::HashSet::new(),
-            shell_integration_hint_requested: std::collections::HashSet::new(),
-            foreground_names: std::collections::HashMap::new(),
-            foreground_generation: std::collections::HashMap::new(),
             pending_move: None,
-            #[cfg(feature = "gui")]
-            explorer_favorites: crate::core::explorer_favorites::ExplorerFavorites::load(),
-            #[cfg(feature = "gui")]
-            port_favorites: crate::core::port_favorites::PortFavorites::load(),
-            attach: crate::core::attach::OccupancyRegistry::new(),
-            mesh_mirror: crate::core::mesh_mirror::MeshMirrorRegistry::default(),
-            #[cfg(feature = "gui")]
-            attach_mesh_frames: crate::core::attach_mesh_frames::AttachMeshFrameStore::default(),
-            pending_gui_attach: Vec::new(),
-            #[cfg(feature = "gui")]
-            pending_screenshot_captures: Vec::new(),
-            #[cfg(feature = "gui")]
-            pending_image_uploads: Vec::new(),
-            capture_uploads: crate::core::capture_upload::CaptureUploadRegistry::new(),
-            bulk_transfers: crate::core::bulk_transfer::BulkTransferRegistry::new(),
-            pending_structural_forward: Vec::new(),
-            #[cfg(feature = "gui")]
-            pending_resize_forward: std::collections::HashMap::new(),
-            #[cfg(feature = "gui")]
-            pending_list_dir_forward: Vec::new(),
-            #[cfg(feature = "gui")]
-            pending_git_query_forward: Vec::new(),
-            #[cfg(feature = "gui")]
-            pending_markdown_content_forward: Vec::new(),
-            #[cfg(feature = "gui")]
-            pending_mesh_full_resend_forward: std::collections::HashSet::new(),
-            pending_attention_clear_forward: std::collections::HashSet::new(),
-            #[cfg(feature = "gui")]
-            pending_mesh_context_forward: std::collections::HashMap::new(),
-            #[cfg(feature = "gui")]
-            pending_mesh_input_forward: std::collections::HashMap::new(),
-            #[cfg(feature = "gui")]
-            pending_gui_attach_user: Vec::new(),
-            waker_factory: None,
-            surface_registry: {
-                let reg = SurfaceKindRegistry::new();
-                crate::core::surface_registry::register_builtin_kinds(&reg);
-                Arc::new(reg)
-            },
-            plugin_hook_events: Arc::new(
-                crate::core::hook_event_registry::PluginHookEventRegistry::new(),
-            ),
-            file_format: {
-                let reg = crate::file::format::FileFormatRegistry::new();
-                reg.install_host_defaults(crate::file::format::HOST_DEFAULTS_TOML);
-                if let Some(path) = file_handler_user_config_path() {
-                    reg.install_user_config(&path);
-                }
-                Arc::new(reg)
-            },
-            file_handler: {
-                let reg = crate::file::handler::FileHandlerRegistry::new();
-                reg.install_host_defaults(crate::file::handler::HOST_DEFAULTS_TOML);
-                if let Some(path) = file_handler_user_config_path() {
-                    reg.install_user_config(&path);
-                }
-                Arc::new(reg)
-            },
-            #[cfg(feature = "gui")]
-            identify_worker: None,
             layout_dirty: crate::core::layout_persistence::LayoutDirtyTracker::new(),
             pending_scrollback_inject: HashMap::new(),
             pending_layout_restore: None,
@@ -562,12 +332,7 @@ impl CoreState {
             layout_slot_preserve_failed: false,
             #[cfg(debug_assertions)]
             input_simulation_enabled: false,
-            memory,
         };
-
-        engine
-            .file_handler
-            .attach_detector_info(engine.file_format.clone());
 
         engine.notifications = NotificationStore::with_counter(
             engine.settings.notification.coalesce_ms,
@@ -575,16 +340,6 @@ impl CoreState {
         );
 
         engine
-    }
-
-    /// 설정과 factory가 있으면 surface별 waker, 아니면 공용 waker를 반환한다.
-    pub fn make_waker(&self, surface_id: u32) -> Waker {
-        if self.settings.performance.targeted_pty_polling
-            && let Some(factory) = &self.waker_factory
-        {
-            return factory.make_targeted_waker(surface_id);
-        }
-        self.waker.clone()
     }
 
     /// 현재 트리에서 복원 항목의 출처 workspace를 찾는다. 트리를 바꾸기 전에 호출해야 한다.
@@ -610,7 +365,7 @@ impl CoreState {
     ) -> crate::close_trace::PushClosedItemTimings {
         let mut timings = crate::close_trace::PushClosedItemTimings::default();
         let origin_workspace = self.origin_workspace_of(&item);
-        let mem = self.memory.clone();
+        let mem = self.runtime.memory.clone();
         let t_inject = std::time::Instant::now();
         crate::model::closed_item::inject_restore_commands(&mut item, &|sid| {
             let mut guard = crate::poison::recover_mutex(
@@ -651,12 +406,12 @@ impl CoreState {
     /// 키보드·IME·붙여넣기의 사용자 입력 시각을 기록한다. 마우스 보고·파일 열기·에이전트 전송은 제외한다.
     #[cfg(feature = "gui")]
     pub fn record_typing(&mut self, surface_id: u32) {
-        self.last_key_input
+        self.live.last_key_input
             .insert(surface_id, std::time::Instant::now());
     }
 
     pub fn is_typing(&self, surface_id: u32) -> bool {
-        if let Some(last) = self.last_key_input.get(&surface_id) {
+        if let Some(last) = self.live.last_key_input.get(&surface_id) {
             last.elapsed().as_secs_f64() < 5.0
         } else {
             false
@@ -675,15 +430,14 @@ impl CoreState {
         params: &serde_json::Value,
     ) -> anyhow::Result<Box<dyn crate::model::Surface>> {
         // 철회된 plugin 종류는 알 수 없는 종류와 구별해 필요한 조치를 안내한다.
-        if let Some(plugin_id) = self.surface_registry.withdrawn_by(kind) {
-            return Err(crate::core::surface_registry::SurfaceKindWithdrawn {
+        if let Some(plugin_id) = self.runtime.surface_registry.withdrawn_by(kind) {
+            return Err(crate::runtime::surface_registry::SurfaceKindWithdrawn {
                 kind: kind.to_string(),
                 plugin_id,
             }
             .into());
         }
-        let def = self
-            .surface_registry
+        let def = self.runtime.surface_registry
             .get_live(kind)
             .ok_or_else(|| anyhow::anyhow!("unknown surface kind: {}", kind))?;
         // 명시한 params가 우선이다. cwd 상속 경로에서 홈으로 바꾸지 않도록 @home은 여기서 해석하지 않는다.
@@ -702,7 +456,7 @@ impl CoreState {
     /// @settings.explorer_view_mode와 전달된 @home을 해석하고 알 수 없는 @ 토큰은 경고 후 건너뛴다.
     pub(crate) fn apply_kind_default_params(
         &self,
-        def: &crate::core::surface_registry::SurfaceKindDef,
+        def: &crate::runtime::surface_registry::SurfaceKindDef,
         params: &mut serde_json::Value,
         home: Option<&std::path::Path>,
     ) -> bool {
@@ -753,11 +507,7 @@ impl CoreState {
     }
 }
 
-fn file_handler_user_config_path() -> Option<std::path::PathBuf> {
-    tasty_utils::path::tasty_home().map(|d| d.join("file-handlers.toml"))
-}
-
-mod attention;
+pub(crate) mod attention;
 mod busy;
 mod category;
 pub mod child_liveness;
@@ -837,7 +587,7 @@ impl EngineRef<'_> {
         presentation: &dyn crate::model::StructurePresentation,
     ) -> Option<crate::model::ClosedItem> {
         let tab = self.find_pane_by_id(pane_id)?.tabs.get(tab_index)?;
-        let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&self.surface_registry);
+        let mut snap_fn = crate::runtime::surface_registry::snapshot_fn_for(&self.runtime.surface_registry);
         let terminals = &self.runtime.terminals;
         crate::model::closed_item::ClosedTab::from_tab(
             tab,
@@ -861,7 +611,7 @@ impl EngineRef<'_> {
         let pane = ws.pane_layout().find_pane(pane_id)?;
         let (direction, ratio, was_first, sibling_pane_id) =
             ws.pane_layout().locate_split_context(pane_id)?;
-        let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&self.surface_registry);
+        let mut snap_fn = crate::runtime::surface_registry::snapshot_fn_for(&self.runtime.surface_registry);
         let terminals = &self.runtime.terminals;
         Some(crate::model::ClosedItem::from_pane(
             pane,
@@ -1045,8 +795,8 @@ mod engine_creation_failure_tests {
         s
     }
 
-    fn registry() -> std::sync::Arc<crate::core::agent::runner_thread::RunnerRegistry> {
-        std::sync::Arc::new(crate::core::agent::runner_thread::RunnerRegistry::new())
+    fn registry() -> std::sync::Arc<crate::runtime::agent::runner_thread::RunnerRegistry> {
+        std::sync::Arc::new(crate::runtime::agent::runner_thread::RunnerRegistry::new())
     }
 
     fn in_memory() -> std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> {

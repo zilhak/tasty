@@ -33,7 +33,7 @@ pub use preset::ClonedPreset;
 pub use crate::core::origin::UserSource;
 pub use crate::core::origin::{AgentSource, IntentOrigin};
 
-/// Core::apply의 오류를 처리한다. mirror 구조 변경 차단과 철회된 kind 오류는
+/// AppServices::apply의 오류를 처리한다. mirror 구조 변경 차단과 철회된 kind 오류는
 /// 사용자 요청일 때만 토스트로 알리고, 에이전트 요청은 로그로 남긴다.
 /// 그 밖의 오류는 warn으로 기록한다. label은 로그에서 작업을 구분하는 이름이다.
 /// 원격으로 전달한 에이전트 요청에는 실패 회신도 로그만 남기도록 표시한다.
@@ -45,9 +45,9 @@ pub fn report_apply_error(
     label: &str,
     err: &anyhow::Error,
 ) {
-    crate::core::mark_last_forward_user_triggered(engine, err, origin);
-    crate::core::mark_last_forward_agent_origin(engine, err, origin);
-    if let Some(blocked) = err.downcast_ref::<crate::core::MirrorStructuralBlocked>() {
+    crate::app::services::mark_last_forward_user_triggered(engine, err, origin);
+    crate::app::services::mark_last_forward_agent_origin(engine, err, origin);
+    if let Some(blocked) = err.downcast_ref::<crate::app::services::MirrorStructuralBlocked>() {
         // 원격에 전달한 요청은 회신에서 실패를 처리하므로 여기서는 토스트를 띄우지 않는다.
         if blocked.forwarded {
             return;
@@ -63,7 +63,7 @@ pub fn report_apply_error(
             crate::model::toast_kind::ToastScope::Window,
         );
     } else if let Some(withdrawn) =
-        err.downcast_ref::<crate::core::surface_registry::SurfaceKindWithdrawn>()
+        err.downcast_ref::<crate::runtime::surface_registry::SurfaceKindWithdrawn>()
     {
         report_withdrawn_kind(state, origin, label, err, withdrawn);
     } else {
@@ -78,7 +78,7 @@ fn report_withdrawn_kind(
     origin: &IntentOrigin,
     label: &str,
     err: &anyhow::Error,
-    withdrawn: &crate::core::surface_registry::SurfaceKindWithdrawn,
+    withdrawn: &crate::runtime::surface_registry::SurfaceKindWithdrawn,
 ) {
     if !origin.is_user() {
         tracing::warn!("{label} failed (agent origin, no toast): {err}");
@@ -125,8 +125,8 @@ pub struct DispatchedIntent {
 #[allow(clippy::large_enum_variant)] // reason: 명령마다 Box를 할당하는 비용을 피한다
 pub enum Intent {
     Ui(UiIntent),
-    /// 도메인 명령도 같은 큐에 넣고 Core::apply로 전달한다.
-    Domain(crate::core::intent::DomainIntent),
+    /// 도메인 명령도 같은 큐에 넣고 AppServices::apply로 전달한다.
+    Domain(crate::app::command::DomainIntent),
 
     /// 사용자 요청일 때만 적용 후 포커스를 옮긴다.
     ApplyPreset {
@@ -259,7 +259,7 @@ impl UiIntent {
 }
 
 // 시스템 요청용 빌더는 DomainIntent에만 둔다.
-impl crate::core::intent::DomainIntent {
+impl crate::app::command::DomainIntent {
     #[cfg(feature = "gui")]
     pub(crate) fn from_user_shortcut(self, id: &'static str) -> DispatchedIntent {
         Intent::Domain(self).from_user_shortcut(id)

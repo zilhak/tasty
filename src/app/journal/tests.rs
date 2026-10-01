@@ -15,12 +15,12 @@ fn application_bootstrap_commits_default_structure_before_installing_its_real_pt
     .unwrap();
     crate::surface_meta::SurfaceMetaStore::set(
         &mut *memory.lock().unwrap(),
-        crate::core::terminal_store::PTY_ID_BASE + 4,
+        crate::runtime::terminal_store::PTY_ID_BASE + 4,
         "restore.command",
         "PTY-SPACE",
     )
     .unwrap();
-    let runners = Arc::new(crate::core::agent::runner_thread::RunnerRegistry::new());
+    let runners = Arc::new(crate::runtime::agent::runner_thread::RunnerRegistry::new());
     let mut settings = crate::settings::Settings::default();
     settings.general.shell = "/bin/sh".into();
     settings.general.startup_command = "printf 'BOOTSTRAP-%s\\n' JOURNAL; exec sleep 60".into();
@@ -93,7 +93,7 @@ fn failed_metadata_scope_read_rejects_bootstrap_instead_of_reserving_from_zero()
     let memory = Arc::new(std::sync::Mutex::new(
         tasty_memory::MemoryStore::open(&path).unwrap(),
     ));
-    let runners = Arc::new(crate::core::agent::runner_thread::RunnerRegistry::new());
+    let runners = Arc::new(crate::runtime::agent::runner_thread::RunnerRegistry::new());
     let session = EngineSession::for_journal(
         80,
         24,

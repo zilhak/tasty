@@ -23,7 +23,7 @@ use super::command_executor::Executed;
 pub(crate) use binding::{BoundEngine, EngineBinding, EngineSelection};
 pub(crate) use decider::StreamCommand;
 pub(crate) use preparation::{ClaimedPreparation, EffectLease, PreparationInput, ShellRecipe};
-pub(crate) use response::{ResponsePlan, ResponseProgress};
+pub(crate) use response::{CompletionView,ResponsePlan, ResponseProgress};
 
 const QUEUE_CAPACITY: usize = 64;
 const MAX_REQUEST_BYTES: usize =
@@ -74,7 +74,7 @@ pub(crate) enum Work {
     },
     CleanupFinished {
         lease: EffectLease,
-        mirror_count: usize,
+        view:CompletionView,
     },
     PreparationUncertain {lease:EffectLease,reason:String},
     CancelAdmission,
@@ -347,10 +347,7 @@ pub(crate) fn request_size(work: &Work) -> usize {
         Work::InstallationRejected { lease, reason } | Work::PreparationUncertain {lease,reason} => {
             serde_json::to_vec(&(lease, reason)).map_or(usize::MAX, |bytes| bytes.len())
         }
-        Work::CleanupFinished {
-            lease,
-            mirror_count,
-        } => serde_json::to_vec(&(lease, mirror_count)).map_or(usize::MAX, |bytes| bytes.len()),
+        Work::CleanupFinished {lease,view} => serde_json::to_vec(&(lease,view)).map_or(usize::MAX, |bytes| bytes.len()),
         Work::CancelAdmission => 0,
     }
 }

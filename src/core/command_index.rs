@@ -93,7 +93,7 @@ impl CommandIndex {
         phase: char,
         payload: &str,
     ) -> Option<CommandCapEvent> {
-        if !crate::core::terminal_store::is_surface_id_space(surface_id) {
+        if !crate::runtime::terminal_store::is_surface_id_space(surface_id) {
             return None;
         }
         let now = unix_ms_now();
@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn headless_pty_ids_are_not_indexed() {
-        use crate::core::terminal_store::PTY_ID_BASE;
+        use crate::runtime::terminal_store::PTY_ID_BASE;
         use std::sync::{Arc, Mutex};
         use tasty_memory::MemoryStore;
 

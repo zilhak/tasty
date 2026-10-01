@@ -42,7 +42,7 @@ impl App {
             // 설정 변경은 다음 Intent 처리에서 적용한다. MainView가 없으면 요청을 넣지 못하고 경고만 남긴다.
             if let Some(main) = self.main_windows_iter_mut().next() {
                 main.state.dispatch_intent(
-                    crate::core::intent::DomainIntent::UpdateSettings(new_settings)
+                    crate::app::command::DomainIntent::UpdateSettings(new_settings)
                         .from_user_menu("settings_save"),
                 );
             } else {

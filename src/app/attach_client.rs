@@ -7,7 +7,7 @@ mod dispatch;
 #[cfg(test)]
 mod navigation_tests;
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use dispatch::{AttachSource, Outcome, dispatch_attach};
 
 use std::collections::{HashMap, HashSet};
@@ -304,7 +304,7 @@ impl App {
     pub(crate) fn dispatch_pending_gui_attach(&mut self) {
         let mut reqs: Vec<(u16, u32)> = Vec::new();
         for mut engine in self.engines_mut().windows_and_pending() {
-            reqs.append(&mut engine.pending_gui_attach);
+            reqs.append(&mut engine.remote.pending_gui_attach);
         }
         for (port, workspace) in reqs {
             self.try_dispatch_one_gui_attach_ipc(port, workspace);
@@ -313,7 +313,7 @@ impl App {
         // 사용자 요청만 성공 후 포커스를 이동한다. IPC 요청과 큐를 나눈다.
         let mut user_reqs: Vec<crate::core::GuiAttachUserReq> = Vec::new();
         for mut engine in self.engines_mut().windows_and_pending() {
-            user_reqs.append(&mut engine.pending_gui_attach_user);
+            user_reqs.append(&mut engine.remote.pending_gui_attach_user);
         }
         for req in user_reqs {
             self.try_dispatch_one_gui_attach_user(req);
@@ -521,7 +521,7 @@ impl App {
             }
             // 옛 연결의 mesh 캐시와 구독 기록을 비워 full texture를 다시 요청한다.
             for &local in mapping.mesh.keys() {
-                engine.attach_mesh_frames.remove(local);
+                engine.remote.attach_mesh_frames.remove(local);
                 main.attach_mesh_input.remove(&local);
             }
             let new_markdown = mapping.markdown_ids();
@@ -881,9 +881,9 @@ impl App {
 
     /// 로컬 구조 변경 큐를 원격으로 보내며 결과는 회신과 delta로 적용한다.
     pub(crate) fn dispatch_pending_structural_forwards(&mut self) {
-        let mut pending: Vec<crate::core::PendingStructuralForward> = Vec::new();
+        let mut pending: Vec<crate::app::services::PendingStructuralForward> = Vec::new();
         for mut engine in self.engines_mut().windows_and_pending() {
-            pending.append(&mut engine.pending_structural_forward);
+            pending.append(&mut engine.remote.pending_structural_forward);
         }
         for local_op in pending {
             self.forward_one_structural_op(local_op);
@@ -891,8 +891,8 @@ impl App {
     }
 
     /// 사용자 요청의 포커스 의도도 op_id별로 기록한다. 닫기 후보는 원격 ID로 변환한다.
-    fn forward_one_structural_op(&mut self, pending: crate::core::PendingStructuralForward) {
-        let crate::core::PendingStructuralForward {
+    fn forward_one_structural_op(&mut self, pending: crate::app::services::PendingStructuralForward) {
+        let crate::app::services::PendingStructuralForward {
             op: local_op,
             user_triggered,
             close_focus_candidates,
@@ -931,7 +931,7 @@ impl App {
     pub(crate) fn dispatch_pending_resize_forwards(&mut self) {
         let mut pending: Vec<(u32, usize, usize)> = Vec::new();
         for mut engine in self.engines_mut().windows_and_pending() {
-            for (sid, (cols, rows)) in engine.pending_resize_forward.drain() {
+            for (sid, (cols, rows)) in engine.remote.pending_resize_forward.drain() {
                 pending.push((sid, cols, rows));
             }
         }
@@ -968,7 +968,7 @@ impl App {
     pub(crate) fn dispatch_pending_list_dir_forwards(&mut self) {
         let mut pending: Vec<crate::core::PendingListDirForward> = Vec::new();
         for mut engine in self.engines_mut().windows_and_pending() {
-            pending.append(&mut engine.pending_list_dir_forward);
+            pending.append(&mut engine.remote.pending_list_dir_forward);
         }
         for req in pending {
             if let Err(e) =
@@ -987,7 +987,7 @@ impl App {
     pub(crate) fn dispatch_pending_git_query_forwards(&mut self) {
         let mut pending: Vec<crate::core::PendingGitQueryForward> = Vec::new();
         for mut engine in self.engines_mut().windows_and_pending() {
-            pending.append(&mut engine.pending_git_query_forward);
+            pending.append(&mut engine.remote.pending_git_query_forward);
         }
         for req in pending {
             let send_result = self.send_git_query_request(
@@ -1012,7 +1012,7 @@ impl App {
     pub(crate) fn dispatch_pending_markdown_content_forwards(&mut self) {
         let mut pending: Vec<crate::core::PendingMarkdownContentForward> = Vec::new();
         for mut engine in self.engines_mut().windows_and_pending() {
-            pending.append(&mut engine.pending_markdown_content_forward);
+            pending.append(&mut engine.remote.pending_markdown_content_forward);
         }
         for req in pending {
             if let Err(e) = self.send_markdown_content_request(&req) {
@@ -1088,7 +1088,7 @@ impl App {
     pub(crate) fn dispatch_pending_mesh_context_forwards(&mut self) {
         let mut pending: Vec<(u32, crate::core::AttachMeshContextForward)> = Vec::new();
         for mut engine in self.engines_mut().windows_and_pending() {
-            pending.extend(engine.pending_mesh_context_forward.drain());
+            pending.extend(engine.remote.pending_mesh_context_forward.drain());
         }
         for (local_sid, ctx) in pending {
             self.forward_one_mesh_context(local_sid, ctx);
@@ -1124,7 +1124,7 @@ impl App {
     pub(crate) fn dispatch_pending_mesh_input_forwards(&mut self) {
         let mut pending: Vec<(u32, tasty_plugin_protocol::protocol::RawInputWire)> = Vec::new();
         for mut engine in self.engines_mut().windows_and_pending() {
-            pending.extend(engine.pending_mesh_input_forward.drain());
+            pending.extend(engine.remote.pending_mesh_input_forward.drain());
         }
         for (local_sid, input) in pending {
             self.forward_one_mesh_input(local_sid, input);
@@ -1157,7 +1157,7 @@ impl App {
     pub(crate) fn dispatch_pending_mesh_full_resend_forwards(&mut self) {
         let mut pending: Vec<u32> = Vec::new();
         for mut engine in self.engines_mut().windows_and_pending() {
-            pending.extend(engine.pending_mesh_full_resend_forward.drain());
+            pending.extend(engine.remote.pending_mesh_full_resend_forward.drain());
         }
         for local_sid in pending {
             self.forward_one_mesh_full_resend_request(local_sid);
@@ -1168,7 +1168,7 @@ impl App {
     pub(crate) fn dispatch_pending_attention_clear_forwards(&mut self) {
         let mut pending: Vec<u32> = Vec::new();
         for mut engine in self.engines_mut().windows_and_pending() {
-            pending.extend(engine.pending_attention_clear_forward.drain());
+            pending.extend(engine.remote.pending_attention_clear_forward.drain());
         }
         for local_sid in pending {
             self.forward_one_attention_clear(local_sid);
@@ -1366,9 +1366,9 @@ fn remove_mirror_workspace_from_engine(
         engine.forget_mirror_surface_busy(local);
         engine.forget_mirror_surface_attention(local);
         engine.forget_mirror_surface_cwd(local);
-        engine.attach_mesh_frames.remove(local);
+        engine.remote.attach_mesh_frames.remove(local);
         // 로컬 닫기 정리와 같이 soft 점유 등 이 surface의 점유 기록을 지운다.
-        engine.attach.forget_closed_surface(local);
+        engine.forget_closed_surface(local);
     }
     engine.remove_workspace_at(pos);
     state.reconcile_presentation(engine);
@@ -1826,6 +1826,7 @@ fn merge_survivor_mapping(
             Some(l) => {
                 // ID가 같아도 kind가 바뀌면 옛 자원은 정리한다. markdown destroy는 호출자가 맡는다.
                 if old_kind != Some(new_kind) {
+                    engine.runtime.surfaces.remove(&l);
                     if old_kind == Some("terminal") {
                         engine.runtime.terminals.remove(l);
                         engine.forget_mirror_surface_busy(l);
@@ -1833,7 +1834,7 @@ fn merge_survivor_mapping(
                     // cwd는 terminal뿐 아니라 explorer·markdown에도 있어 이전 kind와 함께 지운다.
                     engine.forget_mirror_surface_cwd(l);
                     // 새 frame이 올 때까지 이전 kind의 화면을 그리지 않게 한다.
-                    engine.attach_mesh_frames.remove(l);
+                    engine.remote.attach_mesh_frames.remove(l);
                     if is_terminal {
                         let cols = s.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
                         let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
@@ -1887,33 +1888,45 @@ fn merge_survivor_mapping(
                 .unwrap_or_default();
             explorer_locals.insert(local_id, root);
         } else if new_kind == MARKDOWN_MIRROR_KIND {
-            let reused = (old_kind == Some(MARKDOWN_MIRROR_KIND))
-                .then(|| share_mirror_markdown_surface(engine, local_id))
-                .flatten();
-            if let Some(surface) =
-                reused.or_else(|| create_mirror_markdown_surface(s, local_id, engine))
-            {
-                markdown_locals.insert(local_id, surface);
+            if old_kind == Some(MARKDOWN_MIRROR_KIND) {
+                markdown_locals.insert(local_id, MARKDOWN_MIRROR_KIND.to_string());
+            } else if let Some(surface) = create_mirror_markdown_surface(s, local_id, engine.core) {
+                markdown_locals.insert(local_id, surface.kind().to_string());
+                engine.runtime.surfaces.insert(local_id, surface);
             }
         } else if role == Some("markdown")
-            && !engine.surface_registry.contains(MARKDOWN_MIRROR_KIND)
+            && !engine.runtime.surface_registry.contains(MARKDOWN_MIRROR_KIND)
         {
             // kind 등록을 기다렸다가 표시 시 실제화한다. 다른 플러그인이 같은 이름을
             // 이미 등록했으면 허용된 소유자가 아니므로 placeholder로 기다리지 않는다.
-            markdown_locals.insert(local_id, deferred_mirror_markdown_surface(s, local_id));
+            let surface=deferred_mirror_markdown_surface(s,local_id);
+            markdown_locals.insert(local_id,surface.kind().to_string());
+            engine.runtime.surfaces.insert(local_id,surface);
+        }
+        // The descriptor tree never owns or clones a kind instance. Keep survivors in
+        // the existing runtime collection, replacing only instances changed by the server.
+        if is_terminal {
+            engine.runtime.surfaces.entry(local_id).or_insert_with(||Box::new(TerminalSurface{id:local_id}));
+        } else if let Some(info)=mesh_locals.get(&local_id) {
+            engine.runtime.surfaces.insert(local_id,Box::new(crate::model::AttachMeshSurface::new(local_id,&info.kind,info.plugin_id.clone(),info.display_name.clone())));
+        } else if let Some(root)=explorer_locals.get(&local_id) {
+            engine.runtime.surfaces.insert(local_id,Box::new(ExplorerPanel::new(local_id,root.clone())));
+        } else if !markdown_locals.contains_key(&local_id) {
+            engine.runtime.surfaces.insert(local_id,Box::new(EmptySurface::new(local_id)));
         }
         new_map.insert(remote_id, local_id);
     }
 
     for (&remote_id, &local_id) in old_map.iter() {
         if !new_map.contains_key(&remote_id) {
+            engine.runtime.surfaces.remove(&local_id);
             engine.runtime.terminals.remove(local_id);
             engine.forget_mirror_surface_busy(local_id);
             engine.forget_mirror_surface_attention(local_id);
             engine.forget_mirror_surface_cwd(local_id);
-            engine.attach_mesh_frames.remove(local_id);
+            engine.remote.attach_mesh_frames.remove(local_id);
             // 원격이 닫은 surface도 로컬 닫기처럼 soft 점유 등 점유 기록을 남기지 않는다.
-            engine.attach.forget_closed_surface(local_id);
+            engine.forget_closed_surface(local_id);
         }
     }
 
@@ -1927,7 +1940,13 @@ fn merge_survivor_mapping(
     }
 }
 
-type MirrorMarkdownLeaves = HashMap<u32, Box<dyn Surface>>;
+fn install_mirror_fallbacks(workspace:&Workspace, engine:&mut EngineMut<'_>) {
+    for id in workspace.all_surface_ids() {
+        engine.runtime.surfaces.entry(id).or_insert_with(||Box::new(EmptySurface::new(id)));
+    }
+}
+
+type MirrorMarkdownLeaves = HashMap<u32, String>;
 
 struct SurvivorMapping {
     remote_to_local: HashMap<u32, u32>,
@@ -1947,26 +1966,14 @@ impl SurvivorMapping {
 
 /// kind가 허용된 markdown 플러그인에 등록됐는지 확인한다.
 fn markdown_mirror_available(engine: &crate::core::CoreState) -> bool {
-    engine
-        .surface_registry
+    engine.runtime.surface_registry
         .get_live(MARKDOWN_MIRROR_KIND)
         .is_some_and(|def| {
             matches!(
                 &def.source,
-                crate::core::surface_registry::KindSource::Plugin(p) if p == MARKDOWN_PLUGIN_ID
+                crate::runtime::surface_registry::KindSource::Plugin(p) if p == MARKDOWN_PLUGIN_ID
             )
         })
-}
-
-fn share_mirror_markdown_surface(
-    engine: &crate::core::CoreState,
-    local_id: u32,
-) -> Option<Box<dyn Surface>> {
-    let rs = engine
-        .find_surface_by_id(local_id)?
-        .as_any()
-        .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()?;
-    Some(Box::new(rs.share_handles()))
 }
 
 /// 원격 경로는 remote.file로 전달한다. file을 쓰면 플러그인이 로컬 경로로 읽는다.
@@ -2275,7 +2282,7 @@ fn apply_one_mirror_event(
         MirrorEvent::Mesh(remote_id, generation, frame_seq, full, bytes) => {
             if let Some(&local) = sess.remote_to_local.get(&remote_id) {
                 host.engine
-                    .attach_mesh_frames
+                    .remote.attach_mesh_frames
                     .update(local, bytes, generation, frame_seq, full);
             }
         }
@@ -2636,7 +2643,7 @@ fn build_pane_from_json(
             },
             markdown,
         )
-        .unwrap_or_else(|| SurfaceLayout::Leaf(Box::new(EmptySurface::new(ids.next_surface()))));
+        .unwrap_or_else(|| SurfaceLayout::Leaf(crate::model::SurfaceDescriptor::new(ids.next_surface(),"empty")));
         let remote_focus = t
             .get("focused_surface")
             .and_then(|v| v.as_u64())
@@ -2679,7 +2686,7 @@ fn build_pane_from_json(
             id: ids.next_tab(),
             name: crate::i18n::t("attach.tab_title_fallback").to_string(),
             explicit_name: None,
-            layout_opt: Some(SurfaceLayout::Leaf(Box::new(EmptySurface::new(sid)))),
+            layout_opt: Some(SurfaceLayout::Leaf(crate::model::SurfaceDescriptor::new(sid,"empty"))),
             surface_titles: Default::default(),
         });
     }
@@ -2909,24 +2916,12 @@ fn build_layout(
                 .get(&remote)
                 .copied()
                 .unwrap_or_else(|| ids.next_surface());
-            let surface: Box<dyn Surface> = if term.contains(&local) {
-                Box::new(TerminalSurface { id: local })
-            } else if let Some(info) = mesh.get(&local) {
-                Box::new(crate::model::AttachMeshSurface::new(
-                    local,
-                    &info.kind,
-                    info.plugin_id.clone(),
-                    info.display_name.clone(),
-                ))
-            } else if let Some(root) = explorer.get(&local) {
-                // 원격 explorer의 경로는 wire에 있는 root를 사용한다.
-                Box::new(ExplorerPanel::new(local, root.clone()))
-            } else if let Some(surface) = markdown.remove(&local) {
-                surface
-            } else {
-                Box::new(EmptySurface::new(local))
-            };
-            Some(SurfaceLayout::Leaf(surface))
+            let kind = if term.contains(&local) {"terminal"}
+                else if let Some(info)=mesh.get(&local) {info.kind.as_str()}
+                else if explorer.contains_key(&local) {"explorer"}
+                else if let Some(kind)=markdown.get(&local) {kind.as_str()}
+                else {"empty"};
+            Some(SurfaceLayout::Leaf(crate::model::SurfaceDescriptor::new(local,kind)))
         }
         "Split" => {
             let direction = match node.get("direction").and_then(|v| v.as_str()) {
@@ -3456,13 +3451,13 @@ mod tests {
 
     #[test]
     fn an_agent_close_is_forwarded_with_the_agent_origin() {
-        let queued = |user_triggered| crate::core::PendingStructuralForward {
+        let queued = |user_triggered| crate::app::services::PendingStructuralForward {
             op: tasty_ipc::stream::StructuralOp::CloseSurface { surface_id: 9 },
             user_triggered,
             close_focus_candidates: Vec::new(),
             silent_failure: false,
         };
-        let origin_on_wire = |p: crate::core::PendingStructuralForward| {
+        let origin_on_wire = |p: crate::app::services::PendingStructuralForward| {
             let payload = structural_op_payload(3, p.op, p.user_triggered);
             let v: serde_json::Value = serde_json::from_slice(&payload).expect("json");
             assert_eq!(v["event"], "structural_op");
@@ -3498,7 +3493,7 @@ mod tests {
         engine.set_mirror_surface_busy(local_surface, true);
         engine.set_mirror_surface_cwd(local_surface, Some("/srv/remote".to_string()));
         engine
-            .attach_mesh_frames
+            .remote.attach_mesh_frames
             .update(local_surface, vec![1, 2, 3], 0, 0, true);
         state.set_active_workspace_index(&engine, engine.workspaces().len() - 1);
 
@@ -3520,11 +3515,11 @@ mod tests {
             "mirror busy 엔트리 제거"
         );
         assert!(
-            engine.attach_mesh_frames.get(local_surface).is_none(),
+            engine.remote.attach_mesh_frames.get(local_surface).is_none(),
             "mesh 프레임 캐시 제거"
         );
         assert!(
-            engine.mirror_surface_cwd.is_empty(),
+            engine.remote.mirror_surface_cwd.is_empty(),
             "mirror cwd 엔트리 제거"
         );
         assert_eq!(
@@ -3624,7 +3619,7 @@ mod tests {
                 .insert(local_surface, Terminal::new_detached(80, 24), None);
             engine.set_mirror_surface_busy(local_surface, true);
             engine
-                .attach_mesh_frames
+                .remote.attach_mesh_frames
                 .update(local_surface, vec![1, 2, 3], 0, 0, true);
             state.set_active_workspace_index(engine.core, engine.workspaces().len() - 1);
         }
@@ -3646,7 +3641,7 @@ mod tests {
             "mirror busy 엔트리 제거"
         );
         assert!(
-            engine.attach_mesh_frames.get(local_surface).is_none(),
+            engine.remote.attach_mesh_frames.get(local_surface).is_none(),
             "mesh 프레임 캐시 제거"
         );
         assert_eq!(
@@ -4474,7 +4469,7 @@ mod tests {
             "최초 terminal survivor 는 Terminal 을 만들어야 한다"
         );
         engine
-            .attach_mesh_frames
+            .remote.attach_mesh_frames
             .update(local_10, vec![1, 2, 3], 1, 1, true);
 
         // 다음 병합이 이전 kind를 조회할 수 있도록 먼저 실제 트리에 반영한다.
@@ -4537,7 +4532,7 @@ mod tests {
             "옛 Terminal 객체는 즉시 제거돼야 한다"
         );
         assert!(
-            engine.attach_mesh_frames.get(local_10).is_none(),
+            engine.remote.attach_mesh_frames.get(local_10).is_none(),
             "옛(terminal 시절의 무의미한) mesh frame 캐시도 제거돼야 한다"
         );
     }
@@ -4571,7 +4566,7 @@ mod tests {
         let m2 = merge_survivor_mapping(&m1.remote_to_local, &[], &ids, &frame_tx, &mut engine);
         assert!(m2.remote_to_local.is_empty());
         assert!(
-            engine.attach.occupancy_of(local_10).is_none(),
+            engine.live.occupancy.occupancy_of(local_10).is_none(),
             "원격이 닫은 surface 의 soft 점유가 남았다"
         );
     }
@@ -4584,12 +4579,12 @@ mod tests {
             .workspace_at(0)
             .expect("workspace index is valid")
             .all_surface_ids()[0];
-        let event = crate::core::apply_create_workspace_inner(
+        let event = crate::app::services::apply_create_workspace_inner(
             &mut engine,
-            crate::core::WorkspaceCreationParams::terminal(),
+            crate::app::services::WorkspaceCreationParams::terminal(),
         )
         .expect("workspace 생성");
-        let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
+        let crate::app::command::CoreEvent::WorkspaceCreated { index, .. } = event else {
             panic!("expected WorkspaceCreated");
         };
         engine.make_mirror_fixture(index);
@@ -4611,7 +4606,7 @@ mod tests {
             &map
         ));
         assert!(
-            engine.attach.occupancy_of(local).is_none(),
+            engine.live.occupancy.occupancy_of(local).is_none(),
             "정리된 mirror surface 의 soft 점유가 남았다"
         );
     }
@@ -4690,7 +4685,7 @@ mod tests {
         assert!(new2.is_empty(), "survivor 는 신규 취급되면 안 된다");
         assert!(term2.contains(&local_20));
         assert!(
-            !engine.mirror_surface_cwd.contains_key(&local_20),
+            !engine.remote.mirror_surface_cwd.contains_key(&local_20),
             "kind 전환은 비-terminal 출발이어도 옛 cwd 를 버린다"
         );
         assert!(
@@ -4756,7 +4751,7 @@ mod tests {
             );
         }
         assert!(
-            engine.mirror_surface_cwd.is_empty(),
+            engine.remote.mirror_surface_cwd.is_empty(),
             "null push 는 옛 원격 경로를 남기지 않는다"
         );
     }
@@ -4835,7 +4830,7 @@ mod tests {
         sess.frame_tx = Arc::new(Mutex::new(tx));
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
 
-        let read = |engine: &crate::core::engine_access::EngineRef<'_>, expect: Option<String>| {
+        let read = |engine: &crate::runtime::engine_access::EngineRef<'_>, expect: Option<String>| {
             engine
                 .runtime
                 .terminals
@@ -5068,7 +5063,7 @@ mod tests {
             .expect("test SurfaceKindDecl");
         let (tx, rx) = std::sync::mpsc::channel();
         crate::plugin_bridge::remote_kind::register_remote_kind(
-            &engine.surface_registry,
+            &engine.runtime.surface_registry,
             plugin_id,
             &decl,
             tx,

@@ -16,6 +16,10 @@ pub(crate) struct PendingWindow {
 impl App {
     pub(crate) fn poll_journal_application(&mut self) {
         self.capture_published_input_targets();
+        let projections:Vec<_>=self.engines().window_pairs().filter_map(|(window,main,engine)|self.engines.of_window(window).map(|id|(id,crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&main.state.navigation)))).collect();
+        for (id,presentation) in projections {
+            if let Some(session)=self.engines.session_mut(id) {self.journal.update_completion_view(id,&session.core_state,&presentation);}
+        }
         let mut sessions: Vec<_> = self.engines.all_sessions_mut().collect();
         if let Err(error) = self.journal.poll_bootstrap(&mut sessions) {
             tracing::error!("journal publication halted: {error}");

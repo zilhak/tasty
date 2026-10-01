@@ -24,7 +24,7 @@ struct Target {
 fn resolve_target(state: &MainViewState, engine: &crate::core::CoreState) -> Option<Target> {
     let ws_id = state.dialogs.pending_force_detach_workspace?;
     let ws = engine.workspaces().into_iter().find(|w| w.id == ws_id)?;
-    engine.attach.workspace_holder(ws_id)?;
+    engine.live.occupancy.workspace_holder(ws_id)?;
     Some(Target {
         name: ws.name.clone(),
     })
@@ -81,7 +81,7 @@ pub fn on_close_confirm_force_detach_workspace(
 pub fn draw_confirm_force_detach_workspace(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     let ctx = ui.ctx().clone();
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -164,7 +164,7 @@ pub(crate) fn apply_force_detach(
     let holder = state
         .dialogs
         .pending_force_detach_workspace
-        .and_then(|ws_id| engine.attach.force_detach_workspace(ws_id));
+        .and_then(|ws_id| engine.force_detach_workspace(ws_id));
     if holder.is_none() {
         tracing::debug!("force_detach_workspace: nothing to detach");
     }

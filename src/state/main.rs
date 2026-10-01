@@ -137,7 +137,7 @@ pub struct MainViewState {
     /// 넓은 패널의 빈 여백과 구분해 가장자리 리사이즈가 우선권을 양보할지 판단한다.
     #[cfg(feature = "gui")]
     pub(crate) resize_edge_widget_hovered: bool,
-    /// Core와 공유하는 프리셋 저장소 Arc. GUI 팝업이 읽으며 IPC는 Core 쪽 핸들을 사용한다.
+    /// Core와 공유하는 프리셋 저장소 Arc. GUI 팝업이 읽으며 IPC는 AppServices 쪽 핸들을 사용한다.
     #[cfg_attr(
         not(feature = "gui"),
         expect(

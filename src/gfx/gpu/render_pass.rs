@@ -1,4 +1,4 @@
-use crate::core::engine_access::EngineRef;
+use crate::runtime::engine_access::EngineRef;
 use crate::model::PhysicalRect;
 use crate::plugin::PluginManager;
 use crate::renderer::RenderPreedit;
@@ -75,7 +75,7 @@ impl GpuState {
         for (_pane_id, _pane_rect, surface_regions) in regions {
             for region in surface_regions {
                 // hard 점유 surface는 서버가 보관한 읽기 전용 mirror를 그린다.
-                let is_readonly = engine.attach.is_hard_occupied(region.id);
+                let is_readonly = engine.live.occupancy.is_hard_occupied(region.id);
                 // 첫 attach 뷰 tick 전이면 mirror 가 아직 없다 — 다음 tick 에 채워진다.
                 let Some(terminal) = engine.visible_terminal(region.id) else {
                     continue;

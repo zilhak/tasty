@@ -294,7 +294,7 @@ fn handle(
                         changes,
                         effect_result: None,
                         cancellation: None,
-                        completion_mirrors: None,
+                        completion_view: None,
                         original_results: Default::default(),
                     },
                 })
@@ -383,10 +383,7 @@ fn handle(
         Work::Prepared { lease, result } => effects::prepared(executor, lease, result),
         Work::InstallationRejected { lease, reason } => effects::rejected(executor, lease, reason),
         Work::PreparationUncertain {lease,reason}=>effects::uncertain(executor,lease,reason),
-        Work::CleanupFinished {
-            lease,
-            mirror_count,
-        } => effects::cleaned(executor, lease, mirror_count),
+        Work::CleanupFinished {lease,view}=>effects::cleaned(executor,lease,view),
         Work::CancelAdmission => {
             if pending.remove(&ticket).is_none() {
                 for p in pending.values_mut() {

@@ -2,7 +2,7 @@
 
 use crate::adapters::ipc::handler::params;
 use crate::app::App;
-use crate::core::engine_access::EngineRef;
+use crate::runtime::engine_access::EngineRef;
 use crate::ipc::server::{IpcCommand, send_response};
 
 impl App {
@@ -14,7 +14,7 @@ impl App {
         if engines().next().is_none() {
             send_response(
                 &cmd.response_tx,
-                crate::core::app_surface::no_application_state(rpc_id),
+                crate::app::services::surface::no_application_state(rpc_id),
             );
             return;
         }
@@ -33,7 +33,7 @@ impl App {
             return;
         };
         crate::ipc::handler::agent::task::spawn_task_await(
-            self.core.tasks.awaiter(engine.task_scope),
+            self.services.tasks.awaiter(engine.task_scope),
             rpc_id,
             cmd.request.params.clone(),
             &cmd.response_tx,
@@ -71,7 +71,7 @@ mod tests {
         engine_session
     }
 
-    fn ready_task(core: &crate::core::Core, engine: &EngineRef<'_>, workspace_id: u32) -> String {
+    fn ready_task(core: &crate::app::services::AppServices, engine: &EngineRef<'_>, workspace_id: u32) -> String {
         let opts = TaskCreateOpts {
             workspace_id,
             name: "t".to_string(),

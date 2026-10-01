@@ -75,13 +75,13 @@ impl App {
         let mut tool_registry_dirty = false;
         while let Some(cmd) = round.next(self.hub.ipc_server.as_deref()) {
             let observed =
-                crate::app::ipc_round::CommandObservation::begin(self.core.pressure(), &cmd);
+                crate::app::ipc_round::CommandObservation::begin(self.services.pressure(), &cmd);
             let step = self.ipc_dispatch_command(cmd);
-            observed.finish(self.core.slow_requests());
+            observed.finish(self.services.slow_requests());
             match step {
                 #[cfg(debug_assertions)]
                 IpcStep::Shutdown => {
-                    let end = round.finish(self.core.pressure(), self.core.dispatch());
+                    let end = round.finish(self.services.pressure(), self.services.dispatch());
                     self.ipc_pacer.round_ended(std::time::Instant::now(), end);
                     return true;
                 }
@@ -93,7 +93,7 @@ impl App {
                 IpcStep::NotHandled => {}
             }
         }
-        let end = round.finish(self.core.pressure(), self.core.dispatch());
+        let end = round.finish(self.services.pressure(), self.services.dispatch());
         self.ipc_pacer.round_ended(std::time::Instant::now(), end);
         if tool_registry_dirty {
             self.refresh_tool_registry();
@@ -105,7 +105,7 @@ impl App {
     /// 명령을 각 단계에 전달하고 처리·재집계·종료 여부를 반환한다. 일부 응답은 비동기로 이어진다.
     fn ipc_dispatch_command(&mut self, cmd: crate::ipc::server::IpcCommand) -> IpcStep {
         // 큐 대기와 handler 시간을 따로 기록한다. 대기 중 기한이 지났으면 게이트 전에 거절한다.
-        if !crate::app::ipc_round::claim_or_answer(&cmd, self.core.dispatch()) {
+        if !crate::app::ipc_round::claim_or_answer(&cmd, self.services.dispatch()) {
             return IpcStep::Handled;
         }
         let caller = match self.ipc_resolve_caller(&cmd) {

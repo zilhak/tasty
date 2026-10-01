@@ -6,7 +6,7 @@ use crate::adapters::ui::popup::PopupManager;
 use crate::adapters::ui::popup::file_picker::FILE_PICKER_POPUP_ID;
 use crate::adapters::ui::popup::{PopupScope, defs};
 use crate::app::dispatch::plugin_popup_events::cancel_child_file_picker;
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::state::{
     FilePickerData, FilePickerRequester, FilePickerResult, FpLoadState, RequestContext,
 };
@@ -217,12 +217,12 @@ fn scope_hidden_popup_is_not_the_escape_candidate() {
 }
 
 pub(super) fn push_workspace(engine: &mut EngineMut<'_>) -> u32 {
-    let event = crate::core::apply_create_workspace_inner(
+    let event = crate::app::services::apply_create_workspace_inner(
         engine,
-        crate::core::WorkspaceCreationParams::terminal(),
+        crate::app::services::WorkspaceCreationParams::terminal(),
     )
     .expect("create workspace");
-    let crate::core::intent::CoreEvent::WorkspaceCreated { id, .. } = event else {
+    let crate::app::command::CoreEvent::WorkspaceCreated { id, .. } = event else {
         panic!("apply_create_workspace_inner must return WorkspaceCreated");
     };
     id
@@ -285,7 +285,7 @@ fn tab_scoped_popup_follows_its_tab_after_reorder() {
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
     core.apply(
         &mut engine,
-        crate::core::intent::DomainIntent::MoveTab {
+        crate::app::command::DomainIntent::MoveTab {
             pane_id,
             tab_id: second,
             to_index: 0,

@@ -4,14 +4,14 @@ use crate::adapters::ipc::handler::params::{self, p_try};
 use serde_json::{Value, json};
 use tasty_memory::cache as cache_mod;
 
-use crate::core::Core;
+use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::{entry_to_json, map_error, parse_value, require_str, require_workspace_id};
 
 pub fn handle_cache_put(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -45,7 +45,7 @@ pub fn handle_cache_put(
 }
 
 pub fn handle_cache_get(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -67,7 +67,7 @@ pub fn handle_cache_get(
 }
 
 pub fn handle_cache_invalidate(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -89,7 +89,7 @@ pub fn handle_cache_invalidate(
 }
 
 pub fn handle_cache_clear(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -107,7 +107,7 @@ pub fn handle_cache_clear(
 }
 
 pub fn handle_cache_list(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,

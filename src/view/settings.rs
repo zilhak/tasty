@@ -178,7 +178,7 @@ impl View for SettingsView {
                 self.mark_dirty();
             }
             WindowEvent::ModifiersChanged(modifiers) => {
-                self.base.modifiers = modifiers.state();
+                self.base.state.modifiers = modifiers.state();
             }
             WindowEvent::Focused(focused) => {
                 // MainView 와 **별개 인스턴스**의 detector 라 여기서도 따로 지운다.
@@ -204,7 +204,7 @@ impl View for SettingsView {
                     && crate::adapters::ui::input::shortcuts::matches_any_binding(
                         &self.settings.keybindings.toggle_settings,
                         &event.logical_key,
-                        self.base.modifiers,
+                        self.base.state.modifiers,
                     )
                 {
                     self.should_close = true;
@@ -225,9 +225,9 @@ impl View for SettingsView {
                 // 필수 규칙(capture_winit_key_combo)으로 분기.
                 if is_recording {
                     let combo = if self.settings_ui_state.recording_is_bare_key() {
-                        crate::settings_ui::capture_bare_key(event, self.base.modifiers)
+                        crate::settings_ui::capture_bare_key(event, self.base.state.modifiers)
                     } else {
-                        crate::settings_ui::capture_winit_key_combo(event, self.base.modifiers)
+                        crate::settings_ui::capture_winit_key_combo(event, self.base.state.modifiers)
                     };
                     if !matches!(combo, crate::settings_ui::KeyCapture::None) {
                         self.settings_ui_state.captured_winit_combo = Some(combo);
@@ -246,7 +246,7 @@ impl View for SettingsView {
     }
 
     fn render(&mut self) {
-        if !self.base.dirty {
+        if !self.base.state.dirty {
             return;
         }
         self.base.begin_frame();
@@ -316,7 +316,7 @@ impl View for SettingsView {
 
         self.reveal_after_first_render();
 
-        if self.base.dirty {
+        if self.base.state.dirty {
             self.base.winit.request_redraw();
         }
     }

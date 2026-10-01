@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use winit::window::WindowId;
 
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use crate::runtime::engine_session::{EngineId, EngineSession};
 use crate::state::MainViewState;
 

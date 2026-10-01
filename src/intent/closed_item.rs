@@ -4,14 +4,14 @@
 //! 상세 규칙: docs/adr/0023-attach-state-sync-and-forwarding.md.
 
 use super::{DispatchedIntent, Intent};
-use crate::core::Core;
-use crate::core::engine_access::EngineMut;
+use crate::app::services::AppServices;
+use crate::runtime::engine_access::EngineMut;
 use crate::state::RequestContext;
 
 /// Surface·Tab·Pane을 복원할 워크스페이스가 없으면 먼저 만든다.
 /// Workspace 복원은 자체적으로 워크스페이스를 만들므로 제외한다.
 fn ensure_workspace_for_restore(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
 ) {
@@ -32,7 +32,7 @@ fn ensure_workspace_for_restore(
 }
 
 pub fn handle(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     intent: &DispatchedIntent,
@@ -42,15 +42,15 @@ pub fn handle(
     }
     ensure_workspace_for_restore(core, state, engine);
     let target_pane_id = state.focused_pane(engine).map(|p| p.id);
-    let domain_intent = crate::core::intent::DomainIntent::RestoreClosedItem {
+    let domain_intent = crate::app::command::DomainIntent::RestoreClosedItem {
         target_pane_id,
-        scope: crate::core::intent::RestoreScope::Local,
+        scope: crate::app::command::RestoreScope::Local,
     };
     let events = match crate::app::structural_exec::execute(core, state, engine, domain_intent) {
         Ok(e) => e,
         Err(e) => {
             // 사용자 요청임을 전달해야 원격 복원 결과에 맞춰 포커스도 옮긴다.
-            crate::core::mark_last_forward_user_triggered(engine, &e, &intent.origin);
+            crate::app::services::mark_last_forward_user_triggered(engine, &e, &intent.origin);
             crate::intent::report_apply_error(
                 state,
                 engine,
@@ -62,7 +62,7 @@ pub fn handle(
         }
     };
     for ev in events {
-        if let crate::core::intent::CoreEvent::ClosedItemRestored {
+        if let crate::app::command::CoreEvent::ClosedItemRestored {
             restored,
             kind,
             presentation,

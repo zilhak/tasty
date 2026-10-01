@@ -158,7 +158,7 @@ fn local_tab_reorder_keeps_the_fixed_tab_identity_between_queued_moves() {
         assert!(journal.admit_metadata_intent(
             session.id,
             &session.core_state,
-            &crate::core::intent::DomainIntent::MoveTab {
+            &crate::app::command::DomainIntent::MoveTab {
                 pane_id,
                 tab_id,
                 to_index: 1

@@ -2,7 +2,7 @@
 //! 보이는 surface만 다음 조회 시각을 내보내고 호스트가 나머지 타이머를 취소한다.
 //! 레이아웃 캐시는 ID·엣지·방향·치수를 비교하며 task 상태만 바뀌면 좌표를 유지한다.
 
-use crate::core::engine_access::EngineRef;
+use crate::runtime::engine_access::EngineRef;
 use std::collections::HashMap;
 use std::hash::{Hash as _, Hasher as _};
 use std::time::{Duration, Instant};
@@ -324,8 +324,8 @@ fn fetch(
 ) -> Result<DagData, String> {
     use tasty_agent::{TaskGraph, group_tasks_into_dags};
 
-    let tasks = crate::core::agent::task::task_list_from_state(
-        &engine.memory,
+    let tasks = crate::runtime::agent::task::task_list_from_state(
+        &engine.runtime.memory,
         engine.task_scope,
         workspace_id,
     )

@@ -50,7 +50,7 @@ impl App {
             return;
         }
 
-        self.pending_settings_macos_permissions_tab = true;
+        self.state.pending_settings_macos_permissions_tab = true;
         crate::shortcuts::send_app_event(&self.view.proxy, crate::AppEvent::OpenSettings);
     }
 }

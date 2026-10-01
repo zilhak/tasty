@@ -2,10 +2,10 @@
 
 use super::*;
 use crate::adapters::ipc::handler::params::{self, p_try};
-use crate::core::Core;
+use crate::app::services::AppServices;
 
 pub fn handle_cancel(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -91,7 +91,7 @@ pub(crate) fn spawn_approval_await(
 }
 
 pub fn handle_get(
-    _core: &Core,
+    _core: &AppServices,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -110,7 +110,7 @@ pub fn handle_get(
 /// `approval.list` — 전체 record. 필터: `state` (pending|responded|timed_out|cancelled|terminal),
 /// `workspace_id`.
 pub fn handle_list(
-    _core: &Core,
+    _core: &AppServices,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -151,7 +151,7 @@ pub fn handle_list(
 ///
 /// 응답: `{ entries: [...], count, returned }`.
 pub fn handle_history(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,

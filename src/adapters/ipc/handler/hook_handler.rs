@@ -10,7 +10,7 @@
 
 use serde_json::json;
 
-use crate::core::Core;
+use crate::app::services::AppServices;
 use crate::hook_handler::{
     self, HookHandlerAction, HookHandlerId, HookShellEnv, HookSource, IpcCall, SequenceOrigin,
     SubstitutionContext, UserHookHandlerActionDecl, UserHookHandlerUpsertDecl, build_env,
@@ -69,7 +69,7 @@ pub fn handle_reload(id: serde_json::Value) -> JsonRpcResponse {
 /// 응답은 접수 여부만 나타낸다. 대기 한도 초과나 실행기 부재로 넘기지 못하면 오류로 답한다.
 /// 비활성 핸들러는 거절한다.
 pub fn handle_dispatch(
-    core: &Core,
+    core: &AppServices,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

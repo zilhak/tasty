@@ -10,7 +10,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
 use crate::adapters::ui::icons::{self, Icon};
-use crate::core::surface_registry::{
+use crate::runtime::surface_registry::{
     PresetFieldInput, PresetFieldSpec, PresetFieldTarget, SurfaceKindRegistry,
 };
 use crate::i18n::t;

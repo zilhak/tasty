@@ -3,9 +3,9 @@ use std::sync::Arc;
 use tasty_terminal::Terminal;
 
 use super::EngineSession;
-use crate::core::agent::event_feed::AgentEvent;
-use crate::core::agent::task_waker::TerminalSnapshot;
-use crate::core::output_observer::{ObserverSpec, SinkSpec};
+use crate::runtime::agent::event_feed::AgentEvent;
+use crate::runtime::agent::task_waker::TerminalSnapshot;
+use crate::runtime::output_observer::{ObserverSpec, SinkSpec};
 
 fn session() -> EngineSession {
     EngineSession::new(80, 24, Arc::new(|| {})).expect("isolated session")
@@ -65,7 +65,7 @@ fn session_drop_joins_observer_and_preserves_external_task_handles() {
         .workspace_at(0)
         .expect("workspace index is valid")
         .all_surface_ids()[0];
-    let memory = Arc::clone(&owner.core_state.memory);
+    let memory = Arc::clone(&owner.core_state.runtime.memory);
     let hub = Arc::clone(owner.task_scope.waker_hub());
     let feed = Arc::clone(owner.task_scope.event_queue());
     let observer = owner

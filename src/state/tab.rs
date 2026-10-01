@@ -1,5 +1,5 @@
 #[cfg(any(feature = "gui", test))]
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 #[cfg(any(feature = "gui", test))]
 use serde_json::Value;
 #[cfg(all(test, feature = "gui"))]
@@ -33,9 +33,9 @@ impl RequestContext {
         let rows = engine.default_rows;
         let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let waker = engine.make_waker(surface_id);
-        let (terminal, pty) = crate::core::terminal_spawn::spawn_shell_terminal(
+        let (terminal, pty) = crate::runtime::terminal_spawn::spawn_shell_terminal(
             surface_id,
-            crate::core::terminal_spawn::ShellSpawnOpts {
+            crate::runtime::terminal_spawn::ShellSpawnOpts {
                 cols,
                 rows,
                 shell: sh.shell_ref(),
@@ -86,10 +86,10 @@ impl RequestContext {
         let cwd = self.resolve_inherit_cwd(&engine.as_ref());
         let surface =
             engine.create_surface_via_registry(kind, surface_id, cwd.as_deref(), params)?;
-        let name = crate::core::surface_registry::default_tab_name_for_kind(
+        let name = crate::runtime::surface_registry::default_tab_name_for_kind(
             kind,
             params,
-            engine.surface_registry.get(kind).as_deref(),
+            engine.runtime.surface_registry.get(kind).as_deref(),
         );
         if let Some(pane) = self.focused_pane_mut(engine) {
             pane.add_surface_tab(tab_id, name, None, surface);
@@ -132,10 +132,10 @@ impl RequestContext {
         let cwd = self.resolve_inherit_cwd(&engine.as_ref());
         let surface =
             engine.create_surface_via_registry(kind, surface_id, cwd.as_deref(), params)?;
-        let name = crate::core::surface_registry::default_tab_name_for_kind(
+        let name = crate::runtime::surface_registry::default_tab_name_for_kind(
             kind,
             params,
-            engine.surface_registry.get(kind).as_deref(),
+            engine.runtime.surface_registry.get(kind).as_deref(),
         );
         let ws = self.active_workspace_mut(engine);
         if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
@@ -266,7 +266,7 @@ impl RequestContext {
                 .find_pane(pane_id)
                 && let Some(tab) = pane.tabs.get(tab_index)
             {
-                crate::core::impl_close::collect_close_targets(tab, &engine.as_ref(), &mut t);
+                crate::app::services::impl_close::collect_close_targets(tab, &engine.as_ref(), &mut t);
             }
             t.into_iter().map(|(sid, _)| sid).collect()
         };
@@ -285,14 +285,14 @@ impl RequestContext {
         self.close_tab_through_core(engine, tab_id)
     }
 
-    /// Core 탭 닫기로 트리를 바꾸고 복원 기록을 남긴 뒤 창 쪽 정리와 알림을 이어서 한다.
+    /// AppServices 탭 닫기로 트리를 바꾸고 복원 기록을 남긴 뒤 창 쪽 정리와 알림을 이어서 한다.
     #[cfg(any(feature = "gui", test))]
     fn close_tab_through_core(&mut self, engine: &mut EngineMut<'_>, tab_id: u32) -> bool {
-        let crate::core::intent::CoreEvent::TabClosed {
+        let crate::app::command::CoreEvent::TabClosed {
             closed,
             cleanup_targets,
             ..
-        } = crate::core::Core::close_tab_recording(engine, tab_id, Some(&self.navigation))
+        } = crate::app::services::AppServices::close_tab_recording(engine, tab_id, Some(&self.navigation))
         else {
             return false;
         };
@@ -329,7 +329,7 @@ impl RequestContext {
             if let Some(pane) = self.focused_pane(engine)
                 && let Some(tab) = pane.tabs.get(self.navigation.tab_index(pane))
             {
-                crate::core::impl_close::collect_close_targets(tab, &engine.as_ref(), &mut t);
+                crate::app::services::impl_close::collect_close_targets(tab, &engine.as_ref(), &mut t);
             }
             t.into_iter().map(|(sid, _)| sid).collect()
         };

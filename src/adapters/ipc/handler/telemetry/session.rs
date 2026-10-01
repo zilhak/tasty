@@ -9,12 +9,12 @@ use tasty_memory::{ListOpts, MemoryValue, Scope};
 use super::query::{QueryFilter, collect_events};
 use tasty_telemetry::{ANOMALY_KEY_PREFIX, Anomaly};
 
-use crate::core::Core;
+use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 pub fn handle_session_summary(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -77,7 +77,7 @@ pub(super) struct ApprovalCounts {
 }
 
 pub(super) fn build_session_summary(
-    core: &Core,
+    core: &AppServices,
     workspace_id: Option<u32>,
     since: Option<u64>,
     until: Option<u64>,
@@ -134,7 +134,7 @@ pub(super) fn build_session_summary(
 }
 
 pub(super) fn collect_approvals(
-    core: &Core,
+    core: &AppServices,
     workspace_filter: Option<u32>,
     since: Option<u64>,
     until: Option<u64>,
@@ -193,7 +193,7 @@ pub(super) fn collect_approvals(
 }
 
 pub(super) fn collect_anomalies(
-    core: &Core,
+    core: &AppServices,
     since: Option<u64>,
     until: Option<u64>,
 ) -> std::result::Result<Vec<Anomaly>, String> {

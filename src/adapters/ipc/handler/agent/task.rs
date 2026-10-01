@@ -1,11 +1,11 @@
 use std::collections::BTreeSet;
 
 use crate::adapters::ipc::handler::params::{self, p_try};
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use serde_json::{Value, json};
 
-use crate::core::Core;
-use crate::core::agent::graph_view::{collect_graph_edges, on_failure_kind, task_command_kind};
+use crate::app::services::AppServices;
+use crate::runtime::agent::graph_view::{collect_graph_edges, on_failure_kind, task_command_kind};
 use tasty_agent::task::{TaskCreateOpts, TaskDeleteOpts, TaskPurgeFilter};
 use tasty_agent::{
     AgentError, DispatchHandle, OnFailure, PollSpecRef, ReducerStrategy, Task, TaskCommand,
@@ -18,7 +18,7 @@ use super::super::memory::mark_durability;
 use super::{agent_err_to_response, escape_dot, now_ms, task_id_param, workspace_id_param};
 
 pub fn handle_task_create(
-    core: &Core,
+    core: &AppServices,
     engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
@@ -136,7 +136,7 @@ fn validate_task_output_refs(
     depends_on: &[TaskId],
     on_failure: &OnFailure,
 ) -> Result<(), String> {
-    use crate::core::agent::task_output_ref;
+    use crate::runtime::agent::task_output_ref;
 
     let mut available: BTreeSet<&str> = depends_on.iter().map(String::as_str).collect();
     if let TaskCommand::Reduce { inputs, .. } = command {
@@ -224,7 +224,7 @@ fn retain_by_state(tasks: &mut Vec<Task>, states: Option<&[String]>) {
 }
 
 pub fn handle_task_list(
-    core: &Core,
+    core: &AppServices,
     engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
@@ -255,11 +255,11 @@ pub fn handle_task_list(
 /// 러너가 꺼져 있어도 저장소를 조회해 실제 작업 수를 반환한다.
 /// 조회 실패 시 카운트는 0이 아니라 null이며 store_error에 원인이 담긴다.
 /// list_failures는 러너의 연속 조회 실패 횟수다. 스레드가 살아 있어도 작업이 진행되지 않을 수 있다.
-fn runner_status_json(core: &Core, engine: &EngineRef<'_>, workspace_id: u32) -> Value {
+fn runner_status_json(core: &AppServices, engine: &EngineRef<'_>, workspace_id: u32) -> Value {
     runner_status_value(&core.tasks.runner_status(engine.task_scope, workspace_id))
 }
 
-fn runner_status_value(status: &crate::core::agent::runner_thread::RunnerStatus) -> Value {
+fn runner_status_value(status: &crate::runtime::agent::runner_thread::RunnerStatus) -> Value {
     json!({
         "running": status.running,
         "crashed": status.crashed,
@@ -272,7 +272,7 @@ fn runner_status_value(status: &crate::core::agent::runner_thread::RunnerStatus)
 
 /// AwaitExternal은 상태만 보면 Running이므로 대기 중인 신호와 기한을 함께 반환한다.
 fn awaiting_external_json(
-    core: &Core,
+    core: &AppServices,
     engine: &EngineRef<'_>,
     workspace_id: u32,
     task_id: &str,
@@ -293,7 +293,7 @@ fn awaiting_external_json(
 }
 
 pub fn handle_task_get(
-    core: &Core,
+    core: &AppServices,
     engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
@@ -329,7 +329,7 @@ pub fn handle_task_get(
 }
 
 pub fn handle_task_cancel(
-    core: &Core,
+    core: &AppServices,
     engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
@@ -362,7 +362,7 @@ pub fn handle_task_cancel(
 }
 
 pub fn handle_task_retry(
-    core: &Core,
+    core: &AppServices,
     engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
@@ -403,11 +403,11 @@ pub fn handle_task_retry(
 pub const DEFAULT_TASK_AWAIT_TIMEOUT_MS: u64 = 600_000;
 
 pub fn await_task_blocking(
-    awaiter: &crate::core::task_service::TaskAwaiter,
+    awaiter: &crate::runtime::task_service::TaskAwaiter,
     rpc_id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    use crate::core::agent::task_waker::AwaitOutcome;
+    use crate::runtime::agent::task_waker::AwaitOutcome;
 
     let workspace_id = match workspace_id_param(params, &rpc_id) {
         Ok(w) => w,
@@ -460,7 +460,7 @@ pub(crate) fn unowned_await_workspace(rpc_id: Value, workspace_id: u32) -> JsonR
 /// 메인 루프를 막지 않도록 워커에서 완료를 기다린다.
 /// GUI와 헤드리스의 engine 선택 방식이 달라, 호출자가 소유 engine의 대기 계약을 먼저 고른다.
 pub(crate) fn spawn_task_await(
-    awaiter: crate::core::task_service::TaskAwaiter,
+    awaiter: crate::runtime::task_service::TaskAwaiter,
     rpc_id: Value,
     params: Value,
     response_tx: &std::sync::mpsc::SyncSender<JsonRpcResponse>,
@@ -538,7 +538,7 @@ fn render_graph_edges(tasks: &[Task]) -> Vec<Value> {
 }
 
 pub fn handle_task_graph(
-    core: &Core,
+    core: &AppServices,
     engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
@@ -605,7 +605,7 @@ fn dag_summary_json(dag: &tasty_agent::DagSummary, include_tasks: bool) -> Value
 }
 
 pub fn handle_dag_list(
-    core: &Core,
+    core: &AppServices,
     engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
@@ -622,7 +622,7 @@ pub fn handle_dag_list(
 
     match core.tasks.dag_list(
         engine.task_scope,
-        &crate::core::agent::task::dag_scan_workspaces(engine, workspace_id),
+        &crate::runtime::agent::task::dag_scan_workspaces(engine, workspace_id),
     ) {
         Err(e) => agent_err_to_response(id, e),
         Ok(dags) => {
@@ -654,7 +654,7 @@ fn subset_cycle(tasks: &[Task]) -> Option<AgentError> {
 }
 
 pub fn handle_dag_get(
-    core: &Core,
+    core: &AppServices,
     engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
@@ -676,7 +676,7 @@ pub fn handle_dag_get(
 
     let (dag, tasks) = match core.tasks.dag_get(
         engine.task_scope,
-        &crate::core::agent::task::dag_scan_workspaces(engine, workspace_id),
+        &crate::runtime::agent::task::dag_scan_workspaces(engine, workspace_id),
         &dag_id,
     ) {
         Err(e) => return agent_err_to_response(id, e),
@@ -716,7 +716,7 @@ pub fn handle_dag_get(
 }
 
 pub fn handle_task_reduce(
-    core: &Core,
+    core: &AppServices,
     engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
@@ -772,7 +772,7 @@ pub fn handle_task_reduce(
 /// workspace 러너를 시작·중지하거나 상태를 조회한다. 이미 시작/중지된 경우는 그대로 둔다.
 /// 상태 조회 실패 시 카운트는 null이고 store_error에 원인을 담는다.
 pub fn handle_task_run(
-    core: &Core,
+    core: &AppServices,
     engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
@@ -807,7 +807,7 @@ pub fn handle_task_run(
 
 /// 외부에서 작업 결과를 보고하는 진입점. 러너는 이 IPC 대신 RunnerContext로 저장소를 직접 갱신한다.
 pub fn handle_task_set_result(
-    core: &Core,
+    core: &AppServices,
     engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
@@ -887,7 +887,7 @@ pub fn handle_task_set_result(
 /// 참조가 있으면 거절하고 error.data.referenced_by에 참조자를 반환한다.
 /// cascade는 참조자를 함께 지우고 force는 참조 검사만 생략한다. Running 삭제는 항상 거절한다.
 pub fn handle_task_delete(
-    core: &Core,
+    core: &AppServices,
     engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
@@ -936,7 +936,7 @@ fn purge_filter_from_params(params: &Value, now_ms: u64) -> Result<TaskPurgeFilt
 /// 상태·경과시간 필터로 고른 작업 중 참조 검사와 Running 제외 조건을 만족하는 것만 지운다.
 /// 두 필터를 모두 생략하면 거절한다. dry_run은 deleted/retained 계획만 반환한다.
 pub fn handle_task_purge(
-    core: &Core,
+    core: &AppServices,
     engine: &mut EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
@@ -1178,7 +1178,7 @@ mod poll_strategy_ref_tests {
 #[cfg(test)]
 mod graph_edge_tests {
     use super::*;
-    use crate::core::agent::graph_view::GraphEdge;
+    use crate::runtime::agent::graph_view::GraphEdge;
 
     fn task(id: &str, name: &str, state: TaskState) -> Task {
         Task {

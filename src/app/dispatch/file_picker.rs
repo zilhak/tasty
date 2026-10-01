@@ -2,7 +2,7 @@
 //! 요청한 플러그인이 있으면 확정·취소 결과도 전달한다.
 
 use crate::app::App;
-use crate::core::intent::DomainIntent;
+use crate::app::command::DomainIntent;
 use crate::state::{FilePickerRequester, FilePickerResult};
 use crate::view::ui::View;
 
@@ -23,7 +23,7 @@ impl App {
             })
             .collect();
         for id in pending {
-            let core = &mut self.core;
+            let core = &mut self.services;
             let plugin_manager = self.plugin_manager.as_mut();
             let Some(main) = self.view.views.get_mut(&id).and_then(|w| w.as_main_mut()) else {
                 continue;
@@ -105,7 +105,7 @@ fn emit_file_picker_result(
 
 /// 원격 파일을 내려받지 않고 선택한 경로만 복사한다.
 fn apply_remote_confirm(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     state: &mut crate::state::MainViewState,
     paths: &[String],
 ) {

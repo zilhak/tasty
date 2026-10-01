@@ -1,7 +1,7 @@
 //! workspace.created의 window_id는 발행 시점에 그 workspace를 가진 창이며, 없으면 0이다.
 //! 쌓인 사건에는 window_id가 없고, 발행 경로는 created_window로만 payload 값을 만들 수 있다.
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use winit::window::WindowId;
 
 use super::workspace::created_window;

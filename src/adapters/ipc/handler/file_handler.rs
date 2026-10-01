@@ -9,13 +9,13 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::core::Core;
+use crate::app::services::AppServices;
 #[cfg(feature = "gui")]
 use crate::file::format::{DetectDepth, FileTarget};
 use tasty_ipc::protocol::JsonRpcResponse;
 
 pub fn handle_reload(
-    core: &Core,
+    core: &AppServices,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -33,8 +33,7 @@ pub fn handle_reload(
 /// detector를 ID 순으로 반환한다. 병합 결과와 출처별 원본을 함께 보여준다.
 /// contributions는 설치 순서이며 병합 우선순위가 아니다. rules는 사용자 설정과 같은 키를 쓴다.
 pub fn handle_detectors(engine: &crate::core::CoreState, id: serde_json::Value) -> JsonRpcResponse {
-    let detectors: Vec<serde_json::Value> = engine
-        .file_format
+    let detectors: Vec<serde_json::Value> = engine.runtime.file_format
         .detector_snapshots()
         .iter()
         .map(detector_json)
@@ -180,7 +179,7 @@ pub fn handle_dispatch(
         req.origin_surface_id,
         req.user_navigation_url.as_deref(),
     );
-    let intent = crate::core::intent::DomainIntent::DispatchFile {
+    let intent = crate::app::command::DomainIntent::DispatchFile {
         target,
         depth,
         origin_surface_id: req.origin_surface_id,

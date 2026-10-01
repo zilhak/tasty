@@ -123,6 +123,12 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 
 CoreState의 로컬 트리는 `local_workspaces`, 원격 mirror 트리는 `mirror_workspaces`에 별도로 있다. 렌더·입력·IPC는 빌린 합성 목록을 조회하고 로컬 저장·digest는 로컬 목록만 읽는다. 혼합 표시 순서는 비영속 projection으로 관리한다([ADR-0061](../adr/0061-external-remote-module-and-attach-sync.md)).
 
+앱 진행 값은 `app::state::AppState`, 공유 저장소·OS port·작업 실행 서비스는 `app::services::AppServices`가 소유한다. 부팅 phase와 복원 요청값은 `BootProgress`, OS 창·GPU·engine worker receiver는 `BootResources`로 분리한다. 열린 View와 engine 연결 관계는 기존 registry가 원본이며 AppState에 ID 목록을 복제하지 않는다.
+
+`SurfaceLayout::Leaf`는 ID·kind·확정 activation을 가진 `SurfaceDescriptor`다. 실행 kind 객체는 `EngineRuntime.surfaces` 한 컬렉션에 있고 Terminal/Pty 원본은 같은 engine의 TerminalStore에 있다. runtime kind registry·waker·파일 처리기 등록부와 생성자 파일 I/O도 EngineRuntime에 속한다. `LiveDomainState`는 점유·busy·attention·입력/출력 관측을 담으며, 점유 값 변경 자체는 전송하지 않는다. Remote 모듈이 허브와 전송 큐를 맡고 로컬 readonly Terminal 표시는 EngineRuntime에 남는다. 외부 client session·SSH transport의 통합과 전체 producer/소비자 이행은 아직 완료되지 않았다.
+
+공통 `ViewState`는 focus·modifiers·dirty/repaint·닫기 요청과 View 수명 식별자를 가지며 OS 창·GPU는 ViewBase 자원이다. 구조 생성의 사용자 선택 continuation은 원래 View 수명과 선택 세대가 유지될 때만 적용하고 저장/replay 대상에는 넣지 않는다. View 이벤트 문맥에는 engine 수명 owner 전체 대신 실행에 필요한 대여를 전달한다. View의 구조 후처리와 기존 직접 writer 제거는 이어지는 전환 범위다.
+
 `tasty-domain`은 순수 구조 판단과 재구성 모델을 구현한다. 연결된 bootstrap·복원 경로의 원본은 worker의 JournalModel이며, CoreState에는 확정 batch의 live projection을 적용한다. 일반 구조 writer의 전환은 진행 중이므로 전체 engine 활성화 완료를 뜻하지 않는다. 의존 방향은 `tasty-domain` → `tasty-model`이고 `tasty-event-store`에는 의존하지 않는다. 두 크레이트를 연결하는 것은 본 바이너리의 runtime 모듈이다.
 
 - 엔진별 구조 stream: journal 하나에 엔진마다 구조 stream이 하나 있고 이름은 `structure:` 접두로 시작한다. 이 접두가 없는 stream은 구조 이벤트로 해석하지 않는다.

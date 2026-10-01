@@ -3,7 +3,7 @@
 //! 그릴 때 스크롤 ID를 저장하고 on_close에서 임시 상태를 지운다.
 
 use super::StageAction;
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 
 pub(crate) use crate::fullscreen_stages::NOTIFICATIONS_STAGE_ID;
 

@@ -89,7 +89,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 /// 읽기 전용 진단 조회. engine에서는 주입된 스트림 허브를 얻는다.
 pub(super) fn handle_system_pressure(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -105,7 +105,7 @@ pub(super) fn handle_system_pressure(
         core.memory_init_fallback(),
         state_db.as_ref(),
     );
-    body["stream_push"] = stream_push_json(engine.attach.notifier().map(|hub| hub.loss()));
+    body["stream_push"] = stream_push_json(engine.remote.notifier().map(|hub| hub.loss()));
     // 큐 상태는 IPC 주입기가 가진 입장 기록에서 읽는다. 서버가 없으면 null이다.
     let ledger = core
         .host_ipc_injector
@@ -633,7 +633,7 @@ mod tests {
         assert_eq!(m["pragmas"]["journal_mode"]["took"], true);
     }
 
-    // 실제 Core 계측을 읽는지 확인한다. 새 기본값을 만들어 반환하면 실패해야 한다.
+    // 실제 AppServices 계측을 읽는지 확인한다. 새 기본값을 만들어 반환하면 실패해야 한다.
     #[test]
     fn the_connection_block_reads_the_gauge_the_core_hands_to_the_server() {
         let _home = crate::test_support::TastyHomeGuard::new();
@@ -662,7 +662,7 @@ mod tests {
             &crate::ipc::caller::CallerContext::Local,
         );
         let c = resp.result.expect("result")["connections"].clone();
-        assert_eq!(c["live"], 1, "핸들러가 Core 의 게이지를 읽어야 한다");
+        assert_eq!(c["live"], 1, "핸들러가 AppServices 의 게이지를 읽어야 한다");
         assert_eq!(c["live_max"], 2);
         assert_eq!(c["accepted"], 2);
         assert_eq!(
@@ -683,7 +683,7 @@ mod tests {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         let hub = StreamHub::new();
-        engine.attach.set_notifier(hub.clone());
+        engine.remote.set_notifier(hub.clone());
 
         let id = hub.alloc_id();
         let rx = hub.register(id);
@@ -854,9 +854,9 @@ mod tests {
         core.dispatch()
             .record_round(tasty_ipc::dispatch::RoundEnd::TimeBudget);
 
-        let call = |core: &mut crate::core::Core,
+        let call = |core: &mut crate::app::services::AppServices,
                     state: &mut crate::state::RequestContext,
-                    engine: &mut crate::core::engine_access::EngineMut<'_>,
+                    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
                     method: &str,
                     params: serde_json::Value,
                     key: Option<&str>| {

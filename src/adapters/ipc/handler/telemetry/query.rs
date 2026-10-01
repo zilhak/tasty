@@ -8,7 +8,7 @@ use tasty_telemetry::{
     validate_agent_id, validate_metric,
 };
 
-use crate::core::Core;
+use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -79,7 +79,7 @@ impl QueryFilter {
 }
 
 pub(super) fn collect_events(
-    core: &Core,
+    core: &AppServices,
     filter: &QueryFilter,
 ) -> std::result::Result<Vec<TelemetryEvent>, String> {
     let scopes: Vec<Scope> = if let Some(w) = filter.workspace_id {
@@ -128,7 +128,7 @@ pub(super) fn collect_events(
 
 /// `telemetry.summary` — (metric, agent) 별 합/카운트/min/max/last.
 pub fn handle_summary(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -163,7 +163,7 @@ pub fn handle_summary(
 /// 입력: `metric` (필수), `agent` (선택), `workspace_id` (선택), `window` (1m|1h|1d),
 /// `since` / `until` (선택, unix ms).
 pub fn handle_timeseries(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -211,7 +211,7 @@ pub fn handle_timeseries(
 
 /// `telemetry.top` — agent 또는 workspace 기준 sum 내림차순.
 pub fn handle_top(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,

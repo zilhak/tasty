@@ -34,7 +34,7 @@ pub(super) fn queue_scrollback_for_surface(
 /// 새 ID는 쓰기 성공 전에 Terminal store에 기록될 수 있다.
 pub(super) fn capture_scrollback_to_disk(
     surface_id: crate::model::SurfaceId,
-    store: &mut crate::core::terminal_store::TerminalStore,
+    store: &mut crate::runtime::terminal_store::TerminalStore,
     seen_refs: &mut std::collections::HashSet<String>,
 ) -> Option<String> {
     let terminal = store.get(surface_id)?;
@@ -68,7 +68,7 @@ fn collect_capture_lines(
 /// 이번 capture에서 쓰지 않은 기존 ID는 재사용하고 없거나 중복이면 새로 발급한다.
 fn resolve_capture_persist_id(
     surface_id: crate::model::SurfaceId,
-    store: &mut crate::core::terminal_store::TerminalStore,
+    store: &mut crate::runtime::terminal_store::TerminalStore,
     seen_refs: &std::collections::HashSet<String>,
 ) -> String {
     let existing = store.scrollback_persist_id(surface_id).map(str::to_string);

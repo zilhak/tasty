@@ -2,7 +2,7 @@
 //! 플러그인 이벤트·팝업 요청은 큐에 넣고 surface 열기는 사용자 포커스 pane을 대상으로 한다.
 
 use crate::adapters::ui::popup::{self, PopupAction};
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::i18n::t;
 use crate::intent::{OpenPopupMode, UiIntent};
 use crate::plugin::manifest::ToolAction;

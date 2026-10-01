@@ -1,7 +1,7 @@
 //! 활성 워크스페이스·pane·surface 접근. 워크스페이스가 없을 수 있는 호출자는 Option 또는 빈 목록 검사를 사용한다.
 
 #[cfg(feature = "gui")]
-use crate::core::engine_access::EngineRef;
+use crate::runtime::engine_access::EngineRef;
 #[cfg(feature = "gui")]
 use tasty_terminal::Terminal;
 
@@ -58,7 +58,7 @@ impl RequestContext {
     pub(crate) fn apply_structure_result(
         &mut self,
         engine: &CoreState,
-        event: &crate::core::intent::CoreEvent,
+        event: &crate::app::command::CoreEvent,
     ) {
         self.navigation.apply_result(&engine.workspaces(), event);
         self.reconcile_presentation(engine);

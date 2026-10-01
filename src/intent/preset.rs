@@ -2,7 +2,7 @@
 //! Intent 경로는 origin에 따라 포커스와 창 열기를 처리하며, IPC는 inner 함수를 직접 호출해 응답한다.
 
 use super::{DispatchedIntent, Intent};
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 
 /// 호출자가 미리 캡처해 큐에 넣는 프리셋 데이터.
 #[derive(Debug, Clone)]
@@ -30,7 +30,7 @@ use crate::state::preset_apply::{ApplyError, ApplyOptions};
 use tasty_presets::{PresetError, PresetKind};
 
 pub fn handle(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     intent: &DispatchedIntent,
@@ -75,7 +75,7 @@ pub fn handle(
 }
 
 fn apply(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     intent: &DispatchedIntent,
@@ -110,7 +110,7 @@ fn apply(
 }
 
 fn save(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     state: &mut RequestContext,
     _engine: &mut crate::core::CoreState,
     intent: &DispatchedIntent,
@@ -214,7 +214,7 @@ impl PresetMutationError {
         matches!(
             self,
             Self::Apply(ApplyError::Other(e))
-                if e.downcast_ref::<crate::core::MirrorStructuralBlocked>().is_some()
+                if e.downcast_ref::<crate::app::services::MirrorStructuralBlocked>().is_some()
         )
     }
 }
@@ -250,7 +250,7 @@ fn mirror_target_index(
 
 // 적용 중 저장소 잠금을 유지하지 않도록 프리셋을 복사한다.
 fn clone_preset_from_store(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     kind: PresetKind,
     name: &str,
 ) -> Result<Option<ClonedPreset>, PresetMutationError> {
@@ -288,7 +288,7 @@ pub struct PresetSaveRequest<'a> {
 }
 
 pub fn apply_inner(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     target: PresetApplyTarget,
@@ -304,7 +304,7 @@ pub fn apply_inner(
     // mirror 트리는 원격이 소유한다. preset은 원격으로 전달할 수 없으므로 만들기 전에 거절한다.
     if let Some(workspace_index) = mirror_target_index(state, engine, &target) {
         return Err(PresetMutationError::Apply(ApplyError::Other(
-            anyhow::Error::new(crate::core::MirrorStructuralBlocked {
+            anyhow::Error::new(crate::app::services::MirrorStructuralBlocked {
                 workspace_index,
                 forwarded: false,
             }),
@@ -402,7 +402,7 @@ fn store_preset(
 /// 이름이 충돌하면 overwrite에 따라 덮어쓰거나 SkippedExists를 반환한다.
 /// explicit_name이 없으면 base_name으로 중복되지 않는 이름을 만든다.
 pub fn save_inner(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     base_name: &str,
     explicit_name: Option<&str>,
     overwrite: bool,
@@ -425,7 +425,7 @@ pub fn save_inner(
 }
 
 pub fn delete_inner(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     kind: PresetKind,
     name: &str,
 ) -> Result<(), PresetMutationError> {
@@ -438,7 +438,7 @@ pub fn delete_inner(
 }
 
 pub fn rename_inner(
-    core: &crate::core::Core,
+    core: &crate::app::services::AppServices,
     kind: PresetKind,
     from: &str,
     to: &str,
@@ -461,7 +461,7 @@ pub fn capture_inner(
     kind: PresetKind,
     source_id: u32,
 ) -> Result<(ClonedPreset, String), String> {
-    let registry = engine.surface_registry.clone();
+    let registry = engine.runtime.surface_registry.clone();
 
     match kind {
         PresetKind::Workspace => {
@@ -543,7 +543,7 @@ mod mirror_tests {
         }
     }
 
-    fn core_with_presets(dir: &std::path::Path) -> crate::core::Core {
+    fn core_with_presets(dir: &std::path::Path) -> crate::app::services::AppServices {
         let core = crate::ipc::handler::cli_entry_tests::test_core();
         let mut store = PresetStore::load_from(dir.into());
         store
@@ -579,7 +579,7 @@ mod mirror_tests {
         matches!(
             err,
             PresetMutationError::Apply(ApplyError::Other(e))
-                if e.downcast_ref::<crate::core::MirrorStructuralBlocked>()
+                if e.downcast_ref::<crate::app::services::MirrorStructuralBlocked>()
                     .is_some_and(|b| !b.forwarded)
         ) && err.is_mirror_refusal()
     }

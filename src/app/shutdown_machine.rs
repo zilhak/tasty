@@ -60,11 +60,11 @@ enum StepOutcome {
 impl App {
     /// 종료 시작 시각과 순서를 공유한다. 이미 종료 중이면 다시 시작하지 않는다.
     pub(crate) fn begin_shutdown(&mut self, event_loop: &ActiveEventLoop) {
-        if self.shutdown.is_some() {
+        if self.state.shutdown.is_some() {
             return;
         }
         shutdown_trace::mark_start();
-        self.shutdown = Some(ShutdownState {
+        self.state.shutdown = Some(ShutdownState {
             phase: ShutdownPhase::SavingLayout,
             final_view_sequence: None,
         });
@@ -86,7 +86,7 @@ impl App {
 
     /// Exited 뒤에는 프레임을 예약하지 않지만 종료 가드는 유지한다.
     pub(crate) fn shutdown_needs_frames(&self) -> bool {
-        self.shutdown
+        self.state.shutdown
             .as_ref()
             .is_some_and(|sd| !matches!(sd.phase, ShutdownPhase::Exited))
     }
@@ -110,7 +110,7 @@ impl App {
 
     /// 대기 단계에 닿을 때까지 진행한다. 바로 끝나면 로딩 화면을 그리지 않는다.
     pub(crate) fn drive_shutdown_frame(&mut self, event_loop: &ActiveEventLoop) {
-        let Some(sd) = self.shutdown.as_ref() else {
+        let Some(sd) = self.state.shutdown.as_ref() else {
             return;
         };
         let exited = matches!(sd.phase, ShutdownPhase::Exited);
@@ -161,7 +161,7 @@ impl App {
     }
 
     fn shutdown_step(&mut self) -> StepOutcome {
-        let Some(sd) = self.shutdown.as_ref() else {
+        let Some(sd) = self.state.shutdown.as_ref() else {
             return StepOutcome::Finished;
         };
         match sd.phase {
@@ -176,7 +176,7 @@ impl App {
     }
 
     fn set_shutdown_phase(&mut self, phase: ShutdownPhase) {
-        if let Some(sd) = self.shutdown.as_mut() {
+        if let Some(sd) = self.state.shutdown.as_mut() {
             sd.phase = phase;
         }
     }
@@ -205,7 +205,7 @@ impl App {
                     }
                 }
             }
-            self.shutdown
+            self.state.shutdown
                 .as_mut()
                 .expect("shutdown phase")
                 .final_view_sequence = Some(self.journal.latest_view_sequence());
@@ -301,7 +301,7 @@ impl App {
     }
 
     fn render_shutdown_frame(&mut self) {
-        let Some(sd) = self.shutdown.as_ref() else {
+        let Some(sd) = self.state.shutdown.as_ref() else {
             return;
         };
         let key = sd.phase.text_key();

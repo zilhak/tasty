@@ -48,7 +48,7 @@ impl MainView {
         // egui로 그리는 surface는 아래에서 font_size를 조정한다.
         if let FocusedSurfaceType::Kind(k) = &focus
             && kind_zoomable
-            && crate::core::surface_registry::webview_kind::is_webview_kind(k)
+            && crate::runtime::surface_registry::webview_kind::is_webview_kind(k)
             && let Some(plugin_id) = crate::webview::webview_settings_plugin_id(k)
         {
             use crate::settings::PluginSettingValue;

@@ -4,7 +4,7 @@ use crate::runtime::journal_product::{
     Completion, EngineSelection, JournalWorker, Request, ResultValue, Work,
 };
 use crate::runtime::live_projection;
-mod commands;
+pub(crate) mod commands;
 mod creation;
 #[cfg(feature = "gui")]
 mod retirement;
@@ -24,6 +24,7 @@ pub(crate) struct JournalApplication {
     worker: JournalWorker,
     commands: commands::Commands,
     changed_engines: std::collections::HashSet<EngineId>,
+    completion_views:HashMap<EngineId,crate::runtime::journal_product::CompletionView>,
     wake: Arc<dyn Fn() + Send + Sync>,
     opening: HashMap<EngineId, Opening>,
     creations: HashMap<EngineId, creation::Creation>,
@@ -55,6 +56,17 @@ pub(crate) struct JournalApplication {
 }
 
 impl JournalApplication {
+    pub(crate) fn update_completion_view(&mut self,id:EngineId,core:&crate::core::CoreState,presentation:&dyn crate::model::StructurePresentation) {
+        let mut selected_tabs=std::collections::BTreeMap::new();
+        for workspace in &core.workspaces() {
+            for pane in workspace.pane_layout().all_pane_ids() {
+                if let Some(pane)=workspace.pane_layout().find_pane(pane)
+                    && let Some(tab)=pane.tabs.get(presentation.tab_index(pane)) {selected_tabs.insert(pane.id,tab.id);}
+            }
+        }
+        self.completion_views.insert(id,crate::runtime::journal_product::CompletionView {mirror_count:core.mirror_workspaces.len(),selected_tabs});
+    }
+
     pub(crate) fn new(wake: Arc<dyn Fn() + Send + Sync>) -> anyhow::Result<Self> {
         let home = tasty_utils::path::tasty_home()
             .ok_or_else(|| anyhow::anyhow!("data home unavailable for structure journal"))?;
@@ -63,6 +75,7 @@ impl JournalApplication {
             worker,
             commands: Default::default(),
             changed_engines: Default::default(),
+            completion_views:Default::default(),
             wake,
             opening: HashMap::new(),
             creations: HashMap::new(),
@@ -97,8 +110,7 @@ impl JournalApplication {
             return Ok(());
         }
         let scopes = session
-            .core_state
-            .memory
+            .core_state.runtime.memory
             .lock()
             .map_err(|error| error.to_string())?
             .scopes()
@@ -107,7 +119,7 @@ impl JournalApplication {
             .iter()
             .filter_map(|scope| match tasty_memory::Scope::parse(scope) {
                 Ok(tasty_memory::Scope::Surface(id))
-                    if crate::core::terminal_store::is_surface_id_space(id) =>
+                    if crate::runtime::terminal_store::is_surface_id_space(id) =>
                 {
                     Some(id)
                 }
@@ -173,7 +185,9 @@ impl JournalApplication {
                         .core_state
                         .mirror_workspaces
                         .len();
-                    creation.poll_cleanup(&self.worker, mirror_count)?;
+                    let mut view=self.completion_views.get(engine).cloned().unwrap_or_default();
+                    view.mirror_count=mirror_count;
+                    creation.poll_cleanup(&self.worker,view)?;
                 }
             }
             let completion = match self.worker.try_recv() {
@@ -229,6 +243,7 @@ impl JournalApplication {
                             _ => tasty_domain::JournalModel::default(),
                         };
                         live_projection::bootstrap::initialize(&mut session.core_state, &model)?;
+                        crate::runtime::surface_restorer::initialize_instances(session,&model);
                         opening.projected = matches!(
                             opening.selection,
                             EngineSelection::Slot { resume: true, .. }
@@ -290,31 +305,34 @@ impl JournalApplication {
                                 &mut session.core_state,
                                 &after,
                             )?;
+                            crate::runtime::surface_restorer::initialize_instances(session,&after);
                             opening.projected = true;
                         } else {
-                            let mut prepared = live_projection::PreparedLeaves::new();
+                            let mut prepared = None;
                             let mut installation = None;
                             if let Some(creation) = self.creations.get_mut(&session.id) {
                                 installation = creation.authorize_installation(session, events)?;
                                 if let Some(leaf) =
                                     creation.leaf_for_publication(session, events)?
                                 {
-                                    prepared.insert(
-                                        leaf.surface.surface_id().expect("prepared surface ID"),
-                                        leaf,
-                                    );
+                                    prepared=Some(leaf);
                                 }
                             }
                             live_projection::apply(
                                 &mut session.core_state,
                                 predecessor,
                                 &domain,
-                                &mut prepared,
                                 &mut Vec::new(),
                             )?;
+                            if let Some(leaf)=prepared {
+                                let id=leaf.surface.surface_id().ok_or("materialized kind has no ID")?;
+                                let descriptor=session.core_state.find_surface_by_id(id).ok_or("materialized leaf has no committed descriptor")?;
+                                if descriptor.kind!=leaf.logical_kind {return Err("materialized kind differs from committed descriptor".into());}
+                                drop(session.runtime.surfaces.insert(id,leaf.surface));
+                            }
                             if let Some(installation) = installation {
                                 let retiring = session
-                                    .core_state
+                                    .as_ref()
                                     .find_surface_by_id(installation.surface_id())
                                     .map(crate::runtime::effect_runner::RetiringKind::capture);
                                 let installed = installation
@@ -393,12 +411,12 @@ impl JournalApplication {
                             .find(|session| session.id == engine)
                             .ok_or("restoring engine disappeared")?;
                         let current = session
-                            .core_state
+                            .as_ref()
                             .find_surface_by_id(restoration.surface_id)
                             .and_then(|surface| {
                                 surface
                                     .as_any()
-                                    .downcast_ref::<live_projection::bootstrap::JournalPlaceholder>(
+                                    .downcast_ref::<crate::runtime::surface_restorer::JournalPlaceholder>(
                                     )
                             })
                             .ok_or("restoring surface no longer has its pending capture")?;
@@ -454,6 +472,7 @@ impl JournalApplication {
                             &mut session.core_state,
                             &bound.model,
                         )?;
+                        crate::runtime::surface_restorer::initialize_instances(session,&bound.model);
                     }
                     self.restored_views.insert(
                         session.id,
@@ -474,7 +493,7 @@ impl JournalApplication {
                         self.creations.insert(session.id, creation);
                     } else {
                         for restoration in
-                            crate::runtime::surface_restorer::describe(&session.core_state)
+                            crate::runtime::surface_restorer::describe(&session.as_ref())
                         {
                             if restoration.reference.is_some() {
                                 self.restoration_queue.push_back((session.id, restoration));
@@ -592,8 +611,7 @@ impl JournalApplication {
                         selected.contains(&item.surface_id)
                     } else {
                         session
-                            .core_state
-                            .surface_registry
+                            .core_state.runtime.surface_registry
                             .get_live(&item.input.kind)
                             .is_some()
                     }

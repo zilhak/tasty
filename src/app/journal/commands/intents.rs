@@ -6,13 +6,14 @@ impl JournalApplication {
         &mut self,
         engine_id: EngineId,
         core: &crate::core::CoreState,
-        intent: &crate::core::intent::DomainIntent,
+        intent: &crate::app::command::DomainIntent,
         origin: &crate::intent::IntentOrigin,
+        view:Option<IntentViewContinuation>,
     ) -> bool {
-        use crate::core::intent::DomainIntent as I;
+        use crate::app::command::DomainIntent as I;
         if let Some(spec)=super::create_spec::Spec::from_intent(intent) {
             if core.mirror_workspace_index_for_structural(intent).is_some() {return false;}
-            self.admit_intent_request(engine_id,"intent.create",serde_json::to_value(spec).expect("fixed creation spec serializes"),origin);
+            self.admit_intent_request(engine_id,"intent.create",serde_json::to_value(spec).expect("fixed creation spec serializes"),origin,view);
             return true;
         }
         let (method, params) = match intent {
@@ -34,6 +35,7 @@ impl JournalApplication {
                         Reply::Intent {
                             engine: engine_id,
                             origin: origin.clone(),
+                            view:None,
                         },
                         JsonRpcResponse::invalid_params(
                             serde_json::Value::Null,
@@ -97,7 +99,7 @@ impl JournalApplication {
             }
             _ => return false,
         };
-        self.admit_intent_request(engine_id, method, params, origin);
+        self.admit_intent_request(engine_id,method,params,origin,None);
 
         true
     }
@@ -125,15 +127,16 @@ impl JournalApplication {
                 serde_json::json!({"tab_id":tab_id,"name":name,"user_direct":origin.is_user()}),
             ),
         };
-        self.admit_intent_request(engine_id, method, params, origin);
+        self.admit_intent_request(engine_id,method,params,origin,None);
     }
 
     fn admit_intent_request(
         &mut self,
         engine_id: EngineId,
         method: &str,
-        params: serde_json::Value,
-        origin: &crate::intent::IntentOrigin,
+        params:serde_json::Value,
+        origin:&crate::intent::IntentOrigin,
+        view:Option<IntentViewContinuation>,
     ) {
         let request = JsonRpcRequest {
             jsonrpc: "2.0".into(),
@@ -149,6 +152,7 @@ impl JournalApplication {
             Reply::Intent {
                 engine: engine_id,
                 origin: origin.clone(),
+                            view,
             },
             match origin {
                 crate::intent::IntentOrigin::User { .. } => "user",
@@ -201,6 +205,7 @@ impl JournalApplication {
             Reply::Intent {
                 engine: session.id,
                 origin: origin.clone(),
+                            view:None,
             },
             intent_actor(origin).into(),
             &format!("intent:{origin:?}"),

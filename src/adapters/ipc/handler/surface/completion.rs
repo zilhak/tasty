@@ -28,7 +28,7 @@ pub(crate) fn handle_completion(
     }
     // GUI 후속 처리는 표시를 갱신한다.
     out.push(
-        crate::core::intent::DomainIntent::SurfaceCompletion { surface_id, kind }.from_agent_ipc(),
+        crate::app::command::DomainIntent::SurfaceCompletion { surface_id, kind }.from_agent_ipc(),
     );
     JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": surface_id }))
 }

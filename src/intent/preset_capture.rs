@@ -4,10 +4,10 @@
 //! PTY·스크롤백·attach 세션은 보존하지 않는다. 터미널의 params는 비워 두며,
 //! 복원을 미룬 EmptySurface는 원래 터미널 또는 플러그인 정보를 보존한다.
 
-use crate::core::engine_access::EngineRef;
+use crate::runtime::engine_access::EngineRef;
 use serde_json::Value;
 
-use crate::core::surface_registry::SurfaceKindRegistry;
+use crate::runtime::surface_registry::SurfaceKindRegistry;
 use crate::model::{
     Deferred, EmptySurface, Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, Workspace,
 };
@@ -214,7 +214,7 @@ fn capture_surface(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::surface_registry::register_builtin_kinds;
+    use crate::runtime::surface_registry::register_builtin_kinds;
     use crate::model::DeferredSpawn;
     use std::path::PathBuf;
     use std::sync::Arc;

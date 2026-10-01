@@ -18,7 +18,7 @@ use egui::epaint::textures::TexturesDelta;
 use egui::epaint::{ClippedPrimitive, Primitive, TextureId};
 
 use super::GpuState;
-use crate::core::egui_mesh_surface::EguiMeshSurface;
+use crate::runtime::egui_mesh_surface::EguiMeshSurface;
 use crate::model::PhysicalRect;
 use crate::plugin::PluginManager;
 use crate::state::MainViewState;
@@ -147,7 +147,7 @@ enum DecodeOutcome {
 /// 않는다 — registry 미등록 kind 의 합성을 시도하지 않는다(A1-S1 인계 점검).
 pub(super) fn collect_egui_mesh_targets(
     state: &MainViewState,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     terminal_rect: PhysicalRect,
     scale_factor: f32,
 ) -> Vec<(u32, String, PhysicalRect)> {
@@ -156,7 +156,7 @@ pub(super) fn collect_egui_mesh_targets(
         state.surface_regions(engine, terminal_rect, scale_factor)
     {
         for r in regions {
-            if let Some(ms) = r.surface.as_any().downcast_ref::<EguiMeshSurface>() {
+            if let Some(ms) = engine.find_surface_by_id(r.id).and_then(|surface|surface.as_any().downcast_ref::<EguiMeshSurface>()) {
                 out.push((r.id, ms.plugin_id.clone(), r.rect));
             }
         }
@@ -169,7 +169,7 @@ pub(super) fn collect_egui_mesh_targets(
 /// 프로세스가 없어 무의미하므로 반환하지 않는다.
 pub(super) fn collect_attach_mesh_targets(
     state: &MainViewState,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     terminal_rect: PhysicalRect,
     scale_factor: f32,
 ) -> Vec<(u32, PhysicalRect)> {
@@ -627,7 +627,7 @@ impl GpuState {
         view: &wgpu::TextureView,
         targets: &[(u32, PhysicalRect)],
         existing: &[u32],
-        frame_store: &crate::core::attach_mesh_frames::AttachMeshFrameStore,
+        frame_store: &crate::remote::mesh_frames::AttachMeshFrameStore,
     ) {
         let live: HashSet<u32> = existing.iter().copied().collect();
         self.attach_mesh_targets.retain(|sid, _| live.contains(sid));

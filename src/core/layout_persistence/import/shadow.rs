@@ -24,13 +24,13 @@ pub(super) fn core_canonical(engine: &CoreState) -> Canonical {
 /// capture와 같은 registry 조회(철회된 정의 포함)로 정한다. 대기 plugin은 등록 여부와 관계없이
 /// kind를 유지하지만 kind 문자열만으로는 구별하지 못해 registry 판정을 따른다.
 pub(super) fn capture_keeps_kind(engine: &CoreState, kind: &str) -> bool {
-    kind == super::TERMINAL_KIND || engine.surface_registry.get(kind).is_some()
+    kind == super::TERMINAL_KIND || engine.runtime.surface_registry.get(kind).is_some()
 }
 
 /// CoreState를 슬롯으로 capture해 journal의 그 슬롯 엔진 stream에 가져온 뒤 그 모델을 읽는다.
 /// capture는 scrollback 저장 ID를 새로 정할 수 있어 engine을 바꿀 수 있다.
 pub(super) fn capture_and_import(
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     store: &mut EventStore,
     epoch: WriterEpoch,
     slot: LayoutSlotId,

@@ -393,7 +393,7 @@ impl Creation {
         &mut self,
         session: &mut EngineSession,
         events: &[tasty_domain::RecordedEvent],
-    ) -> Result<Option<live_projection::PreparedLeaf>, String> {
+    ) -> Result<Option<effect_runner::PreparedLeaf>, String> {
         let Stage::Finish(installed) = &self.stage else {
             return Ok(None);
         };
@@ -446,7 +446,7 @@ impl Creation {
     pub(super) fn poll_cleanup(
         &mut self,
         worker: &JournalWorker,
-        mirror_count: usize,
+        view:crate::runtime::journal_product::CompletionView,
     ) -> Result<(), String> {
         if !self.flush(worker)? {
             return Ok(());
@@ -502,7 +502,7 @@ impl Creation {
                 worker,
                 Work::CleanupFinished {
                     lease: installed.lease.clone(),
-                    mirror_count,
+                    view,
                 },
             )?;
             let Stage::Installing { installed, .. } =

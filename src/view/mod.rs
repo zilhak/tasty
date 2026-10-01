@@ -2,6 +2,7 @@
 //! View trait은 src/view/ui.rs에 있다.
 
 pub(crate) mod base;
+pub(crate) mod state;
 pub(crate) mod main;
 pub(crate) mod modal;
 pub(crate) mod plugins;
@@ -59,7 +60,7 @@ pub(crate) struct ViewCtx<'a> {
     /// GUI attach 서버가 mesh 프레임을 원격 구독자에게 중계할 때 사용하는 허브.
     pub(crate) stream_hub: &'a tasty_ipc::stream_hub::StreamHub,
     /// 이 창에 연결된 engine. App의 engine registry가 창 ID로 찾아 넘긴다. 모달 View는 None이다.
-    pub(crate) engine: Option<&'a mut crate::runtime::engine_session::EngineSession>,
+    pub(crate) engine: Option<crate::runtime::engine_access::EngineMut<'a>>,
 }
 
 /// 열린 모달의 종류. 창을 열 때 기록해 debug 조회에서 모달을 구분한다.

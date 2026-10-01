@@ -20,7 +20,7 @@ impl App {
             if let Some(surface) = engine.find_surface_by_id(surface_id)
                 && let Some(ms) = surface
                     .as_any()
-                    .downcast_ref::<crate::core::egui_mesh_surface::EguiMeshSurface>()
+                    .downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>()
             {
                 owner = Some((wid, ms.plugin_id.clone()));
                 break;

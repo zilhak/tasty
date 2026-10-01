@@ -1,5 +1,5 @@
-use crate::core::engine_access::{EngineMut, EngineRef};
-use crate::core::intent::{DomainIntent, SendPayload};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::app::command::{DomainIntent, SendPayload};
 use crate::model::PhysicalRect;
 use crate::selection::{self, SelectionMode, SelectionPoint, TextSelection};
 use crate::view::ui::View;

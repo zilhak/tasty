@@ -8,12 +8,12 @@ use crate::state::WorkspaceCloseOrigin;
 fn active_after_restoring_a_closed_workspace(intent: crate::intent::DispatchedIntent) -> usize {
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
-    let event = crate::core::apply_create_workspace_inner(
+    let event = crate::app::services::apply_create_workspace_inner(
         &mut engine,
-        crate::core::WorkspaceCreationParams::terminal(),
+        crate::app::services::WorkspaceCreationParams::terminal(),
     )
     .expect("second workspace");
-    let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
+    let crate::app::command::CoreEvent::WorkspaceCreated { index, .. } = event else {
         panic!("apply_create_workspace_inner가 WorkspaceCreated를 반환해야 한다");
     };
     assert_eq!(index, 1);
@@ -75,7 +75,7 @@ fn active_after_restoring_a_closed_workspace(intent: crate::intent::DispatchedIn
     };
     assert_eq!(state.navigation.split_hints.get(node_id), Some(&false));
     assert_eq!(
-        engine.attach.presentation.split_hints.get(node_id),
+        engine.remote.presentation.split_hints.get(node_id),
         Some(&false)
     );
     state.active_workspace_index(&engine)

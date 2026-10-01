@@ -2,7 +2,7 @@
 //! kind를 바꾸다 원래대로 돌아와도 기존 params는 유지한다. 확인할 때 최종 kind가
 //! 달라졌으면 한 번만 정리하고, 같으면 선언 필드만 적용해 나머지 params를 보존한다.
 
-use crate::core::surface_registry::PresetFieldTarget;
+use crate::runtime::surface_registry::PresetFieldTarget;
 
 use super::{DemoLayout, KindCatalog, Leaf, PaneNode, Root, SurfNode, remove_param, set_param};
 

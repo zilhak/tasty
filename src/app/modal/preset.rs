@@ -10,12 +10,12 @@ use crate::view;
 impl App {
     /// 이미 열려 있으면 새 창 대신 기존 창에 포커스를 준다.
     pub(crate) fn open_preset_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if let Some(id) = self.preset_view_id {
+        if let Some(id) = self.state.preset_view_id {
             if let Some(w) = self.view.views.get(&id) {
                 w.base().winit.focus_window();
                 return;
             }
-            self.preset_view_id = None;
+            self.state.preset_view_id = None;
         }
 
         let attrs = Self::preset_window_attributes();
@@ -35,14 +35,14 @@ impl App {
             }
         };
 
-        let store = std::sync::Arc::clone(&self.core.preset_store);
+        let store = std::sync::Arc::clone(&self.services.preset_store);
         // MainView가 없으면 동적 kind 목록 없이 정적 기본값을 사용한다.
         let registry = self.any_main_engine().map(|e| e.surface_registry.clone());
         let window_id = window.id();
         let mut preset = view::PresetView::new(gpu, window, store, registry, keybindings);
         crate::view::ui::present_first_frame(&mut preset);
         self.view.views.insert(window_id, Box::new(preset));
-        self.preset_view_id = Some(window_id);
+        self.state.preset_view_id = Some(window_id);
         tracing::info!("opened preset window {:?}", window_id);
     }
 
@@ -85,10 +85,10 @@ impl App {
     }
 
     pub(crate) fn on_preset_window_closed(&mut self, window_id: WindowId) {
-        if self.preset_view_id != Some(window_id) {
+        if self.state.preset_view_id != Some(window_id) {
             return;
         }
-        self.preset_view_id = None;
+        self.state.preset_view_id = None;
         self.view.views.remove(&window_id);
     }
 
@@ -114,7 +114,7 @@ impl App {
         }
         self.open_preset_window(event_loop);
         if let Some((kind, name)) = pending_selection
-            && let Some(pwid) = self.preset_view_id
+            && let Some(pwid) = self.state.preset_view_id
             && let Some(pw) = self
                 .view
                 .views

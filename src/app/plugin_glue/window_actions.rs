@@ -11,7 +11,7 @@ fn record_trust_then_install(
     pubkey_b64: &str,
     permissions: &[String],
     publisher_fingerprint: &str,
-) -> anyhow::Result<Vec<crate::core::intent::CoreEvent>> {
+) -> anyhow::Result<Vec<crate::app::command::CoreEvent>> {
     use tasty_host_plugin::known_plugins::{KnownPluginEntry, KnownPlugins};
 
     let mut db =
@@ -29,9 +29,9 @@ fn record_trust_then_install(
     app.plugin_install(std::path::PathBuf::from(src_path))
 }
 
-fn extract_installed_plugin_id(events: &[crate::core::intent::CoreEvent]) -> Option<String> {
+fn extract_installed_plugin_id(events: &[crate::app::command::CoreEvent]) -> Option<String> {
     events.iter().find_map(|ev| match ev {
-        crate::core::intent::CoreEvent::PluginRegistryChanged { plugin_id, .. } => {
+        crate::app::command::CoreEvent::PluginRegistryChanged { plugin_id, .. } => {
             Some(plugin_id.clone())
         }
         _ => None,
@@ -249,7 +249,7 @@ impl App {
         if close_modal {
             self.close_active_modal();
             if open_settings_plugin_tab {
-                self.pending_settings_plugin_tab = true;
+                self.state.pending_settings_plugin_tab = true;
                 crate::shortcuts::send_app_event(&self.view.proxy, crate::AppEvent::OpenSettings);
             }
             return;

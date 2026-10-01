@@ -1,4 +1,4 @@
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 
 impl EngineMut<'_> {
     /// 지정한 surface의 사용자 mark 이후 출력. 로컬 Terminal이 없으면 빈 문자열이다.

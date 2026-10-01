@@ -1,7 +1,7 @@
 //! 닫힌 항목의 surface·pane을 새 ID로 다시 만든다. 필요한 PTY도 생성한다.
 //! 결과를 트리에 붙이는 일은 호출자가 맡으며 부분 생성 뒤 실패를 되돌리지는 않는다.
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::model::closed_item::*;
 use crate::model::{
     DeferredPlugin, EmptySurface, Pane, PaneNode, Surface, SurfaceLayout, Tab, TerminalSurface,
@@ -56,7 +56,7 @@ pub(crate) fn rebuild_surface(
         ClosedPanel::Generic { kind, snapshot } => {
             let id = engine.next_ids.next_surface();
             // 미등록 kind는 원래 정보의 placeholder로 남긴다. None을 반환하면 ? 전파로 형제 tab·pane까지 버릴 수 있다.
-            match engine.surface_registry.get_live(&kind) {
+            match engine.runtime.surface_registry.get_live(&kind) {
                 None => {
                     let ph =
                         EmptySurface::new_deferred_plugin(id, DeferredPlugin { kind, snapshot });
@@ -377,7 +377,7 @@ mod deferred_plugin_tests {
 
     // 등록된 종류는 placeholder가 아닌 생성기 결과를 사용하는지 확인할 대조군이다.
     fn register_ok_kind(e: &mut crate::core::CoreState, kind: &'static str) {
-        use crate::core::surface_registry::{KindSource, RegisteredRendering, SurfaceKindDef};
+        use crate::runtime::surface_registry::{KindSource, RegisteredRendering, SurfaceKindDef};
         use std::collections::HashMap;
         use std::sync::Arc;
         e.surface_registry.register(SurfaceKindDef {
@@ -388,7 +388,7 @@ mod deferred_plugin_tests {
             icon: None,
             create: Arc::new(|_, _, _| Err(anyhow::anyhow!("dummy"))),
             restore: Arc::new(|id, _| {
-                Ok(crate::core::surface_registry::PreparedKind::local(
+                Ok(crate::runtime::surface_registry::PreparedKind::local(
                     Box::new(EmptySurface::new(id)) as Box<dyn Surface>,
                 ))
             }),

@@ -62,7 +62,7 @@ fn prepared() -> (
 /// 한 프레임을 그려 나온 도형을 그대로 돌려준다.
 fn painted_shapes(
     state: &mut MainViewState,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     ids: Ids,
 ) -> Vec<egui::epaint::ClippedShape> {
     let ctx = egui::Context::default();
@@ -79,7 +79,7 @@ fn painted_shapes(
 /// 한 프레임을 그려 scrim 색으로 칠해진 사각형들의 rect 를 모은다.
 fn scrim_rects(
     state: &mut MainViewState,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     ids: Ids,
 ) -> Vec<egui::Rect> {
     let scrim = egui::Color32::from(crate::theme::theme().scrim());

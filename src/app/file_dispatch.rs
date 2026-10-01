@@ -29,7 +29,7 @@ impl App {
         };
         if let Some((main, mut engine)) = window.and_then(|id| engines_mut!(self).window_pair(id)) {
             crate::file::dispatch::apply_identify_result(
-                &mut self.core,
+                &mut self.services,
                 &mut main.state,
                 &mut engine,
                 target,
@@ -45,7 +45,7 @@ impl App {
             if let Some((state, mut engine)) = engines_mut!(self).parked_session_with_resource(rid)
             {
                 crate::file::dispatch::apply_identify_result(
-                    &mut self.core,
+                    &mut self.services,
                     state,
                     &mut engine,
                     target,

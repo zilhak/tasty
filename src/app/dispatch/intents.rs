@@ -2,7 +2,7 @@
 
 use crate::app::App;
 use crate::app::window_access::{DispatchCtx, engines_mut};
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::ipc;
 use crate::runtime::engine_session::EngineId;
 
@@ -68,7 +68,7 @@ impl App {
         appearance_changed: &mut bool,
     ) {
         for (id, batch) in batches {
-            let core = &mut self.core;
+            let core = &mut self.services;
             let Some(DispatchCtx {
                 state,
                 mut engine,
@@ -157,7 +157,7 @@ impl App {
     }
 
     fn dispatch_one_intent(
-        core: &mut crate::core::Core,
+        core: &mut crate::app::services::AppServices,
         state: &mut crate::state::MainViewState,
         engine: &mut EngineMut<'_>,
         intent: &crate::intent::DispatchedIntent,
@@ -200,7 +200,7 @@ impl App {
         request: &'a ipc::protocol::JsonRpcRequest,
         caller: &'a ipc::caller::CallerContext,
     ) -> Result<ipc::handler::CheckedRequest<'a>, ipc::protocol::JsonRpcResponse> {
-        let core = &mut self.core;
+        let core = &mut self.services;
         if let Some((state, engine)) = engines_mut!(self).sessions().next() {
             return ipc::handler::check_request(core, state, engine.core, request, caller);
         }
@@ -228,11 +228,11 @@ impl App {
             }
         };
         if let Some(id) = target_id {
-            let core = &mut self.core;
+            let core = &mut self.services;
             let resp_opt = engines_mut!(self).window_pair(id).map(|(w, mut engine)| {
                 let r =
                     ipc::handler::handle_checked_request(core, &mut w.state, &mut engine, checked);
-                w.base.dirty = true;
+                w.base.state.dirty = true;
                 r
             });
             if let Some(response) = resp_opt {
@@ -244,7 +244,7 @@ impl App {
             named.and_then(|rid| engines_mut!(self).parked_session_with_resource(rid));
         if let Some((state, mut engine)) = owner_in_parked {
             let response =
-                ipc::handler::handle_checked_request(&mut self.core, state, &mut engine, checked);
+                ipc::handler::handle_checked_request(&mut self.services, state, &mut engine, checked);
             self.dispatch_pending_intents();
             return response;
         }
@@ -257,7 +257,7 @@ impl App {
         }
         if let Some((state, mut engine)) = engines_mut!(self).first_parked_session() {
             let response =
-                ipc::handler::handle_checked_request(&mut self.core, state, &mut engine, checked);
+                ipc::handler::handle_checked_request(&mut self.services, state, &mut engine, checked);
             self.dispatch_pending_intents();
             return response;
         }
@@ -273,7 +273,7 @@ mod tests {
     #[test]
     fn classify_partitions_domain_appearance_immediate() {
         use crate::intent::{Intent, UiIntent};
-        let dom = || crate::core::intent::DomainIntent::MoveWorkspace {
+        let dom = || crate::app::command::DomainIntent::MoveWorkspace {
             workspace_id: 0,
             to_index: 0,
         };

@@ -38,6 +38,7 @@ mod namespace_table_for_tests;
 mod plugin_bridge;
 mod ports;
 mod runtime;
+mod remote;
 #[cfg(test)]
 mod source_guards;
 mod state;
@@ -60,8 +61,8 @@ use tasty_terminal as terminal;
 pub use tasty_themes as theme;
 pub use tasty_utils::path as paths;
 
-pub(crate) use crate::core::output_observer;
-pub(crate) use crate::core::surface_registry::meta as surface_meta;
+pub(crate) use crate::runtime::output_observer;
+pub(crate) use crate::runtime::surface_registry::meta as surface_meta;
 pub(crate) use adapters::cli;
 pub(crate) use adapters::ipc;
 pub(crate) use adapters::plugin;

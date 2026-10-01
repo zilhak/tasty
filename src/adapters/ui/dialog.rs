@@ -60,7 +60,7 @@ pub fn on_close_rename_popup(
 pub fn draw_rename_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     let th = theme::theme();
 
@@ -364,13 +364,13 @@ fn apply_rename_explorer_add_favorite(
     path: std::path::PathBuf,
     buffer: String,
 ) {
-    engine.explorer_favorites.add(path, buffer);
-    engine.explorer_favorites.save();
+    engine.runtime.explorer_favorites.add(path, buffer);
+    engine.runtime.explorer_favorites.save();
 }
 
 fn apply_rename_new_category(state: &mut MainViewState, buffer: String) {
     state.dispatch_intent(
-        crate::core::intent::DomainIntent::CreateCategory { name: buffer }
+        crate::app::command::DomainIntent::CreateCategory { name: buffer }
             .from_user_menu("rename_popup"),
     );
 }
@@ -381,7 +381,7 @@ fn apply_rename_category_name(
     buffer: String,
 ) {
     state.dispatch_intent(
-        crate::core::intent::DomainIntent::RenameCategory {
+        crate::app::command::DomainIntent::RenameCategory {
             id: cat_id,
             name: buffer,
         }
@@ -397,7 +397,7 @@ mod tests {
         tasty_themes::mocha_fallback()
     }
 
-    fn push_workspace(engine: &mut crate::core::engine_access::EngineMut<'_>, name: &str) -> u32 {
+    fn push_workspace(engine: &mut crate::runtime::engine_access::EngineMut<'_>, name: &str) -> u32 {
         let ws_id = engine.next_ids.next_workspace();
         let pane_id = engine.next_ids.next_pane();
         let tab_id = engine.next_ids.next_tab();
@@ -420,7 +420,7 @@ mod tests {
     /// 팝업은 요청을 큐에 넣기만 하므로 메인 루프처럼 큐를 비워 적용한다.
     fn apply_rename_and_drain(
         state: &mut MainViewState,
-        engine: &mut crate::core::engine_access::EngineMut<'_>,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
         target: RenameTarget,
         buffer: &str,
     ) {

@@ -5,7 +5,7 @@
 #![cfg(not(feature = "gui"))]
 
 use crate::core::CoreState;
-use crate::core::intent::RestoredKind;
+use crate::app::command::RestoredKind;
 use crate::intent::IntentOrigin;
 use crate::state::RequestContext;
 

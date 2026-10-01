@@ -1,10 +1,10 @@
 //! GUI와 헤드리스가 공유하는 PTY 종료 처리. 창이 없다는 이유로 호출하지 않는다.
-use crate::core::Core;
-use crate::core::engine_access::EngineMut;
+use crate::app::services::AppServices;
+use crate::runtime::engine_access::EngineMut;
 use crate::state::RequestContext;
 
 pub(crate) fn handle(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     surface: u32,
@@ -41,7 +41,7 @@ pub(crate) fn handle(
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use crate::core::intent::CoreEvent;
+    use crate::app::command::CoreEvent;
     use std::time::{Duration, Instant};
 
     fn process(surface: u32, command: &str) -> (tasty_terminal::Terminal, tasty_terminal::Pty) {
@@ -124,7 +124,7 @@ mod tests {
     #[cfg(feature = "gui")]
     #[test]
     fn queued_title_and_cwd_observations_keep_their_original_generation() {
-        use crate::core::intent::DomainIntent;
+        use crate::app::command::DomainIntent;
         let (_state, mut session) = crate::state::tests::test_state();
         let (mut core, _home) = crate::adapters::ipc::handler::pty::tests::core();
         let mut engine = session.borrow_mut();

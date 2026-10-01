@@ -1,7 +1,7 @@
 #[cfg(feature = "gui")]
 use crate::core::CoreState;
 #[cfg(feature = "gui")]
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 #[cfg(feature = "gui")]
 use crate::model::{PaneId, PhysicalPx, PhysicalRect, SurfaceRegion};
 
@@ -44,7 +44,7 @@ impl RequestContext {
     /// 텍스처·전송 상태는 가시성이 아니라 surface 수명에 맞춰 유지해야 한다.
     #[cfg(feature = "gui")]
     pub fn egui_mesh_surfaces_existing(&self, engine: &CoreState) -> Vec<(u32, String)> {
-        use crate::core::egui_mesh_surface::EguiMeshSurface;
+        use crate::runtime::egui_mesh_surface::EguiMeshSurface;
         let mut out: Vec<(u32, String)> = Vec::new();
         for ws in &engine.workspaces() {
             for pane_id in ws.pane_layout().all_pane_ids() {
@@ -97,7 +97,7 @@ impl RequestContext {
 
     /// 활성 워크스페이스의 각 활성 탭에서 지연된 surface 초기화를 시도한다.
     /// 입력 경로마다 복원 처리를 넣는 대신 그리기 전에 한 번 순회한다.
-    pub fn reify_displayed_surfaces(&self, engine: &mut crate::core::engine_access::EngineMut<'_>) {
+    pub fn reify_displayed_surfaces(&self, engine: &mut crate::runtime::engine_access::EngineMut<'_>) {
         if engine.workspaces().is_empty() {
             return;
         }
@@ -216,7 +216,7 @@ impl RequestContext {
         None
     }
 
-    /// View geometry로 고정한 크기를 Core::resize_terminals에 넘긴다. 점유·mirror 및 grid/tap/OS 순서는 실행 경계가 유지한다.
+    /// View geometry로 고정한 크기를 AppServices::resize_terminals에 넘긴다. 점유·mirror 및 grid/tap/OS 순서는 실행 경계가 유지한다.
     /// PTY resize는 미뤄지므로 호출자가 resize 이벤트 처리 후 flush_all_pty_resizes를 호출해야 한다.
     #[cfg(feature = "gui")]
     pub fn resize_all(
@@ -257,6 +257,6 @@ impl RequestContext {
                 }
             }
         }
-        crate::core::Core::resize_terminals(engine, targets);
+        crate::app::services::AppServices::resize_terminals(engine, targets);
     }
 }

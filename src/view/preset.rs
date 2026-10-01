@@ -17,7 +17,7 @@ use tasty_settings::KeybindingSettings;
 use crate::adapters::ui::preset::demo_layout::KindCatalog;
 use crate::adapters::ui::preset::surface_settings::SurfaceCfg;
 use crate::adapters::ui::{LayoutContext, ToastManager, ToastScope};
-use crate::core::surface_registry::SurfaceKindRegistry;
+use crate::runtime::surface_registry::SurfaceKindRegistry;
 use crate::gpu::GpuState;
 use crate::i18n::t;
 use crate::view::ui::{View, sealed};
@@ -125,7 +125,7 @@ impl View for PresetView {
                 self.mark_dirty();
             }
             WindowEvent::ModifiersChanged(m) => {
-                self.base.modifiers = m.state();
+                self.base.state.modifiers = m.state();
             }
             _ => {}
         }
@@ -133,7 +133,7 @@ impl View for PresetView {
     }
 
     fn render(&mut self) {
-        if !self.base.dirty {
+        if !self.base.state.dirty {
             return;
         }
         self.base.begin_frame();
@@ -208,7 +208,7 @@ impl View for PresetView {
             self.shown = true;
         }
 
-        if self.base.dirty {
+        if self.base.state.dirty {
             self.base.winit.request_redraw();
         }
     }

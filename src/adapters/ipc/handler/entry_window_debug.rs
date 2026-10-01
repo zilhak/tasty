@@ -1,7 +1,7 @@
 //! EntryWindow의 디버그 라우터. release에서는 이 파일을 제외한다.
 #![cfg(debug_assertions)]
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 
 impl super::EntryWindow<'_> {

@@ -1,6 +1,6 @@
 use winit::event_loop::ActiveEventLoop;
 
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use crate::plugin::PluginManager;
 use crate::view::ui::View;
 
@@ -156,7 +156,7 @@ impl MainView {
         // Sync webview lifecycle: create/destroy/reposition/visibility
         self.sync_webviews(engine, plugin_manager);
 
-        if self.base.dirty {
+        if self.base.state.dirty {
             self.base.winit.request_redraw();
         }
     }
@@ -226,12 +226,12 @@ impl MainView {
                 self.apply_grid_resync(engine);
             }
             // Schedule another redraw to verify scale factor has stabilized.
-            self.base.dirty = true;
+            self.base.state.dirty = true;
         } else if self.state.stage_deferred_grid_resync && !self.state.fullscreen_stage_active() {
             // 무대를 나온 첫 프레임 — 보류했던 갱신을 여기서 소진한다.
             self.state.stage_deferred_grid_resync = false;
             self.apply_grid_resync(engine);
-            self.base.dirty = true;
+            self.base.state.dirty = true;
         }
     }
 
@@ -250,7 +250,7 @@ impl MainView {
         plugin_manager: Option<&PluginManager>,
         stream_hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
-        if !self.base.dirty {
+        if !self.base.state.dirty {
             return;
         }
         // Reconcile composition for every displayed content source, including
@@ -299,7 +299,7 @@ impl MainView {
                 // 실제 present에 성공한 첫 시각만 부팅 계측에 기록한다.
                 crate::boot::trace::mark_first_paint();
                 if self.base.gpu.take_terminal_cursor_restore_pending() {
-                    self.base.dirty = true;
+                    self.base.state.dirty = true;
                 }
             }
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -307,7 +307,7 @@ impl MainView {
                 // Surface was lost/outdated; resize recovers it, but we must
                 // re-render now that it's ready. dirty was set to false above,
                 // so restore it and request another frame.
-                self.base.dirty = true;
+                self.base.state.dirty = true;
             }
             Err(wgpu::SurfaceError::OutOfMemory) => {
                 tracing::error!("GPU out of memory");
@@ -349,7 +349,7 @@ impl MainView {
                     .or_default()
                     .pending_full = true;
             }
-            self.base.dirty = true;
+            self.base.state.dirty = true;
         }
 
         // attach mesh mirror(`docs/dev-guide/attach-behavior.md#mesh-mirror-채널` 참고)
@@ -359,9 +359,9 @@ impl MainView {
         let attach_full_reqs = self.base.gpu.take_attach_mesh_full_requests();
         if !attach_full_reqs.is_empty() {
             engine
-                .pending_mesh_full_resend_forward
+                .remote.pending_mesh_full_resend_forward
                 .extend(attach_full_reqs);
-            self.base.dirty = true;
+            self.base.state.dirty = true;
         }
     }
 
@@ -456,7 +456,7 @@ impl MainView {
                         ) {
                             let sid = region.id;
                             let leaf_rect = region.rect;
-                            let surface = region.surface;
+                            let Some(surface)=engine.find_surface_by_id(region.id) else {continue;};
                             if surface.webview_url().is_none() {
                                 continue;
                             }
@@ -760,7 +760,7 @@ impl MainView {
         // 다른 앱의 포커스를 바꾸지 않도록 이 창이 OS 포커스를 가질 때만 처리한다.
         if overlay_open {
             if !self.webview_overlay_focus_released
-                && host_window_has_os_focus(self.base.focused, || {
+                && host_window_has_os_focus(self.base.state.focused, || {
                     self.webviews.values().any(|wv| wv.holds_keyboard_focus())
                 })
             {
@@ -787,7 +787,7 @@ impl MainView {
             },
             &mut self.webview_focus_release_pending,
             || {
-                host_window_has_os_focus(self.base.focused, || {
+                host_window_has_os_focus(self.base.state.focused, || {
                     self.webviews.values().any(|wv| wv.holds_keyboard_focus())
                 })
             },
@@ -1622,7 +1622,7 @@ impl MainView {
         // 사이드바 점유 표시와 같은 기준으로 강제 끊기 항목을 추가한다.
         if ws_idx < engine.workspaces().len()
             && engine
-                .attach
+                .live.occupancy
                 .workspace_holder(
                     engine
                         .workspace_at(ws_idx)
@@ -1688,7 +1688,7 @@ impl MainView {
 
     fn handle_workspace_category_header_native_menu(
         &mut self,
-        engine: &mut crate::core::engine_access::EngineMut<'_>,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
         cat_id: crate::model::WorkspaceCategoryId,
         x: f32,
         y: f32,
@@ -1768,7 +1768,7 @@ impl MainView {
 
     fn handle_sidebar_background_native_menu(
         &mut self,
-        engine: &mut crate::core::engine_access::EngineMut<'_>,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
         x: f32,
         y: f32,
     ) {
@@ -1915,7 +1915,7 @@ impl MainView {
 
     fn handle_surface_native_menu(
         &mut self,
-        engine: &mut crate::core::engine_access::EngineMut<'_>,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
         surface_id: u32,
         x: f32,
         y: f32,
@@ -2406,8 +2406,8 @@ impl MainView {
                 }
                 Some(1) => {
                     // 사이드바는 다음 프레임 스냅샷에서 갱신 — redraw 만 요청.
-                    engine.explorer_favorites.remove(&path);
-                    engine.explorer_favorites.save();
+                    engine.runtime.explorer_favorites.remove(&path);
+                    engine.runtime.explorer_favorites.save();
                 }
                 _ => {}
             }
@@ -2416,7 +2416,7 @@ impl MainView {
 
     fn handle_new_workspace_button_native_menu(
         &mut self,
-        engine: &mut crate::core::engine_access::EngineMut<'_>,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
         x: f32,
         y: f32,
     ) {
@@ -2459,7 +2459,7 @@ impl MainView {
 
     fn handle_new_tab_button_native_menu(
         &mut self,
-        engine: &mut crate::core::engine_access::EngineMut<'_>,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
         pane_id: u32,
         x: f32,
         y: f32,

@@ -2,12 +2,12 @@
 //! IPC tab.create는 이 큐를 거치지 않고 별도로 처리한다.
 
 use super::{DispatchedIntent, Intent, IntentOrigin};
-use crate::core::Core;
-use crate::core::engine_access::EngineMut;
+use crate::app::services::AppServices;
+use crate::runtime::engine_access::EngineMut;
 use crate::state::RequestContext;
 
 pub fn handle(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     intent: &DispatchedIntent,
@@ -18,7 +18,7 @@ pub fn handle(
 }
 
 fn new_tab(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     kind: Option<&str>,
@@ -38,13 +38,12 @@ fn new_tab(
         params.clone()
     };
 
-    let records_recent = engine
-        .surface_registry
+    let records_recent = engine.runtime.surface_registry
         .get(kind)
         .is_some_and(|d| d.records_recent);
     let recent_params = records_recent.then(|| surface_params.clone());
 
-    let intent = crate::core::intent::DomainIntent::CreateTab {
+    let intent = crate::app::command::DomainIntent::CreateTab {
         pane_id,
         cwd,
         kind: kind.to_string(),
@@ -54,7 +53,7 @@ fn new_tab(
         activate: origin.is_user(),
     };
     // mirror pane의 탭은 원격에 만들어지므로 경로도 원격 파일이다. 로컬 최근 목록에서 다시 열 수 없다.
-    // Core::apply가 forward를 정하는 판정과 같은 기준을 쓴다.
+    // AppServices::apply가 forward를 정하는 판정과 같은 기준을 쓴다.
     if let Some(params) = recent_params
         && engine
             .mirror_workspace_index_for_structural(&intent)
@@ -74,7 +73,7 @@ fn new_tab(
             #[cfg(feature = "gui")]
             if origin.is_user() {
                 for event in &events {
-                    if let crate::core::intent::CoreEvent::TabCreated {
+                    if let crate::app::command::CoreEvent::TabCreated {
                         pane_id, tab_id, ..
                     } = event
                     {
@@ -82,11 +81,11 @@ fn new_tab(
                     }
                 }
             }
-            // Headless builds have no tutorial observer; Core already applied the mutation.
+            // Headless builds have no tutorial observer; AppServices already applied the mutation.
             let _ = events;
         }
         Err(e) => {
-            crate::core::mark_last_forward_user_triggered(engine, &e, origin);
+            crate::app::services::mark_last_forward_user_triggered(engine, &e, origin);
             super::report_apply_error(state, engine, origin, &format!("NewTab kind={kind}"), &e);
         }
     }

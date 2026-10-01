@@ -53,7 +53,7 @@ impl App {
             }
         };
         if let Some(id) = target_id {
-            let core = &mut self.core;
+            let core = &mut self.services;
             let resp_opt = engines_mut!(self).window_pair(id).map(|(w, mut engine)| {
                 let r = host_ipc::handler::handle_checked_request(
                     core,
@@ -61,7 +61,7 @@ impl App {
                     &mut engine,
                     checked,
                 );
-                w.base.dirty = true;
+                w.base.state.dirty = true;
                 r
             });
             if let Some(response) = resp_opt {
@@ -75,7 +75,7 @@ impl App {
             named.and_then(|rid| engines_mut!(self).parked_session_with_resource(rid));
         if let Some((state, mut engine)) = owner_in_parked {
             let response = host_ipc::handler::handle_checked_request(
-                &mut self.core,
+                &mut self.services,
                 state,
                 &mut engine,
                 checked,
@@ -97,7 +97,7 @@ impl App {
         }
         if let Some((state, mut engine)) = engines_mut!(self).first_parked_session() {
             let response = host_ipc::handler::handle_checked_request(
-                &mut self.core,
+                &mut self.services,
                 state,
                 &mut engine,
                 checked,

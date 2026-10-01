@@ -339,7 +339,7 @@ impl App {
                     Some(w) => {
                         let base = w.base_mut();
                         base.gpu.pending_screenshot = Some(std::path::PathBuf::from(&path));
-                        base.dirty = true;
+                        base.state.dirty = true;
                         base.winit.request_redraw();
                         host_ipc::protocol::JsonRpcResponse::success(
                             response_id,
@@ -364,8 +364,8 @@ impl App {
     }
     fn ipc_handle_clipboard_set_text(&mut self, cmd: &IpcCommand) -> IpcStep {
         let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-        let resp = crate::core::app_surface::clipboard_set_text(
-            &self.core,
+        let resp = crate::app::services::surface::clipboard_set_text(
+            &self.services,
             response_id,
             &cmd.request.params,
         );
@@ -397,7 +397,7 @@ impl App {
                 if kind == Some("terminal") {
                     m.base.gpu.pending_surface_screenshot =
                         Some((sid, std::path::PathBuf::from(path)));
-                    m.base.dirty = true;
+                    m.base.state.dirty = true;
                     m.base.winit.request_redraw();
                     host_ipc::protocol::JsonRpcResponse::success(
                         response_id,
@@ -432,7 +432,7 @@ impl App {
         // 읽기 전용 메서드 표는 헤드리스와 공유한다.
         let surface_registry = self.core_state().surface_registry.clone();
         if let Some(response) = host_ipc::handler::plugin::dispatch_readonly(
-            &self.core,
+            &self.services,
             self.plugin_manager.as_ref(),
             &surface_registry,
             cmd.request.method.as_str(),
@@ -462,7 +462,7 @@ impl App {
                         let installed_id = events
                             .iter()
                             .find_map(|ev| match ev {
-                                crate::core::intent::CoreEvent::PluginRegistryChanged {
+                                crate::app::command::CoreEvent::PluginRegistryChanged {
                                     plugin_id,
                                     ..
                                 } => Some(plugin_id.clone()),
@@ -617,14 +617,14 @@ impl App {
             }
             "plugin.grant_agent_permission" => {
                 host_ipc::handler::session::handle_grant_agent_permission(
-                    &self.core,
+                    &self.services,
                     id,
                     &cmd.request.params,
                 )
             }
             "plugin.revoke_agent_permission" => {
                 host_ipc::handler::session::handle_revoke_agent_permission(
-                    &self.core,
+                    &self.services,
                     id,
                     &cmd.request.params,
                 )
@@ -680,15 +680,15 @@ impl App {
                 }
             }
             "plugin.audit_follow" => {
-                host_ipc::handler::audit::handle_follow(&self.core, id, &cmd.request.params)
+                host_ipc::handler::audit::handle_follow(&self.services, id, &cmd.request.params)
             }
             "plugin.audit_clear" => {
-                host_ipc::handler::audit::handle_clear(&self.core, id, &cmd.request.params)
+                host_ipc::handler::audit::handle_clear(&self.services, id, &cmd.request.params)
             }
             "plugin.request_permission" => {
                 // 창 생성 경로가 approval_store Arc를 공유하므로 첫 MainView를 사용한다.
                 // 창이 없으면 승인 popup을 표시할 수 없어 거절한다.
-                let core = &mut self.core;
+                let core = &mut self.services;
                 let main = engines_mut!(self).window_pairs().next();
                 match main {
                     Some((_, m, engine)) => host_ipc::handler::session::handle_request_permission(
@@ -761,7 +761,7 @@ impl App {
             .all()
             .next()
             .map(|e| e.approval_store.clone());
-        let memory = self.core.memory_arc();
+        let memory = self.services.memory_arc();
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         match store_opt {
             Some(store) => crate::ipc::handler::approval::spawn_approval_await(
@@ -773,7 +773,7 @@ impl App {
             ),
             None => send_response(
                 &cmd.response_tx,
-                crate::core::app_surface::no_application_state(rpc_id),
+                crate::app::services::surface::no_application_state(rpc_id),
             ),
         }
     }

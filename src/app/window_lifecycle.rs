@@ -61,9 +61,9 @@ pub(super) fn build_engine_and_plugins(
     factory: crate::waker::SharedWakerFactory,
     proxy: winit::event_loop::EventLoopProxy<crate::AppEvent>,
     memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-    runner_registry: Arc<crate::core::agent::runner_thread::RunnerRegistry>,
+    runner_registry: Arc<crate::runtime::agent::runner_thread::RunnerRegistry>,
     layout_slot: crate::core::layout_persistence::LayoutSlotId,
-    gauges: crate::core::PluginGauges,
+    gauges: crate::app::services::PluginGauges,
     #[cfg(debug_assertions)] input_simulation_enabled: bool,
 ) -> anyhow::Result<(
     crate::runtime::engine_session::EngineSession,
@@ -86,10 +86,10 @@ pub(super) fn build_engine_and_plugins(
 
 /// 새 창의 engine은 task ID 순번을 기존 engine과 공유하고 runner 등록부는 TaskService의 것을 쓴다.
 fn additional_window_task_scope(
-    src: &crate::core::task_service::TaskScope,
-    tasks: &crate::core::task_service::TaskService,
-) -> crate::core::task_service::TaskScope {
-    crate::core::task_service::TaskScope::with_seq(
+    src: &crate::runtime::task_service::TaskScope,
+    tasks: &crate::runtime::task_service::TaskService,
+) -> crate::runtime::task_service::TaskScope {
+    crate::runtime::task_service::TaskScope::with_seq(
         Arc::clone(src.agent_seq()),
         Arc::clone(tasks.runner_registry()),
     )
@@ -101,7 +101,7 @@ fn build_core_state_first_boot(
     factory: crate::waker::SharedWakerFactory,
     proxy: winit::event_loop::EventLoopProxy<crate::AppEvent>,
     memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-    runner_registry: Arc<crate::core::agent::runner_thread::RunnerRegistry>,
+    runner_registry: Arc<crate::runtime::agent::runner_thread::RunnerRegistry>,
     layout_slot: crate::core::layout_persistence::LayoutSlotId,
     #[cfg(debug_assertions)] input_simulation_enabled: bool,
 ) -> anyhow::Result<crate::runtime::engine_session::EngineSession> {
@@ -117,9 +117,9 @@ fn build_core_state_first_boot(
         memory,
         runner_registry,
     )?;
-    engine.core_state.waker_factory = Some(factory);
-    engine.core_state.identify_worker = Some(Arc::new(
-        crate::identify_worker::IdentifyWorker::new(engine.core_state.file_format.clone(), proxy),
+    engine.core_state.runtime.waker_factory = Some(factory);
+    engine.core_state.runtime.identify_worker = Some(Arc::new(
+        crate::identify_worker::IdentifyWorker::new(engine.core_state.runtime.file_format.clone(), proxy),
     ));
     #[cfg(debug_assertions)]
     {
@@ -136,17 +136,17 @@ fn build_core_state_first_boot(
 fn build_plugin_manager(
     factory: crate::waker::SharedWakerFactory,
     engine: &crate::core::CoreState,
-    gauges: crate::core::PluginGauges,
+    gauges: crate::app::services::PluginGauges,
 ) -> plugin::PluginManager {
     let mut mgr = plugin::PluginManager::with_registries(
         factory,
-        engine.file_format.clone(),
-        engine.file_handler.clone(),
+        engine.runtime.file_format.clone(),
+        engine.runtime.file_handler.clone(),
     );
     // 호스트와 같은 게이지를 써야 플러그인 대기 시간도 원래 요청의 pressure 기록에 연결된다.
     mgr.set_plugin_wait(gauges.plugin_wait);
     mgr.set_slow_requests(gauges.slow_requests);
-    mgr.set_surface_registry(engine.surface_registry.clone());
+    mgr.set_surface_registry(engine.runtime.surface_registry.clone());
     mgr.set_i18n_registrar(std::sync::Arc::new(crate::i18n::BinI18nRegistrar));
     mgr.set_hook_handler_registry(std::sync::Arc::new(
         crate::hook_handler::HostHookHandlerPort,
@@ -225,7 +225,7 @@ impl App {
                     src.approval_store.clone(),
                     src.telemetry_seq.clone(),
                     src.anomaly_detector.clone(),
-                    additional_window_task_scope(src.task_scope, &self.core.tasks),
+                    additional_window_task_scope(src.task_scope, &self.services.tasks),
                     src.next_ids.clone(),
                 )
             });
@@ -252,21 +252,21 @@ impl App {
                     waker,
                     Some(next_ids),
                     Some(layout_slot),
-                    self.core.memory_arc(),
-                    Arc::clone(self.core.tasks.runner_registry()),
+                    self.services.memory_arc(),
+                    Arc::clone(self.services.tasks.runner_registry()),
                 )?;
-                engine.core_state.waker_factory = Some(factory.clone());
-                engine.core_state.surface_registry = surface_registry;
-                engine.core_state.file_format = file_format;
-                engine.core_state.file_handler = file_handler;
-                engine.core_state.identify_worker = identify_worker;
+                engine.core_state.runtime.waker_factory = Some(factory.clone());
+                engine.core_state.runtime.surface_registry = surface_registry;
+                engine.core_state.runtime.file_format = file_format;
+                engine.core_state.runtime.file_handler = file_handler;
+                engine.core_state.runtime.identify_worker = identify_worker;
                 engine.core_state.approval_store = approval_store;
                 engine.core_state.telemetry_seq = telemetry_seq;
                 engine.core_state.anomaly_detector = anomaly_detector;
                 engine.task_scope = task_scope;
                 #[cfg(debug_assertions)]
                 {
-                    engine.core_state.input_simulation_enabled = self.input_simulation_enabled;
+                    engine.core_state.input_simulation_enabled = self.state.input_simulation_enabled;
                 }
                 tracing::info!(
                     target: "tasty::boot",
@@ -280,18 +280,18 @@ impl App {
                     rows,
                     factory.clone(),
                     self.view.proxy.clone(),
-                    self.core.memory_arc(),
-                    Arc::clone(self.core.tasks.runner_registry()),
+                    self.services.memory_arc(),
+                    Arc::clone(self.services.tasks.runner_registry()),
                     layout_slot,
                     #[cfg(debug_assertions)]
-                    self.input_simulation_enabled,
+                    self.state.input_simulation_enabled,
                 )?
             };
             self.install_pending_engine(engine);
         }
 
         if self.plugin_manager.is_none() {
-            let gauges = self.core.plugin_gauges();
+            let gauges = self.services.plugin_gauges();
             let mgr = build_plugin_manager(factory, self.core_state(), gauges);
             self.plugin_manager = Some(mgr);
         }
@@ -302,8 +302,8 @@ impl App {
         &mut self,
         restored_idx_after_layout: Option<crate::model::RestoredPresentation>,
     ) -> Result<crate::state::MainViewState, String> {
-        let preset_store = self.core.preset_store.clone();
-        let memory = self.core.memory_arc();
+        let preset_store = self.services.preset_store.clone();
+        let memory = self.services.memory_arc();
         let engine = self
             .engines
             .pending_mut()
@@ -329,8 +329,8 @@ impl App {
             return Vec::new();
         };
         engine.local_workspaces.iter().flat_map(|workspace|workspace.all_surface_ids()).filter_map(|id|
-            engine.find_surface_by_id(id).and_then(|surface|surface.as_any().downcast_ref::<crate::runtime::live_projection::bootstrap::JournalPlaceholder>())
-                .filter(|surface|surface.kind!="terminal" && engine.surface_registry.get_live(&surface.kind).is_none())
+            engine.find_surface_by_id(id).and_then(|surface|surface.as_any().downcast_ref::<crate::runtime::surface_restorer::JournalPlaceholder>())
+                .filter(|surface|surface.kind!="terminal" && engine.runtime.surface_registry.get_live(&surface.kind).is_none())
                 .map(|surface|surface.kind.clone())
         ).collect()
     }
@@ -345,7 +345,7 @@ impl App {
         let engine = self.core_state();
         needed
             .iter()
-            .all(|k| engine.surface_registry.get_live(k).is_some())
+            .all(|k| engine.runtime.surface_registry.get_live(k).is_some())
     }
 
     pub(super) fn boot_pump_step_remote_restores_done(&mut self) -> bool {
@@ -430,7 +430,7 @@ impl App {
             }
             let active_workspace = main.state.active_workspace_index(&session.core_state);
             Self::retire_main_engine(
-                &mut self.core,
+                &mut self.services,
                 &mut session.borrow_mut(),
                 active_workspace,
                 &main.state.navigation,
@@ -749,7 +749,7 @@ mod register_focus_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::task_service::{TaskScope, TaskService};
+    use crate::runtime::task_service::{TaskScope, TaskService};
 
     #[test]
     fn an_additional_window_scope_shares_the_service_registry_and_the_id_sequence() {

@@ -1,5 +1,5 @@
 use crate::adapters::ipc::handler::params::require_u32;
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use serde_json::json;
 
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -100,12 +100,12 @@ fn send_fail_message(surface_id: u32, outcome: &SendOutcome) -> String {
 }
 
 fn dispatch_send(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut EngineMut<'_>,
     surface_id: u32,
-    payload: crate::core::intent::SendPayload,
+    payload: crate::app::command::SendPayload,
 ) -> SendOutcome {
-    let intent = crate::core::intent::DomainIntent::SendToSurface {
+    let intent = crate::app::command::DomainIntent::SendToSurface {
         surface_id,
         payload,
     };
@@ -114,8 +114,8 @@ fn dispatch_send(
         Err(_) => return SendOutcome::NotFound,
     };
     match events.into_iter().next() {
-        Some(crate::core::intent::CoreEvent::SurfaceSent { sent: true, .. }) => SendOutcome::Sent,
-        Some(crate::core::intent::CoreEvent::SurfaceSent {
+        Some(crate::app::command::CoreEvent::SurfaceSent { sent: true, .. }) => SendOutcome::Sent,
+        Some(crate::app::command::CoreEvent::SurfaceSent {
             hard_occupied: true,
             ..
         }) => SendOutcome::HardOccupied,
@@ -124,7 +124,7 @@ fn dispatch_send(
 }
 
 pub(crate) fn handle_surface_send(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -141,7 +141,7 @@ pub(crate) fn handle_surface_send(
         core,
         engine,
         surface_id,
-        crate::core::intent::SendPayload::Text(text),
+        crate::app::command::SendPayload::Text(text),
     ) {
         SendOutcome::Sent => {
             JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
@@ -151,7 +151,7 @@ pub(crate) fn handle_surface_send(
 }
 
 pub(crate) fn handle_surface_send_key(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -201,7 +201,7 @@ pub(crate) fn handle_surface_send_key(
                     core,
                     engine,
                     surface_id,
-                    crate::core::intent::SendPayload::Text(other.to_string()),
+                    crate::app::command::SendPayload::Text(other.to_string()),
                 ) {
                     SendOutcome::Sent => {
                         return JsonRpcResponse::success(
@@ -224,7 +224,7 @@ pub(crate) fn handle_surface_send_key(
         core,
         engine,
         surface_id,
-        crate::core::intent::SendPayload::Bytes(bytes),
+        crate::app::command::SendPayload::Bytes(bytes),
     );
     JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
 }
@@ -256,7 +256,7 @@ pub(crate) fn handle_surface_wake(
 }
 
 pub(crate) fn handle_surface_send_combo(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -306,7 +306,7 @@ pub(crate) fn handle_surface_send_combo(
         core,
         engine,
         surface_id,
-        crate::core::intent::SendPayload::Bytes(bytes_to_send),
+        crate::app::command::SendPayload::Bytes(bytes_to_send),
     ) {
         SendOutcome::Sent => JsonRpcResponse::success(id, json!({ "sent": true })),
         SendOutcome::HardOccupied => JsonRpcResponse::invalid_params(
@@ -320,7 +320,7 @@ pub(crate) fn handle_surface_send_combo(
 }
 
 pub(crate) fn handle_surface_send_to(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -337,7 +337,7 @@ pub(crate) fn handle_surface_send_to(
         core,
         engine,
         surface_id,
-        crate::core::intent::SendPayload::Text(text),
+        crate::app::command::SendPayload::Text(text),
     ) {
         SendOutcome::Sent => JsonRpcResponse::success(id, json!({ "sent": true })),
         outcome => JsonRpcResponse::invalid_params(id, send_fail_message(surface_id, &outcome)),

@@ -1,6 +1,6 @@
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{PopupAction, PopupScope};
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use crate::i18n::t;
 use crate::state::MainViewState;
 use crate::theme::Theme;

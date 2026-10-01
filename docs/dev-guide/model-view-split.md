@@ -4,6 +4,9 @@
 
 `tasty-model` 이 의존하는 type-\* crate 는 `tasty-type-geometry`(LogicalPx/PhysicalPx)와 `tasty-type-appearance` 다 — 둘 다 GUI 타입을 들이지 않는다.
 
+
+공통 창 상태는 `src/view/state.rs`의 `ViewState`, OS 창과 GPU는 `ViewBase`, MainView 전용 선택·viewport·popup 데이터는 `MainViewState`에 둔다. 비동기 구조 완료가 화면 선택을 바꿀 때는 originating View identity와 NavigationState의 선택 세대를 확인한다. EngineSession의 kind 인스턴스는 EngineRuntime의 단일 컬렉션에서 빌리며, 구조 트리의 SurfaceDescriptor를 실행 객체로 downcast하지 않는다.
+
 ## 왜 분리하나
 
 - **플러그인 호환성** — 모델은 직렬화 가능한 식별 정보만 보유 → plugin 프로세스가 같은 모델을 그대로 쓸 수 있다.

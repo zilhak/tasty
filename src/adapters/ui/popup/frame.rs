@@ -77,7 +77,7 @@ fn drain_on_close_hooks_with_lookup(
 pub(crate) fn draw_popup_layer(
     ctx: &egui::Context,
     state: &mut MainViewState,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     draw_ctx: &crate::adapters::ui::LayoutContext,
 ) {
     // intent-exempt: 매 프레임 번역·크기를 렌더링 전에 갱신한다. Intent 큐는 한 프레임 지연을 만든다.

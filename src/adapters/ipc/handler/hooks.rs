@@ -1,6 +1,6 @@
 use super::params::require_u32;
 use super::params::{self, p_try};
-use crate::core::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use serde_json::json;
 use tasty_hooks::HookEvent;
 
@@ -19,10 +19,10 @@ fn validate_hook_event(
     let HookEvent::Custom(key) = event else {
         return Ok(());
     };
-    if engine.plugin_hook_events.contains(key) {
+    if engine.runtime.plugin_hook_events.contains(key) {
         return Ok(());
     }
-    let declared = engine.plugin_hook_events.all_keys();
+    let declared = engine.runtime.plugin_hook_events.all_keys();
     let declared_str = if declared.is_empty() {
         "(none — no active plugin declares hook events)".to_string()
     } else {
@@ -38,7 +38,7 @@ fn validate_hook_event(
 }
 
 pub(crate) fn handle_hook_set(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -72,7 +72,7 @@ pub(crate) fn handle_hook_set(
     // command-completed는 OSC 133 셸 통합이 필요하다. 아직 prompt boundary가 없으면 경고한다.
     // 막 시작한 셸일 수도 있으므로 훅 등록 자체는 거절하지 않는다.
     if matches!(event, HookEvent::CommandCompleted(_))
-        && !engine.shell_integration_boundary_seen.contains(&surface_id)
+        && !engine.live.shell_integration_boundary_seen.contains(&surface_id)
     {
         tracing::warn!(
             surface_id,
@@ -152,7 +152,7 @@ pub(crate) fn handle_hook_list(
 }
 
 pub(crate) fn handle_hook_unset(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -167,7 +167,7 @@ pub(crate) fn handle_hook_unset(
 }
 
 pub(crate) fn handle_global_hook_set(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -226,7 +226,7 @@ pub(crate) fn handle_global_hook_list(
 }
 
 pub(crate) fn handle_global_hook_unset(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -241,7 +241,7 @@ pub(crate) fn handle_global_hook_unset(
 }
 
 pub(crate) fn handle_surface_fire_hook(
-    core: &mut crate::core::Core,
+    core: &mut crate::app::services::AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,

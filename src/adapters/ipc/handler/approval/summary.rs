@@ -2,10 +2,10 @@
 
 use super::*;
 use crate::adapters::ipc::handler::params::require_u32;
-use crate::core::Core;
+use crate::app::services::AppServices;
 
 pub fn handle_summary_set(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -38,7 +38,7 @@ pub fn handle_summary_set(
 
 /// `approval.summary.get` — workspace 의 요약을 반환. 없으면 `content: null`.
 pub fn handle_summary_get(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,

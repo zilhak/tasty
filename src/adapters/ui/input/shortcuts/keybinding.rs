@@ -1,7 +1,7 @@
 //! 설정된 키바인딩을 그룹 순서대로 비교해 처음 매칭된 액션을 실행한다.
 //! 그룹 순서도 충돌 우선순위에 영향을 준다.
 
-use crate::core::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineMut;
 use winit::keyboard::{Key, ModifiersState};
 
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
@@ -234,7 +234,7 @@ impl MainView {
             );
             if will_open {
                 state.dispatch_intent(
-                    crate::core::intent::DomainIntent::MarkAllNotificationsRead
+                    crate::app::command::DomainIntent::MarkAllNotificationsRead
                         .from_user_shortcut("toggle_notifications"),
                 );
             }
@@ -788,7 +788,7 @@ impl MainView {
             let ws = engine.workspace_at(idx)?;
             ws.mirror.then_some(ws.id)
         });
-        engine.pending_screenshot_captures.push(mirror_ws_id);
+        engine.remote.pending_screenshot_captures.push(mirror_ws_id);
     }
 
     pub(crate) fn open_preset_apply_popup(

@@ -15,7 +15,7 @@ use tasty_plugin_protocol::{
     SurfaceSetContextParams, ThemeWire,
 };
 
-use crate::core::egui_mesh_surface::EguiMeshSurface;
+use crate::runtime::egui_mesh_surface::EguiMeshSurface;
 use crate::model::{PhysicalPx, PhysicalRect};
 use crate::plugin::PluginManager;
 use crate::plugin_bridge::MeshForwardCommon;
@@ -73,7 +73,7 @@ impl MainView {
     /// 합성과 같은 surface 영역으로 포인터 대상을 찾는다.
     pub(super) fn egui_mesh_target_at(
         &self,
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_access::EngineRef<'_>,
         x: f32,
         y: f32,
     ) -> Option<(u32, String, PhysicalRect)> {
@@ -84,7 +84,7 @@ impl MainView {
         {
             for r in regions {
                 if r.rect.contains(PhysicalPx(x), PhysicalPx(y))
-                    && let Some(ms) = r.surface.as_any().downcast_ref::<EguiMeshSurface>()
+                    && let Some(ms) = engine.find_surface_by_id(r.id).and_then(|surface|surface.as_any().downcast_ref::<EguiMeshSurface>())
                 {
                     return Some((r.id, ms.plugin_id.clone(), r.rect));
                 }
@@ -94,7 +94,7 @@ impl MainView {
     }
 
     /// wire에 전달할 색·is_light·UI 배율. 현재 reduced_motion은 포함하지 않는다.
-    pub(super) fn mesh_theme_snapshot(&self, engine: &crate::core::CoreState) -> ThemeWire {
+    pub(super) fn mesh_theme_snapshot(&self, engine: &crate::runtime::engine_access::EngineRef<'_>) -> ThemeWire {
         let theme = crate::theme::theme();
         ThemeWire {
             colors: theme.to_colors(),
@@ -105,7 +105,7 @@ impl MainView {
 
     /// 로컬·원격 mesh가 공유하는 modifier 변환.
     pub(super) fn mesh_modifiers(&self) -> ModifiersWire {
-        let m = &self.base.modifiers;
+        let m = &self.base.state.modifiers;
         let cmd = if cfg!(target_os = "macos") {
             m.super_key()
         } else {
@@ -191,7 +191,7 @@ impl MainView {
     /// 포커스된 EguiMeshSurface의 ID. 다른 종류에는 입력을 전달하지 않는다.
     pub(crate) fn focused_egui_mesh_surface_id(
         &self,
-        engine: &crate::core::CoreState,
+        engine: &crate::runtime::engine_access::EngineRef<'_>,
     ) -> Option<u32> {
         let sid = self.state.focused_surface_id(engine)?;
         let surface = engine.find_surface_by_id(sid)?;
@@ -237,7 +237,7 @@ impl MainView {
     /// 이 창의 surface가 무효화됐으면 다음 컨텍스트 전송을 요청한다. 다른 창의 ID는 무시한다.
     pub(crate) fn mark_surface_invalidated(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
         surface_id: u32,
     ) -> bool {
         let exists = self
@@ -259,7 +259,7 @@ impl MainView {
     /// [`MainView::handle_redraw`] 가 합성(`gpu.render`) 직전에 부른다.
     pub(super) fn forward_egui_mesh_context(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
         mgr: &PluginManager,
     ) {
         let terminal_rect = self.compute_terminal_rect();
@@ -274,7 +274,7 @@ impl MainView {
                 .surface_regions(&*engine, terminal_rect, self.base.gpu.scale_factor())
         {
             for r in regions {
-                if let Some(ms) = r.surface.as_any().downcast_ref::<EguiMeshSurface>() {
+                if let Some(ms) = engine.find_surface_by_id(r.id).and_then(|surface|surface.as_any().downcast_ref::<EguiMeshSurface>()) {
                     targets.push(MeshTarget {
                         sid: r.id,
                         plugin_id: ms.plugin_id.clone(),
@@ -414,12 +414,12 @@ impl MainView {
     /// 기존 surface의 새 구독·복구 요청은 pending_full에 넣고 해당 tick의 중계를 생략한다.
     pub(super) fn forward_mesh_to_attach_subscribers(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
         mgr: &PluginManager,
         stream_hub: &StreamHub,
     ) {
-        for sid in engine.mesh_mirror.active_surface_ids() {
-            let Some(ctx) = engine.mesh_mirror.get(sid) else {
+        for sid in engine.remote.mesh_mirror.active_surface_ids() {
+            let Some(ctx) = engine.remote.mesh_mirror.get(sid) else {
                 continue;
             };
             let client_id = ctx.client_id;
@@ -429,13 +429,13 @@ impl MainView {
             let theme = ctx.theme.clone();
             let focused = ctx.focused;
 
-            let need_full = engine.mesh_mirror.take_need_full_textures(sid);
+            let need_full = engine.remote.mesh_mirror.take_need_full_textures(sid);
             // 컨텍스트 전송은 기존 로컬 경로가 맡으며 여기서는 변경 표시만 비운다.
-            let _ = engine.mesh_mirror.take_dirty(sid);
+            let _ = engine.remote.mesh_mirror.take_dirty(sid);
 
             if mgr.egui_mesh_frame(sid).is_none() {
                 let Some(ms) = engine.find_egui_mesh_surface(sid) else {
-                    engine.mesh_mirror.remove(sid);
+                    engine.remote.mesh_mirror.remove(sid);
                     continue;
                 };
                 let plugin_id = ms.plugin_id.clone();
@@ -473,7 +473,7 @@ impl MainView {
                 st.common.bootstrap_sent = true;
             } else if need_full {
                 self.egui_mesh.entry(sid).or_default().set_pending_full();
-                self.base.dirty = true;
+                self.base.state.dirty = true;
                 continue;
             }
 

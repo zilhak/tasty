@@ -6,9 +6,10 @@
 //! 기본 GUI 시험에서도 이 모듈을 컴파일해 큐 처리를 검증한다.
 //! 설계: docs/design/flows/action-dispatch.md, docs/adr/0003-headless-behavior.md.
 
-use crate::core::engine_access::{EngineMut, EngineRef};
-use crate::core::intent::CoreEvent;
-use crate::core::{AttentionKind, Core, CoreState};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::app::command::CoreEvent;
+use crate::core::{AttentionKind,  State};
+use crate::app::services::AppServices;
 use crate::intent::{DispatchedIntent, Intent};
 use crate::state::RequestContext;
 
@@ -20,7 +21,7 @@ const MAX_DRAIN_ROUNDS: usize = 8;
 /// 예를 들어 surface.set_mark 응답 후에는 surface.read_since_mark로 그 마커를 읽을 수 있어야 한다.
 #[cfg(test)]
 pub(crate) fn drain_pending_intents(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
 ) {
@@ -29,7 +30,7 @@ pub(crate) fn drain_pending_intents(
 
 #[cfg(not(feature = "gui"))]
 pub(crate) fn drain_pending_intents_in_app(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     journal: &mut crate::app::journal::JournalApplication,
@@ -45,7 +46,7 @@ pub(crate) fn drain_pending_intents_in_app(
                 Err(error)=> {super::report_apply_error(state,engine.core,&dispatched.origin,"creation input",&error);continue;},
             }
             let handled=match (engine_id,&dispatched.body) {
-                (Some(id),Intent::Domain(intent))=>journal.admit_metadata_intent(id,engine.core,intent,&dispatched.origin),
+                (Some(id),Intent::Domain(intent))=>journal.admit_metadata_intent(id,engine.core,intent,&dispatched.origin,None),
                 (Some(id),Intent::DirectRename(rename))=>{journal.admit_direct_rename(id,rename,&dispatched.origin);true},
                 (None,Intent::Domain(_)|Intent::DirectRename(_))=>{tracing::error!("headless structural intent has no application engine owner");true},
                 _=>false,
@@ -57,7 +58,7 @@ pub(crate) fn drain_pending_intents_in_app(
 }
 
 fn drain_with(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     mut journal_admission: impl FnMut(&CoreState, &DispatchedIntent) -> bool,
@@ -85,7 +86,7 @@ fn drain_with(
 /// 나머지 이벤트는 여기서 버리며 플러그인 이벤트 버스로 전달하지 않는다.
 /// 헤드리스에서도 이 이벤트를 구독해야 한다면 별도의 전달 경로가 필요하다.
 pub(crate) fn drain_pending_host_events(
-    core: &Core,
+    core: &AppServices,
     state: &mut RequestContext,
     engine: &EngineRef<'_>,
 ) {
@@ -115,7 +116,7 @@ pub(crate) fn apply_terminal_cwd_changed(engine: &mut EngineMut<'_>, surface_id:
 }
 
 fn apply_one(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     dispatched: DispatchedIntent,
@@ -141,7 +142,7 @@ fn apply_one(
 
 // GUI와 같은 Intent 변종을 처리해 큐에 들어온 요청이 빠지지 않도록 한다.
 fn route_non_domain(
-    core: &mut Core,
+    core: &mut AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     dispatched: &DispatchedIntent,
@@ -242,7 +243,7 @@ fn push_notification(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::builder::CoreBuilder;
+    use crate::app::services::builder::AppServicesBuilder;
     use crate::ipc::caller::CallerContext;
     use crate::ipc::protocol::JsonRpcRequest;
     use std::sync::{Arc, Mutex};
@@ -250,8 +251,8 @@ mod tests {
     // 큐 처리 유무에 따른 누적 차이가 드러나도록 요청을 반복한다.
     const N: usize = 128;
 
-    fn test_core() -> Core {
-        CoreBuilder::new()
+    fn test_core() -> AppServices {
+        AppServicesBuilder::new()
             .with_fs(Arc::new(crate::adapters::test::mem_fs::MemFileSystem::new()))
             .with_clock(Arc::new(
                 crate::adapters::test::fake_clock::FakeClock::default(),
@@ -275,11 +276,11 @@ mod tests {
             )))
             .with_settings_storage(Arc::new(tasty_settings::FileSettingsStorage))
             .build()
-            .expect("test Core")
+            .expect("test AppServices")
     }
 
     fn fixture() -> (
-        Core,
+        AppServices,
         RequestContext,
         crate::runtime::engine_session::EngineSession,
         u32,
@@ -307,7 +308,7 @@ mod tests {
     }
 
     fn send(
-        core: &mut Core,
+        core: &mut AppServices,
         state: &mut RequestContext,
         engine: &mut EngineMut<'_>,
         method: &str,
@@ -412,7 +413,7 @@ mod tests {
 
     // 반복해서 큐에 넣도록 once가 아닌 훅을 등록한다.
     fn set_a_hook(
-        core: &mut Core,
+        core: &mut AppServices,
         state: &mut RequestContext,
         engine: &mut EngineMut<'_>,
         sid: u32,

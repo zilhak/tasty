@@ -1,7 +1,7 @@
 use serde_json::{Value, json};
 
 use crate::adapters::ipc::handler::params::{self, p_try};
-use crate::core::Core;
+use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -16,7 +16,7 @@ fn serialize<T: serde::Serialize>(id: Value, value: T) -> JsonRpcResponse {
 }
 
 pub fn handle_semaphore_create(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -49,7 +49,7 @@ pub fn handle_semaphore_create(
 }
 
 pub fn handle_semaphore_set_permits(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -82,7 +82,7 @@ pub fn handle_semaphore_set_permits(
 }
 
 pub fn handle_semaphore_acquire(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -114,7 +114,7 @@ pub fn handle_semaphore_acquire(
 }
 
 pub fn handle_semaphore_release(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -142,7 +142,7 @@ pub fn handle_semaphore_release(
 }
 
 pub fn handle_semaphore_list(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -162,7 +162,7 @@ pub fn handle_semaphore_list(
 }
 
 pub fn handle_semaphore_delete(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,

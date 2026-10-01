@@ -1,15 +1,15 @@
 //! 닫은 항목 복원은 사용자 origin에서만 포커스를 옮겨야 한다.
 
 use super::cascade_closed_item_restored;
-use crate::core::intent::RestoredKind;
+use crate::app::command::RestoredKind;
 use crate::intent::{AgentSource, IntentOrigin, UserSource};
 
 fn restored_workspace_index(origin: &IntentOrigin) -> usize {
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
-    crate::core::apply_create_workspace_inner(
+    crate::app::services::apply_create_workspace_inner(
         &mut engine,
-        crate::core::WorkspaceCreationParams::terminal(),
+        crate::app::services::WorkspaceCreationParams::terminal(),
     )
     .unwrap();
     assert_eq!(state.active_workspace_index(&engine), 0);

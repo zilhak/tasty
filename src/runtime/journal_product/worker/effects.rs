@@ -164,12 +164,12 @@ pub(super) fn uncertain(executor:&Executor<StructureDecider>,lease:EffectLease,r
 pub(super) fn cleaned(
     executor: &Executor<StructureDecider>,
     lease: EffectLease,
-    mirror_count: usize,
+    view:super::super::CompletionView,
 ) -> Result<ResultValue> {
     let command = StructuralCommand::FinishCleanup {
         operation: lease.operation.clone(),
     };
-    finish(executor, lease, command, "cleaned", Some(mirror_count))
+    finish(executor, lease, command, "cleaned", Some(view))
 }
 
 fn finish(
@@ -177,13 +177,13 @@ fn finish(
     lease: EffectLease,
     command: StructuralCommand,
     phase: &str,
-    completion_mirrors: Option<usize>,
+    completion_view: Option<super::super::CompletionView>,
 ) -> Result<ResultValue> {
     let key = CommandKey {
         caller_scope: "journal-effect-result".into(),
         idempotency_key: format!("{}/{}/{phase}", lease.effect_id, lease.attempt),
     };
-    let digest = serde_json::to_vec(&(&lease, &command, completion_mirrors))
+    let digest = serde_json::to_vec(&(&lease, &command, &completion_view))
         .map_err(|error| error.to_string())?;
     executor
         .with_state(|_| ())
@@ -244,7 +244,7 @@ fn finish(
             }],
             effect_result: Some(lease),
             cancellation: None,
-            completion_mirrors,
+            completion_view,
             original_results,
         },
     };
@@ -290,7 +290,7 @@ fn cancel_unstarted(
             }],
             effect_result: None,
             cancellation: Some(transition),
-            completion_mirrors: None,
+            completion_view: None,
             original_results,
         },
     };

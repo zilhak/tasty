@@ -5,13 +5,13 @@ use serde_json::{Value, json};
 use tasty_memory::{ListOpts, MemoryValue, PutOpts, Scope};
 use tasty_telemetry::{ANOMALY_KEY_PREFIX, Anomaly, AnomalyKind, anomaly_key};
 
-use crate::core::Core;
+use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 /// expires_at은 조회에서 제외할 뿐 디스크에서 지우지 않는다.
 /// 물리 삭제는 부팅·실행 중 log_retention의 상한으로 별도 수행한다.
-pub(super) fn persist_anomaly(core: &Core, anomaly: &Anomaly) -> std::result::Result<(), String> {
+pub(super) fn persist_anomaly(core: &AppServices, anomaly: &Anomaly) -> std::result::Result<(), String> {
     let key = anomaly_key(anomaly.detected_at, &anomaly.id);
     let value = MemoryValue::Json(serde_json::to_value(anomaly).map_err(|e| e.to_string())?);
     let opts = PutOpts {
@@ -88,7 +88,7 @@ pub(super) fn fire_anomaly_notification(
     };
     let _ = engine; // 옛 직접 add 경로 제거 — cascade 가 라우팅 + add + host event 일괄.
     out.push(
-        crate::core::intent::DomainIntent::PushNotification {
+        crate::app::command::DomainIntent::PushNotification {
             ws_id,
             surface_id: 0,
             title,
@@ -102,7 +102,7 @@ pub(super) fn fire_anomaly_notification(
 /// `telemetry.anomaly.list` — 영속된 anomaly 레코드 조회. 필터: `agent`, `kind`,
 /// `since`, `until` (unix ms). 응답은 `detected_at` 오름차순.
 pub fn handle_anomaly_list(
-    core: &Core,
+    core: &AppServices,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,

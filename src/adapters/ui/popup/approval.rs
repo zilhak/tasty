@@ -253,7 +253,7 @@ pub fn on_close_approval_popup(
 pub fn draw_approval_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::core::engine_access::EngineMut<'_>,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     let Some(current_id) = state.dialogs.pending_approval_ids.front().cloned() else {
         return PopupAction::Close;
@@ -380,7 +380,7 @@ pub fn enqueue_approval(
     let surface = record.request.surface_id.unwrap_or(0);
     let _ = engine; // 옛 직접 add 경로 제거 — cascade 가 라우팅 + add + host event 일괄 처리.
     state.dispatch_intent(
-        crate::core::intent::DomainIntent::PushNotification {
+        crate::app::command::DomainIntent::PushNotification {
             ws_id: workspace,
             surface_id: surface,
             title: format!("{severity_prefix}{}", record.request.title),
