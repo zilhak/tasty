@@ -24,6 +24,7 @@ pub struct AutoAttachOutcome {
 }
 
 pub struct Remote {
+    pub(crate) browsers:crate::browser::Browsers,
     retirements:Vec<crate::transport::RetirementReceipt>,
     attempt_threads:Vec<std::thread::JoinHandle<()>>,
     retirement_failed:bool,
@@ -45,13 +46,13 @@ impl Remote {
     pub fn new()->Self {
         let (tx,rx)=std::sync::mpsc::channel();
         let (connection_tx,connection_rx)=std::sync::mpsc::sync_channel(8);
-        Self {pending_connections:Default::default(),next_connection:1,connection_tx,connection_rx,retirements:Vec::new(),attempt_threads:Vec::new(),retirement_failed:false,shutdown_started:None,attempts:Vec::new(),sessions:Vec::new(),active:Default::default(),last_active_ws:None,pending_reactivation:Default::default(),reconnect:Default::default(),tx,rx}
+        Self {browsers:Default::default(),pending_connections:Default::default(),next_connection:1,connection_tx,connection_rx,retirements:Vec::new(),attempt_threads:Vec::new(),retirement_failed:false,shutdown_started:None,attempts:Vec::new(),sessions:Vec::new(),active:Default::default(),last_active_ws:None,pending_reactivation:Default::default(),reconnect:Default::default(),tx,rx}
     }
 }
 
 #[derive(Clone)]
 pub struct AttemptToken(std::sync::Arc<AttemptState>);
-struct AttemptState {active:std::sync::atomic::AtomicBool,sockets:std::sync::Mutex<Vec<std::net::TcpStream>>}
+struct AttemptState {ssh:std::sync::Mutex<Vec<tasty_ssh::SshCancel>>,active:std::sync::atomic::AtomicBool,sockets:std::sync::Mutex<Vec<std::net::TcpStream>>}
 impl PartialEq for AttemptToken {fn eq(&self,other:&Self)->bool {self.same(other)}}
 impl Eq for AttemptToken {}
 impl std::hash::Hash for AttemptToken {fn hash<H:std::hash::Hasher>(&self,state:&mut H) {std::hash::Hash::hash(&(std::sync::Arc::as_ptr(&self.0) as usize),state);}}
@@ -59,7 +60,13 @@ impl AttemptToken {
     pub fn is_active(&self)->bool {self.0.active.load(std::sync::atomic::Ordering::Acquire)}
     pub(crate) fn cancel(&self) {
         self.0.active.store(false,std::sync::atomic::Ordering::Release);
+        if let Ok(mut ssh)=self.0.ssh.lock() {for cancel in ssh.drain(..) {cancel.cancel();}}
         if let Ok(mut sockets)=self.0.sockets.lock() {for socket in sockets.drain(..) {let _=socket.shutdown(std::net::Shutdown::Both);}}
+    }
+    pub(crate) fn register_ssh(&self,cancel:tasty_ssh::SshCancel)->Result<(),String> {
+        let mut handles=self.0.ssh.lock().map_err(|_|"SSH cancellation state poisoned".to_owned())?;
+        if !self.is_active() {cancel.cancel();return Err("remote attempt retired".into());}
+        handles.push(cancel);Ok(())
     }
     fn complete(&self) {
         self.0.active.store(false,std::sync::atomic::Ordering::Release);
@@ -109,6 +116,7 @@ impl Remote {
         if self.shutdown_started.is_some() {return;}
         self.shutdown_started=Some(Instant::now());
         for attempt in &self.attempts {attempt.token.cancel();}
+        self.shutdown_browsers();
         self.sessions.clear();
         self.pending_connections.clear();
         self.collect_connections();
@@ -119,12 +127,14 @@ impl Remote {
     /// Joining and deadline expiry are distinct observations; callers must not call timeout success.
     pub fn shutdown_observation(&mut self)->ShutdownObservation {
         self.collect_connections();
+        self.shutdown_browsers();
         while let Ok(outcome)=self.rx.try_recv() {drop(outcome);}
         if self.retirements.iter().all(|receipt|receipt.is_done()) {
             // Acquire of every joined receipt follows the worker's final send. Drain once more
             // after that observation so Joined also releases the final owned SSH tunnel outcome.
             while let Ok(outcome)=self.rx.try_recv() {drop(outcome);}
             self.collect_connections();
+            self.shutdown_browsers();
             if self.retirements.iter().any(|receipt|!receipt.is_done()) {return ShutdownObservation::Waiting;}
             if self.retirement_failed || self.retirements.iter().any(|receipt|receipt.failed()) {ShutdownObservation::WorkerFailed} else {ShutdownObservation::Joined}
         } else if self.shutdown_started.is_some_and(|start|start.elapsed()>=std::time::Duration::from_secs(5)) {
@@ -139,7 +149,7 @@ impl Remote {
             });
         }
         if self.attempts.len()>=64 {return Err("remote connection attempt queue is full");}
-        let token=AttemptToken(std::sync::Arc::new(AttemptState {active:std::sync::atomic::AtomicBool::new(true),sockets:std::sync::Mutex::new(Vec::new())}));
+        let token=AttemptToken(std::sync::Arc::new(AttemptState {ssh:std::sync::Mutex::new(Vec::new()),active:std::sync::atomic::AtomicBool::new(true),sockets:std::sync::Mutex::new(Vec::new())}));
         self.attempts.push(AttemptRecord {token:token.clone(),anchor,mapping});
         Ok(token)
     }

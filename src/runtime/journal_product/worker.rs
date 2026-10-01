@@ -116,7 +116,7 @@ pub(super) fn run(
         } else {
             Vec::new()
         };
-        let release_admission=matches!(request.work,Work::Resolve {..}|Work::CancelAdmission);
+        let release_admission=matches!(request.work,Work::Resolve {..}|Work::CancelAdmission|Work::Capture {..});
         let mut result = match &halted {
             Some(reason) => Err(reason.clone()),
             None => handle(&executor, &home, &mut pending, request.ticket, request.work),

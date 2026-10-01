@@ -5,8 +5,8 @@ use std::sync::Arc;
 use winit::event::WindowEvent;
 
 use crate::adapters::ui::{LayoutContext, ToastManager, ToastScope};
-use crate::file::format::FileFormatRegistry;
-use crate::file::handler::FileHandlerRegistry;
+use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;
+use crate::runtime::file_catalog::HandlerCatalog as FileHandlerRegistry;
 use crate::gpu::GpuState;
 use crate::i18n::t;
 use crate::settings::Settings;
@@ -20,9 +20,9 @@ pub struct SettingsView {
     pub settings: Settings,
     settings_ui_state: SettingsUiState,
     /// `FileHandler` 탭의 Extension Mapping sub-tab 에서 사용. Save 시 user TOML 에 직접 저장.
-    file_format: Arc<FileFormatRegistry>,
+    file_format: FileFormatRegistry,
     /// 같은 사용자 TOML의 handler 섹션을 함께 내보내 저장 시 보존한다.
-    file_handler: Arc<FileHandlerRegistry>,
+    file_handler: FileHandlerRegistry,
     /// user TOML 저장 경로. CI/CD 등 홈 디렉토리가 없으면 `None` 으로 들어와 저장 skip.
     user_config_path: Option<std::path::PathBuf>,
     shown: bool,
@@ -32,6 +32,7 @@ pub struct SettingsView {
     /// footer Save 로 닫혔는가. plugin override draft 는 이것이 참일 때만 회수된다 —
     /// Cancel · 창 닫기 · 설정 토글 키로 닫으면 그 draft 는 버려진다.
     committed: bool,
+    original_restore_content:bool,
     toasts: ToastManager,
 }
 
@@ -40,12 +41,13 @@ impl SettingsView {
         gpu: GpuState,
         winit: Arc<winit::window::Window>,
         settings: Settings,
-        file_format: Arc<FileFormatRegistry>,
-        file_handler: Arc<FileHandlerRegistry>,
+        file_format: FileFormatRegistry,
+        file_handler: FileHandlerRegistry,
         user_config_path: Option<std::path::PathBuf>,
     ) -> Self {
         Self {
             base: ViewBase::new(gpu, winit),
+            original_restore_content:settings.general.restore_surface_content,
             settings,
             settings_ui_state: SettingsUiState::new(),
             file_format,
@@ -110,10 +112,8 @@ impl SettingsView {
         self.settings_ui_state.set_settings_pages(pages);
     }
 
-    /// Save 중 bashrc 저장 오류를 한 번 가져온다.
-    /// 설정 창은 닫히므로 App이 메인 창에 오류를 표시한다.
-    pub fn take_bashrc_save_error(&mut self) -> Option<String> {
-        self.settings_ui_state.bashrc_save_error.take()
+    pub(crate) fn take_execution_edits(&mut self)->Option<crate::app::settings_edit::SettingsEdits> {
+        self.committed.then(||self.settings_ui_state.take_execution_edits(self.original_restore_content&&!self.settings.general.restore_surface_content))
     }
 
     /// Save로 닫았을 때만 plugin 단축키 변경 초안을 반환한다.
@@ -269,8 +269,8 @@ impl View for SettingsView {
                     settings: &mut settings,
                     ui_state,
                     captured_double_tap: captured_dt,
-                    file_format: file_format.as_ref(),
-                    file_handler: file_handler.as_ref(),
+                    file_format: &file_format,
+                    file_handler: &file_handler,
                     user_config_path: user_config_path.as_deref(),
                 },
             );

@@ -108,6 +108,8 @@ pub enum CreateFollowup {
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // reason: 명령마다 Box를 할당하는 비용을 피한다
 pub enum Intent {
+    #[cfg(feature="gui")]
+    RemoteBrowser(crate::app::remote_browser::BrowserRequest),
     PatchSettings(crate::app::engine_action::SettingsPatch),
     Engine(crate::app::engine_action::EngineAction),
     ForwardMirror {op:tasty_ipc::stream::StructuralOp,close_focus_candidates:Vec<u32>},

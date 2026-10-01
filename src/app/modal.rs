@@ -36,28 +36,20 @@ impl App {
         if let Some(settings_modal) = modal.as_any_mut().downcast_mut::<view::SettingsView>() {
             let new_settings = settings_modal.settings.clone();
             let plugin_draft = settings_modal.take_plugin_shortcut_draft();
-            // 모달이 없어지기 전에 저장 실패 사유를 회수해 MainView에 알린다.
-            let bashrc_error = settings_modal.take_bashrc_save_error();
+            // Only footer Save returns execution edits; Cancel leaves application services unchanged.
+            let execution_edits=settings_modal.take_execution_edits();
 
-            // 설정 변경은 다음 Intent 처리에서 적용한다. MainView가 없으면 요청을 넣지 못하고 경고만 남긴다.
-            if let Some(main) = self.main_windows_iter_mut().next() {
-                main.state.dispatch_intent(
-                    crate::app::command::DomainIntent::UpdateSettings(new_settings)
-                        .from_user_menu("settings_save"),
-                );
-            } else {
-                tracing::warn!(
-                    "Settings modal closed but no main window to dispatch UpdateSettings"
-                );
+            if execution_edits.is_some() {
+                let origin=crate::app::command::DomainIntent::UpdateSettings(new_settings.clone()).from_user_menu("settings_save").origin;
+                self.cascade_settings_updated(new_settings,&origin);
             }
 
             for main in self.main_windows_iter_mut() {
                 main.state.settings_open_requested = false;
             }
             self.apply_plugin_shortcut_draft(plugin_draft);
-            if let Some(reason) = bashrc_error {
-                self.surface_bashrc_save_failure(&reason);
-            }
+            let owner=self.settings_edit_owner.take();
+            if let (Some(owner),Some(edits))=(owner,execution_edits) {self.apply_settings_edits(owner,edits);}
         } else if modal.as_any().is::<view::PluginsView>() {
             for main in self.main_windows_iter_mut() {
                 main.state.plugins_open = false;

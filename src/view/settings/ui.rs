@@ -1,3 +1,4 @@
+use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;
 pub(crate) mod file_chooser;
 mod file_handler_tab;
 mod keybindings_tab;
@@ -15,8 +16,8 @@ pub(crate) use keybindings_tab::PluginBundleContext;
 pub use keybindings_tab::{KeyCapture, capture_bare_key, capture_winit_key_combo};
 
 use crate::adapters::ui::popup::{DragHandle, PopupManager, PopupState};
-use crate::file::format::{DetectorId, FileFormatRegistry};
-use crate::file::handler::FileHandlerRegistry;
+use crate::file::format::{DetectorId, };
+use crate::runtime::file_catalog::HandlerCatalog as FileHandlerRegistry;
 use crate::i18n::t;
 use crate::plugin::manifest::BindingMode;
 use crate::plugin::registry_state::ShortcutOverride;
@@ -1662,83 +1663,18 @@ fn commit_settings_save(
     user_config_path: Option<&std::path::Path>,
     result: &mut Option<bool>,
 ) {
-    apply_settings_draft(settings, ui_state);
-    commit_file_handler_draft(ui_state, file_format, file_handler, user_config_path);
-    commit_hook_handler_draft(ui_state);
-    *result = Some(true);
+    if let Some(draft)=&ui_state.draft {*settings=draft.clone();}
+    *result=Some(true);
 }
 
-/// draft 를 settings 에 반영 + 그로 인한 부수효과(scrollback 정리, bashrc 저장).
-fn apply_settings_draft(settings: &mut Settings, ui_state: &mut SettingsUiState) {
-    let prev_restore_surface_content = settings.general.restore_surface_content;
-    if let Some(draft) = &ui_state.draft {
-        *settings = draft.clone();
-    }
-    // restore_surface_content 를 끈 경우 기존 scrollback 정리.
-    if prev_restore_surface_content && !settings.general.restore_surface_content {
-        crate::scrollback_store::clear_all();
-    }
-    // tasty 빌트인 bashrc 편집은 Windows 전용 (Misc 탭).
-    #[cfg(windows)]
-    if let Some(bashrc) = &ui_state.bashrc_user_draft
-        && let Err(reason) = crate::settings::general::save_user_bashrc(bashrc)
-    {
-        // 설정 창을 닫은 뒤 메인 창에 표시할 수 있도록 오류를 보관한다.
-        tracing::error!("save bashrc.user failed: {reason}");
-        ui_state.bashrc_save_error = Some(reason);
-    }
-}
-
-/// FileHandler 탭 편집 draft 를 registry commit + 디스크 저장.
-fn commit_file_handler_draft(
-    ui_state: &mut SettingsUiState,
-    file_format: &FileFormatRegistry,
-    file_handler: &FileHandlerRegistry,
-    user_config_path: Option<&std::path::Path>,
-) {
-    let mut fh_touched = false;
-    if let Some(draft) = ui_state.extension_priority_draft.take() {
-        for (ext, order) in &draft {
-            if order.is_empty() {
-                file_format.clear_user_extension_priority(ext);
-            } else {
-                file_format.set_user_extension_priority(ext, order.clone());
-            }
-        }
-        fh_touched = true;
-    }
-    {
-        let fh = std::mem::take(&mut ui_state.fh_edit_draft);
-        if fh.has_changes() {
-            fh.apply(file_format, file_handler);
-            fh_touched = true;
-        }
-    }
-    if fh_touched
-        && let Some(path) = user_config_path
-        && let Err(e) =
-            crate::file::handler::save::save_combined_user_config(file_format, file_handler, path)
-    {
-        tracing::warn!("file_handler tab: save_combined_user_config failed: {e}");
-    }
-}
-
-/// 훅 핸들러 변경 초안을 레지스트리와 사용자 설정 파일에 저장한다.
-fn commit_hook_handler_draft(ui_state: &mut SettingsUiState) {
-    let hh = std::mem::take(&mut ui_state.hook_edit_draft);
-    if hh.has_changes() {
-        let reg = crate::hook_handler::global();
-        hh.apply(reg);
-        match crate::hook_handler::user_config_path() {
-            Some(path) => {
-                if let Err(e) = reg.save_user_config(&path) {
-                    tracing::warn!("hook_handlers tab: save_user_config failed: {e}");
-                }
-            }
-            None => tracing::warn!(
-                "hook_handlers tab: user config path unavailable — changes not persisted"
-            ),
-        }
+impl SettingsUiState {
+    pub(crate) fn take_execution_edits(&mut self,clear_scrollback:bool)->crate::app::settings_edit::SettingsEdits {
+        use crate::app::settings_edit::{RegistryEdit,SettingsEdits};
+        let mut registry=Vec::new();
+        if let Some(draft)=self.extension_priority_draft.take() {registry.extend(draft.into_iter().map(|(extension,order)|RegistryEdit::Extension {extension,order}));}
+        registry.extend(std::mem::take(&mut self.fh_edit_draft).into_edits());
+        registry.extend(std::mem::take(&mut self.hook_edit_draft).into_edits());
+        SettingsEdits {registry,clear_scrollback,bashrc:self.bashrc_user_draft.take()}
     }
 }
 

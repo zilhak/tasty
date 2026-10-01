@@ -124,7 +124,7 @@ impl App {
         use crate::intent::{Intent, UiIntent};
         if matches!(
             intent.body,
-            Intent::PatchSettings(_)|Intent::ForwardMirror {..}|Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_)
+            Intent::RemoteBrowser(_)|Intent::PatchSettings(_)|Intent::ForwardMirror {..}|Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_)
                 |Intent::ApplyPreset {..}|Intent::RestoreClosedItem|Intent::NewWorkspace {..}|Intent::NewTab {..}|Intent::NewTabWithFollowup {..}|Intent::SplitPane {..}|Intent::SplitSurface {..}|Intent::ConvertSurface {..}
         ) {
             IntentClass::Domain
@@ -208,7 +208,7 @@ impl App {
             Intent::RestoreClosedItem => {
                 tracing::error!("undo intent bypassed journal admission");
             }
-            Intent::PatchSettings(_)|Intent::ForwardMirror {..}|Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_) => {
+            Intent::RemoteBrowser(_)|Intent::PatchSettings(_)|Intent::ForwardMirror {..}|Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_) => {
                 tracing::error!(
                     "dispatch_one_intent reached Intent::Domain (should be handled in domain_batch)"
                 );

@@ -13,7 +13,6 @@ mod focus;
 mod fullscreen_stage_tests;
 #[cfg(feature = "gui")]
 mod handler_recent;
-mod ipc_window;
 #[cfg(any(feature = "gui", test))]
 mod layout;
 #[cfg(feature = "gui")]

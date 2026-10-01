@@ -50,3 +50,5 @@ pub(crate) mod pending_submit;
 pub(crate) mod engine_read;
 
 pub(crate) mod kind_catalog;
+
+pub(crate) mod file_catalog;

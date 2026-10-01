@@ -70,77 +70,18 @@ impl HookHandlerEditDraft {
             || !self.add.is_empty()
     }
 
-    /// draft 를 registry 에 commit 한다. 디스크 영속(`save_user_config`)은 호출측
-    /// (Settings Save) 책임 — 파일 핸들러 sub-tab 과 동일 분업.
-    pub fn apply(self, reg: &HookHandlerRegistry) {
-        apply_enabled(&self.enabled, reg);
-        apply_cmd_edits(&self.cmd_edits, reg);
-        apply_removals(&self.remove, reg);
-        apply_additions(self.add, reg);
-    }
-}
-
-/// enabled 토글 draft 를 user-origin `disabled` override 로 commit.
-fn apply_enabled(enabled: &BTreeMap<HookHandlerId, bool>, reg: &HookHandlerRegistry) {
-    for (id, is_enabled) in enabled {
-        reg.set_user_handler_disabled(id, !is_enabled);
-    }
-}
-
-/// ShellCommand 행 인라인 명령 편집 draft 를 commit.
-fn apply_cmd_edits(cmd_edits: &BTreeMap<HookHandlerId, String>, reg: &HookHandlerRegistry) {
-    for (id, cmd) in cmd_edits {
-        // 인라인 편집은 전체 명령 문자열 하나 — `command` 에 그대로 담고
-        // args 는 비운다 (hook 트리거 실행 경로가 셸 경유로 해석).
-        // ShellCommand 는 source=hook 불변식이 있어 명시적으로 함께 적는다.
-        let decl = UserHookHandlerUpsertDecl {
-            id: id.as_str().to_string(),
-            source: Some(HookSource::Hook),
-            priority: None,
-            display_name_i18n_key: None,
-            disabled: None,
-            action: Some(UserHookHandlerActionDecl::ShellCommand {
-                command: cmd.clone(),
-                args: Vec::new(),
-            }),
-        };
-        if let Err(e) = reg.upsert_user_handler(decl) {
-            tracing::warn!("hook_handlers tab: cmd edit upsert failed: {e}");
-        }
-    }
-}
-
-/// user-origin 핸들러 삭제 draft 를 commit.
-fn apply_removals(remove: &BTreeSet<HookHandlerId>, reg: &HookHandlerRegistry) {
-    for id in remove {
-        reg.remove_user_handler(id);
-    }
-}
-
-/// 신규 user 핸들러 추가 draft 를 commit.
-fn apply_additions(add: Vec<PendingHookAdd>, reg: &HookHandlerRegistry) {
-    for add in add {
-        let decl = UserHookHandlerUpsertDecl {
-            id: format!("user/{}", add.short),
-            source: Some(HookSource::Hook),
-            priority: Some(add.priority),
-            display_name_i18n_key: None,
-            disabled: Some(false),
-            action: Some(UserHookHandlerActionDecl::ShellCommand {
-                command: add.cmd,
-                args: Vec::new(),
-            }),
-        };
-        if let Err(e) = reg.upsert_user_handler(decl) {
-            tracing::warn!("hook_handlers tab: add upsert failed: {e}");
-        }
+    pub(crate) fn into_edits(self)->Vec<crate::app::settings_edit::RegistryEdit> {
+        use crate::app::settings_edit::RegistryEdit as E;
+        self.enabled.into_iter().map(|(id,value)|E::HookEnabled(id,value))
+            .chain(self.remove.into_iter().map(E::RemoveHook))
+            .chain(self.cmd_edits.into_iter().map(|(id,cmd)|E::UpsertHook(UserHookHandlerUpsertDecl {id:id.as_str().to_owned(),source:Some(HookSource::Hook),priority:None,display_name_i18n_key:None,disabled:None,action:Some(UserHookHandlerActionDecl::ShellCommand {command:cmd,args:Vec::new()})})))
+            .chain(self.add.into_iter().map(|add|E::UpsertHook(UserHookHandlerUpsertDecl {id:format!("user/{}",add.short),source:Some(HookSource::Hook),priority:Some(add.priority),display_name_i18n_key:None,disabled:Some(false),action:Some(UserHookHandlerActionDecl::ShellCommand {command:add.cmd,args:Vec::new()})}))).collect()
     }
 }
 
 /// Hook Handlers sub-tab 콘텐츠 (jsx `HookHandlers` 전사).
 pub(super) fn draw_hook_handlers(ui: &mut egui::Ui, hh: &mut HookHandlerEditDraft) {
     let th = crate::theme::theme();
-    let reg = crate::hook_handler::global();
     vspace(ui, th.spacing_xs);
 
     // ── intro row: 설명 paragraph(flex 1, measure-md) + "Add handler" 버튼 ──
@@ -190,7 +131,7 @@ pub(super) fn draw_hook_handlers(ui: &mut egui::Ui, hh: &mut HookHandlerEditDraf
     vspace(ui, th.spacing_xs);
 
     // ── 등록 핸들러 rows (registry 정렬순: priority↑ → owner → id) + draft 추가분 ──
-    let rows = reg.all_handlers_including_disabled();
+    let rows = crate::runtime::file_catalog::hook_handlers();
     if rows.is_empty() && hh.add.is_empty() {
         ui.label(
             egui::RichText::new(t("settings.file_handler.hook_handlers.empty"))
@@ -712,7 +653,7 @@ mod tests {
             .insert(HookHandlerId::new("user/greet"), "echo bye".into());
         draft.apply(&reg);
 
-        let rows = reg.all_handlers_including_disabled();
+        let rows = crate::runtime::file_catalog::hook_handlers();
         assert!(matches!(
             &rows[0].action,
             HookHandlerAction::ShellCommand { command, .. } if command == "echo bye"

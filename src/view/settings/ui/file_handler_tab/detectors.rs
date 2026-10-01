@@ -1,7 +1,8 @@
+use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;
 use std::collections::BTreeSet;
 
 use crate::file::format::{
-    DetectorDecl, DetectorId, DetectorRuleDecl, DetectorRuleKind, FileFormatRegistry, RuleOrigin,
+    DetectorDecl, DetectorId, DetectorRuleDecl, DetectorRuleKind, RuleOrigin,
 };
 use crate::i18n::t;
 

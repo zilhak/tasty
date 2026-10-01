@@ -1,12 +1,6 @@
-//! IPC 핸들러가 RequestContext 전체 대신 사용하는 창 연산과 요청별 intent 목록.
-//! 창 조회·workspace 변경·이벤트 큐 등 필요한 연산은 IpcWindow로 제공한다.
-//! 구조 변경은 도메인 포트 CascadeWindow를 함께 사용한다.
-//!
-//! 핸들러는 IntentOutbox에 intent를 넣고 진입점이 창 큐 끝으로 옮긴다.
-//! 기존 큐 뒤에 요청 순서대로 추가하며, 진입 검사의 intent가 핸들러보다 먼저 들어간다.
-//! 이 순서는 handler/intent_order_tests.rs에서 확인한다.
-//!
-//! 창 자체를 조작하는 GUI·debug 핸들러는 별도 라우터가 EntryWindow를 통해 호출한다(ADR-0002).
+//! Request-local presentation queries and output collection for engine handlers.
+//! RequestScope owns the captured defaults and returned intents; it exposes no View or lifecycle methods.
+//! Explicit GUI/debug routes run separately after the engine phase.
 
 use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::path::PathBuf;
@@ -14,7 +8,7 @@ use std::path::PathBuf;
 use crate::core::CoreState;
 use crate::intent::DispatchedIntent;
 
-/// 엔진 핸들러에 필요한 창 연산. state::ipc_window가 구현한다.
+/// Compatibility query names over request values. Implemented by RequestScope.
 pub(crate) trait IpcWindow {
     fn presentation(&self)->&dyn crate::model::StructurePresentation;
     fn resolve_inherit_cwd_from_surface(&self,engine:&EngineRef<'_>,surface:u32)->Option<PathBuf>;

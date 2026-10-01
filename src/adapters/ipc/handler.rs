@@ -16,7 +16,6 @@ pub(crate) mod debug_plugin;
 mod debug_state;
 #[cfg(debug_assertions)]
 mod debug_terminal;
-mod entry_window;
 mod file_handler;
 #[cfg(feature = "gui")]
 mod file_picker;
@@ -126,7 +125,7 @@ pub fn handle_with_caller(
 }
 
 /// 검사한 요청을 실행하고 소요 시간을 기록한다. 예산과 사용량은 다시 집계하지 않는다.
-/// RequestContext는 EntryWindow로 감싸고 요청의 intent를 해당 창 큐로 전달한다(ADR-0002).
+/// Engine handlers borrow RequestScope values. Returned outputs are applied before a separate GUI/debug route.
 pub(crate) fn handle_checked_request(
     core: &mut crate::app::services::AppServices,
     state: &mut RequestContext,
@@ -135,8 +134,7 @@ pub(crate) fn handle_checked_request(
 ) -> JsonRpcResponse {
     engine.refresh_attach_presentation(&state.navigation);
     let started = core.now_instant();
-    let mut window = entry_window::EntryWindow::new(state);
-    let response = route_checked_request(core, &mut window, engine, checked);
+    let response = route_checked_request(core, state, engine, checked);
     // 시작과 끝을 같은 Clock으로 재야 주입한 시계와 벽시계가 섞이지 않는다.
     let elapsed = core.now_instant().duration_since(started);
     core.pressure().record_handler(elapsed);
@@ -148,7 +146,7 @@ pub(crate) fn handle_checked_request(
 /// 조기 반환도 계측되도록 실행 시간은 이 함수 밖에서 기록한다.
 fn route_checked_request(
     core: &mut crate::app::services::AppServices,
-    window: &mut entry_window::EntryWindow<'_>,
+    state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     checked: &CheckedRequest<'_>,
 ) -> JsonRpcResponse {
@@ -163,7 +161,7 @@ fn route_checked_request(
         Ok(pending) => pending,
         Err(answer) => return answer,
     };
-    let response = dispatch_routed(core, window, engine, caller, request, id);
+    let response = dispatch_routed(core, state, engine, caller, request, id);
     idempotency::finish(core.now_instant(), pending, &response);
     response
 }
@@ -171,35 +169,38 @@ fn route_checked_request(
 /// 모든 반환값을 기록할 수 있도록 멱등 저장소 처리는 이 함수 밖에 둔다.
 fn dispatch_routed(
     core: &mut crate::app::services::AppServices,
-    window: &mut entry_window::EntryWindow<'_>,
+    state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     caller: &CallerContext,
     request: &JsonRpcRequest,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     // 요청에서 생성한 intent를 순서대로 해당 창 큐에 옮긴다.
+    let mut scope=crate::ipc::request_scope::RequestScope::capture(state,engine.core);
     let mut out = crate::ipc::window_port::IntentOutbox::default();
     let routed = route_engine_handler(
         core,
-        window.port(),
+        &mut scope,
         &mut out,
         engine,
         caller,
         request,
         id.clone(),
     );
-    window.port().enqueue_intents(out);
+    scope.enqueue_intents(out);
+    let outputs=scope.finish();
+    outputs.apply(state,engine.core);
     if let Some(resp) = routed {
         return resp;
     }
 
     #[cfg(feature = "gui")]
-    if let Some(resp) = window.route_window(engine, caller, request, id.clone()) {
+    if let Some(resp) = route_window_handler(state,engine,caller,request,id.clone()) {
         return resp;
     }
 
     #[cfg(debug_assertions)]
-    if let Some(resp) = window.route_debug(engine, request, id.clone()) {
+    if let Some(resp) = route_debug_handler(state,engine,request,id.clone()) {
         return resp;
     }
 
@@ -411,10 +412,11 @@ fn should_rate_limit(caller: &CallerContext, method: &str) -> bool {
 
 /// Display the already persisted observations in the selected presentation, if one exists.
 #[cfg(feature="gui")]
-pub(crate) fn display_plugin_rss_anomalies(window:&mut dyn IpcWindow,engine:&mut crate::core::CoreState,anomalies:&[tasty_telemetry::Anomaly]) {
+pub(crate) fn display_plugin_rss_anomalies(state:&mut RequestContext,engine:&mut crate::core::CoreState,anomalies:&[tasty_telemetry::Anomaly]) {
     let mut out=crate::ipc::window_port::IntentOutbox::default();
-    for anomaly in anomalies {telemetry::fire_anomaly_notification(window,&mut out,engine,anomaly);}
-    window.enqueue_intents(out);
+    let mut scope=crate::ipc::request_scope::RequestScope::capture(state,engine);
+    for anomaly in anomalies {telemetry::fire_anomaly_notification(&mut scope,&mut out,engine,anomaly);}
+    scope.enqueue_intents(out);let outputs=scope.finish();outputs.apply(state,engine);
 }
 
 /// 점유자가 아닌 호출자의 workspace 구조 변경을 IPC 라우터에서 거절한다.
@@ -997,7 +999,7 @@ fn route_engine_handler(
     })
 }
 
-/// 창 상태를 조작하는 GUI 핸들러는 EntryWindow를 통해 RequestContext를 받는다(ADR-0002).
+/// Explicit GUI handlers receive View state after the engine handler phase has ended.
 /// window_router_caller_tests는 아래 match 팔과 호출자 명부를 대조한다.
 /// match 밖의 분기는 검사에서 빠질 수 있으므로 새 진입점의 호출자 제한도 직접 확인한다.
 #[cfg(feature = "gui")]

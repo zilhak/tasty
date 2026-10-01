@@ -38,7 +38,8 @@ pub(super) fn persist(executor:&Executor<StructureDecider>,ticket:u64,binding:En
         let mut changes=Vec::new();
         for capture in captures {
             let generation=inner.store.reserve_ids(epoch,"capture",1,i64::MAX as u64).map_err(|error|error.to_string())?.start;
-            let reference=inner.store.put_payload(epoch,&capture.bytes).map_err(|error|error.to_string())?;
+            let holder=format!("admission/{}/{ticket}",epoch.0);
+            let reference=inner.store.put_payload_pinned(epoch,&capture.bytes,&holder).map_err(|error|error.to_string())?;
             changes.push(StreamCommand {stream:binding.stream.clone(),command:tasty_core::StructuralCommand::RecordCapture {
                 surface:capture.surface,kind:capture.kind,activation:capture.activation,content_generation:generation,snapshot_schema:1,data:tasty_core::DataRef(reference.0),
             }});

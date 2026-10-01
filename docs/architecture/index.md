@@ -272,7 +272,7 @@ ports-and-adapters 배치:
 
 탭의 OSC/CWD 제목 관측은 Engine의 LiveDomainState가 보유한다. 순수 Tab은 명시 이름·기본 이름을 가지고, 조회 때 별도로 받은 관측 값을 합성한다. 지연 surface 준비는 표시 중인 IDs를 받은 App materialization에서 실행하며 View가 PTY/factory를 직접 만들지 않는다. `image.open`의 외부 요청은 기존 plugin namespace를 거치고 소유 plugin의 host fallback에서 journal 변환을 실행한다. 외부 namespace 키 계약을 전체 경로 durable 보장으로 확대하지 않는다.
 
-ViewCtx는 Core/Live 관측과 표시용 query를 빌리는 EngineRead를 받는다. TerminalRead는 PTY 소유자·입력·resize·tap 쓰기를 노출하지 않으며 DAG는 목록·runner 상태 값만 조회한다. kind catalog는 등록 시 만든 immutable metadata Arc와 불투명 등록 identity만 제공하고 factory·등록·철회는 실행 owner에 남긴다. RequestContext의 저장소 잠금 bridge는 제거했다. IPC의 View 전체 의존, 설정 editor의 저장 출구, 최종 capture/export/Recovery 소비자 이행은 진행 중이며 전체 빌드·실행 검증 완료를 뜻하지 않는다.
+ViewCtx는 Core/Live 관측과 표시용 query를 빌리는 EngineRead를 받는다. TerminalRead는 PTY 소유자·입력·resize·tap 쓰기를 노출하지 않으며 DAG는 목록·runner 상태 값만 조회한다. kind catalog는 등록 시 만든 immutable metadata Arc와 불투명 등록 identity만 제공하고 factory·등록·철회는 실행 owner에 남긴다. RequestContext의 저장소 잠금 bridge는 제거했다. IPC engine handler는 동기 RequestScope의 borrowed 선택·권한 근거와 요청별 출력 큐를 사용하고 GUI/debug 조작은 별도 경로다. 설정 editor는 편집값만 반환하며 App이 모달을 열 때 잡은 registry owner로 저장한다. PluginManager 읽기 범위, 개별 소비자와 최종 capture/export/Recovery 이행은 진행 중이며 전체 빌드·실행 검증 완료를 뜻하지 않는다.
 
 지연 입력과 attach도 App이 materialization 완료를 기다린 뒤 실행한다. public wake의 완료와 메모리에만 남는 원 입력을 구별하며, 입력은 원 Engine/PTY generation과 현재 점유를 다시 확인한다. terminal tell의 body-ack/settle/CR은 Engine이 보유하고 App deadline에서 진행한다. attach는 연결 registration과 grant readiness를 보관하여 초기 descriptor보다 delta/입력이 앞서지 않게 한다. 이 대기 관계는 journal의 구조 원본이나 과거 raw 입력 재생 목록이 아니다.
 

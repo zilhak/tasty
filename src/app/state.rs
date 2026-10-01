@@ -7,6 +7,8 @@ use std::time::Instant;
 use crate::app::shutdown_machine;
 #[derive(Default)]
 pub(crate) struct AppState {
+    #[cfg(feature="gui")]
+    pub(crate) remote_browsers:std::collections::HashMap<u64,crate::app::remote_browser::BrowserTarget>,
     pub(crate) started:bool,
     #[cfg(feature="gui")]
     pub(crate) pending_remote_endpoints:std::collections::HashMap<tasty_remote::outbound::AttemptToken,crate::app::attach_client::pending::PendingMirrorInstall>,

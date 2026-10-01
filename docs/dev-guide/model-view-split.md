@@ -128,3 +128,7 @@ Mirror는 원격 pane/tab ID에 안정된 로컬 ID를 대응시킨다. snapshot
 닫힌 구조를 복원하면 새 객체의 내부 선택과 legacy split hint는 origin과 무관하게 복원 자료로 초기화한다. 이미 존재하는 선택은 보존하며, 복원된 탭·pane·workspace로 사용자를 옮기는 후속 선택만 User origin에 제한한다. attach 전송 projection은 구조 결과의 보정값을 반영하고, 원격 사용자 생성의 일회성 active 값은 서버 View 선택으로 역수입하지 않는다. 새 구독은 그 시점 서버 View/명령 기본값으로 다시 캡처한다.
 
 ViewCtx의 EngineRead는 실행 owner 자체를 감싸거나 역으로 복원하는 포트가 아니다. 순수 구조와 Live 관측을 빌리고 Terminal 내용·kind 메타데이터·DAG 목록을 조회한다. PTY 소유권·waker·ID 예약·Remote 전송 큐·TaskScope 제어는 전달하지 않는다. 렌더 중 계산한 Explorer/DAG 변경은 대상 activation/physical generation 또는 mirror projection identity를 붙인 App 명령으로 보낸다. 메뉴·드래그 탭 재정렬은 tab ID를 고정한 journal 요청이며 View가 pane의 순서를 쓰지 않는다. 프리셋 저장도 View에서 factory snapshot을 호출하지 않고 대상 ID와 presentation을 App에 전달한다.
+
+IPC engine handler는 `RequestScope`로 선택/default ID와 필요한 권한 근거를 읽는다. 동기 요청은 presentation을 빌리고 전체 선택 맵을 복제하지 않는다. handler의 intents/approval 출력은 scope 종료 뒤 원 owner에 적용하며, GUI/debug 전용 호출은 별도 라우트다. 비동기 journal/live 요청은 이 scope를 보관하지 않고 고정 ID·owned 입력·원 View/실행 generation을 별도로 보관한다.
+
+SettingsView는 설정 초안과 `RegistryEdit` 값을 반환한다. FileFormat/Handler catalog는 metadata 조회만 제공하며 App이 보유한 원 registry와 경로로 변경·저장을 실행한다. 모달 Save는 MainView 큐를 거치지 않고 App 설정 cascade로 들어가므로 표시 창이 없어도 저장과 전역 theme 적용을 수행한다. Cancel은 실행 초안을 반환하지 않는다.

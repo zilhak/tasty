@@ -1,6 +1,7 @@
+use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;
 use std::collections::BTreeMap;
 
-use crate::file::format::{DetectorId, DetectorInfo, FileFormatRegistry};
+use crate::file::format::{DetectorId, DetectorInfo, };
 use crate::i18n::t;
 
 use super::draw_intro_block;

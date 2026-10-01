@@ -139,6 +139,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.apply_attach_client_output();
             }
             AppEvent::AutoAttachReady => {
+                self.poll_remote_browsers();
                 self.drain_auto_attach_results();
             }
             AppEvent::ScreenshotCaptureReady => {
@@ -428,6 +429,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_mesh_context_forwards();
         self.dispatch_pending_mesh_input_forwards();
 
+        self.poll_remote_browsers();
         self.poll_auto_attach();
 
         self.poll_screenshot_captures();

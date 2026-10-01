@@ -308,7 +308,7 @@ pub fn draw_approval_popup(
 /// 중복되지 않은 승인 요청을 큐에 넣고 팝업 열기와 알림을 요청한다.
 pub fn enqueue_approval(
     state: &mut MainViewState,
-    engine: &mut crate::core::CoreState,
+    engine: &crate::core::CoreState,
     record: &ApprovalRecord,
 ) {
     state.dialogs.approval_records.insert(record.request.id.clone(),record.clone());

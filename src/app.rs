@@ -111,6 +111,8 @@ impl std::error::Error for NoGpuAdapter {}
 
 pub(crate) struct App {
     pub(crate) journal: journal::JournalApplication,
+    #[cfg(feature="gui")]
+    pub(crate) settings_edit_owner:Option<settings_edit::SettingsEditOwner>,
     pub(crate) pending_server_attaches:Vec<attach_activation::PendingAttach>,
     pub(crate) publication_inputs: publication_input::PublicationInputs,
     pub(crate) services: AppServices,
@@ -235,7 +237,7 @@ impl App {
             })
         })?;
         Ok(Self {
-            journal,pending_server_attaches:Vec::new(),
+            journal,pending_server_attaches:Vec::new(),settings_edit_owner:None,
             publication_inputs: Default::default(),
             services: crate::boot::wiring::build_production_core(memory)?,
             state:state::AppState {#[cfg(debug_assertions)] input_simulation_enabled,..Default::default()},
@@ -410,3 +412,9 @@ mod view_mesh;
 mod explorer_action;
 
 pub(crate) mod telemetry;
+
+#[cfg(feature="gui")]
+pub(crate) mod settings_edit;
+
+#[cfg(feature="gui")]
+pub(crate) mod remote_browser;

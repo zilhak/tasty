@@ -374,7 +374,7 @@ fn register_one_surface_kind(
 /// GUI와 같은 공용 검사를 인터셉트 전에 실행한다.
 fn gates_before_intercept<'a>(
     app: &mut App,
-    window: &mut dyn crate::ipc::window_port::IpcWindow,
+    window: &mut crate::state::CommandContext,
     engine: &mut CoreState,
     request: &'a crate::ipc::protocol::JsonRpcRequest,
     caller: &'a crate::ipc::caller::CallerContext,

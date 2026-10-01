@@ -61,12 +61,13 @@ impl App {
         };
 
         let modal_window_id = window.id();
+        self.settings_edit_owner=Some(crate::app::settings_edit::SettingsEditOwner {format:init.file_format.clone(),handler:init.file_handler.clone(),path:init.user_config_path.clone()});
         let mut modal = view::SettingsView::new(
             gpu,
             window,
             init.settings,
-            init.file_format,
-            init.file_handler,
+            crate::runtime::file_catalog::FormatCatalog::new(init.file_format),
+            crate::runtime::file_catalog::HandlerCatalog::new(init.file_handler),
             init.user_config_path,
         );
         modal.set_plugin_shortcuts(self.snapshot_plugin_shortcuts());

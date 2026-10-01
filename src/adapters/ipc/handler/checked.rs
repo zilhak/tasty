@@ -35,7 +35,7 @@ impl CheckedRequest<'_> {
 }
 
 /// engine이 있는 진입점의 권한·사용량 제한·호출 빈도를 검사하고 결과를 한 번 기록한다.
-pub(crate) fn check_request<'a>(
+fn check_scope_request<'a>(
     core: &mut AppServices,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut CoreState,
@@ -69,6 +69,13 @@ pub(crate) fn check_request<'a>(
     // 권한 없는 호출에는 `-32001`을 반환하고, 허용된 호출은 한 번 집계한다(ADR-0005).
     super::idempotency::check_envelope(request, &id)?;
     Ok(CheckedRequest { request, caller })
+}
+
+/// App constructs a detached scope before admission; a refused gate still returns its display outputs.
+pub(crate) fn check_request<'a>(core:&mut AppServices,state:&mut crate::state::RequestContext,engine:&mut CoreState,request:&'a JsonRpcRequest,caller:&'a CallerContext)->Result<CheckedRequest<'a>,JsonRpcResponse> {
+    let mut scope=crate::ipc::request_scope::RequestScope::capture(state,engine);
+    let result=check_scope_request(core,&mut scope,engine,request,caller);
+    let outputs=scope.finish();outputs.apply(state,engine);result
 }
 
 /// 창/parked engine이 전혀 없는 GUI 부팅·종료 구간에는 Local만 진입 가능하다.

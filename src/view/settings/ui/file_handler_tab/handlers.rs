@@ -1,6 +1,7 @@
-use crate::file::format::FileFormatRegistry;
+use crate::runtime::file_catalog::HandlerCatalog as FileHandlerRegistry;
+use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;
 use crate::file::handler::{
-    FileHandlerRegistry, HandlerAction, HandlerOwner, UserHandlerActionDecl, UserHandlerUpsertDecl,
+    HandlerAction, HandlerOwner, UserHandlerActionDecl, UserHandlerUpsertDecl,
 };
 use crate::i18n::t;
 

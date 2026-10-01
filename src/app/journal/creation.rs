@@ -7,6 +7,9 @@ use tasty_core::{
     StructuralResult, SurfaceSpec,
 };
 
+/// Process-local observation barrier only. Ready is emitted after the full publication ACK;
+/// Failed denies this join and does not classify the durable operation as Failed or Cancelled.
+/// Recovery/cancellation must consult OperationOutcome and the retained effect obligation.
 #[derive(Clone)]
 pub(crate) enum ActivationOutcome {
     Ready {activation:Option<u64>,physical:Option<tasty_terminal::ResourceGeneration>},

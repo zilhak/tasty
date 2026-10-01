@@ -34,6 +34,7 @@ impl App {
         source: DispatchSource,
         mut dispatched: DispatchedIntent,
     ) -> anyhow::Result<()> {
+        if let Intent::RemoteBrowser(request)=&dispatched.body {return self.remote_browser_request(source.engine(),request.clone()).map_err(anyhow::Error::msg);}
         let after_create=match &dispatched.body {Intent::NewTabWithFollowup {followup,..}=>Some(followup.clone()),_=>None};
         if let Some(context)=self.engines_mut().resolve(source.engine())
             && let Some(intent)=crate::app::creation_intent::resolve(context.state,&context.engine.as_ref(),&dispatched.body,&dispatched.origin)? {
@@ -722,7 +723,7 @@ impl App {
     }
 
     /// 창과 parked 상태의 설정을 모두 갱신해야 복원된 창이 옛 설정을 쓰지 않는다.
-    fn cascade_settings_updated(&mut self, new_settings: Settings, origin: &IntentOrigin) {
+    pub(crate) fn cascade_settings_updated(&mut self, new_settings: Settings, origin: &IntentOrigin) {
         let generation = match self.journal.note_settings_intent() {
             Ok(generation) => generation,
             Err(error) => {
@@ -773,13 +774,8 @@ impl App {
         let prev_overrides = prev_appearance.as_ref().map(|a| a.theme_overrides.clone());
         let prev_language = prev_settings.map(|s| s.general.language.clone());
 
-        for (_, main, mut engine) in self.engines_mut().window_pairs() {
-            engine.runtime.settings = new_settings.clone();
-            main.mark_dirty();
-        }
-        for mut engine in self.engines_mut().parked() {
-            engine.runtime.settings = new_settings.clone();
-        }
+        for session in self.engines.all_sessions_mut() {session.runtime.settings=new_settings.clone();}
+        for main in self.main_windows_iter_mut() {main.mark_dirty();}
         if let Err(e) = new_settings.save() {
             // 메모리에 적용됐어도 다음 실행에 보존할 수 없는 실패이므로 오류로 남긴다.
             tracing::error!("failed to save settings: {e}");
@@ -789,19 +785,10 @@ impl App {
             != Some(new_settings.appearance.theme.as_str())
             || prev_ui_scale.as_deref() != Some(new_settings.appearance.ui_scale.as_str())
             || prev_overrides.as_ref() != Some(&new_settings.appearance.theme_overrides);
+        tasty_themes::install_global_with_runtime(&new_settings.appearance,new_settings.theme_runtime());
         if appearance_changed {
-            use crate::intent::UiIntent;
-            if let Some(main) = self.main_windows_iter_mut().next() {
-                main.state.dispatch_intent(
-                    UiIntent::AppearanceChanged.from_user_menu("settings.appearance.changed"),
-                );
-            }
-        } else {
-            // ThemeRuntime을 함께 전달해 배율·모션 설정이 기본값으로 바뀌지 않게 한다.
-            tasty_themes::install_global_with_runtime(
-                &new_settings.appearance,
-                new_settings.theme_runtime(),
-            );
+            for view in self.view.views.values_mut() {view.base_mut().gpu.refresh_theme();view.mark_dirty();}
+            for session in self.engines.all_sessions_mut() {session.borrow_mut().resync_terminal_palettes();}
         }
 
         if let Some(mgr) = self.plugin_manager.as_mut() {

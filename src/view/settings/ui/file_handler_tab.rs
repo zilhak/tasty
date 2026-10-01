@@ -1,10 +1,12 @@
 //! Handler 설정: detector, handler, 확장자 우선순위와 훅 핸들러를 편집한다.
 //! 변경은 초안에 보관하고 Save에서 레지스트리와 사용자 TOML에 반영한다.
 
+use crate::runtime::file_catalog::HandlerCatalog as FileHandlerRegistry;
+use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::file::format::{DetectorDecl, DetectorId, FileFormatRegistry};
-use crate::file::handler::{FileHandlerRegistry, HandlerId, UserHandlerUpsertDecl};
+use crate::file::format::{DetectorDecl, DetectorId, };
+use crate::file::handler::{HandlerId, UserHandlerUpsertDecl};
 use crate::i18n::t;
 
 /// 파일 라우팅 설정 세 종류와 훅 핸들러 설정.
@@ -46,60 +48,14 @@ impl FileHandlerEditDraft {
             || !self.add_handler.is_empty()
     }
 
-    pub fn apply(self, file_format: &FileFormatRegistry, file_handler: &FileHandlerRegistry) {
-        apply_detector_changes(
-            &self.detector_enabled,
-            &self.remove_detector,
-            self.add_detector,
-            file_format,
-        );
-        apply_handler_changes(
-            &self.handler_enabled,
-            &self.remove_handler,
-            self.add_handler,
-            file_handler,
-        );
-    }
-}
-
-/// detector 관련 draft(enabled 토글/삭제/추가)를 registry 에 commit.
-fn apply_detector_changes(
-    detector_enabled: &BTreeMap<DetectorId, bool>,
-    remove_detector: &BTreeSet<DetectorId>,
-    add_detector: Vec<DetectorDecl>,
-    file_format: &FileFormatRegistry,
-) {
-    for (id, enabled) in detector_enabled {
-        // 사용자 요청을 명시적인 override로 반영한다.
-        file_format.set_user_detector_disabled(id, !enabled);
-    }
-    for id in remove_detector {
-        file_format.remove_user_detector(id);
-    }
-    for decl in add_detector {
-        if let Err(e) = file_format.upsert_user_detector(decl) {
-            tracing::warn!("file_handler tab: upsert_user_detector failed: {e}");
-        }
-    }
-}
-
-/// handler 관련 draft(enabled 토글/삭제/추가)를 registry 에 commit.
-fn apply_handler_changes(
-    handler_enabled: &BTreeMap<HandlerId, bool>,
-    remove_handler: &BTreeSet<HandlerId>,
-    add_handler: Vec<UserHandlerUpsertDecl>,
-    file_handler: &FileHandlerRegistry,
-) {
-    for (id, enabled) in handler_enabled {
-        file_handler.set_user_handler_disabled(id, !enabled);
-    }
-    for id in remove_handler {
-        file_handler.remove_user_handler(id);
-    }
-    for decl in add_handler {
-        if let Err(e) = file_handler.upsert_user_handler(decl) {
-            tracing::warn!("file_handler tab: upsert_user_handler failed: {e}");
-        }
+    pub(crate) fn into_edits(self)->Vec<crate::app::settings_edit::RegistryEdit> {
+        use crate::app::settings_edit::RegistryEdit as E;
+        self.detector_enabled.into_iter().map(|(id,value)|E::DetectorEnabled(id,value))
+            .chain(self.handler_enabled.into_iter().map(|(id,value)|E::HandlerEnabled(id,value)))
+            .chain(self.remove_detector.into_iter().map(E::RemoveDetector))
+            .chain(self.remove_handler.into_iter().map(E::RemoveHandler))
+            .chain(self.add_detector.into_iter().map(E::AddDetector))
+            .chain(self.add_handler.into_iter().map(E::AddHandler)).collect()
     }
 }
 
