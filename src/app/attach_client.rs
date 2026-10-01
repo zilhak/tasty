@@ -4926,6 +4926,21 @@ mod tests {
         let mut structure_ids = MirrorStructureIds::default();
         let (_, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
+        // The common fixture registers markdown; this scenario starts with no live kind.
+        assert_eq!(
+            engine
+                .runtime
+                .surface_registry
+                .withdraw_plugin(MARKDOWN_PLUGIN_ID),
+            vec![MARKDOWN_MIRROR_KIND],
+        );
+        assert!(
+            engine
+                .runtime
+                .surface_registry
+                .get_live(MARKDOWN_MIRROR_KIND)
+                .is_none()
+        );
         supply_ids(&engine);
         let ids = test_ids();
         let (tx, _frames) = tasty_remote::connection::channel();
