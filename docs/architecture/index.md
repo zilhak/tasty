@@ -264,7 +264,7 @@ ViewCtx는 Core/Live 관측과 표시용 query를 빌리는 EngineRead를 받는
 
 탭 이동 host event는 committed projection 또는 Remote replacement의 이전/이후 값에서 생성한다. View polling에 lifecycle 통지 의무를 남기지 않으며, 사용자 생성의 tutorial/팝업·선택은 원 View가 살아 있을 때만 수행하는 별도 표시 동작이다.
 
-탐색기·DAG kind 변경, 클립보드 이미지 파일 저장·업로드, 점유 해제·즐겨찾기 저장은 View에서 고정한 대상 binding을 받아 App이 실행한다. Explorer의 copy/move/trash/rename/open은 고정 경로·User origin·SurfaceBinding·View identity를 담은 별도 파일 요청으로 전달한다. App의 `explorer_files`가 View별 대기 8개·요청당 1MiB 한도와 동시 worker 1개로 실행하며 시작과 완료에 원 대상을 대조한다. cut clipboard와 Explorer 선택 identity가 바뀌면 늦은 결과를 새 UI에 적용하지 않는다. 시작한 작업은 View close로 취소하지 않으며 종료는 실제 join을 관측하고 5초 기한 초과를 완료로 간주하지 않는다. 로컬 directory listing과 metadata의 동기 조회는 남아 있다. View는 자체 선택/cache만 바꾸며 structural tab 순서는 journal 명령으로 요청한다. RSS 이상 감지·순번·저장은 창 유무와 독립적인 App 서비스이고, View가 있을 때의 알림 대상 선택은 그 뒤의 표시 정책이다.
+탐색기·DAG kind 변경, 클립보드 이미지 파일 저장·업로드, 점유 해제·즐겨찾기 저장은 View에서 고정한 대상 binding을 받아 App이 실행한다. Explorer의 copy/move/trash/rename/open은 고정 경로·User origin·SurfaceBinding·View identity를 담은 별도 파일 요청으로 전달한다. App의 `explorer_files`가 View별 대기 8개·요청당 1MiB 한도와 동시 worker 1개로 실행하며 시작과 완료에 원 대상을 대조한다. cut clipboard와 Explorer 선택 identity가 바뀌면 늦은 결과가 새 clipboard나 선택을 지우지 않는다. 시작한 작업은 View close로 취소하지 않으며 종료는 실제 join을 관측하고 5초 기한 초과를 완료로 간주하지 않는다. 로컬 directory listing과 metadata의 동기 조회는 남아 있다. View는 자체 선택/cache만 바꾸며 structural tab 순서는 journal 명령으로 요청한다. RSS 이상 감지·순번·저장은 창 유무와 독립적인 App 서비스이고, View가 있을 때의 알림 대상 선택은 그 뒤의 표시 정책이다.
 
 App의 window event provider는 EngineRegistry에서 불변 EngineRead를 만든다. 프레임은 View의 geometry 계산과 App 실행 적용을 분리하며, 설정·kind owner가 필요한 부팅/추가 창 경로는 EngineSession을 만들고 AppServices의 registry Arc를 주입한다. system.info와 tree/Lua snapshot의 공통 query는 표시 선택·active index와 EngineRead를 받아 pure Core에 실행 필드를 다시 넣지 않는다.
 
