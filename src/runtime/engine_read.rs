@@ -20,9 +20,8 @@ pub(crate) struct EngineRead<'a> {
     pub(crate) settings: &'a crate::settings::Settings,
     pub(crate) terminals: TerminalRead<'a>,
     pub(crate) surface_registry: super::kind_catalog::KindCatalog,
+    #[cfg(feature = "gui")]
     pub(crate) file_handler: HandlerCatalog<'a>,
-    pub(crate) default_cols: usize,
-    pub(crate) default_rows: usize,
     #[cfg(feature = "gui")]
     pub(crate) explorer_favorites: &'a [crate::core::explorer_favorites::ExplorerFavorite],
     #[cfg(feature = "gui")]
@@ -34,40 +33,38 @@ pub(crate) struct EngineRead<'a> {
     mirror_busy: &'a HashSet<u32>,
     #[cfg(feature = "gui")]
     readonly: &'a HashMap<u32, tasty_terminal::Terminal>,
+    #[cfg(feature = "gui")]
     memory: &'a std::sync::Mutex<dyn tasty_memory::MemoryStorage>,
+    #[cfg(feature = "gui")]
     tasks: &'a tasty_task_runtime::TaskScope,
 }
 #[derive(Clone, Copy)]
 pub(crate) struct TerminalRead<'a>(&'a TerminalStore);
 impl<'a> TerminalRead<'a> {
+    #[cfg(feature = "gui")]
     pub(crate) fn get(&self, id: u32) -> Option<&'a tasty_terminal::Terminal> {
         self.0.get(id)
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn contains(&self, id: u32) -> bool {
         self.0.contains(id)
     }
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (u32, &'a tasty_terminal::Terminal)> {
-        self.0.iter()
-    }
+    #[cfg(feature = "gui")]
     pub(crate) fn generation(&self, id: u32) -> Option<tasty_terminal::ResourceGeneration> {
         self.0.generation(id)
     }
-    pub(crate) fn matches_generation(
-        &self,
-        id: u32,
-        generation: tasty_terminal::ResourceGeneration,
-    ) -> bool {
-        self.0.matches_generation(id, generation)
-    }
+    #[cfg(feature = "gui")]
     pub(crate) fn has_pty(&self, id: u32) -> bool {
         self.0.pty(id).is_some()
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn foreground_process_name(&self, id: u32) -> Option<String> {
         self.0
             .pty(id)?
             .foreground_process_info()
             .map(|info| info.name)
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn process_id(&self, id: u32) -> Option<u32> {
         self.0.pty(id)?.process_id()
     }
@@ -86,9 +83,8 @@ impl<'a> EngineRef<'a> {
             surface_registry: super::kind_catalog::KindCatalog::new(
                 self.runtime.surface_registry.clone(),
             ),
+            #[cfg(feature = "gui")]
             file_handler: HandlerCatalog(&self.runtime.file_handler),
-            default_cols: self.runtime.default_cols,
-            default_rows: self.runtime.default_rows,
             #[cfg(feature = "gui")]
             explorer_favorites: &self.runtime.explorer_favorites.items,
             #[cfg(feature = "gui")]
@@ -100,7 +96,9 @@ impl<'a> EngineRef<'a> {
             mirror_busy: &self.remote.mirror_busy_surfaces,
             #[cfg(feature = "gui")]
             readonly: &self.runtime.readonly_views,
+            #[cfg(feature = "gui")]
             memory: self.runtime.memory.as_ref(),
+            #[cfg(feature = "gui")]
             tasks: self.task_scope,
         }
     }
@@ -125,6 +123,7 @@ impl<'a> EngineRead<'a> {
         let target = crate::app::engine_action::SurfaceBinding::capture(self, sid)?;
         Some(crate::app::html_runtime::snapshot(remote, target))
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn as_ref(&self) -> Self {
         self.clone()
     }
@@ -133,6 +132,7 @@ impl<'a> EngineRead<'a> {
             inner: surface.as_ref(),
         })
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn find_terminal_by_id(&self, id: u32) -> Option<&'a tasty_terminal::Terminal> {
         self.terminals.get(id)
     }
@@ -144,6 +144,7 @@ impl<'a> EngineRead<'a> {
             self.terminals.get(id)
         }
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn tab_display_name(&self, tab: &Tab, surface: Option<u32>) -> String {
         tab.display_name(surface.and_then(|id| self.live.surface_titles.get(&id)))
     }
@@ -153,6 +154,7 @@ impl<'a> EngineRead<'a> {
     ) -> ObservedPresentation<'b> {
         ObservedPresentation::new(selection, &self.live.surface_titles)
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn surface_display_path(
         &self,
         id: u32,
@@ -188,9 +190,11 @@ impl<'a> EngineRead<'a> {
     pub(crate) fn busy_count(&self, ids: &[u32]) -> usize {
         ids.iter().filter(|id| self.is_surface_busy(**id)).count()
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn foreground_name(&self, id: u32) -> Option<&str> {
         self.live.foreground_names.get(&id).map(String::as_str)
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn foreground_generation(&self, id: u32) -> u64 {
         self.live
             .foreground_generation
@@ -201,25 +205,30 @@ impl<'a> EngineRead<'a> {
     pub(crate) fn is_surface_mouse_capture_disabled(&self, id: u32) -> bool {
         self.live.mouse_capture_disabled_surfaces.contains(&id)
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn task_list(
         &self,
         workspace: u32,
     ) -> Result<Vec<tasty_agent::Task>, tasty_agent::AgentError> {
         tasty_task_runtime::task::task_list_from_state(self.memory, self.tasks, workspace)
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn dag_list(
         &self,
         workspaces: &[u32],
     ) -> Result<Vec<tasty_agent::DagSummary>, tasty_agent::AgentError> {
         tasty_task_runtime::task::dag_list_from_state(self.memory, self.tasks, workspaces)
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn runner_liveness(&self, workspace: u32) -> (bool, bool) {
         self.tasks.runner_liveness(workspace)
     }
 }
 
+#[cfg(feature = "gui")]
 #[derive(Clone, Copy)]
 pub(crate) struct HandlerCatalog<'a>(&'a crate::file::handler::FileHandlerRegistry);
+#[cfg(feature = "gui")]
 impl HandlerCatalog<'_> {
     pub(crate) fn handler(
         &self,
@@ -242,37 +251,30 @@ impl<'a> SurfaceRead<'a> {
     pub(crate) fn kind(&self) -> &'static str {
         self.inner.kind()
     }
-    pub(crate) fn type_name(&self) -> &'static str {
-        self.inner.type_name()
-    }
-    pub(crate) fn surface_id(&self) -> Option<u32> {
-        self.inner.surface_id()
-    }
-    pub(crate) fn display_name(&self) -> String {
-        self.inner.display_name()
-    }
     pub(crate) fn source_cwd(&self) -> Option<std::path::PathBuf> {
         self.inner.source_cwd()
-    }
-    pub(crate) fn webview_url(&self) -> Option<String> {
-        self.inner.webview_url()
     }
     pub(crate) fn to_tree_json(&self) -> serde_json::Value {
         self.inner.to_tree_json()
     }
     // These builtin models contain ordinary values; their mutation requires &mut ownership.
+    #[cfg(feature = "gui")]
     pub(crate) fn empty(&self) -> Option<&'a crate::model::EmptySurface> {
         self.inner.as_any().downcast_ref()
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn explorer(&self) -> Option<&'a crate::model::ExplorerPanel> {
         self.inner.as_any().downcast_ref()
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn dag(&self) -> Option<&'a crate::model::DagGraphSurface> {
         self.inner.as_any().downcast_ref()
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn mesh(&self) -> Option<&'a super::egui_mesh_surface::EguiMeshSurface> {
         self.inner.as_any().downcast_ref()
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn attach_mesh(&self) -> Option<&'a crate::model::AttachMeshSurface> {
         self.inner.as_any().downcast_ref()
     }

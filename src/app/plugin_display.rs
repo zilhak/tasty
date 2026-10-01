@@ -43,15 +43,6 @@ impl<'a> PluginDisplay<'a> {
         // mesh protocol's generation check does not exclude concurrent peer payload writes.
         Some(unsafe { mapping.as_slice() })
     }
-    pub(crate) fn shortcut_epoch(self) -> (u64, u64) {
-        (
-            self.manager.command_registry.revision(),
-            self.manager.config.shortcut_revision(),
-        )
-    }
-    pub(crate) fn command_bindings(self, keys: &tasty_settings::KeybindingSettings) -> Vec<String> {
-        crate::plugin_bridge::key_dispatch::all_command_bindings(self.manager, keys)
-    }
 }
 
 /// The App rechecks the instance's plugin before delivering a frame's input or geometry.

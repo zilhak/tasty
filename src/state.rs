@@ -284,16 +284,6 @@ impl RequestContext {
         std::mem::take(&mut self.pending_intents)
     }
 
-    /// 비어 있지 않은 file 파라미터를 kind의 최근 목록에 기록한다.
-    /// 호출자가 records_recent capability를 확인해야 한다.
-    pub(crate) fn record_recent(&mut self, kind: &str, params: &serde_json::Value) {
-        if let Some(file) = params.get("file").and_then(|v| v.as_str())
-            && !file.is_empty()
-        {
-            self.recent_files.add(kind, file.to_string());
-        }
-    }
-
     /// 등록된 convert_input_popup을 열도록 요청한다. 변환 대상이 있으면 context에 담는다.
     /// kind나 팝업 선언을 찾지 못하면 경고를 기록하고 false를 반환한다.
     #[cfg(feature = "gui")]
@@ -527,17 +517,6 @@ impl RequestContext {
             other => FocusedSurfaceType::Kind(other.to_string()),
         }
     }
-
-    pub fn surface_kind(
-        &self,
-        engine: &crate::runtime::engine_read::EngineRead<'_>,
-        surface_id: u32,
-    ) -> Option<&'static str> {
-        engine.find_surface_by_id(surface_id).map(|s| s.kind())
-    }
-
-    /// 이미 알린 탭 변경을 다음 폴링에서 중복 보고하지 않도록 기준 사본을 갱신한다.
-    /// 최초 폴링 전이면 그 폴링이 기준을 만들도록 그대로 둔다.
 
     /// cwd 상속 설정이 켜져 있으면 포커스된 surface의 로컬 경로를 반환한다.
     /// 원격 mirror의 경로는 로컬 PTY 작업 디렉터리로 사용할 수 없어 제외한다.

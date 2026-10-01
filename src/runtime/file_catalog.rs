@@ -1,4 +1,5 @@
 //! Shared registry queries for editors. No mutators or file execution are exposed.
+#![cfg(feature = "gui")]
 use std::sync::Arc;
 use tasty_file_format::{
     DetectorId, DetectorInfo, FileFormatDetector, FileFormatRegistry, RuleOrigin,
@@ -54,9 +55,6 @@ impl HandlerCatalog {
     }
     pub(crate) fn list_handlers(&self) -> Vec<HandlerId> {
         self.0.list_handlers()
-    }
-    pub(crate) fn all_handlers(&self) -> Vec<FileHandler> {
-        self.0.all_handlers()
     }
 }
 pub(crate) fn hook_handlers() -> Vec<crate::hook_handler::HookHandler> {

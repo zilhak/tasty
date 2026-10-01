@@ -136,3 +136,5 @@ ViewCtx의 EngineRead는 실행 owner 자체를 감싸거나 역으로 복원하
 IPC engine handler는 `RequestScope`로 선택/default ID와 필요한 권한 근거를 읽는다. 동기 요청은 presentation을 빌리고 전체 선택 맵을 복제하지 않는다. handler의 intents/approval 출력은 scope 종료 뒤 원 owner에 적용하며, GUI/debug 전용 호출은 별도 라우트다. 비동기 journal/live 요청은 이 scope를 보관하지 않고 고정 ID·owned 입력·원 View/실행 generation을 별도로 보관한다.
 
 SettingsView는 설정 초안과 `RegistryEdit` 값을 반환한다. FileFormat/Handler catalog는 metadata 조회만 제공하며 App이 보유한 원 registry와 경로로 변경·저장을 실행한다. 모달 Save는 MainView 큐를 거치지 않고 App 설정 cascade로 들어가므로 표시 창이 없어도 저장과 전역 theme 적용을 수행한다. Cancel은 실행 초안을 반환하지 않는다.
+
+표시용 catalog에는 실제 소비하는 metadata만 유지한다. GUI 전용 Terminal·surface 표시 query와 editor catalog는 GUI 구성에서만 제공하며, headless 실행은 EngineRef/EngineMut의 기존 실행·조회 경로를 사용한다. 표시 facade는 사용하지 않는 factory 설정 사본이나 실행 경로를 대신 보유하지 않는다.

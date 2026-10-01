@@ -8,6 +8,7 @@ pub(crate) struct SurfaceBinding {
     mirror: Option<(u32, std::sync::Weak<()>)>,
 }
 impl SurfaceBinding {
+    #[cfg(feature = "gui")]
     pub(crate) fn capture(
         engine: &crate::runtime::engine_read::EngineRead<'_>,
         surface: u32,
