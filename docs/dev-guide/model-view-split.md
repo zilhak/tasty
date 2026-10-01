@@ -7,6 +7,14 @@
 
 공통 창 상태는 `src/view/state.rs`의 `ViewState`, OS 창과 GPU는 `ViewBase`, MainView 전용 선택·viewport·popup 데이터는 `MainViewState`에 둔다. 비동기 구조 완료가 화면 선택을 바꿀 때는 originating View identity와 NavigationState의 선택 세대를 확인한다. EngineSession의 kind 인스턴스는 EngineRuntime의 단일 컬렉션에서 빌리며, 구조 트리의 SurfaceDescriptor를 실행 객체로 downcast하지 않는다.
 
+## View에 제공하는 조회와 실행 요청
+
+`EngineRead::find_surface_by_id`는 내부 실행 객체를 숨긴 `SurfaceRead`를 반환한다. 이 wrapper는 `as_any`나 `Deref`로 원 `dyn Surface`를 꺼내는 출구를 제공하지 않는다. ID·kind·표시 이름·CWD 같은 조회와 내장 Empty·Explorer·DAG의 불변 표시 참조를 사용한다. 이 타입들은 값을 보유하며 변경에는 실행 owner의 가변 차용이 필요하다. mesh의 표시 정보도 실행 binding과 구분한다. `remote_webview()`는 kind·URL·NavState만 제공하며 RemoteSurface의 writer Arc나 sender를 노출하지 않는다.
+
+View는 로컬 표시 상태를 직접 바꾸고, 실행 변경은 고정 대상의 `EngineAction` 또는 journal 요청으로 App에 반환한다. App이 원 binding을 대조한 뒤 Engine 실행 owner를 빌려 적용한다. 읽기 위해 전체 surface 모델을 복제하거나, 화면 store를 빌리기 위해 도메인 writer를 View에 전달하지 않는다.
+
+HTML은 같은 경계의 예다. native WebView 객체는 MainView에 남고, App의 `webview_sync`가 gate·load·reload·navigation proof를 처리한다. 배너는 `HtmlSnapshot`에서 만든 일회 요청만 반환한다. App의 프레임 순서는 렌더에서 나온 실행 요청 적용 후 native 동기화이며, 세부 계약은 [WebView 호스트 계약](../design/systems/webview.md#탐색-상태와-실행-소유)에 둔다.
+
 ## 왜 분리하나
 
 - **플러그인 호환성** — 모델은 직렬화 가능한 식별 정보만 보유 → plugin 프로세스가 같은 모델을 그대로 쓸 수 있다.
@@ -35,9 +43,6 @@
 
 ```rust
 pub struct FooPanel { pub id: u32, pub file_path: String, last_mtime: Option<SystemTime> }
-impl FooPanel {
-    pub fn poll_reload(&mut self) -> Option<String> { /* 외부 변경 감지 시 새 콘텐츠 */ }
-}
 impl Surface for FooPanel {        // crates/tasty-model/src/surface_trait.rs
     fn kind(&self) -> &'static str { "foo" }
     /* ... */
@@ -52,9 +57,8 @@ pub struct FooView { pub content: String, pub texture: Option<egui::TextureHandl
 #[derive(Default)]
 pub struct FooViewStore { views: HashMap<SurfaceId, FooView> }
 impl FooViewStore {
-    pub fn get_or_init(&mut self, panel: &mut FooPanel) -> &mut FooView {
+    pub fn get_or_init(&mut self, panel: &FooPanel) -> &mut FooView {
         let view = self.views.entry(panel.id).or_insert_with(|| FooView::new(panel));
-        if let Some(c) = panel.poll_reload() { view.replace_content(c); }
         view
     }
     pub fn drop_view(&mut self, sid: SurfaceId) { self.views.remove(&sid); }
@@ -74,12 +78,12 @@ pub(crate) fn release_surface_views(&mut self, surface_id: u32) {
 
 ### 4. 렌더 호출 — `mem::take` 패턴
 
-디스패치 루프에서 `&mut FooPanel`(engine.workspaces 경로)와 `&mut FooView`(state.foo_views 경로)를 같은 상위 상태를 통해 동시에 빌리기 어려운 경우, 루프 직전에 store를 잠시 꺼낸다:
+표시 루프는 panel의 불변 참조와 View store를 함께 사용한다. `MainViewState`의 다른 표시 필드도 빌려야 하면 루프 직전에 store만 잠시 꺼낸다. 아래 예시의 `foo()`는 해당 kind에 추가할 좁은 `SurfaceRead` 조회를 뜻한다:
 
 ```rust
 let mut foo_views = std::mem::take(&mut state.foo_views);
 for info in &infos {
-    if let Some(panel) = surface.as_foo_mut() {
+    if let Some(panel) = engine.find_surface_by_id(info.surface_id).and_then(|surface| surface.foo()) {
         let view = foo_views.get_or_init(panel);
         draw_foo(ui, panel, view);
     }

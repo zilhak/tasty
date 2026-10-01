@@ -105,11 +105,20 @@ PlatformWebView의 Drop이 OS 자원을 정리하며 부모 winit 창이 먼저 
 종료 회귀를 재현할 때는 실제 native webview가 생성된 것을 먼저 확인하고 탭 닫기와 창 닫기를 구별한다.
 보이던 webview가 overlay 없이 곧바로 제거되는 경로(원격 attach mirror의 surface 변환처럼 구조 변경이 왕복 뒤에 도착하는 경우)도 따로 확인한다.
 
-## 탐색 상태 — 소유는 도메인 모델이다
+<a id="탐색-상태--소유는-도메인-모델이다"></a>
+
+## 탐색 상태와 실행 소유
+
+`PlatformWebView`와 native handle, geometry·표시 cache는 `MainView`가 소유한다.
+[App의 동기화 adapter](../../../src/app/webview_sync.rs)는 원 Engine의 실행 차용과 그 View의 native handle을 함께 받아 gate 설치, host-load 표시, load·reload, 탐색 상태 반영을 실행한다. 첫 로드 전에 script gate와 sandbox 값을 설치한다. surface 실행 인스턴스가 바뀌면 기존 native binding과 navigation proof를 폐기한다.
 
 NavState(Idle·Loading·Done·Failed)는 tasty-model의 OS 비의존 값이다.
-RemoteSurface·native backend·egui chrome이 이 값을 함께 사용한다.
-nav_state는 현재 상태를 읽고 take_pending_navigations는 쌓인 요청을 꺼내 비운다.
+App adapter가 native backend의 현재 상태를 읽어 EngineRuntime의 `RemoteSurface` 관측값에 반영하고, egui chrome은 `SurfaceRead::remote_webview()`의 조회 값으로 표시한다. CoreState의 확정 구조가 native handle이나 탐색 실행을 소유하지 않는다.
+`nav_state`는 현재 상태를 읽고 `take_pending_navigations`는 쌓인 요청을 꺼내 비운다.
+
+HTML 배너는 [값 snapshot과 요청](../../../src/app/html_runtime.rs)을 사용한다. Allow·Dismiss·Reshow 요청은 표시 당시 `DocumentRecord`, `SurfaceBinding`, 원 `HtmlScriptState`의 weak identity에 묶이고 한 번만 소비된다. App은 현재 surface와 문서가 일치할 때만 요청을 적용한다. 프레임에서는 배너 렌더 뒤 요청을 적용하고 `finish_redraw` 뒤 같은 호출 흐름에서 native 동기화를 수행하므로, 허용 상태 갱신이 reload보다 먼저다. 문서별 허용 정책은 [ADR-0053](../../adr/0053-html-script-detection-and-per-document-allowance.md)을 유지한다.
+
+사용자 navigation proof의 원본은 AppServices가 보유한 `NavigationProofs`다. App adapter는 plugin 통지 전에 원 View·surface·페이지 작성자·resource identity를 기록하고, 프레임 끝에 owner takeover와 사라진 surface를 반영한다. IPC `RequestScope`는 원 View의 weak identity와 현재 Engine 실행 문맥으로 proof를 한 번 소비한다. 닫힌 View나 교체된 resource의 기록은 새 대상에 사용할 수 없다.
 
 PendingNavigation은 URL과 user_gesture를 포함한다. Linux는 WebKit is_user_gesture,
 Windows는 IsUserInitiated를 사용하며 실패 시 warning과 false로 처리한다. macOS는 항상 false다.

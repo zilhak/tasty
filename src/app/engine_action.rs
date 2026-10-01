@@ -123,7 +123,12 @@ impl EngineAction {
                 let Some(current)=engine.runtime.surface_registry.get_live(kind) else {return;};
                 if !registration.matches(&current) {return;}
                 let Some(manager)=plugins else {return;};
-                if let Some((kind,file,name))=bootstrap {manager.send_egui_mesh_surface_create(plugin,target.surface,kind,file.as_deref(),name);}
+                if let Some((kind,file,name))=bootstrap {
+                    let Some(binding)=engine.runtime.surfaces.get(&target.surface)
+                        .and_then(|surface|surface.as_any().downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>())
+                        .map(|surface|surface.retirement_binding.clone()) else {return;};
+                    manager.send_egui_mesh_surface_create(plugin,target.surface,kind,file.as_deref(),name,&binding);
+                }
                 manager.send_surface_set_context(plugin,params);
             },
             #[cfg(feature="gui")]
