@@ -268,15 +268,12 @@ cargo() {
 "#,
     )
     .unwrap();
-    let slash = |path: &std::path::Path| {
-        tasty_doc_guards::floored_walk::normalized_rel(path, std::path::Path::new(""))
-    };
     let bash = hook_bash();
     let mut child = Command::new(bash)
-        .arg(slash(&repo_root().join(".githooks/pre-push")))
+        .arg(hook_path(&repo_root().join(".githooks/pre-push")))
         .args(["origin", "unused"])
-        .env("BASH_ENV", slash(&env_file))
-        .env("HOOK_FIXTURE", slash(&root))
+        .env("BASH_ENV", hook_path(&env_file))
+        .env("HOOK_FIXTURE", hook_path(&root))
         .env("HOOK_VERSION_RC", version_rc.to_string())
         .env("HOOK_POPULATION_RC", population_rc.to_string())
         .env("HOOK_CARGO_RC", cargo_rc.to_string())
@@ -384,9 +381,11 @@ fn pre_push_handles_new_deleted_multiple_and_empty_refs() {
 fn pre_push_checks_do_not_inherit_the_pushing_repository_environment() {
     let scratch = tasty_doc_guards::temp_scratch::Scratch::new("pre-push-git-env");
     let output = std::process::Command::new(hook_bash())
-        .arg(repo_root().join("scripts/tests/pre-push-git-environment.sh"))
-        .arg(repo_root().join(".githooks/pre-push"))
-        .arg(scratch.path())
+        .arg(hook_path(
+            &repo_root().join("scripts/tests/pre-push-git-environment.sh"),
+        ))
+        .arg(hook_path(&repo_root().join(".githooks/pre-push")))
+        .arg(hook_path(scratch.path()))
         .output()
         .expect("run disposable hook repository fixture");
     assert!(
@@ -414,4 +413,8 @@ fn hook_bash() -> std::path::PathBuf {
     } else {
         std::path::PathBuf::from("bash")
     }
+}
+
+fn hook_path(path: &std::path::Path) -> String {
+    tasty_doc_guards::floored_walk::normalized_rel(path, std::path::Path::new(""))
 }

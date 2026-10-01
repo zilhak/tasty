@@ -40,7 +40,9 @@ chmod +x "$fixture/check"
 cp "$fixture/check" "$fixture/bin/cargo"
 cp "$fixture/check" "$repo/scripts/check-plugin-version-bump.sh"
 cp "$fixture/check" "$repo/scripts/check-population-freshness.sh"
-export EXPECTED_PARENT="$(git -C "$repo" rev-parse --show-toplevel)" EXPECTED_FIXTURE="$fixture"
+EXPECTED_PARENT="$(git -C "$repo" rev-parse --show-toplevel)"
+EXPECTED_FIXTURE="$fixture"
+export EXPECTED_PARENT EXPECTED_FIXTURE
 export PATH="$fixture/bin:$PATH"
 # Only this disposable repository is ever exported as the hook's Git context.
 export GIT_DIR="$repo/.git" GIT_COMMON_DIR="$repo/.git" GIT_WORK_TREE="$repo"
