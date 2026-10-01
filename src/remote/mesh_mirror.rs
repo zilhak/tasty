@@ -9,6 +9,9 @@ use tasty_plugin_protocol::protocol::{ModifiersWire, RawInputEventWire, RawInput
 #[derive(Debug, Clone)]
 pub(crate) struct MeshMirrorContext {
     pub(crate) client_id: AttachClientId,
+    pub(crate) grant:u64,
+    pub(crate) binding:std::sync::Weak<()>,
+    pub(crate) activation:Option<u64>,
     pub(crate) width_px: u32,
     pub(crate) height_px: u32,
     pub(crate) pixels_per_point: f32,
@@ -23,6 +26,7 @@ pub(crate) struct MeshMirrorContext {
     /// chunk 재조립용 번호. plugin의 frame_seq와 별개다.
     next_frame_id: u64,
     pending_events: Vec<RawInputEventWire>,
+    pending_bytes:usize,
     /// MeshContext에는 modifier가 없어 마지막 MeshInput의 값을 다음 context 전송에 쓴다.
     pub(crate) last_modifiers: ModifiersWire,
 }
@@ -40,18 +44,22 @@ pub(crate) struct MeshMirrorRegistry {
 
 impl MeshMirrorRegistry {
     /// surface별 구독을 등록·갱신한다. 바뀌었으면 dirty를 세우며 반환값은 없다.
-    /// 기존 client가 바뀌어도 texture·generation·대기 입력을 여기서 초기화하지는 않는다.
+    /// 원 grant/registration/activation이 바뀌면 이전 입력과 texture 세대를 계승하지 않는다.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn upsert(
         &mut self,
         surface_id: u32,
         client_id: AttachClientId,
+        grant:u64,binding:std::sync::Weak<()>,activation:Option<u64>,
         width_px: u32,
         height_px: u32,
         pixels_per_point: f32,
         theme: Option<ThemeWire>,
         focused: bool,
     ) {
+        if self.contexts.get(&surface_id).is_some_and(|ctx|ctx.client_id!=client_id || ctx.grant!=grant || !ctx.binding.ptr_eq(&binding) || ctx.activation!=activation) {
+            self.contexts.remove(&surface_id);
+        }
         match self.contexts.get_mut(&surface_id) {
             Some(ctx) => {
                 let changed = ctx.client_id != client_id
@@ -72,7 +80,7 @@ impl MeshMirrorRegistry {
                 self.contexts.insert(
                     surface_id,
                     MeshMirrorContext {
-                        client_id,
+                        client_id,grant,binding,activation,
                         width_px,
                         height_px,
                         pixels_per_point,
@@ -84,6 +92,7 @@ impl MeshMirrorRegistry {
                         last_forwarded_generation: None,
                         next_frame_id: 0,
                         pending_events: Vec::new(),
+                        pending_bytes:0,
                         last_modifiers: ModifiersWire::default(),
                     },
                 );
@@ -141,6 +150,11 @@ impl MeshMirrorRegistry {
     pub(crate) fn push_input(&mut self, surface_id: u32, input: RawInputWire) -> bool {
         match self.contexts.get_mut(&surface_id) {
             Some(ctx) => {
+                let bytes=serde_json::to_vec(&input).map_or(usize::MAX,|value|value.len());
+                if ctx.pending_events.len().saturating_add(input.events.len())>1024 || ctx.pending_bytes.saturating_add(bytes)>1024*1024 {
+                    tracing::warn!(surface_id,"remote mesh input capacity exhausted");return false;
+                }
+                ctx.pending_bytes+=bytes;
                 ctx.last_modifiers = input.modifiers;
                 ctx.pending_events.extend(input.events);
                 ctx.dirty = true;
@@ -153,7 +167,7 @@ impl MeshMirrorRegistry {
     pub(crate) fn take_pending_events(&mut self, surface_id: u32) -> Vec<RawInputEventWire> {
         self.contexts
             .get_mut(&surface_id)
-            .map(|c| std::mem::take(&mut c.pending_events))
+            .map(|c| {c.pending_bytes=0;std::mem::take(&mut c.pending_events)})
             .unwrap_or_default()
     }
 

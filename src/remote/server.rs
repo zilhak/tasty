@@ -4,7 +4,7 @@ use crate::runtime::engine_access::EngineMut;
 
 use crate::runtime::engine_access::EngineRef;
 use std::collections::HashMap;
-use std::thread;
+
 
 use crate::app::services::AppServices;
 use crate::core::CoreState;
@@ -75,12 +75,13 @@ impl EngineMut<'_> {
         theme: Option<tasty_plugin_protocol::protocol::ThemeWire>,
         focused: bool,
     ) -> bool {
-        if !self.mesh_holder_matches(surface_id, client_id) {
-            return false;
-        }
+        let Some(grant)=self.as_ref().attached_mesh_grant(surface_id,client_id) else {return false;};
+        let Some(binding)=self.remote.notifier().and_then(|hub|hub.client_binding(client_id)) else {return false;};
+        let Some(descriptor)=self.core.find_surface_by_id(surface_id) else {return false;};
+        let activation=descriptor.activation_generation;
         self.remote.mesh_mirror.upsert(
             surface_id,
-            client_id,
+            client_id,grant,binding,activation,
             width_px,
             height_px,
             pixels_per_point,
@@ -96,9 +97,8 @@ impl EngineMut<'_> {
         surface_id: SurfaceId,
         client_id: AttachClientId,
     ) -> bool {
-        if !self.mesh_holder_matches(surface_id, client_id) {
-            return false;
-        }
+        let Some(hub)=self.remote.notifier() else {return false;};
+        if !self.as_ref().attached_mesh_context_is_current(surface_id,&hub) || self.remote.mesh_mirror.get(surface_id).is_none_or(|ctx|ctx.client_id!=client_id) {return false;}
         self.remote.mesh_mirror.request_full_resend(surface_id)
     }
 
@@ -109,10 +109,12 @@ impl EngineMut<'_> {
         client_id: AttachClientId,
         input: tasty_plugin_protocol::protocol::RawInputWire,
     ) -> bool {
-        if !self.mesh_holder_matches(surface_id, client_id) {
-            return false;
+        let Some(hub)=self.remote.notifier() else {return false;};
+        if !self.as_ref().attached_mesh_context_is_current(surface_id,&hub) || self.remote.mesh_mirror.get(surface_id).is_none_or(|ctx|ctx.client_id!=client_id) {return false;}
+        if self.remote.mesh_mirror.push_input(surface_id,input) {true} else {
+            if let Some(ctx)=self.remote.mesh_mirror.get(surface_id) {hub.unregister_bound(client_id,&ctx.binding);}
+            self.remote.mesh_mirror.remove(surface_id);false
         }
-        self.remote.mesh_mirror.push_input(surface_id, input)
     }
 
     /// mirror에서 사용자가 읽은 attention을 지운다. 해당 workspace의 holder만 요청할 수 있다.
@@ -4495,63 +4497,11 @@ impl crate::runtime::engine_access::EngineMut<'_> {
         }
 
 
-        let Some(terminal) = self.runtime.terminals.get_mut(surface_id) else {
-            let _ = self.live.occupancy.release(surface_id, client_id); // 이미 해제됐으면 추가 처리가 필요 없다.
-            reject_attach(hub, client_id, "spawn_failed", None);
-            return;
-        };
-
-        let cols = terminal.cols();
-        let rows = terminal.rows();
-        // reader worker가 다른 스레드에서 ingest하므로 snapshot과 tap을 한 번의 잠금으로 건다.
-        // 이후 허브에서 발생할 수 있는 전송 손실까지 막는 것은 아니다.
-        let tasty_terminal::AttachSubscription {
-            snapshot,
-            output: tap_rx,
-            resize: resize_rx,
-        } = terminal.snapshot_and_tap();
-
-        let attached = serde_json::json!({
-            "event": "attached",
-            "surface_id": surface_id,
-            "cols": cols,
-            "rows": rows,
-        });
-        let attached_frame = StreamFrame::new(
-            StreamTag::Control,
-            serde_json::to_vec(&attached).unwrap_or_default(),
-        );
-        let _ = hub.push(client_id, attached_frame); // 실패한 통지는 재시도하지 않는다.
-        let _ = hub.push(client_id, StreamFrame::new(StreamTag::Data, snapshot)); // 손실·끊김 처리는 허브에 맡기고 여기서는 재전송하지 않는다.
-
-        let hub2 = hub.clone();
-        thread::spawn(move || {
-            for chunk in tap_rx {
-                match hub2.push(client_id, StreamFrame::new(StreamTag::Data, chunk)) {
-                    PushResult::Unknown | PushResult::Disconnected => break,
-                    _ => {}
-                }
-            }
-        });
-
-        let hub3 = hub.clone();
-        thread::spawn(move || {
-            for (cols, rows) in resize_rx {
-                let msg = StreamControl::Resize {
-                    surface_id,
-                    cols,
-                    rows,
-                };
-                let frame = StreamFrame::new(
-                    StreamTag::Control,
-                    serde_json::to_vec(&msg).unwrap_or_default(),
-                );
-                match hub3.push(client_id, frame) {
-                    PushResult::Unknown | PushResult::Disconnected => break,
-                    _ => {}
-                }
-            }
-        });
+        if !self.runtime.terminals.contains(surface_id) {
+            let _=self.live.occupancy.release(surface_id,client_id); // already released has no additional work.
+            reject_attach(hub,client_id,"spawn_failed",None);return;
+        }
+        self.subscribe_terminal(surface_id,client_id,hub,false,true);
 
         tracing::debug!("attach: surface {surface_id} -> client {client_id}");
     }
@@ -4639,54 +4589,14 @@ impl crate::runtime::engine_access::EngineMut<'_> {
 
     /// workspace 연결에 터미널 snapshot과 출력·resize tap을 등록한다.
     /// snapshot과 tap은 한 번의 잠금으로 걸어 그 사이 출력이 빠지지 않게 한다.
-    /// forwarder는 채널 EOF 또는 다음 push의 끊김 결과로 종료한다.
+    /// Engine 소유 subscription은 원 grant·terminal generation·hub registration이 바뀌면 폐기한다.
     pub(crate) fn tap_surface_for_stream(
         &mut self,
         sid: SurfaceId,
         client_id: AttachClientId,
         hub: &StreamHub,
     ) {
-        let Some(terminal) = self.runtime.terminals.get_mut(sid) else {
-            return;
-        };
-        let tasty_terminal::AttachSubscription {
-            snapshot,
-            output: tap_rx,
-            resize: resize_rx,
-        } = terminal.snapshot_and_tap();
-        let snapshot_frame = StreamFrame::new(StreamTag::Data, encode_mux(sid, &snapshot));
-        let _ = hub.push(client_id, snapshot_frame); // 손실·끊김 처리는 허브에 맡기고 여기서는 재전송하지 않는다.
-        let hub2 = hub.clone();
-        thread::spawn(move || {
-            for chunk in tap_rx {
-                match hub2.push(
-                    client_id,
-                    StreamFrame::new(StreamTag::Data, encode_mux(sid, &chunk)),
-                ) {
-                    PushResult::Unknown | PushResult::Disconnected => break,
-                    _ => {}
-                }
-            }
-        });
-
-        let hub3 = hub.clone();
-        thread::spawn(move || {
-            for (cols, rows) in resize_rx {
-                let msg = StreamControl::Resize {
-                    surface_id: sid,
-                    cols,
-                    rows,
-                };
-                let frame = StreamFrame::new(
-                    StreamTag::Control,
-                    serde_json::to_vec(&msg).unwrap_or_default(),
-                );
-                match hub3.push(client_id, frame) {
-                    PushResult::Unknown | PushResult::Disconnected => break,
-                    _ => {}
-                }
-            }
-        });
+        self.subscribe_terminal(sid,client_id,hub,true,false);
     }
 
     /// 새 workspace 멤버의 점유를 등록한다. 로컬 생성이면 delta를 먼저 보내고 tap한다.
@@ -4798,5 +4708,24 @@ impl crate::runtime::engine_access::EngineMut<'_> {
         class: &AttachSurfaceClass,
     ) -> (serde_json::Value, Vec<serde_json::Value>) {
         self.as_ref().build_workspace_tree_surfaces(idx, class)
+    }
+}
+
+
+impl EngineRef<'_> {
+    fn attached_mesh_grant(&self,surface:u32,client:u32)->Option<u64> {
+        let direct=self.live.occupancy.locks_snapshot().into_iter().find(|(id,_)|*id==surface).map(|(_,grant)|grant);
+        let grant=direct.or_else(|| {
+            let workspace=self.live.occupancy.workspace_of_surface(surface)?;
+            self.live.occupancy.workspaces_snapshot().into_iter().find(|(id,_)|*id==workspace).map(|(_,grant)|grant)
+        })?;
+        (grant.holder==client && grant.ready).then_some(grant.granted_seq)
+    }
+    pub(crate) fn attached_mesh_context_is_current(&self,surface:u32,hub:&StreamHub)->bool {
+        self.remote.mesh_mirror.get(surface).is_some_and(|ctx| {
+            self.attached_mesh_grant(surface,ctx.client_id)==Some(ctx.grant)
+                && hub.matches_client_binding(ctx.client_id,&ctx.binding)
+                && self.core.find_surface_by_id(surface).is_some_and(|descriptor|descriptor.activation_generation==ctx.activation)
+        })
     }
 }

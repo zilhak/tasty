@@ -6,6 +6,7 @@ use crate::core::state::AttentionKind;
 use tasty_ipc::stream::{StreamFrame,StreamTag};
 use crate::core::attach::AttachClientId;
 pub(crate) struct RemoteState {
+    pub(crate) attach_subscriptions:std::collections::HashMap<(u32,u32),super::subscription::Subscription>,
     pub(crate) attach_mapping_tokens:std::collections::HashMap<u32,std::sync::Arc<()>>,
     pub(crate) presentation:crate::model::StructurePresentationSnapshot,
     notifier:Option<tasty_ipc::stream_hub::StreamHub>,
@@ -82,6 +83,7 @@ pub(crate) struct RemoteState {
 }
 impl RemoteState {
     pub(crate) fn new()->Self {Self {
+            attach_subscriptions:Default::default(),
             attach_mapping_tokens:Default::default(),
             presentation:Default::default(),notifier:None,suppress_auto_tap:false,structure_changed:Default::default(),pending_workspace_taps:Default::default(),pending_structure_replies:Default::default(),
             mesh_mirror: crate::remote::mesh_mirror::MeshMirrorRegistry::default(),
@@ -166,6 +168,7 @@ impl RemoteState {
     /// Dispose only ephemeral observations and queued sends for a removed local identity.
     /// Connection ownership and other surfaces in the same session remain intact.
     pub(crate) fn forget_surface_observations(&mut self, id:u32) {
+        self.attach_subscriptions.retain(|(surface,_),_|*surface!=id);
         self.mesh_mirror.remove(id);
         self.last_forwarded_busy.remove(&id);
         self.last_forwarded_attention.remove(&id);
