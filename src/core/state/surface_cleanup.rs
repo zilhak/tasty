@@ -80,9 +80,10 @@ impl EngineMut<'_> {
         use std::time::Instant;
         sums.surfaces += 1;
         let t = Instant::now();
-        CoreState::delete_scrollback_persist(persist_id);
+        Self::delete_scrollback_persist(persist_id);
         sums.scrollback_delete += t.elapsed();
         let t = Instant::now();
+        self.runtime.surfaces.remove(&surface_id);
         self.drop_terminal(surface_id);
         sums.terminal_drop += t.elapsed();
         let t = Instant::now();

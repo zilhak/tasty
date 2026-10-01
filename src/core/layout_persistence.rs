@@ -279,7 +279,10 @@ fn serialize_layout(
     active_workspace: usize,
     presentation: &dyn crate::model::StructurePresentation,
 ) -> Option<String> {
-    let saved = SavedLayout::capture(engine, active_workspace, presentation);
+    let saved=match SavedLayout::capture(engine,active_workspace,presentation) {
+        Ok(saved)=>saved,
+        Err(error)=>{tracing::error!("layout capture refused: {error}");return None;},
+    };
     match serde_json::to_string_pretty(&saved) {
         Ok(j) => Some(j),
         Err(e) => {

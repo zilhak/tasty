@@ -5,50 +5,6 @@ use std::collections::HashSet;
 
 use super::{AttachClientSession, MirrorHost};
 
-/// 회신을 기다리는 에이전트 요청 ID. 회신이나 재연결 때 제거한다.
-#[derive(Debug, Default)]
-pub(super) struct AgentRequests {
-    /// forward 한 구조 op 의 op_id(`PendingStructuralForward::silent_failure`).
-    structural: HashSet<u64>,
-    /// 원격 markdown 원문 요청의 request_id(`PendingMarkdownContentForward::agent_origin`).
-    markdown: HashSet<u64>,
-}
-
-impl AgentRequests {
-    pub(super) fn note_structural_from(
-        &mut self,
-        pending: &crate::app::services::PendingStructuralForward,
-        op_id: u64,
-    ) {
-        if pending.silent_failure {
-            self.structural.insert(op_id);
-        }
-    }
-
-    pub(super) fn forget_structural(&mut self, op_id: u64) {
-        self.structural.remove(&op_id);
-    }
-
-    pub(super) fn note_markdown_from(
-        &mut self,
-        req: &crate::core::PendingMarkdownContentForward,
-        request_id: u64,
-    ) {
-        if req.agent_origin {
-            self.markdown.insert(request_id);
-        }
-    }
-
-    pub(super) fn take_markdown(&mut self, request_id: u64) -> bool {
-        self.markdown.remove(&request_id)
-    }
-
-    pub(super) fn clear(&mut self) {
-        self.structural.clear();
-        self.markdown.clear();
-    }
-}
-
 /// 복원할 항목이 없는 응답은 일반 실패와 구별해 알린다.
 /// 에이전트 요청의 실패는 사용자 toast로 표시하지 않는다.
 pub(super) fn apply_structural_failed(
@@ -58,7 +14,7 @@ pub(super) fn apply_structural_failed(
     reason: Option<String>,
 ) {
     let reason = reason.unwrap_or_default();
-    if sess.agent_requests.structural.remove(&op_id) {
+    if sess.state.agent_requests.structural.remove(&op_id) {
         tracing::warn!(
             "structural forward op {op_id} (agent origin) failed on the remote: {reason}"
         );
@@ -130,9 +86,9 @@ mod tests {
     #[test]
     fn an_agent_forward_failure_does_not_toast() {
         let mut sess = test_session(9_000, HashMap::new());
-        sess.agent_requests
+        sess.state.agent_requests
             .note_structural_from(&structural(true), 5);
-        sess.agent_requests
+        sess.state.agent_requests
             .note_structural_from(&structural(false), 6);
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
         let (mut state, mut engine_session) = crate::state::tests::test_state();
@@ -148,7 +104,7 @@ mod tests {
         }
         assert_eq!(state.toasts.len(), 0, "에이전트 op 의 실패는 로그로 끝난다");
         assert!(
-            sess.agent_requests.structural.is_empty(),
+            sess.state.agent_requests.structural.is_empty(),
             "회신이 오면 표시를 지운다"
         );
 
@@ -171,10 +127,10 @@ mod tests {
     #[test]
     fn an_agent_markdown_reload_truncation_does_not_toast() {
         let mut sess = test_session(9_000, HashMap::from([(30, 300)]));
-        sess.markdown_locals.insert(300);
-        sess.agent_requests
+        sess.state.markdown_locals.insert(300);
+        sess.state.agent_requests
             .note_markdown_from(&markdown(11, true), 11);
-        sess.agent_requests
+        sess.state.agent_requests
             .note_markdown_from(&markdown(12, false), 12);
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
         let (mut state, mut engine_session) = crate::state::tests::test_state();
@@ -203,7 +159,7 @@ mod tests {
             "에이전트 요청의 잘림은 toast 를 안 낸다"
         );
         assert!(
-            sess.agent_requests.markdown.is_empty(),
+            sess.state.agent_requests.markdown.is_empty(),
             "회신이 오면 표시를 지운다"
         );
 

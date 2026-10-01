@@ -171,6 +171,17 @@ impl Terminal {
         state.sink = Some(OutputSink::external(sink).bind(state.connection.clone()));
     }
 
+    /// Replace a detached remote connection without changing its VT content identity.
+    /// Prior protocol/clipboard responses keep the old resource generation and are rejected.
+    pub fn replace_external_connection(&mut self,sink:mpsc::Sender<Vec<u8>>) {
+        let mut state=self.lock_state();
+        state.connection.revoke();
+        state.connection=crate::binding::ConnectionLease::new();
+        state.sink=Some(OutputSink::external(sink).bind(state.connection.clone()));
+        state.enqueued_count=0;
+        state.events.clear();
+    }
+
     /// Plumb the host's resolved theme palette so OSC 10/11/12/4 color *queries*
     /// are answered with the colors the renderer actually draws. The host calls
     /// this on terminal creation and whenever the theme changes.

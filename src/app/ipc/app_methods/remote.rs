@@ -41,7 +41,7 @@ impl App {
             }
         };
 
-        let tx = self.auto_attach_tx.clone();
+        let tx = self.remote.tx.clone();
         let proxy = self.view.proxy.clone();
         match target {
             RemoteAttachTarget::Existing(remote_ws) => {
@@ -129,12 +129,12 @@ impl RemoteAttachTarget {
 
 /// 결과 채널에 터널을 넘기고 메인 루프를 깨운다. mirror 생성은 이후에 수행한다.
 fn send_attach_outcome(
-    tx: &std::sync::mpsc::Sender<crate::app::auto_attach::AutoAttachOutcome>,
+    tx: &std::sync::mpsc::Sender<crate::remote::outbound::AutoAttachOutcome>,
     proxy: &winit::event_loop::EventLoopProxy<AppEvent>,
     remote_ws: u32,
     result: anyhow::Result<(Option<tasty_ssh::SshTunnel>, u16)>,
 ) {
-    let outcome = crate::app::auto_attach::AutoAttachOutcome {
+    let outcome = crate::remote::outbound::AutoAttachOutcome {
         anchor_ws_id: None,
         remote_ws,
         result,
@@ -151,7 +151,7 @@ fn remote_attach_create_worker(
     cwd: Option<String>,
     rpc_id: serde_json::Value,
     response_tx: &std::sync::mpsc::SyncSender<host_ipc::protocol::JsonRpcResponse>,
-    tx: &std::sync::mpsc::Sender<crate::app::auto_attach::AutoAttachOutcome>,
+    tx: &std::sync::mpsc::Sender<crate::remote::outbound::AutoAttachOutcome>,
     proxy: &winit::event_loop::EventLoopProxy<AppEvent>,
 ) {
     let (tunnel, port) = match conn.resolve_endpoint() {

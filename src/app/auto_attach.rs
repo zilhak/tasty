@@ -9,7 +9,8 @@ use std::time::Instant;
 use tasty_remote_profiles::{Passkeys, RemoteProfiles};
 use tasty_ssh::{self as ssh, Backoff, PortMode, SshTarget, SshTunnel};
 
-use super::attach_client::SessionState;
+use crate::remote::client_session::SessionState;
+use crate::remote::outbound::{ReconnectSlot,AutoAttachOutcome};
 use crate::app::App;
 use crate::model::WorkspaceAttachTarget;
 use crate::view::ui::View as _;
@@ -17,15 +18,6 @@ use crate::view::ui::View as _;
 /// 자동 재연결의 실패 횟수 상한. 워크스페이스 재활성화로 재시도하는 동작은 막지 않는다.
 const MAX_RECONNECT_ATTEMPTS: u32 = 20;
 
-/// 실패한 재연결의 다음 시도 시각과 누적 횟수. 첫 시도는 슬롯 없이 즉시 수행한다.
-pub(crate) struct ReconnectSlot {
-    backoff: Backoff,
-    next_attempt: Instant,
-    attempts: u32,
-    /// 슬롯을 지우면 첫 시도로 취급하므로 중단 상태를 별도로 보존한다.
-    /// 사용자가 해당 워크스페이스로 돌아오면 재개할 수 있다.
-    given_up: bool,
-}
 
 impl ReconnectSlot {
     fn new() -> Self {
@@ -66,20 +58,11 @@ fn should_reset_given_up(slot: Option<&ReconnectSlot>, edge_now: bool) -> bool {
     edge_now && slot.is_some_and(|s| s.given_up)
 }
 
-/// AppEvent에 넣을 수 없는 터널 핸들을 별도 결과 채널로 전달한다.
-pub(crate) struct AutoAttachOutcome {
-    /// 자동 attach의 로컬 anchor ID. anchor 없는 수동 요청은 None이며 중복 방지 집합에 넣지 않는다.
-    pub(crate) anchor_ws_id: Option<u32>,
-    pub(crate) remote_ws: u32,
-    pub(crate) result: anyhow::Result<(Option<SshTunnel>, u16)>,
-    /// 신규 mirror 생성 대신 기존 세션 재연결과 실패 시 백오프 갱신을 수행할지 구별한다.
-    pub(crate) is_reconnect: bool,
-}
 
 impl App {
     /// 활성 워크스페이스의 전환을 한 번 계산해 두 트리거가 같은 전환을 보게 한다.
     pub(crate) fn poll_auto_attach(&mut self) {
-        let prev_active = self.auto_attach_last_active_ws;
+        let prev_active = self.remote.last_active_ws;
         let current_ws_id = self
             .focused_pair()
             .and_then(|(main, engine)| {
@@ -88,7 +71,7 @@ impl App {
                     .workspace_at(main.state.active_workspace_index(engine.core))
             })
             .map(|ws| ws.id);
-        self.auto_attach_last_active_ws = current_ws_id;
+        self.remote.last_active_ws = current_ws_id;
 
         self.maybe_trigger_auto_attach(current_ws_id, prev_active);
         self.maybe_trigger_reconnect(current_ws_id, prev_active);
@@ -98,14 +81,14 @@ impl App {
     /// 타이머만 등록·해제한다. 중단 상태를 담은 재연결 슬롯은 보존한다.
     pub(crate) fn sync_reconnect_timers(&mut self, now: Instant) {
         let wakeups: Vec<(u32, Instant)> = self
-            .attach_client_sessions
+            .remote.sessions
             .iter()
             .filter(|s| s.state() == SessionState::Reconnecting)
             .filter_map(|s| s.anchor_ws_id())
             // 워커가 이미 떠 있는 anchor 는 결과 이벤트(`AutoAttachReady`)가 깨운다.
-            .filter(|anchor| !self.auto_attach_active.contains(anchor))
+            .filter(|anchor| !self.remote.active.contains(anchor))
             .filter_map(|anchor| {
-                reconnect_wakeup_at(self.auto_attach_reconnect.get(&anchor)).map(|at| (anchor, at))
+                reconnect_wakeup_at(self.remote.reconnect.get(&anchor)).map(|at| (anchor, at))
             })
             .collect();
         crate::app::timers::sync_reconnect_timers(&mut self.timers, &wakeups, now);
@@ -129,26 +112,26 @@ impl App {
         };
         // 재연결이 맡은 anchor에 새 mirror를 중복 생성하지 않는다.
         if self
-            .attach_client_sessions
+            .remote.sessions
             .iter()
             .any(|s| s.anchor_ws_id() == Some(anchor) && s.state() == SessionState::Reconnecting)
         {
             return;
         }
-        let pending_reactivation = self.auto_attach_pending_reactivation.contains(&anchor);
+        let pending_reactivation = self.remote.pending_reactivation.contains(&anchor);
         if !is_attach_trigger_allowed(pending_reactivation, current_ws_id, prev_active) {
             return;
         }
-        if self.auto_attach_active.contains(&anchor) {
+        if self.remote.active.contains(&anchor) {
             return;
         }
         let Some(remote_ws) = mapping.remote_workspace else {
             return;
         };
 
-        self.auto_attach_active.insert(anchor);
-        self.auto_attach_pending_reactivation.remove(&anchor);
-        let tx = self.auto_attach_tx.clone();
+        self.remote.active.insert(anchor);
+        self.remote.pending_reactivation.remove(&anchor);
+        let tx = self.remote.tx.clone();
         let proxy = self.view.proxy.clone();
         let target = mapping.target.clone();
         // SSH 연결 준비가 메인 루프를 막지 않게 한다.
@@ -168,24 +151,24 @@ impl App {
     /// 시도 중이 아닌 anchor를 예약 시각 또는 해당 워크스페이스 재활성화 때 재연결한다.
     fn maybe_trigger_reconnect(&mut self, current_ws_id: Option<u32>, prev_active: Option<u32>) {
         let anchors: Vec<u32> = self
-            .attach_client_sessions
+            .remote.sessions
             .iter()
             .filter(|s| s.state() == SessionState::Reconnecting)
             .filter_map(|s| s.anchor_ws_id())
             .collect();
         for anchor in anchors {
-            if self.auto_attach_active.contains(&anchor) {
+            if self.remote.active.contains(&anchor) {
                 continue;
             }
             let edge_now =
                 current_ws_id == Some(anchor) && is_reactivation_edge(current_ws_id, prev_active);
-            let existing_slot = self.auto_attach_reconnect.get(&anchor);
+            let existing_slot = self.remote.reconnect.get(&anchor);
             let due = reconnect_due(existing_slot, Instant::now());
             if !edge_now && !due {
                 continue;
             }
             if should_reset_given_up(existing_slot, edge_now) {
-                self.auto_attach_reconnect.remove(&anchor);
+                self.remote.reconnect.remove(&anchor);
             }
             // 대기 중 워크스페이스나 매핑이 사라졌을 수 있으므로 다시 읽는다.
             let mapping = self.engines().windows().find_map(|(_, e)| {
@@ -195,17 +178,17 @@ impl App {
                     .and_then(|ws| ws.attach_mapping.clone())
             });
             let Some(mapping) = mapping else {
-                self.auto_attach_reconnect.remove(&anchor);
-                self.auto_attach_pending_reactivation.remove(&anchor);
+                self.remote.reconnect.remove(&anchor);
+                self.remote.pending_reactivation.remove(&anchor);
                 continue;
             };
             let Some(remote_ws) = mapping.remote_workspace else {
                 continue; // 원격 workspace id 미지정 — 자동 attach 와 동일 원칙 3.
             };
 
-            self.auto_attach_active.insert(anchor);
-            self.auto_attach_pending_reactivation.remove(&anchor);
-            let tx = self.auto_attach_tx.clone();
+            self.remote.active.insert(anchor);
+            self.remote.pending_reactivation.remove(&anchor);
+            let tx = self.remote.tx.clone();
             let proxy = self.view.proxy.clone();
             let target = mapping.target.clone();
             std::thread::spawn(move || {
@@ -223,7 +206,7 @@ impl App {
     }
 
     pub(crate) fn drain_auto_attach_results(&mut self) {
-        while let Ok(outcome) = self.auto_attach_rx.try_recv() {
+        while let Ok(outcome) = self.remote.rx.try_recv() {
             self.apply_auto_attach_outcome(outcome);
         }
     }
@@ -250,7 +233,7 @@ impl App {
                     "attach 엔드포인트 해석 실패 (anchor ws {anchor_ws_id:?}, remote ws {remote_ws}, reconnect={is_reconnect}): {e}"
                 );
                 if let Some(anchor) = anchor_ws_id {
-                    self.auto_attach_active.remove(&anchor);
+                    self.remote.active.remove(&anchor);
                     if is_reconnect {
                         self.on_reconnect_attempt_failed(anchor, &e);
                     }
@@ -275,13 +258,13 @@ impl App {
                  — 로컬 self-attach 는 debug 빌드 전용."
             );
             if let Some(anchor) = anchor_ws_id {
-                self.auto_attach_active.remove(&anchor);
+                self.remote.active.remove(&anchor);
             }
             return;
         }
         let attach_result = if is_reconnect {
             let idx = anchor_ws_id.and_then(|anchor| {
-                self.attach_client_sessions.iter().position(|s| {
+                self.remote.sessions.iter().position(|s| {
                     s.anchor_ws_id() == Some(anchor) && s.state() == SessionState::Reconnecting
                 })
             });
@@ -297,7 +280,7 @@ impl App {
         match attach_result {
             Ok(()) => {
                 if let Some(anchor) = anchor_ws_id {
-                    self.auto_attach_reconnect.remove(&anchor);
+                    self.remote.reconnect.remove(&anchor);
                 }
             }
             Err(e) => {
@@ -305,7 +288,7 @@ impl App {
                     "attach mirror 실패 (anchor ws {anchor_ws_id:?}, remote ws {remote_ws}, reconnect={is_reconnect}): {e}"
                 );
                 if let Some(anchor) = anchor_ws_id {
-                    self.auto_attach_active.remove(&anchor);
+                    self.remote.active.remove(&anchor);
                     if is_reconnect {
                         self.on_reconnect_attempt_failed(anchor, &e);
                     }
@@ -319,7 +302,7 @@ impl App {
     fn on_reconnect_attempt_failed(&mut self, anchor: u32, err: &anyhow::Error) {
         let permanent_conflict = err.to_string().contains("already_attached");
         let slot = self
-            .auto_attach_reconnect
+            .remote.reconnect
             .entry(anchor)
             .or_insert_with(ReconnectSlot::new);
         slot.attempts += 1;

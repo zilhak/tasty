@@ -288,7 +288,7 @@ impl AppServices {
             if pane.tabs.len() > 1 {
                 let snapshot_opt = {
                     let mut snap_fn =
-                        crate::runtime::surface_registry::snapshot_fn_for(&engine.runtime.surface_registry);
+                        crate::runtime::surface_registry::snapshot_fn_for(&engine.runtime.surface_registry,&engine.runtime.surfaces);
                     let terminals = &engine.runtime.terminals;
                     crate::model::closed_item::ClosedTab::from_tab(
                         &pane.tabs[loc.tab_idx],
@@ -353,7 +353,7 @@ impl AppServices {
             {
                 let snapshot = {
                     let mut snap_fn =
-                        crate::runtime::surface_registry::snapshot_fn_for(&engine.runtime.surface_registry);
+                        crate::runtime::surface_registry::snapshot_fn_for(&engine.runtime.surface_registry,&engine.runtime.surfaces);
                     let terminals = &engine.runtime.terminals;
                     crate::model::ClosedItem::from_pane(
                         pane,
@@ -424,7 +424,7 @@ impl AppServices {
             let t = Instant::now();
             let item = {
                 let mut snap_fn =
-                    crate::runtime::surface_registry::snapshot_fn_for(&engine.runtime.surface_registry);
+                    crate::runtime::surface_registry::snapshot_fn_for(&engine.runtime.surface_registry,&engine.runtime.surfaces);
                 let ws = engine
                     .workspace_at(loc.ws_idx)
                     .expect("workspace index is valid");

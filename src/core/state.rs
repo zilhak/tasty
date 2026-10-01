@@ -359,6 +359,9 @@ impl CoreState {
         self.workspace_at(ws_idx).map(|ws| ws.id)
     }
 
+}
+
+impl EngineMut<'_> {
     pub fn push_closed_item(
         &mut self,
         mut item: crate::model::ClosedItem,
@@ -419,7 +422,7 @@ impl CoreState {
     }
 }
 
-impl CoreState {
+impl EngineRef<'_> {
     /// 등록된 종류로 surface를 만든다. Terminal의 PTY 생성은 호출자가 별도로 처리한다.
     /// cwd는 호출자가 정해 넘기며 사용 여부는 각 종류가 결정한다.
     pub(crate) fn create_surface_via_registry(
@@ -587,7 +590,7 @@ impl EngineRef<'_> {
         presentation: &dyn crate::model::StructurePresentation,
     ) -> Option<crate::model::ClosedItem> {
         let tab = self.find_pane_by_id(pane_id)?.tabs.get(tab_index)?;
-        let mut snap_fn = crate::runtime::surface_registry::snapshot_fn_for(&self.runtime.surface_registry);
+        let mut snap_fn = crate::runtime::surface_registry::snapshot_fn_for(&self.runtime.surface_registry,&self.runtime.surfaces);
         let terminals = &self.runtime.terminals;
         crate::model::closed_item::ClosedTab::from_tab(
             tab,
@@ -611,7 +614,7 @@ impl EngineRef<'_> {
         let pane = ws.pane_layout().find_pane(pane_id)?;
         let (direction, ratio, was_first, sibling_pane_id) =
             ws.pane_layout().locate_split_context(pane_id)?;
-        let mut snap_fn = crate::runtime::surface_registry::snapshot_fn_for(&self.runtime.surface_registry);
+        let mut snap_fn = crate::runtime::surface_registry::snapshot_fn_for(&self.runtime.surface_registry,&self.runtime.surfaces);
         let terminals = &self.runtime.terminals;
         Some(crate::model::ClosedItem::from_pane(
             pane,

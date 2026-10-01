@@ -29,143 +29,61 @@ struct CaptureCtx<'a> {
 }
 
 impl SavedLayout {
-    /// 새 scrollback ID를 Terminal store에도 기록하므로 engine을 변경할 수 있다.
-    pub fn capture(
-        engine: &mut EngineMut<'_>,
-        active_workspace: usize,
-        presentation: &dyn crate::model::StructurePresentation,
-    ) -> Self {
-        let registry = engine.runtime.surface_registry.clone();
-        let capture_scrollback = engine.settings.general.restore_surface_content;
-        let memory = engine.runtime.memory.clone();
-        let categories: Vec<SavedCategory> = engine
-            .categories
-            .iter()
-            .map(|c| SavedCategory {
-                id: c.id,
-                name: c.name.clone(),
-                collapsed: presentation.category_collapsed(c.id),
+    /// Capture runtime instances before walking descriptors. Missing owners abort the export.
+    pub fn capture(engine:&mut EngineMut<'_>,active_workspace:usize,presentation:&dyn crate::model::StructurePresentation)->Result<Self,String> {
+        let registry=engine.runtime.surface_registry.clone();
+        let memory=engine.runtime.memory.clone();
+        let capture_scrollback=engine.settings.general.restore_surface_content;
+        let mut seen_refs=SeenRefs::new();
+        let active_workspace=engine.workspaces().iter().take(active_workspace).filter(|workspace|!workspace.mirror).count();
+        let ids:Vec<_>=engine.core.local_workspaces.iter().flat_map(|workspace|workspace.all_surface_ids()).collect();
+        let mut captured=std::collections::HashMap::new();
+        let mut ctx=CaptureCtx {presentation,registry:&registry,capture_scrollback,memory:&memory,seen_refs:&mut seen_refs,terminals:&mut engine.runtime.terminals};
+        for id in ids {
+            let instance=engine.runtime.surfaces.get_mut(&id).ok_or_else(||format!("surface {id} has no runtime owner during capture"))?;
+            let snapshot=SavedSurface::capture_surface(instance.as_mut(),&mut ctx);
+            if captured.insert(id,snapshot).is_some() {return Err(format!("surface {id} appears twice in the committed structure"));}
+        }
+        let workspaces=engine.core.local_workspaces.iter().map(|workspace| {
+            let focused=workspace.pane_layout().all_pane_ids().iter().position(|id|Some(*id)==presentation.pane_id(workspace)).unwrap_or(0);
+            Ok(SavedWorkspace {
+                name:workspace.name.clone(),subtitle:workspace.subtitle.clone(),description:workspace.description.clone(),
+                pane_layout:SavedPaneNode::capture(workspace.pane_layout(),presentation,&mut captured)?,
+                focused_pane_index:focused,attach_mapping:workspace.attach_mapping.clone(),category:workspace.category,
             })
-            .collect();
-        let mut seen_refs = SeenRefs::new();
-        // mirror는 원격 세션 없이 복원할 수 없으므로 저장하지 않는다. 제외 후 활성 인덱스도 맞춘다.
-        let active_workspace = engine
-            .workspaces()
-            .into_iter()
-            .take(active_workspace)
-            .filter(|ws| !ws.mirror)
-            .count();
-        let workspaces: Vec<SavedWorkspace> = {
-            let workspaces = &mut engine.core.local_workspaces;
-            let terminals = &mut engine.runtime.terminals;
-            let mut ctx = CaptureCtx {
-                presentation,
-                registry: registry.as_ref(),
-                capture_scrollback,
-                memory: &memory,
-                seen_refs: &mut seen_refs,
-                terminals,
-            };
-            workspaces
-                .iter_mut()
-                .map(|ws| SavedWorkspace::capture(ws, &mut ctx))
-                .collect()
-        };
-        let active_workspace = active_workspace.min(workspaces.len().saturating_sub(1));
-        Self {
-            version: LAYOUT_VERSION,
-            workspaces,
-            active_workspace,
-            categories,
-        }
+        }).collect::<Result<Vec<_>,String>>()?;
+        let active_workspace=active_workspace.min(workspaces.len().saturating_sub(1));
+        Ok(Self {version:LAYOUT_VERSION,workspaces,active_workspace,categories:engine.categories.iter().map(|category|SavedCategory {
+            id:category.id,name:category.name.clone(),collapsed:presentation.category_collapsed(category.id),
+        }).collect()})
     }
 }
-
-impl SavedWorkspace {
-    fn capture(ws: &mut Workspace, ctx: &mut CaptureCtx<'_>) -> Self {
-        let all_ids = ws.pane_layout().all_pane_ids();
-        let focused_pane_index = all_ids
-            .iter()
-            .position(|&id| Some(id) == ctx.presentation.pane_id(ws))
-            .unwrap_or(0);
-        let attach_mapping = ws.attach_mapping.clone();
-        let category = ws.category;
-        let pane_layout = SavedPaneNode::capture(ws.pane_layout_mut(), ctx);
-        Self {
-            name: ws.name.clone(),
-            subtitle: ws.subtitle.clone(),
-            description: ws.description.clone(),
-            pane_layout,
-            focused_pane_index,
-            attach_mapping,
-            category,
-        }
-    }
-}
-
 impl SavedPaneNode {
-    fn capture(node: &mut PaneNode, ctx: &mut CaptureCtx<'_>) -> Self {
-        match node {
-            PaneNode::Leaf(pane) => SavedPaneNode::Leaf(SavedPane::capture(pane, ctx)),
-            PaneNode::Split {
-                direction,
-                ratio,
-                first,
-                second,
-            } => SavedPaneNode::Split {
-                direction: (*direction).into(),
-                ratio: *ratio,
-                first: Box::new(SavedPaneNode::capture(first, ctx)),
-                second: Box::new(SavedPaneNode::capture(second, ctx)),
+    fn capture(node:&PaneNode,presentation:&dyn crate::model::StructurePresentation,captured:&mut std::collections::HashMap<u32,SavedSurface>)->Result<Self,String> {
+        Ok(match node {
+            PaneNode::Leaf(pane)=>Self::Leaf(SavedPane {
+                active_tab:presentation.tab_index(pane),
+                tabs:pane.tabs.iter().map(|tab|Ok(SavedTab {
+                    name:tab.name.clone(),explicit_name:tab.explicit_name.clone(),
+                    surface:SavedSurfaceLayout::capture_layout(tab.layout(),captured)?,
+                })).collect::<Result<Vec<_>,String>>()?,
+            }),
+            PaneNode::Split {direction,ratio,first,second}=>Self::Split {
+                direction:(*direction).into(),ratio:*ratio,
+                first:Box::new(Self::capture(first,presentation,captured)?),second:Box::new(Self::capture(second,presentation,captured)?),
             },
-        }
+        })
     }
 }
-
-impl SavedPane {
-    fn capture(pane: &mut Pane, ctx: &mut CaptureCtx<'_>) -> Self {
-        let active_tab = ctx.presentation.tab_index(pane);
-        let tabs = pane
-            .tabs
-            .iter_mut()
-            .map(|t| SavedTab::capture(t, ctx))
-            .collect();
-        Self { tabs, active_tab }
-    }
-}
-
-impl SavedTab {
-    fn capture(tab: &mut Tab, ctx: &mut CaptureCtx<'_>) -> Self {
-        let name = tab.name.clone();
-        let explicit_name = tab.explicit_name.clone();
-        let surface = SavedSurfaceLayout::capture_layout(tab.layout_mut(), ctx);
-        Self {
-            name,
-            explicit_name,
-            surface,
-        }
-    }
-}
-
 impl SavedSurfaceLayout {
-    fn capture_layout(layout: &mut SurfaceLayout, ctx: &mut CaptureCtx<'_>) -> Self {
-        match layout {
-            SurfaceLayout::Leaf(surface) => {
-                SavedSurfaceLayout::Leaf(SavedSurface::capture_surface(surface.as_mut(), ctx))
-            }
-            SurfaceLayout::Split {
-                direction,
-                ratio,
-                first,
-                second,
-                ..
-            } => SavedSurfaceLayout::Split {
-                direction: (*direction).into(),
-                ratio: *ratio,
-                first: Box::new(SavedSurfaceLayout::capture_layout(first, ctx)),
-                second: Box::new(SavedSurfaceLayout::capture_layout(second, ctx)),
+    fn capture_layout(layout:&SurfaceLayout,captured:&mut std::collections::HashMap<u32,SavedSurface>)->Result<Self,String> {
+        Ok(match layout {
+            SurfaceLayout::Leaf(surface)=>Self::Leaf(captured.remove(&surface.id).ok_or_else(||format!("surface {} capture is missing",surface.id))?),
+            SurfaceLayout::Split {direction,ratio,first,second,..}=>Self::Split {
+                direction:(*direction).into(),ratio:*ratio,
+                first:Box::new(Self::capture_layout(first,captured)?),second:Box::new(Self::capture_layout(second,captured)?),
             },
-        }
+        })
     }
 }
 

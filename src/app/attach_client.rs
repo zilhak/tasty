@@ -9,6 +9,8 @@ mod navigation_tests;
 
 use crate::runtime::engine_access::EngineMut;
 use dispatch::{AttachSource, Outcome, dispatch_attach};
+use crate::remote::client_session::*;
+use crate::remote::transport::*;
 
 use std::collections::{HashMap, HashSet};
 use std::net::TcpStream;
@@ -42,163 +44,6 @@ const MARKDOWN_PLUGIN_ID: &str = "com.tasty.markdown";
 const MARKDOWN_MIRROR_CONTENT_RESULT_EVENT: &str = "markdown_mirror.content_result";
 const MARKDOWN_MIRROR_CHANGED_EVENT: &str = "markdown_mirror.changed";
 
-/// 출력과 resize를 같은 버퍼에 도착 순서대로 담아 올바른 크기의 그리드에 적용한다.
-pub(crate) enum MirrorEvent {
-    Data(u32, Vec<u8>),
-    Resize(u32, usize, usize),
-    /// 로컬 PTY가 없는 mirror의 busy 상태는 서버에서 받는다.
-    Activity(u32, bool),
-    /// None이면 원격 attention 해제다. 로컬 완료 감지와 별도로 반영한다.
-    Attention(u32, Option<tasty_ipc::stream::AttentionKindWire>),
-    /// 원격 cwd. 로컬 파일시스템 경로로 사용하지 않으며 None이면 값을 지운다.
-    Cwd(u32, Option<String>),
-    /// 구조 변경 실패. 에이전트 요청은 로그, 사용자 요청은 toast로 알린다.
-    StructuralFailed(u64, Option<String>),
-    /// 사용자 요청의 포커스 의도를 뒤따르는 StructuralDelta에 전달할 op_id.
-    StructuralSucceeded(u64),
-    /// 원격의 전체 구조. 기존 surface의 로컬 ID·터미널은 가능한 한 재사용한다.
-    StructuralDelta {
-        workspace_id: u32,
-        tree: Value,
-        surfaces: Vec<Value>,
-    },
-    /// capture_result 커스텀 이벤트. 성공 경로는 원격 파일시스템의 경로다.
-    CaptureResult {
-        ok: bool,
-        path: Option<String>,
-        reason: Option<String>,
-    },
-    /// list_dir_result 커스텀 이벤트. dir은 서버가 반환한 절대경로다.
-    ListDirResult {
-        request_id: u64,
-        ok: bool,
-        dir: Option<String>,
-        entries: Option<Vec<crate::core::fs_list::DirEntryInfo>>,
-        /// 서버가 프레임 크기 때문에 목록을 잘랐으면 사용자에게 알린다.
-        truncated: bool,
-        reason: Option<String>,
-    },
-    /// 재조립된 mesh frame. bytes는 서버가 footer를 제거한 payload다.
-    Mesh(u32, u64, u64, bool, Vec<u8>),
-    /// git_query_result의 kind별 JSON은 호스트가 해석하지 않고 플러그인으로 전달한다.
-    GitQueryResult {
-        request_id: u64,
-        ok: bool,
-        kind: String,
-        data: Option<Value>,
-        truncated: bool,
-        reason: Option<String>,
-    },
-    /// markdown_content_result의 surface_id는 원격 ID다. 성공은 file/source, 실패는 reason을 담는다.
-    MarkdownContentResult {
-        request_id: u64,
-        surface_id: u32,
-        ok: bool,
-        file: Option<String>,
-        source: Option<String>,
-        truncated: bool,
-        reason: Option<String>,
-    },
-    /// 다른 점유 대상의 문서 신호도 올 수 있어 이 세션의 원격 surface ID인지 확인해야 한다.
-    MarkdownChanged {
-        surface_id: u32,
-    },
-    /// 서버 전송 손실. 데이터가 연속이라는 가정을 버리고 재동기화를 요청한다.
-    Desynced {
-        frames: u64,
-    },
-}
-
-/// 버퍼 필드에 직접 접근해 적용 대상 없이 비우지 못하도록 모듈로 분리한다.
-mod outbox {
-    use std::sync::{Arc, Mutex};
-
-    use super::{MirrorEvent, MirrorHost};
-
-    /// 수신 스레드가 쌓고 메인 스레드가 비운다. take_for는 적용할 MirrorHost를 요구한다.
-    #[derive(Clone)]
-    pub(crate) struct MirrorOutbox {
-        events: Arc<Mutex<Vec<MirrorEvent>>>,
-    }
-
-    impl MirrorOutbox {
-        pub(super) fn new() -> Self {
-            Self {
-                events: Arc::new(Mutex::new(Vec::new())),
-            }
-        }
-
-        /// poison 상태면 새 이벤트를 버리고 false를 반환한다.
-        pub(super) fn push(&self, ev: MirrorEvent) -> bool {
-            match self.events.lock() {
-                Ok(mut buf) => {
-                    buf.push(ev);
-                    true
-                }
-                Err(_) => {
-                    // 같은 poison 상태가 반복되므로 폐기 진단은 프로세스에서 한 번만 남긴다.
-                    if !super::MIRROR_OUTBOX_PUSH_DROPPED
-                        .swap(true, std::sync::atomic::Ordering::Relaxed)
-                    {
-                        tracing::error!(
-                            "{} lock poisoned; dropping arriving mirror events. Further drops are not logged.",
-                            super::MIRROR_OUTBOX_WHAT
-                        );
-                    }
-                    false
-                }
-            }
-        }
-
-        /// 도착 순서를 유지해 버퍼를 비운다. poison 상태에서도 이미 받은 Vec를 회수한다.
-        pub(super) fn take_for(&self, _host: &MirrorHost<'_, '_>) -> Vec<MirrorEvent> {
-            std::mem::take(&mut *crate::poison::recover_mutex(
-                self.events.lock(),
-                super::MIRROR_OUTBOX_WHAT,
-                &super::MIRROR_OUTBOX_POISONED,
-            ))
-        }
-
-        /// 테스트에서만 버퍼를 직접 확인하거나 채울 수 있다.
-        #[cfg(test)]
-        pub(super) fn peek(&self) -> std::sync::MutexGuard<'_, Vec<MirrorEvent>> {
-            self.events.lock().unwrap_or_else(|p| p.into_inner())
-        }
-    }
-}
-
-use outbox::MirrorOutbox;
-
-/// 입력·heartbeat·제어 프레임을 단일 writer 스레드로 전달한다.
-struct OutFrame {
-    tag: StreamTag,
-    payload: Vec<u8>,
-}
-
-type FrameSender = std::sync::mpsc::Sender<OutFrame>;
-
-/// 재연결 때 sender만 교체해 살아 있는 터미널의 입력 forwarder가 새 연결을 쓰게 한다.
-/// 연결별 heartbeat와 writer는 이 공유 핸들을 사용하지 않는다.
-type SharedFrameSender = Arc<Mutex<FrameSender>>;
-
-/// poison 복구 로그의 식별자. Sender·Vec 값은 회수하지만 소켓 writer의 락을 복구하는 경로는 아니다.
-const FRAME_TX_WHAT: &str = "attach frame sender";
-static FRAME_TX_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-const MIRROR_OUTBOX_WHAT: &str = "attach mirror outbox";
-static MIRROR_OUTBOX_POISONED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-/// poison 복구와 이벤트 폐기는 서로 다른 진단이므로 각각 한 번씩 기록한다.
-static MIRROR_OUTBOX_PUSH_DROPPED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-/// Reconnecting에서는 mirror와 scrollback을 남기고 연결만 교체한다.
-/// 완전히 닫힌 세션은 목록에서 제거하므로 Closed 상태는 두지 않는다.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SessionState {
-    Connected,
-    Reconnecting,
-}
-
 /// mesh leaf를 AttachMeshSurface로 만들 때 필요한 표시 정보.
 #[derive(Debug, Clone)]
 struct MirrorMeshInfo {
@@ -207,98 +52,6 @@ struct MirrorMeshInfo {
     display_name: String,
 }
 
-#[derive(Default)]
-struct MirrorStructureIds {
-    panes: HashMap<u32, u32>,
-    remote_tabs: HashMap<u32, u32>,
-}
-
-impl MirrorStructureIds {
-    fn retain_workspace(&mut self, workspace: &Workspace) {
-        let pane_ids = workspace.pane_layout().all_pane_ids();
-        self.panes.retain(|_, local| pane_ids.contains(local));
-        self.remote_tabs.retain(|_, local| {
-            pane_ids.iter().any(|id| {
-                workspace
-                    .pane_layout()
-                    .find_pane(*id)
-                    .is_some_and(|pane| pane.tabs.iter().any(|tab| tab.id == *local))
-            })
-        });
-    }
-}
-
-pub(crate) struct AttachClientSession {
-    structure_ids: MirrorStructureIds,
-    local_workspace: u32,
-    /// 원격 surface ID를 로컬 mirror ID로 바꾼다.
-    remote_to_local: HashMap<u32, u32>,
-    output: MirrorOutbox,
-    /// 읽기·쓰기 실패나 종료 통지를 메인 루프의 정리 경로에 전달한다.
-    disconnected: Arc<AtomicBool>,
-    /// 재연결 때 sender를 교체하며 입력 forwarder는 같은 공유 핸들을 유지한다.
-    frame_tx: SharedFrameSender,
-    state: SessionState,
-    // 이유: 서버 세션 ID를 보관한다. 현재 이 필드를 읽는 경로는 없다.
-    #[allow(dead_code)]
-    client_id: u32,
-    /// bulk 연결이 기존 점유에 연결할 원격 workspace ID.
-    remote_workspace: u32,
-    /// bulk 연결도 대화형 attach의 로컬 포트와 SSH 터널을 사용한다.
-    bulk_port: u16,
-    /// 세션이 살아 있는 동안 터널을 유지한다. 직접 loopback 연결은 None.
-    #[allow(dead_code)]
-    tunnel: Option<tasty_ssh::SshTunnel>,
-    /// 자동 연결을 시작한 로컬 anchor ID. 수동 연결은 None.
-    anchor_ws_id: Option<u32>,
-    op_seq: u64,
-    /// 사용자 요청별 포커스 의도. 성공 회신에서 꺼내 다음 delta에 적용한다.
-    /// 현재 실패 회신에서는 제거하지 않으며 재연결이나 세션 제거 때 정리된다.
-    pending_op_focus: HashMap<u64, PendingOpFocus>,
-    /// 에이전트 요청의 회신은 사용자 toast 대신 로그로 알린다.
-    agent_requests: agent_origin::AgentRequests,
-    /// 성공 회신 뒤 다음 StructuralDelta가 한 번 소비할 포커스 의도.
-    next_delta_focus: Option<PendingOpFocus>,
-    /// 원격 surface별 마지막 전송 크기. 응답 전 반복 전송을 줄이며 재연결 때 비운다.
-    /// 큐 전송 성공은 원격 적용 확인이 아니다.
-    last_forwarded_resize: HashMap<u32, (usize, usize)>,
-    /// 현재 배지는 loopback 엔드포인트다. 실제 SSH host 정보는 이 세션에 전달되지 않는다.
-    remote_label: String,
-    /// 응답에 소비자 정보가 없어 요청별로 기록한다. None은 File Picker, Some은 explorer surface ID다.
-    pending_list_dir_consumers: HashMap<u64, Option<u32>>,
-    /// 로컬 markdown surface ID. mirror 교체·삭제는 일반 lifecycle 큐를 거치지 않아 직접 destroy를 보낸다.
-    markdown_locals: HashSet<u32>,
-    /// 손실 뒤 재attach를 기다리는 동안 통지된 프레임 수.
-    /// 서버가 점유 해제를 큐에 넣은 뒤 소켓을 닫으므로 Detach 후 EOF를 기다려 새 attach를 보낸다.
-    resync_pending: Option<u64>,
-    /// parked 상태에서는 재attach할 창이 없어 Detach 전송을 미룬다. 창이 생기면 이어서 처리한다.
-    resync_awaiting_window: bool,
-}
-
-impl AttachClientSession {
-    /// 손실 복구를 위해 옛 연결에 Detach를 보냈다면 다음 EOF는 재attach로 처리한다.
-    fn resync_released(&self) -> bool {
-        self.resync_pending.is_some() && !self.resync_awaiting_window
-    }
-
-    pub(crate) fn state(&self) -> SessionState {
-        self.state
-    }
-
-    pub(crate) fn anchor_ws_id(&self) -> Option<u32> {
-        self.anchor_ws_id
-    }
-
-    /// 현재 sender로 큐에 넣는다. poison 상태에서는 sender를 회수해 사용한다.
-    fn send_frame(
-        &self,
-        tag: StreamTag,
-        payload: Vec<u8>,
-    ) -> Result<(), std::sync::mpsc::SendError<OutFrame>> {
-        crate::poison::recover_mutex(self.frame_tx.lock(), FRAME_TX_WHAT, &FRAME_TX_POISONED)
-            .send(OutFrame { tag, payload })
-    }
-}
 
 impl App {
     pub(crate) fn dispatch_pending_gui_attach(&mut self) {
@@ -362,9 +115,9 @@ impl App {
         let (conn, client_id, write_half, name, surfaces, tree) =
             attach_handshake(port, workspace, "gui attach")?;
 
-        let (frame_tx, frame_rx) = std::sync::mpsc::channel::<OutFrame>();
+        let (frame_tx,frame_rx)=crate::remote::connection::channel();
         // 재연결해도 입력 forwarder가 새 sender를 볼 수 있도록 공유 핸들을 유지한다.
-        let frame_tx: SharedFrameSender = Arc::new(Mutex::new(frame_tx));
+        
 
         let local_ws_id;
         let proxy;
@@ -397,20 +150,21 @@ impl App {
                 &mapping.explorer,
                 &mut mapping.markdown,
             );
-            ws.mirror = true;
+            install_mirror_fallbacks(&ws,&mut engine);
+            ws.mirror=true;
             engine.push_mirror_workspace(ws);
             main.state.reconcile_presentation(engine.core);
             main.mark_dirty();
         }
 
-        let output = MirrorOutbox::new();
+        let output = MirrorOutbox::new(frame_tx.epoch());
         let disconnected = Arc::new(AtomicBool::new(false));
 
         spawn_attach_write_thread(
             write_half,
             frame_rx,
             disconnected.clone(),
-            proxy.clone(),
+            attach_wake(&proxy),
             "",
         );
 
@@ -418,29 +172,27 @@ impl App {
             conn,
             output.clone(),
             disconnected.clone(),
-            proxy.clone(),
+            attach_wake(&proxy),
             local_ws_id,
             "",
+            mirror_event_from_control,
         );
 
         // heartbeat는 이 연결의 sender와 종료 신호를 사용한다. 재연결 시 새 스레드를 만든다.
         let raw_frame_tx =
-            crate::poison::recover_mutex(frame_tx.lock(), FRAME_TX_WHAT, &FRAME_TX_POISONED)
-                .clone();
+            frame_tx.clone();
         spawn_attach_heartbeat_thread(raw_frame_tx, disconnected.clone());
 
-        self.attach_client_sessions.push(AttachClientSession {
+        self.remote.sessions.push(AttachClientSession {
+            transport:ClientTransport {output,disconnected,frame_tx,tunnel},
+            state:ClientSessionState {
             structure_ids,
             local_workspace: local_ws_id,
             remote_to_local,
-            output,
-            disconnected,
-            frame_tx,
-            state: SessionState::Connected,
+            phase:SessionState::Connected,
             client_id,
             remote_workspace: workspace,
             bulk_port: port,
-            tunnel,
             anchor_ws_id,
             op_seq: 0,
             pending_op_focus: HashMap::new(),
@@ -452,6 +204,7 @@ impl App {
             markdown_locals,
             resync_pending: None,
             resync_awaiting_window: false,
+            }
         });
         tracing::info!(
             "gui attach: mirror workspace {local_ws_id} from 127.0.0.1:{port} (remote ws {workspace})"
@@ -468,19 +221,15 @@ impl App {
         tunnel: Option<tasty_ssh::SshTunnel>,
     ) -> anyhow::Result<()> {
         let (workspace, local_workspace) = {
-            let sess = &self.attach_client_sessions[sess_idx];
-            (sess.remote_workspace, sess.local_workspace)
+            let sess = &self.remote.sessions[sess_idx];
+            (sess.state.remote_workspace, sess.state.local_workspace)
         };
 
         let (conn, client_id, write_half, name, surfaces, tree) =
             attach_handshake(port, workspace, "gui reconnect")?;
 
-        let (new_frame_tx, frame_rx) = std::sync::mpsc::channel::<OutFrame>();
-        // 새 Arc를 만들면 살아 있는 입력 forwarder가 옛 sender를 계속 본다.
-        let shared_frame_tx: SharedFrameSender =
-            self.attach_client_sessions[sess_idx].frame_tx.clone();
-        *crate::poison::recover_mutex(shared_frame_tx.lock(), FRAME_TX_WHAT, &FRAME_TX_POISONED) =
-            new_frame_tx;
+        // Retiring the prior epoch rejects its queued frames; survivors receive a new sink.
+        let (shared_frame_tx,frame_rx)=crate::remote::connection::channel();
 
         let Some(wid) = self.find_main_with_workspace(local_workspace) else {
             anyhow::bail!(
@@ -490,7 +239,11 @@ impl App {
         let proxy;
         let removed_markdown: Vec<u32>;
         {
-            let sess = &mut self.attach_client_sessions[sess_idx];
+            let sess = &mut self.remote.sessions[sess_idx];
+            sess.transport.frame_tx.retire();
+            sess.transport.disconnected.store(true,Ordering::Release);
+            sess.transport.frame_tx=shared_frame_tx.clone();
+
             let Some((main, mut engine)) = engines_mut!(self).window_pair(wid) else {
                 anyhow::bail!("window {wid:?} 가 더 이상 MainView 가 아님 — 재연결 취소");
             };
@@ -502,21 +255,23 @@ impl App {
                 .into_iter()
                 .find(|w| w.id == local_workspace)
                 .and_then(|ws| {
-                    capture_focused_remote(&main.state.navigation, ws, &sess.remote_to_local)
+                    capture_focused_remote(&main.state.navigation, ws, &sess.state.remote_to_local)
                 });
 
+            engine.remote.discard_connection_requests(&sess.state.remote_to_local,sess.state.local_workspace);
             let mut mapping = merge_survivor_mapping(
-                &sess.remote_to_local,
+                &sess.state.remote_to_local,
                 &surfaces,
                 &ids,
                 &shared_frame_tx,
                 &mut engine,
             );
-            sess.remote_to_local = std::mem::take(&mut mapping.remote_to_local);
+            sess.state.remote_to_local = std::mem::take(&mut mapping.remote_to_local);
             // 연결 사이에 빠진 출력을 연속된 스트림으로 읽지 않도록 표지를 바꾼다.
-            for &local in sess.remote_to_local.values() {
-                if let Some(t) = engine.runtime.terminals.get_mut(local) {
-                    t.renew_output_stream();
+            for (&remote,&local) in &sess.state.remote_to_local {
+                if let Some(terminal)=engine.runtime.terminals.get_mut(local) {
+                    bind_mirror_input(terminal,remote,&shared_frame_tx,true);
+                    terminal.renew_output_stream();
                 }
             }
             // 옛 연결의 mesh 캐시와 구독 기록을 비워 full texture를 다시 요청한다.
@@ -530,7 +285,7 @@ impl App {
                 .difference(&new_markdown)
                 .copied()
                 .collect();
-            sess.markdown_locals = new_markdown;
+            sess.state.markdown_locals = new_markdown;
 
             let Some(_) = engine
                 .workspaces()
@@ -542,24 +297,25 @@ impl App {
                 );
             };
             let mut ws = build_mirror_workspace(
-                &mut sess.structure_ids,
+                &mut sess.state.structure_ids,
                 &mut main.state.navigation,
                 local_workspace,
                 &name,
                 &tree,
                 &ids,
-                &sess.remote_to_local,
+                &sess.state.remote_to_local,
                 &mapping.terminals,
                 &mapping.mesh,
                 &mapping.explorer,
                 &mut mapping.markdown,
             );
-            ws.mirror = true;
+            install_mirror_fallbacks(&ws,&mut engine);
+            ws.mirror=true;
             if !restore_focus_after_delta(
                 &mut main.state.navigation,
                 &mut ws,
                 old_focused_remote,
-                &sess.remote_to_local,
+                &sess.state.remote_to_local,
             ) {
                 tracing::info!(
                     "gui reconnect: 이전 focus surface 를 재연결 후 트리에서 찾지 못함 — 원격 기본 focus 유지"
@@ -578,14 +334,14 @@ impl App {
         }
         destroy_mirror_markdown_surfaces(&mut self.plugin_manager, removed_markdown);
 
-        let output = MirrorOutbox::new();
+        let output = MirrorOutbox::new(shared_frame_tx.epoch());
         let disconnected = Arc::new(AtomicBool::new(false));
 
         spawn_attach_write_thread(
             write_half,
             frame_rx,
             disconnected.clone(),
-            proxy.clone(),
+            attach_wake(&proxy),
             "(재연결)",
         );
 
@@ -593,35 +349,35 @@ impl App {
             conn,
             output.clone(),
             disconnected.clone(),
-            proxy.clone(),
+            attach_wake(&proxy),
             local_workspace,
             "(재연결)",
+            mirror_event_from_control,
         );
 
         let raw_frame_tx =
-            crate::poison::recover_mutex(shared_frame_tx.lock(), FRAME_TX_WHAT, &FRAME_TX_POISONED)
-                .clone();
+            shared_frame_tx.clone();
         spawn_attach_heartbeat_thread(raw_frame_tx, disconnected.clone());
 
-        let sess = &mut self.attach_client_sessions[sess_idx];
-        sess.output = output;
-        sess.disconnected = disconnected;
-        sess.client_id = client_id;
-        sess.bulk_port = port;
-        sess.tunnel = tunnel;
-        sess.op_seq = 0;
-        sess.pending_op_focus.clear();
-        sess.agent_requests.clear();
-        sess.next_delta_focus = None;
-        sess.last_forwarded_resize.clear();
+        let sess = &mut self.remote.sessions[sess_idx];
+        sess.transport.output = output;
+        sess.transport.disconnected = disconnected;
+        sess.state.client_id = client_id;
+        sess.state.bulk_port = port;
+        sess.transport.tunnel = tunnel;
+        sess.state.op_seq = 0;
+        sess.state.pending_op_focus.clear();
+        sess.state.agent_requests.clear();
+        sess.state.next_delta_focus = None;
+        sess.state.last_forwarded_resize.clear();
         // 옛 연결의 목록 요청은 다시 응답하지 않는다. 소비자는 자체 timeout으로 실패 처리한다.
-        sess.pending_list_dir_consumers.clear();
-        sess.resync_pending = None;
-        sess.resync_awaiting_window = false;
-        sess.state = SessionState::Connected;
-        sess.remote_label = format!("127.0.0.1:{port}");
+        sess.state.pending_list_dir_consumers.clear();
+        sess.state.resync_pending = None;
+        sess.state.resync_awaiting_window = false;
+        sess.state.phase = SessionState::Connected;
+        sess.state.remote_label = format!("127.0.0.1:{port}");
         // 원문은 바로 다시 받지 않는다. 변경 신호를 보내 플러그인이 재요청이나 stale 표시를 선택하게 한다.
-        let markdown_locals: Vec<u32> = sess.markdown_locals.iter().copied().collect();
+        let markdown_locals: Vec<u32> = sess.state.markdown_locals.iter().copied().collect();
         for local in markdown_locals {
             push_markdown_changed(&mut self.plugin_manager, local);
         }
@@ -649,20 +405,20 @@ impl App {
     /// 창이 있는 engine, parked engine 순서로 적용 대상을 찾은 뒤 출력 버퍼를 비운다.
     /// 대상이 없으면 버퍼를 유지한다. 고아 판정·정리도 같은 engine 범위를 확인해야 한다.
     pub(crate) fn apply_attach_client_output(&mut self) {
-        if self.attach_client_sessions.is_empty() {
+        if self.remote.sessions.is_empty() {
             return;
         }
         let mut dead: Vec<usize> = Vec::new();
         let mut reconnecting: Vec<usize> = Vec::new();
         let mut resyncing: Vec<usize> = Vec::new();
-        for idx in 0..self.attach_client_sessions.len() {
+        for idx in 0..self.remote.sessions.len() {
             let (local_ws, disconnected, state, anchor_ws_id) = {
-                let sess = &self.attach_client_sessions[idx];
+                let sess = &self.remote.sessions[idx];
                 (
-                    sess.local_workspace,
-                    sess.disconnected.load(Ordering::SeqCst),
-                    sess.state,
-                    sess.anchor_ws_id,
+                    sess.state.local_workspace,
+                    sess.transport.disconnected.load(Ordering::SeqCst),
+                    sess.state.phase,
+                    sess.state.anchor_ws_id,
                 )
             };
 
@@ -674,7 +430,7 @@ impl App {
             // delta 뒤의 출력도 갱신된 ID 매핑을 써야 하므로 세션을 복제하지 않고 나눠 빌린다.
             match host {
                 Some(MirrorOutputHost::Window(wid)) => {
-                    let sess = &mut self.attach_client_sessions[idx];
+                    let sess = &mut self.remote.sessions[idx];
                     let mut pair = engines_mut!(self).window_pair(wid);
                     let mut mirror_host = pair
                         .as_mut()
@@ -689,7 +445,7 @@ impl App {
                     }
                 }
                 Some(MirrorOutputHost::Parked(id)) => {
-                    let sess = &mut self.attach_client_sessions[idx];
+                    let sess = &mut self.remote.sessions[idx];
                     let (state, mut engine) = engines_mut!(self)
                         .parked_session(id)
                         .expect("mirror_output_host가 방금 찾은 parked engine");
@@ -702,7 +458,7 @@ impl App {
                 None => {}
             }
             // 같은 묶음에 손실 통지와 EOF가 올 수 있어 이벤트 적용 뒤 재attach 여부를 확인한다.
-            let sess = &self.attach_client_sessions[idx];
+            let sess = &self.remote.sessions[idx];
             match disconnect_disposition(
                 disconnected,
                 state,
@@ -717,7 +473,7 @@ impl App {
         }
         for &idx in &resyncing {
             if !self.resync_session(idx) {
-                if self.attach_client_sessions[idx].anchor_ws_id.is_some() {
+                if self.remote.sessions[idx].state.anchor_ws_id.is_some() {
                     reconnecting.push(idx);
                 } else {
                     dead.push(idx);
@@ -729,7 +485,7 @@ impl App {
         }
         dead.sort_unstable();
         for &idx in dead.iter().rev() {
-            let sess = self.attach_client_sessions.remove(idx);
+            let sess = self.remote.sessions.remove(idx);
             self.cleanup_mirror_workspace(&sess, true);
         }
     }
@@ -737,12 +493,12 @@ impl App {
     /// 새 attach snapshot으로 손실 뒤 화면을 재동기화한다. 빠진 출력 이력을 복구하는 것은 아니다.
     fn resync_session(&mut self, idx: usize) -> bool {
         let (port, tunnel, frames, local_workspace) = {
-            let sess = &mut self.attach_client_sessions[idx];
+            let sess = &mut self.remote.sessions[idx];
             (
-                sess.bulk_port,
-                sess.tunnel.take(),
-                sess.resync_pending.unwrap_or(0),
-                sess.local_workspace,
+                sess.state.bulk_port,
+                sess.transport.tunnel.take(),
+                sess.state.resync_pending.unwrap_or(0),
+                sess.state.local_workspace,
             )
         };
         match self.reconnect_session(idx, port, tunnel) {
@@ -756,7 +512,7 @@ impl App {
                 tracing::warn!(
                     "gui attach: mirror workspace {local_workspace} 재동기화 실패 — 끊김으로 처리한다: {e}"
                 );
-                self.attach_client_sessions[idx].resync_pending = None;
+                self.remote.sessions[idx].state.resync_pending = None;
                 false
             }
         }
@@ -765,12 +521,13 @@ impl App {
     /// anchor가 있는 세션은 연결이 끊겨도 mirror를 남겨 자동 재연결을 기다린다.
     fn enter_reconnecting(&mut self, idx: usize) {
         let (anchor, local_workspace, markdown_locals) = {
-            let sess = &mut self.attach_client_sessions[idx];
-            sess.state = SessionState::Reconnecting;
+            let sess = &mut self.remote.sessions[idx];
+            sess.state.phase = SessionState::Reconnecting;
+            sess.transport.frame_tx.retire();
             (
-                sess.anchor_ws_id,
-                sess.local_workspace,
-                sess.markdown_locals.clone(),
+                sess.state.anchor_ws_id,
+                sess.state.local_workspace,
+                sess.state.markdown_locals.clone(),
             )
         };
         // 기다리던 원문 요청을 request_id=0으로 취소하고 표시 중인 원문도 끊김 상태로 바꾼다.
@@ -781,8 +538,8 @@ impl App {
             );
         }
         if let Some(anchor) = anchor {
-            self.auto_attach_active.remove(&anchor);
-            self.auto_attach_pending_reactivation.insert(anchor);
+            self.remote.active.remove(&anchor);
+            self.remote.pending_reactivation.insert(anchor);
         }
         for (_, main, engine) in self.engines_mut().window_pairs() {
             if engine
@@ -816,8 +573,8 @@ impl App {
             if remove_mirror_workspace_from_engine(
                 &mut engine,
                 &mut main.state,
-                sess.local_workspace,
-                &sess.remote_to_local,
+                sess.state.local_workspace,
+                &sess.state.remote_to_local,
             ) {
                 // 사용자가 직접 닫은 경우에는 끊김 toast를 표시하지 않는다.
                 if from_disconnect {
@@ -836,25 +593,25 @@ impl App {
             // parked 상태에는 표시할 창이 없어 toast를 쌓거나 redraw를 요청하지 않는다.
             remove_mirror_workspace_from_parked(
                 self.engines_mut(),
-                sess.local_workspace,
-                &sess.remote_to_local,
+                sess.state.local_workspace,
+                &sess.state.remote_to_local,
             );
         }
         // 응답을 받을 수 없어진 git-viewer 요청을 취소한다.
         if from_disconnect {
             self.notify_git_viewer_mirror_lost();
         }
-        destroy_mirror_markdown_surfaces(&mut self.plugin_manager, sess.markdown_locals.clone());
+        destroy_mirror_markdown_surfaces(&mut self.plugin_manager, sess.state.markdown_locals.clone());
         // 사용자 닫기도 heartbeat를 멈춰 소켓이 불필요하게 유지되지 않게 한다.
-        sess.disconnected.store(true, Ordering::SeqCst);
+        sess.transport.disconnected.store(true, Ordering::SeqCst);
         let _ = sess.send_frame(StreamTag::Detach, Vec::new()); // 종료 중 writer가 사라졌다면 전송 실패를 무시한다.
-        if let Some(anchor) = sess.anchor_ws_id {
-            self.auto_attach_active.remove(&anchor);
-            self.auto_attach_reconnect.remove(&anchor);
+        if let Some(anchor) = sess.state.anchor_ws_id {
+            self.remote.active.remove(&anchor);
+            self.remote.reconnect.remove(&anchor);
             if from_disconnect {
-                self.auto_attach_pending_reactivation.insert(anchor);
+                self.remote.pending_reactivation.insert(anchor);
             } else {
-                self.auto_attach_pending_reactivation.remove(&anchor);
+                self.remote.pending_reactivation.remove(&anchor);
             }
         }
     }
@@ -862,19 +619,19 @@ impl App {
     /// mirror workspace가 창과 parked engine 어디에도 없으면 세션도 정리한다.
     /// 창이 없다는 사실만으로 parked 세션을 고아로 판단하지 않는다.
     pub(crate) fn detach_orphaned_mirror_sessions(&mut self) {
-        if self.attach_client_sessions.is_empty() {
+        if self.remote.sessions.is_empty() {
             return;
         }
         let orphaned: Vec<usize> = self
-            .attach_client_sessions
+            .remote.sessions
             .iter()
             .enumerate()
-            .map(|(idx, s)| (idx, s.local_workspace))
+            .map(|(idx, s)| (idx, s.state.local_workspace))
             .filter(|&(_, ws)| !self.mirror_workspace_engine_alive(ws))
             .map(|(idx, _)| idx)
             .collect();
         for &idx in orphaned.iter().rev() {
-            let sess = self.attach_client_sessions.remove(idx);
+            let sess = self.remote.sessions.remove(idx);
             self.cleanup_mirror_workspace(&sess, false);
         }
     }
@@ -900,26 +657,26 @@ impl App {
         } = &pending;
         let local_anchor = local_op.anchor_surface_id();
         let Some((sess, remote_anchor)) = find_mirror_session_and_remote_id(
-            &mut self.attach_client_sessions,
+            &mut self.remote.sessions,
             local_anchor,
             "structural",
         ) else {
             return;
         };
-        let Some(wire) = remote_structural_op(local_op, remote_anchor, &sess.remote_to_local)
+        let Some(wire) = remote_structural_op(local_op, remote_anchor, &sess.state.remote_to_local)
         else {
             return;
         };
-        let op_id = sess.op_seq;
-        sess.op_seq += 1;
+        let op_id = sess.state.op_seq;
+        sess.state.op_seq += 1;
 
         if *user_triggered
             && let Some(intent) =
-                pending_op_focus_for(local_op, close_focus_candidates, &sess.remote_to_local)
+                pending_op_focus_for(local_op, close_focus_candidates, &sess.state.remote_to_local)
         {
-            sess.pending_op_focus.insert(op_id, intent);
+            sess.state.pending_op_focus.insert(op_id, intent);
         }
-        sess.agent_requests.note_structural_from(&pending, op_id);
+        sess.state.agent_requests.note_structural_from(&pending, op_id);
 
         let payload = structural_op_payload(op_id, wire, *user_triggered);
         if let Err(e) = sess.send_frame(StreamTag::Control, payload) {
@@ -942,13 +699,13 @@ impl App {
 
     fn forward_one_resize(&mut self, local_sid: u32, cols: usize, rows: usize) {
         let Some((sess, remote_sid)) = find_mirror_session_and_remote_id(
-            &mut self.attach_client_sessions,
+            &mut self.remote.sessions,
             local_sid,
             "resize",
         ) else {
             return;
         };
-        if sess.last_forwarded_resize.get(&remote_sid) == Some(&(cols, rows)) {
+        if sess.state.last_forwarded_resize.get(&remote_sid) == Some(&(cols, rows)) {
             return;
         }
         let payload = serde_json::to_vec(&StreamControl::ClientResize {
@@ -961,7 +718,7 @@ impl App {
             tracing::warn!("resize forward: 전송 큐가 닫혀 요청을 보내지 못했다: {e}");
             return;
         }
-        sess.last_forwarded_resize.insert(remote_sid, (cols, rows));
+        sess.state.last_forwarded_resize.insert(remote_sid, (cols, rows));
     }
 
     /// 목록 요청을 원격으로 보낸다. 세션이 없으면 폐기하며 소비자는 자체 timeout으로 실패 처리한다.
@@ -1101,7 +858,7 @@ impl App {
         ctx: crate::core::AttachMeshContextForward,
     ) {
         let Some((sess, remote_sid)) = find_mirror_session_and_remote_id(
-            &mut self.attach_client_sessions,
+            &mut self.remote.sessions,
             local_sid,
             "mesh context",
         ) else {
@@ -1137,7 +894,7 @@ impl App {
         input: tasty_plugin_protocol::protocol::RawInputWire,
     ) {
         let Some((sess, remote_sid)) = find_mirror_session_and_remote_id(
-            &mut self.attach_client_sessions,
+            &mut self.remote.sessions,
             local_sid,
             "mesh input",
         ) else {
@@ -1178,7 +935,7 @@ impl App {
     /// 해제 전송 실패는 로그를 남기고 폐기한다. 별도 재시도 큐는 없다.
     fn forward_one_attention_clear(&mut self, local_sid: u32) {
         let Some((sess, remote_sid)) = find_mirror_session_and_remote_id(
-            &mut self.attach_client_sessions,
+            &mut self.remote.sessions,
             local_sid,
             "attention clear",
         ) else {
@@ -1195,7 +952,7 @@ impl App {
 
     fn forward_one_mesh_full_resend_request(&mut self, local_sid: u32) {
         let Some((sess, remote_sid)) = find_mirror_session_and_remote_id(
-            &mut self.attach_client_sessions,
+            &mut self.remote.sessions,
             local_sid,
             "mesh full-resend",
         ) else {
@@ -1266,7 +1023,7 @@ fn find_mirror_session_and_remote_id<'a>(
 ) -> Option<(&'a mut AttachClientSession, u32)> {
     let Some(sess) = sessions
         .iter_mut()
-        .find(|s| s.remote_to_local.values().any(|&l| l == local_sid))
+        .find(|s| s.state.remote_to_local.values().any(|&l| l == local_sid))
     else {
         tracing::warn!(
             "{label} forward: mirror 세션이 로컬 surface {local_sid} 를 갖지 않아 요청을 버린다"
@@ -1285,67 +1042,13 @@ fn find_mirror_session_and_remote_id<'a>(
     Some((sess, remote_sid))
 }
 
-fn attach_handshake(
-    port: u16,
-    workspace: u32,
-    log_prefix: &str,
-) -> anyhow::Result<(StreamConnection, u32, TcpStream, String, Vec<Value>, Value)> {
-    let sock = TcpStream::connect(("127.0.0.1", port))?;
-    arm_attach_timeouts(&sock, log_prefix);
-    let (mut conn, client_id) =
-        StreamConnection::open_attach_workspace(sock, STREAM_PROTO, workspace)?;
-    let first = conn.recv()?;
-    if first.tag != StreamTag::Control {
-        anyhow::bail!("expected attach Control frame, got {:?}", first.tag);
-    }
-    let ctrl: Value = serde_json::from_slice(&first.payload)?;
-    let (name, surfaces, tree) = parse_attach_descriptor(&ctrl)?;
-    // 손실 통지는 연결별 opt-in이다. 구 서버는 이 선언을 모를 수 있으므로
-    // 지원을 확인해야 하면 system.info의 ipc.stream.loss-notify capability를 조회한다.
-    let declare = serde_json::to_vec(&StreamControl::ClientLossNotify {}).unwrap_or_default();
-    if let Err(e) = conn.send(StreamTag::Control, &declare) {
-        tracing::warn!("{log_prefix}: 손실 통지 요청을 보내지 못했다: {e}");
-    }
-    let write_half = conn.try_clone_writer()?;
-    Ok((conn, client_id, write_half, name, surfaces, tree))
-}
+
 
 /// read/write timeout을 설정한다. 설정 실패는 경고만 남기며 연결은 계속한다.
 /// writer 사본도 같은 소켓의 timeout 설정을 사용한다.
-fn arm_attach_timeouts(sock: &TcpStream, log_prefix: &str) {
-    if let Err(e) = sock.set_read_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
-        tracing::warn!("{log_prefix}: failed to set read timeout: {e}");
-    }
-    if let Err(e) = sock.set_write_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
-        tracing::warn!("{log_prefix}: failed to set write timeout: {e}");
-    }
-}
 
-fn parse_attach_descriptor(ctrl: &Value) -> anyhow::Result<(String, Vec<Value>, Value)> {
-    match ctrl.get("event").and_then(|v| v.as_str()) {
-        Some("attached_workspace") => {}
-        Some("attach_error") => {
-            let reason = ctrl
-                .get("reason")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
-            anyhow::bail!("workspace attach rejected: {reason}");
-        }
-        other => anyhow::bail!("unexpected attach control event: {other:?}"),
-    }
-    let name = ctrl
-        .get("name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("remote")
-        .to_string();
-    let surfaces = ctrl
-        .get("surfaces")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let tree = ctrl.get("tree").cloned().unwrap_or(Value::Null);
-    Ok((name, surfaces, tree))
-}
+
+
 
 /// 이 engine에 해당 workspace가 있으면 mirror 자원을 함께 정리하고 활성 인덱스를 보정한다.
 fn remove_mirror_workspace_from_engine(
@@ -1362,6 +1065,7 @@ fn remove_mirror_workspace_from_engine(
         return false;
     };
     for &local in remote_to_local.values() {
+        engine.runtime.surfaces.remove(&local);
         engine.runtime.terminals.remove(local);
         engine.forget_mirror_surface_busy(local);
         engine.forget_mirror_surface_attention(local);
@@ -1487,7 +1191,7 @@ impl<'a, 'engine> MirrorHost<'a, 'engine> {
         sess: &mut AttachClientSession,
         plugin_manager: &mut Option<crate::plugin::PluginManager>,
     ) -> bool {
-        let drained = sess.output.take_for(self);
+        let drained = sess.transport.output.drain();
         if drained.is_empty() {
             return false;
         }
@@ -1524,7 +1228,9 @@ fn apply_mirror_events(
     plugin_manager: &mut Option<crate::plugin::PluginManager>,
     events: Vec<MirrorEvent>,
 ) {
+    let epoch=sess.transport.frame_tx.epoch();
     for ev in events {
+        if !epoch.is_active() || !epoch.same(&sess.transport.frame_tx.epoch()) {break;}
         apply_one_mirror_event(sess, host, plugin_manager, ev);
     }
 }
@@ -1533,43 +1239,23 @@ fn log_mirror_cleanup(sess: &AttachClientSession, from_disconnect: bool) {
     if from_disconnect {
         tracing::warn!(
             "attach mirror cleanup: local ws {} (remote ws {}, anchor {:?}) — 원격발 disconnect 로 정리",
-            sess.local_workspace,
-            sess.remote_workspace,
-            sess.anchor_ws_id
+            sess.state.local_workspace,
+            sess.state.remote_workspace,
+            sess.state.anchor_ws_id
         );
     } else {
         tracing::info!(
             "attach mirror cleanup: local ws {} (remote ws {}, anchor {:?}) — 사용자 close 로 정리",
-            sess.local_workspace,
-            sess.remote_workspace,
-            sess.anchor_ws_id
+            sess.state.local_workspace,
+            sess.state.remote_workspace,
+            sess.state.anchor_ws_id
         );
     }
 }
 
 /// 프레임을 순서대로 쓰며 write 실패는 연결 종료로 처리한다.
 /// 일부만 쓴 프레임을 같은 소켓에서 재시도하면 수신 경계가 어긋날 수 있다.
-fn spawn_attach_write_thread(
-    write_half: TcpStream,
-    frame_rx: std::sync::mpsc::Receiver<OutFrame>,
-    disconnected: Arc<AtomicBool>,
-    proxy: EventLoopProxy<AppEvent>,
-    log_suffix: &'static str,
-) {
-    std::thread::spawn(move || {
-        let mut write_half = write_half;
-        for item in frame_rx {
-            if let Err(e) = stream::write_frame(&mut write_half, item.tag, &item.payload) {
-                tracing::warn!(
-                    "attach write thread{log_suffix}: 프레임을 쓰지 못해 연결 종료로 처리한다: {e}"
-                );
-                disconnected.store(true, Ordering::SeqCst);
-                let _ = proxy.send_event(AppEvent::AttachClientData); // event loop 종료 시에만 실패 — 무시
-                break;
-            }
-        }
-    });
-}
+
 
 /// 제어 프레임을 mirror 이벤트로 변환한다. 어느 파서에서도 인식하지 못하면 무시한다.
 fn mirror_event_from_control(payload: &[u8]) -> Option<MirrorEvent> {
@@ -1614,92 +1300,10 @@ fn mirror_event_from_control(payload: &[u8]) -> Option<MirrorEvent> {
 }
 
 /// 수신 이벤트를 버퍼에 쌓고 메인 루프를 깨운다. 수신 실패는 연결 종료로 전달한다.
-fn spawn_attach_reader_thread(
-    mut conn: StreamConnection,
-    output: MirrorOutbox,
-    disconnected: Arc<AtomicBool>,
-    proxy: EventLoopProxy<AppEvent>,
-    local_workspace: u32,
-    log_suffix: &'static str,
-) {
-    std::thread::spawn(move || {
-        let mut mesh_assembler = tasty_ipc::mesh_stream::MeshFrameAssembler::new();
-        loop {
-            match conn.recv() {
-                Ok(frame) => match frame.tag {
-                    StreamTag::Data => {
-                        if let Some((sid, payload)) = stream::decode_mux(&frame.payload) {
-                            output.push(MirrorEvent::Data(sid, payload.to_vec()));
-                        }
-                        let _ = proxy.send_event(AppEvent::AttachClientData); // event loop 종료 시에만 실패 — 무시
-                    }
-                    StreamTag::Detach => {
-                        disconnected.store(true, Ordering::SeqCst);
-                        let _ = proxy.send_event(AppEvent::AttachClientData); // event loop 종료 시에만 실패 — 무시
-                        break;
-                    }
-                    StreamTag::Control => {
-                        if String::from_utf8_lossy(&frame.payload).contains("force_detached") {
-                            disconnected.store(true, Ordering::SeqCst);
-                            let _ = proxy.send_event(AppEvent::AttachClientData); // event loop 종료 시에만 실패 — 무시
-                            break;
-                        }
-                        let mirror_ev = mirror_event_from_control(&frame.payload);
-                        if let Some(ev) = mirror_ev
-                            && output.push(ev)
-                        {
-                            let _ = proxy.send_event(AppEvent::AttachClientData); // event loop 종료 시에만 실패 — 무시
-                        }
-                    }
-                    StreamTag::Ping => {}
-                    // 완성된 mesh frame만 적용한다. 손상 청크는 폐기하며 이후 full frame으로 복구해야 한다.
-                    StreamTag::MeshData => {
-                        if let Ok(Some((meta, bytes))) = mesh_assembler.push_chunk(&frame.payload)
-                            && output.push(MirrorEvent::Mesh(
-                                meta.surface_id,
-                                meta.generation,
-                                meta.frame_seq,
-                                meta.full_textures,
-                                bytes,
-                            ))
-                        {
-                            let _ = proxy.send_event(AppEvent::AttachClientData); // event loop 종료 시에만 실패 — 무시
-                        }
-                    }
-                },
-                Err(e) => {
-                    tracing::warn!(
-                        "attach reader thread{log_suffix}: mirror workspace {local_workspace} 원격 수신 실패로 연결 종료를 알린다: {e}"
-                    );
-                    disconnected.store(true, Ordering::SeqCst);
-                    let _ = proxy.send_event(AppEvent::AttachClientData); // event loop 종료 시에만 실패 — 무시
-                    break;
-                }
-            }
-        }
-    });
-}
+
 
 /// 연결마다 heartbeat를 보낸다. 종료 신호를 확인하거나 큐 전송에 실패하면 끝난다.
-fn spawn_attach_heartbeat_thread(raw_frame_tx: FrameSender, disconnected: Arc<AtomicBool>) {
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(stream::HEARTBEAT_INTERVAL);
-            if disconnected.load(Ordering::SeqCst) {
-                break;
-            }
-            if raw_frame_tx
-                .send(OutFrame {
-                    tag: StreamTag::Ping,
-                    payload: Vec::new(),
-                })
-                .is_err()
-            {
-                break;
-            }
-        }
-    });
-}
+
 
 /// 로컬 PTY 없이 mirror 터미널을 만든다. 입력은 별도 스레드로 원격에 전달한다.
 fn make_mirror_surface(
@@ -1711,49 +1315,12 @@ fn make_mirror_surface(
     engine: &mut EngineMut<'_>,
 ) {
     let mut mirror = Terminal::new_detached(cols, rows);
-    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
-    mirror.set_input_sink(tx);
-    let frame_tx = frame_tx.clone();
-    // 프레임 상한에서 mux 헤더를 뺀 크기로 나눠 paste 순서를 유지한다.
-    // 매번 현재 sender를 읽고, 연결이 끊겨 전송에 실패해도 forwarder는 다음 입력을 기다린다.
-    // 실패한 청크는 재전송하지 않으며 터미널 sink가 닫히면 스레드도 종료한다.
-    std::thread::spawn(move || {
-        const MAX_BODY: usize = (stream::MAX_FRAME_LEN as usize) - 4;
-        for chunk in rx {
-            for part in chunk.chunks(MAX_BODY) {
-                let framed = stream::encode_mux(remote_id, part);
-                let current = crate::poison::recover_mutex(
-                    frame_tx.lock(),
-                    FRAME_TX_WHAT,
-                    &FRAME_TX_POISONED,
-                )
-                .clone();
-                if current
-                    .send(OutFrame {
-                        tag: StreamTag::Data,
-                        payload: framed,
-                    })
-                    .is_err()
-                {
-                    continue;
-                }
-            }
-        }
-    });
+    bind_mirror_input(&mut mirror,remote_id,frame_tx,false);
     // mirror의 feed_bytes는 process의 lazy 동기화를 거치지 않아 옵저버 게이트를 여기서 초기화한다.
     mirror.set_output_events_enabled(engine.observer_router.wants(local_id));
     engine.runtime.terminals.insert(local_id, mirror, None);
 }
 
-/// 성공한 사용자 요청의 다음 delta에 한 번 적용할 로컬 포커스 의도.
-#[derive(Debug, Clone)]
-enum PendingOpFocus {
-    NewResource,
-    /// 옛 포커스가 사라졌으면 우선순위 순서의 원격 ID 후보 중 남은 surface를 선택한다.
-    Close {
-        candidates: Vec<u32>,
-    },
-}
 
 fn pending_op_focus_for(
     op: &StructuralOp,
@@ -2081,40 +1648,40 @@ fn markdown_content_failure(local_surface_id: u32, request_id: u64, reason: &str
 /// 손실 통지마다 스트림 표지를 바꾼다. 이미 재attach 대기 중이면 손실 수를 누적한다.
 /// parked 상태에서는 창을 다시 찾을 때까지 Detach를 미룬다.
 fn begin_resync(sess: &mut AttachClientSession, host: &mut MirrorHost<'_, '_>, frames: u64) {
-    for &local in sess.remote_to_local.values() {
+    for &local in sess.state.remote_to_local.values() {
         if let Some(t) = host.engine.runtime.terminals.get_mut(local) {
             t.renew_output_stream();
         }
     }
-    if let Some(total) = sess.resync_pending.as_mut() {
+    if let Some(total) = sess.state.resync_pending.as_mut() {
         *total += frames;
         return;
     }
-    sess.resync_pending = Some(frames);
+    sess.state.resync_pending = Some(frames);
     if !host.windowed {
-        sess.resync_awaiting_window = true;
+        sess.state.resync_awaiting_window = true;
         tracing::warn!(
             "attach mirror: mirror workspace {} — 서버가 이 연결의 프레임 {frames} 장을 버렸다. 창이 없어(parked) 재attach 를 창이 돌아올 때까지 미룬다",
-            sess.local_workspace
+            sess.state.local_workspace
         );
         return;
     }
     tracing::warn!(
         "attach mirror: mirror workspace {} — 서버가 이 연결의 프레임 {frames} 장을 버렸다. 옛 연결을 놓고 재attach 한다",
-        sess.local_workspace
+        sess.state.local_workspace
     );
     release_for_resync(sess, host);
 }
 
 fn resume_resync_in_window(sess: &mut AttachClientSession, host: &mut MirrorHost<'_, '_>) {
-    if !sess.resync_awaiting_window || !host.windowed {
+    if !sess.state.resync_awaiting_window || !host.windowed {
         return;
     }
-    sess.resync_awaiting_window = false;
+    sess.state.resync_awaiting_window = false;
     tracing::info!(
         "attach mirror: mirror workspace {} — 창이 돌아왔다. 미뤄 둔 재attach 를 시작한다(손실 {} 장)",
-        sess.local_workspace,
-        sess.resync_pending.unwrap_or(0)
+        sess.state.local_workspace,
+        sess.state.resync_pending.unwrap_or(0)
     );
     release_for_resync(sess, host);
 }
@@ -2139,32 +1706,32 @@ fn apply_one_mirror_event(
     match ev {
         MirrorEvent::Desynced { frames } => begin_resync(sess, host, frames),
         MirrorEvent::Data(remote_id, bytes) => {
-            if let Some(&local) = sess.remote_to_local.get(&remote_id)
+            if let Some(&local) = sess.state.remote_to_local.get(&remote_id)
                 && let Some(t) = host.engine.runtime.terminals.get_mut(local)
             {
                 t.feed_bytes(&bytes);
             }
         }
         MirrorEvent::Resize(remote_id, cols, rows) => {
-            if let Some(&local) = sess.remote_to_local.get(&remote_id)
+            if let Some(&local) = sess.state.remote_to_local.get(&remote_id)
                 && let Some(t) = host.engine.runtime.terminals.get_mut(local)
             {
                 t.resize(cols, rows);
             }
         }
         MirrorEvent::Activity(remote_id, busy) => {
-            if let Some(&local) = sess.remote_to_local.get(&remote_id) {
+            if let Some(&local) = sess.state.remote_to_local.get(&remote_id) {
                 host.engine.set_mirror_surface_busy(local, busy);
             }
         }
         MirrorEvent::Cwd(remote_id, cwd) => {
-            if let Some(&local) = sess.remote_to_local.get(&remote_id) {
+            if let Some(&local) = sess.state.remote_to_local.get(&remote_id) {
                 host.engine.set_mirror_surface_cwd(local, cwd);
             }
         }
         MirrorEvent::Attention(remote_id, kind) => {
             // 서버 상태를 반영할 때 로컬 해제 요청을 다시 forward하지 않는다.
-            if let Some(&local) = sess.remote_to_local.get(&remote_id) {
+            if let Some(&local) = sess.state.remote_to_local.get(&remote_id) {
                 host.engine.set_mirror_surface_attention(
                     local,
                     kind.map(crate::core::AttentionKind::from_wire),
@@ -2176,9 +1743,9 @@ fn apply_one_mirror_event(
         }
         MirrorEvent::StructuralSucceeded(op_id) => {
             // 성공한 요청의 포커스 의도는 다음 delta가 한 번 소비한다.
-            sess.agent_requests.forget_structural(op_id);
-            if let Some(intent) = sess.pending_op_focus.remove(&op_id) {
-                sess.next_delta_focus = Some(intent);
+            sess.state.agent_requests.forget_structural(op_id);
+            if let Some(intent) = sess.state.pending_op_focus.remove(&op_id) {
+                sess.state.next_delta_focus = Some(intent);
             }
         }
         MirrorEvent::StructuralDelta {
@@ -2186,7 +1753,7 @@ fn apply_one_mirror_event(
             tree,
             surfaces,
         } => {
-            let pending_focus = sess.next_delta_focus.take();
+            let pending_focus = sess.state.next_delta_focus.take();
             let removed_markdown = apply_mirror_structural_delta(
                 &mut host.state.navigation,
                 sess,
@@ -2280,7 +1847,7 @@ fn apply_one_mirror_event(
             }
         }
         MirrorEvent::Mesh(remote_id, generation, frame_seq, full, bytes) => {
-            if let Some(&local) = sess.remote_to_local.get(&remote_id) {
+            if let Some(&local) = sess.state.remote_to_local.get(&remote_id) {
                 host.engine
                     .remote.attach_mesh_frames
                     .update(local, bytes, generation, frame_seq, full);
@@ -2351,7 +1918,7 @@ fn apply_list_dir_result_event(
         };
         picker.entries = es;
         if picker.remote_host.is_none() {
-            picker.remote_host = Some(sess.remote_label.clone());
+            picker.remote_host = Some(sess.state.remote_label.clone());
         }
         if truncated {
             host.toast(
@@ -2405,8 +1972,8 @@ fn apply_git_query_result_event(
 }
 
 fn markdown_mirror_local(sess: &AttachClientSession, remote_surface_id: u32) -> Option<u32> {
-    let &local = sess.remote_to_local.get(&remote_surface_id)?;
-    sess.markdown_locals.contains(&local).then_some(local)
+    let &local = sess.state.remote_to_local.get(&remote_surface_id)?;
+    sess.state.markdown_locals.contains(&local).then_some(local)
 }
 
 /// 원격 ID를 로컬 markdown ID로 바꿔 회신한다. leaf가 사라졌거나 kind가 바뀌었으면 무시한다.
@@ -2423,7 +1990,7 @@ fn apply_markdown_content_result_event(
     truncated: bool,
     reason: Option<String>,
 ) {
-    let agent_origin = sess.agent_requests.take_markdown(request_id);
+    let agent_origin = sess.state.agent_requests.take_markdown(request_id);
     let Some(local) = markdown_mirror_local(sess, remote_surface_id) else {
         return;
     };
@@ -2459,31 +2026,31 @@ fn apply_mirror_structural_delta(
     let old_focused_remote: Option<u32> = engine
         .workspaces()
         .into_iter()
-        .find(|w| w.id == sess.local_workspace)
-        .and_then(|ws| capture_focused_remote(navigation, ws, &sess.remote_to_local));
+        .find(|w| w.id == sess.state.local_workspace)
+        .and_then(|ws| capture_focused_remote(navigation, ws, &sess.state.remote_to_local));
 
     let mut mapping = merge_survivor_mapping(
-        &sess.remote_to_local,
+        &sess.state.remote_to_local,
         surfaces,
         &ids,
-        &sess.frame_tx,
+        &sess.transport.frame_tx,
         engine,
     );
     let newly_created_remote_ids = std::mem::take(&mut mapping.newly_created_remote_ids);
 
-    sess.remote_to_local = std::mem::take(&mut mapping.remote_to_local);
+    sess.state.remote_to_local = std::mem::take(&mut mapping.remote_to_local);
     let new_markdown = mapping.markdown_ids();
     let removed_markdown: Vec<u32> = sess
         .markdown_locals
         .difference(&new_markdown)
         .copied()
         .collect();
-    sess.markdown_locals = new_markdown;
+    sess.state.markdown_locals = new_markdown;
 
     if let Some(pos) = engine
         .workspaces()
         .into_iter()
-        .position(|w| w.id == sess.local_workspace)
+        .position(|w| w.id == sess.state.local_workspace)
     {
         let name = engine
             .workspace_at(pos)
@@ -2491,26 +2058,27 @@ fn apply_mirror_structural_delta(
             .name
             .clone();
         let mut ws = build_mirror_workspace(
-            &mut sess.structure_ids,
+            &mut sess.state.structure_ids,
             navigation,
-            sess.local_workspace,
+            sess.state.local_workspace,
             &name,
             tree,
             &ids,
-            &sess.remote_to_local,
+            &sess.state.remote_to_local,
             &mapping.terminals,
             &mapping.mesh,
             &mapping.explorer,
             &mut mapping.markdown,
         );
-        ws.mirror = true;
+        install_mirror_fallbacks(&ws,engine);
+        ws.mirror=true;
 
         // 사용자가 새 surface를 만들었다면 옛 포커스 복원보다 새 surface 선택을 우선한다.
         let mut focus_handled = false;
         if matches!(pending_focus, Some(PendingOpFocus::NewResource))
             && let Some(&new_local) = newly_created_remote_ids
                 .first()
-                .and_then(|rid| sess.remote_to_local.get(rid))
+                .and_then(|rid| sess.state.remote_to_local.get(rid))
         {
             focus_handled = set_focus_to_surface(navigation, &ws, new_local);
         }
@@ -2519,12 +2087,12 @@ fn apply_mirror_structural_delta(
                 navigation,
                 &mut ws,
                 old_focused_remote,
-                &sess.remote_to_local,
+                &sess.state.remote_to_local,
             );
             // 옛 포커스가 사라졌으면 닫기 전에 구한 인접 후보를 시도한다. 후보도 없으면 원격 값을 유지한다.
             if !restored && let Some(PendingOpFocus::Close { candidates }) = &pending_focus {
                 for &remote_cand in candidates {
-                    if let Some(&local_cand) = sess.remote_to_local.get(&remote_cand)
+                    if let Some(&local_cand) = sess.state.remote_to_local.get(&remote_cand)
                         && set_focus_to_surface(navigation, &ws, local_cand)
                     {
                         break;
@@ -2539,7 +2107,7 @@ fn apply_mirror_structural_delta(
     } else {
         tracing::warn!(
             "structural delta: mirror workspace {} (remote {workspace_id}) 를 찾지 못해 갱신을 건너뛴다",
-            sess.local_workspace
+            sess.state.local_workspace
         );
     }
     removed_markdown
@@ -3143,13 +2711,13 @@ impl App {
         bytes: &[u8],
     ) -> anyhow::Result<()> {
         let Some(sess) = self
-            .attach_client_sessions
+            .remote.sessions
             .iter()
-            .find(|s| s.local_workspace == local_ws_id)
+            .find(|s| s.state.local_workspace == local_ws_id)
         else {
             anyhow::bail!("no attach session for mirror workspace {local_ws_id}");
         };
-        let frame_tx = sess.frame_tx.clone();
+        let frame_tx = sess.transport.frame_tx.clone();
         let upload_id = next_capture_upload_id();
 
         use base64::Engine as _;
@@ -3186,9 +2754,9 @@ impl App {
         consumer: Option<u32>,
     ) -> anyhow::Result<()> {
         let Some(sess) = self
-            .attach_client_sessions
+            .remote.sessions
             .iter_mut()
-            .find(|s| s.local_workspace == local_ws_id)
+            .find(|s| s.state.local_workspace == local_ws_id)
         else {
             anyhow::bail!("no attach session for mirror workspace {local_ws_id}");
         };
@@ -3197,9 +2765,9 @@ impl App {
             "request_id": request_id,
             "dir": dir,
         });
-        let result = send_capture_control_frame(&sess.frame_tx, &msg);
+        let result = send_capture_control_frame(&sess.transport.frame_tx, &msg);
         if result.is_ok() {
-            sess.pending_list_dir_consumers.insert(request_id, consumer);
+            sess.state.pending_list_dir_consumers.insert(request_id, consumer);
         }
         result
     }
@@ -3214,9 +2782,9 @@ impl App {
         diff_path: Option<&str>,
     ) -> anyhow::Result<()> {
         let Some(sess) = self
-            .attach_client_sessions
+            .remote.sessions
             .iter()
-            .find(|s| s.remote_to_local.values().any(|&l| l == local_surface_id))
+            .find(|s| s.state.remote_to_local.values().any(|&l| l == local_surface_id))
         else {
             anyhow::bail!("no attach session for mirror surface {local_surface_id}");
         };
@@ -3236,7 +2804,7 @@ impl App {
             "worktree_path": worktree_path,
             "diff_path": diff_path,
         });
-        send_capture_control_frame(&sess.frame_tx, &msg)
+        send_capture_control_frame(&sess.transport.frame_tx, &msg)
     }
 
     pub(crate) fn send_markdown_content_request(
@@ -3245,9 +2813,9 @@ impl App {
     ) -> anyhow::Result<()> {
         let (local_surface_id, request_id) = (req.local_surface_id, req.request_id);
         let Some(sess) = self
-            .attach_client_sessions
+            .remote.sessions
             .iter_mut()
-            .find(|s| s.markdown_locals.contains(&local_surface_id))
+            .find(|s| s.state.markdown_locals.contains(&local_surface_id))
         else {
             anyhow::bail!("no attach session holds mirror markdown surface {local_surface_id}");
         };
@@ -3259,7 +2827,7 @@ impl App {
         else {
             anyhow::bail!("no remote surface id for mirror surface {local_surface_id}");
         };
-        if sess.state != SessionState::Connected {
+        if sess.state.phase != SessionState::Connected {
             anyhow::bail!("mirror session is reconnecting");
         }
         let msg = serde_json::json!({
@@ -3267,8 +2835,8 @@ impl App {
             "request_id": request_id,
             "surface_id": remote_sid,
         });
-        send_capture_control_frame(&sess.frame_tx, &msg)?;
-        sess.agent_requests.note_markdown_from(req, request_id);
+        send_capture_control_frame(&sess.transport.frame_tx, &msg)?;
+        sess.state.agent_requests.note_markdown_from(req, request_id);
         Ok(())
     }
 }
@@ -3278,8 +2846,7 @@ fn send_capture_control_frame(
     msg: &serde_json::Value,
 ) -> anyhow::Result<()> {
     let payload = serde_json::to_vec(msg)?;
-    crate::poison::recover_mutex(frame_tx.lock(), FRAME_TX_WHAT, &FRAME_TX_POISONED)
-        .send(OutFrame {
+    frame_tx.send(OutFrame {
             tag: StreamTag::Control,
             payload,
         })
@@ -3290,10 +2857,10 @@ fn send_capture_control_frame(
 impl App {
     /// 워커가 세션 전체를 빌리지 않도록 접속 포트와 원격 workspace ID만 꺼낸다.
     pub(crate) fn bulk_target_for(&self, local_ws_id: u32) -> Option<(u16, u32)> {
-        self.attach_client_sessions
+        self.remote.sessions
             .iter()
-            .find(|s| s.local_workspace == local_ws_id)
-            .map(|s| (s.bulk_port, s.remote_workspace))
+            .find(|s| s.state.local_workspace == local_ws_id)
+            .map(|s| (s.state.bulk_port, s.state.remote_workspace))
     }
 }
 
@@ -4827,7 +4394,7 @@ mod tests {
             .insert(local_surface, Terminal::new_detached(80, 24), None);
         let mut sess = test_session(9_000, HashMap::from([(remote_surface, local_surface)]));
         let (tx, frames_out) = std::sync::mpsc::channel::<OutFrame>();
-        sess.frame_tx = Arc::new(Mutex::new(tx));
+        sess.transport.frame_tx = Arc::new(Mutex::new(tx));
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
 
         let read = |engine: &crate::runtime::engine_access::EngineRef<'_>, expect: Option<String>| {
@@ -4867,7 +4434,7 @@ mod tests {
             );
         }
         assert_eq!(
-            sess.resync_pending,
+            sess.state.resync_pending,
             Some(5),
             "기다리는 동안의 통지는 합산한다"
         );
@@ -4883,7 +4450,7 @@ mod tests {
             "손실 전 표지로 읽으면 stream 불일치여야 한다"
         );
         assert_eq!(
-            sess.state,
+            sess.state.phase,
             SessionState::Connected,
             "재attach 는 EOF 를 본 뒤에 건다 — 통지만으로 상태를 바꾸지 않는다"
         );
@@ -4902,11 +4469,11 @@ mod tests {
             .insert(local_surface, Terminal::new_detached(80, 24), None);
         let mut sess = test_session(9_000, HashMap::from([(remote_surface, local_surface)]));
         assert!(
-            sess.anchor_ws_id.is_none(),
+            sess.state.anchor_ws_id.is_none(),
             "전제: 수동 attach(anchor 없음)"
         );
         let (tx, frames_out) = std::sync::mpsc::channel::<OutFrame>();
-        sess.frame_tx = Arc::new(Mutex::new(tx));
+        sess.transport.frame_tx = Arc::new(Mutex::new(tx));
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
 
         {
@@ -4918,27 +4485,27 @@ mod tests {
                 vec![MirrorEvent::Desynced { frames: 4 }],
             );
         }
-        assert_eq!(sess.resync_pending, Some(4));
-        assert!(sess.resync_awaiting_window);
+        assert_eq!(sess.state.resync_pending, Some(4));
+        assert!(sess.state.resync_awaiting_window);
         assert!(
             frames_out.try_iter().next().is_none(),
             "parked 에서 옛 연결을 놓으면 재attach 가 창을 못 찾아 mirror 가 정리된다"
         );
         assert_eq!(
             disconnect_disposition(
-                sess.disconnected.load(Ordering::SeqCst),
-                sess.state,
+                sess.transport.disconnected.load(Ordering::SeqCst),
+                sess.state.phase,
                 sess.resync_released(),
-                sess.anchor_ws_id.is_some(),
+                sess.state.anchor_ws_id.is_some(),
             ),
             DisconnectDisposition::None
         );
         assert_eq!(
             disconnect_disposition(
                 true,
-                sess.state,
+                sess.state.phase,
                 sess.resync_released(),
-                sess.anchor_ws_id.is_some(),
+                sess.state.anchor_ws_id.is_some(),
             ),
             DisconnectDisposition::Cleanup
         );
@@ -4959,14 +4526,14 @@ mod tests {
         let sent: Vec<OutFrame> = frames_out.try_iter().collect();
         assert_eq!(sent.len(), 1);
         assert_eq!(sent[0].tag, StreamTag::Detach);
-        assert!(!sess.resync_awaiting_window);
+        assert!(!sess.state.resync_awaiting_window);
         assert_eq!(state.toasts.len(), toasts_before + 1, "재동기화 안내 toast");
         assert_eq!(
             disconnect_disposition(
                 true,
-                sess.state,
+                sess.state.phase,
                 sess.resync_released(),
-                sess.anchor_ws_id.is_some(),
+                sess.state.anchor_ws_id.is_some(),
             ),
             DisconnectDisposition::Resync,
             "Detach를 보낸 뒤 EOF를 받으면 재attach한다"
@@ -5329,7 +4896,7 @@ mod tests {
             .expect("RemoteSurface");
 
         let mut sess = test_session(ws_id, m1.remote_to_local.clone());
-        sess.markdown_locals = HashSet::from([local]);
+        sess.state.markdown_locals = HashSet::from([local]);
 
         let removed = apply_mirror_structural_delta(
             &mut navigation,
@@ -5364,7 +4931,7 @@ mod tests {
             None,
         );
         assert_eq!(removed, vec![local]);
-        assert!(sess.markdown_locals.is_empty());
+        assert!(sess.state.markdown_locals.is_empty());
     }
 
     #[test]
@@ -5419,7 +4986,7 @@ mod tests {
     #[test]
     fn markdown_mirror_local_maps_only_markdown_leaves() {
         let mut sess = test_session(1, HashMap::from([(30, 300), (31, 310)]));
-        sess.markdown_locals.insert(300);
+        sess.state.markdown_locals.insert(300);
         assert_eq!(markdown_mirror_local(&sess, 30), Some(300));
         assert_eq!(markdown_mirror_local(&sess, 31), None, "터미널 leaf");
         assert_eq!(
@@ -5581,7 +5148,7 @@ mod tests {
     fn no_host_leaves_the_mirror_buffer_untouched() {
         let ws_id = 9_000u32;
         let mut sess = test_session(ws_id, HashMap::new());
-        sess.output.peek().extend([
+        sess.transport.output.peek().extend([
             MirrorEvent::Data(1, b"a".to_vec()),
             MirrorEvent::Resize(1, 10, 5),
         ]);
@@ -5590,7 +5157,7 @@ mod tests {
         let applied = apply_pending_mirror_output(&mut sess, None, &mut plugin_manager);
 
         assert!(!applied, "적용 대상이 없으면 적용했다고 보고하지 않는다");
-        let buf = sess.output.peek();
+        let buf = sess.transport.output.peek();
         assert_eq!(
             buf.len(),
             2,
@@ -5607,7 +5174,7 @@ mod tests {
         let remote_surface = 42u32;
         let mut parked = parked_with_mirror(ws_id, local_surface);
         let mut sess = test_session(ws_id, HashMap::from([(remote_surface, local_surface)]));
-        sess.output
+        sess.transport.output
             .peek()
             .push(MirrorEvent::Data(remote_surface, b"applied-here".to_vec()));
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
@@ -5632,7 +5199,7 @@ mod tests {
         };
 
         assert!(applied);
-        assert!(sess.output.peek().is_empty(), "적용했으면 버퍼는 비워진다");
+        assert!(sess.transport.output.peek().is_empty(), "적용했으면 버퍼는 비워진다");
         let term = parked[pidx]
             .session
             .runtime
@@ -5686,11 +5253,42 @@ mod tests {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         let host = MirrorHost::parked(&mut state, &mut engine);
-        let drained = buf.take_for(&host);
+        let drained = buf.drain();
         assert!(matches!(drained[0], MirrorEvent::Data(1, ref b) if b == b"a"));
         assert!(matches!(drained[1], MirrorEvent::Resize(1, 10, 5)));
         assert!(matches!(drained[2], MirrorEvent::Data(1, ref b) if b == b"b"));
         assert_eq!(drained.len(), 3);
         assert!(buf.peek().is_empty(), "꺼낸 뒤 버퍼는 비어 있다");
     }
+}
+
+fn attach_wake(proxy:&EventLoopProxy<AppEvent>)->Arc<dyn Fn()+Send+Sync> {
+    let proxy=proxy.clone();
+    Arc::new(move|| {if let Err(error)=proxy.send_event(AppEvent::AttachClientData) {tracing::debug!("remote wake after event loop closed: {error}");}})
+}
+
+fn bind_mirror_input(mirror:&mut Terminal,remote_id:u32,frame_tx:&SharedFrameSender,reconnect:bool) {
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    if reconnect {mirror.replace_external_connection(tx);} else {mirror.set_input_sink(tx);}
+    let frame_tx = frame_tx.clone();
+    // 프레임 상한에서 mux 헤더를 뺀 크기로 나눠 paste 순서를 유지한다.
+    // 매번 현재 sender를 읽고, 연결이 끊겨 전송에 실패해도 forwarder는 다음 입력을 기다린다.
+    // 실패한 청크는 재전송하지 않으며 터미널 sink가 닫히면 스레드도 종료한다.
+    std::thread::spawn(move || {
+        const MAX_BODY: usize = (stream::MAX_FRAME_LEN as usize) - 4;
+        for chunk in rx {
+            for part in chunk.chunks(MAX_BODY) {
+                let framed = stream::encode_mux(remote_id, part);
+                if frame_tx
+                    .send(OutFrame {
+                        tag: StreamTag::Data,
+                        payload: framed,
+                    })
+                    .is_err()
+                {
+                    continue;
+                }
+            }
+        }
+    });
 }

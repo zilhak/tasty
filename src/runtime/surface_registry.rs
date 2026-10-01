@@ -14,10 +14,14 @@ use crate::model::{Surface, SurfaceId};
 
 pub use builtins::register_builtin_kinds;
 
-pub fn snapshot_fn_for(
-    registry: &SurfaceKindRegistry,
-) -> impl FnMut(&dyn Surface) -> Option<serde_json::Value> + '_ {
-    move |s| registry.get(s.kind()).and_then(|def| (def.snapshot)(s))
+pub fn snapshot_fn_for<'a>(
+    registry:&'a SurfaceKindRegistry,
+    instances:&'a std::collections::HashMap<u32,Box<dyn Surface>>,
+)->impl FnMut(SurfaceId)->Option<serde_json::Value>+'a {
+    move |id| {
+        let surface=instances.get(&id)?;
+        registry.get(surface.kind()).and_then(|definition|(definition.snapshot)(surface.as_ref()))
+    }
 }
 
 /// 직렬화할 데이터. None은 해당 surface를 영속화에서 제외한다.

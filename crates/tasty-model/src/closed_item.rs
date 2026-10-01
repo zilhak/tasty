@@ -1,11 +1,11 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
-use super::{PaneId, SplitDirection, Surface, SurfaceId, TabId, WorkspaceId};
+use super::{PaneId, SplitDirection, SurfaceDescriptor, SurfaceId, TabId, WorkspaceId};
 
-/// `&dyn Surface` → snapshot JSON. `None`이면 영속화에서 제외(휘발성 surface).
+/// Explicit surface ID → snapshot JSON. `None`이면 영속화에서 제외(휘발성 surface).
 /// 호출자가 `SurfaceKindRegistry`를 캡처해 넘긴다 — core는 registry 타입을 알지 않는다.
-pub type SnapshotFn<'a> = &'a mut dyn FnMut(&dyn Surface) -> Option<serde_json::Value>;
+pub type SnapshotFn<'a> = &'a mut dyn FnMut(SurfaceId) -> Option<serde_json::Value>;
 
 /// Maximum number of closed items to keep.
 const MAX_CLOSED_ITEMS: usize = 10;
@@ -164,10 +164,10 @@ impl ClosedSurfaceLayout {
     ) -> Self {
         match layout {
             super::SurfaceLayout::Leaf(surface) => {
-                if let Some(node) = surface.as_any().downcast_ref::<super::TerminalSurface>() {
+                if surface.kind()=="terminal" {
                     ClosedSurfaceLayout::Single(ClosedSurface::from_capture(
-                        node.id,
-                        terminal_lookup(node.id),
+                        surface.id,
+                        terminal_lookup(surface.id),
                     ))
                 } else {
                     // Non-terminal surfaces: store minimal placeholder with the surface ID.
@@ -216,17 +216,17 @@ impl ClosedPanel {
     /// Terminal은 직접 캡처하고 나머지는 호스트의 snapshot 콜백을 사용한다.
     /// 콜백이 None이면 복원 목록에서 제외한다.
     pub fn from_surface(
-        surface: &dyn Surface,
+        surface: &SurfaceDescriptor,
         snapshot: SnapshotFn<'_>,
         terminal_lookup: &TerminalCaptureFn<'_>,
     ) -> Option<Self> {
-        if let Some(node) = surface.as_any().downcast_ref::<super::TerminalSurface>() {
+        if surface.kind()=="terminal" {
             return Some(ClosedPanel::Terminal(ClosedSurface::from_capture(
-                node.id,
-                terminal_lookup(node.id),
+                surface.id,
+                terminal_lookup(surface.id),
             )));
         }
-        let snap = snapshot(surface)?;
+        let snap = snapshot(surface.id)?;
         Some(ClosedPanel::Generic {
             kind: surface.kind().to_string(),
             snapshot: snap,

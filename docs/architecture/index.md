@@ -125,7 +125,7 @@ CoreState의 로컬 트리는 `local_workspaces`, 원격 mirror 트리는 `mirro
 
 앱 진행 값은 `app::state::AppState`, 공유 저장소·OS port·작업 실행 서비스는 `app::services::AppServices`가 소유한다. 부팅 phase와 복원 요청값은 `BootProgress`, OS 창·GPU·engine worker receiver는 `BootResources`로 분리한다. 열린 View와 engine 연결 관계는 기존 registry가 원본이며 AppState에 ID 목록을 복제하지 않는다.
 
-`SurfaceLayout::Leaf`는 ID·kind·확정 activation을 가진 `SurfaceDescriptor`다. 실행 kind 객체는 `EngineRuntime.surfaces` 한 컬렉션에 있고 Terminal/Pty 원본은 같은 engine의 TerminalStore에 있다. runtime kind registry·waker·파일 처리기 등록부와 생성자 파일 I/O도 EngineRuntime에 속한다. `LiveDomainState`는 점유·busy·attention·입력/출력 관측을 담으며, 점유 값 변경 자체는 전송하지 않는다. Remote 모듈이 허브와 전송 큐를 맡고 로컬 readonly Terminal 표시는 EngineRuntime에 남는다. 외부 client session·SSH transport의 통합과 전체 producer/소비자 이행은 아직 완료되지 않았다.
+`SurfaceLayout::Leaf`는 ID·kind·확정 activation을 가진 `SurfaceDescriptor`다. 실행 kind 객체는 `EngineRuntime.surfaces` 한 컬렉션에 있고 Terminal/Pty 원본은 같은 engine의 TerminalStore에 있다. runtime kind registry·waker·파일 처리기 등록부와 생성자 파일 I/O도 EngineRuntime에 속한다. `LiveDomainState`는 점유·busy·attention·입력/출력 관측을 담으며, 점유 값 변경 자체는 전송하지 않는다. Remote 모듈이 허브와 전송 큐를 맡고 로컬 readonly Terminal 표시는 EngineRuntime에 남는다. 외부 client session은 Remote가 소유하며 session 값과 sender/outbox/SSH tunnel 자원을 구분한다. socket handshake·reader/writer·heartbeat는 Remote transport에 있고 App을 참조하지 않는 wake 콜백을 받는다. 연결 sender는 교체 슬롯이 아니라 고정 epoch에 묶이며 재연결 전 입력·응답 큐를 새 연결로 재해소하지 않는다. 전체 producer/소비자·복구 이행은 아직 완료되지 않았다.
 
 공통 `ViewState`는 focus·modifiers·dirty/repaint·닫기 요청과 View 수명 식별자를 가지며 OS 창·GPU는 ViewBase 자원이다. 구조 생성의 사용자 선택 continuation은 원래 View 수명과 선택 세대가 유지될 때만 적용하고 저장/replay 대상에는 넣지 않는다. View 이벤트 문맥에는 engine 수명 owner 전체 대신 실행에 필요한 대여를 전달한다. View의 구조 후처리와 기존 직접 writer 제거는 이어지는 전환 범위다.
 

@@ -546,7 +546,7 @@ impl RequestContext {
         engine: &EngineRef<'_>,
         ws_idx: usize,
     ) -> crate::model::ClosedItem {
-        let mut snap_fn = crate::runtime::surface_registry::snapshot_fn_for(&engine.runtime.surface_registry);
+        let mut snap_fn = crate::runtime::surface_registry::snapshot_fn_for(&engine.runtime.surface_registry,&engine.runtime.surfaces);
         let ws = engine
             .workspace_at(ws_idx)
             .expect("workspace index is valid");

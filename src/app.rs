@@ -176,29 +176,8 @@ pub(crate) struct App {
     /// 그 전에 닫힌 창은 닫기 경로에서 제거한다.
     #[cfg(feature = "gui")]
     pub(crate) pending_focus_hint_clear: std::collections::HashSet<WindowId>,
-    /// 원격 워크스페이스의 mirror 세션. 연결 스레드와 remote↔local ID 매핑을 보유한다.
-    #[cfg(feature = "gui")]
-    pub(crate) attach_client_sessions: Vec<attach_client::AttachClientSession>,
-    /// 중복 자동 attach를 막기 위한 진행 중·완료된 anchor ID. 세션 정리 시 제거한다.
-    #[cfg(feature = "gui")]
-    pub(crate) auto_attach_active: std::collections::HashSet<u32>,
-    /// 워크스페이스를 다시 활성화했는지 확인할 직전 활성 ID.
-    #[cfg(feature = "gui")]
-    pub(crate) auto_attach_last_active_ws: Option<u32>,
-    /// 연결 해제 뒤 워크스페이스 재활성화를 기다리는 anchor.
-    /// 새로 매핑한 활성 워크스페이스는 즉시 attach해야 하므로 별도로 구분한다.
-    #[cfg(feature = "gui")]
-    pub(crate) auto_attach_pending_reactivation: std::collections::HashSet<u32>,
-    /// 자동 attach 워커의 SSH 터널·포트 결과를 메인 루프로 전달한다.
-    #[cfg(feature = "gui")]
-    pub(crate) auto_attach_tx: std::sync::mpsc::Sender<auto_attach::AutoAttachOutcome>,
-    #[cfg(feature = "gui")]
-    pub(crate) auto_attach_rx: std::sync::mpsc::Receiver<auto_attach::AutoAttachOutcome>,
-    /// 끊긴 anchor별 재연결 시각·백오프·시도 횟수.
-    /// 성공하거나 사용자가 mirror를 닫으면 제거한다.
-    /// docs/dev-guide/attach-behavior.md#gui-자동-재연결-스코프 참조.
-    #[cfg(feature = "gui")]
-    pub(crate) auto_attach_reconnect: std::collections::HashMap<u32, auto_attach::ReconnectSlot>,
+    #[cfg(feature="gui")]
+    pub(crate) remote:crate::remote::outbound::Remote,
     /// 스크린샷→클립보드 캡처 워커 스레드 → 메인 루프 결과 채널.
     #[cfg(feature = "gui")]
     pub(crate) screenshot_capture_tx:
@@ -240,7 +219,6 @@ impl App {
         #[cfg(debug_assertions)] input_simulation_enabled: bool,
     ) -> anyhow::Result<Self> {
         let (stream_inbound_tx, stream_inbound_rx) = std::sync::mpsc::channel();
-        let (auto_attach_tx, auto_attach_rx) = std::sync::mpsc::channel();
         let (screenshot_capture_tx, screenshot_capture_rx) = std::sync::mpsc::channel();
         let (image_upload_tx, image_upload_rx) = std::sync::mpsc::channel();
         let (transfer_progress_tx, transfer_progress_rx) = std::sync::mpsc::channel();
@@ -292,13 +270,7 @@ impl App {
                 })
             }),
             pending_focus_hint_clear: std::collections::HashSet::new(),
-            attach_client_sessions: Vec::new(),
-            auto_attach_active: std::collections::HashSet::new(),
-            auto_attach_last_active_ws: None,
-            auto_attach_pending_reactivation: std::collections::HashSet::new(),
-            auto_attach_tx,
-            auto_attach_rx,
-            auto_attach_reconnect: std::collections::HashMap::new(),
+            remote:crate::remote::outbound::Remote::new(),
             screenshot_capture_tx,
             screenshot_capture_rx,
             image_upload_tx,
