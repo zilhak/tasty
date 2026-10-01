@@ -13,6 +13,7 @@ impl RequestContext {
         self.navigation.workspace_index(&engine.workspaces())
     }
 
+    #[cfg(any(feature = "gui", debug_assertions, test))]
     pub(crate) fn set_active_workspace_index(&mut self, engine: &CoreState, index: usize) {
         if let Some(ws) = engine.workspace_at(index) {
             self.navigation

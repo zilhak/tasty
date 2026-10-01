@@ -47,6 +47,7 @@ impl Selection {
         self.previous_order = ids;
     }
 
+    #[cfg(any(feature = "gui", debug_assertions, test))]
     fn select(&mut self, id: u32, ids: Vec<u32>) -> bool {
         if !ids.contains(&id) {
             return false;
@@ -62,6 +63,7 @@ impl Selection {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct NavigationState {
     /// Selection intent generation; never a structural revision or journal input.
+    #[cfg(any(feature = "gui", debug_assertions, test))]
     generation: std::sync::Arc<()>,
     pub(crate) split_hints: HashMap<crate::model::SplitNodeId, bool>,
     pub(crate) collapsed_categories: std::collections::HashSet<u32>,
@@ -94,6 +96,7 @@ impl NavigationState {
     pub(crate) fn matches_generation(&self, generation: &std::sync::Weak<()>) -> bool {
         self.generation().ptr_eq(generation)
     }
+    #[cfg(any(feature = "gui", debug_assertions, test))]
     fn note_selection_change(&mut self, changed: bool) -> bool {
         if changed {
             self.generation = std::sync::Arc::new(());
@@ -184,6 +187,7 @@ impl NavigationState {
             .or_else(|| tab.layout_if_initialized()?.first_surface_id())
     }
 
+    #[cfg(any(feature = "gui", debug_assertions, test))]
     pub(crate) fn select_workspace(
         &mut self,
         workspaces: &WorkspaceRead<'_>,
@@ -203,6 +207,7 @@ impl NavigationState {
         self.note_selection_change(changed)
     }
 
+    #[cfg(any(feature = "gui", debug_assertions, test))]
     pub(crate) fn select_tab(&mut self, pane: &Pane, id: u32) -> bool {
         let changed = self
             .selected_tabs
@@ -222,6 +227,7 @@ impl NavigationState {
         self.note_selection_change(changed)
     }
 
+    #[cfg(any(feature = "gui", debug_assertions, test))]
     pub(crate) fn goto_tab(&mut self, pane: &Pane, index: usize) -> crate::model::TabSwitch {
         let Some(tab) = pane.tabs.get(index) else {
             return crate::model::TabSwitch::OutOfRange {

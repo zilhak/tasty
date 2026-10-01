@@ -6,6 +6,7 @@ use super::RequestContext;
 use crate::runtime::engine_read::EngineRead;
 
 /// 닫기 요청 출처. 복원 사본 저장, surface.closed의 reason, 계측 구분값을 정한다.
+#[cfg(any(feature = "gui", debug_assertions, test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceCloseOrigin {
     /// 사용자 단축키·메뉴 또는 사용자 입력을 재현하는 debug IPC 경로.
@@ -13,6 +14,7 @@ pub enum WorkspaceCloseOrigin {
     User,
 }
 
+#[cfg(any(feature = "gui", debug_assertions, test))]
 impl WorkspaceCloseOrigin {
     /// User가 없는 빌드도 처리하도록 cfg가 붙은 match 분기를 사용한다.
     #[cfg(feature = "gui")]
@@ -300,6 +302,7 @@ impl RequestContext {
     /// 지정 워크스페이스를 닫고 관련 상태를 정리한다.
     /// origin은 복원 사본·surface.closed reason·계측 구분을 정한다.
     /// 제거 후 활성 인덱스를 보정하며 workspace.closed는 after_workspace_removed에서 보낸다.
+    #[cfg(any(feature = "gui", debug_assertions, test))]
     pub fn close_workspace_at(
         &mut self,
         engine: &crate::runtime::engine_read::EngineRead<'_>,
