@@ -15,7 +15,6 @@ use tasty_plugin_protocol::{
     SurfaceSetContextParams, ThemeWire,
 };
 
-use crate::runtime::egui_mesh_surface::EguiMeshSurface;
 use crate::model::{PhysicalPx, PhysicalRect};
 use crate::app::plugin_display::PluginDisplay;
 use crate::plugin_bridge::MeshForwardCommon;
@@ -84,7 +83,7 @@ impl MainView {
         {
             for r in regions {
                 if r.rect.contains(PhysicalPx(x), PhysicalPx(y))
-                    && let Some(ms) = engine.find_surface_by_id(r.id).and_then(|surface|surface.as_any().downcast_ref::<EguiMeshSurface>())
+                    && let Some(ms) = engine.find_surface_by_id(r.id).and_then(|surface|surface.mesh())
                 {
                     return Some((r.id, ms.plugin_id.clone(), r.rect));
                 }
@@ -195,9 +194,7 @@ impl MainView {
     ) -> Option<u32> {
         let sid = self.state.focused_surface_id(engine)?;
         let surface = engine.find_surface_by_id(sid)?;
-        surface
-            .as_any()
-            .downcast_ref::<EguiMeshSurface>()
+        surface.mesh()
             .map(|_| sid)
     }
 
@@ -274,7 +271,7 @@ impl MainView {
                 .surface_regions(&*engine, terminal_rect, self.base.gpu.scale_factor())
         {
             for r in regions {
-                if let Some(ms) = engine.find_surface_by_id(r.id).and_then(|surface|surface.as_any().downcast_ref::<EguiMeshSurface>()) {
+                if let Some(ms) = engine.find_surface_by_id(r.id).and_then(|surface|surface.mesh()) {
                     targets.push(MeshTarget {
                         sid: r.id,
                         plugin_id: ms.plugin_id.clone(),

@@ -18,7 +18,6 @@ use egui::epaint::textures::TexturesDelta;
 use egui::epaint::{ClippedPrimitive, Primitive, TextureId};
 
 use super::GpuState;
-use crate::runtime::egui_mesh_surface::EguiMeshSurface;
 use crate::model::PhysicalRect;
 use crate::app::plugin_display::PluginDisplay;
 use crate::state::MainViewState;
@@ -142,7 +141,7 @@ enum DecodeOutcome {
 /// 활성 workspace 에서 egui-mesh surface 의 (surface_id, plugin_id, 물리 rect) 일람.
 ///
 /// `surface_regions` 가 layout 에 실제 존재하는 surface 만 반환하고, 그중
-/// [`EguiMeshSurface`] 로 다운캐스트되는 것만 골라낸다. 화이트리스트 gate 에서 거부된
+/// 표시 query에서 mesh 모델로 분류된 것만 골라낸다. 화이트리스트 gate 에서 거부된
 /// kind 는 애초에 `EguiMeshSurface` 로 생성되지 않으므로(registry 미등록) 여기 잡히지
 /// 않는다 — registry 미등록 kind 의 합성을 시도하지 않는다(A1-S1 인계 점검).
 pub(super) fn collect_egui_mesh_targets(
@@ -156,7 +155,7 @@ pub(super) fn collect_egui_mesh_targets(
         state.surface_regions(engine, terminal_rect, scale_factor)
     {
         for r in regions {
-            if let Some(ms) = engine.find_surface_by_id(r.id).and_then(|surface|surface.as_any().downcast_ref::<EguiMeshSurface>()) {
+            if let Some(ms) = engine.find_surface_by_id(r.id).and_then(|surface|surface.mesh()) {
                 out.push((r.id, ms.plugin_id.clone(), r.rect));
             }
         }
@@ -179,7 +178,7 @@ pub(super) fn collect_attach_mesh_targets(
     {
         for r in regions {
             if engine.find_surface_by_id(r.id)
-                .is_some_and(|surface| surface.as_any().is::<crate::model::AttachMeshSurface>())
+                .is_some_and(|surface| surface.attach_mesh().is_some())
             {
                 out.push((r.id, r.rect));
             }

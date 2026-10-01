@@ -37,15 +37,12 @@ pub(crate) fn focused_workspace_category(
 
 fn focused_explorer_panel<'a>(
     state: &crate::state::MainViewState,
-    engine: &'a crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'a>,
 ) -> Option<&'a crate::model::ExplorerPanel> {
     let pane = state.focused_pane(engine)?;
     let tab = pane.tabs.get(state.navigation.tab_index(pane))?;
     let focused = state.navigation.surface_id(tab).unwrap_or(0);
-    let surface = tab.layout().find_surface(focused)?;
-    surface
-        .as_any()
-        .downcast_ref::<crate::model::ExplorerPanel>()
+    engine.find_surface_by_id(focused)?.explorer()
 }
 
 fn focused_explorer_surface_id(

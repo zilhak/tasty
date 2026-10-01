@@ -5,7 +5,7 @@
 //! 재로드가 commit되어 단계가 사라지면 재로드 중 배너를 `banner_fade` 동안 흐리게 지운다.
 //! 배너는 키보드 포커스를 가져가지 않고, 클릭은 사용자 조작으로만 상태를 바꾼다.
 
-use tasty_model::html_script::{BannerPhase, ScriptDetection};
+use tasty_model::html_script::BannerPhase;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
@@ -13,7 +13,7 @@ use tasty_ui_widgets::{
     inset_banner_zone,
 };
 
-use crate::plugin_bridge::remote_surface::RemoteSurface;
+use crate::app::html_runtime::{HtmlAction, HtmlActionKind, HtmlSnapshot};
 
 /// 이전 프레임에서 이어받는 페이드 상태.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -90,20 +90,17 @@ fn resolve(
 }
 
 /// `panel`에 배너를 그리고 패널 위쪽에서 페이지가 시작할 곳까지의 거리를 돌려준다.
-/// 배너가 없으면 `None`이다. 허용·닫기 클릭은 이 surface의 상태에 바로 적용한다.
+/// 배너가 없으면 `None`이다. 허용·닫기는 표시한 문서에 묶인 App 요청으로 반환한다.
 pub fn draw(
     ui: &mut egui::Ui,
     theme: &Theme,
-    remote: &RemoteSurface,
+    snapshot: &HtmlSnapshot,
+    actions: &mut Vec<HtmlAction>,
     surface_id: u32,
     panel: egui::Rect,
 ) -> Option<LogicalPx> {
-    let (phase, remote_only) = remote.with_html_script(|st| {
-        (
-            st.banner_phase(),
-            st.current_detection() == Some(ScriptDetection::ScriptsRemoteOnly),
-        )
-    });
+    let phase = snapshot.phase;
+    let remote_only = snapshot.remote_only;
     let memo_id = egui::Id::new(("html_script_banner_fade", surface_id));
     let memo = ui
         .ctx()
@@ -138,25 +135,15 @@ pub fn draw(
     let out = html_script_banner(&mut child, theme, &view);
     if shown.alpha >= 1.0 {
         if out.allow_clicked {
-            allow(remote, surface_id);
+            actions.push(snapshot.request(HtmlActionKind::Allow));
         } else if out.dismiss_clicked {
             tracing::debug!("html script banner: surface {surface_id} dismissed by the user");
-            remote.with_html_script(|st| st.dismiss_banner());
+            actions.push(snapshot.request(HtmlActionKind::Dismiss));
         }
     }
     Some(LogicalPx(
         out.rect.bottom() + theme.banner_inset_gap().value() - panel.top(),
     ))
-}
-
-/// 사용자의 허용 클릭. 현재 문서를 허용으로 기록하면 호스트가 다음 동기화에서 다시 읽는다.
-fn allow(remote: &RemoteSurface, surface_id: u32) {
-    match remote.with_html_script(|st| st.allow_current()) {
-        Ok(()) => {
-            tracing::info!("html script banner: surface {surface_id} scripts allowed by the user")
-        }
-        Err(e) => tracing::warn!("html script banner: surface {surface_id} allow failed: {e}"),
-    }
 }
 
 #[cfg(test)]

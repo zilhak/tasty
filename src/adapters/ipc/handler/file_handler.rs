@@ -132,7 +132,7 @@ fn default_depth() -> String {
 pub fn handle_dispatch(
     out: &mut crate::ipc::window_port::IntentOutbox,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     caller: &tasty_ipc::caller::CallerContext,
     id: serde_json::Value,
     params: serde_json::Value,
@@ -173,6 +173,7 @@ pub fn handle_dispatch(
     let target = FileTarget::new(PathBuf::from(&req.path));
     let dispatch_origin = dispatch_origin_of(
         window,
+        engine,
         caller,
         req.owner_popup_instance,
         req.origin_surface_id,
@@ -210,6 +211,7 @@ pub fn handle_dispatch(
 #[cfg(feature = "gui")]
 pub(super) fn dispatch_origin_of(
     window: &mut dyn crate::ipc::window_port::IpcWindow,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     caller: &tasty_ipc::caller::CallerContext,
     owner_popup_instance: Option<u64>,
     origin_surface_id: Option<u32>,
@@ -231,7 +233,7 @@ pub(super) fn dispatch_origin_of(
     }
     if let Some(url) = user_navigation_url {
         if let Some(surface_id) = origin_surface_id
-            && window.take_webview_user_navigation(plugin_id, surface_id, url)
+            && window.take_webview_user_navigation(engine, plugin_id, surface_id, url)
         {
             return FileDispatchOrigin::User;
         }

@@ -21,7 +21,7 @@ struct NavigateReq {
 pub fn handle_navigate(
     out: &mut crate::ipc::window_port::IntentOutbox,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     caller: &tasty_ipc::caller::CallerContext,
     id: serde_json::Value,
     params: serde_json::Value,
@@ -38,6 +38,7 @@ pub fn handle_navigate(
     // 원격 변환 실패를 toast로 알릴지도 이 출처로 정한다.
     let origin = super::file_handler::dispatch_origin_of(
         window,
+        engine,
         caller,
         req.owner_popup_instance,
         None,

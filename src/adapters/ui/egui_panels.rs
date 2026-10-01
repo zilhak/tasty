@@ -33,6 +33,7 @@ pub fn draw_egui_panels(
     scale_factor: f32,
 ) {
     let mut infos = Vec::new();
+    let mut html_actions = Vec::new();
     {
         let ws = state.active_workspace(engine);
         let ws_id = ws.id;
@@ -60,15 +61,9 @@ pub fn draw_egui_panels(
                     continue;
                 }
                 // 일반 surface 메뉴로 대체되지 않도록 탐색기의 현재 폴더를 함께 보관한다.
-                let explorer_cwd = r
-                    .surface
-                    .as_any()
-                    .downcast_ref::<crate::model::ExplorerPanel>()
+                let explorer_cwd = engine.find_surface_by_id(r.id).and_then(|surface| surface.explorer())
                     .map(|p| p.current_root().to_path_buf());
-                let dag_poll = r
-                    .surface
-                    .as_any()
-                    .downcast_ref::<crate::model::DagGraphSurface>()
+                let dag_poll = engine.find_surface_by_id(r.id).and_then(|surface| surface.dag())
                     .map(|p| {
                         crate::adapters::ui::surface::dag_graph::DagPollRequest::from_surface(
                             p, ws_id,
@@ -152,18 +147,14 @@ pub fn draw_egui_panels(
         let Some(sid)=info.surface_id.or_else(||state.navigation.surface_id(tab)) else {continue;};
         let Some(surface)=engine.find_surface_by_id(sid) else {continue;};
 
-        if let Some(empty) = surface
-            .as_any()
-            .downcast_ref::<crate::model::EmptySurface>()
+        if let Some(empty) = surface.empty()
         {
             draw_panel_frame_no_margin(ctx, &format!("empty_panel_{}", id_suffix), info, |ui| {
                 if let Some(act) = crate::empty_ui::draw_empty(ui, empty) {
                     pending_empty_action = Some(act);
                 }
             });
-        } else if let Some(ex_panel) = surface
-            .as_any()
-            .downcast_ref::<crate::model::ExplorerPanel>()
+        } else if let Some(ex_panel) = surface.explorer()
         {
             let view = explorer_views.get_or_init(ex_panel, mirror_ws_id);
             let act = draw_panel_frame(
@@ -197,9 +188,7 @@ pub fn draw_egui_panels(
             {
                 pending_explorer_action = Some((ex_panel.id, a));
             }
-        } else if let Some(dag) = surface
-            .as_any()
-            .downcast_ref::<crate::model::DagGraphSurface>()
+        } else if let Some(dag) = surface.dag()
         {
             let view = dag_views.get_or_init(dag.id);
             let mut dag_id=dag.dag_id.clone();
@@ -219,13 +208,10 @@ pub fn draw_egui_panels(
             if (dag_id.as_ref(),direction)!=(dag.dag_id.as_ref(),dag.direction) && let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,sid) {
                 state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::DagSelection {target,dag_id,direction}).from_user_context_menu());
             }
-        } else if let Some(remote) = surface
-            .as_any()
-            .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
-        ) {
+        } else if let Some(remote) = surface.remote_webview() {
             // webview 내용은 native overlay가 그린다. 여기서는 URL 부재나 overlay 숨김 때 보일 배경을 그린다.
-            if crate::runtime::surface_registry::webview_kind::is_webview_kind(remote.kind_static) {
-                let url = crate::model::Surface::webview_url(remote);
+            if crate::runtime::surface_registry::webview_kind::is_webview_kind(remote.kind()) {
+                let url = remote.url();
                 let nav = remote.nav_state();
                 let banner_inset = draw_panel_frame(
                     ctx,
@@ -237,13 +223,14 @@ pub fn draw_egui_panels(
                         let panel = ui.max_rect();
                         crate::webview_chrome_ui::draw_webview_chrome(ui, url.as_deref(), nav);
                         let sid = info.surface_id?;
-                        if remote.kind_static != "html" {
+                        if remote.kind() != "html" {
                             return None;
                         }
                         crate::adapters::ui::surface::html_script_banner::draw(
                             ui,
                             &theme::theme(),
-                            remote,
+                            &engine.html_script(sid)?,
+                            &mut html_actions,
                             sid,
                             panel,
                         )
@@ -254,6 +241,12 @@ pub fn draw_egui_panels(
                 }
             }
         }
+    }
+
+    for action in html_actions {
+        state.dispatch_intent(crate::intent::Intent::Engine(
+            crate::app::engine_action::EngineAction::Html(action),
+        ).from_user_menu("html-script-banner"));
     }
 
     let active_ws = state.active_workspace_index(engine);

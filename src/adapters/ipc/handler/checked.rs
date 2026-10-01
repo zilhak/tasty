@@ -73,7 +73,7 @@ fn check_scope_request<'a>(
 
 /// App constructs a detached scope before admission; a refused gate still returns its display outputs.
 pub(crate) fn check_request<'a>(core:&mut AppServices,state:&mut crate::state::RequestContext,engine:&mut CoreState,request:&'a JsonRpcRequest,caller:&'a CallerContext)->Result<CheckedRequest<'a>,JsonRpcResponse> {
-    let mut scope=crate::ipc::request_scope::RequestScope::capture(state,engine);
+    let mut scope=crate::ipc::request_scope::RequestScope::capture(state,engine,#[cfg(feature="gui")] None);
     let result=check_scope_request(core,&mut scope,engine,request,caller);
     let outputs=scope.finish();outputs.apply(state,engine);result
 }

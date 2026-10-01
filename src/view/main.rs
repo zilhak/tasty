@@ -13,7 +13,7 @@ mod menu_target;
 mod mouse;
 mod move_menu;
 mod preset_actions;
-mod redraw;
+pub(crate) mod redraw;
 pub(crate) mod selection;
 mod shutdown;
 pub(crate) mod vi_copy;
@@ -85,6 +85,7 @@ pub struct MainView {
     pub(crate) double_tap: crate::double_tap::DoubleTapDetector,
     /// Native WebView instances keyed by surface ID.
     pub(crate) webviews: std::collections::HashMap<u32, crate::webview::PlatformWebView>,
+    pub(crate) webview_runtime: std::collections::HashMap<u32, crate::app::html_runtime::NativeWebviewBinding>,
     /// surface 별 마지막으로 webview 에 적용한 HTML 설정 — 변경 시에만 재적용(매 프레임 호출 회피).
     pub(crate) webview_applied_settings:
         std::collections::HashMap<u32, crate::webview::HtmlWebViewSettings>,
@@ -179,12 +180,14 @@ pub(crate) enum MeshHoverTarget {
 impl MainView {
     pub(crate) fn new(
         gpu: GpuState,
-        state: MainViewState,
+        mut state: MainViewState,
         window: Arc<winit::window::Window>,
         proxy: winit::event_loop::EventLoopProxy<AppEvent>,
     ) -> Self {
+        let base = ViewBase::new(gpu, window);
+        state.webview_identity = base.state.identity();
         Self {
-            base: ViewBase::new(gpu, window),
+            base,
             state,
             cursor_position: None,
             dragging_divider: None,
@@ -208,6 +211,7 @@ impl MainView {
             ime_advance_base: (0, 0),
             double_tap: crate::double_tap::DoubleTapDetector::new(),
             webviews: std::collections::HashMap::new(),
+            webview_runtime: std::collections::HashMap::new(),
             webview_applied_settings: std::collections::HashMap::new(),
             webview_loaded_urls: std::collections::HashMap::new(),
             webview_create_attempts: std::collections::HashMap::new(),

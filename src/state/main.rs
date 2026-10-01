@@ -250,10 +250,10 @@ pub struct MainViewState {
     #[cfg(feature = "gui")]
     pub(crate) plugin_popup_user_activated: std::collections::HashMap<u64, String>,
 
-    /// WebView별 최신 사용자 navigation 기록. 플러그인·surface·URL이 맞으면 한 번 소비한다.
-    /// 기록·정리 조건은 crate::plugin_bridge::user_navigation에서 관리한다.
+    /// Opaque identity of the native View that produced navigation gestures.
+    /// App owns the actual one-shot proof records; dropping the View invalidates this weak token.
     #[cfg(feature = "gui")]
-    pub(crate) webview_user_navigations: crate::plugin_bridge::user_navigation::UserNavigations,
+    pub(crate) webview_identity: std::sync::Weak<()>,
 
     /// debug IPC가 요청한 webview 탐색 조작. sync_webviews가 소비한다.
     #[cfg(all(feature = "gui", debug_assertions))]

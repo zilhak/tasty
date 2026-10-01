@@ -7,7 +7,7 @@ use winit::event::MouseButton;
 use tasty_plugin_protocol::protocol::{RawInputEventWire, RawInputWire, ThemeWire};
 
 use crate::core::AttachMeshContextForward;
-use crate::model::{AttachMeshSurface, PhysicalPx, PhysicalRect};
+use crate::model::{PhysicalPx, PhysicalRect};
 
 use super::MainView;
 use super::egui_mesh::{key_wire_event, map_button};
@@ -41,7 +41,7 @@ impl MainView {
             for r in regions {
                 if r.rect.contains(PhysicalPx(x), PhysicalPx(y))
                     && engine.find_surface_by_id(r.id)
-                        .is_some_and(|surface| surface.as_any().is::<AttachMeshSurface>())
+                        .is_some_and(|surface| surface.attach_mesh().is_some())
                 {
                     return Some((r.id, r.rect));
                 }
@@ -57,9 +57,7 @@ impl MainView {
     ) -> Option<u32> {
         let sid = self.state.focused_surface_id(engine)?;
         let surface = engine.find_surface_by_id(sid)?;
-        surface
-            .as_any()
-            .downcast_ref::<AttachMeshSurface>()
+        surface.attach_mesh()
             .map(|_| sid)
     }
 
@@ -166,7 +164,7 @@ impl MainView {
         {
             for r in regions {
                 if engine.find_surface_by_id(r.id)
-                    .is_some_and(|surface| surface.as_any().is::<AttachMeshSurface>())
+                    .is_some_and(|surface| surface.attach_mesh().is_some())
                 {
                     targets.push((r.id, r.rect));
                 }

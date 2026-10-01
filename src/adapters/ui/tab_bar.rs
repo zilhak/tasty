@@ -225,16 +225,8 @@ fn compute_tab_html_script_markers(
         .map(|t| {
             let mut found: Option<TabScriptMarker> = None;
             for sid in t.all_surface_ids() {
-                let Some(rs) = engine.find_surface_by_id(sid).and_then(|s| {
-                    s.as_any()
-                        .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
-                }) else {
-                    continue;
-                };
-                if rs.kind_static != "html" {
-                    continue;
-                }
-                let kind = match rs.with_html_script(|st| st.marker()) {
+                let Some(snapshot) = engine.html_script(sid) else { continue; };
+                let kind = match snapshot.marker {
                     Some(ScriptMarker::Blocked) => HtmlScriptMarkerKind::Blocked,
                     Some(ScriptMarker::Allowed) => HtmlScriptMarkerKind::Allowed,
                     None => continue,
