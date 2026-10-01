@@ -1,4 +1,4 @@
-//! Contract fixtures for scoped cursors and admission pressure; execution is deferred by the host.
+//! Contract fixtures for scoped cursors and admission pressure.
 use std::collections::BTreeSet;
 use crate::*;
 use super::common::{fresh,append,new_effect};

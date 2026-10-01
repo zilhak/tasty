@@ -197,7 +197,7 @@ source pin 해제 실패는 보수적으로 참조를 남기고 다음 같은 �
 
 - [closed-tab-restore](../closed-tab-restore/index.md) · [layout-presets](../layout-presets/index.md) · [terminal](../terminal/index.md)(scrollback)
 - [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md) — 슬롯 모델을 고른 이유·대안·재검토 조건
-- [멀티 윈도우 아키텍처](../../architecture/multi-window.md) — 창 ↔ engine ↔ 슬롯 1:1 구조
+- [멀티 윈도우 아키텍처](../../architecture/multi-window.md) — GUI 저장 슬롯의 조건부 대응과 parked·retiring engine, headless 수명
 
 
 ### 부분 projection 위치와 저장 압력
@@ -208,7 +208,9 @@ source pin 해제 실패는 보수적으로 참조를 남기고 다음 같은 �
 
 신규 구조 명령에는 활성 DB 페이지와 WAL을 기준으로 내부 admission 예산이 적용된다.
 기본 ceiling은 896 MiB, 미확정 명령 credit은 64 MiB다. 재사용 가능한 DB freelist는 과금에서
-제외하며 압력 시 unpinned payload GC와 reader를 기다리지 않는 WAL truncate를 시도한다.
+제외하며 압력 시 reader를 기다리지 않는 WAL truncate를 시도한다. payload GC는 기존
+checkpoint에서 reader lease를 잠그고 최신 참조를 durable pin으로 옮긴 뒤 수행한다.
+admission gate가 그 동기화 없이 독립 GC를 실행하지 않는다.
 이미 확정된 명령의 같은 key 조회와 효과 완료·정리·복구는 이 gate 때문에 거절하지 않는다.
 이 값은 전체 DB 파일의 hard cap이나 OS 저장 공간 보장이 아니다. 정확한 범위와 설정 API는
 [저장소 결정](../../adr/0063-event-store-storage-fencing-and-effect-states.md#활성-저장량의-신규-admission-예산)에 있다.
