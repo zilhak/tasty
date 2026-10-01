@@ -109,23 +109,23 @@ pub(super) fn run(
             break;
         }
         let was_halted = halted.is_some();
-        let mut predecessor = if matches!(
-            request.work,
+        let publishes = match &request.work {
             Work::ReconcilePreparation { .. }
-                | Work::ReconcileRetirement { .. }
-                | Work::Capture { .. }
-                | Work::RetirementFinished { .. }
-                | Work::ForwardFinished { .. }
-                | Work::OpenEngine { .. }
-                | Work::RetireEngine(_)
-                | Work::Resolve { .. }
-                | Work::Prepared { .. }
-                | Work::CleanupFinished { .. }
-                | Work::InstallationRejected { .. }
-                | Work::PreparationUncertain { .. }
-                | Work::ClaimPreparation { .. }
-        ) && halted.is_none()
-        {
+            | Work::ReconcileRetirement { .. }
+            | Work::Capture { .. }
+            | Work::RetirementFinished { .. }
+            | Work::OpenEngine { .. }
+            | Work::Resolve { .. }
+            | Work::Prepared { .. }
+            | Work::CleanupFinished { .. }
+            | Work::InstallationRejected { .. }
+            | Work::PreparationUncertain { .. }
+            | Work::ClaimPreparation { .. } => true,
+            #[cfg(any(feature = "gui", test))]
+            Work::ForwardFinished { .. } | Work::RetireEngine(_) => true,
+            _ => false,
+        };
+        let mut predecessor = if publishes && halted.is_none() {
             match executor.with_state(Clone::clone) {
                 Ok(models) => Some(models),
                 Err(error) => {
@@ -145,8 +145,12 @@ pub(super) fn run(
         } else {
             Vec::new()
         };
-        let checkpoint_requested =
-            matches!(request.work, Work::Capture { .. } | Work::RetireEngine(_));
+        let checkpoint_requested = match &request.work {
+            Work::Capture { .. } => true,
+            #[cfg(any(feature = "gui", test))]
+            Work::RetireEngine(_) => true,
+            _ => false,
+        };
         let mut release_admission = matches!(
             request.work,
             Work::Resolve { .. } | Work::CancelAdmission | Work::Capture { .. }
@@ -289,6 +293,7 @@ fn handle(
                 .ok_or("original command missing")?;
             Ok(recovery::command_result(&inner.state, record, false))
         }
+        #[cfg(any(feature = "gui", test))]
         Work::RetireEngine(binding) => binding::retire(executor, home, ticket, binding),
         Work::OpenEngine {
             selection,
@@ -504,9 +509,11 @@ fn handle(
                 shell,
             )
         }
+        #[cfg(any(feature = "gui", test))]
         Work::ClaimForward { stream, operation } => {
             effects::claim_forward(executor, &stream, &operation)
         }
+        #[cfg(any(feature = "gui", test))]
         Work::ForwardFinished { lease, outcome } => effects::forwarded(executor, lease, outcome),
         Work::Capture { binding, surfaces } => {
             capture::persist(executor, ticket, binding, surfaces)

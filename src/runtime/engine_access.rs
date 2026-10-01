@@ -21,6 +21,7 @@ pub(crate) struct EngineMut<'a> {
 
 #[derive(Clone, Copy)]
 pub(crate) struct EngineRef<'a> {
+    #[cfg(feature = "gui")]
     pub(crate) journal_binding: Option<&'a super::journal_product::EngineBinding>,
     pub(crate) core: &'a CoreState,
     pub(crate) persistence: &'a super::engine_session::EnginePersistence,
@@ -39,6 +40,7 @@ impl EngineMut<'_> {
 
     pub(crate) fn as_ref(&self) -> EngineRef<'_> {
         EngineRef {
+            #[cfg(feature = "gui")]
             journal_binding: self.journal_binding,
             core: self.core,
             persistence: self.persistence,

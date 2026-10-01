@@ -6,6 +6,7 @@ pub(super) struct PendingCapture {
     work: Option<Work>,
 }
 impl JournalApplication {
+    #[cfg(feature = "gui")]
     pub(crate) fn queue_surface_capture(&mut self, session: &EngineSession, force: bool) {
         if self.is_halted() || !session.runtime.settings.general.restore_layout {
             return;
@@ -16,6 +17,7 @@ impl JournalApplication {
             .or_insert(force);
         (self.wake)();
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn has_pending_capture(&self, engine: EngineId) -> bool {
         self.capture_requests.contains_key(&engine)
             || self
@@ -160,6 +162,7 @@ pub(crate) enum PresetCaptureReply {
         call_id: u64,
         name: Option<String>,
     },
+    #[cfg(feature = "gui")]
     Intent {
         origin: crate::intent::IntentOrigin,
         view: std::sync::Weak<()>,
@@ -167,13 +170,17 @@ pub(crate) enum PresetCaptureReply {
     },
 }
 pub(crate) struct PresetCaptureCompletion {
+    #[cfg(feature = "gui")]
     pub(crate) engine: EngineId,
+    #[cfg(feature = "gui")]
     pub(crate) binding: crate::runtime::journal_product::EngineBinding,
     pub(crate) reply: PresetCaptureReply,
     pub(crate) result: Result<(crate::intent::ClonedPreset, String), String>,
 }
 struct PendingPresetCapture {
+    #[cfg(feature = "gui")]
     engine: EngineId,
+    #[cfg(feature = "gui")]
     binding: crate::runtime::journal_product::EngineBinding,
     reply: PresetCaptureReply,
     work: Option<Work>,
@@ -248,7 +255,9 @@ impl JournalApplication {
         self.preset_captures.pending.insert(
             ticket,
             PendingPresetCapture {
+                #[cfg(feature = "gui")]
                 engine: engine_id,
+                #[cfg(feature = "gui")]
                 binding,
                 reply,
                 work: Some(Work::CapturePreset { draft }),
@@ -375,7 +384,9 @@ impl JournalApplication {
         self.preset_captures
             .completed
             .push(PresetCaptureCompletion {
+                #[cfg(feature = "gui")]
                 engine: pending.engine,
+                #[cfg(feature = "gui")]
                 binding: pending.binding,
                 reply: pending.reply,
                 result: captured,
@@ -384,6 +395,7 @@ impl JournalApplication {
         true
     }
 
+    #[cfg(feature = "gui")]
     pub(crate) fn has_pending_preset_capture(&self, engine: EngineId) -> bool {
         self.preset_captures
             .pending
@@ -396,6 +408,7 @@ impl JournalApplication {
                 .any(|result| result.engine == engine)
     }
 
+    #[cfg(feature = "gui")]
     pub(crate) fn has_pending_preset_captures(&self) -> bool {
         !self.preset_captures.pending.is_empty() || !self.preset_captures.completed.is_empty()
     }
@@ -413,6 +426,7 @@ impl JournalApplication {
 
 /// Save completion belongs to the original View. The caller validates its weak identity before
 /// emitting toast/dialog changes; an absent View never prevents an already accepted preset save.
+#[cfg(feature = "gui")]
 pub(crate) struct PresetCaptureNotice {
     pub(crate) engine: EngineId,
     pub(crate) binding: crate::runtime::journal_product::EngineBinding,
@@ -426,9 +440,11 @@ impl PresetCaptureCompletion {
         services: &crate::app::services::AppServices,
     ) -> Option<PresetCaptureOutput> {
         let name = match &self.reply {
-            PresetCaptureReply::Ipc { name, .. }
-            | PresetCaptureReply::Intent { name, .. }
-            | PresetCaptureReply::Plugin { name, .. } => name.as_deref(),
+            PresetCaptureReply::Ipc { name, .. } | PresetCaptureReply::Plugin { name, .. } => {
+                name.as_deref()
+            }
+            #[cfg(feature = "gui")]
+            PresetCaptureReply::Intent { name, .. } => name.as_deref(),
         };
         let result = self
             .result
@@ -489,6 +505,7 @@ impl PresetCaptureCompletion {
                     response,
                 }))
             }
+            #[cfg(feature = "gui")]
             PresetCaptureReply::Intent { origin, view, .. } => {
                 Some(PresetCaptureOutput::Intent(PresetCaptureNotice {
                     engine: self.engine,
@@ -516,6 +533,7 @@ fn preset_reply_weight(reply: &PresetCaptureReply) -> usize {
             .to_string()
             .len()
             .saturating_add(name.as_ref().map_or(0, String::len)),
+        #[cfg(feature = "gui")]
         PresetCaptureReply::Intent { name, .. } => name.as_ref().map_or(0, String::len),
         PresetCaptureReply::Plugin { plugin, name, .. } => plugin
             .len()
@@ -524,6 +542,7 @@ fn preset_reply_weight(reply: &PresetCaptureReply) -> usize {
 }
 
 pub(crate) enum PresetCaptureOutput {
+    #[cfg(feature = "gui")]
     Intent(PresetCaptureNotice),
     Plugin(PresetPluginReply),
 }

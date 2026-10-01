@@ -99,6 +99,7 @@ impl EngineSession {
 
     pub(crate) fn as_ref(&self) -> EngineRef<'_> {
         EngineRef {
+            #[cfg(feature = "gui")]
             journal_binding: self.journal_binding.as_ref(),
             core: &self.core_state,
             persistence: &self.persistence,

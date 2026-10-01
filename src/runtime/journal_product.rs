@@ -54,10 +54,12 @@ pub(crate) enum Work {
         lease: EffectLease,
         evidence: Vec<u8>,
     },
+    #[cfg(any(feature = "gui", test))]
     ClaimForward {
         stream: String,
         operation: tasty_core::OperationId,
     },
+    #[cfg(any(feature = "gui", test))]
     ForwardFinished {
         lease: EffectLease,
         outcome: tasty_core::OperationOutcome,
@@ -90,6 +92,7 @@ pub(crate) enum Work {
     CapturePreset {
         draft: crate::intent::preset_capture::PresetCaptureDraft,
     },
+    #[cfg(any(feature = "gui", test))]
     RetireEngine(EngineBinding),
     OpenEngine {
         selection: EngineSelection,
@@ -159,6 +162,7 @@ pub(crate) enum ResultValue {
         reason: String,
         replay: bool,
     },
+    #[cfg(any(feature = "gui", test))]
     ForwardClaimed {
         lease: EffectLease,
         payload: Vec<u8>,
@@ -463,6 +467,7 @@ pub(crate) fn request_size(work: &Work) -> usize {
             binding.stream.len() + binding.journal_id.len() + 96,
             |sum, surface| sum.saturating_add(surface.weight()),
         ),
+        #[cfg(any(feature = "gui", test))]
         Work::RetireEngine(binding) => binding.stream.len() + binding.journal_id.len() + 64,
         #[cfg(feature = "gui")]
         Work::SaveView(view) => serde_json::to_vec(view).map_or(usize::MAX, |bytes| bytes.len()),
@@ -508,8 +513,9 @@ pub(crate) fn request_size(work: &Work) -> usize {
         Work::PutPreparation(input) => {
             serde_json::to_vec(input).map_or(usize::MAX, |bytes| bytes.len())
         }
-        Work::ClaimForward { stream, operation }
-        | Work::ClaimPreparation { stream, operation }
+        #[cfg(any(feature = "gui", test))]
+        Work::ClaimForward { stream, operation } => stream.len().saturating_add(operation.0.len()),
+        Work::ClaimPreparation { stream, operation }
         | Work::ClaimRetirement { stream, operation } => {
             stream.len().saturating_add(operation.0.len())
         }
@@ -523,7 +529,11 @@ pub(crate) fn request_size(work: &Work) -> usize {
         Work::CleanupFinished { lease, view } => {
             serde_json::to_vec(&(lease, view)).map_or(usize::MAX, |bytes| bytes.len())
         }
-        Work::ForwardFinished { lease, outcome } | Work::RetirementFinished { lease, outcome } => {
+        #[cfg(any(feature = "gui", test))]
+        Work::ForwardFinished { lease, outcome } => {
+            serde_json::to_vec(&(lease, outcome)).map_or(usize::MAX, |bytes| bytes.len())
+        }
+        Work::RetirementFinished { lease, outcome } => {
             serde_json::to_vec(&(lease, outcome)).map_or(usize::MAX, |bytes| bytes.len())
         }
         Work::CancelAdmission => 0,

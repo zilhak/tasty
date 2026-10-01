@@ -16,6 +16,7 @@ impl AppServices {
                 hard_occupied: true,
             };
         }
+        #[cfg(feature = "gui")]
         if let crate::app::command::SendPayload::Bound { generation, .. } = &payload
             && !engine
                 .runtime
@@ -29,8 +30,11 @@ impl AppServices {
         }
         let sent = if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
             match payload {
-                crate::app::command::SendPayload::Bytes(bytes)
-                | crate::app::command::SendPayload::Bound { bytes, .. } => {
+                crate::app::command::SendPayload::Bytes(bytes) => {
+                    terminal.send_bytes(&bytes);
+                }
+                #[cfg(feature = "gui")]
+                crate::app::command::SendPayload::Bound { bytes, .. } => {
                     terminal.send_bytes(&bytes);
                 }
                 crate::app::command::SendPayload::Text(text) => {

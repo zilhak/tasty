@@ -124,6 +124,7 @@ pub(super) fn restore_key(binding: &EngineBinding) -> Result<Option<String>, Str
     Ok(Some(format!("view:slot-{slot}")))
 }
 
+#[cfg(feature = "gui")]
 pub(super) fn save(
     store: &mut tasty_event_store::EventStore,
     epoch: tasty_event_store::WriterEpoch,

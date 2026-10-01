@@ -137,6 +137,13 @@ pub enum Intent {
     Domain(crate::app::command::DomainIntent),
 
     /// 사용자 요청일 때만 적용 후 포커스를 옮긴다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "View input constructs this intent; the shared adapter resolves it while headless IPC uses journal requests"
+        )
+    )]
     ApplyPreset {
         kind: tasty_presets::PresetKind,
         name: String,
@@ -144,6 +151,13 @@ pub enum Intent {
         category: Option<crate::model::WorkspaceCategoryId>,
     },
     /// explicit_name을 우선 사용하고, 없으면 base_name으로 중복되지 않는 이름을 만든다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "View input constructs this intent; the shared adapter resolves it while headless IPC uses journal requests"
+        )
+    )]
     CapturePreset {
         kind: tasty_presets::PresetKind,
         source: u32,
@@ -151,14 +165,35 @@ pub enum Intent {
     },
 
     /// 포커스된 surface를 분할한다. 사용자 단축키용이며 IPC는 ID를 지정한다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "View input constructs this intent; the shared adapter resolves it while headless IPC uses journal requests"
+        )
+    )]
     SplitSurface { direction: SplitDirection },
     /// Terminal은 호스트 내장 종류이며 나머지는 등록된 kind를 사용한다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "View input constructs this intent; the shared adapter resolves it while headless IPC uses journal requests"
+        )
+    )]
     ConvertSurface {
         surface_id: u32,
         target: ConvertTarget,
     },
 
     /// 포커스된 pane에 탭을 추가한다. kind가 None이면 terminal을 사용한다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "View input constructs this intent; the shared adapter resolves it while headless IPC uses journal requests"
+        )
+    )]
     NewTab {
         kind: Option<String>,
         params: serde_json::Value,
@@ -172,6 +207,13 @@ pub enum Intent {
     },
 
     /// 포커스된 pane을 분할하는 사용자 단축키 명령.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "View input constructs this intent; the shared adapter resolves it while headless IPC uses journal requests"
+        )
+    )]
     SplitPane { direction: SplitDirection },
 
     /// Practice setup completion belongs to this original tutorial attempt.
@@ -179,6 +221,13 @@ pub enum Intent {
     PrepareTutorial { ticket: std::sync::Weak<()> },
 
     /// kind가 None이면 terminal을 사용한다. 사용자 요청일 때만 새 워크스페이스를 활성화한다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "View input constructs this intent; the shared adapter resolves it while headless IPC uses journal requests"
+        )
+    )]
     NewWorkspace {
         kind: Option<String>,
         params: serde_json::Value,
@@ -187,9 +236,23 @@ pub enum Intent {
     },
 
     /// 최근 닫은 항목을 포커스된 pane에 복원한다. 필요한 워크스페이스는 먼저 만든다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "View input constructs this intent; the shared adapter resolves it while headless IPC uses journal requests"
+        )
+    )]
     RestoreClosedItem,
 
     /// 사용자가 이름 변경 팝업에 직접 입력한 이름. 적용 뒤 user_direct host 이벤트를 낸다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "View input constructs this intent; the shared adapter resolves it while headless IPC uses journal requests"
+        )
+    )]
     DirectRename(rename::DirectRename),
     #[cfg(feature = "gui")]
     CommitDivider(crate::state::layout_preview::DividerCommit),

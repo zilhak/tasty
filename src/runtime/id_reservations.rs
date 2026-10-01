@@ -9,10 +9,12 @@ const KINDS: [IdKind; 4] = [
     IdKind::Surface,
 ];
 #[derive(Debug)]
+#[cfg(any(feature = "gui", test))]
 pub(crate) enum ReservationError {
     Pending,
     Unavailable(String),
 }
+#[cfg(any(feature = "gui", test))]
 impl std::fmt::Display for ReservationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -21,7 +23,9 @@ impl std::fmt::Display for ReservationError {
         }
     }
 }
+#[cfg(any(feature = "gui", test))]
 impl std::error::Error for ReservationError {}
+#[cfg(any(feature = "gui", test))]
 impl From<&str> for ReservationError {
     fn from(error: &str) -> Self {
         Self::Unavailable(error.into())
@@ -35,10 +39,12 @@ struct Bank {
 }
 #[derive(Clone, Default)]
 pub(crate) struct IdReservations(Arc<Mutex<Bank>>);
+#[cfg(any(feature = "gui", test))]
 pub(crate) struct ReservedIds {
     ranges: Mutex<BTreeMap<IdKind, VecDeque<std::ops::Range<u64>>>>,
     bank: std::sync::Weak<Mutex<Bank>>,
 }
+#[cfg(any(feature = "gui", test))]
 impl Drop for ReservedIds {
     fn drop(&mut self) {
         let (Some(bank), Ok(ranges)) = (self.bank.upgrade(), self.ranges.get_mut()) else {
@@ -120,6 +126,7 @@ impl IdReservations {
             bank.failure = Some(reason);
         }
     }
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn ensure(&self, needed: &[(IdKind, u32)]) -> Result<(), ReservationError> {
         let mut bank = self
             .0
@@ -148,6 +155,7 @@ impl IdReservations {
         }
     }
     /// Preflight and consume all ranges together, before installing any mirror resources.
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn lease(&self, needed: &[(IdKind, u32)]) -> Result<ReservedIds, ReservationError> {
         let mut bank = self.0.lock().map_err(|_| "ID reservation bank poisoned")?;
         if let Some(error) = &bank.failure {
@@ -191,6 +199,7 @@ impl IdReservations {
         })
     }
 }
+#[cfg(any(feature = "gui", test))]
 impl ReservedIds {
     fn next(&self, kind: IdKind) -> anyhow::Result<u32> {
         let mut ranges = self

@@ -13,7 +13,9 @@ pub(crate) mod forward;
 mod process_release;
 mod publication;
 mod resource_cleanup;
-pub(crate) use capture::{PresetCaptureNotice, PresetCaptureOutput, PresetCaptureReply};
+#[cfg(feature = "gui")]
+pub(crate) use capture::PresetCaptureNotice;
+pub(crate) use capture::{PresetCaptureOutput, PresetCaptureReply};
 mod id_reservations;
 #[cfg(feature = "gui")]
 mod retirement;

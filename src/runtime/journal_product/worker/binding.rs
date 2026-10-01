@@ -263,6 +263,7 @@ fn imported_view(
         .map_err(|error| error.to_string())
 }
 
+#[cfg(any(feature = "gui", test))]
 pub(super) fn retire(
     executor: &Executor<StructureDecider>,
     home: &std::path::Path,

@@ -501,6 +501,7 @@ pub(super) fn read_original_results(
     super::super::response::OriginalResults::from_record(&record)
 }
 
+#[cfg(any(feature = "gui", test))]
 pub(super) fn claim_forward(
     executor: &Executor<StructureDecider>,
     stream: &str,
@@ -588,6 +589,7 @@ pub(super) fn claim_forward(
         payload,
     })
 }
+#[cfg(any(feature = "gui", test))]
 pub(super) fn forwarded(
     executor: &Executor<StructureDecider>,
     lease: EffectLease,

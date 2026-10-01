@@ -8,6 +8,7 @@ use super::{Intent, OpenPopupMode, UiIntent};
 use crate::state::RequestContext;
 
 /// 헤드리스에서는 팝업을 표시할 수 없어 요청을 무시한다.
+#[cfg(feature = "gui")]
 pub fn handle(
     state: &mut RequestContext,
     engine: &mut crate::runtime::engine_access::EngineMut<'_>,

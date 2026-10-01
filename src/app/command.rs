@@ -26,6 +26,7 @@ pub(crate) enum SendPayload {
     Bytes(Vec<u8>),
     Text(String),
     /// Live-only delayed user input, bound to the resource which accepted the operation.
+    #[cfg(feature = "gui")]
     Bound {
         generation: tasty_terminal::ResourceGeneration,
         bytes: Vec<u8>,
@@ -63,27 +64,62 @@ pub(crate) enum DomainIntent {
         category: Option<crate::model::WorkspaceCategoryId>,
     },
     /// Source identity is fixed at admission; the destination is an order coordinate.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "GUI input constructs this explicit target; headless IPC resolves its wire request directly in the journal"
+        )
+    )]
     MoveWorkspace {
         workspace_id: u32,
         to_index: usize,
     },
 
     /// 없는 workspace나 카테고리면 오류다. workspace 순서와 사용자 선택은 바꾸지 않는다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "GUI input constructs this explicit target; headless IPC resolves its wire request directly in the journal"
+        )
+    )]
     SetWorkspaceCategory {
         workspace_id: u32,
         category: crate::model::WorkspaceCategoryId,
     },
 
     /// 이름을 검증해 목록 끝에 추가한다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "GUI input constructs this explicit target; headless IPC resolves its wire request directly in the journal"
+        )
+    )]
     CreateCategory {
         name: String,
     },
     /// normal은 이름을 바꿀 수 없다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "GUI input constructs this explicit target; headless IPC resolves its wire request directly in the journal"
+        )
+    )]
     RenameCategory {
         id: crate::model::WorkspaceCategoryId,
         name: String,
     },
     /// normal은 지울 수 없다. 안의 workspace는 normal로 옮긴다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "GUI input constructs this explicit target; headless IPC resolves its wire request directly in the journal"
+        )
+    )]
     DeleteCategory {
         id: crate::model::WorkspaceCategoryId,
     },
@@ -106,9 +142,23 @@ pub(crate) enum DomainIntent {
         surface_id: u32,
         generation: tasty_terminal::ResourceGeneration,
     },
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "GUI input constructs this explicit target; headless IPC resolves its wire request directly in the journal"
+        )
+    )]
     CloseTab {
         tab_id: u32,
     },
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "GUI input constructs this explicit target; headless IPC resolves its wire request directly in the journal"
+        )
+    )]
     MoveTab {
         pane_id: u32,
         tab_id: u32,
@@ -137,11 +187,25 @@ pub(crate) enum DomainIntent {
         kind: String,
         surface_params: Value,
     },
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "GUI input constructs this explicit target; headless IPC resolves its wire request directly in the journal"
+        )
+    )]
     ClosePane {
         pane_id: u32,
     },
     /// 빈 상위 tab·pane·workspace까지 닫을 수 있다. save_snapshot은 복원 기록 저장 여부다.
     /// 자원·메모리 정리, 활성 workspace 보정과 빈 창 보충은 호출자의 후속 처리다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "GUI input constructs this explicit target; headless IPC resolves its wire request directly in the journal"
+        )
+    )]
     CloseSurface {
         surface_id: u32,
         presentation: Option<Box<crate::model::StructurePresentationSnapshot>>,
@@ -153,6 +217,13 @@ pub(crate) enum DomainIntent {
     },
     /// source의 Terminal·scrollback·ID는 유지하며 target 위치로 옮긴다.
     /// 덮어쓴 target은 후속 처리로 정리하고 닫기 복원 기록에 남기지 않는다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(
+            dead_code,
+            reason = "GUI input constructs this explicit target; headless IPC resolves its wire request directly in the journal"
+        )
+    )]
     MoveSurface {
         source_surface_id: u32,
         target_surface_id: u32,
