@@ -15,7 +15,7 @@ pub fn handle_cancel(
         Some(s) if !s.is_empty() => ApprovalId(s.to_string()),
         _ => return JsonRpcResponse::invalid_params(id, "Missing 'id'"),
     };
-    match core.cancel_approval(engine, &req_id) {
+    match core.cancel_approval(&req_id) {
         Ok(change) => {
             persist_record(core, &change.record);
             crate::adapters::ipc::handler::memory::written(core, id, record_to_json(&change.record))
@@ -91,7 +91,7 @@ pub(crate) fn spawn_approval_await(
 }
 
 pub fn handle_get(
-    _core: &AppServices,
+    core: &AppServices,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -101,7 +101,7 @@ pub fn handle_get(
         Some(s) if !s.is_empty() => ApprovalId(s.to_string()),
         _ => return JsonRpcResponse::invalid_params(id, "Missing 'id'"),
     };
-    match engine.approval_store.get(&req_id) {
+    match core.approval_store.get(&req_id) {
         Some(rec) => JsonRpcResponse::success(id, record_to_json(&rec)),
         None => JsonRpcResponse::success(id, Value::Null),
     }
@@ -110,7 +110,7 @@ pub fn handle_get(
 /// `approval.list` — 전체 record. 필터: `state` (pending|responded|timed_out|cancelled|terminal),
 /// `workspace_id`.
 pub fn handle_list(
-    _core: &AppServices,
+    core: &AppServices,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -123,7 +123,7 @@ pub fn handle_list(
             Err(e) => return e,
         };
 
-    let mut records = engine.approval_store.list();
+    let mut records = core.approval_store.list();
     if let Some(f) = state_filter {
         records.retain(|r| {
             use tasty_approval::ApprovalState as S;

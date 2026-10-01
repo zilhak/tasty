@@ -1101,6 +1101,7 @@ impl App {
         id: WindowId,
         event: WindowEvent,
     ) {
+        self.refresh_approval_presentations();
         let modal_active = self.view.is_modal_active();
         let action = {
             if let Some(w) = self.view.views.get_mut(&id) {

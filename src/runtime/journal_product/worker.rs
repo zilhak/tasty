@@ -1,6 +1,7 @@
 mod binding;
 mod effects;
 mod capture;
+mod assembly;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -273,7 +274,8 @@ fn handle(
                     return Err("effect results require their validated lease endpoint".into());
                 }
                 if let tasty_domain::StructuralCommand::PrepareCreation { input, .. }
-                    |tasty_domain::StructuralCommand::Close {input,..} = &change.command
+                    |tasty_domain::StructuralCommand::Close {input,..}
+                    |tasty_domain::StructuralCommand::PrepareAssembly {input,..} = &change.command
                     && !admitted.inputs.contains(input)
                 {
                     return Err("preparation input belongs to another admission".into());
@@ -324,10 +326,14 @@ fn handle(
                 .map_err(|e| e.to_string())?;
             Ok(ResultValue::Executed(executed))
         }
+        Work::PrepareUndo {binding,target_pane,scope,shell}=> {
+            let admitted=pending.get_mut(&ticket).ok_or("undo input has no admitted owner")?;
+            assembly::undo(executor,admitted,ticket,binding,target_pane,scope,shell)
+        },
         Work::Capture {binding,surfaces}=>capture::persist(executor,ticket,binding,surfaces),
-        Work::CaptureClosed {binding,target,display_name,surfaces}=>{
+        Work::CaptureClosed {view,binding,target,display_name,surfaces}=>{
             let admitted=pending.get_mut(&ticket).ok_or("close capture has no admitted request")?;
-            let (input,undo)=capture::closed(executor,ticket,binding,target,display_name,surfaces)?;
+            let (input,undo)=capture::closed(executor,ticket,binding,target,display_name,surfaces,view)?;
             admitted.inputs.push(input);
             if let Some(capture)=&undo {admitted.inputs.extend(capture.data_refs());}
             Ok(ResultValue::ClosedCaptured {input,undo})

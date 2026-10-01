@@ -53,7 +53,7 @@ pub(super) fn persist(executor:&Executor<StructureDecider>,ticket:u64,binding:En
 
 /// A user close snapshots the canonical removed subtree. Lazy payload/seed references are copied
 /// without opening a factory, while live observations replace only the matching captured instances.
-pub(super) fn closed(executor:&Executor<StructureDecider>,ticket:u64,binding:EngineBinding,target:tasty_domain::CloseTarget,display_name:Option<String>,captures:Vec<CapturedSurface>)->Result<(tasty_domain::DataRef,Option<tasty_domain::UndoCapture>),String> {
+pub(super) fn closed(executor:&Executor<StructureDecider>,ticket:u64,binding:EngineBinding,target:tasty_domain::CloseTarget,display_name:Option<String>,captures:Vec<CapturedSurface>,view:super::super::CompletionView)->Result<(tasty_domain::DataRef,Option<tasty_domain::UndoCapture>),String> {
     executor.with_state(|_|()).map_err(|error|error.to_string())?;
     let mut inner=executor.inner.lock().map_err(|error|error.to_string())?;
     let epoch=inner.epoch;
@@ -65,6 +65,7 @@ pub(super) fn closed(executor:&Executor<StructureDecider>,ticket:u64,binding:Eng
     let input=serde_json::to_vec(&target).map_err(|error|error.to_string())?;
     let input=inner.store.put_payload_pinned(epoch,&input,&holder).map_err(|error|error.to_string())?;
     let Some(mut snapshot)=snapshot else {return Ok((tasty_domain::DataRef(input.0),None));};
+    snapshot.presentation=tasty_domain::UndoPresentation {focused_panes:view.focused_panes.into_iter().filter(|(workspace,_)|snapshot.workspaces.contains_key(workspace)).collect(),selected_tabs:view.selected_tabs.into_iter().filter(|(pane,_)|snapshot.panes.contains_key(pane)).collect(),selected_surfaces:view.selected_surfaces.into_iter().filter(|(tab,_)|snapshot.tabs.contains_key(tab)).collect()};
     for capture in captures {
         let surface=snapshot.surfaces.get_mut(&capture.surface).ok_or("capture is outside the closed subtree")?;
         if surface.kind!=capture.kind || surface.activation.map(|activation|activation.generation)!=capture.activation {

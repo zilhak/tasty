@@ -131,6 +131,9 @@ impl AppServicesBuilder {
             Arc::clone(&host_ipc_injector),
         );
         Ok(AppServices {
+            approval_store: Arc::new(tasty_approval::ApprovalStore::new()),
+            telemetry_seq: Arc::new(tasty_telemetry::TelemetrySeq::new()),
+            anomaly_detector: Arc::new(tasty_telemetry::AnomalyDetector::new()),
             fs: self
                 .fs
                 .ok_or_else(|| anyhow::anyhow!("FileSystem missing"))?,

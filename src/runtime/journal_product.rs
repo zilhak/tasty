@@ -41,8 +41,9 @@ pub(crate) struct Admission {
 
 #[derive(Debug)]
 pub(crate) enum Work {
+    PrepareUndo {binding:EngineBinding,target_pane:Option<u32>,scope:Option<u32>,shell:ShellRecipe},
     ReserveExecutionIds {binding:EngineBinding,kinds:Vec<(IdKind,u32)>},
-    CaptureClosed {binding:EngineBinding,target:tasty_domain::CloseTarget,display_name:Option<String>,surfaces:Vec<crate::runtime::surface_capture::CapturedSurface>},
+    CaptureClosed {view:CompletionView,binding:EngineBinding,target:tasty_domain::CloseTarget,display_name:Option<String>,surfaces:Vec<crate::runtime::surface_capture::CapturedSurface>},
     Capture {binding:EngineBinding,surfaces:Vec<crate::runtime::surface_capture::CapturedSurface>},
     RetireEngine(EngineBinding),
     OpenEngine {
@@ -94,6 +95,7 @@ pub(crate) struct Request {
 
 #[derive(Debug, Clone)]
 pub(crate) enum ResultValue {
+    AssemblyResolved {stream:String,input:Option<tasty_domain::DataRef>,plan:Option<tasty_domain::CreationAssembly>},
     #[cfg(feature = "gui")]
     ViewSaved,
     Bound(BoundEngine),
@@ -316,8 +318,9 @@ fn request_payload_too_large(work: &Work) -> bool {
 
 pub(crate) fn request_size(work: &Work) -> usize {
     match work {
+        Work::PrepareUndo {binding,target_pane,scope,shell}=>serde_json::to_vec(&(binding,target_pane,scope,shell)).map_or(usize::MAX,|bytes|bytes.len()),
         Work::ReserveExecutionIds {binding,kinds}=>binding.stream.len()+binding.journal_id.len()+kinds.capacity()*std::mem::size_of::<(IdKind,u32)>(),
-        Work::CaptureClosed {binding,surfaces,display_name,..}=>surfaces.iter().fold(binding.stream.len()+binding.journal_id.len()+display_name.as_ref().map_or(0,String::len)+96,|sum,surface|sum.saturating_add(surface.weight())),
+        Work::CaptureClosed {view,binding,surfaces,display_name,..}=>surfaces.iter().fold(serde_json::to_vec(view).map_or(usize::MAX,|bytes|bytes.len()).saturating_add(binding.stream.len())+binding.journal_id.len()+display_name.as_ref().map_or(0,String::len)+96,|sum,surface|sum.saturating_add(surface.weight())),
         Work::Capture {binding,surfaces}=>surfaces.iter().fold(binding.stream.len()+binding.journal_id.len()+96,|sum,surface|sum.saturating_add(surface.weight())),
         Work::RetireEngine(binding) => binding.stream.len() + binding.journal_id.len() + 64,
         #[cfg(feature = "gui")]

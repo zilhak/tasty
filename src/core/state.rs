@@ -112,14 +112,6 @@ pub struct CoreState {
 
     pub(crate) closed_items: crate::model::ClosedItemStore,
 
-    pub(crate) approval_store: std::sync::Arc<tasty_approval::ApprovalStore>,
-
-    /// 같은 밀리초에 발생한 telemetry 키를 구별할 이 engine의 순번.
-    pub(crate) telemetry_seq: std::sync::Arc<tasty_telemetry::TelemetrySeq>,
-
-    /// 이 engine의 메모리 내 이상 탐지 상태. 탐지 기록 저장은 호출자가 맡는다.
-    pub(crate) anomaly_detector: std::sync::Arc<tasty_telemetry::AnomalyDetector>,
-
     /// "이동"으로 지정한 대상. 종류와 관계없이 하나만 대기하며 새로 지정하면 덮어쓴다. 저장하지 않는다.
     pub(crate) pending_move: Option<PendingMove>,
 
@@ -207,9 +199,6 @@ impl CoreState {
             default_rows: rows,
             settings,
             closed_items: crate::model::ClosedItemStore::new(),
-            approval_store: std::sync::Arc::new(tasty_approval::ApprovalStore::new()),
-            telemetry_seq: std::sync::Arc::new(tasty_telemetry::TelemetrySeq::new()),
-            anomaly_detector: std::sync::Arc::new(tasty_telemetry::AnomalyDetector::new()),
             pending_move: None,
             layout_dirty: crate::core::layout_persistence::LayoutDirtyTracker::new(),
             pending_layout_restore: None,

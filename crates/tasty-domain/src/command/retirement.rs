@@ -17,7 +17,7 @@ pub(super) fn decide(model:&JournalModel,command:&StructuralCommand)->Result<Str
                 Ok((entity.id,pane))
             }).collect::<Result<Vec<_>,Rejection>>()?;
             let plan=RetirementPlan {target:*target,removed:removed.clone(),surfaces,undo:undo.clone(),tab_parents,is_user_close:*is_user_close};
-            let record=Operation {id:operation.clone(),command_id:command_id.clone(),engine_incarnation:model.engine_incarnation,creation:None,retirement:Some(plan.clone()),targets:removed,reserved:Vec::new(),input:*input,activation_generation:0,outcome:None,pending_outcome:None,cleanup:None,prepared_data:None,reconciliation_evidence:None};
+            let record=Operation {id:operation.clone(),command_id:command_id.clone(),engine_incarnation:model.engine_incarnation,creation:None,assembly:None,retirement:Some(plan.clone()),targets:removed,reserved:Vec::new(),input:*input,activation_generation:0,outcome:None,pending_outcome:None,cleanup:None,prepared_data:None,prepared_deferred:false,reconciliation_evidence:None};
             let mut events=vec![DomainEvent::OperationPrepared {operation:record}];
             if let Some(capture)=undo {
                 if !is_user_close {return Err(Rejection("only user close can append an undo record".into()));}

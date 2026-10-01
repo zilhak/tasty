@@ -291,11 +291,8 @@ impl App {
         }
         let attach_result=self.queue_mirror_connection(target,port,remote_ws,tunnel);
         match attach_result {
-            Ok(()) => {
-                if let Some(anchor) = anchor_ws_id {
-                    self.remote.reconnect.remove(&anchor);
-                }
-            }
+            // 접수는 성공 설치가 아니다. 실패 이력은 pending 설치 성공 때만 해제한다.
+            Ok(()) => {}
             Err(e) => {
                 tracing::warn!(
                     "attach mirror 실패 (anchor ws {anchor_ws_id:?}, remote ws {remote_ws}, reconnect={is_reconnect}): {e}"

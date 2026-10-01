@@ -30,6 +30,7 @@ pub(crate) struct PreparedMaterialization {
     previous_resource: Option<ResourceGeneration>,
     registration: Option<KindRegistration>,
     installed: bool,
+    deferred:bool,
     scrollback_persist_id: Option<String>,
 }
 
@@ -82,6 +83,7 @@ pub(crate) fn prepare(
 
     let mut scrollback_persist_id = None;
     let input = claimed.input;
+    let deferred=matches!(claimed.plan.destination,tasty_domain::CreationDestination::Assembly {..}) && input.kind!="terminal" && engine.runtime.surface_registry.get_live(&input.kind).is_none();
     let (surface, connection, publication, registration) = if input.kind == "terminal" {
         let shell = input
             .shell
@@ -152,6 +154,8 @@ pub(crate) fn prepare(
             None,
             None,
         )
+    } else if deferred {
+        (Box::new(crate::runtime::surface_restorer::JournalPlaceholder {id:surface_id,kind:input.kind.clone(),data:claimed.plan.surface.data,creation_seed:None,activation:Some(tasty_domain::Activation {generation:claimed.lease.resource_generation,phase:tasty_domain::ActivationPhase::Deferred})}) as Box<dyn crate::model::Surface>,None,None,None)
     } else {
         if let Some(plugin_id) = engine.runtime.surface_registry.withdrawn_by(&input.kind) {
             return Err(crate::runtime::surface_registry::SurfaceKindWithdrawn {
@@ -195,13 +199,16 @@ pub(crate) fn prepare(
         publication,
         previous_resource,
         registration,
-        installed: false,
+        installed: false,deferred,
         scrollback_persist_id,
     })
 }
 
 impl PreparedMaterialization {
     /// Installation consumes external handles while the engine keeps the unpublished kind leaf.
+    pub(crate) fn is_deferred(&self)->bool {self.deferred}
+    pub(crate) fn surface_id(&self)->Option<u32> {self.leaf.surface.surface_id()}
+
     pub(crate) fn begin_installation(
         &mut self,
         engine: &crate::core::CoreState,

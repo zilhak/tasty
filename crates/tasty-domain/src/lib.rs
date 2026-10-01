@@ -31,7 +31,7 @@ mod model;
 mod operation;
 mod retirement;
 mod undo;
-pub use undo::{UndoRecord,UndoCapture,ClosedSnapshot};
+pub use undo::{UndoRecord,UndoCapture,ClosedSnapshot,UndoPresentation,ClosedPanePosition};
 mod streams;
 
 #[cfg(test)]
@@ -63,3 +63,6 @@ pub use streams::{
 };
 
 pub use retirement::{CloseTarget,RetirementPlan,RetiredSurface};
+
+mod assembly;
+pub use assembly::{CreationAssembly,AssemblyDestination};

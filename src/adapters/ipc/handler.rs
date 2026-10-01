@@ -246,7 +246,7 @@ pub(crate) fn check_permission_gate(
 ) -> Option<JsonRpcResponse> {
     if let Err(e) = caller.ensure_allowed(canonical) {
         tracing::warn!("ipc permission denied: {e}");
-        let seq = engine.telemetry_seq.next();
+        let seq = core.telemetry_seq.next();
         crate::ipc::audit::record(
             core,
             caller,
@@ -300,7 +300,7 @@ pub(crate) fn check_cap_gate(
 ) -> Option<JsonRpcResponse> {
     if let Some(reason) = telemetry::check_cap_block(core, caller, canonical) {
         tracing::warn!("ipc cap blocked: {reason}");
-        let seq = engine.telemetry_seq.next();
+        let seq = core.telemetry_seq.next();
         crate::ipc::audit::record(
             core,
             caller,
@@ -338,7 +338,7 @@ pub(crate) fn check_rate_limit_gate(
         Ok(outcome) if !outcome.allowed => {
             let reason = format!("throttled: tokens_left={:.2}", outcome.tokens_left);
             tracing::warn!("ipc rate_limited: {reason}");
-            let seq = engine.telemetry_seq.next();
+            let seq = core.telemetry_seq.next();
             crate::ipc::audit::record(
                 core,
                 caller,
@@ -375,7 +375,7 @@ fn record_telemetry_and_audit(
     telemetry::record_ipc_call(core, window, &mut out, engine, caller, canonical, params);
     window.enqueue_intents(out);
 
-    let seq = engine.telemetry_seq.next();
+    let seq = core.telemetry_seq.next();
     crate::ipc::audit::record(
         core,
         caller,

@@ -40,6 +40,7 @@ pub(super) fn decide(
                 command_id: command_id.clone(),
                 engine_incarnation: model.engine_incarnation,
                 creation: Some(plan.clone()),
+                assembly:None,
                 retirement:None,
                 targets: plan.targets(),
                 reserved: plan.reserved_ids(),
@@ -48,7 +49,7 @@ pub(super) fn decide(
                 outcome: None,
                 pending_outcome: None,
                 cleanup: None,
-                prepared_data: None,
+                prepared_data: None,prepared_deferred:false,
                 reconciliation_evidence: None,
             };
             Ok(StructuralDecision {
@@ -84,6 +85,7 @@ pub(super) fn decide(
                 .as_ref()
                 .ok_or_else(|| Rejection("operation is not a creation".into()))?;
             if let PreparationResult::Failed { reason } = result {
+                if matches!(plan.destination,Destination::Assembly {..}) {return super::assembly::settle(model,operation,OperationOutcome::Failed {reason:reason.clone()});}
                 return Ok(failed(operation, plan, reason.clone(), false));
             }
             if operation.engine_incarnation != model.engine_incarnation {
@@ -97,8 +99,8 @@ pub(super) fn decide(
             if let Err(error) = validate_target(model, plan) {
                 return Ok(failed(operation, plan, error.0, true));
             }
-            let PreparationResult::Ready { data } = result else {
-                unreachable!()
+            let (data,deferred)=match result {
+                PreparationResult::Ready {data}=>(data,false),PreparationResult::Deferred {data}=>(data,true),_=>unreachable!(),
             };
             let mut events = Vec::new();
             let previous_activation = match &plan.destination {
@@ -119,7 +121,7 @@ pub(super) fn decide(
                     surface: plan.surface.id,
                     previous_activation,
                 },
-                prepared_data: *data,
+                prepared_data: *data,deferred,
             });
             Ok(StructuralDecision {
                 events,
@@ -150,6 +152,9 @@ pub(super) fn decide(
                 .pending_outcome
                 .clone()
                 .ok_or_else(|| Rejection("operation is not awaiting cleanup".into()))?;
+            if matches!(operation.creation.as_ref().map(|plan|&plan.destination),Some(Destination::Assembly {..})) {
+                return super::assembly::settle(model,operation,outcome);
+            }
             let result = match &outcome {
                 OperationOutcome::Succeeded => operation
                     .creation
@@ -190,7 +195,7 @@ pub(super) fn decide(
                     previous_generation,
                     activation: Activation {
                         generation: operation.activation_generation,
-                        phase: ActivationPhase::Ready,
+                        phase: if operation.prepared_deferred {ActivationPhase::Deferred}else {ActivationPhase::Ready},
                     },
                 });
                 if !matches!(plan.destination, Destination::Restore { .. }) {
@@ -230,6 +235,7 @@ pub(super) fn decide(
                     "installation is not waiting for publication".into(),
                 ));
             }
+            if matches!(operation.creation.as_ref().map(|plan|&plan.destination),Some(Destination::Assembly {..})) {return super::assembly::settle(model,operation,OperationOutcome::Failed {reason:reason.clone()});}
             Ok(StructuralDecision {
                 events: vec![DomainEvent::OperationFinished {
                     id: id.clone(),
@@ -255,6 +261,7 @@ pub(super) fn decide(
             if operation.outcome.is_some() || operation.pending_outcome.is_some() {
                 return Err(Rejection("operation is no longer unstarted".into()));
             }
+            if matches!(operation.creation.as_ref().map(|plan|&plan.destination),Some(Destination::Assembly {..})) {return super::assembly::settle(model,operation,OperationOutcome::Cancelled {reason:reason.clone()});}
             Ok(StructuralDecision {
                 events: vec![DomainEvent::OperationFinished {
                     id: id.clone(),
@@ -306,7 +313,7 @@ fn failed(
                     surface: plan.surface.id,
                     activation_generation: operation.activation_generation,
                 },
-                prepared_data: None,
+                prepared_data: None,deferred:false,
             }
         } else {
             DomainEvent::OperationFinished {
@@ -375,7 +382,7 @@ fn creation_events(model: &JournalModel, plan: &CreationPlan) -> Vec<DomainEvent
             });
             None
         }
-        Destination::Restore { .. } => None,
+        Destination::Restore { .. } | Destination::Assembly {..} => None,
         Destination::Convert {
             surface,
             explicit_name,

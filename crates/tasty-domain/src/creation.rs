@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CreationDestination {
+    Assembly {operation:OperationId},
     Workspace {
         workspace: u32,
         pane: u32,
@@ -71,7 +72,7 @@ impl CreationPlan {
                 vec![entity(IdKind::Pane, *pane), entity(IdKind::Tab, *tab)]
             }
             CreationDestination::Split { .. } => Vec::new(),
-            CreationDestination::Convert { .. } | CreationDestination::Restore { .. } => {
+            CreationDestination::Assembly {..}|CreationDestination::Convert { .. } | CreationDestination::Restore { .. } => {
                 return Vec::new();
             }
         };
@@ -81,6 +82,7 @@ impl CreationPlan {
 
     pub fn target_is_live(&self, model: &crate::JournalModel) -> bool {
         match &self.destination {
+            CreationDestination::Assembly {operation}=>model.operations.get(operation).is_some_and(|group|group.outcome.is_none() && group.assembly.as_ref().is_some_and(|plan|plan.snapshot.surfaces.contains_key(&self.surface.id) && plan.target_is_live(model))),
             CreationDestination::Workspace { category, .. } => {
                 model.categories.contains_key(category)
             }
@@ -113,6 +115,7 @@ impl CreationPlan {
 
     pub fn targets(&self) -> Vec<EntityId> {
         let (kind, id) = match &self.destination {
+            CreationDestination::Assembly {..}=>return Vec::new(),
             CreationDestination::Workspace { category, .. } => (IdKind::Category, *category),
             CreationDestination::Tab { pane, .. } => (IdKind::Pane, *pane),
             CreationDestination::Pane { target, .. } => (IdKind::Pane, *target),
@@ -126,6 +129,7 @@ impl CreationPlan {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PreparationResult {
+    Deferred {data:Option<DataRef>},
     Ready { data: Option<DataRef> },
     Failed { reason: String },
 }

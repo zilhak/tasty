@@ -106,8 +106,8 @@ fn detect_anomalies_after_ipc(
     params: &Value,
     ts: u64,
 ) -> Vec<tasty_telemetry::Anomaly> {
-    let seq = engine.telemetry_seq.next();
-    let detector = engine.anomaly_detector.clone();
+    let seq = core.telemetry_seq.next();
+    let detector = core.anomaly_detector.clone();
     let anomalies = detector.record_call(agent, method, params, ts, seq);
     for anomaly in &anomalies {
         if let Err(e) = persist_anomaly(core, anomaly) {
@@ -128,8 +128,8 @@ pub(crate) fn record_rss_sample(
     rss_bytes: u64,
     ts: u64,
 ) {
-    let seq = engine.telemetry_seq.next();
-    let detector = engine.anomaly_detector.clone();
+    let seq = core.telemetry_seq.next();
+    let detector = core.anomaly_detector.clone();
     let Some(anomaly) = detector.record_rss_sample(agent, rss_bytes, ts, seq) else {
         return;
     };
@@ -205,7 +205,7 @@ fn persist_event(
     engine: &mut crate::core::CoreState,
     ev: &TelemetryEvent,
 ) -> std::result::Result<String, String> {
-    let seq = engine.telemetry_seq.next();
+    let seq = core.telemetry_seq.next();
     let key = event_key(ev.ts, seq);
     let scope = scope_for(ev.workspace_id);
     let value = MemoryValue::Json(serde_json::to_value(ev).map_err(|e| e.to_string())?);

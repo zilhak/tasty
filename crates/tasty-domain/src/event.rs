@@ -209,6 +209,8 @@ pub enum DomainEvent {
         outcome: OperationOutcome,
         cleanup: crate::CleanupPlan,
         prepared_data: Option<DataRef>,
+        #[serde(default)]
+        deferred:bool,
     },
     #[serde(rename = "operation.finished")]
     OperationFinished {
@@ -243,7 +245,7 @@ impl DomainEvent {
             Self::SurfaceConverted { data, .. } => data.iter().copied().collect(),
             Self::SurfaceDataRecorded { data, .. } => vec![*data],
             Self::SurfaceCreationSeeded { input, .. } => vec![*input],
-            Self::OperationPrepared { operation } => std::iter::once(operation.input)
+            Self::OperationPrepared { operation } => operation.assembly.iter().flat_map(|plan|plan.data_refs()).chain(std::iter::once(operation.input))
                 .chain(
                     operation
                         .creation

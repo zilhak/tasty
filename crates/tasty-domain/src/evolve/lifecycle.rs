@@ -6,7 +6,7 @@ use crate::{
 pub(super) fn prepare(m: &mut JournalModel, operation: Operation) -> Result<()> {
     if operation.id.0.is_empty()
         || operation.command_id.is_empty()
-        || (operation.activation_generation == 0 && operation.retirement.is_none())
+        || (operation.activation_generation == 0 && operation.retirement.is_none() && operation.assembly.is_none())
         || operation.input.0 == 0
         || (operation.creation.is_some() && operation.retirement.is_some())
         || operation.outcome.is_some()
@@ -111,7 +111,7 @@ pub(super) fn finish(
     if !matches!(outcome, OperationOutcome::Uncertain { .. }) {
         op.pending_outcome = None;
         op.cleanup = None;
-        op.prepared_data = None;
+        if !matches!(op.creation.as_ref().map(|plan|&plan.destination),Some(crate::CreationDestination::Assembly {..})) {op.prepared_data = None;}
     }
     op.outcome = Some(outcome);
     op.reconciliation_evidence = evidence;
@@ -195,6 +195,7 @@ pub(super) fn await_cleanup(
     outcome: OperationOutcome,
     cleanup: crate::CleanupPlan,
     prepared_data: Option<DataRef>,
+    deferred:bool,
 ) -> Result<()> {
     let operation = m
         .operations
@@ -213,5 +214,6 @@ pub(super) fn await_cleanup(
     operation.pending_outcome = Some(outcome);
     operation.cleanup = Some(cleanup);
     operation.prepared_data = prepared_data;
+    operation.prepared_deferred=deferred;
     Ok(())
 }

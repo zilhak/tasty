@@ -2,6 +2,7 @@
 
 mod bootstrap;
 mod creation;
+mod assembly;
 mod metadata;
 pub(crate) mod retirement;
 
@@ -12,6 +13,7 @@ use crate::{DomainEvent, JournalModel, Ratio};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StructuralCommand {
+    PrepareAssembly {operation:crate::OperationId,command_id:String,input:crate::DataRef,plan:crate::CreationAssembly},
     RecordCapture {surface:u32,kind:String,activation:Option<u64>,content_generation:u64,snapshot_schema:u32,data:crate::DataRef},
     Close {operation:crate::OperationId,command_id:String,input:crate::DataRef,target:crate::CloseTarget,expected:Vec<crate::RetiredSurface>,undo:Option<crate::UndoCapture>,is_user_close:bool},
     FinishRetirement {operation:crate::OperationId,outcome:crate::OperationOutcome},
@@ -112,6 +114,7 @@ impl StructuralCommand {
     pub fn reserved_ids(&self) -> Vec<crate::EntityId> {
         match self {
             Self::PrepareCreation { plan, .. } => plan.reserved_ids(),
+            Self::PrepareAssembly {plan,..}=>plan.reserved_ids(),
             Self::CreateCategory { reserved_id, .. } => vec![crate::EntityId {
                 kind: crate::IdKind::Category,
                 id: *reserved_id,
@@ -181,6 +184,7 @@ pub fn decide_structure(
         return Err(Rejection("engine binding has been retired".into()));
     }
     let decision = match command {
+        StructuralCommand::PrepareAssembly {..}=>assembly::decide(model,command)?,
         StructuralCommand::RecordCapture {surface,kind,activation,content_generation,snapshot_schema,data}=> {
             let current=model.surfaces.get(surface).ok_or_else(||Rejection("capture target no longer exists".into()))?;
             if current.kind!=*kind || current.activation.map(|activation|activation.generation)!=*activation {

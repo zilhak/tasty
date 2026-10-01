@@ -222,9 +222,6 @@ impl App {
                     src.file_format.clone(),
                     src.file_handler.clone(),
                     src.identify_worker.clone(),
-                    src.approval_store.clone(),
-                    src.telemetry_seq.clone(),
-                    src.anomaly_detector.clone(),
                     additional_window_task_scope(src.task_scope, &self.services.tasks),
                     src.runtime.counters.clone(),
                 )
@@ -235,9 +232,6 @@ impl App {
                 file_format,
                 file_handler,
                 identify_worker,
-                approval_store,
-                telemetry_seq,
-                anomaly_detector,
                 task_scope,
                 next_ids,
             )) = shared
@@ -260,9 +254,6 @@ impl App {
                 engine.runtime.file_format = file_format;
                 engine.runtime.file_handler = file_handler;
                 engine.runtime.identify_worker = identify_worker;
-                engine.core_state.approval_store = approval_store;
-                engine.core_state.telemetry_seq = telemetry_seq;
-                engine.core_state.anomaly_detector = anomaly_detector;
                 engine.task_scope = task_scope;
                 #[cfg(debug_assertions)]
                 {

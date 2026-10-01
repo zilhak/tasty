@@ -150,6 +150,12 @@ fn route_non_domain(
     dispatched: &DispatchedIntent,
 ) {
     match &dispatched.body {
+        Intent::RespondApproval {request_id,choice,comment}=> {
+            match core.respond_approval(request_id,choice.clone(),tasty_approval::Responder::User,comment.clone()) {
+                Ok(change)=>crate::ipc::handler::approval::persist_record(core,&change.record),
+                Err(error)=>tracing::warn!("approval response failed: {error}"),
+            }
+        },
         Intent::Ui(_) => crate::intent::popup::handle(state, engine, dispatched),
         Intent::ApplyPreset { .. } | Intent::SavePreset { .. } => {
             crate::intent::preset::handle(core, state, engine, dispatched);

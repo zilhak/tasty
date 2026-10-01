@@ -2,6 +2,7 @@
 mod category;
 mod create;
 mod close;
+mod assembly;
 mod create_spec;
 mod display;
 #[cfg(feature = "gui")]
@@ -398,6 +399,7 @@ impl JournalApplication {
     }
 
     pub(crate) fn resolve_ipc_for_engine(&mut self, ticket: u64, session: &EngineSession) {
+        if self.commands.pending.get(&ticket).is_some_and(|pending|pending.request.method=="intent.restore-closed") {self.resolve_undo(ticket,session);return;}
         if self.commands.pending.get(&ticket).is_some_and(|pending|matches!(pending.request.method.as_str(),"workspace.close"|"tab.close"|"pane.close"|"surface.close"|"surface.close_self"|"intent.close")) {self.resolve_close(ticket,session);return;}
         if self.commands.pending.get(&ticket).is_some_and(|pending|pending.request.method=="intent.create") {
             self.resolve_fixed_creation(ticket,session);
@@ -544,6 +546,17 @@ impl JournalApplication {
                 });
                 self.refresh_command_weight(ticket);return Ok(true);
             }
+            Ok(ResultValue::AssemblyResolved {stream,input,plan})=> {
+                pending.queued=Some(match (input,plan) {
+                    (Some(input),Some(plan))=>Work::Resolve {
+                        changes:vec![StreamCommand {stream:stream.clone(),command:tasty_domain::StructuralCommand::PrepareAssembly {operation:tasty_domain::OperationId(String::new()),command_id:String::new(),input:*input,plan:plan.clone()}}],
+                        response:Some(ResponsePlan::AssemblyRestored {stream:stream.clone(),root:plan.snapshot.root,surfaces:plan.snapshot.surfaces.keys().copied().collect(),presentation:plan.snapshot.presentation.clone()}),
+                    },
+                    (None,None)=>Work::Resolve {changes:Vec::new(),response:Some(ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"restored":false}))))},
+                    _=>return Err("undo preparation result is incomplete".into()),
+                });
+                self.refresh_command_weight(ticket);return Ok(true);
+            }
             Ok(ResultValue::InputStored(input)) if pending.resource.is_some() => {
                 pending.queued = Some(
                     pending
@@ -584,7 +597,7 @@ impl JournalApplication {
                         &self.worker,
                         operation.clone(),
                     )?;
-                    if self.creations.insert(request.engine, creation).is_some() {
+                    if self.creations.insert((request.engine,creation.ticket), creation).is_some() {
                         return Err("engine already owns a materialization continuation".into());
                     }
                 }
@@ -927,7 +940,8 @@ impl crate::app::App {
                 if let Some(event)=event.resolve(&session.core_state,presentation) {session.borrow_mut().enqueue_host_event(event);}
             }
         }
-        for result in std::mem::take(&mut self.journal.commands.completed_intents) {
+        for mut result in std::mem::take(&mut self.journal.commands.completed_intents) {
+                if result.response.error.is_none() && let Some(surface)=result.response.result.as_ref().and_then(|value|value.get("restored_surface_id")).and_then(|value|value.as_u64()).and_then(|id|u32::try_from(id).ok()) && let Some(view)=result.view.as_mut() {view.activate_surface=Some(surface);}
             if result.response.error.is_none() && result.origin.is_user()
                 && let Some(continuation)=result.view.as_ref()
                 && continuation.close_empty_engine
@@ -945,11 +959,22 @@ impl crate::app::App {
                 && let Some(workspace)=context.engine.workspace_at(index)
                 && let Some(pane)=workspace.pane_layout().find_pane(pane_id)
                 && let Some(tab)=pane.tabs.iter().find(|tab|tab.contains_surface(surface)) {
+                if let Some(saved)=result.response.result.as_ref().and_then(|value|value.get("presentation")).and_then(|value|serde_json::from_value::<tasty_domain::UndoPresentation>(value.clone()).ok()) {
+                    for (workspace,pane) in saved.focused_panes {
+                        if let Some(workspace)=context.engine.find_workspace_index_for_id(workspace).and_then(|index|context.engine.workspace_at(index)) {context.state.navigation.select_pane(workspace,pane);}
+                    }
+                    for (pane,tab) in saved.selected_tabs {
+                        if let Some(pane)=context.engine.find_pane_by_id(pane) {context.state.navigation.select_tab(pane,tab);}
+                    }
+                    for (tab,surface) in saved.selected_surfaces {
+                        if let Some(tab)=context.engine.find_pane_for_tab(tab).and_then(|pane|context.engine.find_pane_by_id(pane)).and_then(|pane|pane.tabs.iter().find(|candidate|candidate.id==tab)) {context.state.navigation.select_surface(tab,surface);}
+                    }
+                }
                 context.state.navigation.select_workspace(&context.engine.workspaces(),workspace.id);
                 context.state.navigation.select_pane(workspace,pane.id);
                 context.state.navigation.select_tab(pane,tab.id);
                 context.state.navigation.select_surface(tab,surface);
-                if let Some(view)=context.view {view.mark_dirty();}
+            if let Some(view)=context.view {view.mark_dirty();}
             }
             if let Some(error) = result.response.error
                 && let Some(context) = self.engines_mut().resolve(result.engine)

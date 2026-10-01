@@ -12,9 +12,12 @@ pub(crate) struct PendingMirrorInstall {
     pub mapping:Option<crate::model::WorkspaceAttachMapping>,
     pub mapping_token:Option<std::sync::Weak<()>>,
     pub reconnect:Option<(u32,tasty_remote::connection::ConnectionEpoch)>,
+    pub resync:bool,
 }
 impl App {
     pub(crate) fn mirror_install_target(&self,explicit:Option<EngineId>,anchor:Option<u32>,reconnect:Option<usize>,activate:bool)->anyhow::Result<PendingMirrorInstall> {
+        let anchor=anchor.or_else(||reconnect.and_then(|index|self.remote.sessions.get(index)).and_then(|session|session.state.anchor_ws_id));
+        let resync=reconnect.and_then(|index|self.remote.sessions.get(index)).is_some_and(|session|session.state.resync_pending.is_some());
         let old=reconnect.and_then(|index|self.remote.sessions.get(index)).map(|session|(session.state.local_workspace,session.transport.frame_tx.epoch()));
         let engine=explicit.or_else(||old.as_ref().and_then(|(workspace,_)|self.engines.all_sessions().find(|engine|engine.core_state.has_workspace(*workspace)).map(|engine|engine.id)))
             .or_else(||anchor.and_then(|workspace|self.engines.all_sessions().find(|engine|engine.core_state.has_workspace(workspace)).map(|engine|engine.id)))
@@ -26,7 +29,7 @@ impl App {
         let owner=self.engines.get(engine).ok_or_else(||anyhow::anyhow!("mirror target engine missing"))?;
         let mapping=anchor.and_then(|id|owner.find_workspace_index_for_id(id).and_then(|index|owner.workspace_at(index)).and_then(|workspace|workspace.attach_mapping.clone()));
         let mapping_token=anchor.and_then(|id|owner.remote.attach_mapping_tokens.get(&id)).map(Arc::downgrade);
-        Ok(PendingMirrorInstall {mapping,mapping_token,engine,window,view:main.map(|main|main.base.state.identity()),selection:main.map(|main|main.state.navigation.generation()),activate,anchor,reconnect:old})
+        Ok(PendingMirrorInstall {resync,mapping,mapping_token,engine,window,view:main.map(|main|main.base.state.identity()),selection:main.map(|main|main.state.navigation.generation()),activate,anchor,reconnect:old})
     }
     pub(crate) fn mirror_install_target_is_current(&self,target:&PendingMirrorInstall)->bool {
         let Some(engine)=self.engines.get(target.engine) else {return false;};
@@ -92,6 +95,17 @@ impl App {
     fn fail_pending_mirror(&mut self,ticket:ConnectionTicket,target:&PendingMirrorInstall,error:String) {
         self.state.pending_mirror_installs.remove(&ticket);self.remote.cancel_connection(ticket);
         tracing::warn!(engine=?target.engine,"mirror connection could not be installed: {error}");
+        if target.resync {
+            if let Some((workspace,epoch))=&target.reconnect {
+                if let Some(index)=self.remote.sessions.iter().position(|session|session.state.local_workspace==*workspace && session.transport.frame_tx.epoch().same(epoch)) {
+                    self.remote.sessions[index].state.resync_pending=None;
+                    if target.anchor.is_some() {self.enter_reconnecting(index);} else {
+                        let session=self.remote.sessions.remove(index);
+                        self.cleanup_mirror_workspace(&session,true);
+                    }
+                }
+            }
+        }
         if let Some(anchor)=target.anchor {
             self.remote.active.remove(&anchor);
             if target.reconnect.is_some() {self.on_reconnect_attempt_failed(anchor,&anyhow::anyhow!(error));}

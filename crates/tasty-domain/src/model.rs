@@ -240,8 +240,11 @@ impl JournalModel {
             // Terminal known results retain command identity/history, but do not keep a second
             // live undo/capture pin after UndoRecordConsumed/Evicted. Event retention pins remain
             // independent until log compaction is allowed to remove that history.
-            .chain(self.operations.values().filter(|operation|operation.outcome.is_none() || matches!(operation.outcome,Some(crate::OperationOutcome::Uncertain {..}))).flat_map(|operation| {
+            .chain(self.operations.values().filter(|operation|operation.outcome.is_none() || matches!(operation.outcome,Some(crate::OperationOutcome::Uncertain {..})) || operation.creation.as_ref().is_some_and(|plan|match &plan.destination {
+                crate::CreationDestination::Assembly {operation:group}=>self.operations.get(group).is_some_and(|coordinator|coordinator.outcome.is_none() || matches!(coordinator.outcome,Some(crate::OperationOutcome::Uncertain {..}))),_=>false,
+            })).flat_map(|operation| {
                 std::iter::once(operation.input)
+                    .chain(operation.assembly.iter().flat_map(|plan|plan.data_refs()))
                     .chain(operation.reconciliation_evidence)
                     .chain(operation.prepared_data)
                     .chain(

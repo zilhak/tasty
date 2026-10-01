@@ -247,8 +247,8 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
             id,
             outcome,
             cleanup,
-            prepared_data,
-        } => lifecycle::await_cleanup(m, id, outcome, cleanup, prepared_data),
+            prepared_data,deferred,
+        } => lifecycle::await_cleanup(m, id, outcome, cleanup, prepared_data,deferred),
         DomainEvent::OperationFinished { id, outcome } => lifecycle::finish(m, id, outcome, None),
         DomainEvent::OperationReconciled {
             id,

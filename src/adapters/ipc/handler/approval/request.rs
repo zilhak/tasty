@@ -120,7 +120,7 @@ pub fn handle_request(
         metadata,
     };
 
-    match core.request_approval(engine, req) {
+    match core.request_approval(req) {
         Ok(change) => {
             persist_record(core, &change.record);
             #[cfg(feature = "gui")]

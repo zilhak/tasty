@@ -32,6 +32,28 @@ impl App {
         if appearance_changed {
             self.cascade_appearance_changed();
         }
+        self.refresh_approval_presentations();
+    }
+
+    /// A projection of pending popup records, refreshed after every source of store changes.
+    pub(crate) fn refresh_approval_presentations(&mut self) {
+        let store=&self.services.approval_store;
+        for view in self.view.views.values_mut() {
+            let Some(main)=view.as_main_mut() else {continue;};
+            let dialogs=&mut main.state.dialogs;
+            let mut changed=false;
+            for id in &dialogs.pending_approval_ids {
+                match store.get(id) {
+                    Some(record)=>{
+                        changed|=dialogs.approval_records.get(id).is_none_or(|old|old.state!=record.state);
+                        dialogs.approval_records.insert(id.clone(),record);
+                    },
+                    None=>{changed|=dialogs.approval_records.remove(id).is_some();},
+                }
+            }
+            dialogs.approval_records.retain(|id,_|dialogs.pending_approval_ids.contains(id));
+            if changed {main.mark_dirty();}
+        }
     }
 
     /// 큐의 소유권을 옮겨 둔 뒤 창·parked 상태의 빌림을 끝내고 처리한다. 창 → parked 순서다.
@@ -103,7 +125,7 @@ impl App {
         if matches!(
             intent.body,
             Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_)
-                |Intent::NewWorkspace {..}|Intent::NewTab {..}|Intent::SplitPane {..}|Intent::SplitSurface {..}|Intent::ConvertSurface {..}
+                |Intent::RestoreClosedItem|Intent::NewWorkspace {..}|Intent::NewTab {..}|Intent::SplitPane {..}|Intent::SplitSurface {..}|Intent::ConvertSurface {..}
         ) {
             IntentClass::Domain
         } else if matches!(intent.body, Intent::Ui(UiIntent::AppearanceChanged)) {
@@ -164,6 +186,16 @@ impl App {
     ) {
         use crate::intent::Intent;
         match &intent.body {
+            Intent::RespondApproval {request_id,choice,comment} => {
+                match core.respond_approval(request_id,choice.clone(),tasty_approval::Responder::User,comment.clone()) {
+                    Ok(change)=>{
+                        crate::ipc::handler::approval::persist_record(core,&change.record);
+                        state.dialogs.approval_records.insert(request_id.clone(),change.record);
+                    },
+                    Err(error)=>tracing::warn!("approval response failed: {error}"),
+                }
+                state.dialogs.approval_submitting=None;
+            }
             Intent::Ui(_) => {
                 crate::intent::popup::handle(state, engine, intent);
             }

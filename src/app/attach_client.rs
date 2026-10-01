@@ -385,6 +385,9 @@ impl App {
             }
             // 같은 묶음에 손실 통지와 EOF가 올 수 있어 이벤트 적용 뒤 재attach 여부를 확인한다.
             let sess = &self.remote.sessions[idx];
+            // A handshake/ID reservation continuation owns this epoch until installation or failure.
+            // Its original transport (including the tunnel) must not be taken a second time.
+            if self.state.pending_mirror_installs.values().any(|pending|pending.reconnect.as_ref().is_some_and(|(workspace,epoch)|*workspace==sess.state.local_workspace && sess.transport.frame_tx.epoch().same(epoch))) {continue;}
             match disconnect_disposition(
                 disconnected,
                 state,

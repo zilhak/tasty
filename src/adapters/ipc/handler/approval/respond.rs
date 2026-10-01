@@ -23,7 +23,7 @@ pub fn handle_respond(
         .map(str::to_string);
     let by = responder_from_caller(caller);
 
-    match core.respond_approval(engine, &req_id, choice.clone(), by, comment) {
+    match core.respond_approval(&req_id, choice.clone(), by, comment) {
         Ok(change) => {
             persist_record(core, &change.record);
             // 권한 부여에 실패해도 승인 응답은 보존한다. agent 재시도 때 다시 권한을 요청한다.

@@ -76,7 +76,10 @@ pub(super) fn aggregate(
                     *result = match &operation.outcome {
                         Some(OperationOutcome::Succeeded)=> {
                             if operation.retirement.is_some() {StructuralResult::Closed {closed:true}}
-                            else {operation.creation.as_ref().ok_or("completed operation has no result plan")?.created_result()}
+                            else if let Some(plan)=&operation.assembly {
+                                let surviving=plan.snapshot.surfaces.keys().filter(|surface|operations.get(&tasty_domain::CreationAssembly::member(&operation.id,**surface)).is_some_and(|member|matches!(member.outcome,Some(OperationOutcome::Succeeded)))).copied().collect();
+                                plan.result(&surviving)
+                            } else {operation.creation.as_ref().ok_or("completed operation has no result plan")?.created_result()}
                         },
                         Some(
                             OperationOutcome::Failed { reason }

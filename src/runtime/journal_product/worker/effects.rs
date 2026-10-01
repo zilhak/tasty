@@ -44,7 +44,7 @@ pub(super) fn claim(
     }
     let capture = if matches!(
         plan.destination,
-        tasty_domain::CreationDestination::Restore { .. }
+        tasty_domain::CreationDestination::Restore { .. } | tasty_domain::CreationDestination::Assembly {..}
     ) {
         plan.surface
             .data

@@ -1,7 +1,7 @@
-//! 승인 요청을 순서대로 표시한다. 사용자 선택은 ApprovalStore에 반영한 뒤 UI에서 저장한다.
+//! 승인 레코드의 읽기 사본을 표시하고 응답 의도를 App으로 보낸다.
 //! 큐가 비면 닫으며, 표시 함수는 갤러리에서도 상태 저장소 없이 사용할 수 있다.
 
-use tasty_approval::{ApprovalRecord, Responder, Severity};
+use tasty_approval::{ApprovalRecord, Severity};
 use tasty_type_geometry::length::LogicalPx;
 
 use crate::adapters::ui::popup::{self, PopupAction};
@@ -18,23 +18,21 @@ const MIN_HEIGHT: LogicalPx = LogicalPx(180.0);
 const MAX_HEIGHT: LogicalPx = LogicalPx(480.0);
 
 /// PopupDef.title_fn — 큐 head 의 title 을 popup 타이틀로 사용.
-pub fn approval_popup_title(state: &MainViewState, engine: &crate::core::CoreState) -> String {
+pub fn approval_popup_title(state: &MainViewState, _engine: &crate::core::CoreState) -> String {
     let Some(id) = state.dialogs.pending_approval_ids.front() else {
         return t("approval.popup.title").to_string();
     };
-    engine
-        .approval_store
-        .get(id)
-        .map(|r| r.request.title)
+    state.dialogs.approval_records.get(id)
+        .map(|r| r.request.title.clone())
         .unwrap_or_else(|| t("approval.popup.title").to_string())
 }
 
 /// PopupDef.sizer — body 길이 + 선택지 수에 따라 height 추정.
-pub fn approval_popup_sizer(state: &MainViewState, engine: &crate::core::CoreState) -> egui::Vec2 {
+pub fn approval_popup_sizer(state: &MainViewState, _engine: &crate::core::CoreState) -> egui::Vec2 {
     let Some(id) = state.dialogs.pending_approval_ids.front() else {
         return egui::vec2(DEFAULT_WIDTH.value(), MIN_HEIGHT.value());
     };
-    let record = engine.approval_store.get(id);
+    let record = state.dialogs.approval_records.get(id);
     let body_len = record
         .as_ref()
         .and_then(|r| r.request.body.as_deref())
@@ -253,14 +251,16 @@ pub fn on_close_approval_popup(
 pub fn draw_approval_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    _engine: &mut crate::runtime::engine_access::EngineMut<'_>,
 ) -> PopupAction {
     let Some(current_id) = state.dialogs.pending_approval_ids.front().cloned() else {
         return PopupAction::Close;
     };
 
-    let Some(record) = engine.approval_store.get(&current_id) else {
+    let Some(record) = state.dialogs.approval_records.get(&current_id).cloned() else {
         state.dialogs.pending_approval_ids.pop_front();
+        state.dialogs.approval_records.remove(&current_id);
+        state.dialogs.approval_submitting=None;
         state.dialogs.approval_comment_buffer.clear();
         if state.dialogs.pending_approval_ids.is_empty() {
             return PopupAction::Close;
@@ -270,6 +270,8 @@ pub fn draw_approval_popup(
 
     if record.state.is_terminal() {
         state.dialogs.pending_approval_ids.pop_front();
+        state.dialogs.approval_records.remove(&current_id);
+        state.dialogs.approval_submitting=None;
         state.dialogs.approval_comment_buffer.clear();
         if state.dialogs.pending_approval_ids.is_empty() {
             return PopupAction::Close;
@@ -292,49 +294,15 @@ pub fn draw_approval_popup(
         } else {
             Some(state.dialogs.approval_comment_buffer.trim().to_string())
         };
-        let store = engine.approval_store.clone();
-        match store.respond(&current_id, choice_key, Responder::User, comment) {
-            Ok(change) => {
-                persist_after_respond(state, &change.record);
-                state.dialogs.pending_approval_ids.pop_front();
-                state.dialogs.approval_comment_buffer.clear();
-                if state.dialogs.pending_approval_ids.is_empty() {
-                    return PopupAction::Close;
-                }
-            }
-            Err(e) => {
-                tracing::warn!("approval popup respond failed: {e}");
-            }
+        if state.dialogs.approval_submitting.is_none() {
+            state.dialogs.approval_submitting=Some(current_id.clone());
+            state.dispatch_intent(crate::intent::Intent::RespondApproval {
+                request_id:current_id,choice:choice_key,comment,
+            }.from_user_menu("approval.respond"));
         }
     }
 
     PopupAction::None
-}
-
-/// 도메인 저장소는 영속화를 맡지 않으므로 응답 후 UI에서 메모리에 저장한다.
-fn persist_after_respond(state: &MainViewState, record: &ApprovalRecord) {
-    use tasty_memory::{MemoryValue, PutOpts, Scope};
-    let scope = match record.request.workspace_id {
-        Some(wid) => Scope::Workspace(wid),
-        None => Scope::Global,
-    };
-    let key = format!("tasty.approval.{}", record.request.id);
-    let value = match serde_json::to_value(record) {
-        Ok(v) => MemoryValue::Json(v),
-        Err(e) => {
-            tracing::warn!("approval popup: serialize failed: {e}");
-            return;
-        }
-    };
-    let opts = PutOpts {
-        expires_at: None,
-        cas: None,
-    };
-    let result =
-        state.with_memory(|m| m.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts));
-    if let Err(e) = result {
-        tracing::warn!("approval popup: memory put failed: {e}");
-    }
 }
 
 /// 중복되지 않은 승인 요청을 큐에 넣고 팝업 열기와 알림을 요청한다.
@@ -343,6 +311,7 @@ pub fn enqueue_approval(
     engine: &mut crate::core::CoreState,
     record: &ApprovalRecord,
 ) {
+    state.dialogs.approval_records.insert(record.request.id.clone(),record.clone());
     if state
         .dialogs
         .pending_approval_ids

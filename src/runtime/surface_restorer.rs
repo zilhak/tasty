@@ -92,6 +92,14 @@ pub(crate) fn describe(engine: &crate::runtime::engine_access::EngineRef<'_>) ->
         .collect()
 }
 
+pub(crate) fn from_saved(id:u32,value:&tasty_domain::Surface,shell:ShellRecipe)->RestoreInput {
+    RestoreInput {
+        surface_id:id,reference:value.data.or(value.creation_seed),from_creation_seed:value.data.is_none() && value.creation_seed.is_some(),
+        plan:tasty_domain::CreationPlan {destination:tasty_domain::CreationDestination::Restore {surface:id,previous_activation:None},surface:tasty_domain::SurfaceSpec {id,kind:value.kind.clone(),data:value.data},tab_name:String::new(),explicit_name:None},
+        input:PreparationInput {kind:value.kind.clone(),cwd:None,params:serde_json::json!({}),restore:None,shell:(value.kind=="terminal").then_some(shell)},
+    }
+}
+
 pub(crate) fn accept_payload(
     request: &mut RestoreInput,
     reference: tasty_domain::DataRef,

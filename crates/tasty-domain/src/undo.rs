@@ -18,9 +18,24 @@ pub struct UndoRecord {
     pub target:CloseTarget,
     pub capture:UndoCapture,
 }
+#[derive(Debug,Clone,Default,PartialEq,Serialize,Deserialize)]
+pub struct UndoPresentation {
+    pub focused_panes:BTreeMap<u32,u32>,
+    pub selected_tabs:BTreeMap<u32,u32>,
+    pub selected_surfaces:BTreeMap<u32,u32>,
+}
+#[derive(Debug,Clone,PartialEq,Serialize,Deserialize)]
+pub struct ClosedPanePosition {
+    pub sibling:u32,
+    pub split:crate::SplitSpec,
+}
 #[derive(Debug,Clone,PartialEq,Serialize,Deserialize)]
 pub struct ClosedSnapshot {
     pub version:u32,
+    #[serde(default)]
+    pub presentation:UndoPresentation,
+    #[serde(default)]
+    pub pane_position:Option<ClosedPanePosition>,
     pub root:EntityId,
     pub origin_workspace:Option<u32>,
     pub workspaces:BTreeMap<u32,Workspace>,
@@ -38,7 +53,8 @@ impl ClosedSnapshot {
         let tab=model.surfaces.get(&first_surface)?.tab;
         let pane=model.tabs.get(&tab)?.pane;
         let origin_workspace=(root.kind!=IdKind::Workspace).then_some(model.panes.get(&pane)?.workspace);
-        let mut result=Self {version:1,root,origin_workspace,workspaces:Default::default(),panes:Default::default(),tabs:Default::default(),surfaces:Default::default(),tab_name:model.tabs.get(&tab).map(|tab|tab.name.clone())};
+        let pane_position=if root.kind==IdKind::Pane {model.workspaces.get(&model.panes.get(&root.id)?.workspace).and_then(|workspace|pane_position(&workspace.layout,root.id))} else {None};
+        let mut result=Self {version:1,presentation:Default::default(),pane_position,root,origin_workspace,workspaces:Default::default(),panes:Default::default(),tabs:Default::default(),surfaces:Default::default(),tab_name:model.tabs.get(&tab).map(|tab|tab.name.clone())};
         for entity in removed {
             match entity.kind {
                 IdKind::Workspace=>{result.workspaces.insert(entity.id,model.workspaces.get(&entity.id)?.clone());},
@@ -53,4 +69,13 @@ impl ClosedSnapshot {
     pub fn data_refs(&self)->Vec<DataRef> {
         self.surfaces.values().flat_map(|surface|surface.data.into_iter().chain(surface.creation_seed)).collect()
     }
+}
+
+fn pane_position(tree:&crate::SplitTree<u32>,target:u32)->Option<ClosedPanePosition> {
+    use crate::SplitTree;
+    let SplitTree::Split {direction,ratio,first,second}=tree else {return None;};
+    let side=if matches!(**first,SplitTree::Leaf(id) if id==target) {Some((second.as_ref(),crate::Placement::Before))}
+        else if matches!(**second,SplitTree::Leaf(id) if id==target) {Some((first.as_ref(),crate::Placement::After))} else {None};
+    if let Some((sibling,placement))=side {return Some(ClosedPanePosition {sibling:*sibling.leaves().first()?,split:crate::SplitSpec {direction:*direction,ratio:*ratio,placement}});}
+    pane_position(first,target).or_else(||pane_position(second,target))
 }

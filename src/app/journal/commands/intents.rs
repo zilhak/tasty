@@ -11,6 +11,12 @@ impl JournalApplication {
         view:Option<IntentViewContinuation>,
     ) -> bool {
         use crate::app::command::DomainIntent as I;
+        if let I::RestoreClosedItem {target_pane_id,scope}=intent {
+            if core.mirror_workspace_index_for_structural(intent).is_some() {return false;}
+            let scope=match scope {crate::app::command::RestoreScope::Local=>None,crate::app::command::RestoreScope::Workspace(id)=>Some(*id)};
+            self.admit_intent_request(engine_id,"intent.restore-closed",serde_json::json!({"pane":target_pane_id,"scope":scope}),origin,view);
+            return true;
+        }
         let close=match intent {
             I::CloseWorkspace {workspace_id}=>Some((tasty_domain::CloseTarget::Workspace(*workspace_id),origin.is_user(),origin.is_user(),None)),
             I::CloseTab {tab_id}=>Some((tasty_domain::CloseTarget::Tab(*tab_id),origin.is_user(),origin.is_user(),None)),

@@ -94,7 +94,8 @@ impl StructureDecider {
             let model = candidate.streams.entry(change.stream.clone()).or_default();
             let mut resolved = change.command.clone();
             if let StructuralCommand::PrepareCreation {operation,command_id,..}
-                |StructuralCommand::Close {operation,command_id,..} = &mut resolved
+                |StructuralCommand::Close {operation,command_id,..}
+                |StructuralCommand::PrepareAssembly {operation,command_id,..} = &mut resolved
             {
                 *command_id = context.command_id.to_owned();
                 *operation =

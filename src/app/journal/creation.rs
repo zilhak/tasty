@@ -14,6 +14,8 @@ pub(super) struct Creation {
     fixed_plan: Option<CreationPlan>,
     stage: Stage,
     public: bool,
+    assembly_member:bool,
+    published:bool,
     queued: Option<Work>,
 }
 
@@ -31,6 +33,7 @@ enum Stage {
     },
     Uncertain {reason:String},
     Finish(Installed),
+    AwaitPublication(Installed),
     Rejected {
         lease: crate::runtime::journal_product::EffectLease,
         reason: String,
@@ -53,6 +56,7 @@ impl Creation {
             ticket,
             binding,
             public: true,
+            assembly_member:false,published:false,
             stage: Stage::Claim,
             fixed_plan: None,
             queued: None,
@@ -102,6 +106,7 @@ impl Creation {
             binding,
             stage: Stage::Admit,
             public: false,
+            assembly_member:false,published:false,
             queued: None,
             fixed_plan: None,
             input: PreparationInput {
@@ -159,6 +164,7 @@ impl Creation {
             fixed_plan: Some(request.plan),
             stage: Stage::Admit,
             public: false,
+            assembly_member:false,published:false,
             queued: None,
         })
     }
@@ -285,6 +291,7 @@ impl Creation {
                 Stage::Claim
             }
             (Stage::Claim, ResultValue::Claimed(claimed)) => {
+                self.assembly_member=matches!(claimed.plan.destination,CreationDestination::Assembly {..});
                 let lease = claimed.lease.clone();
                 let binding = ExecutionBinding {
                     stream: self.binding.stream.clone(),
@@ -293,6 +300,7 @@ impl Creation {
                 };
                 match effect_runner::prepare(&mut session.borrow_mut(), &binding, claimed) {
                     Ok(prepared) => {
+                        let preparation_result=if prepared.is_deferred() {PreparationResult::Deferred {data:None}}else {PreparationResult::Ready {data:None}};
                         let operation = prepared.lease.operation.clone();
                         session
                             .pending_materializations
@@ -301,7 +309,7 @@ impl Creation {
                             worker,
                             Work::Prepared {
                                 lease,
-                                result: PreparationResult::Ready { data: None },
+                                result: preparation_result,
                             },
                         )?;
                         Stage::Prepared(operation)
@@ -327,6 +335,7 @@ impl Creation {
                 started,
             },
             (Stage::Uncertain {reason},ResultValue::Executed(_))=>return Err(format!("resource publication is uncertain: {reason}")),
+            (Stage::Finish(installed), ResultValue::Executed(_)) if self.assembly_member && !self.published => Stage::AwaitPublication(installed),
             (Stage::Finish(_), ResultValue::Executed(_)) => return Ok(true),
             (
                 Stage::Rejected {
@@ -394,11 +403,11 @@ impl Creation {
         session: &mut EngineSession,
         events: &[tasty_domain::RecordedEvent],
     ) -> Result<Option<effect_runner::PreparedLeaf>, String> {
-        let Stage::Finish(installed) = &self.stage else {
-            return Ok(None);
-        };
+        let installed=match &self.stage {Stage::Finish(installed)|Stage::AwaitPublication(installed)=>installed,_=>return Ok(None)};
+        let surface=session.pending_materializations.get(&installed.lease.operation).and_then(|prepared|prepared.surface_id()).ok_or("installed leaf has no original candidate")?;
         if !events.iter().any(|recorded|matches!(&recorded.event,
-            tasty_domain::DomainEvent::OperationFinished { id, outcome:tasty_domain::OperationOutcome::Succeeded } if *id==installed.lease.operation)) { return Ok(None); }
+            tasty_domain::DomainEvent::SurfaceActivationChanged {id,activation,..} if *id==surface && activation.generation==installed.lease.resource_generation)) { return Ok(None); }
+        self.published=true;
         let prepared = session
             .pending_materializations
             .remove(&installed.lease.operation)
@@ -408,6 +417,8 @@ impl Creation {
             .map(Some)
             .map_err(|error| error.to_string())
     }
+
+    pub(super) fn publication_released(&self)->bool {self.published && matches!(self.stage,Stage::AwaitPublication(_))}
 
     pub(super) fn installed(&mut self, installed: Installed) {
         self.stage = Stage::Installing {
@@ -423,7 +434,7 @@ impl Creation {
         surface: u32,
     ) -> Option<Option<tasty_terminal::ResourceGeneration>> {
         match &self.stage {
-            Stage::Installing { installed, .. } | Stage::Finish(installed)
+            Stage::Installing { installed, .. } | Stage::Finish(installed) | Stage::AwaitPublication(installed)
                 if installed.surface_id == surface =>
             {
                 Some(installed.previous_resource)
@@ -433,7 +444,7 @@ impl Creation {
     }
 
     pub(super) fn pauses_observation(&self) -> bool {
-        matches!(self.stage, Stage::Installing { .. } | Stage::Finish(_) | Stage::Uncertain {..})
+        matches!(self.stage, Stage::Installing { .. } | Stage::Finish(_) | Stage::AwaitPublication(_) | Stage::Uncertain {..})
     }
 
     pub(super) fn needs_cleanup_poll(&self) -> bool {

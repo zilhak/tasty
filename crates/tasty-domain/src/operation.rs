@@ -43,6 +43,8 @@ pub struct Operation {
     #[serde(default)]
     pub creation: Option<crate::CreationPlan>,
     #[serde(default)]
+    pub assembly:Option<crate::CreationAssembly>,
+    #[serde(default)]
     pub retirement:Option<crate::RetirementPlan>,
     pub targets: Vec<EntityId>,
     pub reserved: Vec<EntityId>,
@@ -56,6 +58,8 @@ pub struct Operation {
     pub cleanup: Option<crate::CleanupPlan>,
     #[serde(default)]
     pub prepared_data: Option<DataRef>,
+    #[serde(default)]
+    pub prepared_deferred:bool,
     pub reconciliation_evidence: Option<DataRef>,
 }
 

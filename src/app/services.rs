@@ -30,6 +30,10 @@ pub(crate) use impl_workspace::{WorkspaceCreationParams,apply_create_workspace_i
 /// 프로세스가 공유하는 port와 저장소 핸들. 창별 데이터는 CoreState에 있다.
 #[allow(dead_code)] // 이유: 일부 port는 아직 읽지 않지만 AppServicesBuilder가 같은 port 묶음을 주입하는 인터페이스를 유지한다.
 pub(crate) struct AppServices {
+    /// Process-wide services. Engine and View owners carry neither copies nor lookup authority.
+    pub(crate) approval_store: Arc<tasty_approval::ApprovalStore>,
+    pub(crate) telemetry_seq: Arc<tasty_telemetry::TelemetrySeq>,
+    pub(crate) anomaly_detector: Arc<tasty_telemetry::AnomalyDetector>,
     fs: Arc<dyn FileSystem>,
     clock: Arc<dyn Clock>,
     clipboard: Arc<dyn ClipboardSystem>,
@@ -252,29 +256,26 @@ impl AppServices {
 
     pub(crate) fn request_approval(
         &mut self,
-        engine: &mut crate::core::CoreState,
         req: tasty_approval::ApprovalRequest,
     ) -> Result<tasty_approval::StateChange, tasty_approval::ApprovalError> {
-        engine.approval_store.request(req)
+        self.approval_store.request(req)
     }
 
     pub(crate) fn respond_approval(
         &mut self,
-        engine: &mut crate::core::CoreState,
         req_id: &tasty_approval::ApprovalId,
         choice: String,
         by: tasty_approval::Responder,
         comment: Option<String>,
     ) -> Result<tasty_approval::StateChange, tasty_approval::ApprovalError> {
-        engine.approval_store.respond(req_id, choice, by, comment)
+        self.approval_store.respond(req_id, choice, by, comment)
     }
 
     pub(crate) fn cancel_approval(
         &mut self,
-        engine: &mut crate::core::CoreState,
         req_id: &tasty_approval::ApprovalId,
     ) -> Result<tasty_approval::StateChange, tasty_approval::ApprovalError> {
-        engine.approval_store.cancel(req_id)
+        self.approval_store.cancel(req_id)
     }
 
     /// Core를 직접 받지 않는 뷰·정리 코드에도 같은 저장소를 주입하기 위한 Arc 사본.

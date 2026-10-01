@@ -14,9 +14,9 @@ use tasty_ipc::protocol::JsonRpcResponse;
 use super::now_ms;
 use super::query::{QueryFilter, collect_events};
 
-pub(super) fn generate_cap_id(engine: &mut crate::core::CoreState) -> String {
+pub(super) fn generate_cap_id(core: &AppServices) -> String {
     let ts = now_ms();
-    let seq = engine.telemetry_seq.next();
+    let seq = core.telemetry_seq.next();
     format!("cap_{ts:013}{seq:04}", ts = ts, seq = seq % 10_000)
 }
 
@@ -124,7 +124,7 @@ pub fn handle_cap_set(
     };
 
     let cap = CostCap {
-        id: generate_cap_id(engine),
+        id: generate_cap_id(core),
         agent,
         metric,
         threshold,
@@ -441,7 +441,7 @@ pub(super) fn fire_require_approval(
             "threshold": cap.threshold,
         }),
     };
-    match core.request_approval(engine, req) {
+    match core.request_approval(req) {
         Ok(change) => {
             crate::ipc::handler::approval::persist_record(core, &change.record);
             // 먼저 발생한 알림보다 승인 팝업이 앞서지 않도록 outbox를 먼저 창 큐로 옮긴다.

@@ -149,7 +149,7 @@ pub(crate) fn publish_capability_elevation_at(
     reason: Option<&str>,
 ) -> Option<ApprovalRecord> {
     // 이미 같은 agent+permission 으로 Pending elevation 이 있으면 재사용.
-    if let Some(existing) = engine.approval_store.list().into_iter().find(|r| {
+    if let Some(existing) = core.approval_store.list().into_iter().find(|r| {
         matches!(r.state, tasty_approval::ApprovalState::Pending)
             && r.request.metadata.get("kind").and_then(|v| v.as_str())
                 == Some("capability_elevation")
@@ -208,7 +208,7 @@ pub(crate) fn publish_capability_elevation_at(
         metadata,
     };
 
-    match core.request_approval(engine, req) {
+    match core.request_approval(req) {
         Ok(change) => {
             persist_record(core, &change.record);
             Some(change.record)

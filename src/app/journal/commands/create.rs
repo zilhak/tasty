@@ -279,7 +279,7 @@ impl JournalApplication {
         let Some(pending) = self.commands.pending.get_mut(&ticket) else {
             return;
         };
-        if self.creations.contains_key(&session.id) {
+        if self.has_creation(session.id) {
             pending.needs_resolution = true;
             return;
         }
@@ -302,7 +302,7 @@ impl JournalApplication {
 
     pub(crate) fn resolve_fixed_creation(&mut self,ticket:u64,session:&EngineSession) {
         let Some(pending)=self.commands.pending.get_mut(&ticket) else {return;};
-        if self.creations.contains_key(&session.id) {pending.needs_resolution=true;return;}
+        if self.has_creation(session.id) {pending.needs_resolution=true;return;}
         let result=serde_json::from_value::<super::create_spec::Spec>(pending.request.params.clone()).map_err(|error|JsonRpcResponse::invalid_params(serde_json::Value::Null,error.to_string())).and_then(|spec|Request::from_spec(spec,session));
         match result {
             Ok(mut resource)=> {

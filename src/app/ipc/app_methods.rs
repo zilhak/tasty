@@ -754,29 +754,17 @@ impl App {
         });
     }
 
-    /// 창 생성 때 공유한 approval_store를 고르고 대기는 공용 함수에 맡긴다.
+    /// Approval await has process ownership and remains available without a MainView.
     fn ipc_dispatch_approval_await(&mut self, cmd: &IpcCommand) {
-        let store_opt = self
-            .engines()
-            .all()
-            .next()
-            .map(|e| e.approval_store.clone());
-        let memory = self.services.memory_arc();
-        let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-        match store_opt {
-            Some(store) => crate::ipc::handler::approval::spawn_approval_await(
-                store,
-                memory,
-                rpc_id,
-                cmd.request.params.clone(),
-                &cmd.response_tx,
-            ),
-            None => send_response(
-                &cmd.response_tx,
-                crate::app::services::surface::no_application_state(rpc_id),
-            ),
-        }
+        crate::ipc::handler::approval::spawn_approval_await(
+            self.services.approval_store.clone(),
+            self.services.memory_arc(),
+            cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+            cmd.request.params.clone(),
+            &cmd.response_tx,
+        );
     }
+
 }
 
 /// 명시한 창 ID는 모달·preset도 허용한다. ID가 없으면 MainView 하나만 자동 선택한다.
