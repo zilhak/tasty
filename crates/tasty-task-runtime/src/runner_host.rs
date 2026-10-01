@@ -48,6 +48,7 @@ pub(crate) fn run_result_key(task_id: &str) -> String {
     format!("{RUN_RESULT_KEY_PREFIX}{task_id}")
 }
 
+use crate::task_output_ref;
 use tasty_agent::run_custom_shell;
 use tasty_ipc::host_call::HostIpcInjector;
 
