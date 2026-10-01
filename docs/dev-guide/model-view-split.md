@@ -11,7 +11,7 @@
 
 `EngineRead::find_surface_by_id`는 내부 실행 객체를 숨긴 `SurfaceRead`를 반환한다. 이 wrapper는 `as_any`나 `Deref`로 원 `dyn Surface`를 꺼내는 출구를 제공하지 않는다. ID·kind·표시 이름·CWD 같은 조회와 내장 Empty·Explorer·DAG의 불변 표시 참조를 사용한다. 이 타입들은 값을 보유하며 변경에는 실행 owner의 가변 차용이 필요하다. mesh의 표시 정보도 실행 binding과 구분한다. `remote_webview()`는 kind·URL·NavState만 제공하며 RemoteSurface의 writer Arc나 sender를 노출하지 않는다.
 
-View는 로컬 표시 상태를 직접 바꾸고, 실행 변경은 고정 대상의 `EngineAction` 또는 journal 요청으로 App에 반환한다. App이 원 binding을 대조한 뒤 Engine 실행 owner를 빌려 적용한다. 읽기 위해 전체 surface 모델을 복제하거나, 화면 store를 빌리기 위해 도메인 writer를 View에 전달하지 않는다.
+View는 로컬 표시 상태를 직접 바꾸고, 실행 변경은 고정 대상의 `EngineAction`, Explorer 파일 요청 또는 journal 요청으로 App에 반환한다. App이 원 binding을 대조한 뒤 Engine 실행 owner를 빌려 적용한다. 읽기 위해 전체 surface 모델을 복제하거나, 화면 store를 빌리기 위해 도메인 writer를 View에 전달하지 않는다.
 
 HTML은 같은 경계의 예다. native WebView 객체는 MainView에 남고, App의 `webview_sync`가 gate·load·reload·navigation proof를 처리한다. 배너는 `HtmlSnapshot`에서 만든 일회 요청만 반환한다. App의 프레임 순서는 렌더에서 나온 실행 요청 적용 후 native 동기화이며, 세부 계약은 [WebView 호스트 계약](../design/systems/webview.md#탐색-상태와-실행-소유)에 둔다.
 
@@ -138,3 +138,5 @@ IPC engine handler는 `RequestScope`로 선택/default ID와 필요한 권한 �
 SettingsView는 설정 초안과 `RegistryEdit` 값을 반환한다. FileFormat/Handler catalog는 metadata 조회만 제공하며 App이 보유한 원 registry와 경로로 변경·저장을 실행한다. 모달 Save는 MainView 큐를 거치지 않고 App 설정 cascade로 들어가므로 표시 창이 없어도 저장과 전역 theme 적용을 수행한다. Cancel은 실행 초안을 반환하지 않는다.
 
 표시용 catalog에는 실제 소비하는 metadata만 유지한다. GUI 전용 Terminal·surface 표시 query와 editor catalog는 GUI 구성에서만 제공하며, headless 실행은 EngineRef/EngineMut의 기존 실행·조회 경로를 사용한다. 표시 facade는 사용하지 않는 factory 설정 사본이나 실행 경로를 대신 보유하지 않는다.
+
+Explorer의 paste/trash/rename/open 요청은 원 View와 SurfaceBinding, 고정 경로, 사용자 origin을 담는다. App의 전용 bounded worker가 파일 실행을 소유하며, 결과는 원 View/surface와 선택·클립보드 identity를 대조한 뒤 표시 상태에만 적용한다. 메뉴 선택의 비동기성과 파일 실행의 비동기성은 별개다. 로컬 목록과 metadata 조회는 현재 동기 경로이며 이 파일 작업 경계의 전환으로 전부 제거됐다고 보지 않는다.

@@ -177,6 +177,8 @@ pub struct MainViewState {
     /// Explorer의 파일 복사·잘라내기 목록. 창마다 하나이며 OS 텍스트 클립보드와 별개다. 저장하지 않는다.
     #[cfg(feature = "gui")]
     pub(crate) explorer_clipboard: Option<ExplorerClipboard>,
+    #[cfg(feature = "gui")]
+    pub(crate) explorer_file_requests: crate::app::explorer_files::Requests,
 
     /// DAG 그래프의 조회·레이아웃 캐시와 줌·이동·선택 상태.
     #[cfg(feature = "gui")]

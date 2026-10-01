@@ -148,7 +148,16 @@ impl MainView {
         } else if action == ExplorerAction::PasteFiles
             && let Some(cwd) = super::focused_explorer_cwd(&self.state, &*engine)
         {
-            self.explorer_menu_paste(engine, sid, &[], &cwd, false);
+            self.explorer_menu_paste(
+                engine,
+                sid,
+                &[],
+                &cwd,
+                false,
+                crate::intent::IntentOrigin::User {
+                    source: crate::intent::UserSource::Shortcut("paste"),
+                },
+            );
         }
         self.mark_dirty();
         true

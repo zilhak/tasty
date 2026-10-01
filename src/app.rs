@@ -112,6 +112,8 @@ pub(crate) struct App {
     pub(crate) settings_edit_owner: Option<settings_edit::SettingsEditOwner>,
     #[cfg(feature = "gui")]
     pub(crate) port_scans: port_scans::PortScans,
+    #[cfg(feature = "gui")]
+    pub(crate) explorer_files: explorer_files::ExplorerFiles,
     pub(crate) pending_server_attaches: Vec<attach_activation::PendingAttach>,
     pub(crate) publication_inputs: publication_input::PublicationInputs,
     pub(crate) services: AppServices,
@@ -242,6 +244,8 @@ impl App {
             pending_server_attaches: Vec::new(),
             settings_edit_owner: None,
             port_scans: Default::default(),
+            #[cfg(feature = "gui")]
+            explorer_files: Default::default(),
             publication_inputs: Default::default(),
             services: crate::boot::wiring::build_production_core(memory)?,
             state: state::AppState {
@@ -431,6 +435,8 @@ pub(crate) mod settings_files;
 
 mod preset_capture;
 
+#[cfg(feature = "gui")]
+pub(crate) mod explorer_files;
 #[cfg(feature = "gui")]
 mod port_scans;
 

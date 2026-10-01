@@ -400,6 +400,7 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         self.poll_port_scans();
+        self.poll_explorer_files();
         self.poll_profile_detections();
         for mut engine in self.engines_mut().windowed_and_parked() {
             engine.poll_attach_subscriptions();
@@ -2239,8 +2240,7 @@ impl App {
         } else {
             min_deadline(
                 deadline,
-                self.screenshot_workers
-                    .has_pending()
+                (self.screenshot_workers.has_pending() || self.explorer_files.has_pending())
                     .then(|| std::time::Instant::now() + std::time::Duration::from_millis(20)),
             )
         };

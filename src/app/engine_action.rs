@@ -177,11 +177,6 @@ pub(crate) enum EngineAction {
         dag_id: Option<String>,
         direction: crate::model::DagDirection,
     },
-    RenameExplorerEntry {
-        target: SurfaceBinding,
-        path: std::path::PathBuf,
-        name: String,
-    },
     #[cfg(feature = "gui")]
     FocusObserved {
         target: SurfaceBinding,
@@ -271,7 +266,6 @@ impl EngineAction {
             Self::Explorer { .. } => self.apply_explorer(engine),
             #[cfg(feature = "gui")]
             Self::DagSelection { .. } => self.apply_dag_selection(engine),
-            Self::RenameExplorerEntry { .. } => self.apply_rename_explorer_entry(engine),
             #[cfg(feature = "gui")]
             Self::Screenshot {
                 target,
@@ -602,21 +596,6 @@ impl EngineAction {
         }
     }
 
-    fn apply_rename_explorer_entry(&self, engine: &mut EngineMut<'_>) {
-        let Self::RenameExplorerEntry { target, path, name } = self else {
-            unreachable!("variant-specific action dispatch")
-        };
-        if target.current(&engine.as_ref())
-            && let Some(parent) = path.parent()
-        {
-            let next = parent.join(name);
-            if next != *path
-                && let Err(error) = std::fs::rename(path, &next)
-            {
-                tracing::warn!(%error,"explorer rename failed");
-            }
-        }
-    }
     fn apply_explorer_cwd(&self, engine: &mut EngineMut<'_>) {
         let Self::ExplorerCwd { target, folder } = self else {
             unreachable!("variant-specific action dispatch")

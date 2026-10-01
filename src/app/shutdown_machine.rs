@@ -55,6 +55,7 @@ pub(crate) struct ShutdownState {
     port_scan_deadline: Option<Instant>,
     profile_detection_deadline: Option<Instant>,
     screenshot_deadline: Option<Instant>,
+    explorer_files_deadline: Option<Instant>,
     runner_stop_deadline: Instant,
 }
 
@@ -77,6 +78,7 @@ impl App {
             port_scan_deadline: Some(Instant::now() + PORT_SCAN_RECLAIM_TIMEOUT),
             profile_detection_deadline: Some(Instant::now() + Duration::from_secs(5)),
             screenshot_deadline: Some(Instant::now() + Duration::from_secs(5)),
+            explorer_files_deadline: Some(Instant::now() + Duration::from_secs(5)),
             runner_stop_deadline: Instant::now() + Duration::from_secs(5),
         });
 
@@ -87,6 +89,7 @@ impl App {
         self.port_scans.begin_shutdown();
         self.services.profile_detections.begin_shutdown();
         self.screenshot_workers.begin_shutdown();
+        self.explorer_files.begin_shutdown();
 
         // Native child views sit above the GPU loading frame. Normal redraws no
         // longer run after shutdown starts, so hide them before the first frame.
@@ -416,10 +419,33 @@ impl App {
         }
         false
     }
+    fn wait_for_explorer_file_shutdown(&mut self) -> bool {
+        let remaining = self.explorer_files.poll_shutdown();
+        if remaining != 0
+            && let Some(deadline) = self
+                .state
+                .shutdown
+                .as_ref()
+                .and_then(|s| s.explorer_files_deadline)
+        {
+            if Instant::now() < deadline {
+                return true;
+            }
+            tracing::warn!(
+                remaining,
+                "Explorer file shutdown timed out; worker remains unjoined and file work is not cancelled"
+            );
+            if let Some(state) = self.state.shutdown.as_mut() {
+                state.explorer_files_deadline = None;
+            }
+        }
+        false
+    }
     fn shutdown_step_stopping_plugins(&mut self) -> StepOutcome {
         if self.wait_for_port_scan_shutdown()
             || self.wait_for_profile_shutdown()
             || self.wait_for_screenshot_shutdown()
+            || self.wait_for_explorer_file_shutdown()
         {
             return StepOutcome::Waiting;
         }

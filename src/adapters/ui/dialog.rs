@@ -348,24 +348,18 @@ fn apply_rename_explorer_entry(
     buffer: String,
 ) {
     let name = buffer.trim();
-    if !name.is_empty()
-        && let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, surface_id)
-    {
-        state.dispatch_intent(
-            crate::intent::Intent::Engine(
-                crate::app::engine_action::EngineAction::RenameExplorerEntry {
-                    target,
-                    path,
-                    name: name.to_owned(),
-                },
-            )
-            .from_user_context_menu(),
+    if !name.is_empty() {
+        state.request_explorer_file(
+            engine,
+            surface_id,
+            crate::app::explorer_files::Operation::Rename {
+                path,
+                name: name.to_owned(),
+            },
+            crate::intent::IntentOrigin::User {
+                source: crate::intent::UserSource::Menu("rename_popup"),
+            },
         );
-    }
-    if let Some(view) = state.explorer_views.get_mut(surface_id) {
-        view.selected.clear();
-        view.anchor = None;
-        view.request_reload();
     }
 }
 

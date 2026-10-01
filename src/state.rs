@@ -105,6 +105,7 @@ pub struct DropHoverState {
 #[derive(Clone, Debug)]
 #[cfg(feature = "gui")]
 pub struct ExplorerClipboard {
+    pub(crate) identity: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub paths: Vec<std::path::PathBuf>,
     pub cut: bool,
 }
@@ -225,6 +226,8 @@ impl RequestContext {
             explorer_views: Default::default(),
             #[cfg(feature = "gui")]
             explorer_clipboard: None,
+            #[cfg(feature = "gui")]
+            explorer_file_requests: Default::default(),
             #[cfg(feature = "gui")]
             dag_graph_views: Default::default(),
             #[cfg(feature = "gui")]

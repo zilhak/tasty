@@ -56,6 +56,7 @@ pub struct ExplorerView {
     pub state: LoadState,
     /// 선택된 엔트리 경로 집합.
     pub selected: HashSet<PathBuf>,
+    selection_identity: std::sync::Arc<()>,
     /// 마지막으로 클릭(앵커)된 엔트리 — shift 범위 선택 기준.
     pub anchor: Option<PathBuf>,
     /// 사이드바 디렉토리 트리에서 펼쳐진 디렉토리.
@@ -92,6 +93,7 @@ impl ExplorerView {
             loaded: None,
             state: LoadState::Ok,
             selected: HashSet::new(),
+            selection_identity: std::sync::Arc::new(()),
             anchor: None,
             expanded: HashSet::new(),
             tree_children: HashMap::new(),
@@ -122,6 +124,18 @@ impl ExplorerView {
         self.addr_active = None;
     }
 
+    pub(crate) fn selection_identity(&self) -> std::sync::Weak<()> {
+        std::sync::Arc::downgrade(&self.selection_identity)
+    }
+    pub(crate) fn matches_selection(&self, identity: &std::sync::Weak<()>) -> bool {
+        self.selection_identity().ptr_eq(identity)
+    }
+    pub(crate) fn clear_selection(&mut self) {
+        self.selection_identity = std::sync::Arc::new(());
+        self.selected.clear();
+        self.anchor = None;
+    }
+
     /// 다음 렌더에서 현재 디렉토리를 다시 읽도록 표시.
     pub fn request_reload(&mut self) {
         self.reload_requested = true;
@@ -129,6 +143,7 @@ impl ExplorerView {
 
     /// 현재 디렉토리의 모든 엔트리를 선택. 앵커는 마지막 엔트리로 둔다.
     pub fn select_all(&mut self) {
+        self.selection_identity = std::sync::Arc::new(());
         self.selected = self.entries.iter().map(|e| e.path.clone()).collect();
         self.anchor = self.entries.last().map(|e| e.path.clone());
     }
@@ -184,8 +199,7 @@ impl ExplorerView {
         // 달라지므로, 폴더 변경(`dir_changed`)보다 넓은 이 조건에서 버퍼를 비운다.
         self.reset_type_ahead();
         if dir_changed {
-            self.selected.clear();
-            self.anchor = None;
+            self.clear_selection();
         }
         match read_dir_entries(&tab.root) {
             Ok(mut entries) => {
@@ -257,8 +271,7 @@ impl ExplorerView {
         }
 
         if dir_changed {
-            self.selected.clear();
-            self.anchor = None;
+            self.clear_selection();
             self.tree_children.clear();
         }
 
@@ -391,6 +404,7 @@ impl ExplorerView {
 
     /// 단일 선택으로 설정.
     pub fn select_only(&mut self, path: &Path) {
+        self.selection_identity = std::sync::Arc::new(());
         self.selected.clear();
         self.selected.insert(path.to_path_buf());
         self.anchor = Some(path.to_path_buf());
@@ -398,6 +412,7 @@ impl ExplorerView {
 
     /// 토글 선택 (ctrl-click).
     pub fn toggle_select(&mut self, path: &Path) {
+        self.selection_identity = std::sync::Arc::new(());
         if !self.selected.remove(path) {
             self.selected.insert(path.to_path_buf());
         }

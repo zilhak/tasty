@@ -1448,7 +1448,16 @@ impl MainView {
                 Some(1) => this.explorer_menu_copy_path(surface_id, &paths, &cwd, is_empty_target),
                 Some(10) => this.explorer_menu_set_clipboard(engine, surface_id, &paths, false),
                 Some(11) => this.explorer_menu_set_clipboard(engine, surface_id, &paths, true),
-                Some(12) => this.explorer_menu_paste(engine, surface_id, &paths, &cwd, is_folder),
+                Some(12) => this.explorer_menu_paste(
+                    engine,
+                    surface_id,
+                    &paths,
+                    &cwd,
+                    is_folder,
+                    crate::intent::IntentOrigin::User {
+                        source: crate::intent::UserSource::ContextMenu,
+                    },
+                ),
                 Some(30) => this.explorer_menu_trash(engine, surface_id, &paths),
                 Some(20) => this.explorer_menu_open_in_system(engine, surface_id, &paths, &cwd),
                 Some(40) => this.explorer_menu_rename(engine, surface_id, &paths),
@@ -1619,6 +1628,7 @@ impl MainView {
             return;
         }
         self.state.explorer_clipboard = Some(crate::state::ExplorerClipboard {
+            identity: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             paths: paths.to_vec(),
             cut,
         });
@@ -1632,6 +1642,7 @@ impl MainView {
         paths: &[std::path::PathBuf],
         cwd: &std::path::Path,
         is_folder: bool,
+        origin: crate::intent::IntentOrigin,
     ) {
         // (ADR-0022) mirror explorer 는 파일 변경을 지원하지 않는다 — 표시된 경로는 원격
         // 호스트의 경로라 로컬 fs 붙여넣기를 그대로 실행하면 로컬을 원격 경로
@@ -1646,17 +1657,16 @@ impl MainView {
             cwd.to_path_buf()
         };
         if let Some(clip) = self.state.explorer_clipboard.clone() {
-            let (ok, err) = crate::explorer_ui::ops::paste_all(&clip.paths, &dest, clip.cut);
-            // 잘라내기는 이동 성공 시 클립보드 소진.
-            if clip.cut && err.is_none() {
-                self.state.explorer_clipboard = None;
-            }
-            if let Some(v) = self.state.explorer_views.get_mut(surface_id) {
-                v.request_reload();
-            }
-            if let Some(e) = err {
-                tracing::warn!("explorer: paste error ({ok} ok): {e}");
-            }
+            self.state.request_explorer_file(
+                engine,
+                surface_id,
+                crate::app::explorer_files::Operation::Paste {
+                    paths: clip.paths,
+                    destination: dest,
+                    cut: clip.cut,
+                },
+                origin,
+            );
         }
     }
 
@@ -1672,14 +1682,14 @@ impl MainView {
             self.toast_remote_write_unsupported();
             return;
         }
-        if let Err(e) = trash::delete_all(paths) {
-            tracing::warn!("explorer: move to trash failed: {e}");
-        }
-        if let Some(v) = self.state.explorer_views.get_mut(surface_id) {
-            v.selected.clear();
-            v.anchor = None;
-            v.request_reload();
-        }
+        self.state.request_explorer_file(
+            engine,
+            surface_id,
+            crate::app::explorer_files::Operation::Trash(paths.to_vec()),
+            crate::intent::IntentOrigin::User {
+                source: crate::intent::UserSource::ContextMenu,
+            },
+        );
     }
 
     /// 시스템에서 열기 (아이템 20).
@@ -1696,9 +1706,14 @@ impl MainView {
             return;
         }
         let target = paths.first().cloned().unwrap_or_else(|| cwd.to_path_buf());
-        if let Err(e) = crate::platform::reveal::open_path(&target) {
-            tracing::warn!("explorer: open_path failed: {e}");
-        }
+        self.state.request_explorer_file(
+            engine,
+            surface_id,
+            crate::app::explorer_files::Operation::Open(target),
+            crate::intent::IntentOrigin::User {
+                source: crate::intent::UserSource::ContextMenu,
+            },
+        );
     }
 
     /// 이름 변경 (아이템 40).

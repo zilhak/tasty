@@ -1,7 +1,6 @@
 //! 파일 탐색기 렌더링. 모델의 탐색 상태와 ExplorerView의 목록·선택으로 화면을 그린다.
 //! 렌더 중에는 engine을 다시 가변 대여할 수 없어 사용자 동작을 모아 호출부에서 처리한다.
 
-pub mod ops;
 pub mod type_ahead;
 pub mod view;
 
@@ -1036,8 +1035,7 @@ fn handle_background_context(
     if let Some(pos) = pos
         && rect.contains(pos)
     {
-        view.selected.clear();
-        view.anchor = None;
+        view.clear_selection();
         *action = Some(ExplorerAction::ContextMenu {
             target: ExplorerMenuTarget::Empty,
             cwd: root.to_path_buf(),
