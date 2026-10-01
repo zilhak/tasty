@@ -13,7 +13,7 @@ pub(crate) struct ScreenshotCaptureOutcome {
     pub(crate) remote_target:Option<crate::app::attach_client::RemoteTarget>,
     /// 요청 시점의 로컬 mirror workspace ID. None이면 로컬 클립보드를 사용한다.
     pub(crate) mirror_ws_id: Option<u32>,
-    /// 실패를 알릴 원래 창. 부팅 중·parked 요청은 None이다.
+    /// 요청의 원 View에 해당하는 창. View 없는 요청은 worker 시작 전에 버린다.
     pub(crate) source_window: Option<WindowId>,
     /// 로컬 파일 경로와, 원격 전송에만 필요한 파일 바이트.
     pub(crate) result: Result<(std::path::PathBuf, Option<Vec<u8>>), CaptureError>,
@@ -31,9 +31,11 @@ impl App {
         for session in self.engines.all_sessions_mut() {
             reqs.extend(std::mem::take(&mut session.remote.pending_screenshot_captures).into_iter().map(|workspace|(session.id,workspace)));
         }
-        for (engine, mirror_ws_id) in reqs {
+        for (engine, (mirror_ws_id,origin_view)) in reqs {
             let source_window=self.engines.window_of(engine);
-            let source_view=source_window.and_then(|window|self.view.views.get(&window)).and_then(|view|view.as_main()).map(|main|main.base.state.identity());
+            let current=source_window.and_then(|window|self.view.views.get(&window)).and_then(|view|view.as_main()).is_some_and(|main|main.base.state.matches_identity(&origin_view));
+            if !current {tracing::debug!("discarding screenshot request from retired View");continue;}
+            let source_view=Some(origin_view);
 
             let remote_target=mirror_ws_id.and_then(|workspace|self.capture_remote_target(workspace,None));
             if mirror_ws_id.is_some() && remote_target.is_none() {tracing::debug!("capture mirror disappeared before start");continue;}

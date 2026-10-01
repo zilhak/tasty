@@ -24,7 +24,7 @@ pub(crate) struct RemoteState {
     /// 캡처 시점에 정한 mirror workspace. None이면 로컬 클립보드에 기록한다.
     /// 캡처 도중 포커스가 바뀌어도 업로드 대상은 바뀌지 않는다.
     #[cfg(feature = "gui")]
-    pub(crate) pending_screenshot_captures: Vec<Option<u32>>,
+    pub(crate) pending_screenshot_captures: Vec<(Option<u32>,std::sync::Weak<()>)>,
     /// mirror 이미지 붙여넣기 요청. App이 업로드하고 저장 경로를 미리 정한 surface로 보낸다.
     #[cfg(feature = "gui")]
     pub(crate) pending_image_uploads: Vec<PendingImageUpload>,
@@ -160,7 +160,7 @@ impl RemoteState {
         self.pending_git_query_forward.retain(|request|!ids.contains(&request.local_surface_id));
         self.pending_markdown_content_forward.retain(|request|!ids.contains(&request.local_surface_id));
         self.pending_image_uploads.retain(|request|request.mirror_ws_id!=workspace);
-        self.pending_screenshot_captures.retain(|target|*target!=Some(workspace));
+        self.pending_screenshot_captures.retain(|(target,_)|*target!=Some(workspace));
     }
 }
 

@@ -61,17 +61,19 @@ impl App {
         }
         for req in reqs {
             let crate::core::PendingImageUpload {
+                origin_view,
                 mirror_ws_id,
                 surface_id,
                 bracketed,
                 file_name,
                 png_bytes,
             } = req;
+            let view=self.find_main_with_surface(surface_id).and_then(|window|self.view.views.get(&window).and_then(|view|view.as_main()).filter(|main|main.base.state.matches_identity(&origin_view)).map(|_|(window,origin_view)));
+            if view.is_none() {tracing::debug!("discarding image upload request from retired View");continue;}
             let attempt=match self.remote.begin_attempt(None,None) {
                 Ok(attempt)=>attempt,
                 Err(error)=>{self.push_transfer_error(surface_id,mirror_ws_id,file_name,error.into(),None);continue;},
             };
-            let view=self.find_main_with_surface(surface_id).and_then(|window|self.view.views.get(&window).and_then(|view|view.as_main()).map(|main|(window,main.base.state.identity())));
             let transfer_id = next_ui_transfer_id();
             let total = png_bytes.len() as u64;
             self.begin_transfer_progress_row(surface_id, transfer_id, &file_name, total);
@@ -241,6 +243,7 @@ impl App {
                     let name = file_name.clone();
                     let retry = if retryable {
                         Some(crate::core::PendingImageUpload {
+                            origin_view:view.as_ref().expect("origin View checked").1.clone(),
                             mirror_ws_id,
                             surface_id,
                             bracketed,
