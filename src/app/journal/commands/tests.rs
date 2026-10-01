@@ -150,7 +150,7 @@ fn boot_with_layout(layout: Option<serde_json::Value>) -> (EngineSession, Journa
         Arc::new(std::sync::Mutex::new(
             tasty_memory::testing::InMemoryStorage::new(),
         )),
-        Arc::new(crate::runtime::agent::runner_thread::RunnerRegistry::new()),
+        Arc::new(tasty_task_runtime::RunnerRegistry::new()),
         settings,
     )
     .unwrap();

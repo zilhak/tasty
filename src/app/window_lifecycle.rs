@@ -61,7 +61,7 @@ pub(super) fn build_engine_and_plugins(
     factory: crate::waker::SharedWakerFactory,
     proxy: winit::event_loop::EventLoopProxy<crate::AppEvent>,
     memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-    runner_registry: Arc<crate::runtime::agent::runner_thread::RunnerRegistry>,
+    runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
     layout_slot: crate::core::layout_persistence::LayoutSlotId,
     gauges: crate::app::services::PluginGauges,
     #[cfg(debug_assertions)] input_simulation_enabled: bool,
@@ -86,10 +86,10 @@ pub(super) fn build_engine_and_plugins(
 
 /// 새 창의 engine은 task ID 순번을 기존 engine과 공유하고 runner 등록부는 TaskService의 것을 쓴다.
 fn additional_window_task_scope(
-    src: &crate::runtime::task_service::TaskScope,
-    tasks: &crate::runtime::task_service::TaskService,
-) -> crate::runtime::task_service::TaskScope {
-    crate::runtime::task_service::TaskScope::with_seq(
+    src: &tasty_task_runtime::TaskScope,
+    tasks: &tasty_task_runtime::TaskService,
+) -> tasty_task_runtime::TaskScope {
+    tasty_task_runtime::TaskScope::with_seq(
         Arc::clone(src.agent_seq()),
         Arc::clone(tasks.runner_registry()),
     )
@@ -101,7 +101,7 @@ fn build_core_state_first_boot(
     factory: crate::waker::SharedWakerFactory,
     proxy: winit::event_loop::EventLoopProxy<crate::AppEvent>,
     memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-    runner_registry: Arc<crate::runtime::agent::runner_thread::RunnerRegistry>,
+    runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
     layout_slot: crate::core::layout_persistence::LayoutSlotId,
     #[cfg(debug_assertions)] input_simulation_enabled: bool,
 ) -> anyhow::Result<crate::runtime::engine_session::EngineSession> {
@@ -743,7 +743,7 @@ mod register_focus_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::task_service::{TaskScope, TaskService};
+    use tasty_task_runtime::{TaskScope, TaskService};
 
     #[test]
     fn an_additional_window_scope_shares_the_service_registry_and_the_id_sequence() {

@@ -324,7 +324,7 @@ fn fetch(
 ) -> Result<DagData, String> {
     use tasty_agent::{TaskGraph, group_tasks_into_dags};
 
-    let tasks = crate::runtime::agent::task::task_list_from_state(
+    let tasks = tasty_task_runtime::task::task_list_from_state(
         &engine.runtime.memory,
         engine.task_scope,
         workspace_id,

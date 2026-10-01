@@ -15,7 +15,6 @@ pub(crate) mod surface_restorer;
 mod tests;
 
 pub(crate) mod agent;
-pub(crate) mod task_service;
 
 pub(crate) mod child_terminal;
 

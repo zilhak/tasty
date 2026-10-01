@@ -12,15 +12,15 @@ const OPEN: &str = "${task.";
 const OUTPUT_MARKER: &str = "output";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TaskOutputRef {
-    pub(crate) task_id: TaskId,
+pub struct TaskOutputRef {
+    pub task_id: TaskId,
     /// 빈 문자열이면 결과 전체를 가리킨다.
-    pub(crate) pointer: String,
+    pub pointer: String,
 }
 
 /// 생성 시 invalid_params, 실행 시 PermanentFail로 사용자에게 전달할 오류.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ParseError(pub(crate) String);
+pub struct ParseError(pub String);
 
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -29,7 +29,7 @@ impl std::fmt::Display for ParseError {
 }
 
 /// 원문 바이트 범위도 반환해 문자열 전체를 차지한 표식의 타입 보존 치환에 사용한다.
-pub(crate) fn parse_refs(s: &str) -> Result<Vec<(Range<usize>, TaskOutputRef)>, ParseError> {
+pub fn parse_refs(s: &str) -> Result<Vec<(Range<usize>, TaskOutputRef)>, ParseError> {
     let mut out = Vec::new();
     let mut from = 0usize;
     while let Some(rel) = s[from..].find(OPEN) {
@@ -72,7 +72,7 @@ fn parse_inner(inner: &str) -> Result<TaskOutputRef, ParseError> {
 }
 
 /// 생성 검증에서 참조 작업을 모은다. 여기의 순회와 runner_host의 별도 치환 순회를 같은 범위로 유지해야 한다.
-pub(crate) fn referenced_tasks(command: &TaskCommand) -> Result<BTreeSet<TaskId>, ParseError> {
+pub fn referenced_tasks(command: &TaskCommand) -> Result<BTreeSet<TaskId>, ParseError> {
     let mut ids = BTreeSet::new();
     let mut err = None;
     for_each_template(command, &mut |s| {
@@ -91,7 +91,7 @@ pub(crate) fn referenced_tasks(command: &TaskCommand) -> Result<BTreeSet<TaskId>
 }
 
 /// Run 인자·UTF-8 cwd와 Custom JSON의 문자열 값을 방문한다. Reduce·WaitBarrier는 제외한다.
-pub(crate) fn for_each_template(command: &TaskCommand, f: &mut impl FnMut(&str)) {
+pub fn for_each_template(command: &TaskCommand, f: &mut impl FnMut(&str)) {
     match command {
         TaskCommand::Run { command, cwd, .. } => {
             for arg in command {

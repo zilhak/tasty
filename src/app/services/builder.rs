@@ -126,9 +126,10 @@ impl AppServicesBuilder {
             .memory
             .ok_or_else(|| anyhow::anyhow!("MemoryStorage missing"))?;
         let host_ipc_injector = Arc::new(OnceLock::new());
-        let tasks = crate::runtime::task_service::TaskService::new(
+        let tasks = tasty_task_runtime::TaskService::new(
             memory.clone(),
             Arc::clone(&host_ipc_injector),
+            Arc::new(crate::app::task_completion::AppCompletionResolver),
         );
         Ok(AppServices {
             approval_store: Arc::new(tasty_approval::ApprovalStore::new()),

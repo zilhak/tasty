@@ -53,7 +53,7 @@ pub(crate) struct AppServices {
     pub(crate) host_ipc_injector: Arc<OnceLock<tasty_ipc::host_call::HostIpcInjector>>,
 
     /// 러너·완료 대기·훅-작업 연결을 가진 작업 실행 서비스.
-    pub(crate) tasks: crate::runtime::task_service::TaskService,
+    pub(crate) tasks: tasty_task_runtime::TaskService,
 
     /// GUI·헤드리스 큐와 핸들러가 같은 요청 압력 계측을 사용한다.
     pressure: tasty_telemetry::PressureStats,

@@ -78,7 +78,7 @@ pub struct RunnerRegistry {
 impl RunnerRegistry {
     /// poison을 한 번 알리고 스레드 맵을 계속 사용한다. 시작·정지·liveness 조회가 사용한다.
     fn lock_recovering(&self) -> std::sync::MutexGuard<'_, HashMap<u32, RunnerControl>> {
-        crate::poison::recover_mutex(
+        tasty_utils::poison::recover_mutex(
             self.threads.lock(),
             "runner registry thread map",
             &self.poison_reported,
@@ -93,7 +93,7 @@ impl RunnerRegistry {
     }
 
     /// 새로 시작했으면 true. 이미 실행 중이거나 spawn이 실패했으면 false다.
-    pub fn start(&self, ctx: RunnerContext, workspace_id: u32) -> bool {
+    pub(crate) fn start(&self, ctx: RunnerContext, workspace_id: u32) -> bool {
         let mut threads = self.lock_recovering();
         if let Some(ctrl) = threads.get(&workspace_id)
             && !ctrl.crashed.load(Ordering::Relaxed)
@@ -142,7 +142,7 @@ impl RunnerRegistry {
     }
 
     /// 등록된 스레드에 정지를 요청하고 join한다. 진행 중인 dispatch·poll이 끝날 때까지 기다릴 수 있다.
-    pub fn stop(&self, workspace_id: u32) -> bool {
+    pub(crate) fn stop(&self, workspace_id: u32) -> bool {
         let mut threads = self.lock_recovering();
         if let Some(mut ctrl) = threads.remove(&workspace_id) {
             let _ = ctrl.stop_tx.send(()); // 수신자가 끝났으면 정지 신호 실패는 무시한다.
@@ -155,7 +155,7 @@ impl RunnerRegistry {
     }
 
     /// 등록 여부와 crashed 표지로 상태를 답하며 task 수는 세지 않는다.
-    pub fn liveness(&self, workspace_id: u32) -> (bool, bool) {
+    pub(crate) fn liveness(&self, workspace_id: u32) -> (bool, bool) {
         let threads = self.lock_recovering();
         match threads.get(&workspace_id) {
             Some(ctrl) => (
@@ -166,7 +166,7 @@ impl RunnerRegistry {
         }
     }
 
-    pub fn status(&self, ctx: &RunnerContext, workspace_id: u32) -> RunnerStatus {
+    pub(crate) fn status(&self, ctx: &RunnerContext, workspace_id: u32) -> RunnerStatus {
         let (running, crashed) = self.liveness(workspace_id);
         let list_failures = {
             let threads = self.threads.lock().expect("RunnerRegistry poisoned");
@@ -647,7 +647,7 @@ fn expire_overdue_hook_waits(ctx: &RunnerContext, now_ms: u64) {
             ctx.task_waker_hub.fire(
                 workspace_id,
                 &task_id,
-                crate::runtime::agent::task_waker::TerminalSnapshot { state, result },
+                crate::task_waker::TerminalSnapshot { state, result },
             );
         }
         tracing::warn!(
@@ -836,7 +836,7 @@ fn run_loop(
                     ctx_for_set.task_waker_hub.fire(
                         ws,
                         id,
-                        crate::runtime::agent::task_waker::TerminalSnapshot { state, result },
+                        crate::task_waker::TerminalSnapshot { state, result },
                     );
                 }
                 res
@@ -905,8 +905,8 @@ mod tests {
             memory: Arc::new(Mutex::new(mem)),
             agent_seq: Arc::new(AtomicU64::new(0)),
             host_ipc: Arc::new(OnceLock::new()),
-            task_waker_hub: Arc::new(crate::runtime::agent::task_waker::TaskWakerHub::new()),
-            hook_task_waits: Arc::new(crate::runtime::agent::hook_wait::HookTaskWaits::new()),
+            task_waker_hub: Arc::new(crate::task_waker::TaskWakerHub::new()),
+            hook_task_waits: Arc::new(crate::hook_wait::HookTaskWaits::new()),
         };
         (td, ctx)
     }

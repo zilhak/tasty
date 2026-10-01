@@ -16,7 +16,7 @@ impl EngineSession {
                 tasty_memory::MemoryStore::open_in_memory()?,
             ));
         let runner_registry =
-            std::sync::Arc::new(crate::runtime::agent::runner_thread::RunnerRegistry::new());
+            std::sync::Arc::new(tasty_task_runtime::RunnerRegistry::new());
         Self::new_with_ids_and_settings(
             cols,
             rows,
@@ -38,7 +38,7 @@ impl EngineSession {
         shared_ids: Option<RuntimeCounters>,
         layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
         memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-        runner_registry: std::sync::Arc<crate::runtime::agent::runner_thread::RunnerRegistry>,
+        runner_registry: std::sync::Arc<tasty_task_runtime::RunnerRegistry>,
     ) -> anyhow::Result<Self> {
         let state = Self::for_journal(
             cols,
@@ -61,7 +61,7 @@ impl EngineSession {
         shared_ids: Option<RuntimeCounters>,
         layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
         memory: Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-        runner_registry: Arc<crate::runtime::agent::runner_thread::RunnerRegistry>,
+        runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
         settings: Settings,
     ) -> anyhow::Result<Self> {
         Self::assemble(
@@ -85,7 +85,7 @@ impl EngineSession {
         shared_ids: Option<RuntimeCounters>,
         layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
         memory: Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-        runner_registry: Arc<crate::runtime::agent::runner_thread::RunnerRegistry>,
+        runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
         settings: Settings,
     ) -> anyhow::Result<Self> {
         Self::assemble(
@@ -108,7 +108,7 @@ impl EngineSession {
         shared_ids: Option<RuntimeCounters>,
         layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
         memory: Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-        runner_registry: Arc<crate::runtime::agent::runner_thread::RunnerRegistry>,
+        runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
         settings: Settings,
         materialize_default: bool,
     ) -> anyhow::Result<Self> {
@@ -133,7 +133,7 @@ impl EngineSession {
                 next_ids.hook_counter(),
                 next_ids.global_hook_counter(),
             ),
-            task_scope: crate::runtime::task_service::TaskScope::new(runner_registry),
+            task_scope: tasty_task_runtime::TaskScope::new(runner_registry),
             observer_router: crate::output_observer::ObserverRouter::with_counter(
                 next_ids.observer_counter(),
             ),

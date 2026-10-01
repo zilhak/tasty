@@ -11,7 +11,7 @@ static HOOK_WAIT_POISONED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 /// hook ID별 일회성 대기. 보고가 없으면 sweep_expired로 만료 항목을 회수해 호출자가 처리한다.
-pub(crate) struct HookTaskWaits {
+pub struct HookTaskWaits {
     inner: Mutex<HashMap<u64, (u32, TaskId, u64)>>,
 }
 
@@ -26,21 +26,21 @@ impl HookTaskWaits {
     /// 러너는 메인 스레드의 Core를 직접 사용하지 않고 공유 Arc로 등록한다.
     pub fn register(&self, hook_id: u64, workspace_id: u32, task_id: TaskId, deadline_ms: u64) {
         let mut guard =
-            crate::poison::recover_mutex(self.inner.lock(), HOOK_WAIT_WHAT, &HOOK_WAIT_POISONED);
+            tasty_utils::poison::recover_mutex(self.inner.lock(), HOOK_WAIT_WHAT, &HOOK_WAIT_POISONED);
         guard.insert(hook_id, (workspace_id, task_id, deadline_ms));
     }
 
     /// 한 번 반환한 매핑은 지워 같은 훅의 재발생이 끝난 작업과 다시 연결되지 않게 한다.
     pub fn resolve(&self, hook_id: u64) -> Option<(u32, TaskId)> {
         let mut guard =
-            crate::poison::recover_mutex(self.inner.lock(), HOOK_WAIT_WHAT, &HOOK_WAIT_POISONED);
+            tasty_utils::poison::recover_mutex(self.inner.lock(), HOOK_WAIT_WHAT, &HOOK_WAIT_POISONED);
         guard.remove(&hook_id).map(|(ws, tid, _)| (ws, tid))
     }
 
     /// deadline <= now_ms인 항목을 락 안에서 제거한다. 여러 러너가 호출해도 같은 항목을 중복 회수하지 않는다.
     pub fn sweep_expired(&self, now_ms: u64) -> Vec<(u32, TaskId)> {
         let mut guard =
-            crate::poison::recover_mutex(self.inner.lock(), HOOK_WAIT_WHAT, &HOOK_WAIT_POISONED);
+            tasty_utils::poison::recover_mutex(self.inner.lock(), HOOK_WAIT_WHAT, &HOOK_WAIT_POISONED);
         let expired_ids: Vec<u64> = guard
             .iter()
             .filter(|(_, (_, _, deadline))| *deadline <= now_ms)
@@ -55,7 +55,7 @@ impl HookTaskWaits {
     #[cfg(test)]
     pub fn len(&self) -> usize {
         let guard =
-            crate::poison::recover_mutex(self.inner.lock(), HOOK_WAIT_WHAT, &HOOK_WAIT_POISONED);
+            tasty_utils::poison::recover_mutex(self.inner.lock(), HOOK_WAIT_WHAT, &HOOK_WAIT_POISONED);
         guard.len()
     }
 }

@@ -655,8 +655,8 @@ mod engine_creation_failure_tests {
         s
     }
 
-    fn registry() -> std::sync::Arc<crate::runtime::agent::runner_thread::RunnerRegistry> {
-        std::sync::Arc::new(crate::runtime::agent::runner_thread::RunnerRegistry::new())
+    fn registry() -> std::sync::Arc<tasty_task_runtime::RunnerRegistry> {
+        std::sync::Arc::new(tasty_task_runtime::RunnerRegistry::new())
     }
 
     fn in_memory() -> std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> {

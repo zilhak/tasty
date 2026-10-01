@@ -37,7 +37,7 @@ impl AppServices {
             && b.state == BarrierState::Closed
         {
             engine.task_scope.event_queue().push(
-                crate::runtime::agent::event_feed::AgentEvent::BarrierClosed {
+                tasty_task_runtime::event_feed::AgentEvent::BarrierClosed {
                     workspace_id,
                     name: b.name.clone(),
                     count_required: b.count_required,

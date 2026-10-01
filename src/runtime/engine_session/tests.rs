@@ -3,8 +3,8 @@ use std::sync::Arc;
 use tasty_terminal::Terminal;
 
 use super::EngineSession;
-use crate::runtime::agent::event_feed::AgentEvent;
-use crate::runtime::agent::task_waker::TerminalSnapshot;
+use tasty_task_runtime::event_feed::AgentEvent;
+use tasty_task_runtime::task_waker::TerminalSnapshot;
 use crate::runtime::output_observer::{ObserverSpec, SinkSpec};
 
 fn session() -> EngineSession {

@@ -174,7 +174,7 @@ mod tests {
             Arc::new(std::sync::Mutex::new(
                 tasty_memory::testing::InMemoryStorage::new(),
             )),
-            Arc::new(crate::runtime::agent::runner_thread::RunnerRegistry::new()),
+            Arc::new(tasty_task_runtime::RunnerRegistry::new()),
             settings,
         )
         .unwrap();
@@ -283,7 +283,7 @@ mod tests {
             Arc::new(std::sync::Mutex::new(
                 tasty_memory::testing::InMemoryStorage::new(),
             )),
-            Arc::new(crate::runtime::agent::runner_thread::RunnerRegistry::new()),
+            Arc::new(tasty_task_runtime::RunnerRegistry::new()),
             settings,
         )
         .unwrap();

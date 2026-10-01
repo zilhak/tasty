@@ -33,7 +33,7 @@ pub struct TaskWakerHub {
     /// 조회 후 즉시 반환하거나 시간 초과한 대기자만 골라 지우는 데 쓴다.
     next_waiter: std::sync::atomic::AtomicU64,
     /// engine과 같은 큐를 공유해야 메인 루프가 이 이벤트를 방송할 수 있다.
-    feed: std::sync::Arc<crate::runtime::agent::event_feed::AgentEventQueue>,
+    feed: std::sync::Arc<crate::event_feed::AgentEventQueue>,
 }
 
 impl TaskWakerHub {
@@ -44,7 +44,7 @@ impl TaskWakerHub {
     }
 
     pub fn with_feed(
-        feed: std::sync::Arc<crate::runtime::agent::event_feed::AgentEventQueue>,
+        feed: std::sync::Arc<crate::event_feed::AgentEventQueue>,
     ) -> Self {
         Self {
             waiters: Mutex::new(HashMap::new()),
@@ -55,7 +55,7 @@ impl TaskWakerHub {
 
     /// poison을 알리고 waiter 맵을 계속 사용해 상태 전이 경로에서 다시 패닉하지 않게 한다.
     fn lock_recovering(&self) -> std::sync::MutexGuard<'_, Waiters> {
-        crate::poison::recover_mutex(self.waiters.lock(), "task waker hub", &TASK_WAKER_POISONED)
+        tasty_utils::poison::recover_mutex(self.waiters.lock(), "task waker hub", &TASK_WAKER_POISONED)
     }
 
     fn unregister(&self, key: &WaiterKey, waiter: u64) {
@@ -123,7 +123,7 @@ impl TaskWakerHub {
     pub fn fire(&self, workspace_id: u32, task_id: &TaskId, snapshot: TerminalSnapshot) {
         if snapshot.state.is_terminal() {
             self.feed
-                .push(crate::runtime::agent::event_feed::AgentEvent::TaskFinished {
+                .push(crate::event_feed::AgentEvent::TaskFinished {
                     workspace_id,
                     task_id: task_id.clone(),
                     state: snapshot.state.name(),
@@ -249,7 +249,7 @@ mod tests {
 
     #[test]
     fn a_terminal_task_reaches_the_feed_even_with_nobody_waiting() {
-        use crate::runtime::agent::event_feed::{AgentEvent, AgentEventQueue};
+        use crate::event_feed::{AgentEvent, AgentEventQueue};
         let feed = Arc::new(AgentEventQueue::new());
         let hub = TaskWakerHub::with_feed(Arc::clone(&feed));
         hub.fire(7, &"t-9".to_string(), snap(TaskState::Cancelled));
@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn a_nonterminal_snapshot_leaves_the_feed_alone() {
-        use crate::runtime::agent::event_feed::AgentEventQueue;
+        use crate::event_feed::AgentEventQueue;
         let feed = Arc::new(AgentEventQueue::new());
         let hub = TaskWakerHub::with_feed(Arc::clone(&feed));
         hub.fire(7, &"t-9".to_string(), snap(TaskState::Running));

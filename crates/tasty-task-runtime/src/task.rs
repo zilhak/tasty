@@ -9,13 +9,12 @@ use tasty_agent::{
 };
 use tasty_memory::HOST_OWNER;
 
-use crate::core::CoreState;
-use crate::runtime::agent::runner_host::evict_task_side_keys;
-use crate::runtime::task_service::{TaskScope, TaskService};
+use crate::runner_host::evict_task_side_keys;
+use crate::{TaskScope, TaskService};
 
 impl TaskService {
     /// fallback 예약 작업은 참조할 본 작업이 등록되기 전에 Ready가 되지 않게 만든다.
-    pub(crate) fn task_create(
+    pub fn task_create(
         &self,
         scope: &TaskScope,
         opts: TaskCreateOpts,
@@ -32,7 +31,7 @@ impl TaskService {
         })
     }
 
-    pub(crate) fn task_list(
+    pub fn task_list(
         &self,
         scope: &TaskScope,
         workspace_id: u32,
@@ -41,7 +40,7 @@ impl TaskService {
     }
 
     /// 받은 workspace만 순회한다. 화면의 DAG 목록과 같은 구현을 쓴다.
-    pub(crate) fn dag_list(
+    pub fn dag_list(
         &self,
         scope: &TaskScope,
         workspace_ids: &[u32],
@@ -51,7 +50,7 @@ impl TaskService {
 
     /// 받은 순서의 첫 일치를 반환한다. dag_scan_workspaces는 ID 오름차순으로 넘긴다.
     /// 사용자가 정한 DAG 키가 여러 workspace에 같을 수 있어 구별하려면 workspace_id도 지정한다.
-    pub(crate) fn dag_get(
+    pub fn dag_get(
         &self,
         scope: &TaskScope,
         workspace_ids: &[u32],
@@ -74,7 +73,7 @@ impl TaskService {
         Ok(None)
     }
 
-    pub(crate) fn task_get(
+    pub fn task_get(
         &self,
         scope: &TaskScope,
         workspace_id: u32,
@@ -87,7 +86,7 @@ impl TaskService {
         })
     }
 
-    pub(crate) fn task_cancel(
+    pub fn task_cancel(
         &self,
         scope: &TaskScope,
         workspace_id: u32,
@@ -116,14 +115,14 @@ impl TaskService {
         scope.waker_hub().fire(
             workspace_id,
             &task.id,
-            crate::runtime::agent::task_waker::TerminalSnapshot {
+            crate::task_waker::TerminalSnapshot {
                 state: task.state.clone(),
                 result: task.result.clone(),
             },
         );
     }
 
-    pub(crate) fn task_retry(
+    pub fn task_retry(
         &self,
         scope: &TaskScope,
         workspace_id: u32,
@@ -139,7 +138,7 @@ impl TaskService {
     }
 
     /// 상태 변경과 자동 전이된 후속 작업을 반환한다.
-    pub(crate) fn task_set_state(
+    pub fn task_set_state(
         &self,
         scope: &TaskScope,
         workspace_id: u32,
@@ -161,7 +160,7 @@ impl TaskService {
         result
     }
 
-    pub(crate) fn task_set_result(
+    pub fn task_set_result(
         &self,
         scope: &TaskScope,
         workspace_id: u32,
@@ -178,7 +177,7 @@ impl TaskService {
     /// 훅 매핑을 소비해 exit code가 0 또는 없으면 성공, 나머지는 실패로 처리한다.
     /// 대기자를 깨울 hub가 engine별이므로 훅이 발생한 engine의 범위를 전달해야 한다.
     /// 매핑은 저장 전에 제거하며 저장 실패 때 다시 등록하지 않는다.
-    pub(crate) fn resolve_hook_task_wait(
+    pub fn resolve_hook_task_wait(
         &self,
         scope: &TaskScope,
         hook_id: u64,
@@ -209,7 +208,7 @@ impl TaskService {
     }
 
     /// 저장소 락 안에서는 입력 결과만 모으고 실제 reducer 실행은 호출자가 락 밖에서 한다.
-    pub(crate) fn task_reduce_collect(
+    pub fn task_reduce_collect(
         &self,
         scope: &TaskScope,
         workspace_id: u32,
@@ -241,7 +240,7 @@ impl TaskService {
 
     /// 참조·Running 검사를 통과해 삭제된 작업의 handle·실행 결과도 정리한다.
     /// 부속 키 정리는 저장소 락을 다시 사용하므로 첫 락을 놓은 뒤 호출해야 한다.
-    pub(crate) fn task_delete(
+    pub fn task_delete(
         &self,
         scope: &TaskScope,
         workspace_id: u32,
@@ -262,7 +261,7 @@ impl TaskService {
 
     /// 상태나 경과시간 조건 중 하나는 있어야 한다. dry_run과 실제 삭제가 같은 계획을 사용한다.
     /// 계획 조회와 적용은 별도 락 구간이다.
-    pub(crate) fn task_purge(
+    pub fn task_purge(
         &self,
         scope: &TaskScope,
         workspace_id: u32,
@@ -538,7 +537,7 @@ mod task_delete_tests {
     };
     use crate::app::services::AppServices;
 
-    use crate::runtime::agent::runner_host::{handle_key, run_result_key};
+    use crate::runner_host::{handle_key, run_result_key};
     use crate::app::services::builder::AppServicesBuilder;
     use crate::ports::notification_sound::NoopPlayer;
 
@@ -697,35 +696,23 @@ mod task_delete_tests {
 }
 
 /// 서비스와 서비스를 받지 못하는 화면이 같은 목록 조회를 쓴다. 화면은 engine의 저장소를 넘긴다.
-pub(crate) fn task_list_from_state(
+pub fn task_list_from_state(
     memory: &std::sync::Mutex<dyn tasty_memory::MemoryStorage>,
     scope: &TaskScope,
     workspace_id: u32,
 ) -> Result<Vec<Task>, AgentError> {
-    let mut guard = crate::poison::recover_mutex(
+    let mut guard = tasty_utils::poison::recover_mutex(
         memory.lock(),
-        crate::core::MEMORY_WHAT,
-        &crate::core::MEMORY_POISONED,
+        tasty_memory::STORE_LOCK_WHAT,
+        &tasty_memory::STORE_LOCK_POISONED,
     );
     let store = TaskStore::new(&mut *guard, HOST_OWNER, scope.agent_seq().as_ref());
     store.list(workspace_id)
 }
 
-/// ID 미지정 시 이 engine의 live workspace를 오름차순으로 순회한다. 명시한 ID는 그대로 사용한다.
-pub(crate) fn dag_scan_workspaces(engine: &CoreState, workspace_id: Option<u32>) -> Vec<u32> {
-    match workspace_id {
-        Some(w) => vec![w],
-        None => {
-            let mut ids: Vec<u32> = engine.workspaces().into_iter().map(|w| w.id).collect();
-            ids.sort_unstable();
-            ids
-        }
-    }
-}
-
 /// 받은 workspace만 순회한다. 호출자는 dag_scan_workspaces로 engine의 live workspace를 넘겨
 /// 삭제된 workspace의 고아 scope를 조회하지 않게 한다.
-pub(crate) fn dag_list_from_state(
+pub fn dag_list_from_state(
     memory: &std::sync::Mutex<dyn tasty_memory::MemoryStorage>,
     scope: &TaskScope,
     workspace_ids: &[u32],

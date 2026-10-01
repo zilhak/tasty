@@ -109,10 +109,10 @@ impl DagListState {
             return;
         }
         self.last_list_poll = Some(now);
-        match crate::runtime::agent::task::dag_list_from_state(
+        match tasty_task_runtime::task::dag_list_from_state(
             &engine.runtime.memory,
             engine.task_scope,
-            &crate::runtime::agent::task::dag_scan_workspaces(engine, None),
+            &crate::app::task_completion::dag_workspaces(engine.workspaces().into_iter().map(|workspace|workspace.id),None),
         ) {
             Ok(summaries) => {
                 self.rows = summaries

@@ -45,7 +45,7 @@ pub fn run_result_key(task_id: &str) -> String {
     format!("{RUN_RESULT_KEY_PREFIX}{task_id}")
 }
 
-use crate::runtime::agent::task_output_ref;
+use crate::task_output_ref;
 use tasty_agent::run_custom_shell;
 use tasty_ipc::host_call::HostIpcInjector;
 
@@ -64,14 +64,15 @@ pub(crate) fn is_injector_not_initialized(msg: &str) -> bool {
 }
 
 #[derive(Clone)]
-pub struct RunnerContext {
-    pub memory: Arc<Mutex<dyn MemoryStorage>>,
-    pub agent_seq: Arc<AtomicU64>,
-    pub host_ipc: Arc<OnceLock<HostIpcInjector>>,
+pub(crate) struct RunnerContext {
+    pub(crate) memory: Arc<Mutex<dyn MemoryStorage>>,
+    pub(crate) agent_seq: Arc<AtomicU64>,
+    pub(crate) host_ipc: Arc<OnceLock<HostIpcInjector>>,
     /// Core를 거치지 않는 러너의 종료 처리도 대기자를 깨울 수 있도록 같은 hub를 공유한다.
-    pub task_waker_hub: Arc<crate::runtime::agent::task_waker::TaskWakerHub>,
+    pub(crate) task_waker_hub: Arc<crate::task_waker::TaskWakerHub>,
     /// 러너가 push 대기를 등록하고 호스트가 훅 결과를 전달하는 공유 매핑.
-    pub hook_task_waits: Arc<crate::runtime::agent::hook_wait::HookTaskWaits>,
+    pub(crate) hook_task_waits: Arc<crate::hook_wait::HookTaskWaits>,
+    pub(crate) completion:Arc<dyn crate::completion::CompletionResolver>,
 }
 
 static MEMORY_POISON_REPORTED: std::sync::atomic::AtomicBool =
@@ -83,7 +84,7 @@ static RUN_RESULT_POISON_REPORTED: std::sync::atomic::AtomicBool =
 impl RunnerContext {
     /// poison은 로그로 알리고 남은 저장소를 계속 사용한다. 임의 MemoryStorage 호출의 중간 실패를 복구하는 것은 아니다.
     pub fn with_memory<R>(&self, f: impl FnOnce(&mut dyn MemoryStorage) -> R) -> R {
-        let mut guard = crate::poison::recover_mutex(
+        let mut guard = tasty_utils::poison::recover_mutex(
             self.memory.lock(),
             "agent runner memory",
             &MEMORY_POISON_REPORTED,
@@ -566,7 +567,7 @@ impl HostExecutor {
                         };
                         persist_run_result(&mem_clone, ws, &task_id_clone, &outcome);
                         // 결과를 기록하지 못하면 poll은 계속 Active라 poison을 알리고 cell을 사용한다.
-                        *crate::poison::recover_mutex(
+                        *tasty_utils::poison::recover_mutex(
                             cell_clone.lock(),
                             "agent run result cell",
                             &RUN_RESULT_POISON_REPORTED,
@@ -597,16 +598,13 @@ impl HostExecutor {
                 let spec: tasty_agent::PollSpec = match poll {
                     Some(PollSpecRef::Inline(spec)) => spec.clone(),
                     Some(PollSpecRef::Named { strategy }) => {
-                        let id =
-                            crate::completion_strategy::CompletionStrategyId::new(strategy.clone());
-                        let strat = crate::completion_strategy::global()
-                            .resolve_strategy(&id)
+                        let strat = self.ctx.completion.named(strategy)
                             .map_err(|e| {
                                 format!("Custom '{ipc_method}' poll strategy '{strategy}': {e}")
                             })?;
                         match strat.kind {
-                            crate::completion_strategy::CompletionStrategyKind::Poll(spec) => spec,
-                            crate::completion_strategy::CompletionStrategyKind::Push {
+                            crate::completion::CompletionKind::Poll(spec) => spec,
+                            crate::completion::CompletionKind::Push {
                                 notify_via,
                                 timeout_ms,
                             } => {
@@ -622,14 +620,13 @@ impl HostExecutor {
                         }
                     }
                     None => {
-                        match crate::completion_strategy::global()
-                            .resolve_default_for_method(ipc_method)
+                        match self.ctx.completion.default_for_method(ipc_method)
                         {
                             Some(strat) => match strat.kind {
-                                crate::completion_strategy::CompletionStrategyKind::Poll(spec) => {
+                                crate::completion::CompletionKind::Poll(spec) => {
                                     spec
                                 }
-                                crate::completion_strategy::CompletionStrategyKind::Push {
+                                crate::completion::CompletionKind::Push {
                                     notify_via,
                                     timeout_ms,
                                 } => {
@@ -693,7 +690,7 @@ impl HostExecutor {
         ipc_method: &str,
         params: &serde_json::Value,
         strategy_id: &str,
-        notify_via: &crate::hook_handler::HookHandlerId,
+        notify_via: &str,
         timeout_ms: u64,
     ) -> Result<DispatchHandle, String> {
         let surface_id = params
@@ -708,7 +705,7 @@ impl HostExecutor {
         let hook_params = json!({
             "surface_id": surface_id,
             "event": "command-completed",
-            "handler": notify_via.as_str(),
+            "handler": notify_via,
             "once": true,
         });
         let hook_resp = self
@@ -792,7 +789,7 @@ impl HostExecutor {
             }
             DispatchHandle::ShellProcess { pid } => {
                 if let Some(entry) = self.shell_children.get(pid) {
-                    let taken = crate::poison::recover_mutex(
+                    let taken = tasty_utils::poison::recover_mutex(
                         entry.result.lock(),
                         "agent run result cell",
                         &RUN_RESULT_POISON_REPORTED,
@@ -1132,7 +1129,7 @@ pub(crate) fn persist_run_result(
 ) {
     let value = MemoryValue::Json(run_outcome_to_value(outcome));
     let res = {
-        let mut guard = crate::poison::recover_mutex(
+        let mut guard = tasty_utils::poison::recover_mutex(
             memory.lock(),
             "agent runner memory",
             &MEMORY_POISON_REPORTED,
@@ -1254,8 +1251,8 @@ mod tests {
             memory: Arc::new(Mutex::new(mem)),
             agent_seq: Arc::new(AtomicU64::new(0)),
             host_ipc: Arc::new(OnceLock::new()),
-            task_waker_hub: Arc::new(crate::runtime::agent::task_waker::TaskWakerHub::new()),
-            hook_task_waits: Arc::new(crate::runtime::agent::hook_wait::HookTaskWaits::new()),
+            task_waker_hub: Arc::new(crate::task_waker::TaskWakerHub::new()),
+            hook_task_waits: Arc::new(crate::hook_wait::HookTaskWaits::new()),
         };
         (td, ctx)
     }

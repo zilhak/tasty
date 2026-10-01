@@ -1,0 +1,22 @@
+[package]
+name = "tasty-task-runtime"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Task execution, runner lifecycle, hook completion, and engine task scopes"
+
+[dependencies]
+tasty-agent = { path = "../tasty-agent" }
+tasty-memory = { path = "../tasty-memory" }
+tasty-ipc = { path = "../tasty-ipc" }
+tasty-utils = { path = "../tasty-utils" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+tasty-latency-control = { path = "../tasty-latency-control" }
+
+[lints]
+workspace = true

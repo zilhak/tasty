@@ -35,7 +35,7 @@ pub(crate) struct EngineSession {
         crate::runtime::effect_runner::PreparedMaterialization,
     >,
     pub(crate) hooks: crate::hook_runtime::HookRuntimeState,
-    pub(crate) task_scope: crate::runtime::task_service::TaskScope,
+    pub(crate) task_scope: tasty_task_runtime::TaskScope,
     pub(crate) observer_router: crate::output_observer::ObserverRouter,
     pub(crate) runtime: crate::runtime::engine_runtime::EngineRuntime,
     /// 실행 자원의 Drop까지 격리 홈이 살아 있어야 한다.

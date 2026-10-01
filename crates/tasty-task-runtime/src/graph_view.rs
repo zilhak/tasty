@@ -2,15 +2,15 @@
 
 use tasty_agent::{OnFailure, Task, TaskCommand, TaskId};
 
-pub(crate) struct GraphEdge<'a> {
-    pub(crate) from: &'a TaskId,
-    pub(crate) to: &'a TaskId,
-    pub(crate) kind: &'static str,
+pub struct GraphEdge<'a> {
+    pub from: &'a TaskId,
+    pub to: &'a TaskId,
+    pub kind: &'static str,
 }
 
 /// 직접 참조는 그대로 연결한다. inline fallback은 실패 뒤 만든 작업의 fallback_of를 역조회한다.
 /// 원래 작업이 삭제될 수 있어 fallback_of 대상이 없으면 그 연결은 생략한다.
-pub(crate) fn collect_graph_edges(tasks: &[Task]) -> Vec<GraphEdge<'_>> {
+pub fn collect_graph_edges(tasks: &[Task]) -> Vec<GraphEdge<'_>> {
     let mut edges = Vec::new();
     for t in tasks {
         for dep in &t.depends_on {
@@ -57,7 +57,7 @@ pub(crate) fn collect_graph_edges(tasks: &[Task]) -> Vec<GraphEdge<'_>> {
 }
 
 /// 노드 아이콘과 task_graph JSON이 공유하는 종류 식별자.
-pub(crate) fn task_command_kind(command: &TaskCommand) -> &'static str {
+pub fn task_command_kind(command: &TaskCommand) -> &'static str {
     match command {
         TaskCommand::Run { .. } => "run",
         TaskCommand::Custom { .. } => "custom",
@@ -66,7 +66,7 @@ pub(crate) fn task_command_kind(command: &TaskCommand) -> &'static str {
     }
 }
 
-pub(crate) fn on_failure_kind(on_failure: &OnFailure) -> &'static str {
+pub fn on_failure_kind(on_failure: &OnFailure) -> &'static str {
     match on_failure {
         OnFailure::Abort => "abort",
         OnFailure::ContinueDownstream => "continue_downstream",

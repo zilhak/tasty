@@ -5,7 +5,7 @@ use crate::runtime::engine_access::{EngineMut, EngineRef};
 use serde_json::{Value, json};
 
 use crate::app::services::AppServices;
-use crate::runtime::agent::graph_view::{collect_graph_edges, on_failure_kind, task_command_kind};
+use tasty_task_runtime::graph_view::{collect_graph_edges, on_failure_kind, task_command_kind};
 use tasty_agent::task::{TaskCreateOpts, TaskDeleteOpts, TaskPurgeFilter};
 use tasty_agent::{
     AgentError, DispatchHandle, OnFailure, PollSpecRef, ReducerStrategy, Task, TaskCommand,
@@ -136,7 +136,7 @@ fn validate_task_output_refs(
     depends_on: &[TaskId],
     on_failure: &OnFailure,
 ) -> Result<(), String> {
-    use crate::runtime::agent::task_output_ref;
+    use tasty_task_runtime::task_output_ref;
 
     let mut available: BTreeSet<&str> = depends_on.iter().map(String::as_str).collect();
     if let TaskCommand::Reduce { inputs, .. } = command {
@@ -259,7 +259,7 @@ fn runner_status_json(core: &AppServices, engine: &EngineRef<'_>, workspace_id: 
     runner_status_value(&core.tasks.runner_status(engine.task_scope, workspace_id))
 }
 
-fn runner_status_value(status: &crate::runtime::agent::runner_thread::RunnerStatus) -> Value {
+fn runner_status_value(status: &tasty_task_runtime::RunnerStatus) -> Value {
     json!({
         "running": status.running,
         "crashed": status.crashed,
@@ -403,11 +403,11 @@ pub fn handle_task_retry(
 pub const DEFAULT_TASK_AWAIT_TIMEOUT_MS: u64 = 600_000;
 
 pub fn await_task_blocking(
-    awaiter: &crate::runtime::task_service::TaskAwaiter,
+    awaiter: &tasty_task_runtime::TaskAwaiter,
     rpc_id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    use crate::runtime::agent::task_waker::AwaitOutcome;
+    use tasty_task_runtime::task_waker::AwaitOutcome;
 
     let workspace_id = match workspace_id_param(params, &rpc_id) {
         Ok(w) => w,
@@ -460,7 +460,7 @@ pub(crate) fn unowned_await_workspace(rpc_id: Value, workspace_id: u32) -> JsonR
 /// 메인 루프를 막지 않도록 워커에서 완료를 기다린다.
 /// GUI와 헤드리스의 engine 선택 방식이 달라, 호출자가 소유 engine의 대기 계약을 먼저 고른다.
 pub(crate) fn spawn_task_await(
-    awaiter: crate::runtime::task_service::TaskAwaiter,
+    awaiter: tasty_task_runtime::TaskAwaiter,
     rpc_id: Value,
     params: Value,
     response_tx: &std::sync::mpsc::SyncSender<JsonRpcResponse>,
@@ -622,7 +622,7 @@ pub fn handle_dag_list(
 
     match core.tasks.dag_list(
         engine.task_scope,
-        &crate::runtime::agent::task::dag_scan_workspaces(engine, workspace_id),
+        &crate::app::task_completion::dag_workspaces(engine.workspaces().into_iter().map(|workspace|workspace.id),workspace_id),
     ) {
         Err(e) => agent_err_to_response(id, e),
         Ok(dags) => {
@@ -676,7 +676,7 @@ pub fn handle_dag_get(
 
     let (dag, tasks) = match core.tasks.dag_get(
         engine.task_scope,
-        &crate::runtime::agent::task::dag_scan_workspaces(engine, workspace_id),
+        &crate::app::task_completion::dag_workspaces(engine.workspaces().into_iter().map(|workspace|workspace.id),workspace_id),
         &dag_id,
     ) {
         Err(e) => return agent_err_to_response(id, e),
@@ -1178,7 +1178,7 @@ mod poll_strategy_ref_tests {
 #[cfg(test)]
 mod graph_edge_tests {
     use super::*;
-    use crate::runtime::agent::graph_view::GraphEdge;
+    use tasty_task_runtime::graph_view::GraphEdge;
 
     fn task(id: &str, name: &str, state: TaskState) -> Task {
         Task {

@@ -183,6 +183,7 @@ tasty-output = { path = "crates/tasty-output" }
 tasty-approval = { path = "crates/tasty-approval" }
 tasty-telemetry = { path = "crates/tasty-telemetry" }
 tasty-agent = { path = "crates/tasty-agent" }
+tasty-task-runtime = { path = "crates/tasty-task-runtime" }
 tasty-dag-layout = { path = "crates/tasty-dag-layout" }
 tasty-design-tokens = { path = "crates/tasty-design-tokens" }
 tasty-plugin-protocol = { path = "crates/tasty-plugin-protocol" }

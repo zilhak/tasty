@@ -24,7 +24,7 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
     let memory = Arc::new(std::sync::Mutex::new(
         tasty_memory::testing::InMemoryStorage::new(),
     ));
-    let runners = Arc::new(crate::runtime::agent::runner_thread::RunnerRegistry::new());
+    let runners = Arc::new(tasty_task_runtime::RunnerRegistry::new());
     let mut settings = crate::settings::Settings::default();
     settings.general.shell = "/bin/sh".into();
     settings.general.startup_command = "exec sleep 60".into();
@@ -209,7 +209,7 @@ fn failed_view_write_retains_the_checkpoint_and_marks_its_engine_dirty() {
     let memory = Arc::new(std::sync::Mutex::new(
         tasty_memory::testing::InMemoryStorage::new(),
     ));
-    let runners = Arc::new(crate::runtime::agent::runner_thread::RunnerRegistry::new());
+    let runners = Arc::new(tasty_task_runtime::RunnerRegistry::new());
     let mut settings = crate::settings::Settings::default();
     settings.general.shell = "/bin/sh".into();
     settings.general.startup_command = "exec sleep 60".into();

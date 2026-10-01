@@ -5684,6 +5684,7 @@ dependencies = [
  "shell-escape",
  "sysinfo",
  "tasty-agent",
+ "tasty-task-runtime",
  "tasty-approval",
  "tasty-cell-width",
  "tasty-cli",
@@ -6448,6 +6449,21 @@ dependencies = [
  "tasty-i18n",
  "tasty-remote-profiles",
  "tasty-utils",
+ "tracing",
+]
+
+[[package]]
+name = "tasty-task-runtime"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tasty-agent",
+ "tasty-ipc",
+ "tasty-latency-control",
+ "tasty-memory",
+ "tasty-utils",
+ "tempfile",
  "tracing",
 ]
 
