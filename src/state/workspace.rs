@@ -2,7 +2,7 @@
 use crate::core::CoreState;
 
 use super::RequestContext;
-#[cfg(feature = "gui")]
+#[cfg(any(feature = "gui", test))]
 use crate::runtime::engine_read::EngineRead;
 
 /// 닫기 요청 출처. 복원 사본 저장, surface.closed의 reason, 계측 구분값을 정한다.
@@ -88,10 +88,12 @@ impl RequestContext {
         let Some(cat) = engine.categories().get(section_idx).map(|c| c.id) else {
             return;
         };
+        #[cfg(feature = "gui")]
         let collapsed = engine
             .categories()
             .get(section_idx)
             .is_some_and(|c| self.navigation.collapsed_categories.contains(&c.id));
+        #[cfg(feature = "gui")]
         if collapsed {
             self.dispatch_intent(
                 crate::intent::Intent::Ui(crate::intent::UiIntent::SetCategoryCollapsed {
@@ -264,7 +266,7 @@ impl RequestContext {
     }
 
     /// 순서를 바꾸고 활성 대상을 유지한다. 범위 밖이거나 같은 위치면 false다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub fn move_workspace(&mut self, engine: &EngineRead<'_>, from: usize, to: usize) -> bool {
         let len = engine.workspaces().len();
         if from == to || from >= len || to >= len {

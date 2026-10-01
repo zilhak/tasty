@@ -1,4 +1,4 @@
-#[cfg(any(feature = "gui", test))]
+#[cfg(feature = "gui")]
 use crate::core::CoreState;
 use crate::runtime::engine_read::EngineRead;
 
@@ -34,7 +34,7 @@ impl RequestContext {
     ///
     /// GUI 사용자 요청으로 표시하며, 닫기 요청은 변경 전 트리에서 구한 포커스 후보를 받는다.
     /// 새 탭·분할·이동처럼 닫기가 아닌 요청에는 빈 후보 목록을 넘긴다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub(crate) fn forward_mirror_structural(
         &mut self,
         engine: &EngineRead<'_>,
@@ -68,7 +68,7 @@ impl RequestContext {
 
     /// 닫을 탭의 다음 탭, 마지막이면 이전 탭을 우선하는 로컬 포커스 후보다.
     /// 나머지 탭도 순서대로 포함하며 하나뿐인 탭에는 후보가 없다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub(crate) fn pane_sibling_tab_focus_candidates(
         &self,
         pane: &crate::model::Pane,
@@ -104,7 +104,7 @@ impl RequestContext {
 
     /// 같은 분할 탭의 다른 surface를 순서대로 후보에 넣는다.
     /// 단일 surface 탭이면 pane_sibling_tab_focus_candidates에 위임한다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     fn active_surface_close_focus_candidates(
         &self,
         engine: &CoreState,
@@ -135,7 +135,7 @@ impl RequestContext {
     }
 
     /// 포커스된 pane 닫기를 처리한다. mirror 요청을 전달한 경우에도 true다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub fn close_active_pane(&mut self, engine: &EngineRead<'_>) -> bool {
         let mirror_op = self.focused_surface_id(engine).map(|sid| {
             crate::ipc::stream::StructuralOp::ClosePane {
@@ -171,7 +171,7 @@ impl RequestContext {
     }
 
     /// 포커스된 surface를 닫고 필요하면 빈 탭·pane·워크스페이스도 정리한다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub fn close_active_surface(&mut self, engine: &EngineRead<'_>) -> bool {
         let focused_sid = self.focused_surface_id(engine);
         let mirror_op = focused_sid

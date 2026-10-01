@@ -1,6 +1,6 @@
-#[cfg(any(feature = "gui", test))]
+#[cfg(feature = "gui")]
 use crate::runtime::engine_read::EngineRead;
-#[cfg(any(feature = "gui", test))]
+#[cfg(feature = "gui")]
 use serde_json::Value;
 
 #[cfg(any(feature = "gui", debug_assertions))]
@@ -12,7 +12,7 @@ use crate::core::CoreState;
 
 impl RequestContext {
     /// Resolve the menu owner once; App admits and executes the explicit creation command.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub fn add_kind_tab_by_owner(
         &mut self,
         engine: &crate::runtime::engine_read::EngineRead<'_>,
@@ -38,7 +38,7 @@ impl RequestContext {
         Ok(())
     }
 
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub fn set_explorer_cwd(
         &mut self,
         engine: &crate::runtime::engine_read::EngineRead<'_>,
@@ -150,7 +150,7 @@ impl RequestContext {
     }
 
     /// AppServices 탭 닫기로 트리를 바꾸고 복원 기록을 남긴 뒤 창 쪽 정리와 알림을 이어서 한다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     fn close_tab_through_core(&mut self, engine: &EngineRead<'_>, tab_id: u32) -> bool {
         if engine.find_pane_for_tab(tab_id).is_none() {
             return false;
@@ -162,7 +162,7 @@ impl RequestContext {
     }
 
     /// 활성 탭 닫기를 처리한다. mirror 요청을 전달한 경우에도 true다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub fn close_active_tab(&mut self, engine: &EngineRead<'_>) -> bool {
         let mirror_op =
             self.focused_surface_id(engine)

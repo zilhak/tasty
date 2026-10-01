@@ -47,6 +47,7 @@ fn missing_surface_does_not_queue_a_close() {
     assert!(state.take_pending_intents().is_empty());
 }
 
+#[cfg(feature = "gui")]
 #[test]
 fn active_pane_and_tab_closes_preserve_the_original_ids_and_user_origin() {
     let (mut state, mut owner) = test_state();
@@ -67,6 +68,7 @@ fn active_pane_and_tab_closes_preserve_the_original_ids_and_user_origin() {
     assert!(engine.find_pane_for_tab(tab).is_some());
 }
 
+#[cfg(feature = "gui")]
 #[test]
 fn mirror_close_is_a_user_request_without_local_structure_mutation() {
     let (mut state, mut owner) = crate::state::tests::test_mirror_state();

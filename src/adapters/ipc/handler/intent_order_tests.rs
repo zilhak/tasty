@@ -164,6 +164,7 @@ fn detailed_labels(state: &crate::state::RequestContext) -> Vec<String> {
                     format!("PushNotification:{source}:{title}")
                 }
             }
+            #[cfg(feature = "gui")]
             Intent::Ui(crate::intent::UiIntent::OpenPopup { .. }) => "OpenPopup".into(),
             _ => label(intent),
         })
