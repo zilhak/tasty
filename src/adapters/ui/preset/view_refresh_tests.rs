@@ -37,7 +37,7 @@ fn ws(name: &str, tabs: usize) -> WorkspacePreset {
 /// `draw_preview` 를 한 프레임 그린다.
 fn frame(
     ctx: &egui::Context,
-    store: &mut PresetStore,
+    store: &mut PresetDrafts,
     editing: bool,
     selected_node: &mut Option<usize>,
 ) {
@@ -79,10 +79,10 @@ fn dev_key() -> String {
     preset_key(PresetKind::Workspace, "dev")
 }
 
-fn seeded() -> (tempfile::TempDir, PresetStore) {
+fn seeded() -> (tempfile::TempDir, PresetDrafts) {
     let tmp = tempfile::tempdir().expect("tmp");
-    let mut store = PresetStore::load_from(tmp.path().into());
-    store.save_workspace(ws("dev", 1)).expect("seed");
+    let mut store = PresetDrafts::default();
+    store.queue_workspace(ws("dev", 1)).expect("seed");
     (tmp, store)
 }
 
@@ -96,7 +96,7 @@ fn view_mode_shows_an_agent_save_on_the_next_frame() {
     assert_eq!(cached_tabs(&ctx), 1);
 
     store
-        .save_workspace_overwrite(ws("dev", 2))
+        .queue_workspace_overwrite(ws("dev", 2))
         .expect("agent save");
     frame(&ctx, &mut store, false, &mut selected);
     assert_eq!(
@@ -125,7 +125,7 @@ fn edit_mode_keeps_its_cache_through_an_agent_save() {
     assert_eq!(cached_tabs(&ctx), 1);
 
     store
-        .save_workspace_overwrite(ws("dev", 2))
+        .queue_workspace_overwrite(ws("dev", 2))
         .expect("agent save");
     frame(&ctx, &mut store, true, &mut selected);
     assert_eq!(
@@ -170,7 +170,7 @@ fn edit_mode_entered_on_the_first_frame_after_an_agent_save_starts_from_the_new_
     assert_eq!(cached_tabs(&ctx), 1);
 
     store
-        .save_workspace_overwrite(ws("dev", 2))
+        .queue_workspace_overwrite(ws("dev", 2))
         .expect("agent save");
     frame(&ctx, &mut store, true, &mut selected);
     assert_eq!(
@@ -188,7 +188,7 @@ fn edit_mode_entered_on_the_first_frame_after_an_agent_save_starts_from_the_new_
     );
 
     store
-        .save_workspace_overwrite(ws("dev", 3))
+        .queue_workspace_overwrite(ws("dev", 3))
         .expect("agent save");
     frame(&ctx, &mut store, true, &mut selected);
     assert_eq!(

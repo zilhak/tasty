@@ -9,14 +9,13 @@ mod cache_slot_tests;
 mod demo_cache;
 pub mod demo_layout;
 mod layout_base;
-#[cfg(test)]
-mod persist_tests;
 pub mod surface_settings;
 mod toolbar;
 #[cfg(test)]
 mod view_refresh_tests;
 
-use tasty_presets::{PresetKind, PresetPaneNode, PresetResult, PresetStore, PresetSurfaceLayout};
+use crate::view::preset::draft::PresetDrafts;
+use tasty_presets::{PresetKind, PresetPaneNode, PresetResult, PresetSurfaceLayout};
 use tasty_settings::KeybindingSettings;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -102,35 +101,35 @@ pub(super) struct EditMetaState {
     subtitle: String,
 }
 
-/// [`persist_layout`] 의 결과.
+/// [`queue_layout`] 의 결과.
 #[derive(Debug, PartialEq)]
-enum Persisted {
-    /// 썼다(또는 쓸 것이 없었다). 값은 캐시의 새 기준 판 — 저장 뒤 저장소의 값이다.
-    Saved(Option<LayoutBase>),
+enum QueuedLayout {
+    /// 요청을 만들었다(또는 변경이 없다). App 결과가 도착하면 저장소 projection으로 다시 대조한다.
+    Queued(Option<LayoutBase>),
     /// 캐시가 지어진 뒤 저장소의 레이아웃이 바뀌었다. 아무것도 쓰지 않았다.
     Conflict,
 }
 
 /// 캐시를 만들 때의 base와 현재 저장소를 비교한 뒤 저장한다. 다르면 Conflict이며
 /// 사라진 프리셋은 되살리지 않는다.
-fn persist_layout(
-    store: &mut PresetStore,
+fn queue_layout(
+    store: &mut PresetDrafts,
     kind: PresetKind,
     name: &str,
     layout: &DemoLayout,
     base: &Option<LayoutBase>,
-) -> PresetResult<Persisted> {
+) -> PresetResult<QueuedLayout> {
     let current = LayoutBase::current(store, kind, name);
     if current.is_some() && current != *base {
-        return Ok(Persisted::Conflict);
+        return Ok(QueuedLayout::Conflict);
     }
     write_layout(store, kind, name, layout)?;
-    Ok(Persisted::Saved(LayoutBase::current(store, kind, name)))
+    Ok(QueuedLayout::Queued(LayoutBase::current(store, kind, name)))
 }
 
 /// 메타데이터는 유지하고 레이아웃만 저장한다. 범위가 맞지 않거나 프리셋이 없으면 아무것도 쓰지 않는다.
 fn write_layout(
-    store: &mut PresetStore,
+    store: &mut PresetDrafts,
     kind: PresetKind,
     name: &str,
     layout: &DemoLayout,
@@ -144,8 +143,7 @@ fn write_layout(
                 return Ok(());
             };
             p.layout = node;
-            // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
-            store.save_workspace_overwrite(p)
+            store.queue_workspace_overwrite(p)
         }
         PresetKind::Tab => {
             let Some(surf) = layout.rebuild_surface_layout() else {
@@ -155,8 +153,7 @@ fn write_layout(
                 return Ok(());
             };
             p.tab.layout = surf;
-            // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
-            store.save_tab_overwrite(p)
+            store.queue_tab_overwrite(p)
         }
         PresetKind::Pane => {
             let Some(pane) = layout.rebuild_single_pane() else {
@@ -166,8 +163,7 @@ fn write_layout(
                 return Ok(());
             };
             p.pane = pane;
-            // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
-            store.save_pane_overwrite(p)
+            store.queue_pane_overwrite(p)
         }
     }
 }
@@ -209,7 +205,7 @@ fn count_label(n: usize, one_key: &str, many_key: &str) -> String {
 /// 편집 가능한 **실제** subtitle 필드값(Workspace 만 보유). Tab/Pane 은 구조 파생
 /// subtitle 이라 편집 불가 → 빈 문자열.
 pub(super) fn workspace_subtitle_field(
-    store: &PresetStore,
+    store: &PresetDrafts,
     kind: PresetKind,
     name: &str,
 ) -> String {
@@ -223,7 +219,7 @@ pub(super) fn workspace_subtitle_field(
     }
 }
 
-fn subtitle(store: &PresetStore, kind: PresetKind, name: &str) -> String {
+fn subtitle(store: &kind: PresetKind, name: &str) -> String {
     match kind {
         PresetKind::Workspace => store
             .get_workspace(name)
@@ -294,12 +290,11 @@ fn minimal_pane() -> tasty_presets::PresetPane {
 }
 
 /// 최소 preset 을 만들어 저장하고, 부여된 이름을 반환한다. 실패 시 `None`.
-fn create_minimal(store: &mut PresetStore, kind: PresetKind) -> Option<String> {
+fn create_minimal(store: &mut kind: PresetKind) -> Option<String> {
     use tasty_presets::{PanePreset, TabPreset, WorkspacePreset};
     let name = store.unique_name(kind, kind.as_str());
     let result = match kind {
-        // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
-        PresetKind::Workspace => store.save_workspace(WorkspacePreset {
+        PresetKind::Workspace => store.queue_workspace(WorkspacePreset {
             name: name.clone(),
             subtitle: String::new(),
             description: String::new(),
@@ -307,16 +302,14 @@ fn create_minimal(store: &mut PresetStore, kind: PresetKind) -> Option<String> {
                 pane: minimal_pane(),
             },
         }),
-        // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
-        PresetKind::Tab => store.save_tab(TabPreset {
+        PresetKind::Tab => store.queue_tab(TabPreset {
             name: name.clone(),
             tab: tasty_presets::PresetTab {
                 explicit_name: None,
                 layout: minimal_surface(),
             },
         }),
-        // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
-        PresetKind::Pane => store.save_pane(PanePreset {
+        PresetKind::Pane => store.queue_pane(PanePreset {
             name: name.clone(),
             pane: minimal_pane(),
         }),
@@ -332,7 +325,7 @@ fn create_minimal(store: &mut PresetStore, kind: PresetKind) -> Option<String> {
 
 /// 기존 preset 의 복사본을 만들어 저장하고, 새 이름을 반환한다. 실패 시 `None`.
 pub(super) fn duplicate_preset(
-    store: &mut PresetStore,
+    store: &mut PresetDrafts,
     kind: PresetKind,
     name: &str,
 ) -> Option<String> {
@@ -341,24 +334,21 @@ pub(super) fn duplicate_preset(
         PresetKind::Workspace => match store.get_workspace(name).cloned() {
             Some(mut p) => {
                 p.name = new_name.clone();
-                // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
-                store.save_workspace(p)
+                store.queue_workspace(p)
             }
             None => return None,
         },
         PresetKind::Tab => match store.get_tab(name).cloned() {
             Some(mut p) => {
                 p.name = new_name.clone();
-                // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
-                store.save_tab(p)
+                store.queue_tab(p)
             }
             None => return None,
         },
         PresetKind::Pane => match store.get_pane(name).cloned() {
             Some(mut p) => {
                 p.name = new_name.clone();
-                // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
-                store.save_pane(p)
+                store.queue_pane(p)
             }
             None => return None,
         },
@@ -434,7 +424,7 @@ fn draw_list_row(
 #[allow(clippy::too_many_arguments)]
 fn draw_preview(
     ui: &mut egui::Ui,
-    store: &mut PresetStore,
+    store: &mut PresetDrafts,
     theme: &Theme,
     kind: PresetKind,
     name: &str,
@@ -497,7 +487,7 @@ fn draw_preview(
 #[allow(clippy::too_many_arguments)]
 fn draw_preview_editing(
     ui: &mut egui::Ui,
-    store: &mut PresetStore,
+    store: &mut PresetDrafts,
     theme: &Theme,
     kind: PresetKind,
     name: &str,
@@ -539,9 +529,9 @@ fn draw_preview_editing(
     if !mutated {
         return;
     }
-    match persist_layout(store, kind, name, &cache.layout, &cache.base) {
-        Ok(Persisted::Saved(base)) => cache.base = base,
-        Ok(Persisted::Conflict) => {
+    match queue_layout(store, kind, name, &cache.layout, &cache.base) {
+        Ok(QueuedLayout::Queued(base)) => cache.base = base,
+        Ok(QueuedLayout::Conflict) => {
             reload_after_conflict(store, kind, name, catalog, cache, selected_node, toasts);
         }
         Err(e) => {
@@ -562,7 +552,7 @@ fn draw_preview_editing(
 #[allow(clippy::too_many_arguments)] // reason: 형제 draw_preview_editing 과 같은 패널 상태 묶음을 그대로 받는다 — 구조체로 묶으면 호출부 한 곳을 위해 빌림 분할만 늘어난다
 fn draw_settings_detail(
     ui: &mut egui::Ui,
-    store: &mut PresetStore,
+    store: &mut PresetDrafts,
     theme: &Theme,
     kind: PresetKind,
     name: &str,
@@ -600,8 +590,8 @@ fn draw_settings_detail(
         CfgOutcome::Confirm => {
             let mut candidate = cache.layout.clone();
             candidate.apply_leaf_draft(leaf_id, cfg.draft(), catalog);
-            match persist_layout(store, kind, name, &candidate, &cache.base) {
-                Ok(Persisted::Saved(base)) => {
+            match queue_layout(store, kind, name, &candidate, &cache.base) {
+                Ok(QueuedLayout::Queued(base)) => {
                     store_demo(
                         ui,
                         DemoCache {
@@ -613,7 +603,7 @@ fn draw_settings_detail(
                     *selected_node = Some(leaf_id);
                     *surface_cfg = None;
                 }
-                Ok(Persisted::Conflict) => {
+                Ok(QueuedLayout::Conflict) => {
                     reload_after_conflict(
                         store,
                         kind,
@@ -703,7 +693,7 @@ fn draw_preset_list(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
     theme: &Theme,
-    store: &mut PresetStore,
+    store: &mut PresetDrafts,
     kind: PresetKind,
     selected: &mut Option<String>,
     resolved: &Option<String>,
@@ -800,7 +790,7 @@ pub(super) struct PresetToolbarClicks {
 #[allow(clippy::too_many_arguments)]
 pub fn draw_preset_panel(
     ctx: &egui::Context,
-    store: &mut PresetStore,
+    store: &mut PresetDrafts,
     active_kind: &mut PresetKind,
     selected_workspace: &mut Option<String>,
     selected_tab: &mut Option<String>,

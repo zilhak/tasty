@@ -1,7 +1,8 @@
 //! 프리셋별 미리보기 캐시. 미리보기와 설정 화면이 같은 인스턴스를 사용한다.
 //! 현재·직전 pass에서 쓴 캐시만 남기며 저장소 비교 기준인 LayoutBase도 함께 보관한다.
 
-use tasty_presets::{PresetKind, PresetStore};
+use crate::view::preset::draft::PresetDrafts;
+use tasty_presets::{PresetKind};
 
 use crate::adapters::ui::{ToastKind, ToastManager, ToastScope};
 use crate::i18n::t;
@@ -12,7 +13,7 @@ use super::layout_base::LayoutBase;
 /// 선택된 preset 으로부터 미리보기 위젯을 만든다. `catalog` 는 registry 파생 kind
 /// 스냅샷(미주입이면 빈 catalog → 정적 fallback).
 fn build_demo(
-    store: &PresetStore,
+    store: &PresetDrafts,
     kind: PresetKind,
     name: &str,
     catalog: &KindCatalog,
@@ -100,7 +101,7 @@ pub(super) struct DemoCache {
 
 /// 저장소에서 캐시를 만든다. 프리셋이 없으면 None이다.
 pub(super) fn build_cache(
-    store: &PresetStore,
+    store: &PresetDrafts,
     kind: PresetKind,
     name: &str,
     catalog: &KindCatalog,
@@ -115,7 +116,7 @@ pub(super) fn build_cache(
 /// 캐시된 layout 을 꺼낸다. 키가 다르거나 없으면 store 에서 새로 짓는다.
 pub(super) fn load_demo(
     ui: &egui::Ui,
-    store: &PresetStore,
+    store: &PresetDrafts,
     kind: PresetKind,
     name: &str,
     catalog: &KindCatalog,
@@ -135,7 +136,7 @@ pub(super) fn store_demo(ui: &egui::Ui, cache: DemoCache) {
 
 /// 저장 충돌이면 편집본 대신 저장소 값을 읽고 알린다. 같은 ID가 다른 leaf를 가리킬 수 있어 선택도 푼다.
 pub(super) fn reload_after_conflict(
-    store: &PresetStore,
+    store: &PresetDrafts,
     kind: PresetKind,
     name: &str,
     catalog: &KindCatalog,
@@ -158,7 +159,7 @@ pub(super) fn reload_after_conflict(
 /// 보기 모드에서 저장소 레이아웃이 바뀌면 캐시를 갱신한다. 편집 중에는 호출하지 않는다.
 /// 값이 같으면 미리보기 탭 선택을 유지하며, 프리셋이 사라졌으면 캐시를 그대로 둔다.
 pub(super) fn refresh_view_cache(
-    store: &PresetStore,
+    store: &PresetDrafts,
     kind: PresetKind,
     name: &str,
     catalog: &KindCatalog,

@@ -1,6 +1,7 @@
 //! 보기·편집 모드의 프리셋 툴바와 선택한 동작 처리.
 
-use tasty_presets::{PresetKind, PresetStore};
+use crate::view::preset::draft::PresetDrafts;
+use tasty_presets::{PresetKind};
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant};
 
@@ -24,7 +25,7 @@ pub(super) struct ToolbarEditingOutcome {
 pub(super) fn draw_toolbar_editing(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
-    store: &mut PresetStore,
+    store: &mut PresetDrafts,
     theme: &Theme,
     kind: PresetKind,
     name: &str,
@@ -74,7 +75,7 @@ pub(super) fn draw_toolbar_editing(
 /// 편집 name 필드가 focus 를 잃었을 때 rename 을 커밋한다. 빈 이름은 거부하고
 /// 되돌리며, rename 실패는 toast 로 알리고 원래 이름으로 되돌린다.
 fn commit_editing_name(
-    store: &mut PresetStore,
+    store: &mut PresetDrafts,
     kind: PresetKind,
     name: &str,
     meta: &mut EditMetaState,
@@ -89,7 +90,7 @@ fn commit_editing_name(
     if buf == name {
         return;
     }
-    match store.rename(kind, name, &buf) {
+    match store.queue_rename(kind, name, &buf) {
         Ok(()) => {
             *selected = Some(buf.clone());
             meta.key = format!("{}:{}", kind.as_str(), buf);
@@ -109,7 +110,7 @@ fn commit_editing_name(
 
 /// 편집 subtitle 필드가 바뀌면 즉시 store/disk 에 write-through(auto-save).
 fn commit_editing_subtitle(
-    store: &mut PresetStore,
+    store: &mut PresetDrafts,
     name: &str,
     meta: &EditMetaState,
     toasts: &mut ToastManager,
@@ -118,8 +119,7 @@ fn commit_editing_subtitle(
         return;
     };
     p.subtitle = meta.subtitle.clone();
-    // intent-exempt: [결과사용] 응답이 필요한 mutate 는 AppServices method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
-    if let Err(e) = store.save_workspace_overwrite(p) {
+    if let Err(e) = store.queue_workspace_overwrite(p) {
         tracing::warn!("preset subtitle save failed: {e}");
         toasts.push(
             t("preset.toast.save_failed"),
@@ -163,7 +163,7 @@ pub(super) struct ToolbarViewClicks {
 pub(super) fn draw_toolbar_view(
     ui: &mut egui::Ui,
     theme: &Theme,
-    store: &mut PresetStore,
+    store: &mut PresetDrafts,
     kind: PresetKind,
     name: &str,
     detail_sub: &str,
@@ -190,7 +190,7 @@ pub(super) fn draw_toolbar_view(
         } else if resp.lost_focus() {
             let buf = r.buffer.trim().to_string();
             if !buf.is_empty() && buf != r.original {
-                match store.rename(kind, &r.original, &buf) {
+                match store.queue_rename(kind, &r.original, &buf) {
                     Ok(()) => *selected = Some(buf),
                     Err(e) => tracing::warn!("preset rename failed: {e}"),
                 }
@@ -278,7 +278,7 @@ pub(super) fn draw_toolbar_view(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn apply_toolbar_actions(
     ctx: &egui::Context,
-    store: &mut PresetStore,
+    store: &mut PresetDrafts,
     kind: PresetKind,
     current: &Option<String>,
     editing: &mut bool,
@@ -318,7 +318,7 @@ pub(super) fn apply_toolbar_actions(
         ctx.request_repaint();
     }
     if clicks.delete_clicked {
-        match store.delete(kind, &name) {
+        match store.queue_delete(kind, &name) {
             Ok(()) => {
                 *selected = None;
                 *rename = None;

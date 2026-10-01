@@ -4,14 +4,17 @@
 //! - 다른 윈도우 입력을 차단하지 않음
 //! - Esc 로 닫히지 않음
 //! - 엔진 전역 단일 인스턴스는 `App.preset_view_id` 가 관리
-//! - 구조 편집은 즉시 store 가 디스크 동기화 (별도 save 버튼 없음). surface 파라미터는
+//! - 구조 편집은 값 요청을 App에 반환해 저장한다(별도 save 버튼 없음). surface 파라미터는
 //!   설정 화면의 draft 로 고치고 확인을 눌러야 저장된다
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+pub(crate) mod draft;
+use draft::{PresetDrafts, PresetEdit};
 
 use winit::event::WindowEvent;
 
-use tasty_presets::{PresetKind, PresetStore};
+use tasty_presets::PresetKind;
 use tasty_settings::KeybindingSettings;
 
 use crate::adapters::ui::preset::demo_layout::KindCatalog;
@@ -25,7 +28,7 @@ use crate::view::{ViewAction, ViewBase, ViewCtx};
 
 pub struct PresetView {
     pub base: ViewBase,
-    store: Arc<Mutex<PresetStore>>,
+    drafts: PresetDrafts,
     /// 등록된 surface kind의 공유 목록. 매 프레임 읽어 plugin 활성 상태를 반영한다.
     /// 목록이 없으면 정적 기본 목록을 사용한다.
     surface_registry: Option<SurfaceKindCatalog>,
@@ -42,6 +45,7 @@ pub struct PresetView {
     /// 열려 있는 surface 설정 화면(대상 leaf + draft). `None` 이면 미리보기가 보인다.
     surface_cfg: Option<SurfaceCfg>,
     toasts: ToastManager,
+    pending_cfg: Option<SurfaceCfg>,
     shown: bool,
 }
 
@@ -49,13 +53,13 @@ impl PresetView {
     pub fn new(
         gpu: GpuState,
         winit: Arc<winit::window::Window>,
-        store: Arc<Mutex<PresetStore>>,
+        drafts: PresetDrafts,
         surface_registry: Option<SurfaceKindCatalog>,
         keybindings: KeybindingSettings,
     ) -> Self {
         Self {
             base: ViewBase::new(gpu, winit),
-            store,
+            drafts,
             surface_registry,
             keybindings,
             active_kind: PresetKind::Workspace,
@@ -66,8 +70,28 @@ impl PresetView {
             selected_node: None,
             surface_cfg: None,
             toasts: ToastManager::new(),
+            pending_cfg: None,
             shown: false,
         }
+    }
+
+    pub(crate) fn refresh_drafts(&mut self, drafts: PresetDrafts) {
+        if !self.drafts.has_edits() { self.drafts = drafts; }
+    }
+
+    pub(crate) fn take_edits(&mut self) -> Vec<PresetEdit> { self.drafts.take_edits() }
+
+    pub(crate) fn accept_edits(&mut self, drafts: PresetDrafts, error: Option<String>) {
+        self.drafts = drafts;
+        if error.is_some() {
+            // Failed surface-settings confirmation keeps the user's draft available for retry.
+            if self.surface_cfg.is_none() { self.surface_cfg = self.pending_cfg.take(); }
+            self.toasts.push(t("preset.toast.save_failed"),
+                crate::adapters::ui::ToastKind::Error, ToastScope::Window);
+        } else {
+            self.pending_cfg = None;
+        }
+        self.mark_dirty();
     }
 
     /// 외부에서 특정 프리셋을 선택한다. 열려 있던 surface 설정 초안은 버린다.
@@ -139,7 +163,8 @@ impl View for PresetView {
         self.base.begin_frame();
 
         let raw_input = self.base.gpu.take_egui_input(&self.base.winit);
-        let store_arc = self.store.clone();
+        let drafts = &mut self.drafts;
+        self.pending_cfg = self.surface_cfg.clone();
         // registry 스냅샷을 프레임마다 파생 — 미주입이면 빈 catalog(정적 fallback).
         let catalog = self
             .surface_registry
@@ -157,14 +182,9 @@ impl View for PresetView {
         let keybindings = &self.keybindings;
 
         let full_output = self.base.gpu.run_egui(raw_input, |ctx| {
-            let mut store_guard = crate::poison::recover_mutex(
-                store_arc.lock(),
-                crate::core::PRESET_STORE_WHAT,
-                &crate::core::PRESET_STORE_POISONED,
-            );
             crate::preset_ui::draw_preset_panel(
                 ctx,
-                &mut store_guard,
+                drafts,
                 active_kind,
                 sel_ws,
                 sel_tab,
@@ -176,7 +196,6 @@ impl View for PresetView {
                 &catalog,
                 keybindings,
             );
-            drop(store_guard);
 
             let empty_layout = LayoutContext {
                 active_workspace: 0,

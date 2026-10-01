@@ -39,7 +39,7 @@ fn key(name: &str) -> String {
 }
 
 /// 한 프레임 안에서 `calls` 의 (preset 이름, 편집 여부) 를 차례로 `draw_preview` 한다.
-fn frame(ctx: &egui::Context, store: &mut PresetStore, calls: &[(&str, bool)]) {
+fn frame(ctx: &egui::Context, store: &mut PresetDrafts, calls: &[(&str, bool)]) {
     let theme = tasty_themes::mocha_fallback();
     let catalog = KindCatalog::default();
     let kb = KeybindingSettings::default();
@@ -81,11 +81,11 @@ fn cached_tabs(ctx: &egui::Context, name: &str) -> usize {
 }
 
 /// 저장소와 다른 편집본을 캐시에 넣되 저장소 비교 기준은 유지한다.
-fn editing_dev() -> (tempfile::TempDir, PresetStore, egui::Context) {
+fn editing_dev() -> (tempfile::TempDir, PresetDrafts, egui::Context) {
     let tmp = tempfile::tempdir().expect("tmp");
-    let mut store = PresetStore::load_from(tmp.path().into());
-    store.save_workspace(ws("dev", 1)).expect("seed dev");
-    store.save_workspace(ws("ops", 2)).expect("seed ops");
+    let mut store = PresetDrafts::default();
+    store.queue_workspace(ws("dev", 1)).expect("seed dev");
+    store.queue_workspace(ws("ops", 2)).expect("seed ops");
     let ctx = egui::Context::default();
     frame(&ctx, &mut store, &[("dev", true)]);
     let mut cache = cached(&ctx, "dev").expect("cache");
@@ -103,7 +103,7 @@ fn another_preset_drawn_first_in_the_frame_keeps_the_edit_cache() {
             let (_tmp, mut store, ctx) = editing_dev();
             if agent_saved {
                 store
-                    .save_workspace_overwrite(ws("dev", 2))
+                    .queue_workspace_overwrite(ws("dev", 2))
                     .expect("agent save");
             }
             frame(&ctx, &mut store, &[first, ("dev", true)]);
@@ -120,7 +120,7 @@ fn another_preset_drawn_first_in_the_frame_keeps_the_edit_cache() {
 #[test]
 fn slots_do_not_pile_up_while_browsing() {
     let (_tmp, mut store, ctx) = editing_dev();
-    store.save_workspace(ws("qa", 1)).expect("seed qa");
+    store.queue_workspace(ws("qa", 1)).expect("seed qa");
 
     frame(&ctx, &mut store, &[("ops", false)]);
     assert!(cached(&ctx, "dev").is_some(), "직전 프레임의 칸은 남는다");
