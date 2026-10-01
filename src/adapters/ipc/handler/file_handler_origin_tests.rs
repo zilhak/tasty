@@ -16,6 +16,38 @@ use crate::intent::Intent;
 const PLUGIN: &str = "com.example.popup";
 const POPUP: u64 = 7;
 
+fn source_fixture() -> (
+    crate::state::RequestContext,
+    crate::runtime::engine_session::EngineSession,
+) {
+    use tasty_core::{DomainEvent as E, SurfaceSpec};
+    crate::state::tests::test_state_from_model(crate::state::tests::test_model(vec![
+        E::CategoryCreated {
+            id: 0,
+            name: "normal".into(),
+            index: 0,
+        },
+        E::WorkspaceCreated {
+            id: 1,
+            name: "workspace".into(),
+            category: 0,
+            index: 0,
+            pane: 1,
+        },
+        E::TabCreated {
+            id: 1,
+            pane: 1,
+            index: 0,
+            name: "source".into(),
+            surface: SurfaceSpec {
+                id: 1,
+                kind: "markdown".into(),
+                data: None,
+            },
+        },
+    ]))
+}
+
 fn plugin_caller(plugin_id: &str) -> CallerContext {
     CallerContext::Plugin {
         plugin_id: plugin_id.to_string(),
@@ -57,7 +89,7 @@ fn dispatch_through_with(
     let (mut state, mut engine_session) = if mirror {
         crate::state::tests::test_mirror_state()
     } else {
-        crate::state::tests::test_state()
+        source_fixture()
     };
     let mut engine = engine_session.borrow_mut();
     FileHandlerRegistryPort::install_plugin_handlers(
@@ -401,7 +433,7 @@ fn an_external_caller_cannot_claim_a_webview_navigation() {
 fn only_an_unverified_plugin_request_opens_the_fallback_picker() {
     for (caller, opens) in [(plugin_caller(PLUGIN), true), (CallerContext::Local, false)] {
         let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = source_fixture();
         let mut engine = engine_session.borrow_mut();
         let mut out = crate::ipc::window_port::IntentOutbox::default();
         let mut scope =
@@ -470,7 +502,7 @@ fn a_plugin_cannot_claim_another_plugins_webview_navigation() {
 /// 같은 프레임에 페이지 작성자가 바뀌면 navigation 기록을 버린다. 다음 프레임의 클릭은 허용한다.
 #[test]
 fn a_click_drained_in_the_frame_the_owner_took_the_page_back_is_not_a_user_action() {
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = source_fixture();
     let mut engine = engine_session.borrow_mut();
     let view = Arc::new(());
     state.webview_identity = Arc::downgrade(&view);
@@ -510,7 +542,7 @@ fn a_click_drained_in_the_frame_the_owner_took_the_page_back_is_not_a_user_actio
 
 #[test]
 fn a_webview_navigation_backs_only_one_dispatch() {
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = source_fixture();
     let mut engine = engine_session.borrow_mut();
     let view = Arc::new(());
     state.webview_identity = Arc::downgrade(&view);
@@ -554,7 +586,7 @@ fn a_mirror_origin_dispatch_echoes_the_requested_depth() {
         let (mut state, mut engine_session) = if mirror {
             crate::state::tests::test_mirror_state()
         } else {
-            crate::state::tests::test_state()
+            source_fixture()
         };
         let mut engine = engine_session.borrow_mut();
         let sid = engine
