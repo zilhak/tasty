@@ -576,8 +576,13 @@ impl JournalApplication {
         } else if pending.request.method == "terminal.respawn" {
             super::child::resolve_respawn(&pending.request, session)
         } else {
-            super::create_spec::Spec::from_public(&pending.request, &session.as_ref(), &view, services)
-                .and_then(|spec| Request::from_spec(spec, session))
+            super::create_spec::Spec::from_public(
+                &pending.request,
+                &session.as_ref(),
+                &view,
+                services,
+            )
+            .and_then(|spec| Request::from_spec(spec, session))
         };
         match resolved {
             Ok(mut resource) => {
@@ -842,7 +847,12 @@ impl Completed {
                 kind: surface.kind().into(),
             });
         }
-        if matches!(self.destination, CreationDestination::Pane { .. }) {
+        if let CreationDestination::Pane { target, split, .. } = &self.destination {
+            push(E::PaneSplit {
+                original_pane: *target,
+                new_pane: pane_id,
+                direction: split.direction,
+            });
             push(E::PaneCreated {
                 pane_id,
                 workspace_id: workspace.id,

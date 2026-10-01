@@ -84,3 +84,7 @@ runtime epoch, engine incarnation, activation 및 physical generation을 구분�
 응답 binding을 유지한다. client/runtime epoch/registration/op_id는 내부 요청 envelope의
 correlation 값으로 원 command 입력 바이트에 보존하며 중복 제거에 사용하지 않는다.
 공개 IPC에서 명시한 멱등 키의 기존 계약과는 별개다.
+
+새 pane의 live 생성 완료는 원 target pane과 확정 split 방향으로 `pane.split`을 통지한다.
+이 통지는 최초 성공 command continuation에서만 생성한다. Stored 재시도, journal replay와
+기존 surface의 materialization은 같은 사용자 생성 통지를 다시 만들지 않는다.
