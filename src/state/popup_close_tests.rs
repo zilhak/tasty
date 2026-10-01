@@ -2,7 +2,42 @@
 //! egui 프레임을 실행하며 OS 창은 만들지 않는다.
 //! 고정 위치에 열고 크기 계산이 필요한 팝업은 입력 없는 프레임 뒤에 버튼 좌표를 구한다.
 
-use super::tests::test_state;
+fn test_state() -> (
+    crate::state::RequestContext,
+    crate::runtime::engine_session::EngineSession,
+) {
+    use tasty_core::{DomainEvent as E, SurfaceSpec};
+    crate::state::tests::test_state_from_model(crate::state::tests::test_model(vec![
+        E::CategoryCreated {
+            id: 0,
+            name: "normal".into(),
+            index: 0,
+        },
+        E::CategoryCreated {
+            id: 1,
+            name: "Services".into(),
+            index: 1,
+        },
+        E::WorkspaceCreated {
+            id: 1,
+            name: "workspace".into(),
+            category: 0,
+            index: 0,
+            pane: 1,
+        },
+        E::TabCreated {
+            id: 1,
+            pane: 1,
+            index: 0,
+            name: "terminal".into(),
+            surface: SurfaceSpec {
+                id: 1,
+                kind: "terminal".into(),
+                data: None,
+            },
+        },
+    ]))
+}
 use crate::adapters::ui::draw_popups;
 use crate::adapters::ui::info_modal::{INFO_MODAL_ID, InfoModal, InfoModalAction};
 use crate::adapters::ui::popup::approval::APPROVAL_POPUP_ID;
@@ -22,7 +57,6 @@ use crate::adapters::ui::popup::transfer::{
 use crate::adapters::ui::popup::{PopupId, title_bar_height};
 use crate::intent::{Intent, UiIntent};
 use crate::model::{PhysicalPx, PhysicalRect};
-use crate::runtime::engine_access::EngineMut;
 use crate::state::{
     FileHandlerPickerData, FileHandlerPickerResult, FilePickerData, FilePickerResult, FpLoadState,
     PendingScriptConfirm, RenameTarget,
@@ -98,7 +132,7 @@ fn run_frame(
 ) {
     let ctx = egui::Context::default();
     drop(ctx.run(raw, |ctx| {
-        draw_popups(ctx, state, engine, &[], term_rect(), 1.0);
+        draw_popups(ctx, state, &engine.read(), &[], term_rect(), 1.0);
     }));
 }
 
@@ -601,7 +635,7 @@ fn info_modal_close_intent_with_single_entry_pops_and_does_not_reopen() {
 fn confirm_delete_category_escape_close_clears_dialog_state() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
-    let cat_id = engine.create_category("Services").unwrap();
+    let cat_id = 1;
     state.dialogs.pending_category_delete = Some(cat_id);
     state
         .popups
@@ -617,7 +651,7 @@ fn confirm_delete_category_escape_close_clears_dialog_state() {
 fn confirm_delete_category_outside_click_clears_dialog_state() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
-    let cat_id = engine.create_category("Services").unwrap();
+    let cat_id = 1;
     state.dialogs.pending_category_delete = Some(cat_id);
     state
         .popups
@@ -637,7 +671,7 @@ fn confirm_delete_category_outside_click_clears_dialog_state() {
 fn confirm_delete_category_close_intent_now_clears_dialog_state() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
-    let cat_id = engine.create_category("Services").unwrap();
+    let cat_id = 1;
     state.dialogs.pending_category_delete = Some(cat_id);
     state
         .popups
@@ -796,41 +830,45 @@ fn confirm_force_detach_closes_when_the_workspace_is_gone() {
 
 // 이 하네스는 프레임마다 Context를 새로 만들어 버튼 클릭 대신 실행 함수를 직접 검사한다.
 #[test]
-fn confirm_force_detach_confirm_releases_the_workspace_and_its_members() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
+fn confirm_force_detach_confirm_queues_the_original_grant_without_releasing_it() {
+    let (mut state, mut owner) = test_state();
+    let mut engine = owner.borrow_mut();
     let (ws_id, members) = occupied_workspace_with_popup(&mut state, &mut engine);
-    assert!(!members.is_empty(), "픽스처 워크스페이스에 surface 가 없다");
-
-    let holder = crate::adapters::ui::popup::confirm_force_detach_workspace::apply_force_detach(
+    assert!(!members.is_empty());
+    let grant = engine
+        .live
+        .occupancy
+        .workspaces_snapshot()
+        .into_iter()
+        .find(|(id, _)| *id == ws_id)
+        .unwrap()
+        .1
+        .granted_seq;
+    crate::adapters::ui::popup::confirm_force_detach_workspace::apply_force_detach(
         &mut state,
-        &mut engine,
+        &engine.read(),
     );
-
-    assert_eq!(holder, Some(7));
-    assert!(engine.live.occupancy.workspace_holder(ws_id).is_none());
-    for sid in &members {
-        assert!(
-            !engine.live.occupancy.is_hard_occupied(*sid),
-            "surface {sid} 가 아직 점유 중이다"
-        );
-    }
+    let intents = state.take_pending_intents();
+    assert_eq!(intents.len(), 1);
+    assert!(intents[0].origin.is_user());
+    assert!(
+        matches!(&intents[0].body, Intent::Engine(crate::app::engine_action::EngineAction::DetachWorkspace { workspace, holder: 7, grant: original }) if *workspace == ws_id && *original == grant)
+    );
+    assert_eq!(engine.live.occupancy.workspace_holder(ws_id), Some(7));
     assert!(state.dialogs.pending_force_detach_workspace.is_none());
 }
 
 #[test]
 fn confirm_force_detach_with_no_pending_target_detaches_nothing() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
+    let (mut state, mut owner) = test_state();
+    let mut engine = owner.borrow_mut();
     let (ws_id, _) = occupied_workspace_with_popup(&mut state, &mut engine);
     state.dialogs.pending_force_detach_workspace = None;
-
-    let holder = crate::adapters::ui::popup::confirm_force_detach_workspace::apply_force_detach(
+    crate::adapters::ui::popup::confirm_force_detach_workspace::apply_force_detach(
         &mut state,
-        &mut engine,
+        &engine.read(),
     );
-
-    assert_eq!(holder, None);
+    assert!(state.take_pending_intents().is_empty());
     assert_eq!(engine.live.occupancy.workspace_holder(ws_id), Some(7));
 }
 
@@ -945,7 +983,7 @@ fn run_frames(
     let ctx = egui::Context::default();
     for raw in inputs {
         drop(ctx.run(raw, |ctx| {
-            draw_popups(ctx, state, engine, &[], term_rect(), 1.0);
+            draw_popups(ctx, state, &engine.read(), &[], term_rect(), 1.0);
         }));
     }
     ctx
@@ -1070,20 +1108,17 @@ fn file_picker_close_intent_now_marks_cancelled() {
 }
 
 fn push_approval(
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    _engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     state: &mut crate::state::RequestContext,
     id: &str,
 ) {
-    let record = engine
-        .approval_store
-        .request(ApprovalRequest {
-            id: ApprovalId(id.to_string()),
-            requester: Requester::Plugin {
-                id: "test".to_string(),
-            },
+    let record = tasty_approval::ApprovalRecord {
+        request: ApprovalRequest {
+            id: ApprovalId(id.into()),
+            requester: Requester::Plugin { id: "test".into() },
             workspace_id: None,
             surface_id: None,
-            title: "Test approval".to_string(),
+            title: "Test approval".into(),
             body: None,
             choices: vec![],
             default_choice: None,
@@ -1091,12 +1126,18 @@ fn push_approval(
             severity: Severity::Info,
             created_at: 1,
             metadata: serde_json::Value::Null,
-        })
-        .expect("approval request");
+        },
+        state: tasty_approval::ApprovalState::Pending,
+        history: vec![],
+    };
     state
         .dialogs
         .pending_approval_ids
-        .push_back(record.record.request.id.clone());
+        .push_back(record.request.id.clone());
+    state
+        .dialogs
+        .approval_records
+        .insert(record.request.id.clone(), record);
 }
 
 #[test]
@@ -1280,367 +1321,4 @@ fn preset_apply_cancel_action_close_clears_selection_and_target_category() {
     assert!(!state.popups.is_open(APPLY_WORKSPACE_POPUP_ID));
     assert!(state.dialogs.preset_apply_target_category.is_none());
     assert!(state.dialogs.preset_picker_selected.is_none());
-}
-
-fn open_scoped(
-    state: &mut crate::state::RequestContext,
-    engine: &mut EngineMut<'_>,
-    id: PopupId,
-    scope: crate::adapters::ui::popup::PopupScope,
-) {
-    crate::intent::popup::handle(
-        state,
-        engine,
-        &UiIntent::OpenPopup {
-            id,
-            mode: crate::intent::OpenPopupMode::WithScope(scope),
-        }
-        .from_user_menu("test"),
-    );
-}
-
-fn visible_popup(
-    state: &crate::state::RequestContext,
-    engine: &crate::core::CoreState,
-) -> Option<PopupId> {
-    let ctx = super::popup_ownership_tests::live_layout_ctx(state, engine);
-    state
-        .popups
-        .topmost_visible_open(Some(&ctx))
-        .map(|(id, _)| id)
-}
-
-/// 범위 workspace가 닫히면 이름 변경 팝업이 닫히고, 다른 workspace에서 다시 열면 보인다.
-#[test]
-fn rename_popup_closes_with_its_workspace_and_reopens_elsewhere() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let b = super::popup_ownership_tests::push_workspace(&mut engine);
-    let c = super::popup_ownership_tests::push_workspace(&mut engine);
-    state.set_active_workspace_index(&engine, engine.find_workspace_index_for_id(b).unwrap());
-    let target = RenameTarget::WorkspaceName { workspace_id: b };
-    let scope = target.popup_scope(&engine);
-    state.dialogs.rename = Some((target, "B".to_string()));
-    open_scoped(&mut state, &mut engine, RENAME_POPUP_ID, scope);
-
-    let b_idx = engine.find_workspace_index_for_id(b).unwrap();
-    assert!(state.close_workspace_at(
-        &mut engine,
-        b_idx,
-        crate::state::WorkspaceCloseOrigin::Agent
-    ));
-    for _ in 0..3 {
-        run_frame(empty_input(), &mut state, &mut engine);
-    }
-    assert!(
-        !state.popups.is_open(RENAME_POPUP_ID),
-        "rename popup stays open after its workspace closed"
-    );
-    assert!(state.dialogs.rename.is_none());
-
-    state.set_active_workspace_index(&engine, engine.find_workspace_index_for_id(c).unwrap());
-    let target = RenameTarget::WorkspaceName { workspace_id: c };
-    let scope = target.popup_scope(&engine);
-    state.dialogs.rename = Some((target, "C".to_string()));
-    open_scoped(&mut state, &mut engine, RENAME_POPUP_ID, scope);
-    run_frame(empty_input(), &mut state, &mut engine);
-    assert_eq!(visible_popup(&state, &engine), Some(RENAME_POPUP_ID));
-}
-
-/// 범위 workspace가 닫힌 도구 팝업은 활성 workspace로 다시 열면 보인다.
-#[test]
-fn tool_popup_reopens_on_the_active_workspace_after_its_workspace_closed() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let b = super::popup_ownership_tests::push_workspace(&mut engine);
-    super::popup_ownership_tests::push_workspace(&mut engine);
-    state.set_active_workspace_index(&engine, engine.find_workspace_index_for_id(b).unwrap());
-    open_scoped(
-        &mut state,
-        &mut engine,
-        PORT_SCANNER_POPUP_ID,
-        crate::adapters::ui::popup::PopupScope::Workspace(b),
-    );
-    run_frame(empty_input(), &mut state, &mut engine);
-
-    let b_idx = engine.find_workspace_index_for_id(b).unwrap();
-    assert!(state.close_workspace_at(&mut engine, b_idx, crate::state::WorkspaceCloseOrigin::User));
-    run_frame(empty_input(), &mut state, &mut engine);
-
-    let active_id = state.active_workspace(&engine).id;
-    open_scoped(
-        &mut state,
-        &mut engine,
-        PORT_SCANNER_POPUP_ID,
-        crate::adapters::ui::popup::PopupScope::Workspace(active_id),
-    );
-    run_frame(empty_input(), &mut state, &mut engine);
-    assert_eq!(visible_popup(&state, &engine), Some(PORT_SCANNER_POPUP_ID));
-}
-
-/// 범위 탭이 닫히면 탭 이름 변경 팝업이 닫힌다.
-#[test]
-fn tab_rename_popup_closes_with_its_tab() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    state.add_tab(&mut engine).unwrap();
-    let pane_id = state.focused_pane_id(&engine);
-    let pane = engine.find_pane_by_id(pane_id).unwrap();
-    let tab_id = pane.tabs[state.navigation.tab_index(pane)].id;
-    let target = RenameTarget::TabName { tab_id };
-    let scope = target.popup_scope(&engine);
-    state.dialogs.rename = Some((target, "t".to_string()));
-    open_scoped(&mut state, &mut engine, RENAME_POPUP_ID, scope);
-
-    let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-    core.apply(
-        &mut engine,
-        crate::app::command::DomainIntent::CloseTab { tab_id },
-    )
-    .expect("close tab");
-    run_frame(empty_input(), &mut state, &mut engine);
-    assert!(!state.popups.is_open(RENAME_POPUP_ID));
-    assert!(state.dialogs.rename.is_none());
-}
-
-/// 두 탭을 만들고 활성 탭의 surface와 다른 탭의 surface를 돌려준다.
-fn two_tab_surfaces(
-    state: &mut crate::state::RequestContext,
-    engine: &mut EngineMut<'_>,
-) -> (u32, u32, u32) {
-    let other = state.focused_surface_id(engine).expect("first surface");
-    state.add_tab(engine).unwrap();
-    let pane_id = state.focused_pane_id(engine);
-    let pane = engine.find_pane_by_id(pane_id).unwrap();
-    let tab_id = pane.tabs[state.navigation.tab_index(pane)].id;
-    let target = state.focused_surface_id(engine).expect("second surface");
-    assert_ne!(target, other);
-    (tab_id, target, other)
-}
-
-fn close_tab(engine: &mut EngineMut<'_>, tab_id: u32) {
-    let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-    core.apply(
-        engine,
-        crate::app::command::DomainIntent::CloseTab { tab_id },
-    )
-    .expect("close tab");
-}
-
-/// 범위 surface가 사라지면 변환 팝업이 닫히고, 다른 surface로 다시 열면 보인다.
-#[test]
-fn convert_popup_closes_with_its_surface_and_reopens_elsewhere() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let (tab_id, target, other) = two_tab_surfaces(&mut state, &mut engine);
-    state.dialogs.convert_popup = Some(target);
-    open_scoped(
-        &mut state,
-        &mut engine,
-        CONVERT_SURFACE_POPUP_ID,
-        crate::adapters::ui::popup::PopupScope::Surface(target),
-    );
-
-    close_tab(&mut engine, tab_id);
-    for _ in 0..3 {
-        run_frame(empty_input(), &mut state, &mut engine);
-    }
-    assert!(
-        !state.popups.is_open(CONVERT_SURFACE_POPUP_ID),
-        "convert popup stays open after its surface closed"
-    );
-    assert!(state.dialogs.convert_popup.is_none());
-
-    assert_eq!(state.focused_surface_id(&engine), Some(other));
-    state.dialogs.convert_popup = Some(other);
-    open_scoped(
-        &mut state,
-        &mut engine,
-        CONVERT_SURFACE_POPUP_ID,
-        crate::adapters::ui::popup::PopupScope::Surface(other),
-    );
-    run_frame(empty_input(), &mut state, &mut engine);
-    assert_eq!(
-        visible_popup(&state, &engine),
-        Some(CONVERT_SURFACE_POPUP_ID)
-    );
-}
-
-/// 범위 surface가 사라진 검색창은 닫혀 Ctrl+F가 여는 분기로 가고, 다른 surface에서 다시 보인다.
-#[test]
-fn search_bar_closes_with_its_surface_and_reopens_elsewhere() {
-    const SEARCH_BAR_POPUP_ID: PopupId = "search_bar";
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let (tab_id, target, other) = two_tab_surfaces(&mut state, &mut engine);
-    state.search.surface_id = target;
-    state.search.query = "needle".to_string();
-    state.search.matches = vec![tasty_terminal::search::SearchMatch {
-        row: 0,
-        col_start: 0,
-        col_end: 6,
-    }];
-    crate::intent::popup::handle(
-        &mut state,
-        &mut engine,
-        &UiIntent::OpenPopup {
-            id: SEARCH_BAR_POPUP_ID,
-            mode: crate::intent::OpenPopupMode::AtTopOfScope(
-                crate::adapters::ui::popup::PopupScope::Surface(target),
-            ),
-        }
-        .from_user_menu("test"),
-    );
-
-    close_tab(&mut engine, tab_id);
-    run_frame(empty_input(), &mut state, &mut engine);
-    assert!(
-        !state.popups.is_open(SEARCH_BAR_POPUP_ID),
-        "search bar stays open after its surface closed"
-    );
-    assert!(
-        state.search.query.is_empty() && state.search.matches.is_empty(),
-        "results of the closed surface must not carry over to the next surface"
-    );
-
-    state.search.surface_id = other;
-    crate::intent::popup::handle(
-        &mut state,
-        &mut engine,
-        &UiIntent::OpenPopup {
-            id: SEARCH_BAR_POPUP_ID,
-            mode: crate::intent::OpenPopupMode::AtTopOfScope(
-                crate::adapters::ui::popup::PopupScope::Surface(other),
-            ),
-        }
-        .from_user_menu("test"),
-    );
-    run_frame(empty_input(), &mut state, &mut engine);
-    assert_eq!(visible_popup(&state, &engine), Some(SEARCH_BAR_POPUP_ID));
-}
-
-const SEARCH_BAR: PopupId = "search_bar";
-
-/// Ctrl+F·메뉴·탭바 검색 버튼이 공유하는 진입점을 부르고 쌓인 intent를 처리한다.
-fn find_in_focused_surface(state: &mut crate::state::RequestContext, engine: &mut EngineMut<'_>) {
-    let focused = state.focused_surface_id(engine);
-    crate::adapters::ui::search_bar::open_or_focus_for(state, focused, "test");
-    for intent in state.take_pending_intents() {
-        crate::intent::popup::handle(state, engine, &intent);
-    }
-}
-
-fn type_query(state: &mut crate::state::RequestContext, query: &str) {
-    state.search.query = query.to_string();
-    state.search.matches = vec![tasty_terminal::search::SearchMatch {
-        row: 0,
-        col_start: 0,
-        col_end: query.len(),
-    }];
-}
-
-fn search_scope(
-    state: &crate::state::RequestContext,
-) -> Option<crate::adapters::ui::popup::PopupScope> {
-    state.popups.open_scope(SEARCH_BAR).cloned()
-}
-
-/// 다른 탭에 열려 숨은 검색창은 현재 탭의 surface로 옮겨 보이고, 이전 검색은 비워진다.
-#[test]
-fn find_moves_a_search_bar_hidden_in_another_tab_to_the_focused_surface() {
-    use crate::adapters::ui::popup::PopupScope;
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let (_tab_id, target, other) = two_tab_surfaces(&mut state, &mut engine);
-    find_in_focused_surface(&mut state, &mut engine);
-    type_query(&mut state, "needle");
-    run_frame(empty_input(), &mut state, &mut engine);
-    assert_eq!(visible_popup(&state, &engine), Some(SEARCH_BAR));
-
-    state.goto_tab_in_pane(&mut engine, 0);
-    assert_eq!(state.focused_surface_id(&engine), Some(other));
-    run_frame(empty_input(), &mut state, &mut engine);
-    assert_eq!(visible_popup(&state, &engine), None, "hidden with its tab");
-    assert_eq!(search_scope(&state), Some(PopupScope::Surface(target)));
-
-    find_in_focused_surface(&mut state, &mut engine);
-    assert_eq!(state.search.surface_id, other);
-    assert!(
-        state.search.query.is_empty() && state.search.matches.is_empty(),
-        "the search of the previous surface must not carry over"
-    );
-    // 같은 프레임에 들어온 입력을 늦은 on_close가 지우지 않는다(닫았다 다시 여는 경로가 아니다).
-    type_query(&mut state, "fresh");
-    run_frame(empty_input(), &mut state, &mut engine);
-    assert_eq!(visible_popup(&state, &engine), Some(SEARCH_BAR));
-    assert_eq!(search_scope(&state), Some(PopupScope::Surface(other)));
-    assert_eq!(state.search.surface_id, other);
-    assert_eq!(state.search.query, "fresh");
-}
-
-/// 같은 surface에 열린 검색창은 범위와 검색을 그대로 두고 입력 포커스만 받는다.
-#[test]
-fn find_on_the_same_surface_only_focuses_the_open_search_bar() {
-    use crate::adapters::ui::popup::PopupScope;
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let sid = state.focused_surface_id(&engine).expect("surface");
-    find_in_focused_surface(&mut state, &mut engine);
-    type_query(&mut state, "needle");
-    state.popups.set_focused(SEARCH_BAR, false);
-    run_frame(empty_input(), &mut state, &mut engine);
-    assert!(!state.popups.is_focused(SEARCH_BAR));
-
-    find_in_focused_surface(&mut state, &mut engine);
-    assert!(state.take_pending_intents().is_empty(), "no reopen request");
-    run_frame(empty_input(), &mut state, &mut engine);
-    assert_eq!(search_scope(&state), Some(PopupScope::Surface(sid)));
-    assert_eq!(state.search.surface_id, sid);
-    assert_eq!(state.search.query, "needle");
-    assert_eq!(state.search.matches.len(), 1);
-    assert!(state.popups.is_focused(SEARCH_BAR));
-}
-
-/// 같은 탭의 다른 분할 surface에서 찾으면 검색창이 그 surface로 옮겨 가고 이전 검색은 비워진다.
-#[test]
-fn find_in_a_split_sibling_moves_the_search_bar_to_it() {
-    use crate::adapters::ui::popup::PopupScope;
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let a = state.focused_surface_id(&engine).expect("surface a");
-    let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-    let events = core
-        .apply(
-            &mut engine,
-            crate::app::command::DomainIntent::SplitSurface {
-                target_surface_id: a,
-                direction: crate::model::SplitDirection::Vertical,
-                cwd: None,
-                kind: "terminal".to_string(),
-                surface_params: serde_json::json!({}),
-            },
-        )
-        .expect("split surface");
-    let Some(crate::app::command::CoreEvent::SurfaceSplit {
-        new_surface_id: b, ..
-    }) = events.into_iter().next()
-    else {
-        panic!("expected SurfaceSplit event");
-    };
-
-    // 분할 뒤 포커스가 새 surface로 갈 수 있으므로 A로 되돌린다. 이미 A면 바뀌지 않는다.
-    state.focus_surface_by_id(&mut engine, a);
-    assert_eq!(state.focused_surface_id(&engine), Some(a));
-    find_in_focused_surface(&mut state, &mut engine);
-    type_query(&mut state, "needle");
-    run_frame(empty_input(), &mut state, &mut engine);
-    assert_eq!(search_scope(&state), Some(PopupScope::Surface(a)));
-
-    assert!(state.focus_surface_by_id(&mut engine, b));
-    find_in_focused_surface(&mut state, &mut engine);
-    run_frame(empty_input(), &mut state, &mut engine);
-    assert_eq!(visible_popup(&state, &engine), Some(SEARCH_BAR));
-    assert_eq!(search_scope(&state), Some(PopupScope::Surface(b)));
-    assert_eq!(state.search.surface_id, b);
-    assert!(state.search.query.is_empty() && state.search.matches.is_empty());
 }

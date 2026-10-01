@@ -16,6 +16,69 @@ fn split_workspace(id: u32, mirror: bool) -> Workspace {
     workspace.mirror = mirror;
     workspace
 }
+fn local_fixture(
+    revision: u64,
+    split_surface: bool,
+) -> (
+    crate::state::RequestContext,
+    crate::runtime::engine_session::EngineSession,
+) {
+    use tasty_core::{DomainEvent as E, Placement, Ratio, SplitSpec, SurfaceSpec};
+    let spec = |id| SurfaceSpec {
+        id,
+        kind: "terminal".into(),
+        data: None,
+    };
+    let split = SplitSpec {
+        direction: SplitDirection::Vertical,
+        ratio: Ratio::from_f32(0.5),
+        placement: Placement::After,
+    };
+    let mut events = vec![
+        E::CategoryCreated {
+            id: 0,
+            name: "normal".into(),
+            index: 0,
+        },
+        E::WorkspaceCreated {
+            id: 1,
+            name: "split".into(),
+            category: 0,
+            index: 0,
+            pane: 10,
+        },
+        E::TabCreated {
+            id: 100,
+            pane: 10,
+            index: 0,
+            name: "first".into(),
+            surface: spec(1000),
+        },
+        E::PaneSplit {
+            target: 10,
+            pane: 20,
+            split,
+        },
+        E::TabCreated {
+            id: 200,
+            pane: 20,
+            index: 0,
+            name: "second".into(),
+            surface: spec(2000),
+        },
+    ];
+    if split_surface {
+        events.push(E::SurfaceSplit {
+            target: 1000,
+            surface: spec(1001),
+            split,
+        });
+    }
+    let mut model = crate::state::tests::test_model(events);
+    model.applied.revision = Some(tasty_core::Revision(revision));
+    crate::state::tests::test_state_from_model(model)
+}
+
 fn rect() -> PhysicalRect {
     PhysicalRect {
         x: PhysicalPx(0.0),
@@ -69,10 +132,8 @@ fn width(previews: &LayoutPreviews, core: &CoreState, workspace: u32) -> f32 {
 
 #[test]
 fn preview_geometry_does_not_mutate_the_committed_tree_and_cancel_restores_geometry() {
-    let (mut state, mut session) = crate::state::tests::test_state();
-    let core = &mut session.core_state;
-    core.set_workspace_fixture(vec![split_workspace(1, false)]);
-    core.committed_structure_revision() = Some(12);
+    let (mut state, session) = local_fixture(12, false);
+    let core = &session.core_state;
     state.reconcile_presentation(core);
     let original = width(&state.layout_previews, core, 1);
     let sequence = start(&mut state.layout_previews, core, 1);
@@ -113,15 +174,13 @@ fn preview_geometry_does_not_mutate_the_committed_tree_and_cancel_restores_geome
 
 #[test]
 fn a_new_projection_invalidates_the_drag_even_when_leaf_ids_are_identical() {
-    let (_, mut session) = crate::state::tests::test_state();
-    let core = &mut session.core_state;
-    core.set_workspace_fixture(vec![split_workspace(1, false)]);
-    core.committed_structure_revision() = Some(5);
+    let (_, session) = local_fixture(5, false);
+    let core = &session.core_state;
     let mut previews = LayoutPreviews::default();
     let sequence = start(&mut previews, core, 1);
     previews.update(core, sequence, 0.8);
-    core.replace_local_workspaces(vec![split_workspace(1, false)]);
-    core.committed_structure_revision() = Some(7);
+    let (_, next) = local_fixture(7, false);
+    let core = &next.core_state;
     assert!(!previews.update(core, sequence, 0.9));
     assert!(previews.finish(core, sequence).is_none());
     assert!(previews.entries.is_empty());
@@ -129,9 +188,9 @@ fn a_new_projection_invalidates_the_drag_even_when_leaf_ids_are_identical() {
 
 #[test]
 fn cancelled_second_mirror_drag_preserves_the_first_until_remote_projection_replacement() {
-    let (_, mut session) = crate::state::tests::test_state();
-    let core = &mut session.core_state;
-    core.set_workspace_fixture(vec![split_workspace(9, true)]);
+    let mut model = CoreState::default();
+    model.push_mirror_workspace(split_workspace(9, true));
+    let core = &mut model;
     let mut previews = LayoutPreviews::default();
     let original = width(&previews, core, 9);
     let first = start(&mut previews, core, 9);
@@ -166,10 +225,8 @@ fn cancelled_second_mirror_drag_preserves_the_first_until_remote_projection_repl
 
 #[test]
 fn another_view_keeps_its_geometry_and_removed_target_releases_the_preview() {
-    let (_, mut session) = crate::state::tests::test_state();
-    let core = &mut session.core_state;
-    core.set_workspace_fixture(vec![split_workspace(1, false)]);
-    core.committed_structure_revision() = Some(3);
+    let (_, session) = local_fixture(5, false);
+    let core = &session.core_state;
     let mut first_view = LayoutPreviews::default();
     let second_view = LayoutPreviews::default();
     let original = width(&second_view, core, 1);
@@ -177,25 +234,16 @@ fn another_view_keeps_its_geometry_and_removed_target_releases_the_preview() {
     first_view.update(core, sequence, 0.8);
     assert!(width(&first_view, core, 1) > original);
     assert_eq!(width(&second_view, core, 1), original);
-    drop(core.remove_workspace_at(0));
+    let after = CoreState::default();
+    let core = &after;
     assert!(first_view.finish(core, sequence).is_none());
     assert!(first_view.entries.is_empty());
 }
 
 #[test]
 fn surface_preview_is_shared_by_hit_testing_dividers_and_move_source_mark() {
-    use crate::model::{SurfaceLayout, TerminalSurface};
-    let (mut state, mut session) = crate::state::tests::test_state();
-    let core = &mut session.core_state;
-    core.set_workspace_fixture(vec![split_workspace(1, false)]);
-    core.committed_structure_revision() = Some(8);
-    core.find_pane_by_id_mut(10).unwrap().tabs[0].put_layout(SurfaceLayout::Split {
-        direction: SplitDirection::Vertical,
-        ratio: 0.5,
-        first: Box::new(SurfaceLayout::Leaf(Box::new(TerminalSurface { id: 1000 }))),
-        second: Box::new(SurfaceLayout::Leaf(Box::new(TerminalSurface { id: 1001 }))),
-        node_id: crate::model::SplitNodeId::allocate(),
-    });
+    let (mut state, session) = local_fixture(8, true);
+    let core = &session.core_state;
     state.reconcile_presentation(core);
     let panes = state.pane_rects(core, &core.local_workspaces()[0], rect(), 1.5);
     let content = PhysicalRect {
@@ -235,8 +283,8 @@ fn surface_preview_is_shared_by_hit_testing_dividers_and_move_source_mark() {
             )
             .is_some()
     );
-    core.pending_move = Some(crate::core::state::PendingMove::Surface(1000));
     let mark = crate::adapters::ui::move_source::resolve(
+        Some(crate::state::PendingMove::Surface(1000)),
         &state.navigation,
         core,
         0,
