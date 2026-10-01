@@ -298,6 +298,8 @@ fn prepare_workspace(
         worker,
         ticket,
         Work::PutPreparation(PreparationInput {
+            adopt: None,
+            child: None,
             kind: kind.into(),
             cwd: None,
             params: serde_json::json!({}),
@@ -476,7 +478,7 @@ fn mixed_operation_leases_are_rejected_before_either_effect_or_model_changes() {
         &worker,
         32,
         Work::CleanupFinished {
-            mirror_count: 0,
+            view: crate::runtime::journal_product::CompletionView::default(),
             lease: EffectLease {
                 effect_id: "missing".into(),
                 operation: OperationId("missing".into()),
@@ -644,7 +646,7 @@ fn committed_installation_preserves_initial_observations_and_defers_command_comp
         &worker,
         5,
         Work::CleanupFinished {
-            mirror_count: 0,
+            view: crate::runtime::journal_product::CompletionView::default(),
             lease: installed.lease.clone(),
         },
     );
@@ -751,6 +753,8 @@ fn complete_conversion_and_reap(
         worker,
         10,
         Work::PutPreparation(PreparationInput {
+            adopt: None,
+            child: None,
             kind: "empty".into(),
             cwd: None,
             params: serde_json::json!({}),
@@ -861,7 +865,7 @@ fn complete_conversion_and_reap(
         worker,
         14,
         Work::CleanupFinished {
-            mirror_count: 0,
+            view: crate::runtime::journal_product::CompletionView::default(),
             lease: installed.lease.clone(),
         },
     );

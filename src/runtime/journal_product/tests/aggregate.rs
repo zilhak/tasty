@@ -58,6 +58,8 @@ fn exercise(public: bool) {
         &worker,
         1,
         Work::PutPreparation(PreparationInput {
+            adopt: None,
+            child: None,
             kind: "empty".into(),
             cwd: None,
             params: serde_json::json!({}),
@@ -158,7 +160,7 @@ fn exercise(public: bool) {
             &worker,
             12,
             Work::CleanupFinished {
-                mirror_count: 0,
+                view: crate::runtime::journal_product::CompletionView::default(),
                 lease: claimed.lease,
             },
         );

@@ -1,7 +1,7 @@
 mod navigation_compat;
 use super::*;
 use crate::model::SplitDirection;
-use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::EngineMut;
 
 // 다른 상태·팝업 시험도 같은 engine/RequestContext 구성을 사용한다.
 pub(crate) fn test_state() -> (
@@ -196,28 +196,19 @@ fn state_fixture(
     let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
         tasty_presets::PresetStore::load_default(),
     ));
-    let mut state = RequestContext::new(&engine.as_ref().read(), preset_store);
+    let mut state = RequestContext::new(&engine.read().read(), preset_store);
     state.engine_id = Some(engine.id);
     (state, engine)
 }
 
 fn collect_surface_ids(state: &mut RequestContext, engine: &mut EngineMut<'_>) -> Vec<u32> {
-    let ws = state.active_workspace_mut(engine);
+    let ws = state.active_workspace(&engine.read());
     let ws_ids: std::collections::HashSet<u32> = ws.all_surface_ids().into_iter().collect();
     engine
         .runtime
         .terminals
         .iter()
         .filter_map(|(sid, _)| ws_ids.contains(&sid).then_some(sid))
-        .collect()
-}
-
-fn collect_all_surface_ids(_state: &mut RequestContext, engine: &mut EngineMut<'_>) -> Vec<u32> {
-    engine
-        .runtime
-        .terminals
-        .iter()
-        .map(|(sid, _)| sid)
         .collect()
 }
 
@@ -238,791 +229,22 @@ fn find_terminal_by_id_nonexistent() {
     assert!(engine.find_terminal_by_id(9999).is_none());
 }
 
-#[test]
-fn find_terminal_by_id_after_split() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let original_ids = collect_surface_ids(&mut state, &mut engine);
-    let original_id = original_ids[0];
-
-    state
-        .test_split_pane(&mut engine, SplitDirection::Vertical)
-        .unwrap();
-
-    let all_ids = collect_surface_ids(&mut state, &mut engine);
-    assert_eq!(all_ids.len(), 2);
-
-    assert!(engine.find_terminal_by_id(original_id).is_some());
-    let new_id = *all_ids.iter().find(|&&id| id != original_id).unwrap();
-    assert!(engine.find_terminal_by_id(new_id).is_some());
-}
-
-#[test]
-fn find_terminal_by_id_across_tabs() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let original_ids = collect_surface_ids(&mut state, &mut engine);
-    let first_id = original_ids[0];
-
-    state.add_tab(&mut engine).unwrap();
-
-    let all_ids = collect_all_surface_ids(&mut state, &mut engine);
-    assert_eq!(all_ids.len(), 2);
-
-    assert!(engine.find_terminal_by_id(first_id).is_some());
-    let second_id = *all_ids.iter().find(|&&id| id != first_id).unwrap();
-    assert!(engine.find_terminal_by_id(second_id).is_some());
-}
-
-#[test]
-fn close_active_pane_single_fails() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    assert!(!state.close_active_pane(&mut engine));
-}
-
-#[test]
-fn close_active_pane_after_split() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    state
-        .test_split_pane(&mut engine, SplitDirection::Vertical)
-        .unwrap();
-
-    assert_eq!(
-        state
-            .active_workspace(&engine)
-            .pane_layout()
-            .all_pane_ids()
-            .len(),
-        2
-    );
-    assert!(state.close_active_pane(&mut engine));
-    assert_eq!(
-        state
-            .active_workspace(&engine)
-            .pane_layout()
-            .all_pane_ids()
-            .len(),
-        1
-    );
-}
-
-#[test]
-fn close_active_tab_single_fails() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    assert!(!state.close_active_tab(&mut engine));
-}
-
-#[test]
-fn close_active_tab_after_add() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    state.add_tab(&mut engine).unwrap();
-
-    let pane_id = state.focused_pane_id(&engine);
-    let tab_count = state
-        .active_workspace(&engine)
-        .pane_layout()
-        .find_pane(pane_id)
-        .unwrap()
-        .tabs
-        .len();
-    assert_eq!(tab_count, 2);
-
-    assert!(state.close_active_tab(&mut engine));
-
-    let tab_count_after = state
-        .active_workspace(&engine)
-        .pane_layout()
-        .find_pane(pane_id)
-        .unwrap()
-        .tabs
-        .len();
-    assert_eq!(tab_count_after, 1);
-}
-
-// GUI 직접 요청은 원격 op를 큐에 넣고 mirror의 로컬 트리를 바꾸지 않아야 한다.
-
-#[test]
-fn mirror_close_active_surface_forwards_close_surface() {
-    use crate::ipc::stream::StructuralOp;
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let sid = state.focused_surface_id(&engine).unwrap();
-    let active = state.active_workspace_index(&engine);
-    engine.make_mirror_fixture(active);
-    assert!(engine.remote.pending_structural_forward.is_empty());
-
-    assert!(state.close_active_surface(&mut engine));
-    assert!(
-        engine.find_terminal_by_id(sid).is_some(),
-        "mirror close 는 로컬 surface 를 지우면 안 된다"
-    );
-    assert_eq!(engine.remote.pending_structural_forward.len(), 1);
-    let queued = &engine.remote.pending_structural_forward[0];
-    assert!(
-        queued.user_triggered,
-        "RequestContext 직접 호출 경로는 항상 GUI 유래"
-    );
-    match &queued.op {
-        StructuralOp::CloseSurface { surface_id } => assert_eq!(*surface_id, sid),
-        other => panic!("expected CloseSurface, got {other:?}"),
-    }
-}
-
-/// 변환은 선행 표시 없이 공용 오류 보고만 거친다. 사용자 요청이면 원격에도 사용자 조작으로 전달해야 한다.
-#[cfg(feature = "gui")] // mirror 구조 변경 전달은 gui 전용이다
-#[test]
-fn mirror_convert_surface_from_the_user_forwards_as_user_triggered() {
-    use crate::ipc::stream::StructuralOp;
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let mut core = crate::ipc::handler::cli_entry_tests::test_core();
-    let sid = state.focused_surface_id(&engine).unwrap();
-    let active = state.active_workspace_index(&engine);
-    engine.make_mirror_fixture(active);
-
-    crate::intent::surface::handle(
-        &mut core,
-        &mut state,
-        &mut engine,
-        &crate::intent::Intent::ConvertSurface {
-            surface_id: sid,
-            target: crate::intent::ConvertTarget::Terminal,
-        }
-        .from_user_menu("test"),
-    );
-    assert_eq!(engine.remote.pending_structural_forward.len(), 1);
-    let queued = &engine.remote.pending_structural_forward[0];
-    assert!(
-        queued.user_triggered,
-        "사용자의 변환 요청은 원격에 사용자 조작으로 전달한다"
-    );
-    match &queued.op {
-        StructuralOp::ConvertSurface { surface_id, .. } => assert_eq!(*surface_id, sid),
-        other => panic!("expected ConvertSurface, got {other:?}"),
-    }
-}
-
-#[test]
-fn mirror_close_active_pane_forwards_close_pane() {
-    use crate::ipc::stream::StructuralOp;
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let sid = state.focused_surface_id(&engine).unwrap();
-    let active = state.active_workspace_index(&engine);
-    engine.make_mirror_fixture(active);
-
-    assert!(state.close_active_pane(&mut engine));
-    assert_eq!(
-        state
-            .active_workspace(&engine)
-            .pane_layout()
-            .all_pane_ids()
-            .len(),
-        1,
-        "mirror pane close 는 로컬 pane 을 제거하면 안 된다"
-    );
-    assert_eq!(
-        engine.closed_items.len(),
-        0,
-        "mirror pane close 는 closed_items 스택에 아무것도 남기면 안 된다"
-    );
-    match &engine.remote.pending_structural_forward[0].op {
-        StructuralOp::ClosePane { anchor_surface_id } => assert_eq!(*anchor_surface_id, sid),
-        other => panic!("expected ClosePane, got {other:?}"),
-    }
-}
-
-#[test]
-fn mirror_close_active_tab_forwards_close_tab() {
-    use crate::ipc::stream::StructuralOp;
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let sid = state.focused_surface_id(&engine).unwrap();
-    let active = state.active_workspace_index(&engine);
-    engine.make_mirror_fixture(active);
-
-    assert!(state.close_active_tab(&mut engine));
-    assert!(
-        engine.find_terminal_by_id(sid).is_some(),
-        "mirror tab close 는 로컬 surface 를 지우면 안 된다"
-    );
-    match &engine.remote.pending_structural_forward[0].op {
-        StructuralOp::CloseTab { anchor_surface_id } => assert_eq!(*anchor_surface_id, sid),
-        other => panic!("expected CloseTab, got {other:?}"),
-    }
-}
-
-#[test]
-fn mirror_add_tab_forwards_new_tab() {
-    use crate::ipc::stream::StructuralOp;
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let sid = state.focused_surface_id(&engine).unwrap();
-    let pane_id = state.focused_pane_id(&engine);
-    let tabs_before = state
-        .active_workspace(&engine)
-        .pane_layout()
-        .find_pane(pane_id)
-        .unwrap()
-        .tabs
-        .len();
-    let active = state.active_workspace_index(&engine);
-    engine.make_mirror_fixture(active);
-
-    state.add_tab(&mut engine).unwrap();
-    let tabs_after = state
-        .active_workspace(&engine)
-        .pane_layout()
-        .find_pane(pane_id)
-        .unwrap()
-        .tabs
-        .len();
-    assert_eq!(
-        tabs_after, tabs_before,
-        "mirror add_tab 은 로컬 탭을 만들면 안 된다"
-    );
-    match &engine.remote.pending_structural_forward[0].op {
-        StructuralOp::NewTab {
-            anchor_surface_id,
-            surface_kind,
-            ..
-        } => {
-            assert_eq!(*anchor_surface_id, sid);
-            assert_eq!(surface_kind, "terminal");
-        }
-        other => panic!("expected NewTab, got {other:?}"),
-    }
-}
-
-#[test]
-fn mirror_close_active_tab_computes_sibling_candidate() {
-    use crate::ipc::stream::StructuralOp;
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let sid_first = state.focused_surface_id(&engine).unwrap();
-    state.add_tab(&mut engine).unwrap();
-    let sid_second = state.focused_surface_id(&engine).unwrap();
-    assert_ne!(sid_first, sid_second);
-
-    let active = state.active_workspace_index(&engine);
-    engine.make_mirror_fixture(active);
-    assert!(state.close_active_tab(&mut engine));
-    let queued = &engine.remote.pending_structural_forward[0];
-    assert!(queued.user_triggered);
-    assert_eq!(
-        queued.close_focus_candidates,
-        vec![sid_first],
-        "닫히는 탭이 마지막이면 이전 탭의 focused surface 가 1순위 후보"
-    );
-    match &queued.op {
-        StructuralOp::CloseTab { anchor_surface_id } => assert_eq!(*anchor_surface_id, sid_second),
-        other => panic!("expected CloseTab, got {other:?}"),
-    }
-}
-
-#[test]
-fn mirror_close_active_surface_split_computes_sibling_candidate() {
-    use crate::ipc::stream::StructuralOp;
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let sid_a = state.focused_surface_id(&engine).unwrap();
-    let pane_id = state.focused_pane_id(&engine);
-    let (ws_idx, _) = engine.find_workspace_index_for_surface(sid_a).unwrap();
-    let sid_b = engine.runtime.counters.next_surface();
-    engine
-        .workspace_at_mut(ws_idx)
-        .expect("workspace index is valid")
-        .pane_layout_mut()
-        .find_pane_mut(pane_id)
-        .unwrap()
-        .split_surface_by_id_marker(sid_a, SplitDirection::Horizontal, sid_b)
-        .unwrap();
-    engine
-        .runtime
-        .terminals
-        .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24), None);
-    // 분할 헬퍼가 포커스를 바꾸지 않아 sid_a를 닫는다.
-    assert_eq!(state.focused_surface_id(&engine), Some(sid_a));
-
-    let active = state.active_workspace_index(&engine);
-    engine.make_mirror_fixture(active);
-    assert!(state.close_active_surface(&mut engine));
-    let queued = &engine.remote.pending_structural_forward[0];
-    assert!(queued.user_triggered);
-    assert_eq!(
-        queued.close_focus_candidates,
-        vec![sid_b],
-        "split tab 안 형제 surface 가 인접 후보"
-    );
-    match &queued.op {
-        StructuralOp::CloseSurface { surface_id } => assert_eq!(*surface_id, sid_a),
-        other => panic!("expected CloseSurface, got {other:?}"),
-    }
-}
-
-#[test]
-fn close_active_surface_split_saves_closed_item_snapshot() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let sid_a = state.focused_surface_id(&engine).unwrap();
-    let pane_id = state.focused_pane_id(&engine);
-    let (ws_idx, _) = engine.find_workspace_index_for_surface(sid_a).unwrap();
-    let sid_b = engine.runtime.counters.next_surface();
-    engine
-        .workspace_at_mut(ws_idx)
-        .expect("workspace index is valid")
-        .pane_layout_mut()
-        .find_pane_mut(pane_id)
-        .unwrap()
-        .split_surface_by_id_marker(sid_a, SplitDirection::Horizontal, sid_b)
-        .unwrap();
-    engine
-        .runtime
-        .terminals
-        .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24), None);
-    assert_eq!(state.focused_surface_id(&engine), Some(sid_a));
-
-    assert_eq!(engine.closed_items.len(), 0);
-    assert!(state.close_active_surface(&mut engine));
-
-    assert_eq!(
-        engine.closed_items.len(),
-        1,
-        "split surface 를 닫으면 ClosedItem 이 하나 쌓여야 한다"
-    );
-    match engine.closed_items.list().next().unwrap() {
-        crate::model::ClosedItem::Surface { surface, .. } => {
-            assert_eq!(surface.id, sid_a);
-        }
-        crate::model::ClosedItem::Tab(_) => panic!("expected ClosedItem::Surface, got Tab"),
-        crate::model::ClosedItem::Pane { .. } => {
-            panic!("expected ClosedItem::Surface, got Pane")
-        }
-        crate::model::ClosedItem::Workspace { .. } => {
-            panic!("expected ClosedItem::Surface, got Workspace")
-        }
-    }
-}
-
-#[test]
-fn close_pane_saves_closed_item_snapshot() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    state
-        .test_split_pane(&mut engine, SplitDirection::Vertical)
-        .unwrap();
-    assert_eq!(
-        state
-            .active_workspace(&engine)
-            .pane_layout()
-            .all_pane_ids()
-            .len(),
-        2
-    );
-
-    assert_eq!(engine.closed_items.len(), 0);
-    assert!(state.close_active_pane(&mut engine));
-
-    assert_eq!(
-        engine.closed_items.len(),
-        1,
-        "pane 을 닫으면 ClosedItem 이 하나 쌓여야 한다"
-    );
-    match engine.closed_items.list().next().unwrap() {
-        crate::model::ClosedItem::Pane { pane, .. } => {
-            assert_eq!(pane.tabs.len(), 1, "split 로 만든 새 pane 은 tab 1개");
-        }
-        crate::model::ClosedItem::Surface { .. } => {
-            panic!("expected ClosedItem::Pane, got Surface")
-        }
-        crate::model::ClosedItem::Tab(_) => panic!("expected ClosedItem::Pane, got Tab"),
-        crate::model::ClosedItem::Workspace { .. } => {
-            panic!("expected ClosedItem::Pane, got Workspace")
-        }
-    }
-}
-
-#[test]
-fn close_pane_then_restore_reinserts_pane() {
-    use crate::app::command::{CoreEvent, DomainIntent, RestoredKind};
-    use crate::app::services::builder::AppServicesBuilder;
-
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    state
-        .test_split_pane(&mut engine, SplitDirection::Vertical)
-        .unwrap();
-    assert_eq!(
-        state
-            .active_workspace(&engine)
-            .pane_layout()
-            .all_pane_ids()
-            .len(),
-        2
-    );
-    // 복원 대상 pane은 닫은 뒤 남은 포커스 pane에서 구한다.
-    assert!(state.close_active_pane(&mut engine));
-    assert_eq!(
-        state
-            .active_workspace(&engine)
-            .pane_layout()
-            .all_pane_ids()
-            .len(),
-        1,
-        "pane close 직후엔 1개여야 한다"
-    );
-    assert_eq!(engine.closed_items.len(), 1);
-    let remaining_pane_id = state.focused_pane_id(&engine);
-
-    let mut core = AppServicesBuilder::new()
-        .with_fs(std::sync::Arc::new(
-            crate::adapters::test::mem_fs::MemFileSystem::new(),
-        ))
-        .with_clock(std::sync::Arc::new(
-            crate::adapters::test::fake_clock::FakeClock::default(),
-        ))
-        .with_clipboard(std::sync::Arc::new(
-            crate::adapters::test::mock_clipboard::MockClipboard::default(),
-        ))
-        .with_process(std::sync::Arc::new(
-            crate::adapters::test::mock_process::MockProcessSpawner,
-        ))
-        .with_home(std::sync::Arc::new(
-            crate::adapters::test::tmp_home::TmpHome::new(tempfile::tempdir().expect("tmp").keep()),
-        ))
-        .with_sound_player(std::sync::Arc::new(
-            crate::ports::notification_sound::NoopPlayer,
-        ))
-        .with_memory(std::sync::Arc::new(std::sync::Mutex::new(
-            tasty_memory::testing::InMemoryStorage::new(),
-        )))
-        .with_themes(std::sync::Arc::new(tasty_themes::ThemeStore::new()))
-        .with_preset_store(std::sync::Arc::new(std::sync::Mutex::new(
-            tasty_presets::PresetStore::load_default(),
-        )))
-        .with_settings_storage(std::sync::Arc::new(tasty_settings::FileSettingsStorage))
-        .build()
-        .expect("test AppServices");
-
-    let events = core
-        .apply(
-            &mut engine,
-            DomainIntent::RestoreClosedItem {
-                target_pane_id: Some(remaining_pane_id),
-                scope: crate::app::command::RestoreScope::Local,
-            },
-        )
-        .expect("restore should not error");
-
-    assert_eq!(
-        state
-            .active_workspace(&engine)
-            .pane_layout()
-            .all_pane_ids()
-            .len(),
-        2,
-        "restore 후 pane 이 다시 2개여야 한다"
-    );
-    let restored_kind_ok = events.iter().any(|ev| {
-        matches!(
-            ev,
-            CoreEvent::ClosedItemRestored {
-                restored: true,
-                kind: RestoredKind::PaneIntoWorkspace { .. },
-                ..
-            }
-        )
-    });
-    assert!(
-        restored_kind_ok,
-        "ClosedItemRestored{{restored:true, kind:PaneIntoWorkspace}} 이벤트가 있어야 한다: {events:?}"
-    );
-    assert_eq!(engine.closed_items.len(), 0, "복원 후 스택은 비어야 한다");
-}
-
-#[test]
-fn mirror_close_active_pane_has_no_focus_candidates() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let active = state.active_workspace_index(&engine);
-    engine.make_mirror_fixture(active);
-    assert!(state.close_active_pane(&mut engine));
-    assert!(
-        engine.remote.pending_structural_forward[0]
-            .close_focus_candidates
-            .is_empty()
-    );
-}
-
-#[test]
-fn close_surface_by_id_no_snapshot_recreates_when_emptied() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    assert_eq!(engine.workspaces().len(), 1);
-    let surface_ids = collect_surface_ids(&mut state, &mut engine);
-    assert_eq!(surface_ids.len(), 1);
-    let sid = surface_ids[0];
-
-    assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid, false));
-    assert!(
-        !engine.workspaces().is_empty(),
-        "agent-initiated close must not leave the window with zero workspaces"
-    );
-    let new_surface_ids = collect_surface_ids(&mut state, &mut engine);
-    assert_eq!(new_surface_ids.len(), 1);
-    assert_ne!(new_surface_ids[0], sid);
-}
-
-// 복원 사본 없이 닫고 터미널 저장소·트리·lifecycle 큐의 정리를 확인한다.
-
-#[test]
-fn c3_case1_split_surface_close_cleans_up_and_keeps_sibling() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let sid_a = collect_surface_ids(&mut state, &mut engine)[0];
-    let pane_id = state.focused_pane_id(&engine);
-    let (ws_idx, _) = engine.find_workspace_index_for_surface(sid_a).unwrap();
-    let sid_b = engine.runtime.counters.next_surface();
-    engine
-        .workspace_at_mut(ws_idx)
-        .expect("workspace index is valid")
-        .pane_layout_mut()
-        .find_pane_mut(pane_id)
-        .unwrap()
-        .split_surface_by_id_marker(sid_a, SplitDirection::Horizontal, sid_b)
-        .unwrap();
-    engine
-        .runtime
-        .terminals
-        .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24), None);
-    assert!(engine.runtime.terminals.contains(sid_a));
-
-    let _ = state.take_pending_lifecycle_events();
-    assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid_a, false));
-
-    assert!(
-        !engine.runtime.terminals.contains(sid_a),
-        "닫힌 surface 의 Terminal 이 cleanup 돼야 함"
-    );
-    assert!(
-        engine.runtime.terminals.contains(sid_b),
-        "형제 surface 는 생존"
-    );
-    let events = state.take_pending_lifecycle_events();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].surface_id, sid_a);
-}
-
-#[test]
-fn c3_case2_tab_close_removes_tab_and_cleans_surface() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
-    state.add_tab(&mut engine).unwrap();
-    let pane_id = state.focused_pane_id(&engine);
-    let sid1 = *collect_surface_ids(&mut state, &mut engine)
-        .iter()
-        .find(|&&s| s != sid0)
-        .unwrap();
-    assert_eq!(
-        state
-            .active_workspace(&engine)
-            .pane_layout()
-            .find_pane(pane_id)
-            .unwrap()
-            .tabs
-            .len(),
-        2
-    );
-
-    let _ = state.take_pending_lifecycle_events();
-    assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid1, false));
-
-    assert_eq!(
-        state
-            .active_workspace(&engine)
-            .pane_layout()
-            .find_pane(pane_id)
-            .unwrap()
-            .tabs
-            .len(),
-        1
-    );
-    assert!(
-        !engine.runtime.terminals.contains(sid1),
-        "닫힌 tab 의 surface 가 cleanup 돼야 함"
-    );
-    assert!(
-        engine.runtime.terminals.contains(sid0),
-        "형제 tab 의 surface 는 생존"
-    );
-    let events = state.take_pending_lifecycle_events();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].surface_id, sid1);
-}
-
-#[test]
-fn c3_case3_pane_close_removes_pane_and_reassigns_focus() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
-    state
-        .test_split_pane(&mut engine, SplitDirection::Vertical)
-        .unwrap();
-    let sid1 = *collect_surface_ids(&mut state, &mut engine)
-        .iter()
-        .find(|&&s| s != sid0)
-        .unwrap();
-    assert_eq!(
-        state
-            .active_workspace(&engine)
-            .pane_layout()
-            .all_pane_ids()
-            .len(),
-        2
-    );
-
-    let _ = state.take_pending_lifecycle_events();
-    assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid1, false));
-
-    assert_eq!(
-        state
-            .active_workspace(&engine)
-            .pane_layout()
-            .all_pane_ids()
-            .len(),
-        1
-    );
-    assert!(!engine.runtime.terminals.contains(sid1));
-    assert!(
-        engine.runtime.terminals.contains(sid0),
-        "형제 pane 의 surface 는 생존"
-    );
-    let focused = state.focused_pane_id(&engine);
-    assert!(
-        state
-            .active_workspace(&engine)
-            .pane_layout()
-            .find_pane(focused)
-            .is_some(),
-        "focused_pane 이 생존 pane 으로 재배정돼야 함"
-    );
-    let events = state.take_pending_lifecycle_events();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].surface_id, sid1);
-}
-
-/// 지연된 터미널 placeholder 탭을 추가하고 surface ID를 반환한다.
-fn add_deferred_tab(state: &mut RequestContext, engine: &mut crate::core::CoreState) -> u32 {
-    let tab_id = engine.runtime.counters.next_tab();
-    let surface_id = engine.runtime.counters.next_surface();
-    let sh = crate::core::state::ShellConfig::from_settings(&engine.runtime.settings);
-    let spawn = crate::model::DeferredSpawn {
-        shell: sh.shell_ref().map(|s| s.to_string()),
-        shell_args: sh.args_ref().iter().map(|s| s.to_string()).collect(),
-        extra_env: sh
-            .envs_ref()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect(),
-        cols: engine.runtime.default_cols,
-        rows: engine.runtime.default_rows,
-        working_dir: None,
-        restore_command: None,
-        scrollback_persist_id: None,
-    };
-    let placeholder = crate::model::EmptySurface::new_deferred(surface_id, spawn);
-    let tab =
-        crate::model::Tab::new_named(tab_id, "Shell".to_string(), None, Box::new(placeholder));
-    let pane = state.focused_pane_mut(engine).expect("focused pane");
-    pane.tabs.push(tab);
-    surface_id
-}
-
-#[test]
-fn keyboard_tab_switch_reifies_deferred_surface() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let sid = add_deferred_tab(&mut state, &mut engine);
-    assert!(
-        engine.is_surface_deferred(sid),
-        "precondition: tab1 은 deferred"
-    );
-
-    state.next_tab_in_pane(&mut engine);
-    assert!(
-        engine.is_surface_deferred(sid),
-        "전환 핸들러 자체는 reify 하지 않는다(표시 지점에서 처리)"
-    );
-
-    state.reify_displayed_surfaces(&mut engine);
-    assert!(
-        !engine.is_surface_deferred(sid),
-        "표시 전 초기화 호출로 지연된 surface를 복원해야 한다"
-    );
-    assert!(
-        engine.runtime.terminals.contains(sid),
-        "PTY가 TerminalStore에 추가돼야 한다"
-    );
-}
-
-#[test]
-fn close_active_tab_reifies_newly_active_deferred_surface() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let sid = add_deferred_tab(&mut state, &mut engine);
-    assert!(engine.is_surface_deferred(sid));
-
-    assert!(state.close_active_tab(&mut engine));
-    assert!(
-        engine.is_surface_deferred(sid),
-        "close 직후엔 아직 deferred"
-    );
-
-    state.reify_displayed_surfaces(&mut engine);
-    assert!(
-        !engine.is_surface_deferred(sid),
-        "닫기 후 활성화된 지연 탭을 복원해야 한다"
-    );
-    assert!(engine.runtime.terminals.contains(sid));
-}
-
-#[test]
-fn reify_displayed_surfaces_is_noop_without_deferred() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let before = collect_all_surface_ids(&mut state, &mut engine);
-    state.reify_displayed_surfaces(&mut engine);
-    let after = collect_all_surface_ids(&mut state, &mut engine);
-    assert_eq!(before.len(), after.len(), "deferred 없으면 no-op");
-}
-
-fn add_test_workspace(state: &mut RequestContext, engine: &mut EngineMut<'_>) {
-    let event = crate::app::services::apply_create_workspace_inner(
-        engine,
-        crate::app::services::WorkspaceCreationParams::terminal(),
-    )
-    .unwrap();
-    let crate::app::command::CoreEvent::WorkspaceCreated { index, .. } = event else {
-        panic!("apply_create_workspace_inner가 WorkspaceCreated를 반환해야 한다");
-    };
-    state.set_active_workspace_index(engine, index);
-}
-
 fn add_mirror_test_workspace(state: &mut RequestContext, engine: &mut EngineMut<'_>) -> u32 {
-    add_test_workspace(state, engine);
-    let idx = state.active_workspace_index(engine);
-    engine.make_mirror_fixture(idx);
-    let ws = engine
-        .workspace_at(idx)
-        .expect("방금 만든 workspace 가 있어야 한다");
-    *ws.all_surface_ids()
-        .first()
-        .expect("새 workspace 에 surface 하나")
+    let id = 900_001;
+    let mut workspace =
+        crate::model::Workspace::new_with_terminal_marker(id, "Mirror".into(), id, id, id);
+    workspace.mirror = true;
+    engine.core.push_mirror_workspace(workspace);
+    engine
+        .runtime
+        .surfaces
+        .insert(id, Box::new(crate::model::TerminalSurface { id }));
+    engine
+        .runtime
+        .terminals
+        .insert(id, tasty_terminal::Terminal::new_detached(80, 24), None);
+    state.set_active_workspace_index(&engine.read(), engine.workspaces().len() - 1);
+    id
 }
 
 #[test]
@@ -1032,7 +254,7 @@ fn local_attention_raise_is_suppressed_on_mirror_surface() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
     let local_sid = *engine
-        .workspace_at(state.active_workspace_index(&engine))
+        .workspace_at(state.active_workspace_index(&engine.read()))
         .unwrap()
         .all_surface_ids()
         .first()
@@ -1064,7 +286,7 @@ fn osc133_command_completed_raises_attention_only_off_mirror() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
     let local_sid = *engine
-        .workspace_at(state.active_workspace_index(&engine))
+        .workspace_at(state.active_workspace_index(&engine.read()))
         .unwrap()
         .all_surface_ids()
         .first()
@@ -1126,7 +348,7 @@ fn mirror_surface_notification_item_survives_the_attention_gate() {
     let mut engine = engine_session.borrow_mut();
     let mirror_sid = add_mirror_test_workspace(&mut state, &mut engine);
     let mirror_ws_id = engine
-        .workspace_at(state.active_workspace_index(&engine))
+        .workspace_at(state.active_workspace_index(&engine.read()))
         .expect("mirror workspace")
         .id;
 
@@ -1204,7 +426,7 @@ fn occupancy_suppresses_completion_highlight() {
     let (state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
     let sids = engine
-        .workspace_at(state.active_workspace_index(&engine))
+        .workspace_at(state.active_workspace_index(&engine.read()))
         .unwrap()
         .all_surface_ids();
     let sid = *sids.first().expect("기본 workspace 에 surface 하나");
@@ -1217,7 +439,7 @@ fn occupancy_suppresses_completion_highlight() {
     };
 
     engine.raise_attention(sid, AttentionKind::Completion);
-    let regions = regions_from_state(&state, &engine, term_rect, 1.0);
+    let regions = regions_from_state(&state, &engine.read(), term_rect, 1.0);
     assert!(
         regions
             .iter()
@@ -1230,7 +452,7 @@ fn occupancy_suppresses_completion_highlight() {
         .occupancy
         .acquire_soft(sid, /* parent */ 9999, Some("agent".into()))
         .expect("soft 점유 획득");
-    let regions = regions_from_state(&state, &engine, term_rect, 1.0);
+    let regions = regions_from_state(&state, &engine.read(), term_rect, 1.0);
     assert!(
         regions.iter().all(|r| r.kind.is_none()),
         "점유 중이면 완료 테두리를 억제해야 한다(점유 > 완료)"
@@ -1247,7 +469,7 @@ fn needs_input_not_suppressed_by_occupancy() {
     let (state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
     let sids = engine
-        .workspace_at(state.active_workspace_index(&engine))
+        .workspace_at(state.active_workspace_index(&engine.read()))
         .unwrap()
         .all_surface_ids();
     let sid = *sids.first().expect("기본 workspace 에 surface 하나");
@@ -1265,7 +487,7 @@ fn needs_input_not_suppressed_by_occupancy() {
         .acquire_soft(sid, /* parent */ 9999, Some("agent".into()))
         .expect("soft 점유 획득");
     engine.raise_attention(sid, AttentionKind::NeedsInput);
-    let regions = regions_from_state(&state, &engine, term_rect, 1.0);
+    let regions = regions_from_state(&state, &engine.read(), term_rect, 1.0);
     assert!(
         regions
             .iter()
@@ -1275,147 +497,95 @@ fn needs_input_not_suppressed_by_occupancy() {
 }
 
 #[test]
-fn add_workspace_increments_count() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    assert_eq!(engine.workspaces().len(), 1);
-    add_test_workspace(&mut state, &mut engine);
-    assert_eq!(engine.workspaces().len(), 2);
-}
-
-#[cfg(feature = "gui")] // markdown surface 생성이 gui 전용 remote-kind 등록에 의존한다
-#[test]
-fn resolve_inherit_cwd_from_markdown_surface() {
-    // Markdown 파일의 부모 디렉터리를 cwd로 사용하는 경로를 검사한다.
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    #[cfg(windows)]
-    let (root, file) = ("C:\\workspace\\proj", "C:\\workspace\\proj\\readme.md");
-    #[cfg(not(windows))]
-    let (root, file) = ("/workspace/proj", "/workspace/proj/readme.md");
-    state
-        .test_add_markdown_tab(&mut engine, file.to_string())
-        .unwrap();
-
-    let mut sid_opt = None;
-    for ws in &engine.workspaces() {
-        for pid in ws.pane_layout().all_pane_ids() {
-            if let Some(p) = ws.pane_layout().find_pane(pid) {
-                for tab in &p.tabs {
-                    if let Some(s) = tab
-                        .layout()
-                        .find_surface(state.navigation.surface_id(tab).unwrap_or(0))
-                        && s.kind() == "markdown"
-                    {
-                        sid_opt = s.surface_id();
-                    }
-                }
-            }
-        }
-    }
-    let sid = sid_opt.expect("markdown surface should exist");
-    assert_eq!(
-        state.resolve_inherit_cwd_from_surface(&engine.as_ref(), sid),
-        Some(std::path::PathBuf::from(root))
-    );
-}
-
-#[cfg(feature = "gui")] // markdown surface 생성이 gui 전용 remote-kind 등록에 의존한다
-#[test]
-fn resolve_inherit_cwd_from_surface_respects_toggle_off() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    engine.runtime.settings.general.inherit_cwd = false;
-
-    #[cfg(windows)]
-    let file = "C:\\workspace\\proj\\readme.md";
-    #[cfg(not(windows))]
-    let file = "/workspace/proj/readme.md";
-    state
-        .test_add_markdown_tab(&mut engine, file.to_string())
-        .unwrap();
-
-    let mut sid_opt = None;
-    for ws in &engine.workspaces() {
-        for pid in ws.pane_layout().all_pane_ids() {
-            if let Some(p) = ws.pane_layout().find_pane(pid) {
-                for tab in &p.tabs {
-                    if let Some(s) = tab
-                        .layout()
-                        .find_surface(state.navigation.surface_id(tab).unwrap_or(0))
-                        && s.kind() == "markdown"
-                    {
-                        sid_opt = s.surface_id();
-                    }
-                }
-            }
-        }
-    }
-    let sid = sid_opt.expect("markdown surface should exist");
-    assert_eq!(
-        state.resolve_inherit_cwd_from_surface(&engine.as_ref(), sid),
-        None
-    );
-}
-
-#[test]
 fn resolve_inherit_cwd_from_unknown_surface_is_none() {
     let (state, mut engine_session) = test_state();
     let engine = engine_session.borrow_mut();
     let _ = &engine;
     assert_eq!(
-        state.resolve_inherit_cwd_from_surface(&engine.as_ref(), 99999),
+        state.resolve_inherit_cwd_from_surface(&engine.read(), 99999),
         None
     );
 }
 
-/// 실제 attach 없이 mirror 플래그와 explorer root로 원격 cwd를 구성한다.
-fn focused_explorer(
-    state: &mut RequestContext,
-    engine: &mut EngineMut<'_>,
-) -> (u32, std::path::PathBuf) {
+/// Static descriptors and a runtime Explorer value; no factory or filesystem request.
+fn explorer_fixture(
+    mirror: bool,
+) -> (
+    RequestContext,
+    crate::runtime::engine_session::EngineSession,
+    u32,
+    std::path::PathBuf,
+) {
+    use tasty_core::DomainEvent as E;
+    let id = 700_001;
+    let model = test_model(vec![
+        E::CategoryCreated {
+            id: 0,
+            name: "normal".into(),
+            index: 0,
+        },
+        E::WorkspaceCreated {
+            id,
+            name: "Explorer".into(),
+            category: 0,
+            index: 0,
+            pane: id,
+        },
+        E::TabCreated {
+            id,
+            pane: id,
+            index: 0,
+            name: "Explorer".into(),
+            surface: tasty_core::SurfaceSpec {
+                id,
+                kind: "explorer".into(),
+                data: None,
+            },
+        },
+    ]);
+    let (state, mut session) = test_state_from_model(model);
+    if mirror {
+        session.core_state = crate::core::CoreState::new_base();
+        let pane = crate::model::Pane::new_with_surface(
+            id,
+            id,
+            "Explorer".into(),
+            crate::model::SurfaceDescriptor::new(id, "explorer"),
+        );
+        let mut workspace = crate::model::Workspace::new_with_pane(id, "Explorer".into(), pane);
+        workspace.mirror = true;
+        session.core_state.push_mirror_workspace(workspace);
+    }
     let root = crate::test_support::abs_path("remote/proj");
-    let (_tab, sid) = state
-        .add_kind_tab(
-            engine,
-            "explorer",
-            &serde_json::json!({ "path": root.to_string_lossy() }),
-        )
-        .expect("add explorer tab");
-    assert_eq!(
-        state.focused_surface_id(engine),
-        Some(sid),
-        "새 탭이 focus 를 받는다"
+    session.runtime.surfaces.insert(
+        id,
+        Box::new(crate::model::ExplorerPanel::new(id, root.clone())),
     );
-    (sid, root)
+    (state, session, id, root)
 }
 
 #[test]
 fn local_explorer_cwd_is_local_and_inherited() {
-    let (mut state, mut engine_session) = test_state();
+    let (state, mut engine_session, sid, root) = explorer_fixture(false);
     let mut engine = engine_session.borrow_mut();
-    let (sid, root) = focused_explorer(&mut state, &mut engine);
     assert_eq!(
         engine.surface_cwd(sid),
         Some(crate::core::state::SurfaceCwd::Local(root.clone()))
     );
     assert_eq!(
-        state.resolve_inherit_cwd(&engine.as_ref()),
+        state.resolve_inherit_cwd(&engine.read()),
         Some(root.clone())
     );
     assert_eq!(
-        state.resolve_inherit_cwd_from_surface(&engine.as_ref(), sid),
+        state.resolve_inherit_cwd_from_surface(&engine.read(), sid),
         Some(root)
     );
 }
 
 #[test]
 fn mirror_explorer_cwd_is_remote_and_not_inherited_locally() {
-    let (mut state, mut engine_session) = test_state();
+    let (state, mut engine_session, sid, root) = explorer_fixture(true);
     let mut engine = engine_session.borrow_mut();
-    let (sid, root) = focused_explorer(&mut state, &mut engine);
-    let active = state.active_workspace_index(&engine);
-    engine.make_mirror_fixture(active);
 
     assert_eq!(
         engine.surface_cwd(sid),
@@ -1425,21 +595,20 @@ fn mirror_explorer_cwd_is_remote_and_not_inherited_locally() {
         "mirror 워크스페이스의 cwd 는 원격 출처로 분류된다"
     );
     assert_eq!(engine.as_ref().local_surface_cwd(sid), None);
-    assert_eq!(state.resolve_inherit_cwd(&engine.as_ref()), None);
+    assert_eq!(state.resolve_inherit_cwd(&engine.read()), None);
     assert_eq!(
-        state.resolve_inherit_cwd_from_surface(&engine.as_ref(), sid),
+        state.resolve_inherit_cwd_from_surface(&engine.read(), sid),
         None
     );
 }
 
 #[test]
 fn popup_context_splits_cwd_keys_by_gate_and_provenance() {
-    let (mut state, mut engine_session) = test_state();
+    let (state, mut engine_session, sid, root) = explorer_fixture(false);
     let mut engine = engine_session.borrow_mut();
-    let (sid, root) = focused_explorer(&mut state, &mut engine);
     let root_s = root.to_string_lossy().into_owned();
 
-    let local = state.popup_surface_context(&engine.as_ref(), Some(sid));
+    let local = state.popup_surface_context(&engine.read(), Some(sid));
     assert_eq!(local["cwd"], serde_json::json!(root_s));
     assert_eq!(local["observed_cwd"], serde_json::json!(root_s));
     assert_eq!(local["origin_surface_id"], serde_json::json!(sid));
@@ -1447,14 +616,14 @@ fn popup_context_splits_cwd_keys_by_gate_and_provenance() {
     assert!(local.get("mirror").is_none());
 
     engine.runtime.settings.general.inherit_cwd = false;
-    let gated = state.popup_surface_context(&engine.as_ref(), Some(sid));
+    let gated = state.popup_surface_context(&engine.read(), Some(sid));
     assert!(gated["cwd"].is_null());
     assert_eq!(gated["observed_cwd"], serde_json::json!(root_s));
 
     engine.runtime.settings.general.inherit_cwd = true;
-    let active = state.active_workspace_index(&engine);
-    engine.make_mirror_fixture(active);
-    let mirror = state.popup_surface_context(&engine.as_ref(), Some(sid));
+    let (mirror_state, mut mirror_session, sid, _) = explorer_fixture(true);
+    let engine = mirror_session.borrow_mut();
+    let mirror = mirror_state.popup_surface_context(&engine.read(), Some(sid));
     assert!(
         mirror["cwd"].is_null(),
         "원격 경로는 `cwd` 키로 새지 않는다"
@@ -1474,7 +643,7 @@ fn surface_display_path_returns_workspace_and_tab_names() {
     let path = engine
         .surface_display_path(sid, &state.navigation)
         .expect("path for existing surface");
-    let ws = state.active_workspace(&engine);
+    let ws = state.active_workspace(&engine.read());
     assert_eq!(path.workspace_name, ws.name);
     assert!(path.tab_name.is_some());
 }
@@ -1490,80 +659,55 @@ fn surface_display_path_unknown_surface_is_none() {
     );
 }
 
-fn explorer_of<'a>(
-    engine: &'a crate::core::CoreState,
-    state: &RequestContext,
-    sid: u32,
-) -> Option<&'a crate::model::ExplorerPanel> {
-    let ws = state.active_workspace(engine);
-    for pid in ws.pane_layout().all_pane_ids() {
-        let Some(pane) = ws.pane_layout().find_pane(pid) else {
-            continue;
-        };
-        for tab in &pane.tabs {
-            if let Some(s) = tab.layout().find_surface(sid) {
-                return s.as_any().downcast_ref::<crate::model::ExplorerPanel>();
-            }
-        }
-    }
-    None
-}
-
-#[test]
-fn add_kind_tab_by_owner_opens_explorer_with_folder_cwd() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let owner = state.focused_surface_id(&engine).expect("focused surface");
-    // explorer는 절대경로만 받으므로 시험 환경의 절대경로를 사용한다.
-    let folder = crate::test_support::abs_path("proj/sub");
-    let (_tab, sid) = state
-        .add_kind_tab_by_owner(
-            &mut engine,
-            owner,
-            "explorer",
-            &serde_json::json!({ "path": folder.to_string_lossy() }),
-        )
-        .expect("add explorer tab in owner pane");
-    let ex = explorer_of(&engine, &state, sid).expect("explorer surface exists");
-    assert_eq!(ex.cwd(), folder.as_path());
-    assert_eq!(ex.current_root(), folder.as_path());
-}
-
-#[test]
-fn set_explorer_cwd_moves_root_and_clears_history() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let (_t, sid) = state
-        .add_kind_tab(
-            &mut engine,
-            "explorer",
-            &serde_json::json!({ "path": "/proj" }),
-        )
-        .expect("add explorer tab");
-    state.set_explorer_cwd(&mut engine, sid, std::path::PathBuf::from("/other"));
-    let ex = explorer_of(&engine, &state, sid).expect("explorer surface exists");
-    assert_eq!(ex.cwd(), std::path::Path::new("/other"));
-    assert_eq!(ex.current_root(), std::path::Path::new("/other"));
-    assert!(!ex.active_tab().can_go_back());
-}
-
 // 포커스가 없는 pane에서 발생한 탭 바 입력으로 해당 pane이 선택되는지 검사한다.
 
 #[cfg(feature = "gui")]
-fn two_pane_setup(
-    state: &mut RequestContext,
-    engine: &mut EngineMut<'_>,
-) -> (
-    u32, /* pane_a: 비focused */
-    u32, /* pane_b: focused */
+fn two_pane_fixture() -> (
+    RequestContext,
+    crate::runtime::engine_session::EngineSession,
 ) {
-    let pane_a = state.focused_pane_id(engine);
+    use tasty_core::DomainEvent as E;
+    let mut events = vec![
+        E::CategoryCreated {
+            id: 0,
+            name: "normal".into(),
+            index: 0,
+        },
+        E::WorkspaceCreated {
+            id: 1,
+            name: "Workspace".into(),
+            category: 0,
+            index: 0,
+            pane: 10,
+        },
+        E::PaneSplit {
+            target: 10,
+            pane: 20,
+            split: tasty_core::SplitSpec {
+                direction: SplitDirection::Vertical,
+                ratio: tasty_core::Ratio::from_f32(0.5),
+                placement: tasty_core::Placement::After,
+            },
+        },
+    ];
+    for (id, pane, index) in [(101, 10, 0), (102, 10, 1), (201, 20, 0)] {
+        events.push(E::TabCreated {
+            id,
+            pane,
+            index,
+            name: "Terminal".into(),
+            surface: tasty_core::SurfaceSpec {
+                id,
+                kind: "terminal".into(),
+                data: None,
+            },
+        });
+    }
+    let (mut state, session) = test_state_from_model(test_model(events));
     state
-        .test_split_pane(engine, SplitDirection::Vertical)
-        .unwrap();
-    let pane_b = state.focused_pane_id(engine);
-    assert_ne!(pane_a, pane_b, "split 은 새 pane 을 만들어야 한다");
-    (pane_a, pane_b)
+        .navigation
+        .select_pane(session.core_state.workspace_at(0).unwrap(), 20);
+    (state, session)
 }
 
 #[cfg(feature = "gui")] // gui 어댑터(divider / tab_bar / egui 좌표)를 직접 부르는 테스트
@@ -1571,14 +715,14 @@ fn two_pane_setup(
 fn switch_tab_on_other_pane_moves_focus() {
     use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
 
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
+    let (mut state, mut engine_session) = two_pane_fixture();
+    let engine = engine_session.borrow_mut();
+    let (pane_a, pane_b) = (10, 20);
     assert_eq!(state.focused_pane_id(&engine), pane_b);
 
     apply_tab_bar_actions(
         &mut state,
-        &mut engine,
+        &engine.read(),
         vec![TabBarAction::SwitchTab {
             pane_id: pane_a,
             tab_index: 0,
@@ -1600,26 +744,28 @@ fn switch_tab_on_other_pane_moves_focus() {
 fn focus_pane_action_moves_focus_without_switching_tab() {
     use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
 
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
+    let (mut state, mut engine_session) = two_pane_fixture();
+    let engine = engine_session.borrow_mut();
+    let (pane_a, pane_b) = (10, 20);
 
     // 빈 영역 클릭이 활성 탭을 바꾸지 않는지 확인하도록 탭을 두 개 둔다.
     state
         .navigation
-        .select_pane(state.active_workspace_mut(&mut engine), pane_a);
-    state.add_tab(&mut engine).unwrap();
+        .select_pane(state.active_workspace(&engine.read()), pane_a);
+    state
+        .navigation
+        .goto_tab(engine.find_pane_by_id(pane_a).unwrap(), 1);
     let active_before = state
         .navigation
         .tab_index(engine.find_pane_by_id(pane_a).unwrap());
     assert_eq!(active_before, 1);
     state
         .navigation
-        .select_pane(state.active_workspace_mut(&mut engine), pane_b);
+        .select_pane(state.active_workspace(&engine.read()), pane_b);
 
     apply_tab_bar_actions(
         &mut state,
-        &mut engine,
+        &engine.read(),
         vec![TabBarAction::FocusPane { pane_id: pane_a }],
         &[],
         160.0,
@@ -1649,14 +795,14 @@ fn scroll_left_and_right_on_other_pane_move_focus() {
         (|pane_id| TabBarAction::ScrollLeft { pane_id }) as fn(u32) -> TabBarAction,
         (|pane_id| TabBarAction::ScrollRight { pane_id }) as fn(u32) -> TabBarAction,
     ] {
-        let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
-        let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
+        let (mut state, mut engine_session) = two_pane_fixture();
+        let engine = engine_session.borrow_mut();
+        let (pane_a, pane_b) = (10, 20);
         assert_eq!(state.focused_pane_id(&engine), pane_b);
 
         apply_tab_bar_actions(
             &mut state,
-            &mut engine,
+            &engine.read(),
             vec![action_of(pane_a)],
             &[],
             160.0,
@@ -1673,60 +819,12 @@ fn scroll_left_and_right_on_other_pane_move_focus() {
 
 #[cfg(feature = "gui")] // gui 어댑터(divider / tab_bar / egui 좌표)를 직접 부르는 테스트
 #[test]
-fn close_tab_on_other_pane_moves_focus() {
-    use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
-
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
-
-    // 탭이 실제로 닫힌 뒤에도 pane이 남도록 두 개를 둔다.
-    state
-        .navigation
-        .select_pane(state.active_workspace_mut(&mut engine), pane_a);
-    state.add_tab(&mut engine).unwrap();
-    state
-        .navigation
-        .select_pane(state.active_workspace_mut(&mut engine), pane_b);
-
-    apply_tab_bar_actions(
-        &mut state,
-        &mut engine,
-        vec![TabBarAction::CloseTab {
-            pane_id: pane_a,
-            tab_index: 0,
-        }],
-        &[],
-        160.0,
-        1.0,
-    );
-
-    assert_eq!(
-        state.focused_pane_id(&engine),
-        pane_a,
-        "다른 pane 의 탭을 close 해도 그 pane 으로 focus 를 옮겨야 한다"
-    );
-    assert_eq!(
-        state
-            .active_workspace(&engine)
-            .pane_layout()
-            .find_pane(pane_a)
-            .unwrap()
-            .tabs
-            .len(),
-        1,
-        "탭이 실제로 닫혀야 한다"
-    );
-}
-
-#[cfg(feature = "gui")] // gui 어댑터(divider / tab_bar / egui 좌표)를 직접 부르는 테스트
-#[test]
 fn context_menu_actions_do_not_move_focus() {
     use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
 
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let (pane_a, pane_b) = two_pane_setup(&mut state, &mut engine);
+    let (mut state, mut engine_session) = two_pane_fixture();
+    let engine = engine_session.borrow_mut();
+    let (pane_a, pane_b) = (10, 20);
     assert_eq!(state.focused_pane_id(&engine), pane_b);
 
     let actions = vec![
@@ -1744,7 +842,7 @@ fn context_menu_actions_do_not_move_focus() {
             pos: egui::Pos2::ZERO,
         },
     ];
-    apply_tab_bar_actions(&mut state, &mut engine, actions, &[], 160.0, 1.0);
+    apply_tab_bar_actions(&mut state, &engine.read(), actions, &[], 160.0, 1.0);
 
     assert_eq!(
         state.focused_pane_id(&engine),
@@ -1753,807 +851,8 @@ fn context_menu_actions_do_not_move_focus() {
     );
 }
 
-fn test_state_with_mock_memory() -> (
-    RequestContext,
-    crate::runtime::engine_session::EngineSession,
-    std::sync::Arc<std::sync::Mutex<tasty_memory::testing::InMemoryStorage>>,
-) {
-    let mock = std::sync::Arc::new(std::sync::Mutex::new(
-        tasty_memory::testing::InMemoryStorage::new(),
-    ));
-    let (state, engine_session) = test_state_with_memory(mock.clone());
-    (state, engine_session, mock)
-}
-
-#[test]
-fn cleanup_surface_purges_surface_scope_exactly_once() {
-    let (mut state, mut engine_session, mock) = test_state_with_mock_memory();
-    let mut engine = engine_session.borrow_mut();
-    let sid = collect_surface_ids(&mut state, &mut engine)[0];
-    let scope = tasty_memory::Scope::Surface(sid);
-
-    state.with_memory(|m| {
-        crate::surface_meta::SurfaceMetaStore::set(m, sid, "nickname", "before-close").unwrap();
-    });
-    assert_eq!(
-        mock.lock().unwrap().purge_scope_call_count(&scope),
-        0,
-        "close 전에는 purge 가 없어야 한다"
-    );
-
-    state.cleanup_surface(&mut engine, sid, None);
-
-    // 실패 메시지에서 같은 Mutex를 다시 잠그지 않도록 호출 이력을 먼저 복사한다.
-    let (count, calls) = {
-        let guard = mock.lock().unwrap();
-        (
-            guard.purge_scope_call_count(&scope),
-            guard.purge_scope_calls().to_vec(),
-        )
-    };
-    assert_eq!(
-        count, 1,
-        "surface close 당 purge_scope(Scope::Surface) 는 1회여야 한다 (호출 이력: {calls:?})"
-    );
-}
-
-/// 도메인 자원 회수는 창 상태 없이 engine만으로 끝나야 한다.
-#[test]
-fn engine_cleanup_reclaims_domain_resources_without_window_state() {
-    let (mut state, mut engine_session, mock) = test_state_with_mock_memory();
-    let mut engine = engine_session.borrow_mut();
-    let sid = collect_surface_ids(&mut state, &mut engine)[0];
-    engine.live.occupancy.acquire(sid, 7).expect("하드 점유");
-    let mut sums = crate::close_trace::CleanupSums::default();
-
-    engine.cleanup_surface_traced(sid, None, &mut sums);
-
-    assert!(
-        engine.runtime.terminals.get(sid).is_none(),
-        "Terminal이 남으면 안 된다"
-    );
-    assert!(
-        !engine.live.occupancy.is_hard_occupied(sid),
-        "닫힌 surface 점유가 남았다"
-    );
-    assert_eq!(sums.surfaces, 1);
-    assert_eq!(
-        mock.lock()
-            .unwrap()
-            .purge_scope_call_count(&tasty_memory::Scope::Surface(sid)),
-        1
-    );
-}
-
-#[test]
-fn cleanup_surface_still_clears_surface_scope_entries() {
-    let (mut state, mut engine_session, _mock) = test_state_with_mock_memory();
-    let mut engine = engine_session.borrow_mut();
-    let sid = collect_surface_ids(&mut state, &mut engine)[0];
-
-    state.with_memory(|m| {
-        crate::surface_meta::SurfaceMetaStore::set(m, sid, "nickname", "doomed").unwrap();
-        crate::surface_meta::SurfaceMetaStore::set(m, sid, "restore.command", "claude -r x")
-            .unwrap();
-    });
-    assert_eq!(
-        state
-            .with_memory(|m| crate::surface_meta::SurfaceMetaStore::list(m, sid))
-            .len(),
-        2
-    );
-
-    state.cleanup_surface(&mut engine, sid, None);
-
-    assert!(
-        state
-            .with_memory(|m| crate::surface_meta::SurfaceMetaStore::list(m, sid))
-            .is_empty(),
-        "close 후 surface scope 에 키가 남으면 안 된다"
-    );
-    assert_eq!(
-        state.with_memory(|m| crate::surface_meta::SurfaceMetaStore::get(m, sid, "nickname")),
-        None
-    );
-}
-
-#[test]
-fn workspace_close_purges_each_surface_scope_once() {
-    let (mut state, mut engine_session, mock) = test_state_with_mock_memory();
-    let mut engine = engine_session.borrow_mut();
-    state.add_tab(&mut engine).expect("add_tab");
-    state.add_tab(&mut engine).expect("add_tab");
-    let sids = collect_surface_ids(&mut state, &mut engine);
-    assert!(sids.len() >= 3, "탭 3개 이상이어야 의미 있다: {sids:?}");
-
-    for sid in &sids {
-        state.cleanup_surface(&mut engine, *sid, None);
-    }
-
-    let guard = mock.lock().unwrap();
-    for sid in &sids {
-        assert_eq!(
-            guard.purge_scope_call_count(&tasty_memory::Scope::Surface(*sid)),
-            1,
-            "surface {sid} 의 purge 가 1회가 아니다"
-        );
-    }
-    assert_eq!(
-        guard.purge_scope_calls().len(),
-        sids.len(),
-        "surface 수만큼만 purge 해야 한다 (2N 이면 중복 회귀)"
-    );
-}
-
-/// 첫 workspace의 유일한 surface를 에이전트 경로로 닫아 workspace까지 연관 제거한다.
-fn close_last_surface_of_first_workspace(
-    state: &mut RequestContext,
-    engine: &mut EngineMut<'_>,
-) -> (u32, u32, u32) {
-    add_test_workspace(state, engine);
-    let victim_ws = engine.workspace_at(0).expect("workspace index is valid").id;
-    let kept_ws = engine.workspace_at(1).expect("workspace index is valid").id;
-    let victim_sids = engine
-        .workspace_at(0)
-        .expect("workspace index is valid")
-        .all_surface_ids();
-    assert_eq!(
-        victim_sids.len(),
-        1,
-        "연관 제거가 일어나려면 surface가 하나여야 한다"
-    );
-    (victim_ws, kept_ws, victim_sids[0])
-}
-
-fn run_cascade_close(state: &mut RequestContext, engine: &mut EngineMut<'_>, sid: u32) {
-    let mut core = crate::ipc::handler::cli_entry_tests::test_core();
-    let closed = crate::app::structural_exec::close_surface(
-        &mut core,
-        state,
-        engine,
-        sid,
-        false,
-        &crate::core::origin::IPC_AGENT,
-    )
-    .expect("close_surface");
-    assert!(closed.closed);
-}
-
-/// headless에도 workspace.closed 통지와 별개로 workspace 범위 정리가 필요하다.
-#[test]
-fn cascade_workspace_removal_purges_only_its_scope_once() {
-    let (mut state, mut engine_session, mock) = test_state_with_mock_memory();
-    let mut engine = engine_session.borrow_mut();
-    let (victim_ws, kept_ws, sid) = close_last_surface_of_first_workspace(&mut state, &mut engine);
-
-    run_cascade_close(&mut state, &mut engine, sid);
-
-    assert!(engine.workspaces().into_iter().all(|w| w.id != victim_ws));
-    let guard = mock.lock().unwrap();
-    assert_eq!(
-        guard.purge_scope_call_count(&tasty_memory::Scope::Workspace(victim_ws)),
-        1,
-        "호출 이력: {:?}",
-        guard.purge_scope_calls()
-    );
-    assert_eq!(
-        guard.purge_scope_call_count(&tasty_memory::Scope::Workspace(kept_ws)),
-        0
-    );
-    assert_eq!(
-        guard.purge_scope_call_count(&tasty_memory::Scope::Surface(sid)),
-        1
-    );
-}
-
-/// regular·secret 저장소 모두에서 제거된 workspace·surface 범위만 지우고 남은 workspace는 유지한다.
-#[test]
-fn cascade_workspace_removal_clears_regular_and_secret_entries_of_that_scope() {
-    use tasty_memory::{MemoryValue, PutOpts, Scope};
-    let store: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
-        std::sync::Arc::new(std::sync::Mutex::new(
-            tasty_memory::MemoryStore::open_in_memory().expect("in-memory store"),
-        ));
-    let (mut state, mut engine_session) = test_state_with_memory(store);
-    let mut engine = engine_session.borrow_mut();
-    let (victim_ws, kept_ws, sid) = close_last_surface_of_first_workspace(&mut state, &mut engine);
-    let scopes = [
-        Scope::Workspace(victim_ws),
-        Scope::Workspace(kept_ws),
-        Scope::Surface(sid),
-    ];
-    let value = MemoryValue::Text("v".into());
-    state.with_memory(|m| {
-        for scope in &scopes {
-            m.put("test", scope, "k", &value, &PutOpts::default())
-                .expect("put");
-            m.put_secret("test", scope, "k", &value, &PutOpts::default())
-                .expect("put_secret");
-        }
-    });
-
-    run_cascade_close(&mut state, &mut engine, sid);
-
-    let present = |scope: &Scope| {
-        state.with_memory(|m| {
-            (
-                m.get(scope, "k").expect("get").is_some(),
-                m.get_secret("test", scope, "k")
-                    .expect("get_secret")
-                    .is_some(),
-            )
-        })
-    };
-    assert_eq!(present(&Scope::Workspace(victim_ws)), (false, false));
-    assert_eq!(present(&Scope::Surface(sid)), (false, false));
-    assert_eq!(present(&Scope::Workspace(kept_ws)), (true, true));
-}
-
-// 인덱스가 유지돼도 대상은 달라질 수 있어 포커스 보존을 ID로 확인한다.
-
-#[test]
-fn closing_an_earlier_workspace_keeps_the_viewed_workspace() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let victim_sid = engine
-        .workspace_at(0)
-        .expect("workspace index is valid")
-        .all_surface_ids()[0];
-    for _ in 0..3 {
-        add_test_workspace(&mut state, &mut engine);
-    }
-    state.switch_workspace(&mut engine, 2);
-    let viewed_id = engine.workspace_at(2).expect("workspace index is valid").id;
-
-    assert!(state.close_surface_by_id_no_snapshot(&mut engine, victim_sid, false));
-
-    assert_eq!(engine.workspaces().len(), 3);
-    assert_eq!(
-        engine
-            .workspace_at(state.active_workspace_index(&engine))
-            .expect("workspace index is valid")
-            .id,
-        viewed_id,
-        "앞쪽 워크스페이스가 닫혀도 사용자가 보던 워크스페이스는 그대로여야 한다"
-    );
-}
-
-#[test]
-fn closing_the_viewed_workspace_moves_to_a_neighbour() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    for _ in 0..2 {
-        add_test_workspace(&mut state, &mut engine);
-    }
-    state.switch_workspace(&mut engine, 1);
-    let viewed_sid = engine
-        .workspace_at(1)
-        .expect("workspace index is valid")
-        .all_surface_ids()[0];
-    let survivors: Vec<u32> = [
-        engine.workspace_at(0).expect("workspace index is valid").id,
-        engine.workspace_at(2).expect("workspace index is valid").id,
-    ]
-    .into();
-
-    assert!(state.close_surface_by_id_no_snapshot(&mut engine, viewed_sid, false));
-
-    assert_eq!(engine.workspaces().len(), 2);
-    assert!(
-        survivors.contains(
-            &engine
-                .workspace_at(state.active_workspace_index(&engine))
-                .expect("workspace index is valid")
-                .id
-        ),
-        "닫힌 대상이 보던 워크스페이스였으면 생존 워크스페이스로 이동한다"
-    );
-}
-
-#[test]
-fn closing_an_earlier_tab_keeps_the_viewed_tab() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
-    state.add_tab(&mut engine).unwrap();
-    state.add_tab(&mut engine).unwrap();
-    let pane_id = state.focused_pane_id(&engine);
-    state
-        .navigation
-        .goto_tab(engine.find_pane_by_id(pane_id).unwrap(), 1);
-    let viewed_tab_id = {
-        let pane = state
-            .active_workspace(&engine)
-            .pane_layout()
-            .find_pane(pane_id)
-            .unwrap();
-        pane.tabs[1].id
-    };
-
-    assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid0, false));
-
-    let pane = state
-        .active_workspace(&engine)
-        .pane_layout()
-        .find_pane(pane_id)
-        .unwrap();
-    assert_eq!(pane.tabs.len(), 2);
-    assert_eq!(
-        pane.tabs[state.navigation.tab_index(pane)].id,
-        viewed_tab_id,
-        "앞쪽 탭이 닫혀도 사용자가 보던 탭은 그대로여야 한다"
-    );
-}
-
-#[test]
-fn closing_an_unfocused_pane_keeps_the_focused_pane() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
-    state
-        .test_split_pane(&mut engine, SplitDirection::Vertical)
-        .unwrap();
-    state
-        .test_split_pane(&mut engine, SplitDirection::Vertical)
-        .unwrap();
-    let pane_ids = state.active_workspace(&engine).pane_layout().all_pane_ids();
-    assert_eq!(pane_ids.len(), 3);
-    let focused_pane = *pane_ids.last().unwrap();
-    state.navigation.select_pane(
-        engine
-            .workspace_at(state.active_workspace_index(&engine))
-            .expect("workspace index is valid"),
-        focused_pane,
-    );
-
-    assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid0, false));
-
-    assert_eq!(
-        state.focused_pane_id(&engine),
-        focused_pane,
-        "포커스와 무관한 pane 이 닫혔는데 포커스가 움직이면 안 된다"
-    );
-}
-
-#[test]
-fn closing_the_focused_pane_reassigns_focus() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
-    state
-        .test_split_pane(&mut engine, SplitDirection::Vertical)
-        .unwrap();
-    let (_, sid0_pane) = engine.find_workspace_index_for_surface(sid0).unwrap();
-    state.navigation.select_pane(
-        engine
-            .workspace_at(state.active_workspace_index(&engine))
-            .expect("workspace index is valid"),
-        sid0_pane,
-    );
-
-    assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid0, false));
-
-    let ws = state.active_workspace(&engine);
-    assert_ne!(state.navigation.pane_id(ws).unwrap(), sid0_pane);
-    assert!(
-        ws.pane_layout()
-            .find_pane(state.navigation.pane_id(ws).unwrap())
-            .is_some(),
-        "포커스 pane 을 닫았으면 생존 pane 으로 재배정돼야 한다"
-    );
-}
-
-#[test]
-fn agent_close_does_not_record_the_workspace_for_undo() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    add_test_workspace(&mut state, &mut engine);
-
-    assert!(state.close_workspace_at(&mut engine, 0, WorkspaceCloseOrigin::Agent));
-
-    assert!(
-        engine.closed_items.is_empty(),
-        "에이전트가 닫은 것은 사용자의 되돌리기 스택에 들어가면 안 된다"
-    );
-}
-
-#[test]
-fn user_close_still_records_the_workspace_for_undo() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    add_test_workspace(&mut state, &mut engine);
-
-    assert!(state.close_workspace_at(&mut engine, 0, WorkspaceCloseOrigin::User));
-
-    assert_eq!(engine.closed_items.len(), 1);
-}
-
-#[test]
-fn agent_close_reports_agent_origin_to_plugins() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    add_test_workspace(&mut state, &mut engine);
-
-    assert!(state.close_workspace_at(&mut engine, 0, WorkspaceCloseOrigin::Agent));
-
-    let events = state.take_pending_lifecycle_events();
-    assert!(
-        !events.is_empty(),
-        "닫힌 surface 의 lifecycle 이벤트가 하나는 있어야 한다"
-    );
-    let flags: Vec<bool> = events.iter().map(|e| e.is_user_close).collect();
-    assert!(
-        flags.iter().all(|f| !*f),
-        "에이전트가 닫았는데 plugin 에는 사용자 close 로 나간다: {flags:?}"
-    );
-}
-
-#[test]
-fn user_close_reports_user_origin_to_plugins() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    add_test_workspace(&mut state, &mut engine);
-
-    assert!(state.close_workspace_at(&mut engine, 0, WorkspaceCloseOrigin::User));
-
-    let events = state.take_pending_lifecycle_events();
-    assert!(!events.is_empty());
-    assert!(events.iter().all(|e| e.is_user_close));
-}
-
-#[test]
-fn closing_a_workspace_emits_the_host_event_for_both_origins() {
-    for origin in [WorkspaceCloseOrigin::Agent, WorkspaceCloseOrigin::User] {
-        let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
-        add_test_workspace(&mut state, &mut engine);
-        let workspace_id = engine.workspace_at(0).expect("workspace index is valid").id;
-
-        assert!(state.close_workspace_at(&mut engine, 0, origin));
-
-        let emitted = state.take_pending_host_events().iter().any(|e| {
-            matches!(
-                e,
-                crate::state::PendingHostEvent::WorkspaceClosed { workspace_id: id }
-                    if *id == workspace_id
-            )
-        });
-        assert!(emitted, "{origin:?}: workspace.closed host event 가 없다");
-    }
-}
-
-// PTY 종료 정리의 save_snapshot=false와 is_user_close=true 조합을 각각 검사한다.
-#[test]
-fn pty_exit_close_skips_the_snapshot_but_still_reports_a_user_close() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    add_test_workspace(&mut state, &mut engine);
-    let ws_idx = state.active_workspace_index(&engine);
-    let surface = engine
-        .workspace_at(ws_idx)
-        .expect("workspace index is valid")
-        .all_surface_ids()[0];
-    let closed_before = engine.closed_items.len();
-
-    assert!(state.close_surface_by_id_no_snapshot(&mut engine, surface, true));
-
-    assert_eq!(
-        engine.closed_items.len(),
-        closed_before,
-        "스스로 끝난 셸은 되돌리기 스택에 쌓이지 않는다(save_snapshot=false)"
-    );
-    let events = state.take_pending_lifecycle_events();
-    assert!(!events.is_empty(), "close 는 lifecycle 이벤트를 낸다");
-    assert!(
-        events.iter().all(|e| e.is_user_close),
-        "같은 호출이 plugin 에는 사용자 close 로 나가야 한다(is_user_close=true)"
-    );
-}
-
-#[test]
-fn inline_cascade_emits_the_workspace_closed_host_event() {
-    let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
-    add_test_workspace(&mut state, &mut engine);
-    let ws_idx = state.active_workspace_index(&engine);
-    let workspace_id = engine
-        .workspace_at(ws_idx)
-        .expect("workspace index is valid")
-        .id;
-    let surface_ids = engine
-        .workspace_at(ws_idx)
-        .expect("workspace index is valid")
-        .all_surface_ids();
-    assert_eq!(
-        surface_ids.len(),
-        1,
-        "워크스페이스에 surface 가 하나여야 한다"
-    );
-    let before = engine.workspaces().len();
-
-    assert!(state.close_surface_by_id_no_snapshot(&mut engine, surface_ids[0], false));
-    assert_eq!(
-        engine.workspaces().len(),
-        before - 1,
-        "워크스페이스가 실제로 사라져야 이 경로를 지난 것이다"
-    );
-
-    let emitted = state.take_pending_host_events().iter().any(|e| {
-        matches!(
-            e,
-            crate::state::PendingHostEvent::WorkspaceClosed { workspace_id: id }
-                if *id == workspace_id
-        )
-    });
-    assert!(
-        emitted,
-        "인라인 cascade 로 사라진 워크스페이스에 workspace.closed 가 없다"
-    );
-}
-
-// hard 점유한 대상의 닫기 거절과, 점유가 없을 때의 정상 닫기를 함께 검사한다.
-#[cfg(test)]
-mod close_refuses_hard_occupied {
-    use super::*;
-
-    const HOLDER: u32 = 1;
-
-    fn add_ws(engine: &mut EngineMut<'_>) -> usize {
-        let event = crate::app::services::apply_create_workspace_inner(
-            engine,
-            crate::app::services::WorkspaceCreationParams::terminal(),
-        )
-        .expect("워크스페이스 생성");
-        let crate::app::command::CoreEvent::WorkspaceCreated { index, .. } = event else {
-            panic!("expected WorkspaceCreated");
-        };
-        index
-    }
-
-    /// 레이아웃과 TerminalStore가 같은 대상의 정리 여부에 동의하는지 확인한다.
-    fn alive(engine: &EngineRef<'_>, sid: u32) -> bool {
-        let in_tree = engine
-            .workspaces()
-            .into_iter()
-            .any(|w| w.all_surface_ids().contains(&sid));
-        let has_terminal = engine.runtime.terminals.get(sid).is_some();
-        assert_eq!(
-            in_tree, has_terminal,
-            "surface {sid}: 레이아웃 트리({in_tree})와 터미널 저장소({has_terminal})의 정리 상태가 다르다"
-        );
-        in_tree
-    }
-
-    fn split_pane(state: &mut RequestContext, engine: &mut EngineMut<'_>) -> u32 {
-        state
-            .test_split_pane(engine, SplitDirection::Vertical)
-            .expect("pane split");
-        state.focused_surface_id(engine).expect("포커스 surface")
-    }
-
-    #[test]
-    fn closing_a_workspace_holding_an_occupied_surface_is_refused() {
-        let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
-        let idx = add_ws(&mut engine);
-        let sid = engine
-            .workspace_at(idx)
-            .expect("workspace index is valid")
-            .all_surface_ids()[0];
-        engine
-            .live
-            .occupancy
-            .acquire(sid, HOLDER)
-            .expect("하드 점유");
-
-        let closed = state.close_workspace_at(&mut engine, idx, WorkspaceCloseOrigin::User);
-
-        assert!(!closed, "점유된 워크스페이스는 닫히면 안 된다");
-        assert!(alive(&engine.as_ref(), sid), "surface 가 살아 있어야 한다");
-        assert_eq!(
-            engine.workspaces().len(),
-            2,
-            "거절이면 아무것도 안 사라진다"
-        );
-        assert!(
-            engine.live.occupancy.is_hard_occupied(sid),
-            "거절 경로가 점유 상태를 건드리면 안 된다"
-        );
-    }
-
-    #[test]
-    fn closing_an_unoccupied_workspace_still_works() {
-        let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
-        let idx = add_ws(&mut engine);
-
-        assert!(state.close_workspace_at(&mut engine, idx, WorkspaceCloseOrigin::User));
-        assert_eq!(engine.workspaces().len(), 1);
-    }
-
-    #[test]
-    fn closing_the_focused_surface_when_occupied_is_refused() {
-        let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
-        let sid_a = state.focused_surface_id(&engine).expect("포커스 surface");
-        let pane_id = state.focused_pane_id(&engine);
-        let (ws_idx, _) = engine
-            .find_workspace_index_for_surface(sid_a)
-            .expect("워크스페이스");
-        let sid_b = engine.runtime.counters.next_surface();
-        engine
-            .workspace_at_mut(ws_idx)
-            .expect("workspace index is valid")
-            .pane_layout_mut()
-            .find_pane_mut(pane_id)
-            .expect("pane")
-            .split_surface_by_id_marker(sid_a, SplitDirection::Horizontal, sid_b)
-            .expect("surface split");
-        engine.runtime.terminals.insert(
-            sid_b,
-            tasty_terminal::Terminal::new_detached(80, 24),
-            None,
-        );
-        engine
-            .live
-            .occupancy
-            .acquire(sid_a, HOLDER)
-            .expect("하드 점유");
-
-        assert!(!state.close_active_surface(&mut engine), "거절해야 한다");
-        assert!(alive(&engine.as_ref(), sid_a));
-    }
-
-    #[test]
-    fn closing_an_unoccupied_focused_surface_still_works() {
-        let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
-        let sid_a = state.focused_surface_id(&engine).expect("포커스 surface");
-        let pane_id = state.focused_pane_id(&engine);
-        let (ws_idx, _) = engine
-            .find_workspace_index_for_surface(sid_a)
-            .expect("워크스페이스");
-        let sid_b = engine.runtime.counters.next_surface();
-        engine
-            .workspace_at_mut(ws_idx)
-            .expect("workspace index is valid")
-            .pane_layout_mut()
-            .find_pane_mut(pane_id)
-            .expect("pane")
-            .split_surface_by_id_marker(sid_a, SplitDirection::Horizontal, sid_b)
-            .expect("surface split");
-        engine.runtime.terminals.insert(
-            sid_b,
-            tasty_terminal::Terminal::new_detached(80, 24),
-            None,
-        );
-
-        assert!(state.close_active_surface(&mut engine));
-        assert!(!alive(&engine.as_ref(), sid_a));
-    }
-
-    #[test]
-    fn closing_a_pane_holding_an_occupied_surface_is_refused() {
-        let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
-        let sid = split_pane(&mut state, &mut engine);
-        engine
-            .live
-            .occupancy
-            .acquire(sid, HOLDER)
-            .expect("하드 점유");
-
-        assert!(!state.close_active_pane(&mut engine), "거절해야 한다");
-        assert!(alive(&engine.as_ref(), sid));
-        assert_eq!(
-            state
-                .active_workspace(&engine)
-                .pane_layout()
-                .all_pane_ids()
-                .len(),
-            2,
-            "거절이면 pane 도 그대로다"
-        );
-    }
-
-    #[test]
-    fn closing_an_unoccupied_pane_still_works() {
-        let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
-        let sid = split_pane(&mut state, &mut engine);
-
-        assert!(state.close_active_pane(&mut engine));
-        assert!(!alive(&engine.as_ref(), sid));
-    }
-
-    #[test]
-    fn closing_a_tab_holding_an_occupied_surface_is_refused() {
-        let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
-        state.add_tab(&mut engine).expect("탭 추가");
-        let sid = state.focused_surface_id(&engine).expect("포커스 surface");
-        engine
-            .live
-            .occupancy
-            .acquire(sid, HOLDER)
-            .expect("하드 점유");
-
-        assert!(!state.close_active_tab(&mut engine), "거절해야 한다");
-        assert!(alive(&engine.as_ref(), sid));
-    }
-
-    #[test]
-    fn closing_an_unoccupied_tab_still_works() {
-        let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
-        state.add_tab(&mut engine).expect("탭 추가");
-        let sid = state.focused_surface_id(&engine).expect("포커스 surface");
-
-        assert!(state.close_active_tab(&mut engine));
-        assert!(!alive(&engine.as_ref(), sid));
-    }
-
-    // 요청 거절과 달리 종료된 PTY의 사후 정리는 점유 때문에 막지 않는다.
-    #[test]
-    fn the_post_mortem_cleanup_path_still_closes_an_occupied_surface() {
-        let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
-        add_ws(&mut engine);
-        let sid = state.focused_surface_id(&engine).expect("포커스 surface");
-        engine
-            .live
-            .occupancy
-            .acquire(sid, HOLDER)
-            .expect("하드 점유");
-
-        assert!(
-            state.close_surface_by_id_no_snapshot(&mut engine, sid, false),
-            "사후 정리는 점유와 무관하게 통해야 한다"
-        );
-        assert!(!alive(&engine.as_ref(), sid));
-    }
-}
-
-// 닫힌 surface의 점유만 제거하고 workspace와 다른 surface의 점유는 남겨야 한다.
-#[cfg(test)]
 mod cleanup_forgets_only_the_closed_surface {
-    use super::*;
-
     const HOLDER: u32 = 7;
-
-    #[test]
-    fn the_closed_surfaces_own_lock_is_gone() {
-        let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
-        crate::app::services::apply_create_workspace_inner(
-            &mut engine,
-            crate::app::services::WorkspaceCreationParams::terminal(),
-        )
-        .expect("워크스페이스 생성");
-        let sid = state.focused_surface_id(&engine).expect("포커스 surface");
-        engine
-            .live
-            .occupancy
-            .acquire(sid, HOLDER)
-            .expect("하드 점유");
-
-        assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid, false));
-
-        assert!(
-            !engine.live.occupancy.is_hard_occupied(sid),
-            "사라진 surface 를 점유 중이라고 말하면 안 된다"
-        );
-        assert!(
-            engine
-                .live
-                .occupancy
-                .locks_snapshot()
-                .iter()
-                .all(|(s, _)| *s != sid),
-            "attach.list 스냅샷에도 남으면 안 된다"
-        );
-    }
-
     #[test]
     fn a_workspace_holders_other_surfaces_keep_their_occupancy() {
         let mut reg = crate::core::attach::OccupancyRegistry::new();

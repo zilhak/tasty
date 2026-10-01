@@ -24,7 +24,7 @@ fn application_bootstrap_commits_default_structure_before_installing_its_real_pt
     let mut settings = crate::settings::Settings::default();
     settings.general.shell = "/bin/sh".into();
     settings.general.startup_command = "printf 'BOOTSTRAP-%s\\n' JOURNAL; exec sleep 60".into();
-    let mut session = EngineSession::for_journal(
+    let mut session = EngineSession::new_with_ids_and_settings(
         80,
         24,
         Arc::new(|| {}),
@@ -49,7 +49,7 @@ fn application_bootstrap_commits_default_structure_before_installing_its_real_pt
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         if session.journal_binding.is_some() && journal.is_ready(session.id) {
             break;
         }
@@ -94,7 +94,7 @@ fn failed_metadata_scope_read_rejects_bootstrap_instead_of_reserving_from_zero()
         tasty_memory::MemoryStore::open(&path).unwrap(),
     ));
     let runners = Arc::new(tasty_task_runtime::RunnerRegistry::new());
-    let session = EngineSession::for_journal(
+    let session = EngineSession::new_with_ids_and_settings(
         80,
         24,
         Arc::new(|| {}),
