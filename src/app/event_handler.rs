@@ -35,7 +35,13 @@ impl ApplicationHandler<AppEvent> for App {
 
         if self.journal.pauses_observation()
             && !self.journal.is_halted()
-            && !matches!(event, AppEvent::JournalReady|AppEvent::Shutdown|AppEvent::QuitRequested|AppEvent::CloseWindow(_))
+            && !matches!(
+                event,
+                AppEvent::JournalReady
+                    | AppEvent::Shutdown
+                    | AppEvent::QuitRequested
+                    | AppEvent::CloseWindow(_)
+            )
         {
             self.defer_publication_event(crate::app::publication_input::DeferredEvent::App(event));
             return;
@@ -133,7 +139,11 @@ impl ApplicationHandler<AppEvent> for App {
             }
             // 타이머 실행은 이어지는 about_to_wait가 담당한다.
             AppEvent::TimerTick => {
-                if !self.journal.is_halted() && !self.journal.pauses_observation() {for session in self.engines.all_sessions_mut() {session.borrow_mut().poll_input_submissions();}}
+                if !self.journal.is_halted() && !self.journal.pauses_observation() {
+                    for session in self.engines.all_sessions_mut() {
+                        session.borrow_mut().poll_input_submissions();
+                    }
+                }
             }
             AppEvent::AttachClientData => {
                 self.apply_attach_client_output();
@@ -252,7 +262,10 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
-        if self.journal.pauses_observation() && !self.journal.is_halted() && !matches!(event,WindowEvent::CloseRequested) {
+        if self.journal.pauses_observation()
+            && !self.journal.is_halted()
+            && !matches!(event, WindowEvent::CloseRequested)
+        {
             let target = self.capture_publication_input(id, &event);
             self.defer_publication_event(crate::app::publication_input::DeferredEvent::Window {
                 window: id,
@@ -355,14 +368,34 @@ impl ApplicationHandler<AppEvent> for App {
         if self.journal.is_halted() {
             self.ipc_pacer.loop_reached_about_to_wait();
             self.process_ipc();
-            event_loop.set_control_flow(min_deadline(self.engine_release_poll_deadline(),self.runner_stop_poll_deadline()).map_or(winit::event_loop::ControlFlow::Wait,winit::event_loop::ControlFlow::WaitUntil));
+            event_loop.set_control_flow(
+                min_deadline(
+                    self.engine_release_poll_deadline(),
+                    self.runner_stop_poll_deadline(),
+                )
+                .map_or(
+                    winit::event_loop::ControlFlow::Wait,
+                    winit::event_loop::ControlFlow::WaitUntil,
+                ),
+            );
             return;
         }
 
         self.poll_journal_application();
-        if !self.journal.pauses_observation() {self.poll_pending_window();}
+        if !self.journal.pauses_observation() {
+            self.poll_pending_window();
+        }
         if self.journal.is_halted() {
-            event_loop.set_control_flow(min_deadline(self.engine_release_poll_deadline(),self.runner_stop_poll_deadline()).map_or(winit::event_loop::ControlFlow::Wait,winit::event_loop::ControlFlow::WaitUntil));
+            event_loop.set_control_flow(
+                min_deadline(
+                    self.engine_release_poll_deadline(),
+                    self.runner_stop_poll_deadline(),
+                )
+                .map_or(
+                    winit::event_loop::ControlFlow::Wait,
+                    winit::event_loop::ControlFlow::WaitUntil,
+                ),
+            );
             return;
         }
 
@@ -371,14 +404,18 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
         self.resume_publication_events(event_loop);
-        if self.state.shutdown.is_some() || self.journal.is_halted() || self.journal.pauses_observation()
+        if self.state.shutdown.is_some()
+            || self.journal.is_halted()
+            || self.journal.pauses_observation()
         {
             return;
         }
 
         self.poll_port_scans();
         self.poll_profile_detections();
-        for mut engine in self.engines_mut().windowed_and_parked() {engine.poll_attach_subscriptions();}
+        for mut engine in self.engines_mut().windowed_and_parked() {
+            engine.poll_attach_subscriptions();
+        }
 
         // Lua 자동실행 재진입 상태는 이번 회차의 모든 이벤트 처리 전에 갱신한다.
         self.lua_autofire.checkpoint();
@@ -421,7 +458,6 @@ impl ApplicationHandler<AppEvent> for App {
 
         // 사용자가 닫은 mirror의 연결도 정리해야 원격 점유가 남지 않는다.
         self.detach_orphaned_mirror_sessions();
-
 
         self.dispatch_pending_resize_forwards();
 
@@ -649,11 +685,24 @@ impl App {
 
     /// Sampling and persistence belong to App. A View only selects the optional notification target.
     fn record_plugin_rss_samples_if_present(&mut self) {
-        let samples=self.plugin_manager.as_mut().map(|manager|manager.take_rss_samples()).unwrap_or_default();
-        let time=self.services.now_unix_millis() as u64;
-        let anomalies:Vec<_>=samples.into_iter().filter_map(|(plugin,bytes)|self.services.record_rss_sample(&plugin,bytes,time)).collect();
-        if !anomalies.is_empty() && let Some((_,main,mut engine))=engines_mut!(self).window_pairs().next() {
-            crate::adapters::ipc::handler::display_plugin_rss_anomalies(&mut main.state,&mut engine,&anomalies);
+        let samples = self
+            .plugin_manager
+            .as_mut()
+            .map(|manager| manager.take_rss_samples())
+            .unwrap_or_default();
+        let time = self.services.now_unix_millis() as u64;
+        let anomalies: Vec<_> = samples
+            .into_iter()
+            .filter_map(|(plugin, bytes)| self.services.record_rss_sample(&plugin, bytes, time))
+            .collect();
+        if !anomalies.is_empty()
+            && let Some((_, main, mut engine)) = engines_mut!(self).window_pairs().next()
+        {
+            crate::adapters::ipc::handler::display_plugin_rss_anomalies(
+                &mut main.state,
+                &mut engine,
+                &anomalies,
+            );
         }
     }
 
@@ -823,8 +872,8 @@ impl App {
 
     /// surface ID가 있으면 해당 engine을, 없으면 모든 창·parked engine의 출력을 처리한다.
     fn handle_terminal_output(&mut self, surface_id: Option<u32>) {
-        use crate::app::dispatch_domain::DispatchSource;
         use crate::app::command::CoreEvent;
+        use crate::app::dispatch_domain::DispatchSource;
         // 비우는 동안 도착한 wake가 중복으로 버려지지 않도록 먼저 해제한다.
         self.note_drained_all(surface_id);
         let core = &mut self.services;
@@ -1050,7 +1099,10 @@ impl App {
                 event_loop,
                 modal_active: false,
                 engine: None,
-                plugin_manager: self.plugin_manager.as_ref().map(super::plugin_display::PluginDisplay::new),
+                plugin_manager: self
+                    .plugin_manager
+                    .as_ref()
+                    .map(super::plugin_display::PluginDisplay::new),
             };
             modal.handle_event(event, &mut ctx)
         } else {
@@ -1102,8 +1154,15 @@ impl App {
         id: WindowId,
         event: WindowEvent,
     ) {
-        if matches!(event,WindowEvent::RedrawRequested) && self.view.views.get(&id).is_some_and(|view|view.as_main().is_some()) {
-            self.redraw_main_window(id);return;
+        if matches!(event, WindowEvent::RedrawRequested)
+            && self
+                .view
+                .views
+                .get(&id)
+                .is_some_and(|view| view.as_main().is_some())
+        {
+            self.redraw_main_window(id);
+            return;
         }
         self.refresh_approval_presentations();
         self.refresh_preset_editor(id);
@@ -1115,8 +1174,11 @@ impl App {
                     event_loop,
                     modal_active,
                     engine,
-                    plugin_manager: self.plugin_manager.as_ref().map(super::plugin_display::PluginDisplay::new),
-                    };
+                    plugin_manager: self
+                        .plugin_manager
+                        .as_ref()
+                        .map(super::plugin_display::PluginDisplay::new),
+                };
                 // modeless PresetView의 닫기는 여기서 처리하며 모달은 앞의 전용 경로가 처리한다.
                 w.handle_event(event, &mut ctx)
             } else {
@@ -1204,8 +1266,8 @@ impl App {
     /// Windows 절전 복귀 뒤 PTY 상태·출력을 확인하고 의심되는 surface를 알린다.
     #[cfg(all(windows, feature = "gui"))]
     pub(crate) fn resume_health_pass(&mut self) {
-        use crate::app::dispatch_domain::DispatchSource;
         use crate::app::command::CoreEvent;
+        use crate::app::dispatch_domain::DispatchSource;
         tracing::info!("system resumed — running PTY health pass (ADR-0013)");
         let core = &mut self.services;
         let mut pending: Vec<(DispatchSource, Vec<CoreEvent>)> = Vec::new();
@@ -1244,7 +1306,12 @@ impl App {
                 .unwrap_or(0);
             let title = crate::i18n::t("resume.suspect.title").to_string();
             let body = crate::i18n::t("resume.suspect.body").to_string();
-            if engine.live.notifications.add(ws_id, sid, title, body).is_some() {
+            if engine
+                .live
+                .notifications
+                .add(ws_id, sid, title, body)
+                .is_some()
+            {
                 engine.raise_attention(sid, crate::core::AttentionKind::Completion);
             }
         }
@@ -1388,22 +1455,31 @@ impl App {
     ) {
         for (client_id, workspace_id) in requests {
             if !self.attach_workspace_on_owning_engine(workspace_id, client_id, hub) {
-                crate::remote::server::reject_attach(
-                    hub,
-                    client_id,
-                    "workspace_not_found",
-                    None,
-                );
+                crate::remote::server::reject_attach(hub, client_id, "workspace_not_found", None);
             }
         }
     }
 
     fn apply_input_frames_batch(&mut self, frames: impl IntoIterator<Item = (u32, Vec<u8>)>) {
         for (client_id, bytes) in frames {
-            if self.pending_server_attaches.iter().any(|pending|pending.client()==client_id) {
-                crate::remote::server::reject_attach(&self.stream_hub,client_id,"not_ready",None);
-                for pending in &mut self.pending_server_attaches {if pending.client()==client_id {pending.cancel();}}
-                self.journal.wake_application();continue;
+            if self
+                .pending_server_attaches
+                .iter()
+                .any(|pending| pending.client() == client_id)
+            {
+                crate::remote::server::reject_attach(
+                    &self.stream_hub,
+                    client_id,
+                    "not_ready",
+                    None,
+                );
+                for pending in &mut self.pending_server_attaches {
+                    if pending.client() == client_id {
+                        pending.cancel();
+                    }
+                }
+                self.journal.wake_application();
+                continue;
             }
             let routed = self.feed_stream_input(client_id, &bytes);
             #[cfg(debug_assertions)]
@@ -1586,15 +1662,55 @@ impl App {
         }
     }
 
-    fn attach_on_owning_engine(&mut self,surface:u32,client:u32,hub:&tasty_ipc::stream_hub::StreamHub)->bool {
-        let Some(session)=self.engines.all_sessions_mut().find(|session|session.core_state.has_surface(surface)) else{return false;};
-        let id=session.id;
-        crate::app::attach_activation::begin(&mut self.pending_server_attaches,&self.journal,id,&mut session.borrow_mut(),crate::app::attach_activation::Target::Surface(surface),client,hub);true
+    fn attach_on_owning_engine(
+        &mut self,
+        surface: u32,
+        client: u32,
+        hub: &tasty_ipc::stream_hub::StreamHub,
+    ) -> bool {
+        let Some(session) = self
+            .engines
+            .all_sessions_mut()
+            .find(|session| session.core_state.has_surface(surface))
+        else {
+            return false;
+        };
+        let id = session.id;
+        crate::app::attach_activation::begin(
+            &mut self.pending_server_attaches,
+            &self.journal,
+            id,
+            &mut session.borrow_mut(),
+            crate::app::attach_activation::Target::Surface(surface),
+            client,
+            hub,
+        );
+        true
     }
-    fn attach_workspace_on_owning_engine(&mut self,workspace:u32,client:u32,hub:&tasty_ipc::stream_hub::StreamHub)->bool {
-        let Some(session)=self.engines.all_sessions_mut().find(|session|session.core_state.has_workspace(workspace)) else{return false;};
-        let id=session.id;
-        crate::app::attach_activation::begin(&mut self.pending_server_attaches,&self.journal,id,&mut session.borrow_mut(),crate::app::attach_activation::Target::Workspace(workspace),client,hub);true
+    fn attach_workspace_on_owning_engine(
+        &mut self,
+        workspace: u32,
+        client: u32,
+        hub: &tasty_ipc::stream_hub::StreamHub,
+    ) -> bool {
+        let Some(session) = self
+            .engines
+            .all_sessions_mut()
+            .find(|session| session.core_state.has_workspace(workspace))
+        else {
+            return false;
+        };
+        let id = session.id;
+        crate::app::attach_activation::begin(
+            &mut self.pending_server_attaches,
+            &self.journal,
+            id,
+            &mut session.borrow_mut(),
+            crate::app::attach_activation::Target::Workspace(workspace),
+            client,
+            hub,
+        );
+        true
     }
 
     /// workspace 점유는 surface ID가 붙은 입력, 단일 surface 점유는 원시 입력으로 전달한다.
@@ -1676,13 +1792,57 @@ impl App {
 
     /// 구조 변경은 점유한 workspace를 가진 MainView에서만 실행한다.
     /// parked 상태에도 MainViewState는 있지만 현재 이 실행 루프의 대상은 아니다.
-    fn apply_forwarded_structural_op(&mut self,client_id:u32,op_id:u64,op:&crate::ipc::stream::StructuralOp,origin:crate::ipc::stream::ForwardOrigin,hub:&tasty_ipc::stream_hub::StreamHub) {
-        let owner=self.engines.all_sessions().find(|session|session.live.occupancy.workspace_held_by(client_id).is_some()).map(|session|session.id);
-        if let Some(session)=owner.and_then(|id|self.engines.session_mut(id)) && let Some(binding)=session.journal_binding.as_ref() {
-            if let Some((ticket,workspace))=self.journal.admit_remote(session.id,&session.core_state,&session.live,binding.runtime_epoch,hub,client_id,op_id,op.clone(),origin) {session.remote.pending_structure_replies.insert(ticket,workspace);}
+    fn apply_forwarded_structural_op(
+        &mut self,
+        client_id: u32,
+        op_id: u64,
+        op: &crate::ipc::stream::StructuralOp,
+        origin: crate::ipc::stream::ForwardOrigin,
+        hub: &tasty_ipc::stream_hub::StreamHub,
+    ) {
+        let owner = self
+            .engines
+            .all_sessions()
+            .find(|session| {
+                session
+                    .live
+                    .occupancy
+                    .workspace_held_by(client_id)
+                    .is_some()
+            })
+            .map(|session| session.id);
+        if let Some(session) = owner.and_then(|id| self.engines.session_mut(id))
+            && let Some(binding) = session.journal_binding.as_ref()
+        {
+            if let Some((ticket, workspace)) = self.journal.admit_remote(
+                session.id,
+                &session.core_state,
+                &session.live,
+                binding.runtime_epoch,
+                hub,
+                client_id,
+                op_id,
+                op.clone(),
+                origin,
+            ) {
+                session
+                    .remote
+                    .pending_structure_replies
+                    .insert(ticket, workspace);
+            }
         } else {
-            let reason=crate::remote::structure_sync::unresolved_forward_reason(self.engines.all_sessions().map(|session|session.as_ref()),client_id,op);
-            crate::app::journal::commands::inbound::reply(hub,client_id,op_id,false,Some(reason));
+            let reason = crate::remote::structure_sync::unresolved_forward_reason(
+                self.engines.all_sessions().map(|session| session.as_ref()),
+                client_id,
+                op,
+            );
+            crate::app::journal::commands::inbound::reply(
+                hub,
+                client_id,
+                op_id,
+                false,
+                Some(reason),
+            );
         }
     }
 
@@ -1924,7 +2084,14 @@ impl App {
                 bytes,
             } => {
                 let found = self.with_bulk_ws_engine(bulk_ws, |engine| {
-                    crate::remote::server::append_bulk_transfer(engine,hub,client_id,transfer_id,seq,&bytes)
+                    crate::remote::server::append_bulk_transfer(
+                        engine,
+                        hub,
+                        client_id,
+                        transfer_id,
+                        seq,
+                        &bytes,
+                    )
                 });
                 log_bulk_chunk_result(found, client_id, transfer_id, bulk_ws);
             }
@@ -2100,13 +2267,38 @@ impl App {
         let deadline = min_deadline(deadline, self.journal.cleanup_poll_deadline());
         let deadline = min_deadline(deadline, self.engine_release_poll_deadline());
         let deadline = min_deadline(deadline, self.runner_stop_poll_deadline());
-        let deadline = if self.journal.pauses_observation() {deadline} else {
-            min_deadline(deadline,self.screenshot_workers.has_pending().then(||std::time::Instant::now()+std::time::Duration::from_millis(20)))
+        let deadline = if self.journal.pauses_observation() {
+            deadline
+        } else {
+            min_deadline(
+                deadline,
+                self.screenshot_workers
+                    .has_pending()
+                    .then(|| std::time::Instant::now() + std::time::Duration::from_millis(20)),
+            )
         };
-        let deadline = if self.journal.pauses_observation() {deadline} else {
-            min_deadline(deadline,self.services.profile_detections.has_pending().then(||std::time::Instant::now()+std::time::Duration::from_millis(20)))
+        let deadline = if self.journal.pauses_observation() {
+            deadline
+        } else {
+            min_deadline(
+                deadline,
+                self.services
+                    .profile_detections
+                    .has_pending()
+                    .then(|| std::time::Instant::now() + std::time::Duration::from_millis(20)),
+            )
         };
-        let deadline=if self.journal.pauses_observation(){deadline}else{min_deadline(deadline,self.engines.all_sessions().filter_map(|session|session.runtime.input_submit_deadline()).min())};
+        let deadline = if self.journal.pauses_observation() {
+            deadline
+        } else {
+            min_deadline(
+                deadline,
+                self.engines
+                    .all_sessions()
+                    .filter_map(|session| session.runtime.input_submit_deadline())
+                    .min(),
+            )
+        };
         self.timer_waker.set_deadline(deadline);
         let deadline = if self.pending_window.is_some() {
             let opening = std::time::Instant::now() + crate::app::boot_machine::BOOT_FRAME_INTERVAL;

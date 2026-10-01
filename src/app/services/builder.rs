@@ -131,14 +131,19 @@ impl AppServicesBuilder {
             Arc::clone(&host_ipc_injector),
             Arc::new(crate::app::task_completion::AppCompletionResolver),
         );
-        let home=self.home.ok_or_else(||anyhow::anyhow!("HomeDirectory missing"))?;
-        let registry_config=home.tasty_config().map(|path|path.join("file-handlers.toml"));
-        let registries=crate::runtime::registries::RuntimeRegistries::new(registry_config.as_deref());
+        let home = self
+            .home
+            .ok_or_else(|| anyhow::anyhow!("HomeDirectory missing"))?;
+        let registry_config = home
+            .tasty_config()
+            .map(|path| path.join("file-handlers.toml"));
+        let registries =
+            crate::runtime::registries::RuntimeRegistries::new(registry_config.as_deref());
         Ok(AppServices {
             registries,
-            #[cfg(feature="gui")]
-            navigation_proofs:Default::default(),
-            profile_detections:Default::default(),
+            #[cfg(feature = "gui")]
+            navigation_proofs: Default::default(),
+            profile_detections: Default::default(),
             approval_store: Arc::new(tasty_approval::ApprovalStore::new()),
             telemetry_seq: Arc::new(tasty_telemetry::TelemetrySeq::new()),
             anomaly_detector: Arc::new(tasty_telemetry::AnomalyDetector::new()),

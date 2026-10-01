@@ -9,8 +9,8 @@ use tasty_plugin_protocol::{
 };
 
 use crate::adapters::ui::PluginBannerCloseKind;
-use crate::model::LogicalPx;
 use crate::app::plugin_display::PluginDisplay;
+use crate::model::LogicalPx;
 use crate::plugin_bridge::wire_scroll;
 use crate::state::RequestContext;
 
@@ -105,22 +105,25 @@ pub fn draw_plugin_banners(
         if geom_changed || has_input || need_bootstrap || theme_changed || need_full || need_repaint
         {
             fwd.record_sent(geom, &current_theme, has_frame);
-            state.dispatch_intent(crate::intent::Intent::Engine(
-                crate::app::engine_action::EngineAction::PluginDisplay(
-                    crate::app::plugin_display::PluginDisplayRequest::Banner {
-                        plugin: slot.plugin_id.clone(),
-                        params: BannerSetContextParams {
-                    instance_id: slot.instance_id,
-                    width_px: w_px,
-                    height_px: h_px,
-                    pixels_per_point: ppp,
-                    raw_input,
-                    theme: Some(current_theme.clone()),
-                    need_full_textures: need_full,
+            state.dispatch_intent(
+                crate::intent::Intent::Engine(
+                    crate::app::engine_action::EngineAction::PluginDisplay(
+                        crate::app::plugin_display::PluginDisplayRequest::Banner {
+                            plugin: slot.plugin_id.clone(),
+                            params: BannerSetContextParams {
+                                instance_id: slot.instance_id,
+                                width_px: w_px,
+                                height_px: h_px,
+                                pixels_per_point: ppp,
+                                raw_input,
+                                theme: Some(current_theme.clone()),
+                                need_full_textures: need_full,
+                            },
                         },
-                    },
-                ),
-            ).from_user_menu("plugin-render-context"));
+                    ),
+                )
+                .from_user_menu("plugin-render-context"),
+            );
         }
 
         state

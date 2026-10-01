@@ -1,9 +1,9 @@
 //! 비동기 식별·picker 결과를 GUI 상태에 적용한다.
 
 use crate::app::services::AppServices;
-use crate::runtime::engine_access::EngineMut;
 use crate::file::dispatch::DispatchTarget;
 use crate::file::format::{DetectorId, FileTarget};
+use crate::runtime::engine_access::EngineMut;
 use crate::state::{FileHandlerPickerResult, RequestContext};
 
 pub(crate) fn apply_identify_result(
@@ -188,7 +188,13 @@ pub(super) mod tests {
         let (mut core, mut engine_session) = build_test_core();
         let mut engine = engine_session.borrow_mut();
         let unmatched = DetectorId::new("no-such-detector");
-        assert!(engine.runtime.file_handler.handlers_for(&unmatched).is_empty());
+        assert!(
+            engine
+                .runtime
+                .file_handler
+                .handlers_for(&unmatched)
+                .is_empty()
+        );
         assert!(
             !engine.runtime.file_handler.all_handlers().is_empty(),
             "host defaults (html-system/directory-system) should give a non-empty fallback pool"

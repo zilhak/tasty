@@ -70,12 +70,39 @@ impl HookHandlerEditDraft {
             || !self.add.is_empty()
     }
 
-    pub(crate) fn into_edits(self)->Vec<crate::app::settings_edit::RegistryEdit> {
+    pub(crate) fn into_edits(self) -> Vec<crate::app::settings_edit::RegistryEdit> {
         use crate::app::settings_edit::RegistryEdit as E;
-        self.enabled.into_iter().map(|(id,value)|E::HookEnabled(id,value))
+        self.enabled
+            .into_iter()
+            .map(|(id, value)| E::HookEnabled(id, value))
             .chain(self.remove.into_iter().map(E::RemoveHook))
-            .chain(self.cmd_edits.into_iter().map(|(id,cmd)|E::UpsertHook(UserHookHandlerUpsertDecl {id:id.as_str().to_owned(),source:Some(HookSource::Hook),priority:None,display_name_i18n_key:None,disabled:None,action:Some(UserHookHandlerActionDecl::ShellCommand {command:cmd,args:Vec::new()})})))
-            .chain(self.add.into_iter().map(|add|E::UpsertHook(UserHookHandlerUpsertDecl {id:format!("user/{}",add.short),source:Some(HookSource::Hook),priority:Some(add.priority),display_name_i18n_key:None,disabled:Some(false),action:Some(UserHookHandlerActionDecl::ShellCommand {command:add.cmd,args:Vec::new()})}))).collect()
+            .chain(self.cmd_edits.into_iter().map(|(id, cmd)| {
+                E::UpsertHook(UserHookHandlerUpsertDecl {
+                    id: id.as_str().to_owned(),
+                    source: Some(HookSource::Hook),
+                    priority: None,
+                    display_name_i18n_key: None,
+                    disabled: None,
+                    action: Some(UserHookHandlerActionDecl::ShellCommand {
+                        command: cmd,
+                        args: Vec::new(),
+                    }),
+                })
+            }))
+            .chain(self.add.into_iter().map(|add| {
+                E::UpsertHook(UserHookHandlerUpsertDecl {
+                    id: format!("user/{}", add.short),
+                    source: Some(HookSource::Hook),
+                    priority: Some(add.priority),
+                    display_name_i18n_key: None,
+                    disabled: Some(false),
+                    action: Some(UserHookHandlerActionDecl::ShellCommand {
+                        command: add.cmd,
+                        args: Vec::new(),
+                    }),
+                })
+            }))
+            .collect()
     }
 }
 

@@ -8,11 +8,12 @@ pub(super) fn aggregate(
     command: &ResolvedCommand,
     decision: &Decision<StreamEvent, NewEffect>,
 ) -> Result<Vec<tasty_event_store::CommandUpdate>, String> {
-    if !decision
-        .events
-        .iter()
-        .any(|event| matches!(event.event, DomainEvent::OperationFinished { .. }|DomainEvent::OperationReconciled {..}))
-    {
+    if !decision.events.iter().any(|event| {
+        matches!(
+            event.event,
+            DomainEvent::OperationFinished { .. } | DomainEvent::OperationReconciled { .. }
+        )
+    }) {
         return Ok(Vec::new());
     }
     let after = projected_after(state, decision)?;
@@ -28,7 +29,9 @@ pub(super) fn aggregate(
         .collect();
     let mut affected = BTreeSet::new();
     for event in &decision.events {
-        if let DomainEvent::OperationFinished { id, outcome } | DomainEvent::OperationReconciled {id,outcome,..} = &event.event {
+        if let DomainEvent::OperationFinished { id, outcome }
+        | DomainEvent::OperationReconciled { id, outcome, .. } = &event.event
+        {
             let operation = operations
                 .get_mut(id)
                 .expect("decide checked the operation");
@@ -74,13 +77,44 @@ pub(super) fn aggregate(
                         .get(id)
                         .expect("original result refers to its operation");
                     *result = match &operation.outcome {
-                        Some(OperationOutcome::Succeeded)=> {
-                            if operation.forward {StructuralResult::Updated} else if let Some(plan)=&operation.retirement {if plan.replacement.is_some() {StructuralResult::Moved {moved:true}}else {StructuralResult::Closed {closed:true}}}
-                            else if let Some(plan)=&operation.assembly {
-                                let surviving=plan.snapshot.surfaces.keys().filter(|surface|operations.get(&tasty_core::CreationAssembly::member(&operation.id,**surface)).is_some_and(|member|matches!(member.outcome,Some(OperationOutcome::Succeeded)))).copied().collect();
+                        Some(OperationOutcome::Succeeded) => {
+                            if operation.forward {
+                                StructuralResult::Updated
+                            } else if let Some(plan) = &operation.retirement {
+                                if plan.replacement.is_some() {
+                                    StructuralResult::Moved { moved: true }
+                                } else {
+                                    StructuralResult::Closed { closed: true }
+                                }
+                            } else if let Some(plan) = &operation.assembly {
+                                let surviving = plan
+                                    .snapshot
+                                    .surfaces
+                                    .keys()
+                                    .filter(|surface| {
+                                        operations
+                                            .get(&tasty_core::CreationAssembly::member(
+                                                &operation.id,
+                                                **surface,
+                                            ))
+                                            .is_some_and(|member| {
+                                                matches!(
+                                                    member.outcome,
+                                                    Some(OperationOutcome::Succeeded)
+                                                )
+                                            })
+                                    })
+                                    .copied()
+                                    .collect();
                                 plan.result(&surviving)
-                            } else {operation.creation.as_ref().ok_or("completed operation has no result plan")?.created_result()}
-                        },
+                            } else {
+                                operation
+                                    .creation
+                                    .as_ref()
+                                    .ok_or("completed operation has no result plan")?
+                                    .created_result()
+                            }
+                        }
                         Some(
                             OperationOutcome::Failed { reason }
                             | OperationOutcome::Cancelled { reason }
@@ -93,8 +127,14 @@ pub(super) fn aggregate(
                 }
             }
             let response = if let Some(plan) = &original.response {
-                let complete =
-                    progress.freeze(plan, &after, command.completion_view.as_ref().unwrap_or(&super::super::CompletionView::default()))?;
+                let complete = progress.freeze(
+                    plan,
+                    &after,
+                    command
+                        .completion_view
+                        .as_ref()
+                        .unwrap_or(&super::super::CompletionView::default()),
+                )?;
                 if status == CommandStatus::InProgress {
                     Some(serde_json::to_vec(&progress).map_err(|error| error.to_string())?)
                 } else {

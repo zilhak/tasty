@@ -422,7 +422,6 @@ pub fn draw_port_scanner_popup(
     let mut filter_state = read_filter_state(&ctx);
     let target_show_all_system = filter_state.show_all_system;
 
-
     let need_kick = match &state.port_scan {
         PortScanState::Idle => true,
         PortScanState::Ready { scope, .. } => *scope != scope_from_flag(target_show_all_system),
@@ -466,7 +465,10 @@ pub fn draw_port_scanner_popup(
             sort_rows(&mut v, filter_state.sort_key, filter_state.sort_dir);
             for row in &mut v {
                 if let Ok(addr) = row.addr_display.parse::<IpAddr>() {
-                    row.favorited = engine.port_favorites.iter().any(|favorite|favorite.addr==addr && favorite.port==row.port);
+                    row.favorited = engine
+                        .port_favorites
+                        .iter()
+                        .any(|favorite| favorite.addr == addr && favorite.port == row.port);
                 }
             }
             (v, state_total)
@@ -643,7 +645,16 @@ pub fn draw_port_scanner_popup(
         }
         PortScannerAction::ToggleFavorite(addr_display, port) => {
             if let Ok(addr) = addr_display.parse::<IpAddr>() {
-                state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::TogglePortFavorite {address:addr,port,label:format_host_port(&addr_display,port)}).from_user_context_menu());
+                state.dispatch_intent(
+                    crate::intent::Intent::Engine(
+                        crate::app::engine_action::EngineAction::TogglePortFavorite {
+                            address: addr,
+                            port,
+                            label: format_host_port(&addr_display, port),
+                        },
+                    )
+                    .from_user_context_menu(),
+                );
             }
             PopupAction::None
         }
@@ -785,10 +796,7 @@ fn build_snapshot(
             if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                 for tab in &pane.tabs {
                     for sid in tab.all_surface_ids() {
-                        let Some(shell_pid) = engine
-                            .terminals
-                            .process_id(sid)
-                        else {
+                        let Some(shell_pid) = engine.terminals.process_id(sid) else {
                             continue;
                         };
                         let Some(path) = engine.surface_display_path(sid, presentation) else {
@@ -817,7 +825,11 @@ pub fn kick_off_scan(
 ) {
     let snapshot = build_snapshot(engine, presentation, show_all_system);
     let scope = scope_from_flag(show_all_system);
-    *slot = PortScanState::Loading { ticket: Arc::new(()), request: Some(snapshot), scope };
+    *slot = PortScanState::Loading {
+        ticket: Arc::new(()),
+        request: Some(snapshot),
+        scope,
+    };
     ctx.request_repaint();
 }
 
@@ -861,16 +873,31 @@ fn build_favorite_rows(
 impl PortScanState {
     pub(crate) fn take_request(&mut self) -> Option<(Weak<()>, ScanSnapshot)> {
         match self {
-            Self::Loading { ticket, request, .. } => request.take().map(|request| (Arc::downgrade(ticket), request)),
+            Self::Loading {
+                ticket, request, ..
+            } => request
+                .take()
+                .map(|request| (Arc::downgrade(ticket), request)),
             _ => None,
         }
     }
 
-    pub(crate) fn accept(&mut self, request: &Weak<()>, result: Result<Vec<PortRowView>, String>) -> bool {
-        let Self::Loading { ticket, scope, .. } = self else { return false; };
-        if !Arc::downgrade(ticket).ptr_eq(request) { return false; }
+    pub(crate) fn accept(
+        &mut self,
+        request: &Weak<()>,
+        result: Result<Vec<PortRowView>, String>,
+    ) -> bool {
+        let Self::Loading { ticket, scope, .. } = self else {
+            return false;
+        };
+        if !Arc::downgrade(ticket).ptr_eq(request) {
+            return false;
+        }
         *self = match result {
-            Ok(rows) => Self::Ready { rows, scope: *scope },
+            Ok(rows) => Self::Ready {
+                rows,
+                scope: *scope,
+            },
             Err(error) => Self::Failed(error),
         };
         true
@@ -2181,7 +2208,11 @@ mod tests {
     fn only_the_current_scan_can_replace_the_displayed_result() {
         let ticket = Arc::new(());
         let token = Arc::downgrade(&ticket);
-        let mut state = PortScanState::Loading { ticket, request: None, scope: ScanScope::Tasty };
+        let mut state = PortScanState::Loading {
+            ticket,
+            request: None,
+            scope: ScanScope::Tasty,
+        };
         let stale = Arc::new(());
         assert!(!state.accept(&Arc::downgrade(&stale), Ok(vec![dummy_row(1)])));
         assert!(state.accept(&token, Ok(vec![dummy_row(3000)])));

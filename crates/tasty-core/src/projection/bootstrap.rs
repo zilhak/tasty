@@ -1,7 +1,7 @@
 //! Logical bootstrap before the first publication ACK. It does not read payloads or create resources.
 use super::*;
-use tasty_model::{PaneNode, SplitNodeId, SurfaceLayout, WorkspaceCategory};
 use crate::SplitTree;
+use tasty_model::{PaneNode, SplitNodeId, SurfaceLayout, WorkspaceCategory};
 
 pub fn initialize(core: &mut CoreState, model: &JournalModel) -> Result<()> {
     if !core.local_workspaces.is_empty() {
@@ -87,7 +87,9 @@ fn surface_tree(model: &JournalModel, tree: &SplitTree<u32>) -> Result<SurfaceLa
         SplitTree::Leaf(id) => {
             let source = model.surfaces.get(id).ok_or("bootstrap surface missing")?;
             Ok(SurfaceLayout::Leaf(tasty_model::SurfaceDescriptor {
-                id:*id,kind:source.kind.clone(),activation_generation:source.activation.map(|activation|activation.generation),
+                id: *id,
+                kind: source.kind.clone(),
+                activation_generation: source.activation.map(|activation| activation.generation),
             }))
         }
         SplitTree::Split {
@@ -104,4 +106,3 @@ fn surface_tree(model: &JournalModel, tree: &SplitTree<u32>) -> Result<SurfaceLa
         }),
     }
 }
-

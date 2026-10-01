@@ -41,23 +41,44 @@ impl App {
             }
         };
 
-        let attempt=match self.remote.begin_attempt(None,None) {
-            Ok(attempt)=>attempt,
-            Err(error)=> {send_response(&cmd.response_tx,host_ipc::protocol::JsonRpcResponse::error(rpc_id,-32050,error));return;},
+        let attempt = match self.remote.begin_attempt(None, None) {
+            Ok(attempt) => attempt,
+            Err(error) => {
+                send_response(
+                    &cmd.response_tx,
+                    host_ipc::protocol::JsonRpcResponse::error(rpc_id, -32050, error),
+                );
+                return;
+            }
         };
-        let target_binding=match self.mirror_install_target(None,None,None,false) {
-            Ok(target)=>target,
-            Err(error)=>{self.remote.finish_attempt(&attempt);send_response(&cmd.response_tx,host_ipc::protocol::JsonRpcResponse::invalid_params(rpc_id,error.to_string()));return;},
+        let target_binding = match self.mirror_install_target(None, None, None, false) {
+            Ok(target) => target,
+            Err(error) => {
+                self.remote.finish_attempt(&attempt);
+                send_response(
+                    &cmd.response_tx,
+                    host_ipc::protocol::JsonRpcResponse::invalid_params(rpc_id, error.to_string()),
+                );
+                return;
+            }
         };
-        self.state.pending_remote_endpoints.insert(attempt.clone(),target_binding);
+        self.state
+            .pending_remote_endpoints
+            .insert(attempt.clone(), target_binding);
         let tx = self.remote.tx.clone();
         let proxy = self.view.proxy.clone();
         match target {
             RemoteAttachTarget::Existing(remote_ws) => {
-                if let Err(error)=self.remote.spawn_attempt(attempt.clone(),move || {
+                if let Err(error) = self.remote.spawn_attempt(attempt.clone(), move || {
                     let result = conn.resolve_endpoint();
-                    send_attach_outcome(&tx, &proxy, attempt,remote_ws, result);
-                }) {send_response(&cmd.response_tx,host_ipc::protocol::JsonRpcResponse::internal_error(rpc_id,error));return;}
+                    send_attach_outcome(&tx, &proxy, attempt, remote_ws, result);
+                }) {
+                    send_response(
+                        &cmd.response_tx,
+                        host_ipc::protocol::JsonRpcResponse::internal_error(rpc_id, error),
+                    );
+                    return;
+                }
                 send_response(
                     &cmd.response_tx,
                     host_ipc::protocol::JsonRpcResponse::success(
@@ -68,10 +89,24 @@ impl App {
             }
             RemoteAttachTarget::Create { name, cwd } => {
                 let response_tx = cmd.response_tx.clone();
-                let failure_id=rpc_id.clone();
-                if let Err(error)=self.remote.spawn_attempt(attempt.clone(),move || {
-                    remote_attach_create_worker(conn,name,cwd,rpc_id,&response_tx,&tx,&proxy,attempt);
-                }) {send_response(&cmd.response_tx,host_ipc::protocol::JsonRpcResponse::internal_error(failure_id,error));}
+                let failure_id = rpc_id.clone();
+                if let Err(error) = self.remote.spawn_attempt(attempt.clone(), move || {
+                    remote_attach_create_worker(
+                        conn,
+                        name,
+                        cwd,
+                        rpc_id,
+                        &response_tx,
+                        &tx,
+                        &proxy,
+                        attempt,
+                    );
+                }) {
+                    send_response(
+                        &cmd.response_tx,
+                        host_ipc::protocol::JsonRpcResponse::internal_error(failure_id, error),
+                    );
+                }
             }
         }
     }
@@ -141,7 +176,7 @@ impl RemoteAttachTarget {
 fn send_attach_outcome(
     tx: &std::sync::mpsc::Sender<tasty_remote::outbound::AutoAttachOutcome>,
     proxy: &winit::event_loop::EventLoopProxy<AppEvent>,
-    attempt:tasty_remote::outbound::AttemptToken,
+    attempt: tasty_remote::outbound::AttemptToken,
     remote_ws: u32,
     result: anyhow::Result<(Option<tasty_ssh::SshTunnel>, u16)>,
 ) {
@@ -165,7 +200,7 @@ fn remote_attach_create_worker(
     response_tx: &std::sync::mpsc::SyncSender<host_ipc::protocol::JsonRpcResponse>,
     tx: &std::sync::mpsc::Sender<tasty_remote::outbound::AutoAttachOutcome>,
     proxy: &winit::event_loop::EventLoopProxy<AppEvent>,
-    attempt:tasty_remote::outbound::AttemptToken,
+    attempt: tasty_remote::outbound::AttemptToken,
 ) {
     let (tunnel, port) = match conn.resolve_endpoint() {
         Ok(v) => v,
@@ -179,13 +214,32 @@ fn remote_attach_create_worker(
                     format!("remote endpoint resolve failed: {e:#}"),
                 ),
             );
-            send_attach_outcome(tx,proxy,attempt,0,Err(anyhow::anyhow!("remote attach preparation failed: {e:#}")));
+            send_attach_outcome(
+                tx,
+                proxy,
+                attempt,
+                0,
+                Err(anyhow::anyhow!("remote attach preparation failed: {e:#}")),
+            );
             return;
         }
     };
     if !attempt.is_active() {
-        send_response(response_tx,host_ipc::protocol::JsonRpcResponse::error(rpc_id,-32050,"remote connection attempt cancelled"));
-        send_attach_outcome(tx,proxy,attempt,0,Err(anyhow::anyhow!("remote connection attempt cancelled")));
+        send_response(
+            response_tx,
+            host_ipc::protocol::JsonRpcResponse::error(
+                rpc_id,
+                -32050,
+                "remote connection attempt cancelled",
+            ),
+        );
+        send_attach_outcome(
+            tx,
+            proxy,
+            attempt,
+            0,
+            Err(anyhow::anyhow!("remote connection attempt cancelled")),
+        );
         return;
     }
     let created = match tasty_remote::create::create_via_port(port, name.as_deref(), cwd.as_deref())
@@ -200,7 +254,13 @@ fn remote_attach_create_worker(
                     format!("remote workspace.create failed: {e:#}"),
                 ),
             );
-            send_attach_outcome(tx,proxy,attempt,0,Err(anyhow::anyhow!("remote attach preparation failed: {e:#}")));
+            send_attach_outcome(
+                tx,
+                proxy,
+                attempt,
+                0,
+                Err(anyhow::anyhow!("remote attach preparation failed: {e:#}")),
+            );
             return;
         }
     };
@@ -217,5 +277,5 @@ fn remote_attach_create_worker(
             }),
         ),
     );
-    send_attach_outcome(tx,proxy,attempt,created.id,Ok((tunnel,port)));
+    send_attach_outcome(tx, proxy, attempt, created.id, Ok((tunnel, port)));
 }

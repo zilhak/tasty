@@ -20,9 +20,9 @@ use crate::adapters::ui::popup::transfer::{
     TRANSFER_ERROR_POPUP_ID, TRANSFER_PROGRESS_POPUP_ID, TransferError, TransferProgress,
 };
 use crate::adapters::ui::popup::{PopupId, title_bar_height};
-use crate::runtime::engine_access::EngineMut;
 use crate::intent::{Intent, UiIntent};
 use crate::model::{PhysicalPx, PhysicalRect};
+use crate::runtime::engine_access::EngineMut;
 use crate::state::{
     FileHandlerPickerData, FileHandlerPickerResult, FilePickerData, FilePickerResult, FpLoadState,
     PendingScriptConfirm, RenameTarget,
@@ -670,7 +670,8 @@ fn occupied_workspace_with_popup(
         .expect("workspace index is valid")
         .all_surface_ids();
     engine
-        .live.occupancy
+        .live
+        .occupancy
         .acquire_workspace(ws_id, &members, &members, 7)
         .expect("workspace is free in the fixture");
     state.dialogs.pending_force_detach_workspace = Some(ws_id);

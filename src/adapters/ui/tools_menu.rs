@@ -2,11 +2,11 @@
 //! 플러그인 이벤트·팝업 요청은 큐에 넣고 surface 열기는 사용자 포커스 pane을 대상으로 한다.
 
 use crate::adapters::ui::popup::{self, PopupAction};
-use crate::runtime::engine_read::EngineRead;
 use crate::i18n::t;
 use crate::intent::{OpenPopupMode, UiIntent};
 use crate::plugin::manifest::ToolAction;
 use crate::plugin::tool_registry::ToolItem;
+use crate::runtime::engine_read::EngineRead;
 use crate::state::MainViewState;
 use crate::theme;
 use egui::emath::GuiRounding as _;
@@ -259,7 +259,10 @@ fn tools_menu_size_for(builtin_count: usize, plugin_count: usize, item_spacing: 
 }
 
 /// PopupDef.sizer — 매 프레임 plugin tool registry 의 실제 항목 수로 height 재계산.
-pub fn tools_menu_sizer(state: &MainViewState, engine: &crate::runtime::engine_read::EngineRead<'_>) -> egui::Vec2 {
+pub fn tools_menu_sizer(
+    state: &MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> egui::Vec2 {
     let plugin_count = state.tool_registry.visible_items().len();
     tools_menu_size_for(
         BUILTIN_TOOLS.len(),

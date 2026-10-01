@@ -1,31 +1,34 @@
 //! Process-wide application services and execution coordination. Engine structure has another owner.
-use std::sync::{Arc,Mutex,OnceLock};
+use crate::app::command::{CoreEvent, DomainIntent, ProcessPtyOutcome};
+use crate::core::*;
+use crate::ports::{
+    clipboard::ClipboardSystem, clock::Clock, fs::FileSystem, home::HomeDirectory,
+    notification_sound::NotificationSoundPlayer, process::ProcessSpawner,
+};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
+use std::sync::{Arc, Mutex, OnceLock};
 use tasty_memory::MemoryStorage;
-use tasty_presets::{PresetStorage,PresetStore};
+use tasty_presets::{PresetStorage, PresetStore};
 use tasty_settings::SettingsStorage;
 use tasty_themes::ThemeStorage;
-use crate::ports::{clipboard::ClipboardSystem,clock::Clock,fs::FileSystem,home::HomeDirectory,notification_sound::NotificationSoundPlayer,process::ProcessSpawner};
-use crate::core::*;
-use crate::runtime::engine_access::{EngineMut,EngineRef};
-use crate::app::command::{CoreEvent,DomainIntent,ProcessPtyOutcome};
 pub(crate) mod builder;
 pub(crate) mod file;
-pub(crate) mod ipc_facade;
-pub(crate) mod session;
 pub(crate) mod impl_attach;
 pub(crate) mod impl_clipboard;
 pub(crate) mod impl_mirror;
-mod live_intent;
 pub(crate) mod impl_pty;
 pub(crate) mod impl_tab;
+pub(crate) mod ipc_facade;
+mod live_intent;
+pub(crate) mod session;
 /// 프로세스가 공유하는 port와 저장소 핸들. 창별 데이터는 CoreState에 있다.
 #[allow(dead_code)] // 이유: 일부 port는 아직 읽지 않지만 AppServicesBuilder가 같은 port 묶음을 주입하는 인터페이스를 유지한다.
 pub(crate) struct AppServices {
-    pub(crate) registries:crate::runtime::registries::RuntimeRegistries,
+    pub(crate) registries: crate::runtime::registries::RuntimeRegistries,
     /// Process-wide services. Engine and View owners carry neither copies nor lookup authority.
-    #[cfg(feature="gui")]
-    pub(crate) navigation_proofs:Arc<crate::app::html_runtime::NavigationProofs>,
-    pub(crate) profile_detections:tasty_remote::profile_detection::ProfileDetections,
+    #[cfg(feature = "gui")]
+    pub(crate) navigation_proofs: Arc<crate::app::html_runtime::NavigationProofs>,
+    pub(crate) profile_detections: tasty_remote::profile_detection::ProfileDetections,
     pub(crate) approval_store: Arc<tasty_approval::ApprovalStore>,
     pub(crate) telemetry_seq: Arc<tasty_telemetry::TelemetrySeq>,
     pub(crate) anomaly_detector: Arc<tasty_telemetry::AnomalyDetector>,

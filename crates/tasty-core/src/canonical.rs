@@ -18,8 +18,8 @@ pub mod live;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::Serialize;
 use crate::{DataRef, JournalModel, SplitTree};
+use serde::Serialize;
 use tasty_model::SplitDirection;
 
 /// 비교에서 뺀 CoreState 자료와 그 이유. 문서의 제외 목록과 같다.

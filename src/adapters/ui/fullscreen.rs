@@ -25,7 +25,9 @@ pub struct StageDef {
         &crate::runtime::engine_read::EngineRead<'_>,
     ) -> StageAction,
     /// 닫기 큐에서 호출할 정리 훅. 임시 egui 상태를 지울 수 있도록 Context를 받는다.
-    pub on_close: Option<fn(&egui::Context, &mut MainViewState, &crate::runtime::engine_read::EngineRead<'_>)>,
+    pub on_close: Option<
+        fn(&egui::Context, &mut MainViewState, &crate::runtime::engine_read::EngineRead<'_>),
+    >,
 }
 
 impl StageDef {

@@ -53,9 +53,9 @@ pub(crate) struct ShutdownState {
     pub(crate) phase: ShutdownPhase,
     final_view_sequence: Option<u64>,
     port_scan_deadline: Option<Instant>,
-    profile_detection_deadline:Option<Instant>,
-    screenshot_deadline:Option<Instant>,
-    runner_stop_deadline:Instant,
+    profile_detection_deadline: Option<Instant>,
+    screenshot_deadline: Option<Instant>,
+    runner_stop_deadline: Instant,
 }
 
 enum StepOutcome {
@@ -75,12 +75,14 @@ impl App {
             phase: ShutdownPhase::SavingLayout,
             final_view_sequence: None,
             port_scan_deadline: Some(Instant::now() + PORT_SCAN_RECLAIM_TIMEOUT),
-            profile_detection_deadline:Some(Instant::now()+Duration::from_secs(5)),
-            screenshot_deadline:Some(Instant::now()+Duration::from_secs(5)),
-            runner_stop_deadline:Instant::now()+Duration::from_secs(5),
+            profile_detection_deadline: Some(Instant::now() + Duration::from_secs(5)),
+            screenshot_deadline: Some(Instant::now() + Duration::from_secs(5)),
+            runner_stop_deadline: Instant::now() + Duration::from_secs(5),
         });
 
-        for session in self.engines.all_sessions_mut() {let _=session.poll_runner_stop(&self.services.tasks);}
+        for session in self.engines.all_sessions_mut() {
+            let _ = session.poll_runner_stop(&self.services.tasks);
+        }
         self.port_scans.begin_shutdown();
         self.services.profile_detections.begin_shutdown();
         self.screenshot_workers.begin_shutdown();
@@ -102,7 +104,8 @@ impl App {
 
     /// Exited 뒤에는 프레임을 예약하지 않지만 종료 가드는 유지한다.
     pub(crate) fn shutdown_needs_frames(&self) -> bool {
-        self.state.shutdown
+        self.state
+            .shutdown
             .as_ref()
             .is_some_and(|sd| !matches!(sd.phase, ShutdownPhase::Exited))
     }
@@ -203,14 +206,22 @@ impl App {
         // Cleanup has a bounded receipt deadline and records Uncertain before the halt path.
         if self.journal.pauses_observation() && !self.journal.is_halted() {
             self.poll_journal_application();
-            if self.journal.pauses_observation() && !self.journal.is_halted() {return StepOutcome::Waiting;}
+            if self.journal.pauses_observation() && !self.journal.is_halted() {
+                return StepOutcome::Waiting;
+            }
         }
         for session in self.engines.all_sessions_mut() {
-            crate::app::attach_activation::cancel_engine(&mut self.pending_server_attaches,session.id,&mut session.borrow_mut(),&self.stream_hub);
+            crate::app::attach_activation::cancel_engine(
+                &mut self.pending_server_attaches,
+                session.id,
+                &mut session.borrow_mut(),
+                &self.stream_hub,
+            );
         }
         let t_flush = Instant::now();
         if self
-            .state.shutdown
+            .state
+            .shutdown
             .as_ref()
             .is_some_and(|shutdown| shutdown.final_view_sequence.is_none())
         {
@@ -224,7 +235,8 @@ impl App {
                     }
                 }
             }
-            self.state.shutdown
+            self.state
+                .shutdown
                 .as_mut()
                 .expect("shutdown phase")
                 .final_view_sequence = Some(self.journal.latest_view_sequence());
@@ -299,10 +311,30 @@ impl App {
     /// 플러그인이 닫힘에 따른 파일·자식 정리를 수행할 기회를 주기 위한 순서다.
     /// 모든 종료 요청을 여기서 보낸 뒤 S4에서 함께 기다린다. shutdown_channel_order가 호출 배치를 검사한다.
     fn shutdown_step_closing_surfaces(&mut self) -> StepOutcome {
-        let remaining=self.engines.all_sessions_mut().map(|session|session.poll_runner_stop(&self.services.tasks)).filter(|observation|matches!(observation,tasty_task_runtime::RunnerStopObservation::Waiting)).count();
-        if remaining!=0 {
-            if self.state.shutdown.as_ref().is_some_and(|state|Instant::now()<state.runner_stop_deadline) {return StepOutcome::Waiting;}
-            tracing::warn!(remaining,"runner shutdown timed out; scopes retain unjoined workers");
+        let remaining = self
+            .engines
+            .all_sessions_mut()
+            .map(|session| session.poll_runner_stop(&self.services.tasks))
+            .filter(|observation| {
+                matches!(
+                    observation,
+                    tasty_task_runtime::RunnerStopObservation::Waiting
+                )
+            })
+            .count();
+        if remaining != 0 {
+            if self
+                .state
+                .shutdown
+                .as_ref()
+                .is_some_and(|state| Instant::now() < state.runner_stop_deadline)
+            {
+                return StepOutcome::Waiting;
+            }
+            tracing::warn!(
+                remaining,
+                "runner shutdown timed out; scopes retain unjoined workers"
+            );
         }
         self.emit_shutdown_initiated();
         self.shutdown_close_surfaces();
@@ -316,33 +348,69 @@ impl App {
     fn shutdown_step_stopping_plugins(&mut self) -> StepOutcome {
         let scans_remaining = self.port_scans.poll_shutdown();
         if scans_remaining != 0
-            && let Some(deadline) = self.state.shutdown.as_ref().and_then(|state| state.port_scan_deadline)
+            && let Some(deadline) = self
+                .state
+                .shutdown
+                .as_ref()
+                .and_then(|state| state.port_scan_deadline)
         {
-            if Instant::now() < deadline { return StepOutcome::Waiting; }
-            tracing::warn!(scans_remaining, "port scan shutdown timed out; workers remain unjoined");
-            if let Some(state) = self.state.shutdown.as_mut() { state.port_scan_deadline = None; }
+            if Instant::now() < deadline {
+                return StepOutcome::Waiting;
+            }
+            tracing::warn!(
+                scans_remaining,
+                "port scan shutdown timed out; workers remain unjoined"
+            );
+            if let Some(state) = self.state.shutdown.as_mut() {
+                state.port_scan_deadline = None;
+            }
         }
-        let detections_remaining=self.services.profile_detections.poll_shutdown();
-        if detections_remaining!=0
-            && let Some(deadline)=self.state.shutdown.as_ref().and_then(|state|state.profile_detection_deadline)
+        let detections_remaining = self.services.profile_detections.poll_shutdown();
+        if detections_remaining != 0
+            && let Some(deadline) = self
+                .state
+                .shutdown
+                .as_ref()
+                .and_then(|state| state.profile_detection_deadline)
         {
-            if Instant::now()<deadline {return StepOutcome::Waiting;}
-            tracing::warn!(detections_remaining,"profile detection shutdown timed out; workers remain unjoined");
-            if let Some(state)=self.state.shutdown.as_mut() {state.profile_detection_deadline=None;}
+            if Instant::now() < deadline {
+                return StepOutcome::Waiting;
+            }
+            tracing::warn!(
+                detections_remaining,
+                "profile detection shutdown timed out; workers remain unjoined"
+            );
+            if let Some(state) = self.state.shutdown.as_mut() {
+                state.profile_detection_deadline = None;
+            }
         }
-        let screenshots_remaining=self.screenshot_workers.poll_shutdown();
-        if screenshots_remaining!=0
-            && let Some(deadline)=self.state.shutdown.as_ref().and_then(|state|state.screenshot_deadline)
+        let screenshots_remaining = self.screenshot_workers.poll_shutdown();
+        if screenshots_remaining != 0
+            && let Some(deadline) = self
+                .state
+                .shutdown
+                .as_ref()
+                .and_then(|state| state.screenshot_deadline)
         {
-            if Instant::now()<deadline {return StepOutcome::Waiting;}
-            tracing::warn!(screenshots_remaining,"screenshot shutdown timed out; workers remain unjoined");
-            if let Some(state)=self.state.shutdown.as_mut() {state.screenshot_deadline=None;}
+            if Instant::now() < deadline {
+                return StepOutcome::Waiting;
+            }
+            tracing::warn!(
+                screenshots_remaining,
+                "screenshot shutdown timed out; workers remain unjoined"
+            );
+            if let Some(state) = self.state.shutdown.as_mut() {
+                state.screenshot_deadline = None;
+            }
         }
-        let remote=self.remote.shutdown_observation();
+        let remote = self.remote.shutdown_observation();
         match remote {
-            tasty_remote::outbound::ShutdownObservation::Waiting=>return StepOutcome::Waiting,
-            tasty_remote::outbound::ShutdownObservation::Joined=>{},
-            other=>tracing::warn!(?other,"remote I/O retirement was not a confirmed clean join"),
+            tasty_remote::outbound::ShutdownObservation::Waiting => return StepOutcome::Waiting,
+            tasty_remote::outbound::ShutdownObservation::Joined => {}
+            other => tracing::warn!(
+                ?other,
+                "remote I/O retirement was not a confirmed clean join"
+            ),
         }
         let done = match self.plugin_manager.as_mut() {
             Some(mgr) => mgr.poll_shutdown_all(),

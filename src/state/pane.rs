@@ -45,7 +45,13 @@ impl RequestContext {
         }
         match op {
             Some(op) => {
-                self.dispatch_intent(crate::intent::Intent::ForwardMirror {op,close_focus_candidates}.from_user_menu("mirror.structural"));
+                self.dispatch_intent(
+                    crate::intent::Intent::ForwardMirror {
+                        op,
+                        close_focus_candidates,
+                    }
+                    .from_user_menu("mirror.structural"),
+                );
             }
             None => {
                 #[cfg(feature = "gui")]
@@ -145,7 +151,10 @@ impl RequestContext {
             ws.pane_layout()
                 .find_pane(target_id)
                 .map(|pane| {
-                    pane.tabs.iter().flat_map(|tab|tab.all_surface_ids()).collect()
+                    pane.tabs
+                        .iter()
+                        .flat_map(|tab| tab.all_surface_ids())
+                        .collect()
                 })
                 .unwrap_or_default()
         };
@@ -153,7 +162,10 @@ impl RequestContext {
             return false;
         }
 
-        self.dispatch_intent(crate::app::command::DomainIntent::ClosePane {pane_id:target_id}.from_user_context_menu());
+        self.dispatch_intent(
+            crate::app::command::DomainIntent::ClosePane { pane_id: target_id }
+                .from_user_context_menu(),
+        );
         true
     }
 
@@ -191,7 +203,7 @@ impl RequestContext {
         surface_id: u32,
         is_user_close: bool,
     ) -> bool {
-        self.queue_surface_close(engine,surface_id,true,is_user_close)
+        self.queue_surface_close(engine, surface_id, true, is_user_close)
     }
 
     /// 복원 사본 없이 닫는다. 워크스페이스가 모두 사라지면 다음 화면 처리에 필요한 기본 항목을 만든다.
@@ -201,20 +213,38 @@ impl RequestContext {
         surface_id: u32,
         is_user_close: bool,
     ) -> bool {
-        self.queue_surface_close(engine,surface_id,false,is_user_close)
+        self.queue_surface_close(engine, surface_id, false, is_user_close)
     }
 
     /// Queue fixed IDs and an explicit user snapshot request; execution and repair are App-owned.
-    fn queue_surface_close(&mut self,engine:&EngineRead<'_>,surface_id:u32,capture:bool,is_user:bool)->bool {
-        if !engine.core.has_surface(surface_id) {return false;}
-        let intent=crate::app::command::DomainIntent::CloseSurface {
-            surface_id,presentation:capture.then(||Box::new(crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&engine.categories(),&self.navigation))),
+    fn queue_surface_close(
+        &mut self,
+        engine: &EngineRead<'_>,
+        surface_id: u32,
+        capture: bool,
+        is_user: bool,
+    ) -> bool {
+        if !engine.core.has_surface(surface_id) {
+            return false;
+        }
+        let intent = crate::app::command::DomainIntent::CloseSurface {
+            surface_id,
+            presentation: capture.then(|| {
+                Box::new(crate::model::StructurePresentationSnapshot::capture(
+                    &engine.workspaces(),
+                    &engine.categories(),
+                    &self.navigation,
+                ))
+            }),
         };
-        #[cfg(feature="gui")]
-        if is_user {self.dispatch_intent(intent.from_user_context_menu());return true;}
-        self.dispatch_intent(intent.from_agent_ipc());true
+        #[cfg(feature = "gui")]
+        if is_user {
+            self.dispatch_intent(intent.from_user_context_menu());
+            return true;
+        }
+        self.dispatch_intent(intent.from_agent_ipc());
+        true
     }
-
 }
 
 #[cfg(feature = "gui")]

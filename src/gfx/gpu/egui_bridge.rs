@@ -1,8 +1,8 @@
 use winit::window::Window;
 
 use crate::adapters::ui;
-use crate::runtime::engine_read::EngineRead;
 use crate::model::PhysicalRect;
+use crate::runtime::engine_read::EngineRead;
 use crate::settings::EffectiveFont;
 use crate::state::MainViewState;
 
@@ -104,7 +104,7 @@ impl GpuState {
             ui::titlebar::draw_titlebar(ctx, state, window, proxy);
             let plugin_alert = plugin_manager.map_or(0, |m| m.attention_count());
             // 닫힌 대상의 이동 대기 표시와 "이곳으로 이동" 메뉴가 남지 않게 한다.
-            ui::move_source::clear_if_target_closed(engine,&mut state.pending_move);
+            ui::move_source::clear_if_target_closed(engine, &mut state.pending_move);
             ui::draw_ui(ctx, state, engine, scale_factor, plugin_alert);
             ui::draw_pane_dividers(ctx, dividers, scale_factor);
             ui::draw_surface_highlights(ctx, state, engine, terminal_rect, scale_factor);
@@ -112,7 +112,8 @@ impl GpuState {
             ui::draw_egui_panels(ctx, state, engine, pane_rects, scale_factor);
             // 탭 바와 점유 테두리 뒤에 그려 대상 rect에서 가장 마지막에 둔다.
             let move_mark = ui::move_source::resolve(
-                state.pending_move,                &state.navigation,
+                state.pending_move,
+                &state.navigation,
                 engine,
                 state.active_workspace_index(engine),
                 pane_rects,
@@ -169,7 +170,11 @@ impl GpuState {
         })
     }
 
-    pub(super) fn post_egui_update(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>, _prev_theme: &str) {
+    pub(super) fn post_egui_update(
+        &mut self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+        _prev_theme: &str,
+    ) {
         // 설정 변경은 AppearanceChanged에서 전달받고, 여기서는 현재 Theme의 스타일을 다시 적용한다.
         tasty_egui_theme::apply_theme_to_egui(&crate::theme::theme(), &self.egui_ctx);
 

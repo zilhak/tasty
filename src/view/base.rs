@@ -9,8 +9,7 @@ use crate::view::repaint::RepaintGate;
 pub struct ViewBase {
     pub gpu: GpuState,
     pub winit: Arc<winit::window::Window>,
-    pub(crate) state:crate::view::state::ViewState,
-
+    pub(crate) state: crate::view::state::ViewState,
 }
 
 impl ViewBase {
@@ -18,7 +17,7 @@ impl ViewBase {
         Self {
             gpu,
             winit,
-            state:Default::default(),
+            state: Default::default(),
         }
     }
 
@@ -31,7 +30,9 @@ impl ViewBase {
     /// 미룬 시각은 about_to_wait에서 WaitUntil로 예약한다.
     pub fn mark_dirty_from(&mut self, source: crate::view::RepaintSource) {
         self.state.dirty = true;
-        if self.state.repaint
+        if self
+            .state
+            .repaint
             .admit(source, std::time::Instant::now(), &self.winit)
         {
             self.winit.request_redraw();

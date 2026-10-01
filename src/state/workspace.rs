@@ -53,17 +53,32 @@ impl RequestContext {
         engine: &crate::runtime::engine_read::EngineRead<'_>,
         context: &str,
     ) -> bool {
-        if !engine.workspaces().is_empty() {return false;}
-        self.dispatch_intent(crate::app::command::DomainIntent::CreateWorkspace {
-            cwd:None,kind:"terminal".into(),surface_params:serde_json::json!({}),name:None,subtitle:None,description:None,category:None,
-        }.from_system());
-        tracing::debug!(context,"queued default workspace for an empty engine");
+        if !engine.workspaces().is_empty() {
+            return false;
+        }
+        self.dispatch_intent(
+            crate::app::command::DomainIntent::CreateWorkspace {
+                cwd: None,
+                kind: "terminal".into(),
+                surface_params: serde_json::json!({}),
+                name: None,
+                subtitle: None,
+                description: None,
+                category: None,
+            }
+            .from_system(),
+        );
+        tracing::debug!(context, "queued default workspace for an empty engine");
         true
     }
 
     /// 0-based 인덱스로 전환한다. 사용자 입력과 debug IPC에서만 호출한다.
     #[cfg(any(feature = "gui", debug_assertions, test))]
-    pub fn switch_workspace(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>, index: usize) {
+    pub fn switch_workspace(
+        &mut self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+        index: usize,
+    ) {
         if index < engine.workspaces().len() {
             self.set_active_workspace_index(engine, index);
             let cat = engine
@@ -84,7 +99,11 @@ impl RequestContext {
     /// 접힌 카테고리는 펼쳐 저장하고, 마지막으로 본 워크스페이스를 선택한다.
     /// 기록된 대상이 없거나 다른 카테고리로 이동했다면 첫 항목을 선택한다.
     #[cfg(any(feature = "gui", test))]
-    pub fn switch_to_category(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>, section_idx: usize) {
+    pub fn switch_to_category(
+        &mut self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+        section_idx: usize,
+    ) {
         let Some(cat) = engine.categories().get(section_idx).map(|c| c.id) else {
             return;
         };
@@ -150,7 +169,10 @@ impl RequestContext {
     /// 마지막 항목에서는 workspace_switch_crosses_category에 따라 같은 카테고리의
     /// 처음으로 돌아가거나 다음 카테고리로 넘어간다.
     #[cfg(any(feature = "gui", test))]
-    pub fn next_workspace_in_active_category(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>) {
+    pub fn next_workspace_in_active_category(
+        &mut self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+    ) {
         if let Some(target) = self.relative_workspace_in_active_category(engine, 1) {
             self.switch_workspace(engine, target);
         }
@@ -158,7 +180,10 @@ impl RequestContext {
 
     /// 이전 항목으로 이동한다. 경계 처리는 next_workspace_in_active_category와 반대다.
     #[cfg(any(feature = "gui", test))]
-    pub fn prev_workspace_in_active_category(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>) {
+    pub fn prev_workspace_in_active_category(
+        &mut self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+    ) {
         if let Some(target) = self.relative_workspace_in_active_category(engine, -1) {
             self.switch_workspace(engine, target);
         }
@@ -264,13 +289,24 @@ impl RequestContext {
         if from == to || from >= len || to >= len {
             return false;
         }
-        let Some(workspace_id)=engine.workspace_at(from).map(|workspace|workspace.id) else {return false;};
-        self.dispatch_intent(crate::app::command::DomainIntent::MoveWorkspace {workspace_id,to_index:to}.from_user_context_menu());
+        let Some(workspace_id) = engine.workspace_at(from).map(|workspace| workspace.id) else {
+            return false;
+        };
+        self.dispatch_intent(
+            crate::app::command::DomainIntent::MoveWorkspace {
+                workspace_id,
+                to_index: to,
+            }
+            .from_user_context_menu(),
+        );
         true
     }
 
     #[cfg(feature = "gui")]
-    pub fn close_active_workspace(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>) -> bool {
+    pub fn close_active_workspace(
+        &mut self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+    ) -> bool {
         self.close_workspace_at(
             engine,
             self.active_workspace_index(engine),
@@ -287,13 +323,20 @@ impl RequestContext {
         ws_idx: usize,
         origin: WorkspaceCloseOrigin,
     ) -> bool {
-        let Some(workspace)=engine.workspace_at(ws_idx) else {return false;};
-        let workspace_id=workspace.id;
-        let targets=workspace.all_surface_ids();
-        if self.refuse_if_hard_occupied(engine,targets) {return false;}
-        let intent=crate::app::command::DomainIntent::CloseWorkspace {workspace_id};
-        #[cfg(feature="gui")]
-        if origin.is_user() {self.dispatch_intent(intent.from_user_context_menu());return true;}
+        let Some(workspace) = engine.workspace_at(ws_idx) else {
+            return false;
+        };
+        let workspace_id = workspace.id;
+        let targets = workspace.all_surface_ids();
+        if self.refuse_if_hard_occupied(engine, targets) {
+            return false;
+        }
+        let intent = crate::app::command::DomainIntent::CloseWorkspace { workspace_id };
+        #[cfg(feature = "gui")]
+        if origin.is_user() {
+            self.dispatch_intent(intent.from_user_context_menu());
+            return true;
+        }
         self.dispatch_intent(intent.from_agent_ipc());
         true
     }

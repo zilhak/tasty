@@ -93,11 +93,31 @@ impl StructureDecider {
             }
             let model = candidate.streams.entry(change.stream.clone()).or_default();
             let mut resolved = change.command.clone();
-            if let StructuralCommand::PrepareCreation {operation,command_id,..}
-                |StructuralCommand::Close {operation,command_id,..}
-                |StructuralCommand::PrepareAssembly {operation,command_id,..}
-                |StructuralCommand::PrepareForward {operation,command_id,..}
-                |StructuralCommand::Replace {operation,command_id,..} = &mut resolved
+            if let StructuralCommand::PrepareCreation {
+                operation,
+                command_id,
+                ..
+            }
+            | StructuralCommand::Close {
+                operation,
+                command_id,
+                ..
+            }
+            | StructuralCommand::PrepareAssembly {
+                operation,
+                command_id,
+                ..
+            }
+            | StructuralCommand::PrepareForward {
+                operation,
+                command_id,
+                ..
+            }
+            | StructuralCommand::Replace {
+                operation,
+                command_id,
+                ..
+            } = &mut resolved
             {
                 *command_id = context.command_id.to_owned();
                 *operation =
@@ -156,9 +176,17 @@ impl StructureDecider {
             response: match &command.response {
                 Some(response) => {
                     let mut progress = super::response::ResponseProgress::new(results);
-                    match progress.freeze(response, &candidate, &command.completion_view.clone().unwrap_or_default()).map_err(Rejection)? {
+                    match progress
+                        .freeze(
+                            response,
+                            &candidate,
+                            &command.completion_view.clone().unwrap_or_default(),
+                        )
+                        .map_err(Rejection)?
+                    {
                         Some(wire) => wire,
-                        None => serde_json::to_vec(&progress).map_err(|error| Rejection(error.to_string()))?,
+                        None => serde_json::to_vec(&progress)
+                            .map_err(|error| Rejection(error.to_string()))?,
                     }
                 }
                 None => serde_json::to_vec(&results).map_err(|e| Rejection(e.to_string()))?,
@@ -189,10 +217,10 @@ impl JournalDecider for StructureDecider {
         let internal = command.changes.iter().all(|change| {
             matches!(
                 change.command,
-                StructuralCommand::ReconcileRetirement {..}
-                    | StructuralCommand::RecoverOperation {..}
+                StructuralCommand::ReconcileRetirement { .. }
+                    | StructuralCommand::RecoverOperation { .. }
                     | StructuralCommand::FinishCreation { .. }
-                    | StructuralCommand::FinishRetirement {..}
+                    | StructuralCommand::FinishRetirement { .. }
                     | StructuralCommand::FinishCleanup { .. }
                     | StructuralCommand::CancelUnstartedCreation { .. }
                     | StructuralCommand::RejectInstallation { .. }
@@ -278,15 +306,12 @@ impl JournalDecider for StructureDecider {
     }
 }
 
-fn new_effect(
-    stream: &str,
-    effect: &tasty_core::StructuralEffect,
-) -> Result<NewEffect, Rejection> {
+fn new_effect(stream: &str, effect: &tasty_core::StructuralEffect) -> Result<NewEffect, Rejection> {
     use tasty_core::StructuralEffect;
     let (operation, generation, step) = match effect {
         // A close operation has one cleanup attempt identity; each target retains its own activation.
-        StructuralEffect::RetireSurfaces {operation,..}=>(operation,1,"retire"),
-        StructuralEffect::ForwardStructure {operation,..}=>(operation,1,"forward"),
+        StructuralEffect::RetireSurfaces { operation, .. } => (operation, 1, "retire"),
+        StructuralEffect::ForwardStructure { operation, .. } => (operation, 1, "forward"),
         StructuralEffect::PrepareSurface {
             operation,
             activation_generation,
@@ -294,7 +319,12 @@ fn new_effect(
         } => (operation, *activation_generation, "prepare"),
     };
     Ok(NewEffect {
-        claim_kind:match effect {StructuralEffect::PrepareSurface {..}=>tasty_event_store::ClaimKind::Activation,StructuralEffect::RetireSurfaces {..}|StructuralEffect::ForwardStructure {..}=>tasty_event_store::ClaimKind::Obligation},
+        claim_kind: match effect {
+            StructuralEffect::PrepareSurface { .. } => tasty_event_store::ClaimKind::Activation,
+            StructuralEffect::RetireSurfaces { .. } | StructuralEffect::ForwardStructure { .. } => {
+                tasty_event_store::ClaimKind::Obligation
+            }
+        },
         effect_id: format!("{}/{}", operation.0, step),
         operation_id: operation.0.clone(),
         // This is the durable activation obligation, not the process-local Pty generation.

@@ -1,7 +1,7 @@
-use crate::runtime::journal_payload::StoreBytes;
 //! CoreState ↔ 구조 journal digest 시험. CoreState를 capture해 가져온 journal 모델이 CoreState와
 //! 같은 구조를 나타내고, replay해도 digest가 같으며, 한쪽만 바꾸면 digest가 달라지는지 본다.
 
+use crate::runtime::journal_payload::StoreBytes;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -20,8 +20,7 @@ use crate::model::{
 };
 use crate::runtime::journal::{self, engine_stream, full_replay, save_snapshot};
 use tasty_core::canonical::{
-    CanonData, Canonical, DIGEST_EXCLUDED, KNOWN_MISMATCHES, differences,
-    known_mismatch,
+    CanonData, Canonical, DIGEST_EXCLUDED, KNOWN_MISMATCHES, differences, known_mismatch,
 };
 
 const JOURNAL: &str = "journal-shadow-digest-test";
@@ -436,7 +435,9 @@ const CORE_MUTATIONS: &[CoreMutation] = &[
     ("category order", |e| e.categories().swap(1, 2)),
     ("workspace order", |e| e.local_workspaces().swap(0, 2)),
     ("workspace name", |e| e.local_workspaces()[0].name.push('x')),
-    ("workspace category", |e| e.local_workspaces()[0].category = 8),
+    ("workspace category", |e| {
+        e.local_workspaces()[0].category = 8
+    }),
     ("workspace subtitle", |e| {
         e.local_workspaces()[0].subtitle.clear()
     }),

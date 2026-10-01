@@ -26,19 +26,22 @@ impl EngineId {
 pub(crate) struct EngineSession {
     pub(crate) id: EngineId,
     pub(crate) core_state: CoreState,
-    pub(crate) persistence:EnginePersistence,
-    pub(crate) remote:crate::remote::state::RemoteState,
-    pub(crate) live:crate::core::live::LiveDomainState,
-    pub(crate) engine_release:Option<crate::runtime::resource_retirement::EngineRelease>,
+    pub(crate) persistence: EnginePersistence,
+    pub(crate) remote: crate::remote::state::RemoteState,
+    pub(crate) live: crate::core::live::LiveDomainState,
+    pub(crate) engine_release: Option<crate::runtime::resource_retirement::EngineRelease>,
     pub(crate) journal_binding: Option<crate::runtime::journal_product::EngineBinding>,
-    pub(crate) pending_resource_retirements:std::collections::HashMap<tasty_core::OperationId,crate::runtime::resource_retirement::ResourceRetirement>,
+    pub(crate) pending_resource_retirements: std::collections::HashMap<
+        tasty_core::OperationId,
+        crate::runtime::resource_retirement::ResourceRetirement,
+    >,
     pub(crate) pending_materializations: std::collections::HashMap<
         tasty_core::OperationId,
         crate::runtime::effect_runner::PreparedMaterialization,
     >,
     pub(crate) hooks: crate::hook_runtime::HookRuntimeState,
     pub(crate) task_scope: tasty_task_runtime::TaskScope,
-    pub(crate) runner_stop:Option<tasty_task_runtime::RunnerStopReceipt>,
+    pub(crate) runner_stop: Option<tasty_task_runtime::RunnerStopReceipt>,
     pub(crate) observer_router: crate::output_observer::ObserverRouter,
     pub(crate) runtime: crate::runtime::engine_runtime::EngineRuntime,
     /// 실행 자원의 Drop까지 격리 홈이 살아 있어야 한다.
@@ -52,30 +55,42 @@ pub(crate) struct EngineSession {
 /// Engine binding and capture scheduling values, separate from the committed structure.
 /// SQLite and file execution remain owned by the App storage worker.
 pub(crate) struct EnginePersistence {
-    pub(crate) slot:Option<crate::core::layout_persistence::LayoutSlotId>,
-    pub(crate) dirty:crate::core::layout_persistence::LayoutDirtyTracker,
+    pub(crate) slot: Option<crate::core::layout_persistence::LayoutSlotId>,
+    pub(crate) dirty: crate::core::layout_persistence::LayoutDirtyTracker,
 }
 impl EnginePersistence {
-    pub(crate) fn new(slot:Option<crate::core::layout_persistence::LayoutSlotId>)->Self {Self {slot,dirty:crate::core::layout_persistence::LayoutDirtyTracker::new()}}
+    pub(crate) fn new(slot: Option<crate::core::layout_persistence::LayoutSlotId>) -> Self {
+        Self {
+            slot,
+            dirty: crate::core::layout_persistence::LayoutDirtyTracker::new(),
+        }
+    }
 }
 
 impl EngineSession {
     /// Stop only this scope's runners; retain their receipts until the actual worker join.
-    pub(crate) fn poll_runner_stop(&mut self,tasks:&tasty_task_runtime::TaskService)->tasty_task_runtime::RunnerStopObservation {
-        let scope=&self.task_scope;
-        self.runner_stop.get_or_insert_with(||tasks.request_stop_scope(scope)).poll()
+    pub(crate) fn poll_runner_stop(
+        &mut self,
+        tasks: &tasty_task_runtime::TaskService,
+    ) -> tasty_task_runtime::RunnerStopObservation {
+        let scope = &self.task_scope;
+        self.runner_stop
+            .get_or_insert_with(|| tasks.request_stop_scope(scope))
+            .poll()
     }
 
-    pub(crate) fn read(&self)->super::engine_read::EngineRead<'_> {self.as_ref().read()}
+    pub(crate) fn read(&self) -> super::engine_read::EngineRead<'_> {
+        self.as_ref().read()
+    }
 
     pub(crate) fn borrow_mut(&mut self) -> EngineMut<'_> {
         EngineMut {
-            journal_binding:self.journal_binding.as_ref(),
+            journal_binding: self.journal_binding.as_ref(),
             core: &mut self.core_state,
-            persistence:&mut self.persistence,
+            persistence: &mut self.persistence,
             runtime: &mut self.runtime,
-            remote:&mut self.remote,
-            live:&mut self.live,
+            remote: &mut self.remote,
+            live: &mut self.live,
             hooks: &mut self.hooks,
             task_scope: &mut self.task_scope,
             observer_router: &mut self.observer_router,
@@ -84,12 +99,12 @@ impl EngineSession {
 
     pub(crate) fn as_ref(&self) -> EngineRef<'_> {
         EngineRef {
-            journal_binding:self.journal_binding.as_ref(),
+            journal_binding: self.journal_binding.as_ref(),
             core: &self.core_state,
-            persistence:&self.persistence,
+            persistence: &self.persistence,
             runtime: &self.runtime,
-            remote:&self.remote,
-            live:&self.live,
+            remote: &self.remote,
+            live: &self.live,
             hooks: &self.hooks,
             task_scope: &self.task_scope,
             observer_router: &self.observer_router,

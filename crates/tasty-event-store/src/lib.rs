@@ -20,37 +20,38 @@
 //! - projection 행을 가진 consumer의 위치는 [`EventStore::commit_projection`]으로만 옮긴다.
 //!   위치만 저장하는 [`EventStore::save_checkpoint`]는 그 consumer를 거절한다.
 
-mod command;
-mod write_limits;
 mod admission_budget;
-mod retention;
-mod manifest;
+mod command;
 mod commit;
 mod effect;
 mod error;
 mod identity;
+mod manifest;
 mod payload;
 mod projection;
-mod scoped_projection;
 mod read;
+mod retention;
 mod schema;
+mod scoped_projection;
 mod snapshot;
 mod store;
 mod types;
+mod write_limits;
 
 #[cfg(test)]
 mod tests;
 
-pub use admission_budget::{AdmissionBudget,AdmissionUsage};
+pub use admission_budget::{AdmissionBudget, AdmissionUsage};
 pub use commit::{CommitOutcome, CommitRequest, event_holder};
 pub use effect::{
-    ActivationClaim,ClaimKind,EffectClaim,ObligationClaim,AttemptRecord, EffectRecord, EffectState, EffectTransition, NewEffect,
+    ActivationClaim, AttemptRecord, ClaimKind, EffectClaim, EffectRecord, EffectState,
+    EffectTransition, NewEffect, ObligationClaim,
 };
 pub use error::{StoreError, StoreResult};
 pub use identity::IdRange;
 pub use projection::{ProjectionState, ProjectionWrite};
-pub use scoped_projection::{ScopedCut, ScopedProjectionState, ScopedProjectionWrite};
 pub use schema::SCHEMA_VERSION;
+pub use scoped_projection::{ScopedCut, ScopedProjectionState, ScopedProjectionWrite};
 pub use snapshot::{
     DomainSnapshot, NewSnapshot, RejectedSnapshot, Replay, SnapshotId, snapshot_holder,
 };
@@ -61,5 +62,5 @@ pub use types::{
     StoredBatch, StoredEvent, StreamAppend, StreamId, WriterEpoch,
 };
 
-pub use retention::Compaction;
 pub use manifest::{NewRestoreManifest, RestoreManifest};
+pub use retention::Compaction;

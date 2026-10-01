@@ -58,7 +58,8 @@ impl crate::runtime::engine_access::EngineMut<'_> {
 
     /// Count messages queued for a surface.
     pub fn message_count(&self, surface_id: u32) -> usize {
-        self.live.surface_messages
+        self.live
+            .surface_messages
             .get(&surface_id)
             .map(|v| v.len())
             .unwrap_or(0)

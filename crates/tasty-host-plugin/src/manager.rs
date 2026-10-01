@@ -173,7 +173,7 @@ pub(super) enum PendingRequestKind {
         caller_plugin_id: String,
         /// caller plugin이 ipc.call 시점에 발급한 call_id.
         call_id: u64,
-        caller_binding:std::sync::Weak<()>,
+        caller_binding: std::sync::Weak<()>,
         /// target 응답이 도착해야 하는 시각. 지나면 caller 에 오류로 회신하고 버린다.
         deadline: Instant,
     },
@@ -502,7 +502,7 @@ pub struct BannerInstance {
 #[derive(Debug, Clone)]
 pub struct PendingPluginCall {
     /// Source process captured while collecting the IpcCall, before reload can replace it.
-    pub binding:std::sync::Weak<()>,
+    pub binding: std::sync::Weak<()>,
     pub plugin_id: String,
     pub call_id: u64,
     pub method: String,

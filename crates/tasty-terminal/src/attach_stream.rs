@@ -1,6 +1,6 @@
 //! Ordered, bounded attach output. One parser lock orders the snapshot, output and grid resize.
-use std::sync::{Arc, mpsc};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, mpsc};
 
 use crate::{Terminal, TerminalState};
 
@@ -14,14 +14,21 @@ const EVENT_CHARGE: usize = std::mem::size_of::<AttachEvent>();
 pub enum AttachEvent {
     Output(Vec<u8>),
     /// The grid changed at this point in the output sequence. This is not an OS resize ACK.
-    Resize { cols: usize, rows: usize },
+    Resize {
+        cols: usize,
+        rows: usize,
+    },
     /// The prefix is complete, but its next event could not be retained. Resubscribe with a
     /// fresh snapshot; this subscription never resumes and never silently skips an event.
     Loss,
 }
 impl AttachEvent {
     fn weight(&self) -> usize {
-        EVENT_CHARGE + match self { Self::Output(bytes) => bytes.len(), _ => 0 }
+        EVENT_CHARGE
+            + match self {
+                Self::Output(bytes) => bytes.len(),
+                _ => 0,
+            }
     }
 }
 
@@ -43,7 +50,9 @@ impl AttachEventReceiver {
     /// Delivers retained events in order, then exactly one Loss on overflow, then Disconnected.
     /// A normal terminal/producer drop drains the prefix and reports Disconnected without Loss.
     pub fn try_recv(&mut self) -> Result<AttachEvent, mpsc::TryRecvError> {
-        if self.ended { return Err(mpsc::TryRecvError::Disconnected); }
+        if self.ended {
+            return Err(mpsc::TryRecvError::Disconnected);
+        }
         match self.receiver.try_recv() {
             Ok(event) => {
                 self.state.bytes.fetch_sub(event.weight(), Ordering::AcqRel);
@@ -65,7 +74,9 @@ impl AttachEventReceiver {
                         }
                     }
                 } else {
-                    if error == mpsc::TryRecvError::Disconnected { self.ended = true; }
+                    if error == mpsc::TryRecvError::Disconnected {
+                        self.ended = true;
+                    }
                     Err(error)
                 }
             }
@@ -73,7 +84,9 @@ impl AttachEventReceiver {
     }
 }
 impl Drop for AttachEventReceiver {
-    fn drop(&mut self) { self.state.receiver_closed.store(true, Ordering::Release); }
+    fn drop(&mut self) {
+        self.state.receiver_closed.store(true, Ordering::Release);
+    }
 }
 
 pub struct AttachStreamSubscription {
@@ -89,19 +102,33 @@ pub(crate) struct AttachStreamTap {
     state: Arc<QueueState>,
 }
 impl AttachStreamTap {
-    fn is_live(&self) -> bool { !self.state.receiver_closed.load(Ordering::Acquire) }
+    fn is_live(&self) -> bool {
+        !self.state.receiver_closed.load(Ordering::Acquire)
+    }
 
     /// Called only under the terminal's parser lock. There is one producer per subscription;
     /// the consumer can release bytes concurrently, but cannot insert events or resume a loss.
     fn send(&self, output: Option<&[u8]>, cols: usize, rows: usize) -> bool {
-        if !self.is_live() { return false; }
-        let Some(weight) = output.map_or(Some(EVENT_CHARGE), |bytes| bytes.len().checked_add(EVENT_CHARGE)) else {
-            self.state.lost.store(true, Ordering::Release); return false;
+        if !self.is_live() {
+            return false;
+        }
+        let Some(weight) = output.map_or(Some(EVENT_CHARGE), |bytes| {
+            bytes.len().checked_add(EVENT_CHARGE)
+        }) else {
+            self.state.lost.store(true, Ordering::Release);
+            return false;
         };
-        if self.state.bytes.fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
-            used.checked_add(weight).filter(|total| *total <= ATTACH_STREAM_MAX_BYTES)
-        }).is_err() {
-            self.state.lost.store(true, Ordering::Release); return false;
+        if self
+            .state
+            .bytes
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+                used.checked_add(weight)
+                    .filter(|total| *total <= ATTACH_STREAM_MAX_BYTES)
+            })
+            .is_err()
+        {
+            self.state.lost.store(true, Ordering::Release);
+            return false;
         }
         // Reject oversized chunks before allocating a per-subscriber copy.
         let event = match output {
@@ -123,7 +150,8 @@ impl AttachStreamTap {
 
 impl TerminalState {
     pub(crate) fn fan_out_attach_output(&mut self, bytes: &[u8]) {
-        self.attach_streams.retain(|tap| tap.send(Some(bytes), 0, 0));
+        self.attach_streams
+            .retain(|tap| tap.send(Some(bytes), 0, 0));
     }
     pub(crate) fn fan_out_attach_resize(&mut self, cols: usize, rows: usize) {
         self.attach_streams.retain(|tap| tap.send(None, cols, rows));
@@ -133,9 +161,20 @@ impl TerminalState {
         let snapshot = self.snapshot_as_vt();
         let (sender, receiver) = mpsc::sync_channel(ATTACH_STREAM_MAX_EVENTS);
         let state = Arc::new(QueueState::default());
-        self.attach_streams.push(AttachStreamTap { sender, state: state.clone() });
-        AttachStreamSubscription { snapshot, cols: self.cols, rows: self.rows,
-            events: AttachEventReceiver { receiver, state, ended: false } }
+        self.attach_streams.push(AttachStreamTap {
+            sender,
+            state: state.clone(),
+        });
+        AttachStreamSubscription {
+            snapshot,
+            cols: self.cols,
+            rows: self.rows,
+            events: AttachEventReceiver {
+                receiver,
+                state,
+                ended: false,
+            },
+        }
     }
 }
 impl Terminal {

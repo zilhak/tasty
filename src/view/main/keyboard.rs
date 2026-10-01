@@ -131,7 +131,7 @@ impl MainView {
         }
 
         if let Some(sid) = typing_surface_id {
-            self.record_typing_intent(engine,sid);
+            self.record_typing_intent(engine, sid);
         }
     }
 
@@ -296,11 +296,7 @@ impl MainView {
     }
 
     /// 포커스된 터미널로 키를 보낸다. IME 조합 문자는 Commit에서 보낸다.
-    fn forward_key_to_terminal(
-        &mut self,
-        engine: &EngineRead<'_>,
-        event: &winit::event::KeyEvent,
-    ) {
+    fn forward_key_to_terminal(&mut self, engine: &EngineRead<'_>, event: &winit::event::KeyEvent) {
         // Commit이 따로 오지 않는 ASCII 문자와 구두점은 여기서 전달한다.
         let text_for_terminal = if self.ime_active {
             match &event.text {
@@ -381,7 +377,8 @@ impl MainView {
         self.egui_mesh_push_key(surface_id, event);
 
         if let Some(text) = &event.text {
-            let is_cmd = self.base.state.modifiers.control_key() || self.base.state.modifiers.super_key();
+            let is_cmd =
+                self.base.state.modifiers.control_key() || self.base.state.modifiers.super_key();
             if should_forward_text(text.as_str(), is_cmd, self.ime_active) {
                 self.egui_mesh_push_text(surface_id, text.as_str());
             }
@@ -395,7 +392,8 @@ impl MainView {
         self.attach_mesh_push_key(surface_id, event);
 
         if let Some(text) = &event.text {
-            let is_cmd = self.base.state.modifiers.control_key() || self.base.state.modifiers.super_key();
+            let is_cmd =
+                self.base.state.modifiers.control_key() || self.base.state.modifiers.super_key();
             if should_forward_text(text.as_str(), is_cmd, self.ime_active) {
                 self.attach_mesh_push_text(surface_id, text.as_str());
             }

@@ -18,7 +18,9 @@ pub struct WriteAck {
 
 impl WriteAck {
     /// Nonblocking flush observation for event-loop-owned input continuations.
-    pub fn is_complete(&self)->bool {*sink::lock_write_progress(&self.progress.0)>=self.target}
+    pub fn is_complete(&self) -> bool {
+        *sink::lock_write_progress(&self.progress.0) >= self.target
+    }
 
     /// writer의 완료 횟수가 target에 도달하면 true를 반환한다.
     /// detached 터미널처럼 writer가 없거나 대기 제한 안에 완료하지 못하면 false다.
@@ -176,24 +178,26 @@ impl Terminal {
 
     /// Replace a detached remote connection without changing its VT content identity.
     /// Prior protocol/clipboard responses keep the old resource generation and are rejected.
-    pub fn replace_external_connection(&mut self,sink:mpsc::Sender<Vec<u8>>) {
-        let mut state=self.lock_state();
+    pub fn replace_external_connection(&mut self, sink: mpsc::Sender<Vec<u8>>) {
+        let mut state = self.lock_state();
         state.connection.revoke();
-        state.connection=crate::binding::ConnectionLease::new();
-        state.sink=Some(OutputSink::external(sink).bind(state.connection.clone()));
-        state.enqueued_count=0;
+        state.connection = crate::binding::ConnectionLease::new();
+        state.sink = Some(OutputSink::external(sink).bind(state.connection.clone()));
+        state.enqueued_count = 0;
         state.events.clear();
     }
 
     /// A nonblocking external endpoint. Remote applies its own bounded admission synchronously;
     /// Terminal owns neither a second unbounded byte queue nor a forwarding worker.
-    pub fn bind_external_input(&mut self,send:crate::ExternalInput,reconnect:bool) {
-        let mut state=self.lock_state();
+    pub fn bind_external_input(&mut self, send: crate::ExternalInput, reconnect: bool) {
+        let mut state = self.lock_state();
         if reconnect {
-            state.connection.revoke();state.connection=crate::binding::ConnectionLease::new();
-            state.enqueued_count=0;state.events.clear();
+            state.connection.revoke();
+            state.connection = crate::binding::ConnectionLease::new();
+            state.enqueued_count = 0;
+            state.events.clear();
         }
-        state.sink=Some(OutputSink::callback(send).bind(state.connection.clone()));
+        state.sink = Some(OutputSink::callback(send).bind(state.connection.clone()));
     }
 
     /// Plumb the host's resolved theme palette so OSC 10/11/12/4 color *queries*
@@ -219,14 +223,24 @@ impl Terminal {
     }
 
     /// Queue input against this exact physical connection, reporting admission failure.
-    pub fn try_send_key_with_ack(&mut self,text:&str)->Result<WriteAck,mpsc::SendError<Vec<u8>>> {
-        let mut state=self.lock_state();
-        let bytes=text.as_bytes().to_vec();
-        let sink=state.sink.as_ref().ok_or_else(||mpsc::SendError(bytes.clone()))?;
+    pub fn try_send_key_with_ack(
+        &mut self,
+        text: &str,
+    ) -> Result<WriteAck, mpsc::SendError<Vec<u8>>> {
+        let mut state = self.lock_state();
+        let bytes = text.as_bytes().to_vec();
+        let sink = state
+            .sink
+            .as_ref()
+            .ok_or_else(|| mpsc::SendError(bytes.clone()))?;
         sink.send(bytes)?;
-        let progress=sink.progress().clone();
-        state.enqueued_count+=1;state.last_input_at=std::time::Instant::now();
-        Ok(WriteAck {progress,target:state.enqueued_count})
+        let progress = sink.progress().clone();
+        state.enqueued_count += 1;
+        state.last_input_at = std::time::Instant::now();
+        Ok(WriteAck {
+            progress,
+            target: state.enqueued_count,
+        })
     }
 
     /// Send keyboard input to PTY (non-blocking, queued to writer thread).

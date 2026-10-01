@@ -28,9 +28,13 @@ impl SurfaceHandles {
 impl SurfaceBinding {
     /// False means every original handle (including queued Created and manager registration)
     /// has been dropped. This is evidence of disposal, not a lookup by reusable surface ID.
-    pub fn is_alive(&self)->bool {self.0.strong_count()!=0}
+    pub fn is_alive(&self) -> bool {
+        self.0.strong_count() != 0
+    }
 
-    pub fn same_instance(&self, other:&Self)->bool {self.0.ptr_eq(&other.0)}
+    pub fn same_instance(&self, other: &Self) -> bool {
+        self.0.ptr_eq(&other.0)
+    }
 
     pub fn matches(&self, handles: &SurfaceHandles) -> bool {
         self.0.ptr_eq(&Arc::downgrade(&handles.snapshot_cache))
@@ -56,7 +60,9 @@ pub(crate) struct MeshBootstrap {
     pub(crate) request: u64,
 }
 impl MeshBinding {
-    pub fn binding(&self) -> SurfaceBinding { SurfaceBinding(Arc::downgrade(&self.identity)) }
+    pub fn binding(&self) -> SurfaceBinding {
+        SurfaceBinding(Arc::downgrade(&self.identity))
+    }
 }
 
 /// Exact destroy-RPC observation. Neither FIFO enqueue nor dropping the host kind is an ACK.
@@ -69,35 +75,60 @@ pub struct RemoteRetirementReceipt {
 }
 pub struct RemoteRetirementCompletion(Arc<std::sync::OnceLock<Result<(), String>>>);
 impl RemoteRetirementReceipt {
-    pub fn pending(surface_id:u32,binding:SurfaceBinding) -> (Self, RemoteRetirementCompletion) {
+    pub fn pending(surface_id: u32, binding: SurfaceBinding) -> (Self, RemoteRetirementCompletion) {
         let state = Arc::new(std::sync::OnceLock::new());
-        (Self {state:state.clone(),surface_id,binding,children:Vec::new()}, RemoteRetirementCompletion(state))
+        (
+            Self {
+                state: state.clone(),
+                surface_id,
+                binding,
+                children: Vec::new(),
+            },
+            RemoteRetirementCompletion(state),
+        )
     }
-    pub(crate) fn group(surface_id:u32,binding:SurfaceBinding,children:Vec<Self>)->Self {
-        Self {state:Arc::new(std::sync::OnceLock::new()),surface_id,binding,children}
+    pub(crate) fn group(surface_id: u32, binding: SurfaceBinding, children: Vec<Self>) -> Self {
+        Self {
+            state: Arc::new(std::sync::OnceLock::new()),
+            surface_id,
+            binding,
+            children,
+        }
     }
     pub fn observation(&self) -> Option<Result<(), String>> {
-        if self.children.is_empty() {return self.state.get().cloned();}
-        let mut pending=false;
-        for child in &self.children {
-            match child.observation() {Some(Err(reason))=>return Some(Err(reason)),None=>pending=true,Some(Ok(()))=>{}}
+        if self.children.is_empty() {
+            return self.state.get().cloned();
         }
-        if pending {None} else {Some(Ok(()))}
+        let mut pending = false;
+        for child in &self.children {
+            match child.observation() {
+                Some(Err(reason)) => return Some(Err(reason)),
+                None => pending = true,
+                Some(Ok(())) => {}
+            }
+        }
+        if pending { None } else { Some(Ok(())) }
     }
-    pub fn matches(&self,surface_id:u32,binding:&SurfaceBinding)->bool {
-        self.surface_id==surface_id && self.binding.0.ptr_eq(&binding.0)
+    pub fn matches(&self, surface_id: u32, binding: &SurfaceBinding) -> bool {
+        self.surface_id == surface_id && self.binding.0.ptr_eq(&binding.0)
     }
 }
 impl RemoteRetirementCompletion {
     pub fn finish(self, result: Result<(), String>) {
-        if self.0.set(result).is_err() {tracing::warn!("remote retirement receipt was already settled");}
+        if self.0.set(result).is_err() {
+            tracing::warn!("remote retirement receipt was already settled");
+        }
     }
 }
 impl Drop for RemoteRetirementCompletion {
     fn drop(&mut self) {
         if self.0.get().is_none() {
             // A cancelled request/connection is not evidence that the plugin destroyed its owner.
-            if self.0.set(Err("remote retirement acknowledgement was lost".into())).is_err() {
+            if self
+                .0
+                .set(Err("remote retirement acknowledgement was lost".into()))
+                .is_err()
+            {
                 tracing::warn!("remote retirement producer ended during settlement");
             }
         }

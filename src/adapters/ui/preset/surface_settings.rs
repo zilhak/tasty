@@ -7,8 +7,8 @@ use tasty_ui_widgets::tokens::STRUCT_GAP_3;
 use tasty_ui_widgets::{Button, ButtonVariant, Input, select};
 
 use crate::adapters::ui::icons;
-use crate::runtime::surface_registry::{PresetFieldInput, PresetFieldSpec, PresetFieldTarget};
 use crate::i18n::{t, t_fmt};
+use crate::runtime::surface_registry::{PresetFieldInput, PresetFieldSpec, PresetFieldTarget};
 
 use super::demo_layout::{KindCatalog, LeafDraft, LeafLocation, kind_accent};
 

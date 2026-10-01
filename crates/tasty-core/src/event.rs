@@ -39,14 +39,17 @@ pub struct SplitSpec {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum DomainEvent {
-    #[serde(rename="structure.replaced")]
-    StructureReplaced {replacement:crate::Replacement,removed:Vec<crate::EntityId>},
-    #[serde(rename="undo.added")]
-    UndoRecordAdded {record:crate::UndoRecord},
-    #[serde(rename="undo.consumed")]
-    UndoRecordConsumed {id:OperationId},
-    #[serde(rename="undo.evicted")]
-    UndoRecordEvicted {id:OperationId},
+    #[serde(rename = "structure.replaced")]
+    StructureReplaced {
+        replacement: crate::Replacement,
+        removed: Vec<crate::EntityId>,
+    },
+    #[serde(rename = "undo.added")]
+    UndoRecordAdded { record: crate::UndoRecord },
+    #[serde(rename = "undo.consumed")]
+    UndoRecordConsumed { id: OperationId },
+    #[serde(rename = "undo.evicted")]
+    UndoRecordEvicted { id: OperationId },
     #[serde(rename = "engine.incarnation_started")]
     EngineIncarnationStarted { previous: u64, current: u64 },
     #[serde(rename = "engine.retired")]
@@ -208,8 +211,12 @@ pub enum DomainEvent {
 
     #[serde(rename = "operation.prepared")]
     OperationPrepared { operation: Operation },
-    #[serde(rename="operation.resource_prepared")]
-    OperationResourcePrepared {id:OperationId,data:Option<DataRef>,deferred:bool},
+    #[serde(rename = "operation.resource_prepared")]
+    OperationResourcePrepared {
+        id: OperationId,
+        data: Option<DataRef>,
+        deferred: bool,
+    },
     #[serde(rename = "operation.awaiting_cleanup")]
     OperationAwaitingCleanup {
         id: OperationId,
@@ -217,7 +224,7 @@ pub enum DomainEvent {
         cleanup: crate::CleanupPlan,
         prepared_data: Option<DataRef>,
         #[serde(default)]
-        deferred:bool,
+        deferred: bool,
     },
     #[serde(rename = "operation.finished")]
     OperationFinished {
@@ -225,7 +232,7 @@ pub enum DomainEvent {
         outcome: OperationOutcome,
     },
     #[serde(rename = "operation.recovery_observed")]
-    OperationRecoveryObserved {id:OperationId,evidence:DataRef},
+    OperationRecoveryObserved { id: OperationId, evidence: DataRef },
     #[serde(rename = "operation.reconciled")]
     OperationReconciled {
         id: OperationId,
@@ -247,27 +254,41 @@ impl DomainEvent {
     /// Immutable content referenced by this fact. The storage adapter pins these in its commit.
     pub fn data_refs(&self) -> Vec<DataRef> {
         match self {
-            Self::UndoRecordAdded {record}=>record.capture.data_refs().collect(),
+            Self::UndoRecordAdded { record } => record.capture.data_refs().collect(),
             Self::TabCreated { surface, .. } | Self::SurfaceSplit { surface, .. } => {
                 surface.data.into_iter().collect()
             }
             Self::SurfaceConverted { data, .. } => data.iter().copied().collect(),
             Self::SurfaceDataRecorded { data, .. } => vec![*data],
-            Self::SurfaceCreationSeeded { input, .. } | Self::SurfaceSeedImported { input, .. } => vec![*input],
-            Self::OperationPrepared { operation } => operation.assembly.iter().flat_map(|plan|plan.data_refs()).chain(std::iter::once(operation.input))
+            Self::SurfaceCreationSeeded { input, .. } | Self::SurfaceSeedImported { input, .. } => {
+                vec![*input]
+            }
+            Self::OperationPrepared { operation } => operation
+                .assembly
+                .iter()
+                .flat_map(|plan| plan.data_refs())
+                .chain(std::iter::once(operation.input))
                 .chain(
                     operation
                         .creation
                         .as_ref()
                         .and_then(|plan| plan.surface.data),
                 )
-                .chain(operation.retirement.as_ref().and_then(|plan|plan.undo.as_ref()).into_iter().flat_map(|capture|capture.data_refs()))
+                .chain(
+                    operation
+                        .retirement
+                        .as_ref()
+                        .and_then(|plan| plan.undo.as_ref())
+                        .into_iter()
+                        .flat_map(|capture| capture.data_refs()),
+                )
                 .collect(),
-            Self::OperationResourcePrepared {data,..}=>data.iter().copied().collect(),
+            Self::OperationResourcePrepared { data, .. } => data.iter().copied().collect(),
             Self::OperationAwaitingCleanup { prepared_data, .. } => {
                 prepared_data.iter().copied().collect()
             }
-            Self::OperationRecoveryObserved {evidence,..}|Self::OperationReconciled { evidence, .. } => vec![*evidence],
+            Self::OperationRecoveryObserved { evidence, .. }
+            | Self::OperationReconciled { evidence, .. } => vec![*evidence],
             _ => Vec::new(),
         }
     }
@@ -319,10 +340,10 @@ impl DomainEvent {
 
     pub fn type_tag(&self) -> &'static str {
         match self {
-            Self::StructureReplaced {..}=>"structure.replaced",
-            Self::UndoRecordAdded {..}=>"undo.added",
-            Self::UndoRecordConsumed {..}=>"undo.consumed",
-            Self::UndoRecordEvicted {..}=>"undo.evicted",
+            Self::StructureReplaced { .. } => "structure.replaced",
+            Self::UndoRecordAdded { .. } => "undo.added",
+            Self::UndoRecordConsumed { .. } => "undo.consumed",
+            Self::UndoRecordEvicted { .. } => "undo.evicted",
             Self::EngineIncarnationStarted { .. } => "engine.incarnation_started",
             Self::EngineRetired { .. } => "engine.retired",
             Self::CategoryCreated { .. } => "category.created",
@@ -354,10 +375,10 @@ impl DomainEvent {
             Self::PaneRatioSet { .. } => "pane.ratio_set",
             Self::SurfaceRatioSet { .. } => "surface.ratio_set",
             Self::OperationPrepared { .. } => "operation.prepared",
-            Self::OperationResourcePrepared {..}=>"operation.resource_prepared",
+            Self::OperationResourcePrepared { .. } => "operation.resource_prepared",
             Self::OperationAwaitingCleanup { .. } => "operation.awaiting_cleanup",
             Self::OperationFinished { .. } => "operation.finished",
-            Self::OperationRecoveryObserved {..}=>"operation.recovery_observed",
+            Self::OperationRecoveryObserved { .. } => "operation.recovery_observed",
             Self::OperationReconciled { .. } => "operation.reconciled",
             Self::MetadataSet { .. } => "metadata.set",
             Self::MetadataRemoved { .. } => "metadata.removed",

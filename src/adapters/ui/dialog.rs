@@ -18,7 +18,10 @@ pub fn rename_popup_default_size() -> egui::Vec2 {
     )
 }
 
-pub fn rename_popup_title(state: &MainViewState, _engine: &crate::runtime::engine_read::EngineRead<'_>) -> String {
+pub fn rename_popup_title(
+    state: &MainViewState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> String {
     state
         .dialogs
         .rename
@@ -233,7 +236,10 @@ fn category_validation(
     }
 }
 
-fn rename_target_exists(target: &RenameTarget, engine: &crate::runtime::engine_read::EngineRead<'_>) -> bool {
+fn rename_target_exists(
+    target: &RenameTarget,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> bool {
     match target {
         RenameTarget::WorkspaceName { workspace_id }
         | RenameTarget::WorkspaceSubtitle { workspace_id } => {
@@ -336,14 +342,25 @@ fn apply_rename_tab_name(
 
 fn apply_rename_explorer_entry(
     state: &mut MainViewState,
-    engine:&crate::runtime::engine_read::EngineRead<'_>,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     surface_id: u32,
     path: std::path::PathBuf,
     buffer: String,
 ) {
-    let name=buffer.trim();
-    if !name.is_empty() && let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,surface_id) {
-        state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::RenameExplorerEntry {target,path,name:name.to_owned()}).from_user_context_menu());
+    let name = buffer.trim();
+    if !name.is_empty()
+        && let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, surface_id)
+    {
+        state.dispatch_intent(
+            crate::intent::Intent::Engine(
+                crate::app::engine_action::EngineAction::RenameExplorerEntry {
+                    target,
+                    path,
+                    name: name.to_owned(),
+                },
+            )
+            .from_user_context_menu(),
+        );
     }
     if let Some(view) = state.explorer_views.get_mut(surface_id) {
         view.selected.clear();
@@ -352,8 +369,17 @@ fn apply_rename_explorer_entry(
     }
 }
 
-fn apply_rename_explorer_add_favorite(state:&mut MainViewState,path:std::path::PathBuf,label:String) {
-    state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::AddExplorerFavorite {path,label}).from_user_context_menu());
+fn apply_rename_explorer_add_favorite(
+    state: &mut MainViewState,
+    path: std::path::PathBuf,
+    label: String,
+) {
+    state.dispatch_intent(
+        crate::intent::Intent::Engine(
+            crate::app::engine_action::EngineAction::AddExplorerFavorite { path, label },
+        )
+        .from_user_context_menu(),
+    );
 }
 
 fn apply_rename_new_category(state: &mut MainViewState, buffer: String) {

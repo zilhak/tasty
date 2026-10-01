@@ -859,10 +859,17 @@ impl MainView {
             return;
         }
         if engine.settings.general.mouse_capture_hint
-            && let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,surface_id) {
-            self.state.dispatch_intent(crate::intent::Intent::MouseCaptureHint {
-                target,foreground_generation:engine.foreground_generation(surface_id),view:self.base.state.identity(),
-            }.from_user_shortcut("mouse_capture_hint"));
+            && let Some(target) =
+                crate::app::engine_action::SurfaceBinding::capture(engine, surface_id)
+        {
+            self.state.dispatch_intent(
+                crate::intent::Intent::MouseCaptureHint {
+                    target,
+                    foreground_generation: engine.foreground_generation(surface_id),
+                    view: self.base.state.identity(),
+                }
+                .from_user_shortcut("mouse_capture_hint"),
+            );
         }
     }
 
@@ -2047,7 +2054,10 @@ mod hover_motion_tests {
 
 /// 캡처 동작은 유지하면서 안내 배너만 숨기는 설정인지 확인한다.
 /// busy 폴링이 마지막으로 관측한 전경 이름을 현재 설정과 대조하며, 이름을 모르면 숨기지 않는다.
-fn mouse_capture_banner_suppressed(engine: &crate::runtime::engine_read::EngineRead<'_>, surface_id: u32) -> bool {
+fn mouse_capture_banner_suppressed(
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    surface_id: u32,
+) -> bool {
     engine.foreground_name(surface_id).is_some_and(|name| {
         engine
             .settings

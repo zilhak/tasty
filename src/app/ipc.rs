@@ -126,7 +126,9 @@ impl App {
         if self.journal.admit_ipc(&cmd, &caller) {
             return IpcStep::Handled;
         }
-        if self.defer_live_input(&cmd,&checked) {return IpcStep::Handled;}
+        if self.defer_live_input(&cmd, &checked) {
+            return IpcStep::Handled;
+        }
         match self.ipc_step_app_methods(&cmd, &caller) {
             #[cfg(debug_assertions)]
             IpcStep::Shutdown => return IpcStep::Shutdown,

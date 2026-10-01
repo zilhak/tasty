@@ -3,26 +3,43 @@ use serde::{Deserialize, Serialize};
 use tasty_core::{Rejection, StructureModels};
 use tasty_ipc::protocol::JsonRpcResponse;
 
-#[derive(Debug,Clone,Default,Serialize,Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct CompletionView {
-    pub mirror_count:usize,
-    pub focused_panes:std::collections::BTreeMap<u32,u32>,
-    pub selected_tabs:std::collections::BTreeMap<u32,u32>,
-    pub selected_surfaces:std::collections::BTreeMap<u32,u32>,
+    pub mirror_count: usize,
+    pub focused_panes: std::collections::BTreeMap<u32, u32>,
+    pub selected_tabs: std::collections::BTreeMap<u32, u32>,
+    pub selected_surfaces: std::collections::BTreeMap<u32, u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) enum ResponsePlan {
-    Moved {success:JsonRpcResponse,not_moved:JsonRpcResponse},
-    AssemblyRestored {stream:String,root:tasty_core::EntityId,surfaces:Vec<u32>,presentation:tasty_core::UndoPresentation},
+    Moved {
+        success: JsonRpcResponse,
+        not_moved: JsonRpcResponse,
+    },
+    AssemblyRestored {
+        stream: String,
+        root: tasty_core::EntityId,
+        surfaces: Vec<u32>,
+        presentation: tasty_core::UndoPresentation,
+    },
     Fixed(JsonRpcResponse),
-    Closed { success: JsonRpcResponse, not_closed: JsonRpcResponse },
+    Closed {
+        success: JsonRpcResponse,
+        not_closed: JsonRpcResponse,
+    },
     WorkspaceCreated {
         stream: String,
         id: u32,
         surface_id: u32,
     },
-    TabCreated {stream:String,pane:u32,tab:u32,surface:u32,activate:bool},
+    TabCreated {
+        stream: String,
+        pane: u32,
+        tab: u32,
+        surface: u32,
+        activate: bool,
+    },
     Multiple(Vec<ResponsePlan>),
     CategoryCreated {
         stream: String,
@@ -42,18 +59,80 @@ impl ResponsePlan {
         view: &CompletionView,
     ) -> Result<Vec<u8>, Rejection> {
         let response = match self {
-            Self::AssemblyRestored {stream,root,surfaces,presentation}=> {
-                let model=after.streams.get(stream).ok_or_else(||Rejection("restored engine missing".into()))?;
-                let mut presentation=presentation.clone();
-                presentation.focused_panes.retain(|workspace,pane|model.panes.get(pane).is_some_and(|pane|pane.workspace==*workspace));
-                presentation.selected_tabs.retain(|pane,tab|model.tabs.get(tab).is_some_and(|tab|tab.pane==*pane));
-                presentation.selected_surfaces.retain(|tab,surface|model.surfaces.get(surface).is_some_and(|surface|surface.tab==*tab));
-                let pane=match root.kind {tasty_core::IdKind::Workspace=>presentation.focused_panes.get(&root.id).copied().or_else(||model.workspaces.get(&root.id).and_then(|workspace|workspace.layout.leaves().first().copied())),tasty_core::IdKind::Pane=>Some(root.id),_=>model.tabs.get(&root.id).map(|tab|tab.pane)};
-                let tab=pane.and_then(|pane|presentation.selected_tabs.get(&pane).copied().or_else(||model.panes.get(&pane).and_then(|pane|pane.tabs.first().copied())));
-                let surface=tab.and_then(|tab|presentation.selected_surfaces.get(&tab).copied().or_else(||model.tabs.get(&tab).and_then(|tab|tab.layout.leaves().first().copied()))).filter(|surface|surfaces.contains(surface)).or_else(||surfaces.iter().find(|surface|model.surfaces.contains_key(surface)).copied());
-                JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"restored":surface.is_some(),"kind":root.kind.label(),"restored_surface_id":surface,"presentation":presentation}))
-            },
-            Self::Moved {success,..}=>success.clone(),
+            Self::AssemblyRestored {
+                stream,
+                root,
+                surfaces,
+                presentation,
+            } => {
+                let model = after
+                    .streams
+                    .get(stream)
+                    .ok_or_else(|| Rejection("restored engine missing".into()))?;
+                let mut presentation = presentation.clone();
+                presentation.focused_panes.retain(|workspace, pane| {
+                    model
+                        .panes
+                        .get(pane)
+                        .is_some_and(|pane| pane.workspace == *workspace)
+                });
+                presentation
+                    .selected_tabs
+                    .retain(|pane, tab| model.tabs.get(tab).is_some_and(|tab| tab.pane == *pane));
+                presentation.selected_surfaces.retain(|tab, surface| {
+                    model
+                        .surfaces
+                        .get(surface)
+                        .is_some_and(|surface| surface.tab == *tab)
+                });
+                let pane = match root.kind {
+                    tasty_core::IdKind::Workspace => presentation
+                        .focused_panes
+                        .get(&root.id)
+                        .copied()
+                        .or_else(|| {
+                            model
+                                .workspaces
+                                .get(&root.id)
+                                .and_then(|workspace| workspace.layout.leaves().first().copied())
+                        }),
+                    tasty_core::IdKind::Pane => Some(root.id),
+                    _ => model.tabs.get(&root.id).map(|tab| tab.pane),
+                };
+                let tab = pane.and_then(|pane| {
+                    presentation.selected_tabs.get(&pane).copied().or_else(|| {
+                        model
+                            .panes
+                            .get(&pane)
+                            .and_then(|pane| pane.tabs.first().copied())
+                    })
+                });
+                let surface = tab
+                    .and_then(|tab| {
+                        presentation
+                            .selected_surfaces
+                            .get(&tab)
+                            .copied()
+                            .or_else(|| {
+                                model
+                                    .tabs
+                                    .get(&tab)
+                                    .and_then(|tab| tab.layout.leaves().first().copied())
+                            })
+                    })
+                    .filter(|surface| surfaces.contains(surface))
+                    .or_else(|| {
+                        surfaces
+                            .iter()
+                            .find(|surface| model.surfaces.contains_key(surface))
+                            .copied()
+                    });
+                JsonRpcResponse::success(
+                    serde_json::Value::Null,
+                    serde_json::json!({"restored":surface.is_some(),"kind":root.kind.label(),"restored_surface_id":surface,"presentation":presentation}),
+                )
+            }
+            Self::Moved { success, .. } => success.clone(),
             Self::Fixed(response) => response.clone(),
             Self::Closed { success, .. } => success.clone(),
             Self::Multiple(plans) => {
@@ -106,12 +185,33 @@ impl ResponsePlan {
                     }),
                 )
             }
-            Self::TabCreated {stream,pane,tab,surface,activate}=> {
-                let model=after.streams.get(stream).ok_or_else(||Rejection("created tab stream missing".into()))?;
-                let pane_model=model.panes.get(pane).ok_or_else(||Rejection("created tab pane missing".into()))?;
-                let selected=if *activate {Some(*tab)} else {view.selected_tabs.get(pane).copied()};
-                let active_tab=selected.and_then(|selected|pane_model.tabs.iter().position(|id|*id==selected)).unwrap_or(0);
-                JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"pane_id":pane,"surface_id":surface,"tab_count":pane_model.tabs.len(),"active_tab":active_tab}))
+            Self::TabCreated {
+                stream,
+                pane,
+                tab,
+                surface,
+                activate,
+            } => {
+                let model = after
+                    .streams
+                    .get(stream)
+                    .ok_or_else(|| Rejection("created tab stream missing".into()))?;
+                let pane_model = model
+                    .panes
+                    .get(pane)
+                    .ok_or_else(|| Rejection("created tab pane missing".into()))?;
+                let selected = if *activate {
+                    Some(*tab)
+                } else {
+                    view.selected_tabs.get(pane).copied()
+                };
+                let active_tab = selected
+                    .and_then(|selected| pane_model.tabs.iter().position(|id| *id == selected))
+                    .unwrap_or(0);
+                JsonRpcResponse::success(
+                    serde_json::Value::Null,
+                    serde_json::json!({"pane_id":pane,"surface_id":surface,"tab_count":pane_model.tabs.len(),"active_tab":active_tab}),
+                )
             }
             Self::WorkspaceUpdated {
                 stream,
@@ -203,9 +303,28 @@ impl ResponseProgress {
                     reason,
                 ));
             }
-            if let (ResponsePlan::Moved {success,not_moved},Some(R::Moved {moved}))=(plan,result) {return Ok(if *moved {success.clone()}else {not_moved.clone()});}
-            if let (ResponsePlan::Closed { success, not_closed }, Some(R::Closed { closed })) = (plan, result) {
-                return Ok(if *closed { success.clone() } else { not_closed.clone() });
+            if let (ResponsePlan::Moved { success, not_moved }, Some(R::Moved { moved })) =
+                (plan, result)
+            {
+                return Ok(if *moved {
+                    success.clone()
+                } else {
+                    not_moved.clone()
+                });
+            }
+            if let (
+                ResponsePlan::Closed {
+                    success,
+                    not_closed,
+                },
+                Some(R::Closed { closed }),
+            ) = (plan, result)
+            {
+                return Ok(if *closed {
+                    success.clone()
+                } else {
+                    not_closed.clone()
+                });
             }
             let bytes = plan
                 .render(model, view)
@@ -255,7 +374,7 @@ impl ResponseProgress {
             .results
             .iter()
             .find(|result| matches!(result, R::Failed { .. }));
-        serde_json::to_vec(&render(plan, failed.or_else(||self.results.first()))?)
+        serde_json::to_vec(&render(plan, failed.or_else(|| self.results.first()))?)
             .map(Some)
             .map_err(|error| error.to_string())
     }

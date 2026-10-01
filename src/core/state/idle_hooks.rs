@@ -1,7 +1,7 @@
 //! 공용 busy 타이머에서 IdleTimeout 훅을 확인한다.
 
-use crate::runtime::engine_access::EngineMut;
 use crate::core::host_event::PendingHostEvent;
+use crate::runtime::engine_access::EngineMut;
 
 impl EngineMut<'_> {
     /// 터미널의 마지막 출력 시각으로 IdleTimeout 훅을 발화하고 HookFired를 돌려준다.

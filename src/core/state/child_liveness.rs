@@ -183,10 +183,10 @@ impl EngineRef<'_> {
             output_silence: self
                 .find_terminal_by_id(child_surface)
                 .map(|t| t.last_output_at().elapsed()),
-            hook_silence: self
-                .runtime
-                .child_terminals
-                .hook_silence(child_surface, crate::runtime::child_terminal::now_epoch_ms()),
+            hook_silence: self.runtime.child_terminals.hook_silence(
+                child_surface,
+                crate::runtime::child_terminal::now_epoch_ms(),
+            ),
         }
     }
 

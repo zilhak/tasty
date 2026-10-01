@@ -20,9 +20,9 @@ use tasty_settings::KeybindingSettings;
 use crate::adapters::ui::preset::demo_layout::KindCatalog;
 use crate::adapters::ui::preset::surface_settings::SurfaceCfg;
 use crate::adapters::ui::{LayoutContext, ToastManager, ToastScope};
-use crate::runtime::kind_catalog::KindCatalog as SurfaceKindCatalog;
 use crate::gpu::GpuState;
 use crate::i18n::t;
+use crate::runtime::kind_catalog::KindCatalog as SurfaceKindCatalog;
 use crate::view::ui::{View, sealed};
 use crate::view::{ViewAction, ViewBase, ViewCtx};
 
@@ -86,12 +86,21 @@ impl PresetView {
     }
 
     pub(crate) fn refresh_drafts(&mut self, drafts: PresetDrafts) {
-        if !self.drafts.has_edits() { self.drafts = drafts; }
+        if !self.drafts.has_edits() {
+            self.drafts = drafts;
+        }
     }
 
-    pub(crate) fn take_edits(&mut self) -> Vec<PresetEdit> { self.drafts.take_edits() }
+    pub(crate) fn take_edits(&mut self) -> Vec<PresetEdit> {
+        self.drafts.take_edits()
+    }
 
-    pub(crate) fn accept_edits(&mut self, drafts: PresetDrafts, error: Option<String>, applied: &[PresetApplied]) {
+    pub(crate) fn accept_edits(
+        &mut self,
+        drafts: PresetDrafts,
+        error: Option<String>,
+        applied: &[PresetApplied],
+    ) {
         self.drafts = drafts;
         if error.is_some() {
             // Admission updated local selection and buffers optimistically. Restore them only
@@ -107,7 +116,8 @@ impl PresetView {
                 previous.toolbar.restore(&self.base.gpu.egui_ctx);
                 for result in applied {
                     let kind = match result {
-                        PresetApplied::Rename { kind, .. } | PresetApplied::Delete { kind, .. }
+                        PresetApplied::Rename { kind, .. }
+                        | PresetApplied::Delete { kind, .. }
                         | PresetApplied::Save { kind, .. } => *kind,
                     };
                     let selected = match kind {
@@ -117,20 +127,42 @@ impl PresetView {
                     };
                     match result {
                         PresetApplied::Rename { from, to, .. } => {
-                            if selected.is_none() || selected.as_deref() == Some(from.as_str()) { *selected = Some(to.clone()); }
-                            if let Some(cfg) = &mut self.surface_cfg { cfg.remap_preset(kind, from, to); }
+                            if selected.is_none() || selected.as_deref() == Some(from.as_str()) {
+                                *selected = Some(to.clone());
+                            }
+                            if let Some(cfg) = &mut self.surface_cfg {
+                                cfg.remap_preset(kind, from, to);
+                            }
                         }
                         PresetApplied::Delete { name, .. } => {
-                            if selected.as_deref() == Some(name.as_str()) { *selected = None; self.selected_node = None; }
-                            if self.surface_cfg.as_ref().is_some_and(|cfg| cfg.belongs_to(kind, name)) { self.surface_cfg = None; }
+                            if selected.as_deref() == Some(name.as_str()) {
+                                *selected = None;
+                                self.selected_node = None;
+                            }
+                            if self
+                                .surface_cfg
+                                .as_ref()
+                                .is_some_and(|cfg| cfg.belongs_to(kind, name))
+                            {
+                                self.surface_cfg = None;
+                            }
                         }
-                        PresetApplied::Save { name, created: true, .. } => { *selected = Some(name.clone()); }
+                        PresetApplied::Save {
+                            name,
+                            created: true,
+                            ..
+                        } => {
+                            *selected = Some(name.clone());
+                        }
                         _ => {}
                     }
                 }
             }
-            self.toasts.push(t("preset.toast.save_failed"),
-                crate::adapters::ui::ToastKind::Error, ToastScope::Window);
+            self.toasts.push(
+                t("preset.toast.save_failed"),
+                crate::adapters::ui::ToastKind::Error,
+                ToastScope::Window,
+            );
         } else {
             self.pending_presentation = None;
         }
@@ -208,8 +240,11 @@ impl View for PresetView {
         let raw_input = self.base.gpu.take_egui_input(&self.base.winit);
         let drafts = &mut self.drafts;
         self.pending_presentation = Some(PendingPresentation {
-            workspace: self.selected_workspace.clone(), tab: self.selected_tab.clone(),
-            pane: self.selected_pane.clone(), editing: self.editing, node: self.selected_node,
+            workspace: self.selected_workspace.clone(),
+            tab: self.selected_tab.clone(),
+            pane: self.selected_pane.clone(),
+            editing: self.editing,
+            node: self.selected_node,
             cfg: self.surface_cfg.clone(),
             toolbar: crate::adapters::ui::preset::ToolbarDraft::capture(&self.base.gpu.egui_ctx),
         });
@@ -258,8 +293,10 @@ impl View for PresetView {
 
         if let Some(previous) = &mut self.pending_presentation {
             previous.toolbar.retain_input(&self.base.gpu.egui_ctx);
-            if let Some(submitted)=crate::adapters::ui::preset::take_confirmed_surface_cfg(&self.base.gpu.egui_ctx) {
-                previous.cfg=Some(submitted);
+            if let Some(submitted) =
+                crate::adapters::ui::preset::take_confirmed_surface_cfg(&self.base.gpu.egui_ctx)
+            {
+                previous.cfg = Some(submitted);
             }
         }
 

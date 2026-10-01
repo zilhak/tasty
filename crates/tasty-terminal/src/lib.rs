@@ -35,7 +35,10 @@ use termwiz::escape::parser::Parser;
 use termwiz::escape::{Action, ControlCode, Esc, EscCode};
 use termwiz::surface::Surface;
 
-pub use attach_stream::{AttachEvent, AttachEventReceiver, AttachStreamSubscription, ATTACH_STREAM_MAX_BYTES, ATTACH_STREAM_MAX_EVENTS};
+pub use attach_stream::{
+    ATTACH_STREAM_MAX_BYTES, ATTACH_STREAM_MAX_EVENTS, AttachEvent, AttachEventReceiver,
+    AttachStreamSubscription,
+};
 pub use binding::ResourceGeneration;
 pub use color::{ColorPalette, TerminalRgb};
 pub use events::*;

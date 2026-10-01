@@ -1,24 +1,31 @@
 //! App progress and one-shot cross-View request values. Services, handles and object registries have other owners.
-#[cfg(feature="gui")]
-use winit::window::WindowId;
-#[cfg(feature="gui")]
-use std::time::Instant;
-#[cfg(feature="gui")]
+#[cfg(feature = "gui")]
 use crate::app::shutdown_machine;
+#[cfg(feature = "gui")]
+use std::time::Instant;
+#[cfg(feature = "gui")]
+use winit::window::WindowId;
 #[derive(Default)]
 pub(crate) struct AppState {
-    #[cfg(feature="gui")]
-    pub(crate) remote_browsers:std::collections::HashMap<u64,crate::app::remote_browser::BrowserTarget>,
-    pub(crate) started:bool,
-    #[cfg(feature="gui")]
-    pub(crate) pending_remote_endpoints:std::collections::HashMap<tasty_remote::outbound::AttemptToken,crate::app::attach_client::pending::PendingMirrorInstall>,
-    #[cfg(feature="gui")]
-    pub(crate) pending_mirror_installs:std::collections::HashMap<tasty_remote::pending_connection::ConnectionTicket,crate::app::attach_client::pending::PendingMirrorInstall>,
-    pub(crate) pending_host_events:Vec<crate::core::host_event::PendingHostEvent>,
-    #[cfg(not(feature="gui"))]
-    pub(crate) stopping:bool,
-    #[cfg(feature="gui")]
-    pub(crate) boot:Option<BootProgress>,
+    #[cfg(feature = "gui")]
+    pub(crate) remote_browsers:
+        std::collections::HashMap<u64, crate::app::remote_browser::BrowserTarget>,
+    pub(crate) started: bool,
+    #[cfg(feature = "gui")]
+    pub(crate) pending_remote_endpoints: std::collections::HashMap<
+        tasty_remote::outbound::AttemptToken,
+        crate::app::attach_client::pending::PendingMirrorInstall,
+    >,
+    #[cfg(feature = "gui")]
+    pub(crate) pending_mirror_installs: std::collections::HashMap<
+        tasty_remote::pending_connection::ConnectionTicket,
+        crate::app::attach_client::pending::PendingMirrorInstall,
+    >,
+    pub(crate) pending_host_events: Vec<crate::core::host_event::PendingHostEvent>,
+    #[cfg(not(feature = "gui"))]
+    pub(crate) stopping: bool,
+    #[cfg(feature = "gui")]
+    pub(crate) boot: Option<BootProgress>,
 
     /// 종료를 시작한 뒤 이벤트 루프를 나갈 때까지 보유한다.
     #[cfg(feature = "gui")]
@@ -68,7 +75,7 @@ pub(crate) struct AppState {
     pub(crate) pending_settings_subtab: Option<String>,
 }
 
-#[cfg(feature="gui")]
+#[cfg(feature = "gui")]
 pub(crate) enum BootPhase {
     GpuInit,
     WaitingJournal,
@@ -91,30 +98,44 @@ pub(crate) enum BootPhase {
     },
 }
 
-
-#[cfg(feature="gui")]
+#[cfg(feature = "gui")]
 pub(crate) struct BootProgress {
-    pub(crate) settings:crate::settings::Settings,
-    pub(crate) settings_origin:tasty_settings::SettingsOrigin,
-    pub(crate) phase:BootPhase,
-    pub(crate) boot_t0:std::time::Instant,
-    pub(crate) db_init_error:Option<crate::db::DbInitError>,
-    pub(crate) invalid_theme_name:Option<String>,
-    pub(crate) restored_idx:Option<crate::model::RestoredPresentation>,
-    pub(crate) journal_plugins_waited:bool,
+    pub(crate) settings: crate::settings::Settings,
+    pub(crate) settings_origin: tasty_settings::SettingsOrigin,
+    pub(crate) phase: BootPhase,
+    pub(crate) boot_t0: std::time::Instant,
+    pub(crate) db_init_error: Option<crate::db::DbInitError>,
+    pub(crate) invalid_theme_name: Option<String>,
+    pub(crate) restored_idx: Option<crate::model::RestoredPresentation>,
+    pub(crate) journal_plugins_waited: bool,
 }
 
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub(crate) enum AppPhase {Starting,Running,Stopping,Failed}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AppPhase {
+    Starting,
+    Running,
+    Stopping,
+    Failed,
+}
 impl AppState {
-    pub(crate) fn phase(&self)->AppPhase {
-        #[cfg(feature="gui")]
+    pub(crate) fn phase(&self) -> AppPhase {
+        #[cfg(feature = "gui")]
         {
-            if self.shutdown.is_some() {return AppPhase::Stopping;}
-            if self.boot_error_mode {return AppPhase::Failed;}
+            if self.shutdown.is_some() {
+                return AppPhase::Stopping;
+            }
+            if self.boot_error_mode {
+                return AppPhase::Failed;
+            }
         }
-        #[cfg(not(feature="gui"))]
-        if self.stopping {return AppPhase::Stopping;}
-        if self.started {AppPhase::Running}else{AppPhase::Starting}
+        #[cfg(not(feature = "gui"))]
+        if self.stopping {
+            return AppPhase::Stopping;
+        }
+        if self.started {
+            AppPhase::Running
+        } else {
+            AppPhase::Starting
+        }
     }
 }

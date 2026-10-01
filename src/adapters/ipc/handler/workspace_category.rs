@@ -34,4 +34,3 @@ pub fn handle_list(
         .collect();
     JsonRpcResponse::success(id, json!(cats))
 }
-

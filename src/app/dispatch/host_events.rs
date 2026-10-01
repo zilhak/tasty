@@ -14,9 +14,7 @@ use crate::app::window_access::engines_mut;
 use crate::runtime::engine_access::{EngineMut, EngineRef};
 use crate::state::PendingHostEvent;
 
-fn take_current_host_events(
-    engine: &mut EngineMut<'_>,
-) -> Vec<PendingHostEvent> {
+fn take_current_host_events(engine: &mut EngineMut<'_>) -> Vec<PendingHostEvent> {
     let mut events = engine.take_pending_host_events();
     events.retain(|event| match event {
         PendingHostEvent::SurfaceTitleChanged {
@@ -34,19 +32,19 @@ fn take_current_host_events(
 
 impl App {
     pub(crate) fn dispatch_pending_host_events(&mut self) {
-        let mut drained=std::mem::take(&mut self.state.pending_host_events);
+        let mut drained = std::mem::take(&mut self.state.pending_host_events);
         for (state, mut engine) in engines_mut!(self).sessions() {
-            let mut observed=state.detect_focus_change(engine.core);
+            let mut observed = state.detect_focus_change(engine.core);
             observed.extend(state.detect_workspace_activation(engine.core));
             observed.extend(state.detect_tab_focus_change(engine.core));
             engine.runtime.pending_host_events.extend(observed);
         }
         // Includes parked, pending and retiring owners; delivery never depends on a live View.
         for session in self.engines.all_sessions_mut() {
-            let mut engine=session.borrow_mut();
-            let events=take_current_host_events(&mut engine);
-            reproject_osc_title_on_focus(&mut engine,&events);
-            resolve_hook_fired_task_waits(&self.services,&engine.as_ref(),&events);
+            let mut engine = session.borrow_mut();
+            let events = take_current_host_events(&mut engine);
+            reproject_osc_title_on_focus(&mut engine, &events);
+            resolve_hook_fired_task_waits(&self.services, &engine.as_ref(), &events);
             drained.extend(events);
         }
         if drained.is_empty() {

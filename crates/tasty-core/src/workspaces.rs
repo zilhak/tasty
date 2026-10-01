@@ -119,10 +119,7 @@ impl CoreState {
         true
     }
 
-    pub fn replace_mirror_workspace(
-        &mut self,
-        workspace: Workspace,
-    ) -> Result<(), Workspace> {
+    pub fn replace_mirror_workspace(&mut self, workspace: Workspace) -> Result<(), Workspace> {
         assert!(workspace.mirror, "remote projection requires a mirror");
         if let Some(slot) = self
             .mirror_workspaces
@@ -320,4 +317,3 @@ impl<'a> IntoIterator for &WorkspaceRead<'a> {
         self.iter()
     }
 }
-

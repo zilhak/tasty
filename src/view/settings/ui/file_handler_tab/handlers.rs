@@ -1,9 +1,9 @@
-use crate::runtime::file_catalog::HandlerCatalog as FileHandlerRegistry;
-use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;
 use crate::file::handler::{
     HandlerAction, HandlerOwner, UserHandlerActionDecl, UserHandlerUpsertDecl,
 };
 use crate::i18n::t;
+use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;
+use crate::runtime::file_catalog::HandlerCatalog as FileHandlerRegistry;
 
 use super::{AddHandlerActionKind, AddHandlerForm, FileHandlerEditDraft, draw_intro_block};
 use tasty_ui_widgets::vspace;

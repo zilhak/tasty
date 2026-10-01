@@ -2,15 +2,13 @@
 //! 구조 생성·닫기는 App의 journal admission에서 처리하며 여기에는 입력·관계 서비스가 남는다.
 //! 부모·자식 관계와 soft 점유를 함께 관리한다(ADR-0021).
 
-
-
 mod fixed_input;
-pub(crate) use fixed_input::{FixedInput,decode_fixed_input};
 use crate::runtime::engine_access::{EngineMut, EngineRef};
+pub(crate) use fixed_input::{FixedInput, decode_fixed_input};
 use serde_json::{Value, json};
 
-use crate::runtime::child_terminal::ChildEntry;
 use crate::core::state::child_liveness::ChildLiveness;
+use crate::runtime::child_terminal::ChildEntry;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::surface;
@@ -173,8 +171,20 @@ fn send_body_then_submit(
     surface_id: u32,
     body: String,
 ) -> Result<(), JsonRpcResponse> {
-    if engine.runtime.pending_submits.len()>=crate::runtime::pending_submit::MAX_PENDING {return Err(JsonRpcResponse::error(id.clone(),tasty_ipc::protocol::ERR_COMMAND_QUEUE_FULL,"terminal submission queue is full"));}
-    let generation=engine.runtime.terminals.generation(surface_id).ok_or_else(||JsonRpcResponse::invalid_params(id.clone(),format!("Surface {surface_id} not found")))?;
+    if engine.runtime.pending_submits.len() >= crate::runtime::pending_submit::MAX_PENDING {
+        return Err(JsonRpcResponse::error(
+            id.clone(),
+            tasty_ipc::protocol::ERR_COMMAND_QUEUE_FULL,
+            "terminal submission queue is full",
+        ));
+    }
+    let generation = engine
+        .runtime
+        .terminals
+        .generation(surface_id)
+        .ok_or_else(|| {
+            JsonRpcResponse::invalid_params(id.clone(), format!("Surface {surface_id} not found"))
+        })?;
     let ack = send_text_to_surface_with_ack(engine, surface_id, &body).map_err(|e| {
         let msg = match e {
             SendTextError::HardOccupied => format!(
@@ -186,15 +196,26 @@ fn send_body_then_submit(
         JsonRpcResponse::invalid_params(id.clone(), msg)
     })?;
 
-    engine.runtime.pending_submits.push(crate::runtime::pending_submit::PendingSubmit::new(surface_id,generation,ack));
+    engine
+        .runtime
+        .pending_submits
+        .push(crate::runtime::pending_submit::PendingSubmit::new(
+            surface_id, generation, ack,
+        ));
     (engine.runtime.waker)();
     Ok(())
 }
 
-pub(crate) fn decode_tell<'a>(params:&'a Value,id:&Value)->Result<(u32,&'a str),JsonRpcResponse> {
-    let surface=require_u32(params,"surface",id)?;
-    let text=params.get("text").and_then(|value|value.as_str()).ok_or_else(||JsonRpcResponse::invalid_params(id.clone(),"missing 'text'"))?;
-    Ok((surface,text))
+pub(crate) fn decode_tell<'a>(
+    params: &'a Value,
+    id: &Value,
+) -> Result<(u32, &'a str), JsonRpcResponse> {
+    let surface = require_u32(params, "surface", id)?;
+    let text = params
+        .get("text")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| JsonRpcResponse::invalid_params(id.clone(), "missing 'text'"))?;
+    Ok((surface, text))
 }
 
 pub(crate) fn handle_tell(
@@ -203,7 +224,10 @@ pub(crate) fn handle_tell(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let (surface_id,text)=match decode_tell(params,&id) {Ok(value)=>value,Err(error)=>return error};
+    let (surface_id, text) = match decode_tell(params, &id) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
     let payload = build_tell_payload(&text);
     if let Err(e) = send_body_then_submit(engine, core, &id, surface_id, payload) {
         return e;
@@ -465,7 +489,10 @@ pub(crate) fn handle_respawn(
 
     // cwd가 바뀌면 PTY를 교체하고, 아니면 Ctrl-C를 보낸다. Ctrl-C가 종료 완료를 보장하지는 않는다.
     if new_cwd.is_some() {
-        return JsonRpcResponse::internal_error(id,"child resource respawn requires committed structure admission");
+        return JsonRpcResponse::internal_error(
+            id,
+            "child resource respawn requires committed structure admission",
+        );
     } else {
         let combo = json!({
             "surface_id": entry.child_surface_id,
@@ -670,7 +697,6 @@ mod tests {
         assert_eq!(format_index_ranges(&[0, 57]), "0, 57");
     }
 
-
     #[test]
     fn child_not_found_points_at_index_when_given_a_surface_id() {
         let mut reg = crate::runtime::child_terminal::ChildTerminalRegistry::default();
@@ -774,7 +800,11 @@ mod tests {
             .child_terminals
             .register_child(parent, child(c, idx));
         e.occupy_soft(c, parent, Some("worker".into())).unwrap();
-        let occ = e.live.occupancy.occupancy_of(c).expect("soft occupancy present");
+        let occ = e
+            .live
+            .occupancy
+            .occupancy_of(c)
+            .expect("soft occupancy present");
         assert_eq!(occ.tier, OccupancyTier::Soft);
         assert_eq!(occ.parent, Some(parent));
         assert!(!e.live.occupancy.is_hard_occupied(c));
@@ -808,7 +838,8 @@ mod tests {
         assert!(resp.error.is_none());
 
         let occ = e
-            .live.occupancy
+            .live
+            .occupancy
             .occupancy_of(target)
             .expect("soft occupancy present");
         assert_eq!(occ.tier, OccupancyTier::Soft);
@@ -885,7 +916,8 @@ mod tests {
             .all_surface_ids()[0];
         let target = 6103u32;
         add_extra_surface(&mut e, target);
-        e.live.occupancy
+        e.live
+            .occupancy
             .acquire(target, /* hard occupancy client id */ 1)
             .unwrap();
 

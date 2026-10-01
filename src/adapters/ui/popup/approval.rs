@@ -18,17 +18,26 @@ const MIN_HEIGHT: LogicalPx = LogicalPx(180.0);
 const MAX_HEIGHT: LogicalPx = LogicalPx(480.0);
 
 /// PopupDef.title_fn — 큐 head 의 title 을 popup 타이틀로 사용.
-pub fn approval_popup_title(state: &MainViewState, _engine: &crate::runtime::engine_read::EngineRead<'_>) -> String {
+pub fn approval_popup_title(
+    state: &MainViewState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> String {
     let Some(id) = state.dialogs.pending_approval_ids.front() else {
         return t("approval.popup.title").to_string();
     };
-    state.dialogs.approval_records.get(id)
+    state
+        .dialogs
+        .approval_records
+        .get(id)
         .map(|r| r.request.title.clone())
         .unwrap_or_else(|| t("approval.popup.title").to_string())
 }
 
 /// PopupDef.sizer — body 길이 + 선택지 수에 따라 height 추정.
-pub fn approval_popup_sizer(state: &MainViewState, _engine: &crate::runtime::engine_read::EngineRead<'_>) -> egui::Vec2 {
+pub fn approval_popup_sizer(
+    state: &MainViewState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> egui::Vec2 {
     let Some(id) = state.dialogs.pending_approval_ids.front() else {
         return egui::vec2(DEFAULT_WIDTH.value(), MIN_HEIGHT.value());
     };
@@ -260,7 +269,7 @@ pub fn draw_approval_popup(
     let Some(record) = state.dialogs.approval_records.get(&current_id).cloned() else {
         state.dialogs.pending_approval_ids.pop_front();
         state.dialogs.approval_records.remove(&current_id);
-        state.dialogs.approval_submitting=None;
+        state.dialogs.approval_submitting = None;
         state.dialogs.approval_comment_buffer.clear();
         if state.dialogs.pending_approval_ids.is_empty() {
             return PopupAction::Close;
@@ -271,7 +280,7 @@ pub fn draw_approval_popup(
     if record.state.is_terminal() {
         state.dialogs.pending_approval_ids.pop_front();
         state.dialogs.approval_records.remove(&current_id);
-        state.dialogs.approval_submitting=None;
+        state.dialogs.approval_submitting = None;
         state.dialogs.approval_comment_buffer.clear();
         if state.dialogs.pending_approval_ids.is_empty() {
             return PopupAction::Close;
@@ -295,10 +304,15 @@ pub fn draw_approval_popup(
             Some(state.dialogs.approval_comment_buffer.trim().to_string())
         };
         if state.dialogs.approval_submitting.is_none() {
-            state.dialogs.approval_submitting=Some(current_id.clone());
-            state.dispatch_intent(crate::intent::Intent::RespondApproval {
-                request_id:current_id,choice:choice_key,comment,
-            }.from_user_menu("approval.respond"));
+            state.dialogs.approval_submitting = Some(current_id.clone());
+            state.dispatch_intent(
+                crate::intent::Intent::RespondApproval {
+                    request_id: current_id,
+                    choice: choice_key,
+                    comment,
+                }
+                .from_user_menu("approval.respond"),
+            );
         }
     }
 
@@ -311,7 +325,10 @@ pub fn enqueue_approval(
     engine: &crate::core::CoreState,
     record: &ApprovalRecord,
 ) {
-    state.dialogs.approval_records.insert(record.request.id.clone(),record.clone());
+    state
+        .dialogs
+        .approval_records
+        .insert(record.request.id.clone(), record.clone());
     if state
         .dialogs
         .pending_approval_ids

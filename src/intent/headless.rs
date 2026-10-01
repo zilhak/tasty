@@ -6,11 +6,11 @@
 //! 기본 GUI 시험에서도 이 모듈을 컴파일해 큐 처리를 검증한다.
 //! 설계: docs/design/flows/action-dispatch.md, docs/adr/0003-headless-behavior.md.
 
-use crate::runtime::engine_access::{EngineMut, EngineRef};
 use crate::app::command::CoreEvent;
-use crate::core::{AttentionKind,  State};
 use crate::app::services::AppServices;
+use crate::core::{AttentionKind, State};
 use crate::intent::{DispatchedIntent, Intent};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 use crate::state::RequestContext;
 
 /// 한 번에 처리할 묶음 수. 처리 중 명령이 계속 추가돼도 루프를 빠져나올 수 있게 한다.
@@ -35,28 +35,62 @@ pub(crate) fn drain_pending_intents_in_app(
     engine: &mut EngineMut<'_>,
     journal: &mut crate::app::journal::JournalApplication,
 ) {
-    let engine_id=state.engine_id;
+    let engine_id = state.engine_id;
     for _ in 0..MAX_DRAIN_ROUNDS {
-        let batch=state.take_pending_intents();
-        if batch.is_empty() {return;}
+        let batch = state.take_pending_intents();
+        if batch.is_empty() {
+            return;
+        }
         for mut dispatched in batch {
-            match crate::app::creation_intent::resolve(state,&engine.as_ref(),&dispatched.body,&dispatched.origin) {
-                Ok(Some(intent))=>dispatched.body=Intent::Domain(intent),
-                Ok(None)=>{},
-                Err(error)=> {super::report_apply_error(state,engine.core,&dispatched.origin,"creation input",&error);continue;},
+            match crate::app::creation_intent::resolve(
+                state,
+                &engine.as_ref(),
+                &dispatched.body,
+                &dispatched.origin,
+            ) {
+                Ok(Some(intent)) => dispatched.body = Intent::Domain(intent),
+                Ok(None) => {}
+                Err(error) => {
+                    super::report_apply_error(
+                        state,
+                        engine.core,
+                        &dispatched.origin,
+                        "creation input",
+                        &error,
+                    );
+                    continue;
+                }
             }
-            if let Intent::Domain(crate::app::command::DomainIntent::RetireExitedSurface {surface_id,generation})=&dispatched.body
-                && !engine.runtime.terminals.matches_generation(*surface_id,*generation) {continue;}
-            let handled=match (engine_id,&dispatched.body) {
-                (Some(id),Intent::Domain(intent))=>journal.admit_metadata_intent(id,engine.core,intent,&dispatched.origin,None),
-                (Some(id),Intent::DirectRename(rename))=>{journal.admit_direct_rename(id,rename,&dispatched.origin);true},
-                (None,Intent::Domain(_)|Intent::DirectRename(_))=>{tracing::error!("headless structural intent has no application engine owner");true},
-                _=>false,
+            if let Intent::Domain(crate::app::command::DomainIntent::RetireExitedSurface {
+                surface_id,
+                generation,
+            }) = &dispatched.body
+                && !engine
+                    .runtime
+                    .terminals
+                    .matches_generation(*surface_id, *generation)
+            {
+                continue;
+            }
+            let handled = match (engine_id, &dispatched.body) {
+                (Some(id), Intent::Domain(intent)) => {
+                    journal.admit_metadata_intent(id, engine.core, intent, &dispatched.origin, None)
+                }
+                (Some(id), Intent::DirectRename(rename)) => {
+                    journal.admit_direct_rename(id, rename, &dispatched.origin);
+                    true
+                }
+                (None, Intent::Domain(_) | Intent::DirectRename(_)) => {
+                    tracing::error!("headless structural intent has no application engine owner");
+                    true
+                }
+                _ => false,
             };
-            if !handled {apply_one(core,state,engine,dispatched);}
+            if !handled {
+                apply_one(core, state, engine, dispatched);
+            }
         }
     }
-
 }
 
 fn drain_with(
@@ -87,10 +121,7 @@ fn drain_with(
 /// 호스트 이벤트 큐를 비우고 HookFired로 완료를 기다리는 작업을 처리한다.
 /// 나머지 이벤트는 여기서 버리며 플러그인 이벤트 버스로 전달하지 않는다.
 /// 헤드리스에서도 이 이벤트를 구독해야 한다면 별도의 전달 경로가 필요하다.
-pub(crate) fn drain_pending_host_events(
-    core: &AppServices,
-    engine: &mut EngineMut<'_>,
-) {
+pub(crate) fn drain_pending_host_events(core: &AppServices, engine: &mut EngineMut<'_>) {
     engine.runtime.pending_lifecycle_events.clear();
     for event in engine.take_pending_host_events() {
         if let crate::state::PendingHostEvent::HookFired {
@@ -131,7 +162,7 @@ fn apply_one(
         return;
     };
     engine.refresh_attach_presentation(&state.navigation);
-    match core.apply_live(engine,domain) {
+    match core.apply_live(engine, domain) {
         Ok(events) => {
             for event in events {
                 handle_core_event(engine, event);
@@ -149,20 +180,38 @@ fn route_non_domain(
     dispatched: &DispatchedIntent,
 ) {
     match &dispatched.body {
-        Intent::Engine(action)=>action.apply(engine,None),
-        Intent::RespondApproval {request_id,choice,comment}=> {
-            match core.respond_approval(request_id,choice.clone(),tasty_approval::Responder::User,comment.clone()) {
-                Ok(change)=>crate::ipc::handler::approval::persist_record(core,&change.record),
-                Err(error)=>tracing::warn!("approval response failed: {error}"),
+        Intent::Engine(action) => action.apply(engine, None),
+        Intent::RespondApproval {
+            request_id,
+            choice,
+            comment,
+        } => {
+            match core.respond_approval(
+                request_id,
+                choice.clone(),
+                tasty_approval::Responder::User,
+                comment.clone(),
+            ) {
+                Ok(change) => crate::ipc::handler::approval::persist_record(core, &change.record),
+                Err(error) => tracing::warn!("approval response failed: {error}"),
             }
-        },
-        Intent::PatchSettings(_)=>tracing::error!("settings patch bypassed application resolution"),
-        Intent::ForwardMirror {..}=>tracing::warn!("headless has no mirror client transport"),
+        }
+        Intent::PatchSettings(_) => {
+            tracing::error!("settings patch bypassed application resolution")
+        }
+        Intent::ForwardMirror { .. } => tracing::warn!("headless has no mirror client transport"),
         Intent::Ui(_) => crate::intent::popup::handle(state, engine, dispatched),
-        Intent::ApplyPreset { .. } | Intent::CapturePreset {..} | Intent::SavePreset { .. } => {
+        Intent::ApplyPreset { .. } | Intent::CapturePreset { .. } | Intent::SavePreset { .. } => {
             crate::intent::preset::handle(core, state, engine, dispatched);
         }
-        Intent::SplitSurface {..}|Intent::ConvertSurface {..}|Intent::NewTab {..}|Intent::NewTabWithFollowup {..}|Intent::SplitPane {..}|Intent::NewWorkspace {..}=>tracing::error!("structural intent bypassed journal admission"),
+        Intent::SplitSurface { .. }
+        | Intent::ConvertSurface { .. }
+        | Intent::NewTab { .. }
+        | Intent::NewTabWithFollowup { .. }
+        | Intent::SplitPane { .. }
+        | Intent::NewWorkspace { .. } => {
+            tracing::error!("structural intent bypassed journal admission")
+        }
         Intent::RestoreClosedItem => {
             tracing::error!("undo intent bypassed journal admission");
         }

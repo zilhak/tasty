@@ -5,9 +5,9 @@
 
 use crate::app::App;
 use crate::core::CoreState;
-use crate::runtime::engine_access::EngineMut;
 use crate::ipc::caller::resolve_caller_from_envelope;
 use crate::ipc::server::send_response;
+use crate::runtime::engine_access::EngineMut;
 use crate::state::RequestContext;
 
 /// GUI와 같은 IPC 회차 예산을 사용한다. 요청이 만든 Intent는 응답 전에 적용한다.
@@ -18,7 +18,8 @@ pub(crate) fn pump_ipc(
 ) -> std::ops::ControlFlow<()> {
     let mut round = crate::app::ipc_round::IpcRound::begin();
     while let Some(cmd) = round.next(app.hub.ipc_server.as_deref()) {
-        let observed = crate::app::ipc_round::CommandObservation::begin(app.services.pressure(), &cmd);
+        let observed =
+            crate::app::ipc_round::CommandObservation::begin(app.services.pressure(), &cmd);
         let flow = dispatch_command(app, state, session, cmd);
         observed.finish(app.services.slow_requests());
         if flow.is_break() {
@@ -66,13 +67,21 @@ fn dispatch_command(
             return std::ops::ControlFlow::Continue(());
         }
     };
-    if app.preset_capture_on_session(&cmd,&checked,session,&state.navigation) {return std::ops::ControlFlow::Continue(());}
-    let mut owner=session.borrow_mut();
-    let engine=&mut owner;
+    if app.preset_capture_on_session(&cmd, &checked, session, &state.navigation) {
+        return std::ops::ControlFlow::Continue(());
+    }
+    let mut owner = session.borrow_mut();
+    let engine = &mut owner;
     if app.journal.admit_ipc(&cmd, &caller) {
         return std::ops::ControlFlow::Continue(());
     }
-    if let Some(id)=state.engine_id && app.journal.defer_live_ipc(&cmd,&checked,id,&engine.as_ref()) {return std::ops::ControlFlow::Continue(());}
+    if let Some(id) = state.engine_id
+        && app
+            .journal
+            .defer_live_ipc(&cmd, &checked, id, &engine.as_ref())
+    {
+        return std::ops::ControlFlow::Continue(());
+    }
     match intercept_app_layer(app, state, engine, &caller, &cmd) {
         Some(Intercepted::Answered) => return std::ops::ControlFlow::Continue(()),
         #[cfg(debug_assertions)]
@@ -102,7 +111,8 @@ fn dispatch_command(
     }
     // kind 소유자만 준비한다. namespace 전달과 달리 IPC hook extension은 여기서 시작하지 않는다.
     super::headless_plugins::ensure_plugin_for_surface_kind(app, state, engine, &cmd.request);
-    let resp = crate::ipc::handler::handle_checked_request(&mut app.services, state, engine, &checked);
+    let resp =
+        crate::ipc::handler::handle_checked_request(&mut app.services, state, engine, &checked);
     // 응답 전에 요청의 Intent와 후속 이벤트를 적용한다.
     crate::intent::headless::drain_pending_intents_in_app(
         &mut app.services,

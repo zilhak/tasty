@@ -17,8 +17,8 @@ use tasty_plugin_protocol::{
 use crate::adapters::ui::LayoutContext;
 use crate::adapters::ui::popup::occlusion::{Occluder, PointOwnership, point_ownership};
 use crate::adapters::ui::popup::{self, PopupManager, PopupScope};
-use crate::model::LogicalPx;
 use crate::app::plugin_display::PluginDisplay;
+use crate::model::LogicalPx;
 use crate::plugin::manifest::PopupAnchor;
 use crate::plugin_bridge::wire_scroll;
 use crate::state::RequestContext;
@@ -211,22 +211,25 @@ pub fn draw_plugin_popups(
                 .entry(snap.instance_id)
                 .or_default()
                 .record_sent(geom, &current_theme, has_frame);
-            state.dispatch_intent(crate::intent::Intent::Engine(
-                crate::app::engine_action::EngineAction::PluginDisplay(
-                    crate::app::plugin_display::PluginDisplayRequest::Popup {
-                        plugin: snap.plugin_id.clone(),
-                        params: PopupSetContextParams {
-                    instance_id: snap.instance_id,
-                    width_px: w_px,
-                    height_px: h_px,
-                    pixels_per_point: ppp,
-                    raw_input,
-                    theme: Some(current_theme.clone()),
-                    need_full_textures: need_full,
+            state.dispatch_intent(
+                crate::intent::Intent::Engine(
+                    crate::app::engine_action::EngineAction::PluginDisplay(
+                        crate::app::plugin_display::PluginDisplayRequest::Popup {
+                            plugin: snap.plugin_id.clone(),
+                            params: PopupSetContextParams {
+                                instance_id: snap.instance_id,
+                                width_px: w_px,
+                                height_px: h_px,
+                                pixels_per_point: ppp,
+                                raw_input,
+                                theme: Some(current_theme.clone()),
+                                need_full_textures: need_full,
+                            },
                         },
-                    },
-                ),
-            ).from_user_menu("plugin-render-context"));
+                    ),
+                )
+                .from_user_menu("plugin-render-context"),
+            );
         }
 
         state

@@ -1,10 +1,10 @@
 //! Global input rules use the same settings update/save path as the settings UI.
 use serde_json::{Value, json};
 
-use crate::runtime::engine_read::EngineRead;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::ipc::window_port::IntentOutbox;
+use crate::runtime::engine_read::EngineRead;
 
 pub fn get(engine: &EngineRead<'_>, id: Value) -> JsonRpcResponse {
     JsonRpcResponse::success(id, json!({ "rules": engine.settings.terminal_input.rules }))

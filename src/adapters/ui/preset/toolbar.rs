@@ -1,7 +1,7 @@
 //! 보기·편집 모드의 프리셋 툴바와 선택한 동작 처리.
 
 use crate::view::preset::draft::PresetDrafts;
-use tasty_presets::{PresetKind};
+use tasty_presets::PresetKind;
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant};
 

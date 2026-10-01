@@ -154,7 +154,9 @@ impl EngineMut<'_> {
                 surface_id,
                 "mirror attention cleared — queueing clear forward to the owning instance"
             );
-            self.remote.pending_attention_clear_forward.insert(surface_id);
+            self.remote
+                .pending_attention_clear_forward
+                .insert(surface_id);
         }
         removed
     }
@@ -212,7 +214,8 @@ impl EngineMut<'_> {
     )> {
         let locks = self.live.occupancy.locks_snapshot();
         let occupied: std::collections::HashSet<u32> = locks.iter().map(|&(sid, _)| sid).collect();
-        self.remote.last_forwarded_attention
+        self.remote
+            .last_forwarded_attention
             .retain(|sid, _| occupied.contains(sid));
         let mut out = Vec::new();
         for (sid, lock) in locks {
@@ -349,7 +352,11 @@ mod tests {
     fn mark_notification_read_clears_attention_when_no_unread_left() {
         let mut s_session = state();
         let mut s = s_session.borrow_mut();
-        let id = s.live.notifications.add(1, 100, "t".into(), "b".into()).unwrap();
+        let id = s
+            .live
+            .notifications
+            .add(1, 100, "t".into(), "b".into())
+            .unwrap();
         s.raise_attention(100, AttentionKind::Completion);
         assert!(s.attention_dominant_kind(&[100]).is_some());
 
@@ -415,7 +422,11 @@ mod tests {
     fn mark_all_notifications_read_leaves_unrelated_surface_attention_untouched() {
         let mut s_session = state();
         let mut s = s_session.borrow_mut();
-        let id = s.live.notifications.add(1, 100, "t".into(), "b".into()).unwrap();
+        let id = s
+            .live
+            .notifications
+            .add(1, 100, "t".into(), "b".into())
+            .unwrap();
         s.live.notifications.mark_read(id); // 이미 읽음 처리된 알림
         s.raise_attention(100, AttentionKind::Completion); // 알림과 무관한 producer(toast 등)가 건 attention
         s.raise_attention(200, AttentionKind::Completion);
@@ -494,7 +505,10 @@ mod tests {
         e.live.occupancy.release(sid, 7).expect("release");
         assert!(e.attention_forwards().is_empty());
 
-        e.live.occupancy.acquire(sid, 9).expect("다른 client 재획득");
+        e.live
+            .occupancy
+            .acquire(sid, 9)
+            .expect("다른 client 재획득");
         assert_eq!(
             e.attention_forwards(),
             vec![(9, sid, Some(AttentionKind::NeedsInput))],
@@ -519,7 +533,8 @@ mod tests {
         );
 
         e.live.occupancy.release(sid, 7).expect("release");
-        e.live.occupancy
+        e.live
+            .occupancy
             .acquire(sid, 9)
             .expect("같은 tick 창 안의 다른 client 획득");
         assert_eq!(
@@ -682,7 +697,8 @@ mod tests {
 
         assert!(s.clear_attention(sid));
         assert_eq!(
-            s.remote.pending_attention_clear_forward
+            s.remote
+                .pending_attention_clear_forward
                 .iter()
                 .copied()
                 .collect::<Vec<_>>(),
@@ -730,7 +746,8 @@ mod tests {
 
         assert_eq!(s.attention_kind(sid), None);
         assert_eq!(
-            s.remote.pending_attention_clear_forward
+            s.remote
+                .pending_attention_clear_forward
                 .iter()
                 .copied()
                 .collect::<Vec<_>>(),
@@ -750,7 +767,8 @@ mod tests {
         s.mark_all_notifications_read();
 
         assert_eq!(
-            s.remote.pending_attention_clear_forward
+            s.remote
+                .pending_attention_clear_forward
                 .iter()
                 .copied()
                 .collect::<Vec<_>>(),
@@ -810,7 +828,8 @@ mod tests {
     fn soft_occupancy_does_not_gate_the_local_clear() {
         let mut s_session = state();
         let mut s = s_session.borrow_mut();
-        s.live.occupancy
+        s.live
+            .occupancy
             .acquire_soft(42, 7, Some("child".into()))
             .expect("soft lock");
         assert!(
@@ -854,7 +873,8 @@ mod tests {
             .expect("workspace index is valid")
             .all_surface_ids()[0];
         let ws = s.workspace_at(0).expect("workspace index is valid").id;
-        s.live.occupancy
+        s.live
+            .occupancy
             .acquire_workspace(ws, &[sid], &[sid], 1)
             .expect("workspace hard lock");
         s.raise_attention(sid, AttentionKind::NeedsInput);
@@ -893,7 +913,8 @@ mod tests {
             "점유 중 알림 읽음은 홀더의 신호를 지우지 못한다"
         );
         assert!(
-            s.live.notifications
+            s.live
+                .notifications
                 .all()
                 .find(|n| n.id == occupied_read)
                 .unwrap()
@@ -945,7 +966,12 @@ mod tests {
         );
         for id in [occupied, free] {
             assert!(
-                s.live.notifications.all().find(|n| n.id == id).unwrap().read,
+                s.live
+                    .notifications
+                    .all()
+                    .find(|n| n.id == id)
+                    .unwrap()
+                    .read,
                 "모든 알림의 read 플래그는 점유 여부와 무관하게 세워진다(회귀 방지)"
             );
         }
@@ -1025,7 +1051,13 @@ mod tests {
 }
 
 impl crate::runtime::engine_read::EngineRead<'_> {
-    pub(crate) fn attention_kind(&self,id:u32)->Option<AttentionKind> {self.live.attention.kind_of(id)}
-    pub(crate) fn attention_count_of_kind(&self,kind:AttentionKind,ids:&[u32])->usize {self.live.attention.count_of_kind(kind,ids)}
-    pub(crate) fn attention_dominant_kind(&self,ids:&[u32])->Option<AttentionKind> {self.live.attention.dominant_kind(ids)}
+    pub(crate) fn attention_kind(&self, id: u32) -> Option<AttentionKind> {
+        self.live.attention.kind_of(id)
+    }
+    pub(crate) fn attention_count_of_kind(&self, kind: AttentionKind, ids: &[u32]) -> usize {
+        self.live.attention.count_of_kind(kind, ids)
+    }
+    pub(crate) fn attention_dominant_kind(&self, ids: &[u32]) -> Option<AttentionKind> {
+        self.live.attention.dominant_kind(ids)
+    }
 }

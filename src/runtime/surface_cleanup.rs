@@ -23,14 +23,19 @@ impl EngineMut<'_> {
 
     /// Execution-owned scope deletion. Journal cleanup propagates failure to its durable result;
     /// the legacy adapter below logs the same failure without inventing a second purge policy.
-    pub(crate) fn purge_closed_memory_scope(&self, scope: &tasty_memory::Scope) -> Result<(), String> {
+    pub(crate) fn purge_closed_memory_scope(
+        &self,
+        scope: &tasty_memory::Scope,
+    ) -> Result<(), String> {
         self.with_memory(|memory| memory.purge_scope(scope))
             .map(|_| ())
             .map_err(|error| error.to_string())
     }
 
     fn purge_surface_memory_scope(&self, surface_id: u32) {
-        if let Err(error) = self.purge_closed_memory_scope(&tasty_memory::Scope::Surface(surface_id)) {
+        if let Err(error) =
+            self.purge_closed_memory_scope(&tasty_memory::Scope::Surface(surface_id))
+        {
             tracing::warn!(surface_id, "memory: purge_scope failed: {error}");
         }
     }
@@ -40,7 +45,9 @@ impl EngineMut<'_> {
     /// path는 종료 시간 로그의 경로 구분값이다.
     pub(crate) fn purge_workspace_memory_scope(&self, workspace_id: u32, path: &'static str) {
         let t = std::time::Instant::now();
-        if let Err(error) = self.purge_closed_memory_scope(&tasty_memory::Scope::Workspace(workspace_id)) {
+        if let Err(error) =
+            self.purge_closed_memory_scope(&tasty_memory::Scope::Workspace(workspace_id))
+        {
             tracing::warn!(workspace_id, "memory: purge_scope failed: {error}");
         }
         crate::close_trace::log_ws_purge(t, path);
@@ -72,9 +79,14 @@ impl EngineMut<'_> {
         Self::delete_scrollback_persist(persist_id);
         sums.scrollback_delete += t.elapsed();
         let t = Instant::now();
-        if let Some(owner)=self.runtime.surfaces.remove(&surface_id)
-            && let Some(remote)=owner.as_any().downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>() {
-            self.runtime.pending_plugin_retirements.push((surface_id,remote.handles().binding()));
+        if let Some(owner) = self.runtime.surfaces.remove(&surface_id)
+            && let Some(remote) = owner
+                .as_any()
+                .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
+        {
+            self.runtime
+                .pending_plugin_retirements
+                .push((surface_id, remote.handles().binding()));
         }
         self.drop_terminal(surface_id);
         sums.terminal_drop += t.elapsed();
@@ -99,14 +111,24 @@ impl EngineMut<'_> {
     pub(crate) fn cleanup_surface_observations(&mut self, surface_id: u32) {
         self.runtime.pending_scrollback_inject.remove(&surface_id);
         self.remote.pending_workspace_taps.remove(&surface_id);
-        if self.runtime.child_terminals.unregister_child_by_surface(surface_id) {self.runtime.child_terminals.save();}
+        if self
+            .runtime
+            .child_terminals
+            .unregister_child_by_surface(surface_id)
+        {
+            self.runtime.child_terminals.save();
+        }
         #[cfg(feature = "gui")]
         self.runtime.readonly_views.remove(&surface_id);
-        self.runtime.pending_submits.retain(|submit|submit.surface()!=surface_id);
+        self.runtime
+            .pending_submits
+            .retain(|submit| submit.surface() != surface_id);
         self.live.surface_titles.remove(&surface_id);
         self.live.last_key_input.remove(&surface_id);
         self.live.busy_surfaces.remove(&surface_id);
-        self.live.mouse_capture_disabled_surfaces.remove(&surface_id);
+        self.live
+            .mouse_capture_disabled_surfaces
+            .remove(&surface_id);
         self.live.foreground_names.remove(&surface_id);
         self.live.foreground_generation.remove(&surface_id);
         self.live.surface_messages.remove(&surface_id);
@@ -122,4 +144,3 @@ impl EngineMut<'_> {
         }
     }
 }
-

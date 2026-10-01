@@ -1,6 +1,6 @@
 use super::*;
-use crate::runtime::engine_access::{EngineMut, EngineRef};
 use crate::model::SplitDirection;
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 
 // 다른 상태·팝업 시험도 같은 engine/RequestContext 구성을 사용한다.
 pub(crate) fn test_state() -> (
@@ -517,8 +517,8 @@ fn close_pane_saves_closed_item_snapshot() {
 
 #[test]
 fn close_pane_then_restore_reinserts_pane() {
-    use crate::app::services::builder::AppServicesBuilder;
     use crate::app::command::{CoreEvent, DomainIntent, RestoredKind};
+    use crate::app::services::builder::AppServicesBuilder;
 
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
@@ -1095,7 +1095,8 @@ fn occupancy_suppresses_completion_highlight() {
     );
 
     engine
-        .live.occupancy
+        .live
+        .occupancy
         .acquire_soft(sid, /* parent */ 9999, Some("agent".into()))
         .expect("soft 점유 획득");
     let regions = regions_from_state(&state, &engine, term_rect, 1.0);
@@ -1128,7 +1129,8 @@ fn needs_input_not_suppressed_by_occupancy() {
     };
 
     engine
-        .live.occupancy
+        .live
+        .occupancy
         .acquire_soft(sid, /* parent */ 9999, Some("agent".into()))
         .expect("soft 점유 획득");
     engine.raise_attention(sid, AttentionKind::NeedsInput);
@@ -1245,7 +1247,13 @@ fn crosses_category_off_keeps_local_wrap() {
         .workspace_at_mut(3)
         .expect("workspace index is valid")
         .set_category(work); // D
-    assert!(!engine.runtime.settings.general.workspace_switch_crosses_category);
+    assert!(
+        !engine
+            .runtime
+            .settings
+            .general
+            .workspace_switch_crosses_category
+    );
 
     state.switch_workspace(&mut engine, 1); // active = B (normal 의 마지막)
     state.next_workspace_in_active_category(&mut engine);
@@ -1271,7 +1279,11 @@ fn crosses_category_on_next_lands_on_next_category_first() {
 
     state.switch_workspace(&mut engine, 3);
     state.switch_workspace(&mut engine, 1); // active = B (normal 의 마지막)
-    engine.runtime.settings.general.workspace_switch_crosses_category = true;
+    engine
+        .runtime
+        .settings
+        .general
+        .workspace_switch_crosses_category = true;
 
     state.next_workspace_in_active_category(&mut engine);
     assert_eq!(state.active_workspace_index(&engine), 2); // work 의 first = C (D 의 last-active 아님)
@@ -1293,7 +1305,11 @@ fn crosses_category_on_prev_lands_on_prev_category_last() {
         .workspace_at_mut(3)
         .expect("workspace index is valid")
         .set_category(work); // D (work 의 last)
-    engine.runtime.settings.general.workspace_switch_crosses_category = true;
+    engine
+        .runtime
+        .settings
+        .general
+        .workspace_switch_crosses_category = true;
 
     state.switch_workspace(&mut engine, 2); // active = C (work 의 첫)
     state.prev_workspace_in_active_category(&mut engine);
@@ -1316,7 +1332,11 @@ fn crosses_category_on_wraps_across_full_category_list() {
         .workspace_at_mut(3)
         .expect("workspace index is valid")
         .set_category(work); // D (work 의 last, 마지막 카테고리)
-    engine.runtime.settings.general.workspace_switch_crosses_category = true;
+    engine
+        .runtime
+        .settings
+        .general
+        .workspace_switch_crosses_category = true;
 
     state.switch_workspace(&mut engine, 3); // active = D (마지막 카테고리의 마지막)
     state.next_workspace_in_active_category(&mut engine);
@@ -1330,7 +1350,11 @@ fn crosses_category_on_single_category_falls_back_to_local_wrap() {
     add_test_workspace(&mut state, &mut engine); // B=1
     add_test_workspace(&mut state, &mut engine); // C=2
     assert!(!engine.runtime.settings.general.workspace_categories_enabled);
-    engine.runtime.settings.general.workspace_switch_crosses_category = true;
+    engine
+        .runtime
+        .settings
+        .general
+        .workspace_switch_crosses_category = true;
 
     state.switch_workspace(&mut engine, 2); // active = C (normal 의 마지막, 유일한 카테고리)
     state.next_workspace_in_active_category(&mut engine);
@@ -2553,7 +2577,11 @@ mod close_refuses_hard_occupied {
             .workspace_at(idx)
             .expect("workspace index is valid")
             .all_surface_ids()[0];
-        engine.live.occupancy.acquire(sid, HOLDER).expect("하드 점유");
+        engine
+            .live
+            .occupancy
+            .acquire(sid, HOLDER)
+            .expect("하드 점유");
 
         let closed = state.close_workspace_at(&mut engine, idx, WorkspaceCloseOrigin::User);
 
@@ -2603,7 +2631,11 @@ mod close_refuses_hard_occupied {
             tasty_terminal::Terminal::new_detached(80, 24),
             None,
         );
-        engine.live.occupancy.acquire(sid_a, HOLDER).expect("하드 점유");
+        engine
+            .live
+            .occupancy
+            .acquire(sid_a, HOLDER)
+            .expect("하드 점유");
 
         assert!(!state.close_active_surface(&mut engine), "거절해야 한다");
         assert!(alive(&engine.as_ref(), sid_a));
@@ -2642,7 +2674,11 @@ mod close_refuses_hard_occupied {
         let (mut state, mut engine_session) = test_state();
         let mut engine = engine_session.borrow_mut();
         let sid = split_pane(&mut state, &mut engine);
-        engine.live.occupancy.acquire(sid, HOLDER).expect("하드 점유");
+        engine
+            .live
+            .occupancy
+            .acquire(sid, HOLDER)
+            .expect("하드 점유");
 
         assert!(!state.close_active_pane(&mut engine), "거절해야 한다");
         assert!(alive(&engine.as_ref(), sid));
@@ -2673,7 +2709,11 @@ mod close_refuses_hard_occupied {
         let mut engine = engine_session.borrow_mut();
         state.add_tab(&mut engine).expect("탭 추가");
         let sid = state.focused_surface_id(&engine).expect("포커스 surface");
-        engine.live.occupancy.acquire(sid, HOLDER).expect("하드 점유");
+        engine
+            .live
+            .occupancy
+            .acquire(sid, HOLDER)
+            .expect("하드 점유");
 
         assert!(!state.close_active_tab(&mut engine), "거절해야 한다");
         assert!(alive(&engine.as_ref(), sid));
@@ -2697,7 +2737,11 @@ mod close_refuses_hard_occupied {
         let mut engine = engine_session.borrow_mut();
         add_ws(&mut engine);
         let sid = state.focused_surface_id(&engine).expect("포커스 surface");
-        engine.live.occupancy.acquire(sid, HOLDER).expect("하드 점유");
+        engine
+            .live
+            .occupancy
+            .acquire(sid, HOLDER)
+            .expect("하드 점유");
 
         assert!(
             state.close_surface_by_id_no_snapshot(&mut engine, sid, false),
@@ -2724,7 +2768,11 @@ mod cleanup_forgets_only_the_closed_surface {
         )
         .expect("워크스페이스 생성");
         let sid = state.focused_surface_id(&engine).expect("포커스 surface");
-        engine.live.occupancy.acquire(sid, HOLDER).expect("하드 점유");
+        engine
+            .live
+            .occupancy
+            .acquire(sid, HOLDER)
+            .expect("하드 점유");
 
         assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid, false));
 
@@ -2734,7 +2782,8 @@ mod cleanup_forgets_only_the_closed_surface {
         );
         assert!(
             engine
-                .live.occupancy
+                .live
+                .occupancy
                 .locks_snapshot()
                 .iter()
                 .all(|(s, _)| *s != sid),

@@ -25,7 +25,7 @@ pub(crate) struct InputTarget {
     remote: Option<crate::plugin_bridge::host_cmd::SurfaceBinding>,
     revision: Option<u64>,
     activation: Option<u64>,
-    host_focus:Option<(Option<crate::model::popup_kind::PopupId>,Option<egui::Id>)>,
+    host_focus: Option<(Option<crate::model::popup_kind::PopupId>, Option<egui::Id>)>,
 }
 
 #[derive(Default)]
@@ -35,10 +35,10 @@ pub(crate) struct PublicationInputs {
     pub rejected: usize,
     #[cfg(feature = "gui")]
     targets: std::collections::HashMap<winit::window::WindowId, InputTarget>,
-    #[cfg(feature="gui")]
-    rejected_windows:std::collections::HashSet<winit::window::WindowId>,
-    #[cfg(feature="gui")]
-    reset_all_gestures:bool,
+    #[cfg(feature = "gui")]
+    rejected_windows: std::collections::HashSet<winit::window::WindowId>,
+    #[cfg(feature = "gui")]
+    reset_all_gestures: bool,
 }
 
 impl PublicationInputs {
@@ -47,7 +47,11 @@ impl PublicationInputs {
             event = DeferredEvent::App(AppEvent::TerminalOutput(None));
         }
         // Wake hints carry no payload. Their source queue/Terminal retains all data in arrival order.
-        let app_event=match &event {DeferredEvent::App(event)=>Some(event),#[cfg(feature="gui")] _=>None};
+        let app_event = match &event {
+            DeferredEvent::App(event) => Some(event),
+            #[cfg(feature = "gui")]
+            _ => None,
+        };
         if let Some(event) = app_event {
             let duplicate = self.events.iter().any(|(old, _)| match old {
                 DeferredEvent::App(old) => wake_class(old)
@@ -68,9 +72,13 @@ impl PublicationInputs {
         let weight = weight(&event);
         if self.events.len() >= MAX_EVENTS || self.bytes.saturating_add(weight) > MAX_BYTES {
             self.rejected = self.rejected.saturating_add(1);
-            #[cfg(feature="gui")]
-            if let DeferredEvent::Window {window,..}=&event {
-                if self.rejected_windows.len()<MAX_EVENTS {self.rejected_windows.insert(*window);} else {self.reset_all_gestures=true;}
+            #[cfg(feature = "gui")]
+            if let DeferredEvent::Window { window, .. } = &event {
+                if self.rejected_windows.len() < MAX_EVENTS {
+                    self.rejected_windows.insert(*window);
+                } else {
+                    self.reset_all_gestures = true;
+                }
             }
             return Err(event);
         }
@@ -192,9 +200,13 @@ impl crate::app::App {
             resource,
             remote,
             revision: owner.core.committed_structure_revision(),
-            host_focus:host_keyboard_focus(view),
-            activation: surface
-                .and_then(|id| owner.core.find_surface_by_id(id).and_then(|surface|surface.activation_generation)),
+            host_focus: host_keyboard_focus(view),
+            activation: surface.and_then(|id| {
+                owner
+                    .core
+                    .find_surface_by_id(id)
+                    .and_then(|surface| surface.activation_generation)
+            }),
         })
     }
 
@@ -213,8 +225,12 @@ impl crate::app::App {
         let Some(owner) = self.engines.get(target.engine) else {
             return false;
         };
-        if matches!(event,winit::event::WindowEvent::KeyboardInput {..}|winit::event::WindowEvent::Ime(_)) && target.host_focus.is_some() {
-            return host_keyboard_focus(view)==target.host_focus;
+        if matches!(
+            event,
+            winit::event::WindowEvent::KeyboardInput { .. } | winit::event::WindowEvent::Ime(_)
+        ) && target.host_focus.is_some()
+        {
+            return host_keyboard_focus(view) == target.host_focus;
         }
         if view.state.focused_surface_id(owner.core) != target.surface {
             return false;
@@ -250,10 +266,12 @@ impl crate::app::App {
                 | winit::event::WindowEvent::Touch(_)
                 | winit::event::WindowEvent::DroppedFile(_)
         );
-        if target
-            .surface
-            .and_then(|id| owner.core.find_surface_by_id(id).and_then(|surface|surface.activation_generation))
-            != target.activation
+        if target.surface.and_then(|id| {
+            owner
+                .core
+                .find_surface_by_id(id)
+                .and_then(|surface| surface.activation_generation)
+        }) != target.activation
         {
             return false;
         }
@@ -330,8 +348,14 @@ impl crate::app::App {
         }
         let rejected = std::mem::take(&mut self.publication_inputs.rejected);
         if rejected > 0 {
-            let windows=if std::mem::take(&mut self.publication_inputs.reset_all_gestures) {self.view.views.keys().copied().collect()} else {std::mem::take(&mut self.publication_inputs.rejected_windows)};
-            for window in windows {self.cancel_publication_gesture(window);}
+            let windows = if std::mem::take(&mut self.publication_inputs.reset_all_gestures) {
+                self.view.views.keys().copied().collect()
+            } else {
+                std::mem::take(&mut self.publication_inputs.rejected_windows)
+            };
+            for window in windows {
+                self.cancel_publication_gesture(window);
+            }
             for view in self.view.views.values_mut() {
                 // An overflow cannot leave a modifier latched from a discarded release event.
                 view.base_mut().state.modifiers = winit::keyboard::ModifiersState::empty();
@@ -378,10 +402,21 @@ impl crate::app::App {
     }
 }
 
-#[cfg(feature="gui")]
-fn host_keyboard_focus(view:&crate::view::main::MainView)->Option<(Option<crate::model::popup_kind::PopupId>,Option<egui::Id>)> {
-    (view.state.popups.has_focused() || view.state.has_input_dialog_open() || view.state.plugin_popup_open || view.state.tutorial.keyboard_focus).then(||(
-        view.state.popups.focused_dismissal_target().map(|(id,_)|id),
-        view.base.gpu.egui_ctx.memory(|memory|memory.focused()),
-    ))
+#[cfg(feature = "gui")]
+fn host_keyboard_focus(
+    view: &crate::view::main::MainView,
+) -> Option<(Option<crate::model::popup_kind::PopupId>, Option<egui::Id>)> {
+    (view.state.popups.has_focused()
+        || view.state.has_input_dialog_open()
+        || view.state.plugin_popup_open
+        || view.state.tutorial.keyboard_focus)
+        .then(|| {
+            (
+                view.state
+                    .popups
+                    .focused_dismissal_target()
+                    .map(|(id, _)| id),
+                view.base.gpu.egui_ctx.memory(|memory| memory.focused()),
+            )
+        })
 }

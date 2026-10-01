@@ -487,7 +487,9 @@ impl SshCancel {
     /// 시도도 spawn 되지 않게 플래그를 세운다. 여러 번 불러도 안전하다.
     /// Mark cancellation without waiting on the child. The owning probe observes this flag
     /// and performs kill/reap before its worker returns. This is not a completion receipt.
-    pub fn request_cancel(&self) {self.inner.cancelled.store(true, Ordering::SeqCst);}
+    pub fn request_cancel(&self) {
+        self.inner.cancelled.store(true, Ordering::SeqCst);
+    }
 
     pub fn cancel(&self) {
         self.request_cancel();
@@ -680,7 +682,9 @@ fn wait_with_timeout(owner: &mut ChildOwner, budget: Duration) -> bool {
     let deadline = Instant::now() + budget;
     let mut nap = Duration::from_millis(5);
     loop {
-        if owner.is_cancelled() {return true;}
+        if owner.is_cancelled() {
+            return true;
+        }
         match owner.try_exited() {
             ChildPoll::Exited | ChildPoll::Taken => return true,
             ChildPoll::Running => {}
@@ -1154,8 +1158,10 @@ impl SshTunnel {
 
     /// Terminate this exact tunnel and observe its child's wait result. Hosts call this on
     /// their retirement worker; the synchronous Drop contract used by CLI remains unchanged.
-    pub fn terminate_and_reap(&mut self)->std::io::Result<std::process::ExitStatus> {
-        if let Err(error)=self.child.kill() {tracing::debug!(%error,"SSH tunnel kill returned before wait");}
+    pub fn terminate_and_reap(&mut self) -> std::io::Result<std::process::ExitStatus> {
+        if let Err(error) = self.child.kill() {
+            tracing::debug!(%error,"SSH tunnel kill returned before wait");
+        }
         self.child.wait()
     }
 

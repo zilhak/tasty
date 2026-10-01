@@ -77,7 +77,9 @@ pub fn core_canonical(engine: &CoreState) -> Canonical {
 }
 
 /// 저장 형식이 정하는 kind. 대기 중인 terminal은 terminal, plugin 대기는 기다리는 kind다.
-pub fn core_kind(surface:&SurfaceDescriptor)->String {surface.kind.clone()}
+pub fn core_kind(surface: &SurfaceDescriptor) -> String {
+    surface.kind.clone()
+}
 
 fn surface_id(surface: &SurfaceDescriptor, defects: &mut Vec<String>) -> u32 {
     surface.surface_id().unwrap_or_else(|| {

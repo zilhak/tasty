@@ -36,7 +36,10 @@ const STATUS_SELECT_SALT: &str = "dag_list_status";
 const STATUS_SELECT_OVERLAY_KEY: &str = "dag_list_status";
 
 /// 배율이 적용된 Theme 토큰으로 팝업 크기를 계산한다.
-pub fn dag_list_sizer(_state: &MainViewState, _engine: &crate::runtime::engine_read::EngineRead<'_>) -> egui::Vec2 {
+pub fn dag_list_sizer(
+    _state: &MainViewState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> egui::Vec2 {
     let th = crate::theme::theme();
     egui::vec2(th.dag_popup_width().value(), th.dag_popup_height().value())
 }
@@ -110,9 +113,13 @@ impl DagListState {
             return;
         }
         self.last_list_poll = Some(now);
-        match engine.dag_list(
-            &crate::app::task_completion::dag_workspaces(engine.workspaces().into_iter().map(|workspace|workspace.id),None),
-        ) {
+        match engine.dag_list(&crate::app::task_completion::dag_workspaces(
+            engine
+                .workspaces()
+                .into_iter()
+                .map(|workspace| workspace.id),
+            None,
+        )) {
             Ok(summaries) => {
                 self.rows = summaries
                     .into_iter()

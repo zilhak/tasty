@@ -2,8 +2,8 @@
 
 use crate::app::App;
 use crate::app::window_access::{DispatchCtx, engines_mut};
-use crate::runtime::engine_access::EngineMut;
 use crate::ipc;
+use crate::runtime::engine_access::EngineMut;
 use crate::runtime::engine_session::EngineId;
 
 enum IntentClass {
@@ -37,22 +37,33 @@ impl App {
 
     /// A projection of pending popup records, refreshed after every source of store changes.
     pub(crate) fn refresh_approval_presentations(&mut self) {
-        let store=&self.services.approval_store;
+        let store = &self.services.approval_store;
         for view in self.view.views.values_mut() {
-            let Some(main)=view.as_main_mut() else {continue;};
-            let dialogs=&mut main.state.dialogs;
-            let mut changed=false;
+            let Some(main) = view.as_main_mut() else {
+                continue;
+            };
+            let dialogs = &mut main.state.dialogs;
+            let mut changed = false;
             for id in &dialogs.pending_approval_ids {
                 match store.get(id) {
-                    Some(record)=>{
-                        changed|=dialogs.approval_records.get(id).is_none_or(|old|old.state!=record.state);
-                        dialogs.approval_records.insert(id.clone(),record);
-                    },
-                    None=>{changed|=dialogs.approval_records.remove(id).is_some();},
+                    Some(record) => {
+                        changed |= dialogs
+                            .approval_records
+                            .get(id)
+                            .is_none_or(|old| old.state != record.state);
+                        dialogs.approval_records.insert(id.clone(), record);
+                    }
+                    None => {
+                        changed |= dialogs.approval_records.remove(id).is_some();
+                    }
                 }
             }
-            dialogs.approval_records.retain(|id,_|dialogs.pending_approval_ids.contains(id));
-            if changed {main.mark_dirty();}
+            dialogs
+                .approval_records
+                .retain(|id, _| dialogs.pending_approval_ids.contains(id));
+            if changed {
+                main.mark_dirty();
+            }
         }
     }
 
@@ -109,9 +120,14 @@ impl App {
                         intent,
                     )),
                     IntentClass::Appearance => *appearance_changed = true,
-                    IntentClass::Immediate => {
-                        Self::dispatch_one_intent(core, state, &mut engine, &intent,self.plugin_manager.as_ref(),view.as_deref())
-                    }
+                    IntentClass::Immediate => Self::dispatch_one_intent(
+                        core,
+                        state,
+                        &mut engine,
+                        &intent,
+                        self.plugin_manager.as_ref(),
+                        view.as_deref(),
+                    ),
                 }
             }
             if let Some(view) = view {
@@ -124,8 +140,21 @@ impl App {
         use crate::intent::{Intent, UiIntent};
         if matches!(
             intent.body,
-            Intent::RemoteBrowser(_)|Intent::PatchSettings(_)|Intent::ForwardMirror {..}|Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_)
-                |Intent::ApplyPreset {..}|Intent::CapturePreset {..}|Intent::RestoreClosedItem|Intent::NewWorkspace {..}|Intent::NewTab {..}|Intent::NewTabWithFollowup {..}|Intent::SplitPane {..}|Intent::SplitSurface {..}|Intent::ConvertSurface {..}
+            Intent::RemoteBrowser(_)
+                | Intent::PatchSettings(_)
+                | Intent::ForwardMirror { .. }
+                | Intent::Domain(_)
+                | Intent::DirectRename(_)
+                | Intent::CommitDivider(_)
+                | Intent::ApplyPreset { .. }
+                | Intent::CapturePreset { .. }
+                | Intent::RestoreClosedItem
+                | Intent::NewWorkspace { .. }
+                | Intent::NewTab { .. }
+                | Intent::NewTabWithFollowup { .. }
+                | Intent::SplitPane { .. }
+                | Intent::SplitSurface { .. }
+                | Intent::ConvertSurface { .. }
         ) {
             IntentClass::Domain
         } else if matches!(intent.body, Intent::Ui(UiIntent::AppearanceChanged)) {
@@ -183,30 +212,51 @@ impl App {
         state: &mut crate::state::MainViewState,
         engine: &mut EngineMut<'_>,
         intent: &crate::intent::DispatchedIntent,
-        plugins:Option<&crate::plugin::PluginManager>,
-        view:Option<&crate::view::ViewBase>,
+        plugins: Option<&crate::plugin::PluginManager>,
+        view: Option<&crate::view::ViewBase>,
     ) {
         use crate::intent::Intent;
         match &intent.body {
-            Intent::MouseCaptureHint {target,foreground_generation,view:origin}=> {
-                if view.is_some_and(|view|view.state.matches_identity(origin))
-                    && let Some(surface)=target.take_mouse_capture_hint(engine,*foreground_generation) {
-                    state.banners.push(crate::adapters::ui::BannerState::persistent(
-                        crate::adapters::ui::banner::defs::BANNER_MOUSE_CAPTURE,
-                        crate::adapters::ui::BannerScope::Surface(surface),
-                    ).with_origin_generation(*foreground_generation));
+            Intent::MouseCaptureHint {
+                target,
+                foreground_generation,
+                view: origin,
+            } => {
+                if view.is_some_and(|view| view.state.matches_identity(origin))
+                    && let Some(surface) =
+                        target.take_mouse_capture_hint(engine, *foreground_generation)
+                {
+                    state.banners.push(
+                        crate::adapters::ui::BannerState::persistent(
+                            crate::adapters::ui::banner::defs::BANNER_MOUSE_CAPTURE,
+                            crate::adapters::ui::BannerScope::Surface(surface),
+                        )
+                        .with_origin_generation(*foreground_generation),
+                    );
                 }
-            },
-            Intent::Engine(action)=>action.apply(engine,plugins),
-            Intent::RespondApproval {request_id,choice,comment} => {
-                match core.respond_approval(request_id,choice.clone(),tasty_approval::Responder::User,comment.clone()) {
-                    Ok(change)=>{
-                        crate::ipc::handler::approval::persist_record(core,&change.record);
-                        state.dialogs.approval_records.insert(request_id.clone(),change.record);
-                    },
-                    Err(error)=>tracing::warn!("approval response failed: {error}"),
+            }
+            Intent::Engine(action) => action.apply(engine, plugins),
+            Intent::RespondApproval {
+                request_id,
+                choice,
+                comment,
+            } => {
+                match core.respond_approval(
+                    request_id,
+                    choice.clone(),
+                    tasty_approval::Responder::User,
+                    comment.clone(),
+                ) {
+                    Ok(change) => {
+                        crate::ipc::handler::approval::persist_record(core, &change.record);
+                        state
+                            .dialogs
+                            .approval_records
+                            .insert(request_id.clone(), change.record);
+                    }
+                    Err(error) => tracing::warn!("approval response failed: {error}"),
                 }
-                state.dialogs.approval_submitting=None;
+                state.dialogs.approval_submitting = None;
             }
             Intent::Ui(_) => {
                 crate::intent::popup::handle(state, engine, intent);
@@ -214,11 +264,24 @@ impl App {
             Intent::ApplyPreset { .. } | Intent::SavePreset { .. } => {
                 crate::intent::preset::handle(core, state, engine, intent);
             }
-        Intent::SplitSurface {..}|Intent::ConvertSurface {..}|Intent::NewTab {..}|Intent::NewTabWithFollowup {..}|Intent::SplitPane {..}|Intent::NewWorkspace {..}=>tracing::error!("structural intent bypassed journal admission"),
+            Intent::SplitSurface { .. }
+            | Intent::ConvertSurface { .. }
+            | Intent::NewTab { .. }
+            | Intent::NewTabWithFollowup { .. }
+            | Intent::SplitPane { .. }
+            | Intent::NewWorkspace { .. } => {
+                tracing::error!("structural intent bypassed journal admission")
+            }
             Intent::RestoreClosedItem => {
                 tracing::error!("undo intent bypassed journal admission");
             }
-            Intent::CapturePreset {..}|Intent::RemoteBrowser(_)|Intent::PatchSettings(_)|Intent::ForwardMirror {..}|Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_) => {
+            Intent::CapturePreset { .. }
+            | Intent::RemoteBrowser(_)
+            | Intent::PatchSettings(_)
+            | Intent::ForwardMirror { .. }
+            | Intent::Domain(_)
+            | Intent::DirectRename(_)
+            | Intent::CommitDivider(_) => {
                 tracing::error!(
                     "dispatch_one_intent reached Intent::Domain (should be handled in domain_batch)"
                 );
@@ -276,8 +339,12 @@ impl App {
         let owner_in_parked =
             named.and_then(|rid| engines_mut!(self).parked_session_with_resource(rid));
         if let Some((state, mut engine)) = owner_in_parked {
-            let response =
-                ipc::handler::handle_checked_request(&mut self.services, state, &mut engine, checked);
+            let response = ipc::handler::handle_checked_request(
+                &mut self.services,
+                state,
+                &mut engine,
+                checked,
+            );
             self.dispatch_pending_intents();
             return response;
         }
@@ -289,8 +356,12 @@ impl App {
             );
         }
         if let Some((state, mut engine)) = engines_mut!(self).first_parked_session() {
-            let response =
-                ipc::handler::handle_checked_request(&mut self.services, state, &mut engine, checked);
+            let response = ipc::handler::handle_checked_request(
+                &mut self.services,
+                state,
+                &mut engine,
+                checked,
+            );
             self.dispatch_pending_intents();
             return response;
         }

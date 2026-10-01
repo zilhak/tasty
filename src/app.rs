@@ -2,17 +2,19 @@
 
 /// GUI와 헤드리스에서 공통으로 이벤트 큐를 비운다.
 pub(crate) mod agent_events;
+pub(crate) mod attach_activation;
 #[cfg(feature = "gui")]
 pub(crate) mod attach_client;
 #[cfg(feature = "gui")]
 pub(crate) mod attach_poll;
-pub(crate) mod creation_intent;
 #[cfg(feature = "gui")]
 pub(crate) mod auto_attach;
 #[cfg(feature = "gui")]
 pub(crate) mod boot_machine;
 #[cfg(feature = "gui")]
 pub(crate) mod busy;
+pub(crate) mod command;
+pub(crate) mod creation_intent;
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(crate) mod debug_info;
 #[cfg(feature = "gui")]
@@ -39,9 +41,6 @@ pub(crate) mod image_upload;
 pub(crate) mod ipc;
 pub(crate) mod ipc_round;
 pub(crate) mod journal;
-pub(crate) mod services;
-pub(crate) mod state;
-pub(crate) mod command;
 #[cfg(feature = "gui")]
 pub(crate) mod modal;
 #[cfg(feature = "gui")]
@@ -49,18 +48,19 @@ pub(crate) mod persistence;
 #[cfg(feature = "gui")]
 pub(crate) mod plugin_glue;
 pub(crate) mod process_exit;
-pub(crate) mod attach_activation;
 pub(crate) mod publication_input;
 #[cfg(feature = "gui")]
 pub(crate) mod request_owner;
 #[cfg(feature = "gui")]
 pub(crate) mod screenshot_capture;
+pub(crate) mod services;
 #[cfg(feature = "gui")]
 pub(crate) mod shutdown_cascade;
 #[cfg(feature = "gui")]
 pub(crate) mod shutdown_machine;
 #[cfg(feature = "gui")]
 pub(crate) mod shutdown_trace;
+pub(crate) mod state;
 #[cfg(feature = "gui")]
 pub(crate) mod sweeps;
 pub(crate) mod timer_report;
@@ -111,14 +111,14 @@ impl std::error::Error for NoGpuAdapter {}
 
 pub(crate) struct App {
     pub(crate) journal: journal::JournalApplication,
-    #[cfg(feature="gui")]
-    pub(crate) settings_edit_owner:Option<settings_edit::SettingsEditOwner>,
-    #[cfg(feature="gui")]
-    pub(crate) port_scans:port_scans::PortScans,
-    pub(crate) pending_server_attaches:Vec<attach_activation::PendingAttach>,
+    #[cfg(feature = "gui")]
+    pub(crate) settings_edit_owner: Option<settings_edit::SettingsEditOwner>,
+    #[cfg(feature = "gui")]
+    pub(crate) port_scans: port_scans::PortScans,
+    pub(crate) pending_server_attaches: Vec<attach_activation::PendingAttach>,
     pub(crate) publication_inputs: publication_input::PublicationInputs,
     pub(crate) services: AppServices,
-    pub(crate) state:state::AppState,
+    pub(crate) state: state::AppState,
     pub(crate) hub: Hub,
     /// IPC 연결 스레드가 수신자를 등록하고 메인 루프가 출력을 전송한다.
     pub(crate) stream_hub: tasty_ipc::stream_hub::StreamHub,
@@ -178,12 +178,12 @@ pub(crate) struct App {
     /// 그 전에 닫힌 창은 닫기 경로에서 제거한다.
     #[cfg(feature = "gui")]
     pub(crate) pending_focus_hint_clear: std::collections::HashSet<WindowId>,
-    #[cfg(feature="gui")]
-    pub(crate) remote:tasty_remote::outbound::Remote,
+    #[cfg(feature = "gui")]
+    pub(crate) remote: tasty_remote::outbound::Remote,
     /// 스크린샷→클립보드 캡처 워커 스레드 → 메인 루프 결과 채널.
     #[cfg(feature = "gui")]
-    pub(crate) screenshot_workers:screenshot_capture::ScreenshotWorkers,
-    #[cfg(feature="gui")]
+    pub(crate) screenshot_workers: screenshot_capture::ScreenshotWorkers,
+    #[cfg(feature = "gui")]
     pub(crate) screenshot_capture_tx:
         std::sync::mpsc::Sender<screenshot_capture::ScreenshotCaptureOutcome>,
     #[cfg(feature = "gui")]
@@ -241,10 +241,17 @@ impl App {
             })
         })?;
         Ok(Self {
-            journal,pending_server_attaches:Vec::new(),settings_edit_owner:None,port_scans:Default::default(),
+            journal,
+            pending_server_attaches: Vec::new(),
+            settings_edit_owner: None,
+            port_scans: Default::default(),
             publication_inputs: Default::default(),
             services: crate::boot::wiring::build_production_core(memory)?,
-            state:state::AppState {#[cfg(debug_assertions)] input_simulation_enabled,..Default::default()},
+            state: state::AppState {
+                #[cfg(debug_assertions)]
+                input_simulation_enabled,
+                ..Default::default()
+            },
             hub: Hub::new(port_file),
             stream_hub: tasty_ipc::stream_hub::StreamHub::new(),
             stream_inbound_tx,
@@ -274,8 +281,8 @@ impl App {
                 })
             }),
             pending_focus_hint_clear: std::collections::HashSet::new(),
-            remote:tasty_remote::outbound::Remote::new(),
-            screenshot_workers:Default::default(),
+            remote: tasty_remote::outbound::Remote::new(),
+            screenshot_workers: Default::default(),
             screenshot_capture_tx,
             screenshot_capture_rx,
             image_upload_tx,
@@ -301,10 +308,11 @@ impl App {
         let mut timers = tasty_timer::TimerHub::new();
         timers::register_steady_state(&mut timers, std::time::Instant::now());
         Ok(Self {
-            journal: journal::JournalApplication::new(journal_wake)?,pending_server_attaches:Vec::new(),
+            journal: journal::JournalApplication::new(journal_wake)?,
+            pending_server_attaches: Vec::new(),
             publication_inputs: Default::default(),
             services: crate::boot::wiring::build_production_core_headless(memory)?,
-            state:state::AppState::default(),
+            state: state::AppState::default(),
             hub: Hub::new(port_file),
             stream_hub: tasty_ipc::stream_hub::StreamHub::new(),
             stream_inbound_tx,
@@ -398,47 +406,48 @@ pub(crate) mod task_completion;
 
 pub(crate) mod engine_action;
 
-#[cfg(feature="gui")]
+#[cfg(feature = "gui")]
 mod view_frame;
 
-#[cfg(feature="gui")]
+#[cfg(feature = "gui")]
 mod view_mesh;
 
-#[cfg(feature="gui")]
+#[cfg(feature = "gui")]
 mod explorer_action;
 
 pub(crate) mod telemetry;
 
-#[cfg(feature="gui")]
+#[cfg(feature = "gui")]
 pub(crate) mod settings_edit;
 
-#[cfg(feature="gui")]
+#[cfg(feature = "gui")]
 pub(crate) mod remote_browser;
 
-#[cfg(feature="gui")]
+#[cfg(feature = "gui")]
 pub(crate) mod plugin_display;
 
-#[cfg(feature="gui")]
-pub(crate) mod settings_files;
-#[cfg(feature="gui")]
+#[cfg(feature = "gui")]
 mod preset_editor;
+#[cfg(feature = "gui")]
+pub(crate) mod settings_files;
 
 mod preset_capture;
 
-#[cfg(feature="gui")]
+#[cfg(feature = "gui")]
 mod port_scans;
 
-#[cfg(feature="gui")]
+#[cfg(feature = "gui")]
 pub(crate) mod html_runtime;
-#[cfg(feature="gui")]
+#[cfg(feature = "gui")]
 pub(crate) mod webview_sync;
 
-#[cfg(feature="gui")]
+#[cfg(feature = "gui")]
 pub(crate) mod remote_tool_files;
 
 impl App {
     /// Reap only workers whose stop has been requested; never wait for a running thread here.
-    pub(crate) fn runner_stop_poll_deadline(&self)->Option<std::time::Instant> {
-        (self.services.tasks.poll_runner_stops()!=0).then(||std::time::Instant::now()+std::time::Duration::from_millis(10))
+    pub(crate) fn runner_stop_poll_deadline(&self) -> Option<std::time::Instant> {
+        (self.services.tasks.poll_runner_stops() != 0)
+            .then(|| std::time::Instant::now() + std::time::Duration::from_millis(10))
     }
 }

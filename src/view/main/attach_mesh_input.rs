@@ -40,7 +40,8 @@ impl MainView {
         {
             for r in regions {
                 if r.rect.contains(PhysicalPx(x), PhysicalPx(y))
-                    && engine.find_surface_by_id(r.id)
+                    && engine
+                        .find_surface_by_id(r.id)
                         .is_some_and(|surface| surface.attach_mesh().is_some())
                 {
                     return Some((r.id, r.rect));
@@ -57,8 +58,7 @@ impl MainView {
     ) -> Option<u32> {
         let sid = self.state.focused_surface_id(engine)?;
         let surface = engine.find_surface_by_id(sid)?;
-        surface.attach_mesh()
-            .map(|_| sid)
+        surface.attach_mesh().map(|_| sid)
     }
 
     /// 포인터 버튼 누름/뗌을 attach mesh surface 에 누적.
@@ -150,7 +150,10 @@ impl MainView {
     }
 
     /// 변경된 영역·테마·포커스와 누적 입력을 App의 네트워크 전송 큐에 넣는다.
-    pub(super) fn forward_attach_mesh_context(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>) {
+    pub(super) fn forward_attach_mesh_context(
+        &mut self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+    ) {
         let terminal_rect = self.compute_terminal_rect();
         let ppp = self.base.gpu.scale_factor();
         let focused = self.state.focused_surface_id(&*engine);
@@ -163,7 +166,8 @@ impl MainView {
                 .surface_regions(&*engine, terminal_rect, self.base.gpu.scale_factor())
         {
             for r in regions {
-                if engine.find_surface_by_id(r.id)
+                if engine
+                    .find_surface_by_id(r.id)
                     .is_some_and(|surface| surface.attach_mesh().is_some())
                 {
                     targets.push((r.id, r.rect));
@@ -187,34 +191,44 @@ impl MainView {
             let focus_changed = st.last_focused != Some(is_focused);
             let has_input = !st.events.is_empty();
 
-            let mut context=None;let mut input=None;
+            let mut context = None;
+            let mut input = None;
             if geom_changed || theme_changed || focus_changed {
                 st.last_geom = Some(geom);
                 st.last_theme = Some(current_theme.clone());
                 st.last_focused = Some(is_focused);
-                context=Some(AttachMeshContextForward {
-                        width_px: w,
-                        height_px: h,
-                        pixels_per_point: ppp,
-                        theme: Some(current_theme.clone()),
-                        focused: is_focused,
-                    },
-                );
+                context = Some(AttachMeshContextForward {
+                    width_px: w,
+                    height_px: h,
+                    pixels_per_point: ppp,
+                    theme: Some(current_theme.clone()),
+                    focused: is_focused,
+                });
             }
 
             if has_input {
                 let events = std::mem::take(&mut st.events);
-                input=Some(RawInputWire {
-                        time: None,
-                        focused: is_focused,
-                        modifiers,
-                        events,
-                    },
-                );
+                input = Some(RawInputWire {
+                    time: None,
+                    focused: is_focused,
+                    modifiers,
+                    events,
+                });
             }
             if context.is_some() || input.is_some() {
-                if let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,sid) {
-                    self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::RemoteMesh {target,context,input}).from_user_shortcut("remote-mesh-frame"));
+                if let Some(target) =
+                    crate::app::engine_action::SurfaceBinding::capture(engine, sid)
+                {
+                    self.state.dispatch_intent(
+                        crate::intent::Intent::Engine(
+                            crate::app::engine_action::EngineAction::RemoteMesh {
+                                target,
+                                context,
+                                input,
+                            },
+                        )
+                        .from_user_shortcut("remote-mesh-frame"),
+                    );
                 }
             }
         }

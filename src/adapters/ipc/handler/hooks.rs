@@ -72,7 +72,10 @@ pub(crate) fn handle_hook_set(
     // command-completed는 OSC 133 셸 통합이 필요하다. 아직 prompt boundary가 없으면 경고한다.
     // 막 시작한 셸일 수도 있으므로 훅 등록 자체는 거절하지 않는다.
     if matches!(event, HookEvent::CommandCompleted(_))
-        && !engine.live.shell_integration_boundary_seen.contains(&surface_id)
+        && !engine
+            .live
+            .shell_integration_boundary_seen
+            .contains(&surface_id)
     {
         tracing::warn!(
             surface_id,

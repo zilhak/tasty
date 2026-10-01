@@ -100,7 +100,12 @@ pub fn draw_menu(
     );
 
     if suppress_resp.clicked() {
-        state.dispatch_intent(crate::intent::Intent::PatchSettings(crate::app::engine_action::SettingsPatch::SuppressMouseHint(app_name.clone())).from_user_context_menu());
+        state.dispatch_intent(
+            crate::intent::Intent::PatchSettings(
+                crate::app::engine_action::SettingsPatch::SuppressMouseHint(app_name.clone()),
+            )
+            .from_user_context_menu(),
+        );
         state.banners.close_shown_if_id(
             &BannerScope::Surface(surface_id),
             crate::adapters::ui::banner::defs::BANNER_MOUSE_CAPTURE,
@@ -108,7 +113,12 @@ pub fn draw_menu(
         return PopupAction::Close;
     }
     if disable_resp.clicked() {
-        state.dispatch_intent(crate::intent::Intent::PatchSettings(crate::app::engine_action::SettingsPatch::DisableMouseCapture(app_name)).from_user_context_menu());
+        state.dispatch_intent(
+            crate::intent::Intent::PatchSettings(
+                crate::app::engine_action::SettingsPatch::DisableMouseCapture(app_name),
+            )
+            .from_user_context_menu(),
+        );
         return PopupAction::Close;
     }
     PopupAction::None

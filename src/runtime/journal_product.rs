@@ -22,8 +22,11 @@ use tasty_event_store::{CommandKey, CommandRecord, IdRange};
 use super::command_executor::Executed;
 pub(crate) use binding::{BoundEngine, EngineBinding, EngineSelection};
 pub(crate) use decider::StreamCommand;
-pub(crate) use preparation::{AdoptRecipe, ChildRecipe,ClaimedPreparation,ClaimedRetirement,EffectLease, PreparationInput, ShellRecipe};
-pub(crate) use response::{CompletionView,ResponsePlan, ResponseProgress};
+pub(crate) use preparation::{
+    AdoptRecipe, ChildRecipe, ClaimedPreparation, ClaimedRetirement, EffectLease, PreparationInput,
+    ShellRecipe,
+};
+pub(crate) use response::{CompletionView, ResponsePlan, ResponseProgress};
 
 const QUEUE_CAPACITY: usize = 64;
 const MAX_REQUEST_BYTES: usize =
@@ -41,16 +44,52 @@ pub(crate) struct Admission {
 
 #[derive(Debug)]
 pub(crate) enum Work {
-    ReconcilePreparation {lease:EffectLease,evidence:Vec<u8>,discarded:Option<String>,view:CompletionView},
-    ReconcileRetirement {lease:EffectLease,evidence:Vec<u8>},
-    ClaimForward {stream:String,operation:tasty_core::OperationId},
-    ForwardFinished {lease:EffectLease,outcome:tasty_core::OperationOutcome},
-    PrepareSubtree {binding:EngineBinding,draft:crate::runtime::preset_plan::AssemblyDraft},
-    PrepareUndo {binding:EngineBinding,target_pane:Option<u32>,scope:Option<u32>,shell:ShellRecipe},
-    ReserveExecutionIds {binding:EngineBinding,kinds:Vec<(IdKind,u32)>},
-    CaptureClosed {view:CompletionView,binding:EngineBinding,target:tasty_core::CloseTarget,display_name:Option<String>,surfaces:Vec<crate::runtime::surface_capture::CapturedSurface>},
-    Capture {binding:EngineBinding,surfaces:Vec<crate::runtime::surface_capture::CapturedSurface>},
-    CapturePreset {draft:crate::intent::preset_capture::PresetCaptureDraft},
+    ReconcilePreparation {
+        lease: EffectLease,
+        evidence: Vec<u8>,
+        discarded: Option<String>,
+        view: CompletionView,
+    },
+    ReconcileRetirement {
+        lease: EffectLease,
+        evidence: Vec<u8>,
+    },
+    ClaimForward {
+        stream: String,
+        operation: tasty_core::OperationId,
+    },
+    ForwardFinished {
+        lease: EffectLease,
+        outcome: tasty_core::OperationOutcome,
+    },
+    PrepareSubtree {
+        binding: EngineBinding,
+        draft: crate::runtime::preset_plan::AssemblyDraft,
+    },
+    PrepareUndo {
+        binding: EngineBinding,
+        target_pane: Option<u32>,
+        scope: Option<u32>,
+        shell: ShellRecipe,
+    },
+    ReserveExecutionIds {
+        binding: EngineBinding,
+        kinds: Vec<(IdKind, u32)>,
+    },
+    CaptureClosed {
+        view: CompletionView,
+        binding: EngineBinding,
+        target: tasty_core::CloseTarget,
+        display_name: Option<String>,
+        surfaces: Vec<crate::runtime::surface_capture::CapturedSurface>,
+    },
+    Capture {
+        binding: EngineBinding,
+        surfaces: Vec<crate::runtime::surface_capture::CapturedSurface>,
+    },
+    CapturePreset {
+        draft: crate::intent::preset_capture::PresetCaptureDraft,
+    },
     RetireEngine(EngineBinding),
     OpenEngine {
         selection: EngineSelection,
@@ -71,8 +110,14 @@ pub(crate) enum Work {
     ReadPayload(tasty_core::DataRef),
     PutPreparation(PreparationInput),
     PutPayload(Vec<u8>),
-    ClaimRetirement {stream:String,operation:tasty_core::OperationId},
-    RetirementFinished {lease:EffectLease,outcome:tasty_core::OperationOutcome},
+    ClaimRetirement {
+        stream: String,
+        operation: tasty_core::OperationId,
+    },
+    RetirementFinished {
+        lease: EffectLease,
+        outcome: tasty_core::OperationOutcome,
+    },
     ClaimPreparation {
         stream: String,
         operation: tasty_core::OperationId,
@@ -87,9 +132,12 @@ pub(crate) enum Work {
     },
     CleanupFinished {
         lease: EffectLease,
-        view:CompletionView,
+        view: CompletionView,
     },
-    PreparationUncertain {lease:EffectLease,reason:String},
+    PreparationUncertain {
+        lease: EffectLease,
+        reason: String,
+    },
     CancelAdmission,
 }
 
@@ -101,10 +149,24 @@ pub(crate) struct Request {
 
 #[derive(Debug, Clone)]
 pub(crate) enum ResultValue {
-    CapturedPreset {preset:crate::intent::ClonedPreset,base_name:String},
-    RecoveryRequired {command_id:String,reason:String,replay:bool},
-    ForwardClaimed {lease:EffectLease,payload:Vec<u8>},
-    AssemblyResolved {stream:String,input:Option<tasty_core::DataRef>,plan:Option<tasty_core::CreationAssembly>},
+    CapturedPreset {
+        preset: crate::intent::ClonedPreset,
+        base_name: String,
+    },
+    RecoveryRequired {
+        command_id: String,
+        reason: String,
+        replay: bool,
+    },
+    ForwardClaimed {
+        lease: EffectLease,
+        payload: Vec<u8>,
+    },
+    AssemblyResolved {
+        stream: String,
+        input: Option<tasty_core::DataRef>,
+        plan: Option<tasty_core::CreationAssembly>,
+    },
     #[cfg(feature = "gui")]
     ViewSaved,
     Bound(BoundEngine),
@@ -116,14 +178,20 @@ pub(crate) enum ResultValue {
     Command(CommandRecord),
     Executed(Executed),
     Reserved(Vec<IdRange>),
-    ExecutionIds {binding:EngineBinding,ranges:Vec<IdRange>},
+    ExecutionIds {
+        binding: EngineBinding,
+        ranges: Vec<IdRange>,
+    },
     Engine(JournalModel),
     Payload {
         reference: tasty_core::DataRef,
         bytes: Vec<u8>,
     },
     InputStored(tasty_core::DataRef),
-    ClosedCaptured {input:tasty_core::DataRef,undo:Option<tasty_core::UndoCapture>},
+    ClosedCaptured {
+        input: tasty_core::DataRef,
+        undo: Option<tasty_core::UndoCapture>,
+    },
     Claimed(ClaimedPreparation),
     RetirementClaimed(ClaimedRetirement),
     Cancelled,
@@ -198,8 +266,8 @@ impl JournalWorker {
         let (acknowledgements, acks) = mpsc::sync_channel(1);
         let closed = Arc::new(AtomicBool::new(false));
         let stopped = closed.clone();
-        let readers=Arc::new(super::journal_payload::PayloadReaders::default());
-        let worker_readers=readers.clone();
+        let readers = Arc::new(super::journal_payload::PayloadReaders::default());
+        let worker_readers = readers.clone();
         #[cfg(test)]
         let fail_next_publication = Arc::new(AtomicBool::new(false));
         #[cfg(test)]
@@ -235,8 +303,13 @@ impl JournalWorker {
 
     /// Retain references synchronously with draft freezing, before another projection can ACK.
     /// The storage worker holds the same readers lock while transferring snapshot pins and GC.
-    pub(crate) fn retain_payloads(&self,refs:Vec<tasty_core::DataRef>)->Result<super::journal_payload::PayloadReadLease,String> {
-        if self.closed.load(Ordering::Acquire) {return Err("structure journal stopped".into());}
+    pub(crate) fn retain_payloads(
+        &self,
+        refs: Vec<tasty_core::DataRef>,
+    ) -> Result<super::journal_payload::PayloadReadLease, String> {
+        if self.closed.load(Ordering::Acquire) {
+            return Err("structure journal stopped".into());
+        }
         self.readers.lease(refs)
     }
 
@@ -339,14 +412,53 @@ fn request_payload_too_large(work: &Work) -> bool {
 
 pub(crate) fn request_size(work: &Work) -> usize {
     match work {
-        Work::ReconcilePreparation {lease,evidence,discarded,view}=>serde_json::to_vec(&(lease,view)).map_or(usize::MAX,|bytes|bytes.len()).saturating_add(evidence.capacity()).saturating_add(discarded.as_ref().map_or(0,String::capacity)),
-        Work::CapturePreset {draft}=>draft.weight(),
-        Work::ReconcileRetirement {lease,evidence}=>serde_json::to_vec(lease).map_or(usize::MAX,|bytes|bytes.len()).saturating_add(evidence.capacity()),
-        Work::PrepareSubtree {binding,draft}=>serde_json::to_vec(&(binding,draft)).map_or(usize::MAX,|bytes|bytes.len()),
-        Work::PrepareUndo {binding,target_pane,scope,shell}=>serde_json::to_vec(&(binding,target_pane,scope,shell)).map_or(usize::MAX,|bytes|bytes.len()),
-        Work::ReserveExecutionIds {binding,kinds}=>binding.stream.len()+binding.journal_id.len()+kinds.capacity()*std::mem::size_of::<(IdKind,u32)>(),
-        Work::CaptureClosed {view,binding,surfaces,display_name,..}=>surfaces.iter().fold(serde_json::to_vec(view).map_or(usize::MAX,|bytes|bytes.len()).saturating_add(binding.stream.len())+binding.journal_id.len()+display_name.as_ref().map_or(0,String::len)+96,|sum,surface|sum.saturating_add(surface.weight())),
-        Work::Capture {binding,surfaces}=>surfaces.iter().fold(binding.stream.len()+binding.journal_id.len()+96,|sum,surface|sum.saturating_add(surface.weight())),
+        Work::ReconcilePreparation {
+            lease,
+            evidence,
+            discarded,
+            view,
+        } => serde_json::to_vec(&(lease, view))
+            .map_or(usize::MAX, |bytes| bytes.len())
+            .saturating_add(evidence.capacity())
+            .saturating_add(discarded.as_ref().map_or(0, String::capacity)),
+        Work::CapturePreset { draft } => draft.weight(),
+        Work::ReconcileRetirement { lease, evidence } => serde_json::to_vec(lease)
+            .map_or(usize::MAX, |bytes| bytes.len())
+            .saturating_add(evidence.capacity()),
+        Work::PrepareSubtree { binding, draft } => {
+            serde_json::to_vec(&(binding, draft)).map_or(usize::MAX, |bytes| bytes.len())
+        }
+        Work::PrepareUndo {
+            binding,
+            target_pane,
+            scope,
+            shell,
+        } => serde_json::to_vec(&(binding, target_pane, scope, shell))
+            .map_or(usize::MAX, |bytes| bytes.len()),
+        Work::ReserveExecutionIds { binding, kinds } => {
+            binding.stream.len()
+                + binding.journal_id.len()
+                + kinds.capacity() * std::mem::size_of::<(IdKind, u32)>()
+        }
+        Work::CaptureClosed {
+            view,
+            binding,
+            surfaces,
+            display_name,
+            ..
+        } => surfaces.iter().fold(
+            serde_json::to_vec(view)
+                .map_or(usize::MAX, |bytes| bytes.len())
+                .saturating_add(binding.stream.len())
+                + binding.journal_id.len()
+                + display_name.as_ref().map_or(0, String::len)
+                + 96,
+            |sum, surface| sum.saturating_add(surface.weight()),
+        ),
+        Work::Capture { binding, surfaces } => surfaces.iter().fold(
+            binding.stream.len() + binding.journal_id.len() + 96,
+            |sum, surface| sum.saturating_add(surface.weight()),
+        ),
         Work::RetireEngine(binding) => binding.stream.len() + binding.journal_id.len() + 64,
         #[cfg(feature = "gui")]
         Work::SaveView(view) => serde_json::to_vec(view).map_or(usize::MAX, |bytes| bytes.len()),
@@ -355,9 +467,18 @@ pub(crate) fn request_size(work: &Work) -> usize {
             normal_category_name,
             surface_floor,
         } => {
-            let serialized=serde_json::to_vec(&(selection, normal_category_name, surface_floor)).map_or(usize::MAX, |bytes| bytes.len());
-            match selection {EngineSelection::ImportedSlot {source}=>serialized.max(source.weight().saturating_add(normal_category_name.len()).saturating_add(64)),_=>serialized}
-        },
+            let serialized = serde_json::to_vec(&(selection, normal_category_name, surface_floor))
+                .map_or(usize::MAX, |bytes| bytes.len());
+            match selection {
+                EngineSelection::ImportedSlot { source } => serialized.max(
+                    source
+                        .weight()
+                        .saturating_add(normal_category_name.len())
+                        .saturating_add(64),
+                ),
+                _ => serialized,
+            }
+        }
         Work::Admit(header) => header
             .original_digest
             .len()
@@ -377,21 +498,28 @@ pub(crate) fn request_size(work: &Work) -> usize {
             .saturating_mul(std::mem::size_of::<(IdKind, u32)>()),
         Work::ReadEngine(stream) | Work::ReadCommand(stream) => stream.len(),
         Work::ReadPayload(_) => std::mem::size_of::<tasty_core::DataRef>(),
-        Work::PutPayload(bytes)=>bytes.len(),
+        Work::PutPayload(bytes) => bytes.len(),
         Work::PutPreparation(input) => {
             serde_json::to_vec(input).map_or(usize::MAX, |bytes| bytes.len())
         }
-        Work::ClaimForward {stream,operation}|Work::ClaimPreparation { stream, operation } | Work::ClaimRetirement {stream,operation} => {
+        Work::ClaimForward { stream, operation }
+        | Work::ClaimPreparation { stream, operation }
+        | Work::ClaimRetirement { stream, operation } => {
             stream.len().saturating_add(operation.0.len())
         }
         Work::Prepared { lease, result } => {
             serde_json::to_vec(&(lease, result)).map_or(usize::MAX, |bytes| bytes.len())
         }
-        Work::InstallationRejected { lease, reason } | Work::PreparationUncertain {lease,reason} => {
+        Work::InstallationRejected { lease, reason }
+        | Work::PreparationUncertain { lease, reason } => {
             serde_json::to_vec(&(lease, reason)).map_or(usize::MAX, |bytes| bytes.len())
         }
-        Work::CleanupFinished {lease,view} => serde_json::to_vec(&(lease,view)).map_or(usize::MAX, |bytes| bytes.len()),
-        Work::ForwardFinished {lease,outcome}|Work::RetirementFinished {lease,outcome}=>serde_json::to_vec(&(lease,outcome)).map_or(usize::MAX,|bytes|bytes.len()),
+        Work::CleanupFinished { lease, view } => {
+            serde_json::to_vec(&(lease, view)).map_or(usize::MAX, |bytes| bytes.len())
+        }
+        Work::ForwardFinished { lease, outcome } | Work::RetirementFinished { lease, outcome } => {
+            serde_json::to_vec(&(lease, outcome)).map_or(usize::MAX, |bytes| bytes.len())
+        }
         Work::CancelAdmission => 0,
     }
 }

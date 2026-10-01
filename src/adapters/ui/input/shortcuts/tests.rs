@@ -308,7 +308,12 @@ fn zoom_in_increments_terminal_font_size_override_only() {
     // Pin the default so the test is independent of the user's settings file.
     engine.runtime.settings.appearance.default_font.font_size = 14.0;
     engine.runtime.settings.appearance.terminal_font.font_size = None;
-    engine.runtime.settings.appearance.plugin_font_overrides.clear();
+    engine
+        .runtime
+        .settings
+        .appearance
+        .plugin_font_overrides
+        .clear();
     let consumed = MainView::handle_zoom_shortcut(
         &mut state,
         &mut engine,
@@ -353,7 +358,15 @@ fn zoom_reset_clears_terminal_font_size_override() {
         ModifiersState::CONTROL,
     );
     assert!(consumed);
-    assert!(engine.runtime.settings.appearance.terminal_font.font_size.is_none());
+    assert!(
+        engine
+            .runtime
+            .settings
+            .appearance
+            .terminal_font
+            .font_size
+            .is_none()
+    );
 }
 
 #[test]

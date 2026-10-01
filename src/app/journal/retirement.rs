@@ -69,7 +69,7 @@ impl JournalApplication {
         std::mem::take(&mut self.retirements.completed)
     }
 
-    pub(crate) fn defer_retired_engine_delivery(&mut self,id:EngineId) {
+    pub(crate) fn defer_retired_engine_delivery(&mut self, id: EngineId) {
         self.retirements.completed.push(id);
         (self.wake)();
     }
@@ -77,7 +77,9 @@ impl JournalApplication {
     /// Failed View creation must not delete a successfully resumed slot. Only its process owner ends.
     pub(crate) fn release_failed_opening(&mut self, id: EngineId, binding: EngineBinding) {
         self.retire_engine(id, binding, true);
-        if let Some(pending) = self.retirements.pending.get_mut(&id) { pending.preserve_stream = true; }
+        if let Some(pending) = self.retirements.pending.get_mut(&id) {
+            pending.preserve_stream = true;
+        }
     }
 
     pub(crate) fn forget_released_engine(&mut self, id: EngineId) {
@@ -90,21 +92,46 @@ impl JournalApplication {
 
     // Drain accepted work while its exact owner remains hidden and alive.
     pub(super) fn submit_retirements(&mut self) -> Result<(), String> {
-        let ready: Vec<_> = self.retirements.pending.iter().filter_map(|(id, pending)| {
-            (pending.ticket.is_none() && !self.has_pending_engine_effects(*id)
-                && !self.restoration_reads.values().any(|(engine, _)| engine == id))
+        let ready: Vec<_> = self
+            .retirements
+            .pending
+            .iter()
+            .filter_map(|(id, pending)| {
+                (pending.ticket.is_none()
+                    && !self.has_pending_engine_effects(*id)
+                    && !self
+                        .restoration_reads
+                        .values()
+                        .any(|(engine, _)| engine == id))
                 .then_some(*id)
-        }).take(8).collect();
+            })
+            .take(8)
+            .collect();
         for id in ready {
-            if self.retirements.pending.get(&id).is_some_and(|pending| pending.preserve_stream) {
+            if self
+                .retirements
+                .pending
+                .get(&id)
+                .is_some_and(|pending| pending.preserve_stream)
+            {
                 self.retirements.pending.remove(&id);
                 self.retirements.completed.push(id);
                 continue;
             }
-            let retirement = self.retirements.pending.get_mut(&id).ok_or("retiring owner disappeared")?;
+            let retirement = self
+                .retirements
+                .pending
+                .get_mut(&id)
+                .ok_or("retiring owner disappeared")?;
             let ticket = self.next_ticket;
-            match self.worker.submit(Request {ticket, work: Work::RetireEngine(retirement.binding.clone())}) {
-                Ok(()) => {retirement.ticket = Some(ticket); self.next_ticket += 1;}
+            match self.worker.submit(Request {
+                ticket,
+                work: Work::RetireEngine(retirement.binding.clone()),
+            }) {
+                Ok(()) => {
+                    retirement.ticket = Some(ticket);
+                    self.next_ticket += 1;
+                }
                 Err(crate::runtime::journal_product::SubmitError::Busy) => break,
                 Err(error) => return Err(format!("retirement submission failed: {error:?}")),
             }
@@ -147,18 +174,36 @@ impl JournalApplication {
     /// owner release container, then let exact PTY and plugin observations govern registry removal.
     pub(crate) fn release_halted_resources(
         &mut self,
-        session:&mut EngineSession,
-        plugins:Option<&mut crate::plugin::PluginManager>,
-    )->bool {
-        if !self.is_halted() {return false;}
-        if let Some(plugins)=plugins {plugins.poll_retirement_control();}
-        let mut release=session.engine_release.take().unwrap_or_default();
-        let keys:Vec<_>=self.creations.keys().filter(|(engine,_)|*engine==session.id).copied().collect();
-        for key in keys {if let Some(creation)=self.creations.remove(&key) {creation.retain_for_release(&mut release);}}
-        for (_,candidate) in session.pending_materializations.drain() {candidate.retire_for_release(&mut release);}
-        for (_,retirement) in session.pending_resource_retirements.drain() {retirement.retain_for_release(&mut release);}
-        self.resource_cleanups.retain(|_,cleanup|cleanup.engine!=session.id);
-        session.engine_release=Some(release);
+        session: &mut EngineSession,
+        plugins: Option<&mut crate::plugin::PluginManager>,
+    ) -> bool {
+        if !self.is_halted() {
+            return false;
+        }
+        if let Some(plugins) = plugins {
+            plugins.poll_retirement_control();
+        }
+        let mut release = session.engine_release.take().unwrap_or_default();
+        let keys: Vec<_> = self
+            .creations
+            .keys()
+            .filter(|(engine, _)| *engine == session.id)
+            .copied()
+            .collect();
+        for key in keys {
+            if let Some(creation) = self.creations.remove(&key) {
+                creation.retain_for_release(&mut release);
+            }
+        }
+        for (_, candidate) in session.pending_materializations.drain() {
+            candidate.retire_for_release(&mut release);
+        }
+        for (_, retirement) in session.pending_resource_retirements.drain() {
+            retirement.retain_for_release(&mut release);
+        }
+        self.resource_cleanups
+            .retain(|_, cleanup| cleanup.engine != session.id);
+        session.engine_release = Some(release);
         true
     }
 }

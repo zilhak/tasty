@@ -21,7 +21,10 @@ struct Target {
 }
 
 /// 대상이 없거나 점유가 이미 풀렸으면 None을 반환한다.
-fn resolve_target(state: &MainViewState, engine: &crate::runtime::engine_read::EngineRead<'_>) -> Option<Target> {
+fn resolve_target(
+    state: &MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> Option<Target> {
     let ws_id = state.dialogs.pending_force_detach_workspace?;
     let ws = engine.workspaces().into_iter().find(|w| w.id == ws_id)?;
     engine.live.occupancy.workspace_holder(ws_id)?;
@@ -157,9 +160,27 @@ pub fn draw_confirm_force_detach_workspace(
 
 /// 보류 대상의 점유를 해제하고 대상을 비운다. 실제 해제된 holder를 반환하며
 /// 이미 풀렸으면 None이다. 버튼 클릭 재현 없이도 해제 동작을 검사할 수 있다.
-pub(crate) fn apply_force_detach(state:&mut MainViewState,engine:&crate::runtime::engine_read::EngineRead<'_>) {
-    if let Some(workspace)=state.dialogs.pending_force_detach_workspace.take()
-        && let Some((_,lock))=engine.live.occupancy.workspaces_snapshot().into_iter().find(|(id,_)|*id==workspace) {
-        state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::DetachWorkspace {workspace,holder:lock.holder,grant:lock.granted_seq}).from_user_context_menu());
+pub(crate) fn apply_force_detach(
+    state: &mut MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+) {
+    if let Some(workspace) = state.dialogs.pending_force_detach_workspace.take()
+        && let Some((_, lock)) = engine
+            .live
+            .occupancy
+            .workspaces_snapshot()
+            .into_iter()
+            .find(|(id, _)| *id == workspace)
+    {
+        state.dispatch_intent(
+            crate::intent::Intent::Engine(
+                crate::app::engine_action::EngineAction::DetachWorkspace {
+                    workspace,
+                    holder: lock.holder,
+                    grant: lock.granted_seq,
+                },
+            )
+            .from_user_context_menu(),
+        );
     }
 }

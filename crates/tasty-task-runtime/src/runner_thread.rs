@@ -50,159 +50,337 @@ fn store_list_failure_log(consecutive: u32) -> StoreListFailureLog {
 }
 
 struct RunnerControl {
-    owner:std::sync::Weak<crate::task_waker::TaskWakerHub>,
-    stop_tx:mpsc::Sender<()>,
-    stopping:AtomicBool,
-    crashed:Arc<AtomicBool>,
-    list_failures:Arc<AtomicU32>,
-    join:Mutex<Option<thread::JoinHandle<()>>>,
-    joined:std::sync::atomic::AtomicU8,
+    owner: std::sync::Weak<crate::task_waker::TaskWakerHub>,
+    stop_tx: mpsc::Sender<()>,
+    stopping: AtomicBool,
+    crashed: Arc<AtomicBool>,
+    list_failures: Arc<AtomicU32>,
+    join: Mutex<Option<thread::JoinHandle<()>>>,
+    joined: std::sync::atomic::AtomicU8,
 }
 impl RunnerControl {
     fn request_stop(&self) {
-        if !self.stopping.swap(true,Ordering::AcqRel) {
-            let _=self.stop_tx.send(()); // A finished receiver already needs no stop signal.
+        if !self.stopping.swap(true, Ordering::AcqRel) {
+            let _ = self.stop_tx.send(()); // A finished receiver already needs no stop signal.
         }
     }
-    fn observe_join(&self)->RunnerStopObservation {
-        let mut slot=match self.join.try_lock() {
-            Ok(slot)=>slot,
-            Err(std::sync::TryLockError::WouldBlock)=>return RunnerStopObservation::Waiting,
-            Err(std::sync::TryLockError::Poisoned(poison))=>poison.into_inner(),
+    fn observe_join(&self) -> RunnerStopObservation {
+        let mut slot = match self.join.try_lock() {
+            Ok(slot) => slot,
+            Err(std::sync::TryLockError::WouldBlock) => return RunnerStopObservation::Waiting,
+            Err(std::sync::TryLockError::Poisoned(poison)) => poison.into_inner(),
         };
-        if let Some(handle)=slot.as_ref() {
-            if !handle.is_finished() {return RunnerStopObservation::Waiting;}
-            let failed=slot.take().expect("join handle present").join().is_err() || self.crashed.load(Ordering::Acquire);
-            if failed {tracing::warn!("task runner joined after worker failure");}
-            self.joined.store(if failed {2}else{1},Ordering::Release);
+        if let Some(handle) = slot.as_ref() {
+            if !handle.is_finished() {
+                return RunnerStopObservation::Waiting;
+            }
+            let failed = slot.take().expect("join handle present").join().is_err()
+                || self.crashed.load(Ordering::Acquire);
+            if failed {
+                tracing::warn!("task runner joined after worker failure");
+            }
+            self.joined
+                .store(if failed { 2 } else { 1 }, Ordering::Release);
         }
-        match self.joined.load(Ordering::Acquire) {1=>RunnerStopObservation::Joined,2=>RunnerStopObservation::WorkerFailed,_=>RunnerStopObservation::Waiting}
+        match self.joined.load(Ordering::Acquire) {
+            1 => RunnerStopObservation::Joined,
+            2 => RunnerStopObservation::WorkerFailed,
+            _ => RunnerStopObservation::Waiting,
+        }
     }
     fn join_blocking(&self) {
-        let mut slot=self.join.lock().unwrap_or_else(|poison|poison.into_inner());
-        if let Some(handle)=slot.take() {
-            let failed=handle.join().is_err() || self.crashed.load(Ordering::Acquire);
-            if failed {tracing::warn!("task runner joined after worker failure");}
-            self.joined.store(if failed {2}else{1},Ordering::Release);
+        let mut slot = self
+            .join
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if let Some(handle) = slot.take() {
+            let failed = handle.join().is_err() || self.crashed.load(Ordering::Acquire);
+            if failed {
+                tracing::warn!("task runner joined after worker failure");
+            }
+            self.joined
+                .store(if failed { 2 } else { 1 }, Ordering::Release);
         }
     }
-
 }
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum RunnerStopObservation {Waiting,Joined,WorkerFailed}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RunnerStopObservation {
+    Waiting,
+    Joined,
+    WorkerFailed,
+}
 /// Exact controls captured when stop was requested. A later workspace owner is never included.
 #[derive(Clone)]
 pub struct RunnerStopReceipt {
-    registry:std::sync::Weak<RunnerRegistry>,
-    controls:Vec<(u32,Arc<RunnerControl>)>,
+    registry: std::sync::Weak<RunnerRegistry>,
+    controls: Vec<(u32, Arc<RunnerControl>)>,
 }
 impl RunnerStopReceipt {
-    pub fn poll(&self)->RunnerStopObservation {
-        let mut waiting=false;let mut failed=false;
-        for (workspace,control) in &self.controls {
-            let observed=control.observe_join();
-            waiting|=observed==RunnerStopObservation::Waiting;
-            failed|=observed==RunnerStopObservation::WorkerFailed;
-            if observed!=RunnerStopObservation::Waiting && let Some(registry)=self.registry.upgrade() {registry.unregister(*workspace,control);}
+    pub fn poll(&self) -> RunnerStopObservation {
+        let mut waiting = false;
+        let mut failed = false;
+        for (workspace, control) in &self.controls {
+            let observed = control.observe_join();
+            waiting |= observed == RunnerStopObservation::Waiting;
+            failed |= observed == RunnerStopObservation::WorkerFailed;
+            if observed != RunnerStopObservation::Waiting
+                && let Some(registry) = self.registry.upgrade()
+            {
+                registry.unregister(*workspace, control);
+            }
         }
-        if waiting {RunnerStopObservation::Waiting} else if failed {RunnerStopObservation::WorkerFailed} else {RunnerStopObservation::Joined}
+        if waiting {
+            RunnerStopObservation::Waiting
+        } else if failed {
+            RunnerStopObservation::WorkerFailed
+        } else {
+            RunnerStopObservation::Joined
+        }
     }
 }
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct RunnerStatus {
-    pub running:bool,
-    pub crashed:bool,
-    pub ready_count:Option<u32>,
-    pub running_count:Option<u32>,
-    pub store_error:Option<String>,
-    pub list_failures:u32,
+    pub running: bool,
+    pub crashed: bool,
+    pub ready_count: Option<u32>,
+    pub running_count: Option<u32>,
+    pub store_error: Option<String>,
+    pub list_failures: u32,
 }
 pub struct RunnerRegistry {
-    threads:Mutex<HashMap<u32,Arc<RunnerControl>>>,
-    poison_reported:AtomicBool,
+    threads: Mutex<HashMap<u32, Arc<RunnerControl>>>,
+    poison_reported: AtomicBool,
 }
 impl RunnerRegistry {
-    fn lock_recovering(&self)->std::sync::MutexGuard<'_,HashMap<u32,Arc<RunnerControl>>> {
-        tasty_utils::poison::recover_mutex(self.threads.lock(),"runner registry thread map",&self.poison_reported)
+    fn lock_recovering(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Arc<RunnerControl>>> {
+        tasty_utils::poison::recover_mutex(
+            self.threads.lock(),
+            "runner registry thread map",
+            &self.poison_reported,
+        )
     }
-    pub fn new()->Self {Self {threads:Mutex::new(HashMap::new()),poison_reported:AtomicBool::new(false)}}
-    fn unregister(&self,workspace:u32,control:&Arc<RunnerControl>) {
-        let mut threads=self.lock_recovering();
-        if threads.get(&workspace).is_some_and(|current|Arc::ptr_eq(current,control)) {threads.remove(&workspace);}
+    pub fn new() -> Self {
+        Self {
+            threads: Mutex::new(HashMap::new()),
+            poison_reported: AtomicBool::new(false),
+        }
     }
-    pub(crate) fn request_stop(self:&Arc<Self>,owner:&Arc<crate::task_waker::TaskWakerHub>,workspace:Option<u32>)->RunnerStopReceipt {
-        let controls=self.lock_recovering().iter().filter(|(id,control)|workspace.is_none_or(|workspace|workspace==**id)&&control.owner.ptr_eq(&Arc::downgrade(owner))).map(|(id,control)|(*id,control.clone())).collect::<Vec<_>>();
-        for (_,control) in &controls {control.request_stop();}
-        RunnerStopReceipt {registry:Arc::downgrade(self),controls}
+    fn unregister(&self, workspace: u32, control: &Arc<RunnerControl>) {
+        let mut threads = self.lock_recovering();
+        if threads
+            .get(&workspace)
+            .is_some_and(|current| Arc::ptr_eq(current, control))
+        {
+            threads.remove(&workspace);
+        }
+    }
+    pub(crate) fn request_stop(
+        self: &Arc<Self>,
+        owner: &Arc<crate::task_waker::TaskWakerHub>,
+        workspace: Option<u32>,
+    ) -> RunnerStopReceipt {
+        let controls = self
+            .lock_recovering()
+            .iter()
+            .filter(|(id, control)| {
+                workspace.is_none_or(|workspace| workspace == **id)
+                    && control.owner.ptr_eq(&Arc::downgrade(owner))
+            })
+            .map(|(id, control)| (*id, control.clone()))
+            .collect::<Vec<_>>();
+        for (_, control) in &controls {
+            control.request_stop();
+        }
+        RunnerStopReceipt {
+            registry: Arc::downgrade(self),
+            controls,
+        }
     }
     /// Reap only stopped workers; crashed entries remain visible until stop or explicit restart.
-    pub(crate) fn poll_stops(&self)->usize {
-        let controls=self.lock_recovering().iter().filter(|(_,control)|control.stopping.load(Ordering::Acquire)).map(|(id,control)|(*id,control.clone())).collect::<Vec<_>>();
-        let mut remaining=0;
-        for (workspace,control) in controls {
-            if control.observe_join()==RunnerStopObservation::Waiting {remaining+=1;} else {self.unregister(workspace,&control);}
+    pub(crate) fn poll_stops(&self) -> usize {
+        let controls = self
+            .lock_recovering()
+            .iter()
+            .filter(|(_, control)| control.stopping.load(Ordering::Acquire))
+            .map(|(id, control)| (*id, control.clone()))
+            .collect::<Vec<_>>();
+        let mut remaining = 0;
+        for (workspace, control) in controls {
+            if control.observe_join() == RunnerStopObservation::Waiting {
+                remaining += 1;
+            } else {
+                self.unregister(workspace, &control);
+            }
         }
         remaining
     }
-    pub(crate) fn start(&self,ctx:RunnerContext,workspace_id:u32)->bool {
-        let mut threads=self.lock_recovering();
-        if ctx.scope_stopping.load(Ordering::Acquire) {return false;}
-        if let Some(control)=threads.get(&workspace_id) {
+    pub(crate) fn start(&self, ctx: RunnerContext, workspace_id: u32) -> bool {
+        let mut threads = self.lock_recovering();
+        if ctx.scope_stopping.load(Ordering::Acquire) {
+            return false;
+        }
+        if let Some(control) = threads.get(&workspace_id) {
             // A stopping old owner still owns its dispatch/poll until the exact worker has joined.
-            if !control.crashed.load(Ordering::Acquire) && !control.stopping.load(Ordering::Acquire) {return false;}
-            if control.observe_join()==RunnerStopObservation::Waiting {return false;}
+            if !control.crashed.load(Ordering::Acquire) && !control.stopping.load(Ordering::Acquire)
+            {
+                return false;
+            }
+            if control.observe_join() == RunnerStopObservation::Waiting {
+                return false;
+            }
         }
         threads.remove(&workspace_id);
-        let (stop_tx,stop_rx)=mpsc::channel();
-        let crashed=Arc::new(AtomicBool::new(false));let thread_crashed=crashed.clone();
-        let list_failures=Arc::new(AtomicU32::new(0));let thread_failures=list_failures.clone();
-        let owner=Arc::downgrade(&ctx.task_waker_hub);
-        let spawned=thread::Builder::new().name(format!("agent-runner-ws{workspace_id}")).spawn(move || {
-            if std::panic::catch_unwind(std::panic::AssertUnwindSafe(||run_loop(ctx,workspace_id,stop_rx,&thread_failures))).is_err() {
-                thread_crashed.store(true,Ordering::Release);
-                tracing::error!(workspace_id,"task runner panicked; explicit restart is required");
+        let (stop_tx, stop_rx) = mpsc::channel();
+        let crashed = Arc::new(AtomicBool::new(false));
+        let thread_crashed = crashed.clone();
+        let list_failures = Arc::new(AtomicU32::new(0));
+        let thread_failures = list_failures.clone();
+        let owner = Arc::downgrade(&ctx.task_waker_hub);
+        let spawned = thread::Builder::new()
+            .name(format!("agent-runner-ws{workspace_id}"))
+            .spawn(move || {
+                if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    run_loop(ctx, workspace_id, stop_rx, &thread_failures)
+                }))
+                .is_err()
+                {
+                    thread_crashed.store(true, Ordering::Release);
+                    tracing::error!(
+                        workspace_id,
+                        "task runner panicked; explicit restart is required"
+                    );
+                }
+            });
+        let join = match spawned {
+            Ok(join) => join,
+            Err(error) => {
+                tracing::error!(%error,workspace_id,"task runner spawn failed");
+                return false;
             }
-        });
-        let join=match spawned {Ok(join)=>join,Err(error)=>{tracing::error!(%error,workspace_id,"task runner spawn failed");return false;}};
-        threads.insert(workspace_id,Arc::new(RunnerControl {owner,stop_tx,stopping:AtomicBool::new(false),crashed,list_failures,join:Mutex::new(Some(join)),joined:std::sync::atomic::AtomicU8::new(0)}));true
+        };
+        threads.insert(
+            workspace_id,
+            Arc::new(RunnerControl {
+                owner,
+                stop_tx,
+                stopping: AtomicBool::new(false),
+                crashed,
+                list_failures,
+                join: Mutex::new(Some(join)),
+                joined: std::sync::atomic::AtomicU8::new(0),
+            }),
+        );
+        true
     }
     /// Compatibility entry retains explicit synchronous stop semantics; lifecycle uses receipts.
-    pub(crate) fn stop(&self,workspace:u32)->bool {
-        let control=self.lock_recovering().get(&workspace).cloned();
-        if let Some(control)=control {control.request_stop();control.join_blocking();self.unregister(workspace,&control);true} else {false}
+    pub(crate) fn stop(&self, workspace: u32) -> bool {
+        let control = self.lock_recovering().get(&workspace).cloned();
+        if let Some(control) = control {
+            control.request_stop();
+            control.join_blocking();
+            self.unregister(workspace, &control);
+            true
+        } else {
+            false
+        }
     }
-    pub(crate) fn stop_scoped(&self,owner:&Arc<crate::task_waker::TaskWakerHub>,workspace:u32)->bool {
-        let control=self.lock_recovering().get(&workspace).filter(|control|control.owner.ptr_eq(&Arc::downgrade(owner))).cloned();
-        if let Some(control)=control {control.request_stop();control.join_blocking();self.unregister(workspace,&control);true} else {false}
+    pub(crate) fn stop_scoped(
+        &self,
+        owner: &Arc<crate::task_waker::TaskWakerHub>,
+        workspace: u32,
+    ) -> bool {
+        let control = self
+            .lock_recovering()
+            .get(&workspace)
+            .filter(|control| control.owner.ptr_eq(&Arc::downgrade(owner)))
+            .cloned();
+        if let Some(control) = control {
+            control.request_stop();
+            control.join_blocking();
+            self.unregister(workspace, &control);
+            true
+        } else {
+            false
+        }
     }
-    pub(crate) fn liveness(&self,workspace:u32)->(bool,bool) {
-        self.lock_recovering().get(&workspace).map_or((false,false),|control| {
-            let crashed=control.crashed.load(Ordering::Acquire);
-            (!control.stopping.load(Ordering::Acquire)&&!crashed,crashed)
-        })
+    pub(crate) fn liveness(&self, workspace: u32) -> (bool, bool) {
+        self.lock_recovering()
+            .get(&workspace)
+            .map_or((false, false), |control| {
+                let crashed = control.crashed.load(Ordering::Acquire);
+                (
+                    !control.stopping.load(Ordering::Acquire) && !crashed,
+                    crashed,
+                )
+            })
     }
-    pub(crate) fn scoped_liveness(&self,owner:&Arc<crate::task_waker::TaskWakerHub>,workspace:u32)->(bool,bool) {
-        self.lock_recovering().get(&workspace).filter(|control|control.owner.ptr_eq(&Arc::downgrade(owner))).map_or((false,false),|control| {
-            let crashed=control.crashed.load(Ordering::Acquire);
-            (!control.stopping.load(Ordering::Acquire)&&!crashed,crashed)
-        })
+    pub(crate) fn scoped_liveness(
+        &self,
+        owner: &Arc<crate::task_waker::TaskWakerHub>,
+        workspace: u32,
+    ) -> (bool, bool) {
+        self.lock_recovering()
+            .get(&workspace)
+            .filter(|control| control.owner.ptr_eq(&Arc::downgrade(owner)))
+            .map_or((false, false), |control| {
+                let crashed = control.crashed.load(Ordering::Acquire);
+                (
+                    !control.stopping.load(Ordering::Acquire) && !crashed,
+                    crashed,
+                )
+            })
     }
-    pub(crate) fn status(&self,ctx:&RunnerContext,workspace:u32)->RunnerStatus {
-        let (running,crashed)=self.scoped_liveness(&ctx.task_waker_hub,workspace);
-        let list_failures=self.lock_recovering().get(&workspace).filter(|control|control.owner.ptr_eq(&Arc::downgrade(&ctx.task_waker_hub))).map_or(0,|control|control.list_failures.load(Ordering::Relaxed));
-        match count_ready_running(ctx,workspace) {
-            Ok((ready,running_count))=>RunnerStatus {running,crashed,ready_count:Some(ready),running_count:Some(running_count),store_error:None,list_failures},
-            Err(error)=>RunnerStatus {running,crashed,ready_count:None,running_count:None,store_error:Some(error),list_failures},
+    pub(crate) fn status(&self, ctx: &RunnerContext, workspace: u32) -> RunnerStatus {
+        let (running, crashed) = self.scoped_liveness(&ctx.task_waker_hub, workspace);
+        let list_failures = self
+            .lock_recovering()
+            .get(&workspace)
+            .filter(|control| control.owner.ptr_eq(&Arc::downgrade(&ctx.task_waker_hub)))
+            .map_or(0, |control| control.list_failures.load(Ordering::Relaxed));
+        match count_ready_running(ctx, workspace) {
+            Ok((ready, running_count)) => RunnerStatus {
+                running,
+                crashed,
+                ready_count: Some(ready),
+                running_count: Some(running_count),
+                store_error: None,
+                list_failures,
+            },
+            Err(error) => RunnerStatus {
+                running,
+                crashed,
+                ready_count: None,
+                running_count: None,
+                store_error: Some(error),
+                list_failures,
+            },
         }
     }
 }
-impl Default for RunnerRegistry {fn default()->Self {Self::new()}}
+impl Default for RunnerRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl Drop for RunnerRegistry {
     fn drop(&mut self) {
-        let threads=self.threads.get_mut().unwrap_or_else(|poison|poison.into_inner());
-        for control in threads.values() {control.request_stop();}
-        let remaining=threads.values().filter(|control|control.observe_join()==RunnerStopObservation::Waiting).count();
-        if remaining!=0 {tracing::warn!(remaining,"task runners still unjoined at service owner drop");}
+        let threads = self
+            .threads
+            .get_mut()
+            .unwrap_or_else(|poison| poison.into_inner());
+        for control in threads.values() {
+            control.request_stop();
+        }
+        let remaining = threads
+            .values()
+            .filter(|control| control.observe_join() == RunnerStopObservation::Waiting)
+            .count();
+        if remaining != 0 {
+            tracing::warn!(
+                remaining,
+                "task runners still unjoined at service owner drop"
+            );
+        }
     }
 }
 
@@ -587,7 +765,11 @@ fn finalize_precise_tasks(
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             for (task_id, outcome) in precise {
                 transitioned.extend(apply_precise_outcome(
-                    &mut store, workspace_id, task_id, outcome, now,
+                    &mut store,
+                    workspace_id,
+                    task_id,
+                    outcome,
+                    now,
                 ));
             }
         }
@@ -652,10 +834,12 @@ fn expire_overdue_hook_waits(ctx: &RunnerContext, now_ms: u64) {
     for wait in overdue {
         let workspace_id = wait.workspace;
         let task_id = wait.task;
-        let owner = wait.owner.unwrap_or_else(|| crate::hook_wait::HookWaitOwner {
-            agent_seq: ctx.agent_seq.clone(),
-            completion: ctx.task_waker_hub.clone(),
-        });
+        let owner = wait
+            .owner
+            .unwrap_or_else(|| crate::hook_wait::HookWaitOwner {
+                agent_seq: ctx.agent_seq.clone(),
+                completion: ctx.task_waker_hub.clone(),
+            });
         let error = "push completion strategy timed out waiting for external report".to_string();
         let fire_target = ctx.with_memory(|mem| {
             let seq = owner.agent_seq.clone();
@@ -847,7 +1031,11 @@ fn run_loop(
     stop_rx: mpsc::Receiver<()>,
     list_failures: &AtomicU32,
 ) {
-    if ctx.scope_stopping.load(Ordering::Acquire) || !matches!(stop_rx.try_recv(),Err(mpsc::TryRecvError::Empty)) {return;}
+    if ctx.scope_stopping.load(Ordering::Acquire)
+        || !matches!(stop_rx.try_recv(), Err(mpsc::TryRecvError::Empty))
+    {
+        return;
+    }
     let reloaded = purge_and_reload_on_restart(&ctx, workspace_id);
     let executor = HostExecutor::new(ctx.clone());
     let mut runner = RunnerLoop::new(executor);
@@ -855,7 +1043,11 @@ fn run_loop(
         runner.running.insert(task_id, handle);
     }
     loop {
-        if ctx.scope_stopping.load(Ordering::Acquire) || !matches!(stop_rx.try_recv(),Err(mpsc::TryRecvError::Empty)) {break;}
+        if ctx.scope_stopping.load(Ordering::Acquire)
+            || !matches!(stop_rx.try_recv(), Err(mpsc::TryRecvError::Empty))
+        {
+            break;
+        }
         // 만료 작업의 종결 상태를 이번 snapshot에서도 보고 handle·점유를 정리할 수 있도록 먼저 처리한다.
         let now = now_ms();
         expire_overdue_hook_waits(&ctx, now);
@@ -944,7 +1136,7 @@ mod tests {
         let td = tempfile::tempdir().unwrap();
         let mem = MemoryStore::open(&td.path().join("mem.db")).unwrap();
         let ctx = RunnerContext {
-            scope_stopping:Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            scope_stopping: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             memory: Arc::new(Mutex::new(mem)),
             agent_seq: Arc::new(AtomicU64::new(0)),
             host_ipc: Arc::new(OnceLock::new()),
@@ -1649,12 +1841,19 @@ mod tests {
                 now_ms: 1000,
             };
             let parent = store.create(opts("parent", vec![])).unwrap();
-            let child = store.create(opts("child", vec![parent.id.clone()])).unwrap();
-            store.set_state(7, &parent.id, TaskState::Running, 1100).unwrap();
+            let child = store
+                .create(opts("child", vec![parent.id.clone()]))
+                .unwrap();
+            store
+                .set_state(7, &parent.id, TaskState::Running, 1100)
+                .unwrap();
             (parent.id, child.id)
         });
         origin.hook_task_waits.register_owned(
-            1, 7, parent.clone(), 2000,
+            1,
+            7,
+            parent.clone(),
+            2000,
             HookWaitOwner {
                 agent_seq: origin.agent_seq.clone(),
                 completion: origin.task_waker_hub.clone(),
@@ -1666,10 +1865,14 @@ mod tests {
         assert_eq!(dropped, 0);
         assert_eq!(events.len(), 2);
         assert!(events.contains(&AgentEvent::TaskFinished {
-            workspace_id: 7, task_id: parent, state: "failed",
+            workspace_id: 7,
+            task_id: parent,
+            state: "failed",
         }));
         assert!(events.contains(&AgentEvent::TaskFinished {
-            workspace_id: 7, task_id: child, state: "skipped",
+            workspace_id: 7,
+            task_id: child,
+            state: "skipped",
         }));
         assert!(sweeping_feed.take_pending().0.is_empty());
         expire_overdue_hook_waits(&sweeping, 5000);
@@ -1745,43 +1948,69 @@ mod poison_tests {
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
-    fn controlled(owner:&Arc<crate::task_waker::TaskWakerHub>)->(Arc<RunnerControl>,mpsc::Sender<()>) {
-        let (release_tx,release_rx)=mpsc::channel();
-        let (stop_tx,_stop_rx)=mpsc::channel();
-        let join=thread::spawn(move || {release_rx.recv().expect("release test worker");});
-        (Arc::new(RunnerControl {owner:Arc::downgrade(owner),stop_tx,stopping:AtomicBool::new(false),crashed:Arc::new(AtomicBool::new(false)),list_failures:Arc::new(AtomicU32::new(0)),join:Mutex::new(Some(join)),joined:std::sync::atomic::AtomicU8::new(0)}),release_tx)
+    fn controlled(
+        owner: &Arc<crate::task_waker::TaskWakerHub>,
+    ) -> (Arc<RunnerControl>, mpsc::Sender<()>) {
+        let (release_tx, release_rx) = mpsc::channel();
+        let (stop_tx, _stop_rx) = mpsc::channel();
+        let join = thread::spawn(move || {
+            release_rx.recv().expect("release test worker");
+        });
+        (
+            Arc::new(RunnerControl {
+                owner: Arc::downgrade(owner),
+                stop_tx,
+                stopping: AtomicBool::new(false),
+                crashed: Arc::new(AtomicBool::new(false)),
+                list_failures: Arc::new(AtomicU32::new(0)),
+                join: Mutex::new(Some(join)),
+                joined: std::sync::atomic::AtomicU8::new(0),
+            }),
+            release_tx,
+        )
     }
     #[test]
     fn stop_matches_scope_and_waits_for_the_exact_worker() {
-        let registry=Arc::new(RunnerRegistry::new());
-        let origin=Arc::new(crate::task_waker::TaskWakerHub::new());
-        let other=Arc::new(crate::task_waker::TaskWakerHub::new());
-        let (control,release)=controlled(&origin);
-        registry.lock_recovering().insert(7,control.clone());
-        assert_eq!(registry.request_stop(&other,Some(7)).poll(),RunnerStopObservation::Joined);
+        let registry = Arc::new(RunnerRegistry::new());
+        let origin = Arc::new(crate::task_waker::TaskWakerHub::new());
+        let other = Arc::new(crate::task_waker::TaskWakerHub::new());
+        let (control, release) = controlled(&origin);
+        registry.lock_recovering().insert(7, control.clone());
+        assert_eq!(
+            registry.request_stop(&other, Some(7)).poll(),
+            RunnerStopObservation::Joined
+        );
         assert!(!control.stopping.load(Ordering::Acquire));
-        let receipt=registry.request_stop(&origin,Some(7));
-        assert_eq!(receipt.poll(),RunnerStopObservation::Waiting);
+        let receipt = registry.request_stop(&origin, Some(7));
+        assert_eq!(receipt.poll(), RunnerStopObservation::Waiting);
         assert!(registry.lock_recovering().contains_key(&7));
         release.send(()).unwrap();
         control.join_blocking();
-        assert_eq!(receipt.poll(),RunnerStopObservation::Joined);
+        assert_eq!(receipt.poll(), RunnerStopObservation::Joined);
         assert!(!registry.lock_recovering().contains_key(&7));
     }
     #[test]
     fn an_old_receipt_cannot_unregister_a_successor_and_poll_never_waits_on_join_lock() {
-        let registry=Arc::new(RunnerRegistry::new());
-        let owner=Arc::new(crate::task_waker::TaskWakerHub::new());
-        let (old,release)=controlled(&owner);
-        registry.lock_recovering().insert(7,old.clone());
-        let receipt=registry.request_stop(&owner,Some(7));
-        {let _joining=old.join.lock().unwrap();assert_eq!(receipt.poll(),RunnerStopObservation::Waiting);}
-        release.send(()).unwrap();old.join_blocking();
-        let (successor,release)=controlled(&owner);
-        registry.lock_recovering().insert(7,successor.clone());
-        assert_eq!(receipt.poll(),RunnerStopObservation::Joined);
-        assert!(Arc::ptr_eq(registry.lock_recovering().get(&7).unwrap(),&successor));
+        let registry = Arc::new(RunnerRegistry::new());
+        let owner = Arc::new(crate::task_waker::TaskWakerHub::new());
+        let (old, release) = controlled(&owner);
+        registry.lock_recovering().insert(7, old.clone());
+        let receipt = registry.request_stop(&owner, Some(7));
+        {
+            let _joining = old.join.lock().unwrap();
+            assert_eq!(receipt.poll(), RunnerStopObservation::Waiting);
+        }
+        release.send(()).unwrap();
+        old.join_blocking();
+        let (successor, release) = controlled(&owner);
+        registry.lock_recovering().insert(7, successor.clone());
+        assert_eq!(receipt.poll(), RunnerStopObservation::Joined);
+        assert!(Arc::ptr_eq(
+            registry.lock_recovering().get(&7).unwrap(),
+            &successor
+        ));
         assert!(!successor.stopping.load(Ordering::Acquire));
-        release.send(()).unwrap();successor.join_blocking();
+        release.send(()).unwrap();
+        successor.join_blocking();
     }
 }

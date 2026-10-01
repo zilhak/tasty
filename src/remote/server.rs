@@ -1,11 +1,10 @@
 //! attach 점유를 터미널 출력·입력, mesh·문서 조회, 구조 변경과 파일 전송에 연결한다.
 //! GUI와 헤드리스 메인 루프가 StreamHub의 수신 결과를 이 모듈에 전달한다.
+use super::transfer_spool::{Spool, TransferOwner};
 use crate::runtime::engine_access::EngineMut;
-use super::transfer_spool::{Spool,TransferOwner};
 
 use crate::runtime::engine_access::EngineRef;
 use std::collections::HashMap;
-
 
 use crate::app::services::AppServices;
 use crate::core::CoreState;
@@ -76,13 +75,26 @@ impl EngineMut<'_> {
         theme: Option<tasty_plugin_protocol::protocol::ThemeWire>,
         focused: bool,
     ) -> bool {
-        let Some(grant)=self.as_ref().attached_mesh_grant(surface_id,client_id) else {return false;};
-        let Some(binding)=self.remote.notifier().and_then(|hub|hub.client_binding(client_id)) else {return false;};
-        let Some(descriptor)=self.core.find_surface_by_id(surface_id) else {return false;};
-        let activation=descriptor.activation_generation;
+        let Some(grant) = self.as_ref().attached_mesh_grant(surface_id, client_id) else {
+            return false;
+        };
+        let Some(binding) = self
+            .remote
+            .notifier()
+            .and_then(|hub| hub.client_binding(client_id))
+        else {
+            return false;
+        };
+        let Some(descriptor) = self.core.find_surface_by_id(surface_id) else {
+            return false;
+        };
+        let activation = descriptor.activation_generation;
         self.remote.mesh_mirror.upsert(
             surface_id,
-            client_id,grant,binding,activation,
+            client_id,
+            grant,
+            binding,
+            activation,
             width_px,
             height_px,
             pixels_per_point,
@@ -98,8 +110,20 @@ impl EngineMut<'_> {
         surface_id: SurfaceId,
         client_id: AttachClientId,
     ) -> bool {
-        let Some(hub)=self.remote.notifier() else {return false;};
-        if !self.as_ref().attached_mesh_context_is_current(surface_id,&hub) || self.remote.mesh_mirror.get(surface_id).is_none_or(|ctx|ctx.client_id!=client_id) {return false;}
+        let Some(hub) = self.remote.notifier() else {
+            return false;
+        };
+        if !self
+            .as_ref()
+            .attached_mesh_context_is_current(surface_id, &hub)
+            || self
+                .remote
+                .mesh_mirror
+                .get(surface_id)
+                .is_none_or(|ctx| ctx.client_id != client_id)
+        {
+            return false;
+        }
         self.remote.mesh_mirror.request_full_resend(surface_id)
     }
 
@@ -110,11 +134,28 @@ impl EngineMut<'_> {
         client_id: AttachClientId,
         input: tasty_plugin_protocol::protocol::RawInputWire,
     ) -> bool {
-        let Some(hub)=self.remote.notifier() else {return false;};
-        if !self.as_ref().attached_mesh_context_is_current(surface_id,&hub) || self.remote.mesh_mirror.get(surface_id).is_none_or(|ctx|ctx.client_id!=client_id) {return false;}
-        if self.remote.mesh_mirror.push_input(surface_id,input) {true} else {
-            if let Some(ctx)=self.remote.mesh_mirror.get(surface_id) {hub.unregister_bound(client_id,&ctx.binding);}
-            self.remote.mesh_mirror.remove(surface_id);false
+        let Some(hub) = self.remote.notifier() else {
+            return false;
+        };
+        if !self
+            .as_ref()
+            .attached_mesh_context_is_current(surface_id, &hub)
+            || self
+                .remote
+                .mesh_mirror
+                .get(surface_id)
+                .is_none_or(|ctx| ctx.client_id != client_id)
+        {
+            return false;
+        }
+        if self.remote.mesh_mirror.push_input(surface_id, input) {
+            true
+        } else {
+            if let Some(ctx) = self.remote.mesh_mirror.get(surface_id) {
+                hub.unregister_bound(client_id, &ctx.binding);
+            }
+            self.remote.mesh_mirror.remove(surface_id);
+            false
         }
     }
 
@@ -180,8 +221,10 @@ pub(crate) fn finalize_capture_upload(
     let result = match (is_holder, bytes) {
         (false, _) => Err("client does not hold a workspace attach".to_string()),
         (true, None) => Err("no uploaded bytes for this upload_id".to_string()),
-        (true, Some((owner,bytes))) if owner.current(&engine.as_ref(),hub,client_id)=>save_capture_and_set_clipboard(core,file_name,bytes),
-        (true, Some(_))=>Err("capture origin grant or registration retired".into()),
+        (true, Some((owner, bytes))) if owner.current(&engine.as_ref(), hub, client_id) => {
+            save_capture_and_set_clipboard(core, file_name, bytes)
+        }
+        (true, Some(_)) => Err("capture origin grant or registration retired".into()),
     };
     let payload = match &result {
         Ok(path) => serde_json::json!({
@@ -285,7 +328,8 @@ pub(crate) fn begin_bulk_transfer(
 ) {
     let dir = resolve_bulk_transfer_dir(&engine.runtime.settings);
     let max_bytes = engine
-        .runtime.settings
+        .runtime
+        .settings
         .remote_transfer
         .max_mb
         .saturating_mul(1024 * 1024);
@@ -307,11 +351,22 @@ pub(crate) fn begin_bulk_transfer(
         let _ = hub.push(client_id, frame); // 손실·끊김 처리는 허브에 맡기고 여기서는 재전송하지 않는다.
         return;
     }
-    let Some(owner)=TransferOwner::capture(&engine.as_ref(),hub,client_id,true) else {
-        reject_bulk_transfer(hub,client_id,transfer_id,"bulk origin is no longer attached");return;
+    let Some(owner) = TransferOwner::capture(&engine.as_ref(), hub, client_id, true) else {
+        reject_bulk_transfer(
+            hub,
+            client_id,
+            transfer_id,
+            "bulk origin is no longer attached",
+        );
+        return;
     };
-    if let Err(error)=engine.remote.bulk_transfers.begin(client_id,transfer_id,filename,total_size,owner) {
-        reject_bulk_transfer(hub,client_id,transfer_id,&error);
+    if let Err(error) =
+        engine
+            .remote
+            .bulk_transfers
+            .begin(client_id, transfer_id, filename, total_size, owner)
+    {
+        reject_bulk_transfer(hub, client_id, transfer_id, &error);
     }
 }
 
@@ -326,7 +381,11 @@ pub(crate) fn finalize_bulk_transfer(
     bulk_workspace: WorkspaceId,
     dir: Option<std::path::PathBuf>,
 ) {
-    let authorized = engine.live.occupancy.workspace_holder(bulk_workspace).is_some();
+    let authorized = engine
+        .live
+        .occupancy
+        .workspace_holder(bulk_workspace)
+        .is_some();
     // 권한 확인에 실패해도 버퍼를 회수해 큰 업로드가 메모리에 남지 않게 한다.
     let taken = engine.remote.bulk_transfers.take(client_id, transfer_id);
     let result = if !authorized {
@@ -335,8 +394,12 @@ pub(crate) fn finalize_bulk_transfer(
         match (taken, dir) {
             (None, _) => Err("no uploaded bytes for this transfer_id".to_string()),
             (Some(_), None) => Err("no tasty home directory".to_string()),
-            (Some((filename,owner,bytes)),Some(d)) if owner.current(&engine.as_ref(),hub,client_id)=>save_bulk_file(&d,&filename,"bulk-file",bytes),
-            (Some(_),Some(_))=>Err("bulk origin grant or registration retired".into()),
+            (Some((filename, owner, bytes)), Some(d))
+                if owner.current(&engine.as_ref(), hub, client_id) =>
+            {
+                save_bulk_file(&d, &filename, "bulk-file", bytes)
+            }
+            (Some(_), Some(_)) => Err("bulk origin grant or registration retired".into()),
         }
     };
     let reply = match result {
@@ -901,7 +964,10 @@ impl EngineRef<'_> {
         let mut kinds: HashMap<u32, &'static str> = HashMap::new();
         let mut display_names: HashMap<u32, String> = HashMap::new();
         for id in ws.all_surface_ids() {
-            if let Some(surface)=self.runtime.surfaces.get(&id) {kinds.insert(id,surface.kind());display_names.insert(id,surface.display_name());}
+            if let Some(surface) = self.runtime.surfaces.get(&id) {
+                kinds.insert(id, surface.kind());
+                display_names.insert(id, surface.display_name());
+            }
         }
         let (mesh_whitelisted, mesh_rejected) = mesh_mirror_candidates(class);
         let (content_whitelisted, content_rejected) = content_mirror_candidates(class);
@@ -967,7 +1033,10 @@ impl EngineRef<'_> {
                 "kind": kinds.get(&sid).copied().unwrap_or("unknown"),
             }));
         }
-        (ws.to_attach_tree_json(&self.observed_presentation(&self.remote.presentation)), surfaces)
+        (
+            ws.to_attach_tree_json(&self.observed_presentation(&self.remote.presentation)),
+            surfaces,
+        )
     }
 }
 
@@ -1413,7 +1482,12 @@ mod mesh_descriptor_display_name_tests {
         let (mut engine_session, idx) =
             engine_with_mesh_surface("image", "com.tasty.image", "screenshot.png");
         let engine = engine_session.borrow_mut();
-        let class = engine.classify_attach_surfaces(engine.workspace_at(idx).expect("workspace index is valid").id);
+        let class = engine.classify_attach_surfaces(
+            engine
+                .workspace_at(idx)
+                .expect("workspace index is valid")
+                .id,
+        );
         let (_tree, surfaces) = engine.build_workspace_tree_surfaces(idx, &class);
         let mesh = surfaces
             .iter()
@@ -1434,7 +1508,12 @@ mod mesh_descriptor_display_name_tests {
         ] {
             let (mut engine_session, idx) = engine_with_mesh_surface(kind, plugin_id, name);
             let engine = engine_session.borrow_mut();
-            let class = engine.classify_attach_surfaces(engine.workspace_at(idx).expect("workspace index is valid").id);
+            let class = engine.classify_attach_surfaces(
+                engine
+                    .workspace_at(idx)
+                    .expect("workspace index is valid")
+                    .id,
+            );
             let (_tree, surfaces) = engine.build_workspace_tree_surfaces(idx, &class);
             let mesh = surfaces
                 .iter()
@@ -2303,7 +2382,8 @@ mod forward_exec_tests {
         let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         let client_id = 42;
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &[a], &[a], client_id)
             .expect("workspace 점유 획득");
         let op = StructuralOp::SplitSurface {
@@ -2347,7 +2427,8 @@ mod forward_exec_tests {
         let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         let client_id = 7;
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &[a], &[a], client_id)
             .expect("workspace 점유 획득");
         let hub = tasty_ipc::stream_hub::StreamHub::new();
@@ -2408,7 +2489,8 @@ mod forward_exec_tests {
         let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         let client_id = 7;
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &[a], &[a], client_id)
             .expect("workspace 점유 획득");
         let hub = tasty_ipc::stream_hub::StreamHub::new();
@@ -2491,7 +2573,8 @@ mod forward_exec_tests {
         .added_terminals[0];
         let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &[a, b], &[a, b], 7)
             .expect("workspace 점유 획득");
         let hub = tasty_ipc::stream_hub::StreamHub::new();
@@ -2649,9 +2732,8 @@ mod forward_exec_tests {
         push_unrelated_workspace(&mut engine, 900, 901);
         let alive = StructuralOp::CloseSurface { surface_id: 901 };
         let gone = StructuralOp::CloseSurface { surface_id: 555 };
-        let reason = |op| {
-            crate::remote::structure_sync::unresolved_forward_reason([&*engine.core], 7, op)
-        };
+        let reason =
+            |op| crate::remote::structure_sync::unresolved_forward_reason([&*engine.core], 7, op);
         assert_eq!(reason(&alive), "workspace not found");
         assert!(
             reason(&gone).starts_with("no live surface 555 "),
@@ -3040,7 +3122,8 @@ mod forward_exec_tests {
         let a = seed(&mut engine);
         let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &[a], &[a], 7)
             .expect("workspace 점유 획득");
         let before = engine.runtime.terminals.iter().count();
@@ -3070,7 +3153,8 @@ mod forward_exec_tests {
         let a = seed(&mut engine);
         let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &[a], &[a], 7)
             .expect("workspace 점유 획득");
         let panes_before = engine
@@ -3134,7 +3218,8 @@ mod forward_exec_tests {
             .expect("workspace index is valid")
             .all_surface_ids();
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &all, &all, 7)
             .expect("workspace 점유 획득");
         let panes_before = engine
@@ -3193,7 +3278,8 @@ mod forward_exec_tests {
             .expect("workspace index is valid")
             .all_surface_ids();
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &all, &all, 7)
             .expect("workspace 점유 획득");
         let mv = StructuralOp::MoveTab {
@@ -3241,7 +3327,8 @@ mod forward_exec_tests {
             .expect("workspace index is valid")
             .all_surface_ids();
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &all, &all, 7)
             .expect("workspace 점유 획득");
         let before = engine.runtime.terminals.iter().count();
@@ -3280,7 +3367,8 @@ mod forward_exec_tests {
             .expect("workspace index is valid")
             .all_surface_ids();
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &all, &all, holder)
             .expect("workspace 점유 획득");
 
@@ -3354,7 +3442,8 @@ mod forward_exec_tests {
         let a = seed(&mut engine);
         let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &[a], &[a], 7)
             .expect("workspace 점유 획득");
         let op = StructuralOp::ConvertSurface {
@@ -3550,7 +3639,8 @@ mod forward_exec_tests {
             .expect("workspace index is valid")
             .all_surface_ids();
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &all, &all, 7)
             .expect("workspace 점유 획득");
         let mv = StructuralOp::MoveSurface {
@@ -3582,7 +3672,8 @@ mod forward_exec_tests {
             .pane_layout()
             .all_pane_ids()[0];
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &[a], &[a], 7)
             .expect("workspace 점유 획득");
 
@@ -3660,7 +3751,8 @@ mod forward_exec_tests {
             .tabs[0]
             .id;
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &[a], &[a], 7)
             .expect("workspace 점유 획득");
 
@@ -3754,7 +3846,8 @@ mod forward_exec_tests {
         let pty_id =
             crate::adapters::ipc::handler::pty::tests::spawn_test_pty(&mut core, &mut engine);
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &[a], &[a], 7)
             .expect("workspace 점유 획득");
 
@@ -3974,7 +4067,8 @@ mod forward_exec_tests {
             .occupy_soft(child, parent, None)
             .expect("child soft 점유");
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &[parent, child], &[parent, child], 7)
             .expect("workspace 점유 획득");
 
@@ -4037,7 +4131,8 @@ mod forward_exec_tests {
         let a = seed(&mut engine);
         let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &[a], &[a], 7)
             .expect("workspace 점유 획득");
 
@@ -4201,11 +4296,19 @@ mod forward_exec_tests {
         );
         assert!(
             matches!(
-                engine.remote.pending_structural_forward.first().map(|p| &p.op),
+                engine
+                    .remote
+                    .pending_structural_forward
+                    .first()
+                    .map(|p| &p.op),
                 Some(StructuralOp::NewTab { .. })
             ),
             "mirror 의 tab.create 는 원격 NewTab 으로 큐잉돼야 한다 (got: {:?})",
-            engine.remote.pending_structural_forward.first().map(|p| &p.op)
+            engine
+                .remote
+                .pending_structural_forward
+                .first()
+                .map(|p| &p.op)
         );
         assert_eq!(
             engine.runtime.terminals.iter().count(),
@@ -4291,7 +4394,8 @@ mod forward_exec_tests {
                 "mirror" => engine.make_mirror_fixture(0),
                 _ => {
                     engine
-                        .live.occupancy
+                        .live
+                        .occupancy
                         .acquire_workspace(blocked_ws_id, &[a], &[a], 7)
                         .expect("workspace 점유 획득");
                 }
@@ -4367,7 +4471,8 @@ mod forward_exec_tests {
         let a = seed(&mut engine);
         let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &[a], &[a], 7)
             .expect("workspace 점유 획득");
 
@@ -4479,7 +4584,9 @@ impl crate::runtime::engine_access::EngineMut<'_> {
     ) {
         if !self.runtime.terminals.contains(surface_id) && !self.is_surface_deferred(surface_id) {
             if let Some((kind, plugin_id)) = self.find_mesh_surface_info(surface_id)
-                && crate::runtime::surface_registry::egui_mesh::is_egui_mesh_allowed(&kind, &plugin_id)
+                && crate::runtime::surface_registry::egui_mesh::is_egui_mesh_allowed(
+                    &kind, &plugin_id,
+                )
             {
                 self.attach_mesh_surface_for_stream(surface_id, client_id, hub);
                 return;
@@ -4500,12 +4607,12 @@ impl crate::runtime::engine_access::EngineMut<'_> {
             }
         }
 
-
         if !self.runtime.terminals.contains(surface_id) {
-            let _=self.live.occupancy.release(surface_id,client_id); // already released has no additional work.
-            reject_attach(hub,client_id,"spawn_failed",None);return;
+            let _ = self.live.occupancy.release(surface_id, client_id); // already released has no additional work.
+            reject_attach(hub, client_id, "spawn_failed", None);
+            return;
         }
-        self.subscribe_terminal(surface_id,client_id,hub,false,true);
+        self.subscribe_terminal(surface_id, client_id, hub, false, true);
 
         tracing::debug!("attach: surface {surface_id} -> client {client_id}");
     }
@@ -4516,7 +4623,9 @@ impl crate::runtime::engine_access::EngineMut<'_> {
         let Some(surface_id) = self.live.occupancy.surface_held_by(client_id) else {
             return false;
         };
-        if !self.live.occupancy.surface_attachment_ready(surface_id) {return false;}
+        if !self.live.occupancy.surface_attachment_ready(surface_id) {
+            return false;
+        }
         if let Some(terminal) = self.runtime.terminals.get_mut(surface_id) {
             terminal.send_bytes(bytes);
             true
@@ -4538,7 +4647,8 @@ impl crate::runtime::engine_access::EngineMut<'_> {
             reject_attach(hub, client_id, "workspace_not_found", None);
             return false;
         };
-        let class = self.classify_attach_surfaces(self.workspace_at(idx).expect("workspace index is valid").id);
+        let class = self
+            .classify_attach_surfaces(self.workspace_at(idx).expect("workspace index is valid").id);
         // 화면을 복제할 수 없는 멤버도 workspace 점유에 포함한다.
         let members: Vec<SurfaceId> = class
             .terminals
@@ -4550,10 +4660,12 @@ impl crate::runtime::engine_access::EngineMut<'_> {
             .copied()
             .collect();
 
-        match self
-            .live.occupancy
-            .acquire_workspace(workspace_id, &class.terminals, &members, client_id)
-        {
+        match self.live.occupancy.acquire_workspace(
+            workspace_id,
+            &class.terminals,
+            &members,
+            client_id,
+        ) {
             Ok(_) => {}
             Err(AttachError::AlreadyAttached { holder }) => {
                 reject_attach(hub, client_id, "already_attached", Some(holder));
@@ -4565,13 +4677,14 @@ impl crate::runtime::engine_access::EngineMut<'_> {
             }
         }
 
-
         let descriptor = self.build_workspace_descriptor(idx, workspace_id, &class);
         let descriptor_frame = StreamFrame::new(
             StreamTag::Control,
             serde_json::to_vec(&descriptor).unwrap_or_default(),
         );
-        if hub.push(client_id,descriptor_frame)!=PushResult::Sent {return false;}
+        if hub.push(client_id, descriptor_frame) != PushResult::Sent {
+            return false;
+        }
 
         for &sid in &class.terminals {
             self.tap_surface_for_stream(sid, client_id, hub);
@@ -4600,7 +4713,7 @@ impl crate::runtime::engine_access::EngineMut<'_> {
         client_id: AttachClientId,
         hub: &StreamHub,
     ) {
-        self.subscribe_terminal(sid,client_id,hub,true,false);
+        self.subscribe_terminal(sid, client_id, hub, true, false);
     }
 
     /// 새 workspace 멤버의 점유를 등록한다. 로컬 생성이면 delta를 먼저 보내고 tap한다.
@@ -4613,12 +4726,14 @@ impl crate::runtime::engine_access::EngineMut<'_> {
         is_terminal: bool,
     ) {
         if !self
-            .live.occupancy
+            .live
+            .occupancy
             .add_workspace_member(workspace_id, surface_id, is_terminal)
         {
             return;
         }
-        if self.remote.is_auto_tap_suppressed() || self.remote.structure_reply_pending(workspace_id) {
+        if self.remote.is_auto_tap_suppressed() || self.remote.structure_reply_pending(workspace_id)
+        {
             return;
         }
         // client가 ID 매핑을 만든 뒤 snapshot을 받도록 delta를 먼저 보낸다.
@@ -4643,11 +4758,19 @@ impl crate::runtime::engine_access::EngineMut<'_> {
         remote_surface_id: u32,
         bytes: &[u8],
     ) -> bool {
-        if !self.live.occupancy.surface_attachment_ready(remote_surface_id) {return false;}
+        if !self
+            .live
+            .occupancy
+            .surface_attachment_ready(remote_surface_id)
+        {
+            return false;
+        }
         let Some(ws) = self.live.occupancy.workspace_of_surface(remote_surface_id) else {
             return false;
         };
-        if !self.live.occupancy.workspace_attachment_ready(ws) || self.live.occupancy.workspace_holder(ws) != Some(client_id) {
+        if !self.live.occupancy.workspace_attachment_ready(ws)
+            || self.live.occupancy.workspace_holder(ws) != Some(client_id)
+        {
             return false;
         }
         if let Some(terminal) = self.runtime.terminals.get_mut(remote_surface_id) {
@@ -4715,47 +4838,113 @@ impl crate::runtime::engine_access::EngineMut<'_> {
     }
 }
 
-
 impl EngineRef<'_> {
-    fn attached_mesh_grant(&self,surface:u32,client:u32)->Option<u64> {
-        let direct=self.live.occupancy.locks_snapshot().into_iter().find(|(id,_)|*id==surface).map(|(_,grant)|grant);
-        let grant=direct.or_else(|| {
-            let workspace=self.live.occupancy.workspace_of_surface(surface)?;
-            self.live.occupancy.workspaces_snapshot().into_iter().find(|(id,_)|*id==workspace).map(|(_,grant)|grant)
+    fn attached_mesh_grant(&self, surface: u32, client: u32) -> Option<u64> {
+        let direct = self
+            .live
+            .occupancy
+            .locks_snapshot()
+            .into_iter()
+            .find(|(id, _)| *id == surface)
+            .map(|(_, grant)| grant);
+        let grant = direct.or_else(|| {
+            let workspace = self.live.occupancy.workspace_of_surface(surface)?;
+            self.live
+                .occupancy
+                .workspaces_snapshot()
+                .into_iter()
+                .find(|(id, _)| *id == workspace)
+                .map(|(_, grant)| grant)
         })?;
-        (grant.holder==client && grant.ready).then_some(grant.granted_seq)
+        (grant.holder == client && grant.ready).then_some(grant.granted_seq)
     }
-    pub(crate) fn attached_mesh_context_is_current(&self,surface:u32,hub:&StreamHub)->bool {
+    pub(crate) fn attached_mesh_context_is_current(&self, surface: u32, hub: &StreamHub) -> bool {
         self.remote.mesh_mirror.get(surface).is_some_and(|ctx| {
-            self.attached_mesh_grant(surface,ctx.client_id)==Some(ctx.grant)
-                && hub.matches_client_binding(ctx.client_id,&ctx.binding)
-                && self.core.find_surface_by_id(surface).is_some_and(|descriptor|descriptor.activation_generation==ctx.activation)
+            self.attached_mesh_grant(surface, ctx.client_id) == Some(ctx.grant)
+                && hub.matches_client_binding(ctx.client_id, &ctx.binding)
+                && self
+                    .core
+                    .find_surface_by_id(surface)
+                    .is_some_and(|descriptor| descriptor.activation_generation == ctx.activation)
         })
     }
 }
 
-
-fn reject_bulk_transfer(hub:&StreamHub,client:u32,transfer:u64,reason:&str) {
-    let Some(binding)=hub.client_binding(client) else {return;};
-    let reply=StreamControl::BulkResult {transfer_id:transfer,ok:false,path:None,reason:Some(reason.into())};
-    hub.push_bound(client,&binding,StreamFrame::new(StreamTag::Control,serde_json::to_vec(&reply).unwrap_or_default()));
+fn reject_bulk_transfer(hub: &StreamHub, client: u32, transfer: u64, reason: &str) {
+    let Some(binding) = hub.client_binding(client) else {
+        return;
+    };
+    let reply = StreamControl::BulkResult {
+        transfer_id: transfer,
+        ok: false,
+        path: None,
+        reason: Some(reason.into()),
+    };
+    hub.push_bound(
+        client,
+        &binding,
+        StreamFrame::new(
+            StreamTag::Control,
+            serde_json::to_vec(&reply).unwrap_or_default(),
+        ),
+    );
 }
-pub(crate) fn append_bulk_transfer(engine:&mut EngineMut<'_>,hub:&StreamHub,client:u32,transfer:u64,seq:u32,bytes:&[u8])->bool {
-    let accepted=TransferOwner::capture(&engine.as_ref(),hub,client,true).is_some_and(|owner|engine.remote.bulk_transfers.append(client,transfer,seq,bytes,&owner));
+pub(crate) fn append_bulk_transfer(
+    engine: &mut EngineMut<'_>,
+    hub: &StreamHub,
+    client: u32,
+    transfer: u64,
+    seq: u32,
+    bytes: &[u8],
+) -> bool {
+    let accepted =
+        TransferOwner::capture(&engine.as_ref(), hub, client, true).is_some_and(|owner| {
+            engine
+                .remote
+                .bulk_transfers
+                .append(client, transfer, seq, bytes, &owner)
+        });
     if !accepted {
-        reject_bulk_transfer(hub,client,transfer,"bulk transfer rejected: stale origin, invalid sequence/length, or spool failure");
-        if let Some(binding)=hub.client_binding(client) {hub.unregister_bound(client,&binding);}
+        reject_bulk_transfer(
+            hub,
+            client,
+            transfer,
+            "bulk transfer rejected: stale origin, invalid sequence/length, or spool failure",
+        );
+        if let Some(binding) = hub.client_binding(client) {
+            hub.unregister_bound(client, &binding);
+        }
         engine.remote.bulk_transfers.clear_client(client);
     }
     accepted
 }
-pub(crate) fn append_capture_upload(engine:&mut EngineMut<'_>,hub:&StreamHub,client:u32,upload:u64,bytes:&[u8],now:std::time::Instant) {
-    let accepted=TransferOwner::capture(&engine.as_ref(),hub,client,false).is_some_and(|owner|engine.remote.capture_uploads.append(client,upload,bytes,now,owner));
+pub(crate) fn append_capture_upload(
+    engine: &mut EngineMut<'_>,
+    hub: &StreamHub,
+    client: u32,
+    upload: u64,
+    bytes: &[u8],
+    now: std::time::Instant,
+) {
+    let accepted =
+        TransferOwner::capture(&engine.as_ref(), hub, client, false).is_some_and(|owner| {
+            engine
+                .remote
+                .capture_uploads
+                .append(client, upload, bytes, now, owner)
+        });
     if !accepted {
-        if let Some(binding)=hub.client_binding(client) {
-            let response=serde_json::json!({"event":"capture_result","upload_id":upload,"ok":false,"reason":"capture transfer origin or spool unavailable"});
-            hub.push_bound(client,&binding,StreamFrame::new(StreamTag::Control,serde_json::to_vec(&response).unwrap_or_default()));
-            hub.unregister_bound(client,&binding);
+        if let Some(binding) = hub.client_binding(client) {
+            let response = serde_json::json!({"event":"capture_result","upload_id":upload,"ok":false,"reason":"capture transfer origin or spool unavailable"});
+            hub.push_bound(
+                client,
+                &binding,
+                StreamFrame::new(
+                    StreamTag::Control,
+                    serde_json::to_vec(&response).unwrap_or_default(),
+                ),
+            );
+            hub.unregister_bound(client, &binding);
         }
         engine.remote.capture_uploads.clear_client(client);
     }

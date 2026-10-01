@@ -26,7 +26,7 @@ pub(super) fn decide(m: &JournalModel, cmd: &StructuralCommand) -> Result<Struct
         | StructuralCommand::FinishCleanup { .. }
         | StructuralCommand::CancelUnstartedCreation { .. }
         | StructuralCommand::RejectInstallation { .. }
-        | StructuralCommand::MarkPreparationUncertain {..} => {
+        | StructuralCommand::MarkPreparationUncertain { .. } => {
             unreachable!("creation has its own decision rules")
         }
     }

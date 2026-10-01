@@ -1,9 +1,9 @@
 //! 원격 프로필·Attach·Passkey를 편집한다. CLI·IPC와 같은 저장 로직을 사용한다.
 //! tasty-attach 프로필은 Attach 탭에서만 다루며 SSH 프로필 참조 또는 직접 입력을 지원한다.
 
+use crate::app::remote_tool_files::{FileAction, FileRequest, FileValue};
 use std::collections::HashSet;
 use std::sync::{Arc, Weak};
-use crate::app::remote_tool_files::{FileAction,FileRequest,FileValue};
 
 use tasty_remote_profiles::{
     KNOWN_PASSKEY_KINDS, PORT_MODES, Passkey, Passkeys, RemoteProfile, RemoteProfiles, SHELLS,
@@ -119,14 +119,14 @@ pub(crate) struct AttachForm {
 #[derive(Clone, Debug)]
 struct DetectJob {
     name: String,
-    id:tasty_remote::profile_detection::DetectionId,
+    id: tasty_remote::profile_detection::DetectionId,
 }
 
 #[derive(Clone, Debug, Default)]
 struct UiState {
-    identity:Arc<()>,
-    view:Weak<()>,
-    revealed_values:std::collections::HashMap<String,(Passkey,String)>,
+    identity: Arc<()>,
+    view: Weak<()>,
+    revealed_values: std::collections::HashMap<String, (Passkey, String)>,
     tab: Tab,
     profile_view: Sub,
     attach_view: Sub,
@@ -311,7 +311,7 @@ pub fn draw_remote_tool_popup(
     let ctx = ui.ctx().clone();
     let mut st = read_ui(&ctx);
 
-    st.view=state.webview_identity.clone();
+    st.view = state.webview_identity.clone();
 
     let mut profiles = RemoteProfiles::load();
     let passkeys = Passkeys::load();
@@ -563,7 +563,7 @@ fn draw_profiles_tab(
                 draw_confirm_delete(ui, th, t("remote_tool.noun_profile"), &name, None)
             {
                 if act {
-                    enqueue(ui.ctx(),st,FileAction::DeleteProfile(name.clone()));
+                    enqueue(ui.ctx(), st, FileAction::DeleteProfile(name.clone()));
                 }
                 st.profile_view = Sub::List;
             }
@@ -670,7 +670,7 @@ fn draw_profile_list(
             }
             ProfileRowAction::Redetect => {
                 if st.detecting.is_none() {
-                    enqueue(ui.ctx(),st,FileAction::Detect(p.name.clone()));
+                    enqueue(ui.ctx(), st, FileAction::Detect(p.name.clone()));
                 }
             }
         }
@@ -1277,7 +1277,7 @@ fn draw_profile_form(
         return;
     }
     if do_save {
-        enqueue(ui.ctx(),st,FileAction::SaveProfile(st.pform.clone()));
+        enqueue(ui.ctx(), st, FileAction::SaveProfile(st.pform.clone()));
     }
 }
 
@@ -1300,8 +1300,6 @@ fn passkey_dropdown_row(ui: &mut egui::Ui, th: &Theme, value: &mut String, passk
     });
 }
 
-
-
 fn draw_attach_tab(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -1317,7 +1315,7 @@ fn draw_attach_tab(
                 draw_confirm_delete(ui, th, t("remote_tool.noun_attach"), &name, None)
             {
                 if act {
-                    enqueue(ui.ctx(),st,FileAction::DeleteProfile(name.clone()));
+                    enqueue(ui.ctx(), st, FileAction::DeleteProfile(name.clone()));
                 }
                 st.attach_view = Sub::List;
             }
@@ -1781,11 +1779,9 @@ fn draw_attach_form(
         return;
     }
     if do_save {
-        enqueue(ui.ctx(),st,FileAction::SaveAttach(st.aform.clone()));
+        enqueue(ui.ctx(), st, FileAction::SaveAttach(st.aform.clone()));
     }
 }
-
-
 
 fn draw_passkeys_tab(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: &Passkeys) {
     match st.passkey_view.clone() {
@@ -1800,7 +1796,7 @@ fn draw_passkeys_tab(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
                 Some(t("remote_tool.passkey_delete_hint")),
             ) {
                 if act {
-                    enqueue(ui.ctx(),st,FileAction::DeletePasskey(name.clone()));
+                    enqueue(ui.ctx(), st, FileAction::DeletePasskey(name.clone()));
                 }
                 st.passkey_view = Sub::List;
             }
@@ -1838,7 +1834,16 @@ fn draw_passkey_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
     scroll_list_with_fade(ui, th, |ui| {
         for k in &passkeys.passkeys {
             let revealed = st.revealed.contains(&k.name);
-            if let Some(a) = draw_passkey_row(ui, th, k, revealed,st.revealed_values.get(&k.name).filter(|(key,_)|key==k).map(|(_,value)|value.as_str())) {
+            if let Some(a) = draw_passkey_row(
+                ui,
+                th,
+                k,
+                revealed,
+                st.revealed_values
+                    .get(&k.name)
+                    .filter(|(key, _)| key == k)
+                    .map(|(_, value)| value.as_str()),
+            ) {
                 action = Some((k.name.clone(), a));
             }
         }
@@ -1849,9 +1854,16 @@ fn draw_passkey_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
                 if st.revealed.contains(&name) {
                     st.revealed.remove(&name);
                     st.revealed_values.remove(&name);
-                } else if let Some(key)=passkeys.get(&name) {
+                } else if let Some(key) = passkeys.get(&name) {
                     st.revealed.insert(name);
-                    enqueue(ui.ctx(),st,FileAction::Reveal {key:key.clone(),editing:false});
+                    enqueue(
+                        ui.ctx(),
+                        st,
+                        FileAction::Reveal {
+                            key: key.clone(),
+                            editing: false,
+                        },
+                    );
                 }
             }
             PasskeyRowAction::Edit => {
@@ -1859,12 +1871,19 @@ fn draw_passkey_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
                     st.kform = PasskeyForm {
                         name: k.name.clone(),
                         kind: k.kind.clone(),
-                        value:String::new(),
+                        value: String::new(),
                         editing_original: Some(k.name.clone()),
                     };
                     st.kerr = None;
                     st.passkey_view = Sub::Form;
-                    enqueue(ui.ctx(),st,FileAction::Reveal {key:k.clone(),editing:true});
+                    enqueue(
+                        ui.ctx(),
+                        st,
+                        FileAction::Reveal {
+                            key: k.clone(),
+                            editing: true,
+                        },
+                    );
                 }
             }
             PasskeyRowAction::Delete => {
@@ -1885,7 +1904,7 @@ fn draw_passkey_row(
     th: &Theme,
     k: &Passkey,
     revealed: bool,
-    revealed_value:Option<&str>,
+    revealed_value: Option<&str>,
 ) -> Option<PasskeyRowAction> {
     let mut out = None;
     ui.horizontal(|ui| {
@@ -1977,7 +1996,6 @@ fn draw_passkey_row(
 }
 
 /// 로컬 GUI 전용 값 노출. path kind 는 경로, inline kind 는 관리 파일 내용을 읽는다.
-
 
 fn draw_passkey_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
     let full_x = ui.clip_rect().x_range();
@@ -2088,11 +2106,9 @@ fn draw_passkey_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
         return;
     }
     if do_save {
-        enqueue(ui.ctx(),st,FileAction::SavePasskey(st.kform.clone()));
+        enqueue(ui.ctx(), st, FileAction::SavePasskey(st.kform.clone()));
     }
 }
-
-
 
 fn draw_confirm_delete(
     ui: &mut egui::Ui,
@@ -2701,44 +2717,105 @@ mod tests {
     }
 }
 
-const FILE_REQUESTS:&str="remote_tool.file_requests";
-fn enqueue(ctx:&egui::Context,state:&UiState,action:FileAction) {
+const FILE_REQUESTS: &str = "remote_tool.file_requests";
+fn enqueue(ctx: &egui::Context, state: &UiState, action: FileAction) {
     ctx.memory_mut(|memory| {
-        let queue=memory.data.get_temp_mut_or_default::<Vec<FileRequest>>(egui::Id::new(FILE_REQUESTS));
-        if queue.len()>=64 {tracing::warn!("remote tool request capacity exhausted");return;}
-        queue.push(FileRequest {popup:Arc::downgrade(&state.identity),view:state.view.clone(),action});
+        let queue = memory
+            .data
+            .get_temp_mut_or_default::<Vec<FileRequest>>(egui::Id::new(FILE_REQUESTS));
+        if queue.len() >= 64 {
+            tracing::warn!("remote tool request capacity exhausted");
+            return;
+        }
+        queue.push(FileRequest {
+            popup: Arc::downgrade(&state.identity),
+            view: state.view.clone(),
+            action,
+        });
     });
 }
-pub(crate) fn take_file_requests(ctx:&egui::Context)->Vec<FileRequest> {
-    ctx.memory_mut(|memory|std::mem::take(memory.data.get_temp_mut_or_default::<Vec<FileRequest>>(egui::Id::new(FILE_REQUESTS))))
+pub(crate) fn take_file_requests(ctx: &egui::Context) -> Vec<FileRequest> {
+    ctx.memory_mut(|memory| {
+        std::mem::take(
+            memory
+                .data
+                .get_temp_mut_or_default::<Vec<FileRequest>>(egui::Id::new(FILE_REQUESTS)),
+        )
+    })
 }
-pub(crate) fn accept_file_result(ctx:&egui::Context,request:&FileRequest,result:Result<FileValue,String>) {
-    let mut state=read_ui(ctx);
-    if !request.popup.ptr_eq(&Arc::downgrade(&state.identity)) {return;}
-    match (&request.action,result) {
-        (FileAction::SaveProfile(form),result) if form==&state.pform=>match result {
-            Ok(value)=>{state.perr=None;state.profile_view=Sub::List;if let FileValue::Detection(id,name)=value {state.detecting=Some(DetectJob {id,name});}},
-            Err(error)=>state.perr=Some(error),
-        },
-        (FileAction::SaveAttach(form),result) if form==&state.aform=>match result {
-            Ok(_)=>{state.aerr=None;state.attach_view=Sub::List;},Err(error)=>state.aerr=Some(error),
-        },
-        (FileAction::SavePasskey(form),result) if form==&state.kform=>match result {
-            Ok(_)=>{state.kerr=None;state.passkey_view=Sub::List;state.revealed.clear();state.revealed_values.clear();},Err(error)=>state.kerr=Some(error),
-        },
-        (FileAction::Detect(_),Ok(FileValue::Detection(id,name)))=>state.detecting=Some(DetectJob {id,name}),
-        (FileAction::Reveal {key,editing},Ok(FileValue::Revealed(value)))=>{
-            if *editing {
-                if state.passkey_view==Sub::Form && state.kform.editing_original.as_deref()==Some(key.name.as_str()) && state.kform.value.is_empty() {state.kform.value=value;}
-            } else if state.revealed.contains(&key.name) {state.revealed_values.insert(key.name.clone(),(key.clone(),value));}
-        },
-        (_,Err(error))=>tracing::warn!(%error,"remote tool request failed"),
-        _=>{},
+pub(crate) fn accept_file_result(
+    ctx: &egui::Context,
+    request: &FileRequest,
+    result: Result<FileValue, String>,
+) {
+    let mut state = read_ui(ctx);
+    if !request.popup.ptr_eq(&Arc::downgrade(&state.identity)) {
+        return;
     }
-    write_ui(ctx,state);ctx.request_repaint();
+    match (&request.action, result) {
+        (FileAction::SaveProfile(form), result) if form == &state.pform => match result {
+            Ok(value) => {
+                state.perr = None;
+                state.profile_view = Sub::List;
+                if let FileValue::Detection(id, name) = value {
+                    state.detecting = Some(DetectJob { id, name });
+                }
+            }
+            Err(error) => state.perr = Some(error),
+        },
+        (FileAction::SaveAttach(form), result) if form == &state.aform => match result {
+            Ok(_) => {
+                state.aerr = None;
+                state.attach_view = Sub::List;
+            }
+            Err(error) => state.aerr = Some(error),
+        },
+        (FileAction::SavePasskey(form), result) if form == &state.kform => match result {
+            Ok(_) => {
+                state.kerr = None;
+                state.passkey_view = Sub::List;
+                state.revealed.clear();
+                state.revealed_values.clear();
+            }
+            Err(error) => state.kerr = Some(error),
+        },
+        (FileAction::Detect(_), Ok(FileValue::Detection(id, name))) => {
+            state.detecting = Some(DetectJob { id, name })
+        }
+        (FileAction::Reveal { key, editing }, Ok(FileValue::Revealed(value))) => {
+            if *editing {
+                if state.passkey_view == Sub::Form
+                    && state.kform.editing_original.as_deref() == Some(key.name.as_str())
+                    && state.kform.value.is_empty()
+                {
+                    state.kform.value = value;
+                }
+            } else if state.revealed.contains(&key.name) {
+                state
+                    .revealed_values
+                    .insert(key.name.clone(), (key.clone(), value));
+            }
+        }
+        (_, Err(error)) => tracing::warn!(%error,"remote tool request failed"),
+        _ => {}
+    }
+    write_ui(ctx, state);
+    ctx.request_repaint();
 }
-pub(crate) fn accept_detection(ctx:&egui::Context,update:&tasty_remote::profile_detection::DetectionUpdate)->bool {
-    let mut state=read_ui(ctx);
-    if !state.detecting.as_ref().is_some_and(|job|job.id==update.id) {return false;}
-    state.detecting=None;write_ui(ctx,state);ctx.request_repaint();true
+pub(crate) fn accept_detection(
+    ctx: &egui::Context,
+    update: &tasty_remote::profile_detection::DetectionUpdate,
+) -> bool {
+    let mut state = read_ui(ctx);
+    if !state
+        .detecting
+        .as_ref()
+        .is_some_and(|job| job.id == update.id)
+    {
+        return false;
+    }
+    state.detecting = None;
+    write_ui(ctx, state);
+    ctx.request_repaint();
+    true
 }

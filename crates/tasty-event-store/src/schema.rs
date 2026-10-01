@@ -8,7 +8,7 @@ use rusqlite::{Connection, ErrorCode, OptionalExtension};
 use crate::error::{StoreError, StoreResult};
 
 /// 순서대로 적용하는 migration. 인덱스 + 1이 버전이다. 이미 배포한 항목은 고치지 않고 뒤에 추가한다.
-const MIGRATIONS: &[&str] = &[V1,V2,V3,V4,V5,V6,V7];
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7];
 
 /// 이 빌드가 읽고 쓸 수 있는 가장 새 스키마 버전.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
@@ -167,7 +167,7 @@ const V3: &str = r#"
 
 // Activation claims retain their original uniqueness constraint. Cleanup attempts have another
 // explicit ownership class and cannot acquire, release, or impersonate an activation claim.
-const V4:&str=r#"
+const V4: &str = r#"
 ALTER TABLE effects ADD COLUMN claim_kind TEXT NOT NULL DEFAULT 'activation' CHECK(claim_kind IN ('activation','obligation'));
 ALTER TABLE effect_attempts RENAME TO effect_attempts_v3;
 CREATE TABLE effect_attempts (

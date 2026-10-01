@@ -1,19 +1,21 @@
 //! Engine-scoped remote session resources. They are not local journal facts.
-use crate::core::state::RemoteCwd;
-#[cfg(feature="gui")]
-use crate::core::state::{PendingImageUpload,AttachMeshContextForward,GuiAttachUserReq};
-use crate::core::state::AttentionKind;
-use tasty_ipc::stream::{StreamFrame,StreamTag};
 use crate::core::attach::AttachClientId;
+use crate::core::state::AttentionKind;
+use crate::core::state::RemoteCwd;
+#[cfg(feature = "gui")]
+use crate::core::state::{AttachMeshContextForward, GuiAttachUserReq, PendingImageUpload};
+use tasty_ipc::stream::{StreamFrame, StreamTag};
 pub(crate) struct RemoteState {
-    pub(crate) attach_subscriptions:std::collections::HashMap<(u32,u32),super::subscription::Subscription>,
-    pub(crate) attach_mapping_tokens:std::collections::HashMap<u32,std::sync::Arc<()>>,
-    pub(crate) presentation:crate::model::StructurePresentationSnapshot,
-    notifier:Option<tasty_ipc::stream_hub::StreamHub>,
-    suppress_auto_tap:bool,
-    structure_changed:std::collections::BTreeSet<u32>,
-    pub(crate) pending_workspace_taps:std::collections::HashMap<u32,(u32,tasty_terminal::ResourceGeneration)>,
-    pub(crate) pending_structure_replies:std::collections::BTreeMap<u64,u32>,
+    pub(crate) attach_subscriptions:
+        std::collections::HashMap<(u32, u32), super::subscription::Subscription>,
+    pub(crate) attach_mapping_tokens: std::collections::HashMap<u32, std::sync::Arc<()>>,
+    pub(crate) presentation: crate::model::StructurePresentationSnapshot,
+    notifier: Option<tasty_ipc::stream_hub::StreamHub>,
+    suppress_auto_tap: bool,
+    structure_changed: std::collections::BTreeSet<u32>,
+    pub(crate) pending_workspace_taps:
+        std::collections::HashMap<u32, (u32, tasty_terminal::ResourceGeneration)>,
+    pub(crate) pending_structure_replies: std::collections::BTreeMap<u64, u32>,
     /// 서버의 mesh 구독 상태. 실제 전송은 PluginManager를 가진 GUI·헤드리스 계층이 맡는다.
     pub(crate) mesh_mirror: crate::remote::mesh_mirror::MeshMirrorRegistry,
     /// client가 조립한 mesh frame을 로컬 surface ID로 보관한다. 서버 구독 상태와는 별개다.
@@ -24,7 +26,7 @@ pub(crate) struct RemoteState {
     /// 캡처 시점에 정한 mirror workspace. None이면 로컬 클립보드에 기록한다.
     /// 캡처 도중 포커스가 바뀌어도 업로드 대상은 바뀌지 않는다.
     #[cfg(feature = "gui")]
-    pub(crate) pending_screenshot_captures: Vec<(Option<u32>,std::sync::Weak<()>)>,
+    pub(crate) pending_screenshot_captures: Vec<(Option<u32>, std::sync::Weak<()>)>,
     /// mirror 이미지 붙여넣기 요청. App이 업로드하고 저장 경로를 미리 정한 surface로 보낸다.
     #[cfg(feature = "gui")]
     pub(crate) pending_image_uploads: Vec<PendingImageUpload>,
@@ -72,20 +74,23 @@ pub(crate) struct RemoteState {
     /// attention 전송 후보의 (holder, kind). None은 해제이며 송신 성공과는 별개다.
     pub(crate) last_forwarded_attention: std::collections::HashMap<
         u32,
-        (
-            crate::core::attach::AttachClientId,
-            Option<AttentionKind>,
-        ),
+        (crate::core::attach::AttachClientId, Option<AttentionKind>),
     >,
     /// cwd 전송 후보의 (holder, 값). 같은 값이어도 holder가 바뀌면 새 후보를 만든다.
     pub(crate) last_forwarded_cwd:
         std::collections::HashMap<u32, (crate::core::attach::AttachClientId, Option<String>)>,
 }
 impl RemoteState {
-    pub(crate) fn new()->Self {Self {
-            attach_subscriptions:Default::default(),
-            attach_mapping_tokens:Default::default(),
-            presentation:Default::default(),notifier:None,suppress_auto_tap:false,structure_changed:Default::default(),pending_workspace_taps:Default::default(),pending_structure_replies:Default::default(),
+    pub(crate) fn new() -> Self {
+        Self {
+            attach_subscriptions: Default::default(),
+            attach_mapping_tokens: Default::default(),
+            presentation: Default::default(),
+            notifier: None,
+            suppress_auto_tap: false,
+            structure_changed: Default::default(),
+            pending_workspace_taps: Default::default(),
+            pending_structure_replies: Default::default(),
             mesh_mirror: crate::remote::mesh_mirror::MeshMirrorRegistry::default(),
             #[cfg(feature = "gui")]
             attach_mesh_frames: crate::remote::mesh_frames::AttachMeshFrameStore::default(),
@@ -118,20 +123,40 @@ impl RemoteState {
             last_forwarded_busy: std::collections::HashMap::new(),
             last_forwarded_attention: std::collections::HashMap::new(),
             last_forwarded_cwd: std::collections::HashMap::new(),
-    }}
+        }
+    }
 }
 
 impl RemoteState {
-    pub(crate) fn set_notifier(&mut self,hub:tasty_ipc::stream_hub::StreamHub) {self.notifier=Some(hub);}
-    pub(crate) fn notifier(&self)->Option<tasty_ipc::stream_hub::StreamHub> {self.notifier.clone()}
-    pub(crate) fn is_auto_tap_suppressed(&self)->bool {self.suppress_auto_tap}
-    pub(crate) fn structure_reply_pending(&self,workspace:u32)->bool {self.pending_structure_replies.values().any(|value|*value==workspace)}
-    pub(crate) fn set_auto_tap_suppressed(&mut self,value:bool) {self.suppress_auto_tap=value;}
-    pub(crate) fn mark_structure_changed(&mut self,id:u32) {self.structure_changed.insert(id);}
-    pub(crate) fn clear_structure_changed(&mut self,id:u32) {self.structure_changed.remove(&id);}
-    pub(crate) fn take_structure_changed(&mut self)->Vec<u32> {
-        let (held,ready):(Vec<_>,Vec<_>)=std::mem::take(&mut self.structure_changed).into_iter().partition(|id|self.structure_reply_pending(*id));
-        self.structure_changed.extend(held);ready
+    pub(crate) fn set_notifier(&mut self, hub: tasty_ipc::stream_hub::StreamHub) {
+        self.notifier = Some(hub);
+    }
+    pub(crate) fn notifier(&self) -> Option<tasty_ipc::stream_hub::StreamHub> {
+        self.notifier.clone()
+    }
+    pub(crate) fn is_auto_tap_suppressed(&self) -> bool {
+        self.suppress_auto_tap
+    }
+    pub(crate) fn structure_reply_pending(&self, workspace: u32) -> bool {
+        self.pending_structure_replies
+            .values()
+            .any(|value| *value == workspace)
+    }
+    pub(crate) fn set_auto_tap_suppressed(&mut self, value: bool) {
+        self.suppress_auto_tap = value;
+    }
+    pub(crate) fn mark_structure_changed(&mut self, id: u32) {
+        self.structure_changed.insert(id);
+    }
+    pub(crate) fn clear_structure_changed(&mut self, id: u32) {
+        self.structure_changed.remove(&id);
+    }
+    pub(crate) fn take_structure_changed(&mut self) -> Vec<u32> {
+        let (held, ready): (Vec<_>, Vec<_>) = std::mem::take(&mut self.structure_changed)
+            .into_iter()
+            .partition(|id| self.structure_reply_pending(*id));
+        self.structure_changed.extend(held);
+        ready
     }
     /// Control 사유와 Detach를 차례로 push한다. 허브가 없거나 송신에 실패해도 점유 해제는 되돌리지 않는다.
     pub(crate) fn notify_detached(&self, holder: AttachClientId, reason: &str) {
@@ -145,43 +170,60 @@ impl RemoteState {
     }
 }
 
-#[cfg(feature="gui")]
+#[cfg(feature = "gui")]
 impl RemoteState {
     /// This runs on the App thread before exposing a replacement connection. Queued local-ID
     /// requests still refer to the retired mapping and must not be resolved through the new one.
-    pub(crate) fn discard_connection_requests(&mut self,mapping:&std::collections::HashMap<u32,u32>,workspace:u32) {
-        let ids:std::collections::HashSet<u32>=mapping.values().copied().collect();
-        self.pending_resize_forward.retain(|id,_|!ids.contains(id));
-        self.pending_mesh_context_forward.retain(|id,_|!ids.contains(id));
-        self.pending_mesh_input_forward.retain(|id,_|!ids.contains(id));
-        self.pending_mesh_full_resend_forward.retain(|id|!ids.contains(id));
-        self.pending_attention_clear_forward.retain(|id|!ids.contains(id));
-        self.pending_list_dir_forward.retain(|request|request.local_ws_id!=workspace);
-        self.pending_git_query_forward.retain(|request|!ids.contains(&request.local_surface_id));
-        self.pending_markdown_content_forward.retain(|request|!ids.contains(&request.local_surface_id));
-        self.pending_image_uploads.retain(|request|request.mirror_ws_id!=workspace);
-        self.pending_screenshot_captures.retain(|(target,_)|*target!=Some(workspace));
+    pub(crate) fn discard_connection_requests(
+        &mut self,
+        mapping: &std::collections::HashMap<u32, u32>,
+        workspace: u32,
+    ) {
+        let ids: std::collections::HashSet<u32> = mapping.values().copied().collect();
+        self.pending_resize_forward
+            .retain(|id, _| !ids.contains(id));
+        self.pending_mesh_context_forward
+            .retain(|id, _| !ids.contains(id));
+        self.pending_mesh_input_forward
+            .retain(|id, _| !ids.contains(id));
+        self.pending_mesh_full_resend_forward
+            .retain(|id| !ids.contains(id));
+        self.pending_attention_clear_forward
+            .retain(|id| !ids.contains(id));
+        self.pending_list_dir_forward
+            .retain(|request| request.local_ws_id != workspace);
+        self.pending_git_query_forward
+            .retain(|request| !ids.contains(&request.local_surface_id));
+        self.pending_markdown_content_forward
+            .retain(|request| !ids.contains(&request.local_surface_id));
+        self.pending_image_uploads
+            .retain(|request| request.mirror_ws_id != workspace);
+        self.pending_screenshot_captures
+            .retain(|(target, _)| *target != Some(workspace));
     }
 }
 
 impl RemoteState {
     /// Dispose only ephemeral observations and queued sends for a removed local identity.
     /// Connection ownership and other surfaces in the same session remain intact.
-    pub(crate) fn forget_surface_observations(&mut self, id:u32) {
-        self.attach_subscriptions.retain(|(surface,_),_|*surface!=id);
+    pub(crate) fn forget_surface_observations(&mut self, id: u32) {
+        self.attach_subscriptions
+            .retain(|(surface, _), _| *surface != id);
         self.mesh_mirror.remove(id);
         self.last_forwarded_busy.remove(&id);
         self.last_forwarded_attention.remove(&id);
         self.last_forwarded_cwd.remove(&id);
         self.pending_attention_clear_forward.remove(&id);
-        #[cfg(feature="gui")]
+        #[cfg(feature = "gui")]
         {
             self.pending_resize_forward.remove(&id);
             self.pending_mesh_context_forward.remove(&id);
             self.pending_mesh_input_forward.remove(&id);
             self.pending_mesh_full_resend_forward.remove(&id);
-            self.pending_git_query_forward.retain(|request|request.local_surface_id!=id);
-            self.pending_markdown_content_forward.retain(|request|request.local_surface_id!=id);
+            self.pending_git_query_forward
+                .retain(|request| request.local_surface_id != id);
+            self.pending_markdown_content_forward
+                .retain(|request| request.local_surface_id != id);
         }
     }
 }

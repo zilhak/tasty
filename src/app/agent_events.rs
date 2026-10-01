@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use tasty_task_runtime::event_feed::{AgentEvent, AgentEventQueue};
 use crate::plugin::PluginManager;
+use tasty_task_runtime::event_feed::{AgentEvent, AgentEventQueue};
 
 pub(crate) fn take_from(q: &Arc<AgentEventQueue>, events: &mut Vec<AgentEvent>, dropped: &mut u64) {
     let (mut e, d) = q.take_pending();

@@ -85,7 +85,8 @@ pub struct MainView {
     pub(crate) double_tap: crate::double_tap::DoubleTapDetector,
     /// Native WebView instances keyed by surface ID.
     pub(crate) webviews: std::collections::HashMap<u32, crate::webview::PlatformWebView>,
-    pub(crate) webview_runtime: std::collections::HashMap<u32, crate::app::html_runtime::NativeWebviewBinding>,
+    pub(crate) webview_runtime:
+        std::collections::HashMap<u32, crate::app::html_runtime::NativeWebviewBinding>,
     /// surface 별 마지막으로 webview 에 적용한 HTML 설정 — 변경 시에만 재적용(매 프레임 호출 회피).
     pub(crate) webview_applied_settings:
         std::collections::HashMap<u32, crate::webview::HtmlWebViewSettings>,
@@ -271,7 +272,10 @@ impl MainView {
 
     /// 현재 preedit을 PTY로 보내지 않고 버린다.
     /// 팝업/오버레이가 열릴 때 사용.
-    pub(crate) fn clear_ime_preedit(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>) {
+    pub(crate) fn clear_ime_preedit(
+        &mut self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+    ) {
         ime::clear_preedit(self, engine);
     }
 
@@ -439,13 +443,8 @@ impl MainView {
                     let cell_w = self.base.gpu.cell_width();
                     let cell_h = self.base.gpu.cell_height();
                     let scale_factor = self.base.gpu.scale_factor();
-                    self.state.resize_all(
-                        engine,
-                        terminal_rect,
-                        cell_w,
-                        cell_h,
-                        scale_factor,
-                    );
+                    self.state
+                        .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
                 }
                 self.mark_dirty();
             }
@@ -569,7 +568,7 @@ impl View for MainView {
             tracing::warn!("main window event without an engine: {event:?}");
             return ViewAction::None;
         };
-        self.handle_engine_event(&mut engine,event,ctx)
+        self.handle_engine_event(&mut engine, event, ctx)
     }
 
     fn render(&mut self) {
@@ -580,9 +579,21 @@ impl View for MainView {
 impl sealed::Sealed for MainView {}
 
 impl MainView {
-    pub(super) fn record_typing_intent(&mut self,engine:&crate::runtime::engine_read::EngineRead<'_>,surface:u32) {
-        if let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,surface) {
-            self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::RecordTyping {target,at:std::time::Instant::now()}).from_user_shortcut("typing"));
+    pub(super) fn record_typing_intent(
+        &mut self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+        surface: u32,
+    ) {
+        if let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, surface) {
+            self.state.dispatch_intent(
+                crate::intent::Intent::Engine(
+                    crate::app::engine_action::EngineAction::RecordTyping {
+                        target,
+                        at: std::time::Instant::now(),
+                    },
+                )
+                .from_user_shortcut("typing"),
+            );
         }
     }
 }

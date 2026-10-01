@@ -22,38 +22,63 @@ impl EventStore {
 
     /// Create an immutable payload and its in-flight holder in one transaction. GC cannot run
     /// between creation and the eventual event pin, even when command admission is asynchronous.
-    pub fn put_payload_pinned(&mut self,epoch:WriterEpoch,bytes:&[u8],holder:&str)->StoreResult<PayloadRef> {
-        let tx=self.write_tx(epoch)?;
-        let payload=insert(&tx,bytes)?;
-        pin_in(&tx,payload,holder)?;
-        tx.commit()?;Ok(payload)
+    pub fn put_payload_pinned(
+        &mut self,
+        epoch: WriterEpoch,
+        bytes: &[u8],
+        holder: &str,
+    ) -> StoreResult<PayloadRef> {
+        let tx = self.write_tx(epoch)?;
+        let payload = insert(&tx, bytes)?;
+        pin_in(&tx, payload, holder)?;
+        tx.commit()?;
+        Ok(payload)
     }
 
     /// Cumulative preparation bound for one unresolved admission. This is not an effect-result
     /// write: accepted effect completion continues to use put_payload_pinned under pressure.
-    pub fn put_admission_payload_pinned(&mut self,epoch:WriterEpoch,bytes:&[u8],holder:&str)->StoreResult<PayloadRef> {
-        let limit=self.admission_budget.command_credit_bytes;
-        let tx=self.write_tx(epoch)?;
+    pub fn put_admission_payload_pinned(
+        &mut self,
+        epoch: WriterEpoch,
+        bytes: &[u8],
+        holder: &str,
+    ) -> StoreResult<PayloadRef> {
+        let limit = self.admission_budget.command_credit_bytes;
+        let tx = self.write_tx(epoch)?;
         let used:u64=tx.query_row("SELECT COALESCE(SUM(length(p.bytes)),0) FROM payloads p JOIN payload_pins h ON h.payload_id=p.payload_id WHERE h.holder=?1",[holder],|row|row.get(0))?;
-        let requested=bytes.len() as u64;
-        if used.checked_add(requested).is_none_or(|total|total>limit) {return Err(StoreError::AdmissionPayloadCapacity {used,requested,limit});}
-        let payload=insert(&tx,bytes)?;pin_in(&tx,payload,holder)?;tx.commit()?;Ok(payload)
+        let requested = bytes.len() as u64;
+        if used
+            .checked_add(requested)
+            .is_none_or(|total| total > limit)
+        {
+            return Err(StoreError::AdmissionPayloadCapacity {
+                used,
+                requested,
+                limit,
+            });
+        }
+        let payload = insert(&tx, bytes)?;
+        pin_in(&tx, payload, holder)?;
+        tx.commit()?;
+        Ok(payload)
     }
 
     /// Release only one explicit holder; event/snapshot/undo pins are not affected.
-    pub fn release_payload_holder(&mut self,epoch:WriterEpoch,holder:&str)->StoreResult<()> {
-        let tx=self.write_tx(epoch)?;
-        tx.execute("DELETE FROM payload_pins WHERE holder = ?1",[holder])?;
-        tx.commit()?;Ok(())
+    pub fn release_payload_holder(&mut self, epoch: WriterEpoch, holder: &str) -> StoreResult<()> {
+        let tx = self.write_tx(epoch)?;
+        tx.execute("DELETE FROM payload_pins WHERE holder = ?1", [holder])?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// Admission holders are process-local preparation. A fenced new writer can remove the old
     /// namespace: accepted commands already have event pins, unaccepted inputs may be collected.
-    pub fn release_abandoned_admission_holders(&mut self,epoch:WriterEpoch)->StoreResult<()> {
-        let tx=self.write_tx(epoch)?;
-        let current=format!("admission/{}/",epoch.0);
+    pub fn release_abandoned_admission_holders(&mut self, epoch: WriterEpoch) -> StoreResult<()> {
+        let tx = self.write_tx(epoch)?;
+        let current = format!("admission/{}/", epoch.0);
         tx.execute("DELETE FROM payload_pins WHERE substr(holder,1,10) = 'admission/' AND substr(holder,1,length(?1)) != ?1",[current])?;
-        tx.commit()?;Ok(())
+        tx.commit()?;
+        Ok(())
     }
 
     /// Atomically transfer an owner's complete reference set. An invalid replacement rolls back
@@ -82,7 +107,7 @@ impl EventStore {
         source_holder: &str,
         destination_holder: &str,
     ) -> StoreResult<Vec<(PayloadRef, PayloadRef)>> {
-        let mut size=crate::write_limits::Budget::new();
+        let mut size = crate::write_limits::Budget::new();
         let source_tx = source.write_tx(source_epoch)?;
         let mut contents = Vec::new();
         let mut seen = std::collections::BTreeSet::new();
@@ -90,7 +115,8 @@ impl EventStore {
             if seen.insert(reference.0) {
                 let bytes = read_verified(&source_tx, *reference)?;
                 crate::write_limits::blob(&bytes)?;
-                size.add(bytes.len())?;size.add(256)?;
+                size.add(bytes.len())?;
+                size.add(256)?;
                 pin_in(&source_tx, *reference, source_holder)?;
                 contents.push((*reference, bytes));
             }
@@ -115,10 +141,21 @@ impl EventStore {
     /// Check size in the same read snapshot before allocating the BLOB buffer.
     pub fn read_payload_bounded(&self, payload: PayloadRef, limit: usize) -> StoreResult<Vec<u8>> {
         let tx = self.conn.unchecked_transaction()?;
-        let size: Option<i64> = tx.query_row("SELECT length(bytes) FROM payloads WHERE payload_id = ?1",
-            [to_i64(payload.0)?], |row| row.get(0)).optional()?;
+        let size: Option<i64> = tx
+            .query_row(
+                "SELECT length(bytes) FROM payloads WHERE payload_id = ?1",
+                [to_i64(payload.0)?],
+                |row| row.get(0),
+            )
+            .optional()?;
         let size = to_u64(size.ok_or(StoreError::PayloadMissing(payload.0))?)?;
-        if size > limit as u64 {return Err(StoreError::PayloadTooLarge {payload: payload.0, size, limit});}
+        if size > limit as u64 {
+            return Err(StoreError::PayloadTooLarge {
+                payload: payload.0,
+                size,
+                limit,
+            });
+        }
         read_verified(&tx, payload)
     }
 

@@ -205,8 +205,8 @@ impl GitQueryKind {
 
 /// Per-client push sink held in the registry.
 struct StreamSink {
-    binding:Arc<()>,
-    registration:u128,
+    binding: Arc<()>,
+    registration: u128,
     tx: SyncSender<StreamFrame>,
     /// Consecutive dropped-frame count (reset on a successful send).
     lag: u32,
@@ -370,7 +370,8 @@ impl StreamHub {
         tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED).insert(
             id,
             StreamSink {
-                binding:Arc::new(()),registration:rand::random(),
+                binding: Arc::new(()),
+                registration: rand::random(),
                 tx,
                 lag: 0,
                 loss_notify: false,
@@ -389,12 +390,17 @@ impl StreamHub {
     }
 
     /// A reply lease identifies this registration, including when a numeric ID is registered again.
-    pub fn client_identity(&self,id:StreamClientId)->Option<(u128,Weak<()>)> {
-        tasty_utils::poison::recover_mutex(self.sinks.lock(),SINKS_WHAT,&SINKS_POISONED).get(&id).map(|sink|(sink.registration,Arc::downgrade(&sink.binding)))
+    pub fn client_identity(&self, id: StreamClientId) -> Option<(u128, Weak<()>)> {
+        tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED)
+            .get(&id)
+            .map(|sink| (sink.registration, Arc::downgrade(&sink.binding)))
     }
-    pub fn client_binding(&self,id:StreamClientId)->Option<Weak<()>> {self.client_identity(id).map(|(_,binding)|binding)}
-    pub fn matches_client_binding(&self,id:StreamClientId,binding:&Weak<()>)->bool {
-        self.client_binding(id).is_some_and(|current|current.ptr_eq(binding))
+    pub fn client_binding(&self, id: StreamClientId) -> Option<Weak<()>> {
+        self.client_identity(id).map(|(_, binding)| binding)
+    }
+    pub fn matches_client_binding(&self, id: StreamClientId, binding: &Weak<()>) -> bool {
+        self.client_binding(id)
+            .is_some_and(|current| current.ptr_eq(binding))
     }
 
     /// ClientLossNotify 선언을 기록한다. 반복 호출은 같으며 이미 끊긴 연결은 무시한다.
@@ -418,11 +424,18 @@ impl StreamHub {
     }
 
     /// Remove only the original registration, including its bulk binding.
-    pub fn unregister_bound(&self,id:StreamClientId,binding:&Weak<()>)->bool {
-        let mut sinks=tasty_utils::poison::recover_mutex(self.sinks.lock(),SINKS_WHAT,&SINKS_POISONED);
-        if !sinks.get(&id).is_some_and(|sink|Arc::downgrade(&sink.binding).ptr_eq(binding)) {return false;}
+    pub fn unregister_bound(&self, id: StreamClientId, binding: &Weak<()>) -> bool {
+        let mut sinks =
+            tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED);
+        if !sinks
+            .get(&id)
+            .is_some_and(|sink| Arc::downgrade(&sink.binding).ptr_eq(binding))
+        {
+            return false;
+        }
         sinks.remove(&id);
-        tasty_utils::poison::recover_mutex(self.bulk_bindings.lock(),BULK_WHAT,&BULK_POISONED).remove(&id);
+        tasty_utils::poison::recover_mutex(self.bulk_bindings.lock(), BULK_WHAT, &BULK_POISONED)
+            .remove(&id);
         true
     }
 
@@ -446,21 +459,33 @@ impl StreamHub {
     /// Push a frame to one client. Non-blocking: a full sink drops the frame and,
     /// past [`LAG_LIMIT`] consecutive drops, disconnects the client.
     pub fn push(&self, id: StreamClientId, frame: StreamFrame) -> PushResult {
-        self.push_to(id,None,frame)
+        self.push_to(id, None, frame)
     }
 
     /// Registration comparison and enqueue share the same sink lock.
-    pub fn push_bound(&self,id:StreamClientId,binding:&Weak<()>,frame:StreamFrame)->PushResult {
-        self.push_to(id,Some(binding),frame)
+    pub fn push_bound(
+        &self,
+        id: StreamClientId,
+        binding: &Weak<()>,
+        frame: StreamFrame,
+    ) -> PushResult {
+        self.push_to(id, Some(binding), frame)
     }
 
-    fn push_to(&self,id:StreamClientId,binding:Option<&Weak<()>>,frame:StreamFrame)->PushResult {
+    fn push_to(
+        &self,
+        id: StreamClientId,
+        binding: Option<&Weak<()>>,
+        frame: StreamFrame,
+    ) -> PushResult {
         let mut sinks =
             tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED);
         let Some(sink) = sinks.get_mut(&id) else {
             return PushResult::Unknown;
         };
-        if binding.is_some_and(|binding|!Arc::downgrade(&sink.binding).ptr_eq(binding)) {return PushResult::Unknown;}
+        if binding.is_some_and(|binding| !Arc::downgrade(&sink.binding).ptr_eq(binding)) {
+            return PushResult::Unknown;
+        }
         // 큐가 가득 차 생긴 손실이므로 Loss도 바로 넣지 못할 수 있다.
         // pending_loss를 보존하고 수신자가 자리를 비울 때 또는 다음 push 전에 다시 넣는다.
         // 통지가 큐에 들어가기 전에는 누계를 초기화하지 않는다.

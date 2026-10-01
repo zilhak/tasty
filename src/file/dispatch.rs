@@ -393,8 +393,10 @@ pub(crate) fn open_surface_tab(
                 activate: dispatch_origin.selects_result(),
             };
             state.dispatch_intent(match dispatch_origin {
-                FileDispatchOrigin::User=>intent.from_user_menu("file_dispatch"),
-                FileDispatchOrigin::Agent|FileDispatchOrigin::PluginUnverified=>intent.from_agent_ipc(),
+                FileDispatchOrigin::User => intent.from_user_menu("file_dispatch"),
+                FileDispatchOrigin::Agent | FileDispatchOrigin::PluginUnverified => {
+                    intent.from_agent_ipc()
+                }
             });
         }
         None => {
@@ -416,7 +418,6 @@ pub(crate) fn open_surface_tab(
 
 /// mirror pane이면 원격 실행 큐에 넣은 것이다. 실패가 아니며 결과는 원격 회신으로 받는다.
 /// 요청 주체를 마지막 forward에 표시해야 하므로 CreateTab apply 직후에 호출한다.
-
 
 /// 경로 구분자를 바꾸고 file URI 접두사를 붙인다. 특수문자 percent-encoding은 하지 않는다.
 fn path_to_file_uri(abs: &std::path::Path) -> String {
@@ -604,7 +605,9 @@ mod tests {
     fn remote_placeholder_picker_carries_no_recent_even_when_recent_is_populated() {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        let any = engine.runtime.file_handler
+        let any = engine
+            .runtime
+            .file_handler
             .all_handlers()
             .into_iter()
             .next()

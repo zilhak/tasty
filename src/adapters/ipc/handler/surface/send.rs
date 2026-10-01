@@ -124,15 +124,32 @@ fn dispatch_send(
 }
 
 /// Shared wire decoding before either lazy activation or live input execution.
-pub(crate) fn decode_input_header<'a>(method:&str,params:&'a serde_json::Value,id:&serde_json::Value)->Result<(u32,&'a str),JsonRpcResponse> {
-    if method=="surface.send_to" {
-        let text=params.get("text").and_then(|value|value.as_str()).ok_or_else(||JsonRpcResponse::invalid_params(id.clone(),"Missing 'text' parameter"))?;
-        return Ok((require_u32(params,"surface_id",id)?,text));
+pub(crate) fn decode_input_header<'a>(
+    method: &str,
+    params: &'a serde_json::Value,
+    id: &serde_json::Value,
+) -> Result<(u32, &'a str), JsonRpcResponse> {
+    if method == "surface.send_to" {
+        let text = params
+            .get("text")
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| {
+                JsonRpcResponse::invalid_params(id.clone(), "Missing 'text' parameter")
+            })?;
+        return Ok((require_u32(params, "surface_id", id)?, text));
     }
-    let surface=require_surface_id(params,id)?;
-    let field=match method {"surface.send"|"surface.send_wait_idle"=>"text",_=>"key"};
-    let value=params.get(field).and_then(|value|value.as_str()).ok_or_else(||JsonRpcResponse::invalid_params(id.clone(),format!("Missing '{field}' parameter")))?;
-    Ok((surface,value))
+    let surface = require_surface_id(params, id)?;
+    let field = match method {
+        "surface.send" | "surface.send_wait_idle" => "text",
+        _ => "key",
+    };
+    let value = params
+        .get(field)
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| {
+            JsonRpcResponse::invalid_params(id.clone(), format!("Missing '{field}' parameter"))
+        })?;
+    Ok((surface, value))
 }
 
 pub(crate) fn handle_surface_send(
@@ -141,7 +158,10 @@ pub(crate) fn handle_surface_send(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let (surface_id,text)=match decode_input_header("surface.send",params,&id) {Ok(input)=>input,Err(error)=>return error};
+    let (surface_id, text) = match decode_input_header("surface.send", params, &id) {
+        Ok(input) => input,
+        Err(error) => return error,
+    };
 
     match dispatch_send(
         core,
@@ -162,8 +182,10 @@ pub(crate) fn handle_surface_send_key(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let (surface_id,key)=match decode_input_header("surface.send_key",params,&id) {Ok(input)=>input,Err(error)=>return error};
-
+    let (surface_id, key) = match decode_input_header("surface.send_key", params, &id) {
+        Ok(input) => input,
+        Err(error) => return error,
+    };
 
     let bytes: Vec<u8> = match key {
         "enter" => b"\r".to_vec(),
@@ -235,7 +257,10 @@ pub(crate) fn handle_surface_send_combo(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let (surface_id,key)=match decode_input_header("surface.send_combo",params,&id) {Ok(input)=>input,Err(error)=>return error};
+    let (surface_id, key) = match decode_input_header("surface.send_combo", params, &id) {
+        Ok(input) => input,
+        Err(error) => return error,
+    };
 
     let modifiers = params
         .get("modifiers")
@@ -293,7 +318,10 @@ pub(crate) fn handle_surface_send_to(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let (surface_id,text)=match decode_input_header("surface.send_to",params,&id) {Ok(input)=>input,Err(error)=>return error};
+    let (surface_id, text) = match decode_input_header("surface.send_to", params, &id) {
+        Ok(input) => input,
+        Err(error) => return error,
+    };
     match dispatch_send(
         core,
         engine,

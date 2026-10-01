@@ -29,8 +29,8 @@ pub(crate) use query::{
     handle_cursor_position, handle_foreground_process, handle_mouse_tracking, handle_screen_text,
     handle_surface_locate,
 };
-pub(crate) use send::{decode_input_header,
-    handle_surface_send, handle_surface_send_combo, handle_surface_send_key,
+pub(crate) use send::{
+    decode_input_header, handle_surface_send, handle_surface_send_combo, handle_surface_send_key,
     handle_surface_send_to,
 };
 

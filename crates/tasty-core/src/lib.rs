@@ -31,7 +31,7 @@ mod model;
 mod operation;
 mod retirement;
 mod undo;
-pub use undo::{UndoRecord,UndoCapture,ClosedSnapshot,UndoPresentation,ClosedPanePosition};
+pub use undo::{ClosedPanePosition, ClosedSnapshot, UndoCapture, UndoPresentation, UndoRecord};
 mod streams;
 
 #[cfg(test)]
@@ -62,19 +62,19 @@ pub use streams::{
     STRUCTURE_STREAM_PREFIX, StreamBatch, StructureModels, evolve_streams, is_structure_stream,
 };
 
-pub use retirement::{CloseTarget,RetirementPlan,RetiredSurface};
+pub use retirement::{CloseTarget, RetiredSurface, RetirementPlan};
 
 mod assembly;
-pub use assembly::{CreationAssembly,AssemblyDestination};
+pub use assembly::{AssemblyDestination, CreationAssembly};
 
 mod replacement;
 pub use replacement::Replacement;
 
-mod state;
-mod finders;
-mod categories;
-pub mod workspaces;
 pub mod canonical;
+mod categories;
+mod finders;
 pub mod projection;
-pub use state::CoreState;
+mod state;
+pub mod workspaces;
 pub use finders::SurfaceDisplayPath;
+pub use state::CoreState;

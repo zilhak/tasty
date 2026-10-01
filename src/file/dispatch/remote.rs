@@ -2,12 +2,12 @@
 //! 식별은 파일 이름만 보는 DetectDepth::Name으로 끝나며, 원격 NewTab으로 보낼 수 있는 핸들러만 실행한다.
 //! 규칙은 [ADR-0022](../../../docs/adr/0022-remote-mirror-content-and-queries.md)를 따른다.
 
-use crate::runtime::engine_access::EngineMut;
-use crate::core::{State};
 use crate::app::services::AppServices;
+use crate::core::State;
 use crate::file::dispatch::{DispatchTarget, FileDispatchOrigin};
 use crate::file::format::{DetectorId, FileTarget};
 use crate::file::handler::{FileHandler, HandlerAction};
+use crate::runtime::engine_access::EngineMut;
 use crate::state::RequestContext;
 
 /// 원격에 열 수 있는 핸들러인지 확인한다.
@@ -131,7 +131,9 @@ fn open_remote_picker(
     picker.origin_surface_id = Some(origin_surface_id);
     picker.default_handler = None;
     picker.recent.retain(|summary| {
-        engine.runtime.file_handler
+        engine
+            .runtime
+            .file_handler
             .get(&summary.id)
             .is_some_and(|h| is_remote_openable(engine, &h))
     });

@@ -186,14 +186,22 @@ impl Default for ImportExportState {
 }
 
 impl ImportExportState {
-    pub(crate) fn take_file_requests(&mut self) -> Vec<crate::app::settings_files::SettingsFileRequest> {
+    pub(crate) fn take_file_requests(
+        &mut self,
+    ) -> Vec<crate::app::settings_files::SettingsFileRequest> {
         std::mem::take(&mut self.pending_files)
     }
 
-    pub(crate) fn accept_file_result(&mut self, result: crate::app::settings_files::SettingsFileResult) {
+    pub(crate) fn accept_file_result(
+        &mut self,
+        result: crate::app::settings_files::SettingsFileResult,
+    ) {
         match result {
             crate::app::settings_files::SettingsFileResult::Export { path, result } => {
-                self.finish_export(&path, result.map_err(|error| ExportFailReason::of_io(&error)));
+                self.finish_export(
+                    &path,
+                    result.map_err(|error| ExportFailReason::of_io(&error)),
+                );
             }
             crate::app::settings_files::SettingsFileResult::Import { path, result } => {
                 self.finish_import(&path, result);
@@ -229,9 +237,13 @@ impl ImportExportState {
     ) {
         let overrides = merged_overrides(&ctx.overrides, plugin_draft);
         match encode(keybindings, &overrides) {
-            Ok(text) => self.pending_files.push(crate::app::settings_files::SettingsFileRequest::Export {
-                path: path.to_path_buf(), text,
-            }),
+            Ok(text) => {
+                self.pending_files
+                    .push(crate::app::settings_files::SettingsFileRequest::Export {
+                        path: path.to_path_buf(),
+                        text,
+                    })
+            }
             Err(error) => {
                 tracing::error!(%error, "keybinding export encode failed");
                 self.finish_export(path, Err(ExportFailReason::Unknown(error.to_string())));
@@ -268,11 +280,16 @@ impl ImportExportState {
         self.failure = None;
         self.conflict_prompt = None;
         self.conflict_answer = None;
-        self.pending_files.push(crate::app::settings_files::SettingsFileRequest::Import {
-            path: path.to_path_buf(),
-            plugins: ctx.installed_plugin_ids.clone(),
-            scripts: settings.scripts.iter().map(|script| script.id.clone()).collect(),
-        });
+        self.pending_files
+            .push(crate::app::settings_files::SettingsFileRequest::Import {
+                path: path.to_path_buf(),
+                plugins: ctx.installed_plugin_ids.clone(),
+                scripts: settings
+                    .scripts
+                    .iter()
+                    .map(|script| script.id.clone())
+                    .collect(),
+            });
     }
 
     fn finish_import(&mut self, path: &Path, result: Result<DecodedBundle, Option<usize>>) {
@@ -676,18 +693,26 @@ mod tests {
     fn export_feedback_waits_for_app_result_and_recovers_after_retry() {
         let mut state = ImportExportState::default();
         let path = PathBuf::from("keybindings.toml");
-        state.export_to(&path, &KeybindingSettings::default(),
-            &PluginBundleContext::default(), &PluginShortcutDraft::new());
+        state.export_to(
+            &path,
+            &KeybindingSettings::default(),
+            &PluginBundleContext::default(),
+            &PluginShortcutDraft::new(),
+        );
         assert_eq!(state.take_file_requests().len(), 1);
         assert!(state.toast.is_none());
         state.accept_file_result(crate::app::settings_files::SettingsFileResult::Export {
             path: path.clone(),
             result: Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
         });
-        assert!(matches!(state.export_failure.as_ref().unwrap().reason, ExportFailReason::PermissionDenied));
+        assert!(matches!(
+            state.export_failure.as_ref().unwrap().reason,
+            ExportFailReason::PermissionDenied
+        ));
         assert!(state.toast.is_none());
         state.accept_file_result(crate::app::settings_files::SettingsFileResult::Export {
-            path, result: Ok(()),
+            path,
+            result: Ok(()),
         });
         assert!(state.export_failure.is_none());
         assert!(state.take_toast().is_some());

@@ -1,11 +1,11 @@
 //! Handler 설정: detector, handler, 확장자 우선순위와 훅 핸들러를 편집한다.
 //! 변경은 초안에 보관하고 Save에서 레지스트리와 사용자 TOML에 반영한다.
 
-use crate::runtime::file_catalog::HandlerCatalog as FileHandlerRegistry;
 use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;
+use crate::runtime::file_catalog::HandlerCatalog as FileHandlerRegistry;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::file::format::{DetectorDecl, DetectorId, };
+use crate::file::format::{DetectorDecl, DetectorId};
 use crate::file::handler::{HandlerId, UserHandlerUpsertDecl};
 use crate::i18n::t;
 
@@ -48,14 +48,21 @@ impl FileHandlerEditDraft {
             || !self.add_handler.is_empty()
     }
 
-    pub(crate) fn into_edits(self)->Vec<crate::app::settings_edit::RegistryEdit> {
+    pub(crate) fn into_edits(self) -> Vec<crate::app::settings_edit::RegistryEdit> {
         use crate::app::settings_edit::RegistryEdit as E;
-        self.detector_enabled.into_iter().map(|(id,value)|E::DetectorEnabled(id,value))
-            .chain(self.handler_enabled.into_iter().map(|(id,value)|E::HandlerEnabled(id,value)))
+        self.detector_enabled
+            .into_iter()
+            .map(|(id, value)| E::DetectorEnabled(id, value))
+            .chain(
+                self.handler_enabled
+                    .into_iter()
+                    .map(|(id, value)| E::HandlerEnabled(id, value)),
+            )
             .chain(self.remove_detector.into_iter().map(E::RemoveDetector))
             .chain(self.remove_handler.into_iter().map(E::RemoveHandler))
             .chain(self.add_detector.into_iter().map(E::AddDetector))
-            .chain(self.add_handler.into_iter().map(E::AddHandler)).collect()
+            .chain(self.add_handler.into_iter().map(E::AddHandler))
+            .collect()
     }
 }
 

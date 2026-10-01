@@ -42,7 +42,10 @@ const MOD_COL_W: LogicalPx = LogicalPx(108.0);
 const LIST_DIR_SOFT_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// PopupDef.sizer — 고정 640×480(gallery specimen `FRAME_W`/`FRAME_H`).
-pub fn picker_sizer(_state: &MainViewState, _engine: &crate::runtime::engine_read::EngineRead<'_>) -> egui::Vec2 {
+pub fn picker_sizer(
+    _state: &MainViewState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> egui::Vec2 {
     egui::vec2(POPUP_WIDTH.value(), POPUP_HEIGHT.value())
 }
 
@@ -1002,7 +1005,8 @@ fn navigate(
             sent_at: Instant::now(),
         };
         engine
-            .remote.pending_list_dir_forward
+            .remote
+            .pending_list_dir_forward
             .push(crate::core::PendingListDirForward {
                 local_ws_id: mirror_ws_id,
                 request_id,

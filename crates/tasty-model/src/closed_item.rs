@@ -164,7 +164,7 @@ impl ClosedSurfaceLayout {
     ) -> Self {
         match layout {
             super::SurfaceLayout::Leaf(surface) => {
-                if surface.kind()=="terminal" {
+                if surface.kind() == "terminal" {
                     ClosedSurfaceLayout::Single(ClosedSurface::from_capture(
                         surface.id,
                         terminal_lookup(surface.id),
@@ -220,7 +220,7 @@ impl ClosedPanel {
         snapshot: SnapshotFn<'_>,
         terminal_lookup: &TerminalCaptureFn<'_>,
     ) -> Option<Self> {
-        if surface.kind()=="terminal" {
+        if surface.kind() == "terminal" {
             return Some(ClosedPanel::Terminal(ClosedSurface::from_capture(
                 surface.id,
                 terminal_lookup(surface.id),

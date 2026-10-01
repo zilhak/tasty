@@ -1,7 +1,7 @@
 use egui::emath::GuiRounding as _;
 
-use crate::runtime::engine_read::EngineRead;
 use crate::model::PhysicalRect;
+use crate::runtime::engine_read::EngineRead;
 use crate::state::MainViewState;
 use crate::theme;
 
@@ -61,9 +61,13 @@ pub fn draw_egui_panels(
                     continue;
                 }
                 // 일반 surface 메뉴로 대체되지 않도록 탐색기의 현재 폴더를 함께 보관한다.
-                let explorer_cwd = engine.find_surface_by_id(r.id).and_then(|surface| surface.explorer())
+                let explorer_cwd = engine
+                    .find_surface_by_id(r.id)
+                    .and_then(|surface| surface.explorer())
                     .map(|p| p.current_root().to_path_buf());
-                let dag_poll = engine.find_surface_by_id(r.id).and_then(|surface| surface.dag())
+                let dag_poll = engine
+                    .find_surface_by_id(r.id)
+                    .and_then(|surface| surface.dag())
                     .map(|p| {
                         crate::adapters::ui::surface::dag_graph::DagPollRequest::from_surface(
                             p, ws_id,
@@ -140,22 +144,28 @@ pub fn draw_egui_panels(
                 format!("surface_{}", sid)
             });
 
-        let ws=state.active_workspace(engine);
-        let mirror_ws_id=ws.mirror.then_some(ws.id);
-        let Some(pane)=ws.pane_layout().find_pane(info.pane_id) else {continue;};
-        let Some(tab)=pane.tabs.get(state.navigation.tab_index(pane)) else {continue;};
-        let Some(sid)=info.surface_id.or_else(||state.navigation.surface_id(tab)) else {continue;};
-        let Some(surface)=engine.find_surface_by_id(sid) else {continue;};
+        let ws = state.active_workspace(engine);
+        let mirror_ws_id = ws.mirror.then_some(ws.id);
+        let Some(pane) = ws.pane_layout().find_pane(info.pane_id) else {
+            continue;
+        };
+        let Some(tab) = pane.tabs.get(state.navigation.tab_index(pane)) else {
+            continue;
+        };
+        let Some(sid) = info.surface_id.or_else(|| state.navigation.surface_id(tab)) else {
+            continue;
+        };
+        let Some(surface) = engine.find_surface_by_id(sid) else {
+            continue;
+        };
 
-        if let Some(empty) = surface.empty()
-        {
+        if let Some(empty) = surface.empty() {
             draw_panel_frame_no_margin(ctx, &format!("empty_panel_{}", id_suffix), info, |ui| {
                 if let Some(act) = crate::empty_ui::draw_empty(ui, empty) {
                     pending_empty_action = Some(act);
                 }
             });
-        } else if let Some(ex_panel) = surface.explorer()
-        {
+        } else if let Some(ex_panel) = surface.explorer() {
             let view = explorer_views.get_or_init(ex_panel, mirror_ws_id);
             let act = draw_panel_frame(
                 ctx,
@@ -188,11 +198,10 @@ pub fn draw_egui_panels(
             {
                 pending_explorer_action = Some((ex_panel.id, a));
             }
-        } else if let Some(dag) = surface.dag()
-        {
+        } else if let Some(dag) = surface.dag() {
             let view = dag_views.get_or_init(dag.id);
-            let mut dag_id=dag.dag_id.clone();
-            let mut direction=dag.direction;
+            let mut dag_id = dag.dag_id.clone();
+            let mut direction = dag.direction;
             draw_panel_frame_no_margin(ctx, &format!("dag_panel_{}", id_suffix), info, |ui| {
                 let target = crate::adapters::ui::surface::dag_graph::DagTarget {
                     dag_id: &mut dag_id,
@@ -205,8 +214,20 @@ pub fn draw_egui_panels(
                     crate::adapters::ui::surface::dag_graph::DagChrome::Own,
                 );
             });
-            if (dag_id.as_ref(),direction)!=(dag.dag_id.as_ref(),dag.direction) && let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,sid) {
-                state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::DagSelection {target,dag_id,direction}).from_user_context_menu());
+            if (dag_id.as_ref(), direction) != (dag.dag_id.as_ref(), dag.direction)
+                && let Some(target) =
+                    crate::app::engine_action::SurfaceBinding::capture(engine, sid)
+            {
+                state.dispatch_intent(
+                    crate::intent::Intent::Engine(
+                        crate::app::engine_action::EngineAction::DagSelection {
+                            target,
+                            dag_id,
+                            direction,
+                        },
+                    )
+                    .from_user_context_menu(),
+                );
             }
         } else if let Some(remote) = surface.remote_webview() {
             // webview 내용은 native overlay가 그린다. 여기서는 URL 부재나 overlay 숨김 때 보일 배경을 그린다.
@@ -244,9 +265,10 @@ pub fn draw_egui_panels(
     }
 
     for action in html_actions {
-        state.dispatch_intent(crate::intent::Intent::Engine(
-            crate::app::engine_action::EngineAction::Html(action),
-        ).from_user_menu("html-script-banner"));
+        state.dispatch_intent(
+            crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Html(action))
+                .from_user_menu("html-script-banner"),
+        );
     }
 
     let active_ws = state.active_workspace_index(engine);
@@ -268,7 +290,8 @@ pub fn draw_egui_panels(
     // engine의 하위 항목을 빌린 동안 모은 원격 목록 조회를 큐로 옮긴다.
     for (sid, req) in state.explorer_views.drain_outbox() {
         engine
-            .remote.pending_list_dir_forward
+            .remote
+            .pending_list_dir_forward
             .push(crate::core::PendingListDirForward {
                 local_ws_id: req.local_ws_id,
                 request_id: req.request_id,
@@ -375,7 +398,12 @@ pub(crate) fn apply_explorer_action(
             apply_explorer_panel_action(state, engine, sid, &act);
             let mode = m.as_str().to_string();
             if engine.settings.general.explorer_view_mode != mode {
-                state.dispatch_intent(crate::intent::Intent::PatchSettings(crate::app::engine_action::SettingsPatch::ExplorerMode(mode)).from_user_menu("explorer.view_mode"));
+                state.dispatch_intent(
+                    crate::intent::Intent::PatchSettings(
+                        crate::app::engine_action::SettingsPatch::ExplorerMode(mode),
+                    )
+                    .from_user_menu("explorer.view_mode"),
+                );
             }
         }
         A::ContextMenu { target, cwd, x, y } => {
@@ -435,9 +463,20 @@ pub(crate) fn apply_explorer_action(
     }
 }
 
-fn apply_explorer_panel_action(state:&mut MainViewState,engine:&crate::runtime::engine_read::EngineRead<'_>,sid:u32,action:&crate::explorer_ui::ExplorerAction) {
-    if let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,sid) {
-        state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Explorer {target,action:action.clone()}).from_user_context_menu());
+fn apply_explorer_panel_action(
+    state: &mut MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    sid: u32,
+    action: &crate::explorer_ui::ExplorerAction,
+) {
+    if let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, sid) {
+        state.dispatch_intent(
+            crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Explorer {
+                target,
+                action: action.clone(),
+            })
+            .from_user_context_menu(),
+        );
     }
 }
 
@@ -607,7 +646,17 @@ fn draw_occupied_overlays(
     }
 
     if let Some(sid) = pending_force_detach {
-        if let Some(lock)=engine.live.occupancy.occupancy_of(sid) {state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::DetachSurface {surface:sid,grant:lock.granted_seq}).from_user_context_menu());}
+        if let Some(lock) = engine.live.occupancy.occupancy_of(sid) {
+            state.dispatch_intent(
+                crate::intent::Intent::Engine(
+                    crate::app::engine_action::EngineAction::DetachSurface {
+                        surface: sid,
+                        grant: lock.granted_seq,
+                    },
+                )
+                .from_user_context_menu(),
+            );
+        }
     }
 }
 

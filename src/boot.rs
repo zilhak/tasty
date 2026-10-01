@@ -462,7 +462,7 @@ fn bootstrap_engine(
         .map_err(anyhow::Error::msg)?;
     while engine.journal_binding.is_none() || !app.journal.is_ready(engine.id) {
         app.journal
-            .poll_bootstrap(&mut [&mut engine],app.plugin_manager.as_mut())
+            .poll_bootstrap(&mut [&mut engine], app.plugin_manager.as_mut())
             .map_err(anyhow::Error::msg)?;
         app.journal
             .poll_restore_bootstrap(&engine)
@@ -482,8 +482,7 @@ fn bootstrap_engine(
             .collect::<Vec<_>>(),
     );
     // force-detach 통지에 IPC 서버와 같은 스트림 허브를 사용한다.
-    engine
-        .remote.set_notifier(app.stream_hub.clone());
+    engine.remote.set_notifier(app.stream_hub.clone());
     Ok(engine)
 }
 
@@ -535,11 +534,22 @@ fn dispatch_headless_event(
 ) -> std::ops::ControlFlow<()> {
     use crate::AppEvent;
     if matches!(event, AppEvent::JournalReady) {
-        app.journal.update_completion_view(session.id,&session.core_state,&state.navigation);
-        if let Err(error) = app.journal.poll_bootstrap(&mut [session],app.plugin_manager.as_mut()) {
+        app.journal
+            .update_completion_view(session.id, &session.core_state, &state.navigation);
+        if let Err(error) = app
+            .journal
+            .poll_bootstrap(&mut [session], app.plugin_manager.as_mut())
+        {
             tracing::error!("committed structure publication halted: {error}");
         }
-        if app.journal.is_halted() {crate::app::attach_activation::cancel_engine(&mut app.pending_server_attaches,session.id,&mut session.borrow_mut(),&app.stream_hub);}
+        if app.journal.is_halted() {
+            crate::app::attach_activation::cancel_engine(
+                &mut app.pending_server_attaches,
+                session.id,
+                &mut session.borrow_mut(),
+                &app.stream_hub,
+            );
+        }
         if !app.journal.is_halted() && !app.journal.pauses_observation() {
             for request in app.journal.creation_requests_needing_kind() {
                 headless_plugins::ensure_plugin_for_surface_kind(
@@ -549,12 +559,32 @@ fn dispatch_headless_event(
                     &request,
                 );
             }
-            crate::app::attach_activation::poll(&mut app.pending_server_attaches,&mut app.journal,&mut [session],&app.stream_hub);
-            app.journal.resolve_headless_requests(session, state,&app.services);
-            app.journal.finish_headless_live_inputs(session.id,&mut app.services,state,&mut session.borrow_mut(),app.plugin_manager.as_mut());
+            crate::app::attach_activation::poll(
+                &mut app.pending_server_attaches,
+                &mut app.journal,
+                &mut [session],
+                &app.stream_hub,
+            );
+            app.journal
+                .resolve_headless_requests(session, state, &app.services);
+            app.journal.finish_headless_live_inputs(
+                session.id,
+                &mut app.services,
+                state,
+                &mut session.borrow_mut(),
+                app.plugin_manager.as_mut(),
+            );
             session.borrow_mut().poll_input_submissions();
-            for (remote,response) in app.journal.take_remote_results() {
-                if remote.engine==session.id {crate::app::journal::commands::inbound::deliver_result(remote,response,&mut session.borrow_mut(),app.plugin_manager.as_mut(),&app.stream_hub);}
+            for (remote, response) in app.journal.take_remote_results() {
+                if remote.engine == session.id {
+                    crate::app::journal::commands::inbound::deliver_result(
+                        remote,
+                        response,
+                        &mut session.borrow_mut(),
+                        app.plugin_manager.as_mut(),
+                        &app.stream_hub,
+                    );
+                }
             }
             if !app.journal.take_changed_engines().is_empty() {
                 state.reconcile_presentation(&session.core_state);
@@ -597,16 +627,23 @@ fn dispatch_headless_event(
         }
         return std::ops::ControlFlow::Continue(());
     }
-    if matches!(event,AppEvent::IpcReady) {
+    if matches!(event, AppEvent::IpcReady) {
         waker.note_ipc_drained();
-        let flow=headless_dispatch::pump_ipc(app,state,session);
-        rewake_if_left(flow,||ipc_commands_left(&app.services),||waker.wake_ipc());
+        let flow = headless_dispatch::pump_ipc(app, state, session);
+        rewake_if_left(
+            flow,
+            || ipc_commands_left(&app.services),
+            || waker.wake_ipc(),
+        );
         return flow;
     }
     let engine = &mut session.borrow_mut();
     match event {
         AppEvent::JournalReady => unreachable!("journal event handled above"),
-        AppEvent::Shutdown | AppEvent::QuitRequested => {app.state.stopping=true;return std::ops::ControlFlow::Break(());},
+        AppEvent::Shutdown | AppEvent::QuitRequested => {
+            app.state.stopping = true;
+            return std::ops::ControlFlow::Break(());
+        }
         AppEvent::TerminalOutput(id) => handle_terminal_output(app, state, engine, id),
         AppEvent::IpcReady => unreachable!("IPC event handled above"),
         AppEvent::StreamReady => headless_stream::handle_stream_ready(app, state, engine),
@@ -679,12 +716,12 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         mgr.refresh_packages();
     }
 
-    app.state.started=true;
+    app.state.started = true;
     tracing::info!("headless daemon ready; PTY pump + IPC dispatch active");
 
     loop {
         if !app.journal.is_halted() && !app.journal.pauses_observation() {
-            let _=app.services.profile_detections.poll();
+            let _ = app.services.profile_detections.poll();
             engine.poll_attach_subscriptions();
             crate::intent::headless::drain_pending_intents_in_app(
                 &mut app.services,
@@ -692,10 +729,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                 &mut engine,
                 &mut app.journal,
             );
-            crate::intent::headless::drain_pending_host_events(
-                &app.services,
-                &mut engine,
-            );
+            crate::intent::headless::drain_pending_host_events(&app.services, &mut engine);
         }
         // 대기 전에 agent 이벤트를 발행한다. 대기 중 새 항목이 쌓이면 다음 루프에서 전달한다.
         if !app.journal.pauses_observation() {
@@ -718,14 +752,29 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         };
         let deadline =
             crate::app::timers::min_deadline(deadline, app.journal.cleanup_poll_deadline());
-        let deadline=crate::app::timers::min_deadline(deadline,app.runner_stop_poll_deadline());
-        let deadline=if app.journal.is_halted() || app.journal.pauses_observation(){deadline}else{crate::app::timers::min_deadline(deadline,engine.runtime.input_submit_deadline())};
-        let deadline=if app.journal.is_halted() || app.journal.pauses_observation() {deadline} else {
-            crate::app::timers::min_deadline(deadline,app.services.profile_detections.has_pending().then(||std::time::Instant::now()+std::time::Duration::from_millis(20)))
+        let deadline = crate::app::timers::min_deadline(deadline, app.runner_stop_poll_deadline());
+        let deadline = if app.journal.is_halted() || app.journal.pauses_observation() {
+            deadline
+        } else {
+            crate::app::timers::min_deadline(deadline, engine.runtime.input_submit_deadline())
+        };
+        let deadline = if app.journal.is_halted() || app.journal.pauses_observation() {
+            deadline
+        } else {
+            crate::app::timers::min_deadline(
+                deadline,
+                app.services
+                    .profile_detections
+                    .has_pending()
+                    .then(|| std::time::Instant::now() + std::time::Duration::from_millis(20)),
+            )
         };
         let pending = match wait_for_event(&rx, deadline) {
             Wait::Event(ev) => Some(ev),
-            Wait::Deadline if app.journal.cleanup_poll_deadline().is_some() || engine.runtime.input_submit_deadline().is_some() => {
+            Wait::Deadline
+                if app.journal.cleanup_poll_deadline().is_some()
+                    || engine.runtime.input_submit_deadline().is_some() =>
+            {
                 Some(crate::AppEvent::JournalReady)
             }
             Wait::Deadline => None,
@@ -747,21 +796,31 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         }
     }
     drop(engine);
-    let _=session.poll_runner_stop(&app.services.tasks);
+    let _ = session.poll_runner_stop(&app.services.tasks);
     app.services.profile_detections.begin_shutdown();
-    let deadline=std::time::Instant::now()+std::time::Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     loop {
-        let remaining=app.services.profile_detections.poll_shutdown();
-        if remaining==0 {break;}
-        if std::time::Instant::now()>=deadline {
-            tracing::warn!(remaining,"headless profile detection shutdown timed out; workers remain unjoined");
+        let remaining = app.services.profile_detections.poll_shutdown();
+        if remaining == 0 {
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            tracing::warn!(
+                remaining,
+                "headless profile detection shutdown timed out; workers remain unjoined"
+            );
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     loop {
-        if !matches!(session.poll_runner_stop(&app.services.tasks),tasty_task_runtime::RunnerStopObservation::Waiting) {break;}
-        if std::time::Instant::now()>=deadline {
+        if !matches!(
+            session.poll_runner_stop(&app.services.tasks),
+            tasty_task_runtime::RunnerStopObservation::Waiting
+        ) {
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
             tracing::warn!("headless runner shutdown timed out; scope retains unjoined workers");
             break;
         }
@@ -802,48 +861,94 @@ mod tests {
     }
 }
 
-#[cfg(all(test,not(feature="gui")))]
+#[cfg(all(test, not(feature = "gui")))]
 mod journal_event_tests {
     use super::*;
-    use std::sync::{Arc,Mutex,mpsc};
-    use std::time::{Duration,Instant};
+    use std::sync::{Arc, Mutex, mpsc};
+    use std::time::{Duration, Instant};
 
     #[test]
     fn public_creation_finishes_using_only_real_journal_wakes_and_cleanup_deadlines() {
-        let _home=crate::test_support::IsolatedHome::new();
-        let (tx,events)=mpsc::channel();
-        let waker=crate::adapters::production::headless_waker::HeadlessWaker::new(tx);
-        let memory=Arc::new(Mutex::new(tasty_memory::MemoryStore::open_in_memory().unwrap()));
-        let mut app=crate::app::App::new_headless(waker.journal_waker(),None,Some(memory.clone())).unwrap();
-        let mut settings=crate::settings::Settings::default();
-        settings.general.shell="/bin/sh".into();
-        settings.general.startup_command="exec sleep 60".into();
-        let mut session=crate::runtime::engine_session::EngineSession::for_journal(80,24,waker.waker_factory().make_default_waker(),None,None,memory,Arc::clone(app.services.tasks.runner_registry()),settings,app.services.registries.clone()).unwrap();
-        app.journal.begin_engine(&session,crate::runtime::journal_product::EngineSelection::FreshHeadless).unwrap();
-        let mut state=crate::state::CommandContext::new(&session.read(),app.services.preset_store.clone());
-        state.engine_id=Some(session.id);
-        let until=Instant::now()+Duration::from_secs(10);
+        let _home = crate::test_support::IsolatedHome::new();
+        let (tx, events) = mpsc::channel();
+        let waker = crate::adapters::production::headless_waker::HeadlessWaker::new(tx);
+        let memory = Arc::new(Mutex::new(
+            tasty_memory::MemoryStore::open_in_memory().unwrap(),
+        ));
+        let mut app =
+            crate::app::App::new_headless(waker.journal_waker(), None, Some(memory.clone()))
+                .unwrap();
+        let mut settings = crate::settings::Settings::default();
+        settings.general.shell = "/bin/sh".into();
+        settings.general.startup_command = "exec sleep 60".into();
+        let mut session = crate::runtime::engine_session::EngineSession::for_journal(
+            80,
+            24,
+            waker.waker_factory().make_default_waker(),
+            None,
+            None,
+            memory,
+            Arc::clone(app.services.tasks.runner_registry()),
+            settings,
+            app.services.registries.clone(),
+        )
+        .unwrap();
+        app.journal
+            .begin_engine(
+                &session,
+                crate::runtime::journal_product::EngineSelection::FreshHeadless,
+            )
+            .unwrap();
+        let mut state =
+            crate::state::CommandContext::new(&session.read(), app.services.preset_store.clone());
+        state.engine_id = Some(session.id);
+        let until = Instant::now() + Duration::from_secs(10);
         while !app.journal.is_ready(session.id) {
-            let event=events.recv_timeout(until.saturating_duration_since(Instant::now())).expect("bootstrap wake");
-            assert!(dispatch_headless_event(&mut app,&mut state,&mut session,&waker,event).is_continue());
+            let event = events
+                .recv_timeout(until.saturating_duration_since(Instant::now()))
+                .expect("bootstrap wake");
+            assert!(
+                dispatch_headless_event(&mut app, &mut state, &mut session, &waker, event)
+                    .is_continue()
+            );
         }
-        let (reply,rx)=mpsc::sync_channel(1);
+        let (reply, rx) = mpsc::sync_channel(1);
         let request=serde_json::from_value(serde_json::json!({"jsonrpc":"2.0","method":"workspace.create","params":{"name":"event-driven"},"id":1,"idempotency_key":"event-create"})).unwrap();
-        assert!(app.journal.admit_ipc(&crate::ipc::server::IpcCommand::new(request,reply),&crate::ipc::caller::CallerContext::Local));
-        let response=loop {
-            if let Ok(response)=rx.try_recv() {break response;}
-            assert!(Instant::now()<until,"no worker wake after queued cleanup");
-            let deadline=app.journal.cleanup_poll_deadline().unwrap_or(until).min(until);
-            let event=match events.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-                Ok(event)=>event,
-                Err(mpsc::RecvTimeoutError::Timeout) if app.journal.cleanup_poll_deadline().is_some()=>crate::AppEvent::JournalReady,
-                Err(error)=>panic!("missing event-driven continuation: {error}"),
-            };
-            assert!(dispatch_headless_event(&mut app,&mut state,&mut session,&waker,event).is_continue());
+        assert!(app.journal.admit_ipc(
+            &crate::ipc::server::IpcCommand::new(request, reply),
+            &crate::ipc::caller::CallerContext::Local
+        ));
+        let response = loop {
+            if let Ok(response) = rx.try_recv() {
+                break response;
+            }
+            assert!(
+                Instant::now() < until,
+                "no worker wake after queued cleanup"
+            );
+            let deadline = app
+                .journal
+                .cleanup_poll_deadline()
+                .unwrap_or(until)
+                .min(until);
+            let event =
+                match events.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                    Ok(event) => event,
+                    Err(mpsc::RecvTimeoutError::Timeout)
+                        if app.journal.cleanup_poll_deadline().is_some() =>
+                    {
+                        crate::AppEvent::JournalReady
+                    }
+                    Err(error) => panic!("missing event-driven continuation: {error}"),
+                };
+            assert!(
+                dispatch_headless_event(&mut app, &mut state, &mut session, &waker, event)
+                    .is_continue()
+            );
         };
-        assert!(response.error.is_none(),"{response:?}");
-        assert_eq!(response.result.unwrap()["name"],"event-driven");
-        assert_eq!(session.core_state.local_workspaces().len(),2);
+        assert!(response.error.is_none(), "{response:?}");
+        assert_eq!(response.result.unwrap()["name"], "event-driven");
+        assert_eq!(session.core_state.local_workspaces().len(), 2);
         assert!(!app.journal.pauses_observation());
         assert!(!app.journal.is_halted());
     }

@@ -1,6 +1,6 @@
 use super::*;
-use tasty_model::{EmptySurface, SplitDirection, SurfaceLayout};
 use crate::{DomainEvent as E, Placement, Ratio, RecordedEvent, SplitSpec, SurfaceSpec};
+use tasty_model::{EmptySurface, SplitDirection, SurfaceLayout};
 
 fn batch(model: &JournalModel, events: Vec<E>) -> DomainBatch {
     DomainBatch {

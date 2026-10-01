@@ -6,13 +6,24 @@ use tasty_terminal::{Terminal, TerminalEvent};
 use super::CoreState;
 
 impl crate::runtime::engine_access::EngineRef<'_> {
-    pub fn is_surface_deferred(&self,surface:u32)->bool {
-        self.runtime.surfaces.get(&surface).is_some_and(|surface|surface.as_any().is::<crate::runtime::surface_restorer::JournalPlaceholder>())
+    pub fn is_surface_deferred(&self, surface: u32) -> bool {
+        self.runtime.surfaces.get(&surface).is_some_and(|surface| {
+            surface
+                .as_any()
+                .is::<crate::runtime::surface_restorer::JournalPlaceholder>()
+        })
     }
-    pub(crate) fn find_mesh_surface_info(&self,surface:u32)->Option<(String,String)> {
-        self.runtime.surfaces.get(&surface)?.attach_mesh_info().map(|(kind,plugin)|(kind.into(),plugin.into()))
+    pub(crate) fn find_mesh_surface_info(&self, surface: u32) -> Option<(String, String)> {
+        self.runtime
+            .surfaces
+            .get(&surface)?
+            .attach_mesh_info()
+            .map(|(kind, plugin)| (kind.into(), plugin.into()))
     }
-    pub(crate) fn find_egui_mesh_surface(&self,surface:u32)->Option<&crate::runtime::egui_mesh_surface::EguiMeshSurface> {
+    pub(crate) fn find_egui_mesh_surface(
+        &self,
+        surface: u32,
+    ) -> Option<&crate::runtime::egui_mesh_surface::EguiMeshSurface> {
         self.runtime.surfaces.get(&surface)?.as_any().downcast_ref()
     }
 }
@@ -174,7 +185,8 @@ impl EngineMut<'_> {
     }
 }
 
-
 impl EngineMut<'_> {
-    pub fn mark_layout_dirty(&mut self) {self.persistence.dirty.mark_dirty();}
+    pub fn mark_layout_dirty(&mut self) {
+        self.persistence.dirty.mark_dirty();
+    }
 }

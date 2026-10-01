@@ -31,7 +31,7 @@ pub fn draw_collapsed_sidebar(
         .workspaces()
         .into_iter()
         .enumerate()
-        .map(|(i, ws)| entry_view(state.pending_move,engine, i, ws, active_ws))
+        .map(|(i, ws)| entry_view(state.pending_move, engine, i, ws, active_ws))
         .collect();
 
     let sections = build_category_sections(&state.navigation, engine, active_ws);

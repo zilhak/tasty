@@ -55,7 +55,7 @@ pub enum CommitOutcome {
 impl EventStore {
     /// 요청 전체를 한 transaction으로 확정한다. 오류이면 아무것도 남지 않는다.
     pub fn commit(&mut self, request: &CommitRequest) -> StoreResult<CommitOutcome> {
-        let pending_effect_limit=self.admission_budget.max_pending_effects;
+        let pending_effect_limit = self.admission_budget.max_pending_effects;
         let journal_id = self.journal_id().to_owned();
         let tx = self.write_tx(request.writer_epoch)?;
         if let Some(new) = &request.command
@@ -70,7 +70,11 @@ impl EventStore {
             }
             return Ok(CommitOutcome::Duplicate(existing));
         }
-        crate::admission_budget::require_effect_capacity(&tx,request.effects.len(),pending_effect_limit)?;
+        crate::admission_budget::require_effect_capacity(
+            &tx,
+            request.effects.len(),
+            pending_effect_limit,
+        )?;
         let batch = write_all(&tx, request, &journal_id)?;
         tx.commit()?;
         Ok(CommitOutcome::Committed { batch })
@@ -81,33 +85,49 @@ impl EventStore {
     pub fn commit_with_restore_checkpoint(
         &mut self,
         request: &CommitRequest,
-        prepare: impl FnOnce(&crate::StoredBatch) -> StoreResult<(crate::NewSnapshot, crate::NewRestoreManifest)>,
+        prepare: impl FnOnce(
+            &crate::StoredBatch,
+        ) -> StoreResult<(crate::NewSnapshot, crate::NewRestoreManifest)>,
     ) -> StoreResult<CommitOutcome> {
-        let pending_effect_limit=self.admission_budget.max_pending_effects;
+        let pending_effect_limit = self.admission_budget.max_pending_effects;
         let journal_id = self.journal_id().to_owned();
         let tx = self.write_tx(request.writer_epoch)?;
         if let Some(new) = &request.command
             && let Some(key) = &new.key
-            && let Some(existing) = find_by_key(&tx, key)? {
+            && let Some(existing) = find_by_key(&tx, key)?
+        {
             if existing.request_digest != new.request_digest {
-                return Err(StoreError::KeyConflict {caller_scope:key.caller_scope.clone(),idempotency_key:key.idempotency_key.clone()});
+                return Err(StoreError::KeyConflict {
+                    caller_scope: key.caller_scope.clone(),
+                    idempotency_key: key.idempotency_key.clone(),
+                });
             }
             return Ok(CommitOutcome::Duplicate(existing));
         }
-        crate::admission_budget::require_effect_capacity(&tx,request.effects.len(),pending_effect_limit)?;
-        let batch = write_all(&tx, request, &journal_id)?.ok_or_else(|| StoreError::Corrupt("restore import has no initial event batch".into()))?;
+        crate::admission_budget::require_effect_capacity(
+            &tx,
+            request.effects.len(),
+            pending_effect_limit,
+        )?;
+        let batch = write_all(&tx, request, &journal_id)?.ok_or_else(|| {
+            StoreError::Corrupt("restore import has no initial event batch".into())
+        })?;
         let stored = crate::read::load_batch(&tx, batch.batch_id)?;
         let (snapshot, mut manifest) = prepare(&stored)?;
-        let mut size=crate::write_limits::commit(request)?;
-        size.snapshot(&snapshot)?;size.manifest(&manifest)?;
-        if snapshot.batch_id != batch.batch_id {return Err(StoreError::Corrupt("import snapshot differs from committed batch".into()));}
+        let mut size = crate::write_limits::commit(request)?;
+        size.snapshot(&snapshot)?;
+        size.manifest(&manifest)?;
+        if snapshot.batch_id != batch.batch_id {
+            return Err(StoreError::Corrupt(
+                "import snapshot differs from committed batch".into(),
+            ));
+        }
         manifest.snapshot_id = crate::snapshot::insert_snapshot(&tx, &snapshot)?;
         crate::manifest::save_in(&tx, &manifest)?;
         crate::snapshot::retain_snapshots(&tx, snapshot.model_version, 2)?;
         tx.commit()?;
-        Ok(CommitOutcome::Committed {batch:Some(batch)})
+        Ok(CommitOutcome::Committed { batch: Some(batch) })
     }
-
 }
 
 fn write_all(

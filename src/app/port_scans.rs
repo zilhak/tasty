@@ -1,10 +1,10 @@
 //! App owns scan workers and result channels; Views retain only presentation and request identity.
+use crate::adapters::ui::popup::port_scanner::{PortRowView, ScanSnapshot, SourceTag, format_addr};
+use crate::view::ui::View;
 use std::collections::HashSet;
 use std::sync::{Weak, mpsc};
 use std::thread::JoinHandle;
 use winit::window::WindowId;
-use crate::adapters::ui::popup::port_scanner::{PortRowView, ScanSnapshot, SourceTag, format_addr};
-use crate::view::ui::View;
 
 const MAX_SCAN_JOBS: usize = 8;
 
@@ -22,16 +22,23 @@ pub(crate) struct PortScans {
     stopping: bool,
 }
 impl PortScans {
-    pub(crate) fn begin_shutdown(&mut self) { self.stopping = true; }
+    pub(crate) fn begin_shutdown(&mut self) {
+        self.stopping = true;
+    }
 
     /// Returns the count still owned, not an elapsed-time approximation of completion.
     pub(crate) fn poll_shutdown(&mut self) -> usize {
         self.stopping = true;
         let mut index = 0;
         while index < self.jobs.len() {
-            if !self.jobs[index].worker.is_finished() { index += 1; continue; }
+            if !self.jobs[index].worker.is_finished() {
+                index += 1;
+                continue;
+            }
             let job = self.jobs.swap_remove(index);
-            if job.worker.join().is_err() { tracing::warn!("port scan worker panicked during App retirement"); }
+            if job.worker.join().is_err() {
+                tracing::warn!("port scan worker panicked during App retirement");
+            }
         }
         self.jobs.len()
     }
@@ -42,7 +49,10 @@ impl Drop for PortScans {
         if pending != 0 {
             // Forced App teardown may abandon observation. Dropping JoinHandle detaches these
             // workers; it neither cancels OS inspection nor establishes that they joined.
-            tracing::warn!(pending, "App dropped while port scan workers remain unjoined");
+            tracing::warn!(
+                pending,
+                "App dropped while port scan workers remain unjoined"
+            );
         }
     }
 }
@@ -51,47 +61,93 @@ impl super::App {
     pub(crate) fn poll_port_scans(&mut self) {
         let mut index = 0;
         while index < self.port_scans.jobs.len() {
-            if !self.port_scans.jobs[index].worker.is_finished() { index += 1; continue; }
+            if !self.port_scans.jobs[index].worker.is_finished() {
+                index += 1;
+                continue;
+            }
             let result = match self.port_scans.jobs[index].result.try_recv() {
                 Ok(result) => result,
-                Err(mpsc::TryRecvError::Empty) => { index += 1; continue; }
+                Err(mpsc::TryRecvError::Empty) => {
+                    index += 1;
+                    continue;
+                }
                 Err(mpsc::TryRecvError::Disconnected) => Err("scan worker disconnected".into()),
             };
             let job = self.port_scans.jobs.swap_remove(index);
             // is_finished above proves the thread ended; a result alone does not prove a join.
-            if job.worker.join().is_err() { tracing::warn!("port scan worker panicked"); }
-            let Some(view) = self.view.views.get_mut(&job.window).and_then(|view| view.as_main_mut()) else { continue; };
-            if !view.base.state.matches_identity(&job.view) { continue; }
-            let slot = if job.favorites { &mut view.state.port_favorites_scan } else { &mut view.state.port_scan };
-            if slot.accept(&job.ticket, result) { view.mark_dirty(); }
+            if job.worker.join().is_err() {
+                tracing::warn!("port scan worker panicked");
+            }
+            let Some(view) = self
+                .view
+                .views
+                .get_mut(&job.window)
+                .and_then(|view| view.as_main_mut())
+            else {
+                continue;
+            };
+            if !view.base.state.matches_identity(&job.view) {
+                continue;
+            }
+            let slot = if job.favorites {
+                &mut view.state.port_favorites_scan
+            } else {
+                &mut view.state.port_scan
+            };
+            if slot.accept(&job.ticket, result) {
+                view.mark_dirty();
+            }
         }
-        if self.port_scans.stopping { return; }
+        if self.port_scans.stopping {
+            return;
+        }
         let proxy = self.view.proxy.clone();
         for (&window, view) in &mut self.view.views {
-            let Some(view) = view.as_main_mut() else { continue; };
+            let Some(view) = view.as_main_mut() else {
+                continue;
+            };
             let identity = view.base.state.identity();
             for favorites in [false, true] {
                 // Refresh replaces the View's pending snapshot, never an in-flight worker.
                 // Defer admission without dropping that latest request until capacity is free.
                 if self.port_scans.jobs.len() >= MAX_SCAN_JOBS
                     || self.port_scans.jobs.iter().any(|job| {
-                        job.window == window && job.view.ptr_eq(&identity) && job.favorites == favorites
+                        job.window == window
+                            && job.view.ptr_eq(&identity)
+                            && job.favorites == favorites
                     })
-                { continue; }
-                let slot = if favorites { &mut view.state.port_favorites_scan } else { &mut view.state.port_scan };
-                let Some((ticket, snapshot)) = slot.take_request() else { continue; };
+                {
+                    continue;
+                }
+                let slot = if favorites {
+                    &mut view.state.port_favorites_scan
+                } else {
+                    &mut view.state.port_scan
+                };
+                let Some((ticket, snapshot)) = slot.take_request() else {
+                    continue;
+                };
                 let (sender, result) = mpsc::channel();
                 let wake = proxy.clone();
-                match std::thread::Builder::new().name("port-scan".into()).spawn(move || {
-                    let result = std::panic::catch_unwind(|| run_scan(snapshot))
-                        .unwrap_or_else(|_| Err("scan worker panicked".into()));
-                    if sender.send(result).is_err() { return; } // App has retired; no result consumer remains.
-                    if wake.send_event(crate::AppEvent::TimerTick).is_err() {
-                        tracing::debug!("port scan completion after App event loop closed");
-                    }
-                }) {
+                match std::thread::Builder::new()
+                    .name("port-scan".into())
+                    .spawn(move || {
+                        let result = std::panic::catch_unwind(|| run_scan(snapshot))
+                            .unwrap_or_else(|_| Err("scan worker panicked".into()));
+                        if sender.send(result).is_err() {
+                            return;
+                        } // App has retired; no result consumer remains.
+                        if wake.send_event(crate::AppEvent::TimerTick).is_err() {
+                            tracing::debug!("port scan completion after App event loop closed");
+                        }
+                    }) {
                     Ok(worker) => self.port_scans.jobs.push(ScanJob {
-                        window, view: identity.clone(), ticket, favorites, result, worker,
+                        window,
+                        view: identity.clone(),
+                        ticket,
+                        favorites,
+                        result,
+                        worker,
                     }),
                     Err(error) => {
                         tracing::warn!(%error, "port scan worker spawn failed");
@@ -169,4 +225,3 @@ fn run_scan(snapshot: ScanSnapshot) -> Result<Vec<PortRowView>, String> {
         Ok(rows)
     }
 }
-

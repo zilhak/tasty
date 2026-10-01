@@ -21,9 +21,19 @@ impl CoreState {
         None
     }
 
-    pub(crate) fn find_surface_descriptor_mut(&mut self,id:u32)->Option<&mut tasty_model::SurfaceDescriptor> {
-        let pane=self.find_pane_for_surface(id)?;
-        self.find_pane_by_id_mut(pane)?.tabs.iter_mut().find_map(|tab|tab.layout_opt.as_mut().and_then(|layout|layout.find_leaf_mut(id)))
+    pub(crate) fn find_surface_descriptor_mut(
+        &mut self,
+        id: u32,
+    ) -> Option<&mut tasty_model::SurfaceDescriptor> {
+        let pane = self.find_pane_for_surface(id)?;
+        self.find_pane_by_id_mut(pane)?
+            .tabs
+            .iter_mut()
+            .find_map(|tab| {
+                tab.layout_opt
+                    .as_mut()
+                    .and_then(|layout| layout.find_leaf_mut(id))
+            })
     }
 
     pub fn live_surface_ids(&self) -> std::collections::HashSet<u32> {
@@ -151,7 +161,7 @@ impl CoreState {
     }
 
     /// surface의 workspace 이름과 탭 표시 이름. 트리에 없으면 None이다.
-        pub fn surface_display_path(
+    pub fn surface_display_path(
         &self,
         surface_id: u32,
         presentation: &dyn tasty_model::StructurePresentation,
@@ -163,7 +173,13 @@ impl CoreState {
                         if tab.contains_surface(surface_id) {
                             return Some(SurfaceDisplayPath {
                                 workspace_name: workspace.name.clone(),
-                                tab_name: Some(tab.display_name(presentation.surface_id(tab).and_then(|id|presentation.surface_title(id)))),
+                                tab_name: Some(
+                                    tab.display_name(
+                                        presentation
+                                            .surface_id(tab)
+                                            .and_then(|id| presentation.surface_title(id)),
+                                    ),
+                                ),
                             });
                         }
                     }
@@ -179,7 +195,6 @@ pub struct SurfaceDisplayPath {
     pub workspace_name: String,
     pub tab_name: Option<String>,
 }
-
 
 impl crate::CoreState {
     pub fn has_surface(&self, surface_id: u32) -> bool {
@@ -200,4 +215,3 @@ impl crate::CoreState {
             .any(|ws| ws.pane_layout().all_pane_ids().contains(&pane_id))
     }
 }
-

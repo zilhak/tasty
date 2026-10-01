@@ -3,16 +3,16 @@ use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::runtime::surface_registry::SurfaceKindRegistry;
 use crate::model::Workspace;
 use crate::notification::NotificationStore;
+use crate::runtime::surface_registry::SurfaceKindRegistry;
 use crate::settings::Settings;
 pub(crate) use message::SurfaceMessage;
 use tasty_terminal::Waker;
 
 pub struct ShellConfig {
-    pub shell:String,
-    pub args:Vec<String>,
+    pub shell: String,
+    pub args: Vec<String>,
     /// 셸 초기화에 필요한 추가 환경변수. bash의 rcfile 설정은 args로 전달한다.
     pub envs: Vec<(String, String)>,
 }
@@ -57,10 +57,10 @@ pub(crate) struct GuiAttachUserReq {
 
 /// 붙여넣기 시점의 mirror 대상을 고정하고 백그라운드 업로드 뒤 그 surface에 원격 경로를 입력한다.
 #[cfg(feature = "gui")]
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct PendingImageUpload {
     /// Original View captured when the user enqueues the paste, preserved through retry.
-    pub(crate) origin_view:std::sync::Weak<()>,
+    pub(crate) origin_view: std::sync::Weak<()>,
     /// attach 세션을 찾을 로컬 mirror workspace ID.
     pub(crate) mirror_ws_id: u32,
     /// 붙여넣기 시점에 정한 로컬 mirror surface ID.
@@ -86,7 +86,8 @@ impl EngineMut<'_> {
     /// 키보드·IME·붙여넣기의 사용자 입력 시각을 기록한다. 마우스 보고·파일 열기·에이전트 전송은 제외한다.
     #[cfg(feature = "gui")]
     pub fn record_typing(&mut self, surface_id: u32) {
-        self.live.last_key_input
+        self.live
+            .last_key_input
             .insert(surface_id, std::time::Instant::now());
     }
 
@@ -170,11 +171,11 @@ mod surface_cwd;
 mod terminal_finders;
 
 pub(crate) use attention::AttentionKind;
-#[cfg(feature = "gui")]
-pub use tasty_core::SurfaceDisplayPath;
 pub(crate) use surface_cwd::RemoteCwd;
 #[cfg(any(feature = "gui", test))]
 pub(crate) use surface_cwd::SurfaceCwd;
+#[cfg(feature = "gui")]
+pub use tasty_core::SurfaceDisplayPath;
 
 impl EngineMut<'_> {
     #[cfg(feature = "gui")]
@@ -182,23 +183,43 @@ impl EngineMut<'_> {
         self.runtime.terminals.resync_palettes();
     }
 
-    pub fn refresh_tab_display_name(&mut self,surface:u32) {
-        if !self.core.has_surface(surface) {return;}
-        let cwd=self.runtime.terminals.cwd(surface);
-        let home=directories::BaseDirs::new().map(|dirs|dirs.home_dir().to_path_buf());
-        let name=cwd.as_deref().and_then(|cwd| {
-            if Some(cwd)==home.as_deref() {Some("~".into())}
-            else if cwd==std::path::Path::new("/") {Some("/".into())}
-            else {cwd.file_name().map(|name|name.to_string_lossy().into_owned())}
+    pub fn refresh_tab_display_name(&mut self, surface: u32) {
+        if !self.core.has_surface(surface) {
+            return;
+        }
+        let cwd = self.runtime.terminals.cwd(surface);
+        let home = directories::BaseDirs::new().map(|dirs| dirs.home_dir().to_path_buf());
+        let name = cwd.as_deref().and_then(|cwd| {
+            if Some(cwd) == home.as_deref() {
+                Some("~".into())
+            } else if cwd == std::path::Path::new("/") {
+                Some("/".into())
+            } else {
+                cwd.file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            }
         });
-        self.live.surface_titles.entry(surface).or_default().cwd_name=name;
+        self.live
+            .surface_titles
+            .entry(surface)
+            .or_default()
+            .cwd_name = name;
     }
 
-    pub fn refresh_tab_osc_title(&mut self,surface:u32) {
-        if !self.core.has_surface(surface) {return;}
-        self.live.surface_titles.entry(surface).or_default().osc_title=self.runtime.terminals.get(surface).and_then(|terminal|terminal.current_title());
+    pub fn refresh_tab_osc_title(&mut self, surface: u32) {
+        if !self.core.has_surface(surface) {
+            return;
+        }
+        self.live
+            .surface_titles
+            .entry(surface)
+            .or_default()
+            .osc_title = self
+            .runtime
+            .terminals
+            .get(surface)
+            .and_then(|terminal| terminal.current_title());
     }
-
 }
 
 impl EngineRef<'_> {
@@ -210,7 +231,10 @@ impl EngineRef<'_> {
         presentation: &dyn crate::model::StructurePresentation,
     ) -> Option<crate::model::ClosedItem> {
         let tab = self.find_pane_by_id(pane_id)?.tabs.get(tab_index)?;
-        let mut snap_fn = crate::runtime::surface_registry::snapshot_fn_for(&self.runtime.surface_registry,&self.runtime.surfaces);
+        let mut snap_fn = crate::runtime::surface_registry::snapshot_fn_for(
+            &self.runtime.surface_registry,
+            &self.runtime.surfaces,
+        );
         let terminals = &self.runtime.terminals;
         crate::model::closed_item::ClosedTab::from_tab(
             tab,
@@ -234,7 +258,10 @@ impl EngineRef<'_> {
         let pane = ws.pane_layout().find_pane(pane_id)?;
         let (direction, ratio, was_first, sibling_pane_id) =
             ws.pane_layout().locate_split_context(pane_id)?;
-        let mut snap_fn = crate::runtime::surface_registry::snapshot_fn_for(&self.runtime.surface_registry,&self.runtime.surfaces);
+        let mut snap_fn = crate::runtime::surface_registry::snapshot_fn_for(
+            &self.runtime.surface_registry,
+            &self.runtime.surfaces,
+        );
         let terminals = &self.runtime.terminals;
         Some(crate::model::ClosedItem::from_pane(
             pane,
@@ -364,7 +391,10 @@ mod default_params_tests {
         let mut params = serde_json::json!({});
         let injected = e.apply_kind_default_params(&def, &mut params, None);
         assert!(injected);
-        assert_eq!(params["view_mode"], e.runtime.settings.general.explorer_view_mode);
+        assert_eq!(
+            params["view_mode"],
+            e.runtime.settings.general.explorer_view_mode
+        );
         assert!(
             params.get("path").is_none(),
             "@home must not resolve when home=None"
@@ -379,7 +409,10 @@ mod default_params_tests {
         let mut params = serde_json::json!({});
         let home = std::path::PathBuf::from("/home/tester");
         e.apply_kind_default_params(&def, &mut params, Some(&home));
-        assert_eq!(params["view_mode"], e.runtime.settings.general.explorer_view_mode);
+        assert_eq!(
+            params["view_mode"],
+            e.runtime.settings.general.explorer_view_mode
+        );
         assert_eq!(params["path"], "/home/tester");
     }
 

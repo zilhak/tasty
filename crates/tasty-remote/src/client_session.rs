@@ -1,18 +1,18 @@
 //! Outbound mirror session ownership. App applies received values to explicit engine/View targets.
-use std::collections::{HashMap,HashSet};
-use std::sync::{Arc,Mutex};
-use std::sync::atomic::AtomicBool;
 use serde_json::Value;
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use tasty_ipc::stream::StreamTag;
 use tasty_model::Workspace;
 /// Host-independent remote directory values; the application chooses its local picker cache.
 #[derive(Clone)]
 pub struct RemoteDirEntry {
-    pub name:String,
-    pub is_dir:bool,
-    pub size:u64,
-    pub modified:Option<std::time::SystemTime>,
-    pub ext:String,
+    pub name: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub modified: Option<std::time::SystemTime>,
+    pub ext: String,
 }
 /// 출력과 resize를 같은 버퍼에 도착 순서대로 담아 올바른 크기의 그리드에 적용한다.
 pub enum MirrorEvent {
@@ -84,44 +84,92 @@ pub enum MirrorEvent {
 /// Incoming values have one arrival order and a bounded retained-byte budget. On overflow the
 /// connection is explicitly desynchronized; dropping content never masquerades as a continuous cut.
 mod outbox {
-    use std::sync::{Arc,Mutex};
     use super::MirrorEvent;
+    use std::sync::{Arc, Mutex};
     #[derive(Default)]
-    struct Pending {events:Vec<MirrorEvent>,bytes:usize}
+    struct Pending {
+        events: Vec<MirrorEvent>,
+        bytes: usize,
+    }
     #[derive(Clone)]
-    pub struct MirrorOutbox {epoch:crate::connection::ConnectionEpoch,pending:Arc<Mutex<Pending>>}
+    pub struct MirrorOutbox {
+        epoch: crate::connection::ConnectionEpoch,
+        pending: Arc<Mutex<Pending>>,
+    }
     impl MirrorOutbox {
-        pub fn new(epoch:crate::connection::ConnectionEpoch)->Self {Self {epoch,pending:Arc::new(Mutex::new(Pending::default()))}}
-        pub fn push(&self,event:MirrorEvent)->bool {
-            if !self.epoch.is_active() {return false;}
-            let Ok(mut pending)=self.pending.lock() else {
-                if !super::MIRROR_OUTBOX_PUSH_DROPPED.swap(true,std::sync::atomic::Ordering::Relaxed) {tracing::error!("remote inbox poisoned; arrival discarded");}
+        pub fn new(epoch: crate::connection::ConnectionEpoch) -> Self {
+            Self {
+                epoch,
+                pending: Arc::new(Mutex::new(Pending::default())),
+            }
+        }
+        pub fn push(&self, event: MirrorEvent) -> bool {
+            if !self.epoch.is_active() {
+                return false;
+            }
+            let Ok(mut pending) = self.pending.lock() else {
+                if !super::MIRROR_OUTBOX_PUSH_DROPPED
+                    .swap(true, std::sync::atomic::Ordering::Relaxed)
+                {
+                    tracing::error!("remote inbox poisoned; arrival discarded");
+                }
                 return false;
             };
-            if !self.epoch.is_active() {return false;}
-            let bytes=event.retained_bytes();
-            if pending.events.len()>=1024 || pending.bytes.saturating_add(bytes)>tasty_ipc::admission::QUEUED_BYTES_LIMIT {
-                let frames=pending.events.len() as u64+1;
-                pending.events.clear();pending.bytes=std::mem::size_of::<MirrorEvent>();
-                pending.events.push(MirrorEvent::Desynced {frames});
-            } else {pending.bytes+=bytes;pending.events.push(event);}
+            if !self.epoch.is_active() {
+                return false;
+            }
+            let bytes = event.retained_bytes();
+            if pending.events.len() >= 1024
+                || pending.bytes.saturating_add(bytes) > tasty_ipc::admission::QUEUED_BYTES_LIMIT
+            {
+                let frames = pending.events.len() as u64 + 1;
+                pending.events.clear();
+                pending.bytes = std::mem::size_of::<MirrorEvent>();
+                pending.events.push(MirrorEvent::Desynced { frames });
+            } else {
+                pending.bytes += bytes;
+                pending.events.push(event);
+            }
             true
         }
         /// A blocked structural delta and its complete tail precede arrivals received meanwhile.
         /// If preserving the combined tail exceeds the same budget, report loss explicitly.
-        pub fn restore_front(&self,mut events:Vec<MirrorEvent>) {
-            if !self.epoch.is_active() {return;}
-            let mut pending=tasty_utils::poison::recover_mutex(self.pending.lock(),super::MIRROR_OUTBOX_WHAT,&super::MIRROR_OUTBOX_POISONED);
-            let bytes=events.iter().fold(0usize,|sum,event|sum.saturating_add(event.retained_bytes()));
-            if events.len().saturating_add(pending.events.len())>1024 || bytes.saturating_add(pending.bytes)>tasty_ipc::admission::QUEUED_BYTES_LIMIT {
-                let frames=events.len().saturating_add(pending.events.len()) as u64;
-                pending.events.clear();pending.events.push(MirrorEvent::Desynced {frames});pending.bytes=std::mem::size_of::<MirrorEvent>();
-            } else {events.append(&mut pending.events);pending.events=events;pending.bytes+=bytes;}
+        pub fn restore_front(&self, mut events: Vec<MirrorEvent>) {
+            if !self.epoch.is_active() {
+                return;
+            }
+            let mut pending = tasty_utils::poison::recover_mutex(
+                self.pending.lock(),
+                super::MIRROR_OUTBOX_WHAT,
+                &super::MIRROR_OUTBOX_POISONED,
+            );
+            let bytes = events.iter().fold(0usize, |sum, event| {
+                sum.saturating_add(event.retained_bytes())
+            });
+            if events.len().saturating_add(pending.events.len()) > 1024
+                || bytes.saturating_add(pending.bytes) > tasty_ipc::admission::QUEUED_BYTES_LIMIT
+            {
+                let frames = events.len().saturating_add(pending.events.len()) as u64;
+                pending.events.clear();
+                pending.events.push(MirrorEvent::Desynced { frames });
+                pending.bytes = std::mem::size_of::<MirrorEvent>();
+            } else {
+                events.append(&mut pending.events);
+                pending.events = events;
+                pending.bytes += bytes;
+            }
         }
-        pub fn drain(&self)->Vec<MirrorEvent> {
-            let mut pending=tasty_utils::poison::recover_mutex(self.pending.lock(),super::MIRROR_OUTBOX_WHAT,&super::MIRROR_OUTBOX_POISONED);
-            pending.bytes=0;
-            if !self.epoch.is_active() {pending.events.clear();return Vec::new();}
+        pub fn drain(&self) -> Vec<MirrorEvent> {
+            let mut pending = tasty_utils::poison::recover_mutex(
+                self.pending.lock(),
+                super::MIRROR_OUTBOX_WHAT,
+                &super::MIRROR_OUTBOX_POISONED,
+            );
+            pending.bytes = 0;
+            if !self.epoch.is_active() {
+                pending.events.clear();
+                return Vec::new();
+            }
             std::mem::take(&mut pending.events)
         }
     }
@@ -135,8 +183,8 @@ pub struct OutFrame {
     pub payload: Vec<u8>,
 }
 
-pub type FrameSender=Arc<super::connection::ConnectionSender>;
-pub type SharedFrameSender=FrameSender;
+pub type FrameSender = Arc<super::connection::ConnectionSender>;
+pub type SharedFrameSender = FrameSender;
 
 const MIRROR_OUTBOX_WHAT: &str = "attach mirror outbox";
 static MIRROR_OUTBOX_POISONED: std::sync::atomic::AtomicBool =
@@ -152,7 +200,6 @@ pub enum SessionState {
     Connected,
     Reconnecting,
 }
-
 
 /// 성공한 사용자 요청의 다음 delta에 한 번 적용할 로컬 포커스 의도.
 #[derive(Debug, Clone)]
@@ -174,11 +221,7 @@ pub struct AgentRequests {
 }
 
 impl AgentRequests {
-    pub fn note_structural(
-        &mut self,
-        agent_origin:bool,
-        op_id: u64,
-    ) {
+    pub fn note_structural(&mut self, agent_origin: bool, op_id: u64) {
         if agent_origin {
             self.structural.insert(op_id);
         }
@@ -188,11 +231,7 @@ impl AgentRequests {
         self.structural.remove(&op_id);
     }
 
-    pub fn note_markdown(
-        &mut self,
-        agent_origin:bool,
-        request_id: u64,
-    ) {
+    pub fn note_markdown(&mut self, agent_origin: bool, request_id: u64) {
         if agent_origin {
             self.markdown.insert(request_id);
         }
@@ -207,7 +246,6 @@ impl AgentRequests {
         self.markdown.clear();
     }
 }
-
 
 #[derive(Default)]
 pub struct MirrorStructureIds {
@@ -231,11 +269,11 @@ impl MirrorStructureIds {
 }
 
 pub struct AttachClientSession {
-    pub state:ClientSessionState,
-    pub transport:ClientTransport,
+    pub state: ClientSessionState,
+    pub transport: ClientTransport,
 }
 pub struct ClientTransport {
-    pub workers:crate::transport::ConnectionWorkers,
+    pub workers: crate::transport::ConnectionWorkers,
     pub output: MirrorOutbox,
     pub disconnected: Arc<AtomicBool>,
     pub frame_tx: SharedFrameSender,
@@ -311,36 +349,89 @@ impl AttachClientSession {
 impl Drop for ClientTransport {
     fn drop(&mut self) {
         // Closing the old socket is distinct from replaying input into another connection.
-        if let Err(error)=self.frame_tx.send(OutFrame {tag:StreamTag::Detach,payload:Vec::new()}) {
+        if let Err(error) = self.frame_tx.send(OutFrame {
+            tag: StreamTag::Detach,
+            payload: Vec::new(),
+        }) {
             tracing::debug!("remote detach queue already closed: {error}");
         }
         self.workers.retire_tunnel(self.tunnel.take());
         self.frame_tx.retire();
-        self.disconnected.store(true,std::sync::atomic::Ordering::Release);
+        self.disconnected
+            .store(true, std::sync::atomic::Ordering::Release);
     }
 }
 
-
 impl MirrorEvent {
-    fn retained_bytes(&self)->usize {
-        fn text(value:&Option<String>)->usize {value.as_ref().map_or(0,String::capacity)}
-        fn json(value:&Value)->usize {
+    fn retained_bytes(&self) -> usize {
+        fn text(value: &Option<String>) -> usize {
+            value.as_ref().map_or(0, String::capacity)
+        }
+        fn json(value: &Value) -> usize {
             std::mem::size_of::<Value>().saturating_add(match value {
-                Value::String(value)=>value.capacity(),
-                Value::Array(values)=>values.iter().fold(values.capacity().saturating_mul(std::mem::size_of::<Value>()),|sum,value|sum.saturating_add(json(value))),
-                Value::Object(values)=>values.iter().fold(values.len().saturating_mul(128),|sum,(key,value)|sum.saturating_add(key.capacity()).saturating_add(json(value))),
-                _=>0,
+                Value::String(value) => value.capacity(),
+                Value::Array(values) => values.iter().fold(
+                    values
+                        .capacity()
+                        .saturating_mul(std::mem::size_of::<Value>()),
+                    |sum, value| sum.saturating_add(json(value)),
+                ),
+                Value::Object(values) => {
+                    values
+                        .iter()
+                        .fold(values.len().saturating_mul(128), |sum, (key, value)| {
+                            sum.saturating_add(key.capacity())
+                                .saturating_add(json(value))
+                        })
+                }
+                _ => 0,
             })
         }
         std::mem::size_of::<Self>().saturating_add(match self {
-            Self::Data(_,bytes)|Self::Mesh(_,_,_,_,bytes)=>bytes.capacity(),
-            Self::Cwd(_,value)|Self::StructuralFailed(_,value)=>text(value),
-            Self::StructuralDelta {tree,surfaces,..}=>surfaces.iter().fold(json(tree).saturating_add(surfaces.capacity().saturating_mul(std::mem::size_of::<Value>())),|sum,value|sum.saturating_add(json(value))),
-            Self::CaptureResult {path,reason,..}=>text(path).saturating_add(text(reason)),
-            Self::ListDirResult {dir,entries,reason,..}=>text(dir).saturating_add(text(reason)).saturating_add(entries.as_ref().map_or(0,|entries|entries.iter().fold(entries.capacity().saturating_mul(std::mem::size_of::<RemoteDirEntry>()),|sum,entry|sum.saturating_add(entry.name.capacity()).saturating_add(entry.ext.capacity())))),
-            Self::GitQueryResult {kind,data,reason,..}=>kind.capacity().saturating_add(data.as_ref().map_or(0,json)).saturating_add(text(reason)),
-            Self::MarkdownContentResult {file,source,reason,..}=>text(file).saturating_add(text(source)).saturating_add(text(reason)),
-            _=>0,
+            Self::Data(_, bytes) | Self::Mesh(_, _, _, _, bytes) => bytes.capacity(),
+            Self::Cwd(_, value) | Self::StructuralFailed(_, value) => text(value),
+            Self::StructuralDelta { tree, surfaces, .. } => surfaces.iter().fold(
+                json(tree).saturating_add(
+                    surfaces
+                        .capacity()
+                        .saturating_mul(std::mem::size_of::<Value>()),
+                ),
+                |sum, value| sum.saturating_add(json(value)),
+            ),
+            Self::CaptureResult { path, reason, .. } => text(path).saturating_add(text(reason)),
+            Self::ListDirResult {
+                dir,
+                entries,
+                reason,
+                ..
+            } => text(dir)
+                .saturating_add(text(reason))
+                .saturating_add(entries.as_ref().map_or(0, |entries| {
+                    entries.iter().fold(
+                        entries
+                            .capacity()
+                            .saturating_mul(std::mem::size_of::<RemoteDirEntry>()),
+                        |sum, entry| {
+                            sum.saturating_add(entry.name.capacity())
+                                .saturating_add(entry.ext.capacity())
+                        },
+                    )
+                })),
+            Self::GitQueryResult {
+                kind, data, reason, ..
+            } => kind
+                .capacity()
+                .saturating_add(data.as_ref().map_or(0, json))
+                .saturating_add(text(reason)),
+            Self::MarkdownContentResult {
+                file,
+                source,
+                reason,
+                ..
+            } => text(file)
+                .saturating_add(text(source))
+                .saturating_add(text(reason)),
+            _ => 0,
         })
     }
 }

@@ -318,7 +318,8 @@ mod tests {
         assert_eq!(data.mirror_ws_id, Some(ws_id));
         assert_eq!(data.current_dir, "/srv/remote/proj");
         let forward = engine
-            .remote.pending_list_dir_forward
+            .remote
+            .pending_list_dir_forward
             .last()
             .expect("원격 조회가 큐잉된다");
         assert_eq!(

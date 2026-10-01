@@ -228,7 +228,7 @@ pub struct JournalModel {
     #[serde(default)]
     pub operations: BTreeMap<crate::OperationId, crate::Operation>,
     #[serde(default)]
-    pub undo_records:Vec<crate::UndoRecord>,
+    pub undo_records: Vec<crate::UndoRecord>,
 }
 
 impl JournalModel {
@@ -240,21 +240,55 @@ impl JournalModel {
             // Terminal known results retain command identity/history, but do not keep a second
             // live undo/capture pin after UndoRecordConsumed/Evicted. Event retention pins remain
             // independent until log compaction is allowed to remove that history.
-            .chain(self.operations.values().filter(|operation|operation.outcome.is_none() || matches!(operation.outcome,Some(crate::OperationOutcome::Uncertain {..})) || operation.creation.as_ref().is_some_and(|plan|match &plan.destination {
-                crate::CreationDestination::Assembly {operation:group}=>self.operations.get(group).is_some_and(|coordinator|coordinator.outcome.is_none() || matches!(coordinator.outcome,Some(crate::OperationOutcome::Uncertain {..}))),_=>false,
-            })).flat_map(|operation| {
-                std::iter::once(operation.input)
-                    .chain(operation.assembly.iter().flat_map(|plan|plan.data_refs()))
-                    .chain(operation.reconciliation_evidence)
-                    .chain(operation.prepared_data)
-                    .chain(
-                        operation
-                            .creation
-                            .as_ref()
-                            .and_then(|plan| plan.surface.data),
-                    )
-                    .chain(operation.retirement.as_ref().and_then(|plan|plan.undo.as_ref()).into_iter().flat_map(|capture|capture.data_refs()))
-            }))
-            .chain(self.undo_records.iter().flat_map(|record|record.capture.data_refs()))
+            .chain(
+                self.operations
+                    .values()
+                    .filter(|operation| {
+                        operation.outcome.is_none()
+                            || matches!(
+                                operation.outcome,
+                                Some(crate::OperationOutcome::Uncertain { .. })
+                            )
+                            || operation.creation.as_ref().is_some_and(|plan| {
+                                match &plan.destination {
+                                    crate::CreationDestination::Assembly { operation: group } => {
+                                        self.operations.get(group).is_some_and(|coordinator| {
+                                            coordinator.outcome.is_none()
+                                                || matches!(
+                                                    coordinator.outcome,
+                                                    Some(crate::OperationOutcome::Uncertain { .. })
+                                                )
+                                        })
+                                    }
+                                    _ => false,
+                                }
+                            })
+                    })
+                    .flat_map(|operation| {
+                        std::iter::once(operation.input)
+                            .chain(operation.assembly.iter().flat_map(|plan| plan.data_refs()))
+                            .chain(operation.reconciliation_evidence)
+                            .chain(operation.prepared_data)
+                            .chain(
+                                operation
+                                    .creation
+                                    .as_ref()
+                                    .and_then(|plan| plan.surface.data),
+                            )
+                            .chain(
+                                operation
+                                    .retirement
+                                    .as_ref()
+                                    .and_then(|plan| plan.undo.as_ref())
+                                    .into_iter()
+                                    .flat_map(|capture| capture.data_refs()),
+                            )
+                    }),
+            )
+            .chain(
+                self.undo_records
+                    .iter()
+                    .flat_map(|record| record.capture.data_refs()),
+            )
     }
 }

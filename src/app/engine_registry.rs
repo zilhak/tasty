@@ -30,7 +30,10 @@ pub(crate) type SplitById<'a> = (
 pub(crate) enum RetiringView {
     Discard,
     Releasing,
-    Preserve {navigation:crate::state::navigation::NavigationState,checkpoint:Option<u64>},
+    Preserve {
+        navigation: crate::state::navigation::NavigationState,
+        checkpoint: Option<u64>,
+    },
 }
 
 #[derive(Default)]
@@ -41,13 +44,20 @@ pub(crate) struct EngineRegistry {
     parked: Vec<ParkedView>,
     /// 창에 배정되기 전의 engine.
     pending: Option<EngineId>,
-    retiring:HashMap<EngineId,RetiringView>,
+    retiring: HashMap<EngineId, RetiringView>,
 }
 
 impl EngineRegistry {
     /// Presentation receives a read capability without borrowing the session mutably.
-    pub(crate) fn read(&self,id:EngineId)->Option<crate::runtime::engine_read::EngineRead<'_>> {self.sessions.get(&id).map(EngineSession::read)}
-    pub(crate) fn window_read(&self,window:WindowId)->Option<crate::runtime::engine_read::EngineRead<'_>> {self.read(*self.by_window.get(&window)?)}
+    pub(crate) fn read(&self, id: EngineId) -> Option<crate::runtime::engine_read::EngineRead<'_>> {
+        self.sessions.get(&id).map(EngineSession::read)
+    }
+    pub(crate) fn window_read(
+        &self,
+        window: WindowId,
+    ) -> Option<crate::runtime::engine_read::EngineRead<'_>> {
+        self.read(*self.by_window.get(&window)?)
+    }
 
     /// 새 engine을 임시 관계로 넣는다. 이미 임시 engine이 있으면 넣지 않고 되돌려준다.
     pub(crate) fn insert_pending(
@@ -65,7 +75,9 @@ impl EngineRegistry {
 
     /// Failed OS/View assembly releases its pending relation while retaining the execution owner.
     pub(crate) fn begin_retiring_pending(&mut self, id: EngineId) -> bool {
-        if self.pending != Some(id) { return false; }
+        if self.pending != Some(id) {
+            return false;
+        }
         self.pending = None;
         self.retiring.insert(id, RetiringView::Discard);
         true
@@ -130,17 +142,26 @@ impl EngineRegistry {
     /// Keep the sole resource owner while its slot retirement is awaiting durable publication.
     pub(crate) fn begin_retiring_window(&mut self, wid: WindowId) -> Option<EngineId> {
         let id = self.by_window.remove(&wid)?;
-        self.retiring.insert(id,RetiringView::Discard);
+        self.retiring.insert(id, RetiringView::Discard);
         Some(id)
     }
 
-    pub(crate) fn mark_retiring_release(&mut self,id:EngineId) {
-        if let Some(relation)=self.retiring.get_mut(&id) {*relation=RetiringView::Releasing;}
+    pub(crate) fn mark_retiring_release(&mut self, id: EngineId) {
+        if let Some(relation) = self.retiring.get_mut(&id) {
+            *relation = RetiringView::Releasing;
+        }
     }
-    pub(crate) fn releasing_ids(&self)->Vec<EngineId> {
-        self.retiring.iter().filter_map(|(id,relation)|matches!(relation,RetiringView::Releasing).then_some(*id)).collect()
+    pub(crate) fn releasing_ids(&self) -> Vec<EngineId> {
+        self.retiring
+            .iter()
+            .filter_map(|(id, relation)| matches!(relation, RetiringView::Releasing).then_some(*id))
+            .collect()
     }
-    pub(crate) fn has_releasing(&self)->bool {self.retiring.values().any(|relation|matches!(relation,RetiringView::Releasing))}
+    pub(crate) fn has_releasing(&self) -> bool {
+        self.retiring
+            .values()
+            .any(|relation| matches!(relation, RetiringView::Releasing))
+    }
 
     pub(crate) fn finish_retiring(&mut self, id: EngineId) -> Option<EngineSession> {
         self.retiring
@@ -149,15 +170,43 @@ impl EngineRegistry {
             .flatten()
     }
 
-    pub(crate) fn preserve_closed_view(&mut self,wid:WindowId,navigation:crate::state::navigation::NavigationState)->Option<EngineId> {
-        let id=self.by_window.remove(&wid)?;
-        self.retiring.insert(id,RetiringView::Preserve {navigation,checkpoint:None});Some(id)
+    pub(crate) fn preserve_closed_view(
+        &mut self,
+        wid: WindowId,
+        navigation: crate::state::navigation::NavigationState,
+    ) -> Option<EngineId> {
+        let id = self.by_window.remove(&wid)?;
+        self.retiring.insert(
+            id,
+            RetiringView::Preserve {
+                navigation,
+                checkpoint: None,
+            },
+        );
+        Some(id)
     }
-    pub(crate) fn preserved_closes(&self)->Vec<(EngineId,crate::state::navigation::NavigationState,Option<u64>)> {
-        self.retiring.iter().filter_map(|(id,retiring)|match retiring {RetiringView::Preserve {navigation,checkpoint}=>Some((*id,navigation.clone(),*checkpoint)),_=>None}).collect()
+    pub(crate) fn preserved_closes(
+        &self,
+    ) -> Vec<(
+        EngineId,
+        crate::state::navigation::NavigationState,
+        Option<u64>,
+    )> {
+        self.retiring
+            .iter()
+            .filter_map(|(id, retiring)| match retiring {
+                RetiringView::Preserve {
+                    navigation,
+                    checkpoint,
+                } => Some((*id, navigation.clone(), *checkpoint)),
+                _ => None,
+            })
+            .collect()
     }
-    pub(crate) fn mark_closed_view_checkpoint(&mut self,id:EngineId,sequence:u64) {
-        if let Some(RetiringView::Preserve {checkpoint,..})=self.retiring.get_mut(&id) {*checkpoint=Some(sequence);}
+    pub(crate) fn mark_closed_view_checkpoint(&mut self, id: EngineId, sequence: u64) {
+        if let Some(RetiringView::Preserve { checkpoint, .. }) = self.retiring.get_mut(&id) {
+            *checkpoint = Some(sequence);
+        }
     }
 
     pub(crate) fn retiring_slots(&self) -> impl Iterator<Item = u32> + '_ {
@@ -186,7 +235,9 @@ impl EngineRegistry {
         self.sessions.get_mut(&id).map(|s| s.borrow_mut())
     }
 
-    pub(crate) fn all_sessions(&self)->impl Iterator<Item=&EngineSession> {self.sessions.values()}
+    pub(crate) fn all_sessions(&self) -> impl Iterator<Item = &EngineSession> {
+        self.sessions.values()
+    }
 
     /// Publication borrows every live, parked and opening owner as one application batch.
     pub(crate) fn all_sessions_mut(&mut self) -> impl Iterator<Item = &mut EngineSession> {

@@ -9,8 +9,8 @@ use super::types::{
     CompletionStrategyId, CompletionStrategyKind, CompletionStrategyOwner,
     is_valid_completion_strategy_short_name,
 };
-use crate::runtime::agent::completion_strategy::completion_strategy_to_poll_spec;
 use crate::hook_handler::HookHandlerId;
+use crate::runtime::agent::completion_strategy::completion_strategy_to_poll_spec;
 /// CLI 자동 대기와 같은 poll 선언을 사용한다. 최상위 전략 선언과 이름이 겹쳐 별칭을 둔다.
 use tasty_plugin_manifest::CompletionStrategyDecl as PollStrategyDecl;
 

@@ -6,12 +6,12 @@ use std::sync::mpsc::Sender;
 
 use crate::model::Surface;
 
-use crate::runtime::surface_registry::{
-    KindSource, RegisteredRendering, SurfaceKindDef, SurfaceKindRegistry,
-};
 use crate::plugin::manifest::SurfaceKindDecl;
 use crate::plugin_bridge::host_cmd::HostCmd;
 use crate::plugin_bridge::remote_surface::RemoteSurface;
+use crate::runtime::surface_registry::{
+    KindSource, RegisteredRendering, SurfaceKindDef, SurfaceKindRegistry,
+};
 
 // Surface::kind가 static 문자열을 요구한다. 같은 kind를 다시 등록해도 추가 할당하며 해제하지 않는다.
 fn leak_kind(s: &str) -> &'static str {

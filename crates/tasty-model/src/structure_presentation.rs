@@ -6,7 +6,9 @@ use crate::{Pane, SurfaceId, Tab, Workspace};
 
 pub trait StructurePresentation {
     /// Observations are supplied by the execution owner, never stored on structural nodes.
-    fn surface_title(&self,_surface:SurfaceId)->Option<&crate::SurfaceTitle> {None}
+    fn surface_title(&self, _surface: SurfaceId) -> Option<&crate::SurfaceTitle> {
+        None
+    }
     fn pane_id(&self, workspace: &Workspace) -> Option<u32>;
     fn tab_index(&self, pane: &Pane) -> usize;
     fn surface_id(&self, tab: &Tab) -> Option<SurfaceId>;

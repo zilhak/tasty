@@ -65,7 +65,7 @@ pub(crate) fn is_injector_not_initialized(msg: &str) -> bool {
 
 #[derive(Clone)]
 pub(crate) struct RunnerContext {
-    pub(crate) scope_stopping:Arc<std::sync::atomic::AtomicBool>,
+    pub(crate) scope_stopping: Arc<std::sync::atomic::AtomicBool>,
     pub(crate) memory: Arc<Mutex<dyn MemoryStorage>>,
     pub(crate) agent_seq: Arc<AtomicU64>,
     pub(crate) host_ipc: Arc<OnceLock<HostIpcInjector>>,
@@ -73,7 +73,7 @@ pub(crate) struct RunnerContext {
     pub(crate) task_waker_hub: Arc<crate::task_waker::TaskWakerHub>,
     /// 러너가 push 대기를 등록하고 호스트가 훅 결과를 전달하는 공유 매핑.
     pub(crate) hook_task_waits: Arc<crate::hook_wait::HookTaskWaits>,
-    pub(crate) completion:Arc<dyn crate::completion::CompletionResolver>,
+    pub(crate) completion: Arc<dyn crate::completion::CompletionResolver>,
 }
 
 static MEMORY_POISON_REPORTED: std::sync::atomic::AtomicBool =
@@ -85,7 +85,11 @@ static RUN_RESULT_POISON_REPORTED: std::sync::atomic::AtomicBool =
 impl RunnerContext {
     /// The store transition may cancel downstream tasks as well as the requested task.
     /// Notify after releasing the memory lock, through this engine's hub only.
-    pub(crate) fn fire_terminal_tasks(&self, workspace_id: u32, tasks: impl IntoIterator<Item = Task>) {
+    pub(crate) fn fire_terminal_tasks(
+        &self,
+        workspace_id: u32,
+        tasks: impl IntoIterator<Item = Task>,
+    ) {
         for task in tasks {
             if task.state.is_terminal() {
                 self.task_waker_hub.fire(
@@ -616,10 +620,9 @@ impl HostExecutor {
                 let spec: tasty_agent::PollSpec = match poll {
                     Some(PollSpecRef::Inline(spec)) => spec.clone(),
                     Some(PollSpecRef::Named { strategy }) => {
-                        let strat = self.ctx.completion.named(strategy)
-                            .map_err(|e| {
-                                format!("Custom '{ipc_method}' poll strategy '{strategy}': {e}")
-                            })?;
+                        let strat = self.ctx.completion.named(strategy).map_err(|e| {
+                            format!("Custom '{ipc_method}' poll strategy '{strategy}': {e}")
+                        })?;
                         match strat.kind {
                             crate::completion::CompletionKind::Poll(spec) => spec,
                             crate::completion::CompletionKind::Push {
@@ -637,36 +640,31 @@ impl HostExecutor {
                             }
                         }
                     }
-                    None => {
-                        match self.ctx.completion.default_for_method(ipc_method)
-                        {
-                            Some(strat) => match strat.kind {
-                                crate::completion::CompletionKind::Poll(spec) => {
-                                    spec
-                                }
-                                crate::completion::CompletionKind::Push {
-                                    notify_via,
+                    None => match self.ctx.completion.default_for_method(ipc_method) {
+                        Some(strat) => match strat.kind {
+                            crate::completion::CompletionKind::Poll(spec) => spec,
+                            crate::completion::CompletionKind::Push {
+                                notify_via,
+                                timeout_ms,
+                            } => {
+                                return self.dispatch_push_strategy(
+                                    task,
+                                    ipc_method,
+                                    params,
+                                    strat.id.as_str(),
+                                    &notify_via,
                                     timeout_ms,
-                                } => {
-                                    return self.dispatch_push_strategy(
-                                        task,
-                                        ipc_method,
-                                        params,
-                                        strat.id.as_str(),
-                                        &notify_via,
-                                        timeout_ms,
-                                    );
-                                }
-                            },
-                            None => {
-                                return Ok(DispatchHandle::CustomImmediate(TaskResult {
-                                    exit_code: Some(0),
-                                    output: Some(value),
-                                    error: None,
-                                }));
+                                );
                             }
+                        },
+                        None => {
+                            return Ok(DispatchHandle::CustomImmediate(TaskResult {
+                                exit_code: Some(0),
+                                output: Some(value),
+                                error: None,
+                            }));
                         }
-                    }
+                    },
                 };
                 let spec = &spec;
                 // 같은 poll 인자를 매핑하면 응답값이 요청값을 덮는다.
@@ -1273,7 +1271,7 @@ mod tests {
         let td = tempfile::tempdir().unwrap();
         let mem = MemoryStore::open(&td.path().join("mem.db")).unwrap();
         let ctx = RunnerContext {
-            scope_stopping:Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            scope_stopping: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             memory: Arc::new(Mutex::new(mem)),
             agent_seq: Arc::new(AtomicU64::new(0)),
             host_ipc: Arc::new(OnceLock::new()),
@@ -2025,7 +2023,8 @@ mod tests {
                         "state_field": "state",
                         "terminal_states": ["done"],
                         "interval_ms": 1,
-                    })).unwrap(),
+                    }))
+                    .unwrap(),
                 ),
             }),
             default_method: None,
@@ -2328,7 +2327,8 @@ mod tests {
                         "state_field": "state",
                         "terminal_states": ["done"],
                         "interval_ms": 1,
-                    })).unwrap(),
+                    }))
+                    .unwrap(),
                 ),
             }),
             default_method: Some("rhtest3.start".into()),

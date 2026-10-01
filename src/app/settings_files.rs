@@ -3,13 +3,26 @@ use std::path::PathBuf;
 use tasty_host_plugin::keybinding_bundle::{BundleError, DecodeEnv, DecodedBundle, decode};
 
 pub(crate) enum SettingsFileRequest {
-    Export { path: PathBuf, text: String },
-    Import { path: PathBuf, plugins: Vec<String>, scripts: Vec<String> },
+    Export {
+        path: PathBuf,
+        text: String,
+    },
+    Import {
+        path: PathBuf,
+        plugins: Vec<String>,
+        scripts: Vec<String>,
+    },
 }
 
 pub(crate) enum SettingsFileResult {
-    Export { path: PathBuf, result: std::io::Result<()> },
-    Import { path: PathBuf, result: Result<DecodedBundle, Option<usize>> },
+    Export {
+        path: PathBuf,
+        result: std::io::Result<()>,
+    },
+    Import {
+        path: PathBuf,
+        result: Result<DecodedBundle, Option<usize>>,
+    },
 }
 
 impl SettingsFileRequest {
@@ -22,7 +35,11 @@ impl SettingsFileRequest {
                 }
                 SettingsFileResult::Export { path, result }
             }
-            Self::Import { path, plugins, scripts } => {
+            Self::Import {
+                path,
+                plugins,
+                scripts,
+            } => {
                 let result = std::fs::read_to_string(&path).map_err(|error| {
                     tracing::warn!(%error, path = %path.display(), "keybinding import read failed");
                     None
@@ -51,9 +68,12 @@ impl super::App {
     /// Synchronous execution keeps results attached to this exact settings View; no worker can
     /// deliver into a replacement modal after Cancel or close.
     pub(crate) fn process_settings_file_requests(&mut self, id: winit::window::WindowId) {
-        let Some(view) = self.view.views.get_mut(&id)
-            .and_then(|view| view.as_any_mut().downcast_mut::<crate::view::SettingsView>())
-        else { return; };
+        let Some(view) = self.view.views.get_mut(&id).and_then(|view| {
+            view.as_any_mut()
+                .downcast_mut::<crate::view::SettingsView>()
+        }) else {
+            return;
+        };
         for request in view.take_file_requests() {
             view.accept_file_result(request.execute());
         }

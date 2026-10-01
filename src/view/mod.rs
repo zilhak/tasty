@@ -2,7 +2,6 @@
 //! View trait은 src/view/ui.rs에 있다.
 
 pub(crate) mod base;
-pub(crate) mod state;
 pub(crate) mod main;
 pub(crate) mod modal;
 pub(crate) mod plugins;
@@ -10,6 +9,7 @@ pub(crate) mod preset;
 pub(crate) mod quit;
 pub(crate) mod repaint;
 pub(crate) mod settings;
+pub(crate) mod state;
 pub(crate) mod ui;
 
 pub(crate) use base::ViewBase;

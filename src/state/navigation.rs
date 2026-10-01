@@ -2,8 +2,8 @@
 //! View's selection or the defaults of a headless command context. The domain
 //! tree is read only; reconciling it never performs a domain mutation.
 
-use tasty_core::workspaces::WorkspaceRead;
 use std::collections::HashMap;
+use tasty_core::workspaces::WorkspaceRead;
 
 use crate::model::{Pane, SurfaceId, Tab, Workspace, WorkspaceId};
 
@@ -62,7 +62,7 @@ impl Selection {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct NavigationState {
     /// Selection intent generation; never a structural revision or journal input.
-    generation:std::sync::Arc<()>,
+    generation: std::sync::Arc<()>,
     pub(crate) split_hints: HashMap<crate::model::SplitNodeId, bool>,
     pub(crate) collapsed_categories: std::collections::HashSet<u32>,
     workspace: Selection,
@@ -72,17 +72,30 @@ pub(crate) struct NavigationState {
 }
 
 impl NavigationState {
-    pub(crate) fn apply_replacement(&mut self,replacement:tasty_core::Replacement) {
+    pub(crate) fn apply_replacement(&mut self, replacement: tasty_core::Replacement) {
         match replacement.source.kind {
-            tasty_core::IdKind::Surface=>self.remap_surface_selection(replacement.target.id,replacement.source.id),
-            tasty_core::IdKind::Tab=>self.remap_tab_selection(replacement.target.id,replacement.source.id),
-            tasty_core::IdKind::Pane=>self.remap_pane_selection(replacement.target.id,replacement.source.id),_=>{},
+            tasty_core::IdKind::Surface => {
+                self.remap_surface_selection(replacement.target.id, replacement.source.id)
+            }
+            tasty_core::IdKind::Tab => {
+                self.remap_tab_selection(replacement.target.id, replacement.source.id)
+            }
+            tasty_core::IdKind::Pane => {
+                self.remap_pane_selection(replacement.target.id, replacement.source.id)
+            }
+            _ => {}
         }
     }
-    pub(crate) fn generation(&self)->std::sync::Weak<()> {std::sync::Arc::downgrade(&self.generation)}
-    pub(crate) fn matches_generation(&self,generation:&std::sync::Weak<()>)->bool {self.generation().ptr_eq(generation)}
-    fn note_selection_change(&mut self,changed:bool)->bool {
-        if changed {self.generation=std::sync::Arc::new(());}
+    pub(crate) fn generation(&self) -> std::sync::Weak<()> {
+        std::sync::Arc::downgrade(&self.generation)
+    }
+    pub(crate) fn matches_generation(&self, generation: &std::sync::Weak<()>) -> bool {
+        self.generation().ptr_eq(generation)
+    }
+    fn note_selection_change(&mut self, changed: bool) -> bool {
+        if changed {
+            self.generation = std::sync::Arc::new(());
+        }
         changed
     }
 
@@ -174,7 +187,7 @@ impl NavigationState {
         workspaces: &WorkspaceRead<'_>,
         id: WorkspaceId,
     ) -> bool {
-        let changed=self.workspace.select(id,workspace_ids(workspaces));
+        let changed = self.workspace.select(id, workspace_ids(workspaces));
         self.note_selection_change(changed)
     }
 
@@ -183,12 +196,16 @@ impl NavigationState {
             return false;
         }
         let changed = self.pane_id(workspace) != Some(id);
-        self.panes.insert(workspace.id,id);
+        self.panes.insert(workspace.id, id);
         self.note_selection_change(changed)
     }
 
     pub(crate) fn select_tab(&mut self, pane: &Pane, id: u32) -> bool {
-        let changed=self.selected_tabs.entry(pane.id).or_default().select(id,tab_ids(pane));
+        let changed = self
+            .selected_tabs
+            .entry(pane.id)
+            .or_default()
+            .select(id, tab_ids(pane));
         self.note_selection_change(changed)
     }
 
@@ -197,7 +214,7 @@ impl NavigationState {
             return false;
         }
         let changed = self.surface_id(tab) != Some(id);
-        self.surfaces.insert(tab.id,id);
+        self.surfaces.insert(tab.id, id);
         self.note_selection_change(changed)
     }
 

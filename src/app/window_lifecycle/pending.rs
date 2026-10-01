@@ -16,37 +16,87 @@ pub(crate) struct PendingWindow {
 impl App {
     pub(crate) fn poll_journal_application(&mut self) {
         self.capture_published_input_targets();
-        let projections:Vec<_>=self.engines().window_pairs().filter_map(|(window,main,engine)|self.engines.of_window(window).map(|id|(id,crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&main.state.navigation)))).collect();
-        for (id,presentation) in projections {
-            if let Some(session)=self.engines.session_mut(id) {self.journal.update_completion_view(id,&session.core_state,&presentation);}
+        let projections: Vec<_> = self
+            .engines()
+            .window_pairs()
+            .filter_map(|(window, main, engine)| {
+                self.engines.of_window(window).map(|id| {
+                    (
+                        id,
+                        crate::model::StructurePresentationSnapshot::capture(
+                            &engine.workspaces(),
+                            &main.state.navigation,
+                        ),
+                    )
+                })
+            })
+            .collect();
+        for (id, presentation) in projections {
+            if let Some(session) = self.engines.session_mut(id) {
+                self.journal
+                    .update_completion_view(id, &session.core_state, &presentation);
+            }
         }
         // Materialization belongs to App/Engine; View contributes only the displayed IDs.
         // Revisit after each completion so Busy/another activation never loses a visible leaf.
-        let selected:Vec<_>=self.engines().window_pairs().filter_map(|(window,main,engine)| {
-            let id=self.engines.of_window(window)?;
-            let workspace=engine.workspace_at(main.state.active_workspace_index(engine.core))?;
-            let surfaces=workspace.pane_layout().all_pane_ids().into_iter().filter_map(|id|workspace.pane_layout().find_pane(id))
-                .filter_map(|pane|pane.tabs.get(main.state.navigation.tab_index(pane))).flat_map(|tab|tab.all_surface_ids()).collect::<Vec<_>>();
-            Some((id,surfaces))
-        }).collect();
-        for (id,surfaces) in selected {
-            let Some(session)=self.engines.session_mut(id) else {continue;};
-            session.borrow_mut().reify_displayed_mirror_resources(&surfaces);
+        let selected: Vec<_> = self
+            .engines()
+            .window_pairs()
+            .filter_map(|(window, main, engine)| {
+                let id = self.engines.of_window(window)?;
+                let workspace =
+                    engine.workspace_at(main.state.active_workspace_index(engine.core))?;
+                let surfaces = workspace
+                    .pane_layout()
+                    .all_pane_ids()
+                    .into_iter()
+                    .filter_map(|id| workspace.pane_layout().find_pane(id))
+                    .filter_map(|pane| pane.tabs.get(main.state.navigation.tab_index(pane)))
+                    .flat_map(|tab| tab.all_surface_ids())
+                    .collect::<Vec<_>>();
+                Some((id, surfaces))
+            })
+            .collect();
+        for (id, surfaces) in selected {
+            let Some(session) = self.engines.session_mut(id) else {
+                continue;
+            };
+            session
+                .borrow_mut()
+                .reify_displayed_mirror_resources(&surfaces);
             for surface in surfaces {
-                match self.journal.activate_restored_surface(session,surface) {
-                    Ok(true)=>break,
-                    Ok(false)=>{},
-                    Err(error)=>{tracing::error!("selected surface restore failed: {error}");break;},
+                match self.journal.activate_restored_surface(session, surface) {
+                    Ok(true) => break,
+                    Ok(false) => {}
+                    Err(error) => {
+                        tracing::error!("selected surface restore failed: {error}");
+                        break;
+                    }
                 }
             }
         }
         let mut sessions: Vec<_> = self.engines.all_sessions_mut().collect();
-        if let Err(error) = self.journal.poll_bootstrap(&mut sessions,self.plugin_manager.as_mut()) {
+        if let Err(error) = self
+            .journal
+            .poll_bootstrap(&mut sessions, self.plugin_manager.as_mut())
+        {
             tracing::error!("journal publication halted: {error}");
-            for session in &mut sessions {crate::app::attach_activation::cancel_engine(&mut self.pending_server_attaches,session.id,&mut session.borrow_mut(),&self.stream_hub);}
+            for session in &mut sessions {
+                crate::app::attach_activation::cancel_engine(
+                    &mut self.pending_server_attaches,
+                    session.id,
+                    &mut session.borrow_mut(),
+                    &self.stream_hub,
+                );
+            }
         }
         if !self.journal.pauses_observation() {
-            crate::app::attach_activation::poll(&mut self.pending_server_attaches,&mut self.journal,&mut sessions,&self.stream_hub);
+            crate::app::attach_activation::poll(
+                &mut self.pending_server_attaches,
+                &mut self.journal,
+                &mut sessions,
+                &self.stream_hub,
+            );
         }
         drop(sessions);
         if !self.journal.pauses_observation() {
@@ -54,52 +104,101 @@ impl App {
             self.apply_attach_client_output();
         }
         if !self.journal.pauses_observation() && !self.journal.is_halted() {
-            for session in self.engines.all_sessions_mut() {session.borrow_mut().poll_input_submissions();}
+            for session in self.engines.all_sessions_mut() {
+                session.borrow_mut().poll_input_submissions();
+            }
             self.dispatch_pending_surface_lifecycle();
             self.dispatch_pending_host_events();
         }
         self.poll_preserved_window_closes();
-        for id in self.journal.take_retired_engines() {self.engines.mark_retiring_release(id);}
+        for id in self.journal.take_retired_engines() {
+            self.engines.mark_retiring_release(id);
+        }
         self.poll_retiring_engine_owners();
     }
 
     pub(crate) fn poll_retiring_engine_owners(&mut self) {
         for id in self.engines.releasing_ids() {
-            let Some(session)=self.engines.session_mut(id) else {continue;};
-            if matches!(session.poll_runner_stop(&self.services.tasks),tasty_task_runtime::RunnerStopObservation::Waiting) {continue;}
+            let Some(session) = self.engines.session_mut(id) else {
+                continue;
+            };
+            if matches!(
+                session.poll_runner_stop(&self.services.tasks),
+                tasty_task_runtime::RunnerStopObservation::Waiting
+            ) {
+                continue;
+            }
             // WorkerFailed is an actual joined worker failure, reported once by the registry.
             // It does not cancel tasks; physical EngineRelease still needs its own receipts.
             if self.journal.is_halted() {
-                if !self.journal.release_halted_resources(session,self.plugin_manager.as_mut()) {continue;}
+                if !self
+                    .journal
+                    .release_halted_resources(session, self.plugin_manager.as_mut())
+                {
+                    continue;
+                }
             } else {
-                if self.journal.has_pending_engine_effects(id) || session.runtime.has_pending_delivery() {continue;}
+                if self.journal.has_pending_engine_effects(id)
+                    || session.runtime.has_pending_delivery()
+                {
+                    continue;
+                }
             }
-            if crate::runtime::resource_retirement::poll_engine_release(session,self.plugin_manager.as_mut()) {
+            if crate::runtime::resource_retirement::poll_engine_release(
+                session,
+                self.plugin_manager.as_mut(),
+            ) {
                 self.journal.forget_released_engine(id);
                 drop(self.engines.finish_retiring(id));
             }
         }
     }
 
-    pub(crate) fn engine_release_poll_deadline(&self)->Option<std::time::Instant> {
-        self.engines.has_releasing().then(||std::time::Instant::now()+std::time::Duration::from_millis(10))
+    pub(crate) fn engine_release_poll_deadline(&self) -> Option<std::time::Instant> {
+        self.engines
+            .has_releasing()
+            .then(|| std::time::Instant::now() + std::time::Duration::from_millis(10))
     }
 
     pub(crate) fn poll_preserved_window_closes(&mut self) {
-        if self.journal.pauses_observation() && !self.journal.is_halted() {return;}
-        for (id,mut navigation,checkpoint) in self.engines.preserved_closes() {
-            if self.journal.is_halted() {self.engines.mark_retiring_release(id);continue;}
-            if self.journal.has_pending_engine_effects(id) {continue;}
-            let Some(session)=self.engines.session_mut(id) else {continue;};
-            if !session.pending_resource_retirements.is_empty() || !session.pending_materializations.is_empty() || session.runtime.has_pending_delivery() {continue;}
-            let Some(binding)=session.journal_binding.clone() else {continue;};
+        if self.journal.pauses_observation() && !self.journal.is_halted() {
+            return;
+        }
+        for (id, mut navigation, checkpoint) in self.engines.preserved_closes() {
+            if self.journal.is_halted() {
+                self.engines.mark_retiring_release(id);
+                continue;
+            }
+            if self.journal.has_pending_engine_effects(id) {
+                continue;
+            }
+            let Some(session) = self.engines.session_mut(id) else {
+                continue;
+            };
+            if !session.pending_resource_retirements.is_empty()
+                || !session.pending_materializations.is_empty()
+                || session.runtime.has_pending_delivery()
+            {
+                continue;
+            }
+            let Some(binding) = session.journal_binding.clone() else {
+                continue;
+            };
             if checkpoint.is_none() {
                 navigation.reconcile(&session.core_state.workspaces());
-                let active=navigation.workspace_id(&session.core_state.workspaces());
-                let active_index=navigation.workspace_index(&session.core_state.workspaces());
-                self.journal.queue_surface_capture(session,true);
-                self.journal.queue_view(crate::runtime::journal_product::view_record::StoredView::capture(binding.clone(),&session.core_state,active,&navigation));
-                self.engines.mark_closed_view_checkpoint(id,self.journal.latest_view_sequence());
+                let active = navigation.workspace_id(&session.core_state.workspaces());
+                let active_index = navigation.workspace_index(&session.core_state.workspaces());
+                self.journal.queue_surface_capture(session, true);
+                self.journal.queue_view(
+                    crate::runtime::journal_product::view_record::StoredView::capture(
+                        binding.clone(),
+                        &session.core_state,
+                        active,
+                        &navigation,
+                    ),
+                );
+                self.engines
+                    .mark_closed_view_checkpoint(id, self.journal.latest_view_sequence());
             } else if !self.journal.has_pending_view_for(&binding.stream) {
                 self.engines.mark_retiring_release(id);
             }
@@ -107,8 +206,15 @@ impl App {
     }
 
     fn release_failed_pending_window(&mut self, id: EngineId) {
-        let Some(session) = self.engines.session_mut(id) else { return; };
-        crate::app::attach_activation::cancel_engine(&mut self.pending_server_attaches, id, &mut session.borrow_mut(), &self.stream_hub);
+        let Some(session) = self.engines.session_mut(id) else {
+            return;
+        };
+        crate::app::attach_activation::cancel_engine(
+            &mut self.pending_server_attaches,
+            id,
+            &mut session.borrow_mut(),
+            &self.stream_hub,
+        );
         let Some(binding) = session.journal_binding.clone() else {
             // Ordinary failure calls arrive only after binding. Keep an unexpected accepted opener
             // owned rather than dropping resources whose publication status is not known.
@@ -134,7 +240,9 @@ impl App {
                     error,
                 );
                 drop(pending);
-                if self.engines.begin_retiring_pending(id) {self.engines.mark_retiring_release(id);}
+                if self.engines.begin_retiring_pending(id) {
+                    self.engines.mark_retiring_release(id);
+                }
             }
             return;
         }

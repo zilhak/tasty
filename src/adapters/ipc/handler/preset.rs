@@ -8,8 +8,7 @@ use tasty_presets::{PanePreset, PresetKind, TabPreset, WorkspacePreset};
 
 use crate::intent::ClonedPreset;
 use crate::intent::preset::{
-    PresetMutationError, SaveOutcome, capture_inner, delete_inner,
-    rename_inner, save_inner,
+    PresetMutationError, SaveOutcome, capture_inner, delete_inner, rename_inner, save_inner,
 };
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -44,7 +43,10 @@ fn require_str<'a>(
 
 use super::params::require_u32;
 
-fn with_store<R>(core: &crate::app::services::AppServices, f: impl FnOnce(&tasty_presets::PresetStore) -> R) -> R {
+fn with_store<R>(
+    core: &crate::app::services::AppServices,
+    f: impl FnOnce(&tasty_presets::PresetStore) -> R,
+) -> R {
     let guard = crate::poison::recover_mutex(
         core.preset_store.lock(),
         crate::core::PRESET_STORE_WHAT,
@@ -55,8 +57,9 @@ fn with_store<R>(core: &crate::app::services::AppServices, f: impl FnOnce(&tasty
 
 pub(crate) fn mutation_error(id: serde_json::Value, e: PresetMutationError) -> JsonRpcResponse {
     match &e {
-        PresetMutationError::NotFound { .. }
-        | PresetMutationError::Store(_) => JsonRpcResponse::invalid_params(id, e.to_string()),
+        PresetMutationError::NotFound { .. } | PresetMutationError::Store(_) => {
+            JsonRpcResponse::invalid_params(id, e.to_string())
+        }
     }
 }
 
@@ -225,7 +228,10 @@ pub(crate) fn decode_capture_request(
 ) -> Result<(PresetKind, u32, Option<String>), JsonRpcResponse> {
     let kind = parse_kind(params, id)?;
     let source = require_u32(params, "source_id", id)?;
-    let name = params.get("name").and_then(|value| value.as_str()).map(str::to_string);
+    let name = params
+        .get("name")
+        .and_then(|value| value.as_str())
+        .map(str::to_string);
     Ok((kind, source, name))
 }
 
@@ -255,4 +261,3 @@ pub fn handle_capture(
         Err(e) => mutation_error(id, e),
     }
 }
-

@@ -31,7 +31,13 @@ pub(crate) fn handle(
     });
     // 종료한 프로세스는 복원 스냅샷에 남기지 않는다.
     // intent-exempt: explicit PTY exit cascade, not a new user or agent command
-    state.dispatch_intent(crate::app::command::DomainIntent::RetireExitedSurface {surface_id:surface,generation}.from_system());
+    state.dispatch_intent(
+        crate::app::command::DomainIntent::RetireExitedSurface {
+            surface_id: surface,
+            generation,
+        }
+        .from_system(),
+    );
 }
 
 #[cfg(all(test, unix))]

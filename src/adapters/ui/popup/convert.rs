@@ -1,7 +1,7 @@
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{self, PopupAction};
-use crate::runtime::engine_read::EngineRead;
 use crate::i18n::t;
+use crate::runtime::engine_read::EngineRead;
 use crate::state::MainViewState;
 use crate::theme;
 use crate::theme::Theme;
@@ -18,7 +18,10 @@ const DEFAULT_KIND_COUNT: usize = 5;
 /// Sizer: 현재 kind 를 뺀 변환 가능 kind 수에 맞춰 popup 크기를 계산.
 /// `popup::frame::draw_popup_layer`가 프레임마다 호출하므로 plugin이 새 kind를
 /// 등록한 직후나 UI 배율이 바뀐 직후 자동으로 popup 크기가 맞춰진다.
-pub fn convert_popup_sizer(state: &MainViewState, engine: &crate::runtime::engine_read::EngineRead<'_>) -> egui::Vec2 {
+pub fn convert_popup_sizer(
+    state: &MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> egui::Vec2 {
     convert_popup_size_for(&theme::theme(), listed_kinds(state, engine).len())
 }
 
@@ -128,7 +131,10 @@ struct ConvertItem {
 }
 
 /// 팝업에 나열할 항목 — 대상 surface 의 현재 kind 는 바꿀 대상이 아니라 뺀다.
-fn listed_kinds(state: &MainViewState, engine: &crate::runtime::engine_read::EngineRead<'_>) -> Vec<ConvertItem> {
+fn listed_kinds(
+    state: &MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> Vec<ConvertItem> {
     let current = state
         .dialogs
         .convert_popup
@@ -198,7 +204,8 @@ fn enumerate_convertible_kinds(
     let mut items = Vec::with_capacity(kinds.len());
     for kind in kinds {
         let label = resolve_label(state, engine, kind);
-        let icon = engine.surface_registry
+        let icon = engine
+            .surface_registry
             .get(kind)
             .and_then(|d| d.icon.clone())
             .map(|n| icons::from_name(&n))
@@ -213,7 +220,11 @@ fn enumerate_convertible_kinds(
     items
 }
 
-fn resolve_label(_state: &MainViewState, engine: &crate::runtime::engine_read::EngineRead<'_>, kind: &str) -> String {
+fn resolve_label(
+    _state: &MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    kind: &str,
+) -> String {
     let popup_key = format!("convert_popup.{kind}");
     let tr = t(&popup_key);
     if tr != popup_key.as_str() {
@@ -450,11 +461,15 @@ pub enum ConvertAction {
     Kind(String),
 }
 
-fn action_for_kind(engine: &crate::runtime::engine_read::EngineRead<'_>, kind: &str) -> ConvertAction {
+fn action_for_kind(
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    kind: &str,
+) -> ConvertAction {
     if kind == "terminal" {
         return ConvertAction::Terminal;
     }
-    if engine.surface_registry
+    if engine
+        .surface_registry
         .get(kind)
         .is_some_and(|d| d.convert_requires_input)
     {

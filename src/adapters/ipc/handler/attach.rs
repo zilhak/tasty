@@ -146,7 +146,8 @@ pub(crate) fn handle_into_gui(
 /// surface와 workspace 점유 목록을 함께 반환한다.
 pub(crate) fn handle_list(engine: &EngineRead<'_>, id: serde_json::Value) -> JsonRpcResponse {
     let arr: Vec<_> = engine
-        .live.occupancy
+        .live
+        .occupancy
         .locks_snapshot()
         .into_iter()
         .map(|(sid, l)| {
@@ -158,7 +159,8 @@ pub(crate) fn handle_list(engine: &EngineRead<'_>, id: serde_json::Value) -> Jso
         })
         .collect();
     let workspaces: Vec<_> = engine
-        .live.occupancy
+        .live
+        .occupancy
         .workspaces_snapshot()
         .into_iter()
         .map(|(ws, l)| {

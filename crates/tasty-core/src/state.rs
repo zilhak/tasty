@@ -12,30 +12,47 @@ pub struct CoreState {
     pub(crate) mirror_projection_tokens: std::collections::HashMap<u32, std::sync::Arc<()>>,
     /// 표시 순서의 카테고리. 생성·복원 뒤 기본 normal 항목을 앞에 두도록 정규화한다.
     pub(crate) categories: Vec<tasty_model::WorkspaceCategory>,
-
 }
 
 impl CoreState {
-    pub fn new_base()->Self {Self {
-        committed_structure_revision:None,local_workspaces:Vec::new(),mirror_workspaces:Vec::new(),workspace_display_order:Vec::new(),mirror_projection_tokens:Default::default(),categories:vec![tasty_model::WorkspaceCategory::normal()],
-    }}
-
+    pub fn new_base() -> Self {
+        Self {
+            committed_structure_revision: None,
+            local_workspaces: Vec::new(),
+            mirror_workspaces: Vec::new(),
+            workspace_display_order: Vec::new(),
+            mirror_projection_tokens: Default::default(),
+            categories: vec![tasty_model::WorkspaceCategory::normal()],
+        }
+    }
 }
 
-
 impl CoreState {
-    pub fn local_workspaces(&self)->&[tasty_model::Workspace] {&self.local_workspaces}
-    pub fn mirror_workspaces(&self)->&[tasty_model::Workspace] {&self.mirror_workspaces}
-    pub fn committed_structure_revision(&self)->Option<u64> {self.committed_structure_revision}
+    pub fn local_workspaces(&self) -> &[tasty_model::Workspace] {
+        &self.local_workspaces
+    }
+    pub fn mirror_workspaces(&self) -> &[tasty_model::Workspace] {
+        &self.mirror_workspaces
+    }
+    pub fn committed_structure_revision(&self) -> Option<u64> {
+        self.committed_structure_revision
+    }
 
     /// Remote is the only structural writer for mirror collections. A local ID cannot grant
     /// mutable access to the committed local projection through this entry point.
-    pub fn mirror_workspace_mut(&mut self,id:u32)->Option<&mut tasty_model::Workspace> {
-        self.mirror_workspaces.iter_mut().find(|workspace|workspace.id==id)
+    pub fn mirror_workspace_mut(&mut self, id: u32) -> Option<&mut tasty_model::Workspace> {
+        self.mirror_workspaces
+            .iter_mut()
+            .find(|workspace| workspace.id == id)
     }
-    pub fn remove_mirror_workspace(&mut self,id:u32)->Option<tasty_model::Workspace> {
-        let index=self.mirror_workspaces.iter().position(|workspace|workspace.id==id)?;
-        self.workspace_display_order.retain(|candidate|*candidate!=id);
-        self.mirror_projection_tokens.remove(&id);Some(self.mirror_workspaces.remove(index))
+    pub fn remove_mirror_workspace(&mut self, id: u32) -> Option<tasty_model::Workspace> {
+        let index = self
+            .mirror_workspaces
+            .iter()
+            .position(|workspace| workspace.id == id)?;
+        self.workspace_display_order
+            .retain(|candidate| *candidate != id);
+        self.mirror_projection_tokens.remove(&id);
+        Some(self.mirror_workspaces.remove(index))
     }
 }

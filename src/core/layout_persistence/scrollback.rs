@@ -12,7 +12,10 @@ pub(super) fn queue_scrollback_for_surface(
     use crate::scrollback_store::ScrollbackRead;
     match crate::scrollback_store::read(persist_id) {
         ScrollbackRead::Loaded(lines) if !lines.is_empty() => {
-            engine.runtime.pending_scrollback_inject.insert(surface_id, lines);
+            engine
+                .runtime
+                .pending_scrollback_inject
+                .insert(surface_id, lines);
         }
         ScrollbackRead::Loaded(_) => {}
         ScrollbackRead::Absent => {

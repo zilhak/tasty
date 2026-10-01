@@ -1,22 +1,22 @@
 //! Accepted structural requests retain their original identity until a committed wire reply exists.
+mod assembly;
 mod category;
-mod create;
-mod wake;
-pub(crate) mod live_resume;
 mod child;
 mod close;
-mod replacement;
-mod assembly;
-#[cfg(feature="gui")]
-mod forwarding;
+mod create;
 mod create_spec;
 mod display;
 #[cfg(feature = "gui")]
 mod divider;
-mod intents;
-mod notification;
+#[cfg(feature = "gui")]
+mod forwarding;
 pub(crate) mod inbound;
+mod intents;
+pub(crate) mod live_resume;
+mod notification;
+mod replacement;
 mod tab;
+mod wake;
 mod workspace;
 use super::*;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
@@ -33,12 +33,12 @@ struct CategoryReservation {
 /// Live View continuation, never serialized with a structural command or replayed response.
 #[derive(Clone)]
 pub(crate) struct IntentViewContinuation {
-    pub(crate) view:std::sync::Weak<()>,
-    pub(crate) selection:std::sync::Weak<()>,
-    pub(crate) activate_surface:Option<u32>,
-    pub(crate) close_empty_engine:bool,
-    pub(crate) after_create:Option<crate::intent::CreateFollowup>,
-    pub(crate) tutorial:Option<create::TutorialCreated>,
+    pub(crate) view: std::sync::Weak<()>,
+    pub(crate) selection: std::sync::Weak<()>,
+    pub(crate) activate_surface: Option<u32>,
+    pub(crate) close_empty_engine: bool,
+    pub(crate) after_create: Option<crate::intent::CreateFollowup>,
+    pub(crate) tutorial: Option<create::TutorialCreated>,
 }
 
 enum Reply {
@@ -63,14 +63,14 @@ enum Reply {
         binding: std::sync::Weak<()>,
     },
     Intent {
-        engine:EngineId,
-        origin:crate::intent::IntentOrigin,
-        view:Option<IntentViewContinuation>,
+        engine: EngineId,
+        origin: crate::intent::IntentOrigin,
+        view: Option<IntentViewContinuation>,
     },
 }
 
 struct IntentResult {
-    view:Option<IntentViewContinuation>,
+    view: Option<IntentViewContinuation>,
     engine: EngineId,
     origin: crate::intent::IntentOrigin,
     response: JsonRpcResponse,
@@ -83,16 +83,16 @@ struct Pending {
     needs_resolution: bool,
     category: Option<CategoryReservation>,
     resource: Option<create::Request>,
-    #[cfg(feature="gui")]
-    forward:Option<super::forward::Draft>,
+    #[cfg(feature = "gui")]
+    forward: Option<super::forward::Draft>,
     /// Reservation follows the original request until its final reply, including effect-owned copies.
-    forward_reserved:usize,
-    one_shot_reserved:usize,
-    closing:Option<close::Request>,
-    replacing:Option<replacement::Request>,
-    close_cause:close::Cause,
+    forward_reserved: usize,
+    one_shot_reserved: usize,
+    closing: Option<close::Request>,
+    replacing: Option<replacement::Request>,
+    close_cause: close::Cause,
     waiting_command: Option<String>,
-    activation_wait:Option<super::creation::ActivationReceipt>,
+    activation_wait: Option<super::creation::ActivationReceipt>,
     created: Option<create::Completed>,
     bytes: usize,
     replay: bool,
@@ -123,8 +123,8 @@ pub(super) struct Commands {
     completed_dividers: Vec<(EngineId, u64, crate::intent::IntentOrigin, JsonRpcResponse)>,
     completed_plugins: Vec<(String, u64, std::sync::Weak<()>, JsonRpcResponse)>,
     completed_intents: Vec<IntentResult>,
-    completed_live:Vec<(live_resume::Resume,JsonRpcResponse)>,
-    completed_remote:Vec<(inbound::RemoteReply,JsonRpcResponse)>,
+    completed_live: Vec<(live_resume::Resume, JsonRpcResponse)>,
+    completed_remote: Vec<(inbound::RemoteReply, JsonRpcResponse)>,
     completed_host_events: Vec<(EngineId, notification::Notification)>,
     #[cfg(feature = "gui")]
     settings_generation: u64,
@@ -138,16 +138,52 @@ pub(super) struct Commands {
 }
 
 impl Commands {
-    pub(super) fn has_remote_request(&self,engine:EngineId)->bool {self.pending.values().any(|pending|matches!(&pending.reply,Reply::Remote(remote) if remote.engine==engine)) || self.completed_remote.iter().any(|(remote,_)|remote.engine==engine)}
-    pub(super) fn has_closing(&self)->bool {self.pending.values().any(|pending|pending.closing.is_some()||pending.replacing.is_some())}
-    pub(super) fn has_resource_request(&self,engine:EngineId)->bool {
-        self.completed_live.iter().any(|(resume,_)|resume.engine==engine) || self.pending.values().any(|pending|matches!(&pending.reply,Reply::Resume(resume) if resume.engine==engine)||pending.closing.as_ref().is_some_and(|request|request.engine==engine)||pending.resource.as_ref().is_some_and(|request|request.engine==engine)||pending.replacing.as_ref().is_some_and(|request|request.engine==engine))
+    pub(super) fn has_remote_request(&self, engine: EngineId) -> bool {
+        self.pending
+            .values()
+            .any(|pending| matches!(&pending.reply,Reply::Remote(remote) if remote.engine==engine))
+            || self
+                .completed_remote
+                .iter()
+                .any(|(remote, _)| remote.engine == engine)
+    }
+    pub(super) fn has_closing(&self) -> bool {
+        self.pending
+            .values()
+            .any(|pending| pending.closing.is_some() || pending.replacing.is_some())
+    }
+    pub(super) fn has_resource_request(&self, engine: EngineId) -> bool {
+        self.completed_live
+            .iter()
+            .any(|(resume, _)| resume.engine == engine)
+            || self.pending.values().any(|pending| {
+                matches!(&pending.reply,Reply::Resume(resume) if resume.engine==engine)
+                    || pending
+                        .closing
+                        .as_ref()
+                        .is_some_and(|request| request.engine == engine)
+                    || pending
+                        .resource
+                        .as_ref()
+                        .is_some_and(|request| request.engine == engine)
+                    || pending
+                        .replacing
+                        .as_ref()
+                        .is_some_and(|request| request.engine == engine)
+            })
     }
 
     fn deliver(&mut self, reply: Reply, response: JsonRpcResponse) {
         match reply {
-            Reply::Resume(resume)=> {if response.error.is_some() {let (reply,response)=resume.error_reply(response);self.deliver(reply,response);} else {self.completed_live.push((resume,response));}},
-            Reply::Remote(reply)=>self.completed_remote.push((reply,response)),
+            Reply::Resume(resume) => {
+                if response.error.is_some() {
+                    let (reply, response) = resume.error_reply(response);
+                    self.deliver(reply, response);
+                } else {
+                    self.completed_live.push((resume, response));
+                }
+            }
+            Reply::Remote(reply) => self.completed_remote.push((reply, response)),
             #[cfg(feature = "gui")]
             Reply::Divider {
                 engine,
@@ -178,7 +214,11 @@ impl Commands {
             } => self
                 .completed_plugins
                 .push((plugin_id, call_id, binding, response)),
-            Reply::Intent { engine, origin,view } => self.completed_intents.push(IntentResult {
+            Reply::Intent {
+                engine,
+                origin,
+                view,
+            } => self.completed_intents.push(IntentResult {
                 view,
                 engine,
                 origin,
@@ -192,8 +232,10 @@ pub(crate) fn handles(method: &str) -> bool {
     tasty_ipc::method_meta::has_structure_journal_contract(method)
 }
 
-fn handles_request(request:&JsonRpcRequest)->bool {
-    handles(&request.method) || (request.method=="terminal.respawn" && request.params.get("cwd").is_some_and(|cwd|cwd.is_string()))
+fn handles_request(request: &JsonRpcRequest) -> bool {
+    handles(&request.method)
+        || (request.method == "terminal.respawn"
+            && request.params.get("cwd").is_some_and(|cwd| cwd.is_string()))
 }
 
 impl JournalApplication {
@@ -246,8 +288,15 @@ impl JournalApplication {
             .pending
             .values()
             .map(|pending| pending.bytes)
-            .sum::<usize>().saturating_add(self.commands.completed_live.iter().map(|(resume,_)|resume.weight()).sum::<usize>());
-        if self.commands.pending.len()+self.commands.completed_live.len() >= MAX_PENDING
+            .sum::<usize>()
+            .saturating_add(
+                self.commands
+                    .completed_live
+                    .iter()
+                    .map(|(resume, _)| resume.weight())
+                    .sum::<usize>(),
+            );
+        if self.commands.pending.len() + self.commands.completed_live.len() >= MAX_PENDING
             || held.saturating_add(bytes) > tasty_ipc::admission::QUEUED_BYTES_LIMIT
         {
             self.commands.deliver(
@@ -272,13 +321,15 @@ impl JournalApplication {
                 needs_resolution: false,
                 category: None,
                 resource: None,
-                #[cfg(feature="gui")]
-                forward:None,
-                forward_reserved:0,one_shot_reserved:0,
-                closing:None,
-                replacing:None,
-                close_cause:Default::default(),
-                waiting_command: None,activation_wait:None,
+                #[cfg(feature = "gui")]
+                forward: None,
+                forward_reserved: 0,
+                one_shot_reserved: 0,
+                closing: None,
+                replacing: None,
+                close_cause: Default::default(),
+                waiting_command: None,
+                activation_wait: None,
                 created: None,
                 bytes,
                 replay: false,
@@ -346,7 +397,14 @@ impl JournalApplication {
             .pending
             .values()
             .map(|pending| pending.bytes)
-            .sum::<usize>().saturating_add(self.commands.completed_live.iter().map(|(resume,_)|resume.weight()).sum::<usize>());
+            .sum::<usize>()
+            .saturating_add(
+                self.commands
+                    .completed_live
+                    .iter()
+                    .map(|(resume, _)| resume.weight())
+                    .sum::<usize>(),
+            );
         if total > tasty_ipc::admission::QUEUED_BYTES_LIMIT {
             let response = JsonRpcResponse::error(
                 serde_json::Value::Null,
@@ -429,18 +487,81 @@ impl JournalApplication {
     }
 
     pub(crate) fn resolve_ipc_for_engine(&mut self, ticket: u64, session: &EngineSession) {
-        if self.commands.pending.get(&ticket).is_some_and(|pending|matches!(pending.request.method.as_str(),"surface.wake"|"intent.wake")) {self.resolve_wake(ticket,session);return;}
-        if let Some(pending)=self.commands.pending.get(&ticket) && pending.request.method=="tab.move" && !matches!(pending.close_cause,close::Cause::RemoteHolder {..}) {
-            let workspace=pending.request.params["pane_id"].as_u64().and_then(|id|u32::try_from(id).ok()).and_then(|pane|session.core_state.find_workspace_index_for_pane(pane)).and_then(|index|session.core_state.workspace_at(index));
-            if let Some(workspace)=workspace && session.live.occupancy.workspace_holder(workspace.id).is_some() {
-                self.reject_resolved_request(ticket,crate::ipc::handler::hard_occupied_denial(workspace.id,&serde_json::Value::Null));return;
+        if self.commands.pending.get(&ticket).is_some_and(|pending| {
+            matches!(
+                pending.request.method.as_str(),
+                "surface.wake" | "intent.wake"
+            )
+        }) {
+            self.resolve_wake(ticket, session);
+            return;
+        }
+        if let Some(pending) = self.commands.pending.get(&ticket)
+            && pending.request.method == "tab.move"
+            && !matches!(pending.close_cause, close::Cause::RemoteHolder { .. })
+        {
+            let workspace = pending.request.params["pane_id"]
+                .as_u64()
+                .and_then(|id| u32::try_from(id).ok())
+                .and_then(|pane| session.core_state.find_workspace_index_for_pane(pane))
+                .and_then(|index| session.core_state.workspace_at(index));
+            if let Some(workspace) = workspace
+                && session
+                    .live
+                    .occupancy
+                    .workspace_holder(workspace.id)
+                    .is_some()
+            {
+                self.reject_resolved_request(
+                    ticket,
+                    crate::ipc::handler::hard_occupied_denial(
+                        workspace.id,
+                        &serde_json::Value::Null,
+                    ),
+                );
+                return;
             }
         }
-        if self.commands.pending.get(&ticket).is_some_and(|pending|matches!(pending.request.method.as_str(),"intent.replace"|"intent.move-surface")) {self.resolve_replacement(ticket,session);return;}
-        if self.commands.pending.get(&ticket).is_some_and(|pending|pending.request.method=="intent.restore-closed") {self.resolve_undo(ticket,session);return;}
-        if self.commands.pending.get(&ticket).is_some_and(|pending|matches!(pending.request.method.as_str(),"terminal.kill"|"workspace.close"|"tab.close"|"pane.close"|"surface.close"|"surface.close_self"|"intent.close")) {self.resolve_close(ticket,session);return;}
-        if self.commands.pending.get(&ticket).is_some_and(|pending|pending.request.method=="intent.create") {
-            self.resolve_fixed_creation(ticket,session);
+        if self.commands.pending.get(&ticket).is_some_and(|pending| {
+            matches!(
+                pending.request.method.as_str(),
+                "intent.replace" | "intent.move-surface"
+            )
+        }) {
+            self.resolve_replacement(ticket, session);
+            return;
+        }
+        if self
+            .commands
+            .pending
+            .get(&ticket)
+            .is_some_and(|pending| pending.request.method == "intent.restore-closed")
+        {
+            self.resolve_undo(ticket, session);
+            return;
+        }
+        if self.commands.pending.get(&ticket).is_some_and(|pending| {
+            matches!(
+                pending.request.method.as_str(),
+                "terminal.kill"
+                    | "workspace.close"
+                    | "tab.close"
+                    | "pane.close"
+                    | "surface.close"
+                    | "surface.close_self"
+                    | "intent.close"
+            )
+        }) {
+            self.resolve_close(ticket, session);
+            return;
+        }
+        if self
+            .commands
+            .pending
+            .get(&ticket)
+            .is_some_and(|pending| pending.request.method == "intent.create")
+        {
+            self.resolve_fixed_creation(ticket, session);
             return;
         }
         let Some(pending) = self.commands.pending.get_mut(&ticket) else {
@@ -463,9 +584,12 @@ impl JournalApplication {
                 | "intent.workspace-mapping"
                 | "intent.workspace-rename"
                 | "intent.tab-name"
-                | "intent.tab-move" | "tab.move"
+                | "intent.tab-move"
+                | "tab.move"
         ) {
-            match if pending.request.method=="tab.move" {tab::move_public(&pending.request,session)} else if pending.request.method == "intent.tab-name" {
+            match if pending.request.method == "tab.move" {
+                tab::move_public(&pending.request, session)
+            } else if pending.request.method == "intent.tab-name" {
                 tab::rename(&pending.request, session)
             } else if pending.request.method == "intent.tab-move" {
                 tab::move_tab(&pending.request)
@@ -565,47 +689,129 @@ impl JournalApplication {
                 self.refresh_command_weight(ticket);
                 return Ok(true);
             }
-            Ok(ResultValue::ClosedCaptured {input,undo})=>{
-                let closing=pending.closing.as_mut().ok_or("close capture lost its request")?;
-                closing.undo=undo.clone();closing.input_ref=Some(*input);
-                pending.queued=Some(if let Some(replacement)=pending.resource.as_mut() {replacement.reservation()?} else {closing.stored(*input)});
-                self.refresh_command_weight(ticket);return Ok(true);
-            }
-            #[cfg(feature="gui")]
-            Ok(ResultValue::InputStored(input)) if pending.forward.is_some()=> {
-                let draft=pending.forward.as_ref().expect("forward input owner");
-                pending.queued=Some(Work::Resolve {changes:vec![StreamCommand {stream:draft.stream.clone(),command:tasty_core::StructuralCommand::PrepareForward {operation:tasty_core::OperationId(String::new()),command_id:String::new(),input:*input}}],response:Some(ResponsePlan::Fixed(draft.response.clone()))});
-                self.refresh_command_weight(ticket);return Ok(true);
-            }
-            Ok(ResultValue::InputStored(input)) if pending.replacing.is_some()=> {
-                pending.queued=Some(pending.replacing.as_ref().expect("replacement input owner").stored(*input));self.refresh_command_weight(ticket);return Ok(true);
-            }
-            Ok(ResultValue::InputStored(input)) if pending.closing.is_some()=> {
-                let closing=pending.closing.as_mut().expect("close input owner");
-                pending.queued=Some(if let Some(close_input)=closing.input_ref {
-                    let Work::Resolve {mut changes,response}=closing.stored(close_input) else {unreachable!("close resolution")};
-                    let Work::Resolve {changes:replacement,..}=pending.resource.as_ref().ok_or("replacement draft disappeared")?.stored(*input) else {unreachable!("creation resolution")};
-                    changes.extend(replacement);
-                    Work::Resolve {changes,response}
+            Ok(ResultValue::ClosedCaptured { input, undo }) => {
+                let closing = pending
+                    .closing
+                    .as_mut()
+                    .ok_or("close capture lost its request")?;
+                closing.undo = undo.clone();
+                closing.input_ref = Some(*input);
+                pending.queued = Some(if let Some(replacement) = pending.resource.as_mut() {
+                    replacement.reservation()?
                 } else {
-                    closing.input_ref=Some(*input);
-                    if let Some(replacement)=pending.resource.as_mut() {replacement.reservation()?} else {closing.stored(*input)}
+                    closing.stored(*input)
                 });
-                self.refresh_command_weight(ticket);return Ok(true);
+                self.refresh_command_weight(ticket);
+                return Ok(true);
             }
-            Ok(ResultValue::AssemblyResolved {stream,input,plan})=> {
-                pending.queued=Some(match (input,plan) {
-                    (Some(input),Some(plan))=>Work::Resolve {
-                        changes:vec![StreamCommand {stream:stream.clone(),command:tasty_core::StructuralCommand::PrepareAssembly {operation:tasty_core::OperationId(String::new()),command_id:String::new(),input:*input,plan:plan.clone()}}],
-                        response:Some(if pending.request.method=="preset.apply" {
-                            let root=plan.snapshot.root;let mut response=serde_json::json!({"applied":true,"kind":root.kind.label()});response[format!("{}_id",root.kind.label())]=serde_json::json!(root.id);
-                            ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,response))
-                        }else {ResponsePlan::AssemblyRestored {stream:stream.clone(),root:plan.snapshot.root,surfaces:plan.snapshot.surfaces.keys().copied().collect(),presentation:plan.snapshot.presentation.clone()}}),
-                    },
-                    (None,None)=>Work::Resolve {changes:Vec::new(),response:Some(ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"restored":false}))))},
-                    _=>return Err("undo preparation result is incomplete".into()),
+            #[cfg(feature = "gui")]
+            Ok(ResultValue::InputStored(input)) if pending.forward.is_some() => {
+                let draft = pending.forward.as_ref().expect("forward input owner");
+                pending.queued = Some(Work::Resolve {
+                    changes: vec![StreamCommand {
+                        stream: draft.stream.clone(),
+                        command: tasty_core::StructuralCommand::PrepareForward {
+                            operation: tasty_core::OperationId(String::new()),
+                            command_id: String::new(),
+                            input: *input,
+                        },
+                    }],
+                    response: Some(ResponsePlan::Fixed(draft.response.clone())),
                 });
-                self.refresh_command_weight(ticket);return Ok(true);
+                self.refresh_command_weight(ticket);
+                return Ok(true);
+            }
+            Ok(ResultValue::InputStored(input)) if pending.replacing.is_some() => {
+                pending.queued = Some(
+                    pending
+                        .replacing
+                        .as_ref()
+                        .expect("replacement input owner")
+                        .stored(*input),
+                );
+                self.refresh_command_weight(ticket);
+                return Ok(true);
+            }
+            Ok(ResultValue::InputStored(input)) if pending.closing.is_some() => {
+                let closing = pending.closing.as_mut().expect("close input owner");
+                pending.queued = Some(if let Some(close_input) = closing.input_ref {
+                    let Work::Resolve {
+                        mut changes,
+                        response,
+                    } = closing.stored(close_input)
+                    else {
+                        unreachable!("close resolution")
+                    };
+                    let Work::Resolve {
+                        changes: replacement,
+                        ..
+                    } = pending
+                        .resource
+                        .as_ref()
+                        .ok_or("replacement draft disappeared")?
+                        .stored(*input)
+                    else {
+                        unreachable!("creation resolution")
+                    };
+                    changes.extend(replacement);
+                    Work::Resolve { changes, response }
+                } else {
+                    closing.input_ref = Some(*input);
+                    if let Some(replacement) = pending.resource.as_mut() {
+                        replacement.reservation()?
+                    } else {
+                        closing.stored(*input)
+                    }
+                });
+                self.refresh_command_weight(ticket);
+                return Ok(true);
+            }
+            Ok(ResultValue::AssemblyResolved {
+                stream,
+                input,
+                plan,
+            }) => {
+                pending.queued = Some(match (input, plan) {
+                    (Some(input), Some(plan)) => Work::Resolve {
+                        changes: vec![StreamCommand {
+                            stream: stream.clone(),
+                            command: tasty_core::StructuralCommand::PrepareAssembly {
+                                operation: tasty_core::OperationId(String::new()),
+                                command_id: String::new(),
+                                input: *input,
+                                plan: plan.clone(),
+                            },
+                        }],
+                        response: Some(if pending.request.method == "preset.apply" {
+                            let root = plan.snapshot.root;
+                            let mut response =
+                                serde_json::json!({"applied":true,"kind":root.kind.label()});
+                            response[format!("{}_id", root.kind.label())] =
+                                serde_json::json!(root.id);
+                            ResponsePlan::Fixed(JsonRpcResponse::success(
+                                serde_json::Value::Null,
+                                response,
+                            ))
+                        } else {
+                            ResponsePlan::AssemblyRestored {
+                                stream: stream.clone(),
+                                root: plan.snapshot.root,
+                                surfaces: plan.snapshot.surfaces.keys().copied().collect(),
+                                presentation: plan.snapshot.presentation.clone(),
+                            }
+                        }),
+                    },
+                    (None, None) => Work::Resolve {
+                        changes: Vec::new(),
+                        response: Some(ResponsePlan::Fixed(JsonRpcResponse::success(
+                            serde_json::Value::Null,
+                            serde_json::json!({"restored":false}),
+                        ))),
+                    },
+                    _ => return Err("undo preparation result is incomplete".into()),
+                });
+                self.refresh_command_weight(ticket);
+                return Ok(true);
             }
             Ok(ResultValue::InputStored(input)) if pending.resource.is_some() => {
                 pending.queued = Some(
@@ -622,11 +828,24 @@ impl JournalApplication {
                 if executed.status == tasty_event_store::CommandStatus::InProgress =>
             {
                 pending.waiting_command = Some(executed.command_id.clone());
-                #[cfg(feature="gui")]
-                if !pending.replay && let Some(draft)=pending.forward.take() {
-                    let progress:crate::runtime::journal_product::ResponseProgress=serde_json::from_slice(executed.response.as_deref().ok_or("forward command progress missing")?).map_err(|error|error.to_string())?;
-                    let Some(tasty_core::StructuralResult::Pending {operation})=progress.results.first() else {return Err("forward command operation missing".into());};
-                    self.start_forward(draft,operation.clone())?;
+                #[cfg(feature = "gui")]
+                if !pending.replay
+                    && let Some(draft) = pending.forward.take()
+                {
+                    let progress: crate::runtime::journal_product::ResponseProgress =
+                        serde_json::from_slice(
+                            executed
+                                .response
+                                .as_deref()
+                                .ok_or("forward command progress missing")?,
+                        )
+                        .map_err(|error| error.to_string())?;
+                    let Some(tasty_core::StructuralResult::Pending { operation }) =
+                        progress.results.first()
+                    else {
+                        return Err("forward command operation missing".into());
+                    };
+                    self.start_forward(draft, operation.clone())?;
                 }
 
                 if !pending.replay
@@ -645,7 +864,8 @@ impl JournalApplication {
                     else {
                         return Err("public creation operation missing".into());
                     };
-                    pending.one_shot_reserved=request.one_shot_input.as_ref().map_or(0,String::len);
+                    pending.one_shot_reserved =
+                        request.one_shot_input.as_ref().map_or(0, String::len);
                     pending.created = Some(create::Completed::from_request(&request));
                     let creation_ticket = self.next_ticket;
                     self.next_ticket += 1;
@@ -656,7 +876,11 @@ impl JournalApplication {
                         operation.clone(),
                     )?;
                     creation.set_one_shot_input(request.one_shot_input);
-                    if self.creations.insert((request.engine,creation.ticket), creation).is_some() {
+                    if self
+                        .creations
+                        .insert((request.engine, creation.ticket), creation)
+                        .is_some()
+                    {
                         return Err("engine already owns a materialization continuation".into());
                     }
                 }
@@ -695,7 +919,19 @@ impl JournalApplication {
                 self.refresh_command_weight(ticket);
                 return Ok(true);
             }
-            Ok(ResultValue::RecoveryRequired {command_id,reason,replay})=> {let mut response=JsonRpcResponse::error(serde_json::Value::Null,crate::ipc::protocol::ERR_OPERATION_RECOVERY_REQUIRED,format!("command {command_id} requires recovery: {reason}"));response.idempotent_replay=*replay;response},
+            Ok(ResultValue::RecoveryRequired {
+                command_id,
+                reason,
+                replay,
+            }) => {
+                let mut response = JsonRpcResponse::error(
+                    serde_json::Value::Null,
+                    crate::ipc::protocol::ERR_OPERATION_RECOVERY_REQUIRED,
+                    format!("command {command_id} requires recovery: {reason}"),
+                );
+                response.idempotent_replay = *replay;
+                response
+            }
             Ok(ResultValue::Cancelled) => oversized_response(serde_json::Value::Null),
             Ok(ResultValue::Stored(record) | ResultValue::Command(record)) => {
                 let bytes = record
@@ -755,27 +991,55 @@ impl JournalApplication {
             && !completed.idempotent_replay
             && let Some(created) = pending.created
         {
-            if let Reply::Intent {view:Some(view),origin,..}=&mut pending.reply && origin.is_user() {view.tutorial=created.tutorial.clone();}
-            if created.activate
-                && let Reply::Intent {view:Some(view),origin,..}=&mut pending.reply
-                && origin.is_user() {
-                view.activate_surface=Some(created.surface);
+            if let Reply::Intent {
+                view: Some(view),
+                origin,
+                ..
+            } = &mut pending.reply
+                && origin.is_user()
+            {
+                view.tutorial = created.tutorial.clone();
             }
-            if matches!(created.destination,tasty_core::CreationDestination::Restore {..}) {
-                if let Some(items)=self.restoration_ready.get_mut(&created.engine) {items.retain(|item|item.surface_id!=created.surface);}
+            if created.activate
+                && let Reply::Intent {
+                    view: Some(view),
+                    origin,
+                    ..
+                } = &mut pending.reply
+                && origin.is_user()
+            {
+                view.activate_surface = Some(created.surface);
+            }
+            if matches!(
+                created.destination,
+                tasty_core::CreationDestination::Restore { .. }
+            ) {
+                if let Some(items) = self.restoration_ready.get_mut(&created.engine) {
+                    items.retain(|item| item.surface_id != created.surface);
+                }
             }
             created.notify(sessions, &mut self.commands.completed_host_events);
         }
 
-        if completed.error.is_none() && let Reply::Resume(resume)=&mut pending.reply {
-            if resume.generation.is_none() {resume.generation=sessions.iter().find(|session|session.id==resume.engine).and_then(|session|session.runtime.terminals.generation(resume.surface));}
+        if completed.error.is_none()
+            && let Reply::Resume(resume) = &mut pending.reply
+        {
+            if resume.generation.is_none() {
+                resume.generation = sessions
+                    .iter()
+                    .find(|session| session.id == resume.engine)
+                    .and_then(|session| session.runtime.terminals.generation(resume.surface));
+            }
         }
         match pending.reply {
-            Reply::Resume(mut resume)=> {
-                if let Some((surface,activation))=resume.advance(&mut completed) {self.continue_live_resume(resume,surface,activation);}
-                else {self.commands.deliver(Reply::Resume(resume),completed);}
-            },
-            reply=>self.commands.deliver(reply,completed),
+            Reply::Resume(mut resume) => {
+                if let Some((surface, activation)) = resume.advance(&mut completed) {
+                    self.continue_live_resume(resume, surface, activation);
+                } else {
+                    self.commands.deliver(Reply::Resume(resume), completed);
+                }
+            }
+            reply => self.commands.deliver(reply, completed),
         }
         Ok(true)
     }
@@ -800,7 +1064,7 @@ impl JournalApplication {
         &mut self,
         session: &mut EngineSession,
         state: &mut crate::state::RequestContext,
-        services:&crate::app::services::AppServices,
+        services: &crate::app::services::AppServices,
     ) {
         for (ticket, request) in self.requests_needing_resolution() {
             if self.commands.pending.get(&ticket).is_some_and(|pending| matches!(&pending.reply, Reply::Intent { engine, .. } if *engine != session.id)) {
@@ -825,10 +1089,34 @@ impl JournalApplication {
                 );
                 continue;
             }
-            if request.method=="remote.structural" {self.resolve_remote_request(ticket,session,services);continue;}
-            if matches!(request.method.as_str(),"terminal.spawn"|"terminal.respawn"|"pty.attach_surface"|"tab.create"|"split"|"surface.respawn_terminal"|"image.open") {self.resolve_public_creation(ticket,session,services);continue;}
-            if matches!(request.method.as_str(),"preset.apply"|"intent.preset-apply") {
-                self.resolve_preset(ticket,session,services,state.focused_pane_id(&session.core_state));continue;
+            if request.method == "remote.structural" {
+                self.resolve_remote_request(ticket, session, services);
+                continue;
+            }
+            if matches!(
+                request.method.as_str(),
+                "terminal.spawn"
+                    | "terminal.respawn"
+                    | "pty.attach_surface"
+                    | "tab.create"
+                    | "split"
+                    | "surface.respawn_terminal"
+                    | "image.open"
+            ) {
+                self.resolve_public_creation(ticket, session, services);
+                continue;
+            }
+            if matches!(
+                request.method.as_str(),
+                "preset.apply" | "intent.preset-apply"
+            ) {
+                self.resolve_preset(
+                    ticket,
+                    session,
+                    services,
+                    state.focused_pane_id(&session.core_state),
+                );
+                continue;
             }
             if request.method == "workspace.create" {
                 let kind = request
@@ -850,7 +1138,11 @@ impl JournalApplication {
                 self.resolve_ipc_for_engine(ticket, session);
             }
         }
-        for (engine,replacement) in std::mem::take(&mut self.replacements) {if engine==session.id {state.navigation.apply_replacement(replacement);}}
+        for (engine, replacement) in std::mem::take(&mut self.replacements) {
+            if engine == session.id {
+                state.navigation.apply_replacement(replacement);
+            }
+        }
         for (engine, event) in std::mem::take(&mut self.commands.completed_host_events) {
             if engine == session.id
                 && let Some(event) = event.resolve(&session.core_state, &state.navigation)
@@ -878,14 +1170,24 @@ impl crate::app::App {
                 .get(&ticket)
                 .and_then(|pending| match &pending.reply {
                     Reply::Intent { engine, .. } => Some(*engine),
-                    Reply::Remote(reply)=>Some(reply.engine),
-                    Reply::Resume(resume)=>Some(resume.engine),
+                    Reply::Remote(reply) => Some(reply.engine),
+                    Reply::Resume(resume) => Some(resume.engine),
                     _ => None,
                 })
             {
-                if self.try_resolve_mirror_request(ticket,id,&request) {continue;}
+                if self.try_resolve_mirror_request(ticket, id, &request) {
+                    continue;
+                }
                 if let Some(session) = self.engines.session_mut(id) {
-                    if request.method=="remote.structural" {self.journal.resolve_remote_request(ticket,session,&self.services);} else if request.method=="intent.preset-apply" {self.journal.resolve_preset(ticket,session,&self.services,None);} else {self.journal.resolve_ipc_for_engine(ticket, session);}
+                    if request.method == "remote.structural" {
+                        self.journal
+                            .resolve_remote_request(ticket, session, &self.services);
+                    } else if request.method == "intent.preset-apply" {
+                        self.journal
+                            .resolve_preset(ticket, session, &self.services, None);
+                    } else {
+                        self.journal.resolve_ipc_for_engine(ticket, session);
+                    }
                 } else {
                     self.journal.reject_resolved_request(
                         ticket,
@@ -922,8 +1224,17 @@ impl crate::app::App {
                         })
                         .map(|(id, _)| id)
                 });
-            if let Some(engine)=id && self.try_resolve_mirror_request(ticket,engine,&request) {continue;}
-            let preset_pane=if request.method=="preset.apply" {id.and_then(|engine|self.engines_mut().resolve(engine)).and_then(|context|context.state.focused_pane_id(context.engine.core))}else {None};
+            if let Some(engine) = id
+                && self.try_resolve_mirror_request(ticket, engine, &request)
+            {
+                continue;
+            }
+            let preset_pane = if request.method == "preset.apply" {
+                id.and_then(|engine| self.engines_mut().resolve(engine))
+                    .and_then(|context| context.state.focused_pane_id(context.engine.core))
+            } else {
+                None
+            };
             let creation_cwd = if request.method == "workspace.create" {
                 id.and_then(|engine| self.engines_mut().resolve(engine))
                     .map(|context| {
@@ -960,8 +1271,25 @@ impl crate::app::App {
                 self.journal.reject_resolved_request(ticket, response);
                 continue;
             };
-            if matches!(request.method.as_str(),"terminal.spawn"|"terminal.respawn"|"pty.attach_surface"|"tab.create"|"split"|"surface.respawn_terminal"|"image.open") {self.journal.resolve_public_creation(ticket,session,&self.services);continue;}
-            if request.method=="preset.apply" {self.journal.resolve_preset(ticket,session,&self.services,preset_pane);continue;}
+            if matches!(
+                request.method.as_str(),
+                "terminal.spawn"
+                    | "terminal.respawn"
+                    | "pty.attach_surface"
+                    | "tab.create"
+                    | "split"
+                    | "surface.respawn_terminal"
+                    | "image.open"
+            ) {
+                self.journal
+                    .resolve_public_creation(ticket, session, &self.services);
+                continue;
+            }
+            if request.method == "preset.apply" {
+                self.journal
+                    .resolve_preset(ticket, session, &self.services, preset_pane);
+                continue;
+            }
             if let Some(cwd) = creation_cwd {
                 match cwd {
                     Ok(cwd) => self
@@ -1014,70 +1342,165 @@ impl crate::app::App {
                 }
             }
         }
-        let mut presentations:std::collections::HashMap<_,_>=self.engines().window_pairs().filter_map(|(window,main,engine)| {
-            self.engines.of_window(window).map(|id|(id,crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&engine.categories(),&main.state.navigation)))
-        }).collect();
-        for (id,state,engine) in self.engines.parked_sessions() {
-            presentations.insert(id,crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&engine.categories(),&state.navigation));
+        let mut presentations: std::collections::HashMap<_, _> = self
+            .engines()
+            .window_pairs()
+            .filter_map(|(window, main, engine)| {
+                self.engines.of_window(window).map(|id| {
+                    (
+                        id,
+                        crate::model::StructurePresentationSnapshot::capture(
+                            &engine.workspaces(),
+                            &engine.categories(),
+                            &main.state.navigation,
+                        ),
+                    )
+                })
+            })
+            .collect();
+        for (id, state, engine) in self.engines.parked_sessions() {
+            presentations.insert(
+                id,
+                crate::model::StructurePresentationSnapshot::capture(
+                    &engine.workspaces(),
+                    &engine.categories(),
+                    &state.navigation,
+                ),
+            );
         }
-        for (id,navigation,_) in self.engines.preserved_closes() {
-            if let Some(engine)=self.engines.get(id) {
-                presentations.insert(id,crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&engine.categories(),&navigation));
+        for (id, navigation, _) in self.engines.preserved_closes() {
+            if let Some(engine) = self.engines.get(id) {
+                presentations.insert(
+                    id,
+                    crate::model::StructurePresentationSnapshot::capture(
+                        &engine.workspaces(),
+                        &engine.categories(),
+                        &navigation,
+                    ),
+                );
             }
         }
         for (engine, event) in std::mem::take(&mut self.journal.commands.completed_host_events) {
-            if let Some(session)=self.engines.session_mut(engine) {
-                let presentation=presentations.get(&engine).unwrap_or(&session.remote.presentation);
-                if let Some(event)=event.resolve(&session.as_ref(),presentation) {session.borrow_mut().enqueue_host_event(event);}
+            if let Some(session) = self.engines.session_mut(engine) {
+                let presentation = presentations
+                    .get(&engine)
+                    .unwrap_or(&session.remote.presentation);
+                if let Some(event) = event.resolve(&session.as_ref(), presentation) {
+                    session.borrow_mut().enqueue_host_event(event);
+                }
             }
         }
         for mut result in std::mem::take(&mut self.journal.commands.completed_intents) {
-                if result.response.error.is_none() && let Some(surface)=result.response.result.as_ref().and_then(|value|value.get("restored_surface_id")).and_then(|value|value.as_u64()).and_then(|id|u32::try_from(id).ok()) && let Some(view)=result.view.as_mut() {view.activate_surface=Some(surface);}
-            if result.response.error.is_none() && result.origin.is_user() && !result.response.idempotent_replay
-                && let Some(continuation)=result.view.as_ref()
-                && let Some(tutorial)=continuation.tutorial.as_ref()
-                && let Some(context)=self.engines_mut().resolve(result.engine)
-                && context.view.as_ref().is_some_and(|view|view.state.matches_identity(&continuation.view)) {
-                tutorial.observe(context.state,context.engine.core);
+            if result.response.error.is_none()
+                && let Some(surface) = result
+                    .response
+                    .result
+                    .as_ref()
+                    .and_then(|value| value.get("restored_surface_id"))
+                    .and_then(|value| value.as_u64())
+                    .and_then(|id| u32::try_from(id).ok())
+                && let Some(view) = result.view.as_mut()
+            {
+                view.activate_surface = Some(surface);
             }
-            if result.response.error.is_none() && result.origin.is_user()
-                && let Some(continuation)=result.view.as_ref()
+            if result.response.error.is_none()
+                && result.origin.is_user()
+                && !result.response.idempotent_replay
+                && let Some(continuation) = result.view.as_ref()
+                && let Some(tutorial) = continuation.tutorial.as_ref()
+                && let Some(context) = self.engines_mut().resolve(result.engine)
+                && context
+                    .view
+                    .as_ref()
+                    .is_some_and(|view| view.state.matches_identity(&continuation.view))
+            {
+                tutorial.observe(context.state, context.engine.core);
+            }
+            if result.response.error.is_none()
+                && result.origin.is_user()
+                && let Some(continuation) = result.view.as_ref()
                 && continuation.close_empty_engine
-                && let Some(context)=self.engines_mut().resolve(result.engine)
+                && let Some(context) = self.engines_mut().resolve(result.engine)
                 && context.engine.workspaces().is_empty()
-                && let Some(view)=context.view
-                && view.state.matches_identity(&continuation.view) {view.state.close_requested=true;}
-            if result.response.error.is_none() && result.origin.is_user()
-                && let Some(continuation)=result.view
-                && let Some(surface)=continuation.activate_surface
-                && let Some(context)=self.engines_mut().resolve(result.engine)
-                && context.view.as_ref().is_some_and(|view|view.state.matches_identity(&continuation.view))
-                && context.state.navigation.matches_generation(&continuation.selection)
-                && let Some((index,pane_id))=context.engine.find_workspace_index_for_surface(surface)
-                && let Some(workspace)=context.engine.workspace_at(index)
-                && let Some(pane)=workspace.pane_layout().find_pane(pane_id)
-                && let Some(tab)=pane.tabs.iter().find(|tab|tab.contains_surface(surface)) {
-                if let Some(saved)=result.response.result.as_ref().and_then(|value|value.get("presentation")).and_then(|value|serde_json::from_value::<tasty_core::UndoPresentation>(value.clone()).ok()) {
-                    for (workspace,pane) in saved.focused_panes {
-                        if let Some(workspace)=context.engine.find_workspace_index_for_id(workspace).and_then(|index|context.engine.workspace_at(index)) {context.state.navigation.select_pane(workspace,pane);}
+                && let Some(view) = context.view
+                && view.state.matches_identity(&continuation.view)
+            {
+                view.state.close_requested = true;
+            }
+            if result.response.error.is_none()
+                && result.origin.is_user()
+                && let Some(continuation) = result.view
+                && let Some(surface) = continuation.activate_surface
+                && let Some(context) = self.engines_mut().resolve(result.engine)
+                && context
+                    .view
+                    .as_ref()
+                    .is_some_and(|view| view.state.matches_identity(&continuation.view))
+                && context
+                    .state
+                    .navigation
+                    .matches_generation(&continuation.selection)
+                && let Some((index, pane_id)) =
+                    context.engine.find_workspace_index_for_surface(surface)
+                && let Some(workspace) = context.engine.workspace_at(index)
+                && let Some(pane) = workspace.pane_layout().find_pane(pane_id)
+                && let Some(tab) = pane.tabs.iter().find(|tab| tab.contains_surface(surface))
+            {
+                if let Some(saved) = result
+                    .response
+                    .result
+                    .as_ref()
+                    .and_then(|value| value.get("presentation"))
+                    .and_then(|value| {
+                        serde_json::from_value::<tasty_core::UndoPresentation>(value.clone()).ok()
+                    })
+                {
+                    for (workspace, pane) in saved.focused_panes {
+                        if let Some(workspace) = context
+                            .engine
+                            .find_workspace_index_for_id(workspace)
+                            .and_then(|index| context.engine.workspace_at(index))
+                        {
+                            context.state.navigation.select_pane(workspace, pane);
+                        }
                     }
-                    for (pane,tab) in saved.selected_tabs {
-                        if let Some(pane)=context.engine.find_pane_by_id(pane) {context.state.navigation.select_tab(pane,tab);}
+                    for (pane, tab) in saved.selected_tabs {
+                        if let Some(pane) = context.engine.find_pane_by_id(pane) {
+                            context.state.navigation.select_tab(pane, tab);
+                        }
                     }
-                    for (tab,surface) in saved.selected_surfaces {
-                        if let Some(tab)=context.engine.find_pane_for_tab(tab).and_then(|pane|context.engine.find_pane_by_id(pane)).and_then(|pane|pane.tabs.iter().find(|candidate|candidate.id==tab)) {context.state.navigation.select_surface(tab,surface);}
+                    for (tab, surface) in saved.selected_surfaces {
+                        if let Some(tab) = context
+                            .engine
+                            .find_pane_for_tab(tab)
+                            .and_then(|pane| context.engine.find_pane_by_id(pane))
+                            .and_then(|pane| pane.tabs.iter().find(|candidate| candidate.id == tab))
+                        {
+                            context.state.navigation.select_surface(tab, surface);
+                        }
                     }
                 }
-                context.state.navigation.select_workspace(&context.engine.workspaces(),workspace.id);
-                context.state.navigation.select_pane(workspace,pane.id);
-                context.state.navigation.select_tab(pane,tab.id);
-                context.state.navigation.select_surface(tab,surface);
-                if let Some(followup)=continuation.after_create {
+                context
+                    .state
+                    .navigation
+                    .select_workspace(&context.engine.workspaces(), workspace.id);
+                context.state.navigation.select_pane(workspace, pane.id);
+                context.state.navigation.select_tab(pane, tab.id);
+                context.state.navigation.select_surface(tab, surface);
+                if let Some(followup) = continuation.after_create {
                     match followup {
-                        crate::intent::CreateFollowup::Prompt {kind}=>context.state.enqueue_convert_input_popup(&context.engine.as_ref(),&kind,Some(surface)),
+                        crate::intent::CreateFollowup::Prompt { kind } => {
+                            context.state.enqueue_convert_input_popup(
+                                &context.engine.as_ref(),
+                                &kind,
+                                Some(surface),
+                            )
+                        }
                     }
                 }
-            if let Some(view)=context.view {view.mark_dirty();}
+                if let Some(view) = context.view {
+                    view.mark_dirty();
+                }
             }
             if let Some(error) = result.response.error
                 && let Some(context) = self.engines_mut().resolve(result.engine)
@@ -1091,8 +1514,10 @@ impl crate::app::App {
                 );
             }
         }
-        for (engine,replacement) in std::mem::take(&mut self.journal.replacements) {
-            if let Some(context)=self.engines_mut().resolve(engine) {context.state.navigation.apply_replacement(replacement);}
+        for (engine, replacement) in std::mem::take(&mut self.journal.replacements) {
+            if let Some(context) = self.engines_mut().resolve(engine) {
+                context.state.navigation.apply_replacement(replacement);
+            }
         }
         for id in self.journal.take_changed_engines() {
             if let Some(mut context) = self.engines_mut().resolve(id) {
@@ -1115,7 +1540,9 @@ fn retry_outcome(
     match result {
         Ok(ResultValue::NeedsResolution) => Some(O::Executed),
         Ok(ResultValue::JoinedAdmission { .. }) => Some(O::InFlight),
-        Ok(ResultValue::Stored(_)|ResultValue::RecoveryRequired {replay:true,..}) => Some(O::Replayed),
+        Ok(ResultValue::Stored(_) | ResultValue::RecoveryRequired { replay: true, .. }) => {
+            Some(O::Replayed)
+        }
         Err(error) if error.contains("idempotency key") => Some(O::Conflicted),
         _ => None,
     }
@@ -1139,11 +1566,11 @@ impl JournalApplication {
     ) -> bool {
         // This runs only after namespace routing. The owning image plugin trampolines
         // into the host; the outer namespace request retains its existing key contract.
-        let host_conversion=cfg!(feature="gui") && request.method=="image.open";
+        let host_conversion = cfg!(feature = "gui") && request.method == "image.open";
         if !handles_request(request) && !host_conversion {
             return false;
         }
-        if !manager.is_some_and(|manager|manager.plugin_call_is_current(call)) {
+        if !manager.is_some_and(|manager| manager.plugin_call_is_current(call)) {
             tracing::warn!(plugin=%call.plugin_id,"discarding structural call from retired plugin");
             return true;
         }
@@ -1160,10 +1587,21 @@ impl JournalApplication {
         true
     }
 
-    #[cfg(feature="gui")]
-    pub(crate) fn admit_host_fallback_ipc(&mut self,command:&crate::ipc::server::IpcCommand,caller:&crate::ipc::caller::CallerContext)->bool {
-        if command.request.method!="image.open" {return false;}
-        self.admit_request(&command.request,Reply::Ipc(command.response_tx.clone()),crate::ipc::handler::idempotency::caller_scope(caller),"ipc");
+    #[cfg(feature = "gui")]
+    pub(crate) fn admit_host_fallback_ipc(
+        &mut self,
+        command: &crate::ipc::server::IpcCommand,
+        caller: &crate::ipc::caller::CallerContext,
+    ) -> bool {
+        if command.request.method != "image.open" {
+            return false;
+        }
+        self.admit_request(
+            &command.request,
+            Reply::Ipc(command.response_tx.clone()),
+            crate::ipc::handler::idempotency::caller_scope(caller),
+            "ipc",
+        );
         true
     }
 
@@ -1184,52 +1622,71 @@ impl JournalApplication {
 }
 
 fn pending_weight(pending: &Pending) -> usize {
-    #[cfg(feature="gui")]
-    let forward_bytes=pending.forward_reserved.max(pending.forward.as_ref().map_or(0,super::forward::Draft::weight));
-    #[cfg(not(feature="gui"))]
-    let forward_bytes=0;
-    forward_bytes.saturating_add(pending.one_shot_reserved).saturating_add(serde_json::to_vec(&pending.request)
-        .expect("request JSON serializes")
-        .len()
+    #[cfg(feature = "gui")]
+    let forward_bytes = pending.forward_reserved.max(
+        pending
+            .forward
+            .as_ref()
+            .map_or(0, super::forward::Draft::weight),
+    );
+    #[cfg(not(feature = "gui"))]
+    let forward_bytes = 0;
+    forward_bytes
+        .saturating_add(pending.one_shot_reserved)
         .saturating_add(
-            pending
-                .queued
-                .as_ref()
-                .map_or(0, crate::runtime::journal_product::request_size),
-        )
-        .saturating_add(pending.fixed.as_ref().map_or(0, |commands| {
-            serde_json::to_vec(commands)
-                .expect("fixed commands serialize")
+            serde_json::to_vec(&pending.request)
+                .expect("request JSON serializes")
                 .len()
-        }))
-        .saturating_add(
-            pending
-                .display
-                .as_ref()
-                .map_or(0, display::DisplayContinuation::weight),
+                .saturating_add(
+                    pending
+                        .queued
+                        .as_ref()
+                        .map_or(0, crate::runtime::journal_product::request_size),
+                )
+                .saturating_add(pending.fixed.as_ref().map_or(0, |commands| {
+                    serde_json::to_vec(commands)
+                        .expect("fixed commands serialize")
+                        .len()
+                }))
+                .saturating_add(
+                    pending
+                        .display
+                        .as_ref()
+                        .map_or(0, display::DisplayContinuation::weight),
+                )
+                .saturating_add(pending.resource.as_ref().map_or(0, create::Request::weight))
+                .saturating_add(pending.closing.as_ref().map_or(0, close::Request::weight))
+                .saturating_add(
+                    pending
+                        .replacing
+                        .as_ref()
+                        .map_or(0, replacement::Request::weight),
+                )
+                .saturating_add(pending.waiting_command.as_ref().map_or(0, String::len))
+                .saturating_add(
+                    pending
+                        .created
+                        .as_ref()
+                        .map_or(0, create::Completed::weight),
+                )
+                .saturating_add(reply_weight(&pending.reply))
+                .saturating_add(
+                    pending
+                        .category
+                        .as_ref()
+                        .map_or(0, |category| category.name.len() + category.stream.len()),
+                ),
         )
-        .saturating_add(pending.resource.as_ref().map_or(0, create::Request::weight))
-        .saturating_add(pending.closing.as_ref().map_or(0,close::Request::weight))
-        .saturating_add(pending.replacing.as_ref().map_or(0,replacement::Request::weight))
-        .saturating_add(pending.waiting_command.as_ref().map_or(0, String::len))
-        .saturating_add(
-            pending
-                .created
-                .as_ref()
-                .map_or(0, create::Completed::weight),
-        )
-        .saturating_add(reply_weight(&pending.reply))
-        .saturating_add(
-            pending
-                .category
-                .as_ref()
-                .map_or(0, |category| category.name.len() + category.stream.len()),
-        ))
 }
 
 fn reply_weight(_reply: &Reply) -> usize {
-    if let Reply::Resume(resume)=_reply {return resume.weight();}
-    if let Reply::Remote(reply)=_reply {return reply.before.capacity()*std::mem::size_of::<u32>()+std::mem::size_of::<inbound::RemoteReply>();}
+    if let Reply::Resume(resume) = _reply {
+        return resume.weight();
+    }
+    if let Reply::Remote(reply) = _reply {
+        return reply.before.capacity() * std::mem::size_of::<u32>()
+            + std::mem::size_of::<inbound::RemoteReply>();
+    }
     #[cfg(feature = "gui")]
     if let Reply::Settings { settings, .. } = _reply {
         return serde_json::to_vec(settings)
@@ -1243,17 +1700,29 @@ fn reply_weight(_reply: &Reply) -> usize {
 mod tests;
 
 // Stream JSON through a hash so raw terminal input is never retained as a command digest.
-fn request_digest(request:&JsonRpcRequest)->Vec<u8> {
+fn request_digest(request: &JsonRpcRequest) -> Vec<u8> {
     // Existing keys retain their original comparison representation. Only the newly journaled
     // raw-input composite uses a hash; upgrading must not turn old Stored replies into conflicts.
-    if !matches!(request.method.as_str(),"terminal.spawn"|"terminal.respawn") {return serde_json::to_vec(&(&request.method,&request.params)).expect("JSON request serializes");}
+    if !matches!(
+        request.method.as_str(),
+        "terminal.spawn" | "terminal.respawn"
+    ) {
+        return serde_json::to_vec(&(&request.method, &request.params))
+            .expect("JSON request serializes");
+    }
     use sha2::Digest;
     struct HashWriter(sha2::Sha256);
     impl std::io::Write for HashWriter {
-        fn write(&mut self,bytes:&[u8])->std::io::Result<usize> {self.0.update(bytes);Ok(bytes.len())}
-        fn flush(&mut self)->std::io::Result<()> {Ok(())}
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.update(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
     }
-    let mut writer=HashWriter(sha2::Sha256::new());
-    serde_json::to_writer(&mut writer,&(&request.method,&request.params)).expect("JSON request serializes");
+    let mut writer = HashWriter(sha2::Sha256::new());
+    serde_json::to_writer(&mut writer, &(&request.method, &request.params))
+        .expect("JSON request serializes");
     writer.0.finalize().to_vec()
 }

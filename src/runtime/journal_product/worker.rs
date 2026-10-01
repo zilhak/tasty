@@ -1,7 +1,7 @@
-mod binding;
-mod effects;
-mod capture;
 mod assembly;
+mod binding;
+mod capture;
+mod effects;
 mod recovery;
 
 use std::collections::HashMap;
@@ -17,18 +17,27 @@ use crate::runtime::command_executor::{Executor, Request as ExecuteRequest};
 use crate::runtime::journal;
 
 struct Pending {
-    disk_credit:u64,
+    disk_credit: u64,
     admission: Admission,
     followers: Vec<u64>,
     reservations: Vec<tasty_event_store::IdRange>,
     inputs: Vec<tasty_core::DataRef>,
 }
 
-const MAX_ADMISSION_IDS:u64=16_384;
+const MAX_ADMISSION_IDS: u64 = 16_384;
 impl Pending {
-    fn check_ids(&self, additional:u64)->Result<(),String> {
-        let held=self.reservations.iter().map(tasty_event_store::IdRange::len).sum::<u64>();
-        if held.checked_add(additional).is_none_or(|total|total>MAX_ADMISSION_IDS) {return Err("admission ID reservation capacity exhausted".into());}
+    fn check_ids(&self, additional: u64) -> Result<(), String> {
+        let held = self
+            .reservations
+            .iter()
+            .map(tasty_event_store::IdRange::len)
+            .sum::<u64>();
+        if held
+            .checked_add(additional)
+            .is_none_or(|total| total > MAX_ADMISSION_IDS)
+        {
+            return Err("admission ID reservation capacity exhausted".into());
+        }
         Ok(())
     }
 }
@@ -37,7 +46,7 @@ type Acknowledgements = mpsc::Receiver<(u64, Result<(), String>)>;
 
 pub(super) fn run(
     home: PathBuf,
-    readers:Arc<crate::runtime::journal_payload::PayloadReaders>,
+    readers: Arc<crate::runtime::journal_payload::PayloadReaders>,
     requests: mpsc::Receiver<super::QueuedRequest>,
     completions: mpsc::SyncSender<Completion>,
     acknowledgements: Acknowledgements,
@@ -62,11 +71,17 @@ pub(super) fn run(
         }
     };
     {
-        let mut inner=executor.inner.lock().expect("new executor lock");
-        let epoch=inner.epoch;
-        if let Err(error)=inner.store.release_abandoned_admission_holders(epoch) {send(Completion::StartupFailed(error.to_string()));return;}
+        let mut inner = executor.inner.lock().expect("new executor lock");
+        let epoch = inner.epoch;
+        if let Err(error) = inner.store.release_abandoned_admission_holders(epoch) {
+            send(Completion::StartupFailed(error.to_string()));
+            return;
+        }
     }
-    if let Err(error)=recovery::recover(&executor) {send(Completion::StartupFailed(error));return;}
+    if let Err(error) = recovery::recover(&executor) {
+        send(Completion::StartupFailed(error));
+        return;
+    }
     let mut published = {
         let inner = executor.inner.lock().expect("new executor lock");
         let cut = inner.state.batch;
@@ -95,11 +110,11 @@ pub(super) fn run(
         let was_halted = halted.is_some();
         let mut predecessor = if matches!(
             request.work,
-            Work::ReconcilePreparation {..}
-                | Work::ReconcileRetirement {..}
-                | Work::Capture {..}
-                | Work::RetirementFinished {..}
-                | Work::ForwardFinished {..}
+            Work::ReconcilePreparation { .. }
+                | Work::ReconcileRetirement { .. }
+                | Work::Capture { .. }
+                | Work::RetirementFinished { .. }
+                | Work::ForwardFinished { .. }
                 | Work::OpenEngine { .. }
                 | Work::RetireEngine(_)
                 | Work::Resolve { .. }
@@ -120,7 +135,8 @@ pub(super) fn run(
         } else {
             None
         };
-        let mut followers = if matches!(request.work, Work::Resolve { .. } | Work::CancelAdmission) {
+        let mut followers = if matches!(request.work, Work::Resolve { .. } | Work::CancelAdmission)
+        {
             pending
                 .get(&request.ticket)
                 .map(|p| p.followers.clone())
@@ -128,9 +144,13 @@ pub(super) fn run(
         } else {
             Vec::new()
         };
-        let checkpoint_requested=matches!(request.work,Work::Capture {..}|Work::RetireEngine(_));
-        let mut release_admission=matches!(request.work,Work::Resolve {..}|Work::CancelAdmission|Work::Capture {..});
-        let is_admit=matches!(request.work,Work::Admit(_));
+        let checkpoint_requested =
+            matches!(request.work, Work::Capture { .. } | Work::RetireEngine(_));
+        let mut release_admission = matches!(
+            request.work,
+            Work::Resolve { .. } | Work::CancelAdmission | Work::Capture { .. }
+        );
+        let is_admit = matches!(request.work, Work::Admit(_));
         let mut result = match &halted {
             Some(reason) => Err(reason.clone()),
             None => handle(&executor, &home, &mut pending, request.ticket, request.work),
@@ -138,15 +158,22 @@ pub(super) fn run(
         // A failed preparation is terminal for this unresolved admission. Release its credit
         // and notify joined callers even when App never sends a later CancelAdmission.
         if result.is_err() && !is_admit {
-            if let Some(abandoned)=pending.remove(&request.ticket) {
-                for follower in abandoned.followers {if !followers.contains(&follower) {followers.push(follower);}}
-                release_admission=true;
+            if let Some(abandoned) = pending.remove(&request.ticket) {
+                for follower in abandoned.followers {
+                    if !followers.contains(&follower) {
+                        followers.push(follower);
+                    }
+                }
+                release_admission = true;
             }
         }
         if release_admission {
-            let mut inner=executor.inner.lock().expect("worker executor lock");
-            let epoch=inner.epoch;
-            if let Err(error)=inner.store.release_payload_holder(epoch,&format!("admission/{}/{ticket}",epoch.0,ticket=request.ticket)) {
+            let mut inner = executor.inner.lock().expect("worker executor lock");
+            let epoch = inner.epoch;
+            if let Err(error) = inner.store.release_payload_holder(
+                epoch,
+                &format!("admission/{}/{ticket}", epoch.0, ticket = request.ticket),
+            ) {
                 // A leaked pin is conservative; it is reclaimed by a future fenced writer.
                 tracing::warn!("admission payload pin release failed: {error}");
             }
@@ -172,17 +199,20 @@ pub(super) fn run(
         if !was_halted && halted.is_some() {
             // Publication failure ends all unresolved admissions. Their credits must not survive
             // the terminal transport failure; committed operations already have durable pins.
-            let abandoned:Vec<_>=pending.drain().map(|(ticket,_)|ticket).collect();
-            let mut inner=executor.inner.lock().expect("worker executor lock");
-            let epoch=inner.epoch;
+            let abandoned: Vec<_> = pending.drain().map(|(ticket, _)| ticket).collect();
+            let mut inner = executor.inner.lock().expect("worker executor lock");
+            let epoch = inner.epoch;
             for ticket in abandoned {
-                if let Err(error)=inner.store.release_payload_holder(epoch,&format!("admission/{}/{ticket}",epoch.0)) {
+                if let Err(error) = inner
+                    .store
+                    .release_payload_holder(epoch, &format!("admission/{}/{ticket}", epoch.0))
+                {
                     tracing::warn!(%error,"halted admission pin remains for fenced-writer cleanup");
                 }
             }
         }
         if checkpoint_requested && halted.is_none() && result.is_ok() {
-            checkpoint_published(&executor,published,&readers);
+            checkpoint_published(&executor, published, &readers);
         }
         if !was_halted
             && let Some(reason) = &halted
@@ -199,19 +229,31 @@ pub(super) fn run(
             }
         }
     }
-    if halted.is_none() {checkpoint_published(&executor,published,&readers);}
+    if halted.is_none() {
+        checkpoint_published(&executor, published, &readers);
+    }
 }
 
 /// Maintenance cannot change an already committed command response. The leaf atomically replaces
 /// snapshot/live pins and preserves the previous checkpoint on failure; retry at the next capture,
 /// retirement or graceful worker stop, never by waking an unbounded maintenance loop.
-fn checkpoint_published(executor:&Executor<StructureDecider>,published:Option<u64>,readers:&crate::runtime::journal_payload::PayloadReaders) {
-    match executor.with_state(|models|models.batch) {
-        Ok(cut) if cut==published=>{
-            if let Err(error)=capture::checkpoint(executor,readers) {tracing::warn!(%error,"structure checkpoint failed; retaining previous checkpoint");}
-        },
-        Ok(_)=>tracing::warn!("structure checkpoint skipped: committed cut has not been published"),
-        Err(error)=>tracing::warn!(%error,"structure checkpoint skipped: canonical state unavailable"),
+fn checkpoint_published(
+    executor: &Executor<StructureDecider>,
+    published: Option<u64>,
+    readers: &crate::runtime::journal_payload::PayloadReaders,
+) {
+    match executor.with_state(|models| models.batch) {
+        Ok(cut) if cut == published => {
+            if let Err(error) = capture::checkpoint(executor, readers) {
+                tracing::warn!(%error,"structure checkpoint failed; retaining previous checkpoint");
+            }
+        }
+        Ok(_) => {
+            tracing::warn!("structure checkpoint skipped: committed cut has not been published")
+        }
+        Err(error) => {
+            tracing::warn!(%error,"structure checkpoint skipped: canonical state unavailable")
+        }
     }
 }
 
@@ -223,9 +265,17 @@ fn handle(
     work: Work,
 ) -> Result<ResultValue, String> {
     match work {
-        Work::CapturePreset {draft}=>capture::preset(executor,draft).map(|(preset,base_name)|ResultValue::CapturedPreset {preset,base_name}),
-        Work::ReconcilePreparation {lease,evidence,discarded,view}=>recovery::reconcile_preparation(executor,lease,evidence,discarded,view),
-        Work::ReconcileRetirement {lease,evidence}=>recovery::reconcile_retirement(executor,lease,evidence),
+        Work::CapturePreset { draft } => capture::preset(executor, draft)
+            .map(|(preset, base_name)| ResultValue::CapturedPreset { preset, base_name }),
+        Work::ReconcilePreparation {
+            lease,
+            evidence,
+            discarded,
+            view,
+        } => recovery::reconcile_preparation(executor, lease, evidence, discarded, view),
+        Work::ReconcileRetirement { lease, evidence } => {
+            recovery::reconcile_retirement(executor, lease, evidence)
+        }
         Work::ReadCommand(command_id) => {
             executor
                 .with_state(|_| ())
@@ -236,7 +286,7 @@ fn handle(
                 .command(&command_id)
                 .map_err(|error| error.to_string())?
                 .ok_or("original command missing")?;
-            Ok(recovery::command_result(&inner.state,record,false))
+            Ok(recovery::command_result(&inner.state, record, false))
         }
         Work::RetireEngine(binding) => binding::retire(executor, home, ticket, binding),
         Work::OpenEngine {
@@ -250,7 +300,7 @@ fn handle(
             selection,
             normal_category_name,
             surface_floor,
-            pending.values().map(|entry|entry.disk_credit).sum(),
+            pending.values().map(|entry| entry.disk_credit).sum(),
         ),
         Work::Admit(admission) => {
             if pending.contains_key(&ticket)
@@ -284,18 +334,23 @@ fn handle(
                     .lookup_command(key, &admission.original_digest)
                     .map_err(|e| e.to_string())?
                 {
-                    CommandLookup::Hit(record) => return Ok(recovery::command_result(&inner.state,record,true)),
+                    CommandLookup::Hit(record) => {
+                        return Ok(recovery::command_result(&inner.state, record, true));
+                    }
                     CommandLookup::DigestMismatch(_) => {
                         return Err("idempotency key belongs to a different request".into());
                     }
                     CommandLookup::Miss => {}
                 }
             }
-            let disk_credit={
-                let outstanding=pending.values().map(|entry|entry.disk_credit).sum();
-                let mut inner=executor.inner.lock().map_err(|error|error.to_string())?;
-                let epoch=inner.epoch;
-                inner.store.ensure_new_admission(epoch,outstanding).map_err(|error|error.to_string())?;
+            let disk_credit = {
+                let outstanding = pending.values().map(|entry| entry.disk_credit).sum();
+                let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
+                let epoch = inner.epoch;
+                inner
+                    .store
+                    .ensure_new_admission(epoch, outstanding)
+                    .map_err(|error| error.to_string())?;
                 inner.store.admission_budget().command_credit_bytes
             };
             let held_bytes: usize = pending
@@ -321,40 +376,49 @@ fn handle(
             );
             Ok(ResultValue::NeedsResolution)
         }
-        Work::Resolve { mut changes, response } => {
+        Work::Resolve {
+            mut changes,
+            response,
+        } => {
             let admitted = pending
                 .remove(&ticket)
                 .ok_or("journal request was not admitted")?;
             for change in &changes {
                 if matches!(
                     change.command,
-                    tasty_core::StructuralCommand::ReconcilePreparation {..}
-                        | tasty_core::StructuralCommand::ReconcileRetirement {..}
-                        | tasty_core::StructuralCommand::RecoverOperation {..}
-                        | tasty_core::StructuralCommand::RecordCapture {..}
+                    tasty_core::StructuralCommand::ReconcilePreparation { .. }
+                        | tasty_core::StructuralCommand::ReconcileRetirement { .. }
+                        | tasty_core::StructuralCommand::RecoverOperation { .. }
+                        | tasty_core::StructuralCommand::RecordCapture { .. }
                         | tasty_core::StructuralCommand::OpenEngine { .. }
                         | tasty_core::StructuralCommand::RetireEngine { .. }
                         | tasty_core::StructuralCommand::FinishCreation { .. }
                         | tasty_core::StructuralCommand::FinishCleanup { .. }
-                        | tasty_core::StructuralCommand::FinishRetirement {..}
-                        | tasty_core::StructuralCommand::FinishForward {..}
+                        | tasty_core::StructuralCommand::FinishRetirement { .. }
+                        | tasty_core::StructuralCommand::FinishForward { .. }
                         | tasty_core::StructuralCommand::CancelUnstartedCreation { .. }
                         | tasty_core::StructuralCommand::RejectInstallation { .. }
-                            | tasty_core::StructuralCommand::MarkPreparationUncertain { .. }
+                        | tasty_core::StructuralCommand::MarkPreparationUncertain { .. }
                 ) {
                     return Err("effect results require their validated lease endpoint".into());
                 }
                 if let tasty_core::StructuralCommand::PrepareCreation { input, .. }
-                    |tasty_core::StructuralCommand::Close {input,..}
-                    |tasty_core::StructuralCommand::PrepareAssembly {input,..}
-                    |tasty_core::StructuralCommand::PrepareForward {input,..}
-                    |tasty_core::StructuralCommand::Replace {input,..} = &change.command
+                | tasty_core::StructuralCommand::Close { input, .. }
+                | tasty_core::StructuralCommand::PrepareAssembly { input, .. }
+                | tasty_core::StructuralCommand::PrepareForward { input, .. }
+                | tasty_core::StructuralCommand::Replace { input, .. } = &change.command
                     && !admitted.inputs.contains(input)
                 {
                     return Err("preparation input belongs to another admission".into());
                 }
-                if let tasty_core::StructuralCommand::Close {undo:Some(capture),..}=&change.command
-                    && capture.data_refs().any(|reference|!admitted.inputs.contains(&reference)) {
+                if let tasty_core::StructuralCommand::Close {
+                    undo: Some(capture),
+                    ..
+                } = &change.command
+                    && capture
+                        .data_refs()
+                        .any(|reference| !admitted.inputs.contains(&reference))
+                {
                     return Err("undo capture belongs to another admission".into());
                 }
                 for required in change.command.reserved_ids() {
@@ -370,15 +434,29 @@ fn handle(
             }
             // Resolve admission-only activation markers against the sole canonical source.
             // The decider receives a fixed plan and cannot read a live projection or the database.
-            executor.with_state(|models| {
-                for change in &mut changes {
-                    if let tasty_core::StructuralCommand::PrepareCreation {plan,..}=&mut change.command
-                        && let tasty_core::CreationDestination::Convert {surface,previous_activation,..}=&mut plan.destination
-                        && *previous_activation==Some(0) {
-                            *previous_activation=models.streams.get(&change.stream).and_then(|model|model.surfaces.get(surface)).and_then(|surface|surface.activation.map(|activation|activation.generation));
+            executor
+                .with_state(|models| {
+                    for change in &mut changes {
+                        if let tasty_core::StructuralCommand::PrepareCreation { plan, .. } =
+                            &mut change.command
+                            && let tasty_core::CreationDestination::Convert {
+                                surface,
+                                previous_activation,
+                                ..
+                            } = &mut plan.destination
+                            && *previous_activation == Some(0)
+                        {
+                            *previous_activation = models
+                                .streams
+                                .get(&change.stream)
+                                .and_then(|model| model.surfaces.get(surface))
+                                .and_then(|surface| {
+                                    surface.activation.map(|activation| activation.generation)
+                                });
                         }
-                }
-            }).map_err(|error|error.to_string())?;
+                    }
+                })
+                .map_err(|error| error.to_string())?;
             let admission = admitted.admission;
             let executed = executor
                 .execute(&ExecuteRequest {
@@ -399,38 +477,103 @@ fn handle(
                 .map_err(|e| e.to_string())?;
             Ok(ResultValue::Executed(executed))
         }
-        Work::PrepareSubtree {binding,draft}=> {
-            let admitted=pending.get_mut(&ticket).ok_or("preset input has no admitted owner")?;
-            assembly::preset(executor,admitted,ticket,binding,draft)
-        },
-        Work::PrepareUndo {binding,target_pane,scope,shell}=> {
-            let admitted=pending.get_mut(&ticket).ok_or("undo input has no admitted owner")?;
-            assembly::undo(executor,admitted,ticket,binding,target_pane,scope,shell)
-        },
-        Work::ClaimForward {stream,operation}=>effects::claim_forward(executor,&stream,&operation),
-        Work::ForwardFinished {lease,outcome}=>effects::forwarded(executor,lease,outcome),
-        Work::Capture {binding,surfaces}=>capture::persist(executor,ticket,binding,surfaces),
-        Work::CaptureClosed {view,binding,target,display_name,surfaces}=>{
-            let admitted=pending.get_mut(&ticket).ok_or("close capture has no admitted request")?;
-            let (input,undo)=capture::closed(executor,ticket,binding,target,display_name,surfaces,view)?;
+        Work::PrepareSubtree { binding, draft } => {
+            let admitted = pending
+                .get_mut(&ticket)
+                .ok_or("preset input has no admitted owner")?;
+            assembly::preset(executor, admitted, ticket, binding, draft)
+        }
+        Work::PrepareUndo {
+            binding,
+            target_pane,
+            scope,
+            shell,
+        } => {
+            let admitted = pending
+                .get_mut(&ticket)
+                .ok_or("undo input has no admitted owner")?;
+            assembly::undo(
+                executor,
+                admitted,
+                ticket,
+                binding,
+                target_pane,
+                scope,
+                shell,
+            )
+        }
+        Work::ClaimForward { stream, operation } => {
+            effects::claim_forward(executor, &stream, &operation)
+        }
+        Work::ForwardFinished { lease, outcome } => effects::forwarded(executor, lease, outcome),
+        Work::Capture { binding, surfaces } => {
+            capture::persist(executor, ticket, binding, surfaces)
+        }
+        Work::CaptureClosed {
+            view,
+            binding,
+            target,
+            display_name,
+            surfaces,
+        } => {
+            let admitted = pending
+                .get_mut(&ticket)
+                .ok_or("close capture has no admitted request")?;
+            let (input, undo) = capture::closed(
+                executor,
+                ticket,
+                binding,
+                target,
+                display_name,
+                surfaces,
+                view,
+            )?;
             admitted.inputs.push(input);
-            if let Some(capture)=&undo {admitted.inputs.extend(capture.data_refs());}
-            Ok(ResultValue::ClosedCaptured {input,undo})
-        },
-        Work::ReserveExecutionIds {binding,kinds}=>{
-            executor.with_state(|_|()).map_err(|error|error.to_string())?;
-            let mut inner=executor.inner.lock().map_err(|error|error.to_string())?;
-            let epoch=inner.epoch;
-            if binding.journal_id!=inner.store.journal_id() || binding.runtime_epoch!=epoch.0 || inner.state.streams.get(&binding.stream).is_none_or(|model|model.engine_retired || model.engine_incarnation!=binding.incarnation) {return Err("execution reservation belongs to a retired engine".into());}
-            if kinds.len()>4 {return Err("invalid execution reservation kind count".into());}
-            let mut ranges=Vec::new();
-            for (kind,count) in kinds {
-                if kind==tasty_core::IdKind::Category || count==0 {return Err("execution reservation has invalid kind/count".into());}
-                let max=if kind==tasty_core::IdKind::Surface {0x7fff_ffff}else {u32::MAX};
-                ranges.push(inner.store.reserve_ids(epoch,kind.label(),u64::from(count),u64::from(max)).map_err(|error|error.to_string())?);
+            if let Some(capture) = &undo {
+                admitted.inputs.extend(capture.data_refs());
             }
-            Ok(ResultValue::ExecutionIds {binding,ranges})
-        },
+            Ok(ResultValue::ClosedCaptured { input, undo })
+        }
+        Work::ReserveExecutionIds { binding, kinds } => {
+            executor
+                .with_state(|_| ())
+                .map_err(|error| error.to_string())?;
+            let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
+            let epoch = inner.epoch;
+            if binding.journal_id != inner.store.journal_id()
+                || binding.runtime_epoch != epoch.0
+                || inner
+                    .state
+                    .streams
+                    .get(&binding.stream)
+                    .is_none_or(|model| {
+                        model.engine_retired || model.engine_incarnation != binding.incarnation
+                    })
+            {
+                return Err("execution reservation belongs to a retired engine".into());
+            }
+            if kinds.len() > 4 {
+                return Err("invalid execution reservation kind count".into());
+            }
+            let mut ranges = Vec::new();
+            for (kind, count) in kinds {
+                if kind == tasty_core::IdKind::Category || count == 0 {
+                    return Err("execution reservation has invalid kind/count".into());
+                }
+                let max = if kind == tasty_core::IdKind::Surface {
+                    0x7fff_ffff
+                } else {
+                    u32::MAX
+                };
+                ranges.push(
+                    inner
+                        .store
+                        .reserve_ids(epoch, kind.label(), u64::from(count), u64::from(max))
+                        .map_err(|error| error.to_string())?,
+                );
+            }
+            Ok(ResultValue::ExecutionIds { binding, ranges })
+        }
         Work::Reserve(kinds) => {
             if !pending.contains_key(&ticket) {
                 return Err("ID reservation requires an admitted request".into());
@@ -438,7 +581,10 @@ fn handle(
             if kinds.len() > 5 || kinds.iter().any(|(_, count)| *count == 0 || *count > 4096) {
                 return Err("invalid structure ID reservation size".into());
             }
-            pending.get(&ticket).ok_or("ID reservation requires admission")?.check_ids(kinds.iter().map(|(_,count)|u64::from(*count)).sum())?;
+            pending
+                .get(&ticket)
+                .ok_or("ID reservation requires admission")?
+                .check_ids(kinds.iter().map(|(_, count)| u64::from(*count)).sum())?;
             let mut inner = executor.inner.lock().map_err(|e| e.to_string())?;
             let epoch = inner.epoch;
             let mut ranges = Vec::new();
@@ -474,13 +620,24 @@ fn handle(
         Work::ReadEngine(stream) => executor
             .with_state(|models| ResultValue::Engine(models.stream(&stream)))
             .map_err(|e| e.to_string()),
-        Work::PutPayload(bytes)=> {
-            let admitted=pending.get_mut(&ticket).ok_or("payload has no admitted owner")?;
-            let inner=&mut *executor.inner.lock().map_err(|error|error.to_string())?;
-            let epoch=inner.epoch;
-            let reference=inner.store.put_admission_payload_pinned(epoch,&bytes,&format!("admission/{}/{ticket}",epoch.0)).map_err(|error|error.to_string())?;
-            let reference=tasty_core::DataRef(reference.0);admitted.inputs.push(reference);Ok(ResultValue::InputStored(reference))
-        },
+        Work::PutPayload(bytes) => {
+            let admitted = pending
+                .get_mut(&ticket)
+                .ok_or("payload has no admitted owner")?;
+            let inner = &mut *executor.inner.lock().map_err(|error| error.to_string())?;
+            let epoch = inner.epoch;
+            let reference = inner
+                .store
+                .put_admission_payload_pinned(
+                    epoch,
+                    &bytes,
+                    &format!("admission/{}/{ticket}", epoch.0),
+                )
+                .map_err(|error| error.to_string())?;
+            let reference = tasty_core::DataRef(reference.0);
+            admitted.inputs.push(reference);
+            Ok(ResultValue::InputStored(reference))
+        }
         Work::PutPreparation(input) => {
             let admitted = pending
                 .get_mut(&ticket)
@@ -490,21 +647,27 @@ fn handle(
             let epoch = inner.epoch;
             let reference = inner
                 .store
-                .put_admission_payload_pinned(epoch, &bytes, &format!("admission/{}/{ticket}",epoch.0))
+                .put_admission_payload_pinned(
+                    epoch,
+                    &bytes,
+                    &format!("admission/{}/{ticket}", epoch.0),
+                )
                 .map_err(|error| error.to_string())?;
             let reference = tasty_core::DataRef(reference.0);
             admitted.inputs.push(reference);
             Ok(ResultValue::InputStored(reference))
         }
-        Work::ClaimRetirement {stream,operation}=>effects::claim_retirement(executor,&stream,&operation),
-        Work::RetirementFinished {lease,outcome}=>effects::retired(executor,lease,outcome),
+        Work::ClaimRetirement { stream, operation } => {
+            effects::claim_retirement(executor, &stream, &operation)
+        }
+        Work::RetirementFinished { lease, outcome } => effects::retired(executor, lease, outcome),
         Work::ClaimPreparation { stream, operation } => {
             effects::claim(executor, &stream, &operation)
         }
         Work::Prepared { lease, result } => effects::prepared(executor, lease, result),
         Work::InstallationRejected { lease, reason } => effects::rejected(executor, lease, reason),
-        Work::PreparationUncertain {lease,reason}=>effects::uncertain(executor,lease,reason),
-        Work::CleanupFinished {lease,view}=>effects::cleaned(executor,lease,view),
+        Work::PreparationUncertain { lease, reason } => effects::uncertain(executor, lease, reason),
+        Work::CleanupFinished { lease, view } => effects::cleaned(executor, lease, view),
         Work::CancelAdmission => {
             if pending.remove(&ticket).is_none() {
                 for p in pending.values_mut() {

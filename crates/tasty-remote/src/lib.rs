@@ -18,11 +18,11 @@
 pub mod browse;
 pub mod create;
 
+pub mod client_session;
 /// Persistent connection/session ownership shared by host adapters without App/View dependencies.
 pub mod connection;
-pub mod client_session;
-pub mod transport;
 pub mod outbound;
+pub mod transport;
 
 pub mod pending_connection;
 

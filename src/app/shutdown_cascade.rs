@@ -10,13 +10,38 @@ impl App {
     /// 창과 parked engine의 닫힘 알림을 큐에 넣는다. 반환값은 추가한 surface 수다.
     /// 실제 이벤트 전달은 dispatch_pending_surface_lifecycle을 별도로 호출한다.
     pub(crate) fn cascade_shutdown_close_all_surfaces(&mut self) -> usize {
-        let mut closed=0;
+        let mut closed = 0;
         for session in self.engines.all_sessions_mut() {
-            let targets:Vec<_>=session.runtime.surfaces.iter().map(|(id,surface)|(*id,surface.kind().to_owned(),surface.as_any().downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>().map(|remote|remote.handles().binding()))).collect();
-            closed+=targets.len();
-            for (surface_id,kind,binding) in targets {
-                if let Some(binding)=binding {session.runtime.pending_plugin_retirements.push((surface_id,binding));}
-                session.runtime.pending_lifecycle_events.push(crate::core::host_event::PendingSurfaceClosed {surface_id,kind:Some(kind),is_user_close:true});
+            let targets: Vec<_> = session
+                .runtime
+                .surfaces
+                .iter()
+                .map(|(id, surface)| {
+                    (
+                        *id,
+                        surface.kind().to_owned(),
+                        surface
+                            .as_any()
+                            .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
+                            .map(|remote| remote.handles().binding()),
+                    )
+                })
+                .collect();
+            closed += targets.len();
+            for (surface_id, kind, binding) in targets {
+                if let Some(binding) = binding {
+                    session
+                        .runtime
+                        .pending_plugin_retirements
+                        .push((surface_id, binding));
+                }
+                session.runtime.pending_lifecycle_events.push(
+                    crate::core::host_event::PendingSurfaceClosed {
+                        surface_id,
+                        kind: Some(kind),
+                        is_user_close: true,
+                    },
+                );
             }
         }
         closed

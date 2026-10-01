@@ -110,7 +110,9 @@ pub(crate) struct ToolbarDraft {
 impl ToolbarDraft {
     pub(crate) fn capture(ctx: &egui::Context) -> Self {
         ctx.data_mut(|data| Self {
-            rename: data.get_temp::<Option<RenameState>>(egui::Id::new("preset_rename_state")).flatten(),
+            rename: data
+                .get_temp::<Option<RenameState>>(egui::Id::new("preset_rename_state"))
+                .flatten(),
             metadata: data.get_temp(egui::Id::new("preset_edit_meta")),
         })
     }
@@ -120,9 +122,13 @@ impl ToolbarDraft {
             if let Some(original) = &mut self.metadata {
                 original.name = latest.name;
                 original.subtitle = latest.subtitle;
-            } else { self.metadata = Some(latest); }
+            } else {
+                self.metadata = Some(latest);
+            }
         }
-        if let Some(latest) = latest.rename { self.rename = Some(latest); }
+        if let Some(latest) = latest.rename {
+            self.rename = Some(latest);
+        }
     }
 
     pub(crate) fn reconcile(&mut self, applied: &[crate::view::preset::draft::PresetApplied]) {
@@ -131,18 +137,34 @@ impl ToolbarDraft {
             match result {
                 PresetApplied::Rename { kind, from, to } => {
                     if let Some(meta) = &mut self.metadata
-                        && meta.key == format!("{}:{from}", kind.as_str()) {
+                        && meta.key == format!("{}:{from}", kind.as_str())
+                    {
                         meta.key = format!("{}:{to}", kind.as_str());
                         meta.name = to.clone();
                     }
                     if let Some(rename) = &mut self.rename
-                        && rename.kind == *kind && rename.original == *from {
-                        rename.original = to.clone(); rename.buffer = to.clone();
+                        && rename.kind == *kind
+                        && rename.original == *from
+                    {
+                        rename.original = to.clone();
+                        rename.buffer = to.clone();
                     }
                 }
                 PresetApplied::Delete { kind, name } => {
-                    if self.metadata.as_ref().is_some_and(|meta| meta.key == format!("{}:{name}", kind.as_str())) { self.metadata = None; }
-                    if self.rename.as_ref().is_some_and(|rename| rename.kind == *kind && rename.original == *name) { self.rename = None; }
+                    if self
+                        .metadata
+                        .as_ref()
+                        .is_some_and(|meta| meta.key == format!("{}:{name}", kind.as_str()))
+                    {
+                        self.metadata = None;
+                    }
+                    if self
+                        .rename
+                        .as_ref()
+                        .is_some_and(|rename| rename.kind == *kind && rename.original == *name)
+                    {
+                        self.rename = None;
+                    }
                 }
                 _ => {}
             }
@@ -661,7 +683,9 @@ fn draw_settings_detail(
                         },
                     );
                     *selected_node = Some(leaf_id);
-                    ui.ctx().data_mut(|data|data.insert_temp(egui::Id::new("preset.confirmed_surface_cfg"),cfg.clone()));
+                    ui.ctx().data_mut(|data| {
+                        data.insert_temp(egui::Id::new("preset.confirmed_surface_cfg"), cfg.clone())
+                    });
                     *surface_cfg = None;
                 }
                 Ok(QueuedLayout::Conflict) => {
@@ -1066,8 +1090,7 @@ pub fn draw_preset_panel(
     ctx.data_mut(|d| d.insert_temp(rename_id, rename));
 }
 
-
 /// The submitted draft includes input entered in the same render pass as Confirm.
-pub(crate) fn take_confirmed_surface_cfg(ctx:&egui::Context)->Option<SurfaceCfg> {
-    ctx.data_mut(|data|data.remove_temp(egui::Id::new("preset.confirmed_surface_cfg")))
+pub(crate) fn take_confirmed_surface_cfg(ctx: &egui::Context) -> Option<SurfaceCfg> {
+    ctx.data_mut(|data| data.remove_temp(egui::Id::new("preset.confirmed_surface_cfg")))
 }

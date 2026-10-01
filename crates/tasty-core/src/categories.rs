@@ -1,5 +1,7 @@
 impl crate::CoreState {
-    pub fn categories(&self)->&[tasty_model::WorkspaceCategory] {&self.categories}
+    pub fn categories(&self) -> &[tasty_model::WorkspaceCategory] {
+        &self.categories
+    }
     pub fn resolve_category(&self, token: &str) -> Option<tasty_model::WorkspaceCategoryId> {
         let t = token.trim();
         if let Ok(id) = t.parse::<u32>()

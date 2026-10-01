@@ -43,9 +43,7 @@ impl TaskWakerHub {
         Self::default()
     }
 
-    pub fn with_feed(
-        feed: std::sync::Arc<crate::event_feed::AgentEventQueue>,
-    ) -> Self {
+    pub fn with_feed(feed: std::sync::Arc<crate::event_feed::AgentEventQueue>) -> Self {
         Self {
             waiters: Mutex::new(HashMap::new()),
             next_waiter: std::sync::atomic::AtomicU64::new(0),
@@ -55,7 +53,11 @@ impl TaskWakerHub {
 
     /// poison을 알리고 waiter 맵을 계속 사용해 상태 전이 경로에서 다시 패닉하지 않게 한다.
     fn lock_recovering(&self) -> std::sync::MutexGuard<'_, Waiters> {
-        tasty_utils::poison::recover_mutex(self.waiters.lock(), "task waker hub", &TASK_WAKER_POISONED)
+        tasty_utils::poison::recover_mutex(
+            self.waiters.lock(),
+            "task waker hub",
+            &TASK_WAKER_POISONED,
+        )
     }
 
     fn unregister(&self, key: &WaiterKey, waiter: u64) {
@@ -122,12 +124,11 @@ impl TaskWakerHub {
     /// 대기자에게 snapshot을 보내고 매핑을 지운다. 종결 상태는 대기자가 없어도 사건 큐에 기록한다.
     pub fn fire(&self, workspace_id: u32, task_id: &TaskId, snapshot: TerminalSnapshot) {
         if snapshot.state.is_terminal() {
-            self.feed
-                .push(crate::event_feed::AgentEvent::TaskFinished {
-                    workspace_id,
-                    task_id: task_id.clone(),
-                    state: snapshot.state.name(),
-                });
+            self.feed.push(crate::event_feed::AgentEvent::TaskFinished {
+                workspace_id,
+                task_id: task_id.clone(),
+                state: snapshot.state.name(),
+            });
         }
         let mut g = self.lock_recovering();
         let Some(senders) = g.remove(&(workspace_id, task_id.clone())) else {

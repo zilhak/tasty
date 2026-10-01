@@ -285,7 +285,19 @@ pub fn draw_transfer_error(
         if let Some(err) = state.dialogs.transfer_error.pop_front()
             && let Some(payload) = err.retry
         {
-            if let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,payload.surface_id) {state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::ImageUpload {target,request:payload}).from_user_context_menu());}
+            if let Some(target) =
+                crate::app::engine_action::SurfaceBinding::capture(engine, payload.surface_id)
+            {
+                state.dispatch_intent(
+                    crate::intent::Intent::Engine(
+                        crate::app::engine_action::EngineAction::ImageUpload {
+                            target,
+                            request: payload,
+                        },
+                    )
+                    .from_user_context_menu(),
+                );
+            }
         }
         return if state.dialogs.transfer_error.is_empty() {
             PopupAction::Close

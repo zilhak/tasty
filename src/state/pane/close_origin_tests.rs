@@ -1,9 +1,9 @@
 //! 창 경로(사용자)와 IPC 경로(에이전트)가 같은 AppServices 닫기를 타고,
 //! 사용자 닫기만 복원 기록을 남기는지 검사한다.
 
-use crate::runtime::engine_access::EngineMut;
 use crate::app::command::{CascadeLevel, CoreEvent, DomainIntent};
 use crate::model::{ClosedItem, SplitDirection};
+use crate::runtime::engine_access::EngineMut;
 use crate::state::RequestContext;
 use crate::state::tests::test_state;
 use tasty_terminal::Terminal;

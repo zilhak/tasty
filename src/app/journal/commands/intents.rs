@@ -8,53 +8,142 @@ impl JournalApplication {
         core: &crate::core::CoreState,
         intent: &crate::app::command::DomainIntent,
         origin: &crate::intent::IntentOrigin,
-        view:Option<IntentViewContinuation>,
+        view: Option<IntentViewContinuation>,
     ) -> bool {
         use crate::app::command::DomainIntent as I;
-        if let I::ApplyPreset {kind,name,target_pane_id,category}=intent {
-            self.admit_intent_request(engine_id,"intent.preset-apply",serde_json::json!({"kind":kind,"name":name,"target_pane_id":target_pane_id,"category":category}),origin,view);return true;
-        }
-        if let I::RestoreClosedItem {target_pane_id,scope}=intent {
-            if core.mirror_workspace_index_for_structural(intent).is_some() {return false;}
-            let scope=match scope {crate::app::command::RestoreScope::Local=>None,crate::app::command::RestoreScope::Workspace(id)=>Some(*id)};
-            self.admit_intent_request(engine_id,"intent.restore-closed",serde_json::json!({"pane":target_pane_id,"scope":scope}),origin,view);
+        if let I::ApplyPreset {
+            kind,
+            name,
+            target_pane_id,
+            category,
+        } = intent
+        {
+            self.admit_intent_request(engine_id,"intent.preset-apply",serde_json::json!({"kind":kind,"name":name,"target_pane_id":target_pane_id,"category":category}),origin,view);
             return true;
         }
-        let replacement=match intent {
-            I::MoveSurface {source_surface_id:source,target_surface_id:target}=>Some((tasty_core::IdKind::Surface,*source,*target)),
-            I::ReplaceTabWithTab {source_tab_id:source,target_tab_id:target}=>Some((tasty_core::IdKind::Tab,*source,*target)),
-            I::ReplacePaneWithPane {source_pane_id:source,target_pane_id:target}=>Some((tasty_core::IdKind::Pane,*source,*target)),_=>None,
-        };
-        if let Some((kind,source,target))=replacement {
-            let replacement=tasty_core::Replacement {source:tasty_core::EntityId {kind,id:source},target:tasty_core::EntityId {kind,id:target}};
-            self.admit_intent_request(engine_id,"intent.replace",serde_json::to_value(replacement).expect("replacement IDs serialize"),origin,view);return true;
+        if let I::RestoreClosedItem {
+            target_pane_id,
+            scope,
+        } = intent
+        {
+            if core.mirror_workspace_index_for_structural(intent).is_some() {
+                return false;
+            }
+            let scope = match scope {
+                crate::app::command::RestoreScope::Local => None,
+                crate::app::command::RestoreScope::Workspace(id) => Some(*id),
+            };
+            self.admit_intent_request(
+                engine_id,
+                "intent.restore-closed",
+                serde_json::json!({"pane":target_pane_id,"scope":scope}),
+                origin,
+                view,
+            );
+            return true;
         }
-        let close=match intent {
-            I::CloseWorkspace {workspace_id}=>Some((tasty_core::CloseTarget::Workspace(*workspace_id),origin.is_user(),origin.is_user(),None)),
-            I::CloseTab {tab_id}=>Some((tasty_core::CloseTarget::Tab(*tab_id),origin.is_user(),origin.is_user(),None)),
-            I::ClosePane {pane_id}=>Some((tasty_core::CloseTarget::Pane(*pane_id),origin.is_user(),origin.is_user(),None)),
-            I::CloseSurface {surface_id,presentation}=>Some((tasty_core::CloseTarget::Surface(*surface_id),origin.is_user() && presentation.is_some(),origin.is_user(),None)),
-            I::RetireExitedSurface {surface_id,..}=>Some((tasty_core::CloseTarget::Surface(*surface_id),false,true,Some(core.find_surface_by_id(*surface_id).and_then(|surface|surface.activation_generation)))),
-            _=>None,
+        let replacement = match intent {
+            I::MoveSurface {
+                source_surface_id: source,
+                target_surface_id: target,
+            } => Some((tasty_core::IdKind::Surface, *source, *target)),
+            I::ReplaceTabWithTab {
+                source_tab_id: source,
+                target_tab_id: target,
+            } => Some((tasty_core::IdKind::Tab, *source, *target)),
+            I::ReplacePaneWithPane {
+                source_pane_id: source,
+                target_pane_id: target,
+            } => Some((tasty_core::IdKind::Pane, *source, *target)),
+            _ => None,
         };
-        if let Some((target,capture,user_close,expected))=close {
-            if core.mirror_workspace_index_for_structural(intent).is_some() {return false;}
-            let mut params=serde_json::json!({"target":target,"capture":capture,"user_close":user_close});
-            if let Some(expected)=expected {params["expected_activation"]=serde_json::json!(expected);}
-            let mut view=view;
-            if let Some(view)=view.as_mut() {view.close_empty_engine=matches!(target,tasty_core::CloseTarget::Workspace(_));}
-            let ticket=self.next_ticket;
-            self.admit_intent_request(engine_id,"intent.close",params,origin,view);
-            if let I::RetireExitedSurface {generation,..}=intent
-                && matches!(origin,crate::intent::IntentOrigin::System)
-                && let Some(pending)=self.commands.pending.get_mut(&ticket) {
-                pending.close_cause=super::close::Cause::ProcessExit(*generation);
+        if let Some((kind, source, target)) = replacement {
+            let replacement = tasty_core::Replacement {
+                source: tasty_core::EntityId { kind, id: source },
+                target: tasty_core::EntityId { kind, id: target },
+            };
+            self.admit_intent_request(
+                engine_id,
+                "intent.replace",
+                serde_json::to_value(replacement).expect("replacement IDs serialize"),
+                origin,
+                view,
+            );
+            return true;
+        }
+        let close = match intent {
+            I::CloseWorkspace { workspace_id } => Some((
+                tasty_core::CloseTarget::Workspace(*workspace_id),
+                origin.is_user(),
+                origin.is_user(),
+                None,
+            )),
+            I::CloseTab { tab_id } => Some((
+                tasty_core::CloseTarget::Tab(*tab_id),
+                origin.is_user(),
+                origin.is_user(),
+                None,
+            )),
+            I::ClosePane { pane_id } => Some((
+                tasty_core::CloseTarget::Pane(*pane_id),
+                origin.is_user(),
+                origin.is_user(),
+                None,
+            )),
+            I::CloseSurface {
+                surface_id,
+                presentation,
+            } => Some((
+                tasty_core::CloseTarget::Surface(*surface_id),
+                origin.is_user() && presentation.is_some(),
+                origin.is_user(),
+                None,
+            )),
+            I::RetireExitedSurface { surface_id, .. } => Some((
+                tasty_core::CloseTarget::Surface(*surface_id),
+                false,
+                true,
+                Some(
+                    core.find_surface_by_id(*surface_id)
+                        .and_then(|surface| surface.activation_generation),
+                ),
+            )),
+            _ => None,
+        };
+        if let Some((target, capture, user_close, expected)) = close {
+            if core.mirror_workspace_index_for_structural(intent).is_some() {
+                return false;
+            }
+            let mut params =
+                serde_json::json!({"target":target,"capture":capture,"user_close":user_close});
+            if let Some(expected) = expected {
+                params["expected_activation"] = serde_json::json!(expected);
+            }
+            let mut view = view;
+            if let Some(view) = view.as_mut() {
+                view.close_empty_engine = matches!(target, tasty_core::CloseTarget::Workspace(_));
+            }
+            let ticket = self.next_ticket;
+            self.admit_intent_request(engine_id, "intent.close", params, origin, view);
+            if let I::RetireExitedSurface { generation, .. } = intent
+                && matches!(origin, crate::intent::IntentOrigin::System)
+                && let Some(pending) = self.commands.pending.get_mut(&ticket)
+            {
+                pending.close_cause = super::close::Cause::ProcessExit(*generation);
             }
             return true;
         }
-        if let Some(spec)=super::create_spec::Spec::from_intent(intent) {
-            if core.mirror_workspace_index_for_structural(intent).is_some() {return false;}
-            self.admit_intent_request(engine_id,"intent.create",serde_json::to_value(spec).expect("fixed creation spec serializes"),origin,view);
+        if let Some(spec) = super::create_spec::Spec::from_intent(intent) {
+            if core.mirror_workspace_index_for_structural(intent).is_some() {
+                return false;
+            }
+            self.admit_intent_request(
+                engine_id,
+                "intent.create",
+                serde_json::to_value(spec).expect("fixed creation spec serializes"),
+                origin,
+                view,
+            );
             return true;
         }
         let (method, params) = match intent {
@@ -76,7 +165,7 @@ impl JournalApplication {
                         Reply::Intent {
                             engine: engine_id,
                             origin: origin.clone(),
-                            view:None,
+                            view: None,
                         },
                         JsonRpcResponse::invalid_params(
                             serde_json::Value::Null,
@@ -140,7 +229,7 @@ impl JournalApplication {
             }
             _ => return false,
         };
-        self.admit_intent_request(engine_id,method,params,origin,None);
+        self.admit_intent_request(engine_id, method, params, origin, None);
 
         true
     }
@@ -168,16 +257,16 @@ impl JournalApplication {
                 serde_json::json!({"tab_id":tab_id,"name":name,"user_direct":origin.is_user()}),
             ),
         };
-        self.admit_intent_request(engine_id,method,params,origin,None);
+        self.admit_intent_request(engine_id, method, params, origin, None);
     }
 
     pub(super) fn admit_intent_request(
         &mut self,
         engine_id: EngineId,
         method: &str,
-        params:serde_json::Value,
-        origin:&crate::intent::IntentOrigin,
-        view:Option<IntentViewContinuation>,
+        params: serde_json::Value,
+        origin: &crate::intent::IntentOrigin,
+        view: Option<IntentViewContinuation>,
     ) {
         let request = JsonRpcRequest {
             jsonrpc: "2.0".into(),
@@ -193,7 +282,7 @@ impl JournalApplication {
             Reply::Intent {
                 engine: engine_id,
                 origin: origin.clone(),
-                            view,
+                view,
             },
             match origin {
                 crate::intent::IntentOrigin::User { .. } => "user",
@@ -246,7 +335,7 @@ impl JournalApplication {
             Reply::Intent {
                 engine: session.id,
                 origin: origin.clone(),
-                            view:None,
+                view: None,
             },
             intent_actor(origin).into(),
             &format!("intent:{origin:?}"),

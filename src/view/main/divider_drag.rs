@@ -15,7 +15,10 @@ pub(crate) struct DividerDrag {
 impl super::MainView {
     /// Losing the pointer or entering chrome ends the gesture at its last valid displayed ratio.
     /// Only stale targets and rejected commits roll back a preview.
-    pub(super) fn finish_divider_drag(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>) -> bool {
+    pub(super) fn finish_divider_drag(
+        &mut self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+    ) -> bool {
         let Some(drag) = self.dragging_divider.take() else {
             return false;
         };

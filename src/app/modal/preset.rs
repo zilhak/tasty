@@ -36,11 +36,16 @@ impl App {
         };
 
         let drafts = {
-            let store = crate::poison::recover_mutex(self.services.preset_store.lock(),
-                crate::core::PRESET_STORE_WHAT, &crate::core::PRESET_STORE_POISONED);
+            let store = crate::poison::recover_mutex(
+                self.services.preset_store.lock(),
+                crate::core::PRESET_STORE_WHAT,
+                &crate::core::PRESET_STORE_POISONED,
+            );
             crate::app::preset_editor::capture(&store)
         };
-        let registry = Some(crate::runtime::kind_catalog::KindCatalog::new(self.services.registries.surface_registry.clone()));
+        let registry = Some(crate::runtime::kind_catalog::KindCatalog::new(
+            self.services.registries.surface_registry.clone(),
+        ));
         let window_id = window.id();
         let mut preset = view::PresetView::new(gpu, window, drafts, registry, keybindings);
         crate::view::ui::present_first_frame(&mut preset);

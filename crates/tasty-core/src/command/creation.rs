@@ -19,8 +19,12 @@ pub(super) fn decide(
         } => {
             validate_target(model, plan)?;
             if model.operations.values().any(|pending| {
-                pending.creation.as_ref().is_some_and(|creation|creation.surface.id == plan.surface.id)
-                    && (pending.outcome.is_none() || matches!(pending.outcome,Some(OperationOutcome::Uncertain {..})))
+                pending
+                    .creation
+                    .as_ref()
+                    .is_some_and(|creation| creation.surface.id == plan.surface.id)
+                    && (pending.outcome.is_none()
+                        || matches!(pending.outcome, Some(OperationOutcome::Uncertain { .. })))
             }) {
                 return Err(Rejection("surface has an unresolved creation owner".into()));
             }
@@ -46,8 +50,9 @@ pub(super) fn decide(
                 command_id: command_id.clone(),
                 engine_incarnation: model.engine_incarnation,
                 creation: Some(plan.clone()),
-                assembly:None,
-                retirement:None,forward:false,
+                assembly: None,
+                retirement: None,
+                forward: false,
                 targets: plan.targets(),
                 reserved: plan.reserved_ids(),
                 input: *input,
@@ -55,7 +60,9 @@ pub(super) fn decide(
                 outcome: None,
                 pending_outcome: None,
                 cleanup: None,
-                prepared_data: None,prepared_deferred:false,resource_prepared:false,
+                prepared_data: None,
+                prepared_deferred: false,
+                resource_prepared: false,
                 reconciliation_evidence: None,
             };
             Ok(StructuralDecision {
@@ -83,14 +90,19 @@ pub(super) fn decide(
                 .operations
                 .get(id)
                 .ok_or_else(|| Rejection("preparation operation not found".into()))?;
-            if operation.outcome.is_some() || operation.pending_outcome.is_some() || operation.resource_prepared {
+            if operation.outcome.is_some()
+                || operation.pending_outcome.is_some()
+                || operation.resource_prepared
+            {
                 return Err(Rejection("preparation already has a result".into()));
             }
             let plan = operation
                 .creation
                 .as_ref()
                 .ok_or_else(|| Rejection("operation is not a creation".into()))?;
-            if matches!(plan.destination,Destination::Assembly {..}) {return super::assembly::prepared_member(model,operation,result);}
+            if matches!(plan.destination, Destination::Assembly { .. }) {
+                return super::assembly::prepared_member(model, operation, result);
+            }
             if let PreparationResult::Failed { reason } = result {
                 return Ok(failed(operation, plan, reason.clone(), false));
             }
@@ -105,8 +117,10 @@ pub(super) fn decide(
             if let Err(error) = validate_target(model, plan) {
                 return Ok(failed(operation, plan, error.0, true));
             }
-            let (data,deferred)=match result {
-                PreparationResult::Ready {data}=>(data,false),PreparationResult::Deferred {data}=>(data,true),_=>unreachable!(),
+            let (data, deferred) = match result {
+                PreparationResult::Ready { data } => (data, false),
+                PreparationResult::Deferred { data } => (data, true),
+                _ => unreachable!(),
             };
             let mut events = Vec::new();
             let previous_activation = match &plan.destination {
@@ -127,7 +141,8 @@ pub(super) fn decide(
                     surface: plan.surface.id,
                     previous_activation,
                 },
-                prepared_data: *data,deferred,
+                prepared_data: *data,
+                deferred,
             });
             Ok(StructuralDecision {
                 events,
@@ -138,12 +153,29 @@ pub(super) fn decide(
                 },
             })
         }
-        StructuralCommand::MarkPreparationUncertain {operation:id,reason} => {
-            let operation=model.operations.get(id).ok_or_else(||Rejection("uncertain operation not found".into()))?;
-            if operation.outcome.is_some() {return Err(Rejection("operation already has an outcome".into()));}
+        StructuralCommand::MarkPreparationUncertain {
+            operation: id,
+            reason,
+        } => {
+            let operation = model
+                .operations
+                .get(id)
+                .ok_or_else(|| Rejection("uncertain operation not found".into()))?;
+            if operation.outcome.is_some() {
+                return Err(Rejection("operation already has an outcome".into()));
+            }
             Ok(StructuralDecision {
-                events:vec![DomainEvent::OperationFinished {id:id.clone(),outcome:OperationOutcome::Uncertain {reason:reason.clone()}}],
-                effects:Vec::new(),result:StructuralResult::Pending {operation:id.clone()},completed_command:None,
+                events: vec![DomainEvent::OperationFinished {
+                    id: id.clone(),
+                    outcome: OperationOutcome::Uncertain {
+                        reason: reason.clone(),
+                    },
+                }],
+                effects: Vec::new(),
+                result: StructuralResult::Pending {
+                    operation: id.clone(),
+                },
+                completed_command: None,
             })
         }
         StructuralCommand::FinishCleanup { operation: id } => {
@@ -158,8 +190,11 @@ pub(super) fn decide(
                 .pending_outcome
                 .clone()
                 .ok_or_else(|| Rejection("operation is not awaiting cleanup".into()))?;
-            if matches!(operation.creation.as_ref().map(|plan|&plan.destination),Some(Destination::Assembly {..})) {
-                return super::assembly::settle(model,operation,outcome);
+            if matches!(
+                operation.creation.as_ref().map(|plan| &plan.destination),
+                Some(Destination::Assembly { .. })
+            ) {
+                return super::assembly::settle(model, operation, outcome);
             }
             let result = match &outcome {
                 OperationOutcome::Succeeded => operation
@@ -201,7 +236,11 @@ pub(super) fn decide(
                     previous_generation,
                     activation: Activation {
                         generation: operation.activation_generation,
-                        phase: if operation.prepared_deferred {ActivationPhase::Deferred}else {ActivationPhase::Ready},
+                        phase: if operation.prepared_deferred {
+                            ActivationPhase::Deferred
+                        } else {
+                            ActivationPhase::Ready
+                        },
                     },
                 });
                 if !matches!(plan.destination, Destination::Restore { .. }) {
@@ -241,7 +280,18 @@ pub(super) fn decide(
                     "installation is not waiting for publication".into(),
                 ));
             }
-            if matches!(operation.creation.as_ref().map(|plan|&plan.destination),Some(Destination::Assembly {..})) {return super::assembly::settle(model,operation,OperationOutcome::Failed {reason:reason.clone()});}
+            if matches!(
+                operation.creation.as_ref().map(|plan| &plan.destination),
+                Some(Destination::Assembly { .. })
+            ) {
+                return super::assembly::settle(
+                    model,
+                    operation,
+                    OperationOutcome::Failed {
+                        reason: reason.clone(),
+                    },
+                );
+            }
             Ok(StructuralDecision {
                 events: vec![DomainEvent::OperationFinished {
                     id: id.clone(),
@@ -267,7 +317,18 @@ pub(super) fn decide(
             if operation.outcome.is_some() || operation.pending_outcome.is_some() {
                 return Err(Rejection("operation is no longer unstarted".into()));
             }
-            if matches!(operation.creation.as_ref().map(|plan|&plan.destination),Some(Destination::Assembly {..})) {return super::assembly::settle(model,operation,OperationOutcome::Cancelled {reason:reason.clone()});}
+            if matches!(
+                operation.creation.as_ref().map(|plan| &plan.destination),
+                Some(Destination::Assembly { .. })
+            ) {
+                return super::assembly::settle(
+                    model,
+                    operation,
+                    OperationOutcome::Cancelled {
+                        reason: reason.clone(),
+                    },
+                );
+            }
             Ok(StructuralDecision {
                 events: vec![DomainEvent::OperationFinished {
                     id: id.clone(),
@@ -288,37 +349,74 @@ pub(super) fn decide(
 
 /// Reuse terminal creation rules only after the adapter supplied exact-owner receipt evidence.
 /// The scratch model merely permits those rules to run; only reconciliation facts touch history.
-pub(super) fn reconcile(model:&JournalModel,id:&crate::OperationId,evidence:crate::DataRef,discarded:Option<&str>)->Result<StructuralDecision> {
-    let previous=model.operations.get(id).ok_or_else(||Rejection("preparation reconciliation operation missing".into()))?;
-    let plan=previous.creation.as_ref().ok_or_else(||Rejection("reconciliation operation is not a creation".into()))?;
-    if evidence.0==0 || !matches!(previous.outcome,Some(OperationOutcome::Uncertain {..})) {
-        return Err(Rejection("preparation reconciliation requires an uncertain owner and evidence".into()));
+pub(super) fn reconcile(
+    model: &JournalModel,
+    id: &crate::OperationId,
+    evidence: crate::DataRef,
+    discarded: Option<&str>,
+) -> Result<StructuralDecision> {
+    let previous = model
+        .operations
+        .get(id)
+        .ok_or_else(|| Rejection("preparation reconciliation operation missing".into()))?;
+    let plan = previous
+        .creation
+        .as_ref()
+        .ok_or_else(|| Rejection("reconciliation operation is not a creation".into()))?;
+    if evidence.0 == 0 || !matches!(previous.outcome, Some(OperationOutcome::Uncertain { .. })) {
+        return Err(Rejection(
+            "preparation reconciliation requires an uncertain owner and evidence".into(),
+        ));
     }
-    let mut resumed=model.clone();
-    resumed.operations.get_mut(id).ok_or_else(||Rejection("preparation owner disappeared".into()))?.outcome=None;
-    if let Destination::Assembly {operation:group}=&plan.destination {
-        let coordinator=resumed.operations.get_mut(group).ok_or_else(||Rejection("assembly coordinator missing".into()))?;
-        if matches!(coordinator.outcome,Some(OperationOutcome::Uncertain {..})) {coordinator.outcome=None;}
-    }
-    let command=match discarded {
-        Some(reason)=>StructuralCommand::RejectInstallation {operation:id.clone(),reason:reason.to_owned()},
-        None=>StructuralCommand::FinishCleanup {operation:id.clone()},
-    };
-    let mut decision=decide(&resumed,&command)?;
-    let mut events=Vec::with_capacity(decision.events.len());
-    for event in decision.events {
-        match event {
-            DomainEvent::OperationFinished {id,outcome}
-                if model.operations.get(&id).is_some_and(|operation|matches!(operation.outcome,Some(OperationOutcome::Uncertain {..})))=> {
-                    // Unresolved peers/target changes do not invent a second reconciliation.
-                    if !matches!(outcome,OperationOutcome::Uncertain {..}) {
-                        events.push(DomainEvent::OperationReconciled {id,outcome,evidence});
-                    }
-                },
-            event=>events.push(event),
+    let mut resumed = model.clone();
+    resumed
+        .operations
+        .get_mut(id)
+        .ok_or_else(|| Rejection("preparation owner disappeared".into()))?
+        .outcome = None;
+    if let Destination::Assembly { operation: group } = &plan.destination {
+        let coordinator = resumed
+            .operations
+            .get_mut(group)
+            .ok_or_else(|| Rejection("assembly coordinator missing".into()))?;
+        if matches!(
+            coordinator.outcome,
+            Some(OperationOutcome::Uncertain { .. })
+        ) {
+            coordinator.outcome = None;
         }
     }
-    decision.events=events;
+    let command = match discarded {
+        Some(reason) => StructuralCommand::RejectInstallation {
+            operation: id.clone(),
+            reason: reason.to_owned(),
+        },
+        None => StructuralCommand::FinishCleanup {
+            operation: id.clone(),
+        },
+    };
+    let mut decision = decide(&resumed, &command)?;
+    let mut events = Vec::with_capacity(decision.events.len());
+    for event in decision.events {
+        match event {
+            DomainEvent::OperationFinished { id, outcome }
+                if model.operations.get(&id).is_some_and(|operation| {
+                    matches!(operation.outcome, Some(OperationOutcome::Uncertain { .. }))
+                }) =>
+            {
+                // Unresolved peers/target changes do not invent a second reconciliation.
+                if !matches!(outcome, OperationOutcome::Uncertain { .. }) {
+                    events.push(DomainEvent::OperationReconciled {
+                        id,
+                        outcome,
+                        evidence,
+                    });
+                }
+            }
+            event => events.push(event),
+        }
+    }
+    decision.events = events;
     Ok(decision)
 }
 
@@ -355,7 +453,8 @@ fn failed(
                     surface: plan.surface.id,
                     activation_generation: operation.activation_generation,
                 },
-                prepared_data: None,deferred:false,
+                prepared_data: None,
+                deferred: false,
             }
         } else {
             DomainEvent::OperationFinished {
@@ -424,7 +523,7 @@ fn creation_events(model: &JournalModel, plan: &CreationPlan) -> Vec<DomainEvent
             });
             None
         }
-        Destination::Restore { .. } | Destination::Assembly {..} => None,
+        Destination::Restore { .. } | Destination::Assembly { .. } => None,
         Destination::Convert {
             surface,
             explicit_name,

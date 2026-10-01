@@ -5,7 +5,10 @@ use serde_json::Value;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 /// webview는 egui-mesh의 set_context를 받지 않으므로 이 조회로 색·light 여부·UI zoom을 얻는다.
-pub fn handle_query(engine: &crate::runtime::engine_read::EngineRead<'_>, id: Value) -> JsonRpcResponse {
+pub fn handle_query(
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    id: Value,
+) -> JsonRpcResponse {
     let theme = crate::theme::theme();
     let wire = tasty_plugin_protocol::ThemeWire {
         colors: theme.to_colors(),

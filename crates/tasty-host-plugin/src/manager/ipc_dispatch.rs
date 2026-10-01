@@ -18,20 +18,50 @@ use super::{
 
 impl PluginManager {
     pub fn take_pending_plugin_calls(&mut self) -> Vec<PendingPluginCall> {
-        std::mem::take(&mut self.pending_plugin_calls).into_iter().filter(|call|self.plugin_call_is_current(call)).collect()
+        std::mem::take(&mut self.pending_plugin_calls)
+            .into_iter()
+            .filter(|call| self.plugin_call_is_current(call))
+            .collect()
     }
 
-    pub fn plugin_call_is_current(&self,call:&PendingPluginCall)->bool {
-        self.processes.get(&call.plugin_id).is_some_and(|process|process.reply_binding().ptr_eq(&call.binding))
+    pub fn plugin_call_is_current(&self, call: &PendingPluginCall) -> bool {
+        self.processes
+            .get(&call.plugin_id)
+            .is_some_and(|process| process.reply_binding().ptr_eq(&call.binding))
     }
 
-    pub fn send_plugin_call_result(&mut self,call:&PendingPluginCall,result:Option<serde_json::Value>,error:Option<String>,code:Option<i32>) {
-        self.send_bound_ipc_parts(&call.plugin_id,&call.binding,call.call_id,result,error,code);
+    pub fn send_plugin_call_result(
+        &mut self,
+        call: &PendingPluginCall,
+        result: Option<serde_json::Value>,
+        error: Option<String>,
+        code: Option<i32>,
+    ) {
+        self.send_bound_ipc_parts(
+            &call.plugin_id,
+            &call.binding,
+            call.call_id,
+            result,
+            error,
+            code,
+        );
     }
 
-    pub(super) fn send_bound_ipc_parts(&mut self,plugin:&str,binding:&std::sync::Weak<()>,call:u64,result:Option<serde_json::Value>,error:Option<String>,code:Option<i32>) {
-        if self.processes.get(plugin).is_some_and(|process|process.reply_binding().ptr_eq(binding)) {
-            self.send_ipc_result(plugin,call,result,error,code);
+    pub(super) fn send_bound_ipc_parts(
+        &mut self,
+        plugin: &str,
+        binding: &std::sync::Weak<()>,
+        call: u64,
+        result: Option<serde_json::Value>,
+        error: Option<String>,
+        code: Option<i32>,
+    ) {
+        if self
+            .processes
+            .get(plugin)
+            .is_some_and(|process| process.reply_binding().ptr_eq(binding))
+        {
+            self.send_ipc_result(plugin, call, result, error, code);
         }
     }
 
@@ -131,13 +161,26 @@ impl PluginManager {
         params: serde_json::Value,
         caller_plugin_id: &str,
         call_id: u64,
-        binding:&std::sync::Weak<()>,
+        binding: &std::sync::Weak<()>,
     ) {
-        if !self.processes.get(caller_plugin_id).is_some_and(|process|process.reply_binding().ptr_eq(binding)) {return;}
+        if !self
+            .processes
+            .get(caller_plugin_id)
+            .is_some_and(|process| process.reply_binding().ptr_eq(binding))
+        {
+            return;
+        }
         let plugin_id = match self.validate_namespace_call(method, Some(caller_plugin_id)) {
             Ok(id) => id,
             Err((code, msg)) => {
-                self.send_bound_ipc_parts(caller_plugin_id, binding, call_id, None, Some(msg), Some(code));
+                self.send_bound_ipc_parts(
+                    caller_plugin_id,
+                    binding,
+                    call_id,
+                    None,
+                    Some(msg),
+                    Some(code),
+                );
                 return;
             }
         };
@@ -149,7 +192,7 @@ impl PluginManager {
             FinalCaller::Plugin {
                 caller_plugin_id: caller_plugin_id.to_string(),
                 call_id,
-                binding:binding.clone(),
+                binding: binding.clone(),
             },
         );
     }
@@ -370,7 +413,7 @@ impl PluginManager {
                 plugin_id: target_plugin_id,
                 caller_plugin_id,
                 call_id,
-                caller_binding:binding,
+                caller_binding: binding,
                 deadline,
             },
             (fc, Some((ext_id, decl))) => PendingRequestKind::NamespaceInvokeWithPostHook {
@@ -478,7 +521,14 @@ impl PluginManager {
                 call_id,
                 binding,
             } => {
-                self.send_bound_ipc_parts(&caller_plugin_id, &binding, call_id, None, Some(message), Some(code));
+                self.send_bound_ipc_parts(
+                    &caller_plugin_id,
+                    &binding,
+                    call_id,
+                    None,
+                    Some(message),
+                    Some(code),
+                );
             }
         }
     }
@@ -502,7 +552,14 @@ impl PluginManager {
                 call_id,
                 binding,
             } => {
-                self.send_bound_ipc_parts(&caller_plugin_id, &binding, call_id, Some(result), None, None);
+                self.send_bound_ipc_parts(
+                    &caller_plugin_id,
+                    &binding,
+                    call_id,
+                    Some(result),
+                    None,
+                    None,
+                );
             }
         }
     }
@@ -590,7 +647,7 @@ impl PluginManager {
             .pending_requests
             .iter()
             .filter_map(|(id, p)| match &p.kind {
-                PendingRequestKind::SurfaceRetire {..} if p.to == plugin_id => Some(*id),
+                PendingRequestKind::SurfaceRetire { .. } if p.to == plugin_id => Some(*id),
                 PendingRequestKind::NamespaceInvoke { plugin_id: pid, .. }
                 | PendingRequestKind::PluginToPluginNamespace { plugin_id: pid, .. }
                 | PendingRequestKind::NamespaceInvokeWithPostHook {
@@ -632,7 +689,9 @@ impl PluginManager {
                 );
             }
             match removed.map(|p| p.kind) {
-                Some(PendingRequestKind::SurfaceRetire {completion,..}) => completion.finish(Err(msg)),
+                Some(PendingRequestKind::SurfaceRetire { completion, .. }) => {
+                    completion.finish(Err(msg))
+                }
                 Some(PendingRequestKind::NamespaceInvoke {
                     response_tx,
                     original_id,
@@ -651,7 +710,14 @@ impl PluginManager {
                 }) => {
                     // 바로 위 local 갈래와 같은 `-32004` 를 싣는다. 이 짝이 갈리면
                     // 같은 취소 사건이 caller 종류에 따라 다른 코드로 나간다.
-                    self.send_bound_ipc_parts(&caller_plugin_id, &caller_binding, call_id, None, Some(msg), Some(-32004));
+                    self.send_bound_ipc_parts(
+                        &caller_plugin_id,
+                        &caller_binding,
+                        call_id,
+                        None,
+                        Some(msg),
+                        Some(-32004),
+                    );
                 }
                 Some(PendingRequestKind::ExtensionPreIpcHook { final_caller, .. })
                 | Some(PendingRequestKind::ExtensionPostIpcHook { final_caller, .. })

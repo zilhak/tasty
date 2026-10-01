@@ -1,6 +1,6 @@
 use super::is_remote_openable;
-use crate::core::identify_port::IdentifySpawner;
 use crate::app::command::DomainIntent;
+use crate::core::identify_port::IdentifySpawner;
 use crate::file::dispatch::picker_apply::tests::build_test_core;
 use crate::file::dispatch::{FileDispatchOrigin, apply_identify_result};
 use crate::file::format::{DetectDepth, DetectorId, FileTarget};
@@ -385,7 +385,10 @@ fn an_unopenable_remote_file_toasts_unless_an_external_ipc_asked() {
             false,
         );
         assert!(state.dialogs.file_handler_picker.is_none(), "{origin:?}");
-        assert!(engine.remote.pending_structural_forward.is_empty(), "{origin:?}");
+        assert!(
+            engine.remote.pending_structural_forward.is_empty(),
+            "{origin:?}"
+        );
         assert_eq!(state.toasts.len(), toasts, "{origin:?}");
     }
 }

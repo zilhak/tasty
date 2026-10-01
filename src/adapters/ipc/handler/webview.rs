@@ -14,7 +14,13 @@ fn notify_content_changed(
 ) {
     use crate::model::Surface;
     if let Some((kind, plugin_id, _)) = surface.attach_content_info() {
-        crate::remote::server::notify_markdown_changed(&engine.live.occupancy,engine.remote,kind,plugin_id,sid);
+        crate::remote::server::notify_markdown_changed(
+            &engine.live.occupancy,
+            engine.remote,
+            kind,
+            plugin_id,
+            sid,
+        );
     }
 }
 
@@ -377,7 +383,8 @@ mod tests {
             .expect("workspace index is valid")
             .id;
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire_workspace(ws_id, &[terminal_sid], &[terminal_sid, md_sid], client)
             .expect("acquire workspace");
 

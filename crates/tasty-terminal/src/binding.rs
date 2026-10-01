@@ -9,7 +9,9 @@ pub struct ResourceGeneration(u64);
 
 impl ResourceGeneration {
     /// Observation token meaningful only together with the owning process/runtime epoch.
-    pub fn value(self)->u64 {self.0}
+    pub fn value(self) -> u64 {
+        self.0
+    }
     pub(crate) fn fresh() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(1);
         Self(

@@ -2,7 +2,7 @@
 //! 현재·직전 pass에서 쓴 캐시만 남기며 저장소 비교 기준인 LayoutBase도 함께 보관한다.
 
 use crate::view::preset::draft::PresetDrafts;
-use tasty_presets::{PresetKind};
+use tasty_presets::PresetKind;
 
 use crate::adapters::ui::{ToastKind, ToastManager, ToastScope};
 use crate::i18n::t;

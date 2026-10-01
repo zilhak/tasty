@@ -6,12 +6,12 @@ use crate::runtime::journal_product::{
 use tasty_core::projection;
 pub(crate) mod commands;
 mod creation;
-pub(crate) use creation::{ActivationOutcome,ActivationReceipt};
-mod resource_cleanup;
-#[cfg(feature="gui")]
-pub(crate) mod forward;
+pub(crate) use creation::{ActivationOutcome, ActivationReceipt};
 mod capture;
-pub(crate) use capture::{PresetCaptureReply,PresetCaptureNotice,PresetCaptureOutput};
+#[cfg(feature = "gui")]
+pub(crate) mod forward;
+mod resource_cleanup;
+pub(crate) use capture::{PresetCaptureNotice, PresetCaptureOutput, PresetCaptureReply};
 mod id_reservations;
 #[cfg(feature = "gui")]
 mod retirement;
@@ -30,19 +30,19 @@ struct Opening {
 pub(crate) struct JournalApplication {
     worker: JournalWorker,
     commands: commands::Commands,
-    captures:std::collections::BTreeMap<u64,capture::PendingCapture>,
-    preset_captures:capture::PresetCaptures,
-    capture_requests:HashMap<EngineId,bool>,
-    execution_id_requests:HashMap<u64,EngineId>,
-    replacements:Vec<(EngineId,tasty_core::Replacement)>,
+    captures: std::collections::BTreeMap<u64, capture::PendingCapture>,
+    preset_captures: capture::PresetCaptures,
+    capture_requests: HashMap<EngineId, bool>,
+    execution_id_requests: HashMap<u64, EngineId>,
+    replacements: Vec<(EngineId, tasty_core::Replacement)>,
     changed_engines: std::collections::HashSet<EngineId>,
-    completion_views:HashMap<EngineId,crate::runtime::journal_product::CompletionView>,
+    completion_views: HashMap<EngineId, crate::runtime::journal_product::CompletionView>,
     wake: Arc<dyn Fn() + Send + Sync>,
     opening: HashMap<EngineId, Opening>,
-    creations: HashMap<(EngineId,u64), creation::Creation>,
-    #[cfg(feature="gui")]
-    forwards:std::collections::BTreeMap<u64,forward::Forward>,
-    resource_cleanups:std::collections::BTreeMap<u64,resource_cleanup::Cleanup>,
+    creations: HashMap<(EngineId, u64), creation::Creation>,
+    #[cfg(feature = "gui")]
+    forwards: std::collections::BTreeMap<u64, forward::Forward>,
+    resource_cleanups: std::collections::BTreeMap<u64, resource_cleanup::Cleanup>,
     restoration_reads: HashMap<u64, (EngineId, crate::runtime::surface_restorer::RestoreInput)>,
     restoration_queue: VecDeque<(EngineId, crate::runtime::surface_restorer::RestoreInput)>,
     restoration_ready: HashMap<EngineId, Vec<crate::runtime::surface_restorer::RestoreInput>>,
@@ -66,26 +66,47 @@ pub(crate) struct JournalApplication {
     retirements: retirement::Retirements,
     known_slots: std::collections::BTreeMap<u32, bool>,
     started: bool,
-    runtime_epoch:Option<u64>,
+    runtime_epoch: Option<u64>,
     next_ticket: u64,
     halted: Option<String>,
 }
 
 impl JournalApplication {
-    pub(crate) fn update_completion_view(&mut self,id:EngineId,core:&crate::core::CoreState,presentation:&dyn crate::model::StructurePresentation) {
-        let mut focused_panes=std::collections::BTreeMap::new();
-        let mut selected_tabs=std::collections::BTreeMap::new();
-        let mut selected_surfaces=std::collections::BTreeMap::new();
+    pub(crate) fn update_completion_view(
+        &mut self,
+        id: EngineId,
+        core: &crate::core::CoreState,
+        presentation: &dyn crate::model::StructurePresentation,
+    ) {
+        let mut focused_panes = std::collections::BTreeMap::new();
+        let mut selected_tabs = std::collections::BTreeMap::new();
+        let mut selected_surfaces = std::collections::BTreeMap::new();
         for workspace in &core.workspaces() {
-            if let Some(pane)=presentation.pane_id(workspace) {focused_panes.insert(workspace.id,pane);}
+            if let Some(pane) = presentation.pane_id(workspace) {
+                focused_panes.insert(workspace.id, pane);
+            }
             for pane in workspace.pane_layout().all_pane_ids() {
-                if let Some(pane)=workspace.pane_layout().find_pane(pane) {
-                    if let Some(tab)=pane.tabs.get(presentation.tab_index(pane)) {selected_tabs.insert(pane.id,tab.id);}
-                    for tab in &pane.tabs {if let Some(surface)=presentation.surface_id(tab) {selected_surfaces.insert(tab.id,surface);}}
+                if let Some(pane) = workspace.pane_layout().find_pane(pane) {
+                    if let Some(tab) = pane.tabs.get(presentation.tab_index(pane)) {
+                        selected_tabs.insert(pane.id, tab.id);
+                    }
+                    for tab in &pane.tabs {
+                        if let Some(surface) = presentation.surface_id(tab) {
+                            selected_surfaces.insert(tab.id, surface);
+                        }
+                    }
                 }
             }
         }
-        self.completion_views.insert(id,crate::runtime::journal_product::CompletionView {focused_panes,mirror_count:core.mirror_workspaces().len(),selected_tabs,selected_surfaces});
+        self.completion_views.insert(
+            id,
+            crate::runtime::journal_product::CompletionView {
+                focused_panes,
+                mirror_count: core.mirror_workspaces().len(),
+                selected_tabs,
+                selected_surfaces,
+            },
+        );
     }
 
     pub(crate) fn new(wake: Arc<dyn Fn() + Send + Sync>) -> anyhow::Result<Self> {
@@ -95,19 +116,19 @@ impl JournalApplication {
         Ok(Self {
             worker,
             commands: Default::default(),
-            captures:Default::default(),
-            preset_captures:Default::default(),
-            capture_requests:Default::default(),
-            execution_id_requests:Default::default(),
+            captures: Default::default(),
+            preset_captures: Default::default(),
+            capture_requests: Default::default(),
+            execution_id_requests: Default::default(),
             changed_engines: Default::default(),
-            replacements:Vec::new(),
-            completion_views:Default::default(),
+            replacements: Vec::new(),
+            completion_views: Default::default(),
             wake,
             opening: HashMap::new(),
             creations: HashMap::new(),
-            resource_cleanups:Default::default(),
-            #[cfg(feature="gui")]
-            forwards:Default::default(),
+            resource_cleanups: Default::default(),
+            #[cfg(feature = "gui")]
+            forwards: Default::default(),
             restoration_reads: HashMap::new(),
             restoration_queue: VecDeque::new(),
             restoration_ready: HashMap::new(),
@@ -125,7 +146,7 @@ impl JournalApplication {
             retirements: Default::default(),
             known_slots: Default::default(),
             started: false,
-            runtime_epoch:None,
+            runtime_epoch: None,
             next_ticket: 1,
             halted: None,
         })
@@ -145,7 +166,8 @@ impl JournalApplication {
             }
         }
         let scopes = session
-            .runtime.memory
+            .runtime
+            .memory
             .lock()
             .map_err(|error| error.to_string())?
             .scopes()
@@ -179,12 +201,12 @@ impl JournalApplication {
     pub(crate) fn poll_bootstrap(
         &mut self,
         sessions: &mut [&mut EngineSession],
-        plugins:Option<&mut crate::plugin::PluginManager>,
+        plugins: Option<&mut crate::plugin::PluginManager>,
     ) -> Result<(), String> {
         if let Some(reason) = &self.halted {
             return Err(reason.clone());
         }
-        let result = self.poll_initial(sessions,plugins);
+        let result = self.poll_initial(sessions, plugins);
         #[cfg(feature = "gui")]
         for session in sessions {
             if session
@@ -202,7 +224,11 @@ impl JournalApplication {
         result
     }
 
-    fn poll_initial(&mut self,sessions:&mut [&mut EngineSession],mut plugins:Option<&mut crate::plugin::PluginManager>)->Result<(),String> {
+    fn poll_initial(
+        &mut self,
+        sessions: &mut [&mut EngineSession],
+        mut plugins: Option<&mut crate::plugin::PluginManager>,
+    ) -> Result<(), String> {
         const MAX_COMPLETIONS: usize = 16;
         for _ in 0..MAX_COMPLETIONS {
             if self.started {
@@ -213,7 +239,7 @@ impl JournalApplication {
                 }
                 self.submit_openings()?;
                 self.submit_commands()?;
-                #[cfg(feature="gui")]
+                #[cfg(feature = "gui")]
                 self.submit_forwards()?;
                 self.poll_resource_cleanup(sessions, plugins.as_deref_mut())?;
                 self.submit_captures(sessions)?;
@@ -224,15 +250,19 @@ impl JournalApplication {
                 self.submit_retirements()?;
                 #[cfg(feature = "gui")]
                 self.submit_view_writes()?;
-                for ((engine,_), creation) in &mut self.creations {
+                for ((engine, _), creation) in &mut self.creations {
                     let session = sessions
                         .iter_mut()
                         .find(|session| session.id == *engine)
                         .ok_or("materializing engine disappeared")?;
-                    let mirror_count=session.core_state.mirror_workspaces().len();
-                    let mut view=self.completion_views.get(engine).cloned().unwrap_or_default();
-                    view.mirror_count=mirror_count;
-                    creation.poll_cleanup(&self.worker,view,session)?;
+                    let mirror_count = session.core_state.mirror_workspaces().len();
+                    let mut view = self
+                        .completion_views
+                        .get(engine)
+                        .cloned()
+                        .unwrap_or_default();
+                    view.mirror_count = mirror_count;
+                    creation.poll_cleanup(&self.worker, view, session)?;
                 }
             }
             let completion = match self.worker.try_recv() {
@@ -244,9 +274,12 @@ impl JournalApplication {
             };
             match completion {
                 Completion::Ready {
-                    cut, mut bootstrap, runtime_epoch,..
+                    cut,
+                    mut bootstrap,
+                    runtime_epoch,
+                    ..
                 } => {
-                    self.runtime_epoch=Some(runtime_epoch);
+                    self.runtime_epoch = Some(runtime_epoch);
                     self.known_slots.extend(bootstrap.streams.iter().filter_map(
                         |(stream, model)| {
                             stream
@@ -289,7 +322,7 @@ impl JournalApplication {
                             _ => tasty_core::JournalModel::default(),
                         };
                         projection::bootstrap::initialize(&mut session.core_state, &model)?;
-                        crate::runtime::surface_restorer::initialize_instances(session,&model);
+                        crate::runtime::surface_restorer::initialize_instances(session, &model);
                         opening.projected = matches!(
                             opening.selection,
                             EngineSelection::Slot { resume: true, .. }
@@ -313,7 +346,9 @@ impl JournalApplication {
                             Some(EngineSelection::Slot { slot, .. }) => {
                                 Some(format!("structure:slot-{slot}"))
                             }
-                            Some(EngineSelection::ImportedSlot { source }) => Some(format!("structure:slot-{}",source.destination_slot)),
+                            Some(EngineSelection::ImportedSlot { source }) => {
+                                Some(format!("structure:slot-{}", source.destination_slot))
+                            }
                             Some(EngineSelection::FreshHeadless) => engine_binding
                                 .as_ref()
                                 .map(|binding| binding.stream.clone()),
@@ -348,32 +383,66 @@ impl JournalApplication {
                             let mut after = predecessor.clone();
                             tasty_core::evolve(&mut after, &domain)
                                 .map_err(|error| error.to_string())?;
-                            projection::bootstrap::initialize(
-                                &mut session.core_state,
-                                &after,
-                            )?;
-                            crate::runtime::surface_restorer::initialize_instances(session,&after);
+                            projection::bootstrap::initialize(&mut session.core_state, &after)?;
+                            crate::runtime::surface_restorer::initialize_instances(session, &after);
                             opening.projected = true;
                         } else {
                             let mut prepared = Vec::new();
                             let mut installations = Vec::new();
-                            for (key,creation) in self.creations.iter_mut().filter(|((engine,_),_)|*engine==session.id) {
-                                if let Some(installation)=creation.authorize_installation(session,events)? {installations.push((*key,installation));}
-                                if let Some(leaf)=creation.leaf_for_publication(session,events)? {prepared.push(leaf);}
+                            for (key, creation) in self
+                                .creations
+                                .iter_mut()
+                                .filter(|((engine, _), _)| *engine == session.id)
+                            {
+                                if let Some(installation) =
+                                    creation.authorize_installation(session, events)?
+                                {
+                                    installations.push((*key, installation));
+                                }
+                                if let Some(leaf) =
+                                    creation.leaf_for_publication(session, events)?
+                                {
+                                    prepared.push(leaf);
+                                }
                             }
                             for event in &domain.events {
-                                if let tasty_core::DomainEvent::OperationPrepared {operation}=&event.event
-                                    && matches!(operation.creation.as_ref().map(|plan|&plan.destination),Some(tasty_core::CreationDestination::Assembly {..})) {
-                                    let ticket=self.next_ticket;self.next_ticket=self.next_ticket.checked_add(1).ok_or("journal ticket exhausted")?;
-                                    let binding=session.journal_binding.clone().ok_or("assembly engine binding missing")?;
-                                    let creation=creation::Creation::committed(ticket,binding,&self.worker,operation.id.clone())?;
-                                    self.creations.insert((session.id,ticket),creation);
+                                if let tasty_core::DomainEvent::OperationPrepared { operation } =
+                                    &event.event
+                                    && matches!(
+                                        operation.creation.as_ref().map(|plan| &plan.destination),
+                                        Some(tasty_core::CreationDestination::Assembly { .. })
+                                    )
+                                {
+                                    let ticket = self.next_ticket;
+                                    self.next_ticket = self
+                                        .next_ticket
+                                        .checked_add(1)
+                                        .ok_or("journal ticket exhausted")?;
+                                    let binding = session
+                                        .journal_binding
+                                        .clone()
+                                        .ok_or("assembly engine binding missing")?;
+                                    let creation = creation::Creation::committed(
+                                        ticket,
+                                        binding,
+                                        &self.worker,
+                                        operation.id.clone(),
+                                    )?;
+                                    self.creations.insert((session.id, ticket), creation);
                                 }
-                                if let tasty_core::DomainEvent::OperationPrepared {operation}=&event.event
-                                    && operation.retirement.is_some() {
+                                if let tasty_core::DomainEvent::OperationPrepared { operation } =
+                                    &event.event
+                                    && operation.retirement.is_some()
+                                {
                                     let retirement=crate::runtime::resource_retirement::ResourceRetirement::capture(session,operation)?;
-                                    session.pending_resource_retirements.insert(operation.id.clone(),retirement);
-                                    self.queue_resource_retirement(session.id,stream.clone(),operation.id.clone())?;
+                                    session
+                                        .pending_resource_retirements
+                                        .insert(operation.id.clone(), retirement);
+                                    self.queue_resource_retirement(
+                                        session.id,
+                                        stream.clone(),
+                                        operation.id.clone(),
+                                    )?;
                                 }
                             }
                             projection::apply(
@@ -383,37 +452,93 @@ impl JournalApplication {
                                 &mut Vec::new(),
                             )?;
                             for leaf in prepared {
-                                let id=leaf.surface.surface_id().ok_or("materialized kind has no ID")?;
-                                let descriptor=session.core_state.find_surface_by_id(id).ok_or("materialized leaf has no committed descriptor")?;
-                                if descriptor.kind!=leaf.logical_kind {return Err("materialized kind differs from committed descriptor".into());}
-                                let deferred=leaf.surface.as_any().is::<crate::runtime::surface_restorer::JournalPlaceholder>();
-                                drop(session.runtime.surfaces.insert(id,leaf.surface));
+                                let id = leaf
+                                    .surface
+                                    .surface_id()
+                                    .ok_or("materialized kind has no ID")?;
+                                let descriptor = session
+                                    .core_state
+                                    .find_surface_by_id(id)
+                                    .ok_or("materialized leaf has no committed descriptor")?;
+                                if descriptor.kind != leaf.logical_kind {
+                                    return Err(
+                                        "materialized kind differs from committed descriptor"
+                                            .into(),
+                                    );
+                                }
+                                let deferred = leaf
+                                    .surface
+                                    .as_any()
+                                    .is::<crate::runtime::surface_restorer::JournalPlaceholder>(
+                                );
+                                drop(session.runtime.surfaces.insert(id, leaf.surface));
                                 if deferred {
-                                    let mut after=predecessor.clone();
-                                    tasty_core::evolve(&mut after,&domain).map_err(|error|error.to_string())?;
+                                    let mut after = predecessor.clone();
+                                    tasty_core::evolve(&mut after, &domain)
+                                        .map_err(|error| error.to_string())?;
                                     if let Some(placeholder)=session.runtime.surfaces.get_mut(&id).and_then(|surface|surface.as_any_mut().downcast_mut::<crate::runtime::surface_restorer::JournalPlaceholder>()) {
                                         let value=after.surfaces.get(&id).ok_or("deferred assembly leaf missing")?;
                                         placeholder.data=value.data;placeholder.creation_seed=value.creation_seed;placeholder.activation=value.activation;
                                     }
-                                    if let Some(request)=crate::runtime::surface_restorer::describe(&session.as_ref()).into_iter().find(|request|request.surface_id==id) {
-                                        if request.reference.is_some() {self.restoration_queue.push_back((session.id,request));} else {self.restoration_ready.entry(session.id).or_default().push(request);}
+                                    if let Some(request) =
+                                        crate::runtime::surface_restorer::describe(
+                                            &session.as_ref(),
+                                        )
+                                        .into_iter()
+                                        .find(|request| request.surface_id == id)
+                                    {
+                                        if request.reference.is_some() {
+                                            self.restoration_queue.push_back((session.id, request));
+                                        } else {
+                                            self.restoration_ready
+                                                .entry(session.id)
+                                                .or_default()
+                                                .push(request);
+                                        }
                                     }
                                 }
                             }
-                            for (key,installation) in installations {
-                                let retiring = session.runtime.surfaces.get(&installation.surface_id())
-                                    .map(|surface|crate::runtime::effect_runner::RetiringKind::capture(surface.as_ref()));
-                                self.creations.get_mut(&key).expect("materialization request")
-                                    .install_candidate(session,plugins.as_deref_mut(),retiring,installation)?;
+                            for (key, installation) in installations {
+                                let retiring = session
+                                    .runtime
+                                    .surfaces
+                                    .get(&installation.surface_id())
+                                    .map(|surface| {
+                                        crate::runtime::effect_runner::RetiringKind::capture(
+                                            surface.as_ref(),
+                                        )
+                                    });
+                                self.creations
+                                    .get_mut(&key)
+                                    .expect("materialization request")
+                                    .install_candidate(
+                                        session,
+                                        plugins.as_deref_mut(),
+                                        retiring,
+                                        installation,
+                                    )?;
                             }
                         }
-                        session.borrow_mut().observe_committed_structure(predecessor,events);
+                        session
+                            .borrow_mut()
+                            .observe_committed_structure(predecessor, events);
                         for recorded in events {
                             match &recorded.event {
-                                tasty_core::DomainEvent::StructureReplaced {replacement,..}=>self.replacements.push((session.id,*replacement)),
-                                tasty_core::DomainEvent::WorkspaceAttachMappingSet {id,..}=>{session.remote.attach_mapping_tokens.insert(*id,Arc::new(()));},
-                                tasty_core::DomainEvent::WorkspaceClosed {id}=>{session.remote.attach_mapping_tokens.remove(id);},
-                                _=>{},
+                                tasty_core::DomainEvent::StructureReplaced {
+                                    replacement, ..
+                                } => self.replacements.push((session.id, *replacement)),
+                                tasty_core::DomainEvent::WorkspaceAttachMappingSet {
+                                    id, ..
+                                } => {
+                                    session
+                                        .remote
+                                        .attach_mapping_tokens
+                                        .insert(*id, Arc::new(()));
+                                }
+                                tasty_core::DomainEvent::WorkspaceClosed { id } => {
+                                    session.remote.attach_mapping_tokens.remove(id);
+                                }
+                                _ => {}
                             }
                         }
                         if let Some(slot) = stream
@@ -423,9 +548,7 @@ impl JournalApplication {
                             let mut retired = predecessor.engine_retired;
                             for event in events {
                                 match event.event {
-                                    tasty_core::DomainEvent::EngineRetired { .. } => {
-                                        retired = true
-                                    }
+                                    tasty_core::DomainEvent::EngineRetired { .. } => retired = true,
                                     tasty_core::DomainEvent::EngineIncarnationStarted {
                                         ..
                                     } => retired = false,
@@ -434,7 +557,12 @@ impl JournalApplication {
                             }
                             self.known_slots.insert(slot, retired);
                         }
-                        if events.iter().any(|recorded|!matches!(recorded.event,tasty_core::DomainEvent::SurfaceDataRecorded {..})) {
+                        if events.iter().any(|recorded| {
+                            !matches!(
+                                recorded.event,
+                                tasty_core::DomainEvent::SurfaceDataRecorded { .. }
+                            )
+                        }) {
                             session.persistence.dirty.mark_dirty();
                         }
                         self.changed_engines.insert(session.id);
@@ -448,18 +576,36 @@ impl JournalApplication {
                     self.worker
                         .acknowledge(batch.batch_id, Ok(()))
                         .map_err(|error| format!("bootstrap publication ACK: {error:?}"))?;
-                    for ((id,_),creation) in &self.creations {
-                        if let Some(session)=sessions.iter().find(|session|session.id==*id) {creation.acknowledge_publication(session);}
+                    for ((id, _), creation) in &self.creations {
+                        if let Some(session) = sessions.iter().find(|session| session.id == *id) {
+                            creation.acknowledge_publication(session);
+                        }
                     }
-                    self.creations.retain(|_,creation|!creation.publication_released());
+                    self.creations
+                        .retain(|_, creation| !creation.publication_released());
                 }
                 Completion::Finished { ticket, result } => {
-                    #[cfg(feature="gui")]
-                    if self.answer_forward(ticket,&result)? {continue;}
-                    if self.answer_execution_ids(ticket,&result,sessions)? {continue;}
-                    if self.answer_capture(ticket,&result,sessions) {continue;}
-                    if self.answer_preset_capture(ticket,&result) {continue;}
-                    if self.answer_resource_cleanup(ticket,&result,sessions,plugins.as_deref_mut())? {continue;}
+                    #[cfg(feature = "gui")]
+                    if self.answer_forward(ticket, &result)? {
+                        continue;
+                    }
+                    if self.answer_execution_ids(ticket, &result, sessions)? {
+                        continue;
+                    }
+                    if self.answer_capture(ticket, &result, sessions) {
+                        continue;
+                    }
+                    if self.answer_preset_capture(ticket, &result) {
+                        continue;
+                    }
+                    if self.answer_resource_cleanup(
+                        ticket,
+                        &result,
+                        sessions,
+                        plugins.as_deref_mut(),
+                    )? {
+                        continue;
+                    }
                     if self.answer_command(ticket, &result, sessions)? {
                         continue;
                     }
@@ -523,7 +669,7 @@ impl JournalApplication {
                         .iter()
                         .find_map(|(key, creation)| (creation.ticket == ticket).then_some(*key))
                     {
-                        let id=key.0;
+                        let id = key.0;
                         let session = sessions
                             .iter_mut()
                             .find(|session| session.id == id)
@@ -534,7 +680,11 @@ impl JournalApplication {
                             .expect("creation exists")
                             .answered(&self.worker, session, result?)?
                         {
-                            if let Some(mut creation)=self.creations.remove(&key) && let Some(request)=creation.failed_restore(session) {self.restoration_ready.entry(id).or_default().push(request);}
+                            if let Some(mut creation) = self.creations.remove(&key)
+                                && let Some(request) = creation.failed_restore(session)
+                            {
+                                self.restoration_ready.entry(id).or_default().push(request);
+                            }
                             self.refresh_in_progress_commands();
                         }
                         continue;
@@ -553,11 +703,11 @@ impl JournalApplication {
                         return Err("bootstrap did not return an engine binding".into());
                     };
                     if !opening.projected {
-                        projection::bootstrap::initialize(
-                            &mut session.core_state,
+                        projection::bootstrap::initialize(&mut session.core_state, &bound.model)?;
+                        crate::runtime::surface_restorer::initialize_instances(
+                            session,
                             &bound.model,
-                        )?;
-                        crate::runtime::surface_restorer::initialize_instances(session,&bound.model);
+                        );
                     }
                     self.restored_views.insert(
                         session.id,
@@ -567,7 +717,13 @@ impl JournalApplication {
                         ),
                     );
                     for workspace in &session.core_state.local_workspaces() {
-                        if workspace.attach_mapping.is_some() {session.remote.attach_mapping_tokens.entry(workspace.id).or_insert_with(||Arc::new(()));}
+                        if workspace.attach_mapping.is_some() {
+                            session
+                                .remote
+                                .attach_mapping_tokens
+                                .entry(workspace.id)
+                                .or_insert_with(|| Arc::new(()));
+                        }
                     }
                     session.journal_binding = Some(bound.binding);
                     if session.core_state.local_workspaces().is_empty() {
@@ -577,7 +733,8 @@ impl JournalApplication {
                             .ok_or("journal ticket range exhausted")?;
                         let creation =
                             creation::Creation::default_workspace(ticket, session, &self.worker)?;
-                        self.creations.insert((session.id,creation.ticket), creation);
+                        self.creations
+                            .insert((session.id, creation.ticket), creation);
                     } else {
                         for restoration in
                             crate::runtime::surface_restorer::describe(&session.as_ref())
@@ -612,20 +769,35 @@ impl JournalApplication {
         engine: EngineId,
         surface: u32,
     ) -> Option<Option<tasty_terminal::ResourceGeneration>> {
-        self.creations.iter().filter(|((id,_),_)|*id==engine).find_map(|(_,creation)|creation.input_generation(surface))
+        self.creations
+            .iter()
+            .filter(|((id, _), _)| *id == engine)
+            .find_map(|(_, creation)| creation.input_generation(surface))
     }
 
     pub(crate) fn pauses_observation(&self) -> bool {
-        self.commands.has_closing() || self.cleanup_pauses_observation() || self.creations
-            .values()
-            .any(creation::Creation::pauses_observation)
+        self.commands.has_closing()
+            || self.cleanup_pauses_observation()
+            || self
+                .creations
+                .values()
+                .any(creation::Creation::pauses_observation)
     }
 
-    pub(crate) fn cleanup_poll_deadline(&self)->Option<std::time::Instant> {
-        self.resource_cleanup_deadline().into_iter().chain(self.creations.values().filter_map(creation::Creation::cleanup_deadline)).min()
+    pub(crate) fn cleanup_poll_deadline(&self) -> Option<std::time::Instant> {
+        self.resource_cleanup_deadline()
+            .into_iter()
+            .chain(
+                self.creations
+                    .values()
+                    .filter_map(creation::Creation::cleanup_deadline),
+            )
+            .min()
     }
 
-    pub(crate) fn runtime_epoch(&self)->Option<u64> {self.runtime_epoch}
+    pub(crate) fn runtime_epoch(&self) -> Option<u64> {
+        self.runtime_epoch
+    }
     pub(crate) fn is_halted(&self) -> bool {
         self.halted.is_some()
     }
@@ -678,7 +850,8 @@ impl JournalApplication {
                         selected.contains(&item.surface_id)
                     } else {
                         session
-                            .runtime.surface_registry
+                            .runtime
+                            .surface_registry
                             .get_live(&item.input.kind)
                             .is_some()
                     }
@@ -702,18 +875,61 @@ impl JournalApplication {
     }
 
     /// Selection is supplied by the application/View. Loading a payload alone grants no activation.
-    pub(crate) fn wake_application(&self) {(self.wake)();}
-    pub(crate) fn request_restore_receipt(&mut self,session:&EngineSession,surface:u32,activation:Option<u64>)->Result<Option<ActivationReceipt>,String> {
-        if self.is_halted() {return Err("resource publication is halted".into());}
-        if let Some(reason)=crate::runtime::surface_restorer::recovery_blocked_reason(session,surface) {return Err(reason.to_owned());}
-        if let Some(receipt)=self.creations.iter().filter(|((engine,_),_)|*engine==session.id).find_map(|(_,creation)|creation.join_restore(surface,activation)) {return Ok(Some(receipt));}
-        if self.has_creation(session.id) {return Ok(None);}
-        if session.core_state.find_surface_by_id(surface).and_then(|value|value.activation_generation)!=activation {return Err("activation target changed".into());}
-        if self.activate_restored_surface(session,surface)? {
-            return Ok(self.creations.iter().filter(|((engine,_),_)|*engine==session.id).find_map(|(_,creation)|creation.join_restore(surface,activation)));
+    pub(crate) fn wake_application(&self) {
+        (self.wake)();
+    }
+    pub(crate) fn request_restore_receipt(
+        &mut self,
+        session: &EngineSession,
+        surface: u32,
+        activation: Option<u64>,
+    ) -> Result<Option<ActivationReceipt>, String> {
+        if self.is_halted() {
+            return Err("resource publication is halted".into());
         }
-        let reading=self.restoration_queue.iter().any(|(engine,request)|*engine==session.id && request.surface_id==surface)||self.restoration_reads.values().any(|(engine,request)|*engine==session.id && request.surface_id==surface);
-        if reading {Ok(None)}else{Err("selected resource has no pending restore input".into())}
+        if let Some(reason) =
+            crate::runtime::surface_restorer::recovery_blocked_reason(session, surface)
+        {
+            return Err(reason.to_owned());
+        }
+        if let Some(receipt) = self
+            .creations
+            .iter()
+            .filter(|((engine, _), _)| *engine == session.id)
+            .find_map(|(_, creation)| creation.join_restore(surface, activation))
+        {
+            return Ok(Some(receipt));
+        }
+        if self.has_creation(session.id) {
+            return Ok(None);
+        }
+        if session
+            .core_state
+            .find_surface_by_id(surface)
+            .and_then(|value| value.activation_generation)
+            != activation
+        {
+            return Err("activation target changed".into());
+        }
+        if self.activate_restored_surface(session, surface)? {
+            return Ok(self
+                .creations
+                .iter()
+                .filter(|((engine, _), _)| *engine == session.id)
+                .find_map(|(_, creation)| creation.join_restore(surface, activation)));
+        }
+        let reading =
+            self.restoration_queue
+                .iter()
+                .any(|(engine, request)| *engine == session.id && request.surface_id == surface)
+                || self.restoration_reads.values().any(|(engine, request)| {
+                    *engine == session.id && request.surface_id == surface
+                });
+        if reading {
+            Ok(None)
+        } else {
+            Err("selected resource has no pending restore input".into())
+        }
     }
 
     pub(crate) fn activate_restored_surface(
@@ -734,31 +950,57 @@ impl JournalApplication {
         let Some(index) = items.iter().position(|item| item.surface_id == surface_id) else {
             return Ok(false);
         };
-        if items[index].input.kind!="terminal" && session.runtime.surface_registry.get_live(&items[index].input.kind).is_none() {return Ok(false);}
+        if items[index].input.kind != "terminal"
+            && session
+                .runtime
+                .surface_registry
+                .get_live(&items[index].input.kind)
+                .is_none()
+        {
+            return Ok(false);
+        }
         let request = items.remove(index);
         let ticket = self.next_ticket;
         self.next_ticket = ticket
             .checked_add(1)
             .ok_or("journal ticket range exhausted")?;
         let creation = creation::Creation::restore(ticket, session, &self.worker, request)?;
-        self.creations.insert((session.id,creation.ticket), creation);
+        self.creations
+            .insert((session.id, creation.ticket), creation);
         (self.wake)();
         Ok(true)
     }
 
-    pub(super) fn has_creation(&self,id:EngineId)->bool {self.creations.keys().any(|(engine,_)|*engine==id)}
-    pub(super) fn has_forward(&self,id:EngineId)->bool {
-        #[cfg(feature="gui")]
-        {return self.forwards.values().any(|forward|forward.engine==id);}
-        #[cfg(not(feature="gui"))]
-        {let _=id;false}
+    pub(super) fn has_creation(&self, id: EngineId) -> bool {
+        self.creations.keys().any(|(engine, _)| *engine == id)
     }
-    pub(crate) fn has_pending_engine_effects(&self,id:EngineId)->bool {
-        self.commands.has_remote_request(id)||self.has_forward(id)||self.has_pending_capture(id)||self.has_pending_preset_capture(id)||self.has_creation(id)||self.has_resource_cleanup(id)||self.commands.has_resource_request(id)
+    pub(super) fn has_forward(&self, id: EngineId) -> bool {
+        #[cfg(feature = "gui")]
+        {
+            return self.forwards.values().any(|forward| forward.engine == id);
+        }
+        #[cfg(not(feature = "gui"))]
+        {
+            let _ = id;
+            false
+        }
     }
-    #[cfg(feature="gui")]
-    pub(crate) fn has_pending_view_for(&self,stream:&str)->bool {
-        self.queued_view_writes.contains_key(stream)||self.view_writes.values().any(|view|view.binding.stream==stream)
+    pub(crate) fn has_pending_engine_effects(&self, id: EngineId) -> bool {
+        self.commands.has_remote_request(id)
+            || self.has_forward(id)
+            || self.has_pending_capture(id)
+            || self.has_pending_preset_capture(id)
+            || self.has_creation(id)
+            || self.has_resource_cleanup(id)
+            || self.commands.has_resource_request(id)
+    }
+    #[cfg(feature = "gui")]
+    pub(crate) fn has_pending_view_for(&self, stream: &str) -> bool {
+        self.queued_view_writes.contains_key(stream)
+            || self
+                .view_writes
+                .values()
+                .any(|view| view.binding.stream == stream)
     }
 
     pub(crate) fn is_ready(&self, id: EngineId) -> bool {
@@ -840,7 +1082,12 @@ impl JournalApplication {
 
     #[cfg(feature = "gui")]
     pub(crate) fn has_pending_view_writes(&self) -> bool {
-        !self.is_halted() && (self.has_pending_preset_captures() || !self.capture_requests.is_empty() || !self.captures.is_empty() || !self.queued_view_writes.is_empty() || !self.view_writes.is_empty())
+        !self.is_halted()
+            && (self.has_pending_preset_captures()
+                || !self.capture_requests.is_empty()
+                || !self.captures.is_empty()
+                || !self.queued_view_writes.is_empty()
+                || !self.view_writes.is_empty())
     }
 
     #[cfg(feature = "gui")]

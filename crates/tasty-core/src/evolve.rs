@@ -97,22 +97,50 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
             m.engine_retired = true;
             Ok(())
         }
-        DomainEvent::StructureReplaced {replacement,removed}=> {
-            let (after,actual)=replacement.simulate(m).map_err(|error|EvolveError::InvalidFact(error.to_string()))?;
-            if actual!=removed {return Err(EvolveError::InvalidFact("replacement removal set differs from its fact".into()));}
-            *m=after;Ok(())
-        },
-        DomainEvent::UndoRecordAdded {record}=>{
-            let owns=m.operations.get(&record.id).and_then(|operation|operation.retirement.as_ref()).is_some_and(|plan|plan.is_user_close && plan.target==record.target && plan.undo.as_ref()==Some(&record.capture));
-            if !owns || m.undo_records.iter().any(|old|old.id==record.id) || record.capture.snapshot.0==0 || m.undo_records.len()>=10 {
+        DomainEvent::StructureReplaced {
+            replacement,
+            removed,
+        } => {
+            let (after, actual) = replacement
+                .simulate(m)
+                .map_err(|error| EvolveError::InvalidFact(error.to_string()))?;
+            if actual != removed {
+                return Err(EvolveError::InvalidFact(
+                    "replacement removal set differs from its fact".into(),
+                ));
+            }
+            *m = after;
+            Ok(())
+        }
+        DomainEvent::UndoRecordAdded { record } => {
+            let owns = m
+                .operations
+                .get(&record.id)
+                .and_then(|operation| operation.retirement.as_ref())
+                .is_some_and(|plan| {
+                    plan.is_user_close
+                        && plan.target == record.target
+                        && plan.undo.as_ref() == Some(&record.capture)
+                });
+            if !owns
+                || m.undo_records.iter().any(|old| old.id == record.id)
+                || record.capture.snapshot.0 == 0
+                || m.undo_records.len() >= 10
+            {
                 return Err(EvolveError::InvalidFact("invalid undo record".into()));
             }
-            m.undo_records.push(record);Ok(())
-        },
-        DomainEvent::UndoRecordConsumed {id}|DomainEvent::UndoRecordEvicted {id}=>{
-            let index=m.undo_records.iter().position(|record|record.id==id).ok_or_else(||EvolveError::Missing(format!("undo:{}",id.0)))?;
-            m.undo_records.remove(index);Ok(())
-        },
+            m.undo_records.push(record);
+            Ok(())
+        }
+        DomainEvent::UndoRecordConsumed { id } | DomainEvent::UndoRecordEvicted { id } => {
+            let index = m
+                .undo_records
+                .iter()
+                .position(|record| record.id == id)
+                .ok_or_else(|| EvolveError::Missing(format!("undo:{}", id.0)))?;
+            m.undo_records.remove(index);
+            Ok(())
+        }
         DomainEvent::CategoryCreated { id, name, index } => create_category(m, id, name, index),
         DomainEvent::CategoryRenamed { id, name } => {
             get_mut(&mut m.categories, IdKind::Category, id)?.name = name;
@@ -212,7 +240,9 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
         DomainEvent::SurfaceSeedImported { id, input } => {
             let surface = get_mut(&mut m.surfaces, IdKind::Surface, id)?;
             if input.0 == 0 || surface.activation.is_some() || surface.creation_seed.is_some() {
-                return Err(EvolveError::InvalidFact("import seed requires an inactive surface without a seed".into()));
+                return Err(EvolveError::InvalidFact(
+                    "import seed requires an inactive surface without a seed".into(),
+                ));
             }
             surface.creation_seed = Some(input);
             Ok(())
@@ -256,19 +286,40 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
             lifecycle::ratio(layout, &path, ratio)
         }
         DomainEvent::OperationPrepared { operation } => lifecycle::prepare(m, operation),
-        DomainEvent::OperationResourcePrepared {id,data,deferred}=>lifecycle::prepared(m,id,data,deferred),
+        DomainEvent::OperationResourcePrepared { id, data, deferred } => {
+            lifecycle::prepared(m, id, data, deferred)
+        }
         DomainEvent::OperationAwaitingCleanup {
             id,
             outcome,
             cleanup,
-            prepared_data,deferred,
-        } => lifecycle::await_cleanup(m, id, outcome, cleanup, prepared_data,deferred),
+            prepared_data,
+            deferred,
+        } => lifecycle::await_cleanup(m, id, outcome, cleanup, prepared_data, deferred),
         DomainEvent::OperationFinished { id, outcome } => lifecycle::finish(m, id, outcome, None),
-        DomainEvent::OperationRecoveryObserved {id,evidence}=> {
-            let operation=m.operations.get_mut(&id).ok_or_else(||EvolveError::Missing(format!("operation:{}",id.0)))?;
-            if evidence.0==0 || operation.reconciliation_evidence.is_some() || !matches!(operation.outcome,Some(crate::OperationOutcome::Cancelled {..}|crate::OperationOutcome::Uncertain {..}|crate::OperationOutcome::Superseded {..})) {return Err(EvolveError::InvalidFact("invalid recovery observation".into()));}
-            operation.reconciliation_evidence=Some(evidence);Ok(())
-        },
+        DomainEvent::OperationRecoveryObserved { id, evidence } => {
+            let operation = m
+                .operations
+                .get_mut(&id)
+                .ok_or_else(|| EvolveError::Missing(format!("operation:{}", id.0)))?;
+            if evidence.0 == 0
+                || operation.reconciliation_evidence.is_some()
+                || !matches!(
+                    operation.outcome,
+                    Some(
+                        crate::OperationOutcome::Cancelled { .. }
+                            | crate::OperationOutcome::Uncertain { .. }
+                            | crate::OperationOutcome::Superseded { .. }
+                    )
+                )
+            {
+                return Err(EvolveError::InvalidFact(
+                    "invalid recovery observation".into(),
+                ));
+            }
+            operation.reconciliation_evidence = Some(evidence);
+            Ok(())
+        }
         DomainEvent::OperationReconciled {
             id,
             outcome,

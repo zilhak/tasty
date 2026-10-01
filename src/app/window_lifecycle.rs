@@ -64,7 +64,7 @@ pub(super) fn build_engine_and_plugins(
     runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
     layout_slot: crate::core::layout_persistence::LayoutSlotId,
     gauges: crate::app::services::PluginGauges,
-    registries:crate::runtime::registries::RuntimeRegistries,
+    registries: crate::runtime::registries::RuntimeRegistries,
     #[cfg(debug_assertions)] input_simulation_enabled: bool,
 ) -> anyhow::Result<(
     crate::runtime::engine_session::EngineSession,
@@ -105,7 +105,7 @@ fn build_core_state_first_boot(
     memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
     layout_slot: crate::core::layout_persistence::LayoutSlotId,
-    registries:crate::runtime::registries::RuntimeRegistries,
+    registries: crate::runtime::registries::RuntimeRegistries,
     #[cfg(debug_assertions)] input_simulation_enabled: bool,
 ) -> anyhow::Result<crate::runtime::engine_session::EngineSession> {
     // 슬롯 로드 시간도 포함한다. scrollback GC는 창마다 하지 않고 부팅 때 전체 슬롯을 대상으로 한다.
@@ -122,9 +122,10 @@ fn build_core_state_first_boot(
         registries,
     )?;
     engine.runtime.waker_factory = Some(factory);
-    engine.runtime.identify_worker = Some(Arc::new(
-        crate::identify_worker::IdentifyWorker::new(engine.runtime.file_format.clone(), proxy),
-    ));
+    engine.runtime.identify_worker = Some(Arc::new(crate::identify_worker::IdentifyWorker::new(
+        engine.runtime.file_format.clone(),
+        proxy,
+    )));
     #[cfg(debug_assertions)]
     {
         engine.runtime.input_simulation_enabled = input_simulation_enabled;
@@ -228,12 +229,7 @@ impl App {
                 )
             });
 
-            let engine = if let Some((
-                identify_worker,
-                task_scope,
-                next_ids,
-            )) = shared
-            {
+            let engine = if let Some((identify_worker, task_scope, next_ids)) = shared {
                 // 전체 슬롯 scrollback GC는 부팅 때만 실행하며 여기서는 새 슬롯을 읽는다.
                 let t_engine = std::time::Instant::now();
                 // 기본 workspace 생성부터 ID를 발급하므로 기존 발급기를 생성 전에 주입한다.
@@ -315,11 +311,29 @@ impl App {
         let Some(engine) = self.engines.pending() else {
             return Vec::new();
         };
-        engine.local_workspaces().iter().flat_map(|workspace|workspace.all_surface_ids()).filter_map(|id|
-            engine.find_surface_by_id(id).and_then(|surface|surface.as_any().downcast_ref::<crate::runtime::surface_restorer::JournalPlaceholder>())
-                .filter(|surface|surface.kind!="terminal" && engine.runtime.surface_registry.get_live(&surface.kind).is_none())
-                .map(|surface|surface.kind.clone())
-        ).collect()
+        engine
+            .local_workspaces()
+            .iter()
+            .flat_map(|workspace| workspace.all_surface_ids())
+            .filter_map(|id| {
+                engine
+                    .find_surface_by_id(id)
+                    .and_then(|surface| {
+                        surface
+                            .as_any()
+                            .downcast_ref::<crate::runtime::surface_restorer::JournalPlaceholder>()
+                    })
+                    .filter(|surface| {
+                        surface.kind != "terminal"
+                            && engine
+                                .runtime
+                                .surface_registry
+                                .get_live(&surface.kind)
+                                .is_none()
+                    })
+                    .map(|surface| surface.kind.clone())
+            })
+            .collect()
     }
 
     pub(super) fn boot_pump_step_plugins_registered(&mut self, needed: &[String]) -> bool {
@@ -329,7 +343,9 @@ impl App {
             Vec::new()
         };
         self.finalize_plugin_hello(hello_pairs);
-        let Some(engine) = self.engines.pending() else {return false;};
+        let Some(engine) = self.engines.pending() else {
+            return false;
+        };
         needed
             .iter()
             .all(|k| engine.runtime.surface_registry.get_live(k).is_some())
@@ -378,8 +394,15 @@ impl App {
         wid: winit::window::WindowId,
         main: Box<crate::view::main::MainView>,
     ) {
-        if let Some(id)=self.engines.of_window(wid) && let Some(session)=self.engines.session_mut(id) {
-            crate::app::attach_activation::cancel_engine(&mut self.pending_server_attaches,id,&mut session.borrow_mut(),&self.stream_hub);
+        if let Some(id) = self.engines.of_window(wid)
+            && let Some(session) = self.engines.session_mut(id)
+        {
+            crate::app::attach_activation::cancel_engine(
+                &mut self.pending_server_attaches,
+                id,
+                &mut session.borrow_mut(),
+                &self.stream_hub,
+            );
         }
         if !self.journal.is_halted() {
             let retiring = self.engines.of_window(wid).and_then(|id| {
@@ -396,17 +419,19 @@ impl App {
             }
         }
         if !self.journal.is_halted()
-            && let Some(id)=self.engines.of_window(wid)
-            && let Some(engine)=self.engines.get(id)
-            && engine.runtime.settings.general.restore_layout {
-            self.engines.preserve_closed_view(wid,main.state.navigation.clone());
+            && let Some(id) = self.engines.of_window(wid)
+            && let Some(engine) = self.engines.get(id)
+            && engine.runtime.settings.general.restore_layout
+        {
+            self.engines
+                .preserve_closed_view(wid, main.state.navigation.clone());
             drop(main);
             self.poll_preserved_window_closes();
             return;
         }
         // A halted publication cannot become a new restore checkpoint. Preserve all exact
         // physical/private owners in the registry until their release receipts are observed.
-        let Some(id)=self.engines.begin_retiring_window(wid) else {
+        let Some(id) = self.engines.begin_retiring_window(wid) else {
             tracing::error!("retiring window {wid:?} without an engine relation");
             return;
         };

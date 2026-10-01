@@ -47,7 +47,11 @@ pub fn handle_observe_stop(
     }
 }
 
-pub fn handle_observe_list(core: &AppServices, engine: &EngineRef<'_>, id: Value) -> JsonRpcResponse {
+pub fn handle_observe_list(
+    core: &AppServices,
+    engine: &EngineRef<'_>,
+    id: Value,
+) -> JsonRpcResponse {
     let items = core.observer_list(engine);
     JsonRpcResponse::success(id, json!({ "observers": items }))
 }

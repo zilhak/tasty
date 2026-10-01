@@ -17,4 +17,3 @@ pub(in crate::adapters::ipc::handler) fn refuse_if_hard_occupied(
         ),
     ))
 }
-

@@ -181,7 +181,7 @@ pub(super) fn flush_preedit(w: &mut MainView, engine: &EngineRead<'_>) {
         }
     };
     dispatch_send_text(w, &engine.as_ref(), Some(preedit.surface_id), &preedit.text);
-    w.record_typing_intent(engine,preedit.surface_id);
+    w.record_typing_intent(engine, preedit.surface_id);
     w.ime_cursor_advance = 0;
     w.ime_advance_base = (0, 0);
     w.mark_dirty();
@@ -189,7 +189,10 @@ pub(super) fn flush_preedit(w: &mut MainView, engine: &EngineRead<'_>) {
 
 /// 현재 preedit을 PTY로 보내지 않고 버린다.
 /// 팝업/오버레이가 열릴 때 조합 중 문자가 터미널로 전달되지 않도록 사용.
-pub(super) fn clear_preedit(w: &mut MainView, engine: &crate::runtime::engine_read::EngineRead<'_>) {
+pub(super) fn clear_preedit(
+    w: &mut MainView,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+) {
     let _ = engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     w.ime_preedit = None;
     w.ime_cursor_advance = 0;
@@ -267,7 +270,7 @@ pub(crate) fn ipc_commit(w: &mut MainView, engine: &EngineRead<'_>, text: &str) 
     let sid = w.state.focused_surface_id(engine);
     dispatch_send_text(w, &engine.as_ref(), sid, text);
     if let Some(sid) = sid {
-        w.record_typing_intent(engine,sid);
+        w.record_typing_intent(engine, sid);
     }
     w.mark_dirty();
 }
@@ -339,7 +342,7 @@ fn on_commit(w: &mut MainView, engine: &EngineRead<'_>, text: String) {
     let sid = w.state.focused_surface_id(engine);
     dispatch_send_text(w, &engine.as_ref(), sid, &text);
     if let Some(sid) = sid {
-        w.record_typing_intent(engine,sid);
+        w.record_typing_intent(engine, sid);
     }
     w.mark_dirty();
 }

@@ -61,7 +61,11 @@ impl App {
         };
 
         let modal_window_id = window.id();
-        self.settings_edit_owner=Some(crate::app::settings_edit::SettingsEditOwner {format:init.file_format.clone(),handler:init.file_handler.clone(),path:init.user_config_path.clone()});
+        self.settings_edit_owner = Some(crate::app::settings_edit::SettingsEditOwner {
+            format: init.file_format.clone(),
+            handler: init.file_handler.clone(),
+            path: init.user_config_path.clone(),
+        });
         let mut modal = view::SettingsView::new(
             gpu,
             window,
@@ -91,8 +95,8 @@ impl App {
             crate::settings::Settings::load()
         };
 
-        let file_format=self.services.registries.file_format.clone();
-        let file_handler=self.services.registries.file_handler.clone();
+        let file_format = self.services.registries.file_format.clone();
+        let file_handler = self.services.registries.file_handler.clone();
         let user_config_path =
             tasty_utils::path::tasty_home().map(|d| d.join("file-handlers.toml"));
         let plugin_pages: Vec<tasty_host_plugin::SettingsPageEntry> = self

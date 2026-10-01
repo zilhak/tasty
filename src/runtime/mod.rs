@@ -2,9 +2,9 @@
 //! The storage worker owns canonical journal models; App publishes committed descriptor projections.
 pub(crate) mod command_executor;
 pub(crate) mod effect_runner;
-pub(crate) mod engine_session;
 pub(crate) mod engine_access;
 pub(crate) mod engine_runtime;
+pub(crate) mod engine_session;
 pub(crate) mod journal;
 pub(crate) mod journal_product;
 pub(crate) mod surface_restorer;

@@ -1,7 +1,7 @@
 use winit::event_loop::ActiveEventLoop;
 
-use crate::runtime::engine_read::EngineRead;
 use crate::app::plugin_display::PluginDisplay;
+use crate::runtime::engine_read::EngineRead;
 use crate::view::ui::View;
 
 use super::MainView;
@@ -93,7 +93,7 @@ pub(crate) fn take_hidden_webview_focus_targets(
 }
 
 impl MainView {
-    pub(crate) fn prepare_redraw(&mut self,engine:&EngineRead<'_>) {
+    pub(crate) fn prepare_redraw(&mut self, engine: &EngineRead<'_>) {
         self.state.reconcile_presentation(engine);
         // 열기 요청은 render_if_dirty 전에 소비해야 한다. egui가 이번 프레임에 만든
         // 요청이 다음 프레임까지 남아 키·마우스 차단과 Escape 취소에 사용되기 때문이다.
@@ -117,10 +117,13 @@ impl MainView {
             self.state
                 .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
         }
-
     }
 
-    pub(crate) fn finish_redraw(&mut self,engine:&EngineRead<'_>,_plugin_manager:Option<PluginDisplay<'_>>) {
+    pub(crate) fn finish_redraw(
+        &mut self,
+        engine: &EngineRead<'_>,
+        _plugin_manager: Option<PluginDisplay<'_>>,
+    ) {
         // 무대가 draw 중 닫힐 수 있으므로 렌더 뒤 OS 전체화면 상태를 맞춘다.
         self.sync_window_fullscreen();
 
@@ -156,7 +159,10 @@ impl MainView {
     /// 전체화면 무대 진입 시 진행 중인 드래그·IME·native 메뉴를 취소한다.
     /// 배경으로 release가 전달되지 않으므로 드래그를 확정하지 않고 버린다.
     /// 이미 확정된 텍스트 선택과 vi 복사 모드는 유지한다.
-    fn sync_fullscreen_stage_transition(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>) {
+    fn sync_fullscreen_stage_transition(
+        &mut self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+    ) {
         let active = self.state.fullscreen_stage_active();
         if active == self.stage_was_active {
             return;
@@ -231,12 +237,22 @@ impl MainView {
     fn apply_grid_resync(&mut self, _engine: &crate::runtime::engine_read::EngineRead<'_>) {
         let terminal_rect = self.compute_terminal_rect();
         let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
-        self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::DefaultGrid {cols,rows}).from_user_shortcut("grid-resize"));
+        self.state.dispatch_intent(
+            crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::DefaultGrid {
+                cols,
+                rows,
+            })
+            .from_user_shortcut("grid-resize"),
+        );
     }
 
     /// dirty일 때 입력·mesh 중계와 GPU 렌더링, full 재전송 요청을 처리한다.
     /// 로컬 무대 중에도 attach 구독자에게 mesh를 중계해야 하므로 조기 반환하지 않는다.
-    pub(crate) fn prepare_render_inputs(&mut self,engine:&EngineRead<'_>,plugin_manager:Option<PluginDisplay<'_>>) {
+    pub(crate) fn prepare_render_inputs(
+        &mut self,
+        engine: &EngineRead<'_>,
+        plugin_manager: Option<PluginDisplay<'_>>,
+    ) {
         if !self.base.state.dirty {
             return;
         }
@@ -246,9 +262,12 @@ impl MainView {
             && let Some(sid) = self.state.focused_surface_id(engine)
             && let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, sid)
         {
-            self.state.dispatch_intent(crate::intent::Intent::Engine(
-                crate::app::engine_action::EngineAction::FocusObserved { target },
-            ).from_user_menu("render-focus"));
+            self.state.dispatch_intent(
+                crate::intent::Intent::Engine(
+                    crate::app::engine_action::EngineAction::FocusObserved { target },
+                )
+                .from_user_menu("render-focus"),
+            );
         }
         // Reconcile composition for every displayed content source, including
         // global PTY wakes, direct parser injection and attach mirrors.
@@ -258,15 +277,20 @@ impl MainView {
         // 불변 차용 전에 plugin에 크기·배율·입력을 보내고 회신한 mesh를 합성한다.
         if let Some(mgr) = plugin_manager {
             self.forward_egui_mesh_context(engine, mgr);
-
         }
         // attach mesh mirror surface — 위와 동형이되 목적지가 원격이라
         // PluginManager 가 필요 없다(로컬에 plugin 프로세스가 없다).
         self.forward_attach_mesh_context(engine);
     }
 
-    pub(crate) fn render_if_dirty(&mut self,engine:&EngineRead<'_>,plugin_manager:Option<PluginDisplay<'_>>) {
-        if !self.base.state.dirty {return;}
+    pub(crate) fn render_if_dirty(
+        &mut self,
+        engine: &EngineRead<'_>,
+        plugin_manager: Option<PluginDisplay<'_>>,
+    ) {
+        if !self.base.state.dirty {
+            return;
+        }
         self.submit_gpu_frame(engine, plugin_manager);
         self.drain_full_texture_requests(engine);
     }
@@ -356,8 +380,18 @@ impl MainView {
         // 가 세션을 통해 `MeshFullResendRequest` 로 forward 하도록 큐에 옮긴다.
         let attach_full_reqs = self.base.gpu.take_attach_mesh_full_requests();
         if !attach_full_reqs.is_empty() {
-            let targets=attach_full_reqs.into_iter().filter_map(|surface|crate::app::engine_action::SurfaceBinding::capture(engine,surface)).collect();
-            self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::RemoteMeshFull {targets}).from_user_shortcut("mesh-full-recovery"));
+            let targets = attach_full_reqs
+                .into_iter()
+                .filter_map(|surface| {
+                    crate::app::engine_action::SurfaceBinding::capture(engine, surface)
+                })
+                .collect();
+            self.state.dispatch_intent(
+                crate::intent::Intent::Engine(
+                    crate::app::engine_action::EngineAction::RemoteMeshFull { targets },
+                )
+                .from_user_shortcut("mesh-full-recovery"),
+            );
             self.base.state.dirty = true;
         }
     }
@@ -695,22 +729,45 @@ impl MainView {
                 from_index,
                 to_index,
             });
-        if !self.state.forward_mirror_structural(engine,mirror_op,Vec::new())
-            && let Some(tab_id)=engine.find_pane_by_id(pane_id).and_then(|pane|pane.tabs.get(from_index)).map(|tab|tab.id) {
-            self.state.dispatch_intent(crate::app::command::DomainIntent::MoveTab {pane_id,tab_id,to_index}.from_user_context_menu());
+        if !self
+            .state
+            .forward_mirror_structural(engine, mirror_op, Vec::new())
+            && let Some(tab_id) = engine
+                .find_pane_by_id(pane_id)
+                .and_then(|pane| pane.tabs.get(from_index))
+                .map(|tab| tab.id)
+        {
+            self.state.dispatch_intent(
+                crate::app::command::DomainIntent::MoveTab {
+                    pane_id,
+                    tab_id,
+                    to_index,
+                }
+                .from_user_context_menu(),
+            );
         }
     }
 
     /// tab rename 팝업을 연다 — 현재 표시명을 prefill 하고 `RenameTarget::TabName`
     /// scope 로 `rename` 팝업을 dispatch.
-    fn rename_tab(&mut self, engine: &crate::runtime::engine_read::EngineRead<'_>, pane_id: u32, tab_index: usize) {
+    fn rename_tab(
+        &mut self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+        pane_id: u32,
+        tab_index: usize,
+    ) {
         let Some((tab_id, current_name)) = self
             .state
             .active_workspace(engine)
             .pane_layout()
             .find_pane(pane_id)
             .and_then(|p| p.tabs.get(tab_index))
-            .map(|t| (t.id, engine.tab_display_name(t,self.state.navigation.surface_id(t))))
+            .map(|t| {
+                (
+                    t.id,
+                    engine.tab_display_name(t, self.state.navigation.surface_id(t)),
+                )
+            })
         else {
             return;
         };
@@ -726,13 +783,7 @@ impl MainView {
         );
     }
 
-    fn handle_pane_native_menu(
-        &mut self,
-        engine: &EngineRead<'_>,
-        pane_id: u32,
-        x: f32,
-        y: f32,
-    ) {
+    fn handle_pane_native_menu(&mut self, engine: &EngineRead<'_>, pane_id: u32, x: f32, y: f32) {
         use crate::platform::native_menu::MenuItem;
         let items = [
             MenuItem::new(1, crate::i18n::t("pane_context_menu.new_terminal")),
@@ -764,15 +815,48 @@ impl MainView {
     ) {
         match result {
             Some(1) => {
-                let selected=engine.find_pane_by_id(pane_id).and_then(|pane|pane.tabs.get(self.state.navigation.tab_index(pane))).and_then(|tab|self.state.navigation.surface_id(tab));
-                let cwd=selected.and_then(|surface|self.state.resolve_inherit_cwd_from_surface(engine,surface));
-                self.state.dispatch_intent(crate::app::command::DomainIntent::CreateTab {pane_id,cwd,kind:"terminal".into(),name:None,surface_params:serde_json::json!({}),activate:true}.from_user_context_menu());
+                let selected = engine
+                    .find_pane_by_id(pane_id)
+                    .and_then(|pane| pane.tabs.get(self.state.navigation.tab_index(pane)))
+                    .and_then(|tab| self.state.navigation.surface_id(tab));
+                let cwd = selected.and_then(|surface| {
+                    self.state.resolve_inherit_cwd_from_surface(engine, surface)
+                });
+                self.state.dispatch_intent(
+                    crate::app::command::DomainIntent::CreateTab {
+                        pane_id,
+                        cwd,
+                        kind: "terminal".into(),
+                        name: None,
+                        surface_params: serde_json::json!({}),
+                        activate: true,
+                    }
+                    .from_user_context_menu(),
+                );
             }
             Some(2) => {
-                self.state.dispatch_intent(crate::intent::Intent::NewTabWithFollowup {pane_id,followup:crate::intent::CreateFollowup::Prompt {kind:"markdown".into()}}.from_user_context_menu());
+                self.state.dispatch_intent(
+                    crate::intent::Intent::NewTabWithFollowup {
+                        pane_id,
+                        followup: crate::intent::CreateFollowup::Prompt {
+                            kind: "markdown".into(),
+                        },
+                    }
+                    .from_user_context_menu(),
+                );
             }
             Some(5) => {
-                self.state.dispatch_intent(crate::app::command::DomainIntent::CreateTab {pane_id,cwd:None,kind:"image".into(),name:None,surface_params:serde_json::json!({}),activate:true}.from_user_context_menu());
+                self.state.dispatch_intent(
+                    crate::app::command::DomainIntent::CreateTab {
+                        pane_id,
+                        cwd: None,
+                        kind: "image".into(),
+                        name: None,
+                        surface_params: serde_json::json!({}),
+                        activate: true,
+                    }
+                    .from_user_context_menu(),
+                );
             }
             Some(6) => {
                 if let Err(e) = self.save_pane_preset_from_pane_id(engine, pane_id) {
@@ -987,7 +1071,8 @@ impl MainView {
         // 사이드바 점유 표시와 같은 기준으로 강제 끊기 항목을 추가한다.
         if ws_idx < engine.workspaces().len()
             && engine
-                .live.occupancy
+                .live
+                .occupancy
                 .workspace_holder(
                     engine
                         .workspace_at(ws_idx)
@@ -1044,12 +1129,15 @@ impl MainView {
                 .workspace_at(ws_idx)
                 .expect("workspace index is valid")
                 .id;
-            self.state.dispatch_intent(crate::intent::Intent::Domain(
-                crate::app::command::DomainIntent::SetWorkspaceCategory {
-                    workspace_id: ws_id,
-                    category: cat_id,
-                },
-            ).from_user_context_menu());
+            self.state.dispatch_intent(
+                crate::intent::Intent::Domain(
+                    crate::app::command::DomainIntent::SetWorkspaceCategory {
+                        workspace_id: ws_id,
+                        category: cat_id,
+                    },
+                )
+                .from_user_context_menu(),
+            );
         }
     }
 
@@ -1773,7 +1861,14 @@ impl MainView {
                 }
                 Some(1) => {
                     // 사이드바는 다음 프레임 스냅샷에서 갱신 — redraw 만 요청.
-                    this.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::RemoveExplorerFavorite {path:path.clone()}).from_user_context_menu());
+                    this.state.dispatch_intent(
+                        crate::intent::Intent::Engine(
+                            crate::app::engine_action::EngineAction::RemoveExplorerFavorite {
+                                path: path.clone(),
+                            },
+                        )
+                        .from_user_context_menu(),
+                    );
                 }
                 _ => {}
             }

@@ -41,7 +41,7 @@ pub const ERR_EXPIRED_BEFORE_RUN: i32 = -32067;
 
 /// A durable operation survived its execution owner without a known result. Retrying the same key
 /// never resends the external action; reconciliation must establish its result first.
-pub const ERR_OPERATION_RECOVERY_REQUIRED:i32=-32068;
+pub const ERR_OPERATION_RECOVERY_REQUIRED: i32 = -32068;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcRequest {

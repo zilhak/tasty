@@ -280,7 +280,10 @@ fn a_convert_to_a_withdrawn_kind_leaves_no_recent_entry() {
     };
     register(&engine);
     assert_eq!(
-        engine.runtime.surface_registry.withdraw_plugin("com.x.probe"),
+        engine
+            .runtime
+            .surface_registry
+            .withdraw_plugin("com.x.probe"),
         vec!["probe_recent"]
     );
     let surface_id = *state

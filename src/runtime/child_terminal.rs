@@ -80,10 +80,12 @@ impl ChildTerminalRegistry {
         }
     }
 
-    pub(crate) fn reserve_index(&mut self,parent:u32)->Result<u32,String> {
-        let entry=self.next_index.entry(parent).or_insert(0);
-        let index=*entry;*entry=entry.checked_add(1).ok_or("child index space exhausted")?;
-        self.save();Ok(index)
+    pub(crate) fn reserve_index(&mut self, parent: u32) -> Result<u32, String> {
+        let entry = self.next_index.entry(parent).or_insert(0);
+        let index = *entry;
+        *entry = entry.checked_add(1).ok_or("child index space exhausted")?;
+        self.save();
+        Ok(index)
     }
 
     pub fn next_index_for(&mut self, parent: u32) -> u32 {

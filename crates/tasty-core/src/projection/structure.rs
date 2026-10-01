@@ -7,7 +7,9 @@ pub(super) fn apply_event(
     retired: &mut Vec<Retired>,
 ) -> Result<()> {
     match event {
-        DomainEvent::StructureReplaced {replacement,..}=>super::replacement::apply(engine,*replacement,retired)?,
+        DomainEvent::StructureReplaced { replacement, .. } => {
+            super::replacement::apply(engine, *replacement, retired)?
+        }
         DomainEvent::EngineIncarnationStarted { .. } | DomainEvent::EngineRetired { .. } => {}
         DomainEvent::CategoryCreated { id, name, index } => engine
             .categories
@@ -104,7 +106,7 @@ pub(super) fn apply_event(
             name,
             surface,
         } => {
-            let leaf = SurfaceDescriptor::new(surface.id,surface.kind.clone());
+            let leaf = SurfaceDescriptor::new(surface.id, surface.kind.clone());
             pane(engine, *pane_id)?
                 .tabs
                 .insert(*index, Tab::new_with_surface(*id, name.clone(), leaf));
@@ -124,8 +126,8 @@ pub(super) fn apply_event(
         DomainEvent::TabClosed { id } => {
             retired.push(Retired::Tab(layout::detach_tab(engine, *id)?))
         }
-        DomainEvent::SurfaceConverted { id,kind,.. } => {
-            let leaf = SurfaceDescriptor::new(*id,kind.clone());
+        DomainEvent::SurfaceConverted { id, kind, .. } => {
+            let leaf = SurfaceDescriptor::new(*id, kind.clone());
             let target_tab = engine.find_tab_for_surface(*id).ok_or("surface missing")?;
             let slot = tab(engine, target_tab)?
                 .layout_mut()
@@ -140,19 +142,19 @@ pub(super) fn apply_event(
         | DomainEvent::SurfaceMoved { .. }
         | DomainEvent::SurfaceClosed { .. }
         | DomainEvent::PaneRatioSet { .. }
-        | DomainEvent::SurfaceRatioSet { .. } => {
-            layout::apply_event(engine, event, retired)?
-        }
-        DomainEvent::UndoRecordAdded {..}|DomainEvent::UndoRecordConsumed {..}|DomainEvent::UndoRecordEvicted {..}
+        | DomainEvent::SurfaceRatioSet { .. } => layout::apply_event(engine, event, retired)?,
+        DomainEvent::UndoRecordAdded { .. }
+        | DomainEvent::UndoRecordConsumed { .. }
+        | DomainEvent::UndoRecordEvicted { .. }
         | DomainEvent::SurfaceCreationSeeded { .. }
         | DomainEvent::SurfaceSeedImported { .. }
         | DomainEvent::SurfaceDataRecorded { .. }
         | DomainEvent::SurfaceActivationChanged { .. }
         | DomainEvent::OperationPrepared { .. }
-        | DomainEvent::OperationResourcePrepared {..}
+        | DomainEvent::OperationResourcePrepared { .. }
         | DomainEvent::OperationAwaitingCleanup { .. }
         | DomainEvent::OperationFinished { .. }
-        | DomainEvent::OperationRecoveryObserved {..}
+        | DomainEvent::OperationRecoveryObserved { .. }
         | DomainEvent::OperationReconciled { .. } => {}
         DomainEvent::MetadataSet { .. } | DomainEvent::MetadataRemoved { .. } => {
             return Err("service metadata has no structural writer".into());

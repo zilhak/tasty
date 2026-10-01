@@ -540,7 +540,8 @@ impl MainView {
             {
                 let tab_index = state.navigation.tab_index(pane);
                 if let Some(tab) = pane.tabs.get(tab_index) {
-                    let current_name = engine.tab_display_name(tab,state.navigation.surface_id(tab));
+                    let current_name =
+                        engine.tab_display_name(tab, state.navigation.surface_id(tab));
                     let target = crate::state::RenameTarget::TabName { tab_id: tab.id };
                     let scope = target.popup_scope(engine);
                     state.dialogs.rename = Some((target, current_name));
@@ -788,8 +789,17 @@ impl MainView {
             let ws = engine.workspace_at(idx)?;
             ws.mirror.then_some(ws.id)
         });
-        let target=state.focused_surface_id(engine).and_then(|surface|crate::app::engine_action::SurfaceBinding::capture(engine,surface));
-        state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Screenshot {target,mirror_workspace:mirror_ws_id,view:state.webview_identity.clone()}).from_user_shortcut("screenshot"));
+        let target = state.focused_surface_id(engine).and_then(|surface| {
+            crate::app::engine_action::SurfaceBinding::capture(engine, surface)
+        });
+        state.dispatch_intent(
+            crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Screenshot {
+                target,
+                mirror_workspace: mirror_ws_id,
+                view: state.webview_identity.clone(),
+            })
+            .from_user_shortcut("screenshot"),
+        );
     }
 
     pub(crate) fn open_preset_apply_popup(

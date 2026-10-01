@@ -91,8 +91,8 @@ struct RestartCause {
 pub(super) struct RetirementControl {
     publications: std::collections::VecDeque<(HostCmd, usize)>,
     publication_bytes: usize,
-    cancelled: Vec<(u32,crate::host_cmd::SurfaceBinding)>,
-    responses: std::collections::VecDeque<(String,std::sync::Weak<()>,protocol::PluginResponse)>,
+    cancelled: Vec<(u32, crate::host_cmd::SurfaceBinding)>,
+    responses: std::collections::VecDeque<(String, std::sync::Weak<()>, protocol::PluginResponse)>,
     bytes: usize,
 }
 
@@ -153,34 +153,64 @@ impl PluginManager {
             self.retirement_control.publication_bytes = 0;
         }
         for _ in 0..64 {
-            if !halted && (self.retirement_control.publications.len() >= 256
-                || self.retirement_control.publication_bytes >= crate::process::channel_bytes::QUEUE_BYTES_LIMIT) {
-                return Err("plugin publication backlog exceeded its retirement-control budget".into());
+            if !halted
+                && (self.retirement_control.publications.len() >= 256
+                    || self.retirement_control.publication_bytes
+                        >= crate::process::channel_bytes::QUEUE_BYTES_LIMIT)
+            {
+                return Err(
+                    "plugin publication backlog exceeded its retirement-control budget".into(),
+                );
             }
-            let Ok(command) = self.host_cmd_rx.try_recv() else { break; };
+            let Ok(command) = self.host_cmd_rx.try_recv() else {
+                break;
+            };
             match command {
-                HostCmd::RemoteSurfaceRetired { surface_id, binding, completion } => {
-                    let cancelled = if let Some(index) = self.retirement_control.cancelled.iter()
-                        .position(|(id, old)| *id == surface_id && old.same_instance(&binding)) {
+                HostCmd::RemoteSurfaceRetired {
+                    surface_id,
+                    binding,
+                    completion,
+                } => {
+                    let cancelled = if let Some(index) = self
+                        .retirement_control
+                        .cancelled
+                        .iter()
+                        .position(|(id, old)| *id == surface_id && old.same_instance(&binding))
+                    {
                         self.retirement_control.cancelled.swap_remove(index);
                         true
-                    } else if let Some(index) = self.retirement_control.publications.iter()
-                        .position(|(command, _)| publication_binding(command)
-                            .is_some_and(|(id, old)| id == surface_id && old.same_instance(&binding))) {
+                    } else if let Some(index) = self
+                        .retirement_control
+                        .publications
+                        .iter()
+                        .position(|(command, _)| {
+                            publication_binding(command).is_some_and(|(id, old)| {
+                                id == surface_id && old.same_instance(&binding)
+                            })
+                        })
+                    {
                         // This exact owner is being retired before its queued create was sent.
                         // Other publications keep their FIFO order and are never cancelled here.
-                        let (_, bytes) = self.retirement_control.publications.remove(index).expect("located publication");
+                        let (_, bytes) = self
+                            .retirement_control
+                            .publications
+                            .remove(index)
+                            .expect("located publication");
                         self.retirement_control.publication_bytes -= bytes;
                         true
-                    } else { false };
+                    } else {
+                        false
+                    };
                     if cancelled {
-                        if let Some(completion) = completion { completion.finish(Ok(())); }
+                        if let Some(completion) = completion {
+                            completion.finish(Ok(()));
+                        }
                     } else if let Some(completion) = completion {
                         self.destroy_observed_remote_surface(surface_id, binding, completion);
                     } else {
                         self.destroy_bound_remote_surface(surface_id, &binding);
                     }
-                },
+                }
                 publication => {
                     if halted {
                         if let Some((surface, binding)) = publication_binding(&publication) {
@@ -188,57 +218,114 @@ impl PluginManager {
                         }
                     } else {
                         let bytes = publication_weight(&publication);
-                        self.retirement_control.publication_bytes = self.retirement_control.publication_bytes.saturating_add(bytes);
-                        self.retirement_control.publications.push_back((publication, bytes));
+                        self.retirement_control.publication_bytes = self
+                            .retirement_control
+                            .publication_bytes
+                            .saturating_add(bytes);
+                        self.retirement_control
+                            .publications
+                            .push_back((publication, bytes));
                     }
-                },
-            }
-        }
-        let plugins:Vec<_>=self.processes.keys().cloned().collect();
-        let mut remaining=64usize;
-        for plugin in plugins {
-            while remaining>0 && self.retirement_control.bytes<crate::process::channel_bytes::QUEUE_BYTES_LIMIT {
-                let Some(process)=self.processes.get(&plugin) else {break;};
-                let binding=process.reply_binding();
-                let response=match process.resp_rx.try_recv() {
-                    Ok(response)=>response,
-                    Err(std::sync::mpsc::TryRecvError::Empty)=>break,
-                    Err(std::sync::mpsc::TryRecvError::Disconnected)=> {
-                        let ids:Vec<_>=self.pending_requests.iter().filter_map(|(id,pending)|
-                            (pending.to==plugin && matches!(pending.kind,PendingRequestKind::SurfaceRetire {..})).then_some(*id)).collect();
-                        for id in ids {self.pending_requests.remove(&id);}
-                        break;
-                    },
-                };
-                remaining-=1;
-                if self.pending_requests.get(&response.id).is_some_and(|pending|matches!(pending.kind,PendingRequestKind::SurfaceRetire {..})) {
-                    self.handle_plugin_response(&plugin,response);
-                } else {
-                    // Match the channel policy: one already-received oversized response may be
-                    // retained, then further reads stop. Ordinary callbacks are never run here.
-                    let bytes=serde_json::to_vec(&response).map_or(crate::process::channel_bytes::QUEUE_BYTES_LIMIT,|bytes|bytes.len());
-                    self.retirement_control.bytes=self.retirement_control.bytes.saturating_add(bytes).saturating_add(plugin.len());
-                    self.retirement_control.responses.push_back((plugin.clone(),binding,response));
                 }
             }
         }
-        let obsolete:Vec<_>=self.pending_requests.iter().filter_map(|(id,pending)|match &pending.kind {
-            PendingRequestKind::SurfaceRetire {process_binding,..} if self.processes.get(&pending.to)
-                .is_none_or(|process|!process.reply_binding().ptr_eq(process_binding))=>Some(*id),
-            _=>None,
-        }).collect();
-        for id in obsolete {self.pending_requests.remove(&id);}
-        if !halted && self.retirement_control.bytes >= crate::process::channel_bytes::QUEUE_BYTES_LIMIT {
+        let plugins: Vec<_> = self.processes.keys().cloned().collect();
+        let mut remaining = 64usize;
+        for plugin in plugins {
+            while remaining > 0
+                && self.retirement_control.bytes < crate::process::channel_bytes::QUEUE_BYTES_LIMIT
+            {
+                let Some(process) = self.processes.get(&plugin) else {
+                    break;
+                };
+                let binding = process.reply_binding();
+                let response = match process.resp_rx.try_recv() {
+                    Ok(response) => response,
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        let ids: Vec<_> = self
+                            .pending_requests
+                            .iter()
+                            .filter_map(|(id, pending)| {
+                                (pending.to == plugin
+                                    && matches!(
+                                        pending.kind,
+                                        PendingRequestKind::SurfaceRetire { .. }
+                                    ))
+                                .then_some(*id)
+                            })
+                            .collect();
+                        for id in ids {
+                            self.pending_requests.remove(&id);
+                        }
+                        break;
+                    }
+                };
+                remaining -= 1;
+                if self
+                    .pending_requests
+                    .get(&response.id)
+                    .is_some_and(|pending| {
+                        matches!(pending.kind, PendingRequestKind::SurfaceRetire { .. })
+                    })
+                {
+                    self.handle_plugin_response(&plugin, response);
+                } else {
+                    // Match the channel policy: one already-received oversized response may be
+                    // retained, then further reads stop. Ordinary callbacks are never run here.
+                    let bytes = serde_json::to_vec(&response)
+                        .map_or(crate::process::channel_bytes::QUEUE_BYTES_LIMIT, |bytes| {
+                            bytes.len()
+                        });
+                    self.retirement_control.bytes = self
+                        .retirement_control
+                        .bytes
+                        .saturating_add(bytes)
+                        .saturating_add(plugin.len());
+                    self.retirement_control.responses.push_back((
+                        plugin.clone(),
+                        binding,
+                        response,
+                    ));
+                }
+            }
+        }
+        let obsolete: Vec<_> = self
+            .pending_requests
+            .iter()
+            .filter_map(|(id, pending)| match &pending.kind {
+                PendingRequestKind::SurfaceRetire {
+                    process_binding, ..
+                } if self
+                    .processes
+                    .get(&pending.to)
+                    .is_none_or(|process| !process.reply_binding().ptr_eq(process_binding)) =>
+                {
+                    Some(*id)
+                }
+                _ => None,
+            })
+            .collect();
+        for id in obsolete {
+            self.pending_requests.remove(&id);
+        }
+        if !halted
+            && self.retirement_control.bytes >= crate::process::channel_bytes::QUEUE_BYTES_LIMIT
+        {
             return Err("plugin response backlog exceeded its retirement-control budget".into());
         }
         Ok(())
     }
     fn restore_retirement_control_responses(&mut self) {
-        let responses=std::mem::take(&mut self.retirement_control.responses);
-        self.retirement_control.bytes=0;
-        for (plugin,binding,response) in responses {
-            if self.processes.get(&plugin).is_some_and(|process|process.reply_binding().ptr_eq(&binding)) {
-                self.handle_plugin_response(&plugin,response);
+        let responses = std::mem::take(&mut self.retirement_control.responses);
+        self.retirement_control.bytes = 0;
+        for (plugin, binding, response) in responses {
+            if self
+                .processes
+                .get(&plugin)
+                .is_some_and(|process| process.reply_binding().ptr_eq(&binding))
+            {
+                self.handle_plugin_response(&plugin, response);
             }
         }
     }
@@ -416,9 +503,11 @@ impl PluginManager {
                     .get(id)
                     .cloned()
                     .unwrap_or_else(|| Arc::new(HashSet::new()));
-                let Some(process)=self.processes.get(id) else {return;};
+                let Some(process) = self.processes.get(id) else {
+                    return;
+                };
                 out.new_calls.push(PendingPluginCall {
-                    binding:process.reply_binding(),
+                    binding: process.reply_binding(),
                     plugin_id: id.to_string(),
                     call_id,
                     method,
@@ -510,7 +599,9 @@ impl PluginManager {
     /// 현재 등록된 권한으로 바꾼다. 아직 모르는 플러그인은 수집 당시 값을 유지한다.
     fn restamp_permissions(&self, calls: &mut [PendingPluginCall]) {
         for call in calls.iter_mut() {
-            if !self.plugin_call_is_current(call) {continue;}
+            if !self.plugin_call_is_current(call) {
+                continue;
+            }
             if let Some(perms) = self.plugin_permissions.get(&call.plugin_id) {
                 call.permissions = perms.clone();
             }
@@ -738,41 +829,77 @@ impl PluginManager {
         surface_id: u32,
         binding: crate::host_cmd::SurfaceBinding,
     ) -> Result<crate::host_cmd::RemoteRetirementReceipt, String> {
-        let (receipt, completion) = crate::host_cmd::RemoteRetirementReceipt::pending(surface_id,binding.clone());
-        self.host_cmd_tx.send(HostCmd::RemoteSurfaceRetired {surface_id,binding,completion:Some(completion)})
+        let (receipt, completion) =
+            crate::host_cmd::RemoteRetirementReceipt::pending(surface_id, binding.clone());
+        self.host_cmd_tx
+            .send(HostCmd::RemoteSurfaceRetired {
+                surface_id,
+                binding,
+                completion: Some(completion),
+            })
             .map_err(|error| error.to_string())?;
         Ok(receipt)
     }
 
     pub fn enqueue_observed_mesh_retirement(
-        &mut self, surface_id:u32, binding:&crate::host_cmd::MeshBinding,
-    ) -> Result<crate::host_cmd::RemoteRetirementReceipt,String> {
-        use crate::host_cmd::{MeshPublication,RemoteRetirementReceipt};
-        let mut publication=binding.publication.lock().map_err(|_| "mesh binding poisoned")?;
-        if let MeshPublication::Retiring(receipt)=&*publication {return Ok(receipt.clone());}
-        let mut receipts=Vec::new();
+        &mut self,
+        surface_id: u32,
+        binding: &crate::host_cmd::MeshBinding,
+    ) -> Result<crate::host_cmd::RemoteRetirementReceipt, String> {
+        use crate::host_cmd::{MeshPublication, RemoteRetirementReceipt};
+        let mut publication = binding
+            .publication
+            .lock()
+            .map_err(|_| "mesh binding poisoned")?;
+        if let MeshPublication::Retiring(receipt) = &*publication {
+            return Ok(receipt.clone());
+        }
+        let mut receipts = Vec::new();
         match &*publication {
             MeshPublication::NeverSent => {
-                let (receipt,completion)=RemoteRetirementReceipt::pending(surface_id,binding.binding());
-                completion.finish(Ok(()));receipts.push(receipt);
-            },
-            MeshPublication::Sent(generations) => for generation in generations {
-                let (receipt,completion)=RemoteRetirementReceipt::pending(surface_id,binding.binding());
-                let crate::host_cmd::MeshBootstrap {plugin,process,request:bootstrap}=generation;
-                if let Some(owner)=self.processes.get(plugin).filter(|owner|owner.reply_binding().ptr_eq(process)) {
-                    let id=self.next_request_id.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
-                    let request=protocol::PluginRequest::new(protocol::METHOD_SURFACE_DESTROY,json!({"surface_id":surface_id}),id);
-                    match owner.try_send_request(request) {
+                let (receipt, completion) =
+                    RemoteRetirementReceipt::pending(surface_id, binding.binding());
+                completion.finish(Ok(()));
+                receipts.push(receipt);
+            }
+            MeshPublication::Sent(generations) => {
+                for generation in generations {
+                    let (receipt, completion) =
+                        RemoteRetirementReceipt::pending(surface_id, binding.binding());
+                    let crate::host_cmd::MeshBootstrap {
+                        plugin,
+                        process,
+                        request: bootstrap,
+                    } = generation;
+                    if let Some(owner) = self
+                        .processes
+                        .get(plugin)
+                        .filter(|owner| owner.reply_binding().ptr_eq(process))
+                    {
+                        let id = self
+                            .next_request_id
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let request = protocol::PluginRequest::new(
+                            protocol::METHOD_SURFACE_DESTROY,
+                            json!({"surface_id":surface_id}),
+                            id,
+                        );
+                        match owner.try_send_request(request) {
                         Ok(()) => {self.pending_requests.insert(id,super::PendingRequest::now(plugin,PendingRequestKind::SurfaceRetire {completion,process_binding:process.clone()}));},
                         Err(error) => completion.finish(Err(format!("mesh bootstrap {bootstrap} destruction was not acknowledged: {error}"))),
                     }
-                } else {completion.finish(Err(format!("mesh bootstrap {bootstrap} original process is unavailable")));}
-                receipts.push(receipt);
-            },
+                    } else {
+                        completion.finish(Err(format!(
+                            "mesh bootstrap {bootstrap} original process is unavailable"
+                        )));
+                    }
+                    receipts.push(receipt);
+                }
+            }
             MeshPublication::Retiring(_) => unreachable!(),
         }
-        let receipt=RemoteRetirementReceipt::group(surface_id,binding.binding(),receipts);
-        *publication=MeshPublication::Retiring(receipt.clone());
+        let receipt = RemoteRetirementReceipt::group(surface_id, binding.binding(), receipts);
+        *publication = MeshPublication::Retiring(receipt.clone());
         Ok(receipt)
     }
 
@@ -783,11 +910,15 @@ impl PluginManager {
         completion: crate::host_cmd::RemoteRetirementCompletion,
     ) {
         let Some(entry) = self.surfaces.get(&surface_id) else {
-            completion.finish(Err("original remote registration is absent; destruction is unconfirmed".into()));
+            completion.finish(Err(
+                "original remote registration is absent; destruction is unconfirmed".into(),
+            ));
             return;
         };
         if !binding.matches(&entry.handles) {
-            completion.finish(Err("remote registration changed before destruction acknowledgement".into()));
+            completion.finish(Err(
+                "remote registration changed before destruction acknowledgement".into(),
+            ));
             return;
         }
         let process_binding = match &entry.publication {
@@ -796,23 +927,47 @@ impl PluginManager {
         };
         let plugin_id = entry.plugin_id.clone();
         if let Some(frame) = self.egui_mesh_frames.remove(&surface_id) {
-            self.release_plugin_buffer(&frame.plugin_id,frame.buffer_id);
+            self.release_plugin_buffer(&frame.plugin_id, frame.buffer_id);
         }
         self.surfaces.remove(&surface_id);
         let Some(process_binding) = process_binding else {
             completion.finish(Ok(()));
             return;
         };
-        let Some(process) = self.processes.get(&plugin_id)
-            .filter(|process| process.reply_binding().ptr_eq(&process_binding)) else {
-            completion.finish(Err("original plugin process is unavailable for destruction".into()));
+        let Some(process) = self
+            .processes
+            .get(&plugin_id)
+            .filter(|process| process.reply_binding().ptr_eq(&process_binding))
+        else {
+            completion.finish(Err(
+                "original plugin process is unavailable for destruction".into(),
+            ));
             return;
         };
-        let id = self.next_request_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let request = protocol::PluginRequest::new(protocol::METHOD_SURFACE_DESTROY,json!({"surface_id":surface_id}),id);
+        let id = self
+            .next_request_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let request = protocol::PluginRequest::new(
+            protocol::METHOD_SURFACE_DESTROY,
+            json!({"surface_id":surface_id}),
+            id,
+        );
         match process.try_send_request(request) {
-            Ok(()) => {self.pending_requests.insert(id,super::PendingRequest::now(&plugin_id,PendingRequestKind::SurfaceRetire {completion,process_binding}));},
-            Err(error) => completion.finish(Err(format!("remote destruction request was not acknowledged: {error}"))),
+            Ok(()) => {
+                self.pending_requests.insert(
+                    id,
+                    super::PendingRequest::now(
+                        &plugin_id,
+                        PendingRequestKind::SurfaceRetire {
+                            completion,
+                            process_binding,
+                        },
+                    ),
+                );
+            }
+            Err(error) => completion.finish(Err(format!(
+                "remote destruction request was not acknowledged: {error}"
+            ))),
         }
     }
 
@@ -846,13 +1001,16 @@ impl PluginManager {
         if let Some(entry) = self.surfaces.remove(&surface_id) {
             match &entry.publication {
                 super::RemotePublication::NeverSent => return,
-                super::RemotePublication::Sent(binding) if self.processes.get(&entry.plugin_id)
-                    .is_some_and(|process| process.reply_binding().ptr_eq(binding)) => {},
+                super::RemotePublication::Sent(binding)
+                    if self
+                        .processes
+                        .get(&entry.plugin_id)
+                        .is_some_and(|process| process.reply_binding().ptr_eq(binding)) => {}
                 super::RemotePublication::Sent(_) => {
                     tracing::warn!(surface_id, plugin = %entry.plugin_id,
                         "original remote process is unavailable; destruction remains unconfirmed");
                     return;
-                },
+                }
             }
             self.send_surface_request(
                 &entry.plugin_id,
@@ -896,15 +1054,16 @@ impl PluginManager {
 
     pub(super) fn drain_host_cmds(&mut self) {
         loop {
-            let cmd = if let Some((command, bytes)) = self.retirement_control.publications.pop_front() {
-                self.retirement_control.publication_bytes -= bytes;
-                command
-            } else {
-                match self.host_cmd_rx.try_recv() {
-                    Ok(command) => command,
-                    Err(_) => break,
-                }
-            };
+            let cmd =
+                if let Some((command, bytes)) = self.retirement_control.publications.pop_front() {
+                    self.retirement_control.publication_bytes -= bytes;
+                    command
+                } else {
+                    match self.host_cmd_rx.try_recv() {
+                        Ok(command) => command,
+                        Err(_) => break,
+                    }
+                };
             match cmd {
                 HostCmd::RemoteSurfaceRetired {
                     surface_id,
@@ -912,8 +1071,10 @@ impl PluginManager {
                     completion,
                 } => {
                     if let Some(completion) = completion {
-                        self.destroy_observed_remote_surface(surface_id,binding,completion);
-                    } else {self.destroy_bound_remote_surface(surface_id, &binding);}
+                        self.destroy_observed_remote_surface(surface_id, binding, completion);
+                    } else {
+                        self.destroy_bound_remote_surface(surface_id, &binding);
+                    }
                 }
                 HostCmd::RemoteSurfaceCreated {
                     surface_id,
@@ -939,9 +1100,14 @@ impl PluginManager {
                             binding,
                         },
                     );
-                    self.surfaces.insert(surface_id, RemoteSurfaceEntry {
-                        plugin_id, handles, publication,
-                    });
+                    self.surfaces.insert(
+                        surface_id,
+                        RemoteSurfaceEntry {
+                            plugin_id,
+                            handles,
+                            publication,
+                        },
+                    );
                 }
                 HostCmd::RemoteSurfaceRestored {
                     surface_id,
@@ -964,9 +1130,14 @@ impl PluginManager {
                             binding,
                         },
                     );
-                    self.surfaces.insert(surface_id, RemoteSurfaceEntry {
-                        plugin_id, handles, publication,
-                    });
+                    self.surfaces.insert(
+                        surface_id,
+                        RemoteSurfaceEntry {
+                            plugin_id,
+                            handles,
+                            publication,
+                        },
+                    );
                 }
             }
         }
@@ -975,22 +1146,52 @@ impl PluginManager {
 
 fn publication_binding(command: &HostCmd) -> Option<(u32, crate::host_cmd::SurfaceBinding)> {
     match command {
-        HostCmd::RemoteSurfaceCreated { surface_id, handles, .. }
-        | HostCmd::RemoteSurfaceRestored { surface_id, handles, .. } => Some((*surface_id, handles.binding())),
+        HostCmd::RemoteSurfaceCreated {
+            surface_id,
+            handles,
+            ..
+        }
+        | HostCmd::RemoteSurfaceRestored {
+            surface_id,
+            handles,
+            ..
+        } => Some((*surface_id, handles.binding())),
         HostCmd::RemoteSurfaceRetired { .. } => None,
     }
 }
 
 fn publication_weight(command: &HostCmd) -> usize {
     let (plugin, kind, payload, cwd) = match command {
-        HostCmd::RemoteSurfaceCreated { plugin_id, kind, params, cwd, .. } =>
-            (plugin_id, kind, params, cwd.as_ref().map_or(0, |path| path.as_os_str().len())),
-        HostCmd::RemoteSurfaceRestored { plugin_id, kind, data, .. } => (plugin_id, kind, data, 0),
+        HostCmd::RemoteSurfaceCreated {
+            plugin_id,
+            kind,
+            params,
+            cwd,
+            ..
+        } => (
+            plugin_id,
+            kind,
+            params,
+            cwd.as_ref().map_or(0, |path| path.as_os_str().len()),
+        ),
+        HostCmd::RemoteSurfaceRestored {
+            plugin_id,
+            kind,
+            data,
+            ..
+        } => (plugin_id, kind, data, 0),
         HostCmd::RemoteSurfaceRetired { .. } => return std::mem::size_of::<HostCmd>(),
     };
-    std::mem::size_of::<HostCmd>().saturating_add(plugin.len()).saturating_add(kind.len())
-        .saturating_add(cwd).saturating_add(serde_json::to_vec(payload)
-            .map_or(crate::process::channel_bytes::QUEUE_BYTES_LIMIT, |bytes| bytes.len()))
+    std::mem::size_of::<HostCmd>()
+        .saturating_add(plugin.len())
+        .saturating_add(kind.len())
+        .saturating_add(cwd)
+        .saturating_add(
+            serde_json::to_vec(payload)
+                .map_or(crate::process::channel_bytes::QUEUE_BYTES_LIMIT, |bytes| {
+                    bytes.len()
+                }),
+        )
 }
 
 #[cfg(test)]

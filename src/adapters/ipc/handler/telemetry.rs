@@ -128,7 +128,9 @@ pub(crate) fn record_rss_sample(
     rss_bytes: u64,
     ts: u64,
 ) {
-    let Some(anomaly)=core.record_rss_sample(agent,rss_bytes,ts) else {return;};
+    let Some(anomaly) = core.record_rss_sample(agent, rss_bytes, ts) else {
+        return;
+    };
     fire_anomaly_notification(window, out, engine, &anomaly);
 }
 

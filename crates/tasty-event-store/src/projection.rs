@@ -42,9 +42,16 @@ impl EventStore {
     ) -> StoreResult<()> {
         check_keys(write)?;
         let tx = self.write_tx(epoch)?;
-        crate::scoped_projection::require_global(&tx, &write.consumer_id, write.projection_version)?;
+        crate::scoped_projection::require_global(
+            &tx,
+            &write.consumer_id,
+            write.projection_version,
+        )?;
         // An incremental delta cannot repair rows whose missing history was already compacted.
-        crate::retention::require_cursor(&tx, checkpoint_batch(&tx, &write.consumer_id, write.projection_version)?)?;
+        crate::retention::require_cursor(
+            &tx,
+            checkpoint_batch(&tx, &write.consumer_id, write.projection_version)?,
+        )?;
         apply_rows(&tx, write)?;
         advance_checkpoint(
             &tx,
@@ -65,11 +72,22 @@ impl EventStore {
     ) -> StoreResult<()> {
         check_keys(write)?;
         let tx = self.write_tx(epoch)?;
-        crate::scoped_projection::require_global(&tx, &write.consumer_id, write.projection_version)?;
-        tx.execute("DELETE FROM projection_rows WHERE consumer_id = ?1 AND projection_version = ?2",
-            params![write.consumer_id, write.projection_version])?;
+        crate::scoped_projection::require_global(
+            &tx,
+            &write.consumer_id,
+            write.projection_version,
+        )?;
+        tx.execute(
+            "DELETE FROM projection_rows WHERE consumer_id = ?1 AND projection_version = ?2",
+            params![write.consumer_id, write.projection_version],
+        )?;
         apply_rows(&tx, write)?;
-        advance_checkpoint(&tx, &write.consumer_id, write.projection_version, write.batch_id)?;
+        advance_checkpoint(
+            &tx,
+            &write.consumer_id,
+            write.projection_version,
+            write.batch_id,
+        )?;
         tx.commit()?;
         Ok(())
     }

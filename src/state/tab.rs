@@ -18,25 +18,49 @@ impl RequestContext {
     pub fn add_kind_tab_by_owner(
         &mut self,
         engine: &crate::runtime::engine_read::EngineRead<'_>,
-        owner_surface_id:u32,
-        kind:&str,
-        params:&Value,
-    )->anyhow::Result<()> {
-        let (_,pane_id)=engine.find_workspace_index_for_surface(owner_surface_id)
-            .ok_or_else(||anyhow::anyhow!("owner surface {owner_surface_id} not found"))?;
-        let cwd=self.resolve_inherit_cwd(engine);
-        self.dispatch_intent(crate::app::command::DomainIntent::CreateTab {
-            pane_id,cwd,kind:kind.into(),name:None,surface_params:params.clone(),activate:true,
-        }.from_user_context_menu());
+        owner_surface_id: u32,
+        kind: &str,
+        params: &Value,
+    ) -> anyhow::Result<()> {
+        let (_, pane_id) = engine
+            .find_workspace_index_for_surface(owner_surface_id)
+            .ok_or_else(|| anyhow::anyhow!("owner surface {owner_surface_id} not found"))?;
+        let cwd = self.resolve_inherit_cwd(engine);
+        self.dispatch_intent(
+            crate::app::command::DomainIntent::CreateTab {
+                pane_id,
+                cwd,
+                kind: kind.into(),
+                name: None,
+                surface_params: params.clone(),
+                activate: true,
+            }
+            .from_user_context_menu(),
+        );
         Ok(())
     }
 
     #[cfg(any(feature = "gui", test))]
-    pub fn set_explorer_cwd(&mut self,engine:&crate::runtime::engine_read::EngineRead<'_>,sid:u32,folder:std::path::PathBuf) {
-        let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,sid) else {return;};
-        self.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::ExplorerCwd {target,folder}).from_user_context_menu());
-        #[cfg(feature="gui")]
-        if let Some(view)=self.explorer_views.get_mut(sid) {view.request_reload();}
+    pub fn set_explorer_cwd(
+        &mut self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+        sid: u32,
+        folder: std::path::PathBuf,
+    ) {
+        let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, sid) else {
+            return;
+        };
+        self.dispatch_intent(
+            crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::ExplorerCwd {
+                target,
+                folder,
+            })
+            .from_user_context_menu(),
+        );
+        #[cfg(feature = "gui")]
+        if let Some(view) = self.explorer_views.get_mut(sid) {
+            view.request_reload();
+        }
     }
 
     #[cfg(any(feature = "gui", test))]
@@ -81,12 +105,7 @@ impl RequestContext {
 
     /// 지정한 pane의 탭을 닫는다. 포커스와 무관하게 사본 저장·정리·dirty 갱신을 수행한다.
     #[cfg(feature = "gui")]
-    pub fn close_tab(
-        &mut self,
-        engine: &EngineRead<'_>,
-        pane_id: u32,
-        tab_index: usize,
-    ) -> bool {
+    pub fn close_tab(&mut self, engine: &EngineRead<'_>, pane_id: u32, tab_index: usize) -> bool {
         let mirror_op = self
             .active_workspace(engine)
             .pane_layout()
@@ -135,8 +154,12 @@ impl RequestContext {
     /// AppServices 탭 닫기로 트리를 바꾸고 복원 기록을 남긴 뒤 창 쪽 정리와 알림을 이어서 한다.
     #[cfg(any(feature = "gui", test))]
     fn close_tab_through_core(&mut self, engine: &EngineRead<'_>, tab_id: u32) -> bool {
-        if engine.find_pane_for_tab(tab_id).is_none() {return false;}
-        self.dispatch_intent(crate::app::command::DomainIntent::CloseTab {tab_id}.from_user_context_menu());
+        if engine.find_pane_for_tab(tab_id).is_none() {
+            return false;
+        }
+        self.dispatch_intent(
+            crate::app::command::DomainIntent::CloseTab { tab_id }.from_user_context_menu(),
+        );
         true
     }
 

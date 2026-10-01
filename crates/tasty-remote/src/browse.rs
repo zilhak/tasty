@@ -117,13 +117,20 @@ pub fn probe_method(
     method: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value> {
-    probe_method_bound(port,method,params,None)
+    probe_method_bound(port, method, params, None)
 }
 
-pub(crate) fn probe_method_bound(port:u16,method:&str,params:serde_json::Value,attempt:Option<&crate::outbound::AttemptToken>)->Result<serde_json::Value> {
+pub(crate) fn probe_method_bound(
+    port: u16,
+    method: &str,
+    params: serde_json::Value,
+    attempt: Option<&crate::outbound::AttemptToken>,
+) -> Result<serde_json::Value> {
     let stream = TcpStream::connect(("127.0.0.1", port))
         .with_context(|| format!("터널 localport 127.0.0.1:{port} 연결 실패"))?;
-    if let Some(attempt)=attempt {attempt.register_socket(&stream)?;}
+    if let Some(attempt) = attempt {
+        attempt.register_socket(&stream)?;
+    }
     stream.set_read_timeout(Some(PROBE_TIMEOUT))?;
     stream.set_write_timeout(Some(PROBE_TIMEOUT))?;
 
@@ -163,14 +170,19 @@ pub(crate) fn probe_method_bound(port:u16,method:&str,params:serde_json::Value,a
 
 /// 접속된 포트로 `workspace.list` + `attach.list` 를 조회해 병합한 목록을 만든다.
 /// 터널 수명은 호출자가 관리한다(browse 는 조회 후 Drop, attach 는 별개).
-pub fn browse_via_port(port: u16) -> Result<Vec<RemoteWorkspace>> {browse_via_port_bound(port,None)}
+pub fn browse_via_port(port: u16) -> Result<Vec<RemoteWorkspace>> {
+    browse_via_port_bound(port, None)
+}
 
-pub(crate) fn browse_via_port_bound(port:u16,attempt:Option<&crate::outbound::AttemptToken>)->Result<Vec<RemoteWorkspace>> {
-    let ws_list = probe_method_bound(port, "workspace.list", serde_json::json!({}),attempt)
+pub(crate) fn browse_via_port_bound(
+    port: u16,
+    attempt: Option<&crate::outbound::AttemptToken>,
+) -> Result<Vec<RemoteWorkspace>> {
+    let ws_list = probe_method_bound(port, "workspace.list", serde_json::json!({}), attempt)
         .context("원격 workspace.list 조회 실패")?;
     // attach.list 는 병합용 부가 정보 — 실패해도 목록 자체는 반환(점유 표시만 생략).
-    let attach_list =
-        probe_method_bound(port, "attach.list", serde_json::json!({}),attempt).unwrap_or(serde_json::Value::Null);
+    let attach_list = probe_method_bound(port, "attach.list", serde_json::json!({}), attempt)
+        .unwrap_or(serde_json::Value::Null);
 
     // workspace 점유만 합친다. workspace.list에 멤버 surface ID가 없어 단일 surface 점유는 판정하지 않는다.
     let mut ws_holders: std::collections::HashMap<u32, Option<u32>> =

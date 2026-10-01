@@ -9,16 +9,24 @@ pub(crate) struct PluginDisplay<'a> {
 }
 
 impl<'a> PluginDisplay<'a> {
-    pub(crate) fn new(manager: &'a PluginManager) -> Self { Self { manager } }
-    pub(crate) fn attention_count(self) -> usize { self.manager.attention_count() }
+    pub(crate) fn new(manager: &'a PluginManager) -> Self {
+        Self { manager }
+    }
+    pub(crate) fn attention_count(self) -> usize {
+        self.manager.attention_count()
+    }
     pub(crate) fn popup_instances(self) -> impl Iterator<Item = (u64, &'a PopupInstance)> {
         self.manager.popup_instances()
     }
     pub(crate) fn banner_instances(self) -> impl Iterator<Item = (u64, &'a BannerInstance)> {
         self.manager.banner_instances()
     }
-    pub(crate) fn needs_egui_mesh_bootstrap(self, plugin:&str, binding:&crate::plugin_bridge::host_cmd::MeshBinding)->bool {
-        self.manager.needs_egui_mesh_bootstrap(plugin,binding)
+    pub(crate) fn needs_egui_mesh_bootstrap(
+        self,
+        plugin: &str,
+        binding: &crate::plugin_bridge::host_cmd::MeshBinding,
+    ) -> bool {
+        self.manager.needs_egui_mesh_bootstrap(plugin, binding)
     }
     pub(crate) fn egui_mesh_frame(self, surface: u32) -> Option<&'a EguiMeshFrame> {
         self.manager.egui_mesh_frame(surface)
@@ -36,7 +44,10 @@ impl<'a> PluginDisplay<'a> {
         Some(unsafe { mapping.as_slice() })
     }
     pub(crate) fn shortcut_epoch(self) -> (u64, u64) {
-        (self.manager.command_registry.revision(), self.manager.config.shortcut_revision())
+        (
+            self.manager.command_registry.revision(),
+            self.manager.config.shortcut_revision(),
+        )
     }
     pub(crate) fn command_bindings(self, keys: &tasty_settings::KeybindingSettings) -> Vec<String> {
         crate::plugin_bridge::key_dispatch::all_command_bindings(self.manager, keys)
@@ -48,24 +59,32 @@ impl<'a> PluginDisplay<'a> {
 /// manager replacement must fence these queued outputs before resetting instance counters.
 #[derive(Clone, Debug)]
 pub(crate) enum PluginDisplayRequest {
-    Popup { plugin: String, params: PopupSetContextParams },
-    Banner { plugin: String, params: BannerSetContextParams },
+    Popup {
+        plugin: String,
+        params: PopupSetContextParams,
+    },
+    Banner {
+        plugin: String,
+        params: BannerSetContextParams,
+    },
 }
 
 impl PluginDisplayRequest {
     pub(crate) fn apply(&self, manager: &PluginManager) {
         match self {
             Self::Popup { plugin, params } => {
-                if manager.popup_instances().any(|(id, instance)| {
-                    id == params.instance_id && instance.plugin_id == *plugin
-                }) {
+                if manager
+                    .popup_instances()
+                    .any(|(id, instance)| id == params.instance_id && instance.plugin_id == *plugin)
+                {
                     manager.send_popup_set_context(plugin, params);
                 }
             }
             Self::Banner { plugin, params } => {
-                if manager.banner_instances().any(|(id, instance)| {
-                    id == params.instance_id && instance.plugin_id == *plugin
-                }) {
+                if manager
+                    .banner_instances()
+                    .any(|(id, instance)| id == params.instance_id && instance.plugin_id == *plugin)
+                {
                     manager.send_banner_set_context(plugin, params);
                 }
             }

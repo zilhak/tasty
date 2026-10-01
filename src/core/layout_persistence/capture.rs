@@ -2,9 +2,9 @@
 
 use serde_json::json;
 
+use crate::model::{Deferred, Pane, PaneNode, Surface, SurfaceLayout, Tab, Workspace};
 use crate::runtime::engine_access::EngineMut;
 use crate::runtime::surface_registry::SurfaceKindRegistry;
-use crate::model::{Deferred, Pane, PaneNode, Surface, SurfaceLayout, Tab, Workspace};
 
 use super::LAYOUT_VERSION;
 use super::schema::{
@@ -30,58 +30,149 @@ struct CaptureCtx<'a> {
 
 impl SavedLayout {
     /// Capture runtime instances before walking descriptors. Missing owners abort the export.
-    pub fn capture(engine:&mut EngineMut<'_>,active_workspace:usize,presentation:&dyn crate::model::StructurePresentation)->Result<Self,String> {
-        let registry=engine.runtime.surface_registry.clone();
-        let memory=engine.runtime.memory.clone();
-        let capture_scrollback=engine.runtime.settings.general.restore_surface_content;
-        let mut seen_refs=SeenRefs::new();
-        let active_workspace=engine.workspaces().iter().take(active_workspace).filter(|workspace|!workspace.mirror).count();
-        let ids:Vec<_>=engine.core.local_workspaces().iter().flat_map(|workspace|workspace.all_surface_ids()).collect();
-        let mut captured=std::collections::HashMap::new();
-        let mut ctx=CaptureCtx {presentation,registry:&registry,capture_scrollback,memory:&memory,seen_refs:&mut seen_refs,terminals:&mut engine.runtime.terminals};
+    pub fn capture(
+        engine: &mut EngineMut<'_>,
+        active_workspace: usize,
+        presentation: &dyn crate::model::StructurePresentation,
+    ) -> Result<Self, String> {
+        let registry = engine.runtime.surface_registry.clone();
+        let memory = engine.runtime.memory.clone();
+        let capture_scrollback = engine.runtime.settings.general.restore_surface_content;
+        let mut seen_refs = SeenRefs::new();
+        let active_workspace = engine
+            .workspaces()
+            .iter()
+            .take(active_workspace)
+            .filter(|workspace| !workspace.mirror)
+            .count();
+        let ids: Vec<_> = engine
+            .core
+            .local_workspaces()
+            .iter()
+            .flat_map(|workspace| workspace.all_surface_ids())
+            .collect();
+        let mut captured = std::collections::HashMap::new();
+        let mut ctx = CaptureCtx {
+            presentation,
+            registry: &registry,
+            capture_scrollback,
+            memory: &memory,
+            seen_refs: &mut seen_refs,
+            terminals: &mut engine.runtime.terminals,
+        };
         for id in ids {
-            let instance=engine.runtime.surfaces.get_mut(&id).ok_or_else(||format!("surface {id} has no runtime owner during capture"))?;
-            let snapshot=SavedSurface::capture_surface(instance.as_mut(),&mut ctx);
-            if captured.insert(id,snapshot).is_some() {return Err(format!("surface {id} appears twice in the committed structure"));}
+            let instance = engine
+                .runtime
+                .surfaces
+                .get_mut(&id)
+                .ok_or_else(|| format!("surface {id} has no runtime owner during capture"))?;
+            let snapshot = SavedSurface::capture_surface(instance.as_mut(), &mut ctx);
+            if captured.insert(id, snapshot).is_some() {
+                return Err(format!(
+                    "surface {id} appears twice in the committed structure"
+                ));
+            }
         }
-        let workspaces=engine.core.local_workspaces().iter().map(|workspace| {
-            let focused=workspace.pane_layout().all_pane_ids().iter().position(|id|Some(*id)==presentation.pane_id(workspace)).unwrap_or(0);
-            Ok(SavedWorkspace {
-                name:workspace.name.clone(),subtitle:workspace.subtitle.clone(),description:workspace.description.clone(),
-                pane_layout:SavedPaneNode::capture(workspace.pane_layout(),presentation,&mut captured)?,
-                focused_pane_index:focused,attach_mapping:workspace.attach_mapping.clone(),category:workspace.category,
+        let workspaces = engine
+            .core
+            .local_workspaces()
+            .iter()
+            .map(|workspace| {
+                let focused = workspace
+                    .pane_layout()
+                    .all_pane_ids()
+                    .iter()
+                    .position(|id| Some(*id) == presentation.pane_id(workspace))
+                    .unwrap_or(0);
+                Ok(SavedWorkspace {
+                    name: workspace.name.clone(),
+                    subtitle: workspace.subtitle.clone(),
+                    description: workspace.description.clone(),
+                    pane_layout: SavedPaneNode::capture(
+                        workspace.pane_layout(),
+                        presentation,
+                        &mut captured,
+                    )?,
+                    focused_pane_index: focused,
+                    attach_mapping: workspace.attach_mapping.clone(),
+                    category: workspace.category,
+                })
             })
-        }).collect::<Result<Vec<_>,String>>()?;
-        let active_workspace=active_workspace.min(workspaces.len().saturating_sub(1));
-        Ok(Self {version:LAYOUT_VERSION,workspaces,active_workspace,categories:engine.categories().iter().map(|category|SavedCategory {
-            id:category.id,name:category.name.clone(),collapsed:presentation.category_collapsed(category.id),
-        }).collect()})
+            .collect::<Result<Vec<_>, String>>()?;
+        let active_workspace = active_workspace.min(workspaces.len().saturating_sub(1));
+        Ok(Self {
+            version: LAYOUT_VERSION,
+            workspaces,
+            active_workspace,
+            categories: engine
+                .categories()
+                .iter()
+                .map(|category| SavedCategory {
+                    id: category.id,
+                    name: category.name.clone(),
+                    collapsed: presentation.category_collapsed(category.id),
+                })
+                .collect(),
+        })
     }
 }
 impl SavedPaneNode {
-    fn capture(node:&PaneNode,presentation:&dyn crate::model::StructurePresentation,captured:&mut std::collections::HashMap<u32,SavedSurface>)->Result<Self,String> {
+    fn capture(
+        node: &PaneNode,
+        presentation: &dyn crate::model::StructurePresentation,
+        captured: &mut std::collections::HashMap<u32, SavedSurface>,
+    ) -> Result<Self, String> {
         Ok(match node {
-            PaneNode::Leaf(pane)=>Self::Leaf(SavedPane {
-                active_tab:presentation.tab_index(pane),
-                tabs:pane.tabs.iter().map(|tab|Ok(SavedTab {
-                    name:tab.name.clone(),explicit_name:tab.explicit_name.clone(),
-                    surface:SavedSurfaceLayout::capture_layout(tab.layout(),captured)?,
-                })).collect::<Result<Vec<_>,String>>()?,
+            PaneNode::Leaf(pane) => Self::Leaf(SavedPane {
+                active_tab: presentation.tab_index(pane),
+                tabs: pane
+                    .tabs
+                    .iter()
+                    .map(|tab| {
+                        Ok(SavedTab {
+                            name: tab.name.clone(),
+                            explicit_name: tab.explicit_name.clone(),
+                            surface: SavedSurfaceLayout::capture_layout(tab.layout(), captured)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, String>>()?,
             }),
-            PaneNode::Split {direction,ratio,first,second}=>Self::Split {
-                direction:(*direction).into(),ratio:*ratio,
-                first:Box::new(Self::capture(first,presentation,captured)?),second:Box::new(Self::capture(second,presentation,captured)?),
+            PaneNode::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => Self::Split {
+                direction: (*direction).into(),
+                ratio: *ratio,
+                first: Box::new(Self::capture(first, presentation, captured)?),
+                second: Box::new(Self::capture(second, presentation, captured)?),
             },
         })
     }
 }
 impl SavedSurfaceLayout {
-    fn capture_layout(layout:&SurfaceLayout,captured:&mut std::collections::HashMap<u32,SavedSurface>)->Result<Self,String> {
+    fn capture_layout(
+        layout: &SurfaceLayout,
+        captured: &mut std::collections::HashMap<u32, SavedSurface>,
+    ) -> Result<Self, String> {
         Ok(match layout {
-            SurfaceLayout::Leaf(surface)=>Self::Leaf(captured.remove(&surface.id).ok_or_else(||format!("surface {} capture is missing",surface.id))?),
-            SurfaceLayout::Split {direction,ratio,first,second,..}=>Self::Split {
-                direction:(*direction).into(),ratio:*ratio,
-                first:Box::new(Self::capture_layout(first,captured)?),second:Box::new(Self::capture_layout(second,captured)?),
+            SurfaceLayout::Leaf(surface) => Self::Leaf(
+                captured
+                    .remove(&surface.id)
+                    .ok_or_else(|| format!("surface {} capture is missing", surface.id))?,
+            ),
+            SurfaceLayout::Split {
+                direction,
+                ratio,
+                first,
+                second,
+                ..
+            } => Self::Split {
+                direction: (*direction).into(),
+                ratio: *ratio,
+                first: Box::new(Self::capture_layout(first, captured)?),
+                second: Box::new(Self::capture_layout(second, captured)?),
             },
         })
     }
@@ -262,9 +353,10 @@ mod tests {
 
         let registry = SurfaceKindRegistry::new();
         let mut seen_refs = SeenRefs::new();
-        let mut terminals = crate::runtime::terminal_store::TerminalStore::new(std::sync::Arc::new(
-            std::sync::atomic::AtomicU32::new(crate::runtime::terminal_store::PTY_ID_BASE),
-        ));
+        let mut terminals =
+            crate::runtime::terminal_store::TerminalStore::new(std::sync::Arc::new(
+                std::sync::atomic::AtomicU32::new(crate::runtime::terminal_store::PTY_ID_BASE),
+            ));
         let mut ctx = CaptureCtx {
             presentation: &crate::model::StructurePresentationSnapshot::default(),
             registry: &registry,

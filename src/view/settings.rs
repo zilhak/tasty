@@ -5,10 +5,10 @@ use std::sync::Arc;
 use winit::event::WindowEvent;
 
 use crate::adapters::ui::{LayoutContext, ToastManager, ToastScope};
-use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;
-use crate::runtime::file_catalog::HandlerCatalog as FileHandlerRegistry;
 use crate::gpu::GpuState;
 use crate::i18n::t;
+use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;
+use crate::runtime::file_catalog::HandlerCatalog as FileHandlerRegistry;
 use crate::settings::Settings;
 use crate::settings_ui::{self, PluginShortcutSnapshot, SettingsUiState};
 use crate::view::ui::{View, sealed};
@@ -32,16 +32,21 @@ pub struct SettingsView {
     /// footer Save 로 닫혔는가. plugin override draft 는 이것이 참일 때만 회수된다 —
     /// Cancel · 창 닫기 · 설정 토글 키로 닫으면 그 draft 는 버려진다.
     committed: bool,
-    original_restore_content:bool,
+    original_restore_content: bool,
     toasts: ToastManager,
 }
 
 impl SettingsView {
-    pub(crate) fn take_file_requests(&mut self) -> Vec<crate::app::settings_files::SettingsFileRequest> {
+    pub(crate) fn take_file_requests(
+        &mut self,
+    ) -> Vec<crate::app::settings_files::SettingsFileRequest> {
         self.settings_ui_state.take_file_requests()
     }
 
-    pub(crate) fn accept_file_result(&mut self, result: crate::app::settings_files::SettingsFileResult) {
+    pub(crate) fn accept_file_result(
+        &mut self,
+        result: crate::app::settings_files::SettingsFileResult,
+    ) {
         self.settings_ui_state.accept_file_result(result);
         self.mark_dirty();
     }
@@ -56,7 +61,7 @@ impl SettingsView {
     ) -> Self {
         Self {
             base: ViewBase::new(gpu, winit),
-            original_restore_content:settings.general.restore_surface_content,
+            original_restore_content: settings.general.restore_surface_content,
             settings,
             settings_ui_state: SettingsUiState::new(),
             file_format,
@@ -121,8 +126,14 @@ impl SettingsView {
         self.settings_ui_state.set_settings_pages(pages);
     }
 
-    pub(crate) fn take_execution_edits(&mut self)->Option<crate::app::settings_edit::SettingsEdits> {
-        self.committed.then(||self.settings_ui_state.take_execution_edits(self.original_restore_content&&!self.settings.general.restore_surface_content))
+    pub(crate) fn take_execution_edits(
+        &mut self,
+    ) -> Option<crate::app::settings_edit::SettingsEdits> {
+        self.committed.then(|| {
+            self.settings_ui_state.take_execution_edits(
+                self.original_restore_content && !self.settings.general.restore_surface_content,
+            )
+        })
     }
 
     /// Save로 닫았을 때만 plugin 단축키 변경 초안을 반환한다.
@@ -236,7 +247,10 @@ impl View for SettingsView {
                     let combo = if self.settings_ui_state.recording_is_bare_key() {
                         crate::settings_ui::capture_bare_key(event, self.base.state.modifiers)
                     } else {
-                        crate::settings_ui::capture_winit_key_combo(event, self.base.state.modifiers)
+                        crate::settings_ui::capture_winit_key_combo(
+                            event,
+                            self.base.state.modifiers,
+                        )
                     };
                     if !matches!(combo, crate::settings_ui::KeyCapture::None) {
                         self.settings_ui_state.captured_winit_combo = Some(combo);

@@ -5,14 +5,13 @@
 
 pub mod bootstrap;
 mod layout;
-mod structure;
 mod replacement;
-
+mod structure;
 
 use crate::{DomainBatch, DomainEvent, JournalModel};
 
-use crate::canonical::{Canonical, SkipData, live};
 use crate::CoreState;
+use crate::canonical::{Canonical, SkipData, live};
 use tasty_model::{Pane, SurfaceDescriptor, Tab, Workspace};
 
 pub enum Retired {
@@ -42,20 +41,21 @@ pub fn apply(
         return Err("committed live projection differs from the canonical result".into());
     }
     engine.committed_structure_revision = after.applied.revision;
-    for (id,surface) in &after.surfaces {
-        if let Some(descriptor)=engine.find_surface_descriptor_mut(*id) {
-            descriptor.activation_generation=surface.activation.map(|activation|activation.generation);
+    for (id, surface) in &after.surfaces {
+        if let Some(descriptor) = engine.find_surface_descriptor_mut(*id) {
+            descriptor.activation_generation =
+                surface.activation.map(|activation| activation.generation);
         }
     }
     Ok(())
 }
 
-fn preflight(engine:&CoreState,before:&JournalModel,batch:&DomainBatch)->Result<()> {
-    if live::core_canonical(engine)!=Canonical::of_journal(before,&SkipData) {
+fn preflight(engine: &CoreState, before: &JournalModel, batch: &DomainBatch) -> Result<()> {
+    if live::core_canonical(engine) != Canonical::of_journal(before, &SkipData) {
         return Err("live projection is not at the command's committed predecessor".into());
     }
-    let mut after=before.clone();
-    crate::evolve(&mut after,batch).map_err(|error|error.to_string())?;
+    let mut after = before.clone();
+    crate::evolve(&mut after, batch).map_err(|error| error.to_string())?;
     Ok(())
 }
 

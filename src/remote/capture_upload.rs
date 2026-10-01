@@ -2,16 +2,16 @@
 //! 프레임 해석은 stream_hub, 권한 확인·파일 저장·클립보드는 attach_runtime이 맡는다.
 //! 시각을 인자로 받아 실제 대기 없이 만료를 검사할 수 있다.
 
+use super::transfer_spool::{Spool, TransferOwner};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use super::transfer_spool::{Spool,TransferOwner};
 
 /// 마지막 청크 이후 이 시간 이상 지난 버퍼를 회수한다. 연결 종료를 판정하는 값은 아니다.
 pub(crate) const DEFAULT_TTL: Duration = Duration::from_secs(300);
 
 struct PartialUpload {
-    spool:Spool,
-    owner:TransferOwner,
+    spool: Spool,
+    owner: TransferOwner,
     last_activity: Instant,
 }
 
@@ -41,18 +41,48 @@ impl CaptureUploadRegistry {
     }
 
     /// 만료 버퍼를 먼저 지운 뒤 청크를 추가한다. 만료된 같은 ID가 다시 오면 새 버퍼가 된다.
-    pub(crate) fn append(&mut self, client_id:u32,upload_id:u64,data:&[u8],now:Instant,owner:TransferOwner)->bool {
+    pub(crate) fn append(
+        &mut self,
+        client_id: u32,
+        upload_id: u64,
+        data: &[u8],
+        now: Instant,
+        owner: TransferOwner,
+    ) -> bool {
         self.sweep_expired(now);
-        let key=(client_id,upload_id);
+        let key = (client_id, upload_id);
         if !self.partials.contains_key(&key) {
-            if self.partials.len()>=256 {return false;}
-            let spool=match Spool::new() {Ok(spool)=>spool,Err(error)=>{tracing::warn!(%error,"capture spool creation failed");return false;}};
-            self.partials.insert(key,PartialUpload {spool,owner:owner.clone(),last_activity:now});
+            if self.partials.len() >= 256 {
+                return false;
+            }
+            let spool = match Spool::new() {
+                Ok(spool) => spool,
+                Err(error) => {
+                    tracing::warn!(%error,"capture spool creation failed");
+                    return false;
+                }
+            };
+            self.partials.insert(
+                key,
+                PartialUpload {
+                    spool,
+                    owner: owner.clone(),
+                    last_activity: now,
+                },
+            );
         }
-        let entry=self.partials.get_mut(&key).expect("capture entry inserted");
-        if !entry.owner.same(&owner) {self.partials.remove(&key);return false;}
-        if let Err(error)=entry.spool.append(data) {tracing::warn!(%error,"capture spool write failed");self.partials.remove(&key);return false;}
-        entry.last_activity=now;true
+        let entry = self.partials.get_mut(&key).expect("capture entry inserted");
+        if !entry.owner.same(&owner) {
+            self.partials.remove(&key);
+            return false;
+        }
+        if let Err(error) = entry.spool.append(data) {
+            tracing::warn!(%error,"capture spool write failed");
+            self.partials.remove(&key);
+            return false;
+        }
+        entry.last_activity = now;
+        true
     }
 
     /// 마지막 활동에서 TTL 이상 지난 버퍼를 지운다.
@@ -70,14 +100,17 @@ impl CaptureUploadRegistry {
     }
 
     /// 버퍼를 제거하고 바이트를 반환한다. 여기서는 만료 시간을 다시 검사하지 않는다.
-    pub(crate) fn take(&mut self, client_id: u32, upload_id: u64) -> Option<(TransferOwner,Spool)> {
+    pub(crate) fn take(
+        &mut self,
+        client_id: u32,
+        upload_id: u64,
+    ) -> Option<(TransferOwner, Spool)> {
         self.partials
             .remove(&(client_id, upload_id))
-            .map(|e| (e.owner,e.spool))
+            .map(|e| (e.owner, e.spool))
     }
 
     pub(crate) fn clear_client(&mut self, client_id: u32) {
         self.partials.retain(|(cid, _), _| *cid != client_id);
     }
 }
-

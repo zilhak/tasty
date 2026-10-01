@@ -2,8 +2,8 @@
 
 use crate::adapters::ipc::handler::params;
 use crate::app::App;
-use crate::runtime::engine_access::EngineRef;
 use crate::ipc::server::{IpcCommand, send_response};
+use crate::runtime::engine_access::EngineRef;
 
 impl App {
     /// 요청 workspace를 가진 engine의 허브에서 기다린다. 포커스·창 순서로 고르지 않는다.
@@ -71,7 +71,11 @@ mod tests {
         engine_session
     }
 
-    fn ready_task(core: &crate::app::services::AppServices, engine: &EngineRef<'_>, workspace_id: u32) -> String {
+    fn ready_task(
+        core: &crate::app::services::AppServices,
+        engine: &EngineRef<'_>,
+        workspace_id: u32,
+    ) -> String {
         let opts = TaskCreateOpts {
             workspace_id,
             name: "t".to_string(),

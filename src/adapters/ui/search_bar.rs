@@ -1,8 +1,8 @@
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{PopupAction, PopupScope};
-use crate::runtime::engine_read::EngineRead;
-use crate::runtime::engine_read::EngineRead;
 use crate::i18n::t;
+use crate::runtime::engine_read::EngineRead;
+use crate::runtime::engine_read::EngineRead;
 use crate::state::MainViewState;
 use crate::theme::Theme;
 use tasty_terminal::search::{SearchError, SearchOptions};
@@ -374,7 +374,10 @@ fn run_search(state: &mut MainViewState, engine: &EngineRead<'_>) {
     }
 }
 
-fn focused_terminal_surface_id(state: &MainViewState, engine: &crate::runtime::engine_read::EngineRead<'_>) -> u32 {
+fn focused_terminal_surface_id(
+    state: &MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> u32 {
     let ws = state.active_workspace(engine);
     let pane_id = state.navigation.pane_id(ws).unwrap_or(0);
     ws.pane_layout()

@@ -10,10 +10,8 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
 use crate::adapters::ui::icons::{self, Icon};
-use crate::runtime::surface_registry::{
-    PresetFieldInput, PresetFieldSpec, PresetFieldTarget,
-};
 use crate::i18n::t;
+use crate::runtime::surface_registry::{PresetFieldInput, PresetFieldSpec, PresetFieldTarget};
 
 mod surface_draft;
 pub use surface_draft::{LeafDraft, LeafLocation};

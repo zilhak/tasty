@@ -1,20 +1,22 @@
 //! Outbound socket handshake, reader, writer and heartbeat. No App or View references.
+use super::client_session::{FrameSender, MirrorEvent, MirrorOutbox, OutFrame};
+use serde_json::Value;
 use std::net::TcpStream;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool,Ordering};
-use serde_json::Value;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tasty_ipc::client::StreamConnection;
-use tasty_ipc::stream::{self,STREAM_PROTO,StreamControl,StreamTag};
-use super::client_session::{MirrorEvent,MirrorOutbox,OutFrame,FrameSender};
+use tasty_ipc::stream::{self, STREAM_PROTO, StreamControl, StreamTag};
 pub fn attach_handshake(
     port: u16,
     workspace: u32,
     log_prefix: &str,
-    cancel:&super::outbound::AttemptToken,
+    cancel: &super::outbound::AttemptToken,
 ) -> anyhow::Result<(StreamConnection, u32, TcpStream, String, Vec<Value>, Value)> {
-    if !cancel.is_active() {anyhow::bail!("connection attempt retired");}
-    let address=std::net::SocketAddr::from(([127,0,0,1],port));
-    let sock=TcpStream::connect_timeout(&address,std::time::Duration::from_millis(250))?;
+    if !cancel.is_active() {
+        anyhow::bail!("connection attempt retired");
+    }
+    let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let sock = TcpStream::connect_timeout(&address, std::time::Duration::from_millis(250))?;
     cancel.register_socket(&sock)?;
     arm_attach_timeouts(&sock, log_prefix);
     let (mut conn, client_id) =
@@ -74,20 +76,26 @@ pub fn spawn_attach_write_thread(
     write_half: TcpStream,
     frame_rx: std::sync::mpsc::Receiver<super::connection::QueuedFrame>,
     disconnected: Arc<AtomicBool>,
-    wake:Arc<dyn Fn()+Send+Sync>,
+    wake: Arc<dyn Fn() + Send + Sync>,
     log_suffix: &'static str,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut write_half = write_half;
         loop {
-            let queued=match frame_rx.recv_timeout(std::time::Duration::from_millis(100)) {
-                Ok(queued)=>queued,
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) if !disconnected.load(Ordering::Acquire)=>continue,
-                Err(_)=>break,
+            let queued = match frame_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                Ok(queued) => queued,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+                    if !disconnected.load(Ordering::Acquire) =>
+                {
+                    continue;
+                }
+                Err(_) => break,
             };
-            let item=queued.frame;
-            let detach=item.tag==StreamTag::Detach;
-            if !detach && (!queued.epoch.is_active() || disconnected.load(Ordering::Acquire)) {continue;}
+            let item = queued.frame;
+            let detach = item.tag == StreamTag::Detach;
+            if !detach && (!queued.epoch.is_active() || disconnected.load(Ordering::Acquire)) {
+                continue;
+            }
             if let Err(e) = stream::write_frame(&mut write_half, item.tag, &item.payload) {
                 tracing::warn!(
                     "attach write thread{log_suffix}: 프레임을 쓰지 못해 연결 종료로 처리한다: {e}"
@@ -97,7 +105,9 @@ pub fn spawn_attach_write_thread(
                 break;
             }
             if detach {
-                if let Err(error)=write_half.shutdown(std::net::Shutdown::Both) {tracing::debug!("remote socket already closed: {error}");}
+                if let Err(error) = write_half.shutdown(std::net::Shutdown::Both) {
+                    tracing::debug!("remote socket already closed: {error}");
+                }
                 break;
             }
         }
@@ -108,10 +118,10 @@ pub fn spawn_attach_reader_thread(
     mut conn: StreamConnection,
     output: MirrorOutbox,
     disconnected: Arc<AtomicBool>,
-    wake:Arc<dyn Fn()+Send+Sync>,
+    wake: Arc<dyn Fn() + Send + Sync>,
     local_workspace: u32,
     log_suffix: &'static str,
-    decode_control:fn(&[u8])->Option<MirrorEvent>,
+    decode_control: fn(&[u8]) -> Option<MirrorEvent>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut mesh_assembler = tasty_ipc::mesh_stream::MeshFrameAssembler::new();
@@ -171,7 +181,10 @@ pub fn spawn_attach_reader_thread(
     })
 }
 
-pub fn spawn_attach_heartbeat_thread(raw_frame_tx: FrameSender, disconnected: Arc<AtomicBool>) -> std::thread::JoinHandle<()> {
+pub fn spawn_attach_heartbeat_thread(
+    raw_frame_tx: FrameSender,
+    disconnected: Arc<AtomicBool>,
+) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         loop {
             std::thread::park_timeout(stream::HEARTBEAT_INTERVAL);
@@ -196,37 +209,67 @@ pub fn spawn_attach_heartbeat_thread(raw_frame_tx: FrameSender, disconnected: Ar
 #[derive(Clone)]
 pub struct RetirementReceipt(std::sync::Arc<std::sync::atomic::AtomicU8>);
 impl RetirementReceipt {
-    pub fn is_done(&self)->bool {self.0.load(Ordering::Acquire)!=0}
-    pub fn failed(&self)->bool {self.0.load(Ordering::Acquire)==2}
+    pub fn is_done(&self) -> bool {
+        self.0.load(Ordering::Acquire) != 0
+    }
+    pub fn failed(&self) -> bool {
+        self.0.load(Ordering::Acquire) == 2
+    }
 }
 pub struct ConnectionWorkers {
-    receipt:RetirementReceipt,
-    control:Option<TcpStream>,
-    handles:Vec<std::thread::JoinHandle<()>>,
-    tunnel:Option<tasty_ssh::SshTunnel>,
+    receipt: RetirementReceipt,
+    control: Option<TcpStream>,
+    handles: Vec<std::thread::JoinHandle<()>>,
+    tunnel: Option<tasty_ssh::SshTunnel>,
 }
 impl ConnectionWorkers {
-    pub fn new(control:TcpStream,handles:Vec<std::thread::JoinHandle<()>>)->Self {Self {receipt:RetirementReceipt(Arc::new(std::sync::atomic::AtomicU8::new(0))),control:Some(control),handles,tunnel:None}}
-    pub fn receipt(&self)->RetirementReceipt {self.receipt.clone()}
-    pub(crate) fn retire_tunnel(&mut self,tunnel:Option<tasty_ssh::SshTunnel>) {self.tunnel=tunnel;}
+    pub fn new(control: TcpStream, handles: Vec<std::thread::JoinHandle<()>>) -> Self {
+        Self {
+            receipt: RetirementReceipt(Arc::new(std::sync::atomic::AtomicU8::new(0))),
+            control: Some(control),
+            handles,
+            tunnel: None,
+        }
+    }
+    pub fn receipt(&self) -> RetirementReceipt {
+        self.receipt.clone()
+    }
+    pub(crate) fn retire_tunnel(&mut self, tunnel: Option<tasty_ssh::SshTunnel>) {
+        self.tunnel = tunnel;
+    }
 }
 impl Drop for ConnectionWorkers {
     fn drop(&mut self) {
-        let Some(control)=self.control.take() else {return;};
-        let handles=std::mem::take(&mut self.handles);
-        let tunnel=self.tunnel.take();
-        for handle in &handles {handle.thread().unpark();}
-        let receipt=self.receipt.clone();
+        let Some(control) = self.control.take() else {
+            return;
+        };
+        let handles = std::mem::take(&mut self.handles);
+        let tunnel = self.tunnel.take();
+        for handle in &handles {
+            handle.thread().unpark();
+        }
+        let receipt = self.receipt.clone();
         std::thread::spawn(move || {
-            let deadline=std::time::Instant::now()+std::time::Duration::from_millis(250);
-            while !handles.iter().all(std::thread::JoinHandle::is_finished) && std::time::Instant::now()<deadline {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(250);
+            while !handles.iter().all(std::thread::JoinHandle::is_finished)
+                && std::time::Instant::now() < deadline
+            {
                 std::thread::sleep(std::time::Duration::from_millis(5));
             }
-            if let Err(error)=control.shutdown(std::net::Shutdown::Both) {tracing::debug!("retired remote socket already closed: {error}");}
-            let mut failed=false;
-            for handle in handles {if handle.join().is_err() {failed=true;tracing::error!("remote I/O worker panicked during retirement");}}
-            failed|=reap_tunnel(tunnel);
-            receipt.0.store(if failed {2}else {1},Ordering::Release);
+            if let Err(error) = control.shutdown(std::net::Shutdown::Both) {
+                tracing::debug!("retired remote socket already closed: {error}");
+            }
+            let mut failed = false;
+            for handle in handles {
+                if handle.join().is_err() {
+                    failed = true;
+                    tracing::error!("remote I/O worker panicked during retirement");
+                }
+            }
+            failed |= reap_tunnel(tunnel);
+            receipt
+                .0
+                .store(if failed { 2 } else { 1 }, Ordering::Release);
         });
     }
 }
@@ -234,13 +277,20 @@ impl Drop for ConnectionWorkers {
 /// Retain ownership of non-socket connection workers (SSH endpoint resolution) through join.
 /// Cancellation is supplied by the attempt token; a slow external resolver is reported by the
 /// Remote shutdown deadline instead of treating detached execution as completed.
-pub(crate) fn join_attempt_workers(handles:Vec<std::thread::JoinHandle<()>>)->RetirementReceipt {
-    let receipt=RetirementReceipt(Arc::new(std::sync::atomic::AtomicU8::new(0)));
-    let result=receipt.clone();
+pub(crate) fn join_attempt_workers(handles: Vec<std::thread::JoinHandle<()>>) -> RetirementReceipt {
+    let receipt = RetirementReceipt(Arc::new(std::sync::atomic::AtomicU8::new(0)));
+    let result = receipt.clone();
     std::thread::spawn(move || {
-        let mut failed=false;
-        for handle in handles {if handle.join().is_err() {failed=true;tracing::error!("remote endpoint worker panicked");}}
-        result.0.store(if failed {2}else {1},Ordering::Release);
+        let mut failed = false;
+        for handle in handles {
+            if handle.join().is_err() {
+                failed = true;
+                tracing::error!("remote endpoint worker panicked");
+            }
+        }
+        result
+            .0
+            .store(if failed { 2 } else { 1 }, Ordering::Release);
     });
     receipt
 }
@@ -248,43 +298,83 @@ pub(crate) fn join_attempt_workers(handles:Vec<std::thread::JoinHandle<()>>)->Re
 /// A connected socket and its bounded snapshot tail before the application installs a mirror.
 /// There is no App/View or local engine lookup here.
 pub struct PreparedConnection {
-    pub port:u16,
-    pub remote_workspace:u32,
-    pub client_id:u32,
-    pub name:String,
-    pub surfaces:Vec<Value>,
-    pub tree:Value,
-    pub transport:super::client_session::ClientTransport,
+    pub port: u16,
+    pub remote_workspace: u32,
+    pub client_id: u32,
+    pub name: String,
+    pub surfaces: Vec<Value>,
+    pub tree: Value,
+    pub transport: super::client_session::ClientTransport,
 }
 impl PreparedConnection {
-    pub fn connect(cancel:super::outbound::AttemptToken,port:u16,workspace:u32,tunnel:Option<tasty_ssh::SshTunnel>,wake:Arc<dyn Fn()+Send+Sync>,decode:fn(&[u8])->Option<MirrorEvent>)->anyhow::Result<Self> {
-        let (conn,client_id,write_half,name,surfaces,tree)=attach_handshake(port,workspace,"remote pending connection",&cancel)?;
-        let control=write_half.try_clone()?;
-        let (frame_tx,frame_rx)=super::connection::channel();
-        let disconnected=Arc::new(AtomicBool::new(false));
-        frame_tx.bind_failure(disconnected.clone(),wake.clone());
-        let output=MirrorOutbox::new(frame_tx.epoch());
-        let writer=spawn_attach_write_thread(write_half,frame_rx,disconnected.clone(),wake.clone(),"");
-        let reader=spawn_attach_reader_thread(conn,output.clone(),disconnected.clone(),wake,workspace,"",decode);
-        let heartbeat=spawn_attach_heartbeat_thread(frame_tx.clone(),disconnected.clone());
-        let workers=ConnectionWorkers::new(control,vec![writer,reader,heartbeat]);
-        Ok(Self {port,remote_workspace:workspace,client_id,name,surfaces,tree,transport:super::client_session::ClientTransport {workers,output,disconnected,frame_tx,tunnel}})
+    pub fn connect(
+        cancel: super::outbound::AttemptToken,
+        port: u16,
+        workspace: u32,
+        tunnel: Option<tasty_ssh::SshTunnel>,
+        wake: Arc<dyn Fn() + Send + Sync>,
+        decode: fn(&[u8]) -> Option<MirrorEvent>,
+    ) -> anyhow::Result<Self> {
+        let (conn, client_id, write_half, name, surfaces, tree) =
+            attach_handshake(port, workspace, "remote pending connection", &cancel)?;
+        let control = write_half.try_clone()?;
+        let (frame_tx, frame_rx) = super::connection::channel();
+        let disconnected = Arc::new(AtomicBool::new(false));
+        frame_tx.bind_failure(disconnected.clone(), wake.clone());
+        let output = MirrorOutbox::new(frame_tx.epoch());
+        let writer =
+            spawn_attach_write_thread(write_half, frame_rx, disconnected.clone(), wake.clone(), "");
+        let reader = spawn_attach_reader_thread(
+            conn,
+            output.clone(),
+            disconnected.clone(),
+            wake,
+            workspace,
+            "",
+            decode,
+        );
+        let heartbeat = spawn_attach_heartbeat_thread(frame_tx.clone(), disconnected.clone());
+        let workers = ConnectionWorkers::new(control, vec![writer, reader, heartbeat]);
+        Ok(Self {
+            port,
+            remote_workspace: workspace,
+            client_id,
+            name,
+            surfaces,
+            tree,
+            transport: super::client_session::ClientTransport {
+                workers,
+                output,
+                disconnected,
+                frame_tx,
+                tunnel,
+            },
+        })
     }
 }
 
-fn reap_tunnel(tunnel:Option<tasty_ssh::SshTunnel>)->bool {
-    let Some(mut tunnel)=tunnel else {return false;};
-    let failed=match tunnel.terminate_and_reap() {
-        Ok(_)=>false,Err(error)=>{tracing::error!(%error,"SSH tunnel wait failed");true},
+fn reap_tunnel(tunnel: Option<tasty_ssh::SshTunnel>) -> bool {
+    let Some(mut tunnel) = tunnel else {
+        return false;
     };
-    drop(tunnel);failed
+    let failed = match tunnel.terminate_and_reap() {
+        Ok(_) => false,
+        Err(error) => {
+            tracing::error!(%error,"SSH tunnel wait failed");
+            true
+        }
+    };
+    drop(tunnel);
+    failed
 }
-pub(crate) fn retire_tunnel(tunnel:tasty_ssh::SshTunnel)->RetirementReceipt {
-    let receipt=RetirementReceipt(Arc::new(std::sync::atomic::AtomicU8::new(0)));
-    let completed=receipt.clone();
+pub(crate) fn retire_tunnel(tunnel: tasty_ssh::SshTunnel) -> RetirementReceipt {
+    let receipt = RetirementReceipt(Arc::new(std::sync::atomic::AtomicU8::new(0)));
+    let completed = receipt.clone();
     std::thread::spawn(move || {
-        let failed=reap_tunnel(Some(tunnel));
-        completed.0.store(if failed {2}else{1},Ordering::Release);
+        let failed = reap_tunnel(Some(tunnel));
+        completed
+            .0
+            .store(if failed { 2 } else { 1 }, Ordering::Release);
     });
     receipt
 }

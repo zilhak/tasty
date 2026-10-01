@@ -16,11 +16,11 @@ pub(crate) use keybindings_tab::PluginBundleContext;
 pub use keybindings_tab::{KeyCapture, capture_bare_key, capture_winit_key_combo};
 
 use crate::adapters::ui::popup::{DragHandle, PopupManager, PopupState};
-use crate::file::format::{DetectorId, };
-use crate::runtime::file_catalog::HandlerCatalog as FileHandlerRegistry;
+use crate::file::format::DetectorId;
 use crate::i18n::t;
 use crate::plugin::manifest::BindingMode;
 use crate::plugin::registry_state::ShortcutOverride;
+use crate::runtime::file_catalog::HandlerCatalog as FileHandlerRegistry;
 use crate::settings::Settings;
 use tasty_host_plugin::SettingsPageEntry;
 use tasty_plugin_manifest::SettingsCategory;
@@ -500,11 +500,16 @@ impl SettingsUiState {
     }
 
     /// 설정 창 자체 토스트로 올릴 가져오기/내보내기 결과 문구(1 회).
-    pub(crate) fn take_file_requests(&mut self) -> Vec<crate::app::settings_files::SettingsFileRequest> {
+    pub(crate) fn take_file_requests(
+        &mut self,
+    ) -> Vec<crate::app::settings_files::SettingsFileRequest> {
         self.import_export.take_file_requests()
     }
 
-    pub(crate) fn accept_file_result(&mut self, result: crate::app::settings_files::SettingsFileResult) {
+    pub(crate) fn accept_file_result(
+        &mut self,
+        result: crate::app::settings_files::SettingsFileResult,
+    ) {
         self.import_export.accept_file_result(result);
     }
 
@@ -1671,18 +1676,33 @@ fn commit_settings_save(
     user_config_path: Option<&std::path::Path>,
     result: &mut Option<bool>,
 ) {
-    if let Some(draft)=&ui_state.draft {*settings=draft.clone();}
-    *result=Some(true);
+    if let Some(draft) = &ui_state.draft {
+        *settings = draft.clone();
+    }
+    *result = Some(true);
 }
 
 impl SettingsUiState {
-    pub(crate) fn take_execution_edits(&mut self,clear_scrollback:bool)->crate::app::settings_edit::SettingsEdits {
-        use crate::app::settings_edit::{RegistryEdit,SettingsEdits};
-        let mut registry=Vec::new();
-        if let Some(draft)=self.extension_priority_draft.take() {registry.extend(draft.into_iter().map(|(extension,order)|RegistryEdit::Extension {extension,order}));}
+    pub(crate) fn take_execution_edits(
+        &mut self,
+        clear_scrollback: bool,
+    ) -> crate::app::settings_edit::SettingsEdits {
+        use crate::app::settings_edit::{RegistryEdit, SettingsEdits};
+        let mut registry = Vec::new();
+        if let Some(draft) = self.extension_priority_draft.take() {
+            registry.extend(
+                draft
+                    .into_iter()
+                    .map(|(extension, order)| RegistryEdit::Extension { extension, order }),
+            );
+        }
         registry.extend(std::mem::take(&mut self.fh_edit_draft).into_edits());
         registry.extend(std::mem::take(&mut self.hook_edit_draft).into_edits());
-        SettingsEdits {registry,clear_scrollback,bashrc:self.bashrc_user_draft.take()}
+        SettingsEdits {
+            registry,
+            clear_scrollback,
+            bashrc: self.bashrc_user_draft.take(),
+        }
     }
 }
 

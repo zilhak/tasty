@@ -21,7 +21,10 @@ pub(crate) fn forward_mesh_frames_for_engine(
     stream_hub: &StreamHub,
 ) {
     for sid in engine.remote.mesh_mirror.active_surface_ids() {
-        if !engine.as_ref().attached_mesh_context_is_current(sid,stream_hub) {
+        if !engine
+            .as_ref()
+            .attached_mesh_context_is_current(sid, stream_hub)
+        {
             engine.remote.mesh_mirror.remove(sid);
             continue;
         }
@@ -92,17 +95,28 @@ pub(crate) fn relay_mesh_frame_if_new(
     sid: u32,
     client_id: AttachClientId,
 ) {
-    if !engine.as_ref().attached_mesh_context_is_current(sid,stream_hub) {
+    if !engine
+        .as_ref()
+        .attached_mesh_context_is_current(sid, stream_hub)
+    {
         engine.remote.mesh_mirror.remove(sid);
         return;
     }
-    let Some(binding)=engine.remote.mesh_mirror.get(sid)
-        .filter(|context|context.client_id==client_id).map(|context|context.binding.clone()) else {return;};
+    let Some(binding) = engine
+        .remote
+        .mesh_mirror
+        .get(sid)
+        .filter(|context| context.client_id == client_id)
+        .map(|context| context.binding.clone())
+    else {
+        return;
+    };
     let Some(frame) = mgr.egui_mesh_frame(sid) else {
         return;
     };
     if !engine
-        .remote.mesh_mirror
+        .remote
+        .mesh_mirror
         .should_forward_generation(sid, frame.generation)
     {
         return;
@@ -133,7 +147,11 @@ pub(crate) fn relay_mesh_frame_if_new(
         user
     };
 
-    let Some(frame_id) = engine.remote.mesh_mirror.mark_forwarded(sid, frame.generation) else {
+    let Some(frame_id) = engine
+        .remote
+        .mesh_mirror
+        .mark_forwarded(sid, frame.generation)
+    else {
         return;
     };
     for payload in tasty_ipc::mesh_stream::split_mesh_frame(
@@ -144,7 +162,11 @@ pub(crate) fn relay_mesh_frame_if_new(
         frame.full_textures,
         bytes,
     ) {
-        let result = stream_hub.push_bound(client_id, &binding, StreamFrame::new(StreamTag::MeshData, payload));
+        let result = stream_hub.push_bound(
+            client_id,
+            &binding,
+            StreamFrame::new(StreamTag::MeshData, payload),
+        );
         if matches!(result, PushResult::Unknown | PushResult::Disconnected) {
             // 연결이 사라졌거나 끊겼으면 이 프레임의 나머지 chunk 전송을 중단한다.
             break;
@@ -202,11 +224,13 @@ mod tests {
         );
 
         engine
-            .live.occupancy
+            .live
+            .occupancy
             .acquire(surface_id, client_id)
             .expect("hard-occupy for mesh mirror subscription");
         engine
-            .remote.mesh_mirror
+            .remote
+            .mesh_mirror
             .upsert(surface_id, client_id, 800, 600, 2.0, None, true);
 
         (engine_session, surface_id)
@@ -236,7 +260,11 @@ mod tests {
                 "parked engine's mesh mirror subscription should have been driven"
             );
             assert!(
-                !engine.core_state.remote.mesh_mirror.take_need_full_textures(*sid),
+                !engine
+                    .core_state
+                    .remote
+                    .mesh_mirror
+                    .take_need_full_textures(*sid),
                 "parked engine's need_full_textures should have been consumed"
             );
             assert!(engine.core_state.live.occupancy.is_hard_occupied(*sid));

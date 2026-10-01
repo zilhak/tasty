@@ -10,7 +10,8 @@ impl EngineMut<'_> {
     /// 터미널 사본을 하나라도 갱신했으면 true다.
     pub(crate) fn refresh_readonly_views(&mut self) -> bool {
         let attached: Vec<u32> = self
-            .live.occupancy
+            .live
+            .occupancy
             .locks_snapshot()
             .into_iter()
             .map(|(sid, _)| sid)

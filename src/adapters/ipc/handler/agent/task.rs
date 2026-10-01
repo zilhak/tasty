@@ -5,7 +5,6 @@ use crate::runtime::engine_access::{EngineMut, EngineRef};
 use serde_json::{Value, json};
 
 use crate::app::services::AppServices;
-use tasty_task_runtime::graph_view::{collect_graph_edges, on_failure_kind, task_command_kind};
 use tasty_agent::task::{TaskCreateOpts, TaskDeleteOpts, TaskPurgeFilter};
 use tasty_agent::{
     AgentError, DispatchHandle, OnFailure, PollSpecRef, ReducerStrategy, Task, TaskCommand,
@@ -13,6 +12,7 @@ use tasty_agent::{
 };
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
+use tasty_task_runtime::graph_view::{collect_graph_edges, on_failure_kind, task_command_kind};
 
 use super::super::memory::mark_durability;
 use super::{agent_err_to_response, escape_dot, now_ms, task_id_param, workspace_id_param};
@@ -622,7 +622,13 @@ pub fn handle_dag_list(
 
     match core.tasks.dag_list(
         engine.task_scope,
-        &crate::app::task_completion::dag_workspaces(engine.workspaces().into_iter().map(|workspace|workspace.id),workspace_id),
+        &crate::app::task_completion::dag_workspaces(
+            engine
+                .workspaces()
+                .into_iter()
+                .map(|workspace| workspace.id),
+            workspace_id,
+        ),
     ) {
         Err(e) => agent_err_to_response(id, e),
         Ok(dags) => {
@@ -676,7 +682,13 @@ pub fn handle_dag_get(
 
     let (dag, tasks) = match core.tasks.dag_get(
         engine.task_scope,
-        &crate::app::task_completion::dag_workspaces(engine.workspaces().into_iter().map(|workspace|workspace.id),workspace_id),
+        &crate::app::task_completion::dag_workspaces(
+            engine
+                .workspaces()
+                .into_iter()
+                .map(|workspace| workspace.id),
+            workspace_id,
+        ),
         &dag_id,
     ) {
         Err(e) => return agent_err_to_response(id, e),
@@ -791,7 +803,8 @@ pub fn handle_task_run(
             core.tasks.runner_start(engine.task_scope, workspace_id);
         }
         "stop" => {
-            core.tasks.runner_stop_scoped(engine.task_scope, workspace_id);
+            core.tasks
+                .runner_stop_scoped(engine.task_scope, workspace_id);
         }
         "status" => {}
         other => {

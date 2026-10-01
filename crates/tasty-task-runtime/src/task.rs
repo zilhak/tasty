@@ -31,11 +31,7 @@ impl TaskService {
         })
     }
 
-    pub fn task_list(
-        &self,
-        scope: &TaskScope,
-        workspace_id: u32,
-    ) -> Result<Vec<Task>, AgentError> {
+    pub fn task_list(&self, scope: &TaskScope, workspace_id: u32) -> Result<Vec<Task>, AgentError> {
         task_list_from_state(self.memory(), scope, workspace_id)
     }
 
@@ -184,18 +180,26 @@ impl TaskService {
         exit_code: Option<i32>,
         now_ms: u64,
     ) {
-        let Some((workspace_id, task_id,owner)) = self.hook_task_waits().resolve_owned(hook_id) else {
+        let Some((workspace_id, task_id, owner)) = self.hook_task_waits().resolve_owned(hook_id)
+        else {
             return;
         };
-        let mut context=self.runner_context(scope);
-        if let Some(owner)=owner {context.agent_seq=owner.agent_seq;context.task_waker_hub=owner.completion;}
+        let mut context = self.runner_context(scope);
+        if let Some(owner) = owner {
+            context.agent_seq = owner.agent_seq;
+            context.task_waker_hub = owner.completion;
+        }
         let result = TaskResult {
             exit_code,
             output: None,
             error: None,
         };
-        if let Err(e)=context.with_memory(|memory| {
-            TaskStore::new(memory,HOST_OWNER,context.agent_seq.as_ref()).set_result(workspace_id,&task_id,result)
+        if let Err(e) = context.with_memory(|memory| {
+            TaskStore::new(memory, HOST_OWNER, context.agent_seq.as_ref()).set_result(
+                workspace_id,
+                &task_id,
+                result,
+            )
         }) {
             tracing::warn!("resolve_hook_task_wait: set_result {task_id} failed: {e}");
             return;
@@ -206,12 +210,21 @@ impl TaskService {
             },
             _ => TaskState::Succeeded,
         };
-        let transitioned=context.with_memory(|memory| {
-            TaskStore::new(memory,HOST_OWNER,context.agent_seq.as_ref()).set_state(workspace_id,&task_id,new_state,now_ms)
+        let transitioned = context.with_memory(|memory| {
+            TaskStore::new(memory, HOST_OWNER, context.agent_seq.as_ref()).set_state(
+                workspace_id,
+                &task_id,
+                new_state,
+                now_ms,
+            )
         });
         match transitioned {
-            Ok((task,downstream))=>context.fire_terminal_tasks(workspace_id,std::iter::once(task).chain(downstream)),
-            Err(error)=>tracing::warn!(%error,%task_id,"resolve_hook_task_wait state change failed"),
+            Ok((task, downstream)) => {
+                context.fire_terminal_tasks(workspace_id, std::iter::once(task).chain(downstream))
+            }
+            Err(error) => {
+                tracing::warn!(%error,%task_id,"resolve_hook_task_wait state change failed")
+            }
         }
     }
 

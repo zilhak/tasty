@@ -316,7 +316,7 @@ pub(crate) fn migrate_and_gc_on_boot(restore_layout: bool) {
 
 #[derive(Default)]
 pub struct LayoutDirtyTracker {
-    generation:std::sync::Arc<()>,
+    generation: std::sync::Arc<()>,
     dirty: bool,
     dirty_since: Option<Instant>,
 }
@@ -328,15 +328,20 @@ impl LayoutDirtyTracker {
 }
 
 impl LayoutDirtyTracker {
-    pub(crate) fn generation(&self)->std::sync::Weak<()> {std::sync::Arc::downgrade(&self.generation)}
-    pub(crate) fn clear_if_generation(&mut self,expected:&std::sync::Weak<()>) {
-        if expected.ptr_eq(&self.generation()) {self.dirty=false;self.dirty_since=None;}
+    pub(crate) fn generation(&self) -> std::sync::Weak<()> {
+        std::sync::Arc::downgrade(&self.generation)
+    }
+    pub(crate) fn clear_if_generation(&mut self, expected: &std::sync::Weak<()>) {
+        if expected.ptr_eq(&self.generation()) {
+            self.dirty = false;
+            self.dirty_since = None;
+        }
     }
 
     /// 처음 변경된 시각을 유지해 연속 변경이 저장 예약을 계속 늦추지 않게 한다.
     /// 실제 저장 시각·성공 여부를 보장하지는 않는다.
     pub fn mark_dirty(&mut self) {
-        self.generation=std::sync::Arc::new(());
+        self.generation = std::sync::Arc::new(());
         if !self.dirty {
             self.dirty = true;
             self.dirty_since = Some(Instant::now());

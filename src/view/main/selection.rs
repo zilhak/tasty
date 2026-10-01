@@ -1,6 +1,6 @@
-use crate::runtime::engine_read::EngineRead;
 use crate::app::command::{DomainIntent, SendPayload};
 use crate::model::PhysicalRect;
+use crate::runtime::engine_read::EngineRead;
 use crate::selection::{self, SelectionMode, SelectionPoint, TextSelection};
 use crate::view::ui::View;
 
@@ -202,7 +202,7 @@ impl MainView {
             .state
             .focused_surface_id(engine)
             .and_then(|sid| engine.terminals.foreground_process_name(sid))
-            .map(|name|crate::click_cursor::is_shell_process(&name))
+            .map(|name| crate::click_cursor::is_shell_process(&name))
             .unwrap_or(false);
         if !is_shell {
             return;

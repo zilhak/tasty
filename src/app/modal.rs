@@ -37,19 +37,24 @@ impl App {
             let new_settings = settings_modal.settings.clone();
             let plugin_draft = settings_modal.take_plugin_shortcut_draft();
             // Only footer Save returns execution edits; Cancel leaves application services unchanged.
-            let execution_edits=settings_modal.take_execution_edits();
+            let execution_edits = settings_modal.take_execution_edits();
 
             if execution_edits.is_some() {
-                let origin=crate::app::command::DomainIntent::UpdateSettings(new_settings.clone()).from_user_menu("settings_save").origin;
-                self.cascade_settings_updated(new_settings,&origin);
+                let origin =
+                    crate::app::command::DomainIntent::UpdateSettings(new_settings.clone())
+                        .from_user_menu("settings_save")
+                        .origin;
+                self.cascade_settings_updated(new_settings, &origin);
             }
 
             for main in self.main_windows_iter_mut() {
                 main.state.settings_open_requested = false;
             }
             self.apply_plugin_shortcut_draft(plugin_draft);
-            let owner=self.settings_edit_owner.take();
-            if let (Some(owner),Some(edits))=(owner,execution_edits) {self.apply_settings_edits(owner,edits);}
+            let owner = self.settings_edit_owner.take();
+            if let (Some(owner), Some(edits)) = (owner, execution_edits) {
+                self.apply_settings_edits(owner, edits);
+            }
         } else if modal.as_any().is::<view::PluginsView>() {
             for main in self.main_windows_iter_mut() {
                 main.state.plugins_open = false;

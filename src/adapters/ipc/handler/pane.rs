@@ -1,7 +1,7 @@
 use serde_json::json;
 
-use crate::runtime::engine_access::EngineMut;
 use crate::model::SplitDirection;
+use crate::runtime::engine_access::EngineMut;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_pane_id;
@@ -62,4 +62,3 @@ pub(crate) fn resolve_surface_target(
     }
     None
 }
-

@@ -5,7 +5,7 @@ use crate::core::CoreState;
 
 impl RequestContext {
     pub fn detect_focus_change(&mut self, engine: &CoreState) -> Vec<PendingHostEvent> {
-        let mut events=Vec::new();
+        let mut events = Vec::new();
         let current = self.focused_surface_id(engine);
         if current == self.last_focused_surface_id {
             return events;
@@ -22,7 +22,7 @@ impl RequestContext {
     }
 
     pub fn detect_workspace_activation(&mut self, engine: &CoreState) -> Vec<PendingHostEvent> {
-        let mut events=Vec::new();
+        let mut events = Vec::new();
         let current = engine
             .workspace_at(self.active_workspace_index(engine))
             .map(|w| w.id);
@@ -41,7 +41,7 @@ impl RequestContext {
     }
 
     pub fn detect_tab_focus_change(&mut self, engine: &CoreState) -> Vec<PendingHostEvent> {
-        let mut events=Vec::new();
+        let mut events = Vec::new();
         let current = self.focused_pane(engine).and_then(|pane| {
             pane.tabs
                 .get(self.navigation.tab_index(pane))
@@ -61,6 +61,4 @@ impl RequestContext {
         }
         events
     }
-
-    /// pane 간 탭 이동을 감지한다. 생성·닫기는 해당 처리 경로가 이벤트를 기록한다.
 }

@@ -5,7 +5,10 @@ use crate::intent::{OpenPopupMode, UiIntent};
 use crate::model::WorkspaceCategoryId;
 use crate::state::{MainViewState, RenameTarget};
 
-pub(crate) fn open_new_category_dialog(state: &mut MainViewState, engine: &crate::runtime::engine_read::EngineRead<'_>) {
+pub(crate) fn open_new_category_dialog(
+    state: &mut MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+) {
     let target = RenameTarget::NewCategory;
     let scope = target.popup_scope(engine);
     state.dialogs.rename = Some((target, String::new()));

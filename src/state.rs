@@ -1,6 +1,4 @@
 mod accessors;
-#[cfg(feature="gui")]
-pub(crate) mod preset_catalog;
 #[cfg(feature = "gui")]
 pub(crate) mod branch;
 #[cfg(feature = "gui")]
@@ -26,6 +24,8 @@ pub(crate) mod pane;
 mod popup_close_tests;
 #[cfg(all(test, feature = "gui"))]
 mod popup_ownership_tests;
+#[cfg(feature = "gui")]
+pub(crate) mod preset_catalog;
 #[cfg(feature = "gui")]
 mod shell_integration_hint;
 mod tab;
@@ -55,11 +55,11 @@ pub use events::FocusedSurfaceType;
 pub use workspace::WorkspaceCloseOrigin;
 
 use crate::core::CoreState;
-use crate::runtime::engine_read::EngineRead;
 #[cfg(feature = "gui")]
 use crate::model::LogicalPx;
 #[cfg(any(feature = "gui", test))]
 use crate::model::PhysicalPx;
+use crate::runtime::engine_read::EngineRead;
 
 #[cfg(feature = "gui")]
 mod main;
@@ -122,8 +122,8 @@ impl RequestContext {
             #[cfg(feature = "gui")]
             preset_store: preset_catalog::PresetCatalog::new(preset_store),
             navigation,
-            #[cfg(feature="gui")]
-            pending_move:None,
+            #[cfg(feature = "gui")]
+            pending_move: None,
             #[cfg(feature = "gui")]
             tab_bar_scroll: Default::default(),
             #[cfg(feature = "gui")]
@@ -303,7 +303,8 @@ impl RequestContext {
         kind: &str,
         convert_surface_id: Option<u32>,
     ) -> bool {
-        let Some(popup_ref) = engine.surface_registry
+        let Some(popup_ref) = engine
+            .surface_registry
             .get(kind)
             .and_then(|d| d.convert_input_popup.clone())
         else {
@@ -534,10 +535,12 @@ impl RequestContext {
     /// 이미 알린 탭 변경을 다음 폴링에서 중복 보고하지 않도록 기준 사본을 갱신한다.
     /// 최초 폴링 전이면 그 폴링이 기준을 만들도록 그대로 둔다.
 
-
     /// cwd 상속 설정이 켜져 있으면 포커스된 surface의 로컬 경로를 반환한다.
     /// 원격 mirror의 경로는 로컬 PTY 작업 디렉터리로 사용할 수 없어 제외한다.
-    pub(crate) fn resolve_inherit_cwd(&self, engine: &EngineRead<'_>) -> Option<std::path::PathBuf> {
+    pub(crate) fn resolve_inherit_cwd(
+        &self,
+        engine: &EngineRead<'_>,
+    ) -> Option<std::path::PathBuf> {
         if !engine.settings.general.inherit_cwd || engine.workspaces().is_empty() {
             return None;
         }
@@ -610,5 +613,5 @@ mod tab_bar_height_seed_tests {
     }
 }
 
-#[cfg(feature="gui")]
+#[cfg(feature = "gui")]
 pub(crate) use main::PendingMove;

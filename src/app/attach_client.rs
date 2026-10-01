@@ -3,10 +3,10 @@
 //! 자동 연결 매핑은 auto_attach가 관리한다. docs/dev-guide/attach-behavior.md 참조.
 
 mod agent_origin;
-pub(crate) mod pending;
 mod dispatch;
 #[cfg(test)]
 mod navigation_tests;
+pub(crate) mod pending;
 
 use crate::runtime::engine_access::EngineMut;
 use dispatch::{AttachSource, Outcome, dispatch_attach};
@@ -53,55 +53,82 @@ struct MirrorMeshInfo {
     display_name: String,
 }
 
-
 impl App {
     /// Keep the popup's fixed installation target through the existing user attach guard.
-    pub(crate) fn queue_browser_mirror(&mut self,target:pending::PendingMirrorInstall,port:u16,workspace:u32,tunnel:Option<tasty_ssh::SshTunnel>)->anyhow::Result<()> {
-        let own_port=self.hub.ipc_server.as_ref().map(|server|server.port());
-        let mut tunnel=tunnel;
-        let outcome=dispatch_attach(own_port,port,workspace,AttachSource::User,||self.queue_mirror_connection(target,port,workspace,tunnel.take()));
+    pub(crate) fn queue_browser_mirror(
+        &mut self,
+        target: pending::PendingMirrorInstall,
+        port: u16,
+        workspace: u32,
+        tunnel: Option<tasty_ssh::SshTunnel>,
+    ) -> anyhow::Result<()> {
+        let own_port = self.hub.ipc_server.as_ref().map(|server| server.port());
+        let mut tunnel = tunnel;
+        let outcome = dispatch_attach(own_port, port, workspace, AttachSource::User, || {
+            self.queue_mirror_connection(target, port, workspace, tunnel.take())
+        });
         self.remote.retire_tunnel(tunnel);
         match outcome {
-            Outcome::Connected(result)=>result,
-            Outcome::RejectedSelf=>anyhow::bail!("self attach is not supported"),
+            Outcome::Connected(result) => result,
+            Outcome::RejectedSelf => anyhow::bail!("self attach is not supported"),
         }
     }
 
     pub(crate) fn dispatch_pending_gui_attach(&mut self) {
-        let mut requests=Vec::new();let mut user_requests=Vec::new();
+        let mut requests = Vec::new();
+        let mut user_requests = Vec::new();
         for session in self.engines.all_sessions_mut() {
-            requests.extend(std::mem::take(&mut session.remote.pending_gui_attach).into_iter().map(|request|(session.id,request)));
-            user_requests.extend(std::mem::take(&mut session.remote.pending_gui_attach_user).into_iter().map(|request|(session.id,request)));
+            requests.extend(
+                std::mem::take(&mut session.remote.pending_gui_attach)
+                    .into_iter()
+                    .map(|request| (session.id, request)),
+            );
+            user_requests.extend(
+                std::mem::take(&mut session.remote.pending_gui_attach_user)
+                    .into_iter()
+                    .map(|request| (session.id, request)),
+            );
         }
-        for (engine,(port,workspace)) in requests {self.try_dispatch_one_gui_attach_ipc(engine,port,workspace);}
-        for (engine,request) in user_requests {self.try_dispatch_one_gui_attach_user(engine,request);}
+        for (engine, (port, workspace)) in requests {
+            self.try_dispatch_one_gui_attach_ipc(engine, port, workspace);
+        }
+        for (engine, request) in user_requests {
+            self.try_dispatch_one_gui_attach_user(engine, request);
+        }
     }
 
-    fn try_dispatch_one_gui_attach_ipc(&mut self,engine:EngineId, port: u16, workspace: u32) {
+    fn try_dispatch_one_gui_attach_ipc(&mut self, engine: EngineId, port: u16, workspace: u32) {
         let own_port = self.hub.ipc_server.as_ref().map(|s| s.port());
         if let Outcome::Connected(Err(e)) =
             dispatch_attach(own_port, port, workspace, AttachSource::Ipc, || {
-                let target=self.mirror_install_target(Some(engine),None,None,false)?;
-                self.queue_mirror_connection(target,port,workspace,None)
+                let target = self.mirror_install_target(Some(engine), None, None, false)?;
+                self.queue_mirror_connection(target, port, workspace, None)
             })
         {
             tracing::warn!("gui attach failed (port={port}, ws={workspace}): {e}");
         }
     }
 
-    fn try_dispatch_one_gui_attach_user(&mut self,engine:EngineId, mut req: crate::core::GuiAttachUserReq) {
+    fn try_dispatch_one_gui_attach_user(
+        &mut self,
+        engine: EngineId,
+        mut req: crate::core::GuiAttachUserReq,
+    ) {
         let own_port = self.hub.ipc_server.as_ref().map(|s| s.port());
-        let outcome=dispatch_attach(
+        let outcome = dispatch_attach(
             own_port,
             req.port,
             req.workspace,
             AttachSource::User,
-            || {let target=self.mirror_install_target(Some(engine),None,None,true)?;self.queue_mirror_connection(target,req.port,req.workspace,req.tunnel.take())},
+            || {
+                let target = self.mirror_install_target(Some(engine), None, None, true)?;
+                self.queue_mirror_connection(target, req.port, req.workspace, req.tunnel.take())
+            },
         );
         self.remote.retire_tunnel(req.tunnel.take());
         match outcome {
             Outcome::RejectedSelf => {}
-            Outcome::Connected(Ok(())) => {},
+            Outcome::Connected(Ok(())) => {}
             Outcome::Connected(Err(e)) => tracing::warn!(
                 "remote-attach failed (port={}, ws={}): {e}",
                 req.port,
@@ -112,25 +139,51 @@ impl App {
 
     /// Capture the originating engine/View, then queue a cancellable Remote handshake.
     /// Accepted connection work does not mean the mirror is installed yet.
-    pub(crate) fn start_gui_attach(&mut self,port:u16,workspace:u32,tunnel:Option<tasty_ssh::SshTunnel>,anchor_ws_id:Option<u32>)->anyhow::Result<()> {
-        let target=match self.mirror_install_target(None,anchor_ws_id,None,false) {Ok(target)=>target,Err(error)=>{self.remote.retire_tunnel(tunnel);return Err(error);}};
-        self.queue_mirror_connection(target,port,workspace,tunnel)
+    pub(crate) fn start_gui_attach(
+        &mut self,
+        port: u16,
+        workspace: u32,
+        tunnel: Option<tasty_ssh::SshTunnel>,
+        anchor_ws_id: Option<u32>,
+    ) -> anyhow::Result<()> {
+        let target = match self.mirror_install_target(None, anchor_ws_id, None, false) {
+            Ok(target) => target,
+            Err(error) => {
+                self.remote.retire_tunnel(tunnel);
+                return Err(error);
+            }
+        };
+        self.queue_mirror_connection(target, port, workspace, tunnel)
     }
 
-    fn install_new_mirror(&mut self,target:&pending::PendingMirrorInstall,prepared:PreparedConnection)->anyhow::Result<u32> {
-        let PreparedConnection {port,remote_workspace:workspace,client_id,name,surfaces,tree,transport}=prepared;
-        let frame_tx=transport.frame_tx.clone();
-        let anchor_ws_id=target.anchor;
+    fn install_new_mirror(
+        &mut self,
+        target: &pending::PendingMirrorInstall,
+        prepared: PreparedConnection,
+    ) -> anyhow::Result<u32> {
+        let PreparedConnection {
+            port,
+            remote_workspace: workspace,
+            client_id,
+            name,
+            surfaces,
+            tree,
+            transport,
+        } = prepared;
+        let frame_tx = transport.frame_tx.clone();
+        let anchor_ws_id = target.anchor;
         let local_ws_id;
         let remote_to_local: HashMap<u32, u32>;
         let markdown_locals: HashSet<u32>;
         let mut structure_ids = MirrorStructureIds::default();
         {
-            let Some(window)=target.window else {anyhow::bail!("mirror View was retired");};
+            let Some(window) = target.window else {
+                anyhow::bail!("mirror View was retired");
+            };
             let Some((main, mut engine)) = engines_mut!(self).window_pair(window) else {
                 anyhow::bail!("no focused window to host mirror workspace");
             };
-            let ids = lease_mirror_ids(&engine,&tree,surfaces.len(),true)?;
+            let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), true)?;
 
             let mut mapping =
                 merge_survivor_mapping(&HashMap::new(), &surfaces, &ids, &frame_tx, &mut engine)?;
@@ -151,8 +204,8 @@ impl App {
                 &mapping.explorer,
                 &mut mapping.markdown,
             )?;
-            install_mirror_fallbacks(&ws,&mut engine);
-            ws.mirror=true;
+            install_mirror_fallbacks(&ws, &mut engine);
+            ws.mirror = true;
             engine.push_mirror_workspace(ws);
             main.state.reconcile_presentation(engine.core);
             main.mark_dirty();
@@ -160,26 +213,26 @@ impl App {
 
         self.remote.sessions.push(AttachClientSession {
             transport,
-            state:ClientSessionState {
-            structure_ids,
-            local_workspace: local_ws_id,
-            remote_to_local,
-            phase:SessionState::Connected,
-            client_id,
-            remote_workspace: workspace,
-            bulk_port: port,
-            anchor_ws_id,
-            op_seq: 0,
-            pending_op_focus: HashMap::new(),
-            agent_requests: Default::default(),
-            next_delta_focus: None,
-            last_forwarded_resize: HashMap::new(),
-            remote_label: format!("127.0.0.1:{port}"),
-            pending_list_dir_consumers: HashMap::new(),
-            markdown_locals,
-            resync_pending: None,
-            resync_awaiting_window: false,
-            }
+            state: ClientSessionState {
+                structure_ids,
+                local_workspace: local_ws_id,
+                remote_to_local,
+                phase: SessionState::Connected,
+                client_id,
+                remote_workspace: workspace,
+                bulk_port: port,
+                anchor_ws_id,
+                op_seq: 0,
+                pending_op_focus: HashMap::new(),
+                agent_requests: Default::default(),
+                next_delta_focus: None,
+                last_forwarded_resize: HashMap::new(),
+                remote_label: format!("127.0.0.1:{port}"),
+                pending_list_dir_consumers: HashMap::new(),
+                markdown_locals,
+                resync_pending: None,
+                resync_awaiting_window: false,
+            },
         });
         tracing::info!(
             "gui attach: mirror workspace {local_ws_id} from 127.0.0.1:{port} (remote ws {workspace})"
@@ -195,26 +248,57 @@ impl App {
         port: u16,
         tunnel: Option<tasty_ssh::SshTunnel>,
     ) -> anyhow::Result<()> {
-        let target=match self.mirror_install_target(None,None,Some(sess_idx),false) {Ok(target)=>target,Err(error)=>{self.remote.retire_tunnel(tunnel);return Err(error);}};
-        let workspace=self.remote.sessions.get(sess_idx).ok_or_else(||anyhow::anyhow!("reconnect session missing"))?.state.remote_workspace;
-        self.queue_mirror_connection(target,port,workspace,tunnel)
+        let target = match self.mirror_install_target(None, None, Some(sess_idx), false) {
+            Ok(target) => target,
+            Err(error) => {
+                self.remote.retire_tunnel(tunnel);
+                return Err(error);
+            }
+        };
+        let workspace = self
+            .remote
+            .sessions
+            .get(sess_idx)
+            .ok_or_else(|| anyhow::anyhow!("reconnect session missing"))?
+            .state
+            .remote_workspace;
+        self.queue_mirror_connection(target, port, workspace, tunnel)
     }
 
-    fn install_reconnected_mirror(&mut self,sess_idx:usize,target:&pending::PendingMirrorInstall,prepared:PreparedConnection)->anyhow::Result<()> {
-        let PreparedConnection {port,client_id,name,surfaces,tree,transport,..}=prepared;
-        let shared_frame_tx=transport.frame_tx.clone();
-        let local_workspace=target.reconnect.as_ref().ok_or_else(||anyhow::anyhow!("reconnect target missing"))?.0;
-        let wid=self.engines.window_of(target.engine).ok_or_else(||anyhow::anyhow!("reconnect View is parked; retain the pending resource"))?;
+    fn install_reconnected_mirror(
+        &mut self,
+        sess_idx: usize,
+        target: &pending::PendingMirrorInstall,
+        prepared: PreparedConnection,
+    ) -> anyhow::Result<()> {
+        let PreparedConnection {
+            port,
+            client_id,
+            name,
+            surfaces,
+            tree,
+            transport,
+            ..
+        } = prepared;
+        let shared_frame_tx = transport.frame_tx.clone();
+        let local_workspace = target
+            .reconnect
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("reconnect target missing"))?
+            .0;
+        let wid = self.engines.window_of(target.engine).ok_or_else(|| {
+            anyhow::anyhow!("reconnect View is parked; retain the pending resource")
+        })?;
         let removed_markdown: Vec<u32>;
         {
             let sess = &mut self.remote.sessions[sess_idx];
             sess.transport.frame_tx.retire();
-            sess.transport.disconnected.store(true,Ordering::Release);
+            sess.transport.disconnected.store(true, Ordering::Release);
 
             let Some((main, mut engine)) = engines_mut!(self).window_pair(wid) else {
                 anyhow::bail!("window {wid:?} 가 더 이상 MainView 가 아님 — 재연결 취소");
             };
-            let ids = lease_mirror_ids(&engine,&tree,surfaces.len(),false)?;
+            let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
 
             let old_focused_remote: Option<u32> = engine
                 .workspaces()
@@ -224,7 +308,10 @@ impl App {
                     capture_focused_remote(&main.state.navigation, ws, &sess.state.remote_to_local)
                 });
 
-            engine.remote.discard_connection_requests(&sess.state.remote_to_local,sess.state.local_workspace);
+            engine.remote.discard_connection_requests(
+                &sess.state.remote_to_local,
+                sess.state.local_workspace,
+            );
             let mut mapping = merge_survivor_mapping(
                 &sess.state.remote_to_local,
                 &surfaces,
@@ -234,9 +321,9 @@ impl App {
             )?;
             sess.state.remote_to_local = std::mem::take(&mut mapping.remote_to_local);
             // 연결 사이에 빠진 출력을 연속된 스트림으로 읽지 않도록 표지를 바꾼다.
-            for (&remote,&local) in &sess.state.remote_to_local {
-                if let Some(terminal)=engine.runtime.terminals.get_mut(local) {
-                    bind_mirror_input(terminal,remote,&shared_frame_tx,true);
+            for (&remote, &local) in &sess.state.remote_to_local {
+                if let Some(terminal) = engine.runtime.terminals.get_mut(local) {
+                    bind_mirror_input(terminal, remote, &shared_frame_tx, true);
                     terminal.renew_output_stream();
                 }
             }
@@ -275,8 +362,8 @@ impl App {
                 &mapping.explorer,
                 &mut mapping.markdown,
             )?;
-            install_mirror_fallbacks(&ws,&mut engine);
-            ws.mirror=true;
+            install_mirror_fallbacks(&ws, &mut engine);
+            ws.mirror = true;
             if !restore_focus_after_delta(
                 &mut main.state.navigation,
                 &mut ws,
@@ -301,7 +388,7 @@ impl App {
         destroy_mirror_markdown_surfaces(&mut self.plugin_manager, removed_markdown);
 
         let sess = &mut self.remote.sessions[sess_idx];
-        sess.transport=transport;
+        sess.transport = transport;
         sess.state.client_id = client_id;
         sess.state.bulk_port = port;
         sess.state.op_seq = 0;
@@ -401,7 +488,17 @@ impl App {
             let sess = &self.remote.sessions[idx];
             // A handshake/ID reservation continuation owns this epoch until installation or failure.
             // Its original transport (including the tunnel) must not be taken a second time.
-            if self.state.pending_mirror_installs.values().any(|pending|pending.reconnect.as_ref().is_some_and(|(workspace,epoch)|*workspace==sess.state.local_workspace && sess.transport.frame_tx.epoch().same(epoch))) {continue;}
+            if self.state.pending_mirror_installs.values().any(|pending| {
+                pending
+                    .reconnect
+                    .as_ref()
+                    .is_some_and(|(workspace, epoch)| {
+                        *workspace == sess.state.local_workspace
+                            && sess.transport.frame_tx.epoch().same(epoch)
+                    })
+            }) {
+                continue;
+            }
             match disconnect_disposition(
                 disconnected,
                 state,
@@ -544,7 +641,10 @@ impl App {
         if from_disconnect {
             self.notify_git_viewer_mirror_lost();
         }
-        destroy_mirror_markdown_surfaces(&mut self.plugin_manager, sess.state.markdown_locals.clone());
+        destroy_mirror_markdown_surfaces(
+            &mut self.plugin_manager,
+            sess.state.markdown_locals.clone(),
+        );
         // 사용자 닫기도 heartbeat를 멈춰 소켓이 불필요하게 유지되지 않게 한다.
         sess.transport.disconnected.store(true, Ordering::SeqCst);
         let _ = sess.send_frame(StreamTag::Detach, Vec::new()); // 종료 중 writer가 사라졌다면 전송 실패를 무시한다.
@@ -566,7 +666,8 @@ impl App {
             return;
         }
         let orphaned: Vec<usize> = self
-            .remote.sessions
+            .remote
+            .sessions
             .iter()
             .enumerate()
             .map(|(idx, s)| (idx, s.state.local_workspace))
@@ -594,11 +695,9 @@ impl App {
     }
 
     fn forward_one_resize(&mut self, local_sid: u32, cols: usize, rows: usize) {
-        let Some((sess, remote_sid)) = find_mirror_session_and_remote_id(
-            &mut self.remote.sessions,
-            local_sid,
-            "resize",
-        ) else {
+        let Some((sess, remote_sid)) =
+            find_mirror_session_and_remote_id(&mut self.remote.sessions, local_sid, "resize")
+        else {
             return;
         };
         if sess.state.last_forwarded_resize.get(&remote_sid) == Some(&(cols, rows)) {
@@ -614,7 +713,9 @@ impl App {
             tracing::warn!("resize forward: 전송 큐가 닫혀 요청을 보내지 못했다: {e}");
             return;
         }
-        sess.state.last_forwarded_resize.insert(remote_sid, (cols, rows));
+        sess.state
+            .last_forwarded_resize
+            .insert(remote_sid, (cols, rows));
     }
 
     /// 목록 요청을 원격으로 보낸다. 세션이 없으면 폐기하며 소비자는 자체 timeout으로 실패 처리한다.
@@ -753,11 +854,9 @@ impl App {
         local_sid: u32,
         ctx: crate::core::AttachMeshContextForward,
     ) {
-        let Some((sess, remote_sid)) = find_mirror_session_and_remote_id(
-            &mut self.remote.sessions,
-            local_sid,
-            "mesh context",
-        ) else {
+        let Some((sess, remote_sid)) =
+            find_mirror_session_and_remote_id(&mut self.remote.sessions, local_sid, "mesh context")
+        else {
             return;
         };
         let payload = serde_json::to_vec(&StreamControl::MeshContext {
@@ -789,11 +888,9 @@ impl App {
         local_sid: u32,
         input: tasty_plugin_protocol::protocol::RawInputWire,
     ) {
-        let Some((sess, remote_sid)) = find_mirror_session_and_remote_id(
-            &mut self.remote.sessions,
-            local_sid,
-            "mesh input",
-        ) else {
+        let Some((sess, remote_sid)) =
+            find_mirror_session_and_remote_id(&mut self.remote.sessions, local_sid, "mesh input")
+        else {
             return;
         };
         let payload = serde_json::to_vec(&StreamControl::MeshInput {
@@ -938,13 +1035,8 @@ fn find_mirror_session_and_remote_id<'a>(
     Some((sess, remote_sid))
 }
 
-
-
 /// read/write timeout을 설정한다. 설정 실패는 경고만 남기며 연결은 계속한다.
 /// writer 사본도 같은 소켓의 timeout 설정을 사용한다.
-
-
-
 
 /// 이 engine에 해당 workspace가 있으면 mirror 자원을 함께 정리하고 활성 인덱스를 보정한다.
 fn remove_mirror_workspace_from_engine(
@@ -960,7 +1052,7 @@ fn remove_mirror_workspace_from_engine(
     else {
         return false;
     };
-    let _=engine.task_scope.request_stop_workspace(local_workspace);
+    let _ = engine.task_scope.request_stop_workspace(local_workspace);
     for &local in remote_to_local.values() {
         engine.runtime.surfaces.remove(&local);
         engine.runtime.terminals.remove(local);
@@ -1125,20 +1217,33 @@ fn apply_mirror_events(
     plugin_manager: &mut Option<crate::plugin::PluginManager>,
     events: Vec<MirrorEvent>,
 ) {
-    let epoch=sess.transport.frame_tx.epoch();
-    let mut remaining=events.into_iter();
-    while let Some(ev)=remaining.next() {
-        if !epoch.is_active() || !epoch.same(&sess.transport.frame_tx.epoch()) {break;}
-        if let MirrorEvent::StructuralDelta {tree,surfaces,..}=&ev {
-            let admission=mirror_id_needs(tree,surfaces.len(),false).and_then(|needed|host.engine.runtime.ids.ensure(&needed).map_err(anyhow::Error::new));
-            if let Err(error)=admission {
-                if matches!(error.downcast_ref::<crate::runtime::id_reservations::ReservationError>(),Some(crate::runtime::id_reservations::ReservationError::Pending)) {
-                    let mut tail=vec![ev];tail.extend(remaining);
+    let epoch = sess.transport.frame_tx.epoch();
+    let mut remaining = events.into_iter();
+    while let Some(ev) = remaining.next() {
+        if !epoch.is_active() || !epoch.same(&sess.transport.frame_tx.epoch()) {
+            break;
+        }
+        if let MirrorEvent::StructuralDelta { tree, surfaces, .. } = &ev {
+            let admission = mirror_id_needs(tree, surfaces.len(), false).and_then(|needed| {
+                host.engine
+                    .runtime
+                    .ids
+                    .ensure(&needed)
+                    .map_err(anyhow::Error::new)
+            });
+            if let Err(error) = admission {
+                if matches!(
+                    error.downcast_ref::<crate::runtime::id_reservations::ReservationError>(),
+                    Some(crate::runtime::id_reservations::ReservationError::Pending)
+                ) {
+                    let mut tail = vec![ev];
+                    tail.extend(remaining);
                     sess.transport.output.restore_front(tail);
                     (host.engine.runtime.waker)();
                 } else {
                     tracing::warn!("mirror structural identity reservation failed: {error}");
-                    sess.transport.frame_tx.retire();sess.transport.disconnected.store(true,Ordering::Release);
+                    sess.transport.frame_tx.retire();
+                    sess.transport.disconnected.store(true, Ordering::Release);
                 }
                 return;
             }
@@ -1167,7 +1272,6 @@ fn log_mirror_cleanup(sess: &AttachClientSession, from_disconnect: bool) {
 
 /// 프레임을 순서대로 쓰며 write 실패는 연결 종료로 처리한다.
 /// 일부만 쓴 프레임을 같은 소켓에서 재시도하면 수신 경계가 어긋날 수 있다.
-
 
 /// 제어 프레임을 mirror 이벤트로 변환한다. 어느 파서에서도 인식하지 못하면 무시한다.
 fn mirror_event_from_control(payload: &[u8]) -> Option<MirrorEvent> {
@@ -1213,9 +1317,7 @@ fn mirror_event_from_control(payload: &[u8]) -> Option<MirrorEvent> {
 
 /// 수신 이벤트를 버퍼에 쌓고 메인 루프를 깨운다. 수신 실패는 연결 종료로 전달한다.
 
-
 /// 연결마다 heartbeat를 보낸다. 종료 신호를 확인하거나 큐 전송에 실패하면 끝난다.
-
 
 /// 로컬 PTY 없이 mirror 터미널을 만든다. 입력은 별도 스레드로 원격에 전달한다.
 fn make_mirror_surface(
@@ -1227,12 +1329,11 @@ fn make_mirror_surface(
     engine: &mut EngineMut<'_>,
 ) {
     let mut mirror = Terminal::new_detached(cols, rows);
-    bind_mirror_input(&mut mirror,remote_id,frame_tx,false);
+    bind_mirror_input(&mut mirror, remote_id, frame_tx, false);
     // mirror의 feed_bytes는 process의 lazy 동기화를 거치지 않아 옵저버 게이트를 여기서 초기화한다.
     mirror.set_output_events_enabled(engine.observer_router.wants(local_id));
     engine.runtime.terminals.insert(local_id, mirror, None);
 }
-
 
 fn pending_op_focus_for(
     op: &StructuralOp,
@@ -1369,29 +1470,52 @@ fn merge_survivor_mapping(
         } else if new_kind == MARKDOWN_MIRROR_KIND {
             if old_kind == Some(MARKDOWN_MIRROR_KIND) {
                 markdown_locals.insert(local_id, MARKDOWN_MIRROR_KIND.to_string());
-            } else if let Some(surface) = create_mirror_markdown_surface(s, local_id, &engine.as_ref()) {
+            } else if let Some(surface) =
+                create_mirror_markdown_surface(s, local_id, &engine.as_ref())
+            {
                 markdown_locals.insert(local_id, surface.kind().to_string());
                 engine.runtime.surfaces.insert(local_id, surface);
             }
         } else if role == Some("markdown")
-            && !engine.runtime.surface_registry.contains(MARKDOWN_MIRROR_KIND)
+            && !engine
+                .runtime
+                .surface_registry
+                .contains(MARKDOWN_MIRROR_KIND)
         {
             // kind 등록을 기다렸다가 표시 시 실제화한다. 다른 플러그인이 같은 이름을
             // 이미 등록했으면 허용된 소유자가 아니므로 placeholder로 기다리지 않는다.
-            let surface=deferred_mirror_markdown_surface(s,local_id);
-            markdown_locals.insert(local_id,surface.kind().to_string());
-            engine.runtime.surfaces.insert(local_id,surface);
+            let surface = deferred_mirror_markdown_surface(s, local_id);
+            markdown_locals.insert(local_id, surface.kind().to_string());
+            engine.runtime.surfaces.insert(local_id, surface);
         }
         // The descriptor tree never owns or clones a kind instance. Keep survivors in
         // the existing runtime collection, replacing only instances changed by the server.
         if is_terminal {
-            engine.runtime.surfaces.entry(local_id).or_insert_with(||Box::new(TerminalSurface{id:local_id}));
-        } else if let Some(info)=mesh_locals.get(&local_id) {
-            engine.runtime.surfaces.insert(local_id,Box::new(crate::model::AttachMeshSurface::new(local_id,&info.kind,info.plugin_id.clone(),info.display_name.clone())));
-        } else if let Some(root)=explorer_locals.get(&local_id) {
-            engine.runtime.surfaces.insert(local_id,Box::new(ExplorerPanel::new(local_id,root.clone())));
+            engine
+                .runtime
+                .surfaces
+                .entry(local_id)
+                .or_insert_with(|| Box::new(TerminalSurface { id: local_id }));
+        } else if let Some(info) = mesh_locals.get(&local_id) {
+            engine.runtime.surfaces.insert(
+                local_id,
+                Box::new(crate::model::AttachMeshSurface::new(
+                    local_id,
+                    &info.kind,
+                    info.plugin_id.clone(),
+                    info.display_name.clone(),
+                )),
+            );
+        } else if let Some(root) = explorer_locals.get(&local_id) {
+            engine.runtime.surfaces.insert(
+                local_id,
+                Box::new(ExplorerPanel::new(local_id, root.clone())),
+            );
         } else if !markdown_locals.contains_key(&local_id) {
-            engine.runtime.surfaces.insert(local_id,Box::new(EmptySurface::new(local_id)));
+            engine
+                .runtime
+                .surfaces
+                .insert(local_id, Box::new(EmptySurface::new(local_id)));
         }
         new_map.insert(remote_id, local_id);
     }
@@ -1419,9 +1543,13 @@ fn merge_survivor_mapping(
     })
 }
 
-fn install_mirror_fallbacks(workspace:&Workspace, engine:&mut EngineMut<'_>) {
+fn install_mirror_fallbacks(workspace: &Workspace, engine: &mut EngineMut<'_>) {
     for id in workspace.all_surface_ids() {
-        engine.runtime.surfaces.entry(id).or_insert_with(||Box::new(EmptySurface::new(id)));
+        engine
+            .runtime
+            .surfaces
+            .entry(id)
+            .or_insert_with(|| Box::new(EmptySurface::new(id)));
     }
 }
 
@@ -1445,7 +1573,9 @@ impl SurvivorMapping {
 
 /// kind가 허용된 markdown 플러그인에 등록됐는지 확인한다.
 fn markdown_mirror_available(engine: &crate::runtime::engine_access::EngineRef<'_>) -> bool {
-    engine.runtime.surface_registry
+    engine
+        .runtime
+        .surface_registry
         .get_live(MARKDOWN_MIRROR_KIND)
         .is_some_and(|def| {
             matches!(
@@ -1462,9 +1592,15 @@ fn create_mirror_markdown_surface(
     engine: &crate::runtime::engine_access::EngineRef<'_>,
 ) -> Option<Box<dyn Surface>> {
     let params = mirror_markdown_params(descriptor);
-    let definition=engine.runtime.surface_registry.get_live(MARKDOWN_MIRROR_KIND)?;
-    if !matches!(&definition.source,crate::runtime::surface_registry::KindSource::Plugin(plugin) if plugin==MARKDOWN_PLUGIN_ID) {return None;}
-    match (definition.create)(local_id,None,&params).and_then(|prepared|prepared.publish()) {
+    let definition = engine
+        .runtime
+        .surface_registry
+        .get_live(MARKDOWN_MIRROR_KIND)?;
+    if !matches!(&definition.source,crate::runtime::surface_registry::KindSource::Plugin(plugin) if plugin==MARKDOWN_PLUGIN_ID)
+    {
+        return None;
+    }
+    match (definition.create)(local_id, None, &params).and_then(|prepared| prepared.publish()) {
         Ok(surface) => Some(surface),
         Err(e) => {
             tracing::warn!(
@@ -1678,8 +1814,16 @@ fn apply_one_mirror_event(
                 pending_focus,
             );
             match removed_markdown {
-                Ok(removed)=>{host.state.reconcile_presentation(host.engine);destroy_mirror_markdown_surfaces(plugin_manager,removed);},
-                Err(error)=>{tracing::warn!("mirror delta could not obtain its fixed identity reservation: {error}");begin_resync(sess,host,1);},
+                Ok(removed) => {
+                    host.state.reconcile_presentation(host.engine);
+                    destroy_mirror_markdown_surfaces(plugin_manager, removed);
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        "mirror delta could not obtain its fixed identity reservation: {error}"
+                    );
+                    begin_resync(sess, host, 1);
+                }
             }
         }
         MirrorEvent::CaptureResult { ok, path, reason } => {
@@ -1711,11 +1855,25 @@ fn apply_one_mirror_event(
             truncated,
             reason,
         } => {
-            let entries=entries.map(|entries|entries.into_iter().map(|entry|crate::core::fs_list::DirEntryInfo {
-                path:dir.as_deref().map(|dir|std::path::Path::new(dir).join(&entry.name)).unwrap_or_else(||std::path::PathBuf::from(&entry.name)),
-                name:entry.name,is_dir:entry.is_dir,size:entry.size,modified:entry.modified,ext:entry.ext,
-            }).collect());
-            apply_list_dir_result_event(sess,host,request_id,ok,dir,entries,truncated,reason);
+            let entries = entries.map(|entries| {
+                entries
+                    .into_iter()
+                    .map(|entry| crate::core::fs_list::DirEntryInfo {
+                        path: dir
+                            .as_deref()
+                            .map(|dir| std::path::Path::new(dir).join(&entry.name))
+                            .unwrap_or_else(|| std::path::PathBuf::from(&entry.name)),
+                        name: entry.name,
+                        is_dir: entry.is_dir,
+                        size: entry.size,
+                        modified: entry.modified,
+                        ext: entry.ext,
+                    })
+                    .collect()
+            });
+            apply_list_dir_result_event(
+                sess, host, request_id, ok, dir, entries, truncated, reason,
+            );
         }
         MirrorEvent::GitQueryResult {
             request_id,
@@ -1767,7 +1925,8 @@ fn apply_one_mirror_event(
         MirrorEvent::Mesh(remote_id, generation, frame_seq, full, bytes) => {
             if let Some(&local) = sess.state.remote_to_local.get(&remote_id) {
                 host.engine
-                    .remote.attach_mesh_frames
+                    .remote
+                    .attach_mesh_frames
                     .update(local, bytes, generation, frame_seq, full);
             }
         }
@@ -1939,7 +2098,7 @@ fn apply_mirror_structural_delta(
     surfaces: &[Value],
     pending_focus: Option<PendingOpFocus>,
 ) -> anyhow::Result<Vec<u32>> {
-    let ids = lease_mirror_ids(&engine,&tree,surfaces.len(),false)?;
+    let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
 
     let old_focused_remote: Option<u32> = engine
         .workspaces()
@@ -1959,7 +2118,8 @@ fn apply_mirror_structural_delta(
     sess.state.remote_to_local = std::mem::take(&mut mapping.remote_to_local);
     let new_markdown = mapping.markdown_ids();
     let removed_markdown: Vec<u32> = sess
-        .state.markdown_locals
+        .state
+        .markdown_locals
         .difference(&new_markdown)
         .copied()
         .collect();
@@ -1988,8 +2148,8 @@ fn apply_mirror_structural_delta(
             &mapping.explorer,
             &mut mapping.markdown,
         )?;
-        install_mirror_fallbacks(&ws,engine);
-        ws.mirror=true;
+        install_mirror_fallbacks(&ws, engine);
+        ws.mirror = true;
 
         // 사용자가 새 surface를 만들었다면 옛 포커스 복원보다 새 surface 선택을 우선한다.
         let mut focus_handled = false;
@@ -2096,110 +2256,396 @@ fn find_pane_and_tab_for_surface(ws: &Workspace, surface_id: u32) -> Option<(u32
     None
 }
 
-fn stable_mirror_id(ids:&mut HashMap<u32,u32>,remote:u32,next:impl FnOnce()->anyhow::Result<u32>)->anyhow::Result<u32> {
-    if remote!=0 && let Some(id)=ids.get(&remote) {return Ok(*id);}
-    let id=next()?;if remote!=0 {ids.insert(remote,id);}Ok(id)
+fn stable_mirror_id(
+    ids: &mut HashMap<u32, u32>,
+    remote: u32,
+    next: impl FnOnce() -> anyhow::Result<u32>,
+) -> anyhow::Result<u32> {
+    if remote != 0
+        && let Some(id) = ids.get(&remote)
+    {
+        return Ok(*id);
+    }
+    let id = next()?;
+    if remote != 0 {
+        ids.insert(remote, id);
+    }
+    Ok(id)
 }
 
-fn mirror_id_needs(tree:&Value,surfaces:usize,new_workspace:bool)->anyhow::Result<Vec<(tasty_core::IdKind,u32)>> {
+fn mirror_id_needs(
+    tree: &Value,
+    surfaces: usize,
+    new_workspace: bool,
+) -> anyhow::Result<Vec<(tasty_core::IdKind, u32)>> {
     use tasty_core::IdKind;
-    fn count(value:&Value)->usize {match value {Value::Array(values)=>values.iter().fold(1usize,|sum,value|sum.saturating_add(count(value))),Value::Object(values)=>values.values().fold(1usize,|sum,value|sum.saturating_add(count(value))),_=>1}}
+    fn count(value: &Value) -> usize {
+        match value {
+            Value::Array(values) => values
+                .iter()
+                .fold(1usize, |sum, value| sum.saturating_add(count(value))),
+            Value::Object(values) => values
+                .values()
+                .fold(1usize, |sum, value| sum.saturating_add(count(value))),
+            _ => 1,
+        }
+    }
     // Upper bound includes malformed-tree fallback leaves and both legacy/recursive wire shapes.
-    let nodes=count(tree).checked_mul(2).and_then(|nodes|nodes.checked_add(8)).ok_or_else(||anyhow::anyhow!("mirror structure size overflow"))?;
-    let needs=vec![(IdKind::Workspace,u32::from(new_workspace)),(IdKind::Pane,u32::try_from(nodes)?),(IdKind::Tab,u32::try_from(nodes)?),(IdKind::Surface,u32::try_from(nodes.checked_add(surfaces).ok_or_else(||anyhow::anyhow!("mirror surface count overflow"))?)?)];
+    let nodes = count(tree)
+        .checked_mul(2)
+        .and_then(|nodes| nodes.checked_add(8))
+        .ok_or_else(|| anyhow::anyhow!("mirror structure size overflow"))?;
+    let needs = vec![
+        (IdKind::Workspace, u32::from(new_workspace)),
+        (IdKind::Pane, u32::try_from(nodes)?),
+        (IdKind::Tab, u32::try_from(nodes)?),
+        (
+            IdKind::Surface,
+            u32::try_from(
+                nodes
+                    .checked_add(surfaces)
+                    .ok_or_else(|| anyhow::anyhow!("mirror surface count overflow"))?,
+            )?,
+        ),
+    ];
     Ok(needs)
 }
-fn lease_mirror_ids(engine:&EngineMut<'_>,tree:&Value,surfaces:usize,new_workspace:bool)->anyhow::Result<crate::runtime::id_reservations::ReservedIds> {
-    let result=engine.runtime.ids.lease(&mirror_id_needs(tree,surfaces,new_workspace)?);
+fn lease_mirror_ids(
+    engine: &EngineMut<'_>,
+    tree: &Value,
+    surfaces: usize,
+    new_workspace: bool,
+) -> anyhow::Result<crate::runtime::id_reservations::ReservedIds> {
+    let result = engine
+        .runtime
+        .ids
+        .lease(&mirror_id_needs(tree, surfaces, new_workspace)?);
     (engine.runtime.waker)();
     result.map_err(anyhow::Error::new)
 }
 
 #[allow(clippy::too_many_arguments)] // reason: fixed mirror parser inputs
 fn build_pane_from_json(
-    structure_ids:&mut MirrorStructureIds,navigation:&mut crate::state::navigation::NavigationState,p:&Value,
-    ids:&crate::runtime::id_reservations::ReservedIds,map:&HashMap<u32,u32>,term:&HashSet<u32>,mesh:&HashMap<u32,MirrorMeshInfo>,explorer:&HashMap<u32,std::path::PathBuf>,markdown:&mut MirrorMarkdownLeaves,
-)->anyhow::Result<Pane> {
-    let mut tabs=Vec::new();let mut active=0;
-    for (index,value) in p.get("tabs").and_then(Value::as_array).into_iter().flatten().enumerate() {
-        let layout=match build_layout(navigation,value.get("layout").unwrap_or(&Value::Null),&MirrorLayoutSources {ids,map,term,mesh,explorer},markdown)? {
-            Some(layout)=>layout,None=>SurfaceLayout::Leaf(crate::model::SurfaceDescriptor::new(ids.next_surface()?,"empty")),
+    structure_ids: &mut MirrorStructureIds,
+    navigation: &mut crate::state::navigation::NavigationState,
+    p: &Value,
+    ids: &crate::runtime::id_reservations::ReservedIds,
+    map: &HashMap<u32, u32>,
+    term: &HashSet<u32>,
+    mesh: &HashMap<u32, MirrorMeshInfo>,
+    explorer: &HashMap<u32, std::path::PathBuf>,
+    markdown: &mut MirrorMarkdownLeaves,
+) -> anyhow::Result<Pane> {
+    let mut tabs = Vec::new();
+    let mut active = 0;
+    for (index, value) in p
+        .get("tabs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        let layout = match build_layout(
+            navigation,
+            value.get("layout").unwrap_or(&Value::Null),
+            &MirrorLayoutSources {
+                ids,
+                map,
+                term,
+                mesh,
+                explorer,
+            },
+            markdown,
+        )? {
+            Some(layout) => layout,
+            None => SurfaceLayout::Leaf(crate::model::SurfaceDescriptor::new(
+                ids.next_surface()?,
+                "empty",
+            )),
         };
-        let remote=value.get("id").and_then(Value::as_u64).unwrap_or(0) as u32;
-        let tab_id=stable_mirror_id(&mut structure_ids.remote_tabs,remote,||ids.next_tab())?;
-        let focus=value.get("focused_surface").and_then(Value::as_u64).and_then(|id|map.get(&(id as u32))).copied().or_else(||layout.first_surface_id()).unwrap_or(0);
-        let tab=Tab {id:tab_id,name:value.get("name").and_then(Value::as_str).unwrap_or(crate::i18n::t("attach.tab_title_fallback")).into(),explicit_name:None,layout_opt:Some(layout),surface_titles:Default::default()};
-        if value.get("active").and_then(Value::as_bool).unwrap_or(false) {active=index;}
-        navigation.initialize_surface(&tab,focus);tabs.push(tab);
+        let remote = value.get("id").and_then(Value::as_u64).unwrap_or(0) as u32;
+        let tab_id = stable_mirror_id(&mut structure_ids.remote_tabs, remote, || ids.next_tab())?;
+        let focus = value
+            .get("focused_surface")
+            .and_then(Value::as_u64)
+            .and_then(|id| map.get(&(id as u32)))
+            .copied()
+            .or_else(|| layout.first_surface_id())
+            .unwrap_or(0);
+        let tab = Tab {
+            id: tab_id,
+            name: value
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or(crate::i18n::t("attach.tab_title_fallback"))
+                .into(),
+            explicit_name: None,
+            layout_opt: Some(layout),
+            surface_titles: Default::default(),
+        };
+        if value
+            .get("active")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            active = index;
+        }
+        navigation.initialize_surface(&tab, focus);
+        tabs.push(tab);
     }
-    if tabs.is_empty() {tabs.push(Tab {id:ids.next_tab()?,name:crate::i18n::t("attach.tab_title_fallback").into(),explicit_name:None,layout_opt:Some(SurfaceLayout::Leaf(crate::model::SurfaceDescriptor::new(ids.next_surface()?,"empty"))),surface_titles:Default::default()});}
-    let remote=p.get("id").and_then(Value::as_u64).unwrap_or(0) as u32;
-    let id=stable_mirror_id(&mut structure_ids.panes,remote,||ids.next_pane())?;
-    let pane=Pane {id,tabs};navigation.initialize_tab(&pane,active);Ok(pane)
+    if tabs.is_empty() {
+        tabs.push(Tab {
+            id: ids.next_tab()?,
+            name: crate::i18n::t("attach.tab_title_fallback").into(),
+            explicit_name: None,
+            layout_opt: Some(SurfaceLayout::Leaf(crate::model::SurfaceDescriptor::new(
+                ids.next_surface()?,
+                "empty",
+            ))),
+            surface_titles: Default::default(),
+        });
+    }
+    let remote = p.get("id").and_then(Value::as_u64).unwrap_or(0) as u32;
+    let id = stable_mirror_id(&mut structure_ids.panes, remote, || ids.next_pane())?;
+    let pane = Pane { id, tabs };
+    navigation.initialize_tab(&pane, active);
+    Ok(pane)
 }
 
 #[allow(clippy::too_many_arguments)] // reason: fixed recursive mirror parser inputs
 fn build_pane_node(
-    structure_ids:&mut MirrorStructureIds,navigation:&mut crate::state::navigation::NavigationState,node:&Value,
-    ids:&crate::runtime::id_reservations::ReservedIds,map:&HashMap<u32,u32>,term:&HashSet<u32>,mesh:&HashMap<u32,MirrorMeshInfo>,explorer:&HashMap<u32,std::path::PathBuf>,markdown:&mut MirrorMarkdownLeaves,pane_id_map:&mut HashMap<u32,u32>,
-)->anyhow::Result<Option<PaneNode>> {
+    structure_ids: &mut MirrorStructureIds,
+    navigation: &mut crate::state::navigation::NavigationState,
+    node: &Value,
+    ids: &crate::runtime::id_reservations::ReservedIds,
+    map: &HashMap<u32, u32>,
+    term: &HashSet<u32>,
+    mesh: &HashMap<u32, MirrorMeshInfo>,
+    explorer: &HashMap<u32, std::path::PathBuf>,
+    markdown: &mut MirrorMarkdownLeaves,
+    pane_id_map: &mut HashMap<u32, u32>,
+) -> anyhow::Result<Option<PaneNode>> {
     Ok(match node.get("type").and_then(Value::as_str) {
-        Some("Leaf")=>{
-            let Some(remote)=node.get("id").and_then(Value::as_u64) else {return Ok(None);};
-            let pane=build_pane_from_json(structure_ids,navigation,node,ids,map,term,mesh,explorer,markdown)?;
-            pane_id_map.insert(remote as u32,pane.id);Some(PaneNode::Leaf(pane))
-        },
-        Some("Split")=>{
-            let (Some(first),Some(second))=(node.get("first"),node.get("second")) else {return Ok(None);};
-            let Some(first)=build_pane_node(structure_ids,navigation,first,ids,map,term,mesh,explorer,markdown,pane_id_map)? else {return Ok(None);};
-            let Some(second)=build_pane_node(structure_ids,navigation,second,ids,map,term,mesh,explorer,markdown,pane_id_map)? else {return Ok(None);};
-            Some(PaneNode::Split {direction:wire_direction(node),ratio:node.get("ratio").and_then(Value::as_f64).unwrap_or(0.5) as f32,first:Box::new(first),second:Box::new(second)})
-        },
-        _=>None,
+        Some("Leaf") => {
+            let Some(remote) = node.get("id").and_then(Value::as_u64) else {
+                return Ok(None);
+            };
+            let pane = build_pane_from_json(
+                structure_ids,
+                navigation,
+                node,
+                ids,
+                map,
+                term,
+                mesh,
+                explorer,
+                markdown,
+            )?;
+            pane_id_map.insert(remote as u32, pane.id);
+            Some(PaneNode::Leaf(pane))
+        }
+        Some("Split") => {
+            let (Some(first), Some(second)) = (node.get("first"), node.get("second")) else {
+                return Ok(None);
+            };
+            let Some(first) = build_pane_node(
+                structure_ids,
+                navigation,
+                first,
+                ids,
+                map,
+                term,
+                mesh,
+                explorer,
+                markdown,
+                pane_id_map,
+            )?
+            else {
+                return Ok(None);
+            };
+            let Some(second) = build_pane_node(
+                structure_ids,
+                navigation,
+                second,
+                ids,
+                map,
+                term,
+                mesh,
+                explorer,
+                markdown,
+                pane_id_map,
+            )?
+            else {
+                return Ok(None);
+            };
+            Some(PaneNode::Split {
+                direction: wire_direction(node),
+                ratio: node.get("ratio").and_then(Value::as_f64).unwrap_or(0.5) as f32,
+                first: Box::new(first),
+                second: Box::new(second),
+            })
+        }
+        _ => None,
     })
 }
-fn wire_direction(node:&Value)->SplitDirection {if node.get("direction").and_then(Value::as_str)==Some("vertical") {SplitDirection::Vertical}else {SplitDirection::Horizontal}}
+fn wire_direction(node: &Value) -> SplitDirection {
+    if node.get("direction").and_then(Value::as_str) == Some("vertical") {
+        SplitDirection::Vertical
+    } else {
+        SplitDirection::Horizontal
+    }
+}
 
 #[allow(clippy::too_many_arguments)] // reason: mirror projection and reserved identity inputs
 fn build_mirror_workspace(
-    structure_ids:&mut MirrorStructureIds,navigation:&mut crate::state::navigation::NavigationState,ws_id:u32,name:&str,tree:&Value,
-    ids:&crate::runtime::id_reservations::ReservedIds,map:&HashMap<u32,u32>,term:&HashSet<u32>,mesh:&HashMap<u32,MirrorMeshInfo>,explorer:&HashMap<u32,std::path::PathBuf>,markdown:&mut MirrorMarkdownLeaves,
-)->anyhow::Result<Workspace> {
-    let focused=tree.get("focused_pane").and_then(Value::as_u64).unwrap_or(0) as u32;
-    let mut pane_map=HashMap::new();
-    let mut layout=if let Some(node)=tree.get("pane_layout") {build_pane_node(structure_ids,navigation,node,ids,map,term,mesh,explorer,markdown,&mut pane_map)?} else {None};
+    structure_ids: &mut MirrorStructureIds,
+    navigation: &mut crate::state::navigation::NavigationState,
+    ws_id: u32,
+    name: &str,
+    tree: &Value,
+    ids: &crate::runtime::id_reservations::ReservedIds,
+    map: &HashMap<u32, u32>,
+    term: &HashSet<u32>,
+    mesh: &HashMap<u32, MirrorMeshInfo>,
+    explorer: &HashMap<u32, std::path::PathBuf>,
+    markdown: &mut MirrorMarkdownLeaves,
+) -> anyhow::Result<Workspace> {
+    let focused = tree
+        .get("focused_pane")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as u32;
+    let mut pane_map = HashMap::new();
+    let mut layout = if let Some(node) = tree.get("pane_layout") {
+        build_pane_node(
+            structure_ids,
+            navigation,
+            node,
+            ids,
+            map,
+            term,
+            mesh,
+            explorer,
+            markdown,
+            &mut pane_map,
+        )?
+    } else {
+        None
+    };
     if layout.is_none() {
-        for value in tree.get("panes").and_then(Value::as_array).into_iter().flatten() {
-            let pane=build_pane_from_json(structure_ids,navigation,value,ids,map,term,mesh,explorer,markdown)?;
-            pane_map.insert(value.get("id").and_then(Value::as_u64).unwrap_or(0) as u32,pane.id);
-            layout=Some(match layout {None=>PaneNode::Leaf(pane),Some(first)=>PaneNode::Split {direction:SplitDirection::Horizontal,ratio:0.5,first:Box::new(first),second:Box::new(PaneNode::Leaf(pane))}});
+        for value in tree
+            .get("panes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let pane = build_pane_from_json(
+                structure_ids,
+                navigation,
+                value,
+                ids,
+                map,
+                term,
+                mesh,
+                explorer,
+                markdown,
+            )?;
+            pane_map.insert(
+                value.get("id").and_then(Value::as_u64).unwrap_or(0) as u32,
+                pane.id,
+            );
+            layout = Some(match layout {
+                None => PaneNode::Leaf(pane),
+                Some(first) => PaneNode::Split {
+                    direction: SplitDirection::Horizontal,
+                    ratio: 0.5,
+                    first: Box::new(first),
+                    second: Box::new(PaneNode::Leaf(pane)),
+                },
+            });
         }
     }
-    let layout=match layout {Some(layout)=>layout,None=>PaneNode::Leaf(Pane::new_with_surface(ids.next_pane()?,ids.next_tab()?,crate::i18n::t("attach.tab_title_fallback").into(),crate::model::SurfaceDescriptor::new(ids.next_surface()?,"empty")))};
-    let focused=pane_map.get(&focused).copied().or_else(||layout.first_pane().map(|pane|pane.id)).unwrap_or(0);
-    let mut workspace=Workspace::from_restored(ws_id,name.into(),String::new(),layout);workspace.mirror=true;
-    navigation.initialize_pane(&workspace,focused);structure_ids.retain_workspace(&workspace);Ok(workspace)
+    let layout = match layout {
+        Some(layout) => layout,
+        None => PaneNode::Leaf(Pane::new_with_surface(
+            ids.next_pane()?,
+            ids.next_tab()?,
+            crate::i18n::t("attach.tab_title_fallback").into(),
+            crate::model::SurfaceDescriptor::new(ids.next_surface()?, "empty"),
+        )),
+    };
+    let focused = pane_map
+        .get(&focused)
+        .copied()
+        .or_else(|| layout.first_pane().map(|pane| pane.id))
+        .unwrap_or(0);
+    let mut workspace = Workspace::from_restored(ws_id, name.into(), String::new(), layout);
+    workspace.mirror = true;
+    navigation.initialize_pane(&workspace, focused);
+    structure_ids.retain_workspace(&workspace);
+    Ok(workspace)
 }
 
 struct MirrorLayoutSources<'a> {
-    ids:&'a crate::runtime::id_reservations::ReservedIds,map:&'a HashMap<u32,u32>,term:&'a HashSet<u32>,mesh:&'a HashMap<u32,MirrorMeshInfo>,explorer:&'a HashMap<u32,std::path::PathBuf>,
+    ids: &'a crate::runtime::id_reservations::ReservedIds,
+    map: &'a HashMap<u32, u32>,
+    term: &'a HashSet<u32>,
+    mesh: &'a HashMap<u32, MirrorMeshInfo>,
+    explorer: &'a HashMap<u32, std::path::PathBuf>,
 }
-fn build_layout(navigation:&mut crate::state::navigation::NavigationState,node:&Value,sources:&MirrorLayoutSources<'_>,markdown:&mut MirrorMarkdownLeaves)->anyhow::Result<Option<SurfaceLayout>> {
+fn build_layout(
+    navigation: &mut crate::state::navigation::NavigationState,
+    node: &Value,
+    sources: &MirrorLayoutSources<'_>,
+    markdown: &mut MirrorMarkdownLeaves,
+) -> anyhow::Result<Option<SurfaceLayout>> {
     Ok(match node.get("type").and_then(Value::as_str) {
-        Some("Leaf")=>{
-            let Some(remote)=node.get("id").and_then(Value::as_u64) else {return Ok(None);};
-            let local=match sources.map.get(&(remote as u32)) {Some(local)=>*local,None=>sources.ids.next_surface()?};
-            let kind=if sources.term.contains(&local) {"terminal"} else if let Some(info)=sources.mesh.get(&local) {info.kind.as_str()} else if sources.explorer.contains_key(&local) {"explorer"} else {markdown.get(&local).map_or("empty",String::as_str)};
-            Some(SurfaceLayout::Leaf(crate::model::SurfaceDescriptor::new(local,kind)))
-        },
-        Some("Split")=>{
-            let (Some(first),Some(second))=(node.get("first"),node.get("second")) else {return Ok(None);};
-            let Some(first)=build_layout(navigation,first,sources,markdown)? else {return Ok(None);};
-            let Some(second)=build_layout(navigation,second,sources,markdown)? else {return Ok(None);};
-            let node_id=crate::model::SplitNodeId::allocate();navigation.split_hints.insert(node_id,node.get("focus_second").and_then(Value::as_bool).unwrap_or(false));
-            Some(SurfaceLayout::Split {direction:wire_direction(node),ratio:node.get("ratio").and_then(Value::as_f64).unwrap_or(0.5) as f32,first:Box::new(first),second:Box::new(second),node_id})
-        },
-        _=>None,
+        Some("Leaf") => {
+            let Some(remote) = node.get("id").and_then(Value::as_u64) else {
+                return Ok(None);
+            };
+            let local = match sources.map.get(&(remote as u32)) {
+                Some(local) => *local,
+                None => sources.ids.next_surface()?,
+            };
+            let kind = if sources.term.contains(&local) {
+                "terminal"
+            } else if let Some(info) = sources.mesh.get(&local) {
+                info.kind.as_str()
+            } else if sources.explorer.contains_key(&local) {
+                "explorer"
+            } else {
+                markdown.get(&local).map_or("empty", String::as_str)
+            };
+            Some(SurfaceLayout::Leaf(crate::model::SurfaceDescriptor::new(
+                local, kind,
+            )))
+        }
+        Some("Split") => {
+            let (Some(first), Some(second)) = (node.get("first"), node.get("second")) else {
+                return Ok(None);
+            };
+            let Some(first) = build_layout(navigation, first, sources, markdown)? else {
+                return Ok(None);
+            };
+            let Some(second) = build_layout(navigation, second, sources, markdown)? else {
+                return Ok(None);
+            };
+            let node_id = crate::model::SplitNodeId::allocate();
+            navigation.split_hints.insert(
+                node_id,
+                node.get("focus_second")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            );
+            Some(SurfaceLayout::Split {
+                direction: wire_direction(node),
+                ratio: node.get("ratio").and_then(Value::as_f64).unwrap_or(0.5) as f32,
+                first: Box::new(first),
+                second: Box::new(second),
+                node_id,
+            })
+        }
+        _ => None,
     })
 }
 
@@ -2386,10 +2832,15 @@ impl App {
     /// 캡처를 원격에 올리고 원격 클립보드에 경로를 넣도록 요청한다.
     /// StreamControl enum 밖의 capture_chunk/capture_commit 이벤트를 사용한다.
     pub(crate) fn forward_capture_to_remote_clipboard(
-        &mut self,target:&RemoteTarget,file_name:&str,bytes:&[u8],
-    )->anyhow::Result<()> {
-        if !self.remote_target_is_current(target) {anyhow::bail!("capture connection retired before delivery");}
-        let frame_tx=target.sender.clone();
+        &mut self,
+        target: &RemoteTarget,
+        file_name: &str,
+        bytes: &[u8],
+    ) -> anyhow::Result<()> {
+        if !self.remote_target_is_current(target) {
+            anyhow::bail!("capture connection retired before delivery");
+        }
+        let frame_tx = target.sender.clone();
         let upload_id = next_capture_upload_id();
 
         use base64::Engine as _;
@@ -2426,7 +2877,8 @@ impl App {
         consumer: Option<u32>,
     ) -> anyhow::Result<()> {
         let Some(sess) = self
-            .remote.sessions
+            .remote
+            .sessions
             .iter_mut()
             .find(|s| s.state.local_workspace == local_ws_id)
         else {
@@ -2439,7 +2891,9 @@ impl App {
         });
         let result = send_capture_control_frame(&sess.transport.frame_tx, &msg);
         if result.is_ok() {
-            sess.state.pending_list_dir_consumers.insert(request_id, consumer);
+            sess.state
+                .pending_list_dir_consumers
+                .insert(request_id, consumer);
         }
         result
     }
@@ -2453,11 +2907,12 @@ impl App {
         worktree_path: Option<&str>,
         diff_path: Option<&str>,
     ) -> anyhow::Result<()> {
-        let Some(sess) = self
-            .remote.sessions
-            .iter()
-            .find(|s| s.state.remote_to_local.values().any(|&l| l == local_surface_id))
-        else {
+        let Some(sess) = self.remote.sessions.iter().find(|s| {
+            s.state
+                .remote_to_local
+                .values()
+                .any(|&l| l == local_surface_id)
+        }) else {
             anyhow::bail!("no attach session for mirror surface {local_surface_id}");
         };
         let Some(remote_sid) = sess
@@ -2485,7 +2940,8 @@ impl App {
     ) -> anyhow::Result<()> {
         let (local_surface_id, request_id) = (req.local_surface_id, req.request_id);
         let Some(sess) = self
-            .remote.sessions
+            .remote
+            .sessions
             .iter_mut()
             .find(|s| s.state.markdown_locals.contains(&local_surface_id))
         else {
@@ -2508,7 +2964,9 @@ impl App {
             "surface_id": remote_sid,
         });
         send_capture_control_frame(&sess.transport.frame_tx, &msg)?;
-        sess.state.agent_requests.note_markdown(req.agent_origin,request_id);
+        sess.state
+            .agent_requests
+            .note_markdown(req.agent_origin, request_id);
         Ok(())
     }
 }
@@ -2518,7 +2976,8 @@ fn send_capture_control_frame(
     msg: &serde_json::Value,
 ) -> anyhow::Result<()> {
     let payload = serde_json::to_vec(msg)?;
-    frame_tx.send(OutFrame {
+    frame_tx
+        .send(OutFrame {
             tag: StreamTag::Control,
             payload,
         })
@@ -2529,7 +2988,8 @@ fn send_capture_control_frame(
 impl App {
     /// 워커가 세션 전체를 빌리지 않도록 접속 포트와 원격 workspace ID만 꺼낸다.
     pub(crate) fn bulk_target_for(&self, local_ws_id: u32) -> Option<(u16, u32)> {
-        self.remote.sessions
+        self.remote
+            .sessions
             .iter()
             .find(|s| s.state.local_workspace == local_ws_id)
             .map(|s| (s.state.bulk_port, s.state.remote_workspace))
@@ -2547,11 +3007,17 @@ fn bulk_chunk_frames(transfer_id: u64, bytes: &[u8]) -> Vec<Vec<u8>> {
 
 /// 기존 workspace 점유에 연결된 bulk 채널을 연다. timeout 설정 실패는 경고만 남긴다.
 fn open_bulk_connection(port: u16, remote_ws: u32) -> anyhow::Result<StreamConnection> {
-    open_bulk_connection_bound(port,remote_ws,None)
+    open_bulk_connection_bound(port, remote_ws, None)
 }
-fn open_bulk_connection_bound(port:u16,remote_ws:u32,attempt:Option<&tasty_remote::outbound::AttemptToken>)->anyhow::Result<StreamConnection> {
+fn open_bulk_connection_bound(
+    port: u16,
+    remote_ws: u32,
+    attempt: Option<&tasty_remote::outbound::AttemptToken>,
+) -> anyhow::Result<StreamConnection> {
     let sock = TcpStream::connect(("127.0.0.1", port))?;
-    if let Some(attempt)=attempt {attempt.register_socket(&sock)?;}
+    if let Some(attempt) = attempt {
+        attempt.register_socket(&sock)?;
+    }
     if let Err(e) = sock.set_read_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
         tracing::warn!("bulk upload: failed to set read timeout: {e}");
     }
@@ -2582,7 +3048,7 @@ fn send_bulk_payload(
     file_name: &str,
     bytes: &[u8],
     on_progress: impl Fn(u64, u64),
-    epoch:&tasty_remote::connection::ConnectionEpoch,
+    epoch: &tasty_remote::connection::ConnectionEpoch,
 ) -> anyhow::Result<()> {
     let begin = StreamControl::BulkBegin {
         transfer_id,
@@ -2611,7 +3077,11 @@ fn send_bulk_payload(
 
 /// 해당 transfer_id의 결과를 기다린다. Ping이나 다른 응답은 무시하므로 전체 대기 기한은 없다.
 /// 소켓 timeout이 설정됐다면 개별 읽기에 적용된다.
-fn await_bulk_result(conn:&mut StreamConnection,transfer_id:u64,epoch:&tasty_remote::connection::ConnectionEpoch)->anyhow::Result<String> {
+fn await_bulk_result(
+    conn: &mut StreamConnection,
+    transfer_id: u64,
+    epoch: &tasty_remote::connection::ConnectionEpoch,
+) -> anyhow::Result<String> {
     loop {
         ensure_bulk_epoch(epoch)?;
         let frame = conn.recv()?;
@@ -2666,14 +3136,14 @@ pub(crate) fn upload_file_over_bulk(
     file_name: &str,
     bytes: &[u8],
     on_progress: impl Fn(u64, u64),
-    epoch:&tasty_remote::connection::ConnectionEpoch,
-    attempt:&tasty_remote::outbound::AttemptToken,
+    epoch: &tasty_remote::connection::ConnectionEpoch,
+    attempt: &tasty_remote::outbound::AttemptToken,
 ) -> anyhow::Result<String> {
     ensure_bulk_epoch(epoch)?;
     let transfer_id = next_bulk_transfer_id();
-    let mut conn = open_bulk_connection_bound(port, remote_ws,Some(attempt))?;
-    send_bulk_payload(&mut conn, transfer_id, file_name, bytes, on_progress,epoch)?;
-    await_bulk_result(&mut conn, transfer_id,epoch)
+    let mut conn = open_bulk_connection_bound(port, remote_ws, Some(attempt))?;
+    send_bulk_payload(&mut conn, transfer_id, file_name, bytes, on_progress, epoch)?;
+    await_bulk_result(&mut conn, transfer_id, epoch)
 }
 
 #[cfg(test)]
@@ -2744,7 +3214,8 @@ mod tests {
         engine.set_mirror_surface_busy(local_surface, true);
         engine.set_mirror_surface_cwd(local_surface, Some("/srv/remote".to_string()));
         engine
-            .remote.attach_mesh_frames
+            .remote
+            .attach_mesh_frames
             .update(local_surface, vec![1, 2, 3], 0, 0, true);
         state.set_active_workspace_index(&engine, engine.workspaces().len() - 1);
 
@@ -2766,7 +3237,11 @@ mod tests {
             "mirror busy 엔트리 제거"
         );
         assert!(
-            engine.remote.attach_mesh_frames.get(local_surface).is_none(),
+            engine
+                .remote
+                .attach_mesh_frames
+                .get(local_surface)
+                .is_none(),
             "mesh 프레임 캐시 제거"
         );
         assert!(
@@ -2870,7 +3345,8 @@ mod tests {
                 .insert(local_surface, Terminal::new_detached(80, 24), None);
             engine.set_mirror_surface_busy(local_surface, true);
             engine
-                .remote.attach_mesh_frames
+                .remote
+                .attach_mesh_frames
                 .update(local_surface, vec![1, 2, 3], 0, 0, true);
             state.set_active_workspace_index(engine.core, engine.workspaces().len() - 1);
         }
@@ -2892,7 +3368,11 @@ mod tests {
             "mirror busy 엔트리 제거"
         );
         assert!(
-            engine.remote.attach_mesh_frames.get(local_surface).is_none(),
+            engine
+                .remote
+                .attach_mesh_frames
+                .get(local_surface)
+                .is_none(),
             "mesh 프레임 캐시 제거"
         );
         assert_eq!(
@@ -3704,7 +4184,7 @@ mod tests {
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let mut engine = engine_session.borrow_mut();
         // 별도 발급기를 만들면 기본 workspace의 ID와 충돌하므로 engine의 발급기를 공유한다.
-        let ids = lease_mirror_ids(&engine,&tree,surfaces.len(),false)?;
+        let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
         let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
         let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
 
@@ -3720,7 +4200,8 @@ mod tests {
             "최초 terminal survivor 는 Terminal 을 만들어야 한다"
         );
         engine
-            .remote.attach_mesh_frames
+            .remote
+            .attach_mesh_frames
             .update(local_10, vec![1, 2, 3], 1, 1, true);
 
         // 다음 병합이 이전 kind를 조회할 수 있도록 먼저 실제 트리에 반영한다.
@@ -3796,7 +4277,7 @@ mod tests {
         let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let mut engine = engine_session.borrow_mut();
-        let ids = lease_mirror_ids(&engine,&tree,surfaces.len(),false)?;
+        let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
         let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
         let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
         let parent = engine
@@ -3871,7 +4352,7 @@ mod tests {
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let mut engine = engine_session.borrow_mut();
         // 기본 workspace와 ID가 충돌하지 않도록 engine의 발급기를 공유한다.
-        let ids = lease_mirror_ids(&engine,&tree,surfaces.len(),false)?;
+        let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
         let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
         let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
 
@@ -4081,7 +4562,8 @@ mod tests {
         sess.transport.frame_tx = Arc::new(Mutex::new(tx));
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
 
-        let read = |engine: &crate::runtime::engine_access::EngineRef<'_>, expect: Option<String>| {
+        let read = |engine: &crate::runtime::engine_access::EngineRef<'_>,
+                    expect: Option<String>| {
             engine
                 .runtime
                 .terminals
@@ -4368,7 +4850,7 @@ mod tests {
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let mut engine = engine_session.borrow_mut();
         let rx = register_markdown_kind(&engine, MARKDOWN_PLUGIN_ID);
-        let ids = lease_mirror_ids(&engine,&tree,surfaces.len(),false)?;
+        let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
         let (tx, _frames) = std::sync::mpsc::channel::<OutFrame>();
         let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
 
@@ -4426,7 +4908,7 @@ mod tests {
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let mut engine = engine_session.borrow_mut();
         let rx = register_markdown_kind(&engine, "com.example.other-markdown");
-        let ids = lease_mirror_ids(&engine,&tree,surfaces.len(),false)?;
+        let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
         let (tx, _frames) = std::sync::mpsc::channel::<OutFrame>();
         let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
 
@@ -4470,7 +4952,7 @@ mod tests {
         let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let mut engine = engine_session.borrow_mut();
-        let ids = lease_mirror_ids(&engine,&tree,surfaces.len(),false)?;
+        let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
         let (tx, _frames) = std::sync::mpsc::channel::<OutFrame>();
         let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
 
@@ -4541,7 +5023,7 @@ mod tests {
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
         let mut engine = engine_session.borrow_mut();
         let rx = register_markdown_kind(&engine, MARKDOWN_PLUGIN_ID);
-        let ids = lease_mirror_ids(&engine,&tree,surfaces.len(),false)?;
+        let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
         let (tx, _frames) = std::sync::mpsc::channel::<OutFrame>();
         let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
 
@@ -4858,7 +5340,8 @@ mod tests {
         let remote_surface = 42u32;
         let mut parked = parked_with_mirror(ws_id, local_surface);
         let mut sess = test_session(ws_id, HashMap::from([(remote_surface, local_surface)]));
-        sess.transport.output
+        sess.transport
+            .output
             .peek()
             .push(MirrorEvent::Data(remote_surface, b"applied-here".to_vec()));
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
@@ -4883,7 +5366,10 @@ mod tests {
         };
 
         assert!(applied);
-        assert!(sess.transport.output.peek().is_empty(), "적용했으면 버퍼는 비워진다");
+        assert!(
+            sess.transport.output.peek().is_empty(),
+            "적용했으면 버퍼는 비워진다"
+        );
         let term = parked[pidx]
             .session
             .runtime
@@ -4946,100 +5432,265 @@ mod tests {
     }
 }
 
-fn attach_wake(proxy:&EventLoopProxy<AppEvent>)->Arc<dyn Fn()+Send+Sync> {
-    let proxy=proxy.clone();
-    Arc::new(move|| {if let Err(error)=proxy.send_event(AppEvent::AttachClientData) {tracing::debug!("remote wake after event loop closed: {error}");}})
+fn attach_wake(proxy: &EventLoopProxy<AppEvent>) -> Arc<dyn Fn() + Send + Sync> {
+    let proxy = proxy.clone();
+    Arc::new(move || {
+        if let Err(error) = proxy.send_event(AppEvent::AttachClientData) {
+            tracing::debug!("remote wake after event loop closed: {error}");
+        }
+    })
 }
 
-fn bind_mirror_input(mirror:&mut Terminal,remote_id:u32,frame_tx:&SharedFrameSender,reconnect:bool) {
-    let sender=frame_tx.clone();
-    mirror.bind_external_input(Arc::new(move |bytes| {
-        const MAX_BODY:usize=stream::MAX_FRAME_LEN as usize-4;
-        for part in bytes.chunks(MAX_BODY) {
-            if sender.send(OutFrame {tag:StreamTag::Data,payload:stream::encode_mux(remote_id,part)}).is_err() {
-                // A partial paste is an explicit retired-connection loss, never a replay candidate.
-                return Err(std::sync::mpsc::SendError(bytes));
+fn bind_mirror_input(
+    mirror: &mut Terminal,
+    remote_id: u32,
+    frame_tx: &SharedFrameSender,
+    reconnect: bool,
+) {
+    let sender = frame_tx.clone();
+    mirror.bind_external_input(
+        Arc::new(move |bytes| {
+            const MAX_BODY: usize = stream::MAX_FRAME_LEN as usize - 4;
+            for part in bytes.chunks(MAX_BODY) {
+                if sender
+                    .send(OutFrame {
+                        tag: StreamTag::Data,
+                        payload: stream::encode_mux(remote_id, part),
+                    })
+                    .is_err()
+                {
+                    // A partial paste is an explicit retired-connection loss, never a replay candidate.
+                    return Err(std::sync::mpsc::SendError(bytes));
+                }
             }
-        }
-        Ok(())
-    }),reconnect);
+            Ok(())
+        }),
+        reconnect,
+    );
 }
 
 impl App {
-    pub(crate) fn capture_remote_target(&self,workspace:u32,surface:Option<u32>)->Option<RemoteTarget> {
-        let session=self.remote.sessions.iter().find(|session|session.state.local_workspace==workspace)?;
-        if !session.transport.frame_tx.epoch().is_active() {return None;}
-        let engine=self.engines.all_sessions().find(|engine|engine.core_state.has_workspace(workspace))?;
-        let surface=match surface {
-            Some(id)=>Some((id,*session.state.remote_to_local.iter().find(|(_,local)|**local==id)?.0,engine.runtime.terminals.get(id)?.resource_generation())),
-            None=>None,
+    pub(crate) fn capture_remote_target(
+        &self,
+        workspace: u32,
+        surface: Option<u32>,
+    ) -> Option<RemoteTarget> {
+        let session = self
+            .remote
+            .sessions
+            .iter()
+            .find(|session| session.state.local_workspace == workspace)?;
+        if !session.transport.frame_tx.epoch().is_active() {
+            return None;
+        }
+        let engine = self
+            .engines
+            .all_sessions()
+            .find(|engine| engine.core_state.has_workspace(workspace))?;
+        let surface = match surface {
+            Some(id) => Some((
+                id,
+                *session
+                    .state
+                    .remote_to_local
+                    .iter()
+                    .find(|(_, local)| **local == id)?
+                    .0,
+                engine.runtime.terminals.get(id)?.resource_generation(),
+            )),
+            None => None,
         };
-        Some(RemoteTarget {engine:engine.id,workspace,surface,sender:session.transport.frame_tx.clone(),port:session.state.bulk_port,remote_workspace:session.state.remote_workspace})
+        Some(RemoteTarget {
+            engine: engine.id,
+            workspace,
+            surface,
+            sender: session.transport.frame_tx.clone(),
+            port: session.state.bulk_port,
+            remote_workspace: session.state.remote_workspace,
+        })
     }
-    pub(crate) fn remote_target_is_current(&self,target:&RemoteTarget)->bool {
-        if !target.sender.epoch().is_active() {return false;}
-        let Some(session)=self.remote.sessions.iter().find(|session|session.state.local_workspace==target.workspace) else{return false;};
-        if !target.sender.epoch().same(&session.transport.frame_tx.epoch()) {return false;}
-        let Some(engine)=self.engines.get(target.engine) else{return false;};
-        if !engine.has_workspace(target.workspace) {return false;}
-        target.surface.is_none_or(|(local,remote,generation)|session.state.remote_to_local.get(&remote)==Some(&local)&&engine.runtime.terminals.matches_generation(local,generation))
+    pub(crate) fn remote_target_is_current(&self, target: &RemoteTarget) -> bool {
+        if !target.sender.epoch().is_active() {
+            return false;
+        }
+        let Some(session) = self
+            .remote
+            .sessions
+            .iter()
+            .find(|session| session.state.local_workspace == target.workspace)
+        else {
+            return false;
+        };
+        if !target
+            .sender
+            .epoch()
+            .same(&session.transport.frame_tx.epoch())
+        {
+            return false;
+        }
+        let Some(engine) = self.engines.get(target.engine) else {
+            return false;
+        };
+        if !engine.has_workspace(target.workspace) {
+            return false;
+        }
+        target.surface.is_none_or(|(local, remote, generation)| {
+            session.state.remote_to_local.get(&remote) == Some(&local)
+                && engine
+                    .runtime
+                    .terminals
+                    .matches_generation(local, generation)
+        })
     }
 }
 
 /// A worker result may use only the engine, mapping and connection that accepted its request.
 #[derive(Clone)]
 pub(crate) struct RemoteTarget {
-    pub(crate) engine:crate::runtime::engine_session::EngineId,
-    pub(crate) workspace:u32,
-    pub(crate) surface:Option<(u32,u32,tasty_terminal::ResourceGeneration)>,
-    pub(crate) sender:SharedFrameSender,
-    pub(crate) port:u16,
-    pub(crate) remote_workspace:u32,
+    pub(crate) engine: crate::runtime::engine_session::EngineId,
+    pub(crate) workspace: u32,
+    pub(crate) surface: Option<(u32, u32, tasty_terminal::ResourceGeneration)>,
+    pub(crate) sender: SharedFrameSender,
+    pub(crate) port: u16,
+    pub(crate) remote_workspace: u32,
 }
 
-fn ensure_bulk_epoch(epoch:&tasty_remote::connection::ConnectionEpoch)->anyhow::Result<()> {
-    if epoch.is_active() {Ok(())} else {anyhow::bail!("bulk connection retired; remote save outcome may be unknown")}
+fn ensure_bulk_epoch(epoch: &tasty_remote::connection::ConnectionEpoch) -> anyhow::Result<()> {
+    if epoch.is_active() {
+        Ok(())
+    } else {
+        anyhow::bail!("bulk connection retired; remote save outcome may be unknown")
+    }
 }
 
 impl App {
     /// Only values are reserved here. The bounded writer cannot receive the instruction before
     /// its operation/outbox commit and the original connection's validated Running claim.
-    pub(crate) fn prepare_journal_forward(&mut self,engine:EngineId,op:&StructuralOp,user:bool,candidates:&[u32])->anyhow::Result<crate::app::journal::forward::Draft> {
-        let owner=self.engines.get(engine).ok_or_else(||anyhow::anyhow!("mirror engine retired"))?;
-        let (index,_)=owner.core_state.find_workspace_index_for_surface(op.anchor_surface_id()).ok_or_else(||anyhow::anyhow!("mirror anchor missing"))?;
-        let workspace=owner.core_state.workspace_at(index).filter(|workspace|workspace.mirror).ok_or_else(||anyhow::anyhow!("target is not a mirror"))?.id;
-        let stream=owner.journal_binding.as_ref().ok_or_else(||anyhow::anyhow!("mirror engine has no journal binding"))?.stream.clone();
-        let target=self.capture_remote_target(workspace,None).ok_or_else(||anyhow::anyhow!("no live attach session"))?;
-        let session=self.remote.sessions.iter_mut().find(|session|session.state.local_workspace==workspace && session.transport.frame_tx.epoch().same(&target.sender.epoch())).ok_or_else(||anyhow::anyhow!("mirror connection retired"))?;
-        let local_anchor=op.anchor_surface_id();let remote_anchor=*session.state.remote_to_local.iter().find(|(_,local)|**local==local_anchor).ok_or_else(||anyhow::anyhow!("mirror anchor mapping missing"))?.0;
-        let wire=remote_structural_op(op,remote_anchor,&session.state.remote_to_local).ok_or_else(||anyhow::anyhow!("structural target is outside the original mirror"))?;
-        let op_id=session.state.op_seq;session.state.op_seq=op_id.checked_add(1).ok_or_else(||anyhow::anyhow!("remote operation sequence exhausted"))?;
-        let focus=user.then(||pending_op_focus_for(op,candidates,&session.state.remote_to_local)).flatten();
-        let payload=structural_op_payload(op_id,wire,user);
-        Ok(crate::app::journal::forward::Draft {engine,stream,workspace_index:index,response:crate::ipc::protocol::JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"forwarded":true,"workspace_index":index})),target,local_anchor,remote_anchor,op_id,payload,focus,silent_failure:!user})
+    pub(crate) fn prepare_journal_forward(
+        &mut self,
+        engine: EngineId,
+        op: &StructuralOp,
+        user: bool,
+        candidates: &[u32],
+    ) -> anyhow::Result<crate::app::journal::forward::Draft> {
+        let owner = self
+            .engines
+            .get(engine)
+            .ok_or_else(|| anyhow::anyhow!("mirror engine retired"))?;
+        let (index, _) = owner
+            .core_state
+            .find_workspace_index_for_surface(op.anchor_surface_id())
+            .ok_or_else(|| anyhow::anyhow!("mirror anchor missing"))?;
+        let workspace = owner
+            .core_state
+            .workspace_at(index)
+            .filter(|workspace| workspace.mirror)
+            .ok_or_else(|| anyhow::anyhow!("target is not a mirror"))?
+            .id;
+        let stream = owner
+            .journal_binding
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("mirror engine has no journal binding"))?
+            .stream
+            .clone();
+        let target = self
+            .capture_remote_target(workspace, None)
+            .ok_or_else(|| anyhow::anyhow!("no live attach session"))?;
+        let session = self
+            .remote
+            .sessions
+            .iter_mut()
+            .find(|session| {
+                session.state.local_workspace == workspace
+                    && session
+                        .transport
+                        .frame_tx
+                        .epoch()
+                        .same(&target.sender.epoch())
+            })
+            .ok_or_else(|| anyhow::anyhow!("mirror connection retired"))?;
+        let local_anchor = op.anchor_surface_id();
+        let remote_anchor = *session
+            .state
+            .remote_to_local
+            .iter()
+            .find(|(_, local)| **local == local_anchor)
+            .ok_or_else(|| anyhow::anyhow!("mirror anchor mapping missing"))?
+            .0;
+        let wire = remote_structural_op(op, remote_anchor, &session.state.remote_to_local)
+            .ok_or_else(|| anyhow::anyhow!("structural target is outside the original mirror"))?;
+        let op_id = session.state.op_seq;
+        session.state.op_seq = op_id
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("remote operation sequence exhausted"))?;
+        let focus = user
+            .then(|| pending_op_focus_for(op, candidates, &session.state.remote_to_local))
+            .flatten();
+        let payload = structural_op_payload(op_id, wire, user);
+        Ok(crate::app::journal::forward::Draft {
+            engine,
+            stream,
+            workspace_index: index,
+            response: crate::ipc::protocol::JsonRpcResponse::success(
+                serde_json::Value::Null,
+                serde_json::json!({"forwarded":true,"workspace_index":index}),
+            ),
+            target,
+            local_anchor,
+            remote_anchor,
+            op_id,
+            payload,
+            focus,
+            silent_failure: !user,
+        })
     }
 }
 
 impl crate::runtime::engine_access::EngineMut<'_> {
     /// Remote placeholders materialize on the App side and never enter the local journal.
-    pub(crate) fn reify_displayed_mirror_resources(&mut self,selected:&[u32]) {
+    pub(crate) fn reify_displayed_mirror_resources(&mut self, selected: &[u32]) {
         for id in selected {
-            if !self.core.is_mirror_surface(*id) {continue;}
-            let deferred=self.runtime.surfaces.get(id).and_then(|surface|surface.as_any().downcast_ref::<EmptySurface>()).and_then(|empty|match &empty.deferred {Some(crate::model::Deferred::Plugin(value))=>Some(value.clone()),_=>None});
-            let Some(deferred)=deferred else {continue;};
-            if deferred.kind!=MARKDOWN_MIRROR_KIND || !markdown_mirror_available(&self.as_ref()) {continue;}
-            let Some(definition)=self.runtime.surface_registry.get_live(&deferred.kind) else {continue;};
-            let surface=match (definition.restore)(*id,&deferred.snapshot).and_then(|prepared|prepared.publish()) {
-                Ok(surface)=>surface,Err(error)=>{tracing::warn!(surface=*id,"mirror kind restoration failed: {error}");continue;},
+            if !self.core.is_mirror_surface(*id) {
+                continue;
+            }
+            let deferred = self
+                .runtime
+                .surfaces
+                .get(id)
+                .and_then(|surface| surface.as_any().downcast_ref::<EmptySurface>())
+                .and_then(|empty| match &empty.deferred {
+                    Some(crate::model::Deferred::Plugin(value)) => Some(value.clone()),
+                    _ => None,
+                });
+            let Some(deferred) = deferred else {
+                continue;
             };
-            let kind=surface.kind().to_owned();
-            drop(self.runtime.surfaces.insert(*id,surface));
-            if let Some((index,pane))=self.core.find_workspace_index_for_surface(*id)
-                && let Some(workspace)=self.core.workspace_at(index).map(|workspace|workspace.id)
-                && let Some(workspace)=self.core.mirror_workspace_mut(workspace)
-                && let Some(pane)=workspace.pane_layout_mut().find_pane_mut(pane)
-                && let Some(tab)=pane.tabs.iter_mut().find(|tab|tab.contains_surface(*id))
-                && let Some(descriptor)=tab.surface_mut(*id) {descriptor.kind=kind;}
+            if deferred.kind != MARKDOWN_MIRROR_KIND || !markdown_mirror_available(&self.as_ref()) {
+                continue;
+            }
+            let Some(definition) = self.runtime.surface_registry.get_live(&deferred.kind) else {
+                continue;
+            };
+            let surface = match (definition.restore)(*id, &deferred.snapshot)
+                .and_then(|prepared| prepared.publish())
+            {
+                Ok(surface) => surface,
+                Err(error) => {
+                    tracing::warn!(surface = *id, "mirror kind restoration failed: {error}");
+                    continue;
+                }
+            };
+            let kind = surface.kind().to_owned();
+            drop(self.runtime.surfaces.insert(*id, surface));
+            if let Some((index, pane)) = self.core.find_workspace_index_for_surface(*id)
+                && let Some(workspace) = self.core.workspace_at(index).map(|workspace| workspace.id)
+                && let Some(workspace) = self.core.mirror_workspace_mut(workspace)
+                && let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pane)
+                && let Some(tab) = pane.tabs.iter_mut().find(|tab| tab.contains_surface(*id))
+                && let Some(descriptor) = tab.surface_mut(*id)
+            {
+                descriptor.kind = kind;
+            }
         }
     }
 }

@@ -1,8 +1,8 @@
 //! UI 전체 진입점 — sidebar 를 그리고 남은 terminal 영역 PhysicalRect 를 반환.
 
-use crate::runtime::engine_read::EngineRead;
 use crate::intent::Intent;
 use crate::model::PhysicalRect;
+use crate::runtime::engine_read::EngineRead;
 use crate::state::MainViewState;
 use tasty_type_geometry::length::{LogicalPx, PhysicalPx};
 

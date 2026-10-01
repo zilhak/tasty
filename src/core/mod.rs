@@ -18,9 +18,9 @@ pub(crate) mod state;
 
 pub(crate) mod request_target;
 
+pub(crate) use state::AttentionKind;
 #[cfg(feature = "gui")]
 pub(crate) use state::{AttachMeshContextForward, GuiAttachUserReq, PendingImageUpload};
-pub(crate) use state::AttentionKind;
 pub(crate) use tasty_core::CoreState;
 
 #[cfg(feature = "gui")]
@@ -106,6 +106,5 @@ pub(crate) struct PendingMarkdownContentForward {
     /// 에이전트 요청의 잘린 응답은 사용자 toast로 알리지 않는다.
     pub(crate) agent_origin: bool,
 }
-
 
 pub(crate) mod live;

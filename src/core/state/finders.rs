@@ -1,4 +1,4 @@
-use crate::runtime::engine_access::{EngineMut,EngineRef};
+use crate::runtime::engine_access::{EngineMut, EngineRef};
 impl EngineRef<'_> {
     /// 로컬 구조 변경을 막을 mirror workspace를 찾는다. 비구조 요청이나 없는 대상은 None이다.
     pub(crate) fn mirror_workspace_index_for_structural(
@@ -87,7 +87,6 @@ impl EngineRef<'_> {
             .filter(|w| w.mirror)
             .map(|_| ws_idx)
     }
-
 }
 impl EngineMut<'_> {
     /// 현재 트리에 없는 자식 등록을 정리한다. 변경이 있으면 저장을 시도한다.

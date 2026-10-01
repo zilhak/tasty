@@ -7,7 +7,7 @@ use serde_json::json;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::params::require_u32;
-use crate::core::{PendingMarkdownContentForward};
+use crate::core::PendingMarkdownContentForward;
 
 /// 로컬 mirror surface ID로 원문을 요청한다. 원격 ID 변환은 attach 세션 매핑을 사용한다.
 /// 대상 세션이 없으면 App의 요청 처리 단계에서 플러그인에 ok:false 결과를 보낸다.
@@ -27,7 +27,8 @@ pub fn handle_content_request(
         .unwrap_or(false);
     let request_id = crate::core::next_markdown_content_request_id();
     engine
-        .remote.pending_markdown_content_forward
+        .remote
+        .pending_markdown_content_forward
         .push(PendingMarkdownContentForward {
             local_surface_id: surface_id,
             request_id,
@@ -60,7 +61,10 @@ mod tests {
             engine.remote.pending_markdown_content_forward[0].local_surface_id,
             7
         );
-        assert_eq!(engine.remote.pending_markdown_content_forward[0].request_id, rid);
+        assert_eq!(
+            engine.remote.pending_markdown_content_forward[0].request_id,
+            rid
+        );
         assert!(
             !engine.remote.pending_markdown_content_forward[0].agent_origin,
             "요청 출처가 없으면 plugin 자체 요청으로 처리한다"

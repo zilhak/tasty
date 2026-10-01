@@ -270,7 +270,10 @@ pub fn picker_default_size() -> egui::Vec2 {
     picker_size_for(&theme::theme(), 4, 0, false)
 }
 
-pub fn picker_sizer(state: &MainViewState, _engine: &crate::runtime::engine_read::EngineRead<'_>) -> egui::Vec2 {
+pub fn picker_sizer(
+    state: &MainViewState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> egui::Vec2 {
     let th = theme::theme();
     let (c, r, fallback) = state
         .dialogs

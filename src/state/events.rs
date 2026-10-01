@@ -22,7 +22,8 @@ impl FocusedSurfaceType {
         f: impl Fn(&crate::runtime::kind_catalog::KindMetadata) -> bool,
     ) -> bool {
         match self {
-            Self::Kind(k) => engine.surface_registry
+            Self::Kind(k) => engine
+                .surface_registry
                 .get(k)
                 .map(|d| f(&d))
                 .unwrap_or(false),

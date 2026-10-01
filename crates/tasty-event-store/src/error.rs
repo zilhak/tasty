@@ -6,18 +6,39 @@ use crate::types::{CommandStatus, ExpectedRevision, WriterEpoch};
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
     #[error("{kind} logical write bytes {bytes} exceed limit {limit}")]
-    WriteSizeExceeded {kind: &'static str, bytes: usize, limit: usize},
+    WriteSizeExceeded {
+        kind: &'static str,
+        bytes: usize,
+        limit: usize,
+    },
     #[error("pending effect capacity: existing={pending}, new={new_effects}, limit={limit}")]
-    PendingEffectCapacity {pending:u64,new_effects:u64,limit:u64},
+    PendingEffectCapacity {
+        pending: u64,
+        new_effects: u64,
+        limit: u64,
+    },
 
     #[error("invalid journal admission budget")]
     AdmissionBudgetInvalid,
     #[error("journal admission usage: {0}")]
     AdmissionUsageIo(std::io::Error),
-    #[error("journal admission capacity: used={used}, reserved={reserved}, requested={requested}, ceiling={ceiling}")]
-    AdmissionCapacity {used:u64,reserved:u64,requested:u64,ceiling:u64},
-    #[error("admission prepared payload capacity: used={used}, requested={requested}, limit={limit}")]
-    AdmissionPayloadCapacity {used:u64,requested:u64,limit:u64},
+    #[error(
+        "journal admission capacity: used={used}, reserved={reserved}, requested={requested}, ceiling={ceiling}"
+    )]
+    AdmissionCapacity {
+        used: u64,
+        reserved: u64,
+        requested: u64,
+        ceiling: u64,
+    },
+    #[error(
+        "admission prepared payload capacity: used={used}, requested={requested}, limit={limit}"
+    )]
+    AdmissionPayloadCapacity {
+        used: u64,
+        requested: u64,
+        limit: u64,
+    },
 
     #[error("projection scope: {0}")]
     ProjectionScope(String),
@@ -154,7 +175,11 @@ pub enum StoreError {
     PayloadMissing(u64),
 
     #[error("payload {payload} has {size} bytes, exceeding read limit {limit}")]
-    PayloadTooLarge { payload: u64, size: u64, limit: usize },
+    PayloadTooLarge {
+        payload: u64,
+        size: u64,
+        limit: usize,
+    },
 
     #[error("payload {0} failed checksum verification")]
     PayloadCorrupt(u64),
@@ -162,7 +187,9 @@ pub enum StoreError {
     #[error("batch {0} does not exist")]
     UnknownBatch(u64),
 
-    #[error("history at or before batch {retained_after_batch} was compacted; resynchronize from a snapshot")]
+    #[error(
+        "history at or before batch {retained_after_batch} was compacted; resynchronize from a snapshot"
+    )]
     ResyncRequired { retained_after_batch: u64 },
 
     #[error("checkpoint for {consumer_id} would move back from batch {current} to {requested}")]

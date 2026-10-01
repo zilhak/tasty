@@ -132,7 +132,11 @@ impl AppServices {
     ) {
         engine.note_prompt_boundary_seen(sid);
         let mem = engine.runtime.memory.clone();
-        if let Some(cap) = engine.live.command_index.on_boundary(&mem, sid, phase, payload) {
+        if let Some(cap) = engine
+            .live
+            .command_index
+            .on_boundary(&mem, sid, phase, payload)
+        {
             use crate::core::command_index::CommandCapEvent;
             let (title, body) = match cap {
                 CommandCapEvent::SoftWarn { count, .. } => (
@@ -181,7 +185,10 @@ impl AppServices {
                 // 서버에 resize를 요청하고 echo를 받아 로컬 크기를 바꾼다.
                 if engine.runtime.terminals.pty(sid).is_none() {
                     if t.cols() != cols || t.rows() != rows {
-                        engine.remote.pending_resize_forward.insert(sid, (cols, rows));
+                        engine
+                            .remote
+                            .pending_resize_forward
+                            .insert(sid, (cols, rows));
                     }
                     continue;
                 }

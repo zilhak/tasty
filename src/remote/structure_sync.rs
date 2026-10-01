@@ -1,8 +1,8 @@
 //! forward 외의 구조 변경을 attach holder에 보내고, 찾지 못한 forward 대상의 오류를 정한다.
 
-use crate::runtime::engine_access::EngineRef;
 use crate::core::attach::AttachClientId;
 use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineRef;
 use tasty_ipc::stream::{StreamFrame, StreamTag, StructuralOp};
 use tasty_ipc::stream_hub::PushResult;
 
@@ -51,13 +51,35 @@ pub(crate) fn unresolved_forward_reason<'a>(
 }
 
 impl EngineMut<'_> {
-    pub(crate) fn flush_committed_workspace_taps(&mut self,workspace:u32,holder:u32,hub:&tasty_ipc::stream_hub::StreamHub) {
-        if !self.live.occupancy.workspace_attachment_ready(workspace) {return;}
-        let targets:Vec<_>=self.remote.pending_workspace_taps.iter().filter(|(_,value)|value.0==workspace).map(|(id,value)|(*id,value.1)).collect();
-        for (surface,generation) in targets {
+    pub(crate) fn flush_committed_workspace_taps(
+        &mut self,
+        workspace: u32,
+        holder: u32,
+        hub: &tasty_ipc::stream_hub::StreamHub,
+    ) {
+        if !self.live.occupancy.workspace_attachment_ready(workspace) {
+            return;
+        }
+        let targets: Vec<_> = self
+            .remote
+            .pending_workspace_taps
+            .iter()
+            .filter(|(_, value)| value.0 == workspace)
+            .map(|(id, value)| (*id, value.1))
+            .collect();
+        for (surface, generation) in targets {
             self.remote.pending_workspace_taps.remove(&surface);
-            if self.live.occupancy.workspace_holder(workspace)==Some(holder) && self.runtime.terminals.matches_generation(surface,generation) && self.find_workspace_index_for_surface(surface).and_then(|(index,_)|self.workspace_at(index)).is_some_and(|value|value.id==workspace) {
-                self.tap_surface_for_stream(surface,holder,hub);
+            if self.live.occupancy.workspace_holder(workspace) == Some(holder)
+                && self
+                    .runtime
+                    .terminals
+                    .matches_generation(surface, generation)
+                && self
+                    .find_workspace_index_for_surface(surface)
+                    .and_then(|(index, _)| self.workspace_at(index))
+                    .is_some_and(|value| value.id == workspace)
+            {
+                self.tap_surface_for_stream(surface, holder, hub);
             }
         }
     }
@@ -70,7 +92,10 @@ impl EngineMut<'_> {
             let Some(holder) = self.live.occupancy.workspace_holder(ws_id) else {
                 continue;
             };
-            if !self.live.occupancy.workspace_attachment_ready(ws_id) {self.remote.mark_structure_changed(ws_id);continue;}
+            if !self.live.occupancy.workspace_attachment_ready(ws_id) {
+                self.remote.mark_structure_changed(ws_id);
+                continue;
+            }
             let Some(idx) = self.find_workspace_index_for_id(ws_id) else {
                 self.force_detach_workspace(ws_id);
                 continue;
@@ -78,7 +103,9 @@ impl EngineMut<'_> {
             let Some(hub) = self.remote.notifier() else {
                 continue;
             };
-            let class = self.classify_attach_surfaces(self.workspace_at(idx).expect("workspace index is valid").id);
+            let class = self.classify_attach_surfaces(
+                self.workspace_at(idx).expect("workspace index is valid").id,
+            );
             let (tree, surfaces) = self.build_workspace_tree_surfaces(idx, &class);
             let delta = tasty_ipc::stream::StreamControl::StructuralDelta {
                 workspace_id: ws_id,
@@ -89,13 +116,17 @@ impl EngineMut<'_> {
                 StreamTag::Control,
                 serde_json::to_vec(&delta).unwrap_or_default(),
             );
-            match hub.push(holder,frame) {
-                PushResult::Sent=>self.flush_committed_workspace_taps(ws_id,holder,&hub),
-                PushResult::Dropped=>self.remote.mark_structure_changed(ws_id),
-                PushResult::Unknown|PushResult::Disconnected=> {
-                    self.remote.pending_workspace_taps.retain(|_,value|value.0!=ws_id);
-                    tracing::debug!("structure change: holder {holder} of workspace {ws_id} is gone");
-                },
+            match hub.push(holder, frame) {
+                PushResult::Sent => self.flush_committed_workspace_taps(ws_id, holder, &hub),
+                PushResult::Dropped => self.remote.mark_structure_changed(ws_id),
+                PushResult::Unknown | PushResult::Disconnected => {
+                    self.remote
+                        .pending_workspace_taps
+                        .retain(|_, value| value.0 != ws_id);
+                    tracing::debug!(
+                        "structure change: holder {holder} of workspace {ws_id} is gone"
+                    );
+                }
             }
         }
     }

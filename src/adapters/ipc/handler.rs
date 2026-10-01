@@ -176,7 +176,12 @@ fn dispatch_routed(
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     // 요청에서 생성한 intent를 순서대로 해당 창 큐에 옮긴다.
-    let mut scope=crate::ipc::request_scope::RequestScope::capture(state,engine.core,#[cfg(feature="gui")] Some(core.navigation_proofs.clone()));
+    let mut scope = crate::ipc::request_scope::RequestScope::capture(
+        state,
+        engine.core,
+        #[cfg(feature = "gui")]
+        Some(core.navigation_proofs.clone()),
+    );
     let mut out = crate::ipc::window_port::IntentOutbox::default();
     let routed = route_engine_handler(
         core,
@@ -188,19 +193,19 @@ fn dispatch_routed(
         id.clone(),
     );
     scope.enqueue_intents(out);
-    let outputs=scope.finish();
-    outputs.apply(state,engine.core);
+    let outputs = scope.finish();
+    outputs.apply(state, engine.core);
     if let Some(resp) = routed {
         return resp;
     }
 
     #[cfg(feature = "gui")]
-    if let Some(resp) = route_window_handler(state,engine,caller,request,id.clone()) {
+    if let Some(resp) = route_window_handler(state, engine, caller, request, id.clone()) {
         return resp;
     }
 
     #[cfg(debug_assertions)]
-    if let Some(resp) = route_debug_handler(state,engine,request,id.clone()) {
+    if let Some(resp) = route_debug_handler(state, engine, request, id.clone()) {
         return resp;
     }
 
@@ -409,12 +414,20 @@ fn should_rate_limit(caller: &CallerContext, method: &str) -> bool {
 }
 
 /// Display the already persisted observations in the selected presentation, if one exists.
-#[cfg(feature="gui")]
-pub(crate) fn display_plugin_rss_anomalies(state:&mut RequestContext,engine:&mut crate::runtime::engine_access::EngineMut<'_>,anomalies:&[tasty_telemetry::Anomaly]) {
-    let mut out=crate::ipc::window_port::IntentOutbox::default();
-    let mut scope=crate::ipc::request_scope::RequestScope::capture(state,engine,None);
-    for anomaly in anomalies {telemetry::fire_anomaly_notification(&mut scope,&mut out,engine,anomaly);}
-    scope.enqueue_intents(out);let outputs=scope.finish();outputs.apply(state,engine);
+#[cfg(feature = "gui")]
+pub(crate) fn display_plugin_rss_anomalies(
+    state: &mut RequestContext,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    anomalies: &[tasty_telemetry::Anomaly],
+) {
+    let mut out = crate::ipc::window_port::IntentOutbox::default();
+    let mut scope = crate::ipc::request_scope::RequestScope::capture(state, engine, None);
+    for anomaly in anomalies {
+        telemetry::fire_anomaly_notification(&mut scope, &mut out, engine, anomaly);
+    }
+    scope.enqueue_intents(out);
+    let outputs = scope.finish();
+    outputs.apply(state, engine);
 }
 
 /// 점유자가 아닌 호출자의 workspace 구조 변경을 IPC 라우터에서 거절한다.
@@ -573,7 +586,10 @@ fn route_engine_handler(
     id: serde_json::Value,
 ) -> Option<JsonRpcResponse> {
     if tasty_ipc::method_meta::has_structure_journal_contract(&request.method) {
-        return Some(JsonRpcResponse::internal_error(id,"structural request bypassed journal admission"));
+        return Some(JsonRpcResponse::internal_error(
+            id,
+            "structural request bypassed journal admission",
+        ));
     }
     if let Some(resp) = hard_occupied_structural_guard(
         core,
@@ -596,16 +612,18 @@ fn route_engine_handler(
         "pane.list" => pane::handle_pane_list(window.presentation(), engine, id),
         "tab.list" => tab::handle_tab_list(window.presentation(), engine, id, &request.params),
         // terminal: child-terminal 관리와 점유 검사 (ADR-0021)
-        "terminal.spawn" => {
-            JsonRpcResponse::internal_error(id,"terminal.spawn requires committed structure admission")
-        }
+        "terminal.spawn" => JsonRpcResponse::internal_error(
+            id,
+            "terminal.spawn requires committed structure admission",
+        ),
         "terminal.tell" => terminal::handle_tell(core, engine, id, &request.params),
         "terminal.children" => terminal::handle_children(engine, id, &request.params),
         "terminal.parent" => terminal::handle_parent(engine, id, &request.params),
         "terminal.state" => terminal::handle_state(engine, id, &request.params),
-        "terminal.kill" => {
-            JsonRpcResponse::internal_error(id,"terminal.kill requires committed structure admission")
-        }
+        "terminal.kill" => JsonRpcResponse::internal_error(
+            id,
+            "terminal.kill requires committed structure admission",
+        ),
         "terminal.respawn" => terminal::handle_respawn(core, engine, id, &request.params),
         "terminal.broadcast" => terminal::handle_broadcast(core, engine, id, &request.params),
         "terminal.set_state" => terminal::handle_set_state(engine, id, &request.params),
@@ -618,9 +636,10 @@ fn route_engine_handler(
         "pty.wait" => pty::handle_wait(engine, id, &request.params),
         "pty.kill" => pty::handle_kill(engine, id, &request.params),
         "pty.list" => pty::handle_list(engine, id),
-        "pty.attach_surface" => {
-            JsonRpcResponse::internal_error(id,"pty.attach_surface requires committed structure admission")
-        }
+        "pty.attach_surface" => JsonRpcResponse::internal_error(
+            id,
+            "pty.attach_surface requires committed structure admission",
+        ),
         // preset (layout preset CRUD + apply)
         "preset.list" => preset::handle_list(core, id, &request.params),
         "preset.get" => preset::handle_get(core, id, &request.params),
@@ -634,7 +653,10 @@ fn route_engine_handler(
             id,
             &request.params,
         ),
-        "preset.apply" => JsonRpcResponse::internal_error(id,"preset application bypassed the journal command boundary"),
+        "preset.apply" => JsonRpcResponse::internal_error(
+            id,
+            "preset application bypassed the journal command boundary",
+        ),
         "surface.list" => surface::handle_surface_list(&engine.as_ref(), id),
         "surface.kinds" => surface::handle_surface_kinds(&engine.read(), id),
         "surface.send" => surface::handle_surface_send(core, engine, id, &request.params),
@@ -674,9 +696,10 @@ fn route_engine_handler(
             surface::handle_foreground_process(&engine.as_ref(), id, &request.params)
         }
         "surface.locate" => surface::handle_surface_locate(engine, id, &request.params),
-        "surface.respawn_terminal" => {
-            JsonRpcResponse::internal_error(id,"surface.respawn_terminal requires committed structure admission")
-        }
+        "surface.respawn_terminal" => JsonRpcResponse::internal_error(
+            id,
+            "surface.respawn_terminal requires committed structure admission",
+        ),
         "surface.is_typing" => handle_is_typing(engine, id, &request.params),
         "surface.send_wait_idle" => handle_send_wait_idle(engine, id, &request.params),
         "surface.fire_hook" => {
@@ -719,9 +742,14 @@ fn route_engine_handler(
         // identify worker와 결과를 여는 창이 GUI에만 있다.
         // 헤드리스에서는 예약 성공 뒤 요청을 버리지 않도록 라우팅하지 않는다(ADR-0031).
         #[cfg(feature = "gui")]
-        "file_handler.dispatch" => {
-            file_handler::handle_dispatch(out, window, &engine.as_ref(), caller, id, request.params.clone())
-        }
+        "file_handler.dispatch" => file_handler::handle_dispatch(
+            out,
+            window,
+            &engine.as_ref(),
+            caller,
+            id,
+            request.params.clone(),
+        ),
         "hook_handler.list" => hook_handler::handle_list(id),
         "hook_handler.get" => hook_handler::handle_get(id, &request.params),
         "hook_handler.upsert" => hook_handler::handle_upsert(id, &request.params),
@@ -730,9 +758,14 @@ fn route_engine_handler(
         "hook_handler.dispatch" => hook_handler::handle_dispatch(core, id, &request.params),
         "completion_strategy.list" => completion_strategy::handle_list(id),
         #[cfg(feature = "gui")]
-        "markdown.navigate" => {
-            markdown::handle_navigate(out, window, &engine.as_ref(), caller, id, request.params.clone())
-        }
+        "markdown.navigate" => markdown::handle_navigate(
+            out,
+            window,
+            &engine.as_ref(),
+            caller,
+            id,
+            request.params.clone(),
+        ),
         // kind에 상관없이 최근 목록만 조회하므로 GUI가 필요 없다.
         "recent.query" => recent::handle_query(window, id, request.params.clone()),
         // 결과를 전달하는 App::dispatch_pending_git_query_forwards가 GUI 전용이다(ADR-0022).
@@ -745,7 +778,9 @@ fn route_engine_handler(
         }
         // host는 surface 변환·목록만 처리하고 픽셀 편집은 plugin이 처리한다.
         #[cfg(feature = "gui")]
-        "image.open"=>JsonRpcResponse::internal_error(id,"host conversion bypassed journal admission"),
+        "image.open" => {
+            JsonRpcResponse::internal_error(id, "host conversion bypassed journal admission")
+        }
         #[cfg(feature = "gui")]
         "image.list" => image::handle_list(engine, id),
         "memory.put" => memory::handle_put(core, engine, caller, id, &request.params),
@@ -1156,7 +1191,7 @@ fn handle_system_info(
     engine: &crate::runtime::engine_read::EngineRead<'_>,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
-    let mut info = system_info_fields(engine,window.active_workspace_index(engine));
+    let mut info = system_info_fields(engine, window.active_workspace_index(engine));
     info["capabilities"] = tasty_ipc::capability::capabilities_json();
     // 재시도 가능 여부를 판단할 수 있도록 보존 시간·개수·응답 크기도 제공한다.
     info["idempotency"] = idempotency::declaration();
@@ -1166,7 +1201,10 @@ fn handle_system_info(
 /// Version is process-wide; the legacy count/index describe this engine. Include
 /// its workspace IDs so an observation never silently looks like a global count.
 /// window.list reuses the same fields beside the OS window ID.
-pub(crate) fn system_info_fields(engine: &crate::runtime::engine_read::EngineRead<'_>, active_workspace:usize) -> serde_json::Value {
+pub(crate) fn system_info_fields(
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    active_workspace: usize,
+) -> serde_json::Value {
     json!({
         "version": env!("CARGO_PKG_VERSION"),
         "scope": "engine",
@@ -1183,13 +1221,20 @@ fn handle_tree(
     engine: &crate::runtime::engine_read::EngineRead<'_>,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
-    JsonRpcResponse::success(id, json!(build_engine_tree(window.presentation(),window.active_workspace_index(engine),engine)))
+    JsonRpcResponse::success(
+        id,
+        json!(build_engine_tree(
+            window.presentation(),
+            window.active_workspace_index(engine),
+            engine
+        )),
+    )
 }
 
 /// IPC와 Lua 스냅샷이 같은 트리 필드를 사용하도록 공통 JSON을 만든다.
 pub(crate) fn build_engine_tree(
-    presentation:&dyn crate::model::StructurePresentation,
-    active_workspace:usize,
+    presentation: &dyn crate::model::StructurePresentation,
+    active_workspace: usize,
     engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> Vec<serde_json::Value> {
     engine
@@ -1197,7 +1242,12 @@ pub(crate) fn build_engine_tree(
         .into_iter()
         .enumerate()
         .map(|(i, ws)| {
-            let mut t = ws.to_tree_json(&engine.observed_presentation(presentation),&|id|engine.find_surface_by_id(id).map(|surface|surface.to_tree_json()).unwrap_or_else(||serde_json::json!({"id":id,"type":"Pending"})));
+            let mut t = ws.to_tree_json(&engine.observed_presentation(presentation), &|id| {
+                engine
+                    .find_surface_by_id(id)
+                    .map(|surface| surface.to_tree_json())
+                    .unwrap_or_else(|| serde_json::json!({"id":id,"type":"Pending"}))
+            });
             t["active"] = json!(i == active_workspace);
             t["busy_count"] = json!(engine.busy_count(&ws.all_surface_ids()));
             annotate_tree_busy(&mut t, engine);
@@ -1208,7 +1258,10 @@ pub(crate) fn build_engine_tree(
 
 /// Walk a workspace tree JSON value and annotate every node that owns surface
 /// ids with a `busy_count` field. Surface-leaf nodes also get a `busy` boolean.
-fn annotate_tree_busy(node: &mut serde_json::Value, engine: &crate::runtime::engine_read::EngineRead<'_>) {
+fn annotate_tree_busy(
+    node: &mut serde_json::Value,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+) {
     if let Some(obj) = node.as_object_mut() {
         // Surface leaf: has "id" but no "tabs"/"panes"/"first"/"second"
         let is_leaf = !obj.contains_key("tabs")
@@ -1306,7 +1359,11 @@ fn handle_send_wait_idle(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let (surface_id,text)=match surface::decode_input_header("surface.send_wait_idle",params,&id) {Ok(input)=>input,Err(error)=>return error};
+    let (surface_id, text) =
+        match surface::decode_input_header("surface.send_wait_idle", params, &id) {
+            Ok(input) => input,
+            Err(error) => return error,
+        };
     if engine.is_typing(surface_id) {
         return JsonRpcResponse::success(id, json!({ "sent": false, "reason": "typing" }));
     }

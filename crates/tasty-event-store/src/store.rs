@@ -30,8 +30,8 @@ const WRITER_LOCK_SUFFIX: &str = ".writer-lock";
 /// 늦게 보낸 쓰기를 [`StoreError::Fenced`]로 막는다. 잠금 없이 연 저장소는 읽기만 한다.
 pub struct EventStore {
     pub(crate) conn: Connection,
-    pub(crate) database_path:PathBuf,
-    pub(crate) admission_budget:crate::AdmissionBudget,
+    pub(crate) database_path: PathBuf,
+    pub(crate) admission_budget: crate::AdmissionBudget,
     journal_id: String,
     lock_path: PathBuf,
     /// 이 저장소가 가진 writer 잠금. drop하면 OS가 잠금을 푼다.
@@ -42,12 +42,16 @@ impl EventStore {
     /// journal 파일을 열거나 만든다. 파일에 다른 journal_id가 있으면 열지 않는다.
     /// 최근 파일이나 다른 식별로 대상을 추측하지 않기 위해서다.
     pub fn open(path: &Path, journal_id: &str) -> StoreResult<Self> {
-        Self::open_with_admission_budget(path,journal_id,crate::AdmissionBudget::default())
+        Self::open_with_admission_budget(path, journal_id, crate::AdmissionBudget::default())
     }
 
     /// Configure internal admission accounting without changing durable schema or imposing a
     /// hard SQLite page limit on already accepted effects and maintenance.
-    pub fn open_with_admission_budget(path:&Path,journal_id:&str,budget:crate::AdmissionBudget)->StoreResult<Self> {
+    pub fn open_with_admission_budget(
+        path: &Path,
+        journal_id: &str,
+        budget: crate::AdmissionBudget,
+    ) -> StoreResult<Self> {
         budget.validate()?;
         let mut conn = Connection::open(path)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
@@ -63,7 +67,8 @@ impl EventStore {
         bind_journal(&tx, journal_id)?;
         tx.commit()?;
         Ok(Self {
-            database_path:path.to_owned(),admission_budget:budget,
+            database_path: path.to_owned(),
+            admission_budget: budget,
             conn,
             journal_id: journal_id.to_owned(),
             lock_path: writer_lock_path(path),

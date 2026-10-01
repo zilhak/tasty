@@ -26,7 +26,11 @@ impl App {
         };
         let mut tree = Vec::new();
         for (s, e) in self.engines().sessions() {
-            tree.extend(build_engine_tree(&s.navigation,s.active_workspace_index(e.core),&e.read()));
+            tree.extend(build_engine_tree(
+                &s.navigation,
+                s.active_workspace_index(e.core),
+                &e.read(),
+            ));
         }
         engine.publish_snapshot(LuaSnapshot { tree });
     }

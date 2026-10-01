@@ -1,20 +1,34 @@
 //! App synchronizes native WebView effects against the originating runtime resources.
 //! Native windows, geometry caches and input handles remain owned by MainView.
-use crate::runtime::engine_access::EngineRef;
-use crate::runtime::engine_access::EngineMut;
 use crate::plugin::PluginManager;
+use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineRef;
 use crate::view::MainView;
+use crate::view::main::redraw::{
+    MAX_WEBVIEW_CREATE_ATTEMPTS, REVEAL_PENDING_WARN_AFTER, describe_webview_url,
+    host_window_has_os_focus, next_webview_attempts, should_attempt_webview,
+    take_hidden_webview_focus_targets, webview_release_candidate_is_live,
+};
 use crate::view::ui::View;
 use tasty_model::html_script::BannerPhase;
-use crate::view::main::redraw::{describe_webview_url, should_attempt_webview, next_webview_attempts,
-    host_window_has_os_focus, take_hidden_webview_focus_targets, webview_release_candidate_is_live,
-    MAX_WEBVIEW_CREATE_ATTEMPTS, REVEAL_PENDING_WARN_AFTER};
 
-pub(crate) fn synchronize(view: &mut MainView, engine: &mut EngineMut<'_>,
-    plugins: Option<&PluginManager>, proofs: &super::html_runtime::NavigationProofs) {
-    let stale: Vec<_> = view.webviews.keys().copied().filter(|surface| {
-        !view.webview_runtime.get(surface).is_some_and(|binding| binding.current(&engine.as_ref()))
-    }).collect();
+pub(crate) fn synchronize(
+    view: &mut MainView,
+    engine: &mut EngineMut<'_>,
+    plugins: Option<&PluginManager>,
+    proofs: &super::html_runtime::NavigationProofs,
+) {
+    let stale: Vec<_> = view
+        .webviews
+        .keys()
+        .copied()
+        .filter(|surface| {
+            !view
+                .webview_runtime
+                .get(surface)
+                .is_some_and(|binding| binding.current(&engine.as_ref()))
+        })
+        .collect();
     for surface in stale {
         view.webviews.remove(&surface);
         view.webview_runtime.remove(&surface);
@@ -24,7 +38,9 @@ pub(crate) fn synchronize(view: &mut MainView, engine: &mut EngineMut<'_>,
         proofs.invalidate(&view.state.webview_identity, surface);
     }
     sync_webviews(view, &engine.as_ref(), plugins, proofs);
-    if view.base.state.dirty { view.base.winit.request_redraw(); }
+    if view.base.state.dirty {
+        view.base.winit.request_redraw();
+    }
 }
 
 /// HTML surface 전체와 활성 surface의 영역을 수집한다. native 호출은 하지 않는다.
@@ -75,7 +91,9 @@ fn collect_html_surfaces(
                     ) {
                         let sid = region.id;
                         let leaf_rect = region.rect;
-                        let Some(surface)=engine.find_surface_by_id(region.id) else {continue;};
+                        let Some(surface) = engine.find_surface_by_id(region.id) else {
+                            continue;
+                        };
                         if surface.webview_url().is_none() {
                             continue;
                         }
@@ -118,8 +136,7 @@ fn collect_html_surfaces(
                                 x: leaf_rect.x.value() as f64 + left,
                                 y: leaf_rect.y.value() as f64 + top,
                                 width: (leaf_rect.width.value() as f64 - left - right).max(1.0),
-                                height: (leaf_rect.height.value() as f64 - bottom - top)
-                                    .max(1.0),
+                                height: (leaf_rect.height.value() as f64 - bottom - top).max(1.0),
                             };
                             let bounds = crate::webview::WebViewBounds::from_physical(
                                 physical,
@@ -172,7 +189,11 @@ fn create_missing_webviews(
                 view.webview_key_bridge.clone(),
             ) {
                 Ok(wv) => {
-                    let Some(binding) = super::html_runtime::NativeWebviewBinding::capture(engine, sid) else { continue; };
+                    let Some(binding) =
+                        super::html_runtime::NativeWebviewBinding::capture(engine, sid)
+                    else {
+                        continue;
+                    };
                     let bounds = active_html.get(&sid);
                     tracing::debug!(
                         "WebView surface {sid}: created (visible={}, bounds={:?}, url={})",
@@ -207,21 +228,21 @@ fn attach_script_gate(
     wv: &crate::webview::PlatformWebView,
     settings: &crate::webview::HtmlWebViewSettings,
 ) {
-    let Some(rs) = find_remote_surface(view, engine, sid)
-        .filter(|rs| rs.kind_static == "html")
+    let Some(rs) = find_remote_surface(view, engine, sid).filter(|rs| rs.kind_static == "html")
     else {
         return;
     };
-    let gate = crate::webview::script_gate::ScriptGate::new(
-        sid,
-        std::sync::Arc::clone(&rs.html_script),
-    );
+    let gate =
+        crate::webview::script_gate::ScriptGate::new(sid, std::sync::Arc::clone(&rs.html_script));
     gate.set_sandbox(!settings.javascript_enabled);
     wv.attach_script_gate(gate);
 }
 
 /// 허용 직후의 재로드와 debug 탐색 조작을 native webview에 전달한다.
-fn apply_webview_requests(view: &mut MainView, engine: &crate::runtime::engine_access::EngineRef<'_>) {
+fn apply_webview_requests(
+    view: &mut MainView,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
+) {
     for (sid, wv) in &view.webviews {
         let reload = find_remote_surface(view, engine, *sid)
             .is_some_and(|rs| rs.with_html_script(|st| st.take_reload_request()));
@@ -314,7 +335,11 @@ fn note_reveal_pending(view: &mut MainView, pending: &[(u32, crate::webview::Nav
         .retain(|sid, _| pending.iter().any(|(p, _)| p == sid));
 }
 
-fn resync_webview_urls(view: &mut MainView, engine: &crate::runtime::engine_access::EngineRef<'_>, all_html_ids: &[u32]) {
+fn resync_webview_urls(
+    view: &mut MainView,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
+    all_html_ids: &[u32],
+) {
     for &sid in all_html_ids {
         let Some(url) = find_webview_url(view, engine, sid) else {
             continue;
@@ -446,7 +471,8 @@ fn sync_webviews(
 
     // Remove webviews for closed Html surfaces
     view.webviews.retain(|sid, _| all_html_ids.contains(sid));
-    view.webview_runtime.retain(|sid, _| all_html_ids.contains(sid));
+    view.webview_runtime
+        .retain(|sid, _| all_html_ids.contains(sid));
     view.webview_applied_settings
         .retain(|sid, _| all_html_ids.contains(sid));
     view.webview_loaded_urls
@@ -499,23 +525,44 @@ fn sync_webviews(
         for nav in wv.take_pending_navigations() {
             if let Some(manager) = plugin_manager {
                 let remote = find_remote_surface(view, engine, *sid);
-                let owner = remote.map(|remote| crate::plugin_bridge::user_navigation::NavigationOwner {
-                    plugin_id: remote.plugin_id.clone(), wrote_page: remote.webview_page_by_owner(),
-                });
-                proofs.record(&identity, *sid, owner.as_ref(), remote.map(|remote| &remote.webview_url), &nav);
+                let owner =
+                    remote.map(
+                        |remote| crate::plugin_bridge::user_navigation::NavigationOwner {
+                            plugin_id: remote.plugin_id.clone(),
+                            wrote_page: remote.webview_page_by_owner(),
+                        },
+                    );
+                proofs.record(
+                    &identity,
+                    *sid,
+                    owner.as_ref(),
+                    remote.map(|remote| &remote.webview_url),
+                    &nav,
+                );
                 if let Some(owner) = owner {
-                    manager.send_webview_navigation_attempt(&owner.plugin_id,
-                        &tasty_plugin_protocol::WebviewNavigationAttemptParams { surface_id: *sid, url: nav.url });
+                    manager.send_webview_navigation_attempt(
+                        &owner.plugin_id,
+                        &tasty_plugin_protocol::WebviewNavigationAttemptParams {
+                            surface_id: *sid,
+                            url: nav.url,
+                        },
+                    );
                 }
             }
         }
     }
     let live: Vec<_> = view.webviews.keys().copied().collect();
-    let takeovers: Vec<_> = live.iter().map(|&sid| (sid,
-        find_remote_surface(view, engine, sid).is_some_and(|remote| remote.take_webview_owner_takeover())
-    )).collect();
+    let takeovers: Vec<_> = live
+        .iter()
+        .map(|&sid| {
+            (
+                sid,
+                find_remote_surface(view, engine, sid)
+                    .is_some_and(|remote| remote.take_webview_owner_takeover()),
+            )
+        })
+        .collect();
     proofs.settle_frame(&identity, &live, &takeovers);
-
 }
 
 /// surface_id 로 surface 를 전 workspace 에서 찾는다. 탭당 1 개만 보는
@@ -546,8 +593,7 @@ fn webview_surface_kind(
     engine: &crate::runtime::engine_access::EngineRef<'_>,
     surface_id: u32,
 ) -> Option<&'static str> {
-    find_surface_anywhere(view, engine, surface_id)
-        .map(|s| s.kind())
+    find_surface_anywhere(view, engine, surface_id).map(|s| s.kind())
 }
 
 /// surface 소유 plugin의 WebView 설정을 읽는다. 저장된 값이 없으면 기본값을 쓴다.
@@ -600,14 +646,21 @@ fn resolve_webview_settings(
 }
 
 /// Find the URL for an Html panel by surface ID.
-fn find_webview_url(view: &MainView, engine: &crate::runtime::engine_access::EngineRef<'_>, surface_id: u32) -> Option<String> {
+fn find_webview_url(
+    view: &MainView,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
+    surface_id: u32,
+) -> Option<String> {
     find_surface_anywhere(view, engine, surface_id)?
         .webview_url()
         .map(|u| u.to_string())
 }
 
-
-fn note_host_webview_load(view: &MainView, engine: &crate::runtime::engine_access::EngineRef<'_>, sid: u32) {
+fn note_host_webview_load(
+    view: &MainView,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
+    sid: u32,
+) {
     if let Some(rs) = find_remote_surface(view, engine, sid) {
         rs.with_html_script(|st| st.on_host_load_requested());
     }
@@ -654,8 +707,7 @@ fn update_html_script_banner(
     engine: &crate::runtime::engine_access::EngineRef<'_>,
     sid: u32,
 ) -> Option<BannerPhase> {
-    let rs = find_remote_surface(view, engine, sid)
-        .filter(|rs| rs.kind_static == "html")?;
+    let rs = find_remote_surface(view, engine, sid).filter(|rs| rs.kind_static == "html")?;
     let phase = rs.with_html_script(|st| st.update_banner());
     let before = view
         .html_script_phases

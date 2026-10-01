@@ -504,8 +504,13 @@ fn surface_attention_raise_and_clear() {
         );
         assert_eq!(r["ok"], true);
     };
-    let attention_kind =
-        || tasty.call("surface.live.attention.get", json!({ "surface_id": att_sid }))["kind"].clone();
+    let attention_kind = || {
+        tasty.call(
+            "surface.live.attention.get",
+            json!({ "surface_id": att_sid }),
+        )["kind"]
+            .clone()
+    };
 
     raise_kind("needs_input");
     assert_eq!(attention_kind(), "needs_input");
@@ -520,12 +525,18 @@ fn surface_attention_raise_and_clear() {
     assert_eq!(mismatched["previous_kind"], "needs_input");
     assert_eq!(attention_kind(), "needs_input");
 
-    let cleared = tasty.call("surface.live.attention.clear", json!({ "surface_id": att_sid }));
+    let cleared = tasty.call(
+        "surface.live.attention.clear",
+        json!({ "surface_id": att_sid }),
+    );
     assert_eq!(cleared["cleared"], true);
     assert_eq!(cleared["previous_kind"], "needs_input");
     assert!(attention_kind().is_null());
 
-    let again = tasty.call("surface.live.attention.clear", json!({ "surface_id": att_sid }));
+    let again = tasty.call(
+        "surface.live.attention.clear",
+        json!({ "surface_id": att_sid }),
+    );
     assert_eq!(again["ok"], true);
     assert_eq!(again["cleared"], false);
     assert!(again["previous_kind"].is_null());
@@ -541,13 +552,19 @@ fn surface_attention_raise_and_clear() {
 
     assert!(
         tasty
-            .call_raw("surface.live.attention.clear", json!({ "surface_id": 999_999 }))
+            .call_raw(
+                "surface.live.attention.clear",
+                json!({ "surface_id": 999_999 })
+            )
             .get("error")
             .is_some()
     );
     assert!(
         tasty
-            .call_raw("surface.live.attention.get", json!({ "surface_id": 999_999 }))
+            .call_raw(
+                "surface.live.attention.get",
+                json!({ "surface_id": 999_999 })
+            )
             .get("error")
             .is_some()
     );

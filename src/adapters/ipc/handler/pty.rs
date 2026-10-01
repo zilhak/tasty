@@ -400,7 +400,10 @@ pub(crate) mod tests {
         }
     }
 
-    pub(crate) fn spawn_test_pty(core: &mut crate::app::services::AppServices, engine: &mut EngineMut<'_>) -> u32 {
+    pub(crate) fn spawn_test_pty(
+        core: &mut crate::app::services::AppServices,
+        engine: &mut EngineMut<'_>,
+    ) -> u32 {
         ok(handle_spawn(
             core,
             engine,

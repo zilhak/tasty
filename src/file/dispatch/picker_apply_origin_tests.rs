@@ -256,7 +256,9 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
         false,
     );
     assert!(state.dialogs.file_handler_picker.is_none());
-    let h = engine.runtime.file_handler
+    let h = engine
+        .runtime
+        .file_handler
         .all_handlers()
         .into_iter()
         .next()
@@ -480,7 +482,9 @@ fn an_unverified_plugin_dispatch_without_a_matching_handler_opens_the_fallback_p
     let before = engine.find_pane_by_id(pane_id).unwrap();
     let selected_id = before.tabs[state.navigation.tab_index(before)].id;
     let count = before.tabs.len();
-    let picked = engine.runtime.file_handler
+    let picked = engine
+        .runtime
+        .file_handler
         .all_handlers()
         .into_iter()
         .find(|h| {

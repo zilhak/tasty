@@ -1,6 +1,6 @@
 use super::*;
-use tasty_model::{PaneNode, SurfaceLayout};
 use crate::{Placement, SplitSpec};
+use tasty_model::{PaneNode, SurfaceLayout};
 
 pub(super) fn find_tab_mut(node: &mut PaneNode, id: u32) -> Option<&mut Tab> {
     match node {
@@ -51,7 +51,7 @@ pub(super) fn apply_event(
             surface,
             split,
         } => {
-            let surface = SurfaceDescriptor::new(surface.id,surface.kind.clone());
+            let surface = SurfaceDescriptor::new(surface.id, surface.kind.clone());
             insert_surface(engine, *target, surface, split)?;
         }
         DomainEvent::SurfaceMoved { id, target, split } => {

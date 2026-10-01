@@ -391,29 +391,47 @@ fn defer_plugin_preset_capture_headless(
     engine: &EngineMut<'_>,
     call: &tasty_host_plugin::manager::PendingPluginCall,
 ) -> bool {
-    if call.method != "preset.capture" { return false; }
-    if !app.plugin_manager.as_ref().is_some_and(|manager|manager.plugin_call_is_current(call)) {
+    if call.method != "preset.capture" {
+        return false;
+    }
+    if !app
+        .plugin_manager
+        .as_ref()
+        .is_some_and(|manager| manager.plugin_call_is_current(call))
+    {
         tracing::debug!(plugin=%call.plugin_id,"discarding preset capture from a retired plugin process");
         return true;
     }
-    let process_binding=call.binding.clone();
+    let process_binding = call.binding.clone();
     let id = serde_json::Value::from(call.call_id);
     let response = match crate::ipc::handler::preset::decode_capture_request(&call.params, &id) {
         Err(response) => Some(response),
         Ok((kind, source, name)) => {
             let result = match (state.engine_id, engine.journal_binding.cloned()) {
                 (Some(engine_id), Some(binding)) => app.journal.queue_preset_capture_borrowed(
-                    &engine.as_ref(), engine_id, binding, &state.navigation, kind, source,
+                    &engine.as_ref(),
+                    engine_id,
+                    binding,
+                    &state.navigation,
+                    kind,
+                    source,
                     crate::app::journal::PresetCaptureReply::Plugin {
-                        plugin: call.plugin_id.clone(), binding: process_binding.clone(), call_id: call.call_id, name,
+                        plugin: call.plugin_id.clone(),
+                        binding: process_binding.clone(),
+                        call_id: call.call_id,
+                        name,
                     },
                 ),
                 _ => Err("preset capture engine is unbound".into()),
             };
-            result.err().map(|error| crate::ipc::protocol::JsonRpcResponse::invalid_params(id, error))
+            result
+                .err()
+                .map(|error| crate::ipc::protocol::JsonRpcResponse::invalid_params(id, error))
         }
     };
-    if let Some(response) = response && let Some(manager) = app.plugin_manager.as_mut() {
+    if let Some(response) = response
+        && let Some(manager) = app.plugin_manager.as_mut()
+    {
         manager.send_bound_ipc_result(&call.plugin_id, &process_binding, call.call_id, response);
     }
     true
@@ -429,7 +447,13 @@ fn dispatch_plugin_ipc_calls_headless(
         None => return,
     };
     for call in calls {
-        if !app.plugin_manager.as_ref().is_some_and(|manager|manager.plugin_call_is_current(&call)) {continue;}
+        if !app
+            .plugin_manager
+            .as_ref()
+            .is_some_and(|manager| manager.plugin_call_is_current(&call))
+        {
+            continue;
+        }
         let caller = crate::ipc::caller::CallerContext::Plugin {
             plugin_id: call.plugin_id.clone(),
             permissions: call.permissions.clone(),
@@ -473,14 +497,26 @@ fn dispatch_plugin_ipc_calls_headless(
             }
             continue;
         }
-        if defer_plugin_preset_capture_headless(app, state, engine, &call) { continue; }
+        if defer_plugin_preset_capture_headless(app, state, engine, &call) {
+            continue;
+        }
         if app
             .journal
             .admit_plugin(&request, &caller, &call, app.plugin_manager.as_ref())
         {
             continue;
         }
-        if let Some(id)=state.engine_id && app.journal.defer_plugin_input(&checked,id,&engine.as_ref(),&call,app.plugin_manager.as_ref()) {continue;}
+        if let Some(id) = state.engine_id
+            && app.journal.defer_plugin_input(
+                &checked,
+                id,
+                &engine.as_ref(),
+                &call,
+                app.plugin_manager.as_ref(),
+            )
+        {
+            continue;
+        }
         let response =
             crate::ipc::handler::handle_checked_request(&mut app.services, state, engine, &checked);
         // 결과를 보내기 전에 요청의 Intent와 후속 이벤트를 적용한다.

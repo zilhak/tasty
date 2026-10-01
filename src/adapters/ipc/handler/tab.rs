@@ -52,4 +52,3 @@ pub fn handle_tab_list(
     };
     JsonRpcResponse::success(id, json!({ "pane_id": pane_id, "tabs": tabs }))
 }
-

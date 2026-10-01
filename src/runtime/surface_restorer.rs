@@ -1,20 +1,20 @@
 //! Resolve one selected engine's immutable surface capture before requesting an activation.
 use crate::core::CoreState;
 use crate::core::layout_persistence::import::surface_data::SurfaceData;
-use crate::runtime::journal_product::{PreparationInput, ShellRecipe};
 use crate::model::Surface;
+use crate::runtime::journal_product::{PreparationInput, ShellRecipe};
 /// Exists only behind the bootstrap read/render barrier. SurfaceRestorer replaces this with the
 /// selected kind or its ordinary lazy/plugin placeholder after reading the referenced payload.
-pub(crate) const MAX_ACTIVATION_ATTEMPTS:u32=5;
+pub(crate) const MAX_ACTIVATION_ATTEMPTS: u32 = 5;
 pub(crate) struct JournalPlaceholder {
     pub(crate) id: u32,
     pub(crate) kind: String,
     pub(crate) data: Option<tasty_core::DataRef>,
     pub(crate) creation_seed: Option<tasty_core::DataRef>,
     pub(crate) activation: Option<tasty_core::Activation>,
-    pub(crate) attempts:u32,
-    pub(crate) failure:Option<String>,
-    pub(crate) recovery_blocked:bool,
+    pub(crate) attempts: u32,
+    pub(crate) failure: Option<String>,
+    pub(crate) recovery_blocked: bool,
 }
 
 impl Surface for JournalPlaceholder {
@@ -28,13 +28,13 @@ impl Surface for JournalPlaceholder {
     fn surface_id(&self) -> Option<u32> {
         Some(self.id)
     }
-    fn to_tree_json(&self)->serde_json::Value {serde_json::json!({"id":self.id,"surface_id":self.id,"type":"Pending","kind":self.kind,"pty_ready":false,"restore_error":self.failure})}
+    fn to_tree_json(&self) -> serde_json::Value {
+        serde_json::json!({"id":self.id,"surface_id":self.id,"type":"Pending","kind":self.kind,"pty_ready":false,"restore_error":self.failure})
+    }
     fn source_cwd(&self) -> Option<std::path::PathBuf> {
         None
     }
 }
-
-
 
 #[derive(Clone)]
 pub(crate) struct RestoreInput {
@@ -46,16 +46,21 @@ pub(crate) struct RestoreInput {
 }
 
 pub(crate) fn describe(engine: &crate::runtime::engine_access::EngineRef<'_>) -> Vec<RestoreInput> {
-    let core=engine.core;
+    let core = engine.core;
     let shell = crate::core::state::ShellConfig::from_settings(&engine.runtime.settings);
     core.local_workspaces()
         .iter()
         .flat_map(|workspace| workspace.all_surface_ids())
         .filter_map(|id| {
-            let placeholder = engine.runtime.surfaces.get(&id)?
+            let placeholder = engine
+                .runtime
+                .surfaces
+                .get(&id)?
                 .as_any()
                 .downcast_ref::<JournalPlaceholder>()?;
-            if placeholder.recovery_blocked {return None;}
+            if placeholder.recovery_blocked {
+                return None;
+            }
             Some(RestoreInput {
                 surface_id: id,
                 reference: placeholder.data.or(placeholder.creation_seed),
@@ -76,7 +81,9 @@ pub(crate) fn describe(engine: &crate::runtime::engine_access::EngineRef<'_>) ->
                     tab_name: String::new(),
                     explicit_name: None,
                 },
-                input: PreparationInput {adopt:None,child:None,
+                input: PreparationInput {
+                    adopt: None,
+                    child: None,
                     kind: placeholder.kind.clone(),
                     cwd: None,
                     params: serde_json::json!({}),
@@ -98,11 +105,33 @@ pub(crate) fn describe(engine: &crate::runtime::engine_access::EngineRef<'_>) ->
         .collect()
 }
 
-pub(crate) fn from_saved(id:u32,value:&tasty_core::Surface,shell:ShellRecipe)->RestoreInput {
+pub(crate) fn from_saved(id: u32, value: &tasty_core::Surface, shell: ShellRecipe) -> RestoreInput {
     RestoreInput {
-        surface_id:id,reference:value.data.or(value.creation_seed),from_creation_seed:value.data.is_none() && value.creation_seed.is_some(),
-        plan:tasty_core::CreationPlan {destination:tasty_core::CreationDestination::Restore {surface:id,previous_activation:None},surface:tasty_core::SurfaceSpec {id,kind:value.kind.clone(),data:value.data},tab_name:String::new(),explicit_name:None},
-        input:PreparationInput {adopt:None,child:None,kind:value.kind.clone(),cwd:None,params:serde_json::json!({}),restore:None,shell:(value.kind=="terminal").then_some(shell)},
+        surface_id: id,
+        reference: value.data.or(value.creation_seed),
+        from_creation_seed: value.data.is_none() && value.creation_seed.is_some(),
+        plan: tasty_core::CreationPlan {
+            destination: tasty_core::CreationDestination::Restore {
+                surface: id,
+                previous_activation: None,
+            },
+            surface: tasty_core::SurfaceSpec {
+                id,
+                kind: value.kind.clone(),
+                data: value.data,
+            },
+            tab_name: String::new(),
+            explicit_name: None,
+        },
+        input: PreparationInput {
+            adopt: None,
+            child: None,
+            kind: value.kind.clone(),
+            cwd: None,
+            params: serde_json::json!({}),
+            restore: None,
+            shell: (value.kind == "terminal").then_some(shell),
+        },
     }
 }
 
@@ -122,7 +151,9 @@ pub(crate) fn accept_payload(
         }
         request.input.cwd = seed.cwd;
         if request.input.kind == "terminal" {
-            if let Some(shell)=request.input.shell.as_mut() {shell.restore_command=seed.shell.and_then(|shell|shell.restore_command);}
+            if let Some(shell) = request.input.shell.as_mut() {
+                shell.restore_command = seed.shell.and_then(|shell| shell.restore_command);
+            }
         } else {
             request.input.params = seed.params;
             request.input.restore = seed.restore;
@@ -188,18 +219,57 @@ pub(crate) fn initial_terminal_selection(
 }
 
 /// Install only logical placeholders; selected activation is a separate committed operation.
-pub(crate) fn initialize_instances(session:&mut crate::runtime::engine_session::EngineSession,model:&tasty_core::JournalModel) {
-    for (id,surface) in &model.surfaces {
-        let blocked=model.operations.values().find(|operation|operation.creation.as_ref().is_some_and(|plan|plan.surface.id==*id)
-            && (operation.outcome.is_none() || matches!(operation.outcome,Some(tasty_core::OperationOutcome::Uncertain {..}))));
-        let failure=blocked.map(|operation|format!("resource recovery required for operation {}",operation.id.0));
-        session.runtime.surfaces.entry(*id).or_insert_with(||Box::new(JournalPlaceholder {attempts:0,failure,
-            id:*id,kind:surface.kind.clone(),data:surface.data,creation_seed:surface.creation_seed,activation:surface.activation,recovery_blocked:blocked.is_some(),
-        }));
+pub(crate) fn initialize_instances(
+    session: &mut crate::runtime::engine_session::EngineSession,
+    model: &tasty_core::JournalModel,
+) {
+    for (id, surface) in &model.surfaces {
+        let blocked = model.operations.values().find(|operation| {
+            operation
+                .creation
+                .as_ref()
+                .is_some_and(|plan| plan.surface.id == *id)
+                && (operation.outcome.is_none()
+                    || matches!(
+                        operation.outcome,
+                        Some(tasty_core::OperationOutcome::Uncertain { .. })
+                    ))
+        });
+        let failure = blocked.map(|operation| {
+            format!(
+                "resource recovery required for operation {}",
+                operation.id.0
+            )
+        });
+        session.runtime.surfaces.entry(*id).or_insert_with(|| {
+            Box::new(JournalPlaceholder {
+                attempts: 0,
+                failure,
+                id: *id,
+                kind: surface.kind.clone(),
+                data: surface.data,
+                creation_seed: surface.creation_seed,
+                activation: surface.activation,
+                recovery_blocked: blocked.is_some(),
+            })
+        });
     }
 }
 
-pub(crate) fn recovery_blocked_reason(session:&crate::runtime::engine_session::EngineSession,surface:u32)->Option<&str> {
-    let placeholder=session.runtime.surfaces.get(&surface)?.as_any().downcast_ref::<JournalPlaceholder>()?;
-    placeholder.recovery_blocked.then_some(placeholder.failure.as_deref().unwrap_or("resource recovery is unresolved"))
+pub(crate) fn recovery_blocked_reason(
+    session: &crate::runtime::engine_session::EngineSession,
+    surface: u32,
+) -> Option<&str> {
+    let placeholder = session
+        .runtime
+        .surfaces
+        .get(&surface)?
+        .as_any()
+        .downcast_ref::<JournalPlaceholder>()?;
+    placeholder.recovery_blocked.then_some(
+        placeholder
+            .failure
+            .as_deref()
+            .unwrap_or("resource recovery is unresolved"),
+    )
 }

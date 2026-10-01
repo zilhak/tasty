@@ -6,7 +6,10 @@ use crate::{
 pub(super) fn prepare(m: &mut JournalModel, operation: Operation) -> Result<()> {
     if operation.id.0.is_empty()
         || operation.command_id.is_empty()
-        || (operation.activation_generation == 0 && operation.retirement.is_none() && operation.assembly.is_none() && !operation.forward)
+        || (operation.activation_generation == 0
+            && operation.retirement.is_none()
+            && operation.assembly.is_none()
+            && !operation.forward)
         || operation.input.0 == 0
         || (operation.creation.is_some() && operation.retirement.is_some())
         || operation.outcome.is_some()
@@ -19,16 +22,52 @@ pub(super) fn prepare(m: &mut JournalModel, operation: Operation) -> Result<()> 
             "invalid operation preparation".into(),
         ));
     }
-    if let Some(plan)=&operation.retirement {
-        let (removed,surfaces)=if let Some(replacement)=plan.replacement {
-            let (_,removed)=replacement.simulate(m).map_err(|error|EvolveError::InvalidFact(error.to_string()))?;
-            let surfaces=removed.iter().filter(|entity|entity.kind==IdKind::Surface).map(|entity|entity.id).collect();(removed,surfaces)
-        }else {let (_,removed,surfaces)=crate::command::retirement::close_facts(m,plan.target).ok_or_else(||EvolveError::InvalidFact("retirement target cannot close".into()))?;(removed,surfaces)};
-        if removed!=plan.removed || !surfaces.iter().copied().eq(plan.surfaces.iter().map(|surface|surface.id))
-            || plan.tab_parents.len()!=removed.iter().filter(|entity|entity.kind==IdKind::Tab).count()
-            || plan.tab_parents.iter().any(|(tab,pane)|!removed.iter().any(|entity|entity.kind==IdKind::Tab && entity.id==*tab) || !m.panes.get(pane).is_some_and(|pane|pane.tabs.contains(tab)))
-            || plan.surfaces.iter().any(|target|m.surfaces.get(&target.id).is_none_or(|surface|surface.kind!=target.kind || surface.activation.map(|value|value.generation)!=target.activation_generation)) {
-            return Err(EvolveError::InvalidFact("retirement plan does not name the exact existing owners".into()));
+    if let Some(plan) = &operation.retirement {
+        let (removed, surfaces) = if let Some(replacement) = plan.replacement {
+            let (_, removed) = replacement
+                .simulate(m)
+                .map_err(|error| EvolveError::InvalidFact(error.to_string()))?;
+            let surfaces = removed
+                .iter()
+                .filter(|entity| entity.kind == IdKind::Surface)
+                .map(|entity| entity.id)
+                .collect();
+            (removed, surfaces)
+        } else {
+            let (_, removed, surfaces) = crate::command::retirement::close_facts(m, plan.target)
+                .ok_or_else(|| EvolveError::InvalidFact("retirement target cannot close".into()))?;
+            (removed, surfaces)
+        };
+        if removed != plan.removed
+            || !surfaces
+                .iter()
+                .copied()
+                .eq(plan.surfaces.iter().map(|surface| surface.id))
+            || plan.tab_parents.len()
+                != removed
+                    .iter()
+                    .filter(|entity| entity.kind == IdKind::Tab)
+                    .count()
+            || plan.tab_parents.iter().any(|(tab, pane)| {
+                !removed
+                    .iter()
+                    .any(|entity| entity.kind == IdKind::Tab && entity.id == *tab)
+                    || !m
+                        .panes
+                        .get(pane)
+                        .is_some_and(|pane| pane.tabs.contains(tab))
+            })
+            || plan.surfaces.iter().any(|target| {
+                m.surfaces.get(&target.id).is_none_or(|surface| {
+                    surface.kind != target.kind
+                        || surface.activation.map(|value| value.generation)
+                            != target.activation_generation
+                })
+            })
+        {
+            return Err(EvolveError::InvalidFact(
+                "retirement plan does not name the exact existing owners".into(),
+            ));
         }
     }
     if m.operations.contains_key(&operation.id) {
@@ -114,7 +153,12 @@ pub(super) fn finish(
     if !matches!(outcome, OperationOutcome::Uncertain { .. }) {
         op.pending_outcome = None;
         op.cleanup = None;
-        if !matches!(op.creation.as_ref().map(|plan|&plan.destination),Some(crate::CreationDestination::Assembly {..})) {op.prepared_data = None;}
+        if !matches!(
+            op.creation.as_ref().map(|plan| &plan.destination),
+            Some(crate::CreationDestination::Assembly { .. })
+        ) {
+            op.prepared_data = None;
+        }
     }
     op.outcome = Some(outcome);
     op.reconciliation_evidence = evidence;
@@ -198,7 +242,7 @@ pub(super) fn await_cleanup(
     outcome: OperationOutcome,
     cleanup: crate::CleanupPlan,
     prepared_data: Option<DataRef>,
-    deferred:bool,
+    deferred: bool,
 ) -> Result<()> {
     let operation = m
         .operations
@@ -217,12 +261,31 @@ pub(super) fn await_cleanup(
     operation.pending_outcome = Some(outcome);
     operation.cleanup = Some(cleanup);
     operation.prepared_data = prepared_data;
-    operation.prepared_deferred=deferred;
+    operation.prepared_deferred = deferred;
     Ok(())
 }
 
-pub(super) fn prepared(model:&mut JournalModel,id:OperationId,data:Option<DataRef>,deferred:bool)->Result<()> {
-    let operation=model.operations.get_mut(&id).ok_or_else(||EvolveError::Missing(format!("operation:{}",id.0)))?;
-    if operation.resource_prepared || operation.outcome.is_some() || operation.pending_outcome.is_some() || data.is_some_and(|reference|reference.0==0) {return Err(EvolveError::InvalidFact("invalid private preparation result".into()));}
-    operation.resource_prepared=true;operation.prepared_data=data;operation.prepared_deferred=deferred;Ok(())
+pub(super) fn prepared(
+    model: &mut JournalModel,
+    id: OperationId,
+    data: Option<DataRef>,
+    deferred: bool,
+) -> Result<()> {
+    let operation = model
+        .operations
+        .get_mut(&id)
+        .ok_or_else(|| EvolveError::Missing(format!("operation:{}", id.0)))?;
+    if operation.resource_prepared
+        || operation.outcome.is_some()
+        || operation.pending_outcome.is_some()
+        || data.is_some_and(|reference| reference.0 == 0)
+    {
+        return Err(EvolveError::InvalidFact(
+            "invalid private preparation result".into(),
+        ));
+    }
+    operation.resource_prepared = true;
+    operation.prepared_data = data;
+    operation.prepared_deferred = deferred;
+    Ok(())
 }

@@ -152,7 +152,11 @@ pub fn handle_issue(
 /// `session.revoke` — 주어진 토큰 무효화.
 ///
 /// params: `{ token: str }`. 응답: `{ revoked: bool }` (없으면 false).
-pub fn handle_revoke(core: &crate::app::services::AppServices, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_revoke(
+    core: &crate::app::services::AppServices,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     let token_str = match params.get("token").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
         None => {

@@ -10,8 +10,12 @@ use crate::intent::DispatchedIntent;
 
 /// Compatibility query names over request values. Implemented by RequestScope.
 pub(crate) trait IpcWindow {
-    fn presentation(&self)->&dyn crate::model::StructurePresentation;
-    fn resolve_inherit_cwd_from_surface(&self,engine:&EngineRef<'_>,surface:u32)->Option<PathBuf>;
+    fn presentation(&self) -> &dyn crate::model::StructurePresentation;
+    fn resolve_inherit_cwd_from_surface(
+        &self,
+        engine: &EngineRef<'_>,
+        surface: u32,
+    ) -> Option<PathBuf>;
     /// 이 창의 활성 workspace 인덱스. 대상 생략 호환 경로나 응답의 활성 표시에서 쓴다.
     /// 명시 대상이 있는 요청은 그 대상의 소속을 우선한다(ADR-0017).
     fn active_workspace_index(&self, engine: &CoreState) -> usize;
@@ -37,8 +41,13 @@ pub(crate) trait IpcWindow {
     /// 호출 플러그인의 webview에서 기록한 사용자 URL인지 확인하고 기록을 소비한다.
     /// 같은 navigation은 한 번만 사용자 요청 근거로 사용할 수 있다(ADR-0031).
     #[cfg(feature = "gui")]
-    fn take_webview_user_navigation(&mut self, engine:&EngineRef<'_>, plugin_id: &str, surface_id: u32, url: &str)
-    -> bool;
+    fn take_webview_user_navigation(
+        &mut self,
+        engine: &EngineRef<'_>,
+        plugin_id: &str,
+        surface_id: u32,
+        url: &str,
+    ) -> bool;
 
     /// 요청 하나가 모은 intent 를 이 창의 큐 끝에 순서대로 옮긴다. 진입점만 부른다.
     fn enqueue_intents(&mut self, intents: IntentOutbox);

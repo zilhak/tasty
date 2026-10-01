@@ -285,33 +285,98 @@ fn checkpoints_carry_a_revision_vector_and_never_move_back() {
 #[test]
 fn live_snapshot_transfer_rolls_back_invalid_references_and_keeps_history() {
     let (_dir, mut store, epoch) = fresh();
-    let first = store.put_payload_pinned(epoch, b"old", "admission/1/1").expect("put");
-    let second = store.put_payload_pinned(epoch, b"new", "import/source").expect("put");
+    let first = store
+        .put_payload_pinned(epoch, b"old", "admission/1/1")
+        .expect("put");
+    let second = store
+        .put_payload_pinned(epoch, b"new", "import/source")
+        .expect("put");
     let consumer = "structure-maintenance";
     let first_batch = commit_round(&mut store, epoch, 0);
     let snapshot = NewSnapshot {
-        batch_id: first_batch, model_version: MODEL, bytes: b"first".to_vec(),
+        batch_id: first_batch,
+        model_version: MODEL,
+        bytes: b"first".to_vec(),
         referenced_payloads: vec![first],
     };
-    let first_snapshot = store.save_live_snapshot(epoch, &snapshot, consumer).expect("save");
-    store.release_payload_holder(epoch, "admission/1/1").expect("release");
+    let first_snapshot = store
+        .save_live_snapshot(epoch, &snapshot, consumer)
+        .expect("save");
+    store
+        .release_payload_holder(epoch, "admission/1/1")
+        .expect("release");
     let second_batch = commit_round(&mut store, epoch, 1);
     let invalid = NewSnapshot {
-        batch_id: second_batch, bytes: b"invalid".to_vec(),
-        referenced_payloads: vec![crate::PayloadRef(u64::MAX / 2)], ..snapshot.clone()
+        batch_id: second_batch,
+        bytes: b"invalid".to_vec(),
+        referenced_payloads: vec![crate::PayloadRef(u64::MAX / 2)],
+        ..snapshot.clone()
     };
-    assert!(matches!(store.save_live_snapshot(epoch, &invalid, consumer), Err(StoreError::PayloadMissing(_))));
-    assert_eq!(store.checkpoint(consumer, MODEL).expect("cursor").expect("cut").last_batch, Some(first_batch));
-    assert!(store.payload_holders(first).expect("pins").contains(&format!("live:{consumer}")));
-    let valid = NewSnapshot { referenced_payloads: vec![second], ..invalid };
-    store.save_live_snapshot(epoch, &valid, consumer).expect("replace");
-    assert!(store.payload_holders(first).expect("pins").contains(&snapshot_holder(first_snapshot)));
-    assert!(!store.payload_holders(first).expect("pins").contains(&format!("live:{consumer}")));
-    assert!(store.payload_holders(second).expect("pins").contains(&"import/source".to_owned()));
+    assert!(matches!(
+        store.save_live_snapshot(epoch, &invalid, consumer),
+        Err(StoreError::PayloadMissing(_))
+    ));
+    assert_eq!(
+        store
+            .checkpoint(consumer, MODEL)
+            .expect("cursor")
+            .expect("cut")
+            .last_batch,
+        Some(first_batch)
+    );
+    assert!(
+        store
+            .payload_holders(first)
+            .expect("pins")
+            .contains(&format!("live:{consumer}"))
+    );
+    let valid = NewSnapshot {
+        referenced_payloads: vec![second],
+        ..invalid
+    };
+    store
+        .save_live_snapshot(epoch, &valid, consumer)
+        .expect("replace");
+    assert!(
+        store
+            .payload_holders(first)
+            .expect("pins")
+            .contains(&snapshot_holder(first_snapshot))
+    );
+    assert!(
+        !store
+            .payload_holders(first)
+            .expect("pins")
+            .contains(&format!("live:{consumer}"))
+    );
+    assert!(
+        store
+            .payload_holders(second)
+            .expect("pins")
+            .contains(&"import/source".to_owned())
+    );
     let third_batch = commit_round(&mut store, epoch, 2);
-    store.save_live_snapshot(epoch, &NewSnapshot { batch_id: third_batch, ..valid }, consumer).expect("retention");
-    assert!(matches!(store.read_payload(first), Err(StoreError::PayloadMissing(_))));
-    assert_eq!(store.read_batches_after(None, usize::MAX).expect("history").len(), 3);
+    store
+        .save_live_snapshot(
+            epoch,
+            &NewSnapshot {
+                batch_id: third_batch,
+                ..valid
+            },
+            consumer,
+        )
+        .expect("retention");
+    assert!(matches!(
+        store.read_payload(first),
+        Err(StoreError::PayloadMissing(_))
+    ));
+    assert_eq!(
+        store
+            .read_batches_after(None, usize::MAX)
+            .expect("history")
+            .len(),
+        3
+    );
 }
 
 #[test]
@@ -323,10 +388,23 @@ fn damaged_snapshot_dependency_uses_previous_snapshot() {
     let older = snapshot_now(&mut store, epoch, 1);
     let dependency = store.put_payload(epoch, b"surface").expect("payload");
     commit_round(&mut store, epoch, 1);
-    store.save_snapshot(epoch, &NewSnapshot {
-        batch_id: 2, model_version: MODEL, bytes: b"newer".to_vec(), referenced_payloads: vec![dependency],
-    }).expect("snapshot");
-    raw(&path).execute("UPDATE payloads SET bytes = X'00' WHERE payload_id = ?1", [dependency.0 as i64]).expect("corrupt");
+    store
+        .save_snapshot(
+            epoch,
+            &NewSnapshot {
+                batch_id: 2,
+                model_version: MODEL,
+                bytes: b"newer".to_vec(),
+                referenced_payloads: vec![dependency],
+            },
+        )
+        .expect("snapshot");
+    raw(&path)
+        .execute(
+            "UPDATE payloads SET bytes = X'00' WHERE payload_id = ?1",
+            [dependency.0 as i64],
+        )
+        .expect("corrupt");
     let replay = store.snapshot_and_tail(MODEL).expect("replay");
     assert_eq!(replay.snapshot.expect("fallback").snapshot_id, older);
     assert_eq!(replay.rejected.len(), 1);
@@ -335,62 +413,150 @@ fn damaged_snapshot_dependency_uses_previous_snapshot() {
 #[test]
 fn compaction_retains_fallback_tail_and_rejects_old_cursors() {
     let (dir, mut store, epoch) = fresh();
-    for round in 0..5 {commit_round(&mut store, epoch, round);}
-    store.save_checkpoint(epoch, "slow", MODEL, 1).expect("slow cursor");
+    for round in 0..5 {
+        commit_round(&mut store, epoch, round);
+    }
+    store
+        .save_checkpoint(epoch, "slow", MODEL, 1)
+        .expect("slow cursor");
     let older = snapshot_now(&mut store, epoch, 2);
     let newer = snapshot_now(&mut store, epoch, 4);
     let before = full_replay(&store);
-    let result = store.compact_history(epoch, MODEL).expect("compact").expect("boundary");
+    let result = store
+        .compact_history(epoch, MODEL)
+        .expect("compact")
+        .expect("boundary");
     assert_eq!(result.retained_after_batch, 2);
-    assert!(matches!(store.read_batches_after(None, 10), Err(StoreError::ResyncRequired {..})));
-    assert!(matches!(store.read_stream(&StreamId::new("engine-a"), Some(1), 10), Err(StoreError::ResyncRequired {..})));
-    assert!(matches!(store.checkpoint("slow", MODEL), Err(StoreError::ResyncRequired {..})));
+    assert!(matches!(
+        store.read_batches_after(None, 10),
+        Err(StoreError::ResyncRequired { .. })
+    ));
+    assert!(matches!(
+        store.read_stream(&StreamId::new("engine-a"), Some(1), 10),
+        Err(StoreError::ResyncRequired { .. })
+    ));
+    assert!(matches!(
+        store.checkpoint("slow", MODEL),
+        Err(StoreError::ResyncRequired { .. })
+    ));
     assert!(store.delete_snapshot(epoch, older).is_err());
     assert_eq!(rebuild(&store).0, before);
     raw(&db_path(&dir)).execute("UPDATE payloads SET bytes = X'00' WHERE payload_id = (SELECT payload_id FROM snapshots WHERE snapshot_id = ?1)", [newer as i64]).expect("damage new");
     assert_eq!(rebuild(&store).0, before);
     raw(&db_path(&dir)).execute("UPDATE payloads SET bytes = X'00' WHERE payload_id = (SELECT payload_id FROM snapshots WHERE snapshot_id = ?1)", [older as i64]).expect("damage anchor");
-    assert!(matches!(store.snapshot_and_tail(MODEL), Err(StoreError::ResyncRequired {..})));
+    assert!(matches!(
+        store.snapshot_and_tail(MODEL),
+        Err(StoreError::ResyncRequired { .. })
+    ));
 }
 
 #[test]
 fn copied_payloads_have_independent_ownership_and_source_pin_survives() {
     let (_source_dir, mut source, source_epoch) = fresh();
     let (_destination_dir, mut destination, destination_epoch) = fresh();
-    let original = source.put_payload(source_epoch, b"source bytes").expect("source");
-    let mapping = destination.import_payloads(destination_epoch, &mut source, source_epoch,
-        &[original], "import/source", "import/destination").expect("copy");
+    let original = source
+        .put_payload(source_epoch, b"source bytes")
+        .expect("source");
+    let mapping = destination
+        .import_payloads(
+            destination_epoch,
+            &mut source,
+            source_epoch,
+            &[original],
+            "import/source",
+            "import/destination",
+        )
+        .expect("copy");
     let copied = mapping[0].1;
     assert_eq!(source.gc_payloads(source_epoch).expect("source GC"), 0);
-    assert_eq!(destination.read_payload(copied).expect("independent bytes"), b"source bytes");
-    source.release_payload_holder(source_epoch, "import/source").expect("manifest handed off");
+    assert_eq!(
+        destination.read_payload(copied).expect("independent bytes"),
+        b"source bytes"
+    );
+    source
+        .release_payload_holder(source_epoch, "import/source")
+        .expect("manifest handed off");
     assert_eq!(source.gc_payloads(source_epoch).expect("source retire"), 1);
-    assert_eq!(destination.read_payload(copied).expect("survives source retirement"), b"source bytes");
+    assert_eq!(
+        destination
+            .read_payload(copied)
+            .expect("survives source retirement"),
+        b"source bytes"
+    );
 }
 
 #[test]
 fn view_manifest_transfer_is_atomic_and_old_incarnation_cannot_delete_it() {
     let (_dir, mut store, epoch) = fresh();
     commit_round(&mut store, epoch, 0);
-    let snapshot = NewSnapshot {batch_id: 1,model_version: MODEL,bytes: b"domain".to_vec(),referenced_payloads: vec![]};
-    let manifest = crate::NewRestoreManifest {
-        restore_key: "view:slot-0".into(),incarnation: 1,runtime_epoch: epoch.0,sequence: 1,
-        snapshot_id: 0,view: b"view 1".to_vec(),referenced_payloads: vec![],
+    let snapshot = NewSnapshot {
+        batch_id: 1,
+        model_version: MODEL,
+        bytes: b"domain".to_vec(),
+        referenced_payloads: vec![],
     };
-    let id = store.save_restore_checkpoint(epoch, &snapshot, &manifest).expect("atomic source");
+    let manifest = crate::NewRestoreManifest {
+        restore_key: "view:slot-0".into(),
+        incarnation: 1,
+        runtime_epoch: epoch.0,
+        sequence: 1,
+        snapshot_id: 0,
+        view: b"view 1".to_vec(),
+        referenced_payloads: vec![],
+    };
+    let id = store
+        .save_restore_checkpoint(epoch, &snapshot, &manifest)
+        .expect("atomic source");
     assert!(store.delete_snapshot(epoch, id).is_err());
-    let invalid = crate::NewRestoreManifest {sequence: 2,referenced_payloads: vec![crate::PayloadRef(999999)],..manifest.clone()};
-    assert!(store.save_restore_checkpoint(epoch, &snapshot, &invalid).is_err());
-    let current = store.restore_manifest("view:slot-0").expect("read").expect("source");
+    let invalid = crate::NewRestoreManifest {
+        sequence: 2,
+        referenced_payloads: vec![crate::PayloadRef(999999)],
+        ..manifest.clone()
+    };
+    assert!(
+        store
+            .save_restore_checkpoint(epoch, &snapshot, &invalid)
+            .is_err()
+    );
+    let current = store
+        .restore_manifest("view:slot-0")
+        .expect("read")
+        .expect("source");
     assert_eq!(current.view, b"view 1");
     assert_eq!(current.snapshot.snapshot_id, id);
-    assert!(matches!(store.save_restore_checkpoint(epoch, &snapshot, &crate::NewRestoreManifest {
-        sequence: 0,..manifest.clone()
-    }), Err(StoreError::ManifestRegression(_))));
-    let next = crate::NewRestoreManifest {incarnation: 2,sequence: 1,view: b"view 2".to_vec(),..manifest};
-    store.save_restore_checkpoint(epoch, &snapshot, &next).expect("new incarnation");
-    assert!(!store.delete_restore_manifest(epoch, "view:slot-0", 1).expect("old close"));
-    assert_eq!(store.restore_manifest("view:slot-0").expect("read").expect("source").view,b"view 2");
+    assert!(matches!(
+        store.save_restore_checkpoint(
+            epoch,
+            &snapshot,
+            &crate::NewRestoreManifest {
+                sequence: 0,
+                ..manifest.clone()
+            }
+        ),
+        Err(StoreError::ManifestRegression(_))
+    ));
+    let next = crate::NewRestoreManifest {
+        incarnation: 2,
+        sequence: 1,
+        view: b"view 2".to_vec(),
+        ..manifest
+    };
+    store
+        .save_restore_checkpoint(epoch, &snapshot, &next)
+        .expect("new incarnation");
+    assert!(
+        !store
+            .delete_restore_manifest(epoch, "view:slot-0", 1)
+            .expect("old close")
+    );
+    assert_eq!(
+        store
+            .restore_manifest("view:slot-0")
+            .expect("read")
+            .expect("source")
+            .view,
+        b"view 2"
+    );
 }
 
 #[test]
@@ -398,33 +564,101 @@ fn import_marker_events_and_restore_manifest_commit_or_rollback_together() {
     let (_dir, mut store, epoch) = fresh();
     let key = super::common::key("import", "stable");
     let mut request = CommitRequest::new(epoch);
-    request.command = Some(super::common::command("destination-import", Some(key.clone()), b"source-cut"));
-    request.appends.push(append("destination", ExpectedRevision::NoStream, &["created"]));
-    let failed = store.commit_with_restore_checkpoint(&request, |_| Err(StoreError::Corrupt("manifest encoding failed".into())));
+    request.command = Some(super::common::command(
+        "destination-import",
+        Some(key.clone()),
+        b"source-cut",
+    ));
+    request.appends.push(append(
+        "destination",
+        ExpectedRevision::NoStream,
+        &["created"],
+    ));
+    let failed = store.commit_with_restore_checkpoint(&request, |_| {
+        Err(StoreError::Corrupt("manifest encoding failed".into()))
+    });
     assert!(failed.is_err());
-    assert!(matches!(store.lookup_command(&key,b"source-cut").expect("lookup"),crate::CommandLookup::Miss));
-    assert_eq!(store.stream_revision(&StreamId::new("destination")).expect("revision"), None);
-    let committed = store.commit_with_restore_checkpoint(&request, |batch| Ok((
-        NewSnapshot {batch_id:batch.cut.batch_id,model_version:MODEL,bytes:b"imported model".to_vec(),referenced_payloads:vec![]},
-        crate::NewRestoreManifest {restore_key:"view:slot-1".into(),incarnation:1,runtime_epoch:epoch.0,sequence:0,
-            snapshot_id:0,view:b"mapped selection".to_vec(),referenced_payloads:vec![]},
-    ))).expect("atomic commit");
-    assert!(matches!(committed,CommitOutcome::Committed {..}));
-    assert_eq!(store.restore_manifest("view:slot-1").expect("manifest").expect("source").view,b"mapped selection");
-    let duplicate = store.commit_with_restore_checkpoint(&request, |_| panic!("duplicate must not repeat import"));
-    assert!(matches!(duplicate,Ok(CommitOutcome::Duplicate(_))));
+    assert!(matches!(
+        store.lookup_command(&key, b"source-cut").expect("lookup"),
+        crate::CommandLookup::Miss
+    ));
+    assert_eq!(
+        store
+            .stream_revision(&StreamId::new("destination"))
+            .expect("revision"),
+        None
+    );
+    let committed = store
+        .commit_with_restore_checkpoint(&request, |batch| {
+            Ok((
+                NewSnapshot {
+                    batch_id: batch.cut.batch_id,
+                    model_version: MODEL,
+                    bytes: b"imported model".to_vec(),
+                    referenced_payloads: vec![],
+                },
+                crate::NewRestoreManifest {
+                    restore_key: "view:slot-1".into(),
+                    incarnation: 1,
+                    runtime_epoch: epoch.0,
+                    sequence: 0,
+                    snapshot_id: 0,
+                    view: b"mapped selection".to_vec(),
+                    referenced_payloads: vec![],
+                },
+            ))
+        })
+        .expect("atomic commit");
+    assert!(matches!(committed, CommitOutcome::Committed { .. }));
+    assert_eq!(
+        store
+            .restore_manifest("view:slot-1")
+            .expect("manifest")
+            .expect("source")
+            .view,
+        b"mapped selection"
+    );
+    let duplicate = store
+        .commit_with_restore_checkpoint(&request, |_| panic!("duplicate must not repeat import"));
+    assert!(matches!(duplicate, Ok(CommitOutcome::Duplicate(_))));
 }
 
 #[test]
 fn repeated_view_only_saves_prune_same_cut_snapshots() {
     let (dir, mut store, epoch) = fresh();
-    commit_round(&mut store,epoch,0);
+    commit_round(&mut store, epoch, 0);
     for sequence in 1..10 {
-        store.save_restore_checkpoint(epoch,&NewSnapshot {batch_id:1,model_version:MODEL,bytes:b"same domain".to_vec(),referenced_payloads:vec![]},
-            &crate::NewRestoreManifest {restore_key:"view:slot-0".into(),incarnation:1,runtime_epoch:epoch.0,sequence,snapshot_id:0,
-                view:format!("selection {sequence}").into_bytes(),referenced_payloads:vec![]}).expect("view save");
+        store
+            .save_restore_checkpoint(
+                epoch,
+                &NewSnapshot {
+                    batch_id: 1,
+                    model_version: MODEL,
+                    bytes: b"same domain".to_vec(),
+                    referenced_payloads: vec![],
+                },
+                &crate::NewRestoreManifest {
+                    restore_key: "view:slot-0".into(),
+                    incarnation: 1,
+                    runtime_epoch: epoch.0,
+                    sequence,
+                    snapshot_id: 0,
+                    view: format!("selection {sequence}").into_bytes(),
+                    referenced_payloads: vec![],
+                },
+            )
+            .expect("view save");
     }
-    let count: i64 = raw(&db_path(&dir)).query_row("SELECT COUNT(*) FROM snapshots",[],|row|row.get(0)).expect("count");
-    assert_eq!(count,2);
-    assert_eq!(store.restore_manifest("view:slot-0").expect("manifest").expect("source").sequence,9);
+    let count: i64 = raw(&db_path(&dir))
+        .query_row("SELECT COUNT(*) FROM snapshots", [], |row| row.get(0))
+        .expect("count");
+    assert_eq!(count, 2);
+    assert_eq!(
+        store
+            .restore_manifest("view:slot-0")
+            .expect("manifest")
+            .expect("source")
+            .sequence,
+        9
+    );
 }

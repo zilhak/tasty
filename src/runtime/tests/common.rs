@@ -2,9 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use tasty_core::{
-    DataRef, DomainEvent, MetadataTarget, Placement, Ratio, SplitSpec, SurfaceSpec,
-};
+use tasty_core::{DataRef, DomainEvent, MetadataTarget, Placement, Ratio, SplitSpec, SurfaceSpec};
 use tasty_event_store::{
     BatchCut, CommitOutcome, CommitRequest, EventStore, ExpectedRevision, NewEvent, StreamAppend,
     StreamId, WriterEpoch,

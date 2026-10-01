@@ -22,13 +22,20 @@ pub(crate) const BOOT_FRAME_INTERVAL: Duration = Duration::from_millis(16);
 /// docs/features/layout-persistence/index.md의 Plugin surface 복원을 따른다.
 pub(crate) const PLUGIN_WAIT_DEADLINE: Duration = Duration::from_millis(300);
 
-use crate::app::state::{BootPhase,BootProgress};
+use crate::app::state::{BootPhase, BootProgress};
 
 pub(crate) struct BootResources {
-    pub(crate) window:Arc<Window>,
-    pub(crate) gpu:GpuState,
-    engine_worker:Option<std::sync::mpsc::Receiver<anyhow::Result<(crate::runtime::engine_session::EngineSession,crate::plugin::PluginManager)>>>,
-    pub(crate) pending_events:Vec<crate::AppEvent>,
+    pub(crate) window: Arc<Window>,
+    pub(crate) gpu: GpuState,
+    engine_worker: Option<
+        std::sync::mpsc::Receiver<
+            anyhow::Result<(
+                crate::runtime::engine_session::EngineSession,
+                crate::plugin::PluginManager,
+            )>,
+        >,
+    >,
+    pub(crate) pending_events: Vec<crate::AppEvent>,
 }
 
 /// 이미 준비된 창과 GPU로 엔진 생성 오류를 보여 주며 같은 내용을 로그에도 남긴다.
@@ -56,11 +63,25 @@ impl App {
         // 엔진이 슬롯을 읽기 전에 레이아웃 마이그레이션과 전체 슬롯의 scrollback GC를 수행한다.
         crate::core::layout_persistence::migrate_and_gc_on_boot(settings.general.restore_layout);
 
-        let mut boot=BootResources {window,gpu,engine_worker:None,pending_events:Vec::new()};
-        let progress=BootProgress {settings,settings_origin,phase:BootPhase::GpuInit,boot_t0,db_init_error,invalid_theme_name,restored_idx:None,journal_plugins_waited:false};
-        Self::present_first_boot_frame(&mut boot,&progress,boot_t0,window_hidden);
-        self.boot=Some(boot);
-        self.state.boot=Some(progress);
+        let mut boot = BootResources {
+            window,
+            gpu,
+            engine_worker: None,
+            pending_events: Vec::new(),
+        };
+        let progress = BootProgress {
+            settings,
+            settings_origin,
+            phase: BootPhase::GpuInit,
+            boot_t0,
+            db_init_error,
+            invalid_theme_name,
+            restored_idx: None,
+            journal_plugins_waited: false,
+        };
+        Self::present_first_boot_frame(&mut boot, &progress, boot_t0, window_hidden);
+        self.boot = Some(boot);
+        self.state.boot = Some(progress);
     }
 
     /// 첫 로딩 프레임부터 사용자 테마를 쓰도록 적용한다. state.db도 엔진 생성 전에 준비한다.
@@ -83,7 +104,12 @@ impl App {
 
     /// hidden 창은 RedrawRequested를 못 받을 수 있어 즉시 그린다.
     /// 렌더 실패 시에도 창을 표시하므로 OS 기본 배경이 잠깐 보일 수 있다.
-    fn present_first_boot_frame(boot: &mut BootResources,progress:&BootProgress, boot_t0: Instant, window_hidden: bool) {
+    fn present_first_boot_frame(
+        boot: &mut BootResources,
+        progress: &BootProgress,
+        boot_t0: Instant,
+        window_hidden: bool,
+    ) {
         let phase_key = crate::gpu::loading::boot_phase_text_key(&progress.phase);
         if let Err(e) = boot.gpu.render_loading(&boot.window, phase_key) {
             tracing::warn!("boot loading first frame render failed: {e} — showing window anyway");
@@ -104,15 +130,18 @@ impl App {
         let Some(mut boot) = self.boot.take() else {
             return;
         };
-        let Some(mut progress)=self.state.boot.take() else {self.boot=Some(boot);return;};
-        let ready = self.boot_step(&mut boot,&mut progress);
+        let Some(mut progress) = self.state.boot.take() else {
+            self.boot = Some(boot);
+            return;
+        };
+        let ready = self.boot_step(&mut boot, &mut progress);
         // 엔진 생성 실패는 준비된 창과 GPU를 오류 화면에 넘겨 알린다.
         if self.state.boot_error_info.is_some() {
             self.enter_boot_error_mode(boot.window, boot.gpu);
             return;
         }
         if ready {
-            self.finish_boot(boot,progress,event_loop);
+            self.finish_boot(boot, progress, event_loop);
             return;
         }
         let phase_key = crate::gpu::loading::boot_phase_text_key(&progress.phase);
@@ -130,13 +159,13 @@ impl App {
         }
         boot.window.request_redraw();
         self.boot = Some(boot);
-        self.state.boot=Some(progress);
+        self.state.boot = Some(progress);
     }
 
     /// 한 단계를 진행하고 부팅 완료 여부를 반환한다.
-    fn boot_step(&mut self, boot: &mut BootResources,progress:&mut BootProgress) -> bool {
+    fn boot_step(&mut self, boot: &mut BootResources, progress: &mut BootProgress) -> bool {
         if matches!(progress.phase, BootPhase::GpuInit) {
-            boot.engine_worker=Some(self.spawn_engine_worker(boot,progress));
+            boot.engine_worker = Some(self.spawn_engine_worker(boot, progress));
             progress.phase = BootPhase::WaitingEngine {
                 started: Instant::now(),
                 frames: 0,
@@ -144,27 +173,31 @@ impl App {
             return false;
         }
         if matches!(progress.phase, BootPhase::WaitingEngine { .. }) {
-            return self.boot_step_waiting_engine(boot,progress);
+            return self.boot_step_waiting_engine(boot, progress);
         }
         if matches!(progress.phase, BootPhase::WaitingJournal) {
-            return self.boot_step_waiting_journal(boot,progress);
+            return self.boot_step_waiting_journal(boot, progress);
         }
         if matches!(progress.phase, BootPhase::WaitingPlugins { .. }) {
-            return self.boot_step_waiting_plugins(boot,progress);
+            return self.boot_step_waiting_plugins(boot, progress);
         }
-        self.boot_step_restoring_layout(boot,progress)
+        self.boot_step_restoring_layout(boot, progress)
     }
 
-    fn boot_step_waiting_engine(&mut self, boot: &mut BootResources,progress:&mut BootProgress) -> bool {
-        let BootPhase::WaitingEngine {
-            started,
-            frames,
-        } = &mut progress.phase
-        else {
+    fn boot_step_waiting_engine(
+        &mut self,
+        boot: &mut BootResources,
+        progress: &mut BootProgress,
+    ) -> bool {
+        let BootPhase::WaitingEngine { started, frames } = &mut progress.phase else {
             unreachable!("boot_step_waiting_engine called outside WaitingEngine phase");
         };
         *frames += 1;
-        let received=boot.engine_worker.as_ref().ok_or(std::sync::mpsc::TryRecvError::Disconnected).and_then(|rx|rx.try_recv());
+        let received = boot
+            .engine_worker
+            .as_ref()
+            .ok_or(std::sync::mpsc::TryRecvError::Disconnected)
+            .and_then(|rx| rx.try_recv());
         match received {
             Ok(Ok((engine, mgr))) => {
                 boot.engine_worker.take();
@@ -178,7 +211,7 @@ impl App {
                     frames,
                     "T2.7 engine_wait (워커 체류; frames = 그동안 돈 로딩 프레임 스텝 수)"
                 );
-                self.boot_transition_after_engine(boot,progress)
+                self.boot_transition_after_engine(boot, progress)
             }
             Ok(Err(e)) => {
                 boot.engine_worker.take();
@@ -189,18 +222,23 @@ impl App {
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 // 스레드 생성 실패나 워커 패닉으로 결과가 없으면 동기로 다시 시도한다.
                 tracing::error!("boot engine worker channel disconnected — synchronous fallback");
-                if let Err(e) = self
-                    .ensure_engine_and_plugins(&boot.gpu, progress.settings.appearance.sidebar_width)
-                {
+                if let Err(e) = self.ensure_engine_and_plugins(
+                    &boot.gpu,
+                    progress.settings.appearance.sidebar_width,
+                ) {
                     self.state.boot_error_info = Some(boot_engine_error_info(&e));
                     return false;
                 }
-                self.boot_transition_after_engine(boot,progress)
+                self.boot_transition_after_engine(boot, progress)
             }
         }
     }
 
-    fn boot_step_waiting_plugins(&mut self, boot: &mut BootResources,progress:&mut BootProgress) -> bool {
+    fn boot_step_waiting_plugins(
+        &mut self,
+        boot: &mut BootResources,
+        progress: &mut BootProgress,
+    ) -> bool {
         let BootPhase::WaitingPlugins {
             started,
             deadline,
@@ -225,7 +263,11 @@ impl App {
         false
     }
 
-    fn boot_step_restoring_layout(&mut self, boot: &mut BootResources,progress:&mut BootProgress) -> bool {
+    fn boot_step_restoring_layout(
+        &mut self,
+        boot: &mut BootResources,
+        progress: &mut BootProgress,
+    ) -> bool {
         let BootPhase::RestoringLayout { started, deadline } = &mut progress.phase else {
             unreachable!("boot_step_restoring_layout called outside RestoringLayout phase");
         };
@@ -248,7 +290,7 @@ impl App {
     fn spawn_engine_worker(
         &self,
         boot: &BootResources,
-        progress:&BootProgress,
+        progress: &BootProgress,
     ) -> std::sync::mpsc::Receiver<
         anyhow::Result<(
             crate::runtime::engine_session::EngineSession,
@@ -266,7 +308,7 @@ impl App {
         let memory = self.services.memory_arc();
         let runner_registry = Arc::clone(self.services.tasks.runner_registry());
         let gauges = self.services.plugin_gauges();
-        let registries=self.services.registries.clone();
+        let registries = self.services.registries.clone();
         // 점유 중인 슬롯을 확인해야 하므로 메인 스레드에서 선택해 워커로 전달한다.
         let layout_slot = self.claim_free_layout_slot();
         #[cfg(debug_assertions)]
@@ -299,7 +341,11 @@ impl App {
         rx
     }
 
-    fn boot_transition_after_engine(&mut self, boot: &mut BootResources,progress:&mut BootProgress) -> bool {
+    fn boot_transition_after_engine(
+        &mut self,
+        boot: &mut BootResources,
+        progress: &mut BootProgress,
+    ) -> bool {
         let id = self
             .engines
             .pending_id()
@@ -323,10 +369,17 @@ impl App {
         false
     }
 
-    fn boot_step_waiting_journal(&mut self, boot: &mut BootResources,progress:&mut BootProgress) -> bool {
+    fn boot_step_waiting_journal(
+        &mut self,
+        boot: &mut BootResources,
+        progress: &mut BootProgress,
+    ) -> bool {
         let id = self.engines.pending_id().expect("pending bootstrap engine");
         let session = self.engines.session_mut(id).expect("pending engine exists");
-        if let Err(error) = self.journal.poll_bootstrap(&mut [session],self.plugin_manager.as_mut()) {
+        if let Err(error) = self
+            .journal
+            .poll_bootstrap(&mut [session], self.plugin_manager.as_mut())
+        {
             self.state.boot_error_info = Some(boot_engine_error_info(&anyhow::anyhow!(error)));
             return false;
         }
@@ -351,10 +404,14 @@ impl App {
         if session.journal_binding.is_none() || !self.journal.is_ready(id) {
             return false;
         }
-        self.boot_transition_after_journal(boot,progress)
+        self.boot_transition_after_journal(boot, progress)
     }
 
-    fn boot_transition_after_journal(&mut self, boot: &mut BootResources,progress:&mut BootProgress) -> bool {
+    fn boot_transition_after_journal(
+        &mut self,
+        boot: &mut BootResources,
+        progress: &mut BootProgress,
+    ) -> bool {
         let id = self.engines.pending_id().expect("pending bootstrap engine");
         progress.restored_idx = self.journal.take_restored_presentation(id);
         let now = Instant::now();
@@ -370,7 +427,7 @@ impl App {
     pub(super) fn boot_engine_worker_pending(&self) -> bool {
         self.boot
             .as_ref()
-            .is_some_and(|boot|boot.engine_worker.is_some())
+            .is_some_and(|boot| boot.engine_worker.is_some())
     }
 
     /// 종료 단계에서 블로킹 없이 결과를 받는다. 대기 기한은 호출자가 관리한다.
@@ -387,7 +444,9 @@ impl App {
         let Some(boot) = self.boot.as_mut() else {
             return Err(());
         };
-        let Some(rx)=boot.engine_worker.as_ref() else {return Err(());};
+        let Some(rx) = boot.engine_worker.as_ref() else {
+            return Err(());
+        };
         match rx.try_recv() {
             Ok(Ok(payload)) => Ok(Some(payload)),
             Ok(Err(_)) => Ok(None),
@@ -400,10 +459,29 @@ impl App {
     }
 
     /// 창·IPC를 등록하고 시작 이벤트를 알린 뒤 부팅 중 보류한 이벤트를 재생한다.
-    fn finish_boot(&mut self,boot:BootResources,progress:BootProgress,event_loop:&ActiveEventLoop) {
-        let BootResources {window,gpu,pending_events,engine_worker:_}=boot;
-        let BootProgress {settings:_,settings_origin,phase:_,boot_t0,db_init_error,invalid_theme_name,restored_idx,journal_plugins_waited:_}=progress;
-        self.state.started=true;
+    fn finish_boot(
+        &mut self,
+        boot: BootResources,
+        progress: BootProgress,
+        event_loop: &ActiveEventLoop,
+    ) {
+        let BootResources {
+            window,
+            gpu,
+            pending_events,
+            engine_worker: _,
+        } = boot;
+        let BootProgress {
+            settings: _,
+            settings_origin,
+            phase: _,
+            boot_t0,
+            db_init_error,
+            invalid_theme_name,
+            restored_idx,
+            journal_plugins_waited: _,
+        } = progress;
+        self.state.started = true;
         let mut state = match self.assemble_app_state(restored_idx) {
             Ok(state) => state,
             Err(error) => {
@@ -581,7 +659,6 @@ impl App {
                 warn(crate::i18n::t("persistence.warn.settings_locked").to_string());
             }
         }
-
     }
 
     fn start_boot_ipc_and_webhooks(&mut self, state: &mut crate::state::MainViewState) {

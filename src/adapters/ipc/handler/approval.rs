@@ -282,7 +282,11 @@ pub(crate) fn elevation_grant_decision(
 }
 
 /// I/O wrapper — `elevation_grant_decision` 결과를 SessionStore 에 적용.
-pub(super) fn apply_elevation_grant_if_any(core: &AppServices, record: &ApprovalRecord, choice: &str) {
+pub(super) fn apply_elevation_grant_if_any(
+    core: &AppServices,
+    record: &ApprovalRecord,
+    choice: &str,
+) {
     let Some((agent_id, permission, ttl_ms)) = elevation_grant_decision(record, choice) else {
         return;
     };

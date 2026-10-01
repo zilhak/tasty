@@ -30,9 +30,13 @@ impl App {
             return IpcStep::Handled;
         }
 
-        if self.defer_preset_capture(cmd,checked) {return IpcStep::Handled;}
+        if self.defer_preset_capture(cmd, checked) {
+            return IpcStep::Handled;
+        }
 
-        if self.journal.admit_host_fallback_ipc(cmd,checked.caller()) {return IpcStep::Handled;}
+        if self.journal.admit_host_fallback_ipc(cmd, checked.caller()) {
+            return IpcStep::Handled;
+        }
 
         if let Some(resp) = self.dispatch_list_global(&cmd.request) {
             send_response(&cmd.response_tx, resp);

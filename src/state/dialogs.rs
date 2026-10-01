@@ -121,7 +121,8 @@ pub struct DialogState {
     /// 처리한다.
     pub(crate) permission_settings_requested: bool,
     /// 응답 대기 중인 approval 큐. 맨 앞 요청을 표시한다.
-    pub(crate) approval_records: std::collections::HashMap<tasty_approval::ApprovalId,tasty_approval::ApprovalRecord>,
+    pub(crate) approval_records:
+        std::collections::HashMap<tasty_approval::ApprovalId, tasty_approval::ApprovalRecord>,
     pub(crate) approval_submitting: Option<tasty_approval::ApprovalId>,
     pub(crate) pending_approval_ids: VecDeque<tasty_approval::ApprovalId>,
     pub(crate) approval_comment_buffer: String,

@@ -83,7 +83,9 @@ pub(crate) fn batches_after(
 
 pub(crate) fn load_batch(conn: &Connection, batch_id: BatchId) -> StoreResult<StoredBatch> {
     if crate::retention::floor(conn)?.is_some_and(|floor| batch_id <= floor) {
-        return Err(StoreError::ResyncRequired {retained_after_batch: crate::retention::floor(conn)?.expect("checked floor")});
+        return Err(StoreError::ResyncRequired {
+            retained_after_batch: crate::retention::floor(conn)?.expect("checked floor"),
+        });
     }
     let id = to_i64(batch_id)?;
     let command_id: Option<Option<String>> = conn

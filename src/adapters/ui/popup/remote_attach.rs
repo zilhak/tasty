@@ -6,8 +6,8 @@
 use std::time::{Duration, Instant};
 use tasty_type_geometry::length::LogicalPx;
 
-use tasty_remote::browse::RemoteWorkspace;
 use crate::app::remote_browser::BrowserRequest;
+use tasty_remote::browse::RemoteWorkspace;
 use tasty_remote_profiles::RemoteProfiles;
 use tasty_ui_widgets::{Button, ButtonVariant, CenterState, StatusKind, status_dot};
 
@@ -77,10 +77,9 @@ struct UiState {
     ws_sel: Option<WsSel>,
     /// "+ 새 워크스페이스" 행의 진행 상태.
     phase: NewWsPhase,
-    request:Option<u64>,
-    ready:bool,
-    created:Option<u32>,
-
+    request: Option<u64>,
+    ready: bool,
+    created: Option<u32>,
 }
 
 impl UiState {
@@ -166,36 +165,95 @@ fn attach_summaries(profiles: &RemoteProfiles) -> Vec<ProfileSummary> {
         .collect()
 }
 
-fn enqueue(state:&mut MainViewState,request:BrowserRequest) {state.dispatch_intent(crate::intent::Intent::RemoteBrowser(request).from_user_context_menu());}
-fn connect(state:&mut MainViewState,st:&mut UiState,name:String) {
-    if let Some(id)=st.request.take() {enqueue(state,BrowserRequest::Cancel {id});}
-    static NEXT:std::sync::atomic::AtomicU64=std::sync::atomic::AtomicU64::new(1);
-    let id=NEXT.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
-    st.request=Some(id);st.attach_sel=Some(name.clone());st.ws_sel=None;st.phase=NewWsPhase::Rest;st.ready=false;st.created=None;st.conn=Conn::Connecting;
-    enqueue(state,BrowserRequest::Browse {id,profile:name,view:state.webview_identity.clone()});
+fn enqueue(state: &mut MainViewState, request: BrowserRequest) {
+    state.dispatch_intent(crate::intent::Intent::RemoteBrowser(request).from_user_context_menu());
 }
-fn start_create(state:&mut MainViewState,st:&mut UiState) {
-    if st.creating()||!st.ready {return;}
-    if let Some(id)=st.request {st.phase=NewWsPhase::Creating;enqueue(state,BrowserRequest::Create {id});}
-}
-fn push_attach(state:&mut MainViewState,st:&mut UiState,workspace:u32) {
-    if let Some(id)=st.request.take() {st.ready=false;enqueue(state,BrowserRequest::Connect {id,workspace});}
-}
-fn cancel_browse(state:&mut MainViewState,st:&mut UiState) {
-    if let Some(id)=st.request.take() {enqueue(state,BrowserRequest::Cancel {id});}
-    *st=UiState::default();
-}
-fn cleanup(ctx:&egui::Context,state:&mut MainViewState) {cancel_browse(state,&mut read_ui(ctx));clear_ui(ctx);}
-pub fn on_close_remote_attach_popup(ctx:&egui::Context,state:&mut MainViewState,_engine:&crate::runtime::engine_read::EngineRead<'_>) {cleanup(ctx,state);}
-/// App applies values only to the still-open ticket. No worker handle or tunnel enters egui storage.
-pub(crate) fn receive_update(ctx:&egui::Context,id:u64,update:tasty_remote::browser::BrowserUpdate) {
-    let mut state=read_ui(ctx);if state.request!=Some(id) {return;}
-    match update {
-        tasty_remote::browser::BrowserUpdate::Listed(rows)=>{state.ws_sel=rows.is_empty().then_some(WsSel::New);state.conn=Conn::Loaded(rows);state.phase=NewWsPhase::Rest;state.ready=true;},
-        tasty_remote::browser::BrowserUpdate::Created(id)=>{state.created=Some(id);state.phase=NewWsPhase::Rest;},
-        tasty_remote::browser::BrowserUpdate::Failed {creating,message}=>{if creating {state.phase=NewWsPhase::Failed(message);}else{state.conn=Conn::Error(message);state.ready=false;}},
+fn connect(state: &mut MainViewState, st: &mut UiState, name: String) {
+    if let Some(id) = st.request.take() {
+        enqueue(state, BrowserRequest::Cancel { id });
     }
-    write_ui(ctx,state);ctx.request_repaint();
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    st.request = Some(id);
+    st.attach_sel = Some(name.clone());
+    st.ws_sel = None;
+    st.phase = NewWsPhase::Rest;
+    st.ready = false;
+    st.created = None;
+    st.conn = Conn::Connecting;
+    enqueue(
+        state,
+        BrowserRequest::Browse {
+            id,
+            profile: name,
+            view: state.webview_identity.clone(),
+        },
+    );
+}
+fn start_create(state: &mut MainViewState, st: &mut UiState) {
+    if st.creating() || !st.ready {
+        return;
+    }
+    if let Some(id) = st.request {
+        st.phase = NewWsPhase::Creating;
+        enqueue(state, BrowserRequest::Create { id });
+    }
+}
+fn push_attach(state: &mut MainViewState, st: &mut UiState, workspace: u32) {
+    if let Some(id) = st.request.take() {
+        st.ready = false;
+        enqueue(state, BrowserRequest::Connect { id, workspace });
+    }
+}
+fn cancel_browse(state: &mut MainViewState, st: &mut UiState) {
+    if let Some(id) = st.request.take() {
+        enqueue(state, BrowserRequest::Cancel { id });
+    }
+    *st = UiState::default();
+}
+fn cleanup(ctx: &egui::Context, state: &mut MainViewState) {
+    cancel_browse(state, &mut read_ui(ctx));
+    clear_ui(ctx);
+}
+pub fn on_close_remote_attach_popup(
+    ctx: &egui::Context,
+    state: &mut MainViewState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
+) {
+    cleanup(ctx, state);
+}
+/// App applies values only to the still-open ticket. No worker handle or tunnel enters egui storage.
+pub(crate) fn receive_update(
+    ctx: &egui::Context,
+    id: u64,
+    update: tasty_remote::browser::BrowserUpdate,
+) {
+    let mut state = read_ui(ctx);
+    if state.request != Some(id) {
+        return;
+    }
+    match update {
+        tasty_remote::browser::BrowserUpdate::Listed(rows) => {
+            state.ws_sel = rows.is_empty().then_some(WsSel::New);
+            state.conn = Conn::Loaded(rows);
+            state.phase = NewWsPhase::Rest;
+            state.ready = true;
+        }
+        tasty_remote::browser::BrowserUpdate::Created(id) => {
+            state.created = Some(id);
+            state.phase = NewWsPhase::Rest;
+        }
+        tasty_remote::browser::BrowserUpdate::Failed { creating, message } => {
+            if creating {
+                state.phase = NewWsPhase::Failed(message);
+            } else {
+                state.conn = Conn::Error(message);
+                state.ready = false;
+            }
+        }
+    }
+    write_ui(ctx, state);
+    ctx.request_repaint();
 }
 
 /// PopupDef.draw_fn 진입점.
@@ -211,7 +269,6 @@ pub fn draw_remote_attach_popup(
     // 목록 글자 선택이 행 조작을 가로채지 않도록 이 팝업에서 텍스트 선택을 끈다.
     ui.style_mut().interaction.selectable_labels = false;
 
-
     let mut close = false;
     if let Some(new_ws) = st.created.take() {
         push_attach(state, &mut st, new_ws);
@@ -219,7 +276,7 @@ pub fn draw_remote_attach_popup(
     }
 
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        cleanup(&ctx,state);
+        cleanup(&ctx, state);
         return PopupAction::Close;
     }
 
@@ -303,7 +360,7 @@ pub fn draw_remote_attach_popup(
     }
 
     if close {
-        cancel_browse(state,&mut st);
+        cancel_browse(state, &mut st);
         clear_ui(&ctx);
         PopupAction::Close
     } else {
@@ -1058,4 +1115,3 @@ fn badge(
         color,
     );
 }
-

@@ -16,14 +16,21 @@ impl AppServices {
                 hard_occupied: true,
             };
         }
-        if let crate::app::command::SendPayload::Bound {generation,..}=&payload
-            && !engine.runtime.terminals.matches_generation(surface_id,*generation) {
-            return CoreEvent::SurfaceSent {sent:false,hard_occupied:false};
+        if let crate::app::command::SendPayload::Bound { generation, .. } = &payload
+            && !engine
+                .runtime
+                .terminals
+                .matches_generation(surface_id, *generation)
+        {
+            return CoreEvent::SurfaceSent {
+                sent: false,
+                hard_occupied: false,
+            };
         }
         let sent = if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
             match payload {
                 crate::app::command::SendPayload::Bytes(bytes)
-                |crate::app::command::SendPayload::Bound {bytes,..} => {
+                | crate::app::command::SendPayload::Bound { bytes, .. } => {
                     terminal.send_bytes(&bytes);
                 }
                 crate::app::command::SendPayload::Text(text) => {
@@ -39,8 +46,6 @@ impl AppServices {
             hard_occupied: false,
         }
     }
-
-
 }
 
 #[cfg(test)]
@@ -63,11 +68,13 @@ mod attach_block_tests {
             .terminals
             .insert(sid, tasty_terminal::Terminal::new_detached(80, 24), None);
 
-        let ev = AppServices::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
+        let ev =
+            AppServices::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
         assert!(matches!(ev, CoreEvent::SurfaceSent { sent: true, .. }));
 
         engine.live.occupancy.acquire(sid, 1).unwrap();
-        let ev = AppServices::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
+        let ev =
+            AppServices::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
         assert!(matches!(
             ev,
             CoreEvent::SurfaceSent {
@@ -77,7 +84,8 @@ mod attach_block_tests {
         ));
 
         engine.live.occupancy.release(sid, 1).unwrap();
-        let ev = AppServices::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
+        let ev =
+            AppServices::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
         assert!(matches!(ev, CoreEvent::SurfaceSent { sent: true, .. }));
     }
 
@@ -85,8 +93,11 @@ mod attach_block_tests {
     fn nonexistent_surface_is_not_found_not_hard_occupied() {
         let mut engine_session = test_engine();
         let mut engine = engine_session.borrow_mut();
-        let ev =
-            AppServices::apply_send_to_surface(&mut engine, 424242, SendPayload::Bytes(b"x".to_vec()));
+        let ev = AppServices::apply_send_to_surface(
+            &mut engine,
+            424242,
+            SendPayload::Bytes(b"x".to_vec()),
+        );
         assert!(matches!(
             ev,
             CoreEvent::SurfaceSent {
@@ -106,7 +117,8 @@ mod attach_block_tests {
             .terminals
             .insert(sid, tasty_terminal::Terminal::new_detached(80, 24), None);
         engine.occupy_soft(sid, /*parent*/ 1, None).unwrap();
-        let ev = AppServices::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
+        let ev =
+            AppServices::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
         assert!(matches!(ev, CoreEvent::SurfaceSent { sent: true, .. }));
     }
 }

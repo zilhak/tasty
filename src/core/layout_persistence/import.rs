@@ -12,10 +12,10 @@
 //! ([`surface_data::SurfaceData`]) payload로 저장하고 자료 참조로 가리킨다. 제품 worker가 선택된
 //! 슬롯에 구조 stream이 아직 없을 때 호출하며, 이미 활성화한 stream에는 파일을 다시 가져오지 않는다.
 
+pub(crate) mod journal_import;
 #[cfg(test)]
 mod shadow;
 pub(crate) mod surface_data;
-pub(crate) mod journal_import;
 #[cfg(test)]
 mod tests;
 
@@ -39,11 +39,11 @@ use super::schema::{
     SavedCategory, SavedLayout, SavedPaneNode, SavedSurface, SavedSurfaceLayout, SavedWorkspace,
 };
 use super::{LayoutSlotId, SlotLoad, classify_slot_json};
-use crate::runtime::terminal_store::PTY_ID_BASE;
 use crate::model::{
     NORMAL_CATEGORY_ID, PaneId, SurfaceId, TabId, WorkspaceCategoryId, WorkspaceId,
 };
 use crate::runtime::journal::{self, JournalError};
+use crate::runtime::terminal_store::PTY_ID_BASE;
 
 /// 명령 기록의 호출자 범위. 슬롯 번호가 재시도 키가 된다.
 pub(crate) const IMPORT_SCOPE: &str = "layout-import";
@@ -346,7 +346,9 @@ pub(crate) fn import_slot(
         }
     };
     let view = view_of(&layout, &mapping);
-    if let Err(error) = store.release_payload_holder(epoch, &format!("admission/{}/legacy-slot-{slot}", epoch.0)) {
+    if let Err(error) =
+        store.release_payload_holder(epoch, &format!("admission/{}/legacy-slot-{slot}", epoch.0))
+    {
         tracing::warn!(%error, "legacy import committed; admission pin cleanup deferred");
     }
     Ok(ImportOutcome {
@@ -789,7 +791,10 @@ impl Plan {
             None
         } else {
             let bytes = data.encode().map_err(ImportError::SurfaceData)?;
-            Some(sink.store.put_payload_pinned(sink.epoch, &bytes, &sink.holder)?)
+            Some(
+                sink.store
+                    .put_payload_pinned(sink.epoch, &bytes, &sink.holder)?,
+            )
         };
         Ok((
             SurfaceSpec {

@@ -14,10 +14,7 @@ use crate::app::services::AppServices;
 use crate::file::format::{DetectDepth, FileTarget};
 use tasty_ipc::protocol::JsonRpcResponse;
 
-pub fn handle_reload(
-    core: &AppServices,
-    id: serde_json::Value,
-) -> JsonRpcResponse {
+pub fn handle_reload(core: &AppServices, id: serde_json::Value) -> JsonRpcResponse {
     let outcome = core.reload_file_handlers();
     JsonRpcResponse::success(
         id,
@@ -32,7 +29,9 @@ pub fn handle_reload(
 /// detector를 ID 순으로 반환한다. 병합 결과와 출처별 원본을 함께 보여준다.
 /// contributions는 설치 순서이며 병합 우선순위가 아니다. rules는 사용자 설정과 같은 키를 쓴다.
 pub fn handle_detectors(core: &AppServices, id: serde_json::Value) -> JsonRpcResponse {
-    let detectors: Vec<serde_json::Value> = core.registries.file_format
+    let detectors: Vec<serde_json::Value> = core
+        .registries
+        .file_format
         .detector_snapshots()
         .iter()
         .map(detector_json)

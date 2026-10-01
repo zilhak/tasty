@@ -86,9 +86,11 @@ mod tests {
     #[test]
     fn an_agent_forward_failure_does_not_toast() {
         let mut sess = test_session(9_000, HashMap::new());
-        sess.state.agent_requests
+        sess.state
+            .agent_requests
             .note_structural_from(&structural(true), 5);
-        sess.state.agent_requests
+        sess.state
+            .agent_requests
             .note_structural_from(&structural(false), 6);
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
         let (mut state, mut engine_session) = crate::state::tests::test_state();
@@ -128,9 +130,11 @@ mod tests {
     fn an_agent_markdown_reload_truncation_does_not_toast() {
         let mut sess = test_session(9_000, HashMap::from([(30, 300)]));
         sess.state.markdown_locals.insert(300);
-        sess.state.agent_requests
+        sess.state
+            .agent_requests
             .note_markdown_from(&markdown(11, true), 11);
-        sess.state.agent_requests
+        sess.state
+            .agent_requests
             .note_markdown_from(&markdown(12, false), 12);
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
         let (mut state, mut engine_session) = crate::state::tests::test_state();

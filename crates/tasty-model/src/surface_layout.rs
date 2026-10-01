@@ -287,7 +287,11 @@ impl SurfaceLayout {
     }
 
     /// Replace a leaf surface by ID with a new surface. Returns true if found and replaced.
-    pub fn replace_surface(&mut self, target_id: SurfaceId, new_surface: SurfaceDescriptor) -> bool {
+    pub fn replace_surface(
+        &mut self,
+        target_id: SurfaceId,
+        new_surface: SurfaceDescriptor,
+    ) -> bool {
         match self {
             SurfaceLayout::Leaf(surface) => {
                 if Self::leaf_surface_id(surface) == target_id {
@@ -354,8 +358,14 @@ impl SurfaceLayout {
     }
 
     /// Geometry borrows logical descriptors; callers obtain kind instances from their engine.
-    pub fn surface_regions(&self,rect:PhysicalRect)->Vec<SurfaceRegion<'_>> {
-        self.compute_rects(rect).into_iter().filter_map(|(id,rect)|self.find_surface(id).map(|surface|SurfaceRegion {id,rect,surface})).collect()
+    pub fn surface_regions(&self, rect: PhysicalRect) -> Vec<SurfaceRegion<'_>> {
+        self.compute_rects(rect)
+            .into_iter()
+            .filter_map(|(id, rect)| {
+                self.find_surface(id)
+                    .map(|surface| SurfaceRegion { id, rect, surface })
+            })
+            .collect()
     }
 
     /// 원격 mirror가 구조를 복원할 수 있도록 분할 방향·비율·포커스와 surface ID를 보낸다.

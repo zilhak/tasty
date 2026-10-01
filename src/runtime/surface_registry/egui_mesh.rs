@@ -3,11 +3,11 @@
 
 use std::sync::Arc;
 
+use crate::model::Surface;
 use crate::runtime::egui_mesh_surface::EguiMeshSurface;
 use crate::runtime::surface_registry::{
     KindSource, RegisteredRendering, SurfaceKindDef, SurfaceKindRegistry,
 };
-use crate::model::Surface;
 use tasty_plugin_manifest::{HOST_API_VERSION, SurfaceKindDecl};
 
 /// registry가 static 문자열을 요구하므로 메모리를 반환하지 않는다. 철회 후 재등록하면 다시 할당한다.

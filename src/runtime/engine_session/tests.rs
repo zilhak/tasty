@@ -3,9 +3,9 @@ use std::sync::Arc;
 use tasty_terminal::Terminal;
 
 use super::EngineSession;
+use crate::runtime::output_observer::{ObserverSpec, SinkSpec};
 use tasty_task_runtime::event_feed::AgentEvent;
 use tasty_task_runtime::task_waker::TerminalSnapshot;
-use crate::runtime::output_observer::{ObserverSpec, SinkSpec};
 
 fn session() -> EngineSession {
     EngineSession::new(80, 24, Arc::new(|| {})).expect("isolated session")

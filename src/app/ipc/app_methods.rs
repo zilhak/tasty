@@ -259,7 +259,10 @@ impl App {
             .engines()
             .window_pairs()
             .map(|(id, main, engine)| {
-                let mut info = host_ipc::handler::system_info_fields(&engine.read(),main.state.active_workspace_index(engine.core));
+                let mut info = host_ipc::handler::system_info_fields(
+                    &engine.read(),
+                    main.state.active_workspace_index(engine.core),
+                );
                 info["id"] = serde_json::json!(u64::from(id));
                 info["focused"] = serde_json::json!(focused_id == Some(id));
                 info["title"] = serde_json::json!(main.state.active_workspace(engine.core).name);
@@ -764,7 +767,6 @@ impl App {
             &cmd.response_tx,
         );
     }
-
 }
 
 /// 명시한 창 ID는 모달·preset도 허용한다. ID가 없으면 MainView 하나만 자동 선택한다.

@@ -20,7 +20,10 @@ struct Target {
 }
 
 /// `pending_category_delete` 의 대상 카테고리를 해석. 없거나 normal 이면 None(닫힘).
-fn resolve_target(state: &MainViewState, engine: &crate::runtime::engine_read::EngineRead<'_>) -> Option<Target> {
+fn resolve_target(
+    state: &MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> Option<Target> {
     let cat_id = state.dialogs.pending_category_delete?;
     let cat = engine.categories().iter().find(|c| c.id == cat_id)?;
     if cat.is_normal() {

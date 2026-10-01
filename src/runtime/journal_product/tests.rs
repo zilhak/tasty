@@ -359,9 +359,7 @@ fn prepare_workspace(
     let operation = batch.streams["structure:slot-1"]
         .iter()
         .find_map(|recorded| match &recorded.event {
-            tasty_core::DomainEvent::OperationPrepared { operation } => {
-                Some(operation.id.clone())
-            }
+            tasty_core::DomainEvent::OperationPrepared { operation } => Some(operation.id.clone()),
             _ => None,
         })
         .unwrap();
@@ -710,7 +708,10 @@ fn kind_withdrawal_after_claim_prevents_factory_execution() {
         &declaration,
         sender,
     );
-    engine.runtime.surface_registry.withdraw_plugin("com.test.late");
+    engine
+        .runtime
+        .surface_registry
+        .withdraw_plugin("com.test.late");
     assert!(engine.runtime.surface_registry.get("late-kind").is_some());
     let error = match effect_runner::prepare(&mut engine, &binding, claimed) {
         Ok(_) => panic!("withdrawn kind prepared"),
@@ -927,7 +928,10 @@ fn kind_withdrawal_or_replacement_after_prepare_rejects_installation_before_publ
         );
         publish(&worker);
         finished(&worker, 3).unwrap();
-        engine.runtime.surface_registry.withdraw_plugin("com.test.late");
+        engine
+            .runtime
+            .surface_registry
+            .withdraw_plugin("com.test.late");
         if reload {
             crate::plugin_bridge::remote_kind::register_remote_kind(
                 &engine.runtime.surface_registry,

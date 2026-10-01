@@ -6,7 +6,7 @@ use serde_json::json;
 
 use tasty_ipc::protocol::JsonRpcResponse;
 
-use crate::core::{PendingGitQueryForward};
+use crate::core::PendingGitQueryForward;
 use tasty_ipc::stream_hub::GitQueryKind;
 
 /// `git_viewer.query { kind, local_surface_id, worktree_path?, diff_path? }` 요청.
@@ -46,7 +46,8 @@ pub fn handle_query(
     };
     let request_id = crate::core::next_git_query_request_id();
     engine
-        .remote.pending_git_query_forward
+        .remote
+        .pending_git_query_forward
         .push(PendingGitQueryForward {
             local_surface_id: req.local_surface_id,
             request_id,

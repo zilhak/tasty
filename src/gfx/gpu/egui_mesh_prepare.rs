@@ -18,8 +18,8 @@ use egui::epaint::textures::TexturesDelta;
 use egui::epaint::{ClippedPrimitive, Primitive, TextureId};
 
 use super::GpuState;
-use crate::model::PhysicalRect;
 use crate::app::plugin_display::PluginDisplay;
+use crate::model::PhysicalRect;
 use crate::state::MainViewState;
 
 /// 디코드 ppp 와 host ppp 의 허용 오차. float 비교라 작은 epsilon.
@@ -155,7 +155,10 @@ pub(super) fn collect_egui_mesh_targets(
         state.surface_regions(engine, terminal_rect, scale_factor)
     {
         for r in regions {
-            if let Some(ms) = engine.find_surface_by_id(r.id).and_then(|surface|surface.mesh()) {
+            if let Some(ms) = engine
+                .find_surface_by_id(r.id)
+                .and_then(|surface| surface.mesh())
+            {
                 out.push((r.id, ms.plugin_id.clone(), r.rect));
             }
         }
@@ -177,7 +180,8 @@ pub(super) fn collect_attach_mesh_targets(
         state.surface_regions(engine, terminal_rect, scale_factor)
     {
         for r in regions {
-            if engine.find_surface_by_id(r.id)
+            if engine
+                .find_surface_by_id(r.id)
                 .is_some_and(|surface| surface.attach_mesh().is_some())
             {
                 out.push((r.id, r.rect));

@@ -113,7 +113,8 @@ impl PluginManager {
 
     pub(super) fn handle_plugin_response(&mut self, plugin_id: &str, resp: PluginResponse) {
         if self.pending_requests.get(&resp.id).is_some_and(|pending| {
-            matches!(pending.kind, PendingRequestKind::SurfaceRetire {..}) && pending.to != plugin_id
+            matches!(pending.kind, PendingRequestKind::SurfaceRetire { .. })
+                && pending.to != plugin_id
         }) {
             tracing::warn!("remote retirement response came from another plugin");
             return;
@@ -184,13 +185,27 @@ impl PluginManager {
                     self.apply_surface_response(plugin_id, surface_id, &binding, resp.result);
                 }
             }
-            PendingRequestKind::SurfaceRetire {completion,process_binding} => {
-                let current = self.processes.get(plugin_id).map(|process|process.reply_binding());
-                if current.as_ref().is_none_or(|current|!current.ptr_eq(&process_binding)) || process_binding.upgrade().is_none() {
-                    completion.finish(Err("destruction response belongs to a retired plugin process".into()));
+            PendingRequestKind::SurfaceRetire {
+                completion,
+                process_binding,
+            } => {
+                let current = self
+                    .processes
+                    .get(plugin_id)
+                    .map(|process| process.reply_binding());
+                if current
+                    .as_ref()
+                    .is_none_or(|current| !current.ptr_eq(&process_binding))
+                    || process_binding.upgrade().is_none()
+                {
+                    completion.finish(Err(
+                        "destruction response belongs to a retired plugin process".into(),
+                    ));
                 } else if let Some(error) = resp.error {
                     completion.finish(Err(format!("plugin rejected surface destruction: {error}")));
-                } else {completion.finish(Ok(()));}
+                } else {
+                    completion.finish(Ok(()));
+                }
             }
             PendingRequestKind::Other => {}
             PendingRequestKind::PopupOpen { instance_id } => {
@@ -706,7 +721,14 @@ impl PluginManager {
                 deadline: _,
             } => {
                 let msg = self.note_namespace_expiry(&plugin_id, id, origin);
-                self.send_bound_ipc_parts(&caller_plugin_id, &caller_binding, call_id, None, Some(msg), Some(-32004));
+                self.send_bound_ipc_parts(
+                    &caller_plugin_id,
+                    &caller_binding,
+                    call_id,
+                    None,
+                    Some(msg),
+                    Some(-32004),
+                );
             }
             PendingRequestKind::NamespaceInvokeWithPostHook {
                 target_plugin_id,

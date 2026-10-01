@@ -39,4 +39,3 @@ pub(super) fn apply_to_explorer_panel(
         A::OpenFile(_) | A::Refresh | A::ContextMenu { .. } => {}
     }
 }
-

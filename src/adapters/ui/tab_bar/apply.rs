@@ -1,8 +1,8 @@
 //! Tab bar actions → application and core state.
 
 use super::{PaneTabBarView, TabBarAction, compute_drop_index};
-use crate::runtime::engine_read::EngineRead;
 use crate::model::LogicalPx;
+use crate::runtime::engine_read::EngineRead;
 use crate::state::MainViewState;
 use egui::emath::GuiRounding as _;
 
@@ -26,16 +26,32 @@ pub fn apply_tab_bar_actions(
         match action {
             TabBarAction::SwitchTab { pane_id, tab_index } => {
                 let before = state.tutorial_tab_snapshot(engine);
-                if let Some(pane)=engine.find_pane_by_id(pane_id) {state.navigation.goto_tab(pane,tab_index);}
+                if let Some(pane) = engine.find_pane_by_id(pane_id) {
+                    state.navigation.goto_tab(pane, tab_index);
+                }
                 state.observe_tutorial_tab_switch(engine, before);
             }
             TabBarAction::CloseTab { pane_id, tab_index } => {
                 state.close_tab(engine, pane_id, tab_index);
             }
-            TabBarAction::AddTab {pane_id}=> {
-                let selected=engine.find_pane_by_id(pane_id).and_then(|pane|pane.tabs.get(state.navigation.tab_index(pane))).and_then(|tab|state.navigation.surface_id(tab));
-                let cwd=selected.and_then(|surface|state.resolve_inherit_cwd_from_surface(engine,surface));
-                state.dispatch_intent(crate::app::command::DomainIntent::CreateTab {pane_id,cwd,kind:"terminal".into(),name:None,surface_params:serde_json::json!({}),activate:true}.from_user_menu("tab.create"));
+            TabBarAction::AddTab { pane_id } => {
+                let selected = engine
+                    .find_pane_by_id(pane_id)
+                    .and_then(|pane| pane.tabs.get(state.navigation.tab_index(pane)))
+                    .and_then(|tab| state.navigation.surface_id(tab));
+                let cwd = selected
+                    .and_then(|surface| state.resolve_inherit_cwd_from_surface(engine, surface));
+                state.dispatch_intent(
+                    crate::app::command::DomainIntent::CreateTab {
+                        pane_id,
+                        cwd,
+                        kind: "terminal".into(),
+                        name: None,
+                        surface_params: serde_json::json!({}),
+                        activate: true,
+                    }
+                    .from_user_menu("tab.create"),
+                );
             }
             TabBarAction::RequestSplit { pane_id: _ } => {
                 use crate::intent::Intent;
@@ -121,13 +137,20 @@ pub fn apply_tab_bar_actions(
 }
 
 /// 사용자가 탭의 lock 표지를 눌렀다. 표지를 누른 것 자체가 문서를 본 것이다.
-fn show_html_script_banner(state: &mut crate::state::MainViewState, engine: &crate::runtime::engine_read::EngineRead<'_>, surface_id: u32) {
-    let Some(snapshot) = engine.html_script(surface_id) else { return; };
-    state.dispatch_intent(crate::intent::Intent::Engine(
-        crate::app::engine_action::EngineAction::Html(
+fn show_html_script_banner(
+    state: &mut crate::state::MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    surface_id: u32,
+) {
+    let Some(snapshot) = engine.html_script(surface_id) else {
+        return;
+    };
+    state.dispatch_intent(
+        crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Html(
             snapshot.request(crate::app::html_runtime::HtmlActionKind::Reshow),
-        ),
-    ).from_user_menu("html-script-marker"));
+        ))
+        .from_user_menu("html-script-marker"),
+    );
 }
 
 /// 검색 버튼은 터미널에서만 동작한다. 검색창은 terminal 데이터만 읽는다.
@@ -200,9 +223,20 @@ fn apply_drag_end(
                     from_index: drag.tab_index,
                     to_index: target,
                 });
-            if !state.forward_mirror_structural(engine,mirror_op,Vec::new())
-                && let Some(tab_id)=engine.find_pane_by_id(pane_id).and_then(|pane|pane.tabs.get(drag.tab_index)).map(|tab|tab.id) {
-                state.dispatch_intent(crate::app::command::DomainIntent::MoveTab {pane_id,tab_id,to_index:target}.from_user_menu("tab_drag"));
+            if !state.forward_mirror_structural(engine, mirror_op, Vec::new())
+                && let Some(tab_id) = engine
+                    .find_pane_by_id(pane_id)
+                    .and_then(|pane| pane.tabs.get(drag.tab_index))
+                    .map(|tab| tab.id)
+            {
+                state.dispatch_intent(
+                    crate::app::command::DomainIntent::MoveTab {
+                        pane_id,
+                        tab_id,
+                        to_index: target,
+                    }
+                    .from_user_menu("tab_drag"),
+                );
             }
         }
     }

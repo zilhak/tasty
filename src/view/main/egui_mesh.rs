@@ -15,8 +15,8 @@ use tasty_plugin_protocol::{
     SurfaceSetContextParams, ThemeWire,
 };
 
-use crate::model::{PhysicalPx, PhysicalRect};
 use crate::app::plugin_display::PluginDisplay;
+use crate::model::{PhysicalPx, PhysicalRect};
 use crate::plugin_bridge::MeshForwardCommon;
 use tasty_ipc::stream_hub::StreamHub;
 
@@ -83,7 +83,9 @@ impl MainView {
         {
             for r in regions {
                 if r.rect.contains(PhysicalPx(x), PhysicalPx(y))
-                    && let Some(ms) = engine.find_surface_by_id(r.id).and_then(|surface|surface.mesh())
+                    && let Some(ms) = engine
+                        .find_surface_by_id(r.id)
+                        .and_then(|surface| surface.mesh())
                 {
                     return Some((r.id, ms.plugin_id.clone(), r.rect));
                 }
@@ -93,7 +95,10 @@ impl MainView {
     }
 
     /// wire에 전달할 색·is_light·UI 배율. 현재 reduced_motion은 포함하지 않는다.
-    pub(super) fn mesh_theme_snapshot(&self, engine: &crate::runtime::engine_read::EngineRead<'_>) -> ThemeWire {
+    pub(super) fn mesh_theme_snapshot(
+        &self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+    ) -> ThemeWire {
         let theme = crate::theme::theme();
         ThemeWire {
             colors: theme.to_colors(),
@@ -194,8 +199,7 @@ impl MainView {
     ) -> Option<u32> {
         let sid = self.state.focused_surface_id(engine)?;
         let surface = engine.find_surface_by_id(sid)?;
-        surface.mesh()
-            .map(|_| sid)
+        surface.mesh().map(|_| sid)
     }
 
     /// 매핑 가능한 키 누름을 누적한다. 뗌은 키보드 진입부에서 제외한다.
@@ -271,7 +275,10 @@ impl MainView {
                 .surface_regions(&*engine, terminal_rect, self.base.gpu.scale_factor())
         {
             for r in regions {
-                if let Some(ms) = engine.find_surface_by_id(r.id).and_then(|surface|surface.mesh()) {
+                if let Some(ms) = engine
+                    .find_surface_by_id(r.id)
+                    .and_then(|surface| surface.mesh())
+                {
                     targets.push(MeshTarget {
                         sid: r.id,
                         plugin_id: ms.plugin_id.clone(),
@@ -326,8 +333,12 @@ impl MainView {
             let geom_changed = st.common.geom_changed(geom);
             let has_input = !st.events.is_empty();
             let need_bootstrap = st.common.need_bootstrap(has_frame)
-                || engine.find_surface_by_id(sid).and_then(|surface|surface.mesh())
-                    .is_some_and(|mesh|mgr.needs_egui_mesh_bootstrap(&plugin_id,&mesh.retirement_binding));
+                || engine
+                    .find_surface_by_id(sid)
+                    .and_then(|surface| surface.mesh())
+                    .is_some_and(|mesh| {
+                        mgr.needs_egui_mesh_bootstrap(&plugin_id, &mesh.retirement_binding)
+                    });
             let theme_changed = st.common.theme_changed(&current_theme);
             let need_full = st.common.pending_full;
             let focus_changed = st.last_focused != Some(is_focused);
@@ -364,9 +375,21 @@ impl MainView {
                 theme: Some(current_theme.clone()),
                 need_full_textures: need_full,
             };
-            if let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,sid)
-                && let Some(registration)=engine.surface_registry.get_live(kind) {
-                self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::LocalMesh {target,plugin:plugin_id,registration:registration.registration(),bootstrap:need_bootstrap.then(||(kind.into(),file,display_name)),params}).from_user_shortcut("mesh-frame"));
+            if let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, sid)
+                && let Some(registration) = engine.surface_registry.get_live(kind)
+            {
+                self.state.dispatch_intent(
+                    crate::intent::Intent::Engine(
+                        crate::app::engine_action::EngineAction::LocalMesh {
+                            target,
+                            plugin: plugin_id,
+                            registration: registration.registration(),
+                            bootstrap: need_bootstrap.then(|| (kind.into(), file, display_name)),
+                            params,
+                        },
+                    )
+                    .from_user_shortcut("mesh-frame"),
+                );
             }
         }
 
@@ -396,15 +419,25 @@ impl MainView {
                 theme: st.common.last_theme.clone(),
                 need_full_textures: true,
             };
-            if let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,*sid)
-                && let Some(kind)=engine.core.find_surface_by_id(*sid)
-                && let Some(registration)=engine.surface_registry.get_live(&kind.kind) {
-                self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::LocalMesh {target,plugin:plugin_id.clone(),registration:registration.registration(),bootstrap:None,params}).from_user_shortcut("mesh-frame"));
+            if let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, *sid)
+                && let Some(kind) = engine.core.find_surface_by_id(*sid)
+                && let Some(registration) = engine.surface_registry.get_live(&kind.kind)
+            {
+                self.state.dispatch_intent(
+                    crate::intent::Intent::Engine(
+                        crate::app::engine_action::EngineAction::LocalMesh {
+                            target,
+                            plugin: plugin_id.clone(),
+                            registration: registration.registration(),
+                            bootstrap: None,
+                            params,
+                        },
+                    )
+                    .from_user_shortcut("mesh-frame"),
+                );
             }
         }
     }
-
-
 }
 
 /// winit 마우스 버튼 → wire 포인터 버튼. 매핑 불가한 버튼(Back/Forward/Other)은 무시.
@@ -726,10 +759,28 @@ mod tests {
 }
 
 impl MainView {
-    pub(crate) fn note_mesh_bootstrap(&mut self,surface:u32,plugin:String,width:u32,height:u32,ppp:f32,theme:Option<ThemeWire>,focused:bool) {
-        let state=self.egui_mesh.entry(surface).or_default();state.plugin_id=Some(plugin);
-        state.common.last_geom=Some((width,height,ppp.to_bits()));state.common.last_theme=theme;
-        state.last_focused=Some(focused);state.common.bootstrap_sent=true;
+    pub(crate) fn note_mesh_bootstrap(
+        &mut self,
+        surface: u32,
+        plugin: String,
+        width: u32,
+        height: u32,
+        ppp: f32,
+        theme: Option<ThemeWire>,
+        focused: bool,
+    ) {
+        let state = self.egui_mesh.entry(surface).or_default();
+        state.plugin_id = Some(plugin);
+        state.common.last_geom = Some((width, height, ppp.to_bits()));
+        state.common.last_theme = theme;
+        state.last_focused = Some(focused);
+        state.common.bootstrap_sent = true;
     }
-    pub(crate) fn request_mesh_full(&mut self,surface:u32) {self.egui_mesh.entry(surface).or_default().set_pending_full();self.base.state.dirty=true;}
+    pub(crate) fn request_mesh_full(&mut self, surface: u32) {
+        self.egui_mesh
+            .entry(surface)
+            .or_default()
+            .set_pending_full();
+        self.base.state.dirty = true;
+    }
 }

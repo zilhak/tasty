@@ -1,15 +1,13 @@
-use crate::runtime::journal_payload::StoreBytes;
 //! 구조 digest: 같은 stream의 여러 재구성 경로가 같은 digest를 내고, 구조를 바꾸면 digest가 달라진다.
 
+use crate::runtime::journal_payload::StoreBytes;
 use tasty_core::{DataRef, DomainEvent, JournalModel, Pane, Ratio, SplitTree};
 use tasty_event_store::EventStore;
 use tasty_model::WorkspaceAttachMapping;
 
 use super::common::{commit_events, db_path, open, scenario, stream};
 use crate::runtime::journal::{full_replay, load, load_all, save_snapshot};
-use tasty_core::canonical::{
-    CanonData, Canonical, IdMode, SkipData, differences,
-};
+use tasty_core::canonical::{CanonData, Canonical, IdMode, SkipData, differences};
 
 fn canonical(store: &EventStore, model: &JournalModel) -> Canonical {
     Canonical::of_journal(model, &StoreBytes(store))

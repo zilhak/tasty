@@ -52,7 +52,7 @@ impl App {
             self.journal.queue_view(capture);
         }
         for session in self.engines.all_sessions_mut() {
-            self.journal.queue_surface_capture(session,force);
+            self.journal.queue_surface_capture(session, force);
         }
     }
 
@@ -71,8 +71,6 @@ impl App {
             })
             .min()
     }
-
-
 }
 
 /// 창을 닫을 때 슬롯 파일을 보존할지 지울지 정한다.

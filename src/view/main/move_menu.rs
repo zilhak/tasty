@@ -2,8 +2,8 @@
 //! 사용자 우클릭 조작이라 GUI에서만 연다. 명세: docs/features/surface-move/index.md.
 
 use super::MainView;
-use crate::state::PendingMove;
 use crate::platform::native_menu::MenuItem;
+use crate::state::PendingMove;
 
 /// surface 메뉴 항목 id. 같은 메뉴의 다른 항목 id와 겹치지 않는다.
 pub(super) const ITEM_MOVE_SURFACE: u32 = 10;

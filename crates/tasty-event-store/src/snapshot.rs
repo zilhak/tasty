@@ -91,14 +91,20 @@ impl EventStore {
     pub fn delete_snapshot(&mut self, epoch: WriterEpoch, id: SnapshotId) -> StoreResult<()> {
         let tx = self.write_tx(epoch)?;
         if crate::retention::anchor_snapshot(&tx)? == Some(id) {
-            return Err(StoreError::Corrupt("cannot delete the retained history anchor snapshot".into()));
+            return Err(StoreError::Corrupt(
+                "cannot delete the retained history anchor snapshot".into(),
+            ));
         }
         let externally_held: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM snapshots AS snapshot JOIN payload_pins AS pin
              ON pin.payload_id = snapshot.payload_id WHERE snapshot.snapshot_id = ?1 AND pin.holder != ?2)",
             params![to_i64(id)?, snapshot_holder(id)], |row| row.get(0),
         )?;
-        if externally_held {return Err(StoreError::Corrupt("cannot delete a snapshot retained by an external holder".into()));}
+        if externally_held {
+            return Err(StoreError::Corrupt(
+                "cannot delete a snapshot retained by an external holder".into(),
+            ));
+        }
         tx.execute(
             "DELETE FROM snapshots WHERE snapshot_id = ?1",
             [to_i64(id)?],
@@ -164,7 +170,10 @@ impl EventStore {
     }
 }
 
-pub(crate) fn insert_snapshot(conn: &Connection, snapshot: &NewSnapshot) -> StoreResult<SnapshotId> {
+pub(crate) fn insert_snapshot(
+    conn: &Connection,
+    snapshot: &NewSnapshot,
+) -> StoreResult<SnapshotId> {
     crate::write_limits::Budget::new().snapshot(snapshot)?;
     cut_at(conn, snapshot.batch_id)?;
     let body = payload::insert(conn, &snapshot.bytes)?;
@@ -186,7 +195,11 @@ pub(crate) fn insert_snapshot(conn: &Connection, snapshot: &NewSnapshot) -> Stor
 }
 
 /// A valid fallback must include every opaque payload, not merely its serialized domain body.
-pub(crate) fn verify_snapshot(conn: &Connection, id: SnapshotId, body: PayloadRef) -> StoreResult<Vec<u8>> {
+pub(crate) fn verify_snapshot(
+    conn: &Connection,
+    id: SnapshotId,
+    body: PayloadRef,
+) -> StoreResult<Vec<u8>> {
     let bytes = payload::read_verified(conn, body)?;
     let mut stmt = conn.prepare("SELECT payload_id FROM payload_pins WHERE holder = ?1")?;
     let rows = stmt.query_map([snapshot_holder(id)], |row| row.get::<_, i64>(0))?;
@@ -201,7 +214,9 @@ pub(crate) fn retain_snapshots(conn: &Connection, version: u32, keep: usize) -> 
         "SELECT snapshot_id, payload_id FROM snapshots WHERE model_version = ?1
          ORDER BY batch_id DESC, snapshot_id DESC",
     )?;
-    let rows = stmt.query_map([version], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?;
+    let rows = stmt.query_map([version], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+    })?;
     let candidates = rows.collect::<Result<Vec<_>, _>>()?;
     let mut verified = 0;
     for (id, body) in candidates {
@@ -209,7 +224,7 @@ pub(crate) fn retain_snapshots(conn: &Connection, version: u32, keep: usize) -> 
         if verified < keep {
             match verify_snapshot(conn, id, PayloadRef(to_u64(body)?)) {
                 Ok(_) => verified += 1,
-                Err(StoreError::PayloadCorrupt(_) | StoreError::PayloadMissing(_)) => {},
+                Err(StoreError::PayloadCorrupt(_) | StoreError::PayloadMissing(_)) => {}
                 Err(error) => return Err(error),
             }
             // Retain damaged recent snapshots for diagnosis until enough fallbacks are available.
@@ -218,10 +233,16 @@ pub(crate) fn retain_snapshots(conn: &Connection, version: u32, keep: usize) -> 
         let holder = snapshot_holder(id);
         let external: bool = conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM payload_pins WHERE payload_id = ?1 AND holder != ?2)",
-            params![body, holder], |row| row.get(0),
+            params![body, holder],
+            |row| row.get(0),
         )?;
-        if external || crate::retention::anchor_snapshot(conn)? == Some(id) { continue; }
-        conn.execute("DELETE FROM snapshots WHERE snapshot_id = ?1", [to_i64(id)?])?;
+        if external || crate::retention::anchor_snapshot(conn)? == Some(id) {
+            continue;
+        }
+        conn.execute(
+            "DELETE FROM snapshots WHERE snapshot_id = ?1",
+            [to_i64(id)?],
+        )?;
         conn.execute("DELETE FROM payload_pins WHERE holder = ?1", [holder])?;
     }
     Ok(())
@@ -275,7 +296,9 @@ fn latest_valid(
         }
     }
     if let Some(retained_after_batch) = floor {
-        return Err(StoreError::ResyncRequired {retained_after_batch});
+        return Err(StoreError::ResyncRequired {
+            retained_after_batch,
+        });
     }
     Ok((None, rejected))
 }

@@ -205,7 +205,10 @@ pub struct PaneTabBarsOutput {
 
 /// 탭별 busy(녹색 점) 여부 계산. `is_surface_busy()`(로컬 ∪ mirror busy 합집합)를
 /// 거쳐야 원격 attach mirror surface 를 담은 탭도 dot 이 뜬다.
-fn compute_tab_is_busy(engine: &crate::runtime::engine_read::EngineRead<'_>, tabs: &[crate::model::Tab]) -> Vec<bool> {
+fn compute_tab_is_busy(
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    tabs: &[crate::model::Tab],
+) -> Vec<bool> {
     tabs.iter()
         .map(|t| {
             let sids = t.all_surface_ids();
@@ -225,7 +228,9 @@ fn compute_tab_html_script_markers(
         .map(|t| {
             let mut found: Option<TabScriptMarker> = None;
             for sid in t.all_surface_ids() {
-                let Some(snapshot) = engine.html_script(sid) else { continue; };
+                let Some(snapshot) = engine.html_script(sid) else {
+                    continue;
+                };
                 let kind = match snapshot.marker {
                     Some(ScriptMarker::Blocked) => HtmlScriptMarkerKind::Blocked,
                     Some(ScriptMarker::Allowed) => HtmlScriptMarkerKind::Allowed,
@@ -275,7 +280,8 @@ pub fn draw_pane_tab_bars(
     let th = theme::theme();
     let focused_pane_id = state.focused_pane_id(engine);
     let move_mark = crate::adapters::ui::move_source::resolve(
-                state.pending_move,        &state.navigation,
+        state.pending_move,
+        &state.navigation,
         engine,
         state.active_workspace_index(engine),
         pane_rects,
@@ -308,7 +314,7 @@ pub fn draw_pane_tab_bars(
                 tab_names: pane
                     .tabs
                     .iter()
-                    .map(|t| engine.tab_display_name(t,state.navigation.surface_id(t)))
+                    .map(|t| engine.tab_display_name(t, state.navigation.surface_id(t)))
                     .collect(),
                 tab_icons: pane
                     .tabs
@@ -318,7 +324,8 @@ pub fn draw_pane_tab_bars(
                             .find_surface_by_id(state.navigation.surface_id(t).unwrap_or(0))
                             .map(|s| s.kind())
                             .unwrap_or("terminal");
-                        engine.surface_registry
+                        engine
+                            .surface_registry
                             .get(kind)
                             .and_then(|d| d.icon.clone())
                             .map(|n| icons::from_name(&n))

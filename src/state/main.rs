@@ -1,3 +1,5 @@
+//! Main View presentation and application request state.
+
 /// 이동 대기 중인 대상의 종류와 ID. "이곳으로 이동"은 메뉴 대상과 종류가 같을 때만 연다.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PendingMove {
@@ -6,13 +8,10 @@ pub(crate) enum PendingMove {
     Pane(crate::model::PaneId),
 }
 
-
-//! Main View presentation and application request state.
-
 use super::*;
 
 pub struct MainViewState {
-    pub(crate) pending_move:Option<PendingMove>,
+    pub(crate) pending_move: Option<PendingMove>,
     pub(crate) terminal_views: terminal_view::TerminalViewports,
     pub(crate) navigation: navigation::NavigationState,
     pub(crate) layout_previews: layout_preview::LayoutPreviews,

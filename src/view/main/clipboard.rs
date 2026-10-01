@@ -1,6 +1,6 @@
 use super::MainView;
-use crate::runtime::engine_read::EngineRead;
 use crate::app::command::{DomainIntent, SendPayload};
+use crate::runtime::engine_read::EngineRead;
 
 /// bracketed paste 시작·본문·끝을 같은 큐 순서로 보낸다.
 /// mirror 입력도 원격 PTY로 전달하므로 이미지 업로드 뒤 원격 경로 삽입에 재사용한다.
@@ -42,12 +42,28 @@ pub(crate) fn dispatch_paste(w: &mut MainView, surface_id: u32, bracketed: bool,
 }
 
 /// The complete paste shares one queued generation check, including both bracket markers.
-pub(crate) fn dispatch_bound_paste(view:&mut MainView,surface_id:u32,generation:tasty_terminal::ResourceGeneration,bracketed:bool,text:String) {
-    let mut bytes=Vec::new();
-    if bracketed {bytes.extend_from_slice(b"\x1b[200~");}
+pub(crate) fn dispatch_bound_paste(
+    view: &mut MainView,
+    surface_id: u32,
+    generation: tasty_terminal::ResourceGeneration,
+    bracketed: bool,
+    text: String,
+) {
+    let mut bytes = Vec::new();
+    if bracketed {
+        bytes.extend_from_slice(b"\x1b[200~");
+    }
     bytes.extend_from_slice(text.as_bytes());
-    if bracketed {bytes.extend_from_slice(b"\x1b[201~");}
-    view.state.dispatch_intent(DomainIntent::SendToSurface {surface_id,payload:SendPayload::Bound {generation,bytes}}.from_user_shortcut("paste"));
+    if bracketed {
+        bytes.extend_from_slice(b"\x1b[201~");
+    }
+    view.state.dispatch_intent(
+        DomainIntent::SendToSurface {
+            surface_id,
+            payload: SendPayload::Bound { generation, bytes },
+        }
+        .from_user_shortcut("paste"),
+    );
 }
 
 impl MainView {
@@ -89,13 +105,26 @@ impl MainView {
             return;
         };
 
-        let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,sid) else {return;};
+        let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, sid) else {
+            return;
+        };
         match encode_clipboard_image_as_png(&image) {
-            Ok(png_bytes)=>{
-                self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::PasteImage {target,view:self.base.state.identity(),bracketed,file_name:clipboard_image_file_name(),png_bytes}).from_user_shortcut("paste"));
-                self.last_terminal_paste_at=Some(std::time::Instant::now());
-            },
-            Err(error)=>tracing::warn!(%error,"clipboard image encoding failed"),
+            Ok(png_bytes) => {
+                self.state.dispatch_intent(
+                    crate::intent::Intent::Engine(
+                        crate::app::engine_action::EngineAction::PasteImage {
+                            target,
+                            view: self.base.state.identity(),
+                            bracketed,
+                            file_name: clipboard_image_file_name(),
+                            png_bytes,
+                        },
+                    )
+                    .from_user_shortcut("paste"),
+                );
+                self.last_terminal_paste_at = Some(std::time::Instant::now());
+            }
+            Err(error) => tracing::warn!(%error,"clipboard image encoding failed"),
         }
     }
 }

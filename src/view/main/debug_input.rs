@@ -3,8 +3,8 @@
 
 #![cfg(debug_assertions)]
 
-use crate::runtime::engine_read::EngineRead;
 use crate::model::PhysicalPx;
+use crate::runtime::engine_read::EngineRead;
 use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 

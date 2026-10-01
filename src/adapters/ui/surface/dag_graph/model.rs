@@ -2,8 +2,8 @@
 
 use tasty_agent::{DagSummary, Task, TaskCommand, TaskState};
 
-use tasty_task_runtime::graph_view::{collect_graph_edges, on_failure_kind, task_command_kind};
 use crate::i18n::{t, t_fmt, t_fmt2};
+use tasty_task_runtime::graph_view::{collect_graph_edges, on_failure_kind, task_command_kind};
 
 /// 색·기호·번역 라벨로 함께 표시하는 노드 상태.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

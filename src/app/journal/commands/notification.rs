@@ -22,7 +22,7 @@ impl Notification {
                 let tab = pane.tabs.iter().find(|tab| tab.id == tab_id)?;
                 Some(PendingHostEvent::TabRenamed {
                     tab_id,
-                    title: engine.tab_display_name(tab,presentation.surface_id(tab)),
+                    title: engine.tab_display_name(tab, presentation.surface_id(tab)),
                     user_direct,
                 })
             }

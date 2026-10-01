@@ -6,9 +6,9 @@
 use tasty_settings::Settings;
 
 use crate::app::App;
+use crate::app::command::CoreEvent;
 use crate::app::window_access::{DispatchCtx, engines_mut};
 use crate::core::AttentionKind;
-use crate::app::command::CoreEvent;
 use crate::intent::{DispatchedIntent, Intent, IntentOrigin};
 use crate::view::ui::View as _;
 
@@ -34,13 +34,41 @@ impl App {
         source: DispatchSource,
         mut dispatched: DispatchedIntent,
     ) -> anyhow::Result<()> {
-        if let Intent::RemoteBrowser(request)=&dispatched.body {return self.remote_browser_request(source.engine(),request.clone()).map_err(anyhow::Error::msg);}
-        if let Intent::CapturePreset {kind,source:target,presentation}=&dispatched.body {return self.queue_preset_capture_intent(source.engine(),*kind,*target,presentation,&dispatched.origin).map_err(anyhow::Error::msg);}
-        let after_create=match &dispatched.body {Intent::NewTabWithFollowup {followup,..}=>Some(followup.clone()),_=>None};
-        if let Some(context)=self.engines_mut().resolve(source.engine())
-            && let Some(intent)=crate::app::creation_intent::resolve(context.state,&context.engine.as_ref(),&dispatched.body,&dispatched.origin)? {
-                dispatched.body=Intent::Domain(intent);
-            }
+        if let Intent::RemoteBrowser(request) = &dispatched.body {
+            return self
+                .remote_browser_request(source.engine(), request.clone())
+                .map_err(anyhow::Error::msg);
+        }
+        if let Intent::CapturePreset {
+            kind,
+            source: target,
+            presentation,
+        } = &dispatched.body
+        {
+            return self
+                .queue_preset_capture_intent(
+                    source.engine(),
+                    *kind,
+                    *target,
+                    presentation,
+                    &dispatched.origin,
+                )
+                .map_err(anyhow::Error::msg);
+        }
+        let after_create = match &dispatched.body {
+            Intent::NewTabWithFollowup { followup, .. } => Some(followup.clone()),
+            _ => None,
+        };
+        if let Some(context) = self.engines_mut().resolve(source.engine())
+            && let Some(intent) = crate::app::creation_intent::resolve(
+                context.state,
+                &context.engine.as_ref(),
+                &dispatched.body,
+                &dispatched.origin,
+            )?
+        {
+            dispatched.body = Intent::Domain(intent);
+        }
         if let Intent::CommitDivider(commit) = &dispatched.body {
             let id = source.engine();
             let result = self
@@ -61,10 +89,32 @@ impl App {
             }
             return result.map_err(anyhow::Error::msg);
         }
-        if let Intent::ForwardMirror {op,close_focus_candidates}=&dispatched.body {
-            let id=source.engine();
-            let continuation=self.engines_mut().resolve(id).and_then(|context|context.view.map(|view|crate::app::journal::commands::IntentViewContinuation {view:view.state.identity(),selection:context.state.navigation.generation(),activate_surface:None,close_empty_engine:false,after_create:after_create.clone(),tutorial:None}));
-            self.journal.admit_remote_intent(id,op.clone(),&dispatched.origin,continuation,close_focus_candidates.clone());return Ok(());
+        if let Intent::ForwardMirror {
+            op,
+            close_focus_candidates,
+        } = &dispatched.body
+        {
+            let id = source.engine();
+            let continuation = self.engines_mut().resolve(id).and_then(|context| {
+                context.view.map(
+                    |view| crate::app::journal::commands::IntentViewContinuation {
+                        view: view.state.identity(),
+                        selection: context.state.navigation.generation(),
+                        activate_surface: None,
+                        close_empty_engine: false,
+                        after_create: after_create.clone(),
+                        tutorial: None,
+                    },
+                )
+            });
+            self.journal.admit_remote_intent(
+                id,
+                op.clone(),
+                &dispatched.origin,
+                continuation,
+                close_focus_candidates.clone(),
+            );
+            return Ok(());
         }
         if let Intent::DirectRename(rename) = &dispatched.body {
             self.journal
@@ -74,23 +124,56 @@ impl App {
         let Intent::Domain(intent) = dispatched.body else {
             anyhow::bail!("dispatch_domain_intent: non-Domain Intent");
         };
-        if let crate::app::command::DomainIntent::RetireExitedSurface {surface_id,generation}=&intent {
-            if self.engines.get(source.engine()).is_none_or(|engine|!engine.runtime.terminals.matches_generation(*surface_id,*generation)) {return Ok(());}
+        if let crate::app::command::DomainIntent::RetireExitedSurface {
+            surface_id,
+            generation,
+        } = &intent
+        {
+            if self.engines.get(source.engine()).is_none_or(|engine| {
+                !engine
+                    .runtime
+                    .terminals
+                    .matches_generation(*surface_id, *generation)
+            }) {
+                return Ok(());
+            }
         }
         let origin = dispatched.origin;
-        let id=source.engine();
-        let continuation=self.engines_mut().resolve(id).and_then(|context|context.view.map(|view|crate::app::journal::commands::IntentViewContinuation {
-            view:view.state.identity(),selection:context.state.navigation.generation(),activate_surface:None,close_empty_engine:false,after_create:after_create.clone(),tutorial:None,
-        }));
-        if let Some(session)=self.engines.get(id)
-            && session.core_state.mirror_workspace_index_for_structural(&intent).is_some()
-            && let Some(op)=crate::app::services::impl_mirror::build_mirror_forward_op(&session.core_state,&intent) {
-            self.journal.admit_remote_intent(id,op,&origin,continuation,Vec::new());return Ok(());
+        let id = source.engine();
+        let continuation = self.engines_mut().resolve(id).and_then(|context| {
+            context.view.map(
+                |view| crate::app::journal::commands::IntentViewContinuation {
+                    view: view.state.identity(),
+                    selection: context.state.navigation.generation(),
+                    activate_surface: None,
+                    close_empty_engine: false,
+                    after_create: after_create.clone(),
+                    tutorial: None,
+                },
+            )
+        });
+        if let Some(session) = self.engines.get(id)
+            && session
+                .core_state
+                .mirror_workspace_index_for_structural(&intent)
+                .is_some()
+            && let Some(op) = crate::app::services::impl_mirror::build_mirror_forward_op(
+                &session.core_state,
+                &intent,
+            )
+        {
+            self.journal
+                .admit_remote_intent(id, op, &origin, continuation, Vec::new());
+            return Ok(());
         }
         if let Some(session) = self.engines.session_mut(id)
-            && self
-                .journal
-                .admit_metadata_intent(session.id, &session.core_state, &intent, &origin,continuation)
+            && self.journal.admit_metadata_intent(
+                session.id,
+                &session.core_state,
+                &intent,
+                &origin,
+                continuation,
+            )
         {
             return Ok(());
         }
@@ -101,7 +184,7 @@ impl App {
         else {
             anyhow::bail!("dispatch_domain_intent: engine {id:?} not found");
         };
-        let applied = core.apply_live(&mut engine,intent);
+        let applied = core.apply_live(&mut engine, intent);
         let events = events_or_report(state, engine.core, &origin, applied);
         for event in events {
             self.handle_core_event(source, &origin, event);
@@ -164,7 +247,7 @@ impl App {
             CoreEvent::SurfaceAttentionClearRequested { surface_id, kind } => {
                 self.cascade_surface_attention_clear(surface_id, kind);
             }
-            CoreEvent::SurfaceSent {..}=>{},
+            CoreEvent::SurfaceSent { .. } => {}
             CoreEvent::TerminalNotification {
                 surface_id,
                 title,
@@ -244,7 +327,7 @@ impl App {
                 plugin_id,
                 window_id,
             } => self.cascade_plugin_window_declared(plugin_id, window_id),
-            _=>tracing::error!("obsolete structural event bypassed committed projection"),
+            _ => tracing::error!("obsolete structural event bypassed committed projection"),
         }
     }
 
@@ -300,7 +383,9 @@ impl App {
             return;
         };
         // 사용자가 등록한 Bell 훅은 알림·벨 표시 설정을 꺼도 실행한다.
-        if engine.runtime.settings.notification.enabled && engine.runtime.settings.general.bell_notification {
+        if engine.runtime.settings.notification.enabled
+            && engine.runtime.settings.general.bell_notification
+        {
             let ws_id = state.active_workspace(engine.core).id;
             state.dispatch_intent(
                 crate::app::command::DomainIntent::PushNotification {
@@ -509,7 +594,13 @@ impl App {
         else {
             return;
         };
-        super::process_exit::handle(&mut self.services, state, &mut engine, surface_id, generation);
+        super::process_exit::handle(
+            &mut self.services,
+            state,
+            &mut engine,
+            surface_id,
+            generation,
+        );
         if let Some(base) = dirty_main {
             base.state.dirty = true;
         }
@@ -557,7 +648,7 @@ impl App {
         }
     }
 
-    fn enqueue_plugin_host_event(&mut self, ev:crate::state::PendingHostEvent) {
+    fn enqueue_plugin_host_event(&mut self, ev: crate::state::PendingHostEvent) {
         self.state.pending_host_events.push(ev);
     }
 
@@ -586,7 +677,10 @@ impl App {
             tasty_plugin_protocol::events::LifecycleReason::Crash => "crash",
         };
         // 비활성 플러그인이 선언한 훅 이벤트는 새 등록에 사용할 수 없게 한다.
-        self.services.registries.plugin_hook_events.unregister(&plugin_id);
+        self.services
+            .registries
+            .plugin_hook_events
+            .unregister(&plugin_id);
         self.enqueue_plugin_host_event(crate::state::PendingHostEvent::PluginUnloaded {
             plugin_id,
             reason: reason_str.to_string(),
@@ -724,7 +818,11 @@ impl App {
     }
 
     /// 창과 parked 상태의 설정을 모두 갱신해야 복원된 창이 옛 설정을 쓰지 않는다.
-    pub(crate) fn cascade_settings_updated(&mut self, new_settings: Settings, origin: &IntentOrigin) {
+    pub(crate) fn cascade_settings_updated(
+        &mut self,
+        new_settings: Settings,
+        origin: &IntentOrigin,
+    ) {
         let generation = match self.journal.note_settings_intent() {
             Ok(generation) => generation,
             Err(error) => {
@@ -775,8 +873,12 @@ impl App {
         let prev_overrides = prev_appearance.as_ref().map(|a| a.theme_overrides.clone());
         let prev_language = prev_settings.map(|s| s.general.language.clone());
 
-        for session in self.engines.all_sessions_mut() {session.runtime.settings=new_settings.clone();}
-        for main in self.main_windows_iter_mut() {main.mark_dirty();}
+        for session in self.engines.all_sessions_mut() {
+            session.runtime.settings = new_settings.clone();
+        }
+        for main in self.main_windows_iter_mut() {
+            main.mark_dirty();
+        }
         if let Err(e) = new_settings.save() {
             // 메모리에 적용됐어도 다음 실행에 보존할 수 없는 실패이므로 오류로 남긴다.
             tracing::error!("failed to save settings: {e}");
@@ -786,10 +888,18 @@ impl App {
             != Some(new_settings.appearance.theme.as_str())
             || prev_ui_scale.as_deref() != Some(new_settings.appearance.ui_scale.as_str())
             || prev_overrides.as_ref() != Some(&new_settings.appearance.theme_overrides);
-        tasty_themes::install_global_with_runtime(&new_settings.appearance,new_settings.theme_runtime());
+        tasty_themes::install_global_with_runtime(
+            &new_settings.appearance,
+            new_settings.theme_runtime(),
+        );
         if appearance_changed {
-            for view in self.view.views.values_mut() {view.base_mut().gpu.refresh_theme();view.mark_dirty();}
-            for session in self.engines.all_sessions_mut() {session.borrow_mut().resync_terminal_palettes();}
+            for view in self.view.views.values_mut() {
+                view.base_mut().gpu.refresh_theme();
+                view.mark_dirty();
+            }
+            for session in self.engines.all_sessions_mut() {
+                session.borrow_mut().resync_terminal_palettes();
+            }
         }
 
         if let Some(mgr) = self.plugin_manager.as_mut() {
@@ -849,11 +959,11 @@ impl App {
                 self.services.sound_player().play();
             }
             engine.enqueue_host_event(crate::state::PendingHostEvent::NotificationCreated {
-                    id: nid,
-                    title,
-                    body,
-                    source,
-                });
+                id: nid,
+                title,
+                body,
+                source,
+            });
         }
     }
 

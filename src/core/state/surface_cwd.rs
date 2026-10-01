@@ -50,7 +50,8 @@ impl EngineMut<'_> {
     pub fn set_mirror_surface_cwd(&mut self, surface_id: u32, cwd: Option<String>) {
         match cwd {
             Some(path) => {
-                self.remote.mirror_surface_cwd
+                self.remote
+                    .mirror_surface_cwd
                     .insert(surface_id, RemoteCwd::new(path));
             }
             None => {
@@ -74,7 +75,8 @@ impl EngineMut<'_> {
     ) -> Vec<(crate::core::attach::AttachClientId, u32, Option<String>)> {
         let locks = self.live.occupancy.locks_snapshot();
         let occupied: std::collections::HashSet<u32> = locks.iter().map(|&(sid, _)| sid).collect();
-        self.remote.last_forwarded_cwd
+        self.remote
+            .last_forwarded_cwd
             .retain(|sid, _| occupied.contains(sid));
         let mut out = Vec::new();
         for (sid, lock) in locks {
@@ -192,7 +194,10 @@ mod tests {
         assert_eq!(e.surface_cwd_forwards().len(), 1);
 
         e.live.occupancy.release(sid, 7).expect("release");
-        e.live.occupancy.acquire(sid, 8).expect("lock by another client");
+        e.live
+            .occupancy
+            .acquire(sid, 8)
+            .expect("lock by another client");
         let swapped = e.surface_cwd_forwards();
         assert_eq!(swapped.len(), 1);
         assert_eq!((swapped[0].0, swapped[0].1), (8, sid));

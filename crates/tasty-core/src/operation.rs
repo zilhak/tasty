@@ -43,11 +43,11 @@ pub struct Operation {
     #[serde(default)]
     pub creation: Option<crate::CreationPlan>,
     #[serde(default)]
-    pub assembly:Option<crate::CreationAssembly>,
+    pub assembly: Option<crate::CreationAssembly>,
     #[serde(default)]
-    pub retirement:Option<crate::RetirementPlan>,
+    pub retirement: Option<crate::RetirementPlan>,
     #[serde(default)]
-    pub forward:bool,
+    pub forward: bool,
     pub targets: Vec<EntityId>,
     pub reserved: Vec<EntityId>,
     /// Immutable, non-secret resolved preparation input owned by this journal.
@@ -61,9 +61,9 @@ pub struct Operation {
     #[serde(default)]
     pub prepared_data: Option<DataRef>,
     #[serde(default)]
-    pub prepared_deferred:bool,
+    pub prepared_deferred: bool,
     #[serde(default)]
-    pub resource_prepared:bool,
+    pub resource_prepared: bool,
     pub reconciliation_evidence: Option<DataRef>,
 }
 

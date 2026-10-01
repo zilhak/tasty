@@ -12,7 +12,11 @@ pub(crate) fn presentation(
                     .iter()
                     .any(|workspace| workspace.id == *id)
             })
-            .or_else(|| core.local_workspaces().first().map(|workspace| workspace.id)),
+            .or_else(|| {
+                core.local_workspaces()
+                    .first()
+                    .map(|workspace| workspace.id)
+            }),
         selection: crate::model::StructurePresentationSnapshot::default(),
     };
     result.selection.panes.extend(view.focused_panes);

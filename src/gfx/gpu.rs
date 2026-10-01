@@ -556,7 +556,11 @@ impl GpuState {
     /// Pending offscreen surface screenshot(agent action, focus-independent) 소비.
     /// A hard-occupied surface shows a readonly mirror server-side; capture what
     /// the user would see (mirror), else the live terminal.
-    fn handle_pending_surface_screenshot(&mut self, state: &MainViewState, engine: &EngineRead<'_>) {
+    fn handle_pending_surface_screenshot(
+        &mut self,
+        state: &MainViewState,
+        engine: &EngineRead<'_>,
+    ) {
         let Some((surface_id, path)) = self.pending_surface_screenshot.take() else {
             return;
         };

@@ -11,7 +11,7 @@ pub type AttachClientId = u32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AttachLock {
-    pub ready:bool,
+    pub ready: bool,
     pub holder: AttachClientId,
     pub granted_seq: u64,
 }
@@ -71,7 +71,6 @@ pub struct OccupancyRegistry {
     /// 이번 배치에서 끊김을 확인한 client. 점유 정리는 뒤에서 하되 새 acquire가 이를 구별할 수 있게 한다.
     dead_clients: std::collections::HashSet<AttachClientId>,
     soft: HashMap<SurfaceId, SoftEntry>,
-
 }
 
 impl OccupancyRegistry {
@@ -173,7 +172,8 @@ impl OccupancyRegistry {
         }
         self.next_seq += 1;
         let lock = AttachLock {
-            ready:true,            holder: client_id,
+            ready: true,
+            holder: client_id,
             granted_seq: self.next_seq,
         };
         self.surface_locks.insert(surface_id, lock);
@@ -319,7 +319,8 @@ impl OccupancyRegistry {
         }
         self.next_seq += 1;
         let lock = AttachLock {
-            ready:true,            holder: client_id,
+            ready: true,
+            holder: client_id,
             granted_seq: self.next_seq,
         };
         self.workspace_locks.insert(workspace_id, lock);
@@ -358,13 +359,27 @@ impl OccupancyRegistry {
     }
 
     /// Publication readiness belongs to the original grant, independently from connection IDs.
-    pub(crate) fn set_attachment_ready(&mut self,client:AttachClientId,grant:u64,ready:bool) {
-        for lock in self.surface_locks.values_mut().chain(self.workspace_locks.values_mut()) {
-            if lock.holder==client && lock.granted_seq==grant {lock.ready=ready;}
+    pub(crate) fn set_attachment_ready(&mut self, client: AttachClientId, grant: u64, ready: bool) {
+        for lock in self
+            .surface_locks
+            .values_mut()
+            .chain(self.workspace_locks.values_mut())
+        {
+            if lock.holder == client && lock.granted_seq == grant {
+                lock.ready = ready;
+            }
         }
     }
-    pub(crate) fn workspace_attachment_ready(&self,workspace:WorkspaceId)->bool {self.workspace_locks.get(&workspace).is_some_and(|lock|lock.ready)}
-    pub(crate) fn surface_attachment_ready(&self,surface:SurfaceId)->bool {self.surface_locks.get(&surface).is_some_and(|lock|lock.ready)}
+    pub(crate) fn workspace_attachment_ready(&self, workspace: WorkspaceId) -> bool {
+        self.workspace_locks
+            .get(&workspace)
+            .is_some_and(|lock| lock.ready)
+    }
+    pub(crate) fn surface_attachment_ready(&self, surface: SurfaceId) -> bool {
+        self.surface_locks
+            .get(&surface)
+            .is_some_and(|lock| lock.ready)
+    }
 
     pub fn workspace_holder(&self, workspace_id: WorkspaceId) -> Option<AttachClientId> {
         self.workspace_locks.get(&workspace_id).map(|l| l.holder)
@@ -421,8 +436,6 @@ impl OccupancyRegistry {
             self.surface_to_workspace.remove(s);
         }
     }
-
-
 }
 
 #[cfg(test)]

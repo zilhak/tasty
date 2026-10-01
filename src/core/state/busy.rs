@@ -6,7 +6,9 @@ use crate::runtime::engine_access::EngineMut;
 impl EngineMut<'_> {
     /// 마지막 폴링의 캡처 제외 설정. 클릭·드래그를 로컬 선택으로 처리하고 휠은 그대로 둔다.
     pub fn is_surface_mouse_capture_disabled(&self, surface_id: u32) -> bool {
-        self.live.mouse_capture_disabled_surfaces.contains(&surface_id)
+        self.live
+            .mouse_capture_disabled_surfaces
+            .contains(&surface_id)
     }
 
     /// 로컬 폴링 또는 원격 push 중 하나가 busy이면 true다.
@@ -16,14 +18,18 @@ impl EngineMut<'_> {
 
     /// 마지막 폴링의 전경 이름. 아직 해석하지 못한 surface는 None이다.
     pub fn foreground_name(&self, surface_id: u32) -> Option<&str> {
-        self.live.foreground_names.get(&surface_id).map(String::as_str)
+        self.live
+            .foreground_names
+            .get(&surface_id)
+            .map(String::as_str)
     }
 
     /// 관측한 전경 이름이 바뀔 때 증가한다. 배너가 이전 프로그램의 것인지 판단하는 데 쓴다.
     /// 같은 이름의 프로그램이 폴링 사이에 재실행된 경우는 구분하지 못한다.
     #[cfg(any(feature = "gui", test))]
     pub fn foreground_generation(&self, surface_id: u32) -> u64 {
-        self.live.foreground_generation
+        self.live
+            .foreground_generation
             .get(&surface_id)
             .copied()
             .unwrap_or(0)
@@ -31,7 +37,8 @@ impl EngineMut<'_> {
 
     /// 로컬 폴링 결과와 원격 push 결과의 합집합.
     fn is_locally_or_mirror_busy(&self, surface_id: u32) -> bool {
-        self.live.busy_surfaces.contains(&surface_id) || self.remote.mirror_busy_surfaces.contains(&surface_id)
+        self.live.busy_surfaces.contains(&surface_id)
+            || self.remote.mirror_busy_surfaces.contains(&surface_id)
     }
 
     // 이유: 현재 호출자는 test 전용 코드다.
@@ -72,7 +79,8 @@ impl EngineMut<'_> {
     ) -> Vec<(crate::core::attach::AttachClientId, u32, bool)> {
         let locks = self.live.occupancy.locks_snapshot();
         let occupied: std::collections::HashSet<u32> = locks.iter().map(|&(sid, _)| sid).collect();
-        self.remote.last_forwarded_busy
+        self.remote
+            .last_forwarded_busy
             .retain(|sid, _| occupied.contains(sid));
         let mut out = Vec::new();
         for (sid, lock) in locks {
@@ -239,7 +247,10 @@ mod tests {
         e.live.occupancy.release(sid, 7).expect("release");
         assert!(e.busy_activity_forwards().is_empty());
 
-        e.live.occupancy.acquire(sid, 9).expect("다른 client 재획득");
+        e.live
+            .occupancy
+            .acquire(sid, 9)
+            .expect("다른 client 재획득");
         assert_eq!(
             e.busy_activity_forwards(),
             vec![(9, sid, false)],
@@ -260,7 +271,8 @@ mod tests {
         assert_eq!(e.busy_activity_forwards(), vec![(7, sid, true)]);
 
         e.live.occupancy.release(sid, 7).expect("release");
-        e.live.occupancy
+        e.live
+            .occupancy
             .acquire(sid, 9)
             .expect("같은 tick 창 안의 다른 client 획득");
         assert_eq!(

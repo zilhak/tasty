@@ -14,15 +14,13 @@ impl JournalApplication {
             .as_ref()
             .ok_or("divider engine has no journal binding")?;
         let command = match commit.target {
-            LayoutTarget::Workspace(workspace_id) => {
-                tasty_core::StructuralCommand::SetPaneRatio {
-                    workspace_id,
-                    path: commit.path,
-                    expected_leaves: commit.leaves,
-                    expected_revision: commit.revision,
-                    ratio: tasty_core::Ratio::from_f32(commit.ratio),
-                }
-            }
+            LayoutTarget::Workspace(workspace_id) => tasty_core::StructuralCommand::SetPaneRatio {
+                workspace_id,
+                path: commit.path,
+                expected_leaves: commit.leaves,
+                expected_revision: commit.revision,
+                ratio: tasty_core::Ratio::from_f32(commit.ratio),
+            },
             LayoutTarget::Tab(tab_id) => tasty_core::StructuralCommand::SetSurfaceRatio {
                 tab_id,
                 path: commit.path,

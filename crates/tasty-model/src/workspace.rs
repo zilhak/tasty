@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use super::{
-    NORMAL_CATEGORY_ID, Pane, PaneId, PaneNode, SurfaceId, TabId,
-    WorkspaceAttachMapping, WorkspaceCategoryId, WorkspaceId,
+    NORMAL_CATEGORY_ID, Pane, PaneId, PaneNode, SurfaceId, TabId, WorkspaceAttachMapping,
+    WorkspaceCategoryId, WorkspaceId,
 };
 
 /// workspace attach의 surface 분류.
@@ -162,7 +162,7 @@ impl Workspace {
     pub fn to_tree_json(
         &self,
         presentation: &(impl crate::StructurePresentation + ?Sized),
-        surface_json:&dyn Fn(SurfaceId)->serde_json::Value,
+        surface_json: &dyn Fn(SurfaceId) -> serde_json::Value,
     ) -> serde_json::Value {
         let panes: Vec<_> = self
             .pane_layout()
@@ -170,7 +170,7 @@ impl Workspace {
             .iter()
             .filter_map(|&pid| self.pane_layout().find_pane(pid))
             .map(|pane| {
-                let mut p = pane.to_tree_json(presentation,surface_json);
+                let mut p = pane.to_tree_json(presentation, surface_json);
                 p["focused"] = serde_json::json!(Some(pane.id) == presentation.pane_id(self));
                 p
             })

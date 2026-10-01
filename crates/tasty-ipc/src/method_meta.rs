@@ -193,7 +193,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
             "workspace.move",
             plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal(),
         ),
-        ("workspace.close", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
+        (
+            "workspace.close",
+            plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal(),
+        ),
         // ── workspace category (사이드바 폴더 CRUD) ──────────────────
         ("workspace_category.list", plugin(Read, &[SurfaceRead])),
         (
@@ -214,13 +217,28 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ),
         // ── pane / split ──────────────────────────────────────────────
         ("pane.list", plugin(Read, &[SurfaceRead])),
-        ("pane.close", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
-        ("split", plugin(Mutate, &[SurfaceWrite]).kept_in_structure_journal()),
+        (
+            "pane.close",
+            plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal(),
+        ),
+        (
+            "split",
+            plugin(Mutate, &[SurfaceWrite]).kept_in_structure_journal(),
+        ),
         // ── tab ───────────────────────────────────────────────────────
         ("tab.list", plugin(Read, &[SurfaceRead])),
-        ("tab.create", plugin(Mutate, &[SurfaceWrite]).kept_in_structure_journal()),
-        ("tab.close", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
-        ("tab.move", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
+        (
+            "tab.create",
+            plugin(Mutate, &[SurfaceWrite]).kept_in_structure_journal(),
+        ),
+        (
+            "tab.close",
+            plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal(),
+        ),
+        (
+            "tab.move",
+            plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal(),
+        ),
         // ── preset (layout preset CRUD + apply) ───────────────────────
         ("preset.list", plugin(Read, &[SurfaceRead])),
         ("preset.get", plugin(Read, &[SurfaceRead])),
@@ -228,13 +246,22 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("preset.delete", plugin(Idempotent, &[SurfaceWrite])),
         ("preset.rename", plugin(Idempotent, &[SurfaceWrite])),
         ("preset.capture", plugin(Mutate, &[SurfaceWrite])),
-        ("preset.apply", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
+        (
+            "preset.apply",
+            plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal(),
+        ),
         // ── surface (구조 조작) ───────────────────────────────────────
         ("surface.list", plugin(Read, &[SurfaceRead])),
         // 생성 없이 등록 여부를 확인한다. 종류·번역 키·렌더 경로·출처만 공개한다.
         ("surface.kinds", plugin(Read, &[SurfaceRead])),
-        ("surface.close", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
-        ("surface.close_self", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
+        (
+            "surface.close",
+            plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal(),
+        ),
+        (
+            "surface.close_self",
+            plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal(),
+        ),
         ("tree", plugin(Read, &[SurfaceRead])),
         ("webview.set_url", plugin(Idempotent, &[SurfaceWrite])),
         // webview 플러그인은 문서를 만들 때 전역 테마를 조회한다. surface별 정보가 아니므로 추가 토큰은 없다.
@@ -250,7 +277,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.send_combo", plugin(Mutate, &[TerminalWrite])),
         ("surface.send_to", plugin(Mutate, &[TerminalWrite])),
         ("surface.send_wait_idle", plugin(Mutate, &[TerminalWrite])),
-        ("surface.wake", plugin(Mutate, &[TerminalSpawn]).kept_in_structure_journal()),
+        (
+            "surface.wake",
+            plugin(Mutate, &[TerminalSpawn]).kept_in_structure_journal(),
+        ),
         ("surface.set_mark", plugin(Mutate, &[TerminalRead])),
         // 완료 신호는 attention 상태를 바꾸므로 알림 권한을 요구한다.
         ("surface.completion", plugin(Mutate, &[Notification])),
@@ -282,19 +312,26 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.foreground_process", plugin(Read, &[TerminalRead])),
         ("surface.locate", plugin(Read, &[SurfaceRead])),
         ("surface.html_script", plugin(Read, &[SurfaceRead])),
-        ("surface.respawn_terminal", plugin(Mutate, &[TerminalSpawn]).kept_in_structure_journal()),
+        (
+            "surface.respawn_terminal",
+            plugin(Mutate, &[TerminalSpawn]).kept_in_structure_journal(),
+        ),
         ("surface.is_typing", plugin(Read, &[TerminalRead])),
         // ── child-terminal 관리 (docs/features/child-terminal/index.md) ─────────────
         // 자식 터미널 작업이 사용하는 생성·입력·닫기 권한을 함께 요구한다.
         (
             "terminal.spawn",
-            plugin(Mutate, &[SurfaceWrite, TerminalWrite, TerminalSpawn]).kept_in_structure_journal(),
+            plugin(Mutate, &[SurfaceWrite, TerminalWrite, TerminalSpawn])
+                .kept_in_structure_journal(),
         ),
         ("terminal.tell", plugin(Mutate, &[TerminalWrite])),
         ("terminal.children", plugin(Read, &[SurfaceRead])),
         ("terminal.parent", plugin(Read, &[SurfaceRead])),
         ("terminal.state", plugin(Read, &[SurfaceRead])),
-        ("terminal.kill", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
+        (
+            "terminal.kill",
+            plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal(),
+        ),
         (
             "terminal.respawn",
             plugin(Mutate, &[TerminalWrite, TerminalSpawn]),

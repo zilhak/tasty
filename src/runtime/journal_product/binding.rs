@@ -3,10 +3,15 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) enum EngineSelection {
-    Slot { slot: u32, resume: bool },
+    Slot {
+        slot: u32,
+        resume: bool,
+    },
     FreshHeadless,
     /// Explicit internal transfer; ordinary startup never selects another journal.
-    ImportedSlot { source: crate::runtime::journal_payload::import::SourceImport },
+    ImportedSlot {
+        source: crate::runtime::journal_payload::import::SourceImport,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

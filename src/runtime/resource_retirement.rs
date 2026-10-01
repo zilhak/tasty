@@ -1,155 +1,352 @@
 //! Sole ownership of resources detached by a committed tombstone, before cleanup is claimed.
 use crate::runtime::engine_session::EngineSession;
-use crate::runtime::journal_product::{ClaimedRetirement,EffectLease};
-use tasty_core::{Operation,RetirementPlan};
-use tasty_terminal::{Terminal,Pty,PtyRetirement,PtyPhase};
+use crate::runtime::journal_product::{ClaimedRetirement, EffectLease};
+use tasty_core::{Operation, RetirementPlan};
+use tasty_terminal::{Pty, PtyPhase, PtyRetirement, Terminal};
 struct RemovedOwner {
-    surface:Box<dyn crate::model::Surface>,
-    pair:Option<(Terminal,Option<Pty>)>,
-    scrollback:Option<String>,
+    surface: Box<dyn crate::model::Surface>,
+    pair: Option<(Terminal, Option<Pty>)>,
+    scrollback: Option<String>,
 }
 pub(crate) struct ResourceRetirement {
-    plan:RetirementPlan,
-    engine_incarnation:u64,
-    runtime_epoch:u64,
-    owners:Vec<RemovedOwner>,
-    receipts:Vec<PtyRetirement>,
-    remote_receipts:Vec<crate::plugin_bridge::host_cmd::RemoteRetirementReceipt>,
-    started:Option<std::time::Instant>,
-    lease:Option<EffectLease>,
-    start_complete:bool,
-    failure:Option<String>,
-    metadata_complete:bool,
+    plan: RetirementPlan,
+    engine_incarnation: u64,
+    runtime_epoch: u64,
+    owners: Vec<RemovedOwner>,
+    receipts: Vec<PtyRetirement>,
+    remote_receipts: Vec<crate::plugin_bridge::host_cmd::RemoteRetirementReceipt>,
+    started: Option<std::time::Instant>,
+    lease: Option<EffectLease>,
+    start_complete: bool,
+    failure: Option<String>,
+    metadata_complete: bool,
 }
 impl ResourceRetirement {
     /// Called only while publishing an already committed close, before the batch ACK.
-    pub(crate) fn capture(session:&mut EngineSession,operation:&Operation)->Result<Self,String> {
-        let plan=operation.retirement.clone().ok_or("retirement plan missing")?;
-        let binding=session.journal_binding.as_ref().ok_or("retirement engine is unbound")?;
-        if binding.incarnation!=operation.engine_incarnation {return Err("retirement belongs to another engine incarnation".into());}
-        let runtime_epoch=binding.runtime_epoch;
+    pub(crate) fn capture(
+        session: &mut EngineSession,
+        operation: &Operation,
+    ) -> Result<Self, String> {
+        let plan = operation
+            .retirement
+            .clone()
+            .ok_or("retirement plan missing")?;
+        let binding = session
+            .journal_binding
+            .as_ref()
+            .ok_or("retirement engine is unbound")?;
+        if binding.incarnation != operation.engine_incarnation {
+            return Err("retirement belongs to another engine incarnation".into());
+        }
+        let runtime_epoch = binding.runtime_epoch;
         for target in &plan.surfaces {
-            let descriptor=session.core_state.find_surface_by_id(target.id).ok_or("retirement descriptor missing")?;
-            if descriptor.kind!=target.kind || descriptor.activation_generation!=target.activation_generation {
+            let descriptor = session
+                .core_state
+                .find_surface_by_id(target.id)
+                .ok_or("retirement descriptor missing")?;
+            if descriptor.kind != target.kind
+                || descriptor.activation_generation != target.activation_generation
+            {
                 return Err("retirement descriptor differs from the committed old owner".into());
             }
-            if !session.runtime.surfaces.contains_key(&target.id) {return Err("retirement runtime owner missing".into());}
+            if !session.runtime.surfaces.contains_key(&target.id) {
+                return Err("retirement runtime owner missing".into());
+            }
         }
-        let owners=plan.surfaces.iter().map(|target| {
-            let scrollback=session.runtime.terminals.scrollback_persist_id(target.id).map(str::to_owned);
-            RemovedOwner {surface:session.runtime.surfaces.remove(&target.id).expect("preflight retained the owner"),pair:session.runtime.terminals.remove(target.id),scrollback}
-        }).collect();
-        Ok(Self {plan,engine_incarnation:operation.engine_incarnation,runtime_epoch,owners,receipts:Vec::new(),remote_receipts:Vec::new(),started:None,lease:None,start_complete:false,failure:None,metadata_complete:false})
+        let owners = plan
+            .surfaces
+            .iter()
+            .map(|target| {
+                let scrollback = session
+                    .runtime
+                    .terminals
+                    .scrollback_persist_id(target.id)
+                    .map(str::to_owned);
+                RemovedOwner {
+                    surface: session
+                        .runtime
+                        .surfaces
+                        .remove(&target.id)
+                        .expect("preflight retained the owner"),
+                    pair: session.runtime.terminals.remove(target.id),
+                    scrollback,
+                }
+            })
+            .collect();
+        Ok(Self {
+            plan,
+            engine_incarnation: operation.engine_incarnation,
+            runtime_epoch,
+            owners,
+            receipts: Vec::new(),
+            remote_receipts: Vec::new(),
+            started: None,
+            lease: None,
+            start_complete: false,
+            failure: None,
+            metadata_complete: false,
+        })
     }
-    pub(crate) fn start(&mut self,claim:ClaimedRetirement,engine:&mut crate::runtime::engine_access::EngineMut<'_>,mut plugins:Option<&mut crate::plugin::PluginManager>)->Result<(),String> {
-        if self.started.is_some() || claim.plan!=self.plan || claim.engine_incarnation!=self.engine_incarnation || claim.lease.runtime_epoch!=self.runtime_epoch {
+    pub(crate) fn start(
+        &mut self,
+        claim: ClaimedRetirement,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+        mut plugins: Option<&mut crate::plugin::PluginManager>,
+    ) -> Result<(), String> {
+        if self.started.is_some()
+            || claim.plan != self.plan
+            || claim.engine_incarnation != self.engine_incarnation
+            || claim.lease.runtime_epoch != self.runtime_epoch
+        {
             return Err("cleanup claim does not own the detached resources".into());
         }
-        self.lease=Some(claim.lease);
-        self.started=Some(std::time::Instant::now());
-        let result=self.start_owned(engine,plugins);
-        self.start_complete=result.is_ok();
-        self.failure=result.as_ref().err().cloned();
+        self.lease = Some(claim.lease);
+        self.started = Some(std::time::Instant::now());
+        let result = self.start_owned(engine, plugins);
+        self.start_complete = result.is_ok();
+        self.failure = result.as_ref().err().cloned();
         result
     }
-    fn start_owned(&mut self,engine:&mut crate::runtime::engine_access::EngineMut<'_>,mut plugins:Option<&mut crate::plugin::PluginManager>)->Result<(),String> {
-        if self.owners.iter().any(|owner|(owner.surface.as_any().is::<crate::plugin_bridge::remote_surface::RemoteSurface>() || owner.surface.as_any().is::<crate::runtime::egui_mesh_surface::EguiMeshSurface>())) && plugins.is_none() {
+    fn start_owned(
+        &mut self,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+        mut plugins: Option<&mut crate::plugin::PluginManager>,
+    ) -> Result<(), String> {
+        if self.owners.iter().any(|owner| {
+            (owner
+                .surface
+                .as_any()
+                .is::<crate::plugin_bridge::remote_surface::RemoteSurface>()
+                || owner
+                    .surface
+                    .as_any()
+                    .is::<crate::runtime::egui_mesh_surface::EguiMeshSurface>())
+        }) && plugins.is_none()
+        {
             return Err("plugin host is absent for committed retirement".into());
         }
         // The original boxes and Pty handles are private to this operation. No ID lookup can
         // retarget destruction to a replacement installed later under the same logical identity.
         for owner in &self.owners {
-            if let Some(remote)=owner.surface.as_any().downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>() {
-                if !self.remote_receipts.iter().any(|receipt|receipt.matches(remote.id,&remote.handles().binding())) {
-                    self.remote_receipts.push(plugins.as_deref_mut().ok_or("plugin host disappeared")?.enqueue_observed_remote_retirement(remote.id,remote.handles().binding())?);
+            if let Some(remote) = owner
+                .surface
+                .as_any()
+                .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
+            ) {
+                if !self
+                    .remote_receipts
+                    .iter()
+                    .any(|receipt| receipt.matches(remote.id, &remote.handles().binding()))
+                {
+                    self.remote_receipts.push(
+                        plugins
+                            .as_deref_mut()
+                            .ok_or("plugin host disappeared")?
+                            .enqueue_observed_remote_retirement(
+                                remote.id,
+                                remote.handles().binding(),
+                            )?,
+                    );
                 }
             }
         }
         for owner in &self.owners {
-            if let Some(mesh)=owner.surface.as_any().downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>() {
-                if !self.remote_receipts.iter().any(|receipt|receipt.matches(mesh.id,&mesh.retirement_binding.binding())) {
-                    self.remote_receipts.push(plugins.as_deref_mut().ok_or("plugin host disappeared")?.enqueue_observed_mesh_retirement(mesh.id,&mesh.retirement_binding)?);
+            if let Some(mesh) = owner
+                .surface
+                .as_any()
+                .downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>(
+            ) {
+                if !self
+                    .remote_receipts
+                    .iter()
+                    .any(|receipt| receipt.matches(mesh.id, &mesh.retirement_binding.binding()))
+                {
+                    self.remote_receipts.push(
+                        plugins
+                            .as_deref_mut()
+                            .ok_or("plugin host disappeared")?
+                            .enqueue_observed_mesh_retirement(mesh.id, &mesh.retirement_binding)?,
+                    );
                 }
             }
         }
         for mut owner in self.owners.drain(..) {
-            let id=owner.surface.surface_id().ok_or("retiring kind has no identity")?;
-            if let Some((terminal,pty))=owner.pair.take() {drop(terminal);if let Some(pty)=pty {self.receipts.push(pty.retire());}}
-            if let Some(reference)=owner.scrollback {crate::scrollback_store::delete(&reference);}
+            let id = owner
+                .surface
+                .surface_id()
+                .ok_or("retiring kind has no identity")?;
+            if let Some((terminal, pty)) = owner.pair.take() {
+                drop(terminal);
+                if let Some(pty) = pty {
+                    self.receipts.push(pty.retire());
+                }
+            }
+            if let Some(reference) = owner.scrollback {
+                crate::scrollback_store::delete(&reference);
+            }
             engine.cleanup_surface_observations(id);
             drop(owner.surface);
         }
         Ok(())
     }
-    pub(crate) fn retry_owned(&mut self,engine:&mut crate::runtime::engine_access::EngineMut<'_>,plugins:Option<&mut crate::plugin::PluginManager>) {
-        if self.started.is_none() || self.start_complete {return;}
+    pub(crate) fn retry_owned(
+        &mut self,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+        plugins: Option<&mut crate::plugin::PluginManager>,
+    ) {
+        if self.started.is_none() || self.start_complete {
+            return;
+        }
         // Only an unsent bound retirement is retried. Already enqueued exact bindings retain their
         // original ACK receipts, including a failed/unknown response; no callback is replayed.
-        let result=self.start_owned(engine,plugins);
-        self.start_complete=result.is_ok();self.failure=result.err();
+        let result = self.start_owned(engine, plugins);
+        self.start_complete = result.is_ok();
+        self.failure = result.err();
     }
-    pub(crate) fn outcome(&self)->Option<tasty_core::OperationOutcome> {
+    pub(crate) fn outcome(&self) -> Option<tasty_core::OperationOutcome> {
         use tasty_core::OperationOutcome;
-        let started=self.started?;
-        if let Some(reason)=&self.failure {return Some(OperationOutcome::Uncertain {reason:reason.clone()});}
-        if !self.start_complete {return None;}
-        if self.receipts.iter().any(|receipt|receipt.observation().phase==PtyPhase::WaitFailed) {
-            return Some(OperationOutcome::Uncertain {reason:"closed PTY owner has no confirmed reap".into()});
+        let started = self.started?;
+        if let Some(reason) = &self.failure {
+            return Some(OperationOutcome::Uncertain {
+                reason: reason.clone(),
+            });
         }
-        if let Some(reason)=self.remote_receipts.iter().find_map(|receipt|receipt.observation().and_then(Result::err)) {
-            return Some(OperationOutcome::Uncertain {reason});
+        if !self.start_complete {
+            return None;
         }
-        if self.receipts.iter().all(|receipt|receipt.observation().phase==PtyPhase::Reaped)
-            && self.remote_receipts.iter().all(|receipt|matches!(receipt.observation(),Some(Ok(())))) {return Some(OperationOutcome::Succeeded);}
-        if started.elapsed()>=std::time::Duration::from_secs(5) {return Some(OperationOutcome::Uncertain {reason:"resource retirement acknowledgement deadline elapsed".into()});}
+        if self
+            .receipts
+            .iter()
+            .any(|receipt| receipt.observation().phase == PtyPhase::WaitFailed)
+        {
+            return Some(OperationOutcome::Uncertain {
+                reason: "closed PTY owner has no confirmed reap".into(),
+            });
+        }
+        if let Some(reason) = self
+            .remote_receipts
+            .iter()
+            .find_map(|receipt| receipt.observation().and_then(Result::err))
+        {
+            return Some(OperationOutcome::Uncertain { reason });
+        }
+        if self
+            .receipts
+            .iter()
+            .all(|receipt| receipt.observation().phase == PtyPhase::Reaped)
+            && self
+                .remote_receipts
+                .iter()
+                .all(|receipt| matches!(receipt.observation(), Some(Ok(()))))
+        {
+            return Some(OperationOutcome::Succeeded);
+        }
+        if started.elapsed() >= std::time::Duration::from_secs(5) {
+            return Some(OperationOutcome::Uncertain {
+                reason: "resource retirement acknowledgement deadline elapsed".into(),
+            });
+        }
         None
     }
-    pub(crate) fn finish_metadata(&mut self,engine:&mut crate::runtime::engine_access::EngineMut<'_>)->Result<(),String> {
-        if self.metadata_complete {return Ok(());}
-        if !matches!(self.outcome(),Some(tasty_core::OperationOutcome::Succeeded)) {return Err("cleanup receipt is not complete".into());}
+    pub(crate) fn finish_metadata(
+        &mut self,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    ) -> Result<(), String> {
+        if self.metadata_complete {
+            return Ok(());
+        }
+        if !matches!(
+            self.outcome(),
+            Some(tasty_core::OperationOutcome::Succeeded)
+        ) {
+            return Err("cleanup receipt is not complete".into());
+        }
         for target in &self.plan.removed {
-            let scope=match target.kind {
-                tasty_core::IdKind::Surface=> {
-                    if engine.core.find_surface_by_id(target.id).is_some() {return Err("retired surface identity is live again; refusing metadata cleanup".into());}
+            let scope = match target.kind {
+                tasty_core::IdKind::Surface => {
+                    if engine.core.find_surface_by_id(target.id).is_some() {
+                        return Err(
+                            "retired surface identity is live again; refusing metadata cleanup"
+                                .into(),
+                        );
+                    }
                     tasty_memory::Scope::Surface(target.id)
-                },
-                tasty_core::IdKind::Workspace=> {
-                    if engine.core.has_workspace(target.id) {return Err("retired workspace identity is live again; refusing metadata cleanup".into());}
+                }
+                tasty_core::IdKind::Workspace => {
+                    if engine.core.has_workspace(target.id) {
+                        return Err(
+                            "retired workspace identity is live again; refusing metadata cleanup"
+                                .into(),
+                        );
+                    }
                     tasty_memory::Scope::Workspace(target.id)
-                },
-                _=>continue,
+                }
+                _ => continue,
             };
             engine.purge_closed_memory_scope(&scope)?;
         }
-        self.metadata_complete=true;Ok(())
+        self.metadata_complete = true;
+        Ok(())
     }
     /// Notification delivery follows durable completion. It performs no destruction and is not
     /// replayed from historical operations during recovery.
-    pub(crate) fn notify_completed(&self,engine:&mut crate::runtime::engine_access::EngineMut<'_>) {
-        use crate::core::host_event::{PendingHostEvent,PendingSurfaceClosed};
+    pub(crate) fn notify_completed(
+        &self,
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    ) {
+        use crate::core::host_event::{PendingHostEvent, PendingSurfaceClosed};
         for surface in &self.plan.surfaces {
-            engine.runtime.pending_lifecycle_events.push(PendingSurfaceClosed {
-                surface_id:surface.id,kind:Some(surface.kind.clone()),is_user_close:self.plan.is_user_close,
-            });
+            engine
+                .runtime
+                .pending_lifecycle_events
+                .push(PendingSurfaceClosed {
+                    surface_id: surface.id,
+                    kind: Some(surface.kind.clone()),
+                    is_user_close: self.plan.is_user_close,
+                });
         }
-        for (tab_id,pane_id) in &self.plan.tab_parents {
-            engine.enqueue_host_event(PendingHostEvent::TabClosed {tab_id:*tab_id,pane_id:*pane_id});
+        for (tab_id, pane_id) in &self.plan.tab_parents {
+            engine.enqueue_host_event(PendingHostEvent::TabClosed {
+                tab_id: *tab_id,
+                pane_id: *pane_id,
+            });
         }
         for entity in &self.plan.removed {
             match entity.kind {
-                tasty_core::IdKind::Pane=>engine.enqueue_host_event(PendingHostEvent::PaneClosed {pane_id:entity.id}),
-                tasty_core::IdKind::Workspace=>engine.enqueue_host_event(PendingHostEvent::WorkspaceClosed {workspace_id:entity.id}),
-                _=>{},
+                tasty_core::IdKind::Pane => {
+                    engine.enqueue_host_event(PendingHostEvent::PaneClosed { pane_id: entity.id })
+                }
+                tasty_core::IdKind::Workspace => {
+                    engine.enqueue_host_event(PendingHostEvent::WorkspaceClosed {
+                        workspace_id: entity.id,
+                    })
+                }
+                _ => {}
             }
         }
     }
-    pub(crate) fn reconciliation_evidence(&self)->Option<Vec<u8>> {
-        if !self.start_complete || self.failure.is_some() || !self.owners.is_empty() || !self.metadata_complete || !self.receipts.iter().all(|receipt|receipt.observation().phase==PtyPhase::Reaped)
-            || !self.remote_receipts.iter().all(|receipt|matches!(receipt.observation(),Some(Ok(())))) {return None;}
+    pub(crate) fn reconciliation_evidence(&self) -> Option<Vec<u8>> {
+        if !self.start_complete
+            || self.failure.is_some()
+            || !self.owners.is_empty()
+            || !self.metadata_complete
+            || !self
+                .receipts
+                .iter()
+                .all(|receipt| receipt.observation().phase == PtyPhase::Reaped)
+            || !self
+                .remote_receipts
+                .iter()
+                .all(|receipt| matches!(receipt.observation(), Some(Ok(()))))
+        {
+            return None;
+        }
         let receipts:Vec<_>=self.receipts.iter().map(|receipt| {let observation=receipt.observation();serde_json::json!({"generation":receipt.generation().value(),"phase":"reaped","code":observation.exit.map(|exit|exit.code)})}).collect();
         serde_json::to_vec(&serde_json::json!({"version":1,"source":"owned-retirement-receipts","runtime_epoch":self.runtime_epoch,"engine_incarnation":self.engine_incarnation,"metadata_complete":true,"lease":self.lease,"targets":self.plan.surfaces,"receipts":receipts,"remote_destroy_acknowledged":self.remote_receipts.len()})).ok()
     }
-    pub(crate) fn lease(&self)->Option<&EffectLease> {self.lease.as_ref()}
+    pub(crate) fn lease(&self) -> Option<&EffectLease> {
+        self.lease.as_ref()
+    }
 }
 
 /// Process-owner disposal after the View/slot continuation has drained. It never changes structure,
@@ -163,82 +360,170 @@ pub(crate) struct EngineRelease {
     warned: bool,
 }
 impl EngineRelease {
-    pub(crate) fn retain_installation(&mut self, installed:crate::runtime::effect_runner::Installed) {
+    pub(crate) fn retain_installation(
+        &mut self,
+        installed: crate::runtime::effect_runner::Installed,
+    ) {
         installed.retire_for_release(self);
     }
-    pub(crate) fn retain_pty(&mut self, receipt:PtyRetirement) {self.ptys.push(receipt);}
-    pub(crate) fn retain_remote(&mut self, receipt:crate::plugin_bridge::host_cmd::RemoteRetirementReceipt) {self.remote.push(receipt);}
-    pub(crate) fn poll(&mut self, session:&mut EngineSession, mut plugins:Option<&mut crate::plugin::PluginManager>) -> bool {
+    pub(crate) fn retain_pty(&mut self, receipt: PtyRetirement) {
+        self.ptys.push(receipt);
+    }
+    pub(crate) fn retain_remote(
+        &mut self,
+        receipt: crate::plugin_bridge::host_cmd::RemoteRetirementReceipt,
+    ) {
+        self.remote.push(receipt);
+    }
+    pub(crate) fn poll(
+        &mut self,
+        session: &mut EngineSession,
+        mut plugins: Option<&mut crate::plugin::PluginManager>,
+    ) -> bool {
         if !self.started {
-            if !session.pending_materializations.is_empty() || !session.pending_resource_retirements.is_empty() {
+            if !session.pending_materializations.is_empty()
+                || !session.pending_resource_retirements.is_empty()
+            {
                 return false;
             }
             // TaskScope Drop remains non-cancelling. Hooks/observers retain their existing owner
             // lifetime until this exact terminal retirement finishes; no runner stop is synthesized.
-            self.owners.extend(session.runtime.surfaces.drain().map(|(_,surface)|surface));
-            let ids:Vec<_>=session.runtime.terminals.iter().map(|(id,_)|id).collect();
+            self.owners
+                .extend(session.runtime.surfaces.drain().map(|(_, surface)| surface));
+            let ids: Vec<_> = session.runtime.terminals.iter().map(|(id, _)| id).collect();
             for id in ids {
                 session.observer_router.drop_surface(id);
                 session.hooks.forget_surface(id);
-                if let Some(factory)=session.runtime.waker_factory.as_ref() {factory.forget_surface(id);}
-                if let Some((terminal,pty))=session.runtime.terminals.remove(id) {
+                if let Some(factory) = session.runtime.waker_factory.as_ref() {
+                    factory.forget_surface(id);
+                }
+                if let Some((terminal, pty)) = session.runtime.terminals.remove(id) {
                     drop(terminal);
-                    if let Some(pty)=pty {self.ptys.push(pty.retire());}
+                    if let Some(pty) = pty {
+                        self.ptys.push(pty.retire());
+                    }
                 }
             }
-            self.started=true;
+            self.started = true;
         }
-        let mut retained=Vec::new();
+        let mut retained = Vec::new();
         for surface in self.owners.drain(..) {
-            if let Some(remote)=surface.as_any().downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>() {
-                if self.remote.iter().any(|receipt|receipt.matches(remote.id,&remote.handles().binding())) {drop(surface);continue;}
-                let result=plugins.as_deref_mut().ok_or_else(||"plugin host unavailable during engine release".to_owned())
-                    .and_then(|plugins|plugins.enqueue_observed_remote_retirement(remote.id,remote.handles().binding()));
+            if let Some(remote) = surface
+                .as_any()
+                .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
+            ) {
+                if self
+                    .remote
+                    .iter()
+                    .any(|receipt| receipt.matches(remote.id, &remote.handles().binding()))
+                {
+                    drop(surface);
+                    continue;
+                }
+                let result = plugins
+                    .as_deref_mut()
+                    .ok_or_else(|| "plugin host unavailable during engine release".to_owned())
+                    .and_then(|plugins| {
+                        plugins.enqueue_observed_remote_retirement(
+                            remote.id,
+                            remote.handles().binding(),
+                        )
+                    });
                 match result {
-                    Ok(receipt)=>self.remote.push(receipt),
-                    Err(reason)=>{
-                        if !self.warned {tracing::warn!(%reason,"engine retains an unconfirmed remote owner");self.warned=true;}
-                        retained.push(surface);continue;
-                    },
+                    Ok(receipt) => self.remote.push(receipt),
+                    Err(reason) => {
+                        if !self.warned {
+                            tracing::warn!(%reason,"engine retains an unconfirmed remote owner");
+                            self.warned = true;
+                        }
+                        retained.push(surface);
+                        continue;
+                    }
                 }
             }
-            if let Some(mesh)=surface.as_any().downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>() {
-                if !self.remote.iter().any(|receipt|receipt.matches(mesh.id,&mesh.retirement_binding.binding())) {
-                    let result=plugins.as_deref_mut().ok_or_else(||"mesh plugin host unavailable".to_owned())
-                        .and_then(|plugins|plugins.enqueue_observed_mesh_retirement(mesh.id,&mesh.retirement_binding));
-                    match result {Ok(receipt)=>self.remote.push(receipt),Err(_)=>{retained.push(surface);continue;}}
+            if let Some(mesh) = surface
+                .as_any()
+                .downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>()
+            {
+                if !self
+                    .remote
+                    .iter()
+                    .any(|receipt| receipt.matches(mesh.id, &mesh.retirement_binding.binding()))
+                {
+                    let result = plugins
+                        .as_deref_mut()
+                        .ok_or_else(|| "mesh plugin host unavailable".to_owned())
+                        .and_then(|plugins| {
+                            plugins
+                                .enqueue_observed_mesh_retirement(mesh.id, &mesh.retirement_binding)
+                        });
+                    match result {
+                        Ok(receipt) => self.remote.push(receipt),
+                        Err(_) => {
+                            retained.push(surface);
+                            continue;
+                        }
+                    }
                 }
             }
             drop(surface);
         }
-        self.owners=retained;
-        let failed=self.ptys.iter().any(|receipt|receipt.observation().phase==PtyPhase::WaitFailed)
-            || self.remote.iter().any(|receipt|matches!(receipt.observation(),Some(Err(_))));
-        if failed && !self.warned {tracing::warn!("engine release lacks an exact resource completion receipt; owner retained");self.warned=true;}
-        self.owners.is_empty() && self.ptys.iter().all(|receipt|receipt.observation().phase==PtyPhase::Reaped)
-            && self.remote.iter().all(|receipt|matches!(receipt.observation(),Some(Ok(()))))
+        self.owners = retained;
+        let failed = self
+            .ptys
+            .iter()
+            .any(|receipt| receipt.observation().phase == PtyPhase::WaitFailed)
+            || self
+                .remote
+                .iter()
+                .any(|receipt| matches!(receipt.observation(), Some(Err(_))));
+        if failed && !self.warned {
+            tracing::warn!(
+                "engine release lacks an exact resource completion receipt; owner retained"
+            );
+            self.warned = true;
+        }
+        self.owners.is_empty()
+            && self
+                .ptys
+                .iter()
+                .all(|receipt| receipt.observation().phase == PtyPhase::Reaped)
+            && self
+                .remote
+                .iter()
+                .all(|receipt| matches!(receipt.observation(), Some(Ok(()))))
     }
 }
 
 /// Take/restore avoids lending the session and one of its resource fields mutably at once.
-pub(crate) fn poll_engine_release(session:&mut EngineSession,plugins:Option<&mut crate::plugin::PluginManager>)->bool {
-    let mut release=session.engine_release.take().unwrap_or_default();
-    let complete=release.poll(session,plugins);
-    session.engine_release=Some(release);
+pub(crate) fn poll_engine_release(
+    session: &mut EngineSession,
+    plugins: Option<&mut crate::plugin::PluginManager>,
+) -> bool {
+    let mut release = session.engine_release.take().unwrap_or_default();
+    let complete = release.poll(session, plugins);
+    session.engine_release = Some(release);
     complete
 }
 
 impl ResourceRetirement {
-    pub(crate) fn retain_for_release(mut self,release:&mut EngineRelease) {
+    pub(crate) fn retain_for_release(mut self, release: &mut EngineRelease) {
         release.ptys.append(&mut self.receipts);
         release.remote.append(&mut self.remote_receipts);
         for mut owner in self.owners.drain(..) {
-            if let Some((terminal,pty))=owner.pair.take() {drop(terminal);if let Some(pty)=pty {release.ptys.push(pty.retire());}}
+            if let Some((terminal, pty)) = owner.pair.take() {
+                drop(terminal);
+                if let Some(pty) = pty {
+                    release.ptys.push(pty.retire());
+                }
+            }
             release.owners.push(owner.surface);
         }
         // Halt disposal cannot publish the old command outcome or repeat lifecycle notifications.
     }
 }
 impl EngineRelease {
-    pub(crate) fn retain_surface(&mut self,surface:Box<dyn crate::model::Surface>) {self.owners.push(surface);}
+    pub(crate) fn retain_surface(&mut self, surface: Box<dyn crate::model::Surface>) {
+        self.owners.push(surface);
+    }
 }

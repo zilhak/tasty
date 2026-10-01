@@ -49,7 +49,9 @@ fn drain_on_close_hooks_with_lookup(
     engine: &crate::runtime::engine_read::EngineRead<'_>,
     lookup: impl Fn(
         crate::adapters::ui::popup::PopupId,
-    ) -> Option<fn(&egui::Context, &mut MainViewState, &crate::runtime::engine_read::EngineRead<'_>)>,
+    ) -> Option<
+        fn(&egui::Context, &mut MainViewState, &crate::runtime::engine_read::EngineRead<'_>),
+    >,
 ) {
     let mut round = 0u32;
     loop {
@@ -183,7 +185,9 @@ mod on_close_drain_tests {
         map: Lookup,
     ) -> impl Fn(
         crate::adapters::ui::popup::PopupId,
-    ) -> Option<fn(&egui::Context, &mut MainViewState, &crate::runtime::engine_read::EngineRead<'_>)> {
+    ) -> Option<
+        fn(&egui::Context, &mut MainViewState, &crate::runtime::engine_read::EngineRead<'_>),
+    > {
         move |id| map.get(id).copied()
     }
 

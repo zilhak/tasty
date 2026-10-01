@@ -1,5 +1,5 @@
-use super::surface_layout::SurfaceLayout;
 use super::SurfaceDescriptor;
+use super::surface_layout::SurfaceLayout;
 use super::{SplitDirection, SurfaceId, TabId};
 
 #[derive(Default)]
@@ -167,7 +167,7 @@ impl Tab {
         direction: SplitDirection,
         new_surface_id: SurfaceId,
     ) -> bool {
-        let new_node = SurfaceDescriptor::new(new_surface_id,"terminal");
+        let new_node = SurfaceDescriptor::new(new_surface_id, "terminal");
         let old_layout = self.take_layout();
         let (new_layout, remaining) =
             old_layout.split_with_surface(target_surface_id, direction, new_node);
@@ -199,7 +199,7 @@ impl Tab {
     pub fn to_tree_json(
         &self,
         presentation: &(impl crate::StructurePresentation + ?Sized),
-        surface_json:&dyn Fn(SurfaceId)->serde_json::Value,
+        surface_json: &dyn Fn(SurfaceId) -> serde_json::Value,
     ) -> serde_json::Value {
         let selected_surface = presentation.surface_id(self);
         let layout_json = if self.is_split() {
@@ -218,7 +218,7 @@ impl Tab {
         } else {
             // Single-leaf tab. EmptySurface(deferred) renders itself with pty_ready: false.
             // For a live TerminalSurface, append pty_ready: true.
-            let mut v=surface_json(self.first_surface_id().expect("single leaf has an ID"));
+            let mut v = surface_json(self.first_surface_id().expect("single leaf has an ID"));
             if v.get("type").and_then(|t| t.as_str()) == Some("Terminal")
                 && !v
                     .as_object()
@@ -237,4 +237,3 @@ impl Tab {
         })
     }
 }
-

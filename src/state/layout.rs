@@ -1,9 +1,9 @@
 #[cfg(feature = "gui")]
 use crate::core::CoreState;
 #[cfg(feature = "gui")]
-use crate::runtime::engine_read::EngineRead;
-#[cfg(feature = "gui")]
 use crate::model::{PaneId, PhysicalPx, PhysicalRect, SurfaceRegion};
+#[cfg(feature = "gui")]
+use crate::runtime::engine_read::EngineRead;
 
 use super::RequestContext;
 
@@ -225,11 +225,20 @@ impl RequestContext {
                         let rows = ((region.rect.height.value() / cell_height.max(1.0)).floor()
                             as usize)
                             .max(1);
-                        if let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,region.id) {targets.push((target,cols,rows));}
+                        if let Some(target) =
+                            crate::app::engine_action::SurfaceBinding::capture(engine, region.id)
+                        {
+                            targets.push((target, cols, rows));
+                        }
                     }
                 }
             }
         }
-        self.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Resize {targets}).from_user_shortcut("layout-resize"));
+        self.dispatch_intent(
+            crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Resize {
+                targets,
+            })
+            .from_user_shortcut("layout-resize"),
+        );
     }
 }

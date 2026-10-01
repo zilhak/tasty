@@ -125,7 +125,7 @@ impl AppServices {
                 }
                 Ok(vec![])
             }
-            _=>anyhow::bail!("structural intent requires committed journal admission"),
+            _ => anyhow::bail!("structural intent requires committed journal admission"),
         }
     }
 }

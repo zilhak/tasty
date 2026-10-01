@@ -11,5 +11,4 @@ impl MainView {
                 f64::from(inset.to_physical(scale_factor as f32).value())
             })
     }
-
 }

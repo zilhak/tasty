@@ -11,16 +11,26 @@ impl App {
         use tasty_plugin_protocol::events::payloads::SurfaceClosed;
         let mut drained: Vec<crate::state::PendingSurfaceClosed> = Vec::new();
         for session in self.engines.all_sessions_mut() {
-            let pending=std::mem::take(&mut session.runtime.pending_plugin_retirements);
-            for (surface,binding) in pending {
-                if !binding.is_alive() {continue;}
-                match self.plugin_manager.as_mut().map(|manager|manager.enqueue_bound_remote_retirement(surface,binding.clone())) {
-                    Some(Ok(()))=>{},
-                    Some(Err(error))=>{
-                        tracing::error!(surface,"retaining failed plugin retirement: {error}");
-                        session.runtime.pending_plugin_retirements.push((surface,binding));
-                    },
-                    None=>session.runtime.pending_plugin_retirements.push((surface,binding)),
+            let pending = std::mem::take(&mut session.runtime.pending_plugin_retirements);
+            for (surface, binding) in pending {
+                if !binding.is_alive() {
+                    continue;
+                }
+                match self.plugin_manager.as_mut().map(|manager| {
+                    manager.enqueue_bound_remote_retirement(surface, binding.clone())
+                }) {
+                    Some(Ok(())) => {}
+                    Some(Err(error)) => {
+                        tracing::error!(surface, "retaining failed plugin retirement: {error}");
+                        session
+                            .runtime
+                            .pending_plugin_retirements
+                            .push((surface, binding));
+                    }
+                    None => session
+                        .runtime
+                        .pending_plugin_retirements
+                        .push((surface, binding)),
                 }
             }
             // Required owner disposal is not replaced by sending its informational close event.

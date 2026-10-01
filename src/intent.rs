@@ -100,22 +100,33 @@ pub struct DispatchedIntent {
     )
 )]
 /// Transient UI work; it is never serialized into a journal operation.
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub enum CreateFollowup {
-    Prompt {kind:String},
+    Prompt { kind: String },
 }
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // reason: 명령마다 Box를 할당하는 비용을 피한다
 pub enum Intent {
-    #[cfg(feature="gui")]
-    MouseCaptureHint {target:crate::app::engine_action::SurfaceBinding,foreground_generation:u64,view:std::sync::Weak<()>},
-    #[cfg(feature="gui")]
+    #[cfg(feature = "gui")]
+    MouseCaptureHint {
+        target: crate::app::engine_action::SurfaceBinding,
+        foreground_generation: u64,
+        view: std::sync::Weak<()>,
+    },
+    #[cfg(feature = "gui")]
     RemoteBrowser(crate::app::remote_browser::BrowserRequest),
     PatchSettings(crate::app::engine_action::SettingsPatch),
     Engine(crate::app::engine_action::EngineAction),
-    ForwardMirror {op:tasty_ipc::stream::StructuralOp,close_focus_candidates:Vec<u32>},
-    RespondApproval { request_id:tasty_approval::ApprovalId, choice:String, comment:Option<String> },
+    ForwardMirror {
+        op: tasty_ipc::stream::StructuralOp,
+        close_focus_candidates: Vec<u32>,
+    },
+    RespondApproval {
+        request_id: tasty_approval::ApprovalId,
+        choice: String,
+        comment: Option<String>,
+    },
     Ui(UiIntent),
     /// 도메인 명령도 같은 큐에 넣고 AppServices::apply로 전달한다.
     Domain(crate::app::command::DomainIntent),
@@ -129,9 +140,9 @@ pub enum Intent {
     },
     /// explicit_name을 우선 사용하고, 없으면 base_name으로 중복되지 않는 이름을 만든다.
     CapturePreset {
-        kind:tasty_presets::PresetKind,
-        source:u32,
-        presentation:crate::model::StructurePresentationSnapshot,
+        kind: tasty_presets::PresetKind,
+        source: u32,
+        presentation: crate::model::StructurePresentationSnapshot,
     },
     SavePreset {
         base_name: String,
@@ -157,7 +168,10 @@ pub enum Intent {
     },
 
     /// Explicit pane selected by a native menu; completion belongs to the originating View.
-    NewTabWithFollowup {pane_id:u32,followup:CreateFollowup},
+    NewTabWithFollowup {
+        pane_id: u32,
+        followup: CreateFollowup,
+    },
 
     /// 포커스된 pane을 분할하는 사용자 단축키 명령.
     SplitPane {

@@ -1,8 +1,8 @@
 //! Double-tap modifier (Shift+Shift / Ctrl+Ctrl / Alt+Alt) 단축키 처리.
 
-use crate::runtime::engine_read::EngineRead;
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
 use crate::model::{PhysicalRect, SplitDirection};
+use crate::runtime::engine_read::EngineRead;
 use crate::view::main::MainView;
 
 use super::{focused_workspace_category, send_app_event};

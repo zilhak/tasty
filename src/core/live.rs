@@ -1,10 +1,10 @@
 //! Non-journal observations used by admission. No sockets, channels or execution callbacks.
-use std::collections::HashMap;
 use crate::core::state::SurfaceMessage;
+use std::collections::HashMap;
 pub(crate) struct LiveDomainState {
-    pub(crate) notifications:crate::notification::NotificationStore,
-    pub(crate) occupancy:crate::core::attach::OccupancyRegistry,
-    pub(crate) surface_titles:HashMap<u32,tasty_model::SurfaceTitle>,
+    pub(crate) notifications: crate::notification::NotificationStore,
+    pub(crate) occupancy: crate::core::attach::OccupancyRegistry,
+    pub(crate) surface_titles: HashMap<u32, tasty_model::SurfaceTitle>,
     pub(crate) last_key_input: HashMap<u32, std::time::Instant>,
     pub(crate) busy_surfaces: std::collections::HashSet<u32>,
     // attention은 여러 알림 원인이 공유하며 알림 패널 항목과는 별도 상태다.
@@ -25,11 +25,14 @@ pub(crate) struct LiveDomainState {
     pub(crate) command_index: crate::core::command_index::CommandIndex,
     pub(crate) surface_messages: HashMap<u32, Vec<SurfaceMessage>>,
     pub(crate) surface_next_message_id: u32,
-
 }
 
-impl Default for LiveDomainState {fn default()->Self {Self {notifications:crate::notification::NotificationStore::with_coalesce_ms(500),occupancy:Default::default(),
-            surface_titles:HashMap::new(),
+impl Default for LiveDomainState {
+    fn default() -> Self {
+        Self {
+            notifications: crate::notification::NotificationStore::with_coalesce_ms(500),
+            occupancy: Default::default(),
+            surface_titles: HashMap::new(),
             last_key_input: HashMap::new(),
             busy_surfaces: std::collections::HashSet::new(),
             attention: crate::core::state::attention::AttentionStore::default(),
@@ -42,10 +45,18 @@ impl Default for LiveDomainState {fn default()->Self {Self {notifications:crate:
             command_index: crate::core::command_index::CommandIndex::new(),
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,
-}}}
+        }
+    }
+}
 
 impl LiveDomainState {
-    pub(crate) fn with_notifications(counter:std::sync::Arc<std::sync::atomic::AtomicU64>,coalesce:u64)->Self {
-        Self {notifications:crate::notification::NotificationStore::with_counter(coalesce,counter),..Default::default()}
+    pub(crate) fn with_notifications(
+        counter: std::sync::Arc<std::sync::atomic::AtomicU64>,
+        coalesce: u64,
+    ) -> Self {
+        Self {
+            notifications: crate::notification::NotificationStore::with_counter(coalesce, counter),
+            ..Default::default()
+        }
     }
 }
