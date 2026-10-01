@@ -81,4 +81,6 @@ runtime epoch, engine incarnation, activation 및 physical generation을 구분�
 
 원격 forward의 `op_id`는 Result/Delta 상관관계 값이며 durable 멱등 키를 만들지 않는다.
 서버 journal은 각 접수의 command identity를 발급하고 원 connection registration과
-응답 binding을 유지한다. 공개 IPC에서 명시한 멱등 키의 기존 계약과는 별개다.
+응답 binding을 유지한다. client/runtime epoch/registration/op_id는 내부 요청 envelope의
+correlation 값으로 원 command 입력 바이트에 보존하며 중복 제거에 사용하지 않는다.
+공개 IPC에서 명시한 멱등 키의 기존 계약과는 별개다.

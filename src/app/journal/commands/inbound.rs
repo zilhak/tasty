@@ -68,7 +68,9 @@ impl JournalApplication {
         let request = JsonRpcRequest {
             jsonrpc: "2.0".into(),
             method: "remote.structural".into(),
-            params: serde_json::json!({"op":op,"origin":origin}),
+            params: serde_json::json!({"op":op,"origin":origin,"correlation":{
+                "client":client,"runtime_epoch":runtime_epoch,"registration":registration,"op_id":op_id
+            }}),
             id: None,
             session_token: None,
             response_timeout_ms: None,
