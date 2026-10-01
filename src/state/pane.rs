@@ -8,7 +8,7 @@ impl RequestContext {
     /// 닫을 대상 중 hard 점유된 surface가 있으면 true를 반환해 요청을 거절한다.
     /// 종료된 PTY의 사후 정리에는 적용하지 않는다. 그 경로까지 막으면 surface가 남는다.
     /// 로컬 사용자는 점유 해제 버튼으로 먼저 연결을 끊을 수 있다.
-    #[cfg(any(feature = "gui", debug_assertions, test))]
+    #[cfg(any(feature = "gui", debug_assertions))]
     pub(crate) fn refuse_if_hard_occupied(
         &mut self,
         engine: &crate::runtime::engine_read::EngineRead<'_>,
