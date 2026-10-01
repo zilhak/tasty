@@ -102,7 +102,11 @@ fn root_with_bias(
         al.push('\n');
     }
     fs::write(root.join(".complexity-file-allowlist"), al).expect("allowlist");
-    fs::write(root.join(".complexity-frozen-files"), entries.join("\n")).expect("frozen corpus");
+    fs::write(
+        root.join(".complexity-frozen-files"),
+        format!("{}\n", entries.join("\n")),
+    )
+    .expect("frozen corpus");
     for entry in entries {
         let path = root.join(entry);
         fs::create_dir_all(path.parent().expect("명부 경로 부모")).expect("명부 디렉터리");
@@ -282,7 +286,7 @@ fn a_deleted_frozen_file_is_undecidable() {
 #[test]
 fn a_file_exemption_outside_the_frozen_corpus_is_undecidable() {
     let d = root_with(Some(BUDGET), &[P, "src/extra_exempt.rs"]);
-    fs::write(d.path().join(".complexity-frozen-files"), P).expect("불완전 명부");
+    fs::write(d.path().join(".complexity-frozen-files"), format!("{P}\n")).expect("불완전 명부");
     let output = run(d.path(), &reports(P, BUDGET));
     assert_eq!(
         output, 2,
