@@ -68,6 +68,7 @@ impl TerminalState {
         self.scroll_region = None;
         // Notify resize subscribers. Their bounded queues can drop an update.
         self.fan_out_resize(cols, rows);
+        self.fan_out_attach_resize(cols, rows);
         true
     }
 

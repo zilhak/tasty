@@ -1,6 +1,7 @@
 // 이유: 테스트의 반환값 무시는 허용하되 제품 코드의 반환값 무시는 계속 검사한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 mod accessors;
+mod attach_stream;
 mod binding;
 mod color;
 mod events;
@@ -34,6 +35,7 @@ use termwiz::escape::parser::Parser;
 use termwiz::escape::{Action, ControlCode, Esc, EscCode};
 use termwiz::surface::Surface;
 
+pub use attach_stream::{AttachEvent, AttachEventReceiver, AttachStreamSubscription, ATTACH_STREAM_MAX_BYTES, ATTACH_STREAM_MAX_EVENTS};
 pub use binding::ResourceGeneration;
 pub use color::{ColorPalette, TerminalRgb};
 pub use events::*;
@@ -131,6 +133,7 @@ pub(crate) struct TerminalState {
     /// chunks (in apply order) so a remote mirror can replay them. Empty on a
     /// detached terminal and in the common no-subscriber case (zero overhead).
     output_taps: Vec<OutputTap>,
+    attach_streams: Vec<attach_stream::AttachStreamTap>,
     /// Server-side resize subscribers. Each tap receives `(cols, rows)` whenever
     /// the grid actually changes so an attached client can keep its mirror grid
     /// in lockstep with the authoritative remote size. Empty in the common
@@ -388,6 +391,7 @@ impl TerminalState {
             sink: None,
             enqueued_count: 0,
             output_taps: Vec::new(),
+            attach_streams: Vec::new(),
             resize_taps: Vec::new(),
             cols,
             rows,
@@ -470,6 +474,7 @@ impl TerminalState {
         if changed {
             self.flush_surface_change_logs();
         }
+        self.fan_out_attach_output(data);
         changed
     }
 
