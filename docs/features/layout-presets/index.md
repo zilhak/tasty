@@ -96,7 +96,7 @@ mini-tab strip 은 `tab_bar.rs`, split 라인은 `divider.rs` 위젯을 재사�
 - 단축키(`apply_workspace_preset`/`apply_tab_preset`/`apply_pane_preset`, 기본 빈 칸): 적용 popup → 선택 → 새 인스턴스 생성 + **포커스 이동**.
 - **CLI/IPC `preset.apply` 는 항상 `focus: false`** — 포커스 독립 원칙. 단축키 호출만 포커스 이동.
 
-terminal 시작 명령어는 `cd <cwd>\r` 와 합쳐 `TerminalConfig.initial_input` 으로 PTY spawn 시점에 첫 입력으로 주입(`src/state/preset_apply.rs`).
+terminal 시작 명령어는 `cd <cwd>\r` 와 합쳐 고정 preset 준비 입력으로 만들어 journal 실행에 전달한다(`src/runtime/preset_plan.rs`).
 
 ### 설정 화면의 입력 예외
 

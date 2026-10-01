@@ -292,7 +292,7 @@ IPC에는 토스트 대신 사유를 담은 오류를 반환한다. `surface.clo
 - focus 대상 해석 / `TASTY_SURFACE_ID` / `this`: `crates/tasty-cli/src/request.rs`.
 - `tasty close self`: `crates/tasty-cli/src/commands/new_close.rs`(`CloseCommands::CloseSelf`).
 - 창 생성의 origin 분기: `WindowRequestOrigin`(`src/app/event.rs`) → `focus_after_register` · `origin_window_attributes`(`src/app/window_lifecycle.rs`) — 등록 뒤 focused 창과 생성 속성(`with_active` · `with_visible`)이 여기서 파생된다. 에이전트 창을 사용자 창 뒤에 보이는 OS 호출은 `crates/tasty-platform/src/window_stacking.rs`.
-- 탭 생성의 선택 분기: `DomainIntent::CreateTab`의 `activate`를 Core 결과에 연결하고 App adapter가 사용자 continuation으로 처리한다. 값을 정하는 진입점은 App journal 명령 admission의 호출자 · `src/intent/tab.rs` · `open_surface_tab`(`src/file/dispatch.rs`).
+- 탭 생성의 선택 분기: `DomainIntent::CreateTab`의 `activate`를 Core 결과에 연결하고 App adapter가 사용자 continuation으로 처리한다. 값을 정하는 진입점은 App journal 명령 admission의 호출자 · `src/app/creation_intent.rs` · `open_surface_tab`(`src/file/dispatch.rs`).
 - 워크스페이스 close의 origin: View producer는 `src/state/workspace.rs`, 실제 원 reply/origin 분류와 retirement 계획은 `src/app/journal/commands/close.rs`다.
 - 워크스페이스 제거 후 뒷정리: 확정 닫기의 `workspace.closed` 전달은 App의 완료 후처리이며 workspace 범위 memory 정리는 `ResourceRetirement`의 metadata 정리(`src/runtime/resource_retirement.rs`).
 

@@ -5,8 +5,8 @@ use crate::cfg_predicate::cfg_gated_lines;
 use crate::source_text::mask_non_code;
 
 /// 파일 경로로 계산한 모듈 깊이 — 크레이트 루트 바로 아래 모듈이 1.
-/// `src/core/mod.rs` → 1 · `src/core/attach.rs` → 2 · `src/core/agent/mod.rs` → 2 ·
-/// `src/core/agent/task.rs` → 3.
+/// `src/core/mod.rs` → 1 · `src/core/attach.rs` → 2 · `src/runtime/agent/mod.rs` → 2 ·
+/// `src/app/journal/creation.rs` → 3.
 pub fn module_depth(rel: &str) -> usize {
     let parts: Vec<&str> = rel.trim_start_matches("src/").split('/').collect();
     let last = parts.last().copied().unwrap_or("");

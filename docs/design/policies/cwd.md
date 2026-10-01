@@ -84,7 +84,7 @@ pub(crate) enum ConvertSurfaceTarget {
 }
 ```
 
-호출자가 `cwd: None`으로 보내면 `src/intent/surface.rs::convert`가 원본 surface에서 가져온다. 생략된 cwd의 대체값은 이 핸들러가 정하며, 호출자가 임의로 None에 고정하지 않는다.
+호출자가 `cwd: None`으로 보내면 App의 `src/app/creation_intent.rs`가 원본 surface에서 가져온다. 생략된 cwd의 대체값은 이 핸들러가 정하며, 호출자가 임의로 None에 고정하지 않는다.
 
 ##### 3-1. mirror(원격 attach) forward 경로도 같은 불변식 대상
 
@@ -92,8 +92,8 @@ mirror 워크스페이스의 convert 는 로컬에서 실행되지 않고 `Struc
 
 | 단계 | 담당 | 값 |
 |------|------|----|
-| client → wire | `src/core/impl_mirror.rs` (`build_mirror_forward_op`) | intent 에 **명시된** cwd 만 `StructuralOp::ConvertSurface.cwd`(경로 문자열, `#[serde(default)]`) 로 실어 보낸다. mirror surface 에서 carry 한 cwd 는 원격 출처(§3-2)라 로컬 carry 헬퍼가 `None` 을 돌려주므로 싣지 않는다 — 실제 기준은 서버가 자기 PTY에서 읽은 값이며 클라이언트 값은 그 사본이다 |
-| 원격 실행 | `src/core/attach_runtime.rs` (`execute_forwarded_structural_op`) | op 의 `cwd` 가 비어 있으면 `MainViewState::resolve_inherit_cwd_from_surface` 로 **실제 원격 PTY** 기준(OSC 7 캐시 → Linux `/proc`·macOS `proc_pidinfo`) cwd 를 직접 판정한다 |
+| client → wire | `src/app/services/impl_mirror.rs` (`build_mirror_forward_op`) | intent 에 **명시된** cwd 만 `StructuralOp::ConvertSurface.cwd`(경로 문자열, `#[serde(default)]`) 로 실어 보낸다. mirror surface 에서 carry 한 cwd 는 원격 출처(§3-2)라 로컬 carry 헬퍼가 `None` 을 돌려주므로 싣지 않는다 — 실제 기준은 서버가 자기 PTY에서 읽은 값이며 클라이언트 값은 그 사본이다 |
+| 원격 실행 | `src/app/journal/commands/inbound.rs`와 `src/app/journal/commands/create_spec.rs` (원 요청 해석) | op 의 `cwd` 가 비어 있으면 고정 creation 입력의 cwd 해소 경로 로 **실제 원격 PTY** 기준(OSC 7 캐시 → Linux `/proc`·macOS `proc_pidinfo`) cwd 를 직접 판정한다 |
 | 관측 push (server → client) | `EngineMut::forward_surface_cwd` → `StreamControl::Cwd` → client `mirror_surface_cwd` 맵 | 서버가 1Hz 로 점유 surface 의 cwd 를 자기 트리에서 계산해 값이 바뀐 것만 holder 에 보낸다. 실행이 아니라 **관측**이다([ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md)) |
 
 서버측 resolve 는 로컬 convert 와 같은 헬퍼를 쓰므로 **원격 인스턴스의 `inherit_cwd` 설정 게이트를 그대로 적용**한다(실행하는 인스턴스의 설정을 따름). `cwd` 키가 없는 구버전 client 의 op 도 이 서버측 resolve 로 커버된다. **이 게이트는 실행 경로(서버측 resolve)에 한정된다** — 관측 push 는 `inherit_cwd` 와 무관하게 raw cwd 를 보내고, 게이트는 소비 시점(client)이 건다. `inherit_cwd` 는 "새 surface 가 cwd 를 상속하는가" 이지 "cwd 를 아는가" 가 아니다.
@@ -129,7 +129,7 @@ pub struct SurfaceCreateCtx { pub surface_id: u32, pub kind: String, pub cwd: Op
 
 #### 5. Explorer root fallback (host builtin)
 
-Explorer 는 plugin 이 아니라 본체 builtin surface 다(`register_explorer` — `src/core/surface_registry/builtins.rs`). **root 는 어떤 경로로 생성되든 항상 절대경로다.** 결정 순서:
+Explorer 는 plugin 이 아니라 본체 builtin surface 다(`register_explorer` — `src/runtime/surface_registry/builtins.rs`). **root 는 어떤 경로로 생성되든 항상 절대경로다.** 결정 순서:
 
 1. `params["path"]`
 2. `SurfaceKindDef::create` 의 carry cwd (§2)

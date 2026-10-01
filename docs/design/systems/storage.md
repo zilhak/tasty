@@ -118,7 +118,7 @@ fallback에서 memory.db를 쓰는 memory·agent·approval·surface.meta·teleme
 ### 터미널 출력 observer 의 memory sink — 저장 계약
 
 `output.observe_start`의 memory sink는 파싱한 항목을 `memory.db`에 쓴다.
-`src/core/output_observer.rs`의 `run_memory_sink`가 `MemoryStorage` 인터페이스를 사용한다.
+`src/runtime/output_observer.rs`의 `run_memory_sink`가 `MemoryStorage` 인터페이스를 사용한다.
 
 - **키**: `global` 범위에 `tasty.observer.<id>.<ms>.<seq>`로 저장하고 owner는 `_host`다. `<ms>`는 저장 시각의 밀리초, `<seq>`는 sink별로 0부터 세는 순번이며 최소 6자리로 표시한다. 같은 밀리초의 여러 항목은 순번으로 구분한다. 시계가 역행하지 않고 순번이 6자리 범위에 있으면 키의 정렬 순서가 도착 순서와 같아 `memory.list --prefix tasty.observer.<id>.`로 시간순 조회할 수 있다([저장·보존 설계](../../adr/0009-state-storage-and-retention.md)).
 - **`max_records`**: 이번 실행에서 쓴 키를 순서대로 기억하고 최근 N건을 넘으면 오래된 키부터 삭제한다. 삭제 실패는 경고 없이 넘어가므로 N건보다 많이 남을 수 있다. 재시작하면 이 목록은 비워지며 이전 실행이 남긴 키에는 이 상한을 적용하지 않는다.

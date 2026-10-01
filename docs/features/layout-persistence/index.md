@@ -3,14 +3,16 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (설정 토글)
 - **ADR**: [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md) — 슬롯 점유 모델
-- **코드**: `src/core/layout_persistence/`, `~/.tasty/layouts/NN.json` · `~/.tasty/scrollback/<id>.bin`
+- **코드**: `src/app/journal.rs`, `src/runtime/journal_product/view_record.rs`, legacy 입력 `src/core/layout_persistence/`
 - **화면**: 없음 (앱 시작 시 자동 복원)
 
 ## 목적
 
-`general.restore_layout`(기본 on)이 켜져 있으면 워크스페이스·페인·탭·서피스 구성을 `~/.tasty/layouts/NN.json` 슬롯 파일에 저장한다. 다음 실행에서 슬롯을 읽어 배치를 복원한다. 파일 읽기와 쓰기는 실패할 수 있으며 아래의 보호 규칙을 적용한다.
+`general.restore_layout`(기본 on)이 켜져 있으면 journal의 구조와 별도 View checkpoint를 함께 사용해 배치를 복원한다. 저장 원본은 domain journal·immutable surface payload·DB restore manifest다. 기존 슬롯 JSON과 scrollback 파일은 최초 이관 및 호환 읽기 자료이며 현재 저장 원본을 덮어쓰지 않는다.
 
-## 내부 동작
+## Legacy 파일 형식과 이전 저장 흐름
+
+이 절의 슬롯 JSON writer·persist_id 덮어쓰기·파일 삭제 설명은 이전 바이너리의 동작이다. 현재 제품은 아래 Journal 절의 불변 payload와 참조 보존 계약을 따르며, 이 형식은 최초 이관 입력으로 읽는다.
 
 ### 저장 대상 / 타이밍
 
@@ -107,7 +109,7 @@ Parked engine은 슬롯을 점유하지만 윈도우 ID가 없어 `window.list`�
 
 `general.restore_surface_content`(기본 on)가 켜져 있으면 터미널의 scrollback과 화면 라인을 `~/.tasty/scrollback/<persist_id>.bin`에 저장한다. 파일 magic은 `TSSB`다. 복원 시 이전 scrollback과 화면 내용을 새 터미널의 출력 앞에 넣는다.
 
-`persist_id`는 `TerminalStore.scrollback_persist_ids`(`src/core/terminal_store.rs`)에 보관하고 다음 저장에서 같은 파일을 교체한다. 옵션이 꺼져 있으면 새 scrollback을 캡처하지 않는다. 설정 화면에서 on→off로 바꾸면 기존 scrollback 디렉터리를 정리한다. 복원은 저장된 `scrollback_ref`와 읽을 수 있는 파일을 사용한다.
+`persist_id`는 당시 TerminalStore의 scrollback persist ID 목록에 보관하고 다음 저장에서 같은 파일을 교체한다. 옵션이 꺼져 있으면 새 scrollback을 캡처하지 않는다. 설정 화면에서 on→off로 바꾸면 기존 scrollback 디렉터리를 정리한다. 복원은 저장된 `scrollback_ref`와 읽을 수 있는 파일을 사용한다.
 
 Surface 닫기에서는 해당 `.bin`을 삭제한다. 부팅 GC는 `list_slots_in`으로 열거한 슬롯의 `scrollback_ref` 합집합을 구해 참조되지 않는 `.bin`을 지운다. 열거한 슬롯 하나라도 로드하지 못하면 그 회차 GC를 건너뛴다.
 
@@ -135,6 +137,8 @@ Claude 프로필이 붙은 경우 `claude -r <id> --settings "<프로필 경로>
 따라서 첫 stdin 읽기에 반드시 도착하거나 spawn과 동시에 명령이 실행된다는 보장은 없다.
 
 앱 재시작과 [닫힌 항목 복원](../closed-tab-restore/index.md)(Ctrl+Shift+T)에서 사용한다.
+
+## 현재 Journal 저장
 
 ### Journal의 지연 surface 캡처
 

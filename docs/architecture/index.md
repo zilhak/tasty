@@ -32,7 +32,7 @@ Tasty는 본 바이너리(`src/`)와 63 개 크레이트(`crates/*`)로 구성�
 
 ### 도메인과 실행 경계
 
-`tasty-core`는 Command/Event·JournalModel·decide/evolve와 CoreState projection을 소유하며 GUI·PTY·SQL을 직접 의존하지 않는다. `tasty-event-store`는 저장 계약, `tasty-task-runtime`은 작업 실행·완료 대기를 맡는다. root의 App/runtime adapter가 저장·실행·View를 조립한다([ADR-0056](../adr/0056-crate-boundaries-for-core-event-store-and-task-runtime.md)).
+순수 구조 계층인 `tasty-core`는 Command/Event·JournalModel·decide/evolve와 CoreState projection을 소유하며 GUI·PTY·SQL을 직접 의존하지 않는다. `tasty-event-store`는 저장 계약, `tasty-task-runtime`은 작업 실행·완료 대기를 맡는다. root의 App/runtime adapter가 저장·실행·View를 조립한다([ADR-0056](../adr/0056-crate-boundaries-for-core-event-store-and-task-runtime.md)).
 
 View에는 `EngineRead`, 실행 adapter에는 `EngineRef`/`EngineMut`를 전달한다. Core에 View 전체나 상위 EngineSession을 넘기지 않는다. `src/core`에 남은 호스트 adapter를 pure domain crate와 같은 소유자로 보지 않는다. 구조 실행과 IPC의 대여·요청 값은 [App·Engine·View 상태 소유권](../dev-guide/app-state-ownership.md)을 따른다.
 

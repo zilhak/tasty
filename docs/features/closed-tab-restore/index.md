@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 전용 (`restore_closed`, 기본 `Ctrl+Shift+T`)
 - **ADR**: 없음. 사용자와 에이전트의 구분은 [identity](../../identity.md) §1을 따른다.
-- **코드**: `ClosedItem` LIFO (`crates/tasty-model`), snapshot push `src/core/impl_close.rs`(`close_surface_recording`/`close_pane_recording`/`close_tab_recording` — 창 경로와 `Core::apply` 공통) + `src/state/workspace.rs`(`close_workspace_at`) + `src/core/attach_runtime.rs`(원격 forward 의 tab/pane 닫기), 트리 재삽입 `crates/tasty-model/src/pane_tree.rs`(`locate_split_context`/`insert_pane_beside`) + `src/core/impl_workspace.rs`(`apply_restore_closed_item`)
+- **코드**: 닫기 입력과 원 대상 해석 `src/app/journal/commands/close.rs`, 불변 capture `src/runtime/journal_product/worker/capture.rs`, undo 구조 `crates/tasty-core/src/undo.rs`, 복원 준비 `src/app/journal/commands/assembly.rs`, 완료 후 사용자 선택 `src/app/journal/commands/view_completion.rs`.
 - **화면**: 없음 (복원은 focused pane 에 즉시 반영)
 
 ## 목적

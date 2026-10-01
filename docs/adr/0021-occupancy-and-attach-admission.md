@@ -75,4 +75,4 @@ forward가 생성 ID를 반환하고 원격 child의 소유·입력을 다룰 �
 
 - [주체와 점유](../concepts/actors.md)
 - [attach 구현](../dev-guide/attach-behavior.md)
-- 현재 구현: 로컬 IPC의 hard 점유 거절은 `hard_occupied_structural_guard`(`src/adapters/ipc/handler.rs`), mirror 구조 변경의 forward·거절은 `mirror_workspace_index_for_structural`(`src/core/state/finders.rs`)과 `src/core/impl_mirror.rs`
+- 현재 구현: 로컬 IPC의 hard 점유 거절은 `hard_occupied_structural_guard`(`src/adapters/ipc/handler.rs`), mirror 구조 변경의 forward·거절은 `mirror_workspace_index_for_structural`(`src/core/state/finders.rs`)과 `src/app/services/impl_mirror.rs`

@@ -177,7 +177,7 @@ GUI 조건에 따른다. 창이 없다는 이유로 권한 요청 자체를 막�
 ### 답한다 (7)
 
 창이 없어도 답이 정의되는 것들이다. 본체는 두 조합이 **같은 함수**를 쓴다
-(`src/core/app_surface.rs`, 승인·태스크 대기는 대기 본문 옆인 `handler/approval/read.rs` ·
+(`src/app/services/surface.rs`, 승인·태스크 대기는 대기 본문 옆인 `handler/approval/read.rs` ·
 `handler/agent/task.rs`) — `system.shutdown` 만 끊는 방식이 조합마다 달라 예외다.
 
 | 메서드 | 읽는 것 / 하는 일 |
@@ -318,7 +318,7 @@ release 헤드리스 실행에서도 아래 다섯 메서드가 모두 `-32601`�
 
 읽는 것이 `App` 의 `lua_engine` / `plugin_manager`, 그리고 gui 무관 정적 표뿐이다. 창·렌더러·egui 입력 큐를 하나도
 안 본다. 자리가 없어서 사라졌던 것이라 헤드리스 pump 에 자리를 만들었고, 본체는 두 조합이
-**같은 함수**를 쓴다(`src/core/app_surface_debug.rs` · `handler/debug_plugin.rs` ·
+**같은 함수**를 쓴다(`src/app/services/surface_debug.rs` · `handler/debug_plugin.rs` ·
 `handler/popup.rs`).
 
 메서드별로 지원 여부를 판단한다. `debug.popup.list`는 조회만 하므로 지원하지만,

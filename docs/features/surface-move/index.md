@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (우클릭 컨텍스트 메뉴 — `서피스 이동` → `서피스를 이곳으로 이동`, 탭 헤더 `탭 이동` → `탭을 이곳으로 이동`, 탭 헤더 `페인 이동` → `페인을 이곳으로 이동`)
 - **ADR**: 없음
-- **코드**: `DomainIntent::MoveSurface` (`src/core/intent.rs`), `Core::apply_move_surface`/`detach_surface_for_move` (`src/core/impl_move.rs`), `SurfaceLayout::extract_surface` (`crates/tasty-model/src/surface_layout.rs`), 탭·페인 이동 `DomainIntent::ReplaceTabWithTab`/`ReplacePaneWithPane`·`Core::apply_replace_tab_with_tab`/`apply_replace_pane_with_pane` (`src/core/impl_move_container.rs`), `PaneNode::detach_pane`/`replace_pane` (`crates/tasty-model/src/pane_tree.rs`), 결과 `CoreEvent::ContainerMoveApplied` → `SurfaceCloseCascade::from_container_move_applied` (`src/app/structural_cascade.rs`), 슬롯 `CoreState::pending_move: Option<PendingMove>` (`src/core/state.rs`), 메뉴 항목 처리 `src/view/main/move_menu.rs`, 대기 표시 `src/adapters/ui/move_source.rs`(대상 해석)·`tasty_ui_widgets::paint_move_source_ring`/`paint_move_source_glyph`/`paint_move_source_chip`
+- **코드**: 명시 이동 요청 `src/app/command.rs`, journal 이동·교체 해석 `src/app/journal/commands/replacement.rs`, 순수 구조 교체 `crates/tasty-core/src/replacement.rs`, 원 자원 회수 `src/runtime/resource_retirement.rs`, 사용자 선택 후처리 `src/app/journal/commands/view_completion.rs`.
 - **화면**: OS 네이티브 컨텍스트 메뉴 (`PendingNativeMenu::TerminalSurface`/`Surface`/`Tab`), 대기 대상의 점선 링과 move 글리프([이동 대기 표시](#이동-대기-표시)). 갤러리 Layouts › Move source highlight
 
 ## 목적
@@ -33,7 +33,7 @@
 
 ### 불변식 / 가드
 
-- **PTY 보존(R1)**: 이동 경로는 source 에 대해 `TerminalStore::remove`/`cleanup_surface` 를 절대 호출하지 않는다. surface_id 가 불변이라 store 가 자동 추종한다. 코어 테스트 `move_surface_tests`(`src/core/impl_move.rs`)가 이 불변식을 고정한다.
+- **PTY 보존(R1)**: 이동 경로는 source 에 대해 `TerminalStore::remove`/`cleanup_surface` 를 절대 호출하지 않는다. surface_id 가 불변이라 store 가 자동 추종한다. 구조 이동은 `crates/tasty-core/src/replacement.rs`와 runtime collection의 같은 ID를 사용한다. 실제 자원 보존은 별도의 runtime 시험으로 확인한다.
 - **포커스 독립성**: 모든 조회는 surface_id 기준(focused_* 미사용). 슬롯·이동은 사용자 우클릭 조작이라 포커스 부수효과는 사용자 맥락 안에서만 발생. release 에 포커스 변경 API 없음.
 - **가드**: self-ref(source==target)·source 무효(이미 닫힘)·target 무효 → no-op(대기 슬롯만 비움). 구조 증명상 B 는 A detach 후에도 항상 생존하므로 missing-B 분기는 방어적 로깅(`tracing::error!`)만 둔다.
 

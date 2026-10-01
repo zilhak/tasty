@@ -238,6 +238,7 @@ fn comment_prefixes(rel: &str) -> Option<&'static [&'static str]> {
                 | "pre-push"
                 | "pre-merge-commit"
                 | ".complexity-file-allowlist"
+                | ".complexity-frozen-files"
         ) =>
         {
             Some(&["#"])

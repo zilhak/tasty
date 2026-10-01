@@ -8,7 +8,7 @@
 ## Context
 
 결정 당시 `crates/tasty-terminal/src/lib.rs`의 `Terminal`은 VT 상태와 PTY 핸들을 함께 가지며, 내부 `PtyBackend`가 OS master·child와
-reader/parser·writer thread를 소유한다. `src/core/terminal_store.rs`의 `TerminalStore`는 `CoreState` 안에서 Terminal을 보관하고,
+reader/parser·writer thread를 소유한다. 당시 core의 TerminalStore는 `CoreState` 안에서 Terminal을 보관했고,
 당시 `PtyRegistry`는 surface 없는 PTY의 메타데이터·상한·유휴 정리·exit watcher를 따로 가진다.
 원격 mirror의 Terminal에는 PTY가 없다.
 

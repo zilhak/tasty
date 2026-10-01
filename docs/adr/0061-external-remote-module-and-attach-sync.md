@@ -11,7 +11,7 @@
 
 SSH 실행·터널·포트 발견은 `tasty-ssh`, 원격 workspace 조회·생성은 `tasty-remote`에 있다. 본체에서는 `src/app/attach_client.rs`가
 socket·SSH 터널·remote/local ID mapping·mirror 이벤트 처리를 함께 갖고, `src/app/auto_attach.rs`·`src/app/attach_poll.rs`와 App 필드가
-연결 시도·재연결 상태를 나눠 가진다. 서버 쪽 attach는 `src/core/attach_runtime.rs`와 `src/core/impl_attach.rs` 등 Core 안에 있다.
+연결 시도·재연결 상태를 나눠 가진다. 당시 서버 쪽 attach는 core의 attach runtime과 attach 실행 모듈 안에 있었다.
 plugin 프로세스 통신은 `tasty-host-plugin`의 process·listener·handle channel이 담당한다.
 
 [ADR-0023](0023-attach-state-sync-and-forwarding.md)은 이 배치에서 mirror 출력·resize·구조 변경의 순서, 손실 통지와 재attach 복구,

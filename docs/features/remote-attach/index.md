@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 원격 접속 사용자(점유 후 조작) · AI Agent(원격 mirror 를 정당한 행동으로 attach) · 로컬 사용자(force-detach 권한)
 - **ADR**: [ADR-0020](../../adr/0020-remote-connection-profiles.md) (attach 는 원격 대상 · 로컬 self-attach 는 debug 격리). 보안 위임 근거는 [ADR-0011](../../adr/0011-secrets-and-local-trust.md) (loopback trust boundary). mirror 탭 제목 폴백의 i18n 은 [ADR-0040](../../adr/0040-locale-catalogs-and-display-text.md)
-- **코드**: `src/core/attach.rs`(`OccupancyRegistry`), `src/core/attach_runtime.rs`, `src/app/auto_attach.rs`, `src/adapters/ipc/handler/attach.rs`, `src/app/ipc/app_methods.rs`(`remote.workspaces`/`remote.attach`), `crates/tasty-remote/src/browse.rs`(브라우징 코어), CLI `crates/tasty-cli/src/commands/remote.rs`(clap 선언) · `crates/tasty-cli/src/local/{attach,remote_check,remote_workspaces}.rs`(실행)
+- **코드**: `src/core/attach.rs`(`OccupancyRegistry`), `src/remote/server.rs`, `src/app/auto_attach.rs`, `src/adapters/ipc/handler/attach.rs`, `src/app/ipc/app_methods.rs`(`remote.workspaces`/`remote.attach`), `crates/tasty-remote/src/browse.rs`(브라우징 코어), CLI `crates/tasty-cli/src/commands/remote.rs`(clap 선언) · `crates/tasty-cli/src/local/{attach,remote_check,remote_workspaces}.rs`(실행)
 - **화면**: [아래 절](#화면)
 
 ## 목적
@@ -171,7 +171,7 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
     `pty.attach_surface`도 같은 후처리를 쓰며, 아래 비-holder 구조 변경 차단으로 hard 점유
     workspace의 pane에 입양하는 요청을 거절한다([ADR-0021](../../adr/0021-occupancy-and-attach-admission.md)).
   - hard-occupied workspace 에 새로 생긴 surface 는(차단을 통과한, 즉 holder 본인의 forward 경로로 생긴 surface 는) 위와 동일하게 `OccupancyRegistry::add_workspace_member` + `tap_surface_for_stream` 이 실행돼야 한다 — 실행되지 않으면 PTY/화면버퍼는 정상인데 attach client 로의 스트리밍만 시작되지 않아 그 tab 이 검정 화면으로만 보인다(스트림 tap 이 아예 안 걸린 상태).
-    `EngineMut::tap_new_workspace_member`(`src/core/attach_runtime.rs`)가 `apply_create_tab`(`src/core/impl_tab.rs`)/`apply_split_pane`/`apply_split_surface`(`src/core/impl_split.rs`)/`apply_adopt_terminal`(`src/core/impl_attach.rs`) 공통 후처리로 이를 수행한다 — `hub`/`client_id` 를 호출 체인에 새로 꿰지 않고, `OccupancyRegistry` 에 boot 시 주입된 notifier(`StreamHub`, `notify_detached` 와 동일 패턴)를 재사용한다.
+    journal publication이 새 멤버의 원 generation을 pending tap으로 기록하고 `src/remote/structure_sync.rs`가 Result/Delta 이후 전송 성공 분기에서 구독을 연다. notifier와 pending reply/tap은 `RemoteState`가 소유한다.
 - **실패 회신**: 원격이 op 를 실패 처리(대표적으로 **원격에 등록되지 않은 plugin surface kind** — 원격의 kind 레지스트리가 그 호스트에서 생성 가능한 kind 의 authority)하면 `ok:false`+`reason` 을 회신하고, client 가 실패 toast(`attach.toast.mirror_structural_forward_failed`)를 띄운다.
   단 에이전트가 건 op — IPC 구조 요청(split · tab.create/close/move · pane.close · surface.close · `image.open`)과 에이전트 origin intent(`markdown.navigate`(주소창 이동·외부 요청) · `file_handler.dispatch`(`origin_surface_id` 없이)의 새 탭) — 의 실패는 toast 없이 warn 로그로만 남는다([ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md)).
   사용자가 만진 plugin popup 에서 온 `file_handler.dispatch`·`markdown.navigate`(markdown 파일열기 팝업의 새 탭 열기·제자리 변환)는 사용자 origin 이라 그 실패는 toast 가 된다([ADR-0031](../../adr/0031-file-handler-routing.md)).
@@ -185,7 +185,7 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
   - 메커니즘 상세는 [dev-guide/attach-behavior "focus 보존"](../../dev-guide/attach-behavior.md#mirror-구조-변경-forward).
 - **서버 쪽에서 바뀐 구조도 역반영한다**: 원격 셸이 끝나(`exit`) 원격에서 탭/pane 이 닫히면, forward 가 없었어도 원격이 같은 `StructuralDelta` 를 push 해 mirror 에서도 곧바로 사라진다. 원격에서 로컬 경로로 워크스페이스에 편입된 surface 도 같은 메시지로 mirror 에 나타난다(그 surface 의 화면 스냅샷보다 트리가 먼저 간다). 새 메시지는 없다 — 역반영 메시지를 forward 성공 말고도 보낼 뿐이다([ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md)). 그 셸이 워크스페이스의 마지막 surface 였으면 아래 강제 detach 와 같다.
 - **역반영 대신 강제 detach (workspace 자체가 cascade 로 사라지는 경우)**: workspace 의 **마지막 surface** 를 forward `CloseSurface` 로 닫으면, 원격의 `close_case_workspace`("Case 4: last pane in workspace")가 트리 일부가 아니라 **workspace 자체**를 통째로 purge 한다 — 이 경우 되돌릴 delta 자체가 없다.
-  `execute_forwarded_structural_op`(`src/core/attach_runtime.rs`)이 실행 후 워크스페이스를 재조회해 실패를 확인하면, delta 재구성을 시도하는 대신 `force_detach_workspace` 를 호출해 holder 를 강제 detach(Control `force_detached` + `Detach`)시키고 `OccupancyRegistry` 의 lock 도 함께 정리한다.
+  `src/app/journal/commands/inbound.rs`의 `deliver_result`가 실행 후 원 workspace의 부재를 확인하면 `force_detach_workspace`로 holder를 분리하고 점유를 정리한다.
   client 는 이를 일반 force-detach 와 동일하게 처리해 mirror 를 정리한다 — 재attach 없이도 즉시 반영된다.
   메커니즘 상세는 [dev-guide/attach-behavior "점유 레지스트리"](../../dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry).
 - **닫은 항목 복원(`Ctrl+Shift+T`)도 forward 대상이다 ([ADR-0061](../../adr/0061-external-remote-module-and-attach-sync.md))**: mirror 를 보는 중에 누르면 **원격에서** 닫혔던 탭이 되살아나 mirror 에 나타나고, 그 안의 입력은 원격 PTY 로 간다. 복원은 새 PTY spawn 이고 스냅샷의 스크롤백은 서버 디스크에 있으므로 서버만 실행할 수 있다. **원격에 복원할 것이 없어도 로컬 항목을 대신 되살리지 않는다** — 안내 toast 만 뜨고 로컬 스택은 그대로 남아, 로컬 워크스페이스로 돌아가 같은 키를 누르면 그때 복원된다. 즉 **스택이 둘이고 보고 있는 워크스페이스가 어느 쪽을 쓸지 정한다.**
@@ -410,7 +410,7 @@ bulk 파일 전송과 mirror 터미널 이미지 붙여넣기 업로드에 대�
 - Given mirror markdown 문서 When 새로고침 버튼을 누르거나 `markdown.reload` 를 부른다 Then 원격 원문을 다시 요청하고, 늦게 온 옛 회신은 버린다(`crates/tasty-plugin-markdown/src/tests.rs`). 실측(GUI 두 인스턴스): 버튼 클릭과 `markdown.reload` 모두 원문을 다시 받아 stale 표시를 끈 문서로 다시 그린다.
 - Given mirror markdown 문서(원문을 기다리는 중이든 이미 표시 중이든) When anchor 매핑이 있는 세션의 attach 연결이 끊겨 재연결 대기에 들어감 Then 문서는 로딩 상태로 멈추지도 옛 원문을 최신처럼 남기지도 않고 "원격 연결이 끊어졌다" 는 끊김 화면으로 바뀐다 — 요청 송신 자체가 실패해도 같은 실패 결과가 간다. plugin 이 abandon 을 받으면 원문을 받은 뒤에도 끊김 상태가 되는 것(`crates/tasty-plugin-markdown/src/tests.rs`)과 끊김 상태가 원문보다 앞서 그려지는 것(`crates/tasty-plugin-markdown/src/render.rs` 단위 테스트)을 고정한다. 실측(GUI 두 인스턴스, 서버 종료): 원문을 표시 중이던 문서가 끊김 문구 화면으로 다시 그려졌다. anchor 가 없는 수동 attach 는 mirror 워크스페이스째 정리되고 끊김 toast 가 뜬다(실측).
 - Given 끊김 화면을 보이는 survivor mirror markdown 문서 When 같은 서버에 재연결 Then 사용자가 누르지 않아도 원문을 다시 받아 그린다 — 끊긴 동안 바뀐 원문이면 바뀐 원문이 온다. client 가 재연결 직후 survivor 문서마다 변경 신호를 한 번 보내고, plugin 은 그 신호로 원문을 보여 주던 문서는 stale 표시만, 원문을 못 보여 주던 문서(끊김·실패)는 재요청한다(`crates/tasty-plugin-markdown/src/tests.rs`). 실측(GUI 두 인스턴스, 서버를 SIGSTOP 해 heartbeat 만료로 끊고 SIGCONT 로 재연결): 같은 로컬 surface 가 끊김 화면에서 원문으로 돌아왔고, 재연결 신호 송신을 빼는 변이에서는 끊김 화면에 머물렀다. 서버를 재시작하면 원격 surface id 가 바뀌어 survivor 가 아니라 새 leaf 로 만들어지고 새로 원문을 받는다(실측).
-- Given mirror markdown 문서가 원문을 받아 표시 중 When 원격(GUI 서버)에서 그 문서가 다시 그려짐(파일 수정·테마 변경 등) Then client 는 원문을 자동으로 다시 받지 않고 새로고침 버튼 색만 바뀌며, 버튼을 누르면 그때 최신 원문이 온다 — 서버가 신호를 워크스페이스를 점유한 client 전부에 한 번씩 보내는 것과 점유가 없으면 아무것도 안 보내는 것(`src/core/attach_runtime.rs` 단위 테스트), client 가 자기 mirror 문서의 신호만 plugin 에 넘기는 것(`src/app/attach_client.rs` 단위 테스트), plugin 이 신호로는 stale 표시만 켜는 것(`crates/tasty-plugin-markdown/src/tests.rs`)을 각각 고정한다.
+- Given mirror markdown 문서가 원문을 받아 표시 중 When 원격(GUI 서버)에서 그 문서가 다시 그려짐(파일 수정·테마 변경 등) Then client 는 원문을 자동으로 다시 받지 않고 새로고침 버튼 색만 바뀌며, 버튼을 누르면 그때 최신 원문이 온다 — 서버가 신호를 워크스페이스를 점유한 client 전부에 한 번씩 보내는 것과 점유가 없으면 아무것도 안 보내는 것(`src/remote/server.rs` 단위 테스트), client 가 자기 mirror 문서의 신호만 plugin 에 넘기는 것(`src/app/attach_client.rs` 단위 테스트), plugin 이 신호로는 stale 표시만 켜는 것(`crates/tasty-plugin-markdown/src/tests.rs`)을 각각 고정한다.
   `webview.set_url` 수신이 그 신호 송신으로 이어지는 것은 `src/adapters/ipc/handler/webview.rs` 단위 테스트가 고정한다(신호 호출을 빼는 변이에서 실패).
   실측(GUI 두 인스턴스): 서버에서 원문 파일을 고치자 client 문서는 원문을 다시 받지 않고, 새로고침 버튼의 stale 표시만 바뀐 HTML 로 다시 그려졌다(HTML 크기 차이가 툴팁 문구 차이와 같다).
   서버가 헤드리스면 이 신호는 없다(원격 문서가 다시 그려지는 경로가 host 에 닿지 않는다).
@@ -425,7 +425,7 @@ bulk 파일 전송과 mirror 터미널 이미지 붙여넣기 업로드에 대�
 ## 구현
 
 - 점유 레지스트리: `src/core/attach.rs` `OccupancyRegistry`(hard: `surface_locks` / `workspace_locks` / `surface_to_workspace`, acquire/release/force_detach/release_all_for_client · soft: 별도 엔트리 + acquire_soft/release_soft, ADR-0021). 휘발성.
-- 런타임/스냅샷: `src/core/attach_runtime.rs`(서버측 수신, transport 무관 loopback), `src/core/attach_readonly.rs`(서버측 readonly mirror), `src/app/attach_poll.rs`(3초 tick).
+- 런타임/스냅샷: `src/remote/server.rs`(서버측 수신, transport 무관 loopback), `src/remote/readonly.rs`(서버측 readonly mirror), `src/app/attach_poll.rs`(3초 tick).
 - 자동 매핑: `src/app/auto_attach.rs`(`Workspace.attach_mapping` 활성화 시 SSH 터널 + GUI mirror).
 - IPC: `src/adapters/ipc/handler/attach.rs`(`attach.*`). 원격 브라우징/attach IPC(`remote.workspaces`/`remote.attach`)는 `src/app/ipc/app_methods.rs`(워커 스레드+지연 회신). focus 중립 mirror 생성은 `src/app/auto_attach.rs`(수동 트리거 `anchor=None` 재사용) → `src/app/attach_client.rs::start_gui_attach`(`workspaces.push` 만, `active_workspace` 불변; 새 mirror ws id 반환).
 - GUI picker 팝업(사용자 경로): `src/adapters/ui/popup/remote_attach.rs`(2-pane 상태머신 + browse 워커 폴링), `defs.rs`(headless PopupDef), 진입 컨텍스트 메뉴 3곳 `src/view/main/redraw.rs`(빈 배경 / 새 워크스페이스 버튼 / 카테고리 헤더).

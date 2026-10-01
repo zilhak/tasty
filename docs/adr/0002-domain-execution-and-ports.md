@@ -62,6 +62,6 @@ IPC와 forward의 실패 문구 일치, 기존 문구 호환과 두 빌드의 �
 ## References
 
 - [AppState 소유권과 port 사용](../dev-guide/app-state-ownership.md)
-- [도메인 의존 경계](../architecture/index.md#도메인-경계--core--ports)
+- [도메인 의존 경계](../architecture/index.md#도메인과-실행-경계)
 - [닫기 순서](../architecture/close-sequence.md)
-- 구현: `src/app/structural_exec.rs`, `src/app/structural_cascade.rs`, `src/adapters/ipc/window_port.rs`.
+- 당시 구현은 structural_exec와 structural_cascade였다. 현재 명령 입장과 공개 경계는 `src/app/journal/commands.rs`와 `src/app/journal/publication.rs`를 따른다.

@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent (`hook.*` / `global_hook.*`)
 - **ADR**: 없음
-- **코드**: `tasty-hooks` 크레이트(`HookManager`/`HookEvent`/`HookBinding`), `hook.*`·`global_hook.*` 핸들러, 발화 판정·바인딩 실행·`HookFired` 생성 `HookRuntimeState::fire`(`src/hook_runtime/mod.rs`), 바인딩 실행 연결 `src/hook_runtime/trigger.rs`, 전역 훅 감시·셸 실행 `src/hook_runtime/global.rs`. IdleTimeout 판정: `HookRuntimeState::fire_idle_timeouts` + `src/core/state/idle_hooks.rs`(터미널 출력 시각 제공), 전달: `src/app/idle_hooks.rs`(GUI 창과 parked engine)/`src/boot.rs`(headless). OutputMatch 라인 버퍼 공유: `src/core/output_observer.rs::ObserverRouter::dispatch_text`
+- **코드**: `tasty-hooks` 크레이트(`HookManager`/`HookEvent`/`HookBinding`), `hook.*`·`global_hook.*` 핸들러, 발화 판정·바인딩 실행·`HookFired` 생성 `HookRuntimeState::fire`(`src/hook_runtime/mod.rs`), 바인딩 실행 연결 `src/hook_runtime/trigger.rs`, 전역 훅 감시·셸 실행 `src/hook_runtime/global.rs`. IdleTimeout 판정: `HookRuntimeState::fire_idle_timeouts` + `src/core/state/idle_hooks.rs`(터미널 출력 시각 제공), 전달: `src/app/idle_hooks.rs`(GUI 창과 parked engine)/`src/boot.rs`(headless). OutputMatch 라인 버퍼 공유: `src/runtime/output_observer.rs::ObserverRouter::dispatch_text`
 - **화면**: 없음
 
 ## 목적

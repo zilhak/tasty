@@ -460,7 +460,7 @@ Strict는 `next_due`, Lax는 `next_due + slack`으로 계산하며 미래 시각
 | `src/webhook/abuse.rs` | 시각 비교(순수 함수). 실행 스케줄 없음 |
 | `src/adapters/ui/` toast/banner TTL | 렌더 프레임 종속 애니메이션(프레임축) |
 | `crates/tasty-terminal` `ALIVE_CHECK_INTERVAL` | syscall 레이트 리밋 |
-| `src/core/agent/runner_thread.rs` `TICK_INTERVAL` | 워커 스레드 소유. 메인 루프와 실행·소유권 경계가 다르다 |
+| `crates/tasty-task-runtime/src/runner_thread.rs` `TICK_INTERVAL` | 워커 스레드 소유. 메인 루프와 실행·소유권 경계가 다르다 |
 | `crates/tasty-plugin-*/` 자체 폴링 | 별도 **프로세스** — 본체 허브가 닿을 수 없다 |
 
 ## 참고

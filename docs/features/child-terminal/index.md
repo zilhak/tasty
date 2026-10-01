@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: AI Agent
 - **ADR**: [ADR-0021](../../adr/0021-occupancy-and-attach-admission.md) (soft 점유 소비자)
-- **코드**: `src/core/child_terminal.rs` (registry) · `src/adapters/ipc/handler/terminal.rs` (IPC) · `crates/tasty-cli/src/commands/terminal.rs` (CLI)
+- **코드**: `src/runtime/child_terminal.rs` (registry) · `src/adapters/ipc/handler/terminal.rs` (IPC) · `crates/tasty-cli/src/commands/terminal.rs` (CLI)
 - **화면**: 없음 — headless 전용 (자식은 일반 terminal surface 로 렌더; soft 점유 테두리는 [surface-highlight](../surface-highlight/index.md)/점유 계약)
 
 ## 목적

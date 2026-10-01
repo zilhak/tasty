@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (`Alt+'` 팝업) · AI Agent (kind 별 IPC — 범용 convert 없음)
 - **ADR**: [ADR-0031](../../adr/0031-file-handler-routing.md) (파일 입력이 필요한 kind 의 convert 라우팅 capability)
-- **코드**: `ConvertSurface` intent (`src/intent/surface.rs`), 팝업 `src/adapters/ui/popup/convert.rs`
+- **코드**: `ConvertSurface` intent (`src/app/creation_intent.rs`), 팝업 `src/adapters/ui/popup/convert.rs`
 - **화면**: convert 팝업 (`PopupScope::Surface`)
 
 ## 목적

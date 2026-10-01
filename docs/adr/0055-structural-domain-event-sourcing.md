@@ -7,7 +7,7 @@
 
 ## Context
 
-현재 구조 변경은 `src/core/intent.rs`와 `src/app/dispatch/intents.rs`에서 상태와 PTY를 직접 바꾸고,
+당시 구조 변경은 core의 intent 모듈과 App의 intent dispatcher에서 상태와 PTY를 직접 바꾸고,
 결과와 후속 처리 요청을 한 `CoreEvent` 값에 섞어 반환한다. GUI는 Intent 큐를 거치지만 IPC 동기 경로·plugin·원격 forward·시스템 복구는
 각자 다른 지점에서 상태를 바꾼다. 재시작 복원의 원본은 `src/core/layout_persistence`의 레이아웃 snapshot이며,
 `crates/tasty-host-plugin/src/event_bus.rs`의 EventBus와 이벤트 피드는 최근 통지를 보관하는 메모리 링이다.
@@ -150,4 +150,4 @@ version·소유 검사가 필요하다. 영속 commit이 추가되어 구조 변
 - [ADR-0033](0033-event-feed-delivery.md) — 통지용 이벤트 피드는 이 저장소와 별개다
 - [ADR-0010](0010-storage-failure-reporting.md) — 기존 state.db·memory.db의 내구성 정책은 바뀌지 않는다
 - 현재 흐름: [동작 처리 흐름](../design/flows/action-dispatch.md), [레이아웃 저장](../features/layout-persistence/index.md)
-- 현재 구현: `src/intent.rs`, `src/core/intent.rs`, `src/app/dispatch/intents.rs`, `src/core/layout_persistence`, `crates/tasty-host-plugin/src/event_bus.rs`.
+- 현재 구현: `src/intent.rs`, `src/app/journal/commands.rs`, `src/app/dispatch/intents.rs`, `src/core/layout_persistence`, `crates/tasty-host-plugin/src/event_bus.rs`.

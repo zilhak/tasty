@@ -202,7 +202,7 @@ fn default_poll_interval_ms() -> u64 {
 #[serde(untagged)]
 pub enum PollSpecRef {
     /// 등록된 완료 판정 전략 이름(레지스트리 id, `<owner>/<short>`)을 참조.
-    /// 해석은 host(`src/core/agent/runner_host.rs`)가 완료 판정 전략 레지스트리로
+    /// 해석은 host(`crates/tasty-task-runtime/src/runner_host.rs`)가 완료 판정 전략 레지스트리로
     /// 수행한다 — 이 크레이트는 레지스트리를 모른다(코어가 특정 에이전트를 모르는
     /// 것과 같은 층위 분리, `docs/dev-guide/agent-runner.md`).
     Named { strategy: String },
