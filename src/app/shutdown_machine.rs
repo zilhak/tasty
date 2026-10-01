@@ -189,6 +189,9 @@ impl App {
             self.poll_journal_application();
             if self.journal.pauses_observation() && !self.journal.is_halted() {return StepOutcome::Waiting;}
         }
+        for session in self.engines.all_sessions_mut() {
+            crate::app::attach_activation::cancel_engine(&mut self.pending_server_attaches,session.id,&mut session.borrow_mut(),&self.stream_hub);
+        }
         let t_flush = Instant::now();
         if self
             .shutdown

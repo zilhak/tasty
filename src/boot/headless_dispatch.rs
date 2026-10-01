@@ -69,6 +69,7 @@ fn dispatch_command(
     if app.journal.admit_ipc(&cmd, &caller) {
         return std::ops::ControlFlow::Continue(());
     }
+    if let Some(id)=state.engine_id && app.journal.defer_live_ipc(&cmd,&checked,id,&engine.as_ref()) {return std::ops::ControlFlow::Continue(());}
     match intercept_app_layer(app, state, engine, &caller, &cmd) {
         Some(Intercepted::Answered) => return std::ops::ControlFlow::Continue(()),
         #[cfg(debug_assertions)]

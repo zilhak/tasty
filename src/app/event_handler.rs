@@ -132,7 +132,9 @@ impl ApplicationHandler<AppEvent> for App {
                 );
             }
             // 타이머 실행은 이어지는 about_to_wait가 담당한다.
-            AppEvent::TimerTick => {}
+            AppEvent::TimerTick => {
+                if !self.journal.is_halted() && !self.journal.pauses_observation() {for session in self.engines.all_sessions_mut() {session.borrow_mut().poll_input_submissions();}}
+            }
             AppEvent::AttachClientData => {
                 self.apply_attach_client_output();
             }
@@ -1399,6 +1401,11 @@ impl App {
 
     fn apply_input_frames_batch(&mut self, frames: impl IntoIterator<Item = (u32, Vec<u8>)>) {
         for (client_id, bytes) in frames {
+            if self.pending_server_attaches.iter().any(|pending|pending.client()==client_id) {
+                crate::remote::server::reject_attach(&self.stream_hub,client_id,"not_ready",None);
+                for pending in &mut self.pending_server_attaches {if pending.client()==client_id {pending.cancel();}}
+                self.journal.wake_application();continue;
+            }
             let routed = self.feed_stream_input(client_id, &bytes);
             #[cfg(debug_assertions)]
             if !routed {
@@ -1580,44 +1587,15 @@ impl App {
         }
     }
 
-    fn attach_on_owning_engine(
-        &mut self,
-        surface_id: u32,
-        client_id: u32,
-        hub: &tasty_ipc::stream_hub::StreamHub,
-    ) -> bool {
-        for mut engine in self.engines_mut().windowed_and_parked() {
-            if engine.runtime.terminals.contains(surface_id)
-                || engine.is_surface_deferred(surface_id)
-            {
-                engine.attach_surface_for_stream(surface_id, client_id, hub);
-                return true;
-            }
-        }
-        false
+    fn attach_on_owning_engine(&mut self,surface:u32,client:u32,hub:&tasty_ipc::stream_hub::StreamHub)->bool {
+        let Some(session)=self.engines.all_sessions_mut().find(|session|session.core_state.has_surface(surface)) else{return false;};
+        let id=session.id;
+        crate::app::attach_activation::begin(&mut self.pending_server_attaches,&self.journal,id,&mut session.borrow_mut(),crate::app::attach_activation::Target::Surface(surface),client,hub);true
     }
-
-    fn attach_workspace_on_owning_engine(
-        &mut self,
-        workspace_id: u32,
-        client_id: u32,
-        hub: &tasty_ipc::stream_hub::StreamHub,
-    ) -> bool {
-        for (state, mut engine) in self.engines_mut().window_sessions() {
-            if engine.find_workspace_index_for_id(workspace_id).is_some() {
-                engine.refresh_attach_presentation(&state.navigation);
-                engine.attach_workspace_for_stream(workspace_id, client_id, hub);
-                return true;
-            }
-        }
-        for (state, mut engine) in self.engines_mut().parked_sessions() {
-            if engine.find_workspace_index_for_id(workspace_id).is_some() {
-                engine.refresh_attach_presentation(&state.navigation);
-                engine.attach_workspace_for_stream(workspace_id, client_id, hub);
-                return true;
-            }
-        }
-        false
+    fn attach_workspace_on_owning_engine(&mut self,workspace:u32,client:u32,hub:&tasty_ipc::stream_hub::StreamHub)->bool {
+        let Some(session)=self.engines.all_sessions_mut().find(|session|session.core_state.has_workspace(workspace)) else{return false;};
+        let id=session.id;
+        crate::app::attach_activation::begin(&mut self.pending_server_attaches,&self.journal,id,&mut session.borrow_mut(),crate::app::attach_activation::Target::Workspace(workspace),client,hub);true
     }
 
     /// workspace 점유는 surface ID가 붙은 입력, 단일 surface 점유는 원시 입력으로 전달한다.
@@ -2121,6 +2099,7 @@ impl App {
             )
         };
         let deadline = min_deadline(deadline, self.journal.cleanup_poll_deadline());
+        let deadline=if self.journal.pauses_observation(){deadline}else{min_deadline(deadline,self.engines.all_sessions().filter_map(|session|session.runtime.input_submit_deadline()).min())};
         self.timer_waker.set_deadline(deadline);
         let deadline = if self.pending_window.is_some() {
             let opening = std::time::Instant::now() + crate::app::boot_machine::BOOT_FRAME_INTERVAL;

@@ -11,6 +11,7 @@ pub type AttachClientId = u32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AttachLock {
+    pub ready:bool,
     pub holder: AttachClientId,
     pub granted_seq: u64,
 }
@@ -172,7 +173,7 @@ impl OccupancyRegistry {
         }
         self.next_seq += 1;
         let lock = AttachLock {
-            holder: client_id,
+            ready:true,            holder: client_id,
             granted_seq: self.next_seq,
         };
         self.surface_locks.insert(surface_id, lock);
@@ -318,7 +319,7 @@ impl OccupancyRegistry {
         }
         self.next_seq += 1;
         let lock = AttachLock {
-            holder: client_id,
+            ready:true,            holder: client_id,
             granted_seq: self.next_seq,
         };
         self.workspace_locks.insert(workspace_id, lock);
@@ -355,6 +356,15 @@ impl OccupancyRegistry {
         self.surface_locks.contains_key(&surface_id)
             || self.surface_to_workspace.contains_key(&surface_id)
     }
+
+    /// Publication readiness belongs to the original grant, independently from connection IDs.
+    pub(crate) fn set_attachment_ready(&mut self,client:AttachClientId,grant:u64,ready:bool) {
+        for lock in self.surface_locks.values_mut().chain(self.workspace_locks.values_mut()) {
+            if lock.holder==client && lock.granted_seq==grant {lock.ready=ready;}
+        }
+    }
+    pub(crate) fn workspace_attachment_ready(&self,workspace:WorkspaceId)->bool {self.workspace_locks.get(&workspace).is_some_and(|lock|lock.ready)}
+    pub(crate) fn surface_attachment_ready(&self,surface:SurfaceId)->bool {self.surface_locks.get(&surface).is_some_and(|lock|lock.ready)}
 
     pub fn workspace_holder(&self, workspace_id: WorkspaceId) -> Option<AttachClientId> {
         self.workspace_locks.get(&workspace_id).map(|l| l.holder)

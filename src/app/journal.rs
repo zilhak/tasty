@@ -6,6 +6,7 @@ use crate::runtime::journal_product::{
 use tasty_core::projection;
 pub(crate) mod commands;
 mod creation;
+pub(crate) use creation::{ActivationOutcome,ActivationReceipt};
 mod resource_cleanup;
 #[cfg(feature="gui")]
 pub(crate) mod forward;
@@ -434,10 +435,13 @@ impl JournalApplication {
                             }
                         }
                     }
-                    self.creations.retain(|_,creation|!creation.publication_released());
                     self.worker
                         .acknowledge(batch.batch_id, Ok(()))
                         .map_err(|error| format!("bootstrap publication ACK: {error:?}"))?;
+                    for ((id,_),creation) in &self.creations {
+                        if let Some(session)=sessions.iter().find(|session|session.id==*id) {creation.acknowledge_publication(session);}
+                    }
+                    self.creations.retain(|_,creation|!creation.publication_released());
                 }
                 Completion::Finished { ticket, result } => {
                     #[cfg(feature="gui")]
@@ -519,7 +523,7 @@ impl JournalApplication {
                             .expect("creation exists")
                             .answered(&self.worker, session, result?)?
                         {
-                            self.creations.remove(&key);
+                            if let Some(mut creation)=self.creations.remove(&key) && let Some(request)=creation.failed_restore(session) {self.restoration_ready.entry(id).or_default().push(request);}
                             self.refresh_in_progress_commands();
                         }
                         continue;
@@ -703,6 +707,19 @@ impl JournalApplication {
     }
 
     /// Selection is supplied by the application/View. Loading a payload alone grants no activation.
+    pub(crate) fn wake_application(&self) {(self.wake)();}
+    pub(crate) fn request_restore_receipt(&mut self,session:&EngineSession,surface:u32,activation:Option<u64>)->Result<Option<ActivationReceipt>,String> {
+        if self.is_halted() {return Err("resource publication is halted".into());}
+        if let Some(receipt)=self.creations.iter().filter(|((engine,_),_)|*engine==session.id).find_map(|(_,creation)|creation.join_restore(surface,activation)) {return Ok(Some(receipt));}
+        if self.has_creation(session.id) {return Ok(None);}
+        if session.core_state.find_surface_by_id(surface).and_then(|value|value.activation_generation)!=activation {return Err("activation target changed".into());}
+        if self.activate_restored_surface(session,surface)? {
+            return Ok(self.creations.iter().filter(|((engine,_),_)|*engine==session.id).find_map(|(_,creation)|creation.join_restore(surface,activation)));
+        }
+        let reading=self.restoration_queue.iter().any(|(engine,request)|*engine==session.id && request.surface_id==surface)||self.restoration_reads.values().any(|(engine,request)|*engine==session.id && request.surface_id==surface);
+        if reading {Ok(None)}else{Err("selected resource has no pending restore input".into())}
+    }
+
     pub(crate) fn activate_restored_surface(
         &mut self,
         session: &EngineSession,

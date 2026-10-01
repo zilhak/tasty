@@ -49,6 +49,7 @@ pub(crate) mod persistence;
 #[cfg(feature = "gui")]
 pub(crate) mod plugin_glue;
 pub(crate) mod process_exit;
+pub(crate) mod attach_activation;
 pub(crate) mod publication_input;
 #[cfg(feature = "gui")]
 pub(crate) mod request_owner;
@@ -110,6 +111,7 @@ impl std::error::Error for NoGpuAdapter {}
 
 pub(crate) struct App {
     pub(crate) journal: journal::JournalApplication,
+    pub(crate) pending_server_attaches:Vec<attach_activation::PendingAttach>,
     pub(crate) publication_inputs: publication_input::PublicationInputs,
     pub(crate) services: AppServices,
     pub(crate) state:state::AppState,
@@ -233,7 +235,7 @@ impl App {
             })
         })?;
         Ok(Self {
-            journal,
+            journal,pending_server_attaches:Vec::new(),
             publication_inputs: Default::default(),
             services: crate::boot::wiring::build_production_core(memory)?,
             state:state::AppState {#[cfg(debug_assertions)] input_simulation_enabled,..Default::default()},
@@ -292,7 +294,7 @@ impl App {
         let mut timers = tasty_timer::TimerHub::new();
         timers::register_steady_state(&mut timers, std::time::Instant::now());
         Ok(Self {
-            journal: journal::JournalApplication::new(journal_wake)?,
+            journal: journal::JournalApplication::new(journal_wake)?,pending_server_attaches:Vec::new(),
             publication_inputs: Default::default(),
             services: crate::boot::wiring::build_production_core_headless(memory)?,
             state:state::AppState::default(),

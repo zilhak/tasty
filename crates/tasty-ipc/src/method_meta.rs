@@ -250,7 +250,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.send_combo", plugin(Mutate, &[TerminalWrite])),
         ("surface.send_to", plugin(Mutate, &[TerminalWrite])),
         ("surface.send_wait_idle", plugin(Mutate, &[TerminalWrite])),
-        ("surface.wake", plugin(Mutate, &[TerminalSpawn])),
+        ("surface.wake", plugin(Mutate, &[TerminalSpawn]).kept_in_structure_journal()),
         ("surface.set_mark", plugin(Mutate, &[TerminalRead])),
         // 완료 신호는 attention 상태를 바꾸므로 알림 권한을 요구한다.
         ("surface.completion", plugin(Mutate, &[Notification])),

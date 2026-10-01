@@ -444,6 +444,7 @@ fn dispatch_plugin_ipc_calls_headless(
         {
             continue;
         }
+        if let Some(id)=state.engine_id && app.journal.defer_plugin_input(&checked,id,&engine.as_ref(),&call,app.plugin_manager.as_ref()) {continue;}
         let response =
             crate::ipc::handler::handle_checked_request(&mut app.services, state, engine, &checked);
         // 결과를 보내기 전에 요청의 Intent와 후속 이벤트를 적용한다.

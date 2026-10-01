@@ -1266,7 +1266,7 @@ fn merge_survivor_mapping(
     let mut explorer_locals: HashMap<u32, std::path::PathBuf> = HashMap::new();
     let mut markdown_locals: MirrorMarkdownLeaves = HashMap::new();
     let mut newly_created_remote_ids: Vec<u32> = Vec::new();
-    let markdown_available = markdown_mirror_available(engine);
+    let markdown_available = markdown_mirror_available(&engine.as_ref());
     for s in surfaces {
         let remote_id = s.get("remote_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         let role = s.get("role").and_then(|v| v.as_str());
@@ -1354,7 +1354,7 @@ fn merge_survivor_mapping(
         } else if new_kind == MARKDOWN_MIRROR_KIND {
             if old_kind == Some(MARKDOWN_MIRROR_KIND) {
                 markdown_locals.insert(local_id, MARKDOWN_MIRROR_KIND.to_string());
-            } else if let Some(surface) = create_mirror_markdown_surface(s, local_id, engine.core) {
+            } else if let Some(surface) = create_mirror_markdown_surface(s, local_id, &engine.as_ref()) {
                 markdown_locals.insert(local_id, surface.kind().to_string());
                 engine.runtime.surfaces.insert(local_id, surface);
             }
@@ -1429,7 +1429,7 @@ impl SurvivorMapping {
 }
 
 /// kind가 허용된 markdown 플러그인에 등록됐는지 확인한다.
-fn markdown_mirror_available(engine: &crate::core::CoreState) -> bool {
+fn markdown_mirror_available(engine: &crate::runtime::engine_access::EngineRef<'_>) -> bool {
     engine.runtime.surface_registry
         .get_live(MARKDOWN_MIRROR_KIND)
         .is_some_and(|def| {
@@ -1444,10 +1444,12 @@ fn markdown_mirror_available(engine: &crate::core::CoreState) -> bool {
 fn create_mirror_markdown_surface(
     descriptor: &Value,
     local_id: u32,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
 ) -> Option<Box<dyn Surface>> {
     let params = mirror_markdown_params(descriptor);
-    match engine.create_surface_via_registry(MARKDOWN_MIRROR_KIND, local_id, None, &params) {
+    let definition=engine.runtime.surface_registry.get_live(MARKDOWN_MIRROR_KIND)?;
+    if !matches!(&definition.source,crate::runtime::surface_registry::KindSource::Plugin(plugin) if plugin==MARKDOWN_PLUGIN_ID) {return None;}
+    match (definition.create)(local_id,None,&params).and_then(|prepared|prepared.publish()) {
         Ok(surface) => Some(surface),
         Err(e) => {
             tracing::warn!(
@@ -4995,5 +4997,29 @@ impl App {
         let focus=user.then(||pending_op_focus_for(op,candidates,&session.state.remote_to_local)).flatten();
         let payload=structural_op_payload(op_id,wire,user);
         Ok(crate::app::journal::forward::Draft {engine,stream,workspace_index:index,response:crate::ipc::protocol::JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"forwarded":true,"workspace_index":index})),target,local_anchor,remote_anchor,op_id,payload,focus,silent_failure:!user})
+    }
+}
+
+impl crate::runtime::engine_access::EngineMut<'_> {
+    /// Remote placeholders materialize on the App side and never enter the local journal.
+    pub(crate) fn reify_displayed_mirror_resources(&mut self,selected:&[u32]) {
+        for id in selected {
+            if !self.core.is_mirror_surface(*id) {continue;}
+            let deferred=self.runtime.surfaces.get(id).and_then(|surface|surface.as_any().downcast_ref::<EmptySurface>()).and_then(|empty|match &empty.deferred {Some(crate::model::Deferred::Plugin(value))=>Some(value.clone()),_=>None});
+            let Some(deferred)=deferred else {continue;};
+            if deferred.kind!=MARKDOWN_MIRROR_KIND || !markdown_mirror_available(&self.as_ref()) {continue;}
+            let Some(definition)=self.runtime.surface_registry.get_live(&deferred.kind) else {continue;};
+            let surface=match (definition.restore)(*id,&deferred.snapshot).and_then(|prepared|prepared.publish()) {
+                Ok(surface)=>surface,Err(error)=>{tracing::warn!(surface=*id,"mirror kind restoration failed: {error}");continue;},
+            };
+            let kind=surface.kind().to_owned();
+            drop(self.runtime.surfaces.insert(*id,surface));
+            if let Some((index,pane))=self.core.find_workspace_index_for_surface(*id)
+                && let Some(workspace)=self.core.workspace_at(index).map(|workspace|workspace.id)
+                && let Some(workspace)=self.core.mirror_workspace_mut(workspace)
+                && let Some(pane)=workspace.pane_layout_mut().find_pane_mut(pane)
+                && let Some(tab)=pane.tabs.iter_mut().find(|tab|tab.contains_surface(*id))
+                && let Some(descriptor)=tab.surface_mut(*id) {descriptor.kind=kind;}
+        }
     }
 }

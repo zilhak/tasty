@@ -382,6 +382,9 @@ impl App {
         wid: winit::window::WindowId,
         main: Box<crate::view::main::MainView>,
     ) {
+        if let Some(id)=self.engines.of_window(wid) && let Some(session)=self.engines.session_mut(id) {
+            crate::app::attach_activation::cancel_engine(&mut self.pending_server_attaches,id,&mut session.borrow_mut(),&self.stream_hub);
+        }
         if !self.journal.is_halted() {
             let retiring = self.engines.of_window(wid).and_then(|id| {
                 let session = self.engines.session_mut(id)?;

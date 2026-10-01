@@ -141,16 +141,6 @@ fn build_broadcast_payload(text: &str) -> (String, bool) {
     (build_tell_payload(body), submit)
 }
 
-/// 본문 ack와 제출 CR의 IPC 대기 상한. 기다리는 동안 메인 루프를 막지 않도록 별도 스레드를 쓴다.
-/// ack가 오지 않아도 상한 뒤에는 CR 전송을 시도한다. 이 상한이 TUI의 입력 처리를 보장하지는 않는다.
-const TELL_SUBMIT_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-
-/// ack 뒤 CR 전송 전 대기 시간. ack는 PTY 쓰기 완료이지 자식 TUI의 읽기 완료가 아니다.
-/// 초기 측정에서 5/10ms는 간헐 실패했고 20ms에서 통과해 선택했다.
-/// 입력을 한 번에 읽는 문제를 줄이는 지연이며 모든 실행 환경의 제출 성공을 보장하지는 않는다.
-/// 메인 스레드가 아닌 ack 대기 스레드에서만 적용한다.
-const TELL_SUBMIT_EXTRA_SETTLE_DELAY: std::time::Duration = std::time::Duration::from_millis(20);
-
 /// 원격 점유로 막힌 입력과 없는 surface를 구분한다.
 enum SendTextError {
     HardOccupied,
@@ -166,15 +156,14 @@ fn send_text_to_surface_with_ack(
     if engine.live.occupancy.is_hard_occupied(surface_id) {
         return Err(SendTextError::HardOccupied);
     }
-    engine.ensure_surface_initialized(surface_id);
     engine
         .find_terminal_by_id_mut(surface_id)
         .map(|terminal| terminal.send_key_with_ack(text))
         .ok_or(SendTextError::NotFound)
 }
 
-/// 본문을 보내고 별도 스레드에서 ack 대기와 제출 CR 주입을 수행한다.
-/// CR도 surface.send를 거쳐 점유 검사를 받는다. ack 대기 만료 뒤에도 제출을 시도한다.
+/// Send the body, then let the engine poll its original physical owner before submitting CR.
+/// The existing five-second ack bound and twenty-millisecond settling delay are preserved.
 fn send_body_then_submit(
     engine: &mut EngineMut<'_>,
     core: &AppServices,
@@ -182,6 +171,8 @@ fn send_body_then_submit(
     surface_id: u32,
     body: String,
 ) -> Result<(), JsonRpcResponse> {
+    if engine.runtime.pending_submits.len()>=crate::runtime::pending_submit::MAX_PENDING {return Err(JsonRpcResponse::error(id.clone(),tasty_ipc::protocol::ERR_COMMAND_QUEUE_FULL,"terminal submission queue is full"));}
+    let generation=engine.runtime.terminals.generation(surface_id).ok_or_else(||JsonRpcResponse::invalid_params(id.clone(),format!("Surface {surface_id} not found")))?;
     let ack = send_text_to_surface_with_ack(engine, surface_id, &body).map_err(|e| {
         let msg = match e {
             SendTextError::HardOccupied => format!(
@@ -193,26 +184,15 @@ fn send_body_then_submit(
         JsonRpcResponse::invalid_params(id.clone(), msg)
     })?;
 
-    let injector = core.host_ipc_injector_arc().get().cloned();
-    std::thread::spawn(move || {
-        ack.wait(TELL_SUBMIT_ACK_TIMEOUT);
-        std::thread::sleep(TELL_SUBMIT_EXTRA_SETTLE_DELAY);
-        let Some(injector) = injector else {
-            tracing::warn!(
-                "terminal tell/spawn: host_ipc_injector unavailable — \\r submit for surface {surface_id} dropped"
-            );
-            return;
-        };
-        let params = json!({ "surface_id": surface_id, "text": "\r" });
-        // 늦은 CR 재시도는 사용자의 다음 입력을 제출할 수 있어 실패를 기록하고 끝낸다.
-        // 큐에서 기한이 지나면 실행하지 않지만 이미 시작된 명령은 중단할 수 없다.
-        if let Err(e) = injector.dispatch("surface.send", params, TELL_SUBMIT_ACK_TIMEOUT) {
-            tracing::warn!(
-                "terminal tell/spawn: submit \\r re-injection failed (surface={surface_id}): {e}"
-            );
-        }
-    });
+    engine.runtime.pending_submits.push(crate::runtime::pending_submit::PendingSubmit::new(surface_id,generation,ack));
+    (engine.runtime.waker)();
     Ok(())
+}
+
+pub(crate) fn decode_tell<'a>(params:&'a Value,id:&Value)->Result<(u32,&'a str),JsonRpcResponse> {
+    let surface=require_u32(params,"surface",id)?;
+    let text=params.get("text").and_then(|value|value.as_str()).ok_or_else(||JsonRpcResponse::invalid_params(id.clone(),"missing 'text'"))?;
+    Ok((surface,text))
 }
 
 pub(crate) fn handle_tell(
@@ -221,14 +201,7 @@ pub(crate) fn handle_tell(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let surface_id = match require_u32(params, "surface", &id) {
-        Ok(s) => s,
-        Err(e) => return e,
-    };
-    let text = match require_str(params, "text", &id) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
+    let (surface_id,text)=match decode_tell(params,&id) {Ok(value)=>value,Err(error)=>return error};
     let payload = build_tell_payload(&text);
     if let Err(e) = send_body_then_submit(engine, core, &id, surface_id, payload) {
         return e;

@@ -170,7 +170,7 @@ pub(crate) fn prepare(
             None,
         )
     } else if deferred {
-        (Box::new(crate::runtime::surface_restorer::JournalPlaceholder {id:surface_id,kind:input.kind.clone(),data:claimed.plan.surface.data,creation_seed:None,activation:Some(tasty_core::Activation {generation:claimed.lease.resource_generation,phase:tasty_core::ActivationPhase::Deferred})}) as Box<dyn crate::model::Surface>,None,None,None)
+        (Box::new(crate::runtime::surface_restorer::JournalPlaceholder {attempts:0,failure:None,id:surface_id,kind:input.kind.clone(),data:claimed.plan.surface.data,creation_seed:None,activation:Some(tasty_core::Activation {generation:claimed.lease.resource_generation,phase:tasty_core::ActivationPhase::Deferred})}) as Box<dyn crate::model::Surface>,None,None,None)
     } else {
         if let Some(plugin_id) = engine.runtime.surface_registry.withdrawn_by(&input.kind) {
             return Err(crate::runtime::surface_registry::SurfaceKindWithdrawn {

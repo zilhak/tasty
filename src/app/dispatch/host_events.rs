@@ -39,7 +39,6 @@ impl App {
             let mut observed=state.detect_focus_change(engine.core);
             observed.extend(state.detect_workspace_activation(engine.core));
             observed.extend(state.detect_tab_focus_change(engine.core));
-            observed.extend(state.detect_tab_lifecycle(engine.core));
             engine.runtime.pending_host_events.extend(observed);
         }
         // Includes parked, pending and retiring owners; delivery never depends on a live View.

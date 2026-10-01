@@ -123,25 +123,31 @@ fn dispatch_send(
     }
 }
 
+/// Shared wire decoding before either lazy activation or live input execution.
+pub(crate) fn decode_input_header<'a>(method:&str,params:&'a serde_json::Value,id:&serde_json::Value)->Result<(u32,&'a str),JsonRpcResponse> {
+    if method=="surface.send_to" {
+        let text=params.get("text").and_then(|value|value.as_str()).ok_or_else(||JsonRpcResponse::invalid_params(id.clone(),"Missing 'text' parameter"))?;
+        return Ok((require_u32(params,"surface_id",id)?,text));
+    }
+    let surface=require_surface_id(params,id)?;
+    let field=match method {"surface.send"|"surface.send_wait_idle"=>"text",_=>"key"};
+    let value=params.get(field).and_then(|value|value.as_str()).ok_or_else(||JsonRpcResponse::invalid_params(id.clone(),format!("Missing '{field}' parameter")))?;
+    Ok((surface,value))
+}
+
 pub(crate) fn handle_surface_send(
     core: &mut crate::app::services::AppServices,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let surface_id = match require_surface_id(params, &id) {
-        Ok(sid) => sid,
-        Err(e) => return e,
-    };
-    let text = match params.get("text").and_then(|v| v.as_str()) {
-        Some(t) => t.to_string(),
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
-    };
+    let (surface_id,text)=match decode_input_header("surface.send",params,&id) {Ok(input)=>input,Err(error)=>return error};
+
     match dispatch_send(
         core,
         engine,
         surface_id,
-        crate::app::command::SendPayload::Text(text),
+        crate::app::command::SendPayload::Text(text.to_owned()),
     ) {
         SendOutcome::Sent => {
             JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
@@ -156,14 +162,8 @@ pub(crate) fn handle_surface_send_key(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let surface_id = match require_surface_id(params, &id) {
-        Ok(sid) => sid,
-        Err(e) => return e,
-    };
-    let key = match params.get("key").and_then(|v| v.as_str()) {
-        Some(k) => k,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'key' parameter"),
-    };
+    let (surface_id,key)=match decode_input_header("surface.send_key",params,&id) {Ok(input)=>input,Err(error)=>return error};
+
 
     let bytes: Vec<u8> = match key {
         "enter" => b"\r".to_vec(),
@@ -229,46 +229,14 @@ pub(crate) fn handle_surface_send_key(
     JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
 }
 
-/// Force-spawn the PTY of a deferred surface without sending any input.
-///
-/// Returns `{ "woke": true }` if this call spawned the PTY, `{ "woke": false }`
-/// otherwise (already initialized or not a deferred surface). Returns
-/// `invalid_params` if the surface_id refers to neither a live terminal nor a
-/// deferred placeholder.
-pub(crate) fn handle_surface_wake(
-    engine: &mut EngineMut<'_>,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let surface_id = match require_surface_id(params, &id) {
-        Ok(sid) => sid,
-        Err(e) => return e,
-    };
-    let was_deferred = engine.is_surface_deferred(surface_id);
-    let woke = engine.ensure_surface_initialized(surface_id);
-    if !woke && !was_deferred && engine.find_terminal_by_id(surface_id).is_none() {
-        return JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id));
-    }
-    JsonRpcResponse::success(
-        id,
-        json!({ "woke": woke, "surface_id": surface_id, "pty_ready": true }),
-    )
-}
-
 pub(crate) fn handle_surface_send_combo(
     core: &mut crate::app::services::AppServices,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let surface_id = match require_surface_id(params, &id) {
-        Ok(sid) => sid,
-        Err(e) => return e,
-    };
-    let key = match params.get("key").and_then(|v| v.as_str()) {
-        Some(k) => k,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'key' parameter"),
-    };
+    let (surface_id,key)=match decode_input_header("surface.send_combo",params,&id) {Ok(input)=>input,Err(error)=>return error};
+
     let modifiers = params
         .get("modifiers")
         .and_then(|v| v.as_array())
@@ -325,19 +293,12 @@ pub(crate) fn handle_surface_send_to(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let text = match params.get("text").and_then(|v| v.as_str()) {
-        Some(t) => t.to_string(),
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
-    };
-    let surface_id = match require_u32(params, "surface_id", &id) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+    let (surface_id,text)=match decode_input_header("surface.send_to",params,&id) {Ok(input)=>input,Err(error)=>return error};
     match dispatch_send(
         core,
         engine,
         surface_id,
-        crate::app::command::SendPayload::Text(text),
+        crate::app::command::SendPayload::Text(text.to_owned()),
     ) {
         SendOutcome::Sent => JsonRpcResponse::success(id, json!({ "sent": true })),
         outcome => JsonRpcResponse::invalid_params(id, send_fail_message(surface_id, &outcome)),

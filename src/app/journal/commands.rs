@@ -1,6 +1,8 @@
 //! Accepted structural requests retain their original identity until a committed wire reply exists.
 mod category;
 mod create;
+mod wake;
+pub(crate) mod live_resume;
 mod child;
 mod close;
 mod replacement;
@@ -36,9 +38,11 @@ pub(crate) struct IntentViewContinuation {
     pub(crate) activate_surface:Option<u32>,
     pub(crate) close_empty_engine:bool,
     pub(crate) after_create:Option<crate::intent::CreateFollowup>,
+    pub(crate) tutorial:Option<create::TutorialCreated>,
 }
 
 enum Reply {
+    Resume(live_resume::Resume),
     Remote(inbound::RemoteReply),
     #[cfg(feature = "gui")]
     Divider {
@@ -88,6 +92,7 @@ struct Pending {
     replacing:Option<replacement::Request>,
     close_cause:close::Cause,
     waiting_command: Option<String>,
+    activation_wait:Option<super::creation::ActivationReceipt>,
     created: Option<create::Completed>,
     bytes: usize,
     replay: bool,
@@ -118,6 +123,7 @@ pub(super) struct Commands {
     completed_dividers: Vec<(EngineId, u64, crate::intent::IntentOrigin, JsonRpcResponse)>,
     completed_plugins: Vec<(String, u64, std::sync::Weak<()>, JsonRpcResponse)>,
     completed_intents: Vec<IntentResult>,
+    completed_live:Vec<(live_resume::Resume,JsonRpcResponse)>,
     completed_remote:Vec<(inbound::RemoteReply,JsonRpcResponse)>,
     completed_host_events: Vec<(EngineId, notification::Notification)>,
     #[cfg(feature = "gui")]
@@ -135,11 +141,12 @@ impl Commands {
     pub(super) fn has_remote_request(&self,engine:EngineId)->bool {self.pending.values().any(|pending|matches!(&pending.reply,Reply::Remote(remote) if remote.engine==engine)) || self.completed_remote.iter().any(|(remote,_)|remote.engine==engine)}
     pub(super) fn has_closing(&self)->bool {self.pending.values().any(|pending|pending.closing.is_some()||pending.replacing.is_some())}
     pub(super) fn has_resource_request(&self,engine:EngineId)->bool {
-        self.pending.values().any(|pending|pending.closing.as_ref().is_some_and(|request|request.engine==engine)||pending.resource.as_ref().is_some_and(|request|request.engine==engine)||pending.replacing.as_ref().is_some_and(|request|request.engine==engine))
+        self.completed_live.iter().any(|(resume,_)|resume.engine==engine) || self.pending.values().any(|pending|matches!(&pending.reply,Reply::Resume(resume) if resume.engine==engine)||pending.closing.as_ref().is_some_and(|request|request.engine==engine)||pending.resource.as_ref().is_some_and(|request|request.engine==engine)||pending.replacing.as_ref().is_some_and(|request|request.engine==engine))
     }
 
     fn deliver(&mut self, reply: Reply, response: JsonRpcResponse) {
         match reply {
+            Reply::Resume(resume)=> {if response.error.is_some() {let (reply,response)=resume.error_reply(response);self.deliver(reply,response);} else {self.completed_live.push((resume,response));}},
             Reply::Remote(reply)=>self.completed_remote.push((reply,response)),
             #[cfg(feature = "gui")]
             Reply::Divider {
@@ -239,8 +246,8 @@ impl JournalApplication {
             .pending
             .values()
             .map(|pending| pending.bytes)
-            .sum();
-        if self.commands.pending.len() >= MAX_PENDING
+            .sum::<usize>().saturating_add(self.commands.completed_live.iter().map(|(resume,_)|resume.weight()).sum::<usize>());
+        if self.commands.pending.len()+self.commands.completed_live.len() >= MAX_PENDING
             || held.saturating_add(bytes) > tasty_ipc::admission::QUEUED_BYTES_LIMIT
         {
             self.commands.deliver(
@@ -271,7 +278,7 @@ impl JournalApplication {
                 closing:None,
                 replacing:None,
                 close_cause:Default::default(),
-                waiting_command: None,
+                waiting_command: None,activation_wait:None,
                 created: None,
                 bytes,
                 replay: false,
@@ -422,6 +429,7 @@ impl JournalApplication {
     }
 
     pub(crate) fn resolve_ipc_for_engine(&mut self, ticket: u64, session: &EngineSession) {
+        if self.commands.pending.get(&ticket).is_some_and(|pending|matches!(pending.request.method.as_str(),"surface.wake"|"intent.wake")) {self.resolve_wake(ticket,session);return;}
         if let Some(pending)=self.commands.pending.get(&ticket) && pending.request.method=="tab.move" && !matches!(pending.close_cause,close::Cause::RemoteHolder {..}) {
             let workspace=pending.request.params["pane_id"].as_u64().and_then(|id|u32::try_from(id).ok()).and_then(|pane|session.core_state.find_workspace_index_for_pane(pane)).and_then(|index|session.core_state.workspace_at(index));
             if let Some(workspace)=workspace && session.live.occupancy.workspace_holder(workspace.id).is_some() {
@@ -747,14 +755,21 @@ impl JournalApplication {
             && !completed.idempotent_replay
             && let Some(created) = pending.created
         {
+            if let Reply::Intent {view:Some(view),origin,..}=&mut pending.reply && origin.is_user() {view.tutorial=created.tutorial.clone();}
             if created.activate
                 && let Reply::Intent {view:Some(view),origin,..}=&mut pending.reply
                 && origin.is_user() {
                 view.activate_surface=Some(created.surface);
             }
+            if matches!(created.destination,tasty_core::CreationDestination::Restore {..}) {
+                if let Some(items)=self.restoration_ready.get_mut(&created.engine) {items.retain(|item|item.surface_id!=created.surface);}
+            }
             created.notify(sessions, &mut self.commands.completed_host_events);
         }
 
+        if completed.error.is_none() && let Reply::Resume(resume)=&mut pending.reply {
+            if resume.generation.is_none() {resume.generation=sessions.iter().find(|session|session.id==resume.engine).and_then(|session|session.runtime.terminals.generation(resume.surface));}
+        }
         self.commands.deliver(pending.reply, completed);
         Ok(true)
     }
@@ -858,6 +873,7 @@ impl crate::app::App {
                 .and_then(|pending| match &pending.reply {
                     Reply::Intent { engine, .. } => Some(*engine),
                     Reply::Remote(reply)=>Some(reply.engine),
+                    Reply::Resume(resume)=>Some(resume.engine),
                     _ => None,
                 })
             {
@@ -951,6 +967,7 @@ impl crate::app::App {
                 self.journal.resolve_ipc_for_engine(ticket, session);
             }
         }
+        self.finish_live_inputs();
         self.deliver_remote_journal_results();
         self.journal
             .deliver_plugin_replies(self.plugin_manager.as_mut());
@@ -1009,6 +1026,13 @@ impl crate::app::App {
         }
         for mut result in std::mem::take(&mut self.journal.commands.completed_intents) {
                 if result.response.error.is_none() && let Some(surface)=result.response.result.as_ref().and_then(|value|value.get("restored_surface_id")).and_then(|value|value.as_u64()).and_then(|id|u32::try_from(id).ok()) && let Some(view)=result.view.as_mut() {view.activate_surface=Some(surface);}
+            if result.response.error.is_none() && result.origin.is_user() && !result.response.idempotent_replay
+                && let Some(continuation)=result.view.as_ref()
+                && let Some(tutorial)=continuation.tutorial.as_ref()
+                && let Some(context)=self.engines_mut().resolve(result.engine)
+                && context.view.as_ref().is_some_and(|view|view.state.matches_identity(&continuation.view)) {
+                tutorial.observe(context.state,context.engine.core);
+            }
             if result.response.error.is_none() && result.origin.is_user()
                 && let Some(continuation)=result.view.as_ref()
                 && continuation.close_empty_engine
@@ -1198,6 +1222,7 @@ fn pending_weight(pending: &Pending) -> usize {
 }
 
 fn reply_weight(_reply: &Reply) -> usize {
+    if let Reply::Resume(resume)=_reply {return resume.weight();}
     if let Reply::Remote(reply)=_reply {return reply.before.capacity()*std::mem::size_of::<u32>()+std::mem::size_of::<inbound::RemoteReply>();}
     #[cfg(feature = "gui")]
     if let Reply::Settings { settings, .. } = _reply {

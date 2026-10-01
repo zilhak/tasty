@@ -894,17 +894,8 @@ impl EngineRef<'_> {
             .expect("workspace index is valid");
         let mut kinds: HashMap<u32, &'static str> = HashMap::new();
         let mut display_names: HashMap<u32, String> = HashMap::new();
-        for pane_id in ws.pane_layout().all_pane_ids() {
-            if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
-                for tab in &pane.tabs {
-                    tab.for_each_surface(&mut |s| {
-                        if let Some(id) = s.surface_id() {
-                            kinds.insert(id, s.kind());
-                            display_names.insert(id, s.display_name());
-                        }
-                    });
-                }
-            }
+        for id in ws.all_surface_ids() {
+            if let Some(surface)=self.runtime.surfaces.get(&id) {kinds.insert(id,surface.kind());display_names.insert(id,surface.display_name());}
         }
         let (mesh_whitelisted, mesh_rejected) = mesh_mirror_candidates(class);
         let (content_whitelisted, content_rejected) = content_mirror_candidates(class);
@@ -970,7 +961,7 @@ impl EngineRef<'_> {
                 "kind": kinds.get(&sid).copied().unwrap_or("unknown"),
             }));
         }
-        (ws.to_attach_tree_json(&self.remote.presentation), surfaces)
+        (ws.to_attach_tree_json(&self.observed_presentation(&self.remote.presentation)), surfaces)
     }
 }
 
@@ -4503,7 +4494,6 @@ impl crate::runtime::engine_access::EngineMut<'_> {
             }
         }
 
-        self.ensure_surface_initialized(surface_id);
 
         let Some(terminal) = self.runtime.terminals.get_mut(surface_id) else {
             let _ = self.live.occupancy.release(surface_id, client_id); // 이미 해제됐으면 추가 처리가 필요 없다.
@@ -4572,6 +4562,7 @@ impl crate::runtime::engine_access::EngineMut<'_> {
         let Some(surface_id) = self.live.occupancy.surface_held_by(client_id) else {
             return false;
         };
+        if !self.live.occupancy.surface_attachment_ready(surface_id) {return false;}
         if let Some(terminal) = self.runtime.terminals.get_mut(surface_id) {
             terminal.send_bytes(bytes);
             true
@@ -4588,10 +4579,10 @@ impl crate::runtime::engine_access::EngineMut<'_> {
         workspace_id: u32,
         client_id: AttachClientId,
         hub: &StreamHub,
-    ) {
+    ) -> bool {
         let Some(idx) = self.find_workspace_index_for_id(workspace_id) else {
             reject_attach(hub, client_id, "workspace_not_found", None);
-            return;
+            return false;
         };
         let class = self.classify_attach_surfaces(self.workspace_at(idx).expect("workspace index is valid").id);
         // 화면을 복제할 수 없는 멤버도 workspace 점유에 포함한다.
@@ -4612,24 +4603,21 @@ impl crate::runtime::engine_access::EngineMut<'_> {
             Ok(_) => {}
             Err(AttachError::AlreadyAttached { holder }) => {
                 reject_attach(hub, client_id, "already_attached", Some(holder));
-                return;
+                return false;
             }
             Err(_) => {
                 reject_attach(hub, client_id, "lock_error", None);
-                return;
+                return false;
             }
         }
 
-        for &sid in &class.terminals {
-            self.ensure_surface_initialized(sid);
-        }
 
         let descriptor = self.build_workspace_descriptor(idx, workspace_id, &class);
         let descriptor_frame = StreamFrame::new(
             StreamTag::Control,
             serde_json::to_vec(&descriptor).unwrap_or_default(),
         );
-        let _ = hub.push(client_id, descriptor_frame); // 손실·끊김 처리는 허브에 맡기고 여기서는 재전송하지 않는다.
+        if hub.push(client_id,descriptor_frame)!=PushResult::Sent {return false;}
 
         for &sid in &class.terminals {
             self.tap_surface_for_stream(sid, client_id, hub);
@@ -4646,6 +4634,7 @@ impl crate::runtime::engine_access::EngineMut<'_> {
                 + (class.mesh_candidates.len() - mesh_whitelisted.len())
                 + content_rejected.len(),
         );
+        true
     }
 
     /// workspace 연결에 터미널 snapshot과 출력·resize tap을 등록한다.
@@ -4740,10 +4729,11 @@ impl crate::runtime::engine_access::EngineMut<'_> {
         remote_surface_id: u32,
         bytes: &[u8],
     ) -> bool {
+        if !self.live.occupancy.surface_attachment_ready(remote_surface_id) {return false;}
         let Some(ws) = self.live.occupancy.workspace_of_surface(remote_surface_id) else {
             return false;
         };
-        if self.live.occupancy.workspace_holder(ws) != Some(client_id) {
+        if !self.live.occupancy.workspace_attachment_ready(ws) || self.live.occupancy.workspace_holder(ws) != Some(client_id) {
             return false;
         }
         if let Some(terminal) = self.runtime.terminals.get_mut(remote_surface_id) {

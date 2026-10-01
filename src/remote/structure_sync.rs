@@ -51,29 +51,8 @@ pub(crate) fn unresolved_forward_reason<'a>(
 }
 
 impl EngineMut<'_> {
-    /// Project transport obligations only after the entire structural batch has been installed.
-    /// Sending remains in the ordinary observation pump, behind its publication/result barrier.
-    pub(crate) fn observe_committed_structure(&mut self,before:&tasty_core::JournalModel,events:&[tasty_core::RecordedEvent]) {
-        use tasty_core::DomainEvent as E;
-        let structural=events.iter().any(|record|matches!(record.event,
-            E::StructureReplaced {..}|E::WorkspaceCreated {..}|E::WorkspaceRenamed {..}|E::WorkspaceDetailsSet {..}|E::WorkspaceMoved {..}|E::WorkspaceClosed {..}|
-            E::PaneSplit {..}|E::PaneMoved {..}|E::PaneClosed {..}|E::TabCreated {..}|E::TabRenamed {..}|E::TabExplicitNameSet {..}|E::TabMoved {..}|E::TabClosed {..}|
-            E::SurfaceSplit {..}|E::SurfaceMoved {..}|E::SurfaceClosed {..}|E::SurfaceConverted {..}|E::SurfaceActivationChanged {..}|E::PaneRatioSet {..}|E::SurfaceRatioSet {..}));
-        if !structural {return;}
-        let workspaces:std::collections::BTreeSet<_>=before.workspace_order.iter().copied().chain(self.core.local_workspaces().iter().map(|workspace|workspace.id)).collect();
-        for workspace in workspaces {if self.live.occupancy.workspace_holder(workspace).is_some() {self.remote.mark_structure_changed(workspace);}}
-        for record in events {
-            let E::SurfaceActivationChanged {id,activation,..}=&record.event else {continue;};
-            if activation.phase!=tasty_core::ActivationPhase::Ready {continue;}
-            let Some(workspace)=self.find_workspace_index_for_surface(*id).and_then(|(index,_)|self.workspace_at(index)).map(|workspace|workspace.id) else {continue;};
-            if self.live.occupancy.workspace_holder(workspace).is_none() {continue;}
-            let generation=self.runtime.terminals.generation(*id);
-            self.live.occupancy.add_workspace_member(workspace,*id,generation.is_some());
-            if let Some(generation)=generation {self.remote.pending_workspace_taps.insert(*id,(workspace,generation));}
-        }
-    }
-
     pub(crate) fn flush_committed_workspace_taps(&mut self,workspace:u32,holder:u32,hub:&tasty_ipc::stream_hub::StreamHub) {
+        if !self.live.occupancy.workspace_attachment_ready(workspace) {return;}
         let targets:Vec<_>=self.remote.pending_workspace_taps.iter().filter(|(_,value)|value.0==workspace).map(|(id,value)|(*id,value.1)).collect();
         for (surface,generation) in targets {
             self.remote.pending_workspace_taps.remove(&surface);
@@ -91,6 +70,7 @@ impl EngineMut<'_> {
             let Some(holder) = self.live.occupancy.workspace_holder(ws_id) else {
                 continue;
             };
+            if !self.live.occupancy.workspace_attachment_ready(ws_id) {self.remote.mark_structure_changed(ws_id);continue;}
             let Some(idx) = self.find_workspace_index_for_id(ws_id) else {
                 self.force_detach_workspace(ws_id);
                 continue;

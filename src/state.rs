@@ -178,7 +178,6 @@ impl RequestContext {
             #[cfg(feature = "gui")]
             last_focused_tab: None,
             #[cfg(feature = "gui")]
-            last_tab_locations: None,
             #[cfg(feature = "gui")]
             popup_hovered: false,
             #[cfg(feature = "gui")]
@@ -573,25 +572,7 @@ impl RequestContext {
 
     /// 이미 알린 탭 변경을 다음 폴링에서 중복 보고하지 않도록 기준 사본을 갱신한다.
     /// 최초 폴링 전이면 그 폴링이 기준을 만들도록 그대로 둔다.
-    #[cfg(feature = "gui")]
-    pub fn lifecycle_baseline_insert_tab(
-        &mut self,
-        tab_id: u32,
-        pane_id: u32,
-        workspace_id: u32,
-        kind: String,
-    ) {
-        if let Some(map) = self.last_tab_locations.as_mut() {
-            map.insert(tab_id, (pane_id, workspace_id, kind));
-        }
-    }
 
-    #[cfg(feature = "gui")]
-    pub fn lifecycle_baseline_remove_tab(&mut self, tab_id: u32) {
-        if let Some(map) = self.last_tab_locations.as_mut() {
-            map.remove(&tab_id);
-        }
-    }
 
     /// cwd 상속 설정이 켜져 있으면 포커스된 surface의 로컬 경로를 반환한다.
     /// 원격 mirror의 경로는 로컬 PTY 작업 디렉터리로 사용할 수 없어 제외한다.

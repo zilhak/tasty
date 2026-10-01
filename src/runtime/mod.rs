@@ -42,3 +42,7 @@ pub(crate) mod preset_plan;
 
 pub(crate) mod journal_payload;
 pub(crate) mod restored_presentation;
+
+mod structure_observation;
+
+pub(crate) mod pending_submit;

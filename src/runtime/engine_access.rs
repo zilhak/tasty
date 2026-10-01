@@ -108,7 +108,7 @@ impl EngineRef<'_> {
                                 .push((id, explorer.current_root().to_path_buf()));
                             continue;
                         }
-                        let is_terminal = s.kind() == "terminal"
+                        let is_terminal = s.as_any().downcast_ref::<crate::runtime::surface_restorer::JournalPlaceholder>().is_some_and(|placeholder|placeholder.kind=="terminal") || s.kind() == "terminal"
                             || s.as_any()
                                 .downcast_ref::<crate::model::EmptySurface>()
                                 .map(|e| e.deferred_spawn().is_some())
@@ -182,4 +182,10 @@ impl EngineRef<'_> {
 }
 impl EngineMut<'_> {
     pub(crate) fn tab_display_name(&self,tab:&crate::model::Tab,surface:Option<u32>)->String {self.as_ref().tab_display_name(tab,surface)}
+}
+
+impl EngineRef<'_> {
+    pub(crate) fn surface_display_path(&self,surface:u32,selection:&dyn crate::model::StructurePresentation)->Option<tasty_core::SurfaceDisplayPath> {
+        self.core.surface_display_path(surface,&self.observed_presentation(selection))
+    }
 }

@@ -151,14 +151,6 @@ impl Tab {
         self.layout().surface_regions(rect)
     }
 
-    // ── Initialization ──
-
-    /// PTY 생성의 연속 실패 뒤 재시도를 멈출 횟수.
-    pub const MAX_SPAWN_ATTEMPTS: u32 = 5;
-
-    /// 터미널 placeholder의 PTY 생성 정보를 복사해 반환한다. model은 PTY를 만들지 않는다.
-    /// 호스트가 이 정보로 PTY를 만든 뒤 성공하면 [`Tab::complete_terminal_spawn`],
-    /// 실패하면 [`Tab::record_terminal_spawn_failure`]를 호출한다.
     /// Replace the entire layout with a single surface.
     pub fn put_surface(&mut self, surface: SurfaceDescriptor) {
         self.put_layout(SurfaceLayout::Leaf(surface));

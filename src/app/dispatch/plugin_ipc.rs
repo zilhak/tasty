@@ -68,6 +68,7 @@ impl App {
             {
                 continue;
             }
+            if self.defer_live_plugin(&checked,&call) {continue;}
             self.handle_ipc_default_dispatch(&call, &checked);
         }
     }

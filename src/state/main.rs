@@ -170,7 +170,6 @@ pub struct MainViewState {
     /// pane 간 탭 이동 감지용 tab_id → (pane_id, workspace_id, kind) 사본.
     /// 최초 조회는 비교 기준만 저장한다.
     #[cfg(feature = "gui")]
-    pub(crate) last_tab_locations: Option<std::collections::HashMap<u32, (u32, u32, String)>>,
 
     /// Per-surface host view state for `ExplorerPanel` (directory entry cache, selection,
     /// sidebar tree expansion). `ExplorerPanel` itself only holds navigation/tab state.

@@ -30,7 +30,8 @@ impl App {
             Some((id,surfaces))
         }).collect();
         for (id,surfaces) in selected {
-            let Some(session)=self.engines.get(id) else {continue;};
+            let Some(session)=self.engines.session_mut(id) else {continue;};
+            session.borrow_mut().reify_displayed_mirror_resources(&surfaces);
             for surface in surfaces {
                 match self.journal.activate_restored_surface(session,surface) {
                     Ok(true)=>break,
@@ -42,12 +43,18 @@ impl App {
         let mut sessions: Vec<_> = self.engines.all_sessions_mut().collect();
         if let Err(error) = self.journal.poll_bootstrap(&mut sessions,self.plugin_manager.as_mut()) {
             tracing::error!("journal publication halted: {error}");
+            for session in &mut sessions {crate::app::attach_activation::cancel_engine(&mut self.pending_server_attaches,session.id,&mut session.borrow_mut(),&self.stream_hub);}
         }
+        if !self.journal.pauses_observation() {
+            crate::app::attach_activation::poll(&mut self.pending_server_attaches,&mut self.journal,&mut sessions,&self.stream_hub);
+        }
+        drop(sessions);
         if !self.journal.pauses_observation() {
             self.resolve_journal_requests();
             self.apply_attach_client_output();
         }
         if !self.journal.pauses_observation() && !self.journal.is_halted() {
+            for session in self.engines.all_sessions_mut() {session.borrow_mut().poll_input_submissions();}
             self.dispatch_pending_surface_lifecycle();
             self.dispatch_pending_host_events();
         }

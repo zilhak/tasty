@@ -20,6 +20,20 @@ impl<'a> CheckedRequest<'a> {
     }
 }
 
+/// An owned proof of the same admitted request, used only across application continuations.
+/// No deserialization or unrestricted constructor can fabricate successful gate checks.
+pub(crate) struct OwnedCheckedRequest {request:JsonRpcRequest,caller:CallerContext}
+impl OwnedCheckedRequest {
+    pub(crate) fn borrow(&self)->CheckedRequest<'_> {CheckedRequest {request:&self.request,caller:&self.caller}}
+    pub(crate) fn weight(&self)->usize {serde_json::to_vec(&self.request).map_or(usize::MAX,|bytes|bytes.len())}
+}
+impl CheckedRequest<'_> {
+    pub(crate) fn to_owned_without_key(&self)->OwnedCheckedRequest {
+        let mut request=self.request.clone();request.idempotency_key=None;
+        OwnedCheckedRequest {request,caller:self.caller.clone()}
+    }
+}
+
 /// engine이 있는 진입점의 권한·사용량 제한·호출 빈도를 검사하고 결과를 한 번 기록한다.
 pub(crate) fn check_request<'a>(
     core: &mut AppServices,

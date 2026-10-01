@@ -60,7 +60,7 @@ mod settings;
 pub(crate) mod surface;
 pub(crate) mod tab;
 mod telemetry;
-mod terminal;
+pub(crate) mod terminal;
 mod terminal_input;
 pub(crate) mod theme;
 #[cfg(all(debug_assertions, feature = "gui"))]
@@ -86,7 +86,7 @@ pub mod session;
 
 #[cfg(feature = "gui")]
 pub(crate) use checked::check_without_engine;
-pub(crate) use checked::{CheckedRequest, check_request};
+pub(crate) use checked::{CheckedRequest, OwnedCheckedRequest, check_request};
 
 use crate::runtime::engine_access::EngineMut;
 use std::borrow::Cow;
@@ -650,7 +650,6 @@ fn route_engine_handler(
             surface::handle_surface_send_combo(core, engine, id, &request.params)
         }
         "surface.send_to" => surface::handle_surface_send_to(core, engine, id, &request.params),
-        "surface.wake" => surface::handle_surface_wake(engine, id, &request.params),
         "surface.set_mark" => surface::handle_set_mark(out, engine, id, &request.params),
         "surface.completion" => surface::handle_completion(out, engine, id, &request.params),
         "surface.attention.get" => surface::handle_attention_get(engine, id, &request.params),
@@ -1314,18 +1313,10 @@ fn handle_send_wait_idle(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let surface_id = match require_surface_id(params, &id) {
-        Ok(sid) => sid,
-        Err(e) => return e,
-    };
-    let text = match params.get("text").and_then(|v| v.as_str()) {
-        Some(t) => t.to_string(),
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
-    };
+    let (surface_id,text)=match surface::decode_input_header("surface.send_wait_idle",params,&id) {Ok(input)=>input,Err(error)=>return error};
     if engine.is_typing(surface_id) {
         return JsonRpcResponse::success(id, json!({ "sent": false, "reason": "typing" }));
     }
-    engine.ensure_surface_initialized(surface_id);
     if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
         terminal.send_key(&text);
         JsonRpcResponse::success(id, json!({ "sent": true }))

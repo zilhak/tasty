@@ -18,6 +18,7 @@ impl JournalApplication {
     pub(crate) fn admit_remote(&mut self,engine:EngineId,core:&crate::core::CoreState,live:&crate::core::live::LiveDomainState,runtime_epoch:u64,hub:&StreamHub,client:u32,op_id:u64,op:StructuralOp,origin:ForwardOrigin)->Option<(u64,u32)> {
         let Some((registration,binding))=hub.client_identity(client) else{return None;};
         let Some(workspace)=live.occupancy.workspace_held_by(client) else {reply(hub,client,op_id,false,Some("not workspace holder".into()));return None;};
+        if !live.occupancy.workspace_attachment_ready(workspace) {reply(hub,client,op_id,false,Some("workspace attachment is still initializing".into()));return None;}
         let ticket=self.next_ticket;
         let remote=RemoteReply {engine,ticket,client,op_id,workspace,binding,user:origin==ForwardOrigin::User,restore:matches!(op,StructuralOp::RestoreClosedItem {..}),converted:match &op {StructuralOp::ConvertSurface {surface_id,..}=>Some(*surface_id),_=>None}};
         let request=JsonRpcRequest {jsonrpc:"2.0".into(),method:"remote.structural".into(),params:serde_json::json!({"op":op,"origin":origin}),id:None,session_token:None,response_timeout_ms:None,idempotency_key:Some(format!("{runtime_epoch}/{registration}/{op_id}"))};

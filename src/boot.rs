@@ -538,6 +538,7 @@ fn dispatch_headless_event(
         if let Err(error) = app.journal.poll_bootstrap(&mut [session],app.plugin_manager.as_mut()) {
             tracing::error!("committed structure publication halted: {error}");
         }
+        if app.journal.is_halted() {crate::app::attach_activation::cancel_engine(&mut app.pending_server_attaches,session.id,&mut session.borrow_mut(),&app.stream_hub);}
         if !app.journal.is_halted() && !app.journal.pauses_observation() {
             for request in app.journal.creation_requests_needing_kind() {
                 headless_plugins::ensure_plugin_for_surface_kind(
@@ -547,7 +548,10 @@ fn dispatch_headless_event(
                     &request,
                 );
             }
+            crate::app::attach_activation::poll(&mut app.pending_server_attaches,&mut app.journal,&mut [session],&app.stream_hub);
             app.journal.resolve_headless_requests(session, state,&app.services);
+            app.journal.finish_headless_live_inputs(session.id,&mut app.services,state,&mut session.borrow_mut(),app.plugin_manager.as_mut());
+            session.borrow_mut().poll_input_submissions();
             for (remote,response) in app.journal.take_remote_results() {
                 if remote.engine==session.id {crate::app::journal::commands::inbound::deliver_result(remote,response,&mut session.borrow_mut(),app.plugin_manager.as_mut(),&app.stream_hub);}
             }
@@ -712,9 +716,10 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         };
         let deadline =
             crate::app::timers::min_deadline(deadline, app.journal.cleanup_poll_deadline());
+        let deadline=if app.journal.is_halted() || app.journal.pauses_observation(){deadline}else{crate::app::timers::min_deadline(deadline,engine.runtime.input_submit_deadline())};
         let pending = match wait_for_event(&rx, deadline) {
             Wait::Event(ev) => Some(ev),
-            Wait::Deadline if app.journal.cleanup_poll_deadline().is_some() => {
+            Wait::Deadline if app.journal.cleanup_poll_deadline().is_some() || engine.runtime.input_submit_deadline().is_some() => {
                 Some(crate::AppEvent::JournalReady)
             }
             Wait::Deadline => None,

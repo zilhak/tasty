@@ -97,38 +97,6 @@ impl EngineMut<'_> {
 }
 
 impl EngineRef<'_> {
-    /// 등록된 종류로 surface를 만든다. Terminal의 PTY 생성은 호출자가 별도로 처리한다.
-    /// cwd는 호출자가 정해 넘기며 사용 여부는 각 종류가 결정한다.
-    pub(crate) fn create_surface_via_registry(
-        &self,
-        kind: &str,
-        surface_id: u32,
-        cwd: Option<&std::path::Path>,
-        params: &serde_json::Value,
-    ) -> anyhow::Result<Box<dyn crate::model::Surface>> {
-        // 철회된 plugin 종류는 알 수 없는 종류와 구별해 필요한 조치를 안내한다.
-        if let Some(plugin_id) = self.runtime.surface_registry.withdrawn_by(kind) {
-            return Err(crate::runtime::surface_registry::SurfaceKindWithdrawn {
-                kind: kind.to_string(),
-                plugin_id,
-            }
-            .into());
-        }
-        let def = self.runtime.surface_registry
-            .get_live(kind)
-            .ok_or_else(|| anyhow::anyhow!("unknown surface kind: {}", kind))?;
-        // 명시한 params가 우선이다. cwd 상속 경로에서 홈으로 바꾸지 않도록 @home은 여기서 해석하지 않는다.
-        if def.default_params.is_empty() {
-            return (def.create)(surface_id, cwd, params).and_then(|prepared| prepared.publish());
-        }
-        let mut owned = params.clone();
-        if self.apply_kind_default_params(&def, &mut owned, None) {
-            (def.create)(surface_id, cwd, &owned).and_then(|prepared| prepared.publish())
-        } else {
-            (def.create)(surface_id, cwd, params).and_then(|prepared| prepared.publish())
-        }
-    }
-
     /// 없는 키에만 기본값을 넣고 하나라도 넣으면 true다. params가 객체가 아니면 변경하지 않는다.
     /// @settings.explorer_view_mode와 전달된 @home을 해석하고 알 수 없는 @ 토큰은 경고 후 건너뛴다.
     pub(crate) fn apply_kind_default_params(

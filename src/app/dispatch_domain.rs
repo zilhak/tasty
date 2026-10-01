@@ -61,7 +61,7 @@ impl App {
         }
         if let Intent::ForwardMirror {op,close_focus_candidates}=&dispatched.body {
             let id=source.engine();
-            let continuation=self.engines_mut().resolve(id).and_then(|context|context.view.map(|view|crate::app::journal::commands::IntentViewContinuation {view:view.state.identity(),selection:context.state.navigation.generation(),activate_surface:None,close_empty_engine:false,after_create:after_create.clone()}));
+            let continuation=self.engines_mut().resolve(id).and_then(|context|context.view.map(|view|crate::app::journal::commands::IntentViewContinuation {view:view.state.identity(),selection:context.state.navigation.generation(),activate_surface:None,close_empty_engine:false,after_create:after_create.clone(),tutorial:None}));
             self.journal.admit_remote_intent(id,op.clone(),&dispatched.origin,continuation,close_focus_candidates.clone());return Ok(());
         }
         if let Intent::DirectRename(rename) = &dispatched.body {
@@ -78,7 +78,7 @@ impl App {
         let origin = dispatched.origin;
         let id=source.engine();
         let continuation=self.engines_mut().resolve(id).and_then(|context|context.view.map(|view|crate::app::journal::commands::IntentViewContinuation {
-            view:view.state.identity(),selection:context.state.navigation.generation(),activate_surface:None,close_empty_engine:false,after_create:after_create.clone(),
+            view:view.state.identity(),selection:context.state.navigation.generation(),activate_surface:None,close_empty_engine:false,after_create:after_create.clone(),tutorial:None,
         }));
         if let Some(session)=self.engines.get(id)
             && session.core_state.mirror_workspace_index_for_structural(&intent).is_some()

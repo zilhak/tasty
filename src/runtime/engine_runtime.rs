@@ -50,6 +50,7 @@ pub(crate) struct EngineRuntime {
     pub(crate) surfaces:std::collections::HashMap<u32,Box<dyn crate::model::Surface>>,
     /// 실제 Terminal과 scrollback 저장 ID. 레이아웃 트리의 TerminalSurface는 ID만 참조한다.
     pub(crate) terminals: TerminalStore,
+    pub(crate) pending_submits:Vec<super::pending_submit::PendingSubmit>,
     pub(crate) pending_scrollback_inject: std::collections::HashMap<u32, Vec<tasty_terminal::ScrollbackLine>>,
 
     /// 자식 terminal surface의 부모·번호·상태 기록. 파일에서 읽으며 저장은 호출자가 요청한다.
@@ -109,6 +110,7 @@ impl EngineRuntime {
             memory,
 
             surfaces:Default::default(),
+            pending_submits:Vec::new(),
             terminals: TerminalStore::new(counters.pty_counter()),
             pending_scrollback_inject: Default::default(),
             child_terminals: ChildTerminalRegistry::load(),

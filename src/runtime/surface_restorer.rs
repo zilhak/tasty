@@ -5,12 +5,15 @@ use crate::runtime::journal_product::{PreparationInput, ShellRecipe};
 use crate::model::Surface;
 /// Exists only behind the bootstrap read/render barrier. SurfaceRestorer replaces this with the
 /// selected kind or its ordinary lazy/plugin placeholder after reading the referenced payload.
+pub(crate) const MAX_ACTIVATION_ATTEMPTS:u32=5;
 pub(crate) struct JournalPlaceholder {
     pub(crate) id: u32,
     pub(crate) kind: String,
     pub(crate) data: Option<tasty_core::DataRef>,
     pub(crate) creation_seed: Option<tasty_core::DataRef>,
     pub(crate) activation: Option<tasty_core::Activation>,
+    pub(crate) attempts:u32,
+    pub(crate) failure:Option<String>,
 }
 
 impl Surface for JournalPlaceholder {
@@ -24,6 +27,7 @@ impl Surface for JournalPlaceholder {
     fn surface_id(&self) -> Option<u32> {
         Some(self.id)
     }
+    fn to_tree_json(&self)->serde_json::Value {serde_json::json!({"id":self.id,"surface_id":self.id,"type":"Pending","kind":self.kind,"pty_ready":false,"restore_error":self.failure})}
     fn source_cwd(&self) -> Option<std::path::PathBuf> {
         None
     }
@@ -31,6 +35,7 @@ impl Surface for JournalPlaceholder {
 
 
 
+#[derive(Clone)]
 pub(crate) struct RestoreInput {
     pub(crate) surface_id: u32,
     pub(crate) reference: Option<tasty_core::DataRef>,
@@ -182,7 +187,7 @@ pub(crate) fn initial_terminal_selection(
 /// Install only logical placeholders; selected activation is a separate committed operation.
 pub(crate) fn initialize_instances(session:&mut crate::runtime::engine_session::EngineSession,model:&tasty_core::JournalModel) {
     for (id,surface) in &model.surfaces {
-        session.runtime.surfaces.entry(*id).or_insert_with(||Box::new(JournalPlaceholder {
+        session.runtime.surfaces.entry(*id).or_insert_with(||Box::new(JournalPlaceholder {attempts:0,failure:None,
             id:*id,kind:surface.kind.clone(),data:surface.data,creation_seed:surface.creation_seed,activation:surface.activation,
         }));
     }

@@ -20,7 +20,6 @@ impl AppServices {
             && !engine.runtime.terminals.matches_generation(surface_id,*generation) {
             return CoreEvent::SurfaceSent {sent:false,hard_occupied:false};
         }
-        engine.ensure_surface_initialized(surface_id);
         let sent = if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
             match payload {
                 crate::app::command::SendPayload::Bytes(bytes)

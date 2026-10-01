@@ -32,7 +32,7 @@ fn apply(
     engine
         .live.occupancy
         .mark_clients_disconnected(&outcome.disconnected);
-    apply_attach_requests(app, engine, outcome);
+    apply_attach_requests(app,state,engine,outcome);
     apply_input_frames(app, engine, outcome);
     apply_structural_ops(app, state, engine, outcome);
     apply_mirror_state(engine, outcome);
@@ -47,12 +47,12 @@ fn apply(
     engine.push_structure_changes();
 }
 
-fn apply_attach_requests(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
+fn apply_attach_requests(app: &mut App,state:&RequestContext, engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
     for (client_id, surface_id) in std::mem::take(&mut outcome.attach_requests) {
-        engine.attach_surface_for_stream(surface_id, client_id, &app.stream_hub);
+        if let Some(id)=state.engine_id {crate::app::attach_activation::begin(&mut app.pending_server_attaches,&app.journal,id,engine,crate::app::attach_activation::Target::Surface(surface_id),client_id,&app.stream_hub);}
     }
     for (client_id, workspace_id) in std::mem::take(&mut outcome.workspace_attach_requests) {
-        engine.attach_workspace_for_stream(workspace_id, client_id, &app.stream_hub);
+        if let Some(id)=state.engine_id {crate::app::attach_activation::begin(&mut app.pending_server_attaches,&app.journal,id,engine,crate::app::attach_activation::Target::Workspace(workspace_id),client_id,&app.stream_hub);}
     }
 }
 
@@ -69,6 +69,11 @@ fn apply_input_frames(
     outcome: &mut PumpOutcome,
 ) {
     for (client_id, bytes) in std::mem::take(&mut outcome.input_frames) {
+        if app.pending_server_attaches.iter().any(|pending|pending.client()==client_id) {
+            crate::remote::server::reject_attach(&app.stream_hub,client_id,"not_ready",None);
+            for pending in &mut app.pending_server_attaches {if pending.client()==client_id {pending.cancel();}}
+            app.journal.wake_application();continue;
+        }
         // workspace 입력은 surface ID로 나누고 단일 surface 입력은 그대로 전달한다.
         let routed = if engine.live.occupancy.client_holds_workspace(client_id) {
             match crate::ipc::stream::decode_mux(&bytes) {

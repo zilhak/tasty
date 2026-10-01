@@ -7,11 +7,22 @@ use tasty_core::{
     StructuralResult, SurfaceSpec,
 };
 
+#[derive(Clone)]
+pub(crate) enum ActivationOutcome {
+    Ready {activation:Option<u64>,physical:Option<tasty_terminal::ResourceGeneration>},
+    Failed(String),
+}
+pub(crate) type ActivationReceipt=std::sync::Arc<std::sync::OnceLock<ActivationOutcome>>;
+
 pub(super) struct Creation {
     pub(super) ticket: u64,
     binding: crate::runtime::journal_product::EngineBinding,
     input: PreparationInput,
     fixed_plan: Option<CreationPlan>,
+    requested_restore:Option<(u32,Option<u64>)>,
+    receipt:ActivationReceipt,
+    restore_retry:Option<crate::runtime::surface_restorer::RestoreInput>,
+    restore_failure:Option<String>,
     stage: Stage,
     public: bool,
     assembly_member:bool,
@@ -63,7 +74,7 @@ impl Creation {
             public: true,
             assembly_member:false,published:false,transfers_existing:false,preparation_acked:false,one_shot_input:None,
             stage: Stage::Claim,
-            fixed_plan: None,
+            fixed_plan: None,requested_restore:None,receipt:Default::default(),restore_retry:None,restore_failure:None,
             queued: None,
             input: PreparationInput {adopt:None,child:None,
                 kind: String::new(),
@@ -113,7 +124,7 @@ impl Creation {
             public: false,
             assembly_member:false,published:false,transfers_existing:false,preparation_acked:false,one_shot_input:None,
             queued: None,
-            fixed_plan: None,
+            fixed_plan: None,requested_restore:None,receipt:Default::default(),restore_retry:None,restore_failure:None,
             input: PreparationInput {adopt:None,child:None,
                 kind: "terminal".into(),
                 cwd: None,
@@ -160,8 +171,10 @@ impl Creation {
         Ok(Self {
             ticket,
             binding,
+            restore_retry:Some(request.clone()),restore_failure:None,
             input: request.input,
-            fixed_plan: Some(request.plan),
+            requested_restore:match &request.plan.destination {CreationDestination::Restore {surface,previous_activation}=>Some((*surface,*previous_activation)),_=>None},
+            fixed_plan: Some(request.plan),receipt:Default::default(),
             stage: Stage::Admit,
             public: false,
             assembly_member:false,published:false,transfers_existing:false,preparation_acked:false,one_shot_input:None,
@@ -291,6 +304,7 @@ impl Creation {
                 Stage::Claim
             }
             (Stage::Claim, ResultValue::Claimed(claimed)) => {
+                self.requested_restore=match &claimed.plan.destination {CreationDestination::Restore {surface,previous_activation}=>Some((*surface,*previous_activation)),_=>None};
                 self.transfers_existing=claimed.input.adopt.is_some();
                 self.assembly_member=matches!(claimed.plan.destination,CreationDestination::Assembly {..});
                 let lease = claimed.lease.clone();
@@ -358,8 +372,9 @@ impl Creation {
                 answered: true,
                 started,
             },
-            (Stage::Failed(_), _) if self.public => return Ok(true),
+            (Stage::Failed(reason), _) if self.public => {let _=self.receipt.set(ActivationOutcome::Failed(reason));return Ok(true);}
             (Stage::Claim, ResultValue::Executed(_)) if self.public => return Ok(true),
+            (Stage::Failed(reason), _) if self.restore_retry.is_some()=> {self.restore_failure=Some(reason.clone());let _=self.receipt.set(ActivationOutcome::Failed(reason));return Ok(true);},
             (Stage::Failed(reason), _) => return Err(reason),
             _ => return Err("materialization completion arrived outside its request phase".into()),
         };
@@ -440,6 +455,24 @@ impl Creation {
             .map_err(|error| error.to_string())
     }
 
+    pub(super) fn failed_restore(&mut self,session:&mut EngineSession)->Option<crate::runtime::surface_restorer::RestoreInput> {
+        let reason=self.restore_failure.take()?;
+        let request=self.restore_retry.take()?;
+        let placeholder=session.runtime.surfaces.get_mut(&request.surface_id)?.as_any_mut().downcast_mut::<crate::runtime::surface_restorer::JournalPlaceholder>()?;
+        placeholder.attempts=placeholder.attempts.saturating_add(1);placeholder.failure=Some(reason);
+        // Retain the old content/seed, but stop automatic retries at the legacy terminal cap.
+        (placeholder.attempts<crate::runtime::surface_restorer::MAX_ACTIVATION_ATTEMPTS).then_some(request)
+    }
+    pub(super) fn join_restore(&self,surface:u32,activation:Option<u64>)->Option<ActivationReceipt> {
+        (self.requested_restore==Some((surface,activation))).then(||self.receipt.clone())
+    }
+    pub(super) fn acknowledge_publication(&self,session:&EngineSession) {
+        if !self.published {return;}
+        let Some((surface,_))=self.requested_restore else{return;};
+        let activation=session.core_state.find_surface_by_id(surface).and_then(|surface|surface.activation_generation);
+        let physical=session.runtime.terminals.generation(surface);
+        let _=self.receipt.set(ActivationOutcome::Ready {activation,physical});
+    }
     pub(super) fn publication_released(&self)->bool {self.published && matches!(self.stage,Stage::AwaitPublication(_))}
 
     pub(super) fn installed(&mut self, installed: Installed) {
@@ -555,5 +588,12 @@ impl Creation {
             self.flush(worker)?;
         }
         Ok(())
+    }
+}
+
+impl Drop for Creation {
+    fn drop(&mut self) {
+        let reason=match &self.stage {Stage::Failed(reason)|Stage::Uncertain {reason}=>reason.clone(),_=>"activation owner ended without a published resource receipt".into()};
+        let _=self.receipt.set(ActivationOutcome::Failed(reason));
     }
 }

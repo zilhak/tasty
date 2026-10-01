@@ -17,7 +17,7 @@ pub(super) struct Request {
     pub recent:Option<(String,String)>,
 }
 
-pub(super) enum Shape {Image {path:String},ChildRespawn {index:u32},Child {index:u32,workspace:u32},Adopt,Workspace,Tab {pane:u32},Pane {target:u32,direction:crate::model::SplitDirection},Surface {target:u32},Convert {surface:u32,respawn:bool}}
+pub(super) enum Shape {Wake,Image {path:String},ChildRespawn {index:u32},Child {index:u32,workspace:u32},Adopt,Workspace,Tab {pane:u32},Pane {target:u32,direction:crate::model::SplitDirection},Surface {target:u32},Convert {surface:u32,respawn:bool}}
 
 impl Request {
     pub fn resolve(
@@ -248,6 +248,7 @@ impl Request {
 
     pub fn stored(&self, input: tasty_core::DataRef) -> Work {
         let response=match &self.plan.destination {
+            CreationDestination::Restore {..} if matches!(self.shape,Shape::Wake)=>ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"woke":true,"surface_id":self.plan.surface.id,"pty_ready":true}))),
             CreationDestination::Convert {..} if matches!(self.shape,Shape::Image {..})=> {
                 let Shape::Image {path}=&self.shape else {unreachable!("image response")};
                 ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"ok":true,"surface_id":self.plan.surface.id,"path":path})))
@@ -380,7 +381,21 @@ impl JournalApplication {
     }
 }
 
+#[derive(Clone)]
+pub(crate) enum TutorialCreated {Tab {pane:u32,tab:u32},Pane {target:u32,pane:u32},Surface {surface:u32}}
+impl TutorialCreated {
+    #[cfg(feature="gui")]
+    pub fn observe(&self,state:&mut crate::state::MainViewState,core:&crate::core::CoreState) {
+        match *self {
+            Self::Tab {pane,tab}=>state.observe_tutorial_tab_created(core,pane,tab),
+            Self::Pane {target,pane}=>if let Some(workspace)=core.find_workspace_index_for_pane(pane).and_then(|index|core.workspace_at(index)) {state.observe_tutorial_pane_split(workspace.id,target,pane);},
+            Self::Surface {surface}=>if let Some((index,pane))=core.find_workspace_index_for_surface(surface) {state.observe_tutorial_surface_split(core,index,pane,surface);},
+        }
+    }
+}
+
 pub(super) struct Completed {
+    pub tutorial:Option<TutorialCreated>,
     pub engine:EngineId,
     pub surface:u32,
     pub destination:CreationDestination,
@@ -390,6 +405,11 @@ pub(super) struct Completed {
 }
 impl Completed {
     pub fn from_request(request:&Request)->Self {Self {
+        tutorial:match (&request.shape,&request.plan.destination) {
+            (Shape::Tab {..},CreationDestination::Tab {pane,tab,..})=>Some(TutorialCreated::Tab {pane:*pane,tab:*tab}),
+            (Shape::Pane {..},CreationDestination::Pane {target,pane,..})=>Some(TutorialCreated::Pane {target:*target,pane:*pane}),
+            (Shape::Surface {..},CreationDestination::Split {..})=>Some(TutorialCreated::Surface {surface:request.plan.surface.id}),_=>None,
+        },
         recent:request.recent.clone(),engine:request.engine,surface:request.plan.surface.id,destination:request.plan.destination.clone(),activate:request.activate,
         name:request.renamed_name.clone(),subtitle:request.renamed_subtitle.clone(),description:request.renamed_description.clone(),
     }}
