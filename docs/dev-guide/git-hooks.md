@@ -32,6 +32,15 @@ C.6, C.9, C.11, C.12는 staged diff에 추가된 코드만 확인한다. 전체 
 
 먼저 push할 커밋의 플러그인 버전과 파일 수를 검사한다. 둘 중 하나라도 실패하면 컴파일을 시작하지 않고 중단한다. 두 검사에 통과하면 아래 순서대로 빌드와 문서를 검사한다. 빌드 검사 중 하나가 실패해도 나머지는 실행하여 오류를 한 번에 확인할 수 있다.
 
+Git은 훅에 `GIT_DIR`, `GIT_COMMON_DIR`, `GIT_INDEX_FILE` 같은 저장소 환경을 전달할 수 있다.
+pre-push는 먼저 원 저장소와 로그 위치를 확정하고, 각 검사를 실행하는 서브셸에서
+`git rev-parse --local-env-vars`가 열거한 변수만 해제한 뒤 원 저장소를 작업 디렉터리로 고정한다.
+B.9/B.10의 명시 ref 조회는 같은 저장소를 읽되, Cargo·도구·시험이 만드는 다른 Git 저장소에는
+push 저장소의 경로를 전달하지 않는다. 이는 [Git 훅의 저장소 환경 규칙](https://git-scm.com/docs/githooks#_description)을 따른다.
+부모 Git 프로세스의 환경은 바뀌지 않으며 사용자 HOME/PATH와 검사 argv·실패 처리도 유지한다.
+`githooks_are_pinned`의 일회용 저장소 회귀는 이 경계를 검사한다. fixture의 Cargo 대역 성공은
+실제 빌드·문서 검사 통과를 뜻하지 않는다.
+
 | ID | 검사 |
 |----|------|
 | B.9 | `scripts/check-plugin-version-bump.sh --range <원격 커밋> <로컬 커밋>`으로 원격에 게시된 플러그인 버전과 비교한다. |

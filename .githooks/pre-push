@@ -6,6 +6,8 @@ set -e -o pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
+# Git exports repository-local paths to hooks; do not leak them into synthetic repos.
+GIT_LOCAL_ENV_VARS="$(git rev-parse --local-env-vars)"
 red()    { printf '\033[31m%s\033[0m\n' "$*" >&2; }
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
@@ -23,7 +25,13 @@ run_check() {
     local id="$1" title="$2" started=$SECONDS rc=0
     shift 2
     yellow "[$id] 시작: $title"
-    if "$@" > "$LOG_DIR/$id.log" 2>&1; then
+    if (
+        while IFS= read -r name; do
+            [ -z "$name" ] || unset "$name"
+        done <<< "$GIT_LOCAL_ENV_VARS"
+        cd "$REPO_ROOT" || exit 1
+        "$@"
+    ) > "$LOG_DIR/$id.log" 2>&1; then
         green "[$id] 통과 ($((SECONDS - started))초)"
         printf '%s 통과 %s초 — %s\n' "$id" "$((SECONDS - started))" "$title" >> "$SUMMARY"
     else

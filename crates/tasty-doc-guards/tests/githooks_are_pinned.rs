@@ -245,6 +245,7 @@ fn run_pre_push_fixture(
 git() {
     case "$*" in
         'rev-parse --show-toplevel') printf '%s\n' "$HOOK_FIXTURE" ;;
+        'rev-parse --local-env-vars') command git rev-parse --local-env-vars ;;
         'rev-parse --git-path hook-logs') printf '%s/logs\n' "$HOOK_FIXTURE" ;;
         cat-file*) return 0 ;;
         *) return 99 ;;
@@ -270,21 +271,7 @@ cargo() {
     let slash = |path: &std::path::Path| {
         tasty_doc_guards::floored_walk::normalized_rel(path, std::path::Path::new(""))
     };
-    // On Windows, the system bash.exe may be a WSL launcher without a distribution.
-    // Use the Bash installed alongside Git's hook shell instead.
-    let bash = if cfg!(windows) {
-        let shell = Command::new("git")
-            .args(["var", "GIT_SHELL_PATH"])
-            .output()
-            .unwrap();
-        assert!(shell.status.success());
-        std::path::Path::new(String::from_utf8_lossy(&shell.stdout).trim())
-            .parent()
-            .unwrap()
-            .join("bash.exe")
-    } else {
-        std::path::PathBuf::from("bash")
-    };
+    let bash = hook_bash();
     let mut child = Command::new(bash)
         .arg(slash(&repo_root().join(".githooks/pre-push")))
         .args(["origin", "unused"])
@@ -391,4 +378,40 @@ fn pre_push_handles_new_deleted_multiple_and_empty_refs() {
     let (success, output, calls, _) = run_pre_push_fixture("", 1, 1, 101);
     assert!(success, "{output}");
     assert!(calls.is_empty(), "{calls}");
+}
+
+#[test]
+fn pre_push_checks_do_not_inherit_the_pushing_repository_environment() {
+    let scratch = tasty_doc_guards::temp_scratch::Scratch::new("pre-push-git-env");
+    let output = std::process::Command::new(hook_bash())
+        .arg(repo_root().join("scripts/tests/pre-push-git-environment.sh"))
+        .arg(repo_root().join(".githooks/pre-push"))
+        .arg(scratch.path())
+        .output()
+        .expect("run disposable hook repository fixture");
+    assert!(
+        output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn hook_bash() -> std::path::PathBuf {
+    use std::process::Command;
+    // On Windows, the system bash.exe may be a WSL launcher without a distribution.
+    // Use the Bash installed alongside Git's hook shell instead.
+    if cfg!(windows) {
+        let shell = Command::new("git")
+            .args(["var", "GIT_SHELL_PATH"])
+            .output()
+            .unwrap();
+        assert!(shell.status.success());
+        std::path::Path::new(String::from_utf8_lossy(&shell.stdout).trim())
+            .parent()
+            .unwrap()
+            .join("bash.exe")
+    } else {
+        std::path::PathBuf::from("bash")
+    }
 }
