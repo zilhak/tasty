@@ -627,13 +627,14 @@ mod markdown_changed_tests {
         let rx_b = hub.register(b);
         let rx_bystander = hub.register(bystander);
         let mut reg = OccupancyRegistry::new();
-        reg.set_notifier(hub);
+        let mut remote = crate::remote::state::RemoteState::default();
+        remote.set_notifier(hub);
         reg.acquire_workspace(100, &[10], &[10, 11], a).unwrap();
         reg.acquire_workspace(200, &[20], &[20], b).unwrap();
         reg.acquire_workspace(300, &[30], &[30], a).unwrap();
 
         assert_eq!(
-            notify_markdown_changed(&reg, "markdown", "com.tasty.markdown", 11),
+            notify_markdown_changed(&reg, &remote, "markdown", "com.tasty.markdown", 11),
             2
         );
         assert_eq!(changed_surface_id(&rx_a.try_recv().unwrap()), Some(11));
@@ -654,20 +655,21 @@ mod markdown_changed_tests {
         let a = hub.alloc_id();
         let rx = hub.register(a);
         let mut reg = OccupancyRegistry::new();
-        reg.set_notifier(hub);
+        let mut remote = crate::remote::state::RemoteState::default();
+        remote.set_notifier(hub);
         assert_eq!(
-            notify_markdown_changed(&reg, "markdown", "com.tasty.markdown", 11),
+            notify_markdown_changed(&reg, &remote, "markdown", "com.tasty.markdown", 11),
             0
         );
         assert!(rx.try_recv().is_err());
 
         reg.acquire_workspace(100, &[10], &[10, 11], a).unwrap();
         assert_eq!(
-            notify_markdown_changed(&reg, "html", "com.tasty.html", 11),
+            notify_markdown_changed(&reg, &remote, "html", "com.tasty.html", 11),
             0
         );
         assert_eq!(
-            notify_markdown_changed(&reg, "markdown", "com.thirdparty.markdown", 11),
+            notify_markdown_changed(&reg, &remote, "markdown", "com.thirdparty.markdown", 11),
             0
         );
         assert!(rx.try_recv().is_err());

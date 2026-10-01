@@ -208,7 +208,18 @@ mod tests {
     #[test]
     fn new_subscribe_is_dirty_and_needs_full_textures() {
         let mut reg = MeshMirrorRegistry::default();
-        reg.upsert(1, 100, 800, 600, 2.0, None, true);
+        reg.upsert(
+            1,
+            100,
+            1,
+            std::sync::Weak::new(),
+            Some(1),
+            800,
+            600,
+            2.0,
+            None,
+            true,
+        );
         assert!(reg.take_dirty(1));
         assert!(reg.take_need_full_textures(1));
         assert!(!reg.take_dirty(1));
@@ -218,20 +229,64 @@ mod tests {
     #[test]
     fn unchanged_upsert_does_not_redirty() {
         let mut reg = MeshMirrorRegistry::default();
-        reg.upsert(1, 100, 800, 600, 2.0, None, true);
+        reg.upsert(
+            1,
+            100,
+            1,
+            std::sync::Weak::new(),
+            Some(1),
+            800,
+            600,
+            2.0,
+            None,
+            true,
+        );
         reg.take_dirty(1);
         reg.take_need_full_textures(1);
-        reg.upsert(1, 100, 800, 600, 2.0, None, true);
+        reg.upsert(
+            1,
+            100,
+            1,
+            std::sync::Weak::new(),
+            Some(1),
+            800,
+            600,
+            2.0,
+            None,
+            true,
+        );
         assert!(!reg.take_dirty(1));
     }
 
     #[test]
     fn geometry_change_redirties() {
         let mut reg = MeshMirrorRegistry::default();
-        reg.upsert(1, 100, 800, 600, 2.0, None, true);
+        reg.upsert(
+            1,
+            100,
+            1,
+            std::sync::Weak::new(),
+            Some(1),
+            800,
+            600,
+            2.0,
+            None,
+            true,
+        );
         reg.take_dirty(1);
         reg.take_need_full_textures(1);
-        reg.upsert(1, 100, 801, 600, 2.0, None, true);
+        reg.upsert(
+            1,
+            100,
+            1,
+            std::sync::Weak::new(),
+            Some(1),
+            801,
+            600,
+            2.0,
+            None,
+            true,
+        );
         assert!(reg.take_dirty(1));
         assert!(!reg.take_need_full_textures(1));
     }
@@ -240,7 +295,18 @@ mod tests {
     fn full_resend_request_requires_existing_subscription() {
         let mut reg = MeshMirrorRegistry::default();
         assert!(!reg.request_full_resend(9));
-        reg.upsert(9, 1, 10, 10, 1.0, None, false);
+        reg.upsert(
+            9,
+            1,
+            1,
+            std::sync::Weak::new(),
+            Some(1),
+            10,
+            10,
+            1.0,
+            None,
+            false,
+        );
         reg.take_dirty(9);
         reg.take_need_full_textures(9);
         assert!(reg.request_full_resend(9));
@@ -251,7 +317,18 @@ mod tests {
     #[test]
     fn should_forward_generation_dedupes() {
         let mut reg = MeshMirrorRegistry::default();
-        reg.upsert(1, 1, 10, 10, 1.0, None, false);
+        reg.upsert(
+            1,
+            1,
+            1,
+            std::sync::Weak::new(),
+            Some(1),
+            10,
+            10,
+            1.0,
+            None,
+            false,
+        );
         assert!(reg.should_forward_generation(1, 5));
         let frame_id = reg.mark_forwarded(1, 5).unwrap();
         assert_eq!(frame_id, 0);
@@ -263,8 +340,30 @@ mod tests {
     #[test]
     fn remove_for_client_only_drops_that_clients_subscriptions() {
         let mut reg = MeshMirrorRegistry::default();
-        reg.upsert(1, 100, 1, 1, 1.0, None, false);
-        reg.upsert(2, 200, 1, 1, 1.0, None, false);
+        reg.upsert(
+            1,
+            100,
+            1,
+            std::sync::Weak::new(),
+            Some(1),
+            1,
+            1,
+            1.0,
+            None,
+            false,
+        );
+        reg.upsert(
+            2,
+            200,
+            1,
+            std::sync::Weak::new(),
+            Some(1),
+            1,
+            1,
+            1.0,
+            None,
+            false,
+        );
         reg.remove_for_client(100);
         assert!(reg.get(1).is_none());
         assert!(reg.get(2).is_some());
@@ -283,7 +382,18 @@ mod tests {
             events: vec![RawInputEventWire::PointerMoved { x: 1.0, y: 2.0 }],
         };
         assert!(!reg.push_input(9, input.clone()));
-        reg.upsert(9, 1, 10, 10, 1.0, None, false);
+        reg.upsert(
+            9,
+            1,
+            1,
+            std::sync::Weak::new(),
+            Some(1),
+            10,
+            10,
+            1.0,
+            None,
+            false,
+        );
         reg.take_dirty(9);
         assert!(reg.push_input(9, input));
         assert!(reg.take_dirty(9));
@@ -291,5 +401,65 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert!(reg.get(9).unwrap().last_modifiers.ctrl);
         assert!(reg.take_pending_events(9).is_empty());
+    }
+    #[test]
+    fn input_overflow_preserves_the_retained_prefix() {
+        let mut reg = MeshMirrorRegistry::default();
+        let owner = std::sync::Arc::new(());
+        reg.upsert(
+            1,
+            100,
+            7,
+            std::sync::Arc::downgrade(&owner),
+            Some(3),
+            800,
+            600,
+            1.0,
+            None,
+            false,
+        );
+        let input = |count| RawInputWire {
+            time: None,
+            focused: true,
+            modifiers: Default::default(),
+            events: vec![RawInputEventWire::PointerMoved { x: 1.0, y: 2.0 }; count],
+        };
+        assert!(reg.push_input(1, input(1024)));
+        assert!(!reg.push_input(1, input(1)));
+        assert_eq!(reg.take_pending_events(1).len(), 1024);
+        assert!(reg.push_input(1, input(1)));
+    }
+
+    #[test]
+    fn a_replaced_grant_discards_old_pending_input_and_frame_generation() {
+        let mut reg = MeshMirrorRegistry::default();
+        let owner = std::sync::Arc::new(());
+        let binding = std::sync::Arc::downgrade(&owner);
+        reg.upsert(
+            1,
+            100,
+            7,
+            binding.clone(),
+            Some(3),
+            800,
+            600,
+            1.0,
+            None,
+            false,
+        );
+        reg.mark_forwarded(1, 8);
+        assert!(reg.push_input(
+            1,
+            RawInputWire {
+                time: None,
+                focused: true,
+                modifiers: Default::default(),
+                events: vec![RawInputEventWire::PointerMoved { x: 1.0, y: 2.0 }]
+            }
+        ));
+        reg.upsert(1, 100, 8, binding, Some(3), 800, 600, 1.0, None, false);
+        assert!(reg.take_pending_events(1).is_empty());
+        assert!(reg.should_forward_generation(1, 8));
+        assert!(reg.take_need_full_textures(1));
     }
 }
