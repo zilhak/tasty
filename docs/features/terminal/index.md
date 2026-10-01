@@ -49,7 +49,9 @@ macOS·Linux에는 이 Windows 전용 처리를 적용하지 않는다.
 
 - TerminalState는 Pty를 모르고 OutputSink로만 byte를 내보낸다. DSR/DA/OSC 조회 응답도 ingest 중에 같은 sink로 나간다. mirror에는 Pty가 없으며 sink는 attach 입력 채널이다.
 - Pty는 VT를 모르고 읽은 raw 청크를 받는 쪽 계약(`PtyOutput`)으로 넘긴다. 같은 reader worker가 청크를 바로 ingest하지만 grid와 lock은 Terminal 쪽 소유다.
-- 청크 하나의 output tap 전달과 grid 갱신은 같은 state lock 안에서 일어난다. attach는 `Terminal::snapshot_and_tap`으로 VT snapshot과 output·resize tap 등록을 한 번의 lock 안에서 수행한다. 그래서 reader worker가 ingest한 청크는 snapshot과 tap 중 한쪽에만 들어간다. tap 채널이 가득 차 버려지는 청크는 이와 별개다.
+- Remote attach의 `Terminal::snapshot_and_stream(&mut self)`은 VT snapshot·cols/rows·구독 등록을 같은 parser lock 안에서 캡처한다. snapshot 뒤의 `Output`과 `Resize`는 하나의 `AttachEventReceiver`에 발생 순서대로 들어가므로 출력 청크와 크기 변경의 경계가 뒤섞이지 않는다.
+- 이 구독은 최대 256개 event와 1 MiB 큐 바이트 예산을 함께 적용하며 producer를 기다리게 하지 않는다. 한도를 넘으면 이미 수락한 prefix 뒤에 `Loss`를 한 번 전달하고 `Disconnected`로 끝난다. Remote는 손실된 구독을 계속 표시하지 않고 원 registration을 끊어 새 snapshot으로 재연결한다. 구독 해제는 원본 PTY 종료가 아니다.
+- 기존 `snapshot_and_tap`은 VT snapshot과 별도의 output·resize receiver를 사용하는 소비자를 위해 남아 있다. 한 lock에서 snapshot과 tap을 등록하지만 두 receiver 사이의 통합 순서·`Loss` 종료 계약은 새 ordered stream API의 계약이다.
 - resize는 grid 변경과 resize tap 통지가 먼저다. OS resize는 Pty에 예약만 하고, collection의 다음 process 처리에서 강제 flush 또는 호스트가 대기 중인 resize를 순회하는 `Pty::flush_resize`(100ms throttle)에서 적용한다. 그래서 tap은 OS 적용 확인이 아니다.
 - child의 kill·wait 소유자는 Pty 하나다. standalone에서 surface로 adopt해도 바뀌지 않으며 정상 Drop의 Unix 신호 전달 뒤 유예·회수는 메인 루프 밖에서 수행한다. reader/writer 준비가 실패해도 이미 생성한 child는 같은 owner가 정리한다.
 - EngineSession의 기존 TerminalStore는 한 항목에 Terminal과 Option<Pty>를 함께 보관한다. Terminal 자체에는 child/master가 없다. 내용 조회는 Terminal만 빌리고 PID·OS cwd·resize는 Pty를 명시적으로 조회한다.

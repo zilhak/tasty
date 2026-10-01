@@ -21,7 +21,7 @@ pub(crate) fn forward_mesh_frames_for_engine(
     stream_hub: &StreamHub,
 ) {
     for sid in engine.remote.mesh_mirror.active_surface_ids() {
-        if !engine.live.occupancy.is_hard_occupied(sid) {
+        if !engine.as_ref().attached_mesh_context_is_current(sid,stream_hub) {
             engine.remote.mesh_mirror.remove(sid);
             continue;
         }
@@ -92,6 +92,12 @@ pub(crate) fn relay_mesh_frame_if_new(
     sid: u32,
     client_id: AttachClientId,
 ) {
+    if !engine.as_ref().attached_mesh_context_is_current(sid,stream_hub) {
+        engine.remote.mesh_mirror.remove(sid);
+        return;
+    }
+    let Some(binding)=engine.remote.mesh_mirror.get(sid)
+        .filter(|context|context.client_id==client_id).map(|context|context.binding.clone()) else {return;};
     let Some(frame) = mgr.egui_mesh_frame(sid) else {
         return;
     };
@@ -138,7 +144,7 @@ pub(crate) fn relay_mesh_frame_if_new(
         frame.full_textures,
         bytes,
     ) {
-        let result = stream_hub.push(client_id, StreamFrame::new(StreamTag::MeshData, payload));
+        let result = stream_hub.push_bound(client_id, &binding, StreamFrame::new(StreamTag::MeshData, payload));
         if matches!(result, PushResult::Unknown | PushResult::Disconnected) {
             // 연결이 사라졌거나 끊겼으면 이 프레임의 나머지 chunk 전송을 중단한다.
             break;
