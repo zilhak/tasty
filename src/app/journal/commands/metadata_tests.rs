@@ -10,7 +10,7 @@ fn mirror(id: u32, name: &str) -> crate::model::Workspace {
 fn resolve_without_executing(journal: &mut JournalApplication, session: &mut EngineSession) {
     let until = Instant::now() + Duration::from_secs(10);
     loop {
-        journal.poll_bootstrap(&mut [session]).unwrap();
+        journal.poll_bootstrap(&mut [session], None).unwrap();
         let requests = journal.requests_needing_resolution();
         if !requests.is_empty() {
             for (ticket, _) in requests {
@@ -140,7 +140,7 @@ fn mixed_order_keeps_local_canonical_order_and_stored_move_does_not_move_again()
     journal.creations.insert(session.id, creation);
     let until = Instant::now() + Duration::from_secs(10);
     while !journal.creations.is_empty() {
-        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         assert!(Instant::now() < until);
         std::thread::sleep(Duration::from_millis(1));
     }
@@ -212,7 +212,7 @@ fn mixed_order_keeps_local_canonical_order_and_stored_move_does_not_move_again()
 pub(super) fn finish_intents(journal: &mut JournalApplication, session: &mut EngineSession) {
     let until = Instant::now() + Duration::from_secs(10);
     while !journal.commands.pending.is_empty() {
-        journal.poll_bootstrap(&mut [session]).unwrap();
+        journal.poll_bootstrap(&mut [session], None).unwrap();
         for (ticket, _) in journal.requests_needing_resolution() {
             journal.resolve_ipc_for_engine(ticket, session);
         }

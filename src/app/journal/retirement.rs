@@ -176,7 +176,7 @@ mod tests {
     ) {
         let until = Instant::now() + Duration::from_secs(10);
         loop {
-            journal.poll_bootstrap(&mut [session]).unwrap();
+            journal.poll_bootstrap(&mut [session], None).unwrap();
             journal.poll_restore_bootstrap(session).unwrap();
             if ready(journal) {
                 return;
@@ -191,7 +191,7 @@ mod tests {
         let mut settings = crate::settings::Settings::default();
         settings.general.shell = "/bin/sh".into();
         settings.general.startup_command = "exec sleep 60".into();
-        let mut session = EngineSession::for_journal(
+        let mut session = EngineSession::new_with_ids_and_settings(
             80,
             24,
             Arc::new(|| {}),
@@ -300,7 +300,7 @@ mod tests {
         let mut settings = crate::settings::Settings::default();
         settings.general.shell = "/bin/sh".into();
         settings.general.startup_command = "exec sleep 60".into();
-        let mut session = EngineSession::for_journal(
+        let mut session = EngineSession::new_with_ids_and_settings(
             80,
             24,
             Arc::new(|| {}),

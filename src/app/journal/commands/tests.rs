@@ -12,7 +12,7 @@ fn finish(
 ) -> JsonRpcResponse {
     let until = Instant::now() + Duration::from_secs(10);
     loop {
-        journal.poll_bootstrap(&mut [session]).unwrap();
+        journal.poll_bootstrap(&mut [session], None).unwrap();
         for (ticket, request) in journal.requests_needing_resolution() {
             if request.method == "workspace.create" {
                 journal.resolve_workspace_creation(ticket, session, None);
@@ -96,7 +96,16 @@ fn category_wire_results_and_rejections_survive_deletion_and_worker_restart() {
     assert!(finish(&mut journal, &mut session, &rx).error.is_none());
     assert_eq!(session.core_state.categories().len(), 1);
     drop(journal);
-    session.core_state.replace_local_workspaces(Vec::new());
+    let release_deadline = Instant::now() + Duration::from_secs(5);
+    while !crate::runtime::resource_retirement::poll_engine_release(&mut session, None) {
+        assert!(
+            Instant::now() < release_deadline,
+            "old test resources were not reaped"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    session.engine_release = None;
+    session.core_state = crate::core::CoreState::new_base();
     session.journal_binding = None;
     // The old TerminalStore owners are not a second structural source; bootstrap installs replacements.
     let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
@@ -110,7 +119,7 @@ fn category_wire_results_and_rejections_survive_deletion_and_worker_restart() {
         )
         .unwrap();
     while !journal.is_ready(session.id) {
-        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         journal.poll_restore_bootstrap(&session).unwrap();
         assert!(Instant::now() < until);
         std::thread::sleep(Duration::from_millis(1));
@@ -141,7 +150,7 @@ fn boot_with_layout(layout: Option<serde_json::Value>) -> (EngineSession, Journa
     let mut settings = crate::settings::Settings::default();
     settings.general.shell = "/bin/sh".into();
     settings.general.startup_command = "exec sleep 60".into();
-    let mut session = EngineSession::for_journal(
+    let mut session = EngineSession::new_with_ids_and_settings(
         80,
         24,
         Arc::new(|| {}),
@@ -165,7 +174,7 @@ fn boot_with_layout(layout: Option<serde_json::Value>) -> (EngineSession, Journa
         .unwrap();
     let until = Instant::now() + Duration::from_secs(10);
     while !journal.is_ready(session.id) {
-        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         if resume {
             journal.poll_restore_bootstrap(&mut session).unwrap();
         }
@@ -222,7 +231,7 @@ fn oversized_admission_and_resolution_do_not_halt_other_requests() {
     let follower = send(&mut journal, keyed);
     let until = Instant::now() + Duration::from_secs(10);
     loop {
-        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         if journal
             .commands
             .pending
@@ -299,7 +308,7 @@ fn resolved_rename_releases_raw_params_before_retaining_input_and_wire_reply() {
     );
     let until = Instant::now() + Duration::from_secs(10);
     let ticket = loop {
-        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         if let Some((ticket, _)) = journal.requests_needing_resolution().into_iter().next() {
             break ticket;
         }
@@ -340,7 +349,7 @@ fn committed_publication_failure_halts_readers_and_fails_all_pending_replies() {
     );
     let until = Instant::now() + Duration::from_secs(10);
     loop {
-        if journal.poll_bootstrap(&mut [&mut session]).is_err() {
+        if journal.poll_bootstrap(&mut [&mut session], None).is_err() {
             break;
         }
         for (ticket, _) in journal.requests_needing_resolution() {
@@ -420,7 +429,7 @@ fn stale_settings_reset_completion_cannot_overwrite_a_newer_settings_intent() {
         .unwrap();
     let until = Instant::now() + Duration::from_secs(10);
     while !journal.commands.pending.is_empty() {
-        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         assert!(Instant::now() < until);
         std::thread::sleep(Duration::from_millis(1));
     }
@@ -449,7 +458,7 @@ fn stale_settings_reset_completion_cannot_overwrite_a_newer_settings_intent() {
     session.runtime.settings.general.startup_command = "latest-setting-B".into();
     let until = Instant::now() + Duration::from_secs(10);
     while !journal.commands.pending.is_empty() {
-        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         assert!(Instant::now() < until);
         std::thread::sleep(Duration::from_millis(1));
     }
@@ -565,7 +574,7 @@ fn headless_pending_category_intent_uses_the_explicit_engine_journal_admission()
     assert_eq!(header.actor, "agent");
     let until = Instant::now() + Duration::from_secs(10);
     while !journal.commands.pending.is_empty() {
-        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         journal.resolve_headless_requests(&session, &mut state);
         assert!(Instant::now() < until);
         std::thread::sleep(Duration::from_millis(1));
@@ -736,7 +745,7 @@ fn workspace_create_uses_completion_mirror_count_and_serialized_local_append_ord
     );
     let until = Instant::now() + Duration::from_secs(10);
     loop {
-        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         let requests = journal.requests_needing_resolution();
         if let Some((ticket, _)) = requests.first() {
             journal.resolve_workspace_creation(*ticket, &session, None);

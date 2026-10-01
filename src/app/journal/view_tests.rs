@@ -9,7 +9,7 @@ fn poll_until(
 ) {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        journal.poll_bootstrap(&mut [session]).unwrap();
+        journal.poll_bootstrap(&mut [session], None).unwrap();
         journal.poll_restore_bootstrap(session).unwrap();
         if predicate(journal, session) {
             break;
@@ -28,7 +28,7 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
     let mut settings = crate::settings::Settings::default();
     settings.general.shell = "/bin/sh".into();
     settings.general.startup_command = "exec sleep 60".into();
-    let mut session = EngineSession::for_journal(
+    let mut session = EngineSession::new_with_ids_and_settings(
         80,
         24,
         Arc::new(|| {}),
@@ -213,7 +213,7 @@ fn failed_view_write_retains_the_checkpoint_and_marks_its_engine_dirty() {
     let mut settings = crate::settings::Settings::default();
     settings.general.shell = "/bin/sh".into();
     settings.general.startup_command = "exec sleep 60".into();
-    let mut session = EngineSession::for_journal(
+    let mut session = EngineSession::new_with_ids_and_settings(
         80,
         24,
         Arc::new(|| {}),

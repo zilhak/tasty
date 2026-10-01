@@ -14,7 +14,7 @@ fn more_than_one_channel_capacity_of_captures_are_read_without_halting_bootstrap
         tasty_memory::testing::InMemoryStorage::new(),
     ));
     let runners = Arc::new(tasty_task_runtime::RunnerRegistry::new());
-    let mut session = EngineSession::for_journal(
+    let mut session = EngineSession::new_with_ids_and_settings(
         80,
         24,
         Arc::new(|| {}),
@@ -80,7 +80,7 @@ fn more_than_one_channel_capacity_of_captures_are_read_without_halting_bootstrap
     let mut turns = 0;
     loop {
         turns += 1;
-        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         assert!(journal.restoration_reads.len() <= 8);
         if journal
             .restoration_ready
@@ -133,7 +133,7 @@ fn selected_terminal_restores_capture_while_other_tabs_remain_resource_free() {
     let mut settings = crate::settings::Settings::default();
     settings.general.shell = "/bin/sh".into();
     settings.general.startup_command = String::new();
-    let mut session = EngineSession::for_journal(
+    let mut session = EngineSession::new_with_ids_and_settings(
         80,
         24,
         Arc::new(|| {}),
@@ -192,7 +192,7 @@ fn selected_terminal_restores_capture_while_other_tabs_remain_resource_free() {
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         journal.poll_restore_bootstrap(&session).unwrap();
         if journal.is_ready(session.id) {
             break;
@@ -236,7 +236,7 @@ fn selected_terminal_restores_capture_while_other_tabs_remain_resource_free() {
     assert_eq!(journal.restoration_ready[&session.id].len(), 2);
     assert!(journal.activate_restored_surface(&session, ids[2]).unwrap());
     loop {
-        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         if !journal.creations.contains_key(&session.id) {
             break;
         }
@@ -257,7 +257,7 @@ fn large_generic_capture_waits_for_registration_and_reaches_restore_factory_unch
         tasty_memory::testing::InMemoryStorage::new(),
     ));
     let runners = Arc::new(tasty_task_runtime::RunnerRegistry::new());
-    let mut session = EngineSession::for_journal(
+    let mut session = EngineSession::new_with_ids_and_settings(
         80,
         24,
         Arc::new(|| {}),
@@ -313,7 +313,7 @@ fn large_generic_capture_waits_for_registration_and_reaches_restore_factory_unch
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         journal.poll_restore_bootstrap(&session).unwrap();
         if journal.is_ready(session.id) {
             break;
@@ -346,7 +346,7 @@ fn large_generic_capture_waits_for_registration_and_reaches_restore_factory_unch
     );
     loop {
         journal.poll_restore_bootstrap(&session).unwrap();
-        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         if journal.is_ready(session.id) && journal.restoration_ready[&session.id].is_empty() {
             break;
         }
@@ -391,7 +391,7 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
     )
     .unwrap();
     let runners = Arc::new(tasty_task_runtime::RunnerRegistry::new());
-    let mut session = EngineSession::for_journal(
+    let mut session = EngineSession::new_with_ids_and_settings(
         80,
         24,
         Arc::new(|| {}),
@@ -427,7 +427,7 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         journal.poll_restore_bootstrap(&session).unwrap();
         if journal.is_ready(session.id) {
             break;
@@ -476,7 +476,7 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
         )
         .unwrap();
     loop {
-        journal.poll_bootstrap(&mut [&mut session]).unwrap();
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         journal.poll_restore_bootstrap(&session).unwrap();
         if journal.is_ready(session.id) {
             break;
