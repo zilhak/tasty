@@ -2249,7 +2249,7 @@ mod tests {
 
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        on_close_remote_tool_popup(&ctx, &mut state, &mut engine);
+        on_close_remote_tool_popup(&ctx, &mut state, &engine.read());
 
         assert!(
             ctx.memory(|m| m.data.get_temp::<UiState>(egui::Id::new(UI_MEMORY_ID)))

@@ -274,32 +274,13 @@ impl EngineMut<'_> {
 }
 
 #[cfg(test)]
-mod id_generator_tests {
-    use super::IdGenerator;
-
-    #[test]
-    fn next_surface_starts_at_one() {
-        let ids = IdGenerator::new();
-        assert_eq!(ids.next_surface(), 1);
-        assert_eq!(ids.next_surface(), 2);
-    }
-
-    #[test]
-    fn bump_surface_floor_raises_counter() {
-        let ids = IdGenerator::new();
-        ids.bump_surface_floor(18);
-        assert_eq!(
-            ids.next_surface(),
-            18,
-            "floor 이후 첫 id 는 min_next 와 같아야 한다"
-        );
-        assert_eq!(ids.next_surface(), 19);
-    }
+mod runtime_counter_tests {
+    use crate::runtime::counters::RuntimeCounters;
 
     #[test]
     fn two_engines_do_not_hand_out_the_same_hook_id() {
         use tasty_hooks::{HookBinding, HookEvent, HookManager};
-        let ids = IdGenerator::new();
+        let ids = RuntimeCounters::new();
         let mut a = HookManager::with_counter(ids.hook_counter());
         let mut b = HookManager::with_counter(ids.hook_counter());
         let ia = a.add_hook(
@@ -320,7 +301,7 @@ mod id_generator_tests {
     #[test]
     fn two_engines_do_not_hand_out_the_same_global_hook_id() {
         use crate::hook_runtime::global::{GlobalHookManager, HookCondition};
-        let ids = IdGenerator::new();
+        let ids = RuntimeCounters::new();
         let mut a = GlobalHookManager::with_counter(ids.global_hook_counter());
         let mut b = GlobalHookManager::with_counter(ids.global_hook_counter());
         let ia = a.add(
@@ -338,16 +319,6 @@ mod id_generator_tests {
             "공유 발급기를 쓰는 두 engine의 global hook ID가 겹쳤다"
         );
     }
-
-    #[test]
-    fn bump_surface_floor_is_noop_when_already_higher() {
-        let ids = IdGenerator::new();
-        for _ in 0..4 {
-            ids.next_surface();
-        }
-        ids.bump_surface_floor(3);
-        assert_eq!(ids.next_surface(), 5);
-    }
 }
 
 #[cfg(test)]
@@ -362,9 +333,11 @@ mod default_params_tests {
     fn explorer_defaults_without_home_inject_view_mode_only() {
         let mut e_session = engine();
         let e = e_session.borrow_mut();
-        let def = e.surface_registry.get("explorer").unwrap();
+        let def = e.runtime.surface_registry.get("explorer").unwrap();
         let mut params = serde_json::json!({});
-        let injected = e.apply_kind_default_params(&def, &mut params, None);
+        let injected = e
+            .as_ref()
+            .apply_kind_default_params(&def, &mut params, None);
         assert!(injected);
         assert_eq!(
             params["view_mode"],
@@ -380,10 +353,11 @@ mod default_params_tests {
     fn explorer_defaults_with_home_inject_path() {
         let mut e_session = engine();
         let e = e_session.borrow_mut();
-        let def = e.surface_registry.get("explorer").unwrap();
+        let def = e.runtime.surface_registry.get("explorer").unwrap();
         let mut params = serde_json::json!({});
         let home = std::path::PathBuf::from("/home/tester");
-        e.apply_kind_default_params(&def, &mut params, Some(&home));
+        e.as_ref()
+            .apply_kind_default_params(&def, &mut params, Some(&home));
         assert_eq!(
             params["view_mode"],
             e.runtime.settings.general.explorer_view_mode
@@ -395,10 +369,11 @@ mod default_params_tests {
     fn explicit_params_preserved() {
         let mut e_session = engine();
         let e = e_session.borrow_mut();
-        let def = e.surface_registry.get("explorer").unwrap();
+        let def = e.runtime.surface_registry.get("explorer").unwrap();
         let home = std::path::PathBuf::from("/home/tester");
         let mut params = serde_json::json!({"view_mode": "list", "path": "/explicit"});
-        e.apply_kind_default_params(&def, &mut params, Some(&home));
+        e.as_ref()
+            .apply_kind_default_params(&def, &mut params, Some(&home));
         assert_eq!(params["view_mode"], "list");
         assert_eq!(params["path"], "/explicit");
     }
@@ -407,13 +382,16 @@ mod default_params_tests {
     fn kind_without_defaults_is_noop() {
         let mut e_session = engine();
         let e = e_session.borrow_mut();
-        let def = e.surface_registry.get("terminal").unwrap();
+        let def = e.runtime.surface_registry.get("terminal").unwrap();
         let mut params = serde_json::json!({});
-        assert!(!e.apply_kind_default_params(&def, &mut params, None));
+        assert!(
+            !e.as_ref()
+                .apply_kind_default_params(&def, &mut params, None)
+        );
     }
 }
 
-/// 잘못된 셸 설정이 engine 생성의 Err로 전달되는지 확인한다. 창 전체의 오류 처리 검사는 아니다.
+/// 세션 초기화는 실행을 시작하지 않으며 전달된 runner owner를 유지한다.
 #[cfg(test)]
 mod engine_creation_failure_tests {
     use super::*;
@@ -421,7 +399,7 @@ mod engine_creation_failure_tests {
     fn bogus_shell_settings() -> Settings {
         let mut s = Settings::default();
         s.general.shell = "/nonexistent/definitely/not/a/real/shell-xyzzy".to_string();
-        // 복원 대신 새 workspace 생성 경로를 실행해 셸 생성 오류를 확인한다.
+        // 설정값을 받는 것만으로 셸을 실행하지 않아야 한다.
         s.general.restore_layout = false;
         s
     }
@@ -437,47 +415,20 @@ mod engine_creation_failure_tests {
     }
 
     #[test]
-    fn a_bogus_shell_path_makes_engine_creation_return_err_not_panic() {
-        let waker: Waker = std::sync::Arc::new(|| {});
-        let result = crate::runtime::engine_session::EngineSession::new_with_ids_and_settings(
+    fn engine_initialization_does_not_execute_the_configured_shell() {
+        let owner = crate::runtime::engine_session::EngineSession::new_with_ids_and_settings(
             80,
             24,
-            waker,
+            std::sync::Arc::new(|| {}),
             None,
             None,
             in_memory(),
             registry(),
             bogus_shell_settings(),
-        );
-        let err = result
-            .err()
-            .expect("a bogus shell must fail engine creation");
-        let msg = format!("{err}");
-        assert!(
-            msg.contains("shell-xyzzy"),
-            "the error must name the shell that could not be spawned, got: {msg}"
-        );
-    }
-
-    #[test]
-    fn a_valid_shell_still_produces_an_engine_with_one_workspace() {
-        let waker: Waker = std::sync::Arc::new(|| {});
-        let mut ok = Settings::default();
-        ok.general.restore_layout = false;
-        let mut engine_session =
-            crate::runtime::engine_session::EngineSession::new_with_ids_and_settings(
-                80,
-                24,
-                waker,
-                None,
-                None,
-                in_memory(),
-                registry(),
-                ok,
-            )
-            .expect("default settings must produce an engine");
-        let engine = engine_session.borrow_mut();
-        assert_eq!(engine.workspaces().len(), 1);
+        )
+        .expect("session initialization precedes shell execution");
+        assert!(owner.core_state.workspaces().is_empty());
+        assert_eq!(owner.runtime.terminals.iter().count(), 0);
     }
 
     #[test]

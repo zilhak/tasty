@@ -543,18 +543,14 @@ mod tests {
     }
 
     #[test]
-    fn a_withdrawn_kind_keeps_its_definition_but_refuses_creation() {
+    fn a_withdrawn_kind_retains_definition_but_is_absent_from_live_catalog() {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
         let engine = engine_session.borrow_mut();
         let reg = &engine.runtime.surface_registry;
         reg.register(plugin_def("probe_kind", "com.x.probe"));
-        assert!(
-            engine
-                .create_surface_via_registry("probe_kind", 1, None, &serde_json::json!({}))
-                .is_err_and(|e| e.downcast_ref::<SurfaceKindWithdrawn>().is_none())
-        );
+        let original = reg.get_live("probe_kind").expect("live definition");
 
         assert_eq!(reg.withdraw_plugin("com.x.probe"), vec!["probe_kind"]);
 
@@ -569,18 +565,7 @@ mod tests {
             reg.withdrawn_by("probe_kind").as_deref(),
             Some("com.x.probe")
         );
-        let err = engine
-            .create_surface_via_registry("probe_kind", 1, None, &serde_json::json!({}))
-            .err()
-            .expect("철회된 kind 는 만들지 않는다");
-        assert_eq!(
-            err.downcast_ref::<SurfaceKindWithdrawn>(),
-            Some(&SurfaceKindWithdrawn {
-                kind: "probe_kind".to_string(),
-                plugin_id: "com.x.probe".to_string(),
-            })
-        );
-        assert!(err.to_string().contains("com.x.probe"), "{err}");
+        assert!(Arc::ptr_eq(&original, &reg.get("probe_kind").unwrap()));
         assert!(reg.withdraw_plugin("com.x.probe").is_empty());
     }
 

@@ -712,13 +712,14 @@ mod tests {
     #[test]
     fn force_detach_pushes_to_notifier() {
         use tasty_ipc::stream::StreamTag;
-        let hub = StreamHub::new();
+        let hub = tasty_ipc::stream_hub::StreamHub::new();
         let holder = hub.alloc_id();
         let rx = hub.register(holder);
-        let mut reg = OccupancyRegistry::new();
-        reg.set_notifier(hub);
-        reg.acquire(10, holder).unwrap();
-        assert_eq!(reg.force_detach(10), Some(holder));
+        let mut session = crate::state::tests::test_state().1;
+        let mut engine = session.borrow_mut();
+        engine.remote.set_notifier(hub);
+        engine.live.occupancy.acquire(10, holder).unwrap();
+        assert_eq!(engine.force_detach(10), Some(holder));
         let f1 = rx.recv().unwrap();
         assert_eq!(f1.tag, StreamTag::Control);
         assert!(String::from_utf8_lossy(&f1.payload).contains("force_detached"));

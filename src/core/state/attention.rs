@@ -286,8 +286,7 @@ mod tests {
     use super::{AttentionKind, AttentionLevel, effects_of};
 
     fn state() -> crate::runtime::engine_session::EngineSession {
-        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
+        crate::state::tests::test_state().1
     }
 
     /// 같은 surface의 알림을 별개 항목으로 검사하기 위해 합치기 시간을 0으로 둔다.
@@ -370,10 +369,12 @@ mod tests {
         let mut s_session = state_no_coalesce();
         let mut s = s_session.borrow_mut();
         let id1 = s
+            .live
             .notifications
             .add(1, 100, "t1".into(), "b1".into())
             .unwrap();
         let _id2 = s
+            .live
             .notifications
             .add(1, 100, "t2".into(), "b2".into())
             .unwrap();
@@ -664,9 +665,8 @@ mod tests {
 
     /// 실제 attach 없이 workspace의 mirror 플래그로 분기만 검사한다.
     fn mirror_state() -> (crate::runtime::engine_session::EngineSession, u32) {
-        let mut s_session = state();
-        let mut s = s_session.borrow_mut();
-        s.make_mirror_fixture(0);
+        let mut s_session = crate::state::tests::test_mirror_state().1;
+        let s = s_session.borrow_mut();
         let sid = s
             .workspace_at(0)
             .expect("workspace index is valid")
@@ -737,6 +737,7 @@ mod tests {
         let mut s = s_session.borrow_mut();
         let ws_id = s.workspace_at(0).expect("workspace index is valid").id;
         let nid = s
+            .live
             .notifications
             .add(ws_id, sid, "t".into(), "b".into())
             .expect("알림 생성");
@@ -899,6 +900,7 @@ mod tests {
         let mut s_session = state_no_coalesce();
         let mut s = s_session.borrow_mut();
         let occupied_read = s
+            .live
             .notifications
             .add(1, 100, "t1".into(), "b1".into())
             .unwrap();
@@ -925,6 +927,7 @@ mod tests {
         // 앞선 알림은 이미 읽었으므로 새 안읽음 알림으로 같은 경로를 다시 검사한다.
         s.live.occupancy.release(100, 1).expect("release");
         let after_release = s
+            .live
             .notifications
             .add(1, 100, "t2".into(), "b2".into())
             .unwrap();
@@ -941,10 +944,12 @@ mod tests {
         let mut s_session = state_no_coalesce();
         let mut s = s_session.borrow_mut();
         let occupied = s
+            .live
             .notifications
             .add(1, 100, "t1".into(), "b1".into())
             .unwrap();
         let free = s
+            .live
             .notifications
             .add(1, 200, "t2".into(), "b2".into())
             .unwrap();

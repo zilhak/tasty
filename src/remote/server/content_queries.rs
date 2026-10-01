@@ -627,7 +627,7 @@ mod markdown_changed_tests {
         let rx_b = hub.register(b);
         let rx_bystander = hub.register(bystander);
         let mut reg = OccupancyRegistry::new();
-        let mut remote = crate::remote::state::RemoteState::default();
+        let mut remote = crate::remote::state::RemoteState::new();
         remote.set_notifier(hub);
         reg.acquire_workspace(100, &[10], &[10, 11], a).unwrap();
         reg.acquire_workspace(200, &[20], &[20], b).unwrap();
@@ -655,7 +655,7 @@ mod markdown_changed_tests {
         let a = hub.alloc_id();
         let rx = hub.register(a);
         let mut reg = OccupancyRegistry::new();
-        let mut remote = crate::remote::state::RemoteState::default();
+        let mut remote = crate::remote::state::RemoteState::new();
         remote.set_notifier(hub);
         assert_eq!(
             notify_markdown_changed(&reg, &remote, "markdown", "com.tasty.markdown", 11),

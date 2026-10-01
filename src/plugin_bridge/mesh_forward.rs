@@ -188,55 +188,72 @@ mod tests {
     /// 터미널 대신 mesh surface를 만들고 client가 hard 점유·구독한 engine을 준비한다.
     fn make_parked_engine(
         client_id: AttachClientId,
+        hub: &StreamHub,
     ) -> (crate::runtime::engine_session::EngineSession, u32) {
-        let waker: tasty_terminal::Waker = Arc::new(|| {});
-        let mut engine_session =
-            crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("core state");
+        use tasty_core::{DomainEvent as E, SurfaceSpec};
+        let surface_id = client_id;
+        let model = crate::state::tests::test_model(vec![
+            E::CategoryCreated {
+                id: 0,
+                name: "normal".into(),
+                index: 0,
+            },
+            E::WorkspaceCreated {
+                id: 1,
+                name: "mesh".into(),
+                category: 0,
+                index: 0,
+                pane: 1,
+            },
+            E::TabCreated {
+                id: 1,
+                pane: 1,
+                index: 0,
+                name: "mesh".into(),
+                surface: SurfaceSpec {
+                    id: surface_id,
+                    kind: "mesh_demo".into(),
+                    data: None,
+                },
+            },
+        ]);
+        let (_, mut engine_session) = crate::state::tests::test_state_from_model(model);
         let mut engine = engine_session.borrow_mut();
-
-        let pane_id = engine
-            .workspace_at_mut(0)
-            .unwrap()
-            .pane_layout()
-            .all_pane_ids()[0];
-        let surface_id = engine
-            .workspace_at_mut(0)
-            .unwrap()
-            .pane_layout()
-            .find_pane(pane_id)
-            .and_then(|pane| pane.tabs.first())
-            .and_then(|tab| tab.layout_if_initialized())
-            .and_then(|layout| layout.first_surface_id())
-            .expect("seed terminal surface");
-
-        let pane = engine
-            .workspace_at_mut(0)
-            .unwrap()
-            .pane_layout_mut()
-            .find_pane_mut(pane_id)
-            .expect("pane");
-        let tab = pane.tabs.first_mut().expect("tab");
-        tab.layout_mut().replace_surface(
+        engine.runtime.surfaces.insert(
             surface_id,
             Box::new(EguiMeshSurface::new(
                 surface_id,
                 "mesh_demo",
-                "com.tasty.mesh-demo".to_string(),
-                "Demo".to_string(),
+                "com.tasty.mesh-demo".into(),
+                "Demo".into(),
                 None,
             )),
         );
-
-        engine
+        let grant = engine
             .live
             .occupancy
             .acquire(surface_id, client_id)
-            .expect("hard-occupy for mesh mirror subscription");
-        engine
-            .remote
-            .mesh_mirror
-            .upsert(surface_id, client_id, 800, 600, 2.0, None, true);
-
+            .expect("original grant");
+        let binding = hub
+            .client_binding(client_id)
+            .expect("registered connection");
+        let activation = engine
+            .core
+            .find_surface_by_id(surface_id)
+            .unwrap()
+            .activation_generation;
+        engine.remote.mesh_mirror.upsert(
+            surface_id,
+            client_id,
+            grant.granted_seq,
+            binding,
+            activation,
+            800,
+            600,
+            2.0,
+            None,
+            true,
+        );
         (engine_session, surface_id)
     }
 
@@ -244,9 +261,12 @@ mod tests {
     #[test]
     fn multiple_parked_engines_are_each_serviced_independently() {
         let stream_hub = StreamHub::new();
+        let _receivers = [stream_hub.register(101), stream_hub.register(202)];
 
-        let mut parked: Vec<(crate::runtime::engine_session::EngineSession, u32)> =
-            vec![make_parked_engine(101), make_parked_engine(202)];
+        let mut parked: Vec<(crate::runtime::engine_session::EngineSession, u32)> = vec![
+            make_parked_engine(101, &stream_hub),
+            make_parked_engine(202, &stream_hub),
+        ];
         // 플러그인 프로세스는 실행하지 않으며 구독 상태가 처리되는지만 검사한다.
         let mgr = PluginManager::with_registries(
             Arc::new(NoopWakerFactory),
@@ -260,18 +280,18 @@ mod tests {
 
         for (engine, sid) in parked.iter_mut() {
             assert!(
-                !engine.core_state.remote.mesh_mirror.take_dirty(*sid),
+                engine.remote.mesh_mirror.get(*sid).is_some(),
+                "valid original grant must remain registered"
+            );
+            assert!(
+                !engine.remote.mesh_mirror.take_dirty(*sid),
                 "parked engine's mesh mirror subscription should have been driven"
             );
             assert!(
-                !engine
-                    .core_state
-                    .remote
-                    .mesh_mirror
-                    .take_need_full_textures(*sid),
+                !engine.remote.mesh_mirror.take_need_full_textures(*sid),
                 "parked engine's need_full_textures should have been consumed"
             );
-            assert!(engine.core_state.live.occupancy.is_hard_occupied(*sid));
+            assert!(engine.live.occupancy.is_hard_occupied(*sid));
         }
     }
 }

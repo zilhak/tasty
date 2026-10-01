@@ -8,7 +8,7 @@ use tasty_task_runtime::event_feed::AgentEvent;
 use tasty_task_runtime::task_waker::TerminalSnapshot;
 
 fn session() -> EngineSession {
-    EngineSession::new(80, 24, Arc::new(|| {})).expect("isolated session")
+    crate::state::tests::test_state().1
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn session_drop_joins_observer_and_preserves_external_task_handles() {
         .workspace_at(0)
         .expect("workspace index is valid")
         .all_surface_ids()[0];
-    let memory = Arc::clone(&owner.core_state.runtime.memory);
+    let memory = Arc::clone(&owner.runtime.memory);
     let hub = Arc::clone(owner.task_scope.waker_hub());
     let feed = Arc::clone(owner.task_scope.event_queue());
     let observer = owner

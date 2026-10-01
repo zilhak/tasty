@@ -104,6 +104,7 @@ impl Decider for Fake {
             Cmd::CreateWithEffect { name, effect_id } => {
                 let mut decision = create(state, name)?;
                 decision.effects.push(NewEffect {
+                    claim_kind: tasty_event_store::ClaimKind::Activation,
                     effect_id: effect_id.clone(),
                     operation_id: format!("spawn:{name}"),
                     resource_generation: 0,

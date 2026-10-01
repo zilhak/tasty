@@ -3517,7 +3517,7 @@ mod tests {
         let survivor_local = 50u32;
         let mut map = HashMap::new();
         map.insert(1u32, survivor_local);
-        let new_local = ids.next_surface(); // 역반영이 신규에 발급하는 것과 동형.
+        let new_local = ids.next_surface().expect("fixture ID lease"); // 역반영이 신규에 발급하는 것과 동형.
         map.insert(2u32, new_local);
         let mut term = HashSet::new();
         term.insert(survivor_local);
@@ -4910,7 +4910,14 @@ mod tests {
             .and_then(|l| l.find_surface(local))
             .expect("leaf");
         assert_eq!(leaf.kind(), "empty");
-        assert!(!pane.tabs[0].is_surface_deferred(local));
+        assert!(
+            !engine
+                .runtime
+                .surfaces
+                .get(&local)
+                .and_then(|surface| surface.as_any().downcast_ref::<EmptySurface>())
+                .is_some_and(|empty| empty.deferred.is_some())
+        );
     }
 
     #[test]

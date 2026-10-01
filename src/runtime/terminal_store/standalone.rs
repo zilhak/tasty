@@ -152,7 +152,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn touch_and_adopt_use_the_same_metadata_and_physical_owner() {
+    fn adoption_transfer_and_rollback_keep_the_physical_owner() {
         let _home = crate::test_support::IsolatedHome::new();
         let mut store = TerminalStore::new(Arc::new(AtomicU32::new(PTY_ID_BASE)));
         store.set_standalone_limits(2, Duration::from_secs(10));
@@ -166,7 +166,27 @@ mod tests {
         );
         let generation = store.generation(first).unwrap();
         let pid = store.pty(first).unwrap().process_id();
-        assert!(store.adopt(first, 5, Arc::new(|| {})));
+        assert!(
+            store
+                .take_standalone_for_adoption(first, generation.value() + 1)
+                .is_none()
+        );
+        let (terminal, pty, persisted) = store
+            .take_standalone_for_adoption(first, generation.value())
+            .expect("original owner");
+        assert!(store.get(first).is_none());
+        store
+            .restore_standalone_adoption(first, terminal, pty, persisted)
+            .unwrap_or_else(|_| panic!("rollback must preserve the original owner"));
+        assert_eq!(store.generation(first), Some(generation));
+        assert_eq!(store.pty(first).unwrap().process_id(), pid);
+        assert!(store.is_standalone(first));
+        let (mut terminal, mut pty, _) = store
+            .take_standalone_for_adoption(first, generation.value())
+            .expect("retry adoption");
+        pty.adopt();
+        terminal.rewire_waker(Arc::new(|| {}));
+        store.insert(5, terminal, Some(pty));
         assert!(!store.is_standalone(first) && !store.is_standalone(5));
         assert!(store.get(first).is_none() && store.pty(first).is_none());
         assert_eq!(store.generation(5), Some(generation));

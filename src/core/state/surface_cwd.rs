@@ -132,8 +132,7 @@ mod tests {
     use super::{RemoteCwd, SurfaceCwd};
 
     fn engine() -> crate::runtime::engine_session::EngineSession {
-        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine")
+        crate::state::tests::test_state().1
     }
 
     #[test]
@@ -205,13 +204,12 @@ mod tests {
 
     #[test]
     fn mirror_push_overrides_and_none_clears() {
-        let mut e_session = engine();
+        let mut e_session = crate::state::tests::test_mirror_state().1;
         let mut e = e_session.borrow_mut();
         let sid = e
             .workspace_at(0)
             .expect("workspace index is valid")
             .all_surface_ids()[0];
-        e.make_mirror_fixture(0);
 
         e.set_mirror_surface_cwd(sid, Some("/srv/remote".to_string()));
         assert_eq!(
