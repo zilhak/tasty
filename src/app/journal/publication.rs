@@ -481,6 +481,24 @@ impl JournalApplication {
                     let ResultValue::Bound(bound) = result? else {
                         return Err("bootstrap did not return an engine binding".into());
                     };
+                    #[cfg(feature = "gui")]
+                    if bound.restore_legacy_metadata {
+                        let mut memory = crate::poison::recover_mutex(
+                            session.runtime.memory.lock(),
+                            crate::core::MEMORY_WHAT,
+                            &crate::core::MEMORY_POISONED,
+                        );
+                        let purged =
+                            crate::surface_meta::SurfaceMetaStore::purge_out_of_range_surfaces(
+                                &mut *memory,
+                            );
+                        if purged > 0 {
+                            tracing::error!(
+                                purged,
+                                "removed legacy surface scopes outside the surface ID range"
+                            );
+                        }
+                    }
                     if !opening.projected {
                         projection::bootstrap::initialize(&mut session.core_state, &bound.model)?;
                         crate::runtime::surface_restorer::initialize_instances(

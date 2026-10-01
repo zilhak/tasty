@@ -15,10 +15,6 @@ pub(super) fn open(
     executor
         .with_state(|_| ())
         .map_err(|error| error.to_string())?;
-    let resume_view = matches!(
-        &selection,
-        EngineSelection::Slot { resume: true, .. } | EngineSelection::ImportedSlot { .. }
-    );
     let digest = serde_json::to_vec(&(&selection, &normal_category_name, surface_floor))
         .map_err(|error| error.to_string())?;
     let (key, stream, previous, reset) = {
@@ -46,7 +42,7 @@ pub(super) fn open(
                     epoch.0,
                     stream,
                     inner.state.stream(stream),
-                    resume_view,
+                    &selection,
                 );
             }
             CommandLookup::DigestMismatch(_) => {
@@ -100,13 +96,13 @@ pub(super) fn open(
                 .map_err(|error| error.to_string())?;
             inner = executor.inner.lock().map_err(|error| error.to_string())?;
         }
-        if let EngineSelection::Slot { slot, resume: true } = selection {
+        if let EngineSelection::Slot { slot, resume: true } = &selection {
             drop(inner);
-            import_legacy(executor, home, slot)?;
+            import_legacy(executor, home, *slot)?;
             inner = executor.inner.lock().map_err(|error| error.to_string())?;
         }
-        let (stream, reset) = match selection {
-            EngineSelection::Slot { slot, resume } => (format!("structure:slot-{slot}"), !resume),
+        let (stream, reset) = match &selection {
+            EngineSelection::Slot { slot, resume } => (format!("structure:slot-{slot}"), !*resume),
             EngineSelection::ImportedSlot { source } => {
                 (format!("structure:slot-{}", source.destination_slot), false)
             }
@@ -156,7 +152,7 @@ pub(super) fn open(
         inner.epoch.0,
         &stream,
         inner.state.stream(&stream),
-        resume_view,
+        &selection,
     )
 }
 
@@ -166,7 +162,7 @@ fn bound(
     epoch: u64,
     stream: &str,
     model: tasty_core::JournalModel,
-    resume_view: bool,
+    selection: &EngineSelection,
 ) -> Result<ResultValue, String> {
     let binding = EngineBinding {
         journal_id: store.journal_id().into(),
@@ -176,18 +172,30 @@ fn bound(
         published_cut: model.applied.batch,
         revision: model.applied.revision,
     };
-    let restored_view = if resume_view {
-        match super::super::view_record::load(store, home, &binding)? {
-            Some(view) => Some(view),
-            None if model.engine_incarnation == 1 => imported_view(store, stream)?,
-            None => None,
-        }
+    // The completed legacy import is durable provenance even after a View checkpoint.
+    // A reset incarnation or an explicit cross-journal transfer is not legacy restoration.
+    let legacy_view = if matches!(selection, EngineSelection::Slot { resume: true, .. })
+        && model.engine_incarnation == 1
+    {
+        imported_view(store, stream)?
+    } else {
+        None
+    };
+    #[cfg(feature = "gui")]
+    let restore_legacy_metadata = legacy_view.is_some();
+    let restored_view = if matches!(
+        selection,
+        EngineSelection::Slot { resume: true, .. } | EngineSelection::ImportedSlot { .. }
+    ) {
+        super::super::view_record::load(store, home, &binding)?.or(legacy_view)
     } else {
         None
     };
     Ok(ResultValue::Bound(BoundEngine {
         binding,
         imported_view: restored_view,
+        #[cfg(feature = "gui")]
+        restore_legacy_metadata,
         model,
     }))
 }

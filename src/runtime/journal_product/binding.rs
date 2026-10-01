@@ -29,5 +29,8 @@ pub(crate) struct BoundEngine {
     pub(crate) binding: EngineBinding,
     /// One-use bootstrap source; consumed when the initial live projection is built.
     pub(crate) model: tasty_core::JournalModel,
+    /// Successful legacy import in the original resumed incarnation; App owns memory cleanup.
+    #[cfg(feature = "gui")]
+    pub(crate) restore_legacy_metadata: bool,
     pub(crate) imported_view: Option<crate::core::layout_persistence::import::ImportedView>,
 }

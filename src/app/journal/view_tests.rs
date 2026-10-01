@@ -22,8 +22,9 @@ fn poll_until(
 #[test]
 fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
     let memory = Arc::new(std::sync::Mutex::new(
-        tasty_memory::testing::InMemoryStorage::new(),
+        tasty_memory::MemoryStore::open_in_memory().unwrap(),
     ));
+    seed_legacy_scopes(&mut memory.lock().unwrap());
     let runners = Arc::new(tasty_task_runtime::RunnerRegistry::new());
     let mut settings = crate::settings::Settings::default();
     settings.general.shell = "/bin/sh".into();
@@ -34,7 +35,7 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
         Arc::new(|| {}),
         None,
         Some(1),
-        memory,
+        memory.clone(),
         runners,
         settings,
     )
@@ -57,6 +58,7 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
     poll_until(&mut journal, &mut session, |journal, session| {
         journal.is_ready(session.id)
     });
+    assert_legacy_scopes(&memory.lock().unwrap(), false);
     let workspace = &session.core_state.local_workspaces()[0];
     let workspace_id = workspace.id;
     let pane = workspace.pane_layout().first_pane().unwrap();
@@ -107,6 +109,7 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
         binding.published_cut.unwrap()
     );
     drop(journal);
+    seed_legacy_scopes(&mut memory.lock().unwrap());
     std::fs::write(home.join("layouts/01.json"), "invalid legacy positions").unwrap();
     // Reset only the test projection; retained runtime owners still belong to this session.
     session.core_state = crate::core::CoreState::new_base();
@@ -124,11 +127,13 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
     poll_until(&mut journal, &mut session, |journal, session| {
         journal.is_ready(session.id)
     });
+    assert_legacy_scopes(&memory.lock().unwrap(), false);
     let restored = &journal.restored_views[&session.id];
     assert_eq!(restored.active_workspace, Some(workspace_id));
     assert_eq!(restored.selection.selected_tabs[&pane_id], second);
     assert!(restored.selection.collapsed_categories.contains(&0));
     drop(journal);
+    seed_legacy_scopes(&mut memory.lock().unwrap());
     // A reset did not select old View data, including a newer/unreadable sidecar schema.
     std::fs::create_dir_all(home.join("structure/views/slot-1")).unwrap();
     std::fs::write(
@@ -152,6 +157,7 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
     poll_until(&mut journal, &mut session, |journal, session| {
         journal.is_ready(session.id)
     });
+    assert_legacy_scopes(&memory.lock().unwrap(), true);
     assert_eq!(
         session.journal_binding.as_ref().unwrap().incarnation,
         binding.incarnation + 1
@@ -298,4 +304,94 @@ fn failed_view_write_retains_the_checkpoint_and_marks_its_engine_dirty() {
     let saved: serde_json::Value = serde_json::from_slice(&manifest.view).unwrap();
     assert_eq!(saved["sequence"], manifest.sequence);
     assert_eq!(saved["binding"]["runtime_epoch"], binding.runtime_epoch);
+}
+
+// Use the real SQLite store: the generic memory fake does not purge secret rows.
+fn seed_legacy_scopes(memory: &mut tasty_memory::MemoryStore) {
+    use tasty_memory::{MemoryValue, PutOpts, Scope};
+    for id in [17, crate::runtime::terminal_store::PTY_ID_BASE + 4] {
+        let scope = Scope::Surface(id);
+        let value = MemoryValue::Text("legacy".into());
+        memory
+            .put(
+                "com.test.legacy",
+                &scope,
+                "regular",
+                &value,
+                &PutOpts::default(),
+            )
+            .unwrap();
+        memory
+            .put_secret(
+                "com.test.legacy",
+                &scope,
+                "secret",
+                &value,
+                &PutOpts::default(),
+            )
+            .unwrap();
+    }
+}
+
+fn assert_legacy_scopes(memory: &tasty_memory::MemoryStore, invalid_present: bool) {
+    use tasty_memory::Scope;
+    for (id, present) in [
+        (17, true),
+        (
+            crate::runtime::terminal_store::PTY_ID_BASE + 4,
+            invalid_present,
+        ),
+    ] {
+        let scope = Scope::Surface(id);
+        assert_eq!(memory.get(&scope, "regular").unwrap().is_some(), present);
+        assert_eq!(
+            memory
+                .get_secret("com.test.legacy", &scope, "secret")
+                .unwrap()
+                .is_some(),
+            present
+        );
+    }
+}
+
+#[test]
+fn failed_legacy_import_keeps_regular_and_secret_scopes() {
+    let memory = Arc::new(std::sync::Mutex::new(
+        tasty_memory::MemoryStore::open_in_memory().unwrap(),
+    ));
+    seed_legacy_scopes(&mut memory.lock().unwrap());
+    let mut session = EngineSession::new_with_ids_and_settings(
+        80,
+        24,
+        Arc::new(|| {}),
+        None,
+        Some(1),
+        memory.clone(),
+        Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+        crate::settings::Settings::default(),
+    )
+    .unwrap();
+    let home = tasty_utils::path::tasty_home().unwrap();
+    std::fs::create_dir(home.join("layouts")).unwrap();
+    std::fs::write(home.join("layouts/01.json"), "invalid legacy layout").unwrap();
+    let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
+    journal
+        .begin_engine(
+            &session,
+            EngineSelection::Slot {
+                slot: 1,
+                resume: true,
+            },
+        )
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if journal.poll_bootstrap(&mut [&mut session], None).is_err() {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(session.journal_binding.is_none());
+    assert_legacy_scopes(&memory.lock().unwrap(), true);
 }

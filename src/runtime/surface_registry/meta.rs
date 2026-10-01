@@ -117,7 +117,7 @@ impl SurfaceMetaStore {
 
     /// PTY 범위에 들어간 Surface scope를 삭제하고 성공한 scope 수를 반환한다.
     /// 목록 조회 실패는 0이고 개별 삭제 실패는 로그 후 계속한다. ID 발급기 자체의 범위 검사는 아니다.
-    #[cfg(test)]
+    #[cfg(any(feature = "gui", test))]
     pub fn purge_out_of_range_surfaces(mem: &mut dyn MemoryStorage) -> usize {
         use crate::runtime::terminal_store::is_surface_id_space;
         let scopes = match mem.scopes() {
