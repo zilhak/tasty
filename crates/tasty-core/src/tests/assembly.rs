@@ -104,12 +104,27 @@ fn prepared_assembly_round_trips_through_the_durable_event_codec() {
 }
 
 #[test]
+fn prepared_assembly_preserves_zero_and_maximum_identity_keys() {
+    let (model, group, _, _) = prepared();
+    for key in [0, u32::MAX] {
+        let mut operation = model.operations[&group].clone();
+        operation.assembly.as_mut().unwrap().inputs = [(key, DataRef(110))].into();
+        let event = DomainEvent::OperationPrepared { operation };
+        let encoded = encode_event(&event).unwrap();
+        assert_eq!(
+            decode_event(&encoded.type_tag, encoded.schema_version, &encoded.bytes).unwrap(),
+            event
+        );
+    }
+}
+
+#[test]
 fn prepared_assembly_rejects_invalid_identity_map_keys() {
     let (model, group, _, _) = prepared();
     let event = DomainEvent::OperationPrepared {
         operation: model.operations[&group].clone(),
     };
-    for key in ["-1", "4294967296", "not-an-id", "1.5", "+1"] {
+    for key in ["-1", "4294967296", "not-an-id", "1.5", "+1", "00", "01"] {
         let mut value = serde_json::to_value(&event).unwrap();
         let inputs = value["operation"]["assembly"]["inputs"]
             .as_object_mut()

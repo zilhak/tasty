@@ -136,8 +136,11 @@ impl<'de> serde::Deserialize<'de> for IdKey {
                 u32::try_from(value).map(IdKey).map_err(E::custom)
             }
             fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<IdKey, E> {
-                if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-                    return Err(E::custom("identity map key is not decimal"));
+                if value.is_empty()
+                    || (value.len() > 1 && value.starts_with('0'))
+                    || !value.bytes().all(|byte| byte.is_ascii_digit())
+                {
+                    return Err(E::custom("identity map key is not canonical decimal"));
                 }
                 value.parse::<u32>().map(IdKey).map_err(E::custom)
             }
