@@ -24,7 +24,7 @@ CI 설정 설명은 작업 트리의 `.github/workflows/`를 기준으로 한다
 | Intent 규율 (범위와 한계는 [Intent 규율 검사](#intent-규율-검사)) | `bash scripts/check-intent-discipline.sh` — **`mask-source` 판정기를 먼저 짓는다** | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 사유 없는 `#[allow]` (**상한 래칫**, 판정기 `mask-source` 선행) | `bash scripts/check-allow-reason.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 공용 순회를 안 거치는 직접 `read_dir` (**상한 래칫**, 판정기 `mask-source` 선행) | `bash scripts/check-shared-walk-ratchet.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
-| Core::apply 밖 구조 writer (**기준 파일 래칫**, 판정기 `strip-cfg-test`·`mask-source` 선행) | `bash scripts/check-core-writer-ratchet.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동. 범위와 한계는 [구조 writer 래칫](#구조-writer-래칫) | 등급 미정 |
+| 구조 mutation 지표와 지정 실행 entry (**기준 파일 래칫**, 판정기 `strip-cfg-test`·`mask-source` 선행) | `bash scripts/check-core-writer-ratchet.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동. 범위와 한계는 [구조 writer 래칫](#구조-writer-래칫) | 등급 미정 |
 | 셸 자산 정적 검사 | `bash scripts/check-shell-assets.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동. install-shellcheck.sh로 도구를 준비한다. 추적 셸 자산을 검사하며 staged 훅은 새 파일도 확인한다. warning 이상은 실패, 도구 부재는 rc 2다. | 등급 미정 |
 | plugin 버전 bump | `bash scripts/check-plugin-version-bump.sh --range <before> <after>` | `plugin-version-check.yml` (self-hosted Linux X64) | main push · PR · 수동. 문서는 제외하되 `src/`·`lang/`·`assets/` 아래 `.md`를 포함한다. path 의존성 변경도 검사하며 패턴 순서가 중요하다. 잡이 strip-cfg-test를 먼저 빌드한다. staged 검사와 push 범위 검사는 구분한다([릴리스](release.md#플러그인-버전-비교)). | [실측] |
 | 공급망 | `cargo deny check` | `supply-chain-check.yml` | main push는 `Cargo.lock`·`deny.toml` 변경 시, main 대상 PR은 경로 필터 없이 실행한다. 매주 월 09:00 UTC와 수동 실행도 지원한다. 의존성 변경은 push에서, 새 외부 권고는 주기 실행에서 확인한다. | [실측] |
@@ -693,51 +693,36 @@ spawn 시도 1회와 나머지 호출의 래치 진단을 확인한다. 정상 �
 
 ### 구조 writer 래칫
 
-`check-core-writer-ratchet.sh`는 구조 상태를 `Core::apply` 밖에서 직접 바꾸는 writer를 센다.
-기준은 `scripts/core-writer-baseline.txt`의 (지표, 파일, 함수)별 개수다. 줄 번호를 키에 넣지 않으므로
-코드가 같은 함수 안에서 이동해도 기준이 유지된다. 지표는 네 가지다.
+`check-core-writer-ratchet.sh`는 호스트의 구조 mutation 텍스트 지표와 지정 실행 entry의 호출 위치를 검사한다.
+기준은 `scripts/core-writer-baseline.txt`의 (지표, 파일, 함수)별 개수다. `field`, `terminal`, `subop`,
+`appstate`는 src의 기존 이름 기반 지표이며, 수신자 타입을 해석하지 않아 preset draft·불변 계획의
+동명 필드도 포함한다. baseline은 이런 값 조립과 실제 실행을 개별 source로 대조한 위치 명부다.
+App/journal 디렉터리 전체를 면제하지 않는다.
 
-- `field`: 구조 필드 직접 쓰기. Workspace의 name·subtitle·description·attach_mapping·mirror·category,
-  Pane.tabs, Tab의 name·explicit_name·layout_opt, CoreState의 workspaces·categories 벡터를 대상으로 한다.
-  대입, 인덱스 대입, 벡터 변경 메서드, `mem::replace`·`swap`·`take`의 `&mut` 인자, `set_attach_mapping`·`set_category` 호출을 센다.
-- `terminal`: `terminals.insert(` 호출.
-- `subop`: `src/state` 밖에서 구조 하위 연산을 메서드로 호출하는 곳. `appstate` 판정과 같은 목록을 쓴다.
-  pane의 `move_tab`, tab의 `close_surface`, layout의 `replace_surface`, CoreState의 category 메서드·`push_closed_item`,
-  Core의 `create_default_workspace` 등이 해당한다. setter는 `field`가 세므로 뺀다.
-  수신자가 `state`인 호출은 View/명령 문맥 메서드라서 `appstate`가 대신 센다.
-- `appstate`: `src/state.rs`와 `src/state/` 아래 pub·pub(crate) 함수 중 구조를 바꾸는 함수.
-  구조 하위 연산이나 위 필드 쓰기를 직접 호출하거나, 같은 모듈의 구조 함수를 이름으로 호출하는 함수가 해당한다.
+`boundary`는 src와 crates/tasty-core/src의 `evolve`, `evolve_streams`, `projection::apply`,
+`projection::bootstrap::initialize`, mirror push/replace/remove와 display-order 적용 호출을 검사한다.
+`scripts/lib/core_writer_scan.py`의 `(파일, 함수, 호출명)`별 허용 횟수는 replay·순수 후보 모델 결정·
+publication·원격 표시 projection을 구별한다. 같은 파일의 다른 함수 또는 같은 함수의 추가 호출은
+허용되지 않는다. 이 지표의 허용 밖 호출은 0이어야 하며 `--write-baseline`으로 수락할 수 없다.
 
-`Core::apply`의 구현 파일(`src/core/impl_*.rs` 중 구조 intent를 처리하는 파일과 `src/core/restore_rebuild.rs`)
-안의 쓰기는 입구 안으로 보고 세지 않는다. 나머지 `src/`는 `src/core` 안(`core`)과 밖(`outside`)으로 나눠 출력한다.
-입구 파일과 제외 목록(같은 이름의 필드를 쓰는 프리셋 저장소·importer·TerminalStore 구현)은
-`scripts/lib/core_writer_scan.py`에 있다. 목록의 경로가 사라지면 rc 2로 판정을 거부한다.
+기존 네 지표는 합계 증가나 새로운 위치에서 실패한다. `--write-baseline`은 각 합계가 늘지 않았을
+때만 위치 명부를 갱신한다. 이동·삭제 근거 없이 현재 측정값을 기준으로 받아들이면 안 된다.
+구조 domain의 private 필드와 읽기 참조는 Rust 타입 경계가 강제한다. 이 텍스트 guard는 그 경계를
+대신 증명하거나 모든 canonical mutation을 검출하는 분석기가 아니다.
 
-종료코드는 0(기준 이하), 1(지표 합계 증가 또는 기준보다 writer가 많은 위치), 2(판정기 부재·사본 수 불일치·목록 경로 없음)다.
-합계가 줄면 통과하고 기준을 낮추라고 안내한다. 이 점에서 감소도 실패시키는 allow·직접 순회 검사와 다르다.
-writer를 Core로 옮긴 변경은 같은 커밋에서 `--write-baseline`으로 기준을 낮춘다.
-이 옵션은 어느 지표 합계라도 기준보다 크면 거절하므로 기준을 올리는 데 쓸 수 없다.
-합계가 같아도 writer가 기준에 없는 함수로 옮겨 가면 실패한다. 이동을 확인한 뒤 같은 옵션으로 기준을 다시 쓴다.
-
-test 전용 코드(`#[cfg(test)]` 범위와 test로만 선언된 파일)는 `strip-cfg-test --blank-test-only-files`로 비우고,
-주석과 문자열은 `mask-source`로 가린 사본에서 센다. 패턴이 공백과 줄바꿈을 허용하므로 rustfmt가 나눈
-`.terminals\n.insert(` 같은 체인도 잡는다. 변이 검증으로 다음을 확인했다.
-
-- Core 밖 파일에 필드 대입 한 줄을 넣으면 실패하고 위치를 출력한다.
-- 다줄 체인으로 넣어도 실패한다.
-- 같은 코드를 `#[cfg(test)]` 모듈, test로만 선언된 파일, 주석·문자열, 입구 파일에 넣으면 통과한다.
-- 구조 함수를 부르는 새 MainViewState pub 함수를 넣으면 실패한다. 이때 `--write-baseline`은 거절된다.
-- Core 밖 새 함수에서 `pane.move_tab`을 부르면 한 줄이든 다줄 체인이든 실패한다. 같은 호출을 `#[cfg(test)]` 모듈에 넣으면 통과한다.
-- writer 한 줄을 지우면 통과하고 기준을 낮추라고 안내한다.
+입력은 test 전용 범위를 비운 뒤 문자열·주석을 마스킹한 사본이다. 명시 test 파일 경로도 제외한다.
+함수 본문으로 식별한 호출/대입만 센다. source와 사본 수가 다르거나 명시 경로가 없으면 판정하지 않는다.
+`python3 -B -m unittest discover -s scripts/lib -p 'test_*scan.py'`는 View의 직접 mutation,
+허용 파일의 다른 함수, 허용 함수의 초과 호출, mirror 허용과 local projection의 분리,
+App preset 저장의 함수·메서드 한정 예외를 합성 반례로 확인한다.
 
 한계는 다음과 같다.
 
-- 수신자 타입을 해석하지 않는다. 같은 이름의 다른 필드(`.name =` 등)도 세며, 제외 목록에 없는 새 파일에서 생기면 거짓 실패가 난다. 이때는 기준을 올리지 말고 제외 목록에 사유와 함께 추가한다.
-- 입구 판정은 파일 단위다. 입구 파일 안의 함수가 `Core::apply` 밖에서 호출되는 경우(`apply_create_workspace_inner` 등)도 입구 안으로 센다.
-- 가변 참조를 얻은 뒤 다른 이름으로 쓰는 경우, 트레이트 객체나 매크로를 거치는 경우, 위 목록 밖의 필드와 하위 연산은 잡히지 않는다.
-- `subop`은 이름으로만 판정한다. 수신자가 `state`가 아닌 MainViewState 메서드 호출이나 같은 이름의 다른 타입 메서드도 센다.
-- 선택 필드(focused_pane·active_tab·focused_surface), split ratio, standalone PTY와 자식 terminal 관계는 대상이 아니다.
-- 합계가 기준보다 줄어든 상태에서는 그 차이만큼 기존 위치에 writer를 다시 넣어도 통과한다. 기준을 낮추는 것으로 이 여유를 없앤다.
+- 타입, 별칭, trait dispatch, 매크로 확장을 해석하지 않는다. 지정 이름 밖 API나 함수 인식기가
+  본문으로 식별하지 못한 표현은 검사 범위 밖이다.
+- canonical crate는 지정 entry 호출만 검사한다. 모든 필드 대입을 감사했다는 뜻이 아니다.
+- 기존 이름 지표는 같은 개수의 추가·삭제가 상쇄될 수 있다. 합계 감소만으로 제품 경계 개선을 단정하지 않는다.
+- private compiler 경계, 실제 publication barrier 및 resource receipt의 동작은 별도 compile/source/실행 검증 대상이다.
 
 병렬 lane을 합칠 때는 기준 파일을 텍스트로 병합하지 않는다. 기준 파일이 병합에서 충돌하거나,
 이 검사 도입 전에 갈라진 lane이 함수 이름을 바꿔 "기준에 없는 함수"로 실패하면 병합된 트리에서

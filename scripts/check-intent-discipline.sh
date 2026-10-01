@@ -18,11 +18,6 @@ SCAN_DIRS=(src)
 EXEMPT_ALL=(
     "src/intent/popup.rs"
     "src/intent/preset.rs"
-    "src/intent/surface.rs"
-    "src/intent/tab.rs"
-    "src/intent/pane.rs"
-    "src/intent/workspace.rs"
-    "src/state/preset_apply.rs"
     "src/state/pane.rs"
     "src/state/tab.rs"
     "src/state/tests.rs"

@@ -144,3 +144,10 @@ rustfmt가 `state` / `.popups` / `.open(`처럼 여러 줄로 나눈 호출도 �
 - [focus](../policies/focus.md) — 사용자 포커스 보호
 - [reference/event-catalog](../../reference/event-catalog.md) — Event Bus 메시지
 - [dev-guide/popup-implementation](../../dev-guide/popup-implementation.md) — 팝업 구현
+
+### Source guard의 실행 예외
+
+Intent discipline 검사는 옛 direct mutation 이름과 popup/store 호출을 마스킹 source에서 찾는다.
+App preset editor의 `apply`에서 실행하는 여섯 preset save 메서드는 함수·메서드 조합으로만 허용한다.
+같은 App 파일의 다른 함수나 View의 store save는 면제되지 않는다. 구조 publication/evolve/mirror
+entry는 별도의 core-writer guard가 명시 호출 위치로 검사하며, 두 검사는 수신자 타입이나 전체 동작을 증명하지 않는다.

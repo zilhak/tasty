@@ -16,7 +16,7 @@ class NavigationWriterBoundary(unittest.TestCase):
     def measure(self, source, path="src/state/navigation.rs"):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            for item in scan.APPLY_PATH_FILES + scan.EXCLUDED_PREFIXES:
+            for item in scan.APPLY_PATH_FILES + scan.EXCLUDED_PREFIXES + sorted({key[0] for key in scan.BOUNDARY_LIMITS}):
                 target = root / item
                 if item.endswith("/"):
                     target.mkdir(parents=True, exist_ok=True)
@@ -76,6 +76,29 @@ class NavigationWriterBoundary(unittest.TestCase):
         """, "src/app/attach_client.rs")
         self.assertEqual([row[0] for row in rows], ["field"])
         self.assertEqual(rows[0][3], "retain_workspace")
+
+
+class CurrentEntryBoundary(unittest.TestCase):
+    def hits(self, source, path):
+        return list(scan.boundary_violations(path, source, scan.functions(source)))
+
+    def test_view_cannot_apply_committed_projection(self):
+        self.assertEqual(len(self.hits("fn paint() { projection::apply(core, before, batch, retired); }", "src/view/main.rs")), 1)
+
+    def test_other_function_in_publication_is_not_exempt(self):
+        self.assertEqual(len(self.hits("fn bypass() { projection::apply(core, before, batch, retired); }", "src/app/journal/publication.rs")), 1)
+
+    def test_existing_entry_has_a_call_count_ceiling(self):
+        path = "src/app/journal/publication.rs"
+        self.assertEqual(self.hits("fn poll_initial() { projection::apply(a,b,c,d); }", path), [])
+        self.assertEqual(len(self.hits("fn poll_initial() { projection::apply(a,b,c,d); projection::apply(a,b,c,d); }", path)), 1)
+
+    def test_new_canonical_module_cannot_evolve_a_model(self):
+        self.assertEqual(len(self.hits("fn decide() { crate::evolve(model, batch); }", "crates/tasty-core/src/command/new.rs")), 1)
+
+    def test_mirror_permission_does_not_exempt_local_projection(self):
+        self.assertEqual(self.hits("fn install_new_mirror() { engine.push_mirror_workspace(ws); }", "src/app/attach_client.rs"), [])
+        self.assertEqual(len(self.hits("fn install_new_mirror() { projection::apply(a,b,c,d); }", "src/app/attach_client.rs")), 1)
 
 
 if __name__ == "__main__":

@@ -1,11 +1,11 @@
-"""Core::apply 밖의 구조 상태 writer를 (지표, 파일, 함수) 단위로 센다.
+"""호스트 구조 mutation 지표와 지정 publication/remote 적용 진입점를 (지표, 파일, 함수) 단위로 센다.
 
 입력은 test 전용 줄을 비우고 주석·문자열을 가린 사본이다. 줄 번호는 원본과 같다.
 정규식은 필드·메서드 이름 중심이며 공백·줄바꿈을 허용해 rustfmt가 나눈 체인도 잡는다.
 수신자 타입은 해석하지 않으므로 같은 이름의 다른 필드도 센다. 한계는
 docs/dev-guide/ci-gates.md의 구조 writer 래칫 절에 있다.
 
-지표는 field·terminal·subop·appstate 네 가지다.
+지표는 field·terminal·subop·appstate와 허용 밖 지정 호출인 boundary다.
 출력: 한 줄에 hit 하나, 탭 구분 `metric bucket file fn line kind`.
 """
 
@@ -13,25 +13,13 @@ import os
 import re
 import sys
 
-# Core::apply가 호출하는 구현 파일. 이 파일 안의 쓰기는 입구 안으로 보고 세지 않는다.
-APPLY_PATH_FILES = [
-    "src/core/impl_attach.rs",
-    "src/core/impl_category.rs",
-    "src/core/impl_close.rs",
-    "src/core/impl_convert.rs",
-    "src/core/impl_mirror.rs",
-    "src/core/impl_move.rs",
-    "src/core/impl_move_container.rs",
-    "src/core/impl_split.rs",
-    "src/core/impl_tab.rs",
-    "src/core/impl_workspace.rs",
-    "src/core/restore_rebuild.rs",
-]
+# 호스트 파일 전체를 canonical writer 입구로 면제하지 않는다.
+APPLY_PATH_FILES = []
 
 # CoreState 구조가 아닌 같은 이름의 데이터를 다루는 곳. 파일은 접두 일치, 함수는 정확 일치다.
 EXCLUDED_PREFIXES = [
     # TerminalStore 자체 구현. 호출자의 insert를 센다.
-    "src/core/terminal_store.rs",
+    "src/runtime/terminal_store.rs",
     # 저널 importer의 중간 구조를 채운다.
     "src/core/layout_persistence/import.rs",
     # 프리셋 저장소와 미리보기 모델을 편집한다.
@@ -42,7 +30,7 @@ EXCLUDED_FNS = {
     # 저장할 프리셋 사본의 이름을 바꾼다.
     ("src/intent/preset.rs", "store_preset"),
     # Explorer 패널 내부 탭을 닫는다. surface 콘텐츠이며 구조가 아니다.
-    ("src/adapters/ui/egui_panels.rs", "apply_to_explorer_panel"),
+    ("src/app/explorer_action.rs", "apply_to_explorer_panel"),
 }
 
 APPSTATE_PREFIXES = ["src/state.rs", "src/state/"]
@@ -96,16 +84,64 @@ DIRECT_STRUCTURAL_EXTRA = [
     re.compile(r"\bnext_ids\s*\.\s*next_\w+\s*\("),
 ]
 
+
+# These are call-site ceilings, not whole-file exemptions. Canonical value evolution is
+# permitted only at replay/decision/publication; mirror writes remain a separate live projection.
+BOUNDARY_CALLS = re.compile(
+    r"(?<!fn )\b(evolve_streams|evolve|projection\s*::\s*apply|"
+    r"projection\s*::\s*bootstrap\s*::\s*initialize|push_mirror_workspace|"
+    r"replace_mirror_workspace|remove_mirror_workspace|apply_workspace_display_order)\s*\(")
+BOUNDARY_LIMITS = {
+    # Committed replay and predecessor reconstruction.
+    ("src/runtime/journal.rs", "apply_all", "evolve_streams"): 1,
+    ("src/runtime/journal_product/worker.rs", "publish", "evolve_streams"): 1,
+    # Pure candidate models for deciding a batch/completion.
+    ("src/runtime/journal_product/decider.rs", "decide_changes", "evolve"): 1,
+    ("src/runtime/journal_product/decider/completion.rs", "projected_after", "evolve"): 1,
+    # One publication pump owns bootstrap, live projection and validation copies.
+    ("src/app/journal/publication.rs", "poll_initial", "projection::bootstrap::initialize"): 3,
+    ("src/app/journal/publication.rs", "poll_initial", "projection::apply"): 1,
+    ("src/app/journal/publication.rs", "poll_initial", "evolve"): 2,
+    # Non-durable remote model install/reconnect/delta/removal, never local canonical writes.
+    ("src/app/attach_client.rs", "install_new_mirror", "push_mirror_workspace"): 1,
+    ("src/app/attach_client.rs", "install_reconnected_mirror", "replace_mirror_workspace"): 1,
+    ("src/app/attach_client.rs", "apply_mirror_structural_delta", "replace_mirror_workspace"): 1,
+    ("src/app/attach_client.rs", "remove_mirror_workspace_from_engine", "remove_mirror_workspace"): 1,
+    ("src/runtime/structure_observation.rs", "replace_mirror_workspace", "replace_mirror_workspace"): 1,
+    ("src/app/journal/commands/display.rs", "apply", "apply_workspace_display_order"): 1,
+    # Canonical crate's pure batch validation and live projection validation.
+    ("crates/tasty-core/src/command.rs", "decide_structure", "evolve"): 1,
+    ("crates/tasty-core/src/command/assembly.rs", "decide", "evolve"): 1,
+    ("crates/tasty-core/src/projection.rs", "apply", "evolve"): 1,
+    ("crates/tasty-core/src/projection.rs", "preflight", "evolve"): 1,
+    ("crates/tasty-core/src/streams.rs", "evolve_streams", "evolve"): 1,
+}
+
+
+def boundary_violations(rel, text, fns):
+    counts = {}
+    for match in BOUNDARY_CALLS.finditer(text):
+        fn = enclosing(fns, match.start())
+        if fn == "-":
+            continue  # Function bodies only; declarations/macros are outside this text metric.
+        call = re.sub(r"\s+", "", match.group(1))
+        key = (rel, fn, call)
+        counts[key] = counts.get(key, 0) + 1
+        if counts[key] > BOUNDARY_LIMITS.get(key, 0):
+            yield ("boundary", "entry", rel, fn, line_of(text, match.start()), call)
+
 FN_RE = re.compile(r"\bfn\s+([A-Za-z_]\w*)")
 PUB_RE = re.compile(r"\bpub\s*(?:\(\s*crate\s*\)\s*)?(?:const\s+|async\s+|unsafe\s+)*$")
 
 
 def rust_files(root):
     out = []
-    base = os.path.join(root, "src")
-    for dirpath, _dirs, files in os.walk(base):
+    for dirpath, _dirs, files in os.walk(root):
+        rel_dir = os.path.relpath(dirpath, root).replace(os.sep, "/")
+        if not (rel_dir == "src" or rel_dir.startswith("src/") or rel_dir.startswith("crates/tasty-core/src")):
+            continue
         for f in files:
-            if f.endswith(".rs"):
+            if f.endswith(".rs") and not (f.endswith(("_test.rs", "_tests.rs")) or f == "tests.rs" or "tests" in rel_dir.split("/")):
                 full = os.path.join(dirpath, f)
                 out.append(os.path.relpath(full, root).replace(os.sep, "/"))
     return sorted(out)
@@ -185,6 +221,8 @@ def main():
     missing = [p for p in APPLY_PATH_FILES + EXCLUDED_PREFIXES
                if not os.path.exists(os.path.join(root, p.rstrip("/")))]
     missing += [f for f, _ in EXCLUDED_FNS if not os.path.exists(os.path.join(root, f))]
+    missing += [f for f in sorted({key[0] for key in BOUNDARY_LIMITS})
+                if not os.path.exists(os.path.join(root, f))]
     if missing:
         for p in missing:
             print("[core-writer] 목록의 경로가 없다: " + p, file=sys.stderr)
@@ -202,21 +240,24 @@ def main():
         with open(os.path.join(root, rel), encoding="utf-8") as fh:
             text = fh.read()
         fns = functions(text)
+        rows.extend(boundary_violations(rel, text, fns))
+        if rel.startswith("crates/"):
+            continue
         bucket = bucket_of(rel)
         if bucket is not None:
             for kind, rx in FIELD_WRITES:
                 for m in rx.finditer(text):
                     fn = enclosing(fns, m.start())
-                    if not excluded(rel, fn):
+                    if fn != "-" and not excluded(rel, fn):
                         rows.append(("field", bucket, rel, fn, line_of(text, m.start()), kind))
             for m in TERMINAL_INSERT.finditer(text):
                 fn = enclosing(fns, m.start())
-                if not excluded(rel, fn):
+                if fn != "-" and not excluded(rel, fn):
                     rows.append(("terminal", bucket, rel, fn, line_of(text, m.start()), "insert"))
             if not any(rel.startswith(p) for p in APPSTATE_PREFIXES):
                 for m in SUBOP_RE.finditer(text):
                     fn = enclosing(fns, m.start())
-                    if excluded(rel, fn) or APPSTATE_RECEIVER_RE.search(text[:m.start()]):
+                    if fn == "-" or excluded(rel, fn) or APPSTATE_RECEIVER_RE.search(text[:m.start()]):
                         continue
                     rows.append(("subop", bucket, rel, fn, line_of(text, m.start()), m.group(1)))
         if any(rel.startswith(p) for p in APPSTATE_PREFIXES):

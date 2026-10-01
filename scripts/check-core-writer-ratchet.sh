@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Core::apply 밖에서 구조 상태를 바꾸는 writer를 (지표, 파일, 함수) 단위로 세어 기준 파일과 비교한다.
+# 호스트 mutation 텍스트 지표와 지정 canonical/projection/mirror 호출을 기준 파일과 비교한다.
 # 지표 합계가 늘거나 기준에 없던 위치가 생기면 실패하고, 줄면 통과하며 기준을 낮추라고 안내한다.
 # 수신자 타입을 해석하지 않는 텍스트 검사다. 범위와 한계는 docs/dev-guide/ci-gates.md.
 #
@@ -13,7 +13,7 @@ cd "$ROOT"
 
 BASELINE="scripts/core-writer-baseline.txt"
 SCANNER="scripts/lib/core_writer_scan.py"
-METRICS=(field terminal subop appstate)
+METRICS=(field terminal subop appstate boundary)
 
 MODE="check"
 case "${1:-}" in
@@ -52,15 +52,15 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 # test 전용 줄과 test로만 선언된 파일을 비운 뒤 주석·문자열을 가린다. 두 단계 모두 줄 번호를 보존한다.
-if ! "$STRIP_BIN" --blank-test-only-files "$WORK/strip" "$ROOT" src >/dev/null; then
+if ! "$STRIP_BIN" --blank-test-only-files "$WORK/strip" "$ROOT" src crates/tasty-core/src >/dev/null; then
     echo "[core-writer] test 전용 코드 제거 실패 — 판정하지 않는다." >&2; exit 2
 fi
-if ! "$MASK_BIN" "$WORK/mask" "$WORK/strip" src >/dev/null; then
+if ! "$MASK_BIN" "$WORK/mask" "$WORK/strip" src crates/tasty-core/src >/dev/null; then
     echo "[core-writer] 마스킹 실패 — 판정하지 않는다." >&2; exit 2
 fi
 
-src_count=$(find src -type f -name '*.rs' | wc -l | tr -d ' ')
-copy_count=$(find "$WORK/mask/src" -type f -name '*.rs' | wc -l | tr -d ' ')
+src_count=$(find src crates/tasty-core/src -type f -name '*.rs' | wc -l | tr -d ' ')
+copy_count=$(find "$WORK/mask/src" "$WORK/mask/crates/tasty-core/src" -type f -name '*.rs' | wc -l | tr -d ' ')
 if [ "$src_count" -eq 0 ] || [ "$src_count" -ne "$copy_count" ]; then
     echo "[core-writer] 사본 수가 원본과 다르다(원본 ${src_count} · 사본 ${copy_count}) — 판정하지 않는다." >&2
     exit 2
@@ -95,13 +95,14 @@ total_of() {
     awk -F'\t' -v m="$2" '!/^#/ && $1 == m { s += $4 } END { print s + 0 }' "$1"
 }
 
-echo "src .rs ${src_count}개를 훑었다 (Core::apply 구현 파일·제외 목록은 ${SCANNER})."
+echo "src 및 tasty-core .rs ${src_count}개를 훑었다 (지정 entry·제외 목록은 ${SCANNER})."
 for m in "${METRICS[@]}"; do
     n=$(total_of "$WORK/current.tsv" "$m")
     case "$m" in
         field) label="구조 필드 직접 쓰기" ;;
-        terminal) label="Core::apply 밖 terminals.insert" ;;
+        terminal) label="호스트 terminals.insert" ;;
         subop) label="src/state 밖 구조 하위 연산 호출" ;;
+        boundary) label="지정 evolve/publication/mirror entry의 허용 밖 호출" ;;
         appstate) label="View/명령 문맥 구조 변경 pub 함수" ;;
     esac
     by_bucket=$(awk -F'\t' -v m="$m" '$1 == m { b[$2]++ } END { for (k in b) printf "%s %d · ", k, b[k] }' \
@@ -109,6 +110,12 @@ for m in "${METRICS[@]}"; do
     echo "  ${m}: ${n}건 — ${label} (${by_bucket% · })"
 done
 echo
+
+if [ "$(total_of "$WORK/current.tsv" boundary)" -ne 0 ]; then
+    echo "허용 밖 canonical/projection/mirror 호출은 기준에 추가할 수 없다." >&2
+    cat "$WORK/rows.tsv" >&2
+    exit 1
+fi
 
 if [ "$MODE" = write ]; then
     if [ -f "$BASELINE" ]; then
@@ -173,7 +180,7 @@ if [ -s "$WORK/grown.tsv" ]; then
 fi
 
 if [ "$failed" -ne 0 ]; then
-    echo "구조 상태는 Core::apply(DomainIntent)로 바꿔라. 새 writer를 기준에 넣어 통과시키지 마라."
+    echo "구조 상태는 journal publication과 지정된 canonical/projection 진입점으로 바꿔라. 새 writer를 기준에 넣어 통과시키지 마라."
     echo "합계는 그대로이고 writer가 다른 함수로 옮겨졌을 뿐이라면 옮긴 것을 확인한 뒤"
     echo "  bash scripts/check-core-writer-ratchet.sh --write-baseline"
     echo "으로 기준 파일을 다시 쓴다. 이 명령은 어느 지표 합계라도 늘었으면 거절한다."

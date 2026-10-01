@@ -15,6 +15,15 @@ import os
 import re
 import sys
 
+sys.dont_write_bytecode = True
+from core_writer_scan import functions, enclosing
+
+# The App applies frozen PresetEdit values; only store-save calls in this leaf are authorized.
+EXECUTION_CALLS = {(
+    "src/app/preset_editor.rs", "apply", method
+) for method in ("save_workspace", "save_workspace_overwrite", "save_tab", "save_tab_overwrite",
+                 "save_pane", "save_pane_overwrite")}
+
 POPUP_METHODS = (
     "open|open_centered|open_centered_focused|open_with_scope|open_at_top_of_scope"
     "|open_at_focused|close|toggle|toggle_focused"
@@ -127,6 +136,7 @@ def main():
         with open(os.path.join(masked_root, rel), encoding="utf-8") as fh:
             text = fh.read()
         masked = text.split("\n")
+        fns = functions(text)
         # 원문을 읽지 못한 줄은 사본을 사용한다. 이때 사유는 인정되지 않을 수 있다.
         try:
             with open(os.path.join(root, rel), encoding="utf-8") as fh:
@@ -155,6 +165,8 @@ def main():
             if pane_only and rel in exempt_pane:
                 continue
             for m in rx.finditer(text):
+                if (rel, enclosing(fns, m.start()), m.group(1)) in EXECUTION_CALLS:
+                    continue
                 method_line = line_of(m.start(1))
                 if method_line in hits:
                     continue
