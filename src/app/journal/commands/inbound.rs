@@ -77,11 +77,30 @@ impl JournalApplication {
             .contains_key(&ticket)
             .then_some((ticket, workspace))
     }
+    pub(crate) fn unresolved_remote_anchor<'a>(
+        &self,
+        ticket: u64,
+        engines: impl IntoIterator<Item = crate::runtime::engine_access::EngineRef<'a>>,
+    ) -> String {
+        let Some(pending) = self.commands.pending.get(&ticket) else {
+            return "workspace not found".into();
+        };
+        let Reply::Remote(remote) = &pending.reply else {
+            return "workspace not found".into();
+        };
+        let Ok(op) = serde_json::from_value::<StructuralOp>(pending.request.params["op"].clone())
+        else {
+            return "workspace not found".into();
+        };
+        crate::remote::structure_sync::unresolved_forward_reason(engines, remote.client, &op)
+    }
+
     pub(crate) fn resolve_remote_request(
         &mut self,
         ticket: u64,
         session: &mut EngineSession,
         services: &crate::app::services::AppServices,
+        unresolved_anchor: String,
     ) {
         let Some(pending) = self.commands.pending.get(&ticket) else {
             return;
@@ -108,12 +127,12 @@ impl JournalApplication {
             let anchor = op.anchor_surface_id();
             let (index, pane) = core
                 .find_workspace_index_for_surface(anchor)
-                .ok_or_else(|| format!("anchor surface {anchor} not found"))?;
+                .ok_or(unresolved_anchor)?;
             if core
                 .workspace_at(index)
                 .is_none_or(|workspace| workspace.id != remote.workspace)
             {
-                return Err("target is outside the held workspace".into());
+                return Err("workspace not found".into());
             }
             let mut request = pending.request.clone();
             request.idempotency_key = None;
@@ -228,7 +247,11 @@ impl JournalApplication {
                         .and_then(|(index, _)| core.workspace_at(index))
                         .is_none_or(|workspace| workspace.id != remote.workspace)
                     {
-                        return Err("move target is outside the held workspace".into());
+                        return Err(tasty_utils::target::unowned_target_message(
+                            "surface",
+                            u64::from(target_surface_id),
+                            "structural_op.move_surface",
+                        ));
                     }
                     request.method = "intent.move-surface".into();
                     request.params =

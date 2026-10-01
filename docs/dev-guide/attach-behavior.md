@@ -594,3 +594,5 @@ GUI 큐가 처리되지 않는 현재 동작은 별도 시험 이름으로 검�
 통합시험은 debug 조합에만 있다. 근거와 대안은 [준비 부족과 제품 결함을 구분한다](self-verification.md#준비-부족과-제품-결함을-구분한다).
 
 서버 로컬 변경의 구조 통지는 GUI·headless 모두 journal publication이 풀리고 원격 응답이 전달된 뒤 보낸다. 셸 종료로 surface가 삭제된 경우에도 다음 client 입력이나 StreamReady를 기다리지 않는다. 아직 원격 Result가 대기 중인 workspace의 Delta는 기존 pending reply 경계에서 보류하며, 성공한 Result 뒤에 전달한다.
+
+journal이 원격 요청을 실제 해소할 때도 anchor 부재 판정은 모든 현재 engine을 대상으로 한다. 어디에도 anchor가 없고 원 holder의 workspace가 남은 경우에만 공통 `no live surface` 사유와 원 structural op 이름을 반환한다. 다른 engine에서 살아 있는 anchor는 `workspace not found`로 거절한다. MoveSurface의 범위 밖 명시 target은 같은 명시 surface 거절 형식을 사용하며 다른 workspace를 변경하지 않는다.

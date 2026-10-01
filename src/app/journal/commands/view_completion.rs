@@ -21,10 +21,20 @@ impl crate::app::App {
                 if self.try_resolve_mirror_request(ticket, id, &request) {
                     continue;
                 }
+                let missing_anchor = (request.method == "remote.structural").then(|| {
+                    self.journal.unresolved_remote_anchor(
+                        ticket,
+                        self.engines.all_sessions().map(|session| session.as_ref()),
+                    )
+                });
                 if let Some(session) = self.engines.session_mut(id) {
-                    if request.method == "remote.structural" {
-                        self.journal
-                            .resolve_remote_request(ticket, session, &self.services);
+                    if let Some(missing_anchor) = missing_anchor {
+                        self.journal.resolve_remote_request(
+                            ticket,
+                            session,
+                            &self.services,
+                            missing_anchor,
+                        );
                     } else if request.method == "intent.preset-apply" {
                         self.journal
                             .resolve_preset(ticket, session, &self.services, None);

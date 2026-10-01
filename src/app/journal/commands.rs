@@ -705,7 +705,8 @@ impl JournalApplication {
                 continue;
             }
             if request.method == "remote.structural" {
-                self.resolve_remote_request(ticket, session, services);
+                let missing = self.unresolved_remote_anchor(ticket, [session.as_ref()]);
+                self.resolve_remote_request(ticket, session, services, missing);
                 continue;
             }
             if matches!(
