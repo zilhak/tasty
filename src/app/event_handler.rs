@@ -378,6 +378,7 @@ impl ApplicationHandler<AppEvent> for App {
 
         self.poll_port_scans();
         self.poll_profile_detections();
+        for mut engine in self.engines_mut().windowed_and_parked() {engine.poll_attach_subscriptions();}
 
         // Lua 자동실행 재진입 상태는 이번 회차의 모든 이벤트 처리 전에 갱신한다.
         self.lua_autofire.checkpoint();

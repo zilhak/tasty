@@ -238,6 +238,7 @@ plugin 고유 이름까지 같은 Mutate라는 이유로 저장하면 Outside �
 GUI debug 두 단계도 공용 저장 경로로 묶는다.
 원 요청 대신 키를 뗀 relay 인자를 전달하고 forward 완료 전 재시도도 합류시킨다.
 host injector·plugin host-call·구조 stream op에는 현재 호출자 멱등 키 자체가 없다. plugin host-call의 공개 구조 요청도 plugin 주체로 같은 journal admission을 거치지만, 현재 plugin 프로토콜에서 키를 전달한다는 보장은 아니다.
+plugin host-call은 IpcCall을 수집할 때 원 process binding을 고정한다. reload 뒤 새 process에 이전 call_id를 다시 결합하지 않으며 admission에서 현재 binding을 대조한다. 지연 구조·입력·namespace 결과와 오류도 원 binding에만 회신한다.
 실제 GUI dispatch·plugin 왕복 및 루프 밖 조기 호출까지 검증됐다고 보장하지 않는다.
 텍스트 가드가 확인하는 호출 모양을 벗어난 우회는 별도 행동 검증 대상이다.
 

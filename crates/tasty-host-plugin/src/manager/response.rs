@@ -214,11 +214,13 @@ impl PluginManager {
                 plugin_id: _,
                 caller_plugin_id,
                 call_id,
+                caller_binding,
                 deadline: _,
             } => {
                 // 플러그인 호출자에게도 원 오류 코드를 전달한다.
-                self.send_ipc_result(
+                self.send_bound_ipc_parts(
                     &caller_plugin_id,
+                    &caller_binding,
                     call_id,
                     resp.result,
                     resp.error,
@@ -700,10 +702,11 @@ impl PluginManager {
                 plugin_id,
                 caller_plugin_id,
                 call_id,
+                caller_binding,
                 deadline: _,
             } => {
                 let msg = self.note_namespace_expiry(&plugin_id, id, origin);
-                self.send_ipc_result(&caller_plugin_id, call_id, None, Some(msg), Some(-32004));
+                self.send_bound_ipc_parts(&caller_plugin_id, &caller_binding, call_id, None, Some(msg), Some(-32004));
             }
             PendingRequestKind::NamespaceInvokeWithPostHook {
                 target_plugin_id,

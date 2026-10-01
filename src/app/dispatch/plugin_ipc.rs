@@ -15,6 +15,7 @@ impl App {
             None => return,
         };
         for call in calls {
+            if !self.plugin_manager.as_ref().is_some_and(|manager|manager.plugin_call_is_current(&call)) {continue;}
             let caller = Self::plugin_caller(&call);
             let request = Self::plugin_call_request(&call);
             let checked = match self.gates_before_routing(&request, &caller) {
@@ -25,7 +26,7 @@ impl App {
                         None => (None, None),
                     };
                     if let Some(mgr) = self.plugin_manager.as_mut() {
-                        mgr.send_ipc_result(&call.plugin_id, call.call_id, None, msg, code);
+                        mgr.send_plugin_call_result(&call, None, msg, code);
                     }
                     continue;
                 }
@@ -59,6 +60,7 @@ impl App {
                     call.params.clone(),
                     &call.plugin_id,
                     call.call_id,
+                    &call.binding,
                 );
                 continue;
             }
@@ -128,7 +130,7 @@ impl App {
                     Ok(r) => (serde_json::to_value(&r).ok(), None),
                     Err(e) => (None, Some(e)),
                 };
-            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error, None);
+            mgr.send_plugin_call_result(&call, result, error, None);
         }
     }
 
@@ -166,7 +168,7 @@ impl App {
             }
         };
         if let Some(mgr) = self.plugin_manager.as_mut() {
-            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error, None);
+            mgr.send_plugin_call_result(&call, result, error, None);
         }
     }
 
@@ -193,7 +195,7 @@ impl App {
             }
         };
         if let Some(mgr) = self.plugin_manager.as_mut() {
-            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error, None);
+            mgr.send_plugin_call_result(&call, result, error, None);
         }
     }
 
@@ -224,7 +226,7 @@ impl App {
             }
         };
         if let Some(mgr) = self.plugin_manager.as_mut() {
-            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error, None);
+            mgr.send_plugin_call_result(&call, result, error, None);
         }
     }
 
@@ -240,7 +242,7 @@ impl App {
             None => (response.result, None, None),
         };
         if let Some(mgr) = self.plugin_manager.as_mut() {
-            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error, code);
+            mgr.send_plugin_call_result(&call, result, error, code);
         }
     }
 

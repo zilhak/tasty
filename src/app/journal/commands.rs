@@ -1143,17 +1143,16 @@ impl JournalApplication {
         if !handles_request(request) && !host_conversion {
             return false;
         }
-        let Some(process) = manager.and_then(|manager| manager.processes.get(&call.plugin_id))
-        else {
-            tracing::warn!("structural plugin caller disappeared before admission");
+        if !manager.is_some_and(|manager|manager.plugin_call_is_current(call)) {
+            tracing::warn!(plugin=%call.plugin_id,"discarding structural call from retired plugin");
             return true;
-        };
+        }
         self.admit_request(
             request,
             Reply::Plugin {
                 plugin_id: call.plugin_id.clone(),
                 call_id: call.call_id,
-                binding: process.reply_binding(),
+                binding: call.binding.clone(),
             },
             crate::ipc::handler::idempotency::caller_scope(caller),
             "plugin",

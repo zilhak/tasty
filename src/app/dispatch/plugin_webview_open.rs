@@ -18,7 +18,7 @@ impl App {
             Err(message) => (None, Some(message), Some(-32602)),
         };
         if let Some(mgr) = self.plugin_manager.as_mut() {
-            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error, code);
+            mgr.send_plugin_call_result(&call, result, error, code);
         }
     }
 

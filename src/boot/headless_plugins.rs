@@ -431,6 +431,7 @@ fn dispatch_plugin_ipc_calls_headless(
         None => return,
     };
     for call in calls {
+        if !app.plugin_manager.as_ref().is_some_and(|manager|manager.plugin_call_is_current(&call)) {continue;}
         let caller = crate::ipc::caller::CallerContext::Plugin {
             plugin_id: call.plugin_id.clone(),
             permissions: call.permissions.clone(),
@@ -453,7 +454,7 @@ fn dispatch_plugin_ipc_calls_headless(
                     None => (None, None),
                 };
                 if let Some(mgr) = app.plugin_manager.as_mut() {
-                    mgr.send_ipc_result(&call.plugin_id, call.call_id, None, msg, code);
+                    mgr.send_plugin_call_result(&call, None, msg, code);
                 }
                 continue;
             }
@@ -470,7 +471,7 @@ fn dispatch_plugin_ipc_calls_headless(
                         Ok(r) => (serde_json::to_value(&r).ok(), None),
                         Err(e) => (None, Some(e)),
                     };
-                mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error, None);
+                mgr.send_plugin_call_result(&call, result, error, None);
             }
             continue;
         }
@@ -498,7 +499,7 @@ fn dispatch_plugin_ipc_calls_headless(
             None => (response.result, None, None),
         };
         if let Some(mgr) = app.plugin_manager.as_mut() {
-            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error, code);
+            mgr.send_plugin_call_result(&call, result, error, code);
         }
     }
 }

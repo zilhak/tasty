@@ -366,7 +366,9 @@ impl PluginManager {
                     .get(id)
                     .cloned()
                     .unwrap_or_else(|| Arc::new(HashSet::new()));
+                let Some(process)=self.processes.get(id) else {return;};
                 out.new_calls.push(PendingPluginCall {
+                    binding:process.reply_binding(),
                     plugin_id: id.to_string(),
                     call_id,
                     method,
@@ -458,6 +460,7 @@ impl PluginManager {
     /// 현재 등록된 권한으로 바꾼다. 아직 모르는 플러그인은 수집 당시 값을 유지한다.
     fn restamp_permissions(&self, calls: &mut [PendingPluginCall]) {
         for call in calls.iter_mut() {
+            if !self.plugin_call_is_current(call) {continue;}
             if let Some(perms) = self.plugin_permissions.get(&call.plugin_id) {
                 call.permissions = perms.clone();
             }

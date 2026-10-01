@@ -685,6 +685,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     loop {
         if !app.journal.is_halted() && !app.journal.pauses_observation() {
             let _=app.services.profile_detections.poll();
+            engine.poll_attach_subscriptions();
             crate::intent::headless::drain_pending_intents_in_app(
                 &mut app.services,
                 &mut state,

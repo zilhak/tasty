@@ -95,9 +95,9 @@ impl JournalApplication {
     pub(crate) fn defer_plugin_input(&mut self,checked:&crate::ipc::handler::CheckedRequest<'_>,id:EngineId,engine:&crate::runtime::engine_access::EngineRef<'_>,call:&tasty_host_plugin::manager::PendingPluginCall,manager:Option<&crate::plugin::PluginManager>)->bool {
         let Some((fixed,bindings,mut remaining))=plan(checked.request(),engine) else{return false;};
         let Some((surface,activation))=remaining.pop_front() else{return false;};
-        let Some(process)=manager.and_then(|manager|manager.processes.get(&call.plugin_id)) else{return false;};
+        if !manager.is_some_and(|manager|manager.plugin_call_is_current(call)) {return true;}
         let request=JsonRpcRequest {jsonrpc:"2.0".into(),method:"intent.wake".into(),params:serde_json::json!({"surface_id":surface,"activation":activation}),id:None,idempotency_key:None,session_token:None,response_timeout_ms:None};
-        let resume=Resume {engine:id,surface,checked:checked.to_owned_without_key(),reply:Return::Plugin {plugin:call.plugin_id.clone(),call:call.call_id,binding:process.reply_binding()},generation:None,fixed,bindings,remaining};
+        let resume=Resume {engine:id,surface,checked:checked.to_owned_without_key(),reply:Return::Plugin {plugin:call.plugin_id.clone(),call:call.call_id,binding:call.binding.clone()},generation:None,fixed,bindings,remaining};
         let receipt=self.creations.iter().filter(|((engine,_),_)|*engine==id).find_map(|(_,creation)|creation.join_restore(surface,activation));
         let ticket=self.next_ticket;
         self.admit_request(&request,Reply::Resume(resume),crate::ipc::handler::idempotency::caller_scope(checked.caller()),"plugin-input-activation");
