@@ -1,11 +1,13 @@
 # ADR-0054: App·Core·View가 각자의 상태를 소유하고 엔진 수명을 창과 분리한다
 
-- **Status**: Accepted — 구현 상태: 단계적 이행 중. engine은 App registry의 EngineSession이 소유하며 Terminal·hook·task·observer 실행 자원을 CoreState와 나눠 보관한다. 구조 선택은 창별 MainViewState로 분리됐다. Headless는 별도 CommandContext를 사용한다. 저널 원본과 나머지 실행 자원 분리는 계속 이행 대상이다
+- **Status**: Accepted — AppServices와 AppState, EngineSession의 domain/runtime, View별 선택·표시 상태가 분리돼 있다. 로컬 구조는 journal 원본과 CoreState projection을 사용한다. GUI/headless 소비와 종료·재시작의 실행 검증 상태는 이 배치와 구별한다.
 - **Date**: 2026-09-30
 - **Tags**: architecture, state, ownership, lifecycle, domain
 - **Group**: foundation
 
 ## Context
+
+다음은 결정 당시의 기존 구현과 문제다.
 
 결정 당시 `src/state.rs`의 `AppState`는 이름과 달리 창별 상태였다. 실행 큐, 도메인 정리, 선택·스크롤 같은 사용자 상태와 GUI 자원을 함께 가진다.
 `src/view/main.rs`의 `MainView`가 `CoreState`를 직접 소유하고, 창이 없는 엔진은 `src/app.rs`의 `App::parked_states`에
@@ -56,6 +58,10 @@
 명령의 기록·실행·복원 객체는 [ADR-0055](0055-structural-domain-event-sourcing.md), crate 배치는
 [ADR-0056](0056-crate-boundaries-for-core-event-store-and-task-runtime.md), 사용자 선택과 ID 대상은
 [ADR-0059](0059-id-targets-and-view-owned-selection.md)에서 정한다.
+
+### 현재 구현의 소유 객체
+
+AppState는 boot/shutdown·대기 요청의 값만 갖는다. 활성 모달·View 목록은 ViewRegistry, engine 원본과 window/parked/pending/retiring 관계는 EngineRegistry, 공유 서비스는 AppServices가 소유한다. 이들은 App이 조립하는 단일 원본이며 AppState에 같은 목록이나 handle을 복제하지 않는다. EngineSession은 CoreState 외에 LiveDomainState·EngineRuntime·TaskScope·HookRuntimeState·RemoteState와 회수 receipt를 소유한다.
 
 ## Consequences
 

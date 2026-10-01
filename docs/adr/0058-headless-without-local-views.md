@@ -1,6 +1,6 @@
 # ADR-0058: 헤드리스는 로컬 View 없이 같은 명령 실행 경계로 작업을 완료한다
 
-- **Status**: Accepted — 구현 상태: 단계적 이행 중. 현재 헤드리스는 창 상태 구조를 재사용하고 응답 전에 intent 큐를 비우는 방식으로 완료를 맞춘다
+- **Status**: Accepted — headless는 별도 CommandContext와 EngineSession을 사용하며 로컬 View 상태를 만들지 않는다. 구조 명령은 journal commit·publication과 effect 완료 경계를 공유한다. 일반 plugin bus·attach client·로컬 View 자동 복원을 새로 지원하지 않는다. 실제 headless 실행 검증은 별도다.
 - **Date**: 2026-09-30
 - **Tags**: headless, lifecycle, features, architecture
 - **Group**: foundation

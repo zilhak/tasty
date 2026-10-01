@@ -1,11 +1,13 @@
 # ADR-0061: 외부 원격 연결은 Remote가 소유하고 attach 동기화는 서버의 확정 순서를 따른다
 
-- **Status**: Accepted — 구현 상태: 단계적 이행 중. 현재 연결·재연결·ID mapping 상태가 App 필드와 attach client·Core attach runtime에 나뉘어 있다. mirror 트리는 `CoreState.mirror_workspaces`, 로컬 트리는 `CoreState.local_workspaces`로 분리됐다. `workspaces()`는 두 트리를 복제하지 않는 합성 읽기이며 기존 index wire와 ID 기반 navigation을 함께 지원한다. ID는 아직 로컬 공유 카운터에서 받는다
+- **Status**: Accepted — 외부 연결·attempt·epoch·transport는 기존 `tasty-remote`의 Remote가, engine별 서버 구독과 전송은 root `src/remote`가 맡는다. mirror 트리는 CoreState의 로컬 트리와 분리된 projection으로 유지하며 ID는 journal에 영속 예약된 구간을 소비한다. 원 engine/View·mapping·registration에 묶인 결과와 실제 retirement receipt를 사용한다. 구현 상태이며 실제 SSH·재연결·종료의 실행 검증 결과를 뜻하지 않는다.
 - **Date**: 2026-09-30
 - **Tags**: attach, remote, stream, synchronization, plugins
 - **Group**: terminal
 
 ## Context
+
+아래는 결정 당시의 기존 배치다. 현재 구현 위치는 References에 별도로 적는다.
 
 SSH 실행·터널·포트 발견은 `tasty-ssh`, 원격 workspace 조회·생성은 `tasty-remote`에 있다. 본체에서는 `src/app/attach_client.rs`가
 socket·SSH 터널·remote/local ID mapping·mirror 이벤트 처리를 함께 갖고, `src/app/auto_attach.rs`·`src/app/attach_poll.rs`와 App 필드가
@@ -120,7 +122,7 @@ survivor scrollback에 화면이 한 번 더 남을 수 있고, 창에서 시작
 통지도 큐 한 칸을 쓰므로 매 push마다 한 칸만 비우는 client는 lag 한도에서 끊길 수 있다. 5초 이하 dump에는 Ping이 추가되지 않는다.
 StreamReady만으로 전송하는 기타 구조 변경은 다음 stream 활동까지 지연될 수 있다.
 
-이행 중에는 App 필드·attach client·Core attach runtime에 남은 상태를 Remote로 옮기며, 한 상태의 원본이 두 곳에 있는 기간이 없도록 한 번에 옮긴다.
+현재 outbound transport·연결 상태는 `tasty-remote`, engine별 서버 구독·표시·전송 상태는 `src/remote`, 구조 적용과 View 후처리는 App adapter가 맡는다. CoreState의 별도 mirror 필드는 이 ADR이 허용한 읽기 projection이며 추가 저장소로의 이동을 현재 기능 완료의 조건으로 삼지 않는다.
 
 ## Alternatives Considered
 
@@ -162,4 +164,4 @@ StreamReady만으로 전송하는 기타 구조 변경은 다음 stream 활동�
 - [ADR-0020](0020-remote-connection-profiles.md) · [ADR-0021](0021-occupancy-and-attach-admission.md) · [ADR-0022](0022-remote-mirror-content-and-queries.md) · [ADR-0026](0026-plugin-registration-and-lifecycle.md) · [ADR-0028](0028-egui-mesh-rendering.md)
 - [ADR-0054](0054-app-core-view-layers-and-state-ownership.md) · [ADR-0055](0055-structural-domain-event-sourcing.md) · [ADR-0060](0060-terminal-and-pty-separation.md)
 - [attach 구현](../dev-guide/attach-behavior.md), [원격 attach](../features/remote-attach/index.md)
-- 현재 구현: `src/app/attach_client.rs`, `src/app/auto_attach.rs`, `src/app/attach_poll.rs`, `src/core/attach_runtime.rs`, `src/core/impl_attach.rs`, `crates/tasty-remote`, `crates/tasty-ssh`.
+- 현재 구현: `crates/tasty-remote/src/{outbound,transport,connection,client_session,browser}.rs`, `src/remote/{server,structure_sync,subscription,mesh_mirror,transfer_spool}.rs`, `src/app/{attach_client,auto_attach,remote_browser}.rs`, `src/runtime/id_reservations.rs`, `src/app/journal/forward.rs`, `crates/tasty-ssh`.

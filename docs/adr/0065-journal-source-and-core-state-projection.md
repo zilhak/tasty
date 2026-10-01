@@ -1,6 +1,6 @@
 # ADR-0065: 구조 journal이 원본이고 CoreState 트리는 확정 이벤트로 갱신하는 live projection이다
 
-- **Status**: Accepted — 구현 상태: 이행 중. App의 초기 엔진 구성은 journal worker·확정 projection·실제 자원 설치에 연결했다. 선택한 복원 자료도 같은 activation 경계를 사용한다. 선택 slot의 legacy import는 연결했으며 일반 구조 producer·복구 경계가 아직 이행 중이므로 엔진 단위 활성화 조건을 모두 충족한 제품 끝점은 아니다
+- **Status**: Accepted — journal worker의 원본 모델과 확정 batch projection, 별도 실행 인스턴스, 명시 activation·retirement receipt가 구현돼 있다. View 복원 원본은 DB restore manifest와 연결된 checkpoint이며 sidecar는 최초 이관에만 사용한다. 타입/cfg·전체 writer 소비 및 crash/플랫폼 실행 검증은 구현 존재와 별개다.
 - **Date**: 2026-09-30
 - **Tags**: architecture, event-sourcing, domain, projection, migration
 - **Group**: foundation
@@ -25,11 +25,13 @@ IPC 응답과 GUI는 CoreState 트리를 읽는다.
 - 활성화한 엔진에서 로컬 구조 트리의 writer는 projection 적용기 하나뿐이다. CommandExecutor가 commit에 성공한 batch만 적용기로 넘기며, 다른 경로가 트리를 직접 바꾸지 않는다.
   원격 mirror 구조는 로컬 트리와 다른 필드에 있고 쓰는 창구도 다르다([ADR-0061](0061-external-remote-module-and-attach-sync.md)).
 - 이벤트에 넣지 않는 값:
-  - 사용자 선택은 [ADR-0059](0059-id-targets-and-view-owned-selection.md)에 따라 View 소유다. 선택 필드가 아직 CoreState에 있는 동안에는 적용기가 0059의 보정 규칙대로 유지한다.
+  - 사용자 선택은 [ADR-0059](0059-id-targets-and-view-owned-selection.md)에 따라 View의 NavigationState가 소유한다. 구조 삭제 뒤의 선택 보정은 View에 적용한다.
   - `focus_second`는 적용기가 기존 hint 규칙대로 채운다.
   - `osc_title`과 표시 이름 같은 Terminal 파생값은 적용 뒤 기존 계산으로 다시 만든다.
 
 ### 전환 절차
+
+아래는 전환 단계의 결정이다. 현재 제품 경로와 저장 원본은 다음 절에 별도로 적는다.
 
 - shadow 기간에는 기존 경로가 원본이다. 같은 명령을 CoreState와 JournalModel에 모두 적용하고 두 결과의 구조 digest를 비교한다.
   이 기간의 journal 기록은 비교에만 쓰고 복원에는 쓰지 않는다. digest가 다르면 그 범위를 활성화하지 않는다.
@@ -49,34 +51,29 @@ App 한 회의 완료 처리량은 제한한다.
 준비 성공 다음 commit은 설치 권한·옛 owner 정리 의무만 확정한다. 외부 게시·설치와 정확한
 옛 PTY 회수 뒤 최종 commit이 구조 변경·Ready·원 요청 완료를 함께 확정하고 공개한다.
 설치 전 kind 철회·등록 교체는 후보를 폐기하고 기존 인스턴스를 유지한다.
-외부 게시 이후의 불명 결과는 이행 중인 Recovery 경계에서 대조해야 하며, 알려진 실패로
+외부 게시 이후의 불명 결과는 Recovery의 원 attempt·receipt 증거와 대조하며, 알려진 실패로
 바꿔 자동 재실행하지 않는다.
 
 표시면은 첫 capture 전에도 생성 자료 참조를 유지한다. 복원은 snapshot을 우선하고,
 없으면 generic 생성 params/CWD를 사용한다. terminal은 현재 셸 설정과 저장된 명시적
 복원 명령을 사용하며 과거 실행 인자·입력을 자동 재전송하지 않는다.
 복원 capture는 기존 DataRef로 읽고, 같은 자료를 준비 요청에 복사해 다시 저장하지 않는다.
-선택되지 않은 terminal과 아직 등록되지 않은 kind의 지연 활성화 및 일반 명령 진입점은
-계속 이행 중이다. 이 상태를 완전한 writer 단일화나 장애 복구 완료로 해석하지 않는다.
+선택되지 않은 terminal과 아직 등록되지 않은 kind는 지연 활성화하며, 일반 명령도 필요한 원 대상의 activation에 합류한다. source 경계가 존재한다는 사실을 모든 writer·장애 복구 시나리오의 검증 완료로 해석하지 않는다.
 
 선택한 legacy slot은 worker가 원본 파일과 자료를 읽어 한 import batch로 확정하고 초기 View의
 ID 대응을 함께 보존한다. 이미 journal stream이 있으면 legacy 파일을 다시 원본으로 읽지 않는다.
 CoreState 생성자도 제품에서 legacy 파일을 선행 해석하지 않는다. 기존 위치가 범위를 벗어나면
 workspace와 tab은 마지막 항목, pane은 첫 항목을 고르는 복원 규칙을 유지한다.
 
-정상 resume는 journal/stream/incarnation과 확정 cut/revision을 붙인 최신 View checkpoint를
-초기 import 선택보다 우선한다. 이 선택은 구조 이벤트가 아니다. sidecar는 slot과 incarnation별
-경로를 써 새 시작이 손상된 과거 View 파일에 막히지 않고 그 파일도 보존한다.
-현재 incarnation을 선택하지 않은 시작에서는 과거 View를 읽지 않는다. worker는 옛 incarnation과
-더 늦게 도착한 과거 sequence의 저장을 거절한다. 저장 실패의 후보와 dirty 상태는 재시도를 위해
-남기며 종료는 기존 tick 저장과 별도로 최신 final capture를 한 번 요청한다.
-전체 View/payload pin·보존 정리는 최종 저장 전환에서 완성해야 한다.
+정상 resume는 journal/stream/incarnation과 확정 cut/revision을 붙인 최신 View checkpoint를 초기 import 선택보다 우선한다. 이 선택은 구조 이벤트가 아니다. `src/runtime/journal_product/view_record.rs`는 DB restore manifest를 먼저 읽고 그 domain checkpoint와 View의 binding을 대조한다. DB 원본이 없는 경우에만 legacy sidecar를 최초 이관 자료로 읽으며, DB 자료가 손상됐다고 옛 sidecar로 조용히 돌아가지 않는다.
+
+현재 incarnation을 선택하지 않은 시작에서는 과거 View를 읽지 않는다. worker는 옛 incarnation과 더 늦게 도착한 과거 sequence의 저장을 거절한다. 저장 실패의 후보와 dirty 상태는 재시도를 위해 남기며 종료는 기존 tick 저장과 별도로 최신 final capture를 요청한다. View manifest와 도메인 checkpoint·payload 참조를 연결하는 pin/보존 구현은 저장 계층에 있다([ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)). 해당 코드의 존재가 crash·전원 장애 검증을 완료했다는 뜻은 아니다.
 
 ### 실행 인스턴스 분리 뒤 모델 재검토
 
 CoreState의 leaf를 SurfaceDescriptor로 바꾸고 사용자 선택을 View로 옮긴 뒤 두 표현을 다시 대조했다. canonical 모델은 저장 revision·ID map·불변 자료 참조·operation을 소유한다. 읽기 projection은 기존 PaneNode/SurfaceLayout과 process-local SplitNodeId를 유지하여 변경되지 않은 노드의 View hint 연결과 geometry 대여를 보존한다. 순수 적용기와 canonical 비교도 같은 tasty-core에 모았으며, 별도 tasty-domain 패키지를 남기지 않는다.
 
-현재는 읽기 projection을 유지하되 독립 decide/ID 발급/로컬 writer를 허용하지 않는다. 노드 identity를 보존하는 단일 표현이 기존 대여 API를 대체하거나, 두 표현의 유지 비용이 반복 결함으로 드러나면 통합을 다시 판단한다. 이 판단은 성능 개선을 실측했다는 뜻이 아니다. 일반 caller 및 View 실행 경계 이행과 최종 검증은 진행 중이다.
+현재는 읽기 projection을 유지하되 독립 decide/ID 발급/로컬 writer를 허용하지 않는다. 노드 identity를 보존하는 단일 표현이 기존 대여 API를 대체하거나, 두 표현의 유지 비용이 반복 결함으로 드러나면 통합을 다시 판단한다. 이 판단은 성능 개선을 실측했다는 뜻이 아니다. 일반 caller와 View는 읽기·명령 포트로 분리하며, 최종 통합 및 실행 검증의 상태는 별도로 기록해야 한다.
 
 ## Consequences
 
@@ -107,5 +104,5 @@ IPC 응답 형식은 CoreState에서 계속 만들므로 바뀌지 않는다. �
 ## References
 
 - [ADR-0055](0055-structural-domain-event-sourcing.md) · [ADR-0059](0059-id-targets-and-view-owned-selection.md) · [ADR-0061](0061-external-remote-module-and-attach-sync.md) · [ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)
-- [ADR-0064](0064-journal-domain-model-crate.md) — JournalModel과 시험 전용 executor
-- 현재 구현: `crates/tasty-core/src/model.rs`(JournalModel), `crates/tasty-model/src/workspace.rs`·`crates/tasty-model/src/tab.rs`(CoreState 트리), `src/runtime/command_executor.rs`, `src/core/layout_persistence/import.rs`(importer).
+- [ADR-0064](0064-journal-domain-model-crate.md) — JournalModel 추출의 결정 이력
+- 현재 구현: `crates/tasty-core/src/{model,state,projection}.rs`, `crates/tasty-model/src/{workspace,tab}.rs`, `src/runtime/command_executor.rs`, `src/runtime/journal_product/view_record.rs`, `src/core/layout_persistence/import.rs`, `src/app/journal/{creation,resource_cleanup,retirement}.rs`.

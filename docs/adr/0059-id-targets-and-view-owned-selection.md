@@ -1,6 +1,6 @@
 # ADR-0059: 구조 명령은 ID로 대상을 정하고 사용자 선택은 View가 소유한다
 
-- **Status**: Accepted — 구현 상태: 단계적 이행 중. 구조 선택과 카테고리 접힘은 View의 ID 기반 navigation에 있으며 headless는 별도 명령 기본 문맥을 사용한다. 터미널 viewport 분리와 저널 원본 전환은 이행 중이며 레이아웃 슬롯 파일은 복원 원본으로 남아 있다
+- **Status**: Accepted — 구조 선택·카테고리 접힘·terminal viewport는 View가 소유하고 headless는 별도 명령 기본 문맥을 사용한다. 로컬 구조는 journal, View 선택 복원은 DB manifest/checkpoint가 원본이며 legacy 파일은 최초 이관에 사용한다(ADR-0065). 실제 복원·다중 창 실행 검증은 별도다.
 - **Date**: 2026-09-30
 - **Tags**: workspace, focus, routing, identity, layout
 - **Group**: terminal

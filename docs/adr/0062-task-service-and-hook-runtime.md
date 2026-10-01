@@ -1,11 +1,13 @@
 # ADR-0062: 작업 실행은 TaskService가, 훅 감시와 실행은 HookRuntime이 소유한다
 
-- **Status**: Accepted — 구현 상태: 단계적 이행 중. TaskService는 root `src/core/task_service.rs`에 있고 `Core.tasks`로 조립되며 러너 등록부(RunnerRegistry)와 훅-작업 대기(HookTaskWaits)를 소유한다. engine별 작업 순번·완료 대기 허브·사건 큐는 TaskScope로 묶였고, task IPC 핸들러와 App 호출은 TaskService API(`runner_*`·`dispatch_handle`·`awaiter` 등)만 거친다. `task-await`는 요청 workspace를 가진 engine의 TaskScope에서 기다린다. 훅 실행은 root `hook_runtime` 모듈과 HookRuntimeState로 모였다. TaskScope와 HookRuntimeState는 EngineSession이 직접 소유하며, 실행 소비자는 CoreState와 별도로 대여한다. 이 소유 이전만으로 구조 명령의 effect 분리나 CoreState 전체의 무자원 replay가 완성되는 것은 아니다. `task-await`의 소유 engine은 App이 창·parked engine을 차례로 확인해 찾는다. TaskService의 `tasty-task-runtime` 추출과 App이 port로 두 서비스를 연결하는 구조도 아직 없다. runner_host가 root completion_strategy 전역 registry와 HookHandlerId를 직접 사용하므로, 이 host 의존을 좁은 port로 정리한 뒤 추출 시점을 다시 판단한다
+- **Status**: Accepted — TaskService는 `tasty-task-runtime`으로 분리됐고 `AppServices.tasks`가 조립한다. TaskScope와 HookRuntimeState는 EngineSession이 소유한다. 완료 전략은 CompletionResolver로 주입하며 작업 기록은 기존 TaskStore 하나다. engine/workspace 종료에는 원 scope의 nonblocking stop 및 실제 join receipt를 연결했다. 이 구현 배치가 GUI/headless·경합·종료의 실행 검증을 대신하지는 않는다.
 - **Date**: 2026-09-30
 - **Tags**: agents, tasks, hooks, ownership, architecture
 - **Group**: agents
 
 ## Context
+
+아래는 이 결정을 내릴 때의 기존 배치와 문제다. 현재 구현 위치는 References를 따른다.
 
 작업 조율의 알고리즘은 이미 `tasty-agent`에 있다. 작업 상태 전이·의존성·협업 primitive·RunnerLoop를 제공하며, DAG는
 `crates/tasty-agent/src/task/dag.rs`가 작업 집합에서 계산하는 조회 결과다. 그러나 실행 소유는 흩어져 있다.
@@ -87,4 +89,6 @@ IPC 핸들러가 registry를 직접 시작·정지하며, App이 대기 허브 �
 - [ADR-0027](0027-lua-and-hook-execution.md) · [ADR-0041](0041-agent-state-and-completion.md) · [ADR-0042](0042-agent-coordination-and-task-views.md) · [ADR-0032](0032-webhook-admission.md)
 - [ADR-0054](0054-app-core-view-layers-and-state-ownership.md) · [ADR-0055](0055-structural-domain-event-sourcing.md) · [ADR-0056](0056-crate-boundaries-for-core-event-store-and-task-runtime.md)
 - [작업 러너](../dev-guide/agent-runner.md), [훅](../features/hooks/index.md)
-- 현재 구현: 작업 실행은 `src/core/task_service.rs`(TaskService·TaskScope·TaskAwaiter), `src/core/agent/task.rs`(TaskService 작업 API), `src/core/agent/runner_host.rs`, `src/core/agent/runner_thread.rs`, `src/core/agent/task_waker.rs`, `src/core/agent/hook_wait.rs`, `src/adapters/ipc/handler/agent/task.rs`(task IPC), `src/app/ipc/app_methods/task_await.rs`(대기 engine 선택). 훅은 `src/hook_runtime/mod.rs`(HookRuntimeState), `src/hook_runtime/worker.rs`, `src/hook_runtime/trigger.rs`, `src/hook_runtime/global.rs`, `src/core/state/global_hooks.rs`, `src/app/idle_hooks.rs`, `src/hook_handler/exec.rs`. engine별 상태를 필드로 가진 곳은 `src/runtime/engine_session.rs`이며 process TaskService는 `src/core/mod.rs`(`Core`)에서 조립한다. 실행 대여 타입은 `src/core/engine_access.rs`다.
+- 현재 구현: `crates/tasty-task-runtime/src/service.rs`(TaskService·TaskScope·TaskAwaiter), 같은 crate의 `task.rs`·`runner_host.rs`·`runner_thread.rs`·`task_waker.rs`·`hook_wait.rs`. task IPC는 `src/adapters/ipc/handler/agent/task.rs`, 대기 engine 선택은 `src/app/ipc/app_methods/task_await.rs`다.
+- 조립과 실행 대여: `src/app/services.rs`, `src/runtime/engine_session.rs`, `src/runtime/engine_access.rs`. 완료 전략 port는 `crates/tasty-task-runtime/src/completion.rs`와 App의 주입 경로다.
+- 훅: `src/hook_runtime/{mod,worker,trigger,global}.rs`, `src/core/state/global_hooks.rs`, `src/app/idle_hooks.rs`, `src/hook_handler/exec.rs`.

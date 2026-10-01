@@ -1,6 +1,6 @@
 # ADR-0060: 터미널 내용과 OS PTY 연결을 별도 객체로 나누고 엔진이 한 곳에서 소유한다
 
-- **Status**: Accepted — 구현 상태: 단계적 이행 중. EngineSession의 기존 TerminalStore가 Terminal과 선택적인 Pty를 한 항목에서 소유한다. Terminal의 child/master 소유와 외부 standalone watcher는 제거했으며 PtyState가 standalone metadata와 exit 관측을 보관한다. 현재 프로세스의 resource generation을 내용 epoch와 분리해 callback에 전달한다. durable journal activation 및 EffectRunner/RecoveryCoordinator 연결은 남아 있다
+- **Status**: Accepted — EngineSession의 TerminalStore가 Terminal과 선택적인 Pty를 한 항목에서 소유한다. 내용과 physical resource generation을 구분하고 activation·retirement는 effect/receipt 경계에 연결돼 있다. 원자 snapshot/ordered attach stream은 같은 parser lock에서 등록한다. 이 source 구조가 OS별 종료·Recovery·경합 실행 검증을 대신하지 않는다.
 - **Date**: 2026-09-30
 - **Tags**: terminal, pty, lifecycle, ownership
 - **Group**: terminal
