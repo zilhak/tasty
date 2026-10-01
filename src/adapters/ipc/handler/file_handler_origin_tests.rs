@@ -1,4 +1,4 @@
-//! 요청 입구에서 판정한 출처가 파일 식별과 새 탭 선택까지 유지되는지 확인한다.
+//! 요청 입구에서 판정한 출처가 파일 식별과 새 탭 생성 요청까지 유지되는지 확인한다.
 //! origin을 시험에서 직접 지정하면 입구의 잘못된 사용자 판정을 잡을 수 없다.
 
 use std::collections::HashSet;
@@ -23,7 +23,7 @@ fn plugin_caller(plugin_id: &str) -> CallerContext {
     }
 }
 
-/// dispatch 요청을 파일 식별 완료와 새 탭 생성까지 적용한다.
+/// dispatch 요청을 파일 식별 완료와 새 탭 생성 요청까지 적용한다.
 /// activated는 확정 입력을 받은 팝업, with_origin_surface는 명시적 대상 pane, mirror는 원격 전달을 준비한다.
 fn dispatch_through(
     caller: &CallerContext,
@@ -54,7 +54,11 @@ fn dispatch_through_with(
 ) -> DispatchOutcome {
     use tasty_plugin_protocol::host_port::FileHandlerRegistryPort;
     let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = if mirror {
+        crate::state::tests::test_mirror_state()
+    } else {
+        crate::state::tests::test_state()
+    };
     let mut engine = engine_session.borrow_mut();
     FileHandlerRegistryPort::install_plugin_handlers(
         engine.runtime.file_handler.as_ref(),
@@ -74,12 +78,13 @@ fn dispatch_through_with(
             .tab_index(engine.find_pane_by_id(pane_id).expect("pane")),
         0
     );
+    let view = Arc::new(());
+    state.webview_identity = Arc::downgrade(&view);
+    let proofs = Arc::new(crate::app::html_runtime::NavigationProofs::default());
+    let sid = engine.workspace_at(0).unwrap().all_surface_ids()[0];
+    install_source(&mut engine, sid);
     for attempt in navigated {
-        let sid = engine
-            .workspace_at(0)
-            .expect("workspace index is valid")
-            .all_surface_ids()[0];
-        attempt.record(&mut state, sid);
+        attempt.record(&proofs, &state, &engine, sid);
     }
     if with_origin_surface {
         let sid = engine
@@ -89,10 +94,22 @@ fn dispatch_through_with(
         assert_eq!(engine.find_pane_for_surface(sid), Some(pane_id));
         params["origin_surface_id"] = json!(sid);
     }
-    engine.set_workspace_mirror_fixture(0, mirror);
 
     let mut out = crate::ipc::window_port::IntentOutbox::default();
-    let resp = handle_dispatch(&mut out, &mut state, &engine, caller, json!(1), params);
+    let mut scope = crate::ipc::request_scope::RequestScope::capture(
+        &mut state,
+        engine.core,
+        Some(proofs.clone()),
+    );
+    let resp = handle_dispatch(
+        &mut out,
+        &mut scope,
+        &engine.as_ref(),
+        caller,
+        json!(1),
+        params,
+    );
+    drop(scope);
     assert!(resp.error.is_none(), "dispatch must be accepted: {resp:?}");
     let mut emitted = out.into_vec();
     assert_eq!(emitted.len(), 1);
@@ -119,10 +136,14 @@ fn dispatch_through_with(
         dispatch_origin,
         ignore_size_limit,
     );
-    for pending in state.take_pending_intents() {
-        assert!(matches!(pending.body, Intent::NewTab { .. }));
-        crate::intent::tab::handle(&mut core, &mut state, &mut engine, &pending);
-    }
+    // App receives creation requests; the View does not synchronously create/select a tab.
+    assert_eq!(engine.find_pane_by_id(pane_id).unwrap().tabs.len(), 1);
+    assert_eq!(
+        state
+            .navigation
+            .tab_index(engine.find_pane_by_id(pane_id).unwrap()),
+        0
+    );
     (
         dispatch_origin,
         intent_is_user,
@@ -137,15 +158,13 @@ fn dispatch_then_selection(
     activated: Option<(&str, u64)>,
     params: serde_json::Value,
     with_origin_surface: bool,
-) -> (FileDispatchOrigin, bool, (usize, usize)) {
-    let (origin, intent_is_user, state, mut engine_session, pane_id) =
+) -> (FileDispatchOrigin, bool, bool) {
+    let (origin, intent_is_user, mut state, _engine_session, pane_id) =
         dispatch_through(caller, activated, params, with_origin_surface, false);
-    let engine = engine_session.borrow_mut();
-    let pane = engine.find_pane_by_id(pane_id).expect("pane");
     (
         origin,
         intent_is_user,
-        (pane.tabs.len(), state.navigation.tab_index(pane)),
+        creation_activation(&mut state, pane_id),
     )
 }
 
@@ -154,25 +173,25 @@ fn popup_params() -> serde_json::Value {
 }
 
 #[test]
-fn a_dispatch_from_the_users_popup_selects_the_new_tab() {
+fn a_dispatch_from_the_users_popup_requests_activation_of_the_new_tab() {
     let got = dispatch_then_selection(
         &plugin_caller(PLUGIN),
         Some((PLUGIN, POPUP)),
         popup_params(),
         false,
     );
-    assert_eq!(got, (FileDispatchOrigin::User, true, (2, 1)));
+    assert_eq!(got, (FileDispatchOrigin::User, true, true));
 }
 
 #[test]
-fn a_dispatch_without_a_popup_keeps_the_users_tab() {
+fn a_dispatch_without_a_popup_requests_background_creation() {
     let got = dispatch_then_selection(
         &plugin_caller(PLUGIN),
         Some((PLUGIN, POPUP)),
         json!({ "path": "/tmp/a.md" }),
         false,
     );
-    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, false));
 }
 
 #[test]
@@ -183,7 +202,7 @@ fn an_external_caller_cannot_claim_a_popup() {
         popup_params(),
         false,
     );
-    assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::Agent, false, false));
 }
 
 #[test]
@@ -194,73 +213,36 @@ fn a_plugin_cannot_claim_another_plugins_popup() {
         popup_params(),
         false,
     );
-    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, false));
 }
 
 #[test]
 fn an_untouched_popup_is_not_a_user_action() {
     let got = dispatch_then_selection(&plugin_caller(PLUGIN), None, popup_params(), false);
-    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, false));
 }
 
 // 대상 pane을 명시해도 사용자 여부는 팝업 입력으로 판정한다.
 #[test]
-fn a_users_popup_that_names_an_origin_surface_still_selects_the_new_tab() {
+fn a_users_popup_that_names_an_origin_surface_still_requests_activation_of_the_new_tab() {
     let got = dispatch_then_selection(
         &plugin_caller(PLUGIN),
         Some((PLUGIN, POPUP)),
         popup_params(),
         true,
     );
-    assert_eq!(got, (FileDispatchOrigin::User, true, (2, 1)));
+    assert_eq!(got, (FileDispatchOrigin::User, true, true));
 }
 
 #[test]
-fn an_origin_surface_without_a_popup_keeps_the_users_tab() {
+fn an_origin_surface_without_a_popup_requests_background_creation() {
     let got = dispatch_then_selection(
         &plugin_caller(PLUGIN),
         Some((PLUGIN, POPUP)),
         json!({ "path": "/tmp/a.md" }),
         true,
     );
-    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, (2, 0)));
-}
-
-/// 원격 실패는 사용자 요청이면 toast, 에이전트 요청이면 로그로 남겨야 한다.
-#[test]
-fn a_mirror_tab_from_the_users_popup_keeps_its_remote_failure_toast() {
-    let (origin, _, state, engine, _) = dispatch_through(
-        &plugin_caller(PLUGIN),
-        Some((PLUGIN, POPUP)),
-        popup_params(),
-        false,
-        true,
-    );
-    assert_eq!(origin, FileDispatchOrigin::User);
-    assert_eq!(
-        engine.core_state.remote.pending_structural_forward.len(),
-        1,
-        "새 탭은 forward 된다"
-    );
-    assert!(
-        !engine.core_state.remote.pending_structural_forward[0].silent_failure,
-        "사용자가 요청한 원격 작업의 거절은 토스트로 표시한다"
-    );
-    assert_eq!(state.toasts.len(), 0);
-
-    let (origin, _, _, engine, _) = dispatch_through(
-        &plugin_caller(PLUGIN),
-        Some((PLUGIN, POPUP)),
-        json!({ "path": "/tmp/a.md" }),
-        false,
-        true,
-    );
-    assert_eq!(origin, FileDispatchOrigin::PluginUnverified);
-    assert_eq!(engine.core_state.remote.pending_structural_forward.len(), 1);
-    assert!(
-        engine.core_state.remote.pending_structural_forward[0].silent_failure,
-        "에이전트가 요청한 원격 작업의 거절은 로그에 기록한다"
-    );
+    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, false));
 }
 
 const NAV_URL: &str = "about:blank#tasty-nav:link:%2Ftmp%2Fa.md";
@@ -273,17 +255,62 @@ struct Attempt {
     owner_wrote_page: bool,
 }
 
+fn install_source(engine: &mut crate::runtime::engine_access::EngineMut<'_>, sid: u32) {
+    engine.runtime.surfaces.insert(
+        sid,
+        Box::new(crate::plugin_bridge::remote_surface::RemoteSurface::new(
+            sid,
+            "markdown",
+            PLUGIN.into(),
+            "source".into(),
+        )),
+    );
+}
+
+fn creation_activation(state: &mut crate::state::RequestContext, pane_id: u32) -> bool {
+    let intents = state.take_pending_intents();
+    assert_eq!(intents.len(), 1);
+    match &intents[0].body {
+        Intent::Domain(DomainIntent::CreateTab {
+            pane_id: target,
+            activate,
+            ..
+        }) => {
+            assert_eq!(*target, pane_id);
+            assert_eq!(*activate, intents[0].origin.is_user());
+            *activate
+        }
+        Intent::NewTab { .. } => intents[0].origin.is_user(),
+        other => panic!("expected creation request: {other:?}"),
+    }
+}
+
 impl Attempt {
-    fn record(&self, state: &mut crate::state::RequestContext, sid: u32) {
-        crate::plugin_bridge::user_navigation::record(
-            &mut state.webview_user_navigations,
+    fn record(
+        &self,
+        proofs: &crate::app::html_runtime::NavigationProofs,
+        state: &crate::state::RequestContext,
+        engine: &crate::runtime::engine_access::EngineMut<'_>,
+        sid: u32,
+    ) {
+        let remote = engine
+            .runtime
+            .surfaces
+            .get(&sid)
+            .unwrap()
+            .as_any()
+            .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
+            .unwrap();
+        proofs.record(
+            &state.webview_identity,
             sid,
             Some(&crate::plugin_bridge::user_navigation::NavigationOwner {
-                plugin_id: PLUGIN.to_string(),
+                plugin_id: PLUGIN.into(),
                 wrote_page: self.owner_wrote_page,
             }),
+            Some(&remote.webview_url),
             &crate::webview::PendingNavigation {
-                url: NAV_URL.to_string(),
+                url: NAV_URL.into(),
                 user_gesture: self.user_gesture,
             },
         );
@@ -306,28 +333,26 @@ fn link_then_selection(
     caller: &CallerContext,
     navigated: &[Attempt],
     params: serde_json::Value,
-) -> (FileDispatchOrigin, bool, (usize, usize)) {
-    let (origin, intent_is_user, state, mut engine_session, pane_id) =
+) -> (FileDispatchOrigin, bool, bool) {
+    let (origin, intent_is_user, mut state, _owner, pane_id) =
         dispatch_through_with(caller, None, navigated, params, true, false);
-    let engine = engine_session.borrow_mut();
-    let pane = engine.find_pane_by_id(pane_id).expect("pane");
     (
         origin,
         intent_is_user,
-        (pane.tabs.len(), state.navigation.tab_index(pane)),
+        creation_activation(&mut state, pane_id),
     )
 }
 
 #[test]
-fn a_link_the_user_clicked_in_the_plugins_webview_selects_the_new_tab() {
+fn a_link_the_user_clicked_in_the_plugins_webview_requests_activation_of_the_new_tab() {
     let got = link_then_selection(&plugin_caller(PLUGIN), &[gesture(true)], link_params());
-    assert_eq!(got, (FileDispatchOrigin::User, true, (2, 1)));
+    assert_eq!(got, (FileDispatchOrigin::User, true, true));
 }
 
 #[test]
 fn a_navigation_the_engine_did_not_see_as_a_gesture_is_not_a_user_action() {
     let got = link_then_selection(&plugin_caller(PLUGIN), &[gesture(false)], link_params());
-    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, false));
 }
 
 /// 뒤따른 비사용자 navigation이 이전 클릭 기록을 지워야 한다.
@@ -343,7 +368,7 @@ fn a_non_gesture_attempt_after_an_unused_click_leaves_the_dispatch_unverified() 
             &[gesture(true), later],
             link_params(),
         );
-        assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, (2, 0)));
+        assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, false));
     }
 }
 
@@ -355,19 +380,19 @@ fn a_click_on_a_page_the_owner_did_not_write_is_not_a_user_action() {
         owner_wrote_page: false,
     };
     let got = link_then_selection(&plugin_caller(PLUGIN), &[on_agents_page], link_params());
-    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, false));
 }
 
 #[test]
 fn a_plugin_cannot_claim_a_navigation_that_never_happened() {
     let got = link_then_selection(&plugin_caller(PLUGIN), &[], link_params());
-    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, false));
 }
 
 #[test]
 fn an_external_caller_cannot_claim_a_webview_navigation() {
     let got = link_then_selection(&CallerContext::Local, &[gesture(true)], link_params());
-    assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::Agent, false, false));
 }
 
 /// 입구 판정부터 식별 결과 적용까지 이어서 본다. 매칭 핸들러가 없을 때 fallback picker는
@@ -379,14 +404,17 @@ fn only_an_unverified_plugin_request_opens_the_fallback_picker() {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         let mut out = crate::ipc::window_port::IntentOutbox::default();
+        let mut scope =
+            crate::ipc::request_scope::RequestScope::capture(&mut state, engine.core, None);
         let resp = handle_dispatch(
             &mut out,
-            &mut state,
-            &engine,
+            &mut scope,
+            &engine.as_ref(),
             &caller,
             json!(1),
             json!({ "path": "/tmp/unmatched.unknown" }),
         );
+        drop(scope);
         assert!(resp.error.is_none(), "dispatch must be accepted: {resp:?}");
         let Intent::Domain(DomainIntent::DispatchFile {
             target,
@@ -424,9 +452,9 @@ fn a_session_agent_caller_stays_an_agent_request() {
         permissions: Arc::new(HashSet::new()),
     };
     let got = dispatch_then_selection(&agent, Some((PLUGIN, POPUP)), popup_params(), false);
-    assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::Agent, false, false));
     let got = link_then_selection(&agent, &[gesture(true)], link_params());
-    assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::Agent, false, false));
 }
 
 #[test]
@@ -436,33 +464,38 @@ fn a_plugin_cannot_claim_another_plugins_webview_navigation() {
         &[gesture(true)],
         link_params(),
     );
-    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, (2, 0)));
+    assert_eq!(got, (FileDispatchOrigin::PluginUnverified, false, false));
 }
 
 /// 같은 프레임에 페이지 작성자가 바뀌면 navigation 기록을 버린다. 다음 프레임의 클릭은 허용한다.
 #[test]
 fn a_click_drained_in_the_frame_the_owner_took_the_page_back_is_not_a_user_action() {
     let (mut state, mut engine_session) = crate::state::tests::test_state();
-    let engine = engine_session.borrow_mut();
+    let mut engine = engine_session.borrow_mut();
+    let view = Arc::new(());
+    state.webview_identity = Arc::downgrade(&view);
+    let proofs = Arc::new(crate::app::html_runtime::NavigationProofs::default());
     let sid = engine
         .workspace_at(0)
         .expect("workspace index is valid")
         .all_surface_ids()[0];
+    install_source(&mut engine, sid);
     let mut params = link_params();
     params["origin_surface_id"] = json!(sid);
     let mut origins = Vec::new();
     for (id, owner_took_over) in [(0, true), (1, false)] {
-        gesture(true).record(&mut state, sid);
-        crate::plugin_bridge::user_navigation::settle_frame(
-            &mut state.webview_user_navigations,
-            sid,
-            owner_took_over,
-        );
+        gesture(true).record(&proofs, &state, &engine, sid);
+        proofs.settle_frame(&state.webview_identity, &[sid], &[(sid, owner_took_over)]);
         let mut out = crate::ipc::window_port::IntentOutbox::default();
+        let mut scope = crate::ipc::request_scope::RequestScope::capture(
+            &mut state,
+            engine.core,
+            Some(proofs.clone()),
+        );
         let resp = handle_dispatch(
             &mut out,
-            &mut state,
-            &engine,
+            &mut scope,
+            &engine.as_ref(),
             &plugin_caller(PLUGIN),
             json!(id),
             params.clone(),
@@ -478,21 +511,30 @@ fn a_click_drained_in_the_frame_the_owner_took_the_page_back_is_not_a_user_actio
 #[test]
 fn a_webview_navigation_backs_only_one_dispatch() {
     let (mut state, mut engine_session) = crate::state::tests::test_state();
-    let engine = engine_session.borrow_mut();
+    let mut engine = engine_session.borrow_mut();
+    let view = Arc::new(());
+    state.webview_identity = Arc::downgrade(&view);
+    let proofs = Arc::new(crate::app::html_runtime::NavigationProofs::default());
     let sid = engine
         .workspace_at(0)
         .expect("workspace index is valid")
         .all_surface_ids()[0];
-    gesture(true).record(&mut state, sid);
+    install_source(&mut engine, sid);
+    gesture(true).record(&proofs, &state, &engine, sid);
     let mut params = link_params();
     params["origin_surface_id"] = json!(sid);
     let mut origins = Vec::new();
     for id in 0..2 {
         let mut out = crate::ipc::window_port::IntentOutbox::default();
+        let mut scope = crate::ipc::request_scope::RequestScope::capture(
+            &mut state,
+            engine.core,
+            Some(proofs.clone()),
+        );
         let resp = handle_dispatch(
             &mut out,
-            &mut state,
-            &engine,
+            &mut scope,
+            &engine.as_ref(),
             &plugin_caller(PLUGIN),
             json!(id),
             params.clone(),
@@ -509,18 +551,23 @@ fn a_webview_navigation_backs_only_one_dispatch() {
 #[test]
 fn a_mirror_origin_dispatch_echoes_the_requested_depth() {
     for (mirror, expected) in [(false, "deep"), (true, "deep")] {
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = if mirror {
+            crate::state::tests::test_mirror_state()
+        } else {
+            crate::state::tests::test_state()
+        };
         let mut engine = engine_session.borrow_mut();
-        engine.set_workspace_mirror_fixture(0, mirror);
         let sid = engine
             .workspace_at(0)
             .expect("workspace index is valid")
             .all_surface_ids()[0];
         let mut out = crate::ipc::window_port::IntentOutbox::default();
+        let mut scope =
+            crate::ipc::request_scope::RequestScope::capture(&mut state, engine.core, None);
         let resp = handle_dispatch(
             &mut out,
-            &mut state,
-            &engine,
+            &mut scope,
+            &engine.as_ref(),
             &CallerContext::Local,
             json!(1),
             json!({"path": "/remote/doc.md", "depth": "deep", "origin_surface_id": sid}),
