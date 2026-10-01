@@ -11,9 +11,6 @@ pub enum WorkspaceCloseOrigin {
     /// 사용자 단축키·메뉴 또는 사용자 입력을 재현하는 debug IPC 경로.
     #[cfg(any(feature = "gui", debug_assertions, test))]
     User,
-    /// workspace.close IPC/CLI 경로.
-    #[cfg(test)]
-    Agent,
 }
 
 impl WorkspaceCloseOrigin {
@@ -23,8 +20,6 @@ impl WorkspaceCloseOrigin {
         match self {
             #[cfg(any(feature = "gui", debug_assertions, test))]
             Self::User => true,
-            #[cfg(test)]
-            Self::Agent => false,
         }
     }
 }
