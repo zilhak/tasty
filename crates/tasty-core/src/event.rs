@@ -325,6 +325,7 @@ impl DomainEvent {
         "surface.converted",
         "surface.data_recorded",
         "surface.creation_seeded",
+        "surface.seed_imported",
         "surface.activation_changed",
         "pane.ratio_set",
         "surface.ratio_set",

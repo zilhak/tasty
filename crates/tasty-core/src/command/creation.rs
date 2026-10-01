@@ -314,20 +314,17 @@ pub(super) fn decide(
                 .operations
                 .get(id)
                 .ok_or_else(|| Rejection("preparation operation not found".into()))?;
-            if operation.outcome.is_some() || operation.pending_outcome.is_some() {
+            if operation.outcome.is_some()
+                || operation.pending_outcome.is_some()
+                || operation.resource_prepared
+            {
                 return Err(Rejection("operation is no longer unstarted".into()));
             }
             if matches!(
                 operation.creation.as_ref().map(|plan| &plan.destination),
                 Some(Destination::Assembly { .. })
             ) {
-                return super::assembly::settle(
-                    model,
-                    operation,
-                    OperationOutcome::Cancelled {
-                        reason: reason.clone(),
-                    },
-                );
+                return super::assembly::cancel_unstarted_member(model, operation, reason);
             }
             Ok(StructuralDecision {
                 events: vec![DomainEvent::OperationFinished {

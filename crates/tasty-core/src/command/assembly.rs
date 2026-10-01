@@ -217,6 +217,21 @@ pub(super) fn settle(
             completed_command: None,
         });
     }
+    if ready.is_empty() {
+        let reason = "no restorable surface remained".to_owned();
+        events.push(DomainEvent::OperationFinished {
+            id: group.clone(),
+            outcome: OperationOutcome::Failed {
+                reason: reason.clone(),
+            },
+        });
+        return Ok(StructuralDecision {
+            events,
+            effects: Vec::new(),
+            result: StructuralResult::Failed { reason },
+            completed_command: Some(coordinator.command_id.clone()),
+        });
+    }
     if !plan.target_is_live(model) || coordinator.engine_incarnation != model.engine_incarnation {
         events.push(DomainEvent::OperationFinished {
             id: group.clone(),
@@ -231,21 +246,6 @@ pub(super) fn settle(
                 operation: group.clone(),
             },
             completed_command: None,
-        });
-    }
-    if ready.is_empty() {
-        let reason = "no restorable surface remained".to_owned();
-        events.push(DomainEvent::OperationFinished {
-            id: group.clone(),
-            outcome: OperationOutcome::Failed {
-                reason: reason.clone(),
-            },
-        });
-        return Ok(StructuralDecision {
-            events,
-            effects: Vec::new(),
-            result: StructuralResult::Failed { reason },
-            completed_command: Some(coordinator.command_id.clone()),
         });
     }
     let mut completed = plan.clone();
@@ -296,6 +296,55 @@ pub(super) fn settle(
         result: plan.result(&ready),
         completed_command: Some(coordinator.command_id.clone()),
     })
+}
+
+/// A cancelled unclaimed member is also a preparation result for the remaining private peers.
+pub(super) fn cancel_unstarted_member(
+    model: &JournalModel,
+    member: &Operation,
+    reason: &str,
+) -> Result<StructuralDecision, Rejection> {
+    let Some(CreationPlan {
+        destination: CreationDestination::Assembly { operation: group },
+        ..
+    }) = &member.creation
+    else {
+        return Err(Rejection(
+            "cancelled preparation is not an assembly member".into(),
+        ));
+    };
+    // Once a peer entered installation or has an unknown outcome, preparation cannot authorize
+    // it again. Its original cleanup/receipt continues through ordinary settlement.
+    let entered_installation = model.operations.values().any(|peer| {
+        matches!(&peer.creation, Some(CreationPlan { destination: CreationDestination::Assembly { operation }, .. }) if operation == group)
+            && (peer.pending_outcome.is_some() || peer.cleanup.is_some()
+                || matches!(peer.outcome, Some(OperationOutcome::Succeeded | OperationOutcome::Uncertain { .. })))
+    });
+    let cancelled = OperationOutcome::Cancelled {
+        reason: reason.into(),
+    };
+    if entered_installation {
+        return settle(model, member, cancelled);
+    }
+    let mut decision = prepared_member(
+        model,
+        member,
+        &crate::PreparationResult::Failed {
+            reason: reason.into(),
+        },
+    )?;
+    let Some(DomainEvent::OperationFinished { id, outcome }) = decision.events.first_mut() else {
+        return Err(Rejection(
+            "cancelled member has no terminal preparation fact".into(),
+        ));
+    };
+    if id != &member.id {
+        return Err(Rejection(
+            "cancelled member fact belongs to another operation".into(),
+        ));
+    }
+    *outcome = cancelled;
+    Ok(decision)
 }
 
 /// Private resources must all have outcomes before a group may publish any external registration.
@@ -353,8 +402,6 @@ pub(super) fn prepared_member(
                 crate::PreparationResult::Deferred { data } => private.push((peer, *data, true)),
                 crate::PreparationResult::Failed { .. } => failed = true,
             }
-        } else if peer.resource_prepared {
-            private.push((peer, peer.prepared_data, peer.prepared_deferred));
         } else if matches!(
             peer.outcome,
             Some(
@@ -364,6 +411,12 @@ pub(super) fn prepared_member(
             )
         ) {
             failed = true;
+        } else if peer.outcome.is_none()
+            && peer.pending_outcome.is_none()
+            && peer.cleanup.is_none()
+            && peer.resource_prepared
+        {
+            private.push((peer, peer.prepared_data, peer.prepared_deferred));
         } else {
             waiting = true;
         }

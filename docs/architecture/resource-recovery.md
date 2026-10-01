@@ -62,6 +62,10 @@ TaskScope의 비취소 Drop 의미를 바꾸지 않는다. 소멸 시점의 미�
 불명 결과를 다시 대조한다. 늦은 완료를 처리할 때도 stream, operation, attempt,
 runtime epoch, engine incarnation, activation 및 physical generation을 구분한다.
 대조 evidence payload와 결과 event/effect 갱신은 journal의 같은 commit 경계를 지난다.
+여러 leaf를 복원하는 묶음에서 미실행 member의 취소도 준비 결과 집계에 반영한다.
+이미 준비한 private peer에는 원 generation의 폐기 의무를 만들고 receipt 뒤 묶음을 닫는다.
+모든 member가 알려진 실패·취소로 끝났다면 대상이 사라져도 실패로 완료하며, 실제 설치나
+불명 결과가 있는 peer를 새 준비 대상으로 다시 허가하지 않는다.
 그 뒤에 전체 batch publication ACK와 최초 command 결과 완료를 처리한다.
 
 재시작 시 미확정 creation이 남은 placeholder는 Recovery 차단 상태를 갖는다.

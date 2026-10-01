@@ -9,3 +9,5 @@ mod lifecycle;
 mod streams;
 
 mod creation;
+
+mod assembly;
