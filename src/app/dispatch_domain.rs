@@ -59,6 +59,14 @@ impl App {
             Intent::PrepareTutorial { ticket } => Some(ticket.clone()),
             _ => None,
         };
+        if let Some(ticket) = tutorial_preparation.as_ref()
+            && self
+                .engines_mut()
+                .resolve(source.engine())
+                .is_none_or(|context| !context.state.tutorial.matches_preparation(ticket))
+        {
+            return Ok(());
+        }
         let after_create = match &dispatched.body {
             Intent::NewTabWithFollowup { followup, .. } => Some(followup.clone()),
             _ => None,
