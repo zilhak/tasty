@@ -414,7 +414,6 @@ impl ApplicationHandler<AppEvent> for App {
         // 사용자가 닫은 mirror의 연결도 정리해야 원격 점유가 남지 않는다.
         self.detach_orphaned_mirror_sessions();
 
-        self.dispatch_pending_structural_forwards();
 
         self.dispatch_pending_resize_forwards();
 
@@ -662,7 +661,7 @@ impl App {
         if let Some(ref mgr) = self.plugin_manager {
             for engine in engines_mut!(self).parked() {
                 crate::plugin_bridge::mesh_forward::forward_mesh_frames_for_engine(
-                    engine.core,
+                    &mut engine,
                     mgr,
                     &self.stream_hub,
                 );
@@ -1050,7 +1049,6 @@ impl App {
                 modal_active: false,
                 engine: None,
                 plugin_manager: self.plugin_manager.as_ref(),
-                stream_hub: &self.stream_hub,
             };
             modal.handle_event(event, &mut ctx)
         } else {
@@ -1101,6 +1099,9 @@ impl App {
         id: WindowId,
         event: WindowEvent,
     ) {
+        if matches!(event,WindowEvent::RedrawRequested) && self.view.views.get(&id).is_some_and(|view|view.as_main().is_some()) {
+            self.redraw_main_window(id);return;
+        }
         self.refresh_approval_presentations();
         let modal_active = self.view.is_modal_active();
         let action = {
@@ -1109,14 +1110,13 @@ impl App {
                     .engines
                     .of_window(id)
                     .and_then(|e| self.engines.session_mut(e))
-                    .map(|session|session.borrow_mut());
+                    .map(|session|session.as_ref());
                 let mut ctx = ViewCtx {
                     event_loop,
                     modal_active,
                     engine,
                     plugin_manager: self.plugin_manager.as_ref(),
-                    stream_hub: &self.stream_hub,
-                };
+                    };
                 // modeless PresetView의 닫기는 여기서 처리하며 모달은 앞의 전용 경로가 처리한다.
                 w.handle_event(event, &mut ctx)
             } else {

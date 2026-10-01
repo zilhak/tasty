@@ -8,30 +8,14 @@ use crate::adapters::ipc::window_port::{IntentOutbox, IpcWindow};
 use crate::core::CoreState;
 
 impl IpcWindow for RequestContext {
+    fn presentation(&self)->&dyn crate::model::StructurePresentation {&self.navigation}
+    fn resolve_inherit_cwd_from_surface(&self,engine:&EngineRef<'_>,surface:u32)->Option<PathBuf> {RequestContext::resolve_inherit_cwd_from_surface(self,engine,surface)}
     fn active_workspace_index(&self, engine: &CoreState) -> usize {
         self.active_workspace_index(engine)
     }
 
     fn resolve_inherit_cwd(&self, engine: &EngineRef<'_>) -> Option<PathBuf> {
         RequestContext::resolve_inherit_cwd(self, engine)
-    }
-
-    fn cascade_workspace_created(
-        &mut self,
-        engine: &mut CoreState,
-        origin: &crate::intent::IntentOrigin,
-        created: crate::app::dispatch_domain::WorkspaceCreatedCascade,
-    ) {
-        crate::app::dispatch_domain::cascade_workspace_created(self, engine, origin, created);
-    }
-
-    fn close_workspace_at(
-        &mut self,
-        engine: &mut EngineMut<'_>,
-        ws_idx: usize,
-        origin: super::WorkspaceCloseOrigin,
-    ) -> bool {
-        RequestContext::close_workspace_at(self, engine, ws_idx, origin)
     }
 
     fn recent_files(&self, kind: &str) -> Vec<String> {

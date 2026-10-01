@@ -59,7 +59,7 @@ mod tests {
     use super::*;
     use crate::state::tests::test_state;
 
-    fn push_workspace(engine: &mut crate::runtime::engine_access::EngineMut<'_>) -> u32 {
+    fn push_workspace(engine: &mut crate::runtime::engine_access::EngineRef<'_>) -> u32 {
         let event = crate::app::services::apply_create_workspace_inner(
             engine,
             crate::app::services::WorkspaceCreationParams::terminal(),

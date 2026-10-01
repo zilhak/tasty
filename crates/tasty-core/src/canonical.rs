@@ -28,7 +28,6 @@ pub const DIGEST_EXCLUDED: &[(&str, &str)] = &[
         "SurfaceLayout::Split.node_id",
         "process-local compatibility projection identity",
     ),
-    ("Tab.surface_titles", "per-surface terminal observations"),
     (
         "Workspace.mirror",
         "mirror workspaces are remote structure, not local",

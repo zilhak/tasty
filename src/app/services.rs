@@ -13,16 +13,11 @@ pub(crate) mod file;
 pub(crate) mod ipc_facade;
 pub(crate) mod session;
 pub(crate) mod impl_attach;
-pub(crate) mod impl_category;
 pub(crate) mod impl_clipboard;
-pub(crate) mod impl_convert;
 pub(crate) mod impl_mirror;
+mod live_intent;
 pub(crate) mod impl_pty;
-pub(crate) mod impl_split;
 pub(crate) mod impl_tab;
-pub(crate) mod impl_workspace;
-pub(crate) use impl_mirror::{MirrorStructuralBlocked,PendingStructuralForward,mark_last_forward_agent_origin,mark_last_forward_user_triggered};
-pub(crate) use impl_workspace::{WorkspaceCreationParams,apply_create_workspace_inner};
 /// 프로세스가 공유하는 port와 저장소 핸들. 창별 데이터는 CoreState에 있다.
 #[allow(dead_code)] // 이유: 일부 port는 아직 읽지 않지만 AppServicesBuilder가 같은 port 묶음을 주입하는 인터페이스를 유지한다.
 pub(crate) struct AppServices {

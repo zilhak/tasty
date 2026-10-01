@@ -35,6 +35,7 @@ pub(crate) struct IntentViewContinuation {
     pub(crate) selection:std::sync::Weak<()>,
     pub(crate) activate_surface:Option<u32>,
     pub(crate) close_empty_engine:bool,
+    pub(crate) after_create:Option<crate::intent::CreateFollowup>,
 }
 
 enum Reply {
@@ -804,7 +805,7 @@ impl JournalApplication {
                 continue;
             }
             if request.method=="remote.structural" {self.resolve_remote_request(ticket,session,services);continue;}
-            if matches!(request.method.as_str(),"terminal.spawn"|"terminal.respawn"|"pty.attach_surface"|"tab.create"|"split"|"surface.respawn_terminal") {self.resolve_public_creation(ticket,session,services);continue;}
+            if matches!(request.method.as_str(),"terminal.spawn"|"terminal.respawn"|"pty.attach_surface"|"tab.create"|"split"|"surface.respawn_terminal"|"image.open") {self.resolve_public_creation(ticket,session,services);continue;}
             if matches!(request.method.as_str(),"preset.apply"|"intent.preset-apply") {
                 self.resolve_preset(ticket,session,services,state.focused_pane_id(&session.core_state));continue;
             }
@@ -937,7 +938,7 @@ impl crate::app::App {
                 self.journal.reject_resolved_request(ticket, response);
                 continue;
             };
-            if matches!(request.method.as_str(),"terminal.spawn"|"terminal.respawn"|"pty.attach_surface"|"tab.create"|"split"|"surface.respawn_terminal") {self.journal.resolve_public_creation(ticket,session,&self.services);continue;}
+            if matches!(request.method.as_str(),"terminal.spawn"|"terminal.respawn"|"pty.attach_surface"|"tab.create"|"split"|"surface.respawn_terminal"|"image.open") {self.journal.resolve_public_creation(ticket,session,&self.services);continue;}
             if request.method=="preset.apply" {self.journal.resolve_preset(ticket,session,&self.services,preset_pane);continue;}
             if let Some(cwd) = creation_cwd {
                 match cwd {
@@ -1003,7 +1004,7 @@ impl crate::app::App {
         for (engine, event) in std::mem::take(&mut self.journal.commands.completed_host_events) {
             if let Some(session)=self.engines.session_mut(engine) {
                 let presentation=presentations.get(&engine).unwrap_or(&session.remote.presentation);
-                if let Some(event)=event.resolve(&session.core_state,presentation) {session.borrow_mut().enqueue_host_event(event);}
+                if let Some(event)=event.resolve(&session.as_ref(),presentation) {session.borrow_mut().enqueue_host_event(event);}
             }
         }
         for mut result in std::mem::take(&mut self.journal.commands.completed_intents) {
@@ -1040,6 +1041,11 @@ impl crate::app::App {
                 context.state.navigation.select_pane(workspace,pane.id);
                 context.state.navigation.select_tab(pane,tab.id);
                 context.state.navigation.select_surface(tab,surface);
+                if let Some(followup)=continuation.after_create {
+                    match followup {
+                        crate::intent::CreateFollowup::Prompt {kind}=>context.state.enqueue_convert_input_popup(&context.engine.as_ref(),&kind,Some(surface)),
+                    }
+                }
             if let Some(view)=context.view {view.mark_dirty();}
             }
             if let Some(error) = result.response.error
@@ -1100,7 +1106,10 @@ impl JournalApplication {
         call: &tasty_host_plugin::manager::PendingPluginCall,
         manager: Option<&crate::plugin::PluginManager>,
     ) -> bool {
-        if !handles_request(request) {
+        // This runs only after namespace routing. The owning image plugin trampolines
+        // into the host; the outer namespace request retains its existing key contract.
+        let host_conversion=cfg!(feature="gui") && request.method=="image.open";
+        if !handles_request(request) && !host_conversion {
             return false;
         }
         let Some(process) = manager.and_then(|manager| manager.processes.get(&call.plugin_id))
@@ -1118,6 +1127,13 @@ impl JournalApplication {
             crate::ipc::handler::idempotency::caller_scope(caller),
             "plugin",
         );
+        true
+    }
+
+    #[cfg(feature="gui")]
+    pub(crate) fn admit_host_fallback_ipc(&mut self,command:&crate::ipc::server::IpcCommand,caller:&crate::ipc::caller::CallerContext)->bool {
+        if command.request.method!="image.open" {return false;}
+        self.admit_request(&command.request,Reply::Ipc(command.response_tx.clone()),crate::ipc::handler::idempotency::caller_scope(caller),"ipc");
         true
     }
 

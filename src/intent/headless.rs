@@ -131,10 +131,9 @@ fn apply_one(
         return;
     };
     engine.refresh_attach_presentation(&state.navigation);
-    match crate::app::structural_exec::execute(core, state, engine, domain) {
+    match core.apply_live(engine,domain) {
         Ok(events) => {
             for event in events {
-                state.apply_structure_result(engine, &event);
                 handle_core_event(engine, event);
             }
         }
@@ -150,6 +149,7 @@ fn route_non_domain(
     dispatched: &DispatchedIntent,
 ) {
     match &dispatched.body {
+        Intent::Engine(action)=>action.apply(engine,None),
         Intent::RespondApproval {request_id,choice,comment}=> {
             match core.respond_approval(request_id,choice.clone(),tasty_approval::Responder::User,comment.clone()) {
                 Ok(change)=>crate::ipc::handler::approval::persist_record(core,&change.record),
@@ -161,21 +161,11 @@ fn route_non_domain(
         Intent::ApplyPreset { .. } | Intent::SavePreset { .. } => {
             crate::intent::preset::handle(core, state, engine, dispatched);
         }
-        Intent::SplitSurface { .. } | Intent::ConvertSurface { .. } => {
-            crate::intent::surface::handle(core, state, engine, dispatched);
-        }
-        Intent::NewTab { .. } => crate::intent::tab::handle(core, state, engine, dispatched),
-        Intent::SplitPane { .. } => crate::intent::pane::handle(core, state, engine, dispatched),
-        Intent::NewWorkspace { .. } => {
-            crate::intent::workspace::handle(core, state, engine, dispatched);
-        }
+        Intent::SplitSurface {..}|Intent::ConvertSurface {..}|Intent::NewTab {..}|Intent::NewTabWithFollowup {..}|Intent::SplitPane {..}|Intent::NewWorkspace {..}=>tracing::error!("structural intent bypassed journal admission"),
         Intent::RestoreClosedItem => {
             tracing::error!("undo intent bypassed journal admission");
         }
         Intent::DirectRename(_) => {
-            #[cfg(test)]
-            crate::intent::rename::handle(core, state, engine, dispatched);
-            #[cfg(not(test))]
             tracing::error!("direct rename bypassed journal admission");
         }
         Intent::Domain(_) => {}

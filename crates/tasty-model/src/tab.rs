@@ -17,8 +17,6 @@ pub struct Tab {
     /// surface의 이진트리. take_layout/put_layout 사이에만 None이다.
     /// 지연 생성은 트리 안 EmptySurface의 Deferred 값으로 표현한다.
     pub layout_opt: Option<SurfaceLayout>,
-    /// Per-surface observed titles. Selection is supplied by the presentation caller.
-    pub surface_titles: std::collections::HashMap<SurfaceId, SurfaceTitle>,
 }
 
 impl Tab {
@@ -42,17 +40,16 @@ impl Tab {
             name,
             explicit_name,
             layout_opt: Some(SurfaceLayout::Leaf(surface)),
-            surface_titles: Default::default(),
         }
     }
 
     /// Get the display name for this tab (cached, no syscalls).
     /// Priority: explicit_name > osc_title > cached CWD-derived name > fallback "name" field.
-    pub fn display_name(&self, surface_id: Option<SurfaceId>) -> String {
+    pub fn display_name(&self, observed: Option<&SurfaceTitle>) -> String {
         if let Some(ref explicit) = self.explicit_name {
             return explicit.clone();
         }
-        if let Some(title) = surface_id.and_then(|id| self.surface_titles.get(&id)) {
+        if let Some(title) = observed {
             if let Some(osc) = &title.osc_title {
                 return osc.clone();
             }
@@ -61,32 +58,6 @@ impl Tab {
             }
         }
         self.name.clone()
-    }
-
-    /// Recompute and cache the display name from the focused terminal's CWD.
-    /// Caller (CoreState::refresh_tab_display_name) lookups Terminal via
-    /// `engine.runtime.terminals.get(focused_surface).and_then(|t| t.get_cwd())` first
-    /// and passes the cwd in. Tab itself doesn't see the TerminalStore.
-    pub fn refresh_display_name(&mut self, surface_id: SurfaceId, cwd: Option<&std::path::Path>) {
-        let title = self.surface_titles.entry(surface_id).or_default();
-        if let Some(cwd) = cwd {
-            if let Some(home) = dirs_home()
-                && cwd == home
-            {
-                title.cwd_name = Some("~".to_string());
-                return;
-            }
-            let path_str = cwd.to_string_lossy();
-            if path_str == "/" {
-                title.cwd_name = Some("/".to_string());
-                return;
-            }
-            if let Some(name) = cwd.file_name() {
-                title.cwd_name = Some(name.to_string_lossy().to_string());
-                return;
-            }
-        }
-        title.cwd_name = None;
     }
 
     // ── Layout-based accessors ──
@@ -120,8 +91,6 @@ impl Tab {
 
     /// Put the layout back after structural mutation.
     pub fn put_layout(&mut self, layout: SurfaceLayout) {
-        let ids = layout.all_surface_ids();
-        self.surface_titles.retain(|id, _| ids.contains(id));
         self.layout_opt = Some(layout);
     }
 
@@ -271,22 +240,9 @@ impl Tab {
         };
         serde_json::json!({
             "id": self.id,
-            "name": self.display_name(selected_surface),
+            "name": self.display_name(selected_surface.and_then(|id|presentation.surface_title(id))),
             "surface": layout_json,
         })
-    }
-}
-
-fn dirs_home() -> Option<std::path::PathBuf> {
-    #[cfg(not(windows))]
-    {
-        std::env::var("HOME").ok().map(std::path::PathBuf::from)
-    }
-    #[cfg(windows)]
-    {
-        std::env::var("USERPROFILE")
-            .ok()
-            .map(std::path::PathBuf::from)
     }
 }
 

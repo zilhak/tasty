@@ -101,7 +101,7 @@ pub use nav_state::NavState;
 pub use pane::*;
 pub use pane_tree::*;
 pub use surface_trait::Surface;
-pub use tab::Tab;
+pub use tab::{Tab,SurfaceTitle};
 pub use terminal_surface::*;
 pub use workspace::*;
 pub use workspace_category::*;

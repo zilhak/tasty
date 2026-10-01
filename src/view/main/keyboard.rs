@@ -1,4 +1,4 @@
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineRef;
 use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
@@ -70,7 +70,7 @@ impl MainView {
 
     pub(super) fn handle_keyboard_input(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         event: &winit::event::KeyEvent,
         _egui_consumed: bool,
     ) {
@@ -131,7 +131,7 @@ impl MainView {
         }
 
         if let Some(sid) = typing_surface_id {
-            engine.record_typing(sid);
+            self.record_typing_intent(engine,sid);
         }
     }
 
@@ -185,7 +185,7 @@ impl MainView {
     }
 
     /// double-tap 수식키 단축키를 처리했으면 true를 반환한다.
-    fn try_consume_double_tap_key(&mut self, engine: &mut EngineMut<'_>) -> bool {
+    fn try_consume_double_tap_key(&mut self, engine: &mut EngineRef<'_>) -> bool {
         if let Some(dt) = self.double_tap.take()
             && self.handle_double_tap_shortcut(engine, dt)
         {
@@ -246,7 +246,7 @@ impl MainView {
     /// 오버레이가 없을 때 단축키를 처리하고 IME 조합 문자를 정리한다.
     fn try_consume_shortcut_key(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         event: &winit::event::KeyEvent,
     ) -> bool {
         let shortcut_key = self.shortcut_lookup_key(event);
@@ -258,7 +258,7 @@ impl MainView {
     }
 
     /// winit과 native webview가 단축키 처리 뒤 함께 사용하는 후처리.
-    pub(crate) fn after_shortcut_consumed(&mut self, engine: &mut EngineMut<'_>) {
+    pub(crate) fn after_shortcut_consumed(&mut self, engine: &mut EngineRef<'_>) {
         self.reset_modifier_hint_reveal_timer();
         if self.ime_preedit.is_some() {
             // 팝업을 여는 단축키는 조합 문자를 버리고, 그 외에는 PTY로 확정 전송한다.
@@ -279,7 +279,7 @@ impl MainView {
     /// vi 복사 모드의 키를 처리한다. physical key 대체는 Ctrl만 누른 경우에 적용한다.
     fn try_consume_vi_key(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         event: &winit::event::KeyEvent,
     ) -> bool {
         let vi_key = if self.base.state.modifiers.control_key() {
@@ -298,7 +298,7 @@ impl MainView {
     /// 포커스된 터미널로 키를 보낸다. IME 조합 문자는 Commit에서 보낸다.
     fn forward_key_to_terminal(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         event: &winit::event::KeyEvent,
     ) {
         // Commit이 따로 오지 않는 ASCII 문자와 구두점은 여기서 전달한다.
@@ -406,7 +406,7 @@ impl MainView {
     /// 터미널의 읽기 차용이 끝난 뒤 스크롤 상태를 변경한다.
     fn apply_keyboard_scroll_action(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         action: KeyboardScrollAction,
     ) {
         let Some(sid) = self.state.focused_surface_id(engine) else {
@@ -670,7 +670,7 @@ impl MainView {
 
     pub(super) fn handle_ime(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         ime_event: winit::event::Ime,
         egui_consumed: bool,
     ) {

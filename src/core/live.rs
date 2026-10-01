@@ -4,6 +4,7 @@ use crate::core::state::SurfaceMessage;
 pub(crate) struct LiveDomainState {
     pub(crate) notifications:crate::notification::NotificationStore,
     pub(crate) occupancy:crate::core::attach::OccupancyRegistry,
+    pub(crate) surface_titles:HashMap<u32,tasty_model::SurfaceTitle>,
     pub(crate) last_key_input: HashMap<u32, std::time::Instant>,
     pub(crate) busy_surfaces: std::collections::HashSet<u32>,
     // attention은 여러 알림 원인이 공유하며 알림 패널 항목과는 별도 상태다.
@@ -28,6 +29,7 @@ pub(crate) struct LiveDomainState {
 }
 
 impl Default for LiveDomainState {fn default()->Self {Self {notifications:crate::notification::NotificationStore::with_coalesce_ms(500),occupancy:Default::default(),
+            surface_titles:HashMap::new(),
             last_key_input: HashMap::new(),
             busy_surfaces: std::collections::HashSet::new(),
             attention: crate::core::state::attention::AttentionStore::default(),

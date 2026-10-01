@@ -566,53 +566,6 @@ impl App {
     }
 
     /// 로컬 구조 변경 큐를 원격으로 보내며 결과는 회신과 delta로 적용한다.
-    pub(crate) fn dispatch_pending_structural_forwards(&mut self) {
-        let mut pending: Vec<crate::app::services::PendingStructuralForward> = Vec::new();
-        for mut engine in self.engines_mut().windows_and_pending() {
-            pending.append(&mut engine.remote.pending_structural_forward);
-        }
-        for local_op in pending {
-            self.forward_one_structural_op(local_op);
-        }
-    }
-
-    /// 사용자 요청의 포커스 의도도 op_id별로 기록한다. 닫기 후보는 원격 ID로 변환한다.
-    fn forward_one_structural_op(&mut self, pending: crate::app::services::PendingStructuralForward) {
-        let crate::app::services::PendingStructuralForward {
-            op: local_op,
-            user_triggered,
-            close_focus_candidates,
-            ..
-        } = &pending;
-        let local_anchor = local_op.anchor_surface_id();
-        let Some((sess, remote_anchor)) = find_mirror_session_and_remote_id(
-            &mut self.remote.sessions,
-            local_anchor,
-            "structural",
-        ) else {
-            return;
-        };
-        let Some(wire) = remote_structural_op(local_op, remote_anchor, &sess.state.remote_to_local)
-        else {
-            return;
-        };
-        let op_id = sess.state.op_seq;
-        sess.state.op_seq += 1;
-
-        if *user_triggered
-            && let Some(intent) =
-                pending_op_focus_for(local_op, close_focus_candidates, &sess.state.remote_to_local)
-        {
-            sess.state.pending_op_focus.insert(op_id, intent);
-        }
-        sess.state.agent_requests.note_structural(pending.silent_failure,op_id);
-
-        let payload = structural_op_payload(op_id, wire, *user_triggered);
-        if let Err(e) = sess.send_frame(StreamTag::Control, payload) {
-            tracing::warn!("structural forward: 전송 큐가 닫혀 요청을 보내지 못했다: {e}");
-        }
-    }
-
     /// resize 요청만 전송한다. 로컬 mirror grid는 서버의 Resize 회신으로 갱신한다.
     pub(crate) fn dispatch_pending_resize_forwards(&mut self) {
         let mut pending: Vec<(u32, usize, usize)> = Vec::new();

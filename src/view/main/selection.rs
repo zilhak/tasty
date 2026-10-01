@@ -1,4 +1,4 @@
-use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::EngineRef;
 use crate::app::command::{DomainIntent, SendPayload};
 use crate::model::PhysicalRect;
 use crate::selection::{self, SelectionMode, SelectionPoint, TextSelection};
@@ -11,7 +11,7 @@ impl MainView {
     /// Used for Shift+Click range selection.
     pub(super) fn extend_selection(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         x: f32,
         y: f32,
         terminal_rect: &PhysicalRect,
@@ -42,7 +42,7 @@ impl MainView {
     /// Start a new text selection from the given pixel position.
     pub(super) fn start_selection(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         x: f32,
         y: f32,
         terminal_rect: &PhysicalRect,
@@ -186,7 +186,7 @@ impl MainView {
     /// Move the terminal cursor to the clicked position using the click_cursor module.
     pub(super) fn move_cursor_to_click(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         x: f32,
         y: f32,
         terminal_rect: &PhysicalRect,
@@ -337,7 +337,7 @@ impl MainView {
 
     /// 현재 선택을 복사하고 선택 범위는 유지한다. 우클릭 복사는 포커스와 무관하다.
     /// Ctrl+C의 포커스 일치 검사는 호출자인 handle_copy_shortcut에서 한다.
-    pub fn copy_selection_to_clipboard(&mut self, engine: &mut EngineMut<'_>) -> bool {
+    pub fn copy_selection_to_clipboard(&mut self, engine: &mut EngineRef<'_>) -> bool {
         let sel = match &self.text_selection {
             Some(s) if !s.is_empty() => s.clone(),
             _ => return false,
@@ -363,7 +363,7 @@ impl MainView {
 
     /// 현재 선택의 줄바꿈을 공백 하나로 바꿔 복사한다. soft wrap은 추출할 때 이미 연결된다.
     /// 우클릭 복사와 같이 포커스를 검사하지 않고 선택 범위도 유지한다.
-    pub fn copy_selection_no_newline(&mut self, engine: &mut EngineMut<'_>) -> bool {
+    pub fn copy_selection_no_newline(&mut self, engine: &mut EngineRef<'_>) -> bool {
         let sel = match &self.text_selection {
             Some(s) if !s.is_empty() => s.clone(),
             _ => return false,

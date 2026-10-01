@@ -162,3 +162,24 @@ impl EngineRef<'_> {
 
 }
 impl EngineMut<'_> {pub(crate) fn make_waker(&self,id:u32)->tasty_terminal::Waker {self.as_ref().make_waker(id)}}
+
+/// Borrowed presentation joins immutable View choices and live observations for one query.
+pub(crate) struct ObservedPresentation<'a> {
+    selection:&'a dyn crate::model::StructurePresentation,
+    titles:&'a std::collections::HashMap<u32,tasty_model::SurfaceTitle>,
+}
+impl crate::model::StructurePresentation for ObservedPresentation<'_> {
+    fn surface_title(&self,id:u32)->Option<&tasty_model::SurfaceTitle> {self.titles.get(&id)}
+    fn pane_id(&self,workspace:&crate::model::Workspace)->Option<u32> {self.selection.pane_id(workspace)}
+    fn tab_index(&self,pane:&crate::model::Pane)->usize {self.selection.tab_index(pane)}
+    fn surface_id(&self,tab:&crate::model::Tab)->Option<u32> {self.selection.surface_id(tab)}
+    fn category_collapsed(&self,id:u32)->bool {self.selection.category_collapsed(id)}
+    fn split_focus_second(&self,id:crate::model::SplitNodeId)->bool {self.selection.split_focus_second(id)}
+}
+impl EngineRef<'_> {
+    pub(crate) fn tab_display_name(&self,tab:&crate::model::Tab,surface:Option<u32>)->String {tab.display_name(surface.and_then(|id|self.live.surface_titles.get(&id)))}
+    pub(crate) fn observed_presentation<'a>(&'a self,selection:&'a dyn crate::model::StructurePresentation)->ObservedPresentation<'a> {ObservedPresentation {selection,titles:&self.live.surface_titles}}
+}
+impl EngineMut<'_> {
+    pub(crate) fn tab_display_name(&self,tab:&crate::model::Tab,surface:Option<u32>)->String {self.as_ref().tab_display_name(tab,surface)}
+}

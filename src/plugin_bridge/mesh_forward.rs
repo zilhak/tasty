@@ -16,7 +16,7 @@ use tasty_ipc::stream_hub::{PushResult, StreamHub};
 /// 구독이 dirty이면 context를 보내고, 전송하지 않은 프레임이 있으면 client에 전달한다.
 /// 두 조건은 독립적으로 확인한다. 창이 있는 engine에는 사용하지 않는다.
 pub(crate) fn forward_mesh_frames_for_engine(
-    engine: &mut CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     mgr: &PluginManager,
     stream_hub: &StreamHub,
 ) {
@@ -25,7 +25,7 @@ pub(crate) fn forward_mesh_frames_for_engine(
             engine.remote.mesh_mirror.remove(sid);
             continue;
         }
-        let Some(ms) = engine.find_egui_mesh_surface(sid) else {
+        let Some(ms) = engine.as_ref().find_egui_mesh_surface(sid) else {
             engine.remote.mesh_mirror.remove(sid);
             continue;
         };
@@ -50,7 +50,7 @@ pub(crate) fn forward_mesh_frames_for_engine(
         // 입력 추가도 dirty를 설정하므로 크기나 테마가 그대로여도 아래에서 전달한다.
         let events = engine.remote.mesh_mirror.take_pending_events(sid);
 
-        if dirty {
+        if dirty || need_full || !events.is_empty() {
             let has_frame = mgr.egui_mesh_frame(sid).is_some();
             if !has_frame {
                 mgr.send_egui_mesh_surface_create(
@@ -84,7 +84,7 @@ pub(crate) fn forward_mesh_frames_for_engine(
 
 /// 이미 만들어진 새 프레임을 attach client에 전달한다. context는 보내지 않는다.
 pub(crate) fn relay_mesh_frame_if_new(
-    engine: &mut CoreState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     mgr: &PluginManager,
     stream_hub: &StreamHub,
     sid: u32,

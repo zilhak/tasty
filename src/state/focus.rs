@@ -4,7 +4,7 @@ use crate::model::PhysicalPx;
 use super::RequestContext;
 
 impl RequestContext {
-    pub fn move_pane_focus_forward(&mut self, engine: &mut CoreState) {
+    pub fn move_pane_focus_forward(&mut self, engine: &CoreState) {
         let ws = self.active_workspace(engine);
         if let Some(id) = self.navigation.pane_id(ws) {
             self.navigation
@@ -12,7 +12,7 @@ impl RequestContext {
         }
     }
 
-    pub fn move_pane_focus_backward(&mut self, engine: &mut CoreState) {
+    pub fn move_pane_focus_backward(&mut self, engine: &CoreState) {
         let ws = self.active_workspace(engine);
         if let Some(id) = self.navigation.pane_id(ws) {
             self.navigation
@@ -20,11 +20,11 @@ impl RequestContext {
         }
     }
 
-    pub fn move_surface_focus_forward(&mut self, engine: &mut CoreState) {
+    pub fn move_surface_focus_forward(&mut self, engine: &CoreState) {
         self.move_surface_focus(engine, false);
     }
 
-    pub fn move_surface_focus_backward(&mut self, engine: &mut CoreState) {
+    pub fn move_surface_focus_backward(&mut self, engine: &CoreState) {
         self.move_surface_focus(engine, true);
     }
 
@@ -48,7 +48,7 @@ impl RequestContext {
 
     pub fn focus_pane_at_position(
         &mut self,
-        engine: &mut CoreState,
+        engine: &CoreState,
         x: f32,
         y: f32,
         terminal_rect: crate::model::PhysicalRect,
@@ -69,7 +69,7 @@ impl RequestContext {
 
     pub fn focus_surface_at_position(
         &mut self,
-        engine: &mut CoreState,
+        engine: &CoreState,
         x: f32,
         y: f32,
         terminal_rect: crate::model::PhysicalRect,
@@ -110,7 +110,7 @@ impl RequestContext {
     }
 
     /// Native input may focus a surface only in a currently displayed tab.
-    pub fn focus_surface_by_id(&mut self, engine: &mut CoreState, surface_id: u32) -> bool {
+    pub fn focus_surface_by_id(&mut self, engine: &CoreState, surface_id: u32) -> bool {
         let ws = self.active_workspace(engine);
         for pane_id in ws.pane_layout().all_pane_ids() {
             let Some(pane) = ws.pane_layout().find_pane(pane_id) else {

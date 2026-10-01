@@ -95,31 +95,6 @@ impl RequestContext {
         out
     }
 
-    /// 활성 워크스페이스의 각 활성 탭에서 지연된 surface 초기화를 시도한다.
-    /// 입력 경로마다 복원 처리를 넣는 대신 그리기 전에 한 번 순회한다.
-    pub fn reify_displayed_surfaces(&self, engine: &mut crate::runtime::engine_access::EngineMut<'_>) {
-        if engine.workspaces().is_empty() {
-            return;
-        }
-        let idx = self
-            .active_workspace_index(engine)
-            .min(engine.workspaces().len().saturating_sub(1));
-        let mut deferred: Vec<u32> = Vec::new();
-        {
-            let ws = engine.workspace_at(idx).expect("workspace index is valid");
-            for pane_id in ws.pane_layout().all_pane_ids() {
-                if let Some(pane) = ws.pane_layout().find_pane(pane_id)
-                    && let Some(tab) = pane.tabs.get(self.navigation.tab_index(pane))
-                {
-                    deferred.extend(tab.deferred_surface_ids());
-                }
-            }
-        }
-        for sid in deferred {
-            engine.reify_deferred_surface(sid);
-        }
-    }
-
     /// Get the actual content rect for the focused surface (accounting for tab bar).
     /// Returns None if no surface is focused.
     #[cfg(feature = "gui")]
@@ -221,7 +196,7 @@ impl RequestContext {
     #[cfg(feature = "gui")]
     pub fn resize_all(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &crate::runtime::engine_access::EngineRef<'_>,
         terminal_rect: PhysicalRect,
         cell_width: f32,
         cell_height: f32,
@@ -252,11 +227,11 @@ impl RequestContext {
                         let rows = ((region.rect.height.value() / cell_height.max(1.0)).floor()
                             as usize)
                             .max(1);
-                        targets.push((region.id, cols, rows));
+                        if let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,region.id) {targets.push((target,cols,rows));}
                     }
                 }
             }
         }
-        crate::app::services::AppServices::resize_terminals(engine, targets);
+        self.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Resize {targets}).from_user_shortcut("layout-resize"));
     }
 }

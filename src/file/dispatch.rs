@@ -383,10 +383,6 @@ pub(crate) fn open_surface_tab(
     };
     match origin_pane {
         Some(pane_id) => {
-            // AppServices 직접 호출은 최근 목록을 여기서 기록한다. Intent 위임 경로는 tab 핸들러가 맡는다.
-            let records_recent = engine.runtime.surface_registry
-                .get(surface_kind)
-                .is_some_and(|d| d.records_recent);
             // 비동기 에이전트 결과가 사용자 선택을 바꾸지 않도록 origin에 따라 선택 여부를 정한다.
             let intent = crate::app::command::DomainIntent::CreateTab {
                 pane_id,
@@ -396,36 +392,10 @@ pub(crate) fn open_surface_tab(
                 surface_params: params.clone(),
                 activate: dispatch_origin.selects_result(),
             };
-            // mirror pane에 여는 경로는 원격 파일이다. forward가 성공으로 처리되더라도 기록하지 않도록
-            // AppServices::apply의 forward 판정과 같은 기준으로 먼저 거른다.
-            let records_recent = records_recent
-                && engine
-                    .mirror_workspace_index_for_structural(&intent)
-                    .is_none();
-            match crate::app::structural_exec::execute(core, state, engine, intent) {
-                Ok(events) => {
-                    crate::app::structural_exec::select_created_tabs(
-                        state,
-                        engine,
-                        &events,
-                        dispatch_origin.selects_result(),
-                    );
-                }
-                Err(e) => {
-                    if mark_remote_forward(engine, &e, dispatch_origin) {
-                        return true;
-                    }
-                    tracing::warn!(
-                        pane_id,
-                        kind = %surface_kind,
-                        "file_dispatch CreateTab failed: {e}",
-                    );
-                    return false;
-                }
-            }
-            if records_recent {
-                state.record_recent(surface_kind, &params);
-            }
+            state.dispatch_intent(match dispatch_origin {
+                FileDispatchOrigin::User=>intent.from_user_menu("file_dispatch"),
+                FileDispatchOrigin::Agent|FileDispatchOrigin::PluginUnverified=>intent.from_agent_ipc(),
+            });
         }
         None => {
             // 위임한 핸들러도 사용자·에이전트를 구분하므로 origin을 보존한다.
@@ -446,32 +416,7 @@ pub(crate) fn open_surface_tab(
 
 /// mirror pane이면 원격 실행 큐에 넣은 것이다. 실패가 아니며 결과는 원격 회신으로 받는다.
 /// 요청 주체를 마지막 forward에 표시해야 하므로 CreateTab apply 직후에 호출한다.
-#[cfg(feature = "gui")]
-fn mark_remote_forward(
-    engine: &mut crate::core::CoreState,
-    err: &anyhow::Error,
-    dispatch_origin: FileDispatchOrigin,
-) -> bool {
-    if !err
-        .downcast_ref::<crate::app::services::MirrorStructuralBlocked>()
-        .is_some_and(|b| b.forwarded)
-    {
-        return false;
-    }
-    let origin = match dispatch_origin {
-        FileDispatchOrigin::User => crate::intent::IntentOrigin::User {
-            source: crate::intent::UserSource::Menu("file_dispatch"),
-        },
-        FileDispatchOrigin::Agent | FileDispatchOrigin::PluginUnverified => {
-            crate::intent::IntentOrigin::Agent {
-                source: crate::intent::AgentSource::Ipc,
-            }
-        }
-    };
-    crate::app::services::mark_last_forward_user_triggered(engine, err, &origin);
-    crate::app::services::mark_last_forward_agent_origin(engine, err, &origin);
-    true
-}
+
 
 /// 경로 구분자를 바꾸고 file URI 접두사를 붙인다. 특수문자 percent-encoding은 하지 않는다.
 fn path_to_file_uri(abs: &std::path::Path) -> String {

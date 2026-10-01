@@ -9,7 +9,7 @@ pub(super) enum Notification {
 impl Notification {
     pub(super) fn resolve(
         self,
-        core: &CoreState,
+        engine: &crate::runtime::engine_access::EngineRef<'_>,
         presentation: &dyn crate::model::StructurePresentation,
     ) -> Option<PendingHostEvent> {
         match self {
@@ -18,11 +18,11 @@ impl Notification {
                 tab_id,
                 user_direct,
             } => {
-                let pane = core.find_pane_by_id(core.find_pane_for_tab(tab_id)?)?;
+                let pane = engine.find_pane_by_id(engine.find_pane_for_tab(tab_id)?)?;
                 let tab = pane.tabs.iter().find(|tab| tab.id == tab_id)?;
                 Some(PendingHostEvent::TabRenamed {
                     tab_id,
-                    title: tab.display_name(presentation.surface_id(tab)),
+                    title: engine.tab_display_name(tab,presentation.surface_id(tab)),
                     user_direct,
                 })
             }

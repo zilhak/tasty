@@ -32,7 +32,6 @@ pub(crate) struct RemoteState {
     /// 전용 bulk 연결의 (client_id, transfer_id)별 메타데이터·바이트 버퍼.
     pub(crate) bulk_transfers: crate::remote::bulk_transfer::BulkTransferRegistry,
     /// 원격 실행 요청과 사용자 선택 보정 태그. anchor는 로컬 ID이며 전송 직전에 원격 ID로 바꾼다.
-    pub(crate) pending_structural_forward: Vec<crate::app::services::PendingStructuralForward>,
     /// 로컬 mirror ID별 최신 resize 목표. 로컬에 먼저 적용하지 않고 서버 echo를 기다린다.
     #[cfg(feature = "gui")]
     pub(crate) pending_resize_forward: std::collections::HashMap<u32, (usize, usize)>,
@@ -95,7 +94,6 @@ impl RemoteState {
             pending_image_uploads: Vec::new(),
             capture_uploads: crate::remote::capture_upload::CaptureUploadRegistry::new(),
             bulk_transfers: crate::remote::bulk_transfer::BulkTransferRegistry::new(),
-            pending_structural_forward: Vec::new(),
             #[cfg(feature = "gui")]
             pending_resize_forward: std::collections::HashMap::new(),
             pending_attention_clear_forward: std::collections::HashSet::new(),
@@ -151,7 +149,6 @@ impl RemoteState {
     /// requests still refer to the retired mapping and must not be resolved through the new one.
     pub(crate) fn discard_connection_requests(&mut self,mapping:&std::collections::HashMap<u32,u32>,workspace:u32) {
         let ids:std::collections::HashSet<u32>=mapping.values().copied().collect();
-        self.pending_structural_forward.retain(|request|!ids.contains(&request.op.anchor_surface_id()));
         self.pending_resize_forward.retain(|id,_|!ids.contains(id));
         self.pending_mesh_context_forward.retain(|id,_|!ids.contains(id));
         self.pending_mesh_input_forward.retain(|id,_|!ids.contains(id));
@@ -174,7 +171,6 @@ impl RemoteState {
         self.last_forwarded_attention.remove(&id);
         self.last_forwarded_cwd.remove(&id);
         self.pending_attention_clear_forward.remove(&id);
-        self.pending_structural_forward.retain(|request|request.op.anchor_surface_id()!=id);
         #[cfg(feature="gui")]
         {
             self.pending_resize_forward.remove(&id);

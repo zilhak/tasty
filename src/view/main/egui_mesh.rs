@@ -237,7 +237,7 @@ impl MainView {
     /// 이 창의 surface가 무효화됐으면 다음 컨텍스트 전송을 요청한다. 다른 창의 ID는 무시한다.
     pub(crate) fn mark_surface_invalidated(
         &mut self,
-        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+        engine: &mut crate::runtime::engine_access::EngineRef<'_>,
         surface_id: u32,
     ) -> bool {
         let exists = self
@@ -259,7 +259,7 @@ impl MainView {
     /// [`MainView::handle_redraw`] 가 합성(`gpu.render`) 직전에 부른다.
     pub(super) fn forward_egui_mesh_context(
         &mut self,
-        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+        engine: &mut crate::runtime::engine_access::EngineRef<'_>,
         mgr: &PluginManager,
     ) {
         let terminal_rect = self.compute_terminal_rect();
@@ -351,17 +351,6 @@ impl MainView {
             st.last_focused = Some(is_focused);
             st.invalidated = false;
 
-            // 생성 params가 먼저 도착하도록 set_context보다 surface.create를 먼저 보낸다.
-            if need_bootstrap {
-                mgr.send_egui_mesh_surface_create(
-                    &plugin_id,
-                    sid,
-                    kind,
-                    file.as_deref(),
-                    &display_name,
-                );
-            }
-
             let params = SurfaceSetContextParams {
                 surface_id: sid,
                 width_px: w,
@@ -376,7 +365,10 @@ impl MainView {
                 theme: Some(current_theme.clone()),
                 need_full_textures: need_full,
             };
-            mgr.send_surface_set_context(&plugin_id, &params);
+            if let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,sid)
+                && let Some(registration)=engine.runtime.surface_registry.get_live(kind) {
+                self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::LocalMesh {target,plugin:plugin_id,registration:std::sync::Arc::downgrade(&registration),bootstrap:need_bootstrap.then(||(kind.into(),file,display_name)),params}).from_user_shortcut("mesh-frame"));
+            }
         }
 
         // 숨겨진 surface의 전체 텍스처 요청은 마지막 영역·테마와 빈 입력으로 보낸다.
@@ -405,87 +397,15 @@ impl MainView {
                 theme: st.common.last_theme.clone(),
                 need_full_textures: true,
             };
-            mgr.send_surface_set_context(plugin_id, &params);
-        }
-    }
-
-    /// GUI가 만든 mesh를 attach 구독자에게 중계한다. 평소에는 새 컨텍스트를 만들지 않는다.
-    /// 아직 한 번도 렌더하지 않은 surface만 초기 생성·컨텍스트를 보낸다.
-    /// 기존 surface의 새 구독·복구 요청은 pending_full에 넣고 해당 tick의 중계를 생략한다.
-    pub(super) fn forward_mesh_to_attach_subscribers(
-        &mut self,
-        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
-        mgr: &PluginManager,
-        stream_hub: &StreamHub,
-    ) {
-        for sid in engine.remote.mesh_mirror.active_surface_ids() {
-            let Some(ctx) = engine.remote.mesh_mirror.get(sid) else {
-                continue;
-            };
-            let client_id = ctx.client_id;
-            let width_px = ctx.width_px;
-            let height_px = ctx.height_px;
-            let pixels_per_point = ctx.pixels_per_point;
-            let theme = ctx.theme.clone();
-            let focused = ctx.focused;
-
-            let need_full = engine.remote.mesh_mirror.take_need_full_textures(sid);
-            // 컨텍스트 전송은 기존 로컬 경로가 맡으며 여기서는 변경 표시만 비운다.
-            let _ = engine.remote.mesh_mirror.take_dirty(sid);
-
-            if mgr.egui_mesh_frame(sid).is_none() {
-                let Some(ms) = engine.find_egui_mesh_surface(sid) else {
-                    engine.remote.mesh_mirror.remove(sid);
-                    continue;
-                };
-                let plugin_id = ms.plugin_id.clone();
-                mgr.send_egui_mesh_surface_create(
-                    &plugin_id,
-                    sid,
-                    ms.kind_static,
-                    ms.file.as_deref(),
-                    &ms.display_name,
-                );
-                mgr.send_surface_set_context(
-                    &plugin_id,
-                    &SurfaceSetContextParams {
-                        surface_id: sid,
-                        width_px,
-                        height_px,
-                        pixels_per_point,
-                        raw_input: RawInputWire {
-                            time: None,
-                            focused,
-                            modifiers: ModifiersWire::default(),
-                            events: Vec::new(),
-                        },
-                        theme: theme.clone(),
-                        need_full_textures: true,
-                    },
-                );
-
-                // 이후 로컬 표시·전체 재전송에 사용할 최소 상태를 기록한다.
-                let st = self.egui_mesh.entry(sid).or_default();
-                st.plugin_id = Some(plugin_id);
-                st.common.last_geom = Some((width_px, height_px, pixels_per_point.to_bits()));
-                st.common.last_theme = theme;
-                st.last_focused = Some(focused);
-                st.common.bootstrap_sent = true;
-            } else if need_full {
-                self.egui_mesh.entry(sid).or_default().set_pending_full();
-                self.base.state.dirty = true;
-                continue;
+            if let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,*sid)
+                && let Some(kind)=engine.core.find_surface_by_id(*sid)
+                && let Some(registration)=engine.runtime.surface_registry.get_live(&kind.kind) {
+                self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::LocalMesh {target,plugin:plugin_id.clone(),registration:std::sync::Arc::downgrade(&registration),bootstrap:None,params}).from_user_shortcut("mesh-frame"));
             }
-
-            crate::plugin_bridge::mesh_forward::relay_mesh_frame_if_new(
-                &mut *engine,
-                mgr,
-                stream_hub,
-                sid,
-                client_id,
-            );
         }
     }
+
+
 }
 
 /// winit 마우스 버튼 → wire 포인터 버튼. 매핑 불가한 버튼(Back/Forward/Other)은 무시.
@@ -804,4 +724,13 @@ mod tests {
         );
         assert!(ev.is_none());
     }
+}
+
+impl MainView {
+    pub(crate) fn note_mesh_bootstrap(&mut self,surface:u32,plugin:String,width:u32,height:u32,ppp:f32,theme:Option<ThemeWire>,focused:bool) {
+        let state=self.egui_mesh.entry(surface).or_default();state.plugin_id=Some(plugin);
+        state.common.last_geom=Some((width,height,ppp.to_bits()));state.common.last_theme=theme;
+        state.last_focused=Some(focused);state.common.bootstrap_sent=true;
+    }
+    pub(crate) fn request_mesh_full(&mut self,surface:u32) {self.egui_mesh.entry(surface).or_default().set_pending_full();self.base.state.dirty=true;}
 }

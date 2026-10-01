@@ -24,7 +24,7 @@ fn local_op(request:&JsonRpcRequest,session:&EngineSession,services:&crate::app:
         },
         "intent.restore-closed"=>Some(StructuralOp::RestoreClosedItem {anchor_surface_id:pane_anchor(id("pane")?)?}),
         "tab.move"=>Some(StructuralOp::MoveTab {anchor_surface_id:pane_anchor(id("pane_id")?)?,from_index:request.params["from_index"].as_u64()?.try_into().ok()?,to_index:request.params["to_index"].as_u64()?.try_into().ok()?}),
-        "tab.create"|"split"|"intent.create"=> {
+        "tab.create"|"split"|"intent.create"|"image.open"=> {
             let spec=if request.method=="intent.create" {serde_json::from_value::<super::create_spec::Spec>(request.params.clone()).ok()?}else {super::create_spec::Spec::from_public(request,session,view,services).ok()?};
             let axis=|direction|match direction {crate::model::SplitDirection::Horizontal=>SplitAxis::Horizontal,crate::model::SplitDirection::Vertical=>SplitAxis::Vertical};
             match spec.destination {

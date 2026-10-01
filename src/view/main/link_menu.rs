@@ -2,7 +2,7 @@
 //! 드래그 선택이 아닌 LinkSpan을 사용하며 포커스를 옮기지 않는다.
 //! 명세: docs/features/terminal-link/index.md.
 
-use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::EngineRef;
 use winit::event::ElementState;
 
 use super::MainView;
@@ -90,7 +90,7 @@ impl MainView {
 
     pub(super) fn handle_terminal_link_native_menu(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         link: TerminalLinkMenu,
         x: f32,
         y: f32,
@@ -127,7 +127,7 @@ impl MainView {
 
     /// 메뉴를 연 뒤에도 같은 범위의 문자가 같을 때만 링크를 선택한다.
     /// 출력·스크롤백 정리·크기 변경으로 내용이 달라졌으면 선택하지 않는다.
-    fn apply_link_selection(&mut self, engine: &mut EngineMut<'_>, link: &TerminalLinkMenu) {
+    fn apply_link_selection(&mut self, engine: &mut EngineRef<'_>, link: &TerminalLinkMenu) {
         let sel = link_selection(link.surface_id, link.start, link.end);
         let Some(terminal) = engine.as_ref().visible_terminal(link.surface_id) else {
             return;

@@ -211,45 +211,23 @@ impl EngineMut<'_> {
         self.runtime.terminals.resync_palettes();
     }
 
-    pub fn refresh_tab_display_name(&mut self, surface_id: u32) {
-        let workspaces = self.core.workspaces_mut();
-        let terminals = &self.runtime.terminals;
-        for workspace in workspaces {
-            let pane_ids = workspace.pane_layout().all_pane_ids();
-            for pid in pane_ids {
-                if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
-                    for tab in &mut pane.tabs {
-                        if tab.contains_surface(surface_id) {
-                            let cwd = terminals.cwd(surface_id);
-                            tab.refresh_display_name(surface_id, cwd.as_deref());
-                            return;
-                        }
-                    }
-                }
-            }
-        }
+    pub fn refresh_tab_display_name(&mut self,surface:u32) {
+        if !self.core.has_surface(surface) {return;}
+        let cwd=self.runtime.terminals.cwd(surface);
+        let home=directories::BaseDirs::new().map(|dirs|dirs.home_dir().to_path_buf());
+        let name=cwd.as_deref().and_then(|cwd| {
+            if Some(cwd)==home.as_deref() {Some("~".into())}
+            else if cwd==std::path::Path::new("/") {Some("/".into())}
+            else {cwd.file_name().map(|name|name.to_string_lossy().into_owned())}
+        });
+        self.live.surface_titles.entry(surface).or_default().cwd_name=name;
     }
 
-    /// surface_id가 속한 탭에서 실제 선택된 surface의 제목을 읽는다.
-    /// 제목이 없으면 OSC 제목을 비우고 사용자가 명시한 탭 이름은 유지한다.
-    pub fn refresh_tab_osc_title(&mut self, surface_id: u32) {
-        let workspaces = self.core.workspaces_mut();
-        let terminals = &self.runtime.terminals;
-        for workspace in workspaces {
-            let pane_ids = workspace.pane_layout().all_pane_ids();
-            for pid in pane_ids {
-                if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
-                    for tab in &mut pane.tabs {
-                        if tab.contains_surface(surface_id) {
-                            tab.surface_titles.entry(surface_id).or_default().osc_title =
-                                terminals.get(surface_id).and_then(|t| t.current_title());
-                            return;
-                        }
-                    }
-                }
-            }
-        }
+    pub fn refresh_tab_osc_title(&mut self,surface:u32) {
+        if !self.core.has_surface(surface) {return;}
+        self.live.surface_titles.entry(surface).or_default().osc_title=self.runtime.terminals.get(surface).and_then(|terminal|terminal.current_title());
     }
+
 }
 
 impl EngineRef<'_> {

@@ -316,7 +316,7 @@ pub fn draw_pane_tab_bars(
                 tab_names: pane
                     .tabs
                     .iter()
-                    .map(|t| t.display_name(state.navigation.surface_id(t)))
+                    .map(|t| engine.tab_display_name(t,state.navigation.surface_id(t)))
                     .collect(),
                 tab_icons: pane
                     .tabs

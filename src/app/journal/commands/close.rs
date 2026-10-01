@@ -141,7 +141,7 @@ impl Request {
             }).unwrap_or_default(),
         }.into_iter().collect();
         let display_name=if let tasty_core::CloseTarget::Surface(id)=self.target {
-            core.find_tab_for_surface(id).and_then(|tab|core.find_pane_for_tab(tab).and_then(|pane|core.find_pane_by_id(pane)).and_then(|pane|pane.tabs.iter().find(|candidate|candidate.id==tab))).map(|tab|tab.display_name(view.and_then(|view|view.selected_surfaces.get(&tab.id).copied()).or_else(||tab.first_surface_id())))
+            core.find_tab_for_surface(id).and_then(|tab|core.find_pane_for_tab(tab).and_then(|pane|core.find_pane_by_id(pane)).and_then(|pane|pane.tabs.iter().find(|candidate|candidate.id==tab))).map(|tab|session.as_ref().tab_display_name(tab,view.and_then(|view|view.selected_surfaces.get(&tab.id).copied()).or_else(||tab.first_surface_id())))
         } else {None};
         Ok(Work::CaptureClosed {view:view.cloned().unwrap_or_default(),binding:self.binding.clone(),target:self.target,display_name,surfaces:crate::runtime::surface_capture::capture_selected(session,Some(&selected))?})
     }

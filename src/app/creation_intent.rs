@@ -16,6 +16,7 @@ pub(crate) fn resolve(state:&RequestContext,engine:&EngineRef<'_>,intent:&Intent
                 kind:kind.into(),surface_params:params_or_empty(params),name:None,subtitle:None,description:None,category:*category,
             }
         },
+        Intent::NewTabWithFollowup {pane_id,..}=>DomainIntent::CreateTab {pane_id:*pane_id,cwd:None,kind:"empty".into(),name:None,surface_params:serde_json::json!({}),activate:origin.is_user()},
         Intent::NewTab {kind,params}=> {
             let kind=kind.as_deref().unwrap_or("terminal");
             DomainIntent::CreateTab {pane_id:state.focused_pane_id(engine.core),cwd:if kind=="terminal" {state.resolve_inherit_cwd(engine)}else{None},kind:kind.into(),name:None,surface_params:params_or_empty(params),activate:origin.is_user()}
@@ -30,7 +31,7 @@ pub(crate) fn resolve(state:&RequestContext,engine:&EngineRef<'_>,intent:&Intent
                 ConvertTarget::Terminal=>ConvertSurfaceTarget::Terminal {cwd:state.resolve_inherit_cwd(engine)},
                 ConvertTarget::Kind {kind,cwd,params}=> {
                     let mut params=params.clone();
-                    if let Some(definition)=engine.core.surface_registry.get(kind) {definition.normalize_param_aliases(&mut params);}
+                    if let Some(definition)=engine.runtime.surface_registry.get(kind) {definition.normalize_param_aliases(&mut params);}
                     ConvertSurfaceTarget::Kind {cwd:cwd.clone().or_else(||state.resolve_inherit_cwd_from_surface(engine,*surface_id)),kind:kind.clone(),params}
                 },
             };

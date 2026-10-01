@@ -721,6 +721,7 @@ impl JournalApplication {
         let Some(index) = items.iter().position(|item| item.surface_id == surface_id) else {
             return Ok(false);
         };
+        if items[index].input.kind!="terminal" && session.runtime.surface_registry.get_live(&items[index].input.kind).is_none() {return Ok(false);}
         let request = items.remove(index);
         let ticket = self.next_ticket;
         self.next_ticket = ticket
@@ -728,6 +729,7 @@ impl JournalApplication {
             .ok_or("journal ticket range exhausted")?;
         let creation = creation::Creation::restore(ticket, session, &self.worker, request)?;
         self.creations.insert((session.id,creation.ticket), creation);
+        (self.wake)();
         Ok(true)
     }
 

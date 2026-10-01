@@ -110,7 +110,7 @@ impl App {
                     )),
                     IntentClass::Appearance => *appearance_changed = true,
                     IntentClass::Immediate => {
-                        Self::dispatch_one_intent(core, state, &mut engine, &intent)
+                        Self::dispatch_one_intent(core, state, &mut engine, &intent,self.plugin_manager.as_ref())
                     }
                 }
             }
@@ -125,7 +125,7 @@ impl App {
         if matches!(
             intent.body,
             Intent::ForwardMirror {..}|Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_)
-                |Intent::ApplyPreset {..}|Intent::RestoreClosedItem|Intent::NewWorkspace {..}|Intent::NewTab {..}|Intent::SplitPane {..}|Intent::SplitSurface {..}|Intent::ConvertSurface {..}
+                |Intent::ApplyPreset {..}|Intent::RestoreClosedItem|Intent::NewWorkspace {..}|Intent::NewTab {..}|Intent::NewTabWithFollowup {..}|Intent::SplitPane {..}|Intent::SplitSurface {..}|Intent::ConvertSurface {..}
         ) {
             IntentClass::Domain
         } else if matches!(intent.body, Intent::Ui(UiIntent::AppearanceChanged)) {
@@ -183,9 +183,11 @@ impl App {
         state: &mut crate::state::MainViewState,
         engine: &mut EngineMut<'_>,
         intent: &crate::intent::DispatchedIntent,
+        plugins:Option<&crate::plugin::PluginManager>,
     ) {
         use crate::intent::Intent;
         match &intent.body {
+            Intent::Engine(action)=>action.apply(engine,plugins),
             Intent::RespondApproval {request_id,choice,comment} => {
                 match core.respond_approval(request_id,choice.clone(),tasty_approval::Responder::User,comment.clone()) {
                     Ok(change)=>{
@@ -202,18 +204,7 @@ impl App {
             Intent::ApplyPreset { .. } | Intent::SavePreset { .. } => {
                 crate::intent::preset::handle(core, state, engine, intent);
             }
-            Intent::SplitSurface { .. } | Intent::ConvertSurface { .. } => {
-                crate::intent::surface::handle(core, state, engine, intent);
-            }
-            Intent::NewTab { .. } => {
-                crate::intent::tab::handle(core, state, engine, intent);
-            }
-            Intent::SplitPane { .. } => {
-                crate::intent::pane::handle(core, state, engine, intent);
-            }
-            Intent::NewWorkspace { .. } => {
-                crate::intent::workspace::handle(core, state, engine, intent);
-            }
+        Intent::SplitSurface {..}|Intent::ConvertSurface {..}|Intent::NewTab {..}|Intent::NewTabWithFollowup {..}|Intent::SplitPane {..}|Intent::NewWorkspace {..}=>tracing::error!("structural intent bypassed journal admission"),
             Intent::RestoreClosedItem => {
                 tracing::error!("undo intent bypassed journal admission");
             }

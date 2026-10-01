@@ -163,7 +163,7 @@ impl CoreState {
                         if tab.contains_surface(surface_id) {
                             return Some(SurfaceDisplayPath {
                                 workspace_name: workspace.name.clone(),
-                                tab_name: Some(tab.display_name(presentation.surface_id(tab))),
+                                tab_name: Some(tab.display_name(presentation.surface_id(tab).and_then(|id|presentation.surface_title(id)))),
                             });
                         }
                     }

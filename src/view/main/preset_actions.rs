@@ -1,7 +1,7 @@
 //! 현재 워크스페이스·탭·패널 구성을 읽어 Intent::SavePreset으로 보낸다.
 //! 저장 이름 결정, 파일 저장, 프리셋 창 열기는 src/intent/preset.rs에서 처리한다.
 
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineRef;
 use anyhow::{Result, anyhow};
 
 use crate::intent::preset_capture::{
@@ -14,7 +14,7 @@ use super::MainView;
 impl MainView {
     pub(crate) fn save_workspace_preset_from_idx(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         ws_idx: usize,
     ) -> Result<()> {
         let ws = engine
@@ -50,7 +50,7 @@ impl MainView {
 
     pub(crate) fn save_tab_preset_from_pane_tab(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         pane_id: u32,
         tab_index: usize,
     ) -> Result<()> {
@@ -91,7 +91,7 @@ impl MainView {
 
     pub(crate) fn save_pane_preset_from_pane_id(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         pane_id: u32,
     ) -> Result<()> {
         let ws = self.state.active_workspace(engine);

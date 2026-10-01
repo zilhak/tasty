@@ -63,7 +63,6 @@ fn pane_tree(model: &JournalModel, tree: &SplitTree<u32>) -> Result<PaneNode> {
                         name: source.name.clone(),
                         explicit_name: source.explicit_name.clone(),
                         layout_opt: Some(surface_tree(model, &source.layout)?),
-                        surface_titles: Default::default(),
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;

@@ -12,16 +12,12 @@ mod apply_error_tests;
 // 헤드리스용 큐 처리를 GUI 조합의 시험에서도 검증한다.
 #[cfg(any(not(feature = "gui"), test))]
 pub(crate) mod headless;
-pub mod pane;
 pub mod popup;
 pub mod preset;
 pub mod preset_capture;
 pub mod rename;
-pub mod surface;
-pub mod tab;
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub mod watch;
-pub mod workspace;
 
 use crate::model::SplitDirection;
 use crate::model::popup_kind::{PopupId, PopupScope};
@@ -44,24 +40,7 @@ pub fn report_apply_error(
     label: &str,
     err: &anyhow::Error,
 ) {
-    crate::app::services::mark_last_forward_user_triggered(engine, err, origin);
-    crate::app::services::mark_last_forward_agent_origin(engine, err, origin);
-    if let Some(blocked) = err.downcast_ref::<crate::app::services::MirrorStructuralBlocked>() {
-        // 원격에 전달한 요청은 회신에서 실패를 처리하므로 여기서는 토스트를 띄우지 않는다.
-        if blocked.forwarded {
-            return;
-        }
-        if !origin.is_user() {
-            tracing::warn!("{label} blocked on a mirror workspace (agent origin, no toast): {err}");
-            return;
-        }
-        #[cfg(feature = "gui")]
-        state.toasts.push(
-            crate::i18n::t("attach.toast.mirror_structural_blocked"),
-            crate::model::toast_kind::ToastKind::Warning,
-            crate::model::toast_kind::ToastScope::Window,
-        );
-    } else if let Some(withdrawn) =
+    if let Some(withdrawn) =
         err.downcast_ref::<crate::runtime::surface_registry::SurfaceKindWithdrawn>()
     {
         report_withdrawn_kind(state, origin, label, err, withdrawn);
@@ -120,9 +99,16 @@ pub struct DispatchedIntent {
         reason = "only the gui raises the user-shortcut intents, so headless never builds them"
     )
 )]
+/// Transient UI work; it is never serialized into a journal operation.
+#[derive(Clone,Debug)]
+pub enum CreateFollowup {
+    Prompt {kind:String},
+}
+
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // reason: 명령마다 Box를 할당하는 비용을 피한다
 pub enum Intent {
+    Engine(crate::app::engine_action::EngineAction),
     ForwardMirror {op:tasty_ipc::stream::StructuralOp,close_focus_candidates:Vec<u32>},
     RespondApproval { request_id:tasty_approval::ApprovalId, choice:String, comment:Option<String> },
     Ui(UiIntent),
@@ -159,6 +145,9 @@ pub enum Intent {
         kind: Option<String>,
         params: serde_json::Value,
     },
+
+    /// Explicit pane selected by a native menu; completion belongs to the originating View.
+    NewTabWithFollowup {pane_id:u32,followup:CreateFollowup},
 
     /// 포커스된 pane을 분할하는 사용자 단축키 명령.
     SplitPane {

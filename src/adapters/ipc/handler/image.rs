@@ -8,54 +8,6 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
 
-/// `image.open { surface_id, path }` — surface를 image kind로 (재)설정 + 파일 로드.
-pub fn handle_open(
-    core: &mut crate::app::services::AppServices,
-    engine: &mut EngineMut<'_>,
-    id: Value,
-    params: &Value,
-) -> JsonRpcResponse {
-    let sid = match require_surface_id(params, &id) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let path = match params.get("path").and_then(|v| v.as_str()) {
-        Some(p) => p.to_string(),
-        None => return JsonRpcResponse::invalid_params(id, "Missing required 'path' parameter"),
-    };
-    let intent = crate::app::command::DomainIntent::ConvertSurface {
-        surface_id: sid,
-        target: crate::app::command::ConvertSurfaceTarget::Kind {
-            cwd: None,
-            kind: "image".to_string(),
-            params: json!({ "file": path.clone() }),
-        },
-    };
-    let events = match core.apply(engine, intent) {
-        Ok(e) => e,
-        // mirror 변환도 원격 전달 접수는 성공으로 답한다. 원격 실행 완료를 뜻하지는 않는다.
-        // 에이전트 요청의 원격 실패는 사용자 toast 대신 로그로 남긴다.
-        Err(e) => {
-            crate::app::services::mark_last_forward_agent_origin(
-                engine,
-                &e,
-                &crate::core::origin::IntentOrigin::Agent {
-                    source: crate::core::origin::AgentSource::Ipc,
-                },
-            );
-            return super::structural_apply_error(id, &e);
-        }
-    };
-    let replaced = matches!(
-        events.into_iter().next(),
-        Some(crate::app::command::CoreEvent::SurfaceConverted { replaced: true, .. })
-    );
-    if !replaced {
-        return JsonRpcResponse::invalid_params(id, format!("Surface {sid} not found"));
-    }
-    JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": sid, "path": path }))
-}
-
 pub fn handle_list(engine: &crate::core::CoreState, id: Value) -> JsonRpcResponse {
     let mut entries: Vec<Value> = Vec::new();
     for workspace in &engine.workspaces() {

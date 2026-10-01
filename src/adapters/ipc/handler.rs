@@ -445,7 +445,6 @@ pub(crate) fn hard_occupied_structural_guard(
     // 여기서는 소속만 찾고 잘못된 값은 handler의 require_*가 거절하게 한다.
     // 정수를 잘라 변환하면 다른 대상의 ID가 될 수 있으므로 범위를 검사한다.
     let ws_idx: usize = match method {
-        "split" => {
             let target_pane = params::read_int::<u32>(params, "target_pane")
                 .ok()
                 .flatten();
@@ -472,7 +471,6 @@ pub(crate) fn hard_occupied_structural_guard(
             let pane_id = params::read_int::<u32>(params, "pane_id").ok().flatten()?;
             engine.find_workspace_index_for_pane(pane_id)?
         }
-        "tab.close" => {
             let tab_id = params::read_int::<u32>(params, "tab_id").ok().flatten()?;
             let pane_id = engine.find_pane_for_tab(tab_id)?;
             engine.find_workspace_index_for_pane(pane_id)?
@@ -581,6 +579,9 @@ fn route_engine_handler(
     request: &JsonRpcRequest,
     id: serde_json::Value,
 ) -> Option<JsonRpcResponse> {
+    if tasty_ipc::method_meta::has_structure_journal_contract(&request.method) {
+        return Some(JsonRpcResponse::internal_error(id,"structural request bypassed journal admission"));
+    }
     if let Some(resp) = hard_occupied_structural_guard(
         core,
         &engine.as_ref(),
@@ -596,38 +597,11 @@ fn route_engine_handler(
         "system.info" => handle_system_info(window, engine, id),
         "system.pressure" => pressure::handle_system_pressure(&*core, engine, id),
         "workspace.list" => workspace::handle_workspace_list(window, engine, id),
-        "workspace.create" => {
-            workspace::handle_workspace_create(core, window, engine, id, &request.params)
-        }
-        "workspace.update" => {
-            workspace::handle_workspace_update(core, window, engine, id, &request.params)
-        }
-        "workspace.move" => {
-            workspace::handle_workspace_move(core, window, engine, id, &request.params)
-        }
-        "workspace.close" => workspace::handle_workspace_close(window, engine, id, &request.params),
         "workspace_category.list" => {
             workspace_category::handle_list(window.presentation(), engine, id)
         }
-        "workspace_category.create" => {
-            workspace_category::handle_create(core, engine, id, &request.params)
-        }
-        "workspace_category.rename" => {
-            workspace_category::handle_rename(core, engine, id, &request.params)
-        }
-        "workspace_category.delete" => {
-            workspace_category::handle_delete(core, engine, id, &request.params)
-        }
-        "workspace_category.move" => {
-            workspace_category::handle_move(core, engine, id, &request.params)
-        }
         "pane.list" => pane::handle_pane_list(window.presentation(), engine, id),
-        "pane.close" => pane::handle_pane_close(core, window, engine, id, &request.params, &origin),
-        "split" => pane::handle_split(core, window, engine, id, &request.params, &origin),
         "tab.list" => tab::handle_tab_list(window.presentation(), engine, id, &request.params),
-        "tab.create" => tab::handle_tab_create(core, window, engine, id, &request.params, &origin),
-        "tab.close" => tab::handle_tab_close(core, window, engine, id, &request.params, &origin),
-        "tab.move" => tab::handle_tab_move(core, window, engine, id, &request.params, &origin),
         // terminal: child-terminal 관리와 점유 검사 (ADR-0021)
         "terminal.spawn" => {
             JsonRpcResponse::internal_error(id,"terminal.spawn requires committed structure admission")
@@ -668,12 +642,6 @@ fn route_engine_handler(
             &request.params,
         ),
         "preset.apply" => JsonRpcResponse::internal_error(id,"preset application bypassed the journal command boundary"),
-        "surface.close" => {
-            surface::handle_surface_close(core, window, engine, id, &request.params, &origin)
-        }
-        "surface.close_self" => {
-            surface::handle_surface_close_self(core, window, engine, id, &request.params, &origin)
-        }
         "surface.list" => surface::handle_surface_list(&engine.as_ref(), id),
         "surface.kinds" => surface::handle_surface_kinds(engine, id),
         "surface.send" => surface::handle_surface_send(core, engine, id, &request.params),
@@ -785,7 +753,7 @@ fn route_engine_handler(
         }
         // host는 surface 변환·목록만 처리하고 픽셀 편집은 plugin이 처리한다.
         #[cfg(feature = "gui")]
-        "image.open" => image::handle_open(core, engine, id, &request.params),
+        "image.open"=>JsonRpcResponse::internal_error(id,"host conversion bypassed journal admission"),
         #[cfg(feature = "gui")]
         "image.list" => image::handle_list(engine, id),
         "memory.put" => memory::handle_put(core, engine, caller, id, &request.params),
@@ -1190,37 +1158,6 @@ fn surface_belongs_to_pane(engine: &CoreState, surface_id: u32, pane_id: u32) ->
     engine.find_pane_for_surface(surface_id) == Some(pane_id)
 }
 
-/// 원격 큐에 넣은 구조 변경은 forwarded:true로 답한다. 원격 완료를 보장하는 응답은 아니다.
-/// 원격 결과는 이후 delta로 확인하며 전달 불가·일반 오류는 internal_error로 반환한다.
-/// 헤드리스에는 전달 큐 소비자가 없어 mirror 구조 변경을 거절한다(ADR-0003).
-pub(super) fn structural_apply_error(id: serde_json::Value, e: &anyhow::Error) -> JsonRpcResponse {
-    if let Some(blocked) = e.downcast_ref::<crate::app::services::MirrorStructuralBlocked>()
-        && blocked.forwarded
-    {
-        return JsonRpcResponse::success(
-            id,
-            json!({
-                "forwarded": true,
-                "workspace_index": blocked.workspace_index,
-            }),
-        );
-    }
-    JsonRpcResponse::internal_error(id, e.to_string())
-}
-
-/// 도메인 오류 종류를 JSON-RPC 코드로 바꾸고 forward 경로와 같은 사유를 보존한다.
-pub(super) fn structural_failure_response(
-    id: serde_json::Value,
-    failure: crate::app::structural_exec::StructuralFailure,
-) -> JsonRpcResponse {
-    use crate::app::structural_exec::StructuralFailure;
-    match failure {
-        StructuralFailure::Rejected(msg) => JsonRpcResponse::invalid_params(id, msg),
-        StructuralFailure::MissingEvent(msg) => JsonRpcResponse::internal_error(id, msg),
-        StructuralFailure::Apply(e) => structural_apply_error(id, &e),
-    }
-}
-
 /// 서버 capability는 창별로 재사용하는 system_info_fields가 아닌 이 응답에만 추가한다.
 fn handle_system_info(
     window: &dyn IpcWindow,
@@ -1268,7 +1205,7 @@ pub(crate) fn build_engine_tree(
         .into_iter()
         .enumerate()
         .map(|(i, ws)| {
-            let mut t = ws.to_tree_json(window.presentation(),&|id|engine.find_surface_by_id(id).map(|surface|surface.to_tree_json()).unwrap_or_else(||serde_json::json!({"id":id,"type":"Pending"})));
+            let mut t = ws.to_tree_json(&engine.as_ref().observed_presentation(window.presentation()),&|id|engine.find_surface_by_id(id).map(|surface|surface.to_tree_json()).unwrap_or_else(||serde_json::json!({"id":id,"type":"Pending"})));
             t["active"] = json!(i == window.active_workspace_index(engine));
             t["busy_count"] = json!(engine.busy_count(&ws.all_surface_ids()));
             annotate_tree_busy(&mut t, engine);

@@ -102,6 +102,7 @@ impl EngineMut<'_> {
         if self.runtime.child_terminals.unregister_child_by_surface(surface_id) {self.runtime.child_terminals.save();}
         #[cfg(feature = "gui")]
         self.runtime.readonly_views.remove(&surface_id);
+        self.live.surface_titles.remove(&surface_id);
         self.live.last_key_input.remove(&surface_id);
         self.live.busy_surfaces.remove(&surface_id);
         self.live.mouse_capture_disabled_surfaces.remove(&surface_id);

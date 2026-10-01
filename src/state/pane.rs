@@ -1,5 +1,5 @@
 use crate::core::CoreState;
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineRef;
 
 use super::RequestContext;
 
@@ -9,7 +9,7 @@ impl RequestContext {
     /// 로컬 사용자는 점유 해제 버튼으로 먼저 연결을 끊을 수 있다.
     pub(crate) fn refuse_if_hard_occupied(
         &mut self,
-        engine: &CoreState,
+        engine: &crate::runtime::engine_access::EngineRef<'_>,
         targets: impl IntoIterator<Item = u32>,
     ) -> bool {
         let Some(_occupied) = targets
@@ -129,7 +129,7 @@ impl RequestContext {
 
     /// 포커스된 pane 닫기를 처리한다. mirror 요청을 전달한 경우에도 true다.
     #[cfg(any(feature = "gui", test))]
-    pub fn close_active_pane(&mut self, engine: &mut EngineMut<'_>) -> bool {
+    pub fn close_active_pane(&mut self, engine: &mut EngineRef<'_>) -> bool {
         let mirror_op = self.focused_surface_id(engine).map(|sid| {
             crate::ipc::stream::StructuralOp::ClosePane {
                 anchor_surface_id: sid,
@@ -159,7 +159,7 @@ impl RequestContext {
 
     /// 포커스된 surface를 닫고 필요하면 빈 탭·pane·워크스페이스도 정리한다.
     #[cfg(any(feature = "gui", test))]
-    pub fn close_active_surface(&mut self, engine: &mut EngineMut<'_>) -> bool {
+    pub fn close_active_surface(&mut self, engine: &mut EngineRef<'_>) -> bool {
         let focused_sid = self.focused_surface_id(engine);
         let mirror_op = focused_sid
             .map(|sid| crate::ipc::stream::StructuralOp::CloseSurface { surface_id: sid });
@@ -187,7 +187,7 @@ impl RequestContext {
     #[cfg(any(feature = "gui", test))]
     pub fn close_surface_by_id(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         surface_id: u32,
         is_user_close: bool,
     ) -> bool {
@@ -197,7 +197,7 @@ impl RequestContext {
     /// 복원 사본 없이 닫는다. 워크스페이스가 모두 사라지면 다음 화면 처리에 필요한 기본 항목을 만든다.
     pub fn close_surface_by_id_no_snapshot(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         surface_id: u32,
         is_user_close: bool,
     ) -> bool {
@@ -205,7 +205,7 @@ impl RequestContext {
     }
 
     /// Queue fixed IDs and an explicit user snapshot request; execution and repair are App-owned.
-    fn queue_surface_close(&mut self,engine:&EngineMut<'_>,surface_id:u32,capture:bool,is_user:bool)->bool {
+    fn queue_surface_close(&mut self,engine:&EngineRef<'_>,surface_id:u32,capture:bool,is_user:bool)->bool {
         if !engine.core.has_surface(surface_id) {return false;}
         let intent=crate::app::command::DomainIntent::CloseSurface {
             surface_id,presentation:capture.then(||Box::new(crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&engine.categories(),&self.navigation))),

@@ -540,7 +540,7 @@ impl MainView {
             {
                 let tab_index = state.navigation.tab_index(pane);
                 if let Some(tab) = pane.tabs.get(tab_index) {
-                    let current_name = tab.display_name(state.navigation.surface_id(tab));
+                    let current_name = engine.tab_display_name(tab,state.navigation.surface_id(tab));
                     let target = crate::state::RenameTarget::TabName { tab_id: tab.id };
                     let scope = target.popup_scope(engine);
                     state.dialogs.rename = Some((target, current_name));

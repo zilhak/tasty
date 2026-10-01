@@ -1,7 +1,7 @@
 //! Tab bar actions → application and core state.
 
 use super::{PaneTabBarView, TabBarAction, compute_drop_index};
-use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_access::EngineRef;
 use crate::model::LogicalPx;
 use crate::state::MainViewState;
 use egui::emath::GuiRounding as _;
@@ -9,7 +9,7 @@ use egui::emath::GuiRounding as _;
 /// 탭바 동작을 처리한다. 직접 조작은 대상 pane으로 먼저 포커스를 옮긴다.
 pub fn apply_tab_bar_actions(
     state: &mut MainViewState,
-    engine: &mut EngineMut<'_>,
+    engine: &mut EngineRef<'_>,
     actions: Vec<TabBarAction>,
     panes: &[PaneTabBarView],
     tab_w: f32,
@@ -26,29 +26,16 @@ pub fn apply_tab_bar_actions(
         match action {
             TabBarAction::SwitchTab { pane_id, tab_index } => {
                 let before = state.tutorial_tab_snapshot(engine);
-                let mut to_wake: Vec<u32> = Vec::new();
-                if let Some(pane) = state
-                    .active_workspace_mut(engine)
-                    .pane_layout_mut()
-                    .find_pane_mut(pane_id)
-                {
-                    state.navigation.goto_tab(pane, tab_index);
-                    if let Some(tab) = pane.tabs.get(tab_index) {
-                        to_wake = tab.deferred_surface_ids();
-                    }
-                }
-                for sid in to_wake {
-                    engine.ensure_surface_initialized(sid);
-                }
+                if let Some(pane)=engine.find_pane_by_id(pane_id) {state.navigation.goto_tab(pane,tab_index);}
                 state.observe_tutorial_tab_switch(engine, before);
             }
             TabBarAction::CloseTab { pane_id, tab_index } => {
                 state.close_tab(engine, pane_id, tab_index);
             }
-            TabBarAction::AddTab { pane_id: _ } => {
-                if let Err(e) = state.add_tab(engine) {
-                    tracing::warn!("add_tab failed: {e}");
-                }
+            TabBarAction::AddTab {pane_id}=> {
+                let selected=engine.find_pane_by_id(pane_id).and_then(|pane|pane.tabs.get(state.navigation.tab_index(pane))).and_then(|tab|state.navigation.surface_id(tab));
+                let cwd=selected.and_then(|surface|state.resolve_inherit_cwd_from_surface(engine,surface));
+                state.dispatch_intent(crate::app::command::DomainIntent::CreateTab {pane_id,cwd,kind:"terminal".into(),name:None,surface_params:serde_json::json!({}),activate:true}.from_user_menu("tab.create"));
             }
             TabBarAction::RequestSplit { pane_id: _ } => {
                 use crate::intent::Intent;

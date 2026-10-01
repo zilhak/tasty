@@ -14,9 +14,10 @@ pub(super) struct Request {
     pub shape:Shape,
     pub activate:bool,
     pub one_shot_input:Option<String>,
+    pub recent:Option<(String,String)>,
 }
 
-pub(super) enum Shape {ChildRespawn {index:u32},Child {index:u32,workspace:u32},Adopt,Workspace,Tab {pane:u32},Pane {target:u32,direction:crate::model::SplitDirection},Surface {target:u32},Convert {surface:u32,respawn:bool}}
+pub(super) enum Shape {Image {path:String},ChildRespawn {index:u32},Child {index:u32,workspace:u32},Adopt,Workspace,Tab {pane:u32},Pane {target:u32,direction:crate::model::SplitDirection},Surface {target:u32},Convert {surface:u32,respawn:bool}}
 
 impl Request {
     pub fn resolve(
@@ -142,7 +143,7 @@ impl Request {
                 .get("subtitle")
                 .and_then(|v| v.as_str())
                 .map(str::to_owned),
-            shape:Shape::Workspace,one_shot_input:None,
+            shape:Shape::Workspace,one_shot_input:None,recent:None,
             activate:false,
             renamed_description: params
                 .get("description")
@@ -247,6 +248,10 @@ impl Request {
 
     pub fn stored(&self, input: tasty_core::DataRef) -> Work {
         let response=match &self.plan.destination {
+            CreationDestination::Convert {..} if matches!(self.shape,Shape::Image {..})=> {
+                let Shape::Image {path}=&self.shape else {unreachable!("image response")};
+                ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"ok":true,"surface_id":self.plan.surface.id,"path":path})))
+            },
             CreationDestination::Convert {..} if matches!(self.shape,Shape::ChildRespawn {..})=> {
                 let Shape::ChildRespawn {index}=self.shape else {unreachable!("child respawn response")};
                 ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"child_surface_id":self.plan.surface.id,"child_index":index})))
@@ -284,6 +289,8 @@ impl Request {
             &self.renamed_name,
             &self.renamed_subtitle,
             &self.renamed_description,
+            if let Shape::Image {path}=&self.shape {Some(path)}else{None},
+            &self.recent,
         ))
         .expect("creation input serializes")
         .len().saturating_add(self.one_shot_input.as_ref().map_or(0,String::len))
@@ -302,6 +309,7 @@ impl JournalApplication {
         let resolved=if pending.request.method=="terminal.spawn" {super::child::resolve_spawn(&pending.request,session,&view)} else if pending.request.method=="terminal.respawn" {super::child::resolve_respawn(&pending.request,session)} else {super::create_spec::Spec::from_public(&pending.request,session,&view,services).and_then(|spec|Request::from_spec(spec,session))};
         match resolved {
             Ok(mut resource)=> {
+                if pending.request.method=="image.open" {resource.shape=Shape::Image {path:pending.request.params["path"].as_str().unwrap_or_default().to_owned()};}
                 resource.activate=false;
                 let work=match resource.reservation() {Ok(work)=>work,Err(error)=>{self.reject_resolved_request(ticket,JsonRpcResponse::internal_error(serde_json::Value::Null,error));return;}};
                 let pending=self.commands.pending.get_mut(&ticket).expect("creation admission remains owned");
@@ -347,6 +355,9 @@ impl JournalApplication {
         let result=serde_json::from_value::<super::create_spec::Spec>(pending.request.params.clone()).map_err(|error|JsonRpcResponse::invalid_params(serde_json::Value::Null,error.to_string())).and_then(|spec|Request::from_spec(spec,session));
         match result {
             Ok(mut resource)=> {
+                if session.runtime.surface_registry.get_live(&resource.plan.surface.kind).is_some_and(|kind|kind.records_recent) {
+                    resource.recent=resource.input.as_ref().and_then(|input|input.params.get("file")).and_then(|file|file.as_str()).filter(|file|!file.is_empty()).map(|file|(resource.plan.surface.kind.clone(),file.to_owned()));
+                }
                 match resource.reservation() {
                     Ok(work)=>pending.queued=Some(work),
                     Err(error)=> {self.reject_resolved_request(ticket,JsonRpcResponse::internal_error(serde_json::Value::Null,error));return;},
@@ -375,18 +386,23 @@ pub(super) struct Completed {
     pub destination:CreationDestination,
     pub activate:bool,
     pub name:Option<String>,pub subtitle:Option<String>,pub description:Option<String>,
+    recent:Option<(String,String)>,
 }
 impl Completed {
     pub fn from_request(request:&Request)->Self {Self {
-        engine:request.engine,surface:request.plan.surface.id,destination:request.plan.destination.clone(),activate:request.activate,
+        recent:request.recent.clone(),engine:request.engine,surface:request.plan.surface.id,destination:request.plan.destination.clone(),activate:request.activate,
         name:request.renamed_name.clone(),subtitle:request.renamed_subtitle.clone(),description:request.renamed_description.clone(),
     }}
     pub fn weight(&self)->usize {
         serde_json::to_vec(&self.destination).map_or(0,|bytes|bytes.len())+
+        self.recent.as_ref().map_or(0,|(kind,file)|kind.len()+file.len())+
         self.name.as_ref().map_or(0,String::len)+self.subtitle.as_ref().map_or(0,String::len)+self.description.as_ref().map_or(0,String::len)
     }
     pub fn notify(self,sessions:&mut [&mut EngineSession],queue:&mut Vec<(EngineId,notification::Notification)>) {
         use crate::core::host_event::PendingHostEvent as E;
+        // This service shares the existing home cache with View reads. Selection or View
+        // retirement cannot erase a successfully opened file; failed/Stored paths never call us.
+        if let Some((kind,file))=self.recent {crate::recent_files::RecentFiles::load().add(&kind,file);}
         let Some(session)=sessions.iter().find(|session|session.id==self.engine) else{return;};
         let engine=session.as_ref();
         let Some((index,pane_id))=engine.find_workspace_index_for_surface(self.surface) else{return;};

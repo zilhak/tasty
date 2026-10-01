@@ -11,34 +11,19 @@
 use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::path::PathBuf;
 
-use crate::app::structure_context::CascadeWindow;
 use crate::core::CoreState;
 use crate::intent::DispatchedIntent;
 
 /// 엔진 핸들러에 필요한 창 연산. state::ipc_window가 구현한다.
-pub(crate) trait IpcWindow: CascadeWindow {
+pub(crate) trait IpcWindow {
+    fn presentation(&self)->&dyn crate::model::StructurePresentation;
+    fn resolve_inherit_cwd_from_surface(&self,engine:&EngineRef<'_>,surface:u32)->Option<PathBuf>;
     /// 이 창의 활성 workspace 인덱스. 대상 생략 호환 경로나 응답의 활성 표시에서 쓴다.
     /// 명시 대상이 있는 요청은 그 대상의 소속을 우선한다(ADR-0017).
     fn active_workspace_index(&self, engine: &CoreState) -> usize;
 
     /// 새 워크스페이스의 cwd 상속 원본 — 설정(`inherit_cwd`)과 이 창의 포커스 surface 를 본다.
     fn resolve_inherit_cwd(&self, engine: &EngineRef<'_>) -> Option<PathBuf>;
-
-    /// workspace 생성 후 이벤트와 활성 선택 조건을 처리한다.
-    fn cascade_workspace_created(
-        &mut self,
-        engine: &mut CoreState,
-        origin: &crate::intent::IntentOrigin,
-        created: crate::app::dispatch_domain::WorkspaceCreatedCascade,
-    );
-
-    /// 워크스페이스 하나를 닫고 창 쪽 자원과 활성 포인터를 정리한다. 닫았으면 `true`.
-    fn close_workspace_at(
-        &mut self,
-        engine: &mut EngineMut<'_>,
-        ws_idx: usize,
-        origin: crate::state::WorkspaceCloseOrigin,
-    ) -> bool;
 
     /// 이 창이 기억하는 최근 파일(최신순).
     fn recent_files(&self, kind: &str) -> Vec<String>;

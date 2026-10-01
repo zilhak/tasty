@@ -1,7 +1,6 @@
 mod accessors;
 #[cfg(feature = "gui")]
 pub(crate) mod branch;
-mod cascade_window;
 #[cfg(feature = "gui")]
 mod detect;
 #[cfg(feature = "gui")]

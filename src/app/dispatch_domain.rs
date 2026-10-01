@@ -6,11 +6,6 @@
 use tasty_settings::Settings;
 
 use crate::app::App;
-use crate::app::structural_cascade::{
-    PaneSplitCascade, SurfaceCloseCascade, cascade_pane_closed_full, cascade_pane_split,
-    cascade_surface_closed, cascade_surface_created, cascade_surface_split,
-    cascade_tab_closed_full, cascade_tab_created,
-};
 use crate::app::window_access::{DispatchCtx, engines_mut};
 use crate::core::AttentionKind;
 use crate::app::command::CoreEvent;
@@ -32,16 +27,6 @@ impl DispatchSource {
     }
 }
 
-/// workspace 생성 결과. window_id는 호출한 쪽이 원래 engine에서 구한다.
-pub(crate) struct WorkspaceCreatedCascade {
-    pub(crate) workspace_id: u32,
-    pub(crate) index: usize,
-    pub(crate) surface_id: Option<u32>,
-    pub(crate) renamed_name: Option<String>,
-    pub(crate) renamed_subtitle: Option<String>,
-    pub(crate) renamed_description: Option<String>,
-}
-
 impl App {
     /// Core가 반환한 이벤트를 같은 source·origin으로 처리한다.
     pub(crate) fn dispatch_domain_intent(
@@ -49,6 +34,7 @@ impl App {
         source: DispatchSource,
         mut dispatched: DispatchedIntent,
     ) -> anyhow::Result<()> {
+        let after_create=match &dispatched.body {Intent::NewTabWithFollowup {followup,..}=>Some(followup.clone()),_=>None};
         if let Some(context)=self.engines_mut().resolve(source.engine())
             && let Some(intent)=crate::app::creation_intent::resolve(context.state,&context.engine.as_ref(),&dispatched.body,&dispatched.origin)? {
                 dispatched.body=Intent::Domain(intent);
@@ -75,7 +61,7 @@ impl App {
         }
         if let Intent::ForwardMirror {op,close_focus_candidates}=&dispatched.body {
             let id=source.engine();
-            let continuation=self.engines_mut().resolve(id).and_then(|context|context.view.map(|view|crate::app::journal::commands::IntentViewContinuation {view:view.state.identity(),selection:context.state.navigation.generation(),activate_surface:None,close_empty_engine:false}));
+            let continuation=self.engines_mut().resolve(id).and_then(|context|context.view.map(|view|crate::app::journal::commands::IntentViewContinuation {view:view.state.identity(),selection:context.state.navigation.generation(),activate_surface:None,close_empty_engine:false,after_create:after_create.clone()}));
             self.journal.admit_remote_intent(id,op.clone(),&dispatched.origin,continuation,close_focus_candidates.clone());return Ok(());
         }
         if let Intent::DirectRename(rename) = &dispatched.body {
@@ -92,7 +78,7 @@ impl App {
         let origin = dispatched.origin;
         let id=source.engine();
         let continuation=self.engines_mut().resolve(id).and_then(|context|context.view.map(|view|crate::app::journal::commands::IntentViewContinuation {
-            view:view.state.identity(),selection:context.state.navigation.generation(),activate_surface:None,close_empty_engine:false,
+            view:view.state.identity(),selection:context.state.navigation.generation(),activate_surface:None,close_empty_engine:false,after_create:after_create.clone(),
         }));
         if let Some(session)=self.engines.get(id)
             && session.core_state.mirror_workspace_index_for_structural(&intent).is_some()
@@ -113,7 +99,7 @@ impl App {
         else {
             anyhow::bail!("dispatch_domain_intent: engine {id:?} not found");
         };
-        let applied = crate::app::structural_exec::execute(core, state, &mut engine, intent);
+        let applied = core.apply_live(&mut engine,intent);
         let events = events_or_report(state, engine.core, &origin, applied);
         for event in events {
             self.handle_core_event(source, &origin, event);
@@ -144,7 +130,6 @@ impl App {
             {
                 return;
             }
-            state.apply_structure_result(engine.core, &event);
         }
         match event {
             CoreEvent::SettingsUpdated(new_settings) => {
@@ -177,175 +162,7 @@ impl App {
             CoreEvent::SurfaceAttentionClearRequested { surface_id, kind } => {
                 self.cascade_surface_attention_clear(surface_id, kind);
             }
-            CoreEvent::WorkspaceCreated {
-                id,
-                index,
-                surface_id,
-                renamed_name,
-                renamed_subtitle,
-                renamed_description,
-            } => {
-                self.dispatch_workspace_created_cascade(
-                    source,
-                    origin,
-                    WorkspaceCreatedCascade {
-                        workspace_id: id,
-                        index,
-                        surface_id,
-                        renamed_name,
-                        renamed_subtitle,
-                        renamed_description,
-                    },
-                );
-            }
-            CoreEvent::WorkspaceMetaUpdated {
-                workspace_id,
-                index: _,
-                name,
-                subtitle,
-                description,
-            } => {
-                self.dispatch_workspace_meta_updated_cascade(
-                    source,
-                    workspace_id,
-                    name,
-                    subtitle,
-                    description,
-                );
-            }
-            CoreEvent::WorkspaceMoved { moved, .. } => {
-                if moved {
-                    self.mark_source_window_dirty(source);
-                }
-            }
-            CoreEvent::TabCreated {
-                pane_id,
-                tab_id,
-                surface_id,
-                tab_count: _,
-                activate,
-            } => {
-                self.dispatch_tab_created_cascade(
-                    source,
-                    pane_id,
-                    tab_id,
-                    surface_id,
-                    activate && origin.is_user(),
-                );
-            }
-            CoreEvent::TabClosed {
-                tab_id,
-                pane_id,
-                closed,
-                cleanup_targets,
-            } => {
-                if closed {
-                    let is_user_close = origin.is_user();
-                    self.dispatch_tab_closed_cascade(
-                        source,
-                        tab_id,
-                        pane_id,
-                        cleanup_targets,
-                        is_user_close,
-                    );
-                }
-            }
-            CoreEvent::TabMoved { moved } => {
-                if moved {
-                    self.mark_source_window_dirty(source);
-                }
-            }
-            CoreEvent::PaneSplit {
-                workspace_index,
-                original_pane_id,
-                new_pane_id,
-                new_surface_id,
-                direction,
-            } => {
-                self.dispatch_pane_split_cascade(
-                    source,
-                    origin,
-                    PaneSplitCascade {
-                        workspace_index,
-                        original_pane_id,
-                        new_pane_id,
-                        new_surface_id,
-                        direction,
-                    },
-                );
-            }
-            CoreEvent::SurfaceSplit {
-                workspace_index,
-                pane_id,
-                new_surface_id,
-            } => {
-                self.dispatch_surface_split_cascade(
-                    source,
-                    origin,
-                    workspace_index,
-                    pane_id,
-                    new_surface_id,
-                );
-            }
-            CoreEvent::PaneClosed {
-                pane_id,
-                closed,
-                cleanup_targets,
-            } => {
-                if closed {
-                    let is_user_close = origin.is_user();
-                    self.dispatch_pane_closed_cascade(
-                        source,
-                        pane_id,
-                        cleanup_targets,
-                        is_user_close,
-                    );
-                }
-            }
-            ev @ CoreEvent::SurfaceClosed { .. } => {
-                if let Some(c) = SurfaceCloseCascade::from_surface_closed(ev, origin.is_user()) {
-                    self.dispatch_surface_closed_cascade(source, c);
-                }
-            }
-            CoreEvent::SurfaceConverted {
-                surface_id,
-                replaced,
-                ..
-            } => {
-                // 같은 surface ID를 새 콘텐츠로 바꿨으면 옛 mesh를 버려 다시 초기화하게 한다.
-                if replaced {
-                    if let Some(mgr) = self.plugin_manager.as_mut() {
-                        mgr.drop_egui_mesh_frame(surface_id);
-                    }
-                    self.mark_source_window_dirty(source);
-                }
-            }
-            ev @ CoreEvent::MoveSurfaceApplied { .. } => {
-                if let Some(c) =
-                    SurfaceCloseCascade::from_move_surface_applied(ev, origin.is_user())
-                {
-                    self.dispatch_surface_closed_cascade(source, c);
-                }
-            }
-            ev @ CoreEvent::ContainerMoveApplied { .. } => {
-                if let Some(c) =
-                    SurfaceCloseCascade::from_container_move_applied(ev, origin.is_user())
-                {
-                    self.dispatch_surface_closed_cascade(source, c);
-                }
-            }
-            CoreEvent::SurfaceSent { .. } => {}
-            CoreEvent::TerminalRespawned { .. } => {}
-            CoreEvent::ClosedItemRestored {
-                restored,
-                kind,
-                presentation,
-            } => {
-                if restored {
-                    self.dispatch_closed_item_restored_cascade(source, origin, kind, &presentation);
-                }
-            }
-
+            CoreEvent::SurfaceSent {..}=>{},
             CoreEvent::TerminalNotification {
                 surface_id,
                 title,
@@ -425,28 +242,7 @@ impl App {
                 plugin_id,
                 window_id,
             } => self.cascade_plugin_window_declared(plugin_id, window_id),
-        }
-    }
-
-    fn dispatch_closed_item_restored_cascade(
-        &mut self,
-        source: DispatchSource,
-        origin: &IntentOrigin,
-        kind: crate::app::command::RestoredKind,
-        presentation: &crate::model::StructurePresentationSnapshot,
-    ) {
-        let Some(DispatchCtx {
-            state,
-            engine,
-            view,
-            ..
-        }) = engines_mut!(self).resolve(source.engine())
-        else {
-            return;
-        };
-        cascade_closed_item_restored(state, engine.core, origin, kind, presentation);
-        if let Some(view) = view {
-            view.mark_dirty();
+            _=>tracing::error!("obsolete structural event bypassed committed projection"),
         }
     }
 
@@ -714,196 +510,6 @@ impl App {
         super::process_exit::handle(&mut self.services, state, &mut engine, surface_id, generation);
         if let Some(base) = dirty_main {
             base.state.dirty = true;
-        }
-    }
-
-    fn dispatch_surface_closed_cascade(&mut self, source: DispatchSource, c: SurfaceCloseCascade) {
-        let core = &mut self.services;
-        let Some(DispatchCtx {
-            state,
-            mut engine,
-            view,
-            ..
-        }) = engines_mut!(self).resolve(source.engine())
-        else {
-            return;
-        };
-        cascade_surface_closed(core, state, &mut engine, c);
-        if let Some(view) = view {
-            view.mark_dirty();
-        }
-    }
-
-    fn dispatch_surface_split_cascade(
-        &mut self,
-        source: DispatchSource,
-        origin: &IntentOrigin,
-        workspace_index: usize,
-        pane_id: u32,
-        new_surface_id: u32,
-    ) {
-        let Some(DispatchCtx {
-            state,
-            engine,
-            view,
-            ..
-        }) = engines_mut!(self).resolve(source.engine())
-        else {
-            return;
-        };
-        cascade_surface_split(
-            state,
-            engine.core,
-            origin,
-            workspace_index,
-            pane_id,
-            new_surface_id,
-        );
-        if let Some(view) = view {
-            view.mark_dirty();
-        }
-    }
-
-    fn dispatch_pane_split_cascade(
-        &mut self,
-        source: DispatchSource,
-        origin: &IntentOrigin,
-        c: PaneSplitCascade,
-    ) {
-        let Some(DispatchCtx {
-            state,
-            engine,
-            view,
-            ..
-        }) = engines_mut!(self).resolve(source.engine())
-        else {
-            return;
-        };
-        cascade_pane_split(state, engine.core, origin, c);
-        if let Some(view) = view {
-            view.mark_dirty();
-        }
-    }
-
-    fn dispatch_tab_created_cascade(
-        &mut self,
-        source: DispatchSource,
-        pane_id: u32,
-        tab_id: u32,
-        surface_id: u32,
-        activate: bool,
-    ) {
-        let Some(DispatchCtx {
-            state,
-            engine,
-            view,
-            ..
-        }) = engines_mut!(self).resolve(source.engine())
-        else {
-            return;
-        };
-        cascade_tab_created(state, &engine.as_ref(), pane_id, tab_id, surface_id);
-        if activate && let Some(pane) = engine.find_pane_by_id(pane_id) {
-            state.navigation.select_tab(pane, tab_id);
-        }
-        if let Some(view) = view {
-            view.mark_dirty();
-        }
-    }
-
-    fn dispatch_pane_closed_cascade(
-        &mut self,
-        source: DispatchSource,
-        pane_id: u32,
-        cleanup_targets: Vec<(u32, Option<String>)>,
-        is_user_close: bool,
-    ) {
-        let Some(DispatchCtx {
-            state,
-            mut engine,
-            view,
-            ..
-        }) = engines_mut!(self).resolve(source.engine())
-        else {
-            return;
-        };
-        cascade_pane_closed_full(state, &mut engine, pane_id, cleanup_targets, is_user_close);
-        if let Some(view) = view {
-            view.mark_dirty();
-        }
-    }
-
-    fn dispatch_tab_closed_cascade(
-        &mut self,
-        source: DispatchSource,
-        tab_id: u32,
-        pane_id: Option<u32>,
-        cleanup_targets: Vec<(u32, Option<String>)>,
-        is_user_close: bool,
-    ) {
-        let Some(DispatchCtx {
-            state,
-            mut engine,
-            view,
-            ..
-        }) = engines_mut!(self).resolve(source.engine())
-        else {
-            return;
-        };
-        cascade_tab_closed_full(
-            state,
-            &mut engine,
-            tab_id,
-            pane_id,
-            cleanup_targets,
-            is_user_close,
-        );
-        if let Some(view) = view {
-            view.mark_dirty();
-        }
-    }
-
-    fn dispatch_workspace_meta_updated_cascade(
-        &mut self,
-        source: DispatchSource,
-        workspace_id: u32,
-        name: Option<String>,
-        subtitle: Option<String>,
-        description: Option<String>,
-    ) {
-        let Some(DispatchCtx {
-            state,
-            engine: _,
-            view,
-            ..
-        }) = engines_mut!(self).resolve(source.engine())
-        else {
-            return;
-        };
-        cascade_workspace_meta_updated(engine, workspace_id, name, subtitle, description);
-        if let Some(view) = view {
-            view.mark_dirty();
-        }
-    }
-
-    fn dispatch_workspace_created_cascade(
-        &mut self,
-        source: DispatchSource,
-        origin: &IntentOrigin,
-        c: WorkspaceCreatedCascade,
-    ) {
-        let Some(DispatchCtx {
-            state,
-            engine,
-            view,
-            ..
-        }) = engines_mut!(self).resolve(source.engine())
-        else {
-            return;
-        };
-        cascade_workspace_created(state, engine.core, origin, c);
-        if let Some(view) = view {
-            view.mark_dirty();
         }
     }
 
@@ -1286,84 +892,6 @@ impl App {
 }
 
 /// workspace 생성의 창별 후속 처리. 사용자 요청일 때만 활성 workspace를 옮긴다.
-pub(crate) fn cascade_workspace_created(
-    state: &mut crate::state::MainViewState,
-    engine: &mut crate::core::CoreState,
-    origin: &IntentOrigin,
-    c: WorkspaceCreatedCascade,
-) {
-    let name = engine
-        .workspace_at(c.index)
-        .map(|w| w.name.clone())
-        .unwrap_or_default();
-    engine.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceCreated {
-        workspace_id: c.workspace_id,
-        name,
-    });
-
-    if c.renamed_name.is_some() || c.renamed_subtitle.is_some() || c.renamed_description.is_some() {
-        engine.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
-            workspace_id: c.workspace_id,
-            name: c.renamed_name,
-            subtitle: c.renamed_subtitle,
-            description: c.renamed_description,
-            user_direct: false,
-        });
-    }
-    if let Some(surface_id) = c.surface_id {
-        cascade_surface_created(state, engine, surface_id);
-    }
-    if origin.is_user() {
-        state.set_active_workspace_index(engine, c.index);
-    }
-}
-
-/// 복원된 구조는 유지하되 사용자 요청에서만 포커스를 옮긴다.
-/// 이 origin 검사를 호출 경로가 사용자 전용이라는 가정으로 대신하지 않는다.
-pub(crate) fn cascade_closed_item_restored(
-    state: &mut crate::state::MainViewState,
-    engine: &mut crate::core::CoreState,
-    origin: &IntentOrigin,
-    kind: crate::app::command::RestoredKind,
-    presentation: &crate::model::StructurePresentationSnapshot,
-) {
-    use crate::app::command::RestoredKind;
-    if !origin.is_user() {
-        return;
-    }
-    state
-        .navigation
-        .apply_snapshot(&engine.workspaces(), presentation);
-    match kind {
-        RestoredKind::Nothing => {}
-        RestoredKind::Workspace { new_ws_index } => {
-            state.set_active_workspace_index(engine, new_ws_index);
-        }
-        RestoredKind::TabIntoPane => {}
-        RestoredKind::PaneIntoWorkspace { pane_id } => {
-            state.select_pane(engine, pane_id);
-        }
-    }
-}
-
-pub(crate) fn cascade_workspace_meta_updated(
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
-    workspace_id: u32,
-    name: Option<String>,
-    subtitle: Option<String>,
-    description: Option<String>,
-) {
-    if name.is_some() || subtitle.is_some() || description.is_some() {
-        engine.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
-            workspace_id,
-            name,
-            subtitle,
-            description,
-            user_direct: false,
-        });
-    }
-}
-
 /// apply 오류는 요청한 창의 state·engine으로 알린다. mirror 차단 toast도 이 경로로 뜬다.
 /// 오류를 여기서 처리하므로 후속 처리할 이벤트가 없다.
 fn events_or_report(

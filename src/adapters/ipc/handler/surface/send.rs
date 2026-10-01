@@ -109,7 +109,7 @@ fn dispatch_send(
         surface_id,
         payload,
     };
-    let events = match core.apply(engine, intent) {
+    let events = match core.apply_live(engine, intent) {
         Ok(e) => e,
         Err(_) => return SendOutcome::NotFound,
     };

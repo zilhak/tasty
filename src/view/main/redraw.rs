@@ -1,6 +1,6 @@
 use winit::event_loop::ActiveEventLoop;
 
-use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::EngineRef;
 use crate::plugin::PluginManager;
 use crate::view::ui::View;
 
@@ -93,13 +93,7 @@ pub(crate) fn take_hidden_webview_focus_targets(
 }
 
 impl MainView {
-    pub(super) fn handle_redraw(
-        &mut self,
-        engine: &mut EngineMut<'_>,
-        _event_loop: &ActiveEventLoop,
-        plugin_manager: Option<&PluginManager>,
-        stream_hub: &tasty_ipc::stream_hub::StreamHub,
-    ) {
+    pub(crate) fn prepare_redraw(&mut self,engine:&mut EngineRef<'_>) {
         self.state.reconcile_presentation(engine);
         // 열기 요청은 render_if_dirty 전에 소비해야 한다. egui가 이번 프레임에 만든
         // 요청이 다음 프레임까지 남아 키·마우스 차단과 Escape 취소에 사용되기 때문이다.
@@ -124,8 +118,9 @@ impl MainView {
                 .resize_all(&mut *engine, terminal_rect, cell_w, cell_h, scale_factor);
         }
 
-        self.render_if_dirty(engine, plugin_manager, stream_hub);
+    }
 
+    pub(crate) fn finish_redraw(&mut self,engine:&mut EngineRef<'_>,plugin_manager:Option<&PluginManager>) {
         // 무대가 draw 중 닫힐 수 있으므로 렌더 뒤 OS 전체화면 상태를 맞춘다.
         self.sync_window_fullscreen();
 
@@ -236,20 +231,15 @@ impl MainView {
     }
 
     /// 현재 창/스케일 기준으로 신규 터미널의 기본 grid(cols/rows)를 갱신한다.
-    fn apply_grid_resync(&mut self, engine: &mut crate::core::CoreState) {
+    fn apply_grid_resync(&mut self, _engine: &crate::runtime::engine_access::EngineRef<'_>) {
         let terminal_rect = self.compute_terminal_rect();
         let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
-        engine.update_grid_size(cols, rows);
+        self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::DefaultGrid {cols,rows}).from_user_shortcut("grid-resize"));
     }
 
     /// dirty일 때 입력·mesh 중계와 GPU 렌더링, full 재전송 요청을 처리한다.
     /// 로컬 무대 중에도 attach 구독자에게 mesh를 중계해야 하므로 조기 반환하지 않는다.
-    fn render_if_dirty(
-        &mut self,
-        engine: &mut EngineMut<'_>,
-        plugin_manager: Option<&PluginManager>,
-        stream_hub: &tasty_ipc::stream_hub::StreamHub,
-    ) {
+    pub(crate) fn prepare_render_inputs(&mut self,engine:&mut EngineRef<'_>,plugin_manager:Option<&PluginManager>) {
         if !self.base.state.dirty {
             return;
         }
@@ -261,14 +251,15 @@ impl MainView {
         // 불변 차용 전에 plugin에 크기·배율·입력을 보내고 회신한 mesh를 합성한다.
         if let Some(mgr) = plugin_manager {
             self.forward_egui_mesh_context(engine, mgr);
-            // GUI가 attach 서버인 경우의 mesh mirror forward — 로컬 redraw가
-            // 방금 만든(또는 위 호출로 이미 있던) EguiMeshFrame 을 attach 구독자에게
-            // 중계한다. 로컬 set_context 송신 이후에 불러 최신 프레임을 relay한다.
-            self.forward_mesh_to_attach_subscribers(engine, mgr, stream_hub);
+
         }
         // attach mesh mirror surface — 위와 동형이되 목적지가 원격이라
         // PluginManager 가 필요 없다(로컬에 plugin 프로세스가 없다).
         self.forward_attach_mesh_context(engine);
+    }
+
+    pub(crate) fn render_if_dirty(&mut self,engine:&mut EngineRef<'_>,plugin_manager:Option<&PluginManager>) {
+        if !self.base.state.dirty {return;}
         self.submit_gpu_frame(engine, plugin_manager);
         self.drain_full_texture_requests(engine);
     }
@@ -276,7 +267,7 @@ impl MainView {
     /// 실제 GPU 프레임 제출 + surface 에러 분기 처리.
     fn submit_gpu_frame(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         plugin_manager: Option<&PluginManager>,
     ) {
         let link_hover = self
@@ -327,7 +318,7 @@ impl MainView {
     /// 다음 tick 의 forward 가 need_full_textures `set_context`/`MeshFullResendRequest`
     /// 를 보낸다. plugin/원격은 스스로 재송신하지 않으므로 다음 tick 을 dirty 로
     /// 보장한다.
-    fn drain_full_texture_requests(&mut self, engine: &mut crate::core::CoreState) {
+    fn drain_full_texture_requests(&mut self, engine: &EngineRef<'_>) {
         let full_reqs = self.base.gpu.take_egui_mesh_full_requests();
         let popup_full_reqs = self.base.gpu.take_egui_mesh_popup_full_requests();
         let banner_full_reqs = self.base.gpu.take_egui_mesh_banner_full_requests();
@@ -358,16 +349,15 @@ impl MainView {
         // 가 세션을 통해 `MeshFullResendRequest` 로 forward 하도록 큐에 옮긴다.
         let attach_full_reqs = self.base.gpu.take_attach_mesh_full_requests();
         if !attach_full_reqs.is_empty() {
-            engine
-                .remote.pending_mesh_full_resend_forward
-                .extend(attach_full_reqs);
+            let targets=attach_full_reqs.into_iter().filter_map(|surface|crate::app::engine_action::SurfaceBinding::capture(engine,surface)).collect();
+            self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::RemoteMeshFull {targets}).from_user_shortcut("mesh-full-recovery"));
             self.base.state.dirty = true;
         }
     }
 
     /// 팝업이 닫힌 뒤 팔레트 명령을 실행한다.
     /// 호스트 명령은 여기서 실행하고 plugin 명령은 App의 처리 큐에 넣는다.
-    fn dispatch_pending_command_palette(&mut self, engine: &mut EngineMut<'_>) {
+    fn dispatch_pending_command_palette(&mut self, engine: &mut EngineRef<'_>) {
         if let Some(cmd) = self.state.command_palette.pending_run.take() {
             match cmd {
                 crate::state::command_palette::PaletteCommand::Host { id, .. } => {
@@ -1011,11 +1001,11 @@ impl MainView {
     /// macOS/Windows의 Ready는 즉시 처리하며 Linux의 Pending은 이후 폴링으로 회수한다.
     pub(super) fn open_native_menu(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         x: f32,
         y: f32,
         items: &[crate::platform::native_menu::MenuItem],
-        cont: impl FnOnce(&mut MainView, &mut EngineMut<'_>, Option<u32>) + 'static,
+        cont: impl FnOnce(&mut MainView, &mut EngineRef<'_>, Option<u32>) + 'static,
     ) {
         use crate::platform::native_menu::{
             MenuOutcome, show_context_menu, warn_if_menu_anchor_scale_premise_broken,
@@ -1039,7 +1029,7 @@ impl MainView {
 
     /// 메뉴 결과를 비차단 조회하고 완료됐으면 후처리를 실행한다.
     /// redraw에서는 새 메뉴 요청보다 먼저, 대기 중에는 8ms 주기로 호출한다.
-    pub(crate) fn poll_pending_native_menu(&mut self, engine: &mut EngineMut<'_>) {
+    pub(crate) fn poll_pending_native_menu(&mut self, engine: &mut EngineRef<'_>) {
         let Some((handle, _)) = self.pending_menu.as_mut() else {
             return;
         };
@@ -1066,7 +1056,7 @@ impl MainView {
 
     /// Process pending native context menu request.
     /// Called after egui frame so we have access to the window handle.
-    fn process_pending_native_menu(&mut self, engine: &mut EngineMut<'_>) {
+    fn process_pending_native_menu(&mut self, engine: &mut EngineRef<'_>) {
         use crate::state::PendingNativeMenu;
 
         // OS 메뉴는 무대 위에 뜨므로 요청을 버린다. 무대 종료 뒤에는 좌표도 유효하지 않다.
@@ -1154,7 +1144,7 @@ impl MainView {
 
     fn handle_tab_native_menu(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         pane_id: u32,
         tab_index: usize,
         x: f32,
@@ -1183,7 +1173,7 @@ impl MainView {
     /// 검사한다.
     fn apply_tab_menu_selection(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         pane_id: u32,
         tab_index: usize,
         result: Option<u32>,
@@ -1319,7 +1309,7 @@ impl MainView {
             .pane_layout()
             .find_pane(pane_id)
             .and_then(|p| p.tabs.get(tab_index))
-            .map(|t| (t.id, t.display_name(self.state.navigation.surface_id(t))))
+            .map(|t| (t.id, engine.tab_display_name(t,self.state.navigation.surface_id(t))))
         else {
             return;
         };
@@ -1337,7 +1327,7 @@ impl MainView {
 
     fn handle_pane_native_menu(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         pane_id: u32,
         x: f32,
         y: f32,
@@ -1367,47 +1357,21 @@ impl MainView {
     /// 검사한다.
     fn apply_pane_menu_selection(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         pane_id: u32,
         result: Option<u32>,
     ) {
         match result {
             Some(1) => {
-                self.state.select_pane(engine, pane_id);
-                if let Err(e) = self.state.add_tab(engine) {
-                    tracing::warn!("add_tab from context menu failed: {e}");
-                }
+                let selected=engine.find_pane_by_id(pane_id).and_then(|pane|pane.tabs.get(self.state.navigation.tab_index(pane))).and_then(|tab|self.state.navigation.surface_id(tab));
+                let cwd=selected.and_then(|surface|self.state.resolve_inherit_cwd_from_surface(engine,surface));
+                self.state.dispatch_intent(crate::app::command::DomainIntent::CreateTab {pane_id,cwd,kind:"terminal".into(),name:None,surface_params:serde_json::json!({}),activate:true}.from_user_context_menu());
             }
             Some(2) => {
-                // 빈 탭을 먼저 만들고, 그 surface 를 제자리 markdown 변환. surface_id 를
-                // 실어 file-open 팝업을 연다(plugin 이 markdown.navigate 로 제자리 변환).
-                self.state.select_pane(engine, pane_id);
-                if let Some((_tab_id, surface_id)) = self.state.add_empty_tab(engine) {
-                    // intent-exempt: surface_id 결과 의존 (후속 convert)
-                    self.state.enqueue_convert_input_popup(
-                        &engine.as_ref(),
-                        "markdown",
-                        Some(surface_id),
-                    );
-                }
+                self.state.dispatch_intent(crate::intent::Intent::NewTabWithFollowup {pane_id,followup:crate::intent::CreateFollowup::Prompt {kind:"markdown".into()}}.from_user_context_menu());
             }
             Some(5) => {
-                self.state.select_pane(engine, pane_id);
-                if let Some((_tab_id, surface_id)) = self.state.add_empty_tab(engine) {
-                    // intent-exempt: surface_id 결과 의존 (후속 convert)
-
-                    self.state.dispatch_intent(
-                        crate::intent::Intent::ConvertSurface {
-                            surface_id,
-                            target: crate::intent::ConvertTarget::Kind {
-                                cwd: None,
-                                kind: "image".to_string(),
-                                params: serde_json::json!({}),
-                            },
-                        }
-                        .from_user_context_menu(),
-                    );
-                }
+                self.state.dispatch_intent(crate::app::command::DomainIntent::CreateTab {pane_id,cwd:None,kind:"image".into(),name:None,surface_params:serde_json::json!({}),activate:true}.from_user_context_menu());
             }
             Some(6) => {
                 if let Err(e) = self.save_pane_preset_from_pane_id(engine, pane_id) {
@@ -1447,7 +1411,7 @@ impl MainView {
 
     fn handle_workspace_native_menu(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         ws_idx: usize,
         x: f32,
         y: f32,
@@ -1688,7 +1652,7 @@ impl MainView {
 
     fn handle_workspace_category_header_native_menu(
         &mut self,
-        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+        engine: &mut crate::runtime::engine_access::EngineRef<'_>,
         cat_id: crate::model::WorkspaceCategoryId,
         x: f32,
         y: f32,
@@ -1768,7 +1732,7 @@ impl MainView {
 
     fn handle_sidebar_background_native_menu(
         &mut self,
-        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+        engine: &mut crate::runtime::engine_access::EngineRef<'_>,
         x: f32,
         y: f32,
     ) {
@@ -1812,7 +1776,7 @@ impl MainView {
 
     fn handle_terminal_surface_native_menu(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         surface_id: u32,
         x: f32,
         y: f32,
@@ -1915,7 +1879,7 @@ impl MainView {
 
     fn handle_surface_native_menu(
         &mut self,
-        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+        engine: &mut crate::runtime::engine_access::EngineRef<'_>,
         surface_id: u32,
         x: f32,
         y: f32,
@@ -1956,7 +1920,7 @@ impl MainView {
 
     fn handle_explorer_native_menu(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         surface_id: u32,
         paths: Vec<std::path::PathBuf>,
         cwd: std::path::PathBuf,
@@ -2319,7 +2283,7 @@ impl MainView {
     /// mirror에서는 금지한다. 로컬에만 만든 탭은 다음 원격 구조 동기화에서 사라진다.
     fn explorer_menu_open_in_new_tab(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         surface_id: u32,
         paths: &[std::path::PathBuf],
     ) {
@@ -2341,7 +2305,7 @@ impl MainView {
     /// 이 폴더로 루트 설정 (아이템 61) — 현재 explorer 의 cwd 를 그 폴더로 이동.
     fn explorer_menu_set_root(
         &mut self,
-        engine: &mut crate::core::CoreState,
+        engine: &EngineRef<'_>,
         surface_id: u32,
         paths: &[std::path::PathBuf],
     ) {
@@ -2352,7 +2316,7 @@ impl MainView {
 
     fn handle_explorer_favorite_native_menu(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         surface_id: u32,
         path: std::path::PathBuf,
         x: f32,
@@ -2406,8 +2370,7 @@ impl MainView {
                 }
                 Some(1) => {
                     // 사이드바는 다음 프레임 스냅샷에서 갱신 — redraw 만 요청.
-                    engine.runtime.explorer_favorites.remove(&path);
-                    engine.runtime.explorer_favorites.save();
+                    this.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::RemoveExplorerFavorite {path:path.clone()}).from_user_context_menu());
                 }
                 _ => {}
             }
@@ -2416,7 +2379,7 @@ impl MainView {
 
     fn handle_new_workspace_button_native_menu(
         &mut self,
-        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+        engine: &mut crate::runtime::engine_access::EngineRef<'_>,
         x: f32,
         y: f32,
     ) {
@@ -2459,7 +2422,7 @@ impl MainView {
 
     fn handle_new_tab_button_native_menu(
         &mut self,
-        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+        engine: &mut crate::runtime::engine_access::EngineRef<'_>,
         pane_id: u32,
         x: f32,
         y: f32,

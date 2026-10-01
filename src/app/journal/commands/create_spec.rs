@@ -54,6 +54,12 @@ impl Spec {
         }).and_then(|tab|view.selected_surfaces.get(&tab.id).copied().filter(|id|tab.contains_surface(*id)).or_else(||tab.first_surface_id()));
         let inherit=|surface:Option<u32>|if engine.runtime.settings.general.inherit_cwd {surface.and_then(|surface|engine.local_surface_cwd(surface))}else {None};
         let (destination,cwd)=match request.method.as_str() {
+            "image.open"=> {
+                let surface=params::require_u32(&input,"surface_id",&id)?;
+                let path=input.get("path").and_then(|value|value.as_str()).ok_or_else(||bad("Missing required 'path' parameter".into()))?.to_owned();
+                kind="image".into();input=serde_json::json!({"file":path});
+                (Destination::Convert {surface,respawn:false},None)
+            },
             "pty.attach_surface"=> {kind="terminal".into();(Destination::Adopt {pane:params::require_u32(&input,"pane_id",&id)?,pty:params::require_u32(&input,"id",&id)?},None)},
             "tab.create"=> {
                 let pane=params::require_u32(&input,"pane_id",&id)?;

@@ -97,7 +97,7 @@ fn run_if_due(
 
 /// 공용 mesh 전달 코드가 구독 변경·새 frame·누적 입력을 처리한다.
 /// 구독 상태 갱신과 frame 전달은 독립적이다. docs/dev-guide/egui-mesh-channel.md를 참고한다.
-fn forward_mesh_frames(app: &mut App, engine: &mut CoreState) {
+fn forward_mesh_frames(app: &mut App, engine: &mut EngineMut<'_>) {
     let Some(mgr) = app.plugin_manager.as_ref() else {
         return;
     };

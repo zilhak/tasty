@@ -20,6 +20,25 @@ impl App {
         for (id,presentation) in projections {
             if let Some(session)=self.engines.session_mut(id) {self.journal.update_completion_view(id,&session.core_state,&presentation);}
         }
+        // Materialization belongs to App/Engine; View contributes only the displayed IDs.
+        // Revisit after each completion so Busy/another activation never loses a visible leaf.
+        let selected:Vec<_>=self.engines().window_pairs().filter_map(|(window,main,engine)| {
+            let id=self.engines.of_window(window)?;
+            let workspace=engine.workspace_at(main.state.active_workspace_index(engine.core))?;
+            let surfaces=workspace.pane_layout().all_pane_ids().into_iter().filter_map(|id|workspace.pane_layout().find_pane(id))
+                .filter_map(|pane|pane.tabs.get(main.state.navigation.tab_index(pane))).flat_map(|tab|tab.all_surface_ids()).collect::<Vec<_>>();
+            Some((id,surfaces))
+        }).collect();
+        for (id,surfaces) in selected {
+            let Some(session)=self.engines.get(id) else {continue;};
+            for surface in surfaces {
+                match self.journal.activate_restored_surface(session,surface) {
+                    Ok(true)=>break,
+                    Ok(false)=>{},
+                    Err(error)=>{tracing::error!("selected surface restore failed: {error}");break;},
+                }
+            }
+        }
         let mut sessions: Vec<_> = self.engines.all_sessions_mut().collect();
         if let Err(error) = self.journal.poll_bootstrap(&mut sessions,self.plugin_manager.as_mut()) {
             tracing::error!("journal publication halted: {error}");

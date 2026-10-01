@@ -144,10 +144,7 @@ impl Creation {
             .journal_binding
             .clone()
             .ok_or("restoring engine has no binding")?;
-        worker
-            .submit(Request {
-                ticket,
-                work: Work::Admit(Admission {
+        let admission=Work::Admit(Admission {
                     key: None,
                     original_digest: serde_json::to_vec(&(
                         "restore",
@@ -159,9 +156,7 @@ impl Creation {
                     actor: "system".into(),
                     origin: "selected-restore".into(),
                     causation_id: None,
-                }),
-            })
-            .map_err(|error| format!("restore admission: {error:?}"))?;
+                });
         Ok(Self {
             ticket,
             binding,
@@ -170,7 +165,7 @@ impl Creation {
             stage: Stage::Admit,
             public: false,
             assembly_member:false,published:false,transfers_existing:false,preparation_acked:false,one_shot_input:None,
-            queued: None,
+            queued: Some(admission),
         })
     }
 

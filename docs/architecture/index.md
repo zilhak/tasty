@@ -265,3 +265,11 @@ ports-and-adapters 배치:
 > 새 invariant 는 *위반이 조용히 통과하면 큰 회귀* 인 약속만 등재한다. 일반 코딩 규칙은 [CLAUDE.md](../../CLAUDE.md)/dev-guide 로.
 
 결정의 *근거/대안/재검토 조건*(보류 결정 포함)은 [ADR](../adr/index.md).
+
+### View 명령 출구와 구조 writer 이행
+
+구조 생성·이동·닫기의 제품 원본은 journal 명령 경계이며 옛 `structural_exec`/`CascadeWindow`와 AppServices의 직접 구조 writer는 제거했다. AppServices의 `apply_live`는 비저널 입력·관측·알림만 처리한다. View는 고정 pane/surface 대상으로 생성·변경 요청을 만들고, App이 확정 결과를 받은 뒤 원 View identity와 선택 세대를 대조하여 팝업·포커스만 갱신한다. 이미 요청한 이미지 생성 등 실행 의무는 이 표시 continuation과 분리한다.
+
+탭의 OSC/CWD 제목 관측은 Engine의 LiveDomainState가 보유한다. 순수 Tab은 명시 이름·기본 이름을 가지고, 조회 때 별도로 받은 관측 값을 합성한다. 지연 surface 준비는 표시 중인 IDs를 받은 App materialization에서 실행하며 View가 PTY/factory를 직접 만들지 않는다. `image.open`의 외부 요청은 기존 plugin namespace를 거치고 소유 plugin의 host fallback에서 journal 변환을 실행한다. 외부 namespace 키 계약을 전체 경로 durable 보장으로 확대하지 않는다.
+
+현재 ViewCtx의 실행 자원 읽기 범위와 IPC/attach lazy continuation, 최종 capture/export/Recovery 소비자 이행은 진행 중이다. 이 설명은 소유·호출 변경이며 전체 빌드·실행 검증 완료를 뜻하지 않는다.

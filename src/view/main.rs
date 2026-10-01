@@ -22,7 +22,7 @@ pub(crate) mod ime;
 
 pub(crate) use divider_drag::DividerDrag;
 
-use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::EngineRef;
 use std::sync::Arc;
 
 use winit::event::WindowEvent;
@@ -154,7 +154,7 @@ pub struct MainView {
 /// `MainView::pending_menu` 슬롯의 내용물.
 pub(crate) type PendingNativeMenuSlot = (
     crate::platform::native_menu::MenuHandle,
-    Box<dyn FnOnce(&mut MainView, &mut EngineMut<'_>, Option<u32>)>,
+    Box<dyn FnOnce(&mut MainView, &mut EngineRef<'_>, Option<u32>)>,
 );
 
 /// Ctrl+V 직후 Ctrl+C를 SIGINT로 흘려보내지 않을 보호 시간.
@@ -261,7 +261,7 @@ impl MainView {
 
     /// 현재 preedit이 있으면 원래 surface에 확정 전송하고 IME 상태를 리셋한다.
     /// 단축키 소비/포커스 전환 직전에 호출.
-    pub(crate) fn flush_ime_preedit(&mut self, engine: &mut EngineMut<'_>) {
+    pub(crate) fn flush_ime_preedit(&mut self, engine: &mut EngineRef<'_>) {
         ime::flush_preedit(self, engine);
     }
 
@@ -272,7 +272,7 @@ impl MainView {
     }
 
     /// PTY 출력 처리 후 cursor가 움직였을 수 있을 때 preedit anchor를 재계산한다.
-    pub(crate) fn recalc_ime_preedit_anchor(&mut self, engine: &mut EngineMut<'_>) {
+    pub(crate) fn recalc_ime_preedit_anchor(&mut self, engine: &mut EngineRef<'_>) {
         ime::recalc_anchor(self, engine);
     }
 
@@ -352,7 +352,7 @@ impl MainView {
     /// 창의 engine과 함께 창 이벤트를 처리한다. engine은 App registry가 창 ID로 찾아 넘긴다.
     fn handle_engine_event(
         &mut self,
-        engine: &mut EngineMut<'_>,
+        engine: &mut EngineRef<'_>,
         event: WindowEvent,
         ctx: &mut ViewCtx<'_>,
     ) -> ViewAction {
@@ -532,7 +532,8 @@ impl MainView {
                 self.handle_dropped_file(path);
             }
             WindowEvent::RedrawRequested => {
-                self.handle_redraw(engine, ctx.event_loop, ctx.plugin_manager, ctx.stream_hub);
+                // App owns prepare → execute geometry/input → render ordering.
+                self.mark_dirty();
             }
             _ => {}
         }
@@ -573,3 +574,11 @@ impl View for MainView {
 }
 
 impl sealed::Sealed for MainView {}
+
+impl MainView {
+    pub(super) fn record_typing_intent(&mut self,engine:&crate::runtime::engine_access::EngineRef<'_>,surface:u32) {
+        if let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,surface) {
+            self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::RecordTyping {target,at:std::time::Instant::now()}).from_user_shortcut("typing"));
+        }
+    }
+}
