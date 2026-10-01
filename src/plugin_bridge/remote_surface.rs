@@ -91,26 +91,6 @@ impl RemoteSurface {
         }
     }
 
-    /// 상태 Arc를 공유해 같은 surface의 새 래퍼를 만든다. 플러그인에 생성 요청은 보내지 않는다.
-    /// attach 트리를 다시 만들 때 기존 문서의 상태를 유지하는 데 사용한다.
-    #[cfg(feature = "gui")]
-    pub fn share_handles(&self) -> Self {
-        Self {
-            id: self.id,
-            kind_static: self.kind_static,
-            plugin_id: self.plugin_id.clone(),
-            snapshot_cache: Arc::clone(&self.snapshot_cache),
-            display_name: Arc::clone(&self.display_name),
-            webview_url: Arc::clone(&self.webview_url),
-            webview_page_by_owner: Arc::clone(&self.webview_page_by_owner),
-            webview_owner_took_over: Arc::clone(&self.webview_owner_took_over),
-            nav_state: Arc::clone(&self.nav_state),
-            html_script: Arc::clone(&self.html_script),
-            cwd: Arc::clone(&self.cwd),
-            initial_file: self.initial_file.clone(),
-        }
-    }
-
     /// URL과 작성자를 갱신한다. by_owner는 호출자가 이 surface의 소유 플러그인인지 나타낸다.
     #[cfg(feature = "gui")]
     pub fn set_webview_url(&self, url: Option<String>, by_owner: bool) {

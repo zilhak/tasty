@@ -74,6 +74,7 @@ pub struct OccupancyRegistry {
 }
 
 impl OccupancyRegistry {
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
     }
@@ -150,6 +151,7 @@ impl OccupancyRegistry {
         self.soft.remove(&surface_id).is_some()
     }
 
+    #[cfg(test)]
     pub fn holder(&self, surface_id: SurfaceId) -> Option<AttachClientId> {
         self.surface_locks.get(&surface_id).map(|l| l.holder)
     }
@@ -390,6 +392,7 @@ impl OccupancyRegistry {
     }
 
     /// 비터미널 멤버는 surface lock이 없어 workspace 역매핑으로 holder를 찾는다.
+    #[cfg(test)]
     pub fn workspace_holder_of(&self, surface_id: SurfaceId) -> Option<AttachClientId> {
         self.workspace_of_surface(surface_id)
             .and_then(|ws| self.workspace_holder(ws))
