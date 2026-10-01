@@ -106,10 +106,7 @@ impl JournalApplication {
         if self.is_halted() { return Err("journal is halted".into()); }
         let binding = session.journal_binding.clone().ok_or("preset capture engine is unbound")?;
         let draft = crate::intent::preset_capture::capture_draft(presentation, &session.as_ref(), kind, source)?;
-        let reply_bytes = match &reply {
-            PresetCaptureReply::Ipc {id, name, ..} => id.to_string().len().saturating_add(name.as_ref().map_or(0, String::len)),
-            PresetCaptureReply::Intent {name, ..} => name.as_ref().map_or(0, String::len),
-        };
+        let reply_bytes = preset_reply_weight(&reply);
         let weight = draft.weight().saturating_add(reply_bytes).saturating_add(256);
         if self.preset_captures.pending.len() + self.preset_captures.completed.len() >= 64
             || self.preset_captures.bytes.saturating_add(weight) > tasty_ipc::admission::QUEUED_BYTES_LIMIT {
@@ -154,7 +151,8 @@ impl JournalApplication {
 
     pub(super) fn answer_preset_capture(&mut self, ticket: u64, result: &Result<ResultValue, String>) -> bool {
         let Some(pending) = self.preset_captures.pending.remove(&ticket) else { return false; };
-        let mut completed_weight = 256;
+        let reply_bytes = preset_reply_weight(&pending.reply);
+        let mut completed_weight = reply_bytes.saturating_add(256);
         let captured = match result {
             Ok(ResultValue::CapturedPreset {preset, base_name}) => {
                 let bytes = match preset {
@@ -162,14 +160,24 @@ impl JournalApplication {
                     crate::intent::ClonedPreset::Pane(value) => serde_json::to_vec(value),
                     crate::intent::ClonedPreset::Tab(value) => serde_json::to_vec(value),
                 };
-                completed_weight = bytes.map_or(usize::MAX, |bytes| bytes.len().saturating_add(base_name.len()).saturating_add(256));
+                completed_weight = bytes.map_or(usize::MAX, |bytes| bytes.len().saturating_add(base_name.len()).saturating_add(reply_bytes).saturating_add(256));
                 if self.preset_captures.bytes.saturating_sub(pending.weight).saturating_add(completed_weight) > tasty_ipc::admission::QUEUED_BYTES_LIMIT {
-                    completed_weight = 256;
+                    completed_weight = reply_bytes.saturating_add(256).saturating_add("resolved preset exceeds available queue bytes".len());
                     Err("resolved preset exceeds available queue bytes".into())
                 } else { Ok((preset.clone(), base_name.clone())) }
             },
-            Err(error) => Err(error.clone()),
-            _ => Err("preset capture returned an unrelated result".into()),
+            Err(error) => {
+                completed_weight = completed_weight.saturating_add(error.len());
+                if self.preset_captures.bytes.saturating_sub(pending.weight).saturating_add(completed_weight) > tasty_ipc::admission::QUEUED_BYTES_LIMIT {
+                    completed_weight = reply_bytes.saturating_add(256).saturating_add("preset capture failed; error exceeds queue limit".len());
+                    tracing::warn!("preset capture error exceeded completion queue bytes");
+                    Err("preset capture failed; error exceeds queue limit".into())
+                } else {Err(error.clone())}
+            },
+            _ => {
+                completed_weight = completed_weight.saturating_add("preset capture returned an unrelated result".len());
+                Err("preset capture returned an unrelated result".into())
+            },
         };
         self.preset_captures.bytes = self.preset_captures.bytes.saturating_sub(pending.weight).saturating_add(completed_weight);
         self.preset_captures.completed.push(PresetCaptureCompletion {
@@ -236,4 +244,11 @@ impl PresetCaptureCompletion {
 enum PresetSaveError {
     Capture(String),
     Store(crate::intent::preset::PresetMutationError),
+}
+
+fn preset_reply_weight(reply: &PresetCaptureReply) -> usize {
+    match reply {
+        PresetCaptureReply::Ipc {id, name, ..} => id.to_string().len().saturating_add(name.as_ref().map_or(0, String::len)),
+        PresetCaptureReply::Intent {name, ..} => name.as_ref().map_or(0, String::len),
+    }
 }
