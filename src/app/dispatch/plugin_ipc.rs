@@ -7,7 +7,8 @@ use crate::app::App;
 use crate::ipc;
 
 impl App {
-    /// 모든 분기 전에 공통 게이트를 통과한다. 권한용 ensure_allowed만 따로 호출하지 않는다.
+    /// 원 process가 살아 있는 호출은 모든 실행 분기 전에 공통 게이트를 통과한다.
+    /// 권한용 ensure_allowed만 따로 호출하지 않는다.
     /// 다른 플러그인의 namespace 호출은 비동기로 전달하며 그 응답을 기다린다.
     pub(crate) fn process_plugin_ipc_calls(&mut self) {
         let calls = match self.plugin_manager.as_mut() {
@@ -377,9 +378,35 @@ mod tests {
             "면제 목록 표지가 있다. METHOD_TABLE 등록과 공통 게이트 적용 여부를 확인한다."
         );
         assert!(
-            !src.contains("continue;\n            }\n            let caller"),
-            "게이트 앞에 조기 continue 가 생겼다"
+            has_only_process_refusal_before_the_gate(src),
+            "게이트 전에는 원 process가 끝난 호출만 거절할 수 있다"
         );
+    }
+
+    fn has_only_process_refusal_before_the_gate(src: &str) -> bool {
+        let Some((_, body)) = src.split_once("for call in calls {") else {
+            return false;
+        };
+        let Some((prefix, _)) = body.split_once("let caller =") else {
+            return false;
+        };
+        let tokens: String = prefix.chars().filter(|ch| !ch.is_whitespace()).collect();
+        tokens
+            == "if!self.plugin_manager.as_ref().is_some_and(|manager|manager.plugin_call_is_current(&call)){continue;}"
+    }
+
+    #[test]
+    fn method_exemptions_cannot_hide_behind_the_process_refusal() {
+        let src = source();
+        assert!(has_only_process_refusal_before_the_gate(src));
+        let bypass = src.replacen(
+            "let caller =",
+            "if call.method == \"banner.open\" { continue; } let caller =",
+            1,
+        );
+        assert!(!has_only_process_refusal_before_the_gate(&bypass));
+        let unfenced = src.replacen("manager.plugin_call_is_current(&call)", "true", 1);
+        assert!(!has_only_process_refusal_before_the_gate(&unfenced));
     }
 
     /// 헤드리스 소스에서도 게이트와 첫 인터셉트의 원문 위치를 비교한다.
