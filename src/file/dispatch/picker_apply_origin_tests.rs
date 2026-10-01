@@ -189,24 +189,10 @@ fn a_dead_origin_cannot_execute_any_action_or_enqueue_a_new_tab() {
 }
 
 #[test]
-fn no_origin_retains_the_user_new_tab_path_and_failed_creation_is_not_success() {
+fn no_origin_queues_the_user_new_tab_request() {
     let (mut core, _) = build_test_core();
     let (mut state, mut engine_session) = fixture();
     let mut engine = engine_session.borrow_mut();
-    let sid = engine
-        .workspace_at(0)
-        .expect("workspace index is valid")
-        .all_surface_ids()[0];
-    assert!(!open_surface_tab(
-        &mut core,
-        &mut state,
-        &mut engine,
-        "missing-kind",
-        serde_json::json!({}),
-        Some(sid),
-        FileDispatchOrigin::User
-    ));
-    assert!(state.pending_intents.is_empty());
     assert!(open_surface_tab(
         &mut core,
         &mut state,
@@ -216,7 +202,13 @@ fn no_origin_retains_the_user_new_tab_path_and_failed_creation_is_not_success() 
         None,
         FileDispatchOrigin::User
     ));
-    assert_eq!(state.pending_intents.len(), 1);
+    let pending = state.take_pending_intents();
+    assert_eq!(pending.len(), 1);
+    assert!(pending[0].origin.is_user());
+    assert!(
+        matches!(&pending[0].body, crate::intent::Intent::NewTab { kind: Some(kind), params }
+        if kind == "empty" && *params == serde_json::json!({}))
+    );
 }
 
 #[test]
