@@ -123,29 +123,7 @@ fn parse_slot_json(path: &Path, json: &str) -> SlotLoad {
     load
 }
 
-/// 홈을 찾지 못하면 Unreadable로 반환해 경로 없는 상태를 새 슬롯으로 취급하지 않는다.
-#[cfg(test)]
-pub(crate) fn load_slot(slot: LayoutSlotId) -> SlotLoad {
-    match layouts_dir() {
-        Some(dir) => load_slot_in(&dir, slot),
-        None => SlotLoad::Unreadable,
-    }
-}
-
-/// 첫 저장보다 이른 부팅 안내에서 백업 공간 부족을 알릴 수 있도록 현재 예산만 조회한다.
-#[cfg(test)]
-pub(crate) fn slot_preservation_is_blocked_in(dir: &Path, slot: LayoutSlotId) -> bool {
-    tasty_utils::path::backup_budget_is_exhausted(&slot_path_in(dir, slot))
-}
-
-/// layouts 경로가 없으면 저장 자체를 못 하므로 백업 공간 부족으로 분류하지 않는다.
-#[cfg(test)]
-pub(crate) fn slot_preservation_is_blocked(slot: LayoutSlotId) -> bool {
-    layouts_dir().is_some_and(|dir| slot_preservation_is_blocked_in(&dir, slot))
-}
-
-/// 레이아웃을 동기 저장한다. 오류는 로그로 남기며 호출자에게 성공 여부를 반환하지 않는다.
-/// capture가 새 scrollback 저장 ID를 터미널에도 기록하므로 engine을 변경할 수 있다.
+/// Legacy slot classification exercised by compatibility tests.
 #[cfg(test)]
 enum SlotReplace {
     /// 여전히 해석되지 않아 먼저 백업해야 한다.

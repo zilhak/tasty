@@ -164,13 +164,6 @@ pub(crate) enum DomainIntent {
         tab_id: u32,
         to_index: usize,
     },
-    /// 사용자가 붙인 탭 이름. None이면 지우고 선택된 surface의 제목으로 돌아간다.
-    #[cfg(test)]
-    RenameTab {
-        tab_id: u32,
-        name: Option<String>,
-    },
-
     /// pane을 분할한다. 사용자 요청의 새 pane 선택은 App 후속 처리에서 맡는다.
     SplitPane {
         target_pane_id: u32,

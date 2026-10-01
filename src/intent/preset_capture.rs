@@ -1,8 +1,6 @@
 //! Freeze preset structure and live content; resolve lazy immutable data on the journal worker.
 //! Neither phase activates a terminal/plugin or copies runtime IDs into the preset wire format.
 use crate::intent::ClonedPreset;
-#[cfg(test)]
-use crate::model::Workspace;
 use crate::model::{Deferred, EmptySurface, Pane, PaneNode, SplitDirection, SurfaceLayout, Tab};
 use crate::runtime::engine_access::EngineRef;
 use crate::runtime::journal_payload::SavedSurfaceSource;
@@ -324,25 +322,4 @@ fn visit_preset(preset: &mut ClonedPreset, visit: &mut impl FnMut(&mut PresetSur
         ClonedPreset::Pane(value) => visit_pane(&mut value.pane, visit),
         ClonedPreset::Tab(value) => visit_layout(&mut value.tab.layout, visit),
     }
-}
-
-// Legacy synchronous entry points reject unresolved payloads; the product continuation uses drafts.
-#[cfg(test)]
-pub fn capture_workspace_preset(
-    presentation: &dyn crate::model::StructurePresentation,
-    engine: &EngineRef<'_>,
-    workspace: &Workspace,
-    name: Option<String>,
-    _registry: &SurfaceKindRegistry,
-) -> Option<WorkspacePreset> {
-    let (ClonedPreset::Workspace(mut value), _) =
-        capture_draft(presentation, engine, PresetKind::Workspace, workspace.id)
-            .ok()?
-            .finish_live()
-            .ok()?
-    else {
-        return None;
-    };
-    value.name = name.unwrap_or_default();
-    Some(value)
 }

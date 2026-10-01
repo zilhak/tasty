@@ -150,26 +150,12 @@ pub(crate) fn gc_orphans_in(dir: &Path, known: &HashSet<String>) {
     }
 }
 
-#[cfg(test)]
-pub fn write(persist_id: &str, lines: &[ScrollbackLine]) -> io::Result<()> {
-    let dir = scrollback_dir().ok_or_else(|| io::Error::other("cannot determine tasty home"))?;
-    write_in(&dir, persist_id, lines)
-}
-
 /// 닫은 항목의 인코딩된 스크롤백을 줄로 푼다. 형식이 맞지 않으면 None이다.
 #[cfg(test)]
 pub fn decode_blob(
     blob: &crate::model::closed_item::ScrollbackBlob,
 ) -> Option<Vec<ScrollbackLine>> {
     deserialize_lines(&blob.bytes)
-}
-
-#[cfg(test)]
-pub fn read(persist_id: &str) -> ScrollbackRead {
-    match scrollback_dir() {
-        Some(dir) => read_in(&dir, persist_id),
-        None => ScrollbackRead::Unreadable,
-    }
 }
 
 pub fn delete(persist_id: &str) {

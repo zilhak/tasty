@@ -283,10 +283,6 @@ mod slots {
         }
     }
 
-    pub(super) fn write_valid_slot(dir: &Path, slot: u32, ws_name: &str) {
-        write_slot(dir, slot, &layout_with(ws_name, None));
-    }
-
     fn write_slot(dir: &Path, slot: u32, layout: &SavedLayout) {
         std::fs::create_dir_all(dir).unwrap();
         std::fs::write(
