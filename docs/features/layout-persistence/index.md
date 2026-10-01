@@ -144,7 +144,10 @@ Preset 캡처 초안은 구조·선택·실행 중 kind snapshot을 동결하고
 scrollback은 preset에 복사하지 않는다. 등록되지 않은 지연 plugin의 opaque snapshot도
 빈 surface로 치환하지 않는다. 이 읽기는 PTY나 plugin을 활성화하지 않는다.
 동기 캡처 경로는 아직 해석하지 않은 참조를 저장하지 않고 오류로 반환한다.
-비동기 제품 continuation 연결은 이행 중이다.
+비동기 제품 continuation 연결은 이행 중이다. 호환 layout export leaf는 canonical 모델과
+별도 View checkpoint를 합성하고, 기존 JSON version/key와 pane·tab 선택 index를 보존한다.
+terminal 캡처의 scrollback은 새 legacy ID의 소유 bytes로 반환하며 기존 파일을 덮어쓰지 않는다.
+이 값 변환은 파일 게시나 새 export IPC/CLI를 수행하지 않는다.
 
 ### Journal snapshot 보존
 

@@ -1,3 +1,5 @@
+pub(crate) mod legacy_export;
+
 use tasty_core::canonical::{ResolveData,CanonData,fnv_hex};
 use tasty_core::DataRef;
 use tasty_event_store::{EventStore,PayloadRef};
