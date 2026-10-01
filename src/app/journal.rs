@@ -206,6 +206,11 @@ impl JournalApplication {
         const MAX_COMPLETIONS: usize = 16;
         for _ in 0..MAX_COMPLETIONS {
             if self.started {
+                if self.pauses_observation() {
+                    if let Some(plugins) = plugins.as_deref_mut() {
+                        plugins.poll_publication_retirements()?;
+                    }
+                }
                 self.submit_openings()?;
                 self.submit_commands()?;
                 #[cfg(feature="gui")]

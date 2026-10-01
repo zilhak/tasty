@@ -89,6 +89,8 @@ struct RestartCause {
 
 #[derive(Default)]
 pub(super) struct RetirementControl {
+    publications: std::collections::VecDeque<(HostCmd, usize)>,
+    publication_bytes: usize,
     cancelled: Vec<(u32,crate::host_cmd::SurfaceBinding)>,
     responses: std::collections::VecDeque<(String,std::sync::Weak<()>,protocol::PluginResponse)>,
     bytes: usize,
@@ -128,23 +130,67 @@ impl PluginManager {
         hello_pairs
     }
 
-    /// A halted journal may dispose already-owned resources, but must not run queued creation,
-    /// hooks, namespace continuations, restart timers or historical plugin calls.
+    /// A halted journal cancels unpublished work; it never starts new plugin execution.
     pub fn poll_retirement_control(&mut self) {
+        if let Err(reason) = self.poll_resource_control(true) {
+            tracing::error!(%reason, "halted retirement control could not advance");
+        }
+    }
+
+    /// Advance only required retirements while the App hides a structural publication.
+    /// Unrelated publication and ordinary callbacks stay queued until observation resumes.
+    pub fn poll_publication_retirements(&mut self) -> Result<(), String> {
+        self.poll_resource_control(false)
+    }
+
+    fn poll_resource_control(&mut self, halted: bool) -> Result<(), String> {
+        if halted {
+            for (command, _) in self.retirement_control.publications.drain(..) {
+                if let Some((surface, binding)) = publication_binding(&command) {
+                    self.retirement_control.cancelled.push((surface, binding));
+                }
+            }
+            self.retirement_control.publication_bytes = 0;
+        }
         for _ in 0..64 {
-            let Ok(command)=self.host_cmd_rx.try_recv() else {break;};
+            if !halted && (self.retirement_control.publications.len() >= 256
+                || self.retirement_control.publication_bytes >= crate::process::channel_bytes::QUEUE_BYTES_LIMIT) {
+                return Err("plugin publication backlog exceeded its retirement-control budget".into());
+            }
+            let Ok(command) = self.host_cmd_rx.try_recv() else { break; };
             match command {
-                HostCmd::RemoteSurfaceCreated {surface_id,handles,..}|HostCmd::RemoteSurfaceRestored {surface_id,handles,..}=> {
-                    self.retirement_control.cancelled.push((surface_id,handles.binding()));
-                    // The factory publication never reached a plugin. Record that exact binding,
-                    // rather than treating absence of an arbitrary same-ID registry entry as proof.
-                },
-                HostCmd::RemoteSurfaceRetired {surface_id,binding,completion}=> {
-                    if let Some(index)=self.retirement_control.cancelled.iter().position(|(id,old)|*id==surface_id && old.same_instance(&binding)) {
+                HostCmd::RemoteSurfaceRetired { surface_id, binding, completion } => {
+                    let cancelled = if let Some(index) = self.retirement_control.cancelled.iter()
+                        .position(|(id, old)| *id == surface_id && old.same_instance(&binding)) {
                         self.retirement_control.cancelled.swap_remove(index);
-                        if let Some(completion)=completion {completion.finish(Ok(()));}
-                    } else if let Some(completion)=completion {self.destroy_observed_remote_surface(surface_id,binding,completion);}
-                    else {self.destroy_bound_remote_surface(surface_id,&binding);}
+                        true
+                    } else if let Some(index) = self.retirement_control.publications.iter()
+                        .position(|(command, _)| publication_binding(command)
+                            .is_some_and(|(id, old)| id == surface_id && old.same_instance(&binding))) {
+                        // This exact owner is being retired before its queued create was sent.
+                        // Other publications keep their FIFO order and are never cancelled here.
+                        let (_, bytes) = self.retirement_control.publications.remove(index).expect("located publication");
+                        self.retirement_control.publication_bytes -= bytes;
+                        true
+                    } else { false };
+                    if cancelled {
+                        if let Some(completion) = completion { completion.finish(Ok(())); }
+                    } else if let Some(completion) = completion {
+                        self.destroy_observed_remote_surface(surface_id, binding, completion);
+                    } else {
+                        self.destroy_bound_remote_surface(surface_id, &binding);
+                    }
+                },
+                publication => {
+                    if halted {
+                        if let Some((surface, binding)) = publication_binding(&publication) {
+                            self.retirement_control.cancelled.push((surface, binding));
+                        }
+                    } else {
+                        let bytes = publication_weight(&publication);
+                        self.retirement_control.publication_bytes = self.retirement_control.publication_bytes.saturating_add(bytes);
+                        self.retirement_control.publications.push_back((publication, bytes));
+                    }
                 },
             }
         }
@@ -182,6 +228,10 @@ impl PluginManager {
             _=>None,
         }).collect();
         for id in obsolete {self.pending_requests.remove(&id);}
+        if !halted && self.retirement_control.bytes >= crate::process::channel_bytes::QUEUE_BYTES_LIMIT {
+            return Err("plugin response backlog exceeded its retirement-control budget".into());
+        }
+        Ok(())
     }
     fn restore_retirement_control_responses(&mut self) {
         let responses=std::mem::take(&mut self.retirement_control.responses);
@@ -740,16 +790,24 @@ impl PluginManager {
             completion.finish(Err("remote registration changed before destruction acknowledgement".into()));
             return;
         }
+        let process_binding = match &entry.publication {
+            super::RemotePublication::NeverSent => None,
+            super::RemotePublication::Sent(binding) => Some(binding.clone()),
+        };
         let plugin_id = entry.plugin_id.clone();
         if let Some(frame) = self.egui_mesh_frames.remove(&surface_id) {
             self.release_plugin_buffer(&frame.plugin_id,frame.buffer_id);
         }
         self.surfaces.remove(&surface_id);
-        let Some(process) = self.processes.get(&plugin_id) else {
+        let Some(process_binding) = process_binding else {
+            completion.finish(Ok(()));
+            return;
+        };
+        let Some(process) = self.processes.get(&plugin_id)
+            .filter(|process| process.reply_binding().ptr_eq(&process_binding)) else {
             completion.finish(Err("original plugin process is unavailable for destruction".into()));
             return;
         };
-        let process_binding = process.reply_binding();
         let id = self.next_request_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let request = protocol::PluginRequest::new(protocol::METHOD_SURFACE_DESTROY,json!({"surface_id":surface_id}),id);
         match process.try_send_request(request) {
@@ -786,6 +844,16 @@ impl PluginManager {
             self.release_plugin_buffer(&pid, bid);
         }
         if let Some(entry) = self.surfaces.remove(&surface_id) {
+            match &entry.publication {
+                super::RemotePublication::NeverSent => return,
+                super::RemotePublication::Sent(binding) if self.processes.get(&entry.plugin_id)
+                    .is_some_and(|process| process.reply_binding().ptr_eq(binding)) => {},
+                super::RemotePublication::Sent(_) => {
+                    tracing::warn!(surface_id, plugin = %entry.plugin_id,
+                        "original remote process is unavailable; destruction remains unconfirmed");
+                    return;
+                },
+            }
             self.send_surface_request(
                 &entry.plugin_id,
                 protocol::METHOD_SURFACE_DESTROY,
@@ -828,9 +896,14 @@ impl PluginManager {
 
     pub(super) fn drain_host_cmds(&mut self) {
         loop {
-            let cmd = match self.host_cmd_rx.try_recv() {
-                Ok(c) => c,
-                Err(_) => break,
+            let cmd = if let Some((command, bytes)) = self.retirement_control.publications.pop_front() {
+                self.retirement_control.publication_bytes -= bytes;
+                command
+            } else {
+                match self.host_cmd_rx.try_recv() {
+                    Ok(command) => command,
+                    Err(_) => break,
+                }
             };
             match cmd {
                 HostCmd::RemoteSurfaceRetired {
@@ -851,15 +924,8 @@ impl PluginManager {
                     handles,
                 } => {
                     let binding = handles.binding();
-                    self.surfaces.insert(
-                        surface_id,
-                        RemoteSurfaceEntry {
-                            plugin_id: plugin_id.clone(),
-                            handles,
-                        },
-                    );
                     let cwd_str = cwd.as_ref().and_then(|p| p.to_str()).map(str::to_string);
-                    self.send_surface_request(
+                    let publication = self.send_owned_surface_request(
                         &plugin_id,
                         protocol::METHOD_SURFACE_CREATE,
                         json!({
@@ -873,6 +939,9 @@ impl PluginManager {
                             binding,
                         },
                     );
+                    self.surfaces.insert(surface_id, RemoteSurfaceEntry {
+                        plugin_id, handles, publication,
+                    });
                 }
                 HostCmd::RemoteSurfaceRestored {
                     surface_id,
@@ -882,14 +951,7 @@ impl PluginManager {
                     handles,
                 } => {
                     let binding = handles.binding();
-                    self.surfaces.insert(
-                        surface_id,
-                        RemoteSurfaceEntry {
-                            plugin_id: plugin_id.clone(),
-                            handles,
-                        },
-                    );
-                    self.send_surface_request(
+                    let publication = self.send_owned_surface_request(
                         &plugin_id,
                         protocol::METHOD_SURFACE_RESTORE,
                         json!({
@@ -902,10 +964,33 @@ impl PluginManager {
                             binding,
                         },
                     );
+                    self.surfaces.insert(surface_id, RemoteSurfaceEntry {
+                        plugin_id, handles, publication,
+                    });
                 }
             }
         }
     }
+}
+
+fn publication_binding(command: &HostCmd) -> Option<(u32, crate::host_cmd::SurfaceBinding)> {
+    match command {
+        HostCmd::RemoteSurfaceCreated { surface_id, handles, .. }
+        | HostCmd::RemoteSurfaceRestored { surface_id, handles, .. } => Some((*surface_id, handles.binding())),
+        HostCmd::RemoteSurfaceRetired { .. } => None,
+    }
+}
+
+fn publication_weight(command: &HostCmd) -> usize {
+    let (plugin, kind, payload, cwd) = match command {
+        HostCmd::RemoteSurfaceCreated { plugin_id, kind, params, cwd, .. } =>
+            (plugin_id, kind, params, cwd.as_ref().map_or(0, |path| path.as_os_str().len())),
+        HostCmd::RemoteSurfaceRestored { plugin_id, kind, data, .. } => (plugin_id, kind, data, 0),
+        HostCmd::RemoteSurfaceRetired { .. } => return std::mem::size_of::<HostCmd>(),
+    };
+    std::mem::size_of::<HostCmd>().saturating_add(plugin.len()).saturating_add(kind.len())
+        .saturating_add(cwd).saturating_add(serde_json::to_vec(payload)
+            .map_or(crate::process::channel_bytes::QUEUE_BYTES_LIMIT, |bytes| bytes.len()))
 }
 
 #[cfg(test)]

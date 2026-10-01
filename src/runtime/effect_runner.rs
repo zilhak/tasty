@@ -285,6 +285,9 @@ impl PreparedMaterialization {
                 .expect("prepared surface has a fixed ID"),
             previous_resource: self.previous_resource,
             connection: self.connection.take(),
+            unpublished_remote: self.leaf.surface.as_any()
+                .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
+                .map(|remote| remote.handles().binding()),
             publication: self.publication.take(),
             registration: self.registration.take(),
             scrollback_persist_id: self.scrollback_persist_id.take(),
@@ -322,7 +325,16 @@ impl PreparedMaterialization {
 impl PreparedMaterialization {
     pub(crate) fn retire_for_release(mut self,release:&mut crate::runtime::resource_retirement::EngineRelease) {
         if let Some((terminal,pty))=self.connection.take() {drop(terminal);release.retain_pty(pty.retire());}
+        if self.publication.take().is_some() {
+            if let Some(remote) = self.leaf.surface.as_any()
+                .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>() {
+                // Consuming the still-private closure proves Created/Restored was never enqueued.
+                let (receipt, completion) = crate::plugin_bridge::host_cmd::RemoteRetirementReceipt::pending(
+                    remote.id, remote.handles().binding());
+                completion.finish(Ok(()));
+                release.retain_remote(receipt);
+            }
+        }
         release.retain_surface(self.leaf.surface);
-        // Pending publication actions are dropped without executing them during a halted release.
     }
 }

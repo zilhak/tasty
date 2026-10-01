@@ -15,6 +15,10 @@ Plugin 회수는 원 surface binding과 process binding에 연결한 destroy RPC
 host FIFO에서 생성 요청이 아직 전달되지 않았다는 정확한 취소 근거가 있어야 회수를
 완료한다. 오류·연결 종료·process 교체는 불명이며, 살아 있는 process의 timeout만으로
 pending 응답을 없애지 않는다. 이후 실제 응답이 오면 같은 retained owner가 확인한다.
+일반 remote surface도 create/restore가 실제 큐에 수락된 process identity를 등록과 함께
+보관한다. destroy와 별도 완료 응답을 기다리지 않는 명시 회수 통지는 그 process에만 보내며 같은 plugin ID로 재시작한
+process에 대신 보내지 않는다. 생성 요청의 큐 미수락은 알려진 미전송이지만, 등록 부재나
+원 process 소멸은 미전송 증거가 아니다.
 
 Mesh도 각 runtime 인스턴스의 불투명 binding으로 bootstrap을 추적한다. 큐에 제출하지
 못한 create는 미실행으로 구별하며, 제출된 create는 원 process와 request identity를
@@ -23,6 +27,13 @@ Mesh도 각 runtime 인스턴스의 불투명 binding으로 bootstrap을 추적�
 destroy를 보내고 모든 세대의 실제 응답을 기다린다. 같은 surface
 ID의 새 인스턴스나 새 process를 찾아 대신 종료하지 않는다. View는 binding을 전달할
 수 있지만 내부 상태는 plugin manager만 변경한다.
+
+정상 구조 공개 장벽에서도 plugin control pump는 필수 회수 요청과 해당 응답을 처리한다.
+새 create/restore는 원 FIFO 순서로 보관하고 일반 callback은 실행하지 않는다. 아직
+보내지 않은 create/restore와 정확히 같은 binding의 retire가 만나면 그 한 쌍만 취소한다.
+장벽이 풀리면 보관한 publication부터 정상 FIFO 처리를 재개한다. 보관 예산을 넘으면
+초과 항목의 소유를 유지한 채 journal의 기존 halt/disposal 경계로 전이하며 성공이나
+계속 진행 가능한 대기로 표시하지 않는다.
 
 Journal이 멈춘 경우의 plugin control pump는 회수 요청과 해당 응답만 실행한다.
 새 create/restore·hook·namespace continuation·자동 재시작은 실행하지 않는다.
@@ -35,6 +46,10 @@ binding을 확인한다. backlog가 차면 읽기를 멈추고 완료를 추측�
 `EngineRelease`는 남은 kind 인스턴스, standalone을 포함한 PTY, 기존 installation 및
 private candidate의 회수 receipt를 보관한다. 실제 reap·plugin 응답이 끝나기 전에는
 registry owner를 버리지 않는다. stream 보존 close는 구조·metadata를 지우지 않는다.
+private candidate가 아직 publication closure를 보유하면 그 closure를 실행하지 않고
+폐기했다는 원 binding의 완료 receipt를 전달한다. closure가 Installation으로 이동한
+경우도 해당 owner가 증거를 보관한다. 이미 소비한 closure나 등록 부재로 이 증거를
+만들지는 않는다.
 
 이 경계는 TaskScope 취소가 아니다. runner stop·task cancel·OS kill은 기존의 별도
 명령 의미를 따른다. surface에 묶인 observer와 hook을 해제한 뒤 PTY를 retire하며,

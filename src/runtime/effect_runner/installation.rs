@@ -9,6 +9,7 @@ pub(crate) struct Installation {
     pub(super) previous_resource: Option<ResourceGeneration>,
     pub(super) connection: Option<(Terminal, Pty)>,
     pub(super) publication: Option<PublicationAction>,
+    pub(super) unpublished_remote: Option<crate::plugin_bridge::host_cmd::SurfaceBinding>,
     pub(super) registration: Option<KindRegistration>,
     pub(super) scrollback_persist_id: Option<String>,
     pub(super) metadata:Vec<(String,String)>,
@@ -213,6 +214,13 @@ impl Installation {
 impl Installation {
     pub(crate) fn retire_for_release(mut self,release:&mut crate::runtime::resource_retirement::EngineRelease) {
         if let Some((terminal,pty))=self.connection.take() {drop(terminal);release.retain_pty(pty.retire());}
+        if self.publication.take().is_some() {
+            if let Some(binding) = self.unpublished_remote.take() {
+                let (receipt, completion) = crate::plugin_bridge::host_cmd::RemoteRetirementReceipt::pending(self.surface_id, binding);
+                completion.finish(Ok(()));
+                release.retain_remote(receipt);
+            }
+        }
         if let Some(receipt)=self.retirement.take() {release.retain_pty(receipt);}
         for receipt in self.remote_retirements {release.retain_remote(receipt);}
         // A consumed publication or one-shot input is never reconstructed or resent here.

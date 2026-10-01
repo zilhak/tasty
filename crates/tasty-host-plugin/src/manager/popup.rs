@@ -17,9 +17,19 @@ impl PluginManager {
         params: serde_json::Value,
         kind: PendingRequestKind,
     ) {
-        let proc = match self.processes.get(plugin_id) {
-            Some(p) => p,
-            None => return,
+        self.send_owned_surface_request(plugin_id, method, params, kind);
+    }
+
+    /// The returned identity exists only after this process accepted the original request.
+    pub(super) fn send_owned_surface_request(
+        &mut self,
+        plugin_id: &str,
+        method: &str,
+        params: serde_json::Value,
+        kind: PendingRequestKind,
+    ) -> super::RemotePublication {
+        let Some(proc) = self.processes.get(plugin_id) else {
+            return super::RemotePublication::NeverSent;
         };
         let id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
         let req = PluginRequest::new(method, params, id);
@@ -28,9 +38,11 @@ impl PluginManager {
             Ok(()) => {
                 self.pending_requests
                     .insert(id, PendingRequest::now(plugin_id, kind));
+                super::RemotePublication::Sent(proc.reply_binding())
             }
             Err(e) => {
                 tracing::warn!("plugin '{plugin_id}' {method} send failed: {e}");
+                super::RemotePublication::NeverSent
             }
         }
     }

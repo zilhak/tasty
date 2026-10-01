@@ -298,6 +298,12 @@ pub(super) struct RemoteSurfaceEntry {
     /// 소유 plugin id — surface 닫힘 시 `surface.destroy` 를 이 plugin 에 보낸다.
     pub(super) plugin_id: String,
     pub(super) handles: SurfaceHandles,
+    pub(super) publication: RemotePublication,
+}
+
+pub(super) enum RemotePublication {
+    NeverSent,
+    Sent(std::sync::Weak<()>),
 }
 
 /// 최근 수신한 mesh 프레임의 메타데이터. 실제 내용은 공유 버퍼에 있으며 렌더러가 읽는다.
