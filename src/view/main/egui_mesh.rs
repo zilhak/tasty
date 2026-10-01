@@ -325,7 +325,9 @@ impl MainView {
             }
             let geom_changed = st.common.geom_changed(geom);
             let has_input = !st.events.is_empty();
-            let need_bootstrap = st.common.need_bootstrap(has_frame);
+            let need_bootstrap = st.common.need_bootstrap(has_frame)
+                || engine.find_surface_by_id(sid).and_then(|surface|surface.mesh())
+                    .is_some_and(|mesh|mgr.needs_egui_mesh_bootstrap(&plugin_id,&mesh.retirement_binding));
             let theme_changed = st.common.theme_changed(&current_theme);
             let need_full = st.common.pending_full;
             let focus_changed = st.last_focused != Some(is_focused);

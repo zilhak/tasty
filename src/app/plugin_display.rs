@@ -17,6 +17,9 @@ impl<'a> PluginDisplay<'a> {
     pub(crate) fn banner_instances(self) -> impl Iterator<Item = (u64, &'a BannerInstance)> {
         self.manager.banner_instances()
     }
+    pub(crate) fn needs_egui_mesh_bootstrap(self, plugin:&str, binding:&crate::plugin_bridge::host_cmd::MeshBinding)->bool {
+        self.manager.needs_egui_mesh_bootstrap(plugin,binding)
+    }
     pub(crate) fn egui_mesh_frame(self, surface: u32) -> Option<&'a EguiMeshFrame> {
         self.manager.egui_mesh_frame(surface)
     }
