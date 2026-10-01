@@ -52,6 +52,7 @@ pub use dialogs::{
 pub(crate) use dialogs::{FilePickerData, FilePickerRequester, FilePickerResult, FpLoadState};
 #[cfg(feature = "gui")]
 pub use events::FocusedSurfaceType;
+#[cfg(any(feature = "gui", debug_assertions, test))]
 pub use workspace::WorkspaceCloseOrigin;
 
 use crate::core::CoreState;
