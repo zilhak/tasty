@@ -1405,13 +1405,19 @@ fn file_dispatch_is_refused_rather_than_accepted_in_a_headless_daemon() {
 fn mirror_forward_requests_are_refused_by_name_in_a_headless_daemon() {
     let _lane = lane();
     let tasty = common::shared();
+    // Named-target validation precedes the unsupported headless dispatch fallback.
+    let workspace = tasty.create_workspace("headless-mirror-forward-refusal");
+    let surface_id = workspace.surface_id;
     let mut messages = Vec::new();
     for (method, params) in [
         (
             "git_viewer.query",
-            json!({"kind": "status", "local_surface_id": 1}),
+            json!({"kind": "status", "local_surface_id": surface_id}),
         ),
-        ("markdown_mirror.content_request", json!({"surface_id": 1})),
+        (
+            "markdown_mirror.content_request",
+            json!({"surface_id": surface_id}),
+        ),
     ] {
         let resp = tasty.call_raw(method, params);
         let error = resp.get("error");
