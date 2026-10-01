@@ -468,7 +468,8 @@ impl IdentifySpawner for RecordingSpawner {
 
 #[test]
 fn a_mirror_origin_identifies_by_name_only() {
-    let (mut core, mut local_session) = build_test_core();
+    let (mut core, _) = build_test_core();
+    let (_, mut local_session) = crate::state::tests::test_state();
     let (_, mut mirror_session) = crate::state::tests::test_mirror_state();
     let spawner = std::sync::Arc::new(RecordingSpawner::default());
     let mut ids = Vec::new();

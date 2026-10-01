@@ -314,14 +314,32 @@ mod tests {
         let data = state.dialogs.file_picker.as_ref().expect("popup open");
         assert_eq!(data.mirror_ws_id, Some(ws_id));
         assert_eq!(data.current_dir, "/srv/remote/proj");
-        let forward = engine
-            .remote
-            .pending_list_dir_forward
-            .last()
-            .expect("원격 조회가 큐잉된다");
+        let requests: Vec<_> = state
+            .pending_intents
+            .iter()
+            .filter_map(|intent| match &intent.body {
+                crate::intent::Intent::Engine(
+                    crate::app::engine_action::EngineAction::ListDirectory {
+                        request,
+                        projection,
+                        target,
+                    },
+                ) => Some((request, projection, target)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(requests.len(), 1);
+        let (request, projection, target) = requests[0];
+        assert_eq!(request.local_ws_id, ws_id);
         assert_eq!(
-            forward.dir, "/srv/remote/proj",
+            request.dir, "/srv/remote/proj",
             "원격 경로는 stat 없이 그대로 간다"
+        );
+        assert!(engine.matches_mirror_projection(ws_id, projection));
+        assert!(target.is_none());
+        assert!(
+            engine.remote.pending_list_dir_forward.is_empty(),
+            "View only queues an App request"
         );
     }
 
