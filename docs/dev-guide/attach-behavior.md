@@ -52,6 +52,10 @@ UI 대기 기한과 worker 종료는 별개다. 기한 만료는 취소 요청�
 
 SSH의 `request_cancel`은 취소 flag만 설정한다. 실제 자식 kill/reap는 probe worker가 수행하고, 기존 동기 `cancel` API와 구별한다. worker가 끝나기 전에는 종료 완료로 표시하지 않는다.
 
+이미지 업로드 worker는 Remote의 attempt 예산과 실제 join 관측에 포함된다. bulk socket은 handshake 전에 원 attempt에 등록하며 종료 취소가 그 socket만 닫는다. 업로드 결과를 붙여넣을 때는 원 connection epoch·remote/local mapping·terminal physical generation과 원 View identity를 함께 확인한다.
+
+OS 화면 캡처는 App의 ScreenshotWorkers가 최대4개 worker를 소유한다. 현재 OS API에 취소 handle이 없으므로 종료 때 신규 요청을 막고 실제 완료한 worker만 join한다. 남은 수는 미완으로 보고하며 원 engine/View가 사라진 결과를 새 창이나 클립보드에 적용하지 않는다.
+
 ## 초기 스냅샷 + delta
 
 attach 직후 서버가 현재 visible 화면을 `snapshot_and_tap` 으로 tap 등록과 같은 lock 안에서 **1회** 직렬화 push(셀 속성 + 커서 + alt-screen/DECCKM/bracketed 모드 복원). 이후 변화는 output tap delta(Data 프레임). client 는 받은 바이트를 PTY 없는 mirror 터미널(`Terminal::new_detached` + `feed_bytes`)에 먹여 같은 termwiz 파서로 grid 재구성.

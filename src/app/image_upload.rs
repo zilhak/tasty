@@ -18,6 +18,8 @@ fn next_ui_transfer_id() -> u64 {
 }
 
 pub(crate) struct ImageUploadOutcome {
+    pub(crate) attempt:tasty_remote::outbound::AttemptToken,
+    pub(crate) view:Option<(winit::window::WindowId,std::sync::Weak<()>)>,
     pub(crate) remote_target:Option<crate::app::attach_client::RemoteTarget>,
     /// 대상 surface가 사라졌을 때 실패 popup을 표시할 workspace.
     pub(crate) mirror_ws_id: u32,
@@ -65,6 +67,11 @@ impl App {
                 file_name,
                 png_bytes,
             } = req;
+            let attempt=match self.remote.begin_attempt(None,None) {
+                Ok(attempt)=>attempt,
+                Err(error)=>{self.push_transfer_error(surface_id,mirror_ws_id,file_name,error.into(),None);continue;},
+            };
+            let view=self.find_main_with_surface(surface_id).and_then(|window|self.view.views.get(&window).and_then(|view|view.as_main()).map(|main|(window,main.base.state.identity())));
             let transfer_id = next_ui_transfer_id();
             let total = png_bytes.len() as u64;
             self.begin_transfer_progress_row(surface_id, transfer_id, &file_name, total);
@@ -73,7 +80,9 @@ impl App {
             let tx = self.image_upload_tx.clone();
             let progress_tx = self.transfer_progress_tx.clone();
             let proxy = self.view.proxy.clone();
-            std::thread::spawn(move || {
+            let rejected_name=file_name.clone();
+            let worker_attempt=attempt.clone();
+            let spawned=self.remote.spawn_attempt(attempt,move || {
                 let start = std::time::Instant::now();
                 let result = match target {
                     Some((port, remote_ws,epoch)) => {
@@ -97,6 +106,7 @@ impl App {
                                 let _ = proxy.send_event(crate::AppEvent::TransferProgressTick);
                             },
                             &epoch,
+                            &worker_attempt,
                         )
                     }
                     None => Err(anyhow::anyhow!(
@@ -105,6 +115,7 @@ impl App {
                 };
                 // 수신자(메인 루프)가 종료돼 채널이 닫힌 경우에만 실패 — 무시.
                 let _ = tx.send(ImageUploadOutcome {
+                    attempt:worker_attempt,view,
                     remote_target,
                     mirror_ws_id,
                     surface_id,
@@ -117,6 +128,10 @@ impl App {
                 // event loop 가 종료된 경우에만 실패 — 무시.
                 let _ = proxy.send_event(crate::AppEvent::ImageUploadReady);
             });
+            if let Err(error)=spawned {
+                self.finish_transfer_progress_row(surface_id,mirror_ws_id,transfer_id);
+                self.push_transfer_error(surface_id,mirror_ws_id,rejected_name,error,None);
+            }
         }
     }
 
@@ -179,6 +194,7 @@ impl App {
     pub(crate) fn drain_image_upload_results(&mut self) {
         while let Ok(outcome) = self.image_upload_rx.try_recv() {
             let ImageUploadOutcome {
+                attempt,view,
                 remote_target,
                 mirror_ws_id,
                 surface_id,
@@ -188,7 +204,9 @@ impl App {
                 png_bytes,
                 result,
             } = outcome;
+            let accepted=self.remote.finish_attempt(&attempt).is_some();
             self.finish_transfer_progress_row(surface_id, mirror_ws_id, transfer_id);
+            if !accepted || view.as_ref().is_none_or(|(window,identity)|self.view.views.get(window).and_then(|view|view.as_main()).is_none_or(|main|!main.base.state.matches_identity(identity))) {continue;}
             if remote_target.as_ref().is_some_and(|target|!self.remote_target_is_current(target)) {
                 tracing::debug!("discarding upload result for retired remote target");continue;
             }

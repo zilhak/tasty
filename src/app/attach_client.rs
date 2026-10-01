@@ -2541,7 +2541,11 @@ fn bulk_chunk_frames(transfer_id: u64, bytes: &[u8]) -> Vec<Vec<u8>> {
 
 /// 기존 workspace 점유에 연결된 bulk 채널을 연다. timeout 설정 실패는 경고만 남긴다.
 fn open_bulk_connection(port: u16, remote_ws: u32) -> anyhow::Result<StreamConnection> {
+    open_bulk_connection_bound(port,remote_ws,None)
+}
+fn open_bulk_connection_bound(port:u16,remote_ws:u32,attempt:Option<&tasty_remote::outbound::AttemptToken>)->anyhow::Result<StreamConnection> {
     let sock = TcpStream::connect(("127.0.0.1", port))?;
+    if let Some(attempt)=attempt {attempt.register_socket(&sock)?;}
     if let Err(e) = sock.set_read_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
         tracing::warn!("bulk upload: failed to set read timeout: {e}");
     }
@@ -2657,10 +2661,11 @@ pub(crate) fn upload_file_over_bulk(
     bytes: &[u8],
     on_progress: impl Fn(u64, u64),
     epoch:&tasty_remote::connection::ConnectionEpoch,
+    attempt:&tasty_remote::outbound::AttemptToken,
 ) -> anyhow::Result<String> {
     ensure_bulk_epoch(epoch)?;
     let transfer_id = next_bulk_transfer_id();
-    let mut conn = open_bulk_connection(port, remote_ws)?;
+    let mut conn = open_bulk_connection_bound(port, remote_ws,Some(attempt))?;
     send_bulk_payload(&mut conn, transfer_id, file_name, bytes, on_progress,epoch)?;
     await_bulk_result(&mut conn, transfer_id,epoch)
 }

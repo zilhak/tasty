@@ -73,7 +73,7 @@ impl AttemptToken {
         if let Ok(mut sockets)=self.0.sockets.lock() {sockets.clear();}
     }
     /// Register the exact connecting socket before the first blocking handshake read/write.
-    pub(crate) fn register_socket(&self,socket:&std::net::TcpStream)->std::io::Result<()> {
+    pub fn register_socket(&self,socket:&std::net::TcpStream)->std::io::Result<()> {
         let control=socket.try_clone()?;
         let mut sockets=self.0.sockets.lock().map_err(|_|std::io::Error::other("connection cancellation state poisoned"))?;
         if !self.is_active() {let _=control.shutdown(std::net::Shutdown::Both);return Err(std::io::Error::new(std::io::ErrorKind::Interrupted,"connection attempt retired"));}
