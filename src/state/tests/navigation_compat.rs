@@ -37,7 +37,8 @@ fn navigation_fixture(
         });
     }
     let (mut state, session) = test_state_from_model(test_model(events));
-    state.switch_workspace(&session.as_ref().read(), categories.len().saturating_sub(1));
+    // Seed selection without inventing an earlier user visit in the destination category.
+    state.set_active_workspace_index(&session.core_state, categories.len().saturating_sub(1));
     (state, session)
 }
 
