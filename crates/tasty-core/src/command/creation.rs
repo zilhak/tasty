@@ -18,6 +18,12 @@ pub(super) fn decide(
             plan,
         } => {
             validate_target(model, plan)?;
+            if model.operations.values().any(|pending| {
+                pending.creation.as_ref().is_some_and(|creation|creation.surface.id == plan.surface.id)
+                    && (pending.outcome.is_none() || matches!(pending.outcome,Some(OperationOutcome::Uncertain {..})))
+            }) {
+                return Err(Rejection("surface has an unresolved creation owner".into()));
+            }
             if plan.surface.kind.is_empty() {
                 return Err(Rejection("surface kind must not be empty".into()));
             }
@@ -278,6 +284,42 @@ pub(super) fn decide(
         }
         _ => unreachable!("creation commands are dispatched explicitly"),
     }
+}
+
+/// Reuse terminal creation rules only after the adapter supplied exact-owner receipt evidence.
+/// The scratch model merely permits those rules to run; only reconciliation facts touch history.
+pub(super) fn reconcile(model:&JournalModel,id:&crate::OperationId,evidence:crate::DataRef,discarded:Option<&str>)->Result<StructuralDecision> {
+    let previous=model.operations.get(id).ok_or_else(||Rejection("preparation reconciliation operation missing".into()))?;
+    let plan=previous.creation.as_ref().ok_or_else(||Rejection("reconciliation operation is not a creation".into()))?;
+    if evidence.0==0 || !matches!(previous.outcome,Some(OperationOutcome::Uncertain {..})) {
+        return Err(Rejection("preparation reconciliation requires an uncertain owner and evidence".into()));
+    }
+    let mut resumed=model.clone();
+    resumed.operations.get_mut(id).ok_or_else(||Rejection("preparation owner disappeared".into()))?.outcome=None;
+    if let Destination::Assembly {operation:group}=&plan.destination {
+        let coordinator=resumed.operations.get_mut(group).ok_or_else(||Rejection("assembly coordinator missing".into()))?;
+        if matches!(coordinator.outcome,Some(OperationOutcome::Uncertain {..})) {coordinator.outcome=None;}
+    }
+    let command=match discarded {
+        Some(reason)=>StructuralCommand::RejectInstallation {operation:id.clone(),reason:reason.to_owned()},
+        None=>StructuralCommand::FinishCleanup {operation:id.clone()},
+    };
+    let mut decision=decide(&resumed,&command)?;
+    let mut events=Vec::with_capacity(decision.events.len());
+    for event in decision.events {
+        match event {
+            DomainEvent::OperationFinished {id,outcome}
+                if model.operations.get(&id).is_some_and(|operation|matches!(operation.outcome,Some(OperationOutcome::Uncertain {..})))=> {
+                    // Unresolved peers/target changes do not invent a second reconciliation.
+                    if !matches!(outcome,OperationOutcome::Uncertain {..}) {
+                        events.push(DomainEvent::OperationReconciled {id,outcome,evidence});
+                    }
+                },
+            event=>events.push(event),
+        }
+    }
+    decision.events=events;
+    Ok(decision)
 }
 
 fn validate_target(model: &JournalModel, plan: &CreationPlan) -> Result<()> {

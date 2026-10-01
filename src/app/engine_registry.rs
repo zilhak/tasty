@@ -29,6 +29,7 @@ pub(crate) type SplitById<'a> = (
 
 pub(crate) enum RetiringView {
     Discard,
+    Releasing,
     Preserve {navigation:crate::state::navigation::NavigationState,checkpoint:Option<u64>},
 }
 
@@ -132,6 +133,14 @@ impl EngineRegistry {
         self.retiring.insert(id,RetiringView::Discard);
         Some(id)
     }
+
+    pub(crate) fn mark_retiring_release(&mut self,id:EngineId) {
+        if let Some(relation)=self.retiring.get_mut(&id) {*relation=RetiringView::Releasing;}
+    }
+    pub(crate) fn releasing_ids(&self)->Vec<EngineId> {
+        self.retiring.iter().filter_map(|(id,relation)|matches!(relation,RetiringView::Releasing).then_some(*id)).collect()
+    }
+    pub(crate) fn has_releasing(&self)->bool {self.retiring.values().any(|relation|matches!(relation,RetiringView::Releasing))}
 
     pub(crate) fn finish_retiring(&mut self, id: EngineId) -> Option<EngineSession> {
         self.retiring

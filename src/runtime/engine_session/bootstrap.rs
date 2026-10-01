@@ -124,6 +124,7 @@ impl EngineSession {
             remote:crate::remote::state::RemoteState::new(),
             live:crate::core::live::LiveDomainState::with_notifications(next_ids.notification_counter(),settings.notification.coalesce_ms),
             journal_binding: None,
+            engine_release:None,
             pending_materializations: Default::default(),
             pending_resource_retirements:Default::default(),
             persistence:super::EnginePersistence::new(layout_slot),

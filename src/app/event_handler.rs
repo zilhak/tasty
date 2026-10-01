@@ -320,6 +320,7 @@ impl ApplicationHandler<AppEvent> for App {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let _stall_guard = stall_watchdog::Guard::enter(Site::AboutToWait);
+        self.poll_retiring_engine_owners();
         // 부팅·종료 중에는 일반 타이머를 처리하지 않고 각 상태 머신이 대기를 정한다.
         // 평상시 대기 시각은 말미에서 타이머·지연 repaint를 함께 반영한다.
 
@@ -354,14 +355,14 @@ impl ApplicationHandler<AppEvent> for App {
         if self.journal.is_halted() {
             self.ipc_pacer.loop_reached_about_to_wait();
             self.process_ipc();
-            event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+            event_loop.set_control_flow(self.engine_release_poll_deadline().map_or(winit::event_loop::ControlFlow::Wait,winit::event_loop::ControlFlow::WaitUntil));
             return;
         }
 
         self.poll_journal_application();
         if !self.journal.pauses_observation() {self.poll_pending_window();}
         if self.journal.is_halted() {
-            event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+            event_loop.set_control_flow(self.engine_release_poll_deadline().map_or(winit::event_loop::ControlFlow::Wait,winit::event_loop::ControlFlow::WaitUntil));
             return;
         }
 
@@ -2095,6 +2096,7 @@ impl App {
             )
         };
         let deadline = min_deadline(deadline, self.journal.cleanup_poll_deadline());
+        let deadline = min_deadline(deadline, self.engine_release_poll_deadline());
         let deadline=if self.journal.pauses_observation(){deadline}else{min_deadline(deadline,self.engines.all_sessions().filter_map(|session|session.runtime.input_submit_deadline()).min())};
         self.timer_waker.set_deadline(deadline);
         let deadline = if self.pending_window.is_some() {

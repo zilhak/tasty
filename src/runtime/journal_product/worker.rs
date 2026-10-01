@@ -85,7 +85,8 @@ pub(super) fn run(
         let was_halted = halted.is_some();
         let mut predecessor = if matches!(
             request.work,
-            Work::ReconcileRetirement {..}
+            Work::ReconcilePreparation {..}
+                | Work::ReconcileRetirement {..}
                 | Work::Capture {..}
                 | Work::RetirementFinished {..}
                 | Work::ForwardFinished {..}
@@ -192,6 +193,7 @@ fn handle(
 ) -> Result<ResultValue, String> {
     match work {
         Work::CapturePreset {draft}=>capture::preset(executor,draft).map(|(preset,base_name)|ResultValue::CapturedPreset {preset,base_name}),
+        Work::ReconcilePreparation {lease,evidence,discarded,view}=>recovery::reconcile_preparation(executor,lease,evidence,discarded,view),
         Work::ReconcileRetirement {lease,evidence}=>recovery::reconcile_retirement(executor,lease,evidence),
         Work::ReadCommand(command_id) => {
             executor
@@ -286,7 +288,8 @@ fn handle(
             for change in &changes {
                 if matches!(
                     change.command,
-                    tasty_core::StructuralCommand::ReconcileRetirement {..}
+                    tasty_core::StructuralCommand::ReconcilePreparation {..}
+                        | tasty_core::StructuralCommand::ReconcileRetirement {..}
                         | tasty_core::StructuralCommand::RecoverOperation {..}
                         | tasty_core::StructuralCommand::RecordCapture {..}
                         | tasty_core::StructuralCommand::OpenEngine { .. }

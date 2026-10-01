@@ -59,17 +59,32 @@ impl App {
             self.dispatch_pending_host_events();
         }
         self.poll_preserved_window_closes();
-        for id in self.journal.take_retired_engines() {
-            if self.engines.session_mut(id).is_some_and(|session|session.runtime.has_pending_delivery() || !session.pending_materializations.is_empty() || !session.pending_resource_retirements.is_empty()) {
-                self.journal.defer_retired_engine_delivery(id);
-            } else {self.journal.forget_released_engine(id);drop(self.engines.finish_retiring(id));}
+        for id in self.journal.take_retired_engines() {self.engines.mark_retiring_release(id);}
+        self.poll_retiring_engine_owners();
+    }
+
+    pub(crate) fn poll_retiring_engine_owners(&mut self) {
+        for id in self.engines.releasing_ids() {
+            let Some(session)=self.engines.session_mut(id) else {continue;};
+            // Halted private owners are transferred by the Recovery leaf before EngineRelease starts.
+            if self.journal.is_halted() {continue;}
+            if self.journal.has_pending_engine_effects(id) {continue;}
+            if session.runtime.has_pending_delivery() {continue;}
+            if crate::runtime::resource_retirement::poll_engine_release(session,self.plugin_manager.as_mut()) {
+                self.journal.forget_released_engine(id);
+                drop(self.engines.finish_retiring(id));
+            }
         }
+    }
+
+    pub(crate) fn engine_release_poll_deadline(&self)->Option<std::time::Instant> {
+        self.engines.has_releasing().then(||std::time::Instant::now()+std::time::Duration::from_millis(10))
     }
 
     pub(crate) fn poll_preserved_window_closes(&mut self) {
         if self.journal.pauses_observation() && !self.journal.is_halted() {return;}
         for (id,mut navigation,checkpoint) in self.engines.preserved_closes() {
-            if self.journal.is_halted() {drop(self.engines.finish_retiring(id));continue;}
+            if self.journal.is_halted() {self.engines.mark_retiring_release(id);continue;}
             if self.journal.has_pending_engine_effects(id) {continue;}
             let Some(session)=self.engines.session_mut(id) else {continue;};
             if !session.pending_resource_retirements.is_empty() || !session.pending_materializations.is_empty() || session.runtime.has_pending_delivery() {continue;}
@@ -82,7 +97,7 @@ impl App {
                 self.journal.queue_view(crate::runtime::journal_product::view_record::StoredView::capture(binding.clone(),&session.core_state,active,&navigation));
                 self.engines.mark_closed_view_checkpoint(id,self.journal.latest_view_sequence());
             } else if !self.journal.has_pending_view_for(&binding.stream) {
-                drop(self.engines.finish_retiring(id));
+                self.engines.mark_retiring_release(id);
             }
         }
     }
@@ -115,8 +130,7 @@ impl App {
                     error,
                 );
                 drop(pending);
-                self.journal.abandon_halted_engine(id);
-                drop(self.engines.retire_pending(id));
+                if self.engines.begin_retiring_pending(id) {self.engines.mark_retiring_release(id);}
             }
             return;
         }

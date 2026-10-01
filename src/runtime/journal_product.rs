@@ -41,6 +41,7 @@ pub(crate) struct Admission {
 
 #[derive(Debug)]
 pub(crate) enum Work {
+    ReconcilePreparation {lease:EffectLease,evidence:Vec<u8>,discarded:Option<String>,view:CompletionView},
     ReconcileRetirement {lease:EffectLease,evidence:Vec<u8>},
     ClaimForward {stream:String,operation:tasty_core::OperationId},
     ForwardFinished {lease:EffectLease,outcome:tasty_core::OperationOutcome},
@@ -338,6 +339,7 @@ fn request_payload_too_large(work: &Work) -> bool {
 
 pub(crate) fn request_size(work: &Work) -> usize {
     match work {
+        Work::ReconcilePreparation {lease,evidence,discarded,view}=>serde_json::to_vec(&(lease,view)).map_or(usize::MAX,|bytes|bytes.len()).saturating_add(evidence.capacity()).saturating_add(discarded.as_ref().map_or(0,String::capacity)),
         Work::CapturePreset {draft}=>draft.weight(),
         Work::ReconcileRetirement {lease,evidence}=>serde_json::to_vec(lease).map_or(usize::MAX,|bytes|bytes.len()).saturating_add(evidence.capacity()),
         Work::PrepareSubtree {binding,draft}=>serde_json::to_vec(&(binding,draft)).map_or(usize::MAX,|bytes|bytes.len()),

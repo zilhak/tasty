@@ -15,6 +15,7 @@ use crate::{DomainEvent, JournalModel, Ratio};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StructuralCommand {
+    ReconcilePreparation {operation:crate::OperationId,evidence:crate::DataRef,discarded:Option<String>},
     ReconcileRetirement {operation:crate::OperationId,evidence:crate::DataRef},
     RecoverOperation {operation:crate::OperationId,outcome:crate::OperationOutcome,evidence:crate::DataRef},
     Replace {operation:crate::OperationId,command_id:String,input:crate::DataRef,replacement:crate::Replacement,expected:Vec<crate::RetiredSurface>},
@@ -178,7 +179,8 @@ pub fn decide_structure(
     if model.engine_retired
         && !matches!(
             command,
-            StructuralCommand::ReconcileRetirement {..}
+            StructuralCommand::ReconcilePreparation {..}
+                | StructuralCommand::ReconcileRetirement {..}
                 | StructuralCommand::RecoverOperation {..}
                 | StructuralCommand::OpenEngine { .. }
                 | StructuralCommand::RetireEngine { .. }
@@ -194,6 +196,7 @@ pub fn decide_structure(
         return Err(Rejection("engine binding has been retired".into()));
     }
     let decision = match command {
+        StructuralCommand::ReconcilePreparation {operation,evidence,discarded}=>creation::reconcile(model,operation,*evidence,discarded.as_deref())?,
         StructuralCommand::ReconcileRetirement {operation,evidence}=> {
             let previous=model.operations.get(operation).ok_or_else(||Rejection("reconciliation operation missing".into()))?;
             if previous.retirement.is_none() || !matches!(previous.outcome,Some(crate::OperationOutcome::Uncertain {..})) || evidence.0==0 {return Err(Rejection("retirement reconciliation needs an uncertain cleanup and evidence".into()));}

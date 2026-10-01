@@ -29,6 +29,7 @@ pub(crate) struct EngineSession {
     pub(crate) persistence:EnginePersistence,
     pub(crate) remote:crate::remote::state::RemoteState,
     pub(crate) live:crate::core::live::LiveDomainState,
+    pub(crate) engine_release:Option<crate::runtime::resource_retirement::EngineRelease>,
     pub(crate) journal_binding: Option<crate::runtime::journal_product::EngineBinding>,
     pub(crate) pending_resource_retirements:std::collections::HashMap<tasty_core::OperationId,crate::runtime::resource_retirement::ResourceRetirement>,
     pub(crate) pending_materializations: std::collections::HashMap<

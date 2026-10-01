@@ -404,33 +404,15 @@ impl App {
             self.poll_preserved_window_closes();
             return;
         }
-        let Some(mut session) = self.engines.retire_window(wid) else {
+        // A halted publication cannot become a new restore checkpoint. Preserve all exact
+        // physical/private owners in the registry until their release receipts are observed.
+        let Some(id)=self.engines.begin_retiring_window(wid) else {
             tracing::error!("retiring window {wid:?} without an engine relation");
             return;
         };
-        // A halted batch may have changed only part of the live tree. Closing remains available,
-        // but neither capture nor slot deletion may turn that partial projection into restore input.
-        if !self.journal.is_halted() {
-            if session.runtime.settings.general.restore_layout
-                && let Some(binding) = session.journal_binding.as_ref()
-            {
-                let active = session
-                    .core_state
-                    .workspace_at(main.state.active_workspace_index(&session.core_state))
-                    .map(|workspace| workspace.id);
-                self.journal.queue_view(
-                    crate::runtime::journal_product::view_record::StoredView::capture(
-                        binding.clone(),
-                        &session.core_state,
-                        active,
-                        &main.state.navigation,
-                    ),
-                );
-            }
-
-        }
+        self.engines.mark_retiring_release(id);
         drop(main);
-        drop(session);
+        self.poll_retiring_engine_owners();
     }
 
     /// 사용자 요청 창은 포커스를 옮기고, 에이전트 요청은 기존 포커스를 유지한다.

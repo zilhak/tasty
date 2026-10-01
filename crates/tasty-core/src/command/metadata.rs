@@ -18,7 +18,8 @@ pub(super) fn decide(m: &JournalModel, cmd: &StructuralCommand) -> Result<Struct
         | StructuralCommand::MoveTab { .. }
         | StructuralCommand::SetPaneRatio { .. }
         | StructuralCommand::SetSurfaceRatio { .. } => tab_or_ratio(m, cmd),
-        StructuralCommand::RetireEngine { .. }
+        StructuralCommand::ReconcilePreparation { .. }
+        | StructuralCommand::RetireEngine { .. }
         | StructuralCommand::OpenEngine { .. }
         | StructuralCommand::PrepareCreation { .. }
         | StructuralCommand::FinishCreation { .. }
