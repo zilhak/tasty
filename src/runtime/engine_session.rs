@@ -1,8 +1,5 @@
 //! 한 engine의 수명 단위. 창·parked·임시 어느 자리에 있든 같은 id로 식별한다.
 
-// 상위 모듈의 dead_code 허용은 시험 전용 journal 때문이다. 이 모듈은 제품 경로라 검사를 되살린다.
-#![warn(dead_code)]
-
 use crate::runtime::engine_access::EngineMut;
 use crate::runtime::engine_access::EngineRef;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -79,6 +76,7 @@ impl EngineSession {
             .poll()
     }
 
+    #[cfg(feature = "gui")]
     pub(crate) fn read(&self) -> super::engine_read::EngineRead<'_> {
         self.as_ref().read()
     }
