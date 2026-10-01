@@ -2,8 +2,8 @@
 
 use crate::adapters::ipc::handler::params::{self, p_try};
 use serde_json::{Value, json};
-use tasty_memory::{ListOpts, MemoryValue, PutOpts, Scope};
-use tasty_telemetry::{ANOMALY_KEY_PREFIX, Anomaly, AnomalyKind, anomaly_key};
+use tasty_memory::{ListOpts, MemoryValue, Scope};
+use tasty_telemetry::{ANOMALY_KEY_PREFIX, Anomaly, AnomalyKind};
 
 use crate::app::services::AppServices;
 use tasty_ipc::caller::CallerContext;

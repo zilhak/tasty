@@ -55,15 +55,6 @@ impl RequestContext {
             .retain(|id, _| engine.find_pane_by_id(*id).is_some());
     }
 
-    pub(crate) fn apply_structure_result(
-        &mut self,
-        engine: &CoreState,
-        event: &crate::app::command::CoreEvent,
-    ) {
-        self.navigation.apply_result(&engine.workspaces(), event);
-        self.reconcile_presentation(engine);
-    }
-
     /// Invariant: caller must ensure `engine.workspaces()` is non-empty.
     /// Parked states (after the last window closes) can have zero workspaces —
     /// such callers must use `engine.workspaces().is_empty()` checks instead.

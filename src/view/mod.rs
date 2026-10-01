@@ -23,7 +23,7 @@ pub(crate) use settings::SettingsView;
 
 use std::collections::HashMap;
 
-use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
+use winit::event_loop::EventLoopProxy;
 use winit::window::WindowId;
 
 use crate::AppEvent;
@@ -51,12 +51,8 @@ pub(crate) enum ViewAction {
 
 /// 이벤트 핸들러에 함께 전달되는 맥락.
 pub(crate) struct ViewCtx<'a> {
-    pub(crate) event_loop: &'a ActiveEventLoop,
     /// 현재 모달 View 가 활성 상태인지. true면 비모달 View 는 입력을 차단해야 한다.
     pub(crate) modal_active: bool,
-    /// 현재 active plugin manager. MainView 가 frame prepare 시 plugin canvas의
-    /// SharedMemory와 dirty rect에 접근하기 위해 사용한다. plugin 비활성 빌드/초기 시점에는 None.
-    pub(crate) plugin_manager: Option<crate::app::plugin_display::PluginDisplay<'a>>,
     /// 이 창에 연결된 engine. App의 engine registry가 창 ID로 찾아 넘긴다. 모달 View는 None이다.
     pub(crate) engine: Option<crate::runtime::engine_read::EngineRead<'a>>,
 }

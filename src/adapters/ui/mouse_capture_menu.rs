@@ -7,7 +7,6 @@ use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
 use crate::intent::{OpenPopupMode, UiIntent};
-use crate::settings::GeneralSettings;
 use crate::state::MainViewState;
 use crate::theme::{self, Theme};
 use tasty_icons::Icon;
@@ -53,18 +52,6 @@ pub fn open(
         }
         .from_user_menu("mouse_capture_banner"),
     );
-}
-
-/// 알림 억제 목록에 이름을 추가한다. 배너 닫기는 호출부에서 처리한다.
-pub(crate) fn suppress_banner_action(settings: &mut GeneralSettings, app_name: &str) {
-    settings
-        .mouse_capture_banner_blacklist
-        .push(app_name.to_string());
-}
-
-/// 캡처 비활성화 목록에 이름을 추가한다. 사용자가 확인할 수 있도록 배너는 남긴다.
-pub(crate) fn disable_capture_action(settings: &mut GeneralSettings, app_name: &str) {
-    settings.mouse_capture_blacklist.push(app_name.to_string());
 }
 
 /// `PopupDef.draw_fn` — 메뉴 콘텐츠만 그린다(셸은 headless popup 시스템이 그림).
@@ -227,29 +214,5 @@ fn draw_menu_row(
         resp.on_hover_text(app_name.to_string())
     } else {
         resp
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn mouse_capture_banner_menu_suppress_action_pushes_banner_blacklist() {
-        let mut settings = GeneralSettings::default();
-        suppress_banner_action(&mut settings, "vim");
-        assert_eq!(
-            settings.mouse_capture_banner_blacklist,
-            vec!["vim".to_string()]
-        );
-        assert!(settings.mouse_capture_blacklist.is_empty());
-    }
-
-    #[test]
-    fn mouse_capture_banner_menu_disable_action_pushes_capture_blacklist() {
-        let mut settings = GeneralSettings::default();
-        disable_capture_action(&mut settings, "vim");
-        assert_eq!(settings.mouse_capture_blacklist, vec!["vim".to_string()]);
-        assert!(settings.mouse_capture_banner_blacklist.is_empty());
     }
 }

@@ -8,7 +8,7 @@ use std::sync::{Arc, Weak};
 use tasty_remote_profiles::{
     KNOWN_PASSKEY_KINDS, PORT_MODES, Passkey, Passkeys, RemoteProfile, RemoteProfiles, SHELLS,
     SshConfigHost, config_availability, enumerate_hosts_at, imported_as, is_builtin_kind,
-    is_valid_passkey_name, is_valid_port_mode, is_valid_shell, user_config_path,
+    user_config_path,
 };
 
 use crate::adapters::ui::icons;

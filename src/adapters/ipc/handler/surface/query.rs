@@ -1,7 +1,7 @@
 use serde_json::json;
 
 use crate::adapters::ipc::handler::params::{self, p_try};
-use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::EngineRef;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;

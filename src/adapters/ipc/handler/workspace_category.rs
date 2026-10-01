@@ -3,11 +3,8 @@
 //! 공통 normal(id0)은 하나로 합친다. rename/delete는 ID로 창을 선택한다.
 //! create는 포커스된 창에 만들고, move의 from_index 호환 입력도 해당 창을 사용한다.
 
-use super::params::{self, p_try};
-use crate::runtime::engine_access::EngineMut;
 use serde_json::json;
 
-use crate::app::command::DomainIntent;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 /// 카테고리 목록 조회(read). 각 카테고리의 워크스페이스 수를 동봉한다.

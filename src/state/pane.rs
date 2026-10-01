@@ -1,3 +1,4 @@
+#[cfg(any(feature = "gui", test))]
 use crate::core::CoreState;
 use crate::runtime::engine_read::EngineRead;
 
@@ -207,6 +208,7 @@ impl RequestContext {
     }
 
     /// 복원 사본 없이 닫는다. 워크스페이스가 모두 사라지면 다음 화면 처리에 필요한 기본 항목을 만든다.
+    #[cfg(test)]
     pub fn close_surface_by_id_no_snapshot(
         &mut self,
         engine: &EngineRead<'_>,
@@ -217,6 +219,7 @@ impl RequestContext {
     }
 
     /// Queue fixed IDs and an explicit user snapshot request; execution and repair are App-owned.
+    #[cfg(any(feature = "gui", test))]
     fn queue_surface_close(
         &mut self,
         engine: &EngineRead<'_>,

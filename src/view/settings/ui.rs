@@ -216,8 +216,6 @@ pub struct SettingsUiState {
     pub preview_font_loaded: std::collections::HashMap<String, String>,
     /// Draft of ~/.tasty/bashrc.user content. None until the Misc tab loads it.
     pub(crate) bashrc_user_draft: Option<String>,
-    /// Save 중 bashrc 저장 오류. 창을 닫은 뒤 App이 메인 창에 표시한다.
-    pub(crate) bashrc_save_error: Option<String>,
     /// winit KeyboardInput에서 직접 캡처한 키 조합 (녹화 중일 때 사용).
     pub captured_winit_combo: Option<KeyCapture>,
     /// Plugins 서브탭이 표시할 plugin command snapshot (모달 오픈 시 1회 채워짐).
@@ -451,7 +449,6 @@ impl SettingsUiState {
             font_filter: std::collections::HashMap::new(),
             preview_font_loaded: std::collections::HashMap::new(),
             bashrc_user_draft: None,
-            bashrc_save_error: None,
             captured_winit_combo: None,
             plugin_shortcuts: PluginShortcutSnapshot::default(),
             plugin_shortcuts_selected: None,
@@ -1701,6 +1698,7 @@ impl SettingsUiState {
         SettingsEdits {
             registry,
             clear_scrollback,
+            #[cfg(windows)]
             bashrc: self.bashrc_user_draft.take(),
         }
     }

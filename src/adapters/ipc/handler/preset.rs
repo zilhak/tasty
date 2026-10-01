@@ -2,7 +2,7 @@
 //! IPC는 성공/실패를 동기로 응답해야 하므로 intent 큐를 거치지 않는다.
 //! 적용할 때 focus:false로 사용자 포커스를 유지한다.
 
-use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::EngineRef;
 use serde_json::json;
 use tasty_presets::{PanePreset, PresetKind, TabPreset, WorkspacePreset};
 

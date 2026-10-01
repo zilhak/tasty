@@ -1,7 +1,6 @@
 //! `surface.*` IPC 핸들러 도메인 sub-module 모음.
 
 mod attention;
-mod close;
 mod commands;
 mod completion;
 pub(crate) mod cwd;
@@ -14,7 +13,6 @@ pub(crate) mod query;
 mod send;
 
 pub(crate) use attention::{handle_attention_clear, handle_attention_get};
-pub(in crate::adapters::ipc::handler) use close::refuse_if_hard_occupied;
 pub(crate) use commands::{handle_command_at, handle_commands, handle_last_command};
 pub(crate) use completion::handle_completion;
 pub(crate) use cwd::handle_set_cwd;
@@ -34,4 +32,4 @@ pub(crate) use send::{
     handle_surface_send_to,
 };
 
-pub(super) use super::{caller_surface_id, require_surface_id};
+pub(super) use super::require_surface_id;

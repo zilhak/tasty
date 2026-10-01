@@ -14,7 +14,6 @@ use tasty_ipc::protocol::JsonRpcResponse;
 use super::surface;
 
 type AppServices = crate::app::services::AppServices;
-type CoreState = crate::core::CoreState;
 
 use super::params::{optional_u32, require_u32};
 

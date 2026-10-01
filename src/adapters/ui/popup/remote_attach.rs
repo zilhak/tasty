@@ -3,7 +3,6 @@
 //! 사용자 입력 경로이므로 pending_gui_attach_user에서 새 mirror로 포커스를 옮긴다.
 //! release에서는 dispatch_pending_gui_attach가 자기 인스턴스로의 연결을 거절한다.
 
-use std::time::Instant;
 use tasty_remote::browser::BROWSE_DEADLINE;
 use tasty_type_geometry::length::LogicalPx;
 

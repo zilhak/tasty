@@ -1,7 +1,5 @@
 //! 키보드 입력을 전달할 surface 종류. 호스트 이벤트 타입은 core::host_event에 있다.
 
-use crate::core::CoreState;
-
 /// 터미널 입력은 별도 경로로 보내고, 다른 surface는 kind로 구분한다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FocusedSurfaceType {

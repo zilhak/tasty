@@ -86,9 +86,11 @@ impl NavigationState {
             _ => {}
         }
     }
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn generation(&self) -> std::sync::Weak<()> {
         std::sync::Arc::downgrade(&self.generation)
     }
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn matches_generation(&self, generation: &std::sync::Weak<()>) -> bool {
         self.generation().ptr_eq(generation)
     }
@@ -191,6 +193,7 @@ impl NavigationState {
         self.note_selection_change(changed)
     }
 
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn select_pane(&mut self, workspace: &Workspace, id: u32) -> bool {
         if workspace.pane_layout().find_pane(id).is_none() {
             return false;
@@ -209,6 +212,7 @@ impl NavigationState {
         self.note_selection_change(changed)
     }
 
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn select_surface(&mut self, tab: &Tab, id: SurfaceId) -> bool {
         if !tab.contains_surface(id) {
             return false;
@@ -233,6 +237,7 @@ impl NavigationState {
 
     // Mirror snapshots initialize only missing/deleted selections from the wire.
     // Surviving local choices win; a pending user close may then choose its neighbour.
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn initialize_pane(&mut self, workspace: &Workspace, pane: u32) {
         if self
             .panes
@@ -242,6 +247,7 @@ impl NavigationState {
             self.select_pane(workspace, pane);
         }
     }
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn initialize_tab(&mut self, pane: &Pane, index: usize) {
         let selection = self.selected_tabs.entry(pane.id).or_default();
         if !selection
@@ -252,6 +258,7 @@ impl NavigationState {
             selection.select(tab.id, tab_ids(pane));
         }
     }
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn initialize_surface(&mut self, tab: &Tab, surface: u32) {
         if !self
             .surfaces
@@ -260,68 +267,6 @@ impl NavigationState {
         {
             self.select_surface(tab, surface);
         }
-    }
-
-    fn initialize_snapshot(
-        &mut self,
-        workspaces: &WorkspaceRead<'_>,
-        selection: &crate::model::StructurePresentationSnapshot,
-    ) {
-        self.split_hints
-            .extend(selection.split_hints.iter().map(|(id, hint)| (*id, *hint)));
-        for ws in workspaces {
-            if let Some(id) = selection.panes.get(&ws.id) {
-                self.initialize_pane(ws, *id);
-            }
-            for id in ws.pane_layout().all_pane_ids() {
-                let Some(pane) = ws.pane_layout().find_pane(id) else {
-                    continue;
-                };
-                if let Some(id) = selection.selected_tabs.get(&pane.id)
-                    && let Some(index) = pane.tabs.iter().position(|tab| tab.id == *id)
-                {
-                    self.initialize_tab(pane, index);
-                }
-                for tab in &pane.tabs {
-                    if let Some(id) = selection.surfaces.get(&tab.id) {
-                        self.initialize_surface(tab, *id);
-                    }
-                }
-            }
-        }
-    }
-
-    pub(crate) fn apply_result(
-        &mut self,
-        workspaces: &WorkspaceRead<'_>,
-        event: &crate::app::command::CoreEvent,
-    ) {
-        use crate::app::command::CoreEvent;
-        match event {
-            CoreEvent::ClosedItemRestored { presentation, .. } => {
-                // New objects inherit stored internal defaults for every origin.
-                // Existing live View choices are changed only by user continuations.
-                self.initialize_snapshot(workspaces, presentation);
-            }
-            CoreEvent::MoveSurfaceApplied {
-                replacement: Some((removed, replacement)),
-                ..
-            } => self.remap_surface_selection(*removed, *replacement),
-            CoreEvent::ContainerMoveApplied {
-                replaced_tab,
-                replaced_pane,
-                ..
-            } => {
-                if let Some((removed, replacement)) = replaced_tab {
-                    self.remap_tab_selection(*removed, *replacement);
-                }
-                if let Some((removed, replacement)) = replaced_pane {
-                    self.remap_pane_selection(*removed, *replacement);
-                }
-            }
-            _ => {}
-        }
-        self.reconcile(workspaces);
     }
 
     pub(crate) fn remap_surface_selection(&mut self, removed: u32, replacement: u32) {

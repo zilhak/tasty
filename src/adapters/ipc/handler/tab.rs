@@ -1,19 +1,8 @@
 use serde_json::json;
 
-use super::params::{self, p_try};
-use crate::runtime::engine_access::EngineMut;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_pane_id;
-
-fn require_tab_id(
-    params: &serde_json::Value,
-    id: &serde_json::Value,
-) -> Result<u32, JsonRpcResponse> {
-    params::opt_int::<u32>(params, "tab_id", id)?.ok_or_else(|| {
-        JsonRpcResponse::invalid_params(id.clone(), "Missing required 'tab_id' parameter")
-    })
-}
 
 pub fn handle_tab_list(
     presentation: &(impl crate::model::StructurePresentation + ?Sized),

@@ -16,7 +16,7 @@ use tasty_ui_widgets::{
 
 use crate::adapters::ui::icons;
 use crate::hook_handler::config::UserHookHandlerActionDecl;
-use crate::hook_handler::registry::{HookHandlerRegistry, UserHookHandlerUpsertDecl};
+use crate::hook_handler::registry::UserHookHandlerUpsertDecl;
 use crate::hook_handler::types::is_valid_hook_handler_short_name;
 use crate::hook_handler::{
     HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource,
@@ -63,13 +63,6 @@ struct AddHookForm {
 }
 
 impl HookHandlerEditDraft {
-    pub fn has_changes(&self) -> bool {
-        !self.enabled.is_empty()
-            || !self.cmd_edits.is_empty()
-            || !self.remove.is_empty()
-            || !self.add.is_empty()
-    }
-
     pub(crate) fn into_edits(self) -> Vec<crate::app::settings_edit::RegistryEdit> {
         use crate::app::settings_edit::RegistryEdit as E;
         self.enabled

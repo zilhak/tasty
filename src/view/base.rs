@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use winit::keyboard::ModifiersState;
-
 use crate::gpu::GpuState;
-use crate::view::repaint::RepaintGate;
 
 /// Per-View OS/GPU resource owner, composed with common display values.
 pub struct ViewBase {

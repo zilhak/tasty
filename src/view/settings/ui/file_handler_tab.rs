@@ -39,15 +39,6 @@ pub(crate) struct FileHandlerEditDraft {
 }
 
 impl FileHandlerEditDraft {
-    pub fn has_changes(&self) -> bool {
-        !self.detector_enabled.is_empty()
-            || !self.handler_enabled.is_empty()
-            || !self.remove_detector.is_empty()
-            || !self.remove_handler.is_empty()
-            || !self.add_detector.is_empty()
-            || !self.add_handler.is_empty()
-    }
-
     pub(crate) fn into_edits(self) -> Vec<crate::app::settings_edit::RegistryEdit> {
         use crate::app::settings_edit::RegistryEdit as E;
         self.detector_enabled

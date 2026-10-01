@@ -6,8 +6,6 @@ use serde_json::{Value, json};
 
 use tasty_ipc::protocol::JsonRpcResponse;
 
-use super::require_surface_id;
-
 pub fn handle_list(engine: &EngineRef<'_>, id: Value) -> JsonRpcResponse {
     let mut entries: Vec<Value> = Vec::new();
     for workspace in &engine.workspaces() {

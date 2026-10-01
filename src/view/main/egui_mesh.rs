@@ -18,7 +18,6 @@ use tasty_plugin_protocol::{
 use crate::app::plugin_display::PluginDisplay;
 use crate::model::{PhysicalPx, PhysicalRect};
 use crate::plugin_bridge::MeshForwardCommon;
-use tasty_ipc::stream_hub::StreamHub;
 
 use super::MainView;
 

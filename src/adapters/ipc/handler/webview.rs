@@ -3,7 +3,6 @@
 use super::params::require_u32;
 use serde_json::Value;
 
-use crate::plugin::PluginManager;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 /// 문서 변경을 attach 클라이언트에 알린다. 대상과 허용 종류는 attach_runtime이 검사한다.
@@ -88,52 +87,6 @@ fn is_owner(
         caller,
         tasty_ipc::caller::CallerContext::Plugin { plugin_id, .. } if *plugin_id == rs.plugin_id
     )
-}
-
-/// 차단 여부와 무관하게 navigation 시도를 소유 플러그인에 알린다.
-/// 처리 전에 surface가 제거됐으면 무시한다. 통지한 플러그인과 페이지 소유 여부를 반환한다.
-/// 호출자는 사용자 제스처 기록을 해당 플러그인에 연결하고 아닌 경우 이전 기록을 지운다(ADR-0031).
-pub fn notify_navigation_attempt(
-    mgr: &PluginManager,
-    engine: &crate::runtime::engine_access::EngineRef<'_>,
-    surface_id: u32,
-    url: &str,
-) -> Option<crate::plugin_bridge::user_navigation::NavigationOwner> {
-    for ws in &engine.workspaces() {
-        for &pid in &ws.pane_layout().all_pane_ids() {
-            if let Some(pane) = ws.pane_layout().find_pane(pid) {
-                for tab in &pane.tabs {
-                    let Some(layout) = tab.layout_if_initialized() else {
-                        continue;
-                    };
-                    let Some(surface) = layout
-                        .find_surface(surface_id)
-                        .and_then(|_| engine.find_surface_by_id(surface_id))
-                    else {
-                        continue;
-                    };
-                    if let Some(rs) = surface
-                        .as_any()
-                        .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
-                    ) {
-                        mgr.send_webview_navigation_attempt(
-                            &rs.plugin_id,
-                            &tasty_plugin_protocol::WebviewNavigationAttemptParams {
-                                surface_id,
-                                url: url.to_string(),
-                            },
-                        );
-                        return Some(crate::plugin_bridge::user_navigation::NavigationOwner {
-                            plugin_id: rs.plugin_id.clone(),
-                            wrote_page: rs.webview_page_by_owner(),
-                        });
-                    }
-                    return None;
-                }
-            }
-        }
-    }
-    None
 }
 
 #[cfg(test)]

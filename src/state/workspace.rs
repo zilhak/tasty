@@ -2,6 +2,7 @@
 use crate::core::CoreState;
 
 use super::RequestContext;
+#[cfg(feature = "gui")]
 use crate::runtime::engine_read::EngineRead;
 
 /// 닫기 요청 출처. 복원 사본 저장, surface.closed의 reason, 계측 구분값을 정한다.
@@ -11,35 +12,19 @@ pub enum WorkspaceCloseOrigin {
     #[cfg(any(feature = "gui", debug_assertions, test))]
     User,
     /// workspace.close IPC/CLI 경로.
+    #[cfg(test)]
     Agent,
 }
 
 impl WorkspaceCloseOrigin {
-    /// 사용자의 닫은 항목 복원 목록에 저장할지 정한다.
-    fn saves_snapshot(self) -> bool {
-        self.is_user()
-    }
-
-    /// surface.closed 이벤트에 User 또는 Ipc reason을 넣을 때 사용한다.
-    fn is_user_close(self) -> bool {
-        self.is_user()
-    }
-
     /// User가 없는 빌드도 처리하도록 cfg가 붙은 match 분기를 사용한다.
+    #[cfg(feature = "gui")]
     fn is_user(self) -> bool {
         match self {
             #[cfg(any(feature = "gui", debug_assertions, test))]
             Self::User => true,
+            #[cfg(test)]
             Self::Agent => false,
-        }
-    }
-
-    /// close 계측(`close_trace`)의 경로 구분값.
-    fn trace_path(self) -> &'static str {
-        match self {
-            #[cfg(any(feature = "gui", debug_assertions, test))]
-            Self::User => "gui",
-            Self::Agent => "ipc",
         }
     }
 }
@@ -48,6 +33,7 @@ impl RequestContext {
     /// 워크스페이스가 없으면 기본 항목을 생성하고 true를 반환한다. 실패하면 false다.
     /// 원격 연결 해제 등으로 빈 상태가 됐을 때 사용자 창을 유지하기 위한 처리이며
     /// 별도의 host event는 만들지 않는다.
+    #[cfg(feature = "gui")]
     pub(crate) fn recreate_workspace_if_empty(
         &mut self,
         engine: &crate::runtime::engine_read::EngineRead<'_>,
