@@ -1,4 +1,5 @@
 pub(crate) mod legacy_export;
+pub(crate) mod import;
 
 use tasty_core::canonical::{ResolveData,CanonData,fnv_hex};
 use tasty_core::DataRef;

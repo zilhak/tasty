@@ -106,6 +106,21 @@ pub(super) fn save(
     Ok(())
 }
 
+impl StoredView {
+    pub(crate) fn imported(binding: EngineBinding, selection: ImportedView) -> Self {
+        Self {version: 1, binding, selection, sequence: 0}
+    }
+    pub(crate) fn selection(&self) -> &ImportedView { &self.selection }
+    pub(crate) fn validate_import(&self, journal: &str, model: &tasty_core::JournalModel) -> Result<(), String> {
+        if self.version != 1 || self.binding.journal_id != journal || self.binding.incarnation != model.engine_incarnation
+            || model.engine_retired || self.binding.revision > model.applied.revision
+            || self.binding.published_cut > model.applied.batch {
+            return Err("source View manifest does not match its frozen domain".into());
+        }
+        Ok(())
+    }
+}
+
 #[cfg(feature = "gui")]
 impl StoredView {
     pub(crate) fn capture(

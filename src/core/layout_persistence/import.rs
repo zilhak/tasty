@@ -15,6 +15,7 @@
 #[cfg(test)]
 mod shadow;
 pub(crate) mod surface_data;
+pub(crate) mod journal_import;
 #[cfg(test)]
 mod tests;
 
@@ -305,6 +306,7 @@ pub(crate) fn import_slot(
         store,
         epoch,
         scrollback,
+        holder: format!("admission/{}/legacy-slot-{slot}", epoch.0),
     };
     for (index, workspace) in layout.workspaces.iter().enumerate() {
         plan.workspace(&mut sink, index, workspace)?;
@@ -344,6 +346,7 @@ pub(crate) fn import_slot(
         }
     };
     let view = view_of(&layout, &mapping);
+    store.release_payload_holder(epoch, &format!("admission/{}/legacy-slot-{slot}", epoch.0))?;
     Ok(ImportOutcome {
         mapping,
         view,
@@ -553,6 +556,7 @@ struct Sink<'a> {
     store: &'a mut EventStore,
     epoch: WriterEpoch,
     scrollback: &'a dyn ScrollbackSource,
+    holder: String,
 }
 
 /// 만들 이벤트와 대응을 모은다. 이벤트마다 같은 transaction에서 pin할 payload를 함께 둔다.
@@ -783,7 +787,7 @@ impl Plan {
             None
         } else {
             let bytes = data.encode().map_err(ImportError::SurfaceData)?;
-            Some(sink.store.put_payload(sink.epoch, &bytes)?)
+            Some(sink.store.put_payload_pinned(sink.epoch, &bytes, &sink.holder)?)
         };
         Ok((
             SurfaceSpec {

@@ -1,6 +1,6 @@
 # ADR-0063: 이벤트 저장소는 payload를 journal DB에 두고 파일 잠금과 writer 세대로 쓰기를 제한한다
 
-- **Status**: Accepted — 구현 상태: payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별, 영속 ID 예약 및 projection 출력/consumer 위치 원자 확정은 `tasty-event-store`에 구현됐다. App 초기 엔진 구성·선택 slot import·자원 준비는 데이터 홈 worker에 연결 중이다. 기존 숫자 surface metadata를 피하는 예약 기준도 이 worker에서 영속 반영한다. 미이행: 일반 구조 writer 전체 합류, 효과 복구·최종 제품 활성화, 새 journal로의 payload 복사, 부분 consumer 위치, 모든 local/mirror ID 발급 전환. 정상 슬롯 resume와 폐기 뒤 incarnation 전환은 App bootstrap·retirement에 연결돼 있다.
+- **Status**: Accepted — 구현 상태: payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별, 영속 ID 예약 및 projection 출력/consumer 위치 원자 확정은 `tasty-event-store`에 구현됐다. App 초기 엔진 구성·선택 slot import·자원 준비는 데이터 홈 worker에 연결 중이다. 기존 숫자 surface metadata를 피하는 예약 기준도 이 worker에서 영속 반영한다. 미이행: 일반 구조 writer 전체 합류, 효과 복구·최종 제품 활성화, 부분 consumer 위치, 모든 local/mirror ID 발급 전환. 정상 슬롯 resume와 폐기 뒤 incarnation 전환은 App bootstrap·retirement에 연결돼 있다.
 - **Date**: 2026-09-30
 - **Tags**: event-sourcing, storage, sqlite, durability, effects, fencing
 - **Group**: foundation
@@ -35,6 +35,10 @@ domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 제품 경
 - 새로 넣은 payload는 참조가 생기기 전까지 GC 대상이다. 참조할 기록을 commit하기 전에 GC가 돌았으면 그 commit은 payload 없음으로 실패하고, 호출자가 다시 넣는다.
   확정된 참조가 가리키는 payload가 사라지는 경로는 없다.
 - 새 journal로 가져오는 경우 payload는 대상 journal에 복사해 독립 소유하게 한 뒤 원본의 pin을 푼다. 다른 journal의 행을 가리키지 않는다.
+  내부 import는 전송 ID로 source snapshot/View alias를 고정한다. destination의 새 ID mapping·초기 events·
+  최초 응답·domain snapshot·View manifest를 같은 transaction에 확정한 뒤 source alias를 해제한다.
+  실패한 준비 payload는 admission holder로 보존하며 다음 fenced writer가 미수락 잔여 pin을 정리한다.
+  destination commit 뒤 응답 유실은 같은 전송 키 조회로 합류하고 source의 command/effect/cleanup을 복사하지 않는다.
 - 이벤트 자체의 작은 payload는 이벤트 행에 inline BLOB으로 둔다. 불변 payload 표는 여러 기록이 참조하거나 크기가 큰 내용을 위한 것이다.
 
 ### View 복원 manifest

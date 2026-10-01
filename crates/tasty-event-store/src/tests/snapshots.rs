@@ -392,3 +392,39 @@ fn view_manifest_transfer_is_atomic_and_old_incarnation_cannot_delete_it() {
     assert!(!store.delete_restore_manifest(epoch, "view:slot-0", 1).expect("old close"));
     assert_eq!(store.restore_manifest("view:slot-0").expect("read").expect("source").view,b"view 2");
 }
+
+#[test]
+fn import_marker_events_and_restore_manifest_commit_or_rollback_together() {
+    let (_dir, mut store, epoch) = fresh();
+    let key = super::common::key("import", "stable");
+    let mut request = CommitRequest::new(epoch);
+    request.command = Some(super::common::command("destination-import", Some(key.clone()), b"source-cut"));
+    request.appends.push(append("destination", ExpectedRevision::NoStream, &["created"]));
+    let failed = store.commit_with_restore_checkpoint(&request, |_| Err(StoreError::Corrupt("manifest encoding failed".into())));
+    assert!(failed.is_err());
+    assert!(matches!(store.lookup_command(&key,b"source-cut").expect("lookup"),crate::CommandLookup::Miss));
+    assert_eq!(store.stream_revision(&StreamId::new("destination")).expect("revision"), None);
+    let committed = store.commit_with_restore_checkpoint(&request, |batch| Ok((
+        NewSnapshot {batch_id:batch.cut.batch_id,model_version:MODEL,bytes:b"imported model".to_vec(),referenced_payloads:vec![]},
+        crate::NewRestoreManifest {restore_key:"view:slot-1".into(),incarnation:1,runtime_epoch:epoch.0,sequence:0,
+            snapshot_id:0,view:b"mapped selection".to_vec(),referenced_payloads:vec![]},
+    ))).expect("atomic commit");
+    assert!(matches!(committed,CommitOutcome::Committed {..}));
+    assert_eq!(store.restore_manifest("view:slot-1").expect("manifest").expect("source").view,b"mapped selection");
+    let duplicate = store.commit_with_restore_checkpoint(&request, |_| panic!("duplicate must not repeat import"));
+    assert!(matches!(duplicate,Ok(CommitOutcome::Duplicate(_))));
+}
+
+#[test]
+fn repeated_view_only_saves_prune_same_cut_snapshots() {
+    let (dir, mut store, epoch) = fresh();
+    commit_round(&mut store,epoch,0);
+    for sequence in 1..10 {
+        store.save_restore_checkpoint(epoch,&NewSnapshot {batch_id:1,model_version:MODEL,bytes:b"same domain".to_vec(),referenced_payloads:vec![]},
+            &crate::NewRestoreManifest {restore_key:"view:slot-0".into(),incarnation:1,runtime_epoch:epoch.0,sequence,snapshot_id:0,
+                view:format!("selection {sequence}").into_bytes(),referenced_payloads:vec![]}).expect("view save");
+    }
+    let count: i64 = raw(&db_path(&dir)).query_row("SELECT COUNT(*) FROM snapshots",[],|row|row.get(0)).expect("count");
+    assert_eq!(count,2);
+    assert_eq!(store.restore_manifest("view:slot-0").expect("manifest").expect("source").sequence,9);
+}

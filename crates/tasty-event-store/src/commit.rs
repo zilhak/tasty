@@ -73,6 +73,35 @@ impl EventStore {
         tx.commit()?;
         Ok(CommitOutcome::Committed { batch })
     }
+    /// Commit a destination import and its restore source in one transaction. The builder may only
+    /// encode the model obtained from this already validated batch; it cannot access this store.
+    /// A duplicate import returns its first mapping/response without rebuilding or changing pins.
+    pub fn commit_with_restore_checkpoint(
+        &mut self,
+        request: &CommitRequest,
+        prepare: impl FnOnce(&crate::StoredBatch) -> StoreResult<(crate::NewSnapshot, crate::NewRestoreManifest)>,
+    ) -> StoreResult<CommitOutcome> {
+        let journal_id = self.journal_id().to_owned();
+        let tx = self.write_tx(request.writer_epoch)?;
+        if let Some(new) = &request.command
+            && let Some(key) = &new.key
+            && let Some(existing) = find_by_key(&tx, key)? {
+            if existing.request_digest != new.request_digest {
+                return Err(StoreError::KeyConflict {caller_scope:key.caller_scope.clone(),idempotency_key:key.idempotency_key.clone()});
+            }
+            return Ok(CommitOutcome::Duplicate(existing));
+        }
+        let batch = write_all(&tx, request, &journal_id)?.ok_or_else(|| StoreError::Corrupt("restore import has no initial event batch".into()))?;
+        let stored = crate::read::load_batch(&tx, batch.batch_id)?;
+        let (snapshot, mut manifest) = prepare(&stored)?;
+        if snapshot.batch_id != batch.batch_id {return Err(StoreError::Corrupt("import snapshot differs from committed batch".into()));}
+        manifest.snapshot_id = crate::snapshot::insert_snapshot(&tx, &snapshot)?;
+        crate::manifest::save_in(&tx, &manifest)?;
+        crate::snapshot::retain_snapshots(&tx, snapshot.model_version, 2)?;
+        tx.commit()?;
+        Ok(CommitOutcome::Committed {batch:Some(batch)})
+    }
+
 }
 
 fn write_all(

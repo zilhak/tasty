@@ -174,13 +174,20 @@ DB manifest가 없을 때만 이전 sidecar를 초기 자료로 읽으며, 첫 �
 일치하는 DB manifest가 손상돼도 sidecar로 돌아가 선택을 바꾸지 않는다. 새 incarnation은
 옛 incarnation의 손상된 View 바이트를 읽지 않는다. retirement는 해당 incarnation의
 manifest만 해제하고 미완·Uncertain domain 의무의 참조는 계속 유지한다.
+구조 변경 없이 View만 반복 저장해도 같은 transaction에서 이전 cache snapshot을 정리하며,
+현재 manifest·외부 holder·anchor가 잡은 snapshot은 남긴다.
 Manifest가 가리키는 snapshot은 보존 경계의 하한이며, 선택 자료만 domain event에서
 재생하거나 최신 선택으로 다시 생성하지 않는다.
 
 새 journal import의 payload 복사는 source import holder를 먼저 영속화하고 destination에
 독립 BLOB과 destination holder를 한 transaction으로 만든다. 복사 API는 source holder를
 해제하지 않는다. destination 초기 이벤트와 manifest 전환이 끝난 호출자가 해제하며,
-실패 시 source를 계속 읽을 수 있다. 이 복사 primitive의 source→destination import batch/manifest 전환 연결은 이행 중이다.
+실패 시 source를 계속 읽을 수 있다. 내부 journal import는 명시 source restore manifest를 전송 ID별 고정 alias로 pin한다.
+대상은 현재 데이터 홈의 명시된 새 슬롯이며, 새 ID mapping·copied payload 참조·초기 batch·
+최초 응답·domain snapshot·View manifest를 한 transaction으로 확정한다. 동일 전송 ID의
+재시도는 원 mapping을 반환한다. source가 이후 사라져도 완료한 destination을 다시 만들지 않는다.
+source pin 해제 실패는 보수적으로 참조를 남기고 다음 같은 전송 재시도에서 정리한다.
+정상 시작의 단일 journal 정책과 공개 IPC/CLI는 바꾸지 않는다.
 
 ## 저장하지 않는 것
 
