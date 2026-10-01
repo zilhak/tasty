@@ -190,8 +190,10 @@ filesystem quota가 아니다. SQLite `max_page_count`를 걸어 기수락 효�
 
 과금은 `(page_count - freelist_count) * page_size + 실제 WAL 파일 바이트`다. DB 물리 파일
 크기와 재사용 가능한 freelist도 조회 결과에 별도로 제공한다. GC 뒤 DB 파일이 커도 빈 페이지는
-다음 쓰기에 재사용할 수 있어 과금에서 제외한다. 한도 판단이 실패하면 unpinned payload GC와
-busy timeout 0의 WAL TRUNCATE를 시도한 뒤 재측정한다. reader가 막으면 기다리거나 성공을
+다음 쓰기에 재사용할 수 있어 과금에서 제외한다. 한도 판단이 실패하면
+busy timeout 0의 WAL TRUNCATE를 시도한 뒤 재측정한다. payload GC는 메모리 reader lease를
+잠근 채 최신 참조를 durable pin으로 옮기는 기존 제품 checkpoint에서만 수행한다. admission
+gate는 그 잠금과 참조를 알 수 없으므로 독립 GC를 실행하지 않는다. reader가 막으면 기다리거나 성공을
 추측하지 않고 남은 WAL을 그대로 과금한다. PASSIVE checkpoint만으로 물리 WAL이 줄었다고
 간주하지 않는다. key·최초 응답·미완료 effect·ID 기록을 예산 때문에 삭제하지 않는다.
 

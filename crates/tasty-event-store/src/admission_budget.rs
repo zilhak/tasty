@@ -51,8 +51,8 @@ impl EventStore {
         drop(self.write_tx(epoch)?); // Validate the active fenced writer before maintenance/admission.
         let mut usage=self.admission_usage()?;
         if !self.fits(usage,outstanding_credits) {
-            // Only unpinned payloads: never command keys, responses, effects, or retained evidence.
-            self.gc_payloads(epoch)?;
+            // The store cannot see in-process read leases. Payload GC belongs to the product
+            // checkpoint that synchronizes reader pins under its lease lock, never this gate.
             self.try_reclaim_admission_wal()?;
             usage=self.admission_usage()?;
         }
