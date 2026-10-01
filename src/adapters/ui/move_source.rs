@@ -6,7 +6,7 @@ use egui::emath::GuiRounding as _;
 use tasty_type_geometry::length::PhysicalPx;
 
 use crate::core::CoreState;
-use crate::core::state::PendingMove;
+use crate::state::PendingMove;
 use crate::model::PhysicalRect;
 
 /// 활성 워크스페이스에서 표시할 단서. 대상이 다른 워크스페이스에 있으면 [`workspace_cue`]가 대신한다.
@@ -22,14 +22,14 @@ pub(crate) enum MoveSourceMark {
 
 /// 슬롯의 대상이 어느 워크스페이스에도 없으면 슬롯을 비운다. 비웠으면 true다.
 /// 대상 종류와 관계없이 닫힌 대상의 표시와 "이곳으로 이동" 메뉴가 남지 않게 한다.
-pub(crate) fn clear_if_target_closed(engine: &mut CoreState) -> bool {
-    let Some(pending) = engine.pending_move else {
+pub(crate) fn clear_if_target_closed(engine: &CoreState,pending_move:&mut Option<PendingMove>) -> bool {
+    let Some(pending) = *pending_move else {
         return false;
     };
     if workspace_of(engine, pending).is_some() {
         return false;
     }
-    engine.pending_move = None;
+    *pending_move = None;
     true
 }
 
@@ -46,8 +46,8 @@ fn workspace_of(engine: &CoreState, pending: PendingMove) -> Option<usize> {
 
 /// 대상이 활성 워크스페이스 밖에 있으면 그 워크스페이스 인덱스를 반환한다.
 /// 사이드바 행과 접힌 레일 아바타가 move 글리프를 둔다.
-pub(crate) fn workspace_cue(engine: &CoreState, active_ws: usize) -> Option<usize> {
-    let ws_idx = workspace_of(engine, engine.pending_move?)?;
+pub(crate) fn workspace_cue(engine: &CoreState, active_ws: usize,pending:Option<PendingMove>) -> Option<usize> {
+    let ws_idx = workspace_of(engine, pending?)?;
     (ws_idx != active_ws).then_some(ws_idx)
 }
 
@@ -56,6 +56,7 @@ pub(crate) fn workspace_cue(engine: &CoreState, active_ws: usize) -> Option<usiz
 /// 활성 워크스페이스의 페인은 모두 `pane_rects`에 있으므로 뒤의 경우는 방어용이다.
 /// 탭 칸이 탭 바 스크롤 밖에 있거나 rect가 링보다 좁아 보이지 않는 경우는 여기서 거르지 않는다.
 pub(crate) fn resolve(
+    pending:Option<PendingMove>,
     presentation: &dyn crate::model::StructurePresentation,
     engine: &CoreState,
     active_ws: usize,
@@ -64,7 +65,7 @@ pub(crate) fn resolve(
     previews: Option<&crate::state::layout_preview::LayoutPreviews>,
     scale_factor: f32,
 ) -> Option<MoveSourceMark> {
-    let pending = engine.pending_move?;
+    let pending = pending?;
     if workspace_of(engine, pending)? != active_ws {
         return None;
     }

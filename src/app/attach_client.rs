@@ -5025,3 +5025,22 @@ pub(crate) struct RemoteTarget {
 fn ensure_bulk_epoch(epoch:&tasty_remote::connection::ConnectionEpoch)->anyhow::Result<()> {
     if epoch.is_active() {Ok(())} else {anyhow::bail!("bulk connection retired; remote save outcome may be unknown")}
 }
+
+impl App {
+    /// Only values are reserved here. The bounded writer cannot receive the instruction before
+    /// its operation/outbox commit and the original connection's validated Running claim.
+    pub(crate) fn prepare_journal_forward(&mut self,engine:EngineId,op:&StructuralOp,user:bool,candidates:&[u32])->anyhow::Result<crate::app::journal::forward::Draft> {
+        let owner=self.engines.get(engine).ok_or_else(||anyhow::anyhow!("mirror engine retired"))?;
+        let (index,_)=owner.core_state.find_workspace_index_for_surface(op.anchor_surface_id()).ok_or_else(||anyhow::anyhow!("mirror anchor missing"))?;
+        let workspace=owner.core_state.workspace_at(index).filter(|workspace|workspace.mirror).ok_or_else(||anyhow::anyhow!("target is not a mirror"))?.id;
+        let stream=owner.journal_binding.as_ref().ok_or_else(||anyhow::anyhow!("mirror engine has no journal binding"))?.stream.clone();
+        let target=self.capture_remote_target(workspace,None).ok_or_else(||anyhow::anyhow!("no live attach session"))?;
+        let session=self.remote.sessions.iter_mut().find(|session|session.state.local_workspace==workspace && session.transport.frame_tx.epoch().same(&target.sender.epoch())).ok_or_else(||anyhow::anyhow!("mirror connection retired"))?;
+        let local_anchor=op.anchor_surface_id();let remote_anchor=*session.state.remote_to_local.iter().find(|(_,local)|**local==local_anchor).ok_or_else(||anyhow::anyhow!("mirror anchor mapping missing"))?.0;
+        let wire=remote_structural_op(op,remote_anchor,&session.state.remote_to_local).ok_or_else(||anyhow::anyhow!("structural target is outside the original mirror"))?;
+        let op_id=session.state.op_seq;session.state.op_seq=op_id.checked_add(1).ok_or_else(||anyhow::anyhow!("remote operation sequence exhausted"))?;
+        let focus=user.then(||pending_op_focus_for(op,candidates,&session.state.remote_to_local)).flatten();
+        let payload=structural_op_payload(op_id,wire,user);
+        Ok(crate::app::journal::forward::Draft {engine,stream,workspace_index:index,target,local_anchor,remote_anchor,op_id,payload,focus,silent_failure:!user})
+    }
+}

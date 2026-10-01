@@ -20,6 +20,15 @@ impl JournalApplication {
             self.admit_intent_request(engine_id,"intent.restore-closed",serde_json::json!({"pane":target_pane_id,"scope":scope}),origin,view);
             return true;
         }
+        let replacement=match intent {
+            I::MoveSurface {source_surface_id:source,target_surface_id:target}=>Some((tasty_domain::IdKind::Surface,*source,*target)),
+            I::ReplaceTabWithTab {source_tab_id:source,target_tab_id:target}=>Some((tasty_domain::IdKind::Tab,*source,*target)),
+            I::ReplacePaneWithPane {source_pane_id:source,target_pane_id:target}=>Some((tasty_domain::IdKind::Pane,*source,*target)),_=>None,
+        };
+        if let Some((kind,source,target))=replacement {
+            let replacement=tasty_domain::Replacement {source:tasty_domain::EntityId {kind,id:source},target:tasty_domain::EntityId {kind,id:target}};
+            self.admit_intent_request(engine_id,"intent.replace",serde_json::to_value(replacement).expect("replacement IDs serialize"),origin,view);return true;
+        }
         let close=match intent {
             I::CloseWorkspace {workspace_id}=>Some((tasty_domain::CloseTarget::Workspace(*workspace_id),origin.is_user(),origin.is_user(),None)),
             I::CloseTab {tab_id}=>Some((tasty_domain::CloseTarget::Tab(*tab_id),origin.is_user(),origin.is_user(),None)),
@@ -162,7 +171,7 @@ impl JournalApplication {
         self.admit_intent_request(engine_id,method,params,origin,None);
     }
 
-    fn admit_intent_request(
+    pub(super) fn admit_intent_request(
         &mut self,
         engine_id: EngineId,
         method: &str,

@@ -46,6 +46,8 @@ pub struct Operation {
     pub assembly:Option<crate::CreationAssembly>,
     #[serde(default)]
     pub retirement:Option<crate::RetirementPlan>,
+    #[serde(default)]
+    pub forward:bool,
     pub targets: Vec<EntityId>,
     pub reserved: Vec<EntityId>,
     /// Immutable, non-secret resolved preparation input owned by this journal.

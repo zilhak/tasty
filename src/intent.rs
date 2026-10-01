@@ -124,6 +124,7 @@ pub struct DispatchedIntent {
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // reason: 명령마다 Box를 할당하는 비용을 피한다
 pub enum Intent {
+    ForwardMirror {op:tasty_ipc::stream::StructuralOp,close_focus_candidates:Vec<u32>},
     RespondApproval { request_id:tasty_approval::ApprovalId, choice:String, comment:Option<String> },
     Ui(UiIntent),
     /// 도메인 명령도 같은 큐에 넣고 AppServices::apply로 전달한다.

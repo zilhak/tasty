@@ -18,8 +18,6 @@ pub(crate) mod impl_clipboard;
 pub(crate) mod impl_close;
 pub(crate) mod impl_convert;
 pub(crate) mod impl_mirror;
-pub(crate) mod impl_move;
-pub(crate) mod impl_move_container;
 pub(crate) mod impl_pty;
 pub(crate) mod impl_split;
 pub(crate) mod impl_tab;

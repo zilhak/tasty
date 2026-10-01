@@ -75,7 +75,7 @@ pub(super) fn aggregate(
                         .expect("original result refers to its operation");
                     *result = match &operation.outcome {
                         Some(OperationOutcome::Succeeded)=> {
-                            if operation.retirement.is_some() {StructuralResult::Closed {closed:true}}
+                            if operation.forward {StructuralResult::Updated} else if let Some(plan)=&operation.retirement {if plan.replacement.is_some() {StructuralResult::Moved {moved:true}}else {StructuralResult::Closed {closed:true}}}
                             else if let Some(plan)=&operation.assembly {
                                 let surviving=plan.snapshot.surfaces.keys().filter(|surface|operations.get(&tasty_domain::CreationAssembly::member(&operation.id,**surface)).is_some_and(|member|matches!(member.outcome,Some(OperationOutcome::Succeeded)))).copied().collect();
                                 plan.result(&surviving)

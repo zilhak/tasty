@@ -7,6 +7,8 @@ use crate::runtime::live_projection;
 pub(crate) mod commands;
 mod creation;
 mod resource_cleanup;
+#[cfg(feature="gui")]
+pub(crate) mod forward;
 mod capture;
 mod id_reservations;
 #[cfg(feature = "gui")]
@@ -29,11 +31,14 @@ pub(crate) struct JournalApplication {
     captures:std::collections::BTreeMap<u64,capture::PendingCapture>,
     capture_requests:HashMap<EngineId,bool>,
     execution_id_requests:HashMap<u64,EngineId>,
+    replacements:Vec<(EngineId,tasty_domain::Replacement)>,
     changed_engines: std::collections::HashSet<EngineId>,
     completion_views:HashMap<EngineId,crate::runtime::journal_product::CompletionView>,
     wake: Arc<dyn Fn() + Send + Sync>,
     opening: HashMap<EngineId, Opening>,
     creations: HashMap<(EngineId,u64), creation::Creation>,
+    #[cfg(feature="gui")]
+    forwards:std::collections::BTreeMap<u64,forward::Forward>,
     resource_cleanups:std::collections::BTreeMap<u64,resource_cleanup::Cleanup>,
     restoration_reads: HashMap<u64, (EngineId, crate::runtime::surface_restorer::RestoreInput)>,
     restoration_queue: VecDeque<(EngineId, crate::runtime::surface_restorer::RestoreInput)>,
@@ -58,6 +63,7 @@ pub(crate) struct JournalApplication {
     retirements: retirement::Retirements,
     known_slots: std::collections::BTreeMap<u32, bool>,
     started: bool,
+    runtime_epoch:Option<u64>,
     next_ticket: u64,
     halted: Option<String>,
 }
@@ -90,11 +96,14 @@ impl JournalApplication {
             capture_requests:Default::default(),
             execution_id_requests:Default::default(),
             changed_engines: Default::default(),
+            replacements:Vec::new(),
             completion_views:Default::default(),
             wake,
             opening: HashMap::new(),
             creations: HashMap::new(),
             resource_cleanups:Default::default(),
+            #[cfg(feature="gui")]
+            forwards:Default::default(),
             restoration_reads: HashMap::new(),
             restoration_queue: VecDeque::new(),
             restoration_ready: HashMap::new(),
@@ -112,6 +121,7 @@ impl JournalApplication {
             retirements: Default::default(),
             known_slots: Default::default(),
             started: false,
+            runtime_epoch:None,
             next_ticket: 1,
             halted: None,
         })
@@ -189,6 +199,8 @@ impl JournalApplication {
             if self.started {
                 self.submit_openings()?;
                 self.submit_commands()?;
+                #[cfg(feature="gui")]
+                self.submit_forwards()?;
                 self.poll_resource_cleanup(sessions)?;
                 self.submit_captures(sessions)?;
                 self.refill_execution_ids(sessions)?;
@@ -219,8 +231,9 @@ impl JournalApplication {
             };
             match completion {
                 Completion::Ready {
-                    cut, mut bootstrap, ..
+                    cut, mut bootstrap, runtime_epoch,..
                 } => {
+                    self.runtime_epoch=Some(runtime_epoch);
                     self.known_slots.extend(bootstrap.streams.iter().filter_map(
                         |(stream, model)| {
                             stream
@@ -389,6 +402,7 @@ impl JournalApplication {
                         }
                         for recorded in events {
                             match &recorded.event {
+                                tasty_domain::DomainEvent::StructureReplaced {replacement,..}=>self.replacements.push((session.id,*replacement)),
                                 tasty_domain::DomainEvent::WorkspaceAttachMappingSet {id,..}=>{session.remote.attach_mapping_tokens.insert(*id,Arc::new(()));},
                                 tasty_domain::DomainEvent::WorkspaceClosed {id}=>{session.remote.attach_mapping_tokens.remove(id);},
                                 _=>{},
@@ -429,6 +443,8 @@ impl JournalApplication {
                         .map_err(|error| format!("bootstrap publication ACK: {error:?}"))?;
                 }
                 Completion::Finished { ticket, result } => {
+                    #[cfg(feature="gui")]
+                    if self.answer_forward(ticket,&result)? {continue;}
                     if self.answer_execution_ids(ticket,&result,sessions)? {continue;}
                     if self.answer_capture(ticket,&result,sessions) {continue;}
                     if self.answer_resource_cleanup(ticket,&result,sessions,plugins.as_deref_mut())? {continue;}
@@ -614,6 +630,7 @@ impl JournalApplication {
         (!self.resource_cleanups.is_empty() || self.creations.values().any(creation::Creation::needs_cleanup_poll)).then(||std::time::Instant::now()+std::time::Duration::from_millis(10))
     }
 
+    pub(crate) fn runtime_epoch(&self)->Option<u64> {self.runtime_epoch}
     pub(crate) fn is_halted(&self) -> bool {
         self.halted.is_some()
     }
@@ -719,8 +736,14 @@ impl JournalApplication {
     }
 
     pub(super) fn has_creation(&self,id:EngineId)->bool {self.creations.keys().any(|(engine,_)|*engine==id)}
+    pub(super) fn has_forward(&self,id:EngineId)->bool {
+        #[cfg(feature="gui")]
+        {return self.forwards.values().any(|forward|forward.engine==id);}
+        #[cfg(not(feature="gui"))]
+        {let _=id;false}
+    }
     pub(crate) fn has_pending_engine_effects(&self,id:EngineId)->bool {
-        self.has_pending_capture(id)||self.has_creation(id)||self.has_resource_cleanup(id)||self.commands.has_resource_request(id)
+        self.commands.has_remote_request(id)||self.has_forward(id)||self.has_pending_capture(id)||self.has_creation(id)||self.has_resource_cleanup(id)||self.commands.has_resource_request(id)
     }
     #[cfg(feature="gui")]
     pub(crate) fn has_pending_view_for(&self,stream:&str)->bool {

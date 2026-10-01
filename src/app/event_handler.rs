@@ -1699,62 +1699,13 @@ impl App {
 
     /// 구조 변경은 점유한 workspace를 가진 MainView에서만 실행한다.
     /// parked 상태에도 MainViewState는 있지만 현재 이 실행 루프의 대상은 아니다.
-    fn apply_forwarded_structural_op(
-        &mut self,
-        client_id: u32,
-        op_id: u64,
-        op: &crate::ipc::stream::StructuralOp,
-        origin: crate::ipc::stream::ForwardOrigin,
-        hub: &tasty_ipc::stream_hub::StreamHub,
-    ) {
-        let anchor = op.anchor_surface_id();
-        let core = &mut self.services;
-        let mut handled = false;
-        for (_, main, mut engine) in engines_mut!(self).window_pairs() {
-            let Some(ws) = engine.live.occupancy.workspace_of_surface(anchor) else {
-                continue;
-            };
-            handled = true;
-            let (ok, reason, delta) = if engine.live.occupancy.workspace_holder(ws) != Some(client_id) {
-                (false, Some("not workspace holder".to_string()), None)
-            } else {
-                match crate::app::attach_structure::execute_forwarded_structural_op(
-                    core,
-                    &mut main.state,
-                    &mut engine,
-                    op,
-                    origin,
-                ) {
-                    Ok(delta) => (true, None, delta),
-                    Err(reason) => (false, Some(reason), None),
-                }
-            };
-            // 회신·구조 delta·새 터미널 출력 순서로 보내 mirror가 ID 매핑을 만든 뒤 출력을 받게 한다.
-            reply_structural_result(hub, client_id, op_id, ok, reason);
-            if let Some(fd) = delta {
-                push_structural_delta(hub, client_id, &fd.delta);
-                for sid in fd.added_terminals {
-                    engine.tap_surface_for_stream(sid, client_id, hub);
-                }
-                // kind가 바뀌면 옛 mesh를 버려 새 surface 초기화를 유도한다.
-                if let Some(sid) = fd.converted_surface
-                    && let Some(mgr) = self.plugin_manager.as_mut()
-                {
-                    mgr.drop_egui_mesh_frame(sid);
-                }
-            }
-            main.mark_dirty();
-            break;
-        }
-        if !handled {
-            // workspace 점유는 있지만 anchor가 사라진 경우도 구별해 거절한다.
-            let engines = self.engines().windowed_and_parked();
-            let reason = crate::remote::structure_sync::unresolved_forward_reason(
-                engines.map(|e| e.core),
-                client_id,
-                op,
-            );
-            reply_structural_result(hub, client_id, op_id, false, Some(reason));
+    fn apply_forwarded_structural_op(&mut self,client_id:u32,op_id:u64,op:&crate::ipc::stream::StructuralOp,origin:crate::ipc::stream::ForwardOrigin,hub:&tasty_ipc::stream_hub::StreamHub) {
+        let owner=self.engines.all_sessions().find(|session|session.live.occupancy.workspace_held_by(client_id).is_some()).map(|session|session.id);
+        if let Some(session)=owner.and_then(|id|self.engines.session_mut(id)) && let Some(binding)=session.journal_binding.as_ref() {
+            if let Some((ticket,workspace))=self.journal.admit_remote(session.id,&session.core_state,&session.live,binding.runtime_epoch,hub,client_id,op_id,op.clone(),origin) {session.remote.pending_structure_replies.insert(ticket,workspace);}
+        } else {
+            let reason=crate::remote::structure_sync::unresolved_forward_reason(self.engines.all_sessions().map(|session|session.as_ref()),client_id,op);
+            crate::app::journal::commands::inbound::reply(hub,client_id,op_id,false,Some(reason));
         }
     }
 

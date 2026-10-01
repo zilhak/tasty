@@ -104,7 +104,7 @@ pub(crate) fn mark_last_forward_user_triggered(
 /// pane·tab 작업은 대표 surface를 찾는다. MoveSurface는 같은 workspace의 두 대상만 허용한다.
 /// 다른 workspace의 로컬 ID를 보내면 원격의 무관한 surface ID와 겹칠 수 있다.
 #[cfg(feature = "gui")]
-fn build_mirror_forward_op(
+pub(crate) fn build_mirror_forward_op(
     engine: &crate::core::CoreState,
     intent: &DomainIntent,
 ) -> Option<tasty_ipc::stream::StructuralOp> {
@@ -456,30 +456,6 @@ impl AppServices {
                     engine, surface_id, target,
                 )])
             }
-            DomainIntent::MoveSurface {
-                source_surface_id,
-                target_surface_id,
-            } => Ok(vec![Self::apply_move_surface(
-                engine,
-                source_surface_id,
-                target_surface_id,
-            )]),
-            DomainIntent::ReplaceTabWithTab {
-                source_tab_id,
-                target_tab_id,
-            } => Ok(vec![Self::apply_replace_tab_with_tab(
-                engine,
-                source_tab_id,
-                target_tab_id,
-            )]),
-            DomainIntent::ReplacePaneWithPane {
-                source_pane_id,
-                target_pane_id,
-            } => Ok(vec![Self::apply_replace_pane_with_pane(
-                engine,
-                source_pane_id,
-                target_pane_id,
-            )]),
             DomainIntent::SendToSurface {
                 surface_id,
                 payload,

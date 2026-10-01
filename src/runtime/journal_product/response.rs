@@ -13,6 +13,7 @@ pub(crate) struct CompletionView {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) enum ResponsePlan {
+    Moved {success:JsonRpcResponse,not_moved:JsonRpcResponse},
     AssemblyRestored {stream:String,root:tasty_domain::EntityId,surfaces:Vec<u32>,presentation:tasty_domain::UndoPresentation},
     Fixed(JsonRpcResponse),
     Closed { success: JsonRpcResponse, not_closed: JsonRpcResponse },
@@ -52,6 +53,7 @@ impl ResponsePlan {
                 let surface=tab.and_then(|tab|presentation.selected_surfaces.get(&tab).copied().or_else(||model.tabs.get(&tab).and_then(|tab|tab.layout.leaves().first().copied()))).filter(|surface|surfaces.contains(surface)).or_else(||surfaces.iter().find(|surface|model.surfaces.contains_key(surface)).copied());
                 JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"restored":surface.is_some(),"kind":root.kind.label(),"restored_surface_id":surface,"presentation":presentation}))
             },
+            Self::Moved {success,..}=>success.clone(),
             Self::Fixed(response) => response.clone(),
             Self::Closed { success, .. } => success.clone(),
             Self::Multiple(plans) => {
@@ -201,6 +203,7 @@ impl ResponseProgress {
                     reason,
                 ));
             }
+            if let (ResponsePlan::Moved {success,not_moved},Some(R::Moved {moved}))=(plan,result) {return Ok(if *moved {success.clone()}else {not_moved.clone()});}
             if let (ResponsePlan::Closed { success, not_closed }, Some(R::Closed { closed })) = (plan, result) {
                 return Ok(if *closed { success.clone() } else { not_closed.clone() });
             }

@@ -3,6 +3,8 @@
 mod bootstrap;
 mod creation;
 mod assembly;
+mod forward;
+mod replacement;
 mod metadata;
 pub(crate) mod retirement;
 
@@ -13,6 +15,9 @@ use crate::{DomainEvent, JournalModel, Ratio};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StructuralCommand {
+    Replace {operation:crate::OperationId,command_id:String,input:crate::DataRef,replacement:crate::Replacement,expected:Vec<crate::RetiredSurface>},
+    PrepareForward {operation:crate::OperationId,command_id:String,input:crate::DataRef},
+    FinishForward {operation:crate::OperationId,outcome:crate::OperationOutcome},
     PrepareAssembly {operation:crate::OperationId,command_id:String,input:crate::DataRef,plan:crate::CreationAssembly},
     RecordCapture {surface:u32,kind:String,activation:Option<u64>,content_generation:u64,snapshot_schema:u32,data:crate::DataRef},
     Close {operation:crate::OperationId,command_id:String,input:crate::DataRef,target:crate::CloseTarget,expected:Vec<crate::RetiredSurface>,undo:Option<crate::UndoCapture>,is_user_close:bool},
@@ -174,6 +179,7 @@ pub fn decide_structure(
             StructuralCommand::OpenEngine { .. }
                 | StructuralCommand::RetireEngine { .. }
                 | StructuralCommand::FinishRetirement { .. }
+                | StructuralCommand::FinishForward {..}
                 | StructuralCommand::FinishCreation { .. }
                 | StructuralCommand::FinishCleanup { .. }
                 | StructuralCommand::RejectInstallation { .. }
@@ -184,6 +190,8 @@ pub fn decide_structure(
         return Err(Rejection("engine binding has been retired".into()));
     }
     let decision = match command {
+        StructuralCommand::Replace {..}=>replacement::decide(model,command)?,
+        StructuralCommand::PrepareForward {..}|StructuralCommand::FinishForward {..}=>forward::decide(model,command)?,
         StructuralCommand::PrepareAssembly {..}=>assembly::decide(model,command)?,
         StructuralCommand::RecordCapture {surface,kind,activation,content_generation,snapshot_schema,data}=> {
             let current=model.surfaces.get(surface).ok_or_else(||Rejection("capture target no longer exists".into()))?;

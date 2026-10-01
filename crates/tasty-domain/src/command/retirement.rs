@@ -16,8 +16,8 @@ pub(super) fn decide(model:&JournalModel,command:&StructuralCommand)->Result<Str
                     .ok_or_else(||Rejection("closed tab has no parent".into()))?;
                 Ok((entity.id,pane))
             }).collect::<Result<Vec<_>,Rejection>>()?;
-            let plan=RetirementPlan {target:*target,removed:removed.clone(),surfaces,undo:undo.clone(),tab_parents,is_user_close:*is_user_close};
-            let record=Operation {id:operation.clone(),command_id:command_id.clone(),engine_incarnation:model.engine_incarnation,creation:None,assembly:None,retirement:Some(plan.clone()),targets:removed,reserved:Vec::new(),input:*input,activation_generation:0,outcome:None,pending_outcome:None,cleanup:None,prepared_data:None,prepared_deferred:false,resource_prepared:false,reconciliation_evidence:None};
+            let plan=RetirementPlan {replacement:None,target:*target,removed:removed.clone(),surfaces,undo:undo.clone(),tab_parents,is_user_close:*is_user_close};
+            let record=Operation {id:operation.clone(),command_id:command_id.clone(),engine_incarnation:model.engine_incarnation,creation:None,assembly:None,retirement:Some(plan.clone()),forward:false,targets:removed,reserved:Vec::new(),input:*input,activation_generation:0,outcome:None,pending_outcome:None,cleanup:None,prepared_data:None,prepared_deferred:false,resource_prepared:false,reconciliation_evidence:None};
             let mut events=vec![DomainEvent::OperationPrepared {operation:record}];
             if let Some(capture)=undo {
                 if !is_user_close {return Err(Rejection("only user close can append an undo record".into()));}
@@ -37,7 +37,7 @@ pub(super) fn decide(model:&JournalModel,command:&StructuralCommand)->Result<Str
             let record=model.operations.get(operation).ok_or_else(||Rejection("retirement operation missing".into()))?;
             if record.retirement.is_none() || record.outcome.is_some() {return Err(Rejection("retirement cannot be completed from this state".into()));}
             let result=match outcome {
-                OperationOutcome::Succeeded=>StructuralResult::Closed {closed:true},
+                OperationOutcome::Succeeded=>if record.retirement.as_ref().is_some_and(|plan|plan.replacement.is_some()) {StructuralResult::Moved {moved:true}}else {StructuralResult::Closed {closed:true}},
                 OperationOutcome::Uncertain {reason}=>StructuralResult::Failed {reason:reason.clone()},
                 _=>return Err(Rejection("committed close cleanup requires success or explicit uncertainty".into())),
             };

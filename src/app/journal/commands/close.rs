@@ -1,7 +1,7 @@
 //! Resolve close compatibility once, then commit its tombstone and exact cleanup obligation.
 use super::*;
 #[derive(Clone,Copy,Default)]
-pub(super) enum Cause {#[default] Ordinary,ProcessExit(tasty_terminal::ResourceGeneration)}
+pub(super) enum Cause {#[default] Ordinary,ProcessExit(tasty_terminal::ResourceGeneration),RemoteHolder {client:u32,workspace:u32}}
 pub(super) struct Request {
     pub engine:EngineId,
     pub binding:crate::runtime::journal_product::EngineBinding,
@@ -56,6 +56,9 @@ impl Request {
                 return Err(bad("PTY exit belongs to a retired physical owner".into()));
             }
         }
+        if let Cause::RemoteHolder {client,workspace}=cause {
+            if engine.live.occupancy.workspace_holder(workspace)!=Some(client) {return Err(bad("remote workspace holder changed".into()));}
+        }
         let (workspace,targets,closes_workspace)=match target {
             T::Tab(tab_id)=> {
                 let pane=core.find_pane_for_tab(tab_id).and_then(|id|core.find_pane_by_id(id));
@@ -75,14 +78,8 @@ impl Request {
             },
             T::Workspace(_)=>unreachable!("workspace resolver is separate"),
         };
-        if let Some(caller)=crate::ipc::handler::caller_surface_id(&request.params)
-            && request.method!="surface.close_self" && targets.contains(&caller) {
-            return Err(bad(match target {
-                T::Tab(_)=>"Cannot close a tab that contains your own surface. Use 'tasty close self' instead.",
-                T::Pane(_)=>"Cannot close a pane that contains your own surface. Close all other surfaces in the pane first, then use 'tasty close self'.",
-                _=>"Cannot close your own surface with 'close surface'. Use 'tasty close self' instead.",
-            }.into()));
-        }
+        if let Cause::RemoteHolder {workspace:expected,..}=cause && workspace.is_none_or(|workspace|workspace.id!=expected) {return Err(bad("remote close target is outside its held workspace".into()));}
+        if let Some(response)=caller_refusal(request,core) {return Err(response);}
         // Remote structural effects are admitted separately; a mirror is never a local journal fact.
         if workspace.is_some_and(|workspace|workspace.mirror) {return Err(bad("mirror close requires the bound remote structural effect".into()));}
         if matches!(cause,Cause::Ordinary) && let Some(surface)=targets.iter().find(|id|engine.live.occupancy.is_hard_occupied(**id)) {
@@ -150,7 +147,8 @@ impl JournalApplication {
         let Some(pending)=self.commands.pending.get(&ticket) else{return;};
         match Request::resolve(&pending.request,session,pending.close_cause) {
             Ok(mut request)=>{
-                if !matches!(&pending.reply,Reply::Intent {..}) {request.is_user_close=false;request.capture_undo=false;}
+                if let Reply::Remote(remote)=&pending.reply {request.is_user_close=remote.user;request.capture_undo=remote.user;}
+                else if !matches!(&pending.reply,Reply::Intent {..}) {request.is_user_close=false;request.capture_undo=false;}
                 else if matches!(&pending.reply,Reply::Intent {origin,..} if origin.is_user()) {request.is_user_close=true;}
                 let work=match request.input(session,self.completion_views.get(&session.id)) {Ok(work)=>work,Err(error)=>{self.reject_resolved_request(ticket,JsonRpcResponse::internal_error(serde_json::Value::Null,error));return;}};
                 let pending=self.commands.pending.get_mut(&ticket).expect("resolved request remains pending");
@@ -177,4 +175,18 @@ impl JournalApplication {
 fn core_expected(session:&EngineSession,id:u32)->Option<tasty_domain::RetiredSurface> {
     let surface=session.core_state.find_surface_by_id(id)?;
     Some(tasty_domain::RetiredSurface {id,kind:surface.kind.clone(),activation_generation:surface.activation_generation})
+}
+
+/// Caller protection applies before choosing local execution or remote submission.
+/// Public parameters never grant the holder/system cleanup exceptions.
+pub(super) fn caller_refusal(request:&JsonRpcRequest,core:&crate::core::CoreState)->Option<JsonRpcResponse> {
+    let caller=crate::ipc::handler::caller_surface_id(&request.params)?;
+    let id=|field|request.params.get(field).and_then(|value|value.as_u64()).and_then(|id|u32::try_from(id).ok());
+    let reason=match request.method.as_str() {
+        "surface.close" if id("surface_id")==Some(caller)=>"Cannot close your own surface with 'close surface'. Use 'tasty close self' instead.",
+        "tab.close" if core.find_tab_for_surface(caller)==id("tab_id") && id("tab_id").is_some()=>"Cannot close a tab that contains your own surface. Use 'tasty close self' instead.",
+        "pane.close" if core.find_pane_for_surface(caller)==id("pane_id") && id("pane_id").is_some()=>"Cannot close a pane that contains your own surface. Close all other surfaces in the pane first, then use 'tasty close self'.",
+        _=>return None,
+    };
+    Some(JsonRpcResponse::invalid_params(serde_json::Value::Null,reason))
 }

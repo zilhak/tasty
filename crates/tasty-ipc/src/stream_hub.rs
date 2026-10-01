@@ -205,6 +205,8 @@ impl GitQueryKind {
 
 /// Per-client push sink held in the registry.
 struct StreamSink {
+    binding:Arc<()>,
+    registration:u128,
     tx: SyncSender<StreamFrame>,
     /// Consecutive dropped-frame count (reset on a successful send).
     lag: u32,
@@ -368,6 +370,7 @@ impl StreamHub {
         tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED).insert(
             id,
             StreamSink {
+                binding:Arc::new(()),registration:rand::random(),
                 tx,
                 lag: 0,
                 loss_notify: false,
@@ -383,6 +386,15 @@ impl StreamHub {
             owes_notice,
             sinks: Arc::downgrade(&self.sinks),
         }
+    }
+
+    /// A reply lease identifies this registration, including when a numeric ID is registered again.
+    pub fn client_identity(&self,id:StreamClientId)->Option<(u128,Weak<()>)> {
+        tasty_utils::poison::recover_mutex(self.sinks.lock(),SINKS_WHAT,&SINKS_POISONED).get(&id).map(|sink|(sink.registration,Arc::downgrade(&sink.binding)))
+    }
+    pub fn client_binding(&self,id:StreamClientId)->Option<Weak<()>> {self.client_identity(id).map(|(_,binding)|binding)}
+    pub fn matches_client_binding(&self,id:StreamClientId,binding:&Weak<()>)->bool {
+        self.client_binding(id).is_some_and(|current|current.ptr_eq(binding))
     }
 
     /// ClientLossNotify 선언을 기록한다. 반복 호출은 같으며 이미 끊긴 연결은 무시한다.

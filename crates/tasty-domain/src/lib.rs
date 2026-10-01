@@ -66,3 +66,6 @@ pub use retirement::{CloseTarget,RetirementPlan,RetiredSurface};
 
 mod assembly;
 pub use assembly::{CreationAssembly,AssemblyDestination};
+
+mod replacement;
+pub use replacement::Replacement;

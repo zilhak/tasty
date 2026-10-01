@@ -6,6 +6,7 @@
 pub(crate) mod bootstrap;
 mod layout;
 mod structure;
+mod replacement;
 
 
 use tasty_domain::{DomainBatch, DomainEvent, JournalModel};

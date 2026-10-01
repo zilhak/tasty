@@ -104,7 +104,7 @@ impl GpuState {
             ui::titlebar::draw_titlebar(ctx, state, window, proxy);
             let plugin_alert = plugin_manager.map_or(0, |m| m.attention_count());
             // 닫힌 대상의 이동 대기 표시와 "이곳으로 이동" 메뉴가 남지 않게 한다.
-            ui::move_source::clear_if_target_closed(engine);
+            ui::move_source::clear_if_target_closed(engine,&mut state.pending_move);
             ui::draw_ui(ctx, state, engine, scale_factor, plugin_alert);
             ui::draw_pane_dividers(ctx, dividers, scale_factor);
             ui::draw_surface_highlights(ctx, state, engine, terminal_rect, scale_factor);
@@ -112,7 +112,7 @@ impl GpuState {
             ui::draw_egui_panels(ctx, state, engine, pane_rects, scale_factor);
             // 탭 바와 점유 테두리 뒤에 그려 대상 rect에서 가장 마지막에 둔다.
             let move_mark = ui::move_source::resolve(
-                &state.navigation,
+                state.pending_move,                &state.navigation,
                 engine,
                 state.active_workspace_index(engine),
                 pane_rects,

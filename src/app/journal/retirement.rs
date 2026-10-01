@@ -81,7 +81,7 @@ impl JournalApplication {
             .iter_mut()
             .filter(|(id, pending)| {
                 pending.ticket.is_none()
-                    && !self.has_creation(*id)
+                    && !self.has_creation(*id) && !self.has_forward(*id) && !self.commands.has_remote_request(*id)
                     && !self.commands.has_resource_request(**id)
                     && !self.resource_cleanups.values().any(|cleanup|cleanup.engine==**id)
                     && !self

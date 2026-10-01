@@ -18,7 +18,7 @@ pub(super) fn decide(model:&JournalModel,command:&StructuralCommand)->Result<Str
     }).map_err(|error|Rejection(error.to_string()))?;
     let coordinator=Operation {
         id:operation.clone(),command_id:command_id.clone(),engine_incarnation:model.engine_incarnation,
-        creation:None,assembly:Some(plan.clone()),retirement:None,targets:Vec::new(),reserved:plan.reserved_ids(),input:*input,
+        creation:None,assembly:Some(plan.clone()),retirement:None,forward:false,targets:Vec::new(),reserved:plan.reserved_ids(),input:*input,
         activation_generation:0,outcome:None,pending_outcome:None,cleanup:None,prepared_data:None,prepared_deferred:false,resource_prepared:false,reconciliation_evidence:None,
     };
     let mut events=vec![DomainEvent::OperationPrepared {operation:coordinator}];
@@ -30,7 +30,7 @@ pub(super) fn decide(model:&JournalModel,command:&StructuralCommand)->Result<Str
         let member=Operation {
             id:id.clone(),command_id:command_id.clone(),engine_incarnation:model.engine_incarnation,
             creation:Some(CreationPlan {destination:CreationDestination::Assembly {operation:operation.clone()},surface:SurfaceSpec {id:*surface,kind:value.kind.clone(),data:value.data},tab_name:tab.name.clone(),explicit_name:tab.explicit_name.clone()}),
-            assembly:None,retirement:None,targets:Vec::new(),reserved:Vec::new(),input:plan.inputs[surface],activation_generation:generation,
+            assembly:None,retirement:None,forward:false,targets:Vec::new(),reserved:Vec::new(),input:plan.inputs[surface],activation_generation:generation,
             outcome:None,pending_outcome:None,cleanup:None,prepared_data:None,prepared_deferred:false,resource_prepared:false,reconciliation_evidence:None,
         };
         effects.push(StructuralEffect::PrepareSurface {operation:id,input:member.input,surface:*surface,kind:value.kind.clone(),activation_generation:generation});

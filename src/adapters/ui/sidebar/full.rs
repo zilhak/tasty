@@ -13,6 +13,7 @@ use super::view::{
 
 /// 워크스페이스 1개를 `WorkspaceEntryView` snapshot 으로 변환. collapsed 레일도 공유.
 pub(super) fn entry_view(
+    pending:Option<crate::state::PendingMove>,
     engine: &crate::core::CoreState,
     global_idx: usize,
     ws: &crate::model::Workspace,
@@ -31,7 +32,7 @@ pub(super) fn entry_view(
         attached: engine.live.occupancy.workspace_holder(ws.id).is_some(),
         is_mirror: ws.mirror,
         is_active: global_idx == active_ws,
-        move_source: crate::adapters::ui::move_source::workspace_cue(engine, active_ws)
+        move_source: crate::adapters::ui::move_source::workspace_cue(engine, active_ws,pending)
             == Some(global_idx),
     }
 }
@@ -54,7 +55,7 @@ pub(super) fn build_category_sections(
                 let entries = engine
                     .workspaces_in_category(cat.id)
                     .into_iter()
-                    .map(|(gi, ws)| (gi, entry_view(engine, gi, ws, active_ws)))
+                    .map(|(gi, ws)| (gi, entry_view(state.pending_move,engine, gi, ws, active_ws)))
                     .collect();
                 CategorySectionView {
                     id: cat.id,
@@ -91,7 +92,7 @@ pub fn draw_full_sidebar(
         .workspaces()
         .into_iter()
         .enumerate()
-        .map(|(i, ws)| entry_view(engine, i, ws, active_ws))
+        .map(|(i, ws)| entry_view(state.pending_move,engine, i, ws, active_ws))
         .collect();
 
     let sections = build_category_sections(&state.navigation, engine, active_ws);

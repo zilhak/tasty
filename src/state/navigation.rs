@@ -72,6 +72,13 @@ pub(crate) struct NavigationState {
 }
 
 impl NavigationState {
+    pub(crate) fn apply_replacement(&mut self,replacement:tasty_domain::Replacement) {
+        match replacement.source.kind {
+            tasty_domain::IdKind::Surface=>self.remap_surface_selection(replacement.target.id,replacement.source.id),
+            tasty_domain::IdKind::Tab=>self.remap_tab_selection(replacement.target.id,replacement.source.id),
+            tasty_domain::IdKind::Pane=>self.remap_pane_selection(replacement.target.id,replacement.source.id),_=>{},
+        }
+    }
     pub(crate) fn generation(&self)->std::sync::Weak<()> {std::sync::Arc::downgrade(&self.generation)}
     pub(crate) fn matches_generation(&self,generation:&std::sync::Weak<()>)->bool {self.generation().ptr_eq(generation)}
     fn note_selection_change(&mut self,changed:bool)->bool {

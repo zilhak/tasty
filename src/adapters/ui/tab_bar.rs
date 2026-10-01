@@ -283,7 +283,7 @@ pub fn draw_pane_tab_bars(
     let th = theme::theme();
     let focused_pane_id = state.focused_pane_id(engine);
     let move_mark = crate::adapters::ui::move_source::resolve(
-        &state.navigation,
+                state.pending_move,        &state.navigation,
         engine,
         state.active_workspace_index(engine),
         pane_rects,

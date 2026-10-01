@@ -45,21 +45,6 @@ impl ShellConfig {
     }
 }
 
-/// 이동 대기 중인 대상의 종류와 ID. "이곳으로 이동"은 메뉴 대상과 종류가 같을 때만 연다.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(
-    all(not(feature = "gui"), not(test)),
-    expect(
-        dead_code,
-        reason = "only the gui-only context menus mark items for moving"
-    )
-)]
-pub(crate) enum PendingMove {
-    Surface(crate::model::SurfaceId),
-    Tab(crate::model::TabId),
-    Pane(crate::model::PaneId),
-}
-
 /// 사용자가 원격 연결 팝업에서 확정한 요청. 조회에 쓴 SSH 터널을 함께 넘길 수 있다.
 /// IPC 요청과 달리 연결 성공 후 새 mirror를 선택할 수 있어 별도 큐다.
 #[cfg(feature = "gui")]
@@ -112,8 +97,6 @@ pub struct CoreState {
 
     pub(crate) closed_items: crate::model::ClosedItemStore,
 
-    /// "이동"으로 지정한 대상. 종류와 관계없이 하나만 대기하며 새로 지정하면 덮어쓴다. 저장하지 않는다.
-    pub(crate) pending_move: Option<PendingMove>,
 
     pub(crate) layout_dirty: crate::core::layout_persistence::LayoutDirtyTracker,
     /// 복원한 활성 workspace 인덱스. 창 상태를 만들 때 한 번 소비한다.
@@ -199,7 +182,6 @@ impl CoreState {
             default_rows: rows,
             settings,
             closed_items: crate::model::ClosedItemStore::new(),
-            pending_move: None,
             layout_dirty: crate::core::layout_persistence::LayoutDirtyTracker::new(),
             pending_layout_restore: None,
             layout_slot,

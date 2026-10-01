@@ -220,7 +220,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("tab.list", plugin(Read, &[SurfaceRead])),
         ("tab.create", plugin(Mutate, &[SurfaceWrite]).kept_in_structure_journal()),
         ("tab.close", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
-        ("tab.move", plugin(Idempotent, &[SurfaceWrite])),
+        ("tab.move", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
         // ── preset (layout preset CRUD + apply) ───────────────────────
         ("preset.list", plugin(Read, &[SurfaceRead])),
         ("preset.get", plugin(Read, &[SurfaceRead])),

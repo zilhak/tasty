@@ -124,7 +124,7 @@ impl App {
         use crate::intent::{Intent, UiIntent};
         if matches!(
             intent.body,
-            Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_)
+            Intent::ForwardMirror {..}|Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_)
                 |Intent::ApplyPreset {..}|Intent::RestoreClosedItem|Intent::NewWorkspace {..}|Intent::NewTab {..}|Intent::SplitPane {..}|Intent::SplitSurface {..}|Intent::ConvertSurface {..}
         ) {
             IntentClass::Domain
@@ -217,7 +217,7 @@ impl App {
             Intent::RestoreClosedItem => {
                 crate::intent::closed_item::handle(core, state, engine, intent);
             }
-            Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_) => {
+            Intent::ForwardMirror {..}|Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_) => {
                 tracing::error!(
                     "dispatch_one_intent reached Intent::Domain (should be handled in domain_batch)"
                 );

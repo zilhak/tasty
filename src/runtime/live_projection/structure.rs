@@ -7,6 +7,7 @@ pub(super) fn apply_event(
     retired: &mut Vec<Retired>,
 ) -> Result<()> {
     match event {
+        DomainEvent::StructureReplaced {replacement,..}=>super::replacement::apply(engine,*replacement,retired)?,
         DomainEvent::EngineIncarnationStarted { .. } | DomainEvent::EngineRetired { .. } => {}
         DomainEvent::CategoryCreated { id, name, index } => engine
             .categories

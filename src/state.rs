@@ -137,6 +137,8 @@ impl RequestContext {
             preset_store,
             memory,
             navigation,
+            #[cfg(feature="gui")]
+            pending_move:None,
             #[cfg(feature = "gui")]
             tab_bar_scroll: Default::default(),
             #[cfg(feature = "gui")]
@@ -737,3 +739,6 @@ mod tab_bar_height_seed_tests {
         );
     }
 }
+
+#[cfg(feature="gui")]
+pub(crate) use main::PendingMove;

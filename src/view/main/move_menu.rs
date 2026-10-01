@@ -2,7 +2,7 @@
 //! 사용자 우클릭 조작이라 GUI에서만 연다. 명세: docs/features/surface-move/index.md.
 
 use super::MainView;
-use crate::core::state::PendingMove;
+use crate::state::PendingMove;
 use crate::platform::native_menu::MenuItem;
 
 /// surface 메뉴 항목 id. 같은 메뉴의 다른 항목 id와 겹치지 않는다.
@@ -26,7 +26,7 @@ impl MainView {
             ITEM_MOVE_SURFACE,
             crate::i18n::t("surface_context_menu.move"),
         ));
-        if matches!(engine.pending_move, Some(PendingMove::Surface(_))) {
+        if matches!(self.state.pending_move, Some(PendingMove::Surface(_))) {
             items.push(MenuItem::new(
                 ITEM_MOVE_SURFACE_HERE,
                 crate::i18n::t("surface_context_menu.move_here"),
@@ -44,7 +44,7 @@ impl MainView {
         match item {
             ITEM_MOVE_SURFACE => {
                 // 도메인 구조는 바꾸지 않고 대기 슬롯만 덮어쓴다.
-                engine.pending_move = Some(PendingMove::Surface(surface_id));
+                self.state.pending_move = Some(PendingMove::Surface(surface_id));
                 self.state.toasts.push_info(
                     crate::i18n::t("toast.surface_cut"),
                     crate::adapters::ui::ToastScope::Surface(surface_id),
@@ -52,8 +52,8 @@ impl MainView {
                 true
             }
             ITEM_MOVE_SURFACE_HERE => {
-                if let Some(PendingMove::Surface(source)) = engine.pending_move {
-                    engine.pending_move = None;
+                if let Some(PendingMove::Surface(source)) = self.state.pending_move {
+                    self.state.pending_move = None;
                     self.state.dispatch_intent(
                         crate::app::command::DomainIntent::MoveSurface {
                             source_surface_id: source,
@@ -81,7 +81,7 @@ impl MainView {
             ITEM_MOVE_TAB,
             crate::i18n::t("tab_context_menu.move_tab"),
         ));
-        if matches!(engine.pending_move, Some(PendingMove::Tab(id)) if id != tab_id) {
+        if matches!(self.state.pending_move, Some(PendingMove::Tab(id)) if id != tab_id) {
             items.push(MenuItem::new(
                 ITEM_MOVE_TAB_HERE,
                 crate::i18n::t("tab_context_menu.move_tab_here"),
@@ -95,7 +95,7 @@ impl MainView {
             ITEM_MOVE_PANE,
             crate::i18n::t("tab_context_menu.move_pane"),
         ));
-        if matches!(engine.pending_move, Some(PendingMove::Pane(id)) if id != pane_id) {
+        if matches!(self.state.pending_move, Some(PendingMove::Pane(id)) if id != pane_id) {
             items.push(MenuItem::new(
                 ITEM_MOVE_PANE_HERE,
                 crate::i18n::t("tab_context_menu.move_pane_here"),
@@ -114,7 +114,7 @@ impl MainView {
         match item {
             ITEM_MOVE_TAB => {
                 if let Some(pane_id) = engine.find_pane_for_tab(tab_id) {
-                    engine.pending_move = Some(PendingMove::Tab(tab_id));
+                    self.state.pending_move = Some(PendingMove::Tab(tab_id));
                     self.state.toasts.push_info(
                         crate::i18n::t("toast.tab_cut"),
                         crate::adapters::ui::ToastScope::Pane(pane_id),
@@ -124,9 +124,9 @@ impl MainView {
             }
             ITEM_MOVE_TAB_HERE => {
                 if engine.find_pane_for_tab(tab_id).is_some()
-                    && let Some(PendingMove::Tab(source)) = engine.pending_move
+                    && let Some(PendingMove::Tab(source)) = self.state.pending_move
                 {
-                    engine.pending_move = None;
+                    self.state.pending_move = None;
                     self.state.dispatch_intent(
                         crate::app::command::DomainIntent::ReplaceTabWithTab {
                             source_tab_id: source,
@@ -139,7 +139,7 @@ impl MainView {
             }
             ITEM_MOVE_PANE => {
                 if let Some(pane_id) = engine.find_pane_for_tab(tab_id) {
-                    engine.pending_move = Some(PendingMove::Pane(pane_id));
+                    self.state.pending_move = Some(PendingMove::Pane(pane_id));
                     self.state.toasts.push_info(
                         crate::i18n::t("toast.pane_cut"),
                         crate::adapters::ui::ToastScope::Pane(pane_id),
@@ -149,9 +149,9 @@ impl MainView {
             }
             ITEM_MOVE_PANE_HERE => {
                 if let Some(pane_id) = engine.find_pane_for_tab(tab_id)
-                    && let Some(PendingMove::Pane(source)) = engine.pending_move
+                    && let Some(PendingMove::Pane(source)) = self.state.pending_move
                 {
-                    engine.pending_move = None;
+                    self.state.pending_move = None;
                     self.state.dispatch_intent(
                         crate::app::command::DomainIntent::ReplacePaneWithPane {
                             source_pane_id: source,

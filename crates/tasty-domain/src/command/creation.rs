@@ -41,7 +41,7 @@ pub(super) fn decide(
                 engine_incarnation: model.engine_incarnation,
                 creation: Some(plan.clone()),
                 assembly:None,
-                retirement:None,
+                retirement:None,forward:false,
                 targets: plan.targets(),
                 reserved: plan.reserved_ids(),
                 input: *input,

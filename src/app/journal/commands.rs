@@ -2,13 +2,17 @@
 mod category;
 mod create;
 mod close;
+mod replacement;
 mod assembly;
+#[cfg(feature="gui")]
+mod forwarding;
 mod create_spec;
 mod display;
 #[cfg(feature = "gui")]
 mod divider;
 mod intents;
 mod notification;
+pub(crate) mod inbound;
 mod tab;
 mod workspace;
 use super::*;
@@ -33,6 +37,7 @@ pub(crate) struct IntentViewContinuation {
 }
 
 enum Reply {
+    Remote(inbound::RemoteReply),
     #[cfg(feature = "gui")]
     Divider {
         engine: EngineId,
@@ -72,7 +77,12 @@ struct Pending {
     needs_resolution: bool,
     category: Option<CategoryReservation>,
     resource: Option<create::Request>,
+    #[cfg(feature="gui")]
+    forward:Option<super::forward::Draft>,
+    /// Reservation follows the original request until its final reply, including effect-owned copies.
+    forward_reserved:usize,
     closing:Option<close::Request>,
+    replacing:Option<replacement::Request>,
     close_cause:close::Cause,
     waiting_command: Option<String>,
     created: Option<create::Completed>,
@@ -105,6 +115,7 @@ pub(super) struct Commands {
     completed_dividers: Vec<(EngineId, u64, crate::intent::IntentOrigin, JsonRpcResponse)>,
     completed_plugins: Vec<(String, u64, std::sync::Weak<()>, JsonRpcResponse)>,
     completed_intents: Vec<IntentResult>,
+    completed_remote:Vec<(inbound::RemoteReply,JsonRpcResponse)>,
     completed_host_events: Vec<(EngineId, notification::Notification)>,
     #[cfg(feature = "gui")]
     settings_generation: u64,
@@ -118,13 +129,15 @@ pub(super) struct Commands {
 }
 
 impl Commands {
-    pub(super) fn has_closing(&self)->bool {self.pending.values().any(|pending|pending.closing.is_some())}
+    pub(super) fn has_remote_request(&self,engine:EngineId)->bool {self.pending.values().any(|pending|matches!(&pending.reply,Reply::Remote(remote) if remote.engine==engine)) || self.completed_remote.iter().any(|(remote,_)|remote.engine==engine)}
+    pub(super) fn has_closing(&self)->bool {self.pending.values().any(|pending|pending.closing.is_some()||pending.replacing.is_some())}
     pub(super) fn has_resource_request(&self,engine:EngineId)->bool {
-        self.pending.values().any(|pending|pending.closing.as_ref().is_some_and(|request|request.engine==engine)||pending.resource.as_ref().is_some_and(|request|request.engine==engine))
+        self.pending.values().any(|pending|pending.closing.as_ref().is_some_and(|request|request.engine==engine)||pending.resource.as_ref().is_some_and(|request|request.engine==engine)||pending.replacing.as_ref().is_some_and(|request|request.engine==engine))
     }
 
     fn deliver(&mut self, reply: Reply, response: JsonRpcResponse) {
         match reply {
+            Reply::Remote(reply)=>self.completed_remote.push((reply,response)),
             #[cfg(feature = "gui")]
             Reply::Divider {
                 engine,
@@ -246,7 +259,11 @@ impl JournalApplication {
                 needs_resolution: false,
                 category: None,
                 resource: None,
+                #[cfg(feature="gui")]
+                forward:None,
+                forward_reserved:0,
                 closing:None,
+                replacing:None,
                 close_cause:Default::default(),
                 waiting_command: None,
                 created: None,
@@ -399,6 +416,7 @@ impl JournalApplication {
     }
 
     pub(crate) fn resolve_ipc_for_engine(&mut self, ticket: u64, session: &EngineSession) {
+        if self.commands.pending.get(&ticket).is_some_and(|pending|matches!(pending.request.method.as_str(),"intent.replace"|"intent.move-surface")) {self.resolve_replacement(ticket,session);return;}
         if self.commands.pending.get(&ticket).is_some_and(|pending|pending.request.method=="intent.restore-closed") {self.resolve_undo(ticket,session);return;}
         if self.commands.pending.get(&ticket).is_some_and(|pending|matches!(pending.request.method.as_str(),"workspace.close"|"tab.close"|"pane.close"|"surface.close"|"surface.close_self"|"intent.close")) {self.resolve_close(ticket,session);return;}
         if self.commands.pending.get(&ticket).is_some_and(|pending|pending.request.method=="intent.create") {
@@ -425,9 +443,9 @@ impl JournalApplication {
                 | "intent.workspace-mapping"
                 | "intent.workspace-rename"
                 | "intent.tab-name"
-                | "intent.tab-move"
+                | "intent.tab-move" | "tab.move"
         ) {
-            match if pending.request.method == "intent.tab-name" {
+            match if pending.request.method=="tab.move" {tab::move_public(&pending.request,session)} else if pending.request.method == "intent.tab-name" {
                 tab::rename(&pending.request, session)
             } else if pending.request.method == "intent.tab-move" {
                 tab::move_tab(&pending.request)
@@ -533,6 +551,15 @@ impl JournalApplication {
                 pending.queued=Some(if let Some(replacement)=pending.resource.as_mut() {replacement.reservation()?} else {closing.stored(*input)});
                 self.refresh_command_weight(ticket);return Ok(true);
             }
+            #[cfg(feature="gui")]
+            Ok(ResultValue::InputStored(input)) if pending.forward.is_some()=> {
+                let draft=pending.forward.as_ref().expect("forward input owner");
+                pending.queued=Some(Work::Resolve {changes:vec![StreamCommand {stream:draft.stream.clone(),command:tasty_domain::StructuralCommand::PrepareForward {operation:tasty_domain::OperationId(String::new()),command_id:String::new(),input:*input}}],response:Some(ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"forwarded":true,"workspace_index":draft.workspace_index}))))});
+                self.refresh_command_weight(ticket);return Ok(true);
+            }
+            Ok(ResultValue::InputStored(input)) if pending.replacing.is_some()=> {
+                pending.queued=Some(pending.replacing.as_ref().expect("replacement input owner").stored(*input));self.refresh_command_weight(ticket);return Ok(true);
+            }
             Ok(ResultValue::InputStored(input)) if pending.closing.is_some()=> {
                 let closing=pending.closing.as_mut().expect("close input owner");
                 pending.queued=Some(if let Some(close_input)=closing.input_ref {
@@ -575,6 +602,13 @@ impl JournalApplication {
                 if executed.status == tasty_event_store::CommandStatus::InProgress =>
             {
                 pending.waiting_command = Some(executed.command_id.clone());
+                #[cfg(feature="gui")]
+                if !pending.replay && let Some(draft)=pending.forward.take() {
+                    let progress:crate::runtime::journal_product::ResponseProgress=serde_json::from_slice(executed.response.as_deref().ok_or("forward command progress missing")?).map_err(|error|error.to_string())?;
+                    let Some(tasty_domain::StructuralResult::Pending {operation})=progress.results.first() else {return Err("forward command operation missing".into());};
+                    self.start_forward(draft,operation.clone())?;
+                }
+
                 if !pending.replay
                     && let Some(request) = pending.resource.take()
                 {
@@ -755,6 +789,7 @@ impl JournalApplication {
                 );
                 continue;
             }
+            if request.method=="remote.structural" {self.resolve_remote_request(ticket,session,services);continue;}
             if matches!(request.method.as_str(),"tab.create"|"split"|"surface.respawn_terminal") {self.resolve_public_creation(ticket,session,services);continue;}
             if matches!(request.method.as_str(),"preset.apply"|"intent.preset-apply") {
                 self.resolve_preset(ticket,session,services,state.focused_pane_id(&session.core_state));continue;
@@ -779,6 +814,7 @@ impl JournalApplication {
                 self.resolve_ipc_for_engine(ticket, session);
             }
         }
+        for (engine,replacement) in std::mem::take(&mut self.replacements) {if engine==session.id {state.navigation.apply_replacement(replacement);}}
         for (engine, event) in std::mem::take(&mut self.commands.completed_host_events) {
             if engine == session.id
                 && let Some(event) = event.resolve(&session.core_state, &state.navigation)
@@ -797,6 +833,7 @@ impl JournalApplication {
 #[cfg(feature = "gui")]
 impl crate::app::App {
     pub(crate) fn resolve_journal_requests(&mut self) {
+        self.execute_journal_forwards();
         for (ticket, request) in self.journal.requests_needing_resolution() {
             if let Some(id) = self
                 .journal
@@ -805,11 +842,13 @@ impl crate::app::App {
                 .get(&ticket)
                 .and_then(|pending| match &pending.reply {
                     Reply::Intent { engine, .. } => Some(*engine),
+                    Reply::Remote(reply)=>Some(reply.engine),
                     _ => None,
                 })
             {
+                if self.try_resolve_mirror_request(ticket,id,&request) {continue;}
                 if let Some(session) = self.engines.session_mut(id) {
-                    if request.method=="intent.preset-apply" {self.journal.resolve_preset(ticket,session,&self.services,None);} else {self.journal.resolve_ipc_for_engine(ticket, session);}
+                    if request.method=="remote.structural" {self.journal.resolve_remote_request(ticket,session,&self.services);} else if request.method=="intent.preset-apply" {self.journal.resolve_preset(ticket,session,&self.services,None);} else {self.journal.resolve_ipc_for_engine(ticket, session);}
                 } else {
                     self.journal.reject_resolved_request(
                         ticket,
@@ -846,6 +885,7 @@ impl crate::app::App {
                         })
                         .map(|(id, _)| id)
                 });
+            if let Some(engine)=id && self.try_resolve_mirror_request(ticket,engine,&request) {continue;}
             let preset_pane=if request.method=="preset.apply" {id.and_then(|engine|self.engines_mut().resolve(engine)).and_then(|context|context.state.focused_pane_id(context.engine.core))}else {None};
             let creation_cwd = if request.method == "workspace.create" {
                 id.and_then(|engine| self.engines_mut().resolve(engine))
@@ -896,6 +936,7 @@ impl crate::app::App {
                 self.journal.resolve_ipc_for_engine(ticket, session);
             }
         }
+        self.deliver_remote_journal_results();
         self.journal
             .deliver_plugin_replies(self.plugin_manager.as_mut());
         for (settings, origin, response) in self.journal.take_settings_results() {
@@ -999,6 +1040,9 @@ impl crate::app::App {
                 );
             }
         }
+        for (engine,replacement) in std::mem::take(&mut self.journal.replacements) {
+            if let Some(context)=self.engines_mut().resolve(engine) {context.state.navigation.apply_replacement(replacement);}
+        }
         for id in self.journal.take_changed_engines() {
             if let Some(mut context) = self.engines_mut().resolve(id) {
                 context.state.reconcile_presentation(&context.engine);
@@ -1080,7 +1124,11 @@ impl JournalApplication {
 }
 
 fn pending_weight(pending: &Pending) -> usize {
-    serde_json::to_vec(&pending.request)
+    #[cfg(feature="gui")]
+    let forward_bytes=pending.forward_reserved.max(pending.forward.as_ref().map_or(0,super::forward::Draft::weight));
+    #[cfg(not(feature="gui"))]
+    let forward_bytes=0;
+    forward_bytes.saturating_add(serde_json::to_vec(&pending.request)
         .expect("request JSON serializes")
         .len()
         .saturating_add(
@@ -1102,6 +1150,7 @@ fn pending_weight(pending: &Pending) -> usize {
         )
         .saturating_add(pending.resource.as_ref().map_or(0, create::Request::weight))
         .saturating_add(pending.closing.as_ref().map_or(0,close::Request::weight))
+        .saturating_add(pending.replacing.as_ref().map_or(0,replacement::Request::weight))
         .saturating_add(pending.waiting_command.as_ref().map_or(0, String::len))
         .saturating_add(
             pending
@@ -1115,10 +1164,11 @@ fn pending_weight(pending: &Pending) -> usize {
                 .category
                 .as_ref()
                 .map_or(0, |category| category.name.len() + category.stream.len()),
-        )
+        ))
 }
 
 fn reply_weight(_reply: &Reply) -> usize {
+    if let Reply::Remote(reply)=_reply {return reply.before.capacity()*std::mem::size_of::<u32>()+std::mem::size_of::<inbound::RemoteReply>();}
     #[cfg(feature = "gui")]
     if let Reply::Settings { settings, .. } = _reply {
         return serde_json::to_vec(settings)

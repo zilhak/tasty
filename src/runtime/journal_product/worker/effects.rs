@@ -313,6 +313,7 @@ fn validate_binding(effect:&tasty_event_store::EffectRecord,stream:&str,operatio
             effect.claim_kind==tasty_event_store::ClaimKind::Activation && effect.effect_id==format!("{}/prepare",operation.id.0)
                 && operation.creation.as_ref().is_some_and(|plan|id==operation.id && input==operation.input && surface==plan.surface.id && kind==plan.surface.kind && activation_generation==operation.activation_generation && effect.resource_generation==activation_generation)
         },
+        StructuralEffect::ForwardStructure {operation:id,input}=>effect.claim_kind==tasty_event_store::ClaimKind::Obligation && effect.effect_id==format!("{}/forward",operation.id.0) && id==operation.id && operation.forward && input==operation.input,
         StructuralEffect::RetireSurfaces {operation:id,plan}=> {
             effect.claim_kind==tasty_event_store::ClaimKind::Obligation && effect.effect_id==format!("{}/retire",operation.id.0)
                 && id==operation.id && operation.retirement.as_ref()==Some(&plan)
@@ -362,4 +363,24 @@ fn read_original_results(
         .map_err(|error| error.to_string())?
         .ok_or("original command record missing")?;
     super::super::response::OriginalResults::from_record(&record)
+}
+
+
+pub(super) fn claim_forward(executor:&Executor<StructureDecider>,stream:&str,id:&OperationId)->Result<ResultValue> {
+    executor.with_state(|_|()).map_err(|error|error.to_string())?;
+    let mut inner=executor.inner.lock().map_err(|error|error.to_string())?;
+    let model=inner.state.streams.get(stream).ok_or("forward engine missing")?;
+    let operation=model.operations.get(id).filter(|operation|operation.forward && operation.outcome.is_none()).ok_or("forward operation missing")?.clone();
+    if model.engine_retired || model.engine_incarnation!=operation.engine_incarnation {return Err("forward engine binding retired".into());}
+    let effect_id=format!("{}/forward",id.0);let epoch=inner.epoch;
+    let effect=inner.store.effect(&effect_id).map_err(|error|error.to_string())?.ok_or("forward effect missing")?;
+    validate_binding(&effect,stream,&operation)?;
+    if effect.state!=EffectState::Pending || inner.store.effect_origin_epoch(&effect_id).map_err(|error|error.to_string())?!=epoch {return Err("old remote submission requires reconciliation; it cannot be resent automatically".into());}
+    let payload=inner.store.read_payload(PayloadRef(operation.input.0)).map_err(|error|error.to_string())?;
+    inner.store.transition_effect(epoch,&EffectTransition {effect_id:effect_id.clone(),from:EffectState::Pending,to:EffectState::Running,resource_generation:effect.resource_generation,attempt:None,claim:Some(tasty_event_store::ObligationClaim {engine_id:stream.into(),engine_incarnation:operation.engine_incarnation,operation_id:id.0.clone(),runtime_epoch:epoch.0}.into()),result:None}).map_err(|error|error.to_string())?;
+    let claimed=inner.store.effect(&effect_id).map_err(|error|error.to_string())?.ok_or("claimed forward missing")?;
+    Ok(ResultValue::ForwardClaimed {lease:EffectLease {effect_id,operation:id.clone(),stream:stream.into(),runtime_epoch:epoch.0,resource_generation:claimed.resource_generation,attempt:claimed.attempt},payload})
+}
+pub(super) fn forwarded(executor:&Executor<StructureDecider>,lease:EffectLease,outcome:tasty_domain::OperationOutcome)->Result<ResultValue> {
+    finish(executor,lease.clone(),StructuralCommand::FinishForward {operation:lease.operation,outcome},"forwarded",None)
 }

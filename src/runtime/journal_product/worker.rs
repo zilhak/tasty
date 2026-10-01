@@ -84,6 +84,7 @@ pub(super) fn run(
             request.work,
             Work::Capture {..}
                 | Work::RetirementFinished {..}
+                | Work::ForwardFinished {..}
                 | Work::OpenEngine { .. }
                 | Work::RetireEngine(_)
                 | Work::Resolve { .. }
@@ -267,6 +268,7 @@ fn handle(
                         | tasty_domain::StructuralCommand::FinishCreation { .. }
                         | tasty_domain::StructuralCommand::FinishCleanup { .. }
                         | tasty_domain::StructuralCommand::FinishRetirement {..}
+                        | tasty_domain::StructuralCommand::FinishForward {..}
                         | tasty_domain::StructuralCommand::CancelUnstartedCreation { .. }
                         | tasty_domain::StructuralCommand::RejectInstallation { .. }
                             | tasty_domain::StructuralCommand::MarkPreparationUncertain { .. }
@@ -275,7 +277,9 @@ fn handle(
                 }
                 if let tasty_domain::StructuralCommand::PrepareCreation { input, .. }
                     |tasty_domain::StructuralCommand::Close {input,..}
-                    |tasty_domain::StructuralCommand::PrepareAssembly {input,..} = &change.command
+                    |tasty_domain::StructuralCommand::PrepareAssembly {input,..}
+                    |tasty_domain::StructuralCommand::PrepareForward {input,..}
+                    |tasty_domain::StructuralCommand::Replace {input,..} = &change.command
                     && !admitted.inputs.contains(input)
                 {
                     return Err("preparation input belongs to another admission".into());
@@ -334,6 +338,8 @@ fn handle(
             let admitted=pending.get_mut(&ticket).ok_or("undo input has no admitted owner")?;
             assembly::undo(executor,admitted,ticket,binding,target_pane,scope,shell)
         },
+        Work::ClaimForward {stream,operation}=>effects::claim_forward(executor,&stream,&operation),
+        Work::ForwardFinished {lease,outcome}=>effects::forwarded(executor,lease,outcome),
         Work::Capture {binding,surfaces}=>capture::persist(executor,ticket,binding,surfaces),
         Work::CaptureClosed {view,binding,target,display_name,surfaces}=>{
             let admitted=pending.get_mut(&ticket).ok_or("close capture has no admitted request")?;

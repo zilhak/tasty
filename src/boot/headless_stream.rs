@@ -91,64 +91,11 @@ fn apply_input_frames(
     }
 }
 
-fn apply_structural_ops(
-    app: &mut App,
-    state: &mut RequestContext,
-    engine: &mut EngineMut<'_>,
-    outcome: &mut PumpOutcome,
-) {
-    for (client_id, op_id, op, origin) in std::mem::take(&mut outcome.structural_ops) {
-        // 점유자를 확인한 뒤 result → delta → 새 surface tap 순으로 보낸다.
-        // client가 ID 매핑을 만든 뒤 스냅샷을 받아야 한다.
-        let anchor = op.anchor_surface_id();
-        let (ok, reason, delta) = match engine.live.occupancy.workspace_of_surface(anchor) {
-            Some(ws) if engine.live.occupancy.workspace_holder(ws) == Some(client_id) => {
-                match crate::app::attach_structure::execute_forwarded_structural_op(
-                    &mut app.services,
-                    state,
-                    engine,
-                    &op,
-                    origin,
-                ) {
-                    Ok(delta) => (true, None, delta),
-                    Err(reason) => (false, Some(reason), None),
-                }
-            }
-            Some(_) => (false, Some("not workspace holder".to_string()), None),
-            None => (
-                false,
-                Some(
-                    crate::remote::structure_sync::unresolved_forward_reason(
-                        [&*engine.core],
-                        client_id,
-                        &op,
-                    ),
-                ),
-                None,
-            ),
-        };
-        let reply = crate::ipc::stream::StreamControl::StructuralResult { op_id, ok, reason };
-        let frame = crate::ipc::stream::StreamFrame::new(
-            crate::ipc::stream::StreamTag::Control,
-            serde_json::to_vec(&reply).unwrap_or_default(),
-        );
-        let _ = app.stream_hub.push(client_id, frame); // 연결 종료·손실은 허브가 처리하며 응답은 재시도하지 않는다.
-        if let Some(fd) = delta {
-            let delta_frame = crate::ipc::stream::StreamFrame::new(
-                crate::ipc::stream::StreamTag::Control,
-                serde_json::to_vec(&fd.delta).unwrap_or_default(),
-            );
-            let _ = app.stream_hub.push(client_id, delta_frame); // 손실 복구는 스트림 경로에 맡기며 여기서 delta를 재전송하지 않는다.
-            for sid in fd.added_terminals {
-                engine.tap_surface_for_stream(sid, client_id, &app.stream_hub);
-            }
-            // kind 변환 뒤 이전 mesh frame이 남아 표시되지 않게 버린다.
-            if let Some(sid) = fd.converted_surface
-                && let Some(mgr) = app.plugin_manager.as_mut()
-            {
-                mgr.drop_egui_mesh_frame(sid);
-            }
-        }
+fn apply_structural_ops(app:&mut App,state:&mut RequestContext,engine:&mut EngineMut<'_>,outcome:&mut PumpOutcome) {
+    let Some(id)=state.engine_id else{return;};
+    let Some(epoch)=app.journal.runtime_epoch() else{return;};
+    for (client,op_id,op,origin) in std::mem::take(&mut outcome.structural_ops) {
+        if let Some((ticket,workspace))=app.journal.admit_remote(id,engine.core,engine.live,epoch,&app.stream_hub,client,op_id,op,origin) {engine.remote.pending_structure_replies.insert(ticket,workspace);}
     }
 }
 

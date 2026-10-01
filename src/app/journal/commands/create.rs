@@ -186,6 +186,7 @@ impl Request {
                 CreationDestination::Split {target,split:tasty_domain::SplitSpec {direction,ratio:tasty_domain::Ratio::from_f32(0.5),placement:tasty_domain::Placement::After}}
             },
             D::Convert {surface,respawn}=> {
+                if respawn && let Some(shell)=result.input.as_mut().and_then(|input|input.shell.as_mut()) {shell.startup_command.clear();shell.restore_command=None;}
                 if core.find_surface_by_id(surface).is_none() {return Err(bad(format!("Surface {surface} not found")));}
                 result.shape=Shape::Convert {surface,respawn};
                 result.plan.surface.id=surface;

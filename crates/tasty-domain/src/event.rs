@@ -39,6 +39,8 @@ pub struct SplitSpec {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum DomainEvent {
+    #[serde(rename="structure.replaced")]
+    StructureReplaced {replacement:crate::Replacement,removed:Vec<crate::EntityId>},
     #[serde(rename="undo.added")]
     UndoRecordAdded {record:crate::UndoRecord},
     #[serde(rename="undo.consumed")]
@@ -267,6 +269,7 @@ impl DomainEvent {
 
     /// 이 빌드가 아는 모든 type tag. codec은 이 밖의 tag를 거절한다.
     pub const TAGS: &'static [&'static str] = &[
+        "structure.replaced",
         "undo.added",
         "undo.consumed",
         "undo.evicted",
@@ -310,6 +313,7 @@ impl DomainEvent {
 
     pub fn type_tag(&self) -> &'static str {
         match self {
+            Self::StructureReplaced {..}=>"structure.replaced",
             Self::UndoRecordAdded {..}=>"undo.added",
             Self::UndoRecordConsumed {..}=>"undo.consumed",
             Self::UndoRecordEvicted {..}=>"undo.evicted",

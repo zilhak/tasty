@@ -41,6 +41,8 @@ pub(crate) struct Admission {
 
 #[derive(Debug)]
 pub(crate) enum Work {
+    ClaimForward {stream:String,operation:tasty_domain::OperationId},
+    ForwardFinished {lease:EffectLease,outcome:tasty_domain::OperationOutcome},
     PrepareSubtree {binding:EngineBinding,draft:crate::runtime::preset_plan::AssemblyDraft},
     PrepareUndo {binding:EngineBinding,target_pane:Option<u32>,scope:Option<u32>,shell:ShellRecipe},
     ReserveExecutionIds {binding:EngineBinding,kinds:Vec<(IdKind,u32)>},
@@ -96,6 +98,7 @@ pub(crate) struct Request {
 
 #[derive(Debug, Clone)]
 pub(crate) enum ResultValue {
+    ForwardClaimed {lease:EffectLease,payload:Vec<u8>},
     AssemblyResolved {stream:String,input:Option<tasty_domain::DataRef>,plan:Option<tasty_domain::CreationAssembly>},
     #[cfg(feature = "gui")]
     ViewSaved,
@@ -356,7 +359,7 @@ pub(crate) fn request_size(work: &Work) -> usize {
         Work::PutPreparation(input) => {
             serde_json::to_vec(input).map_or(usize::MAX, |bytes| bytes.len())
         }
-        Work::ClaimPreparation { stream, operation } | Work::ClaimRetirement {stream,operation} => {
+        Work::ClaimForward {stream,operation}|Work::ClaimPreparation { stream, operation } | Work::ClaimRetirement {stream,operation} => {
             stream.len().saturating_add(operation.0.len())
         }
         Work::Prepared { lease, result } => {
@@ -366,7 +369,7 @@ pub(crate) fn request_size(work: &Work) -> usize {
             serde_json::to_vec(&(lease, reason)).map_or(usize::MAX, |bytes| bytes.len())
         }
         Work::CleanupFinished {lease,view} => serde_json::to_vec(&(lease,view)).map_or(usize::MAX, |bytes| bytes.len()),
-        Work::RetirementFinished {lease,outcome}=>serde_json::to_vec(&(lease,outcome)).map_or(usize::MAX,|bytes|bytes.len()),
+        Work::ForwardFinished {lease,outcome}|Work::RetirementFinished {lease,outcome}=>serde_json::to_vec(&(lease,outcome)).map_or(usize::MAX,|bytes|bytes.len()),
         Work::CancelAdmission => 0,
     }
 }

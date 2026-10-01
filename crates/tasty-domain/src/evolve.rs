@@ -97,6 +97,11 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
             m.engine_retired = true;
             Ok(())
         }
+        DomainEvent::StructureReplaced {replacement,removed}=> {
+            let (after,actual)=replacement.simulate(m).map_err(|error|EvolveError::InvalidFact(error.to_string()))?;
+            if actual!=removed {return Err(EvolveError::InvalidFact("replacement removal set differs from its fact".into()));}
+            *m=after;Ok(())
+        },
         DomainEvent::UndoRecordAdded {record}=>{
             let owns=m.operations.get(&record.id).and_then(|operation|operation.retirement.as_ref()).is_some_and(|plan|plan.is_user_close && plan.target==record.target && plan.undo.as_ref()==Some(&record.capture));
             if !owns || m.undo_records.iter().any(|old|old.id==record.id) || record.capture.snapshot.0==0 || m.undo_records.len()>=10 {

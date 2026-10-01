@@ -4715,7 +4715,7 @@ impl crate::runtime::engine_access::EngineMut<'_> {
         {
             return;
         }
-        if self.remote.is_auto_tap_suppressed() {
+        if self.remote.is_auto_tap_suppressed() || self.remote.structure_reply_pending(workspace_id) {
             return;
         }
         // client가 ID 매핑을 만든 뒤 snapshot을 받도록 delta를 먼저 보낸다.

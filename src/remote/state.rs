@@ -11,6 +11,7 @@ pub(crate) struct RemoteState {
     notifier:Option<tasty_ipc::stream_hub::StreamHub>,
     suppress_auto_tap:bool,
     structure_changed:std::collections::BTreeSet<u32>,
+    pub(crate) pending_structure_replies:std::collections::BTreeMap<u64,u32>,
     /// 서버의 mesh 구독 상태. 실제 전송은 PluginManager를 가진 GUI·헤드리스 계층이 맡는다.
     pub(crate) mesh_mirror: crate::remote::mesh_mirror::MeshMirrorRegistry,
     /// client가 조립한 mesh frame을 로컬 surface ID로 보관한다. 서버 구독 상태와는 별개다.
@@ -82,7 +83,7 @@ pub(crate) struct RemoteState {
 impl RemoteState {
     pub(crate) fn new()->Self {Self {
             attach_mapping_tokens:Default::default(),
-            presentation:Default::default(),notifier:None,suppress_auto_tap:false,structure_changed:Default::default(),
+            presentation:Default::default(),notifier:None,suppress_auto_tap:false,structure_changed:Default::default(),pending_structure_replies:Default::default(),
             mesh_mirror: crate::remote::mesh_mirror::MeshMirrorRegistry::default(),
             #[cfg(feature = "gui")]
             attach_mesh_frames: crate::remote::mesh_frames::AttachMeshFrameStore::default(),
@@ -123,10 +124,14 @@ impl RemoteState {
     pub(crate) fn set_notifier(&mut self,hub:tasty_ipc::stream_hub::StreamHub) {self.notifier=Some(hub);}
     pub(crate) fn notifier(&self)->Option<tasty_ipc::stream_hub::StreamHub> {self.notifier.clone()}
     pub(crate) fn is_auto_tap_suppressed(&self)->bool {self.suppress_auto_tap}
+    pub(crate) fn structure_reply_pending(&self,workspace:u32)->bool {self.pending_structure_replies.values().any(|value|*value==workspace)}
     pub(crate) fn set_auto_tap_suppressed(&mut self,value:bool) {self.suppress_auto_tap=value;}
     pub(crate) fn mark_structure_changed(&mut self,id:u32) {self.structure_changed.insert(id);}
     pub(crate) fn clear_structure_changed(&mut self,id:u32) {self.structure_changed.remove(&id);}
-    pub(crate) fn take_structure_changed(&mut self)->Vec<u32> {std::mem::take(&mut self.structure_changed).into_iter().collect()}
+    pub(crate) fn take_structure_changed(&mut self)->Vec<u32> {
+        let (held,ready):(Vec<_>,Vec<_>)=std::mem::take(&mut self.structure_changed).into_iter().partition(|id|self.structure_reply_pending(*id));
+        self.structure_changed.extend(held);ready
+    }
     /// Control 사유와 Detach를 차례로 push한다. 허브가 없거나 송신에 실패해도 점유 해제는 되돌리지 않는다.
     pub(crate) fn notify_detached(&self, holder: AttachClientId, reason: &str) {
         let Some(hub) = &self.notifier else {

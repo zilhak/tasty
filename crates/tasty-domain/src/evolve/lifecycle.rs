@@ -6,7 +6,7 @@ use crate::{
 pub(super) fn prepare(m: &mut JournalModel, operation: Operation) -> Result<()> {
     if operation.id.0.is_empty()
         || operation.command_id.is_empty()
-        || (operation.activation_generation == 0 && operation.retirement.is_none() && operation.assembly.is_none())
+        || (operation.activation_generation == 0 && operation.retirement.is_none() && operation.assembly.is_none() && !operation.forward)
         || operation.input.0 == 0
         || (operation.creation.is_some() && operation.retirement.is_some())
         || operation.outcome.is_some()
@@ -20,7 +20,10 @@ pub(super) fn prepare(m: &mut JournalModel, operation: Operation) -> Result<()> 
         ));
     }
     if let Some(plan)=&operation.retirement {
-        let (_,removed,surfaces)=crate::command::retirement::close_facts(m,plan.target).ok_or_else(||EvolveError::InvalidFact("retirement target cannot close".into()))?;
+        let (removed,surfaces)=if let Some(replacement)=plan.replacement {
+            let (_,removed)=replacement.simulate(m).map_err(|error|EvolveError::InvalidFact(error.to_string()))?;
+            let surfaces=removed.iter().filter(|entity|entity.kind==IdKind::Surface).map(|entity|entity.id).collect();(removed,surfaces)
+        }else {let (_,removed,surfaces)=crate::command::retirement::close_facts(m,plan.target).ok_or_else(||EvolveError::InvalidFact("retirement target cannot close".into()))?;(removed,surfaces)};
         if removed!=plan.removed || !surfaces.iter().copied().eq(plan.surfaces.iter().map(|surface|surface.id))
             || plan.tab_parents.len()!=removed.iter().filter(|entity|entity.kind==IdKind::Tab).count()
             || plan.tab_parents.iter().any(|(tab,pane)|!removed.iter().any(|entity|entity.kind==IdKind::Tab && entity.id==*tab) || !m.panes.get(pane).is_some_and(|pane|pane.tabs.contains(tab)))

@@ -11,6 +11,8 @@ pub struct RetiredSurface {
 }
 #[derive(Debug,Clone,PartialEq,Eq,Serialize,Deserialize)]
 pub struct RetirementPlan {
+    #[serde(default)]
+    pub replacement:Option<crate::Replacement>,
     pub target:CloseTarget,
     pub removed:Vec<EntityId>,
     pub surfaces:Vec<RetiredSurface>,

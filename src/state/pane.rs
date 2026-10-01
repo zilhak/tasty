@@ -45,14 +45,7 @@ impl RequestContext {
         }
         match op {
             Some(op) => {
-                engine
-                    .remote.pending_structural_forward
-                    .push(crate::app::services::PendingStructuralForward {
-                        op,
-                        user_triggered: true,
-                        close_focus_candidates,
-                        silent_failure: false,
-                    });
+                self.dispatch_intent(crate::intent::Intent::ForwardMirror {op,close_focus_candidates}.from_user_menu("mirror.structural"));
             }
             None => {
                 #[cfg(feature = "gui")]

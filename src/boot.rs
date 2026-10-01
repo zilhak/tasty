@@ -548,6 +548,9 @@ fn dispatch_headless_event(
                 );
             }
             app.journal.resolve_headless_requests(session, state,&app.services);
+            for (remote,response) in app.journal.take_remote_results() {
+                if remote.engine==session.id {crate::app::journal::commands::inbound::deliver_result(remote,response,&mut session.borrow_mut(),app.plugin_manager.as_mut(),&app.stream_hub);}
+            }
             if !app.journal.take_changed_engines().is_empty() {
                 state.reconcile_presentation(&session.core_state);
                 session
