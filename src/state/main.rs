@@ -155,7 +155,7 @@ pub struct MainViewState {
             reason = "headless receives the preset store copy but only gui popups read it"
         )
     )]
-    pub(crate) preset_store: std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>,
+    pub(crate) preset_store: super::preset_catalog::PresetCatalog,
     /// Core와 공유하는 메모리 저장소. 화면 처리와 종료 정리에서도 사용한다.
     /// surface 포커스 변경을 감지할 이전 값.
     #[cfg(feature = "gui")]

@@ -79,12 +79,7 @@ fn draw_apply_popup(
     kind: PresetKind,
 ) -> PopupAction {
     let th = theme::theme();
-    let names: Vec<String> = crate::poison::recover_mutex(
-        state.preset_store.lock(),
-        crate::core::PRESET_STORE_WHAT,
-        &crate::core::PRESET_STORE_POISONED,
-    )
-    .list(kind);
+    let names = state.preset_store.list(kind);
 
     if state.dialogs.preset_picker_selected.is_none() {
         if let Some(first) = names.first() {
