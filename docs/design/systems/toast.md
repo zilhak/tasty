@@ -137,3 +137,5 @@ Toast 위에서 마우스 클릭/드래그해도 토스트는 무시하고 이�
 - [banner.md](banner.md) — parent 상단 info+action 오버레이 (내용 적으면 Toast 권장)
 - [identity](../../identity.md) — 사용자/에이전트 행동 분리
 - [ADR-0035](../../adr/0035-shared-design-and-theme.md) — 카드 치수와 색 계산을 공용 구현으로 모은 이유
+
+사용자 프리셋 적용의 journal 실패는 접수한 원 View에 `preset.toast.apply_failed` Error toast로 알린다. continuation의 View identity가 바뀌었거나 요청이 에이전트 origin 또는 replay이면 표시하지 않는다. 성공을 기다리는 동안 다른 View를 다시 골라 실패를 표시하지 않는다.

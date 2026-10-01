@@ -411,6 +411,16 @@ impl crate::app::App {
         if let Some(error) = result.response.error
             && let Some(context) = self.engines_mut().resolve(result.engine)
         {
+            if let (Some(continuation), Some(view)) = (result.view.as_ref(), context.view.as_ref())
+            {
+                show_failed_preset(
+                    &mut context.state.toasts,
+                    &view.state,
+                    continuation,
+                    &result.origin,
+                    result.response.idempotent_replay,
+                );
+            }
             crate::intent::report_apply_error(
                 context.state,
                 context.engine.core,
@@ -467,5 +477,81 @@ fn restore_saved_presentation(
         {
             state.navigation.select_surface(tab, surface);
         }
+    }
+}
+
+fn show_failed_preset(
+    toasts: &mut crate::adapters::ui::toast::ToastManager,
+    view: &crate::view::state::ViewState,
+    continuation: &IntentViewContinuation,
+    origin: &crate::intent::IntentOrigin,
+    replay: bool,
+) {
+    if continuation.preset_apply
+        && origin.is_user()
+        && !replay
+        && view.matches_identity(&continuation.view)
+    {
+        toasts.push(
+            crate::i18n::t("preset.toast.apply_failed"),
+            crate::model::toast_kind::ToastKind::Error,
+            crate::model::toast_kind::ToastScope::Window,
+        );
+    }
+}
+
+#[cfg(test)]
+mod preset_failure_tests {
+    use super::*;
+    use crate::intent::{AgentSource, IntentOrigin, UserSource};
+
+    fn continuation(view: &crate::view::state::ViewState) -> IntentViewContinuation {
+        IntentViewContinuation {
+            view: view.identity(),
+            selection: std::sync::Weak::new(),
+            activate_surface: None,
+            close_empty_engine: false,
+            preset_apply: true,
+            after_create: None,
+            tutorial: None,
+            tutorial_preparation: None,
+            tutorial_surface: None,
+        }
+    }
+    fn user() -> IntentOrigin {
+        IntentOrigin::User {
+            source: UserSource::Shortcut("preset-test"),
+        }
+    }
+    #[test]
+    fn failed_user_preset_displays_the_original_view_error() {
+        let view = crate::view::state::ViewState::default();
+        let mut toasts = crate::adapters::ui::toast::ToastManager::new();
+        show_failed_preset(&mut toasts, &view, &continuation(&view), &user(), false);
+        assert_eq!(
+            toasts.messages(),
+            vec![crate::i18n::t("preset.toast.apply_failed")]
+        );
+    }
+    #[test]
+    fn stale_agent_replayed_and_other_intent_failures_do_not_show_preset_toasts() {
+        let original = crate::view::state::ViewState::default();
+        let replacement = crate::view::state::ViewState::default();
+        let mut continuation = continuation(&original);
+        let mut toasts = crate::adapters::ui::toast::ToastManager::new();
+        show_failed_preset(&mut toasts, &replacement, &continuation, &user(), false);
+        show_failed_preset(
+            &mut toasts,
+            &original,
+            &continuation,
+            &IntentOrigin::Agent {
+                source: AgentSource::Ipc,
+            },
+            false,
+        );
+        show_failed_preset(&mut toasts, &original, &continuation, &user(), true);
+        continuation.preset_apply = false;
+        show_failed_preset(&mut toasts, &original, &continuation, &user(), false);
+        assert_eq!(toasts.len(), 0);
     }
 }

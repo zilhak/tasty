@@ -43,6 +43,8 @@ pub(crate) struct IntentViewContinuation {
     pub(crate) activate_surface: Option<u32>,
     pub(crate) close_empty_engine: bool,
     #[cfg(feature = "gui")]
+    pub(crate) preset_apply: bool,
+    #[cfg(feature = "gui")]
     pub(crate) after_create: Option<crate::intent::CreateFollowup>,
     #[cfg(feature = "gui")]
     pub(crate) tutorial: Option<create::TutorialCreated>,

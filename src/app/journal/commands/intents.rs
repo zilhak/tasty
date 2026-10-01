@@ -18,6 +18,11 @@ impl JournalApplication {
             category,
         } = intent
         {
+            #[cfg(feature = "gui")]
+            let view = view.map(|mut continuation| {
+                continuation.preset_apply = true;
+                continuation
+            });
             self.admit_intent_request(engine_id,"intent.preset-apply",serde_json::json!({"kind":kind,"name":name,"target_pane_id":target_pane_id,"category":category}),origin,view);
             return true;
         }
