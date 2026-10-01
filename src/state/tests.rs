@@ -60,12 +60,12 @@ pub(crate) fn test_model(events: Vec<tasty_core::DomainEvent>) -> tasty_core::Jo
     tasty_core::evolve(
         &mut model,
         &tasty_core::DomainBatch {
-            batch_id: tasty_core::BatchId(1),
+            batch_id: 1,
             events: events
                 .into_iter()
                 .enumerate()
                 .map(|(index, event)| tasty_core::RecordedEvent {
-                    revision: tasty_core::Revision(index as u64 + 1),
+                    revision: index as u64 + 1,
                     event,
                 })
                 .collect(),
@@ -196,13 +196,13 @@ fn state_fixture(
     let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
         tasty_presets::PresetStore::load_default(),
     ));
-    let mut state = RequestContext::new(&engine.read().read(), preset_store);
-    state.engine_id = Some(engine.id);
+    let state = RequestContext::new(&engine.as_ref().read(), preset_store);
     (state, engine)
 }
 
 fn collect_surface_ids(state: &mut RequestContext, engine: &mut EngineMut<'_>) -> Vec<u32> {
-    let ws = state.active_workspace(&engine.read());
+    let read = engine.read();
+    let ws = state.active_workspace(&read);
     let ws_ids: std::collections::HashSet<u32> = ws.all_surface_ids().into_iter().collect();
     engine
         .runtime
@@ -300,8 +300,7 @@ fn osc133_command_completed_raises_attention_only_off_mirror() {
             .feed_bytes(OSC133_D);
     }
 
-    // 실제 PTY 파서와 락 경합이 있으므로 try_take_events 대신 기다리는 take를 사용한다.
-    // 이 시험은 이벤트를 한 번만 꺼내므로 일시적인 락 경합을 누락으로 읽으면 안 된다.
+    // detached terminal에 넣은 OSC를 한 번에 drain한다. 실제 PTY 실행은 이 fixture 범위가 아니다.
     let boundaries: Vec<u32> = [local_sid, mirror_sid]
         .into_iter()
         .filter(|sid| {
@@ -352,7 +351,7 @@ fn mirror_surface_notification_item_survives_the_attention_gate() {
         .expect("mirror workspace")
         .id;
 
-    let created = engine.notifications.add(
+    let created = engine.live.notifications.add(
         mirror_ws_id,
         mirror_sid,
         "bell".to_string(),
@@ -643,7 +642,8 @@ fn surface_display_path_returns_workspace_and_tab_names() {
     let path = engine
         .surface_display_path(sid, &state.navigation)
         .expect("path for existing surface");
-    let ws = state.active_workspace(&engine.read());
+    let read = engine.read();
+    let ws = state.active_workspace(&read);
     assert_eq!(path.workspace_name, ws.name);
     assert!(path.tab_name.is_some());
 }

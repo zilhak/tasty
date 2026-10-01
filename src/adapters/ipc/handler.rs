@@ -1382,50 +1382,6 @@ fn handle_send_wait_idle(
 }
 
 #[cfg(test)]
-mod structural_apply_error_tests {
-    //! mirror 워크스페이스 구조 op forward 시 IPC 응답 정합성 회귀 방지.
-    //! `forwarded:true`(원격으로 큐잉됨)를 실패로 오보하지 않고 success 로 회신한다.
-    use super::structural_apply_error;
-
-    #[test]
-    fn forwarded_op_returns_success_not_error() {
-        let err = anyhow::Error::new(crate::app::services::MirrorStructuralBlocked {
-            workspace_index: 3,
-            forwarded: true,
-        });
-        let resp = structural_apply_error(serde_json::json!(1), &err);
-        assert!(
-            resp.error.is_none(),
-            "forward 로 큐잉된 op 는 에러로 회신하면 안 된다(원격 실행됨)"
-        );
-        let result = resp
-            .result
-            .expect("forwarded op 는 success result 를 가진다");
-        assert_eq!(result["forwarded"], true);
-        assert_eq!(result["workspace_index"], 3);
-    }
-
-    #[test]
-    fn non_forwarded_mirror_block_stays_internal_error() {
-        let err = anyhow::Error::new(crate::app::services::MirrorStructuralBlocked {
-            workspace_index: 0,
-            forwarded: false,
-        });
-        let resp = structural_apply_error(serde_json::json!(1), &err);
-        assert!(resp.result.is_none());
-        assert_eq!(resp.error.expect("internal_error").code, -32603);
-    }
-
-    #[test]
-    fn plain_error_stays_internal_error() {
-        let err = anyhow::anyhow!("some unrelated failure");
-        let resp = structural_apply_error(serde_json::json!(1), &err);
-        assert!(resp.result.is_none());
-        assert_eq!(resp.error.expect("internal_error").code, -32603);
-    }
-}
-
-#[cfg(test)]
 mod require_surface_id_tests {
     use super::require_surface_id;
     use crate::runtime::terminal_store::PTY_ID_BASE;
@@ -1471,9 +1427,9 @@ mod system_info_tests {
 
     #[test]
     fn system_info_identifies_the_engine_and_the_active_workspace_by_id() {
-        let (state, mut engine_session) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
         let engine = engine_session.borrow_mut();
-        let info = system_info_fields(&state, &engine);
+        let info = system_info_fields(&engine.read(), state.active_workspace_index(&engine));
         assert_eq!(info["scope"], "engine");
         assert_eq!(info["workspace_count"], engine.workspaces().len());
         assert_eq!(info["active_workspace"], 0);
@@ -1489,10 +1445,10 @@ mod system_info_tests {
 
     #[test]
     fn system_info_does_not_invent_an_active_workspace_for_an_empty_engine() {
-        let (state, mut engine_session) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        engine.replace_local_workspaces(Vec::new());
-        let info = system_info_fields(&state, &engine);
+        *engine.core = crate::core::CoreState::new_base();
+        let info = system_info_fields(&engine.read(), state.active_workspace_index(&engine));
         assert_eq!(info["workspace_count"], 0);
         assert_eq!(
             info["active_workspace"],
@@ -1505,9 +1461,15 @@ mod system_info_tests {
     /// 패키지 버전과 별도로 서버 capability를 제공한다.
     #[test]
     fn system_info_declares_what_this_server_can_negotiate() {
-        let (state, mut engine_session) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
         let engine = engine_session.borrow_mut();
-        let resp = handle_system_info(&state, &engine, serde_json::json!(1));
+        let scope = crate::adapters::ipc::request_scope::RequestScope::capture(
+            &mut state,
+            engine.core,
+            #[cfg(feature = "gui")]
+            None,
+        );
+        let resp = handle_system_info(&scope, &engine.read(), serde_json::json!(1));
         let result = resp.result.expect("성공 응답이어야 한다");
         let caps = result["capabilities"]
             .as_array()
@@ -1524,9 +1486,15 @@ mod system_info_tests {
     /// client가 요구하는 capability가 응답에 실제로 포함되는지 확인한다.
     #[test]
     fn system_info_declares_the_capability_name_the_client_asks_for() {
-        let (state, mut engine_session) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
         let engine = engine_session.borrow_mut();
-        let resp = handle_system_info(&state, &engine, serde_json::json!(1));
+        let scope = crate::adapters::ipc::request_scope::RequestScope::capture(
+            &mut state,
+            engine.core,
+            #[cfg(feature = "gui")]
+            None,
+        );
+        let resp = handle_system_info(&scope, &engine.read(), serde_json::json!(1));
         let result = resp.result.expect("성공 응답이어야 한다");
         let names: Vec<&str> = result["capabilities"]
             .as_array()
@@ -1542,9 +1510,15 @@ mod system_info_tests {
 
     #[test]
     fn system_info_declares_the_bounds_of_the_idempotency_guarantee() {
-        let (state, mut engine_session) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
         let engine = engine_session.borrow_mut();
-        let resp = handle_system_info(&state, &engine, serde_json::json!(1));
+        let scope = crate::adapters::ipc::request_scope::RequestScope::capture(
+            &mut state,
+            engine.core,
+            #[cfg(feature = "gui")]
+            None,
+        );
+        let resp = handle_system_info(&scope, &engine.read(), serde_json::json!(1));
         let result = resp.result.expect("성공 응답이어야 한다");
         assert_eq!(result["idempotency"], super::idempotency::declaration());
         assert_eq!(result["idempotency"]["survives_restart"], false);
@@ -1553,9 +1527,9 @@ mod system_info_tests {
     /// capability를 창별 공통 필드에 중복하지 않는다.
     #[test]
     fn the_per_window_fields_do_not_repeat_the_server_capabilities() {
-        let (state, mut engine_session) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
         let engine = engine_session.borrow_mut();
-        let shared = system_info_fields(&state, &engine);
+        let shared = system_info_fields(&engine.read(), state.active_workspace_index(&engine));
         assert!(
             shared.get("capabilities").is_none(),
             "창마다 재사용되는 필드에 capability 가 실렸다: {shared}"

@@ -99,7 +99,7 @@ mod tests {
         let new_generation = replacement.1.generation();
         assert_ne!(generation, new_generation);
         engine.replace_terminal_by_id(surface, replacement).unwrap();
-        drop(state.take_pending_host_events());
+        drop(engine.take_pending_host_events());
         handle(&mut core, &mut state, &mut engine, surface, generation);
         assert!(
             engine.has_surface(surface),
@@ -118,7 +118,7 @@ mod tests {
                 .is_alive()
         );
         assert!(
-            state.take_pending_host_events().is_empty(),
+            engine.take_pending_host_events().is_empty(),
             "late exit must not publish a new process-exit event"
         );
     }
@@ -135,15 +135,9 @@ mod tests {
             .expect("workspace index is valid")
             .all_surface_ids()[0];
         let old = engine.runtime.terminals.generation(surface).unwrap();
-        let pane_id = engine.find_pane_for_surface(surface).unwrap();
         let title = |engine: &EngineMut<'_>| {
             engine
-                .workspace_at(0)
-                .expect("workspace index is valid")
-                .pane_layout()
-                .find_pane(pane_id)
-                .unwrap()
-                .tabs[0]
+                .live
                 .surface_titles
                 .get(&surface)
                 .and_then(|titles| titles.osc_title.clone())
@@ -161,8 +155,16 @@ mod tests {
         engine
             .replace_terminal_by_id(surface, process(surface, "exec sleep 60"))
             .unwrap();
-        assert!(core.apply(&mut engine, pending_title).unwrap().is_empty());
-        assert!(core.apply(&mut engine, pending_cwd).unwrap().is_empty());
+        assert!(
+            core.apply_live(&mut engine, pending_title)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            core.apply_live(&mut engine, pending_cwd)
+                .unwrap()
+                .is_empty()
+        );
         assert_eq!(
             title(&engine),
             original_title,
@@ -171,7 +173,7 @@ mod tests {
         let current = engine.runtime.terminals.generation(surface).unwrap();
         assert!(
             !core
-                .apply(
+                .apply_live(
                     &mut engine,
                     DomainIntent::UpdateTabName {
                         surface_id: surface,
@@ -184,7 +186,7 @@ mod tests {
         );
         assert_eq!(title(&engine).as_deref(), Some("current-title"));
         let current_cwd = core
-            .apply(
+            .apply_live(
                 &mut engine,
                 DomainIntent::SurfaceCwdChanged {
                     surface_id: surface,

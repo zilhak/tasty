@@ -119,7 +119,7 @@ fn mirror_delta_and_reconnect_replacement_cancel_stale_annotations_and_retries_d
     assert!(
         session
             .core_state
-            .local_workspaces
+            .local_workspaces()
             .iter()
             .all(|workspace| workspace.id != 900)
     );
@@ -137,7 +137,7 @@ fn mixed_order_keeps_local_canonical_order_and_stored_move_does_not_move_again()
         &journal.worker,
     )
     .unwrap();
-    journal.creations.insert(session.id, creation);
+    journal.creations.insert((session.id, ticket), creation);
     let until = Instant::now() + Duration::from_secs(10);
     while !journal.creations.is_empty() {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
@@ -174,7 +174,7 @@ fn mixed_order_keeps_local_canonical_order_and_stored_move_does_not_move_again()
     assert_eq!(
         session
             .core_state
-            .local_workspaces
+            .local_workspaces()
             .iter()
             .map(|workspace| workspace.id)
             .collect::<Vec<_>>(),
@@ -248,7 +248,7 @@ fn direct_rename_commits_before_notification_and_clear_uses_current_selected_tit
     navigation.reconcile(&session.core_state.workspaces());
     let (_, notification) = journal.commands.completed_host_events.pop().unwrap();
     assert!(
-        matches!(notification.resolve(&session.core_state, &navigation), Some(Event::WorkspaceRenamed { workspace_id, user_direct: true, .. }) if workspace_id == workspace)
+        matches!(notification.resolve(&session.as_ref(), &navigation), Some(Event::WorkspaceRenamed { workspace_id, user_direct: true, .. }) if workspace_id == workspace)
     );
     journal.admit_direct_rename(
         session.id,
@@ -266,13 +266,14 @@ fn direct_rename_commits_before_notification_and_clear_uses_current_selected_tit
         &origin,
     );
     resolve_without_executing(&mut journal, &mut session);
-    let tab = &mut session
-        .core_state
-        .find_pane_by_id_mut(pane_id)
-        .unwrap()
-        .tabs[0];
+    let tab = &session.core_state.find_pane_by_id(pane_id).unwrap().tabs[0];
     assert_eq!(tab.explicit_name.as_deref(), Some("explicit"));
-    tab.surface_titles.entry(sid).or_default().osc_title = Some("latest observed title".into());
+    session
+        .live
+        .surface_titles
+        .entry(sid)
+        .or_default()
+        .osc_title = Some("latest observed title".into());
     finish_intents(&mut journal, &mut session);
     assert!(
         session.core_state.find_pane_by_id(pane_id).unwrap().tabs[0]
@@ -281,7 +282,7 @@ fn direct_rename_commits_before_notification_and_clear_uses_current_selected_tit
     );
     let (_, notification) = journal.commands.completed_host_events.pop().unwrap();
     assert!(
-        matches!(notification.resolve(&session.core_state, &navigation), Some(Event::TabRenamed { title, user_direct: true, .. }) if title == "latest observed title")
+        matches!(notification.resolve(&session.as_ref(), &navigation), Some(Event::TabRenamed { title, user_direct: true, .. }) if title == "latest observed title")
     );
     journal.admit_direct_rename(
         session.id,

@@ -511,7 +511,8 @@ fn a_durable_claim_precedes_real_pty_preparation_and_the_candidate_stays_private
     let mut engine = session.borrow_mut();
     let old_ids = engine.live_surface_ids();
     let reserved_surface = claimed.plan.surface.id;
-    let prepared = effect_runner::prepare(&mut engine, &binding, claimed).unwrap();
+    let prepared = effect_runner::prepare(&mut engine, &binding, claimed)
+        .unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(
         engine.live_surface_ids(),
         old_ids,
@@ -563,7 +564,8 @@ fn a_durable_claim_precedes_real_pty_preparation_and_the_candidate_stays_private
 #[cfg(unix)]
 #[test]
 fn committed_installation_preserves_initial_observations_and_defers_command_completion() {
-    use crate::runtime::{effect_runner, live_projection};
+    use crate::runtime::effect_runner;
+    use tasty_core::projection;
     use tasty_core::{DomainBatch, PreparationResult};
     let home = tempfile::tempdir().unwrap();
     let worker = start(home.path());
@@ -576,13 +578,23 @@ fn committed_installation_preserves_initial_observations_and_defers_command_comp
         runtime_epoch: claimed.lease.runtime_epoch,
         engine_incarnation: claimed.engine_incarnation,
     };
-    let (_view, mut session) = crate::state::tests::test_state();
+    let (_view, mut session) =
+        crate::state::tests::test_state_from_model(crate::state::tests::test_model(vec![
+            tasty_core::DomainEvent::CategoryCreated {
+                id: 1,
+                name: "category-1".into(),
+                index: 0,
+            },
+        ]));
     let mut engine = session.borrow_mut();
-    // The worker owns the only canonical predecessor; this fixture projects its category.
-    // Its unrelated original Terminal stays in the store to catch accidental SID replacement.
-    engine.replace_local_workspaces(Vec::new());
-    engine.categories() = vec![crate::model::WorkspaceCategory::new(1, "category-1".into())];
-    let mut prepared = effect_runner::prepare(&mut engine, &binding, claimed).unwrap();
+    // An unrelated live resource catches accidental SID replacement without another Core tree.
+    engine.runtime.terminals.insert(
+        u32::MAX,
+        tasty_terminal::Terminal::new_detached(80, 24),
+        None,
+    );
+    let mut prepared = effect_runner::prepare(&mut engine, &binding, claimed)
+        .unwrap_or_else(|error| panic!("{error}"));
     let generation = prepared
         .connection
         .as_ref()
@@ -613,17 +625,17 @@ fn committed_installation_preserves_initial_observations_and_defers_command_comp
     let Completion::Publish { batch, before, .. } = receive(&worker) else {
         panic!("publication")
     };
-    let installation = prepared.begin_installation(engine.core).unwrap();
-    let mut leaves = std::collections::HashMap::new();
+    let mut installation = prepared
+        .begin_installation(&engine.runtime.surface_registry)
+        .unwrap();
     let mut retired = Vec::new();
-    live_projection::apply(
+    projection::apply(
         engine.core,
         &before[&binding.stream],
         &DomainBatch {
             batch_id: batch.batch_id,
             events: batch.streams[&binding.stream].clone(),
         },
-        &mut leaves,
         &mut retired,
     )
     .unwrap();
@@ -653,15 +665,17 @@ fn committed_installation_preserves_initial_observations_and_defers_command_comp
     let Completion::Publish { batch, before, .. } = receive(&worker) else {
         panic!("completion publication")
     };
-    leaves.insert(sid, prepared.into_leaf(&installed).unwrap());
-    live_projection::apply(
+    engine
+        .runtime
+        .surfaces
+        .insert(sid, prepared.into_leaf(&installed).unwrap());
+    projection::apply(
         engine.core,
         &before[&binding.stream],
         &DomainBatch {
             batch_id: batch.batch_id,
             events: batch.streams[&binding.stream].clone(),
         },
-        &mut leaves,
         &mut retired,
     )
     .unwrap();
@@ -719,11 +733,8 @@ fn kind_withdrawal_after_claim_prevents_factory_execution() {
         Ok(_) => panic!("withdrawn kind prepared"),
         Err(error) => error,
     };
-    assert!(
-        error
-            .downcast_ref::<crate::runtime::surface_registry::SurfaceKindWithdrawn>()
-            .is_some()
-    );
+    assert!(!error.uncertain, "withdrawal precedes factory execution");
+    assert!(error.reason.contains("late-kind"));
     assert!(receiver.try_recv().is_err());
 }
 
@@ -734,7 +745,8 @@ fn complete_conversion_and_reap(
     binding: &crate::runtime::effect_runner::ExecutionBinding,
     sid: u32,
 ) {
-    use crate::runtime::{effect_runner, live_projection};
+    use crate::runtime::effect_runner;
+    use tasty_core::projection;
     use tasty_core::{
         CreationDestination, CreationPlan, DomainBatch, DomainEvent, OperationId,
         PreparationResult, SurfaceSpec,
@@ -804,7 +816,8 @@ fn complete_conversion_and_reap(
         .unwrap();
     finished(worker, 10).unwrap();
     let claimed = claim(worker, 11, operation);
-    let mut candidate = effect_runner::prepare(engine, binding, claimed).unwrap();
+    let mut candidate =
+        effect_runner::prepare(engine, binding, claimed).unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(engine.runtime.terminals.generation(sid), Some(original));
     assert_eq!(
         engine.runtime.terminals.pty(sid).unwrap().process_id(),
@@ -822,17 +835,17 @@ fn complete_conversion_and_reap(
     let Completion::Publish { batch, before, .. } = receive(worker) else {
         panic!("publication")
     };
-    let installation = candidate.begin_installation(engine.core).unwrap();
-    let mut leaves = std::collections::HashMap::new();
+    let mut installation = candidate
+        .begin_installation(&engine.runtime.surface_registry)
+        .unwrap();
     let mut retired = Vec::new();
-    live_projection::apply(
+    projection::apply(
         engine.core,
         &before[&binding.stream],
         &DomainBatch {
             batch_id: batch.batch_id,
             events: batch.streams[&binding.stream].clone(),
         },
-        &mut leaves,
         &mut retired,
     )
     .unwrap();
@@ -872,15 +885,17 @@ fn complete_conversion_and_reap(
     let Completion::Publish { batch, before, .. } = receive(worker) else {
         panic!("completion")
     };
-    leaves.insert(sid, candidate.into_leaf(&installed).unwrap());
-    live_projection::apply(
+    engine
+        .runtime
+        .surfaces
+        .insert(sid, candidate.into_leaf(&installed).unwrap());
+    projection::apply(
         engine.core,
         &before[&binding.stream],
         &DomainBatch {
             batch_id: batch.batch_id,
             events: batch.streams[&binding.stream].clone(),
         },
-        &mut leaves,
         &mut retired,
     )
     .unwrap();
@@ -920,7 +935,8 @@ fn kind_withdrawal_or_replacement_after_prepare_rejects_installation_before_publ
             &declaration,
             sender.clone(),
         );
-        let mut candidate = effect_runner::prepare(&mut engine, &binding, claimed).unwrap();
+        let mut candidate = effect_runner::prepare(&mut engine, &binding, claimed)
+            .unwrap_or_else(|error| panic!("{error}"));
         let lease = candidate.lease.clone();
         submit(
             &worker,
@@ -944,7 +960,7 @@ fn kind_withdrawal_or_replacement_after_prepare_rejects_installation_before_publ
                 sender,
             );
         }
-        let error = match candidate.begin_installation(engine.core) {
+        let error = match candidate.begin_installation(&engine.runtime.surface_registry) {
             Ok(_) => panic!("stale kind installed"),
             Err(error) => error,
         };
@@ -954,7 +970,7 @@ fn kind_withdrawal_or_replacement_after_prepare_rejects_installation_before_publ
         );
         assert_eq!(engine.live_surface_ids(), original_ids);
         assert!(
-            candidate.discard().is_none(),
+            matches!(candidate.discard(&mut engine), Ok(None)),
             "remote proxy had no physical PTY to retire"
         );
         submit(

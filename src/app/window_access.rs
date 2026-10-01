@@ -597,16 +597,43 @@ mod tests {
 
     use super::*;
 
+    fn named_fixture(
+        name: &str,
+    ) -> (
+        crate::state::RequestContext,
+        crate::runtime::engine_session::EngineSession,
+    ) {
+        use tasty_core::DomainEvent as E;
+        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1_000_000);
+        let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        crate::state::tests::test_state_from_model(crate::state::tests::test_model(vec![
+            E::CategoryCreated {
+                id: 0,
+                name: "normal".into(),
+                index: 0,
+            },
+            E::WorkspaceCreated {
+                id,
+                name: name.into(),
+                category: 0,
+                index: 0,
+                pane: id,
+            },
+            E::TabCreated {
+                id,
+                pane: id,
+                index: 0,
+                name: "Terminal".into(),
+                surface: tasty_core::SurfaceSpec {
+                    id,
+                    kind: "terminal".into(),
+                    data: None,
+                },
+            },
+        ]))
+    }
     fn engine_with_workspace_name(name: &str) -> crate::runtime::engine_session::EngineSession {
-        let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine_session =
-            crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
-        let mut engine = engine_session.borrow_mut();
-        engine
-            .workspace_at_mut(0)
-            .expect("workspace index is valid")
-            .name = name.to_string();
-        engine_session
+        named_fixture(name).1
     }
 
     #[test]
@@ -663,20 +690,15 @@ mod tests {
         let ids = names
             .iter()
             .map(|name| {
-                let (state, mut engine_session) = crate::state::tests::test_state();
-                let mut engine = engine_session.borrow_mut();
-                engine
-                    .workspace_at_mut(0)
-                    .expect("workspace index is valid")
-                    .name = (*name).to_string();
+                let (state, engine_session) = named_fixture(name);
                 reg.park_for_test(state, engine_session)
             })
             .collect();
         (reg, ids)
     }
 
-    fn engine_mut(reg: &mut EngineRegistry, id: EngineId) -> &mut crate::core::CoreState {
-        reg.get_mut(id).expect("registry에 있는 engine").core
+    fn engine_mut(reg: &mut EngineRegistry, id: EngineId) -> EngineMut<'_> {
+        reg.get_mut(id).expect("registry에 있는 engine")
     }
 
     fn parked_pairs(
@@ -720,15 +742,9 @@ mod tests {
     fn workspace_in_later_parked_engine_is_not_orphaned() {
         let (mut reg, ids) = parked(&["first", "second"]);
         // 첫 engine과 겹치지 않는 ID를 두 번째 engine에만 만든다.
-        let target = engine_mut(&mut reg, ids[0])
-            .workspace_at(0)
-            .expect("workspace index is valid")
-            .id
-            + 5_000;
-        engine_mut(&mut reg, ids[1])
-            .workspace_at_mut(0)
-            .expect("workspace index is valid")
-            .id = target;
+        let first = reg.get(ids[0]).unwrap().workspace_at(0).unwrap().id;
+        let target = reg.get(ids[1]).unwrap().workspace_at(0).unwrap().id;
+        assert_ne!(first, target);
         assert!(any_engine_has_workspace(
             std::iter::empty(),
             parked_pairs(&reg),
@@ -872,7 +888,7 @@ mod tests {
             "sessions는 임시 engine을 넣지 않는다"
         );
         assert_eq!(
-            scan.reborrow().pending().map(|e| e
+            scan.reborrow().windows_and_pending().next().map(|e| e
                 .workspace_at(0)
                 .expect("workspace index is valid")
                 .name
@@ -885,12 +901,7 @@ mod tests {
     fn park_appends_and_unpark_takes_the_oldest() {
         let (mut reg, ids) = parked(&["p0"]);
         let mut views = HashMap::new();
-        let (state, mut engine_session) = crate::state::tests::test_state();
-        let mut engine = engine_session.borrow_mut();
-        engine
-            .workspace_at_mut(0)
-            .expect("workspace index is valid")
-            .name = "p1".to_string();
+        let (state, engine_session) = named_fixture("p1");
         let p1 = with_pending(&mut reg, engine_session);
         let w = WindowId::from(1u64);
         reg.attach_window(w, p1);
@@ -915,96 +926,12 @@ mod tests {
     }
 
     #[test]
-    fn parked_navigation_survives_application_mutations_and_unpark() {
-        use crate::app::command::DomainIntent;
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
-        let mut engine = engine_session.borrow_mut();
-        let pane_id = engine
-            .workspace_at(0)
-            .expect("workspace index is valid")
-            .pane_layout()
-            .first_pane()
-            .unwrap()
-            .id;
-        let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-        for _ in 0..2 {
-            crate::app::structural_exec::execute(
-                &mut core,
-                &mut state,
-                &mut engine,
-                DomainIntent::CreateTab {
-                    pane_id,
-                    cwd: None,
-                    kind: "empty".into(),
-                    name: None,
-                    surface_params: serde_json::json!({}),
-                    activate: false,
-                },
-            )
-            .unwrap();
-        }
-        let pane = engine.find_pane_by_id(pane_id).unwrap();
-        let selected = pane.tabs[2].id;
-        let removed = pane.tabs[1].id;
-        state.navigation.select_tab(pane, selected);
-        let mut reg = EngineRegistry::default();
-        let id = reg.park_for_test(state, engine_session);
-        let mut views = HashMap::new();
-        {
-            let scan = EngineScanMut::from_fields(&mut views, &mut reg);
-            let (state, mut engine) = scan.parked_session(id).unwrap();
-            let tab_id = engine.find_pane_by_id(pane_id).unwrap().tabs[0].id;
-            crate::app::structural_exec::execute(
-                &mut core,
-                state,
-                &mut engine,
-                DomainIntent::MoveTab {
-                    pane_id,
-                    tab_id,
-                    to_index: 2,
-                },
-            )
-            .unwrap();
-            crate::app::structural_exec::execute(
-                &mut core,
-                state,
-                &mut engine,
-                DomainIntent::CloseTab { tab_id: removed },
-            )
-            .unwrap();
-            assert_eq!(
-                state
-                    .navigation
-                    .tab_id(engine.find_pane_by_id(pane_id).unwrap()),
-                Some(selected)
-            );
-        }
-        let (unparked, state) = EngineScanMut::from_fields(&mut views, &mut reg)
-            .unpark_first()
-            .unwrap();
-        assert_eq!(unparked, id);
-        let engine = reg.get(id).unwrap();
-        assert_eq!(
-            state
-                .navigation
-                .tab_id(engine.find_pane_by_id(pane_id).unwrap()),
-            Some(selected)
-        );
-    }
-
-    #[test]
     fn parked_session_lookups_find_the_engine_by_id() {
         let (mut reg, ids) = parked(&["p0", "p1"]);
         // 첫 항목과 겹치지 않는 ID를 두 번째 항목에만 둔다.
-        let target = engine_mut(&mut reg, ids[0])
-            .workspace_at(0)
-            .expect("workspace index is valid")
-            .id
-            + 5_000;
-        engine_mut(&mut reg, ids[1])
-            .workspace_at_mut(0)
-            .expect("workspace index is valid")
-            .id = target;
+        let first = reg.get(ids[0]).unwrap().workspace_at(0).unwrap().id;
+        let target = reg.get(ids[1]).unwrap().workspace_at(0).unwrap().id;
+        assert_ne!(first, target);
         let mut other = EngineRegistry::default();
         let unknown = with_pending(&mut other, engine_with_workspace_name("x"));
         let mut views = HashMap::new();

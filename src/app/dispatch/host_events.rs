@@ -246,15 +246,15 @@ mod terminal_generation_tests {
 
     #[test]
     fn the_real_host_queue_drops_only_the_old_connection_title() {
-        let (mut state, mut session) = crate::state::tests::test_state();
-        let engine = session.borrow_mut();
+        let (_state, mut session) = crate::state::tests::test_state();
+        let mut engine = session.borrow_mut();
         let surface = engine
             .workspace_at(0)
             .expect("workspace index is valid")
             .all_surface_ids()[0];
         let old = engine.runtime.terminals.generation(surface).unwrap();
-        drop(state.take_pending_host_events());
-        state.enqueue_host_event(PendingHostEvent::SurfaceTitleChanged {
+        drop(engine.take_pending_host_events());
+        engine.enqueue_host_event(PendingHostEvent::SurfaceTitleChanged {
             surface_id: surface,
             generation: old,
             title: "stale-title".into(),
@@ -265,21 +265,21 @@ mod terminal_generation_tests {
             None,
         );
         let current = engine.runtime.terminals.generation(surface).unwrap();
-        state.enqueue_host_event(PendingHostEvent::SurfaceTitleChanged {
+        engine.enqueue_host_event(PendingHostEvent::SurfaceTitleChanged {
             surface_id: surface,
             generation: current,
             title: "current-title".into(),
         });
-        state.enqueue_host_event(PendingHostEvent::SurfaceFocused {
+        engine.enqueue_host_event(PendingHostEvent::SurfaceFocused {
             surface_id: surface,
             prev_surface_id: None,
         });
-        let events = take_current_host_events(&mut state, &engine.as_ref());
+        let events = take_current_host_events(&mut engine);
         assert_eq!(events.len(), 2);
         assert!(
             matches!(&events[0], PendingHostEvent::SurfaceTitleChanged { title, .. } if title == "current-title")
         );
         assert!(matches!(events[1], PendingHostEvent::SurfaceFocused { .. }));
-        assert!(state.take_pending_host_events().is_empty());
+        assert!(engine.take_pending_host_events().is_empty());
     }
 }

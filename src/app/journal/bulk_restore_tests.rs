@@ -158,8 +158,6 @@ fn selected_terminal_restores_capture_while_other_tabs_remain_resource_free() {
     .unwrap();
     let tabs:Vec<_> = (0..3).map(|index|serde_json::json!({"name":format!("terminal-{index}"),"explicit_name":null,"surface":{"Leaf":{"Terminal":{"cwd":home.to_string_lossy(),"restore_command":"printf 'RESTORE-%s\\n' READY; exec sleep 60","scrollback_ref":"saved"}}}})).collect();
     let layout = serde_json::json!({"version":2,"active_workspace":0,"workspaces":[{"name":"restore","subtitle":"","description":"","category":0,"focused_pane_index":0,"pane_layout":{"Leaf":{"tabs":tabs,"active_tab":1}}}]});
-    session.core_state.pending_layout_restore =
-        Some(serde_json::from_value(layout.clone()).unwrap());
     let ids = {
         let mut store =
             tasty_event_store::EventStore::open(&directory.join("journal.db"), journal_id).unwrap();
@@ -226,8 +224,9 @@ fn selected_terminal_restores_capture_while_other_tabs_remain_resource_free() {
         assert!(session.runtime.terminals.get(sid).is_none());
         assert!(
             session
-                .core_state
-                .find_surface_by_id(sid)
+                .runtime
+                .surfaces
+                .get(&sid)
                 .unwrap()
                 .as_any()
                 .is::<crate::runtime::surface_restorer::JournalPlaceholder>()
@@ -237,7 +236,7 @@ fn selected_terminal_restores_capture_while_other_tabs_remain_resource_free() {
     assert!(journal.activate_restored_surface(&session, ids[2]).unwrap());
     loop {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
-        if !journal.creations.contains_key(&session.id) {
+        if !journal.has_creation(session.id) {
             break;
         }
         assert!(Instant::now() < deadline, "later selection stalled");
@@ -330,8 +329,9 @@ fn large_generic_capture_waits_for_registration_and_reaches_restore_factory_unch
     );
     assert!(
         session
-            .core_state
-            .find_surface_by_id(sid)
+            .runtime
+            .surfaces
+            .get(&sid)
             .unwrap()
             .as_any()
             .is::<crate::runtime::surface_restorer::JournalPlaceholder>()
@@ -339,7 +339,7 @@ fn large_generic_capture_waits_for_registration_and_reaches_restore_factory_unch
     let (sender, receiver) = std::sync::mpsc::channel();
     let declaration=serde_json::from_value(serde_json::json!({"kind":"late-restore","display_name_i18n_key":"surface.kind.markdown","rendering":"remote"})).unwrap();
     crate::plugin_bridge::remote_kind::register_remote_kind(
-        &session.core_state.runtime.surface_registry,
+        &session.runtime.surface_registry,
         "com.test.late-restore",
         &declaration,
         sender,
@@ -410,7 +410,7 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
     let (sender, receiver) = std::sync::mpsc::channel();
     let declaration=serde_json::from_value(serde_json::json!({"kind":"import-null","display_name_i18n_key":"surface.kind.markdown","rendering":"remote"})).unwrap();
     crate::plugin_bridge::remote_kind::register_remote_kind(
-        &session.core_state.runtime.surface_registry,
+        &session.runtime.surface_registry,
         "com.test.import-null",
         &declaration,
         sender,
@@ -451,9 +451,8 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
         }
         _ => panic!("JSON null was treated as create rather than a restore snapshot"),
     }
-    assert!(session.core_state.pending_layout_restore.is_none());
     crate::surface_meta::SurfaceMetaStore::set(
-        &mut *session.core_state.runtime.memory.lock().unwrap(),
+        &mut *session.runtime.memory.lock().unwrap(),
         ids[0],
         "restore.command",
         "keep live metadata",
@@ -463,7 +462,8 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
     drop(journal);
     // A later legacy export is not another import request or a source of positional identities.
     std::fs::write(&slot_path, "{broken legacy after successful import").unwrap();
-    session.core_state.replace_local_workspaces(Vec::new());
+    // Reset only the test projection; retained runtime owners still belong to this session.
+    session.core_state = crate::core::CoreState::new_base();
     session.journal_binding = None;
     let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
     journal
@@ -490,7 +490,7 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
     );
     assert_eq!(
         crate::surface_meta::SurfaceMetaStore::get(
-            &mut *session.core_state.runtime.memory.lock().unwrap(),
+            &mut *session.runtime.memory.lock().unwrap(),
             ids[0],
             "restore.command"
         )

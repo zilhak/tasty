@@ -60,15 +60,33 @@ mod tests {
     use super::*;
 
     fn engine_with_workspace(workspace_id: u32) -> crate::runtime::engine_session::EngineSession {
-        let waker: crate::terminal::Waker = Arc::new(|| {});
-        let mut engine_session =
-            crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
-        let mut engine = engine_session.borrow_mut();
-        engine
-            .workspace_at_mut(0)
-            .expect("workspace index is valid")
-            .id = workspace_id;
-        engine_session
+        use tasty_core::DomainEvent as E;
+        crate::state::tests::test_state_from_model(crate::state::tests::test_model(vec![
+            E::CategoryCreated {
+                id: 0,
+                name: "normal".into(),
+                index: 0,
+            },
+            E::WorkspaceCreated {
+                id: workspace_id,
+                name: "Task".into(),
+                category: 0,
+                index: 0,
+                pane: workspace_id,
+            },
+            E::TabCreated {
+                id: workspace_id,
+                pane: workspace_id,
+                index: 0,
+                name: "Terminal".into(),
+                surface: tasty_core::SurfaceSpec {
+                    id: workspace_id,
+                    kind: "terminal".into(),
+                    data: None,
+                },
+            },
+        ]))
+        .1
     }
 
     fn ready_task(

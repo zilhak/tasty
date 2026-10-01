@@ -92,7 +92,13 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
         !journal.has_pending_view_writes()
     });
     assert!(journal.failed_view_writes.is_empty());
-    let bytes = std::fs::read(home.join("structure/views/slot-1/incarnation-1.json")).unwrap();
+    let store = tasty_event_store::EventStore::open(
+        &home.join("structure/journal.db"),
+        &binding.journal_id,
+    )
+    .unwrap();
+    let bytes = store.restore_manifest("view:slot-1").unwrap().unwrap().view;
+    drop(store);
     let saved: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(saved["sequence"], final_sequence);
     assert_eq!(saved["binding"]["revision"], binding.revision.unwrap());
@@ -102,7 +108,8 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
     );
     drop(journal);
     std::fs::write(home.join("layouts/01.json"), "invalid legacy positions").unwrap();
-    session.core_state.replace_local_workspaces(Vec::new());
+    // Reset only the test projection; retained runtime owners still belong to this session.
+    session.core_state = crate::core::CoreState::new_base();
     session.journal_binding = None;
     let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
     journal
@@ -123,12 +130,14 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
     assert!(restored.selection.collapsed_categories.contains(&0));
     drop(journal);
     // A reset did not select old View data, including a newer/unreadable sidecar schema.
+    std::fs::create_dir_all(home.join("structure/views/slot-1")).unwrap();
     std::fs::write(
         home.join("structure/views/slot-1/incarnation-1.json"),
         "{unreadable old View}",
     )
     .unwrap();
-    session.core_state.replace_local_workspaces(Vec::new());
+    // Reset only the test projection; retained runtime owners still belong to this session.
+    session.core_state = crate::core::CoreState::new_base();
     session.journal_binding = None;
     let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
     journal

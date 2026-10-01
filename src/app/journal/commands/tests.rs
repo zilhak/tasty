@@ -369,7 +369,7 @@ fn committed_publication_failure_halts_readers_and_fails_all_pending_replies() {
     assert!(
         !session
             .core_state
-            .categories
+            .categories()
             .iter()
             .any(|category| category.name == "committed-not-published")
     );
@@ -393,7 +393,7 @@ fn committed_publication_failure_halts_readers_and_fails_all_pending_replies() {
             .unwrap();
     assert!(
         model
-            .categories
+            .categories()
             .values()
             .any(|category| category.name == "committed-not-published"),
         "failure is after durable commit, not an admission refusal"
@@ -451,7 +451,7 @@ fn stale_settings_reset_completion_cannot_overwrite_a_newer_settings_intent() {
     assert!(second > first);
     // The ordinary service-side update B has been applied while A's reset awaits its commit.
     session
-        .core_state
+        .runtime
         .settings
         .general
         .workspace_categories_enabled = true;
@@ -468,7 +468,7 @@ fn stale_settings_reset_completion_cannot_overwrite_a_newer_settings_intent() {
     );
     assert!(
         session
-            .core_state
+            .runtime
             .settings
             .general
             .workspace_categories_enabled
@@ -582,7 +582,7 @@ fn headless_pending_category_intent_uses_the_explicit_engine_journal_admission()
     assert!(
         session
             .core_state
-            .categories
+            .categories()
             .iter()
             .any(|category| category.name == "headless-queued")
     );

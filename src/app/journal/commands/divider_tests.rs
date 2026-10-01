@@ -22,7 +22,7 @@ fn divider_commit_publishes_once_and_stale_revision_rejects_unchanged_leaf_targe
         crate::model::SurfaceLayout::Split { node_id, .. } => *node_id,
         _ => panic!("split"),
     };
-    let instance = session.core_state.find_surface_by_id(surfaces[0]).unwrap()
+    let instance = session.runtime.surfaces.get(&surfaces[0]).unwrap().as_ref()
         as *const dyn crate::model::Surface as *const ();
     let revision = session.core_state.committed_structure_revision().unwrap();
     journal
@@ -135,7 +135,7 @@ fn divider_commit_publishes_once_and_stale_revision_rejects_unchanged_leaf_targe
     );
     assert_eq!(
         instance,
-        session.core_state.find_surface_by_id(surfaces[0]).unwrap()
+        session.runtime.surfaces.get(&surfaces[0]).unwrap().as_ref()
             as *const dyn crate::model::Surface as *const ()
     );
 }
@@ -163,7 +163,8 @@ fn local_tab_reorder_keeps_the_fixed_tab_identity_between_queued_moves() {
                 tab_id,
                 to_index: 1
             },
-            &crate::intent::IntentOrigin::System
+            &crate::intent::IntentOrigin::System,
+            None,
         ));
     }
     metadata::finish_intents(&mut journal, &mut session);

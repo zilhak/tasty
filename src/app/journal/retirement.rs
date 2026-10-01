@@ -238,7 +238,8 @@ mod tests {
                 assert!(!home.join("layouts/01.json").exists());
             }
             drop(journal);
-            session.core_state.replace_local_workspaces(Vec::new());
+            // Reset only the test projection; retained runtime owners still belong to this session.
+            session.core_state = crate::core::CoreState::new_base();
             session.journal_binding = None;
         }
         std::fs::remove_dir_all(home.join("layouts")).unwrap();
@@ -269,7 +270,8 @@ mod tests {
         );
         assert_eq!(journal.known_layout_slots().collect::<Vec<_>>(), vec![2]);
         drop(journal);
-        session.core_state.replace_local_workspaces(Vec::new());
+        // Reset only the test projection; retained runtime owners still belong to this session.
+        session.core_state = crate::core::CoreState::new_base();
         session.journal_binding = None;
         session.persistence.slot = Some(1);
         let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
@@ -329,7 +331,7 @@ mod tests {
         journal.next_ticket += 1;
         let creation =
             creation::Creation::default_workspace(ticket, &session, &journal.worker).unwrap();
-        journal.creations.insert(id, creation);
+        journal.creations.insert((id, ticket), creation);
         journal.retire_engine(id, session.journal_binding.clone().unwrap(), true);
         journal.submit_retirements().unwrap();
         assert!(journal.retirements.pending[&id].ticket.is_none());
@@ -337,7 +339,7 @@ mod tests {
         assert!(journal.take_retired_engines().is_empty());
         pump(&mut journal, &mut session, |j| !j.has_pending_retirements());
         assert!(session.pending_materializations.is_empty());
-        assert!(!journal.creations.contains_key(&id));
+        assert!(!journal.has_creation(id));
         assert_eq!(
             session.runtime.terminals.iter().count(),
             2,
