@@ -25,7 +25,7 @@ Done → event_loop.exit()
 run_app 반환 → drop_app_with_trace → shutdown_total_with_drop
 ```
 
-진행 중 worker의 대기 상한이 지나면 미회수 수 또는 TimedOut/WorkerFailed를 기록한다. 이것은 Joined가 아니다. 정상 EngineRegistry의 retiring owner를 해제하는 경로는 원 runner와 물리 자원 receipt를 기다리며 앱 종료의 상한과 구별한다.
+진행 중 worker의 대기 상한이 지나면 미회수 수 또는 해당 retirement의 TimedOut 관측을 기록한다. timeout은 실제 join 완료를 뜻하지 않는다. Task runner의 `RunnerStopObservation::WorkerFailed`는 이와 달리 실제 join 뒤 확인한 worker 실패다. `Joined`와 성공 여부는 다르지만 두 관측 모두 원 thread의 join은 끝났다는 뜻이다. 정상 EngineRegistry의 retiring owner를 해제하는 경로는 원 runner와 물리 자원 receipt를 기다리며 앱 종료의 상한과 구별한다.
 
 Remote의 established tunnel과 늦은 연결 결과는 retirement worker가 child wait를 수행한다. App 스레드가 정상 Remote 세션의 SshTunnel을 직접 blocking Drop하는 경로로 설명하지 않는다. CLI의 동기 SshTunnel Drop과 예외적인 Drop tail은 별도다. observer join이나 plugin 강제 종료 후 wait 등 남은 동기 구간은 실제 지연을 측정해야 한다.
 

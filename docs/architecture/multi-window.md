@@ -109,7 +109,7 @@ engine의 존재 여부는 창 관계와 parked 관계를 함께 확인한다. �
 
 슬롯을 가진 GUI engine은 한 **레이아웃 슬롯**에 연결되고, MainView는 연결돼 있는 동안 한 engine을 표시한다. parked·retiring처럼 창이 없는 owner도 회수가 끝날 때까지 슬롯을 유지한다. headless의 새 구조 stream은 GUI 슬롯을 갖지 않는다. 각 EngineSession의 persistence/binding은 해당 슬롯(있는 경우)과 journal stream을 가리킨다. 창마다 워크스페이스 목록이 독립이라는 구조적 사실이 저장소까지 이어진 형태다 — 두 창이 같은 목록을 복제하거나 서로의 저장을 덮어쓰지 않는다.
 
-**점유는 살아있는 engine 에서 파생된다.** 별도 슬롯 레지스트리도, 디스크 기록도 없다. 점유 집합은 sessions의 전체 owner에서 파생하며 창·parked·pending·retiring을 포함한다. 갓 만들어진 engine 은 창에 붙기 전까지 임시 관계에 머물기 때문에, 그 구간을 빠뜨리면 같은 슬롯이 두 번 배정된다. 따라서
+**점유는 살아있는 engine 에서 파생된다.** 프로세스 내 실행 owner의 슬롯 점유를 위한 별도 레지스트리나 디스크 기록은 없다. 복원 원본인 DB manifest와 그 binding은 이 실행 중 점유 집합과 구별한다. 점유 집합은 sessions의 전체 owner에서 파생하며 창·parked·pending·retiring을 포함한다. 갓 만들어진 engine 은 창에 붙기 전까지 임시 관계에 머물기 때문에, 그 구간을 빠뜨리면 같은 슬롯이 두 번 배정된다. 따라서
 
 - engine이 실제로 drop되면 그 슬롯은 그 순간 free 가 된다 — 해제 호출이 없으니 해제 누락도 없다.
 - **parked engine 은 슬롯을 계속 쥔다.** 창이 없어도 engine 이 살아 있으므로 점유에 포함되고, 다시 창을 열 때 그 engine 이 같은 슬롯을 이어쓴다. 재배정했다면 남의 슬롯 파일을 덮어썼을 것이다.
