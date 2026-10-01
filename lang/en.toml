@@ -958,10 +958,7 @@ font_unresolved = "Could not load the language pack font: {}. Some characters ma
 [persistence.warn]
 settings_unparsable = "Tasty could not read {} and started with defaults. Before the first save, the original is moved to a .bak file in the same folder."
 settings_locked = "Your settings file could not be read. Saving settings is disabled so the file is not overwritten — fix or move it, then restart."
-layout_unparsable = "Tasty could not read the saved window layout and started with a fresh one. Before the first save, the original is moved to a .bak file in the same folder."
-layout_locked = "Your saved window layout could not be read, so Tasty started with a fresh one. The saved layout will not be overwritten."
 settings_unparsable_blocked = "Tasty could not read {} or back it up, so saving is blocked. Move or delete the .bak files in the same folder, then restart."
-layout_unparsable_blocked = "Tasty could not read or back up the saved layout, so saving is blocked. Move or delete the .bak files in the layouts folder, then restart."
 
 [banner.mouse_capture]
 title = "Mouse input captured"
@@ -1691,7 +1688,6 @@ connecting = "Connecting…"
 connecting_hint = "Establishing the SSH tunnel to {name} and listing workspaces. If the host does not respond, the lookup stops on its own after {secs}s."
 timeout = "The remote host did not respond within {secs}s, so the lookup was stopped."
 cant_connect = "Can't connect"
-error_generic = "The remote instance didn't respond."
 no_workspaces_line = "{name} is reachable but has no workspaces yet."
 in_use = "in use"
 inactive = "inactive"

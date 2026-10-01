@@ -144,7 +144,7 @@ impl Remote {
                     .and_then(|id| id.as_u64())
                     .and_then(|id| u32::try_from(id).ok())
                     .map(ResultValue::Created)
-                    .ok_or_else(|| "remote workspace.create returned no ID".into())
+                    .ok_or_else(|| tasty_i18n::t("remote_attach.create_failed_generic").to_owned())
             });
             crate::outbound::send_attempt_result(
                 &tx,
