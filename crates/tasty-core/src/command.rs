@@ -204,7 +204,7 @@ pub fn decide_structure(
         },
         StructuralCommand::RecoverOperation {operation,outcome,evidence}=> {
             let previous=model.operations.get(operation).ok_or_else(||Rejection("recovery operation missing".into()))?;
-            if previous.outcome.is_some() || evidence.0==0 || !matches!(outcome,crate::OperationOutcome::Cancelled {..}|crate::OperationOutcome::Uncertain {..}) {return Err(Rejection("recovery observation cannot invent a successful execution".into()));}
+            if previous.outcome.is_some() || evidence.0==0 || !matches!(outcome,crate::OperationOutcome::Cancelled {..}|crate::OperationOutcome::Uncertain {..}|crate::OperationOutcome::Superseded {..}) {return Err(Rejection("recovery observation cannot invent a successful execution".into()));}
             StructuralDecision {events:vec![DomainEvent::OperationFinished {id:operation.clone(),outcome:outcome.clone()},DomainEvent::OperationRecoveryObserved {id:operation.clone(),evidence:*evidence}],effects:Vec::new(),result:StructuralResult::Pending {operation:operation.clone()},completed_command:Some(previous.command_id.clone())}
         },
         StructuralCommand::Replace {..}=>replacement::decide(model,command)?,

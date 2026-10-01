@@ -43,6 +43,7 @@ impl App {
         }
         view.finish_redraw(&session.read(),self.plugin_manager.as_ref().map(super::plugin_display::PluginDisplay::new));
         super::webview_sync::synchronize(view,&mut session.borrow_mut(),self.plugin_manager.as_ref(),&self.services.navigation_proofs);
+        self.process_remote_tool_requests(id);
         self.poll_port_scans();
     }
 }

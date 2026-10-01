@@ -138,6 +138,7 @@ impl AppServicesBuilder {
             registries,
             #[cfg(feature="gui")]
             navigation_proofs:Default::default(),
+            profile_detections:Default::default(),
             approval_store: Arc::new(tasty_approval::ApprovalStore::new()),
             telemetry_seq: Arc::new(tasty_telemetry::TelemetrySeq::new()),
             anomaly_detector: Arc::new(tasty_telemetry::AnomalyDetector::new()),

@@ -684,6 +684,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
 
     loop {
         if !app.journal.is_halted() && !app.journal.pauses_observation() {
+            let _=app.services.profile_detections.poll();
             crate::intent::headless::drain_pending_intents_in_app(
                 &mut app.services,
                 &mut state,
@@ -717,6 +718,9 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         let deadline =
             crate::app::timers::min_deadline(deadline, app.journal.cleanup_poll_deadline());
         let deadline=if app.journal.is_halted() || app.journal.pauses_observation(){deadline}else{crate::app::timers::min_deadline(deadline,engine.runtime.input_submit_deadline())};
+        let deadline=if app.journal.is_halted() || app.journal.pauses_observation() {deadline} else {
+            crate::app::timers::min_deadline(deadline,app.services.profile_detections.has_pending().then(||std::time::Instant::now()+std::time::Duration::from_millis(20)))
+        };
         let pending = match wait_for_event(&rx, deadline) {
             Wait::Event(ev) => Some(ev),
             Wait::Deadline if app.journal.cleanup_poll_deadline().is_some() || engine.runtime.input_submit_deadline().is_some() => {
@@ -739,6 +743,17 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         if flow.is_break() {
             break;
         }
+    }
+    app.services.profile_detections.begin_shutdown();
+    let deadline=std::time::Instant::now()+std::time::Duration::from_secs(5);
+    loop {
+        let remaining=app.services.profile_detections.poll_shutdown();
+        if remaining==0 {break;}
+        if std::time::Instant::now()>=deadline {
+            tracing::warn!(remaining,"headless profile detection shutdown timed out; workers remain unjoined");
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
     Ok(())
 }

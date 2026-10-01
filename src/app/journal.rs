@@ -700,6 +700,7 @@ impl JournalApplication {
     pub(crate) fn wake_application(&self) {(self.wake)();}
     pub(crate) fn request_restore_receipt(&mut self,session:&EngineSession,surface:u32,activation:Option<u64>)->Result<Option<ActivationReceipt>,String> {
         if self.is_halted() {return Err("resource publication is halted".into());}
+        if let Some(reason)=crate::runtime::surface_restorer::recovery_blocked_reason(session,surface) {return Err(reason.to_owned());}
         if let Some(receipt)=self.creations.iter().filter(|((engine,_),_)|*engine==session.id).find_map(|(_,creation)|creation.join_restore(surface,activation)) {return Ok(Some(receipt));}
         if self.has_creation(session.id) {return Ok(None);}
         if session.core_state.find_surface_by_id(surface).and_then(|value|value.activation_generation)!=activation {return Err("activation target changed".into());}

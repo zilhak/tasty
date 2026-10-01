@@ -983,11 +983,11 @@ fn route_engine_handler(
             attach::handle_force_detach_workspace(engine, id, &request.params)
         }
         "attach.into_gui" => attach::handle_into_gui(engine, id, &request.params),
-        "attach.list" => attach::handle_list(engine, id),
+        "attach.list" => attach::handle_list(&engine.read(), id),
         "remote.profile.list" => remote_profile::handle_list(id),
         "remote.profile.get" => remote_profile::handle_get(id, &request.params),
-        "remote.profile.add" => remote_profile::handle_add(id, &request.params),
-        "remote.profile.detect" => remote_profile::handle_detect(id, &request.params),
+        "remote.profile.add" => remote_profile::handle_add(core, id, &request.params),
+        "remote.profile.detect" => remote_profile::handle_detect(core, id, &request.params),
         "remote.profile.remove" => remote_profile::handle_remove(id, &request.params),
         // SSH를 실행하지 않고 로컬 설정 파일을 읽는다.
         "remote.profile.list_local" => remote_profile::handle_list_local(id),

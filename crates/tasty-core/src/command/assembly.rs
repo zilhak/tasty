@@ -52,7 +52,7 @@ pub(super) fn settle(model:&JournalModel,member:&Operation,outcome:OperationOutc
         let result=if id==member.id {Some(&outcome)} else {model.operations.get(&id).and_then(|operation|operation.outcome.as_ref())};
         match result {
             Some(OperationOutcome::Succeeded)=>{ready.insert(*surface);},
-            Some(OperationOutcome::Failed {..}|OperationOutcome::Cancelled {..})=>failed=true,
+            Some(OperationOutcome::Failed {..}|OperationOutcome::Cancelled {..}|OperationOutcome::Superseded {..})=>failed=true,
             _=>waiting=true,
         }
     }
@@ -111,7 +111,7 @@ pub(super) fn prepared_member(model:&JournalModel,member:&Operation,result:&crat
                 crate::PreparationResult::Failed {..}=>failed=true,
             }
         } else if peer.resource_prepared {private.push((peer,peer.prepared_data,peer.prepared_deferred));}
-        else if matches!(peer.outcome,Some(OperationOutcome::Failed {..}|OperationOutcome::Cancelled {..})) {failed=true;}
+        else if matches!(peer.outcome,Some(OperationOutcome::Failed {..}|OperationOutcome::Cancelled {..}|OperationOutcome::Superseded {..})) {failed=true;}
         else {waiting=true;}
     }
     if !waiting {

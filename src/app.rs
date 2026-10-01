@@ -429,3 +429,6 @@ mod port_scans;
 pub(crate) mod html_runtime;
 #[cfg(feature="gui")]
 pub(crate) mod webview_sync;
+
+#[cfg(feature="gui")]
+pub(crate) mod remote_tool_files;
