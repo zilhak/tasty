@@ -75,7 +75,7 @@ fn local_fixture(
         });
     }
     let mut model = crate::state::tests::test_model(events);
-    model.applied.revision = Some(tasty_core::Revision(revision));
+    model.applied.revision = Some(revision);
     crate::state::tests::test_state_from_model(model)
 }
 
@@ -188,7 +188,7 @@ fn a_new_projection_invalidates_the_drag_even_when_leaf_ids_are_identical() {
 
 #[test]
 fn cancelled_second_mirror_drag_preserves_the_first_until_remote_projection_replacement() {
-    let mut model = CoreState::default();
+    let mut model = CoreState::new_base();
     model.push_mirror_workspace(split_workspace(9, true));
     let core = &mut model;
     let mut previews = LayoutPreviews::default();
@@ -234,7 +234,7 @@ fn another_view_keeps_its_geometry_and_removed_target_releases_the_preview() {
     first_view.update(core, sequence, 0.8);
     assert!(width(&first_view, core, 1) > original);
     assert_eq!(width(&second_view, core, 1), original);
-    let after = CoreState::default();
+    let after = CoreState::new_base();
     let core = &after;
     assert!(first_view.finish(core, sequence).is_none());
     assert!(first_view.entries.is_empty());

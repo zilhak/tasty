@@ -504,18 +504,7 @@ mod tests {
     use crate::state::RequestContext;
 
     fn make_state() -> RequestContext {
-        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-        let mut engine_session =
-            crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
-        let mut engine = engine_session.borrow_mut();
-        let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
-            tasty_presets::PresetStore::load_default(),
-        ));
-        let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
-            std::sync::Arc::new(std::sync::Mutex::new(
-                tasty_memory::testing::InMemoryStorage::new(),
-            ));
-        RequestContext::new(&mut engine, preset_store, memory)
+        crate::state::tests::test_state().0
     }
 
     #[test]

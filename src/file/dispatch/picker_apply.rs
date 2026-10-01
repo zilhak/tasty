@@ -202,9 +202,7 @@ pub(super) mod tests {
 
         let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
             Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
-        let memory: Arc<Mutex<dyn tasty_memory::MemoryStorage>> =
-            Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));
-        let mut state = RequestContext::new(&mut engine, preset_store, memory);
+        let mut state = RequestContext::new(&engine.read(), preset_store);
 
         apply_identify_result(
             &mut core,
@@ -251,9 +249,7 @@ pub(super) mod tests {
         assert!(engine.runtime.file_handler.get(&handler_id).is_some());
         let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
             Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
-        let memory: Arc<Mutex<dyn tasty_memory::MemoryStorage>> =
-            Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));
-        let mut state = RequestContext::new(&mut engine, preset_store, memory);
+        let mut state = RequestContext::new(&engine.read(), preset_store);
         let recent_before = state.file_handler_recent.list().len();
 
         apply_file_picker_result(

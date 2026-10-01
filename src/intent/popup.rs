@@ -103,18 +103,7 @@ mod tests {
         RequestContext,
         crate::runtime::engine_session::EngineSession,
     ) {
-        let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
-        let mut engine_session =
-            crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
-        let mut engine = engine_session.borrow_mut();
-        let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
-            tasty_presets::PresetStore::load_default(),
-        ));
-        let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
-            std::sync::Arc::new(std::sync::Mutex::new(
-                tasty_memory::testing::InMemoryStorage::new(),
-            ));
-        let mut state = RequestContext::new(&mut engine, preset_store, memory);
+        let (mut state, engine_session) = crate::state::tests::test_state();
         state.popups.register(PopupState::new(
             "test_popup",
             "Test".to_string(),
@@ -134,16 +123,16 @@ mod tests {
     #[test]
     fn second_open_intent_for_same_id_is_deduped() {
         let (mut state, mut engine_session) = make_state();
-        let engine = engine_session.borrow_mut();
+        let mut engine = engine_session.borrow_mut();
         handle(
             &mut state,
-            engine.core,
+            &mut engine,
             &dispatched_open("test_popup", OpenPopupMode::Default),
         );
         assert!(state.popups.is_open("test_popup"));
         handle(
             &mut state,
-            engine.core,
+            &mut engine,
             &dispatched_open("test_popup", OpenPopupMode::CenteredFocused),
         );
         assert!(state.popups.is_open("test_popup"));
@@ -152,29 +141,29 @@ mod tests {
     #[test]
     fn close_intent_closes_popup() {
         let (mut state, mut engine_session) = make_state();
-        let engine = engine_session.borrow_mut();
+        let mut engine = engine_session.borrow_mut();
         handle(
             &mut state,
-            engine.core,
+            &mut engine,
             &dispatched_open("test_popup", OpenPopupMode::Default),
         );
         assert!(state.popups.is_open("test_popup"));
-        handle(&mut state, engine.core, &dispatched_close("test_popup"));
+        handle(&mut state, &mut engine, &dispatched_close("test_popup"));
         assert!(!state.popups.is_open("test_popup"));
     }
 
     #[test]
     fn toggle_opens_when_closed_closes_when_open() {
         let (mut state, mut engine_session) = make_state();
-        let engine = engine_session.borrow_mut();
+        let mut engine = engine_session.borrow_mut();
         let toggle = UiIntent::TogglePopup {
             id: "test_popup",
             mode: OpenPopupMode::Default,
         }
         .from_user_shortcut("test");
-        handle(&mut state, engine.core, &toggle);
+        handle(&mut state, &mut engine, &toggle);
         assert!(state.popups.is_open("test_popup"));
-        handle(&mut state, engine.core, &toggle);
+        handle(&mut state, &mut engine, &toggle);
         assert!(!state.popups.is_open("test_popup"));
     }
 
@@ -182,38 +171,38 @@ mod tests {
     #[test]
     fn close_intent_pushes_to_closed_queue() {
         let (mut state, mut engine_session) = make_state();
-        let engine = engine_session.borrow_mut();
+        let mut engine = engine_session.borrow_mut();
         handle(
             &mut state,
-            engine.core,
+            &mut engine,
             &dispatched_open("test_popup", OpenPopupMode::Default),
         );
-        handle(&mut state, engine.core, &dispatched_close("test_popup"));
+        handle(&mut state, &mut engine, &dispatched_close("test_popup"));
         assert_eq!(state.popups.take_closed_queue(), vec!["test_popup"]);
     }
 
     #[test]
     fn toggle_close_branch_pushes_to_closed_queue() {
         let (mut state, mut engine_session) = make_state();
-        let engine = engine_session.borrow_mut();
+        let mut engine = engine_session.borrow_mut();
         let toggle = UiIntent::TogglePopup {
             id: "test_popup",
             mode: OpenPopupMode::Default,
         }
         .from_user_shortcut("test");
-        handle(&mut state, engine.core, &toggle);
+        handle(&mut state, &mut engine, &toggle);
         assert!(state.popups.take_closed_queue().is_empty());
-        handle(&mut state, engine.core, &toggle);
+        handle(&mut state, &mut engine, &toggle);
         assert_eq!(state.popups.take_closed_queue(), vec!["test_popup"]);
     }
 
     #[test]
     fn open_with_scope_uses_requested_scope() {
         let (mut state, mut engine_session) = make_state();
-        let engine = engine_session.borrow_mut();
+        let mut engine = engine_session.borrow_mut();
         handle(
             &mut state,
-            engine.core,
+            &mut engine,
             &dispatched_open("test_popup", OpenPopupMode::WithScope(PopupScope::Window)),
         );
         assert!(state.popups.is_open("test_popup"));

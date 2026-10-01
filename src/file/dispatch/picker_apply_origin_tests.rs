@@ -8,6 +8,59 @@ use crate::file::format::{DetectorId, FileTarget};
 use crate::file::handler::{FileHandler, HandlerAction, HandlerId, HandlerOwner};
 use crate::state::FileHandlerPickerResult;
 
+fn fixture() -> (
+    crate::state::RequestContext,
+    crate::runtime::engine_session::EngineSession,
+) {
+    use tasty_core::{DomainEvent as E, SurfaceSpec};
+    let mut events = vec![E::CategoryCreated {
+        id: 0,
+        name: "normal".into(),
+        index: 0,
+    }];
+    for id in 1..=2 {
+        events.push(E::WorkspaceCreated {
+            id,
+            name: format!("workspace {id}"),
+            category: 0,
+            index: (id - 1) as usize,
+            pane: id,
+        });
+        events.push(E::TabCreated {
+            id,
+            pane: id,
+            index: 0,
+            name: "terminal".into(),
+            surface: SurfaceSpec {
+                id,
+                kind: "terminal".into(),
+                data: None,
+            },
+        });
+    }
+    events.push(E::TabCreated {
+        id: 3,
+        pane: 1,
+        index: 1,
+        name: "extra".into(),
+        surface: SurfaceSpec {
+            id: 3,
+            kind: "empty".into(),
+            data: None,
+        },
+    });
+    crate::state::tests::test_state_from_model(crate::state::tests::test_model(events))
+}
+
+fn take_creation(state: &mut crate::state::RequestContext, pane: u32, activate: bool) {
+    let intents = state.take_pending_intents();
+    assert_eq!(intents.len(), 1);
+    assert_eq!(intents[0].origin.is_user(), activate);
+    assert!(
+        matches!(&intents[0].body, crate::intent::Intent::Domain(DomainIntent::CreateTab { pane_id, activate: selected, .. }) if *pane_id == pane && *selected == activate)
+    );
+}
+
 fn handler(action: HandlerAction) -> FileHandler {
     FileHandler {
         id: HandlerId::new("host/origin-test"),
@@ -36,7 +89,7 @@ fn take_picker_open_request(state: &mut crate::state::RequestContext, agent: boo
 fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
     use tasty_plugin_protocol::host_port::FileHandlerRegistryPort;
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = fixture();
     let mut engine = engine_session.borrow_mut();
     let sid = engine
         .workspace_at(0)
@@ -63,19 +116,6 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
     );
     let picker = state.dialogs.file_handler_picker.take().unwrap();
     take_picker_open_request(&mut state, false);
-    core.apply(
-        &mut engine,
-        DomainIntent::CreateWorkspace {
-            cwd: None,
-            kind: "terminal".into(),
-            surface_params: serde_json::json!({}),
-            name: None,
-            subtitle: None,
-            description: None,
-            category: None,
-        },
-    )
-    .unwrap();
     state.set_active_workspace_index(&engine, 1);
     let before = engine
         .workspace_at(0)
@@ -95,27 +135,22 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
         picker.dispatch_origin,
         picker.ignore_size_limit,
     );
-    let added = engine
-        .workspace_at(0)
-        .expect("workspace index is valid")
-        .all_surface_ids()
-        .into_iter()
-        .find(|id| !before.contains(id))
-        .unwrap();
-    assert_eq!(engine.find_pane_for_surface(added), Some(pane));
-    // 사용자 선택은 origin pane의 결과 탭을 고르지만 활성 workspace와 포커스는 옮기지 않는다.
-    let after = engine.find_pane_by_id(pane).unwrap();
-    assert_ne!(state.navigation.tab_index(after), active_tab);
-    assert_eq!(state.navigation.tab_index(after), after.tabs.len() - 1);
+    take_creation(&mut state, pane, true);
+    assert_eq!(engine.workspace_at(0).unwrap().all_surface_ids(), before);
+    assert_eq!(
+        state
+            .navigation
+            .tab_index(engine.find_pane_by_id(pane).unwrap()),
+        active_tab
+    );
     assert_eq!(state.active_workspace_index(&engine), 1);
     assert_eq!(state.focused_surface_id(&engine), focused_surface);
-    assert!(state.pending_intents.is_empty());
 }
 
 #[test]
 fn a_dead_origin_cannot_execute_any_action_or_enqueue_a_new_tab() {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = fixture();
     let mut engine = engine_session.borrow_mut();
     for action in [
         HandlerAction::OpenSurface {
@@ -156,7 +191,7 @@ fn a_dead_origin_cannot_execute_any_action_or_enqueue_a_new_tab() {
 #[test]
 fn no_origin_retains_the_user_new_tab_path_and_failed_creation_is_not_success() {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = fixture();
     let mut engine = engine_session.borrow_mut();
     let sid = engine
         .workspace_at(0)
@@ -185,15 +220,14 @@ fn no_origin_retains_the_user_new_tab_path_and_failed_creation_is_not_success() 
 }
 
 #[test]
-fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch() {
+fn identify_and_picker_keep_origin_and_cancel_or_missing_target_do_not_dispatch() {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = fixture();
     let mut engine = engine_session.borrow_mut();
     let sid = engine
         .workspace_at(0)
         .expect("workspace index is valid")
         .all_surface_ids()[0];
-    let pane = engine.find_pane_for_surface(sid).unwrap();
     let target = FileTarget::new("/missing/unknown");
     apply_identify_result(
         &mut core,
@@ -223,27 +257,8 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
     assert!(state.pending_intents.is_empty());
     assert_eq!(state.file_handler_recent.list().len(), recent_before);
 
-    // pane은 남기고 명시 origin만 지워 포커스 대체 실행 여부를 확인한다.
-    core.apply(
-        &mut engine,
-        DomainIntent::CreateTab {
-            pane_id: pane,
-            cwd: None,
-            kind: "empty".into(),
-            name: None,
-            surface_params: serde_json::json!({}),
-            activate: true,
-        },
-    )
-    .unwrap();
-    core.apply(
-        &mut engine,
-        DomainIntent::CloseSurface {
-            surface_id: sid,
-            presentation: None,
-        },
-    )
-    .unwrap();
+    // A missing explicit origin must not fall back to the focused pane.
+    let sid = u32::MAX;
     assert!(!engine.has_surface(sid));
     apply_identify_result(
         &mut core,
@@ -282,32 +297,17 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
 #[test]
 fn agent_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = fixture();
     let mut engine = engine_session.borrow_mut();
     let origin = engine
         .workspace_at(0)
         .expect("workspace index is valid")
         .all_surface_ids()[0];
     let pane_id = engine.find_pane_for_surface(origin).unwrap();
-    // 원래 origin과 선택된 탭을 다르게 둔다.
-    assert!(open_surface_tab(
-        &mut core,
-        &mut state,
-        &mut engine,
-        "empty",
-        serde_json::json!({}),
-        Some(origin),
-        FileDispatchOrigin::User,
-    ));
-    assert_eq!(
-        state
-            .navigation
-            .tab_index(engine.find_pane_by_id(pane_id).unwrap()),
-        1
-    );
+    state.goto_tab_in_pane(&engine, 1);
     let focused_surface = state.focused_surface_id(&engine);
     assert_ne!(focused_surface, Some(origin));
-    for kind in ["empty", "terminal", "missing-kind"] {
+    for kind in ["empty", "terminal"] {
         let before = engine.find_pane_by_id(pane_id).unwrap();
         let selected_id = before.tabs[state.navigation.tab_index(before)].id;
         let count = before.tabs.len();
@@ -320,9 +320,10 @@ fn agent_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
             Some(origin),
             FileDispatchOrigin::Agent,
         );
-        assert_eq!(succeeded, kind != "missing-kind");
+        assert!(succeeded);
+        take_creation(&mut state, pane_id, false);
         let after = engine.find_pane_by_id(pane_id).unwrap();
-        assert_eq!(after.tabs.len(), count + usize::from(succeeded));
+        assert_eq!(after.tabs.len(), count);
         assert_eq!(
             after.tabs[state.navigation.tab_index(after)].id,
             selected_id,
@@ -335,9 +336,9 @@ fn agent_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
 
 /// 사용자 결과는 선택돼야 하며 origin의 pane에 추가돼야 한다. 선택만 보면 잘못된 pane을 놓친다.
 #[test]
-fn a_user_origin_selects_its_result_tab() {
+fn a_user_origin_requests_activation_in_the_original_pane() {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = fixture();
     let mut engine = engine_session.borrow_mut();
     let origin = engine
         .workspace_at(0)
@@ -358,29 +359,19 @@ fn a_user_origin_selects_its_result_tab() {
         FileDispatchOrigin::User,
     ));
 
+    take_creation(&mut state, pane_id, true);
     let after = engine.find_pane_by_id(pane_id).unwrap();
-    assert_eq!(
-        after.tabs.len(),
-        count + 1,
-        "origin 의 pane 에 하나 늘어야 한다"
-    );
-    assert_ne!(
-        after.tabs[state.navigation.tab_index(after)].id,
-        selected_before,
-        "사용자가 연 결과는 선택돼야 한다"
-    );
+    assert_eq!(after.tabs.len(), count);
     assert_eq!(
         after.tabs[state.navigation.tab_index(after)].id,
-        after.tabs[after.tabs.len() - 1].id,
-        "선택은 방금 append 된 탭이어야 한다"
+        selected_before
     );
-    assert!(state.pending_intents.is_empty());
 }
 
 #[test]
 fn user_dispatch_and_remote_placeholder_open_the_picker_as_user_requests() {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = fixture();
     let mut engine = engine_session.borrow_mut();
     let sid = engine
         .workspace_at(0)
@@ -409,7 +400,7 @@ fn user_dispatch_and_remote_placeholder_open_the_picker_as_user_requests() {
 #[test]
 fn agent_dispatch_without_a_matching_handler_opens_no_picker() {
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = fixture();
     let mut engine = engine_session.borrow_mut();
     let sid = engine
         .workspace_at(0)
@@ -442,7 +433,7 @@ fn agent_dispatch_without_a_matching_handler_opens_no_picker() {
 fn an_unverified_plugin_dispatch_without_a_matching_handler_opens_the_fallback_picker() {
     use tasty_plugin_protocol::host_port::FileHandlerRegistryPort;
     let (mut core, _) = build_test_core();
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (mut state, mut engine_session) = fixture();
     let mut engine = engine_session.borrow_mut();
     FileHandlerRegistryPort::install_plugin_handlers(
         engine.runtime.file_handler.as_ref(),
@@ -502,8 +493,9 @@ fn an_unverified_plugin_dispatch_without_a_matching_handler_opens_the_fallback_p
         FileDispatchOrigin::PluginUnverified,
         false,
     );
+    take_creation(&mut state, pane_id, false);
     let after = engine.find_pane_by_id(pane_id).unwrap();
-    assert_eq!(after.tabs.len(), count + 1, "선택한 핸들러가 탭을 연다");
+    assert_eq!(after.tabs.len(), count, "생성은 App에 요청한다");
     assert_eq!(
         after.tabs[state.navigation.tab_index(after)].id,
         selected_id,

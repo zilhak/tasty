@@ -199,8 +199,17 @@ fn route_non_domain(
         }
         Intent::Domain(_) => {}
         #[cfg(feature = "gui")]
-        Intent::CommitDivider(_) => {
-            tracing::error!("divider commit requires the GUI application adapter")
+        Intent::CommitDivider(_)
+        | Intent::MouseCaptureHint { .. }
+        | Intent::RemoteBrowser(_)
+        | Intent::PatchSettings(_)
+        | Intent::Engine(_)
+        | Intent::ForwardMirror { .. }
+        | Intent::RespondApproval { .. }
+        | Intent::Ui(_)
+        | Intent::NewTabWithFollowup { .. }
+        | Intent::PrepareTutorial { .. } => {
+            tracing::error!("intent requires the GUI application adapter")
         }
     }
 }
@@ -538,7 +547,7 @@ mod tests {
             serde_json::json!({ "surface_id": sid, "event": "command-completed:0" }),
         );
         drain_pending_intents(&mut core, &mut state, &mut engine);
-        drain_pending_host_events(&core, &mut state, &engine.as_ref());
+        drain_pending_host_events(&core, &mut engine);
 
         let task = core
             .tasks
@@ -566,9 +575,9 @@ mod tests {
                 "surface.fire_hook",
                 serde_json::json!({ "surface_id": sid, "event": "command-completed:0" }),
             );
-            drain_pending_host_events(&core, &mut state, &engine.as_ref());
+            drain_pending_host_events(&core, &mut engine);
             assert!(
-                state.pending_host_events.is_empty(),
+                engine.runtime.pending_host_events.is_empty(),
                 "drain 후 host event 큐가 남아 있으면 안 된다 (i={i})"
             );
         }
@@ -591,38 +600,10 @@ mod tests {
             );
         }
         assert_eq!(
-            state.pending_host_events.len(),
+            engine.runtime.pending_host_events.len(),
             N,
             "큐를 처리하지 않으면 실행한 훅 수만큼 이벤트가 쌓인다"
         );
-    }
-
-    fn new_empty_tab_then_selection(
-        dispatched: impl FnOnce(Intent) -> DispatchedIntent,
-    ) -> (usize, usize) {
-        let (mut core, mut state, mut engine_session, _sid) = fixture();
-        let mut engine = engine_session.borrow_mut();
-        state.dispatch_intent(dispatched(Intent::NewTab {
-            kind: Some("empty".to_string()),
-            params: serde_json::json!({}),
-        }));
-        drain_pending_intents(&mut core, &mut state, &mut engine);
-        let pane_id = state.focused_pane_id(&engine);
-        let pane = engine.find_pane_by_id(pane_id).expect("focused pane");
-        (pane.tabs.len(), state.navigation.tab_index(pane))
-    }
-
-    #[test]
-    fn a_user_new_tab_selects_it() {
-        assert_eq!(
-            new_empty_tab_then_selection(|i| i.from_user_menu("test")),
-            (2, 1)
-        );
-    }
-
-    #[test]
-    fn an_agent_labelled_new_tab_keeps_the_users_tab() {
-        assert_eq!(new_empty_tab_then_selection(Intent::from_agent_ipc), (2, 0));
     }
 
     #[test]
@@ -633,7 +614,7 @@ mod tests {
         terminal.feed_bytes(b"\x1b]7;file://localhost/tmp/tasty-osc7-probe\x07");
         engine.runtime.terminals.insert(sid, terminal, None);
         engine.persistence.dirty.clear();
-        let tab_name = |engine: &CoreState| {
+        let tab_name = |engine: &EngineMut<'_>| {
             state
                 .active_workspace(engine)
                 .pane_layout()
@@ -644,10 +625,14 @@ mod tests {
                         .active_workspace(engine)
                         .pane_layout()
                         .find_pane(pid)?;
-                    pane.tabs
-                        .iter()
-                        .find(|t| t.contains_surface(sid))
-                        .map(|t| t.display_name(state.navigation.surface_id(t)))
+                    pane.tabs.iter().find(|t| t.contains_surface(sid)).map(|t| {
+                        t.display_name(
+                            state
+                                .navigation
+                                .surface_id(t)
+                                .and_then(|sid| engine.live.surface_titles.get(&sid)),
+                        )
+                    })
                 })
                 .expect("fixture tab")
         };

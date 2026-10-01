@@ -50,7 +50,7 @@ fn manager_with_popup() -> PluginManager {
 fn frame(
     ctx: &Context,
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     mgr: &PluginManager,
     events: Vec<Event>,
 ) -> Option<Rect> {
@@ -60,7 +60,13 @@ fn frame(
         ..Default::default()
     };
     let _full_output = ctx.run(input, |ctx| {
-        draw_plugin_popups(ctx, state, engine, Some(mgr), None);
+        draw_plugin_popups(
+            ctx,
+            state,
+            engine,
+            Some(crate::app::plugin_display::PluginDisplay::new(mgr)),
+            None,
+        );
     });
     state.plugin_popup_hittest.first().map(|o| o.rect)
 }
@@ -81,13 +87,13 @@ fn a_press_inside_the_popup_records_it_and_a_hover_does_not() {
     let mgr = manager_with_popup();
     let ctx = Context::default();
 
-    let shell = frame(&ctx, &mut state, &mut engine, &mgr, Vec::new()).expect("popup 이 놓인다");
+    let shell = frame(&ctx, &mut state, &engine.read(), &mgr, Vec::new()).expect("popup 이 놓인다");
     let inside = shell.center();
 
     frame(
         &ctx,
         &mut state,
-        &mut engine,
+        &engine.read(),
         &mgr,
         vec![Event::PointerMoved(inside)],
     );
@@ -100,7 +106,7 @@ fn a_press_inside_the_popup_records_it_and_a_hover_does_not() {
     frame(
         &ctx,
         &mut state,
-        &mut engine,
+        &engine.read(),
         &mgr,
         vec![Event::PointerMoved(inside), press(inside)],
     );
@@ -121,12 +127,12 @@ fn a_closed_popup_loses_its_record() {
     let mgr = manager_with_popup();
     let ctx = Context::default();
 
-    let shell = frame(&ctx, &mut state, &mut engine, &mgr, Vec::new()).expect("popup 이 놓인다");
+    let shell = frame(&ctx, &mut state, &engine.read(), &mgr, Vec::new()).expect("popup 이 놓인다");
     let inside = shell.center();
     frame(
         &ctx,
         &mut state,
-        &mut engine,
+        &engine.read(),
         &mgr,
         vec![Event::PointerMoved(inside), press(inside)],
     );
@@ -134,7 +140,7 @@ fn a_closed_popup_loses_its_record() {
 
     // 실제 닫기 처리 대신 인스턴스를 지워 다음 렌더 프레임이 보는 상태를 만든다.
     let mgr = manager();
-    frame(&ctx, &mut state, &mut engine, &mgr, Vec::new());
+    frame(&ctx, &mut state, &engine.read(), &mgr, Vec::new());
     assert!(
         state.plugin_popup_user_activated.is_empty(),
         "닫힌 팝업의 활성화 기록이 남았다: {:?}",
