@@ -175,7 +175,7 @@ impl TaskService {
     }
 
     /// 훅 매핑을 소비해 exit code가 0 또는 없으면 성공, 나머지는 실패로 처리한다.
-    /// 대기자를 깨울 hub가 engine별이므로 훅이 발생한 engine의 범위를 전달해야 한다.
+    /// 등록된 원 hub/agent_seq를 사용한다. 소유 정보 없는 legacy 등록만 호출 scope를 사용한다.
     /// 매핑은 저장 전에 제거하며 저장 실패 때 다시 등록하지 않는다.
     pub fn resolve_hook_task_wait(
         &self,
@@ -184,15 +184,19 @@ impl TaskService {
         exit_code: Option<i32>,
         now_ms: u64,
     ) {
-        let Some((workspace_id, task_id)) = self.hook_task_waits().resolve(hook_id) else {
+        let Some((workspace_id, task_id,owner)) = self.hook_task_waits().resolve_owned(hook_id) else {
             return;
         };
+        let mut context=self.runner_context(scope);
+        if let Some(owner)=owner {context.agent_seq=owner.agent_seq;context.task_waker_hub=owner.completion;}
         let result = TaskResult {
             exit_code,
             output: None,
             error: None,
         };
-        if let Err(e) = self.task_set_result(scope, workspace_id, &task_id, result) {
+        if let Err(e)=context.with_memory(|memory| {
+            TaskStore::new(memory,HOST_OWNER,context.agent_seq.as_ref()).set_result(workspace_id,&task_id,result)
+        }) {
             tracing::warn!("resolve_hook_task_wait: set_result {task_id} failed: {e}");
             return;
         }
@@ -202,8 +206,12 @@ impl TaskService {
             },
             _ => TaskState::Succeeded,
         };
-        if let Err(e) = self.task_set_state(scope, workspace_id, &task_id, new_state, now_ms) {
-            tracing::warn!("resolve_hook_task_wait: set_state {task_id} failed: {e}");
+        let transitioned=context.with_memory(|memory| {
+            TaskStore::new(memory,HOST_OWNER,context.agent_seq.as_ref()).set_state(workspace_id,&task_id,new_state,now_ms)
+        });
+        match transitioned {
+            Ok((task,downstream))=>context.fire_terminal_tasks(workspace_id,std::iter::once(task).chain(downstream)),
+            Err(error)=>tracing::warn!(%error,%task_id,"resolve_hook_task_wait state change failed"),
         }
     }
 

@@ -52,9 +52,11 @@ impl HookTaskWaits {
 
     /// 한 번 반환한 매핑은 지워 같은 훅의 재발생이 끝난 작업과 다시 연결되지 않게 한다.
     pub fn resolve(&self, hook_id: u64) -> Option<(u32, TaskId)> {
-        let mut guard =
-            tasty_utils::poison::recover_mutex(self.inner.lock(), HOOK_WAIT_WHAT, &HOOK_WAIT_POISONED);
-        guard.remove(&hook_id).map(|wait| (wait.workspace, wait.task))
+        self.resolve_owned(hook_id).map(|(workspace,task,_)|(workspace,task))
+    }
+    pub(crate) fn resolve_owned(&self,hook_id:u64)->Option<(u32,TaskId,Option<HookWaitOwner>)> {
+        let mut guard=tasty_utils::poison::recover_mutex(self.inner.lock(),HOOK_WAIT_WHAT,&HOOK_WAIT_POISONED);
+        guard.remove(&hook_id).map(|wait|(wait.workspace,wait.task,wait.owner))
     }
 
     /// Another workspace's runner may expire this wait even after its own runner stopped.

@@ -65,6 +65,7 @@ pub(crate) fn is_injector_not_initialized(msg: &str) -> bool {
 
 #[derive(Clone)]
 pub(crate) struct RunnerContext {
+    pub(crate) scope_stopping:Arc<std::sync::atomic::AtomicBool>,
     pub(crate) memory: Arc<Mutex<dyn MemoryStorage>>,
     pub(crate) agent_seq: Arc<AtomicU64>,
     pub(crate) host_ipc: Arc<OnceLock<HostIpcInjector>>,
@@ -1272,6 +1273,7 @@ mod tests {
         let td = tempfile::tempdir().unwrap();
         let mem = MemoryStore::open(&td.path().join("mem.db")).unwrap();
         let ctx = RunnerContext {
+            scope_stopping:Arc::new(std::sync::atomic::AtomicBool::new(false)),
             memory: Arc::new(Mutex::new(mem)),
             agent_seq: Arc::new(AtomicU64::new(0)),
             host_ipc: Arc::new(OnceLock::new()),

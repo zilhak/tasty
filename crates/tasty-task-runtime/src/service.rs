@@ -10,12 +10,13 @@ use tasty_memory::MemoryStorage;
 use crate::event_feed::AgentEventQueue;
 use crate::hook_wait::HookTaskWaits;
 use crate::runner_host::RunnerContext;
-use crate::runner_thread::{RunnerRegistry, RunnerStatus};
+use crate::runner_thread::{RunnerRegistry,RunnerStatus,RunnerStopReceipt};
 use crate::task_waker::{AwaitOutcome, TaskWakerHub, TerminalSnapshot};
 
 /// engine 하나의 작업 실행 범위. 완료 대기 허브와 사건 큐는 engine마다 따로 두며,
 /// 완료 통지는 task가 속한 workspace를 가진 engine의 범위로만 간다.
 pub struct TaskScope {
+    stopping:Arc<std::sync::atomic::AtomicBool>,
     /// 같은 밀리초에 만든 task ID를 구별하는 순번. 창을 새로 열면 기존 engine과 공유한다.
     agent_seq: Arc<AtomicU64>,
     /// task 종결을 대기자에게 알리고 같은 사건 큐에도 기록한다.
@@ -41,6 +42,7 @@ impl TaskScope {
         // 허브가 기록하는 큐와 메인 루프가 비우는 큐가 같아야 한다.
         let event_queue = Arc::new(AgentEventQueue::new());
         Self {
+            stopping:Arc::new(std::sync::atomic::AtomicBool::new(false)),
             agent_seq,
             waker_hub: Arc::new(TaskWakerHub::with_feed(Arc::clone(&event_queue))),
             event_queue,
@@ -60,13 +62,18 @@ impl TaskScope {
         &self.event_queue
     }
 
+    /// Retire this scope's original runner only; dropping TaskScope itself does not stop it.
+    pub fn request_stop_workspace(&self,workspace:u32)->RunnerStopReceipt {
+        self.runner_registry.request_stop(&self.waker_hub,Some(workspace))
+    }
+
     pub fn runner_registry(&self) -> &Arc<RunnerRegistry> {
         &self.runner_registry
     }
 
     /// 화면은 표시 중인 DAG의 task만 세므로 러너 실행·crash 여부만 반환한다.
     pub fn runner_liveness(&self, workspace_id: u32) -> (bool, bool) {
-        self.runner_registry.liveness(workspace_id)
+        self.runner_registry.scoped_liveness(&self.waker_hub,workspace_id)
     }
 }
 
@@ -110,6 +117,7 @@ impl TaskService {
 
     pub(crate) fn runner_context(&self, scope: &TaskScope) -> RunnerContext {
         RunnerContext {
+            scope_stopping:scope.stopping.clone(),
             memory: self.memory.clone(),
             agent_seq: scope.agent_seq().clone(),
             host_ipc: self.host_ipc.clone(),
@@ -144,6 +152,19 @@ impl TaskService {
     pub fn runner_stop(&self, workspace_id: u32) -> bool {
         self.runner_registry.stop(workspace_id)
     }
+
+    pub fn request_stop_workspace(&self,scope:&TaskScope,workspace:u32)->RunnerStopReceipt {
+        self.runner_registry.request_stop(scope.waker_hub(),Some(workspace))
+    }
+    pub fn request_stop_scope(&self,scope:&TaskScope)->RunnerStopReceipt {
+        scope.stopping.store(true,std::sync::atomic::Ordering::Release);
+        self.runner_registry.request_stop(scope.waker_hub(),None)
+    }
+    /// Explicit compatibility stop, fenced to the supplied scope rather than only the numeric ID.
+    pub fn runner_stop_scoped(&self,scope:&TaskScope,workspace:u32)->bool {
+        self.runner_registry.stop_scoped(scope.waker_hub(),workspace)
+    }
+    pub fn poll_runner_stops(&self)->usize {self.runner_registry.poll_stops()}
 
     /// 러너가 꺼져 있어도 저장소를 조회해 실제 작업 수를 채운다.
     pub fn runner_status(&self, scope: &TaskScope, workspace_id: u32) -> RunnerStatus {

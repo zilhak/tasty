@@ -11,4 +11,4 @@ pub mod task_output_ref;
 pub mod task_waker;
 mod service;
 pub use service::{TaskService,TaskScope,TaskAwaiter};
-pub use runner_thread::{RunnerRegistry,RunnerStatus};
+pub use runner_thread::{RunnerRegistry,RunnerStatus,RunnerStopReceipt,RunnerStopObservation};
