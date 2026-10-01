@@ -24,10 +24,11 @@ fn clipboard() -> crate::state::ExplorerClipboard {
 #[test]
 fn failed_or_late_cut_does_not_consume_a_new_clipboard() {
     let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
     state.explorer_clipboard = Some(clipboard());
     state.request_explorer_file(
         &engine.read(),
-        1,
+        sid,
         paste(vec!["original".into()], "dest".into()),
         user(),
     );
@@ -39,7 +40,7 @@ fn failed_or_late_cut_does_not_consume_a_new_clipboard() {
     );
     state.request_explorer_file(
         &engine.read(),
-        1,
+        sid,
         paste(vec!["original".into()], "dest".into()),
         user(),
     );
@@ -53,7 +54,7 @@ fn failed_or_late_cut_does_not_consume_a_new_clipboard() {
     ));
     state.request_explorer_file(
         &engine.read(),
-        1,
+        sid,
         paste(vec!["original".into()], "dest".into()),
         user(),
     );
@@ -73,17 +74,18 @@ fn failed_or_late_cut_does_not_consume_a_new_clipboard() {
 #[test]
 fn late_selection_and_replaced_view_are_not_modified() {
     let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
     let original = crate::view::state::ViewState::default();
     state.webview_identity = original.identity();
     let dir = tempfile::tempdir().unwrap();
-    let panel = crate::model::ExplorerPanel::new(1, dir.path().into());
+    let panel = crate::model::ExplorerPanel::new(sid, dir.path().into());
     state
         .explorer_views
         .get_or_init(&panel, None)
         .select_only(&dir.path().join("old"));
     state.request_explorer_file(
         &engine.read(),
-        1,
+        sid,
         Operation::Trash(vec![dir.path().join("old")]),
         user(),
     );
@@ -91,7 +93,11 @@ fn late_selection_and_replaced_view_are_not_modified() {
     assert!(target.matches_view(&original));
     assert!(!target.matches_view(&crate::view::state::ViewState::default()));
     let next = dir.path().join("new");
-    state.explorer_views.get_mut(1).unwrap().select_only(&next);
+    state
+        .explorer_views
+        .get_mut(sid)
+        .unwrap()
+        .select_only(&next);
     target.apply(&mut state, true);
     assert!(
         state
@@ -106,28 +112,31 @@ fn late_selection_and_replaced_view_are_not_modified() {
 #[test]
 fn admission_is_bounded_and_rejects_mirror_and_non_user_requests() {
     let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
     for _ in 0..MAX_PENDING_PER_VIEW + 1 {
-        state.request_explorer_file(&engine.read(), 1, Operation::Open("path".into()), user());
+        state.request_explorer_file(&engine.read(), sid, Operation::Open("path".into()), user());
     }
     assert_eq!(state.explorer_file_requests.0.len(), MAX_PENDING_PER_VIEW);
     state.explorer_file_requests.0.clear();
     state.request_explorer_file(
         &engine.read(),
-        1,
+        sid,
         Operation::Open("x".repeat(MAX_REQUEST_BYTES + 1).into()),
         user(),
     );
     state.request_explorer_file(
         &engine.read(),
-        1,
+        sid,
         Operation::Open("path".into()),
         IntentOrigin::System,
     );
     assert!(state.explorer_file_requests.0.is_empty());
     let (mut state, engine) = crate::state::tests::test_mirror_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    assert!(engine.read().is_mirror_surface(sid));
     state.request_explorer_file(
         &engine.read(),
-        1,
+        sid,
         Operation::Trash(vec!["path".into()]),
         user(),
     );
@@ -188,7 +197,13 @@ fn worker_copy_move_rename_preserves_partial_success() {
 #[test]
 fn shutdown_reports_a_running_worker_until_its_actual_join() {
     let (mut state, engine) = crate::state::tests::test_state();
-    state.request_explorer_file(&engine.read(), 1, Operation::Open("unused".into()), user());
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    state.request_explorer_file(
+        &engine.read(),
+        sid,
+        Operation::Open("unused".into()),
+        user(),
+    );
     let target = state.explorer_file_requests.0.pop_front().unwrap().target;
     let (send, receive) = std::sync::mpsc::sync_channel(0);
     let worker = std::thread::spawn(move || {
