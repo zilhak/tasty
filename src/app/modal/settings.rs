@@ -85,7 +85,7 @@ impl App {
     /// 포커스 창의 설정·레지스트리를 사용한다. 없으면 설정 파일을 읽고 빈 파일 레지스트리를 만든다.
     fn resolve_settings_init_data(&self) -> SettingsInitData {
         let settings = if let Some((_, engine)) = self.focused_pair() {
-            engine.settings.clone()
+            engine.runtime.settings.clone()
         } else {
             crate::settings::Settings::load()
         };

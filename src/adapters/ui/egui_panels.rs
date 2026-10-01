@@ -132,7 +132,7 @@ pub fn draw_egui_panels(
     // 키 바인딩 전체를 파싱하는 작업이라, explorer 패널이 하나도 없는 프레임에서는
     // 만들지 않는다(`explorer_cwd`는 `ExplorerPanel`일 때만 채워진다).
     let explorer_shortcut_chars = if infos.iter().any(|i| i.explorer_cwd.is_some()) {
-        crate::explorer_ui::type_ahead::unmodified_binding_chars(&engine.settings.keybindings)
+        crate::explorer_ui::type_ahead::unmodified_binding_chars(&engine.runtime.settings.keybindings)
     } else {
         std::collections::HashSet::new()
     };
@@ -396,9 +396,9 @@ pub(crate) fn apply_explorer_action(
         A::SetViewMode(m) => {
             apply_explorer_panel_action(state, engine, sid, &act);
             let mode = m.as_str().to_string();
-            if engine.settings.general.explorer_view_mode != mode {
-                engine.settings.general.explorer_view_mode = mode;
-                if let Err(e) = engine.settings.save() {
+            if engine.runtime.settings.general.explorer_view_mode != mode {
+                engine.runtime.settings.general.explorer_view_mode = mode;
+                if let Err(e) = engine.runtime.settings.save() {
                     tracing::warn!("failed to persist explorer view mode: {e}");
                 }
             }

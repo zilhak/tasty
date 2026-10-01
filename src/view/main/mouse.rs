@@ -19,7 +19,7 @@ impl MainView {
             .as_ref()
             .map(|h| (h.surface_id, h.highlight.segments.clone()));
 
-        let modifier = LinkModifier::parse(&engine.settings.general.link_click_modifier);
+        let modifier = LinkModifier::parse(&engine.runtime.settings.general.link_click_modifier);
         let mods = &self.base.state.modifiers;
         let matches_mods = modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
 
@@ -687,7 +687,7 @@ impl MainView {
         terminal_rect: &crate::model::PhysicalRect,
         button_state: ElementState,
     ) -> bool {
-        let modifier = LinkModifier::parse(&engine.settings.general.link_click_modifier);
+        let modifier = LinkModifier::parse(&engine.runtime.settings.general.link_click_modifier);
         let mods = &self.base.state.modifiers;
         let link_mods_match = !matches!(modifier, LinkModifier::None)
             && modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
@@ -858,7 +858,7 @@ impl MainView {
         if mouse_capture_banner_suppressed(&*engine, surface_id) {
             return;
         }
-        if engine.settings.general.mouse_capture_hint {
+        if engine.runtime.settings.general.mouse_capture_hint {
             let show = engine
                 .find_terminal_by_id(surface_id)
                 .is_some_and(|t| t.take_mouse_capture_hint());
@@ -2075,7 +2075,7 @@ mod mouse_capture_banner_tests {
         let mut e_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
         let mut e = e_session.borrow_mut();
-        e.settings.general.mouse_capture_banner_blacklist = vec!["vim".to_string()];
+        e.runtime.settings.general.mouse_capture_banner_blacklist = vec!["vim".to_string()];
         assert!(!mouse_capture_banner_suppressed(&e, 42));
         e.live.foreground_names.insert(42, "vim".to_string());
         e.live.foreground_names.insert(43, "htop".to_string());

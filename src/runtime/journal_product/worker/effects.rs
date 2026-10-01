@@ -1,4 +1,4 @@
-use tasty_domain::{OperationId, PreparationResult, StructuralCommand};
+use tasty_core::{OperationId, PreparationResult, StructuralCommand};
 use tasty_event_store::{
     ActivationClaim, CommandKey, CommandLookup, EffectState, EffectTransition, PayloadRef,
 };
@@ -44,7 +44,7 @@ pub(super) fn claim(
     }
     let capture = if matches!(
         plan.destination,
-        tasty_domain::CreationDestination::Restore { .. } | tasty_domain::CreationDestination::Assembly {..}
+        tasty_core::CreationDestination::Restore { .. } | tasty_core::CreationDestination::Assembly {..}
     ) {
         plan.surface
             .data
@@ -302,8 +302,8 @@ fn cancel_unstarted(
         .map_err(|error| error.to_string())
 }
 
-pub(super) fn validate_binding(effect:&tasty_event_store::EffectRecord,stream:&str,operation:&tasty_domain::Operation)->Result<()> {
-    use tasty_domain::StructuralEffect;
+pub(super) fn validate_binding(effect:&tasty_event_store::EffectRecord,stream:&str,operation:&tasty_core::Operation)->Result<()> {
+    use tasty_core::StructuralEffect;
     if effect.operation_id!=operation.id.0 || effect.command_id.as_deref()!=Some(operation.command_id.as_str())
         || effect.payload.type_tag!="structure.surface_effect" || effect.payload.schema_version!=1 {
         return Err("effect does not belong to this operation and command".into());
@@ -351,7 +351,7 @@ pub(super) fn claim_retirement(executor:&Executor<StructureDecider>,stream:&str,
         plan,engine_incarnation:operation.engine_incarnation,
     }))
 }
-pub(super) fn retired(executor:&Executor<StructureDecider>,lease:EffectLease,outcome:tasty_domain::OperationOutcome)->Result<ResultValue> {
+pub(super) fn retired(executor:&Executor<StructureDecider>,lease:EffectLease,outcome:tasty_core::OperationOutcome)->Result<ResultValue> {
     let command=StructuralCommand::FinishRetirement {operation:lease.operation.clone(),outcome};
     finish(executor,lease,command,"retired",None)
 }
@@ -383,6 +383,6 @@ pub(super) fn claim_forward(executor:&Executor<StructureDecider>,stream:&str,id:
     let claimed=inner.store.effect(&effect_id).map_err(|error|error.to_string())?.ok_or("claimed forward missing")?;
     Ok(ResultValue::ForwardClaimed {lease:EffectLease {effect_id,operation:id.clone(),stream:stream.into(),runtime_epoch:epoch.0,resource_generation:claimed.resource_generation,attempt:claimed.attempt},payload})
 }
-pub(super) fn forwarded(executor:&Executor<StructureDecider>,lease:EffectLease,outcome:tasty_domain::OperationOutcome)->Result<ResultValue> {
+pub(super) fn forwarded(executor:&Executor<StructureDecider>,lease:EffectLease,outcome:tasty_core::OperationOutcome)->Result<ResultValue> {
     finish(executor,lease.clone(),StructuralCommand::FinishForward {operation:lease.operation,outcome},"forwarded",None)
 }

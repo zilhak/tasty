@@ -1,6 +1,6 @@
 # ADR-0056: 도메인·이벤트 저장·작업 실행을 별도 crate로 나눈다
 
-- **Status**: Accepted — 구현 상태: 단계적 이행 중. `tasty-event-store`는 새로 작성하고, `tasty-core`와 `tasty-task-runtime`은 선행 조건을 충족한 뒤 추출 시점을 다시 판단한다
+- **Status**: Accepted — 구현 상태: 이행 중. tasty-core는 canonical Command/Event·decide/evolve와 순수 live projection/query를 함께 소유하며 임시 tasty-domain을 합쳤다. tasty-task-runtime은 TaskService/Scope·runner·완료 대기 실행 코드를 소유한다. root caller 이행과 최종 검증은 진행 중이다
 - **Date**: 2026-09-30
 - **Tags**: architecture, crates, build, domain, headless
 - **Group**: foundation
@@ -38,7 +38,7 @@ AppState·CoreState·ViewState 전용 crate나 모든 trait을 모으는 ports c
 | Remote, RemoteState, SSH/attach 실행 | 기존 `tasty-remote` 확장. `tasty-ssh` 역할 유지 |
 | Terminal/TerminalState, Pty/PtyState | 기존 `tasty-terminal` 안의 별도 모듈. 별도 PTY crate는 보류 |
 | 순수 구조 타입 | 실행 결합을 걷어낸 `tasty-model`. 새 domain-types crate는 만들지 않음 |
-| EngineSession, CommandExecutor, EffectRunner, projection·recovery 실행 | root 내부 runtime 모듈 |
+| EngineSession, CommandExecutor, EffectRunner, projection 공개·recovery 실행 | root 내부 runtime 모듈 |
 | View·ViewState, renderer, UI intent | root GUI 모듈 |
 | App·AppState, boot, CLI 진입, adapter 조립 | root `tasty` |
 | plugin 프로세스·채널 | 기존 `tasty-host-plugin`·protocol·SDK |
@@ -80,10 +80,9 @@ crate 목록 문서·README·가드의 crate 수를 추출마다 함께 갱신�
 ### 코드와 설정에서 확인
 
 - `tasty-model`에서 실행 인스턴스(`DeferredSpawn.waker` 등)를 걷어내면 `tasty-core` 추출 시점을 판단한다.
-  현재 상태: `DeferredSpawn`은 waker를 담지 않고 waker 공급은 호스트가 spawn 시점에 맡는다. `tasty-model`은 `tasty-terminal`을 의존하지 않으며
-  `cargo tree -p tasty-model --edges normal`에 `tasty-terminal`이 나오지 않는다. Surface 트리가 동작을 가진 trait 객체(`Box<dyn Surface>`)를 담는 구조는 남아 있다.
-  PTY 실행 계층이 따라오는 결합은 해소됐으므로 이 조건에 따른 추출 시점 판단이 남은 일이다. 판단할 때 [ADR-0064](0064-journal-domain-model-crate.md)의 `tasty-domain`과 합칠지·이름을 정리할지를 함께 정한다.
-  현재 codec 분담: 도메인 payload codec과 그 버전 변환은 [ADR-0064](0064-journal-domain-model-crate.md)의 도메인 crate가, 저장 봉투 형식과 migration은 EventStore가 맡는다.
+  현재 상태: `DeferredSpawn`은 waker를 담지 않고 `tasty-model`의 leaf는 `SurfaceDescriptor`다. kind 인스턴스와 Terminal/Pty는 EngineRuntime의 컬렉션으로 이동했다.
+  `tasty-core` 추출 때 임시 `tasty-domain`의 원본 모델/명령/사건/codec을 합쳤다. CoreState의 로컬 가변 트리는 crate 내부 projection만 사용하며 root는 확정 batch의 공개·효과 실행을 조율한다.
+  도메인 payload codec과 버전 변환은 tasty-core, 저장 봉투 형식과 migration은 EventStore 소유다.
 - TaskService API와 host port가 정리되면 `tasty-task-runtime` 추출 시점을 판단한다.
 - HookRuntime의 공개 API가 안정되고 root 밖 소비자가 생기면 별도 crate 추출을 검토한다.
 - 순수 터미널 재생·원격 mirror·renderer 테스트에서 PTY 의존을 빼야 하면 별도 PTY crate 추출을 검토한다.

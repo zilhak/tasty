@@ -132,7 +132,7 @@ pub fn draw_tutorial_overlay(
         let shortcut = bindings
             .first()
             .map(|b| {
-                tasty_settings::KeybindingSettings::format_display(b, &engine.settings.general)
+                tasty_settings::KeybindingSettings::format_display(b, &engine.runtime.settings.general)
             })
             .unwrap_or_else(|| t("tutorial.binding_unset").to_owned());
         body.push_str(&format!(

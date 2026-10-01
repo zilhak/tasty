@@ -2,7 +2,7 @@
 //! View's selection or the defaults of a headless command context. The domain
 //! tree is read only; reconciling it never performs a domain mutation.
 
-use crate::core::state::workspaces::WorkspaceRead;
+use tasty_core::workspaces::WorkspaceRead;
 use std::collections::HashMap;
 
 use crate::model::{Pane, SurfaceId, Tab, Workspace, WorkspaceId};
@@ -72,11 +72,11 @@ pub(crate) struct NavigationState {
 }
 
 impl NavigationState {
-    pub(crate) fn apply_replacement(&mut self,replacement:tasty_domain::Replacement) {
+    pub(crate) fn apply_replacement(&mut self,replacement:tasty_core::Replacement) {
         match replacement.source.kind {
-            tasty_domain::IdKind::Surface=>self.remap_surface_selection(replacement.target.id,replacement.source.id),
-            tasty_domain::IdKind::Tab=>self.remap_tab_selection(replacement.target.id,replacement.source.id),
-            tasty_domain::IdKind::Pane=>self.remap_pane_selection(replacement.target.id,replacement.source.id),_=>{},
+            tasty_core::IdKind::Surface=>self.remap_surface_selection(replacement.target.id,replacement.source.id),
+            tasty_core::IdKind::Tab=>self.remap_tab_selection(replacement.target.id,replacement.source.id),
+            tasty_core::IdKind::Pane=>self.remap_pane_selection(replacement.target.id,replacement.source.id),_=>{},
         }
     }
     pub(crate) fn generation(&self)->std::sync::Weak<()> {std::sync::Arc::downgrade(&self.generation)}

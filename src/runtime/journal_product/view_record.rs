@@ -102,8 +102,8 @@ impl StoredView {
         presentation: &dyn crate::model::StructurePresentation,
     ) -> Self {
         let captured = crate::model::StructurePresentationSnapshot::capture(
-            &core.local_workspaces,
-            &core.categories,
+            &core.local_workspaces(),
+            &core.categories(),
             presentation,
         );
         Self {
@@ -112,7 +112,7 @@ impl StoredView {
             sequence: 0,
             selection: ImportedView {
                 active_workspace: active.filter(|id| {
-                    core.local_workspaces
+                    core.local_workspaces()
                         .iter()
                         .any(|workspace| workspace.id == *id)
                 }),

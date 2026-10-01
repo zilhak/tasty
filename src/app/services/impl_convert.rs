@@ -77,9 +77,9 @@ impl AppServices {
         use crate::app::command::ConvertSurfaceTarget;
         match target {
             ConvertSurfaceTarget::Terminal { cwd } => {
-                let cols = engine.default_cols;
-                let rows = engine.default_rows;
-                let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
+                let cols = engine.runtime.default_cols;
+                let rows = engine.runtime.default_rows;
+                let sh = crate::core::state::ShellConfig::from_settings(&engine.runtime.settings);
                 let waker = engine.make_waker(surface_id);
                 let (terminal, pty) = match tasty_terminal::spawn_terminal(
                     tasty_terminal::TerminalConfig {

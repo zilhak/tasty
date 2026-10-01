@@ -20,7 +20,7 @@ struct Pending {
     admission: Admission,
     followers: Vec<u64>,
     reservations: Vec<tasty_event_store::IdRange>,
-    inputs: Vec<tasty_domain::DataRef>,
+    inputs: Vec<tasty_core::DataRef>,
 }
 
 type Acknowledgements = mpsc::Receiver<(u64, Result<(), String>)>;
@@ -266,31 +266,31 @@ fn handle(
             for change in &changes {
                 if matches!(
                     change.command,
-                    tasty_domain::StructuralCommand::ReconcileRetirement {..}
-                        | tasty_domain::StructuralCommand::RecoverOperation {..}
-                        | tasty_domain::StructuralCommand::RecordCapture {..}
-                        | tasty_domain::StructuralCommand::OpenEngine { .. }
-                        | tasty_domain::StructuralCommand::RetireEngine { .. }
-                        | tasty_domain::StructuralCommand::FinishCreation { .. }
-                        | tasty_domain::StructuralCommand::FinishCleanup { .. }
-                        | tasty_domain::StructuralCommand::FinishRetirement {..}
-                        | tasty_domain::StructuralCommand::FinishForward {..}
-                        | tasty_domain::StructuralCommand::CancelUnstartedCreation { .. }
-                        | tasty_domain::StructuralCommand::RejectInstallation { .. }
-                            | tasty_domain::StructuralCommand::MarkPreparationUncertain { .. }
+                    tasty_core::StructuralCommand::ReconcileRetirement {..}
+                        | tasty_core::StructuralCommand::RecoverOperation {..}
+                        | tasty_core::StructuralCommand::RecordCapture {..}
+                        | tasty_core::StructuralCommand::OpenEngine { .. }
+                        | tasty_core::StructuralCommand::RetireEngine { .. }
+                        | tasty_core::StructuralCommand::FinishCreation { .. }
+                        | tasty_core::StructuralCommand::FinishCleanup { .. }
+                        | tasty_core::StructuralCommand::FinishRetirement {..}
+                        | tasty_core::StructuralCommand::FinishForward {..}
+                        | tasty_core::StructuralCommand::CancelUnstartedCreation { .. }
+                        | tasty_core::StructuralCommand::RejectInstallation { .. }
+                            | tasty_core::StructuralCommand::MarkPreparationUncertain { .. }
                 ) {
                     return Err("effect results require their validated lease endpoint".into());
                 }
-                if let tasty_domain::StructuralCommand::PrepareCreation { input, .. }
-                    |tasty_domain::StructuralCommand::Close {input,..}
-                    |tasty_domain::StructuralCommand::PrepareAssembly {input,..}
-                    |tasty_domain::StructuralCommand::PrepareForward {input,..}
-                    |tasty_domain::StructuralCommand::Replace {input,..} = &change.command
+                if let tasty_core::StructuralCommand::PrepareCreation { input, .. }
+                    |tasty_core::StructuralCommand::Close {input,..}
+                    |tasty_core::StructuralCommand::PrepareAssembly {input,..}
+                    |tasty_core::StructuralCommand::PrepareForward {input,..}
+                    |tasty_core::StructuralCommand::Replace {input,..} = &change.command
                     && !admitted.inputs.contains(input)
                 {
                     return Err("preparation input belongs to another admission".into());
                 }
-                if let tasty_domain::StructuralCommand::Close {undo:Some(capture),..}=&change.command
+                if let tasty_core::StructuralCommand::Close {undo:Some(capture),..}=&change.command
                     && capture.data_refs().any(|reference|!admitted.inputs.contains(&reference)) {
                     return Err("undo capture belongs to another admission".into());
                 }
@@ -309,8 +309,8 @@ fn handle(
             // The decider receives a fixed plan and cannot read a live projection or the database.
             executor.with_state(|models| {
                 for change in &mut changes {
-                    if let tasty_domain::StructuralCommand::PrepareCreation {plan,..}=&mut change.command
-                        && let tasty_domain::CreationDestination::Convert {surface,previous_activation,..}=&mut plan.destination
+                    if let tasty_core::StructuralCommand::PrepareCreation {plan,..}=&mut change.command
+                        && let tasty_core::CreationDestination::Convert {surface,previous_activation,..}=&mut plan.destination
                         && *previous_activation==Some(0) {
                             *previous_activation=models.streams.get(&change.stream).and_then(|model|model.surfaces.get(surface)).and_then(|surface|surface.activation.map(|activation|activation.generation));
                         }
@@ -362,8 +362,8 @@ fn handle(
             if kinds.len()>4 {return Err("invalid execution reservation kind count".into());}
             let mut ranges=Vec::new();
             for (kind,count) in kinds {
-                if kind==tasty_domain::IdKind::Category || count==0 {return Err("execution reservation has invalid kind/count".into());}
-                let max=if kind==tasty_domain::IdKind::Surface {0x7fff_ffff}else {u32::MAX};
+                if kind==tasty_core::IdKind::Category || count==0 {return Err("execution reservation has invalid kind/count".into());}
+                let max=if kind==tasty_core::IdKind::Surface {0x7fff_ffff}else {u32::MAX};
                 ranges.push(inner.store.reserve_ids(epoch,kind.label(),u64::from(count),u64::from(max)).map_err(|error|error.to_string())?);
             }
             Ok(ResultValue::ExecutionIds {binding,ranges})
@@ -379,7 +379,7 @@ fn handle(
             let epoch = inner.epoch;
             let mut ranges = Vec::new();
             for (kind, count) in kinds {
-                let max = if kind == tasty_domain::IdKind::Surface {
+                let max = if kind == tasty_core::IdKind::Surface {
                     0x7fff_ffff
                 } else {
                     u32::MAX
@@ -434,7 +434,7 @@ fn handle(
             let inner=&mut *executor.inner.lock().map_err(|error|error.to_string())?;
             let epoch=inner.epoch;
             let reference=inner.store.put_payload_pinned(epoch,&bytes,&format!("admission/{}/{ticket}",epoch.0)).map_err(|error|error.to_string())?;
-            let reference=tasty_domain::DataRef(reference.0);admitted.inputs.push(reference);Ok(ResultValue::InputStored(reference))
+            let reference=tasty_core::DataRef(reference.0);admitted.inputs.push(reference);Ok(ResultValue::InputStored(reference))
         },
         Work::PutPreparation(input) => {
             let admitted = pending
@@ -447,7 +447,7 @@ fn handle(
                 .store
                 .put_payload_pinned(epoch, &bytes, &format!("admission/{}/{ticket}",epoch.0))
                 .map_err(|error| error.to_string())?;
-            let reference = tasty_domain::DataRef(reference.0);
+            let reference = tasty_core::DataRef(reference.0);
             admitted.inputs.push(reference);
             Ok(ResultValue::InputStored(reference))
         }
@@ -474,7 +474,7 @@ fn handle(
 fn publish(
     executor: &Executor<StructureDecider>,
     published: &mut Option<u64>,
-    predecessor: &mut Option<tasty_domain::StructureModels>,
+    predecessor: &mut Option<tasty_core::StructureModels>,
     acks: &Acknowledgements,
     engine_binding: Option<super::EngineBinding>,
     send: &impl Fn(Completion) -> bool,
@@ -506,7 +506,7 @@ fn publish(
             .keys()
             .map(|stream| (stream.clone(), previous.stream(stream)))
             .collect();
-        tasty_domain::evolve_streams(&mut previous, &decoded).map_err(|error| error.to_string())?;
+        tasty_core::evolve_streams(&mut previous, &decoded).map_err(|error| error.to_string())?;
         *predecessor = Some(previous);
         if !send(Completion::Publish {
             engine_binding: engine_binding.clone(),

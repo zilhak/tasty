@@ -21,9 +21,9 @@ impl AppServices {
         let new_surface_id = engine.runtime.counters.next_surface();
         let is_terminal = kind == "terminal";
 
-        let cols = engine.default_cols;
-        let rows = engine.default_rows;
-        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
+        let cols = engine.runtime.default_cols;
+        let rows = engine.runtime.default_rows;
+        let sh = crate::core::state::ShellConfig::from_settings(&engine.runtime.settings);
         let waker = engine.make_waker(new_surface_id);
 
         let new_pane = if is_terminal {
@@ -96,9 +96,9 @@ impl AppServices {
         let is_terminal = kind == "terminal";
 
         let new_surface: Box<dyn crate::model::Surface> = if is_terminal {
-            let cols = engine.default_cols;
-            let rows = engine.default_rows;
-            let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
+            let cols = engine.runtime.default_cols;
+            let rows = engine.runtime.default_rows;
+            let sh = crate::core::state::ShellConfig::from_settings(&engine.runtime.settings);
             let waker = engine.make_waker(new_surface_id);
             let (terminal, pty) = tasty_terminal::spawn_terminal(
                 tasty_terminal::TerminalConfig {

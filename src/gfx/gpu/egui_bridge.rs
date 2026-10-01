@@ -94,7 +94,7 @@ impl GpuState {
     ) -> egui::FullOutput {
         let raw_input = self.egui_state.take_egui_input(window);
         self.egui_ctx.options_mut(|o| {
-            o.line_scroll_speed = engine.settings.general.wheel_line_scroll;
+            o.line_scroll_speed = engine.runtime.settings.general.wheel_line_scroll;
         });
         let scale_factor = self.scale_factor;
         let proxy = &self.proxy;
@@ -173,7 +173,7 @@ impl GpuState {
         // 설정 변경은 AppearanceChanged에서 전달받고, 여기서는 현재 Theme의 스타일을 다시 적용한다.
         tasty_egui_theme::apply_theme_to_egui(&crate::theme::theme(), &self.egui_ctx);
 
-        let term_font = engine.settings.appearance.effective_terminal_font();
+        let term_font = engine.runtime.settings.appearance.effective_terminal_font();
         let effective_font_size = term_font.effective_font_size(self.scale_factor);
         let new_sig = term_font_signature(&term_font, effective_font_size);
         if new_sig != self.last_term_font_sig {

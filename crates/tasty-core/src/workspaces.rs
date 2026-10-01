@@ -1,11 +1,11 @@
 //! Composite reads borrow disjoint local and mirror projections. Neither tree is cloned.
 
-use super::CoreState;
-use crate::model::Workspace;
+use crate::CoreState;
+use tasty_model::Workspace;
 
 impl CoreState {
     /// Existing list indices refer to the combined display order. Journal input uses local only.
-    pub(crate) fn workspaces(&self) -> WorkspaceRead<'_> {
+    pub fn workspaces(&self) -> WorkspaceRead<'_> {
         if self.mirror_workspaces.is_empty() {
             return WorkspaceRead::local(&self.local_workspaces);
         }
@@ -16,7 +16,7 @@ impl CoreState {
         }
     }
 
-    pub(crate) fn workspace_at(&self, index: usize) -> Option<&Workspace> {
+    pub fn workspace_at(&self, index: usize) -> Option<&Workspace> {
         self.workspaces().get(index)
     }
 
@@ -48,8 +48,7 @@ impl CoreState {
         self.insert_local_workspace(self.workspaces().len(), workspace);
     }
 
-    #[cfg(any(feature = "gui", test))]
-    pub(crate) fn push_mirror_workspace(&mut self, workspace: Workspace) {
+    pub fn push_mirror_workspace(&mut self, workspace: Workspace) {
         assert!(workspace.mirror, "remote projection requires a mirror");
         self.refresh_workspace_display_order();
         self.workspace_display_order.push(workspace.id);
@@ -120,8 +119,7 @@ impl CoreState {
         true
     }
 
-    #[cfg(any(feature = "gui", test))]
-    pub(crate) fn replace_mirror_workspace(
+    pub fn replace_mirror_workspace(
         &mut self,
         workspace: Workspace,
     ) -> Result<(), Workspace> {
@@ -140,19 +138,19 @@ impl CoreState {
         }
     }
 
-    pub(crate) fn mirror_projection_token(&self, id: u32) -> Option<std::sync::Weak<()>> {
+    pub fn mirror_projection_token(&self, id: u32) -> Option<std::sync::Weak<()>> {
         self.mirror_projection_tokens
             .get(&id)
             .map(std::sync::Arc::downgrade)
     }
 
-    pub(crate) fn matches_mirror_projection(&self, id: u32, token: &std::sync::Weak<()>) -> bool {
+    pub fn matches_mirror_projection(&self, id: u32, token: &std::sync::Weak<()>) -> bool {
         self.mirror_projection_token(id)
             .is_some_and(|current| current.ptr_eq(token))
     }
 
     /// A display continuation cannot reorder the committed local tree or discard new objects.
-    pub(crate) fn apply_workspace_display_order(&mut self, order: Vec<u32>) -> bool {
+    pub fn apply_workspace_display_order(&mut self, order: Vec<u32>) -> bool {
         if order.len() != self.workspaces().len()
             || order
                 .iter()
@@ -231,7 +229,7 @@ impl CoreState {
 
 /// Borrowed composite sequence. Iteration does not allocate, sort, or clone workspace objects.
 #[derive(Clone, Copy)]
-pub(crate) struct WorkspaceRead<'a> {
+pub struct WorkspaceRead<'a> {
     local: &'a [Workspace],
     mirrors: &'a [Workspace],
     order: &'a [u32],
@@ -245,16 +243,16 @@ impl<'a> WorkspaceRead<'a> {
             order: &[],
         }
     }
-    pub(crate) fn len(self) -> usize {
+    pub fn len(self) -> usize {
         self.local.len() + self.mirrors.len()
     }
-    pub(crate) fn is_empty(self) -> bool {
+    pub fn is_empty(self) -> bool {
         self.len() == 0
     }
-    pub(crate) fn get(self, index: usize) -> Option<&'a Workspace> {
+    pub fn get(self, index: usize) -> Option<&'a Workspace> {
         self.iter().nth(index)
     }
-    pub(crate) fn iter(self) -> WorkspaceIter<'a> {
+    pub fn iter(self) -> WorkspaceIter<'a> {
         WorkspaceIter {
             read: self,
             ordered: 0,
@@ -264,7 +262,7 @@ impl<'a> WorkspaceRead<'a> {
     }
 }
 
-pub(crate) struct WorkspaceIter<'a> {
+pub struct WorkspaceIter<'a> {
     read: WorkspaceRead<'a>,
     ordered: usize,
     fallback: usize,
@@ -323,137 +321,3 @@ impl<'a> IntoIterator for &WorkspaceRead<'a> {
     }
 }
 
-#[cfg(test)]
-impl CoreState {
-    pub(crate) fn set_workspace_fixture(&mut self, workspaces: Vec<Workspace>) {
-        self.workspace_display_order = workspaces.iter().map(|workspace| workspace.id).collect();
-        (self.mirror_workspaces, self.local_workspaces) = workspaces
-            .into_iter()
-            .partition(|workspace| workspace.mirror);
-        self.mirror_projection_tokens = self
-            .mirror_workspaces
-            .iter()
-            .map(|workspace| (workspace.id, std::sync::Arc::new(())))
-            .collect();
-    }
-    pub(crate) fn set_workspace_mirror_fixture(&mut self, index: usize, mirror: bool) {
-        if self.workspace_at(index).expect("fixture workspace").mirror == mirror {
-            return;
-        }
-        if mirror {
-            self.make_mirror_fixture(index);
-        } else {
-            self.make_local_fixture(index);
-        }
-    }
-    pub(crate) fn make_local_fixture(&mut self, index: usize) {
-        let mut workspace = self.remove_workspace_at(index);
-        workspace.mirror = false;
-        self.refresh_workspace_display_order();
-        let local_index = self
-            .workspaces()
-            .iter()
-            .take(index)
-            .filter(|w| !w.mirror)
-            .count();
-        self.workspace_display_order.insert(index, workspace.id);
-        self.local_workspaces.insert(local_index, workspace);
-    }
-    pub(crate) fn make_mirror_fixture(&mut self, index: usize) {
-        let mut workspace = self.remove_workspace_at(index);
-        workspace.mirror = true;
-        self.refresh_workspace_display_order();
-        self.workspace_display_order.insert(index, workspace.id);
-        self.mirror_projection_tokens
-            .insert(workspace.id, std::sync::Arc::new(()));
-        self.mirror_workspaces.push(workspace);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    fn workspace(id: u32, mirror: bool) -> Workspace {
-        let mut workspace = Workspace::new_with_terminal_marker(
-            id,
-            format!("ws-{id}"),
-            id * 10,
-            id * 100,
-            id * 1000,
-        );
-        workspace.mirror = mirror;
-        workspace
-    }
-    #[test]
-    fn committed_local_order_and_mirror_display_keep_existing_objects() {
-        let (_view, mut session) = crate::state::tests::test_state();
-        let engine = &mut session.core_state;
-        engine.set_workspace_fixture(vec![
-            workspace(1, false),
-            workspace(9, true),
-            workspace(2, false),
-        ]);
-        let surface = engine.find_surface_by_id(1000).unwrap() as *const dyn crate::model::Surface
-            as *const ();
-        engine.reorder_local_workspaces(&[2, 1]).unwrap();
-        assert_eq!(
-            engine
-                .workspaces()
-                .iter()
-                .map(|workspace| workspace.id)
-                .collect::<Vec<_>>(),
-            [2, 9, 1]
-        );
-        assert_eq!(
-            engine
-                .local_workspaces
-                .iter()
-                .map(|workspace| workspace.id)
-                .collect::<Vec<_>>(),
-            [2, 1]
-        );
-        assert_eq!(engine.mirror_workspaces[0].id, 9);
-        assert_eq!(
-            engine.find_surface_by_id(1000).unwrap() as *const dyn crate::model::Surface
-                as *const (),
-            surface
-        );
-        assert!(engine.reorder_local_workspaces(&[9, 1]).is_err());
-        assert_eq!(
-            engine
-                .workspaces()
-                .iter()
-                .map(|workspace| workspace.id)
-                .collect::<Vec<_>>(),
-            [2, 9, 1]
-        );
-    }
-    #[test]
-    fn dynamic_mirror_insert_rebuild_remove_preserves_local_selection() {
-        let (mut view, mut session) = crate::state::tests::test_state();
-        let engine = &mut session.core_state;
-        engine.set_workspace_fixture(vec![workspace(1, false), workspace(2, false)]);
-        view.reconcile_presentation(engine);
-        view.navigation.select_workspace(&engine.workspaces(), 2);
-        engine.push_mirror_workspace(workspace(9, true));
-        assert!(engine.move_workspace_in_display(2, 0));
-        engine
-            .replace_mirror_workspace(workspace(9, true))
-            .unwrap_or_else(|_| panic!("mirror disappeared"));
-        view.reconcile_presentation(engine);
-        assert_eq!(view.navigation.workspace_id(&engine.workspaces()), Some(2));
-        assert_eq!(engine.workspace_at(0).unwrap().id, 9);
-        engine.remove_workspace_at(0);
-        assert!(engine.mirror_workspaces.is_empty());
-        assert_eq!(
-            engine
-                .workspaces()
-                .iter()
-                .map(|workspace| workspace.id)
-                .collect::<Vec<_>>(),
-            [1, 2]
-        );
-        view.reconcile_presentation(engine);
-        assert_eq!(view.navigation.workspace_id(&engine.workspaces()), Some(2));
-    }
-}

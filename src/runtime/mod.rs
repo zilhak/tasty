@@ -7,8 +7,6 @@ pub(crate) mod engine_access;
 pub(crate) mod engine_runtime;
 pub(crate) mod journal;
 pub(crate) mod journal_product;
-pub(crate) mod live_projection;
-pub(crate) mod shadow_digest;
 pub(crate) mod surface_restorer;
 
 #[cfg(test)]
@@ -41,3 +39,6 @@ pub(crate) mod id_reservations;
 pub(crate) mod counters;
 
 pub(crate) mod preset_plan;
+
+pub(crate) mod journal_payload;
+pub(crate) mod restored_presentation;

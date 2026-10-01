@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use tasty_domain::{
+use tasty_core::{
     DataRef, DomainEvent, MetadataTarget, Placement, Ratio, SplitSpec, SurfaceSpec,
 };
 use tasty_event_store::{

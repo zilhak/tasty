@@ -33,10 +33,10 @@ impl SavedLayout {
     pub fn capture(engine:&mut EngineMut<'_>,active_workspace:usize,presentation:&dyn crate::model::StructurePresentation)->Result<Self,String> {
         let registry=engine.runtime.surface_registry.clone();
         let memory=engine.runtime.memory.clone();
-        let capture_scrollback=engine.settings.general.restore_surface_content;
+        let capture_scrollback=engine.runtime.settings.general.restore_surface_content;
         let mut seen_refs=SeenRefs::new();
         let active_workspace=engine.workspaces().iter().take(active_workspace).filter(|workspace|!workspace.mirror).count();
-        let ids:Vec<_>=engine.core.local_workspaces.iter().flat_map(|workspace|workspace.all_surface_ids()).collect();
+        let ids:Vec<_>=engine.core.local_workspaces().iter().flat_map(|workspace|workspace.all_surface_ids()).collect();
         let mut captured=std::collections::HashMap::new();
         let mut ctx=CaptureCtx {presentation,registry:&registry,capture_scrollback,memory:&memory,seen_refs:&mut seen_refs,terminals:&mut engine.runtime.terminals};
         for id in ids {
@@ -44,7 +44,7 @@ impl SavedLayout {
             let snapshot=SavedSurface::capture_surface(instance.as_mut(),&mut ctx);
             if captured.insert(id,snapshot).is_some() {return Err(format!("surface {id} appears twice in the committed structure"));}
         }
-        let workspaces=engine.core.local_workspaces.iter().map(|workspace| {
+        let workspaces=engine.core.local_workspaces().iter().map(|workspace| {
             let focused=workspace.pane_layout().all_pane_ids().iter().position(|id|Some(*id)==presentation.pane_id(workspace)).unwrap_or(0);
             Ok(SavedWorkspace {
                 name:workspace.name.clone(),subtitle:workspace.subtitle.clone(),description:workspace.description.clone(),
@@ -53,7 +53,7 @@ impl SavedLayout {
             })
         }).collect::<Result<Vec<_>,String>>()?;
         let active_workspace=active_workspace.min(workspaces.len().saturating_sub(1));
-        Ok(Self {version:LAYOUT_VERSION,workspaces,active_workspace,categories:engine.categories.iter().map(|category|SavedCategory {
+        Ok(Self {version:LAYOUT_VERSION,workspaces,active_workspace,categories:engine.categories().iter().map(|category|SavedCategory {
             id:category.id,name:category.name.clone(),collapsed:presentation.category_collapsed(category.id),
         }).collect()})
     }
@@ -311,7 +311,7 @@ mod tests {
         let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
         let mut engine = engine_session.borrow_mut();
-        engine.settings.general.restore_surface_content = false;
+        engine.runtime.settings.general.restore_surface_content = false;
         let workspaces: Vec<Workspace> = specs
             .iter()
             .map(|(name, mirror)| mirror_marker_ws(&mut engine, name, *mirror))

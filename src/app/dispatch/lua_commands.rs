@@ -63,7 +63,7 @@ impl App {
                     .settings
                     .scripts
                     .update_hash(&pending.script_id, pending.new_hash.clone());
-                if let Err(e) = engine.settings.save() {
+                if let Err(e) = engine.runtime.settings.save() {
                     tracing::warn!(target: "tasty_lua", "script hash persist failed: {e}");
                 }
                 main.mark_dirty();

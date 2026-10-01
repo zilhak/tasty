@@ -1,11 +1,11 @@
 //! CoreState 쪽 구조 digest 입력. CoreState를 직접 읽은 정규 표현과, capture → importer → journal
-//! 모델을 거친 정규 표현을 만든다. 정규 표현과 비교 범위는 [`crate::runtime::shadow_digest`]가 정한다.
+//! 모델을 거친 정규 표현을 만든다. 정규 표현과 비교 범위는 [`tasty_core::canonical`]가 정한다.
 //!
 //! 시험 전용이며 제품 경로에 연결하지 않는다.
 
 mod tests;
 
-use tasty_domain::{DataRef, JournalModel};
+use tasty_core::{DataRef, JournalModel};
 use tasty_event_store::{EventStore, PayloadRef, WriterEpoch};
 
 use super::surface_data::SurfaceData;
@@ -14,10 +14,10 @@ use crate::core::CoreState;
 use crate::core::layout_persistence::LayoutSlotId;
 use crate::core::layout_persistence::schema::SavedLayout;
 use crate::runtime::journal;
-use crate::runtime::shadow_digest::{CanonData, Canonical, ResolveData, fnv_hex, sorted_value};
+use tasty_core::canonical::{CanonData, Canonical, ResolveData, fnv_hex, sorted_value};
 
 pub(super) fn core_canonical(engine: &CoreState) -> Canonical {
-    crate::runtime::shadow_digest::live::core_canonical(engine)
+    tasty_core::canonical::live::core_canonical(engine)
 }
 
 /// capture가 이 kind를 그대로 저장하는지. terminal은 registry를 보지 않고 저장하며, 그 밖의 surface는

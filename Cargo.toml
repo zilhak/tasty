@@ -194,7 +194,7 @@ tasty-ipc = { path = "crates/tasty-ipc" }
 tasty-cli = { path = "crates/tasty-cli" }
 tasty-model = { path = "crates/tasty-model" }
 # 구조 저널 runtime(시험 전용, 제품 미연결)이 도메인 규칙과 저장 계약을 연결한다.
-tasty-domain = { path = "crates/tasty-domain" }
+tasty-core = { path = "crates/tasty-core" }
 tasty-event-store = { path = "crates/tasty-event-store" }
 tasty-file-format = { path = "crates/tasty-file-format" }
 tasty-file-handler = { path = "crates/tasty-file-handler" }

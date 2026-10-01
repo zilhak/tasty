@@ -1,6 +1,6 @@
 # ADR-0064: 저널 도메인 모델은 `tasty-core` 추출 전에 순수 도메인 crate `tasty-domain`에 새로 작성한다
 
-- **Status**: Accepted — 구현 상태: `tasty-domain` crate와 root `src/runtime` 모듈(generic CommandExecutor, 저장 batch 변환, 전체 replay와 snapshot+tail 재구성)이 있다. typed 메타데이터 필드와 전용 이벤트, surface 저장 자료도 시험 전용 importer까지 반영됐다. 둘 다 시험 전용이며 제품 경로에는 연결되지 않았다. 미이행: 제품 배선(원본과 projection의 관계와 전환 절차는 [ADR-0065](0065-journal-source-and-core-state-projection.md)), 저널 예약에서 runtime ID를 발급하는 배선과 `u64`→`u32` 좁힘(규칙은 [ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)의 영속 ID 예약 절)
+- **Status**: Accepted — 선행 crate 단계 종료. tasty-core 추출 시 tasty-domain의 Command/Event·JournalModel·decide/evolve·codec을 함께 옮기고 기존 패키지를 제거했다. 제품 worker·projection·effect 배선은 이행 중이며 전체 writer/복구 완료나 최종 검증 완료를 뜻하지 않는다
 - **Date**: 2026-09-30
 - **Tags**: architecture, crates, domain, event-sourcing, commands
 - **Group**: foundation
@@ -100,4 +100,4 @@ crate 목록 문서·README·가드의 crate 수 갱신이 함께 필요하다.
 - [ADR-0056](0056-crate-boundaries-for-core-event-store-and-task-runtime.md) — crate 배치와 `tasty-core` 추출 조건
 - [ADR-0057](0057-command-identity-for-mutation-retries.md) · [ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)
 - [ADR-0065](0065-journal-source-and-core-state-projection.md) — 제품 연결 뒤 JournalModel과 CoreState 트리의 관계, 엔진별 활성화 절차
-- 현재 구현: `crates/tasty-domain/src/model.rs`·`crates/tasty-domain/src/ids.rs`(저널 모델·저널 전용 값·typed ID kind), `src/runtime/command_executor.rs`·`src/runtime/journal.rs`(executor·저장 batch 변환·replay·snapshot), `crates/tasty-event-store/src/lib.rs`(도메인을 모르는 저장 계약), `crates/tasty-model`(재사용할 값·ID 타입)
+- 현재 구현: `crates/tasty-core/src/model.rs`·`crates/tasty-core/src/ids.rs`(저널 모델·저널 전용 값·typed ID kind), `src/runtime/command_executor.rs`·`src/runtime/journal.rs`(executor·저장 batch 변환·replay·snapshot), `crates/tasty-event-store/src/lib.rs`(도메인을 모르는 저장 계약), `crates/tasty-model`(재사용할 값·ID 타입)

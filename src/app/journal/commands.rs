@@ -486,7 +486,7 @@ impl JournalApplication {
                         stream: binding.stream.clone(),
                         name,
                     });
-                    pending.queued = Some(Work::Reserve(vec![(tasty_domain::IdKind::Category, 1)]));
+                    pending.queued = Some(Work::Reserve(vec![(tasty_core::IdKind::Category, 1)]));
                 }
                 Ok(category::Resolved::Apply(command, response)) => {
                     pending.queued = Some(Work::Resolve {
@@ -565,7 +565,7 @@ impl JournalApplication {
             #[cfg(feature="gui")]
             Ok(ResultValue::InputStored(input)) if pending.forward.is_some()=> {
                 let draft=pending.forward.as_ref().expect("forward input owner");
-                pending.queued=Some(Work::Resolve {changes:vec![StreamCommand {stream:draft.stream.clone(),command:tasty_domain::StructuralCommand::PrepareForward {operation:tasty_domain::OperationId(String::new()),command_id:String::new(),input:*input}}],response:Some(ResponsePlan::Fixed(draft.response.clone()))});
+                pending.queued=Some(Work::Resolve {changes:vec![StreamCommand {stream:draft.stream.clone(),command:tasty_core::StructuralCommand::PrepareForward {operation:tasty_core::OperationId(String::new()),command_id:String::new(),input:*input}}],response:Some(ResponsePlan::Fixed(draft.response.clone()))});
                 self.refresh_command_weight(ticket);return Ok(true);
             }
             Ok(ResultValue::InputStored(input)) if pending.replacing.is_some()=> {
@@ -587,7 +587,7 @@ impl JournalApplication {
             Ok(ResultValue::AssemblyResolved {stream,input,plan})=> {
                 pending.queued=Some(match (input,plan) {
                     (Some(input),Some(plan))=>Work::Resolve {
-                        changes:vec![StreamCommand {stream:stream.clone(),command:tasty_domain::StructuralCommand::PrepareAssembly {operation:tasty_domain::OperationId(String::new()),command_id:String::new(),input:*input,plan:plan.clone()}}],
+                        changes:vec![StreamCommand {stream:stream.clone(),command:tasty_core::StructuralCommand::PrepareAssembly {operation:tasty_core::OperationId(String::new()),command_id:String::new(),input:*input,plan:plan.clone()}}],
                         response:Some(if pending.request.method=="preset.apply" {
                             let root=plan.snapshot.root;let mut response=serde_json::json!({"applied":true,"kind":root.kind.label()});response[format!("{}_id",root.kind.label())]=serde_json::json!(root.id);
                             ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,response))
@@ -616,7 +616,7 @@ impl JournalApplication {
                 #[cfg(feature="gui")]
                 if !pending.replay && let Some(draft)=pending.forward.take() {
                     let progress:crate::runtime::journal_product::ResponseProgress=serde_json::from_slice(executed.response.as_deref().ok_or("forward command progress missing")?).map_err(|error|error.to_string())?;
-                    let Some(tasty_domain::StructuralResult::Pending {operation})=progress.results.first() else {return Err("forward command operation missing".into());};
+                    let Some(tasty_core::StructuralResult::Pending {operation})=progress.results.first() else {return Err("forward command operation missing".into());};
                     self.start_forward(draft,operation.clone())?;
                 }
 
@@ -631,7 +631,7 @@ impl JournalApplication {
                                 .ok_or("public creation progress missing")?,
                         )
                         .map_err(|error| error.to_string())?;
-                    let Some(tasty_domain::StructuralResult::Pending { operation }) =
+                    let Some(tasty_core::StructuralResult::Pending { operation }) =
                         progress.results.last()
                     else {
                         return Err("public creation operation missing".into());
@@ -676,7 +676,7 @@ impl JournalApplication {
                 pending.queued = Some(Work::Resolve {
                     changes: vec![StreamCommand {
                         stream: stream.clone(),
-                        command: tasty_domain::StructuralCommand::CreateCategory {
+                        command: tasty_core::StructuralCommand::CreateCategory {
                             reserved_id: id,
                             name,
                         },
@@ -990,14 +990,14 @@ impl crate::app::App {
             }
         }
         let mut presentations:std::collections::HashMap<_,_>=self.engines().window_pairs().filter_map(|(window,main,engine)| {
-            self.engines.of_window(window).map(|id|(id,crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&engine.categories,&main.state.navigation)))
+            self.engines.of_window(window).map(|id|(id,crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&engine.categories(),&main.state.navigation)))
         }).collect();
         for (id,state,engine) in self.engines.parked_sessions() {
-            presentations.insert(id,crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&engine.categories,&state.navigation));
+            presentations.insert(id,crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&engine.categories(),&state.navigation));
         }
         for (id,navigation,_) in self.engines.preserved_closes() {
             if let Some(engine)=self.engines.get(id) {
-                presentations.insert(id,crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&engine.categories,&navigation));
+                presentations.insert(id,crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&engine.categories(),&navigation));
             }
         }
         for (engine, event) in std::mem::take(&mut self.journal.commands.completed_host_events) {
@@ -1025,7 +1025,7 @@ impl crate::app::App {
                 && let Some(workspace)=context.engine.workspace_at(index)
                 && let Some(pane)=workspace.pane_layout().find_pane(pane_id)
                 && let Some(tab)=pane.tabs.iter().find(|tab|tab.contains_surface(surface)) {
-                if let Some(saved)=result.response.result.as_ref().and_then(|value|value.get("presentation")).and_then(|value|serde_json::from_value::<tasty_domain::UndoPresentation>(value.clone()).ok()) {
+                if let Some(saved)=result.response.result.as_ref().and_then(|value|value.get("presentation")).and_then(|value|serde_json::from_value::<tasty_core::UndoPresentation>(value.clone()).ok()) {
                     for (workspace,pane) in saved.focused_panes {
                         if let Some(workspace)=context.engine.find_workspace_index_for_id(workspace).and_then(|index|context.engine.workspace_at(index)) {context.state.navigation.select_pane(workspace,pane);}
                     }

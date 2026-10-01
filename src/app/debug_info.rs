@@ -28,7 +28,7 @@ pub fn collect(
         info.insert("viewport_height".into(), json!(size.height));
     }
 
-    let appearance = &engine.settings.appearance;
+    let appearance = &engine.runtime.settings.appearance;
     let term_eff = appearance.effective_terminal_font();
     let md_eff = appearance.effective_font_for_kind("markdown");
     info.insert(

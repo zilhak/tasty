@@ -32,7 +32,7 @@ pub(crate) struct ShellRecipe {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct EffectLease {
     pub(crate) effect_id: String,
-    pub(crate) operation: tasty_domain::OperationId,
+    pub(crate) operation: tasty_core::OperationId,
     pub(crate) stream: String,
     pub(crate) runtime_epoch: u64,
     pub(crate) resource_generation: u64,
@@ -43,7 +43,7 @@ pub(crate) struct EffectLease {
 pub(crate) struct ClaimedPreparation {
     pub(crate) lease: EffectLease,
     pub(crate) input: PreparationInput,
-    pub(crate) plan: tasty_domain::CreationPlan,
+    pub(crate) plan: tasty_core::CreationPlan,
     /// Immutable capture bytes read by the storage worker, never replayed as PTY input.
     pub(crate) capture: Option<Vec<u8>>,
     pub(crate) engine_incarnation: u64,
@@ -52,13 +52,13 @@ pub(crate) struct ClaimedPreparation {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct RecordedEffect {
     pub(super) stream: String,
-    pub(super) instruction: tasty_domain::StructuralEffect,
+    pub(super) instruction: tasty_core::StructuralEffect,
 }
 
 #[derive(Debug,Clone)]
 pub(crate) struct ClaimedRetirement {
     pub(crate) lease:EffectLease,
-    pub(crate) plan:tasty_domain::RetirementPlan,
+    pub(crate) plan:tasty_core::RetirementPlan,
     pub(crate) engine_incarnation:u64,
 }
 

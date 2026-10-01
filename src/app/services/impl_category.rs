@@ -73,7 +73,7 @@ mod tests {
         let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
         let mut engine = engine_session.borrow_mut();
-        engine.layout_dirty.clear();
+        engine.persistence.dirty.clear();
         (
             crate::ipc::handler::cli_entry_tests::test_core(),
             engine_session,
@@ -103,7 +103,7 @@ mod tests {
         let id = create(&mut core, &mut engine, "Work");
         assert_eq!(engine.categories().len(), 2);
         assert_eq!(engine.category_name(id), Some("Work"));
-        assert!(engine.layout_dirty.is_dirty());
+        assert!(engine.persistence.dirty.is_dirty());
     }
 
     #[test]
@@ -111,7 +111,7 @@ mod tests {
         let (mut core, mut engine_session) = fixture();
         let mut engine = engine_session.borrow_mut();
         create(&mut core, &mut engine, "Work");
-        engine.layout_dirty.clear();
+        engine.persistence.dirty.clear();
         let err = core
             .apply(
                 &mut engine,
@@ -123,7 +123,7 @@ mod tests {
         let direct = engine.create_category("work").expect_err("duplicate");
         assert_eq!(err.to_string(), direct.to_string());
         assert_eq!(engine.categories().len(), 2);
-        assert!(!engine.layout_dirty.is_dirty());
+        assert!(!engine.persistence.dirty.is_dirty());
     }
 
     #[test]
@@ -188,7 +188,7 @@ mod tests {
         let (mut core, mut engine_session) = fixture();
         let mut engine = engine_session.borrow_mut();
         let a = create(&mut core, &mut engine, "A");
-        engine.layout_dirty.clear();
+        engine.persistence.dirty.clear();
         let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
         apply(
             &mut core,
@@ -205,7 +205,7 @@ mod tests {
                 .category,
             a
         );
-        assert!(engine.layout_dirty.is_dirty());
+        assert!(engine.persistence.dirty.is_dirty());
         assert!(
             core.apply(
                 &mut engine,
@@ -246,7 +246,7 @@ mod tests {
                 .attach_mapping,
             Some(mapping)
         );
-        assert!(engine.layout_dirty.is_dirty());
+        assert!(engine.persistence.dirty.is_dirty());
         apply(
             &mut core,
             &mut engine,

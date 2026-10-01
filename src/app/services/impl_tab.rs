@@ -51,9 +51,9 @@ impl AppServices {
         let surface_id = engine.runtime.counters.next_surface();
         let is_terminal = kind == "terminal";
 
-        let cols = engine.default_cols;
-        let rows = engine.default_rows;
-        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
+        let cols = engine.runtime.default_cols;
+        let rows = engine.runtime.default_rows;
+        let sh = crate::core::state::ShellConfig::from_settings(&engine.runtime.settings);
         let waker = engine.make_waker(surface_id);
 
         let prepared_non_terminal = if !is_terminal {

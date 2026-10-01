@@ -55,14 +55,14 @@ pub fn draw_collapsed_sidebar(
         let mods = ctx.input(|i| i.modifiers);
         crate::adapters::ui::switch_overlay::workspace_switch_held(
             mods,
-            &engine.settings.keybindings,
+            &engine.runtime.settings.keybindings,
         )
     };
-    let category_switch_held = engine.settings.general.workspace_categories_enabled && {
+    let category_switch_held = engine.runtime.settings.general.workspace_categories_enabled && {
         let mods = ctx.input(|i| i.modifiers);
         crate::adapters::ui::switch_overlay::category_switch_held(
             mods,
-            &engine.settings.keybindings,
+            &engine.runtime.settings.keybindings,
         )
     };
 
@@ -73,7 +73,7 @@ pub fn draw_collapsed_sidebar(
         .show(ctx, |ui| {
             let props = SidebarCollapsedProps {
                 theme: &th,
-                kb: &engine.settings.keybindings,
+                kb: &engine.runtime.settings.keybindings,
                 workspaces: &workspaces,
                 categories: sections.as_deref(),
                 tools_hover,

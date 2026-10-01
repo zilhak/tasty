@@ -66,7 +66,7 @@ impl MainView {
             if let Some(local) =
                 find_matching_individual_slot(&kb.workspace_switch_slot_keys, key, mods)
             {
-                if engine.settings.general.workspace_categories_enabled {
+                if engine.runtime.settings.general.workspace_categories_enabled {
                     state.switch_workspace_in_active_category(engine, local);
                 } else {
                     state.switch_workspace(engine, local);
@@ -75,7 +75,7 @@ impl MainView {
             }
         }
         if kb.category_switch_modifier == KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER
-            && engine.settings.general.workspace_categories_enabled
+            && engine.runtime.settings.general.workspace_categories_enabled
         {
             if matches_binding(kb.category_next_key(), key, mods) {
                 state.next_category(engine);
@@ -126,7 +126,7 @@ impl MainView {
                 }
                 if let Some(local) = kb.workspace_switch_slot_keys.iter().position(|k| k == ch) {
                     // 카테고리를 사용하면 카테고리 내 인덱스, 아니면 전역 인덱스다.
-                    if engine.settings.general.workspace_categories_enabled {
+                    if engine.runtime.settings.general.workspace_categories_enabled {
                         state.switch_workspace_in_active_category(engine, local);
                     } else {
                         state.switch_workspace(engine, local);
@@ -135,7 +135,7 @@ impl MainView {
                 }
             }
             Some(SwitchTarget::Category) => {
-                if !engine.settings.general.workspace_categories_enabled {
+                if !engine.runtime.settings.general.workspace_categories_enabled {
                     return false;
                 }
                 if ch == kb.category_next_key() {

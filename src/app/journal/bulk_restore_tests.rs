@@ -246,7 +246,7 @@ fn selected_terminal_restores_capture_while_other_tabs_remain_resource_free() {
     assert_eq!(session.runtime.terminals.iter().count(), 2);
     assert!(session.runtime.terminals.get(ids[0]).is_none());
     assert_eq!(
-        session.core_state.local_workspaces[0].all_surface_ids(),
+        session.core_state.local_workspaces()[0].all_surface_ids(),
         ids
     );
 }
@@ -435,13 +435,13 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
         assert!(Instant::now() < deadline, "product slot import stalled");
         std::thread::sleep(Duration::from_millis(1));
     }
-    let ids = session.core_state.local_workspaces[0].all_surface_ids();
+    let ids = session.core_state.local_workspaces()[0].all_surface_ids();
     assert_eq!(
         ids,
         vec![18],
         "legacy import reserves above numeric metadata scopes"
     );
-    assert_eq!(session.core_state.local_workspaces[0].name, "imported");
+    assert_eq!(session.core_state.local_workspaces()[0].name, "imported");
     match receiver.try_recv().unwrap() {
         crate::plugin_bridge::host_cmd::HostCmd::RemoteSurfaceRestored {
             surface_id, data, ..
@@ -485,7 +485,7 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
         std::thread::sleep(Duration::from_millis(1));
     }
     assert_eq!(
-        session.core_state.local_workspaces[0].all_surface_ids(),
+        session.core_state.local_workspaces()[0].all_surface_ids(),
         ids
     );
     assert_eq!(

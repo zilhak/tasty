@@ -1,7 +1,7 @@
 //! Sole ownership of resources detached by a committed tombstone, before cleanup is claimed.
 use crate::runtime::engine_session::EngineSession;
 use crate::runtime::journal_product::{ClaimedRetirement,EffectLease};
-use tasty_domain::{Operation,RetirementPlan};
+use tasty_core::{Operation,RetirementPlan};
 use tasty_terminal::{Terminal,Pty,PtyRetirement,PtyPhase};
 struct RemovedOwner {
     surface:Box<dyn crate::model::Surface>,
@@ -71,8 +71,8 @@ impl ResourceRetirement {
         }
         Ok(())
     }
-    pub(crate) fn outcome(&self)->Option<tasty_domain::OperationOutcome> {
-        use tasty_domain::OperationOutcome;
+    pub(crate) fn outcome(&self)->Option<tasty_core::OperationOutcome> {
+        use tasty_core::OperationOutcome;
         let started=self.started?;
         if let Some(reason)=&self.failure {return Some(OperationOutcome::Uncertain {reason:reason.clone()});}
         if !self.start_complete {return None;}
@@ -85,14 +85,14 @@ impl ResourceRetirement {
     }
     pub(crate) fn finish_metadata(&mut self,engine:&mut crate::runtime::engine_access::EngineMut<'_>)->Result<(),String> {
         if self.metadata_complete {return Ok(());}
-        if !matches!(self.outcome(),Some(tasty_domain::OperationOutcome::Succeeded)) {return Err("cleanup receipt is not complete".into());}
+        if !matches!(self.outcome(),Some(tasty_core::OperationOutcome::Succeeded)) {return Err("cleanup receipt is not complete".into());}
         for target in &self.plan.removed {
             let scope=match target.kind {
-                tasty_domain::IdKind::Surface=> {
+                tasty_core::IdKind::Surface=> {
                     if engine.core.find_surface_by_id(target.id).is_some() {return Err("retired surface identity is live again; refusing metadata cleanup".into());}
                     tasty_memory::Scope::Surface(target.id)
                 },
-                tasty_domain::IdKind::Workspace=> {
+                tasty_core::IdKind::Workspace=> {
                     if engine.core.has_workspace(target.id) {return Err("retired workspace identity is live again; refusing metadata cleanup".into());}
                     tasty_memory::Scope::Workspace(target.id)
                 },
@@ -116,8 +116,8 @@ impl ResourceRetirement {
         }
         for entity in &self.plan.removed {
             match entity.kind {
-                tasty_domain::IdKind::Pane=>engine.enqueue_host_event(PendingHostEvent::PaneClosed {pane_id:entity.id}),
-                tasty_domain::IdKind::Workspace=>engine.enqueue_host_event(PendingHostEvent::WorkspaceClosed {workspace_id:entity.id}),
+                tasty_core::IdKind::Pane=>engine.enqueue_host_event(PendingHostEvent::PaneClosed {pane_id:entity.id}),
+                tasty_core::IdKind::Workspace=>engine.enqueue_host_event(PendingHostEvent::WorkspaceClosed {workspace_id:entity.id}),
                 _=>{},
             }
         }

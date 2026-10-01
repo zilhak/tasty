@@ -43,7 +43,7 @@ pub(super) fn build_category_sections(
     engine: &crate::core::CoreState,
     active_ws: usize,
 ) -> Option<Vec<CategorySectionView>> {
-    if !engine.settings.general.workspace_categories_enabled {
+    if !engine.runtime.settings.general.workspace_categories_enabled {
         return None;
     }
     let workspaces_heading = t("sidebar.workspaces_heading").to_string();
@@ -127,14 +127,14 @@ pub fn draw_full_sidebar(
         let mods = ctx.input(|i| i.modifiers);
         crate::adapters::ui::switch_overlay::workspace_switch_held(
             mods,
-            &engine.settings.keybindings,
+            &engine.runtime.settings.keybindings,
         )
     };
-    let category_switch_held = engine.settings.general.workspace_categories_enabled && {
+    let category_switch_held = engine.runtime.settings.general.workspace_categories_enabled && {
         let mods = ctx.input(|i| i.modifiers);
         crate::adapters::ui::switch_overlay::category_switch_held(
             mods,
-            &engine.settings.keybindings,
+            &engine.runtime.settings.keybindings,
         )
     };
 
@@ -147,7 +147,7 @@ pub fn draw_full_sidebar(
         .show(ctx, |ui| {
             let props = SidebarFullProps {
                 theme: &th,
-                kb: &engine.settings.keybindings,
+                kb: &engine.runtime.settings.keybindings,
                 workspaces: &workspaces,
                 categories: sections.as_deref(),
                 drag,

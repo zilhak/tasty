@@ -30,7 +30,7 @@ impl MainView {
         engine: &mut EngineMut<'_>,
         dt: crate::double_tap::DoubleTapKey,
     ) -> bool {
-        let kb = engine.settings.keybindings.clone();
+        let kb = engine.runtime.settings.keybindings.clone();
         let dt_str = dt.binding_str();
 
         let has_dt = |bindings: &[String]| bindings.iter().any(|b| b == dt_str);

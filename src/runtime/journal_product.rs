@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread::JoinHandle;
 
-use tasty_domain::{IdKind, JournalModel, StreamBatch, StructureModels};
+use tasty_core::{IdKind, JournalModel, StreamBatch, StructureModels};
 use tasty_event_store::{CommandKey, CommandRecord, IdRange};
 
 use super::command_executor::Executed;
@@ -42,12 +42,12 @@ pub(crate) struct Admission {
 #[derive(Debug)]
 pub(crate) enum Work {
     ReconcileRetirement {lease:EffectLease,evidence:Vec<u8>},
-    ClaimForward {stream:String,operation:tasty_domain::OperationId},
-    ForwardFinished {lease:EffectLease,outcome:tasty_domain::OperationOutcome},
+    ClaimForward {stream:String,operation:tasty_core::OperationId},
+    ForwardFinished {lease:EffectLease,outcome:tasty_core::OperationOutcome},
     PrepareSubtree {binding:EngineBinding,draft:crate::runtime::preset_plan::AssemblyDraft},
     PrepareUndo {binding:EngineBinding,target_pane:Option<u32>,scope:Option<u32>,shell:ShellRecipe},
     ReserveExecutionIds {binding:EngineBinding,kinds:Vec<(IdKind,u32)>},
-    CaptureClosed {view:CompletionView,binding:EngineBinding,target:tasty_domain::CloseTarget,display_name:Option<String>,surfaces:Vec<crate::runtime::surface_capture::CapturedSurface>},
+    CaptureClosed {view:CompletionView,binding:EngineBinding,target:tasty_core::CloseTarget,display_name:Option<String>,surfaces:Vec<crate::runtime::surface_capture::CapturedSurface>},
     Capture {binding:EngineBinding,surfaces:Vec<crate::runtime::surface_capture::CapturedSurface>},
     RetireEngine(EngineBinding),
     OpenEngine {
@@ -66,18 +66,18 @@ pub(crate) enum Work {
     SaveView(view_record::StoredView),
     ReadEngine(String),
     ReadCommand(String),
-    ReadPayload(tasty_domain::DataRef),
+    ReadPayload(tasty_core::DataRef),
     PutPreparation(PreparationInput),
     PutPayload(Vec<u8>),
-    ClaimRetirement {stream:String,operation:tasty_domain::OperationId},
-    RetirementFinished {lease:EffectLease,outcome:tasty_domain::OperationOutcome},
+    ClaimRetirement {stream:String,operation:tasty_core::OperationId},
+    RetirementFinished {lease:EffectLease,outcome:tasty_core::OperationOutcome},
     ClaimPreparation {
         stream: String,
-        operation: tasty_domain::OperationId,
+        operation: tasty_core::OperationId,
     },
     Prepared {
         lease: EffectLease,
-        result: tasty_domain::PreparationResult,
+        result: tasty_core::PreparationResult,
     },
     InstallationRejected {
         lease: EffectLease,
@@ -101,7 +101,7 @@ pub(crate) struct Request {
 pub(crate) enum ResultValue {
     RecoveryRequired {command_id:String,reason:String,replay:bool},
     ForwardClaimed {lease:EffectLease,payload:Vec<u8>},
-    AssemblyResolved {stream:String,input:Option<tasty_domain::DataRef>,plan:Option<tasty_domain::CreationAssembly>},
+    AssemblyResolved {stream:String,input:Option<tasty_core::DataRef>,plan:Option<tasty_core::CreationAssembly>},
     #[cfg(feature = "gui")]
     ViewSaved,
     Bound(BoundEngine),
@@ -116,11 +116,11 @@ pub(crate) enum ResultValue {
     ExecutionIds {binding:EngineBinding,ranges:Vec<IdRange>},
     Engine(JournalModel),
     Payload {
-        reference: tasty_domain::DataRef,
+        reference: tasty_core::DataRef,
         bytes: Vec<u8>,
     },
-    InputStored(tasty_domain::DataRef),
-    ClosedCaptured {input:tasty_domain::DataRef,undo:Option<tasty_domain::UndoCapture>},
+    InputStored(tasty_core::DataRef),
+    ClosedCaptured {input:tasty_core::DataRef,undo:Option<tasty_core::UndoCapture>},
     Claimed(ClaimedPreparation),
     RetirementClaimed(ClaimedRetirement),
     Cancelled,
@@ -357,7 +357,7 @@ pub(crate) fn request_size(work: &Work) -> usize {
             .len()
             .saturating_mul(std::mem::size_of::<(IdKind, u32)>()),
         Work::ReadEngine(stream) | Work::ReadCommand(stream) => stream.len(),
-        Work::ReadPayload(_) => std::mem::size_of::<tasty_domain::DataRef>(),
+        Work::ReadPayload(_) => std::mem::size_of::<tasty_core::DataRef>(),
         Work::PutPayload(bytes)=>bytes.len(),
         Work::PutPreparation(input) => {
             serde_json::to_vec(input).map_or(usize::MAX, |bytes| bytes.len())

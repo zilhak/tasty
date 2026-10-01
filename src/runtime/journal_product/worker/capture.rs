@@ -39,8 +39,8 @@ pub(super) fn persist(executor:&Executor<StructureDecider>,ticket:u64,binding:En
         for capture in captures {
             let generation=inner.store.reserve_ids(epoch,"capture",1,i64::MAX as u64).map_err(|error|error.to_string())?.start;
             let reference=inner.store.put_payload(epoch,&capture.bytes).map_err(|error|error.to_string())?;
-            changes.push(StreamCommand {stream:binding.stream.clone(),command:tasty_domain::StructuralCommand::RecordCapture {
-                surface:capture.surface,kind:capture.kind,activation:capture.activation,content_generation:generation,snapshot_schema:1,data:tasty_domain::DataRef(reference.0),
+            changes.push(StreamCommand {stream:binding.stream.clone(),command:tasty_core::StructuralCommand::RecordCapture {
+                surface:capture.surface,kind:capture.kind,activation:capture.activation,content_generation:generation,snapshot_schema:1,data:tasty_core::DataRef(reference.0),
             }});
         }
         (key,changes)
@@ -53,7 +53,7 @@ pub(super) fn persist(executor:&Executor<StructureDecider>,ticket:u64,binding:En
 
 /// A user close snapshots the canonical removed subtree. Lazy payload/seed references are copied
 /// without opening a factory, while live observations replace only the matching captured instances.
-pub(super) fn closed(executor:&Executor<StructureDecider>,ticket:u64,binding:EngineBinding,target:tasty_domain::CloseTarget,display_name:Option<String>,captures:Vec<CapturedSurface>,view:super::super::CompletionView)->Result<(tasty_domain::DataRef,Option<tasty_domain::UndoCapture>),String> {
+pub(super) fn closed(executor:&Executor<StructureDecider>,ticket:u64,binding:EngineBinding,target:tasty_core::CloseTarget,display_name:Option<String>,captures:Vec<CapturedSurface>,view:super::super::CompletionView)->Result<(tasty_core::DataRef,Option<tasty_core::UndoCapture>),String> {
     executor.with_state(|_|()).map_err(|error|error.to_string())?;
     let mut inner=executor.inner.lock().map_err(|error|error.to_string())?;
     let epoch=inner.epoch;
@@ -61,23 +61,23 @@ pub(super) fn closed(executor:&Executor<StructureDecider>,ticket:u64,binding:Eng
     if binding.journal_id!=inner.store.journal_id() || binding.runtime_epoch!=epoch.0 {return Err("close capture journal runtime changed".into());}
     let model=inner.state.streams.get(&binding.stream).ok_or("close capture stream missing")?;
     if model.engine_retired || model.engine_incarnation!=binding.incarnation {return Err("close capture engine is retired".into());}
-    let snapshot=tasty_domain::ClosedSnapshot::capture(model,target);
+    let snapshot=tasty_core::ClosedSnapshot::capture(model,target);
     let input=serde_json::to_vec(&target).map_err(|error|error.to_string())?;
     let input=inner.store.put_payload_pinned(epoch,&input,&holder).map_err(|error|error.to_string())?;
-    let Some(mut snapshot)=snapshot else {return Ok((tasty_domain::DataRef(input.0),None));};
-    snapshot.presentation=tasty_domain::UndoPresentation {focused_panes:view.focused_panes.into_iter().filter(|(workspace,_)|snapshot.workspaces.contains_key(workspace)).collect(),selected_tabs:view.selected_tabs.into_iter().filter(|(pane,_)|snapshot.panes.contains_key(pane)).collect(),selected_surfaces:view.selected_surfaces.into_iter().filter(|(tab,_)|snapshot.tabs.contains_key(tab)).collect()};
+    let Some(mut snapshot)=snapshot else {return Ok((tasty_core::DataRef(input.0),None));};
+    snapshot.presentation=tasty_core::UndoPresentation {focused_panes:view.focused_panes.into_iter().filter(|(workspace,_)|snapshot.workspaces.contains_key(workspace)).collect(),selected_tabs:view.selected_tabs.into_iter().filter(|(pane,_)|snapshot.panes.contains_key(pane)).collect(),selected_surfaces:view.selected_surfaces.into_iter().filter(|(tab,_)|snapshot.tabs.contains_key(tab)).collect()};
     for capture in captures {
         let surface=snapshot.surfaces.get_mut(&capture.surface).ok_or("capture is outside the closed subtree")?;
         if surface.kind!=capture.kind || surface.activation.map(|activation|activation.generation)!=capture.activation {
             return Err("closed snapshot observed an obsolete kind instance".into());
         }
         let reference=inner.store.put_payload_pinned(epoch,&capture.bytes,&holder).map_err(|error|error.to_string())?;
-        surface.data=Some(tasty_domain::DataRef(reference.0));
+        surface.data=Some(tasty_core::DataRef(reference.0));
         surface.snapshot_schema=1;
     }
-    if snapshot.root.kind==tasty_domain::IdKind::Surface {snapshot.tab_name=display_name.or(snapshot.tab_name);}
+    if snapshot.root.kind==tasty_core::IdKind::Surface {snapshot.tab_name=display_name.or(snapshot.tab_name);}
     let retained=snapshot.data_refs();
     let bytes=serde_json::to_vec(&snapshot).map_err(|error|error.to_string())?;
     let reference=inner.store.put_payload_pinned(epoch,&bytes,&holder).map_err(|error|error.to_string())?;
-    Ok((tasty_domain::DataRef(input.0),Some(tasty_domain::UndoCapture {snapshot:tasty_domain::DataRef(reference.0),retained})))
+    Ok((tasty_core::DataRef(input.0),Some(tasty_core::UndoCapture {snapshot:tasty_core::DataRef(reference.0),retained})))
 }

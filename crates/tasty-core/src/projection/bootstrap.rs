@@ -1,9 +1,9 @@
 //! Logical bootstrap before the first publication ACK. It does not read payloads or create resources.
 use super::*;
-use crate::model::{PaneNode, SplitNodeId, SurfaceLayout, WorkspaceCategory};
-use tasty_domain::SplitTree;
+use tasty_model::{PaneNode, SplitNodeId, SurfaceLayout, WorkspaceCategory};
+use crate::SplitTree;
 
-pub(crate) fn initialize(core: &mut CoreState, model: &JournalModel) -> Result<()> {
+pub fn initialize(core: &mut CoreState, model: &JournalModel) -> Result<()> {
     if !core.local_workspaces.is_empty() {
         return Err("bootstrap cannot replace an already published local tree".into());
     }
@@ -87,7 +87,7 @@ fn surface_tree(model: &JournalModel, tree: &SplitTree<u32>) -> Result<SurfaceLa
     match tree {
         SplitTree::Leaf(id) => {
             let source = model.surfaces.get(id).ok_or("bootstrap surface missing")?;
-            Ok(SurfaceLayout::Leaf(crate::model::SurfaceDescriptor {
+            Ok(SurfaceLayout::Leaf(tasty_model::SurfaceDescriptor {
                 id:*id,kind:source.kind.clone(),activation_generation:source.activation.map(|activation|activation.generation),
             }))
         }
@@ -106,45 +106,3 @@ fn surface_tree(model: &JournalModel, tree: &SplitTree<u32>) -> Result<SurfaceLa
     }
 }
 
-pub(crate) fn presentation(
-    core: &CoreState,
-    view: Option<crate::core::layout_persistence::import::ImportedView>,
-) -> crate::model::RestoredPresentation {
-    let view = view.unwrap_or_default();
-    let mut result = crate::model::RestoredPresentation {
-        active_workspace: view
-            .active_workspace
-            .filter(|id| {
-                core.local_workspaces
-                    .iter()
-                    .any(|workspace| workspace.id == *id)
-            })
-            .or_else(|| core.local_workspaces.first().map(|workspace| workspace.id)),
-        selection: crate::model::StructurePresentationSnapshot::default(),
-    };
-    result.selection.panes.extend(view.focused_panes);
-    result.selection.selected_tabs.extend(view.active_tabs);
-    result.selection.surfaces.extend(view.selected_surfaces);
-    result
-        .selection
-        .collapsed_categories
-        .extend(view.collapsed_categories);
-    for workspace in &core.local_workspaces {
-        for id in workspace.pane_layout().all_pane_ids() {
-            if let Some(pane) = workspace.pane_layout().find_pane(id) {
-                for tab in &pane.tabs {
-                    if let Some(surface) = tab.first_surface_id() {
-                        result.selection.surfaces.entry(tab.id).or_insert(surface);
-                    }
-                    let mut nodes = Vec::new();
-                    tab.layout().split_node_ids(&mut nodes);
-                    result
-                        .selection
-                        .split_hints
-                        .extend(nodes.into_iter().map(|node| (node, false)));
-                }
-            }
-        }
-    }
-    result
-}

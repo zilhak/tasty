@@ -198,7 +198,7 @@ impl App {
             self.flush_layout_persistence(true);
             if !self.journal.is_halted() {
                 for session in self.engines.all_sessions_mut() {
-                    if !session.core_state.settings.general.restore_layout
+                    if !session.runtime.settings.general.restore_layout
                         && let Some(binding) = session.journal_binding.clone()
                     {
                         self.journal.retire_engine(session.id, binding, false);

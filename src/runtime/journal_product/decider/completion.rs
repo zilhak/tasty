@@ -1,7 +1,7 @@
 //! Finish an original command only after all of its operations, across streams, are terminal.
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
-use tasty_domain::{Operation, OperationId, OperationOutcome};
+use tasty_core::{Operation, OperationId, OperationOutcome};
 
 pub(super) fn aggregate(
     state: &StructureModels,
@@ -77,7 +77,7 @@ pub(super) fn aggregate(
                         Some(OperationOutcome::Succeeded)=> {
                             if operation.forward {StructuralResult::Updated} else if let Some(plan)=&operation.retirement {if plan.replacement.is_some() {StructuralResult::Moved {moved:true}}else {StructuralResult::Closed {closed:true}}}
                             else if let Some(plan)=&operation.assembly {
-                                let surviving=plan.snapshot.surfaces.keys().filter(|surface|operations.get(&tasty_domain::CreationAssembly::member(&operation.id,**surface)).is_some_and(|member|matches!(member.outcome,Some(OperationOutcome::Succeeded)))).copied().collect();
+                                let surviving=plan.snapshot.surfaces.keys().filter(|surface|operations.get(&tasty_core::CreationAssembly::member(&operation.id,**surface)).is_some_and(|member|matches!(member.outcome,Some(OperationOutcome::Succeeded)))).copied().collect();
                                 plan.result(&surviving)
                             } else {operation.creation.as_ref().ok_or("completed operation has no result plan")?.created_result()}
                         },
@@ -137,7 +137,7 @@ fn projected_after(
             .into_iter()
             .enumerate()
             .map(|(index, event)| {
-                Ok(tasty_domain::RecordedEvent {
+                Ok(tasty_core::RecordedEvent {
                     revision: revision
                         .checked_add(index as u64 + 1)
                         .ok_or("projection revision exhausted")?,
@@ -145,7 +145,7 @@ fn projected_after(
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
-        tasty_domain::evolve(model, &tasty_domain::DomainBatch { batch_id, events })
+        tasty_core::evolve(model, &tasty_core::DomainBatch { batch_id, events })
             .map_err(|error| error.to_string())?;
     }
     Ok(after)

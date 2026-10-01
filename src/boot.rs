@@ -811,7 +811,7 @@ mod journal_event_tests {
         };
         assert!(response.error.is_none(),"{response:?}");
         assert_eq!(response.result.unwrap()["name"],"event-driven");
-        assert_eq!(session.core_state.local_workspaces.len(),2);
+        assert_eq!(session.core_state.local_workspaces().len(),2);
         assert!(!app.journal.pauses_observation());
         assert!(!app.journal.is_halted());
     }

@@ -639,8 +639,8 @@ mod wiring {
         let mut engine = engine_session.borrow_mut();
         std::fs::create_dir_all(dir).unwrap();
         engine.layouts_dir_override = Some(dir.to_path_buf());
-        engine.layout_slot = Some(1);
-        engine.settings.general.restore_layout = true;
+        engine.persistence.slot = Some(1);
+        engine.runtime.settings.general.restore_layout = true;
         engine_session
     }
 
@@ -887,7 +887,7 @@ mod wiring {
             "내용을 모르는 파일은 옮기지도 않는다"
         );
         assert!(
-            engine.layout_dirty.is_dirty(),
+            engine.persistence.dirty.is_dirty(),
             "보호된 슬롯의 저장을 건너뛰면 dirty를 유지해야 한다"
         );
     }
@@ -913,7 +913,7 @@ mod wiring {
             "정상 슬롯은 저장돼야 한다"
         );
         assert!(
-            !engine.layout_dirty.is_dirty(),
+            !engine.persistence.dirty.is_dirty(),
             "저장했으면 dirty 를 내린다"
         );
     }

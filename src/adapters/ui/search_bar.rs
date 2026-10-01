@@ -105,7 +105,7 @@ pub fn draw_search_bar(
             // find 단축키 → 검색창은 그대로 두고 포커스만 터미널로 되돌린다.
             let find_pressed = ui.input(|i| {
                 crate::adapters::ui::input::shortcuts::any_binding_pressed_egui(
-                    &engine.settings.keybindings.find,
+                    &engine.runtime.settings.keybindings.find,
                     i,
                 )
             });

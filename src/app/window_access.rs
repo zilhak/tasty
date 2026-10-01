@@ -603,7 +603,7 @@ fn any_engine_has_workspace<'a>(
 
 /// 모든 engine의 슬롯을 모은다. 창·parked·임시 engine을 [`EngineScan::all`]로 한 번씩 본다.
 fn occupied_slots(engines: EngineScan<'_>) -> HashSet<LayoutSlotId> {
-    engines.all().filter_map(|e| e.layout_slot).collect()
+    engines.all().filter_map(|e| e.persistence.slot).collect()
 }
 
 /// 저장된 레이아웃을 우선 복원하도록 오름차순 files의 첫 미점유 슬롯을 고른다.
@@ -838,17 +838,17 @@ mod tests {
     #[test]
     fn occupied_slots_counts_each_engine_once() {
         let (mut reg, ids) = parked(&["p0", "p1"]);
-        engine_mut(&mut reg, ids[0]).layout_slot = Some(4);
-        engine_mut(&mut reg, ids[1]).layout_slot = Some(2);
+        engine_mut(&mut reg, ids[0]).persistence.slot = Some(4);
+        engine_mut(&mut reg, ids[1]).persistence.slot = Some(2);
         let mut pending_session = engine_with_workspace_name("tmp");
         let mut pending = pending_session.borrow_mut();
-        pending.layout_slot = Some(7);
+        pending.persistence.slot = Some(7);
         with_pending(&mut reg, pending_session);
         let views = HashMap::new();
         let scan = EngineScan::from_fields(&views, &reg);
         assert_eq!(occupied_slots(scan), slots(&[2, 4, 7]));
         assert_eq!(
-            scan.all().filter(|e| e.layout_slot.is_some()).count(),
+            scan.all().filter(|e| e.persistence.slot.is_some()).count(),
             3,
             "슬롯을 가진 engine이 각각 한 번만 보인다"
         );

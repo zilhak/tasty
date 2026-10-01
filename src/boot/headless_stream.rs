@@ -286,7 +286,7 @@ fn apply_bulk_events(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOu
             }
             BulkEvent::Commit { transfer_id } => {
                 // 용량 사전판정과 같은 저장 폴더를 사용한다.
-                let dir = crate::remote::server::resolve_bulk_transfer_dir(&engine.settings);
+                let dir = crate::remote::server::resolve_bulk_transfer_dir(&engine.runtime.settings);
                 crate::remote::server::finalize_bulk_transfer(
                     engine,
                     &app.stream_hub,

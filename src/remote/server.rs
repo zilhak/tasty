@@ -279,7 +279,7 @@ pub(crate) fn begin_bulk_transfer(
     filename: String,
     total_size: u64,
 ) {
-    let dir = resolve_bulk_transfer_dir(&engine.settings);
+    let dir = resolve_bulk_transfer_dir(&engine.runtime.settings);
     let max_bytes = engine
         .settings
         .remote_transfer
@@ -3456,7 +3456,7 @@ mod forward_exec_tests {
             .get_mut(a)
             .expect("seeded terminal")
             .set_cached_cwd(dir.path().to_path_buf());
-        engine.settings.general.inherit_cwd = false;
+        engine.runtime.settings.general.inherit_cwd = false;
         let op = StructuralOp::ConvertSurface {
             surface_id: a,
             surface_kind: "explorer".to_string(),

@@ -154,12 +154,12 @@ impl App {
         // 색과 런타임 값이 서로 다른 설정에서 나오지 않게 같은 사본을 읽는다.
         let picked = self
             .focused_pair()
-            .map(|(_, engine)| &engine.core.settings)
+            .map(|(_, engine)| &engine.runtime.settings)
             .or_else(|| {
                 self.engines()
                     .windowed_and_parked()
                     .next()
-                    .map(|e| &e.core.settings)
+                    .map(|e| &e.runtime.settings)
             })
             .map(|s| (s.appearance.clone(), s.theme_runtime()));
         let Some((appearance, runtime)) = picked else {
@@ -215,7 +215,7 @@ impl App {
                 crate::intent::workspace::handle(core, state, engine, intent);
             }
             Intent::RestoreClosedItem => {
-                crate::intent::closed_item::handle(core, state, engine, intent);
+                tracing::error!("undo intent bypassed journal admission");
             }
             Intent::ForwardMirror {..}|Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_) => {
                 tracing::error!(

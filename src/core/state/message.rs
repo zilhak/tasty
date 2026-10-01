@@ -7,7 +7,7 @@ pub struct SurfaceMessage {
     pub(crate) content: String,
 }
 
-impl CoreState {
+impl crate::runtime::engine_access::EngineMut<'_> {
     /// Send a message from one surface to another. Returns the assigned message ID.
     pub fn send_message(&mut self, from: u32, to: u32, content: String) -> u32 {
         self.live.surface_next_message_id += 1;

@@ -1,13 +1,14 @@
+use crate::runtime::journal_payload::StoreBytes;
 //! 구조 digest: 같은 stream의 여러 재구성 경로가 같은 digest를 내고, 구조를 바꾸면 digest가 달라진다.
 
-use tasty_domain::{DataRef, DomainEvent, JournalModel, Pane, Ratio, SplitTree};
+use tasty_core::{DataRef, DomainEvent, JournalModel, Pane, Ratio, SplitTree};
 use tasty_event_store::EventStore;
 use tasty_model::WorkspaceAttachMapping;
 
 use super::common::{commit_events, db_path, open, scenario, stream};
 use crate::runtime::journal::{full_replay, load, load_all, save_snapshot};
-use crate::runtime::shadow_digest::{
-    CanonData, Canonical, IdMode, SkipData, StoreBytes, differences,
+use tasty_core::canonical::{
+    CanonData, Canonical, IdMode, SkipData, differences,
 };
 
 fn canonical(store: &EventStore, model: &JournalModel) -> Canonical {
@@ -184,23 +185,23 @@ fn each_structural_change_changes_the_digest() {
             DomainEvent::PaneSplit {
                 target: 1,
                 pane: 3,
-                split: tasty_domain::SplitSpec {
+                split: tasty_core::SplitSpec {
                     direction: tasty_model::SplitDirection::Horizontal,
                     ratio: Ratio::from_f32(0.5),
-                    placement: tasty_domain::Placement::After,
+                    placement: tasty_core::Placement::After,
                 },
             },
             DomainEvent::SurfaceSplit {
                 target: 1,
-                surface: tasty_domain::SurfaceSpec {
+                surface: tasty_core::SurfaceSpec {
                     id: 4,
                     kind: "terminal".to_owned(),
                     data: None,
                 },
-                split: tasty_domain::SplitSpec {
+                split: tasty_core::SplitSpec {
                     direction: tasty_model::SplitDirection::Vertical,
                     ratio: Ratio::from_f32(0.25),
-                    placement: tasty_domain::Placement::After,
+                    placement: tasty_core::Placement::After,
                 },
             },
         ],

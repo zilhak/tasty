@@ -18,9 +18,9 @@ fn local_op(request:&JsonRpcRequest,session:&EngineSession,services:&crate::app:
         "tab.close"=>Some(StructuralOp::CloseTab {anchor_surface_id:tab_anchor(id("tab_id")?)?}),
         "pane.close"=>Some(StructuralOp::ClosePane {anchor_surface_id:pane_anchor(id("pane_id")?)?}),
         "intent.close"=>match serde_json::from_value(request.params["target"].clone()).ok()? {
-            tasty_domain::CloseTarget::Surface(id)=>Some(StructuralOp::CloseSurface {surface_id:id}),
-            tasty_domain::CloseTarget::Tab(id)=>Some(StructuralOp::CloseTab {anchor_surface_id:tab_anchor(id)?}),
-            tasty_domain::CloseTarget::Pane(id)=>Some(StructuralOp::ClosePane {anchor_surface_id:pane_anchor(id)?}),_=>None,
+            tasty_core::CloseTarget::Surface(id)=>Some(StructuralOp::CloseSurface {surface_id:id}),
+            tasty_core::CloseTarget::Tab(id)=>Some(StructuralOp::CloseTab {anchor_surface_id:tab_anchor(id)?}),
+            tasty_core::CloseTarget::Pane(id)=>Some(StructuralOp::ClosePane {anchor_surface_id:pane_anchor(id)?}),_=>None,
         },
         "intent.restore-closed"=>Some(StructuralOp::RestoreClosedItem {anchor_surface_id:pane_anchor(id("pane")?)?}),
         "tab.move"=>Some(StructuralOp::MoveTab {anchor_surface_id:pane_anchor(id("pane_id")?)?,from_index:request.params["from_index"].as_u64()?.try_into().ok()?,to_index:request.params["to_index"].as_u64()?.try_into().ok()?}),

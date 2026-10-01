@@ -3,12 +3,12 @@ use super::{
     CanonCategory, CanonData, CanonPane, CanonSurface, CanonTab, CanonTree, CanonWorkspace,
     Canonical, IdMode, direction_name, sorted_value,
 };
-use crate::core::CoreState;
-use crate::model::{PaneNode, SurfaceDescriptor, SurfaceLayout};
+use crate::CoreState;
+use tasty_model::{PaneNode, SurfaceDescriptor, SurfaceLayout};
 
 /// CoreState의 정규 표현. ID는 원래 값이고 surface 저장 자료는 비교하지 않는다.
 /// mirror workspace와 선택·파생 값은 뺀다.
-pub(crate) fn core_canonical(engine: &CoreState) -> Canonical {
+pub fn core_canonical(engine: &CoreState) -> Canonical {
     let mut defects = Vec::new();
     let categories = engine
         .categories
@@ -77,7 +77,7 @@ pub(crate) fn core_canonical(engine: &CoreState) -> Canonical {
 }
 
 /// 저장 형식이 정하는 kind. 대기 중인 terminal은 terminal, plugin 대기는 기다리는 kind다.
-pub(crate) fn core_kind(surface:&SurfaceDescriptor)->String {surface.kind.clone()}
+pub fn core_kind(surface:&SurfaceDescriptor)->String {surface.kind.clone()}
 
 fn surface_id(surface: &SurfaceDescriptor, defects: &mut Vec<String>) -> u32 {
     surface.surface_id().unwrap_or_else(|| {
@@ -86,7 +86,7 @@ fn surface_id(surface: &SurfaceDescriptor, defects: &mut Vec<String>) -> u32 {
     })
 }
 
-fn pane_leaves<'a>(node: &'a PaneNode, out: &mut Vec<&'a crate::model::Pane>) {
+fn pane_leaves<'a>(node: &'a PaneNode, out: &mut Vec<&'a tasty_model::Pane>) {
     match node {
         PaneNode::Leaf(pane) => out.push(pane),
         PaneNode::Split { first, second, .. } => {

@@ -4,7 +4,7 @@ mod retirement;
 
 use super::*;
 use std::time::Duration;
-use tasty_domain::{StructuralCommand, StructureModels, evolve_streams};
+use tasty_core::{StructuralCommand, StructureModels, evolve_streams};
 
 fn receive(worker: &JournalWorker) -> Completion {
     worker
@@ -254,7 +254,7 @@ fn interrupted_first_initialization_keeps_its_explicit_identity() {
     assert_eq!(binding["phase"], "Ready");
 }
 
-fn publish(worker: &JournalWorker) -> tasty_domain::StreamBatch {
+fn publish(worker: &JournalWorker) -> tasty_core::StreamBatch {
     let Completion::Publish { batch, .. } = receive(worker) else {
         panic!("committed batch")
     };
@@ -267,8 +267,8 @@ fn prepare_workspace(
     ticket: u64,
     name: &str,
     kind: &str,
-) -> tasty_domain::OperationId {
-    use tasty_domain::{CreationDestination, CreationPlan, DataRef, OperationId, SurfaceSpec};
+) -> tasty_core::OperationId {
+    use tasty_core::{CreationDestination, CreationPlan, DataRef, OperationId, SurfaceSpec};
     submit(worker, ticket, Work::Admit(header(name)));
     assert!(matches!(
         finished(worker, ticket).unwrap(),
@@ -359,7 +359,7 @@ fn prepare_workspace(
     let operation = batch.streams["structure:slot-1"]
         .iter()
         .find_map(|recorded| match &recorded.event {
-            tasty_domain::DomainEvent::OperationPrepared { operation } => {
+            tasty_core::DomainEvent::OperationPrepared { operation } => {
                 Some(operation.id.clone())
             }
             _ => None,
@@ -372,11 +372,11 @@ fn prepare_workspace(
         executed.status,
         tasty_event_store::CommandStatus::InProgress
     );
-    let progress: Vec<tasty_domain::StructuralResult> =
+    let progress: Vec<tasty_core::StructuralResult> =
         serde_json::from_slice(executed.response.as_ref().unwrap()).unwrap();
     assert!(matches!(
         &progress[..],
-        [tasty_domain::StructuralResult::Pending { .. }]
+        [tasty_core::StructuralResult::Pending { .. }]
     ));
     operation
 }
@@ -405,7 +405,7 @@ fn seed_category(worker: &JournalWorker) {
 fn claim(
     worker: &JournalWorker,
     ticket: u64,
-    operation: tasty_domain::OperationId,
+    operation: tasty_core::OperationId,
 ) -> ClaimedPreparation {
     submit(
         worker,
@@ -423,7 +423,7 @@ fn claim(
 
 #[test]
 fn mixed_operation_leases_are_rejected_before_either_effect_or_model_changes() {
-    use tasty_domain::{OperationId, PreparationResult};
+    use tasty_core::{OperationId, PreparationResult};
     let home = tempfile::tempdir().unwrap();
     let worker = start(home.path());
     seed_category(&worker);
@@ -496,7 +496,7 @@ fn mixed_operation_leases_are_rejected_before_either_effect_or_model_changes() {
 #[test]
 fn a_durable_claim_precedes_real_pty_preparation_and_the_candidate_stays_private() {
     use crate::runtime::effect_runner::{self, ExecutionBinding};
-    use tasty_domain::PreparationResult;
+    use tasty_core::PreparationResult;
     let home = tempfile::tempdir().unwrap();
     let worker = start(home.path());
     seed_category(&worker);
@@ -564,7 +564,7 @@ fn a_durable_claim_precedes_real_pty_preparation_and_the_candidate_stays_private
 #[test]
 fn committed_installation_preserves_initial_observations_and_defers_command_completion() {
     use crate::runtime::{effect_runner, live_projection};
-    use tasty_domain::{DomainBatch, PreparationResult};
+    use tasty_core::{DomainBatch, PreparationResult};
     let home = tempfile::tempdir().unwrap();
     let worker = start(home.path());
     seed_category(&worker);
@@ -581,7 +581,7 @@ fn committed_installation_preserves_initial_observations_and_defers_command_comp
     // The worker owns the only canonical predecessor; this fixture projects its category.
     // Its unrelated original Terminal stays in the store to catch accidental SID replacement.
     engine.replace_local_workspaces(Vec::new());
-    engine.categories = vec![crate::model::WorkspaceCategory::new(1, "category-1".into())];
+    engine.categories() = vec![crate::model::WorkspaceCategory::new(1, "category-1".into())];
     let mut prepared = effect_runner::prepare(&mut engine, &binding, claimed).unwrap();
     let generation = prepared
         .connection
@@ -732,7 +732,7 @@ fn complete_conversion_and_reap(
     sid: u32,
 ) {
     use crate::runtime::{effect_runner, live_projection};
-    use tasty_domain::{
+    use tasty_core::{
         CreationDestination, CreationPlan, DomainBatch, DomainEvent, OperationId,
         PreparationResult, SurfaceSpec,
     };
@@ -892,7 +892,7 @@ fn complete_conversion_and_reap(
 #[test]
 fn kind_withdrawal_or_replacement_after_prepare_rejects_installation_before_publication() {
     use crate::runtime::effect_runner::{self, ExecutionBinding};
-    use tasty_domain::PreparationResult;
+    use tasty_core::PreparationResult;
     for reload in [false, true] {
         let home = tempfile::tempdir().unwrap();
         let worker = start(home.path());

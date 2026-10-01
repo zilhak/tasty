@@ -186,7 +186,7 @@ impl RequestContext {
             .iter()
             .position(|(gi, _)| *gi == self.active_workspace_index(engine))?;
 
-        if engine.settings.general.workspace_switch_crosses_category {
+        if engine.runtime.settings.general.workspace_switch_crosses_category {
             let raw = pos as isize + delta;
             if raw < 0 || raw >= len as isize {
                 if let Some(target) = self.relative_category_boundary_workspace(engine, delta) {

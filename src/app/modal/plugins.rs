@@ -38,7 +38,7 @@ impl App {
 
         let appearance = self
             .focused_pair()
-            .map(|(_, engine)| engine.settings.appearance.clone())
+            .map(|(_, engine)| engine.runtime.settings.appearance.clone())
             .unwrap_or_else(|| crate::settings::Settings::load().appearance);
 
         let gpu = match self.create_gpu_state(window.clone(), &appearance) {

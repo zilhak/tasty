@@ -145,15 +145,7 @@ impl RequestContext {
             ws.pane_layout()
                 .find_pane(target_id)
                 .map(|pane| {
-                    let mut t: Vec<(u32, Option<String>)> = Vec::new();
-                    for tab in &pane.tabs {
-                        crate::app::services::impl_close::collect_close_targets(
-                            tab,
-                            &engine.as_ref(),
-                            &mut t,
-                        );
-                    }
-                    t.into_iter().map(|(sid, _)| sid).collect()
+                    pane.tabs.iter().flat_map(|tab|tab.all_surface_ids()).collect()
                 })
                 .unwrap_or_default()
         };
@@ -216,7 +208,7 @@ impl RequestContext {
     fn queue_surface_close(&mut self,engine:&EngineMut<'_>,surface_id:u32,capture:bool,is_user:bool)->bool {
         if !engine.core.has_surface(surface_id) {return false;}
         let intent=crate::app::command::DomainIntent::CloseSurface {
-            surface_id,presentation:capture.then(||Box::new(crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&engine.categories,&self.navigation))),
+            surface_id,presentation:capture.then(||Box::new(crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&engine.categories(),&self.navigation))),
         };
         #[cfg(feature="gui")]
         if is_user {self.dispatch_intent(intent.from_user_context_menu());return true;}
@@ -237,10 +229,10 @@ impl RequestContext {
         let new_pane_id = engine.runtime.counters.next_pane();
         let new_tab_id = engine.runtime.counters.next_tab();
         let new_surface_id = engine.runtime.counters.next_surface();
-        let cols = engine.default_cols;
-        let rows = engine.default_rows;
+        let cols = engine.runtime.default_cols;
+        let rows = engine.runtime.default_rows;
 
-        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
+        let sh = crate::core::state::ShellConfig::from_settings(&engine.runtime.settings);
         let terminal = crate::runtime::terminal_spawn::spawn_shell_terminal(
             new_surface_id,
             crate::runtime::terminal_spawn::ShellSpawnOpts {

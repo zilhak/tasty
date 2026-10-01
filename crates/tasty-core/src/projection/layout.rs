@@ -1,6 +1,6 @@
 use super::*;
-use crate::model::{PaneNode, SurfaceLayout};
-use tasty_domain::{Placement, SplitSpec};
+use tasty_model::{PaneNode, SurfaceLayout};
+use crate::{Placement, SplitSpec};
 
 pub(super) fn find_tab_mut(node: &mut PaneNode, id: u32) -> Option<&mut Tab> {
     match node {

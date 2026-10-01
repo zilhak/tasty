@@ -26,12 +26,13 @@ impl EngineId {
 pub(crate) struct EngineSession {
     pub(crate) id: EngineId,
     pub(crate) core_state: CoreState,
+    pub(crate) persistence:EnginePersistence,
     pub(crate) remote:crate::remote::state::RemoteState,
     pub(crate) live:crate::core::live::LiveDomainState,
     pub(crate) journal_binding: Option<crate::runtime::journal_product::EngineBinding>,
-    pub(crate) pending_resource_retirements:std::collections::HashMap<tasty_domain::OperationId,crate::runtime::resource_retirement::ResourceRetirement>,
+    pub(crate) pending_resource_retirements:std::collections::HashMap<tasty_core::OperationId,crate::runtime::resource_retirement::ResourceRetirement>,
     pub(crate) pending_materializations: std::collections::HashMap<
-        tasty_domain::OperationId,
+        tasty_core::OperationId,
         crate::runtime::effect_runner::PreparedMaterialization,
     >,
     pub(crate) hooks: crate::hook_runtime::HookRuntimeState,
@@ -46,10 +47,21 @@ pub(crate) struct EngineSession {
         Option<std::sync::mpsc::Receiver<crate::plugin_bridge::host_cmd::HostCmd>>,
 }
 
+/// Engine binding and capture scheduling values, separate from the committed structure.
+/// SQLite and file execution remain owned by the App storage worker.
+pub(crate) struct EnginePersistence {
+    pub(crate) slot:Option<crate::core::layout_persistence::LayoutSlotId>,
+    pub(crate) dirty:crate::core::layout_persistence::LayoutDirtyTracker,
+}
+impl EnginePersistence {
+    pub(crate) fn new(slot:Option<crate::core::layout_persistence::LayoutSlotId>)->Self {Self {slot,dirty:crate::core::layout_persistence::LayoutDirtyTracker::new()}}
+}
+
 impl EngineSession {
     pub(crate) fn borrow_mut(&mut self) -> EngineMut<'_> {
         EngineMut {
             core: &mut self.core_state,
+            persistence:&mut self.persistence,
             runtime: &mut self.runtime,
             remote:&mut self.remote,
             live:&mut self.live,
@@ -62,6 +74,7 @@ impl EngineSession {
     pub(crate) fn as_ref(&self) -> EngineRef<'_> {
         EngineRef {
             core: &self.core_state,
+            persistence:&self.persistence,
             runtime: &self.runtime,
             remote:&self.remote,
             live:&self.live,

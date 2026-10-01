@@ -2131,8 +2131,8 @@ fn stable_mirror_id(ids:&mut HashMap<u32,u32>,remote:u32,next:impl FnOnce()->any
     let id=next()?;if remote!=0 {ids.insert(remote,id);}Ok(id)
 }
 
-fn mirror_id_needs(tree:&Value,surfaces:usize,new_workspace:bool)->anyhow::Result<Vec<(tasty_domain::IdKind,u32)>> {
-    use tasty_domain::IdKind;
+fn mirror_id_needs(tree:&Value,surfaces:usize,new_workspace:bool)->anyhow::Result<Vec<(tasty_core::IdKind,u32)>> {
+    use tasty_core::IdKind;
     fn count(value:&Value)->usize {match value {Value::Array(values)=>values.iter().fold(1usize,|sum,value|sum.saturating_add(count(value))),Value::Object(values)=>values.values().fold(1usize,|sum,value|sum.saturating_add(count(value))),_=>1}}
     // Upper bound includes malformed-tree fallback leaves and both legacy/recursive wire shapes.
     let nodes=count(tree).checked_mul(2).and_then(|nodes|nodes.checked_add(8)).ok_or_else(||anyhow::anyhow!("mirror structure size overflow"))?;

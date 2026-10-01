@@ -69,7 +69,7 @@ pub(crate) fn disable_capture_action(settings: &mut GeneralSettings, app_name: &
 
 /// 별도 저장 버튼이 없는 메뉴이므로 클릭한 설정을 즉시 저장한다.
 fn persist_settings(engine: &mut crate::core::CoreState) {
-    if let Err(e) = engine.settings.save() {
+    if let Err(e) = engine.runtime.settings.save() {
         tracing::warn!("failed to persist mouse capture blacklist: {e}");
     }
 }
@@ -107,7 +107,7 @@ pub fn draw_menu(
     );
 
     if suppress_resp.clicked() {
-        suppress_banner_action(&mut engine.settings.general, &app_name);
+        suppress_banner_action(&mut engine.runtime.settings.general, &app_name);
         persist_settings(engine);
         state.banners.close_shown_if_id(
             &BannerScope::Surface(surface_id),
@@ -116,7 +116,7 @@ pub fn draw_menu(
         return PopupAction::Close;
     }
     if disable_resp.clicked() {
-        disable_capture_action(&mut engine.settings.general, &app_name);
+        disable_capture_action(&mut engine.runtime.settings.general, &app_name);
         persist_settings(engine);
         return PopupAction::Close;
     }

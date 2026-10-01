@@ -1,7 +1,7 @@
 //! Creation inputs are fixed only after the original key misses. Factories run after effect commit.
 use super::*;
 use crate::runtime::journal_product::{EngineBinding, PreparationInput, ShellRecipe};
-use tasty_domain::{CreationDestination, CreationPlan, IdKind, SurfaceSpec};
+use tasty_core::{CreationDestination, CreationPlan, IdKind, SurfaceSpec};
 
 pub(super) struct Request {
     pub engine: EngineId,
@@ -67,7 +67,7 @@ impl Request {
         let internal=|message:String|JsonRpcResponse::internal_error(serde_json::Value::Null,message);
         let category=0;
         let attach_mapping=None;
-        let shell = crate::core::state::ShellConfig::from_settings(&core.settings);
+        let shell = crate::core::state::ShellConfig::from_settings(&core.runtime.settings);
         let display_index = core.workspaces().len();
         let tab_name = if kind == "terminal" {
             "Shell".into()
@@ -93,11 +93,11 @@ impl Request {
                     executable: shell.shell,
                     arguments: shell.args,
                     environment: shell.envs,
-                    cols: core.default_cols,
-                    rows: core.default_rows,
-                    scrollback_lines: core.settings.general.scrollback_lines,
-                    disk_scrollback: core.settings.performance.scrollback_disk_swap,
-                    startup_command: core.settings.general.startup_command.clone(),
+                    cols: core.runtime.default_cols,
+                    rows: core.runtime.default_rows,
+                    scrollback_lines: core.runtime.settings.general.scrollback_lines,
+                    disk_scrollback: core.runtime.settings.performance.scrollback_disk_swap,
+                    startup_command: core.runtime.settings.general.startup_command.clone(),
                     restore_command: None,
                 }),
             }),
@@ -189,12 +189,12 @@ impl Request {
             D::Pane {target,direction}=> {
                 if core.find_pane_by_id(target).is_none() {return Err(bad(format!("Pane {target} not found")));}
                 result.shape=Shape::Pane {target,direction};result.activate=true;
-                CreationDestination::Pane {target,pane:0,tab:0,split:tasty_domain::SplitSpec {direction,ratio:tasty_domain::Ratio::from_f32(0.5),placement:tasty_domain::Placement::After}}
+                CreationDestination::Pane {target,pane:0,tab:0,split:tasty_core::SplitSpec {direction,ratio:tasty_core::Ratio::from_f32(0.5),placement:tasty_core::Placement::After}}
             },
             D::Surface {target,direction}=> {
                 if core.find_surface_by_id(target).is_none() {return Err(bad(format!("Surface {target} not found")));}
                 result.shape=Shape::Surface {target};result.activate=true;
-                CreationDestination::Split {target,split:tasty_domain::SplitSpec {direction,ratio:tasty_domain::Ratio::from_f32(0.5),placement:tasty_domain::Placement::After}}
+                CreationDestination::Split {target,split:tasty_core::SplitSpec {direction,ratio:tasty_core::Ratio::from_f32(0.5),placement:tasty_core::Placement::After}}
             },
             D::Convert {surface,respawn}=> {
                 if respawn && let Some(shell)=result.input.as_mut().and_then(|input|input.shell.as_mut()) {shell.startup_command.clear();shell.restore_command=None;}
@@ -245,7 +245,7 @@ impl Request {
         ))
     }
 
-    pub fn stored(&self, input: tasty_domain::DataRef) -> Work {
+    pub fn stored(&self, input: tasty_core::DataRef) -> Work {
         let response=match &self.plan.destination {
             CreationDestination::Convert {..} if matches!(self.shape,Shape::ChildRespawn {..})=> {
                 let Shape::ChildRespawn {index}=self.shape else {unreachable!("child respawn response")};
@@ -265,8 +265,8 @@ impl Request {
         Work::Resolve {
             changes: vec![StreamCommand {
                 stream: self.binding.stream.clone(),
-                command: tasty_domain::StructuralCommand::PrepareCreation {
-                    operation: tasty_domain::OperationId(String::new()),
+                command: tasty_core::StructuralCommand::PrepareCreation {
+                    operation: tasty_core::OperationId(String::new()),
                     command_id: String::new(),
                     input,
                     plan: self.plan.clone(),

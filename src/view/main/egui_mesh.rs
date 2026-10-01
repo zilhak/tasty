@@ -99,7 +99,7 @@ impl MainView {
         ThemeWire {
             colors: theme.to_colors(),
             is_light: theme.is_light,
-            ui_zoom: engine.settings.appearance.ui_scale_factor(),
+            ui_zoom: engine.runtime.settings.appearance.ui_scale_factor(),
         }
     }
 

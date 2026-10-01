@@ -789,7 +789,7 @@ fn c3_case3_pane_close_removes_pane_and_reassigns_focus() {
 fn add_deferred_tab(state: &mut RequestContext, engine: &mut crate::core::CoreState) -> u32 {
     let tab_id = engine.runtime.counters.next_tab();
     let surface_id = engine.runtime.counters.next_surface();
-    let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
+    let sh = crate::core::state::ShellConfig::from_settings(&engine.runtime.settings);
     let spawn = crate::model::DeferredSpawn {
         shell: sh.shell_ref().map(|s| s.to_string()),
         shell_args: sh.args_ref().iter().map(|s| s.to_string()).collect(),
@@ -798,8 +798,8 @@ fn add_deferred_tab(state: &mut RequestContext, engine: &mut crate::core::CoreSt
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect(),
-        cols: engine.default_cols,
-        rows: engine.default_rows,
+        cols: engine.runtime.default_cols,
+        rows: engine.runtime.default_rows,
         working_dir: None,
         restore_command: None,
         scrollback_persist_id: None,
@@ -1245,7 +1245,7 @@ fn crosses_category_off_keeps_local_wrap() {
         .workspace_at_mut(3)
         .expect("workspace index is valid")
         .set_category(work); // D
-    assert!(!engine.settings.general.workspace_switch_crosses_category);
+    assert!(!engine.runtime.settings.general.workspace_switch_crosses_category);
 
     state.switch_workspace(&mut engine, 1); // active = B (normal 의 마지막)
     state.next_workspace_in_active_category(&mut engine);
@@ -1271,7 +1271,7 @@ fn crosses_category_on_next_lands_on_next_category_first() {
 
     state.switch_workspace(&mut engine, 3);
     state.switch_workspace(&mut engine, 1); // active = B (normal 의 마지막)
-    engine.settings.general.workspace_switch_crosses_category = true;
+    engine.runtime.settings.general.workspace_switch_crosses_category = true;
 
     state.next_workspace_in_active_category(&mut engine);
     assert_eq!(state.active_workspace_index(&engine), 2); // work 의 first = C (D 의 last-active 아님)
@@ -1293,7 +1293,7 @@ fn crosses_category_on_prev_lands_on_prev_category_last() {
         .workspace_at_mut(3)
         .expect("workspace index is valid")
         .set_category(work); // D (work 의 last)
-    engine.settings.general.workspace_switch_crosses_category = true;
+    engine.runtime.settings.general.workspace_switch_crosses_category = true;
 
     state.switch_workspace(&mut engine, 2); // active = C (work 의 첫)
     state.prev_workspace_in_active_category(&mut engine);
@@ -1316,7 +1316,7 @@ fn crosses_category_on_wraps_across_full_category_list() {
         .workspace_at_mut(3)
         .expect("workspace index is valid")
         .set_category(work); // D (work 의 last, 마지막 카테고리)
-    engine.settings.general.workspace_switch_crosses_category = true;
+    engine.runtime.settings.general.workspace_switch_crosses_category = true;
 
     state.switch_workspace(&mut engine, 3); // active = D (마지막 카테고리의 마지막)
     state.next_workspace_in_active_category(&mut engine);
@@ -1329,8 +1329,8 @@ fn crosses_category_on_single_category_falls_back_to_local_wrap() {
     let mut engine = engine_session.borrow_mut();
     add_test_workspace(&mut state, &mut engine); // B=1
     add_test_workspace(&mut state, &mut engine); // C=2
-    assert!(!engine.settings.general.workspace_categories_enabled);
-    engine.settings.general.workspace_switch_crosses_category = true;
+    assert!(!engine.runtime.settings.general.workspace_categories_enabled);
+    engine.runtime.settings.general.workspace_switch_crosses_category = true;
 
     state.switch_workspace(&mut engine, 2); // active = C (normal 의 마지막, 유일한 카테고리)
     state.next_workspace_in_active_category(&mut engine);
@@ -1538,7 +1538,7 @@ fn resolve_inherit_cwd_from_markdown_surface() {
 fn resolve_inherit_cwd_from_surface_respects_toggle_off() {
     let (mut state, mut engine_session) = test_state();
     let mut engine = engine_session.borrow_mut();
-    engine.settings.general.inherit_cwd = false;
+    engine.runtime.settings.general.inherit_cwd = false;
 
     #[cfg(windows)]
     let file = "C:\\workspace\\proj\\readme.md";
@@ -1659,12 +1659,12 @@ fn popup_context_splits_cwd_keys_by_gate_and_provenance() {
     assert!(local.get("remote_cwd").is_none());
     assert!(local.get("mirror").is_none());
 
-    engine.settings.general.inherit_cwd = false;
+    engine.runtime.settings.general.inherit_cwd = false;
     let gated = state.popup_surface_context(&engine.as_ref(), Some(sid));
     assert!(gated["cwd"].is_null());
     assert_eq!(gated["observed_cwd"], serde_json::json!(root_s));
 
-    engine.settings.general.inherit_cwd = true;
+    engine.runtime.settings.general.inherit_cwd = true;
     let active = state.active_workspace_index(&engine);
     engine.make_mirror_fixture(active);
     let mirror = state.popup_surface_context(&engine.as_ref(), Some(sid));

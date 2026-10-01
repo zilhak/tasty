@@ -406,7 +406,7 @@ pub fn draw_command_palette_popup(
                 .keybindings
                 .get_bindings(id)
                 .and_then(|b| b.first())
-                .map(|s| KeybindingSettings::format_display_parts(s, &engine.settings.general))
+                .map(|s| KeybindingSettings::format_display_parts(s, &engine.runtime.settings.general))
                 .unwrap_or_default()
         });
 

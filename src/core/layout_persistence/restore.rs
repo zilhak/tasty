@@ -108,7 +108,7 @@ impl SavedLayout {
         let active = self.active_workspace.min(workspaces.len() - 1);
         let selected_workspace_id = workspaces[active].id;
         engine.replace_local_workspaces(workspaces);
-        engine.categories = categories;
+        engine.categories() = categories;
         engine.ensure_normal_category();
         presentation.active_workspace = Some(selected_workspace_id);
         Some(presentation)
@@ -281,7 +281,7 @@ impl SavedSurface {
                 restore_command,
                 scrollback_ref,
             } if !is_active => {
-                let sh = ShellConfig::from_settings(&engine.settings);
+                let sh = ShellConfig::from_settings(&engine.runtime.settings);
                 // 이후 실제 터미널을 capture할 때 사용할 복원 명령도 메타데이터에 기록한다.
                 // 아직 deferred인 동안의 capture는 DeferredSpawn 값을 읽는다.
                 if let Some(cmd) = restore_command.as_deref() {
@@ -313,8 +313,8 @@ impl SavedSurface {
                         .iter()
                         .map(|(k, v)| (k.to_string(), v.to_string()))
                         .collect(),
-                    cols: engine.default_cols,
-                    rows: engine.default_rows,
+                    cols: engine.runtime.default_cols,
+                    rows: engine.runtime.default_rows,
                     working_dir: cwd.as_ref().map(PathBuf::from),
                     restore_command,
                     scrollback_persist_id: scrollback_ref,
@@ -355,7 +355,7 @@ fn restore_terminal_immediate(
     restore_command: Option<String>,
     scrollback_ref: Option<String>,
 ) -> Option<Box<dyn Surface>> {
-    let sh = ShellConfig::from_settings(&engine.settings);
+    let sh = ShellConfig::from_settings(&engine.runtime.settings);
     let waker = engine.make_waker(surface_id);
     let working_dir = cwd.as_ref().map(PathBuf::from);
     // 복원 명령을 생성 시 초기 입력으로 전달한다. 자식의 첫 read나 명령 실행 성공을 보장하지는 않는다.
@@ -363,8 +363,8 @@ fn restore_terminal_immediate(
     let initial_input = initial.as_deref();
     let (mut terminal, pty) = match tasty_terminal::spawn_terminal(
         tasty_terminal::TerminalConfig {
-            cols: engine.default_cols,
-            rows: engine.default_rows,
+            cols: engine.runtime.default_cols,
+            rows: engine.runtime.default_rows,
             shell: sh.shell_ref(),
             args: &sh.args_ref(),
             extra_env: &sh.envs_ref(),

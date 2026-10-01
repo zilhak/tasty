@@ -466,7 +466,7 @@ impl App {
         else {
             return;
         };
-        if engine.settings.notification.enabled {
+        if engine.runtime.settings.notification.enabled {
             let ws_id = state.active_workspace(engine.core).id;
             state.dispatch_intent(
                 crate::app::command::DomainIntent::PushNotification {
@@ -502,7 +502,7 @@ impl App {
             return;
         };
         // 사용자가 등록한 Bell 훅은 알림·벨 표시 설정을 꺼도 실행한다.
-        if engine.settings.notification.enabled && engine.settings.general.bell_notification {
+        if engine.runtime.settings.notification.enabled && engine.runtime.settings.general.bell_notification {
             let ws_id = state.active_workspace(engine.core).id;
             state.dispatch_intent(
                 crate::app::command::DomainIntent::PushNotification {
@@ -1128,7 +1128,7 @@ impl App {
             .engines()
             .windowed_and_parked()
             .next()
-            .is_some_and(|engine| engine.settings.general.workspace_categories_enabled)
+            .is_some_and(|engine| engine.runtime.settings.general.workspace_categories_enabled)
             && !new_settings.general.workspace_categories_enabled;
         if turning_off {
             let ids: Vec<_> = self
@@ -1145,7 +1145,7 @@ impl App {
                 };
                 changes.push(crate::runtime::journal_product::StreamCommand {
                     stream: binding.stream.clone(),
-                    command: tasty_domain::StructuralCommand::ResetCategories,
+                    command: tasty_core::StructuralCommand::ResetCategories,
                 });
             }
             self.journal
@@ -1160,7 +1160,7 @@ impl App {
             .engines()
             .windowed_and_parked()
             .next()
-            .map(|e| &e.core.settings);
+            .map(|e| &e.runtime.settings);
         let prev_appearance = prev_settings.map(|s| s.appearance.clone());
         let prev_theme = prev_appearance.as_ref().map(|a| a.theme.clone());
         let prev_ui_scale = prev_appearance.as_ref().map(|a| a.ui_scale.clone());
@@ -1168,11 +1168,11 @@ impl App {
         let prev_language = prev_settings.map(|s| s.general.language.clone());
 
         for (_, main, mut engine) in self.engines_mut().window_pairs() {
-            engine.settings = new_settings.clone();
+            engine.runtime.settings = new_settings.clone();
             main.mark_dirty();
         }
         for mut engine in self.engines_mut().parked() {
-            engine.settings = new_settings.clone();
+            engine.runtime.settings = new_settings.clone();
         }
         if let Err(e) = new_settings.save() {
             // 메모리에 적용됐어도 다음 실행에 보존할 수 없는 실패이므로 오류로 남긴다.
@@ -1251,7 +1251,7 @@ impl App {
         if let Some(nid) = created_id {
             engine.raise_attention(surface_id, AttentionKind::Completion);
             // OS 벨과의 중복을 피하려는 TerminalBellRing 표지는 사운드에서 제외한다.
-            if engine.settings.notification.sound && source != "TerminalBellRing" {
+            if engine.runtime.settings.notification.sound && source != "TerminalBellRing" {
                 self.services.sound_player().play();
             }
             engine.enqueue_host_event(crate::state::PendingHostEvent::NotificationCreated {

@@ -319,7 +319,7 @@ impl App {
         let Some(engine) = self.engines.pending() else {
             return Vec::new();
         };
-        engine.local_workspaces.iter().flat_map(|workspace|workspace.all_surface_ids()).filter_map(|id|
+        engine.local_workspaces().iter().flat_map(|workspace|workspace.all_surface_ids()).filter_map(|id|
             engine.find_surface_by_id(id).and_then(|surface|surface.as_any().downcast_ref::<crate::runtime::surface_restorer::JournalPlaceholder>())
                 .filter(|surface|surface.kind!="terminal" && engine.runtime.surface_registry.get_live(&surface.kind).is_none())
                 .map(|surface|surface.kind.clone())
@@ -385,7 +385,7 @@ impl App {
         if !self.journal.is_halted() {
             let retiring = self.engines.of_window(wid).and_then(|id| {
                 let session = self.engines.session_mut(id)?;
-                (!session.core_state.settings.general.restore_layout)
+                (!session.runtime.settings.general.restore_layout)
                     .then(|| (id, session.journal_binding.clone()))
                     .and_then(|(id, binding)| binding.map(|binding| (id, binding)))
             });
@@ -399,7 +399,7 @@ impl App {
         if !self.journal.is_halted()
             && let Some(id)=self.engines.of_window(wid)
             && let Some(engine)=self.engines.get(id)
-            && engine.settings.general.restore_layout {
+            && engine.runtime.settings.general.restore_layout {
             self.engines.preserve_closed_view(wid,main.state.navigation.clone());
             drop(main);
             self.poll_preserved_window_closes();
@@ -412,7 +412,7 @@ impl App {
         // A halted batch may have changed only part of the live tree. Closing remains available,
         // but neither capture nor slot deletion may turn that partial projection into restore input.
         if !self.journal.is_halted() {
-            if session.core_state.settings.general.restore_layout
+            if session.runtime.settings.general.restore_layout
                 && let Some(binding) = session.journal_binding.as_ref()
             {
                 let active = session
@@ -565,10 +565,10 @@ impl App {
                 session,
                 crate::runtime::journal_product::EngineSelection::Slot {
                     slot: session
-                        .core_state
-                        .layout_slot
+                        .persistence
+                        .slot
                         .ok_or("pending GUI engine has no layout slot")?,
-                    resume: session.core_state.settings.general.restore_layout,
+                    resume: session.runtime.settings.general.restore_layout,
                 },
             )?;
             let id = window.id();

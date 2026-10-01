@@ -15,20 +15,20 @@ impl JournalApplication {
             .ok_or("divider engine has no journal binding")?;
         let command = match commit.target {
             LayoutTarget::Workspace(workspace_id) => {
-                tasty_domain::StructuralCommand::SetPaneRatio {
+                tasty_core::StructuralCommand::SetPaneRatio {
                     workspace_id,
                     path: commit.path,
                     expected_leaves: commit.leaves,
                     expected_revision: commit.revision,
-                    ratio: tasty_domain::Ratio::from_f32(commit.ratio),
+                    ratio: tasty_core::Ratio::from_f32(commit.ratio),
                 }
             }
-            LayoutTarget::Tab(tab_id) => tasty_domain::StructuralCommand::SetSurfaceRatio {
+            LayoutTarget::Tab(tab_id) => tasty_core::StructuralCommand::SetSurfaceRatio {
                 tab_id,
                 path: commit.path,
                 expected_leaves: commit.leaves,
                 expected_revision: commit.revision,
-                ratio: tasty_domain::Ratio::from_f32(commit.ratio),
+                ratio: tasty_core::Ratio::from_f32(commit.ratio),
             },
         };
         let changes = vec![StreamCommand {

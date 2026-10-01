@@ -52,7 +52,7 @@ impl Spec {
         let selected=|pane:u32|engine.find_pane_by_id(pane).and_then(|pane| {
             view.selected_tabs.get(&pane.id).and_then(|id|pane.tabs.iter().find(|tab|tab.id==*id)).or_else(||pane.tabs.first())
         }).and_then(|tab|view.selected_surfaces.get(&tab.id).copied().filter(|id|tab.contains_surface(*id)).or_else(||tab.first_surface_id()));
-        let inherit=|surface:Option<u32>|if engine.settings.general.inherit_cwd {surface.and_then(|surface|engine.local_surface_cwd(surface))}else {None};
+        let inherit=|surface:Option<u32>|if engine.runtime.settings.general.inherit_cwd {surface.and_then(|surface|engine.local_surface_cwd(surface))}else {None};
         let (destination,cwd)=match request.method.as_str() {
             "pty.attach_surface"=> {kind="terminal".into();(Destination::Adopt {pane:params::require_u32(&input,"pane_id",&id)?,pty:params::require_u32(&input,"id",&id)?},None)},
             "tab.create"=> {

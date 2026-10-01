@@ -14,14 +14,14 @@ pub(crate) mod origin;
 pub(crate) mod param_bag;
 #[cfg(feature = "gui")]
 pub(crate) mod port_favorites;
-pub(crate) mod restore_rebuild;
 pub(crate) mod state;
 
 pub(crate) mod request_target;
 
 #[cfg(feature = "gui")]
 pub(crate) use state::{AttachMeshContextForward, GuiAttachUserReq, PendingImageUpload};
-pub(crate) use state::{AttentionKind, CoreState};
+pub(crate) use state::AttentionKind;
+pub(crate) use tasty_core::CoreState;
 
 #[cfg(feature = "gui")]
 static NEXT_LIST_DIR_REQUEST_ID: std::sync::atomic::AtomicU64 =

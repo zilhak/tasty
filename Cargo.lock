@@ -5691,7 +5691,7 @@ dependencies = [
  "tasty-dag-layout",
  "tasty-design-tokens",
  "tasty-doc-guards",
- "tasty-domain",
+ "tasty-core",
  "tasty-egui-theme",
  "tasty-event-store",
  "tasty-file-format",
@@ -5839,7 +5839,7 @@ name = "tasty-doc-guards"
 version = "0.1.0"
 
 [[package]]
-name = "tasty-domain"
+name = "tasty-core"
 version = "0.1.0"
 dependencies = [
  "serde",

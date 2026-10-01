@@ -20,7 +20,7 @@ impl MainView {
         key: &Key,
         mods: ModifiersState,
     ) -> bool {
-        let kb = &engine.settings.keybindings;
+        let kb = &engine.runtime.settings.keybindings;
         let action = if matches_any_binding(&kb.zoom_in, key, mods) {
             ZoomAction::In
         } else if matches_any_binding(&kb.zoom_out, key, mods) {
@@ -52,7 +52,7 @@ impl MainView {
             && let Some(plugin_id) = crate::webview::webview_settings_plugin_id(k)
         {
             use crate::settings::PluginSettingValue;
-            let current = match engine.settings.plugin_setting(plugin_id, "zoom") {
+            let current = match engine.runtime.settings.plugin_setting(plugin_id, "zoom") {
                 Some(PluginSettingValue::Number(n)) => *n,
                 _ => 100.0,
             };
@@ -67,7 +67,7 @@ impl MainView {
             return true;
         }
 
-        let appearance = &mut engine.settings.appearance;
+        let appearance = &mut engine.runtime.settings.appearance;
         let (override_ref, current_effective_size) = match &focus {
             FocusedSurfaceType::Terminal => {
                 let size = appearance

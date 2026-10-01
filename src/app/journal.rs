@@ -3,7 +3,7 @@ use crate::runtime::engine_session::{EngineId, EngineSession};
 use crate::runtime::journal_product::{
     Completion, EngineSelection, JournalWorker, Request, ResultValue, Work,
 };
-use crate::runtime::live_projection;
+use tasty_core::projection;
 pub(crate) mod commands;
 mod creation;
 mod resource_cleanup;
@@ -31,7 +31,7 @@ pub(crate) struct JournalApplication {
     captures:std::collections::BTreeMap<u64,capture::PendingCapture>,
     capture_requests:HashMap<EngineId,bool>,
     execution_id_requests:HashMap<u64,EngineId>,
-    replacements:Vec<(EngineId,tasty_domain::Replacement)>,
+    replacements:Vec<(EngineId,tasty_core::Replacement)>,
     changed_engines: std::collections::HashSet<EngineId>,
     completion_views:HashMap<EngineId,crate::runtime::journal_product::CompletionView>,
     wake: Arc<dyn Fn() + Send + Sync>,
@@ -82,7 +82,7 @@ impl JournalApplication {
                 }
             }
         }
-        self.completion_views.insert(id,crate::runtime::journal_product::CompletionView {focused_panes,mirror_count:core.mirror_workspaces.len(),selected_tabs,selected_surfaces});
+        self.completion_views.insert(id,crate::runtime::journal_product::CompletionView {focused_panes,mirror_count:core.mirror_workspaces().len(),selected_tabs,selected_surfaces});
     }
 
     pub(crate) fn new(wake: Arc<dyn Fn() + Send + Sync>) -> anyhow::Result<Self> {
@@ -183,7 +183,7 @@ impl JournalApplication {
                 .as_ref()
                 .is_some_and(|binding| self.failed_view_writes.contains_key(&binding.stream))
             {
-                session.core_state.layout_dirty.mark_dirty();
+                session.persistence.dirty.mark_dirty();
             }
         }
         if let Err(reason) = &result {
@@ -214,7 +214,7 @@ impl JournalApplication {
                         .iter_mut()
                         .find(|session| session.id == *engine)
                         .ok_or("materializing engine disappeared")?;
-                    let mirror_count=session.core_state.mirror_workspaces.len();
+                    let mirror_count=session.core_state.mirror_workspaces().len();
                     let mut view=self.completion_views.get(engine).cloned().unwrap_or_default();
                     view.mirror_count=mirror_count;
                     creation.poll_cleanup(&self.worker,view,session)?;
@@ -242,7 +242,7 @@ impl JournalApplication {
                     ));
                     let occupied: Vec<_> = sessions
                         .iter()
-                        .map(|session| (session.id, session.core_state.layout_slot))
+                        .map(|session| (session.id, session.persistence.slot))
                         .collect();
                     for session in sessions.iter_mut() {
                         let Some(opening) = self.opening.get_mut(&session.id) else {
@@ -263,7 +263,7 @@ impl JournalApplication {
                                 })
                             {
                                 *slot = *available;
-                                session.core_state.layout_slot = Some(*available);
+                                session.persistence.slot = Some(*available);
                             }
                         }
                         let model = match opening.selection {
@@ -271,9 +271,9 @@ impl JournalApplication {
                                 .streams
                                 .remove(&format!("structure:slot-{slot}"))
                                 .unwrap_or_default(),
-                            _ => tasty_domain::JournalModel::default(),
+                            _ => tasty_core::JournalModel::default(),
                         };
-                        live_projection::bootstrap::initialize(&mut session.core_state, &model)?;
+                        projection::bootstrap::initialize(&mut session.core_state, &model)?;
                         crate::runtime::surface_restorer::initialize_instances(session,&model);
                         opening.projected = matches!(
                             opening.selection,
@@ -320,19 +320,19 @@ impl JournalApplication {
                         };
                         let predecessor =
                             before.get(&stream).ok_or("bootstrap predecessor missing")?;
-                        let domain = tasty_domain::DomainBatch {
+                        let domain = tasty_core::DomainBatch {
                             batch_id: batch.batch_id,
                             events: events.clone(),
                         };
                         if let Some(opening) = opening
                             && (!opening.projected
-                                || (session.core_state.local_workspaces.is_empty()
+                                || (session.core_state.local_workspaces().is_empty()
                                     && predecessor.workspaces.is_empty()))
                         {
                             let mut after = predecessor.clone();
-                            tasty_domain::evolve(&mut after, &domain)
+                            tasty_core::evolve(&mut after, &domain)
                                 .map_err(|error| error.to_string())?;
-                            live_projection::bootstrap::initialize(
+                            projection::bootstrap::initialize(
                                 &mut session.core_state,
                                 &after,
                             )?;
@@ -346,21 +346,21 @@ impl JournalApplication {
                                 if let Some(leaf)=creation.leaf_for_publication(session,events)? {prepared.push(leaf);}
                             }
                             for event in &domain.events {
-                                if let tasty_domain::DomainEvent::OperationPrepared {operation}=&event.event
-                                    && matches!(operation.creation.as_ref().map(|plan|&plan.destination),Some(tasty_domain::CreationDestination::Assembly {..})) {
+                                if let tasty_core::DomainEvent::OperationPrepared {operation}=&event.event
+                                    && matches!(operation.creation.as_ref().map(|plan|&plan.destination),Some(tasty_core::CreationDestination::Assembly {..})) {
                                     let ticket=self.next_ticket;self.next_ticket=self.next_ticket.checked_add(1).ok_or("journal ticket exhausted")?;
                                     let binding=session.journal_binding.clone().ok_or("assembly engine binding missing")?;
                                     let creation=creation::Creation::committed(ticket,binding,&self.worker,operation.id.clone())?;
                                     self.creations.insert((session.id,ticket),creation);
                                 }
-                                if let tasty_domain::DomainEvent::OperationPrepared {operation}=&event.event
+                                if let tasty_core::DomainEvent::OperationPrepared {operation}=&event.event
                                     && operation.retirement.is_some() {
                                     let retirement=crate::runtime::resource_retirement::ResourceRetirement::capture(session,operation)?;
                                     session.pending_resource_retirements.insert(operation.id.clone(),retirement);
                                     self.queue_resource_retirement(session.id,stream.clone(),operation.id.clone())?;
                                 }
                             }
-                            live_projection::apply(
+                            projection::apply(
                                 &mut session.core_state,
                                 predecessor,
                                 &domain,
@@ -374,7 +374,7 @@ impl JournalApplication {
                                 drop(session.runtime.surfaces.insert(id,leaf.surface));
                                 if deferred {
                                     let mut after=predecessor.clone();
-                                    tasty_domain::evolve(&mut after,&domain).map_err(|error|error.to_string())?;
+                                    tasty_core::evolve(&mut after,&domain).map_err(|error|error.to_string())?;
                                     if let Some(placeholder)=session.runtime.surfaces.get_mut(&id).and_then(|surface|surface.as_any_mut().downcast_mut::<crate::runtime::surface_restorer::JournalPlaceholder>()) {
                                         let value=after.surfaces.get(&id).ok_or("deferred assembly leaf missing")?;
                                         placeholder.data=value.data;placeholder.creation_seed=value.creation_seed;placeholder.activation=value.activation;
@@ -399,9 +399,9 @@ impl JournalApplication {
                         session.borrow_mut().observe_committed_structure(predecessor,events);
                         for recorded in events {
                             match &recorded.event {
-                                tasty_domain::DomainEvent::StructureReplaced {replacement,..}=>self.replacements.push((session.id,*replacement)),
-                                tasty_domain::DomainEvent::WorkspaceAttachMappingSet {id,..}=>{session.remote.attach_mapping_tokens.insert(*id,Arc::new(()));},
-                                tasty_domain::DomainEvent::WorkspaceClosed {id}=>{session.remote.attach_mapping_tokens.remove(id);},
+                                tasty_core::DomainEvent::StructureReplaced {replacement,..}=>self.replacements.push((session.id,*replacement)),
+                                tasty_core::DomainEvent::WorkspaceAttachMappingSet {id,..}=>{session.remote.attach_mapping_tokens.insert(*id,Arc::new(()));},
+                                tasty_core::DomainEvent::WorkspaceClosed {id}=>{session.remote.attach_mapping_tokens.remove(id);},
                                 _=>{},
                             }
                         }
@@ -412,10 +412,10 @@ impl JournalApplication {
                             let mut retired = predecessor.engine_retired;
                             for event in events {
                                 match event.event {
-                                    tasty_domain::DomainEvent::EngineRetired { .. } => {
+                                    tasty_core::DomainEvent::EngineRetired { .. } => {
                                         retired = true
                                     }
-                                    tasty_domain::DomainEvent::EngineIncarnationStarted {
+                                    tasty_core::DomainEvent::EngineIncarnationStarted {
                                         ..
                                     } => retired = false,
                                     _ => {}
@@ -423,8 +423,8 @@ impl JournalApplication {
                             }
                             self.known_slots.insert(slot, retired);
                         }
-                        if events.iter().any(|recorded|!matches!(recorded.event,tasty_domain::DomainEvent::SurfaceDataRecorded {..})) {
-                            session.core_state.mark_layout_dirty();
+                        if events.iter().any(|recorded|!matches!(recorded.event,tasty_core::DomainEvent::SurfaceDataRecorded {..})) {
+                            session.persistence.dirty.mark_dirty();
                         }
                         self.changed_engines.insert(session.id);
                         if let Some(binding) = session.journal_binding.as_mut() {
@@ -538,7 +538,7 @@ impl JournalApplication {
                         return Err("bootstrap did not return an engine binding".into());
                     };
                     if !opening.projected {
-                        live_projection::bootstrap::initialize(
+                        projection::bootstrap::initialize(
                             &mut session.core_state,
                             &bound.model,
                         )?;
@@ -546,17 +546,16 @@ impl JournalApplication {
                     }
                     self.restored_views.insert(
                         session.id,
-                        live_projection::bootstrap::presentation(
+                        crate::runtime::restored_presentation::presentation(
                             &session.core_state,
                             bound.imported_view,
                         ),
                     );
-                    session.core_state.pending_layout_restore = None;
-                    for workspace in &session.core_state.local_workspaces {
+                    for workspace in &session.core_state.local_workspaces() {
                         if workspace.attach_mapping.is_some() {session.remote.attach_mapping_tokens.entry(workspace.id).or_insert_with(||Arc::new(()));}
                     }
                     session.journal_binding = Some(bound.binding);
-                    if session.core_state.local_workspaces.is_empty() {
+                    if session.core_state.local_workspaces().is_empty() {
                         let ticket = self.next_ticket;
                         self.next_ticket = ticket
                             .checked_add(1)

@@ -191,7 +191,7 @@ impl crate::app::App {
             surface,
             resource,
             remote,
-            revision: owner.core.committed_structure_revision,
+            revision: owner.core.committed_structure_revision(),
             host_focus:host_keyboard_focus(view),
             activation: surface
                 .and_then(|id| owner.core.find_surface_by_id(id).and_then(|surface|surface.activation_generation)),
@@ -258,7 +258,7 @@ impl crate::app::App {
             return false;
         }
         if geometry {
-            return owner.core.committed_structure_revision == target.revision;
+            return owner.core.committed_structure_revision() == target.revision;
         }
         true
     }

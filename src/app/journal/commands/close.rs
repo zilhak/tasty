@@ -5,14 +5,14 @@ pub(super) enum Cause {#[default] Ordinary,ProcessExit(tasty_terminal::ResourceG
 pub(super) struct Request {
     pub engine:EngineId,
     pub binding:crate::runtime::journal_product::EngineBinding,
-    pub target:tasty_domain::CloseTarget,
+    pub target:tasty_core::CloseTarget,
     pub response:JsonRpcResponse,
     pub not_closed:JsonRpcResponse,
     pub is_user_close:bool,
-    pub input_ref:Option<tasty_domain::DataRef>,
+    pub input_ref:Option<tasty_core::DataRef>,
     pub replacement:bool,
-    pub undo:Option<tasty_domain::UndoCapture>,
-    pub expected:Vec<tasty_domain::RetiredSurface>,
+    pub undo:Option<tasty_core::UndoCapture>,
+    pub expected:Vec<tasty_core::RetiredSurface>,
     pub capture_undo:bool,
 }
 impl Request {
@@ -29,16 +29,16 @@ impl Request {
             return Ok(resolved);
         }
         if request.method=="intent.close" {
-            let target:tasty_domain::CloseTarget=serde_json::from_value(request.params["target"].clone()).map_err(|error|JsonRpcResponse::invalid_params(serde_json::Value::Null,error.to_string()))?;
+            let target:tasty_core::CloseTarget=serde_json::from_value(request.params["target"].clone()).map_err(|error|JsonRpcResponse::invalid_params(serde_json::Value::Null,error.to_string()))?;
             let mut normalized=request.clone();
             let (method,field,value)=match target {
-                tasty_domain::CloseTarget::Workspace(id)=>("workspace.close","id",id),
-                tasty_domain::CloseTarget::Pane(id)=>("pane.close","pane_id",id),
-                tasty_domain::CloseTarget::Tab(id)=>("tab.close","tab_id",id),
-                tasty_domain::CloseTarget::Surface(id)=>("surface.close_self","surface_id",id),
+                tasty_core::CloseTarget::Workspace(id)=>("workspace.close","id",id),
+                tasty_core::CloseTarget::Pane(id)=>("pane.close","pane_id",id),
+                tasty_core::CloseTarget::Tab(id)=>("tab.close","tab_id",id),
+                tasty_core::CloseTarget::Surface(id)=>("surface.close_self","surface_id",id),
             };
             normalized.method=method.into();normalized.params=serde_json::json!({});normalized.params[field]=serde_json::json!(value);
-            let mut resolved=if matches!(target,tasty_domain::CloseTarget::Workspace(_)) {Self::workspace(&normalized,session,true)?} else {Self::resolve(&normalized,session,cause)?};
+            let mut resolved=if matches!(target,tasty_core::CloseTarget::Workspace(_)) {Self::workspace(&normalized,session,true)?} else {Self::resolve(&normalized,session,cause)?};
             if let Some(expected)=request.params.get("expected_activation") {
                 let expected:Option<u64>=serde_json::from_value(expected.clone()).map_err(|error|JsonRpcResponse::invalid_params(serde_json::Value::Null,error.to_string()))?;
                 if resolved.expected.first().is_none_or(|target|target.activation_generation!=expected) {return Err(JsonRpcResponse::invalid_params(serde_json::Value::Null,"close belongs to a retired surface activation"));}
@@ -48,7 +48,7 @@ impl Request {
             return Ok(resolved);
         }
         if request.method=="workspace.close" {return Self::workspace(request,session,false);}
-        use tasty_domain::CloseTarget as T;
+        use tasty_core::CloseTarget as T;
         use crate::ipc::handler::params;
         let id=serde_json::Value::Null;
         let bad=|reason:String|JsonRpcResponse::invalid_params(id.clone(),reason);
@@ -125,29 +125,29 @@ impl Request {
             return Err(bad(format!("Workspace holds surface {surface}, which is occupied by a remote attach session (hard-occupied) — someone is working in that terminal right now. Release it from the attaching instance first.")));
         }
         if !allow_last && engine.workspaces().len()==1 {return Err(bad(crate::ipc::handler::workspace::last_workspace_refusal().into()));}
-        Ok(Self {engine:session.id,binding:session.journal_binding.clone().ok_or_else(||JsonRpcResponse::internal_error(id.clone(),"engine has no journal binding"))?,target:tasty_domain::CloseTarget::Workspace(workspace.id),response:JsonRpcResponse::success(id.clone(),serde_json::json!({"closed":true,"id":workspace.id})),not_closed:JsonRpcResponse::success(id,serde_json::json!({"closed":false,"id":workspace.id})),is_user_close:false,input_ref:None,replacement:false,undo:None,expected:workspace.all_surface_ids().into_iter().filter_map(|id|core_expected(session,id)).collect(),capture_undo:false})
+        Ok(Self {engine:session.id,binding:session.journal_binding.clone().ok_or_else(||JsonRpcResponse::internal_error(id.clone(),"engine has no journal binding"))?,target:tasty_core::CloseTarget::Workspace(workspace.id),response:JsonRpcResponse::success(id.clone(),serde_json::json!({"closed":true,"id":workspace.id})),not_closed:JsonRpcResponse::success(id,serde_json::json!({"closed":false,"id":workspace.id})),is_user_close:false,input_ref:None,replacement:false,undo:None,expected:workspace.all_surface_ids().into_iter().filter_map(|id|core_expected(session,id)).collect(),capture_undo:false})
     }
     pub fn input(&self,session:&EngineSession,view:Option<&crate::runtime::journal_product::CompletionView>)->Result<Work,String> {
         if !self.capture_undo {return Ok(Work::PutPayload(serde_json::to_vec(&self.target).map_err(|error|error.to_string())?));}
         let core=&session.core_state;
         let selected:std::collections::HashSet<_>=match self.target {
-            tasty_domain::CloseTarget::Workspace(id)=>core.find_workspace_index_for_id(id).and_then(|index|core.workspace_at(index)).map(|workspace|workspace.all_surface_ids()).unwrap_or_default(),
-            tasty_domain::CloseTarget::Pane(id)=>core.find_pane_by_id(id).map(|pane|pane.tabs.iter().flat_map(|tab|tab.all_surface_ids()).collect()).unwrap_or_default(),
-            tasty_domain::CloseTarget::Tab(id)=>core.find_pane_for_tab(id).and_then(|pane|core.find_pane_by_id(pane)).and_then(|pane|pane.tabs.iter().find(|tab|tab.id==id)).map(|tab|tab.all_surface_ids()).unwrap_or_default(),
-            tasty_domain::CloseTarget::Surface(id)=>crate::app::services::locate_surface_in_pane(core,id).and_then(|location|core.workspace_at(location.ws_idx)).map(|workspace| {
+            tasty_core::CloseTarget::Workspace(id)=>core.find_workspace_index_for_id(id).and_then(|index|core.workspace_at(index)).map(|workspace|workspace.all_surface_ids()).unwrap_or_default(),
+            tasty_core::CloseTarget::Pane(id)=>core.find_pane_by_id(id).map(|pane|pane.tabs.iter().flat_map(|tab|tab.all_surface_ids()).collect()).unwrap_or_default(),
+            tasty_core::CloseTarget::Tab(id)=>core.find_pane_for_tab(id).and_then(|pane|core.find_pane_by_id(pane)).and_then(|pane|pane.tabs.iter().find(|tab|tab.id==id)).map(|tab|tab.all_surface_ids()).unwrap_or_default(),
+            tasty_core::CloseTarget::Surface(id)=>crate::app::services::locate_surface_in_pane(core,id).and_then(|location|core.workspace_at(location.ws_idx)).map(|workspace| {
                 // Closing its last leaf cascades through the containing structures, but all removed
                 // leaves still consist of this one ID.
                 workspace.all_surface_ids().into_iter().filter(|surface|*surface==id).collect()
             }).unwrap_or_default(),
         }.into_iter().collect();
-        let display_name=if let tasty_domain::CloseTarget::Surface(id)=self.target {
+        let display_name=if let tasty_core::CloseTarget::Surface(id)=self.target {
             core.find_tab_for_surface(id).and_then(|tab|core.find_pane_for_tab(tab).and_then(|pane|core.find_pane_by_id(pane)).and_then(|pane|pane.tabs.iter().find(|candidate|candidate.id==tab))).map(|tab|tab.display_name(view.and_then(|view|view.selected_surfaces.get(&tab.id).copied()).or_else(||tab.first_surface_id())))
         } else {None};
         Ok(Work::CaptureClosed {view:view.cloned().unwrap_or_default(),binding:self.binding.clone(),target:self.target,display_name,surfaces:crate::runtime::surface_capture::capture_selected(session,Some(&selected))?})
     }
-    pub fn stored(&self,input:tasty_domain::DataRef)->Work {
-        Work::Resolve {changes:vec![StreamCommand {stream:self.binding.stream.clone(),command:tasty_domain::StructuralCommand::Close {
-            operation:tasty_domain::OperationId(String::new()),command_id:String::new(),input,target:self.target,expected:self.expected.clone(),undo:self.undo.clone(),is_user_close:self.is_user_close,
+    pub fn stored(&self,input:tasty_core::DataRef)->Work {
+        Work::Resolve {changes:vec![StreamCommand {stream:self.binding.stream.clone(),command:tasty_core::StructuralCommand::Close {
+            operation:tasty_core::OperationId(String::new()),command_id:String::new(),input,target:self.target,expected:self.expected.clone(),undo:self.undo.clone(),is_user_close:self.is_user_close,
         }}],response:Some(ResponsePlan::Closed {success:self.response.clone(),not_closed:self.not_closed.clone()})}
     }
     pub fn weight(&self)->usize {self.binding.stream.len()+serde_json::to_vec(&(&self.response,&self.not_closed,&self.expected,&self.undo)).map_or(usize::MAX,|bytes|bytes.len())}
@@ -183,9 +183,9 @@ impl JournalApplication {
     }
 }
 
-fn core_expected(session:&EngineSession,id:u32)->Option<tasty_domain::RetiredSurface> {
+fn core_expected(session:&EngineSession,id:u32)->Option<tasty_core::RetiredSurface> {
     let surface=session.core_state.find_surface_by_id(id)?;
-    Some(tasty_domain::RetiredSurface {id,kind:surface.kind.clone(),activation_generation:surface.activation_generation})
+    Some(tasty_core::RetiredSurface {id,kind:surface.kind.clone(),activation_generation:surface.activation_generation})
 }
 
 /// Caller protection applies before choosing local execution or remote submission.

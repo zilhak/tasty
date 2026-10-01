@@ -1955,7 +1955,7 @@ impl App {
                 let found = self.with_bulk_ws_engine(bulk_ws, |engine| {
                     // begin의 용량 검사와 같은 소유 engine 설정에서 저장 폴더를 구한다.
                     let dir =
-                        crate::remote::server::resolve_bulk_transfer_dir(&engine.settings);
+                        crate::remote::server::resolve_bulk_transfer_dir(&engine.runtime.settings);
                     crate::remote::server::finalize_bulk_transfer(
                         engine,
                         hub,

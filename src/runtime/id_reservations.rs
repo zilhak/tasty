@@ -1,7 +1,7 @@
 //! Runtime consumption of already durable ID ranges. This module never issues IDs or opens SQLite.
 use std::collections::{BTreeMap,VecDeque};
 use std::sync::{Arc,Mutex};
-use tasty_domain::IdKind;
+use tasty_core::IdKind;
 const KINDS:[IdKind;4]=[IdKind::Workspace,IdKind::Pane,IdKind::Tab,IdKind::Surface];
 #[derive(Debug)]
 pub(crate) enum ReservationError {Pending,Unavailable(String)}

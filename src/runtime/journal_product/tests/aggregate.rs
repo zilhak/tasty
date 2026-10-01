@@ -1,5 +1,5 @@
 use super::*;
-use tasty_domain::{
+use tasty_core::{
     CreationDestination, CreationPlan, DomainEvent, OperationId, PreparationResult,
     StructuralResult, SurfaceSpec,
 };

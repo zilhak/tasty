@@ -3,19 +3,19 @@
 //! Prepared objects and retired objects each have one owner. Resource execution is the caller's
 //! responsibility; this module neither spawns a process nor reads a stored payload.
 
-pub(crate) mod bootstrap;
+pub mod bootstrap;
 mod layout;
 mod structure;
 mod replacement;
 
 
-use tasty_domain::{DomainBatch, DomainEvent, JournalModel};
+use crate::{DomainBatch, DomainEvent, JournalModel};
 
-use super::shadow_digest::{Canonical, SkipData, live};
-use crate::core::CoreState;
-use crate::model::{Pane, SurfaceDescriptor, Tab, Workspace};
+use crate::canonical::{Canonical, SkipData, live};
+use crate::CoreState;
+use tasty_model::{Pane, SurfaceDescriptor, Tab, Workspace};
 
-pub(crate) enum Retired {
+pub enum Retired {
     Workspace(Workspace),
     Pane(Pane),
     Tab(Tab),
@@ -26,7 +26,7 @@ type Result<T> = std::result::Result<T, String>;
 
 /// A mismatch halts publication. The caller must not publish any engine in a partially applied batch.
 /// Both comparisons exclude content payloads, resource status, and View selections.
-pub(crate) fn apply(
+pub fn apply(
     engine: &mut CoreState,
     before: &JournalModel,
     batch: &DomainBatch,
@@ -37,7 +37,7 @@ pub(crate) fn apply(
         structure::apply_event(engine, &recorded.event, retired)?;
     }
     let mut after = before.clone();
-    tasty_domain::evolve(&mut after, batch).map_err(|error| error.to_string())?;
+    crate::evolve(&mut after, batch).map_err(|error| error.to_string())?;
     if live::core_canonical(engine) != Canonical::of_journal(&after, &SkipData) {
         return Err("committed live projection differs from the canonical result".into());
     }
@@ -55,7 +55,7 @@ fn preflight(engine:&CoreState,before:&JournalModel,batch:&DomainBatch)->Result<
         return Err("live projection is not at the command's committed predecessor".into());
     }
     let mut after=before.clone();
-    tasty_domain::evolve(&mut after,batch).map_err(|error|error.to_string())?;
+    crate::evolve(&mut after,batch).map_err(|error|error.to_string())?;
     Ok(())
 }
 

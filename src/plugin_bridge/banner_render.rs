@@ -67,7 +67,7 @@ pub fn draw_plugin_banners(
         ThemeWire {
             colors: th.to_colors(),
             is_light: th.is_light,
-            ui_zoom: engine.settings.appearance.ui_scale_factor(),
+            ui_zoom: engine.runtime.settings.appearance.ui_scale_factor(),
         }
     };
 

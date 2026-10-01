@@ -21,6 +21,6 @@ pub(crate) struct EngineBinding {
 pub(crate) struct BoundEngine {
     pub(crate) binding: EngineBinding,
     /// One-use bootstrap source; consumed when the initial live projection is built.
-    pub(crate) model: tasty_domain::JournalModel,
+    pub(crate) model: tasty_core::JournalModel,
     pub(crate) imported_view: Option<crate::core::layout_persistence::import::ImportedView>,
 }

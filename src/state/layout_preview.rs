@@ -45,7 +45,7 @@ impl Preview {
         if let Some(token) = &self.mirror {
             core.matches_mirror_projection(self.workspace, token)
         } else {
-            core.committed_structure_revision == Some(self.commit.revision)
+            core.committed_structure_revision() == Some(self.commit.revision)
                 && core.has_workspace(self.workspace)
         }
     }
@@ -121,7 +121,7 @@ impl LayoutPreviews {
         let mirror = core.mirror_projection_token(workspace);
         let revision = match &mirror {
             Some(_) => 0,
-            None => core.committed_structure_revision?,
+            None => core.committed_structure_revision()?,
         };
         self.next_sequence = self.next_sequence.checked_add(1)?;
         let sequence = self.next_sequence;

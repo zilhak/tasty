@@ -131,7 +131,7 @@ impl MainView {
                 state.sidebar_collapsed = !state.sidebar_collapsed;
             }
             "toggle_categories_collapsed" => {
-                if engine.settings.general.workspace_categories_enabled {
+                if engine.runtime.settings.general.workspace_categories_enabled {
                     state.dispatch_intent(
                         crate::intent::UiIntent::ToggleAllCategoriesCollapsed
                             .from_user_shortcut("toggle_categories_collapsed"),
@@ -468,7 +468,7 @@ impl MainView {
         key: &Key,
         mods: ModifiersState,
     ) -> bool {
-        let kb = &engine.settings.keybindings;
+        let kb = &engine.runtime.settings.keybindings;
         let Some(script_id) = kb
             .script_bindings
             .iter()
@@ -477,7 +477,7 @@ impl MainView {
         else {
             return false;
         };
-        let Some(entry) = engine.settings.scripts.get(&script_id) else {
+        let Some(entry) = engine.runtime.settings.scripts.get(&script_id) else {
             tracing::warn!(
                 target: "tasty_lua",
                 "script shortcut matched but script '{script_id}' not registered — ignoring"
@@ -550,7 +550,7 @@ impl MainView {
             return true;
         }
 
-        let kb = engine.settings.keybindings.clone();
+        let kb = engine.runtime.settings.keybindings.clone();
 
         // macOS는 AppKit의 메뉴 단축키가 처리하므로 winit에서 중복 실행하지 않는다.
         #[cfg(not(target_os = "macos"))]

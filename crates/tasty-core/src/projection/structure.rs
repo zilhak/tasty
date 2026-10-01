@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::WorkspaceCategory;
+use tasty_model::WorkspaceCategory;
 
 pub(super) fn apply_event(
     engine: &mut CoreState,

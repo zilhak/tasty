@@ -193,13 +193,13 @@ mod tests {
         let mut surface_ids = Vec::new();
         for slot in [1, 2] {
             let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
-            session.core_state.layout_slot = Some(slot);
+            session.persistence.slot = Some(slot);
             journal
                 .begin_engine(&session, EngineSelection::Slot { slot, resume: true })
                 .unwrap();
             pump(&mut journal, &mut session, |j| j.is_ready(id));
             bindings.push(session.journal_binding.clone().unwrap());
-            surface_ids.push(session.core_state.local_workspaces[0].all_surface_ids()[0]);
+            surface_ids.push(session.core_state.local_workspaces()[0].all_surface_ids()[0]);
             if slot == 1 {
                 journal.retire_engine(id, bindings[0].clone(), true);
                 assert!(
@@ -216,7 +216,7 @@ mod tests {
             session.journal_binding = None;
         }
         std::fs::remove_dir_all(home.join("layouts")).unwrap();
-        session.core_state.layout_slot = Some(1); // Early legacy-file selection has no journal data yet.
+        session.persistence.slot = Some(1); // Early legacy-file selection has no journal data yet.
         let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
         journal
             .begin_first_gui_engine(
@@ -228,7 +228,7 @@ mod tests {
             )
             .unwrap();
         pump(&mut journal, &mut session, |j| j.is_ready(id));
-        assert_eq!(session.core_state.layout_slot, Some(2));
+        assert_eq!(session.persistence.slot, Some(2));
         assert_eq!(
             session.journal_binding.as_ref().unwrap().stream,
             "structure:slot-2"
@@ -238,14 +238,14 @@ mod tests {
             bindings[1].incarnation
         );
         assert_eq!(
-            session.core_state.local_workspaces[0].all_surface_ids(),
+            session.core_state.local_workspaces()[0].all_surface_ids(),
             vec![surface_ids[1]]
         );
         assert_eq!(journal.known_layout_slots().collect::<Vec<_>>(), vec![2]);
         drop(journal);
         session.core_state.replace_local_workspaces(Vec::new());
         session.journal_binding = None;
-        session.core_state.layout_slot = Some(1);
+        session.persistence.slot = Some(1);
         let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
         journal
             .begin_engine(

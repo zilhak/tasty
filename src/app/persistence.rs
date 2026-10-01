@@ -12,7 +12,7 @@ impl App {
         }
         let mut captures = Vec::new();
         for (window, view, engine) in self.engines().window_pairs() {
-            if engine.settings.general.restore_layout
+            if engine.runtime.settings.general.restore_layout
                 && let Some(binding) = self
                     .engines
                     .of_window(window)
@@ -32,7 +32,7 @@ impl App {
             }
         }
         for (id, state, engine) in self.engines.parked_sessions() {
-            if engine.settings.general.restore_layout
+            if engine.runtime.settings.general.restore_layout
                 && let Some(binding) = self.engines.journal_binding(id)
             {
                 let active = engine
@@ -63,10 +63,10 @@ impl App {
             .windowed_and_parked()
             .filter_map(|e| {
                 schedulable_dirty_since(
-                    e.settings.general.restore_layout,
-                    e.layout_slot.is_some(),
-                    e.layout_slot_protected,
-                    e.layout_dirty.dirty_since(),
+                    e.runtime.settings.general.restore_layout,
+                    e.persistence.slot.is_some(),
+                    false,
+                    e.persistence.dirty.dirty_since(),
                 )
             })
             .min()

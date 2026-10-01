@@ -741,10 +741,10 @@ impl MainView {
         // native 콜백이 사용할 단축키 스냅샷을 다시 만든다.
         let plugin_epoch =
             plugin_manager.map(|m| (m.command_registry.revision(), m.config.shortcut_revision()));
-        if self.webview_policy_src.as_ref() != Some(&engine.settings.keybindings)
+        if self.webview_policy_src.as_ref() != Some(&engine.runtime.settings.keybindings)
             || self.webview_policy_plugin_epoch != plugin_epoch
         {
-            let kb = &engine.settings.keybindings;
+            let kb = &engine.runtime.settings.keybindings;
             let plugin_combos = plugin_manager
                 .map(|m| crate::plugin_bridge::key_dispatch::all_command_bindings(m, kb))
                 .unwrap_or_default();
@@ -966,7 +966,7 @@ impl MainView {
             Some(id) => id,
             None => return HtmlWebViewSettings::default(),
         };
-        let s = &engine.settings;
+        let s = &engine.runtime.settings;
         let zoom_percent = match s.plugin_setting(plugin_id, "zoom") {
             Some(PluginSettingValue::Number(n)) => *n,
             _ => 100.0,
@@ -1587,7 +1587,7 @@ impl MainView {
 
         // 현재 카테고리를 제외한 이동 대상과 새 카테고리 항목을 만든다.
         let mut move_targets: Vec<crate::model::WorkspaceCategoryId> = Vec::new();
-        if engine.settings.general.workspace_categories_enabled
+        if engine.runtime.settings.general.workspace_categories_enabled
             && ws_idx < engine.workspaces().len()
         {
             let cur_cat = engine

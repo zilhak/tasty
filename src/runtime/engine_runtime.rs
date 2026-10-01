@@ -11,6 +11,12 @@ use crate::runtime::terminal_store::TerminalStore;
 
 /// Kind instances retire before terminal/Pty owners. Shared service references do not cancel tasks.
 pub(crate) struct EngineRuntime {
+    pub(crate) settings:crate::settings::Settings,
+    pub(crate) default_cols:usize,
+    pub(crate) default_rows:usize,
+    #[cfg(debug_assertions)]
+    pub(crate) input_simulation_enabled:bool,
+
     pub(crate) ids:crate::runtime::id_reservations::IdReservations,
     pub(crate) counters:super::counters::RuntimeCounters,
     pub(crate) waker: Waker,
@@ -61,8 +67,10 @@ impl EngineRuntime {
     }
 
     /// PTY ID 발급기는 같은 프로세스의 engine들이 공유해야 ID가 겹치지 않는다.
-    pub(crate) fn new(counters:super::counters::RuntimeCounters,waker:Waker,memory:Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>) -> Self {
+    pub(crate) fn new(counters:super::counters::RuntimeCounters,waker:Waker,memory:Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,settings:crate::settings::Settings,cols:usize,rows:usize) -> Self {
         let runtime=Self {
+            settings,default_cols:cols,default_rows:rows,
+            #[cfg(debug_assertions)] input_simulation_enabled:false,
             ids:Default::default(),
             counters:counters.clone(),
             waker: waker.clone(),

@@ -35,7 +35,7 @@ fn application_bootstrap_commits_default_structure_before_installing_its_real_pt
         settings,
     )
     .unwrap();
-    assert!(session.core_state.local_workspaces.is_empty());
+    assert!(session.core_state.local_workspaces().is_empty());
     assert_eq!(session.runtime.terminals.iter().count(), 0);
     let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
     journal
@@ -60,9 +60,9 @@ fn application_bootstrap_commits_default_structure_before_installing_its_real_pt
     assert_eq!(binding.stream, "structure:slot-1");
     assert_eq!(binding.incarnation, 1);
     assert!(binding.journal_id.starts_with("journal-"));
-    assert_eq!(session.core_state.local_workspaces.len(), 1);
+    assert_eq!(session.core_state.local_workspaces().len(), 1);
     assert!(session.pending_materializations.is_empty());
-    let sid = session.core_state.local_workspaces[0].all_surface_ids()[0];
+    let sid = session.core_state.local_workspaces()[0].all_surface_ids()[0];
     assert_eq!(
         sid, 18,
         "new durable IDs are above the existing numeric metadata scopes"
@@ -119,6 +119,6 @@ fn failed_metadata_scope_read_rejects_bootstrap_instead_of_reserving_from_zero()
         .unwrap_err();
     assert!(error.contains("cannot establish existing surface ID floor"));
     assert!(journal.opening.is_empty());
-    assert!(session.core_state.local_workspaces.is_empty());
+    assert!(session.core_state.local_workspaces().is_empty());
     assert_eq!(session.runtime.terminals.iter().count(), 0);
 }

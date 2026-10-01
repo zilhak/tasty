@@ -3,26 +3,6 @@ use tasty_terminal::Terminal;
 use super::CoreState;
 use crate::runtime::engine_access::{EngineMut, EngineRef};
 
-impl CoreState {
-    pub fn has_surface(&self, surface_id: u32) -> bool {
-        self.workspaces()
-            .into_iter()
-            .any(|ws| ws.all_surface_ids().contains(&surface_id))
-    }
-
-    pub fn has_workspace(&self, workspace_id: u32) -> bool {
-        self.workspaces()
-            .into_iter()
-            .any(|ws| ws.id == workspace_id)
-    }
-
-    pub fn has_pane(&self, pane_id: u32) -> bool {
-        self.workspaces()
-            .into_iter()
-            .any(|ws| ws.pane_layout().all_pane_ids().contains(&pane_id))
-    }
-}
-
 impl EngineMut<'_> {
     pub fn find_terminal_by_id_mut(&mut self, surface_id: u32) -> Option<&mut Terminal> {
         self.runtime.terminals.get_mut(surface_id)

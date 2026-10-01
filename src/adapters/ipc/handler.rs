@@ -1242,7 +1242,7 @@ pub(crate) fn system_info_fields(window: &dyn IpcWindow, engine: &CoreState) -> 
     json!({
         "version": env!("CARGO_PKG_VERSION"),
         "scope": "engine",
-        "layout_slot": engine.layout_slot,
+        "layout_slot": engine.persistence.slot,
         "workspace_count": engine.workspaces().len(),
         "workspace_ids": engine.workspaces().into_iter().map(|ws| ws.id).collect::<Vec<_>>(),
         "active_workspace": active_workspace,

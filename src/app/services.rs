@@ -15,14 +15,12 @@ pub(crate) mod session;
 pub(crate) mod impl_attach;
 pub(crate) mod impl_category;
 pub(crate) mod impl_clipboard;
-pub(crate) mod impl_close;
 pub(crate) mod impl_convert;
 pub(crate) mod impl_mirror;
 pub(crate) mod impl_pty;
 pub(crate) mod impl_split;
 pub(crate) mod impl_tab;
 pub(crate) mod impl_workspace;
-pub(crate) use impl_close::CloseTracePath;
 pub(crate) use impl_mirror::{MirrorStructuralBlocked,PendingStructuralForward,mark_last_forward_agent_origin,mark_last_forward_user_triggered};
 pub(crate) use impl_workspace::{WorkspaceCreationParams,apply_create_workspace_inner};
 /// 프로세스가 공유하는 port와 저장소 핸들. 창별 데이터는 CoreState에 있다.

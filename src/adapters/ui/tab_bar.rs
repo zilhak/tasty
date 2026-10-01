@@ -349,7 +349,7 @@ pub fn draw_pane_tab_bars(
         }
     }
 
-    let appearance = &engine.settings.appearance;
+    let appearance = &engine.runtime.settings.appearance;
     let tab_w = appearance.tab_width;
     let tab_font_size = appearance.tab_font_size;
 
@@ -368,7 +368,7 @@ pub fn draw_pane_tab_bars(
 
     let props = PaneTabBarsProps {
         theme: &th,
-        kb: &engine.settings.keybindings,
+        kb: &engine.runtime.settings.keybindings,
         panes: &panes,
         scale_factor,
         tab_width: tab_w,

@@ -67,9 +67,9 @@ pub(crate) fn handle_spawn(
     };
 
     // surface를 만들지 않고 셸만 시작한다. command는 최초 stdin 입력으로 보낸다.
-    let cols = engine.default_cols;
-    let rows = engine.default_rows;
-    let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
+    let cols = engine.runtime.default_cols;
+    let rows = engine.runtime.default_rows;
+    let sh = crate::core::state::ShellConfig::from_settings(&engine.runtime.settings);
     let waker = engine.make_waker(pty_id);
     let working_dir = cwd.as_deref().map(std::path::Path::new);
     let initial_input = if command.is_empty() {

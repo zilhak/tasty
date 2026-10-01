@@ -1,6 +1,6 @@
 //! Convert a preset into fixed values. This code never creates a kind, PTY, or live tree.
 use std::collections::BTreeMap;
-use tasty_domain::{AssemblyDestination,ClosedSnapshot,CreationAssembly,EntityId,IdKind,Pane,Ratio,SplitTree,Surface,Tab,Workspace};
+use tasty_core::{AssemblyDestination,ClosedSnapshot,CreationAssembly,EntityId,IdKind,Pane,Ratio,SplitTree,Surface,Tab,Workspace};
 use tasty_presets::{PresetPane,PresetPaneNode,PresetSurfaceLayout,PresetSplitDirection};
 use crate::intent::ClonedPreset;
 use crate::runtime::engine_access::EngineRef;
@@ -40,12 +40,12 @@ impl Builder<'_,'_> {
                     if cwd.is_none() {cwd=crate::runtime::surface_registry::PresetFieldSpec::derive_cwd(&definition.preset_fields,&params);}
                 }
                 let shell=if surface.kind=="terminal" {
-                    let current=crate::core::state::ShellConfig::from_settings(&self.engine.settings);
+                    let current=crate::core::state::ShellConfig::from_settings(&self.engine.runtime.settings);
                     let mut initial=String::new();
                     if let Some(directory)=&surface.cwd {initial.push_str(&format!("cd {}\r",shell_escape(directory)));}
                     if let Some(command)=surface.startup_command.as_deref().map(str::trim).filter(|command|!command.is_empty()) {initial.push_str(command);initial.push('\r');}
                     cwd=None;
-                    Some(ShellRecipe {executable:current.shell,arguments:current.args,environment:current.envs,cols:self.engine.default_cols,rows:self.engine.default_rows,scrollback_lines:self.engine.settings.general.scrollback_lines,disk_scrollback:self.engine.settings.performance.scrollback_disk_swap,startup_command:initial,restore_command:None})
+                    Some(ShellRecipe {executable:current.shell,arguments:current.args,environment:current.envs,cols:self.engine.runtime.default_cols,rows:self.engine.runtime.default_rows,scrollback_lines:self.engine.runtime.settings.general.scrollback_lines,disk_scrollback:self.engine.runtime.settings.performance.scrollback_disk_swap,startup_command:initial,restore_command:None})
                 } else {None};
                 self.inputs.insert(id,PreparationInput {adopt:None,child:None,kind:surface.kind.clone(),cwd,params,shell,restore:None});
                 self.snapshot.surfaces.insert(id,Surface {tab,kind:surface.kind.clone(),data:None,creation_seed:None,metadata:Default::default(),activation:None,content_generation:0,snapshot_schema:0});
@@ -83,7 +83,7 @@ pub(crate) fn draft(engine:&EngineRef<'_>,preset:&ClonedPreset,target_pane:Optio
         ClonedPreset::Workspace(preset)=> {
             let id=build.label()?;let layout=build.panes(id,&preset.layout)?;
             if let Some(pane)=layout.leaves().first() {build.snapshot.presentation.focused_panes.insert(id,*pane);}
-            build.snapshot.workspaces.insert(id,Workspace {name:if preset.name.is_empty() {format!("Workspace {}",engine.workspaces().len()+1)}else {preset.name.clone()},category:category.filter(|category|engine.categories.iter().any(|value|value.id==*category)).unwrap_or(0),subtitle:preset.subtitle.clone(),description:preset.description.clone(),attach_mapping:None,metadata:Default::default(),layout});
+            build.snapshot.workspaces.insert(id,Workspace {name:if preset.name.is_empty() {format!("Workspace {}",engine.workspaces().len()+1)}else {preset.name.clone()},category:category.filter(|category|engine.categories().iter().any(|value|value.id==*category)).unwrap_or(0),subtitle:preset.subtitle.clone(),description:preset.description.clone(),attach_mapping:None,metadata:Default::default(),layout});
             build.snapshot.root=EntityId {kind:IdKind::Workspace,id};AssemblyDestination::Workspace
         },
         ClonedPreset::Tab(preset)=> {
@@ -97,7 +97,7 @@ pub(crate) fn draft(engine:&EngineRef<'_>,preset:&ClonedPreset,target_pane:Optio
             let workspace=engine.find_workspace_index_for_pane(target).and_then(|index|engine.workspace_at(index)).ok_or("preset target workspace is missing")?;
             let id=build.pane(workspace.id,&preset.pane)?;
             build.snapshot.root=EntityId {kind:IdKind::Pane,id};
-            AssemblyDestination::Pane {target,split:tasty_domain::SplitSpec {direction:tasty_model::SplitDirection::Vertical,ratio:Ratio::from_f32(0.5),placement:tasty_domain::Placement::After}}
+            AssemblyDestination::Pane {target,split:tasty_core::SplitSpec {direction:tasty_model::SplitDirection::Vertical,ratio:Ratio::from_f32(0.5),placement:tasty_core::Placement::After}}
         },
     };
     let draft=AssemblyDraft {snapshot:build.snapshot,destination,inputs:build.inputs,omit_failed:false};draft.validate()?;Ok(draft)

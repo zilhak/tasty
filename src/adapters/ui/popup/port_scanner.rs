@@ -509,7 +509,7 @@ pub fn draw_port_scanner_popup(
         theme: &th,
         view_state,
         present_states: &present_states,
-        reduced_motion: engine.settings.accessibility.reduced_motion,
+        reduced_motion: engine.runtime.settings.accessibility.reduced_motion,
         favorites: &favorite_rows,
         filter: PortScannerFilter {
             show_all_system: filter_state.show_all_system,

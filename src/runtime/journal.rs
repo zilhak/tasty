@@ -6,7 +6,7 @@
 
 use std::fmt;
 
-use tasty_domain::{
+use tasty_core::{
     CodecError, DomainEvent, EvolveError, JournalModel, MODEL_VERSION, RecordedEvent,
     STRUCTURE_STREAM_PREFIX, StreamBatch, StructureModels, decode_event, decode_snapshot,
     encode_event, encode_snapshot, evolve_streams, is_structure_stream,
@@ -124,9 +124,9 @@ pub(crate) fn apply(
 ) -> Result<(), JournalError> {
     let mut decoded = stream_batch(batch)?;
     let events = decoded.streams.remove(stream.as_str()).unwrap_or_default();
-    tasty_domain::evolve(
+    tasty_core::evolve(
         model,
-        &tasty_domain::DomainBatch {
+        &tasty_core::DomainBatch {
             batch_id: decoded.batch_id,
             events,
         },

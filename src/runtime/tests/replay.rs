@@ -1,7 +1,7 @@
 //! 실제 journal에서의 replay: 전체 로그와 snapshot+tail의 일치, 엔진 stream 분리, 다른 stream
 //! 건너뛰기, 모르는 tag 중단.
 
-use tasty_domain::{CodecError, DomainEvent, MODEL_VERSION, StructureModels};
+use tasty_core::{CodecError, DomainEvent, MODEL_VERSION, StructureModels};
 use tasty_event_store::{
     CommitRequest, ExpectedRevision, NewEvent, OpaquePayload, PayloadRef, StreamAppend, StreamId,
 };

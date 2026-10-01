@@ -1,7 +1,7 @@
 //! Resolve immutable undo values and reserve all replacement identities on the journal worker.
 use super::*;
 use super::super::{EngineBinding,PreparationInput,ShellRecipe};
-use tasty_domain::{AssemblyDestination,ClosedSnapshot,CreationAssembly,DataRef,EntityId,IdKind,Pane,SplitTree,Tab,Workspace};
+use tasty_core::{AssemblyDestination,ClosedSnapshot,CreationAssembly,DataRef,EntityId,IdKind,Pane,SplitTree,Tab,Workspace};
 use std::collections::BTreeMap;
 
 pub(super) fn undo(executor:&Executor<StructureDecider>,admitted:&mut Pending,ticket:u64,binding:EngineBinding,target_pane:Option<u32>,scope:Option<u32>,shell:ShellRecipe)->Result<ResultValue,String> {
@@ -48,7 +48,7 @@ pub(super) fn undo(executor:&Executor<StructureDecider>,admitted:&mut Pending,ti
             let caller=target.ok_or("undo pane target missing")?;
             let position=snapshot.pane_position.as_ref().ok_or("closed pane has no original split position")?;
             let sibling=model.panes.get(&position.sibling).filter(|sibling|sibling.workspace==model.panes[&caller].workspace).map(|_|position.sibling);
-            AssemblyDestination::Pane {target:sibling.unwrap_or(caller),split:if sibling.is_some() {position.split}else {tasty_domain::SplitSpec {direction:position.split.direction,ratio:tasty_domain::Ratio::from_f32(0.5),placement:tasty_domain::Placement::After}}}
+            AssemblyDestination::Pane {target:sibling.unwrap_or(caller),split:if sibling.is_some() {position.split}else {tasty_core::SplitSpec {direction:position.split.direction,ratio:tasty_core::Ratio::from_f32(0.5),placement:tasty_core::Placement::After}}}
         },
         IdKind::Tab=>{let pane=target.ok_or("undo tab target missing")?;AssemblyDestination::Tab {pane,index:model.panes[&pane].tabs.len()}},
         _=>return Err("unsupported undo root".into()),
@@ -77,7 +77,7 @@ fn remap_tree(tree:&mut SplitTree<u32>,ids:&BTreeMap<u32,u32>)->Result<(),String
     Ok(())
 }
 
-fn reserve_remap(store:&mut tasty_event_store::EventStore,epoch:tasty_event_store::WriterEpoch,admitted:&mut Pending,model:&tasty_domain::JournalModel,snapshot:&mut ClosedSnapshot,target:Option<u32>)->Result<BTreeMap<IdKind,BTreeMap<u32,u32>>,String> {
+fn reserve_remap(store:&mut tasty_event_store::EventStore,epoch:tasty_event_store::WriterEpoch,admitted:&mut Pending,model:&tasty_core::JournalModel,snapshot:&mut ClosedSnapshot,target:Option<u32>)->Result<BTreeMap<IdKind,BTreeMap<u32,u32>>,String> {
     let mut maps:BTreeMap<IdKind,BTreeMap<u32,u32>>=BTreeMap::new();
     for (kind,ids) in [(IdKind::Workspace,snapshot.workspaces.keys().copied().collect::<Vec<_>>()),(IdKind::Pane,snapshot.panes.keys().copied().collect()),(IdKind::Tab,snapshot.tabs.keys().copied().collect()),(IdKind::Surface,snapshot.surfaces.keys().copied().collect())] {
         if ids.is_empty() {continue;}
@@ -101,7 +101,7 @@ fn reserve_remap(store:&mut tasty_event_store::EventStore,epoch:tasty_event_stor
     let remap_pairs=|values:&BTreeMap<u32,u32>,parent:IdKind,child:IdKind|->BTreeMap<u32,u32> {
         values.iter().filter_map(|(one,two)|Some((maps.get(&parent)?.get(one).copied()?,maps.get(&child)?.get(two).copied()?))).collect()
     };
-    snapshot.presentation=tasty_domain::UndoPresentation {
+    snapshot.presentation=tasty_core::UndoPresentation {
         focused_panes:remap_pairs(&snapshot.presentation.focused_panes,IdKind::Workspace,IdKind::Pane),
         selected_tabs:remap_pairs(&snapshot.presentation.selected_tabs,IdKind::Pane,IdKind::Tab),
         selected_surfaces:remap_pairs(&snapshot.presentation.selected_surfaces,IdKind::Tab,IdKind::Surface),

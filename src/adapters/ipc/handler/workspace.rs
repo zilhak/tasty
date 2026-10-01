@@ -990,7 +990,7 @@ mod create_cwd_tests {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         let mut core = crate::ipc::handler::cli_entry_tests::test_core();
-        engine.settings.general.shell = "/bin/sh".to_string();
+        engine.runtime.settings.general.shell = "/bin/sh".to_string();
 
         let explicit_dir = tempfile::tempdir().expect("tmp");
         let explicit = explicit_dir.path().canonicalize().expect("canonical");
@@ -1027,7 +1027,7 @@ mod create_cwd_tests {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         let (named, _) = open_explorer(&mut state, &mut engine, "named/proj");
-        engine.settings.general.inherit_cwd = false;
+        engine.runtime.settings.general.inherit_cwd = false;
 
         assert_eq!(
             inherit_cwd_for_create(&state, &engine.as_ref(), Some(named)),

@@ -1,3 +1,4 @@
+use crate::core::CoreState;
 use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -78,192 +79,7 @@ pub(crate) struct AttachMeshContextForward {
     pub(crate) focused: bool,
 }
 
-/// engine별 도메인 상태. GUI에서는 창마다 따로 보유하고 공유 자원은 Arc로 주입한다.
-/// 외부 함수의 타입에 쓰이지만 내부 필드는 crate 밖에 노출하지 않는다.
-pub struct CoreState {
-    /// Revision of this committed live projection, never a command-decision source.
-    pub(crate) committed_structure_revision: Option<u64>,
-    pub(crate) local_workspaces: Vec<Workspace>,
-    pub(crate) mirror_workspaces: Vec<Workspace>,
-    /// Composite display projection; local relative order comes from the committed model.
-    workspace_display_order: Vec<u32>,
-    /// Lifetime token for volatile annotations; replaced by every remote structural projection.
-    mirror_projection_tokens: std::collections::HashMap<u32, std::sync::Arc<()>>,
-    /// 표시 순서의 카테고리. 생성·복원 뒤 기본 normal 항목을 앞에 두도록 정규화한다.
-    pub(crate) categories: Vec<crate::model::WorkspaceCategory>,
-    pub(crate) default_cols: usize,
-    pub(crate) default_rows: usize,
-    pub(crate) settings: Settings,
-
-    pub(crate) closed_items: crate::model::ClosedItemStore,
-
-
-    pub(crate) layout_dirty: crate::core::layout_persistence::LayoutDirtyTracker,
-    /// 복원한 활성 workspace 인덱스. 창 상태를 만들 때 한 번 소비한다.
-    /// deferred Terminal 생성 뒤 적용할 scrollback. 읽지 못했거나 비어 있으면 등록하지 않는다.
-    /// plugin 준비 대기 후 적용할 레이아웃. 대기와 제한 시간 처리는 App이 맡는다.
-    pub(crate) pending_layout_restore: Option<crate::core::layout_persistence::SavedLayout>,
-    /// 이 engine의 레이아웃 슬롯. 프로세스 내 engine들의 이 필드로 점유를 확인한다.
-    /// 디스크 잠금은 아니며 헤드리스는 None이다.
-    pub(crate) layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
-    /// 읽기 실패·높은 version으로 기존 슬롯을 덮어쓰면 안 되는 상태.
-    #[cfg(any(feature = "gui", test))]
-    pub(crate) layout_slot_protected: bool,
-    /// 해석 실패한 원본을 저장 전에 재확인·백업해야 하는 상태.
-    #[cfg(any(feature = "gui", test))]
-    pub(crate) layout_slot_unparsable: bool,
-    /// 검사에서 실제 홈 대신 사용할 저장 디렉터리. 저장과 백업 공간 판정이 함께 사용한다.
-    #[cfg(test)]
-    pub(crate) layouts_dir_override: Option<std::path::PathBuf>,
-    /// 백업 공간 부족 또는 보존 실패를 사용자에게 알리기 위한 상태.
-    #[cfg(any(feature = "gui", test))]
-    pub(crate) layout_slot_preserve_failed: bool,
-
-    #[cfg(debug_assertions)]
-    #[cfg_attr(
-        not(feature = "gui"),
-        expect(
-            dead_code,
-            reason = "only the gui input simulation IPC of debug builds reads the flag"
-        )
-    )]
-    pub(crate) input_simulation_enabled: bool,
-
-}
-
-impl CoreState {
-    /// 슬롯 로드 판정을 대기 복원·쓰기 보호·백업 필요 플래그에 반영한다.
-    #[cfg(test)]
-    pub(crate) fn accept_slot_load(
-        &mut self,
-        load: crate::core::layout_persistence::SlotLoad,
-        slot: crate::core::layout_persistence::LayoutSlotId,
-    ) {
-        use crate::core::layout_persistence::SlotLoad;
-        match load {
-            SlotLoad::Loaded(saved) => self.pending_layout_restore = Some(saved),
-            SlotLoad::Absent => {}
-            SlotLoad::Unreadable => self.layout_slot_protected = true,
-            SlotLoad::Unparsable => {
-                self.layout_slot_unparsable = true;
-                // 첫 저장 전에 뜨는 안내도 백업 공간 부족을 구별해야 한다.
-                self.layout_slot_preserve_failed = self.slot_preservation_is_blocked(slot);
-            }
-        }
-    }
-
-    /// 저장과 같은 디렉터리에서 백업 공간을 확인한다. 검사 override도 동일하게 적용한다.
-    #[cfg(test)]
-    fn slot_preservation_is_blocked(
-        &self,
-        slot: crate::core::layout_persistence::LayoutSlotId,
-    ) -> bool {
-        #[cfg(test)]
-        if let Some(dir) = self.layouts_dir_override.as_deref() {
-            return crate::core::layout_persistence::slot_preservation_is_blocked_in(dir, slot);
-        }
-        crate::core::layout_persistence::slot_preservation_is_blocked(slot)
-    }
-
-    pub(crate) fn new_base(
-        cols: usize,
-        rows: usize,
-        layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
-        settings: Settings,
-    ) -> Self {
-        let mut engine = Self {
-            committed_structure_revision: None,
-            local_workspaces: Vec::new(),
-            mirror_workspaces: Vec::new(),
-            workspace_display_order: Vec::new(),
-            mirror_projection_tokens: Default::default(),
-            categories: vec![crate::model::WorkspaceCategory::normal()],
-            default_cols: cols,
-            default_rows: rows,
-            settings,
-            closed_items: crate::model::ClosedItemStore::new(),
-            layout_dirty: crate::core::layout_persistence::LayoutDirtyTracker::new(),
-            pending_layout_restore: None,
-            layout_slot,
-            #[cfg(any(feature = "gui", test))]
-            layout_slot_protected: false,
-            #[cfg(any(feature = "gui", test))]
-            layout_slot_unparsable: false,
-            #[cfg(test)]
-            layouts_dir_override: None,
-            #[cfg(any(feature = "gui", test))]
-            layout_slot_preserve_failed: false,
-            #[cfg(debug_assertions)]
-            input_simulation_enabled: false,
-        };
-
-        engine
-    }
-
-    /// 현재 트리에서 복원 항목의 출처 workspace를 찾는다. 트리를 바꾸기 전에 호출해야 한다.
-    /// 이미 제거했거나 workspace 전체 항목이면 None이라 workspace 범위 복원에서 제외된다.
-    fn origin_workspace_of(&self, item: &crate::model::ClosedItem) -> Option<u32> {
-        use crate::model::closed_item::ClosedItem;
-        let ws_idx = match item {
-            ClosedItem::Surface { surface, .. } => self
-                .find_workspace_index_for_surface(surface.id)
-                .map(|(i, _)| i),
-            ClosedItem::Tab(tab) => self
-                .find_pane_for_tab(tab.id)
-                .and_then(|pid| self.find_workspace_index_for_pane(pid)),
-            ClosedItem::Pane { pane, .. } => self.find_workspace_index_for_pane(pane.id),
-            ClosedItem::Workspace { .. } => return None,
-        }?;
-        self.workspace_at(ws_idx).map(|ws| ws.id)
-    }
-
-}
-
 impl EngineMut<'_> {
-    pub fn push_closed_item(
-        &mut self,
-        mut item: crate::model::ClosedItem,
-    ) -> crate::close_trace::PushClosedItemTimings {
-        let mut timings = crate::close_trace::PushClosedItemTimings::default();
-        let origin_workspace = self.origin_workspace_of(&item);
-        let mem = self.runtime.memory.clone();
-        let t_inject = std::time::Instant::now();
-        crate::model::closed_item::inject_restore_commands(&mut item, &|sid| {
-            let mut guard = crate::poison::recover_mutex(
-                mem.lock(),
-                crate::core::MEMORY_WHAT,
-                &crate::core::MEMORY_POISONED,
-            );
-            crate::surface_meta::SurfaceMetaStore::get(&mut *guard, sid, "restore.command")
-        });
-        timings.restore_inject = t_inject.elapsed();
-        // 닫힌 항목은 큰 scrollback을 메모리에 계속 들지 않도록 별도 파일 ID로 저장한다.
-        // 원래 surface의 저장 ID와 분리해 surface 정리가 이 파일까지 지우지 않게 한다.
-        let t_persist = std::time::Instant::now();
-        crate::model::closed_item::persist_closed_scrollback(&mut item, &mut |blob| {
-            let id = crate::scrollback_store::new_persist_id();
-            match crate::scrollback_store::write_bytes(&id, &blob.bytes) {
-                Ok(()) => Some(id),
-                Err(e) => {
-                    tracing::warn!("closed-item scrollback persist failed: {e}");
-                    None
-                }
-            }
-        });
-        timings.scrollback_persist = t_persist.elapsed();
-        // 복원 목록에서 밀려난 항목의 별도 scrollback 파일도 지운다.
-        let t_evict = std::time::Instant::now();
-        if let Some(evicted) = self.closed_items.push(item, origin_workspace) {
-            let mut refs = Vec::new();
-            crate::model::closed_item::collect_scrollback_refs(&evicted, &mut refs);
-            for id in refs {
-                crate::scrollback_store::delete(&id);
-            }
-        }
-        timings.evict = t_evict.elapsed();
-        timings
-    }
-
     /// 키보드·IME·붙여넣기의 사용자 입력 시각을 기록한다. 마우스 보고·파일 열기·에이전트 전송은 제외한다.
     #[cfg(feature = "gui")]
     pub fn record_typing(&mut self, surface_id: u32) {
@@ -348,7 +164,7 @@ impl EngineRef<'_> {
     ) -> Option<String> {
         match token {
             "@settings.explorer_view_mode" => {
-                Some(self.settings.general.explorer_view_mode.clone())
+                Some(self.runtime.settings.general.explorer_view_mode.clone())
             }
             "@home" => home.map(|p| p.to_string_lossy().to_string()),
             t if t.starts_with('@') => {
@@ -360,17 +176,16 @@ impl EngineRef<'_> {
     }
 }
 
-impl CoreState {
+impl EngineMut<'_> {
     #[cfg(feature = "gui")]
     pub fn update_grid_size(&mut self, cols: usize, rows: usize) {
-        self.default_cols = cols;
-        self.default_rows = rows;
+        self.runtime.default_cols = cols;
+        self.runtime.default_rows = rows;
     }
 }
 
 pub(crate) mod attention;
 mod busy;
-mod category;
 pub mod child_liveness;
 mod finders;
 mod global_hooks;
@@ -382,11 +197,10 @@ mod shell_integration_hint;
 mod soft_occupancy;
 mod surface_cwd;
 mod terminal_finders;
-pub(crate) mod workspaces;
 
 pub(crate) use attention::AttentionKind;
 #[cfg(feature = "gui")]
-pub use finders::SurfaceDisplayPath;
+pub use tasty_core::SurfaceDisplayPath;
 pub(crate) use surface_cwd::RemoteCwd;
 #[cfg(any(feature = "gui", test))]
 pub(crate) use surface_cwd::SurfaceCwd;
@@ -601,7 +415,7 @@ mod default_params_tests {
         let mut params = serde_json::json!({});
         let injected = e.apply_kind_default_params(&def, &mut params, None);
         assert!(injected);
-        assert_eq!(params["view_mode"], e.settings.general.explorer_view_mode);
+        assert_eq!(params["view_mode"], e.runtime.settings.general.explorer_view_mode);
         assert!(
             params.get("path").is_none(),
             "@home must not resolve when home=None"
@@ -616,7 +430,7 @@ mod default_params_tests {
         let mut params = serde_json::json!({});
         let home = std::path::PathBuf::from("/home/tester");
         e.apply_kind_default_params(&def, &mut params, Some(&home));
-        assert_eq!(params["view_mode"], e.settings.general.explorer_view_mode);
+        assert_eq!(params["view_mode"], e.runtime.settings.general.explorer_view_mode);
         assert_eq!(params["path"], "/home/tester");
     }
 

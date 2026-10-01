@@ -304,14 +304,14 @@ impl App {
             .expect("boot engine was installed");
         let session = self.engines.session_mut(id).expect("pending engine exists");
         let slot = session
-            .core_state
-            .layout_slot
+            .persistence
+            .slot
             .expect("GUI engine has a layout slot");
         if let Err(error) = self.journal.begin_first_gui_engine(
             session,
             crate::runtime::journal_product::EngineSelection::Slot {
                 slot,
-                resume: session.core_state.settings.general.restore_layout,
+                resume: session.runtime.settings.general.restore_layout,
             },
         ) {
             self.state.boot_error_info = Some(boot_engine_error_info(&anyhow::anyhow!(error)));
@@ -580,14 +580,7 @@ impl App {
                 warn(crate::i18n::t("persistence.warn.settings_locked").to_string());
             }
         }
-        if engine.layout_slot_preserve_failed {
-            warn(crate::i18n::t("persistence.warn.layout_unparsable_blocked").to_string());
-        } else if engine.layout_slot_unparsable {
-            warn(crate::i18n::t("persistence.warn.layout_unparsable").to_string());
-        }
-        if engine.layout_slot_protected {
-            warn(crate::i18n::t("persistence.warn.layout_locked").to_string());
-        }
+
     }
 
     fn start_boot_ipc_and_webhooks(&mut self, state: &mut crate::state::MainViewState) {

@@ -2,7 +2,7 @@
 use super::*;
 use crate::runtime::effect_runner::{self, ExecutionBinding, Installed};
 use crate::runtime::journal_product::{Admission, PreparationInput, ShellRecipe, StreamCommand};
-use tasty_domain::{
+use tasty_core::{
     CreationDestination, CreationPlan, IdKind, OperationId, PreparationResult, StructuralCommand,
     StructuralResult, SurfaceSpec,
 };
@@ -89,7 +89,7 @@ impl Creation {
         worker: &JournalWorker,
     ) -> Result<Self, String> {
         let core = &session.core_state;
-        let shell = crate::core::state::ShellConfig::from_settings(&core.settings);
+        let shell = crate::core::state::ShellConfig::from_settings(&core.runtime.settings);
         let binding = session
             .journal_binding
             .clone()
@@ -123,11 +123,11 @@ impl Creation {
                     executable: shell.shell,
                     arguments: shell.args,
                     environment: shell.envs,
-                    cols: core.default_cols,
-                    rows: core.default_rows,
-                    scrollback_lines: core.settings.general.scrollback_lines,
-                    disk_scrollback: core.settings.performance.scrollback_disk_swap,
-                    startup_command: core.settings.general.startup_command.clone(),
+                    cols: core.runtime.default_cols,
+                    rows: core.runtime.default_rows,
+                    scrollback_lines: core.runtime.settings.general.scrollback_lines,
+                    disk_scrollback: core.runtime.settings.performance.scrollback_disk_swap,
+                    startup_command: core.runtime.settings.general.startup_command.clone(),
                     restore_command: None,
                 }),
             },
@@ -374,19 +374,19 @@ impl Creation {
     pub(super) fn authorize_installation(
         &mut self,
         session: &mut EngineSession,
-        events: &[tasty_domain::RecordedEvent],
+        events: &[tasty_core::RecordedEvent],
     ) -> Result<Option<effect_runner::Installation>, String> {
         let Stage::Prepared(operation) = &self.stage else {
             return Ok(None);
         };
-        if events.iter().any(|recorded|matches!(&recorded.event,tasty_domain::DomainEvent::OperationAwaitingCleanup {id,cleanup:tasty_domain::CleanupPlan::DiscardPrepared {..},..} if id==operation)) {
+        if events.iter().any(|recorded|matches!(&recorded.event,tasty_core::DomainEvent::OperationAwaitingCleanup {id,cleanup:tasty_core::CleanupPlan::DiscardPrepared {..},..} if id==operation)) {
             let candidate=session.pending_materializations.remove(operation).ok_or("discarded assembly member lost its private owner")?;
             let lease=candidate.lease.clone();let retirement=match self.discard_candidate(session,candidate) {Some(receipt)=>receipt,None=>return Ok(None)};
             self.stage=Stage::Rejected {discard_committed:true,lease,reason:"assembly cancelled before installation".into(),retirement,answered:self.preparation_acked,started:std::time::Instant::now()};
             return Ok(None);
         }
         if !events.iter().any(|recorded|matches!(&recorded.event,
-            tasty_domain::DomainEvent::OperationAwaitingCleanup { id, cleanup:tasty_domain::CleanupPlan::InstallPrepared { .. }, .. } if id==operation)) { return Ok(None); }
+            tasty_core::DomainEvent::OperationAwaitingCleanup { id, cleanup:tasty_core::CleanupPlan::InstallPrepared { .. }, .. } if id==operation)) { return Ok(None); }
         let operation = operation.clone();
         let result = session
             .pending_materializations
@@ -428,12 +428,12 @@ impl Creation {
     pub(super) fn leaf_for_publication(
         &mut self,
         session: &mut EngineSession,
-        events: &[tasty_domain::RecordedEvent],
+        events: &[tasty_core::RecordedEvent],
     ) -> Result<Option<effect_runner::PreparedLeaf>, String> {
         let installed=match &self.stage {Stage::Finish(installed)|Stage::AwaitPublication(installed)=>installed,_=>return Ok(None)};
         let surface=session.pending_materializations.get(&installed.lease.operation).and_then(|prepared|prepared.surface_id()).ok_or("installed leaf has no original candidate")?;
         if !events.iter().any(|recorded|matches!(&recorded.event,
-            tasty_domain::DomainEvent::SurfaceActivationChanged {id,activation,..} if *id==surface && activation.generation==installed.lease.resource_generation)) { return Ok(None); }
+            tasty_core::DomainEvent::SurfaceActivationChanged {id,activation,..} if *id==surface && activation.generation==installed.lease.resource_generation)) { return Ok(None); }
         self.published=true;
         let prepared = session
             .pending_materializations

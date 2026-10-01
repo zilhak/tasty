@@ -1,7 +1,7 @@
 //! Legacy category parameter and response semantics, resolved once after identity admission.
 use super::*;
 use crate::ipc::handler::params;
-use tasty_domain::StructuralCommand;
+use tasty_core::StructuralCommand;
 
 pub(super) enum Resolved {
     Create(String),

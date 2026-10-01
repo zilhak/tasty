@@ -3,7 +3,7 @@
 mod completion;
 
 use serde::{Deserialize, Serialize};
-use tasty_domain::{
+use tasty_core::{
     Decider, Decision, DecisionContext, DomainEvent, Rejection, StructuralCommand,
     StructuralResult, StructureModels, decide_structure,
 };
@@ -88,7 +88,7 @@ impl StructureDecider {
         let mut effects = Vec::new();
         let mut resolved_changes = Vec::new();
         for (index, change) in command.changes.iter().enumerate() {
-            if !tasty_domain::is_structure_stream(&change.stream) {
+            if !tasty_core::is_structure_stream(&change.stream) {
                 return Err(Rejection("not an engine structure stream".into()));
             }
             let model = candidate.streams.entry(change.stream.clone()).or_default();
@@ -101,7 +101,7 @@ impl StructureDecider {
             {
                 *command_id = context.command_id.to_owned();
                 *operation =
-                    tasty_domain::OperationId(format!("{}/prepare/{index}", context.command_id));
+                    tasty_core::OperationId(format!("{}/prepare/{index}", context.command_id));
             }
             let decision = decide_structure(model, &resolved)?;
             resolved_changes.push(StreamCommand {
@@ -122,14 +122,14 @@ impl StructureDecider {
                 .unwrap_or(0)
                 .checked_add(1)
                 .ok_or_else(|| Rejection("journal batch range exhausted".into()))?;
-            let batch = tasty_domain::DomainBatch {
+            let batch = tasty_core::DomainBatch {
                 batch_id,
                 events: decision
                     .events
                     .iter()
                     .enumerate()
                     .map(|(index, event)| {
-                        Ok(tasty_domain::RecordedEvent {
+                        Ok(tasty_core::RecordedEvent {
                             revision: revision.checked_add(index as u64 + 1).ok_or_else(|| {
                                 Rejection("structure revision range exhausted".into())
                             })?,
@@ -138,7 +138,7 @@ impl StructureDecider {
                     })
                     .collect::<Result<_, Rejection>>()?,
             };
-            tasty_domain::evolve(model, &batch).map_err(|e| Rejection(e.to_string()))?;
+            tasty_core::evolve(model, &batch).map_err(|e| Rejection(e.to_string()))?;
             events.extend(decision.events.into_iter().map(|event| StreamEvent {
                 stream: StreamId::new(&change.stream),
                 event,
@@ -233,10 +233,10 @@ impl JournalDecider for StructureDecider {
                             _ => None,
                         })?;
                     let to = match outcome {
-                        tasty_domain::OperationOutcome::Failed { .. } => {
+                        tasty_core::OperationOutcome::Failed { .. } => {
                             tasty_event_store::EffectState::Failed
                         }
-                        tasty_domain::OperationOutcome::Uncertain { .. } => {
+                        tasty_core::OperationOutcome::Uncertain { .. } => {
                             tasty_event_store::EffectState::Uncertain
                         }
                         _ => tasty_event_store::EffectState::Succeeded,
@@ -280,9 +280,9 @@ impl JournalDecider for StructureDecider {
 
 fn new_effect(
     stream: &str,
-    effect: &tasty_domain::StructuralEffect,
+    effect: &tasty_core::StructuralEffect,
 ) -> Result<NewEffect, Rejection> {
-    use tasty_domain::StructuralEffect;
+    use tasty_core::StructuralEffect;
     let (operation, generation, step) = match effect {
         // A close operation has one cleanup attempt identity; each target retains its own activation.
         StructuralEffect::RetireSurfaces {operation,..}=>(operation,1,"retire"),

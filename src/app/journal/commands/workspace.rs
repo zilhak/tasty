@@ -2,7 +2,7 @@
 use super::display::{DisplayAction, DisplayContinuation};
 use super::*;
 use crate::ipc::handler::{params, workspace as legacy};
-use tasty_domain::StructuralCommand as C;
+use tasty_core::StructuralCommand as C;
 
 pub(super) struct Resolved {
     pub changes: Vec<C>,
@@ -200,7 +200,7 @@ fn reorder(request: &JsonRpcRequest, session: &EngineSession) -> Result<Resolved
             let to_index = order
                 .iter()
                 .filter(|id| {
-                    core.local_workspaces
+                    core.local_workspaces()
                         .iter()
                         .any(|workspace| workspace.id == **id)
                 })

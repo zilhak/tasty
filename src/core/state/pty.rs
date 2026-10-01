@@ -5,7 +5,7 @@ use tasty_terminal::{Terminal, TerminalEvent};
 
 use super::CoreState;
 
-impl CoreState {
+impl crate::runtime::engine_access::EngineRef<'_> {
     pub fn is_surface_deferred(&self, surface_id: u32) -> bool {
         for ws in &self.workspaces() {
             let pane_ids = ws.pane_layout().all_pane_ids();
@@ -95,9 +95,6 @@ impl CoreState {
             .get_mut(tab_idx)
     }
 
-    pub fn mark_layout_dirty(&mut self) {
-        self.layout_dirty.mark_dirty();
-    }
 }
 
 /// 종류별 지연 surface 실제화. plugin restore는 GUI 경로와 시험에서만 쓴다.
@@ -470,4 +467,8 @@ mod tests {
             "상한 뒤에는 spawn 정보를 내주지 않는다"
         );
     }
+}
+
+impl EngineMut<'_> {
+    pub fn mark_layout_dirty(&mut self) {self.persistence.dirty.mark_dirty();}
 }

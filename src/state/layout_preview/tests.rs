@@ -72,14 +72,14 @@ fn preview_geometry_does_not_mutate_the_committed_tree_and_cancel_restores_geome
     let (mut state, mut session) = crate::state::tests::test_state();
     let core = &mut session.core_state;
     core.set_workspace_fixture(vec![split_workspace(1, false)]);
-    core.committed_structure_revision = Some(12);
+    core.committed_structure_revision() = Some(12);
     state.reconcile_presentation(core);
     let original = width(&state.layout_previews, core, 1);
     let sequence = start(&mut state.layout_previews, core, 1);
     assert!(state.layout_previews.update(core, sequence, 0.7));
     assert!(width(&state.layout_previews, core, 1) > original);
     assert_eq!(
-        core.local_workspaces[0]
+        core.local_workspaces()[0]
             .pane_layout()
             .split_parts()
             .unwrap()
@@ -87,10 +87,10 @@ fn preview_geometry_does_not_mutate_the_committed_tree_and_cancel_restores_geome
         0.5
     );
     let regions = state.surface_regions(core, rect(), 1.0);
-    let pane_rects = state.pane_rects(core, &core.local_workspaces[0], rect(), 1.0);
+    let pane_rects = state.pane_rects(core, &core.local_workspaces()[0], rect(), 1.0);
     assert_eq!(regions[0].1.width, pane_rects[0].1.width);
     assert_eq!(regions[0].2[0].rect.width, pane_rects[0].1.width);
-    let divider = state.pane_dividers(core, &core.local_workspaces[0], rect(), 1.0)[0];
+    let divider = state.pane_dividers(core, &core.local_workspaces()[0], rect(), 1.0)[0];
     assert!(
         state
             .find_pane_divider_at(core, divider.x.value(), 10.0, rect(), 1.0)
@@ -116,12 +116,12 @@ fn a_new_projection_invalidates_the_drag_even_when_leaf_ids_are_identical() {
     let (_, mut session) = crate::state::tests::test_state();
     let core = &mut session.core_state;
     core.set_workspace_fixture(vec![split_workspace(1, false)]);
-    core.committed_structure_revision = Some(5);
+    core.committed_structure_revision() = Some(5);
     let mut previews = LayoutPreviews::default();
     let sequence = start(&mut previews, core, 1);
     previews.update(core, sequence, 0.8);
     core.replace_local_workspaces(vec![split_workspace(1, false)]);
-    core.committed_structure_revision = Some(7);
+    core.committed_structure_revision() = Some(7);
     assert!(!previews.update(core, sequence, 0.9));
     assert!(previews.finish(core, sequence).is_none());
     assert!(previews.entries.is_empty());
@@ -148,7 +148,7 @@ fn cancelled_second_mirror_drag_preserves_the_first_until_remote_projection_repl
     previews.cancel(second);
     assert_eq!(width(&previews, core, 9), completed);
     assert_eq!(
-        core.mirror_workspaces[0]
+        core.mirror_workspaces()[0]
             .pane_layout()
             .split_parts()
             .unwrap()
@@ -169,7 +169,7 @@ fn another_view_keeps_its_geometry_and_removed_target_releases_the_preview() {
     let (_, mut session) = crate::state::tests::test_state();
     let core = &mut session.core_state;
     core.set_workspace_fixture(vec![split_workspace(1, false)]);
-    core.committed_structure_revision = Some(3);
+    core.committed_structure_revision() = Some(3);
     let mut first_view = LayoutPreviews::default();
     let second_view = LayoutPreviews::default();
     let original = width(&second_view, core, 1);
@@ -188,7 +188,7 @@ fn surface_preview_is_shared_by_hit_testing_dividers_and_move_source_mark() {
     let (mut state, mut session) = crate::state::tests::test_state();
     let core = &mut session.core_state;
     core.set_workspace_fixture(vec![split_workspace(1, false)]);
-    core.committed_structure_revision = Some(8);
+    core.committed_structure_revision() = Some(8);
     core.find_pane_by_id_mut(10).unwrap().tabs[0].put_layout(SurfaceLayout::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
@@ -197,7 +197,7 @@ fn surface_preview_is_shared_by_hit_testing_dividers_and_move_source_mark() {
         node_id: crate::model::SplitNodeId::allocate(),
     });
     state.reconcile_presentation(core);
-    let panes = state.pane_rects(core, &core.local_workspaces[0], rect(), 1.5);
+    let panes = state.pane_rects(core, &core.local_workspaces()[0], rect(), 1.5);
     let content = PhysicalRect {
         y: panes[0].1.y + state.tab_bar_height,
         height: (panes[0].1.height - state.tab_bar_height).max(PhysicalPx(1.0)),

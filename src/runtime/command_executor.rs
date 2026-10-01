@@ -10,7 +10,7 @@ use std::fmt;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tasty_domain::{Decider, Decision, DecisionContext};
+use tasty_core::{Decider, Decision, DecisionContext};
 use tasty_event_store::{
     BatchId, CommandKey, CommandLookup, CommandRecord, CommandStatus, CommandUpdate, CommitOutcome,
     CommitRequest, EffectTransition, EventStore, ExpectedRevision, NewCommand, NewEffect, NewEvent,

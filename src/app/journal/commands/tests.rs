@@ -61,7 +61,7 @@ fn category_wire_results_and_rejections_survive_deletion_and_worker_restart() {
     let category = created.result.as_ref().unwrap()["id"].as_u64().unwrap();
     assert_eq!(created.result.as_ref().unwrap()["name"], "Work");
     assert_eq!(
-        session.core_state.categories.len(),
+        session.core_state.categories().len(),
         2,
         "duplicate admission reserved and created once"
     );
@@ -74,7 +74,7 @@ fn category_wire_results_and_rejections_survive_deletion_and_worker_restart() {
     let rx = send(&mut journal, rename.clone());
     let renamed = finish(&mut journal, &mut session, &rx);
     assert_eq!(renamed.result.as_ref().unwrap()["name"], "  Renamed  ");
-    assert_eq!(session.core_state.categories[1].name, "Renamed");
+    assert_eq!(session.core_state.categories()[1].name, "Renamed");
     let invalid = request(
         "workspace_category.create",
         serde_json::json!({"name":"renamed"}),
@@ -94,7 +94,7 @@ fn category_wire_results_and_rejections_survive_deletion_and_worker_restart() {
         ),
     );
     assert!(finish(&mut journal, &mut session, &rx).error.is_none());
-    assert_eq!(session.core_state.categories.len(), 1);
+    assert_eq!(session.core_state.categories().len(), 1);
     drop(journal);
     session.core_state.replace_local_workspaces(Vec::new());
     session.journal_binding = None;
@@ -126,7 +126,7 @@ fn category_wire_results_and_rejections_survive_deletion_and_worker_restart() {
         assert!(replay.idempotent_replay);
     }
     assert_eq!(
-        session.core_state.categories.len(),
+        session.core_state.categories().len(),
         1,
         "retries neither resolve missing category nor recreate it"
     );
@@ -407,11 +407,11 @@ fn stale_settings_reset_completion_cannot_overwrite_a_newer_settings_intent() {
     let category = finish(&mut journal, &mut session, &rx).result.unwrap()["id"]
         .as_u64()
         .unwrap() as u32;
-    let workspace = session.core_state.local_workspaces[0].id;
+    let workspace = session.core_state.local_workspaces()[0].id;
     journal
         .admit_fixed_intent(
             &session,
-            vec![tasty_domain::StructuralCommand::SetWorkspaceCategory {
+            vec![tasty_core::StructuralCommand::SetWorkspaceCategory {
                 workspace_id: workspace,
                 category,
             }],
@@ -424,16 +424,16 @@ fn stale_settings_reset_completion_cannot_overwrite_a_newer_settings_intent() {
         assert!(Instant::now() < until);
         std::thread::sleep(Duration::from_millis(1));
     }
-    assert_eq!(session.core_state.categories.len(), 2);
-    assert_eq!(session.core_state.local_workspaces[0].category, category);
-    let mut off = session.core_state.settings.clone();
+    assert_eq!(session.core_state.categories().len(), 2);
+    assert_eq!(session.core_state.local_workspaces()[0].category, category);
+    let mut off = session.runtime.settings.clone();
     off.general.workspace_categories_enabled = false;
     let first = journal.note_settings_intent().unwrap();
     journal.admit_settings_reset(
         first,
         vec![StreamCommand {
             stream: session.journal_binding.as_ref().unwrap().stream.clone(),
-            command: tasty_domain::StructuralCommand::ResetCategories,
+            command: tasty_core::StructuralCommand::ResetCategories,
         }],
         off,
         &crate::intent::IntentOrigin::System,
@@ -446,7 +446,7 @@ fn stale_settings_reset_completion_cannot_overwrite_a_newer_settings_intent() {
         .settings
         .general
         .workspace_categories_enabled = true;
-    session.core_state.settings.general.startup_command = "latest-setting-B".into();
+    session.runtime.settings.general.startup_command = "latest-setting-B".into();
     let until = Instant::now() + Duration::from_secs(10);
     while !journal.commands.pending.is_empty() {
         journal.poll_bootstrap(&mut [&mut session]).unwrap();
@@ -465,22 +465,22 @@ fn stale_settings_reset_completion_cannot_overwrite_a_newer_settings_intent() {
             .workspace_categories_enabled
     );
     assert_eq!(
-        session.core_state.settings.general.startup_command,
+        session.runtime.settings.general.startup_command,
         "latest-setting-B"
     );
     assert_eq!(
-        session.core_state.categories.len(),
+        session.core_state.categories().len(),
         1,
         "committed reset facts are retained"
     );
-    assert_eq!(session.core_state.local_workspaces[0].category, 0);
+    assert_eq!(session.core_state.local_workspaces()[0].category, 0);
 }
 
 #[cfg(feature = "gui")]
 #[test]
 fn fixed_intent_budget_counts_its_commands_and_rejects_before_admission_without_losing_capacity() {
     let (mut session, mut journal) = boot();
-    let tab = session.core_state.local_workspaces[0]
+    let tab = session.core_state.local_workspaces()[0]
         .pane_layout()
         .first_pane()
         .unwrap()
@@ -489,7 +489,7 @@ fn fixed_intent_budget_counts_its_commands_and_rejects_before_admission_without_
     journal
         .admit_fixed_intent(
             &session,
-            vec![tasty_domain::StructuralCommand::RenameTab {
+            vec![tasty_core::StructuralCommand::RenameTab {
                 tab_id: tab,
                 name: Some("fixed-name".into()),
             }],
@@ -505,7 +505,7 @@ fn fixed_intent_budget_counts_its_commands_and_rejects_before_admission_without_
     // A larger derived fixed payload hits the pre-Admit stage, so no Resolve can be sent.
     journal.commands.pending.get_mut(&ticket).unwrap().fixed = Some(vec![StreamCommand {
         stream: session.journal_binding.as_ref().unwrap().stream.clone(),
-        command: tasty_domain::StructuralCommand::RenameTab {
+        command: tasty_core::StructuralCommand::RenameTab {
             tab_id: tab,
             name: Some("x".repeat(tasty_ipc::admission::QUEUED_BYTES_LIMIT)),
         },
@@ -554,7 +554,7 @@ fn headless_pending_category_intent_uses_the_explicit_engine_journal_admission()
         &mut journal,
     );
     assert_eq!(
-        session.core_state.categories.len(),
+        session.core_state.categories().len(),
         1,
         "draining the intent does not perform the old direct writer"
     );

@@ -29,7 +29,7 @@ pub fn handle_get_plugin_setting(
 /// `settings.get_remote_transfer {}` → `RemoteTransferSettings` 직렬화
 /// (`{ "dir": <string>, "max_mb": <u64> }`). 원격 전송 저장 정책 조회.
 pub fn handle_get_remote_transfer(engine: &CoreState, id: Value) -> JsonRpcResponse {
-    match serde_json::to_value(&engine.settings.remote_transfer) {
+    match serde_json::to_value(&engine.runtime.settings.remote_transfer) {
         Ok(v) => JsonRpcResponse::success(id, v),
         Err(e) => JsonRpcResponse::error(id, -32603, format!("failed to serialize settings: {e}")),
     }
@@ -43,7 +43,7 @@ pub fn handle_set_remote_transfer(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let mut new_settings = engine.settings.clone();
+    let mut new_settings = engine.runtime.settings.clone();
     let mut changed = false;
 
     if let Some(dir) = params.get("dir") {
@@ -92,7 +92,7 @@ mod tests {
     fn plugin_can_read_back_its_own_stored_setting() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        e.settings.set_plugin_setting(
+        e.runtime.settings.set_plugin_setting(
             "com.tasty.claude",
             "spawn_child_warn_threshold",
             PluginSettingValue::Number(8.0),
@@ -137,8 +137,8 @@ mod tests {
     fn get_remote_transfer_reflects_live_settings() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        e.settings.remote_transfer.dir = "/tmp/xfer".to_string();
-        e.settings.remote_transfer.max_mb = 42;
+        e.runtime.settings.remote_transfer.dir = "/tmp/xfer".to_string();
+        e.runtime.settings.remote_transfer.max_mb = 42;
         let resp = handle_get_remote_transfer(&e, json!(1));
         let v = resp.result.unwrap();
         assert_eq!(v["dir"], json!("/tmp/xfer"));
@@ -149,7 +149,7 @@ mod tests {
     fn plugin_cannot_read_another_plugins_setting() {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
-        e.settings.set_plugin_setting(
+        e.runtime.settings.set_plugin_setting(
             "com.tasty.codex",
             "spawn_child_warn_threshold",
             PluginSettingValue::Number(3.0),

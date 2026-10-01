@@ -142,7 +142,7 @@ impl EngineRegistry {
     pub(crate) fn retiring_slots(&self) -> impl Iterator<Item = u32> + '_ {
         self.retiring
             .keys()
-            .filter_map(|id| self.sessions.get(id)?.core_state.layout_slot)
+            .filter_map(|id| self.sessions.get(id)?.persistence.slot)
     }
 
     pub(crate) fn of_window(&self, wid: WindowId) -> Option<EngineId> {
@@ -311,7 +311,7 @@ mod tests {
     ) -> (MainViewState, crate::runtime::engine_session::EngineSession) {
         let (state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
-        engine.layout_slot = slot;
+        engine.persistence.slot = slot;
         (state, engine_session)
     }
 
@@ -338,7 +338,7 @@ mod tests {
     fn slots(reg: &EngineRegistry) -> Vec<u32> {
         let mut v: Vec<u32> = reg
             .session_ids()
-            .filter_map(|id| reg.get(id).and_then(|e| e.layout_slot))
+            .filter_map(|id| reg.get(id).and_then(|e| e.persistence.slot))
             .collect();
         v.sort_unstable();
         v

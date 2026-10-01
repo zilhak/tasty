@@ -159,7 +159,7 @@ impl MainView {
         let key = self.shortcut_lookup_key(event);
         let decision = stage_key_decision(
             self.state.fullscreen_stage_active(),
-            &engine.settings.keybindings.fullscreen_stage_exit,
+            &engine.runtime.settings.keybindings.fullscreen_stage_exit,
             &key,
             self.base.state.modifiers,
         );
@@ -315,11 +315,11 @@ impl MainView {
 
         // Option as Meta 설정은 macOS에만 있으므로 다른 플랫폼은 false를 쓴다.
         #[cfg(target_os = "macos")]
-        let option_as_meta = engine.settings.general.option_as_meta;
+        let option_as_meta = engine.runtime.settings.general.option_as_meta;
         #[cfg(not(target_os = "macos"))]
         let option_as_meta = false;
 
-        let shift_enter_newline = engine.settings.terminal_input.shift_enter_newline(
+        let shift_enter_newline = engine.runtime.settings.terminal_input.shift_enter_newline(
             self.state
                 .focused_surface_id(&*engine)
                 .and_then(|sid| engine.foreground_name(sid)),

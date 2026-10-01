@@ -78,22 +78,22 @@ pub(crate) fn prepare(
     let previous_resource = engine.runtime.terminals.generation(surface_id);
     if !matches!(
         claimed.plan.destination,
-        tasty_domain::CreationDestination::Convert { .. }
-            | tasty_domain::CreationDestination::Restore { .. }
+        tasty_core::CreationDestination::Convert { .. }
+            | tasty_core::CreationDestination::Restore { .. }
     ) && (previous_resource.is_some() || engine.find_surface_by_id(surface_id).is_some())
     {
         anyhow::bail!("reserved surface ID already has a live owner");
     }
 
     let mut scrollback_persist_id = None;
-    let metadata=if matches!(claimed.plan.destination,tasty_domain::CreationDestination::Pane {..}|tasty_domain::CreationDestination::Split {..}) {
+    let metadata=if matches!(claimed.plan.destination,tasty_core::CreationDestination::Pane {..}|tasty_core::CreationDestination::Split {..}) {
         claimed.input.params.get("meta").and_then(|value|value.as_object()).into_iter().flatten().filter_map(|(key,value)|value.as_str().map(|value|(key.clone(),value.to_owned()))).collect()
     } else {Vec::new()};
     let input = claimed.input;
     let adoption=input.adopt.clone();
     let child=input.child.clone();
     if child.as_ref().is_some_and(|child|child.runtime_epoch!=binding.runtime_epoch) {anyhow::bail!("child creation belongs to an earlier runtime; one-shot input cannot be replayed");}
-    let deferred=matches!(claimed.plan.destination,tasty_domain::CreationDestination::Assembly {..}) && input.kind!="terminal" && engine.runtime.surface_registry.get_live(&input.kind).is_none();
+    let deferred=matches!(claimed.plan.destination,tasty_core::CreationDestination::Assembly {..}) && input.kind!="terminal" && engine.runtime.surface_registry.get_live(&input.kind).is_none();
     let (surface, connection, publication, registration) = if let Some(adoption)=&adoption {
         if input.kind!="terminal" || adoption.runtime_epoch!=binding.runtime_epoch {anyhow::bail!("standalone transfer belongs to another runtime or kind");}
         let (terminal,pty,persist_id)=engine.runtime.terminals.take_standalone_for_adoption(adoption.pty_id,adoption.resource_generation).ok_or_else(||anyhow::anyhow!("standalone owner exited or changed before transfer"))?;
@@ -170,7 +170,7 @@ pub(crate) fn prepare(
             None,
         )
     } else if deferred {
-        (Box::new(crate::runtime::surface_restorer::JournalPlaceholder {id:surface_id,kind:input.kind.clone(),data:claimed.plan.surface.data,creation_seed:None,activation:Some(tasty_domain::Activation {generation:claimed.lease.resource_generation,phase:tasty_domain::ActivationPhase::Deferred})}) as Box<dyn crate::model::Surface>,None,None,None)
+        (Box::new(crate::runtime::surface_restorer::JournalPlaceholder {id:surface_id,kind:input.kind.clone(),data:claimed.plan.surface.data,creation_seed:None,activation:Some(tasty_core::Activation {generation:claimed.lease.resource_generation,phase:tasty_core::ActivationPhase::Deferred})}) as Box<dyn crate::model::Surface>,None,None,None)
     } else {
         if let Some(plugin_id) = engine.runtime.surface_registry.withdrawn_by(&input.kind) {
             return Err(crate::runtime::surface_registry::SurfaceKindWithdrawn {

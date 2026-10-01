@@ -57,7 +57,7 @@ pub fn draw_status_bar(
         .keybindings
         .toggle_command_palette
         .first()
-        .map(|b| tasty_settings::KeybindingSettings::format_display(b, &engine.settings.general))
+        .map(|b| tasty_settings::KeybindingSettings::format_display(b, &engine.runtime.settings.general))
         .unwrap_or_default();
 
     let data = StatusBarData {
@@ -95,12 +95,12 @@ pub fn draw_status_bar(
             }
             StatusBarAction::ToggleTheme => {
                 // 디자인 onTheme: latte ↔ mocha. 그 외 테마에서 누르면 latte 로.
-                let target = if engine.settings.appearance.theme == tasty_themes::BUILTIN_LATTE_ID {
+                let target = if engine.runtime.settings.appearance.theme == tasty_themes::BUILTIN_LATTE_ID {
                     tasty_themes::BUILTIN_MOCHA_ID
                 } else {
                     tasty_themes::BUILTIN_LATTE_ID
                 };
-                let mut new_settings = engine.settings.clone();
+                let mut new_settings = engine.runtime.settings.clone();
                 tasty_themes::apply_theme(&mut new_settings.appearance, target);
                 state.dispatch_intent(
                     crate::app::command::DomainIntent::UpdateSettings(new_settings)

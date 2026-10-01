@@ -12,19 +12,18 @@
 //! - [`Canonical::digest`]는 정규 표현 직렬화의 FNV-1a 64비트 해시다. 차이를 찾을 때는
 //!   [`differences`]로 경로별 차이를 본다.
 //!
-//! 이 모듈은 제품 경로에 연결하지 않는다.
+//! Committed projection uses the same pure comparison as import diagnostics.
 
-pub(crate) mod live;
+pub mod live;
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
-use tasty_domain::{DataRef, JournalModel, SplitTree};
-use tasty_event_store::{EventStore, PayloadRef};
+use crate::{DataRef, JournalModel, SplitTree};
 use tasty_model::SplitDirection;
 
 /// 비교에서 뺀 CoreState 자료와 그 이유. 문서의 제외 목록과 같다.
-pub(crate) const DIGEST_EXCLUDED: &[(&str, &str)] = &[
+pub const DIGEST_EXCLUDED: &[(&str, &str)] = &[
     (
         "SurfaceLayout::Split.node_id",
         "process-local compatibility projection identity",
@@ -40,7 +39,7 @@ pub(crate) const DIGEST_EXCLUDED: &[(&str, &str)] = &[
 
 /// CoreState와 가져온 journal 모델 사이의 알려진 불일치. 문서의 목록과 같다.
 /// 판정은 CoreState 쪽이 왼쪽인 [`Difference`]에 대해 한다.
-pub(crate) const KNOWN_MISMATCHES: &[KnownMismatch] = &[KnownMismatch {
+pub const KNOWN_MISMATCHES: &[KnownMismatch] = &[KnownMismatch {
     id: "unregistered-surface-kind",
     reason: "layout capture saves a surface of an unregistered kind as kind empty",
     applies: |d, kept| {
@@ -53,17 +52,17 @@ pub(crate) const KNOWN_MISMATCHES: &[KnownMismatch] = &[KnownMismatch {
 }];
 
 /// capture가 kind를 그대로 저장하는지 답한다. 판정 원본은 CoreState 쪽이 준다.
-pub(crate) type KeptKind<'a> = &'a dyn Fn(&str) -> bool;
+pub type KeptKind<'a> = &'a dyn Fn(&str) -> bool;
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct KnownMismatch {
-    pub(crate) id: &'static str,
-    pub(crate) reason: &'static str,
-    pub(crate) applies: fn(&Difference, KeptKind<'_>) -> bool,
+pub struct KnownMismatch {
+    pub id: &'static str,
+    pub reason: &'static str,
+    pub applies: fn(&Difference, KeptKind<'_>) -> bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub(crate) enum IdMode {
+pub enum IdMode {
     /// 원래 ID.
     Exact,
     /// 순회 순서 번호. category·workspace는 표시 순서, pane·tab·surface는 전체 깊이 우선 순서다.
@@ -71,60 +70,60 @@ pub(crate) enum IdMode {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct Canonical {
-    pub(crate) ids: IdMode,
-    pub(crate) categories: Vec<CanonCategory>,
-    pub(crate) workspaces: Vec<CanonWorkspace>,
+pub struct Canonical {
+    pub ids: IdMode,
+    pub categories: Vec<CanonCategory>,
+    pub workspaces: Vec<CanonWorkspace>,
     /// 순서 목록에서 닿지 않는 항목과 부모 역참조가 맞지 않는 항목. 원래 ID로 적는다.
-    pub(crate) defects: Vec<String>,
+    pub defects: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct CanonCategory {
-    pub(crate) id: u32,
-    pub(crate) name: String,
+pub struct CanonCategory {
+    pub id: u32,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct CanonWorkspace {
-    pub(crate) id: u32,
-    pub(crate) name: String,
-    pub(crate) category: u32,
-    pub(crate) subtitle: String,
-    pub(crate) description: String,
-    pub(crate) attach_mapping: Option<serde_json::Value>,
-    pub(crate) metadata: BTreeMap<String, String>,
-    pub(crate) layout: CanonTree,
+pub struct CanonWorkspace {
+    pub id: u32,
+    pub name: String,
+    pub category: u32,
+    pub subtitle: String,
+    pub description: String,
+    pub attach_mapping: Option<serde_json::Value>,
+    pub metadata: BTreeMap<String, String>,
+    pub layout: CanonTree,
     /// layout의 leaf 순서.
-    pub(crate) panes: Vec<CanonPane>,
+    pub panes: Vec<CanonPane>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct CanonPane {
-    pub(crate) id: u32,
-    pub(crate) tabs: Vec<CanonTab>,
+pub struct CanonPane {
+    pub id: u32,
+    pub tabs: Vec<CanonTab>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct CanonTab {
-    pub(crate) id: u32,
-    pub(crate) name: String,
-    pub(crate) explicit_name: Option<String>,
-    pub(crate) layout: CanonTree,
+pub struct CanonTab {
+    pub id: u32,
+    pub name: String,
+    pub explicit_name: Option<String>,
+    pub layout: CanonTree,
     /// layout의 leaf 순서.
-    pub(crate) surfaces: Vec<CanonSurface>,
+    pub surfaces: Vec<CanonSurface>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct CanonSurface {
-    pub(crate) id: u32,
-    pub(crate) kind: String,
-    pub(crate) data: CanonData,
-    pub(crate) metadata: BTreeMap<String, String>,
+pub struct CanonSurface {
+    pub id: u32,
+    pub kind: String,
+    pub data: CanonData,
+    pub metadata: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) enum CanonTree {
+pub enum CanonTree {
     Leaf(u32),
     Split {
         direction: &'static str,
@@ -137,7 +136,7 @@ pub(crate) enum CanonTree {
 
 /// surface 저장 자료의 내용.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) enum CanonData {
+pub enum CanonData {
     /// 이 비교에서 뺐다.
     NotCompared,
     /// 자료가 없다.
@@ -151,7 +150,7 @@ pub(crate) enum CanonData {
 }
 
 /// 자료 참조를 내용으로 바꾼다.
-pub(crate) trait ResolveData {
+pub trait ResolveData {
     fn resolve(&self, data: DataRef) -> CanonData;
 
     /// 자료가 없는 surface도 포함한다. 자료를 비교하지 않으면 없는 자료도 비교하지 않는다.
@@ -160,23 +159,8 @@ pub(crate) trait ResolveData {
     }
 }
 
-/// 저장소의 payload 바이트를 그대로 해시한다.
-pub(crate) struct StoreBytes<'a>(pub(crate) &'a EventStore);
-
-impl ResolveData for StoreBytes<'_> {
-    fn resolve(&self, data: DataRef) -> CanonData {
-        match self.0.read_payload(PayloadRef(data.0)) {
-            Ok(bytes) => CanonData::Bytes {
-                len: bytes.len(),
-                hash: fnv_hex(&bytes),
-            },
-            Err(error) => CanonData::Unreadable(error.to_string()),
-        }
-    }
-}
-
 /// 자료를 비교에서 뺀다.
-pub(crate) struct SkipData;
+pub struct SkipData;
 
 impl ResolveData for SkipData {
     fn resolve(&self, _data: DataRef) -> CanonData {
@@ -188,7 +172,7 @@ impl ResolveData for SkipData {
     }
 }
 
-pub(crate) fn direction_name(direction: SplitDirection) -> &'static str {
+pub fn direction_name(direction: SplitDirection) -> &'static str {
     match direction {
         SplitDirection::Horizontal => "horizontal",
         SplitDirection::Vertical => "vertical",
@@ -196,7 +180,7 @@ pub(crate) fn direction_name(direction: SplitDirection) -> &'static str {
 }
 
 /// JSON 값의 객체 키를 정렬한다. serde_json의 순서 보존 기능이 켜져 있어도 같은 값이 같은 바이트가 된다.
-pub(crate) fn sorted_value(value: &serde_json::Value) -> serde_json::Value {
+pub fn sorted_value(value: &serde_json::Value) -> serde_json::Value {
     match value {
         serde_json::Value::Object(map) => {
             let sorted: BTreeMap<&String, serde_json::Value> =
@@ -210,7 +194,7 @@ pub(crate) fn sorted_value(value: &serde_json::Value) -> serde_json::Value {
     }
 }
 
-pub(crate) fn fnv_hex(bytes: &[u8]) -> String {
+pub fn fnv_hex(bytes: &[u8]) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in bytes {
         hash ^= u64::from(*byte);
@@ -238,7 +222,7 @@ fn tree<Id: Copy + Into<u32>>(node: &SplitTree<Id>) -> CanonTree {
 
 impl Canonical {
     /// journal 모델 하나(엔진 stream 하나)의 정규 표현. ID는 원래 값이다.
-    pub(crate) fn of_journal(model: &JournalModel, data: &dyn ResolveData) -> Self {
+    pub fn of_journal(model: &JournalModel, data: &dyn ResolveData) -> Self {
         let mut defects = Vec::new();
         let mut seen_categories = BTreeSet::new();
         let categories = model
@@ -370,7 +354,7 @@ impl Canonical {
     }
 
     /// ID를 순회 순서 번호로 바꾼다. 트리 leaf와 workspace의 category도 같은 번호로 옮긴다.
-    pub(crate) fn positional(&self) -> Self {
+    pub fn positional(&self) -> Self {
         let mut out = self.clone();
         out.ids = IdMode::Positional;
         let category_ids: BTreeMap<u32, u32> = self
@@ -410,7 +394,7 @@ impl Canonical {
     }
 
     /// surface 저장 자료를 비교에서 뺀다.
-    pub(crate) fn without_data(&self) -> Self {
+    pub fn without_data(&self) -> Self {
         let mut out = self.clone();
         for surface in out
             .workspaces
@@ -424,12 +408,12 @@ impl Canonical {
         out
     }
 
-    pub(crate) fn to_value(&self) -> serde_json::Value {
+    pub fn to_value(&self) -> serde_json::Value {
         serde_json::to_value(self).expect("canonical form is plain data")
     }
 
     /// 정규 표현 직렬화의 해시. 같은 구조면 같은 값이다.
-    pub(crate) fn digest(&self) -> String {
+    pub fn digest(&self) -> String {
         fnv_hex(&serde_json::to_vec(self).expect("canonical form is plain data"))
     }
 }
@@ -451,10 +435,10 @@ fn relabel(node: &mut CanonTree, ids: &BTreeMap<u32, u32>) {
 
 /// 정규 표현 한 경로의 차이. `left`·`right`는 [`differences`]에 준 순서다.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Difference {
-    pub(crate) path: String,
-    pub(crate) left: serde_json::Value,
-    pub(crate) right: serde_json::Value,
+pub struct Difference {
+    pub path: String,
+    pub left: serde_json::Value,
+    pub right: serde_json::Value,
 }
 
 impl std::fmt::Display for Difference {
@@ -465,13 +449,13 @@ impl std::fmt::Display for Difference {
 
 impl Difference {
     /// 경로의 마지막 필드 이름.
-    pub(crate) fn field(&self) -> &str {
+    pub fn field(&self) -> &str {
         self.path.rsplit('.').next().unwrap_or_default()
     }
 }
 
 /// 두 정규 표현의 경로별 차이. 같으면 비어 있다. 길이가 다른 목록은 목록 전체를 한 차이로 본다.
-pub(crate) fn differences(left: &Canonical, right: &Canonical) -> Vec<Difference> {
+pub fn differences(left: &Canonical, right: &Canonical) -> Vec<Difference> {
     let mut out = Vec::new();
     diff_value("", &left.to_value(), &right.to_value(), &mut out);
     out
@@ -519,7 +503,7 @@ fn diff_value(
 /// CoreState 쪽을 왼쪽, 가져온 journal 쪽을 오른쪽에 둔 차이가 알려진 불일치인지.
 /// `kept`는 capture가 그 kind를 그대로 저장하는지 답한다. 그대로 저장하는 kind가 empty가 됐다면
 /// 알려진 불일치가 아니라 회귀다.
-pub(crate) fn known_mismatch(
+pub fn known_mismatch(
     difference: &Difference,
     kept: KeptKind<'_>,
 ) -> Option<&'static KnownMismatch> {

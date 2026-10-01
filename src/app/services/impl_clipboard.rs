@@ -11,7 +11,7 @@ impl AppServices {
         sid: u32,
         generation: tasty_terminal::ResourceGeneration,
     ) {
-        let allow = engine.settings.general.allow_clipboard_read;
+        let allow = engine.runtime.settings.general.allow_clipboard_read;
         let clip = if allow {
             match self.clipboard.read_text() {
                 Ok(t) => Some(t),

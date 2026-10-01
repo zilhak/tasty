@@ -4,149 +4,6 @@ use super::*;
 use crate::runtime::engine_access::EngineMut;
 
 impl AppServices {
-    /// scope에 맞는 항목을 꺼내 engine에 복원한다. App의 활성 workspace 변경은 호출자가 맡는다.
-    /// 복원 중 실패해도 꺼낸 항목이나 이미 만든 자원을 되돌리는 처리는 여기서 하지 않는다.
-    pub(super) fn apply_restore_closed_item(
-        engine: &mut EngineMut<'_>,
-        target_pane_id: Option<u32>,
-        scope: crate::app::command::RestoreScope,
-    ) -> CoreEvent {
-        use crate::app::command::RestoredKind;
-        use crate::core::restore_rebuild;
-        use crate::model::Surface;
-        use crate::model::Tab;
-        use crate::model::Workspace;
-        use crate::model::closed_item::ClosedItem;
-
-        let nothing = || CoreEvent::ClosedItemRestored {
-            restored: false,
-            kind: RestoredKind::Nothing,
-            presentation: Box::default(),
-        };
-
-        let Some(item) = pop_for_scope(engine, scope) else {
-            return nothing();
-        };
-
-        let mut presentation = crate::model::StructurePresentationSnapshot::default();
-        let kind = match item {
-            ClosedItem::Surface { surface, tab_name } => {
-                let Some(node) = restore_rebuild::rebuild_surface_node(engine, surface) else {
-                    return nothing();
-                };
-                let Some(pane_id) = target_pane_id else {
-                    return nothing();
-                };
-                let tab_id = engine.runtime.counters.next_tab();
-                let surface_box: Box<dyn Surface> = Box::new(node);
-                let tab = Tab::new_with_surface(tab_id, tab_name, surface_box);
-                if !push_tab_to_pane(engine, pane_id, tab) {
-                    return nothing();
-                }
-                presentation.selected_tabs.insert(pane_id, tab_id);
-                RestoredKind::TabIntoPane
-            }
-            ClosedItem::Tab(closed_tab) => {
-                let Some(result) =
-                    restore_rebuild::rebuild_surface(engine, closed_tab.panel, &mut presentation)
-                else {
-                    return nothing();
-                };
-                let Some(pane_id) = target_pane_id else {
-                    return nothing();
-                };
-                let tab_id = engine.runtime.counters.next_tab();
-                let name = closed_tab.explicit_name.unwrap_or(closed_tab.name);
-                let tab = result.into_tab(tab_id, name, &mut presentation);
-                if !push_tab_to_pane(engine, pane_id, tab) {
-                    return nothing();
-                }
-                presentation.selected_tabs.insert(pane_id, tab_id);
-                RestoredKind::TabIntoPane
-            }
-            ClosedItem::Pane {
-                pane,
-                sibling_pane_id,
-                direction,
-                ratio,
-                was_first,
-            } => {
-                let Some(rebuilt) = restore_rebuild::rebuild_pane(engine, pane, &mut presentation)
-                else {
-                    return nothing();
-                };
-                // 닫힐 당시 위치 대신 호출자가 지정한 대상 pane의 workspace에 복원한다.
-                let Some(pane_id) = target_pane_id else {
-                    return nothing();
-                };
-                let Some(ws) = engine
-                    .workspaces_mut()
-                    .into_iter()
-                    .find(|ws| ws.pane_layout().find_pane(pane_id).is_some())
-                else {
-                    return nothing();
-                };
-                let restored_pane_id = rebuilt.id;
-                let leftover = ws.pane_layout_mut().insert_pane_beside(
-                    sibling_pane_id,
-                    direction,
-                    ratio,
-                    rebuilt,
-                    was_first,
-                );
-                if let Some(rebuilt) = leftover {
-                    // 옛 sibling이 없으면 대상 pane을 분할해 넣는다.
-                    if ws
-                        .pane_layout_mut()
-                        .split_pane_in_place(pane_id, direction, rebuilt)
-                        .is_some()
-                    {
-                        tracing::warn!(
-                            "restore pane: fallback split_pane_in_place unexpectedly missed pane {pane_id}"
-                        );
-                        return nothing();
-                    }
-                }
-                RestoredKind::PaneIntoWorkspace {
-                    pane_id: restored_pane_id,
-                }
-            }
-            ClosedItem::Workspace {
-                name,
-                subtitle,
-                pane_layout,
-                focused_pane,
-                ..
-            } => {
-                let ws_id = engine.runtime.counters.next_workspace();
-                let Some(pane_node) =
-                    restore_rebuild::rebuild_pane_node(engine, pane_layout, &mut presentation)
-                else {
-                    return nothing();
-                };
-                let all_pane_ids = pane_node.all_pane_ids();
-                let actual_focused = if all_pane_ids.contains(&focused_pane) {
-                    focused_pane
-                } else {
-                    *all_pane_ids.first().unwrap_or(&0)
-                };
-                let ws = Workspace::from_restored(ws_id, name, subtitle, pane_node);
-                presentation.panes.insert(ws_id, actual_focused);
-                engine.push_local_workspace(ws);
-                RestoredKind::Workspace {
-                    new_ws_index: engine.workspaces().len() - 1,
-                }
-            }
-        };
-
-        engine.mark_layout_dirty();
-        CoreEvent::ClosedItemRestored {
-            restored: true,
-            kind,
-            presentation: Box::new(presentation),
-        }
-    }
-
     /// 벡터의 위치를 바꾸며 App의 활성 workspace 인덱스는 호출자가 보정한다.
     pub(super) fn apply_move_workspace(
         &mut self,
@@ -300,14 +157,14 @@ pub(crate) fn apply_create_workspace_inner(
     let is_terminal = kind == "terminal";
 
     let mut ws = if is_terminal {
-        let shell = if engine.settings.general.shell.is_empty() {
+        let shell = if engine.runtime.settings.general.shell.is_empty() {
             None
         } else {
-            Some(engine.settings.general.shell.as_str())
+            Some(engine.runtime.settings.general.shell.as_str())
         };
-        let shell_args_owned = engine.settings.general.effective_shell_args();
+        let shell_args_owned = engine.runtime.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-        let shell_envs_owned = engine.settings.general.effective_shell_envs();
+        let shell_envs_owned = engine.runtime.settings.general.effective_shell_envs();
         let shell_envs: Vec<(&str, &str)> = shell_envs_owned
             .iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
@@ -315,8 +172,8 @@ pub(crate) fn apply_create_workspace_inner(
         let (terminal, pty) = crate::runtime::terminal_spawn::spawn_shell_terminal(
             surface_id,
             crate::runtime::terminal_spawn::ShellSpawnOpts {
-                cols: engine.default_cols,
-                rows: engine.default_rows,
+                cols: engine.runtime.default_cols,
+                rows: engine.runtime.default_rows,
                 shell,
                 shell_args: &shell_args,
                 extra_env: &shell_envs,
@@ -391,33 +248,6 @@ pub(crate) fn apply_create_workspace_inner(
         renamed_subtitle,
         renamed_description,
     })
-}
-
-/// scope에 맞는 최신 복원 항목만 꺼낸다. workspace 전체 항목은 출처가 None이므로 Workspace 필터에서 제외된다.
-/// 꺼낸 뒤 거절하면 항목을 잃으므로 후보 선택 때 범위를 적용한다.
-fn pop_for_scope(
-    engine: &mut crate::core::CoreState,
-    scope: crate::app::command::RestoreScope,
-) -> Option<crate::model::ClosedItem> {
-    use crate::app::command::RestoreScope;
-    match scope {
-        RestoreScope::Workspace(ws_id) => engine.closed_items.pop_matching(|o| o == Some(ws_id)),
-        RestoreScope::Local => engine.closed_items.pop_matching(|_| true),
-    }
-}
-
-fn push_tab_to_pane(
-    engine: &mut crate::core::CoreState,
-    pane_id: u32,
-    tab: crate::model::Tab,
-) -> bool {
-    for ws in engine.workspaces_mut().into_iter() {
-        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-            pane.tabs.push(tab);
-            return true;
-        }
-    }
-    false
 }
 
 /// 저장 메타데이터에서 조회한 최대 surface ID를 기준으로 발급 기준을 높인다.

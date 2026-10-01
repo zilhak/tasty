@@ -95,7 +95,7 @@ pub(super) fn handle_debug_settings_apply(
         return JsonRpcResponse::invalid_params(id, "'settings' must be a JSON object");
     }
 
-    let mut base = match serde_json::to_value(&engine.settings) {
+    let mut base = match serde_json::to_value(&engine.runtime.settings) {
         Ok(v) => v,
         Err(e) => {
             return JsonRpcResponse::error(

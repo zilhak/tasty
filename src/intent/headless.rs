@@ -170,7 +170,7 @@ fn route_non_domain(
             crate::intent::workspace::handle(core, state, engine, dispatched);
         }
         Intent::RestoreClosedItem => {
-            crate::intent::closed_item::handle(core, state, engine, dispatched);
+            tracing::error!("undo intent bypassed journal admission");
         }
         Intent::DirectRename(_) => {
             #[cfg(test)]
@@ -221,7 +221,7 @@ fn handle_core_event(engine: &mut EngineMut<'_>, event: CoreEvent) {
 }
 
 fn apply_settings(engine: &mut CoreState, new_settings: tasty_settings::Settings) {
-    engine.settings = new_settings.clone();
+    engine.runtime.settings = new_settings.clone();
     if let Err(e) = new_settings.save() {
         tracing::warn!("failed to save settings: {e}");
     }
@@ -612,7 +612,7 @@ mod tests {
         let mut terminal = tasty_terminal::Terminal::new_detached(80, 24);
         terminal.feed_bytes(b"\x1b]7;file://localhost/tmp/tasty-osc7-probe\x07");
         engine.runtime.terminals.insert(sid, terminal, None);
-        engine.layout_dirty.clear();
+        engine.persistence.dirty.clear();
         let tab_name = |engine: &CoreState| {
             state
                 .active_workspace(engine)
@@ -641,7 +641,7 @@ mod tests {
 
         assert_eq!(tab_name(&engine), "tasty-osc7-probe");
         assert!(
-            engine.layout_dirty.is_dirty(),
+            engine.persistence.dirty.is_dirty(),
             "attach 스냅샷 갱신에 필요한 layout dirty를 설정해야 한다"
         );
     }

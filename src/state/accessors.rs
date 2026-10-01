@@ -168,7 +168,7 @@ impl RequestContext {
         };
         let next = switch_target_for(kb, ctrl, shift, alt, option)
             .filter(|t| {
-                *t != SwitchTarget::Category || engine.settings.general.workspace_categories_enabled
+                *t != SwitchTarget::Category || engine.runtime.settings.general.workspace_categories_enabled
             })
             .map(|target| {
                 let pane_id = match target {

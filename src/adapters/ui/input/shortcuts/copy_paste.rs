@@ -25,7 +25,7 @@ impl MainView {
         key: &Key,
         mods: ModifiersState,
     ) -> bool {
-        let bindings = engine.settings.keybindings.copy.clone();
+        let bindings = engine.runtime.settings.keybindings.copy.clone();
         if !matches_any_binding(&bindings, key, mods) {
             return false;
         }
@@ -83,7 +83,7 @@ impl MainView {
         {
             return false;
         }
-        let kb = &engine.settings.keybindings;
+        let kb = &engine.runtime.settings.keybindings;
         let action = if matches_any_binding(&kb.select_all, key, mods) {
             ExplorerAction::SelectAll
         } else if matches_any_binding(&kb.copy_path, key, mods) {
@@ -160,7 +160,7 @@ impl MainView {
         key: &Key,
         mods: ModifiersState,
     ) -> bool {
-        let bindings = engine.settings.keybindings.paste.clone();
+        let bindings = engine.runtime.settings.keybindings.paste.clone();
         if !matches_any_binding(&bindings, key, mods) {
             return false;
         }

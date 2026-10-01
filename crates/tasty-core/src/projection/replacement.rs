@@ -1,10 +1,10 @@
 //! Apply a replacement to descriptors while retaining surviving layout nodes and runtime IDs.
 use super::*;
-use crate::model::{PaneNode,SurfaceLayout};
-pub(super) fn apply(core:&mut CoreState,replacement:tasty_domain::Replacement,retired:&mut Vec<Retired>)->Result<()> {
+use tasty_model::{PaneNode,SurfaceLayout};
+pub(super) fn apply(core:&mut CoreState,replacement:crate::Replacement,retired:&mut Vec<Retired>)->Result<()> {
     let source=replacement.source.id;let target=replacement.target.id;
     match replacement.source.kind {
-        tasty_domain::IdKind::Surface=> {
+        crate::IdKind::Surface=> {
             let source_tab=core.find_tab_for_surface(source).ok_or("source surface missing")?;
             let moved=if tab(core,source_tab)?.all_surface_ids().len()==1 {
                 let mut old=take_tab(core,source_tab)?;
@@ -17,13 +17,13 @@ pub(super) fn apply(core:&mut CoreState,replacement:tasty_domain::Replacement,re
             let slot=tab(core,target_tab)?.layout_mut().find_leaf_mut(target).ok_or("replacement target slot missing")?;
             retired.push(Retired::Surface(std::mem::replace(slot,moved)));
         },
-        tasty_domain::IdKind::Tab=> {
+        crate::IdKind::Tab=> {
             let moved=take_tab(core,source)?;
             let parent=core.find_pane_for_tab(target).ok_or("replacement tab parent missing")?;
             let pane=pane(core,parent)?;let index=pane.tabs.iter().position(|tab|tab.id==target).ok_or("replacement tab missing")?;
             retired.push(Retired::Tab(std::mem::replace(&mut pane.tabs[index],moved)));
         },
-        tasty_domain::IdKind::Pane=> {
+        crate::IdKind::Pane=> {
             let moved=take_pane(core,source)?;
             let index=core.find_workspace_index_for_pane(target).ok_or("replacement pane parent missing")?;
             let old=core.workspace_at_mut(index).ok_or("replacement workspace missing")?.pane_layout_mut().replace_pane(target,moved).map_err(|_|"replacement pane slot missing")?;

@@ -1,3 +1,4 @@
+use crate::runtime::journal_payload::StoreBytes;
 //! CoreState ↔ 구조 journal digest 시험. CoreState를 capture해 가져온 journal 모델이 CoreState와
 //! 같은 구조를 나타내고, replay해도 digest가 같으며, 한쪽만 바꾸면 digest가 달라지는지 본다.
 
@@ -5,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use tasty_domain::{DomainEvent, IdKind};
+use tasty_core::{DomainEvent, IdKind};
 use tasty_event_store::{
     CommitRequest, EventStore, ExpectedRevision, NewEvent, StoreError, StreamAppend, WriterEpoch,
 };
@@ -18,8 +19,8 @@ use crate::model::{
     SurfaceLayout, Tab, TerminalSurface, Workspace, WorkspaceAttachMapping, WorkspaceCategory,
 };
 use crate::runtime::journal::{self, engine_stream, full_replay, save_snapshot};
-use crate::runtime::shadow_digest::{
-    CanonData, Canonical, DIGEST_EXCLUDED, KNOWN_MISMATCHES, StoreBytes, differences,
+use tasty_core::canonical::{
+    CanonData, Canonical, DIGEST_EXCLUDED, KNOWN_MISMATCHES, differences,
     known_mismatch,
 };
 
@@ -164,7 +165,7 @@ fn engine() -> crate::runtime::engine_session::EngineSession {
     let mut engine_session =
         crate::runtime::engine_session::EngineSession::new(80, 24, waker).expect("engine");
     let mut engine = engine_session.borrow_mut();
-    engine.settings.general.restore_surface_content = false;
+    engine.runtime.settings.general.restore_surface_content = false;
     engine_session
 }
 
@@ -173,7 +174,7 @@ fn full_engine() -> crate::runtime::engine_session::EngineSession {
     let mut engine_session = engine();
     let mut engine = engine_session.borrow_mut();
     let side = WorkspaceCategory::new(6, "side".to_owned());
-    engine.categories = vec![
+    engine.categories() = vec![
         WorkspaceCategory::normal(),
         WorkspaceCategory::new(5, "work".to_owned()),
         side,
@@ -254,8 +255,8 @@ fn full_engine() -> crate::runtime::engine_session::EngineSession {
 fn minimal_engine() -> crate::runtime::engine_session::EngineSession {
     let mut engine_session = engine();
     let mut engine = engine_session.borrow_mut();
-    engine.categories = vec![WorkspaceCategory::normal()];
-    engine.local_workspaces = vec![workspace(
+    engine.categories() = vec![WorkspaceCategory::normal()];
+    engine.local_workspaces() = vec![workspace(
         1,
         "ws",
         0,
@@ -268,7 +269,7 @@ fn minimal_engine() -> crate::runtime::engine_session::EngineSession {
 fn tabs_engine() -> crate::runtime::engine_session::EngineSession {
     let mut engine_session = engine();
     let mut engine = engine_session.borrow_mut();
-    engine.categories = vec![
+    engine.categories() = vec![
         WorkspaceCategory::normal(),
         WorkspaceCategory::new(2, "b".to_owned()),
     ];
@@ -292,7 +293,7 @@ fn tabs_engine() -> crate::runtime::engine_session::EngineSession {
             )
         })
         .collect();
-    engine.local_workspaces = vec![
+    engine.local_workspaces() = vec![
         workspace(3, "b-first", 2, pane(9, tabs)),
         workspace(
             4,
@@ -371,7 +372,7 @@ fn replaying_the_imported_journal_gives_the_import_digest() {
         let (store, _) = open(&dir.path().join("journal.db"));
         assert!(
             store
-                .snapshot_and_tail(tasty_domain::MODEL_VERSION)
+                .snapshot_and_tail(tasty_core::MODEL_VERSION)
                 .expect("replay")
                 .snapshot
                 .is_some()
@@ -421,7 +422,7 @@ fn surface_data_is_compared_by_content() {
 type CoreMutation = (&'static str, fn(&mut CoreState));
 
 fn first_pane(engine: &mut CoreState) -> &mut Pane {
-    match engine.local_workspaces[0].pane_layout_mut() {
+    match engine.local_workspaces()[0].pane_layout_mut() {
         PaneNode::Split { first, .. } => match first.as_mut() {
             PaneNode::Leaf(pane) => pane,
             PaneNode::Split { .. } => panic!("fixture: first pane is a leaf"),
@@ -431,27 +432,27 @@ fn first_pane(engine: &mut CoreState) -> &mut Pane {
 }
 
 const CORE_MUTATIONS: &[CoreMutation] = &[
-    ("category name", |e| e.categories[1].name.push('x')),
-    ("category order", |e| e.categories.swap(1, 2)),
-    ("workspace order", |e| e.local_workspaces.swap(0, 2)),
-    ("workspace name", |e| e.local_workspaces[0].name.push('x')),
-    ("workspace category", |e| e.local_workspaces[0].category = 8),
+    ("category name", |e| e.categories()[1].name.push('x')),
+    ("category order", |e| e.categories().swap(1, 2)),
+    ("workspace order", |e| e.local_workspaces().swap(0, 2)),
+    ("workspace name", |e| e.local_workspaces()[0].name.push('x')),
+    ("workspace category", |e| e.local_workspaces()[0].category = 8),
     ("workspace subtitle", |e| {
-        e.local_workspaces[0].subtitle.clear()
+        e.local_workspaces()[0].subtitle.clear()
     }),
     ("workspace description", |e| {
-        e.local_workspaces[0].description.push('x')
+        e.local_workspaces()[0].description.push('x')
     }),
     ("workspace attach mapping", |e| {
-        e.local_workspaces[0].attach_mapping = None
+        e.local_workspaces()[0].attach_mapping = None
     }),
     ("pane split ratio", |e| {
-        if let PaneNode::Split { ratio, .. } = e.local_workspaces[0].pane_layout_mut() {
+        if let PaneNode::Split { ratio, .. } = e.local_workspaces()[0].pane_layout_mut() {
             *ratio += f32::EPSILON;
         }
     }),
     ("pane split direction", |e| {
-        if let PaneNode::Split { direction, .. } = e.local_workspaces[0].pane_layout_mut() {
+        if let PaneNode::Split { direction, .. } = e.local_workspaces()[0].pane_layout_mut() {
             *direction = SplitDirection::Horizontal;
         }
     }),
@@ -734,7 +735,7 @@ fn capture_with_scrollback_reassigns_a_duplicate_deferred_scrollback_id() {
     assert_ne!(tasty_utils::path::tasty_home(), real_home);
     let mut engine_session = minimal_engine();
     let mut engine = engine_session.borrow_mut();
-    engine.settings.general.restore_surface_content = true;
+    engine.runtime.settings.general.restore_surface_content = true;
     let duplicate = format!("shadow-digest-missing-{}", std::process::id());
     let surface = |id| -> Box<dyn Surface> {
         Box::new(EmptySurface::new_deferred(
@@ -762,7 +763,7 @@ fn capture_with_scrollback_reassigns_a_duplicate_deferred_scrollback_id() {
 }
 
 fn first_pane_of_minimal(engine: &mut CoreState) -> &mut Pane {
-    match engine.local_workspaces[0].pane_layout_mut() {
+    match engine.local_workspaces()[0].pane_layout_mut() {
         PaneNode::Leaf(pane) => pane,
         PaneNode::Split { .. } => panic!("fixture: one pane"),
     }
@@ -785,7 +786,7 @@ fn scrollback_ids(engine: &mut CoreState) -> Vec<Option<String>> {
     out
 }
 
-fn render(diffs: &[crate::runtime::shadow_digest::Difference]) -> String {
+fn render(diffs: &[tasty_core::canonical::Difference]) -> String {
     diffs
         .iter()
         .map(ToString::to_string)

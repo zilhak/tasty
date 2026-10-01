@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use tasty_domain::{Decider, Decision, DecisionContext, DomainEvent, JournalModel, SurfaceSpec};
+use tasty_core::{Decider, Decision, DecisionContext, DomainEvent, JournalModel, SurfaceSpec};
 use tasty_event_store::{
     CommandKey, CommandLookup, EffectState, EventStore, NewEffect, OpaquePayload, Revision,
     StoreError, StoredBatch, StreamId,

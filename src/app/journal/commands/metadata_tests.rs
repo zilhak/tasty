@@ -26,8 +26,8 @@ fn resolve_without_executing(journal: &mut JournalApplication, session: &mut Eng
 #[test]
 fn workspace_response_is_frozen_and_host_notification_is_emitted_once() {
     let (mut session, mut journal) = boot();
-    let workspace = session.core_state.local_workspaces[0].id;
-    let sid = session.core_state.local_workspaces[0].all_surface_ids()[0];
+    let workspace = session.core_state.local_workspaces()[0].id;
+    let sid = session.core_state.local_workspaces()[0].all_surface_ids()[0];
     let generation = session.runtime.terminals.generation(sid);
     let initial = request(
         "workspace.update",
@@ -40,7 +40,7 @@ fn workspace_response_is_frozen_and_host_notification_is_emitted_once() {
     let response = finish(&mut journal, &mut session, &rx);
     assert!(response.error.is_none(), "{response:?}");
     assert_eq!(response.result.as_ref().unwrap()["name"], "first");
-    assert_eq!(session.core_state.local_workspaces[0].name, "first");
+    assert_eq!(session.core_state.local_workspaces()[0].name, "first");
     assert_eq!(
         session.runtime.terminals.generation(sid),
         generation,
@@ -68,7 +68,7 @@ fn workspace_response_is_frozen_and_host_notification_is_emitted_once() {
     assert!(counts_after.executed > counts_before.executed);
     assert!(counts_after.replayed > counts_before.replayed);
     assert_eq!(replay.result, response.result);
-    assert_eq!(session.core_state.local_workspaces[0].name, "second");
+    assert_eq!(session.core_state.local_workspaces()[0].name, "second");
     assert!(journal.commands.completed_host_events.is_empty());
 }
 
@@ -87,7 +87,7 @@ fn mirror_delta_and_reconnect_replacement_cancel_stale_annotations_and_retries_d
         );
         let rx = send(&mut journal, original.clone());
         resolve_without_executing(&mut journal, &mut session);
-        assert_eq!(session.core_state.mirror_workspaces[0].subtitle, "");
+        assert_eq!(session.core_state.mirror_workspaces()[0].subtitle, "");
         // Both production delta and reconnect replace through this exact owner boundary.
         assert!(
             session
@@ -97,12 +97,12 @@ fn mirror_delta_and_reconnect_replacement_cancel_stale_annotations_and_retries_d
         );
         let response = finish(&mut journal, &mut session, &rx);
         assert!(response.error.is_none());
-        assert_eq!(session.core_state.mirror_workspaces[0].name, replacement);
-        assert_eq!(session.core_state.mirror_workspaces[0].subtitle, "");
+        assert_eq!(session.core_state.mirror_workspaces()[0].name, replacement);
+        assert_eq!(session.core_state.mirror_workspaces()[0].subtitle, "");
         assert!(journal.commands.completed_host_events.is_empty());
         let rx = send(&mut journal, original);
         assert!(finish(&mut journal, &mut session, &rx).idempotent_replay);
-        assert_eq!(session.core_state.mirror_workspaces[0].name, replacement);
+        assert_eq!(session.core_state.mirror_workspaces()[0].name, replacement);
     }
     let rx = send(
         &mut journal,
@@ -114,7 +114,7 @@ fn mirror_delta_and_reconnect_replacement_cancel_stale_annotations_and_retries_d
         ),
     );
     assert!(finish(&mut journal, &mut session, &rx).error.is_none());
-    assert_eq!(session.core_state.mirror_workspaces[0].name, "current");
+    assert_eq!(session.core_state.mirror_workspaces()[0].name, "current");
     assert_eq!(journal.commands.completed_host_events.len(), 1);
     assert!(
         session
@@ -128,7 +128,7 @@ fn mirror_delta_and_reconnect_replacement_cancel_stale_annotations_and_retries_d
 #[test]
 fn mixed_order_keeps_local_canonical_order_and_stored_move_does_not_move_again() {
     let (mut session, mut journal) = boot();
-    let local = session.core_state.local_workspaces[0].id;
+    let local = session.core_state.local_workspaces()[0].id;
     let ticket = journal.next_ticket;
     journal.next_ticket += 1;
     let creation = crate::app::journal::creation::Creation::default_workspace(
@@ -144,7 +144,7 @@ fn mixed_order_keeps_local_canonical_order_and_stored_move_does_not_move_again()
         assert!(Instant::now() < until);
         std::thread::sleep(Duration::from_millis(1));
     }
-    let other = session.core_state.local_workspaces[1].id;
+    let other = session.core_state.local_workspaces()[1].id;
     session
         .core_state
         .push_mirror_workspace(mirror(900, "remote"));
@@ -226,8 +226,8 @@ fn direct_rename_commits_before_notification_and_clear_uses_current_selected_tit
     use crate::core::host_event::PendingHostEvent as Event;
     use crate::intent::{IntentOrigin, rename::DirectRename};
     let (mut session, mut journal) = boot();
-    let workspace = session.core_state.local_workspaces[0].id;
-    let sid = session.core_state.local_workspaces[0].all_surface_ids()[0];
+    let workspace = session.core_state.local_workspaces()[0].id;
+    let sid = session.core_state.local_workspaces()[0].all_surface_ids()[0];
     let tab_id = session.core_state.find_tab_for_surface(sid).unwrap();
     let pane_id = session.core_state.find_pane_for_tab(tab_id).unwrap();
     let origin = IntentOrigin::User {
@@ -241,7 +241,7 @@ fn direct_rename_commits_before_notification_and_clear_uses_current_selected_tit
         },
         &origin,
     );
-    assert_ne!(session.core_state.local_workspaces[0].name, "direct-name");
+    assert_ne!(session.core_state.local_workspaces()[0].name, "direct-name");
     assert!(journal.commands.completed_host_events.is_empty());
     finish_intents(&mut journal, &mut session);
     let mut navigation = crate::state::navigation::NavigationState::default();

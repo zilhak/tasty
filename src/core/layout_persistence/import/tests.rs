@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use tasty_domain::{JournalModel, SplitTree, encode_snapshot};
+use tasty_core::{JournalModel, SplitTree, encode_snapshot};
 use tasty_event_store::{EventStore, PayloadRef, StoreError, StreamId, WriterEpoch};
 
 use super::super::schema::{

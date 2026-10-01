@@ -19,9 +19,9 @@ impl CapturedSurface {
 pub(crate) fn capture(session:&EngineSession)->Result<Vec<CapturedSurface>,String> {capture_selected(session,None)}
 pub(crate) fn capture_selected(session:&EngineSession,selected:Option<&std::collections::HashSet<u32>>)->Result<Vec<CapturedSurface>,String> {
     let engine=session.as_ref();
-    let include_content=engine.core.settings.general.restore_surface_content;
+    let include_content=engine.runtime.settings.general.restore_surface_content;
     let mut result=Vec::new();
-    for workspace in &engine.core.local_workspaces {
+    for workspace in &engine.core.local_workspaces() {
         for id in workspace.all_surface_ids() {
             if selected.is_some_and(|selected|!selected.contains(&id)) {continue;}
             let descriptor=engine.core.find_surface_by_id(id).ok_or("capture descriptor missing")?;

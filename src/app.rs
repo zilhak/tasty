@@ -326,7 +326,7 @@ impl App {
         engines
             .primary()
             .or_else(|| engines.parked().next())
-            .map(|e| e.settings.scripts.clone())
+            .map(|e| e.runtime.settings.scripts.clone())
             .unwrap_or_default()
     }
 

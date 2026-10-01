@@ -330,9 +330,9 @@ fn category_user_intents_preserve_dirty_scheduling_and_agent_isolation() {
     let mut engine = engine_session.borrow_mut();
     let category = engine.create_category("work").unwrap();
     let mut apply = |intent: UiIntent| {
-        engine.layout_dirty.clear();
+        engine.persistence.dirty.clear();
         crate::intent::popup::handle(&mut state, &mut engine, &intent.from_user_menu("test"));
-        assert!(engine.layout_dirty.is_dirty());
+        assert!(engine.persistence.dirty.is_dirty());
     };
     apply(UiIntent::SetCategoryCollapsed {
         id: category,

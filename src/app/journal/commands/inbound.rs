@@ -43,13 +43,13 @@ impl JournalApplication {
                 StructuralOp::NewTab {surface_kind,params,..}=>{request.method="tab.create".into();request.params=merged(&params,serde_json::json!({"pane_id":pane,"type":surface_kind}));},
                 StructuralOp::SplitPane {direction,surface_kind,params,..}=>{request.method="split".into();request.params=merged(&params,serde_json::json!({"level":"pane","target_surface":anchor,"direction":direction.as_ipc_str(),"type":surface_kind}));},
                 StructuralOp::SplitSurface {direction,surface_kind,params,..}=>{request.method="split".into();request.params=merged(&params,serde_json::json!({"level":"surface","target_surface":anchor,"direction":direction.as_ipc_str(),"type":surface_kind}));},
-                StructuralOp::CloseSurface {surface_id}=>{request.method="intent.close".into();request.params=close(tasty_domain::CloseTarget::Surface(surface_id));},
-                StructuralOp::CloseTab {..}=>{request.method="intent.close".into();request.params=close(tasty_domain::CloseTarget::Tab(core.find_tab_for_surface(anchor).ok_or("remote tab missing")?));},
-                StructuralOp::ClosePane {..}=>{request.method="intent.close".into();request.params=close(tasty_domain::CloseTarget::Pane(pane));},
+                StructuralOp::CloseSurface {surface_id}=>{request.method="intent.close".into();request.params=close(tasty_core::CloseTarget::Surface(surface_id));},
+                StructuralOp::CloseTab {..}=>{request.method="intent.close".into();request.params=close(tasty_core::CloseTarget::Tab(core.find_tab_for_surface(anchor).ok_or("remote tab missing")?));},
+                StructuralOp::ClosePane {..}=>{request.method="intent.close".into();request.params=close(tasty_core::CloseTarget::Pane(pane));},
                 StructuralOp::MoveTab {from_index,to_index,..}=>{request.method="tab.move".into();request.params=serde_json::json!({"pane_id":pane,"from_index":from_index,"to_index":to_index});},
                 StructuralOp::RestoreClosedItem {..}=>{request.method="intent.restore-closed".into();request.params=serde_json::json!({"pane":pane,"scope":remote.workspace});},
                 StructuralOp::ConvertSurface {surface_id,surface_kind,params,cwd}=> {
-                    let cwd=cwd.filter(|value|!value.trim().is_empty()).map(std::path::PathBuf::from).or_else(||session.core_state.settings.general.inherit_cwd.then(||session.as_ref().local_surface_cwd(surface_id)).flatten());
+                    let cwd=cwd.filter(|value|!value.trim().is_empty()).map(std::path::PathBuf::from).or_else(||session.runtime.settings.general.inherit_cwd.then(||session.as_ref().local_surface_cwd(surface_id)).flatten());
                     let spec=super::create_spec::Spec {destination:super::create_spec::Destination::Convert {surface:surface_id,respawn:false},kind:surface_kind,cwd,params};
                     request.method="intent.create".into();request.params=serde_json::to_value(spec).map_err(|error|error.to_string())?;
                 },

@@ -373,7 +373,7 @@ impl GpuState {
         } else if state.sidebar_collapsed {
             LogicalPx(48.0) // Compact mode: narrow width for collapse button
         } else {
-            engine.settings.appearance.scaled_sidebar_width()
+            engine.runtime.settings.appearance.scaled_sidebar_width()
         };
         let terminal_rect = self.compute_terminal_rect(state.sidebar_width);
         // 표시할 placeholder의 PTY를 resize·render 전에 만든다.
@@ -400,10 +400,10 @@ impl GpuState {
         let layout_ms = render_start.elapsed().as_secs_f64() * 1000.0;
 
         // 이름 있는 폰트 family를 첫 렌더 전에 등록한다.
-        let prev_theme = engine.settings.appearance.theme.clone();
+        let prev_theme = engine.runtime.settings.appearance.theme.clone();
         crate::adapters::ui::font_registry::refresh_surface_fonts(
             &self.egui_ctx,
-            &engine.settings.appearance,
+            &engine.runtime.settings.appearance,
             &mut self.surface_font_state,
         );
 
@@ -578,7 +578,7 @@ impl GpuState {
         let Some((surface_id, path)) = self.pending_surface_screenshot.take() else {
             return;
         };
-        let reverse_screen = engine.settings.general.reverse_screen_enabled;
+        let reverse_screen = engine.runtime.settings.general.reverse_screen_enabled;
         match engine.visible_terminal(surface_id) {
             Some(t) => self.capture_surface_to_png(
                 t,

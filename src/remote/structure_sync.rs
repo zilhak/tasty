@@ -53,18 +53,18 @@ pub(crate) fn unresolved_forward_reason<'a>(
 impl EngineMut<'_> {
     /// Project transport obligations only after the entire structural batch has been installed.
     /// Sending remains in the ordinary observation pump, behind its publication/result barrier.
-    pub(crate) fn observe_committed_structure(&mut self,before:&tasty_domain::JournalModel,events:&[tasty_domain::RecordedEvent]) {
-        use tasty_domain::DomainEvent as E;
+    pub(crate) fn observe_committed_structure(&mut self,before:&tasty_core::JournalModel,events:&[tasty_core::RecordedEvent]) {
+        use tasty_core::DomainEvent as E;
         let structural=events.iter().any(|record|matches!(record.event,
             E::StructureReplaced {..}|E::WorkspaceCreated {..}|E::WorkspaceRenamed {..}|E::WorkspaceDetailsSet {..}|E::WorkspaceMoved {..}|E::WorkspaceClosed {..}|
             E::PaneSplit {..}|E::PaneMoved {..}|E::PaneClosed {..}|E::TabCreated {..}|E::TabRenamed {..}|E::TabExplicitNameSet {..}|E::TabMoved {..}|E::TabClosed {..}|
             E::SurfaceSplit {..}|E::SurfaceMoved {..}|E::SurfaceClosed {..}|E::SurfaceConverted {..}|E::SurfaceActivationChanged {..}|E::PaneRatioSet {..}|E::SurfaceRatioSet {..}));
         if !structural {return;}
-        let workspaces:std::collections::BTreeSet<_>=before.workspace_order.iter().copied().chain(self.core.local_workspaces.iter().map(|workspace|workspace.id)).collect();
+        let workspaces:std::collections::BTreeSet<_>=before.workspace_order.iter().copied().chain(self.core.local_workspaces().iter().map(|workspace|workspace.id)).collect();
         for workspace in workspaces {if self.live.occupancy.workspace_holder(workspace).is_some() {self.remote.mark_structure_changed(workspace);}}
         for record in events {
             let E::SurfaceActivationChanged {id,activation,..}=&record.event else {continue;};
-            if activation.phase!=tasty_domain::ActivationPhase::Ready {continue;}
+            if activation.phase!=tasty_core::ActivationPhase::Ready {continue;}
             let Some(workspace)=self.find_workspace_index_for_surface(*id).and_then(|(index,_)|self.workspace_at(index)).map(|workspace|workspace.id) else {continue;};
             if self.live.occupancy.workspace_holder(workspace).is_none() {continue;}
             let generation=self.runtime.terminals.generation(*id);

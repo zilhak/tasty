@@ -1,7 +1,7 @@
 //! A committed remote enqueue keeps its exact connection lease until the result is durable.
 use super::*;
 use crate::runtime::journal_product::EffectLease;
-use tasty_domain::{OperationId,OperationOutcome};
+use tasty_core::{OperationId,OperationOutcome};
 
 pub(crate) struct Draft {
     pub engine:EngineId,

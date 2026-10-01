@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! 구조 저널의 도메인: 저널 전용 구조 모델, 도메인 이벤트와 그 codec, pure evolve, decide 계약.
+//! Engine structure: canonical JournalModel/Command/Event/decide/evolve and committed read projection.
 //!
 //! 제품 journal worker가 [`JournalModel`] 원본을 소유하고 CoreState는 확정 batch의 live projection을 유지한다.
 //! 실행 자원·View 상태는 이 모델에 들어오지 않는다.
@@ -69,3 +69,12 @@ pub use assembly::{CreationAssembly,AssemblyDestination};
 
 mod replacement;
 pub use replacement::Replacement;
+
+mod state;
+mod finders;
+mod categories;
+pub mod workspaces;
+pub mod canonical;
+pub mod projection;
+pub use state::CoreState;
+pub use finders::SurfaceDisplayPath;

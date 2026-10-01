@@ -21,20 +21,20 @@ impl JournalApplication {
             return true;
         }
         let replacement=match intent {
-            I::MoveSurface {source_surface_id:source,target_surface_id:target}=>Some((tasty_domain::IdKind::Surface,*source,*target)),
-            I::ReplaceTabWithTab {source_tab_id:source,target_tab_id:target}=>Some((tasty_domain::IdKind::Tab,*source,*target)),
-            I::ReplacePaneWithPane {source_pane_id:source,target_pane_id:target}=>Some((tasty_domain::IdKind::Pane,*source,*target)),_=>None,
+            I::MoveSurface {source_surface_id:source,target_surface_id:target}=>Some((tasty_core::IdKind::Surface,*source,*target)),
+            I::ReplaceTabWithTab {source_tab_id:source,target_tab_id:target}=>Some((tasty_core::IdKind::Tab,*source,*target)),
+            I::ReplacePaneWithPane {source_pane_id:source,target_pane_id:target}=>Some((tasty_core::IdKind::Pane,*source,*target)),_=>None,
         };
         if let Some((kind,source,target))=replacement {
-            let replacement=tasty_domain::Replacement {source:tasty_domain::EntityId {kind,id:source},target:tasty_domain::EntityId {kind,id:target}};
+            let replacement=tasty_core::Replacement {source:tasty_core::EntityId {kind,id:source},target:tasty_core::EntityId {kind,id:target}};
             self.admit_intent_request(engine_id,"intent.replace",serde_json::to_value(replacement).expect("replacement IDs serialize"),origin,view);return true;
         }
         let close=match intent {
-            I::CloseWorkspace {workspace_id}=>Some((tasty_domain::CloseTarget::Workspace(*workspace_id),origin.is_user(),origin.is_user(),None)),
-            I::CloseTab {tab_id}=>Some((tasty_domain::CloseTarget::Tab(*tab_id),origin.is_user(),origin.is_user(),None)),
-            I::ClosePane {pane_id}=>Some((tasty_domain::CloseTarget::Pane(*pane_id),origin.is_user(),origin.is_user(),None)),
-            I::CloseSurface {surface_id,presentation}=>Some((tasty_domain::CloseTarget::Surface(*surface_id),origin.is_user() && presentation.is_some(),origin.is_user(),None)),
-            I::RetireExitedSurface {surface_id,..}=>Some((tasty_domain::CloseTarget::Surface(*surface_id),false,true,Some(core.find_surface_by_id(*surface_id).and_then(|surface|surface.activation_generation)))),
+            I::CloseWorkspace {workspace_id}=>Some((tasty_core::CloseTarget::Workspace(*workspace_id),origin.is_user(),origin.is_user(),None)),
+            I::CloseTab {tab_id}=>Some((tasty_core::CloseTarget::Tab(*tab_id),origin.is_user(),origin.is_user(),None)),
+            I::ClosePane {pane_id}=>Some((tasty_core::CloseTarget::Pane(*pane_id),origin.is_user(),origin.is_user(),None)),
+            I::CloseSurface {surface_id,presentation}=>Some((tasty_core::CloseTarget::Surface(*surface_id),origin.is_user() && presentation.is_some(),origin.is_user(),None)),
+            I::RetireExitedSurface {surface_id,..}=>Some((tasty_core::CloseTarget::Surface(*surface_id),false,true,Some(core.find_surface_by_id(*surface_id).and_then(|surface|surface.activation_generation)))),
             _=>None,
         };
         if let Some((target,capture,user_close,expected))=close {
@@ -42,7 +42,7 @@ impl JournalApplication {
             let mut params=serde_json::json!({"target":target,"capture":capture,"user_close":user_close});
             if let Some(expected)=expected {params["expected_activation"]=serde_json::json!(expected);}
             let mut view=view;
-            if let Some(view)=view.as_mut() {view.close_empty_engine=matches!(target,tasty_domain::CloseTarget::Workspace(_));}
+            if let Some(view)=view.as_mut() {view.close_empty_engine=matches!(target,tasty_core::CloseTarget::Workspace(_));}
             let ticket=self.next_ticket;
             self.admit_intent_request(engine_id,"intent.close",params,origin,view);
             if let I::RetireExitedSurface {generation,..}=intent
@@ -71,7 +71,7 @@ impl JournalApplication {
                 from_index,
                 to_index,
             } => {
-                let Some(category) = core.categories.get(*from_index) else {
+                let Some(category) = core.categories().get(*from_index) else {
                     self.commands.deliver(
                         Reply::Intent {
                             engine: engine_id,
@@ -211,7 +211,7 @@ impl JournalApplication {
     pub(crate) fn admit_fixed_intent(
         &mut self,
         session: &EngineSession,
-        commands: Vec<tasty_domain::StructuralCommand>,
+        commands: Vec<tasty_core::StructuralCommand>,
         origin: &crate::intent::IntentOrigin,
     ) -> Result<(), String> {
         let binding = session

@@ -400,7 +400,7 @@ impl AppServices {
                 surface_params,
                 activate,
             } => Self::apply_create_tab(engine, pane_id, cwd, kind, name, surface_params, activate),
-            DomainIntent::CloseTab { tab_id } => Ok(vec![Self::apply_close_tab(engine, tab_id)]),
+
             DomainIntent::MoveTab {
                 pane_id,
                 tab_id,
@@ -436,19 +436,6 @@ impl AppServices {
                 kind,
                 surface_params,
             ),
-            DomainIntent::ClosePane { pane_id } => {
-                Ok(vec![Self::apply_close_pane(engine, pane_id)])
-            }
-            DomainIntent::CloseSurface {
-                surface_id,
-                presentation,
-            } => Ok(vec![Self::apply_close_surface(
-                engine,
-                surface_id,
-                presentation
-                    .as_deref()
-                    .map(|p| p as &dyn crate::model::StructurePresentation),
-            )]),
             DomainIntent::ConvertSurface { surface_id, target } => {
                 Ok(vec![Self::apply_convert_surface(
                     engine, surface_id, target,
@@ -461,14 +448,6 @@ impl AppServices {
                 engine, surface_id, payload,
             )]),
 
-            DomainIntent::RestoreClosedItem {
-                target_pane_id,
-                scope,
-            } => Ok(vec![Self::apply_restore_closed_item(
-                engine,
-                target_pane_id,
-                scope,
-            )]),
             #[cfg(feature = "gui")]
             DomainIntent::UpdateTabName {
                 surface_id,

@@ -3,7 +3,7 @@
 //! A new writer lease proves exclusive journal access, not child termination or delivery to a
 //! remote peer. This coordinator never replays shell input, plugin hooks or historical creates.
 use super::*;
-use tasty_domain::{OperationId,OperationOutcome,StructuralCommand,StructureModels};
+use tasty_core::{OperationId,OperationOutcome,StructuralCommand,StructureModels};
 use tasty_event_store::{EffectState,EffectTransition,CommandRecord,CommandStatus,CommandKey};
 
 pub(super) fn recover(executor:&Executor<StructureDecider>)->Result<(),String> {
@@ -25,7 +25,7 @@ fn recover_one(executor:&Executor<StructureDecider>,stream:&str,id:&OperationId)
         let operation=model.operations.get(id).ok_or("recovery operation disappeared")?.clone();
         if operation.outcome.is_some() {return Ok(());}
         let member_uncertain=operation.assembly.as_ref().is_some_and(|plan|plan.snapshot.surfaces.keys().any(|surface| {
-            model.operations.get(&tasty_domain::CreationAssembly::member(id,*surface)).is_none_or(|member|!matches!(member.outcome,Some(OperationOutcome::Cancelled {..}|OperationOutcome::Failed {..})))
+            model.operations.get(&tasty_core::CreationAssembly::member(id,*surface)).is_none_or(|member|!matches!(member.outcome,Some(OperationOutcome::Cancelled {..}|OperationOutcome::Failed {..})))
         }));
         let suffix=if operation.forward {"forward"}else if operation.retirement.is_some(){"retire"}else {"prepare"};
         let effect=if operation.assembly.is_some() {None} else {
@@ -56,7 +56,7 @@ fn recover_one(executor:&Executor<StructureDecider>,stream:&str,id:&OperationId)
             Some(EffectTransition {effect_id:effect.effect_id.clone(),from:effect.state,to,resource_generation:effect.resource_generation,attempt:(effect.state==EffectState::Running).then_some(effect.attempt),claim:None,result:Some(bytes.clone())})
         });
         let original_results=std::collections::BTreeMap::from([(operation.command_id.clone(),effects::read_original_results(&inner.store,&operation.command_id)?)]);
-        let command=StructuralCommand::RecoverOperation {operation:id.clone(),outcome,evidence:tasty_domain::DataRef(evidence.0)};
+        let command=StructuralCommand::RecoverOperation {operation:id.clone(),outcome,evidence:tasty_core::DataRef(evidence.0)};
         let request=ExecuteRequest {
             key:Some(CommandKey {caller_scope:"resource-recovery".into(),idempotency_key:format!("{}/{stream}/{}",epoch.0,id.0)}),
             actor:"system".into(),origin:"resource-recovery".into(),causation_id:Some(operation.command_id),
@@ -97,7 +97,7 @@ pub(super) fn reconcile_retirement(executor:&Executor<StructureDecider>,lease:cr
         }
         let operation=inner.state.streams.get(&lease.stream).and_then(|model|model.operations.get(&lease.operation)).ok_or("reconciliation operation missing")?.clone();
         if operation.retirement.is_none() || !matches!(operation.outcome,Some(OperationOutcome::Uncertain {..})) || observation["engine_incarnation"].as_u64()!=Some(operation.engine_incarnation) {return Err("reconciliation belongs to another retirement".into());}
-        let observed_targets:Vec<tasty_domain::RetiredSurface>=serde_json::from_value(observation["targets"].clone()).map_err(|error|error.to_string())?;
+        let observed_targets:Vec<tasty_core::RetiredSurface>=serde_json::from_value(observation["targets"].clone()).map_err(|error|error.to_string())?;
         if operation.retirement.as_ref().is_none_or(|plan|plan.surfaces!=observed_targets) {return Err("receipt names different retired resources".into());}
         let effect=inner.store.effect(&lease.effect_id).map_err(|error|error.to_string())?.ok_or("reconciliation effect missing")?;
         effects::validate_binding(&effect,&lease.stream,&operation)?;
@@ -106,7 +106,7 @@ pub(super) fn reconcile_retirement(executor:&Executor<StructureDecider>,lease:cr
         let data=inner.store.put_payload_pinned(epoch,&evidence,&holder).map_err(|error|error.to_string())?;
         let original_results=std::collections::BTreeMap::from([(operation.command_id.clone(),effects::read_original_results(&inner.store,&operation.command_id)?)]);
         let request=ExecuteRequest {key:Some(key),actor:"system".into(),origin:"owned-retirement-reconciliation".into(),causation_id:Some(operation.command_id),command:ResolvedCommand {
-            original_digest:digest,response:None,changes:vec![crate::runtime::journal_product::StreamCommand {stream:lease.stream.clone(),command:StructuralCommand::ReconcileRetirement {operation:lease.operation.clone(),evidence:tasty_domain::DataRef(data.0)}}],effect_result:None,
+            original_digest:digest,response:None,changes:vec![crate::runtime::journal_product::StreamCommand {stream:lease.stream.clone(),command:StructuralCommand::ReconcileRetirement {operation:lease.operation.clone(),evidence:tasty_core::DataRef(data.0)}}],effect_result:None,
             cancellation:Some(EffectTransition {effect_id:lease.effect_id,from:EffectState::Uncertain,to:EffectState::Succeeded,resource_generation:lease.resource_generation,attempt:Some(lease.attempt),claim:None,result:Some(evidence)}),completion_view:None,original_results,
         }};(request,holder)
     };

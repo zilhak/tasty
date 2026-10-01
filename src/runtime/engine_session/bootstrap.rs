@@ -123,12 +123,8 @@ impl EngineSession {
             journal_binding: None,
             pending_materializations: Default::default(),
             pending_resource_retirements:Default::default(),
-            core_state: CoreState::new_base(
-                cols,
-                rows,
-                layout_slot,
-                settings,
-            ),
+            persistence:super::EnginePersistence::new(layout_slot),
+            core_state: CoreState::new_base(),
             hooks: crate::hook_runtime::HookRuntimeState::with_counters(
                 next_ids.hook_counter(),
                 next_ids.global_hook_counter(),
@@ -137,29 +133,20 @@ impl EngineSession {
             observer_router: crate::output_observer::ObserverRouter::with_counter(
                 next_ids.observer_counter(),
             ),
-            runtime: crate::runtime::engine_runtime::EngineRuntime::new(next_ids.clone(),waker.clone(),memory),
+            runtime: crate::runtime::engine_runtime::EngineRuntime::new(next_ids.clone(),waker.clone(),memory,settings,cols,rows),
             #[cfg(test)]
             _isolated_home: isolated_home,
             #[cfg(all(test, feature = "gui"))]
             test_host_commands: None,
         };
-        #[cfg(test)]
-        if materialize_default
-            && session.core_state.settings.general.restore_layout
-            && let Some(slot) = layout_slot
-        {
-            session
-                .core_state
-                .accept_slot_load(crate::core::layout_persistence::load_slot(slot), slot);
-        }
         let mut engine = session.borrow_mut();
         // 복원할 레이아웃이 있으면 기본 PTY를 먼저 만들지 않는다. 복원이 트리를 교체해도 별도 store의 PTY는 남기 때문이다.
-        if materialize_default && engine.pending_layout_restore.is_none() {
+        if materialize_default {
             let ws_id = engine.runtime.counters.next_workspace();
             let pane_id = engine.runtime.counters.next_pane();
             let tab_id = engine.runtime.counters.next_tab();
             let surface_id = engine.runtime.counters.next_surface();
-            let sh = ShellConfig::from_settings(&engine.settings);
+            let sh = ShellConfig::from_settings(&engine.runtime.settings);
             let (terminal, pty) = crate::runtime::terminal_spawn::spawn_shell_terminal(
                 surface_id,
                 crate::runtime::terminal_spawn::ShellSpawnOpts {

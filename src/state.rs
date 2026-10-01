@@ -154,7 +154,7 @@ impl RequestContext {
             #[cfg(feature = "gui")]
             plugins_open: false,
             #[cfg(feature = "gui")]
-            sidebar_width: engine.settings.appearance.sidebar_width,
+            sidebar_width: engine.runtime.settings.appearance.sidebar_width,
             #[cfg(feature = "gui")]
             sidebar_visible: true,
             #[cfg(feature = "gui")]
@@ -208,7 +208,7 @@ impl RequestContext {
             #[cfg(feature = "gui")]
             popups: {
                 let mut pm = crate::adapters::ui::PopupManager::new();
-                let ui_zoom = engine.settings.appearance.ui_scale_factor();
+                let ui_zoom = engine.runtime.settings.appearance.ui_scale_factor();
                 for def in crate::adapters::ui::popup::defs::all_defs() {
                     pm.register_def(def, ui_zoom);
                 }
@@ -539,77 +539,6 @@ impl RequestContext {
         self.shell_integration_hint_shown.remove(&surface_id);
     }
 
-    /// 워크스페이스 복원 사본을 만든다. 저장 여부는 호출자가 결정한다.
-    fn capture_workspace_snapshot(
-        &self,
-        engine: &EngineRef<'_>,
-        ws_idx: usize,
-    ) -> crate::model::ClosedItem {
-        let mut snap_fn = crate::runtime::surface_registry::snapshot_fn_for(&engine.runtime.surface_registry,&engine.runtime.surfaces);
-        let ws = engine
-            .workspace_at(ws_idx)
-            .expect("workspace index is valid");
-        let terminals = &engine.runtime.terminals;
-        crate::model::ClosedItem::from_workspace(
-            ws,
-            &mut snap_fn,
-            &|id| terminals.closed_capture(id),
-            &self.navigation,
-        )
-    }
-
-    /// 제거 전에 모든 surface의 ID와 스크롤백 저장 ID를 수집한다.
-    fn collect_workspace_close_targets(
-        engine: &EngineRef<'_>,
-        ws_idx: usize,
-    ) -> Vec<(u32, Option<String>)> {
-        let mut targets = Vec::new();
-        let ws = engine
-            .workspace_at(ws_idx)
-            .expect("workspace index is valid");
-        for pid in ws.pane_layout().all_pane_ids() {
-            if let Some(pane) = ws.pane_layout().find_pane(pid) {
-                for tab in &pane.tabs {
-                    crate::app::services::impl_close::collect_close_targets(tab, engine, &mut targets);
-                }
-            }
-        }
-        targets
-    }
-
-    /// 워크스페이스 제거 뒤 범위 메모리를 engine에서 정리하고 workspace.closed를 큐에 넣는다.
-    /// path는 종료 시간 로그의 경로 구분값이다.
-    fn after_workspace_removed(
-        &mut self,
-        engine: &CoreState,
-        workspace_id: u32,
-        path: &'static str,
-    ) {
-        engine.enqueue_host_event(PendingHostEvent::WorkspaceClosed { workspace_id });
-        engine.purge_workspace_memory_scope(workspace_id, path);
-    }
-
-    /// 수집한 대상을 정리하고 lifecycle 알림을 큐에 넣는다.
-    /// 제거 후에는 kind를 찾을 수 없으므로 호출자가 넘긴 값을 사용한다.
-    fn cleanup_targets(
-        &mut self,
-        engine: &mut EngineMut<'_>,
-        targets: Vec<(u32, Option<String>, Option<&'static str>)>,
-        is_user_close: bool,
-        trace: Option<&'static str>,
-    ) {
-        let t_loop = std::time::Instant::now();
-        let mut sums = crate::close_trace::CleanupSums::default();
-        for (sid, pid, kind) in targets {
-            self.cleanup_surface_traced(engine, sid, pid, &mut sums);
-            engine.enqueue_surface_closed(sid, kind, is_user_close);
-        }
-        self.reconcile_presentation(engine);
-        if let Some(path) = trace {
-            sums.log(t_loop.elapsed(), path);
-        }
-    }
-
     #[cfg(feature = "gui")]
     pub fn focused_surface_type(&self, engine: &CoreState) -> FocusedSurfaceType {
         let pane = match self.focused_pane(engine) {
@@ -668,7 +597,7 @@ impl RequestContext {
     /// cwd 상속 설정이 켜져 있으면 포커스된 surface의 로컬 경로를 반환한다.
     /// 원격 mirror의 경로는 로컬 PTY 작업 디렉터리로 사용할 수 없어 제외한다.
     pub(crate) fn resolve_inherit_cwd(&self, engine: &EngineRef<'_>) -> Option<std::path::PathBuf> {
-        if !engine.settings.general.inherit_cwd || engine.workspaces().is_empty() {
+        if !engine.runtime.settings.general.inherit_cwd || engine.workspaces().is_empty() {
             return None;
         }
         let sid = self.focused_surface_id(engine)?;
@@ -681,7 +610,7 @@ impl RequestContext {
         engine: &EngineRef<'_>,
         surface_id: u32,
     ) -> Option<std::path::PathBuf> {
-        if !engine.settings.general.inherit_cwd {
+        if !engine.runtime.settings.general.inherit_cwd {
             return None;
         }
         engine.local_surface_cwd(surface_id)

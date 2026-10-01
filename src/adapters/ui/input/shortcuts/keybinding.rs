@@ -357,7 +357,7 @@ impl MainView {
             state.sidebar_collapsed = !state.sidebar_collapsed;
             return true;
         }
-        if engine.settings.general.workspace_categories_enabled
+        if engine.runtime.settings.general.workspace_categories_enabled
             && matches_any_binding(&kb.toggle_categories_collapsed, key, mods)
         {
             state.dispatch_intent(

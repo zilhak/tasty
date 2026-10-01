@@ -7,7 +7,7 @@ use crate::ipc::protocol::JsonRpcResponse;
 use crate::ipc::window_port::IntentOutbox;
 
 pub fn get(engine: &CoreState, id: Value) -> JsonRpcResponse {
-    JsonRpcResponse::success(id, json!({ "rules": engine.settings.terminal_input.rules }))
+    JsonRpcResponse::success(id, json!({ "rules": engine.runtime.settings.terminal_input.rules }))
 }
 
 pub fn handle_input_rule_update(
@@ -21,7 +21,7 @@ pub fn handle_input_rule_update(
     let Some(app) = params.get("app").and_then(Value::as_str) else {
         return JsonRpcResponse::invalid_params(id, "'app' must be a string");
     };
-    let mut settings = engine.settings.clone();
+    let mut settings = engine.runtime.settings.clone();
     let input = &mut settings.terminal_input;
     let result = if method == "settings.remove_input_rule" {
         input.remove_rule(app);
@@ -101,7 +101,7 @@ mod tests {
             "settings.set_input_rule",
         );
         assert!(response.error.is_none());
-        assert!(engine.settings.terminal_input.rules.is_empty());
+        assert!(engine.runtime.settings.terminal_input.rules.is_empty());
         let intents = out.into_vec();
         assert_eq!(intents.len(), 1);
         let Intent::Domain(DomainIntent::UpdateSettings(settings)) = &intents[0].body else {
@@ -164,7 +164,7 @@ mod tests {
         let Intent::Domain(DomainIntent::UpdateSettings(settings)) = intent.body else {
             panic!("expected settings update");
         };
-        engine.settings = settings;
+        engine.runtime.settings = settings;
         assert!(
             engine
                 .settings
@@ -172,7 +172,7 @@ mod tests {
                 .initialized_defaults
                 .contains("com.tasty.claude/claude")
         );
-        engine.settings.terminal_input.remove_rule("claude");
+        engine.runtime.settings.terminal_input.remove_rule("claude");
         let mut out = IntentOutbox::default();
         let response = handle_input_rule_update(
             &mut out,

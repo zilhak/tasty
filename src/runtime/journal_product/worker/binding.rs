@@ -1,6 +1,6 @@
 use super::*;
 use crate::runtime::journal_product::{BoundEngine, EngineBinding, EngineSelection, StreamCommand};
-use tasty_domain::StructuralCommand;
+use tasty_core::StructuralCommand;
 use tasty_event_store::{CommandKey, CommandLookup};
 
 pub(super) fn open(
@@ -128,7 +128,7 @@ fn bound(
     home: &std::path::Path,
     epoch: u64,
     stream: &str,
-    model: tasty_domain::JournalModel,
+    model: tasty_core::JournalModel,
     resume_view: bool,
 ) -> Result<ResultValue, String> {
     let binding = EngineBinding {

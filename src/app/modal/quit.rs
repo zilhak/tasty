@@ -29,7 +29,7 @@ impl App {
             .engines()
             .all()
             .next()
-            .map(|e| e.settings.general.close_behavior.clone())
+            .map(|e| e.runtime.settings.general.close_behavior.clone())
             .unwrap_or_else(|| "ask".to_string());
 
         match behavior.as_str() {

@@ -20,7 +20,7 @@ pub(super) fn resolve_spawn(request:&JsonRpcRequest,session:&mut EngineSession,v
     let cwd=optional_str(input,"cwd");
     if let Some(path)=&cwd && !std::path::Path::new(path).is_dir() {return Err(bad(format!("cwd does not exist: {path}")));}
     let launch_cwd=cwd.as_ref().map(std::path::PathBuf::from).or_else(|| {
-        if !core.settings.general.inherit_cwd {return None;}
+        if !core.runtime.settings.general.inherit_cwd {return None;}
         let tab=view.selected_tabs.get(&pane).and_then(|id|pane_value.tabs.iter().find(|tab|tab.id==*id)).or_else(||pane_value.tabs.first())?;
         let surface=view.selected_surfaces.get(&tab.id).copied().filter(|id|tab.contains_surface(*id)).or_else(||tab.first_surface_id())?;
         session.as_ref().local_surface_cwd(surface)
@@ -31,7 +31,7 @@ pub(super) fn resolve_spawn(request:&JsonRpcRequest,session:&mut EngineSession,v
     let recipe=crate::runtime::journal_product::ChildRecipe {parent,index,workspace,runtime_epoch:result.binding.runtime_epoch,cwd,
         role:optional_str(input,"role"),nickname:optional_str(input,"nickname"),has_command:command.is_some(),replacing:false};
     result.input.as_mut().ok_or_else(||bad("child preparation input missing".into()))?.child=Some(recipe);
-    result.plan.destination=tasty_domain::CreationDestination::Tab {pane,tab:0,index:tab_index};
+    result.plan.destination=tasty_core::CreationDestination::Tab {pane,tab:0,index:tab_index};
     result.plan.tab_name=format!("child{index}");result.plan.explicit_name=Some(result.plan.tab_name.clone());
     result.shape=create::Shape::Child {index,workspace};result.activate=false;
     result.one_shot_input=command.map(|body|if body.contains('\n') {format!("\x1b[200~{body}\x1b[201~")} else {body});

@@ -1,6 +1,7 @@
 //! 실행 경로가 필요한 원본만 빌린다. EngineSession의 수명·ID·View 관계는 노출하지 않는다.
 //! 구조만 읽거나 바꾸는 함수는 계속 CoreState를 받는다. 이 대여는 effect 분리를 대신하지 않는다.
-use crate::core::{CoreState,task_service::TaskScope};
+use crate::core::CoreState;
+use tasty_task_runtime::TaskScope;
 use super::engine_runtime::EngineRuntime;
 use crate::hook_runtime::HookRuntimeState;
 use crate::output_observer::ObserverRouter;
@@ -8,6 +9,7 @@ use std::ops::{Deref, DerefMut};
 
 pub(crate) struct EngineMut<'a> {
     pub(crate) core: &'a mut CoreState,
+    pub(crate) persistence:&'a mut super::engine_session::EnginePersistence,
     pub(crate) remote:&'a mut crate::remote::state::RemoteState,
     pub(crate) live:&'a mut crate::core::live::LiveDomainState,
     pub(crate) runtime: &'a mut EngineRuntime,
@@ -19,6 +21,7 @@ pub(crate) struct EngineMut<'a> {
 #[derive(Clone, Copy)]
 pub(crate) struct EngineRef<'a> {
     pub(crate) core: &'a CoreState,
+    pub(crate) persistence:&'a super::engine_session::EnginePersistence,
     pub(crate) remote:&'a crate::remote::state::RemoteState,
     pub(crate) live:&'a crate::core::live::LiveDomainState,
     pub(crate) runtime: &'a EngineRuntime,
@@ -31,6 +34,7 @@ impl EngineMut<'_> {
     pub(crate) fn as_ref(&self) -> EngineRef<'_> {
         EngineRef {
             core: self.core,
+            persistence:self.persistence,
             remote:self.remote,
             live:self.live,
             runtime: self.runtime,

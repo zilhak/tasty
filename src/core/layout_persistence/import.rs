@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
-use tasty_domain::{
+use tasty_core::{
     CodecError, DataRef, DomainEvent, IdKind, JournalModel, Placement, Ratio, SplitSpec,
     SurfaceSpec,
 };

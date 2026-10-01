@@ -191,7 +191,7 @@ impl MainView {
         y: f32,
         terminal_rect: &PhysicalRect,
     ) {
-        if !engine.settings.general.click_to_move_cursor {
+        if !engine.runtime.settings.general.click_to_move_cursor {
             return;
         }
 

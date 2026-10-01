@@ -9,7 +9,6 @@
 
 #[cfg(all(test, feature = "gui"))]
 mod apply_error_tests;
-pub mod closed_item;
 // 헤드리스용 큐 처리를 GUI 조합의 시험에서도 검증한다.
 #[cfg(any(not(feature = "gui"), test))]
 pub(crate) mod headless;

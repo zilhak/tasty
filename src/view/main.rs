@@ -475,7 +475,7 @@ impl MainView {
                 let (alt, option) = (mods.super_key(), mods.alt_key());
                 #[cfg(not(target_os = "macos"))]
                 let (alt, option) = (mods.alt_key(), false);
-                let kb = &engine.settings.keybindings;
+                let kb = &engine.runtime.settings.keybindings;
                 if self
                     .state
                     .update_switch_overlay(&*engine, kb, ctrl, shift, alt, option)

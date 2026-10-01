@@ -57,7 +57,7 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
     poll_until(&mut journal, &mut session, |journal, session| {
         journal.is_ready(session.id)
     });
-    let workspace = &session.core_state.local_workspaces[0];
+    let workspace = &session.core_state.local_workspaces()[0];
     let workspace_id = workspace.id;
     let pane = workspace.pane_layout().first_pane().unwrap();
     let pane_id = pane.id;
@@ -241,7 +241,7 @@ fn failed_view_write_retains_the_checkpoint_and_marks_its_engine_dirty() {
     let path = home.join("structure/views/slot-1/incarnation-1.json");
     std::fs::create_dir_all(&path).unwrap();
     let binding = session.journal_binding.clone().unwrap();
-    session.core_state.layout_dirty.clear();
+    session.persistence.dirty.clear();
     let choice = crate::model::StructurePresentationSnapshot::default();
     journal.queue_view(StoredView::capture(
         binding.clone(),
@@ -253,7 +253,7 @@ fn failed_view_write_retains_the_checkpoint_and_marks_its_engine_dirty() {
         !journal.has_pending_view_writes()
     });
     assert!(journal.failed_view_writes.contains_key(&binding.stream));
-    assert!(session.core_state.layout_dirty.dirty_since().is_some());
+    assert!(session.persistence.dirty.dirty_since().is_some());
     assert!(
         !journal.is_halted(),
         "failed View checkpoint does not roll back committed structure"

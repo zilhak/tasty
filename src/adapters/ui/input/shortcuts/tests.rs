@@ -306,9 +306,9 @@ fn zoom_in_increments_terminal_font_size_override_only() {
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
     // Pin the default so the test is independent of the user's settings file.
-    engine.settings.appearance.default_font.font_size = 14.0;
-    engine.settings.appearance.terminal_font.font_size = None;
-    engine.settings.appearance.plugin_font_overrides.clear();
+    engine.runtime.settings.appearance.default_font.font_size = 14.0;
+    engine.runtime.settings.appearance.terminal_font.font_size = None;
+    engine.runtime.settings.appearance.plugin_font_overrides.clear();
     let consumed = MainView::handle_zoom_shortcut(
         &mut state,
         &mut engine,
@@ -316,7 +316,7 @@ fn zoom_in_increments_terminal_font_size_override_only() {
         ModifiersState::CONTROL,
     );
     assert!(consumed);
-    let app = &engine.settings.appearance;
+    let app = &engine.runtime.settings.appearance;
     assert_eq!(app.terminal_font.font_size, Some(15.0));
     assert!(!app.plugin_font_overrides.contains_key("markdown"));
     assert!(!app.plugin_font_overrides.contains_key("explorer"));
@@ -327,7 +327,7 @@ fn zoom_in_increments_terminal_font_size_override_only() {
 fn zoom_out_decrements_terminal_font_size_override() {
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
-    engine.settings.appearance.terminal_font.font_size = Some(20.0);
+    engine.runtime.settings.appearance.terminal_font.font_size = Some(20.0);
     let consumed = MainView::handle_zoom_shortcut(
         &mut state,
         &mut engine,
@@ -336,7 +336,7 @@ fn zoom_out_decrements_terminal_font_size_override() {
     );
     assert!(consumed);
     assert_eq!(
-        engine.settings.appearance.terminal_font.font_size,
+        engine.runtime.settings.appearance.terminal_font.font_size,
         Some(19.0)
     );
 }
@@ -345,7 +345,7 @@ fn zoom_out_decrements_terminal_font_size_override() {
 fn zoom_reset_clears_terminal_font_size_override() {
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
-    engine.settings.appearance.terminal_font.font_size = Some(20.0);
+    engine.runtime.settings.appearance.terminal_font.font_size = Some(20.0);
     let consumed = MainView::handle_zoom_shortcut(
         &mut state,
         &mut engine,
@@ -353,14 +353,14 @@ fn zoom_reset_clears_terminal_font_size_override() {
         ModifiersState::CONTROL,
     );
     assert!(consumed);
-    assert!(engine.settings.appearance.terminal_font.font_size.is_none());
+    assert!(engine.runtime.settings.appearance.terminal_font.font_size.is_none());
 }
 
 #[test]
 fn zoom_in_clamps_at_72px() {
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
-    engine.settings.appearance.terminal_font.font_size = Some(71.5);
+    engine.runtime.settings.appearance.terminal_font.font_size = Some(71.5);
     MainView::handle_zoom_shortcut(
         &mut state,
         &mut engine,
@@ -368,7 +368,7 @@ fn zoom_in_clamps_at_72px() {
         ModifiersState::CONTROL,
     );
     assert_eq!(
-        engine.settings.appearance.terminal_font.font_size,
+        engine.runtime.settings.appearance.terminal_font.font_size,
         Some(72.0)
     );
 }
@@ -377,7 +377,7 @@ fn zoom_in_clamps_at_72px() {
 fn zoom_out_clamps_at_6px() {
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
-    engine.settings.appearance.terminal_font.font_size = Some(6.5);
+    engine.runtime.settings.appearance.terminal_font.font_size = Some(6.5);
     MainView::handle_zoom_shortcut(
         &mut state,
         &mut engine,
@@ -385,7 +385,7 @@ fn zoom_out_clamps_at_6px() {
         ModifiersState::CONTROL,
     );
     assert_eq!(
-        engine.settings.appearance.terminal_font.font_size,
+        engine.runtime.settings.appearance.terminal_font.font_size,
         Some(6.0)
     );
 }
@@ -577,7 +577,7 @@ fn wrong_modifier_and_unbound_key_return_false() {
 fn category_combo_routes_to_category_switch() {
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
-    engine.settings.general.workspace_categories_enabled = true;
+    engine.runtime.settings.general.workspace_categories_enabled = true;
     add_test_workspace(&mut state, &mut engine); // ws0 (normal)
     add_test_workspace(&mut state, &mut engine); // ws1
     let cat = engine.create_category("Services").unwrap();
@@ -603,7 +603,7 @@ fn category_combo_routes_to_category_switch() {
 fn category_next_prev_keys_cycle_categories() {
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
-    engine.settings.general.workspace_categories_enabled = true;
+    engine.runtime.settings.general.workspace_categories_enabled = true;
     add_test_workspace(&mut state, &mut engine); // ws1
     add_test_workspace(&mut state, &mut engine); // ws2
     let services = engine.create_category("Services").unwrap();
@@ -657,7 +657,7 @@ fn category_next_prev_keys_cycle_categories() {
 fn category_next_prev_keys_noop_when_folders_disabled() {
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
-    engine.settings.general.workspace_categories_enabled = false;
+    engine.runtime.settings.general.workspace_categories_enabled = false;
     add_test_workspace(&mut state, &mut engine);
     state.switch_workspace(&mut engine, 0);
     let kb = crate::settings::KeybindingSettings::default();
@@ -777,7 +777,7 @@ fn individual_workspace_axis_slot_dispatch() {
 fn individual_category_axis_respects_folders_gate() {
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
-    engine.settings.general.workspace_categories_enabled = true;
+    engine.runtime.settings.general.workspace_categories_enabled = true;
     add_test_workspace(&mut state, &mut engine); // ws0(normal) 이미 있으니 ws1 추가
     let cat = engine.create_category("Services").unwrap();
     let ws1_id = engine.workspace_at(1).expect("workspace index is valid").id;
@@ -805,7 +805,7 @@ fn individual_category_axis_respects_folders_gate() {
     assert_eq!(state.active_workspace_index(&engine), 1);
 
     state.switch_workspace(&mut engine, 0);
-    engine.settings.general.workspace_categories_enabled = false;
+    engine.runtime.settings.general.workspace_categories_enabled = false;
     assert!(!MainView::handle_numeric_switch_shortcuts(
         &mut state,
         &mut engine,
@@ -949,7 +949,7 @@ fn shortcut_new_workspace_stays_normal_when_categories_off() {
     // 카테고리가 꺼져 있으면 새 워크스페이스도 기본 카테고리를 사용한다.
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
-    assert!(!engine.settings.general.workspace_categories_enabled);
+    assert!(!engine.runtime.settings.general.workspace_categories_enabled);
 
     let kb = crate::settings::KeybindingSettings::default();
     let (key, mods) = default_new_workspace_key_mods();

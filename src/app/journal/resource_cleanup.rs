@@ -1,6 +1,6 @@
 //! Application scheduling of committed close obligations. The resources stay on EngineSession.
 use super::*;
-use tasty_domain::{OperationId,OperationOutcome};
+use tasty_core::{OperationId,OperationOutcome};
 #[derive(Clone,Copy)]
 enum Phase {Claim,Running,Reconcile,Reconciled,Finish {uncertain:bool}}
 pub(super) struct Cleanup {

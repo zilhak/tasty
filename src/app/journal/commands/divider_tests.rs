@@ -12,7 +12,7 @@ fn split_layout() -> serde_json::Value {
 #[test]
 fn divider_commit_publishes_once_and_stale_revision_rejects_unchanged_leaf_targets() {
     let (mut session, mut journal) = boot_with_layout(Some(split_layout()));
-    let workspace = &session.core_state.local_workspaces[0];
+    let workspace = &session.core_state.local_workspaces()[0];
     let workspace_id = workspace.id;
     let pane_ids = workspace.pane_layout().all_pane_ids();
     let tab = &workspace.pane_layout().find_pane(pane_ids[0]).unwrap().tabs[0];
@@ -24,7 +24,7 @@ fn divider_commit_publishes_once_and_stale_revision_rejects_unchanged_leaf_targe
     };
     let instance = session.core_state.find_surface_by_id(surfaces[0]).unwrap()
         as *const dyn crate::model::Surface as *const ();
-    let revision = session.core_state.committed_structure_revision.unwrap();
+    let revision = session.core_state.committed_structure_revision().unwrap();
     journal
         .admit_divider(
             &session,
@@ -40,7 +40,7 @@ fn divider_commit_publishes_once_and_stale_revision_rejects_unchanged_leaf_targe
         )
         .unwrap();
     assert_eq!(
-        session.core_state.local_workspaces[0]
+        session.core_state.local_workspaces()[0]
             .pane_layout()
             .split_parts()
             .unwrap()
@@ -59,7 +59,7 @@ fn divider_commit_publishes_once_and_stale_revision_rejects_unchanged_leaf_targe
             .is_none()
     );
     assert_eq!(
-        session.core_state.local_workspaces[0]
+        session.core_state.local_workspaces()[0]
             .pane_layout()
             .split_parts()
             .unwrap()
@@ -67,7 +67,7 @@ fn divider_commit_publishes_once_and_stale_revision_rejects_unchanged_leaf_targe
         0.7
     );
     assert_eq!(
-        session.core_state.committed_structure_revision,
+        session.core_state.committed_structure_revision(),
         session.journal_binding.as_ref().unwrap().revision
     );
     let mut change = DividerCommit {
@@ -108,7 +108,7 @@ fn divider_commit_publishes_once_and_stale_revision_rejects_unchanged_leaf_targe
             .1,
         0.5
     );
-    change.revision = session.core_state.committed_structure_revision.unwrap();
+    change.revision = session.core_state.committed_structure_revision().unwrap();
     journal
         .admit_divider(&session, change, &crate::intent::IntentOrigin::System)
         .unwrap();
@@ -143,7 +143,7 @@ fn divider_commit_publishes_once_and_stale_revision_rejects_unchanged_leaf_targe
 #[test]
 fn local_tab_reorder_keeps_the_fixed_tab_identity_between_queued_moves() {
     let (mut session, mut journal) = boot_with_layout(Some(split_layout()));
-    let pane_id = session.core_state.local_workspaces[0]
+    let pane_id = session.core_state.local_workspaces()[0]
         .pane_layout()
         .all_pane_ids()[0];
     let tabs: Vec<_> = session

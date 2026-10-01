@@ -11,7 +11,7 @@
 [ADR-0064](0064-journal-domain-model-crate.md)는 그 이벤트를 재생하는 구조 모델(JournalModel)을 `tasty-domain`에 새로 작성했다.
 0064는 제품에 연결하기 전까지 JournalModel이 CoreState와 동시에 원본이 아니라고만 정했고, 연결한 뒤 두 모델의 관계와 전환 절차는 정하지 않았다.
 
-두 모델은 모양이 다르다. JournalModel(`crates/tasty-domain/src/model.rs`)은 ID 키 map에 이름·소속·분할 트리·kind·자료 참조·metadata만 담는다.
+두 모델은 모양이 다르다. JournalModel(현재 `crates/tasty-core/src/model.rs`)은 ID 키 map에 이름·소속·분할 트리·kind·자료 참조·metadata만 담는다.
 결정 당시 `tasty-model`의 CoreState 트리는 surface 실행 인스턴스(`Box<dyn Surface>`), 사용자 선택 필드(`Workspace.focused_pane`·`Pane.active_tab`·`Tab.focused_surface`),
 Terminal에서 계산한 파생 캐시(`Tab.osc_title`·`cached_display_name`), 분할 트리의 호환 hint(`focus_second`)를 함께 담는다.
 IPC 응답과 GUI는 CoreState 트리를 읽는다.
@@ -21,7 +21,7 @@ IPC 응답과 GUI는 CoreState 트리를 읽는다.
 ### 원본과 projection
 
 - 구조 journal을 활성화한 엔진에서는 JournalModel이 [ADR-0055](0055-structural-domain-event-sourcing.md) 적용 범위의 원본이다.
-- CoreState 트리는 commit된 batch를 적용받아 갱신되는 live projection이다. JournalModel에 없는 실행 인스턴스를 가지며, IPC 응답과 GUI는 계속 이 트리에서 값을 만든다.
+- CoreState 트리는 commit된 batch를 적용받아 갱신되는 live projection이다. 실행 인스턴스는 EngineRuntime으로 분리하고 트리에는 descriptor를 둔다. IPC 응답과 GUI는 계속 이 읽기 트리에서 값을 만든다.
 - 활성화한 엔진에서 로컬 구조 트리의 writer는 projection 적용기 하나뿐이다. CommandExecutor가 commit에 성공한 batch만 적용기로 넘기며, 다른 경로가 트리를 직접 바꾸지 않는다.
   원격 mirror 구조는 로컬 트리와 다른 필드에 있고 쓰는 창구도 다르다([ADR-0061](0061-external-remote-module-and-attach-sync.md)).
 - 이벤트에 넣지 않는 값:
@@ -72,6 +72,12 @@ workspace와 tab은 마지막 항목, pane은 첫 항목을 고르는 복원 규
 남기며 종료는 기존 tick 저장과 별도로 최신 final capture를 한 번 요청한다.
 전체 View/payload pin·보존 정리는 최종 저장 전환에서 완성해야 한다.
 
+### 실행 인스턴스 분리 뒤 모델 재검토
+
+CoreState의 leaf를 SurfaceDescriptor로 바꾸고 사용자 선택을 View로 옮긴 뒤 두 표현을 다시 대조했다. canonical 모델은 저장 revision·ID map·불변 자료 참조·operation을 소유한다. 읽기 projection은 기존 PaneNode/SurfaceLayout과 process-local SplitNodeId를 유지하여 변경되지 않은 노드의 View hint 연결과 geometry 대여를 보존한다. 순수 적용기와 canonical 비교도 같은 tasty-core에 모았으며, 별도 tasty-domain 패키지를 남기지 않는다.
+
+현재는 읽기 projection을 유지하되 독립 decide/ID 발급/로컬 writer를 허용하지 않는다. 노드 identity를 보존하는 단일 표현이 기존 대여 API를 대체하거나, 두 표현의 유지 비용이 반복 결함으로 드러나면 통합을 다시 판단한다. 이 판단은 성능 개선을 실측했다는 뜻이 아니다. 일반 caller 및 View 실행 경계 이행과 최종 검증은 진행 중이다.
+
 ## Consequences
 
 기존 JournalModel·`evolve`·importer·CommandExecutor를 그대로 쓴다. CoreState를 먼저 순수 모델로 바꾸지 않아도 전환을 시작할 수 있다.
@@ -102,4 +108,4 @@ IPC 응답 형식은 CoreState에서 계속 만들므로 바뀌지 않는다. �
 
 - [ADR-0055](0055-structural-domain-event-sourcing.md) · [ADR-0059](0059-id-targets-and-view-owned-selection.md) · [ADR-0061](0061-external-remote-module-and-attach-sync.md) · [ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)
 - [ADR-0064](0064-journal-domain-model-crate.md) — JournalModel과 시험 전용 executor
-- 현재 구현: `crates/tasty-domain/src/model.rs`(JournalModel), `crates/tasty-model/src/workspace.rs`·`crates/tasty-model/src/tab.rs`(CoreState 트리), `src/runtime/command_executor.rs`, `src/core/layout_persistence/import.rs`(importer).
+- 현재 구현: `crates/tasty-core/src/model.rs`(JournalModel), `crates/tasty-model/src/workspace.rs`·`crates/tasty-model/src/tab.rs`(CoreState 트리), `src/runtime/command_executor.rs`, `src/core/layout_persistence/import.rs`(importer).

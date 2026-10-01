@@ -15,7 +15,7 @@ pub(super) fn require_input_simulation(
     engine: &crate::core::CoreState,
     id: &serde_json::Value,
 ) -> Result<(), JsonRpcResponse> {
-    if !engine.input_simulation_enabled {
+    if !engine.runtime.input_simulation_enabled {
         Err(JsonRpcResponse::error(
             id.clone(),
             -32001,
@@ -192,10 +192,10 @@ pub(super) fn handle_debug_modhint_hold(
             .debug_backdate(std::time::Duration::from_millis(ms));
     }
     let theme = crate::theme::theme();
-    let reduced_motion = engine.settings.accessibility.reduced_motion;
+    let reduced_motion = engine.runtime.settings.accessibility.reduced_motion;
     let dump = crate::adapters::ui::modifier_hint_overlay::debug_state_json(
         &state.modifier_hint,
-        &engine.settings,
+        &engine.runtime.settings,
         &theme,
         reduced_motion,
     );
@@ -210,10 +210,10 @@ pub(super) fn handle_debug_modhint_state(
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let theme = crate::theme::theme();
-    let reduced_motion = engine.settings.accessibility.reduced_motion;
+    let reduced_motion = engine.runtime.settings.accessibility.reduced_motion;
     let dump = crate::adapters::ui::modifier_hint_overlay::debug_state_json(
         &state.modifier_hint,
-        &engine.settings,
+        &engine.runtime.settings,
         &theme,
         reduced_motion,
     );

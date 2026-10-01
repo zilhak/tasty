@@ -1,6 +1,6 @@
 //! Public response values are frozen in the same commit as their structural result.
 use serde::{Deserialize, Serialize};
-use tasty_domain::{Rejection, StructureModels};
+use tasty_core::{Rejection, StructureModels};
 use tasty_ipc::protocol::JsonRpcResponse;
 
 #[derive(Debug,Clone,Default,Serialize,Deserialize)]
@@ -14,7 +14,7 @@ pub(crate) struct CompletionView {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) enum ResponsePlan {
     Moved {success:JsonRpcResponse,not_moved:JsonRpcResponse},
-    AssemblyRestored {stream:String,root:tasty_domain::EntityId,surfaces:Vec<u32>,presentation:tasty_domain::UndoPresentation},
+    AssemblyRestored {stream:String,root:tasty_core::EntityId,surfaces:Vec<u32>,presentation:tasty_core::UndoPresentation},
     Fixed(JsonRpcResponse),
     Closed { success: JsonRpcResponse, not_closed: JsonRpcResponse },
     WorkspaceCreated {
@@ -48,7 +48,7 @@ impl ResponsePlan {
                 presentation.focused_panes.retain(|workspace,pane|model.panes.get(pane).is_some_and(|pane|pane.workspace==*workspace));
                 presentation.selected_tabs.retain(|pane,tab|model.tabs.get(tab).is_some_and(|tab|tab.pane==*pane));
                 presentation.selected_surfaces.retain(|tab,surface|model.surfaces.get(surface).is_some_and(|surface|surface.tab==*tab));
-                let pane=match root.kind {tasty_domain::IdKind::Workspace=>presentation.focused_panes.get(&root.id).copied().or_else(||model.workspaces.get(&root.id).and_then(|workspace|workspace.layout.leaves().first().copied())),tasty_domain::IdKind::Pane=>Some(root.id),_=>model.tabs.get(&root.id).map(|tab|tab.pane)};
+                let pane=match root.kind {tasty_core::IdKind::Workspace=>presentation.focused_panes.get(&root.id).copied().or_else(||model.workspaces.get(&root.id).and_then(|workspace|workspace.layout.leaves().first().copied())),tasty_core::IdKind::Pane=>Some(root.id),_=>model.tabs.get(&root.id).map(|tab|tab.pane)};
                 let tab=pane.and_then(|pane|presentation.selected_tabs.get(&pane).copied().or_else(||model.panes.get(&pane).and_then(|pane|pane.tabs.first().copied())));
                 let surface=tab.and_then(|tab|presentation.selected_surfaces.get(&tab).copied().or_else(||model.tabs.get(&tab).and_then(|tab|tab.layout.leaves().first().copied()))).filter(|surface|surfaces.contains(surface)).or_else(||surfaces.iter().find(|surface|model.surfaces.contains_key(surface)).copied());
                 JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"restored":surface.is_some(),"kind":root.kind.label(),"restored_surface_id":surface,"presentation":presentation}))
@@ -169,7 +169,7 @@ pub(crate) struct RecordedResolution {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct ResponseProgress {
     pub version: u32,
-    pub results: Vec<tasty_domain::StructuralResult>,
+    pub results: Vec<tasty_core::StructuralResult>,
     /// Frozen at each operation's completion, never recomputed from a later live tree.
     pub replies: Vec<Option<JsonRpcResponse>>,
 }
@@ -181,7 +181,7 @@ pub(crate) struct OriginalResults {
 }
 
 impl ResponseProgress {
-    pub(crate) fn new(results: Vec<tasty_domain::StructuralResult>) -> Self {
+    pub(crate) fn new(results: Vec<tasty_core::StructuralResult>) -> Self {
         Self {
             version: 1,
             replies: vec![None; results.len()],
@@ -195,7 +195,7 @@ impl ResponseProgress {
         model: &StructureModels,
         view: &CompletionView,
     ) -> Result<Option<Vec<u8>>, String> {
-        use tasty_domain::StructuralResult as R;
+        use tasty_core::StructuralResult as R;
         let render = |plan: &ResponsePlan, result: Option<&R>| -> Result<JsonRpcResponse, String> {
             if let Some(R::Failed { reason }) = result {
                 return Ok(JsonRpcResponse::internal_error(

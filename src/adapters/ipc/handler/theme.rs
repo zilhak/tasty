@@ -10,7 +10,7 @@ pub fn handle_query(engine: &crate::core::CoreState, id: Value) -> JsonRpcRespon
     let wire = tasty_plugin_protocol::ThemeWire {
         colors: theme.to_colors(),
         is_light: theme.is_light,
-        ui_zoom: engine.settings.appearance.ui_scale_factor(),
+        ui_zoom: engine.runtime.settings.appearance.ui_scale_factor(),
     };
     match serde_json::to_value(&wire) {
         Ok(v) => JsonRpcResponse::success(id, v),

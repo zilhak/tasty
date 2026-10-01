@@ -173,7 +173,7 @@ impl App {
         }
         let focused =
             crate::plugin_bridge::key_dispatch::focused_plugin_surface(&main.state, engine.core);
-        let host_kb = engine.settings.keybindings.clone();
+        let host_kb = engine.runtime.settings.keybindings.clone();
 
         let matched = {
             let Some(mgr) = self.plugin_manager.as_ref() else {

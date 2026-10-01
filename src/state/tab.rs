@@ -29,9 +29,9 @@ impl RequestContext {
         let cwd = self.resolve_inherit_cwd(&engine.as_ref());
         let tab_id = engine.runtime.counters.next_tab();
         let surface_id = engine.runtime.counters.next_surface();
-        let cols = engine.default_cols;
-        let rows = engine.default_rows;
-        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
+        let cols = engine.runtime.default_cols;
+        let rows = engine.runtime.default_rows;
+        let sh = crate::core::state::ShellConfig::from_settings(&engine.runtime.settings);
         let waker = engine.make_waker(surface_id);
         let (terminal, pty) = crate::runtime::terminal_spawn::spawn_shell_terminal(
             surface_id,
@@ -259,16 +259,16 @@ impl RequestContext {
             return true;
         }
         let in_tab: Vec<u32> = {
-            let mut t: Vec<(u32, Option<String>)> = Vec::new();
+            let mut t = Vec::new();
             if let Some(pane) = self
                 .active_workspace(engine)
                 .pane_layout()
                 .find_pane(pane_id)
                 && let Some(tab) = pane.tabs.get(tab_index)
             {
-                crate::app::services::impl_close::collect_close_targets(tab, &engine.as_ref(), &mut t);
+                t.extend(tab.all_surface_ids());
             }
-            t.into_iter().map(|(sid, _)| sid).collect()
+            t
         };
         if self.refuse_if_hard_occupied(engine, in_tab) {
             return false;
@@ -311,13 +311,13 @@ impl RequestContext {
             return true;
         }
         let in_tab: Vec<u32> = {
-            let mut t: Vec<(u32, Option<String>)> = Vec::new();
+            let mut t = Vec::new();
             if let Some(pane) = self.focused_pane(engine)
                 && let Some(tab) = pane.tabs.get(self.navigation.tab_index(pane))
             {
-                crate::app::services::impl_close::collect_close_targets(tab, &engine.as_ref(), &mut t);
+                t.extend(tab.all_surface_ids());
             }
-            t.into_iter().map(|(sid, _)| sid).collect()
+            t
         };
         if self.refuse_if_hard_occupied(engine, in_tab) {
             return false;

@@ -1,6 +1,6 @@
 use super::*;
-use crate::model::{EmptySurface, SplitDirection, SurfaceLayout};
-use tasty_domain::{DomainEvent as E, Placement, Ratio, RecordedEvent, SplitSpec, SurfaceSpec};
+use tasty_model::{EmptySurface, SplitDirection, SurfaceLayout};
+use crate::{DomainEvent as E, Placement, Ratio, RecordedEvent, SplitSpec, SurfaceSpec};
 
 fn batch(model: &JournalModel, events: Vec<E>) -> DomainBatch {
     DomainBatch {
@@ -78,7 +78,7 @@ fn seeded() -> (crate::runtime::engine_session::EngineSession, JournalModel) {
         &mut Vec::new(),
     )
     .unwrap();
-    tasty_domain::evolve(&mut model, &input).unwrap();
+    crate::evolve(&mut model, &input).unwrap();
     (session, model)
 }
 
@@ -126,7 +126,7 @@ fn metadata_and_nested_split_keep_the_surviving_instance_and_split_identity() {
         &mut retired,
     )
     .unwrap();
-    tasty_domain::evolve(&mut model, &input).unwrap();
+    crate::evolve(&mut model, &input).unwrap();
     assert!(retired.is_empty());
     assert_eq!(
         core.find_surface_by_id(1).unwrap() as *const dyn Surface as *const (),
@@ -246,7 +246,7 @@ fn a_retired_pane_keeps_its_kind_objects_until_cleanup() {
         &mut Vec::new(),
     )
     .unwrap();
-    tasty_domain::evolve(&mut model, &input).unwrap();
+    crate::evolve(&mut model, &input).unwrap();
     let input = batch(&model, vec![E::PaneClosed { id: 2 }]);
     let mut retired = Vec::new();
     apply(
