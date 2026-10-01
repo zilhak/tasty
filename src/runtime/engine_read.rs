@@ -56,6 +56,8 @@ impl<'a> EngineRef<'a> {
 }
 impl Deref for EngineRead<'_> {type Target=CoreState;fn deref(&self)->&CoreState {self.core}}
 impl<'a> EngineRead<'a> {
+    #[cfg(feature="gui")]
+    pub(crate) fn html_script(&self,sid:u32)->Option<crate::app::html_runtime::HtmlSnapshot> {crate::app::html_runtime::snapshot(self,sid)}
     pub(crate) fn as_ref(&self)->Self {self.clone()}
     pub(crate) fn find_surface_by_id(&self,id:u32)->Option<&'a dyn Surface> {self.surfaces.get(&id).map(|s|s.as_ref())}
     pub(crate) fn find_terminal_by_id(&self,id:u32)->Option<&'a tasty_terminal::Terminal> {self.terminals.get(id)}

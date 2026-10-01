@@ -424,3 +424,8 @@ mod preset_capture;
 
 #[cfg(feature="gui")]
 mod port_scans;
+
+#[cfg(feature="gui")]
+pub(crate) mod html_runtime;
+#[cfg(feature="gui")]
+pub(crate) mod webview_sync;

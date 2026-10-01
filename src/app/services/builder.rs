@@ -136,6 +136,8 @@ impl AppServicesBuilder {
         let registries=crate::runtime::registries::RuntimeRegistries::new(registry_config.as_deref());
         Ok(AppServices {
             registries,
+            #[cfg(feature="gui")]
+            navigation_proofs:Default::default(),
             approval_store: Arc::new(tasty_approval::ApprovalStore::new()),
             telemetry_seq: Arc::new(tasty_telemetry::TelemetrySeq::new()),
             anomaly_detector: Arc::new(tasty_telemetry::AnomalyDetector::new()),

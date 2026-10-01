@@ -259,7 +259,7 @@ impl RequestContext {
             #[cfg(feature = "gui")]
             plugin_popup_user_activated: std::collections::HashMap::new(),
             #[cfg(feature = "gui")]
-            webview_user_navigations: std::collections::HashMap::new(),
+            webview_identity: std::sync::Weak::new(),
             #[cfg(all(feature = "gui", debug_assertions))]
             debug_webview_history: Vec::new(),
             #[cfg(feature = "gui")]

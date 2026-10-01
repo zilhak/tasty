@@ -13,7 +13,7 @@ impl SurfaceBinding {
         let mirror=engine.find_workspace_index_for_surface(surface).and_then(|(index,_)|engine.workspace_at(index)).filter(|workspace|workspace.mirror).and_then(|workspace|engine.mirror_projection_token(workspace.id).map(|token|(workspace.id,token)));
         Some(Self {surface,activation:descriptor.activation_generation,resource:engine.terminals.generation(surface),mirror})
     }
-    fn current(&self,engine:&EngineRef<'_>)->bool {
+    pub(crate) fn current(&self,engine:&EngineRef<'_>)->bool {
         engine.core.find_surface_by_id(self.surface).is_some_and(|descriptor|descriptor.activation_generation==self.activation)
             && self.resource.is_none_or(|generation|engine.runtime.terminals.matches_generation(self.surface,generation))
             && self.mirror.as_ref().is_none_or(|(workspace,token)|engine.matches_mirror_projection(*workspace,token))
@@ -31,6 +31,8 @@ impl SettingsPatch {
 
 #[derive(Clone,Debug)]
 pub(crate) enum EngineAction {
+    #[cfg(feature="gui")]
+    Html(super::html_runtime::HtmlAction),
     #[cfg(feature="gui")]
     PluginDisplay(super::plugin_display::PluginDisplayRequest),
     #[cfg(feature="gui")]
@@ -65,6 +67,8 @@ pub(crate) enum EngineAction {
 impl EngineAction {
     pub(crate) fn apply(&self,engine:&mut EngineMut<'_>,plugins:Option<&crate::plugin::PluginManager>) {
         match self {
+            #[cfg(feature="gui")]
+            Self::Html(action)=>action.apply(engine),
             #[cfg(feature="gui")]
             Self::PluginDisplay(request)=>{if let Some(manager)=plugins {request.apply(manager);}},
             #[cfg(feature="gui")]

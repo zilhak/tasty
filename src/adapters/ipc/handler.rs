@@ -176,7 +176,7 @@ fn dispatch_routed(
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     // 요청에서 생성한 intent를 순서대로 해당 창 큐에 옮긴다.
-    let mut scope=crate::ipc::request_scope::RequestScope::capture(state,engine.core);
+    let mut scope=crate::ipc::request_scope::RequestScope::capture(state,engine.core,#[cfg(feature="gui")] Some(core.navigation_proofs.clone()));
     let mut out = crate::ipc::window_port::IntentOutbox::default();
     let routed = route_engine_handler(
         core,
@@ -414,7 +414,7 @@ fn should_rate_limit(caller: &CallerContext, method: &str) -> bool {
 #[cfg(feature="gui")]
 pub(crate) fn display_plugin_rss_anomalies(state:&mut RequestContext,engine:&mut crate::runtime::engine_access::EngineMut<'_>,anomalies:&[tasty_telemetry::Anomaly]) {
     let mut out=crate::ipc::window_port::IntentOutbox::default();
-    let mut scope=crate::ipc::request_scope::RequestScope::capture(state,engine);
+    let mut scope=crate::ipc::request_scope::RequestScope::capture(state,engine,None);
     for anomaly in anomalies {telemetry::fire_anomaly_notification(&mut scope,&mut out,engine,anomaly);}
     scope.enqueue_intents(out);let outputs=scope.finish();outputs.apply(state,engine);
 }

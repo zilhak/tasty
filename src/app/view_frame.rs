@@ -34,7 +34,15 @@ impl App {
             }
         }
         view.render_if_dirty(&session.read(),self.plugin_manager.as_ref().map(super::plugin_display::PluginDisplay::new));
+        // A banner decision from this frame must update its gate before native reload/sync.
+        for intent in view.state.take_pending_intents() {
+            match intent.body {
+                crate::intent::Intent::Engine(action)=>action.apply(&mut session.borrow_mut(),self.plugin_manager.as_ref()),
+                _=>view.state.dispatch_intent(intent),
+            }
+        }
         view.finish_redraw(&session.read(),self.plugin_manager.as_ref().map(super::plugin_display::PluginDisplay::new));
+        super::webview_sync::synchronize(view,&mut session.borrow_mut(),self.plugin_manager.as_ref(),&self.services.navigation_proofs);
         self.poll_port_scans();
     }
 }

@@ -12,15 +12,18 @@ pub(crate) struct RequestScope<'a> {
     #[cfg(feature="gui")]
     popup_proofs:&'a std::collections::HashMap<u64,String>,
     #[cfg(feature="gui")]
-    navigation_proofs:&'a mut crate::plugin_bridge::user_navigation::UserNavigations,
+    navigation_proofs:Option<std::sync::Arc<crate::app::html_runtime::NavigationProofs>>,
+    #[cfg(feature="gui")]
+    view:std::sync::Weak<()>,
 }
 impl<'a> RequestScope<'a> {
-    pub(crate) fn capture(state:&'a mut crate::state::RequestContext,engine:&CoreState)->Self {
+    pub(crate) fn capture(state:&'a mut crate::state::RequestContext,engine:&CoreState,#[cfg(feature="gui")] navigation_proofs:Option<std::sync::Arc<crate::app::html_runtime::NavigationProofs>>)->Self {
         Self {presentation:&state.navigation,
             workspace:engine.workspace_at(state.active_workspace_index(engine)).map(|workspace|workspace.id),surface:state.focused_surface_id(engine),recent:&state.recent_files,intents:Vec::new(),
             #[cfg(feature="gui")] approvals:Vec::new(),
             #[cfg(feature="gui")] popup_proofs:&state.plugin_popup_user_activated,
-            #[cfg(feature="gui")] navigation_proofs:&mut state.webview_user_navigations,
+            #[cfg(feature="gui")] navigation_proofs,
+            #[cfg(feature="gui")] view:state.webview_identity.clone(),
         }
     }
     pub(crate) fn finish(self)->RequestOutputs {RequestOutputs {intents:self.intents,#[cfg(feature="gui")] approvals:self.approvals}}
@@ -49,5 +52,5 @@ impl IpcWindow for RequestScope<'_> {
     #[cfg(feature="gui")]
     fn plugin_popup_user_activated(&self,plugin:&str,instance:u64)->bool {self.popup_proofs.get(&instance).is_some_and(|owner|owner==plugin)}
     #[cfg(feature="gui")]
-    fn take_webview_user_navigation(&mut self,plugin:&str,surface:u32,url:&str)->bool {crate::plugin_bridge::user_navigation::take(self.navigation_proofs,plugin,surface,url)}
+    fn take_webview_user_navigation(&mut self,plugin:&str,surface:u32,url:&str)->bool {self.navigation_proofs.as_ref().is_some_and(|proofs|proofs.take(&self.view,plugin,surface,url))}
 }

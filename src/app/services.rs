@@ -23,6 +23,8 @@ pub(crate) mod impl_tab;
 pub(crate) struct AppServices {
     pub(crate) registries:crate::runtime::registries::RuntimeRegistries,
     /// Process-wide services. Engine and View owners carry neither copies nor lookup authority.
+    #[cfg(feature="gui")]
+    pub(crate) navigation_proofs:Arc<crate::app::html_runtime::NavigationProofs>,
     pub(crate) approval_store: Arc<tasty_approval::ApprovalStore>,
     pub(crate) telemetry_seq: Arc<tasty_telemetry::TelemetrySeq>,
     pub(crate) anomaly_detector: Arc<tasty_telemetry::AnomalyDetector>,
