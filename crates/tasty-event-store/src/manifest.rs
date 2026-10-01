@@ -40,6 +40,8 @@ impl EventStore {
         snapshot: &crate::NewSnapshot,
         manifest: &NewRestoreManifest,
     ) -> StoreResult<SnapshotId> {
+        let mut size=crate::write_limits::Budget::new();
+        size.snapshot(snapshot)?;size.manifest(manifest)?;
         let tx = self.write_tx(epoch)?;
         let id = crate::snapshot::insert_snapshot(&tx, snapshot)?;
         let manifest = NewRestoreManifest {snapshot_id: id, ..manifest.clone()};
@@ -107,6 +109,7 @@ fn snapshot_row(conn: &rusqlite::Connection, id: SnapshotId) -> StoreResult<(i64
 }
 
 pub(crate) fn save_in(conn: &rusqlite::Connection, manifest: &NewRestoreManifest) -> StoreResult<()> {
+        crate::write_limits::Budget::new().manifest(manifest)?;
         let previous: Option<(i64, i64, i64)> = conn.query_row(
             "SELECT incarnation,runtime_epoch,sequence FROM restore_manifests WHERE restore_key = ?1",
             [&manifest.restore_key], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?)),

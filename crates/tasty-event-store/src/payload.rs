@@ -82,12 +82,15 @@ impl EventStore {
         source_holder: &str,
         destination_holder: &str,
     ) -> StoreResult<Vec<(PayloadRef, PayloadRef)>> {
+        let mut size=crate::write_limits::Budget::new();
         let source_tx = source.write_tx(source_epoch)?;
         let mut contents = Vec::new();
         let mut seen = std::collections::BTreeSet::new();
         for reference in references {
             if seen.insert(reference.0) {
                 let bytes = read_verified(&source_tx, *reference)?;
+                crate::write_limits::blob(&bytes)?;
+                size.add(bytes.len())?;size.add(256)?;
                 pin_in(&source_tx, *reference, source_holder)?;
                 contents.push((*reference, bytes));
             }
@@ -171,6 +174,7 @@ impl EventStore {
 }
 
 pub(crate) fn insert(conn: &Connection, bytes: &[u8]) -> StoreResult<PayloadRef> {
+    crate::write_limits::blob(bytes)?;
     let digest = Sha256::digest(bytes).to_vec();
     conn.execute(
         "INSERT INTO payloads (sha256, bytes) VALUES (?1, ?2)",

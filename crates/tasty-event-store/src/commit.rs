@@ -98,6 +98,8 @@ impl EventStore {
         let batch = write_all(&tx, request, &journal_id)?.ok_or_else(|| StoreError::Corrupt("restore import has no initial event batch".into()))?;
         let stored = crate::read::load_batch(&tx, batch.batch_id)?;
         let (snapshot, mut manifest) = prepare(&stored)?;
+        let mut size=crate::write_limits::commit(request)?;
+        size.snapshot(&snapshot)?;size.manifest(&manifest)?;
         if snapshot.batch_id != batch.batch_id {return Err(StoreError::Corrupt("import snapshot differs from committed batch".into()));}
         manifest.snapshot_id = crate::snapshot::insert_snapshot(&tx, &snapshot)?;
         crate::manifest::save_in(&tx, &manifest)?;
@@ -113,6 +115,7 @@ fn write_all(
     request: &CommitRequest,
     journal_id: &str,
 ) -> StoreResult<Option<BatchCut>> {
+    crate::write_limits::commit(request)?;
     let command_id = request.command.as_ref().map(|c| c.command_id.as_str());
     if let Some(new) = &request.command {
         command::insert(tx, new)?;

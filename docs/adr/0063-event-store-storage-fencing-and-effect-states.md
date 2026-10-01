@@ -219,9 +219,18 @@ write transaction에서 기존 총수와 더해 검사한다. 같은 key의 최�
 허용한다. 기록 삭제나 task/OS 취소로 개수를 줄이지 않는다. 한 batch에서 종결과 새 효과를
 동시에 요구하면 종결 예정분을 미리 차감하지 않는 보수적 admission이다.
 
-효과 완료 Work도 기존 64 MiB queued-request 상한을 통과하지만, 저장소의 batch/event 생성
-팽창과 immutable payload 전체에 대한 단일 hard byte cap은 현재 API가 보장하지 않는다.
-이미 수락한 결과의 bytes를 잘라 완료를 기록하는 대신 실제 IO 오류/불명 관측을 보존한다.
+효과 완료 Work의 기존 64 MiB queued-request 상한과 별도로 저장소 쓰기 경계에도
+64 MiB 논리 batch 상한과 64 MiB 단일 BLOB 상한을 둔다. batch 계산은 실제 생성된
+CommitRequest의 모든 문자열·바이트 필드와 참조당 8 bytes, envelope/record당 256 bytes를
+합산한다. stream append뿐 아니라 command 원입력·응답·갱신·effect 본문·전이 결과도 포함한다.
+중복 key 결과는 이 검사보다 먼저 반환한다. immutable payload 공통 insert가 단일 BLOB을
+검사하므로 capture·snapshot·View manifest·import도 우회하지 않는다. snapshot/manifest는
+본문과 참조 목록의 논리 합계도 검사하고, import의 commit+snapshot+manifest 및 payload 복사
+transaction도 합계를 제한한다. 단독 effect 전이도 같은 논리 상한을 적용한다.
+이 제한은 SQLite 파일이나 메모리 할당의 hard cap이 아니며 이미 생성한 입력을 쓰기 전에
+거절하는 경계다. 초과하면 WriteSizeExceeded로 transaction을 되돌린다. 기존 의무/claim을
+없애거나 결과 bytes를 잘라 성공으로 저장하지 않는다. effect 오류·Uncertain 대조와
+checkpoint의 이전 snapshot/pin 유지·다음 기회 재시도는 기존 오류 처리 경로를 따른다.
 
 ID 예약은 이벤트 commit과 다른 transaction이므로 실패한 명령이 쓰지 않은 ID가 빈 구간으로 남는다. ID가 연속이라는 가정에 기대는 코드는 이 journal의 ID에 쓸 수 없다.
 

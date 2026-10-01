@@ -21,6 +21,7 @@
 //!   위치만 저장하는 [`EventStore::save_checkpoint`]는 그 consumer를 거절한다.
 
 mod command;
+mod write_limits;
 mod admission_budget;
 mod retention;
 mod manifest;

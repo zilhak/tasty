@@ -155,6 +155,7 @@ impl EventStore {
         epoch: WriterEpoch,
         transition: &EffectTransition,
     ) -> StoreResult<()> {
+        crate::write_limits::Budget::new().transition(transition)?;
         let journal_id = self.journal_id().to_owned();
         let tx = self.write_tx(epoch)?;
         apply_transition(&tx, transition, &journal_id, epoch)?;

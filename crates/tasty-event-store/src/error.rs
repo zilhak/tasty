@@ -5,6 +5,8 @@ use crate::types::{CommandStatus, ExpectedRevision, WriterEpoch};
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
+    #[error("{kind} logical write bytes {bytes} exceed limit {limit}")]
+    WriteSizeExceeded {kind: &'static str, bytes: usize, limit: usize},
     #[error("pending effect capacity: existing={pending}, new={new_effects}, limit={limit}")]
     PendingEffectCapacity {pending:u64,new_effects:u64,limit:u64},
 
