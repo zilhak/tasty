@@ -172,7 +172,6 @@ mod terminal_finders;
 
 pub(crate) use attention::AttentionKind;
 pub(crate) use surface_cwd::RemoteCwd;
-#[cfg(any(feature = "gui", test))]
 pub(crate) use surface_cwd::SurfaceCwd;
 #[cfg(feature = "gui")]
 pub use tasty_core::SurfaceDisplayPath;

@@ -183,6 +183,7 @@ pub(crate) enum EngineAction {
         path: std::path::PathBuf,
         name: String,
     },
+    #[cfg(feature = "gui")]
     FocusObserved {
         target: SurfaceBinding,
     },
@@ -194,18 +195,22 @@ pub(crate) enum EngineAction {
         target: SurfaceBinding,
         folder: std::path::PathBuf,
     },
+    #[cfg(feature = "gui")]
     RemoveExplorerFavorite {
         path: std::path::PathBuf,
     },
+    #[cfg(feature = "gui")]
     AddExplorerFavorite {
         path: std::path::PathBuf,
         label: String,
     },
+    #[cfg(feature = "gui")]
     TogglePortFavorite {
         address: std::net::IpAddr,
         port: u16,
         label: String,
     },
+    #[cfg(feature = "gui")]
     DetachSurface {
         surface: u32,
         grant: u64,
@@ -215,6 +220,7 @@ pub(crate) enum EngineAction {
         holder: u32,
         grant: u64,
     },
+    #[cfg(feature = "gui")]
     RemoteMeshFull {
         targets: Vec<SurfaceBinding>,
     },
@@ -392,6 +398,7 @@ impl EngineAction {
                     }
                 }
             }
+            #[cfg(feature = "gui")]
             Self::AddExplorerFavorite { path, label } => {
                 engine
                     .runtime
@@ -399,6 +406,7 @@ impl EngineAction {
                     .add(path.clone(), label.clone());
                 engine.runtime.explorer_favorites.save();
             }
+            #[cfg(feature = "gui")]
             Self::TogglePortFavorite {
                 address,
                 port,
@@ -414,6 +422,7 @@ impl EngineAction {
                 }
                 engine.runtime.port_favorites.save();
             }
+            #[cfg(feature = "gui")]
             Self::DetachSurface { surface, grant } => {
                 if engine
                     .live
@@ -460,10 +469,12 @@ impl EngineAction {
                     engine.mark_layout_dirty();
                 }
             }
+            #[cfg(feature = "gui")]
             Self::RemoveExplorerFavorite { path } => {
                 engine.runtime.explorer_favorites.remove(path);
                 engine.runtime.explorer_favorites.save();
             }
+            #[cfg(feature = "gui")]
             Self::RemoteMeshFull { targets } => {
                 for target in targets {
                     if target.current(&engine.as_ref()) {
@@ -556,6 +567,7 @@ impl EngineAction {
                         .or_insert_with(|| input.clone());
                 }
             }
+            #[cfg(feature = "gui")]
             Self::FocusObserved { target } => {
                 if target.current(&engine.as_ref()) {
                     engine.clear_attention_local(target.surface);

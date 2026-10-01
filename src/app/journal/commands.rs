@@ -1120,7 +1120,7 @@ impl JournalApplication {
                     ticket,
                     session,
                     services,
-                    state.focused_pane_id(&session.core_state),
+                    Some(state.focused_pane_id(&session.core_state)),
                 );
                 continue;
             }
@@ -1133,7 +1133,7 @@ impl JournalApplication {
                 match crate::ipc::handler::workspace::resolve_create_cwd(
                     &request.params,
                     kind,
-                    state,
+                    &crate::ipc::request_scope::RequestScope::capture(state, &session.core_state),
                     &session.as_ref(),
                     &serde_json::Value::Null,
                 ) {
@@ -1151,7 +1151,7 @@ impl JournalApplication {
         }
         for (engine, event) in std::mem::take(&mut self.commands.completed_host_events) {
             if engine == session.id
-                && let Some(event) = event.resolve(&session.core_state, &state.navigation)
+                && let Some(event) = event.resolve(&session.as_ref(), &state.navigation)
             {
                 session.borrow_mut().enqueue_host_event(event);
             }
@@ -1640,7 +1640,7 @@ fn pending_weight(pending: &Pending) -> usize {
             .map_or(0, super::forward::Draft::weight),
     );
     #[cfg(not(feature = "gui"))]
-    let forward_bytes = 0;
+    let forward_bytes: usize = 0;
     forward_bytes
         .saturating_add(pending.one_shot_reserved)
         .saturating_add(

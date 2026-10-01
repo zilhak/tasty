@@ -82,7 +82,10 @@ fn dispatch_command(
     {
         return std::ops::ControlFlow::Continue(());
     }
-    match intercept_app_layer(app, state, engine, &caller, &cmd) {
+    let mut scope = crate::ipc::request_scope::RequestScope::capture(state, engine.core);
+    let intercepted = intercept_app_layer(app, &mut scope, engine, &caller, &cmd);
+    scope.finish().apply(state, engine.core);
+    match intercepted {
         Some(Intercepted::Answered) => return std::ops::ControlFlow::Continue(()),
         #[cfg(debug_assertions)]
         Some(Intercepted::Shutdown) => return std::ops::ControlFlow::Break(()),
@@ -106,7 +109,7 @@ fn dispatch_command(
         return std::ops::ControlFlow::Continue(());
     }
     // engine 응답 오류를 라우팅 신호로 사용하지 않고 namespace 소유자로 먼저 결정한다.
-    if forward_to_plugin_namespace(app, engine, &caller, &cmd) {
+    if forward_to_plugin_namespace(app, &engine.as_ref(), &caller, &cmd) {
         return std::ops::ControlFlow::Continue(());
     }
     // kind 소유자만 준비한다. namespace 전달과 달리 IPC hook extension은 여기서 시작하지 않는다.
@@ -120,7 +123,7 @@ fn dispatch_command(
         engine,
         &mut app.journal,
     );
-    crate::intent::headless::drain_pending_host_events(&app.services, &mut engine);
+    crate::intent::headless::drain_pending_host_events(&app.services, engine);
     send_response(&cmd.response_tx, resp);
     std::ops::ControlFlow::Continue(())
 }
@@ -160,7 +163,7 @@ fn intercept_app_layer(
     }
     // 조회에는 매니저 메타데이터만 필요하다. 플러그인 설치·권한 부여·실행을 하지 않는다.
     if crate::ipc::handler::plugin::is_readonly_method(&cmd.request.method) {
-        super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
+        super::headless_plugins::ensure_plugin_manager_metadata(app, &engine.as_ref());
         let surface_registry = engine.runtime.surface_registry.clone();
         if let Some(resp) = crate::ipc::handler::plugin::dispatch_readonly(
             &app.services,
@@ -176,7 +179,7 @@ fn intercept_app_layer(
     }
     // 지정한 플러그인만 켜야 하므로 전체 discover_and_start 대신 공용 enable/disable을 사용한다.
     if crate::ipc::handler::plugin::is_lifecycle_toggle_method(&cmd.request.method) {
-        super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
+        super::headless_plugins::ensure_plugin_manager_metadata(app, &engine.as_ref());
         let hook_events = engine.runtime.plugin_hook_events.clone();
         let surface_registry = engine.runtime.surface_registry.clone();
         if let Some((resp, events)) = crate::ipc::handler::plugin::dispatch_lifecycle_toggle(
@@ -215,7 +218,7 @@ fn intercept_app_layer(
     // 사건 조회도 메타데이터만 준비하며 플러그인 프로세스를 실행하지 않는다.
     if cmd.request.method == "events.fetch" {
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-        super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
+        super::headless_plugins::ensure_plugin_manager_metadata(app, &engine.as_ref());
         let args =
             match crate::ipc::handler::events::FetchParams::parse(&cmd.request.params, &rpc_id) {
                 Ok(a) => a,
@@ -249,14 +252,14 @@ fn intercept_app_layer(
     }
 
     #[cfg(debug_assertions)]
-    if let Some(hit) = intercept_debug_app_layer(app, engine, cmd) {
+    if let Some(hit) = intercept_debug_app_layer(app, &engine.as_ref(), cmd) {
         return Some(hit);
     }
     {
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         match cmd.request.method.as_str() {
             "clipboard.set_text" => {
-                let resp = crate::app::services::surface::clipboard_set_text(
+                let resp = crate::app::services::clipboard_set_text(
                     &app.services,
                     rpc_id,
                     &cmd.request.params,
@@ -265,7 +268,7 @@ fn intercept_app_layer(
                 return Some(Intercepted::Answered);
             }
             "remote.workspaces" => {
-                crate::app::services::surface::spawn_remote_workspaces(
+                crate::app::services::spawn_remote_workspaces(
                     rpc_id,
                     &cmd.request.params,
                     &cmd.response_tx,
@@ -329,16 +332,13 @@ fn intercept_app_layer(
 #[cfg(debug_assertions)]
 fn intercept_debug_app_layer(
     app: &mut App,
-    engine: &CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     cmd: &crate::ipc::server::IpcCommand,
 ) -> Option<Intercepted> {
     let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
     if cmd.request.method == "debug.lua.eval" {
-        let resp = crate::app::services::surface_debug::lua_eval(
-            app.lua_engine.as_ref(),
-            rpc_id,
-            &cmd.request.params,
-        );
+        let resp =
+            crate::app::services::lua_eval(app.lua_engine.as_ref(), rpc_id, &cmd.request.params);
         send_response(&cmd.response_tx, resp);
         return Some(Intercepted::Answered);
     }
@@ -363,7 +363,7 @@ fn intercept_debug_app_layer(
     }
     // 전체화면 무대 선언은 조회할 수 있지만 창이 필요한 open·close·state는 처리하지 않는다.
     if cmd.request.method == "debug.fullscreen.list" {
-        let resp = crate::app::services::surface_debug::fullscreen_list(rpc_id);
+        let resp = crate::app::services::fullscreen_list(rpc_id);
         send_response(&cmd.response_tx, resp);
         return Some(Intercepted::Answered);
     }
@@ -386,7 +386,7 @@ fn intercept_debug_app_layer(
 #[cfg(not(feature = "gui"))]
 fn forward_to_plugin_namespace(
     app: &mut App,
-    engine: &CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     caller: &crate::ipc::caller::CallerContext,
     cmd: &crate::ipc::server::IpcCommand,
 ) -> bool {

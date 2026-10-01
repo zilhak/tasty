@@ -1,5 +1,6 @@
 //! Nonblocking preset capture entry points; saved data outlives its originating View.
 use super::{App, journal::PresetCaptureReply};
+#[cfg(feature = "gui")]
 use crate::view::ui::View;
 use crate::{
     ipc::{

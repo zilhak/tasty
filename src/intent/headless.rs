@@ -8,7 +8,7 @@
 
 use crate::app::command::CoreEvent;
 use crate::app::services::AppServices;
-use crate::core::{AttentionKind, State};
+use crate::core::{AttentionKind, CoreState};
 use crate::intent::{DispatchedIntent, Intent};
 use crate::runtime::engine_access::{EngineMut, EngineRef};
 use crate::state::RequestContext;
@@ -260,7 +260,7 @@ fn handle_core_event(engine: &mut EngineMut<'_>, event: CoreEvent) {
     }
 }
 
-fn apply_settings(engine: &mut CoreState, new_settings: tasty_settings::Settings) {
+fn apply_settings(engine: &mut EngineMut<'_>, new_settings: tasty_settings::Settings) {
     engine.runtime.settings = new_settings.clone();
     if let Err(e) = new_settings.save() {
         tracing::warn!("failed to save settings: {e}");
@@ -269,7 +269,7 @@ fn apply_settings(engine: &mut CoreState, new_settings: tasty_settings::Settings
 
 // 헤드리스는 알림을 저장하지만 알림음과 NotificationCreated 이벤트 전송은 생략한다.
 fn push_notification(
-    engine: &mut CoreState,
+    engine: &mut EngineMut<'_>,
     ws_id: u32,
     surface_id: u32,
     title: String,
@@ -280,6 +280,7 @@ fn push_notification(
         return;
     }
     if engine
+        .live
         .notifications
         .add(ws_id, surface_id, title, body)
         .is_some()

@@ -103,7 +103,6 @@ impl AttentionStore {
         self.records.get(&surface_id).map(|r| r.kind)
     }
 
-    #[cfg(any(feature = "gui", test))]
     fn count_of_kind(&self, kind: AttentionKind, surface_ids: &[u32]) -> usize {
         surface_ids
             .iter()
@@ -111,7 +110,6 @@ impl AttentionStore {
             .count()
     }
 
-    #[cfg(any(feature = "gui", test))]
     fn dominant_kind(&self, surface_ids: &[u32]) -> Option<AttentionKind> {
         surface_ids
             .iter()

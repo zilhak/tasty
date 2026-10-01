@@ -334,7 +334,7 @@ fn handle_terminal_output(
             event => fire_terminal_hooks(app, state, engine, vec![event]),
         }
     }
-    crate::intent::headless::drain_pending_host_events(&app.services, &mut engine);
+    crate::intent::headless::drain_pending_host_events(&app.services, engine);
 }
 
 /// output-match 훅을 발화하고 HookFired를 큐에 넣는다. PTY 종료는 호출자가 먼저 공용 process_exit 처리로 분기한다.

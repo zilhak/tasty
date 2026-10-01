@@ -361,7 +361,6 @@ impl LayoutDirtyTracker {
         self.dirty_since = None;
     }
 
-    #[cfg(any(feature = "gui", test))]
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }

@@ -323,9 +323,9 @@ mod ratelimit;
 mod semaphore;
 
 mod surface;
-pub(crate) use surface::{
-    RemoteConnParams, clipboard_set_text, no_application_state, spawn_remote_workspaces,
-};
+#[cfg(feature = "gui")]
+pub(crate) use surface::no_application_state;
+pub(crate) use surface::{RemoteConnParams, clipboard_set_text, spawn_remote_workspaces};
 #[cfg(debug_assertions)]
 mod surface_debug;
 #[cfg(debug_assertions)]
