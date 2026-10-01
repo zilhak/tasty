@@ -58,7 +58,10 @@ impl App {
     /// Keep the popup's fixed installation target through the existing user attach guard.
     pub(crate) fn queue_browser_mirror(&mut self,target:pending::PendingMirrorInstall,port:u16,workspace:u32,tunnel:Option<tasty_ssh::SshTunnel>)->anyhow::Result<()> {
         let own_port=self.hub.ipc_server.as_ref().map(|server|server.port());
-        match dispatch_attach(own_port,port,workspace,AttachSource::User,||self.queue_mirror_connection(target,port,workspace,tunnel)) {
+        let mut tunnel=tunnel;
+        let outcome=dispatch_attach(own_port,port,workspace,AttachSource::User,||self.queue_mirror_connection(target,port,workspace,tunnel.take()));
+        self.remote.retire_tunnel(tunnel);
+        match outcome {
             Outcome::Connected(result)=>result,
             Outcome::RejectedSelf=>anyhow::bail!("self attach is not supported"),
         }
@@ -86,15 +89,17 @@ impl App {
         }
     }
 
-    fn try_dispatch_one_gui_attach_user(&mut self,engine:EngineId, req: crate::core::GuiAttachUserReq) {
+    fn try_dispatch_one_gui_attach_user(&mut self,engine:EngineId, mut req: crate::core::GuiAttachUserReq) {
         let own_port = self.hub.ipc_server.as_ref().map(|s| s.port());
-        match dispatch_attach(
+        let outcome=dispatch_attach(
             own_port,
             req.port,
             req.workspace,
             AttachSource::User,
-            || {let target=self.mirror_install_target(Some(engine),None,None,true)?;self.queue_mirror_connection(target,req.port,req.workspace,req.tunnel)},
-        ) {
+            || {let target=self.mirror_install_target(Some(engine),None,None,true)?;self.queue_mirror_connection(target,req.port,req.workspace,req.tunnel.take())},
+        );
+        self.remote.retire_tunnel(req.tunnel.take());
+        match outcome {
             Outcome::RejectedSelf => {}
             Outcome::Connected(Ok(())) => {},
             Outcome::Connected(Err(e)) => tracing::warn!(
@@ -108,7 +113,7 @@ impl App {
     /// Capture the originating engine/View, then queue a cancellable Remote handshake.
     /// Accepted connection work does not mean the mirror is installed yet.
     pub(crate) fn start_gui_attach(&mut self,port:u16,workspace:u32,tunnel:Option<tasty_ssh::SshTunnel>,anchor_ws_id:Option<u32>)->anyhow::Result<()> {
-        let target=self.mirror_install_target(None,anchor_ws_id,None,false)?;
+        let target=match self.mirror_install_target(None,anchor_ws_id,None,false) {Ok(target)=>target,Err(error)=>{self.remote.retire_tunnel(tunnel);return Err(error);}};
         self.queue_mirror_connection(target,port,workspace,tunnel)
     }
 
@@ -190,7 +195,7 @@ impl App {
         port: u16,
         tunnel: Option<tasty_ssh::SshTunnel>,
     ) -> anyhow::Result<()> {
-        let target=self.mirror_install_target(None,None,Some(sess_idx),false)?;
+        let target=match self.mirror_install_target(None,None,Some(sess_idx),false) {Ok(target)=>target,Err(error)=>{self.remote.retire_tunnel(tunnel);return Err(error);}};
         let workspace=self.remote.sessions.get(sess_idx).ok_or_else(||anyhow::anyhow!("reconnect session missing"))?.state.remote_workspace;
         self.queue_mirror_connection(target,port,workspace,tunnel)
     }

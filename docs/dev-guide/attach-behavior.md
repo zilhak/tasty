@@ -56,6 +56,8 @@ SSH의 `request_cancel`은 취소 flag만 설정한다. 실제 자식 kill/reap�
 
 OS 화면 캡처는 App의 ScreenshotWorkers가 최대4개 worker를 소유한다. 현재 OS API에 취소 handle이 없으므로 종료 때 신규 요청을 막고 실제 완료한 worker만 join한다. 남은 수는 미완으로 보고하며 원 engine/View가 사라진 결과를 새 창이나 클립보드에 적용하지 않는다.
 
+연결된 SSH tunnel은 `ClientTransport`가 내려갈 때 기존 ConnectionWorkers 회수 작업으로 넘긴다. 조회 취소·늦은 endpoint 결과·연결 admission 거절도 Remote가 별도 retirement receipt로 tunnel을 넘긴다. App 스레드에서는 tunnel의 blocking Drop을 실행하지 않으며, child wait 결과를 확인한 뒤에만 회수 receipt를 완료한다. 미완 retirement가 예산에 도달하면 새 연결 시도를 거절한다. CLI의 동기 SshTunnel Drop 계약은 유지한다.
+
 ## 초기 스냅샷 + delta
 
 attach 직후 서버가 현재 visible 화면을 `snapshot_and_tap` 으로 tap 등록과 같은 lock 안에서 **1회** 직렬화 push(셀 속성 + 커서 + alt-screen/DECCKM/bracketed 모드 복원). 이후 변화는 output tap delta(Data 프레임). client 는 받은 바이트를 PTY 없는 mirror 터미널(`Terminal::new_detached` + `feed_bytes`)에 먹여 같은 termwiz 파서로 grid 재구성.

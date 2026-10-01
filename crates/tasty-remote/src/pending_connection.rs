@@ -7,20 +7,23 @@ pub(crate) enum PendingConnection {Connecting(AttemptToken),Ready(AttemptToken,P
 pub(crate) struct ConnectionOutcome {pub ticket:ConnectionTicket,pub result:Result<PreparedConnection,String>}
 impl Remote {
     pub fn queue_connection(&mut self,port:u16,workspace:u32,tunnel:Option<tasty_ssh::SshTunnel>,anchor:Option<u32>,mapping:Option<tasty_model::WorkspaceAttachMapping>,wake:std::sync::Arc<dyn Fn()+Send+Sync>,decode:fn(&[u8])->Option<super::client_session::MirrorEvent>)->Result<ConnectionTicket,String> {
-        if self.pending_connections.len()>=8 {return Err("pending remote connection capacity exhausted".into());}
+        if self.pending_connections.len()>=8 {self.retire_tunnel(tunnel);return Err("pending remote connection capacity exhausted".into());}
         let ticket=ConnectionTicket(self.next_connection);
-        let next=self.next_connection.checked_add(1).ok_or("connection ticket exhausted")?;
-        let token=self.begin_attempt(anchor,mapping).map_err(str::to_owned)?;
+        let Some(next)=self.next_connection.checked_add(1) else {self.retire_tunnel(tunnel);return Err("connection ticket exhausted".into());};
+        let token=match self.begin_attempt(anchor,mapping) {Ok(token)=>token,Err(error)=>{self.retire_tunnel(tunnel);return Err(error.into());}};
         self.next_connection=next;
         self.pending_connections.insert(ticket,PendingConnection::Connecting(token.clone()));
         let tx=self.connection_tx.clone();let worker_wake=wake.clone();let worker_token=token.clone();
+        // Spawn rejection drops its closure on the caller thread; keep the tunnel recoverable.
+        let tunnel=std::sync::Arc::new(std::sync::Mutex::new(tunnel));let worker_tunnel=tunnel.clone();
         if let Err(error)=self.spawn_attempt(token.clone(),move || {
+            let tunnel=worker_tunnel.lock().unwrap_or_else(|poison|poison.into_inner()).take();
             let result=PreparedConnection::connect(worker_token,port,workspace,tunnel,worker_wake,decode).map_err(|error|error.to_string());
             // Deliver cancelled success too: collect_connections tracks the exact I/O retirement
             // receipt before dropping its prepared owner. Shutdown keeps draining this bounded queue.
             if let Err(error)=tx.send(ConnectionOutcome {ticket,result}) {drop(error);}
             wake();
-        }) {self.pending_connections.remove(&ticket);return Err(error);}
+        }) {self.pending_connections.remove(&ticket);self.retire_tunnel(tunnel.lock().unwrap_or_else(|poison|poison.into_inner()).take());return Err(error);}
         Ok(ticket)
     }
     pub fn collect_connections(&mut self) {

@@ -45,7 +45,7 @@ impl App {
             && self.view.views.get(&window).and_then(|view|view.as_main()).is_some_and(|main|target.view.as_ref().is_some_and(|identity|main.base.state.matches_identity(identity))))
     }
     pub(crate) fn queue_mirror_connection(&mut self,target:PendingMirrorInstall,port:u16,workspace:u32,tunnel:Option<tasty_ssh::SshTunnel>)->anyhow::Result<()> {
-        if !self.mirror_install_target_is_current(&target) {anyhow::bail!("mirror origin was retired before connection");}
+        if !self.mirror_install_target_is_current(&target) {self.remote.retire_tunnel(tunnel);anyhow::bail!("mirror origin was retired before connection");}
         let stale:Vec<_>=self.state.pending_mirror_installs.iter().filter_map(|(ticket,pending)|
             ((target.anchor.is_some() || target.reconnect.is_some()) && pending.engine==target.engine && pending.reconnect.as_ref().map(|(id,_)|*id)==target.reconnect.as_ref().map(|(id,_)|*id) && pending.anchor==target.anchor).then_some(*ticket)).collect();
         for ticket in stale {self.state.pending_mirror_installs.remove(&ticket);self.remote.cancel_connection(ticket);}

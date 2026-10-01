@@ -203,15 +203,18 @@ pub struct ConnectionWorkers {
     receipt:RetirementReceipt,
     control:Option<TcpStream>,
     handles:Vec<std::thread::JoinHandle<()>>,
+    tunnel:Option<tasty_ssh::SshTunnel>,
 }
 impl ConnectionWorkers {
-    pub fn new(control:TcpStream,handles:Vec<std::thread::JoinHandle<()>>)->Self {Self {receipt:RetirementReceipt(Arc::new(std::sync::atomic::AtomicU8::new(0))),control:Some(control),handles}}
+    pub fn new(control:TcpStream,handles:Vec<std::thread::JoinHandle<()>>)->Self {Self {receipt:RetirementReceipt(Arc::new(std::sync::atomic::AtomicU8::new(0))),control:Some(control),handles,tunnel:None}}
     pub fn receipt(&self)->RetirementReceipt {self.receipt.clone()}
+    pub(crate) fn retire_tunnel(&mut self,tunnel:Option<tasty_ssh::SshTunnel>) {self.tunnel=tunnel;}
 }
 impl Drop for ConnectionWorkers {
     fn drop(&mut self) {
         let Some(control)=self.control.take() else {return;};
         let handles=std::mem::take(&mut self.handles);
+        let tunnel=self.tunnel.take();
         for handle in &handles {handle.thread().unpark();}
         let receipt=self.receipt.clone();
         std::thread::spawn(move || {
@@ -222,6 +225,7 @@ impl Drop for ConnectionWorkers {
             if let Err(error)=control.shutdown(std::net::Shutdown::Both) {tracing::debug!("retired remote socket already closed: {error}");}
             let mut failed=false;
             for handle in handles {if handle.join().is_err() {failed=true;tracing::error!("remote I/O worker panicked during retirement");}}
+            failed|=reap_tunnel(tunnel);
             receipt.0.store(if failed {2}else {1},Ordering::Release);
         });
     }
@@ -266,4 +270,21 @@ impl PreparedConnection {
         let workers=ConnectionWorkers::new(control,vec![writer,reader,heartbeat]);
         Ok(Self {port,remote_workspace:workspace,client_id,name,surfaces,tree,transport:super::client_session::ClientTransport {workers,output,disconnected,frame_tx,tunnel}})
     }
+}
+
+fn reap_tunnel(tunnel:Option<tasty_ssh::SshTunnel>)->bool {
+    let Some(mut tunnel)=tunnel else {return false;};
+    let failed=match tunnel.terminate_and_reap() {
+        Ok(_)=>false,Err(error)=>{tracing::error!(%error,"SSH tunnel wait failed");true},
+    };
+    drop(tunnel);failed
+}
+pub(crate) fn retire_tunnel(tunnel:tasty_ssh::SshTunnel)->RetirementReceipt {
+    let receipt=RetirementReceipt(Arc::new(std::sync::atomic::AtomicU8::new(0)));
+    let completed=receipt.clone();
+    std::thread::spawn(move || {
+        let failed=reap_tunnel(Some(tunnel));
+        completed.0.store(if failed {2}else{1},Ordering::Release);
+    });
+    receipt
 }

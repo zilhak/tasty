@@ -21,9 +21,9 @@ impl App {
             },
             BrowserRequest::Connect {id,workspace}=>{
                 if !self.browser_target_is_current(id,engine) {self.remote.cancel_browser(id);self.state.remote_browsers.remove(&id);return Ok(());}
+                let target=self.mirror_install_target(Some(engine),None,None,true).map_err(|error|error.to_string())?;
                 let (port,tunnel)=self.remote.take_browser_connection(id)?;
                 self.state.remote_browsers.remove(&id);
-                let target=self.mirror_install_target(Some(engine),None,None,true).map_err(|error|error.to_string())?;
                 self.queue_browser_mirror(target,port,workspace,tunnel).map_err(|error|error.to_string())?;
             },
             BrowserRequest::Cancel {..}=>{},

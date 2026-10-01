@@ -112,6 +112,12 @@ impl Remote {
         self.retirements.retain(|receipt|!receipt.is_done());
         self.retirements.push(receipt);
     }
+    pub fn retire_tunnel(&mut self,tunnel:Option<SshTunnel>) {
+        if let Some(tunnel)=tunnel {self.track_workers(crate::transport::retire_tunnel(tunnel));}
+    }
+    pub fn discard_endpoint_outcome(&mut self,outcome:AutoAttachOutcome) {
+        if let Ok((tunnel,_))=outcome.result {self.retire_tunnel(tunnel);}
+    }
     pub fn begin_shutdown(&mut self) {
         if self.shutdown_started.is_some() {return;}
         self.shutdown_started=Some(Instant::now());
@@ -122,17 +128,17 @@ impl Remote {
         self.collect_connections();
         let threads=std::mem::take(&mut self.attempt_threads);
         if !threads.is_empty() {self.track_workers(crate::transport::join_attempt_workers(threads));}
-        while let Ok(outcome)=self.rx.try_recv() {drop(outcome);}
+        while let Ok(outcome)=self.rx.try_recv() {self.discard_endpoint_outcome(outcome);}
     }
     /// Joining and deadline expiry are distinct observations; callers must not call timeout success.
     pub fn shutdown_observation(&mut self)->ShutdownObservation {
         self.collect_connections();
         self.shutdown_browsers();
-        while let Ok(outcome)=self.rx.try_recv() {drop(outcome);}
+        while let Ok(outcome)=self.rx.try_recv() {self.discard_endpoint_outcome(outcome);}
         if self.retirements.iter().all(|receipt|receipt.is_done()) {
             // Acquire of every joined receipt follows the worker's final send. Drain once more
             // after that observation so Joined also releases the final owned SSH tunnel outcome.
-            while let Ok(outcome)=self.rx.try_recv() {drop(outcome);}
+            while let Ok(outcome)=self.rx.try_recv() {self.discard_endpoint_outcome(outcome);}
             self.collect_connections();
             self.shutdown_browsers();
             if self.retirements.iter().any(|receipt|!receipt.is_done()) {return ShutdownObservation::Waiting;}
@@ -143,6 +149,9 @@ impl Remote {
     }
     pub fn begin_attempt(&mut self,anchor:Option<u32>,mapping:Option<tasty_model::WorkspaceAttachMapping>)->Result<AttemptToken,&'static str> {
         if self.shutdown_started.is_some() {return Err("remote is shutting down");}
+        self.retirement_failed|=self.retirements.iter().any(|receipt|receipt.failed());
+        self.retirements.retain(|receipt|!receipt.is_done());
+        if self.retirements.len()>=128 {return Err("remote resource retirement capacity exhausted");}
         if let Some(anchor)=anchor {
             self.attempts.retain(|attempt| {
                 if attempt.anchor==Some(anchor) {attempt.token.cancel();false} else {true}

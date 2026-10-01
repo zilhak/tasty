@@ -1152,6 +1152,13 @@ impl SshTunnel {
         }
     }
 
+    /// Terminate this exact tunnel and observe its child's wait result. Hosts call this on
+    /// their retirement worker; the synchronous Drop contract used by CLI remains unchanged.
+    pub fn terminate_and_reap(&mut self)->std::io::Result<std::process::ExitStatus> {
+        if let Err(error)=self.child.kill() {tracing::debug!(%error,"SSH tunnel kill returned before wait");}
+        self.child.wait()
+    }
+
     /// 터널 자식 ssh 가 살아있는지(끊김 감지 — 프로세스 레벨).
     pub fn is_alive(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(None))

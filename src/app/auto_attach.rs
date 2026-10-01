@@ -229,17 +229,17 @@ impl App {
     }
 
     fn apply_auto_attach_outcome(&mut self, outcome: AutoAttachOutcome) {
-        let Some(target)=self.state.pending_remote_endpoints.remove(&outcome.attempt) else {self.remote.finish_attempt(&outcome.attempt);return;};
-        if !self.mirror_install_target_is_current(&target) {if let Some(retired)=self.remote.finish_attempt(&outcome.attempt) && let Some(anchor)=retired.anchor {self.remote.active.remove(&anchor);}return;}
+        let Some(target)=self.state.pending_remote_endpoints.remove(&outcome.attempt) else {self.remote.finish_attempt(&outcome.attempt);self.remote.discard_endpoint_outcome(outcome);return;};
+        if !self.mirror_install_target_is_current(&target) {if let Some(retired)=self.remote.finish_attempt(&outcome.attempt) && let Some(anchor)=retired.anchor {self.remote.active.remove(&anchor);}self.remote.discard_endpoint_outcome(outcome);return;}
         let Some(accepted)=self.remote.finish_attempt(&outcome.attempt) else {
-            tracing::debug!("discarding result from retired remote connection attempt");return;
+            tracing::debug!("discarding result from retired remote connection attempt");self.remote.discard_endpoint_outcome(outcome);return;
         };
-        if accepted.anchor!=outcome.anchor_ws_id {tracing::error!("remote outcome belongs to another anchor");return;}
+        if accepted.anchor!=outcome.anchor_ws_id {tracing::error!("remote outcome belongs to another anchor");self.remote.discard_endpoint_outcome(outcome);return;}
         if let Some(anchor)=accepted.anchor {
             let current=self.engines.all_sessions().find_map(|session|session.core_state.workspaces().iter().find(|workspace|workspace.id==anchor).and_then(|workspace|workspace.attach_mapping.clone()));
             if current!=accepted.mapping {
                 self.remote.active.remove(&anchor);
-                tracing::debug!("discarding SSH result after attach mapping changed");return;
+                tracing::debug!("discarding SSH result after attach mapping changed");self.remote.discard_endpoint_outcome(outcome);return;
             }
         }
         let AutoAttachOutcome {
@@ -293,6 +293,7 @@ impl App {
             if let Some(anchor) = anchor_ws_id {
                 self.remote.active.remove(&anchor);
             }
+            self.remote.retire_tunnel(tunnel);
             return;
         }
         let attach_result=self.queue_mirror_connection(target,port,remote_ws,tunnel);

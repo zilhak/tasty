@@ -314,6 +314,7 @@ impl Drop for ClientTransport {
         if let Err(error)=self.frame_tx.send(OutFrame {tag:StreamTag::Detach,payload:Vec::new()}) {
             tracing::debug!("remote detach queue already closed: {error}");
         }
+        self.workers.retire_tunnel(self.tunnel.take());
         self.frame_tx.retire();
         self.disconnected.store(true,std::sync::atomic::Ordering::Release);
     }

@@ -43,7 +43,7 @@ impl Remote {
         if result.is_err() && let Some(session)=self.browsers.sessions.get_mut(&id) {session.attempt=None;}result
     }
     pub fn cancel_browser(&mut self,id:BrowserId) {
-        if let Some(session)=self.browsers.sessions.remove(&id) && let Some(attempt)=session.attempt {self.cancel_attempt(&attempt);}
+        if let Some(session)=self.browsers.sessions.remove(&id) {if let Some(attempt)=session.attempt {self.cancel_attempt(&attempt);}self.retire_tunnel(session.tunnel);}
     }
     pub fn take_browser_connection(&mut self,id:BrowserId)->Result<(u16,Option<tasty_ssh::SshTunnel>),String> {
         let session=self.browsers.sessions.get(&id).ok_or("remote browser not found")?;
@@ -57,8 +57,8 @@ impl Remote {
         for _ in 0..64 {
             let Ok(outcome)=self.browsers.rx.try_recv() else {break;};
             let valid=self.browsers.sessions.get(&outcome.id).and_then(|session|session.attempt.as_ref()).is_some_and(|attempt|*attempt==outcome.attempt);
-            if !valid {continue;}
-            if self.finish_attempt(&outcome.attempt).is_none() {continue;}
+            if !valid {self.discard_browser_outcome(outcome);continue;}
+            if self.finish_attempt(&outcome.attempt).is_none() {self.discard_browser_outcome(outcome);continue;}
             let Some(session)=self.browsers.sessions.get_mut(&outcome.id) else {continue;};session.attempt=None;
             let update=match outcome.result {
                 Ok(ResultValue::Listed {port,tunnel,rows})=>{session.port=Some(port);session.tunnel=tunnel;BrowserUpdate::Listed(rows)},
@@ -72,5 +72,6 @@ impl Remote {
             updates.push((id,BrowserUpdate::Failed {creating,message:tasty_i18n::t(if creating {"remote_attach.create_timeout"}else{"remote_attach.timeout"}).replace("{secs}",if creating {"10"}else{"20"})}));
         }updates
     }
-    pub(crate) fn shutdown_browsers(&mut self) {let ids:Vec<_>=self.browsers.sessions.keys().copied().collect();for id in ids {self.cancel_browser(id);}while let Ok(outcome)=self.browsers.rx.try_recv() {drop(outcome);}}
+    fn discard_browser_outcome(&mut self,outcome:Outcome) {if let Ok(ResultValue::Listed {tunnel,..})=outcome.result {self.retire_tunnel(tunnel);}}
+    pub(crate) fn shutdown_browsers(&mut self) {let ids:Vec<_>=self.browsers.sessions.keys().copied().collect();for id in ids {self.cancel_browser(id);}while let Ok(outcome)=self.browsers.rx.try_recv() {self.discard_browser_outcome(outcome);}}
 }
