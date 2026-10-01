@@ -33,6 +33,19 @@ pub(crate) fn import(
         .map_err(|error| StoreError::Corrupt(error))?;
     let layout = exported.layout;
     let categories = categories_of(&layout);
+    // A different journal namespace is not permission to reuse numeric IDs still present in
+    // shared metadata or referenced by a source cleanup. Reservation gaps remain intentional.
+    for (kind, visible_max) in [
+        (IdKind::Category,request.model.categories.keys().copied().max().unwrap_or(0)),
+        (IdKind::Workspace,request.model.workspaces.keys().copied().max().unwrap_or(0)),
+        (IdKind::Pane,request.model.panes.keys().copied().max().unwrap_or(0)),
+        (IdKind::Tab,request.model.tabs.keys().copied().max().unwrap_or(0)),
+        (IdKind::Surface,request.model.surfaces.keys().copied().max().unwrap_or(0)),
+    ] {
+        let source_next = request.source.next_unreserved_id(kind.label())?.max(u64::from(visible_max)+1);
+        let next = destination.next_unreserved_id(kind.label())?;
+        if next < source_next {destination.reserve_ids(epoch,kind.label(),source_next-next,max_id(kind))?;}
+    }
     let ids = IdPools::reserve(destination, epoch, &layout, &categories)?;
     let holder = format!("admission/{}/journal-import/{}", epoch.0, request.key.idempotency_key);
     let references: Vec<_> = request.model.surfaces.values()
