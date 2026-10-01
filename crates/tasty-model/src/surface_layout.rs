@@ -499,7 +499,7 @@ mod tests {
     use super::*;
 
     fn leaf(id: SurfaceId) -> SurfaceLayout {
-        SurfaceLayout::Leaf(Box::new(TerminalSurface { id }))
+        SurfaceLayout::Leaf(SurfaceDescriptor::new(id, "terminal"))
     }
 
     fn split(first: SurfaceLayout, second: SurfaceLayout) -> SurfaceLayout {

@@ -193,7 +193,7 @@ mod tests {
             id,
             tab_id,
             "Shell".to_string(),
-            Box::new(EmptySurface::new(surface_id)),
+            crate::SurfaceDescriptor::new(surface_id, "empty"),
         )
     }
 

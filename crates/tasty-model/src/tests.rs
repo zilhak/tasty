@@ -385,12 +385,11 @@ fn pane_close_tab_removes_tab() {
 
 #[test]
 fn pane_add_variants_append_structure_without_owning_a_selection() {
-    use super::EmptySurface;
     let mut pane = Pane::new_with_terminal_marker(1, 10, 100);
-    pane.add_surface_tab_background(11, "bg".into(), None, Box::new(EmptySurface::new(101)));
+    pane.add_surface_tab_background(11, "bg".into(), None, SurfaceDescriptor::new(101, "empty"));
     assert_eq!(pane.tabs.len(), 2);
     assert_eq!(pane.tabs[0].id, 10);
-    pane.add_surface_tab(12, "fg".into(), None, Box::new(EmptySurface::new(102)));
+    pane.add_surface_tab(12, "fg".into(), None, SurfaceDescriptor::new(102, "empty"));
     assert_eq!(pane.tabs.len(), 3);
     assert_eq!(pane.tabs[2].id, 12);
 }
@@ -611,14 +610,14 @@ fn pane_node_visits_split_panes() {
 
 // ---- SurfaceLayout tests ----
 
-fn test_surface_node(id: SurfaceId) -> TerminalSurface {
-    TerminalSurface { id }
+fn test_surface_node(id: SurfaceId) -> SurfaceDescriptor {
+    SurfaceDescriptor::new(id, "terminal")
 }
 
 #[test]
 fn surface_layout_all_surface_ids_single() {
     let node = test_surface_node(10);
-    let layout = SurfaceLayout::Leaf(Box::new(node));
+    let layout = SurfaceLayout::Leaf(node);
     assert_eq!(layout.all_surface_ids(), vec![10]);
 }
 
@@ -626,8 +625,8 @@ fn surface_layout_all_surface_ids_single() {
 fn surface_layout_all_surface_ids_split() {
     let node1 = test_surface_node(10);
     let node2 = test_surface_node(20);
-    let layout = SurfaceLayout::Leaf(Box::new(node1));
-    let (layout, leftover) = layout.split_with_node(10, SplitDirection::Vertical, node2);
+    let layout = SurfaceLayout::Leaf(node1);
+    let (layout, leftover) = layout.split_with_surface(10, SplitDirection::Vertical, node2);
     assert!(leftover.is_none(), "split should succeed");
     let ids = layout.all_surface_ids();
     assert_eq!(ids.len(), 2);
@@ -636,11 +635,11 @@ fn surface_layout_all_surface_ids_split() {
 }
 
 #[test]
-fn surface_layout_split_with_node_success() {
+fn surface_layout_split_with_surface_success() {
     let node1 = test_surface_node(10);
     let node2 = test_surface_node(20);
-    let layout = SurfaceLayout::Leaf(Box::new(node1));
-    let (new_layout, leftover) = layout.split_with_node(10, SplitDirection::Vertical, node2);
+    let layout = SurfaceLayout::Leaf(node1);
+    let (new_layout, leftover) = layout.split_with_surface(10, SplitDirection::Vertical, node2);
     assert!(leftover.is_none(), "node should be consumed on success");
     assert_eq!(new_layout.all_surface_ids().len(), 2);
 }
@@ -649,9 +648,9 @@ fn surface_layout_split_with_node_success() {
 fn surface_layout_split_nonexistent_target() {
     let node1 = test_surface_node(10);
     let node2 = test_surface_node(20);
-    let layout = SurfaceLayout::Leaf(Box::new(node1));
+    let layout = SurfaceLayout::Leaf(node1);
     // Target 999 doesn't exist — new_node is returned back
-    let (new_layout, leftover) = layout.split_with_node(999, SplitDirection::Vertical, node2);
+    let (new_layout, leftover) = layout.split_with_surface(999, SplitDirection::Vertical, node2);
     assert!(
         leftover.is_some(),
         "node should be returned when target not found"
@@ -663,8 +662,8 @@ fn surface_layout_split_nonexistent_target() {
 fn surface_layout_close_surface_split_first() {
     let node1 = test_surface_node(10);
     let node2 = test_surface_node(20);
-    let layout = SurfaceLayout::Leaf(Box::new(node1));
-    let (layout, _) = layout.split_with_node(10, SplitDirection::Vertical, node2);
+    let layout = SurfaceLayout::Leaf(node1);
+    let (layout, _) = layout.split_with_surface(10, SplitDirection::Vertical, node2);
     let (new_layout, removed) = layout.close_surface(10);
     assert!(removed, "surface 10 should be removed");
     assert_eq!(new_layout.all_surface_ids(), vec![20]);
@@ -674,8 +673,8 @@ fn surface_layout_close_surface_split_first() {
 fn surface_layout_close_surface_split_second() {
     let node1 = test_surface_node(10);
     let node2 = test_surface_node(20);
-    let layout = SurfaceLayout::Leaf(Box::new(node1));
-    let (layout, _) = layout.split_with_node(10, SplitDirection::Vertical, node2);
+    let layout = SurfaceLayout::Leaf(node1);
+    let (layout, _) = layout.split_with_surface(10, SplitDirection::Vertical, node2);
     let (new_layout, removed) = layout.close_surface(20);
     assert!(removed, "surface 20 should be removed");
     assert_eq!(new_layout.all_surface_ids(), vec![10]);
@@ -684,7 +683,7 @@ fn surface_layout_close_surface_split_second() {
 #[test]
 fn surface_layout_close_single_surface_fails() {
     let node = test_surface_node(10);
-    let layout = SurfaceLayout::Leaf(Box::new(node));
+    let layout = SurfaceLayout::Leaf(node);
     let (new_layout, removed) = layout.close_surface(10);
     assert!(!removed, "cannot close the only surface");
     assert_eq!(new_layout.all_surface_ids(), vec![10]);
@@ -693,7 +692,7 @@ fn surface_layout_close_single_surface_fails() {
 #[test]
 fn surface_layout_close_nonexistent_surface() {
     let node = test_surface_node(10);
-    let layout = SurfaceLayout::Leaf(Box::new(node));
+    let layout = SurfaceLayout::Leaf(node);
     let (new_layout, removed) = layout.close_surface(999);
     assert!(!removed, "999 does not exist");
     assert_eq!(new_layout.all_surface_ids(), vec![10]);
@@ -702,7 +701,7 @@ fn surface_layout_close_nonexistent_surface() {
 #[test]
 fn surface_layout_find_terminal() {
     let node = test_surface_node(10);
-    let layout = SurfaceLayout::Leaf(Box::new(node));
+    let layout = SurfaceLayout::Leaf(node);
     assert!(layout.find_surface(10).is_some());
     assert!(layout.find_surface(999).is_none());
 }
@@ -711,8 +710,8 @@ fn surface_layout_find_terminal() {
 fn surface_layout_find_terminal_in_split() {
     let node1 = test_surface_node(10);
     let node2 = test_surface_node(20);
-    let layout = SurfaceLayout::Leaf(Box::new(node1));
-    let (layout, _) = layout.split_with_node(10, SplitDirection::Vertical, node2);
+    let layout = SurfaceLayout::Leaf(node1);
+    let (layout, _) = layout.split_with_surface(10, SplitDirection::Vertical, node2);
     assert!(layout.find_surface(10).is_some());
     assert!(layout.find_surface(20).is_some());
     assert!(layout.find_surface(99).is_none());
@@ -722,14 +721,13 @@ fn surface_layout_find_terminal_in_split() {
 fn tab_close_surface_in_split() {
     let node1 = test_surface_node(10);
     let node2 = test_surface_node(20);
-    let layout = SurfaceLayout::Leaf(Box::new(node1));
-    let (split_layout, _) = layout.split_with_node(10, SplitDirection::Vertical, node2);
+    let layout = SurfaceLayout::Leaf(node1);
+    let (split_layout, _) = layout.split_with_surface(10, SplitDirection::Vertical, node2);
     let mut tab = Tab {
         id: 1,
         name: "Test".to_string(),
         explicit_name: None,
         layout_opt: Some(split_layout),
-        surface_titles: Default::default(),
     };
     let closed = tab.close_surface(10);
     assert!(closed);
@@ -743,9 +741,9 @@ fn surface_layout_all_surface_ids_three_way() {
     let n1 = test_surface_node(1);
     let n2 = test_surface_node(2);
     let n3 = test_surface_node(3);
-    let layout = SurfaceLayout::Leaf(Box::new(n1));
-    let (layout, _) = layout.split_with_node(1, SplitDirection::Vertical, n2);
-    let (layout, _) = layout.split_with_node(2, SplitDirection::Horizontal, n3);
+    let layout = SurfaceLayout::Leaf(n1);
+    let (layout, _) = layout.split_with_surface(1, SplitDirection::Vertical, n2);
+    let (layout, _) = layout.split_with_surface(2, SplitDirection::Horizontal, n3);
     let ids = layout.all_surface_ids();
     assert_eq!(ids.len(), 3);
     assert!(ids.contains(&1));
@@ -753,295 +751,12 @@ fn surface_layout_all_surface_ids_three_way() {
     assert!(ids.contains(&3));
 }
 
-// ---- Deferred placeholder tests ----
-
-fn test_deferred_placeholder(id: SurfaceId) -> super::EmptySurface {
-    let spawn = super::terminal_surface::DeferredSpawn {
-        shell: None,
-        shell_args: Vec::new(),
-        extra_env: Vec::new(),
-        cols: 80,
-        rows: 24,
-        working_dir: None,
-        restore_command: None,
-        scrollback_persist_id: None,
-    };
-    super::EmptySurface::new_deferred(id, spawn)
-}
-
-#[test]
-fn tab_is_deferred_detects_placeholder_leaf() {
-    let placeholder = test_deferred_placeholder(42);
-    let tab = Tab {
-        id: 1,
-        name: "Shell".to_string(),
-        explicit_name: None,
-        layout_opt: Some(SurfaceLayout::Leaf(Box::new(placeholder))),
-        surface_titles: Default::default(),
-    };
-    assert!(tab.is_deferred());
-    assert_eq!(tab.deferred_surface_ids(), vec![42]);
-    assert!(tab.is_surface_deferred(42));
-    assert!(!tab.is_surface_deferred(99));
-}
-
-#[test]
-fn tab_is_deferred_walks_split_layout() {
-    // Layout: Split(EmptySurface(deferred=Some, id=10), EmptySurface(deferred=Some, id=20))
-    let p1 = test_deferred_placeholder(10);
-    let p2 = test_deferred_placeholder(20);
-    let layout = SurfaceLayout::Split {
-        direction: SplitDirection::Vertical,
-        ratio: 0.5,
-        first: Box::new(SurfaceLayout::Leaf(Box::new(p1))),
-        second: Box::new(SurfaceLayout::Leaf(Box::new(p2))),
-        node_id: crate::SplitNodeId::allocate(),
-    };
-    let tab = Tab {
-        id: 1,
-        name: "Shell".to_string(),
-        explicit_name: None,
-        layout_opt: Some(layout),
-        surface_titles: Default::default(),
-    };
-    assert!(tab.is_deferred());
-    let ids = tab.deferred_surface_ids();
-    assert_eq!(ids.len(), 2);
-    assert!(ids.contains(&10));
-    assert!(ids.contains(&20));
-}
-
-#[test]
-fn tab_is_not_deferred_with_real_terminal() {
-    let node = test_surface_node(7);
-    let tab = Tab {
-        id: 1,
-        name: "Shell".to_string(),
-        explicit_name: None,
-        layout_opt: Some(SurfaceLayout::Leaf(Box::new(node))),
-        surface_titles: Default::default(),
-    };
-    assert!(!tab.is_deferred());
-    assert_eq!(tab.deferred_surface_ids(), Vec::<SurfaceId>::new());
-    assert!(!tab.is_surface_deferred(7));
-}
-
-#[test]
-fn tab_complete_terminal_spawn_replaces_placeholder_in_split() {
-    let p1 = test_deferred_placeholder(11);
-    let p2 = test_deferred_placeholder(12);
-    let layout = SurfaceLayout::Split {
-        direction: SplitDirection::Horizontal,
-        ratio: 0.5,
-        first: Box::new(SurfaceLayout::Leaf(Box::new(p1))),
-        second: Box::new(SurfaceLayout::Leaf(Box::new(p2))),
-        node_id: crate::SplitNodeId::allocate(),
-    };
-    let mut tab = Tab {
-        id: 1,
-        name: "Shell".to_string(),
-        explicit_name: None,
-        layout_opt: Some(layout),
-        surface_titles: Default::default(),
-    };
-    // Only wake id=11. id=12 must remain deferred.
-    assert!(tab.pending_terminal_spawn(11).is_some());
-    assert!(tab.complete_terminal_spawn(11));
-    assert!(!tab.is_surface_deferred(11));
-    assert!(tab.is_surface_deferred(12));
-    assert_eq!(tab.deferred_surface_ids(), vec![12]);
-}
-
-#[test]
-fn workspace_classify_attach_surfaces_separates_terminal_and_non_terminal() {
-    use super::{EmptySurface, Pane, Surface, TerminalSurface, Workspace};
-    // 터미널(100) + split 으로 비-터미널 EmptySurface(200, 비-deferred) + deferred(300).
-    let mut pane = Pane::new_with_surface(1, 1, "t".into(), Box::new(TerminalSurface { id: 100 }));
-    pane.split_surface_by_id_with_surface(
-        100,
-        SplitDirection::Vertical,
-        Box::new(EmptySurface::new(200)),
-    )
-    .unwrap();
-    // deferred 터미널 자리(EmptySurface deferred) → 터미널로 분류돼야 한다.
-    pane.split_surface_by_id_with_surface(
-        200,
-        SplitDirection::Horizontal,
-        Box::new(test_deferred_placeholder(300)) as Box<dyn Surface>,
-    )
-    .unwrap();
-    let ws = Workspace::new_with_pane(1, "w".into(), pane);
-    let class = ws.classify_attach_surfaces();
-    let mut terms = class.terminals.clone();
-    terms.sort_unstable();
-    assert_eq!(terms, vec![100, 300]); // 실 터미널 + deferred
-    assert_eq!(class.non_terminals, vec![200]); // 비-deferred empty
-    assert!(class.explorers.is_empty());
-}
-
-// Deferred::Plugin은 터미널 tap 대상이 아니라 placeholder로 분류한다.
-#[test]
-fn workspace_classify_attach_surfaces_puts_plugin_deferred_in_non_terminals() {
-    use super::terminal_surface::DeferredPlugin;
-    use super::{EmptySurface, Pane, Surface, TerminalSurface, Workspace};
-    let mut pane = Pane::new_with_surface(1, 1, "t".into(), Box::new(TerminalSurface { id: 100 }));
-    let plugin_ph = EmptySurface::new_deferred_plugin(
-        300,
-        DeferredPlugin {
-            kind: "myplugin".into(),
-            snapshot: serde_json::json!({}),
-        },
-    );
-    pane.split_surface_by_id_with_surface(
-        100,
-        SplitDirection::Vertical,
-        Box::new(plugin_ph) as Box<dyn Surface>,
-    )
-    .unwrap();
-    let ws = Workspace::new_with_pane(1, "w".into(), pane);
-    let class = ws.classify_attach_surfaces();
-    assert_eq!(
-        class.terminals,
-        vec![100],
-        "실 터미널만 terminal 이어야 한다"
-    );
-    assert_eq!(
-        class.non_terminals,
-        vec![300],
-        "plugin deferred 는 non_terminal placeholder 여야 한다 (terminal 오분류 금지)"
-    );
-}
-
-/// explorer는 별도 후보로 분류하고 고정 cwd가 아닌 활성 탭의 현재 경로를 전달한다.
-#[test]
-fn workspace_classify_attach_surfaces_puts_explorer_in_dedicated_bucket_with_active_root() {
-    use super::{ExplorerPanel, Pane, Workspace};
-    use std::path::PathBuf;
-
-    let mut panel = ExplorerPanel::new(200, PathBuf::from("/proj"));
-    panel
-        .active_tab_mut()
-        .navigate_to(PathBuf::from("/proj/sub"));
-    let pane = Pane::new_with_surface(1, 1, "Explorer".into(), Box::new(panel));
-    let ws = Workspace::new_with_pane(1, "w".into(), pane);
-    let class = ws.classify_attach_surfaces();
-    assert!(class.non_terminals.is_empty());
-    assert_eq!(class.explorers, vec![(200, PathBuf::from("/proj/sub"))]);
-}
-
-/// 호스트 타입에 의존하지 않고 content mirror trait 계약만 재현하는 시험 surface.
-struct ContentSurface {
-    id: SurfaceId,
-    kind: &'static str,
-    plugin_id: String,
-    file: Option<std::path::PathBuf>,
-}
-
-impl super::Surface for ContentSurface {
-    crate::impl_surface_any!();
-
-    fn kind(&self) -> &'static str {
-        self.kind
-    }
-
-    fn type_name(&self) -> &'static str {
-        "Remote"
-    }
-
-    fn surface_id(&self) -> Option<SurfaceId> {
-        Some(self.id)
-    }
-
-    fn source_cwd(&self) -> Option<std::path::PathBuf> {
-        None
-    }
-
-    fn attach_content_info(&self) -> Option<(&str, &str, Option<std::path::PathBuf>)> {
-        Some((self.kind, self.plugin_id.as_str(), self.file.clone()))
-    }
-}
-
-/// content 후보의 kind·plugin ID·경로를 보존한다. 최종 허용 목록은 호스트 책임이다.
-#[test]
-fn workspace_classify_attach_surfaces_puts_content_surface_in_dedicated_bucket() {
-    use super::{Pane, Workspace};
-    use std::path::PathBuf;
-
-    let pane = Pane::new_with_surface(
-        1,
-        1,
-        "README.md".into(),
-        Box::new(ContentSurface {
-            id: 400,
-            kind: "markdown",
-            plugin_id: "com.tasty.markdown".into(),
-            file: Some(PathBuf::from("/proj/README.md")),
-        }),
-    );
-    let ws = Workspace::new_with_pane(1, "w".into(), pane);
-    let class = ws.classify_attach_surfaces();
-    assert!(
-        class.non_terminals.is_empty(),
-        "content 후보가 placeholder 로 새면 안 된다"
-    );
-    assert_eq!(
-        class.content_candidates,
-        vec![(
-            400,
-            "markdown".to_string(),
-            "com.tasty.markdown".to_string(),
-            Some(PathBuf::from("/proj/README.md")),
-        )]
-    );
-}
-
-/// 두 신호가 모두 있으면 mesh 분류를 우선한다.
-#[test]
-fn workspace_classify_attach_surfaces_prefers_mesh_over_content() {
-    use super::{Pane, Workspace};
-
-    struct BothSurface(SurfaceId);
-    impl super::Surface for BothSurface {
-        crate::impl_surface_any!();
-        fn kind(&self) -> &'static str {
-            "image"
-        }
-        fn type_name(&self) -> &'static str {
-            "EguiMesh"
-        }
-        fn surface_id(&self) -> Option<SurfaceId> {
-            Some(self.0)
-        }
-        fn source_cwd(&self) -> Option<std::path::PathBuf> {
-            None
-        }
-        fn attach_mesh_info(&self) -> Option<(&str, &str)> {
-            Some(("image", "com.tasty.image"))
-        }
-        fn attach_content_info(&self) -> Option<(&str, &str, Option<std::path::PathBuf>)> {
-            Some(("image", "com.tasty.image", None))
-        }
-    }
-
-    let pane = Pane::new_with_surface(1, 1, "img".into(), Box::new(BothSurface(500)));
-    let ws = Workspace::new_with_pane(1, "w".into(), pane);
-    let class = ws.classify_attach_surfaces();
-    assert_eq!(
-        class.mesh_candidates,
-        vec![(500, "image".to_string(), "com.tasty.image".to_string())]
-    );
-    assert!(
-        class.content_candidates.is_empty(),
-        "mesh 후보가 content 버킷으로 새면 mesh mirror 가 끊긴다"
-    );
-}
-
 #[test]
 fn surface_layout_to_tree_json_full_preserves_split_ratio() {
     let node1 = test_surface_node(10);
     let node2 = test_surface_node(20);
-    let layout = SurfaceLayout::Leaf(Box::new(node1));
-    let (layout, _) = layout.split_with_node(10, SplitDirection::Horizontal, node2);
+    let layout = SurfaceLayout::Leaf(node1);
+    let (layout, _) = layout.split_with_surface(10, SplitDirection::Horizontal, node2);
     let json = layout.to_tree_json_full(&crate::StructurePresentationSnapshot::default());
     assert_eq!(json["type"], "Split");
     assert_eq!(json["direction"], "horizontal");
