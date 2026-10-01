@@ -168,24 +168,8 @@ impl RequestContext {
             return false;
         }
 
-        // 대상이 포커스 pane이므로 Core의 포커스 보정이 첫 pane으로 옮긴다.
-        let crate::app::command::CoreEvent::PaneClosed {
-            closed,
-            cleanup_targets,
-            ..
-        } = crate::app::services::AppServices::close_pane_recording(engine, target_id, Some(&self.navigation))
-        else {
-            return false;
-        };
-        if closed {
-            for (sid, pid) in cleanup_targets {
-                let kind = self.surface_kind(engine, sid);
-                self.cleanup_surface(engine, sid, pid);
-                engine.enqueue_surface_closed(sid, kind, true);
-            }
-        }
-        self.reconcile_presentation(engine);
-        closed
+        self.dispatch_intent(crate::app::command::DomainIntent::ClosePane {pane_id:target_id}.from_user_context_menu());
+        true
     }
 
     /// 포커스된 surface를 닫고 필요하면 빈 탭·pane·워크스페이스도 정리한다.
@@ -222,8 +206,7 @@ impl RequestContext {
         surface_id: u32,
         is_user_close: bool,
     ) -> bool {
-        self.close_surface_by_id_inner(engine, surface_id, true, is_user_close)
-            .is_some()
+        self.queue_surface_close(engine,surface_id,true,is_user_close)
     }
 
     /// 복원 사본 없이 닫는다. 워크스페이스가 모두 사라지면 다음 화면 처리에 필요한 기본 항목을 만든다.
@@ -233,94 +216,20 @@ impl RequestContext {
         surface_id: u32,
         is_user_close: bool,
     ) -> bool {
-        let closed = self
-            .close_surface_by_id_inner(engine, surface_id, false, is_user_close)
-            .is_some();
-        if closed {
-            self.recreate_workspace_if_empty(engine, "close_surface_by_id_no_snapshot");
-        }
-        closed
+        self.queue_surface_close(engine,surface_id,false,is_user_close)
     }
 
-    /// AppServices 닫기로 트리를 바꾸고 복원 기록을 남긴 뒤 창 쪽 정리와 알림을 이어서 한다.
-    /// 닫았으면 Core가 돌려준 SurfaceClosed를 돌려준다.
-    /// 복원 사본 저장 여부와 사용자 닫기 표시는 별개다.
-    /// PTY 종료 정리는 save_snapshot=false이지만 is_user_close=true로 보고한다.
-    /// 이 조합은 pty_exit_close_skips_the_snapshot_but_still_reports_a_user_close가 검사한다.
-    fn close_surface_by_id_inner(
-        &mut self,
-        engine: &mut EngineMut<'_>,
-        surface_id: u32,
-        save_snapshot: bool,
-        is_user_close: bool,
-    ) -> Option<crate::app::command::CoreEvent> {
-        use crate::close_trace;
-        use crate::app::command::{CascadeLevel, CoreEvent};
-        use std::time::Instant;
-
-        const PATH: &str = "inline";
-
-        let (ws_idx, _) = engine.find_workspace_index_for_surface(surface_id)?;
-        // surface 하나와 workspace 전체 닫기는 트리에서 빠지기 전의 kind를 알린다.
-        let kinds: std::collections::HashMap<u32, Option<&'static str>> = engine
-            .workspace_at(ws_idx)
-            .expect("workspace index is valid")
-            .all_surface_ids()
-            .into_iter()
-            .map(|sid| (sid, self.surface_kind(engine, sid)))
-            .collect();
-        let kind_before = |sid: u32| kinds.get(&sid).copied().flatten();
-
-        let t_close = Instant::now();
-        let event = crate::app::services::AppServices::close_surface_recording(
-            engine,
-            surface_id,
-            save_snapshot.then_some(&self.navigation as &dyn crate::model::StructurePresentation),
-            crate::app::services::CloseTracePath::Inline,
-        );
-        self.apply_structure_result(engine, &event);
-        let CoreEvent::SurfaceClosed {
-            closed: true,
-            cascade_level,
-            cleanup_targets,
-            workspace_purged,
-            ..
-        } = &event
-        else {
-            return None;
+    /// Queue fixed IDs and an explicit user snapshot request; execution and repair are App-owned.
+    fn queue_surface_close(&mut self,engine:&EngineMut<'_>,surface_id:u32,capture:bool,is_user:bool)->bool {
+        if !engine.core.has_surface(surface_id) {return false;}
+        let intent=crate::app::command::DomainIntent::CloseSurface {
+            surface_id,presentation:capture.then(||Box::new(crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&engine.categories,&self.navigation))),
         };
-        let targets = cleanup_targets.clone();
-        match cascade_level {
-            CascadeLevel::Surface => {
-                for (sid, pid) in targets {
-                    self.cleanup_surface(engine, sid, pid);
-                    engine.enqueue_surface_closed(sid, kind_before(sid), is_user_close);
-                }
-            }
-            // 탭·pane 닫기는 트리에서 빠진 뒤 kind를 찾는다. AppServices cascade 경로와 같다.
-            CascadeLevel::Tab | CascadeLevel::Pane => {
-                for (sid, pid) in targets {
-                    let kind = self.surface_kind(engine, sid);
-                    self.cleanup_surface(engine, sid, pid);
-                    engine.enqueue_surface_closed(sid, kind, is_user_close);
-                }
-            }
-            CascadeLevel::Workspace => {
-                if let Some((_, workspace_id)) = *workspace_purged {
-                    self.reconcile_presentation(engine);
-                    self.after_workspace_removed(engine, workspace_id, PATH);
-                }
-                let zipped: Vec<(u32, Option<String>, Option<&'static str>)> = targets
-                    .into_iter()
-                    .map(|(sid, pid)| (sid, pid, kind_before(sid)))
-                    .collect();
-                let surfaces = zipped.len();
-                self.cleanup_targets(engine, zipped, is_user_close, Some(PATH));
-                close_trace::log_total(t_close, surfaces, save_snapshot, PATH);
-            }
-        }
-        Some(event)
+        #[cfg(feature="gui")]
+        if is_user {self.dispatch_intent(intent.from_user_context_menu());return true;}
+        self.dispatch_intent(intent.from_agent_ipc());true
     }
+
 }
 
 #[cfg(test)]

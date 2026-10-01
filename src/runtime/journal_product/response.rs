@@ -7,6 +7,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 pub(crate) struct CompletionView {
     pub mirror_count:usize,
     pub selected_tabs:std::collections::BTreeMap<u32,u32>,
+    pub selected_surfaces:std::collections::BTreeMap<u32,u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

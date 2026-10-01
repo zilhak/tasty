@@ -2,7 +2,7 @@ use super::*;
 use crate::{CloseTarget,RetirementPlan,RetiredSurface,EntityId,IdKind,Operation,OperationOutcome,StructuralEffect};
 pub(super) fn decide(model:&JournalModel,command:&StructuralCommand)->Result<StructuralDecision,Rejection> {
     match command {
-        StructuralCommand::Close {operation,command_id,input,target,undo,is_user_close}=>{
+        StructuralCommand::Close {operation,command_id,input,target,expected,undo,is_user_close}=>{
             let Some((event,removed,surfaces))=close_facts(model,*target) else {
                 return Ok(StructuralDecision {events:Vec::new(),effects:Vec::new(),result:StructuralResult::Closed {closed:false},completed_command:None});
             };
@@ -10,15 +10,25 @@ pub(super) fn decide(model:&JournalModel,command:&StructuralCommand)->Result<Str
                 let surface=model.surfaces.get(&id).ok_or_else(||Rejection(format!("surface {id} is missing")))?;
                 Ok(RetiredSurface {id,kind:surface.kind.clone(),activation_generation:surface.activation.map(|activation|activation.generation)})
             }).collect::<Result<Vec<_>,Rejection>>()?;
+            if &surfaces!=expected {return Err(Rejection("close target instance changed before commit".into()));}
             let tab_parents=removed.iter().filter(|entity|entity.kind==IdKind::Tab).map(|entity| {
                 let pane=model.panes.iter().find(|(_,pane)|pane.tabs.contains(&entity.id)).map(|(id,_)|*id)
                     .ok_or_else(||Rejection("closed tab has no parent".into()))?;
                 Ok((entity.id,pane))
             }).collect::<Result<Vec<_>,Rejection>>()?;
-            let plan=RetirementPlan {target:*target,removed:removed.clone(),surfaces,undo:*undo,tab_parents,is_user_close:*is_user_close};
+            let plan=RetirementPlan {target:*target,removed:removed.clone(),surfaces,undo:undo.clone(),tab_parents,is_user_close:*is_user_close};
             let record=Operation {id:operation.clone(),command_id:command_id.clone(),engine_incarnation:model.engine_incarnation,creation:None,retirement:Some(plan.clone()),targets:removed,reserved:Vec::new(),input:*input,activation_generation:0,outcome:None,pending_outcome:None,cleanup:None,prepared_data:None,reconciliation_evidence:None};
+            let mut events=vec![DomainEvent::OperationPrepared {operation:record}];
+            if let Some(capture)=undo {
+                if !is_user_close {return Err(Rejection("only user close can append an undo record".into()));}
+                if model.undo_records.len()>=10 {
+                    events.push(DomainEvent::UndoRecordEvicted {id:model.undo_records[0].id.clone()});
+                }
+                events.push(DomainEvent::UndoRecordAdded {record:crate::UndoRecord {id:operation.clone(),target:*target,capture:capture.clone()}});
+            }
+            events.push(event);
             Ok(StructuralDecision {
-                events:vec![DomainEvent::OperationPrepared {operation:record},event],
+                events,
                 effects:vec![StructuralEffect::RetireSurfaces {operation:operation.clone(),plan}],
                 result:StructuralResult::Pending {operation:operation.clone()},completed_command:None,
             })

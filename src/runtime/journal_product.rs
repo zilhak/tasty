@@ -41,6 +41,8 @@ pub(crate) struct Admission {
 
 #[derive(Debug)]
 pub(crate) enum Work {
+    CaptureClosed {binding:EngineBinding,target:tasty_domain::CloseTarget,display_name:Option<String>,surfaces:Vec<crate::runtime::surface_capture::CapturedSurface>},
+    Capture {binding:EngineBinding,surfaces:Vec<crate::runtime::surface_capture::CapturedSurface>},
     RetireEngine(EngineBinding),
     OpenEngine {
         selection: EngineSelection,
@@ -108,6 +110,7 @@ pub(crate) enum ResultValue {
         bytes: Vec<u8>,
     },
     InputStored(tasty_domain::DataRef),
+    ClosedCaptured {input:tasty_domain::DataRef,undo:Option<tasty_domain::UndoCapture>},
     Claimed(ClaimedPreparation),
     RetirementClaimed(ClaimedRetirement),
     Cancelled,
@@ -311,6 +314,8 @@ fn request_payload_too_large(work: &Work) -> bool {
 
 pub(crate) fn request_size(work: &Work) -> usize {
     match work {
+        Work::CaptureClosed {binding,surfaces,display_name,..}=>surfaces.iter().fold(binding.stream.len()+binding.journal_id.len()+display_name.as_ref().map_or(0,String::len)+96,|sum,surface|sum.saturating_add(surface.weight())),
+        Work::Capture {binding,surfaces}=>surfaces.iter().fold(binding.stream.len()+binding.journal_id.len()+96,|sum,surface|sum.saturating_add(surface.weight())),
         Work::RetireEngine(binding) => binding.stream.len() + binding.journal_id.len() + 64,
         #[cfg(feature = "gui")]
         Work::SaveView(view) => serde_json::to_vec(view).map_or(usize::MAX, |bytes| bytes.len()),

@@ -5680,6 +5680,7 @@ dependencies = [
  "semver 1.0.27",
  "serde",
  "serde_json",
+ "sha2",
  "shell-escape",
  "sysinfo",
  "tasty-agent",

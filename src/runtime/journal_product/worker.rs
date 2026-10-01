@@ -1,5 +1,6 @@
 mod binding;
 mod effects;
+mod capture;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -47,6 +48,11 @@ pub(super) fn run(
             return;
         }
     };
+    {
+        let mut inner=executor.inner.lock().expect("new executor lock");
+        let epoch=inner.epoch;
+        if let Err(error)=inner.store.release_abandoned_admission_holders(epoch) {send(Completion::StartupFailed(error.to_string()));return;}
+    }
     let mut published = {
         let inner = executor.inner.lock().expect("new executor lock");
         let cut = inner.state.batch;
@@ -75,7 +81,9 @@ pub(super) fn run(
         let was_halted = halted.is_some();
         let mut predecessor = if matches!(
             request.work,
-            Work::OpenEngine { .. }
+            Work::Capture {..}
+                | Work::RetirementFinished {..}
+                | Work::OpenEngine { .. }
                 | Work::RetireEngine(_)
                 | Work::Resolve { .. }
                 | Work::Prepared { .. }
@@ -103,10 +111,19 @@ pub(super) fn run(
         } else {
             Vec::new()
         };
+        let release_admission=matches!(request.work,Work::Resolve {..}|Work::CancelAdmission);
         let mut result = match &halted {
             Some(reason) => Err(reason.clone()),
             None => handle(&executor, &home, &mut pending, request.ticket, request.work),
         };
+        if release_admission {
+            let mut inner=executor.inner.lock().expect("worker executor lock");
+            let epoch=inner.epoch;
+            if let Err(error)=inner.store.release_payload_holder(epoch,&format!("admission/{}/{ticket}",epoch.0,ticket=request.ticket)) {
+                // A leaked pin is conservative; it is reclaimed by a future fenced writer.
+                tracing::warn!("admission payload pin release failed: {error}");
+            }
+        }
         if halted.is_none()
             && let Err(error) = publish(
                 &executor,
@@ -243,7 +260,8 @@ fn handle(
             for change in &changes {
                 if matches!(
                     change.command,
-                    tasty_domain::StructuralCommand::OpenEngine { .. }
+                    tasty_domain::StructuralCommand::RecordCapture {..}
+                        | tasty_domain::StructuralCommand::OpenEngine { .. }
                         | tasty_domain::StructuralCommand::RetireEngine { .. }
                         | tasty_domain::StructuralCommand::FinishCreation { .. }
                         | tasty_domain::StructuralCommand::FinishCleanup { .. }
@@ -259,6 +277,10 @@ fn handle(
                     && !admitted.inputs.contains(input)
                 {
                     return Err("preparation input belongs to another admission".into());
+                }
+                if let tasty_domain::StructuralCommand::Close {undo:Some(capture),..}=&change.command
+                    && capture.data_refs().any(|reference|!admitted.inputs.contains(&reference)) {
+                    return Err("undo capture belongs to another admission".into());
                 }
                 for required in change.command.reserved_ids() {
                     if !admitted.reservations.iter().any(|range| {
@@ -302,6 +324,14 @@ fn handle(
                 .map_err(|e| e.to_string())?;
             Ok(ResultValue::Executed(executed))
         }
+        Work::Capture {binding,surfaces}=>capture::persist(executor,ticket,binding,surfaces),
+        Work::CaptureClosed {binding,target,display_name,surfaces}=>{
+            let admitted=pending.get_mut(&ticket).ok_or("close capture has no admitted request")?;
+            let (input,undo)=capture::closed(executor,ticket,binding,target,display_name,surfaces)?;
+            admitted.inputs.push(input);
+            if let Some(capture)=&undo {admitted.inputs.extend(capture.data_refs());}
+            Ok(ResultValue::ClosedCaptured {input,undo})
+        },
         Work::Reserve(kinds) => {
             if !pending.contains_key(&ticket) {
                 return Err("ID reservation requires an admitted request".into());
@@ -366,7 +396,8 @@ fn handle(
         Work::PutPayload(bytes)=> {
             let admitted=pending.get_mut(&ticket).ok_or("payload has no admitted owner")?;
             let inner=&mut *executor.inner.lock().map_err(|error|error.to_string())?;
-            let reference=inner.store.put_payload(inner.epoch,&bytes).map_err(|error|error.to_string())?;
+            let epoch=inner.epoch;
+            let reference=inner.store.put_payload_pinned(epoch,&bytes,&format!("admission/{}/{ticket}",epoch.0)).map_err(|error|error.to_string())?;
             let reference=tasty_domain::DataRef(reference.0);admitted.inputs.push(reference);Ok(ResultValue::InputStored(reference))
         },
         Work::PutPreparation(input) => {
@@ -378,7 +409,7 @@ fn handle(
             let epoch = inner.epoch;
             let reference = inner
                 .store
-                .put_payload(epoch, &bytes)
+                .put_payload_pinned(epoch, &bytes, &format!("admission/{}/{ticket}",epoch.0))
                 .map_err(|error| error.to_string())?;
             let reference = tasty_domain::DataRef(reference.0);
             admitted.inputs.push(reference);

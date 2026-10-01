@@ -1,9 +1,6 @@
 //! 레이아웃 변경을 타이머·종료·창 닫기 시점에 저장한다.
 
 use crate::app::App;
-use crate::app::window_access::engines_mut;
-use crate::runtime::engine_access::EngineMut;
-use crate::app::command::DomainIntent;
 
 impl App {
     /// 창과 parked engine을 저장한다. debounce는 호출자가 처리한다.
@@ -54,61 +51,8 @@ impl App {
         for capture in captures {
             self.journal.queue_view(capture);
         }
-        let label = if force { "final" } else { "tick" };
-        let mut engines = engines_mut!(self);
-        for (state, mut engine) in engines.reborrow().window_sessions() {
-            let active_workspace = state.active_workspace_index(engine.core);
-            Self::flush_one_engine(
-                &mut self.services,
-                &mut engine,
-                active_workspace,
-                &state.navigation,
-                force,
-                label,
-                "main",
-            );
-        }
-        for (state, mut engine) in engines.parked_sessions() {
-            let active_workspace = state.active_workspace_index(engine.core);
-            Self::flush_one_engine(
-                &mut self.services,
-                &mut engine,
-                active_workspace,
-                &state.navigation,
-                force,
-                label,
-                "parked",
-            );
-        }
-    }
-
-    /// engine을 버리기 전에 저장하거나 슬롯 파일을 지운다.
-    /// 슬롯 점유는 살아 있는 engine에서 계산하므로 별도 해제는 필요 없다.
-    /// 타이머를 기다릴 수 없으므로 force로 마지막 변경과 복원할 내용을 저장한다.
-    /// 참조가 사라진 scrollback 파일은 다음 부팅의 전체 슬롯 GC가 회수한다.
-    pub(crate) fn retire_main_engine(
-        core: &mut crate::app::services::AppServices,
-        engine: &mut EngineMut<'_>,
-        active_workspace: usize,
-        presentation: &dyn crate::model::StructurePresentation,
-    ) {
-        match retire_action(engine.settings.general.restore_layout) {
-            RetireAction::Flush => {
-                Self::flush_one_engine(
-                    core,
-                    engine,
-                    active_workspace,
-                    presentation,
-                    true,
-                    "retire",
-                    "main",
-                );
-            }
-            RetireAction::Delete => {
-                if let Some(slot) = engine.layout_slot {
-                    crate::core::layout_persistence::delete_slot(slot);
-                }
-            }
+        for session in self.engines.all_sessions_mut() {
+            self.journal.queue_surface_capture(session,force);
         }
     }
 
@@ -128,28 +72,7 @@ impl App {
             .min()
     }
 
-    fn flush_one_engine(
-        core: &mut crate::app::services::AppServices,
-        engine: &mut EngineMut<'_>,
-        active_workspace: usize,
-        presentation: &dyn crate::model::StructurePresentation,
-        force: bool,
-        label: &str,
-        kind: &str,
-    ) {
-        let intent = DomainIntent::SaveLayoutNow {
-            presentation: Box::new(crate::model::StructurePresentationSnapshot::capture(
-                &engine.workspaces(),
-                &engine.categories,
-                presentation,
-            )),
-            active_workspace,
-            force,
-        };
-        if let Err(e) = core.apply(engine, intent) {
-            tracing::error!("SaveLayoutNow({label}) failed ({kind}): {e}");
-        }
-    }
+
 }
 
 /// 창을 닫을 때 슬롯 파일을 보존할지 지울지 정한다.

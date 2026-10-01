@@ -81,10 +81,13 @@ impl App {
         let Intent::Domain(intent) = dispatched.body else {
             anyhow::bail!("dispatch_domain_intent: non-Domain Intent");
         };
+        if let crate::app::command::DomainIntent::RetireExitedSurface {surface_id,generation}=&intent {
+            if self.engines.get(source.engine()).is_none_or(|engine|!engine.runtime.terminals.matches_generation(*surface_id,*generation)) {return Ok(());}
+        }
         let origin = dispatched.origin;
         let id=source.engine();
         let continuation=self.engines_mut().resolve(id).and_then(|context|context.view.map(|view|crate::app::journal::commands::IntentViewContinuation {
-            view:view.state.identity(),selection:context.state.navigation.generation(),activate_surface:None,
+            view:view.state.identity(),selection:context.state.navigation.generation(),activate_surface:None,close_empty_engine:false,
         }));
         if let Some(session) = self.engines.session_mut(id)
             && self

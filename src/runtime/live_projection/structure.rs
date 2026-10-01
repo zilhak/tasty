@@ -142,7 +142,8 @@ pub(super) fn apply_event(
         | DomainEvent::SurfaceRatioSet { .. } => {
             layout::apply_event(engine, event, retired)?
         }
-        DomainEvent::SurfaceCreationSeeded { .. }
+        DomainEvent::UndoRecordAdded {..}|DomainEvent::UndoRecordConsumed {..}|DomainEvent::UndoRecordEvicted {..}
+        | DomainEvent::SurfaceCreationSeeded { .. }
         | DomainEvent::SurfaceDataRecorded { .. }
         | DomainEvent::SurfaceActivationChanged { .. }
         | DomainEvent::OperationPrepared { .. }

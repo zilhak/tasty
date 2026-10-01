@@ -287,35 +287,7 @@ impl AppServices {
 
     /// 설정·변경 여부·보호된 슬롯을 확인해 저장을 시도한다. debounce 대기는 호출자가 맡는다.
     /// LayoutSaved는 저장 생략 때도 반환되며 실제 쓰기 성공을 뜻하지 않는다.
-    #[cfg(any(feature = "gui", test))]
-    pub(super) fn apply_save_layout_now(
-        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
-        active_workspace: usize,
-        force: bool,
-        presentation: &dyn crate::model::StructurePresentation,
-    ) -> CoreEvent {
-        let g = &engine.settings.general;
-        let should_save = if force {
-            g.restore_layout && (engine.layout_dirty.is_dirty() || g.restore_surface_content)
-        } else {
-            g.restore_layout && engine.layout_dirty.is_dirty()
-        };
-        if !should_save {
-            return CoreEvent::LayoutSaved;
-        }
-        // 읽지 못한 기존 사용자 레이아웃을 현재의 빈 상태로 덮지 않도록 저장을 막는다.
-        if engine.layout_slot_protected {
-            tracing::debug!("layout save skipped: slot is locked because it could not be read");
-            return CoreEvent::LayoutSaved;
-        }
-        // engine이 가진 슬롯에만 쓴다. 슬롯이 없으면 저장하지 않는다.
-        let Some(slot) = engine.layout_slot else {
-            return CoreEvent::LayoutSaved;
-        };
-        crate::core::layout_persistence::save_slot(engine, active_workspace, slot, presentation);
-        engine.layout_dirty.clear();
-        CoreEvent::LayoutSaved
-    }
+
 }
 
 /// workspace 생성 요청. 사용자 요청과 내부 기본 workspace 생성이 같은 구현을 사용한다.

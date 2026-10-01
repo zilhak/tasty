@@ -12,7 +12,8 @@ use crate::{DomainEvent, JournalModel, Ratio};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StructuralCommand {
-    Close {operation:crate::OperationId,command_id:String,input:crate::DataRef,target:crate::CloseTarget,undo:Option<crate::DataRef>,is_user_close:bool},
+    RecordCapture {surface:u32,kind:String,activation:Option<u64>,content_generation:u64,snapshot_schema:u32,data:crate::DataRef},
+    Close {operation:crate::OperationId,command_id:String,input:crate::DataRef,target:crate::CloseTarget,expected:Vec<crate::RetiredSurface>,undo:Option<crate::UndoCapture>,is_user_close:bool},
     FinishRetirement {operation:crate::OperationId,outcome:crate::OperationOutcome},
     RetireEngine {
         expected_incarnation: u64,
@@ -180,6 +181,13 @@ pub fn decide_structure(
         return Err(Rejection("engine binding has been retired".into()));
     }
     let decision = match command {
+        StructuralCommand::RecordCapture {surface,kind,activation,content_generation,snapshot_schema,data}=> {
+            let current=model.surfaces.get(surface).ok_or_else(||Rejection("capture target no longer exists".into()))?;
+            if current.kind!=*kind || current.activation.map(|activation|activation.generation)!=*activation {
+                return Err(Rejection("capture belongs to an earlier kind instance".into()));
+            }
+            StructuralDecision {events:vec![DomainEvent::SurfaceDataRecorded {id:*surface,activation_generation:*activation,content_generation:*content_generation,snapshot_schema:*snapshot_schema,data:*data}],effects:Vec::new(),result:StructuralResult::Updated,completed_command:None}
+        },
         StructuralCommand::Close {..}|StructuralCommand::FinishRetirement {..}=>retirement::decide(model,command)?,
         StructuralCommand::OpenEngine { .. } | StructuralCommand::RetireEngine { .. } => {
             bootstrap::decide(model, command)?

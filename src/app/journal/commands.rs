@@ -28,6 +28,7 @@ pub(crate) struct IntentViewContinuation {
     pub(crate) view:std::sync::Weak<()>,
     pub(crate) selection:std::sync::Weak<()>,
     pub(crate) activate_surface:Option<u32>,
+    pub(crate) close_empty_engine:bool,
 }
 
 enum Reply {
@@ -71,6 +72,7 @@ struct Pending {
     category: Option<CategoryReservation>,
     resource: Option<create::Request>,
     closing:Option<close::Request>,
+    close_cause:close::Cause,
     waiting_command: Option<String>,
     created: Option<create::Completed>,
     bytes: usize,
@@ -244,6 +246,7 @@ impl JournalApplication {
                 category: None,
                 resource: None,
                 closing:None,
+                close_cause:Default::default(),
                 waiting_command: None,
                 created: None,
                 bytes,
@@ -521,6 +524,12 @@ impl JournalApplication {
                 );
                 self.refresh_command_weight(ticket);
                 return Ok(true);
+            }
+            Ok(ResultValue::ClosedCaptured {input,undo})=>{
+                let closing=pending.closing.as_mut().ok_or("close capture lost its request")?;
+                closing.undo=undo.clone();closing.input_ref=Some(*input);
+                pending.queued=Some(if let Some(replacement)=pending.resource.as_mut() {replacement.reservation()?} else {closing.stored(*input)});
+                self.refresh_command_weight(ticket);return Ok(true);
             }
             Ok(ResultValue::InputStored(input)) if pending.closing.is_some()=> {
                 let closing=pending.closing.as_mut().expect("close input owner");
@@ -919,6 +928,13 @@ impl crate::app::App {
             }
         }
         for result in std::mem::take(&mut self.journal.commands.completed_intents) {
+            if result.response.error.is_none() && result.origin.is_user()
+                && let Some(continuation)=result.view.as_ref()
+                && continuation.close_empty_engine
+                && let Some(context)=self.engines_mut().resolve(result.engine)
+                && context.engine.workspaces().is_empty()
+                && let Some(view)=context.view
+                && view.state.matches_identity(&continuation.view) {view.state.close_requested=true;}
             if result.response.error.is_none() && result.origin.is_user()
                 && let Some(continuation)=result.view
                 && let Some(surface)=continuation.activate_surface

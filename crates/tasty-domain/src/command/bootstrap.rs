@@ -54,6 +54,7 @@ pub(super) fn decide(
         model.engine_incarnation
     };
     if reset_structure {
+        events.extend(model.undo_records.iter().map(|record|DomainEvent::UndoRecordEvicted {id:record.id.clone()}));
         events.extend(
             model
                 .workspace_order

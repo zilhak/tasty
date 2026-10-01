@@ -39,6 +39,12 @@ pub struct SplitSpec {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum DomainEvent {
+    #[serde(rename="undo.added")]
+    UndoRecordAdded {record:crate::UndoRecord},
+    #[serde(rename="undo.consumed")]
+    UndoRecordConsumed {id:OperationId},
+    #[serde(rename="undo.evicted")]
+    UndoRecordEvicted {id:OperationId},
     #[serde(rename = "engine.incarnation_started")]
     EngineIncarnationStarted { previous: u64, current: u64 },
     #[serde(rename = "engine.retired")]
@@ -230,6 +236,7 @@ impl DomainEvent {
     /// Immutable content referenced by this fact. The storage adapter pins these in its commit.
     pub fn data_refs(&self) -> Vec<DataRef> {
         match self {
+            Self::UndoRecordAdded {record}=>record.capture.data_refs().collect(),
             Self::TabCreated { surface, .. } | Self::SurfaceSplit { surface, .. } => {
                 surface.data.into_iter().collect()
             }
@@ -243,7 +250,7 @@ impl DomainEvent {
                         .as_ref()
                         .and_then(|plan| plan.surface.data),
                 )
-                .chain(operation.retirement.as_ref().and_then(|plan|plan.undo))
+                .chain(operation.retirement.as_ref().and_then(|plan|plan.undo.as_ref()).into_iter().flat_map(|capture|capture.data_refs()))
                 .collect(),
             Self::OperationAwaitingCleanup { prepared_data, .. } => {
                 prepared_data.iter().copied().collect()
@@ -255,6 +262,9 @@ impl DomainEvent {
 
     /// 이 빌드가 아는 모든 type tag. codec은 이 밖의 tag를 거절한다.
     pub const TAGS: &'static [&'static str] = &[
+        "undo.added",
+        "undo.consumed",
+        "undo.evicted",
         "engine.incarnation_started",
         "engine.retired",
         "category.created",
@@ -294,6 +304,9 @@ impl DomainEvent {
 
     pub fn type_tag(&self) -> &'static str {
         match self {
+            Self::UndoRecordAdded {..}=>"undo.added",
+            Self::UndoRecordConsumed {..}=>"undo.consumed",
+            Self::UndoRecordEvicted {..}=>"undo.evicted",
             Self::EngineIncarnationStarted { .. } => "engine.incarnation_started",
             Self::EngineRetired { .. } => "engine.retired",
             Self::CategoryCreated { .. } => "category.created",

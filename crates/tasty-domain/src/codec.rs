@@ -9,8 +9,8 @@ use crate::streams::StructureModels;
 /// 이 빌드가 쓰고 읽는 이벤트 schema version.
 pub const EVENT_SCHEMA_VERSION: u32 = 1;
 
-/// 2 introduced all engine streams; 3 adds replayable operations and activation facts.
-pub const MODEL_VERSION: u32 = 3;
+/// 4 adds immutable undo records and separates live payload pins from completed operation history.
+pub const MODEL_VERSION: u32 = 4;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CodecError {

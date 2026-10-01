@@ -109,6 +109,8 @@ pub(crate) enum DomainIntent {
         activate: bool,
     },
     /// 트리를 닫고 자원 정리 대상은 후속 처리에 넘긴다.
+    CloseWorkspace {workspace_id:u32},
+    RetireExitedSurface {surface_id:u32,generation:tasty_terminal::ResourceGeneration},
     CloseTab {
         tab_id: u32,
     },
@@ -246,16 +248,6 @@ pub(crate) enum DomainIntent {
         surface_id: u32,
         generation: tasty_terminal::ResourceGeneration,
         name: String,
-    },
-
-    /// engine의 레이아웃 슬롯에 저장을 요청한다. restore_layout 설정은 force여도 적용된다.
-    /// force는 surface 내용 복원 설정이 켜져 있을 때 dirty가 아니어도 저장하도록 한다.
-    /// debounce 대기는 이 요청을 보내는 호출자가 맡는다.
-    #[cfg(feature = "gui")]
-    SaveLayoutNow {
-        presentation: Box<crate::model::StructurePresentationSnapshot>,
-        active_workspace: usize,
-        force: bool,
     },
 
     /// GUI 파일 식별 worker에 요청한다. 결과는 App 이벤트로 받으며 worker가 없으면 로그만 남긴다.

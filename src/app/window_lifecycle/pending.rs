@@ -51,7 +51,7 @@ impl App {
                 navigation.reconcile(&session.core_state.workspaces());
                 let active=navigation.workspace_id(&session.core_state.workspaces());
                 let active_index=navigation.workspace_index(&session.core_state.workspaces());
-                Self::retire_main_engine(&mut self.services,&mut session.borrow_mut(),active_index,&navigation);
+                self.journal.queue_surface_capture(session,true);
                 self.journal.queue_view(crate::runtime::journal_product::view_record::StoredView::capture(binding.clone(),&session.core_state,active,&navigation));
                 self.engines.mark_closed_view_checkpoint(id,self.journal.latest_view_sequence());
             } else if !self.journal.has_pending_view_for(&binding.stream) {

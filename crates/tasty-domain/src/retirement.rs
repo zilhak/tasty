@@ -17,5 +17,5 @@ pub struct RetirementPlan {
     pub tab_parents:Vec<(u32,u32)>,
     pub is_user_close:bool,
     /// Immutable user undo capture. Agent closes do not add an undo entry.
-    pub undo:Option<DataRef>,
+    pub undo:Option<crate::UndoCapture>,
 }

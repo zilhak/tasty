@@ -97,6 +97,17 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
             m.engine_retired = true;
             Ok(())
         }
+        DomainEvent::UndoRecordAdded {record}=>{
+            let owns=m.operations.get(&record.id).and_then(|operation|operation.retirement.as_ref()).is_some_and(|plan|plan.is_user_close && plan.target==record.target && plan.undo.as_ref()==Some(&record.capture));
+            if !owns || m.undo_records.iter().any(|old|old.id==record.id) || record.capture.snapshot.0==0 || m.undo_records.len()>=10 {
+                return Err(EvolveError::InvalidFact("invalid undo record".into()));
+            }
+            m.undo_records.push(record);Ok(())
+        },
+        DomainEvent::UndoRecordConsumed {id}|DomainEvent::UndoRecordEvicted {id}=>{
+            let index=m.undo_records.iter().position(|record|record.id==id).ok_or_else(||EvolveError::Missing(format!("undo:{}",id.0)))?;
+            m.undo_records.remove(index);Ok(())
+        },
         DomainEvent::CategoryCreated { id, name, index } => create_category(m, id, name, index),
         DomainEvent::CategoryRenamed { id, name } => {
             get_mut(&mut m.categories, IdKind::Category, id)?.name = name;

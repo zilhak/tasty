@@ -288,23 +288,9 @@ impl RequestContext {
     /// AppServices 탭 닫기로 트리를 바꾸고 복원 기록을 남긴 뒤 창 쪽 정리와 알림을 이어서 한다.
     #[cfg(any(feature = "gui", test))]
     fn close_tab_through_core(&mut self, engine: &mut EngineMut<'_>, tab_id: u32) -> bool {
-        let crate::app::command::CoreEvent::TabClosed {
-            closed,
-            cleanup_targets,
-            ..
-        } = crate::app::services::AppServices::close_tab_recording(engine, tab_id, Some(&self.navigation))
-        else {
-            return false;
-        };
-        if closed {
-            for (sid, pid) in cleanup_targets {
-                let kind = self.surface_kind(engine, sid);
-                self.cleanup_surface(engine, sid, pid);
-                engine.enqueue_surface_closed(sid, kind, true);
-            }
-        }
-        self.reconcile_presentation(engine);
-        closed
+        if engine.find_pane_for_tab(tab_id).is_none() {return false;}
+        self.dispatch_intent(crate::app::command::DomainIntent::CloseTab {tab_id}.from_user_context_menu());
+        true
     }
 
     /// 활성 탭 닫기를 처리한다. mirror 요청을 전달한 경우에도 true다.

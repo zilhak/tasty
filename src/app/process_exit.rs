@@ -31,11 +31,7 @@ pub(crate) fn handle(
     });
     // 종료한 프로세스는 복원 스냅샷에 남기지 않는다.
     // intent-exempt: explicit PTY exit cascade, not a new user or agent command
-    state.close_surface_by_id_no_snapshot(engine, surface, true);
-    // 닫기 처리가 표시해 둔 구조 변경을 mirror에도 전달한다.
-    state.reconcile_presentation(engine);
-    engine.refresh_attach_presentation(&state.navigation);
-    engine.push_structure_changes();
+    state.dispatch_intent(crate::app::command::DomainIntent::RetireExitedSurface {surface_id:surface,generation}.from_system());
 }
 
 #[cfg(all(test, unix))]

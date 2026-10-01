@@ -2,9 +2,8 @@
 
 //! 구조 저널의 도메인: 저널 전용 구조 모델, 도메인 이벤트와 그 codec, pure evolve, decide 계약.
 //!
-//! **시험 전용이며 제품에 연결하지 않는다.** 본 바이너리의 `CoreState`가 구조 상태의 유일한
-//! 원본이고, 이 크레이트의 [`JournalModel`]은 그와 동시에 원본이 되지 않는다. 필드 대응과
-//! 활성화는 제품 배선 단계에서 정한다.
+//! 제품 journal worker가 [`JournalModel`] 원본을 소유하고 CoreState는 확정 batch의 live projection을 유지한다.
+//! 실행 자원·View 상태는 이 모델에 들어오지 않는다.
 //!
 //! - journal 하나에 엔진마다 구조 stream이 하나 있다. 이름은 [`STRUCTURE_STREAM_PREFIX`]로 시작한다.
 //! - [`JournalModel`]은 엔진 하나의 workspace·category·pane·tab·surface 트리와 이름·소속·분할 비율·
@@ -31,6 +30,8 @@ mod ids;
 mod model;
 mod operation;
 mod retirement;
+mod undo;
+pub use undo::{UndoRecord,UndoCapture,ClosedSnapshot};
 mod streams;
 
 #[cfg(test)]

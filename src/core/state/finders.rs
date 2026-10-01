@@ -142,6 +142,8 @@ impl CoreState {
     ) -> Option<usize> {
         use crate::app::command::DomainIntent as D;
         let ws_idx = match intent {
+            D::CloseWorkspace {workspace_id}=>self.find_workspace_index_for_id(*workspace_id),
+            D::RetireExitedSurface {surface_id,..}=>self.find_workspace_index_for_surface(*surface_id).map(|(index,_)|index),
             D::SplitSurface {
                 target_surface_id: sid,
                 ..

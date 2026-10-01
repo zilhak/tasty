@@ -437,13 +437,7 @@ impl App {
                     ),
                 );
             }
-            let active_workspace = main.state.active_workspace_index(&session.core_state);
-            Self::retire_main_engine(
-                &mut self.services,
-                &mut session.borrow_mut(),
-                active_workspace,
-                &main.state.navigation,
-            );
+
         }
         drop(main);
         drop(session);

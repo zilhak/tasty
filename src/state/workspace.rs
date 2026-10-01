@@ -53,23 +53,12 @@ impl RequestContext {
         engine: &mut EngineMut<'_>,
         context: &str,
     ) -> bool {
-        if !engine.workspaces().is_empty() {
-            return false;
-        }
-        match crate::app::services::apply_create_workspace_inner(
-            engine,
-            crate::app::services::WorkspaceCreationParams::terminal(),
-        ) {
-            Ok(crate::app::command::CoreEvent::WorkspaceCreated { index, .. }) => {
-                self.set_active_workspace_index(engine, index);
-                true
-            }
-            Ok(_) => unreachable!("apply_create_workspace_inner 는 WorkspaceCreated 만 반환"),
-            Err(e) => {
-                tracing::warn!("{context}: auto-recreate workspace failed: {e}");
-                false
-            }
-        }
+        if !engine.workspaces().is_empty() {return false;}
+        self.dispatch_intent(crate::app::command::DomainIntent::CreateWorkspace {
+            cwd:None,kind:"terminal".into(),surface_params:serde_json::json!({}),name:None,subtitle:None,description:None,category:None,
+        }.from_system());
+        tracing::debug!(context,"queued default workspace for an empty engine");
+        true
     }
 
     /// 0-based 인덱스로 전환한다. 사용자 입력과 debug IPC에서만 호출한다.
@@ -321,54 +310,14 @@ impl RequestContext {
         ws_idx: usize,
         origin: WorkspaceCloseOrigin,
     ) -> bool {
-        use crate::close_trace;
-        use std::time::Instant;
-
-        let save_snapshot = origin.saves_snapshot();
-        let path = origin.trace_path();
-
-        if ws_idx >= engine.workspaces().len() {
-            return false;
-        }
-        // IPC 사전 검사와 별개로 GUI·debug 경로도 hard 점유 조건을 검사한다.
-        let in_ws = engine
-            .workspace_at(ws_idx)
-            .expect("workspace index is valid")
-            .all_surface_ids();
-        if self.refuse_if_hard_occupied(engine, in_ws) {
-            return false;
-        }
-        let t_close = Instant::now();
-        if save_snapshot {
-            let t = Instant::now();
-            let snapshot = self.capture_workspace_snapshot(&engine.as_ref(), ws_idx);
-            close_trace::log_snapshot(t, &snapshot, path);
-            let t = Instant::now();
-            engine.push_closed_item(snapshot).log(t.elapsed(), path);
-        }
-        let t = Instant::now();
-        let targets =
-            super::RequestContext::collect_workspace_close_targets(&engine.as_ref(), ws_idx);
-        close_trace::log_collect(t, targets.len(), path);
-        let workspace_id = engine
-            .workspace_at(ws_idx)
-            .expect("workspace index is valid")
-            .id;
-        engine.remove_workspace_at(ws_idx);
-        self.after_workspace_removed(engine, workspace_id, path);
-        self.reconcile_presentation(engine);
-        // 제거 후 kind를 찾지 못할 수 있으므로 구독자는 surface ID로도 정리할 수 있어야 한다.
-        let zipped: Vec<(u32, Option<String>, Option<&'static str>)> = targets
-            .into_iter()
-            .map(|(sid, pid)| {
-                let kind = self.surface_kind(engine, sid);
-                (sid, pid, kind)
-            })
-            .collect();
-        let surfaces = zipped.len();
-        self.cleanup_targets(engine, zipped, origin.is_user_close(), Some(path));
-        engine.mark_layout_dirty();
-        close_trace::log_total(t_close, surfaces, save_snapshot, path);
+        let Some(workspace)=engine.workspace_at(ws_idx) else {return false;};
+        let workspace_id=workspace.id;
+        let targets=workspace.all_surface_ids();
+        if self.refuse_if_hard_occupied(engine,targets) {return false;}
+        let intent=crate::app::command::DomainIntent::CloseWorkspace {workspace_id};
+        #[cfg(feature="gui")]
+        if origin.is_user() {self.dispatch_intent(intent.from_user_context_menu());return true;}
+        self.dispatch_intent(intent.from_agent_ipc());
         true
     }
 }

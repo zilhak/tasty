@@ -20,6 +20,31 @@ impl EventStore {
         Ok(payload)
     }
 
+    /// Create an immutable payload and its in-flight holder in one transaction. GC cannot run
+    /// between creation and the eventual event pin, even when command admission is asynchronous.
+    pub fn put_payload_pinned(&mut self,epoch:WriterEpoch,bytes:&[u8],holder:&str)->StoreResult<PayloadRef> {
+        let tx=self.write_tx(epoch)?;
+        let payload=insert(&tx,bytes)?;
+        pin_in(&tx,payload,holder)?;
+        tx.commit()?;Ok(payload)
+    }
+
+    /// Release only one explicit holder; event/snapshot/undo pins are not affected.
+    pub fn release_payload_holder(&mut self,epoch:WriterEpoch,holder:&str)->StoreResult<()> {
+        let tx=self.write_tx(epoch)?;
+        tx.execute("DELETE FROM payload_pins WHERE holder = ?1",[holder])?;
+        tx.commit()?;Ok(())
+    }
+
+    /// Admission holders are process-local preparation. A fenced new writer can remove the old
+    /// namespace: accepted commands already have event pins, unaccepted inputs may be collected.
+    pub fn release_abandoned_admission_holders(&mut self,epoch:WriterEpoch)->StoreResult<()> {
+        let tx=self.write_tx(epoch)?;
+        let current=format!("admission/{}/",epoch.0);
+        tx.execute("DELETE FROM payload_pins WHERE substr(holder,1,10) = 'admission/' AND substr(holder,1,length(?1)) != ?1",[current])?;
+        tx.commit()?;Ok(())
+    }
+
     /// 내용을 읽고 checksum을 검증한다.
     pub fn read_payload(&self, payload: PayloadRef) -> StoreResult<Vec<u8>> {
         read_verified(&self.conn, payload)

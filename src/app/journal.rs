@@ -7,6 +7,7 @@ use crate::runtime::live_projection;
 pub(crate) mod commands;
 mod creation;
 mod resource_cleanup;
+mod capture;
 #[cfg(feature = "gui")]
 mod retirement;
 
@@ -24,6 +25,8 @@ struct Opening {
 pub(crate) struct JournalApplication {
     worker: JournalWorker,
     commands: commands::Commands,
+    captures:std::collections::BTreeMap<u64,capture::PendingCapture>,
+    capture_requests:HashMap<EngineId,bool>,
     changed_engines: std::collections::HashSet<EngineId>,
     completion_views:HashMap<EngineId,crate::runtime::journal_product::CompletionView>,
     wake: Arc<dyn Fn() + Send + Sync>,
@@ -60,13 +63,16 @@ pub(crate) struct JournalApplication {
 impl JournalApplication {
     pub(crate) fn update_completion_view(&mut self,id:EngineId,core:&crate::core::CoreState,presentation:&dyn crate::model::StructurePresentation) {
         let mut selected_tabs=std::collections::BTreeMap::new();
+        let mut selected_surfaces=std::collections::BTreeMap::new();
         for workspace in &core.workspaces() {
             for pane in workspace.pane_layout().all_pane_ids() {
-                if let Some(pane)=workspace.pane_layout().find_pane(pane)
-                    && let Some(tab)=pane.tabs.get(presentation.tab_index(pane)) {selected_tabs.insert(pane.id,tab.id);}
+                if let Some(pane)=workspace.pane_layout().find_pane(pane) {
+                    if let Some(tab)=pane.tabs.get(presentation.tab_index(pane)) {selected_tabs.insert(pane.id,tab.id);}
+                    for tab in &pane.tabs {if let Some(surface)=presentation.surface_id(tab) {selected_surfaces.insert(tab.id,surface);}}
+                }
             }
         }
-        self.completion_views.insert(id,crate::runtime::journal_product::CompletionView {mirror_count:core.mirror_workspaces.len(),selected_tabs});
+        self.completion_views.insert(id,crate::runtime::journal_product::CompletionView {mirror_count:core.mirror_workspaces.len(),selected_tabs,selected_surfaces});
     }
 
     pub(crate) fn new(wake: Arc<dyn Fn() + Send + Sync>) -> anyhow::Result<Self> {
@@ -76,6 +82,8 @@ impl JournalApplication {
         Ok(Self {
             worker,
             commands: Default::default(),
+            captures:Default::default(),
+            capture_requests:Default::default(),
             changed_engines: Default::default(),
             completion_views:Default::default(),
             wake,
@@ -177,6 +185,7 @@ impl JournalApplication {
                 self.submit_openings()?;
                 self.submit_commands()?;
                 self.poll_resource_cleanup(sessions)?;
+                self.submit_captures(sessions)?;
                 self.submit_restore_reads()?;
                 #[cfg(feature = "gui")]
                 self.submit_retirements()?;
@@ -375,7 +384,9 @@ impl JournalApplication {
                             }
                             self.known_slots.insert(slot, retired);
                         }
-                        session.core_state.mark_layout_dirty();
+                        if events.iter().any(|recorded|!matches!(recorded.event,tasty_domain::DomainEvent::SurfaceDataRecorded {..})) {
+                            session.core_state.mark_layout_dirty();
+                        }
                         self.changed_engines.insert(session.id);
                         if let Some(binding) = session.journal_binding.as_mut() {
                             binding.published_cut = Some(batch.batch_id);
@@ -389,6 +400,7 @@ impl JournalApplication {
                         .map_err(|error| format!("bootstrap publication ACK: {error:?}"))?;
                 }
                 Completion::Finished { ticket, result } => {
+                    if self.answer_capture(ticket,&result,sessions) {continue;}
                     if self.answer_resource_cleanup(ticket,&result,sessions,plugins.as_deref_mut())? {continue;}
                     if self.answer_command(ticket, &result, sessions)? {
                         continue;
@@ -675,7 +687,7 @@ impl JournalApplication {
     }
 
     pub(crate) fn has_pending_engine_effects(&self,id:EngineId)->bool {
-        self.creations.contains_key(&id)||self.has_resource_cleanup(id)||self.commands.has_resource_request(id)
+        self.has_pending_capture(id)||self.creations.contains_key(&id)||self.has_resource_cleanup(id)||self.commands.has_resource_request(id)
     }
     #[cfg(feature="gui")]
     pub(crate) fn has_pending_view_for(&self,stream:&str)->bool {
@@ -761,7 +773,7 @@ impl JournalApplication {
 
     #[cfg(feature = "gui")]
     pub(crate) fn has_pending_view_writes(&self) -> bool {
-        !self.is_halted() && (!self.queued_view_writes.is_empty() || !self.view_writes.is_empty())
+        !self.is_halted() && (!self.capture_requests.is_empty() || !self.captures.is_empty() || !self.queued_view_writes.is_empty() || !self.view_writes.is_empty())
     }
 
     #[cfg(feature = "gui")]

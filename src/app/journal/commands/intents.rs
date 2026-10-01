@@ -11,6 +11,29 @@ impl JournalApplication {
         view:Option<IntentViewContinuation>,
     ) -> bool {
         use crate::app::command::DomainIntent as I;
+        let close=match intent {
+            I::CloseWorkspace {workspace_id}=>Some((tasty_domain::CloseTarget::Workspace(*workspace_id),origin.is_user(),origin.is_user(),None)),
+            I::CloseTab {tab_id}=>Some((tasty_domain::CloseTarget::Tab(*tab_id),origin.is_user(),origin.is_user(),None)),
+            I::ClosePane {pane_id}=>Some((tasty_domain::CloseTarget::Pane(*pane_id),origin.is_user(),origin.is_user(),None)),
+            I::CloseSurface {surface_id,presentation}=>Some((tasty_domain::CloseTarget::Surface(*surface_id),origin.is_user() && presentation.is_some(),origin.is_user(),None)),
+            I::RetireExitedSurface {surface_id,..}=>Some((tasty_domain::CloseTarget::Surface(*surface_id),false,true,Some(core.find_surface_by_id(*surface_id).and_then(|surface|surface.activation_generation)))),
+            _=>None,
+        };
+        if let Some((target,capture,user_close,expected))=close {
+            if core.mirror_workspace_index_for_structural(intent).is_some() {return false;}
+            let mut params=serde_json::json!({"target":target,"capture":capture,"user_close":user_close});
+            if let Some(expected)=expected {params["expected_activation"]=serde_json::json!(expected);}
+            let mut view=view;
+            if let Some(view)=view.as_mut() {view.close_empty_engine=matches!(target,tasty_domain::CloseTarget::Workspace(_));}
+            let ticket=self.next_ticket;
+            self.admit_intent_request(engine_id,"intent.close",params,origin,view);
+            if let I::RetireExitedSurface {generation,..}=intent
+                && matches!(origin,crate::intent::IntentOrigin::System)
+                && let Some(pending)=self.commands.pending.get_mut(&ticket) {
+                pending.close_cause=super::close::Cause::ProcessExit(*generation);
+            }
+            return true;
+        }
         if let Some(spec)=super::create_spec::Spec::from_intent(intent) {
             if core.mirror_workspace_index_for_structural(intent).is_some() {return false;}
             self.admit_intent_request(engine_id,"intent.create",serde_json::to_value(spec).expect("fixed creation spec serializes"),origin,view);

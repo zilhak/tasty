@@ -152,55 +152,6 @@ pub(crate) fn slot_preservation_is_blocked(slot: LayoutSlotId) -> bool {
 /// 레이아웃을 동기 저장한다. 오류는 로그로 남기며 호출자에게 성공 여부를 반환하지 않는다.
 /// capture가 새 scrollback 저장 ID를 터미널에도 기록하므로 engine을 변경할 수 있다.
 #[cfg(any(feature = "gui", test))]
-pub(crate) fn save_slot(
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
-    active_workspace: usize,
-    slot: LayoutSlotId,
-    presentation: &dyn crate::model::StructurePresentation,
-) {
-    // 검사에서 실제 저장 경로 전체를 사용하되 사용자 홈 대신 주입한 디렉터리를 쓴다.
-    #[cfg(test)]
-    let resolved = engine.layouts_dir_override.clone().or_else(layouts_dir);
-    #[cfg(not(test))]
-    let resolved = layouts_dir();
-    let dir = match resolved {
-        Some(d) => d,
-        None => {
-            tracing::error!(
-                "cannot determine the tasty home directory; current layout was not saved"
-            );
-            return;
-        }
-    };
-    save_slot_in_dir(engine, active_workspace, slot, &dir, presentation);
-}
-
-/// 손상 원본 보존과 쓰기를 함께 실행한다. 읽지 못한 슬롯의 보호 검사는 이 함수에 없으므로
-/// 제품 호출은 AppServices::apply의 SaveLayoutNow 검사를 거쳐야 한다.
-#[cfg(any(feature = "gui", test))]
-pub(crate) fn save_slot_in_dir(
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
-    active_workspace: usize,
-    slot: LayoutSlotId,
-    dir: &Path,
-    presentation: &dyn crate::model::StructurePresentation,
-) {
-    let Some(json) = serialize_layout(engine, active_workspace, presentation) else {
-        return;
-    };
-    // 손상 원본을 백업하지 못하면 새 상태로 덮어쓰지 않는다.
-    if engine.layout_slot_unparsable {
-        if !preserve_unparsable_slot(dir, slot) {
-            engine.layout_slot_preserve_failed = true;
-            return;
-        }
-        engine.layout_slot_unparsable = false;
-        engine.layout_slot_preserve_failed = false;
-    }
-    save_slot_in(dir, slot, &json);
-}
-
-#[cfg(any(feature = "gui", test))]
 enum SlotReplace {
     /// 여전히 해석되지 않아 먼저 백업해야 한다.
     MoveAside,
@@ -269,54 +220,6 @@ fn preserve_unparsable_slot(dir: &Path, slot: LayoutSlotId) -> bool {
                 path.display()
             );
             false
-        }
-    }
-}
-
-#[cfg(any(feature = "gui", test))]
-fn serialize_layout(
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
-    active_workspace: usize,
-    presentation: &dyn crate::model::StructurePresentation,
-) -> Option<String> {
-    let saved=match SavedLayout::capture(engine,active_workspace,presentation) {
-        Ok(saved)=>saved,
-        Err(error)=>{tracing::error!("layout capture refused: {error}");return None;},
-    };
-    match serde_json::to_string_pretty(&saved) {
-        Ok(j) => Some(j),
-        Err(e) => {
-            tracing::error!("failed to serialize current layout: {e}; layout was not saved");
-            None
-        }
-    }
-}
-
-#[cfg(any(feature = "gui", test))]
-fn save_slot_in(dir: &Path, slot: LayoutSlotId, json: &str) {
-    let path = slot_path_in(dir, slot);
-    if let Err(e) = write_slot_atomic(dir, &path, json) {
-        tracing::error!(
-            "failed to write current layout to slot {}: {e}",
-            path.display()
-        );
-    }
-}
-
-/// 같은 폴더의 임시 파일에 쓴 뒤 rename한다. rename 실패 때 임시 파일 삭제를 시도한다.
-/// 고정된 임시 이름을 쓰며 다른 프로세스와의 잠금이나 fsync는 하지 않는다.
-#[cfg(any(feature = "gui", test))]
-fn write_slot_atomic(dir: &Path, path: &Path, json: &str) -> std::io::Result<()> {
-    std::fs::create_dir_all(dir)?;
-    let tmp = path.with_extension(format!("{SLOT_EXT}.tmp"));
-    std::fs::write(&tmp, json)?;
-    match std::fs::rename(&tmp, path) {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            if let Err(cleanup) = std::fs::remove_file(&tmp) {
-                tracing::debug!("layout slots: cleanup {} failed: {cleanup}", tmp.display());
-            }
-            Err(e)
         }
     }
 }
@@ -413,6 +316,7 @@ pub(crate) fn migrate_and_gc_on_boot(restore_layout: bool) {
 
 #[derive(Default)]
 pub struct LayoutDirtyTracker {
+    generation:std::sync::Arc<()>,
     dirty: bool,
     dirty_since: Option<Instant>,
 }
@@ -424,9 +328,15 @@ impl LayoutDirtyTracker {
 }
 
 impl LayoutDirtyTracker {
+    pub(crate) fn generation(&self)->std::sync::Weak<()> {std::sync::Arc::downgrade(&self.generation)}
+    pub(crate) fn clear_if_generation(&mut self,expected:&std::sync::Weak<()>) {
+        if expected.ptr_eq(&self.generation()) {self.dirty=false;self.dirty_since=None;}
+    }
+
     /// 처음 변경된 시각을 유지해 연속 변경이 저장 예약을 계속 늦추지 않게 한다.
     /// 실제 저장 시각·성공 여부를 보장하지는 않는다.
     pub fn mark_dirty(&mut self) {
+        self.generation=std::sync::Arc::new(());
         if !self.dirty {
             self.dirty = true;
             self.dirty_since = Some(Instant::now());

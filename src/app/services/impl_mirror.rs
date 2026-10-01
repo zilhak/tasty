@@ -512,17 +512,6 @@ impl AppServices {
                 }
                 Ok(vec![Self::apply_update_tab_name(engine, surface_id, name)])
             }
-            #[cfg(feature = "gui")]
-            DomainIntent::SaveLayoutNow {
-                presentation,
-                active_workspace,
-                force,
-            } => Ok(vec![Self::apply_save_layout_now(
-                engine,
-                active_workspace,
-                force,
-                &*presentation,
-            )]),
             // 결과를 이벤트 루프로 돌려주는 identify worker는 GUI에만 있다.
             #[cfg(feature = "gui")]
             DomainIntent::DispatchFile {

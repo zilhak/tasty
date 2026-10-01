@@ -34,3 +34,5 @@ pub(crate) mod resource_retirement;
 pub(crate) mod surface_cleanup;
 
 pub(crate) mod host_events;
+
+pub(crate) mod surface_capture;

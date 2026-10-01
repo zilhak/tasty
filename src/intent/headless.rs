@@ -45,6 +45,8 @@ pub(crate) fn drain_pending_intents_in_app(
                 Ok(None)=>{},
                 Err(error)=> {super::report_apply_error(state,engine.core,&dispatched.origin,"creation input",&error);continue;},
             }
+            if let Intent::Domain(crate::app::command::DomainIntent::RetireExitedSurface {surface_id,generation})=&dispatched.body
+                && !engine.runtime.terminals.matches_generation(*surface_id,*generation) {continue;}
             let handled=match (engine_id,&dispatched.body) {
                 (Some(id),Intent::Domain(intent))=>journal.admit_metadata_intent(id,engine.core,intent,&dispatched.origin,None),
                 (Some(id),Intent::DirectRename(rename))=>{journal.admit_direct_rename(id,rename,&dispatched.origin);true},

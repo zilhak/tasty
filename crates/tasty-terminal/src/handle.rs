@@ -143,6 +143,15 @@ impl Terminal {
         self.lock_state().scrollback_lines_all()
     }
 
+    /// One parser cut for immutable persistence; reading history and grid separately can splice
+    /// output across a scroll between the two locks.
+    pub fn capture_history_and_screen(&self)->Vec<ScrollbackLine> {
+        let state=self.lock_state();
+        let mut lines=state.scrollback_lines_all();
+        lines.extend(state.screen_snapshot_lines());
+        lines
+    }
+
     pub fn screen_snapshot_lines(&self) -> Vec<ScrollbackLine> {
         self.lock_state().screen_snapshot_lines()
     }
