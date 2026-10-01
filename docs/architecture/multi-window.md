@@ -4,22 +4,26 @@ tasty 는 **단일 프로세스 · 메인 스레드 단일 winit 이벤트 루�
 
 ## 구조
 
+```text
+App (프로세스 실행 조정; GUI에서는 winit ApplicationHandler)
+├── services: AppServices       공유 저장소·registry·TaskService·port
+├── state: AppState             boot/shutdown·요청 진행 값
+├── hub: Hub                    IPC 서버·포트 파일
+├── journal: JournalApplication CommandExecutor worker와 완료·publication 조정
+├── remote: Remote              GUI attach client·SSH 시도와 실제 연결 자원
+├── engines: EngineRegistry     GUI engine의 단일 소유 표와 관계
+│   └── EngineSession          CoreState + live/runtime/task/hook/remote/receipt
+└── view: ViewRegistry          GUI View·active_modal·focused_view_id
+    └── views: HashMap<WindowId, Box<dyn View>>
 ```
-App  (1 프로세스, 메인 스레드, winit ApplicationHandler)
-├── core: Core         도메인 본체 (워크스페이스/세션/attach/registries) — 항상 빌드
-├── hub: Hub           외부 통신 (IPC 서버, 포트 파일) — 항상 빌드
-└── view: ViewRegistry GUI 어댑터 — #[cfg(feature = "gui")]
-    ├── proxy              winit EventLoopProxy<AppEvent>
-    ├── views: HashMap<WindowId, Box<dyn View>>
-    ├── active_modal: Option<ActiveModal>   (ID·종류, 모달 전역 최대 1, 비공개)
-    └── focused_view_id: Option<WindowId>
-```
+
+headless는 로컬 ViewRegistry나 attach client를 만들지 않는다. 실행 루프가 EngineSession을 소유하며 AppServices·journal·서버 attach를 사용한다.
 
 `focused_view_id` 는 대상 없는 IPC 요청이 떨어지는 main 창이다. 창을 등록할 때는 그 창을 사용자가 만들었을 때만 옮긴다 — 에이전트가 만든 창은 옮기지 않는다([포커스 정책](../design/policies/focus.md#에이전트가-만든-창과-포커스), [ADR-0059](../adr/0059-id-targets-and-view-owned-selection.md)).
 
 모든 View는 하나의 `views` 맵에 보관한다. 모달도 별도 객체 집합으로 관리하지 않고 `active_modal`로 활성 View와 종류를 표시한다. 활성 모달의 원본은 이 필드 하나이며 창별 MainViewState에는 사본이 없다.
 
-## Window 트레잇 계층 (`src/view/`)
+## View 트레잇 계층 (`src/view/`)
 
 ```text
 View (sealed trait, : sealed::Sealed + std::any::Any)
@@ -40,7 +44,7 @@ View (sealed trait, : sealed::Sealed + std::any::Any)
 
 ## 모달 (Modal modality)
 
-엔진 전역 최대 1개. 설정창·종료 다이얼로그가 대표.
+프로세스 전역 최대 1개. 설정창·종료 다이얼로그가 대표.
 
 - Modal View 가 열리면 `set_active_modal` 로 ID·종류를 세우고, 닫히면 `take_active_modal` 로 비운다(`src/app/modal.rs`).
 - 이벤트 디스패처는 다른 modeless View 에 `modal_active: true` 를 전달하고, 각 View 의 입력 핸들러가 이때 입력을 차단한다(Resized/RedrawRequested/ModifiersChanged/Focused 만 허용).
@@ -52,23 +56,24 @@ App이 가진 모든 engine은 `App.engines`(`EngineRegistry`, `src/app/engine_r
 
 - **창**: 창 ID → engine id. MainView는 engine을 소유하지 않고 id도 들지 않는다. App이 창 ID로 registry에서 engine을 찾아 View에 넘긴다(`ViewCtx.engine`, 창 루프의 `window_pairs`, 창 ID 접근의 `window_pair`).
 - **parked**: 창이 없는 engine과 창을 다시 만들 때 쓸 MainViewState. 보관 순서를 유지한다. 모든 윈도우가 닫혀도 PTY 세션을 잃지 않는 근거다. 윈도우가 0개여도 프로세스(트레이)는 살아 있을 수 있다 — [system-tray 정책](../design/policies/system-tray.md).
-- **임시**: 창에 배정되기 전의 engine 하나. 부팅과 새 창 생성이 이 관계를 거쳐 창에 붙인다.
+- **임시(pending)**: 창에 배정되기 전의 engine 하나. 부팅과 새 창 생성이 이 관계를 거쳐 창에 붙인다.
+- **retiring**: 창과 분리됐지만 저장·확정 retirement·실제 자원 회수가 남은 owner. Discard/Preserve 이후 Releasing 상태에서도 같은 sessions 표에 남는다.
 
-한 engine은 세 관계 중 정확히 하나에 속하고, 관계들의 합집합은 registry가 가진 engine 전체와 같다. 창 전이는 관계만 바꾼다.
+한 engine은 창·parked·pending·retiring 관계 중 하나에 속한다. 전체 owner 순회는 retiring까지 포함해야 한다. 창 전이는 관계만 바꾼다.
 
-`EngineSession`은 `CoreState`와 `EngineRuntime`, engine별 `HookRuntimeState`·`TaskScope`·`ObserverRouter`를 직접 소유한다.
+`EngineSession`은 `CoreState`와 `LiveDomainState`·`EngineRuntime`, engine별 `HookRuntimeState`·`TaskScope`·`ObserverRouter`·`RemoteState`를 직접 소유한다.
 `EngineRuntime`에는 Terminal/Pty 쌍의 단일 TerminalStore, child terminal 관계와 GUI의 readonly Terminal 사본이 있다.
 park/unpark는 이 객체나 작업 대기 허브를 교체하지 않는다. 창의 사용자 선택·viewport는 MainViewState에 남는다.
 headless도 같은 Session을 지역 변수로 소유하며 로컬 View를 만들지 않는다.
 
-실행 소비자는 `EngineMut`, 읽기 소비자는 `EngineRef`로 각 원본을 나눠 빌린다(`src/core/engine_access.rs`).
+View는 `EngineRead`(`src/runtime/engine_read.rs`)를 받는다. 실행 adapter는 `EngineMut`/`EngineRef`(`src/runtime/engine_access.rs`)로 필요한 원본을 나눠 빌린다.
 두 타입은 참조만 가지며 engine id·창 관계·종료 책임은 없다. 구조만 필요한 함수는 `CoreState`를 그대로 받는다.
 Core에 상위 `EngineSession` 전체를 전달하지 않는다. Terminal 읽기는 기존 내용 잠금과 snapshot/tap 경계를 유지한다.
 
 생성 조립은 `src/runtime/engine_session/bootstrap.rs`가 담당한다. 설정·슬롯·registry·child 관계 읽기와 기본 shell 생성은
 기존 시작 조건을 따른다. Session Drop은 hook·task·observer를 Terminal보다 먼저 정리하고, observer는 남은 worker를 join한다.
 TaskScope Drop은 task 취소나 OS 자식 종료를 새로 요청하지 않는다. Terminal과 Pty는 store의 같은 항목에서 각각 소유하며 standalone에서도 Pty가 child kill/wait를 맡는다.
-이 배치가 구조 replay의 무자원화나 durable activation을 완료한 것은 아니다.
+순수 journal replay와 외부 materialization은 분리돼 있다. 실제 종료·재시작 동작의 검증은 source 배치만으로 보장되지 않는다.
 
 
 | 전이 | 동작 |
@@ -76,16 +81,16 @@ TaskScope Drop은 task 취소나 OS 자식 종료를 새로 요청하지 않는�
 | 창 등록 | 임시 engine을 창 관계로 옮긴다(`register_window`). |
 | park | 창 관계를 parked로 바꾸고 View 복원 자료(MainViewState)를 뒤에 붙인다. 마지막 창 닫기와 macOS 최소화가 쓴다. |
 | unpark | 가장 먼저 보관한 parked engine을 임시 관계로 옮긴다. 새 창이 이어받는다. |
-| 은퇴 | 창 관계를 끊고 engine을 registry에서 꺼낸다. 레이아웃 복원 설정에 따라 저장하거나 슬롯 파일을 지운 뒤 View, engine 순서로 버린다. |
+| 은퇴 | 창 관계를 retiring으로 옮긴다. 보존 checkpoint 또는 stream retirement와 수락된 작업을 정리한 뒤 Releasing에서 원 runner·물리 자원 receipt를 기다린다. 완료한 owner만 제거한다. |
 
 parked 상태에서도 engine은 살아 있으므로 레이아웃 슬롯 점유를 유지한다. 종료 때 저장은 창 engine과 parked engine을 한 번씩 본다. `App.engines`는 `App.view` 바로 뒤에 있어 프로세스 종료 때 모든 창 View가 먼저, 그 뒤 engine이 drop된다.
 
 ### engine 탐색
 
-engine만 다루는 App의 순회는 `src/app/window_access.rs`의 `EngineScan`(읽기)·`EngineScanMut`(쓰기)를 거친다. 이 두 핸들은 `App::engines`/`App::engines_mut`로 얻고, 같은 함수에서 `App.core` 같은 다른 필드를 함께 빌려야 하면 `engines_mut!` 매크로로 `views`와 `engines` 필드만 빌린다. 창 View 작업(다시 그리기 표시, toast 등)이 함께 필요한 창 루프는 MainView와 그 engine을 쌍으로 주는 `window_pairs`를, 창 ID로 고른 접근(`find_main_with_*`의 결과 등)은 `window_pair`를 쓴다. engine 기준 요청(`DispatchSource::Engine`)은 `resolve`가 MainViewState·engine과 창이 있으면 그 창의 `ViewBase`를 함께 돌려준다.
+engine만 다루는 App의 순회는 `src/app/window_access.rs`의 `EngineScan`(읽기)·`EngineScanMut`(쓰기)를 거친다. 이 두 핸들은 `App::engines`/`App::engines_mut`로 얻고, 같은 함수에서 `App.services` 같은 다른 필드를 함께 빌려야 하면 `engines_mut!` 매크로로 `views`와 `engines` 필드만 빌린다. 창 View 작업(다시 그리기 표시, toast 등)이 함께 필요한 창 루프는 MainView와 그 engine을 쌍으로 주는 `window_pairs`를, 창 ID로 고른 접근(`find_main_with_*`의 결과 등)은 `window_pair`를 쓴다. engine 기준 요청(`DispatchSource::Engine`)은 `resolve`가 MainViewState·engine과 창이 있으면 그 창의 `ViewBase`를 함께 돌려준다.
 
 - 방문 순서는 창(`views` 순회 순서) → parked(보관 순서) → 임시 engine이다. 호출부가 필요한 관계만 고른다(`windowed_and_parked`, `windows_and_pending`, `primary` 등). 창 목록의 순서는 `HashMap` 순회 순서라 고정된 의미가 없다. 창 관계가 있어도 `views`에 View가 없으면 창 순회에 나오지 않는다.
-- 한 engine은 세 관계 중 한 곳에만 있으므로 전체 순회(`all`, `sessions`)는 각 engine을 정확히 한 번 방문한다. 전역 목록 합산(`list_global`)과 슬롯 점유 계산이 같은 자원을 두 번 세지 않는 근거다. 단위 시험은 전이마다 관계 분할과 슬롯 점유를, parked·임시 관계의 순서와 1회 방문을 고정한다. 창 순회는 `MainView`를 단위 시험에서 만들 수 없어 다중 창 라우팅 E2E로 간접 확인한다.
+- `EngineScan::all`은 창·parked·pending을 읽으며 retiring을 포함하지 않는다. 반면 `EngineRegistry::all_sessions`는 실제 owner 전체를 순회한다. 슬롯 점유·종료·미완 receipt를 다루는 코드는 후자를 사용한다. 탐색 API의 이름만으로 같은 집합이라고 가정하지 않는다.
 - parked 보관과 복원은 `park`(뒤에 붙인다)·`unpark_first`(가장 먼저 보관한 항목)로 한다.
 - engine 은 생성할 때 받은 `EngineId` 를 관계가 바뀌어도 유지한다. engine 기준 요청과 특정 parked engine 은 보관 위치가 아니라 이 id 로 찾는다(`parked_session`, `DispatchSource::Engine`, attach mirror 출력 대상). 다른 engine 을 보관하거나 꺼내 위치가 바뀌어도 같은 engine 을 가리킨다.
 
@@ -102,9 +107,9 @@ engine의 존재 여부는 창 관계와 parked 관계를 함께 확인한다. �
 
 ## 레이아웃 슬롯
 
-창 ↔ engine ↔ **레이아웃 슬롯**은 1:1 이다. 각 `CoreState` 는 자기 슬롯 번호(`layout_slot`)를 들고, 자기 슬롯 파일에만 저장한다. 창마다 워크스페이스 목록이 독립이라는 구조적 사실이 저장소까지 이어진 형태다 — 두 창이 같은 목록을 복제하거나 서로의 저장을 덮어쓰지 않는다.
+창 ↔ engine ↔ **레이아웃 슬롯**은 1:1 이다. 각 EngineSession의 persistence/binding은 자기 슬롯과 journal stream을 가리킨다. 창마다 워크스페이스 목록이 독립이라는 구조적 사실이 저장소까지 이어진 형태다 — 두 창이 같은 목록을 복제하거나 서로의 저장을 덮어쓰지 않는다.
 
-**점유는 살아있는 engine 에서 파생된다.** 별도 슬롯 레지스트리도, 디스크 기록도 없다. 점유 집합은 그때그때 창·parked 관계의 engine을 훑어 만든다 — 여기에 임시 관계의 engine 도 포함된다. 갓 만들어진 engine 은 창에 붙기 전까지 임시 관계에 머물기 때문에, 그 구간을 빠뜨리면 같은 슬롯이 두 번 배정된다. 따라서
+**점유는 살아있는 engine 에서 파생된다.** 별도 슬롯 레지스트리도, 디스크 기록도 없다. 점유 집합은 sessions의 전체 owner에서 파생하며 창·parked·pending·retiring을 포함한다. 갓 만들어진 engine 은 창에 붙기 전까지 임시 관계에 머물기 때문에, 그 구간을 빠뜨리면 같은 슬롯이 두 번 배정된다. 따라서
 
 - engine이 실제로 drop되면 그 슬롯은 그 순간 free 가 된다 — 해제 호출이 없으니 해제 누락도 없다.
 - **parked engine 은 슬롯을 계속 쥔다.** 창이 없어도 engine 이 살아 있으므로 점유에 포함되고, 다시 창을 열 때 그 engine 이 같은 슬롯을 이어쓴다. 재배정했다면 남의 슬롯 파일을 덮어썼을 것이다.
@@ -121,7 +126,7 @@ engine의 존재 여부는 창 관계와 parked 관계를 함께 확인한다. �
 
 | 관점 | 근거 |
 |------|------|
-| 상태 공유 | `Arc`/`Mutex` 없이 Core 상태 직접 공유, 윈도우 간 IPC 불필요 |
+| 상태 접근 | 메인 루프가 engine을 대여하고 공유 서비스는 필요한 Arc/Mutex를 사용한다. 창끼리 구조 사본을 동기화하는 IPC는 없다 |
 | GPU 리소스 | wgpu adapter/device 윈도우 간 공유 가능 |
 | winit 호환 | winit 은 프로세스당 이벤트 루프 1개를 전제 |
 | 크래시 격리 | 셸은 이미 별도 OS 프로세스(PTY) — 셸 크래시가 tasty 로 전파 안 됨 |

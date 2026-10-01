@@ -1,7 +1,9 @@
-# MainViewState 필드 소유권
+# App·Engine·View 상태 소유권
 
-`MainViewState`(`src/state/main.rs`)는 창 하나의 navigation·표시 상태·실행 큐를 가진다.
-Headless는 별도 `CommandContext`(`src/state/command.rs`)를 생성한다. 이 타입은 생략된 명령 대상을 해소하는 기본값과 공통 실행 큐·서비스만 가지며, GUI 상태 객체를 만들지 않는다.
+`AppState`(`src/app/state.rs`)는 프로세스의 시작·종료·요청 진행 값을 가진다. 서비스와 실제 실행 handle은 AppServices·App·EngineSession 같은 소유 객체에 남는다.
+
+`MainViewState`(`src/state/main.rs`)는 창 하나의 navigation·표시·편집 상태와 실행을 요청하는 값 큐를 가진다. worker·socket·파일 저장 원본을 View 상태에 넣지 않는다.
+Headless는 별도 `CommandContext`(`src/state/command.rs`)를 생성한다. 이 타입은 생략된 명령 대상을 해소하는 기본값과 요청 값만 가지며, GUI 상태 객체를 만들지 않는다.
 공통 App adapter 코드의 `RequestContext`는 빌드에 맞는 구체 타입을 재노출하는 이름이다. Core는 이 타입을 참조하지 않는다.
 
 GUI의 `navigation`은 사용자 선택 원본이고, headless의 같은 값 타입은 호환 명령의 대상 해소 문맥이다.
@@ -10,7 +12,7 @@ IPC·저장·attach의 active/focused 값은 명시 read-only presentation으로
 
 창의 engine 소유자(`EngineSession`)는 MainViewState와 MainView 어디에도 없다. CoreState와 Terminal·hook·task·observer 자원은 Session이 각각 소유한다. GUI에서는 `App.engines`가 engine을 소유하고,
 App이 창 ID로 찾아 View에 넘긴다([engine registry](../architecture/multi-window.md#engine-registry와-parked--pty-생존)).
-CoreState만 필요한 함수에는 구조 참조를, 실행/읽기 소비자에는 `EngineMut`/`EngineRef` 대여를 전달한다. View의 terminal 읽기는 불변 대여를 사용한다.
+CoreState만 필요한 함수에는 구조 참조를, 실행 adapter에는 `EngineMut`/`EngineRef`, View에는 `EngineRead`를 전달한다. View의 terminal·kind·surface 조회는 실행 owner를 반환하지 않는 읽기 API를 사용한다.
 구조와 effect·kind 실행 객체의 나머지 분리는 [ADR-0054](../adr/0054-app-core-view-layers-and-state-ownership.md)를 따른다.
 
 ## 열 읽는 법
@@ -39,7 +41,7 @@ CoreState만 필요한 함수에는 구조 참조를, 실행/읽기 소비자에
 
 | 필드 | 에이전트 쪽 입구 | 실제 도메인 데이터의 저장 위치 |
 |---|---|---|
-| `pending_approval_ids` | `approval.request` · capability elevation 이 `enqueue_approval` 로 push | approval 레코드는 `Core` 의 approval 저장소가 갖는다. 이 큐는 그중 **popup 이 보여줄 순서**다 |
+| `pending_approval_ids` | `approval.request` · capability elevation 이 `enqueue_approval` 로 push | approval 레코드는 `AppServices.approval_store`가 갖는다. 이 큐는 그중 **popup 이 보여줄 순서**다 |
 | `file_picker` | `file_picker.trigger`(그 핸들러 모듈이 gui 전용) | 결과는 plugin 에 이벤트로 나간다(ADR-0036) |
 | `pending_open_preset_window` · `pending_preset_window_selection` | 사용자 origin 의 preset 저장만 세운다 | 저장된 preset 은 `PresetStore` 에 있다 |
 
@@ -97,20 +99,15 @@ CoreState만 필요한 함수에는 구조 참조를, 실행/읽기 소비자에
 
 ## 모듈 단위 예외 없이 가른다
 
-MainViewState와 CommandContext는 별도 struct다. 공통 알고리즘과 값 타입은 재사용하되 GUI popup·hover·렌더 자료는 headless에 만들지 않는다. 실제 승인 레코드는 Core에 있고 popup의 pending ID 목록은 View 상태다. intent origin 검사는 사용자 선택·닫은 항목 기록 보호를 위해 계속 유지한다.
+MainViewState와 CommandContext는 별도 struct다. 공통 알고리즘과 값 타입은 재사용하되 GUI popup·hover·렌더 자료는 headless에 만들지 않는다. 실제 승인 레코드는 AppServices에 있고 popup의 pending ID 목록은 View 상태다. intent origin 검사는 사용자 선택·닫은 항목 기록 보호를 위해 계속 유지한다.
 
 ## Core 결과와 공통 App adapter
 
-구조 변경은 도메인 결과로 반환하며 전송하지 않을 JSON-RPC 응답을 만들었다 다시 해석하지 않는다. 닫힌 surface 정리는 공용 `reclaim_closed_surfaces`가, MoveSurface 결과의 close 변환은 공용 생성자가 맡는다.
-닫힌 surface의 도메인 자원(스크롤백 파일·Terminal·명령/observer/hook 인덱스·shell hint·waker·surface memory scope·attach 점유·mirror 부속 맵(busy·cwd·mesh frame)·attention 레코드(로컬 포함))과 제거된 workspace의 memory scope는 `EngineMut::cleanup_surface_traced`와 `CoreState::purge_workspace_memory_scope`(`src/core/state/surface_cleanup.rs`)가 창 상태 없이 회수한다. MainViewState에는 화면 cache 해제(`MainViewState::release_surface_views`)와 lifecycle·host 이벤트 적재만 남는다. 자원 정리를 Core::apply에 넣어 MainViewState 의존을 추가하지 않는다. must_use만으로 이벤트를 분해한 뒤 정리를 빠뜨리는 문제를 막을 수는 없다.
+구조 요청은 App의 journal admission을 거쳐 worker가 decide/commit한다. 확정 batch만 CoreState projection에 적용하며 GUI/IPC/원격 응답을 위해 구조를 두 번 실행하지 않는다. raw input·파일 실행처럼 구조 event 밖의 작업은 원 대상 binding을 가진 실행 adapter로 전달한다.
 
-`app::structural_exec`가 split·tab 생성/이동/닫기·pane/surface 닫기의 검증과 적용을 맡는다.
-IPC와 원격 forward는 같은 실행 함수를 쓰며 `Rejected`, `MissingEvent`, `Apply` 실패를 각 전송 형식으로 변환한다.
-정수 범위 같은 공용 파라미터 판정은 core::param_bag에 둔다.
-권한·점유·자기 대상 제한은 진입점에 남고 anchor 해석·snapshot·즉시 tap 억제·delta 계산은 forward에 남는다.
-공용 cascade의 GUI 효과만 조건부로 실행한다.
-변환한 surface의 mesh 정리는 매니저를 소유한 호출자에게 결과값으로 알린다.
-두 경로의 실패 문구 일치와 기존 외부 문구 보존은 서로 다른 검증이다.
+닫힌 surface의 원 box·Terminal/Pty는 `ResourceRetirement`가 단독 소유하고 effect claim 뒤 정리한다. 원 PTY/plugin receipt와 metadata 의무가 끝나기 전에는 성공으로 응답하지 않는다. MainViewState는 화면 cache·선택 보정만 맡으며 필수 cleanup이 View 유무에 의존하지 않는다. 원 engine이 retiring 중이면 receipt까지 유지한다([닫기 순서](../architecture/close-sequence.md)).
+
+공용 파라미터 검증과 권한·점유·origin 정책은 진입점에서 유지한다. RequestScope는 필요한 presentation을 빌리고 요청 값을 돌려줄 뿐 구조 writer나 전체 View 실행 포트가 아니다.
 
 핸들러는 사용하는 상태만 인자로 받는다. 쓰지 않는 `_state: MainViewState` 인자를 공통 호출 모양에 맞추려고 남기지 않는다. memory와 대상 nickname 해석은 AppServices 또는 명시 Engine 실행 문맥에서 읽고, 출력 조회는 EngineRead의 관측값으로 수행한다. CoreState는 확정 구조 projection이며 실행 저장소나 터미널 객체를 소유하지 않는다. GUI·debug에서 창 상태 자체를 조작하는 핸들러는 창 전용 라우터에 둔다.
 

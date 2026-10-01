@@ -61,7 +61,7 @@ Tasty 개발자를 위한 가이드다. Tasty를 사용하는 에이전트용 �
 | [debug-ipc](debug-ipc.md) | debug 전용 IPC + 격리 |
 | [headless-ipc-surface](headless-ipc-surface.md) | 헤드리스 IPC의 단일 진입 검사·관측·PTY 종료 수명과 메서드별 제공 범위 |
 | [headless-build-boundaries](headless-build-boundaries.md) | GUI·헤드리스 컴파일 경계와 여덟 빌드 조합 검사 |
-| [app-state-ownership](app-state-ownership.md) | `MainViewState` 필드 소유권, EngineSession 자원과 CoreState의 분리 대여, headless 문맥 |
+| [app-state-ownership](app-state-ownership.md) | App·Engine·View 상태 소유권, EngineRead와 실행 대여, receipt 기반 정리와 headless 문맥 |
 | [attach-behavior](attach-behavior.md) | attach(서버=loopback / 로컬-원격=클라이언트) · self-attach connector 진입/완료 검증 |
 | [agent-runner](agent-runner.md) | task DAG executor + 동기화 primitive |
 

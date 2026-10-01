@@ -19,38 +19,24 @@ Tasty는 본 바이너리(`src/`)와 63 개 크레이트(`crates/*`)로 구성�
 
 ## headless 분리 — `gui` feature
 
-본 바이너리는 `gui` feature(`default = ["gui"]`)로 GUI 표면을 켠다. 끄면 **도메인(`core`) + 외부통신(`hub`) 만 빌드**되고 View/GPU(winit·wgpu·egui)는 컴파일에서 빠진다. 이것이 headless 원칙([identity](../identity.md))의 컴파일 차원 강제다 — 에이전트가 GUI 없이 IPC 로 tasty 를 구동할 수 있다.
+본 바이너리는 `gui` feature(`default = ["gui"]`)로 로컬 View/GPU 표면을 켠다. headless는 이 feature를 끄고 App·EngineSession·journal·외부 통신과 실행 서비스를 사용한다. 원격 표시 자료나 plugin mesh 중계가 있다는 이유로 로컬 GUI를 만든 것은 아니다([headless 경계](../dev-guide/headless-build-boundaries.md)).
 
-`App`(winit `ApplicationHandler` 본체)은 세 부분을 합성한다:
+| 소유자 | 역할 | GUI와의 관계 |
+|---|---|---|
+| AppServices | process 공유 port·저장소·registry·TaskService | GUI/headless 공용 |
+| AppState | 시작·종료·요청 진행 값 | GUI 값은 cfg로 구분 |
+| Hub | IPC 서버·포트 파일 | GUI/headless 공용 |
+| JournalApplication | CommandExecutor worker·batch publication·응답/효과 조정 | GUI/headless 공용 |
+| EngineSession | CoreState projection·live/runtime/task/hook/remote와 원 자원 receipt | GUI에서는 EngineRegistry, headless에서는 실행 루프가 소유 |
+| ViewRegistry | View 목록·active_modal·focused_view_id | gui 전용 |
 
-| 필드 | 역할 | gui gate |
-|------|------|----------|
-| `core: Core` | **도메인 본체** — 워크스페이스/탭/페인/서피스 상태, 세션, attach, registries | 항상 |
-| `hub: Hub` | **외부 통신** — IPC 서버(`Option<Box<dyn IpcServerPort>>`), 포트 파일 | 항상 |
-| `view: ViewRegistry` | **GUI 어댑터** — winit proxy, `views: HashMap<WindowId, Box<dyn View>>`, `active_modal`(ID·종류)/`focused_view_id` | `#[cfg(feature = "gui")]` |
+### 도메인과 실행 경계
 
-현재 본체는 `Core`가 상태, `Hub`가 외부 통신, `ViewRegistry`가 GUI를 담당한다. surface_registry·command_index·output_observer·layout_persistence는 `src/core/`에 있다.
+`tasty-core`는 Command/Event·JournalModel·decide/evolve와 CoreState projection을 소유하며 GUI·PTY·SQL을 직접 의존하지 않는다. `tasty-event-store`는 저장 계약, `tasty-task-runtime`은 작업 실행·완료 대기를 맡는다. root의 App/runtime adapter가 저장·실행·View를 조립한다([ADR-0056](../adr/0056-crate-boundaries-for-core-event-store-and-task-runtime.md)).
 
-### 도메인 경계 — `core` + `ports`
+View에는 `EngineRead`, 실행 adapter에는 `EngineRef`/`EngineMut`를 전달한다. Core에 View 전체나 상위 EngineSession을 넘기지 않는다. `src/core`에 남은 호스트 adapter를 pure domain crate와 같은 소유자로 보지 않는다. 구조 실행과 IPC의 대여·요청 값은 [App·Engine·View 상태 소유권](../dev-guide/app-state-ownership.md)을 따른다.
 
-도메인은 src/core와 src/ports에 두고 같은 크레이트 내 모듈 경계로 관리한다.
-도메인은 app·adapter·GUI 구현을 직접 참조하지 않는다.
-공용 타입은 도메인에 정의하고 창 연산은 도메인이 선언한 `CascadeWindow`·`IdentifySpawner` 등의 trait으로 받는다.
-GUI 작업과 응답 전송 worker는 상위 모듈에 둔다.
-별도 core 크레이트는 많은 GUI 조건과 형제 모듈 결합을 이동하고 pub(crate)를 공개해야 하는 비용 때문에 현재 채택하지 않는다.
-경계 검사는 상위 참조·GUI 조건 개수·직접 GUI 의존을 보며 전이 의존과 상위에서 도메인 내부에 접근하는 것까지 막지는 못한다.
-외부 도메인 소비자가 생기거나 분리 빌드의 실측 이득이 커지면 크레이트 분리를 재검토한다.
-
-경계 검사는 기존 gui 조건 뒤의 GUI import도 확인한다.
-optional GUI 의존 목록은 manifest에서 읽고 Windows는 창·그리기·창 핸들 경로와 이를 별칭으로 들일 수 있는 상위 import를 검사한다.
-비GUI Windows 항목은 직접 경로로 사용할 수 있다.
-도메인·IPC port 구현 파일도 에이전트의 활성 상태 읽기 검사에 포함한다.
-webhook·hook 실행부는 inbound adapter 대신 HostIpcInjector를 사용하고 별도 검사로 방향을 확인한다.
-판정 코드는 공유하지만 도메인과 자동화의 허용 의존은 구분한다.
-전이 의존, 다른 workspace crate 내부 feature, 새 port 구현 파일 누락은 여전히 별도 확인 대상이다.
-GUI 허용 경로 목록에 항목이 생기면 같은 경로의 추가 사용도 셀 수 있도록 검사 범위를 재검토한다.
-
-구조 실행과 IPC 핸들러의 구체적인 port 사용은 [MainViewState 소유권](../dev-guide/app-state-ownership.md)을 따른다.
+manifest와 source 경계 검사는 실제 feature 통합·플랫폼 빌드·동작 검증을 대신하지 않는다. 옛 경로와 mutable Core 필드를 전제한 fixture는 현재 소유 계약에 맞춰 별도로 정합해야 한다.
 
 ### 크레이트를 나누는 기준
 
@@ -216,11 +202,13 @@ ports-and-adapters 배치:
 | 모듈 | 역할 |
 |------|------|
 | `boot/` | `fn main` 부팅 시퀀스(`run()` 진입점) — event_loop, headless_{dispatch,stream,plugins}, cli_routing, wiring, locale, trace(부팅 계측) |
-| `app/` | `App`(winit `ApplicationHandler`) — window_lifecycle, boot_machine(첫 윈도우 부팅 상태 머신 — [boot-sequence](boot-sequence.md)), shutdown_cascade(종료 cascade — [shutdown-sequence](shutdown-sequence.md)), modal, ipc dispatch, attach, dispatch_domain(workspace close cascade — [close-sequence](close-sequence.md)) |
-| `core/` | **도메인 본체**(`Core`) — state, session, attach, agent, terminal_store, ipc_facade, 구조 실행·cascade, 도메인이 선언한 창 포트(`cascade_window` · `identify_port`). 위 "도메인 경계" 절 |
+| `app/` | `App`(winit `ApplicationHandler`) — window_lifecycle, boot_machine(첫 윈도우 부팅 상태 머신 — [boot-sequence](boot-sequence.md)), shutdown_cascade(종료 cascade — [shutdown-sequence](shutdown-sequence.md)), modal, ipc dispatch, attach, journal admission/publication·retirement receipt — [close-sequence](close-sequence.md) |
+| `core/` | 호스트 측 도메인 adapter·live 정책·legacy layout 이관. 순수 구조 원본과 projection은 tasty-core에 있다 |
+| `runtime/` | EngineSession, EngineRead/EngineRef/EngineMut, TerminalStore, effect·자원 receipt, journal worker adapter |
+| `remote/` | engine별 attach 구독·표시·전송 adapter. socket/SSH owner는 tasty-remote |
 | `hub.rs` | **외부 통신**(`Hub`) — IPC 서버, 포트 파일 |
 | `view/` | **GUI**(gui-gated) — `View` sealed trait 계층 + MainView/SettingsView/QuitView/PluginsView/PresetView. — [multi-window](multi-window.md) |
-| `state/` | `MainViewState` — MainView 당 1개 런타임 상태(focus/layout/mouse/mark/restore). 공통 App adapter 포트 `CascadeWindow`의 구현(`cascade_window.rs`). Headless는 별도 `CommandContext` |
+| `state/` | View별 navigation·viewport·편집·표시 상태. Headless는 별도 CommandContext를 사용하고 요청 presentation은 RequestScope가 빌린다 |
 | `gfx/` | GPU — `GpuState`, renderer(셀 렌더), screenshot, perf. — [gpu-rendering](../dev-guide/gpu-rendering.md) |
 | `adapters/` | 외부 경계 구현 — `ui`(egui 컴포넌트·popup), `ipc`(handler), `production`/`test`(port 구현체), `cli`, `plugin` |
 | `ports/` | **의존성 역전 trait** — ipc_server, clipboard, clock, fs, home, process, notification_sound (production/test adapter 가 구현 → headless·테스트 교체). 도메인의 일부다 |
@@ -243,8 +231,8 @@ ports-and-adapters 배치:
 |------|------|
 | [boot-sequence](boot-sequence.md) | 첫 윈도우 부팅 상태 머신(BootPhase) — hidden 생성→로딩 프레임→표시, 프레임 구동 대기, 부팅 계측(T1~T7) |
 | [shutdown-sequence](shutdown-sequence.md) | 종료 확정 시 native webview 숨김 + cascade(layout flush→surface close→plugin 종료) + `event_loop.exit()` 이후 Drop tail, 종료 계측(S1~S5) |
-| [close-sequence](close-sequence.md) | 워크스페이스 close 경로 3종(gui/inline/cascade) · 자원 회수의 소유(gui/headless 차이 표) · close 계측(C1~C5) 과 실측 기준선 |
-| [multi-window](multi-window.md) | App = Core/Hub/ViewRegistry, View trait 계층, 모달 불변식, 단일 프로세스 근거 |
+| [close-sequence](close-sequence.md) | 확정 닫기 · 원 자원 retirement receipt · 불명 결과와 명령 완료 · engine/슬롯 해제 |
+| [multi-window](multi-window.md) | AppServices·EngineSession·ViewRegistry 소유, parked/pending/retiring, 모달과 읽기 대여 |
 | [input-layer](input-layer.md) | 마우스 입력 z-order 계층 — 소비/버블링 + 커서 결정 |
 | [data-flows](data-flows.md) | 주요 데이터 흐름 (파일+함수 기준) |
 | [ipc-server](ipc-server.md) | IPC 서버가 요청을 받아들이고 처리하는 쪽의 규칙 — 입장 상한 · dispatch 회차 예산 · 기한 · wake · 요청 압력 게이지 |

@@ -11,7 +11,7 @@ tasty 화면 구조는 객체 계층 하나와, 그 위의 **두 레벨 레이�
 
 ## View 의 종류 (= 윈도우 종류)
 
-`View` trait 의 구현체가 곧 윈도우 종류다. **`MainView` 도 그중 하나** — 터미널을 호스팅하는 View 다. 각 구현체는 별개 OS 윈도우(winit Window)이고, 엔진은 이들을 `HashMap<WindowId, Box<dyn View>>` 로 균일하게 관리한다.
+`View` trait 의 구현체가 곧 윈도우 종류다. **`MainView` 도 그중 하나** — 터미널을 호스팅하는 View 다. 각 구현체는 별개 OS 윈도우(winit Window)이고, App의 `ViewRegistry`는 이들을 `HashMap<WindowId, Box<dyn View>>`로 관리한다.
 
 | 구현체 | 계열 (supertrait) | 무엇 |
 |--------|-------------------|------|
@@ -19,11 +19,12 @@ tasty 화면 구조는 객체 계층 하나와, 그 위의 **두 레벨 레이�
 | `SettingsView` / `PluginsView` / `QuitView` | `ModalView` | 모달 윈도우 — 전역 1개, 활성 시 입력 차단 |
 | `PresetView` | `View` + `sealed::Sealed` 직접 구현 | 에디터 윈도우 — modeless |
 
-(**Engine** = 진입점 + 서버. IPC 포트 소유, 모든 윈도우 생명주기 관리. **headless 에선 View(GUI) 없이 Engine + `CoreState` 만 동작** — 아래 구조 계층은 그 `CoreState` 의 도메인이라 GUI 없이도 구성된다.)
+**App**은 프로세스의 진입점·서비스·통신·실행 조정을 맡는다. IPC 서버와 포트는 App의 Hub가 소유하고, GUI의 View 목록과 모달은 ViewRegistry가 관리한다.
 
+**EngineSession**은 한 engine의 구조 projection(`CoreState`), 휘발성 도메인 상태(`LiveDomainState`), 실행 자원(`EngineRuntime`), task·hook·observer·remote 범위를 소유한다. engine은 창 없이도 살아 있을 수 있다. headless는 App과 EngineSession을 실행하며 로컬 View를 만들지 않는다.
 ## 구조 계층 = CoreState 도메인 (GUI 없이도 구성)
 
-구조 계층은 `CoreState`가 관리하는 Workspace·Pane·Tab·Surface 트리다. GUI 없이도 만들고 사용할 수 있다. headless 부팅은 `CoreState`와 PTY를 직접 만들고, GUI의 `MainView`는 이를 화면에 표시한다. 동작은 [작업 영역 문서](../features/work-area/index.md)를 따른다.
+구조 계층은 `CoreState`가 제공하는 Workspace·Pane·Tab·Surface 읽기 트리다. 로컬 구조의 원본은 journal의 `JournalModel`이며 확정 batch를 projection에 적용한다. 실행 surface와 Terminal/Pty는 EngineRuntime에 있고 트리에는 descriptor가 있다. headless도 같은 명령·실행 경계를 사용하고, GUI의 MainView는 EngineRead로 값을 조회한다. 동작은 [작업 영역 문서](../features/work-area/index.md)를 따른다.
 
 ```
 CoreState   도메인 트리 — headless 에서도 구성·동작
@@ -33,8 +34,7 @@ CoreState   도메인 트리 — headless 에서도 구성·동작
             └── Surface   최하위. 타입(Terminal/Markdown/…)을 가짐.
 ```
 
-GUI 에서는 `MainView`(View) 가 이 `CoreState` 를 호스팅·렌더한다. 윈도우가 여럿이면 각 윈도우에 `CoreState` 가 하나씩 연결된다. `CoreState` 는 App 이 소유하고 MainView 에 넘겨 준다([multi-window](../architecture/multi-window.md#engine-registry와-parked--pty-생존)). headless 엔 MainView 없이 `CoreState` 만 존재한다.
-
+GUI에서는 MainView와 EngineSession의 관계를 App의 EngineRegistry가 관리한다. MainView는 구조나 실행 자원을 직접 소유하지 않는다. 선택·viewport·편집 draft는 View에 남으며, EngineRead는 이를 바꾸거나 실행 자원을 제어하는 포트가 아니다. 창이 사라져도 parked 또는 retiring engine은 수명이 끝날 때까지 유지된다([multi-window](../architecture/multi-window.md#engine-registry와-parked--pty-생존)).
 - **Workspace** — 도메인의 최상위 컨테이너. (GUI 에선) 한 MainView 가 여러 워크스페이스를 갖고 사이드바에서 전환한다.
 - **Pane** — 독립적인 탭 바를 가진 화면 영역. 위치는 **상위 레이아웃**으로 결정되고 탭 전환과 무관하게 고정된다. tmux/iTerm2 에 대응 개념이 없는 tasty 고유 설계.
 - **Tab** — Pane 안의 탭 하나. 내부에 Surface 들의 **하위 레이아웃**을 가진다. 탭 전환 시 하위 레이아웃 전체가 함께 전환된다.

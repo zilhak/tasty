@@ -33,10 +33,11 @@
 
 ### 구조 (→ [hierarchy.md](hierarchy.md))
 
-- **Engine** — 진입점 + 서버. IPC 포트 소유, 모든 View 생명주기 관리. **headless 에선 View 없이 Engine + `CoreState` 만 동작.**
+- **App** — 프로세스 진입점과 공유 서비스·IPC Hub·실행 조정의 소유자. GUI에서는 ViewRegistry와 EngineRegistry를 관리한다.
+- **Engine** — EngineSession이 소유하는 도메인·실행 범위. CoreState projection, LiveDomainState, EngineRuntime과 task·hook·remote 범위를 포함한다. headless도 App과 EngineSession을 실행하되 로컬 View는 없다.
 - **Window** — winit OS 창 자원(`winit::window::Window`). tasty 쪽 `Window` 타입은 **없다** — 이 단어는 OS 창만 가리킨다.
 - **View** — tasty 쪽 윈도우 표현(종류+콘텐츠+행동). winit Window 를 소유. **1 View : 1 Window.** `MainView`/`SettingsView`/… 가 구현체.
-- **CoreState** — Workspace·Pane·Tab·Surface 트리를 관리한다. GUI 없이도 만들고 사용할 수 있으며, GUI에서는 `MainView`가 화면에 표시한다.
+- **CoreState** — 확정된 로컬 구조의 읽기 projection과 별도 mirror 트리. 로컬 writer는 journal projection 적용기다. 실행 인스턴스는 EngineRuntime, 사용자 선택은 View가 소유한다.
 - **Workspace** — 도메인 최상위 컨테이너. 사이드바에서 전환.
 - **Workspace Category(카테고리/사이드바 폴더)** — 워크스페이스를 묶는 **그룹 계층**(사이드바 섹션). `workspace_categories_enabled` 설정으로 on/off. 예약 카테고리 **`normal`**(id `0`, `categories[0]` 위치 고정, rename/delete 불가)가 항상 존재하고, 미지정 워크스페이스의 기본 소속이다. 카테고리 *CRUD·reorder·소속 변경*은 에이전트 작업(IPC/CLI 양면, release) — *선택(active)·접힘 토글*은 사용자 UI 상태(IPC 노출 안 함). 정본 [`features/workspace-category`](../features/workspace-category/index.md).
 - **Pane** — 독립 탭 바를 가진 영역. **상위 레이아웃**이 위치 결정(탭 무관 고정). tasty 고유.
@@ -83,8 +84,8 @@
 
 ### Surface 주의 환기 (→ [`features/surface-highlight`](../features/surface-highlight/index.md))
 
-- **Attention** — surface에 확인할 일이 남았음을 나타내는 공유 상태. `CoreState`의 `AttentionStore`가 surface ID별 `{ kind, raised_at }`을 저장한다. kind는 Completion·NeedsInput이다.
-  알림 패널의 `NotificationStore` 항목과는 별개다. `effects_of().panel_item`이 패널 표시 여부를 정하고 이벤트를 발생시킨 쪽이 패널 항목을 만든다. 실제 렌더에서 surface가 포커스를 얻으면 해제한다(`gpu.rs`). toast, completion, Claude 훅, OSC133 명령 완료 등 여러 경로가 같은 attention을 사용한다.
+- **Attention** — surface에 확인할 일이 남았음을 나타내는 공유 상태. EngineSession의 `LiveDomainState.attention`가 surface ID별 `{ kind, raised_at }`을 저장한다. kind는 Completion·NeedsInput이다.
+  알림 패널의 `NotificationStore` 항목과는 별개다. `effects_of().panel_item`이 패널 표시 여부를 정하고 이벤트를 발생시킨 쪽이 패널 항목을 만든다. 원 SurfaceBinding을 확인한 App의 FocusObserved 실행에서 해제한다. toast, completion, Claude 훅, OSC133 명령 완료 등 여러 경로가 같은 attention을 사용한다.
 - **Highlight** — attention을 화면에 표시하는 이름. 테두리, 노란 탭 제목, 소속 워크스페이스의 개수 배지로 나타낸다. `draw_surface_highlights`·`SurfaceHighlightRegion` 같은 화면 코드가 사용한다. Core 상태 이름 Attention과 구분하며, 잠깐 나타나는 Toast와 달리 surface에 남아 있다.
 - **Completion** — surface의 작업 완료 신호. release의 `surface.completion`·`tasty surface completion`으로 보고한다. `AttentionKind::Completion`을 발생시키는 경로이지만 attention 전체를 뜻하지는 않는다. 에이전트가 자기 결과를 보고하는 기능이며, 완료 전용 효과가 필요해지면 이 처리 경로를 확장한다.
 
@@ -137,8 +138,8 @@ Pane 은 tmux/iTerm2 에 대응 개념이 **없는** tasty 고유 설계다. 그
 
 | 용어 | Rust 심볼 |
 |------|-----------|
-| Engine | `core::Core` + `core::CoreState` |
-| 구조 도메인 트리 | `core::CoreState` (Workspace…Surface 보유) |
+| App / Engine | `app::App` / `runtime::engine_session::EngineSession` |
+| 구조 원본 / 읽기 트리 | `tasty_core::JournalModel` / `tasty_core::CoreState` (Workspace…SurfaceDescriptor) |
 | View(상위) | `view::ui::View` (sealed trait) |
 | View 계열 | `ModalView` supertrait(모달 외 구현체는 `View`+`sealed::Sealed` 직접 구현) |
 | View 구현체 | `MainView` / `SettingsView` / `QuitView` / `PluginsView` / `PresetView` |
