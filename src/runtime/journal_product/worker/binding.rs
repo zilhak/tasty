@@ -10,6 +10,7 @@ pub(super) fn open(
     selection: EngineSelection,
     normal_category_name: String,
     surface_floor: u32,
+    outstanding_credits:u64,
 ) -> Result<ResultValue, String> {
     executor
         .with_state(|_| ())
@@ -50,6 +51,14 @@ pub(super) fn open(
             }
             CommandLookup::Miss => {}
         }
+        // Existing stream resume/recovery remains possible under pressure. Fresh structure
+        // (including legacy import) is new admission; same-key results were returned above.
+        let fresh=match &selection {
+            EngineSelection::Slot {slot,resume}=>!*resume || !inner.state.streams.contains_key(&format!("structure:slot-{slot}")),
+            EngineSelection::ImportedSlot {source}=>!inner.state.streams.contains_key(&format!("structure:slot-{}",source.destination_slot)),
+            EngineSelection::FreshHeadless=>true,
+        };
+        if fresh {inner.store.ensure_new_admission(epoch,outstanding_credits).map_err(|error|error.to_string())?;}
         let next = inner
             .store
             .next_unreserved_id("surface")

@@ -64,7 +64,7 @@ pub(super) fn closed(executor:&Executor<StructureDecider>,ticket:u64,binding:Eng
     if model.engine_retired || model.engine_incarnation!=binding.incarnation {return Err("close capture engine is retired".into());}
     let snapshot=tasty_core::ClosedSnapshot::capture(model,target);
     let input=serde_json::to_vec(&target).map_err(|error|error.to_string())?;
-    let input=inner.store.put_payload_pinned(epoch,&input,&holder).map_err(|error|error.to_string())?;
+    let input=inner.store.put_admission_payload_pinned(epoch,&input,&holder).map_err(|error|error.to_string())?;
     let Some(mut snapshot)=snapshot else {return Ok((tasty_core::DataRef(input.0),None));};
     snapshot.presentation=tasty_core::UndoPresentation {focused_panes:view.focused_panes.into_iter().filter(|(workspace,_)|snapshot.workspaces.contains_key(workspace)).collect(),selected_tabs:view.selected_tabs.into_iter().filter(|(pane,_)|snapshot.panes.contains_key(pane)).collect(),selected_surfaces:view.selected_surfaces.into_iter().filter(|(tab,_)|snapshot.tabs.contains_key(tab)).collect()};
     for capture in captures {
@@ -72,14 +72,14 @@ pub(super) fn closed(executor:&Executor<StructureDecider>,ticket:u64,binding:Eng
         if surface.kind!=capture.kind || surface.activation.map(|activation|activation.generation)!=capture.activation {
             return Err("closed snapshot observed an obsolete kind instance".into());
         }
-        let reference=inner.store.put_payload_pinned(epoch,&capture.bytes,&holder).map_err(|error|error.to_string())?;
+        let reference=inner.store.put_admission_payload_pinned(epoch,&capture.bytes,&holder).map_err(|error|error.to_string())?;
         surface.data=Some(tasty_core::DataRef(reference.0));
         surface.snapshot_schema=1;
     }
     if snapshot.root.kind==tasty_core::IdKind::Surface {snapshot.tab_name=display_name.or(snapshot.tab_name);}
     let retained=snapshot.data_refs();
     let bytes=serde_json::to_vec(&snapshot).map_err(|error|error.to_string())?;
-    let reference=inner.store.put_payload_pinned(epoch,&bytes,&holder).map_err(|error|error.to_string())?;
+    let reference=inner.store.put_admission_payload_pinned(epoch,&bytes,&holder).map_err(|error|error.to_string())?;
     Ok((tasty_core::DataRef(input.0),Some(tasty_core::UndoCapture {snapshot:tasty_core::DataRef(reference.0),retained})))
 }
 

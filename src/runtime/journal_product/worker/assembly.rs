@@ -61,14 +61,14 @@ pub(super) fn undo(executor:&Executor<StructureDecider>,admitted:&mut Pending,ti
             crate::runtime::surface_restorer::accept_payload(&mut request,reference,&bytes)?;
         }
         let bytes=serde_json::to_vec(&request.input).map_err(|error|error.to_string())?;
-        let input=DataRef(inner.store.put_payload_pinned(epoch,&bytes,&holder).map_err(|error|error.to_string())?.0);
+        let input=DataRef(inner.store.put_admission_payload_pinned(epoch,&bytes,&holder).map_err(|error|error.to_string())?.0);
         admitted.inputs.push(input);inputs.insert(*surface,input);
     }
     if let AssemblyDestination::Tab {pane,..}=destination {snapshot.presentation.selected_tabs.insert(pane,snapshot.root.id);}
     let plan=CreationAssembly {snapshot,destination,inputs,undo:Some(record.id),omit_failed:true};
     plan.validate_graph().map_err(|error|error.to_string())?;
     let bytes=serde_json::to_vec(&plan).map_err(|error|error.to_string())?;
-    let input=DataRef(inner.store.put_payload_pinned(epoch,&bytes,&holder).map_err(|error|error.to_string())?.0);
+    let input=DataRef(inner.store.put_admission_payload_pinned(epoch,&bytes,&holder).map_err(|error|error.to_string())?.0);
     admitted.inputs.push(input);
     Ok(ResultValue::AssemblyResolved {stream:binding.stream,input:Some(input),plan:Some(plan)})
 }
@@ -82,6 +82,7 @@ fn reserve_remap(store:&mut tasty_event_store::EventStore,epoch:tasty_event_stor
     for (kind,ids) in [(IdKind::Workspace,snapshot.workspaces.keys().copied().collect::<Vec<_>>()),(IdKind::Pane,snapshot.panes.keys().copied().collect()),(IdKind::Tab,snapshot.tabs.keys().copied().collect()),(IdKind::Surface,snapshot.surfaces.keys().copied().collect())] {
         if ids.is_empty() {continue;}
         let max=if kind==IdKind::Surface {0x7fff_ffff}else {u32::MAX};
+        admitted.check_ids(ids.len() as u64)?;
         let range=store.reserve_ids(epoch,kind.label(),ids.len() as u64,u64::from(max)).map_err(|error|error.to_string())?;
         maps.insert(kind,ids.into_iter().enumerate().map(|(offset,old)|(old,(range.start+offset as u64) as u32)).collect());
         admitted.reservations.push(range);
@@ -124,12 +125,12 @@ pub(super) fn preset(executor:&Executor<StructureDecider>,admitted:&mut Pending,
     for (label,input) in draft.inputs {
         let surface=maps.get(&IdKind::Surface).and_then(|map|map.get(&label)).copied().ok_or("preset input label missing")?;
         let bytes=serde_json::to_vec(&input).map_err(|error|error.to_string())?;
-        let reference=DataRef(inner.store.put_payload_pinned(epoch,&bytes,&holder).map_err(|error|error.to_string())?.0);
+        let reference=DataRef(inner.store.put_admission_payload_pinned(epoch,&bytes,&holder).map_err(|error|error.to_string())?.0);
         admitted.inputs.push(reference);inputs.insert(surface,reference);
     }
     let plan=CreationAssembly {snapshot:draft.snapshot,destination:draft.destination,inputs,undo:None,omit_failed:draft.omit_failed};
     let bytes=serde_json::to_vec(&plan).map_err(|error|error.to_string())?;
-    let input=DataRef(inner.store.put_payload_pinned(epoch,&bytes,&holder).map_err(|error|error.to_string())?.0);
+    let input=DataRef(inner.store.put_admission_payload_pinned(epoch,&bytes,&holder).map_err(|error|error.to_string())?.0);
     admitted.inputs.push(input);
     Ok(ResultValue::AssemblyResolved {stream:binding.stream,input:Some(input),plan:Some(plan)})
 }

@@ -17,10 +17,20 @@ use crate::runtime::command_executor::{Executor, Request as ExecuteRequest};
 use crate::runtime::journal;
 
 struct Pending {
+    disk_credit:u64,
     admission: Admission,
     followers: Vec<u64>,
     reservations: Vec<tasty_event_store::IdRange>,
     inputs: Vec<tasty_core::DataRef>,
+}
+
+const MAX_ADMISSION_IDS:u64=16_384;
+impl Pending {
+    fn check_ids(&self, additional:u64)->Result<(),String> {
+        let held=self.reservations.iter().map(tasty_event_store::IdRange::len).sum::<u64>();
+        if held.checked_add(additional).is_none_or(|total|total>MAX_ADMISSION_IDS) {return Err("admission ID reservation capacity exhausted".into());}
+        Ok(())
+    }
 }
 
 type Acknowledgements = mpsc::Receiver<(u64, Result<(), String>)>;
@@ -110,7 +120,7 @@ pub(super) fn run(
         } else {
             None
         };
-        let followers = if matches!(request.work, Work::Resolve { .. } | Work::CancelAdmission) {
+        let mut followers = if matches!(request.work, Work::Resolve { .. } | Work::CancelAdmission) {
             pending
                 .get(&request.ticket)
                 .map(|p| p.followers.clone())
@@ -119,11 +129,20 @@ pub(super) fn run(
             Vec::new()
         };
         let checkpoint_requested=matches!(request.work,Work::Capture {..}|Work::RetireEngine(_));
-        let release_admission=matches!(request.work,Work::Resolve {..}|Work::CancelAdmission|Work::Capture {..});
+        let mut release_admission=matches!(request.work,Work::Resolve {..}|Work::CancelAdmission|Work::Capture {..});
+        let is_admit=matches!(request.work,Work::Admit(_));
         let mut result = match &halted {
             Some(reason) => Err(reason.clone()),
             None => handle(&executor, &home, &mut pending, request.ticket, request.work),
         };
+        // A failed preparation is terminal for this unresolved admission. Release its credit
+        // and notify joined callers even when App never sends a later CancelAdmission.
+        if result.is_err() && !is_admit {
+            if let Some(abandoned)=pending.remove(&request.ticket) {
+                for follower in abandoned.followers {if !followers.contains(&follower) {followers.push(follower);}}
+                release_admission=true;
+            }
+        }
         if release_admission {
             let mut inner=executor.inner.lock().expect("worker executor lock");
             let epoch=inner.epoch;
@@ -219,6 +238,7 @@ fn handle(
             selection,
             normal_category_name,
             surface_floor,
+            pending.values().map(|entry|entry.disk_credit).sum(),
         ),
         Work::Admit(admission) => {
             if pending.contains_key(&ticket)
@@ -259,6 +279,13 @@ fn handle(
                     CommandLookup::Miss => {}
                 }
             }
+            let disk_credit={
+                let outstanding=pending.values().map(|entry|entry.disk_credit).sum();
+                let mut inner=executor.inner.lock().map_err(|error|error.to_string())?;
+                let epoch=inner.epoch;
+                inner.store.ensure_new_admission(epoch,outstanding).map_err(|error|error.to_string())?;
+                inner.store.admission_budget().command_credit_bytes
+            };
             let held_bytes: usize = pending
                 .values()
                 .map(|pending| pending.admission.original_digest.len())
@@ -273,6 +300,7 @@ fn handle(
             pending.insert(
                 ticket,
                 Pending {
+                    disk_credit,
                     admission,
                     followers: Vec::new(),
                     reservations: Vec::new(),
@@ -398,6 +426,7 @@ fn handle(
             if kinds.len() > 5 || kinds.iter().any(|(_, count)| *count == 0 || *count > 4096) {
                 return Err("invalid structure ID reservation size".into());
             }
+            pending.get(&ticket).ok_or("ID reservation requires admission")?.check_ids(kinds.iter().map(|(_,count)|u64::from(*count)).sum())?;
             let mut inner = executor.inner.lock().map_err(|e| e.to_string())?;
             let epoch = inner.epoch;
             let mut ranges = Vec::new();
@@ -437,7 +466,7 @@ fn handle(
             let admitted=pending.get_mut(&ticket).ok_or("payload has no admitted owner")?;
             let inner=&mut *executor.inner.lock().map_err(|error|error.to_string())?;
             let epoch=inner.epoch;
-            let reference=inner.store.put_payload_pinned(epoch,&bytes,&format!("admission/{}/{ticket}",epoch.0)).map_err(|error|error.to_string())?;
+            let reference=inner.store.put_admission_payload_pinned(epoch,&bytes,&format!("admission/{}/{ticket}",epoch.0)).map_err(|error|error.to_string())?;
             let reference=tasty_core::DataRef(reference.0);admitted.inputs.push(reference);Ok(ResultValue::InputStored(reference))
         },
         Work::PutPreparation(input) => {
@@ -449,7 +478,7 @@ fn handle(
             let epoch = inner.epoch;
             let reference = inner
                 .store
-                .put_payload_pinned(epoch, &bytes, &format!("admission/{}/{ticket}",epoch.0))
+                .put_admission_payload_pinned(epoch, &bytes, &format!("admission/{}/{ticket}",epoch.0))
                 .map_err(|error| error.to_string())?;
             let reference = tasty_core::DataRef(reference.0);
             admitted.inputs.push(reference);
