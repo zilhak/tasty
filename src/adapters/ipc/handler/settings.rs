@@ -99,7 +99,7 @@ mod tests {
         );
         let caller = plugin_caller("com.tasty.claude");
         let resp = handle_get_plugin_setting(
-            &e,
+            &e.read(),
             &caller,
             json!(1),
             &json!({ "storage_key": "spawn_child_warn_threshold" }),
@@ -113,7 +113,7 @@ mod tests {
         let e = e_session.borrow_mut();
         let caller = plugin_caller("com.tasty.claude");
         let resp = handle_get_plugin_setting(
-            &e,
+            &e.read(),
             &caller,
             json!(1),
             &json!({ "storage_key": "never_stored" }),
@@ -126,7 +126,7 @@ mod tests {
     fn get_remote_transfer_returns_defaults() {
         let mut e_session = engine();
         let e = e_session.borrow_mut();
-        let resp = handle_get_remote_transfer(&e, json!(1));
+        let resp = handle_get_remote_transfer(&e.read(), json!(1));
         assert!(resp.error.is_none());
         let v = resp.result.unwrap();
         assert_eq!(v["dir"], json!(""));
@@ -139,7 +139,7 @@ mod tests {
         let mut e = e_session.borrow_mut();
         e.runtime.settings.remote_transfer.dir = "/tmp/xfer".to_string();
         e.runtime.settings.remote_transfer.max_mb = 42;
-        let resp = handle_get_remote_transfer(&e, json!(1));
+        let resp = handle_get_remote_transfer(&e.read(), json!(1));
         let v = resp.result.unwrap();
         assert_eq!(v["dir"], json!("/tmp/xfer"));
         assert_eq!(v["max_mb"], json!(42));
@@ -157,7 +157,7 @@ mod tests {
         let caller = plugin_caller("com.tasty.claude");
         // 요청의 plugin_id로 다른 플러그인 설정을 읽을 수 없어야 한다.
         let resp = handle_get_plugin_setting(
-            &e,
+            &e.read(),
             &caller,
             json!(1),
             &json!({ "storage_key": "spawn_child_warn_threshold", "plugin_id": "com.tasty.codex" }),

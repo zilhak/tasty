@@ -91,14 +91,17 @@ mod tests {
         activated: Option<(&str, u64)>,
         extra: serde_json::Value,
     ) -> (JsonRpcResponse, Vec<crate::intent::DispatchedIntent>, u32) {
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let (mut state, mut engine_session) = if mirror {
+            crate::state::tests::test_mirror_state()
+        } else {
+            crate::state::tests::test_state()
+        };
         let mut engine = engine_session.borrow_mut();
         let sid = *state
             .active_workspace(&engine)
             .all_surface_ids()
             .first()
             .expect("fixture surface");
-        engine.set_workspace_mirror_fixture(0, mirror);
         if let Some((plugin, instance)) = activated {
             state
                 .plugin_popup_user_activated
@@ -109,7 +112,15 @@ mod tests {
             p.extend(e.clone());
         }
         let mut out = crate::ipc::window_port::IntentOutbox::default();
-        let resp = handle_navigate(&mut out, &mut state, &engine, caller, json!(1), params);
+        let mut scope = crate::ipc::request_scope::RequestScope::capture(&mut state, &engine, None);
+        let resp = handle_navigate(
+            &mut out,
+            &mut scope,
+            &engine.as_ref(),
+            caller,
+            json!(1),
+            params,
+        );
         (resp, out.into_vec(), sid)
     }
 

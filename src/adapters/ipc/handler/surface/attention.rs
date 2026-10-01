@@ -137,11 +137,9 @@ mod tests {
 
     #[test]
     fn clear_is_rejected_for_a_mirror_surface() {
-        let (state, mut engine_session) = crate::state::tests::test_state();
+        let (state, mut engine_session) = crate::state::tests::test_mirror_state();
         let mut engine = engine_session.borrow_mut();
         let sid = state.focused_surface_id(&engine).expect("focused surface");
-        let active = state.active_workspace_index(&engine);
-        engine.make_mirror_fixture(active);
 
         let mut out = crate::ipc::window_port::IntentOutbox::default();
         let resp = handle_attention_clear(
@@ -164,13 +162,11 @@ mod tests {
     // mirror 조회는 서버가 보낸 로컬 기록을 읽을 뿐이므로 허용한다.
     #[test]
     fn get_is_allowed_for_a_mirror_surface() {
-        let (state, mut engine_session) = crate::state::tests::test_state();
+        let (state, mut engine_session) = crate::state::tests::test_mirror_state();
         let mut engine = engine_session.borrow_mut();
         let sid = state.focused_surface_id(&engine).expect("focused surface");
-        let active = state.active_workspace_index(&engine);
-        engine.make_mirror_fixture(active);
 
-        let resp = handle_attention_get(&engine, json!(1), &json!({ "surface_id": sid }));
+        let resp = handle_attention_get(&engine.as_ref(), json!(1), &json!({ "surface_id": sid }));
         assert!(resp.error.is_none(), "{:?}", resp.error);
         assert_eq!(
             resp.result,

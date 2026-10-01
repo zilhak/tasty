@@ -57,119 +57,98 @@ impl TabMenuTarget {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::tests::test_state;
+    use tasty_core::{DomainEvent as E, SurfaceSpec};
 
-    fn push_workspace(engine: &crate::runtime::engine_read::EngineRead<'_>) -> u32 {
-        let event = crate::app::services::apply_create_workspace_inner(
-            engine,
-            crate::app::services::WorkspaceCreationParams::terminal(),
-        )
-        .expect("create workspace");
-        let crate::app::command::CoreEvent::WorkspaceCreated { id, .. } = event else {
-            panic!("apply_create_workspace_inner must return WorkspaceCreated");
-        };
-        id
+    fn fixture(extra: Vec<E>) -> crate::runtime::engine_session::EngineSession {
+        let mut events = vec![E::CategoryCreated {
+            id: 0,
+            name: "normal".into(),
+            index: 0,
+        }];
+        for id in 1..=3 {
+            events.push(E::WorkspaceCreated {
+                id,
+                name: format!("workspace {id}"),
+                category: 0,
+                index: (id - 1) as usize,
+                pane: id,
+            });
+            events.push(E::TabCreated {
+                id,
+                pane: id,
+                index: 0,
+                name: "first".into(),
+                surface: SurfaceSpec {
+                    id,
+                    kind: "terminal".into(),
+                    data: None,
+                },
+            });
+        }
+        for id in 4..=5 {
+            events.push(E::TabCreated {
+                id,
+                pane: 1,
+                index: (id - 3) as usize,
+                name: "extra".into(),
+                surface: SurfaceSpec {
+                    id,
+                    kind: "terminal".into(),
+                    data: None,
+                },
+            });
+        }
+        events.extend(extra);
+        crate::state::tests::test_state_from_model(crate::state::tests::test_model(events)).1
     }
 
-    /// 메뉴가 열린 동안 에이전트가 앞쪽 workspace를 닫아도 메뉴는 연 workspace를 가리킨다.
     #[test]
     fn workspace_target_follows_its_workspace_after_agent_close() {
-        let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
-        let a = push_workspace(&mut engine);
-        let b = push_workspace(&mut engine);
-        let target =
-            WorkspaceMenuTarget::capture(&engine, engine.find_workspace_index_for_id(a).unwrap());
-
-        assert!(state.close_workspace_at(
-            &mut engine,
-            0,
-            crate::state::WorkspaceCloseOrigin::Agent
-        ));
-        assert_eq!(
-            target.resolve(&engine),
-            engine.find_workspace_index_for_id(a)
-        );
-        assert_ne!(
-            target.resolve(&engine),
-            engine.find_workspace_index_for_id(b)
-        );
+        let before = fixture(vec![]);
+        let target = WorkspaceMenuTarget::capture(&before.core_state, 1);
+        let after = fixture(vec![E::WorkspaceClosed { id: 1 }]);
+        assert_eq!(target.resolve(&after.core_state), Some(0));
+        assert_eq!(after.core_state.workspace_at(0).unwrap().id, 2);
     }
 
-    /// 메뉴가 열린 동안 workspace 순서가 바뀌어도 메뉴는 연 workspace를 가리킨다.
     #[test]
     fn workspace_target_follows_its_workspace_after_reorder() {
-        let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
-        let a = push_workspace(&mut engine);
-        let target =
-            WorkspaceMenuTarget::capture(&engine, engine.find_workspace_index_for_id(a).unwrap());
-
-        let from = engine.find_workspace_index_for_id(a).unwrap();
-        state.move_workspace(&mut engine, from, 0);
-        assert_eq!(target.resolve(&engine), Some(0));
+        let before = fixture(vec![]);
+        let target = WorkspaceMenuTarget::capture(&before.core_state, 1);
+        let after = fixture(vec![E::WorkspaceMoved {
+            id: 2,
+            category: 0,
+            index: 0,
+        }]);
+        assert_eq!(target.resolve(&after.core_state), Some(0));
     }
 
-    /// 대상 workspace가 닫혔으면 다른 workspace로 넘어가지 않는다.
     #[test]
     fn workspace_target_is_gone_after_its_workspace_closes() {
-        let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
-        push_workspace(&mut engine);
-        push_workspace(&mut engine);
-        let target = WorkspaceMenuTarget::capture(&engine, 1);
-
-        assert!(state.close_workspace_at(
-            &mut engine,
-            1,
-            crate::state::WorkspaceCloseOrigin::Agent
-        ));
-        assert_eq!(target.resolve(&engine), None);
+        let before = fixture(vec![]);
+        let target = WorkspaceMenuTarget::capture(&before.core_state, 1);
+        let after = fixture(vec![E::WorkspaceClosed { id: 2 }]);
+        assert_eq!(target.resolve(&after.core_state), None);
     }
 
-    /// 메뉴가 열린 동안 탭 순서가 바뀌어도 메뉴는 연 탭을 가리킨다.
     #[test]
     fn tab_target_follows_its_tab_after_reorder() {
-        let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
-        state.add_tab(&mut engine).unwrap();
-        state.add_tab(&mut engine).unwrap();
-        let pane_id = state.focused_pane_id(&engine);
-        let first = engine.find_pane_by_id(pane_id).unwrap().tabs[0].id;
-        let middle = engine.find_pane_by_id(pane_id).unwrap().tabs[1].id;
-        let target = TabMenuTarget::capture(&engine, pane_id, 1);
-
-        let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-        core.apply(
-            &mut engine,
-            crate::app::command::DomainIntent::MoveTab {
-                pane_id,
-                tab_id: first,
-                to_index: 2,
-            },
-        )
-        .expect("move tab");
-        let (pid, index) = target.resolve(&engine).expect("tab still exists");
-        assert_eq!(pid, pane_id);
-        assert_eq!(engine.find_pane_by_id(pid).unwrap().tabs[index].id, middle);
+        let before = fixture(vec![]);
+        let target = TabMenuTarget::capture(&before.core_state, 1, 1);
+        let after = fixture(vec![E::TabMoved {
+            id: 1,
+            pane: 1,
+            index: 2,
+        }]);
+        assert_eq!(target.resolve(&after.core_state), Some((1, 0)));
+        assert_eq!(target.tab_id(), Some(4));
     }
 
-    /// 대상 탭이 닫혔으면 다른 탭으로 넘어가지 않는다.
     #[test]
     fn tab_target_is_gone_after_its_tab_closes() {
-        let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
-        state.add_tab(&mut engine).unwrap();
-        let pane_id = state.focused_pane_id(&engine);
-        let first = engine.find_pane_by_id(pane_id).unwrap().tabs[0].id;
-        let target = TabMenuTarget::capture(&engine, pane_id, 0);
-
-        let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
-        core.apply(
-            &mut engine,
-            crate::app::command::DomainIntent::CloseTab { tab_id: first },
-        )
-        .expect("close tab");
-        assert_eq!(target.resolve(&engine), None);
+        let before = fixture(vec![]);
+        let target = TabMenuTarget::capture(&before.core_state, 1, 0);
+        let after = fixture(vec![E::TabClosed { id: 1 }]);
+        assert_eq!(target.resolve(&after.core_state), None);
     }
 }

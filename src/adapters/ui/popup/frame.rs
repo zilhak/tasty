@@ -210,7 +210,7 @@ mod on_close_drain_tests {
 
         let mut map: Lookup = HashMap::new();
         map.insert("notifications", plain_hook);
-        drain_on_close_hooks_with_lookup(&ctx(), &mut state, &mut engine, lookup_from(map));
+        drain_on_close_hooks_with_lookup(&ctx(), &mut state, &engine.read(), lookup_from(map));
 
         assert_eq!(PLAIN_HOOK_FIRES.load(Ordering::SeqCst), 1);
     }
@@ -247,7 +247,7 @@ mod on_close_drain_tests {
         let mut map: Lookup = HashMap::new();
         map.insert("notifications", hook_a);
         map.insert("search_bar", hook_b);
-        drain_on_close_hooks_with_lookup(&ctx(), &mut state, &mut engine, lookup_from(map));
+        drain_on_close_hooks_with_lookup(&ctx(), &mut state, &engine.read(), lookup_from(map));
 
         assert_eq!(A_FIRES.load(Ordering::SeqCst), 1);
         assert_eq!(B_FIRES.load(Ordering::SeqCst), 1);
@@ -277,7 +277,7 @@ mod on_close_drain_tests {
 
         let mut map: Lookup = HashMap::new();
         map.insert("notifications", looping_hook);
-        drain_on_close_hooks_with_lookup(&ctx(), &mut state, &mut engine, lookup_from(map));
+        drain_on_close_hooks_with_lookup(&ctx(), &mut state, &engine.read(), lookup_from(map));
 
         assert_eq!(LOOP_FIRES.load(Ordering::SeqCst), ON_CLOSE_DRAIN_MAX_ROUNDS);
         // 상한을 넘긴 마지막 배치는 이미 큐에서 꺼냈으며 다시 넣지 않는다.

@@ -677,16 +677,19 @@ mod explorer_open_tests {
     #[test]
     fn an_explorer_open_dispatches_the_file_with_its_origin_on_both_sides() {
         for mirror in [false, true] {
-            let (mut state, mut engine_session) = crate::state::tests::test_state();
+            let (mut state, mut engine_session) = if mirror {
+                crate::state::tests::test_mirror_state()
+            } else {
+                crate::state::tests::test_state()
+            };
             let mut engine = engine_session.borrow_mut();
-            engine.set_workspace_mirror_fixture(0, mirror);
             let sid = engine
                 .workspace_at(0)
                 .expect("workspace index is valid")
                 .all_surface_ids()[0];
             super::apply_explorer_action(
                 &mut state,
-                &mut engine,
+                &engine.read(),
                 sid,
                 crate::explorer_ui::ExplorerAction::OpenFile("/some/doc.md".into()),
             );

@@ -67,7 +67,12 @@ mod tests {
         first.recent_files.add("markdown", "/notes/one.md".into());
         second.recent_files.add("markdown", "/notes/two.md".into());
         let query = |state: &mut RequestContext, core: &crate::core::CoreState| {
-            let scope = crate::ipc::request_scope::RequestScope::capture(state, core, None);
+            let scope = crate::ipc::request_scope::RequestScope::capture(
+                state,
+                core,
+                #[cfg(feature = "gui")]
+                None,
+            );
             handle_query(&scope, json!(1), json!({"kind": "markdown"}))
                 .result
                 .unwrap()

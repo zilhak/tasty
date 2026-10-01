@@ -685,8 +685,7 @@ mod tests {
     }
 
     fn tab_with_surface(sid: crate::model::SurfaceId) -> crate::model::Tab {
-        let surface: Box<dyn crate::model::Surface> =
-            Box::new(crate::model::EmptySurface::new(sid));
+        let surface = crate::model::SurfaceDescriptor::new(sid, "empty");
         crate::model::Tab::new_with_surface(1, "t".to_string(), surface)
     }
 
@@ -699,7 +698,7 @@ mod tests {
         engine.set_mirror_surface_busy(sid, true);
         let tabs = vec![tab_with_surface(sid)];
 
-        let result = compute_tab_is_busy(&engine, &tabs);
+        let result = compute_tab_is_busy(&engine.read(), &tabs);
 
         assert_eq!(result, vec![true]);
     }
@@ -711,7 +710,7 @@ mod tests {
         let sid = 4343;
         let tabs = vec![tab_with_surface(sid)];
 
-        let result = compute_tab_is_busy(&engine, &tabs);
+        let result = compute_tab_is_busy(&engine.read(), &tabs);
 
         assert_eq!(result, vec![false]);
     }

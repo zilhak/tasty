@@ -803,7 +803,7 @@ mod sizer_wiring_tests {
             .popups
             .open_at_focused(COMMAND_PALETTE_POPUP_ID, egui::pos2(100.0, 100.0));
         state.command_palette.query = query.to_string();
-        run_one_frame(&mut state, &mut engine);
+        run_one_frame(&mut state, &engine.read());
         state
             .popups
             .get_mut(COMMAND_PALETTE_POPUP_ID)

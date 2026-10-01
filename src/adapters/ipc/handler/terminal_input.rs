@@ -94,7 +94,7 @@ mod tests {
         let mut out = IntentOutbox::default();
         let response = handle_input_rule_update(
             &mut out,
-            &engine,
+            &engine.read(),
             &CallerContext::Local,
             json!(1),
             &json!({ "app": "claude", "shift_enter_newline": true }),
@@ -122,7 +122,7 @@ mod tests {
             assert!(
                 handle_input_rule_update(
                     &mut out,
-                    &engine,
+                    &engine.read(),
                     &CallerContext::Local,
                     json!(1),
                     &params,
@@ -151,7 +151,7 @@ mod tests {
         assert!(
             handle_input_rule_update(
                 &mut out,
-                &engine,
+                &engine.read(),
                 &caller,
                 json!(1),
                 &params,
@@ -167,6 +167,7 @@ mod tests {
         engine.runtime.settings = settings;
         assert!(
             engine
+                .runtime
                 .settings
                 .terminal_input
                 .initialized_defaults
@@ -176,7 +177,7 @@ mod tests {
         let mut out = IntentOutbox::default();
         let response = handle_input_rule_update(
             &mut out,
-            &engine,
+            &engine.read(),
             &caller,
             json!(2),
             &params,
