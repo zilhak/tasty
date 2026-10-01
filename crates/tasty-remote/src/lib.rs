@@ -27,3 +27,5 @@ pub mod outbound;
 pub mod pending_connection;
 
 pub mod browser;
+
+pub mod profile_detection;

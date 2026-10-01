@@ -60,7 +60,7 @@ pub(crate) fn handle_get(id: Value, params: &Value) -> JsonRpcResponse {
 /// 일반 fields로 프로필을 추가·수정한다. tasty-attach도 같은 입력을 쓴다.
 /// ssh의 host/user/port/identity_file/extra_options/shell 편의 인자는 fields/passkey로 변환한다.
 /// identity_file은 path passkey이고 shell에서 port_mode를 도출한다.
-pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
+pub(crate) fn handle_add(core:&mut crate::app::services::AppServices,id: Value, params: &Value) -> JsonRpcResponse {
     let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'name' parameter");
     };
@@ -157,7 +157,7 @@ pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
     match profiles.save() {
         Ok(()) => {
             if will_detect {
-                spawn_detect(name.to_string());
+                if let Err(error)=core.profile_detections.enqueue(name.to_string()) {return JsonRpcResponse::internal_error(id,error);}
             }
             JsonRpcResponse::success(
                 id,
@@ -171,7 +171,7 @@ pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
 }
 
 /// `remote.profile.detect` { name } → 재감지(프로브 체인)를 워커 스레드에서 실행.
-pub(crate) fn handle_detect(id: Value, params: &Value) -> JsonRpcResponse {
+pub(crate) fn handle_detect(core:&mut crate::app::services::AppServices,id: Value, params: &Value) -> JsonRpcResponse {
     let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'name' parameter");
     };
@@ -183,16 +183,10 @@ pub(crate) fn handle_detect(id: Value, params: &Value) -> JsonRpcResponse {
             format!("remote profile '{name}' not found"),
         );
     }
-    spawn_detect(name.to_string());
+    if let Err(error)=core.profile_detections.enqueue(name.to_string()) {return JsonRpcResponse::internal_error(id,error);}
     JsonRpcResponse::success(id, json!({ "detecting": true, "name": name }))
 }
 
-fn spawn_detect(name: String) {
-    std::thread::spawn(move || match tasty_ssh::detect_and_persist(&name) {
-        Ok(mode) => tracing::info!("remote profile '{name}' 감지 성공 → {}", mode.as_str()),
-        Err(e) => tracing::warn!("remote profile '{name}' 감지 실패(비활성): {e}"),
-    });
-}
 
 /// SSH config와 Include에서 Host alias를 읽는다. Match exec를 실행할 수 있는 ssh -G는 쓰지 않는다.
 /// hostname/user/port는 표시용이며 프로필에 복사하지 않는다.

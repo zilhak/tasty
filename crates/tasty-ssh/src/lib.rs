@@ -485,8 +485,12 @@ impl SshCancel {
 
     /// 취소를 요청한다 — 등록된 자식 ssh 를 kill + wait(좀비 방지)하고, 이후의 발견
     /// 시도도 spawn 되지 않게 플래그를 세운다. 여러 번 불러도 안전하다.
+    /// Mark cancellation without waiting on the child. The owning probe observes this flag
+    /// and performs kill/reap before its worker returns. This is not a completion receipt.
+    pub fn request_cancel(&self) {self.inner.cancelled.store(true, Ordering::SeqCst);}
+
     pub fn cancel(&self) {
-        self.inner.cancelled.store(true, Ordering::SeqCst);
+        self.request_cancel();
         let child = lock_slot(&self.inner.child).take();
         if let Some(mut child) = child {
             kill_and_reap(&mut child);
@@ -676,6 +680,7 @@ fn wait_with_timeout(owner: &mut ChildOwner, budget: Duration) -> bool {
     let deadline = Instant::now() + budget;
     let mut nap = Duration::from_millis(5);
     loop {
+        if owner.is_cancelled() {return true;}
         match owner.try_exited() {
             ChildPoll::Exited | ChildPoll::Taken => return true,
             ChildPoll::Running => {}
@@ -1029,7 +1034,7 @@ pub fn apply_shell_to_profile(
 }
 
 /// 프로필 접속 정보로 자동감지를 1회 실행한다(셸 무관 — 항상 프로브 체인).
-fn detect_for_profile(profile: &RemoteProfile, passkeys: &Passkeys) -> Result<PortMode> {
+pub fn detect_for_profile(profile: &RemoteProfile, passkeys: &Passkeys) -> Result<PortMode> {
     let ssh = resolve_ssh_path();
     let target = SshTarget::from_remote_profile(profile, passkeys)?;
     // 이 ssh 프로필의 remote_tasty가 있으면 사용하고 없으면 tasty를 실행한다.

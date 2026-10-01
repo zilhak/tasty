@@ -60,12 +60,12 @@ impl AttemptToken {
     pub fn is_active(&self)->bool {self.0.active.load(std::sync::atomic::Ordering::Acquire)}
     pub(crate) fn cancel(&self) {
         self.0.active.store(false,std::sync::atomic::Ordering::Release);
-        if let Ok(mut ssh)=self.0.ssh.lock() {for cancel in ssh.drain(..) {cancel.cancel();}}
+        if let Ok(mut ssh)=self.0.ssh.lock() {for cancel in ssh.drain(..) {cancel.request_cancel();}}
         if let Ok(mut sockets)=self.0.sockets.lock() {for socket in sockets.drain(..) {let _=socket.shutdown(std::net::Shutdown::Both);}}
     }
     pub fn register_ssh(&self,cancel:tasty_ssh::SshCancel)->Result<(),String> {
         let mut handles=self.0.ssh.lock().map_err(|_|"SSH cancellation state poisoned".to_owned())?;
-        if !self.is_active() {cancel.cancel();return Err("remote attempt retired".into());}
+        if !self.is_active() {cancel.request_cancel();return Err("remote attempt retired".into());}
         handles.push(cancel);Ok(())
     }
     fn complete(&self) {

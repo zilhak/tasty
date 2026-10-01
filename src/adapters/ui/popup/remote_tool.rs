@@ -2,7 +2,8 @@
 //! tasty-attach 프로필은 Attach 탭에서만 다루며 SSH 프로필 참조 또는 직접 입력을 지원한다.
 
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Weak};
+use crate::app::remote_tool_files::{FileAction,FileRequest,FileValue};
 
 use tasty_remote_profiles::{
     KNOWN_PASSKEY_KINDS, PORT_MODES, Passkey, Passkeys, RemoteProfile, RemoteProfiles, SHELLS,
@@ -70,59 +71,62 @@ enum Sub {
 
 /// 프로필 폼 버퍼. ssh 는 전용 필드, 그 외는 generic key-value(`fields`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct ProfileForm {
-    kind: String,
-    name: String,
-    label: String,
+pub(crate) struct ProfileForm {
+    pub(crate) kind: String,
+    pub(crate) name: String,
+    pub(crate) label: String,
     // ssh 전용
-    host: String,
-    user: String,
-    port: String,
-    shell: String,
+    pub(crate) host: String,
+    pub(crate) user: String,
+    pub(crate) port: String,
+    pub(crate) shell: String,
     // 공통
-    passkey_ref: String,
-    fields: Vec<(String, String)>, // generic(비-ssh)
-    editing_original: Option<String>,
+    pub(crate) passkey_ref: String,
+    pub(crate) fields: Vec<(String, String)>, // generic(비-ssh)
+    pub(crate) editing_original: Option<String>,
 }
 
 /// Passkey 폼 버퍼.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct PasskeyForm {
-    name: String,
-    kind: String,
-    value: String,
-    editing_original: Option<String>,
+pub(crate) struct PasskeyForm {
+    pub(crate) name: String,
+    pub(crate) kind: String,
+    pub(crate) value: String,
+    pub(crate) editing_original: Option<String>,
 }
 
 /// Attach 폼 버퍼. Connection 은 ref(ssh 프로필 참조) ↔ inline(자체 연결정보) 토글.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct AttachForm {
-    name: String,
-    label: String,
+pub(crate) struct AttachForm {
+    pub(crate) name: String,
+    pub(crate) label: String,
     /// true = ref 모드(`ssh_ref`), false = inline 모드(host/user/…).
-    mode_ref: bool,
-    ssh_ref: String,
+    pub(crate) mode_ref: bool,
+    pub(crate) ssh_ref: String,
     // inline 전용
-    host: String,
-    user: String,
-    port: String,
-    shell: String,
-    passkey_ref: String,
+    pub(crate) host: String,
+    pub(crate) user: String,
+    pub(crate) port: String,
+    pub(crate) shell: String,
+    pub(crate) passkey_ref: String,
     // Remote tasty 그룹 (모드 무관 공통)
-    remote_tasty: String,
-    port_mode: String,
-    port_file: String,
-    editing_original: Option<String>,
+    pub(crate) remote_tasty: String,
+    pub(crate) port_mode: String,
+    pub(crate) port_file: String,
+    pub(crate) editing_original: Option<String>,
 }
 
 #[derive(Clone, Debug)]
 struct DetectJob {
     name: String,
-    slot: Arc<Mutex<Option<Result<String, String>>>>,
+    id:tasty_remote::profile_detection::DetectionId,
 }
 
 #[derive(Clone, Debug, Default)]
 struct UiState {
+    identity:Arc<()>,
+    view:Weak<()>,
+    revealed_values:std::collections::HashMap<String,(Passkey,String)>,
     tab: Tab,
     profile_view: Sub,
     attach_view: Sub,
@@ -291,7 +295,7 @@ fn is_unknown_kind(kind: &str) -> bool {
 /// 닫을 때 폼·조회 슬롯·필터 초안을 버린다. 적용된 필터는 별도 키에 남긴다.
 pub fn on_close_remote_tool_popup(
     ctx: &egui::Context,
-    _state: &mut MainViewState,
+    state: &mut MainViewState,
     _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     clear_ui(ctx);
@@ -300,14 +304,14 @@ pub fn on_close_remote_tool_popup(
 /// PopupDef.draw_fn 진입점.
 pub fn draw_remote_tool_popup(
     ui: &mut egui::Ui,
-    _state: &mut MainViewState,
+    state: &mut MainViewState,
     _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();
     let mut st = read_ui(&ctx);
 
-    poll_detect(&mut st);
+    st.view=state.webview_identity.clone();
 
     let mut profiles = RemoteProfiles::load();
     let passkeys = Passkeys::load();
@@ -559,10 +563,7 @@ fn draw_profiles_tab(
                 draw_confirm_delete(ui, th, t("remote_tool.noun_profile"), &name, None)
             {
                 if act {
-                    profiles.remove(&name);
-                    if let Err(e) = profiles.save() {
-                        tracing::warn!("remote profile 삭제 후 저장 실패: {e}");
-                    }
+                    enqueue(ui.ctx(),st,FileAction::DeleteProfile(name.clone()));
                 }
                 st.profile_view = Sub::List;
             }
@@ -669,7 +670,7 @@ fn draw_profile_list(
             }
             ProfileRowAction::Redetect => {
                 if st.detecting.is_none() {
-                    st.detecting = Some(spawn_detect(ui.ctx(), p.name.clone()));
+                    enqueue(ui.ctx(),st,FileAction::Detect(p.name.clone()));
                 }
             }
         }
@@ -1276,13 +1277,7 @@ fn draw_profile_form(
         return;
     }
     if do_save {
-        match save_profile(ctx, st, profiles, passkeys) {
-            Ok(()) => {
-                st.perr = None;
-                st.profile_view = Sub::List;
-            }
-            Err(e) => st.perr = Some(e),
-        }
+        enqueue(ui.ctx(),st,FileAction::SaveProfile(st.pform.clone()));
     }
 }
 
@@ -1305,85 +1300,7 @@ fn passkey_dropdown_row(ui: &mut egui::Ui, th: &Theme, value: &mut String, passk
     });
 }
 
-fn save_profile(
-    ctx: &egui::Context,
-    st: &mut UiState,
-    profiles: &mut RemoteProfiles,
-    _passkeys: &Passkeys,
-) -> Result<(), String> {
-    let f = st.pform.clone();
-    let kind = f.kind.trim();
-    if kind.is_empty() {
-        return Err(t("remote_tool.err_type_empty").to_string());
-    }
-    let name = f.name.trim();
-    if name.is_empty() {
-        return Err(t("remote_tool.err_name_empty").to_string());
-    }
-    let is_ssh = kind == "ssh";
-    if is_ssh {
-        if f.host.trim().is_empty() {
-            return Err(t("remote_tool.err_host_empty").to_string());
-        }
-        if !f.port.trim().is_empty() && f.port.trim().parse::<u16>().is_err() {
-            return Err(t("remote_tool.err_port_invalid").to_string());
-        }
-    }
-    if profiles
-        .profiles
-        .iter()
-        .any(|p| p.name == name && Some(p.name.as_str()) != st.pform.editing_original.as_deref())
-    {
-        return Err(t("remote_tool.err_name_dup").to_string());
-    }
 
-    let mut p = RemoteProfile::new(name, kind);
-    if !f.label.trim().is_empty() {
-        p.label = Some(f.label.trim().to_string());
-    }
-    if !f.passkey_ref.is_empty() {
-        p.passkey_ref = Some(f.passkey_ref.clone());
-    }
-    let mut needs_detect = false;
-    if is_ssh {
-        p.set_field("host", f.host.trim().to_string());
-        if !f.user.trim().is_empty() {
-            p.set_field("user", f.user.trim().to_string());
-        }
-        if !f.port.trim().is_empty() {
-            p.set_field("port", f.port.trim().to_string());
-        }
-        let shell = if is_valid_shell(&f.shell) {
-            f.shell.clone()
-        } else {
-            "auto".into()
-        };
-        p.set_field("shell", shell.clone());
-        // 명시 셸 → port_mode 즉시 도출, auto → 저장 후 워커 감지.
-        needs_detect = tasty_remote_profiles::shell_to_port_mode(&shell).is_none();
-        if let Some(mode) = tasty_remote_profiles::shell_to_port_mode(&shell) {
-            p.set_field("port_mode", mode);
-        }
-    } else {
-        for (k, v) in &f.fields {
-            if !k.trim().is_empty() {
-                p.set_field(k.trim().to_string(), v.clone());
-            }
-        }
-    }
-
-    if let Some(orig) = &st.pform.editing_original
-        && orig != name
-    {
-        profiles.remove(orig);
-    }
-    profiles.upsert(p);
-    profiles.save().map_err(|e| format!("save: {e}"))?;
-    if needs_detect && st.detecting.is_none() {
-        st.detecting = Some(spawn_detect(ctx, name.to_string()));
-    }
-    Ok(())
-}
 
 fn draw_attach_tab(
     ui: &mut egui::Ui,
@@ -1400,10 +1317,7 @@ fn draw_attach_tab(
                 draw_confirm_delete(ui, th, t("remote_tool.noun_attach"), &name, None)
             {
                 if act {
-                    profiles.remove(&name);
-                    if let Err(e) = profiles.save() {
-                        tracing::warn!("attach 삭제 후 저장 실패: {e}");
-                    }
+                    enqueue(ui.ctx(),st,FileAction::DeleteProfile(name.clone()));
                 }
                 st.attach_view = Sub::List;
             }
@@ -1867,90 +1781,11 @@ fn draw_attach_form(
         return;
     }
     if do_save {
-        match save_attach(st, profiles) {
-            Ok(()) => {
-                st.aerr = None;
-                st.attach_view = Sub::List;
-            }
-            Err(e) => st.aerr = Some(e),
-        }
+        enqueue(ui.ctx(),st,FileAction::SaveAttach(st.aform.clone()));
     }
 }
 
-fn save_attach(st: &mut UiState, profiles: &mut RemoteProfiles) -> Result<(), String> {
-    let f = st.aform.clone();
-    let name = f.name.trim();
-    if name.is_empty() {
-        return Err(t("remote_tool.err_name_empty").to_string());
-    }
-    if f.mode_ref {
-        if f.ssh_ref.is_empty() {
-            return Err(t("remote_tool.err_ssh_ref_empty").to_string());
-        }
-    } else {
-        if f.host.trim().is_empty() {
-            return Err(t("remote_tool.err_host_empty").to_string());
-        }
-        if !f.port.trim().is_empty() && f.port.trim().parse::<u16>().is_err() {
-            return Err(t("remote_tool.err_port_invalid").to_string());
-        }
-    }
-    // Attach와 다른 프로필이 같은 저장소를 쓰므로 모든 프로필에서 이름 중복을 확인한다.
-    if profiles
-        .profiles
-        .iter()
-        .any(|p| p.name == name && Some(p.name.as_str()) != f.editing_original.as_deref())
-    {
-        return Err(t("remote_tool.err_name_dup").to_string());
-    }
 
-    let mut p = RemoteProfile::new(name, ATTACH_KIND);
-    if !f.label.trim().is_empty() {
-        p.label = Some(f.label.trim().to_string());
-    }
-    if f.mode_ref {
-        p.set_field("ssh_ref", f.ssh_ref.clone());
-    } else {
-        p.set_field("host", f.host.trim().to_string());
-        if !f.user.trim().is_empty() {
-            p.set_field("user", f.user.trim().to_string());
-        }
-        if !f.port.trim().is_empty() {
-            p.set_field("port", f.port.trim().to_string());
-        }
-        let shell = if is_valid_shell(&f.shell) {
-            f.shell.clone()
-        } else {
-            "auto".into()
-        };
-        // "auto" 는 AttachView 기본값 — 파일을 깨끗하게 유지하려 기본값은 쓰지 않는다.
-        if shell != "auto" {
-            p.set_field("shell", shell);
-        }
-        if !f.passkey_ref.is_empty() {
-            p.passkey_ref = Some(f.passkey_ref.clone());
-        }
-    }
-    let rt = f.remote_tasty.trim();
-    if !rt.is_empty() && rt != "tasty" {
-        p.set_field("remote_tasty", rt.to_string());
-    }
-    if is_valid_port_mode(&f.port_mode) && f.port_mode != "auto" {
-        p.set_field("port_mode", f.port_mode.clone());
-    }
-    if !f.port_file.trim().is_empty() {
-        p.set_field("port_file", f.port_file.trim().to_string());
-    }
-
-    if let Some(orig) = &f.editing_original
-        && orig != name
-    {
-        profiles.remove(orig);
-    }
-    profiles.upsert(p);
-    profiles.save().map_err(|e| format!("save: {e}"))?;
-    Ok(())
-}
 
 fn draw_passkeys_tab(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: &Passkeys) {
     match st.passkey_view.clone() {
@@ -1965,11 +1800,7 @@ fn draw_passkeys_tab(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
                 Some(t("remote_tool.passkey_delete_hint")),
             ) {
                 if act {
-                    let mut pk = Passkeys::load();
-                    pk.remove(&name);
-                    if let Err(e) = pk.save() {
-                        tracing::warn!("passkey 삭제 후 저장 실패: {e}");
-                    }
+                    enqueue(ui.ctx(),st,FileAction::DeletePasskey(name.clone()));
                 }
                 st.passkey_view = Sub::List;
             }
@@ -2007,7 +1838,7 @@ fn draw_passkey_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
     scroll_list_with_fade(ui, th, |ui| {
         for k in &passkeys.passkeys {
             let revealed = st.revealed.contains(&k.name);
-            if let Some(a) = draw_passkey_row(ui, th, k, revealed) {
+            if let Some(a) = draw_passkey_row(ui, th, k, revealed,st.revealed_values.get(&k.name).filter(|(key,_)|key==k).map(|(_,value)|value.as_str())) {
                 action = Some((k.name.clone(), a));
             }
         }
@@ -2017,8 +1848,10 @@ fn draw_passkey_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
             PasskeyRowAction::Reveal => {
                 if st.revealed.contains(&name) {
                     st.revealed.remove(&name);
-                } else {
+                    st.revealed_values.remove(&name);
+                } else if let Some(key)=passkeys.get(&name) {
                     st.revealed.insert(name);
+                    enqueue(ui.ctx(),st,FileAction::Reveal {key:key.clone(),editing:false});
                 }
             }
             PasskeyRowAction::Edit => {
@@ -2026,11 +1859,12 @@ fn draw_passkey_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
                     st.kform = PasskeyForm {
                         name: k.name.clone(),
                         kind: k.kind.clone(),
-                        value: reveal_value(k),
+                        value:String::new(),
                         editing_original: Some(k.name.clone()),
                     };
                     st.kerr = None;
                     st.passkey_view = Sub::Form;
+                    enqueue(ui.ctx(),st,FileAction::Reveal {key:k.clone(),editing:true});
                 }
             }
             PasskeyRowAction::Delete => {
@@ -2051,6 +1885,7 @@ fn draw_passkey_row(
     th: &Theme,
     k: &Passkey,
     revealed: bool,
+    revealed_value:Option<&str>,
 ) -> Option<PasskeyRowAction> {
     let mut out = None;
     ui.horizontal(|ui| {
@@ -2077,7 +1912,7 @@ fn draw_passkey_row(
                 }
             });
             let val = if revealed {
-                reveal_value(k)
+                revealed_value.unwrap_or("••••••••").to_string()
             } else {
                 "••••••••".into()
             };
@@ -2142,13 +1977,7 @@ fn draw_passkey_row(
 }
 
 /// 로컬 GUI 전용 값 노출. path kind 는 경로, inline kind 는 관리 파일 내용을 읽는다.
-fn reveal_value(k: &Passkey) -> String {
-    if k.kind == "inline" {
-        std::fs::read_to_string(&k.path).unwrap_or_else(|_| "(unreadable)".into())
-    } else {
-        k.path.clone()
-    }
-}
+
 
 fn draw_passkey_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
     let full_x = ui.clip_rect().x_range();
@@ -2259,50 +2088,11 @@ fn draw_passkey_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
         return;
     }
     if do_save {
-        match save_passkey(st) {
-            Ok(()) => {
-                st.kerr = None;
-                st.passkey_view = Sub::List;
-            }
-            Err(e) => st.kerr = Some(e),
-        }
+        enqueue(ui.ctx(),st,FileAction::SavePasskey(st.kform.clone()));
     }
 }
 
-fn save_passkey(st: &mut UiState) -> Result<(), String> {
-    let f = st.kform.clone();
-    let name = f.name.trim();
-    if name.is_empty() {
-        return Err(t("remote_tool.err_name_empty").to_string());
-    }
-    if !is_valid_passkey_name(name) {
-        return Err(t("remote_tool.err_name_format").to_string());
-    }
-    if f.value.trim().is_empty() {
-        return Err(t("remote_tool.err_value_empty").to_string());
-    }
-    let mut pk = Passkeys::load();
-    if pk
-        .passkeys
-        .iter()
-        .any(|k| k.name == name && Some(k.name.as_str()) != f.editing_original.as_deref())
-    {
-        return Err(t("remote_tool.err_name_dup").to_string());
-    }
-    if let Some(orig) = &f.editing_original
-        && orig != name
-    {
-        pk.remove(orig);
-    }
-    let res = if f.kind == "inline" {
-        pk.upsert_inline(name, &f.value)
-    } else {
-        pk.upsert_path(name, f.value.trim().to_string())
-    };
-    res.map_err(|e| format!("{e}"))?;
-    pk.save().map_err(|e| format!("save: {e}"))?;
-    Ok(())
-}
+
 
 fn draw_confirm_delete(
     ui: &mut egui::Ui,
@@ -2419,75 +2209,11 @@ fn indented_hint(
     });
 }
 
-/// detect 슬롯의 첫 poison을 기록한다. Option 슬롯은 복구해 읽으며
-/// 비어 있는 슬롯을 완료로 처리하지 않는다. 근거: docs/dev-guide/error-handling.md.
-static DETECT_SLOT_POISONED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-const DETECT_SLOT_WHAT: &str = "remote tool detect slot";
-fn spawn_detect(ctx: &egui::Context, name: String) -> DetectJob {
-    let slot: Arc<Mutex<Option<Result<String, String>>>> = Arc::new(Mutex::new(None));
-    let slot_w = Arc::clone(&slot);
-    let ctx_w = ctx.clone();
-    let name_w = name.clone();
-    std::thread::spawn(move || {
-        let res = tasty_ssh::detect_and_persist(&name_w)
-            .map(|m| m.as_str().to_string())
-            .map_err(|e| e.to_string());
-        *crate::poison::recover_mutex(slot_w.lock(), DETECT_SLOT_WHAT, &DETECT_SLOT_POISONED) =
-            Some(res);
-        ctx_w.request_repaint();
-    });
-    DetectJob { name, slot }
-}
-
-fn poll_detect(st: &mut UiState) -> bool {
-    let done = match &st.detecting {
-        Some(job) => {
-            crate::poison::recover_mutex(job.slot.lock(), DETECT_SLOT_WHAT, &DETECT_SLOT_POISONED)
-                .is_some()
-        }
-        None => false,
-    };
-    if done {
-        st.detecting = None;
-    }
-    done
-}
-
 #[cfg(test)]
 // 테스트는 의도적으로 무시하는 결과가 많아 let _ 사유 검사에서 제외한다.
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
-
-    /// poison 이후에도 빈 슬롯은 미완료, 결과가 있는 슬롯은 완료로 처리한다.
-    /// UI 모듈이므로 gui 기능이 있는 조합에서만 컴파일된다.
-    #[test]
-    fn a_poisoned_detect_slot_does_not_look_finished() {
-        let slot: Arc<Mutex<Option<Result<String, String>>>> = Arc::new(Mutex::new(None));
-        let poisoner = Arc::clone(&slot);
-        // 이유: 이 스레드는 패닉하는 것이 목적이라 join 결과는 항상 Err 다 — 버린다.
-        let _ = std::thread::spawn(move || {
-            let _guard = poisoner.lock().expect("fresh lock");
-            panic!("poison the detect slot on purpose");
-        })
-        .join();
-        assert!(slot.is_poisoned(), "전제: 락이 poison 이다");
-
-        let mut st = UiState {
-            detecting: Some(DetectJob {
-                name: "loopback".into(),
-                slot: Arc::clone(&slot),
-            }),
-            ..Default::default()
-        };
-        assert!(!poll_detect(&mut st), "빈 슬롯은 아직 끝나지 않은 것이다");
-        assert!(st.detecting.is_some(), "진행 중인 detect 를 지우면 안 된다");
-
-        *slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(Ok("ssh".into()));
-        assert!(poll_detect(&mut st), "채워지면 완료로 판정한다");
-        assert!(st.detecting.is_none());
-    }
 
     fn prof(name: &str, kind: &str) -> RemoteProfile {
         RemoteProfile::new(name, kind)
@@ -2973,4 +2699,46 @@ mod tests {
         assert!(!is_unknown_kind("smb")); // builtin
         assert!(!is_unknown_kind("http")); // KNOWN_TYPES
     }
+}
+
+const FILE_REQUESTS:&str="remote_tool.file_requests";
+fn enqueue(ctx:&egui::Context,state:&UiState,action:FileAction) {
+    ctx.memory_mut(|memory| {
+        let queue=memory.data.get_temp_mut_or_default::<Vec<FileRequest>>(egui::Id::new(FILE_REQUESTS));
+        if queue.len()>=64 {tracing::warn!("remote tool request capacity exhausted");return;}
+        queue.push(FileRequest {popup:Arc::downgrade(&state.identity),view:state.view.clone(),action});
+    });
+}
+pub(crate) fn take_file_requests(ctx:&egui::Context)->Vec<FileRequest> {
+    ctx.memory_mut(|memory|std::mem::take(memory.data.get_temp_mut_or_default::<Vec<FileRequest>>(egui::Id::new(FILE_REQUESTS))))
+}
+pub(crate) fn accept_file_result(ctx:&egui::Context,request:&FileRequest,result:Result<FileValue,String>) {
+    let mut state=read_ui(ctx);
+    if !request.popup.ptr_eq(&Arc::downgrade(&state.identity)) {return;}
+    match (&request.action,result) {
+        (FileAction::SaveProfile(form),result) if form==&state.pform=>match result {
+            Ok(value)=>{state.perr=None;state.profile_view=Sub::List;if let FileValue::Detection(id,name)=value {state.detecting=Some(DetectJob {id,name});}},
+            Err(error)=>state.perr=Some(error),
+        },
+        (FileAction::SaveAttach(form),result) if form==&state.aform=>match result {
+            Ok(_)=>{state.aerr=None;state.attach_view=Sub::List;},Err(error)=>state.aerr=Some(error),
+        },
+        (FileAction::SavePasskey(form),result) if form==&state.kform=>match result {
+            Ok(_)=>{state.kerr=None;state.passkey_view=Sub::List;state.revealed.clear();state.revealed_values.clear();},Err(error)=>state.kerr=Some(error),
+        },
+        (FileAction::Detect(_),Ok(FileValue::Detection(id,name)))=>state.detecting=Some(DetectJob {id,name}),
+        (FileAction::Reveal {key,editing},Ok(FileValue::Revealed(value)))=>{
+            if *editing {
+                if state.passkey_view==Sub::Form && state.kform.editing_original.as_deref()==Some(key.name.as_str()) && state.kform.value.is_empty() {state.kform.value=value;}
+            } else if state.revealed.contains(&key.name) {state.revealed_values.insert(key.name.clone(),(key.clone(),value));}
+        },
+        (_,Err(error))=>tracing::warn!(%error,"remote tool request failed"),
+        _=>{},
+    }
+    write_ui(ctx,state);ctx.request_repaint();
+}
+pub(crate) fn accept_detection(ctx:&egui::Context,update:&tasty_remote::profile_detection::DetectionUpdate)->bool {
+    let mut state=read_ui(ctx);
+    if !state.detecting.as_ref().is_some_and(|job|job.id==update.id) {return false;}
+    state.detecting=None;write_ui(ctx,state);ctx.request_repaint();true
 }

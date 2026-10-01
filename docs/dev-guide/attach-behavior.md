@@ -48,6 +48,10 @@ attach 는 **server**(피점유 — PTY/grid 소유)와 **client**(점유 — mi
 
 UI 대기 기한과 worker 종료는 별개다. 기한 만료는 취소 요청이며, Remote의 종료 관측은 실제 thread join 및 연결 retirement receipt를 사용한다. 원 raw 입력을 새 connection epoch에 재전송하지 않는다.
 
+원격 프로필 감지는 AppServices의 `ProfileDetections`가 GUI와 IPC에서 함께 실행한다. 최대 8개 probe worker를 소유하고, 완료 후 시작 때의 프로필과 현재 항목이 같을 때만 감지 결과를 저장한다. 삭제·편집된 항목과 무관한 다른 프로필을 시작 snapshot으로 덮어쓰지 않는다. GUI의 프로필·Passkey 저장과 파일 읽기는 `remote_tool_files`가 실행하며, 비밀 표시 응답은 원 View와 팝업 identity에만 적용한다.
+
+SSH의 `request_cancel`은 취소 flag만 설정한다. 실제 자식 kill/reap는 probe worker가 수행하고, 기존 동기 `cancel` API와 구별한다. worker가 끝나기 전에는 종료 완료로 표시하지 않는다.
+
 ## 초기 스냅샷 + delta
 
 attach 직후 서버가 현재 visible 화면을 `snapshot_and_tap` 으로 tap 등록과 같은 lock 안에서 **1회** 직렬화 push(셀 속성 + 커서 + alt-screen/DECCKM/bracketed 모드 복원). 이후 변화는 output tap delta(Data 프레임). client 는 받은 바이트를 PTY 없는 mirror 터미널(`Terminal::new_detached` + `feed_bytes`)에 먹여 같은 termwiz 파서로 grid 재구성.
