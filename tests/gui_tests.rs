@@ -1006,9 +1006,7 @@ fn drag_creates_local_selection() {
 fn right_click_opens_terminal_menu() {
     let inst = shared();
 
-    let sid = inst
-        .debug_focused_surface()
-        .expect("a focused terminal surface");
+    let sid = mouse_test_terminal(&inst);
 
     inst.inject_mouse(sid, 0.5, 0.5, "press", 2);
     // Linux에서는 컨텍스트 메뉴를 release에서 열므로 press와 release를 모두 보낸다.
@@ -1087,17 +1085,55 @@ fn right_click_explorer_never_falls_back_to_surface_menu() {
     }
 }
 
+/// 공유 앱의 이전 시험이 남긴 선택 탭·cat·마우스 모드를 새 terminal로 분리한다.
+fn mouse_test_terminal(inst: &gui_common::GuiTestInstance) -> u64 {
+    inst.focus();
+    let focused = inst
+        .debug_focused_surface()
+        .expect("focused surface before mouse fixture");
+    let surfaces = inst.call("surface.list", json!({}));
+    let pane = surfaces
+        .as_array()
+        .expect("surface list")
+        .iter()
+        .find(|surface| surface["id"].as_u64() == Some(focused))
+        .and_then(|surface| surface["pane_id"].as_u64())
+        .expect("focused surface pane");
+    let created = inst.call("tab.create", json!({"pane_id":pane,"type":"terminal"}));
+    let sid = created["surface_id"].as_u64().expect("created terminal");
+    let index = created["tab_count"].as_u64().expect("created tab count") - 1;
+    inst.call("debug.switch_tab", json!({"index":index}));
+    settle();
+    assert_eq!(
+        inst.debug_focused_surface(),
+        Some(sid),
+        "mouse fixture must select its terminal"
+    );
+    sid
+}
+
 /// 1000·1002·1003은 독립 플래그라 먼저 모두 끄고 원하는 모드 하나를 켠다.
 /// cat -v로 수신 바이트를 관측하며 mark는 호출자가 출력 준비 후 설정한다.
 #[cfg(test)]
 fn enable_mouse_tracking(inst: &gui_common::GuiTestInstance, sid: u64, mode: &str) {
+    let enable = if mode == "off" {
+        String::new()
+    } else {
+        format!("\\e[?{mode}h")
+    };
+    inst.call("surface.set_mark", json!({"surface_id":sid}));
     inst.call(
         "surface.send",
         json!({ "surface_id": sid, "text": format!(
-            "printf '\\e[?1000l\\e[?1002l\\e[?1003l\\e[?{mode}h\\e[?1006h'; cat -v\n"
+            "printf '\\e[?1000l\\e[?1002l\\e[?1003l{enable}\\e[?1006h%s%s\\n' '__TASTY_MOUSE_' '{mode}_READY__'; cat -v\n"
         ) }),
     );
     std::thread::sleep(Duration::from_millis(400));
+    let output = read_since_mark(inst, sid);
+    assert!(
+        output.contains(&format!("__TASTY_MOUSE_{mode}_READY__")),
+        "mouse mode setup must execute in the shell, not merely echo into an old cat: {output:?}"
+    );
 }
 
 #[cfg(test)]
@@ -1113,8 +1149,7 @@ fn read_since_mark(inst: &gui_common::GuiTestInstance, sid: u64) -> String {
 #[ignore]
 fn hover_motion_reported_only_for_mode_1003() {
     let inst = shared();
-    inst.focus();
-    let sid = inst.first_surface_id();
+    let sid = mouse_test_terminal(&inst);
 
     enable_mouse_tracking(&inst, sid, "1003");
     inst.call("surface.set_mark", json!({ "surface_id": sid }));
@@ -1162,10 +1197,7 @@ fn hover_motion_reported_only_for_mode_1003() {
 #[ignore]
 fn hover_motion_never_reaches_a_non_focused_surface() {
     let inst = shared();
-    inst.focus();
-    let focused = inst
-        .debug_focused_surface()
-        .expect("an initially focused surface");
+    let focused = mouse_test_terminal(&inst);
 
     let res = inst.call(
         "split",
@@ -1227,8 +1259,7 @@ fn hover_motion_never_reaches_a_non_focused_surface() {
 #[ignore]
 fn drag_motion_carries_the_pressed_button() {
     let inst = shared();
-    inst.focus();
-    let sid = inst.first_surface_id();
+    let sid = mouse_test_terminal(&inst);
 
     enable_mouse_tracking(&inst, sid, "1002");
     for (button, press, motion) in [
@@ -1258,11 +1289,17 @@ fn drag_motion_carries_the_pressed_button() {
         json!({ "surface_id": sid, "text": "\u{3}" }),
     );
     std::thread::sleep(Duration::from_millis(300));
-    inst.call(
-        "surface.send",
-        json!({ "surface_id": sid, "text": "printf '\\e[?1002l\\e[?1003l'; cat -v\n" }),
+    enable_mouse_tracking(&inst, sid, "off");
+    // A prior tracking gesture need not erase an existing local selection.
+    // Establish the empty-selection precondition using the ordinary local click path.
+    inst.inject_mouse(sid, 0.30, 0.5, "press", 0);
+    inst.inject_mouse(sid, 0.30, 0.5, "release", 0);
+    settle();
+    assert_eq!(
+        inst.debug_selection()["present"],
+        json!(false),
+        "local click must clear the selection before testing a right drag"
     );
-    std::thread::sleep(Duration::from_millis(400));
     inst.call("surface.set_mark", json!({ "surface_id": sid }));
     inst.inject_mouse(sid, 0.30, 0.5, "press", 2);
     inst.inject_mouse(sid, 0.50, 0.5, "move", 2);
