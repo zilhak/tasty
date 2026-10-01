@@ -18,6 +18,50 @@ fn every_event_round_trips_and_the_tag_list_is_complete() {
         .into_iter()
         .flatten()
         .chain(super::lifecycle::examples())
+        .chain([
+            DomainEvent::SurfaceSeedImported {
+                id: 10,
+                input: crate::DataRef(110),
+            },
+            DomainEvent::OperationResourcePrepared {
+                id: crate::OperationId("prepared".into()),
+                data: Some(crate::DataRef(120)),
+                deferred: true,
+            },
+            DomainEvent::OperationRecoveryObserved {
+                id: crate::OperationId("unknown".into()),
+                evidence: crate::DataRef(121),
+            },
+            DomainEvent::StructureReplaced {
+                replacement: crate::Replacement {
+                    source: crate::EntityId {
+                        kind: crate::IdKind::Surface,
+                        id: 10,
+                    },
+                    target: crate::EntityId {
+                        kind: crate::IdKind::Surface,
+                        id: 11,
+                    },
+                },
+                removed: vec![],
+            },
+            DomainEvent::UndoRecordAdded {
+                record: crate::UndoRecord {
+                    id: crate::OperationId("closed".into()),
+                    target: crate::CloseTarget::Surface(10),
+                    capture: crate::UndoCapture {
+                        snapshot: crate::DataRef(122),
+                        retained: vec![crate::DataRef(123)],
+                    },
+                },
+            },
+            DomainEvent::UndoRecordConsumed {
+                id: crate::OperationId("closed".into()),
+            },
+            DomainEvent::UndoRecordEvicted {
+                id: crate::OperationId("expired".into()),
+            },
+        ])
         .collect();
     let mut seen = BTreeSet::new();
     for event in &events {
