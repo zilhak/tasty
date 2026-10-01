@@ -1317,8 +1317,6 @@ fn pending_op_focus_for(
     }
 }
 
-/// 기존 원격 surface의 로컬 ID·자원을 재사용하고 추가·삭제·kind 변경을 반영한다.
-/// markdown은 기존 핸들을 공유해 구조 변경 때마다 문서를 다시 만들지 않는다.
 fn install_mirror_fallbacks(workspace: &Workspace, engine: &mut EngineMut<'_>) {
     for id in workspace.all_surface_ids() {
         engine
