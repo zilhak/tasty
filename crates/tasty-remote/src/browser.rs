@@ -8,6 +8,9 @@ use std::{
     sync::{Arc, mpsc},
     time::{Duration, Instant},
 };
+/// Browse timeout shared with the host's progress display.
+pub const BROWSE_DEADLINE: Duration = Duration::from_secs(20);
+
 pub type BrowserId = u64;
 pub enum BrowserUpdate {
     Listed(Vec<RemoteWorkspace>),
@@ -235,7 +238,11 @@ impl Remote {
             .filter(|(_, session)| {
                 session.attempt.is_some()
                     && session.started.elapsed()
-                        >= Duration::from_secs(if session.creating { 10 } else { 20 })
+                        >= if session.creating {
+                            Duration::from_secs(10)
+                        } else {
+                            BROWSE_DEADLINE
+                        }
             })
             .map(|(id, session)| (*id, session.creating))
             .collect();
@@ -257,7 +264,15 @@ impl Remote {
                     } else {
                         "remote_attach.timeout"
                     })
-                    .replace("{secs}", if creating { "10" } else { "20" }),
+                    .replace(
+                        "{secs}",
+                        &if creating {
+                            10
+                        } else {
+                            BROWSE_DEADLINE.as_secs()
+                        }
+                        .to_string(),
+                    ),
                 },
             ));
         }
