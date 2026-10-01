@@ -176,16 +176,6 @@ impl TerminalStore {
         self.terminals.get(&id).map(|(terminal, _)| terminal)
     }
 
-    /// 닫은 항목 snapshot에 넣을 값을 읽는다.
-    #[cfg(test)]
-    pub(crate) fn closed_capture(
-        &self,
-        id: SurfaceId,
-    ) -> Option<crate::model::closed_item::TerminalCapture> {
-        self.get(id)
-            .map(|terminal| closed_capture_of(terminal, self.cwd(id)))
-    }
-
     pub(crate) fn get_mut(&mut self, id: SurfaceId) -> Option<&mut Terminal> {
         self.terminals.get_mut(&id).map(|(terminal, _)| terminal)
     }

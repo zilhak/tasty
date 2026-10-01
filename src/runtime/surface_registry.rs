@@ -14,19 +14,6 @@ use crate::model::{Surface, SurfaceId};
 
 pub use builtins::register_builtin_kinds;
 
-#[cfg(test)]
-pub fn snapshot_fn_for<'a>(
-    registry: &'a SurfaceKindRegistry,
-    instances: &'a std::collections::HashMap<u32, Box<dyn Surface>>,
-) -> impl FnMut(SurfaceId) -> Option<serde_json::Value> + 'a {
-    move |id| {
-        let surface = instances.get(&id)?;
-        registry
-            .get(surface.kind())
-            .and_then(|definition| (definition.snapshot)(surface.as_ref()))
-    }
-}
-
 /// 직렬화할 데이터. None은 해당 surface를 영속화에서 제외한다.
 pub type SurfaceSnapshotFn = Arc<dyn Fn(&dyn Surface) -> Option<serde_json::Value> + Send + Sync>;
 

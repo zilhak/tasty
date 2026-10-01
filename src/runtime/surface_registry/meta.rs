@@ -14,12 +14,6 @@ fn memory_err_to_io(e: MemoryError) -> io::Error {
 pub struct SurfaceMetaStore;
 
 impl SurfaceMetaStore {
-    /// 메모리 저장소는 scope 사전 생성이 필요 없어 성공만 반환한다.
-    #[cfg(test)]
-    pub fn ensure_created(_surface_id: u32) -> io::Result<()> {
-        Ok(())
-    }
-
     // 닫힘 시 scope 전체 삭제는 ResourceRetirement의 metadata 정리가 맡는다. plugin/Lua가 직접 쓴 키도 함께 처리해야 한다.
 
     pub fn set(
