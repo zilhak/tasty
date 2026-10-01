@@ -676,7 +676,7 @@ impl App {
         {
             sess.state.pending_op_focus.insert(op_id, intent);
         }
-        sess.state.agent_requests.note_structural_from(&pending, op_id);
+        sess.state.agent_requests.note_structural(pending.silent_failure,op_id);
 
         let payload = structural_op_payload(op_id, wire, *user_triggered);
         if let Err(e) = sess.send_frame(StreamTag::Control, payload) {
@@ -2705,19 +2705,10 @@ impl App {
     /// 캡처를 원격에 올리고 원격 클립보드에 경로를 넣도록 요청한다.
     /// StreamControl enum 밖의 capture_chunk/capture_commit 이벤트를 사용한다.
     pub(crate) fn forward_capture_to_remote_clipboard(
-        &mut self,
-        local_ws_id: u32,
-        file_name: &str,
-        bytes: &[u8],
-    ) -> anyhow::Result<()> {
-        let Some(sess) = self
-            .remote.sessions
-            .iter()
-            .find(|s| s.state.local_workspace == local_ws_id)
-        else {
-            anyhow::bail!("no attach session for mirror workspace {local_ws_id}");
-        };
-        let frame_tx = sess.transport.frame_tx.clone();
+        &mut self,target:&RemoteTarget,file_name:&str,bytes:&[u8],
+    )->anyhow::Result<()> {
+        if !self.remote_target_is_current(target) {anyhow::bail!("capture connection retired before delivery");}
+        let frame_tx=target.sender.clone();
         let upload_id = next_capture_upload_id();
 
         use base64::Engine as _;
@@ -2836,7 +2827,7 @@ impl App {
             "surface_id": remote_sid,
         });
         send_capture_control_frame(&sess.transport.frame_tx, &msg)?;
-        sess.state.agent_requests.note_markdown_from(req, request_id);
+        sess.state.agent_requests.note_markdown(req.agent_origin,request_id);
         Ok(())
     }
 }
@@ -2906,12 +2897,14 @@ fn send_bulk_payload(
     file_name: &str,
     bytes: &[u8],
     on_progress: impl Fn(u64, u64),
+    epoch:&crate::remote::connection::ConnectionEpoch,
 ) -> anyhow::Result<()> {
     let begin = StreamControl::BulkBegin {
         transfer_id,
         filename: file_name.to_string(),
         total_size: bytes.len() as u64,
     };
+    ensure_bulk_epoch(epoch)?;
     conn.send(StreamTag::Control, &serde_json::to_vec(&begin)?)?;
 
     let total = bytes.len() as u64;
@@ -2919,20 +2912,23 @@ fn send_bulk_payload(
     let mut sent: u64 = 0;
     for framed in bulk_chunk_frames(transfer_id, bytes) {
         let part_len = (framed.len() - stream::BULK_CHUNK_HEADER_LEN) as u64;
+        ensure_bulk_epoch(epoch)?;
         conn.send(StreamTag::Data, &framed)?;
         sent += part_len;
         on_progress(sent, total);
     }
 
     let commit = StreamControl::BulkCommit { transfer_id };
+    ensure_bulk_epoch(epoch)?;
     conn.send(StreamTag::Control, &serde_json::to_vec(&commit)?)?;
     Ok(())
 }
 
 /// 해당 transfer_id의 결과를 기다린다. Ping이나 다른 응답은 무시하므로 전체 대기 기한은 없다.
 /// 소켓 timeout이 설정됐다면 개별 읽기에 적용된다.
-fn await_bulk_result(conn: &mut StreamConnection, transfer_id: u64) -> anyhow::Result<String> {
+fn await_bulk_result(conn:&mut StreamConnection,transfer_id:u64,epoch:&crate::remote::connection::ConnectionEpoch)->anyhow::Result<String> {
     loop {
+        ensure_bulk_epoch(epoch)?;
         let frame = conn.recv()?;
         match frame.tag {
             StreamTag::Control => {
@@ -2985,11 +2981,13 @@ pub(crate) fn upload_file_over_bulk(
     file_name: &str,
     bytes: &[u8],
     on_progress: impl Fn(u64, u64),
+    epoch:&crate::remote::connection::ConnectionEpoch,
 ) -> anyhow::Result<String> {
+    ensure_bulk_epoch(epoch)?;
     let transfer_id = next_bulk_transfer_id();
     let mut conn = open_bulk_connection(port, remote_ws)?;
-    send_bulk_payload(&mut conn, transfer_id, file_name, bytes, on_progress)?;
-    await_bulk_result(&mut conn, transfer_id)
+    send_bulk_payload(&mut conn, transfer_id, file_name, bytes, on_progress,epoch)?;
+    await_bulk_result(&mut conn, transfer_id,epoch)
 }
 
 #[cfg(test)]
@@ -5291,4 +5289,40 @@ fn bind_mirror_input(mirror:&mut Terminal,remote_id:u32,frame_tx:&SharedFrameSen
             }
         }
     });
+}
+
+impl App {
+    pub(crate) fn capture_remote_target(&self,workspace:u32,surface:Option<u32>)->Option<RemoteTarget> {
+        let session=self.remote.sessions.iter().find(|session|session.state.local_workspace==workspace)?;
+        if !session.transport.frame_tx.epoch().is_active() {return None;}
+        let engine=self.engines.all_sessions().find(|engine|engine.core_state.has_workspace(workspace))?;
+        let surface=match surface {
+            Some(id)=>Some((id,*session.state.remote_to_local.iter().find(|(_,local)|**local==id)?.0,engine.runtime.terminals.get(id)?.resource_generation())),
+            None=>None,
+        };
+        Some(RemoteTarget {engine:engine.id,workspace,surface,sender:session.transport.frame_tx.clone(),port:session.state.bulk_port,remote_workspace:session.state.remote_workspace})
+    }
+    pub(crate) fn remote_target_is_current(&self,target:&RemoteTarget)->bool {
+        if !target.sender.epoch().is_active() {return false;}
+        let Some(session)=self.remote.sessions.iter().find(|session|session.state.local_workspace==target.workspace) else{return false;};
+        if !target.sender.epoch().same(&session.transport.frame_tx.epoch()) {return false;}
+        let Some(engine)=self.engines.get(target.engine) else{return false;};
+        if !engine.has_workspace(target.workspace) {return false;}
+        target.surface.is_none_or(|(local,remote,generation)|session.state.remote_to_local.get(&remote)==Some(&local)&&engine.runtime.terminals.matches_generation(local,generation))
+    }
+}
+
+/// A worker result may use only the engine, mapping and connection that accepted its request.
+#[derive(Clone)]
+pub(crate) struct RemoteTarget {
+    pub(crate) engine:crate::runtime::engine_session::EngineId,
+    pub(crate) workspace:u32,
+    pub(crate) surface:Option<(u32,u32,tasty_terminal::ResourceGeneration)>,
+    pub(crate) sender:SharedFrameSender,
+    pub(crate) port:u16,
+    pub(crate) remote_workspace:u32,
+}
+
+fn ensure_bulk_epoch(epoch:&crate::remote::connection::ConnectionEpoch)->anyhow::Result<()> {
+    if epoch.is_active() {Ok(())} else {anyhow::bail!("bulk connection retired; remote save outcome may be unknown")}
 }

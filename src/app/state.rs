@@ -8,6 +8,7 @@ use crate::app::shutdown_machine;
 #[derive(Default)]
 pub(crate) struct AppState {
     pub(crate) started:bool,
+    pub(crate) pending_host_events:Vec<crate::core::host_event::PendingHostEvent>,
     #[cfg(not(feature="gui"))]
     pub(crate) stopping:bool,
     #[cfg(feature="gui")]

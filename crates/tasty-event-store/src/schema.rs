@@ -8,7 +8,7 @@ use rusqlite::{Connection, ErrorCode, OptionalExtension};
 use crate::error::{StoreError, StoreResult};
 
 /// 순서대로 적용하는 migration. 인덱스 + 1이 버전이다. 이미 배포한 항목은 고치지 않고 뒤에 추가한다.
-const MIGRATIONS: &[&str] = &[V1, V2, V3];
+const MIGRATIONS: &[&str] = &[V1,V2,V3,V4];
 
 /// 이 빌드가 읽고 쓸 수 있는 가장 새 스키마 버전.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
@@ -163,6 +163,31 @@ const V3: &str = r#"
         payload BLOB NOT NULL,
         PRIMARY KEY (consumer_id, projection_version, key)
     );
+"#;
+
+// Activation claims retain their original uniqueness constraint. Cleanup attempts have another
+// explicit ownership class and cannot acquire, release, or impersonate an activation claim.
+const V4:&str=r#"
+ALTER TABLE effects ADD COLUMN claim_kind TEXT NOT NULL DEFAULT 'activation' CHECK(claim_kind IN ('activation','obligation'));
+ALTER TABLE effect_attempts RENAME TO effect_attempts_v3;
+CREATE TABLE effect_attempts (
+    effect_id TEXT NOT NULL REFERENCES effects(effect_id),attempt INTEGER NOT NULL,journal_id TEXT NOT NULL,
+    engine_id TEXT NOT NULL,surface_id TEXT,runtime_epoch INTEGER NOT NULL,activation_generation INTEGER,
+    writer_epoch INTEGER NOT NULL,outcome TEXT,result BLOB,reconciled_outcome TEXT,reconciled_result BLOB,
+    claim_kind TEXT NOT NULL CHECK(claim_kind IN ('activation','obligation')),
+    engine_incarnation INTEGER,operation_id TEXT,
+    PRIMARY KEY(effect_id,attempt),
+    CHECK((claim_kind='activation' AND surface_id IS NOT NULL AND activation_generation IS NOT NULL AND engine_incarnation IS NULL AND operation_id IS NULL)
+       OR (claim_kind='obligation' AND surface_id IS NULL AND activation_generation IS NULL AND engine_incarnation IS NOT NULL AND operation_id IS NOT NULL))
+);
+INSERT INTO effect_attempts(effect_id,attempt,journal_id,engine_id,surface_id,runtime_epoch,activation_generation,writer_epoch,outcome,result,reconciled_outcome,reconciled_result,claim_kind)
+SELECT effect_id,attempt,journal_id,engine_id,surface_id,runtime_epoch,activation_generation,writer_epoch,outcome,result,reconciled_outcome,reconciled_result,'activation' FROM effect_attempts_v3;
+DROP TABLE effect_attempts_v3;
+CREATE TABLE obligation_claims (
+    engine_id TEXT NOT NULL,engine_incarnation INTEGER NOT NULL,operation_id TEXT NOT NULL,
+    runtime_epoch INTEGER NOT NULL,effect_id TEXT NOT NULL REFERENCES effects(effect_id),
+    PRIMARY KEY(engine_id,engine_incarnation,operation_id,runtime_epoch)
+);
 "#;
 
 /// 버전 표를 만들고 부족한 migration을 적용한다. 호출자가 연 쓰기 transaction 안에서 부른다.

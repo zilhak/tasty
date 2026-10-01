@@ -28,3 +28,9 @@ pub(crate) mod output_observer;
 pub(crate) mod surface_registry;
 
 pub(crate) mod egui_mesh_surface;
+
+pub(crate) mod resource_retirement;
+
+pub(crate) mod surface_cleanup;
+
+pub(crate) mod host_events;

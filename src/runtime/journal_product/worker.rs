@@ -247,14 +247,15 @@ fn handle(
                         | tasty_domain::StructuralCommand::RetireEngine { .. }
                         | tasty_domain::StructuralCommand::FinishCreation { .. }
                         | tasty_domain::StructuralCommand::FinishCleanup { .. }
+                        | tasty_domain::StructuralCommand::FinishRetirement {..}
                         | tasty_domain::StructuralCommand::CancelUnstartedCreation { .. }
                         | tasty_domain::StructuralCommand::RejectInstallation { .. }
                             | tasty_domain::StructuralCommand::MarkPreparationUncertain { .. }
                 ) {
                     return Err("effect results require their validated lease endpoint".into());
                 }
-                if let tasty_domain::StructuralCommand::PrepareCreation { input, .. } =
-                    &change.command
+                if let tasty_domain::StructuralCommand::PrepareCreation { input, .. }
+                    |tasty_domain::StructuralCommand::Close {input,..} = &change.command
                     && !admitted.inputs.contains(input)
                 {
                     return Err("preparation input belongs to another admission".into());
@@ -362,6 +363,12 @@ fn handle(
         Work::ReadEngine(stream) => executor
             .with_state(|models| ResultValue::Engine(models.stream(&stream)))
             .map_err(|e| e.to_string()),
+        Work::PutPayload(bytes)=> {
+            let admitted=pending.get_mut(&ticket).ok_or("payload has no admitted owner")?;
+            let inner=&mut *executor.inner.lock().map_err(|error|error.to_string())?;
+            let reference=inner.store.put_payload(inner.epoch,&bytes).map_err(|error|error.to_string())?;
+            let reference=tasty_domain::DataRef(reference.0);admitted.inputs.push(reference);Ok(ResultValue::InputStored(reference))
+        },
         Work::PutPreparation(input) => {
             let admitted = pending
                 .get_mut(&ticket)
@@ -377,6 +384,8 @@ fn handle(
             admitted.inputs.push(reference);
             Ok(ResultValue::InputStored(reference))
         }
+        Work::ClaimRetirement {stream,operation}=>effects::claim_retirement(executor,&stream,&operation),
+        Work::RetirementFinished {lease,outcome}=>effects::retired(executor,lease,outcome),
         Work::ClaimPreparation { stream, operation } => {
             effects::claim(executor, &stream, &operation)
         }

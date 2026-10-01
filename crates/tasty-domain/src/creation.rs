@@ -133,6 +133,7 @@ pub enum PreparationResult {
 /// Obligations, not callbacks. The execution adapter records them in the outbox before running.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StructuralEffect {
+    RetireSurfaces {operation:OperationId,plan:crate::RetirementPlan},
     PrepareSurface {
         operation: OperationId,
         input: DataRef,

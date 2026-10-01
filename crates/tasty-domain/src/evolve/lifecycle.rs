@@ -6,8 +6,9 @@ use crate::{
 pub(super) fn prepare(m: &mut JournalModel, operation: Operation) -> Result<()> {
     if operation.id.0.is_empty()
         || operation.command_id.is_empty()
-        || operation.activation_generation == 0
+        || (operation.activation_generation == 0 && operation.retirement.is_none())
         || operation.input.0 == 0
+        || (operation.creation.is_some() && operation.retirement.is_some())
         || operation.outcome.is_some()
         || operation.pending_outcome.is_some()
         || operation.cleanup.is_some()
@@ -17,6 +18,15 @@ pub(super) fn prepare(m: &mut JournalModel, operation: Operation) -> Result<()> 
         return Err(EvolveError::InvalidFact(
             "invalid operation preparation".into(),
         ));
+    }
+    if let Some(plan)=&operation.retirement {
+        let (_,removed,surfaces)=crate::command::retirement::close_facts(m,plan.target).ok_or_else(||EvolveError::InvalidFact("retirement target cannot close".into()))?;
+        if removed!=plan.removed || !surfaces.iter().copied().eq(plan.surfaces.iter().map(|surface|surface.id))
+            || plan.tab_parents.len()!=removed.iter().filter(|entity|entity.kind==IdKind::Tab).count()
+            || plan.tab_parents.iter().any(|(tab,pane)|!removed.iter().any(|entity|entity.kind==IdKind::Tab && entity.id==*tab) || !m.panes.get(pane).is_some_and(|pane|pane.tabs.contains(tab)))
+            || plan.surfaces.iter().any(|target|m.surfaces.get(&target.id).is_none_or(|surface|surface.kind!=target.kind || surface.activation.map(|value|value.generation)!=target.activation_generation)) {
+            return Err(EvolveError::InvalidFact("retirement plan does not name the exact existing owners".into()));
+        }
     }
     if m.operations.contains_key(&operation.id) {
         return Err(EvolveError::Duplicate(format!(

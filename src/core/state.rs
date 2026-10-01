@@ -229,7 +229,6 @@ pub struct CoreState {
     pub(crate) layout_dirty: crate::core::layout_persistence::LayoutDirtyTracker,
     /// 복원한 활성 workspace 인덱스. 창 상태를 만들 때 한 번 소비한다.
     /// deferred Terminal 생성 뒤 적용할 scrollback. 읽지 못했거나 비어 있으면 등록하지 않는다.
-    pub(crate) pending_scrollback_inject: HashMap<u32, Vec<tasty_terminal::ScrollbackLine>>,
     /// plugin 준비 대기 후 적용할 레이아웃. 대기와 제한 시간 처리는 App이 맡는다.
     pub(crate) pending_layout_restore: Option<crate::core::layout_persistence::SavedLayout>,
     /// 이 engine의 레이아웃 슬롯. 프로세스 내 engine들의 이 필드로 점유를 확인한다.
@@ -319,7 +318,6 @@ impl CoreState {
             anomaly_detector: std::sync::Arc::new(tasty_telemetry::AnomalyDetector::new()),
             pending_move: None,
             layout_dirty: crate::core::layout_persistence::LayoutDirtyTracker::new(),
-            pending_scrollback_inject: HashMap::new(),
             pending_layout_restore: None,
             layout_slot,
             #[cfg(any(feature = "gui", test))]
@@ -522,7 +520,6 @@ mod output_read;
 mod pty;
 mod shell_integration_hint;
 mod soft_occupancy;
-mod surface_cleanup;
 mod surface_cwd;
 mod terminal_finders;
 pub(crate) mod workspaces;

@@ -21,14 +21,42 @@ impl App {
             if let Some(session)=self.engines.session_mut(id) {self.journal.update_completion_view(id,&session.core_state,&presentation);}
         }
         let mut sessions: Vec<_> = self.engines.all_sessions_mut().collect();
-        if let Err(error) = self.journal.poll_bootstrap(&mut sessions) {
+        if let Err(error) = self.journal.poll_bootstrap(&mut sessions,self.plugin_manager.as_mut()) {
             tracing::error!("journal publication halted: {error}");
         }
         if !self.journal.pauses_observation() {
             self.resolve_journal_requests();
         }
+        if !self.journal.pauses_observation() && !self.journal.is_halted() {
+            self.dispatch_pending_surface_lifecycle();
+            self.dispatch_pending_host_events();
+        }
+        self.poll_preserved_window_closes();
         for id in self.journal.take_retired_engines() {
-            drop(self.engines.finish_retiring(id));
+            if self.engines.session_mut(id).is_some_and(|session|session.runtime.has_pending_delivery()) {
+                self.journal.defer_retired_engine_delivery(id);
+            } else {drop(self.engines.finish_retiring(id));}
+        }
+    }
+
+    pub(crate) fn poll_preserved_window_closes(&mut self) {
+        if self.journal.pauses_observation() && !self.journal.is_halted() {return;}
+        for (id,mut navigation,checkpoint) in self.engines.preserved_closes() {
+            if self.journal.is_halted() {drop(self.engines.finish_retiring(id));continue;}
+            if self.journal.has_pending_engine_effects(id) {continue;}
+            let Some(session)=self.engines.session_mut(id) else {continue;};
+            if !session.pending_resource_retirements.is_empty() || !session.pending_materializations.is_empty() || session.runtime.has_pending_delivery() {continue;}
+            let Some(binding)=session.journal_binding.clone() else {continue;};
+            if checkpoint.is_none() {
+                navigation.reconcile(&session.core_state.workspaces());
+                let active=navigation.workspace_id(&session.core_state.workspaces());
+                let active_index=navigation.workspace_index(&session.core_state.workspaces());
+                Self::retire_main_engine(&mut self.services,&mut session.borrow_mut(),active_index,&navigation);
+                self.journal.queue_view(crate::runtime::journal_product::view_record::StoredView::capture(binding.clone(),&session.core_state,active,&navigation));
+                self.engines.mark_closed_view_checkpoint(id,self.journal.latest_view_sequence());
+            } else if !self.journal.has_pending_view_for(&binding.stream) {
+                drop(self.engines.finish_retiring(id));
+            }
         }
     }
 

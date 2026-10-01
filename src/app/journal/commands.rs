@@ -1,6 +1,7 @@
 //! Accepted structural requests retain their original identity until a committed wire reply exists.
 mod category;
 mod create;
+mod close;
 mod create_spec;
 mod display;
 #[cfg(feature = "gui")]
@@ -69,6 +70,7 @@ struct Pending {
     needs_resolution: bool,
     category: Option<CategoryReservation>,
     resource: Option<create::Request>,
+    closing:Option<close::Request>,
     waiting_command: Option<String>,
     created: Option<create::Completed>,
     bytes: usize,
@@ -113,6 +115,11 @@ pub(super) struct Commands {
 }
 
 impl Commands {
+    pub(super) fn has_closing(&self)->bool {self.pending.values().any(|pending|pending.closing.is_some())}
+    pub(super) fn has_resource_request(&self,engine:EngineId)->bool {
+        self.pending.values().any(|pending|pending.closing.as_ref().is_some_and(|request|request.engine==engine)||pending.resource.as_ref().is_some_and(|request|request.engine==engine))
+    }
+
     fn deliver(&mut self, reply: Reply, response: JsonRpcResponse) {
         match reply {
             #[cfg(feature = "gui")]
@@ -236,6 +243,7 @@ impl JournalApplication {
                 needs_resolution: false,
                 category: None,
                 resource: None,
+                closing:None,
                 waiting_command: None,
                 created: None,
                 bytes,
@@ -387,6 +395,7 @@ impl JournalApplication {
     }
 
     pub(crate) fn resolve_ipc_for_engine(&mut self, ticket: u64, session: &EngineSession) {
+        if self.commands.pending.get(&ticket).is_some_and(|pending|matches!(pending.request.method.as_str(),"workspace.close"|"tab.close"|"pane.close"|"surface.close"|"surface.close_self"|"intent.close")) {self.resolve_close(ticket,session);return;}
         if self.commands.pending.get(&ticket).is_some_and(|pending|pending.request.method=="intent.create") {
             self.resolve_fixed_creation(ticket,session);
             return;
@@ -513,6 +522,19 @@ impl JournalApplication {
                 self.refresh_command_weight(ticket);
                 return Ok(true);
             }
+            Ok(ResultValue::InputStored(input)) if pending.closing.is_some()=> {
+                let closing=pending.closing.as_mut().expect("close input owner");
+                pending.queued=Some(if let Some(close_input)=closing.input_ref {
+                    let Work::Resolve {mut changes,response}=closing.stored(close_input) else {unreachable!("close resolution")};
+                    let Work::Resolve {changes:replacement,..}=pending.resource.as_ref().ok_or("replacement draft disappeared")?.stored(*input) else {unreachable!("creation resolution")};
+                    changes.extend(replacement);
+                    Work::Resolve {changes,response}
+                } else {
+                    closing.input_ref=Some(*input);
+                    if let Some(replacement)=pending.resource.as_mut() {replacement.reservation()?} else {closing.stored(*input)}
+                });
+                self.refresh_command_weight(ticket);return Ok(true);
+            }
             Ok(ResultValue::InputStored(input)) if pending.resource.is_some() => {
                 pending.queued = Some(
                     pending
@@ -539,8 +561,8 @@ impl JournalApplication {
                                 .ok_or("public creation progress missing")?,
                         )
                         .map_err(|error| error.to_string())?;
-                    let [tasty_domain::StructuralResult::Pending { operation }] =
-                        progress.results.as_slice()
+                    let Some(tasty_domain::StructuralResult::Pending { operation }) =
+                        progress.results.last()
                     else {
                         return Err("public creation operation missing".into());
                     };
@@ -658,6 +680,7 @@ impl JournalApplication {
             }
             created.notify(sessions, &mut self.commands.completed_host_events);
         }
+
         self.commands.deliver(pending.reply, completed);
         Ok(true)
     }
@@ -730,7 +753,7 @@ impl JournalApplication {
             if engine == session.id
                 && let Some(event) = event.resolve(&session.core_state, &state.navigation)
             {
-                state.enqueue_host_event(event);
+                session.borrow_mut().enqueue_host_event(event);
             }
         }
         for result in std::mem::take(&mut self.commands.completed_intents) {
@@ -878,11 +901,21 @@ impl crate::app::App {
                 }
             }
         }
+        let mut presentations:std::collections::HashMap<_,_>=self.engines().window_pairs().filter_map(|(window,main,engine)| {
+            self.engines.of_window(window).map(|id|(id,crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&engine.categories,&main.state.navigation)))
+        }).collect();
+        for (id,state,engine) in self.engines.parked_sessions() {
+            presentations.insert(id,crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&engine.categories,&state.navigation));
+        }
+        for (id,navigation,_) in self.engines.preserved_closes() {
+            if let Some(engine)=self.engines.get(id) {
+                presentations.insert(id,crate::model::StructurePresentationSnapshot::capture(&engine.workspaces(),&engine.categories,&navigation));
+            }
+        }
         for (engine, event) in std::mem::take(&mut self.journal.commands.completed_host_events) {
-            if let Some(context) = self.engines_mut().resolve(engine)
-                && let Some(event) = event.resolve(context.engine.core, &context.state.navigation)
-            {
-                context.state.enqueue_host_event(event);
+            if let Some(session)=self.engines.session_mut(engine) {
+                let presentation=presentations.get(&engine).unwrap_or(&session.remote.presentation);
+                if let Some(event)=event.resolve(&session.core_state,presentation) {session.borrow_mut().enqueue_host_event(event);}
             }
         }
         for result in std::mem::take(&mut self.journal.commands.completed_intents) {
@@ -1016,6 +1049,7 @@ fn pending_weight(pending: &Pending) -> usize {
                 .map_or(0, display::DisplayContinuation::weight),
         )
         .saturating_add(pending.resource.as_ref().map_or(0, create::Request::weight))
+        .saturating_add(pending.closing.as_ref().map_or(0,close::Request::weight))
         .saturating_add(pending.waiting_command.as_ref().map_or(0, String::len))
         .saturating_add(
             pending

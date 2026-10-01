@@ -221,7 +221,7 @@ impl EngineMut<'_> {
     /// 대기 중인 scrollback을 꺼내 Terminal에 적용한다. Terminal이 없으면 꺼낸 내용은 버린다.
     /// 이미 시작한 PTY의 첫 출력보다 먼저 적용된다고 보장하지는 않는다.
     pub fn apply_pending_scrollback_inject(&mut self, surface_id: u32) {
-        let Some(lines) = self.pending_scrollback_inject.remove(&surface_id) else {
+        let Some(lines) = self.runtime.pending_scrollback_inject.remove(&surface_id) else {
             return;
         };
         if lines.is_empty() {

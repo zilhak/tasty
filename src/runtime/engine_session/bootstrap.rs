@@ -121,6 +121,7 @@ impl EngineSession {
             live:Default::default(),
             journal_binding: None,
             pending_materializations: Default::default(),
+            pending_resource_retirements:Default::default(),
             core_state: CoreState::new_base(
                 cols,
                 rows,

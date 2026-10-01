@@ -405,6 +405,15 @@ impl App {
                 return;
             }
         }
+        if !self.journal.is_halted()
+            && let Some(id)=self.engines.of_window(wid)
+            && let Some(engine)=self.engines.get(id)
+            && engine.settings.general.restore_layout {
+            self.engines.preserve_closed_view(wid,main.state.navigation.clone());
+            drop(main);
+            self.poll_preserved_window_closes();
+            return;
+        }
         let Some(mut session) = self.engines.retire_window(wid) else {
             tracing::error!("retiring window {wid:?} without an engine relation");
             return;

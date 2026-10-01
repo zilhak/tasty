@@ -193,7 +193,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
             "workspace.move",
             plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal(),
         ),
-        ("workspace.close", plugin(Idempotent, &[SurfaceWrite])),
+        ("workspace.close", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
         // ── workspace category (사이드바 폴더 CRUD) ──────────────────
         ("workspace_category.list", plugin(Read, &[SurfaceRead])),
         (
@@ -214,12 +214,12 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ),
         // ── pane / split ──────────────────────────────────────────────
         ("pane.list", plugin(Read, &[SurfaceRead])),
-        ("pane.close", plugin(Idempotent, &[SurfaceWrite])),
+        ("pane.close", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
         ("split", plugin(Mutate, &[SurfaceWrite])),
         // ── tab ───────────────────────────────────────────────────────
         ("tab.list", plugin(Read, &[SurfaceRead])),
         ("tab.create", plugin(Mutate, &[SurfaceWrite])),
-        ("tab.close", plugin(Idempotent, &[SurfaceWrite])),
+        ("tab.close", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
         ("tab.move", plugin(Idempotent, &[SurfaceWrite])),
         // ── preset (layout preset CRUD + apply) ───────────────────────
         ("preset.list", plugin(Read, &[SurfaceRead])),
@@ -233,8 +233,8 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.list", plugin(Read, &[SurfaceRead])),
         // 생성 없이 등록 여부를 확인한다. 종류·번역 키·렌더 경로·출처만 공개한다.
         ("surface.kinds", plugin(Read, &[SurfaceRead])),
-        ("surface.close", plugin(Idempotent, &[SurfaceWrite])),
-        ("surface.close_self", plugin(Idempotent, &[SurfaceWrite])),
+        ("surface.close", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
+        ("surface.close_self", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
         ("tree", plugin(Read, &[SurfaceRead])),
         ("webview.set_url", plugin(Idempotent, &[SurfaceWrite])),
         // webview 플러그인은 문서를 만들 때 전역 테마를 조회한다. surface별 정보가 아니므로 추가 토큰은 없다.

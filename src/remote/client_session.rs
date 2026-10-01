@@ -184,12 +184,12 @@ pub(crate) struct AgentRequests {
 }
 
 impl AgentRequests {
-    pub(crate) fn note_structural_from(
+    pub(crate) fn note_structural(
         &mut self,
-        pending: &crate::app::services::PendingStructuralForward,
+        agent_origin:bool,
         op_id: u64,
     ) {
-        if pending.silent_failure {
+        if agent_origin {
             self.structural.insert(op_id);
         }
     }
@@ -198,12 +198,12 @@ impl AgentRequests {
         self.structural.remove(&op_id);
     }
 
-    pub(crate) fn note_markdown_from(
+    pub(crate) fn note_markdown(
         &mut self,
-        req: &crate::core::PendingMarkdownContentForward,
+        agent_origin:bool,
         request_id: u64,
     ) {
-        if req.agent_origin {
+        if agent_origin {
             self.markdown.insert(request_id);
         }
     }
@@ -327,3 +327,4 @@ impl Drop for ClientTransport {
         self.disconnected.store(true,std::sync::atomic::Ordering::Release);
     }
 }
+

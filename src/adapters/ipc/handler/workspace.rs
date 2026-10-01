@@ -412,7 +412,7 @@ pub fn handle_workspace_update(
         );
     };
 
-    window.cascade_workspace_meta_updated(workspace_id, name, subtitle, description);
+    crate::app::dispatch_domain::cascade_workspace_meta_updated(engine, workspace_id, name, subtitle, description);
 
     // 검증을 마친 값만 적용한다. Core가 layout.json 저장을 예약한다.
     if let Some(category) = category
@@ -557,7 +557,7 @@ pub fn handle_workspace_close(
 }
 
 /// GUI에는 별도 창 닫기를 안내하고 그 기능이 없는 헤드리스에는 권하지 않는다.
-fn last_workspace_refusal() -> &'static str {
+pub(crate) fn last_workspace_refusal() -> &'static str {
     if cfg!(feature = "gui") {
         "Refusing to close the last workspace — closing the window instead is a separate \
          decision; use 'window.close' explicitly if that is what you want"

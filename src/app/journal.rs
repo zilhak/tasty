@@ -6,6 +6,7 @@ use crate::runtime::journal_product::{
 use crate::runtime::live_projection;
 pub(crate) mod commands;
 mod creation;
+mod resource_cleanup;
 #[cfg(feature = "gui")]
 mod retirement;
 
@@ -28,6 +29,7 @@ pub(crate) struct JournalApplication {
     wake: Arc<dyn Fn() + Send + Sync>,
     opening: HashMap<EngineId, Opening>,
     creations: HashMap<EngineId, creation::Creation>,
+    resource_cleanups:std::collections::BTreeMap<u64,resource_cleanup::Cleanup>,
     restoration_reads: HashMap<u64, (EngineId, crate::runtime::surface_restorer::RestoreInput)>,
     restoration_queue: VecDeque<(EngineId, crate::runtime::surface_restorer::RestoreInput)>,
     restoration_ready: HashMap<EngineId, Vec<crate::runtime::surface_restorer::RestoreInput>>,
@@ -79,6 +81,7 @@ impl JournalApplication {
             wake,
             opening: HashMap::new(),
             creations: HashMap::new(),
+            resource_cleanups:Default::default(),
             restoration_reads: HashMap::new(),
             restoration_queue: VecDeque::new(),
             restoration_ready: HashMap::new(),
@@ -144,11 +147,12 @@ impl JournalApplication {
     pub(crate) fn poll_bootstrap(
         &mut self,
         sessions: &mut [&mut EngineSession],
+        plugins:Option<&mut crate::plugin::PluginManager>,
     ) -> Result<(), String> {
         if let Some(reason) = &self.halted {
             return Err(reason.clone());
         }
-        let result = self.poll_initial(sessions);
+        let result = self.poll_initial(sessions,plugins);
         #[cfg(feature = "gui")]
         for session in sessions {
             if session
@@ -166,12 +170,13 @@ impl JournalApplication {
         result
     }
 
-    fn poll_initial(&mut self, sessions: &mut [&mut EngineSession]) -> Result<(), String> {
+    fn poll_initial(&mut self,sessions:&mut [&mut EngineSession],mut plugins:Option<&mut crate::plugin::PluginManager>)->Result<(),String> {
         const MAX_COMPLETIONS: usize = 16;
         for _ in 0..MAX_COMPLETIONS {
             if self.started {
                 self.submit_openings()?;
                 self.submit_commands()?;
+                self.poll_resource_cleanup(sessions)?;
                 self.submit_restore_reads()?;
                 #[cfg(feature = "gui")]
                 self.submit_retirements()?;
@@ -318,6 +323,14 @@ impl JournalApplication {
                                     prepared=Some(leaf);
                                 }
                             }
+                            for event in &domain.events {
+                                if let tasty_domain::DomainEvent::OperationPrepared {operation}=&event.event
+                                    && operation.retirement.is_some() {
+                                    let retirement=crate::runtime::resource_retirement::ResourceRetirement::capture(session,operation)?;
+                                    session.pending_resource_retirements.insert(operation.id.clone(),retirement);
+                                    self.queue_resource_retirement(session.id,stream.clone(),operation.id.clone())?;
+                                }
+                            }
                             live_projection::apply(
                                 &mut session.core_state,
                                 predecessor,
@@ -376,6 +389,7 @@ impl JournalApplication {
                         .map_err(|error| format!("bootstrap publication ACK: {error:?}"))?;
                 }
                 Completion::Finished { ticket, result } => {
+                    if self.answer_resource_cleanup(ticket,&result,sessions,plugins.as_deref_mut())? {continue;}
                     if self.answer_command(ticket, &result, sessions)? {
                         continue;
                     }
@@ -547,16 +561,13 @@ impl JournalApplication {
     }
 
     pub(crate) fn pauses_observation(&self) -> bool {
-        self.creations
+        self.commands.has_closing() || !self.resource_cleanups.is_empty() || self.creations
             .values()
             .any(creation::Creation::pauses_observation)
     }
 
-    pub(crate) fn cleanup_poll_deadline(&self) -> Option<std::time::Instant> {
-        self.creations
-            .values()
-            .any(creation::Creation::needs_cleanup_poll)
-            .then(|| std::time::Instant::now() + std::time::Duration::from_millis(10))
+    pub(crate) fn cleanup_poll_deadline(&self)->Option<std::time::Instant> {
+        (!self.resource_cleanups.is_empty() || self.creations.values().any(creation::Creation::needs_cleanup_poll)).then(||std::time::Instant::now()+std::time::Duration::from_millis(10))
     }
 
     pub(crate) fn is_halted(&self) -> bool {
@@ -663,11 +674,20 @@ impl JournalApplication {
         Ok(true)
     }
 
+    pub(crate) fn has_pending_engine_effects(&self,id:EngineId)->bool {
+        self.creations.contains_key(&id)||self.has_resource_cleanup(id)||self.commands.has_resource_request(id)
+    }
+    #[cfg(feature="gui")]
+    pub(crate) fn has_pending_view_for(&self,stream:&str)->bool {
+        self.queued_view_writes.contains_key(stream)||self.view_writes.values().any(|view|view.binding.stream==stream)
+    }
+
     pub(crate) fn is_ready(&self, id: EngineId) -> bool {
         self.started
             && self.halted.is_none()
             && !self.opening.contains_key(&id)
             && !self.creations.contains_key(&id)
+            && !self.has_resource_cleanup(id)
             && !self
                 .restoration_queue
                 .iter()

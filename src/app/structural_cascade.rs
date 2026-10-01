@@ -218,7 +218,7 @@ pub(crate) fn cascade_surface_closed(
     if let Some((_, workspace_id)) = c.workspace_purged {
         // 통지는 소비자가 있는 GUI에서만 쌓고, 메모리 정리는 headless에서도 한다.
         #[cfg(feature = "gui")]
-        state.enqueue_host_event(crate::core::host_event::PendingHostEvent::WorkspaceClosed {
+        engine.enqueue_host_event(crate::core::host_event::PendingHostEvent::WorkspaceClosed {
             workspace_id,
         });
         engine.purge_workspace_memory_scope(workspace_id, "cascade");
@@ -261,7 +261,7 @@ fn reclaim_closed_surfaces(
         #[cfg(feature = "gui")]
         {
             state.release_surface_views(sid);
-            state.enqueue_surface_closed(sid, kind, is_user_close);
+            engine.enqueue_surface_closed(sid, kind, is_user_close);
         }
     }
     #[cfg(feature = "gui")]
@@ -282,7 +282,7 @@ fn enqueue_closed_tab_events(
         let pane_id = closed_tabs_pane
             .or_else(|| closed_pane_ids.first().copied())
             .unwrap_or_else(|| state.lifecycle_baseline_pane_of(*tab_id).unwrap_or(0));
-        state.enqueue_host_event(crate::core::host_event::PendingHostEvent::TabClosed {
+        engine.enqueue_host_event(crate::core::host_event::PendingHostEvent::TabClosed {
             tab_id: *tab_id,
             pane_id,
         });
@@ -293,7 +293,7 @@ fn enqueue_closed_tab_events(
 #[cfg(feature = "gui")]
 fn enqueue_closed_pane_events(state: &mut dyn CascadeWindow, closed_pane_ids: &[u32]) {
     for pane_id in closed_pane_ids {
-        state.enqueue_host_event(crate::core::host_event::PendingHostEvent::PaneClosed {
+        engine.enqueue_host_event(crate::core::host_event::PendingHostEvent::PaneClosed {
             pane_id: *pane_id,
         });
     }
@@ -352,14 +352,14 @@ pub(crate) fn cascade_pane_split(
 ) {
     #[cfg(feature = "gui")]
     let workspace_id = {
-        state.enqueue_host_event(crate::core::host_event::PendingHostEvent::PaneSplit {
+        engine.enqueue_host_event(crate::core::host_event::PendingHostEvent::PaneSplit {
             original_pane: c.original_pane_id,
             new_pane: c.new_pane_id,
             direction: c.direction,
         });
         let workspace_id = engine.workspace_at(c.workspace_index).map(|w| w.id);
         if let Some(workspace_id) = workspace_id {
-            state.enqueue_host_event(crate::core::host_event::PendingHostEvent::PaneCreated {
+            engine.enqueue_host_event(crate::core::host_event::PendingHostEvent::PaneCreated {
                 pane_id: c.new_pane_id,
                 workspace_id,
             });
@@ -380,7 +380,7 @@ pub(crate) fn cascade_pane_split(
 
 #[cfg(feature = "gui")]
 pub(crate) fn cascade_pane_closed(state: &mut dyn CascadeWindow, pane_id: u32) {
-    state.enqueue_host_event(crate::core::host_event::PendingHostEvent::PaneClosed { pane_id });
+    engine.enqueue_host_event(crate::core::host_event::PendingHostEvent::PaneClosed { pane_id });
 }
 
 /// pane의 surface를 정리하고 GUI에서는 닫힘 알림도 등록한다.
@@ -414,7 +414,7 @@ pub(crate) fn cascade_surface_created(
     else {
         return;
     };
-    state.enqueue_host_event(crate::core::host_event::PendingHostEvent::SurfaceCreated {
+    engine.enqueue_host_event(crate::core::host_event::PendingHostEvent::SurfaceCreated {
         surface_id,
         kind,
         tab_id,
@@ -480,7 +480,7 @@ pub(crate) fn cascade_tab_created(
             .map(|s| s.kind().to_string())
             .unwrap_or_else(|| "unknown".to_string());
         if let Some(workspace_id) = workspace_id {
-            state.enqueue_host_event(crate::core::host_event::PendingHostEvent::TabCreated {
+            engine.enqueue_host_event(crate::core::host_event::PendingHostEvent::TabCreated {
                 tab_id,
                 pane_id,
                 workspace_id,
@@ -497,7 +497,7 @@ pub(crate) fn cascade_tab_closed(state: &mut dyn CascadeWindow, tab_id: u32, pan
     let Some(pane_id) = pane_id else {
         return;
     };
-    state.enqueue_host_event(crate::core::host_event::PendingHostEvent::TabClosed {
+    engine.enqueue_host_event(crate::core::host_event::PendingHostEvent::TabClosed {
         tab_id,
         pane_id,
     });

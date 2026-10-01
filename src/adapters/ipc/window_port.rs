@@ -32,15 +32,6 @@ pub(crate) trait IpcWindow: CascadeWindow {
         created: crate::app::dispatch_domain::WorkspaceCreatedCascade,
     );
 
-    /// workspace 이름 등 메타데이터 변경을 알린다.
-    fn cascade_workspace_meta_updated(
-        &mut self,
-        workspace_id: u32,
-        name: Option<String>,
-        subtitle: Option<String>,
-        description: Option<String>,
-    );
-
     /// 워크스페이스 하나를 닫고 창 쪽 자원과 활성 포인터를 정리한다. 닫았으면 `true`.
     fn close_workspace_at(
         &mut self,
@@ -48,9 +39,6 @@ pub(crate) trait IpcWindow: CascadeWindow {
         ws_idx: usize,
         origin: crate::state::WorkspaceCloseOrigin,
     ) -> bool;
-
-    /// 호스트 이벤트(plugin event bus · hook 대기 task)를 이 창의 큐에 넣는다.
-    fn push_host_event(&mut self, event: crate::state::PendingHostEvent);
 
     /// 이 창이 기억하는 최근 파일(최신순).
     fn recent_files(&self, kind: &str) -> Vec<String>;

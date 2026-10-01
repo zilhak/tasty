@@ -87,10 +87,10 @@ fn drain_with(
 /// 헤드리스에서도 이 이벤트를 구독해야 한다면 별도의 전달 경로가 필요하다.
 pub(crate) fn drain_pending_host_events(
     core: &AppServices,
-    state: &mut RequestContext,
-    engine: &EngineRef<'_>,
+    engine: &mut EngineMut<'_>,
 ) {
-    for event in state.take_pending_host_events() {
+    engine.runtime.pending_lifecycle_events.clear();
+    for event in engine.take_pending_host_events() {
         if let crate::state::PendingHostEvent::HookFired {
             hook_id, exit_code, ..
         } = event

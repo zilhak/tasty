@@ -262,7 +262,7 @@ fn run_due_timers(
                 engine.poll_global_hooks();
                 let exec = app.services.hook_executor();
                 for event in engine.fire_idle_timeout_hooks(&exec) {
-                    state.enqueue_host_event(event);
+                    engine.enqueue_host_event(event);
                 }
                 // 플러그인 소켓 입력이 없어도 상태 확인·재시작을 진행하는 주기 경로다.
                 headless_plugins::pump_plugins(app, state, engine);
@@ -334,7 +334,7 @@ fn handle_terminal_output(
             event => fire_terminal_hooks(app, state, engine, vec![event]),
         }
     }
-    crate::intent::headless::drain_pending_host_events(&app.services, state, &engine.as_ref());
+    crate::intent::headless::drain_pending_host_events(&app.services, &mut engine);
 }
 
 /// output-match 훅을 발화하고 HookFired를 큐에 넣는다. PTY 종료는 호출자가 먼저 공용 process_exit 처리로 분기한다.
@@ -366,7 +366,7 @@ fn fire_terminal_hooks(
             .hooks
             .fire(&exec, surface_id, tasty_hooks::HookEvent::OutputMatch(text))
         {
-            state.enqueue_host_event(fired);
+            engine.enqueue_host_event(fired);
         }
     }
 }
@@ -461,7 +461,7 @@ fn bootstrap_engine(
         .map_err(anyhow::Error::msg)?;
     while engine.journal_binding.is_none() || !app.journal.is_ready(engine.id) {
         app.journal
-            .poll_bootstrap(&mut [&mut engine])
+            .poll_bootstrap(&mut [&mut engine],app.plugin_manager.as_mut())
             .map_err(anyhow::Error::msg)?;
         app.journal
             .poll_restore_bootstrap(&engine)
@@ -535,7 +535,7 @@ fn dispatch_headless_event(
     use crate::AppEvent;
     if matches!(event, AppEvent::JournalReady) {
         app.journal.update_completion_view(session.id,&session.core_state,&state.navigation);
-        if let Err(error) = app.journal.poll_bootstrap(&mut [session]) {
+        if let Err(error) = app.journal.poll_bootstrap(&mut [session],app.plugin_manager.as_mut()) {
             tracing::error!("committed structure publication halted: {error}");
         }
         if !app.journal.is_halted() && !app.journal.pauses_observation() {
@@ -685,8 +685,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
             );
             crate::intent::headless::drain_pending_host_events(
                 &app.services,
-                &mut state,
-                &engine.as_ref(),
+                &mut engine,
             );
         }
         // 대기 전에 agent 이벤트를 발행한다. 대기 중 새 항목이 쌓이면 다음 루프에서 전달한다.

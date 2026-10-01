@@ -12,6 +12,9 @@ use crate::runtime::terminal_store::TerminalStore;
 /// Kind instances retire before terminal/Pty owners. Shared service references do not cancel tasks.
 pub(crate) struct EngineRuntime {
     pub(crate) waker: Waker,
+    pub(crate) pending_host_events: Vec<crate::core::host_event::PendingHostEvent>,
+    pub(crate) pending_lifecycle_events: Vec<crate::core::host_event::PendingSurfaceClosed>,
+    pub(crate) pending_plugin_retirements: Vec<(u32,tasty_host_plugin::host_cmd::SurfaceBinding)>,
     /// 대상별 출력 알림을 만드는 인터페이스. 도메인은 winit EventLoopProxy를 직접 보유하지 않는다.
     pub(crate) waker_factory: Option<crate::waker::SharedWakerFactory>,
     /// surface 종류와 생성·복원 동작의 등록부.
@@ -39,6 +42,7 @@ pub(crate) struct EngineRuntime {
     pub(crate) surfaces:std::collections::HashMap<u32,Box<dyn crate::model::Surface>>,
     /// 실제 Terminal과 scrollback 저장 ID. 레이아웃 트리의 TerminalSurface는 ID만 참조한다.
     pub(crate) terminals: TerminalStore,
+    pub(crate) pending_scrollback_inject: std::collections::HashMap<u32, Vec<tasty_terminal::ScrollbackLine>>,
 
     /// 자식 terminal surface의 부모·번호·상태 기록. 파일에서 읽으며 저장은 호출자가 요청한다.
     pub(crate) child_terminals: ChildTerminalRegistry,
@@ -50,10 +54,15 @@ pub(crate) struct EngineRuntime {
 }
 
 impl EngineRuntime {
+    pub(crate) fn has_pending_delivery(&self)->bool {
+        !self.pending_host_events.is_empty() || !self.pending_lifecycle_events.is_empty() || !self.pending_plugin_retirements.is_empty()
+    }
+
     /// PTY ID 발급기는 같은 프로세스의 engine들이 공유해야 ID가 겹치지 않는다.
     pub(crate) fn new(pty_counter: Arc<AtomicU32>,waker:Waker,memory:Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>) -> Self {
         let runtime=Self {
             waker: waker.clone(),
+            pending_host_events:Vec::new(),pending_lifecycle_events:Vec::new(),pending_plugin_retirements:Vec::new(),
             waker_factory: None,
             surface_registry: {
                 let reg = SurfaceKindRegistry::new();
@@ -89,6 +98,7 @@ impl EngineRuntime {
 
             surfaces:Default::default(),
             terminals: TerminalStore::new(pty_counter),
+            pending_scrollback_inject: Default::default(),
             child_terminals: ChildTerminalRegistry::load(),
             #[cfg(feature="gui")]
             readonly_views:Default::default(),

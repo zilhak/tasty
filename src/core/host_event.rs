@@ -15,7 +15,7 @@
 pub struct PendingSurfaceClosed {
     pub(crate) surface_id: u32,
     /// layout에서 이미 제거돼 kind를 모르면 None이다. 전송할 때 빈 문자열로 바꾼다.
-    pub(crate) kind: Option<&'static str>,
+    pub(crate) kind: Option<String>,
     pub(crate) is_user_close: bool,
 }
 

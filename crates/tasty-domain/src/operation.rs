@@ -42,6 +42,8 @@ pub struct Operation {
     pub engine_incarnation: u64,
     #[serde(default)]
     pub creation: Option<crate::CreationPlan>,
+    #[serde(default)]
+    pub retirement:Option<crate::RetirementPlan>,
     pub targets: Vec<EntityId>,
     pub reserved: Vec<EntityId>,
     /// Immutable, non-secret resolved preparation input owned by this journal.

@@ -74,11 +74,10 @@ pub(super) fn aggregate(
                         .get(id)
                         .expect("original result refers to its operation");
                     *result = match &operation.outcome {
-                        Some(OperationOutcome::Succeeded) => operation
-                            .creation
-                            .as_ref()
-                            .expect("creation result has its plan")
-                            .created_result(),
+                        Some(OperationOutcome::Succeeded)=> {
+                            if operation.retirement.is_some() {StructuralResult::Closed {closed:true}}
+                            else {operation.creation.as_ref().ok_or("completed operation has no result plan")?.created_result()}
+                        },
                         Some(
                             OperationOutcome::Failed { reason }
                             | OperationOutcome::Cancelled { reason }

@@ -18,6 +18,7 @@ fn next_ui_transfer_id() -> u64 {
 }
 
 pub(crate) struct ImageUploadOutcome {
+    pub(crate) remote_target:Option<crate::app::attach_client::RemoteTarget>,
     /// 대상 surface가 사라졌을 때 실패 popup을 표시할 workspace.
     pub(crate) mirror_ws_id: u32,
     /// 붙여넣기를 시작할 때 지정한 로컬 mirror surface.
@@ -67,14 +68,15 @@ impl App {
             let transfer_id = next_ui_transfer_id();
             let total = png_bytes.len() as u64;
             self.begin_transfer_progress_row(surface_id, transfer_id, &file_name, total);
-            let target = self.bulk_target_for(mirror_ws_id);
+            let remote_target=self.capture_remote_target(mirror_ws_id,Some(surface_id));
+            let target=remote_target.as_ref().map(|target|(target.port,target.remote_workspace,target.sender.epoch()));
             let tx = self.image_upload_tx.clone();
             let progress_tx = self.transfer_progress_tx.clone();
             let proxy = self.view.proxy.clone();
             std::thread::spawn(move || {
                 let start = std::time::Instant::now();
                 let result = match target {
-                    Some((port, remote_ws)) => {
+                    Some((port, remote_ws,epoch)) => {
                         let progress_tx = progress_tx.clone();
                         let proxy = proxy.clone();
                         crate::app::attach_client::upload_file_over_bulk(
@@ -94,6 +96,7 @@ impl App {
                                 // 이벤트 루프 종료 시에만 실패 — 무시.
                                 let _ = proxy.send_event(crate::AppEvent::TransferProgressTick);
                             },
+                            &epoch,
                         )
                     }
                     None => Err(anyhow::anyhow!(
@@ -102,6 +105,7 @@ impl App {
                 };
                 // 수신자(메인 루프)가 종료돼 채널이 닫힌 경우에만 실패 — 무시.
                 let _ = tx.send(ImageUploadOutcome {
+                    remote_target,
                     mirror_ws_id,
                     surface_id,
                     bracketed,
@@ -175,6 +179,7 @@ impl App {
     pub(crate) fn drain_image_upload_results(&mut self) {
         while let Ok(outcome) = self.image_upload_rx.try_recv() {
             let ImageUploadOutcome {
+                remote_target,
                 mirror_ws_id,
                 surface_id,
                 bracketed,
@@ -184,8 +189,14 @@ impl App {
                 result,
             } = outcome;
             self.finish_transfer_progress_row(surface_id, mirror_ws_id, transfer_id);
+            if remote_target.as_ref().is_some_and(|target|!self.remote_target_is_current(target)) {
+                tracing::debug!("discarding upload result for retired remote target");continue;
+            }
             match result {
                 Ok(remote_path) => {
+                    let Some(target)=remote_target else {
+                        tracing::error!("upload succeeded without its originating connection binding");continue;
+                    };
                     let Some(wid) = self.find_main_with_surface(surface_id) else {
                         tracing::warn!(
                             "image upload: mirror surface {surface_id} gone before path insertion"
@@ -194,12 +205,9 @@ impl App {
                     };
                     if let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut())
                     {
-                        crate::view::main::clipboard::dispatch_paste(
-                            main,
-                            surface_id,
-                            bracketed,
-                            remote_path,
-                        );
+                        if let Some((_,_,generation))=target.surface {
+                            crate::view::main::clipboard::dispatch_bound_paste(main,surface_id,generation,bracketed,remote_path);
+                        }
                         main.mark_dirty();
                     }
                 }

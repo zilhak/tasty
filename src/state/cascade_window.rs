@@ -73,21 +73,6 @@ impl CascadeWindow for RequestContext {
     }
 
     #[cfg(feature = "gui")]
-    fn enqueue_surface_closed(
-        &mut self,
-        surface_id: u32,
-        kind: Option<&'static str>,
-        is_user_close: bool,
-    ) {
-        RequestContext::enqueue_surface_closed(self, surface_id, kind, is_user_close);
-    }
-
-    #[cfg(feature = "gui")]
-    fn enqueue_host_event(&mut self, event: PendingHostEvent) {
-        RequestContext::enqueue_host_event(self, event);
-    }
-
-    #[cfg(feature = "gui")]
     fn lifecycle_baseline_insert_tab(
         &mut self,
         tab_id: u32,

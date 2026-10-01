@@ -279,7 +279,7 @@ pub(crate) fn handle_surface_fire_hook(
         .fire_as(&core.hook_executor(), surface_id, event, event_kind);
     let count = fired.len();
     for event in fired {
-        window.push_host_event(event);
+        engine.enqueue_host_event(event);
     }
     JsonRpcResponse::success(id, json!({ "fired": count }))
 }

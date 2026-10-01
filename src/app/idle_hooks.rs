@@ -14,7 +14,7 @@ impl App {
                 continue;
             }
             for event in fired {
-                main.state.enqueue_host_event(event);
+                engine.enqueue_host_event(event);
             }
             main.base.state.dirty = true;
         }
@@ -22,7 +22,7 @@ impl App {
         // 화면이 없는 parked engine도 계속 판정한다.
         for (state, mut engine) in self.engines_mut().parked_sessions() {
             for event in engine.fire_idle_timeout_hooks(&exec) {
-                state.enqueue_host_event(event);
+                engine.enqueue_host_event(event);
             }
         }
     }

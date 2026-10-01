@@ -324,7 +324,7 @@ impl App {
     fn boot_step_waiting_journal(&mut self, boot: &mut BootResources,progress:&mut BootProgress) -> bool {
         let id = self.engines.pending_id().expect("pending bootstrap engine");
         let session = self.engines.session_mut(id).expect("pending engine exists");
-        if let Err(error) = self.journal.poll_bootstrap(&mut [session]) {
+        if let Err(error) = self.journal.poll_bootstrap(&mut [session],self.plugin_manager.as_mut()) {
             self.state.boot_error_info = Some(boot_engine_error_info(&anyhow::anyhow!(error)));
             return false;
         }

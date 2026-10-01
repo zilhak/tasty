@@ -10,8 +10,23 @@ impl App {
         use tasty_plugin_protocol::events::LifecycleReason;
         use tasty_plugin_protocol::events::payloads::SurfaceClosed;
         let mut drained: Vec<crate::state::PendingSurfaceClosed> = Vec::new();
-        for (s, _engine) in self.engines_mut().sessions() {
-            drained.extend(s.take_pending_lifecycle_events());
+        for session in self.engines.all_sessions_mut() {
+            let pending=std::mem::take(&mut session.runtime.pending_plugin_retirements);
+            for (surface,binding) in pending {
+                if !binding.is_alive() {continue;}
+                match self.plugin_manager.as_mut().map(|manager|manager.enqueue_bound_remote_retirement(surface,binding.clone())) {
+                    Some(Ok(()))=>{},
+                    Some(Err(error))=>{
+                        tracing::error!(surface,"retaining failed plugin retirement: {error}");
+                        session.runtime.pending_plugin_retirements.push((surface,binding));
+                    },
+                    None=>session.runtime.pending_plugin_retirements.push((surface,binding)),
+                }
+            }
+            // Required owner disposal is not replaced by sending its informational close event.
+            if session.runtime.pending_plugin_retirements.is_empty() {
+                drained.append(&mut session.runtime.pending_lifecycle_events);
+            }
         }
         if drained.is_empty() {
             return;
@@ -22,8 +37,6 @@ impl App {
             return;
         };
         for ev in drained {
-            // 일반 닫기 알림과 별도로 소유 플러그인의 surface 자원도 정리한다.
-            mgr.destroy_remote_surface(ev.surface_id, ev.kind);
             let bus_reason = if ev.is_user_close {
                 LifecycleReason::User
             } else {
@@ -31,7 +44,7 @@ impl App {
             };
             let payload = SurfaceClosed {
                 surface_id: ev.surface_id,
-                kind: ev.kind.map(|s| s.to_string()).unwrap_or_default(),
+                kind: ev.kind.unwrap_or_default(),
                 reason: bus_reason,
             };
             mgr.emit_host_event("surface.closed", &payload, EventScope::Surface);

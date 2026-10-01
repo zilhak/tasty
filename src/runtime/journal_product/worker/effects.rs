@@ -106,7 +106,7 @@ pub(super) fn claim(
                     surface_id: Some(plan.surface.id.to_string()),
                     runtime_epoch: epoch.0,
                     activation_generation: operation.activation_generation,
-                }),
+                }.into()),
                 result: None,
             },
         )
@@ -300,45 +300,57 @@ fn cancel_unstarted(
         .map_err(|error| error.to_string())
 }
 
-fn validate_binding(
-    effect: &tasty_event_store::EffectRecord,
-    stream: &str,
-    operation: &tasty_domain::Operation,
-) -> Result<()> {
-    if effect.operation_id != operation.id.0
-        || effect.command_id.as_deref() != Some(operation.command_id.as_str())
-        || effect.effect_id != format!("{}/prepare", operation.id.0)
-        || effect.payload.type_tag != "structure.surface_effect"
-        || effect.payload.schema_version != 1
-    {
+fn validate_binding(effect:&tasty_event_store::EffectRecord,stream:&str,operation:&tasty_domain::Operation)->Result<()> {
+    use tasty_domain::StructuralEffect;
+    if effect.operation_id!=operation.id.0 || effect.command_id.as_deref()!=Some(operation.command_id.as_str())
+        || effect.payload.type_tag!="structure.surface_effect" || effect.payload.schema_version!=1 {
         return Err("effect does not belong to this operation and command".into());
     }
-    let recorded: crate::runtime::journal_product::preparation::RecordedEffect =
-        serde_json::from_slice(&effect.payload.bytes).map_err(|error| error.to_string())?;
-    let tasty_domain::StructuralEffect::PrepareSurface {
-        operation: id,
-        input,
-        surface,
-        kind,
-        activation_generation,
-    } = recorded.instruction;
-    let plan = operation
-        .creation
-        .as_ref()
-        .ok_or("effect operation has no creation plan")?;
-    if recorded.stream != stream
-        || id != operation.id
-        || input != operation.input
-        || surface != plan.surface.id
-        || kind != plan.surface.kind
-        || activation_generation != operation.activation_generation
-        || effect.resource_generation != activation_generation
-    {
-        return Err(
-            "effect payload binding does not match the operation, stream, and surface".into(),
-        );
+    let recorded:crate::runtime::journal_product::preparation::RecordedEffect=serde_json::from_slice(&effect.payload.bytes).map_err(|error|error.to_string())?;
+    if recorded.stream!=stream {return Err("effect belongs to another engine stream".into());}
+    let valid=match recorded.instruction {
+        StructuralEffect::PrepareSurface {operation:id,input,surface,kind,activation_generation}=> {
+            effect.claim_kind==tasty_event_store::ClaimKind::Activation && effect.effect_id==format!("{}/prepare",operation.id.0)
+                && operation.creation.as_ref().is_some_and(|plan|id==operation.id && input==operation.input && surface==plan.surface.id && kind==plan.surface.kind && activation_generation==operation.activation_generation && effect.resource_generation==activation_generation)
+        },
+        StructuralEffect::RetireSurfaces {operation:id,plan}=> {
+            effect.claim_kind==tasty_event_store::ClaimKind::Obligation && effect.effect_id==format!("{}/retire",operation.id.0)
+                && id==operation.id && operation.retirement.as_ref()==Some(&plan)
+        },
+    };
+    if valid {Ok(())} else {Err("effect payload differs from its exact operation binding".into())}
+}
+
+pub(super) fn claim_retirement(executor:&Executor<StructureDecider>,stream:&str,id:&OperationId)->Result<ResultValue> {
+    executor.with_state(|_|()).map_err(|error|error.to_string())?;
+    let mut inner=executor.inner.lock().map_err(|error|error.to_string())?;
+    let operation=inner.state.streams.get(stream).and_then(|model|model.operations.get(id)).ok_or("retirement operation missing")?.clone();
+    if operation.outcome.is_some() {return Err("retirement operation already has an outcome".into());}
+    let plan=operation.retirement.clone().ok_or("operation is not a retirement")?;
+    if inner.state.streams.get(stream).is_some_and(|model|plan.surfaces.iter().any(|surface|model.surfaces.contains_key(&surface.id))) {
+        return Err("retirement tombstone has not removed every target".into());
     }
-    Ok(())
+    let effect_id=format!("{}/retire",id.0);
+    let effect=inner.store.effect(&effect_id).map_err(|error|error.to_string())?.ok_or("retirement effect missing")?;
+    validate_binding(&effect,stream,&operation)?;
+    if effect.state!=EffectState::Pending {return Err("retirement attempt requires explicit reconciliation before retry".into());}
+    let epoch=inner.epoch;
+    if inner.store.effect_origin_epoch(&effect_id).map_err(|error|error.to_string())?!=epoch {
+        return Err("retirement belongs to an earlier runtime; physical owner reconciliation is required".into());
+    }
+    inner.store.transition_effect(epoch,&EffectTransition {
+        effect_id:effect_id.clone(),from:EffectState::Pending,to:EffectState::Running,resource_generation:effect.resource_generation,attempt:None,
+        claim:Some(tasty_event_store::ObligationClaim {engine_id:stream.into(),engine_incarnation:operation.engine_incarnation,operation_id:id.0.clone(),runtime_epoch:epoch.0}.into()),result:None,
+    }).map_err(|error|error.to_string())?;
+    let claimed=inner.store.effect(&effect_id).map_err(|error|error.to_string())?.ok_or("claimed retirement missing")?;
+    Ok(ResultValue::RetirementClaimed(super::super::ClaimedRetirement {
+        lease:EffectLease {effect_id,operation:id.clone(),stream:stream.into(),runtime_epoch:epoch.0,resource_generation:claimed.resource_generation,attempt:claimed.attempt},
+        plan,engine_incarnation:operation.engine_incarnation,
+    }))
+}
+pub(super) fn retired(executor:&Executor<StructureDecider>,lease:EffectLease,outcome:tasty_domain::OperationOutcome)->Result<ResultValue> {
+    let command=StructuralCommand::FinishRetirement {operation:lease.operation.clone(),outcome};
+    finish(executor,lease,command,"retired",None)
 }
 
 fn read_original_results(

@@ -26,6 +26,10 @@ impl SurfaceHandles {
 }
 
 impl SurfaceBinding {
+    /// False means every original handle (including queued Created and manager registration)
+    /// has been dropped. This is evidence of disposal, not a lookup by reusable surface ID.
+    pub fn is_alive(&self)->bool {self.0.strong_count()!=0}
+
     pub fn matches(&self, handles: &SurfaceHandles) -> bool {
         self.0.ptr_eq(&Arc::downgrade(&handles.snapshot_cache))
     }

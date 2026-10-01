@@ -3,6 +3,7 @@
 mod bootstrap;
 mod creation;
 mod metadata;
+pub(crate) mod retirement;
 
 use serde::{Deserialize, Serialize};
 use tasty_model::WorkspaceAttachMapping;
@@ -11,6 +12,8 @@ use crate::{DomainEvent, JournalModel, Ratio};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StructuralCommand {
+    Close {operation:crate::OperationId,command_id:String,input:crate::DataRef,target:crate::CloseTarget,undo:Option<crate::DataRef>,is_user_close:bool},
+    FinishRetirement {operation:crate::OperationId,outcome:crate::OperationOutcome},
     RetireEngine {
         expected_incarnation: u64,
     },
@@ -119,6 +122,7 @@ impl StructuralCommand {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StructuralResult {
+    Closed {closed:bool},
     EngineOpened {
         incarnation: u64,
     },
@@ -165,6 +169,7 @@ pub fn decide_structure(
             command,
             StructuralCommand::OpenEngine { .. }
                 | StructuralCommand::RetireEngine { .. }
+                | StructuralCommand::FinishRetirement { .. }
                 | StructuralCommand::FinishCreation { .. }
                 | StructuralCommand::FinishCleanup { .. }
                 | StructuralCommand::RejectInstallation { .. }
@@ -175,6 +180,7 @@ pub fn decide_structure(
         return Err(Rejection("engine binding has been retired".into()));
     }
     let decision = match command {
+        StructuralCommand::Close {..}|StructuralCommand::FinishRetirement {..}=>retirement::decide(model,command)?,
         StructuralCommand::OpenEngine { .. } | StructuralCommand::RetireEngine { .. } => {
             bootstrap::decide(model, command)?
         }

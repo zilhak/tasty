@@ -38,17 +38,6 @@ pub(crate) trait CascadeWindow {
     fn release_surface_views(&mut self, surface_id: u32);
 
     #[cfg(feature = "gui")]
-    fn enqueue_surface_closed(
-        &mut self,
-        surface_id: u32,
-        kind: Option<&'static str>,
-        is_user_close: bool,
-    );
-
-    #[cfg(feature = "gui")]
-    fn enqueue_host_event(&mut self, event: PendingHostEvent);
-
-    #[cfg(feature = "gui")]
     fn lifecycle_baseline_insert_tab(
         &mut self,
         tab_id: u32,

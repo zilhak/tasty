@@ -156,3 +156,25 @@ impl RemoteState {
         self.pending_screenshot_captures.retain(|target|*target!=Some(workspace));
     }
 }
+
+impl RemoteState {
+    /// Dispose only ephemeral observations and queued sends for a removed local identity.
+    /// Connection ownership and other surfaces in the same session remain intact.
+    pub(crate) fn forget_surface_observations(&mut self, id:u32) {
+        self.mesh_mirror.remove(id);
+        self.last_forwarded_busy.remove(&id);
+        self.last_forwarded_attention.remove(&id);
+        self.last_forwarded_cwd.remove(&id);
+        self.pending_attention_clear_forward.remove(&id);
+        self.pending_structural_forward.retain(|request|request.op.anchor_surface_id()!=id);
+        #[cfg(feature="gui")]
+        {
+            self.pending_resize_forward.remove(&id);
+            self.pending_mesh_context_forward.remove(&id);
+            self.pending_mesh_input_forward.remove(&id);
+            self.pending_mesh_full_resend_forward.remove(&id);
+            self.pending_git_query_forward.retain(|request|request.local_surface_id!=id);
+            self.pending_markdown_content_forward.retain(|request|request.local_surface_id!=id);
+        }
+    }
+}

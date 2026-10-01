@@ -67,6 +67,11 @@ impl JournalApplication {
         std::mem::take(&mut self.retirements.completed)
     }
 
+    pub(crate) fn defer_retired_engine_delivery(&mut self,id:EngineId) {
+        self.retirements.completed.push(id);
+        (self.wake)();
+    }
+
     // Drain already accepted materializations while their exact owner remains hidden and alive.
     // New activation is disabled at queue time; retirement never overtakes installation cleanup.
     pub(super) fn submit_retirements(&mut self) -> Result<(), String> {
@@ -77,6 +82,8 @@ impl JournalApplication {
             .filter(|(id, pending)| {
                 pending.ticket.is_none()
                     && !self.creations.contains_key(id)
+                    && !self.commands.has_resource_request(**id)
+                    && !self.resource_cleanups.values().any(|cleanup|cleanup.engine==**id)
                     && !self
                         .restoration_reads
                         .values()

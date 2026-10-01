@@ -148,10 +148,6 @@ pub struct MainViewState {
     pub(crate) preset_store: std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>,
     /// Core와 공유하는 메모리 저장소. 화면 처리와 종료 정리에서도 사용한다.
     pub(crate) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-    /// 닫힌 surface의 lifecycle 알림 대기열. App이 꺼내 플러그인에 전송한다.
-    pub(crate) pending_lifecycle_events: Vec<PendingSurfaceClosed>,
-    /// 호스트 이벤트 대기열. GUI는 이벤트를 전송하고 헤드리스는 필요한 종류만 처리한다.
-    pub(crate) pending_host_events: Vec<PendingHostEvent>,
     /// surface 포커스 변경을 감지할 이전 값.
     #[cfg(feature = "gui")]
     pub(crate) last_focused_surface_id: Option<u32>,

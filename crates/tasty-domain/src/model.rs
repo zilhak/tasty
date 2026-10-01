@@ -245,6 +245,7 @@ impl JournalModel {
                             .as_ref()
                             .and_then(|plan| plan.surface.data),
                     )
+                    .chain(operation.retirement.as_ref().and_then(|plan|plan.undo))
             }))
     }
 }

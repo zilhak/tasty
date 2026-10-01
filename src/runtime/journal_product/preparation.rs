@@ -50,3 +50,10 @@ pub(super) struct RecordedEffect {
     pub(super) stream: String,
     pub(super) instruction: tasty_domain::StructuralEffect,
 }
+
+#[derive(Debug,Clone)]
+pub(crate) struct ClaimedRetirement {
+    pub(crate) lease:EffectLease,
+    pub(crate) plan:tasty_domain::RetirementPlan,
+    pub(crate) engine_incarnation:u64,
+}

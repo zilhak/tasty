@@ -453,7 +453,7 @@ fn dispatch_plugin_ipc_calls_headless(
             engine,
             &mut app.journal,
         );
-        crate::intent::headless::drain_pending_host_events(&app.services, state, &engine.as_ref());
+        crate::intent::headless::drain_pending_host_events(&app.services, &mut engine);
         // 오류 코드도 함께 전달해 플러그인이 원래 실패 종류를 알 수 있게 한다.
         let (result, error, code) = match response.error {
             Some(err) => (None, Some(err.message), Some(err.code)),

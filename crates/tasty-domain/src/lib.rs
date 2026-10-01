@@ -30,6 +30,7 @@ mod evolve;
 mod ids;
 mod model;
 mod operation;
+mod retirement;
 mod streams;
 
 #[cfg(test)]
@@ -59,3 +60,5 @@ pub use operation::{
 pub use streams::{
     STRUCTURE_STREAM_PREFIX, StreamBatch, StructureModels, evolve_streams, is_structure_stream,
 };
+
+pub use retirement::{CloseTarget,RetirementPlan,RetiredSurface};

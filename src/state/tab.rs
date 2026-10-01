@@ -300,7 +300,7 @@ impl RequestContext {
             for (sid, pid) in cleanup_targets {
                 let kind = self.surface_kind(engine, sid);
                 self.cleanup_surface(engine, sid, pid);
-                self.enqueue_surface_closed(sid, kind, true);
+                engine.enqueue_surface_closed(sid, kind, true);
             }
         }
         self.reconcile_presentation(engine);

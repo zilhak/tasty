@@ -23,10 +23,10 @@ pub(crate) fn handle(
         .hooks
         .fire(&exec, surface, tasty_hooks::HookEvent::ProcessExit)
     {
-        state.enqueue_host_event(fired);
+        engine.enqueue_host_event(fired);
     }
     #[cfg(feature = "gui")]
-    state.enqueue_host_event(crate::state::PendingHostEvent::ProcessExited {
+    engine.enqueue_host_event(crate::state::PendingHostEvent::ProcessExited {
         surface_id: surface,
     });
     // 종료한 프로세스는 복원 스냅샷에 남기지 않는다.

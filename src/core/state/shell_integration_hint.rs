@@ -2,12 +2,12 @@
 //! 설치 여부를 직접 검사하지 않으며 배너 표시나 자동 설정 변경은 여기서 하지 않는다.
 //! 창에 배너를 이미 보여줬는지는 창 상태가 기록한다.
 
-use super::CoreState;
+use crate::runtime::engine_access::EngineMut;
 
 /// 정상 셸의 첫 프롬프트를 기다리기 위한 최소 시간. 늦은 출력의 오탐까지 막지는 못한다.
 const SHELL_INTEGRATION_HINT_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
 
-impl CoreState {
+impl EngineMut<'_> {
     pub(crate) fn note_first_output(&mut self, surface_id: u32) {
         self.live.shell_integration_first_output_at
             .entry(surface_id)

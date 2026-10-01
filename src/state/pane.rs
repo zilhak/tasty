@@ -181,7 +181,7 @@ impl RequestContext {
             for (sid, pid) in cleanup_targets {
                 let kind = self.surface_kind(engine, sid);
                 self.cleanup_surface(engine, sid, pid);
-                self.enqueue_surface_closed(sid, kind, true);
+                engine.enqueue_surface_closed(sid, kind, true);
             }
         }
         self.reconcile_presentation(engine);
@@ -294,7 +294,7 @@ impl RequestContext {
             CascadeLevel::Surface => {
                 for (sid, pid) in targets {
                     self.cleanup_surface(engine, sid, pid);
-                    self.enqueue_surface_closed(sid, kind_before(sid), is_user_close);
+                    engine.enqueue_surface_closed(sid, kind_before(sid), is_user_close);
                 }
             }
             // 탭·pane 닫기는 트리에서 빠진 뒤 kind를 찾는다. AppServices cascade 경로와 같다.
@@ -302,7 +302,7 @@ impl RequestContext {
                 for (sid, pid) in targets {
                     let kind = self.surface_kind(engine, sid);
                     self.cleanup_surface(engine, sid, pid);
-                    self.enqueue_surface_closed(sid, kind, is_user_close);
+                    engine.enqueue_surface_closed(sid, kind, is_user_close);
                 }
             }
             CascadeLevel::Workspace => {
@@ -365,7 +365,7 @@ impl RequestContext {
         self.navigation.select_pane(ws, new_pane_id);
         engine.send_fast_init(new_surface_id);
         engine.mark_layout_dirty();
-        self.enqueue_host_event(super::PendingHostEvent::PaneSplit {
+        engine.enqueue_host_event(super::PendingHostEvent::PaneSplit {
             original_pane: target_pane_id,
             new_pane: new_pane_id,
             direction,

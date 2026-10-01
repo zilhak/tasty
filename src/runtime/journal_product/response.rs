@@ -12,6 +12,7 @@ pub(crate) struct CompletionView {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) enum ResponsePlan {
     Fixed(JsonRpcResponse),
+    Closed { success: JsonRpcResponse, not_closed: JsonRpcResponse },
     WorkspaceCreated {
         stream: String,
         id: u32,
@@ -38,6 +39,7 @@ impl ResponsePlan {
     ) -> Result<Vec<u8>, Rejection> {
         let response = match self {
             Self::Fixed(response) => response.clone(),
+            Self::Closed { success, .. } => success.clone(),
             Self::Multiple(plans) => {
                 let results = plans
                     .iter()
@@ -185,8 +187,11 @@ impl ResponseProgress {
                     reason,
                 ));
             }
+            if let (ResponsePlan::Closed { success, not_closed }, Some(R::Closed { closed })) = (plan, result) {
+                return Ok(if *closed { success.clone() } else { not_closed.clone() });
+            }
             let bytes = plan
-                .render(model, mirror_count)
+                .render(model, view)
                 .map_err(|error| error.to_string())?;
             serde_json::from_slice(&bytes).map_err(|error| error.to_string())
         };
@@ -233,7 +238,7 @@ impl ResponseProgress {
             .results
             .iter()
             .find(|result| matches!(result, R::Failed { .. }));
-        serde_json::to_vec(&render(plan, failed)?)
+        serde_json::to_vec(&render(plan, failed.or_else(||self.results.first()))?)
             .map(Some)
             .map_err(|error| error.to_string())
     }

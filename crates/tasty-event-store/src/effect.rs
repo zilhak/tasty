@@ -77,9 +77,24 @@ pub struct ActivationClaim {
     pub activation_generation: u64,
 }
 
+/// The persisted effect selects its claim class before any external execution.
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum ClaimKind {Activation,Obligation}
+impl ClaimKind {
+    fn as_str(self)->&'static str {match self {Self::Activation=>"activation",Self::Obligation=>"obligation"}}
+    fn parse(value:&str)->StoreResult<Self> {match value {"activation"=>Ok(Self::Activation),"obligation"=>Ok(Self::Obligation),_=>Err(StoreError::Corrupt(format!("effect claim kind {value}")))}}
+}
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct ObligationClaim {pub engine_id:String,pub engine_incarnation:u64,pub operation_id:String,pub runtime_epoch:u64}
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub enum EffectClaim {Activation(ActivationClaim),Obligation(ObligationClaim)}
+impl From<ActivationClaim> for EffectClaim {fn from(claim:ActivationClaim)->Self {Self::Activation(claim)}}
+impl From<ObligationClaim> for EffectClaim {fn from(claim:ObligationClaim)->Self {Self::Obligation(claim)}}
+
 /// 새 effect. 처음 상태는 Pending 또는 Deferred만 허용한다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewEffect {
+    pub claim_kind:ClaimKind,
     pub effect_id: String,
     pub operation_id: String,
     pub resource_generation: u64,
@@ -97,13 +112,14 @@ pub struct EffectTransition {
     /// Running에서 벗어날 때 결과를 낸 attempt 번호.
     pub attempt: Option<u32>,
     /// Running으로 갈 때 필요한 실행권.
-    pub claim: Option<ActivationClaim>,
+    pub claim: Option<EffectClaim>,
     /// 이 전이의 결과. Uncertain→Cancelled에서는 실행되지 않았다는 대조 증거이며 필수다.
     pub result: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EffectRecord {
+    pub claim_kind:ClaimKind,
     pub effect_id: String,
     pub operation_id: String,
     pub resource_generation: u64,
@@ -120,7 +136,7 @@ pub struct EffectRecord {
 pub struct AttemptRecord {
     pub attempt: u32,
     pub journal_id: String,
-    pub claim: ActivationClaim,
+    pub claim: EffectClaim,
     pub writer_epoch: WriterEpoch,
     /// Running에서 벗어난 상태. 아직 Running이면 `None`이다.
     pub outcome: Option<EffectState>,
@@ -158,6 +174,12 @@ impl EventStore {
         row.map(finish_effect).transpose()
     }
 
+    /// Runtime that committed the obligation. Recovery must reconcile an older owner first.
+    pub fn effect_origin_epoch(&self,effect_id:&str)->StoreResult<WriterEpoch> {
+        let epoch:i64=self.conn.query_row("SELECT batches.writer_epoch FROM effects JOIN batches ON batches.batch_id=effects.cause_batch_id WHERE effects.effect_id=?1",[effect_id],|row|row.get(0))?;
+        Ok(WriterEpoch(to_u64(epoch)?))
+    }
+
     /// 한 상태의 effect 목록. 복구가 Pending·Running·Uncertain을 대조할 때 쓴다.
     pub fn effects_in_state(&self, state: EffectState) -> StoreResult<Vec<EffectRecord>> {
         let mut stmt = self
@@ -175,7 +197,7 @@ impl EventStore {
         let mut stmt = self.conn.prepare(
             "SELECT attempt, journal_id, engine_id, surface_id, runtime_epoch,
                 activation_generation, writer_epoch, outcome, result, reconciled_outcome,
-                reconciled_result
+                reconciled_result,claim_kind,engine_incarnation,operation_id
              FROM effect_attempts WHERE effect_id = ?1 ORDER BY attempt",
         )?;
         let rows = stmt.query_map([effect_id], read_attempt)?;
@@ -188,7 +210,7 @@ impl EventStore {
 }
 
 const SELECT_EFFECT: &str = "SELECT effect_id, operation_id, resource_generation, cause_batch_id,
-    command_id, type_tag, schema_version, payload, state, attempt, result FROM effects";
+    command_id, type_tag, schema_version, payload, state, attempt, result,claim_kind FROM effects";
 
 pub(crate) fn insert(
     conn: &Connection,
@@ -204,8 +226,8 @@ pub(crate) fn insert(
     }
     conn.execute(
         "INSERT INTO effects (effect_id, operation_id, resource_generation, cause_batch_id,
-            command_id, type_tag, schema_version, payload, state)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            command_id, type_tag, schema_version, payload, state,claim_kind)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9,?10)",
         params![
             new.effect_id,
             new.operation_id,
@@ -215,7 +237,7 @@ pub(crate) fn insert(
             new.payload.type_tag,
             new.payload.schema_version,
             new.payload.bytes,
-            new.initial.as_str(),
+            new.initial.as_str(),new.claim_kind.as_str(),
         ],
     )?;
     Ok(())
@@ -237,7 +259,7 @@ pub(crate) fn apply_transition(
         record_reconciliation(conn, t, attempt)?;
     }
     if t.to == EffectState::Running {
-        next_attempt = attempt + 1;
+        next_attempt=attempt.checked_add(1).ok_or_else(||StoreError::Corrupt("effect attempt range exhausted".into()))?;
         open_attempt(conn, t, next_attempt, journal_id, epoch)?;
     }
     // 재시도는 새 attempt를 준비하므로 이전 attempt의 결과를 현재 결과로 남기지 않는다.
@@ -335,21 +357,22 @@ fn open_attempt(
     let Some(claim) = &t.claim else {
         return Err(StoreError::ClaimRequired(t.effect_id.clone()));
     };
-    take_claim(conn, claim, &t.effect_id)?;
+    let (required,operation_id):(String,String)=conn.query_row("SELECT claim_kind,operation_id FROM effects WHERE effect_id=?1",[&t.effect_id],|row|Ok((row.get(0)?,row.get(1)?)))?;
+    let (engine,surface,runtime,activation,incarnation,operation)=match claim {
+        EffectClaim::Activation(claim) if required=="activation" && claim.runtime_epoch==epoch.0=> {
+            take_claim(conn,claim,&t.effect_id)?;
+            (claim.engine_id.as_str(),Some(claim.surface_id.as_deref().unwrap_or("")),claim.runtime_epoch,Some(claim.activation_generation),None,None)
+        },
+        EffectClaim::Obligation(claim) if required=="obligation" && claim.runtime_epoch==epoch.0 && claim.operation_id==operation_id=> {
+            take_obligation_claim(conn,claim,&t.effect_id)?;
+            (claim.engine_id.as_str(),None,claim.runtime_epoch,None,Some(claim.engine_incarnation),Some(claim.operation_id.as_str()))
+        },
+        _=>return Err(StoreError::Corrupt("effect claim class, operation or runtime owner differs from its obligation".into())),
+    };
     conn.execute(
-        "INSERT INTO effect_attempts (effect_id, attempt, journal_id, engine_id, surface_id,
-            runtime_epoch, activation_generation, writer_epoch)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        params![
-            t.effect_id,
-            attempt,
-            journal_id,
-            claim.engine_id,
-            claim.surface_id.as_deref().unwrap_or(""),
-            to_i64(claim.runtime_epoch)?,
-            to_i64(claim.activation_generation)?,
-            to_i64(epoch.0)?,
-        ],
+        "INSERT INTO effect_attempts(effect_id,attempt,journal_id,engine_id,surface_id,runtime_epoch,activation_generation,writer_epoch,claim_kind,engine_incarnation,operation_id)
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+        params![t.effect_id,attempt,journal_id,engine,surface,to_i64(runtime)?,activation.map(to_i64).transpose()?,to_i64(epoch.0)?,required,incarnation.map(to_i64).transpose()?,operation],
     )?;
     Ok(())
 }
@@ -391,7 +414,18 @@ fn take_claim(conn: &Connection, claim: &ActivationClaim, effect_id: &str) -> St
     }
 }
 
+fn take_obligation_claim(conn:&Connection,claim:&ObligationClaim,effect_id:&str)->StoreResult<()> {
+    let incarnation=to_i64(claim.engine_incarnation)?;let runtime=to_i64(claim.runtime_epoch)?;
+    let holder:Option<String>=conn.query_row("SELECT effect_id FROM obligation_claims WHERE engine_id=?1 AND engine_incarnation=?2 AND operation_id=?3 AND runtime_epoch=?4",params![claim.engine_id,incarnation,claim.operation_id,runtime],|row|row.get(0)).optional()?;
+    match holder {
+        Some(holder) if holder==effect_id=>Ok(()),
+        Some(holder)=>Err(StoreError::Corrupt(format!("cleanup obligation is held by {holder}"))),
+        None=>{conn.execute("INSERT INTO obligation_claims(engine_id,engine_incarnation,operation_id,runtime_epoch,effect_id) VALUES(?1,?2,?3,?4,?5)",params![claim.engine_id,incarnation,claim.operation_id,runtime,effect_id])?;Ok(())},
+    }
+}
+
 struct RawEffect {
+    claim_kind:String,
     effect_id: String,
     operation_id: String,
     resource_generation: i64,
@@ -407,6 +441,7 @@ struct RawEffect {
 
 fn read_effect(r: &Row<'_>) -> rusqlite::Result<RawEffect> {
     Ok(RawEffect {
+        claim_kind:r.get(11)?,
         effect_id: r.get(0)?,
         operation_id: r.get(1)?,
         resource_generation: r.get(2)?,
@@ -423,6 +458,7 @@ fn read_effect(r: &Row<'_>) -> rusqlite::Result<RawEffect> {
 
 fn finish_effect(raw: RawEffect) -> StoreResult<EffectRecord> {
     Ok(EffectRecord {
+        claim_kind:ClaimKind::parse(&raw.claim_kind)?,
         effect_id: raw.effect_id,
         operation_id: raw.operation_id,
         resource_generation: to_u64(raw.resource_generation)?,
@@ -440,12 +476,15 @@ fn finish_effect(raw: RawEffect) -> StoreResult<EffectRecord> {
 }
 
 struct RawAttempt {
+    claim_kind:String,
+    engine_incarnation:Option<i64>,
+    operation_id:Option<String>,
     attempt: i64,
     journal_id: String,
     engine_id: String,
-    surface_id: String,
+    surface_id:Option<String>,
     runtime_epoch: i64,
-    activation_generation: i64,
+    activation_generation:Option<i64>,
     writer_epoch: i64,
     outcome: Option<String>,
     result: Option<Vec<u8>>,
@@ -455,6 +494,7 @@ struct RawAttempt {
 
 fn read_attempt(r: &Row<'_>) -> rusqlite::Result<RawAttempt> {
     Ok(RawAttempt {
+        claim_kind:r.get(11)?,engine_incarnation:r.get(12)?,operation_id:r.get(13)?,
         attempt: r.get(0)?,
         journal_id: r.get(1)?,
         engine_id: r.get(2)?,
@@ -474,11 +514,15 @@ fn finish_attempt(raw: RawAttempt) -> StoreResult<AttemptRecord> {
     Ok(AttemptRecord {
         attempt: to_u32(raw.attempt)?,
         journal_id: raw.journal_id,
-        claim: ActivationClaim {
-            engine_id: raw.engine_id,
-            surface_id: (!surface.is_empty()).then_some(surface),
-            runtime_epoch: to_u64(raw.runtime_epoch)?,
-            activation_generation: to_u64(raw.activation_generation)?,
+        claim:match ClaimKind::parse(&raw.claim_kind)? {
+            ClaimKind::Activation=>EffectClaim::Activation(ActivationClaim {
+                engine_id:raw.engine_id,surface_id:surface.filter(|value|!value.is_empty()),runtime_epoch:to_u64(raw.runtime_epoch)?,
+                activation_generation:to_u64(raw.activation_generation.ok_or_else(||StoreError::Corrupt("activation claim has no generation".into()))?)?,
+            }),
+            ClaimKind::Obligation=>EffectClaim::Obligation(ObligationClaim {
+                engine_id:raw.engine_id,engine_incarnation:to_u64(raw.engine_incarnation.ok_or_else(||StoreError::Corrupt("obligation claim has no incarnation".into()))?)?,
+                operation_id:raw.operation_id.ok_or_else(||StoreError::Corrupt("obligation claim has no operation".into()))?,runtime_epoch:to_u64(raw.runtime_epoch)?,
+            }),
         },
         writer_epoch: WriterEpoch(to_u64(raw.writer_epoch)?),
         outcome: raw.outcome.as_deref().map(parse_state).transpose()?,

@@ -27,6 +27,11 @@ pub(crate) type SplitById<'a> = (
     Option<EngineId>,
 );
 
+pub(crate) enum RetiringView {
+    Discard,
+    Preserve {navigation:crate::state::navigation::NavigationState,checkpoint:Option<u64>},
+}
+
 #[derive(Default)]
 pub(crate) struct EngineRegistry {
     sessions: HashMap<EngineId, EngineSession>,
@@ -35,7 +40,7 @@ pub(crate) struct EngineRegistry {
     parked: Vec<ParkedView>,
     /// 창에 배정되기 전의 engine.
     pending: Option<EngineId>,
-    retiring: std::collections::HashSet<EngineId>,
+    retiring:HashMap<EngineId,RetiringView>,
 }
 
 impl EngineRegistry {
@@ -112,20 +117,31 @@ impl EngineRegistry {
     /// Keep the sole resource owner while its slot retirement is awaiting durable publication.
     pub(crate) fn begin_retiring_window(&mut self, wid: WindowId) -> Option<EngineId> {
         let id = self.by_window.remove(&wid)?;
-        self.retiring.insert(id);
+        self.retiring.insert(id,RetiringView::Discard);
         Some(id)
     }
 
     pub(crate) fn finish_retiring(&mut self, id: EngineId) -> Option<EngineSession> {
         self.retiring
             .remove(&id)
-            .then(|| self.sessions.remove(&id))
+            .map(|_| self.sessions.remove(&id))
             .flatten()
+    }
+
+    pub(crate) fn preserve_closed_view(&mut self,wid:WindowId,navigation:crate::state::navigation::NavigationState)->Option<EngineId> {
+        let id=self.by_window.remove(&wid)?;
+        self.retiring.insert(id,RetiringView::Preserve {navigation,checkpoint:None});Some(id)
+    }
+    pub(crate) fn preserved_closes(&self)->Vec<(EngineId,crate::state::navigation::NavigationState,Option<u64>)> {
+        self.retiring.iter().filter_map(|(id,retiring)|match retiring {RetiringView::Preserve {navigation,checkpoint}=>Some((*id,navigation.clone(),*checkpoint)),_=>None}).collect()
+    }
+    pub(crate) fn mark_closed_view_checkpoint(&mut self,id:EngineId,sequence:u64) {
+        if let Some(RetiringView::Preserve {checkpoint,..})=self.retiring.get_mut(&id) {*checkpoint=Some(sequence);}
     }
 
     pub(crate) fn retiring_slots(&self) -> impl Iterator<Item = u32> + '_ {
         self.retiring
-            .iter()
+            .keys()
             .filter_map(|id| self.sessions.get(id)?.core_state.layout_slot)
     }
 
@@ -148,6 +164,8 @@ impl EngineRegistry {
     pub(crate) fn get_mut(&mut self, id: EngineId) -> Option<EngineMut<'_>> {
         self.sessions.get_mut(&id).map(|s| s.borrow_mut())
     }
+
+    pub(crate) fn all_sessions(&self)->impl Iterator<Item=&EngineSession> {self.sessions.values()}
 
     /// Publication borrows every live, parked and opening owner as one application batch.
     pub(crate) fn all_sessions_mut(&mut self) -> impl Iterator<Item = &mut EngineSession> {

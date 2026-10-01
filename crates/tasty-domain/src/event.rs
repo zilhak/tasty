@@ -243,6 +243,7 @@ impl DomainEvent {
                         .as_ref()
                         .and_then(|plan| plan.surface.data),
                 )
+                .chain(operation.retirement.as_ref().and_then(|plan|plan.undo))
                 .collect(),
             Self::OperationAwaitingCleanup { prepared_data, .. } => {
                 prepared_data.iter().copied().collect()

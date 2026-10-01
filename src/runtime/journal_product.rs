@@ -22,7 +22,7 @@ use tasty_event_store::{CommandKey, CommandRecord, IdRange};
 use super::command_executor::Executed;
 pub(crate) use binding::{BoundEngine, EngineBinding, EngineSelection};
 pub(crate) use decider::StreamCommand;
-pub(crate) use preparation::{ClaimedPreparation, EffectLease, PreparationInput, ShellRecipe};
+pub(crate) use preparation::{ClaimedPreparation,ClaimedRetirement,EffectLease, PreparationInput, ShellRecipe};
 pub(crate) use response::{CompletionView,ResponsePlan, ResponseProgress};
 
 const QUEUE_CAPACITY: usize = 64;
@@ -60,6 +60,9 @@ pub(crate) enum Work {
     ReadCommand(String),
     ReadPayload(tasty_domain::DataRef),
     PutPreparation(PreparationInput),
+    PutPayload(Vec<u8>),
+    ClaimRetirement {stream:String,operation:tasty_domain::OperationId},
+    RetirementFinished {lease:EffectLease,outcome:tasty_domain::OperationOutcome},
     ClaimPreparation {
         stream: String,
         operation: tasty_domain::OperationId,
@@ -106,6 +109,7 @@ pub(crate) enum ResultValue {
     },
     InputStored(tasty_domain::DataRef),
     Claimed(ClaimedPreparation),
+    RetirementClaimed(ClaimedRetirement),
     Cancelled,
 }
 
@@ -335,10 +339,11 @@ pub(crate) fn request_size(work: &Work) -> usize {
             .saturating_mul(std::mem::size_of::<(IdKind, u32)>()),
         Work::ReadEngine(stream) | Work::ReadCommand(stream) => stream.len(),
         Work::ReadPayload(_) => std::mem::size_of::<tasty_domain::DataRef>(),
+        Work::PutPayload(bytes)=>bytes.len(),
         Work::PutPreparation(input) => {
             serde_json::to_vec(input).map_or(usize::MAX, |bytes| bytes.len())
         }
-        Work::ClaimPreparation { stream, operation } => {
+        Work::ClaimPreparation { stream, operation } | Work::ClaimRetirement {stream,operation} => {
             stream.len().saturating_add(operation.0.len())
         }
         Work::Prepared { lease, result } => {
@@ -348,6 +353,7 @@ pub(crate) fn request_size(work: &Work) -> usize {
             serde_json::to_vec(&(lease, reason)).map_or(usize::MAX, |bytes| bytes.len())
         }
         Work::CleanupFinished {lease,view} => serde_json::to_vec(&(lease,view)).map_or(usize::MAX, |bytes| bytes.len()),
+        Work::RetirementFinished {lease,outcome}=>serde_json::to_vec(&(lease,outcome)).map_or(usize::MAX,|bytes|bytes.len()),
         Work::CancelAdmission => 0,
     }
 }

@@ -129,6 +129,9 @@ impl App {
             return;
         };
 
+        let attempt=match self.remote.begin_attempt(Some(anchor),Some(mapping.clone())) {
+            Ok(attempt)=>attempt,Err(error)=>{tracing::warn!("{error}");return;},
+        };
         self.remote.active.insert(anchor);
         self.remote.pending_reactivation.remove(&anchor);
         let tx = self.remote.tx.clone();
@@ -138,6 +141,7 @@ impl App {
         std::thread::spawn(move || {
             let result = resolve_endpoint(&target);
             let outcome = AutoAttachOutcome {
+                attempt,
                 anchor_ws_id: Some(anchor),
                 remote_ws,
                 result,
@@ -186,6 +190,9 @@ impl App {
                 continue; // 원격 workspace id 미지정 — 자동 attach 와 동일 원칙 3.
             };
 
+            let attempt=match self.remote.begin_attempt(Some(anchor),Some(mapping.clone())) {
+                Ok(attempt)=>attempt,Err(error)=>{tracing::warn!("{error}");continue;},
+            };
             self.remote.active.insert(anchor);
             self.remote.pending_reactivation.remove(&anchor);
             let tx = self.remote.tx.clone();
@@ -194,6 +201,7 @@ impl App {
             std::thread::spawn(move || {
                 let result = resolve_endpoint(&target);
                 let outcome = AutoAttachOutcome {
+                    attempt,
                     anchor_ws_id: Some(anchor),
                     remote_ws,
                     result,
@@ -212,7 +220,19 @@ impl App {
     }
 
     fn apply_auto_attach_outcome(&mut self, outcome: AutoAttachOutcome) {
+        let Some(accepted)=self.remote.finish_attempt(&outcome.attempt) else {
+            tracing::debug!("discarding result from retired remote connection attempt");return;
+        };
+        if accepted.anchor!=outcome.anchor_ws_id {tracing::error!("remote outcome belongs to another anchor");return;}
+        if let Some(anchor)=accepted.anchor {
+            let current=self.engines.all_sessions().find_map(|session|session.core_state.workspaces().iter().find(|workspace|workspace.id==anchor).and_then(|workspace|workspace.attach_mapping.clone()));
+            if current!=accepted.mapping {
+                self.remote.active.remove(&anchor);
+                tracing::debug!("discarding SSH result after attach mapping changed");return;
+            }
+        }
         let AutoAttachOutcome {
+            attempt:_,
             anchor_ws_id,
             remote_ws,
             result,

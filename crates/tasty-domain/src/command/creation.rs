@@ -40,6 +40,7 @@ pub(super) fn decide(
                 command_id: command_id.clone(),
                 engine_incarnation: model.engine_incarnation,
                 creation: Some(plan.clone()),
+                retirement:None,
                 targets: plan.targets(),
                 reserved: plan.reserved_ids(),
                 input: *input,

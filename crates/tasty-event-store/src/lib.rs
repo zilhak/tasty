@@ -38,7 +38,7 @@ mod tests;
 
 pub use commit::{CommitOutcome, CommitRequest, event_holder};
 pub use effect::{
-    ActivationClaim, AttemptRecord, EffectRecord, EffectState, EffectTransition, NewEffect,
+    ActivationClaim,ClaimKind,EffectClaim,ObligationClaim,AttemptRecord, EffectRecord, EffectState, EffectTransition, NewEffect,
 };
 pub use error::{StoreError, StoreResult};
 pub use identity::IdRange;

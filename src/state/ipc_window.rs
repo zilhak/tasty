@@ -25,22 +25,6 @@ impl IpcWindow for RequestContext {
         crate::app::dispatch_domain::cascade_workspace_created(self, engine, origin, created);
     }
 
-    fn cascade_workspace_meta_updated(
-        &mut self,
-        workspace_id: u32,
-        name: Option<String>,
-        subtitle: Option<String>,
-        description: Option<String>,
-    ) {
-        crate::app::dispatch_domain::cascade_workspace_meta_updated(
-            self,
-            workspace_id,
-            name,
-            subtitle,
-            description,
-        );
-    }
-
     fn close_workspace_at(
         &mut self,
         engine: &mut EngineMut<'_>,
@@ -48,10 +32,6 @@ impl IpcWindow for RequestContext {
         origin: super::WorkspaceCloseOrigin,
     ) -> bool {
         RequestContext::close_workspace_at(self, engine, ws_idx, origin)
-    }
-
-    fn push_host_event(&mut self, event: super::PendingHostEvent) {
-        RequestContext::enqueue_host_event(self, event);
     }
 
     fn recent_files(&self, kind: &str) -> Vec<String> {

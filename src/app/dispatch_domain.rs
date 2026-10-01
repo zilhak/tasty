@@ -471,7 +471,7 @@ impl App {
             .hooks
             .fire(&exec, surface_id, tasty_hooks::HookEvent::Notification)
         {
-            state.enqueue_host_event(fired);
+            engine.enqueue_host_event(fired);
         }
         if let Some(base) = dirty_main {
             base.state.dirty = true;
@@ -507,7 +507,7 @@ impl App {
             .hooks
             .fire(&exec, surface_id, tasty_hooks::HookEvent::Bell)
         {
-            state.enqueue_host_event(fired);
+            engine.enqueue_host_event(fired);
         }
         if let Some(base) = dirty_main {
             base.state.dirty = true;
@@ -535,7 +535,7 @@ impl App {
             .hooks
             .fire(&exec, surface_id, tasty_hooks::HookEvent::OutputMatch(text))
         {
-            state.enqueue_host_event(fired);
+            engine.enqueue_host_event(fired);
         }
         if let Some(base) = dirty_main {
             base.state.dirty = true;
@@ -558,7 +558,7 @@ impl App {
         else {
             return;
         };
-        state.enqueue_host_event(crate::state::PendingHostEvent::SurfaceTitleChanged {
+        engine.enqueue_host_event(crate::state::PendingHostEvent::SurfaceTitleChanged {
             surface_id,
             generation,
             title: title.clone(),
@@ -633,7 +633,7 @@ impl App {
             surface_id,
             tasty_hooks::HookEvent::CommandCompleted(exit_code),
         ) {
-            state.enqueue_host_event(fired);
+            engine.enqueue_host_event(fired);
         }
         if let Some(base) = dirty_main {
             base.state.dirty = true;
@@ -867,7 +867,7 @@ impl App {
         else {
             return;
         };
-        cascade_workspace_meta_updated(state, workspace_id, name, subtitle, description);
+        cascade_workspace_meta_updated(engine, workspace_id, name, subtitle, description);
         if let Some(view) = view {
             view.mark_dirty();
         }
@@ -936,11 +936,8 @@ impl App {
         }
     }
 
-    fn enqueue_plugin_host_event(&mut self, ev: crate::state::PendingHostEvent) {
-        let Some(main) = self.view.views.values_mut().find_map(|w| w.as_main_mut()) else {
-            return;
-        };
-        main.state.enqueue_host_event(ev);
+    fn enqueue_plugin_host_event(&mut self, ev:crate::state::PendingHostEvent) {
+        self.state.pending_host_events.push(ev);
     }
 
     fn cascade_plugin_loaded(&mut self, plugin_id: String, version: String) {
@@ -1244,8 +1241,7 @@ impl App {
             if engine.settings.notification.sound && source != "TerminalBellRing" {
                 self.services.sound_player().play();
             }
-            main.state
-                .enqueue_host_event(crate::state::PendingHostEvent::NotificationCreated {
+            engine.enqueue_host_event(crate::state::PendingHostEvent::NotificationCreated {
                     id: nid,
                     title,
                     body,
@@ -1287,13 +1283,13 @@ pub(crate) fn cascade_workspace_created(
         .workspace_at(c.index)
         .map(|w| w.name.clone())
         .unwrap_or_default();
-    state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceCreated {
+    engine.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceCreated {
         workspace_id: c.workspace_id,
         name,
     });
 
     if c.renamed_name.is_some() || c.renamed_subtitle.is_some() || c.renamed_description.is_some() {
-        state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
+        engine.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
             workspace_id: c.workspace_id,
             name: c.renamed_name,
             subtitle: c.renamed_subtitle,
@@ -1338,14 +1334,14 @@ pub(crate) fn cascade_closed_item_restored(
 }
 
 pub(crate) fn cascade_workspace_meta_updated(
-    state: &mut crate::state::MainViewState,
+    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     workspace_id: u32,
     name: Option<String>,
     subtitle: Option<String>,
     description: Option<String>,
 ) {
     if name.is_some() || subtitle.is_some() || description.is_some() {
-        state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
+        engine.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
             workspace_id,
             name,
             subtitle,

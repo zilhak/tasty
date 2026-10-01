@@ -25,6 +25,8 @@ pub(crate) enum ConvertSurfaceTarget {
 pub(crate) enum SendPayload {
     Bytes(Vec<u8>),
     Text(String),
+    /// Live-only delayed user input, bound to the resource which accepted the operation.
+    Bound {generation:tasty_terminal::ResourceGeneration,bytes:Vec<u8>},
 }
 
 /// 로컬 복원은 전체 목록에서, mirror 복원은 점유 workspace 범위에서 항목을 고른다.

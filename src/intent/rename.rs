@@ -99,7 +99,7 @@ fn rename_tab(
                 .to_string()
         })
         .unwrap_or_default();
-    state.enqueue_host_event(crate::state::PendingHostEvent::TabRenamed {
+    engine.enqueue_host_event(crate::state::PendingHostEvent::TabRenamed {
         tab_id,
         title,
         user_direct: origin.is_user(),
@@ -126,7 +126,7 @@ fn rename_workspace(
         super::report_apply_error(state, engine, origin, "DirectRename workspace", &e);
         return;
     }
-    state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
+    engine.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
         workspace_id,
         name,
         subtitle,

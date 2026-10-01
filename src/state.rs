@@ -171,8 +171,6 @@ impl RequestContext {
             dialogs: DialogState::new(),
             #[cfg(any(feature = "gui", test))]
             tab_bar_height: PhysicalPx(0.0),
-            pending_lifecycle_events: Vec::new(),
-            pending_host_events: Vec::new(),
             #[cfg(feature = "gui")]
             last_focused_surface_id: None,
             #[cfg(feature = "gui")]
@@ -586,7 +584,7 @@ impl RequestContext {
         workspace_id: u32,
         path: &'static str,
     ) {
-        self.enqueue_host_event(PendingHostEvent::WorkspaceClosed { workspace_id });
+        engine.enqueue_host_event(PendingHostEvent::WorkspaceClosed { workspace_id });
         engine.purge_workspace_memory_scope(workspace_id, path);
     }
 
@@ -603,7 +601,7 @@ impl RequestContext {
         let mut sums = crate::close_trace::CleanupSums::default();
         for (sid, pid, kind) in targets {
             self.cleanup_surface_traced(engine, sid, pid, &mut sums);
-            self.enqueue_surface_closed(sid, kind, is_user_close);
+            engine.enqueue_surface_closed(sid, kind, is_user_close);
         }
         self.reconcile_presentation(engine);
         if let Some(path) = trace {
@@ -642,32 +640,6 @@ impl RequestContext {
 
     pub fn surface_kind(&self, engine: &CoreState, surface_id: u32) -> Option<&'static str> {
         engine.find_surface_by_id(surface_id).map(|s| s.kind())
-    }
-
-    pub fn enqueue_surface_closed(
-        &mut self,
-        surface_id: u32,
-        kind: Option<&'static str>,
-        is_user_close: bool,
-    ) {
-        self.pending_lifecycle_events.push(PendingSurfaceClosed {
-            surface_id,
-            kind,
-            is_user_close,
-        });
-    }
-
-    #[cfg(any(feature = "gui", test))]
-    pub fn take_pending_lifecycle_events(&mut self) -> Vec<PendingSurfaceClosed> {
-        std::mem::take(&mut self.pending_lifecycle_events)
-    }
-
-    pub fn enqueue_host_event(&mut self, event: PendingHostEvent) {
-        self.pending_host_events.push(event);
-    }
-
-    pub fn take_pending_host_events(&mut self) -> Vec<PendingHostEvent> {
-        std::mem::take(&mut self.pending_host_events)
     }
 
     /// 이미 알린 탭 변경을 다음 폴링에서 중복 보고하지 않도록 기준 사본을 갱신한다.

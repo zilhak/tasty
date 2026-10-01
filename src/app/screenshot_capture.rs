@@ -8,6 +8,7 @@ use crate::platform::screen_capture::CaptureError;
 use crate::view::ui::View as _;
 
 pub(crate) struct ScreenshotCaptureOutcome {
+    pub(crate) remote_target:Option<crate::app::attach_client::RemoteTarget>,
     /// 요청 시점의 로컬 mirror workspace ID. None이면 로컬 클립보드를 사용한다.
     pub(crate) mirror_ws_id: Option<u32>,
     /// 실패를 알릴 원래 창. 부팅 중·parked 요청은 None이다.
@@ -41,12 +42,15 @@ impl App {
             }
         }
         for (source_window, mirror_ws_id) in reqs {
+            let remote_target=mirror_ws_id.and_then(|workspace|self.capture_remote_target(workspace,None));
+            if mirror_ws_id.is_some() && remote_target.is_none() {tracing::debug!("capture mirror disappeared before start");continue;}
             let tx = self.screenshot_capture_tx.clone();
             let proxy = self.view.proxy.clone();
             std::thread::spawn(move || {
                 let result = capture_and_maybe_read(mirror_ws_id.is_some());
                 // 수신자가 사라지면 캡처 결과를 전달할 곳이 없어 오류를 무시한다.
                 let _ = tx.send(ScreenshotCaptureOutcome {
+                    remote_target,
                     mirror_ws_id,
                     source_window,
                     result,
@@ -60,6 +64,7 @@ impl App {
     pub(crate) fn drain_screenshot_capture_results(&mut self) {
         while let Ok(outcome) = self.screenshot_capture_rx.try_recv() {
             let ScreenshotCaptureOutcome {
+                remote_target,
                 mirror_ws_id,
                 source_window,
                 result,
@@ -73,7 +78,11 @@ impl App {
             };
             match mirror_ws_id {
                 None => self.write_capture_to_local_clipboard(&path),
-                Some(ws_id) => self.upload_capture_to_mirror(ws_id, &path, bytes),
+                Some(_) => {
+                    if let Some(target)=remote_target.filter(|target|self.remote_target_is_current(target)) {
+                        self.upload_capture_to_mirror(&target,&path,bytes);
+                    } else {tracing::debug!("discarding capture for retired remote connection");}
+                },
             }
         }
     }
@@ -122,7 +131,7 @@ impl App {
 
     fn upload_capture_to_mirror(
         &mut self,
-        ws_id: u32,
+        target:&crate::app::attach_client::RemoteTarget,
         path: &std::path::Path,
         bytes: Option<Vec<u8>>,
     ) {
@@ -134,8 +143,8 @@ impl App {
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "screenshot.png".to_string());
-        if let Err(e) = self.forward_capture_to_remote_clipboard(ws_id, &file_name, &bytes) {
-            tracing::warn!("screenshot capture: forward to mirror workspace {ws_id} failed: {e}");
+        if let Err(e) = self.forward_capture_to_remote_clipboard(target, &file_name, &bytes) {
+            tracing::warn!("screenshot capture: forward to mirror workspace {} failed: {e}",target.workspace);
         }
     }
 }

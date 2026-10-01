@@ -106,7 +106,7 @@ fn dispatch_command(
         engine,
         &mut app.journal,
     );
-    crate::intent::headless::drain_pending_host_events(&app.services, state, &engine.as_ref());
+    crate::intent::headless::drain_pending_host_events(&app.services, &mut engine);
     send_response(&cmd.response_tx, resp);
     std::ops::ControlFlow::Continue(())
 }
