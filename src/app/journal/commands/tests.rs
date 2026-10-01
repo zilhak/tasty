@@ -178,7 +178,37 @@ fn boot_with_layout(layout: Option<serde_json::Value>) -> (EngineSession, Journa
         if resume {
             journal.poll_restore_bootstrap(&mut session).unwrap();
         }
-        assert!(Instant::now() < until);
+        assert!(
+            Instant::now() < until,
+            "bootstrap stalled: started={} epoch={:?} binding={} opening={:?} creations={:?} cleanup={} restore_queue={} restore_reads={} restore_ready={} restore_done={} id_refills={} pending_materializations={}",
+            journal.started,
+            journal.runtime_epoch,
+            session.journal_binding.is_some(),
+            journal
+                .opening
+                .get(&session.id)
+                .map(|opening| (opening.ticket, opening.projected)),
+            journal
+                .creations
+                .iter()
+                .map(|(key, creation)| (
+                    key,
+                    creation.ticket,
+                    creation.pauses_observation(),
+                    creation.needs_cleanup_poll()
+                ))
+                .collect::<Vec<_>>(),
+            journal.resource_cleanups.len(),
+            journal.restoration_queue.len(),
+            journal.restoration_reads.len(),
+            journal
+                .restoration_ready
+                .get(&session.id)
+                .map_or(0, Vec::len),
+            journal.restoration_boot_done.contains(&session.id),
+            journal.execution_id_requests.len(),
+            session.pending_materializations.len(),
+        );
         std::thread::sleep(Duration::from_millis(1));
     }
     (session, journal)
