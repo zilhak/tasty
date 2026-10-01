@@ -1191,10 +1191,6 @@ pub(crate) fn caller_surface_id(params: &serde_json::Value) -> Option<u32> {
         .flatten()
 }
 
-fn surface_belongs_to_pane(engine: &CoreState, surface_id: u32, pane_id: u32) -> bool {
-    engine.find_pane_for_surface(surface_id) == Some(pane_id)
-}
-
 /// 서버 capability는 창별로 재사용하는 system_info_fields가 아닌 이 응답에만 추가한다.
 fn handle_system_info(
     window: &dyn IpcWindow,

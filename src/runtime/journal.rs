@@ -33,6 +33,7 @@ pub(crate) enum JournalError {
         model: Option<u64>,
     },
     /// 아직 적용한 batch가 없는 모델은 snapshot으로 저장하지 않는다.
+    #[cfg(test)]
     NothingApplied,
 }
 
@@ -50,6 +51,7 @@ impl fmt::Display for JournalError {
                 f,
                 "snapshot {snapshot_id} is at batch {stored:?}, but its model says {model:?}"
             ),
+            #[cfg(test)]
             Self::NothingApplied => f.write_str("the model has no applied batch to snapshot"),
         }
     }
@@ -117,6 +119,7 @@ pub(crate) fn apply_all(
 }
 
 /// 저장 batch 하나를 엔진 stream 하나의 모델에 적용한다. 다른 stream은 해석만 하고 적용하지 않는다.
+#[cfg(test)]
 pub(crate) fn apply(
     model: &mut JournalModel,
     stream: &StreamId,
@@ -164,6 +167,7 @@ pub(crate) fn load(store: &EventStore, stream: &StreamId) -> Result<JournalModel
 }
 
 /// 전체 로그만으로 모든 엔진 모델을 만든다. snapshot+tail 결과와 대조할 때 쓴다.
+#[cfg(test)]
 pub(crate) fn full_replay(store: &EventStore) -> Result<StructureModels, JournalError> {
     let mut models = StructureModels::default();
     for batch in store.read_batches_after(None, usize::MAX)? {
@@ -173,6 +177,7 @@ pub(crate) fn full_replay(store: &EventStore) -> Result<StructureModels, Journal
 }
 
 /// 모든 엔진 모델을 마지막 적용 batch 위치의 snapshot 하나로 저장한다. surface 자료 참조를 함께 pin한다.
+#[cfg(test)]
 pub(crate) fn save_snapshot(
     store: &mut EventStore,
     epoch: WriterEpoch,

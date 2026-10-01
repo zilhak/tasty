@@ -313,7 +313,6 @@ impl App {
                 // OSC 제목은 저장 대상이 아니므로 레이아웃 저장 대신 화면 갱신만 요청한다.
                 self.mark_source_window_dirty(source);
             }
-            CoreEvent::LayoutSaved => {}
             CoreEvent::PluginLoaded { plugin_id, version } => {
                 self.cascade_plugin_loaded(plugin_id, version)
             }

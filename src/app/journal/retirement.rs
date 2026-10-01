@@ -69,11 +69,6 @@ impl JournalApplication {
         std::mem::take(&mut self.retirements.completed)
     }
 
-    pub(crate) fn defer_retired_engine_delivery(&mut self, id: EngineId) {
-        self.retirements.completed.push(id);
-        (self.wake)();
-    }
-
     /// Failed View creation must not delete a successfully resumed slot. Only its process owner ends.
     pub(crate) fn release_failed_opening(&mut self, id: EngineId, binding: EngineBinding) {
         self.retire_engine(id, binding, true);

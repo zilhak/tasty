@@ -73,33 +73,6 @@ impl App {
     }
 }
 
-/// 창을 닫을 때 슬롯 파일을 보존할지 지울지 정한다.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RetireAction {
-    /// 다음 창이 같은 슬롯을 사용하면 닫기 전 레이아웃을 복원할 수 있다.
-    Flush,
-    Delete,
-}
-
-pub(crate) fn retire_action(restore_layout: bool) -> RetireAction {
-    if restore_layout {
-        RetireAction::Flush
-    } else {
-        RetireAction::Delete
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{RetireAction, retire_action};
-
-    #[test]
-    fn retire_action_follows_restore_layout_setting() {
-        assert_eq!(retire_action(true), RetireAction::Flush);
-        assert_eq!(retire_action(false), RetireAction::Delete);
-    }
-}
-
 /// 저장을 건너뛰면서 dirty를 남기는 engine에는 저장 타이머를 예약하지 않는다.
 /// apply_save_layout_now의 저장 꺼짐·슬롯 없음·보호된 슬롯 조건과 맞춰야 한다.
 pub(crate) fn schedulable_dirty_since(

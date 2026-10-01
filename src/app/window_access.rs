@@ -408,12 +408,6 @@ impl App {
         self.engines().window_pair(self.view.focused_view_id?)
     }
 
-    /// 포커스된 MainView와 그 engine. 다른 App 필드와 함께 빌려야 하면 `engines_mut!`로 `window_pair`를 쓴다.
-    pub(crate) fn focused_pair_mut(&mut self) -> Option<(&mut MainView, EngineMut<'_>)> {
-        let wid = self.view.focused_view_id?;
-        engines_mut!(self).window_pair(wid)
-    }
-
     pub(crate) fn focused_window_mut(&mut self) -> Option<&mut view::main::MainView> {
         self.view
             .focused_view_id

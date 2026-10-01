@@ -83,14 +83,6 @@ impl EngineRegistry {
         true
     }
 
-    pub(crate) fn retire_pending(&mut self, id: EngineId) -> Option<EngineSession> {
-        if self.pending != Some(id) {
-            return None;
-        }
-        self.pending = None;
-        self.sessions.remove(&id)
-    }
-
     pub(crate) fn pending_id(&self) -> Option<EngineId> {
         self.pending
     }

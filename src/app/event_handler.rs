@@ -2161,33 +2161,6 @@ fn send_bulk_commit_failure(
     let _ = hub.push(client_id, frame); // 회신 전송 실패는 여기서 재시도하지 않는다.
 }
 
-fn reply_structural_result(
-    hub: &tasty_ipc::stream_hub::StreamHub,
-    client_id: u32,
-    op_id: u64,
-    ok: bool,
-    reason: Option<String>,
-) {
-    let reply = crate::ipc::stream::StreamControl::StructuralResult { op_id, ok, reason };
-    let frame = crate::ipc::stream::StreamFrame::new(
-        crate::ipc::stream::StreamTag::Control,
-        serde_json::to_vec(&reply).unwrap_or_default(),
-    );
-    let _ = hub.push(client_id, frame); // 회신 전송 실패는 여기서 재시도하지 않는다.
-}
-
-fn push_structural_delta(
-    hub: &tasty_ipc::stream_hub::StreamHub,
-    client_id: u32,
-    delta: &crate::ipc::stream::StreamControl,
-) {
-    let frame = crate::ipc::stream::StreamFrame::new(
-        crate::ipc::stream::StreamTag::Control,
-        serde_json::to_vec(delta).unwrap_or_default(),
-    );
-    let _ = hub.push(client_id, frame); // 회신 전송 실패는 여기서 재시도하지 않는다.
-}
-
 fn reply_mesh_error(
     hub: &tasty_ipc::stream_hub::StreamHub,
     client_id: u32,

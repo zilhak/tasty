@@ -259,6 +259,7 @@ fn plan(
 }
 impl JournalApplication {
     /// Original live-input key arbitration precedes resolving an implicit resource or starting it.
+    #[cfg(not(feature = "gui"))]
     pub(crate) fn defer_live_ipc(
         &mut self,
         command: &crate::ipc::server::IpcCommand,
@@ -419,6 +420,7 @@ impl JournalApplication {
             pending.activation_wait = receipt;
         }
     }
+    #[cfg(not(feature = "gui"))]
     pub(crate) fn finish_headless_live_inputs(
         &mut self,
         id: EngineId,

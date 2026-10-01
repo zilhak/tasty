@@ -109,33 +109,3 @@ pub(crate) struct BootProgress {
     pub(crate) restored_idx: Option<crate::model::RestoredPresentation>,
     pub(crate) journal_plugins_waited: bool,
 }
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum AppPhase {
-    Starting,
-    Running,
-    Stopping,
-    Failed,
-}
-impl AppState {
-    pub(crate) fn phase(&self) -> AppPhase {
-        #[cfg(feature = "gui")]
-        {
-            if self.shutdown.is_some() {
-                return AppPhase::Stopping;
-            }
-            if self.boot_error_mode {
-                return AppPhase::Failed;
-            }
-        }
-        #[cfg(not(feature = "gui"))]
-        if self.stopping {
-            return AppPhase::Stopping;
-        }
-        if self.started {
-            AppPhase::Running
-        } else {
-            AppPhase::Starting
-        }
-    }
-}

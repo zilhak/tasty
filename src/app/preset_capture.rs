@@ -10,6 +10,7 @@ use crate::{
     runtime::engine_session::EngineSession,
 };
 impl App {
+    #[cfg(not(feature = "gui"))]
     pub(crate) fn preset_capture_on_session(
         &mut self,
         command: &IpcCommand,
@@ -31,6 +32,7 @@ impl App {
         }
         self.preset_capture_session_miss(command, session, presentation)
     }
+    #[cfg(not(feature = "gui"))]
     fn preset_capture_session_miss(
         &mut self,
         command: &IpcCommand,

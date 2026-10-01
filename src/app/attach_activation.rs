@@ -28,9 +28,6 @@ impl PendingAttach {
     pub(crate) fn client(&self) -> u32 {
         self.client
     }
-    pub(crate) fn engine(&self) -> EngineId {
-        self.engine
-    }
     pub(crate) fn cancel(&mut self) {
         self.cancelled = true;
     }

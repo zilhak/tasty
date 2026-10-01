@@ -21,9 +21,6 @@ pub(crate) mod debug_info;
 pub(crate) mod dispatch;
 #[cfg(feature = "gui")]
 pub(crate) mod dispatch_domain;
-#[cfg(not(feature = "gui"))]
-#[path = "app/dispatch_domain_stubs.rs"]
-pub(crate) mod dispatch_domain;
 #[cfg(feature = "gui")]
 pub(crate) mod engine_registry;
 pub(crate) mod event;

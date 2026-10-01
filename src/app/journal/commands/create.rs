@@ -19,32 +19,15 @@ pub(super) struct Request {
 
 pub(super) enum Shape {
     Wake,
-    Image {
-        path: String,
-    },
-    ChildRespawn {
-        index: u32,
-    },
-    Child {
-        index: u32,
-        workspace: u32,
-    },
+    Image { path: String },
+    ChildRespawn { index: u32 },
+    Child { index: u32, workspace: u32 },
     Adopt,
     Workspace,
-    Tab {
-        pane: u32,
-    },
-    Pane {
-        target: u32,
-        direction: crate::model::SplitDirection,
-    },
-    Surface {
-        target: u32,
-    },
-    Convert {
-        surface: u32,
-        respawn: bool,
-    },
+    Tab,
+    Pane,
+    Surface,
+    Convert,
 }
 
 impl Request {
@@ -290,7 +273,7 @@ impl Request {
                 let target = core
                     .find_pane_by_id(pane)
                     .ok_or_else(|| bad(format!("Pane {pane} not found")))?;
-                result.shape = Shape::Tab { pane };
+                result.shape = Shape::Tab;
                 result.activate = activate;
                 result.plan.explicit_name = name.clone();
                 if let Some(name) = name {
@@ -306,7 +289,7 @@ impl Request {
                 if core.find_pane_by_id(target).is_none() {
                     return Err(bad(format!("Pane {target} not found")));
                 }
-                result.shape = Shape::Pane { target, direction };
+                result.shape = Shape::Pane;
                 result.activate = true;
                 CreationDestination::Pane {
                     target,
@@ -323,7 +306,7 @@ impl Request {
                 if core.find_surface_by_id(target).is_none() {
                     return Err(bad(format!("Surface {target} not found")));
                 }
-                result.shape = Shape::Surface { target };
+                result.shape = Shape::Surface;
                 result.activate = true;
                 CreationDestination::Split {
                     target,
@@ -345,7 +328,7 @@ impl Request {
                 if core.find_surface_by_id(surface).is_none() {
                     return Err(bad(format!("Surface {surface} not found")));
                 }
-                result.shape = Shape::Convert { surface, respawn };
+                result.shape = Shape::Convert;
                 result.plan.surface.id = surface;
                 let tab = core.find_tab_for_surface(surface).and_then(|tab| {
                     core.find_pane_for_tab(tab)
@@ -754,19 +737,19 @@ impl Completed {
     pub fn from_request(request: &Request) -> Self {
         Self {
             tutorial: match (&request.shape, &request.plan.destination) {
-                (Shape::Tab { .. }, CreationDestination::Tab { pane, tab, .. }) => {
+                (Shape::Tab, CreationDestination::Tab { pane, tab, .. }) => {
                     Some(TutorialCreated::Tab {
                         pane: *pane,
                         tab: *tab,
                     })
                 }
-                (Shape::Pane { .. }, CreationDestination::Pane { target, pane, .. }) => {
+                (Shape::Pane, CreationDestination::Pane { target, pane, .. }) => {
                     Some(TutorialCreated::Pane {
                         target: *target,
                         pane: *pane,
                     })
                 }
-                (Shape::Surface { .. }, CreationDestination::Split { .. }) => {
+                (Shape::Surface, CreationDestination::Split { .. }) => {
                     Some(TutorialCreated::Surface {
                         surface: request.plan.surface.id,
                     })

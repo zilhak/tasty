@@ -284,133 +284,12 @@ pub(crate) enum DomainIntent {
 pub(crate) enum CoreEvent {
     SettingsUpdated(Settings),
 
-    /// 새 workspace 정보. App이 origin에 따라 사용자 선택과 host 이벤트를 처리한다.
-    WorkspaceCreated {
-        id: u32,
-        index: usize,
-        surface_id: Option<u32>,
-        renamed_name: Option<String>,
-        renamed_subtitle: Option<String>,
-        renamed_description: Option<String>,
-    },
-    WorkspaceMetaUpdated {
-        workspace_id: u32,
-        index: usize,
-        name: Option<String>,
-        subtitle: Option<String>,
-        description: Option<String>,
-    },
-    WorkspaceMoved {
-        moved: bool,
-    },
-
-    TabCreated {
-        pane_id: u32,
-        tab_id: u32,
-        surface_id: u32,
-        tab_count: usize,
-        activate: bool,
-    },
-    /// 닫힌 탭의 자원 정리 대상. pane_id가 없으면 대상 탭을 찾지 못한 경우다.
-    TabClosed {
-        tab_id: u32,
-        pane_id: Option<u32>,
-        closed: bool,
-        cleanup_targets: Vec<(u32, Option<String>)>,
-    },
-    TabMoved {
-        moved: bool,
-    },
-
-    PaneSplit {
-        workspace_index: usize,
-        original_pane_id: u32,
-        new_pane_id: u32,
-        new_surface_id: u32,
-        direction: crate::model::SplitDirection,
-    },
-    SurfaceSplit {
-        workspace_index: usize,
-        pane_id: u32,
-        new_surface_id: u32,
-    },
-    PaneClosed {
-        pane_id: u32,
-        closed: bool,
-        cleanup_targets: Vec<(u32, Option<String>)>,
-    },
-    /// 닫힌 계층과 후속 정리·통지 대상을 반환한다. closed=false인 결과도 이 타입을 쓴다.
-    SurfaceClosed {
-        surface_id: u32,
-        closed: bool,
-        cascade_level: CascadeLevel,
-        cleanup_targets: Vec<(u32, Option<String>)>,
-        closed_tab_ids: Vec<u32>,
-        closed_pane_ids: Vec<u32>,
-        /// 제거 당시 workspace의 (인덱스, ID). 이후에는 위치를 찾을 수 없어 활성 인덱스 보정용으로 함께 싣는다.
-        workspace_purged: Option<(usize, u32)>,
-        workspaces_now_empty: bool,
-    },
-    /// 교체 여부와 도메인이 낸 실패 이유. 성공이면 failure는 None이며 forward 경로는 이 이유를 그대로 보낸다.
-    #[cfg_attr(
-        not(feature = "gui"),
-        expect(
-            dead_code,
-            reason = "some shared event fields are read only by GUI dispatch and remain unused in headless builds"
-        )
-    )]
-    SurfaceConverted {
-        surface_id: u32,
-        replaced: bool,
-        failure: Option<String>,
-    },
-    /// target B의 정리 정보와 source A가 떠나며 비게 된 상위 구조 정보다. A는 정리 대상이 아니다.
-    /// moved=false여도 cut 슬롯은 소비되며, source를 떼고 난 뒤 실패한 경우 구조 변경 정보가 남을 수 있다.
-    MoveSurfaceApplied {
-        moved: bool,
-        replacement: Option<(u32, u32)>,
-        b_cleanup: Option<(u32, Option<String>)>,
-        cascade_level: CascadeLevel,
-        closed_tab_ids: Vec<u32>,
-        closed_pane_ids: Vec<u32>,
-        /// source가 떠나 사라진 workspace의 (인덱스, ID).
-        workspace_purged: Option<(usize, u32)>,
-        workspaces_now_empty: bool,
-    },
-    /// 탭·페인 replace 이동의 결과. cleanup_targets·closed_tab_ids는 덮어쓴 target 쪽이며
-    /// 옮긴 source는 넣지 않는다. cascade_level·closed_pane_ids·workspace_purged는 source가 떠나
-    /// 비게 된 구조와 덮어쓴 target 페인을 나타낸다. closed_tabs_pane은 닫힌 탭이 있던 pane이다.
-    #[cfg_attr(
-        all(not(feature = "gui"), not(test)),
-        expect(
-            dead_code,
-            reason = "only the gui dispatcher runs the cleanup cascade for a move"
-        )
-    )]
-    ContainerMoveApplied {
-        moved: bool,
-        replaced_tab: Option<(u32, u32)>,
-        replaced_pane: Option<(u32, u32)>,
-        cleanup_targets: Vec<(u32, Option<String>)>,
-        cascade_level: CascadeLevel,
-        closed_tab_ids: Vec<u32>,
-        closed_tabs_pane: Option<u32>,
-        closed_pane_ids: Vec<u32>,
-        workspace_purged: Option<(usize, u32)>,
-        workspaces_now_empty: bool,
-    },
     /// sent는 터미널 입력 함수를 호출했는지이며 PTY 쓰기 완료를 뜻하지 않는다.
     /// 거절 사유 중 attach 점유는 hard_occupied로 구별한다.
     SurfaceSent {
         sent: bool,
         hard_occupied: bool,
     },
-    /// 새 PTY 생성 또는 대상 교체에 실패하면 error가 있다.
-    TerminalRespawned {
-        surface_id: u32,
-        error: Option<String>,
-    },
-
     #[cfg_attr(
         not(feature = "gui"),
         expect(
@@ -457,13 +336,6 @@ pub(crate) enum CoreEvent {
     SurfaceAttentionClearRequested {
         surface_id: u32,
         kind: Option<crate::core::AttentionKind>,
-    },
-
-    /// restored=false는 후보 부재나 복원 실패다. kind는 복원 종류와 후속 처리에 필요한 위치다.
-    ClosedItemRestored {
-        restored: bool,
-        kind: RestoredKind,
-        presentation: Box<crate::model::StructurePresentationSnapshot>,
     },
 
     /// 자식 프로세스 종료. GUI는 hook·알림과 닫기 요청을 이어 처리한다.
@@ -553,10 +425,6 @@ pub(crate) enum CoreEvent {
         skipped_explicit: bool,
     },
 
-    /// 저장을 생략하거나 쓰기에 실패해도 반환될 수 있으며 실제 저장 성공 확인은 아니다.
-    #[cfg(any(feature = "gui", test))]
-    LayoutSaved,
-
     #[cfg(feature = "gui")]
     PluginLoaded {
         plugin_id: String,
@@ -611,43 +479,6 @@ pub(crate) enum PluginRegistryChange {
     Removed,
     PermissionGranted { permission: String },
     PermissionRevoked { permission: String },
-}
-
-/// 닫힌 항목 복원 결과와 GUI가 선택을 옮길 위치.
-#[derive(Debug, Clone)]
-pub(crate) enum RestoredKind {
-    Nothing,
-    #[cfg_attr(
-        not(feature = "gui"),
-        expect(
-            dead_code,
-            reason = "headless also restores items, but only GUI dispatch uses these fields to update selection"
-        )
-    )]
-    Workspace {
-        new_ws_index: usize,
-    },
-    /// 지정 pane에 surface 또는 tab을 새 탭으로 붙였다.
-    TabIntoPane,
-    /// 지정 pane의 workspace에 pane을 복원했다. GUI는 이 ID를 사용해 선택을 옮긴다.
-    #[cfg_attr(
-        not(feature = "gui"),
-        expect(
-            dead_code,
-            reason = "headless also restores items, but only GUI dispatch uses these fields to update selection"
-        )
-    )]
-    PaneIntoWorkspace {
-        pane_id: u32,
-    },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CascadeLevel {
-    Surface,
-    Tab,
-    Pane,
-    Workspace,
 }
 
 /// PTY 출력 처리 뒤 호출자가 이어 처리할 이벤트 목록.

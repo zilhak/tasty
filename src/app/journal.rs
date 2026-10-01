@@ -797,6 +797,7 @@ impl JournalApplication {
             .min()
     }
 
+    #[cfg(not(feature = "gui"))]
     pub(crate) fn runtime_epoch(&self) -> Option<u64> {
         self.runtime_epoch
     }
