@@ -93,6 +93,12 @@ impl EventStore {
         if crate::retention::anchor_snapshot(&tx)? == Some(id) {
             return Err(StoreError::Corrupt("cannot delete the retained history anchor snapshot".into()));
         }
+        let externally_held: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM snapshots AS snapshot JOIN payload_pins AS pin
+             ON pin.payload_id = snapshot.payload_id WHERE snapshot.snapshot_id = ?1 AND pin.holder != ?2)",
+            params![to_i64(id)?, snapshot_holder(id)], |row| row.get(0),
+        )?;
+        if externally_held {return Err(StoreError::Corrupt("cannot delete a snapshot retained by an external holder".into()));}
         tx.execute(
             "DELETE FROM snapshots WHERE snapshot_id = ?1",
             [to_i64(id)?],
