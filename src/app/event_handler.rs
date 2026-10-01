@@ -1096,13 +1096,8 @@ impl App {
     ) {
         let action = if let Some(modal) = self.view.views.get_mut(&id) {
             let mut ctx = ViewCtx {
-                event_loop,
                 modal_active: false,
                 engine: None,
-                plugin_manager: self
-                    .plugin_manager
-                    .as_ref()
-                    .map(super::plugin_display::PluginDisplay::new),
             };
             modal.handle_event(event, &mut ctx)
         } else {
@@ -1171,13 +1166,8 @@ impl App {
             if let Some(w) = self.view.views.get_mut(&id) {
                 let engine = self.engines.window_read(id);
                 let mut ctx = ViewCtx {
-                    event_loop,
                     modal_active,
                     engine,
-                    plugin_manager: self
-                        .plugin_manager
-                        .as_ref()
-                        .map(super::plugin_display::PluginDisplay::new),
                 };
                 // modeless PresetView의 닫기는 여기서 처리하며 모달은 앞의 전용 경로가 처리한다.
                 w.handle_event(event, &mut ctx)

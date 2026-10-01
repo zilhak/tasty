@@ -116,6 +116,7 @@ impl App {
 
     /// 실패 사유를 번역 문구에 넣되 경로 가운데를 줄여 대상과 OS 오류를 함께 남긴다.
     /// 새 확인 모달 대신 toast로 알리며 성공은 따로 알리지 않는다.
+    #[cfg(windows)]
     pub(crate) fn surface_bashrc_save_failure(&mut self, reason: &str) {
         let Some(view) = self.notice_window_mut() else {
             tracing::error!("no main window to surface the bashrc save failure ({reason})");
@@ -157,6 +158,7 @@ impl App {
     }
 }
 
+#[cfg(any(windows, test))]
 fn bashrc_save_failure_message(reason: &str) -> String {
     crate::i18n::t_fmt_fit("toast.bashrc_save_failed", reason)
 }

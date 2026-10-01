@@ -23,6 +23,7 @@ pub(crate) enum RegistryEdit {
 pub(crate) struct SettingsEdits {
     pub(crate) registry: Vec<RegistryEdit>,
     pub(crate) clear_scrollback: bool,
+    #[cfg(windows)]
     pub(crate) bashrc: Option<String>,
 }
 
