@@ -370,7 +370,7 @@ pub struct PluginManager {
     /// registry create/restore closure가 새 RemoteSurface 등록을 보내는 채널.
     pub host_cmd_tx: Sender<HostCmd>,
     pub(super) host_cmd_rx: Receiver<HostCmd>,
-    pub(super) retirement_control: pump::RetirementControl,
+    retirement_control: pump::RetirementControl,
     /// surface_id → RemoteSurface handle. 라이프사이클 동안 유지.
     pub(super) surfaces: HashMap<u32, RemoteSurfaceEntry>,
     /// host → plugin 요청 ID → 종류. 응답 수신 시 후처리 dispatch용.

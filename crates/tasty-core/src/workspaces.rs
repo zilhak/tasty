@@ -96,29 +96,6 @@ impl CoreState {
         }
     }
 
-    pub(crate) fn move_workspace_in_display(&mut self, from: usize, to: usize) -> bool {
-        let len = self.workspaces().len();
-        if from == to || from >= len || to >= len {
-            return false;
-        }
-        self.refresh_workspace_display_order();
-        let id = self.workspace_display_order.remove(from);
-        self.workspace_display_order.insert(to, id);
-        let order: Vec<_> = self
-            .workspace_display_order
-            .iter()
-            .copied()
-            .filter(|id| {
-                self.local_workspaces
-                    .iter()
-                    .any(|workspace| workspace.id == *id)
-            })
-            .collect();
-        self.reorder_local_workspaces(&order)
-            .expect("display contains each local workspace once");
-        true
-    }
-
     pub fn replace_mirror_workspace(&mut self, workspace: Workspace) -> Result<(), Workspace> {
         assert!(workspace.mirror, "remote projection requires a mirror");
         if let Some(slot) = self

@@ -51,7 +51,7 @@ impl EventStore {
         replace: bool,
     ) -> StoreResult<()> {
         let write = &scoped.write;
-        crate::write_limits::projection(write,Some(&scoped.streams))?;
+        crate::write_limits::projection(write, Some(&scoped.streams))?;
         crate::projection::check_keys(write)?;
         let tx = self.write_tx(epoch)?;
         let requested = scoped_cut(&tx, write.batch_id, &scoped.streams)?;

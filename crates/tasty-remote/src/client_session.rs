@@ -1,8 +1,8 @@
 //! Outbound mirror session ownership. App applies received values to explicit engine/View targets.
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
 use tasty_ipc::stream::StreamTag;
 use tasty_model::Workspace;
 /// Host-independent remote directory values; the application chooses its local picker cache.
@@ -85,7 +85,7 @@ pub enum MirrorEvent {
 /// connection is explicitly desynchronized; dropping content never masquerades as a continuous cut.
 mod outbox {
     use super::MirrorEvent;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     #[derive(Default)]
     struct Pending {
         events: Vec<MirrorEvent>,

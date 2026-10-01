@@ -124,16 +124,26 @@ pub(crate) fn commit(request: &CommitRequest) -> StoreResult<Budget> {
 /// Bound the complete projection mutation before scope/digest allocation or any row deletion.
 /// Count every submitted delete, including duplicates, rather than deduplicating away its cost.
 pub(crate) fn projection(
-    write:&crate::ProjectionWrite,
-    streams:Option<&std::collections::BTreeSet<crate::StreamId>>,
-)->StoreResult<()> {
-    let mut size=Budget::new();size.record()?;size.add(write.consumer_id.len())?;
-    if let Some(streams)=streams {
-        for stream in streams {size.record()?;size.add(stream.as_str().len())?;}
+    write: &crate::ProjectionWrite,
+    streams: Option<&std::collections::BTreeSet<crate::StreamId>>,
+) -> StoreResult<()> {
+    let mut size = Budget::new();
+    size.record()?;
+    size.add(write.consumer_id.len())?;
+    if let Some(streams) = streams {
+        for stream in streams {
+            size.record()?;
+            size.add(stream.as_str().len())?;
+        }
     }
-    for (key,payload) in &write.upserts {
-        size.record()?;size.add(key.len())?;size.bytes(payload)?;
+    for (key, payload) in &write.upserts {
+        size.record()?;
+        size.add(key.len())?;
+        size.bytes(payload)?;
     }
-    for key in &write.deletes {size.record()?;size.add(key.len())?;}
+    for key in &write.deletes {
+        size.record()?;
+        size.add(key.len())?;
+    }
     Ok(())
 }

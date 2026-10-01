@@ -303,17 +303,6 @@ impl RunnerRegistry {
             false
         }
     }
-    pub(crate) fn liveness(&self, workspace: u32) -> (bool, bool) {
-        self.lock_recovering()
-            .get(&workspace)
-            .map_or((false, false), |control| {
-                let crashed = control.crashed.load(Ordering::Acquire);
-                (
-                    !control.stopping.load(Ordering::Acquire) && !crashed,
-                    crashed,
-                )
-            })
-    }
     pub(crate) fn scoped_liveness(
         &self,
         owner: &Arc<crate::task_waker::TaskWakerHub>,
@@ -1936,7 +1925,10 @@ mod poison_tests {
         assert!(joined.is_err(), "그 스레드는 패닉했어야 한다");
         assert!(registry.threads.lock().is_err(), "poison 됐어야 한다");
 
-        assert_eq!(registry.liveness(1), (false, false));
+        assert_eq!(
+            registry.scoped_liveness(&Arc::new(crate::task_waker::TaskWakerHub::new()), 1),
+            (false, false)
+        );
         assert!(!registry.stop(1));
         assert!(
             registry.poison_reported.load(Ordering::Relaxed),
