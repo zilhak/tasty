@@ -175,6 +175,9 @@ pub enum DomainEvent {
         activation_generation: u64,
         input: DataRef,
     },
+    /// Import a creation recipe without copying the source runtime activation or effect.
+    #[serde(rename = "surface.seed_imported")]
+    SurfaceSeedImported { id: SurfaceId, input: DataRef },
     #[serde(rename = "surface.data_recorded")]
     SurfaceDataRecorded {
         id: SurfaceId,
@@ -250,7 +253,7 @@ impl DomainEvent {
             }
             Self::SurfaceConverted { data, .. } => data.iter().copied().collect(),
             Self::SurfaceDataRecorded { data, .. } => vec![*data],
-            Self::SurfaceCreationSeeded { input, .. } => vec![*input],
+            Self::SurfaceCreationSeeded { input, .. } | Self::SurfaceSeedImported { input, .. } => vec![*input],
             Self::OperationPrepared { operation } => operation.assembly.iter().flat_map(|plan|plan.data_refs()).chain(std::iter::once(operation.input))
                 .chain(
                     operation
@@ -346,6 +349,7 @@ impl DomainEvent {
             Self::SurfaceConverted { .. } => "surface.converted",
             Self::SurfaceDataRecorded { .. } => "surface.data_recorded",
             Self::SurfaceCreationSeeded { .. } => "surface.creation_seeded",
+            Self::SurfaceSeedImported { .. } => "surface.seed_imported",
             Self::SurfaceActivationChanged { .. } => "surface.activation_changed",
             Self::PaneRatioSet { .. } => "pane.ratio_set",
             Self::SurfaceRatioSet { .. } => "surface.ratio_set",

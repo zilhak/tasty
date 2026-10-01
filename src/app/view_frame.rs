@@ -4,6 +4,7 @@ impl App {
     pub(crate) fn redraw_main_window(&mut self,id:winit::window::WindowId) {
         self.dispatch_pending_intents();
         if self.journal.is_halted() || self.journal.pauses_observation() {return;}
+        self.poll_port_scans();
         self.refresh_approval_presentations();
         let Some(engine)=self.engines.of_window(id) else {return;};
         let Some(session)=self.engines.session_mut(engine) else {return;};
@@ -34,5 +35,6 @@ impl App {
         }
         view.render_if_dirty(&session.read(),self.plugin_manager.as_ref().map(super::plugin_display::PluginDisplay::new));
         view.finish_redraw(&session.read(),self.plugin_manager.as_ref().map(super::plugin_display::PluginDisplay::new));
+        self.poll_port_scans();
     }
 }

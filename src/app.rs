@@ -113,6 +113,8 @@ pub(crate) struct App {
     pub(crate) journal: journal::JournalApplication,
     #[cfg(feature="gui")]
     pub(crate) settings_edit_owner:Option<settings_edit::SettingsEditOwner>,
+    #[cfg(feature="gui")]
+    pub(crate) port_scans:port_scans::PortScans,
     pub(crate) pending_server_attaches:Vec<attach_activation::PendingAttach>,
     pub(crate) publication_inputs: publication_input::PublicationInputs,
     pub(crate) services: AppServices,
@@ -237,7 +239,7 @@ impl App {
             })
         })?;
         Ok(Self {
-            journal,pending_server_attaches:Vec::new(),settings_edit_owner:None,
+            journal,pending_server_attaches:Vec::new(),settings_edit_owner:None,port_scans:Default::default(),
             publication_inputs: Default::default(),
             services: crate::boot::wiring::build_production_core(memory)?,
             state:state::AppState {#[cfg(debug_assertions)] input_simulation_enabled,..Default::default()},
@@ -419,3 +421,6 @@ mod settings_files;
 mod preset_editor;
 
 mod preset_capture;
+
+#[cfg(feature="gui")]
+mod port_scans;

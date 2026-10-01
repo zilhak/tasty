@@ -209,6 +209,14 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
             surface.creation_seed = Some(input);
             Ok(())
         }
+        DomainEvent::SurfaceSeedImported { id, input } => {
+            let surface = get_mut(&mut m.surfaces, IdKind::Surface, id)?;
+            if input.0 == 0 || surface.activation.is_some() || surface.creation_seed.is_some() {
+                return Err(EvolveError::InvalidFact("import seed requires an inactive surface without a seed".into()));
+            }
+            surface.creation_seed = Some(input);
+            Ok(())
+        }
         DomainEvent::SurfaceDataRecorded {
             id,
             activation_generation,

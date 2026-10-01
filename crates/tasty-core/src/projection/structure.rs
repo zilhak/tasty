@@ -145,6 +145,7 @@ pub(super) fn apply_event(
         }
         DomainEvent::UndoRecordAdded {..}|DomainEvent::UndoRecordConsumed {..}|DomainEvent::UndoRecordEvicted {..}
         | DomainEvent::SurfaceCreationSeeded { .. }
+        | DomainEvent::SurfaceSeedImported { .. }
         | DomainEvent::SurfaceDataRecorded { .. }
         | DomainEvent::SurfaceActivationChanged { .. }
         | DomainEvent::OperationPrepared { .. }

@@ -375,6 +375,8 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
+        self.poll_port_scans();
+
         // Lua 자동실행 재진입 상태는 이번 회차의 모든 이벤트 처리 전에 갱신한다.
         self.lua_autofire.checkpoint();
         self.ipc_pacer.loop_reached_about_to_wait();
