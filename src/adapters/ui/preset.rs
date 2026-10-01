@@ -114,6 +114,41 @@ impl ToolbarDraft {
             metadata: data.get_temp(egui::Id::new("preset_edit_meta")),
         })
     }
+    pub(crate) fn retain_input(&mut self, ctx: &egui::Context) {
+        let latest = Self::capture(ctx);
+        if let Some(latest) = latest.metadata {
+            if let Some(original) = &mut self.metadata {
+                original.name = latest.name;
+                original.subtitle = latest.subtitle;
+            } else { self.metadata = Some(latest); }
+        }
+        if let Some(latest) = latest.rename { self.rename = Some(latest); }
+    }
+
+    pub(crate) fn reconcile(&mut self, applied: &[crate::view::preset::draft::PresetApplied]) {
+        use crate::view::preset::draft::PresetApplied;
+        for result in applied {
+            match result {
+                PresetApplied::Rename { kind, from, to } => {
+                    if let Some(meta) = &mut self.metadata
+                        && meta.key == format!("{}:{from}", kind.as_str()) {
+                        meta.key = format!("{}:{to}", kind.as_str());
+                        meta.name = to.clone();
+                    }
+                    if let Some(rename) = &mut self.rename
+                        && rename.kind == *kind && rename.original == *from {
+                        rename.original = to.clone(); rename.buffer = to.clone();
+                    }
+                }
+                PresetApplied::Delete { kind, name } => {
+                    if self.metadata.as_ref().is_some_and(|meta| meta.key == format!("{}:{name}", kind.as_str())) { self.metadata = None; }
+                    if self.rename.as_ref().is_some_and(|rename| rename.kind == *kind && rename.original == *name) { self.rename = None; }
+                }
+                _ => {}
+            }
+        }
+    }
+
     pub(crate) fn restore(self, ctx: &egui::Context) {
         ctx.data_mut(|data| {
             data.insert_temp(egui::Id::new("preset_rename_state"), self.rename);

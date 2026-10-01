@@ -106,15 +106,18 @@ impl super::App {
         let mut store = crate::poison::recover_mutex(self.services.preset_store.lock(),
             crate::core::PRESET_STORE_WHAT, &crate::core::PRESET_STORE_POISONED);
         let mut error = None;
+        let mut applied = Vec::new();
         for edit in edits {
+            let result = edit.applied();
             if let Err(failure) = apply(&mut store, edit) {
                 tracing::warn!(%failure, "preset editor save failed");
                 error = Some(failure.to_string());
                 break;
             }
+            applied.push(result);
         }
         let drafts = capture(&store);
         drop(store);
-        view.accept_edits(drafts, error);
+        view.accept_edits(drafts, error, &applied);
     }
 }

@@ -22,6 +22,15 @@ pub struct SurfaceCfg {
 }
 
 impl SurfaceCfg {
+    pub(crate) fn remap_preset(&mut self, kind: tasty_presets::PresetKind, from: &str, to: &str) {
+        if self.preset_key == format!("{}:{from}", kind.as_str()) {
+            self.preset_key = format!("{}:{to}", kind.as_str());
+        }
+    }
+    pub(crate) fn belongs_to(&self, kind: tasty_presets::PresetKind, name: &str) -> bool {
+        self.preset_key == format!("{}:{name}", kind.as_str())
+    }
+
     pub(super) fn open(preset_key: String, leaf_id: usize, orig: LeafDraft) -> Self {
         Self {
             preset_key,

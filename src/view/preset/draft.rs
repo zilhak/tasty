@@ -15,6 +15,19 @@ pub(crate) enum PresetEdit {
     Delete { before: PresetValue },
     Rename { before: PresetValue, to: String },
 }
+#[derive(Clone, Debug)]
+pub(crate) enum PresetApplied {
+    Rename { kind: PresetKind, from: String, to: String },
+    Delete { kind: PresetKind, name: String },
+    Save { kind: PresetKind, name: String, created: bool },
+}
+impl PresetEdit {
+    pub(crate) fn applied(&self) -> PresetApplied { match self {
+        Self::Save { before, after } => PresetApplied::Save { kind: after.kind(), name: after.name().into(), created: before.is_none() },
+        Self::Delete { before } => PresetApplied::Delete { kind: before.kind(), name: before.name().into() },
+        Self::Rename { before, to } => PresetApplied::Rename { kind: before.kind(), from: before.name().into(), to: to.clone() },
+    } }
+}
 #[derive(Default)]
 pub(crate) struct PresetDrafts {
     workspaces: BTreeMap<String, WorkspacePreset>,

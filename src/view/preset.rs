@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 pub(crate) mod draft;
-use draft::{PresetDrafts, PresetEdit};
+use draft::{PresetApplied, PresetDrafts, PresetEdit};
 
 use winit::event::WindowEvent;
 
@@ -91,19 +91,43 @@ impl PresetView {
 
     pub(crate) fn take_edits(&mut self) -> Vec<PresetEdit> { self.drafts.take_edits() }
 
-    pub(crate) fn accept_edits(&mut self, drafts: PresetDrafts, error: Option<String>) {
+    pub(crate) fn accept_edits(&mut self, drafts: PresetDrafts, error: Option<String>, applied: &[PresetApplied]) {
         self.drafts = drafts;
         if error.is_some() {
             // Admission updated local selection and buffers optimistically. Restore them only
             // after the App reports failure so rename/delete cannot discard the user's editing state.
-            if let Some(previous) = self.pending_presentation.take() {
+            if let Some(mut previous) = self.pending_presentation.take() {
                 self.selected_workspace = previous.workspace;
                 self.selected_tab = previous.tab;
                 self.selected_pane = previous.pane;
                 self.editing = previous.editing;
                 self.selected_node = previous.node;
                 self.surface_cfg = previous.cfg;
+                previous.toolbar.reconcile(applied);
                 previous.toolbar.restore(&self.base.gpu.egui_ctx);
+                for result in applied {
+                    let kind = match result {
+                        PresetApplied::Rename { kind, .. } | PresetApplied::Delete { kind, .. }
+                        | PresetApplied::Save { kind, .. } => *kind,
+                    };
+                    let selected = match kind {
+                        PresetKind::Workspace => &mut self.selected_workspace,
+                        PresetKind::Tab => &mut self.selected_tab,
+                        PresetKind::Pane => &mut self.selected_pane,
+                    };
+                    match result {
+                        PresetApplied::Rename { from, to, .. } => {
+                            if selected.is_none() || selected.as_deref() == Some(from.as_str()) { *selected = Some(to.clone()); }
+                            if let Some(cfg) = &mut self.surface_cfg { cfg.remap_preset(kind, from, to); }
+                        }
+                        PresetApplied::Delete { name, .. } => {
+                            if selected.as_deref() == Some(name.as_str()) { *selected = None; self.selected_node = None; }
+                            if self.surface_cfg.as_ref().is_some_and(|cfg| cfg.belongs_to(kind, name)) { self.surface_cfg = None; }
+                        }
+                        PresetApplied::Save { name, created: true, .. } => { *selected = Some(name.clone()); }
+                        _ => {}
+                    }
+                }
             }
             self.toasts.push(t("preset.toast.save_failed"),
                 crate::adapters::ui::ToastKind::Error, ToastScope::Window);
@@ -231,6 +255,10 @@ impl View for PresetView {
             };
             toasts.draw(ctx, &empty_layout, false);
         });
+
+        if let Some(previous) = &mut self.pending_presentation {
+            previous.toolbar.retain_input(&self.base.gpu.egui_ctx);
+        }
 
         let has_copy = full_output
             .platform_output
