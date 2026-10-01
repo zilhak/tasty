@@ -710,7 +710,7 @@ impl App {
     /// 복원되지 않은 다른 engine도 계속 처리하도록 parked 항목을 모두 순회한다.
     fn forward_mesh_frames_for_parked(&mut self) {
         if let Some(ref mgr) = self.plugin_manager {
-            for engine in engines_mut!(self).parked() {
+            for mut engine in engines_mut!(self).parked() {
                 crate::plugin_bridge::mesh_forward::forward_mesh_frames_for_engine(
                     &mut engine,
                     mgr,
@@ -734,7 +734,7 @@ impl App {
             // any는 첫 true에서 멈추므로 모든 surface를 표시할 수 없다.
             let mut touched = false;
             for &sid in &invalidated_surfaces {
-                if main.mark_surface_invalidated(engine.core, sid) {
+                if main.mark_surface_invalidated(&engine.read(), sid) {
                     touched = true;
                 }
             }
@@ -887,7 +887,7 @@ impl App {
                         pending.push((DispatchSource::Engine(id), outcome.events));
                     }
                     // 출력 처리는 끝냈다. 보이지 않는 surface는 전환할 때 새로 그리므로 지금 redraw하지 않는다.
-                    if main.is_surface_visible(engine.core, sid) {
+                    if main.is_surface_visible(&engine.read(), sid) {
                         main.mark_dirty_from(RepaintSource::TerminalOutput);
                     }
                     found = true;
@@ -1409,7 +1409,7 @@ impl App {
         self.apply_mesh_full_resend_requests_batch(outcome.mesh_full_resend_requests, &hub);
         self.apply_mesh_input_events_batch(outcome.mesh_input_events, &hub);
 
-        self.apply_capture_uploads_batch(outcome.remote.capture_uploads, &hub);
+        self.apply_capture_uploads_batch(outcome.capture_uploads, &hub);
         self.apply_list_dir_requests_batch(outcome.list_dir_requests, &hub);
         self.apply_git_query_requests_batch(outcome.git_query_requests, &hub);
         self.apply_markdown_content_requests_batch(outcome.markdown_content_requests, &hub);
@@ -2362,7 +2362,7 @@ impl App {
     /// 메뉴 결과가 마지막 workspace를 닫을 수 있어 처리 직후 빈 창의 닫기 요청도 소비한다.
     fn poll_pending_native_menus(&mut self) {
         for (_, main, mut engine) in self.engines_mut().window_pairs() {
-            main.poll_pending_native_menu(&mut engine);
+            main.poll_pending_native_menu(&engine.read());
         }
         self.close_self_requesting_windows();
     }

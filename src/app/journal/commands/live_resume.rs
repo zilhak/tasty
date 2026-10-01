@@ -563,7 +563,7 @@ impl crate::app::App {
         for (resume, response) in std::mem::take(&mut self.journal.commands.completed_live) {
             let services = &mut self.services;
             let manager = self.plugin_manager.as_mut();
-            let Some(context) =
+            let Some(mut context) =
                 crate::app::window_access::engines_mut!(self).resolve(resume.engine)
             else {
                 resume.reject("pending input engine disappeared", manager);

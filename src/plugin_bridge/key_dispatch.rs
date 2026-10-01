@@ -12,12 +12,12 @@ use crate::shortcuts::matches_any_binding;
 
 pub fn focused_plugin_surface(
     state: &crate::state::RequestContext,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
 ) -> Option<(String, u32)> {
     let pane = state.focused_pane(engine)?;
     let tab = pane.tabs.get(state.navigation.tab_index(pane))?;
     let focused = state.navigation.surface_id(tab).unwrap_or(0);
-    let surface = tab.layout().find_surface(focused)?;
+    let surface = engine.find_surface_by_id(focused)?;
     let remote = surface
         .as_any()
         .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()?;

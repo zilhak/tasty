@@ -31,11 +31,11 @@ pub(crate) fn resolve(
         } => DomainIntent::ApplyPreset {
             kind: *kind,
             name: name.clone(),
-            target_pane_id: state.focused_pane_id(&read),
+            target_pane_id: Some(state.focused_pane_id(&read)),
             category: *category,
         },
         Intent::RestoreClosedItem => DomainIntent::RestoreClosedItem {
-            target_pane_id: state.focused_pane_id(&read),
+            target_pane_id: Some(state.focused_pane_id(&read)),
             scope: crate::app::command::RestoreScope::Local,
         },
         Intent::NewWorkspace {

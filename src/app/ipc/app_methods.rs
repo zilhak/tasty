@@ -694,14 +694,23 @@ impl App {
                 let core = &mut self.services;
                 let main = engines_mut!(self).window_pairs().next();
                 match main {
-                    Some((_, m, engine)) => host_ipc::handler::session::handle_request_permission(
-                        core,
-                        &mut m.state,
-                        engine.core,
-                        caller,
-                        id,
-                        &cmd.request.params,
-                    ),
+                    Some((_, m, mut engine)) => {
+                        let mut scope = crate::ipc::request_scope::RequestScope::capture(
+                            &mut m.state,
+                            engine.core,
+                            None,
+                        );
+                        let response = host_ipc::handler::session::handle_request_permission(
+                            core,
+                            &mut scope,
+                            &mut engine,
+                            caller,
+                            id,
+                            &cmd.request.params,
+                        );
+                        scope.finish().apply(&mut m.state, engine.core);
+                        response
+                    }
                     None => host_ipc::protocol::JsonRpcResponse::error(
                         id,
                         -32603,

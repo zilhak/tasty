@@ -920,10 +920,11 @@ impl Creation {
                 Err(error) => Some(error.to_string()),
             };
             if let Some(reason) = uncertain {
+                let lease = installed.lease.clone();
                 self.submit(
                     worker,
                     Work::PreparationUncertain {
-                        lease: installed.lease.clone(),
+                        lease,
                         reason: reason.clone(),
                     },
                 )?;

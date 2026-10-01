@@ -97,8 +97,8 @@ impl App {
         if main.state.keyboard_overlay_open() || main.state.fullscreen_stage_active() {
             return;
         }
-        if main.handle_shortcut(&mut engine, &ev.key, ev.mods) {
-            main.after_shortcut_consumed(&mut engine);
+        if main.handle_shortcut(&engine.read(), &ev.key, ev.mods) {
+            main.after_shortcut_consumed(&engine.read());
         }
         // 호스트 단축키가 마지막 workspace를 닫았을 수 있어 다음 redraw 전에 닫기 요청을 처리한다.
         self.close_self_requesting_windows();

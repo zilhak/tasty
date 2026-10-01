@@ -337,7 +337,7 @@ impl App {
     ) {
         let Some(DispatchCtx {
             state,
-            engine,
+            mut engine,
             view: dirty_main,
             ..
         }) = engines_mut!(self).resolve(source.engine())
@@ -372,7 +372,7 @@ impl App {
     fn cascade_terminal_bell_ring(&mut self, source: DispatchSource, surface_id: u32) {
         let Some(DispatchCtx {
             state,
-            engine,
+            mut engine,
             view: dirty_main,
             ..
         }) = engines_mut!(self).resolve(source.engine())
@@ -416,7 +416,7 @@ impl App {
     ) {
         let Some(DispatchCtx {
             state,
-            engine,
+            mut engine,
             view: dirty_main,
             ..
         }) = engines_mut!(self).resolve(source.engine())

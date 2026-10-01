@@ -171,8 +171,10 @@ impl App {
         if main.state.keyboard_overlay_open() || main.state.fullscreen_stage_active() {
             return false;
         }
-        let focused =
-            crate::plugin_bridge::key_dispatch::focused_plugin_surface(&main.state, engine.core);
+        let focused = crate::plugin_bridge::key_dispatch::focused_plugin_surface(
+            &main.state,
+            &engine.as_ref(),
+        );
         let host_kb = engine.runtime.settings.keybindings.clone();
 
         let matched = {
@@ -228,7 +230,7 @@ impl App {
                 action,
                 order_hint: 0,
             };
-            crate::adapters::ui::tools_menu::invoke_tool(&mut main.state, &mut engine, &item);
+            crate::adapters::ui::tools_menu::invoke_tool(&mut main.state, &engine.read(), &item);
         } else if let Some(mgr) = self.plugin_manager.as_mut() {
             crate::plugin_bridge::key_dispatch::dispatch_plugin_command(
                 mgr, &plugin_id, &cmd_id, surface_id,

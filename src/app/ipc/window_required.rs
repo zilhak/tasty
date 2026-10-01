@@ -148,7 +148,7 @@ impl App {
                 Ok(v) => v,
                 Err(msg) => return reject_bad_params(cmd, &msg),
             };
-            let ok = w.debug_inject_mesh_pointer(&mut engine, surface_id, fx, fy, action);
+            let ok = w.debug_inject_mesh_pointer(&engine.read(), surface_id, fx, fy, action);
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 serde_json::json!({ "injected": ok }),
@@ -177,7 +177,7 @@ impl App {
                 Ok(v) => v,
                 Err(msg) => return reject_bad_params(cmd, &msg),
             };
-            let ok = w.debug_inject_egui_pointer(engine.core, fx, fy, surface_id, action);
+            let ok = w.debug_inject_egui_pointer(&engine.read(), fx, fy, surface_id, action);
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 serde_json::json!({ "injected": ok }),

@@ -23,7 +23,7 @@ impl App {
                 // A row outside its engine's newest 50 cannot be in the global top 50.
                 let rows = one(self.merge_fields(
                     &id,
-                    |_c, _s, e, id| notification::handle_notification_list(e, id),
+                    |_c, _s, e, id| notification::handle_notification_list(&e.as_ref(), id),
                     &[],
                 ));
                 Some(JsonRpcResponse::success(
@@ -32,7 +32,11 @@ impl App {
                 ))
             }
             "workspace.list" => Some(self.collect_list(id, |_c, s, e, id| {
-                workspace::handle_workspace_list(s, e, id)
+                workspace::handle_workspace_list(
+                    &crate::ipc::request_scope::RequestScope::capture(s, e.core, None),
+                    &e.as_ref(),
+                    id,
+                )
             })),
             "surface.list" => Some(self.collect_list(id, |_c, _s, e, id| {
                 surface::handle_surface_list(&e.as_ref(), id)
@@ -57,9 +61,9 @@ impl App {
                 output::handle_observe_list(c, &e.as_ref(), id)
             })),
             // image 플러그인이 host.call로 되돌린 요청도 여기서 전체 창의 결과를 모은다.
-            "image.list" => {
-                Some(self.collect_field(id, "entries", |_c, _s, e, id| image::handle_list(e, id)))
-            }
+            "image.list" => Some(self.collect_field(id, "entries", |_c, _s, e, id| {
+                image::handle_list(&e.as_ref(), id)
+            })),
             "workspace_category.list" => Some(self.collect_categories(id)),
             // hook.list의 surface_id는 소유 창 지정이 아닌 필터이므로 각 engine에 그대로 전달한다.
             "hook.list" => {
@@ -74,7 +78,7 @@ impl App {
             "attach.list" => Some(self.collect_fields(
                 id,
                 ("attached", "workspaces"),
-                |_c, _s, e, id| attach::handle_list(e, id),
+                |_c, _s, e, id| attach::handle_list(&e.read(), id),
             )),
             _ => None,
         }

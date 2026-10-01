@@ -521,14 +521,18 @@ impl RequestContext {
     }
 
     #[cfg(feature = "gui")]
-    fn surface_to_type(surface: &dyn crate::model::Surface) -> FocusedSurfaceType {
+    fn surface_to_type(surface: &crate::model::SurfaceDescriptor) -> FocusedSurfaceType {
         match surface.kind() {
             "terminal" => FocusedSurfaceType::Terminal,
             other => FocusedSurfaceType::Kind(other.to_string()),
         }
     }
 
-    pub fn surface_kind(&self, engine: &CoreState, surface_id: u32) -> Option<&'static str> {
+    pub fn surface_kind(
+        &self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+        surface_id: u32,
+    ) -> Option<&'static str> {
         engine.find_surface_by_id(surface_id).map(|s| s.kind())
     }
 

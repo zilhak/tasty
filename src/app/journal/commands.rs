@@ -829,6 +829,8 @@ impl JournalApplication {
             {
                 pending.waiting_command = Some(executed.command_id.clone());
                 #[cfg(feature = "gui")]
+                let mut forward_start = None;
+                #[cfg(feature = "gui")]
                 if !pending.replay
                     && let Some(draft) = pending.forward.take()
                 {
@@ -845,7 +847,7 @@ impl JournalApplication {
                     else {
                         return Err("forward command operation missing".into());
                     };
-                    self.start_forward(draft, operation.clone())?;
+                    forward_start = Some((draft, operation.clone()));
                 }
 
                 if !pending.replay
@@ -885,6 +887,10 @@ impl JournalApplication {
                     }
                 }
                 self.refresh_command_weight(ticket);
+                #[cfg(feature = "gui")]
+                if let Some((draft, operation)) = forward_start {
+                    self.start_forward(draft, operation)?;
+                }
                 return Ok(true);
             }
             Ok(ResultValue::Stored(record) | ResultValue::Command(record))
@@ -1231,7 +1237,7 @@ impl crate::app::App {
             }
             let preset_pane = if request.method == "preset.apply" {
                 id.and_then(|engine| self.engines_mut().resolve(engine))
-                    .and_then(|context| context.state.focused_pane_id(context.engine.core))
+                    .map(|context| context.state.focused_pane_id(&context.engine.read()))
             } else {
                 None
             };
@@ -1246,7 +1252,11 @@ impl crate::app::App {
                         crate::ipc::handler::workspace::resolve_create_cwd(
                             &request.params,
                             kind,
-                            context.state,
+                            &crate::ipc::request_scope::RequestScope::capture(
+                                context.state,
+                                context.engine.core,
+                                None,
+                            ),
                             &context.engine.as_ref(),
                             &serde_json::Value::Null,
                         )
@@ -1491,10 +1501,10 @@ impl crate::app::App {
                     match followup {
                         crate::intent::CreateFollowup::Prompt { kind } => {
                             context.state.enqueue_convert_input_popup(
-                                &context.engine.as_ref(),
+                                &context.engine.read(),
                                 &kind,
                                 Some(surface),
-                            )
+                            );
                         }
                     }
                 }
@@ -1683,9 +1693,8 @@ fn reply_weight(_reply: &Reply) -> usize {
     if let Reply::Resume(resume) = _reply {
         return resume.weight();
     }
-    if let Reply::Remote(reply) = _reply {
-        return reply.before.capacity() * std::mem::size_of::<u32>()
-            + std::mem::size_of::<inbound::RemoteReply>();
+    if let Reply::Remote(_) = _reply {
+        return std::mem::size_of::<inbound::RemoteReply>();
     }
     #[cfg(feature = "gui")]
     if let Reply::Settings { settings, .. } = _reply {

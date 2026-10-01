@@ -53,7 +53,7 @@ impl App {
                 if let Some((main, mut engine)) = engines_mut!(self).window_pair(wid) {
                     crate::adapters::ui::tools_menu::invoke_tool(
                         &mut main.state,
-                        &mut engine,
+                        &engine.read(),
                         &item,
                     );
                 }

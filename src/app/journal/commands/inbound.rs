@@ -256,15 +256,16 @@ impl JournalApplication {
             }
         };
         let method = normalized.method.clone();
+        let cause = close::Cause::RemoteHolder {
+            client: remote.client,
+            workspace: remote.workspace,
+        };
         let pending = self
             .commands
             .pending
             .get_mut(&ticket)
             .expect("remote admission remains owned");
-        pending.close_cause = close::Cause::RemoteHolder {
-            client: remote.client,
-            workspace: remote.workspace,
-        };
+        pending.close_cause = cause;
         // The original request/digest was already admitted. Only the execution target is normalized.
         pending.request = normalized;
         if matches!(method.as_str(), "tab.create" | "split") {

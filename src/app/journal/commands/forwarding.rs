@@ -4,11 +4,11 @@ use tasty_ipc::stream::{SplitAxis, StructuralOp};
 
 fn local_op(
     request: &JsonRpcRequest,
-    session: &EngineSession,
+    session: &crate::runtime::engine_access::EngineRef<'_>,
     services: &crate::app::services::AppServices,
     view: &crate::runtime::journal_product::CompletionView,
 ) -> Option<StructuralOp> {
-    let core = &session.core_state;
+    let core = session.core;
     let pane_anchor = |id| {
         core.find_pane_by_id(id)
             .and_then(|pane| pane.tabs.first())
@@ -161,13 +161,13 @@ impl crate::app::App {
             .get(&engine)
             .cloned()
             .unwrap_or_default();
-        let Some(op) = local_op(request, session, &self.services, &view) else {
+        let Some(op) = local_op(request, &session, &self.services, &view) else {
             return false;
         };
         let mirrored = session
-            .core_state
+            .core
             .find_workspace_index_for_surface(op.anchor_surface_id())
-            .and_then(|(index, _)| session.core_state.workspace_at(index))
+            .and_then(|(index, _)| session.core.workspace_at(index))
             .is_some_and(|workspace| workspace.mirror);
         if !mirrored {
             return false;
@@ -177,7 +177,7 @@ impl crate::app::App {
             protected.method = "surface.close".into();
             protected.params["surface_id"] = serde_json::json!(op.anchor_surface_id());
         }
-        if let Some(response) = super::close::caller_refusal(&protected, &session.core_state) {
+        if let Some(response) = super::close::caller_refusal(&protected, session.core) {
             self.journal.reject_resolved_request(ticket, response);
             return true;
         }

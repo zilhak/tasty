@@ -727,7 +727,7 @@ fn route_engine_handler(
         "webhook.sweep" => webhook::handle_sweep(id),
         "webhook.config" => webhook::handle_config(id, &request.params),
         #[cfg(feature = "gui")]
-        "webview.set_url" => webview::handle_set_url(engine, caller, id, &request.params),
+        "webview.set_url" => webview::handle_set_url(&engine.as_ref(), caller, id, &request.params),
         #[cfg(feature = "gui")]
         "surface.html_script" => surface::handle_html_script(&engine.as_ref(), id, &request.params),
         // WebView는 surface.set_context를 받지 않아 이 조회로 Theme를 읽는다.

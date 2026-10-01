@@ -187,7 +187,7 @@ impl App {
             .window_of(engine)
             .and_then(|window| self.view.views.get(&window))
             .and_then(|view| view.as_main())
-            .map(|view| view.state.identity())
+            .map(|view| view.base.state.identity())
             .unwrap_or_default();
         let session = self
             .engines

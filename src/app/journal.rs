@@ -389,10 +389,11 @@ impl JournalApplication {
                         } else {
                             let mut prepared = Vec::new();
                             let mut installations = Vec::new();
+                            let session_id = session.id;
                             for (key, creation) in self
                                 .creations
                                 .iter_mut()
-                                .filter(|((engine, _), _)| *engine == session.id)
+                                .filter(|((engine, _), _)| *engine == session_id)
                             {
                                 if let Some(installation) =
                                     creation.authorize_installation(session, events)?
