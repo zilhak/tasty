@@ -106,7 +106,10 @@ impl App {
         }
         if !self.journal.pauses_observation() && !self.journal.is_halted() {
             for session in self.engines.all_sessions_mut() {
-                session.borrow_mut().poll_input_submissions();
+                let mut engine = session.borrow_mut();
+                engine.poll_input_submissions();
+                // Resolved remote replies have run; local closes must not wait for client input.
+                engine.push_structure_changes();
             }
             self.dispatch_pending_surface_lifecycle();
             self.dispatch_pending_host_events();

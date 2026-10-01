@@ -592,3 +592,5 @@ GUI debug 시험의 완료 기록이 없으면 queued 응답만으로 통과하�
 GUI 큐가 처리되지 않는 현재 동작은 별도 시험 이름으로 검사하므로, 그 통과를 GUI 거절
 검증으로 세지 않는다. release의 공통 분기는 유닛시험 대상이며 debug 로그를 요구하는
 통합시험은 debug 조합에만 있다. 근거와 대안은 [준비 부족과 제품 결함을 구분한다](self-verification.md#준비-부족과-제품-결함을-구분한다).
+
+서버 로컬 변경의 구조 통지는 GUI·headless 모두 journal publication이 풀리고 원격 응답이 전달된 뒤 보낸다. 셸 종료로 surface가 삭제된 경우에도 다음 client 입력이나 StreamReady를 기다리지 않는다. 아직 원격 Result가 대기 중인 workspace의 Delta는 기존 pending reply 경계에서 보류하며, 성공한 Result 뒤에 전달한다.

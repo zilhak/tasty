@@ -592,6 +592,9 @@ fn dispatch_headless_event(
                     .borrow_mut()
                     .refresh_attach_presentation(&state.navigation);
             }
+            // A server-side close has no incoming stream event to flush its committed delta.
+            // Remote results above release their ordering fence before this ordinary observation.
+            session.borrow_mut().push_structure_changes();
         }
         app.finish_preset_captures();
         app.journal
