@@ -25,8 +25,11 @@ fn recover_one(executor:&Executor<StructureDecider>,stream:&str,id:&OperationId)
         let operation=model.operations.get(id).ok_or("recovery operation disappeared")?.clone();
         if operation.outcome.is_some() {return Ok(());}
         let member_uncertain=operation.assembly.as_ref().is_some_and(|plan|plan.snapshot.surfaces.keys().any(|surface| {
-            model.operations.get(&tasty_core::CreationAssembly::member(id,*surface)).is_none_or(|member|!matches!(member.outcome,Some(OperationOutcome::Cancelled {..}|OperationOutcome::Failed {..})))
+            model.operations.get(&tasty_core::CreationAssembly::member(id,*surface)).is_none_or(|member|!matches!(member.outcome,Some(OperationOutcome::Cancelled {..}|OperationOutcome::Failed {..}|OperationOutcome::Superseded {..})))
         }));
+        let superseded=operation.engine_incarnation!=model.engine_incarnation
+            || operation.creation.as_ref().and_then(|plan|model.surfaces.get(&plan.surface.id))
+                .and_then(|surface|surface.activation).is_some_and(|activation|activation.generation>operation.activation_generation);
         let suffix=if operation.forward {"forward"}else if operation.retirement.is_some(){"retire"}else {"prepare"};
         let effect=if operation.assembly.is_some() {None} else {
             let effect=inner.store.effect(&format!("{}/{suffix}",id.0)).map_err(|error|error.to_string())?.ok_or("recovery operation has no effect obligation")?;
@@ -36,8 +39,8 @@ fn recover_one(executor:&Executor<StructureDecider>,stream:&str,id:&OperationId)
         };
         let started=effect.as_ref().is_some_and(|effect|effect.attempt>0 || !matches!(effect.state,EffectState::Pending|EffectState::Deferred));
         let unknown=operation.retirement.is_some() || member_uncertain || started || operation.resource_prepared || operation.pending_outcome.is_some();
-        let reason=if unknown {"previous runtime ended without a committed resource or delivery receipt"}else {"historical operation was never claimed; only selected live surfaces may activate"};
-        let outcome=if unknown {OperationOutcome::Uncertain {reason:reason.into()}}else {OperationOutcome::Cancelled {reason:reason.into()}};
+        let reason=if unknown {"previous runtime ended without a committed resource or delivery receipt"}else if superseded {"unclaimed historical operation belongs to an older engine or activation generation"}else {"historical operation was never claimed; only selected live surfaces may activate"};
+        let outcome=if unknown {OperationOutcome::Uncertain {reason:reason.into()}}else if superseded {OperationOutcome::Superseded {reason:reason.into()}}else {OperationOutcome::Cancelled {reason:reason.into()}};
         let observation=serde_json::json!({
             "version":1,"stream":stream,"operation":id,"engine_incarnation":operation.engine_incarnation,
             "new_runtime_epoch":epoch.0,"reason":reason,
