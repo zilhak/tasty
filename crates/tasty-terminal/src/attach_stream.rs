@@ -184,3 +184,7 @@ impl Terminal {
         self.lock_state().snapshot_and_stream()
     }
 }
+
+#[cfg(test)]
+#[path = "attach_stream_tests.rs"]
+mod tests;
