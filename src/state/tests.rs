@@ -132,8 +132,7 @@ fn state_fixture(
     } else {
         tasty_core::projection::bootstrap::initialize(&mut engine.core_state, &model).unwrap();
     }
-    for surface in model.surfaces.values() {
-        let id = surface.id;
+    for (&id, surface) in &model.surfaces {
         match surface.kind.as_str() {
             "terminal" => {
                 engine
