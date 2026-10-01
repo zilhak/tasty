@@ -210,7 +210,7 @@ impl JournalApplication {
                 self.submit_commands()?;
                 #[cfg(feature="gui")]
                 self.submit_forwards()?;
-                self.poll_resource_cleanup(sessions)?;
+                self.poll_resource_cleanup(sessions, plugins.as_deref_mut())?;
                 self.submit_captures(sessions)?;
                 self.submit_preset_captures()?;
                 self.refill_execution_ids(sessions)?;
