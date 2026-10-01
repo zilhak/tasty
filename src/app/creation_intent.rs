@@ -7,6 +7,7 @@ use crate::state::RequestContext;
 pub(crate) fn resolve(state:&RequestContext,engine:&EngineRef<'_>,intent:&Intent,origin:&IntentOrigin)->anyhow::Result<Option<DomainIntent>> {
     let params_or_empty=|params:&serde_json::Value|if params.is_null(){serde_json::json!({})}else{params.clone()};
     Ok(Some(match intent {
+        Intent::ApplyPreset {kind,name,category}=>DomainIntent::ApplyPreset {kind:*kind,name:name.clone(),target_pane_id:state.focused_pane_id(engine.core),category:*category},
         Intent::RestoreClosedItem=>DomainIntent::RestoreClosedItem {target_pane_id:state.focused_pane_id(engine.core),scope:crate::app::command::RestoreScope::Local},
         Intent::NewWorkspace {kind,params,category}=> {
             let kind=kind.as_deref().unwrap_or("terminal");

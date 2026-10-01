@@ -125,7 +125,7 @@ impl App {
         if matches!(
             intent.body,
             Intent::Domain(_) | Intent::DirectRename(_) | Intent::CommitDivider(_)
-                |Intent::RestoreClosedItem|Intent::NewWorkspace {..}|Intent::NewTab {..}|Intent::SplitPane {..}|Intent::SplitSurface {..}|Intent::ConvertSurface {..}
+                |Intent::ApplyPreset {..}|Intent::RestoreClosedItem|Intent::NewWorkspace {..}|Intent::NewTab {..}|Intent::SplitPane {..}|Intent::SplitSurface {..}|Intent::ConvertSurface {..}
         ) {
             IntentClass::Domain
         } else if matches!(intent.body, Intent::Ui(UiIntent::AppearanceChanged)) {

@@ -43,15 +43,6 @@ pub(crate) trait IpcWindow: CascadeWindow {
     /// 이 창이 기억하는 최근 파일(최신순).
     fn recent_files(&self, kind: &str) -> Vec<String>;
 
-    /// preset 을 이 창에 적용한다. 워크스페이스 preset 은 이 창의 워크스페이스 목록에 붙는다.
-    fn apply_preset(
-        &mut self,
-        core: &crate::app::services::AppServices,
-        engine: &mut EngineMut<'_>,
-        target: crate::intent::preset::PresetApplyTarget,
-        options: crate::state::preset_apply::ApplyOptions,
-    ) -> Result<crate::intent::preset::ApplyOutcome, crate::intent::preset::PresetMutationError>;
-
     /// 발행된 capability 승인 요청을 이 창의 승인 팝업 큐에 넣는다.
     #[cfg(feature = "gui")]
     fn enqueue_approval_popup(

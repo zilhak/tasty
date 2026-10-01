@@ -41,6 +41,7 @@ pub(crate) struct Admission {
 
 #[derive(Debug)]
 pub(crate) enum Work {
+    PrepareSubtree {binding:EngineBinding,draft:crate::runtime::preset_plan::AssemblyDraft},
     PrepareUndo {binding:EngineBinding,target_pane:Option<u32>,scope:Option<u32>,shell:ShellRecipe},
     ReserveExecutionIds {binding:EngineBinding,kinds:Vec<(IdKind,u32)>},
     CaptureClosed {view:CompletionView,binding:EngineBinding,target:tasty_domain::CloseTarget,display_name:Option<String>,surfaces:Vec<crate::runtime::surface_capture::CapturedSurface>},
@@ -318,6 +319,7 @@ fn request_payload_too_large(work: &Work) -> bool {
 
 pub(crate) fn request_size(work: &Work) -> usize {
     match work {
+        Work::PrepareSubtree {binding,draft}=>serde_json::to_vec(&(binding,draft)).map_or(usize::MAX,|bytes|bytes.len()),
         Work::PrepareUndo {binding,target_pane,scope,shell}=>serde_json::to_vec(&(binding,target_pane,scope,shell)).map_or(usize::MAX,|bytes|bytes.len()),
         Work::ReserveExecutionIds {binding,kinds}=>binding.stream.len()+binding.journal_id.len()+kinds.capacity()*std::mem::size_of::<(IdKind,u32)>(),
         Work::CaptureClosed {view,binding,surfaces,display_name,..}=>surfaces.iter().fold(serde_json::to_vec(view).map_or(usize::MAX,|bytes|bytes.len()).saturating_add(binding.stream.len())+binding.journal_id.len()+display_name.as_ref().map_or(0,String::len)+96,|sum,surface|sum.saturating_add(surface.weight())),

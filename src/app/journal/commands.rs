@@ -550,7 +550,10 @@ impl JournalApplication {
                 pending.queued=Some(match (input,plan) {
                     (Some(input),Some(plan))=>Work::Resolve {
                         changes:vec![StreamCommand {stream:stream.clone(),command:tasty_domain::StructuralCommand::PrepareAssembly {operation:tasty_domain::OperationId(String::new()),command_id:String::new(),input:*input,plan:plan.clone()}}],
-                        response:Some(ResponsePlan::AssemblyRestored {stream:stream.clone(),root:plan.snapshot.root,surfaces:plan.snapshot.surfaces.keys().copied().collect(),presentation:plan.snapshot.presentation.clone()}),
+                        response:Some(if pending.request.method=="preset.apply" {
+                            let root=plan.snapshot.root;let mut response=serde_json::json!({"applied":true,"kind":root.kind.label()});response[format!("{}_id",root.kind.label())]=serde_json::json!(root.id);
+                            ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,response))
+                        }else {ResponsePlan::AssemblyRestored {stream:stream.clone(),root:plan.snapshot.root,surfaces:plan.snapshot.surfaces.keys().copied().collect(),presentation:plan.snapshot.presentation.clone()}}),
                     },
                     (None,None)=>Work::Resolve {changes:Vec::new(),response:Some(ResponsePlan::Fixed(JsonRpcResponse::success(serde_json::Value::Null,serde_json::json!({"restored":false}))))},
                     _=>return Err("undo preparation result is incomplete".into()),
@@ -727,6 +730,7 @@ impl JournalApplication {
         &mut self,
         session: &EngineSession,
         state: &mut crate::state::RequestContext,
+        services:&crate::app::services::AppServices,
     ) {
         for (ticket, request) in self.requests_needing_resolution() {
             if self.commands.pending.get(&ticket).is_some_and(|pending| matches!(&pending.reply, Reply::Intent { engine, .. } if *engine != session.id)) {
@@ -750,6 +754,10 @@ impl JournalApplication {
                     ),
                 );
                 continue;
+            }
+            if matches!(request.method.as_str(),"tab.create"|"split"|"surface.respawn_terminal") {self.resolve_public_creation(ticket,session,services);continue;}
+            if matches!(request.method.as_str(),"preset.apply"|"intent.preset-apply") {
+                self.resolve_preset(ticket,session,services,state.focused_pane_id(&session.core_state));continue;
             }
             if request.method == "workspace.create" {
                 let kind = request
@@ -801,7 +809,7 @@ impl crate::app::App {
                 })
             {
                 if let Some(session) = self.engines.session_mut(id) {
-                    self.journal.resolve_ipc_for_engine(ticket, session);
+                    if request.method=="intent.preset-apply" {self.journal.resolve_preset(ticket,session,&self.services,None);} else {self.journal.resolve_ipc_for_engine(ticket, session);}
                 } else {
                     self.journal.reject_resolved_request(
                         ticket,
@@ -838,6 +846,7 @@ impl crate::app::App {
                         })
                         .map(|(id, _)| id)
                 });
+            let preset_pane=if request.method=="preset.apply" {id.and_then(|engine|self.engines_mut().resolve(engine)).and_then(|context|context.state.focused_pane_id(context.engine.core))}else {None};
             let creation_cwd = if request.method == "workspace.create" {
                 id.and_then(|engine| self.engines_mut().resolve(engine))
                     .map(|context| {
@@ -874,6 +883,8 @@ impl crate::app::App {
                 self.journal.reject_resolved_request(ticket, response);
                 continue;
             };
+            if matches!(request.method.as_str(),"tab.create"|"split"|"surface.respawn_terminal") {self.journal.resolve_public_creation(ticket,session,&self.services);continue;}
+            if request.method=="preset.apply" {self.journal.resolve_preset(ticket,session,&self.services,preset_pane);continue;}
             if let Some(cwd) = creation_cwd {
                 match cwd {
                     Ok(cwd) => self

@@ -32,6 +32,7 @@ pub(crate) struct PreparedMaterialization {
     installed: bool,
     deferred:bool,
     scrollback_persist_id: Option<String>,
+    metadata:Vec<(String,String)>,
 }
 
 #[derive(Clone)]
@@ -82,6 +83,9 @@ pub(crate) fn prepare(
     }
 
     let mut scrollback_persist_id = None;
+    let metadata=if matches!(claimed.plan.destination,tasty_domain::CreationDestination::Pane {..}|tasty_domain::CreationDestination::Split {..}) {
+        claimed.input.params.get("meta").and_then(|value|value.as_object()).into_iter().flatten().filter_map(|(key,value)|value.as_str().map(|value|(key.clone(),value.to_owned()))).collect()
+    } else {Vec::new()};
     let input = claimed.input;
     let deferred=matches!(claimed.plan.destination,tasty_domain::CreationDestination::Assembly {..}) && input.kind!="terminal" && engine.runtime.surface_registry.get_live(&input.kind).is_none();
     let (surface, connection, publication, registration) = if input.kind == "terminal" {
@@ -200,7 +204,7 @@ pub(crate) fn prepare(
         previous_resource,
         registration,
         installed: false,deferred,
-        scrollback_persist_id,
+        scrollback_persist_id,metadata,
     })
 }
 
@@ -232,6 +236,7 @@ impl PreparedMaterialization {
             publication: self.publication.take(),
             registration: self.registration.take(),
             scrollback_persist_id: self.scrollback_persist_id.take(),
+            metadata:std::mem::take(&mut self.metadata),
         })
     }
 

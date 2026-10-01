@@ -41,6 +41,7 @@ pub(crate) enum RestoreScope {
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // reason: 큐 항목마다 Box를 추가 할당하지 않도록 값을 직접 보관한다.
 pub(crate) enum DomainIntent {
+    ApplyPreset {kind:tasty_presets::PresetKind,name:String,target_pane_id:Option<u32>,category:Option<u32>},
     /// 새 설정을 후속 처리 이벤트로 넘긴다. AppServices::apply 자체가 테마·스크롤백 등을 갱신하지는 않는다.
     UpdateSettings(Settings),
 

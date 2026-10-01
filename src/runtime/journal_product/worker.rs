@@ -326,6 +326,10 @@ fn handle(
                 .map_err(|e| e.to_string())?;
             Ok(ResultValue::Executed(executed))
         }
+        Work::PrepareSubtree {binding,draft}=> {
+            let admitted=pending.get_mut(&ticket).ok_or("preset input has no admitted owner")?;
+            assembly::preset(executor,admitted,ticket,binding,draft)
+        },
         Work::PrepareUndo {binding,target_pane,scope,shell}=> {
             let admitted=pending.get_mut(&ticket).ok_or("undo input has no admitted owner")?;
             assembly::undo(executor,admitted,ticket,binding,target_pane,scope,shell)

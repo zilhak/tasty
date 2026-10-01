@@ -19,7 +19,7 @@ pub(super) fn decide(model:&JournalModel,command:&StructuralCommand)->Result<Str
     let coordinator=Operation {
         id:operation.clone(),command_id:command_id.clone(),engine_incarnation:model.engine_incarnation,
         creation:None,assembly:Some(plan.clone()),retirement:None,targets:Vec::new(),reserved:plan.reserved_ids(),input:*input,
-        activation_generation:0,outcome:None,pending_outcome:None,cleanup:None,prepared_data:None,prepared_deferred:false,reconciliation_evidence:None,
+        activation_generation:0,outcome:None,pending_outcome:None,cleanup:None,prepared_data:None,prepared_deferred:false,resource_prepared:false,reconciliation_evidence:None,
     };
     let mut events=vec![DomainEvent::OperationPrepared {operation:coordinator}];
     let mut effects=Vec::new();
@@ -31,7 +31,7 @@ pub(super) fn decide(model:&JournalModel,command:&StructuralCommand)->Result<Str
             id:id.clone(),command_id:command_id.clone(),engine_incarnation:model.engine_incarnation,
             creation:Some(CreationPlan {destination:CreationDestination::Assembly {operation:operation.clone()},surface:SurfaceSpec {id:*surface,kind:value.kind.clone(),data:value.data},tab_name:tab.name.clone(),explicit_name:tab.explicit_name.clone()}),
             assembly:None,retirement:None,targets:Vec::new(),reserved:Vec::new(),input:plan.inputs[surface],activation_generation:generation,
-            outcome:None,pending_outcome:None,cleanup:None,prepared_data:None,prepared_deferred:false,reconciliation_evidence:None,
+            outcome:None,pending_outcome:None,cleanup:None,prepared_data:None,prepared_deferred:false,resource_prepared:false,reconciliation_evidence:None,
         };
         effects.push(StructuralEffect::PrepareSurface {operation:id,input:member.input,surface:*surface,kind:value.kind.clone(),activation_generation:generation});
         events.push(DomainEvent::OperationPrepared {operation:member});
@@ -57,7 +57,7 @@ pub(super) fn settle(model:&JournalModel,member:&Operation,outcome:OperationOutc
         }
     }
     if waiting {return Ok(StructuralDecision {events,effects:Vec::new(),result:StructuralResult::Pending {operation:group.clone()},completed_command:None});}
-    if failed && !plan.omit_failed {
+    if failed && !plan.omit_failed && !ready.is_empty() {
         // Installed peers may have externally observable registration. Recovery must reconcile
         // those exact owners; an ordinary failed response would falsely close the obligation.
         events.push(DomainEvent::OperationFinished {id:group.clone(),outcome:OperationOutcome::Uncertain {reason:"assembly peer failed after resources were prepared".into()}});
@@ -86,4 +86,48 @@ pub(super) fn settle(model:&JournalModel,member:&Operation,outcome:OperationOutc
     if let Some(id)=&plan.undo {events.push(DomainEvent::UndoRecordConsumed {id:id.clone()});}
     events.push(DomainEvent::OperationFinished {id:group.clone(),outcome:OperationOutcome::Succeeded});
     Ok(StructuralDecision {events,effects:Vec::new(),result:plan.result(&ready),completed_command:Some(coordinator.command_id.clone())})
+}
+
+
+/// Private resources must all have outcomes before a group may publish any external registration.
+/// A failed preset prepares discard obligations for its peers instead of exposing a partial tree.
+pub(super) fn prepared_member(model:&JournalModel,member:&Operation,result:&crate::PreparationResult)->Result<StructuralDecision,Rejection> {
+    let Some(CreationPlan {destination:CreationDestination::Assembly {operation:group},..})=&member.creation else {return Err(Rejection("preparation is not an assembly member".into()));};
+    let coordinator=model.operations.get(group).ok_or_else(||Rejection("assembly coordinator missing".into()))?;
+    let plan=coordinator.assembly.as_ref().ok_or_else(||Rejection("assembly plan missing".into()))?;
+    let mut events=vec![match result {
+        crate::PreparationResult::Ready {data}=>DomainEvent::OperationResourcePrepared {id:member.id.clone(),data:*data,deferred:false},
+        crate::PreparationResult::Deferred {data}=>DomainEvent::OperationResourcePrepared {id:member.id.clone(),data:*data,deferred:true},
+        crate::PreparationResult::Failed {reason}=>DomainEvent::OperationFinished {id:member.id.clone(),outcome:OperationOutcome::Failed {reason:reason.clone()}},
+    }];
+    let mut private=Vec::new();let mut waiting=false;let mut failed=false;
+    for surface in plan.snapshot.surfaces.keys() {
+        let id=CreationAssembly::member(group,*surface);
+        let peer=model.operations.get(&id).ok_or_else(||Rejection("assembly member missing".into()))?;
+        if id==member.id {
+            match result {
+                crate::PreparationResult::Ready {data}=>private.push((peer,*data,false)),
+                crate::PreparationResult::Deferred {data}=>private.push((peer,*data,true)),
+                crate::PreparationResult::Failed {..}=>failed=true,
+            }
+        } else if peer.resource_prepared {private.push((peer,peer.prepared_data,peer.prepared_deferred));}
+        else if matches!(peer.outcome,Some(OperationOutcome::Failed {..}|OperationOutcome::Cancelled {..})) {failed=true;}
+        else {waiting=true;}
+    }
+    if !waiting {
+        if private.is_empty() {
+            let reason="no restorable surface remained".to_owned();
+            events.push(DomainEvent::OperationFinished {id:group.clone(),outcome:OperationOutcome::Failed {reason:reason.clone()}});
+            return Ok(StructuralDecision {events,effects:Vec::new(),result:StructuralResult::Failed {reason},completed_command:Some(coordinator.command_id.clone())});
+        } else {
+            let discarded=(!plan.omit_failed && failed) || !plan.target_is_live(model) || coordinator.engine_incarnation!=model.engine_incarnation;
+            for (peer,data,deferred) in private {
+                let surface=peer.creation.as_ref().ok_or_else(||Rejection("assembly peer has no leaf".into()))?.surface.id;
+                let (outcome,cleanup)=if discarded {(OperationOutcome::Cancelled {reason:"assembly was cancelled before external installation".into()},crate::CleanupPlan::DiscardPrepared {surface,activation_generation:peer.activation_generation})}
+                    else {(OperationOutcome::Succeeded,crate::CleanupPlan::InstallPrepared {surface,previous_activation:None})};
+                events.push(DomainEvent::OperationAwaitingCleanup {id:peer.id.clone(),outcome,cleanup,prepared_data:data,deferred});
+            }
+        }
+    }
+    Ok(StructuralDecision {events,effects:Vec::new(),result:StructuralResult::Pending {operation:group.clone()},completed_command:None})
 }

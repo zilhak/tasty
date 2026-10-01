@@ -39,3 +39,57 @@ impl Spec {
         Some(Self {destination,kind,cwd,params})
     }
 }
+
+impl Spec {
+    pub fn from_public(request:&crate::ipc::protocol::JsonRpcRequest,session:&crate::runtime::engine_session::EngineSession,view:&crate::runtime::journal_product::CompletionView,services:&crate::app::services::AppServices)->Result<Self,crate::ipc::protocol::JsonRpcResponse> {
+        use crate::ipc::{protocol::JsonRpcResponse,handler::params};
+        let id=serde_json::Value::Null;let bad=|message:String|JsonRpcResponse::invalid_params(id.clone(),message);
+        let engine=session.as_ref();let mut input=request.params.clone();
+        let mut kind=input.get("type").and_then(|value|value.as_str()).unwrap_or("terminal").to_owned();
+        let explicit_cwd=input.get("cwd").and_then(|value|value.as_str()).map(std::path::PathBuf::from);
+        let selected=|pane:u32|engine.find_pane_by_id(pane).and_then(|pane| {
+            view.selected_tabs.get(&pane.id).and_then(|id|pane.tabs.iter().find(|tab|tab.id==*id)).or_else(||pane.tabs.first())
+        }).and_then(|tab|view.selected_surfaces.get(&tab.id).copied().filter(|id|tab.contains_surface(*id)).or_else(||tab.first_surface_id()));
+        let inherit=|surface:Option<u32>|if engine.settings.general.inherit_cwd {surface.and_then(|surface|engine.local_surface_cwd(surface))}else {None};
+        let (destination,cwd)=match request.method.as_str() {
+            "tab.create"=> {
+                let pane=params::require_u32(&input,"pane_id",&id)?;
+                if engine.find_pane_by_id(pane).is_none() {return Err(bad(format!("Pane {pane} not found")));}
+                if let Some(definition)=engine.runtime.surface_registry.get(&kind) {
+                    let home=directories::BaseDirs::new().map(|dirs|dirs.home_dir().to_path_buf());
+                    engine.apply_kind_default_params(&definition,&mut input,home.as_deref());
+                }
+                let cwd=if kind=="terminal" {explicit_cwd.or_else(||inherit(selected(pane)))} else {None};
+                (Destination::Tab {pane,name:input.get("name").and_then(|value|value.as_str()).map(str::to_owned),activate:false},cwd)
+            },
+            "split"=> {
+                let surface=crate::ipc::handler::pane::resolve_surface_target(services,&input);
+                let pane=params::optional_u32(&input,"target_pane",&id)?;
+                if surface.is_none() && pane.is_none() {return Err(bad("Missing target. Use 'target_surface' (surface ID or nickname) and/or 'target_pane' (pane ID)".into()));}
+                if surface.is_some() && pane.is_some() {return Err(bad("Cannot specify both 'target_surface' and 'target_pane'. Use one.".into()));}
+                if let Some(path)=&explicit_cwd && !path.is_dir() {return Err(bad(format!("cwd does not exist: {}",path.display())));}
+                if let Some(definition)=engine.runtime.surface_registry.get_live(&kind) && let Some(missing)=definition.first_missing_required_param(&input) {return Err(bad(format!("Missing '{missing}' parameter for {kind} type")));}
+                let direction=match input.get("direction").and_then(|value|value.as_str()) {Some("horizontal"|"h")=>crate::model::SplitDirection::Horizontal,_=>crate::model::SplitDirection::Vertical};
+                match input.get("level").and_then(|value|value.as_str()) {
+                    Some("pane"|"pane-group")=> {
+                        let target=pane.or_else(||surface.and_then(|surface|engine.find_pane_for_surface(surface))).ok_or_else(||bad(format!("Surface {} not found",surface.unwrap_or(0))))?;
+                        (Destination::Pane {target,direction},if kind=="terminal" {explicit_cwd.or_else(||inherit(selected(target)))} else {None})
+                    },
+                    Some("surface")=> {
+                        let target=surface.ok_or_else(||bad("Surface-level split requires 'target_surface', not 'target_pane'".into()))?;
+                        (Destination::Surface {target,direction},if kind=="terminal" {explicit_cwd.or_else(||inherit(Some(target)))}else {None})
+                    },
+                    Some(other)=>return Err(bad(format!("Invalid level '{other}'. Use: pane, surface"))),None=>return Err(bad("Missing 'level' parameter".into())),
+                }
+            },
+            "surface.respawn_terminal"=> {
+                kind="terminal".into();let surface=params::require_u32(&input,"surface_id",&id)?;
+                if engine.runtime.terminals.get(surface).is_none() {return Err(bad(format!("Surface {surface} is not a terminal")));}
+                (Destination::Convert {surface,respawn:true},explicit_cwd)
+            },
+            _=>return Err(bad("unsupported kind creation method".into())),
+        };
+        if let Some(path)=&cwd && !path.is_dir() {return Err(bad(format!("cwd does not exist: {}",path.display())));}
+        Ok(Self {destination,kind,cwd,params:input})
+    }
+}

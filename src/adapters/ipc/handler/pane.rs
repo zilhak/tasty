@@ -70,7 +70,7 @@ pub fn handle_pane_close(
 }
 
 /// 숫자 ID나 별칭으로 surface를 찾는다. 점유 검사도 같은 해석을 사용한다.
-pub(super) fn resolve_surface_target(
+pub(crate) fn resolve_surface_target(
     core: &crate::app::services::AppServices,
     params: &serde_json::Value,
 ) -> Option<u32> {

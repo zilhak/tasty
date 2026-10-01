@@ -40,3 +40,5 @@ pub(crate) mod surface_capture;
 pub(crate) mod id_reservations;
 
 pub(crate) mod counters;
+
+pub(crate) mod preset_plan;

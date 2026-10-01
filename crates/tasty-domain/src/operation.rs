@@ -60,6 +60,8 @@ pub struct Operation {
     pub prepared_data: Option<DataRef>,
     #[serde(default)]
     pub prepared_deferred:bool,
+    #[serde(default)]
+    pub resource_prepared:bool,
     pub reconciliation_evidence: Option<DataRef>,
 }
 

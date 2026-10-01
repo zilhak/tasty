@@ -1,5 +1,5 @@
-//! 프리셋 Intent 처리와 IPC가 함께 사용하는 적용·저장 함수.
-//! Intent 경로는 origin에 따라 포커스와 창 열기를 처리하며, IPC는 inner 함수를 직접 호출해 응답한다.
+//! 프리셋 저장과 읽기 값 처리. 구조 적용은 App journal assembly가 소유한다.
+//! 저장 완료의 창 표시 요청은 origin에 따르며 자원 생성은 이 모듈에서 실행하지 않는다.
 
 use super::{DispatchedIntent, Intent};
 use crate::runtime::engine_access::{EngineMut, EngineRef};
@@ -26,7 +26,6 @@ use crate::intent::preset_capture::{
     capture_pane_preset, capture_tab_preset, capture_workspace_preset,
 };
 use crate::state::RequestContext;
-use crate::state::preset_apply::{ApplyError, ApplyOptions};
 use tasty_presets::{PresetError, PresetKind};
 
 pub fn handle(
@@ -36,23 +35,7 @@ pub fn handle(
     intent: &DispatchedIntent,
 ) {
     match &intent.body {
-        Intent::ApplyPreset {
-            kind,
-            name,
-            category,
-        } => apply(
-            core,
-            state,
-            engine,
-            intent,
-            PresetApplyTarget {
-                kind: *kind,
-                name,
-                target_pane_id: None,
-                target_workspace_id: None,
-                category: *category,
-            },
-        ),
+        Intent::ApplyPreset {..}=>tracing::error!("preset application bypassed the journal command boundary"),
         Intent::SavePreset {
             base_name,
             explicit_name,
@@ -71,41 +54,6 @@ pub fn handle(
             },
         ),
         _ => {}
-    }
-}
-
-fn apply(
-    core: &crate::app::services::AppServices,
-    state: &mut RequestContext,
-    engine: &mut EngineMut<'_>,
-    intent: &DispatchedIntent,
-    target: PresetApplyTarget,
-) {
-    let focus = intent.origin.is_user();
-    let options = ApplyOptions { focus };
-
-    if let Err(e) = apply_inner(core, state, engine, target, options) {
-        tracing::warn!("preset apply failed: {e}");
-        #[cfg(feature = "gui")]
-        if intent.origin.is_user() {
-            // mirror 거절은 다른 mirror 구조 변경 차단과 같은 안내를 쓴다.
-            let (key, kind) = if e.is_mirror_refusal() {
-                (
-                    "attach.toast.mirror_structural_blocked",
-                    crate::model::toast_kind::ToastKind::Warning,
-                )
-            } else {
-                (
-                    "preset.toast.apply_failed",
-                    crate::model::toast_kind::ToastKind::Error,
-                )
-            };
-            state.toasts.push(
-                crate::i18n::t(key),
-                kind,
-                crate::model::toast_kind::ToastScope::Window,
-            );
-        }
     }
 }
 
@@ -171,14 +119,6 @@ fn save(
     let _ = (state, intent, kind, saved_name);
 }
 
-/// 적용으로 생성한 대상의 ID. IPC 응답에서도 사용한다.
-#[derive(Debug, Clone)]
-pub enum ApplyOutcome {
-    Workspace { workspace_id: u32 },
-    Tab { tab_id: u32 },
-    Pane { pane_id: u32 },
-}
-
 #[derive(Debug, Clone)]
 pub enum SaveOutcome {
     Saved(String),
@@ -189,7 +129,6 @@ pub enum SaveOutcome {
 #[derive(Debug)]
 pub enum PresetMutationError {
     NotFound { kind: PresetKind, name: String },
-    Apply(ApplyError),
     Store(PresetError),
 }
 
@@ -199,7 +138,6 @@ impl std::fmt::Display for PresetMutationError {
             Self::NotFound { kind, name } => {
                 write!(f, "preset not found: {}/{name}", kind.as_str())
             }
-            Self::Apply(e) => write!(f, "{e}"),
             Self::Store(e) => write!(f, "{e}"),
         }
     }
@@ -207,49 +145,8 @@ impl std::fmt::Display for PresetMutationError {
 
 impl std::error::Error for PresetMutationError {}
 
-impl PresetMutationError {
-    /// 대상이 mirror workspace라 적용하지 않았다는 거절인지 확인한다.
-    #[cfg(any(feature = "gui", test))]
-    fn is_mirror_refusal(&self) -> bool {
-        matches!(
-            self,
-            Self::Apply(ApplyError::Other(e))
-                if e.downcast_ref::<crate::app::services::MirrorStructuralBlocked>().is_some()
-        )
-    }
-}
-
-/// tab·pane preset이 들어갈 workspace가 mirror면 그 index를 반환한다.
-/// 대상을 생략하면 적용 코드처럼 활성 workspace를 본다. 대상이 없으면 적용 코드가 오류를 낸다.
-/// workspace preset은 새 workspace를 만들므로 검사하지 않는다.
-fn mirror_target_index(
-    state: &RequestContext,
-    engine: &crate::core::CoreState,
-    target: &PresetApplyTarget,
-) -> Option<usize> {
-    let active = || {
-        engine
-            .workspaces()
-            .len()
-            .checked_sub(1)
-            .map(|last| state.active_workspace_index(engine).min(last))
-    };
-    let idx = match target.kind {
-        PresetKind::Tab => match target.target_pane_id {
-            Some(pid) => engine.find_workspace_index_for_pane(pid)?,
-            None => active()?,
-        },
-        PresetKind::Pane => match target.target_workspace_id {
-            Some(ws_id) => engine.find_workspace_index_for_id(ws_id)?,
-            None => active()?,
-        },
-        PresetKind::Workspace => return None,
-    };
-    engine.workspace_at(idx).filter(|ws| ws.mirror).map(|_| idx)
-}
-
 // 적용 중 저장소 잠금을 유지하지 않도록 프리셋을 복사한다.
-fn clone_preset_from_store(
+pub(crate) fn clone_preset_from_store(
     core: &crate::app::services::AppServices,
     kind: PresetKind,
     name: &str,
@@ -270,71 +167,11 @@ fn clone_preset_from_store(
     Ok(cloned)
 }
 
-/// 적용할 프리셋과 대상. Tab은 target_pane_id, Pane은 target_workspace_id,
-/// Workspace는 category를 사용하며 다른 종류의 필드는 무시한다.
-pub struct PresetApplyTarget<'a> {
-    pub kind: PresetKind,
-    pub name: &'a str,
-    pub target_pane_id: Option<u32>,
-    pub target_workspace_id: Option<u32>,
-    pub category: Option<crate::model::WorkspaceCategoryId>,
-}
-
 pub struct PresetSaveRequest<'a> {
     pub base_name: &'a str,
     pub explicit_name: Option<&'a str>,
     pub overwrite: bool,
     pub preset: &'a ClonedPreset,
-}
-
-pub fn apply_inner(
-    core: &crate::app::services::AppServices,
-    state: &mut RequestContext,
-    engine: &mut EngineMut<'_>,
-    target: PresetApplyTarget,
-    options: ApplyOptions,
-) -> Result<ApplyOutcome, PresetMutationError> {
-    let cloned = clone_preset_from_store(core, target.kind, target.name)?.ok_or_else(|| {
-        PresetMutationError::NotFound {
-            kind: target.kind,
-            name: target.name.to_string(),
-        }
-    })?;
-
-    // mirror 트리는 원격이 소유한다. preset은 원격으로 전달할 수 없으므로 만들기 전에 거절한다.
-    if let Some(workspace_index) = mirror_target_index(state, engine, &target) {
-        return Err(PresetMutationError::Apply(ApplyError::Other(
-            anyhow::Error::new(crate::app::services::MirrorStructuralBlocked {
-                workspace_index,
-                forwarded: false,
-            }),
-        )));
-    }
-
-    match cloned {
-        ClonedPreset::Workspace(p) => {
-            let idx = state
-                .apply_workspace_preset(engine, &p, target.category, options)
-                .map_err(PresetMutationError::Apply)?;
-            let workspace_id = engine
-                .workspace_at(idx)
-                .expect("workspace index is valid")
-                .id;
-            Ok(ApplyOutcome::Workspace { workspace_id })
-        }
-        ClonedPreset::Tab(p) => {
-            let tab_id = state
-                .apply_tab_preset(engine, &p, target.target_pane_id, options)
-                .map_err(PresetMutationError::Apply)?;
-            Ok(ApplyOutcome::Tab { tab_id })
-        }
-        ClonedPreset::Pane(p) => {
-            let pane_id = state
-                .apply_pane_preset(engine, &p, target.target_workspace_id, options)
-                .map_err(PresetMutationError::Apply)?;
-            Ok(ApplyOutcome::Pane { pane_id })
-        }
-    }
 }
 
 /// 이름을 직접 지정하고 overwrite=false이면 충돌 시 None을 반환한다.
@@ -518,164 +355,3 @@ pub fn capture_inner(
     }
 }
 
-#[cfg(test)]
-mod mirror_tests {
-    use super::{PresetApplyTarget, PresetMutationError, apply_inner};
-    use crate::state::preset_apply::{ApplyError, ApplyOptions};
-    use tasty_presets::{
-        PanePreset, PresetKind, PresetPane, PresetStore, PresetSurface, PresetSurfaceLayout,
-        PresetTab, TabPreset,
-    };
-
-    /// PTY를 만들지 않도록 등록되지 않은 kind의 leaf를 쓴다.
-    fn preset_tab() -> PresetTab {
-        PresetTab {
-            explicit_name: None,
-            layout: PresetSurfaceLayout::Leaf {
-                surface: PresetSurface {
-                    id: None,
-                    kind: "mirror-test-kind".into(),
-                    cwd: None,
-                    startup_command: None,
-                    params: serde_json::Value::Null,
-                },
-            },
-        }
-    }
-
-    fn core_with_presets(dir: &std::path::Path) -> crate::app::services::AppServices {
-        let core = crate::ipc::handler::cli_entry_tests::test_core();
-        let mut store = PresetStore::load_from(dir.into());
-        store
-            .save_tab(TabPreset {
-                name: "t".into(),
-                tab: preset_tab(),
-            })
-            .expect("save tab preset");
-        store
-            .save_pane(PanePreset {
-                name: "p".into(),
-                pane: PresetPane {
-                    tabs: vec![preset_tab()],
-                    active_tab: 0,
-                },
-            })
-            .expect("save pane preset");
-        *core.preset_store.lock().expect("preset store") = store;
-        core
-    }
-
-    fn target(kind: PresetKind, pane: Option<u32>, ws: Option<u32>) -> PresetApplyTarget<'static> {
-        PresetApplyTarget {
-            kind,
-            name: if kind == PresetKind::Tab { "t" } else { "p" },
-            target_pane_id: pane,
-            target_workspace_id: ws,
-            category: None,
-        }
-    }
-
-    fn is_mirror_refusal(err: &PresetMutationError) -> bool {
-        matches!(
-            err,
-            PresetMutationError::Apply(ApplyError::Other(e))
-                if e.downcast_ref::<crate::app::services::MirrorStructuralBlocked>()
-                    .is_some_and(|b| !b.forwarded)
-        ) && err.is_mirror_refusal()
-    }
-
-    #[test]
-    fn tab_and_pane_presets_are_refused_on_a_mirror_workspace() {
-        let dir = tempfile::tempdir().expect("tmp");
-        let core = core_with_presets(dir.path());
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
-        let mut engine = engine_session.borrow_mut();
-        engine.make_mirror_fixture(0);
-        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
-        let pane_id = engine
-            .workspace_at(0)
-            .expect("workspace index is valid")
-            .pane_layout()
-            .first_pane()
-            .unwrap()
-            .id;
-        let panes_before = engine
-            .workspace_at(0)
-            .expect("workspace index is valid")
-            .pane_layout()
-            .all_pane_ids()
-            .len();
-        let tabs_before = |engine: &crate::core::CoreState| {
-            engine
-                .workspace_at(0)
-                .expect("workspace index is valid")
-                .pane_layout()
-                .find_pane(pane_id)
-                .map(|p| p.tabs.len())
-        };
-        let tabs0 = tabs_before(&engine);
-        let opts = || ApplyOptions { focus: false };
-
-        // 대상을 지정한 경우와 활성 workspace로 해석하는 경우를 모두 확인한다.
-        for t in [
-            target(PresetKind::Tab, Some(pane_id), None),
-            target(PresetKind::Tab, None, None),
-            target(PresetKind::Pane, None, Some(ws_id)),
-            target(PresetKind::Pane, None, None),
-        ] {
-            let kind = t.kind;
-            let res = apply_inner(&core, &mut state, &mut engine, t, opts());
-            let err = match res {
-                Ok(_) => panic!("{kind:?}: mirror workspace에 preset이 적용됐다"),
-                Err(e) => e,
-            };
-            assert!(is_mirror_refusal(&err), "{kind:?}: {err}");
-        }
-        assert_eq!(tabs_before(&engine), tabs0, "탭이 추가됐다");
-        assert_eq!(
-            engine
-                .workspace_at(0)
-                .expect("workspace index is valid")
-                .pane_layout()
-                .all_pane_ids()
-                .len(),
-            panes_before,
-            "pane이 추가됐다"
-        );
-    }
-
-    #[test]
-    fn tab_and_pane_presets_still_apply_on_a_local_workspace() {
-        let dir = tempfile::tempdir().expect("tmp");
-        let core = core_with_presets(dir.path());
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
-        let mut engine = engine_session.borrow_mut();
-        let ws_id = engine.workspace_at(0).expect("workspace index is valid").id;
-        let pane_id = engine
-            .workspace_at(0)
-            .expect("workspace index is valid")
-            .pane_layout()
-            .first_pane()
-            .unwrap()
-            .id;
-
-        for t in [
-            target(PresetKind::Tab, Some(pane_id), None),
-            target(PresetKind::Pane, None, Some(ws_id)),
-        ] {
-            let kind = t.kind;
-            let res = apply_inner(
-                &core,
-                &mut state,
-                &mut engine,
-                t,
-                ApplyOptions { focus: false },
-            );
-            assert!(
-                res.is_ok(),
-                "{kind:?}: {:?}",
-                res.err().map(|e| e.to_string())
-            );
-        }
-    }
-}

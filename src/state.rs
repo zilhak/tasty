@@ -36,7 +36,6 @@ mod workspace;
 // 팔레트 매칭은 헤드리스 시험에서도 검사한다.
 #[cfg(any(feature = "gui", test))]
 pub mod command_palette;
-pub mod preset_apply;
 #[cfg(feature = "gui")]
 pub mod search;
 #[cfg(feature = "gui")]

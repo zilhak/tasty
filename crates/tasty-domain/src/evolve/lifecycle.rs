@@ -217,3 +217,9 @@ pub(super) fn await_cleanup(
     operation.prepared_deferred=deferred;
     Ok(())
 }
+
+pub(super) fn prepared(model:&mut JournalModel,id:OperationId,data:Option<DataRef>,deferred:bool)->Result<()> {
+    let operation=model.operations.get_mut(&id).ok_or_else(||EvolveError::Missing(format!("operation:{}",id.0)))?;
+    if operation.resource_prepared || operation.outcome.is_some() || operation.pending_outcome.is_some() || data.is_some_and(|reference|reference.0==0) {return Err(EvolveError::InvalidFact("invalid private preparation result".into()));}
+    operation.resource_prepared=true;operation.prepared_data=data;operation.prepared_deferred=deferred;Ok(())
+}

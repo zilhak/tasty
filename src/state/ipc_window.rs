@@ -38,17 +38,6 @@ impl IpcWindow for RequestContext {
         self.recent_files.get(kind)
     }
 
-    fn apply_preset(
-        &mut self,
-        core: &crate::app::services::AppServices,
-        engine: &mut EngineMut<'_>,
-        target: crate::intent::preset::PresetApplyTarget,
-        options: super::preset_apply::ApplyOptions,
-    ) -> Result<crate::intent::preset::ApplyOutcome, crate::intent::preset::PresetMutationError>
-    {
-        crate::intent::preset::apply_inner(core, self, engine, target, options)
-    }
-
     #[cfg(feature = "gui")]
     fn enqueue_approval_popup(
         &mut self,

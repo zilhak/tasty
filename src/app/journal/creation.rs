@@ -35,6 +35,7 @@ enum Stage {
     Finish(Installed),
     AwaitPublication(Installed),
     Rejected {
+        discard_committed:bool,
         lease: crate::runtime::journal_product::EffectLease,
         reason: String,
         retirement: Option<tasty_terminal::PtyRetirement>,
@@ -329,6 +330,7 @@ impl Creation {
                     }
                 }
             }
+            (Stage::Prepared(operation),ResultValue::Executed(_))=>Stage::Prepared(operation),
             (Stage::Installing { installed,started,.. }, ResultValue::Executed(_)) => Stage::Installing {
                 installed,
                 answered: true,
@@ -343,10 +345,12 @@ impl Creation {
                     reason,
                     retirement,
                     started,
+                    discard_committed,
                     ..
                 },
                 ResultValue::Executed(_),
             ) => Stage::Rejected {
+                discard_committed,
                 lease,
                 reason,
                 retirement,
@@ -369,6 +373,12 @@ impl Creation {
         let Stage::Prepared(operation) = &self.stage else {
             return Ok(None);
         };
+        if events.iter().any(|recorded|matches!(&recorded.event,tasty_domain::DomainEvent::OperationAwaitingCleanup {id,cleanup:tasty_domain::CleanupPlan::DiscardPrepared {..},..} if id==operation)) {
+            let candidate=session.pending_materializations.remove(operation).ok_or("discarded assembly member lost its private owner")?;
+            let lease=candidate.lease.clone();let retirement=candidate.discard();
+            self.stage=Stage::Rejected {discard_committed:true,lease,reason:"assembly cancelled before installation".into(),retirement,answered:true,started:std::time::Instant::now()};
+            return Ok(None);
+        }
         if !events.iter().any(|recorded|matches!(&recorded.event,
             tasty_domain::DomainEvent::OperationAwaitingCleanup { id, cleanup:tasty_domain::CleanupPlan::InstallPrepared { .. }, .. } if id==operation)) { return Ok(None); }
         let operation = operation.clone();
@@ -387,6 +397,7 @@ impl Creation {
                 let lease = candidate.lease.clone();
                 let retirement = candidate.discard();
                 self.stage = Stage::Rejected {
+                    discard_committed:false,
                     lease,
                     reason: error.to_string(),
                     retirement,
@@ -468,6 +479,7 @@ impl Creation {
             retirement,
             answered: true,
             started,
+            discard_committed,
         } = &self.stage
         {
             let phase=retirement.as_ref().map(|receipt|receipt.observation().phase);
@@ -483,10 +495,10 @@ impl Creation {
                 let reason = reason.clone();
                 self.submit(
                     worker,
-                    Work::InstallationRejected {
+                    if *discard_committed {Work::CleanupFinished {lease:lease.clone(),view}}else {Work::InstallationRejected {
                         lease: lease.clone(),
                         reason: reason.clone(),
-                    },
+                    }},
                 )?;
                 self.stage = Stage::Failed(reason);
                 self.flush(worker)?;

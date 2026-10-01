@@ -270,6 +270,21 @@ impl Request {
 }
 
 impl JournalApplication {
+    pub(crate) fn resolve_public_creation(&mut self,ticket:u64,session:&EngineSession,services:&crate::app::services::AppServices) {
+        let Some(pending)=self.commands.pending.get(&ticket) else {return;};
+        let view=self.completion_views.get(&session.id).cloned().unwrap_or_default();
+        let resolved=super::create_spec::Spec::from_public(&pending.request,session,&view,services).and_then(|spec|Request::from_spec(spec,session));
+        match resolved {
+            Ok(mut resource)=> {
+                resource.activate=false;
+                let work=match resource.reservation() {Ok(work)=>work,Err(error)=>{self.reject_resolved_request(ticket,JsonRpcResponse::internal_error(serde_json::Value::Null,error));return;}};
+                let pending=self.commands.pending.get_mut(&ticket).expect("creation admission remains owned");
+                pending.request.params=serde_json::Value::Null;pending.resource=Some(resource);pending.queued=Some(work);
+                self.refresh_command_weight(ticket);(self.wake)();
+            },
+            Err(response)=>self.reject_resolved_request(ticket,response),
+        }
+    }
     pub(crate) fn resolve_workspace_creation(
         &mut self,
         ticket: u64,

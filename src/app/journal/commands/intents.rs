@@ -11,6 +11,9 @@ impl JournalApplication {
         view:Option<IntentViewContinuation>,
     ) -> bool {
         use crate::app::command::DomainIntent as I;
+        if let I::ApplyPreset {kind,name,target_pane_id,category}=intent {
+            self.admit_intent_request(engine_id,"intent.preset-apply",serde_json::json!({"kind":kind,"name":name,"target_pane_id":target_pane_id,"category":category}),origin,view);return true;
+        }
         if let I::RestoreClosedItem {target_pane_id,scope}=intent {
             if core.mirror_workspace_index_for_structural(intent).is_some() {return false;}
             let scope=match scope {crate::app::command::RestoreScope::Local=>None,crate::app::command::RestoreScope::Workspace(id)=>Some(*id)};

@@ -667,7 +667,7 @@ fn route_engine_handler(
             id,
             &request.params,
         ),
-        "preset.apply" => preset::handle_apply(core, window, engine, id, &request.params),
+        "preset.apply" => JsonRpcResponse::internal_error(id,"preset application bypassed the journal command boundary"),
         "surface.close" => {
             surface::handle_surface_close(core, window, engine, id, &request.params, &origin)
         }

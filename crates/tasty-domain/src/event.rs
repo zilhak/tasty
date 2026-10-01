@@ -203,6 +203,8 @@ pub enum DomainEvent {
 
     #[serde(rename = "operation.prepared")]
     OperationPrepared { operation: Operation },
+    #[serde(rename="operation.resource_prepared")]
+    OperationResourcePrepared {id:OperationId,data:Option<DataRef>,deferred:bool},
     #[serde(rename = "operation.awaiting_cleanup")]
     OperationAwaitingCleanup {
         id: OperationId,
@@ -254,6 +256,7 @@ impl DomainEvent {
                 )
                 .chain(operation.retirement.as_ref().and_then(|plan|plan.undo.as_ref()).into_iter().flat_map(|capture|capture.data_refs()))
                 .collect(),
+            Self::OperationResourcePrepared {data,..}=>data.iter().copied().collect(),
             Self::OperationAwaitingCleanup { prepared_data, .. } => {
                 prepared_data.iter().copied().collect()
             }
@@ -297,6 +300,7 @@ impl DomainEvent {
         "pane.ratio_set",
         "surface.ratio_set",
         "operation.prepared",
+        "operation.resource_prepared",
         "operation.awaiting_cleanup",
         "operation.finished",
         "operation.reconciled",
@@ -339,6 +343,7 @@ impl DomainEvent {
             Self::PaneRatioSet { .. } => "pane.ratio_set",
             Self::SurfaceRatioSet { .. } => "surface.ratio_set",
             Self::OperationPrepared { .. } => "operation.prepared",
+            Self::OperationResourcePrepared {..}=>"operation.resource_prepared",
             Self::OperationAwaitingCleanup { .. } => "operation.awaiting_cleanup",
             Self::OperationFinished { .. } => "operation.finished",
             Self::OperationReconciled { .. } => "operation.reconciled",

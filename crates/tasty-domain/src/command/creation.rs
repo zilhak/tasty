@@ -49,7 +49,7 @@ pub(super) fn decide(
                 outcome: None,
                 pending_outcome: None,
                 cleanup: None,
-                prepared_data: None,prepared_deferred:false,
+                prepared_data: None,prepared_deferred:false,resource_prepared:false,
                 reconciliation_evidence: None,
             };
             Ok(StructuralDecision {
@@ -77,15 +77,15 @@ pub(super) fn decide(
                 .operations
                 .get(id)
                 .ok_or_else(|| Rejection("preparation operation not found".into()))?;
-            if operation.outcome.is_some() || operation.pending_outcome.is_some() {
+            if operation.outcome.is_some() || operation.pending_outcome.is_some() || operation.resource_prepared {
                 return Err(Rejection("preparation already has a result".into()));
             }
             let plan = operation
                 .creation
                 .as_ref()
                 .ok_or_else(|| Rejection("operation is not a creation".into()))?;
+            if matches!(plan.destination,Destination::Assembly {..}) {return super::assembly::prepared_member(model,operation,result);}
             if let PreparationResult::Failed { reason } = result {
-                if matches!(plan.destination,Destination::Assembly {..}) {return super::assembly::settle(model,operation,OperationOutcome::Failed {reason:reason.clone()});}
                 return Ok(failed(operation, plan, reason.clone(), false));
             }
             if operation.engine_incarnation != model.engine_incarnation {

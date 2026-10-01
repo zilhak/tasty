@@ -147,6 +147,7 @@ pub(super) fn apply_event(
         | DomainEvent::SurfaceDataRecorded { .. }
         | DomainEvent::SurfaceActivationChanged { .. }
         | DomainEvent::OperationPrepared { .. }
+        | DomainEvent::OperationResourcePrepared {..}
         | DomainEvent::OperationAwaitingCleanup { .. }
         | DomainEvent::OperationFinished { .. }
         | DomainEvent::OperationReconciled { .. } => {}

@@ -11,6 +11,7 @@ pub(crate) struct Installation {
     pub(super) publication: Option<PublicationAction>,
     pub(super) registration: Option<KindRegistration>,
     pub(super) scrollback_persist_id: Option<String>,
+    pub(super) metadata:Vec<(String,String)>,
 }
 
 pub(crate) struct RetiringKind {
@@ -110,6 +111,12 @@ impl Installation {
                 .runtime
                 .terminals
                 .set_scrollback_persist_id(self.surface_id, persist_id);
+        }
+        if !self.metadata.is_empty() {
+            let mut memory=crate::poison::recover_mutex(engine.runtime.memory.lock(),crate::core::MEMORY_WHAT,&crate::core::MEMORY_POISONED);
+            for (key,value) in &self.metadata {
+                if let Err(error)=crate::surface_meta::SurfaceMetaStore::set(&mut *memory,self.surface_id,key,value) {tracing::warn!(surface=self.surface_id,"surface_meta set failed for key '{key}': {error}");}
+            }
         }
         let retirement = previous.and_then(|(terminal, pty)| {
             drop(terminal);

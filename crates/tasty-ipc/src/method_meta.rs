@@ -215,10 +215,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // ── pane / split ──────────────────────────────────────────────
         ("pane.list", plugin(Read, &[SurfaceRead])),
         ("pane.close", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
-        ("split", plugin(Mutate, &[SurfaceWrite])),
+        ("split", plugin(Mutate, &[SurfaceWrite]).kept_in_structure_journal()),
         // ── tab ───────────────────────────────────────────────────────
         ("tab.list", plugin(Read, &[SurfaceRead])),
-        ("tab.create", plugin(Mutate, &[SurfaceWrite])),
+        ("tab.create", plugin(Mutate, &[SurfaceWrite]).kept_in_structure_journal()),
         ("tab.close", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
         ("tab.move", plugin(Idempotent, &[SurfaceWrite])),
         // ── preset (layout preset CRUD + apply) ───────────────────────
@@ -228,7 +228,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("preset.delete", plugin(Idempotent, &[SurfaceWrite])),
         ("preset.rename", plugin(Idempotent, &[SurfaceWrite])),
         ("preset.capture", plugin(Mutate, &[SurfaceWrite])),
-        ("preset.apply", plugin(Idempotent, &[SurfaceWrite])),
+        ("preset.apply", plugin(Idempotent, &[SurfaceWrite]).kept_in_structure_journal()),
         // ── surface (구조 조작) ───────────────────────────────────────
         ("surface.list", plugin(Read, &[SurfaceRead])),
         // 생성 없이 등록 여부를 확인한다. 종류·번역 키·렌더 경로·출처만 공개한다.
@@ -282,7 +282,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.foreground_process", plugin(Read, &[TerminalRead])),
         ("surface.locate", plugin(Read, &[SurfaceRead])),
         ("surface.html_script", plugin(Read, &[SurfaceRead])),
-        ("surface.respawn_terminal", plugin(Mutate, &[TerminalSpawn])),
+        ("surface.respawn_terminal", plugin(Mutate, &[TerminalSpawn]).kept_in_structure_journal()),
         ("surface.is_typing", plugin(Read, &[TerminalRead])),
         // ── child-terminal 관리 (docs/features/child-terminal/index.md) ─────────────
         // 자식 터미널 작업이 사용하는 생성·입력·닫기 권한을 함께 요구한다.

@@ -8,10 +8,9 @@ use tasty_presets::{PanePreset, PresetKind, TabPreset, WorkspacePreset};
 
 use crate::intent::ClonedPreset;
 use crate::intent::preset::{
-    ApplyOutcome, PresetApplyTarget, PresetMutationError, SaveOutcome, capture_inner, delete_inner,
+    PresetMutationError, SaveOutcome, capture_inner, delete_inner,
     rename_inner, save_inner,
 };
-use crate::state::preset_apply::ApplyOptions;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 fn parse_kind(
@@ -57,7 +56,6 @@ fn with_store<R>(core: &crate::app::services::AppServices, f: impl FnOnce(&tasty
 fn mutation_error(id: serde_json::Value, e: PresetMutationError) -> JsonRpcResponse {
     match &e {
         PresetMutationError::NotFound { .. }
-        | PresetMutationError::Apply(_)
         | PresetMutationError::Store(_) => JsonRpcResponse::invalid_params(id, e.to_string()),
     }
 }
@@ -256,70 +254,3 @@ pub fn handle_capture(
     }
 }
 
-pub fn handle_apply(
-    core: &crate::app::services::AppServices,
-    window: &mut dyn crate::ipc::window_port::IpcWindow,
-    engine: &mut EngineMut<'_>,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let kind = match parse_kind(params, &id) {
-        Ok(k) => k,
-        Err(e) => return e,
-    };
-    let name = match require_str(params, "name", &id) {
-        Ok(s) => s.to_string(),
-        Err(e) => return e,
-    };
-    let target_pane_id = match super::params::optional_u32(params, "target_pane_id", &id) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let target_workspace_id = match super::params::optional_u32(params, "target_workspace_id", &id)
-    {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-
-    let opts = ApplyOptions { focus: false };
-    match window.apply_preset(
-        core,
-        engine,
-        PresetApplyTarget {
-            kind,
-            name: &name,
-            target_pane_id,
-            target_workspace_id,
-            // 카테고리는 UI 메뉴의 임시 상태이며 이 API에서는 지정하지 않는다.
-            category: None,
-        },
-        opts,
-    ) {
-        Ok(ApplyOutcome::Workspace { workspace_id }) => JsonRpcResponse::success(
-            id,
-            json!({
-                "applied": true,
-                "kind": "workspace",
-                "workspace_id": workspace_id,
-            }),
-        ),
-        Ok(ApplyOutcome::Tab { tab_id }) => JsonRpcResponse::success(
-            id,
-            json!({
-                "applied": true,
-                "kind": "tab",
-                "tab_id": tab_id,
-            }),
-        ),
-        Ok(ApplyOutcome::Pane { pane_id }) => JsonRpcResponse::success(
-            id,
-            json!({
-                "applied": true,
-                "kind": "pane",
-                "pane_id": pane_id,
-            }),
-        ),
-        Err(PresetMutationError::Apply(e)) => JsonRpcResponse::internal_error(id, e.to_string()),
-        Err(e) => mutation_error(id, e),
-    }
-}

@@ -547,7 +547,7 @@ fn dispatch_headless_event(
                     &request,
                 );
             }
-            app.journal.resolve_headless_requests(session, state);
+            app.journal.resolve_headless_requests(session, state,&app.services);
             if !app.journal.take_changed_engines().is_empty() {
                 state.reconcile_presentation(&session.core_state);
                 session
