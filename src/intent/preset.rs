@@ -54,23 +54,6 @@ pub fn handle(
             ),
             Err(error) => tracing::warn!(%error,"preset capture failed"),
         },
-        Intent::SavePreset {
-            base_name,
-            explicit_name,
-            overwrite,
-            preset,
-        } => save(
-            core,
-            state,
-            engine,
-            intent,
-            PresetSaveRequest {
-                base_name,
-                explicit_name: explicit_name.as_deref(),
-                overwrite: *overwrite,
-                preset,
-            },
-        ),
         _ => {}
     }
 }
@@ -146,16 +129,12 @@ pub enum SaveOutcome {
 
 #[derive(Debug)]
 pub enum PresetMutationError {
-    NotFound { kind: PresetKind, name: String },
     Store(PresetError),
 }
 
 impl std::fmt::Display for PresetMutationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NotFound { kind, name } => {
-                write!(f, "preset not found: {}/{name}", kind.as_str())
-            }
             Self::Store(e) => write!(f, "{e}"),
         }
     }
@@ -309,7 +288,7 @@ pub fn rename_inner(
 }
 
 /// kind에 맞는 워크스페이스·탭·pane ID로 프리셋을 캡처한다.
-/// IPC preset.capture가 사용하며, UI는 캡처한 데이터를 SavePreset에 담는다.
+/// Live-only 호환 조회이며 지연 자료가 있으면 오류를 반환한다. 제품 캡처는 journal worker에 합류한다.
 pub fn capture_inner(
     presentation: &dyn crate::model::StructurePresentation,
     engine: &EngineRef<'_>,

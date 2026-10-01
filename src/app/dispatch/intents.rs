@@ -9,13 +9,12 @@ use crate::view::ui::View;
 
 enum IntentClass {
     Domain,
-    Appearance,
     Immediate,
 }
 
 impl App {
     /// 같은 state의 UI 요청을 먼저 순서대로 처리하고 Domain 요청은 뒤에 모아 처리한다.
-    /// AppearanceChanged는 마지막에 한 번만 적용한다. 처리 중 추가한 요청은 다음 호출로 남긴다.
+    /// 처리 중 추가한 요청은 다음 호출로 남긴다.
     /// Domain 처리는 App 전체를 빌리므로 창별 상태를 빌린 루프 밖에서 수행한다.
     /// docs/design/flows/action-dispatch.md 참조.
     pub(crate) fn dispatch_pending_intents(&mut self) {
@@ -25,14 +24,10 @@ impl App {
             crate::app::dispatch_domain::DispatchSource,
             crate::intent::DispatchedIntent,
         )> = Vec::new();
-        let mut appearance_changed = false;
-        self.process_state_batches(batches, &mut domain_batch, &mut appearance_changed);
+        self.process_state_batches(batches, &mut domain_batch);
 
         self.run_domain_cascade(domain_batch);
 
-        if appearance_changed {
-            self.cascade_appearance_changed();
-        }
         self.refresh_approval_presentations();
     }
 
@@ -99,7 +94,6 @@ impl App {
             crate::app::dispatch_domain::DispatchSource,
             crate::intent::DispatchedIntent,
         )>,
-        appearance_changed: &mut bool,
     ) {
         for (id, batch) in batches {
             let core = &mut self.services;
@@ -120,7 +114,6 @@ impl App {
                         crate::app::dispatch_domain::DispatchSource::Engine(id),
                         intent,
                     )),
-                    IntentClass::Appearance => *appearance_changed = true,
                     IntentClass::Immediate => Self::dispatch_one_intent(
                         core,
                         state,
@@ -159,8 +152,6 @@ impl App {
                 | Intent::ConvertSurface { .. }
         ) {
             IntentClass::Domain
-        } else if matches!(intent.body, Intent::Ui(UiIntent::AppearanceChanged)) {
-            IntentClass::Appearance
         } else {
             IntentClass::Immediate
         }
@@ -177,35 +168,6 @@ impl App {
             if let Err(e) = self.dispatch_domain_intent(source, dispatched) {
                 tracing::warn!("dispatch_domain_intent failed: {e}");
             }
-        }
-    }
-
-    /// 테마·배율 변경을 모든 창의 GPU와 터미널 팔레트에 반영한다.
-    pub(crate) fn cascade_appearance_changed(&mut self) {
-        // 색과 런타임 값이 서로 다른 설정에서 나오지 않게 같은 사본을 읽는다.
-        let picked = self
-            .focused_pair()
-            .map(|(_, engine)| &engine.runtime.settings)
-            .or_else(|| {
-                self.engines()
-                    .windowed_and_parked()
-                    .next()
-                    .map(|e| &e.runtime.settings)
-            })
-            .map(|s| (s.appearance.clone(), s.theme_runtime()));
-        let Some((appearance, runtime)) = picked else {
-            return;
-        };
-        tasty_themes::install_global_with_runtime(&appearance, runtime);
-
-        for w in self.view.views.values_mut() {
-            w.base_mut().gpu.refresh_theme();
-            w.mark_dirty();
-        }
-
-        // 창 없는 engine도 OSC 색상 조회가 새 팔레트를 반환해야 한다.
-        for mut engine in self.engines_mut().windowed_and_parked() {
-            engine.resync_terminal_palettes();
         }
     }
 
@@ -263,7 +225,7 @@ impl App {
             Intent::Ui(_) => {
                 crate::intent::popup::handle(state, engine, intent);
             }
-            Intent::ApplyPreset { .. } | Intent::SavePreset { .. } => {
+            Intent::ApplyPreset { .. } => {
                 crate::intent::preset::handle(core, state, engine, intent);
             }
             Intent::SplitSurface { .. }
@@ -376,26 +338,6 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn classify_partitions_domain_appearance_immediate() {
-        use crate::intent::{Intent, UiIntent};
-        let dom = || crate::app::command::DomainIntent::MoveWorkspace {
-            workspace_id: 0,
-            to_index: 0,
-        };
-        let batch = [
-            dom().from_agent_ipc(),
-            Intent::RestoreClosedItem.from_user_shortcut("t"),
-            UiIntent::AppearanceChanged.from_user_menu("t"),
-            dom().from_agent_ipc(),
-        ];
-        let classes: Vec<_> = batch.iter().map(App::classify_intent).collect();
-        assert!(matches!(classes[0], IntentClass::Domain));
-        assert!(matches!(classes[1], IntentClass::Immediate));
-        assert!(matches!(classes[2], IntentClass::Appearance));
-        assert!(matches!(classes[3], IntentClass::Domain));
-    }
 
     /// 두 GUI 라우팅 파일에서 사전 검사 호출·반환의 원문 위치 또는 CheckedRequest 인자를 확인한다.
     /// 실행 경로나 실제 검사·기록 횟수는 증명하지 않는다. 주석·문자열도 제거하지 않는 텍스트 검사다.

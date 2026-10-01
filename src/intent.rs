@@ -144,12 +144,6 @@ pub enum Intent {
         source: u32,
         presentation: crate::model::StructurePresentationSnapshot,
     },
-    SavePreset {
-        base_name: String,
-        explicit_name: Option<String>,
-        overwrite: bool,
-        preset: ClonedPreset,
-    },
 
     /// 포커스된 surface를 분할한다. 사용자 단축키용이며 IPC는 ID를 지정한다.
     SplitSurface {
@@ -209,27 +203,12 @@ pub enum Intent {
 )]
 #[derive(Debug, Clone)]
 pub enum UiIntent {
-    SetCategoryCollapsed {
-        id: u32,
-        collapsed: bool,
-    },
-    ToggleCategoryCollapsed {
-        id: u32,
-    },
+    SetCategoryCollapsed { id: u32, collapsed: bool },
+    ToggleCategoryCollapsed { id: u32 },
     ToggleAllCategoriesCollapsed,
-    OpenPopup {
-        id: PopupId,
-        mode: OpenPopupMode,
-    },
-    ClosePopup {
-        id: PopupId,
-    },
-    TogglePopup {
-        id: PopupId,
-        mode: OpenPopupMode,
-    },
-    /// 테마·UI 배율 변경을 모든 main/modal 창의 GPU 상태와 egui에 반영한다.
-    AppearanceChanged,
+    OpenPopup { id: PopupId, mode: OpenPopupMode },
+    ClosePopup { id: PopupId },
+    TogglePopup { id: PopupId, mode: OpenPopupMode },
 }
 
 impl From<UiIntent> for Intent {
@@ -499,20 +478,6 @@ mod tests {
         assert!(!user.origin.is_agent());
         assert!(agent.origin.is_agent());
         assert!(!agent.origin.is_user());
-    }
-
-    #[test]
-    fn appearance_changed_intent_pushes_to_queue() {
-        let mut state = make_state();
-        state.dispatch_intent(
-            UiIntent::AppearanceChanged.from_user_menu("settings.appearance.changed"),
-        );
-        assert_eq!(state.pending_intents.len(), 1);
-        let drained = state.take_pending_intents();
-        assert!(matches!(
-            drained[0].body,
-            Intent::Ui(UiIntent::AppearanceChanged)
-        ));
     }
 
     #[test]

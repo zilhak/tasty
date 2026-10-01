@@ -84,15 +84,6 @@ impl EngineMut<'_> {
             .get(&id)
             .map(|surface| surface.as_ref())
     }
-    pub(crate) fn find_surface_by_id_mut(
-        &mut self,
-        id: u32,
-    ) -> Option<&mut (dyn crate::model::Surface + 'static)> {
-        self.runtime
-            .surfaces
-            .get_mut(&id)
-            .map(|surface| surface.as_mut())
-    }
 }
 
 impl EngineRef<'_> {
@@ -252,37 +243,16 @@ impl EngineRef<'_> {
         }
     }
 }
-impl EngineMut<'_> {
-    pub(crate) fn tab_display_name(&self, tab: &crate::model::Tab, surface: Option<u32>) -> String {
-        self.as_ref().tab_display_name(tab, surface)
-    }
-}
-
-impl EngineRef<'_> {
-    pub(crate) fn surface_display_path(
-        &self,
-        surface: u32,
-        selection: &dyn crate::model::StructurePresentation,
-    ) -> Option<tasty_core::SurfaceDisplayPath> {
-        self.core
-            .surface_display_path(surface, &self.observed_presentation(selection))
-    }
-}
 
 impl EngineRef<'_> {
     pub(crate) fn is_surface_busy(&self, id: u32) -> bool {
         self.read().is_surface_busy(id)
     }
-    pub(crate) fn busy_count(&self, ids: &[u32]) -> usize {
-        self.read().busy_count(ids)
-    }
-    pub(crate) fn is_surface_mouse_capture_disabled(&self, id: u32) -> bool {
-        self.read().is_surface_mouse_capture_disabled(id)
-    }
     pub(crate) fn foreground_name(&self, id: u32) -> Option<&str> {
         self.live.foreground_names.get(&id).map(String::as_str)
     }
     #[cfg(any(feature = "gui", test))]
+    #[cfg(not(feature = "gui"))]
     pub(crate) fn foreground_generation(&self, id: u32) -> u64 {
         self.read().foreground_generation(id)
     }
@@ -291,16 +261,5 @@ impl EngineRef<'_> {
             .last_key_input
             .get(&id)
             .is_some_and(|last| last.elapsed().as_secs_f64() < 5.0)
-    }
-    pub(crate) fn attention_kind(&self, id: u32) -> Option<crate::core::AttentionKind> {
-        self.read().attention_kind(id)
-    }
-}
-impl EngineMut<'_> {
-    pub(crate) fn is_surface_deferred(&self, id: u32) -> bool {
-        self.as_ref().is_surface_deferred(id)
-    }
-    pub(crate) fn find_mesh_surface_info(&self, id: u32) -> Option<(String, String)> {
-        self.as_ref().find_mesh_surface_info(id)
     }
 }

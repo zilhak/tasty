@@ -57,9 +57,7 @@ fn with_store<R>(
 
 pub(crate) fn mutation_error(id: serde_json::Value, e: PresetMutationError) -> JsonRpcResponse {
     match &e {
-        PresetMutationError::NotFound { .. } | PresetMutationError::Store(_) => {
-            JsonRpcResponse::invalid_params(id, e.to_string())
-        }
+        PresetMutationError::Store(_) => JsonRpcResponse::invalid_params(id, e.to_string()),
     }
 }
 

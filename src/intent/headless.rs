@@ -201,7 +201,7 @@ fn route_non_domain(
         }
         Intent::ForwardMirror { .. } => tracing::warn!("headless has no mirror client transport"),
         Intent::Ui(_) => crate::intent::popup::handle(state, engine, dispatched),
-        Intent::ApplyPreset { .. } | Intent::CapturePreset { .. } | Intent::SavePreset { .. } => {
+        Intent::ApplyPreset { .. } | Intent::CapturePreset { .. } => {
             crate::intent::preset::handle(core, state, engine, dispatched);
         }
         Intent::SplitSurface { .. }

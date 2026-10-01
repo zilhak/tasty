@@ -86,6 +86,7 @@ pub(super) fn run(
         let inner = executor.inner.lock().expect("new executor lock");
         let cut = inner.state.batch;
         if !send(Completion::Ready {
+            #[cfg(test)]
             journal_id: inner.store.journal_id().to_owned(),
             runtime_epoch: inner.epoch.0,
             cut,
@@ -320,6 +321,7 @@ fn handle(
                         }
                         existing.followers.push(ticket);
                         return Ok(ResultValue::JoinedAdmission {
+                            #[cfg(test)]
                             leader_ticket: *leader,
                         });
                     }
@@ -617,6 +619,7 @@ fn handle(
                 .map_err(|error| error.to_string())?;
             Ok(ResultValue::Payload { reference, bytes })
         }
+        #[cfg(test)]
         Work::ReadEngine(stream) => executor
             .with_state(|models| ResultValue::Engine(models.stream(&stream)))
             .map_err(|e| e.to_string()),

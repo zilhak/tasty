@@ -175,7 +175,7 @@ impl GpuState {
         engine: &crate::runtime::engine_read::EngineRead<'_>,
         _prev_theme: &str,
     ) {
-        // 설정 변경은 AppearanceChanged에서 전달받고, 여기서는 현재 Theme의 스타일을 다시 적용한다.
+        // 설정 변경은 App의 SettingsUpdated에서 전달받고, 여기서는 현재 Theme의 스타일을 다시 적용한다.
         tasty_egui_theme::apply_theme_to_egui(&crate::theme::theme(), &self.egui_ctx);
 
         let term_font = engine.settings.appearance.effective_terminal_font();
@@ -202,8 +202,7 @@ impl GpuState {
     }
 
     /// Re-apply the current global `Theme` to this window's egui context.
-    /// `cascade_appearance_changed` broadcast 의 진입점 — main + modal 모두 같은
-    /// 시그니처로 호출한다.
+    /// App settings 적용에서 main과 modal에 같은 스타일을 전달한다.
     pub fn refresh_theme(&self) {
         tasty_egui_theme::apply_theme_to_egui(&crate::theme::theme(), &self.egui_ctx);
     }

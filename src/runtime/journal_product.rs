@@ -105,6 +105,7 @@ pub(crate) enum Work {
     Reserve(Vec<(IdKind, u32)>),
     #[cfg(feature = "gui")]
     SaveView(view_record::StoredView),
+    #[cfg(test)]
     ReadEngine(String),
     ReadCommand(String),
     ReadPayload(tasty_core::DataRef),
@@ -172,6 +173,7 @@ pub(crate) enum ResultValue {
     Bound(BoundEngine),
     NeedsResolution,
     JoinedAdmission {
+        #[cfg(test)]
         leader_ticket: u64,
     },
     Stored(CommandRecord),
@@ -182,6 +184,7 @@ pub(crate) enum ResultValue {
         binding: EngineBinding,
         ranges: Vec<IdRange>,
     },
+    #[cfg(test)]
     Engine(JournalModel),
     Payload {
         reference: tasty_core::DataRef,
@@ -200,6 +203,7 @@ pub(crate) enum ResultValue {
 #[derive(Debug)]
 pub(crate) enum Completion {
     Ready {
+        #[cfg(test)]
         journal_id: String,
         runtime_epoch: u64,
         cut: Option<u64>,
@@ -496,7 +500,9 @@ pub(crate) fn request_size(work: &Work) -> usize {
         Work::Reserve(kinds) => kinds
             .len()
             .saturating_mul(std::mem::size_of::<(IdKind, u32)>()),
-        Work::ReadEngine(stream) | Work::ReadCommand(stream) => stream.len(),
+        #[cfg(test)]
+        Work::ReadEngine(stream) => stream.len(),
+        Work::ReadCommand(stream) => stream.len(),
         Work::ReadPayload(_) => std::mem::size_of::<tasty_core::DataRef>(),
         Work::PutPayload(bytes) => bytes.len(),
         Work::PutPreparation(input) => {
