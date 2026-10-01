@@ -30,11 +30,8 @@ fn close(local: bool, remote: bool) -> StructuralCommand {
 fn remote_user_close_keeps_undo_without_a_local_user_lifecycle() {
     let mut model = initial();
     let decision = decide_structure(&model, &close(false, true)).unwrap();
-    evolve(
-        &mut model,
-        &batch(2, model.applied.revision.unwrap(), &decision.events),
-    )
-    .unwrap();
+    let revision = model.applied.revision.unwrap();
+    evolve(&mut model, &batch(2, revision, &decision.events)).unwrap();
     let plan = model.operations[&OperationId("close/1".into())]
         .retirement
         .as_ref()
