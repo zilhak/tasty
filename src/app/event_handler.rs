@@ -1730,7 +1730,9 @@ impl App {
                     return;
                 };
                 match find_workspace_holder_engine_mut(engines_mut!(self), client_id) {
-                    Some(mut engine) => engine.remote.capture_uploads.append(
+                    Some(mut engine) => crate::remote::server::append_capture_upload(
+                        &mut engine,
+                        hub,
                         client_id,
                         upload_id,
                         &bytes,
@@ -1747,9 +1749,9 @@ impl App {
             } => {
                 let core = &self.services;
                 match find_workspace_holder_engine_mut(engines_mut!(self), client_id) {
-                    Some(engine) => {
+                    Some(mut engine) => {
                         crate::remote::server::finalize_capture_upload(
-                            engine.core,
+                            &mut engine,
                             core,
                             hub,
                             client_id,
@@ -1922,9 +1924,7 @@ impl App {
                 bytes,
             } => {
                 let found = self.with_bulk_ws_engine(bulk_ws, |engine| {
-                    engine
-                        .remote.bulk_transfers
-                        .append(client_id, transfer_id, seq, &bytes)
+                    crate::remote::server::append_bulk_transfer(engine,hub,client_id,transfer_id,seq,&bytes)
                 });
                 log_bulk_chunk_result(found, client_id, transfer_id, bulk_ws);
             }
@@ -1952,12 +1952,12 @@ impl App {
     fn with_bulk_ws_engine<R>(
         &mut self,
         bulk_ws: u32,
-        f: impl FnOnce(&mut crate::core::CoreState) -> R,
+        f: impl FnOnce(&mut EngineMut<'_>) -> R,
     ) -> Option<R> {
         self.engines_mut()
             .windowed_and_parked()
             .find(|engine| engine.find_workspace_index_for_id(bulk_ws).is_some())
-            .map(|e| f(e.core))
+            .map(|mut engine| f(&mut engine))
     }
 }
 

@@ -45,11 +45,11 @@ pub(crate) enum EngineAction {
     #[cfg(feature="gui")]
     PluginDisplay(super::plugin_display::PluginDisplayRequest),
     #[cfg(feature="gui")]
-    PasteImage {target:SurfaceBinding,bracketed:bool,file_name:String,png_bytes:Vec<u8>},
+    PasteImage {target:SurfaceBinding,view:std::sync::Weak<()>,bracketed:bool,file_name:String,png_bytes:Vec<u8>},
     #[cfg(feature="gui")]
     ImageUpload {target:SurfaceBinding,request:crate::core::PendingImageUpload},
     #[cfg(feature="gui")]
-    Screenshot {target:Option<SurfaceBinding>,mirror_workspace:Option<u32>},
+    Screenshot {target:Option<SurfaceBinding>,mirror_workspace:Option<u32>,view:std::sync::Weak<()>},
     #[cfg(feature="gui")]
     AttachUser(AttachRequest),
     #[cfg(feature="gui")]
@@ -88,14 +88,14 @@ impl EngineAction {
             Self::DagSelection {target,dag_id,direction}=>{if target.current(&engine.as_ref()) && let Some(dag)=engine.runtime.surfaces.get_mut(&target.surface).and_then(|surface|surface.as_any_mut().downcast_mut::<crate::model::DagGraphSurface>()) {dag.dag_id=dag_id.clone();dag.direction=*direction;engine.mark_layout_dirty();}},
             Self::RenameExplorerEntry {target,path,name}=>{if target.current(&engine.as_ref()) && let Some(parent)=path.parent() {let next=parent.join(name);if next!=*path && let Err(error)=std::fs::rename(path,&next) {tracing::warn!(%error,"explorer rename failed");}}},
             #[cfg(feature="gui")]
-            Self::Screenshot {target,mirror_workspace}=>{if target.as_ref().is_none_or(|target|target.current(&engine.as_ref())) {engine.remote.pending_screenshot_captures.push(*mirror_workspace);}},
+            Self::Screenshot {target,mirror_workspace,view}=>{if target.as_ref().is_none_or(|target|target.current(&engine.as_ref())) {engine.remote.pending_screenshot_captures.push((*mirror_workspace,view.clone()));}},
             #[cfg(feature="gui")]
             Self::ImageUpload {target,request}=>{if target.current(&engine.as_ref()) {engine.remote.pending_image_uploads.push(request.clone());}},
             #[cfg(feature="gui")]
-            Self::PasteImage {target,bracketed,file_name,png_bytes}=>{
+            Self::PasteImage {target,view,bracketed,file_name,png_bytes}=>{
                 if !target.current(&engine.as_ref()) {return;}
                 if let Some((workspace,_))=&target.mirror {
-                    engine.remote.pending_image_uploads.push(crate::core::PendingImageUpload {mirror_ws_id:*workspace,surface_id:target.surface,bracketed:*bracketed,file_name:file_name.clone(),png_bytes:png_bytes.clone()});
+                    engine.remote.pending_image_uploads.push(crate::core::PendingImageUpload {origin_view:view.clone(),mirror_ws_id:*workspace,surface_id:target.surface,bracketed:*bracketed,file_name:file_name.clone(),png_bytes:png_bytes.clone()});
                 } else {
                     let directory=std::env::temp_dir().join("tasty-clipboard");
                     let path=directory.join(file_name);

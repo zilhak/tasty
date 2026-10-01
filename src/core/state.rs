@@ -59,6 +59,8 @@ pub(crate) struct GuiAttachUserReq {
 #[cfg(feature = "gui")]
 #[derive(Clone,Debug)]
 pub(crate) struct PendingImageUpload {
+    /// Original View captured when the user enqueues the paste, preserved through retry.
+    pub(crate) origin_view:std::sync::Weak<()>,
     /// attach 세션을 찾을 로컬 mirror workspace ID.
     pub(crate) mirror_ws_id: u32,
     /// 붙여넣기 시점에 정한 로컬 mirror surface ID.

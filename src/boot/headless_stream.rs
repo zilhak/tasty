@@ -160,7 +160,7 @@ fn push_mesh_error(app: &App, client_id: StreamClientId, surface_id: u32) {
     let _ = app.stream_hub.push(client_id, frame); // 연결 종료·손실은 허브가 처리하며 오류 응답은 재시도하지 않는다.
 }
 
-fn apply_capture_uploads(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOutcome) {
+fn apply_capture_uploads(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
     for (client_id, msg) in std::mem::take(&mut outcome.remote.capture_uploads) {
         use tasty_ipc::stream_hub::CaptureUploadMsg;
         match msg {
@@ -172,7 +172,9 @@ fn apply_capture_uploads(app: &mut App, engine: &mut CoreState, outcome: &mut Pu
                 use base64::Engine as _;
                 match base64::engine::general_purpose::STANDARD.decode(&data_b64) {
                     Ok(bytes) if engine.live.occupancy.client_holds_workspace(client_id) => {
-                        engine.remote.capture_uploads.append(
+                        crate::remote::server::append_capture_upload(
+                            engine,
+                            &app.stream_hub,
                             client_id,
                             upload_id,
                             &bytes,
@@ -253,7 +255,7 @@ fn apply_file_requests(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mut 
 }
 
 /// begin·chunk·commit의 도착 순서를 유지한다. workspace는 연결의 bulk 태그에서 찾는다.
-fn apply_bulk_events(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOutcome) {
+fn apply_bulk_events(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
     for (client_id, event) in std::mem::take(&mut outcome.bulk_events) {
         use tasty_ipc::stream_hub::BulkEvent;
         let Some(ws) = app.stream_hub.bulk_workspace(client_id) else {
@@ -280,9 +282,7 @@ fn apply_bulk_events(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOu
                 seq,
                 bytes,
             } => {
-                if !engine
-                    .remote.bulk_transfers
-                    .append(client_id, transfer_id, seq, &bytes)
+                if !crate::remote::server::append_bulk_transfer(engine,&app.stream_hub,client_id,transfer_id,seq,&bytes)
                 {
                     tracing::warn!(
                         "bulk transfer: chunk for unknown transfer (client {client_id}, transfer {transfer_id}) — no begin? dropping"

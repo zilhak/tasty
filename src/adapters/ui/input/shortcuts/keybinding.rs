@@ -789,7 +789,7 @@ impl MainView {
             ws.mirror.then_some(ws.id)
         });
         let target=state.focused_surface_id(engine).and_then(|surface|crate::app::engine_action::SurfaceBinding::capture(engine,surface));
-        state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Screenshot {target,mirror_workspace:mirror_ws_id}).from_user_shortcut("screenshot"));
+        state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Screenshot {target,mirror_workspace:mirror_ws_id,view:state.webview_identity.clone()}).from_user_shortcut("screenshot"));
     }
 
     pub(crate) fn open_preset_apply_popup(

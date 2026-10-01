@@ -92,7 +92,7 @@ impl MainView {
         let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,sid) else {return;};
         match encode_clipboard_image_as_png(&image) {
             Ok(png_bytes)=>{
-                self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::PasteImage {target,bracketed,file_name:clipboard_image_file_name(),png_bytes}).from_user_shortcut("paste"));
+                self.state.dispatch_intent(crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::PasteImage {target,view:self.base.state.identity(),bracketed,file_name:clipboard_image_file_name(),png_bytes}).from_user_shortcut("paste"));
                 self.last_terminal_paste_at=Some(std::time::Instant::now());
             },
             Err(error)=>tracing::warn!(%error,"clipboard image encoding failed"),
