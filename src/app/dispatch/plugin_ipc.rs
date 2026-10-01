@@ -79,13 +79,11 @@ impl App {
     /// Gates and cross-plugin namespace routing have already selected the host fallback.
     fn defer_plugin_preset_capture(&mut self, call: &PendingPluginCall) -> bool {
         if call.method != "preset.capture" { return false; }
-        let Some(binding) = self.plugin_manager.as_ref()
-            .and_then(|manager| manager.processes.get(&call.plugin_id))
-            .map(|process| process.reply_binding())
-        else {
-            tracing::warn!(plugin = %call.plugin_id, "preset capture caller disappeared before admission");
+        if !self.plugin_manager.as_ref().is_some_and(|manager|manager.plugin_call_is_current(call)) {
+            tracing::debug!(plugin=%call.plugin_id,"discarding preset capture from a retired plugin process");
             return true;
-        };
+        }
+        let binding=call.binding.clone();
         let id = serde_json::Value::from(call.call_id);
         let response = match crate::ipc::handler::preset::decode_capture_request(&call.params, &id) {
             Err(response) => Some(response),

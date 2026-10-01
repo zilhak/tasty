@@ -392,13 +392,11 @@ fn defer_plugin_preset_capture_headless(
     call: &tasty_host_plugin::manager::PendingPluginCall,
 ) -> bool {
     if call.method != "preset.capture" { return false; }
-    let Some(process_binding) = app.plugin_manager.as_ref()
-        .and_then(|manager| manager.processes.get(&call.plugin_id))
-        .map(|process| process.reply_binding())
-    else {
-        tracing::warn!(plugin = %call.plugin_id, "preset capture caller disappeared before admission");
+    if !app.plugin_manager.as_ref().is_some_and(|manager|manager.plugin_call_is_current(call)) {
+        tracing::debug!(plugin=%call.plugin_id,"discarding preset capture from a retired plugin process");
         return true;
-    };
+    }
+    let process_binding=call.binding.clone();
     let id = serde_json::Value::from(call.call_id);
     let response = match crate::ipc::handler::preset::decode_capture_request(&call.params, &id) {
         Err(response) => Some(response),
