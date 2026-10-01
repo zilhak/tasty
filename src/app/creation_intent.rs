@@ -38,6 +38,7 @@ pub(crate) fn resolve(
             target_pane_id: Some(state.focused_pane_id(&read)),
             scope: crate::app::command::RestoreScope::Local,
         },
+        #[cfg(feature = "gui")]
         Intent::PrepareTutorial { .. } => DomainIntent::CreateWorkspace {
             cwd: state.resolve_inherit_cwd(&read),
             kind: "terminal".into(),
