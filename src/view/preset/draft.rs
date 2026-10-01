@@ -93,26 +93,8 @@ impl PresetDrafts {
         self.edits.push(PresetEdit::Rename { before, to: to.into() }); Ok(())
     }
     pub(crate) fn unique_name(&self, kind: PresetKind, base: &str) -> String {
-        let sanitized: String = base.chars().filter_map(|ch| {
-            if ch.is_alphanumeric() || matches!(ch, '_' | '-' | '.') { Some(ch) }
-            else if ch == ' ' { Some('-') } else { None }
-        }).collect();
-        let sanitized = sanitized.trim_start_matches('.');
-        let base = if sanitized.is_empty() { kind.as_str() } else { sanitized };
-        if self.get(kind, base).is_none() { return base.into(); }
-        for index in 2..10_000 {
-            let candidate = format!("{base}-{index}");
-            if self.get(kind, &candidate).is_none() { return candidate; }
-        }
-        format!("{base}-{}", std::process::id())
+        tasty_presets::storage::unique_name_for(kind, base, |name| self.get(kind, name).is_some())
     }
 }
 
-// Admission only; the App's PresetStore repeats validation when executing the edit.
-fn validate_name(name: &str) -> PresetResult<()> {
-    if name.is_empty() || name.len() > 100 || name.starts_with('.')
-        || name.chars().any(|ch| matches!(ch, '/' | '\\' | '\0') || ch.is_control()) {
-        return Err(PresetError::InvalidName(if name.is_empty() { "(empty)".into() } else { name.into() }));
-    }
-    Ok(())
-}
+use tasty_presets::storage::validate_name;

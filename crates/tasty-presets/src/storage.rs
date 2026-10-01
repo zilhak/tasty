@@ -222,23 +222,7 @@ impl PresetStore {
     // ── unique_name (충돌 시 -N suffix) ──────────────────────────────────
 
     pub fn unique_name(&self, kind: PresetKind, base: &str) -> String {
-        let sanitized = sanitize_name(base);
-        let base = if sanitized.is_empty() {
-            kind.as_str().to_string()
-        } else {
-            sanitized
-        };
-        if !self.contains_inner(kind, &base) {
-            return base;
-        }
-        for n in 2u32..10_000 {
-            let cand = format!("{base}-{n}");
-            if !self.contains_inner(kind, &cand) {
-                return cand;
-            }
-        }
-        // 극단적 fallback
-        format!("{base}-{}", std::process::id())
+        unique_name_for(kind, base, |name| self.contains_inner(kind, name))
     }
 }
 
@@ -333,9 +317,30 @@ fn scan_dir<P: LayoutPreset>(dir: &Path) -> BTreeMap<String, P> {
     out
 }
 
+/// Pure naming policy shared by storage and value-only editors.
+pub fn unique_name_for(kind: PresetKind, base: &str, contains: impl Fn(&str) -> bool) -> String {
+    let sanitized = sanitize_name(base);
+    let base = if sanitized.is_empty() {
+        kind.as_str().to_string()
+    } else {
+        sanitized
+    };
+    if !contains(&base) {
+        return base;
+    }
+    for n in 2u32..10_000 {
+        let cand = format!("{base}-{n}");
+        if !contains(&cand) {
+            return cand;
+        }
+    }
+    // 극단적 fallback
+    format!("{base}-{}", std::process::id())
+}
+
 // ── helpers ─────────────────────────────────────────────────────────────
 
-fn validate_name(name: &str) -> PresetResult<()> {
+pub fn validate_name(name: &str) -> PresetResult<()> {
     if name.is_empty() {
         return Err(PresetError::InvalidName("(empty)".into()));
     }

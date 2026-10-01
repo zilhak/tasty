@@ -101,6 +101,31 @@ pub(super) struct EditMetaState {
     subtitle: String,
 }
 
+/// Only the editor's two text buffers; no store or entire egui memory is copied.
+#[derive(Clone)]
+pub(crate) struct ToolbarDraft {
+    rename: Option<RenameState>,
+    metadata: Option<EditMetaState>,
+}
+impl ToolbarDraft {
+    pub(crate) fn capture(ctx: &egui::Context) -> Self {
+        ctx.data_mut(|data| Self {
+            rename: data.get_temp::<Option<RenameState>>(egui::Id::new("preset_rename_state")).flatten(),
+            metadata: data.get_temp(egui::Id::new("preset_edit_meta")),
+        })
+    }
+    pub(crate) fn restore(self, ctx: &egui::Context) {
+        ctx.data_mut(|data| {
+            data.insert_temp(egui::Id::new("preset_rename_state"), self.rename);
+            if let Some(metadata) = self.metadata {
+                data.insert_temp(egui::Id::new("preset_edit_meta"), metadata);
+            } else {
+                data.remove::<EditMetaState>(egui::Id::new("preset_edit_meta"));
+            }
+        });
+    }
+}
+
 /// [`queue_layout`] 의 결과.
 #[derive(Debug, PartialEq)]
 enum QueuedLayout {
@@ -219,7 +244,7 @@ pub(super) fn workspace_subtitle_field(
     }
 }
 
-fn subtitle(store: &kind: PresetKind, name: &str) -> String {
+fn subtitle(store: &PresetDrafts, kind: PresetKind, name: &str) -> String {
     match kind {
         PresetKind::Workspace => store
             .get_workspace(name)
@@ -290,7 +315,7 @@ fn minimal_pane() -> tasty_presets::PresetPane {
 }
 
 /// 최소 preset 을 만들어 저장하고, 부여된 이름을 반환한다. 실패 시 `None`.
-fn create_minimal(store: &mut kind: PresetKind) -> Option<String> {
+fn create_minimal(store: &mut PresetDrafts, kind: PresetKind) -> Option<String> {
     use tasty_presets::{PanePreset, TabPreset, WorkspacePreset};
     let name = store.unique_name(kind, kind.as_str());
     let result = match kind {

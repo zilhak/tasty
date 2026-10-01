@@ -18,7 +18,7 @@ pub(super) enum LayoutBase {
 
 impl LayoutBase {
     /// 현재 저장소 값. 프리셋이 없으면 None이다.
-    pub(super) fn current(store: &kind: PresetKind, name: &str) -> Option<Self> {
+    pub(super) fn current(store: &PresetDrafts, kind: PresetKind, name: &str) -> Option<Self> {
         match kind {
             PresetKind::Workspace => store
                 .get_workspace(name)

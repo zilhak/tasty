@@ -45,8 +45,18 @@ pub struct PresetView {
     /// 열려 있는 surface 설정 화면(대상 leaf + draft). `None` 이면 미리보기가 보인다.
     surface_cfg: Option<SurfaceCfg>,
     toasts: ToastManager,
-    pending_cfg: Option<SurfaceCfg>,
+    pending_presentation: Option<PendingPresentation>,
     shown: bool,
+}
+
+struct PendingPresentation {
+    workspace: Option<String>,
+    tab: Option<String>,
+    pane: Option<String>,
+    editing: bool,
+    node: Option<usize>,
+    cfg: Option<SurfaceCfg>,
+    toolbar: crate::adapters::ui::preset::ToolbarDraft,
 }
 
 impl PresetView {
@@ -70,7 +80,7 @@ impl PresetView {
             selected_node: None,
             surface_cfg: None,
             toasts: ToastManager::new(),
-            pending_cfg: None,
+            pending_presentation: None,
             shown: false,
         }
     }
@@ -84,12 +94,21 @@ impl PresetView {
     pub(crate) fn accept_edits(&mut self, drafts: PresetDrafts, error: Option<String>) {
         self.drafts = drafts;
         if error.is_some() {
-            // Failed surface-settings confirmation keeps the user's draft available for retry.
-            if self.surface_cfg.is_none() { self.surface_cfg = self.pending_cfg.take(); }
+            // Admission updated local selection and buffers optimistically. Restore them only
+            // after the App reports failure so rename/delete cannot discard the user's editing state.
+            if let Some(previous) = self.pending_presentation.take() {
+                self.selected_workspace = previous.workspace;
+                self.selected_tab = previous.tab;
+                self.selected_pane = previous.pane;
+                self.editing = previous.editing;
+                self.selected_node = previous.node;
+                self.surface_cfg = previous.cfg;
+                previous.toolbar.restore(&self.base.gpu.egui_ctx);
+            }
             self.toasts.push(t("preset.toast.save_failed"),
                 crate::adapters::ui::ToastKind::Error, ToastScope::Window);
         } else {
-            self.pending_cfg = None;
+            self.pending_presentation = None;
         }
         self.mark_dirty();
     }
@@ -164,7 +183,12 @@ impl View for PresetView {
 
         let raw_input = self.base.gpu.take_egui_input(&self.base.winit);
         let drafts = &mut self.drafts;
-        self.pending_cfg = self.surface_cfg.clone();
+        self.pending_presentation = Some(PendingPresentation {
+            workspace: self.selected_workspace.clone(), tab: self.selected_tab.clone(),
+            pane: self.selected_pane.clone(), editing: self.editing, node: self.selected_node,
+            cfg: self.surface_cfg.clone(),
+            toolbar: crate::adapters::ui::preset::ToolbarDraft::capture(&self.base.gpu.egui_ctx),
+        });
         // registry 스냅샷을 프레임마다 파생 — 미주입이면 빈 catalog(정적 fallback).
         let catalog = self
             .surface_registry
