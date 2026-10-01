@@ -5684,14 +5684,13 @@ dependencies = [
  "shell-escape",
  "sysinfo",
  "tasty-agent",
- "tasty-task-runtime",
  "tasty-approval",
  "tasty-cell-width",
  "tasty-cli",
+ "tasty-core",
  "tasty-dag-layout",
  "tasty-design-tokens",
  "tasty-doc-guards",
- "tasty-core",
  "tasty-egui-theme",
  "tasty-event-store",
  "tasty-file-format",
@@ -5722,6 +5721,7 @@ dependencies = [
  "tasty-settings",
  "tasty-shm",
  "tasty-ssh",
+ "tasty-task-runtime",
  "tasty-telemetry",
  "tasty-terminal",
  "tasty-terminal-link",
@@ -5815,6 +5815,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tasty-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tasty-model",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "tasty-dag-layout"
 version = "0.1.0"
 dependencies = [
@@ -5837,16 +5847,6 @@ dependencies = [
 [[package]]
 name = "tasty-doc-guards"
 version = "0.1.0"
-
-[[package]]
-name = "tasty-core"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "tasty-model",
- "thiserror 2.0.18",
-]
 
 [[package]]
 name = "tasty-egui-theme"
@@ -6386,9 +6386,9 @@ dependencies = [
  "serde_json",
  "tasty-i18n",
  "tasty-ipc",
+ "tasty-model",
  "tasty-remote-profiles",
  "tasty-ssh",
- "tasty-model",
  "tasty-utils",
  "tracing",
 ]
