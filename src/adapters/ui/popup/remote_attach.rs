@@ -1,7 +1,6 @@
-//! 원격 워크스페이스 조회·연결. 프로필을 고르면 워커에서 workspace.list와 attach.list를 조회한다.
-//! 사용자가 Connect를 누르면 조회 터널을 재사용해 mirror 워크스페이스를 만든다.
-//! 사용자 입력 경로이므로 pending_gui_attach_user에서 새 mirror로 포커스를 옮긴다.
-//! release에서는 dispatch_pending_gui_attach가 자기 인스턴스로의 연결을 거절한다.
+//! 원격 워크스페이스 조회·연결의 요청 ID와 표시 값. 워커와 조회 터널은 Remote가 소유한다.
+//! Connect는 BrowserRequest로 App에 전달하고 원 engine/View에 사용자 활성화 의도를 고정한다.
+//! App의 연결 입구는 조회 터널을 재사용하며 자기 인스턴스로의 연결을 거절한다.
 
 use tasty_remote::browser::BROWSE_DEADLINE;
 use tasty_type_geometry::length::LogicalPx;

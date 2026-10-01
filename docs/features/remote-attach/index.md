@@ -286,16 +286,14 @@ Auto 체인이 전 단계 실패하면 가장 확정적인 분류(취소 > 타�
 사이드바에서 **카테고리 헤더 우클릭(카테고리 on) / 새 워크스페이스(+) 버튼 우클릭 · 빈 배경 우클릭(그룹·플랫 모드 공통) → "원격 워크스페이스 추가"** 로 연다(`remote_attach` headless 팝업, 680×460 2-pane).
 워크스페이스 카드 우클릭에는 없다(카테고리 ON/OFF 에 따라 노출 위치가 갈리도록 재배치 — [`sidebar/screens/sidebar.md`](../sidebar/index.md#화면) 참고).
 좌측은 `tasty-attach` 프로필 목록(remote_tool 이 편집하는 같은 스토어를 **소비만** 함), 우측은 선택 프로필의 원격 워크스페이스를 **4상태**(initial / connecting / error+retry / loaded[+empty])로 표시한다.
-조회는 위 browse 코어(`tasty_remote::browse`)를 **워커 스레드**로 돌려(폴링 슬롯) UI 를 막지 않는다.
+조회 워커와 SSH 터널은 `tasty_remote::browser`의 세션이 소유한다. 팝업은 요청 ID와 표시 값만 보관하고, App이 원 engine·View를 확인한 결과를 전달받는다.
 이미 타 client 가 점유한 원격 ws 는 lavender `in use` 배지 + 선택 불가(중복 mirror 방지).
 
-**Connect 확정 = 사용자 동작 → focus 이동**: 원격 ws 를 골라 Connect 하면 조회에 쓴 SSH 터널을 재사용해 mirror 로 attach 하고, **새 mirror ws 로 focus 가 이동**한다(사용자가 확정한 결과). 이 focus 이동은 IPC/에이전트 경로(위 `remote.attach`, focus 중립)와 분리된 **사용자 입력 전용 큐**(`CoreState.pending_gui_attach_user`)를 통해서만 일어난다 — release IPC 는 이 큐에 push 하지 못한다(원칙 1②). 컨텍스트 메뉴 진입은 `from_user_context_menu()` 로 마킹하고, self(loopback) attach 는 release 에서 `dispatch_pending_gui_attach` 게이트가 차단한다.
+**Connect 확정 = 사용자 동작 → focus 이동**: 원격 workspace를 골라 Connect하면 팝업은 `BrowserRequest::Connect`를 사용자 의도로 전달한다. App은 원 browse의 engine·window·View identity를 확인하고, 그 대상의 mirror 설치 요청에 사용자 활성화 의도를 고정한다. Remote가 보관한 조회 터널은 연결에 재사용된다. 설치가 완료되면 원 사용자 View에서 새 mirror를 선택하며, IPC `remote.attach`의 선택 중립 경로와 구분한다. 자기 인스턴스 연결은 공용 `dispatch_attach` 입구에서 거절한다.
 
-**조회 중(connecting) 사용자 조작 + 정리 계약**: connecting 은 **시간 제한**이 있다.
-워커 자체 상한(위 "연결 시도 상한" 45초 + 터널 ready 5초 + IPC 프로브 5초)만으로는 최악 ~55초를 아무것도 못 하고 기다려야 하므로, UI 가 **20초**(`BROWSE_DEADLINE`, ADR-0022 원격 file picker 와 같은 매 프레임 경과 판정) 안에 결과가 없으면 **워커보다 먼저** 포기하고(진행 중 조회는 취소) error 상태(+ Retry)로 전이한다 — 워커가 슬롯을 영영 못 채워도(스레드 패닉 등) connecting 에 갇히지 않는다.
-그 전에 사용자가 직접 끊을 수도 있다: 조회 중에는 footer 의 ghost 버튼이 **"중단"** 이 되어 팝업을 닫지 않고 조회만 끊고 initial 로 돌아간다(닫기는 헤더 × / Esc).
-어느 경로든(중단 · 타임아웃 · 다른 프로필 재선택 · 팝업 닫기) **진행 중 워커의 자식 ssh 를 kill + reaping** 한다 — 포트 발견 단계의 자식은 `SshTunnel` 의 Drop 회수 계약 밖에 있어 별도 취소 핸들(`tasty_ssh::SshCancel`)이 필요하다([`dev-guide/attach-behavior.md`](../../dev-guide/attach-behavior.md) "터널 생명주기").
-취소 뒤 워커가 뒤늦게 채운 결과는 아무도 읽지 않고 워커 종료와 함께 drop 되며, 그때 `BrowseOk.tunnel` 도 함께 drop 되어 터널이 새지 않는다.
+**조회 중(connecting) 사용자 조작 + 정리 계약**: Remote의 `poll_browsers`가 조회 시작 뒤 **20초**(`BROWSE_DEADLINE`) 경과를 관측하면 원 attempt에 취소를 요청하고 timeout 실패 값으로 전환한다. App과 팝업은 원 View·요청 ID가 일치하는 결과만 error 상태(+ Retry)로 표시한다. UI의 경과 표시도 같은 기한 상수를 사용하지만 취소와 worker 수명의 소유자는 Remote다.
+그 전에 사용자가 직접 중단할 수 있다. 조회 중 footer의 "중단"은 팝업을 닫지 않고 원 요청을 취소해 initial로 돌아간다. 헤더 × / Esc, 다른 프로필 선택도 해당 요청의 취소를 보낸다.
+Remote는 원 attempt의 SSH 취소와 터널 회수를 요청하고 worker의 실제 종료·join을 관측한다. 취소 요청을 자식 프로세스 회수 완료로 간주하지 않는다. 늦은 결과는 원 attempt/session 검사로 폐기하고, 함께 도착한 터널도 Remote의 회수 경로로 넘긴다([터널 수명](../../dev-guide/attach-behavior.md)).
 
 **"+ 새 워크스페이스" 행 — 원격에 만들어서 붙는 경로**: loaded 목록의 **첫 행**은 원격에 이미 있는 워크스페이스가 아니라 `+ 새 워크스페이스` 다. 이 행을 고르고 확정하면 조회에 쓴 같은 터널로 원격에 `workspace.create` 를 1회 보내고, 그 응답의 ws id 를 **기존 Connect 와 똑같은 attach 지점**으로 넘긴다. 이름/cwd 를 묻는 UI 는 없다 — params 를 빈 객체로 보내 원격의 기본값(`type`=terminal, 기본 이름, 원격 자기 활성 surface 의 cwd 상속)을 쓴다. 클라이언트는 원격 파일시스템 경로를 모르므로 cwd 를 지어내지 않는다(명시 지정은 IPC/CLI 쪽 몫).
 
