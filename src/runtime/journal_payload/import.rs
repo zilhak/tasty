@@ -1,7 +1,7 @@
 //! Explicit internal journal transfer. Normal startup still selects the data home's one journal.
 use crate::core::layout_persistence::import::{ImportOutcome, journal_import};
 use std::path::PathBuf;
-use tasty_event_store::{CommandKey, CommandLookup, EventStore, NewRestoreManifest, WriterEpoch};
+use tasty_event_store::{CommandKey, CommandLookup, EventStore, WriterEpoch};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SourceImport {
@@ -72,36 +72,9 @@ pub(crate) fn transfer(
     }
     let mut source = open_source(request)?;
     let source_epoch = source.acquire_writer().map_err(|error| error.to_string())?;
-    let frozen = match source
-        .restore_manifest(&alias)
-        .map_err(|error| error.to_string())?
-    {
-        Some(frozen) => frozen,
-        None => {
-            let selected = source
-                .restore_manifest(&request.source_restore_key)
-                .map_err(|error| error.to_string())?
-                .ok_or("source restore manifest is missing")?;
-            source
-                .save_restore_manifest(
-                    source_epoch,
-                    &NewRestoreManifest {
-                        restore_key: alias.clone(),
-                        incarnation: selected.incarnation,
-                        runtime_epoch: selected.runtime_epoch,
-                        sequence: selected.sequence,
-                        snapshot_id: selected.snapshot.snapshot_id,
-                        view: selected.view,
-                        referenced_payloads: Vec::new(),
-                    },
-                )
-                .map_err(|error| error.to_string())?;
-            source
-                .restore_manifest(&alias)
-                .map_err(|error| error.to_string())?
-                .ok_or("source transfer pin missing")?
-        }
-    };
+    let frozen = source
+        .freeze_restore_alias(source_epoch, &alias, &request.source_restore_key, &digest)
+        .map_err(|error| error.to_string())?;
     let models = tasty_core::decode_snapshot(frozen.snapshot.model_version, &frozen.snapshot.bytes)
         .map_err(|error| error.to_string())?;
     if models.batch != frozen.snapshot.cut.last_batch {

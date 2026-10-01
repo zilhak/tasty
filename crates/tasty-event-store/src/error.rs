@@ -205,6 +205,9 @@ pub enum StoreError {
     #[error("projection key {0} appears twice in one write")]
     ProjectionKeyConflict(String),
 
+    #[error("restore alias {0} is frozen for another input or has no verifiable input identity")]
+    RestoreAliasConflict(String),
+
     #[error("restore manifest {0} would replace a newer saved View")]
     ManifestRegression(String),
 

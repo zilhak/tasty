@@ -7,6 +7,7 @@ mod commands;
 mod effects;
 mod fencing;
 mod identity;
+mod manifest_alias;
 mod projection;
 mod schema;
 mod snapshots;

@@ -99,36 +99,74 @@ impl EventStore {
     /// is an error, not permission to regenerate user selection or silently consult a stale export.
     pub fn restore_manifest(&self, restore_key: &str) -> StoreResult<Option<RestoreManifest>> {
         let tx = self.conn.unchecked_transaction()?;
-        let row: Option<(i64,i64,i64,i64,i64)> = tx.query_row(
-            "SELECT incarnation,runtime_epoch,sequence,snapshot_id,payload_id FROM restore_manifests WHERE restore_key = ?1",
-            [restore_key], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?)),
-        ).optional()?;
-        let Some((incarnation, runtime_epoch, sequence, snapshot_id, view)) = row else {
-            return Ok(None);
-        };
-        let snapshot_id = to_u64(snapshot_id)?;
-        let (batch, version, body) = snapshot_row(&tx, snapshot_id)?;
-        let batch = to_u64(batch)?;
-        crate::retention::require_cursor(&tx, Some(batch))?;
-        let bytes = crate::snapshot::verify_snapshot(&tx, snapshot_id, PayloadRef(to_u64(body)?))?;
-        let view = crate::payload::read_verified(&tx, PayloadRef(to_u64(view)?))?;
-        let mut stmt = tx.prepare("SELECT payload_id FROM payload_pins WHERE holder = ?1")?;
-        let refs = stmt.query_map([holder(restore_key)], |row| row.get::<_, i64>(0))?;
-        for reference in refs {
-            crate::payload::read_verified(&tx, PayloadRef(to_u64(reference?)?))?;
+        read_in(&tx, restore_key)
+    }
+
+    /// Freeze the selected source cut and its exact transfer input together. Retrying the same
+    /// input returns the original cut even if the selected source manifest has since advanced.
+    /// Unbound legacy aliases cannot be retroactively attributed to a new request.
+    pub fn freeze_restore_alias(
+        &mut self,
+        epoch: WriterEpoch,
+        alias: &str,
+        source_key: &str,
+        request_digest: &[u8],
+    ) -> StoreResult<RestoreManifest> {
+        let mut budget = crate::write_limits::Budget::new();
+        budget.add(256)?;
+        budget.add(alias.len())?;
+        budget.add(source_key.len())?;
+        budget.add(request_digest.len())?;
+        let tx = self.write_tx(epoch)?;
+        let input: Option<(String, Vec<u8>)> = tx
+            .query_row(
+                "SELECT source_key,request_digest FROM restore_alias_inputs WHERE restore_key=?1",
+                [alias],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        if let Some((stored_key, stored_digest)) = input {
+            if stored_key != source_key || stored_digest != request_digest {
+                return Err(StoreError::RestoreAliasConflict(alias.into()));
+            }
+            return read_in(&tx, alias)?.ok_or_else(|| {
+                StoreError::Corrupt("frozen restore alias lost its manifest".into())
+            });
         }
-        Ok(Some(RestoreManifest {
-            incarnation: to_u64(incarnation)?,
-            runtime_epoch: to_u64(runtime_epoch)?,
-            sequence: to_u64(sequence)?,
-            snapshot: DomainSnapshot {
-                snapshot_id,
-                cut: crate::read::cut_at(&tx, batch)?,
-                model_version: version,
-                bytes,
-            },
-            view,
-        }))
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM restore_manifests WHERE restore_key=?1)",
+            [alias],
+            |row| row.get(0),
+        )?;
+        if alias == source_key || exists {
+            return Err(StoreError::RestoreAliasConflict(alias.into()));
+        }
+        let selected = read_in(&tx, source_key)?
+            .ok_or_else(|| StoreError::Corrupt("source restore manifest is missing".into()))?;
+        // Preserve explicit manifest pins as well as the snapshot's independently retained pins.
+        let references = {
+            let mut stmt = tx.prepare("SELECT payload_id FROM payload_pins WHERE holder=?1")?;
+            let rows = stmt.query_map([holder(source_key)], |row| row.get::<_, i64>(0))?;
+            rows.map(|row| Ok(PayloadRef(to_u64(row?)?)))
+                .collect::<StoreResult<Vec<_>>>()?
+        };
+        let manifest = NewRestoreManifest {
+            restore_key: alias.into(),
+            incarnation: selected.incarnation,
+            runtime_epoch: selected.runtime_epoch,
+            sequence: selected.sequence,
+            snapshot_id: selected.snapshot.snapshot_id,
+            view: selected.view.clone(),
+            referenced_payloads: references,
+        };
+        budget.manifest(&manifest)?;
+        save_in(&tx, &manifest)?;
+        tx.execute(
+            "INSERT INTO restore_alias_inputs(restore_key,source_key,request_digest) VALUES(?1,?2,?3)",
+            params![alias, source_key, request_digest],
+        )?;
+        tx.commit()?;
+        Ok(selected)
     }
 
     /// A retirement may release only its own incarnation. A late old close cannot remove a new slot.
@@ -153,6 +191,38 @@ impl EventStore {
         Ok(removed != 0)
     }
 }
+fn read_in(conn: &rusqlite::Connection, restore_key: &str) -> StoreResult<Option<RestoreManifest>> {
+    let row: Option<(i64,i64,i64,i64,i64)> = conn.query_row(
+            "SELECT incarnation,runtime_epoch,sequence,snapshot_id,payload_id FROM restore_manifests WHERE restore_key = ?1",
+            [restore_key], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?)),
+        ).optional()?;
+    let Some((incarnation, runtime_epoch, sequence, snapshot_id, view)) = row else {
+        return Ok(None);
+    };
+    let snapshot_id = to_u64(snapshot_id)?;
+    let (batch, version, body) = snapshot_row(conn, snapshot_id)?;
+    let batch = to_u64(batch)?;
+    crate::retention::require_cursor(conn, Some(batch))?;
+    let bytes = crate::snapshot::verify_snapshot(conn, snapshot_id, PayloadRef(to_u64(body)?))?;
+    let view = crate::payload::read_verified(conn, PayloadRef(to_u64(view)?))?;
+    let mut stmt = conn.prepare("SELECT payload_id FROM payload_pins WHERE holder = ?1")?;
+    let refs = stmt.query_map([holder(restore_key)], |row| row.get::<_, i64>(0))?;
+    for reference in refs {
+        crate::payload::read_verified(conn, PayloadRef(to_u64(reference?)?))?;
+    }
+    Ok(Some(RestoreManifest {
+        incarnation: to_u64(incarnation)?,
+        runtime_epoch: to_u64(runtime_epoch)?,
+        sequence: to_u64(sequence)?,
+        snapshot: DomainSnapshot {
+            snapshot_id,
+            cut: crate::read::cut_at(conn, batch)?,
+            model_version: version,
+            bytes,
+        },
+        view,
+    }))
+}
 fn holder(key: &str) -> String {
     format!("restore-manifest:{key}")
 }
@@ -171,6 +241,16 @@ pub(crate) fn save_in(
     manifest: &NewRestoreManifest,
 ) -> StoreResult<()> {
     crate::write_limits::Budget::new().manifest(manifest)?;
+    let frozen: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM restore_alias_inputs WHERE restore_key=?1)",
+        [&manifest.restore_key],
+        |row| row.get(0),
+    )?;
+    if frozen {
+        return Err(StoreError::RestoreAliasConflict(
+            manifest.restore_key.clone(),
+        ));
+    }
     let previous: Option<(i64, i64, i64)> = conn.query_row(
             "SELECT incarnation,runtime_epoch,sequence FROM restore_manifests WHERE restore_key = ?1",
             [&manifest.restore_key], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?)),

@@ -35,7 +35,13 @@ domain snapshot, consumer checkpoint, 불변 payload를 제공한다. 이 문단
 - 새로 넣은 payload는 참조가 생기기 전까지 GC 대상이다. 참조할 기록을 commit하기 전에 GC가 돌았으면 그 commit은 payload 없음으로 실패하고, 호출자가 다시 넣는다.
   확정된 참조가 가리키는 payload가 사라지는 경로는 없다.
 - 새 journal로 가져오는 경우 payload는 대상 journal에 복사해 독립 소유하게 한 뒤 원본의 pin을 푼다. 다른 journal의 행을 가리키지 않는다.
-  내부 import는 전송 ID로 source snapshot/View alias를 고정한다. destination의 새 ID mapping·초기 events·
+  내부 import는 전송 ID로 source snapshot/View alias를 고정한다. alias의 최초 source key와 전체 요청 digest도
+  같은 fenced transaction에 저장한다(schema V8의 restore_alias_inputs). alias/pin만 남고 입력 identity가
+  빠지는 중간 상태는 commit하지 않는다. 같은 입력 재시도는 source의 최신 manifest 대신 원 고정 cut을
+  재사용하며, 같은 source journal에 이미 있는 alias의 source key나 destination slot 등 입력이 달라지면
+  명시 충돌이다. 다른 source DB에 alias가 없는 미완 전송까지 전역 선점하는 정책은 두지 않는다. 입력 identity가 없는
+  과거 alias는 현재 요청에 소급 귀속하지 않고 보존한 채 거절한다. 일반 View 저장은 고정 alias를
+  덮어쓸 수 없고 alias 삭제는 그 입력 identity도 FK cascade로 해제한다. destination의 새 ID mapping·초기 events·
   최초 응답·domain snapshot·View manifest를 같은 transaction에 확정한 뒤 source alias를 해제한다.
   실패한 준비 payload는 admission holder로 보존하며 다음 fenced writer가 미수락 잔여 pin을 정리한다.
   destination commit 뒤 응답 유실은 같은 전송 키 조회로 합류하고 source의 command/effect/cleanup을 복사하지 않는다.
