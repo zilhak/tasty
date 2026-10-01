@@ -270,7 +270,6 @@ impl MainView {
         // Reconcile composition for every displayed content source, including
         // global PTY wakes, direct parser injection and attach mirrors.
         self.recalc_ime_preedit_anchor(engine);
-        self.base.begin_frame();
         self.update_ime_cursor_area(&engine.as_ref());
         // 불변 차용 전에 plugin에 크기·배율·입력을 보내고 회신한 mesh를 합성한다.
         if let Some(mgr) = plugin_manager {
@@ -289,6 +288,9 @@ impl MainView {
         if !self.base.state.dirty {
             return;
         }
+        // Preparation and drawing share the same dirty frame. Consume it only after
+        // this final admission check, so prepare_render_inputs cannot skip the draw.
+        self.base.begin_frame();
         self.submit_gpu_frame(engine, plugin_manager);
         self.drain_full_texture_requests(engine);
     }

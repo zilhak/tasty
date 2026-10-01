@@ -873,7 +873,10 @@ fn test_ime_preedit_cleared_on_popup_focus_shortcut() {
         search_open,
         "search_bar가 열리지 않아 preedit 폐기 시나리오의 전제를 만족하지 못했다: {popups}"
     );
-    // debug.host_popup.list는 포커스를 반환하지 않아 비포커스 상태까지 직접 확인하지는 못한다.
+    // A refocus shortcut is meaningful only after the existing popup actually lost focus.
+    inst.wait_for_ui("search popup unfocused", Duration::from_secs(3), |s| {
+        !s.gate_terms.host_popup_focused && !s.keyboard_shortcuts_gated
+    });
 
     let pre = inst.call("surface.ime_preedit", serde_json::json!({ "text": "한" }));
     let sid = pre["surface_id"]

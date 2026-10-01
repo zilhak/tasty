@@ -38,7 +38,7 @@ call("surface.ime_disable")
 
 1. 한글 조합 중(예: "한" 입력 중) **split/close 등 팝업 없는 단축키** → 조합 문자가 PTY 로 확정 전송(flush). 유실·중복 없음.
 2. 한글 조합 중 **command palette·notifications(intent 팝업)** → 현재 동작상 **flush**(dispatch 지연으로 체크 시 미포커스). 변경 후에도 같은지 확인한다.
-3. 열림·비포커스 search_bar 상태에서 조합 중 `find` 재입력 → 조합 문자 **폐기**(clear), PTY 미전송.
+3. search_bar가 열린 상태에서 바깥을 클릭하고, `ui.state`의 `gate_host_popup_focused=false`와 `keyboard_shortcuts_gated=false`로 비포커스 전제를 확인한다. 조합 중 `find` 재입력 → 조합 문자 **폐기**(clear), PTY 미전송. 팝업 열림 값만으로 실제 프레임·포커스 처리를 확인했다고 보지 않는다.
 4. 조합 중 **Ctrl+letter**(예: 'ㅊ' 조합 중 Ctrl+C) → physical 폴백으로 control char(0x03) 전송, 조합문자 아님.
 5. 위 3케이스에서 `ime_status.has_preedit` 가 처리 후 `false`.
 
