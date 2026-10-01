@@ -21,6 +21,29 @@ pub(crate) fn test_state_with_memory(
     RequestContext,
     crate::runtime::engine_session::EngineSession,
 ) {
+    state_fixture(memory, false)
+}
+
+/// A display-only mirror fixture; transport/materialization tests install a real Remote session.
+pub(crate) fn test_mirror_state() -> (
+    RequestContext,
+    crate::runtime::engine_session::EngineSession,
+) {
+    state_fixture(
+        std::sync::Arc::new(std::sync::Mutex::new(
+            tasty_memory::testing::InMemoryStorage::new(),
+        )),
+        true,
+    )
+}
+
+fn state_fixture(
+    memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    mirror: bool,
+) -> (
+    RequestContext,
+    crate::runtime::engine_session::EngineSession,
+) {
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
     let mut engine = crate::runtime::engine_session::EngineSession::new_with_ids_and_settings(
         80,
@@ -78,7 +101,14 @@ pub(crate) fn test_state_with_memory(
         },
     )
     .expect("canonical presentation fixture");
-    tasty_core::projection::bootstrap::initialize(&mut engine.core_state, &model).unwrap();
+    if mirror {
+        let mut workspace =
+            crate::model::Workspace::new_with_terminal_marker(id, "Workspace 1".into(), id, id, id);
+        workspace.mirror = true;
+        engine.core_state.push_mirror_workspace(workspace);
+    } else {
+        tasty_core::projection::bootstrap::initialize(&mut engine.core_state, &model).unwrap();
+    }
     engine
         .runtime
         .surfaces
