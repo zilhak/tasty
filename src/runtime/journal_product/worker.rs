@@ -121,7 +121,7 @@ pub(super) fn run(
             | Work::InstallationRejected { .. }
             | Work::PreparationUncertain { .. }
             | Work::ClaimPreparation { .. } => true,
-            #[cfg(feature = "gui")]
+            #[cfg(any(feature = "gui", test))]
             Work::RetireEngine(_) => true,
             #[cfg(feature = "gui")]
             Work::ForwardFinished { .. } => true,
@@ -515,7 +515,7 @@ fn handle(
         Work::ClaimForward { stream, operation } => {
             effects::claim_forward(executor, &stream, &operation)
         }
-        #[cfg(any(feature = "gui", test))]
+        #[cfg(feature = "gui")]
         Work::ForwardFinished { lease, outcome } => effects::forwarded(executor, lease, outcome),
         Work::Capture { binding, surfaces } => {
             capture::persist(executor, ticket, binding, surfaces)
