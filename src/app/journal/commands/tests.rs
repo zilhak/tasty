@@ -544,11 +544,8 @@ fn fixed_intent_budget_counts_its_commands_and_rejects_before_admission_without_
 fn headless_pending_category_intent_uses_the_explicit_engine_journal_admission() {
     let (mut session, mut journal) = boot();
     let mut core = crate::ipc::handler::cli_entry_tests::test_core();
-    let mut state = crate::state::RequestContext::new(
-        &mut session.borrow_mut(),
-        core.preset_store.clone(),
-        core.memory_arc(),
-    );
+    let mut state =
+        crate::state::RequestContext::new(&session.as_ref().read(), core.preset_store.clone());
     state.engine_id = Some(session.id);
     state.dispatch_intent(
         crate::app::command::DomainIntent::CreateCategory {
@@ -575,7 +572,7 @@ fn headless_pending_category_intent_uses_the_explicit_engine_journal_admission()
     let until = Instant::now() + Duration::from_secs(10);
     while !journal.commands.pending.is_empty() {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
-        journal.resolve_headless_requests(&session, &mut state);
+        journal.resolve_headless_requests(&mut session, &mut state, &core);
         assert!(Instant::now() < until);
         std::thread::sleep(Duration::from_millis(1));
     }

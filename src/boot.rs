@@ -901,8 +901,10 @@ mod journal_event_tests {
                 crate::runtime::journal_product::EngineSelection::FreshHeadless,
             )
             .unwrap();
-        let mut state =
-            crate::state::CommandContext::new(&session.read(), app.services.preset_store.clone());
+        let mut state = crate::state::CommandContext::new(
+            &session.as_ref().read(),
+            app.services.preset_store.clone(),
+        );
         state.engine_id = Some(session.id);
         let until = Instant::now() + Duration::from_secs(10);
         while !app.journal.is_ready(session.id) {
