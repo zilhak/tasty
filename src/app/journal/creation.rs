@@ -493,12 +493,14 @@ impl Creation {
                 started,
             },
             (Stage::Failed(reason), _) if self.public => {
+                // OnceLock rejection means the original observer already has its terminal result.
                 let _ = self.receipt.set(ActivationOutcome::Failed(reason));
                 return Ok(true);
             }
             (Stage::Claim, ResultValue::Executed(_)) if self.public => return Ok(true),
             (Stage::Failed(reason), _) if self.restore_retry.is_some() => {
                 self.restore_failure = Some(reason.clone());
+                // OnceLock rejection means the original observer already has its terminal result.
                 let _ = self.receipt.set(ActivationOutcome::Failed(reason));
                 return Ok(true);
             }
@@ -641,6 +643,7 @@ impl Creation {
             .find_surface_by_id(surface)
             .and_then(|surface| surface.activation_generation);
         let physical = session.runtime.terminals.generation(surface);
+        // Publication can be observed again; preserve the first exact activation receipt.
         let _ = self.receipt.set(ActivationOutcome::Ready {
             activation,
             physical,
@@ -962,6 +965,7 @@ impl Drop for Creation {
             Stage::Failed(reason) | Stage::Uncertain { reason } => reason.clone(),
             _ => "activation owner ended without a published resource receipt".into(),
         };
+        // Drop must not overwrite an already published Ready or previously reported failure.
         let _ = self.receipt.set(ActivationOutcome::Failed(reason));
     }
 }

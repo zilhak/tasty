@@ -62,7 +62,13 @@ impl PendingAttach {
         }
         match self.target {
             Target::Surface(id) => {
-                let _ = engine.live.occupancy.release(id, self.client);
+                if let Err(error) = engine.live.occupancy.release(id, self.client) {
+                    tracing::warn!(
+                        ?error,
+                        surface = id,
+                        "current attach activation release failed"
+                    );
+                }
             }
             Target::Workspace(id) => {
                 engine.live.occupancy.force_detach_workspace(id);

@@ -244,7 +244,7 @@ impl CreationAssembly {
                     split: *split,
                 });
             }
-            AssemblyDestination::Tab { pane, index } => {
+            AssemblyDestination::Tab { pane, .. } => {
                 if let Some(tab) = tabs.get_mut(&self.snapshot.root.id) {
                     tab.pane = *pane;
                 } else {
@@ -259,7 +259,6 @@ impl CreationAssembly {
                         tabs: vec![self.snapshot.root.id],
                     },
                 );
-                let _ = index;
             }
         }
         for (pane_id, pane) in &panes {

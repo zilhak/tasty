@@ -81,6 +81,7 @@ impl App {
         });
 
         for session in self.engines.all_sessions_mut() {
+            // Begin stop now; the retained session receipt is observed by the shutdown phase.
             let _ = session.poll_runner_stop(&self.services.tasks);
         }
         self.port_scans.begin_shutdown();

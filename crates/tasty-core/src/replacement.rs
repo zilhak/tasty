@@ -19,7 +19,7 @@ impl Replacement {
         let mut next = model.clone();
         match self.source.kind {
             IdKind::Surface => {
-                let source = model
+                model
                     .surfaces
                     .get(&self.source.id)
                     .ok_or_else(|| Rejection("source surface missing".into()))?;
@@ -40,7 +40,6 @@ impl Replacement {
                     .get_mut(&self.source.id)
                     .ok_or_else(|| Rejection("moved source disappeared".into()))?
                     .tab = target.tab;
-                let _ = source;
             }
             IdKind::Tab => {
                 let source = model

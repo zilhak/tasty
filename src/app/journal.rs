@@ -447,15 +447,7 @@ impl JournalApplication {
     }
     #[cfg(feature = "gui")]
     pub(super) fn has_forward(&self, id: EngineId) -> bool {
-        #[cfg(feature = "gui")]
-        {
-            return self.forwards.values().any(|forward| forward.engine == id);
-        }
-        #[cfg(not(feature = "gui"))]
-        {
-            let _ = id;
-            false
-        }
+        self.forwards.values().any(|forward| forward.engine == id)
     }
     #[cfg(feature = "gui")]
     pub(crate) fn has_pending_engine_effects(&self, id: EngineId) -> bool {

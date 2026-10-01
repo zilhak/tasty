@@ -721,6 +721,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
 
     loop {
         if !app.journal.is_halted() && !app.journal.pauses_observation() {
+            // The service applies/logs results; headless has no popup to receive display updates.
             let _ = app.services.profile_detections.poll();
             engine.poll_attach_subscriptions();
             crate::intent::headless::drain_pending_intents_in_app(
@@ -797,6 +798,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     }
     drop(engine);
     app.journal.begin_process_shutdown();
+    // Begin stop now; the loop below observes this same retained receipt until its deadline.
     let _ = session.poll_runner_stop(&app.services.tasks);
     app.services.profile_detections.begin_shutdown();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);

@@ -162,3 +162,5 @@ EngineRef/EngineMut의 참조 필드와 Session의 암묵적 Deref를 검사한�
 슬롯의 레거시 레이아웃 이관이 성공했고 최초 incarnation을 명시적으로 복원할 때, worker는 이관 기록에서 정리 여부만 반환한다. App은 실행 자원 복원 전에 PTY 범위를 침범한 Surface scope를 기존 메모리 저장소에서 삭제하고 오류를 기록한다. 삭제는 해당 scope의 regular·secret 영역에 함께 적용된다. 같은 incarnation을 다시 복원하면 DB View checkpoint가 있어도 이 정리를 재시도한다. 새 incarnation, 복원 비활성, headless 새 시작, 이관 실패, 다른 저널의 명시적 가져오기는 이 레거시 정리를 실행하지 않는다. 메모리 쓰기 소유권은 App에 있고 worker에는 전달하지 않는다.
 
 원격 구조 요청의 내부 durable correlation은 client·runtime epoch·op_id와 원 연결 registration을 보존한다. 128비트 registration은 JSON 숫자 범위로 잘리지 않도록 십진 문자열로 기록한다. StreamControl의 공개 wire와 원 연결의 Weak binding 검증은 이 표현 변경과 독립이며, correlation을 재시도 키로 사용하지 않는다.
+
+실행 정리의 관측값은 수명과 구분한다. runner의 첫 stop 호출 결과를 사용하지 않아도 원 receipt는 EngineSession 또는 RunnerRegistry에 남아 후속 poll이 실제 join을 관측한다. activation의 OnceLock은 최초 Ready/Failed만 전달하며, 반복 publication이나 Drop이 이미 전달한 결과를 덮어쓰지 않는다. 점유 해제의 예상 밖 실패는 로그로 남긴다.
