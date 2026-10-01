@@ -530,3 +530,5 @@ mod engine_creation_failure_tests {
         ));
     }
 }
+
+pub(crate) use finders::mirror_workspace_index_for_structural;

@@ -154,13 +154,10 @@ impl App {
         });
         if let Some(session) = self.engines.get(id)
             && session
-                .core_state
                 .mirror_workspace_index_for_structural(&intent)
                 .is_some()
-            && let Some(op) = crate::app::services::impl_mirror::build_mirror_forward_op(
-                &session.core_state,
-                &intent,
-            )
+            && let Some(op) =
+                crate::app::services::impl_mirror::build_mirror_forward_op(session.core, &intent)
         {
             self.journal
                 .admit_remote_intent(id, op, &origin, continuation, Vec::new());

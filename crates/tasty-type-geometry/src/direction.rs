@@ -1,7 +1,7 @@
 //! 방향 enum. 분할 / 포커스 이동의 방향 표현.
 
 /// 분할 방향. `PhysicalRect::split` 에 전달.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SplitDirection {
     Horizontal,
     Vertical,

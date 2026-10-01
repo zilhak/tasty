@@ -11,14 +11,14 @@ impl App {
         for (_, main, mut engine) in self.engines_mut().window_pairs() {
             let mut changed = crate::app::services::AppServices::update_busy_surfaces(&mut engine);
             // 상태바는 포커스된 surface만 표시하므로 불필요한 Git 조회를 피한다.
-            let focused = main.state.focused_surface_id(engine.core);
+            let focused = main.state.focused_surface_id(&engine.read());
             changed |= main
                 .state
-                .refresh_status_bar_branch(&engine.as_ref(), focused);
+                .refresh_status_bar_branch(&engine.read(), focused);
             engine.forward_busy_activity(&hub);
             engine.forward_attention(&hub);
             engine.forward_surface_cwd(&hub);
-            close_stale_mouse_capture_banners(&mut main.state, engine.core);
+            close_stale_mouse_capture_banners(&mut main.state, &engine.read());
             if changed {
                 main.mark_dirty();
             }
@@ -36,7 +36,7 @@ impl App {
 /// foreground 세대가 바뀌면 마우스 캡처 배너만 닫는다. 같은 surface의 다른 배너는 유지한다.
 fn close_stale_mouse_capture_banners(
     state: &mut crate::state::MainViewState,
-    core_state: &crate::core::CoreState,
+    core_state: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     use crate::adapters::ui::BannerScope;
     use crate::adapters::ui::banner::defs::BANNER_MOUSE_CAPTURE;

@@ -1945,7 +1945,7 @@ impl App {
     ) {
         use tasty_ipc::stream_hub::ListDirRequestMsg;
         let ListDirRequestMsg::ListDirRequest { request_id, dir } = msg;
-        if let Some(engine) = find_workspace_holder_engine_mut(self.engines_mut(), client_id) {
+        if let Some(mut engine) = find_workspace_holder_engine_mut(self.engines_mut(), client_id) {
             crate::remote::server::handle_list_dir_request(
                 &mut engine,
                 hub,
@@ -1979,7 +1979,7 @@ impl App {
             request_id,
             surface_id,
         } = msg;
-        if let Some(engine) = find_workspace_holder_engine_mut(self.engines_mut(), client_id) {
+        if let Some(mut engine) = find_workspace_holder_engine_mut(self.engines_mut(), client_id) {
             crate::remote::server::handle_markdown_content_request(
                 &mut engine,
                 hub,

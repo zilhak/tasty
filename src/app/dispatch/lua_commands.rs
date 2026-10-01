@@ -64,6 +64,7 @@ impl App {
             }
             if let Some((main, mut engine)) = engines_mut!(self).window_pair(id) {
                 engine
+                    .runtime
                     .settings
                     .scripts
                     .update_hash(&pending.script_id, pending.new_hash.clone());

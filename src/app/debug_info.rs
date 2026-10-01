@@ -7,7 +7,7 @@ use crate::state::MainViewState;
 
 pub fn collect(
     state: &MainViewState,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     gpu: Option<&GpuState>,
     ime_active: bool,
 ) -> Value {
@@ -28,7 +28,7 @@ pub fn collect(
         info.insert("viewport_height".into(), json!(size.height));
     }
 
-    let appearance = &engine.runtime.settings.appearance;
+    let appearance = &engine.settings.appearance;
     let term_eff = appearance.effective_terminal_font();
     let md_eff = appearance.effective_font_for_kind("markdown");
     info.insert(

@@ -377,6 +377,9 @@ impl Request {
 
     pub fn reservation(&mut self) -> Result<Work, String> {
         let mut kinds = match self.plan.destination {
+            CreationDestination::Assembly { .. } => {
+                return Err("assembly reservations belong to the coordinator".into());
+            }
             CreationDestination::Workspace { .. } => {
                 vec![(IdKind::Workspace, 1), (IdKind::Pane, 1), (IdKind::Tab, 1)]
             }
@@ -617,10 +620,11 @@ impl JournalApplication {
         session: &EngineSession,
         cwd: Option<std::path::PathBuf>,
     ) {
+        let has_creation = self.has_creation(session.id);
         let Some(pending) = self.commands.pending.get_mut(&ticket) else {
             return;
         };
-        if self.has_creation(session.id) {
+        if has_creation {
             pending.needs_resolution = true;
             return;
         }
@@ -642,10 +646,11 @@ impl JournalApplication {
     }
 
     pub(crate) fn resolve_fixed_creation(&mut self, ticket: u64, session: &EngineSession) {
+        let has_creation = self.has_creation(session.id);
         let Some(pending) = self.commands.pending.get_mut(&ticket) else {
             return;
         };
-        if self.has_creation(session.id) {
+        if has_creation {
             pending.needs_resolution = true;
             return;
         }

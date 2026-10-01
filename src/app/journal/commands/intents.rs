@@ -26,7 +26,7 @@ impl JournalApplication {
             scope,
         } = intent
         {
-            if core.mirror_workspace_index_for_structural(intent).is_some() {
+            if crate::core::state::mirror_workspace_index_for_structural(core, intent).is_some() {
                 return false;
             }
             let scope = match scope {
@@ -111,7 +111,7 @@ impl JournalApplication {
             _ => None,
         };
         if let Some((target, capture, user_close, expected)) = close {
-            if core.mirror_workspace_index_for_structural(intent).is_some() {
+            if crate::core::state::mirror_workspace_index_for_structural(core, intent).is_some() {
                 return false;
             }
             let mut params =
@@ -134,7 +134,7 @@ impl JournalApplication {
             return true;
         }
         if let Some(spec) = super::create_spec::Spec::from_intent(intent) {
-            if core.mirror_workspace_index_for_structural(intent).is_some() {
+            if crate::core::state::mirror_workspace_index_for_structural(core, intent).is_some() {
                 return false;
             }
             self.admit_intent_request(

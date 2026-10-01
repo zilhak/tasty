@@ -66,7 +66,7 @@ impl Decider for StructureDecider {
                 resolved: encoded_resolution(
                     &command.changes,
                     &command.response,
-                    command.completion_view,
+                    command.completion_view.clone(),
                 )?,
                 response: super::ResponsePlan::rejected(&error),
             }),
@@ -171,7 +171,7 @@ impl StructureDecider {
             resolved: encoded_resolution(
                 &resolved_changes,
                 &command.response,
-                command.completion_view,
+                command.completion_view.clone(),
             )?,
             response: match &command.response {
                 Some(response) => {

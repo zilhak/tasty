@@ -73,6 +73,14 @@ impl SurfaceBinding {
 }
 #[derive(Clone, Debug)]
 pub(crate) enum SettingsPatch {
+    PluginZoom {
+        plugin: String,
+        value: f64,
+    },
+    FontSize {
+        kind: Option<String>,
+        size: Option<f32>,
+    },
     ExplorerMode(String),
     SuppressMouseHint(String),
     DisableMouseCapture(String),
@@ -80,6 +88,22 @@ pub(crate) enum SettingsPatch {
 impl SettingsPatch {
     pub(crate) fn apply(&self, settings: &mut crate::settings::Settings) {
         match self {
+            Self::PluginZoom { plugin, value } => settings.set_plugin_setting(
+                plugin,
+                "zoom",
+                crate::settings::PluginSettingValue::Number(*value),
+            ),
+            Self::FontSize { kind, size } => {
+                let font = match kind {
+                    Some(kind) => settings
+                        .appearance
+                        .plugin_font_overrides
+                        .entry(kind.clone())
+                        .or_default(),
+                    None => &mut settings.appearance.terminal_font,
+                };
+                font.font_size = *size;
+            }
             Self::ExplorerMode(mode) => settings.general.explorer_view_mode = mode.clone(),
             Self::SuppressMouseHint(name) => settings
                 .general
@@ -169,6 +193,12 @@ pub(crate) enum EngineAction {
     },
     RemoteMeshFull {
         targets: Vec<SurfaceBinding>,
+    },
+    #[cfg(feature = "gui")]
+    ListDirectory {
+        request: crate::core::PendingListDirForward,
+        projection: std::sync::Weak<()>,
+        target: Option<SurfaceBinding>,
     },
     DefaultGrid {
         cols: usize,
@@ -512,6 +542,20 @@ impl EngineAction {
                 engine.live.last_key_input.insert(target.surface, *at);
             }
             Self::RecordTyping { .. } => {}
+            #[cfg(feature = "gui")]
+            Self::ListDirectory {
+                request,
+                projection,
+                target,
+            } => {
+                if engine.matches_mirror_projection(request.local_ws_id, projection)
+                    && target
+                        .as_ref()
+                        .is_none_or(|target| target.current(&engine.as_ref()))
+                {
+                    engine.remote.pending_list_dir_forward.push(request.clone());
+                }
+            }
             Self::DefaultGrid { cols, rows } => {
                 engine.runtime.default_cols = *cols;
                 engine.runtime.default_rows = *rows;

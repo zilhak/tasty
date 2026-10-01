@@ -27,7 +27,11 @@ pub(super) fn relay_subscribed_mesh(
         let _ = engine.remote.mesh_mirror.take_dirty(sid);
 
         if mgr.egui_mesh_frame(sid).is_none() {
-            let Some(ms) = engine.as_ref().find_egui_mesh_surface(sid) else {
+            let Some(ms) = engine.runtime.surfaces.get(&sid).and_then(|surface| {
+                surface
+                    .as_any()
+                    .downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>()
+            }) else {
                 engine.remote.mesh_mirror.remove(sid);
                 continue;
             };

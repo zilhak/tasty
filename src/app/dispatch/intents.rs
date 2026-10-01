@@ -5,6 +5,7 @@ use crate::app::window_access::{DispatchCtx, engines_mut};
 use crate::ipc;
 use crate::runtime::engine_access::EngineMut;
 use crate::runtime::engine_session::EngineId;
+use crate::view::ui::View;
 
 enum IntentClass {
     Domain,

@@ -115,8 +115,12 @@ impl App {
 
         #[cfg(debug_assertions)]
         if cmd.request.method == "debug.info" {
-            let debug_data =
-                crate::debug_info::collect(&w.state, engine.core, Some(&w.base.gpu), w.ime_active);
+            let debug_data = crate::debug_info::collect(
+                &w.state,
+                &engine.read(),
+                Some(&w.base.gpu),
+                w.ime_active,
+            );
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 debug_data,

@@ -193,7 +193,7 @@ fn reorder(request: &JsonRpcRequest, session: &EngineSession) -> Result<Resolved
         let source = order.remove(from);
         order.insert(to, source);
         if core
-            .local_workspaces
+            .local_workspaces()
             .iter()
             .any(|workspace| workspace.id == source)
         {
@@ -214,7 +214,7 @@ fn reorder(request: &JsonRpcRequest, session: &EngineSession) -> Result<Resolved
         Some(DisplayContinuation {
             engine: session.id,
             mirrors: core
-                .mirror_workspaces
+                .mirror_workspaces()
                 .iter()
                 .map(|workspace| {
                     (

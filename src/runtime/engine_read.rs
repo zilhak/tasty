@@ -221,6 +221,13 @@ impl<'a> EngineRead<'a> {
 #[derive(Clone, Copy)]
 pub(crate) struct HandlerCatalog<'a>(&'a crate::file::handler::FileHandlerRegistry);
 impl HandlerCatalog<'_> {
+    pub(crate) fn handler(
+        &self,
+        id: &tasty_file_handler::HandlerId,
+    ) -> Option<tasty_file_handler::FileHandler> {
+        self.0.handler(id)
+    }
+
     pub(crate) fn all_handlers(&self) -> Vec<tasty_file_handler::FileHandler> {
         self.0.all_handlers()
     }

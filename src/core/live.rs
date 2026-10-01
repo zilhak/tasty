@@ -30,7 +30,10 @@ pub(crate) struct LiveDomainState {
 impl Default for LiveDomainState {
     fn default() -> Self {
         Self {
-            notifications: crate::notification::NotificationStore::with_coalesce_ms(500),
+            notifications: crate::notification::NotificationStore::with_counter(
+                500,
+                std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
+            ),
             occupancy: Default::default(),
             surface_titles: HashMap::new(),
             last_key_input: HashMap::new(),

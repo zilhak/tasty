@@ -10,6 +10,7 @@ pub(crate) fn resolve(
     intent: &Intent,
     origin: &IntentOrigin,
 ) -> anyhow::Result<Option<DomainIntent>> {
+    let read = engine.read();
     let params_or_empty = |params: &serde_json::Value| {
         if params.is_null() {
             serde_json::json!({})
@@ -30,11 +31,11 @@ pub(crate) fn resolve(
         } => DomainIntent::ApplyPreset {
             kind: *kind,
             name: name.clone(),
-            target_pane_id: state.focused_pane_id(engine.core),
+            target_pane_id: state.focused_pane_id(&read),
             category: *category,
         },
         Intent::RestoreClosedItem => DomainIntent::RestoreClosedItem {
-            target_pane_id: state.focused_pane_id(engine.core),
+            target_pane_id: state.focused_pane_id(&read),
             scope: crate::app::command::RestoreScope::Local,
         },
         Intent::NewWorkspace {
@@ -45,7 +46,7 @@ pub(crate) fn resolve(
             let kind = kind.as_deref().unwrap_or("terminal");
             DomainIntent::CreateWorkspace {
                 cwd: if kind == "terminal" && params.is_null() {
-                    state.resolve_inherit_cwd(engine)
+                    state.resolve_inherit_cwd(&read)
                 } else {
                     None
                 },
@@ -68,9 +69,9 @@ pub(crate) fn resolve(
         Intent::NewTab { kind, params } => {
             let kind = kind.as_deref().unwrap_or("terminal");
             DomainIntent::CreateTab {
-                pane_id: state.focused_pane_id(engine.core),
+                pane_id: state.focused_pane_id(&read),
                 cwd: if kind == "terminal" {
-                    state.resolve_inherit_cwd(engine)
+                    state.resolve_inherit_cwd(&read)
                 } else {
                     None
                 },
@@ -81,20 +82,20 @@ pub(crate) fn resolve(
             }
         }
         Intent::SplitPane { direction } => DomainIntent::SplitPane {
-            target_pane_id: state.focused_pane_id(engine.core),
+            target_pane_id: state.focused_pane_id(&read),
             direction: *direction,
-            cwd: state.resolve_inherit_cwd(engine),
+            cwd: state.resolve_inherit_cwd(&read),
             kind: "terminal".into(),
             surface_params: serde_json::json!({}),
         },
         Intent::SplitSurface { direction } => {
             let target = state
-                .focused_surface_id(engine.core)
+                .focused_surface_id(&read)
                 .ok_or_else(|| anyhow::anyhow!("SplitSurface: no focused surface"))?;
             DomainIntent::SplitSurface {
                 target_surface_id: target,
                 direction: *direction,
-                cwd: state.resolve_inherit_cwd_from_surface(engine, target),
+                cwd: state.resolve_inherit_cwd_from_surface(&read, target),
                 kind: "terminal".into(),
                 surface_params: serde_json::json!({}),
             }
@@ -102,7 +103,7 @@ pub(crate) fn resolve(
         Intent::ConvertSurface { surface_id, target } => {
             let target = match target {
                 ConvertTarget::Terminal => ConvertSurfaceTarget::Terminal {
-                    cwd: state.resolve_inherit_cwd(engine),
+                    cwd: state.resolve_inherit_cwd(&read),
                 },
                 ConvertTarget::Kind { kind, cwd, params } => {
                     let mut params = params.clone();
@@ -110,9 +111,9 @@ pub(crate) fn resolve(
                         definition.normalize_param_aliases(&mut params);
                     }
                     ConvertSurfaceTarget::Kind {
-                        cwd: cwd.clone().or_else(|| {
-                            state.resolve_inherit_cwd_from_surface(engine, *surface_id)
-                        }),
+                        cwd: cwd
+                            .clone()
+                            .or_else(|| state.resolve_inherit_cwd_from_surface(&read, *surface_id)),
                         kind: kind.clone(),
                         params,
                     }

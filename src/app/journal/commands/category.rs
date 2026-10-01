@@ -65,7 +65,7 @@ pub(super) fn resolve(
                 return Err(bad("the 'normal' category is fixed at position 0"));
             }
             let category = core
-                .categories
+                .categories()
                 .get(from)
                 .ok_or_else(|| bad("category index out of range"))?
                 .id;

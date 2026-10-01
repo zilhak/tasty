@@ -1,5 +1,6 @@
 //! Nonblocking preset capture entry points; saved data outlives its originating View.
 use super::{App, journal::PresetCaptureReply};
+use crate::view::ui::View;
 use crate::{
     ipc::{
         protocol::JsonRpcResponse,
@@ -229,7 +230,7 @@ impl App {
         else {
             return;
         };
-        if !main.state.matches_identity(&notice.view) {
+        if !main.base.state.matches_identity(&notice.view) {
             return;
         }
         match notice.result {

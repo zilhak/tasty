@@ -347,7 +347,7 @@ impl App {
         let wheel_line_scroll = self
             .engines()
             .primary()
-            .map(|cs| cs.settings.general.wheel_line_scroll)
+            .map(|cs| cs.runtime.settings.general.wheel_line_scroll)
             .unwrap_or(tasty_settings::DEFAULT_WHEEL_LINE_SCROLL);
         // 모달의 CoreState가 아직 없을 수 있으므로 배율은 이 창의 appearance를 사용한다.
         let theme_runtime = tasty_themes::ThemeRuntime {
@@ -355,7 +355,7 @@ impl App {
             ..self
                 .engines()
                 .primary()
-                .map(|cs| cs.settings.theme_runtime())
+                .map(|cs| cs.runtime.settings.theme_runtime())
                 .unwrap_or_default()
         };
         let proxy = self.view.proxy.clone();

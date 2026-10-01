@@ -604,13 +604,15 @@ fn route_engine_handler(
     let origin = intent_origin_of(caller);
     Some(match request.method.as_str() {
         "system.info" => handle_system_info(window, &engine.read(), id),
-        "system.pressure" => pressure::handle_system_pressure(&*core, engine, id),
-        "workspace.list" => workspace::handle_workspace_list(window, engine, id),
+        "system.pressure" => pressure::handle_system_pressure(&*core, &engine.as_ref(), id),
+        "workspace.list" => workspace::handle_workspace_list(window, &engine.as_ref(), id),
         "workspace_category.list" => {
             workspace_category::handle_list(window.presentation(), engine, id)
         }
         "pane.list" => pane::handle_pane_list(window.presentation(), engine, id),
-        "tab.list" => tab::handle_tab_list(window.presentation(), engine, id, &request.params),
+        "tab.list" => {
+            tab::handle_tab_list(window.presentation(), &engine.as_ref(), id, &request.params)
+        }
         // terminal: child-terminal 관리와 점유 검사 (ADR-0021)
         "terminal.spawn" => JsonRpcResponse::internal_error(
             id,
@@ -667,7 +669,9 @@ fn route_engine_handler(
         "surface.send_to" => surface::handle_surface_send_to(core, engine, id, &request.params),
         "surface.set_mark" => surface::handle_set_mark(out, engine, id, &request.params),
         "surface.completion" => surface::handle_completion(out, engine, id, &request.params),
-        "surface.attention.get" => surface::handle_attention_get(engine, id, &request.params),
+        "surface.attention.get" => {
+            surface::handle_attention_get(&engine.as_ref(), id, &request.params)
+        }
         "surface.attention.clear" => {
             surface::handle_attention_clear(out, engine, id, &request.params)
         }
@@ -700,7 +704,7 @@ fn route_engine_handler(
             id,
             "surface.respawn_terminal requires committed structure admission",
         ),
-        "surface.is_typing" => handle_is_typing(engine, id, &request.params),
+        "surface.is_typing" => handle_is_typing(&engine.as_ref(), id, &request.params),
         "surface.send_wait_idle" => handle_send_wait_idle(engine, id, &request.params),
         "surface.fire_hook" => {
             hooks::handle_surface_fire_hook(core, window, engine, id, &request.params)
@@ -709,7 +713,7 @@ fn route_engine_handler(
         "surface.meta.get" => meta::handle_surface_meta_get(core, engine, id, &request.params),
         "surface.meta.unset" => meta::handle_surface_meta_unset(core, engine, id, &request.params),
         "surface.meta.list" => meta::handle_surface_meta_list(core, engine, id, &request.params),
-        "surface.set_cwd" => surface::handle_set_cwd(engine, id, &request.params),
+        "surface.set_cwd" => surface::handle_set_cwd(&engine.as_ref(), id, &request.params),
         "hook.set" => hooks::handle_hook_set(core, engine, id, &request.params),
         "hook.list" => hooks::handle_hook_list(&engine.as_ref(), id, &request.params),
         "hook.unset" => hooks::handle_hook_unset(core, engine, id, &request.params),
@@ -725,7 +729,7 @@ fn route_engine_handler(
         #[cfg(feature = "gui")]
         "webview.set_url" => webview::handle_set_url(engine, caller, id, &request.params),
         #[cfg(feature = "gui")]
-        "surface.html_script" => surface::handle_html_script(engine, id, &request.params),
+        "surface.html_script" => surface::handle_html_script(&engine.as_ref(), id, &request.params),
         // WebView는 surface.set_context를 받지 않아 이 조회로 Theme를 읽는다.
         "theme.query" => theme::handle_query(&engine.read(), id),
         "tree" => handle_tree(window, &engine.read(), id),
@@ -733,7 +737,7 @@ fn route_engine_handler(
         "message.read" => message::handle_message_read(core, engine, id, &request.params),
         "message.count" => message::handle_message_count(engine, id, &request.params),
         "message.clear" => message::handle_message_clear(core, engine, id, &request.params),
-        "notification.list" => notification::handle_notification_list(engine, id),
+        "notification.list" => notification::handle_notification_list(&engine.as_ref(), id),
         "notification.create" => {
             notification::handle_notification_create(out, engine, id, &request.params)
         }
@@ -782,7 +786,7 @@ fn route_engine_handler(
             JsonRpcResponse::internal_error(id, "host conversion bypassed journal admission")
         }
         #[cfg(feature = "gui")]
-        "image.list" => image::handle_list(engine, id),
+        "image.list" => image::handle_list(&engine.as_ref(), id),
         "memory.put" => memory::handle_put(core, engine, caller, id, &request.params),
         "memory.get" => memory::handle_get(core, engine, caller, id, &request.params),
         "memory.delete" => memory::handle_delete(core, engine, caller, id, &request.params),
@@ -1087,10 +1091,12 @@ fn route_debug_handler(
         // surface 이름을 쓰지만 CGEvent/TIS는 OS 전역에 작용한다. debug로 제한한다(ADR-0012).
         #[cfg(all(target_os = "macos", feature = "gui"))]
         "surface.switch_input_source" => {
-            input_source::handle_switch_input_source(state, engine, id, &request.params)
+            input_source::handle_switch_input_source(state, &engine.as_ref(), id, &request.params)
         }
         #[cfg(all(target_os = "macos", feature = "gui"))]
-        "surface.raw_key" => input_source::handle_raw_key(state, engine, id, &request.params),
+        "surface.raw_key" => {
+            input_source::handle_raw_key(state, &engine.as_ref(), id, &request.params)
+        }
         // CLI와 메서드 표에는 같은 이름이 있으므로 오타 대신 플랫폼 미지원 오류를 반환한다.
         #[cfg(not(all(target_os = "macos", feature = "gui")))]
         "surface.switch_input_source" | "surface.raw_key" => {
@@ -1121,10 +1127,12 @@ fn route_debug_handler(
         }
         #[cfg(feature = "gui")]
         "debug.modifier_hint.hold" => {
-            debug::handle_debug_modhint_hold(state, engine, id, &request.params)
+            debug::handle_debug_modhint_hold(state, &engine.as_ref(), id, &request.params)
         }
         #[cfg(feature = "gui")]
-        "debug.modifier_hint.state" => debug::handle_debug_modhint_state(state, engine, id),
+        "debug.modifier_hint.state" => {
+            debug::handle_debug_modhint_state(state, &engine.as_ref(), id)
+        }
         #[cfg(feature = "gui")]
         "debug.banner.list" => debug::handle_debug_banner_list(state, id),
         #[cfg(feature = "gui")]
@@ -1137,10 +1145,12 @@ fn route_debug_handler(
         }
         // 허용 클릭과 페이지 이동 조작을 재현한다(ADR-0053).
         #[cfg(feature = "gui")]
-        "debug.html_script.allow" => debug_html_script::handle_allow(engine, id, &request.params),
+        "debug.html_script.allow" => {
+            debug_html_script::handle_allow(&engine.as_ref(), id, &request.params)
+        }
         #[cfg(feature = "gui")]
         "debug.webview.history" => {
-            debug_html_script::handle_history(state, engine, id, &request.params)
+            debug_html_script::handle_history(state, &engine.as_ref(), id, &request.params)
         }
         _ => return None,
     })
@@ -1326,7 +1336,7 @@ fn annotate_tree_busy(
 }
 
 fn handle_is_typing(
-    engine: &CoreState,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

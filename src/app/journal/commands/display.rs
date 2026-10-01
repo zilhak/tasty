@@ -71,11 +71,7 @@ impl DisplayContinuation {
                 }
                 // Local metadata already came from the committed projection. Only the remote
                 // display annotation has a volatile write at this boundary.
-                if let Some(workspace) = core
-                    .mirror_workspaces
-                    .iter_mut()
-                    .find(|workspace| workspace.id == id)
-                {
+                if let Some(workspace) = core.mirror_workspace_mut(id) {
                     if let Some(name) = name {
                         workspace.name = name;
                     }
@@ -99,16 +95,18 @@ impl DisplayContinuation {
                 notify,
             } => {
                 let pane_id = core.find_pane_for_tab(tab_id)?;
-                let mirror = core
+                let workspace = core
                     .find_workspace_index_for_pane(pane_id)
                     .and_then(|index| core.workspace_at(index))
-                    .is_some_and(|workspace| workspace.mirror);
-                let tab = core
-                    .find_pane_by_id_mut(pane_id)?
-                    .tabs
-                    .iter_mut()
-                    .find(|tab| tab.id == tab_id)?;
-                if mirror {
+                    .map(|workspace| (workspace.id, workspace.mirror))?;
+                if workspace.1 {
+                    let tab = core
+                        .mirror_workspace_mut(workspace.0)?
+                        .pane_layout_mut()
+                        .find_pane_mut(pane_id)?
+                        .tabs
+                        .iter_mut()
+                        .find(|tab| tab.id == tab_id)?;
                     tab.explicit_name = name;
                 }
                 if let Some(user_direct) = notify {
