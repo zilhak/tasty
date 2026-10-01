@@ -1,6 +1,5 @@
 //! shortcuts 모듈 단위 테스트 — binding parsing/matching + zoom 단축키.
 
-use crate::runtime::engine_access::EngineMut;
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey, SmolStr};
 
 use super::physical_key_to_logical;
@@ -286,149 +285,133 @@ fn fresh_state() -> (
     crate::state::MainViewState,
     crate::runtime::engine_session::EngineSession,
 ) {
-    let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
-    let mut engine_session =
-        crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
-    let mut engine = engine_session.borrow_mut();
-    let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
-        tasty_presets::PresetStore::load_default(),
-    ));
-    let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
-        std::sync::Arc::new(std::sync::Mutex::new(
-            tasty_memory::testing::InMemoryStorage::new(),
+    fixture(false)
+}
+
+fn fixture(
+    categories: bool,
+) -> (
+    crate::state::MainViewState,
+    crate::runtime::engine_session::EngineSession,
+) {
+    use tasty_core::{DomainEvent as E, SurfaceSpec};
+    let mut events = vec![E::CategoryCreated {
+        id: 0,
+        name: "normal".into(),
+        index: 0,
+    }];
+    if categories {
+        for id in 1..=2 {
+            events.push(E::CategoryCreated {
+                id,
+                name: format!("category {id}"),
+                index: id as usize,
+            });
+        }
+    }
+    for id in 1..=3 {
+        events.push(E::WorkspaceCreated {
+            id,
+            name: format!("workspace {id}"),
+            category: if categories { id - 1 } else { 0 },
+            index: (id - 1) as usize,
+            pane: id,
+        });
+        for index in 0..3 {
+            let tab = id * 10 + index;
+            events.push(E::TabCreated {
+                id: tab,
+                pane: id,
+                index: index as usize,
+                name: "terminal".into(),
+                surface: SurfaceSpec {
+                    id: tab,
+                    kind: "terminal".into(),
+                    data: None,
+                },
+            });
+        }
+    }
+    let (state, mut engine) =
+        crate::state::tests::test_state_from_model(crate::state::tests::test_model(events));
+    engine.runtime.settings.general.workspace_categories_enabled = categories;
+    engine.runtime.settings.keybindings = crate::settings::KeybindingSettings::default();
+    (state, engine)
+}
+
+#[test]
+fn zoom_shortcuts_queue_relative_changes_without_mutating_settings() {
+    use crate::app::engine_action::{SettingsPatch, ZoomChange};
+    for (key, expected) in [
+        ("=", ZoomChange::In),
+        ("-", ZoomChange::Out),
+        ("0", ZoomChange::Reset),
+    ] {
+        let (mut state, mut owner) = fresh_state();
+        let mut engine = owner.borrow_mut();
+        engine.runtime.settings.appearance.terminal_font.font_size = Some(20.0);
+        assert!(MainView::handle_zoom_shortcut(
+            &mut state,
+            &engine.read(),
+            &k_char(key),
+            ModifiersState::CONTROL
         ));
-    let state = crate::state::MainViewState::new(&mut engine, preset_store, memory);
-    (state, engine_session)
+        assert_eq!(
+            engine.runtime.settings.appearance.terminal_font.font_size,
+            Some(20.0)
+        );
+        let intents = state.take_pending_intents();
+        assert_eq!(intents.len(), 1);
+        assert!(intents[0].origin.is_user());
+        let crate::intent::Intent::PatchSettings(SettingsPatch::FontSize { kind, change }) =
+            &intents[0].body
+        else {
+            panic!("font change request")
+        };
+        assert!(kind.is_none());
+        assert!(matches!(
+            (change, expected),
+            (ZoomChange::In, ZoomChange::In)
+                | (ZoomChange::Out, ZoomChange::Out)
+                | (ZoomChange::Reset, ZoomChange::Reset)
+        ));
+    }
 }
 
 #[test]
-fn zoom_in_increments_terminal_font_size_override_only() {
-    let (mut state, mut engine_session) = fresh_state();
-    let mut engine = engine_session.borrow_mut();
-    // Pin the default so the test is independent of the user's settings file.
-    engine.runtime.settings.appearance.default_font.font_size = 14.0;
-    engine.runtime.settings.appearance.terminal_font.font_size = None;
-    engine
-        .runtime
-        .settings
-        .appearance
-        .plugin_font_overrides
-        .clear();
-    let consumed = MainView::handle_zoom_shortcut(
-        &mut state,
-        &mut engine,
-        &k_char("="),
-        ModifiersState::CONTROL,
-    );
-    assert!(consumed);
-    let app = &engine.runtime.settings.appearance;
-    assert_eq!(app.terminal_font.font_size, Some(15.0));
-    assert!(!app.plugin_font_overrides.contains_key("markdown"));
-    assert!(!app.plugin_font_overrides.contains_key("explorer"));
-    assert_eq!(app.default_font.font_size, 14.0);
-}
-
-#[test]
-fn zoom_out_decrements_terminal_font_size_override() {
-    let (mut state, mut engine_session) = fresh_state();
-    let mut engine = engine_session.borrow_mut();
-    engine.runtime.settings.appearance.terminal_font.font_size = Some(20.0);
-    let consumed = MainView::handle_zoom_shortcut(
-        &mut state,
-        &mut engine,
-        &k_char("-"),
-        ModifiersState::CONTROL,
-    );
-    assert!(consumed);
-    assert_eq!(
-        engine.runtime.settings.appearance.terminal_font.font_size,
-        Some(19.0)
-    );
-}
-
-#[test]
-fn zoom_reset_clears_terminal_font_size_override() {
-    let (mut state, mut engine_session) = fresh_state();
-    let mut engine = engine_session.borrow_mut();
-    engine.runtime.settings.appearance.terminal_font.font_size = Some(20.0);
-    let consumed = MainView::handle_zoom_shortcut(
-        &mut state,
-        &mut engine,
-        &k_char("0"),
-        ModifiersState::CONTROL,
-    );
-    assert!(consumed);
-    assert!(
-        engine
-            .runtime
-            .settings
-            .appearance
-            .terminal_font
-            .font_size
-            .is_none()
-    );
-}
-
-#[test]
-fn zoom_in_clamps_at_72px() {
-    let (mut state, mut engine_session) = fresh_state();
-    let mut engine = engine_session.borrow_mut();
-    engine.runtime.settings.appearance.terminal_font.font_size = Some(71.5);
-    MainView::handle_zoom_shortcut(
-        &mut state,
-        &mut engine,
-        &k_char("="),
-        ModifiersState::CONTROL,
-    );
-    assert_eq!(
-        engine.runtime.settings.appearance.terminal_font.font_size,
-        Some(72.0)
-    );
-}
-
-#[test]
-fn zoom_out_clamps_at_6px() {
-    let (mut state, mut engine_session) = fresh_state();
-    let mut engine = engine_session.borrow_mut();
-    engine.runtime.settings.appearance.terminal_font.font_size = Some(6.5);
-    MainView::handle_zoom_shortcut(
-        &mut state,
-        &mut engine,
-        &k_char("-"),
-        ModifiersState::CONTROL,
-    );
-    assert_eq!(
-        engine.runtime.settings.appearance.terminal_font.font_size,
-        Some(6.0)
-    );
-}
-
-// 사용자 설정과 무관하게 기본 quick-switch 설정을 사용한다.
-
-fn add_test_workspace(state: &mut crate::state::MainViewState, engine: &mut EngineMut<'_>) {
-    let event = crate::app::services::apply_create_workspace_inner(
-        engine,
-        crate::app::services::WorkspaceCreationParams::terminal(),
-    )
-    .unwrap();
-    let crate::app::command::CoreEvent::WorkspaceCreated { index, .. } = event else {
-        panic!("apply_create_workspace_inner did not return WorkspaceCreated");
-    };
-    state.set_active_workspace_index(engine, index);
+fn repeated_zoom_input_keeps_each_relative_request() {
+    use crate::app::engine_action::{SettingsPatch, ZoomChange};
+    let (mut state, mut owner) = fresh_state();
+    let engine = owner.borrow_mut();
+    for _ in 0..3 {
+        assert!(MainView::handle_zoom_shortcut(
+            &mut state,
+            &engine.read(),
+            &k_char("="),
+            ModifiersState::CONTROL
+        ));
+    }
+    let intents = state.take_pending_intents();
+    assert_eq!(intents.len(), 3);
+    assert!(intents.iter().all(|intent| matches!(
+        &intent.body,
+        crate::intent::Intent::PatchSettings(SettingsPatch::FontSize {
+            kind: None,
+            change: ZoomChange::In
+        })
+    )));
 }
 
 #[test]
 fn custom_tab_slot_key_switches_correct_tab() {
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
-    state.add_tab(&mut engine).unwrap();
-    state.add_tab(&mut engine).unwrap();
-    state.goto_tab_in_pane(&mut engine, 0);
+    state.goto_tab_in_pane(&engine.read(), 0);
     let mut kb = crate::settings::KeybindingSettings::default();
     kb.set_tab_slot_key(2, "q");
     let consumed = MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("q"),
         mods_ctrl(),
@@ -450,13 +433,11 @@ fn custom_tab_slot_key_switches_correct_tab() {
 fn tab_next_prev_keys_cycle_focused_pane_tabs() {
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
-    state.add_tab(&mut engine).unwrap();
-    state.add_tab(&mut engine).unwrap(); // 3 tabs
-    state.goto_tab_in_pane(&mut engine, 0);
+    state.goto_tab_in_pane(&engine.read(), 0);
     let kb = crate::settings::KeybindingSettings::default(); // next="l", prev="h", modifier ctrl
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("l"),
         mods_ctrl(),
@@ -473,7 +454,7 @@ fn tab_next_prev_keys_cycle_focused_pane_tabs() {
     );
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("h"),
         mods_ctrl(),
@@ -494,13 +475,11 @@ fn tab_next_prev_keys_cycle_focused_pane_tabs() {
 fn workspace_next_prev_keys_trigger_category_switch() {
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
-    add_test_workspace(&mut state, &mut engine); // ws 1
-    add_test_workspace(&mut state, &mut engine); // ws 2
-    state.switch_workspace(&mut engine, 0);
+    state.switch_workspace(&engine.read(), 0);
     let kb = crate::settings::KeybindingSettings::default(); // next="j", prev="k", modifier alt
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("j"),
         mods_alt(),
@@ -512,7 +491,7 @@ fn workspace_next_prev_keys_trigger_category_switch() {
     assert_eq!(state.active_workspace_index(&engine), 1);
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("k"),
         mods_alt(),
@@ -528,13 +507,11 @@ fn workspace_next_prev_keys_trigger_category_switch() {
 fn workspace_slot_key_switches_workspace() {
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
-    add_test_workspace(&mut state, &mut engine); // ws 1
-    add_test_workspace(&mut state, &mut engine); // ws 2
-    state.switch_workspace(&mut engine, 0);
+    state.switch_workspace(&engine.read(), 0);
     let kb = crate::settings::KeybindingSettings::default(); // slot "2" = index 1
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("2"),
         mods_alt(),
@@ -550,15 +527,14 @@ fn workspace_slot_key_switches_workspace() {
 fn wrong_modifier_and_unbound_key_return_false() {
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
-    state.add_tab(&mut engine).unwrap(); // 2 tabs
-    state.goto_tab_in_pane(&mut engine, 0);
+    state.goto_tab_in_pane(&engine.read(), 0);
     let kb = crate::settings::KeybindingSettings::default();
     let before = state
         .navigation
         .tab_index(state.focused_pane(&engine).unwrap());
     assert!(!MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("1"),
         mods_none(),
@@ -569,7 +545,7 @@ fn wrong_modifier_and_unbound_key_return_false() {
     ));
     assert!(!MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("z"),
         mods_ctrl(),
@@ -588,19 +564,14 @@ fn wrong_modifier_and_unbound_key_return_false() {
 
 #[test]
 fn category_combo_routes_to_category_switch() {
-    let (mut state, mut engine_session) = fresh_state();
+    let (mut state, mut engine_session) = fixture(true);
     let mut engine = engine_session.borrow_mut();
     engine.runtime.settings.general.workspace_categories_enabled = true;
-    add_test_workspace(&mut state, &mut engine); // ws0 (normal)
-    add_test_workspace(&mut state, &mut engine); // ws1
-    let cat = engine.create_category("Services").unwrap();
-    let ws1_id = engine.workspace_at(1).expect("workspace index is valid").id;
-    engine.set_workspace_category(ws1_id, cat).unwrap();
-    state.switch_workspace(&mut engine, 0); // active = ws0 (normal)
+    state.switch_workspace(&engine.read(), 0); // active = ws0 (normal)
     let kb = crate::settings::KeybindingSettings::default(); // cat=ctrl+shift, slot "2"=섹션 index 1
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("2"),
         mods_ctrl_shift(),
@@ -614,23 +585,15 @@ fn category_combo_routes_to_category_switch() {
 
 #[test]
 fn category_next_prev_keys_cycle_categories() {
-    let (mut state, mut engine_session) = fresh_state();
+    let (mut state, mut engine_session) = fixture(true);
     let mut engine = engine_session.borrow_mut();
     engine.runtime.settings.general.workspace_categories_enabled = true;
-    add_test_workspace(&mut state, &mut engine); // ws1
-    add_test_workspace(&mut state, &mut engine); // ws2
-    let services = engine.create_category("Services").unwrap();
-    let extra = engine.create_category("Extra").unwrap();
-    let ws1_id = engine.workspace_at(1).expect("workspace index is valid").id;
-    let ws2_id = engine.workspace_at(2).expect("workspace index is valid").id;
-    engine.set_workspace_category(ws1_id, services).unwrap();
-    engine.set_workspace_category(ws2_id, extra).unwrap();
-    state.switch_workspace(&mut engine, 0); // active = ws0 (normal)
+    state.switch_workspace(&engine.read(), 0); // active = ws0 (normal)
     let kb = crate::settings::KeybindingSettings::default();
 
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("j"),
         mods_ctrl_shift(),
@@ -642,7 +605,7 @@ fn category_next_prev_keys_cycle_categories() {
     assert_eq!(state.active_workspace_index(&engine), 1);
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("j"),
         mods_ctrl_shift(),
@@ -654,7 +617,7 @@ fn category_next_prev_keys_cycle_categories() {
     assert_eq!(state.active_workspace_index(&engine), 2);
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("k"),
         mods_ctrl_shift(),
@@ -671,12 +634,11 @@ fn category_next_prev_keys_noop_when_folders_disabled() {
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
     engine.runtime.settings.general.workspace_categories_enabled = false;
-    add_test_workspace(&mut state, &mut engine);
-    state.switch_workspace(&mut engine, 0);
+    state.switch_workspace(&engine.read(), 0);
     let kb = crate::settings::KeybindingSettings::default();
     assert!(!MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("j"),
         mods_ctrl_shift(),
@@ -692,9 +654,7 @@ fn category_next_prev_keys_noop_when_folders_disabled() {
 fn individual_tab_axis_slot_and_next_prev_dispatch() {
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
-    state.add_tab(&mut engine).unwrap();
-    state.add_tab(&mut engine).unwrap(); // 3 tabs
-    state.goto_tab_in_pane(&mut engine, 0);
+    state.goto_tab_in_pane(&engine.read(), 0);
     let mut kb = crate::settings::KeybindingSettings {
         tab_switch_modifier: crate::settings::KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER
             .to_string(),
@@ -706,7 +666,7 @@ fn individual_tab_axis_slot_and_next_prev_dispatch() {
 
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("q"),
         mods_ctrl_alt(),
@@ -723,7 +683,7 @@ fn individual_tab_axis_slot_and_next_prev_dispatch() {
     );
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("h"),
         mods_alt_shift(),
@@ -741,7 +701,7 @@ fn individual_tab_axis_slot_and_next_prev_dispatch() {
     // 개별 지정은 규칙 기반 대상 조회에서 제외한다.
     assert!(!MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("1"),
         mods_ctrl(),
@@ -762,9 +722,7 @@ fn individual_tab_axis_slot_and_next_prev_dispatch() {
 fn individual_workspace_axis_slot_dispatch() {
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
-    add_test_workspace(&mut state, &mut engine); // ws 1
-    add_test_workspace(&mut state, &mut engine); // ws 2
-    state.switch_workspace(&mut engine, 0);
+    state.switch_workspace(&engine.read(), 0);
     let mut kb = crate::settings::KeybindingSettings {
         workspace_switch_modifier: crate::settings::KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER
             .to_string(),
@@ -774,7 +732,7 @@ fn individual_workspace_axis_slot_dispatch() {
 
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("w"),
         mods_ctrl_alt(),
@@ -788,14 +746,10 @@ fn individual_workspace_axis_slot_dispatch() {
 
 #[test]
 fn individual_category_axis_respects_folders_gate() {
-    let (mut state, mut engine_session) = fresh_state();
+    let (mut state, mut engine_session) = fixture(true);
     let mut engine = engine_session.borrow_mut();
     engine.runtime.settings.general.workspace_categories_enabled = true;
-    add_test_workspace(&mut state, &mut engine); // ws0(normal) 이미 있으니 ws1 추가
-    let cat = engine.create_category("Services").unwrap();
-    let ws1_id = engine.workspace_at(1).expect("workspace index is valid").id;
-    engine.set_workspace_category(ws1_id, cat).unwrap();
-    state.switch_workspace(&mut engine, 0);
+    state.switch_workspace(&engine.read(), 0);
     let mut kb = crate::settings::KeybindingSettings {
         category_switch_modifier: crate::settings::KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER
             .to_string(),
@@ -806,7 +760,7 @@ fn individual_category_axis_respects_folders_gate() {
     let mods = ModifiersState::CONTROL | BINDING_ALT | ModifiersState::SHIFT;
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("s"),
         mods,
@@ -817,11 +771,11 @@ fn individual_category_axis_respects_folders_gate() {
     ));
     assert_eq!(state.active_workspace_index(&engine), 1);
 
-    state.switch_workspace(&mut engine, 0);
+    state.switch_workspace(&engine.read(), 0);
     engine.runtime.settings.general.workspace_categories_enabled = false;
     assert!(!MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("s"),
         mods,
@@ -837,15 +791,14 @@ fn individual_category_axis_respects_folders_gate() {
 fn axis_combos_do_not_cross_route() {
     let (mut state, mut engine_session) = fresh_state();
     let mut engine = engine_session.borrow_mut();
-    state.add_tab(&mut engine).unwrap(); // 2 tabs
-    state.goto_tab_in_pane(&mut engine, 0);
+    state.goto_tab_in_pane(&engine.read(), 0);
     let kb = crate::settings::KeybindingSettings::default();
     let before = state
         .navigation
         .tab_index(state.focused_pane(&engine).unwrap());
     assert!(!MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("2"),
         mods_ctrl_shift(),
@@ -862,7 +815,7 @@ fn axis_combos_do_not_cross_route() {
     );
     assert!(MainView::handle_numeric_switch_shortcuts(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &k_char("2"),
         mods_ctrl(),
@@ -906,44 +859,47 @@ fn default_new_workspace_key_mods() -> (Key, ModifiersState) {
 
 #[test]
 fn focused_workspace_category_returns_active_workspace_category() {
-    let (mut state, mut engine_session) = fresh_state();
+    let (mut state, mut engine_session) = fixture(true);
     let mut engine = engine_session.borrow_mut();
-    let work = engine.create_category("Work").unwrap();
-    add_test_workspace(&mut state, &mut engine); // ws1, 아직 normal
-    let ws1_id = engine.workspace_at(1).expect("workspace index is valid").id;
-    engine.set_workspace_category(ws1_id, work).unwrap();
-    state.switch_workspace(&mut engine, 1);
+    let work = 1;
+    state.switch_workspace(&engine.read(), 1);
 
     assert_eq!(
-        super::focused_workspace_category(&state, &engine),
+        super::focused_workspace_category(&state, &engine.read()),
         Some(work)
     );
 }
 
 #[test]
 fn focused_workspace_category_is_none_when_parked() {
-    let (state, mut engine_session) = fresh_state();
-    let mut engine = engine_session.borrow_mut();
-    engine.replace_local_workspaces(Vec::new()); // parked 상태 (마지막 윈도우가 닫힌 뒤) 재현.
-    assert_eq!(super::focused_workspace_category(&state, &engine), None);
+    let (state, mut owner) =
+        crate::state::tests::test_state_from_model(crate::state::tests::test_model(vec![
+            tasty_core::DomainEvent::CategoryCreated {
+                id: 0,
+                name: "normal".into(),
+                index: 0,
+            },
+        ]));
+    let engine = owner.borrow_mut();
+    assert_eq!(
+        super::focused_workspace_category(&state, &engine.read()),
+        None
+    );
 }
 
 #[test]
 fn shortcut_new_workspace_inherits_active_category() {
-    let (mut state, mut engine_session) = fresh_state();
+    let (mut state, mut engine_session) = fixture(true);
     let mut engine = engine_session.borrow_mut();
-    let work = engine.create_category("Work").unwrap();
-    add_test_workspace(&mut state, &mut engine); // ws1
-    let ws1_id = engine.workspace_at(1).expect("workspace index is valid").id;
-    engine.set_workspace_category(ws1_id, work).unwrap();
-    state.switch_workspace(&mut engine, 1);
+    let work = 1;
+    state.switch_workspace(&engine.read(), 1);
 
     let kb = crate::settings::KeybindingSettings::default();
     let (key, mods) = default_new_workspace_key_mods();
 
     assert!(MainView::match_create_bindings(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &key,
         mods
@@ -969,7 +925,7 @@ fn shortcut_new_workspace_stays_normal_when_categories_off() {
 
     assert!(MainView::match_create_bindings(
         &mut state,
-        &mut engine,
+        &engine.read(),
         &kb,
         &key,
         mods
