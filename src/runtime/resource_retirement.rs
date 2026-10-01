@@ -360,6 +360,11 @@ pub(crate) struct EngineRelease {
     warned: bool,
 }
 impl EngineRelease {
+    #[cfg(all(test, unix))]
+    pub(crate) fn retained_pty_generations(&self) -> Vec<tasty_terminal::ResourceGeneration> {
+        self.ptys.iter().map(PtyRetirement::generation).collect()
+    }
+
     pub(crate) fn retain_installation(
         &mut self,
         installed: crate::runtime::effect_runner::Installed,

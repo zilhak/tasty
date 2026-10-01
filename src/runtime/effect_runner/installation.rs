@@ -62,6 +62,23 @@ struct PendingSubmit {
 }
 
 impl Installed {
+    #[cfg(test)]
+    pub(crate) fn with_test_retirement(
+        lease: EffectLease,
+        receipt: crate::plugin_bridge::host_cmd::RemoteRetirementReceipt,
+    ) -> Self {
+        Self {
+            lease,
+            #[cfg(feature = "gui")]
+            previous_resource: None,
+            surface_id: 1,
+            retirement: None,
+            remote_retirements: vec![receipt],
+            installed_generation: None,
+            input: None,
+        }
+    }
+
     pub(crate) fn reconciliation_evidence(
         &self,
         engine: &crate::runtime::engine_access::EngineRef<'_>,

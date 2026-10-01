@@ -37,16 +37,57 @@ pub(super) struct Creation {
     preparation_acked: bool,
     one_shot_input: Option<String>,
     queued: Option<Work>,
-    uncertain_installed: Option<Installed>,
-    uncertain_discard: Option<(
-        crate::runtime::journal_product::EffectLease,
-        Option<tasty_terminal::PtyRetirement>,
-        bool,
-        String,
-    )>,
+    uncertain_owner: Option<UncertainOwner>,
     failed_installation: Option<effect_runner::Installation>,
     uncertain_committed: bool,
     next_reconcile: std::time::Instant,
+}
+
+/// An uncertain transition retains either the installed owner or the rejected candidate receipt.
+enum UncertainOwner {
+    Installed(Installed),
+    Discard {
+        lease: crate::runtime::journal_product::EffectLease,
+        retirement: Option<tasty_terminal::PtyRetirement>,
+        discard_committed: bool,
+        reason: String,
+    },
+}
+
+impl UncertainOwner {
+    fn from_stage(stage: Stage) -> Option<Self> {
+        match stage {
+            Stage::Installing { installed, .. }
+            | Stage::Finish(installed)
+            | Stage::AwaitPublication(installed) => Some(Self::Installed(installed)),
+            Stage::Rejected {
+                lease,
+                retirement,
+                discard_committed,
+                reason,
+                ..
+            } => Some(Self::Discard {
+                lease,
+                retirement,
+                discard_committed,
+                reason,
+            }),
+            _ => None,
+        }
+    }
+
+    fn retain_for_release(self, release: &mut crate::runtime::resource_retirement::EngineRelease) {
+        match self {
+            Self::Installed(installed) => release.retain_installation(installed),
+            Self::Discard {
+                retirement: Some(receipt),
+                ..
+            } => release.retain_pty(receipt),
+            Self::Discard {
+                retirement: None, ..
+            } => {}
+        }
+    }
 }
 
 enum Stage {
@@ -104,8 +145,7 @@ impl Creation {
             restore_retry: None,
             restore_failure: None,
             queued: None,
-            uncertain_installed: None,
-            uncertain_discard: None,
+            uncertain_owner: None,
             failed_installation: None,
             uncertain_committed: false,
             next_reconcile: std::time::Instant::now(),
@@ -163,8 +203,7 @@ impl Creation {
             preparation_acked: false,
             one_shot_input: None,
             queued: None,
-            uncertain_installed: None,
-            uncertain_discard: None,
+            uncertain_owner: None,
             failed_installation: None,
             uncertain_committed: false,
             next_reconcile: std::time::Instant::now(),
@@ -241,8 +280,7 @@ impl Creation {
             preparation_acked: false,
             one_shot_input: None,
             queued: Some(admission),
-            uncertain_installed: None,
-            uncertain_discard: None,
+            uncertain_owner: None,
             failed_installation: None,
             uncertain_committed: false,
             next_reconcile: std::time::Instant::now(),
@@ -678,18 +716,10 @@ impl Creation {
     }
 
     fn retain_uncertain(&mut self, reason: String) {
-        match std::mem::replace(&mut self.stage, Stage::Transition) {
-            Stage::Installing { installed, .. }
-            | Stage::Finish(installed)
-            | Stage::AwaitPublication(installed) => self.uncertain_installed = Some(installed),
-            Stage::Rejected {
-                lease,
-                retirement,
-                discard_committed,
-                reason,
-                ..
-            } => self.uncertain_discard = Some((lease, retirement, discard_committed, reason)),
-            _ => {}
+        if let Some(owner) =
+            UncertainOwner::from_stage(std::mem::replace(&mut self.stage, Stage::Transition))
+        {
+            self.uncertain_owner = Some(owner);
         }
         self.uncertain_committed = false;
         self.next_reconcile = std::time::Instant::now() + std::time::Duration::from_secs(1);
@@ -713,7 +743,7 @@ impl Creation {
             return Ok(());
         }
         self.next_reconcile = std::time::Instant::now() + std::time::Duration::from_secs(1);
-        if let Some(installed) = self.uncertain_installed.as_ref() {
+        if let Some(UncertainOwner::Installed(installed)) = self.uncertain_owner.as_ref() {
             if let Some(evidence) =
                 installed.reconciliation_evidence(&session.as_ref(), self.binding.incarnation)
             {
@@ -727,13 +757,17 @@ impl Creation {
                         view,
                     },
                 )?;
-                self.stage = Stage::Finish(
-                    self.uncertain_installed
-                        .take()
-                        .expect("checked installation owner"),
-                );
+                let Some(UncertainOwner::Installed(installed)) = self.uncertain_owner.take() else {
+                    unreachable!("checked installation owner");
+                };
+                self.stage = Stage::Finish(installed);
             }
-        } else if let Some((lease, retirement, discard_committed, reason)) = &self.uncertain_discard
+        } else if let Some(UncertainOwner::Discard {
+            lease,
+            retirement,
+            discard_committed,
+            reason,
+        }) = &self.uncertain_owner
         {
             if retirement.as_ref().is_none_or(|receipt| {
                 receipt.observation().phase == tasty_terminal::PtyPhase::Reaped
@@ -772,11 +806,8 @@ impl Creation {
             } => release.retain_pty(receipt),
             _ => {}
         }
-        if let Some(installed) = self.uncertain_installed.take() {
-            release.retain_installation(installed);
-        }
-        if let Some((_, Some(receipt), _, _)) = self.uncertain_discard.take() {
-            release.retain_pty(receipt);
+        if let Some(owner) = self.uncertain_owner.take() {
+            owner.retain_for_release(release);
         }
         if let Some(installation) = self.failed_installation.take() {
             installation.retire_for_release(release);
@@ -969,3 +1000,6 @@ impl Drop for Creation {
         let _ = self.receipt.set(ActivationOutcome::Failed(reason));
     }
 }
+
+#[cfg(test)]
+mod tests;
