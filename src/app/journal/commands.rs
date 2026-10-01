@@ -687,10 +687,19 @@ impl JournalApplication {
         request: &JsonRpcRequest,
         session: &EngineSession,
     ) -> bool {
-        if self.commands.pending.get(&ticket).is_some_and(|pending| matches!(&pending.reply, Reply::Intent { engine, .. } if *engine != session.id)) {
-        self.reject_resolved_request(ticket, JsonRpcResponse::invalid_params(serde_json::Value::Null, "intent engine no longer exists"));
-        return true;
-    }
+        let wrong_engine = self.commands.pending.get(&ticket).is_some_and(|pending| {
+            matches!(&pending.reply, Reply::Intent { engine, .. } if *engine != session.id)
+        });
+        if wrong_engine {
+            self.reject_resolved_request(
+                ticket,
+                JsonRpcResponse::invalid_params(
+                    serde_json::Value::Null,
+                    "intent engine no longer exists",
+                ),
+            );
+            return true;
+        }
 
         let named =
             crate::core::request_target::request_resource_id(&request.method, &request.params);
