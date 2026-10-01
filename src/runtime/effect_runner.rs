@@ -63,10 +63,29 @@ impl KindRegistration {
     }
 }
 
+pub(crate) struct PreparationFailure {
+    pub(crate) reason:String,
+    pub(crate) uncertain:bool,
+}
+impl std::fmt::Display for PreparationFailure {
+    fn fmt(&self,formatter:&mut std::fmt::Formatter<'_>)->std::fmt::Result {formatter.write_str(&self.reason)}
+}
+
 pub(crate) fn prepare(
+    engine:&mut EngineMut<'_>,
+    binding:&ExecutionBinding,
+    claimed:ClaimedPreparation,
+)->Result<PreparedMaterialization,PreparationFailure> {
+    let mut execution_started=false;
+    prepare_inner(engine,binding,claimed,&mut execution_started)
+        .map_err(|error|PreparationFailure {reason:error.to_string(),uncertain:execution_started})
+}
+
+fn prepare_inner(
     engine: &mut EngineMut<'_>,
     binding: &ExecutionBinding,
     claimed: ClaimedPreparation,
+    execution_started:&mut bool,
 ) -> anyhow::Result<PreparedMaterialization> {
     if binding.stream != claimed.lease.stream
         || binding.runtime_epoch != claimed.lease.runtime_epoch
@@ -85,6 +104,14 @@ pub(crate) fn prepare(
         anyhow::bail!("reserved surface ID already has a live owner");
     }
 
+    // Decode and validate opaque data before acquiring an OS child. A malformed capture must not
+    // drop a newly spawned Pty while reporting a known pre-execution failure.
+    let decoded_capture=claimed.capture.as_deref()
+        .map(crate::core::layout_persistence::import::surface_data::SurfaceData::decode).transpose()?;
+    if decoded_capture.as_ref().is_some_and(|capture|matches!(capture,
+        crate::core::layout_persistence::import::surface_data::SurfaceData::Terminal {..}) != (claimed.input.kind=="terminal")) {
+        anyhow::bail!("activation capture belongs to another kind");
+    }
     let mut scrollback_persist_id = None;
     let metadata=if matches!(claimed.plan.destination,tasty_core::CreationDestination::Pane {..}|tasty_core::CreationDestination::Split {..}) {
         claimed.input.params.get("meta").and_then(|value|value.as_object()).into_iter().flatten().filter_map(|(key,value)|value.as_str().map(|value|(key.clone(),value.to_owned()))).collect()
@@ -113,6 +140,7 @@ pub(crate) fn prepare(
             .restore_command
             .as_ref()
             .map(|command| format!("{command}\r"));
+        *execution_started=true;
         let (mut terminal, pty) = tasty_terminal::spawn_terminal(
             tasty_terminal::TerminalConfig {
                 cols: shell.cols,
@@ -131,9 +159,8 @@ pub(crate) fn prepare(
         if shell.disk_scrollback {
             terminal.enable_disk_scrollback(surface_id);
         }
-        if let Some(bytes) = &claimed.capture {
-            match crate::core::layout_persistence::import::surface_data::SurfaceData::decode(bytes)?
-            {
+        if let Some(capture) = decoded_capture {
+            match capture {
                 crate::core::layout_persistence::import::surface_data::SurfaceData::Terminal {
                     scrollback,
                     scrollback_ref,
@@ -170,7 +197,7 @@ pub(crate) fn prepare(
             None,
         )
     } else if deferred {
-        (Box::new(crate::runtime::surface_restorer::JournalPlaceholder {attempts:0,failure:None,id:surface_id,kind:input.kind.clone(),data:claimed.plan.surface.data,creation_seed:None,activation:Some(tasty_core::Activation {generation:claimed.lease.resource_generation,phase:tasty_core::ActivationPhase::Deferred})}) as Box<dyn crate::model::Surface>,None,None,None)
+        (Box::new(crate::runtime::surface_restorer::JournalPlaceholder {attempts:0,failure:None,recovery_blocked:false,id:surface_id,kind:input.kind.clone(),data:claimed.plan.surface.data,creation_seed:None,activation:Some(tasty_core::Activation {generation:claimed.lease.resource_generation,phase:tasty_core::ActivationPhase::Deferred})}) as Box<dyn crate::model::Surface>,None,None,None)
     } else {
         if let Some(plugin_id) = engine.runtime.surface_registry.withdrawn_by(&input.kind) {
             return Err(crate::runtime::surface_registry::SurfaceKindWithdrawn {
@@ -182,13 +209,12 @@ pub(crate) fn prepare(
         let definition = engine.runtime.surface_registry
             .get_live(&input.kind)
             .ok_or_else(|| anyhow::anyhow!("surface kind {} is not registered", input.kind))?;
-        let restore = match claimed.capture.as_deref() {
-            Some(bytes) => match crate::core::layout_persistence::import::surface_data::SurfaceData::decode(bytes)? {
-                crate::core::layout_persistence::import::surface_data::SurfaceData::Generic { data } => Some(data),
-                _ => anyhow::bail!("generic activation capture belongs to another kind"),
-            },
-            None => input.restore,
+        let restore = match decoded_capture {
+            Some(crate::core::layout_persistence::import::surface_data::SurfaceData::Generic {data})=>Some(data),
+            Some(_)=>unreachable!("capture kind was validated before execution"),
+            None=>input.restore,
         };
+        *execution_started=true;
         let prepared = match restore {
             Some(data) => (definition.restore)(surface_id, &data)?,
             None => (definition.create)(surface_id, input.cwd.as_deref(), &input.params)?,

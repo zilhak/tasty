@@ -14,6 +14,7 @@ pub(crate) struct JournalPlaceholder {
     pub(crate) activation: Option<tasty_core::Activation>,
     pub(crate) attempts:u32,
     pub(crate) failure:Option<String>,
+    pub(crate) recovery_blocked:bool,
 }
 
 impl Surface for JournalPlaceholder {
@@ -46,15 +47,15 @@ pub(crate) struct RestoreInput {
 
 pub(crate) fn describe(engine: &crate::runtime::engine_access::EngineRef<'_>) -> Vec<RestoreInput> {
     let core=engine.core;
-    let shell = crate::core::state::ShellConfig::from_settings(&core.runtime.settings);
+    let shell = crate::core::state::ShellConfig::from_settings(&engine.runtime.settings);
     core.local_workspaces()
         .iter()
         .flat_map(|workspace| workspace.all_surface_ids())
         .filter_map(|id| {
-            let placeholder = engine
-                .find_surface_by_id(id)?
+            let placeholder = engine.runtime.surfaces.get(&id)?
                 .as_any()
                 .downcast_ref::<JournalPlaceholder>()?;
+            if placeholder.recovery_blocked {return None;}
             Some(RestoreInput {
                 surface_id: id,
                 reference: placeholder.data.or(placeholder.creation_seed),
@@ -84,11 +85,11 @@ pub(crate) fn describe(engine: &crate::runtime::engine_access::EngineRef<'_>) ->
                         executable: shell.shell.clone(),
                         arguments: shell.args.clone(),
                         environment: shell.envs.clone(),
-                        cols: core.runtime.default_cols,
-                        rows: core.runtime.default_rows,
-                        scrollback_lines: core.runtime.settings.general.scrollback_lines,
-                        disk_scrollback: core.runtime.settings.performance.scrollback_disk_swap,
-                        startup_command: core.runtime.settings.general.startup_command.clone(),
+                        cols: engine.runtime.default_cols,
+                        rows: engine.runtime.default_rows,
+                        scrollback_lines: engine.runtime.settings.general.scrollback_lines,
+                        disk_scrollback: engine.runtime.settings.performance.scrollback_disk_swap,
+                        startup_command: engine.runtime.settings.general.startup_command.clone(),
                         restore_command: None,
                     }),
                 },
@@ -120,7 +121,9 @@ pub(crate) fn accept_payload(
             return Err("creation seed belongs to another surface kind".into());
         }
         request.input.cwd = seed.cwd;
-        if request.input.kind != "terminal" {
+        if request.input.kind == "terminal" {
+            if let Some(shell)=request.input.shell.as_mut() {shell.restore_command=seed.shell.and_then(|shell|shell.restore_command);}
+        } else {
             request.input.params = seed.params;
             request.input.restore = seed.restore;
         }
@@ -187,8 +190,16 @@ pub(crate) fn initial_terminal_selection(
 /// Install only logical placeholders; selected activation is a separate committed operation.
 pub(crate) fn initialize_instances(session:&mut crate::runtime::engine_session::EngineSession,model:&tasty_core::JournalModel) {
     for (id,surface) in &model.surfaces {
-        session.runtime.surfaces.entry(*id).or_insert_with(||Box::new(JournalPlaceholder {attempts:0,failure:None,
-            id:*id,kind:surface.kind.clone(),data:surface.data,creation_seed:surface.creation_seed,activation:surface.activation,
+        let blocked=model.operations.values().find(|operation|operation.creation.as_ref().is_some_and(|plan|plan.surface.id==*id)
+            && (operation.outcome.is_none() || matches!(operation.outcome,Some(tasty_core::OperationOutcome::Uncertain {..}))));
+        let failure=blocked.map(|operation|format!("resource recovery required for operation {}",operation.id.0));
+        session.runtime.surfaces.entry(*id).or_insert_with(||Box::new(JournalPlaceholder {attempts:0,failure,
+            id:*id,kind:surface.kind.clone(),data:surface.data,creation_seed:surface.creation_seed,activation:surface.activation,recovery_blocked:blocked.is_some(),
         }));
     }
+}
+
+pub(crate) fn recovery_blocked_reason(session:&crate::runtime::engine_session::EngineSession,surface:u32)->Option<&str> {
+    let placeholder=session.runtime.surfaces.get(&surface)?.as_any().downcast_ref::<JournalPlaceholder>()?;
+    placeholder.recovery_blocked.then_some(placeholder.failure.as_deref().unwrap_or("resource recovery is unresolved"))
 }

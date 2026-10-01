@@ -23,7 +23,7 @@ impl JournalApplication {
         self.resource_cleanups.insert(ticket,Cleanup {engine,operation:operation.clone(),phase:Phase::Claim,next_reconcile:std::time::Instant::now(),queued:Some(Work::ClaimRetirement {stream,operation})});
         (self.wake)();Ok(())
     }
-    pub(super) fn poll_resource_cleanup(&mut self,sessions:&mut [&mut EngineSession])->Result<(),String> {
+    pub(super) fn poll_resource_cleanup(&mut self,sessions:&mut [&mut EngineSession],mut plugins:Option<&mut crate::plugin::PluginManager>)->Result<(),String> {
         for (ticket,entry) in &mut self.resource_cleanups {
             if matches!(entry.phase,Phase::Running) {
                 let session=sessions.iter_mut().find(|session|session.id==entry.engine).ok_or("retirement session disappeared")?;
@@ -46,6 +46,7 @@ impl JournalApplication {
                 entry.next_reconcile=std::time::Instant::now()+std::time::Duration::from_secs(1);
                 let session=sessions.iter_mut().find(|session|session.id==entry.engine).ok_or("reconciling owner disappeared")?;
                 let mut owner=session.pending_resource_retirements.remove(&entry.operation).ok_or("retirement receipt owner disappeared")?;
+                owner.retry_owned(&mut session.borrow_mut(),plugins.as_deref_mut());
                 if matches!(owner.outcome(),Some(OperationOutcome::Succeeded)) {
                     if let Err(reason)=owner.finish_metadata(&mut session.borrow_mut()) {tracing::warn!("retirement metadata still requires recovery: {reason}");}
                     if let Some(evidence)=owner.reconciliation_evidence() {

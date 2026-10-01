@@ -224,6 +224,12 @@ impl Creation {
         session: &mut EngineSession,
         value: ResultValue,
     ) -> Result<bool, String> {
+        let value=match value {
+            ResultValue::Stored(record) if !matches!(self.stage,Stage::Admit)=>ResultValue::Executed(crate::runtime::command_executor::Executed {
+                command_id:record.command_id,status:record.status,response:record.response,source:crate::runtime::command_executor::Source::Stored,
+            }),
+            other=>other,
+        };
         let stage = std::mem::replace(&mut self.stage, Stage::Transition);
         self.stage = match (stage, value) {
             (Stage::Admit, ResultValue::NeedsResolution) if self.fixed_plan.is_some() => {
@@ -343,16 +349,15 @@ impl Creation {
                     }
                     Err(error) => {
                         let reason = error.to_string();
-                        self.submit(
-                            worker,
-                            Work::Prepared {
-                                lease,
-                                result: PreparationResult::Failed {
-                                    reason: reason.clone(),
-                                },
-                            },
-                        )?;
-                        Stage::Failed(reason)
+                        if error.uncertain {
+                            self.submit(worker,Work::PreparationUncertain {lease,reason:reason.clone()})?;
+                            self.uncertain_committed=false;
+                            self.next_reconcile=std::time::Instant::now()+std::time::Duration::from_secs(1);
+                            Stage::Uncertain {reason}
+                        } else {
+                            self.submit(worker,Work::Prepared {lease,result:PreparationResult::Failed {reason:reason.clone()}})?;
+                            Stage::Failed(reason)
+                        }
                     }
                 }
             }
