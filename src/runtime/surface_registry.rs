@@ -14,6 +14,7 @@ use crate::model::{Surface, SurfaceId};
 
 pub use builtins::register_builtin_kinds;
 
+#[cfg(test)]
 pub fn snapshot_fn_for<'a>(
     registry: &'a SurfaceKindRegistry,
     instances: &'a std::collections::HashMap<u32, Box<dyn Surface>>,
@@ -433,6 +434,7 @@ impl SurfaceKindRegistry {
     }
 
     /// 철회되지 않은 정의의 Arc 사본. 반환 뒤 등록·철회가 바뀔 수 있다.
+    #[cfg(test)]
     pub fn kinds_snapshot(&self) -> Vec<(&'static str, Arc<SurfaceKindDef>)> {
         self.lock_read()
             .iter()
@@ -728,6 +730,7 @@ pub mod egui_mesh;
 pub mod webview_kind;
 
 impl SurfaceKindRegistry {
+    #[cfg(feature = "gui")]
     pub(super) fn metadata(
         &self,
         kind: &str,

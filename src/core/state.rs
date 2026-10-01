@@ -1,14 +1,10 @@
 use crate::core::CoreState;
 use crate::runtime::engine_access::{EngineMut, EngineRef};
-use std::collections::HashMap;
-use std::sync::Arc;
+#[cfg(test)]
+use tasty_terminal::Waker;
 
-use crate::model::Workspace;
-use crate::notification::NotificationStore;
-use crate::runtime::surface_registry::SurfaceKindRegistry;
 use crate::settings::Settings;
 pub(crate) use message::SurfaceMessage;
-use tasty_terminal::Waker;
 
 pub struct ShellConfig {
     pub shell: String,
@@ -83,14 +79,6 @@ pub(crate) struct AttachMeshContextForward {
 }
 
 impl EngineMut<'_> {
-    /// 키보드·IME·붙여넣기의 사용자 입력 시각을 기록한다. 마우스 보고·파일 열기·에이전트 전송은 제외한다.
-    #[cfg(feature = "gui")]
-    pub fn record_typing(&mut self, surface_id: u32) {
-        self.live
-            .last_key_input
-            .insert(surface_id, std::time::Instant::now());
-    }
-
     pub fn is_typing(&self, surface_id: u32) -> bool {
         if let Some(last) = self.live.last_key_input.get(&surface_id) {
             last.elapsed().as_secs_f64() < 5.0
@@ -148,14 +136,6 @@ impl EngineRef<'_> {
     }
 }
 
-impl EngineMut<'_> {
-    #[cfg(feature = "gui")]
-    pub fn update_grid_size(&mut self, cols: usize, rows: usize) {
-        self.runtime.default_cols = cols;
-        self.runtime.default_rows = rows;
-    }
-}
-
 pub(crate) mod attention;
 mod busy;
 pub mod child_liveness;
@@ -205,6 +185,7 @@ impl EngineMut<'_> {
             .cwd_name = name;
     }
 
+    #[cfg(feature = "gui")]
     pub fn refresh_tab_osc_title(&mut self, surface: u32) {
         if !self.core.has_surface(surface) {
             return;
@@ -223,6 +204,7 @@ impl EngineMut<'_> {
 
 impl EngineRef<'_> {
     /// 트리에서 제거하기 전에 탭의 복원 snapshot을 만든다. 복원 목록에 넣는 일은 호출자가 맡는다.
+    #[cfg(test)]
     pub(crate) fn capture_closed_tab(
         &self,
         pane_id: u32,
@@ -245,6 +227,7 @@ impl EngineRef<'_> {
     }
 
     /// pane 제거 전에 분할 위치를 포함한 snapshot을 만든다. workspace의 유일한 pane이면 None이다.
+    #[cfg(test)]
     pub(crate) fn capture_closed_pane(
         &self,
         pane_id: u32,
@@ -277,6 +260,7 @@ impl EngineRef<'_> {
 
 impl EngineMut<'_> {
     /// 트리에서 제거하기 전에 탭의 복원 snapshot을 만든다. 복원 목록에 넣는 일은 호출자가 맡는다.
+    #[cfg(test)]
     pub(crate) fn capture_closed_tab(
         &self,
         pane_id: u32,
@@ -288,6 +272,7 @@ impl EngineMut<'_> {
     }
 
     /// pane 제거 전에 분할 위치를 포함한 snapshot을 만든다. workspace의 유일한 pane이면 None이다.
+    #[cfg(test)]
     pub(crate) fn capture_closed_pane(
         &self,
         pane_id: u32,

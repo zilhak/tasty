@@ -1,10 +1,10 @@
 //! PTY 전경 이름으로 busy·마우스 캡처 설정을 계산하고 원격 busy 값은 따로 보관한다.
 
-use super::CoreState;
 use crate::runtime::engine_access::EngineMut;
 
 impl EngineMut<'_> {
     /// 마지막 폴링의 캡처 제외 설정. 클릭·드래그를 로컬 선택으로 처리하고 휠은 그대로 둔다.
+    #[cfg(test)]
     pub fn is_surface_mouse_capture_disabled(&self, surface_id: u32) -> bool {
         self.live
             .mouse_capture_disabled_surfaces
@@ -12,11 +12,13 @@ impl EngineMut<'_> {
     }
 
     /// 로컬 폴링 또는 원격 push 중 하나가 busy이면 true다.
+    #[cfg(test)]
     pub fn is_surface_busy(&self, surface_id: u32) -> bool {
         self.is_locally_or_mirror_busy(surface_id)
     }
 
     /// 마지막 폴링의 전경 이름. 아직 해석하지 못한 surface는 None이다.
+    #[cfg(any(feature = "gui", test))]
     pub fn foreground_name(&self, surface_id: u32) -> Option<&str> {
         self.live
             .foreground_names
@@ -36,19 +38,20 @@ impl EngineMut<'_> {
     }
 
     /// 로컬 폴링 결과와 원격 push 결과의 합집합.
+    #[cfg(test)]
     fn is_locally_or_mirror_busy(&self, surface_id: u32) -> bool {
         self.live.busy_surfaces.contains(&surface_id)
             || self.remote.mirror_busy_surfaces.contains(&surface_id)
     }
 
-    // 이유: 현재 호출자는 test 전용 코드다.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn any_busy(&self, surface_ids: &[u32]) -> bool {
         surface_ids
             .iter()
             .any(|&sid| self.is_locally_or_mirror_busy(sid))
     }
 
+    #[cfg(test)]
     pub fn busy_count(&self, surface_ids: &[u32]) -> usize {
         surface_ids
             .iter()

@@ -5,8 +5,6 @@ use crate::runtime::engine_access::EngineMut;
 use std::collections::HashMap;
 use std::time::Instant;
 
-use super::CoreState;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AttentionKind {
     Completion,
@@ -103,6 +101,7 @@ impl AttentionStore {
         self.records.get(&surface_id).map(|r| r.kind)
     }
 
+    #[cfg(any(feature = "gui", test))]
     fn count_of_kind(&self, kind: AttentionKind, surface_ids: &[u32]) -> usize {
         surface_ids
             .iter()
@@ -110,6 +109,7 @@ impl AttentionStore {
             .count()
     }
 
+    #[cfg(any(feature = "gui", test))]
     fn dominant_kind(&self, surface_ids: &[u32]) -> Option<AttentionKind> {
         surface_ids
             .iter()
@@ -230,7 +230,7 @@ impl EngineMut<'_> {
         self.live.attention.kind_of(surface_id)
     }
 
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     pub(crate) fn attention_count_of_kind(
         &self,
         kind: AttentionKind,
@@ -240,7 +240,7 @@ impl EngineMut<'_> {
     }
 
     /// 목록의 대표 kind. NeedsInput을 Completion보다 우선한다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     pub fn attention_dominant_kind(&self, surface_ids: &[u32]) -> Option<AttentionKind> {
         self.live.attention.dominant_kind(surface_ids)
     }
@@ -1054,9 +1054,11 @@ impl crate::runtime::engine_read::EngineRead<'_> {
     pub(crate) fn attention_kind(&self, id: u32) -> Option<AttentionKind> {
         self.live.attention.kind_of(id)
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn attention_count_of_kind(&self, kind: AttentionKind, ids: &[u32]) -> usize {
         self.live.attention.count_of_kind(kind, ids)
     }
+    #[cfg(feature = "gui")]
     pub(crate) fn attention_dominant_kind(&self, ids: &[u32]) -> Option<AttentionKind> {
         self.live.attention.dominant_kind(ids)
     }

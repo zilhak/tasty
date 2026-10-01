@@ -1,9 +1,9 @@
 use std::time::Instant;
 
 use crate::runtime::engine_access::EngineMut;
-use tasty_terminal::{Terminal, TerminalEvent};
-
-use super::CoreState;
+#[cfg(test)]
+use tasty_terminal::Terminal;
+use tasty_terminal::TerminalEvent;
 
 impl crate::runtime::engine_access::EngineRef<'_> {
     pub fn is_surface_deferred(&self, surface: u32) -> bool {
@@ -19,12 +19,6 @@ impl crate::runtime::engine_access::EngineRef<'_> {
             .get(&surface)?
             .attach_mesh_info()
             .map(|(kind, plugin)| (kind.into(), plugin.into()))
-    }
-    pub(crate) fn find_egui_mesh_surface(
-        &self,
-        surface: u32,
-    ) -> Option<&crate::runtime::egui_mesh_surface::EguiMeshSurface> {
-        self.runtime.surfaces.get(&surface)?.as_any().downcast_ref()
     }
 }
 
@@ -44,6 +38,7 @@ impl EngineMut<'_> {
         expired
     }
 
+    #[cfg(test)]
     pub fn send_fast_init(&mut self, surface_id: u32) {
         if let Err(e) = crate::surface_meta::SurfaceMetaStore::ensure_created(surface_id) {
             tracing::warn!("surface_meta ensure_created failed for surface {surface_id}: {e}");
@@ -66,24 +61,9 @@ impl EngineMut<'_> {
         }
     }
 
-    /// 대기 중인 scrollback을 꺼내 Terminal에 적용한다. Terminal이 없으면 꺼낸 내용은 버린다.
-    /// 이미 시작한 PTY의 첫 출력보다 먼저 적용된다고 보장하지는 않는다.
-    pub fn apply_pending_scrollback_inject(&mut self, surface_id: u32) {
-        let Some(lines) = self.runtime.pending_scrollback_inject.remove(&surface_id) else {
-            return;
-        };
-        if lines.is_empty() {
-            return;
-        }
-        if let Some(terminal) = self.find_terminal_by_id_mut(surface_id) {
-            terminal.inject_scrollback(lines);
-            let prefill = terminal.rows() / 2;
-            terminal.prefill_visible_from_scrollback(prefill);
-        }
-    }
-
     /// 트리는 유지하고 store의 Terminal을 교체한 뒤 기존 Terminal을 drop한다.
     /// 기존 ID가 없으면 새 Terminal을 등록한 상태에서 Err를 반환한다.
+    #[cfg(test)]
     pub fn replace_terminal_by_id(
         &mut self,
         surface_id: u32,

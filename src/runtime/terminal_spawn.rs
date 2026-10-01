@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! 셸 PTY 생성. model은 생성 정보만 보관하고 실제 `Terminal`과 waker는 호스트가 만든다.
 
 use tasty_terminal::{Pty, Terminal, TerminalConfig, Waker};

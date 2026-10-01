@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use std::sync::{Arc, atomic::AtomicU32};
-use tasty_terminal::{ColorPalette, Pty, ResourceGeneration, Terminal, TerminalRgb, Waker};
+use tasty_terminal::{ColorPalette, Pty, ResourceGeneration, Terminal, TerminalRgb};
 use tasty_type_appearance::color::HexColor;
 
 use crate::model::SurfaceId;
@@ -177,6 +177,7 @@ impl TerminalStore {
     }
 
     /// 닫은 항목 snapshot에 넣을 값을 읽는다.
+    #[cfg(test)]
     pub(crate) fn closed_capture(
         &self,
         id: SurfaceId,
@@ -246,6 +247,7 @@ impl TerminalStore {
 /// 터미널에서 닫은 항목 snapshot에 넣을 값을 읽는다. 줄마다 terminal mutex를 잠그지
 /// 않도록 스크롤백은 한 번에 읽는다. 스크롤백은 디스크 저장 형식으로 인코딩해 넘기므로
 /// 닫기 뒤 저장은 이 바이트를 그대로 쓴다.
+#[cfg(test)]
 pub(crate) fn closed_capture_of(
     terminal: &Terminal,
     cwd: Option<std::path::PathBuf>,
