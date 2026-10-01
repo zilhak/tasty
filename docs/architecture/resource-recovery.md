@@ -98,3 +98,5 @@ View의 구조 정합은 실제 Explorer·DAG cache 및 셸 안내 기록의 ID�
 구조 완료 통지는 journal의 live completion과 host event에서 전달한다. 옛 동기 CoreEvent의 create/close/move/restore 결과와 즉시 owner 삭제 API는 제품 실행 경로로 유지하지 않는다. snapshot과 전체 이력 replay 비교용 보조는 시험에 한정하고, 제품 저장은 live pin과 View manifest를 포함한 checkpoint를 사용한다.
 
 App journal의 publication pump는 `journal/publication.rs`에서 batch 설치와 ACK 순서를 소유한다. `commands/completion.rs`는 worker 결과와 원 응답을 결합하고, GUI의 고정 대상 해소·원 View 후속 처리는 `commands/view_completion.rs`에서 수행한다. 모듈 분리는 동일한 큐·owner·barrier를 유지하며 별도 실행 경로나 worker를 추가하지 않는다.
+
+슬롯 없는 headless 시작은 영속 예약한 새 engine 번호의 stream을 연다. 정상 종료의 process owner 회수는 `engine.retired` 확정과 같지 않으며, 과거 headless stream을 자동 resume하지 않는다. 현재 과거 stream의 모델 참조는 후속 snapshot의 pin에 남을 수 있고, 저장 예산 도달 시 신규 admission을 제한한다. 이는 과거 headless 자료의 영구 보존 요구나 모든 미사용 자료의 GC 완료를 뜻하지 않는다.
