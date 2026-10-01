@@ -22,7 +22,71 @@ pub(crate) fn test_state_with_memory(
     crate::runtime::engine_session::EngineSession,
 ) {
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-    let mut engine = crate::runtime::engine_session::EngineSession::new(80, 24, waker).unwrap();
+    let mut engine = crate::runtime::engine_session::EngineSession::new_with_ids_and_settings(
+        80,
+        24,
+        waker,
+        None,
+        None,
+        memory,
+        std::sync::Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+        crate::settings::Settings::default(),
+    )
+    .unwrap();
+    // Read/presentation fixtures seed canonical facts without executing a shell or a factory.
+    // Tests of actual creation, input delivery or retirement use their journal/PTY harness instead.
+    static NEXT_FIXTURE_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+    let id = NEXT_FIXTURE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let events = vec![
+        tasty_core::DomainEvent::CategoryCreated {
+            id: 0,
+            name: "normal".into(),
+            index: 0,
+        },
+        tasty_core::DomainEvent::WorkspaceCreated {
+            id,
+            name: "Workspace 1".into(),
+            category: 0,
+            index: 0,
+            pane: id,
+        },
+        tasty_core::DomainEvent::TabCreated {
+            id,
+            pane: id,
+            index: 0,
+            name: "Terminal".into(),
+            surface: tasty_core::SurfaceSpec {
+                id,
+                kind: "terminal".into(),
+                data: None,
+            },
+        },
+    ];
+    let mut model = tasty_core::JournalModel::default();
+    tasty_core::evolve(
+        &mut model,
+        &tasty_core::DomainBatch {
+            batch_id: tasty_core::BatchId(1),
+            events: events
+                .into_iter()
+                .enumerate()
+                .map(|(index, event)| tasty_core::RecordedEvent {
+                    revision: tasty_core::Revision(index as u64 + 1),
+                    event,
+                })
+                .collect(),
+        },
+    )
+    .expect("canonical presentation fixture");
+    tasty_core::projection::bootstrap::initialize(&mut engine.core_state, &model).unwrap();
+    engine
+        .runtime
+        .surfaces
+        .insert(id, Box::new(crate::model::TerminalSurface { id }));
+    engine
+        .runtime
+        .terminals
+        .insert(id, tasty_terminal::Terminal::new_detached(80, 24), None);
     // 플러그인 프로세스 없이 WebView kind와 오버레이 등록을 구성한다.
     let decl: tasty_plugin_manifest::SurfaceKindDecl = serde_json::from_value(serde_json::json!({
         "kind": "markdown",
@@ -54,7 +118,7 @@ pub(crate) fn test_state_with_memory(
     {
         let (host_cmd_tx, host_cmd_rx) = std::sync::mpsc::channel();
         crate::plugin_bridge::remote_kind::register_remote_kind(
-            &engine.core_state.runtime.surface_registry,
+            &engine.runtime.surface_registry,
             "com.tasty.markdown",
             &decl,
             host_cmd_tx,
@@ -64,9 +128,8 @@ pub(crate) fn test_state_with_memory(
     let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
         tasty_presets::PresetStore::load_default(),
     ));
-    // 운영 부팅처럼 engine과 RequestContext가 같은 저장소를 공유해야 engine 정리를 mock으로 관찰한다.
-    engine.core_state.runtime.memory = memory.clone();
-    let state = RequestContext::new(&mut engine.core_state, preset_store, memory);
+    let mut state = RequestContext::new(&engine.as_ref().read(), preset_store);
+    state.engine_id = Some(engine.id);
     (state, engine)
 }
 
