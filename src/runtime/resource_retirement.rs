@@ -53,14 +53,23 @@ impl ResourceRetirement {
         result
     }
     fn start_owned(&mut self,engine:&mut crate::runtime::engine_access::EngineMut<'_>,mut plugins:Option<&mut crate::plugin::PluginManager>)->Result<(),String> {
-        if self.owners.iter().any(|owner|owner.surface.as_any().is::<crate::plugin_bridge::remote_surface::RemoteSurface>()) && plugins.is_none() {
+        if self.owners.iter().any(|owner|(owner.surface.as_any().is::<crate::plugin_bridge::remote_surface::RemoteSurface>() || owner.surface.as_any().is::<crate::runtime::egui_mesh_surface::EguiMeshSurface>())) && plugins.is_none() {
             return Err("plugin host is absent for committed retirement".into());
         }
         // The original boxes and Pty handles are private to this operation. No ID lookup can
         // retarget destruction to a replacement installed later under the same logical identity.
         for owner in &self.owners {
             if let Some(remote)=owner.surface.as_any().downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>() {
-                self.remote_receipts.push(plugins.as_deref_mut().ok_or("plugin host disappeared")?.enqueue_observed_remote_retirement(remote.id,remote.handles().binding())?);
+                if !self.remote_receipts.iter().any(|receipt|receipt.matches(remote.id,&remote.handles().binding())) {
+                    self.remote_receipts.push(plugins.as_deref_mut().ok_or("plugin host disappeared")?.enqueue_observed_remote_retirement(remote.id,remote.handles().binding())?);
+                }
+            }
+        }
+        for owner in &self.owners {
+            if let Some(mesh)=owner.surface.as_any().downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>() {
+                if !self.remote_receipts.iter().any(|receipt|receipt.matches(mesh.id,&mesh.retirement_binding.binding())) {
+                    self.remote_receipts.push(plugins.as_deref_mut().ok_or("plugin host disappeared")?.enqueue_observed_mesh_retirement(mesh.id,&mesh.retirement_binding)?);
+                }
             }
         }
         for mut owner in self.owners.drain(..) {
@@ -71,6 +80,13 @@ impl ResourceRetirement {
             drop(owner.surface);
         }
         Ok(())
+    }
+    pub(crate) fn retry_owned(&mut self,engine:&mut crate::runtime::engine_access::EngineMut<'_>,plugins:Option<&mut crate::plugin::PluginManager>) {
+        if self.started.is_none() || self.start_complete {return;}
+        // Only an unsent bound retirement is retried. Already enqueued exact bindings retain their
+        // original ACK receipts, including a failed/unknown response; no callback is replayed.
+        let result=self.start_owned(engine,plugins);
+        self.start_complete=result.is_ok();self.failure=result.err();
     }
     pub(crate) fn outcome(&self)->Option<tasty_core::OperationOutcome> {
         use tasty_core::OperationOutcome;
@@ -85,7 +101,7 @@ impl ResourceRetirement {
         }
         if self.receipts.iter().all(|receipt|receipt.observation().phase==PtyPhase::Reaped)
             && self.remote_receipts.iter().all(|receipt|matches!(receipt.observation(),Some(Ok(())))) {return Some(OperationOutcome::Succeeded);}
-        if started.elapsed()>=std::time::Duration::from_secs(5) {return Some(OperationOutcome::Uncertain {reason:"closed PTY owner reap deadline elapsed".into()});}
+        if started.elapsed()>=std::time::Duration::from_secs(5) {return Some(OperationOutcome::Uncertain {reason:"resource retirement acknowledgement deadline elapsed".into()});}
         None
     }
     pub(crate) fn finish_metadata(&mut self,engine:&mut crate::runtime::engine_access::EngineMut<'_>)->Result<(),String> {
@@ -184,6 +200,13 @@ impl EngineRelease {
                         if !self.warned {tracing::warn!(%reason,"engine retains an unconfirmed remote owner");self.warned=true;}
                         retained.push(surface);continue;
                     },
+                }
+            }
+            if let Some(mesh)=surface.as_any().downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>() {
+                if !self.remote.iter().any(|receipt|receipt.matches(mesh.id,&mesh.retirement_binding.binding())) {
+                    let result=plugins.as_deref_mut().ok_or_else(||"mesh plugin host unavailable".to_owned())
+                        .and_then(|plugins|plugins.enqueue_observed_mesh_retirement(mesh.id,&mesh.retirement_binding));
+                    match result {Ok(receipt)=>self.remote.push(receipt),Err(_)=>{retained.push(surface);continue;}}
                 }
             }
             drop(surface);

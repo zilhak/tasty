@@ -16,6 +16,12 @@ host FIFO에서 생성 요청이 아직 전달되지 않았다는 정확한 취�
 완료한다. 오류·연결 종료·process 교체는 불명이며, 살아 있는 process의 timeout만으로
 pending 응답을 없애지 않는다. 이후 실제 응답이 오면 같은 retained owner가 확인한다.
 
+Mesh도 각 runtime 인스턴스의 불투명 binding으로 bootstrap을 추적한다. 큐에 제출하지
+못한 create는 미실행으로 구별하며, 제출된 create는 원 process와 request identity를
+고정한다. 회수는 그 process에만 destroy를 보내고 실제 응답을 기다린다. 같은 surface
+ID의 새 인스턴스나 새 process를 찾아 대신 종료하지 않는다. View는 binding을 전달할
+수 있지만 내부 상태는 plugin manager만 변경한다.
+
 Journal이 멈춘 경우의 plugin control pump는 회수 요청과 해당 응답만 실행한다.
 새 create/restore·hook·namespace continuation·자동 재시작은 실행하지 않는다.
 일반 응답은 제한된 backlog에 남기며 정상 pump가 명시적으로 재개될 때 원 process
@@ -40,6 +46,10 @@ TaskScope의 비취소 Drop 의미를 바꾸지 않는다. 소멸 시점의 미�
 runtime epoch, engine incarnation, activation 및 physical generation을 구분한다.
 대조 evidence payload와 결과 event/effect 갱신은 journal의 같은 commit 경계를 지난다.
 그 뒤에 전체 batch publication ACK와 최초 command 결과 완료를 처리한다.
+
+재시작 시 미확정 creation이 남은 placeholder는 Recovery 차단 상태를 갖는다.
+선택 복원은 이를 건너뛰며 이전 실행을 새 factory 호출로 대체하지 않는다. 준비 단계는
+실행에 들어가기 전 실패와 factory·spawn 진입 이후의 불명 오류를 구분한다.
 
 이 문서는 구현의 소유 계약을 설명한다. 장애 재현·플랫폼별 실행 결과는 별도의 검증
 기록으로 확인하며, source에 이 경계가 있다는 사실이 실행 검증 통과를 뜻하지 않는다.

@@ -38,6 +38,7 @@ pub(super) fn relay_subscribed_mesh(
                     ms.kind_static,
                     ms.file.as_deref(),
                     &ms.display_name,
+                    &ms.retirement_binding,
                 );
                 mgr.send_surface_set_context(
                     &plugin_id,

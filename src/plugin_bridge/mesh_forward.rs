@@ -33,6 +33,7 @@ pub(crate) fn forward_mesh_frames_for_engine(
         let kind = ms.kind_static;
         let file = ms.file.clone();
         let display_name = ms.display_name.clone();
+        let retirement_binding = ms.retirement_binding.clone();
 
         let Some(ctx) = engine.remote.mesh_mirror.get(sid) else {
             continue;
@@ -59,6 +60,7 @@ pub(crate) fn forward_mesh_frames_for_engine(
                     kind,
                     file.as_deref(),
                     &display_name,
+                    &retirement_binding,
                 );
             }
             let params = tasty_plugin_protocol::SurfaceSetContextParams {

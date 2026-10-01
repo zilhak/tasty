@@ -37,6 +37,23 @@ impl SurfaceBinding {
     }
 }
 
+/// Opaque identity of one mesh bootstrap. Only the plugin manager can change its state.
+#[derive(Clone, Default)]
+pub struct MeshBinding {
+    identity: Arc<Mutex<Option<Value>>>,
+    pub(crate) publication: Arc<Mutex<MeshPublication>>,
+}
+#[derive(Default)]
+pub(crate) enum MeshPublication {
+    #[default]
+    NeverSent,
+    Sent { plugin: String, process: std::sync::Weak<()>, request: u64 },
+    Retiring(RemoteRetirementReceipt),
+}
+impl MeshBinding {
+    pub fn binding(&self) -> SurfaceBinding { SurfaceBinding(Arc::downgrade(&self.identity)) }
+}
+
 /// Exact destroy-RPC observation. Neither FIFO enqueue nor dropping the host kind is an ACK.
 #[derive(Clone)]
 pub struct RemoteRetirementReceipt {

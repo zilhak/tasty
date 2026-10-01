@@ -7,6 +7,7 @@ use crate::model::{Surface, SurfaceId};
 
 pub struct EguiMeshSurface {
     pub id: SurfaceId,
+    pub retirement_binding: crate::plugin_bridge::host_cmd::MeshBinding,
     pub kind_static: &'static str,
     pub plugin_id: String,
     pub display_name: String,
@@ -24,6 +25,7 @@ impl EguiMeshSurface {
     ) -> Self {
         Self {
             id,
+            retirement_binding: Default::default(),
             kind_static,
             plugin_id,
             display_name,

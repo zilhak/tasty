@@ -308,10 +308,14 @@ impl PluginManager {
         kind: &str,
         file: Option<&str>,
         display_name: &str,
+        binding: &crate::host_cmd::MeshBinding,
     ) {
+        let mut publication = binding.publication.lock().expect("mesh binding poisoned");
+        if !matches!(*publication, crate::host_cmd::MeshPublication::NeverSent) { return; }
         let Some(proc) = self.processes.get(plugin_id) else {
             return;
         };
+        let request = self.next_request_id.fetch_add(1, Ordering::Relaxed);
         let req = crate::protocol::PluginRequest::new(
             protocol::METHOD_SURFACE_CREATE,
             json!({
@@ -320,10 +324,14 @@ impl PluginManager {
                 "cwd": null,
                 "params": { "file": file, "display_name": display_name },
             }),
-            self.next_request_id.fetch_add(1, Ordering::Relaxed),
+            request,
         );
         if let Err(e) = proc.try_send_request(req) {
             tracing::warn!("plugin '{plugin_id}' surface.create (egui-mesh) send failed: {e}");
+        } else {
+            *publication = crate::host_cmd::MeshPublication::Sent {
+                plugin: plugin_id.to_owned(), process: proc.reply_binding(), request,
+            };
         }
     }
 

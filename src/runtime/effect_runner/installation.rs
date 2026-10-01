@@ -21,7 +21,7 @@ pub(crate) struct Installation {
 
 pub(crate) struct RetiringKind {
     surface_id: u32,
-    kind: &'static str,
+    mesh: Option<crate::plugin_bridge::host_cmd::MeshBinding>,
     remote: Option<crate::plugin_bridge::host_cmd::SurfaceBinding>,
 }
 
@@ -29,7 +29,7 @@ impl RetiringKind {
     pub(crate) fn capture(surface: &dyn crate::model::Surface) -> Self {
         Self {
             surface_id: surface.surface_id().expect("retiring leaf has an ID"),
-            kind: surface.kind(),
+            mesh: surface.as_any().downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>().map(|mesh|mesh.retirement_binding.clone()),
             remote: surface
                 .as_any()
                 .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
@@ -140,8 +140,9 @@ impl Installation {
                 self.remote_retirements.push(manager
                     .enqueue_observed_remote_retirement(self.surface_id, binding)
                     .map_err(anyhow::Error::msg)?);
-            } else if let Some(manager) = plugins.as_deref_mut() {
-                manager.destroy_remote_surface(self.surface_id, Some(old.kind));
+            } else if let Some(binding) = old.mesh {
+                let manager=plugins.as_deref_mut().ok_or_else(||anyhow::anyhow!("mesh retirement has no plugin host"))?;
+                self.remote_retirements.push(manager.enqueue_observed_mesh_retirement(self.surface_id,&binding).map_err(anyhow::Error::msg)?);
             }
         }
         // Destroy of the old registration precedes enqueueing Created/Restored for the new one.

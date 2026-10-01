@@ -691,6 +691,31 @@ impl PluginManager {
         Ok(receipt)
     }
 
+    pub fn enqueue_observed_mesh_retirement(
+        &mut self, surface_id:u32, binding:&crate::host_cmd::MeshBinding,
+    ) -> Result<crate::host_cmd::RemoteRetirementReceipt,String> {
+        use crate::host_cmd::{MeshPublication,RemoteRetirementReceipt};
+        let mut publication=binding.publication.lock().map_err(|_| "mesh binding poisoned")?;
+        if let MeshPublication::Retiring(receipt)=&*publication {return Ok(receipt.clone());}
+        let (receipt,completion)=RemoteRetirementReceipt::pending(surface_id,binding.binding());
+        match &*publication {
+            MeshPublication::NeverSent => completion.finish(Ok(())),
+            MeshPublication::Sent {plugin,process,request:bootstrap} => {
+                if let Some(owner)=self.processes.get(plugin).filter(|owner|owner.reply_binding().ptr_eq(process)) {
+                    let id=self.next_request_id.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+                    let request=protocol::PluginRequest::new(protocol::METHOD_SURFACE_DESTROY,json!({"surface_id":surface_id}),id);
+                    match owner.try_send_request(request) {
+                        Ok(()) => {self.pending_requests.insert(id,super::PendingRequest::now(plugin,PendingRequestKind::SurfaceRetire {completion,process_binding:process.clone()}));},
+                        Err(error) => completion.finish(Err(format!("mesh bootstrap {bootstrap} destruction was not acknowledged: {error}"))),
+                    }
+                } else {completion.finish(Err(format!("mesh bootstrap {bootstrap} original process is unavailable")));}
+            },
+            MeshPublication::Retiring(_) => unreachable!(),
+        }
+        *publication=MeshPublication::Retiring(receipt.clone());
+        Ok(receipt)
+    }
+
     fn destroy_observed_remote_surface(
         &mut self,
         surface_id: u32,
