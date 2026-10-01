@@ -1,13 +1,12 @@
-//! engine별 레이아웃을 Tasty 홈의 layouts/NN.json 슬롯 파일로 저장한다.
-//! 슬롯 목록은 파일명에서 읽으며 별도 인덱스는 없다. 구조와 surface 복원 정보를 담고
-//! 화면·scrollback 바이트는 별도 저장소에 둔다. plugin 종류는 등록부를 통해 저장·복원한다.
+//! Legacy layout slot discovery and import compatibility, plus journal capture scheduling.
+//! Product persistence uses the journal worker; legacy runtime capture is a comparison fixture.
 
-#[cfg(any(feature = "gui", test))]
+#[cfg(test)]
 mod capture;
 pub(crate) mod import;
 mod restore;
 pub(crate) mod schema;
-#[cfg(any(feature = "gui", test))]
+#[cfg(test)]
 mod scrollback;
 #[cfg(test)]
 mod tests;
@@ -151,7 +150,7 @@ pub(crate) fn slot_preservation_is_blocked(slot: LayoutSlotId) -> bool {
 
 /// 레이아웃을 동기 저장한다. 오류는 로그로 남기며 호출자에게 성공 여부를 반환하지 않는다.
 /// capture가 새 scrollback 저장 ID를 터미널에도 기록하므로 engine을 변경할 수 있다.
-#[cfg(any(feature = "gui", test))]
+#[cfg(test)]
 enum SlotReplace {
     /// 여전히 해석되지 않아 먼저 백업해야 한다.
     MoveAside,
@@ -163,7 +162,7 @@ enum SlotReplace {
 
 /// 부팅 후 다른 인스턴스가 파일을 바꿨을 수 있어 다시 읽는다. 슬롯 점유는 프로세스 안에서만 관리한다.
 /// read와 rename 사이에는 잠금이 없어 이 재확인만으로 동시 쓰기 경합을 막지는 못한다.
-#[cfg(any(feature = "gui", test))]
+#[cfg(test)]
 fn recheck_slot_before_replacing(path: &Path) -> SlotReplace {
     let json = match std::fs::read_to_string(path) {
         Ok(json) => json,
@@ -193,7 +192,7 @@ fn recheck_slot_before_replacing(path: &Path) -> SlotReplace {
 }
 
 /// 재확인 뒤 필요하면 원본을 백업한다. true는 후속 쓰기 허용이며 쓰기 성공은 아니다.
-#[cfg(any(feature = "gui", test))]
+#[cfg(test)]
 fn preserve_unparsable_slot(dir: &Path, slot: LayoutSlotId) -> bool {
     let path = slot_path_in(dir, slot);
     match recheck_slot_before_replacing(&path) {
@@ -224,7 +223,7 @@ fn preserve_unparsable_slot(dir: &Path, slot: LayoutSlotId) -> bool {
     }
 }
 
-#[cfg(any(feature = "gui", test))]
+#[cfg(test)]
 fn delete_slot_in(dir: &Path, slot: LayoutSlotId) {
     let path = slot_path_in(dir, slot);
     if let Err(e) = std::fs::remove_file(&path)
@@ -232,13 +231,6 @@ fn delete_slot_in(dir: &Path, slot: LayoutSlotId) {
     {
         tracing::warn!("Failed to delete {}: {e}", path.display());
     }
-}
-
-/// 레이아웃 복원 설정이 꺼진 창을 닫을 때 슬롯을 지운다. 파일 부재는 무시한다.
-#[cfg(feature = "gui")]
-pub(crate) fn delete_slot(slot: LayoutSlotId) {
-    let Some(dir) = layouts_dir() else { return };
-    delete_slot_in(&dir, slot);
 }
 
 /// layouts 디렉터리가 없을 때만 옛 layout.json을 슬롯 1로 rename한다. 부팅 때 호출한다.
@@ -355,7 +347,7 @@ impl LayoutDirtyTracker {
     }
 
     /// dirty 표시와 시각을 비운다. 호출자가 실제 저장 성공을 확인했는지는 검사하지 않는다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(test)]
     pub fn clear(&mut self) {
         self.dirty = false;
         self.dirty_since = None;

@@ -1,9 +1,9 @@
 //! Freeze preset structure and live content; resolve lazy immutable data on the journal worker.
 //! Neither phase activates a terminal/plugin or copies runtime IDs into the preset wire format.
 use crate::intent::ClonedPreset;
-use crate::model::{
-    Deferred, EmptySurface, Pane, PaneNode, SplitDirection, SurfaceLayout, Tab, Workspace,
-};
+#[cfg(test)]
+use crate::model::Workspace;
+use crate::model::{Deferred, EmptySurface, Pane, PaneNode, SplitDirection, SurfaceLayout, Tab};
 use crate::runtime::engine_access::EngineRef;
 use crate::runtime::journal_payload::SavedSurfaceSource;
 use crate::runtime::surface_registry::SurfaceKindRegistry;
@@ -327,6 +327,7 @@ fn visit_preset(preset: &mut ClonedPreset, visit: &mut impl FnMut(&mut PresetSur
 }
 
 // Legacy synchronous entry points reject unresolved payloads; the product continuation uses drafts.
+#[cfg(test)]
 pub fn capture_workspace_preset(
     presentation: &dyn crate::model::StructurePresentation,
     engine: &EngineRef<'_>,
@@ -339,45 +340,6 @@ pub fn capture_workspace_preset(
             .ok()?
             .finish_live()
             .ok()?
-    else {
-        return None;
-    };
-    value.name = name.unwrap_or_default();
-    Some(value)
-}
-pub fn capture_pane_preset(
-    presentation: &dyn crate::model::StructurePresentation,
-    engine: &EngineRef<'_>,
-    pane: &Pane,
-    name: Option<String>,
-    _registry: &SurfaceKindRegistry,
-) -> Option<PanePreset> {
-    let (ClonedPreset::Pane(mut value), _) =
-        capture_draft(presentation, engine, PresetKind::Pane, pane.id)
-            .ok()?
-            .finish_live()
-            .ok()?
-    else {
-        return None;
-    };
-    value.name = name.unwrap_or_default();
-    Some(value)
-}
-pub fn capture_tab_preset(
-    engine: &EngineRef<'_>,
-    tab: &Tab,
-    name: Option<String>,
-    _registry: &SurfaceKindRegistry,
-) -> Option<TabPreset> {
-    let (ClonedPreset::Tab(mut value), _) = capture_draft(
-        &crate::model::StructurePresentationSnapshot::default(),
-        engine,
-        PresetKind::Tab,
-        tab.id,
-    )
-    .ok()?
-    .finish_live()
-    .ok()?
     else {
         return None;
     };

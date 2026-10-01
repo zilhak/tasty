@@ -2,18 +2,18 @@
 //! 레이아웃 슬롯의 scrollback_ref가 파일을 가리키며 포맷은
 //! tasty_terminal::disk_scrollback::serialize_lines를 따른다.
 //!
-//! 내용 복원 옵션이 켜졌을 때 캡처·저장하고, 복원 시 읽어 터미널에 넣는다.
-//! 닫기에서는 삭제를, 옵션을 끌 때는 전체 정리를 시도한다. 부팅 GC는
-//! 열거된 슬롯의 참조를 모으며 그중 읽지 못한 슬롯이 있으면 생략한다.
-//! 목록 조회 실패·항목 열거 오류까지 보호하는 것은 아니다(core::layout_persistence).
-//! *_in 함수는 시험용 임시 디렉터리를 받아 실제 사용자 홈을 건드리지 않는다.
+//! Product journal import reads the selected home's original bytes before copying them into BLOBs.
+//! Legacy file cleanup still uses slot references; immutable journal payloads use their own pins/GC.
+//! Direct runtime capture and decoded legacy reads remain compatibility-test helpers.
 
 use std::collections::HashSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
 use tasty_terminal::ScrollbackLine;
+#[cfg(test)]
 use tasty_terminal::disk_scrollback::deserialize_lines;
 
 // 루트 경로 선택과 debug/release 구분은 tasty_home()에서 처리한다.
@@ -32,8 +32,8 @@ fn file_path_in(dir: &Path, persist_id: &str) -> Option<PathBuf> {
     Some(dir.join(format!("{persist_id}.{EXT}")))
 }
 
-// 줄 목록 쓰기는 layout 저장(GUI)에서만 쓴다. 닫은 항목은 인코딩된 값을 `write_bytes`로 쓴다.
-#[cfg(any(feature = "gui", test))]
+// Legacy capture fixtures write files; product snapshots are immutable journal payloads.
+#[cfg(test)]
 fn write_in(dir: &Path, persist_id: &str, lines: &[ScrollbackLine]) -> io::Result<()> {
     write_bytes_in(
         dir,
@@ -44,6 +44,7 @@ fn write_in(dir: &Path, persist_id: &str, lines: &[ScrollbackLine]) -> io::Resul
 
 /// 이미 `serialize_lines` 형식으로 인코딩한 바이트를 쓴다. 임시 파일에 쓴 뒤 rename으로
 /// 대상 경로를 교체한다.
+#[cfg(test)]
 fn write_bytes_in(dir: &Path, persist_id: &str, bytes: &[u8]) -> io::Result<()> {
     let path = file_path_in(dir, persist_id)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid persist_id"))?;
@@ -65,6 +66,7 @@ pub(crate) fn read_bytes_from_home(home: &Path, persist_id: &str) -> io::Result<
 }
 
 /// 파일 부재와 읽기 실패를 구분한다. 복원 실패 시 원본을 남겨 재시도할 수 있어야 한다.
+#[cfg(test)]
 pub enum ScrollbackRead {
     /// 정상적으로 읽고 역직렬화했다(빈 목록일 수 있다).
     Loaded(Vec<ScrollbackLine>),
@@ -74,6 +76,7 @@ pub enum ScrollbackRead {
     Unreadable,
 }
 
+#[cfg(test)]
 fn read_in(dir: &Path, persist_id: &str) -> ScrollbackRead {
     let Some(path) = file_path_in(dir, persist_id) else {
         tracing::warn!("scrollback read: invalid persist_id {persist_id:?}");
@@ -92,6 +95,7 @@ fn read_in(dir: &Path, persist_id: &str) -> ScrollbackRead {
     }
 }
 
+#[cfg(test)]
 fn decode_lines(path: &Path, bytes: &[u8]) -> ScrollbackRead {
     match deserialize_lines(bytes) {
         Some(lines) => ScrollbackRead::Loaded(lines),
@@ -146,25 +150,21 @@ pub(crate) fn gc_orphans_in(dir: &Path, known: &HashSet<String>) {
     }
 }
 
-#[cfg(any(feature = "gui", test))]
+#[cfg(test)]
 pub fn write(persist_id: &str, lines: &[ScrollbackLine]) -> io::Result<()> {
     let dir = scrollback_dir().ok_or_else(|| io::Error::other("cannot determine tasty home"))?;
     write_in(&dir, persist_id, lines)
 }
 
-/// 닫은 항목의 인코딩된 스크롤백([`crate::model::closed_item::ScrollbackBlob`])을 쓴다.
-pub fn write_bytes(persist_id: &str, bytes: &[u8]) -> io::Result<()> {
-    let dir = scrollback_dir().ok_or_else(|| io::Error::other("cannot determine tasty home"))?;
-    write_bytes_in(&dir, persist_id, bytes)
-}
-
 /// 닫은 항목의 인코딩된 스크롤백을 줄로 푼다. 형식이 맞지 않으면 None이다.
+#[cfg(test)]
 pub fn decode_blob(
     blob: &crate::model::closed_item::ScrollbackBlob,
 ) -> Option<Vec<ScrollbackLine>> {
     deserialize_lines(&blob.bytes)
 }
 
+#[cfg(test)]
 pub fn read(persist_id: &str) -> ScrollbackRead {
     match scrollback_dir() {
         Some(dir) => read_in(&dir, persist_id),

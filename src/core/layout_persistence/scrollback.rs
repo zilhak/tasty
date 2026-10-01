@@ -1,4 +1,4 @@
-//! scrollback과 화면을 저장하고, deferred 터미널에 적용할 이전 내용을 준비한다.
+//! Legacy file capture and deferred restore helpers for compatibility fixtures.
 
 #[cfg(test)]
 use crate::core::CoreState;

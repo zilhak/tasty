@@ -1,4 +1,5 @@
-//! 현재 레이아웃과 surface 복원 정보를 저장용 데이터로 만든다.
+//! Legacy runtime capture for import/shadow comparison fixtures.
+//! Product export resolves a fixed journal model through journal_payload::legacy_export.
 
 use serde_json::json;
 

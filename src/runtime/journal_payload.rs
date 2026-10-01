@@ -2,11 +2,14 @@ pub(crate) mod import;
 pub(crate) mod legacy_export;
 
 use tasty_core::DataRef;
+#[cfg(test)]
 use tasty_core::canonical::{CanonData, ResolveData, fnv_hex};
 use tasty_event_store::{EventStore, PayloadRef};
 /// 저장소의 payload 바이트를 그대로 해시한다.
+#[cfg(test)]
 pub(crate) struct StoreBytes<'a>(pub(crate) &'a EventStore);
 
+#[cfg(test)]
 impl ResolveData for StoreBytes<'_> {
     fn resolve(&self, data: DataRef) -> CanonData {
         match self.0.read_payload(PayloadRef(data.0)) {
@@ -76,7 +79,10 @@ pub(crate) struct PayloadReaders {
     state: std::sync::Mutex<(u64, std::collections::BTreeMap<u64, Vec<DataRef>>)>,
 }
 #[derive(Debug, Clone)]
-pub(crate) struct PayloadReadLease(std::sync::Arc<ReadLease>);
+pub(crate) struct PayloadReadLease {
+    // The last clone releases the reader ticket through ReadLease::drop.
+    _owner: std::sync::Arc<ReadLease>,
+}
 #[derive(Debug)]
 struct ReadLease {
     owner: std::sync::Arc<PayloadReaders>,
@@ -104,10 +110,12 @@ impl PayloadReaders {
             .ok_or("payload reader tickets exhausted")?;
         let ticket = state.0;
         state.1.insert(ticket, references);
-        Ok(PayloadReadLease(std::sync::Arc::new(ReadLease {
-            owner: self.clone(),
-            ticket,
-        })))
+        Ok(PayloadReadLease {
+            _owner: std::sync::Arc::new(ReadLease {
+                owner: self.clone(),
+                ticket,
+            }),
+        })
     }
     pub(crate) fn with_refs<T>(
         &self,

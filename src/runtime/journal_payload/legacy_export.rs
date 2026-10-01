@@ -13,6 +13,10 @@ use tasty_event_store::{EventStore, PayloadRef};
 pub(crate) struct LegacyExport {
     pub(crate) layout: SavedLayout,
     /// Fresh immutable legacy IDs. No runtime persist_id is overwritten by export preparation.
+    #[expect(
+        dead_code,
+        reason = "Internal content export returns immutable legacy blobs; journal import copies DataRefs instead"
+    )]
     pub(crate) scrollback: BTreeMap<String, Vec<u8>>,
 }
 pub(crate) fn capture(
