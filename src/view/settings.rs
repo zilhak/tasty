@@ -37,6 +37,15 @@ pub struct SettingsView {
 }
 
 impl SettingsView {
+    pub(crate) fn take_file_requests(&mut self) -> Vec<crate::app::settings_files::SettingsFileRequest> {
+        self.settings_ui_state.take_file_requests()
+    }
+
+    pub(crate) fn accept_file_result(&mut self, result: crate::app::settings_files::SettingsFileResult) {
+        self.settings_ui_state.accept_file_result(result);
+        self.mark_dirty();
+    }
+
     pub fn new(
         gpu: GpuState,
         winit: Arc<winit::window::Window>,

@@ -22,7 +22,7 @@ use tasty_host_plugin::keybinding_bundle::option_migration::{
     ConflictPolicy, MigrationError, TargetOs, resolve_migration, scan_option_bindings,
 };
 use tasty_host_plugin::keybinding_bundle::{
-    BundleError, BundleWarning, DecodeEnv, DecodedBundle, PluginShortcutOverrides, decode, encode,
+    BundleWarning, DecodedBundle, PluginShortcutOverrides, encode,
 };
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -147,6 +147,7 @@ impl ExportFailReason {
 
 /// 서브탭 상태 — `SettingsUiState` 가 소유한다.
 pub struct ImportExportState {
+    pending_files: Vec<crate::app::settings_files::SettingsFileRequest>,
     preview: Option<Preview>,
     failure: Option<Failure>,
     /// 내보내기 실패 — 떠 있는 동안 Export 버튼이 꺼진다.
@@ -168,6 +169,7 @@ pub struct ImportExportState {
 impl Default for ImportExportState {
     fn default() -> Self {
         Self {
+            pending_files: Vec::new(),
             preview: None,
             failure: None,
             export_failure: None,
@@ -184,6 +186,21 @@ impl Default for ImportExportState {
 }
 
 impl ImportExportState {
+    pub(crate) fn take_file_requests(&mut self) -> Vec<crate::app::settings_files::SettingsFileRequest> {
+        std::mem::take(&mut self.pending_files)
+    }
+
+    pub(crate) fn accept_file_result(&mut self, result: crate::app::settings_files::SettingsFileResult) {
+        match result {
+            crate::app::settings_files::SettingsFileResult::Export { path, result } => {
+                self.finish_export(&path, result.map_err(|error| ExportFailReason::of_io(&error)));
+            }
+            crate::app::settings_files::SettingsFileResult::Import { path, result } => {
+                self.finish_import(&path, result);
+            }
+        }
+    }
+
     pub(crate) fn take_request(&mut self) -> Option<ImportExportRequest> {
         self.request.take()
     }
@@ -211,17 +228,18 @@ impl ImportExportState {
         plugin_draft: &PluginShortcutDraft,
     ) {
         let overrides = merged_overrides(&ctx.overrides, plugin_draft);
-        let written = encode(keybindings, &overrides)
-            .map_err(|e| {
-                tracing::error!("keybinding export: encode failed: {e}");
-                ExportFailReason::Unknown(e.to_string())
-            })
-            .and_then(|text| {
-                std::fs::write(path, text).map_err(|e| {
-                    tracing::error!("keybinding export to {} failed: {e}", path.display());
-                    ExportFailReason::of_io(&e)
-                })
-            });
+        match encode(keybindings, &overrides) {
+            Ok(text) => self.pending_files.push(crate::app::settings_files::SettingsFileRequest::Export {
+                path: path.to_path_buf(), text,
+            }),
+            Err(error) => {
+                tracing::error!(%error, "keybinding export encode failed");
+                self.finish_export(path, Err(ExportFailReason::Unknown(error.to_string())));
+            }
+        }
+    }
+
+    fn finish_export(&mut self, path: &Path, written: Result<(), ExportFailReason>) {
         match written {
             Ok(()) => {
                 self.export_failure = None;
@@ -250,7 +268,15 @@ impl ImportExportState {
         self.failure = None;
         self.conflict_prompt = None;
         self.conflict_answer = None;
-        let decoded = match read_bundle(path, settings, ctx) {
+        self.pending_files.push(crate::app::settings_files::SettingsFileRequest::Import {
+            path: path.to_path_buf(),
+            plugins: ctx.installed_plugin_ids.clone(),
+            scripts: settings.scripts.iter().map(|script| script.id.clone()).collect(),
+        });
+    }
+
+    fn finish_import(&mut self, path: &Path, result: Result<DecodedBundle, Option<usize>>) {
+        let decoded = match result {
             Ok(decoded) => decoded,
             Err(line) => {
                 self.failure = Some(Failure {
@@ -346,32 +372,6 @@ impl ImportExportState {
             Err(e) => tracing::warn!("keybinding import apply refused: {e}"),
         }
     }
-}
-
-/// 파일을 읽어 번들로 푼다. 실패하면 알 수 있는 경우 TOML 이 멈춘 줄 번호를 돌려준다.
-fn read_bundle(
-    path: &Path,
-    settings: &Settings,
-    ctx: &PluginBundleContext,
-) -> Result<DecodedBundle, Option<usize>> {
-    let text = std::fs::read_to_string(path).map_err(|e| {
-        tracing::warn!("keybinding import: read {} failed: {e}", path.display());
-        None
-    })?;
-    let script_ids: Vec<String> = settings.scripts.iter().map(|s| s.id.clone()).collect();
-    let env = DecodeEnv {
-        installed_plugin_ids: &ctx.installed_plugin_ids,
-        known_script_ids: Some(&script_ids),
-    };
-    decode(&text, &env).map_err(|e| {
-        tracing::warn!("keybinding import: {} is not a bundle: {e}", path.display());
-        match &e {
-            BundleError::Toml(te) => te
-                .span()
-                .map(|span| text[..span.start.min(text.len())].matches('\n').count() + 1),
-            _ => None,
-        }
-    })
 }
 
 /// 설치되지 않은 plugin의 생략 정보를 모은다. 별도 표시 문구가 없는 경고는 로그에 남긴다.
@@ -672,54 +672,25 @@ fn state_migration(preview: &mut Option<Preview>) -> &mut [MigrationRow] {
 mod tests {
     use super::*;
 
-    // 부르는 테스트가 권한 비트를 쓰는 unix 전용 하나뿐이라 같은 cfg 로 가른다 —
-    // 안 가르면 Windows 의 lib test 가 dead_code 로 컴파일되지 않는다.
-    #[cfg(unix)]
-    fn export(state: &mut ImportExportState, path: &Path) {
-        state.export_to(
-            path,
-            &KeybindingSettings::default(),
-            &PluginBundleContext::default(),
-            &PluginShortcutDraft::new(),
-        );
-    }
-
-    /// 쓰기 권한 오류를 실패 안내로 표시하고 재시도 성공 뒤 제거하는지 확인한다.
-    #[cfg(unix)]
     #[test]
-    fn a_failed_export_raises_the_inline_block_and_a_later_success_clears_it() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let dir = tempfile::tempdir().expect("임시 디렉토리");
-        let path = dir.path().join("kb.toml");
-        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o555))
-            .expect("읽기 전용으로");
+    fn export_feedback_waits_for_app_result_and_recovers_after_retry() {
         let mut state = ImportExportState::default();
-        export(&mut state, &path);
-        // root 로 돌면 권한이 안 막는다 — 그때는 이 단정이 무엇도 재지 않으므로 멈춘다.
-        if std::fs::metadata(&path).is_ok() {
-            return;
-        }
-        assert!(
-            state.toast.is_none(),
-            "내보내기 실패에 성공 토스트가 표시됐다"
-        );
-        let failure = state.export_failure.as_ref().expect("실패 블록이 없다");
-        assert_eq!(failure.path, path);
-        assert!(matches!(failure.reason, ExportFailReason::PermissionDenied));
-        assert!(
-            failure.reason.os_message().is_none(),
-            "분류된 오류에는 별도 OS 오류 줄을 표시하지 않는다"
-        );
-
-        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755))
-            .expect("쓰기 가능으로");
-        export(&mut state, &path);
-        assert!(
-            state.export_failure.is_none(),
-            "성공했는데 실패 블록이 남았다"
-        );
-        assert!(state.take_toast().is_some(), "성공 toast 가 없다");
+        let path = PathBuf::from("keybindings.toml");
+        state.export_to(&path, &KeybindingSettings::default(),
+            &PluginBundleContext::default(), &PluginShortcutDraft::new());
+        assert_eq!(state.take_file_requests().len(), 1);
+        assert!(state.toast.is_none());
+        state.accept_file_result(crate::app::settings_files::SettingsFileResult::Export {
+            path: path.clone(),
+            result: Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+        });
+        assert!(matches!(state.export_failure.as_ref().unwrap().reason, ExportFailReason::PermissionDenied));
+        assert!(state.toast.is_none());
+        state.accept_file_result(crate::app::settings_files::SettingsFileResult::Export {
+            path, result: Ok(()),
+        });
+        assert!(state.export_failure.is_none());
+        assert!(state.take_toast().is_some());
     }
 
     /// 알려진 오류는 번역 문구만, 미분류 오류는 OS 오류도 표시한다.

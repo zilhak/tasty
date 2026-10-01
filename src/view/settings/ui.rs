@@ -500,6 +500,14 @@ impl SettingsUiState {
     }
 
     /// 설정 창 자체 토스트로 올릴 가져오기/내보내기 결과 문구(1 회).
+    pub(crate) fn take_file_requests(&mut self) -> Vec<crate::app::settings_files::SettingsFileRequest> {
+        self.import_export.take_file_requests()
+    }
+
+    pub(crate) fn accept_file_result(&mut self, result: crate::app::settings_files::SettingsFileResult) {
+        self.import_export.accept_file_result(result);
+    }
+
     pub fn take_import_export_toast(&mut self) -> Option<String> {
         self.import_export.take_toast()
     }
