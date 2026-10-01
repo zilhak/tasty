@@ -22,7 +22,11 @@ pub struct RetirementPlan {
     pub removed: Vec<EntityId>,
     pub surfaces: Vec<RetiredSurface>,
     pub tab_parents: Vec<(u32, u32)>,
+    /// Local user origin used by plugin lifecycle notifications.
     pub is_user_close: bool,
+    /// Remote user origin permits undo capture without impersonating a local user.
+    #[serde(default)]
+    pub remote_user_close: bool,
     /// Immutable user undo capture. Agent closes do not add an undo entry.
     pub undo: Option<crate::UndoCapture>,
 }

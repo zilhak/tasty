@@ -118,7 +118,7 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
                 .get(&record.id)
                 .and_then(|operation| operation.retirement.as_ref())
                 .is_some_and(|plan| {
-                    plan.is_user_close
+                    (plan.is_user_close || plan.remote_user_close)
                         && plan.target == record.target
                         && plan.undo.as_ref() == Some(&record.capture)
                 });

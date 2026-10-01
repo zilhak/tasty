@@ -76,6 +76,7 @@ pub(super) fn decide(
         surfaces,
         tab_parents,
         is_user_close: false,
+        remote_user_close: false,
         undo: None,
     };
     let record = Operation {

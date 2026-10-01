@@ -17,6 +17,7 @@ pub(super) struct Request {
     pub response: JsonRpcResponse,
     pub not_closed: JsonRpcResponse,
     pub is_user_close: bool,
+    pub remote_user_close: bool,
     pub input_ref: Option<tasty_core::DataRef>,
     pub replacement: bool,
     pub undo: Option<tasty_core::UndoCapture>,
@@ -228,6 +229,7 @@ impl Request {
             response: JsonRpcResponse::success(id.clone(), success),
             not_closed: JsonRpcResponse::success(id, no_op),
             is_user_close: false,
+            remote_user_close: false,
             input_ref: None,
             replacement: closes_workspace && core.workspaces().len() == 1,
             undo: None,
@@ -300,6 +302,7 @@ impl Request {
                 serde_json::json!({"closed":false,"id":workspace.id}),
             ),
             is_user_close: false,
+            remote_user_close: false,
             input_ref: None,
             replacement: false,
             undo: None,
@@ -397,6 +400,7 @@ impl Request {
                     expected: self.expected.clone(),
                     undo: self.undo.clone(),
                     is_user_close: self.is_user_close,
+                    remote_user_close: self.remote_user_close,
                 },
             }],
             response: Some(ResponsePlan::Closed {
@@ -419,7 +423,8 @@ impl JournalApplication {
         match Request::resolve(&pending.request, session, pending.close_cause) {
             Ok(mut request) => {
                 if let Reply::Remote(remote) = &pending.reply {
-                    request.is_user_close = remote.user;
+                    request.is_user_close = false;
+                    request.remote_user_close = remote.user;
                     request.capture_undo = remote.user;
                 } else if !matches!(&pending.reply, Reply::Intent { .. }) {
                     request.is_user_close = false;

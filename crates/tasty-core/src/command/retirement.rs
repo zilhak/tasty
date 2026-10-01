@@ -16,7 +16,13 @@ pub(super) fn decide(
             expected,
             undo,
             is_user_close,
+            remote_user_close,
         } => {
+            if *is_user_close && *remote_user_close {
+                return Err(Rejection(
+                    "close cannot have both local and remote user origins".into(),
+                ));
+            }
             let Some((event, removed, surfaces)) = close_facts(model, *target) else {
                 return Ok(StructuralDecision {
                     events: Vec::new(),
@@ -67,6 +73,7 @@ pub(super) fn decide(
                 undo: undo.clone(),
                 tab_parents,
                 is_user_close: *is_user_close,
+                remote_user_close: *remote_user_close,
             };
             let record = Operation {
                 id: operation.clone(),
@@ -90,7 +97,7 @@ pub(super) fn decide(
             };
             let mut events = vec![DomainEvent::OperationPrepared { operation: record }];
             if let Some(capture) = undo {
-                if !is_user_close {
+                if !is_user_close && !remote_user_close {
                     return Err(Rejection(
                         "only user close can append an undo record".into(),
                     ));

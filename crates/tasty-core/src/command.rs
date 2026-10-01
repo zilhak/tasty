@@ -67,6 +67,8 @@ pub enum StructuralCommand {
         expected: Vec<crate::RetiredSurface>,
         undo: Option<crate::UndoCapture>,
         is_user_close: bool,
+        #[serde(default)]
+        remote_user_close: bool,
     },
     FinishRetirement {
         operation: crate::OperationId,

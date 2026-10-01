@@ -74,3 +74,7 @@ runtime epoch, engine incarnation, activation 및 physical generation을 구분�
 
 이 문서는 구현의 소유 계약을 설명한다. 장애 재현·플랫폼별 실행 결과는 별도의 검증
 기록으로 확인하며, source에 이 경계가 있다는 사실이 실행 검증 통과를 뜻하지 않는다.
+
+원격 user close의 undo 권한은 로컬 사용자 lifecycle origin과 별도로 저장한다.
+원격 사용자가 닫은 항목은 undo에 남길 수 있지만 plugin의 `is_user_close` 통지는
+로컬 사용자 동작으로 바뀌지 않는다. 기존 저장 기록에는 원격 flag가 없으므로 false로 읽는다.
