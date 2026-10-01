@@ -1,7 +1,7 @@
 //! Terminal title observations never mutate the committed structure.
 use super::*;
 impl AppServices {
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub(super) fn apply_update_tab_name(
         engine: &mut EngineMut<'_>,
         surface: u32,

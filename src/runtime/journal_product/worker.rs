@@ -121,8 +121,10 @@ pub(super) fn run(
             | Work::InstallationRejected { .. }
             | Work::PreparationUncertain { .. }
             | Work::ClaimPreparation { .. } => true,
-            #[cfg(any(feature = "gui", test))]
-            Work::ForwardFinished { .. } | Work::RetireEngine(_) => true,
+            #[cfg(feature = "gui")]
+            Work::RetireEngine(_) => true,
+            #[cfg(feature = "gui")]
+            Work::ForwardFinished { .. } => true,
             _ => false,
         };
         let mut predecessor = if publishes && halted.is_none() {
@@ -509,7 +511,7 @@ fn handle(
                 shell,
             )
         }
-        #[cfg(any(feature = "gui", test))]
+        #[cfg(feature = "gui")]
         Work::ClaimForward { stream, operation } => {
             effects::claim_forward(executor, &stream, &operation)
         }

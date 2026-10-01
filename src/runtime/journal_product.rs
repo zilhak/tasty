@@ -54,12 +54,12 @@ pub(crate) enum Work {
         lease: EffectLease,
         evidence: Vec<u8>,
     },
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     ClaimForward {
         stream: String,
         operation: tasty_core::OperationId,
     },
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     ForwardFinished {
         lease: EffectLease,
         outcome: tasty_core::OperationOutcome,
@@ -162,7 +162,7 @@ pub(crate) enum ResultValue {
         reason: String,
         replay: bool,
     },
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     ForwardClaimed {
         lease: EffectLease,
         payload: Vec<u8>,
@@ -513,7 +513,7 @@ pub(crate) fn request_size(work: &Work) -> usize {
         Work::PutPreparation(input) => {
             serde_json::to_vec(input).map_or(usize::MAX, |bytes| bytes.len())
         }
-        #[cfg(any(feature = "gui", test))]
+        #[cfg(feature = "gui")]
         Work::ClaimForward { stream, operation } => stream.len().saturating_add(operation.0.len()),
         Work::ClaimPreparation { stream, operation }
         | Work::ClaimRetirement { stream, operation } => {
@@ -529,7 +529,7 @@ pub(crate) fn request_size(work: &Work) -> usize {
         Work::CleanupFinished { lease, view } => {
             serde_json::to_vec(&(lease, view)).map_or(usize::MAX, |bytes| bytes.len())
         }
-        #[cfg(any(feature = "gui", test))]
+        #[cfg(feature = "gui")]
         Work::ForwardFinished { lease, outcome } => {
             serde_json::to_vec(&(lease, outcome)).map_or(usize::MAX, |bytes| bytes.len())
         }

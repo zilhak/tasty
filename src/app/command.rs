@@ -65,7 +65,7 @@ pub(crate) enum DomainIntent {
     },
     /// Source identity is fixed at admission; the destination is an order coordinate.
     #[cfg_attr(
-        all(not(feature = "gui"), not(test)),
+        not(feature = "gui"),
         expect(
             dead_code,
             reason = "GUI input constructs this explicit target; headless IPC resolves its wire request directly in the journal"
@@ -78,7 +78,7 @@ pub(crate) enum DomainIntent {
 
     /// 없는 workspace나 카테고리면 오류다. workspace 순서와 사용자 선택은 바꾸지 않는다.
     #[cfg_attr(
-        all(not(feature = "gui"), not(test)),
+        not(feature = "gui"),
         expect(
             dead_code,
             reason = "GUI input constructs this explicit target; headless IPC resolves its wire request directly in the journal"
@@ -102,7 +102,7 @@ pub(crate) enum DomainIntent {
     },
     /// normal은 이름을 바꿀 수 없다.
     #[cfg_attr(
-        all(not(feature = "gui"), not(test)),
+        not(feature = "gui"),
         expect(
             dead_code,
             reason = "GUI input constructs this explicit target; headless IPC resolves its wire request directly in the journal"
@@ -114,7 +114,7 @@ pub(crate) enum DomainIntent {
     },
     /// normal은 지울 수 없다. 안의 workspace는 normal로 옮긴다.
     #[cfg_attr(
-        all(not(feature = "gui"), not(test)),
+        not(feature = "gui"),
         expect(
             dead_code,
             reason = "GUI input constructs this explicit target; headless IPC resolves its wire request directly in the journal"
@@ -150,7 +150,7 @@ pub(crate) enum DomainIntent {
         generation: tasty_terminal::ResourceGeneration,
     },
     #[cfg_attr(
-        all(not(feature = "gui"), not(test)),
+        not(feature = "gui"),
         expect(
             dead_code,
             reason = "GUI input constructs this explicit target; headless IPC resolves its wire request directly in the journal"
@@ -160,7 +160,7 @@ pub(crate) enum DomainIntent {
         tab_id: u32,
     },
     #[cfg_attr(
-        all(not(feature = "gui"), not(test)),
+        not(feature = "gui"),
         expect(
             dead_code,
             reason = "GUI input constructs this explicit target; headless IPC resolves its wire request directly in the journal"
@@ -188,7 +188,7 @@ pub(crate) enum DomainIntent {
         surface_params: Value,
     },
     #[cfg_attr(
-        all(not(feature = "gui"), not(test)),
+        not(feature = "gui"),
         expect(
             dead_code,
             reason = "GUI input constructs this explicit target; headless IPC resolves its wire request directly in the journal"
@@ -218,7 +218,7 @@ pub(crate) enum DomainIntent {
     /// source의 Terminal·scrollback·ID는 유지하며 target 위치로 옮긴다.
     /// 덮어쓴 target은 후속 처리로 정리하고 닫기 복원 기록에 남기지 않는다.
     #[cfg_attr(
-        all(not(feature = "gui"), not(test)),
+        not(feature = "gui"),
         expect(
             dead_code,
             reason = "GUI input constructs this explicit target; headless IPC resolves its wire request directly in the journal"
@@ -231,7 +231,7 @@ pub(crate) enum DomainIntent {
     /// source 탭(ID·이름·surface·Terminal·scrollback 유지)을 target 탭 자리로 옮긴다.
     /// 덮어쓴 target 탭은 후속 처리로 정리하고 닫기 복원 기록에 남기지 않는다.
     #[cfg_attr(
-        all(not(feature = "gui"), not(test)),
+        not(feature = "gui"),
         expect(dead_code, reason = "only the gui-only tab context menu issues it")
     )]
     ReplaceTabWithTab {
@@ -241,7 +241,7 @@ pub(crate) enum DomainIntent {
     /// source 페인(ID·탭·surface·Terminal·scrollback 유지)을 target 페인 자리로 옮긴다.
     /// 덮어쓴 target 페인은 후속 처리로 정리하고 닫기 복원 기록에 남기지 않는다.
     #[cfg_attr(
-        all(not(feature = "gui"), not(test)),
+        not(feature = "gui"),
         expect(dead_code, reason = "only the gui-only tab context menu issues it")
     )]
     ReplacePaneWithPane {
@@ -461,7 +461,7 @@ pub(crate) enum CoreEvent {
     },
 
     /// 탭 표시를 다시 그리기 위한 결과. OSC 제목은 레이아웃 저장 대상이 아니다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     TabNameUpdated {
         /// 명시 이름 때문에 건너뛴 경우를 검사에서 구별한다. 제품 후속 처리는 이 값을 읽지 않는다.
         #[allow(dead_code)]

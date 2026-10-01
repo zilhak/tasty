@@ -10,6 +10,13 @@ pub enum DirectRename {
         workspace_id: u32,
         name: String,
     },
+    #[cfg_attr(
+        all(not(feature = "gui"), test),
+        expect(
+            dead_code,
+            reason = "subtitle rename is produced by the GUI popup; headless tests exercise name and tab values only"
+        )
+    )]
     WorkspaceSubtitle {
         workspace_id: u32,
         subtitle: String,
