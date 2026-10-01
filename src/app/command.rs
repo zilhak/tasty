@@ -135,6 +135,13 @@ pub(crate) enum DomainIntent {
         activate: bool,
     },
     /// 트리를 닫고 자원 정리 대상은 후속 처리에 넘긴다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(debug_assertions), not(test)),
+        expect(
+            dead_code,
+            reason = "GUI and debug navigation construct this request; release headless workspace.close uses direct journal admission"
+        )
+    )]
     CloseWorkspace {
         workspace_id: u32,
     },
