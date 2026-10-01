@@ -359,7 +359,7 @@ impl SurfaceLayout {
 
     /// Geometry borrows logical descriptors; callers obtain kind instances from their engine.
     pub fn surface_regions(&self, rect: PhysicalRect) -> Vec<SurfaceRegion<'_>> {
-        self.compute_rects(rect)
+        self.compute_rects(rect, 1.0)
             .into_iter()
             .filter_map(|(id, rect)| {
                 self.find_surface(id)

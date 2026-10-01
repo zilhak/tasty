@@ -1,5 +1,5 @@
 use super::tab::Tab;
-use super::{PaneId, SplitDirection, SurfaceId, TabId, TerminalSurface};
+use super::{PaneId, SplitDirection, SurfaceId, TabId};
 
 /// 탭 전환 결과. 변경 없음과 대상 부재를 구분한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
