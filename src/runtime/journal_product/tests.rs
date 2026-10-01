@@ -668,7 +668,7 @@ fn committed_installation_preserves_initial_observations_and_defers_command_comp
     engine
         .runtime
         .surfaces
-        .insert(sid, prepared.into_leaf(&installed).unwrap());
+        .insert(sid, prepared.into_leaf(&installed).unwrap().surface);
     projection::apply(
         engine.core,
         &before[&binding.stream],
@@ -888,7 +888,7 @@ fn complete_conversion_and_reap(
     engine
         .runtime
         .surfaces
-        .insert(sid, candidate.into_leaf(&installed).unwrap());
+        .insert(sid, candidate.into_leaf(&installed).unwrap().surface);
     projection::apply(
         engine.core,
         &before[&binding.stream],
