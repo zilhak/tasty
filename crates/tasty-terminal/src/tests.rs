@@ -2245,7 +2245,7 @@ fn set_echo_after_input(t: &Terminal) {
 }
 
 /// 입력과 무관한 최근 프로그램 출력으로 busy 에 진입시킨다.
-fn enter_busy(t: &Terminal, fg: &foreground_process::ForegroundProcessInfo) {
+fn enter_busy(t: &mut Terminal, fg: &foreground_process::ForegroundProcessInfo) {
     set_times(t, ms(100), ms(1000));
     assert!(
         t.busy_with_foreground(FAKE_SHELL_PID, Some(fg)),
@@ -2255,9 +2255,9 @@ fn enter_busy(t: &Terminal, fg: &foreground_process::ForegroundProcessInfo) {
 
 #[test]
 fn busy_is_kept_while_typing_over_output() {
-    let t = Terminal::new_detached(80, 24);
+    let mut t = Terminal::new_detached(80, 24);
     let fg = fake_fg("claude", 2);
-    enter_busy(&t, &fg);
+    enter_busy(&mut t, &fg);
     set_echo_after_input(&t);
     assert!(
         t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)),
@@ -2267,7 +2267,7 @@ fn busy_is_kept_while_typing_over_output() {
 
 #[test]
 fn typing_into_idle_program_does_not_enter_busy() {
-    let t = Terminal::new_detached(80, 24);
+    let mut t = Terminal::new_detached(80, 24);
     let fg = fake_fg("vim", 2);
     set_echo_after_input(&t);
     assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)));
@@ -2277,7 +2277,7 @@ fn typing_into_idle_program_does_not_enter_busy() {
 
 #[test]
 fn input_does_not_invalidate_earlier_output() {
-    let t = Terminal::new_detached(80, 24);
+    let mut t = Terminal::new_detached(80, 24);
     let fg = fake_fg("cargo", 2);
     // 출력 500ms 전, 입력은 그 뒤인 100ms 전 — 출력이 입력보다 앞선다.
     set_times(&t, ms(500), ms(100));
@@ -2289,9 +2289,9 @@ fn input_does_not_invalidate_earlier_output() {
 
 #[test]
 fn busy_releases_when_output_goes_quiet() {
-    let t = Terminal::new_detached(80, 24);
+    let mut t = Terminal::new_detached(80, 24);
     let fg = fake_fg("cargo", 2);
-    enter_busy(&t, &fg);
+    enter_busy(&mut t, &fg);
     set_times(
         &t,
         BUSY_OUTPUT_WINDOW + ms(500),
@@ -2305,9 +2305,9 @@ fn busy_releases_when_output_goes_quiet() {
 
 #[test]
 fn output_expiry_wins_over_recent_input() {
-    let t = Terminal::new_detached(80, 24);
+    let mut t = Terminal::new_detached(80, 24);
     let fg = fake_fg("claude", 2);
-    enter_busy(&t, &fg);
+    enter_busy(&mut t, &fg);
     // 출력은 창 밖으로 멈췄고 키는 방금 쳤다.
     set_times(&t, BUSY_OUTPUT_WINDOW + ms(500), ms(0));
     assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)));
@@ -2317,9 +2317,9 @@ fn output_expiry_wins_over_recent_input() {
 
 #[test]
 fn shell_foreground_releases_latched_busy() {
-    let t = Terminal::new_detached(80, 24);
+    let mut t = Terminal::new_detached(80, 24);
     let fg = fake_fg("vim", 2);
-    enter_busy(&t, &fg);
+    enter_busy(&mut t, &fg);
     set_echo_after_input(&t);
     assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fake_fg("bash", 3))));
     assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fake_fg("zsh", FAKE_SHELL_PID))));
@@ -2329,8 +2329,8 @@ fn shell_foreground_releases_latched_busy() {
 
 #[test]
 fn foreground_change_does_not_inherit_busy() {
-    let t = Terminal::new_detached(80, 24);
-    enter_busy(&t, &fake_fg("cargo", 2));
+    let mut t = Terminal::new_detached(80, 24);
+    enter_busy(&mut t, &fake_fg("cargo", 2));
     set_echo_after_input(&t);
     assert!(
         !t.busy_with_foreground(FAKE_SHELL_PID, Some(&fake_fg("vim", 4))),
@@ -2340,11 +2340,13 @@ fn foreground_change_does_not_inherit_busy() {
 
 #[test]
 fn contended_lock_guess_does_not_latch() {
-    let t = Terminal::new_detached(80, 24);
+    let mut t = Terminal::new_detached(80, 24);
     let fg = fake_fg("claude", 2);
     set_echo_after_input(&t);
     {
-        let _held = t.lock_state();
+        let state = Arc::clone(&t.state);
+        let _held =
+            tasty_utils::poison::recover_mutex(state.lock(), STATE_WHAT, &STATE_POISON_REPORTED);
         assert!(
             t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)),
             "락 경합은 그 tick 에 한해 busy 로 추정한다",
