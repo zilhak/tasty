@@ -31,6 +31,8 @@ pub(crate) struct EngineRef<'a> {
 }
 
 impl EngineMut<'_> {
+    pub(crate) fn read(&self)->super::engine_read::EngineRead<'_> {self.as_ref().read()}
+
     pub(crate) fn as_ref(&self) -> EngineRef<'_> {
         EngineRef {
             core: self.core,

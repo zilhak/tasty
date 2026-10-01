@@ -201,8 +201,11 @@ user → plugin → host 순, ID 순으로 고른다. 선택되지 않은 전략
   Succeeded, 0이 아닌 값이면 그 코드를 담은 오류와 함께 Failed로 끝난다.
   종료 코드가 없는 push 신호도 Succeeded로 처리한다.
 - 각 runner thread는 매 tick `expire_overdue_hook_waits`에서
-  `HookTaskWaits::sweep_expired`를 호출한다. 워크스페이스 구분 없이 기한이 지난
-  항목을 Failed로 끝낸다.
+  `HookTaskWaits::take_expired`를 호출한다. 전역 sweep은 워크스페이스 구분 없이 기한이 지난
+  항목을 Failed로 끝내되, 등록 당시의 TaskWakerHub와 agent_seq를 사용한다. 다른 workspace의
+  runner가 만료를 처리해도 원 engine 허브로 종결 사건을 보내고 원 순번으로 inline fallback ID를 발급한다.
+  tick·만료·startup cleanup/reload의 성공한 상태 전이가 반환한 task와 downstream 중 종결 항목은
+  저장소 락을 놓은 뒤 통지한다.
 
 현재 push 전략은 `host/command-completed` 하나다. 훅의 action인 `notification.create`는
 알림을 추가하는 동작이며 작업의 완료 여부를 정하지 않는다. 작업 연결은 `hook_id`로 찾는다.

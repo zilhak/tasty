@@ -413,7 +413,7 @@ impl App {
         Self::report_boot_init_errors(&mut state, db_init_error, invalid_theme_name);
         Self::report_locale_fallback(&mut state);
         self.start_boot_ipc_and_webhooks(&mut state);
-        Self::report_persistence_incidents(settings_origin, self.core_state(), &mut state);
+        Self::report_persistence_incidents(settings_origin, &mut state);
 
         let engine = self
             .engines
@@ -550,7 +550,6 @@ impl App {
     /// 설정·레이아웃을 읽거나 보존하지 못한 사실과 복구에 필요한 정보를 알린다.
     fn report_persistence_incidents(
         settings_origin: tasty_settings::SettingsOrigin,
-        engine: &crate::core::CoreState,
         state: &mut crate::state::MainViewState,
     ) {
         use crate::adapters::ui::{ToastKind, ToastScope};

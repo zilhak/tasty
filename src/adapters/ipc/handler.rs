@@ -587,7 +587,7 @@ fn route_engine_handler(
     }
     let origin = intent_origin_of(caller);
     Some(match request.method.as_str() {
-        "system.info" => handle_system_info(window, engine, id),
+        "system.info" => handle_system_info(window, &engine.read(), id),
         "system.pressure" => pressure::handle_system_pressure(&*core, engine, id),
         "workspace.list" => workspace::handle_workspace_list(window, engine, id),
         "workspace_category.list" => {
@@ -705,7 +705,7 @@ fn route_engine_handler(
         "surface.html_script" => surface::handle_html_script(engine, id, &request.params),
         // WebView는 surface.set_context를 받지 않아 이 조회로 Theme를 읽는다.
         "theme.query" => theme::handle_query(engine, id),
-        "tree" => handle_tree(window, engine, id),
+        "tree" => handle_tree(window, &engine.read(), id),
         "message.send" => message::handle_message_send(core, engine, id, &request.params),
         "message.read" => message::handle_message_read(core, engine, id, &request.params),
         "message.count" => message::handle_message_count(engine, id, &request.params),
@@ -1153,10 +1153,10 @@ fn surface_belongs_to_pane(engine: &CoreState, surface_id: u32, pane_id: u32) ->
 /// 서버 capability는 창별로 재사용하는 system_info_fields가 아닌 이 응답에만 추가한다.
 fn handle_system_info(
     window: &dyn IpcWindow,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
-    let mut info = system_info_fields(window, engine);
+    let mut info = system_info_fields(engine,window.active_workspace_index(engine));
     info["capabilities"] = tasty_ipc::capability::capabilities_json();
     // 재시도 가능 여부를 판단할 수 있도록 보존 시간·개수·응답 크기도 제공한다.
     info["idempotency"] = idempotency::declaration();
@@ -1166,12 +1166,11 @@ fn handle_system_info(
 /// Version is process-wide; the legacy count/index describe this engine. Include
 /// its workspace IDs so an observation never silently looks like a global count.
 /// window.list reuses the same fields beside the OS window ID.
-pub(crate) fn system_info_fields(window: &dyn IpcWindow, engine: &CoreState) -> serde_json::Value {
-    let active_workspace = window.active_workspace_index(engine);
+pub(crate) fn system_info_fields(engine: &crate::runtime::engine_read::EngineRead<'_>, active_workspace:usize) -> serde_json::Value {
     json!({
         "version": env!("CARGO_PKG_VERSION"),
         "scope": "engine",
-        "layout_slot": engine.persistence.slot,
+        "layout_slot": engine.layout_slot,
         "workspace_count": engine.workspaces().len(),
         "workspace_ids": engine.workspaces().into_iter().map(|ws| ws.id).collect::<Vec<_>>(),
         "active_workspace": active_workspace,
@@ -1181,24 +1180,25 @@ pub(crate) fn system_info_fields(window: &dyn IpcWindow, engine: &CoreState) -> 
 
 fn handle_tree(
     window: &dyn IpcWindow,
-    engine: &crate::core::CoreState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
-    JsonRpcResponse::success(id, json!(build_engine_tree(window, engine)))
+    JsonRpcResponse::success(id, json!(build_engine_tree(window.presentation(),window.active_workspace_index(engine),engine)))
 }
 
 /// IPC와 Lua 스냅샷이 같은 트리 필드를 사용하도록 공통 JSON을 만든다.
 pub(crate) fn build_engine_tree(
-    window: &dyn IpcWindow,
-    engine: &crate::core::CoreState,
+    presentation:&dyn crate::model::StructurePresentation,
+    active_workspace:usize,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> Vec<serde_json::Value> {
     engine
         .workspaces()
         .into_iter()
         .enumerate()
         .map(|(i, ws)| {
-            let mut t = ws.to_tree_json(&engine.as_ref().observed_presentation(window.presentation()),&|id|engine.find_surface_by_id(id).map(|surface|surface.to_tree_json()).unwrap_or_else(||serde_json::json!({"id":id,"type":"Pending"})));
-            t["active"] = json!(i == window.active_workspace_index(engine));
+            let mut t = ws.to_tree_json(&engine.observed_presentation(presentation),&|id|engine.find_surface_by_id(id).map(|surface|surface.to_tree_json()).unwrap_or_else(||serde_json::json!({"id":id,"type":"Pending"})));
+            t["active"] = json!(i == active_workspace);
             t["busy_count"] = json!(engine.busy_count(&ws.all_surface_ids()));
             annotate_tree_busy(&mut t, engine);
             t
@@ -1208,7 +1208,7 @@ pub(crate) fn build_engine_tree(
 
 /// Walk a workspace tree JSON value and annotate every node that owns surface
 /// ids with a `busy_count` field. Surface-leaf nodes also get a `busy` boolean.
-fn annotate_tree_busy(node: &mut serde_json::Value, engine: &CoreState) {
+fn annotate_tree_busy(node: &mut serde_json::Value, engine: &crate::runtime::engine_read::EngineRead<'_>) {
     if let Some(obj) = node.as_object_mut() {
         // Surface leaf: has "id" but no "tabs"/"panes"/"first"/"second"
         let is_leaf = !obj.contains_key("tabs")

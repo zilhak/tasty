@@ -1,14 +1,13 @@
 use super::{EngineId, EngineSession};
 use crate::core::CoreState;
 use crate::runtime::counters::RuntimeCounters;
-use crate::core::state::ShellConfig;
-use crate::model::Workspace;
 use crate::settings::Settings;
 use std::sync::Arc;
 use tasty_terminal::Waker;
 
 impl EngineSession {
-    /// 기본 Settings와 in-memory 저장소로 생성한다. 사용자 config.toml의 설정을 읽지 않는다.
+    /// Resource-only test owner with default Settings and in-memory storage.
+    /// Structure fixtures must publish a committed journal model explicitly.
     #[cfg(test)]
     pub fn new(cols: usize, rows: usize, waker: Waker) -> anyhow::Result<Self> {
         let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
@@ -73,7 +72,6 @@ impl EngineSession {
             memory,
             runner_registry,
             settings,
-            false,
         )
     }
 
@@ -97,7 +95,6 @@ impl EngineSession {
             memory,
             runner_registry,
             settings,
-            true,
         )
     }
 
@@ -110,13 +107,12 @@ impl EngineSession {
         memory: Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
         runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
         settings: Settings,
-        materialize_default: bool,
     ) -> anyhow::Result<Self> {
         // CoreState와 실행 자원이 파일을 읽기 전에 검사 홈을 설정한다.
         #[cfg(test)]
         let isolated_home = Some(crate::test_support::IsolatedHome::new());
         let next_ids = shared_ids.unwrap_or_default();
-        let mut session = Self {
+        let session = Self {
             id: EngineId::issue(),
             remote:crate::remote::state::RemoteState::new(),
             live:crate::core::live::LiveDomainState::with_notifications(next_ids.notification_counter(),settings.notification.coalesce_ms),
@@ -139,40 +135,6 @@ impl EngineSession {
             #[cfg(all(test, feature = "gui"))]
             test_host_commands: None,
         };
-        let mut engine = session.borrow_mut();
-        // 복원할 레이아웃이 있으면 기본 PTY를 먼저 만들지 않는다. 복원이 트리를 교체해도 별도 store의 PTY는 남기 때문이다.
-        if materialize_default {
-            let ws_id = engine.runtime.counters.next_workspace();
-            let pane_id = engine.runtime.counters.next_pane();
-            let tab_id = engine.runtime.counters.next_tab();
-            let surface_id = engine.runtime.counters.next_surface();
-            let sh = ShellConfig::from_settings(&engine.runtime.settings);
-            let (terminal, pty) = crate::runtime::terminal_spawn::spawn_shell_terminal(
-                surface_id,
-                crate::runtime::terminal_spawn::ShellSpawnOpts {
-                    cols,
-                    rows,
-                    shell: sh.shell_ref(),
-                    shell_args: &sh.args_ref(),
-                    extra_env: &sh.envs_ref(),
-                    waker,
-                    working_dir: None,
-                },
-            )?;
-            engine
-                .runtime
-                .terminals
-                .insert(surface_id, terminal, Some(pty));
-            let ws = Workspace::new_with_terminal_marker(
-                ws_id,
-                "Workspace 1".to_string(),
-                pane_id,
-                tab_id,
-                surface_id,
-            );
-            engine.replace_local_workspaces(vec![ws]);
-            engine.send_fast_init(surface_id);
-        }
 
         Ok(session)
     }

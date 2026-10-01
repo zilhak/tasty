@@ -41,7 +41,7 @@ impl App {
                 pane::handle_pane_list(&s.navigation, e, id)
             })),
             "tree" => Some(self.collect_list(id, |_c, s, e, id| {
-                JsonRpcResponse::success(id, json!(host_ipc::handler::build_engine_tree(s, e)))
+                JsonRpcResponse::success(id, json!(host_ipc::handler::build_engine_tree(&s.navigation,s.active_workspace_index(e.core),&e.read())))
             })),
             "pty.list" => {
                 Some(self.collect_field(id, "ptys", |_c, _s, e, id| pty::handle_list(e, id)))

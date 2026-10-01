@@ -585,7 +585,7 @@ impl App {
             tasty_plugin_protocol::events::LifecycleReason::Crash => "crash",
         };
         // 비활성 플러그인이 선언한 훅 이벤트는 새 등록에 사용할 수 없게 한다.
-        self.core_state().plugin_hook_events.unregister(&plugin_id);
+        self.engine_runtime().plugin_hook_events.unregister(&plugin_id);
         self.enqueue_plugin_host_event(crate::state::PendingHostEvent::PluginUnloaded {
             plugin_id,
             reason: reason_str.to_string(),

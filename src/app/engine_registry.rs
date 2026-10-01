@@ -44,6 +44,10 @@ pub(crate) struct EngineRegistry {
 }
 
 impl EngineRegistry {
+    /// Presentation receives a read capability without borrowing the session mutably.
+    pub(crate) fn read(&self,id:EngineId)->Option<crate::runtime::engine_read::EngineRead<'_>> {self.sessions.get(&id).map(EngineSession::read)}
+    pub(crate) fn window_read(&self,window:WindowId)->Option<crate::runtime::engine_read::EngineRead<'_>> {self.read(*self.by_window.get(&window)?)}
+
     /// 새 engine을 임시 관계로 넣는다. 이미 임시 engine이 있으면 넣지 않고 되돌려준다.
     pub(crate) fn insert_pending(
         &mut self,

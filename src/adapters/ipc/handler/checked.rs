@@ -1,6 +1,6 @@
 //! 호출 경로에 필요한 진입 검사를 마친 요청. 외부 입력을 역직렬화해 만들 수 없다.
 use super::{CallerContext, JsonRpcRequest, JsonRpcResponse};
-use crate::core::{State};
+use crate::core::CoreState;
 use crate::app::services::AppServices;
 
 /// 진입 검사를 통과한 요청. engine이 없는 GUI 부팅·종료 구간의 Local 호출은

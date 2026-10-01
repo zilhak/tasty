@@ -30,6 +30,7 @@ pub(crate) struct JournalApplication {
     worker: JournalWorker,
     commands: commands::Commands,
     captures:std::collections::BTreeMap<u64,capture::PendingCapture>,
+    preset_captures:capture::PresetCaptures,
     capture_requests:HashMap<EngineId,bool>,
     execution_id_requests:HashMap<u64,EngineId>,
     replacements:Vec<(EngineId,tasty_core::Replacement)>,
@@ -94,6 +95,7 @@ impl JournalApplication {
             worker,
             commands: Default::default(),
             captures:Default::default(),
+            preset_captures:Default::default(),
             capture_requests:Default::default(),
             execution_id_requests:Default::default(),
             changed_engines: Default::default(),
@@ -204,6 +206,7 @@ impl JournalApplication {
                 self.submit_forwards()?;
                 self.poll_resource_cleanup(sessions)?;
                 self.submit_captures(sessions)?;
+                self.submit_preset_captures()?;
                 self.refill_execution_ids(sessions)?;
                 self.submit_restore_reads()?;
                 #[cfg(feature = "gui")]
@@ -448,6 +451,7 @@ impl JournalApplication {
                     if self.answer_forward(ticket,&result)? {continue;}
                     if self.answer_execution_ids(ticket,&result,sessions)? {continue;}
                     if self.answer_capture(ticket,&result,sessions) {continue;}
+                    if self.answer_preset_capture(ticket,&result) {continue;}
                     if self.answer_resource_cleanup(ticket,&result,sessions,plugins.as_deref_mut())? {continue;}
                     if self.answer_command(ticket, &result, sessions)? {
                         continue;
@@ -758,7 +762,7 @@ impl JournalApplication {
         {let _=id;false}
     }
     pub(crate) fn has_pending_engine_effects(&self,id:EngineId)->bool {
-        self.commands.has_remote_request(id)||self.has_forward(id)||self.has_pending_capture(id)||self.has_creation(id)||self.has_resource_cleanup(id)||self.commands.has_resource_request(id)
+        self.commands.has_remote_request(id)||self.has_forward(id)||self.has_pending_capture(id)||self.has_pending_preset_capture(id)||self.has_creation(id)||self.has_resource_cleanup(id)||self.commands.has_resource_request(id)
     }
     #[cfg(feature="gui")]
     pub(crate) fn has_pending_view_for(&self,stream:&str)->bool {

@@ -116,6 +116,7 @@ pub(super) fn run(
         } else {
             Vec::new()
         };
+        let checkpoint_requested=matches!(request.work,Work::Capture {..}|Work::RetireEngine(_));
         let release_admission=matches!(request.work,Work::Resolve {..}|Work::CancelAdmission|Work::Capture {..});
         let mut result = match &halted {
             Some(reason) => Err(reason.clone()),
@@ -147,6 +148,9 @@ pub(super) fn run(
             halted = Some(error.clone());
             result = Err(error);
         }
+        if checkpoint_requested && halted.is_none() && result.is_ok() {
+            checkpoint_published(&executor,published);
+        }
         if !was_halted
             && let Some(reason) = &halted
             && !send(Completion::Halted(reason.clone()))
@@ -162,6 +166,20 @@ pub(super) fn run(
             }
         }
     }
+    if halted.is_none() {checkpoint_published(&executor,published);}
+}
+
+/// Maintenance cannot change an already committed command response. The leaf atomically replaces
+/// snapshot/live pins and preserves the previous checkpoint on failure; retry at the next capture,
+/// retirement or graceful worker stop, never by waking an unbounded maintenance loop.
+fn checkpoint_published(executor:&Executor<StructureDecider>,published:Option<u64>) {
+    match executor.with_state(|models|models.batch) {
+        Ok(cut) if cut==published=>{
+            if let Err(error)=capture::checkpoint(executor) {tracing::warn!(%error,"structure checkpoint failed; retaining previous checkpoint");}
+        },
+        Ok(_)=>tracing::warn!("structure checkpoint skipped: committed cut has not been published"),
+        Err(error)=>tracing::warn!(%error,"structure checkpoint skipped: canonical state unavailable"),
+    }
 }
 
 fn handle(
@@ -172,6 +190,7 @@ fn handle(
     work: Work,
 ) -> Result<ResultValue, String> {
     match work {
+        Work::CapturePreset {draft}=>capture::preset(executor,draft).map(|(preset,base_name)|ResultValue::CapturedPreset {preset,base_name}),
         Work::ReconcileRetirement {lease,evidence}=>recovery::reconcile_retirement(executor,lease,evidence),
         Work::ReadCommand(command_id) => {
             executor

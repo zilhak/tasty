@@ -49,6 +49,7 @@ pub(crate) enum Work {
     ReserveExecutionIds {binding:EngineBinding,kinds:Vec<(IdKind,u32)>},
     CaptureClosed {view:CompletionView,binding:EngineBinding,target:tasty_core::CloseTarget,display_name:Option<String>,surfaces:Vec<crate::runtime::surface_capture::CapturedSurface>},
     Capture {binding:EngineBinding,surfaces:Vec<crate::runtime::surface_capture::CapturedSurface>},
+    CapturePreset {draft:crate::intent::preset_capture::PresetCaptureDraft},
     RetireEngine(EngineBinding),
     OpenEngine {
         selection: EngineSelection,
@@ -99,6 +100,7 @@ pub(crate) struct Request {
 
 #[derive(Debug, Clone)]
 pub(crate) enum ResultValue {
+    CapturedPreset {preset:crate::intent::ClonedPreset,base_name:String},
     RecoveryRequired {command_id:String,reason:String,replay:bool},
     ForwardClaimed {lease:EffectLease,payload:Vec<u8>},
     AssemblyResolved {stream:String,input:Option<tasty_core::DataRef>,plan:Option<tasty_core::CreationAssembly>},
@@ -324,6 +326,7 @@ fn request_payload_too_large(work: &Work) -> bool {
 
 pub(crate) fn request_size(work: &Work) -> usize {
     match work {
+        Work::CapturePreset {draft}=>draft.weight(),
         Work::ReconcileRetirement {lease,evidence}=>serde_json::to_vec(lease).map_or(usize::MAX,|bytes|bytes.len()).saturating_add(evidence.capacity()),
         Work::PrepareSubtree {binding,draft}=>serde_json::to_vec(&(binding,draft)).map_or(usize::MAX,|bytes|bytes.len()),
         Work::PrepareUndo {binding,target_pane,scope,shell}=>serde_json::to_vec(&(binding,target_pane,scope,shell)).map_or(usize::MAX,|bytes|bytes.len()),

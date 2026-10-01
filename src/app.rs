@@ -311,13 +311,13 @@ impl App {
         })
     }
 
-    /// 임시 engine, 없으면 첫 창 engine을 반환한다. 아직 초기화되지 않았으면 panic한다.
+    /// Initialized App execution paths borrow services from the pending or first window owner.
     #[cfg(feature = "gui")]
-    pub(crate) fn core_state(&self) -> &crate::core::CoreState {
+    pub(crate) fn engine_runtime(&self) -> &crate::runtime::engine_runtime::EngineRuntime {
         self.engines()
             .primary()
             .expect("App engine accessed before initialization")
-            .core
+            .runtime
     }
 
     /// 자동실행은 CoreState 초기화 전에도 호출될 수 있어 그때는 빈 레지스트리를 반환한다.

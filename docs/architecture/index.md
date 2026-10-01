@@ -279,3 +279,7 @@ ViewCtx는 Core/Live 관측과 표시용 query를 빌리는 EngineRead를 받는
 탭 이동 host event는 committed projection 또는 Remote replacement의 이전/이후 값에서 생성한다. View polling에 lifecycle 통지 의무를 남기지 않으며, 사용자 생성의 tutorial/팝업·선택은 원 View가 살아 있을 때만 수행하는 별도 표시 동작이다.
 
 탐색기·DAG kind 변경, 클립보드 이미지 파일 저장·업로드, 점유 해제·즐겨찾기 저장은 View에서 고정한 대상 binding을 받아 App이 실행한다. View는 자체 선택/cache만 바꾸며 structural tab 순서는 journal 명령으로 요청한다. RSS 이상 감지·순번·저장은 창 유무와 독립적인 App 서비스이고, View가 있을 때의 알림 대상 선택은 그 뒤의 표시 정책이다.
+
+App의 window event provider는 EngineRegistry에서 불변 EngineRead를 만든다. 프레임은 View의 geometry 계산과 App 실행 적용을 분리하며, 설정·registry·kind owner가 필요한 부팅/추가 창 경로는 EngineRuntime을 명시적으로 사용한다. system.info와 tree/Lua snapshot의 공통 query는 표시 선택·active index와 EngineRead를 받아 pure Core에 실행 필드를 다시 넣지 않는다.
+
+저장 checkpoint는 성공한 capture/engine retirement의 전체 publication ACK 뒤와 정상 worker 종료에 실행한다. canonical cut과 published cut이 다르거나 projection이 halted면 수행하지 않는다. checkpoint 오류는 이전 snapshot/live pin을 유지한 유지보수 실패이며 이미 확정된 명령 결과를 바꾸지 않는다. 다음 capture/retirement/정상 종료에서 다시 시도한다.

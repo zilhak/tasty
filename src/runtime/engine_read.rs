@@ -6,6 +6,7 @@ use super::{engine_access::{EngineRef,ObservedPresentation},terminal_store::Term
 #[derive(Clone)]
 pub(crate) struct EngineRead<'a> {
     pub(crate) core:&'a CoreState,
+    pub(crate) layout_slot:Option<crate::core::layout_persistence::LayoutSlotId>,
     pub(crate) live:&'a LiveDomainState,
     pub(crate) settings:&'a crate::settings::Settings,
     pub(crate) terminals:TerminalRead<'a>,
@@ -42,7 +43,7 @@ impl<'a> TerminalRead<'a> {
 }
 impl<'a> EngineRef<'a> {
     pub(crate) fn read(&self)->EngineRead<'a> {
-        EngineRead {core:self.core,live:self.live,settings:&self.runtime.settings,terminals:TerminalRead(&self.runtime.terminals),
+        EngineRead {core:self.core,layout_slot:self.persistence.slot,live:self.live,settings:&self.runtime.settings,terminals:TerminalRead(&self.runtime.terminals),
             surface_registry:super::kind_catalog::KindCatalog::new(self.runtime.surface_registry.clone()),file_handler:HandlerCatalog(&self.runtime.file_handler),
             default_cols:self.runtime.default_cols,default_rows:self.runtime.default_rows,
             #[cfg(feature="gui")] explorer_favorites:&self.runtime.explorer_favorites,

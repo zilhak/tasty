@@ -80,7 +80,7 @@ pub(super) fn build_engine_and_plugins(
         #[cfg(debug_assertions)]
         input_simulation_enabled,
     )?;
-    let mgr = build_plugin_manager(factory, &engine.core_state, gauges);
+    let mgr = build_plugin_manager(factory, &engine.runtime, gauges);
     Ok((engine, mgr))
 }
 
@@ -123,7 +123,7 @@ fn build_core_state_first_boot(
     ));
     #[cfg(debug_assertions)]
     {
-        engine.core_state.input_simulation_enabled = input_simulation_enabled;
+        engine.runtime.input_simulation_enabled = input_simulation_enabled;
     }
     tracing::info!(
         target: "tasty::boot",
@@ -135,18 +135,18 @@ fn build_core_state_first_boot(
 
 fn build_plugin_manager(
     factory: crate::waker::SharedWakerFactory,
-    engine: &crate::core::CoreState,
+    runtime: &crate::runtime::engine_runtime::EngineRuntime,
     gauges: crate::app::services::PluginGauges,
 ) -> plugin::PluginManager {
     let mut mgr = plugin::PluginManager::with_registries(
         factory,
-        engine.runtime.file_format.clone(),
-        engine.runtime.file_handler.clone(),
+        runtime.file_format.clone(),
+        runtime.file_handler.clone(),
     );
     // 호스트와 같은 게이지를 써야 플러그인 대기 시간도 원래 요청의 pressure 기록에 연결된다.
     mgr.set_plugin_wait(gauges.plugin_wait);
     mgr.set_slow_requests(gauges.slow_requests);
-    mgr.set_surface_registry(engine.runtime.surface_registry.clone());
+    mgr.set_surface_registry(runtime.surface_registry.clone());
     mgr.set_i18n_registrar(std::sync::Arc::new(crate::i18n::BinI18nRegistrar));
     mgr.set_hook_handler_registry(std::sync::Arc::new(
         crate::hook_handler::HostHookHandlerPort,
@@ -218,10 +218,10 @@ impl App {
             // 플러그인이 등록한 kind·파일 처리기와 ID 발급기를 창마다 새로 만들지 않는다.
             let shared = self.any_main_engine().map(|src| {
                 (
-                    src.surface_registry.clone(),
-                    src.file_format.clone(),
-                    src.file_handler.clone(),
-                    src.identify_worker.clone(),
+                    src.runtime.surface_registry.clone(),
+                    src.runtime.file_format.clone(),
+                    src.runtime.file_handler.clone(),
+                    src.runtime.identify_worker.clone(),
                     additional_window_task_scope(src.task_scope, &self.services.tasks),
                     src.runtime.counters.clone(),
                 )
@@ -257,7 +257,7 @@ impl App {
                 engine.task_scope = task_scope;
                 #[cfg(debug_assertions)]
                 {
-                    engine.core_state.input_simulation_enabled = self.state.input_simulation_enabled;
+                    engine.runtime.input_simulation_enabled = self.state.input_simulation_enabled;
                 }
                 tracing::info!(
                     target: "tasty::boot",
@@ -283,7 +283,8 @@ impl App {
 
         if self.plugin_manager.is_none() {
             let gauges = self.services.plugin_gauges();
-            let mgr = build_plugin_manager(factory, self.core_state(), gauges);
+            let engine=self.engines.pending().ok_or_else(||anyhow::anyhow!("pending engine missing for plugin initialization"))?;
+            let mgr = build_plugin_manager(factory, engine.runtime, gauges);
             self.plugin_manager = Some(mgr);
         }
         Ok(())
@@ -294,7 +295,6 @@ impl App {
         restored_idx_after_layout: Option<crate::model::RestoredPresentation>,
     ) -> Result<crate::state::MainViewState, String> {
         let preset_store = self.services.preset_store.clone();
-        let memory = self.services.memory_arc();
         let engine = self
             .engines
             .pending_mut()
@@ -333,7 +333,7 @@ impl App {
             Vec::new()
         };
         self.finalize_plugin_hello(hello_pairs);
-        let engine = self.core_state();
+        let Some(engine) = self.engines.pending() else {return false;};
         needed
             .iter()
             .all(|k| engine.runtime.surface_registry.get_live(k).is_some())

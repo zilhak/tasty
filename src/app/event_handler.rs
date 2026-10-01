@@ -1103,11 +1103,7 @@ impl App {
         let modal_active = self.view.is_modal_active();
         let action = {
             if let Some(w) = self.view.views.get_mut(&id) {
-                let engine = self
-                    .engines
-                    .of_window(id)
-                    .and_then(|e| self.engines.session_mut(e))
-                    .map(|session|session.read());
+                let engine = self.engines.window_read(id);
                 let mut ctx = ViewCtx {
                     event_loop,
                     modal_active,
