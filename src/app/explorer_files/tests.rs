@@ -102,7 +102,7 @@ fn late_selection_and_replaced_view_are_not_modified() {
     assert!(
         state
             .explorer_views
-            .get(1)
+            .get(sid)
             .unwrap()
             .selected
             .contains(&next)
