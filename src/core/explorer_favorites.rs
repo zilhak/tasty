@@ -40,7 +40,7 @@ impl ExplorerFavorites {
         }
     }
 
-    pub fn save(&self) {
+    pub fn save(&mut self) {
         let Some(path) = Self::config_path() else {
             tracing::warn!("explorer: no favorites path available; not saving");
             return;

@@ -619,7 +619,7 @@ impl Terminal {
     /// the host installs a waker for
     /// the new id so targeted PTY polling drains the terminal at its new store
     /// key. Detached mirrors have no reader worker, so this is inert for them.
-    pub fn rewire_waker(&self, waker: Waker) {
+    pub fn rewire_waker(&mut self, waker: Waker) {
         *tasty_utils::poison::recover_mutex(
             self.waker.lock(),
             WAKER_WHAT,

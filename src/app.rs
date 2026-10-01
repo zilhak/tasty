@@ -182,6 +182,8 @@ pub(crate) struct App {
     pub(crate) remote:tasty_remote::outbound::Remote,
     /// 스크린샷→클립보드 캡처 워커 스레드 → 메인 루프 결과 채널.
     #[cfg(feature = "gui")]
+    pub(crate) screenshot_workers:screenshot_capture::ScreenshotWorkers,
+    #[cfg(feature="gui")]
     pub(crate) screenshot_capture_tx:
         std::sync::mpsc::Sender<screenshot_capture::ScreenshotCaptureOutcome>,
     #[cfg(feature = "gui")]
@@ -273,6 +275,7 @@ impl App {
             }),
             pending_focus_hint_clear: std::collections::HashSet::new(),
             remote:tasty_remote::outbound::Remote::new(),
+            screenshot_workers:Default::default(),
             screenshot_capture_tx,
             screenshot_capture_rx,
             image_upload_tx,

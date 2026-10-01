@@ -42,7 +42,7 @@ impl PortFavorites {
         }
     }
 
-    pub fn save(&self) {
+    pub fn save(&mut self) {
         let Some(path) = Self::config_path() else {
             tracing::warn!("port_scanner: no favorites path available; not saving");
             return;

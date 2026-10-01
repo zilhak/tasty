@@ -13,6 +13,15 @@ impl SurfaceBinding {
         let mirror=engine.find_workspace_index_for_surface(surface).and_then(|(index,_)|engine.workspace_at(index)).filter(|workspace|workspace.mirror).and_then(|workspace|engine.mirror_projection_token(workspace.id).map(|token|(workspace.id,token)));
         Some(Self {surface,activation:descriptor.activation_generation,resource:engine.terminals.generation(surface),mirror})
     }
+    #[cfg(feature="gui")]
+    pub(crate) fn take_mouse_capture_hint(&self,engine:&mut EngineMut<'_>,foreground_generation:u64)->Option<u32> {
+        if !self.current(&engine.as_ref()) || engine.foreground_generation(self.surface)!=foreground_generation
+            || !engine.runtime.settings.general.mouse_capture_hint
+            || engine.foreground_name(self.surface).is_some_and(|name|engine.runtime.settings.general.mouse_capture_banner_disabled_for(name)) {
+            return None;
+        }
+        engine.runtime.terminals.get_mut(self.surface)?.take_mouse_capture_hint().then_some(self.surface)
+    }
     pub(crate) fn current(&self,engine:&EngineRef<'_>)->bool {
         engine.core.find_surface_by_id(self.surface).is_some_and(|descriptor|descriptor.activation_generation==self.activation)
             && self.resource.is_none_or(|generation|engine.runtime.terminals.matches_generation(self.surface,generation))

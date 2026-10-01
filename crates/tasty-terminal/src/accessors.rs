@@ -90,7 +90,7 @@ impl Terminal {
     /// 셸 복귀나 출력 중단은 busy를 해제하고, 입력 에코는 새 busy 진입만 막는다.
     /// 이미 busy인 프로세스는 입력만으로 idle로 바뀌지 않는다.
     pub fn busy_with_foreground(
-        &self,
+        &mut self,
         shell_pid: u32,
         foreground: Option<&foreground_process::ForegroundProcessInfo>,
     ) -> bool {

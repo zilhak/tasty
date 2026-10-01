@@ -858,20 +858,11 @@ impl MainView {
         if mouse_capture_banner_suppressed(&*engine, surface_id) {
             return;
         }
-        if engine.settings.general.mouse_capture_hint {
-            let show = engine
-                .find_terminal_by_id(surface_id)
-                .is_some_and(|t| t.take_mouse_capture_hint());
-            if show {
-                let generation = engine.foreground_generation(surface_id);
-                self.state.banners.push(
-                    crate::adapters::ui::BannerState::persistent(
-                        crate::adapters::ui::banner::defs::BANNER_MOUSE_CAPTURE,
-                        crate::adapters::ui::BannerScope::Surface(surface_id),
-                    )
-                    .with_origin_generation(generation),
-                );
-            }
+        if engine.settings.general.mouse_capture_hint
+            && let Some(target)=crate::app::engine_action::SurfaceBinding::capture(engine,surface_id) {
+            self.state.dispatch_intent(crate::intent::Intent::MouseCaptureHint {
+                target,foreground_generation:engine.foreground_generation(surface_id),view:self.base.state.identity(),
+            }.from_user_shortcut("mouse_capture_hint"));
         }
     }
 

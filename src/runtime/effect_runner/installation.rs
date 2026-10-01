@@ -150,7 +150,7 @@ impl Installation {
             publication()?;
         }
         let previous = match self.connection.take() {
-            Some((terminal, mut pty)) => {
+            Some((mut terminal, mut pty)) => {
                 if let Some(adoption)=&self.adoption {
                     if pty.generation().value()!=adoption.resource_generation {anyhow::bail!("standalone installation has another physical owner");}
                     pty.adopt();terminal.rewire_waker(engine.make_waker(self.surface_id));

@@ -15,9 +15,9 @@ pub(crate) struct EngineRead<'a> {
     pub(crate) default_cols:usize,
     pub(crate) default_rows:usize,
     #[cfg(feature="gui")]
-    pub(crate) explorer_favorites:&'a crate::core::explorer_favorites::ExplorerFavorites,
+    pub(crate) explorer_favorites:&'a [crate::core::explorer_favorites::ExplorerFavorite],
     #[cfg(feature="gui")]
-    pub(crate) port_favorites:&'a crate::core::port_favorites::PortFavorites,
+    pub(crate) port_favorites:&'a [crate::core::port_favorites::PortFavorite],
     #[cfg(feature="gui")]
     pub(crate) attach_mesh_frames:&'a crate::remote::mesh_frames::AttachMeshFrameStore,
     surfaces:&'a HashMap<u32,Box<dyn Surface>>,
@@ -46,8 +46,8 @@ impl<'a> EngineRef<'a> {
         EngineRead {core:self.core,layout_slot:self.persistence.slot,live:self.live,settings:&self.runtime.settings,terminals:TerminalRead(&self.runtime.terminals),
             surface_registry:super::kind_catalog::KindCatalog::new(self.runtime.surface_registry.clone()),file_handler:HandlerCatalog(&self.runtime.file_handler),
             default_cols:self.runtime.default_cols,default_rows:self.runtime.default_rows,
-            #[cfg(feature="gui")] explorer_favorites:&self.runtime.explorer_favorites,
-            #[cfg(feature="gui")] port_favorites:&self.runtime.port_favorites,
+            #[cfg(feature="gui")] explorer_favorites:&self.runtime.explorer_favorites.items,
+            #[cfg(feature="gui")] port_favorites:&self.runtime.port_favorites.items,
             #[cfg(feature="gui")] attach_mesh_frames:&self.remote.attach_mesh_frames,
             surfaces:&self.runtime.surfaces,mirror_cwd:&self.remote.mirror_surface_cwd,mirror_busy:&self.remote.mirror_busy_surfaces,
             #[cfg(feature="gui")] readonly:&self.runtime.readonly_views,

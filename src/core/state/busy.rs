@@ -124,7 +124,7 @@ impl EngineMut<'_> {
             std::collections::HashSet::new();
         let mut names: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
         for ((&sid, &shell_pid), fg) in sids.iter().zip(shell_pids.iter()).zip(foregrounds.iter()) {
-            let Some(terminal) = self.runtime.terminals.get(sid) else {
+            let Some(terminal) = self.runtime.terminals.get_mut(sid) else {
                 continue;
             };
             if terminal.busy_with_foreground(shell_pid, fg.as_ref()) {

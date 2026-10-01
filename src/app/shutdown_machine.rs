@@ -54,6 +54,7 @@ pub(crate) struct ShutdownState {
     final_view_sequence: Option<u64>,
     port_scan_deadline: Option<Instant>,
     profile_detection_deadline:Option<Instant>,
+    screenshot_deadline:Option<Instant>,
 }
 
 enum StepOutcome {
@@ -74,10 +75,12 @@ impl App {
             final_view_sequence: None,
             port_scan_deadline: Some(Instant::now() + PORT_SCAN_RECLAIM_TIMEOUT),
             profile_detection_deadline:Some(Instant::now()+Duration::from_secs(5)),
+            screenshot_deadline:Some(Instant::now()+Duration::from_secs(5)),
         });
 
         self.port_scans.begin_shutdown();
         self.services.profile_detections.begin_shutdown();
+        self.screenshot_workers.begin_shutdown();
 
         // Native child views sit above the GPU loading frame. Normal redraws no
         // longer run after shutdown starts, so hide them before the first frame.
@@ -318,6 +321,14 @@ impl App {
             if Instant::now()<deadline {return StepOutcome::Waiting;}
             tracing::warn!(detections_remaining,"profile detection shutdown timed out; workers remain unjoined");
             if let Some(state)=self.state.shutdown.as_mut() {state.profile_detection_deadline=None;}
+        }
+        let screenshots_remaining=self.screenshot_workers.poll_shutdown();
+        if screenshots_remaining!=0
+            && let Some(deadline)=self.state.shutdown.as_ref().and_then(|state|state.screenshot_deadline)
+        {
+            if Instant::now()<deadline {return StepOutcome::Waiting;}
+            tracing::warn!(screenshots_remaining,"screenshot shutdown timed out; workers remain unjoined");
+            if let Some(state)=self.state.shutdown.as_mut() {state.screenshot_deadline=None;}
         }
         let remote=self.remote.shutdown_observation();
         match remote {

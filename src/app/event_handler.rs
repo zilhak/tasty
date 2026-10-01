@@ -2099,6 +2099,9 @@ impl App {
         let deadline = min_deadline(deadline, self.journal.cleanup_poll_deadline());
         let deadline = min_deadline(deadline, self.engine_release_poll_deadline());
         let deadline = if self.journal.pauses_observation() {deadline} else {
+            min_deadline(deadline,self.screenshot_workers.has_pending().then(||std::time::Instant::now()+std::time::Duration::from_millis(20)))
+        };
+        let deadline = if self.journal.pauses_observation() {deadline} else {
             min_deadline(deadline,self.services.profile_detections.has_pending().then(||std::time::Instant::now()+std::time::Duration::from_millis(20)))
         };
         let deadline=if self.journal.pauses_observation(){deadline}else{min_deadline(deadline,self.engines.all_sessions().filter_map(|session|session.runtime.input_submit_deadline()).min())};

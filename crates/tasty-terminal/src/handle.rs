@@ -54,7 +54,7 @@ impl Terminal {
     }
 
     /// 무장된 "첫 마우스 캡처 안내" 플래그를 소비한다(읽고 disarm). 트래킹 세션당 1회 true.
-    pub fn take_mouse_capture_hint(&self) -> bool {
+    pub fn take_mouse_capture_hint(&mut self) -> bool {
         self.lock_state().take_mouse_capture_hint()
     }
 

@@ -11,6 +11,7 @@ use tasty_type_geometry::length::LogicalPx;
 
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
+#[cfg(test)]
 use crate::core::port_favorites::PortFavorites;
 use crate::core::state::SurfaceDisplayPath;
 use crate::i18n::t;
@@ -438,7 +439,7 @@ pub fn draw_port_scanner_popup(
     }
 
     // 즐겨찾기는 메인 범위와 별개로 시스템 전체를 조회한다. 항목이 없으면 조회하지 않는다.
-    let has_favorites = !engine.port_favorites.items.is_empty();
+    let has_favorites = !engine.port_favorites.is_empty();
     if has_favorites && matches!(state.port_favorites_scan, PortScanState::Idle) {
         kick_off_scan(
             &mut state.port_favorites_scan,
@@ -465,7 +466,7 @@ pub fn draw_port_scanner_popup(
             sort_rows(&mut v, filter_state.sort_key, filter_state.sort_dir);
             for row in &mut v {
                 if let Ok(addr) = row.addr_display.parse::<IpAddr>() {
-                    row.favorited = engine.port_favorites.contains(addr, row.port);
+                    row.favorited = engine.port_favorites.iter().any(|favorite|favorite.addr==addr && favorite.port==row.port);
                 }
             }
             (v, state_total)
@@ -477,7 +478,7 @@ pub fn draw_port_scanner_popup(
         PortScanState::Ready { rows, .. } => Some(rows.as_slice()),
         _ => None,
     };
-    let favorite_rows = build_favorite_rows(&engine.port_favorites, favorite_system_rows);
+    let favorite_rows = build_favorite_rows(engine.port_favorites, favorite_system_rows);
 
     let present_states: Vec<PortState> = match &state.port_scan {
         PortScanState::Ready { rows, .. } => present_states(rows),
@@ -827,11 +828,10 @@ pub fn kick_off_scan(
 /// one matching socket (e.g. a LISTEN plus an inbound ESTABLISHED sharing the
 /// port) prefers the LISTEN row.
 fn build_favorite_rows(
-    favorites: &PortFavorites,
+    favorites: &[crate::core::port_favorites::PortFavorite],
     system_rows: Option<&[PortRowView]>,
 ) -> Vec<FavoriteRowView> {
     favorites
-        .items
         .iter()
         .map(|fav| {
             let addr_display = format_addr(fav.addr);
@@ -2689,7 +2689,7 @@ mod tests {
     fn build_favorite_rows_none_when_scan_not_ready() {
         let mut favs = PortFavorites::default();
         favs.items.push(favorite("127.0.0.1", 3000));
-        let rows = build_favorite_rows(&favs, None);
+        let rows = build_favorite_rows(&favs.items, None);
         assert_eq!(rows.len(), 1);
         assert!(rows[0].matched.is_none());
     }
@@ -2701,7 +2701,7 @@ mod tests {
         favs.items.push(favorite("0.0.0.0", 3000));
         favs.items.push(favorite("0.0.0.0", 9999)); // no matching scan row
         let system_rows = vec![tasty_row(3000, "frontend", Some("dev"))];
-        let rows = build_favorite_rows(&favs, Some(&system_rows));
+        let rows = build_favorite_rows(&favs.items, Some(&system_rows));
         assert_eq!(rows.len(), 2);
         let matched = rows[0].matched.as_ref().expect("3000 should match");
         assert_eq!(matched.process_name.as_deref(), Some("node"));
@@ -2718,7 +2718,7 @@ mod tests {
             row_with_state(3000, PortState::Established),
             row_with_state(3000, PortState::Listen),
         ];
-        let rows = build_favorite_rows(&favs, Some(&system_rows));
+        let rows = build_favorite_rows(&favs.items, Some(&system_rows));
         assert!(rows[0].matched.as_ref().unwrap().state.is_listen());
     }
 

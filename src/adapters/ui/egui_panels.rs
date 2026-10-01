@@ -108,7 +108,7 @@ pub fn draw_egui_panels(
     // the store at the same time as `&mut Panel` from `engine.workspaces()`.
     let mut explorer_views = std::mem::take(&mut state.explorer_views);
     let mut dag_views = std::mem::take(&mut state.dag_graph_views);
-    let explorer_favorites = engine.explorer_favorites.items.clone();
+    let explorer_favorites = engine.explorer_favorites;
     // cut 대기 경로를 어둡게 표시한다. 복사·붙여넣기 완료·취소 후에는 빈 목록으로 해제된다.
     let explorer_cut_pending: std::collections::HashSet<std::path::PathBuf> = state
         .explorer_clipboard
@@ -170,7 +170,7 @@ pub fn draw_egui_panels(
                         view,
                         &explorer_font,
                         &id_suffix,
-                        &explorer_favorites,
+                        explorer_favorites,
                         &explorer_cut_pending,
                         &explorer_recent_dirs,
                         mirror_ws_id,
