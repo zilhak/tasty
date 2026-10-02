@@ -11,7 +11,7 @@ const SRC_FLOOR: Floor = Floor {
     measured: tasty_doc_guards::floored_walk::populations::SRC_RS.measured,
     measured_on: tasty_doc_guards::floored_walk::populations::SRC_RS.measured_on,
     counted_on: tasty_doc_guards::floored_walk::populations::SRC_RS.counted_on,
-    why_this_gap: "src의 파일 수는 공용 측정을 사용한다. 현재 780개와 하한 587의 차이는 193개이며 전수 수집의 보장은 아니다. 과거 fdca139c0..91ca7d37d 구간의 최대 감소 24개를 기준으로, 하한의 여유가 두 번의 감소를 감당하는지 비교했다. 크레이트 분리로 한꺼번에 이동하는 경우까지 보장하지는 않는다. 하한에 걸리면 실제 이동·삭제와 순회 누락을 구별해 다시 측정한다.",
+    why_this_gap: "src의 파일 수는 공용 측정을 사용한다. 현재 783개와 하한 587의 차이는 196개이며 전수 수집의 보장은 아니다. 과거 fdca139c0..91ca7d37d 구간의 최대 감소 24개를 기준으로, 하한의 여유가 두 번의 감소를 감당하는지 비교했다. 크레이트 분리로 한꺼번에 이동하는 경우까지 보장하지는 않는다. 하한에 걸리면 실제 이동·삭제와 순회 누락을 구별해 다시 측정한다.",
 };
 
 fn sources() -> Vec<(String, String)> {
