@@ -88,37 +88,7 @@ pub(super) fn run(
             continue;
         }
         let was_halted = halted.is_some();
-        let publishes = match &request.work {
-            Work::ReconcilePreparation { .. }
-            | Work::ReconcileRetirement { .. }
-            | Work::Capture { .. }
-            | Work::RetirementFinished { .. }
-            | Work::OpenEngine { .. }
-            | Work::Resolve { .. }
-            | Work::Prepared { .. }
-            | Work::CleanupFinished { .. }
-            | Work::InstallationRejected { .. }
-            | Work::PreparationUncertain { .. }
-            | Work::ClaimPreparation { .. } => true,
-            #[cfg(any(feature = "gui", test))]
-            Work::RetireEngine(_) => true,
-            #[cfg(feature = "gui")]
-            Work::ForwardFinished { .. } => true,
-            _ => false,
-        };
-        let mut predecessor = if publishes && halted.is_none() {
-            match executor
-                .with_state(|models| binding::publication_predecessor(models, &request.work))
-            {
-                Ok(models) => Some(models),
-                Err(error) => {
-                    halted = Some(error.to_string());
-                    None
-                }
-            }
-        } else {
-            None
-        };
+        let mut predecessor = capture_predecessor(&executor, &request.work, &mut halted);
         let mut followers = if matches!(request.work, Work::Resolve { .. } | Work::CancelAdmission)
         {
             pending
@@ -203,39 +173,100 @@ pub(super) fn run(
                 return;
             }
         }
-        if let Some(reason) = &halted {
-            for (ticket, _) in waiting.drain(..) {
-                if !send(Completion::Finished {
-                    ticket,
-                    result: Err(JournalError::Halted(reason.clone())),
-                }) {
-                    return;
-                }
-            }
-        } else if pending.len() < pending_before {
-            while let Some((ticket, admission)) = waiting.pop_front() {
-                let mut deferred = None;
-                let result = handle(
-                    &executor,
-                    &home,
-                    &mut pending,
-                    ticket,
-                    Work::Admit(admission),
-                    &mut deferred,
-                );
-                if let Some(admission) = deferred {
-                    waiting.push_front((ticket, admission));
-                    break;
-                }
-                if !send(Completion::Finished { ticket, result }) {
-                    return;
-                }
-            }
+        let credit_released = pending.len() < pending_before;
+        if !process_waiting(
+            &executor,
+            &home,
+            &mut pending,
+            &mut waiting,
+            halted.as_deref(),
+            credit_released,
+            &send,
+        ) {
+            return;
         }
     }
     if halted.is_none() {
         checkpoint_published(&executor, published, &readers);
     }
+}
+
+fn capture_predecessor(
+    executor: &Executor<StructureDecider>,
+    work: &Work,
+    halted: &mut Option<String>,
+) -> Option<tasty_core::StructureModels> {
+    let publishes = match work {
+        Work::ReconcilePreparation { .. }
+        | Work::ReconcileRetirement { .. }
+        | Work::Capture { .. }
+        | Work::RetirementFinished { .. }
+        | Work::OpenEngine { .. }
+        | Work::Resolve { .. }
+        | Work::Prepared { .. }
+        | Work::CleanupFinished { .. }
+        | Work::InstallationRejected { .. }
+        | Work::PreparationUncertain { .. }
+        | Work::ClaimPreparation { .. } => true,
+        #[cfg(any(feature = "gui", test))]
+        Work::RetireEngine(_) => true,
+        #[cfg(feature = "gui")]
+        Work::ForwardFinished { .. } => true,
+        _ => false,
+    };
+    if publishes && halted.is_none() {
+        match executor.with_state(|models| binding::publication_predecessor(models, work)) {
+            Ok(models) => Some(models),
+            Err(error) => {
+                *halted = Some(error.to_string());
+                None
+            }
+        }
+    } else {
+        None
+    }
+}
+
+/// Complete halted waiters or retry them in arrival order after a credit is released.
+fn process_waiting(
+    executor: &Executor<StructureDecider>,
+    home: &std::path::Path,
+    pending: &mut HashMap<u64, Pending>,
+    waiting: &mut VecDeque<(u64, Admission)>,
+    halted: Option<&str>,
+    credit_released: bool,
+    send: &impl Fn(Completion) -> bool,
+) -> bool {
+    if let Some(reason) = halted {
+        for (ticket, _) in waiting.drain(..) {
+            if !send(Completion::Finished {
+                ticket,
+                result: Err(JournalError::Halted(reason.to_owned())),
+            }) {
+                return false;
+            }
+        }
+    } else if credit_released {
+        while let Some((ticket, admission)) = waiting.pop_front() {
+            let mut deferred = None;
+            let result = handle(
+                executor,
+                home,
+                pending,
+                ticket,
+                Work::Admit(admission),
+                &mut deferred,
+            );
+            if let Some(admission) = deferred {
+                waiting.push_front((ticket, admission));
+                break;
+            }
+            if !send(Completion::Finished { ticket, result }) {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// Queue an admission until a credit returns. The wait shares the admission count limit, so a

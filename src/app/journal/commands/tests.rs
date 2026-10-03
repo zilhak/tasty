@@ -840,7 +840,6 @@ fn a_failed_public_factory_completes_the_request_without_halting_the_engine() {
 #[cfg(feature = "gui")]
 #[test]
 fn an_unfinished_external_effect_blocks_its_engine_but_not_another_engine() {
-    use crate::runtime::journal_product::{Completion, Request as WorkerRequest};
     let (mut first, mut journal) = boot();
     let mut second = EngineSession::new_with_ids_and_settings(
         80,
@@ -894,29 +893,7 @@ fn an_unfinished_external_effect_blocks_its_engine_but_not_another_engine() {
     assert!(journal.bind_command_engine(held_ticket, first.id));
     // Persist a genuine external obligation but deliberately do not attach a transport runner.
     // Its command stays InProgress without delaying the storage worker or publication ACKs.
-    journal
-        .worker
-        .submit(WorkerRequest {
-            ticket: held_ticket,
-            work: Work::PutPayload(b"{}".to_vec()),
-        })
-        .unwrap();
-    let input = loop {
-        match journal.worker.try_recv() {
-            Ok(Completion::Finished {
-                ticket,
-                result: Ok(ResultValue::InputStored(input)),
-            }) => {
-                assert_eq!(ticket, held_ticket);
-                break input;
-            }
-            Err(std::sync::mpsc::TryRecvError::Empty) => {
-                assert!(Instant::now() < deadline);
-                std::thread::sleep(Duration::from_millis(1));
-            }
-            other => panic!("unexpected payload result: {other:?}"),
-        }
-    };
+    let input = store_waiting_effect_input(&journal, held_ticket, deadline);
     journal
         .commands
         .pending
@@ -996,4 +973,36 @@ fn an_unfinished_external_effect_blocks_its_engine_but_not_another_engine() {
     ));
     assert_eq!(second.core_state.local_workspaces()[0].name, "independent");
     assert_ne!(first.core_state.local_workspaces()[0].name, "same-engine");
+}
+
+#[cfg(feature = "gui")]
+fn store_waiting_effect_input(
+    journal: &JournalApplication,
+    held_ticket: u64,
+    deadline: Instant,
+) -> tasty_core::DataRef {
+    use crate::runtime::journal_product::{Completion, Request as WorkerRequest};
+    journal
+        .worker
+        .submit(WorkerRequest {
+            ticket: held_ticket,
+            work: Work::PutPayload(b"{}".to_vec()),
+        })
+        .unwrap();
+    loop {
+        match journal.worker.try_recv() {
+            Ok(Completion::Finished {
+                ticket,
+                result: Ok(ResultValue::InputStored(input)),
+            }) => {
+                assert_eq!(ticket, held_ticket);
+                return input;
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                assert!(Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            other => panic!("unexpected payload result: {other:?}"),
+        }
+    }
 }
