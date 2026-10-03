@@ -1,6 +1,8 @@
 //! App-owned bounded local reads. Views keep receipts; discarded receipts cannot update a new View.
 use crate::core::fs_list::DirEntryInfo;
+use crate::i18n::t;
 use crate::state::branch::HeadState;
+use crate::state::{FpLoadState, MainViewState};
 use crate::view::ui::View;
 use std::{
     io,
@@ -212,8 +214,7 @@ impl crate::view::MainView {
         let mut changed = self.state.tutorial.poll_progress();
         changed |= self.state.explorer_views.poll_local_reads(owner);
         changed |= self.state.poll_branch_read(owner);
-        changed |=
-            crate::adapters::ui::popup::file_picker::poll_local_reads(&mut self.state, owner);
+        changed |= poll_file_picker_reads(&mut self.state, owner);
         if self.state.dialogs.pending_script_confirm.is_none()
             && let Some(result) = self
                 .state
@@ -260,6 +261,44 @@ impl crate::view::MainView {
             self.mark_dirty();
         }
     }
+}
+
+fn poll_file_picker_reads(
+    state: &mut MainViewState,
+    owner: &mut crate::app::local_reads::LocalReads,
+) -> bool {
+    let Some(d) = state.dialogs.file_picker.as_mut() else {
+        return false;
+    };
+    let Some(result) = d.local_query.as_mut().and_then(|query| query.poll(owner)) else {
+        return false;
+    };
+    d.local_query = None;
+    match result {
+        Ok(mut entries) => {
+            crate::core::fs_list::sort_entries(
+                &mut entries,
+                tasty_model::SortColumn::Name,
+                tasty_model::SortDir::Asc,
+            );
+            d.load = if entries.is_empty() {
+                FpLoadState::Empty
+            } else {
+                FpLoadState::Loaded
+            };
+            d.entries = entries;
+        }
+        Err(e) => {
+            let msg = if e.kind() == std::io::ErrorKind::PermissionDenied {
+                t("filepicker.error_perm.reason_permission").to_string()
+            } else {
+                e.to_string()
+            };
+            d.entries.clear();
+            d.load = FpLoadState::ErrorPerm(msg);
+        }
+    }
+    true
 }
 
 #[cfg(test)]

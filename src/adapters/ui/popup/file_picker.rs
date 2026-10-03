@@ -1041,44 +1041,6 @@ fn navigate(
     };
 }
 
-pub(crate) fn poll_local_reads(
-    state: &mut MainViewState,
-    owner: &mut crate::app::local_reads::LocalReads,
-) -> bool {
-    let Some(d) = state.dialogs.file_picker.as_mut() else {
-        return false;
-    };
-    let Some(result) = d.local_query.as_mut().and_then(|query| query.poll(owner)) else {
-        return false;
-    };
-    d.local_query = None;
-    match result {
-        Ok(mut entries) => {
-            crate::core::fs_list::sort_entries(
-                &mut entries,
-                tasty_model::SortColumn::Name,
-                tasty_model::SortDir::Asc,
-            );
-            d.load = if entries.is_empty() {
-                FpLoadState::Empty
-            } else {
-                FpLoadState::Loaded
-            };
-            d.entries = entries;
-        }
-        Err(e) => {
-            let msg = if e.kind() == std::io::ErrorKind::PermissionDenied {
-                t("filepicker.error_perm.reason_permission").to_string()
-            } else {
-                e.to_string()
-            };
-            d.entries.clear();
-            d.load = FpLoadState::ErrorPerm(msg);
-        }
-    }
-    true
-}
-
 /// 원격 OS를 알 수 없어 경로에 역슬래시가 있으면 Windows 형식으로 추정한다.
 /// 역슬래시를 이름에 포함한 POSIX 경로는 이 방식으로 구별하지 못한다.
 fn is_windows_style_remote_path(p: &str) -> bool {
