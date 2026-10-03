@@ -65,6 +65,9 @@ impl JournalApplication {
         services: &crate::app::services::AppServices,
         default_pane: Option<u32>,
     ) {
+        if !self.bind_command_engine(ticket, session.id) {
+            return;
+        }
         let Some(pending) = self.commands.pending.get(&ticket) else {
             return;
         };

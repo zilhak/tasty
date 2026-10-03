@@ -16,6 +16,7 @@ mod intents;
 pub(crate) mod live_resume;
 mod notification;
 mod replacement;
+mod scheduling;
 mod tab;
 #[cfg(feature = "gui")]
 mod view_completion;
@@ -93,6 +94,7 @@ struct IntentResult {
 
 struct Pending {
     request: JsonRpcRequest,
+    engine_scope: Option<EngineId>,
     reply: Reply,
     queued: Option<Work>,
     needs_resolution: bool,
@@ -335,6 +337,7 @@ impl JournalApplication {
             ticket,
             Pending {
                 request: request.clone(),
+                engine_scope: reply.engine_scope(),
                 reply,
                 queued: Some(work),
                 needs_resolution: false,
@@ -363,13 +366,19 @@ impl JournalApplication {
     }
 
     pub(super) fn submit_commands(&mut self) -> Result<(), String> {
-        let first = self.commands.pending.keys().next().copied();
+        let allowed: std::collections::HashSet<_> = self
+            .commands
+            .pending
+            .iter()
+            .filter(|(ticket, pending)| self.commands.submittable(**ticket, pending))
+            .map(|(ticket, _)| *ticket)
+            .collect();
         let mut oversized = Vec::new();
         for (ticket, pending) in self.commands.pending.iter_mut().take(MAX_PENDING) {
             let Some(work) = pending.queued.take() else {
                 continue;
             };
-            if !matches!(work, Work::Admit(_)) && first != Some(*ticket) {
+            if !matches!(work, Work::Admit(_)) && !allowed.contains(ticket) {
                 pending.queued = Some(work);
                 continue;
             }
@@ -411,6 +420,13 @@ impl JournalApplication {
         let Some(pending) = self.commands.pending.get_mut(&ticket) else {
             return;
         };
+        if let Some(Work::Resolve { changes, .. }) = &pending.queued
+            && changes
+                .first()
+                .is_some_and(|first| changes.iter().any(|change| change.stream != first.stream))
+        {
+            pending.engine_scope = None;
+        }
         pending.bytes = pending_weight(pending);
         let total: usize = self
             .commands
@@ -482,24 +498,19 @@ impl JournalApplication {
             .collect()
     }
 
-    pub(crate) fn requests_needing_resolution(&mut self) -> Vec<(u64, JsonRpcRequest)> {
+    pub(crate) fn requests_needing_resolution(&self) -> Vec<(u64, JsonRpcRequest)> {
         self.commands
             .pending
-            .iter_mut()
-            .take(1)
-            .filter_map(|(ticket, pending)| {
-                if !pending.needs_resolution {
-                    return None;
-                }
-                pending.needs_resolution = false;
-                Some((*ticket, pending.request.clone()))
-            })
+            .iter()
+            .filter(|(_, pending)| pending.needs_resolution)
+            .map(|(ticket, pending)| (*ticket, pending.request.clone()))
             .collect()
     }
 
     pub(crate) fn reject_resolved_request(&mut self, ticket: u64, mut response: JsonRpcResponse) {
         response.id = serde_json::Value::Null;
         if let Some(pending) = self.commands.pending.get_mut(&ticket) {
+            pending.needs_resolution = false;
             pending.request.params = serde_json::Value::Null;
             pending.queued = Some(Work::Resolve {
                 changes: Vec::new(),
@@ -511,6 +522,9 @@ impl JournalApplication {
     }
 
     pub(crate) fn resolve_ipc_for_engine(&mut self, ticket: u64, session: &EngineSession) {
+        if !self.bind_command_engine(ticket, session.id) {
+            return;
+        }
         if self.commands.pending.get(&ticket).is_some_and(|pending| {
             matches!(
                 pending.request.method.as_str(),
@@ -728,6 +742,9 @@ impl JournalApplication {
     ) {
         for (ticket, request) in self.requests_needing_resolution() {
             if self.reject_headless_owner(ticket, &request, session) {
+                continue;
+            }
+            if !self.bind_command_engine(ticket, session.id) {
                 continue;
             }
             if request.method == "remote.structural" {

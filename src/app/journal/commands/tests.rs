@@ -836,3 +836,164 @@ fn a_failed_public_factory_completes_the_request_without_halting_the_engine() {
     );
     assert!(finish(&mut journal, &mut session, &good).error.is_none());
 }
+
+#[cfg(feature = "gui")]
+#[test]
+fn an_unfinished_external_effect_blocks_its_engine_but_not_another_engine() {
+    use crate::runtime::journal_product::{Completion, Request as WorkerRequest};
+    let (mut first, mut journal) = boot();
+    let mut second = EngineSession::new_with_ids_and_settings(
+        80,
+        24,
+        Arc::new(|| {}),
+        None,
+        Some(2),
+        Arc::new(std::sync::Mutex::new(
+            tasty_memory::testing::InMemoryStorage::new(),
+        )),
+        Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+        first.runtime.settings.clone(),
+    )
+    .unwrap();
+    journal
+        .begin_engine(
+            &second,
+            EngineSelection::Slot {
+                slot: 2,
+                resume: false,
+            },
+        )
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !journal.is_ready(second.id) {
+        journal
+            .poll_bootstrap(&mut [&mut first, &mut second], None)
+            .unwrap();
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let first_ws = first.core_state.local_workspaces()[0].id;
+    let second_ws = second.core_state.local_workspaces()[0].id;
+    let held_ticket = journal.next_ticket;
+    let held = send(
+        &mut journal,
+        request(
+            "workspace.update",
+            serde_json::json!({"id": first_ws, "name":"held"}),
+            None,
+            100,
+        ),
+    );
+    while !journal.commands.pending[&held_ticket].needs_resolution {
+        journal
+            .poll_bootstrap(&mut [&mut first, &mut second], None)
+            .unwrap();
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(journal.bind_command_engine(held_ticket, first.id));
+    // Persist a genuine external obligation but deliberately do not attach a transport runner.
+    // Its command stays InProgress without delaying the storage worker or publication ACKs.
+    journal
+        .worker
+        .submit(WorkerRequest {
+            ticket: held_ticket,
+            work: Work::PutPayload(b"{}".to_vec()),
+        })
+        .unwrap();
+    let input = loop {
+        match journal.worker.try_recv() {
+            Ok(Completion::Finished {
+                ticket,
+                result: Ok(ResultValue::InputStored(input)),
+            }) => {
+                assert_eq!(ticket, held_ticket);
+                break input;
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                assert!(Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            other => panic!("unexpected payload result: {other:?}"),
+        }
+    };
+    journal
+        .commands
+        .pending
+        .get_mut(&held_ticket)
+        .unwrap()
+        .queued = Some(Work::Resolve {
+        changes: vec![StreamCommand {
+            stream: first.journal_binding.as_ref().unwrap().stream.clone(),
+            command: tasty_core::StructuralCommand::PrepareForward {
+                operation: tasty_core::OperationId(String::new()),
+                command_id: String::new(),
+                input,
+            },
+        }],
+        response: Some(ResponsePlan::Fixed(JsonRpcResponse::success(
+            serde_json::Value::Null,
+            serde_json::json!({"held":true}),
+        ))),
+    });
+    while journal.commands.pending[&held_ticket]
+        .waiting_command
+        .is_none()
+    {
+        journal
+            .poll_bootstrap(&mut [&mut first, &mut second], None)
+            .unwrap();
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let same = send(
+        &mut journal,
+        request(
+            "workspace.update",
+            serde_json::json!({"id": first_ws,"name":"same-engine"}),
+            None,
+            101,
+        ),
+    );
+    let independent = send(
+        &mut journal,
+        request(
+            "workspace.update",
+            serde_json::json!({"id":second_ws,"name":"independent"}),
+            None,
+            102,
+        ),
+    );
+    loop {
+        journal
+            .poll_bootstrap(&mut [&mut first, &mut second], None)
+            .unwrap();
+        for (ticket, request) in journal.requests_needing_resolution() {
+            let session = if request.params["id"] == serde_json::json!(first_ws) {
+                &first
+            } else {
+                &second
+            };
+            journal.resolve_ipc_for_engine(ticket, session);
+        }
+        if let Ok(response) = independent.try_recv() {
+            assert!(response.error.is_none(), "{response:?}");
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "independent engine was blocked by external effects"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(matches!(
+        held.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Empty)
+    ));
+    assert!(matches!(
+        same.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Empty)
+    ));
+    assert_eq!(second.core_state.local_workspaces()[0].name, "independent");
+    assert_ne!(first.core_state.local_workspaces()[0].name, "same-engine");
+}

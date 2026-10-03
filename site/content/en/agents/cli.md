@@ -1,4 +1,4 @@
-<!-- source-hash: c53ccffb35c5 -->
+<!-- source-hash: bfa3384ddb43 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -549,3 +549,5 @@ For agents using session tokens, call limits apply to plugin commands and combin
 A plugin namespace call starts only its enabled owner and any active extension needed for matching IPC hooks. It does not enable a disabled plugin or start unrelated plugins. An unknown namespace starts none; a misspelled method inside a known namespace may start its owner before returning an error.
 
 Structural requests rejected by a queue or storage budget limit return `-32065`. Requests can wait within the queue limit when other requests temporarily hold the required storage credit. Reusing an idempotency key for a different request returns `-32063`.
+
+While a structural change in one window waits for an external operation, an independent structural request targeting another window can proceed. Requests affecting the same target scope keep their order.

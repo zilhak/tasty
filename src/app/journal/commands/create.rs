@@ -530,6 +530,9 @@ impl JournalApplication {
         session: &mut EngineSession,
         services: &crate::app::services::AppServices,
     ) {
+        if !self.bind_command_engine(ticket, session.id) {
+            return;
+        }
         let Some(pending) = self.commands.pending.get(&ticket) else {
             return;
         };
@@ -608,6 +611,9 @@ impl JournalApplication {
         session: &EngineSession,
         cwd: Option<std::path::PathBuf>,
     ) {
+        if !self.bind_command_engine(ticket, session.id) {
+            return;
+        }
         let has_creation = self.has_creation(session.id);
         let Some(pending) = self.commands.pending.get_mut(&ticket) else {
             return;
@@ -634,6 +640,9 @@ impl JournalApplication {
     }
 
     pub(crate) fn resolve_fixed_creation(&mut self, ticket: u64, session: &EngineSession) {
+        if !self.bind_command_engine(ticket, session.id) {
+            return;
+        }
         let has_creation = self.has_creation(session.id);
         let Some(pending) = self.commands.pending.get_mut(&ticket) else {
             return;

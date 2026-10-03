@@ -28,6 +28,9 @@ impl crate::app::App {
         id: EngineId,
         request: &JsonRpcRequest,
     ) {
+        if !self.journal.bind_command_engine(ticket, id) {
+            return;
+        }
         if self.try_resolve_mirror_request(ticket, id, request) {
             return;
         }
@@ -68,11 +71,10 @@ impl crate::app::App {
             .commands
             .pending
             .get(&ticket)
-            .and_then(|pending| match &pending.reply {
-                Reply::Intent { engine, .. } => Some(*engine),
-                Reply::Remote(reply) => Some(reply.engine),
-                Reply::Resume(resume) => Some(resume.engine),
-                _ => None,
+            .and_then(|pending| {
+                pending
+                    .engine_scope
+                    .or_else(|| pending.reply.engine_scope())
             })
         {
             self.resolve_engine_journal_request(ticket, id, request);
@@ -103,6 +105,11 @@ impl crate::app::App {
                     })
                     .map(|(id, _)| id)
             });
+        if let Some(engine) = id
+            && !self.journal.bind_command_engine(ticket, engine)
+        {
+            return;
+        }
         if let Some(engine) = id
             && self.try_resolve_mirror_request(ticket, engine, request)
         {
