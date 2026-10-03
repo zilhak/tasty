@@ -4,7 +4,7 @@ mod capture;
 mod effects;
 mod recovery;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
@@ -66,12 +66,25 @@ pub(super) fn run(
         return;
     };
     let mut pending: HashMap<u64, Pending> = HashMap::new();
+    // Admissions waiting for a disk credit, in arrival order. They count toward QUEUE_CAPACITY.
+    let mut waiting: VecDeque<(u64, Admission)> = VecDeque::new();
     let mut halted: Option<String> = None;
     while let Ok(queued) = requests.recv() {
         let request = queued.request;
         drop(queued._bytes);
         if closed.load(Ordering::Acquire) {
             break;
+        }
+        let pending_before = pending.len();
+        if halted.is_none() && !waiting.is_empty() && matches!(request.work, Work::Admit(_)) {
+            // A later admission must not take a credit ahead of one already waiting for it.
+            let Work::Admit(admission) = request.work else {
+                unreachable!("checked admission")
+            };
+            if !wait_for_credit(&pending, &mut waiting, request.ticket, admission, &send) {
+                return;
+            }
+            continue;
         }
         let was_halted = halted.is_some();
         let publishes = match &request.work {
@@ -123,10 +136,24 @@ pub(super) fn run(
             Work::Resolve { .. } | Work::CancelAdmission | Work::Capture { .. }
         );
         let is_admit = matches!(request.work, Work::Admit(_));
+        let mut deferred = None;
         let mut result = match &halted {
             Some(reason) => Err(reason.clone()),
-            None => handle(&executor, &home, &mut pending, request.ticket, request.work),
+            None => handle(
+                &executor,
+                &home,
+                &mut pending,
+                request.ticket,
+                request.work,
+                &mut deferred,
+            ),
         };
+        if let Some(admission) = deferred {
+            if !wait_for_credit(&pending, &mut waiting, request.ticket, admission, &send) {
+                return;
+            }
+            continue;
+        }
         release_finished_admission(
             &executor,
             &mut pending,
@@ -173,10 +200,59 @@ pub(super) fn run(
                 return;
             }
         }
+        if let Some(reason) = &halted {
+            for (ticket, _) in waiting.drain(..) {
+                if !send(Completion::Finished {
+                    ticket,
+                    result: Err(reason.clone()),
+                }) {
+                    return;
+                }
+            }
+        } else if pending.len() < pending_before {
+            while let Some((ticket, admission)) = waiting.pop_front() {
+                let mut deferred = None;
+                let result = handle(
+                    &executor,
+                    &home,
+                    &mut pending,
+                    ticket,
+                    Work::Admit(admission),
+                    &mut deferred,
+                );
+                if let Some(admission) = deferred {
+                    waiting.push_front((ticket, admission));
+                    break;
+                }
+                if !send(Completion::Finished { ticket, result }) {
+                    return;
+                }
+            }
+        }
     }
     if halted.is_none() {
         checkpoint_published(&executor, published, &readers);
     }
+}
+
+/// Queue an admission until a credit returns. The wait shares the admission count limit, so a
+/// full queue still answers immediately. Returns false when the App side has gone away.
+fn wait_for_credit(
+    pending: &HashMap<u64, Pending>,
+    waiting: &mut VecDeque<(u64, Admission)>,
+    ticket: u64,
+    admission: Admission,
+    send: &impl Fn(Completion) -> bool,
+) -> bool {
+    let admitted: usize = pending.values().map(|p| 1 + p.followers.len()).sum();
+    if admitted + waiting.len() >= QUEUE_CAPACITY {
+        return send(Completion::Finished {
+            ticket,
+            result: Err("journal admission capacity exhausted".into()),
+        });
+    }
+    waiting.push_back((ticket, admission));
+    true
 }
 
 /// Maintenance cannot change an already committed command response. The leaf atomically replaces
@@ -200,12 +276,14 @@ fn checkpoint_published(
     }
 }
 
+/// `deferred` receives an admission that must wait for a credit; its returned value is unused.
 fn handle(
     executor: &Executor<StructureDecider>,
     home: &std::path::Path,
     pending: &mut HashMap<u64, Pending>,
     ticket: u64,
     work: Work,
+    deferred: &mut Option<Admission>,
 ) -> Result<ResultValue, String> {
     match work {
         Work::CapturePreset { draft } => capture::preset(executor, draft)
@@ -292,10 +370,18 @@ fn handle(
                 let outstanding = pending.values().map(|entry| entry.disk_credit).sum();
                 let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
                 let epoch = inner.epoch;
-                inner
-                    .store
-                    .ensure_new_admission(epoch, outstanding)
-                    .map_err(|error| error.to_string())?;
+                match inner.store.ensure_new_admission(epoch, outstanding) {
+                    Ok(_) => {}
+                    // Credits held by unresolved admissions return on their Resolve or Cancel.
+                    // Wait for them instead of failing; with none outstanding the store is full.
+                    Err(tasty_event_store::StoreError::AdmissionCapacity { .. })
+                        if !pending.is_empty() =>
+                    {
+                        *deferred = Some(admission);
+                        return Ok(ResultValue::NeedsResolution);
+                    }
+                    Err(error) => return Err(error.to_string()),
+                }
                 inner.store.admission_budget().command_credit_bytes
             };
             let held_bytes: usize = pending

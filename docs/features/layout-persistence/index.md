@@ -211,7 +211,9 @@ source pin 해제 실패는 보수적으로 참조를 남기고 다음 같은 �
 재동기화한다. global 위치와 부분 위치를 같은 consumer/version에서 혼용하지 않는다.
 
 신규 구조 명령에는 활성 DB 페이지와 WAL을 기준으로 내부 admission 예산이 적용된다.
-기본 ceiling은 896 MiB, 미확정 명령 credit은 64 MiB다. 재사용 가능한 DB freelist는 과금에서
+기본 ceiling은 896 MiB, 미확정 명령 credit은 64 MiB다. 앞선 명령의 credit 때문에 예산이
+부족하면 그 credit이 풀릴 때까지 도착 순서대로 기다리고, 대기 중인 명령이 없는데도 부족할 때만
+거절한다. 재사용 가능한 DB freelist는 과금에서
 제외하며 압력 시 reader를 기다리지 않는 WAL truncate를 시도한다. payload GC는 기존
 checkpoint에서 reader lease를 잠그고 최신 참조를 durable pin으로 옮긴 뒤 수행한다.
 admission gate가 그 동기화 없이 독립 GC를 실행하지 않는다.

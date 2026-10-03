@@ -35,3 +35,44 @@ fn journal_queue_byte_budget_backpressures_before_its_count_limit_and_releases_o
     drop(worker);
     assert_eq!(queued_bytes.load(Ordering::Acquire), 0);
 }
+
+#[test]
+fn admissions_beyond_the_disk_credit_wait_for_a_released_credit_instead_of_failing() {
+    let home = tempfile::tempdir().unwrap();
+    let worker = start(home.path());
+    let budget = tasty_event_store::AdmissionBudget::default();
+    let submitted = budget.admission_ceiling() / budget.command_credit_bytes + 3;
+    for ticket in 0..submitted {
+        submit(
+            &worker,
+            ticket,
+            Work::Admit(header(&format!("credit-{ticket}"))),
+        );
+    }
+    let mut admitted = Vec::new();
+    while let Ok(Completion::Finished { ticket, result }) = worker
+        .completions
+        .as_ref()
+        .unwrap()
+        .recv_timeout(Duration::from_secs(1))
+    {
+        assert!(
+            matches!(result, Ok(ResultValue::NeedsResolution)),
+            "ticket {ticket} must wait for credit instead of failing: {result:?}"
+        );
+        admitted.push(ticket);
+    }
+    let waiting = submitted - admitted.len() as u64;
+    assert!(
+        waiting > 0,
+        "the default credit must leave some admissions waiting"
+    );
+    assert_eq!(admitted, (0..admitted.len() as u64).collect::<Vec<_>>());
+
+    submit(&worker, 0, Work::CancelAdmission);
+    assert!(finished(&worker, 0).is_ok());
+    assert!(matches!(
+        finished(&worker, admitted.len() as u64),
+        Ok(ResultValue::NeedsResolution)
+    ));
+}

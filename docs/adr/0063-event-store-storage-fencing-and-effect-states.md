@@ -204,7 +204,10 @@ gate는 그 잠금과 참조를 알 수 없으므로 독립 GC를 실행하지 �
 간주하지 않는다. key·최초 응답·미완료 effect·ID 기록을 예산 때문에 삭제하지 않는다.
 
 worker는 durable key hit와 현재 admission follower 합류를 먼저 처리한다. 새 명령은
-현재 과금량+기존 pending credit+새 credit이 ceiling 안일 때만 수락한다. 각 미확정 admission의
+현재 과금량+기존 pending credit+새 credit이 ceiling 안일 때만 수락한다. 기존 pending credit
+때문에 맞지 않으면 바로 거절하지 않고 worker 안에서 도착 순서대로 기다린다. pending admission이
+끝나 credit이 해제되면 다시 판단하고, pending이 하나도 없는데도 맞지 않으면 거절한다. 기다리는
+요청도 아래 worker queue 64건 한도에 포함하며, 앞선 대기가 있으면 새 admission은 그 뒤에 선다. 각 미확정 admission의
 새 준비 payload는 holder별 누적 64 MiB를 초과할 수 없고 구조 ID 예약은 총 16,384개로 제한한다.
 credit은 최초 Resolve, Cancel, 준비 오류에서 해제한다. 성공/실패로 credit을 해제해도 DB의
 payload 페이지는 계속 과금되고 pin은 기존 event/snapshot/GC 수명에 따른다.
