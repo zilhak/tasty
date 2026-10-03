@@ -15,8 +15,10 @@
 IPC 핸들러가 registry를 직접 시작·정지하며, App이 대기 허브 선택과 훅 완료 전달을 맡는다.
 `src/app/ipc/app_methods.rs`의 task 대기는 요청 workspace가 아니라 첫 main View나 첫 parked 엔진의 허브를 고르는 경로가 있다.
 
-훅도 비슷하다. `CoreState`가 HookManager·GlobalHookManager를 갖고, `src/core/state/idle_hooks.rs`와 `src/app/idle_hooks.rs`가 조건 검사와 실행 전달을 나누며,
-`src/core/state/global_hooks.rs`는 조건 판정 뒤 셸 실행까지 요청한다. 실행 worker는 `src/hook_handler/exec.rs`의 전역 worker다.
+분리 전 훅은 `CoreState`가 HookManager·GlobalHookManager를 가졌고, 타이머 어댑터와
+`src/app/idle_hooks.rs`가 조건 검사와 실행 전달을 나눴다. 전역 훅 어댑터는 조건 판정 뒤
+셸 실행까지 요청했다. 당시 실행 worker는 `src/hook_handler/exec.rs`의 전역 worker였다.
+이 타이머 어댑터의 현재 위치는 `src/hook_runtime/engine.rs`다.
 
 [ADR-0054](0054-app-core-view-layers-and-state-ownership.md)에서 `CoreState`는 재생 가능한 구조 모델이어야 하므로 러너·대기자·훅 감시 같은 실행 상태를 가질 수 없다.
 작업의 신원과 대기자 소유가 View 탐색 방식에 의존하는 현재 배치도 이 구조와 맞지 않는다.
