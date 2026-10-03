@@ -199,13 +199,10 @@ fn boot_with_layout(layout: Option<serde_json::Value>) -> (EngineSession, Journa
                 ))
                 .collect::<Vec<_>>(),
             journal.resource_cleanups.len(),
-            journal.restoration_queue.len(),
-            journal.restoration_reads.len(),
-            journal
-                .restoration_ready
-                .get(&session.id)
-                .map_or(0, Vec::len),
-            journal.restoration_boot_done.contains(&session.id),
+            journal.restorations.queued_count(),
+            journal.restorations.read_count(),
+            journal.restorations.ready(session.id).len(),
+            journal.restorations.boot_done(session.id),
             journal.execution_id_requests.len(),
             session.pending_materializations.len(),
         );

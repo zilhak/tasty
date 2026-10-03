@@ -386,9 +386,7 @@ impl JournalApplication {
                 created.destination,
                 tasty_core::CreationDestination::Restore { .. }
             ) {
-                if let Some(items) = self.restoration_ready.get_mut(&created.engine) {
-                    items.retain(|item| item.surface_id != created.surface);
-                }
+                self.restorations.activated(created.engine, created.surface);
             }
             created.notify(sessions, &mut self.commands.completed_host_events);
         }

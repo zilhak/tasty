@@ -220,3 +220,14 @@ admission gate가 그 동기화 없이 독립 GC를 실행하지 않는다.
 이미 확정된 명령의 같은 key 조회와 효과 완료·정리·복구는 이 gate 때문에 거절하지 않는다.
 이 값은 전체 DB 파일의 hard cap이나 OS 저장 공간 보장이 아니다. 정확한 범위와 설정 API는
 [저장소 결정](../../adr/0063-event-store-storage-fencing-and-effect-states.md#활성-저장량의-신규-admission-예산)에 있다.
+
+### 복원 입력과 View 저장의 수명
+
+App의 `Restorations`가 payload 읽기 대기·접수된 ticket·사용 가능한 입력과 bootstrap 단계를
+관리한다. 엔진 종료는 새 입력 접수를 막고 대기 입력을 버리지만, 이미 접수한 읽기 ticket은
+완료 응답을 소비할 때까지 유지한다. 늦은 성공·실패가 종료한 엔진을 되살리지 않는다.
+비활성 surface의 입력은 bootstrap 완료 후에도 남을 수 있으며, 실제 activation 뒤 제거한다.
+
+`ViewWrites`는 stream별 최신 대기 snapshot과 이미 접수한 쓰기를 구분한다. 두 값은 함께
+존재할 수 있다. 이전 쓰기의 실패는 더 최신 snapshot의 재시도·성공을 덮지 않으며,
+엔진 종료 뒤 도착한 완료는 소비만 하고 재사용한 stream에 실패 상태를 붙이지 않는다.

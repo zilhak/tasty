@@ -76,7 +76,7 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
     ));
     journal.submit_view_writes().unwrap();
     assert_eq!(
-        journal.view_writes.len(),
+        journal.view_writes.inflight_count(),
         1,
         "the older tick is already in flight"
     );
@@ -93,7 +93,7 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
     poll_until(&mut journal, &mut session, |journal, _| {
         !journal.has_pending_view_writes()
     });
-    assert!(journal.failed_view_writes.is_empty());
+    assert!(!journal.view_writes.has_failures());
     let store = tasty_event_store::EventStore::open(
         &home.join("structure/journal.db"),
         &binding.journal_id,
@@ -189,7 +189,7 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
     poll_until(&mut journal, &mut session, |journal, _| {
         !journal.has_pending_view_writes()
     });
-    assert!(journal.failed_view_writes.is_empty());
+    assert!(!journal.view_writes.has_failures());
     let store = tasty_event_store::EventStore::open(
         &home.join("structure/journal.db"),
         &current.journal_id,
@@ -257,7 +257,7 @@ fn failed_view_write_retains_the_checkpoint_and_marks_its_engine_dirty() {
     poll_until(&mut journal, &mut session, |journal, _| {
         !journal.has_pending_view_writes()
     });
-    assert!(journal.failed_view_writes.contains_key(&binding.stream));
+    assert!(journal.view_writes.failed_for(&binding.stream));
     assert!(session.persistence.dirty.dirty_since().is_some());
     assert!(
         !journal.is_halted(),
@@ -273,7 +273,7 @@ fn failed_view_write_retains_the_checkpoint_and_marks_its_engine_dirty() {
     poll_until(&mut journal, &mut session, |journal, _| {
         !journal.has_pending_view_writes()
     });
-    assert!(journal.failed_view_writes.is_empty());
+    assert!(!journal.view_writes.has_failures());
     let store = tasty_event_store::EventStore::open(
         &home.join("structure/journal.db"),
         &binding.journal_id,

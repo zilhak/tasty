@@ -281,14 +281,7 @@ impl JournalApplication {
                 .into_iter()
                 .find(|request| request.surface_id == id)
             {
-                if request.reference.is_some() {
-                    self.restoration_queue.push_back((session.id, request));
-                } else {
-                    self.restoration_ready
-                        .entry(session.id)
-                        .or_default()
-                        .push(request);
-                }
+                self.restorations.stage(session.id, request);
             }
         }
 
@@ -496,16 +489,7 @@ impl JournalApplication {
             return Ok(true);
         }
         #[cfg(feature = "gui")]
-        if let Some(view) = self.view_writes.remove(&ticket) {
-            match result {
-                Ok(ResultValue::ViewSaved) => {}
-                Err(error) => {
-                    tracing::warn!("View snapshot write failed: {error}");
-                    self.failed_view_writes
-                        .insert(view.binding.stream.clone(), (view, error.clone()));
-                }
-                _ => return Err("View snapshot returned another completion".into()),
-            }
+        if self.view_writes.complete(ticket, result)? {
             return Ok(true);
         }
 
@@ -578,14 +562,7 @@ impl JournalApplication {
                 .insert((session.id, creation.ticket), creation);
         } else {
             for restoration in crate::runtime::surface_restorer::describe(&session.as_ref()) {
-                if restoration.reference.is_some() {
-                    self.restoration_queue.push_back((session.id, restoration));
-                } else {
-                    self.restoration_ready
-                        .entry(session.id)
-                        .or_default()
-                        .push(restoration);
-                }
+                self.restorations.stage(session.id, restoration);
             }
         }
 
@@ -607,35 +584,7 @@ impl JournalApplication {
         if self.answer_finished_request(ticket, &result, sessions, plugins.as_deref_mut())? {
             return Ok(());
         }
-        if let Some((engine, mut restoration)) = self.restoration_reads.remove(&ticket) {
-            #[cfg(feature = "gui")]
-            if self.retirements.pending.contains_key(&engine) {
-                return Ok(());
-            }
-            let ResultValue::Payload { reference, bytes } = result? else {
-                return Err("restore payload request returned another value".into());
-            };
-            let session = sessions
-                .iter()
-                .find(|session| session.id == engine)
-                .ok_or("restoring engine disappeared")?;
-            let current = session
-                .as_ref()
-                .find_surface_by_id(restoration.surface_id)
-                .and_then(|surface| {
-                    surface
-                        .as_any()
-                        .downcast_ref::<crate::runtime::surface_restorer::JournalPlaceholder>()
-                })
-                .ok_or("restoring surface no longer has its pending capture")?;
-            if current.data.or(current.creation_seed) != restoration.reference {
-                return Err("restoring surface capture changed while reading".into());
-            }
-            crate::runtime::surface_restorer::accept_payload(&mut restoration, reference, &bytes)?;
-            self.restoration_ready
-                .entry(engine)
-                .or_default()
-                .push(restoration);
+        if self.restorations.complete(ticket, &result, sessions)? {
             return Ok(());
         }
         if let Some(key) = self
@@ -657,7 +606,7 @@ impl JournalApplication {
                 if let Some(mut creation) = self.creations.remove(&key)
                     && let Some(request) = creation.failed_restore(session)
                 {
-                    self.restoration_ready.entry(id).or_default().push(request);
+                    self.restorations.return_ready(id, request);
                 }
                 self.refresh_in_progress_commands();
             }

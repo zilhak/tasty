@@ -45,10 +45,8 @@ impl JournalApplication {
         binding: EngineBinding,
         release_owner: bool,
     ) {
-        self.restoration_ready.remove(&id);
-        self.restoration_queue.retain(|(engine, _)| *engine != id);
-        self.queued_view_writes.remove(&binding.stream);
-        self.failed_view_writes.remove(&binding.stream);
+        self.restorations.retire(id);
+        self.view_writes.cancel(&binding.stream);
         self.retirements
             .pending
             .entry(id)
@@ -80,9 +78,7 @@ impl JournalApplication {
     pub(crate) fn forget_released_engine(&mut self, id: EngineId) {
         self.opening.remove(&id);
         self.restored_views.remove(&id);
-        self.restoration_boot_done.remove(&id);
-        self.restoration_ready.remove(&id);
-        self.restoration_queue.retain(|(engine, _)| *engine != id);
+        self.restorations.forget(id);
     }
 
     // Drain accepted work while its exact owner remains hidden and alive.
@@ -94,10 +90,7 @@ impl JournalApplication {
             .filter_map(|(id, pending)| {
                 (pending.ticket.is_none()
                     && !self.has_pending_engine_effects(*id)
-                    && !self
-                        .restoration_reads
-                        .values()
-                        .any(|(engine, _)| engine == id))
+                    && !self.restorations.has_reads(*id))
                 .then_some(*id)
             })
             .take(8)

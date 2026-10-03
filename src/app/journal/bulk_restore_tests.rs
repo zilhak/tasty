@@ -81,12 +81,8 @@ fn more_than_one_channel_capacity_of_captures_are_read_without_halting_bootstrap
     loop {
         turns += 1;
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
-        assert!(journal.restoration_reads.len() <= 8);
-        if journal
-            .restoration_ready
-            .get(&session.id)
-            .is_some_and(|items| items.len() == 100)
-        {
+        assert!(journal.restorations.read_count() <= 8);
+        if journal.restorations.ready(session.id).len() == 100 {
             break;
         }
         assert!(Instant::now() < deadline, "capture reads stalled");
@@ -96,12 +92,16 @@ fn more_than_one_channel_capacity_of_captures_are_read_without_halting_bootstrap
         turns > 1,
         "the application regains control while the worker reads"
     );
-    let got = journal.restoration_ready[&session.id]
+    #[cfg(feature = "gui")]
+    check_cancelled_reads(&mut journal, &session);
+    let got = journal
+        .restorations
+        .ready(session.id)
         .iter()
         .map(|item| (item.surface_id, item.reference.unwrap()))
         .collect::<std::collections::BTreeMap<_, _>>();
     assert_eq!(got, expected);
-    assert!(journal.restoration_reads.is_empty() && journal.restoration_queue.is_empty());
+    assert!(journal.restorations.read_count() == 0 && journal.restorations.queued_count() == 0);
     assert!(
         !journal.is_ready(session.id),
         "capture reads alone do not complete materialization"
@@ -111,6 +111,63 @@ fn more_than_one_channel_capacity_of_captures_are_read_without_halting_bootstrap
         0,
         "logical bootstrap and payload reads never spawn a PTY"
     );
+}
+
+#[cfg(feature = "gui")]
+fn check_cancelled_reads(journal: &mut JournalApplication, session: &EngineSession) {
+    let other = EngineSession::new(80, 24, Arc::new(|| {})).unwrap();
+    let input = journal.restorations.ready(session.id)[0].clone();
+    for forget_before_reply in [false, true] {
+        let mut inputs = restorations::Restorations::default();
+        inputs.register(session.id);
+        inputs.register(other.id);
+        inputs.stage(session.id, input.clone());
+        let mut ready = input.clone();
+        ready.reference = None;
+        inputs.stage(other.id, ready);
+        let ticket = journal.next_ticket;
+        inputs
+            .submit(&journal.worker, &mut journal.next_ticket)
+            .unwrap();
+        inputs.retire(session.id);
+        if forget_before_reply {
+            inputs.forget(session.id);
+        }
+        assert!(
+            inputs.has_reads(session.id),
+            "accepted read retains its completion ticket"
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match journal.worker.try_recv() {
+                Ok(Completion::Finished {
+                    ticket: done,
+                    result,
+                }) => {
+                    assert_eq!(done, ticket);
+                    let result = result.map_err(|error| error.to_string());
+                    assert!(inputs.complete(done, &result, &[]).unwrap());
+                    break;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    assert!(Instant::now() < deadline);
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                other => panic!("unexpected read completion: {other:?}"),
+            }
+        }
+        assert!(!inputs.has_reads(session.id));
+        assert!(
+            inputs.ready(session.id).is_empty(),
+            "late payload must not revive a cancelled engine"
+        );
+        assert_eq!(inputs.ready(other.id).len(), 1);
+        assert!(
+            !inputs
+                .complete(ticket, &Err("late duplicate".into()), &[])
+                .unwrap()
+        );
+    }
 }
 
 #[test]
@@ -232,7 +289,7 @@ fn selected_terminal_restores_capture_while_other_tabs_remain_resource_free() {
                 .is::<crate::runtime::surface_restorer::JournalPlaceholder>()
         );
     }
-    assert_eq!(journal.restoration_ready[&session.id].len(), 2);
+    assert_eq!(journal.restorations.ready(session.id).len(), 2);
     assert!(journal.activate_restored_surface(&session, ids[2]).unwrap());
     loop {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
@@ -320,9 +377,9 @@ fn large_generic_capture_waits_for_registration_and_reaches_restore_factory_unch
         assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(1));
     }
-    assert_eq!(journal.restoration_ready[&session.id].len(), 1);
+    assert_eq!(journal.restorations.ready(session.id).len(), 1);
     assert!(
-        journal.restoration_ready[&session.id][0]
+        journal.restorations.ready(session.id)[0]
             .input
             .restore
             .is_none()
@@ -347,7 +404,7 @@ fn large_generic_capture_waits_for_registration_and_reaches_restore_factory_unch
     loop {
         journal.poll_restore_bootstrap(&session).unwrap();
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
-        if journal.is_ready(session.id) && journal.restoration_ready[&session.id].is_empty() {
+        if journal.is_ready(session.id) && journal.restorations.ready(session.id).is_empty() {
             break;
         }
         assert!(

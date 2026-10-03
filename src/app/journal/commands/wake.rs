@@ -132,20 +132,12 @@ impl JournalApplication {
             return;
         }
         let index = self
-            .restoration_ready
-            .get(&session.id)
-            .and_then(|requests| {
-                requests
-                    .iter()
-                    .position(|request| request.surface_id == surface)
-            });
+            .restorations
+            .ready(session.id)
+            .iter()
+            .position(|input| input.surface_id == surface);
         let Some(index) = index else {
-            let reading =
-                self.restoration_queue.iter().any(|(engine, request)| {
-                    *engine == session.id && request.surface_id == surface
-                }) || self.restoration_reads.values().any(|(engine, request)| {
-                    *engine == session.id && request.surface_id == surface
-                });
+            let reading = self.restorations.is_reading(session.id, surface);
             if reading {
                 if let Some(pending) = self.commands.pending.get_mut(&ticket) {
                     pending.needs_resolution = true;
@@ -155,7 +147,7 @@ impl JournalApplication {
             }
             return;
         };
-        let restore = self.restoration_ready[&session.id][index].clone();
+        let restore = self.restorations.ready(session.id)[index].clone();
         let mut resource = match create::Request::base(
             session,
             "terminal",

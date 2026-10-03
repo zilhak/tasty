@@ -1,27 +1,30 @@
 //! Application side of the data-home worker. Engine bindings live on their EngineSession.
+mod capture;
+pub(crate) mod commands;
+mod creation;
+#[cfg(feature = "gui")]
+pub(crate) mod forward;
+mod id_reservations;
+mod process_release;
+mod publication;
+mod resource_cleanup;
+mod restorations;
+#[cfg(feature = "gui")]
+mod retirement;
+#[cfg(feature = "gui")]
+mod view_writes;
+
 use crate::runtime::engine_session::{EngineId, EngineSession};
 use crate::runtime::journal_product::{
     Completion, EngineSelection, JournalWorker, Request, ResultValue, Work,
 };
-use tasty_core::projection;
-pub(crate) mod commands;
-mod creation;
-pub(crate) use creation::{ActivationOutcome, ActivationReceipt};
-mod capture;
-#[cfg(feature = "gui")]
-pub(crate) mod forward;
-mod process_release;
-mod publication;
-mod resource_cleanup;
 #[cfg(feature = "gui")]
 pub(crate) use capture::PresetCaptureNotice;
 pub(crate) use capture::{PresetCaptureOutput, PresetCaptureReply};
-mod id_reservations;
-#[cfg(feature = "gui")]
-mod retirement;
-
+pub(crate) use creation::{ActivationOutcome, ActivationReceipt};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
+use tasty_core::projection;
 
 struct Opening {
     selection: EngineSelection,
@@ -47,25 +50,10 @@ pub(crate) struct JournalApplication {
     #[cfg(feature = "gui")]
     forwards: std::collections::BTreeMap<u64, forward::Forward>,
     resource_cleanups: std::collections::BTreeMap<u64, resource_cleanup::Cleanup>,
-    restoration_reads: HashMap<u64, (EngineId, crate::runtime::surface_restorer::RestoreInput)>,
-    restoration_queue: VecDeque<(EngineId, crate::runtime::surface_restorer::RestoreInput)>,
-    restoration_ready: HashMap<EngineId, Vec<crate::runtime::surface_restorer::RestoreInput>>,
-    restoration_boot_done: std::collections::HashSet<EngineId>,
+    restorations: restorations::Restorations,
     restored_views: HashMap<EngineId, crate::model::RestoredPresentation>,
     #[cfg(feature = "gui")]
-    queued_view_writes: HashMap<String, crate::runtime::journal_product::view_record::StoredView>,
-    #[cfg(feature = "gui")]
-    view_writes: HashMap<u64, crate::runtime::journal_product::view_record::StoredView>,
-    #[cfg(feature = "gui")]
-    failed_view_writes: HashMap<
-        String,
-        (
-            crate::runtime::journal_product::view_record::StoredView,
-            String,
-        ),
-    >,
-    #[cfg(feature = "gui")]
-    latest_view_sequence: u64,
+    view_writes: view_writes::ViewWrites,
     #[cfg(feature = "gui")]
     retirements: retirement::Retirements,
     known_slots: std::collections::BTreeMap<u32, bool>,
@@ -133,19 +121,10 @@ impl JournalApplication {
             resource_cleanups: Default::default(),
             #[cfg(feature = "gui")]
             forwards: Default::default(),
-            restoration_reads: HashMap::new(),
-            restoration_queue: VecDeque::new(),
-            restoration_ready: HashMap::new(),
-            restoration_boot_done: Default::default(),
+            restorations: Default::default(),
             restored_views: Default::default(),
             #[cfg(feature = "gui")]
-            queued_view_writes: Default::default(),
-            #[cfg(feature = "gui")]
             view_writes: Default::default(),
-            #[cfg(feature = "gui")]
-            failed_view_writes: Default::default(),
-            #[cfg(feature = "gui")]
-            latest_view_sequence: 0,
             #[cfg(feature = "gui")]
             retirements: Default::default(),
             known_slots: Default::default(),
@@ -188,6 +167,7 @@ impl JournalApplication {
             })
             .max()
             .unwrap_or(0);
+        self.restorations.register(session.id);
         self.opening.insert(
             session.id,
             Opening {
@@ -216,7 +196,7 @@ impl JournalApplication {
             if session
                 .journal_binding
                 .as_ref()
-                .is_some_and(|binding| self.failed_view_writes.contains_key(&binding.stream))
+                .is_some_and(|binding| self.view_writes.failed_for(&binding.stream))
             {
                 session.persistence.dirty.mark_dirty();
             }
@@ -297,14 +277,7 @@ impl JournalApplication {
         if self.opening.contains_key(&id)
             || session.journal_binding.is_none()
             || self.has_creation(id)
-            || self
-                .restoration_queue
-                .iter()
-                .any(|(engine, _)| *engine == id)
-            || self
-                .restoration_reads
-                .values()
-                .any(|(engine, _)| *engine == id)
+            || self.restorations.has_pending(id)
         {
             return Ok(());
         }
@@ -313,26 +286,25 @@ impl JournalApplication {
             self.restored_views.get(&id),
         );
         let next = self
-            .restoration_ready
-            .get(&id)
-            .and_then(|items| {
-                items.iter().find(|item| {
-                    if item.input.kind == "terminal" {
-                        selected.contains(&item.surface_id)
-                    } else {
-                        session
-                            .runtime
-                            .surface_registry
-                            .get_live(&item.input.kind)
-                            .is_some()
-                    }
-                })
+            .restorations
+            .ready(id)
+            .iter()
+            .find(|item| {
+                if item.input.kind == "terminal" {
+                    selected.contains(&item.surface_id)
+                } else {
+                    session
+                        .runtime
+                        .surface_registry
+                        .get_live(&item.input.kind)
+                        .is_some()
+                }
             })
             .map(|item| item.surface_id);
         if let Some(surface_id) = next {
             self.activate_restored_surface(session, surface_id)?;
         } else {
-            self.restoration_boot_done.insert(id);
+            self.restorations.finish_bootstrap(id);
         }
         Ok(())
     }
@@ -389,13 +361,7 @@ impl JournalApplication {
                 .filter(|((engine, _), _)| *engine == session.id)
                 .find_map(|(_, creation)| creation.join_restore(surface, activation)));
         }
-        let reading =
-            self.restoration_queue
-                .iter()
-                .any(|(engine, request)| *engine == session.id && request.surface_id == surface)
-                || self.restoration_reads.values().any(|(engine, request)| {
-                    *engine == session.id && request.surface_id == surface
-                });
+        let reading = self.restorations.is_reading(session.id, surface);
         if reading {
             Ok(None)
         } else {
@@ -415,9 +381,7 @@ impl JournalApplication {
         if self.is_halted() || self.has_creation(session.id) {
             return Ok(false);
         }
-        let Some(items) = self.restoration_ready.get_mut(&session.id) else {
-            return Ok(false);
-        };
+        let items = self.restorations.ready(session.id);
         let Some(index) = items.iter().position(|item| item.surface_id == surface_id) else {
             return Ok(false);
         };
@@ -430,7 +394,7 @@ impl JournalApplication {
         {
             return Ok(false);
         }
-        let request = items.remove(index);
+        let request = self.restorations.take_ready(session.id, index);
         let ticket = self.next_ticket;
         self.next_ticket = ticket
             .checked_add(1)
@@ -461,11 +425,7 @@ impl JournalApplication {
     }
     #[cfg(feature = "gui")]
     pub(crate) fn has_pending_view_for(&self, stream: &str) -> bool {
-        self.queued_view_writes.contains_key(stream)
-            || self
-                .view_writes
-                .values()
-                .any(|view| view.binding.stream == stream)
+        self.view_writes.pending_for(stream)
     }
 
     pub(crate) fn is_ready(&self, id: EngineId) -> bool {
@@ -474,125 +434,42 @@ impl JournalApplication {
             && !self.opening.contains_key(&id)
             && !self.has_creation(id)
             && !self.has_resource_cleanup(id)
-            && !self
-                .restoration_queue
-                .iter()
-                .any(|(engine, _)| *engine == id)
-            && !self
-                .restoration_reads
-                .values()
-                .any(|(engine, _)| *engine == id)
-            && (self.restoration_boot_done.contains(&id)
-                || !self
-                    .restoration_ready
-                    .get(&id)
-                    .is_some_and(|items| !items.is_empty()))
+            && self.restorations.is_ready(id)
     }
 
     fn submit_restore_reads(&mut self) -> Result<(), String> {
-        const MAX_READS: usize = 8;
-        while self.restoration_reads.len() < MAX_READS {
-            let Some((engine, restoration)) = self.restoration_queue.pop_front() else {
-                break;
-            };
-            let ticket = self.next_ticket;
-            let request = Request {
-                ticket,
-                work: Work::ReadPayload(
-                    restoration
-                        .reference
-                        .expect("only referenced captures enter the read queue"),
-                ),
-            };
-            match self.worker.submit(request) {
-                Ok(()) => {
-                    self.next_ticket = ticket
-                        .checked_add(1)
-                        .ok_or("journal ticket range exhausted")?;
-                    self.restoration_reads.insert(ticket, (engine, restoration));
-                }
-                Err(crate::runtime::journal_product::SubmitError::Busy) => {
-                    self.restoration_queue.push_front((engine, restoration));
-                    break;
-                }
-                Err(error) => return Err(format!("restore capture read: {error:?}")),
-            }
-        }
-        Ok(())
+        self.restorations
+            .submit(&self.worker, &mut self.next_ticket)
     }
 
     #[cfg(feature = "gui")]
     pub(crate) fn queue_view(
         &mut self,
-        mut view: crate::runtime::journal_product::view_record::StoredView,
+        view: crate::runtime::journal_product::view_record::StoredView,
     ) {
         if !self.is_halted() {
-            let Some(sequence) = self.latest_view_sequence.checked_add(1) else {
-                self.halted = Some("View checkpoint sequence exhausted".into());
+            if let Err(error) = self.view_writes.queue(view) {
+                self.halted = Some(error);
                 return;
-            };
-            self.latest_view_sequence = sequence;
-            view.sequence = sequence;
-            self.failed_view_writes.remove(&view.binding.stream);
-            self.queued_view_writes
-                .insert(view.binding.stream.clone(), view);
+            }
             (self.wake)();
         }
     }
-
     #[cfg(feature = "gui")]
     pub(crate) fn latest_view_sequence(&self) -> u64 {
-        self.latest_view_sequence
+        self.view_writes.sequence()
     }
-
     #[cfg(feature = "gui")]
     pub(crate) fn has_pending_view_writes(&self) -> bool {
         !self.is_halted()
             && (self.has_pending_preset_captures()
                 || !self.capture_requests.is_empty()
                 || !self.captures.is_empty()
-                || !self.queued_view_writes.is_empty()
-                || !self.view_writes.is_empty())
+                || self.view_writes.pending())
     }
-
     #[cfg(feature = "gui")]
     fn submit_view_writes(&mut self) -> Result<(), String> {
-        let ready: Vec<_> = self
-            .queued_view_writes
-            .keys()
-            .filter(|stream| {
-                !self
-                    .view_writes
-                    .values()
-                    .any(|current| current.binding.stream == **stream)
-            })
-            .cloned()
-            .take(8)
-            .collect();
-        for stream in ready {
-            let view = self
-                .queued_view_writes
-                .remove(&stream)
-                .expect("listed View write");
-            let ticket = self.next_ticket;
-            match self.worker.submit(Request {
-                ticket,
-                work: Work::SaveView(view.clone()),
-            }) {
-                Ok(()) => {
-                    self.next_ticket = ticket
-                        .checked_add(1)
-                        .ok_or("journal ticket range exhausted")?;
-                    self.view_writes.insert(ticket, view);
-                }
-                Err(crate::runtime::journal_product::SubmitError::Busy) => {
-                    self.queued_view_writes.insert(stream, view);
-                    break;
-                }
-                Err(error) => return Err(format!("View snapshot submission: {error:?}")),
-            }
-        }
-        Ok(())
+        self.view_writes.submit(&self.worker, &mut self.next_ticket)
     }
 
     fn submit_openings(&mut self) -> Result<(), String> {
