@@ -36,7 +36,11 @@ pub fn unique_dest(dest_dir: &Path, name: &str) -> PathBuf {
 
 /// A rename is one filename in the original directory, never an overwrite or path move.
 pub fn rename_entry(src: &Path, name: &str) -> io::Result<()> {
-    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\']) {
+    let mut components = Path::new(name).components();
+    if !matches!(components.next(), Some(std::path::Component::Normal(_)))
+        || components.next().is_some()
+        || name.contains(['/', '\\'])
+    {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "expected one file name",
@@ -277,6 +281,10 @@ mod tests {
             rename_entry(&src, "b").unwrap_err().kind(),
             io::ErrorKind::AlreadyExists
         );
+        #[cfg(windows)]
+        for name in ["C:escape", "C:"] {
+            assert!(rename_entry(&src, name).is_err());
+        }
         for name in ["../b", "sub/b", "..", ".", ""] {
             assert!(rename_entry(&src, name).is_err());
         }
