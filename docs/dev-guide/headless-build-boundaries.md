@@ -13,6 +13,9 @@ headless(`--no-default-features`)는 IPC/CLI 와 attach 서버를 실행하는 �
 headless 에 생산자도 호출자도 없는 정의. 모듈 전체가 해당하면 모듈 선언에 붙이고,
 일부 항목만이면 그 항목에 붙인다.
 
+View의 비동기 파일 읽기 receipt와 대기 스크립트는 GUI 전용이다. 공유 생성자에서도
+이 필드의 초기화에 같은 feature 조건을 적용한다.
+
 **② GUI 와 순수 테스트가 함께 쓰는 정의 — `cfg(any(feature = "gui", test))`**
 
 테스트가 **실제로 그 정의를 호출할 때만** 쓴다. 호출하지 않는데 `test` 를 포함시키면 그

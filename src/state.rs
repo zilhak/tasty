@@ -228,6 +228,7 @@ impl RequestContext {
             explorer_clipboard: None,
             #[cfg(feature = "gui")]
             explorer_file_requests: Default::default(),
+            #[cfg(feature = "gui")]
             script_reads: Default::default(),
             #[cfg(feature = "gui")]
             dag_graph_views: Default::default(),
