@@ -1,4 +1,4 @@
-<!-- source-hash: c88682a529fa -->
+<!-- source-hash: 485df18198a7 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -69,6 +69,8 @@ While you are editing the address bar or a popup is open, the letters go there i
 If you have bound a shortcut to a single letter with no modifier, that letter acts only as the shortcut and is not used here. The default settings have no such shortcut.
 
 ### Right-click menu
+
+Renaming refuses to overwrite an existing entry and reports the failure. Copying preserves symbolic links as links. You cannot paste a folder into itself or one of its descendants through another path. Failed file operations display an error notification.
 
 - **Copy Path** — with several selected, they are joined with line breaks.
 - **Copy** · **Cut** · **Paste** · **Paste (into)** — if the name already exists, `(copy)` is appended.

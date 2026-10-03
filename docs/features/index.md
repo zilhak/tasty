@@ -53,7 +53,7 @@
 | [closed-tab-restore](closed-tab-restore/index.md) — 닫힌 항목 복원 (`Ctrl+Shift+T`) | 로컬 사용자 | 없음 |
 | [convert-surface](convert-surface/index.md) — Surface 타입 전환 (`Alt+'`) | 로컬 사용자 · AI Agent | convert popup |
 | [surface-move](surface-move/index.md) — Surface·Tab·Pane 위치 이동 (이동/이곳으로 이동) | 로컬 사용자 | OS 컨텍스트 메뉴 |
-| [explorer](explorer/index.md) — 내장 파일 관리자 surface (탐색/열기/뷰모드) | 로컬 사용자 · AI Agent | host surface |
+| [explorer](explorer/index.md) — 내장 파일 관리자 surface (탐색/열기/뷰모드·파일 충돌 보호) | 로컬 사용자 · AI Agent | host surface |
 | [layout-persistence](layout-persistence/index.md) — 레이아웃 영속화 (창별 슬롯 파일 `layouts/NN.json`·scrollback) | 로컬 사용자 | 없음 |
 | [layout-presets](layout-presets/index.md) — 레이아웃 프리셋 (`preset.*`) | 로컬 사용자 · AI Agent | PresetView |
 | [accessibility](accessibility/index.md) — 접근성 (reduced motion 등) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |

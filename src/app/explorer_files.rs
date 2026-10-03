@@ -61,12 +61,7 @@ impl Operation {
             }
             Self::Trash(paths) => trash::delete_all(paths).map_err(|e| e.to_string()),
             Self::Rename { path, name } => {
-                let parent = path.parent().ok_or("rename path has no parent")?;
-                let next = parent.join(name);
-                if next == path {
-                    return Ok(());
-                }
-                std::fs::rename(path, next).map_err(|e| e.to_string())
+                ops::rename_entry(&path, &name).map_err(|e| e.to_string())
             }
             Self::Open(path) => {
                 crate::platform::reveal::open_path(&path).map_err(|e| e.to_string())
@@ -213,7 +208,8 @@ impl Target {
         if self.reload
             && let Some(view) = state.explorer_views.get_mut(self.surface)
         {
-            if self.clear_selection
+            if success
+                && self.clear_selection
                 && self
                     .selection
                     .as_ref()
@@ -250,6 +246,7 @@ impl super::App {
         } = self.explorer_files.job.take().expect("finished job exists");
         let result = join(worker);
         let success = result.is_ok();
+        let failure = result.as_ref().err().cloned();
         if success && let Some(clipboard) = &target.clipboard {
             clipboard.store(true, Ordering::Release);
         }
@@ -273,6 +270,13 @@ impl super::App {
         };
         if !target.view_is_current(view) {
             return;
+        }
+        if let Some(error) = failure {
+            view.state.toasts.push(
+                crate::i18n::t_fmt("explorer.state.operation_failed", &error),
+                crate::adapters::ui::ToastKind::Error,
+                crate::adapters::ui::ToastScope::Surface(target.surface),
+            );
         }
         target.apply(&mut view.state, success);
         view.mark_dirty();

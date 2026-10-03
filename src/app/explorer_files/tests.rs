@@ -229,3 +229,40 @@ fn shutdown_reports_a_running_worker_until_its_actual_join() {
     }
     assert!(!owner.has_pending());
 }
+
+#[test]
+fn failed_rename_preserves_original_selection() {
+    let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    let dir = tempfile::tempdir().unwrap();
+    let selected = dir.path().join("original");
+    let panel = crate::model::ExplorerPanel::new(sid, dir.path().into());
+    state
+        .explorer_views
+        .get_or_init(&panel, None)
+        .select_only(&selected);
+    state.request_explorer_file(
+        &engine.read(),
+        sid,
+        Operation::Rename {
+            path: selected.clone(),
+            name: "collision".into(),
+        },
+        user(),
+    );
+    state
+        .explorer_file_requests
+        .0
+        .pop_front()
+        .unwrap()
+        .target
+        .apply(&mut state, false);
+    assert!(
+        state
+            .explorer_views
+            .get(sid)
+            .unwrap()
+            .selected
+            .contains(&selected)
+    );
+}

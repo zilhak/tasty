@@ -1,20 +1,19 @@
-//! 파일 복사·이동·삭제·이름 변경. 결과 표시는 호출부에서 맡는다.
-//! 이름 충돌은 사본 이름으로 피하고 자기 자신·하위 디렉터리로의 붙여넣기는 거절한다.
+//! File changes use private copy staging and atomic no-replace publication.
+//! Symlinks are copied as links; directory aliases cannot turn a copy into self-recursion.
 
+use std::io;
 use std::path::{Path, PathBuf};
 
-/// `dest_dir` 안에서 `name` 과 충돌하지 않는 경로. 충돌 시 "name (copy)",
-/// "name (copy 2)", … (확장자 보존).
+/// Choose a display name; the actual publication still atomically rejects a competing entry.
 pub fn unique_dest(dest_dir: &Path, name: &str) -> PathBuf {
     let candidate = dest_dir.join(name);
-    if !candidate.exists() {
+    if matches!(candidate.symlink_metadata(), Err(e) if e.kind() == io::ErrorKind::NotFound) {
         return candidate;
     }
     let p = Path::new(name);
     let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or(name);
     let ext = p.extension().and_then(|s| s.to_str());
-    let mut i = 1u32;
-    loop {
+    for i in 1u64.. {
         let suffix = if i == 1 {
             " (copy)".to_string()
         } else {
@@ -24,74 +23,188 @@ pub fn unique_dest(dest_dir: &Path, name: &str) -> PathBuf {
             Some(e) => format!("{stem}{suffix}.{e}"),
             None => format!("{stem}{suffix}"),
         };
-        let candidate = dest_dir.join(&fname);
-        if !candidate.exists() {
-            return candidate;
+        let candidate = dest_dir.join(fname);
+        match candidate.symlink_metadata() {
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return candidate,
+            // Let publication report access errors instead of searching names forever.
+            Err(_) => return candidate,
+            Ok(_) => {}
         }
-        i += 1;
     }
+    unreachable!("file name space exhausted")
 }
 
-/// 디렉토리 재귀 복사 (파일이면 단순 복사).
-pub fn copy_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
-    if src.is_dir() {
-        std::fs::create_dir_all(dst)?;
+/// A rename is one filename in the original directory, never an overwrite or path move.
+pub fn rename_entry(src: &Path, name: &str) -> io::Result<()> {
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\']) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "expected one file name",
+        ));
+    }
+    let parent = src
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no parent"))?;
+    let dst = parent.join(name);
+    if dst == src {
+        return Ok(());
+    }
+    rename_noreplace(src, &dst)
+}
+
+/// Copies into a fresh private tree. Never follows a source symlink or merges destination trees.
+pub fn copy_recursive(src: &Path, dst: &Path) -> io::Result<()> {
+    let meta = src.symlink_metadata()?;
+    if meta.file_type().is_symlink() {
+        let target = std::fs::read_link(src)?;
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(target, dst)?;
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::{FileTypeExt, symlink_dir, symlink_file};
+            if meta.file_type().is_symlink_dir() {
+                symlink_dir(target, dst)?;
+            } else {
+                symlink_file(target, dst)?;
+            }
+        }
+    } else if meta.is_dir() {
+        std::fs::create_dir(dst)?;
         for entry in std::fs::read_dir(src)? {
             let entry = entry?;
             copy_recursive(&entry.path(), &dst.join(entry.file_name()))?;
         }
+    } else if meta.is_file() {
+        let mut input = std::fs::File::open(src)?;
+        let mut output = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(dst)?;
+        io::copy(&mut input, &mut output)?;
+        output.set_permissions(meta.permissions())?;
     } else {
-        if let Some(parent) = dst.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::copy(src, dst)?;
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "cannot copy a special file",
+        ));
     }
     Ok(())
 }
 
-/// 파일/디렉토리 삭제 (재귀).
-pub fn remove_path(path: &Path) -> std::io::Result<()> {
-    if path.is_dir() {
+pub fn remove_path(path: &Path) -> io::Result<()> {
+    if path.symlink_metadata()?.is_dir() {
         std::fs::remove_dir_all(path)
     } else {
         std::fs::remove_file(path)
     }
 }
 
-/// 한 항목을 `dest_dir` 로 복사 또는 이동. 충돌은 `unique_dest` 로 회피.
-/// `cut` 이고 같은 디렉토리면 no-op. 자기 자신/하위로의 이동은 거부.
-pub fn transfer(src: &Path, dest_dir: &Path, cut: bool) -> std::io::Result<PathBuf> {
+pub fn transfer(src: &Path, dest_dir: &Path, cut: bool) -> io::Result<PathBuf> {
     let name = src
         .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "no file name"))?;
-    if dest_dir == src || dest_dir.starts_with(src) {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no file name"))?;
+    let dest_dir = dest_dir.canonicalize()?;
+    let meta = src.symlink_metadata()?;
+    if meta.is_dir() && dest_dir.starts_with(src.canonicalize()?) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
             "cannot paste into itself",
         ));
     }
-    if cut && src.parent() == Some(dest_dir) {
-        return Ok(src.to_path_buf());
+    if cut && src.parent().map(Path::canonicalize).transpose()?.as_ref() == Some(&dest_dir) {
+        return Ok(src.to_owned());
     }
-    let dst = unique_dest(dest_dir, &name);
+    let mut dst = dest_dir.join(name);
     if cut {
-        // 같은 볼륨이면 rename, 실패(예: 볼륨 교차)면 copy + remove 폴백.
-        match std::fs::rename(src, &dst) {
-            Ok(()) => Ok(dst),
-            Err(_) => {
-                copy_recursive(src, &dst)?;
-                remove_path(src)?;
-                Ok(dst)
+        loop {
+            match rename_noreplace(src, &dst) {
+                Ok(()) => return Ok(dst),
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                    dst = unique_dest(&dest_dir, &name.to_string_lossy())
+                }
+                Err(e) if e.kind() == io::ErrorKind::CrossesDevices => break,
+                Err(e) => return Err(e),
             }
         }
-    } else {
-        copy_recursive(src, &dst)?;
-        Ok(dst)
+    }
+    let staging = tempfile::Builder::new()
+        .prefix(".tasty-copy-")
+        .tempdir_in(&dest_dir)?;
+    let staged = staging.path().join("entry");
+    copy_recursive(src, &staged)?;
+    loop {
+        match rename_noreplace(&staged, &dst) {
+            Ok(()) => break,
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                dst = unique_dest(&dest_dir, &name.to_string_lossy())
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    if cut {
+        remove_path(src)?;
+    }
+    Ok(dst)
+}
+
+/// OS primitives preserve an entry created concurrently, including dangling symlinks.
+fn rename_noreplace(src: &Path, dst: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let src = std::ffi::CString::new(src.as_os_str().as_bytes())?;
+        let dst = std::ffi::CString::new(dst.as_os_str().as_bytes())?;
+        // SAFETY: both C strings are valid for the call; the OS owns no borrowed pointers.
+        #[cfg(target_os = "linux")]
+        let result = unsafe {
+            libc::renameat2(
+                libc::AT_FDCWD,
+                src.as_ptr(),
+                libc::AT_FDCWD,
+                dst.as_ptr(),
+                libc::RENAME_NOREPLACE,
+            )
+        };
+        // SAFETY: same lifetime contract as the Linux call, with macOS exclusive rename semantics.
+        #[cfg(target_os = "macos")]
+        let result = unsafe { libc::renamex_np(src.as_ptr(), dst.as_ptr(), libc::RENAME_EXCL) };
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "exclusive rename is unavailable",
+        ));
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(io::Error::last_os_error())
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows::Win32::Storage::FileSystem::{MOVE_FILE_FLAGS, MoveFileExW};
+        let src: Vec<u16> = src.as_os_str().encode_wide().chain(Some(0)).collect();
+        let dst: Vec<u16> = dst.as_os_str().encode_wide().chain(Some(0)).collect();
+        if src[..src.len() - 1].contains(&0) || dst[..dst.len() - 1].contains(&0) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "path contains NUL",
+            ));
+        }
+        // SAFETY: nul-terminated buffers live through the call; zero flags forbid replacement.
+        unsafe {
+            MoveFileExW(
+                windows::core::PCWSTR(src.as_ptr()),
+                windows::core::PCWSTR(dst.as_ptr()),
+                MOVE_FILE_FLAGS(0),
+            )
+        }
+        .map_err(|error| io::Error::from_raw_os_error(error.code().0 & 0xffff))
     }
 }
 
-/// 여러 항목을 `dest_dir` 로 붙여넣기. `(성공 수, 첫 에러 메시지)` 반환.
+/// Continue independent items and retain the failed path in the first error.
 pub fn paste_all(paths: &[PathBuf], dest_dir: &Path, cut: bool) -> (usize, Option<String>) {
     let mut ok = 0usize;
     let mut err = None;
@@ -100,7 +213,7 @@ pub fn paste_all(paths: &[PathBuf], dest_dir: &Path, cut: bool) -> (usize, Optio
             Ok(_) => ok += 1,
             Err(e) => {
                 if err.is_none() {
-                    err = Some(e.to_string());
+                    err = Some(format!("{}: {e}", p.display()));
                 }
             }
         }
@@ -152,5 +265,88 @@ mod tests {
         remove_path(&out).unwrap();
         assert!(!out.exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn rename_collision_and_path_escape_preserve_both_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("a");
+        let dst = dir.path().join("b");
+        std::fs::write(&src, b"a").unwrap();
+        std::fs::write(&dst, b"b").unwrap();
+        assert_eq!(
+            rename_entry(&src, "b").unwrap_err().kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        for name in ["../b", "sub/b", "..", ".", ""] {
+            assert!(rename_entry(&src, name).is_err());
+        }
+        assert_eq!(std::fs::read(&src).unwrap(), b"a");
+        assert_eq!(std::fs::read(&dst).unwrap(), b"b");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy_preserves_dangling_destination_and_source_links() {
+        use std::os::unix::fs::symlink;
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("dest");
+        std::fs::create_dir(&dest).unwrap();
+        let src = dir.path().join("value");
+        std::fs::write(&src, b"data").unwrap();
+        let outside = dir.path().join("outside");
+        symlink(&outside, dest.join("value")).unwrap();
+        let copied = transfer(&src, &dest, false).unwrap();
+        assert_eq!(copied, dest.join("value (copy)"));
+        assert!(!outside.exists());
+        assert!(
+            dest.join("value")
+                .symlink_metadata()
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        let link = dir.path().join("link");
+        symlink("missing", &link).unwrap();
+        let copied = transfer(&link, &dest, false).unwrap();
+        assert_eq!(
+            std::fs::read_link(copied).unwrap(),
+            PathBuf::from("missing")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_alias_is_rejected_before_creating_any_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("source");
+        let inner = src.join("inner");
+        std::fs::create_dir_all(&inner).unwrap();
+        let alias = dir.path().join("alias");
+        std::os::unix::fs::symlink(&inner, &alias).unwrap();
+        for cut in [false, true] {
+            assert!(transfer(&src, &alias, cut).is_err());
+        }
+        assert_eq!(std::fs::read_dir(inner).unwrap().count(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recursive_copy_preserves_cycle_as_link_and_cleans_failed_staging() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("source");
+        let dest = dir.path().join("dest");
+        std::fs::create_dir(&src).unwrap();
+        std::fs::create_dir(&dest).unwrap();
+        std::os::unix::fs::symlink(".", src.join("cycle")).unwrap();
+        let copy = transfer(&src, &dest, false).unwrap();
+        assert_eq!(
+            std::fs::read_link(copy.join("cycle")).unwrap(),
+            PathBuf::from(".")
+        );
+        let socket = src.join("socket");
+        let _listener = std::os::unix::net::UnixListener::bind(socket).unwrap();
+        assert!(transfer(&src, &dest, false).is_err());
+        assert_eq!(std::fs::read_dir(&dest).unwrap().count(), 1);
+        assert!(src.exists());
     }
 }

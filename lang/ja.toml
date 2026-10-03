@@ -832,6 +832,7 @@ path = "パス: {}"
 rename = "名前を変更"
 
 [explorer.state]
+operation_failed = "ファイル操作に失敗しました: {}"
 empty = "このフォルダーは空です"
 no_items = "項目なし"
 no_permission = "権限がありません"

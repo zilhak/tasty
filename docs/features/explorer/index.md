@@ -62,7 +62,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 
 - **경로 복사** (`copy_path`, 다중은 개행 결합) → OS 텍스트 클립보드 + `toast.copied_path` 토스트(단축키/Command Palette/우클릭 메뉴 모두 동일).
 - **복사 / 잘라내기 / 붙여넣기** — explorer 내부 파일 클립보드(`MainViewState::explorer_clipboard`, 창마다 단일 슬롯·세션 종료 시 폐기)에 경로+cut 플래그를 담고, 붙여넣기에서 소비한다.
-  파일 복사·이동·휴지통·이름 변경·시스템 열기는 View가 고정 경로와 원 surface/View identity를 요청으로 넘기고 App의 `explorer_files` worker가 실행한다. 파일 이동 헬퍼는 `src/app/explorer_files/ops.rs`에 있으며 충돌 시 `(copy)` 접미사, 자기 자신/하위로 붙여넣기 거부, cut의 cross-volume copy+remove 폴백을 유지한다.
+  파일 복사·이동·휴지통·이름 변경·시스템 열기는 View가 고정 경로와 원 surface/View identity를 요청으로 넘기고 App의 `explorer_files` worker가 실행한다. 파일 이동 헬퍼는 `src/app/explorer_files/ops.rs`에 있으며 충돌 시 `(copy)` 접미사를 붙이며 목적지 공개는 OS의 덮어쓰기 금지 rename으로 수행한다. 복사는 목적지의 전용 임시 디렉터리에서 준비하고 실패 시 제거한다. 심볼릭 링크는 따라가지 않고 링크로 복사하며 별칭을 해소한 실제 하위 디렉터리로의 복사는 거부한다. cut은 교차 파일시스템 오류일 때만 copy+remove로 전환한다.
   View별 대기 요청은 8개, 요청 경로·이름 자료는 1MiB 이내이며 App은 한 작업씩 실행한다. 시작 전 원 대상과 mirror 제한을 다시 검사한다. 완료 뒤 원 View/surface가 살아 있을 때만 목록 갱신을 요청하고, 변경된 선택이나 새 클립보드는 지우지 않는다. cut은 전부 성공한 원 클립보드만 소진하며 부분 성공은 기존 목록을 유지한다.
   종료는 신규 실행을 막고 최대 5초 실제 worker join을 관측한다. 기한이 지나도 작업 취소나 완료로 기록하지 않으며 남은 worker를 경고한다. 로컬 디렉터리 목록·metadata 조회는 기존 동기 표시 경로로 남아 있어 모든 파일 I/O가 worker로 옮겨진 것은 아니다.
   잘라내기는 이동 성공 시 클립보드를 비운다.
@@ -70,7 +70,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
   붙여넣기 대상은 현재 디렉토리(cwd) 고정(선택된 폴더 안으로의 paste-into 는 컨텍스트 메뉴 전용).
   **복사(cut=false)** 는 fs 접근이 없어 mirror explorer 에서도 그대로 동작하지만, **잘라내기(cut=true)/붙여넣기**는 mirror 에서 메뉴·단축키 모두 차단된다(아래 "mirror(attach) explorer 의 파일 변경 차단" 참고).
 - **휴지통으로 이동** (`delete`) — `trash` 크레이트로 OS 휴지통에 보낸다(가역적이라 확인 모달 없음). mirror 에서 차단.
-- **이름 변경** (`rename`, 단일만) — 공용 rename 팝업(`PopupDef`)을 재사용해 `std::fs::rename`. mirror 에서 차단(가드가 먼저 막아 팝업 자체가 열리지 않는다).
+- **이름 변경** (`rename`, 단일만) — 공용 rename 팝업(`PopupDef`)을 재사용한다. 이름은 단일 파일명이어야 하며 기존 항목을 덮어쓰지 않는다. mirror 에서 차단(가드가 먼저 막아 팝업 자체가 열리지 않는다).
 - **OS 기본 앱으로 열기** (`open_in_system`, 단일 폴더만) — `platform::reveal::open_path`(Windows `explorer` / macOS `open` / Linux `xdg-open`). mirror 에서 차단.
 - **즐겨찾기 추가** (`add_to_favorites`, 단일 폴더 또는 빈 영역) — 아래 참조. mirror 에서 차단.
 - **새 탭으로 열기** (`open_in_new_tab`, 단일 폴더) — 그 폴더를 cwd 로 하는 새 explorer 를 **Pane 탭**(explorer 내부 탭이 아님)으로 연다. 우클릭 대상 surface 의 **소유 pane** 에 추가해(`MainViewState::add_kind_tab_by_owner`) focused pane 이 아니어도 올바른 pane 에 열린다. 기존 explorer 는 불변. mirror 에서 메뉴 자체가 숨겨지고 클릭 시에도 차단된다(아래 참고 — `add_kind_tab_by_owner` 는 mirror 구조 변경 forward 를 거치지 않는다).
@@ -159,3 +159,5 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 ## 관련
 
 - [work-area](../work-area/index.md)(Surface/Tab/Pane 계층) · [file-handler](../file-handler/index.md)(파일 열기 위임) · [convert-surface](../convert-surface/index.md)(explorer 로/에서 변환) · [keybindings](../keybindings/index.md) · [settings](../settings/index.md)(폰트/단축키 탭)
+
+파일 작업 실패는 원 View와 surface binding이 유효할 때 오류 토스트로 알린다. 실패한 rename/trash는 기존 선택을 유지하고 목록을 다시 읽는다. 부분 성공한 붙여넣기는 실패 경로를 표시하며 cut clipboard를 유지한다.

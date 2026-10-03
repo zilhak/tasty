@@ -832,6 +832,7 @@ path = "경로: {}"
 rename = "이름 변경"
 
 [explorer.state]
+operation_failed = "파일 작업 실패: {}"
 empty = "이 폴더는 비어 있습니다"
 no_items = "항목 없음"
 no_permission = "권한 없음"

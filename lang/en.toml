@@ -836,6 +836,7 @@ path = "Path: {}"
 rename = "Rename"
 
 [explorer.state]
+operation_failed = "File operation failed: {}"
 empty = "This folder is empty"
 no_items = "no items"
 no_permission = "No permission"
