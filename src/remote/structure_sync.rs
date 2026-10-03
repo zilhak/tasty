@@ -87,10 +87,12 @@ impl EngineMut<'_> {
 
     /// 변경 표시가 있는 workspace의 전체 트리를 holder에 보낸다. 사라진 workspace는 강제 분리한다.
     /// forward 실행은 자체 delta를 보내고 표시를 지워 중복 통지를 피한다.
+    /// 같은 holder에 마지막으로 보낸 트리와 같으면 delta를 생략한다.
     /// notifier가 없거나 송신에 실패해도 여기서는 변경 표시를 다시 쌓지 않는다.
     pub(crate) fn push_structure_changes(&mut self) {
         for ws_id in self.remote.take_structure_changed() {
             let Some(holder) = self.live.occupancy.workspace_holder(ws_id) else {
+                self.remote.forget_structure_sent(ws_id);
                 continue;
             };
             if !self.live.occupancy.workspace_attachment_ready(ws_id) {
@@ -98,6 +100,7 @@ impl EngineMut<'_> {
                 continue;
             }
             let Some(idx) = self.find_workspace_index_for_id(ws_id) else {
+                self.remote.forget_structure_sent(ws_id);
                 self.force_detach_workspace(ws_id);
                 continue;
             };
@@ -108,16 +111,27 @@ impl EngineMut<'_> {
                 self.workspace_at(idx).expect("workspace index is valid").id,
             );
             let (tree, surfaces) = self.build_workspace_tree_surfaces(idx, &class);
-            let delta = tasty_ipc::stream::StreamControl::StructuralDelta {
-                workspace_id: ws_id,
-                tree,
-                surfaces,
+            let snapshot = serde_json::to_vec(&(&tree, &surfaces)).unwrap_or_default();
+            // holder가 이미 같은 트리를 받았다면 다시 보내지 않고 받은 것으로 보아 새 surface의 tap만 연다.
+            let pushed = if self.remote.structure_already_sent(ws_id, holder, &snapshot) {
+                PushResult::Sent
+            } else {
+                let delta = tasty_ipc::stream::StreamControl::StructuralDelta {
+                    workspace_id: ws_id,
+                    tree,
+                    surfaces,
+                };
+                let frame = StreamFrame::new(
+                    StreamTag::Control,
+                    serde_json::to_vec(&delta).unwrap_or_default(),
+                );
+                let pushed = hub.push(holder, frame);
+                if pushed == PushResult::Sent {
+                    self.remote.record_structure_sent(ws_id, holder, snapshot);
+                }
+                pushed
             };
-            let frame = StreamFrame::new(
-                StreamTag::Control,
-                serde_json::to_vec(&delta).unwrap_or_default(),
-            );
-            match hub.push(holder, frame) {
+            match pushed {
                 PushResult::Sent => self.flush_committed_workspace_taps(ws_id, holder, &hub),
                 PushResult::Dropped => self.remote.mark_structure_changed(ws_id),
                 PushResult::Unknown | PushResult::Disconnected => {

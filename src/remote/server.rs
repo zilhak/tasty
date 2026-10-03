@@ -1,5 +1,7 @@
 //! attach 점유를 터미널 출력·입력, mesh·문서 조회, 구조 변경과 파일 전송에 연결한다.
 //! GUI와 헤드리스 메인 루프가 StreamHub의 수신 결과를 이 모듈에 전달한다.
+mod content_queries;
+
 use super::transfer_spool::{Spool, TransferOwner};
 use crate::runtime::engine_access::EngineMut;
 
@@ -12,8 +14,6 @@ use crate::core::attach::{AttachClientId, AttachError};
 use crate::model::{AttachSurfaceClass, SurfaceId, WorkspaceId};
 use tasty_ipc::stream::{StreamControl, StreamFrame, StreamTag, encode_mux};
 use tasty_ipc::stream_hub::{PushResult, StreamHub};
-
-mod content_queries;
 
 #[cfg(feature = "gui")]
 pub(crate) use content_queries::notify_markdown_changed;
@@ -912,6 +912,10 @@ impl crate::runtime::engine_access::EngineMut<'_> {
         if hub.push(client_id, descriptor_frame) != PushResult::Sent {
             return false;
         }
+        let snapshot =
+            serde_json::to_vec(&(&descriptor["tree"], &descriptor["surfaces"])).unwrap_or_default();
+        self.remote
+            .record_structure_sent(workspace_id, client_id, snapshot);
 
         for &sid in &class.terminals {
             self.tap_surface_for_stream(sid, client_id, hub);

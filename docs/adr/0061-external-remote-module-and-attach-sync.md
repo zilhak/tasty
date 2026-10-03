@@ -97,6 +97,7 @@ forward 요청의 출처, parked 엔진의 즉시 적용을 정했다. mirror �
   서버 쪽 복원에서 로컬 복원의 focus 후처리를 실행하지 않는다.
 - 서버 쪽 변경: PTY 종료나 서버 로컬 멤버 추가로 바뀐 점유 workspace도 변경 workspace 집합을 기록하고 정리가 끝난 뒤 구조 변경으로 보낸다.
   새 멤버의 트리는 snapshot tap보다 먼저 보낸다. workspace가 사라지면 강제 detach하고 잠금을 정리한다. forward는 자신의 Result와 Delta를 보낸 뒤 별도 변경 표시를 지워 중복을 피한다.
+  변경 표시는 다른 workspace의 확정에도 찍힐 수 있으므로, 같은 holder에 마지막으로 보낸 트리와 같으면 Delta를 생략하고 새 멤버의 tap만 연다.
 - forward 실패 사유: anchor가 없으면 모든 엔진에서 surface 생존 여부를 먼저 확인한다. client가 실제 workspace를 점유했고 surface가 서버 전체에 없을 때만
   IPC와 같은 `no live surface` 사유를 반환하고, 다른 곳에 살아 있거나 점유 workspace가 없으면 `workspace not found`를 유지한다.
   사유에는 실제 structural_op 이름을 넣고 포커스로 대체하지 않는다. convert도 journal 생성·교체 완료 경계를 사용한다.

@@ -362,6 +362,7 @@ pub(crate) fn deliver_result(
     engine.remote.clear_structure_changed(remote.workspace);
     let class = engine.classify_attach_surfaces(remote.workspace);
     let (tree, surfaces) = engine.build_workspace_tree_surfaces(index, &class);
+    let snapshot = serde_json::to_vec(&(&tree, &surfaces)).unwrap_or_default();
     let delta = StreamControl::StructuralDelta {
         workspace_id: remote.workspace,
         tree,
@@ -370,7 +371,10 @@ pub(crate) fn deliver_result(
     match serde_json::to_vec(&delta) {
         Ok(bytes) => match hub.push(remote.client, StreamFrame::new(StreamTag::Control, bytes)) {
             tasty_ipc::stream_hub::PushResult::Sent => {
-                engine.flush_committed_workspace_taps(remote.workspace, remote.client, hub)
+                engine.flush_committed_workspace_taps(remote.workspace, remote.client, hub);
+                engine
+                    .remote
+                    .record_structure_sent(remote.workspace, remote.client, snapshot);
             }
             tasty_ipc::stream_hub::PushResult::Dropped => {
                 engine.remote.mark_structure_changed(remote.workspace)

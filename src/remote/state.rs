@@ -75,6 +75,9 @@ pub(crate) struct RemoteState {
     /// cwd 전송 후보의 (holder, 값). 같은 값이어도 holder가 바뀌면 새 후보를 만든다.
     pub(crate) last_forwarded_cwd:
         std::collections::HashMap<u32, (crate::core::attach::AttachClientId, Option<String>)>,
+    /// workspace별로 holder에 보낸 마지막 트리·surface 직렬화 값. 구조 변경 표시는 다른
+    /// workspace의 확정에도 찍히므로, 같은 holder에 같은 트리를 다시 보내지 않는 데 쓴다.
+    last_structure_sent: std::collections::HashMap<u32, (AttachClientId, Vec<u8>)>,
 }
 impl RemoteState {
     pub(crate) fn new() -> Self {
@@ -116,6 +119,7 @@ impl RemoteState {
             last_forwarded_busy: std::collections::HashMap::new(),
             last_forwarded_attention: std::collections::HashMap::new(),
             last_forwarded_cwd: std::collections::HashMap::new(),
+            last_structure_sent: std::collections::HashMap::new(),
         }
     }
 }
@@ -137,6 +141,29 @@ impl RemoteState {
     }
     pub(crate) fn clear_structure_changed(&mut self, id: u32) {
         self.structure_changed.remove(&id);
+    }
+    /// `snapshot`은 `(tree, surfaces)`의 직렬화 값이다. 초기 attach와 두 delta 경로가 같은 형식을 쓴다.
+    pub(crate) fn structure_already_sent(
+        &self,
+        workspace: u32,
+        holder: AttachClientId,
+        snapshot: &[u8],
+    ) -> bool {
+        self.last_structure_sent
+            .get(&workspace)
+            .is_some_and(|(sent_to, sent)| *sent_to == holder && sent == snapshot)
+    }
+    pub(crate) fn record_structure_sent(
+        &mut self,
+        workspace: u32,
+        holder: AttachClientId,
+        snapshot: Vec<u8>,
+    ) {
+        self.last_structure_sent
+            .insert(workspace, (holder, snapshot));
+    }
+    pub(crate) fn forget_structure_sent(&mut self, workspace: u32) {
+        self.last_structure_sent.remove(&workspace);
     }
     pub(crate) fn take_structure_changed(&mut self) -> Vec<u32> {
         let (held, ready): (Vec<_>, Vec<_>) = std::mem::take(&mut self.structure_changed)
@@ -212,5 +239,23 @@ impl RemoteState {
             self.pending_markdown_content_forward
                 .retain(|request| request.local_surface_id != id);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RemoteState;
+
+    #[test]
+    fn a_sent_structure_is_skipped_only_for_the_same_holder_and_value() {
+        let mut remote = RemoteState::new();
+        assert!(!remote.structure_already_sent(7, 1, b"tree-a"));
+        remote.record_structure_sent(7, 1, b"tree-a".to_vec());
+        assert!(remote.structure_already_sent(7, 1, b"tree-a"));
+        assert!(!remote.structure_already_sent(7, 1, b"tree-b"));
+        assert!(!remote.structure_already_sent(7, 2, b"tree-a"));
+        assert!(!remote.structure_already_sent(8, 1, b"tree-a"));
+        remote.forget_structure_sent(7);
+        assert!(!remote.structure_already_sent(7, 1, b"tree-a"));
     }
 }
