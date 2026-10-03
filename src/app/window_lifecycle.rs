@@ -444,12 +444,13 @@ impl App {
     pub(crate) fn register_window(
         &mut self,
         gpu: GpuState,
-        state: crate::state::MainViewState,
+        mut state: crate::state::MainViewState,
         engine: crate::runtime::engine_session::EngineId,
         window: Arc<Window>,
         origin: WindowRequestOrigin,
     ) {
         let window_id = window.id();
+        state.tutorial.persistence = self.tutorial_progress.client();
         let main = window::main::MainView::new(gpu, state, window, self.view.proxy.clone());
         self.view.views.insert(window_id, Box::new(main));
         self.engines.attach_window(window_id, engine);

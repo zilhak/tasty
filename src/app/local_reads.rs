@@ -209,7 +209,8 @@ impl crate::view::MainView {
         &mut self,
         owner: &mut crate::app::local_reads::LocalReads,
     ) {
-        let mut changed = self.state.explorer_views.poll_local_reads(owner);
+        let mut changed = self.state.tutorial.poll_progress();
+        changed |= self.state.explorer_views.poll_local_reads(owner);
         changed |= self.state.poll_branch_read(owner);
         changed |=
             crate::adapters::ui::popup::file_picker::poll_local_reads(&mut self.state, owner);

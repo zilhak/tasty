@@ -45,7 +45,7 @@
 
 - `catalog.rs`: 안정적인 ID·번역 키·단계 요구사항.
 - `runtime.rs`: 전이, 완료/중단, 실습 성공 판정.
-- `progress.rs` / `src/store/tutorial_progress.rs`: 사용자 전이의 DB 효과와 SQL.
+- `progress.rs`: View의 저장 요청·세대·결과 receipt. `src/app/tutorial_progress.rs`: App 소유의 직렬 DB worker. `src/store/tutorial_progress.rs`: SQL.
 - `mod.rs`: 현재 대상 확인과 렌더 진행 관리.
 - `callout.rs`, `marker.rs`, `topic_popup.rs`: 표시.
 - `src/intent/popup.rs`: 공용 목록 진입과 팔레트 관찰.
@@ -62,3 +62,5 @@
 - 대상 유실/워크스페이스 이탈 시 잘못된 마커나 실습 성공이 나타나지 않는다.
 - 클릭·사용자 단축키로 실습을 수행할 수 있고 같은 agent 동작은 실습을 완료하지 않는다.
 - ko/en/ja 안내와 현재 바인딩을 표시하며 긴 본문은 스크롤할 수 있다.
+
+DB 읽기·쓰기는 렌더와 입력 경로에서 실행하지 않는다. App writer는 최대 64개 요청을 접수하고 같은 View의 빠른 연속 저장은 그 View가 성공시킨 row version만 이어 사용한다. 다른 View의 충돌 버전은 채택하지 않는다. 늦은 결과는 최신 View 진행을 덮어쓰지 않으며, 접수된 저장은 해당 View가 닫힌 뒤에도 완료한다. 종료는 큐 배출과 실제 worker join을 기존 종료 기한 안에서 관측한다.

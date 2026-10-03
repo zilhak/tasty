@@ -50,6 +50,9 @@ pub struct Progress {
 }
 
 pub struct TutorialRuntime {
+    pub(crate) persistence: crate::app::tutorial_progress::Client,
+    pub(super) pending_progress: std::collections::VecDeque<super::progress::Pending>,
+    pub(super) progress_generations: Vec<u64>,
     pub active: Option<ActiveTutorial>,
     pub pending_start: Option<usize>,
     pub popup_selected: usize,
@@ -68,6 +71,9 @@ pub struct TutorialRuntime {
 impl Default for TutorialRuntime {
     fn default() -> Self {
         Self {
+            persistence: Default::default(),
+            pending_progress: Default::default(),
+            progress_generations: vec![0; all_topics().len()],
             active: None,
             pending_start: None,
             popup_selected: 0,
@@ -113,6 +119,13 @@ impl TutorialRuntime {
     }
 
     pub fn start_pending(&mut self) {
+        if self
+            .pending_progress
+            .iter()
+            .any(|pending| pending.topic.is_none())
+        {
+            return;
+        }
         let Some(topic) = self.pending_start.take() else {
             return;
         };

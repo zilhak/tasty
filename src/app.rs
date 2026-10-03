@@ -65,6 +65,8 @@ pub(crate) mod sweeps;
 pub(crate) mod timer_report;
 pub(crate) mod timers;
 #[cfg(feature = "gui")]
+pub(crate) mod tutorial_progress;
+#[cfg(feature = "gui")]
 pub(crate) mod webview_keys;
 #[cfg(feature = "gui")]
 pub(crate) mod window_access;
@@ -118,6 +120,8 @@ pub(crate) struct App {
     pub(crate) explorer_files: explorer_files::ExplorerFiles,
     #[cfg(feature = "gui")]
     pub(crate) local_reads: local_reads::LocalReads,
+    #[cfg(feature = "gui")]
+    pub(crate) tutorial_progress: tutorial_progress::TutorialProgress,
     pub(crate) pending_server_attaches: Vec<attach_activation::PendingAttach>,
     pub(crate) publication_inputs: publication_input::PublicationInputs,
     pub(crate) services: AppServices,
@@ -250,6 +254,14 @@ impl App {
             port_scans: Default::default(),
             #[cfg(feature = "gui")]
             explorer_files: Default::default(),
+            tutorial_progress: tutorial_progress::TutorialProgress::new({
+                let proxy = proxy.clone();
+                Arc::new(move || {
+                    if proxy.send_event(AppEvent::TimerTick).is_err() {
+                        tracing::debug!("tutorial persistence wake after shutdown");
+                    }
+                })
+            })?,
             local_reads: local_reads::LocalReads::new({
                 let proxy = proxy.clone();
                 Arc::new(move || {
