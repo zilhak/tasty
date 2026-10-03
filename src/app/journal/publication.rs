@@ -491,9 +491,6 @@ impl JournalApplication {
         if self.answer_resource_cleanup(ticket, result, sessions, plugins.as_deref_mut())? {
             return Ok(true);
         }
-        if self.answer_command(ticket, result, sessions)? {
-            return Ok(true);
-        }
         #[cfg(feature = "gui")]
         if self.finish_retirement(ticket, result)? {
             return Ok(true);
@@ -598,10 +595,15 @@ impl JournalApplication {
     fn accept_finished(
         &mut self,
         ticket: u64,
-        result: Result<ResultValue, String>,
+        result: Result<ResultValue, crate::runtime::journal_product::JournalError>,
         sessions: &mut [&mut EngineSession],
         mut plugins: Option<&mut crate::plugin::PluginManager>,
     ) -> Result<(), String> {
+        if self.answer_command(ticket, &result, sessions)? {
+            return Ok(());
+        }
+        // Resource owners retain diagnostic text; only the command boundary maps IPC categories.
+        let result = result.map_err(|error| error.to_string());
         if self.answer_finished_request(ticket, &result, sessions, plugins.as_deref_mut())? {
             return Ok(());
         }

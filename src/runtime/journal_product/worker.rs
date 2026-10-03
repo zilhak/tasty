@@ -1,3 +1,4 @@
+mod admission;
 mod assembly;
 mod binding;
 mod capture;
@@ -12,7 +13,7 @@ use std::sync::{Arc, mpsc};
 use tasty_event_store::CommandLookup;
 
 use super::decider::{ResolvedCommand, StructureDecider};
-use super::{Admission, Completion, QUEUE_CAPACITY, ResultValue, Work, identity};
+use super::{Admission, Completion, JournalError, QUEUE_CAPACITY, ResultValue, Work, identity};
 use crate::runtime::command_executor::{Executor, Request as ExecuteRequest};
 use crate::runtime::journal;
 
@@ -140,7 +141,7 @@ pub(super) fn run(
         let is_admit = matches!(request.work, Work::Admit(_));
         let mut deferred = None;
         let mut result = match &halted {
-            Some(reason) => Err(reason.clone()),
+            Some(reason) => Err(JournalError::Halted(reason.clone())),
             None => handle(
                 &executor,
                 &home,
@@ -180,7 +181,7 @@ pub(super) fn run(
             )
         {
             halted = Some(error.clone());
-            result = Err(error);
+            result = Err(JournalError::Halted(error));
         }
         if !was_halted && halted.is_some() {
             release_halted_admissions(&executor, &mut pending);
@@ -206,7 +207,7 @@ pub(super) fn run(
             for (ticket, _) in waiting.drain(..) {
                 if !send(Completion::Finished {
                     ticket,
-                    result: Err(reason.clone()),
+                    result: Err(JournalError::Halted(reason.clone())),
                 }) {
                     return;
                 }
@@ -250,7 +251,9 @@ fn wait_for_credit(
     if admitted + waiting.len() >= QUEUE_CAPACITY {
         return send(Completion::Finished {
             ticket,
-            result: Err("journal admission capacity exhausted".into()),
+            result: Err(JournalError::QueueFull(
+                "journal admission capacity exhausted",
+            )),
         });
     }
     waiting.push_back((ticket, admission));
@@ -286,6 +289,19 @@ fn handle(
     ticket: u64,
     work: Work,
     deferred: &mut Option<Admission>,
+) -> Result<ResultValue, JournalError> {
+    match work {
+        Work::Admit(admission) => admission::admit(executor, pending, ticket, admission, deferred),
+        work => handle_work(executor, home, pending, ticket, work).map_err(JournalError::Internal),
+    }
+}
+
+fn handle_work(
+    executor: &Executor<StructureDecider>,
+    home: &std::path::Path,
+    pending: &mut HashMap<u64, Pending>,
+    ticket: u64,
+    work: Work,
 ) -> Result<ResultValue, String> {
     match work {
         Work::CapturePreset { draft } => capture::preset(executor, draft)
@@ -326,89 +342,7 @@ fn handle(
             surface_floor,
             pending.values().map(|entry| entry.disk_credit).sum(),
         ),
-        Work::Admit(admission) => {
-            if pending.contains_key(&ticket)
-                || pending.values().any(|p| p.followers.contains(&ticket))
-            {
-                return Err("journal admission ticket already exists".into());
-            }
-            let pending_count: usize = pending.values().map(|p| 1 + p.followers.len()).sum();
-            if let Some(key) = &admission.key {
-                for (leader, existing) in pending.iter_mut() {
-                    if existing.admission.key.as_ref() == Some(key) {
-                        if existing.admission.original_digest != admission.original_digest {
-                            return Err("idempotency key belongs to a different request".into());
-                        }
-                        if pending_count >= QUEUE_CAPACITY {
-                            return Err("journal admission capacity exhausted".into());
-                        }
-                        existing.followers.push(ticket);
-                        return Ok(ResultValue::JoinedAdmission {
-                            #[cfg(test)]
-                            leader_ticket: *leader,
-                        });
-                    }
-                }
-            }
-            // Recover before exposing any stored success; lookup still precedes target resolution.
-            executor.with_state(|_| ()).map_err(|e| e.to_string())?;
-            if let Some(key) = &admission.key {
-                let inner = executor.inner.lock().map_err(|e| e.to_string())?;
-                match inner
-                    .store
-                    .lookup_command(key, &admission.original_digest)
-                    .map_err(|e| e.to_string())?
-                {
-                    CommandLookup::Hit(record) => {
-                        return Ok(recovery::command_result(&inner.state, record, true));
-                    }
-                    CommandLookup::DigestMismatch(_) => {
-                        return Err("idempotency key belongs to a different request".into());
-                    }
-                    CommandLookup::Miss => {}
-                }
-            }
-            let disk_credit = {
-                let outstanding = pending.values().map(|entry| entry.disk_credit).sum();
-                let mut inner = executor.inner.lock().map_err(|error| error.to_string())?;
-                let epoch = inner.epoch;
-                match inner.store.ensure_new_admission(epoch, outstanding) {
-                    Ok(_) => {}
-                    // Credits held by unresolved admissions return on their Resolve or Cancel.
-                    // Wait for them instead of failing; with none outstanding the store is full.
-                    Err(tasty_event_store::StoreError::AdmissionCapacity { .. })
-                        if !pending.is_empty() =>
-                    {
-                        *deferred = Some(admission);
-                        return Ok(ResultValue::NeedsResolution);
-                    }
-                    Err(error) => return Err(error.to_string()),
-                }
-                inner.store.admission_budget().command_credit_bytes
-            };
-            let held_bytes: usize = pending
-                .values()
-                .map(|pending| pending.admission.original_digest.len())
-                .sum();
-            if held_bytes.saturating_add(admission.original_digest.len()) > super::MAX_QUEUED_BYTES
-            {
-                return Err("journal pending admission byte capacity exhausted".into());
-            }
-            if pending_count >= QUEUE_CAPACITY {
-                return Err("journal admission capacity exhausted".into());
-            }
-            pending.insert(
-                ticket,
-                Pending {
-                    disk_credit,
-                    admission,
-                    followers: Vec::new(),
-                    reservations: Vec::new(),
-                    inputs: Vec::new(),
-                },
-            );
-            Ok(ResultValue::NeedsResolution)
-        }
+        Work::Admit(_) => unreachable!("admission is handled at the typed boundary"),
         Work::Resolve {
             mut changes,
             response,

@@ -23,6 +23,7 @@ mod wake;
 mod workspace;
 use super::*;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
+use crate::runtime::journal_product::JournalError;
 use crate::runtime::journal_product::{Admission, ResponsePlan, StreamCommand};
 use std::sync::mpsc::SyncSender;
 
@@ -120,7 +121,7 @@ struct Pending {
 impl Pending {
     fn take_retry_outcome(
         &mut self,
-        result: &Result<ResultValue, String>,
+        result: &Result<ResultValue, JournalError>,
     ) -> Option<crate::ipc::handler::idempotency::RetryOutcome> {
         if self.retry_counted || self.request.idempotency_key.is_none() {
             return None;
@@ -809,7 +810,7 @@ impl JournalApplication {
 }
 
 fn retry_outcome(
-    result: &Result<ResultValue, String>,
+    result: &Result<ResultValue, JournalError>,
 ) -> Option<crate::ipc::handler::idempotency::RetryOutcome> {
     use crate::ipc::handler::idempotency::RetryOutcome as O;
     match result {
@@ -818,7 +819,7 @@ fn retry_outcome(
         Ok(ResultValue::Stored(_) | ResultValue::RecoveryRequired { replay: true, .. }) => {
             Some(O::Replayed)
         }
-        Err(error) if error.contains("idempotency key") => Some(O::Conflicted),
+        Err(JournalError::KeyConflict) => Some(O::Conflicted),
         _ => None,
     }
 }

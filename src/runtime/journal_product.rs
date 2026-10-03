@@ -5,11 +5,14 @@
 
 mod binding;
 mod decider;
+mod error;
 mod identity;
 mod preparation;
 mod response;
 pub(crate) mod view_record;
 mod worker;
+
+pub(crate) use error::JournalError;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -226,7 +229,7 @@ pub(crate) enum Completion {
     },
     Finished {
         ticket: u64,
-        result: Result<ResultValue, String>,
+        result: Result<ResultValue, JournalError>,
     },
 }
 

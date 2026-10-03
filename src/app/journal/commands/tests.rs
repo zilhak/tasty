@@ -636,7 +636,7 @@ fn each_keyed_journal_request_reports_only_its_initial_retry_decision() {
         ),
         (
             Some("conflict"),
-            Err("idempotency key was reused for a different request".into()),
+            Err(JournalError::KeyConflict),
             Some(O::Conflicted),
         ),
         (None, Ok(ResultValue::NeedsResolution), None),

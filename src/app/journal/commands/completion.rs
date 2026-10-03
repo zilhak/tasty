@@ -5,7 +5,7 @@ impl JournalApplication {
     pub(in crate::app::journal) fn answer_command(
         &mut self,
         ticket: u64,
-        result: &Result<ResultValue, String>,
+        result: &Result<ResultValue, JournalError>,
         sessions: &mut [&mut EngineSession],
     ) -> Result<bool, String> {
         let Some(pending) = self.commands.pending.get_mut(&ticket) else {
@@ -316,17 +316,9 @@ impl JournalApplication {
                     .ok_or("committed structure result has no response")?;
                 serde_json::from_slice(bytes).map_err(|error| error.to_string())?
             }
-            Err(error) => JsonRpcResponse::error(
-                serde_json::Value::Null,
-                if error.contains("idempotency key") {
-                    crate::ipc::protocol::ERR_IDEMPOTENCY_KEY_CONFLICT
-                } else if error.contains("capacity exhausted") {
-                    crate::ipc::protocol::ERR_COMMAND_QUEUE_FULL
-                } else {
-                    -32603
-                },
-                error,
-            ),
+            Err(error) => {
+                JsonRpcResponse::error(serde_json::Value::Null, error.ipc_code(), error.to_string())
+            }
             other => {
                 return Err(format!(
                     "unexpected structural command completion: {other:?}"

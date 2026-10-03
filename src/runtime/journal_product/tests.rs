@@ -57,7 +57,7 @@ fn finished(worker: &JournalWorker, ticket: u64) -> Result<ResultValue, String> 
             result,
         } => {
             assert_eq!(got, ticket);
-            result
+            result.map_err(|error| error.to_string())
         }
         other => panic!("{other:?}"),
     }

@@ -390,7 +390,12 @@ fn assert_stale_view_rejected(journal: &JournalApplication, stale: StoredView) {
         match journal.worker.try_recv() {
             Ok(Completion::Finished { ticket, result }) => {
                 assert_eq!(ticket, u64::MAX);
-                assert!(result.unwrap_err().contains("retired engine binding"));
+                assert!(
+                    result
+                        .unwrap_err()
+                        .to_string()
+                        .contains("retired engine binding")
+                );
                 break;
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {}
