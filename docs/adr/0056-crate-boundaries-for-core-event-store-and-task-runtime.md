@@ -1,6 +1,6 @@
 # ADR-0056: 도메인·이벤트 저장·작업 실행을 별도 crate로 나눈다
 
-- **Status**: Accepted — 구현 상태: 이행 중. tasty-core는 canonical Command/Event·decide/evolve와 순수 live projection/query를 함께 소유하며 임시 tasty-domain을 합쳤다. tasty-task-runtime은 TaskService/Scope·runner·완료 대기 실행 코드를 소유한다. root caller 이행과 최종 검증은 진행 중이다
+- **Status**: Accepted — tasty-core는 Command/Event·decide/evolve와 순수 projection/query를 소유하고 tasty-domain을 흡수했다. tasty-task-runtime은 TaskService/Scope·runner·완료 대기를 소유한다. root는 App·EngineRuntime·View·저장 adapter를 연결한다. 배치와 플랫폼별 실행 검증은 구분한다.
 - **Date**: 2026-09-30
 - **Tags**: architecture, crates, build, domain, headless
 - **Group**: foundation

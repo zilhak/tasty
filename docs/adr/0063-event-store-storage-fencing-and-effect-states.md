@@ -1,6 +1,6 @@
 # ADR-0063: 이벤트 저장소는 payload를 journal DB에 두고 파일 잠금과 writer 세대로 쓰기를 제한한다
 
-- **Status**: Accepted — 구현 상태: payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별, 영속 ID 예약 및 projection 출력/consumer 위치 원자 확정은 `tasty-event-store`에 구현됐다. App 초기 엔진 구성·선택 slot import·자원 준비는 데이터 홈 worker에 연결 중이다. 기존 숫자 surface metadata를 피하는 예약 기준도 이 worker에서 영속 반영한다. 저장 leaf는 scoped consumer 위치와 신규 admission의 활성 저장량 예산을 제공한다. 일반 writer·Recovery·ID 소비의 제품 끝점과 전체 실행 검증은 별도로 대조한다. 정상 슬롯 resume와 폐기 뒤 incarnation 전환은 App bootstrap·retirement에 연결돼 있다.
+- **Status**: Accepted — 구현 상태: payload 저장, 독점 writer 잠금과 세대 검사, effect·명령 상태 전이, schema·파일 식별, 영속 ID 예약 및 projection 출력/consumer 위치 원자 확정은 `tasty-event-store`에 구현됐다. App 초기 엔진 구성·선택 slot import·자원 준비는 데이터 홈 worker에 연결돼 있다. 기존 숫자 surface metadata를 피하는 예약 기준도 이 worker에서 영속 반영한다. 저장 leaf는 scoped consumer 위치와 신규 admission의 활성 저장량 예산을 제공한다. 일반 writer·Recovery·ID 소비의 제품 끝점과 전체 실행 검증은 별도로 대조한다. 정상 슬롯 resume와 폐기 뒤 incarnation 전환은 App bootstrap·retirement에 연결돼 있다.
 - **Date**: 2026-09-30
 - **Tags**: event-sourcing, storage, sqlite, durability, effects, fencing
 - **Group**: foundation

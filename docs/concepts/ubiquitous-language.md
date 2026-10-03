@@ -34,6 +34,9 @@
 ### 구조 (→ [hierarchy.md](hierarchy.md))
 
 - **App** — 프로세스 진입점과 공유 서비스·IPC Hub·실행 조정의 소유자. GUI에서는 ViewRegistry와 EngineRegistry를 관리한다.
+- **AppState** — App의 부팅·종료 단계와 앱 수준 대기 값. ViewRegistry·EngineRegistry·AppServices의 원본을 복제하지 않는다.
+- **ViewState** — View마다 공통인 identity·focus·modifier·repaint·close 상태. MainView의 선택·viewport·popup 등 종류별 상태는 `MainViewState`에 합성한다.
+- **구조 journal** — 데이터 홈에서 확정 구조 사건·명령 결과·effect 의무를 보관하는 원본. engine별 stream을 같은 저장소에서 관리하며 terminal 출력이나 사용자 선택 자체를 구조 사건으로 기록하지 않는다.
 - **Engine** — EngineSession이 소유하는 도메인·실행 범위. CoreState projection, LiveDomainState, EngineRuntime과 task·hook·remote 범위를 포함한다. headless도 App과 EngineSession을 실행하되 로컬 View는 없다.
 - **Window** — winit OS 창 자원(`winit::window::Window`). tasty 쪽 `Window` 타입은 **없다** — 이 단어는 OS 창만 가리킨다.
 - **View** — tasty 쪽 윈도우 표현(종류+콘텐츠+행동). winit Window 를 소유. **1 View : 1 Window.** `MainView`/`SettingsView`/… 가 구현체.

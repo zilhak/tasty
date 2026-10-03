@@ -163,7 +163,7 @@ fn requested_workspace(params: Value, active: usize) -> (Option<u64>, Vec<u32>) 
     (result["record"]["request"]["workspace_id"].as_u64(), ids)
 }
 
-/// surface가 지정되면 사용자의 활성 workspace 대신 그 surface 소속을 사용한다(ADR-0017).
+/// surface가 지정되면 사용자의 활성 workspace 대신 그 surface 소속을 사용한다(ADR-0059).
 #[test]
 fn a_named_surface_decides_the_workspace_whatever_the_user_is_viewing() {
     for active in [0, 1] {

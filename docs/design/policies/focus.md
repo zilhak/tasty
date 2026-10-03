@@ -5,12 +5,14 @@
 ## 계층
 
 ```
-Engine
-└── View (여러 개, HashMap<WindowId, …>)
-    ├── ModalView    — 활성 시 모든 입력 독점 (엔진 전역 최대 1개)
+App
+└── ViewRegistry (여러 View, HashMap<WindowId, …>)
+    ├── ModalView    — 활성 시 모든 입력 독점 (앱 전역 최대 1개)
     └── 그 외 (MainView / PresetView 등) — Modal 없을 때 OS 네이티브 포커스
         └── Pane / Surface — View 내부 포커스
 ```
+
+각 MainView는 EngineRegistry의 binding으로 EngineSession을 가리킨다. Engine은 프로세스나 OS 창과 같은 뜻이 아니며 View 없이도 살아 있을 수 있다.
 
 ## Modal 포커스 차단
 

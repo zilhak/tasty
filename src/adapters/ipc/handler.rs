@@ -109,7 +109,7 @@ use crate::state::RequestContext;
 /// 이미 검사한 요청은 handle_checked_request를 사용한다(ADR-0012).
 ///
 /// 엔진 핸들러는 IpcWindow와 IntentOutbox로 창에 접근한다.
-/// 창 자체를 조작하는 GUI·debug 핸들러만 RequestContext를 받는다(ADR-0002).
+/// 창 자체를 조작하는 GUI·debug 핸들러만 RequestContext를 받는다(ADR-0054).
 #[cfg(test)]
 pub fn handle_with_caller(
     core: &mut crate::app::services::AppServices,
@@ -1158,7 +1158,7 @@ fn route_debug_handler(
 
 /// 필수 surface_id의 타입·u32 범위·Surface ID 공간을 검사한다.
 /// PTY_ID_BASE 이상의 값이 memory scope에 들어가면 다음 부팅의 surface 카운터를
-/// PTY 공간으로 올릴 수 있으므로 거절한다(ADR-0017).
+/// PTY 공간으로 올릴 수 있으므로 거절한다(ADR-0059).
 pub(super) fn require_surface_id(
     params: &serde_json::Value,
     id: &serde_json::Value,

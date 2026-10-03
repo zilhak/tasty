@@ -31,7 +31,7 @@ OS 자원을 가질 수 없고, 같은 자원을 여러 Store·Registry에 반�
 - 한 엔진의 Terminal·Pty 원본과 둘 사이의 연결은 `EngineSession`의 컬렉션 한 곳이 소유한다. `CoreState`는 논리 세션 사실만 가진다.
 - 기존 `TerminalStore`·`PtyRegistry`·`PtyBackend`의 책임을 이 두 객체와 엔진 컬렉션으로 재배치한다. 그 위에 TerminalSessionManager·PtyManager 같은 관리자를 추가하지 않는다.
   standalone PTY의 메타데이터·상한은 `PtyState`와 엔진의 유일한 standalone 색인으로, exit watcher는 Pty의 child 소유·reap 경로로 합친다.
-- 사용자 viewport·selection은 `ViewState`다. 프로그램 cursor·scrollback과 구분한다.
+- 사용자 viewport·selection은 View별 `MainViewState`가 보유한다. 프로그램 cursor·scrollback과 구분한다.
 - 논리 세션 ID와 Pty의 resource generation을 구분한다. 이전 generation의 출력·exit가 respawn한 새 Pty를 바꾸지 않는다.
 - Terminal이 만드는 DSR·DA·OSC 응답은 현재 generation의 local Pty writer 또는 mirror attach sink로 보낸다. 사용자 입력이나 로그 replay 입력으로 바꾸지 않는다.
 - 높은 빈도의 raw I/O는 구조 이벤트 저널에 기록하지 않는다. 터미널 내용의 복원은 surface snapshot 계약을 따른다.

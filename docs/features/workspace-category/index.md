@@ -17,7 +17,7 @@
 - **이름 규칙**: trim 후 빈 이름 거부, `normal`(대소문자 무시) 예약어 거부, 기존 이름과 대소문자 무시 중복 거부.
 - **삭제**: 카테고리를 지우면 그 안의 워크스페이스는 **순서를 보존하며** `normal` 로 귀속한다. 워크스페이스의 전역 인덱스는 불변이므로 사용자 active 는 영향받지 않는다(원칙 1·3).
 - **reorder**: `categories` Vec 순서 변경. **from/to == 0 거부**(normal 0번 고정).
-- **변경 경로**: 생성·이름 변경·삭제·순서·접힘과 workspace 소속 변경은 모두 `DomainIntent`(`SetWorkspaceCategory`·`CreateCategory`·`RenameCategory`·`DeleteCategory`·`ReorderCategory`·`SetCategoryCollapsed`·`ToggleCategoryCollapsed`·`ToggleAllCategoriesCollapsed`)로 `Core::apply`를 거친다. IPC는 요청 안에서 바로 적용하고, 사이드바·팝업·단축키는 intent 큐에 넣어 같은 프레임의 intent 처리에서 적용한다. 성공하면 레이아웃 저장을 예약한다. mirror workspace에서도 로컬에만 적용하며 원격으로 보내지 않는다.
+- **변경 경로**: 생성·이름 변경·삭제·순서·workspace 소속은 App journal 명령으로 확정한다. IPC는 commit·publication 뒤 원 응답을 받으며 UI는 원 View continuation으로 표시를 갱신한다. 카테고리 접힘은 View navigation 상태이고 View checkpoint에 저장한다. mirror의 로컬 표시 변경은 원격 구조 명령과 구분한다.
 - **인덱싱**: 사용자 active 워크스페이스는 하나의 전역 인덱스로 유지([ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)). 카테고리-로컬 전환(`switch_workspace_in_active_category`)은 active 카테고리의 로컬 인덱스를 전역 인덱스로 변환해 기존 전환 경로를 재사용한다. `Alt+숫자` 는 토글 on 이면 active 카테고리 내 로컬 전환, off 면 전역 전환(무회귀).
 - **워크스페이스 축 next/prev 의 카테고리 경계 넘기 옵션**: "다음/이전 워크스페이스" quick-switch(기본 vim 스타일 `j`/`k`, `next_workspace_in_active_category`/`prev_workspace_in_active_category`)는 기본적으로 활성 카테고리 **로컬 목록 안에서만** wrap-around 한다.
   설정 → 일반 → "다음/이전 워크스페이스가 카테고리 경계를 넘음"(`workspace_switch_crosses_category`, 기본 off)을 켜면, 카테고리 마지막 워크스페이스에서 "다음"은 **다음 카테고리의 첫 워크스페이스**로, 카테고리 첫 워크스페이스에서 "이전"은 **이전 카테고리의 마지막 워크스페이스**로 넘어가며 카테고리 목록 자체도 wrap 한다.

@@ -1,4 +1,4 @@
-<!-- source-hash: b2c63d038e1d -->
+<!-- source-hash: a430937bbb02 -->
 # Lua scripts
 
 Turn repeated tasks into Lua scripts. Run them with a shortcut, or set them to run when a window, workspace, or tab opens or closes.

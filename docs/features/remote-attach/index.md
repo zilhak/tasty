@@ -157,10 +157,10 @@ GUI mirror 는 "원격 화면 일부를 놓쳤다" 경고 toast 를 띄운 뒤 �
 
 mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의 뷰다 — 입력(키스트로크)은 이미 원격 PTY 로 forward 된다. 그 안에서의 **구조 변경**(surface/pane split · 새 탭 · 닫기 · 탭 순서 변경 · 닫은 항목 복원)을 로컬에서 실행하면 로컬 셸 PTY 가 mirror 에 섞여 "workspace 전체가 remote" 불변식을 깬다. 따라서 mirror 워크스페이스 구조 변경은 **로컬에서 실행하지 않고**, 대신 **원격 인스턴스에서 실행되도록 forward** 한다.
 
-- **판별·로컬 차단**: 단일 mutate 진입점 `Core::apply` 가 대상 워크스페이스가 mirror 면 로컬 실행을 거부(`MirrorStructuralBlocked`, `CoreState::mirror_workspace_index_for_structural`) — 로컬 트리/PTY 는 절대 바뀌지 않는다.
-  `Core::apply` 를 우회하는 UI 직접 조작(`MainViewState::add_tab`/`add_kind_tab`/`close_active_*`/`close_tab`, 탭 드래그·컨텍스트 메뉴 이동)은 `MainViewState::forward_mirror_structural` 가드가 로컬 실행 대신 대응 `StructuralOp`(new-tab→`NewTab`, close→`CloseSurface`/`CloseTab`/`ClosePane`, 순서변경→`MoveTab`; anchor = focused/대상 pane 의 로컬 surface id)를 같은 forward 큐(`pending_structural_forward`)에 직접 쌓아 원격으로 보낸다 — `Core::apply` 경로와 같은 방식으로 전달한다.
-- **forward (요청)**: `Core::apply` 가 로컬 차단과 동시에 그 구조 op 를 `StructuralOp` 로 만들어(anchor = **로컬** surface id) forward 큐에 넣고, App 이 `about_to_wait` 에서 drain 해 anchor 를 **원격 surface id 로 치환**한 뒤 attach stream 의 `StreamTag::Control`(`StreamControl::StructuralOp`)로 원격에 보낸다. attach 연결 자체가 hard 점유 holder 이므로 연결이 곧 구조 변경 권한을 증명한다(ADR-0021). op 는 **원격 surface id 로 anchor** 되어 원격이 자기 트리에서 pane/tab/workspace 를 resolve 한다 — client 는 surface 매핑만 보유하면 된다.
-- **원격 실행**: 원격이 `StructuralOp` 를 수신(`StreamHub::pump_inbound` 분류)해 holder 를 검증한 뒤, IPC 핸들러가 부르는 것과 같은 도메인 실행 함수(split/tab.create/tab.close/tab.move/pane.close/surface.close — `app::structural_exec`)로 실제로 실행한다(원격 ws 는 mirror 가 아니라 실제 PTY 를 spawn). 대응하는 도메인 실행 함수가 없는 셋(convert · move-surface · 닫은 항목 복원)은 원격이 `Core::apply` 를 직접 부른다. 결과는 `StreamControl::StructuralResult{op_id, ok, reason?}` 로 회신.
+- **판별·로컬 차단**: App의 journal 요청 해소가 명시 대상의 mirror 여부를 확인한다. `src/app/journal/commands/forwarding.rs`가 지원 op를 고정하고 로컬 구조·PTY를 변경하지 않는다. 지원하지 않는 교체 이동·respawn·adopt는 원 요청에 오류를 반환한다.
+- **forward 요청**: 로컬 anchor와 원격 anchor, connection registration, origin을 원 요청에 고정한다. journal에 forward 의무를 확정한 뒤 App의 `src/app/journal/forward.rs`가 원 연결로 전달한다. 로컬 View의 선택 후속 처리는 원 View identity·선택 세대를 확인한 뒤에만 실행한다.
+- **원격 실행**: 서버의 `src/app/journal/commands/inbound.rs`는 holder와 명시 대상을 검증하고 공통 journal 명령·효과 경계로 실행한다. 확정 결과를 `StructuralResult`로 보내고 해당 workspace의 `StructuralDelta`, 새 surface의 출력 tap 순서로 공개한다.
+
 - **점유 상속 (필수 불변식)**: forward 로 원격에 **새로 생긴 터미널은 그 workspace 의 hard 점유를 상속**한다("workspace 전체가 remote" 유지 — ADR-0021 은 점유가 surface 생성 방식과 무관함을 못박는다).
   점유는 attach 시점 멤버 스냅샷으로 끝나는 게 아니라, 구조 변경으로 늘어난 멤버까지 확장돼야 한다.
   `execute_forwarded_structural_op` 이 added 터미널을 `OccupancyRegistry::add_workspace_member` 로 `surface_locks`(→`is_hard_occupied`: 서버 입력차단·resize sweep skip·readonly) + `surface_to_workspace`(→`feed_attached_workspace_input`/`apply_attached_workspace_resize` 의 holder 검증)에 같은 holder 로 등록한다.
@@ -199,8 +199,8 @@ mirror 워크스페이스는 "통째로 원격" 인 원격 워크스페이스의
   막지 않으면 로컬은 에러를 돌려주는데 forward 큐는 IPC 응답과 무관하게 드레인되어 **호출자가 관리하지 못하는 원격 탭**이 생긴다.
   그래서 mirror 워크스페이스를 대상으로 한 `terminal.spawn` 은 tab/surface 를 하나도 만들지 않고 `invalid_params` 로 즉시 거부하며, 메시지에 mirror 사유와 대안(다른 워크스페이스 사용 / 원격 인스턴스에서 직접 spawn)을 담는다.
   나머지 구조 변경은 아래 "현재 범위"대로 mirror 에서도 forward 된다 — 이 거부는 `terminal.spawn` 한 method 에만 적용된다.
-- **탭·페인 교체 이동은 forward 하지 않고 로컬에서 차단한다**: 탭 헤더 메뉴의 `탭 이동`/`페인 이동`으로 고른 교체 이동(`ReplaceTabWithTab`/`ReplacePaneWithPane`)은 source 나 target 중 하나라도 mirror 워크스페이스면 `Core::apply` 가 로컬 실행을 거부하고, 대응 `StructuralOp` 가 없어 원격으로 보내지 않는다. 사용자에게는 차단 toast(`attach.toast.mirror_structural_blocked`)만 뜬다([surface-move](../surface-move/index.md)).
-- **터미널 재시작·PTY 입양은 forward 하지 않고 로컬에서 거부한다**: mirror surface 대상 `RespawnTerminal`(`surface.respawn_terminal`·`terminal.respawn`)과 mirror pane 대상 `AdoptTerminal`(`pty.attach_surface`)은 `Core::apply` 가 `MirrorStructuralBlocked` 로 거부한다. 둘 다 로컬 PTY 를 mirror 트리에 넣는 동작이라 원격 트리와 어긋나고, 대응 `StructuralOp` 가 없어 원격으로 보내지 않는다. IPC 응답은 mirror 사유를 담은 오류이며 트리·PTY registry 는 바뀌지 않는다.
+- **탭·페인 교체 이동은 forward 하지 않고 로컬에서 차단한다**: 탭 헤더 메뉴의 `탭 이동`/`페인 이동`으로 고른 교체 이동(`ReplaceTabWithTab`/`ReplacePaneWithPane`)은 source 나 target 중 하나라도 mirror 워크스페이스면 App의 mirror 구조 요청 해소가 로컬 실행을 거부하고, 대응 `StructuralOp` 가 없어 원격으로 보내지 않는다. 사용자에게는 차단 toast(`attach.toast.mirror_structural_blocked`)만 뜬다([surface-move](../surface-move/index.md)).
+- **터미널 재시작·PTY 입양은 forward 하지 않고 로컬에서 거부한다**: mirror surface 대상 `RespawnTerminal`(`surface.respawn_terminal`·`terminal.respawn`)과 mirror pane 대상 `AdoptTerminal`(`pty.attach_surface`)은 App의 mirror 구조 요청 해소가 거부한다. 둘 다 로컬 PTY 를 mirror 트리에 넣는 동작이라 원격 트리와 어긋나고, 대응 `StructuralOp` 가 없어 원격으로 보내지 않는다. IPC 응답은 mirror 사유를 담은 오류이며 트리·PTY registry 는 바뀌지 않는다.
 - **탭·페인 preset 적용은 forward 하지 않고 로컬에서 거부한다**: tab preset 의 대상 pane(생략하면 활성 workspace)이나 pane preset 의 대상 workspace(생략하면 활성 workspace)가 mirror 면 `preset.apply` 와 preset 팝업의 적용은 탭·pane 을 만들기 전에 `MirrorStructuralBlocked` 로 거부한다. terminal leaf 면 로컬 셸을 mirror 트리에 넣게 되고, preset 은 대응 `StructuralOp` 가 없어 원격으로 보낼 수 없다. IPC 응답은 mirror 사유를 담은 오류이고, 사용자가 적용했으면 차단 toast(`attach.toast.mirror_structural_blocked`)가 뜬다. workspace preset 은 새 로컬 workspace 를 만들므로 거부하지 않는다.
 
 **현재 범위**: surface split / pane split / 새 탭 / surface·tab·pane 닫기 / 탭 순서 변경(`MoveTab` — 탭 헤더 메뉴의 교체 이동 `탭 이동`과 다르다) / 닫은 항목 복원 / surface convert(kind 변환, `markdown.navigate`/`image.open`/host convert 팝업이 모두 이 경로를 탄다 — 변환 결과의 cwd 는 op 의 `cwd` 필드로 전달되고, 비어 있으면 원격이 대상 surface 의 실제 PTY 에서 직접 resolve 한다.
@@ -226,7 +226,7 @@ move-surface 는 **source/target 이 같은 mirror workspace 안에 있을 때�
 
 ### 자동 매핑
 
-`tasty set workspace --id <id> --ssh-profile <name> --remote-workspace <N>`(또는 `--ssh <user@host>`)로 로컬 워크스페이스에 원격 대상을 선언적으로 매핑한다(`Workspace.attach_mapping`, 슬롯 파일 영속. 설정·해제는 `DomainIntent::SetWorkspaceAttachMapping`으로 `Core::apply`를 거친다). 매핑된 워크스페이스를 **활성화하면** 호스트가 자동으로 프로필 resolve → SSH 터널 → GUI mirror 를 띄운다. `remote_workspace` 가 None 이면 skip(ID 명시 필요), 이미 attach 중이면 재트리거 안 함. 자동 attach 는 mirror 를 *추가*만 하고 포커스/active 전환을 강제하지 않는다([포커스 독립성](../../identity.md)).
+`tasty set workspace --id <id> --ssh-profile <name> --remote-workspace <N>`(또는 `--ssh <user@host>`)로 로컬 워크스페이스에 원격 대상을 선언적으로 매핑한다(`Workspace.attach_mapping`, 구조 journal 영속. 설정·해제는 `DomainIntent::SetWorkspaceAttachMapping`에서 공통 journal 명령으로 합류한다). 매핑된 워크스페이스를 **활성화하면** 호스트가 자동으로 프로필 resolve → SSH 터널 → GUI mirror 를 띄운다. `remote_workspace` 가 None 이면 skip(ID 명시 필요), 이미 attach 중이면 재트리거 안 함. 자동 attach 는 mirror 를 *추가*만 하고 포커스/active 전환을 강제하지 않는다([포커스 독립성](../../identity.md)).
 
 **연결이 끊기면 mirror 는 살아있는 채로 자동 재연결을 시도한다**: heartbeat TTL 만료·force-detach 등 원격발 disconnect 로 앵커(매핑된 워크스페이스) 세션이 끊기면, mirror workspace/터미널을 걷어내는 대신 `Reconnecting` 상태로 전이해 살려두고(`src/app/attach_client.rs::enter_reconnecting`), 지수 백오프(0.5s→30s, ±20% jitter)로 재연결을 자동 시도한다(`src/app/auto_attach.rs::maybe_trigger_reconnect`).
 재연결에 성공하면 살아있던 surface 는 scrollback/local id 를 그대로 유지한 채(survivor mapping, `merge_survivor_mapping`) 연결만 새로 맺는다 — 사용자가 아무 조작을 하지 않아도(그 워크스페이스를 계속 보고 있어도) 백그라운드에서 재시도가 진행된다.

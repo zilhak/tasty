@@ -762,7 +762,7 @@ impl MainView {
     }
 
     /// 탐색기는 파일 선택 팝업 없이 새 탭을 연다. 경로가 없으면 홈을 사용한다.
-    /// 사용자 단축키는 새 탭을 선택하며 에이전트의 탭 생성과 구별한다(ADR-0017).
+    /// 사용자 단축키는 새 탭을 선택하며 에이전트의 탭 생성과 구별한다(ADR-0059).
     pub(crate) fn open_explorer_tab(state: &mut crate::state::MainViewState) {
         state.dispatch_intent(
             crate::intent::Intent::NewTab {

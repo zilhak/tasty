@@ -1,6 +1,6 @@
 # ADR-0064: 저널 도메인 모델은 `tasty-core` 추출 전에 순수 도메인 crate `tasty-domain`에 새로 작성한다
 
-- **Status**: Accepted — 선행 crate 단계 종료. tasty-core 추출 시 tasty-domain의 Command/Event·JournalModel·decide/evolve·codec을 함께 옮기고 기존 패키지를 제거했다. 제품 worker·projection·effect 배선은 이행 중이며 전체 writer/복구 완료나 최종 검증 완료를 뜻하지 않는다
+- **Status**: Accepted — 선행 crate 단계의 선택을 보존한다. 현재는 tasty-domain의 Command/Event·JournalModel·decide/evolve·codec을 tasty-core로 합쳤고 제품 worker·projection·effect에 연결했다. 현재 운영 범위는 ADR-0065와 아키텍처 가이드를 따른다.
 - **Date**: 2026-09-30
 - **Tags**: architecture, crates, domain, event-sourcing, commands
 - **Group**: foundation
@@ -16,10 +16,12 @@ decide→commit→apply→응답을 CommandExecutor가, 순수 `decide`·`evolve
 
 [ADR-0056](0056-crate-boundaries-for-core-event-store-and-task-runtime.md)은 이 역할을 새 `tasty-core`에 두기로 했다.
 `tasty-core`는 기존 `src/core`에서 도메인 부분을 추출하는 작업이며, 그 시점은 `tasty-model`의 실행 결합을 걷어낸 뒤 다시 판단하는 것으로 남아 있다.
-현재 `src/core`는 CoreState와 PTY·훅·작업 실행을 함께 들고 있어 그대로 옮길 수 없다.
+결정 당시 `src/core`는 CoreState와 PTY·훅·작업 실행을 함께 들고 있어 그대로 옮길 수 없었다.
 저장 계약 검증을 `tasty-core` 추출까지 미루면 저장소는 계속 제품 경로 밖에서 장난감 모델로만 시험된다.
 
 ## Decision
+
+다음은 tasty-core 추출 전 선행 단계에서 채택한 선택이다. 현재 패키지·제품 연결 상태는 Status와 ADR-0065를 따른다.
 
 저널 전용 구조 도메인을 순수 도메인 crate `tasty-domain`에 새 코드로 작성한다. `src/core`를 옮기지 않는다.
 
@@ -40,10 +42,10 @@ decide→commit→apply→응답을 CommandExecutor가, 순수 `decide`·`evolve
   명령 identity 조회(대상 해소보다 먼저, [ADR-0057](0057-command-identity-for-mutation-retries.md)), decide, 한 transaction의 commit,
   commit 성공 뒤의 메모리 `evolve`, 응답 순서를 그 모듈이 구현한다.
 - 제품 경로에 연결하지 않는다. root의 어떤 부팅·IPC·GUI 경로도 이 모델을 쓰지 않으며, 연결은 root 배선 단계에서 따로 한다.
-  그 전까지 JournalModel은 CoreState와 동시에 원본이 아니다. 현재 구조의 원본은 계속 메모리 CoreState와 레이아웃 snapshot이다.
+  그 선행 단계에서는 JournalModel을 동시에 활성화하지 않고 메모리 CoreState와 레이아웃 snapshot을 원본으로 유지했다.
   연결한 뒤에는 JournalModel이 원본이고 CoreState 트리는 확정 이벤트로 갱신하는 live projection이다([ADR-0065](0065-journal-source-and-core-state-projection.md)).
 - 로그 보존·정리와 journal 사이의 payload 복사는 이 crate를 만드는 단계에 넣지 않고 journal을 복원 원본으로 전환하는 단계에서 설계한다.
-  두 항목은 ADR-0063의 미이행 목록에 그대로 남는다.
+  제품의 현재 snapshot·pin·GC·import 범위는 ADR-0063 및 레이아웃 저장 가이드를 따른다.
 
 ### ADR-0056과의 관계
 
@@ -65,8 +67,7 @@ memory DB의 사용자 기능 `surface.meta`는 이 저널의 generic metadata�
 도메인 crate가 GUI·PTY·SQL을 참조하면 컴파일 오류가 난다. 저장소와 도메인을 함께 쓰는 시험(commit 실패 시 상태 불변, 같은 명령 재시도)은
 root `src/runtime` 모듈의 시험에서 돈다.
 
-JournalModel은 현재 CoreState와 별개인 두 번째 구조 모델이다. 제품에 연결하기 전까지 두 모델의 관계는 importer와 비교 시험으로만 확인되며,
-연결 단계에서 어느 쪽이 원본인지 전환하는 절차가 필요하다. 이 사이에 CoreState 쪽 구조 규칙이 바뀌면 JournalModel에도 반영해야 한다.
+선행 단계에서 JournalModel과 기존 CoreState의 관계는 importer와 비교 시험으로 대조했다. 현재는 JournalModel이 구조 원본이고 CoreState는 확정 batch로 갱신되는 projection이다.
 
 도메인 쪽 crate 이름이 `tasty-core`와 `tasty-domain` 둘로 나뉠 수 있다. 추출 판단 때 정리하지 않으면 같은 역할의 crate가 둘이 된다.
 crate 목록 문서·README·가드의 crate 수 갱신이 함께 필요하다.
@@ -88,7 +89,7 @@ crate 목록 문서·README·가드의 crate 수 갱신이 함께 필요하다.
 - 저널 ID와 runtime ID는 모두 `tasty-model`이 재수출하는 같은 `u32` 별칭이다. 두 공간은 데이터 홈의 구조 journal 예약 하나로 합치기로 했으므로(ADR-0063) newtype으로 나누지 않는다. 다른 발급원이 같은 별칭을 쓰게 되면 구분 방식을 다시 정한다.
 - root 배선 단계에서 Decider 문맥에 권한·대상 해소 같은 root 전용 값이 들어가야 하면 Decider trait과 root runtime의 경계를 다시 본다.
 - `tasty-domain`이 `tasty-model` 외의 저장·실행 계층(`tasty-event-store`·PTY·GUI·root)을 의존해야 하는 요구가 생기면 이 경계를 다시 정한다.
-  `cargo tree -p tasty-domain --edges normal`로 확인한다.
+  현재 통합된 패키지는 `cargo tree -p tasty-core --edges normal`로 확인한다.
 
 ### 실행 결과로 확인
 

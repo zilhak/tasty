@@ -148,7 +148,7 @@ Preset 캡처 초안은 구조·선택·실행 중 kind snapshot을 동결하고
 scrollback은 preset에 복사하지 않는다. 등록되지 않은 지연 plugin의 opaque snapshot도
 빈 surface로 치환하지 않는다. 이 읽기는 PTY나 plugin을 활성화하지 않는다.
 동기 캡처 경로는 아직 해석하지 않은 참조를 저장하지 않고 오류로 반환한다.
-비동기 제품 continuation 연결은 이행 중이다. 호환 layout export leaf는 canonical 모델과
+App의 preset capture continuation이 worker 결과와 원 reply를 연결한다. 호환 layout export leaf는 canonical 모델과
 별도 View checkpoint를 합성하고, 기존 JSON version/key와 pane·tab 선택 index를 보존한다.
 terminal 캡처의 scrollback은 새 legacy ID의 소유 bytes로 반환하며 기존 파일을 덮어쓰지 않는다.
 이 값 변환은 파일 게시나 새 export IPC/CLI를 수행하지 않는다.
@@ -169,7 +169,7 @@ Batch 식별과 stream revision 헤더는 유지한다. 오래된 cursor 읽기�
 `ResyncRequired`를 반환하며, projection은 snapshot의 전체 출력과 cursor를 함께 교체해
 재동기화한다. anchor snapshot과 이후 tail이 모두 손상되면 부분 모델로 열지 않는다.
 App의 읽기 lease에 잡힌 payload는 Busy 대기와 늦은 완료 동안 snapshot pin에 포함한다.
-제품 호출은 publication ACK 뒤에만 허용하며 공통 worker 연결은 이행 중이다.
+공통 worker는 capture·retirement의 전체 publication ACK 뒤와 정상 종료에 checkpoint를 실행한다. halted projection이나 공개되지 않은 cut은 checkpoint하지 않는다.
 
 View checkpoint는 journal의 restore manifest가 별도 원본으로 보관한다. domain snapshot,
 View 바이트, slot binding 및 payload pin은 한 transaction으로 저장한다. incarnation·runtime

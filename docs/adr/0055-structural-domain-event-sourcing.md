@@ -1,6 +1,6 @@
 # ADR-0055: 구조 도메인은 확정 이벤트를 원본으로 삼고 기록·실행·복원을 별도 객체가 맡는다
 
-- **Status**: Accepted — 구현 상태: 단계적 이행 중. 현재 구조 변경은 메모리 상태를 직접 바꾸고 레이아웃 snapshot이 복원 원본이다. 아래 객체는 아직 제품 경로에 연결되지 않았다. 미이행: importer의 child terminal 관계 ID 재매핑(슬롯 복원 엔진 활성화 전 필수; 슬롯 JSON에 surface ID가 없어 복원 시 ID 부여 규칙과 함께 설계 필요)
+- **Status**: Accepted — 구조 변경의 원본은 journal이며 App의 비동기 command·publication·effect·복원 경계에 연결돼 있다. CoreState는 확정 구조의 projection이다. surface ID가 없는 옛 슬롯 자료에서 child terminal 관계 ID를 재매핑하는 기능은 제공하지 않는다. 이 제한을 제품 연결 미완료나 관계 복원 완료와 혼동하지 않는다.
 - **Date**: 2026-09-30
 - **Tags**: architecture, event-sourcing, persistence, recovery, commands
 - **Group**: foundation

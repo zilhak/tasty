@@ -81,7 +81,7 @@ extension을 함께 준비한다([ADR-0026](../adr/0026-plugin-registration-and-
 | 메서드 | 읽는 것 |
 |--------|---------|
 | `plugin.list` | `plugin_manager.packages` |
-| `plugin.show` | `plugin_manager.packages` + config + `CoreState.surface_registry`(선언한 kind 가 등록됐는지) |
+| `plugin.show` | `plugin_manager.packages` + config + `EngineRuntime.surface_registry`(선언한 kind 가 등록됐는지) |
 | `plugin.permissions` | `plugin_manager` config |
 | `plugin.extension.list` | `plugin_manager.extensions` |
 | `plugin.audit_query` | `Core` 의 audit store |
@@ -121,14 +121,11 @@ extension을 함께 준비한다([ADR-0026](../adr/0026-plugin-registration-and-
 
 `plugin.audit_clear` · `plugin.grant_agent_permission` · `plugin.revoke_agent_permission`
 
-### 아직 없다 — `App` 이분이 선행이다 (6)
+<a id="아직-없다--app-이분이-선행이다-6"></a>
 
-이어지는 `cascade_plugin_events` 는 `src/app/dispatch_domain.rs` 의 `App` 메서드이며
-헤드리스 스텁(`dispatch_domain_stubs.rs`)에 대응물이 없다. 위 토글 둘은 그 cascade 중
-자기 이벤트 둘만 헤드리스 형태로 대체해 열었지만, 나머지는 파일을 복사·삭제하거나
-권한을 바꾸는 일이라 각각이 별도 결정이다. 이 경계를 여는 것은
-[ADR-0058](../adr/0058-headless-without-local-views.md)의 GUI와 headless 역할 분리에 관한
-기준에 따라 검토해야 한다.
+### 아직 없다 — 별도 lifecycle과 권한 계약이 필요한 기능 (6)
+
+plugin의 GUI lifecycle 통지는 `src/app/dispatch_domain.rs`가 처리하며 headless 일반 plugin bus는 제공하지 않는다. enable·disable은 지정 plugin의 실행 경계로 처리한다. 설치·삭제·권한 변경을 headless에 추가하는 일은 각각의 공개 권한·오류·완료 계약과 [ADR-0058](../adr/0058-headless-without-local-views.md)에 따라 판단한다.
 
 `plugin.install` · `plugin.remove` · `plugin.grant` · `plugin.revoke` ·
 `plugin.upgrade_builtins` · `plugin.audit_follow`
@@ -270,7 +267,7 @@ image 요청은 host arm까지 전달되지만 헤드리스 구현이 없어 거
 
 | 메서드 | 읽는 것 |
 |--------|---------|
-| `theme.query` | 전역 Theme + `CoreState.settings` 뿐이다. 창도 surface 도 렌더러도 안 본다 |
+| `theme.query` | 전역 Theme + `EngineRuntime.settings` 뿐이다. 창도 surface 도 렌더러도 안 본다 |
 
 `theme.query`는 `src/adapters/ipc/handler/theme.rs`에서 두 빌드가 같은 함수를 사용한다.
 전역 Theme와 설정만 읽으므로 창이 필요하지 않다.
@@ -300,7 +297,7 @@ markdown plugin 이 그 namespace 를 점유해 host 로 되돌리기 때문이�
 | 메서드 | 왜 |
 |--------|-----|
 | `file_handler.dispatch` | 요청을 적용할 identify worker 와 결과를 여는 창이 gui 에만 있다. arm 이 헤드리스에 있던 동안은 `{"accepted": true}` 로 답하고 요청을 버렸다 — `git_viewer.query` 와 같은 모양이다. 근거 [ADR-0031](../adr/0031-file-handler-routing.md). 같은 namespace 의 `file_handler.reload` · `file_handler.detectors` 는 헤드리스에서도 답한다 |
-| `git_viewer.query` · `markdown_mirror.content_request` | 요청을 큐에 넣고 `request_id` 만 답한 뒤 결과를 attach 채널로 받아 오는 비동기 accept 다. 큐를 비워 보내는 쪽이 gui 의 `about_to_wait` 에만 있어, arm 이 헤드리스에 있던 동안은 수락해 놓고 결과가 영영 안 왔다. `-32017` 문구가 메서드 이름을 실어 두 거절이 갈린다. 같은 줄의 셋째 forward(mirror 구조 op)는 메서드가 아니라 대상이 mirror 인지로 갈려 arm 을 못 뺀다 — `Core::apply` 가 거절한다([ADR-0058](../adr/0058-headless-without-local-views.md)). 시험 `tests/e2e_tests.rs` 의 `mirror_forward_requests_are_refused_by_name_in_a_headless_daemon` |
+| `git_viewer.query` · `markdown_mirror.content_request` | 요청을 큐에 넣고 `request_id` 만 답한 뒤 결과를 attach 채널로 받아 오는 비동기 accept 다. 큐를 비워 보내는 쪽이 gui 의 `about_to_wait` 에만 있어, arm 이 헤드리스에 있던 동안은 수락해 놓고 결과가 영영 안 왔다. `-32017` 문구가 메서드 이름을 실어 두 거절이 갈린다. 같은 줄의 셋째 forward(mirror 구조 op)는 메서드가 아니라 대상이 mirror 인지로 갈려 arm 을 못 뺀다 — headless의 명시 mirror 대상 해소가 거절한다([ADR-0058](../adr/0058-headless-without-local-views.md)). 시험 `tests/e2e_tests.rs` 의 `mirror_forward_requests_are_refused_by_name_in_a_headless_daemon` |
 | `surface.html_script` | 읽는 스크립트 상태가 gui 전용인 네이티브 WebView의 탐색 콜백에서만 채워진다. 헤드리스에는 html surface의 WebView가 없어 답할 상태가 없다 |
 
 ### `debug.*` 36 건

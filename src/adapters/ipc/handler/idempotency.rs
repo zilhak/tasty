@@ -562,7 +562,7 @@ pub(crate) fn run_app_layer<T>(
 /// 응답이 나중에 오므로 run_app_layer와 같은 진행 중 기록과 relay를 사용한다.
 ///
 /// 플러그인 고유 이름은 원래 요청을 그대로 전달한다. namespace가 등록되면 그런 이름도
-/// Mutate로 해석되므로 Mutate 판정만으로는 부족하고 Kept 확인이 필요하다(ADR-0005).
+/// Mutate로 해석되므로 Mutate 판정만으로는 부족하고 Kept 확인이 필요하다(ADR-0057).
 pub(crate) fn forward_keeping_the_key(
     caller: &CallerContext,
     cmd: &IpcCommand,

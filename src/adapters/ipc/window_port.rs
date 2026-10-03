@@ -17,7 +17,7 @@ pub(crate) trait IpcWindow {
         surface: u32,
     ) -> Option<PathBuf>;
     /// 이 창의 활성 workspace 인덱스. 대상 생략 호환 경로나 응답의 활성 표시에서 쓴다.
-    /// 명시 대상이 있는 요청은 그 대상의 소속을 우선한다(ADR-0017).
+    /// 명시 대상이 있는 요청은 그 대상의 소속을 우선한다(ADR-0059).
     fn active_workspace_index(&self, engine: &CoreState) -> usize;
 
     /// 새 워크스페이스의 cwd 상속 원본 — 설정(`inherit_cwd`)과 이 창의 포커스 surface 를 본다.

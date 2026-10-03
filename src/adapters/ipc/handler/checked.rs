@@ -79,7 +79,7 @@ fn check_scope_request<'a>(
     }
     super::record_telemetry_and_audit(core, window, engine, caller, canonical, &request.params, ws);
     // 멱등성 키는 모든 라우터에 앞서 검사한다. 권한 검사를 먼저 거쳐
-    // 권한 없는 호출에는 `-32001`을 반환하고, 허용된 호출은 한 번 집계한다(ADR-0005).
+    // 권한 없는 호출에는 `-32001`을 반환하고, 허용된 호출은 한 번 집계한다(ADR-0057).
     super::idempotency::check_envelope(request, &id)?;
     Ok(CheckedRequest { request, caller })
 }

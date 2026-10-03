@@ -32,8 +32,8 @@
 | 계층 | 객체 | 상태 | 소유하지 않는 것 |
 |---|---|---|---|
 | App | 실행 시작·종료, 외부 입력 수신, 대상 해소, Core·View·서비스 조립 | `AppState`: 실행 단계·앱 수준 대기 요청. `ViewRegistry`: View·전역 modal·기본 IPC 라우팅 문맥. `EngineRegistry`: 엔진과 View↔엔진 관계. 공유 서비스는 `AppServices`가 소유 | 도메인 원본의 복제, VT parser, 저널 구현 |
-| Core | 명령 판단과 확정 이벤트 적용, 도메인 불변식 | `CoreState`: 엔진별 구조·kind descriptor·논리 세션 사실과 stream revision. 외부 자원 없이 재생 가능 | wire 응답, 디스크 commit, PTY 실행, 사용자 포커스, OS 창 |
-| View | 로컬 OS 창 하나에 표시하고 사용자 입력을 해석 | `ViewState`: 선택·viewport·popup·IME·draft·표시 revision. 공통 상태와 종류별 상태를 합성 | 도메인 원본, 외부 연결 수명 |
+| Core | 명령 판단과 확정 이벤트 적용, 도메인 불변식 | `JournalModel`: 확정 구조 사실. `CoreState`: 엔진별 구조·kind descriptor와 revision의 읽기 projection | wire 응답, 디스크 commit, PTY 실행, 사용자 포커스, OS 창 |
+| View | 로컬 OS 창 하나에 표시하고 사용자 입력을 해석 | `ViewState`: 공통 identity·focus·repaint. `MainViewState`와 View별 상태: 선택·viewport·popup·IME·draft·표시 revision | 도메인 원본, 외부 연결 수명 |
 
 엔진은 프로세스나 OS 창과 다른 도메인 실행 단위다. `EngineSession`이 한 엔진의 `CoreState`,
 현재 점유·busy 같은 연결 종속 상태(`LiveDomainState`), kind별 surface 실행 객체와 Terminal/Pty 컬렉션을 소유한다.
@@ -41,7 +41,7 @@
 `EngineRegistry`가 엔진 원본과 View↔엔진 관계를 함께 보관하며, `AppState`에 두 목록이나 관계를 복제하지 않는다. `EngineSession`에 반대 방향의
 쓰기 가능한 연결을 따로 두지 않는다.
 
-- `Core` 인스턴스와 `CoreState`는 1:1이 아니다. 같은 Core가 여러 엔진 상태를 판단하며 `CoreState`를 전역 하나로 합치지 않는다.
+- tasty-core의 판단·적용 함수는 명시 모델을 받는다. JournalModel과 CoreState projection은 엔진별이며 전역 하나로 합치지 않는다.
 - parked는 살아 있는 엔진에 연결된 OS View가 없는 상태다. 엔진을 다른 컬렉션으로 옮기지 않는다.
   다시 보여 줄 사용자 상태는 View 복원 자료로 따로 두며 GPU·창을 붙잡지 않는다.
 - 도메인 작업은 로컬 View 없이 완료된다. 필수 정리를 View가 대신하지 않는다. 창 연산 port로 도메인에 창을 빌려주는 방식은 쓰지 않는다.

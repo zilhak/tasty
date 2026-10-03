@@ -8,6 +8,7 @@ tasty 의 영속 데이터는 텍스트 파일과 SQLite에 나눠 저장된다.
 
 | 경로 | 포맷 | 내용 | 관리 주체 | 코드 |
 |------|------|------|-----------|------|
+| `structure/journal.db` (+ `-wal`/`-shm`) | SQLite | 확정 구조 이벤트·명령 결과·effect 상태·불변 payload·snapshot·View restore manifest | App journal worker | `src/runtime/journal_product` · `crates/tasty-event-store` |
 | `state.db` (+ `-wal`/`-shm`) | SQLite | 종류별 최근 파일·폴더·튜토리얼 진행 | 앱 | `src/db.rs` |
 | `memory.db` (+ `-wal`/`-shm`) | SQLite | 에이전트 메모리 (별도 스키마·연결) | 앱 | `crates/tasty-memory/` |
 | `config.toml` | TOML | 사용자 설정(셸·외관·단축키·언어 등) | 사용자 | `crates/tasty-settings/` |
@@ -19,6 +20,12 @@ tasty 의 영속 데이터는 텍스트 파일과 SQLite에 나눠 저장된다.
 | `presets/{workspace,tab,pane}/<name>.toml` | TOML | 레이아웃 프리셋 (탭/페인/서피스 구조) | 사용자 / 앱 | `crates/tasty-presets/` |
 
 - **plugin 데이터는 여기 없다.** 각 plugin 은 자기 `TASTY_PLUGIN_DATA_DIR` 아래에 보관한다. host `state.db` 에 plugin 데이터를 넣지 않는다.
+
+## 구조 journal과 복원 원본
+
+로컬 engine/workspace/pane/tab/surface 구조는 데이터 홈의 단일 journal이 원본이다. 각 engine은 별도 stream을 사용한다. `JournalModel`과 domain snapshot은 확정 이벤트에서 도출하며, CoreState는 실행 객체를 소유하지 않는 읽기 projection이다. terminal·plugin 콘텐츠 payload와 View 선택 checkpoint는 별도 원본이다. mirror 트리는 로컬 구조 journal에 편입하지 않는다.
+
+App worker가 commit한 batch를 모든 대상 엔진에 공개하고 ACK를 받은 뒤 응답·checkpoint를 진행한다. `state.db`와 `memory.db`의 SQLite 설정이나 복구 정책을 journal에 그대로 적용하지 않는다. journal에는 독점 writer fencing, 원자 명령·effect 기록, payload pin·GC와 별도 저장 예산이 있다. 세부 계약은 [레이아웃 저장](../../features/layout-persistence/index.md)과 [ADR-0063](../../adr/0063-event-store-storage-fencing-and-effect-states.md)을 따른다.
 
 ## SQLite `state.db`
 

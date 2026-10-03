@@ -81,7 +81,7 @@ pub fn handle_request(
         };
 
     // workspace_id, surface 소속, 활성 workspace 순으로 선택한다.
-    // 대상이 없는 요청의 활성 workspace 기본값은 호환을 위해 유지한다(ADR-0017).
+    // 대상이 없는 요청의 활성 workspace 기본값은 호환을 위해 유지한다(ADR-0059).
     let workspace_id =
         match crate::adapters::ipc::handler::params::optional_u32(params, "workspace_id", &id) {
             Ok(v) => v,

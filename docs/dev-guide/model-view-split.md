@@ -142,3 +142,7 @@ SettingsView는 설정 초안과 `RegistryEdit` 값을 반환한다. FileFormat/
 Explorer의 paste/trash/rename/open 요청은 원 View와 SurfaceBinding, 고정 경로, 사용자 origin을 담는다. App의 전용 bounded worker가 파일 실행을 소유하며, 결과는 원 View/surface와 선택·클립보드 identity를 대조한 뒤 표시 상태에만 적용한다. 메뉴 선택의 비동기성과 파일 실행의 비동기성은 별개다. 로컬 목록과 metadata 조회는 현재 동기 경로이며 이 파일 작업 경계의 전환으로 전부 제거됐다고 보지 않는다.
 
 로컬 파일 목록·Git HEAD·단축키 스크립트 읽기는 App의 `local_reads`가 최대 4개 worker로 실행한다. View는 입력 경로와 결과 receipt만 보유한다. 폴더·popup·View가 교체되면 해당 receipt를 버리므로 늦은 결과가 새 표시를 바꾸지 않는다. 스크립트는 worker가 읽은 바이트의 해시를 확인하고 동일 바이트를 실행·승인에 사용한다.
+
+## IpcWindow 호환 인터페이스
+
+`src/adapters/ipc/window_port.rs`의 IpcWindow는 실제 Window/View를 빌리는 port가 아니다. 구현체는 동기 요청 하나의 `RequestScope`이며, 캡처한 선택·최근 목록 조회, 사용자 동작 증거 소비와 intent/approval 출력 수집을 제공한다. 창 생성·종료·focus·PTY 실행은 이 trait에 없다. 요청이 끝나면 출력만 원 문맥으로 넘기며 borrowed scope를 비동기 작업에 보관하지 않는다. 이름은 기존 핸들러 query 호출의 호환성을 위해 유지한다.
