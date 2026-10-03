@@ -67,7 +67,7 @@ pub(crate) struct SettingsFileChooser {
 impl SettingsFileChooser {
     pub(crate) fn poll_local_reads(
         &mut self,
-        owner: &mut crate::app::local_reads::LocalReads,
+        owner: &mut crate::app::local_reads::ReadRequests,
     ) -> bool {
         let Some(session) = &mut self.session else {
             return false;

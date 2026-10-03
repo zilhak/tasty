@@ -48,7 +48,7 @@ impl RequestContext {
 
     pub(crate) fn poll_branch_read(
         &mut self,
-        owner: &mut crate::app::local_reads::LocalReads,
+        owner: &mut crate::app::local_reads::ReadRequests,
     ) -> bool {
         let Some(result) = self
             .branch_cache

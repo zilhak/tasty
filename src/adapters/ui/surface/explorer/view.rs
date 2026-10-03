@@ -89,7 +89,7 @@ pub struct ExplorerView {
 }
 
 impl ExplorerView {
-    fn poll_local_reads(&mut self, owner: &mut crate::app::local_reads::LocalReads) -> bool {
+    fn poll_local_reads(&mut self, owner: &mut crate::app::local_reads::ReadRequests) -> bool {
         let mut changed = false;
         if let Some(result) = self
             .local_query
@@ -479,7 +479,7 @@ pub struct ExplorerViewStore {
 impl ExplorerViewStore {
     pub(crate) fn poll_local_reads(
         &mut self,
-        owner: &mut crate::app::local_reads::LocalReads,
+        owner: &mut crate::app::local_reads::ReadRequests,
     ) -> bool {
         let mut changed = false;
         for view in self.views.values_mut() {

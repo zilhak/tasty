@@ -154,7 +154,7 @@ impl SettingsView {
 }
 
 impl View for SettingsView {
-    fn poll_local_reads(&mut self, owner: &mut crate::app::local_reads::LocalReads) {
+    fn poll_local_reads(&mut self, owner: &mut crate::app::local_reads::ReadRequests) {
         if self.settings_ui_state.poll_local_reads(owner) {
             self.mark_dirty();
         }

@@ -43,7 +43,7 @@ pub(crate) trait View: sealed::Sealed + std::any::Any {
     fn handle_event(&mut self, event: WindowEvent, ctx: &mut ViewCtx<'_>) -> ViewAction;
     fn render(&mut self);
 
-    fn poll_local_reads(&mut self, _owner: &mut crate::app::local_reads::LocalReads) {}
+    fn poll_local_reads(&mut self, _owner: &mut crate::app::local_reads::ReadRequests) {}
 
     /// MainView 다운캐스트. MainView가 아니면 `None`.
     fn as_main(&self) -> Option<&MainView> {

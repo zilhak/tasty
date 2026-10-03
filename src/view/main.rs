@@ -555,7 +555,7 @@ impl MainView {
 }
 
 impl View for MainView {
-    fn poll_local_reads(&mut self, owner: &mut crate::app::local_reads::LocalReads) {
+    fn poll_local_reads(&mut self, owner: &mut crate::app::local_reads::ReadRequests) {
         self.poll_local_read_results(owner);
     }
 

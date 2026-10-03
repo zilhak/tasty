@@ -245,7 +245,7 @@ pub struct SettingsUiState {
 impl SettingsUiState {
     pub(crate) fn poll_local_reads(
         &mut self,
-        owner: &mut crate::app::local_reads::LocalReads,
+        owner: &mut crate::app::local_reads::ReadRequests,
     ) -> bool {
         self.file_chooser.poll_local_reads(owner)
     }

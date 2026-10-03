@@ -25,9 +25,9 @@ impl<T> Query<T> {
             receiver,
         }
     }
-    pub(crate) fn poll(&mut self, owner: &mut LocalReads) -> Option<io::Result<T>> {
+    pub(crate) fn poll(&mut self, requests: &mut ReadRequests) -> Option<io::Result<T>> {
         if let Some(request) = self.request.take() {
-            if let Err(request) = owner.submit(request) {
+            if let Err(request) = requests.push(request) {
                 self.request = Some(request);
             }
         }
@@ -38,6 +38,21 @@ impl<T> Query<T> {
                 Some(Err(io::Error::other("local read worker disconnected")))
             }
         }
+    }
+}
+
+/// A bounded value outbox, not a borrowed worker or execution capability.
+pub(crate) struct ReadRequests {
+    pending: Vec<Request>,
+    available: usize,
+}
+impl ReadRequests {
+    fn push(&mut self, request: Request) -> Result<(), Request> {
+        if self.pending.len() >= self.available {
+            return Err(request);
+        }
+        self.pending.push(request);
+        Ok(())
     }
 }
 
@@ -121,6 +136,23 @@ impl LocalReads {
             stopping: false,
         }
     }
+    fn requests(&self) -> ReadRequests {
+        ReadRequests {
+            pending: Vec::new(),
+            available: if self.stopping {
+                0
+            } else {
+                MAX_RUNNING.saturating_sub(self.jobs.len())
+            },
+        }
+    }
+    fn run_requests(&mut self, requests: ReadRequests) {
+        for request in requests.pending {
+            if self.submit(request).is_err() {
+                tracing::warn!("local read admission closed before execution");
+            }
+        }
+    }
     fn submit(&mut self, request: Request) -> Result<(), Request> {
         if self.stopping || self.jobs.len() >= MAX_RUNNING {
             return Err(request);
@@ -159,7 +191,10 @@ impl LocalReads {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
             self.reap();
-            if let Some(result) = query.poll(self) {
+            let mut requests = self.requests();
+            let result = query.poll(&mut requests);
+            self.run_requests(requests);
+            if let Some(result) = result {
                 return result;
             }
             assert!(
@@ -200,16 +235,18 @@ pub(crate) fn git_branch(cwd: &std::path::Path) -> Option<HeadState> {
 impl super::App {
     pub(crate) fn poll_local_reads(&mut self) {
         self.local_reads.reap();
+        let mut requests = self.local_reads.requests();
         for view in self.view.views.values_mut() {
-            view.poll_local_reads(&mut self.local_reads);
+            view.poll_local_reads(&mut requests);
         }
+        self.local_reads.run_requests(requests);
     }
 }
 
 impl crate::view::MainView {
     pub(crate) fn poll_local_read_results(
         &mut self,
-        owner: &mut crate::app::local_reads::LocalReads,
+        owner: &mut crate::app::local_reads::ReadRequests,
     ) {
         let mut changed = self.state.tutorial.poll_progress();
         changed |= self.state.explorer_views.poll_local_reads(owner);
@@ -265,7 +302,7 @@ impl crate::view::MainView {
 
 fn poll_file_picker_reads(
     state: &mut MainViewState,
-    owner: &mut crate::app::local_reads::LocalReads,
+    owner: &mut crate::app::local_reads::ReadRequests,
 ) -> bool {
     let Some(d) = state.dialogs.file_picker.as_mut() else {
         return false;
@@ -315,7 +352,9 @@ mod tests {
         std::fs::write(b.join("new"), b"new").unwrap();
         let mut owner = LocalReads::default();
         let mut query = directory(a);
-        let _result = query.poll(&mut owner);
+        let mut requests = owner.requests();
+        let _result = query.poll(&mut requests);
+        owner.run_requests(requests);
         query = directory(b);
         let result = owner.finish(&mut query).unwrap();
         assert_eq!(result.len(), 1);
@@ -332,7 +371,9 @@ mod tests {
         for _ in 0..MAX_RUNNING + 1 {
             let (release, wait) = mpsc::channel();
             let mut query = Query::new(|reply| Request::Blocked(wait, reply));
-            assert!(query.poll(&mut owner).is_none());
+            let mut requests = owner.requests();
+            assert!(query.poll(&mut requests).is_none());
+            owner.run_requests(requests);
             releases.push(release);
             queries.push(query);
         }
