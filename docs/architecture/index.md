@@ -275,3 +275,15 @@ App의 window event provider는 EngineRegistry에서 불변 EngineRead를 만든
 구조 journal의 batch 적용은 변경 stream의 private candidate만 복제해 검증한 뒤 함께 공개한다. 변경 없는 stream은 내용을 복제하지 않고 applied batch 위치만 이동한다. publication 전후 대조 사본도 해당 작업의 stream으로 제한하며, 여러 stream이 바뀌면 모든 적용과 ACK를 한 공개 단위로 유지한다.
 
 명령 해소는 engine 범위를 고정한다. 확정 후 외부 effect를 기다리는 명령은 같은 engine의 후속 변경을 막으며, 범위가 확인된 다른 engine의 명령은 독립적으로 진행할 수 있다. 범위 미확정·다중 stream 작업은 전역 순서를 유지한다. 저장 worker의 commit·publication ACK 순서는 바꾸지 않는다.
+
+### 생성 continuation의 불확실 상태
+
+`Creation::Stage::Uncertain`은 원래 설치·폐기·실패한 설치의 자원 소유자와 저널 확정 대기,
+재확인 시각을 함께 보관한다. 확정 응답 전에는 외부 자원 재확인을 시작하지 않는다.
+엔진 종료 시 이 단계가 보유한 원 retirement receipt를 release owner로 넘기며,
+저널 완료나 요청자 취소만으로 물리 자원이 해제됐다고 판단하지 않는다.
+
+준비 응답 수신 여부는 `Prepared` 단계에 속하며 설치·폐기 단계가 그 값을 넘겨받는다.
+설치 완료 응답과 최종 publication은 서로 다른 조건이다. assembly 응답이 먼저 도착하면
+`AwaitPublication`에서 기다리고, publication이 먼저 도착하면 `Finish` 안에 적용 사실을
+보관한다. 두 조건을 충족한 assembly만 `Published`에서 전체 batch ACK 뒤 해제된다.

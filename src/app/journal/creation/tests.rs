@@ -81,3 +81,37 @@ fn uncertain_discard_release_retains_the_exact_pty_generation() {
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
 }
+
+#[test]
+fn publication_keeps_the_original_owner_with_either_completion_order() {
+    for reply_first in [false, true] {
+        let binding = crate::plugin_bridge::host_cmd::MeshBinding::default();
+        let (receipt, completion) =
+            crate::plugin_bridge::host_cmd::RemoteRetirementReceipt::pending(1, binding.binding());
+        let installed = Installed::with_test_retirement(lease(), receipt);
+        let mut stage = if reply_first {
+            Stage::AwaitPublication(installed)
+        } else {
+            Stage::Finish {
+                installed,
+                publication: Publication::Pending,
+            }
+        };
+        assert!(!stage.is_published());
+        stage.mark_published();
+        assert!(stage.is_published());
+        assert_eq!(
+            matches!(stage, Stage::Published(_)),
+            reply_first,
+            "the router releases only after both the reply and publication"
+        );
+        let mut release = EngineRelease::default();
+        UncertainOwner::from_stage(stage)
+            .unwrap()
+            .retain_for_release(&mut release);
+        let mut session = EngineSession::new(80, 24, Arc::new(|| {})).unwrap();
+        assert!(!release.poll(&mut session, None));
+        completion.finish(Ok(()));
+        assert!(release.poll(&mut session, None));
+    }
+}
