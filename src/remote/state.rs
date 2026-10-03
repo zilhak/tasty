@@ -165,6 +165,10 @@ impl RemoteState {
     pub(crate) fn forget_structure_sent(&mut self, workspace: u32) {
         self.last_structure_sent.remove(&workspace);
     }
+    pub(crate) fn forget_client_structures(&mut self, holder: AttachClientId) {
+        self.last_structure_sent
+            .retain(|_, (sent_to, _)| *sent_to != holder);
+    }
     pub(crate) fn take_structure_changed(&mut self) -> Vec<u32> {
         let (held, ready): (Vec<_>, Vec<_>) = std::mem::take(&mut self.structure_changed)
             .into_iter()
@@ -255,7 +259,11 @@ mod tests {
         assert!(!remote.structure_already_sent(7, 1, b"tree-b"));
         assert!(!remote.structure_already_sent(7, 2, b"tree-a"));
         assert!(!remote.structure_already_sent(8, 1, b"tree-a"));
-        remote.forget_structure_sent(7);
+        remote.record_structure_sent(8, 2, b"tree-b".to_vec());
+        remote.forget_client_structures(1);
         assert!(!remote.structure_already_sent(7, 1, b"tree-a"));
+        assert!(remote.structure_already_sent(8, 2, b"tree-b"));
+        remote.forget_structure_sent(8);
+        assert!(!remote.structure_already_sent(8, 2, b"tree-b"));
     }
 }

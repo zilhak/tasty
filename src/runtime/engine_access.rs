@@ -164,6 +164,7 @@ impl EngineMut<'_> {
         &mut self,
         id: u32,
     ) -> Option<crate::core::attach::AttachClientId> {
+        self.remote.forget_structure_sent(id);
         let holder = self.live.occupancy.force_detach_workspace(id)?;
         self.remote
             .notify_detached(holder, "force_detach_workspace");

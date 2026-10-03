@@ -1382,6 +1382,7 @@ impl App {
         for mut engine in self.engines_mut().windowed_and_parked() {
             for &cid in clients {
                 engine.live.occupancy.release_all_for_client(cid);
+                engine.remote.forget_client_structures(cid);
                 engine.remote.bulk_transfers.clear_client(cid);
                 engine.remote.capture_uploads.clear_client(cid);
                 engine.remote.mesh_mirror.remove_for_client(cid);

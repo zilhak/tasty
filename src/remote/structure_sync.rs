@@ -88,7 +88,7 @@ impl EngineMut<'_> {
     /// 변경 표시가 있는 workspace의 전체 트리를 holder에 보낸다. 사라진 workspace는 강제 분리한다.
     /// forward 실행은 자체 delta를 보내고 표시를 지워 중복 통지를 피한다.
     /// 같은 holder에 마지막으로 보낸 트리와 같으면 delta를 생략한다.
-    /// notifier가 없거나 송신에 실패해도 여기서는 변경 표시를 다시 쌓지 않는다.
+    /// 송신 큐가 가득 차면 변경 표시를 다시 쌓고, 사라진 연결에는 재시도하지 않는다.
     pub(crate) fn push_structure_changes(&mut self) {
         for ws_id in self.remote.take_structure_changed() {
             let Some(holder) = self.live.occupancy.workspace_holder(ws_id) else {

@@ -373,6 +373,7 @@ fn apply_bulk_events(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mut Pu
 fn apply_disconnects(engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
     for client_id in std::mem::take(&mut outcome.disconnected) {
         engine.live.occupancy.release_all_for_client(client_id);
+        engine.remote.forget_client_structures(client_id);
         engine.remote.bulk_transfers.clear_client(client_id);
         engine.remote.capture_uploads.clear_client(client_id);
         engine.remote.mesh_mirror.remove_for_client(client_id);
