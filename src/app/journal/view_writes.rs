@@ -115,10 +115,10 @@ impl ViewWrites {
             Err(error) => {
                 tracing::warn!("View snapshot write failed: {error}");
                 // A later value already queued is the retry; the older failure must not outlive it.
-                if !self
+                if self
                     .queued
                     .get(&view.binding.stream)
-                    .is_some_and(|queued| queued.sequence > view.sequence)
+                    .is_none_or(|queued| queued.sequence <= view.sequence)
                 {
                     self.failed
                         .insert(view.binding.stream.clone(), (view, error.clone()));

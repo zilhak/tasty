@@ -279,7 +279,8 @@ App의 window event provider는 EngineRegistry에서 불변 EngineRead를 만든
 ### 생성 continuation의 불확실 상태
 
 `Creation::Stage::Uncertain`은 원래 설치·폐기·실패한 설치의 자원 소유자와 저널 확정 대기,
-재확인 시각을 함께 보관한다. 확정 응답 전에는 외부 자원 재확인을 시작하지 않는다.
+재확인 시각을 함께 보관한다. 부분 실패한 설치 owner는 오류 경로에서만 별도 할당해
+일반 단계 값의 크기를 늘리지 않는다. 확정 응답 전에는 외부 자원 재확인을 시작하지 않는다.
 엔진 종료 시 이 단계가 보유한 원 retirement receipt를 release owner로 넘기며,
 저널 완료나 요청자 취소만으로 물리 자원이 해제됐다고 판단하지 않는다.
 

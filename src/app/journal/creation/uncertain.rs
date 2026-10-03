@@ -5,7 +5,7 @@ use super::*;
 pub(super) enum UncertainOwner {
     /// The candidate is retained by EngineSession, or preparation produced no local owner.
     EngineOwned,
-    FailedInstallation(effect_runner::Installation),
+    FailedInstallation(Box<effect_runner::Installation>),
     Installed(Installed),
     Discard {
         lease: crate::runtime::journal_product::EffectLease,
@@ -45,7 +45,7 @@ impl UncertainOwner {
     ) {
         match self {
             Self::EngineOwned => {}
-            Self::FailedInstallation(installation) => installation.retire_for_release(release),
+            Self::FailedInstallation(installation) => (*installation).retire_for_release(release),
             Self::Installed(installed) => release.retain_installation(installed),
             Self::Discard {
                 retirement: Some(receipt),

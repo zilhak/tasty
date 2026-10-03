@@ -41,10 +41,10 @@ impl Restorations {
             .is_some_and(|state| state.phase != RestorePhase::Retiring)
     }
     pub(super) fn return_ready(&mut self, engine: EngineId, input: RestoreInput) {
-        if let Some(state) = self.engines.get_mut(&engine) {
-            if state.phase != RestorePhase::Retiring {
-                state.ready.push(input);
-            }
+        if let Some(state) = self.engines.get_mut(&engine)
+            && state.phase != RestorePhase::Retiring
+        {
+            state.ready.push(input);
         }
     }
     pub(super) fn ready(&self, engine: EngineId) -> &[RestoreInput] {
@@ -66,10 +66,10 @@ impl Restorations {
         }
     }
     pub(super) fn finish_bootstrap(&mut self, engine: EngineId) {
-        if let Some(state) = self.engines.get_mut(&engine) {
-            if state.phase != RestorePhase::Retiring {
-                state.phase = RestorePhase::Serving;
-            }
+        if let Some(state) = self.engines.get_mut(&engine)
+            && state.phase != RestorePhase::Retiring
+        {
+            state.phase = RestorePhase::Serving;
         }
     }
     pub(super) fn boot_done(&self, engine: EngineId) -> bool {

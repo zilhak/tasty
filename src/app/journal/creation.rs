@@ -687,7 +687,7 @@ impl Creation {
                 });
                 self.stage = Stage::Uncertain(Uncertain::pending(
                     reason,
-                    UncertainOwner::FailedInstallation(installation),
+                    UncertainOwner::FailedInstallation(Box::new(installation)),
                 ));
             }
         }
