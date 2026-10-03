@@ -2,7 +2,7 @@
 //! 별도 winit 창이므로 상태와 PopupManager는 설정 창이 소유한다.
 //!
 //! 원격 조회 없이 로컬 파일시스템만 읽으며 native 포털에 의존하지 않는다.
-//! read_dir_entries는 동기 I/O여서 느리거나 응답 없는 파일시스템에서 UI가 멈출 수 있다.
+//! 디렉터리 조회는 App worker에 요청하고 현재 선택 세션의 receipt로만 결과를 받는다.
 //! 저장 모드는 파일을 골라도 이름만 채우고 하단 버튼으로 확정한다.
 //! 기능 문서: docs/features/native-file-picker/index.md.
 
@@ -45,6 +45,7 @@ struct ChooserSession {
     current_dir: PathBuf,
     entries: Vec<DirEntryInfo>,
     load: FpViewState,
+    query: Option<crate::app::local_reads::Query<Vec<DirEntryInfo>>>,
     /// 선택된 행. 저장 모드에서는 비었거나 `[save_name]`(나열된 파일) 둘 중 하나다.
     selected: Vec<String>,
     /// 확장자 필터(점 없이). 비면 필터 없음. 디렉토리는 거르지 않는다.
@@ -64,6 +65,21 @@ pub(crate) struct SettingsFileChooser {
 }
 
 impl SettingsFileChooser {
+    pub(crate) fn poll_local_reads(
+        &mut self,
+        owner: &mut crate::app::local_reads::LocalReads,
+    ) -> bool {
+        let Some(session) = &mut self.session else {
+            return false;
+        };
+        if let Some(result) = session.query.as_mut().and_then(|query| query.poll(owner)) {
+            session.query = None;
+            session.accept_read(result);
+            return true;
+        }
+        false
+    }
+
     /// 선택 화면 상태를 만들고 홈 디렉토리를 동기로 읽는다. popup 을 여는 것은 호출처
     /// (`SettingsUiState::open_file_chooser`)다 — 이 타입은 popup 매니저를 모른다.
     pub(crate) fn begin(
@@ -95,6 +111,7 @@ impl SettingsFileChooser {
             current_dir: start,
             entries: Vec::new(),
             load: FpViewState::Empty,
+            query: None,
             selected: Vec::new(),
             filters,
             save_name,
@@ -179,10 +196,16 @@ impl ChooserSession {
             .unwrap_or_else(|| chooser_title(matches!(self.mode, FileChooserMode::Save { .. })))
     }
 
-    /// 현재 디렉토리를 동기로 다시 읽는다. 선택은 비운다.
+    /// 현재 디렉터리 조회를 요청한다. 이전 receipt와 선택은 버린다.
     fn reload(&mut self) {
         self.selected.clear();
-        match crate::core::fs_list::read_dir_entries(&self.current_dir) {
+        self.query = Some(crate::app::local_reads::directory(self.current_dir.clone()));
+        self.entries.clear();
+        self.load = FpViewState::Loading;
+    }
+
+    fn accept_read(&mut self, result: std::io::Result<Vec<DirEntryInfo>>) {
+        match result {
             Ok(mut entries) => {
                 crate::core::fs_list::sort_entries(
                     &mut entries,
@@ -446,8 +469,20 @@ mod tests {
         dir
     }
 
+    fn settle(session: &mut ChooserSession) {
+        if let Some(mut query) = session.query.take() {
+            let mut owner = crate::app::local_reads::LocalReads::default();
+            let result = owner.finish(&mut query);
+            session.accept_read(result);
+            while owner.poll_shutdown() != 0 {
+                std::thread::yield_now();
+            }
+        }
+    }
     fn session(chooser: &mut SettingsFileChooser) -> &mut ChooserSession {
-        chooser.session.as_mut().expect("open session")
+        let session = chooser.session.as_mut().expect("open session");
+        settle(session);
+        session
     }
 
     #[test]
@@ -519,6 +554,7 @@ mod tests {
             "확정하면 선택한 폴더로 이동해야 한다"
         );
         s.apply(FilePickerAction::NavigateUp);
+        settle(s);
         s.apply(FilePickerAction::Select("b.txt".into()));
         assert_eq!(
             s.apply(FilePickerAction::ConfirmEntry("b.txt".into())),
@@ -542,12 +578,14 @@ mod tests {
             "저장 모드의 폴더 더블클릭은 저장 결과를 반환하면 안 된다"
         );
         s.apply(FilePickerAction::NavigateInto("sub".into()));
+        settle(s);
         assert_eq!(
             s.current_dir,
             dir.join("sub"),
             "폴더를 더블클릭하면 해당 폴더로 이동해야 한다"
         );
         s.apply(FilePickerAction::NavigateUp);
+        settle(s);
         assert_eq!(
             s.apply(FilePickerAction::ConfirmEntry("b.txt".into())),
             None,
@@ -568,9 +606,11 @@ mod tests {
         ch.begin_at(C, FileChooserMode::Open, Vec::new(), dir.clone());
         let s = session(&mut ch);
         s.apply(FilePickerAction::NavigateInto("sub".into()));
+        settle(s);
         assert_eq!(s.current_dir, dir.join("sub"));
         assert!(s.load == FpViewState::Empty);
         s.apply(FilePickerAction::NavigateUp);
+        settle(s);
         assert_eq!(s.current_dir, dir);
         let root_idx = 0;
         s.apply(FilePickerAction::NavigateTo(root_idx));

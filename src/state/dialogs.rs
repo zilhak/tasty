@@ -322,6 +322,8 @@ pub(crate) struct FilePickerData {
     /// 현재 표시 중인 디렉토리(로컬: 절대경로, 원격: 원격 경로 문자열).
     pub(crate) current_dir: String,
     pub(crate) load: FpLoadState,
+    pub(crate) local_query:
+        Option<crate::app::local_reads::Query<Vec<crate::core::fs_list::DirEntryInfo>>>,
     /// 현재 디렉토리의 엔트리(`load` 가 `Loaded`/`Empty` 일 때만 최신).
     pub(crate) entries: Vec<crate::core::fs_list::DirEntryInfo>,
     /// 현재 디렉터리에서 선택한 이름. Select는 단일 선택으로 교체한다.

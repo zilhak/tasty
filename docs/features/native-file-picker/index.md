@@ -458,3 +458,5 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   재사용의 확정·필터·이동·읽기 실패·저장 이름 검증·외부 닫힘 · 저장 모드의 단일 확정 대상·선택 해제·
   덮어쓰기 판정·더블클릭), `src/adapters/ui/popup/file_picker/layout_tests.rs`(헤드리스 렌더로 footer
   버튼 무잘림 · 깊은 경로 가운데 생략 · 짧은 경로 비생략 · 모든 조상이 칠해지거나 `…` 뒤에 있음).
+
+로컬 목록은 App read worker에 제출하고 현재 파일 선택 세션의 receipt로 결과를 받는다. 이동·닫기·재개방으로 receipt가 교체되면 이전 결과를 버린다. 로딩 중에도 메인 이벤트 루프는 파일시스템 읽기를 기다리지 않는다. 원격 연결의 8초 soft timeout은 로컬 읽기에 적용하지 않는다.

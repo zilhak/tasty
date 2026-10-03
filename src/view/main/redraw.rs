@@ -1336,10 +1336,15 @@ impl MainView {
                     this.copy_selection_no_newline(engine);
                 }
                 Some(20) => {
-                    if let Some(target) = &selection_open_path
-                        && let Err(e) = crate::platform::reveal::open_path(target)
-                    {
-                        tracing::warn!("terminal: open selected path failed: {e}");
+                    if let Some(target) = &selection_open_path {
+                        this.state.request_explorer_file(
+                            engine,
+                            surface_id,
+                            crate::app::explorer_files::Operation::Open(target.clone()),
+                            crate::intent::IntentOrigin::User {
+                                source: crate::intent::UserSource::ContextMenu,
+                            },
+                        );
                     }
                 }
                 Some(item) => {

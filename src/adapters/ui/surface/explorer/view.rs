@@ -7,15 +7,15 @@ use std::time::{Duration, Instant};
 use tasty_model::{ExplorerPanel, SortColumn, SortDir, SurfaceId};
 
 use super::type_ahead::TypeAhead;
+use crate::core::fs_list::sort_entries;
 pub(crate) use crate::core::fs_list::{DirEntryInfo, human_size};
-use crate::core::fs_list::{read_dir_entries, sort_entries};
 use crate::i18n::t;
 
 /// 디렉토리 로드 결과 상태 (content 중앙 상태 텍스트로 표현 — design §3.8).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadState {
     Ok,
-    /// (ADR-0022) 원격 mirror 응답 대기 중 — 로컬은 동기 IO 라 이 상태를 거치지 않는다.
+    /// 로컬 worker 또는 원격 mirror 응답을 기다린다.
     Loading,
     /// 권한 거부 (`PermissionDenied`).
     NoPermission,
@@ -23,7 +23,7 @@ pub enum LoadState {
     Error(String),
 }
 
-/// 원격 디렉터리 응답의 UI 대기 제한. 로컬 동기 읽기에는 적용하지 않는다.
+/// 원격 디렉터리 응답의 UI 대기 제한. 로컬 worker 수명과는 별개다.
 const LIST_DIR_SOFT_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// 경로 하나의 원격 list_dir 요청 생애주기(ADR-0022 — `ExplorerView` 가
@@ -52,6 +52,8 @@ pub struct ExplorerView {
     pub entries: Vec<DirEntryInfo>,
     /// `entries` 가 어떤 디렉토리/정렬 기준으로 로드됐는지 (변화 감지용).
     loaded: Option<(PathBuf, SortColumn, SortDir)>,
+    local_query: Option<crate::app::local_reads::Query<Vec<DirEntryInfo>>>,
+    tree_queries: HashMap<PathBuf, crate::app::local_reads::Query<Vec<DirEntryInfo>>>,
     /// 로드 결과 상태.
     pub state: LoadState,
     /// 선택된 엔트리 경로 집합.
@@ -87,10 +89,63 @@ pub struct ExplorerView {
 }
 
 impl ExplorerView {
+    fn poll_local_reads(&mut self, owner: &mut crate::app::local_reads::LocalReads) -> bool {
+        let mut changed = false;
+        if let Some(result) = self
+            .local_query
+            .as_mut()
+            .and_then(|query| query.poll(owner))
+        {
+            self.local_query = None;
+            if self.mirror_ws_id.is_none() {
+                match result {
+                    Ok(mut entries) => {
+                        if let Some((_, col, dir)) = &self.loaded {
+                            sort_entries(&mut entries, *col, *dir);
+                        }
+                        self.entries = entries;
+                        self.state = LoadState::Ok;
+                    }
+                    Err(error) => {
+                        self.entries.clear();
+                        self.state = if error.kind() == std::io::ErrorKind::PermissionDenied {
+                            LoadState::NoPermission
+                        } else {
+                            LoadState::Error(error.to_string())
+                        };
+                    }
+                }
+                changed = true;
+            }
+        }
+        let ready: Vec<_> = self
+            .tree_queries
+            .iter_mut()
+            .filter_map(|(path, query)| query.poll(owner).map(|result| (path.clone(), result)))
+            .collect();
+        for (path, result) in ready {
+            self.tree_queries.remove(&path);
+            match result {
+                Ok(mut entries) => {
+                    entries.retain(|entry| entry.is_dir);
+                    sort_entries(&mut entries, SortColumn::Name, SortDir::Asc);
+                    self.tree_children.insert(path, entries);
+                }
+                Err(error) => {
+                    tracing::debug!(%error, path=%path.display(), "Explorer tree read failed");
+                    self.tree_children.insert(path, Vec::new());
+                }
+            }
+            changed = true;
+        }
+        changed
+    }
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
             loaded: None,
+            local_query: None,
+            tree_queries: HashMap::new(),
             state: LoadState::Ok,
             selected: HashSet::new(),
             selection_identity: std::sync::Arc::new(()),
@@ -180,6 +235,8 @@ impl ExplorerView {
 
         self.mirror_ws_id = mirror_ws_id;
         if let Some(local_ws_id) = mirror_ws_id {
+            self.local_query = None;
+            self.tree_queries.clear();
             self.sync_remote(&tab.root, tab.sort_column, tab.sort_dir, local_ws_id);
             return;
         }
@@ -201,23 +258,12 @@ impl ExplorerView {
         if dir_changed {
             self.clear_selection();
         }
-        match read_dir_entries(&tab.root) {
-            Ok(mut entries) => {
-                sort_entries(&mut entries, tab.sort_column, tab.sort_dir);
-                self.entries = entries;
-                self.state = LoadState::Ok;
-            }
-            Err(e) => {
-                self.entries.clear();
-                self.state = if e.kind() == std::io::ErrorKind::PermissionDenied {
-                    LoadState::NoPermission
-                } else {
-                    LoadState::Error(e.to_string())
-                };
-            }
-        }
+        self.local_query = Some(crate::app::local_reads::directory(tab.root.clone()));
+        self.entries.clear();
+        self.state = LoadState::Loading;
         if dir_changed || self.tree_children.is_empty() {
             self.tree_children.clear();
+            self.tree_queries.clear();
         }
         self.loaded = Some(key);
     }
@@ -389,17 +435,16 @@ impl ExplorerView {
                 .map(|v| v.as_slice())
                 .unwrap_or(&[]);
         }
-        if !self.tree_children.contains_key(dir) {
-            let children = read_dir_entries(dir)
-                .map(|mut v| {
-                    v.retain(|e| e.is_dir);
-                    v.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-                    v
-                })
-                .unwrap_or_default();
-            self.tree_children.insert(dir.to_path_buf(), children);
+        if !self.tree_children.contains_key(dir) && self.tree_queries.len() < 32 {
+            self.tree_queries
+                .entry(dir.to_owned())
+                .or_insert_with(|| crate::app::local_reads::directory(dir.to_owned()));
+            self.tree_children.insert(dir.to_owned(), Vec::new());
         }
-        &self.tree_children[dir]
+        self.tree_children
+            .get(dir)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     /// 단일 선택으로 설정.
@@ -432,6 +477,16 @@ pub struct ExplorerViewStore {
 }
 
 impl ExplorerViewStore {
+    pub(crate) fn poll_local_reads(
+        &mut self,
+        owner: &mut crate::app::local_reads::LocalReads,
+    ) -> bool {
+        let mut changed = false;
+        for view in self.views.values_mut() {
+            changed |= view.poll_local_reads(owner);
+        }
+        changed
+    }
     pub(crate) fn cached_surfaces(&self) -> impl Iterator<Item = SurfaceId> + '_ {
         self.views.keys().copied()
     }

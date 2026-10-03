@@ -13,9 +13,11 @@ pub enum HeadState {
     Detached(String),
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub(crate) struct BranchCache {
     surface_id: Option<u32>,
+    cwd: Option<PathBuf>,
+    query: Option<crate::app::local_reads::Query<Option<HeadState>>>,
     /// 읽기·파싱 실패나 저장소를 찾지 못한 결과도 None으로 캐시한다.
     branch: Option<HeadState>,
 }
@@ -28,12 +30,44 @@ impl RequestContext {
         engine: &EngineRead<'_>,
         surface_id: Option<u32>,
     ) -> bool {
-        let branch = surface_id
-            .and_then(|sid| engine.local_surface_cwd(sid))
-            .and_then(|cwd| git_branch(&cwd));
-        let changed =
-            self.branch_cache.surface_id != surface_id || self.branch_cache.branch != branch;
-        self.branch_cache = BranchCache { surface_id, branch };
+        let cwd = surface_id.and_then(|sid| engine.local_surface_cwd(sid));
+        let changed = self.branch_cache.surface_id != surface_id || self.branch_cache.cwd != cwd;
+        if changed {
+            self.branch_cache = BranchCache {
+                surface_id,
+                cwd: cwd.clone(),
+                query: None,
+                branch: None,
+            };
+        }
+        if self.branch_cache.query.is_none() {
+            self.branch_cache.query = cwd.map(crate::app::local_reads::git);
+        }
+        changed
+    }
+
+    pub(crate) fn poll_branch_read(
+        &mut self,
+        owner: &mut crate::app::local_reads::LocalReads,
+    ) -> bool {
+        let Some(result) = self
+            .branch_cache
+            .query
+            .as_mut()
+            .and_then(|query| query.poll(owner))
+        else {
+            return false;
+        };
+        self.branch_cache.query = None;
+        let branch = match result {
+            Ok(branch) => branch,
+            Err(error) => {
+                tracing::debug!(%error, "Git HEAD read failed");
+                None
+            }
+        };
+        let changed = self.branch_cache.branch != branch;
+        self.branch_cache.branch = branch;
         changed
     }
 
@@ -46,28 +80,8 @@ impl RequestContext {
     }
 }
 
-/// cwd부터 상위에서 .git/HEAD 또는 gitdir 파일을 따라 읽는다.
-/// 읽기·파싱 실패와 저장소가 없는 경우를 반환값에서 구별하지 않는다.
-fn git_branch(cwd: &Path) -> Option<HeadState> {
-    let mut dir = Some(cwd);
-    while let Some(d) = dir {
-        let dot_git = d.join(".git");
-        if let Ok(content) = std::fs::read_to_string(dot_git.join("HEAD")) {
-            return parse_head(&content);
-        }
-        if let Ok(content) = std::fs::read_to_string(&dot_git)
-            && let Some(gitdir) = resolve_gitdir_file(d, &content)
-            && let Ok(head) = std::fs::read_to_string(gitdir.join("HEAD"))
-        {
-            return parse_head(&head);
-        }
-        dir = d.parent();
-    }
-    None
-}
-
 /// 상대 gitdir은 .git 파일이 있는 디렉터리를 기준으로 해석한다.
-fn resolve_gitdir_file(base: &Path, content: &str) -> Option<PathBuf> {
+pub(crate) fn resolve_gitdir_file(base: &Path, content: &str) -> Option<PathBuf> {
     let raw = content.trim().strip_prefix("gitdir:")?.trim();
     if raw.is_empty() {
         return None;
@@ -82,7 +96,7 @@ fn resolve_gitdir_file(base: &Path, content: &str) -> Option<PathBuf> {
 
 /// heads 참조는 브랜치로, 길이 하한 이상의 16진 문자열은 detached SHA로 읽는다.
 /// 실제 객체 존재나 완전한 SHA 길이는 검사하지 않는다. 다른 ref와 파싱 실패는 None이다.
-fn parse_head(content: &str) -> Option<HeadState> {
+pub(crate) fn parse_head(content: &str) -> Option<HeadState> {
     let line = content.trim();
     if let Some(branch) = line.strip_prefix("ref: refs/heads/") {
         return Some(HeadState::Branch(branch.trim().to_owned()));
@@ -101,7 +115,8 @@ const DETACHED_SHORT_SHA_LEN: usize = 7;
 
 #[cfg(test)]
 mod tests {
-    use super::{HeadState, git_branch, parse_head, resolve_gitdir_file};
+    use super::{HeadState, parse_head, resolve_gitdir_file};
+    use crate::app::local_reads::git_branch;
     use std::path::Path;
 
     #[test]

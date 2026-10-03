@@ -947,6 +947,7 @@ fn mk_file_picker_data() -> FilePickerData {
         remote_host: None,
         current_dir: "/tmp".to_string(),
         load: FpLoadState::Loaded,
+        local_query: None,
         entries: vec![],
         selected: vec![],
         result: None,

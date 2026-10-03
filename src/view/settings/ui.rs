@@ -1,8 +1,9 @@
-use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;
 pub(crate) mod file_chooser;
 mod file_handler_tab;
 mod keybindings_tab;
 mod tabs;
+
+use crate::runtime::file_catalog::FormatCatalog as FileFormatRegistry;
 
 use file_handler_tab::{FileHandlerSubTab, draw_file_handler_tab};
 use keybindings_tab::{
@@ -242,6 +243,13 @@ pub struct SettingsUiState {
 }
 
 impl SettingsUiState {
+    pub(crate) fn poll_local_reads(
+        &mut self,
+        owner: &mut crate::app::local_reads::LocalReads,
+    ) -> bool {
+        self.file_chooser.poll_local_reads(owner)
+    }
+
     /// 단축키 녹화 중인지 여부.
     pub fn is_recording(&self) -> bool {
         self.recording_field.is_some()

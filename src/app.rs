@@ -39,6 +39,8 @@ pub(crate) mod ipc;
 pub(crate) mod ipc_round;
 pub(crate) mod journal;
 #[cfg(feature = "gui")]
+pub(crate) mod local_reads;
+#[cfg(feature = "gui")]
 pub(crate) mod modal;
 #[cfg(feature = "gui")]
 pub(crate) mod persistence;
@@ -114,6 +116,8 @@ pub(crate) struct App {
     pub(crate) port_scans: port_scans::PortScans,
     #[cfg(feature = "gui")]
     pub(crate) explorer_files: explorer_files::ExplorerFiles,
+    #[cfg(feature = "gui")]
+    pub(crate) local_reads: local_reads::LocalReads,
     pub(crate) pending_server_attaches: Vec<attach_activation::PendingAttach>,
     pub(crate) publication_inputs: publication_input::PublicationInputs,
     pub(crate) services: AppServices,
@@ -246,6 +250,14 @@ impl App {
             port_scans: Default::default(),
             #[cfg(feature = "gui")]
             explorer_files: Default::default(),
+            local_reads: local_reads::LocalReads::new({
+                let proxy = proxy.clone();
+                Arc::new(move || {
+                    if proxy.send_event(AppEvent::TimerTick).is_err() {
+                        tracing::debug!("local read wake after shutdown");
+                    }
+                })
+            }),
             publication_inputs: Default::default(),
             services: crate::boot::wiring::build_production_core(memory)?,
             state: state::AppState {

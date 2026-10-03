@@ -179,6 +179,7 @@ pub struct MainViewState {
     pub(crate) explorer_clipboard: Option<ExplorerClipboard>,
     #[cfg(feature = "gui")]
     pub(crate) explorer_file_requests: crate::app::explorer_files::Requests,
+    pub(crate) script_reads: std::collections::VecDeque<crate::app::local_reads::PendingScript>,
 
     /// DAG 그래프의 조회·레이아웃 캐시와 줌·이동·선택 상태.
     #[cfg(feature = "gui")]

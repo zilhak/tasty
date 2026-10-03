@@ -161,3 +161,5 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 - [work-area](../work-area/index.md)(Surface/Tab/Pane 계층) · [file-handler](../file-handler/index.md)(파일 열기 위임) · [convert-surface](../convert-surface/index.md)(explorer 로/에서 변환) · [keybindings](../keybindings/index.md) · [settings](../settings/index.md)(폰트/단축키 탭)
 
 파일 작업 실패는 원 View와 surface binding이 유효할 때 오류 토스트로 알린다. 실패한 rename/trash는 기존 선택을 유지하고 목록을 다시 읽는다. 부분 성공한 붙여넣기는 실패 경로를 표시하며 cut clipboard를 유지한다.
+
+로컬 목록·디렉터리 트리 읽기는 App의 최대 4개 read worker를 사용한다. 경로 전환은 이전 receipt를 버리고 기존 로딩 화면에서 새 결과를 기다린다. 파일 변경 worker와 분리돼 대형 복사가 목록 조회 큐를 점유하지 않는다.

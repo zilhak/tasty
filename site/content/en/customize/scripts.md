@@ -1,4 +1,4 @@
-<!-- source-hash: faac5ab94118 -->
+<!-- source-hash: b2c63d038e1d -->
 # Lua scripts
 
 Turn repeated tasks into Lua scripts. Run them with a shortcut, or set them to run when a window, workspace, or tab opens or closes.
@@ -92,3 +92,5 @@ An auto-run that was blocked, or a chain that was suppressed, is also recorded h
 - [Keybindings](keybindings.md) — Assigning combinations and presets
 - [Settings](settings.md) — The whole settings window and where the settings file lives
 - [Driving Tasty from the CLI](../agents/cli.md) — The commands you can call with `tasty.run_cli`
+
+Scripts launched by a shortcut are read in the background. If the contents have changed since registration, the existing confirmation dialog asks for approval before execution. Script files can be up to 8 MiB.

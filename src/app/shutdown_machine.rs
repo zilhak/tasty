@@ -420,7 +420,7 @@ impl App {
         false
     }
     fn wait_for_explorer_file_shutdown(&mut self) -> bool {
-        let remaining = self.explorer_files.poll_shutdown();
+        let remaining = self.explorer_files.poll_shutdown() + self.local_reads.poll_shutdown();
         if remaining != 0
             && let Some(deadline) = self
                 .state

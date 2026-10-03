@@ -3,7 +3,7 @@
 //! OS의 로컬 파일 선택 대화상자는 원격 경로를 탐색할 수 없어 이 화면을 따로 둔다.
 //!
 //! 표시 함수는 FilePickerProps를 받아 동작을 반환하며 갤러리에서 따로 그릴 수 있다.
-//! 로컬 목록은 호출부에서 동기 read_dir_entries로 읽는다.
+//! 로컬 목록은 App의 제한된 read worker에서 읽고 현재 popup receipt에 반영한다.
 //! 원격 목록은 pending_list_dir_forward에 넣고 attach 응답으로 갱신한다.
 //! 응답 제한은 매 프레임 sent_at의 경과 시간으로 확인하며 로컬 읽기에는 적용하지 않는다.
 
@@ -666,6 +666,11 @@ pub fn draw_file_picker(
 
     if let Some(FpLoadState::Loading { sent_at, .. }) =
         state.dialogs.file_picker.as_ref().map(|d| d.load.clone())
+        && state
+            .dialogs
+            .file_picker
+            .as_ref()
+            .is_some_and(|data| data.mirror_ws_id.is_some())
         && sent_at.elapsed() > LIST_DIR_SOFT_TIMEOUT
     {
         let data = state.dialogs.file_picker.as_mut().unwrap();
@@ -946,6 +951,7 @@ pub fn open(
         remote_host: None,
         current_dir: initial_dir,
         load: FpLoadState::Empty,
+        local_query: None,
         entries: Vec::new(),
         selected: Vec::new(),
         result: None,
@@ -999,6 +1005,7 @@ fn navigate(
     d.selected.clear();
 
     if let Some(mirror_ws_id) = d.mirror_ws_id {
+        d.local_query = None;
         let request_id = crate::core::next_list_dir_request_id();
         d.load = FpLoadState::Loading {
             request_id,
@@ -1024,7 +1031,28 @@ fn navigate(
         return;
     }
 
-    match crate::core::fs_list::read_dir_entries(Path::new(&target)) {
+    d.local_query = Some(crate::app::local_reads::directory(
+        std::path::PathBuf::from(target),
+    ));
+    d.entries.clear();
+    d.load = FpLoadState::Loading {
+        request_id: crate::core::next_list_dir_request_id(),
+        sent_at: Instant::now(),
+    };
+}
+
+pub(crate) fn poll_local_reads(
+    state: &mut MainViewState,
+    owner: &mut crate::app::local_reads::LocalReads,
+) -> bool {
+    let Some(d) = state.dialogs.file_picker.as_mut() else {
+        return false;
+    };
+    let Some(result) = d.local_query.as_mut().and_then(|query| query.poll(owner)) else {
+        return false;
+    };
+    d.local_query = None;
+    match result {
         Ok(mut entries) => {
             crate::core::fs_list::sort_entries(
                 &mut entries,
@@ -1048,6 +1076,7 @@ fn navigate(
             d.load = FpLoadState::ErrorPerm(msg);
         }
     }
+    true
 }
 
 /// 원격 OS를 알 수 없어 경로에 역슬래시가 있으면 Windows 형식으로 추정한다.

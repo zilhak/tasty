@@ -140,3 +140,5 @@ SettingsView는 설정 초안과 `RegistryEdit` 값을 반환한다. FileFormat/
 표시용 catalog에는 실제 소비하는 metadata만 유지한다. GUI 전용 Terminal·surface 표시 query와 editor catalog는 GUI 구성에서만 제공하며, headless 실행은 EngineRef/EngineMut의 기존 실행·조회 경로를 사용한다. 표시 facade는 사용하지 않는 factory 설정 사본이나 실행 경로를 대신 보유하지 않는다.
 
 Explorer의 paste/trash/rename/open 요청은 원 View와 SurfaceBinding, 고정 경로, 사용자 origin을 담는다. App의 전용 bounded worker가 파일 실행을 소유하며, 결과는 원 View/surface와 선택·클립보드 identity를 대조한 뒤 표시 상태에만 적용한다. 메뉴 선택의 비동기성과 파일 실행의 비동기성은 별개다. 로컬 목록과 metadata 조회는 현재 동기 경로이며 이 파일 작업 경계의 전환으로 전부 제거됐다고 보지 않는다.
+
+로컬 파일 목록·Git HEAD·단축키 스크립트 읽기는 App의 `local_reads`가 최대 4개 worker로 실행한다. View는 입력 경로와 결과 receipt만 보유한다. 폴더·popup·View가 교체되면 해당 receipt를 버리므로 늦은 결과가 새 표시를 바꾸지 않는다. 스크립트는 worker가 읽은 바이트의 해시를 확인하고 동일 바이트를 실행·승인에 사용한다.

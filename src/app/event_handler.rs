@@ -401,6 +401,7 @@ impl ApplicationHandler<AppEvent> for App {
 
         self.poll_port_scans();
         self.poll_explorer_files();
+        self.poll_local_reads();
         self.poll_profile_detections();
         for mut engine in self.engines_mut().windowed_and_parked() {
             engine.poll_attach_subscriptions();

@@ -23,6 +23,7 @@ fn state_with_picker(owner: Option<u64>) -> RequestContext {
         remote_host: None,
         current_dir: "/tmp".to_string(),
         load: FpLoadState::Empty,
+        local_query: None,
         entries: Vec::new(),
         selected: Vec::new(),
         result: None,

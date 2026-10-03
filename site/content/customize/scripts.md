@@ -91,3 +91,5 @@ TASTY_LOG=tasty_lua=debug tasty
 - [단축키](keybindings.md) — 조합 지정과 프리셋
 - [설정](settings.md) — 설정 윈도우 전체와 설정 파일 위치
 - [tasty CLI 사용하기](../agents/cli.md) — `tasty.run_cli` 로 부를 수 있는 명령
+
+단축키로 스크립트를 실행하면 파일을 백그라운드에서 읽습니다. 읽은 내용이 등록 당시와 달라졌으면 기존 확인 창에서 승인한 뒤 실행합니다. 스크립트 파일은 최대 8 MiB까지 읽습니다.

@@ -504,32 +504,17 @@ impl MainView {
             entry.name.clone()
         };
         let stored_hash = entry.sha256.clone();
-        let source = match std::fs::read_to_string(&path) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::warn!(target: "tasty_lua", "script read failed {}: {e}", path.display());
-                return true;
-            }
-        };
-        // 등록 뒤 파일이 바뀌면 바로 실행하지 않고 사용자 확인을 받는다.
-        let current_hash = tasty_settings::hash_bytes(source.as_bytes());
-        if current_hash == stored_hash {
-            send_app_event(&self.proxy, crate::AppEvent::RunLuaScript { source, name });
+        if self.state.script_reads.len() < 8 {
+            self.state
+                .script_reads
+                .push_back(crate::app::local_reads::PendingScript {
+                    script_id,
+                    name,
+                    stored_hash,
+                    query: crate::app::local_reads::script(path),
+                });
         } else {
-            self.state.dialogs.pending_script_confirm = Some(crate::state::PendingScriptConfirm {
-                script_id,
-                name,
-                source,
-                new_hash: current_hash,
-                result: None,
-            });
-            self.state.dispatch_intent(
-                crate::intent::UiIntent::OpenPopup {
-                    id: "script_changed_confirm",
-                    mode: crate::intent::OpenPopupMode::CenteredFocused,
-                }
-                .from_user_menu("script_tofu_gate"),
-            );
+            tracing::warn!("script read queue is full");
         }
         true
     }
