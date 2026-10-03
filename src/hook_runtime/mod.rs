@@ -3,6 +3,7 @@
 //! 바인딩 실행·전역 훅 셸 실행·IpcSequence worker를 둔다. worker와 OS 프로세스는 이 모듈의 private 자원이다.
 //! 이름에 global이 붙은 전역 훅도 엔진별 등록이며 프로세스 전역 원본으로 합치지 않는다([ADR-0062](../../docs/adr/0062-task-service-and-hook-runtime.md)).
 
+mod engine;
 pub(crate) mod global;
 mod trigger;
 mod worker;

@@ -169,7 +169,7 @@ Codex에는 이 출력 스캐너가 없으므로 같은 감시가 있다고 설�
 추가 프로세스 스냅샷은 없다. 전경 프로그램 이름은 1Hz 일괄 폴링이 이미 채우는
 `foreground_names` 캐시에서만 읽는다 — 자식마다 `Terminal::foreground_process_info()`
 를 개별 호출하면 O(surfaces × processes) 를 되살리는 회귀다
-(`src/core/state/busy.rs` 폴링 주석).
+(`src/runtime/terminal_activity.rs` 폴링 주석).
 
 ## 인터페이스
 

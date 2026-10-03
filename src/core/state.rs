@@ -128,17 +128,12 @@ impl EngineRef<'_> {
 }
 
 pub(crate) mod attention;
-mod busy;
 pub mod child_liveness;
 mod finders;
-mod global_hooks;
-mod idle_hooks;
 mod message;
-mod output_read;
 mod shell_integration_hint;
 mod soft_occupancy;
 mod surface_cwd;
-mod terminal_finders;
 
 pub(crate) use attention::AttentionKind;
 pub(crate) use surface_cwd::RemoteCwd;

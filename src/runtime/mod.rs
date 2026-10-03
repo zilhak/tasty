@@ -1,5 +1,6 @@
 //! Engine resource lifetimes and the committed journal execution boundary.
 //! The storage worker owns canonical journal models; App publishes committed descriptor projections.
+mod child_observation;
 pub(crate) mod command_executor;
 pub(crate) mod effect_runner;
 pub(crate) mod engine_access;
@@ -8,6 +9,9 @@ pub(crate) mod engine_session;
 pub(crate) mod journal;
 pub(crate) mod journal_product;
 pub(crate) mod surface_restorer;
+mod terminal_access;
+mod terminal_activity;
+mod terminal_output;
 
 #[cfg(test)]
 mod tests;

@@ -91,4 +91,4 @@ IPC 핸들러가 registry를 직접 시작·정지하며, App이 대기 허브 �
 - [작업 러너](../dev-guide/agent-runner.md), [훅](../features/hooks/index.md)
 - 현재 구현: `crates/tasty-task-runtime/src/service.rs`(TaskService·TaskScope·TaskAwaiter), 같은 crate의 `task.rs`·`runner_host.rs`·`runner_thread.rs`·`task_waker.rs`·`hook_wait.rs`. task IPC는 `src/adapters/ipc/handler/agent/task.rs`, 대기 engine 선택은 `src/app/ipc/app_methods/task_await.rs`다.
 - 조립과 실행 대여: `src/app/services.rs`, `src/runtime/engine_session.rs`, `src/runtime/engine_access.rs`. 완료 전략 port는 `crates/tasty-task-runtime/src/completion.rs`와 App의 주입 경로다.
-- 훅: `src/hook_runtime/{mod,worker,trigger,global}.rs`, `src/core/state/global_hooks.rs`, `src/app/idle_hooks.rs`, `src/hook_handler/exec.rs`.
+- 훅: `src/hook_runtime/{mod,engine,worker,trigger,global}.rs`, `src/app/idle_hooks.rs`, `src/hook_handler/exec.rs`.

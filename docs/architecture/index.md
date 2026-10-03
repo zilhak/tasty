@@ -287,3 +287,11 @@ App의 window event provider는 EngineRegistry에서 불변 EngineRead를 만든
 설치 완료 응답과 최종 publication은 서로 다른 조건이다. assembly 응답이 먼저 도착하면
 `AwaitPublication`에서 기다리고, publication이 먼저 도착하면 `Finish` 안에 적용 사실을
 보관한다. 두 조건을 충족한 assembly만 `Published`에서 전체 batch ACK 뒤 해제된다.
+
+### Engine 실행 어댑터의 위치
+
+터미널 접근·출력 읽기·전경 프로세스와 busy 관측은 `runtime`의
+`terminal_access`·`terminal_output`·`terminal_activity`가 맡는다. 타이머에서 훅 실행으로
+연결하는 어댑터는 `hook_runtime::engine`에 있다. `runtime::child_observation`은 실제
+TerminalStore·hook 보고에서 근거를 모으고, `core::state::child_liveness`의 순수 판정 함수에
+전달한다. 판정 우선순위와 IPC 응답 문자열은 실행 어댑터의 위치와 독립된 계약이다.
