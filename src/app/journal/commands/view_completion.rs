@@ -71,11 +71,7 @@ impl crate::app::App {
             .commands
             .pending
             .get(&ticket)
-            .and_then(|pending| {
-                pending
-                    .engine_scope
-                    .or_else(|| pending.reply.engine_scope())
-            })
+            .and_then(|pending| pending.reply.engine_scope())
         {
             self.resolve_engine_journal_request(ticket, id, request);
             return;
@@ -93,18 +89,26 @@ impl crate::app::App {
                 return;
             }
         };
-        let id = window
-            .and_then(|window| self.engines.of_window(window))
-            .or_else(|| {
-                self.engines()
-                    .parked_with_ids()
-                    .find(|(_, engine)| {
-                        named.is_none_or(|resource| {
-                            crate::core::request_target::engine_has_resource(engine, resource)
+        let fixed_engine = self
+            .journal
+            .commands
+            .pending
+            .get(&ticket)
+            .and_then(|pending| pending.engine_scope);
+        let id = fixed_engine.or_else(|| {
+            window
+                .and_then(|window| self.engines.of_window(window))
+                .or_else(|| {
+                    self.engines()
+                        .parked_with_ids()
+                        .find(|(_, engine)| {
+                            named.is_none_or(|resource| {
+                                crate::core::request_target::engine_has_resource(engine, resource)
+                            })
                         })
-                    })
-                    .map(|(id, _)| id)
-            });
+                        .map(|(id, _)| id)
+                })
+        });
         if let Some(engine) = id
             && !self.journal.bind_command_engine(ticket, engine)
         {

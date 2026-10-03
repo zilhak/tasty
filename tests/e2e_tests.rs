@@ -2109,3 +2109,45 @@ fn concurrent_requests_are_all_answered_when_every_round_is_cut() {
         rounds["queue_dispatch"]
     );
 }
+
+#[test]
+fn concurrent_creations_keep_their_creation_route_after_binding_the_engine() {
+    let _lane = exclusive_lane();
+    let tasty = common::shared();
+    let before = tasty.call("ui.state", json!({}))["active_workspace"].clone();
+    const CLIENTS: usize = 8;
+    let barrier = std::sync::Barrier::new(CLIENTS);
+    let workspaces: Vec<_> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..CLIENTS)
+            .map(|index| {
+                let barrier = &barrier;
+                scope.spawn(move || {
+                    barrier.wait();
+                    tasty.create_workspace(&format!("bound-creation-{index}"))
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("concurrent create"))
+            .collect()
+    });
+    let ids: std::collections::HashSet<_> =
+        workspaces.iter().map(|workspace| workspace.id).collect();
+    assert_eq!(ids.len(), CLIENTS);
+    assert_eq!(
+        tasty.call("ui.state", json!({}))["active_workspace"],
+        before
+    );
+    for workspace in workspaces {
+        assert!(
+            tasty
+                .call("surface.list", json!({}))
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|surface| surface["id"].as_u64() == Some(workspace.surface_id))
+        );
+        tasty.call("workspace.close", json!({"id":workspace.id}));
+    }
+}
