@@ -1,6 +1,6 @@
 use super::*;
 use crate::runtime::journal_product::{BoundEngine, EngineBinding, EngineSelection, StreamCommand};
-use tasty_core::StructuralCommand;
+use tasty_core::{StructuralCommand, StructureModels};
 use tasty_event_store::{CommandKey, CommandLookup};
 
 pub(super) fn open(
@@ -332,4 +332,47 @@ pub(super) fn retire(
         }
     }
     Ok(ResultValue::Executed(executed))
+}
+
+/// Keep only models this work can publish. Unrelated and retired streams stay on the worker.
+pub(super) fn publication_predecessor(models: &StructureModels, work: &Work) -> StructureModels {
+    let streams: Vec<String> = match work {
+        Work::Resolve { changes, .. } => {
+            changes.iter().map(|change| change.stream.clone()).collect()
+        }
+        Work::Capture { binding, .. } => vec![binding.stream.clone()],
+        #[cfg(any(feature = "gui", test))]
+        Work::RetireEngine(binding) => vec![binding.stream.clone()],
+        Work::ClaimPreparation { stream, .. } => vec![stream.clone()],
+        Work::ReconcilePreparation { lease, .. }
+        | Work::ReconcileRetirement { lease, .. }
+        | Work::RetirementFinished { lease, .. }
+        | Work::Prepared { lease, .. }
+        | Work::CleanupFinished { lease, .. }
+        | Work::InstallationRejected { lease, .. }
+        | Work::PreparationUncertain { lease, .. } => vec![lease.stream.clone()],
+        #[cfg(feature = "gui")]
+        Work::ForwardFinished { lease, .. } => vec![lease.stream.clone()],
+        Work::OpenEngine { selection, .. } => match selection {
+            EngineSelection::Slot { slot, .. } => vec![format!("structure:slot-{slot}")],
+            EngineSelection::ImportedSlot { source } => {
+                vec![format!("structure:slot-{}", source.destination_slot)]
+            }
+            // The persistent allocator issues a previously unused stream.
+            EngineSelection::FreshHeadless => Vec::new(),
+        },
+        _ => Vec::new(),
+    };
+    StructureModels {
+        batch: models.batch,
+        streams: streams
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .map(|stream| {
+                let model = models.stream(&stream);
+                (stream, model)
+            })
+            .collect(),
+    }
 }

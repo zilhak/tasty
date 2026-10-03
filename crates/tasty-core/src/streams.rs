@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::event::{DomainBatch, RecordedEvent};
-use crate::evolve::{EvolveError, evolve};
+use crate::evolve::{EvolveError, check_batch, evolve_owned};
 use crate::ids::BatchId;
 use crate::model::JournalModel;
 
@@ -55,21 +55,28 @@ pub fn evolve_streams(
             got: batch.batch_id,
         });
     }
-    let mut next = models.streams.clone();
-    for stream in batch.streams.keys() {
-        next.entry(stream.clone()).or_default();
+    for model in models.streams.values() {
+        check_batch(model, batch.batch_id)?;
     }
-    for (stream, model) in &mut next {
-        let events = batch.streams.get(stream).cloned().unwrap_or_default();
-        evolve(
-            model,
+    let mut staged = BTreeMap::new();
+    for (stream, events) in &batch.streams {
+        if events.is_empty() && models.streams.contains_key(stream) {
+            continue;
+        }
+        let next = evolve_owned(
+            models.stream(stream),
             &DomainBatch {
                 batch_id: batch.batch_id,
-                events,
+                events: events.clone(),
             },
         )?;
+        staged.insert(stream.clone(), next);
     }
-    models.streams = next;
+    // No fallible operation follows: publish all candidates and advance unchanged cuts together.
+    models.streams.extend(staged);
+    for model in models.streams.values_mut() {
+        model.applied.batch = Some(batch.batch_id);
+    }
     models.batch = Some(batch.batch_id);
     Ok(())
 }

@@ -50,7 +50,16 @@ type Result<T> = std::result::Result<T, EvolveError>;
 
 /// batch의 구조 이벤트를 순서대로 적용한다. 오류이면 모델은 호출 전 그대로다.
 pub fn evolve(model: &mut JournalModel, batch: &DomainBatch) -> Result<()> {
-    let batch_id = batch.batch_id;
+    check_batch(model, batch.batch_id)?;
+    if batch.events.is_empty() {
+        model.applied.batch = Some(batch.batch_id);
+        return Ok(());
+    }
+    *model = evolve_owned(model.clone(), batch)?;
+    Ok(())
+}
+
+pub(crate) fn check_batch(model: &JournalModel, batch_id: BatchId) -> Result<()> {
     if let Some(last) = model.applied.batch
         && batch_id <= last
     {
@@ -59,7 +68,12 @@ pub fn evolve(model: &mut JournalModel, batch: &DomainBatch) -> Result<()> {
             got: batch_id,
         });
     }
-    let mut next = model.clone();
+    Ok(())
+}
+
+/// The caller owns a private candidate; a failed candidate is discarded without another clone.
+pub(crate) fn evolve_owned(mut next: JournalModel, batch: &DomainBatch) -> Result<JournalModel> {
+    check_batch(&next, batch.batch_id)?;
     for recorded in &batch.events {
         let expected = next.applied.revision.unwrap_or(0) + 1;
         if recorded.revision != expected {
@@ -71,9 +85,8 @@ pub fn evolve(model: &mut JournalModel, batch: &DomainBatch) -> Result<()> {
         apply(&mut next, recorded.event.clone())?;
         next.applied.revision = Some(recorded.revision);
     }
-    next.applied.batch = Some(batch_id);
-    *model = next;
-    Ok(())
+    next.applied.batch = Some(batch.batch_id);
+    Ok(next)
 }
 
 fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {

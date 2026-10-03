@@ -118,3 +118,77 @@ fn only_prefixed_streams_are_structure_streams() {
     assert!(!is_structure_stream("structure"));
     assert!(!is_structure_stream("tasks"));
 }
+
+#[test]
+fn unchanged_streams_advance_the_cut_without_replacing_their_content() {
+    let mut models = StructureModels::default();
+    evolve_streams(
+        &mut models,
+        &StreamBatch {
+            batch_id: 1,
+            streams: [
+                (A.into(), events(0, &workspace(1, 1))),
+                (B.into(), events(0, &workspace(2, 2))),
+            ]
+            .into(),
+        },
+    )
+    .unwrap();
+    let name = models.streams[B].workspaces[&2].name.as_ptr();
+    evolve_streams(
+        &mut models,
+        &StreamBatch {
+            batch_id: 2,
+            streams: [(
+                A.into(),
+                events(
+                    3,
+                    &[DomainEvent::TabRenamed {
+                        id: 1,
+                        name: "next".into(),
+                    }],
+                ),
+            )]
+            .into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(models.streams[B].workspaces[&2].name.as_ptr(), name);
+    assert_eq!(models.streams[B].applied.batch, Some(2));
+    assert_eq!(models.streams[B].applied.revision, Some(3));
+    evolve_streams(
+        &mut models,
+        &StreamBatch {
+            batch_id: 3,
+            streams: Default::default(),
+        },
+    )
+    .unwrap();
+    assert_eq!(models.streams[B].workspaces[&2].name.as_ptr(), name);
+    assert_eq!(models.streams[A].applied.batch, Some(3));
+}
+
+#[test]
+fn failing_batch_does_not_advance_an_untouched_stream() {
+    let mut models = StructureModels::default();
+    evolve_streams(
+        &mut models,
+        &StreamBatch {
+            batch_id: 1,
+            streams: [(A.into(), events(0, &workspace(1, 1)))].into(),
+        },
+    )
+    .unwrap();
+    let before = models.clone();
+    assert!(
+        evolve_streams(
+            &mut models,
+            &StreamBatch {
+                batch_id: 2,
+                streams: [(B.into(), events(0, &[DomainEvent::TabClosed { id: 999 }]))].into()
+            }
+        )
+        .is_err()
+    );
+    assert_eq!(models, before);
+}

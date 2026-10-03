@@ -928,7 +928,34 @@ fn kind_withdrawal_or_replacement_after_prepare_rejects_installation_before_publ
             runtime_epoch: claimed.lease.runtime_epoch,
             engine_incarnation: claimed.engine_incarnation,
         };
-        let (_view, mut session) = crate::state::tests::test_state();
+        // The journal reserves surface 1. Use an explicit unrelated owner so this test also
+        // works alone, when the process-wide presentation fixture counter still starts at 1.
+        let model = crate::state::tests::test_model(vec![
+            tasty_core::DomainEvent::CategoryCreated {
+                id: 0,
+                name: "normal".into(),
+                index: 0,
+            },
+            tasty_core::DomainEvent::WorkspaceCreated {
+                id: 100,
+                name: "unrelated".into(),
+                category: 0,
+                index: 0,
+                pane: 100,
+            },
+            tasty_core::DomainEvent::TabCreated {
+                id: 100,
+                pane: 100,
+                index: 0,
+                name: "unrelated".into(),
+                surface: tasty_core::SurfaceSpec {
+                    id: 100,
+                    kind: "empty".into(),
+                    data: None,
+                },
+            },
+        ]);
+        let (_view, mut session) = crate::state::tests::test_state_from_model(model);
         let mut engine = session.borrow_mut();
         let original_ids = engine.live_surface_ids();
         let (sender, receiver) = std::sync::mpsc::channel();

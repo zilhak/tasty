@@ -106,7 +106,9 @@ pub(super) fn run(
             _ => false,
         };
         let mut predecessor = if publishes && halted.is_none() {
-            match executor.with_state(Clone::clone) {
+            match executor
+                .with_state(|models| binding::publication_predecessor(models, &request.work))
+            {
                 Ok(models) => Some(models),
                 Err(error) => {
                     halted = Some(error.to_string());
