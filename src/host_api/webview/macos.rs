@@ -564,6 +564,8 @@ impl PlatformWebView {
     #[cfg(debug_assertions)]
     pub fn debug_history(&self, action: super::DebugHistoryAction) {
         // SAFETY: main thread WKWebView API.
+        // 이유: match 가지는 서로 배타라 한 호출만 실행된다.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         let navigation = unsafe {
             match action {
                 super::DebugHistoryAction::Back => self.webview.goBack(),

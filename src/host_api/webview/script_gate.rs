@@ -30,6 +30,8 @@ impl ScriptGate {
     }
 
     /// 지금 적용할 JS 값.
+    // 이유: macOS는 전역 JS를 켜 두고 탐색 단위 preferences로 문서 JS를 정해 이 값을 쓰지 않는다.
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub fn effective_js(&self) -> bool {
         self.lock().effective_js()
     }
