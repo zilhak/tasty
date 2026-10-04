@@ -24,7 +24,7 @@ printf 'push 전 검사를 시작합니다. 전체 로그: %s\n' "$LOG_DIR"
 run_check() {
     local id="$1" title="$2" started=$SECONDS rc=0
     shift 2
-    yellow "[$id] 시작: $title"
+    yellow "시작: $title"
     if (
         while IFS= read -r name; do
             [ -z "$name" ] || unset "$name"
@@ -32,13 +32,13 @@ run_check() {
         cd "$REPO_ROOT" || exit 1
         "$@"
     ) > "$LOG_DIR/$id.log" 2>&1; then
-        green "[$id] 통과 ($((SECONDS - started))초)"
-        printf '%s 통과 %s초 — %s\n' "$id" "$((SECONDS - started))" "$title" >> "$SUMMARY"
+        green "통과: $title ($((SECONDS - started))초)"
+        printf '통과: %s (%s초)\n' "$title" "$((SECONDS - started))" >> "$SUMMARY"
     else
         rc=$?
         tail -60 "$LOG_DIR/$id.log" >&2
-        red "[$id] 실패 ($((SECONDS - started))초, 종료 코드 $rc). 전체 로그: $LOG_DIR/$id.log"
-        printf '%s 실패 %s초 — %s\n' "$id" "$((SECONDS - started))" "$title" >> "$SUMMARY"
+        red "실패: $title ($((SECONDS - started))초, 종료 코드 $rc). 전체 로그: $LOG_DIR/$id.log"
+        printf '실패: %s (%s초)\n' "$title" "$((SECONDS - started))" >> "$SUMMARY"
         FAIL=1
     fi
 }
@@ -148,10 +148,10 @@ if [ "$PUSH_INVOKED_BY_GIT" -eq 1 ]; then
         exit 1
     fi
 else
-    yellow '[B.9] 생략: 직접 실행했으므로 Git의 원격 ref 정보가 없습니다.'
+    yellow '생략: 플러그인 버전 — 직접 실행했으므로 Git의 원격 ref 정보가 없습니다.'
     yellow '직접 검사: bash scripts/check-plugin-version-bump.sh --range <원격 커밋> HEAD'
-    yellow '[B.10] 생략: 직접 검사하려면 bash scripts/check-population-freshness.sh --rev HEAD'
-    printf 'B.9 생략 — Git의 ref 정보 없음\nB.10 생략 — Git의 ref 정보 없음\n' >> "$SUMMARY"
+    yellow '생략: 파일 수 검사 기준 — 직접 검사하려면 bash scripts/check-population-freshness.sh --rev HEAD'
+    printf '생략: 플러그인 버전 — Git의 ref 정보 없음\n생략: 파일 수 검사 기준 — Git의 ref 정보 없음\n' >> "$SUMMARY"
 fi
 
 # ─

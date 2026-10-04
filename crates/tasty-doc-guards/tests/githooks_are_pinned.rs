@@ -331,9 +331,19 @@ fn pre_push_reports_failures_and_retains_complete_logs() {
     assert_eq!(calls.lines().count(), 7, "{calls}");
     assert!(calls.contains("--range bbbbbbbb aaaaaaaa"));
     assert!(calls.contains("--rev aaaaaaaa"));
-    for id in ["B.9", "B.10", "B.5", "B.8", "B.6", "B.4", "B.7"] {
-        assert!(logs.contains(&format!("{id} 통과")), "{logs}");
+    for title in [
+        "플러그인 버전",
+        "파일 수 검사 기준",
+        "cargo check --workspace --all-targets",
+        "cargo check --workspace --release --locked",
+        "cargo check --no-default-features",
+        "cargo clippy --workspace --all-targets -- -D clippy::correctness",
+        "cargo test -p tasty-doc-guards",
+    ] {
+        assert!(output.contains(&format!("시작: {title}")), "{output}");
+        assert!(logs.contains(&format!("통과: {title} (")), "{logs}");
     }
+    assert!(!output.contains("[B."), "{output}");
     let (success, output, calls, logs) = run_pre_push_fixture(refs, 0, 0, 101);
     assert!(!success, "{output}");
     assert_eq!(calls.lines().count(), 7, "later checks must still run");
@@ -346,7 +356,7 @@ fn pre_push_reports_failures_and_retains_complete_logs() {
         logs.contains("first diagnostic"),
         "full diagnostics must remain in the logs"
     );
-    assert!(logs.contains("B.7 실패"));
+    assert!(logs.contains("실패: cargo test -p tasty-doc-guards"));
 }
 
 #[test]
