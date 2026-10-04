@@ -77,6 +77,16 @@ class NavigationWriterBoundary(unittest.TestCase):
         self.assertEqual([row[0] for row in rows], ["field"])
         self.assertEqual(rows[0][3], "retain_workspace")
 
+    def test_terminal_store_parameter_is_counted_like_an_engine_field(self):
+        for receiver in ["engine.runtime.terminals", "terminals"]:
+            with self.subTest(receiver=receiver):
+                rows = self.measure(
+                    "fn install() { " + receiver + ".insert(id, terminal, None); }",
+                    "src/app/attach_client/resources.rs",
+                )
+                self.assertEqual([row[0] for row in rows], ["terminal"])
+
+
 
 class CurrentEntryBoundary(unittest.TestCase):
     def hits(self, source, path):
@@ -100,8 +110,8 @@ class CurrentEntryBoundary(unittest.TestCase):
         self.assertEqual(len(self.hits("fn decide() { crate::evolve(model, batch); }", "crates/tasty-core/src/command/new.rs")), 1)
 
     def test_mirror_permission_does_not_exempt_local_projection(self):
-        self.assertEqual(self.hits("fn install_new_mirror() { engine.push_mirror_workspace(ws); }", "src/app/attach_client.rs"), [])
-        self.assertEqual(len(self.hits("fn install_new_mirror() { projection::apply(a,b,c,d); }", "src/app/attach_client.rs")), 1)
+        self.assertEqual(self.hits("fn install_new_mirror() { engine.push_mirror_workspace(ws); }", "src/app/attach_client/connection.rs"), [])
+        self.assertEqual(len(self.hits("fn install_new_mirror() { projection::apply(a,b,c,d); }", "src/app/attach_client/connection.rs")), 1)
 
 
 if __name__ == "__main__":

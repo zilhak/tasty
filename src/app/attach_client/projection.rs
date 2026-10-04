@@ -1,216 +1,16 @@
-//! Build and materialize local mirror projections using durable logical IDs.
-use super::*;
+//! Build mirror descriptor trees and reserve IDs without borrowing an engine or resource owner.
 
-/// 로컬 PTY 없이 mirror 터미널을 만든다. 입력은 별도 스레드로 원격에 전달한다.
-pub(super) fn make_mirror_surface(
-    remote_id: u32,
-    local_id: u32,
-    cols: usize,
-    rows: usize,
-    frame_tx: &SharedFrameSender,
-    engine: &mut EngineMut<'_>,
-) {
-    let mut mirror = Terminal::new_detached(cols, rows);
-    bind_mirror_input(&mut mirror, remote_id, frame_tx, false);
-    // mirror의 feed_bytes는 process의 lazy 동기화를 거치지 않아 옵저버 게이트를 여기서 초기화한다.
-    mirror.set_output_events_enabled(engine.observer_router.wants(local_id));
-    engine.runtime.terminals.insert(local_id, mirror, None);
-}
+#[cfg(test)]
+mod tests;
 
-pub(super) fn pending_op_focus_for(
-    op: &StructuralOp,
-    close_focus_candidates: &[u32],
-    remote_to_local: &HashMap<u32, u32>,
-) -> Option<PendingOpFocus> {
-    match op {
-        StructuralOp::NewTab { .. }
-        | StructuralOp::SplitSurface { .. }
-        | StructuralOp::SplitPane { .. }
-        | StructuralOp::RestoreClosedItem { .. } => Some(PendingOpFocus::NewResource),
-        StructuralOp::CloseSurface { .. }
-        | StructuralOp::CloseTab { .. }
-        | StructuralOp::ClosePane { .. } => {
-            let candidates: Vec<u32> = close_focus_candidates
-                .iter()
-                .filter_map(|local_sid| {
-                    remote_to_local
-                        .iter()
-                        .find(|&(_, l)| l == local_sid)
-                        .map(|(&r, _)| r)
-                })
-                .collect();
-            if candidates.is_empty() {
-                None
-            } else {
-                Some(PendingOpFocus::Close { candidates })
-            }
-        }
-        _ => None,
-    }
-}
-
-pub(super) fn install_mirror_fallbacks(workspace: &Workspace, engine: &mut EngineMut<'_>) {
-    for id in workspace.all_surface_ids() {
-        engine
-            .runtime
-            .surfaces
-            .entry(id)
-            .or_insert_with(|| Box::new(EmptySurface::new(id)));
-    }
-}
+use crate::model::{Pane, PaneNode, SplitDirection, SurfaceLayout, Tab, Workspace};
+use serde_json::Value;
+use std::collections::{HashMap, HashSet};
+use tasty_remote::client_session::MirrorStructureIds;
 
 pub(super) type MirrorMarkdownLeaves = HashMap<u32, String>;
 
-pub(super) struct SurvivorMapping {
-    pub(super) remote_to_local: HashMap<u32, u32>,
-    pub(super) terminals: HashSet<u32>,
-    pub(super) mesh: HashMap<u32, MirrorMeshInfo>,
-    pub(super) explorer: HashMap<u32, std::path::PathBuf>,
-    pub(super) markdown: MirrorMarkdownLeaves,
-    /// 새로 매핑한 원격 surface는 사용자 new-tab/split의 포커스 후보가 된다.
-    pub(super) newly_created_remote_ids: Vec<u32>,
-}
-
-impl SurvivorMapping {
-    pub(super) fn markdown_ids(&self) -> HashSet<u32> {
-        self.markdown.keys().copied().collect()
-    }
-}
-
-/// kind가 허용된 markdown 플러그인에 등록됐는지 확인한다.
-pub(super) fn markdown_mirror_available(
-    engine: &crate::runtime::engine_access::EngineRef<'_>,
-) -> bool {
-    engine
-        .runtime
-        .surface_registry
-        .get_live(MARKDOWN_MIRROR_KIND)
-        .is_some_and(|def| {
-            matches!(
-                &def.source,
-                crate::runtime::surface_registry::KindSource::Plugin(p) if p == MARKDOWN_PLUGIN_ID
-            )
-        })
-}
-
-/// 원격 경로는 remote.file로 전달한다. file을 쓰면 플러그인이 로컬 경로로 읽는다.
-pub(super) fn create_mirror_markdown_surface(
-    descriptor: &Value,
-    local_id: u32,
-    engine: &crate::runtime::engine_access::EngineRef<'_>,
-) -> Option<Box<dyn Surface>> {
-    let params = mirror_markdown_params(descriptor);
-    let definition = engine
-        .runtime
-        .surface_registry
-        .get_live(MARKDOWN_MIRROR_KIND)?;
-    if !matches!(&definition.source,crate::runtime::surface_registry::KindSource::Plugin(plugin) if plugin==MARKDOWN_PLUGIN_ID)
-    {
-        return None;
-    }
-    match (definition.create)(local_id, None, &params).and_then(|prepared| prepared.publish()) {
-        Ok(surface) => Some(surface),
-        Err(e) => {
-            tracing::warn!(
-                "attach mirror: markdown surface {local_id} 생성 실패 — 빈 surface: {e}"
-            );
-            None
-        }
-    }
-}
-
-/// 생성과 deferred 복원이 같은 remote params를 사용한다.
-pub(super) fn mirror_markdown_params(descriptor: &Value) -> Value {
-    let file = descriptor
-        .get("file")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
-    let display_name = descriptor
-        .get("display_name")
-        .and_then(|v| v.as_str())
-        .unwrap_or(MARKDOWN_MIRROR_KIND);
-    serde_json::json!({
-        "display_name": display_name,
-        "remote": { "file": file },
-    })
-}
-
-pub(super) fn deferred_mirror_markdown_surface(
-    descriptor: &Value,
-    local_id: u32,
-) -> Box<dyn Surface> {
-    Box::new(EmptySurface::new_deferred_plugin(
-        local_id,
-        DeferredPlugin {
-            kind: MARKDOWN_MIRROR_KIND.to_string(),
-            snapshot: mirror_markdown_params(descriptor),
-        },
-    ))
-}
-
-/// mirror 삭제는 일반 lifecycle 큐를 거치지 않아 사라진 문서를 플러그인에 직접 알린다.
-pub(super) fn destroy_mirror_markdown_surfaces(
-    plugin_manager: &mut Option<crate::plugin::PluginManager>,
-    ids: impl IntoIterator<Item = u32>,
-) {
-    let Some(mgr) = plugin_manager.as_mut() else {
-        return;
-    };
-    for id in ids {
-        mgr.destroy_remote_surface(id, Some(MARKDOWN_MIRROR_KIND));
-    }
-}
-
-/// 이 이벤트의 surface ID는 로컬 ID다.
-pub(super) fn push_markdown_changed(
-    plugin_manager: &mut Option<crate::plugin::PluginManager>,
-    local_surface_id: u32,
-) {
-    let Some(mgr) = plugin_manager.as_mut() else {
-        return;
-    };
-    mgr.emit_host_event_to_plugin(
-        MARKDOWN_PLUGIN_ID,
-        MARKDOWN_MIRROR_CHANGED_EVENT,
-        &serde_json::json!({ "surface_id": local_surface_id }),
-        tasty_plugin_protocol::EventScope::System,
-    );
-}
-
-/// payload.surface_id는 플러그인이 아는 로컬 ID여야 한다.
-pub(super) fn push_markdown_content_result(
-    plugin_manager: &mut Option<crate::plugin::PluginManager>,
-    payload: &Value,
-) {
-    let Some(mgr) = plugin_manager.as_mut() else {
-        return;
-    };
-    mgr.emit_host_event_to_plugin(
-        MARKDOWN_PLUGIN_ID,
-        MARKDOWN_MIRROR_CONTENT_RESULT_EVENT,
-        payload,
-        tasty_plugin_protocol::EventScope::System,
-    );
-}
-
-/// 요청을 보낼 수 없거나 연결이 끊기면 실패를 합성한다. request_id=0은 대기 요청 취소다.
-pub(super) fn markdown_content_failure(
-    local_surface_id: u32,
-    request_id: u64,
-    reason: &str,
-) -> Value {
-    serde_json::json!({
-        "surface_id": local_surface_id,
-        "request_id": request_id,
-        "ok": false,
-        "file": Value::Null,
-        "source": Value::Null,
-        "truncated": false,
-        "reason": reason,
-    })
-}
-
-pub(super) fn stable_mirror_id(
+fn stable_mirror_id(
     ids: &mut HashMap<u32, u32>,
     remote: u32,
     next: impl FnOnce() -> anyhow::Result<u32>,
@@ -233,7 +33,7 @@ pub(super) fn mirror_id_needs(
     new_workspace: bool,
 ) -> anyhow::Result<Vec<(tasty_core::IdKind, u32)>> {
     use tasty_core::IdKind;
-    pub(super) fn count(value: &Value) -> usize {
+    fn count(value: &Value) -> usize {
         match value {
             Value::Array(values) => values
                 .iter()
@@ -265,21 +65,19 @@ pub(super) fn mirror_id_needs(
     Ok(needs)
 }
 pub(super) fn lease_mirror_ids(
-    engine: &EngineMut<'_>,
+    ids: &crate::runtime::id_reservations::IdReservations,
+    wake: &tasty_terminal::Waker,
     tree: &Value,
     surfaces: usize,
     new_workspace: bool,
 ) -> anyhow::Result<crate::runtime::id_reservations::ReservedIds> {
-    let result = engine
-        .runtime
-        .ids
-        .lease(&mirror_id_needs(tree, surfaces, new_workspace)?);
-    (engine.runtime.waker)();
+    let result = ids.lease(&mirror_id_needs(tree, surfaces, new_workspace)?);
+    wake();
     result.map_err(anyhow::Error::new)
 }
 
 #[allow(clippy::too_many_arguments)] // reason: fixed mirror parser inputs
-pub(super) fn build_pane_from_json(
+fn build_pane_from_json(
     structure_ids: &mut MirrorStructureIds,
     navigation: &mut crate::state::navigation::NavigationState,
     p: &Value,
@@ -365,7 +163,7 @@ pub(super) fn build_pane_from_json(
 }
 
 #[allow(clippy::too_many_arguments)] // reason: fixed recursive mirror parser inputs
-pub(super) fn build_pane_node(
+fn build_pane_node(
     structure_ids: &mut MirrorStructureIds,
     navigation: &mut crate::state::navigation::NavigationState,
     node: &Value,
@@ -440,7 +238,7 @@ pub(super) fn build_pane_node(
         _ => None,
     })
 }
-pub(super) fn wire_direction(node: &Value) -> SplitDirection {
+fn wire_direction(node: &Value) -> SplitDirection {
     if node.get("direction").and_then(Value::as_str) == Some("vertical") {
         SplitDirection::Vertical
     } else {
@@ -537,14 +335,14 @@ pub(super) fn build_mirror_workspace(
     Ok(workspace)
 }
 
-pub(super) struct MirrorLayoutSources<'a> {
-    pub(super) ids: &'a crate::runtime::id_reservations::ReservedIds,
-    pub(super) map: &'a HashMap<u32, u32>,
-    pub(super) term: &'a HashSet<u32>,
-    pub(super) mesh: &'a HashMap<u32, MirrorMeshInfo>,
-    pub(super) explorer: &'a HashMap<u32, std::path::PathBuf>,
+struct MirrorLayoutSources<'a> {
+    ids: &'a crate::runtime::id_reservations::ReservedIds,
+    map: &'a HashMap<u32, u32>,
+    term: &'a HashSet<u32>,
+    mesh: &'a HashMap<u32, MirrorMeshInfo>,
+    explorer: &'a HashMap<u32, std::path::PathBuf>,
 }
-pub(super) fn build_layout(
+fn build_layout(
     navigation: &mut crate::state::navigation::NavigationState,
     node: &Value,
     sources: &MirrorLayoutSources<'_>,
@@ -601,51 +399,10 @@ pub(super) fn build_layout(
     })
 }
 
-impl crate::runtime::engine_access::EngineMut<'_> {
-    /// Remote placeholders materialize on the App side and never enter the local journal.
-    pub(crate) fn reify_displayed_mirror_resources(&mut self, selected: &[u32]) {
-        for id in selected {
-            if !self.core.is_mirror_surface(*id) {
-                continue;
-            }
-            let deferred = self
-                .runtime
-                .surfaces
-                .get(id)
-                .and_then(|surface| surface.as_any().downcast_ref::<EmptySurface>())
-                .and_then(|empty| match &empty.deferred {
-                    Some(crate::model::Deferred::Plugin(value)) => Some(value.clone()),
-                    _ => None,
-                });
-            let Some(deferred) = deferred else {
-                continue;
-            };
-            if deferred.kind != MARKDOWN_MIRROR_KIND || !markdown_mirror_available(&self.as_ref()) {
-                continue;
-            }
-            let Some(definition) = self.runtime.surface_registry.get_live(&deferred.kind) else {
-                continue;
-            };
-            let surface = match (definition.restore)(*id, &deferred.snapshot)
-                .and_then(|prepared| prepared.publish())
-            {
-                Ok(surface) => surface,
-                Err(error) => {
-                    tracing::warn!(surface = *id, "mirror kind restoration failed: {error}");
-                    continue;
-                }
-            };
-            let kind = surface.kind().to_owned();
-            drop(self.runtime.surfaces.insert(*id, surface));
-            if let Some((index, pane)) = self.core.find_workspace_index_for_surface(*id)
-                && let Some(workspace) = self.core.workspace_at(index).map(|workspace| workspace.id)
-                && let Some(workspace) = self.core.mirror_workspace_mut(workspace)
-                && let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pane)
-                && let Some(tab) = pane.tabs.iter_mut().find(|tab| tab.contains_surface(*id))
-                && let Some(descriptor) = tab.surface_mut(*id)
-            {
-                descriptor.kind = kind;
-            }
-        }
-    }
+/// mesh leaf를 AttachMeshSurface로 만들 때 필요한 표시 정보.
+#[derive(Debug, Clone)]
+pub(super) struct MirrorMeshInfo {
+    pub(super) kind: String,
+    pub(super) plugin_id: String,
+    pub(super) display_name: String,
 }

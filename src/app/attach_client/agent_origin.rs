@@ -1,15 +1,13 @@
 //! 에이전트 요청의 회신은 사용자 toast 대신 로그로 알린다.
 //! 회신에 요청 주체가 없으므로 송신 시 op_id·request_id를 기록한다.
 
-use std::collections::HashSet;
-
-use super::{AttachClientSession, MirrorHost};
+use tasty_remote::client_session::AttachClientSession;
 
 /// 복원할 항목이 없는 응답은 일반 실패와 구별해 알린다.
 /// 에이전트 요청의 실패는 사용자 toast로 표시하지 않는다.
 pub(super) fn apply_structural_failed(
     sess: &mut AttachClientSession,
-    host: &mut MirrorHost<'_, '_>,
+    toast: impl FnOnce(String, crate::adapters::ui::ToastKind),
     op_id: u64,
     reason: Option<String>,
 ) {
@@ -21,7 +19,7 @@ pub(super) fn apply_structural_failed(
         return;
     }
     if reason == tasty_ipc::stream::STRUCTURAL_REASON_RESTORE_EMPTY {
-        host.toast(
+        toast(
             crate::i18n::t("attach.toast.mirror_restore_empty").to_string(),
             crate::adapters::ui::ToastKind::Info,
         );
@@ -33,12 +31,12 @@ pub(super) fn apply_structural_failed(
     } else {
         format!("{base} ({reason})")
     };
-    host.toast(msg, crate::adapters::ui::ToastKind::Warning);
+    toast(msg, crate::adapters::ui::ToastKind::Warning);
 }
 
 /// 잘림 안내를 문서 본문에 넣지 않는다. 사용자 요청은 toast, 에이전트 요청은 로그로 알린다.
 pub(super) fn notify_markdown_truncated(
-    host: &mut MirrorHost<'_, '_>,
+    toast: impl FnOnce(String, crate::adapters::ui::ToastKind),
     local: u32,
     agent_origin: bool,
 ) {
@@ -48,109 +46,8 @@ pub(super) fn notify_markdown_truncated(
         );
         return;
     }
-    host.toast(
+    toast(
         crate::i18n::t("attach.toast.mirror_markdown_truncated").to_string(),
         crate::adapters::ui::ToastKind::Warning,
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-
-    use super::super::tests::test_session;
-    use super::super::{MirrorEvent, apply_mirror_events};
-    use super::*;
-
-    #[test]
-    fn an_agent_forward_failure_does_not_toast() {
-        let mut sess = test_session(9_000, HashMap::new());
-        sess.state.agent_requests.note_structural(true, 5);
-        sess.state.agent_requests.note_structural(false, 6);
-        let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
-        let mut engine = engine_session.borrow_mut();
-        {
-            let mut host = MirrorHost::windowed(&mut state, &mut engine);
-            apply_mirror_events(
-                &mut sess,
-                &mut host,
-                &mut plugin_manager,
-                vec![MirrorEvent::StructuralFailed(5, Some("nope".to_string()))],
-            );
-        }
-        assert_eq!(state.toasts.len(), 0, "에이전트 op 의 실패는 로그로 끝난다");
-        assert!(
-            sess.state.agent_requests.structural.is_empty(),
-            "회신이 오면 표시를 지운다"
-        );
-
-        {
-            let mut host = MirrorHost::windowed(&mut state, &mut engine);
-            apply_mirror_events(
-                &mut sess,
-                &mut host,
-                &mut plugin_manager,
-                vec![MirrorEvent::StructuralFailed(6, Some("nope".to_string()))],
-            );
-        }
-        assert_eq!(
-            state.toasts.len(),
-            1,
-            "표시 없는 op 의 실패는 toast 를 낸다"
-        );
-    }
-
-    #[test]
-    fn an_agent_markdown_reload_truncation_does_not_toast() {
-        let mut sess = test_session(9_000, HashMap::from([(30, 300)]));
-        sess.state.markdown_locals.insert(300);
-        sess.state.agent_requests.note_markdown(true, 11);
-        sess.state.agent_requests.note_markdown(false, 12);
-        let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
-        let mut engine = engine_session.borrow_mut();
-        let truncated = |request_id| MirrorEvent::MarkdownContentResult {
-            request_id,
-            surface_id: 30,
-            ok: true,
-            file: Some("/r/a.md".to_string()),
-            source: Some("# a".to_string()),
-            truncated: true,
-            reason: None,
-        };
-        {
-            let mut host = MirrorHost::windowed(&mut state, &mut engine);
-            apply_mirror_events(
-                &mut sess,
-                &mut host,
-                &mut plugin_manager,
-                vec![truncated(11)],
-            );
-        }
-        assert_eq!(
-            state.toasts.len(),
-            0,
-            "에이전트 요청의 잘림은 toast 를 안 낸다"
-        );
-        assert!(
-            !sess.state.agent_requests.take_markdown(11),
-            "회신이 오면 표시를 지운다"
-        );
-
-        {
-            let mut host = MirrorHost::windowed(&mut state, &mut engine);
-            apply_mirror_events(
-                &mut sess,
-                &mut host,
-                &mut plugin_manager,
-                vec![truncated(12)],
-            );
-        }
-        assert_eq!(
-            state.toasts.len(),
-            1,
-            "plugin 자신의 요청은 종전대로 toast 를 낸다"
-        );
-    }
 }

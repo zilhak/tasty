@@ -1,30 +1,40 @@
 //! Send bounded capture and bulk payloads on their original connection epoch.
-use super::*;
+
+#[cfg(test)]
+mod tests;
+
+use super::forward::RemoteTarget;
+use super::wire::send_control_frame;
+use crate::app::App;
+use crate::ipc::client::StreamConnection;
+use crate::ipc::stream;
+use crate::ipc::stream::{STREAM_PROTO, StreamControl, StreamTag};
+use std::net::TcpStream;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// 원격은 client_id로도 구별하므로 업로드 ID는 프로세스 안에서 구별되면 된다.
 static NEXT_CAPTURE_UPLOAD_ID: AtomicU64 = AtomicU64::new(1);
 
-pub(super) fn next_capture_upload_id() -> u64 {
+fn next_capture_upload_id() -> u64 {
     NEXT_CAPTURE_UPLOAD_ID.fetch_add(1, Ordering::Relaxed)
 }
 
 /// bulk ID도 원격 client_id와 함께 사용한다.
 static NEXT_BULK_TRANSFER_ID: AtomicU64 = AtomicU64::new(1);
 
-pub(super) fn next_bulk_transfer_id() -> u64 {
+fn next_bulk_transfer_id() -> u64 {
     NEXT_BULK_TRANSFER_ID.fetch_add(1, Ordering::Relaxed)
 }
 
 /// binary sub-header를 더해도 프레임 상한을 넘지 않는 payload 크기.
-pub(super) const BULK_CHUNK_RAW_LEN: usize =
-    stream::MAX_FRAME_LEN as usize - stream::BULK_CHUNK_HEADER_LEN;
+const BULK_CHUNK_RAW_LEN: usize = stream::MAX_FRAME_LEN as usize - stream::BULK_CHUNK_HEADER_LEN;
 
 /// 이미지 업로드 결과 처리가 원격 정책 거절과 전송 오류를 구별하는 접두사다.
 /// 거절이면 Dismiss만, 나머지 오류면 Retry를 제공하므로 문구를 임의로 바꾸지 않는다.
 pub(crate) const BULK_REJECT_PREFIX: &str = "remote rejected bulk upload: ";
 
 /// base64 팽창과 JSON 오버헤드를 포함해 Control 프레임 상한 안에 들도록 여유를 둔다.
-pub(super) const CAPTURE_CHUNK_RAW_LEN: usize = 700 * 1024;
+const CAPTURE_CHUNK_RAW_LEN: usize = 700 * 1024;
 
 impl App {
     /// 캡처를 원격에 올리고 원격 클립보드에 경로를 넣도록 요청한다.
@@ -56,137 +66,19 @@ impl App {
                 "total": total,
                 "data_b64": base64::engine::general_purpose::STANDARD.encode(chunk),
             });
-            send_capture_control_frame(&frame_tx, &msg)?;
+            send_control_frame(&frame_tx, &msg)?;
         }
         let commit = serde_json::json!({
             "event": "capture_commit",
             "upload_id": upload_id,
             "file_name": file_name,
         });
-        send_capture_control_frame(&frame_tx, &commit)
+        send_control_frame(&frame_tx, &commit)
     }
-
-    /// 목록 소비자는 wire에 없으므로 요청 ID에 기록한다. None은 picker, Some은 explorer다.
-    pub(crate) fn send_list_dir_request(
-        &mut self,
-        local_ws_id: u32,
-        request_id: u64,
-        dir: &str,
-        consumer: Option<u32>,
-    ) -> anyhow::Result<()> {
-        let Some(sess) = self
-            .remote
-            .sessions
-            .iter_mut()
-            .find(|s| s.state.local_workspace == local_ws_id)
-        else {
-            anyhow::bail!("no attach session for mirror workspace {local_ws_id}");
-        };
-        let msg = serde_json::json!({
-            "event": "list_dir_request",
-            "request_id": request_id,
-            "dir": dir,
-        });
-        let result = send_capture_control_frame(&sess.transport.frame_tx, &msg);
-        if result.is_ok() {
-            sess.state
-                .pending_list_dir_consumers
-                .insert(request_id, consumer);
-        }
-        result
-    }
-
-    /// 원격 surface ID를 보내 서버가 실제 cwd에서 Git 정보를 찾게 한다.
-    pub(crate) fn send_git_query_request(
-        &mut self,
-        local_surface_id: u32,
-        request_id: u64,
-        kind: tasty_ipc::stream_hub::GitQueryKind,
-        worktree_path: Option<&str>,
-        diff_path: Option<&str>,
-    ) -> anyhow::Result<()> {
-        let Some(sess) = self.remote.sessions.iter().find(|s| {
-            s.state
-                .remote_to_local
-                .values()
-                .any(|&l| l == local_surface_id)
-        }) else {
-            anyhow::bail!("no attach session for mirror surface {local_surface_id}");
-        };
-        let Some(remote_sid) = sess
-            .state
-            .remote_to_local
-            .iter()
-            .find(|&(_, &l)| l == local_surface_id)
-            .map(|(&r, _)| r)
-        else {
-            anyhow::bail!("no remote surface id for mirror surface {local_surface_id}");
-        };
-        let msg = serde_json::json!({
-            "event": "git_query_request",
-            "request_id": request_id,
-            "surface_id": remote_sid,
-            "kind": kind.as_wire_str(),
-            "worktree_path": worktree_path,
-            "diff_path": diff_path,
-        });
-        send_capture_control_frame(&sess.transport.frame_tx, &msg)
-    }
-
-    pub(crate) fn send_markdown_content_request(
-        &mut self,
-        req: &crate::core::PendingMarkdownContentForward,
-    ) -> anyhow::Result<()> {
-        let (local_surface_id, request_id) = (req.local_surface_id, req.request_id);
-        let Some(sess) = self
-            .remote
-            .sessions
-            .iter_mut()
-            .find(|s| s.state.markdown_locals.contains(&local_surface_id))
-        else {
-            anyhow::bail!("no attach session holds mirror markdown surface {local_surface_id}");
-        };
-        let Some(remote_sid) = sess
-            .state
-            .remote_to_local
-            .iter()
-            .find(|&(_, &l)| l == local_surface_id)
-            .map(|(&r, _)| r)
-        else {
-            anyhow::bail!("no remote surface id for mirror surface {local_surface_id}");
-        };
-        if sess.state.phase != SessionState::Connected {
-            anyhow::bail!("mirror session is reconnecting");
-        }
-        let msg = serde_json::json!({
-            "event": "markdown_content_request",
-            "request_id": request_id,
-            "surface_id": remote_sid,
-        });
-        send_capture_control_frame(&sess.transport.frame_tx, &msg)?;
-        sess.state
-            .agent_requests
-            .note_markdown(req.agent_origin, request_id);
-        Ok(())
-    }
-}
-
-pub(super) fn send_capture_control_frame(
-    frame_tx: &SharedFrameSender,
-    msg: &serde_json::Value,
-) -> anyhow::Result<()> {
-    let payload = serde_json::to_vec(msg)?;
-    frame_tx
-        .send(OutFrame {
-            tag: StreamTag::Control,
-            payload,
-        })
-        .map_err(|_| anyhow::anyhow!("attach write queue closed (write thread gone)"))?;
-    Ok(())
 }
 
 /// 파일을 transfer_id·seq 헤더가 있는 청크로 나눈다. 빈 입력은 청크 없이 begin·commit만 보낸다.
-pub(super) fn bulk_chunk_frames(transfer_id: u64, bytes: &[u8]) -> Vec<Vec<u8>> {
+fn bulk_chunk_frames(transfer_id: u64, bytes: &[u8]) -> Vec<Vec<u8>> {
     bytes
         .chunks(BULK_CHUNK_RAW_LEN)
         .enumerate()
@@ -196,10 +88,10 @@ pub(super) fn bulk_chunk_frames(transfer_id: u64, bytes: &[u8]) -> Vec<Vec<u8>> 
 
 /// 기존 workspace 점유에 연결된 bulk 채널을 연다. timeout 설정 실패는 경고만 남긴다.
 #[cfg(test)]
-pub(super) fn open_bulk_connection(port: u16, remote_ws: u32) -> anyhow::Result<StreamConnection> {
+fn open_bulk_connection(port: u16, remote_ws: u32) -> anyhow::Result<StreamConnection> {
     open_bulk_connection_bound(port, remote_ws, None)
 }
-pub(super) fn open_bulk_connection_bound(
+fn open_bulk_connection_bound(
     port: u16,
     remote_ws: u32,
     attempt: Option<&tasty_remote::outbound::AttemptToken>,
@@ -220,7 +112,7 @@ pub(super) fn open_bulk_connection_bound(
 }
 
 /// 결과가 유실되면 기다리기만 하지 않도록 손실 통지를 요청한다. 구 서버는 무시할 수 있다.
-pub(super) fn declare_bulk_loss_notify(conn: &mut StreamConnection) {
+fn declare_bulk_loss_notify(conn: &mut StreamConnection) {
     match serde_json::to_vec(&StreamControl::ClientLossNotify {}) {
         Ok(declare) => {
             if let Err(e) = conn.send(StreamTag::Control, &declare) {
@@ -232,7 +124,7 @@ pub(super) fn declare_bulk_loss_notify(conn: &mut StreamConnection) {
 }
 
 /// begin·청크·commit을 순서대로 보내고 시작 및 각 청크 뒤에 누적 전송 바이트를 알린다.
-pub(super) fn send_bulk_payload(
+fn send_bulk_payload(
     conn: &mut StreamConnection,
     transfer_id: u64,
     file_name: &str,
@@ -267,7 +159,7 @@ pub(super) fn send_bulk_payload(
 
 /// 해당 transfer_id의 결과를 기다린다. Ping이나 다른 응답은 무시하므로 전체 대기 기한은 없다.
 /// 소켓 timeout이 설정됐다면 개별 읽기에 적용된다.
-pub(super) fn await_bulk_result(
+fn await_bulk_result(
     conn: &mut StreamConnection,
     transfer_id: u64,
     epoch: &tasty_remote::connection::ConnectionEpoch,
@@ -336,9 +228,7 @@ pub(crate) fn upload_file_over_bulk(
     await_bulk_result(&mut conn, transfer_id, epoch)
 }
 
-pub(super) fn ensure_bulk_epoch(
-    epoch: &tasty_remote::connection::ConnectionEpoch,
-) -> anyhow::Result<()> {
+fn ensure_bulk_epoch(epoch: &tasty_remote::connection::ConnectionEpoch) -> anyhow::Result<()> {
     if epoch.is_active() {
         Ok(())
     } else {

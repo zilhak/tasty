@@ -1,6 +1,14 @@
 //! Application values identify the sole target; Remote retains pending connection resources.
-use super::*;
+
+use super::projection::mirror_id_needs;
+use super::wire::mirror_event_from_control;
+use crate::AppEvent;
+use crate::app::App;
+use crate::runtime::engine_session::EngineId;
+use std::sync::Arc;
 use tasty_remote::pending_connection::ConnectionTicket;
+use winit::event_loop::EventLoopProxy;
+
 #[derive(Clone)]
 pub(crate) struct PendingMirrorInstall {
     pub engine: EngineId,
@@ -286,4 +294,13 @@ impl App {
             }
         }
     }
+}
+
+fn attach_wake(proxy: &EventLoopProxy<AppEvent>) -> Arc<dyn Fn() + Send + Sync> {
+    let proxy = proxy.clone();
+    Arc::new(move || {
+        if let Err(error) = proxy.send_event(AppEvent::AttachClientData) {
+            tracing::debug!("remote wake after event loop closed: {error}");
+        }
+    })
 }

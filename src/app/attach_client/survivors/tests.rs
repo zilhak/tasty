@@ -1,0 +1,465 @@
+use super::*;
+use crate::app::attach_client::projection::build_mirror_workspace;
+use crate::app::attach_client::resources::MARKDOWN_MIRROR_KIND;
+use crate::app::attach_client::tests::{
+    MARKDOWN_PLUGIN_ID, created_surfaces, markdown_descriptor, register_markdown_kind,
+    single_leaf_tree, supply_ids, test_ids,
+};
+use crate::model::EmptySurface;
+use serde_json::Value;
+use std::collections::{HashMap, HashSet};
+use tasty_remote::client_session::{MirrorStructureIds, SharedFrameSender};
+
+#[test]
+fn merge_survivor_mapping_prefers_server_display_name_and_falls_back_to_kind() {
+    let ids = test_ids();
+    let (_, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
+    supply_ids(&engine);
+    let (tx, _rx) = tasty_remote::connection::channel();
+    let frame_tx: SharedFrameSender = tx;
+
+    let surfaces = vec![
+        serde_json::json!({
+            "remote_id": 10,
+            "role": "mesh",
+            "kind": "markdown",
+            "plugin_id": "com.tasty.markdown",
+            "display_name": "README.md",
+        }),
+        serde_json::json!({
+            "remote_id": 11,
+            "role": "mesh",
+            "kind": "image",
+            "plugin_id": "com.tasty.image",
+        }),
+    ];
+
+    let mapping = merge_survivor_mapping(&HashMap::new(), &surfaces, &ids, &frame_tx, &mut engine)
+        .expect("fixture construction");
+    let mesh = &mapping.mesh;
+
+    let local_10 = mapping.remote_to_local[&10];
+    let local_11 = mapping.remote_to_local[&11];
+    assert_eq!(mesh[&local_10].display_name, "README.md");
+    assert_eq!(
+        mesh[&local_11].display_name, "image",
+        "display_name 필드가 없으면 kind 로 fallback 해야 한다"
+    );
+}
+
+#[test]
+fn merge_survivor_mapping_cleans_up_stale_terminal_on_convert_to_mesh() {
+    let mut navigation = crate::state::navigation::NavigationState::default();
+    let mut structure_ids = MirrorStructureIds::default();
+    let (_, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
+    supply_ids(&engine);
+    // 별도 발급기를 만들면 기본 workspace의 ID와 충돌하므로 engine의 발급기를 공유한다.
+    let ids = test_ids();
+    let (tx, _rx) = tasty_remote::connection::channel();
+    let frame_tx: SharedFrameSender = tx;
+
+    let surfaces_v1 = vec![serde_json::json!({
+        "remote_id": 10, "role": "terminal", "cols": 80, "rows": 24,
+    })];
+    let mut m1 =
+        merge_survivor_mapping(&HashMap::new(), &surfaces_v1, &ids, &frame_tx, &mut engine)
+            .expect("fixture construction");
+    let map1 = m1.remote_to_local.clone();
+    let local_10 = map1[&10];
+    assert!(
+        engine.runtime.terminals.get(local_10).is_some(),
+        "최초 terminal survivor 는 Terminal 을 만들어야 한다"
+    );
+    engine
+        .remote
+        .attach_mesh_frames
+        .update(local_10, vec![1, 2, 3], 1, 1, true);
+
+    // 다음 병합이 이전 kind를 조회할 수 있도록 먼저 실제 트리에 반영한다.
+    let tree = serde_json::json!({
+        "id": 9, "name": "mirror", "focused_pane": 7,
+        "panes": [ {
+            "id": 7,
+            "tabs": [ {
+                "id": 3, "name": "Shell", "active": true, "focused_surface": 10,
+                "layout": { "type": "Leaf", "id": 10, "kind": "terminal" }
+            } ]
+        } ]
+    });
+    let mut ws = build_mirror_workspace(
+        &mut structure_ids,
+        &mut navigation,
+        999,
+        "mirror",
+        &tree,
+        &ids,
+        &map1,
+        &m1.terminals,
+        &m1.mesh,
+        &m1.explorer,
+        &mut m1.markdown,
+    )
+    .expect("fixture construction");
+    ws.mirror = true;
+    engine.push_mirror_workspace(ws);
+
+    let surfaces_v2 = vec![serde_json::json!({
+        "remote_id": 10,
+        "role": "mesh",
+        "kind": "markdown",
+        "plugin_id": "com.tasty.markdown",
+        "display_name": "a.md",
+    })];
+    let m2 = merge_survivor_mapping(&map1, &surfaces_v2, &ids, &frame_tx, &mut engine)
+        .expect("fixture construction");
+    let (map2, term2, mesh2, new2) = (
+        &m2.remote_to_local,
+        &m2.terminals,
+        &m2.mesh,
+        &m2.newly_created_remote_ids,
+    );
+
+    assert_eq!(
+        map2[&10], local_10,
+        "local id 는 convert 후에도 유지돼야 한다"
+    );
+    assert!(new2.is_empty(), "survivor 는 신규 취급되면 안 된다");
+    assert!(
+        !term2.contains(&local_10),
+        "markdown 으로 바뀐 뒤에는 더 이상 terminal_locals 에 없어야 한다"
+    );
+    assert!(
+        mesh2.contains_key(&local_10),
+        "mesh_locals 에는 새로 등록돼야 한다"
+    );
+    assert!(
+        engine.runtime.terminals.get(local_10).is_none(),
+        "옛 Terminal 객체는 즉시 제거돼야 한다"
+    );
+    assert!(
+        engine.remote.attach_mesh_frames.get(local_10).is_none(),
+        "옛(terminal 시절의 무의미한) mesh frame 캐시도 제거돼야 한다"
+    );
+}
+
+/// 원격이 닫은 mirror surface는 로컬 닫기처럼 attach 점유 기록도 남기지 않는다.
+/// forwarded terminal.kill이 남긴 soft 점유가 이 경로로 사라져야 한다.
+#[test]
+fn merge_survivor_mapping_forgets_the_occupancy_of_a_remotely_closed_surface() {
+    let (_, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
+    supply_ids(&engine);
+    let ids = test_ids();
+    let (tx, _rx) = tasty_remote::connection::channel();
+    let frame_tx: SharedFrameSender = tx;
+    let parent = engine
+        .workspace_at(0)
+        .expect("workspace index is valid")
+        .all_surface_ids()[0];
+
+    let surfaces_v1 = vec![serde_json::json!({
+        "remote_id": 10, "role": "terminal", "cols": 80, "rows": 24,
+    })];
+    let m1 = merge_survivor_mapping(&HashMap::new(), &surfaces_v1, &ids, &frame_tx, &mut engine)
+        .expect("fixture construction");
+    let local_10 = m1.remote_to_local[&10];
+    engine
+        .occupy_soft(local_10, parent, None)
+        .expect("soft 점유");
+
+    let m2 = merge_survivor_mapping(&m1.remote_to_local, &[], &ids, &frame_tx, &mut engine)
+        .expect("fixture construction");
+    assert!(m2.remote_to_local.is_empty());
+    assert!(
+        engine.live.occupancy.occupancy_of(local_10).is_none(),
+        "원격이 닫은 surface 의 soft 점유가 남았다"
+    );
+}
+
+#[test]
+fn merge_survivor_mapping_creates_terminal_when_mesh_survivor_converts_to_terminal() {
+    let mut navigation = crate::state::navigation::NavigationState::default();
+    let mut structure_ids = MirrorStructureIds::default();
+    let (_, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
+    supply_ids(&engine);
+    // 기본 workspace와 ID가 충돌하지 않도록 engine의 발급기를 공유한다.
+    let ids = test_ids();
+    let (tx, _rx) = tasty_remote::connection::channel();
+    let frame_tx: SharedFrameSender = tx;
+
+    let surfaces_v1 = vec![serde_json::json!({
+        "remote_id": 20,
+        "role": "mesh",
+        "kind": "markdown",
+        "plugin_id": "com.tasty.markdown",
+        "display_name": "a.md",
+    })];
+    let mut m1 =
+        merge_survivor_mapping(&HashMap::new(), &surfaces_v1, &ids, &frame_tx, &mut engine)
+            .expect("fixture construction");
+    let map1 = m1.remote_to_local.clone();
+    let local_20 = map1[&20];
+    assert!(
+        engine.runtime.terminals.get(local_20).is_none(),
+        "mesh survivor 는 애초에 Terminal 이 없어야 한다"
+    );
+
+    let tree = serde_json::json!({
+        "id": 9, "name": "mirror", "focused_pane": 7,
+        "panes": [ {
+            "id": 7,
+            "tabs": [ {
+                "id": 3, "name": "a.md", "active": true, "focused_surface": 20,
+                "layout": { "type": "Leaf", "id": 20, "kind": "markdown" }
+            } ]
+        } ]
+    });
+    let mut ws = build_mirror_workspace(
+        &mut structure_ids,
+        &mut navigation,
+        999,
+        "mirror",
+        &tree,
+        &ids,
+        &map1,
+        &m1.terminals,
+        &m1.mesh,
+        &m1.explorer,
+        &mut m1.markdown,
+    )
+    .expect("fixture construction");
+    ws.mirror = true;
+    engine.push_mirror_workspace(ws);
+    // terminal이 아니었던 surface의 이전 cwd도 지워야 한다.
+    engine.set_mirror_surface_cwd(local_20, Some("/srv/remote/docs".to_string()));
+
+    let surfaces_v2 = vec![serde_json::json!({
+        "remote_id": 20, "role": "terminal", "cols": 80, "rows": 24,
+    })];
+    let m2 = merge_survivor_mapping(&map1, &surfaces_v2, &ids, &frame_tx, &mut engine)
+        .expect("fixture construction");
+    let (map2, term2, new2) = (
+        &m2.remote_to_local,
+        &m2.terminals,
+        &m2.newly_created_remote_ids,
+    );
+
+    assert_eq!(
+        map2[&20], local_20,
+        "local id 는 convert 후에도 유지돼야 한다"
+    );
+    assert!(new2.is_empty(), "survivor 는 신규 취급되면 안 된다");
+    assert!(term2.contains(&local_20));
+    assert!(
+        !engine.remote.mirror_surface_cwd.contains_key(&local_20),
+        "kind 전환은 비-terminal 출발이어도 옛 cwd 를 버린다"
+    );
+    assert!(
+        engine.runtime.terminals.get(local_20).is_some(),
+        "mesh → terminal convert 는 새 Terminal 을 만들어야 한다(안 그러면 입력이 안 감)"
+    );
+}
+
+#[test]
+fn merge_survivor_mapping_builds_local_markdown_surface_for_markdown_role() {
+    let mut navigation = crate::state::navigation::NavigationState::default();
+    let mut structure_ids = MirrorStructureIds::default();
+    let (_, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
+    supply_ids(&engine);
+    let rx = register_markdown_kind(&engine, MARKDOWN_PLUGIN_ID);
+    let ids = test_ids();
+    let (tx, _frames) = tasty_remote::connection::channel();
+    let frame_tx: SharedFrameSender = tx;
+
+    let mut mapping = merge_survivor_mapping(
+        &HashMap::new(),
+        &[markdown_descriptor(30)],
+        &ids,
+        &frame_tx,
+        &mut engine,
+    )
+    .expect("fixture construction");
+    let local = mapping.remote_to_local[&30];
+    assert_eq!(mapping.markdown_ids(), HashSet::from([local]));
+
+    let created = created_surfaces(&rx);
+    assert_eq!(created.len(), 1, "plugin 에 surface.create 가 한 번 간다");
+    assert_eq!(created[0].0, local);
+    assert_eq!(created[0].1["remote"]["file"], "/remote/docs/README.md");
+    assert!(
+        created[0].1.get("file").is_none(),
+        "원격 경로를 `file` 로 실으면 plugin 이 client 로컬 파일을 읽는다"
+    );
+
+    let ws = build_mirror_workspace(
+        &mut structure_ids,
+        &mut navigation,
+        999,
+        "mirror",
+        &single_leaf_tree(30),
+        &ids,
+        &mapping.remote_to_local,
+        &mapping.terminals,
+        &mapping.mesh,
+        &mapping.explorer,
+        &mut mapping.markdown,
+    )
+    .expect("fixture construction");
+    let pane = ws.pane_layout().first_pane().expect("pane");
+    let leaf = pane.tabs[0]
+        .layout_if_initialized()
+        .and_then(|l| l.find_surface(local))
+        .expect("markdown leaf");
+    assert_eq!(
+        leaf.kind(),
+        "markdown",
+        "빈 surface 가 아니라 markdown surface"
+    );
+}
+
+/// 다른 소유자의 markdown kind는 사용하지 않고 빈 surface로 둔다.
+#[test]
+fn markdown_role_stays_empty_when_another_plugin_owns_the_kind() {
+    let mut navigation = crate::state::navigation::NavigationState::default();
+    let mut structure_ids = MirrorStructureIds::default();
+    let (_, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
+    supply_ids(&engine);
+    let rx = register_markdown_kind(&engine, "com.example.other-markdown");
+    let ids = test_ids();
+    let (tx, _frames) = tasty_remote::connection::channel();
+    let frame_tx: SharedFrameSender = tx;
+
+    let mut mapping = merge_survivor_mapping(
+        &HashMap::new(),
+        &[markdown_descriptor(30)],
+        &ids,
+        &frame_tx,
+        &mut engine,
+    )
+    .expect("fixture construction");
+    assert!(mapping.markdown.is_empty());
+    assert!(created_surfaces(&rx).is_empty());
+    let local = mapping.remote_to_local[&30];
+    let ws = build_mirror_workspace(
+        &mut structure_ids,
+        &mut navigation,
+        999,
+        "mirror",
+        &single_leaf_tree(30),
+        &ids,
+        &mapping.remote_to_local,
+        &mapping.terminals,
+        &mapping.mesh,
+        &mapping.explorer,
+        &mut mapping.markdown,
+    )
+    .expect("fixture construction");
+    let pane = ws.pane_layout().first_pane().expect("pane");
+    let leaf = pane.tabs[0]
+        .layout_if_initialized()
+        .and_then(|l| l.find_surface(local))
+        .expect("leaf");
+    assert_eq!(leaf.kind(), "empty");
+    assert!(
+        !engine
+            .runtime
+            .surfaces
+            .get(&local)
+            .and_then(|surface| surface.as_any().downcast_ref::<EmptySurface>())
+            .is_some_and(|empty| empty.deferred.is_some())
+    );
+}
+
+#[test]
+fn markdown_role_waits_for_the_plugin_kind_and_reifies_as_a_mirror_document() {
+    let mut navigation = crate::state::navigation::NavigationState::default();
+    let mut structure_ids = MirrorStructureIds::default();
+    let (_, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
+    // The common fixture registers markdown; this scenario starts with no live kind.
+    assert_eq!(
+        engine
+            .runtime
+            .surface_registry
+            .withdraw_plugin(MARKDOWN_PLUGIN_ID),
+        vec![MARKDOWN_MIRROR_KIND],
+    );
+    assert!(
+        engine
+            .runtime
+            .surface_registry
+            .get_live(MARKDOWN_MIRROR_KIND)
+            .is_none()
+    );
+    supply_ids(&engine);
+    let ids = test_ids();
+    let (tx, _frames) = tasty_remote::connection::channel();
+    let frame_tx: SharedFrameSender = tx;
+
+    let mut mapping = merge_survivor_mapping(
+        &HashMap::new(),
+        &[markdown_descriptor(30)],
+        &ids,
+        &frame_tx,
+        &mut engine,
+    )
+    .expect("fixture construction");
+    let local = mapping.remote_to_local[&30];
+    assert_eq!(
+        mapping.markdown_ids(),
+        HashSet::from([local]),
+        "placeholder 도 이 세션의 markdown leaf 로 센다 — destroy·끊김 통지 대상"
+    );
+    let ws = build_mirror_workspace(
+        &mut structure_ids,
+        &mut navigation,
+        999,
+        "mirror",
+        &single_leaf_tree(30),
+        &ids,
+        &mapping.remote_to_local,
+        &mapping.terminals,
+        &mapping.mesh,
+        &mapping.explorer,
+        &mut mapping.markdown,
+    )
+    .expect("fixture construction");
+    assert!(
+        engine
+            .runtime
+            .surfaces
+            .get(&local)
+            .and_then(|surface| surface.as_any().downcast_ref::<EmptySurface>())
+            .is_some_and(|empty| empty.deferred.is_some()),
+        "kind 가 없으면 kind 대기 placeholder"
+    );
+    engine.push_mirror_workspace(ws);
+
+    engine.reify_displayed_mirror_resources(&[local]);
+    assert_eq!(engine.find_surface_by_id(local).unwrap().kind(), "empty");
+    let rx = register_markdown_kind(&engine, MARKDOWN_PLUGIN_ID);
+    engine.reify_displayed_mirror_resources(&[local]);
+
+    let leaf = engine.find_surface_by_id(local).expect("leaf");
+    assert_eq!(leaf.kind(), "markdown");
+    let restored: Vec<Value> = rx
+        .try_iter()
+        .filter_map(|cmd| match cmd {
+            crate::plugin_bridge::host_cmd::HostCmd::RemoteSurfaceRestored {
+                surface_id,
+                data,
+                ..
+            } if surface_id == local => Some(data),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(restored.len(), 1, "plugin 에 surface.restore 가 한 번 간다");
+    assert_eq!(restored[0]["remote"]["file"], "/remote/docs/README.md");
+    assert_eq!(restored[0]["display_name"], "README.md");
+    assert!(restored[0].get("file").is_none());
+}

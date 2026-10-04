@@ -1,5 +1,17 @@
 //! Bind outgoing requests to the original remote session and surface.
-use super::*;
+
+#[cfg(test)]
+mod tests;
+
+use super::navigation::pending_op_focus_for;
+use super::resources::{markdown_content_failure, push_markdown_content_result};
+use super::wire::send_control_frame;
+use crate::app::App;
+use crate::app::attach_client::{GIT_VIEWER_PLUGIN_ID, GIT_VIEWER_QUERY_RESULT_EVENT};
+use crate::ipc::stream::{StreamControl, StreamTag, StructuralOp};
+use crate::runtime::engine_session::EngineId;
+use std::collections::HashMap;
+use tasty_remote::client_session::{AttachClientSession, SessionState, SharedFrameSender};
 
 impl App {
     /// 로컬 구조 변경 큐를 원격으로 보내며 결과는 회신과 delta로 적용한다.
@@ -16,7 +28,7 @@ impl App {
         }
     }
 
-    pub(super) fn forward_one_resize(&mut self, local_sid: u32, cols: usize, rows: usize) {
+    fn forward_one_resize(&mut self, local_sid: u32, cols: usize, rows: usize) {
         let Some((sess, remote_sid)) =
             find_mirror_session_and_remote_id(&mut self.remote.sessions, local_sid, "resize")
         else {
@@ -105,7 +117,7 @@ impl App {
         }
     }
 
-    pub(super) fn fail_pending_git_query(
+    fn fail_pending_git_query(
         &mut self,
         request_id: u64,
         kind: tasty_ipc::stream_hub::GitQueryKind,
@@ -135,7 +147,7 @@ impl App {
     }
 
     /// git-viewer에 결과를 전달하고 열린 인스턴스의 repaint를 예약한다.
-    pub(super) fn broadcast_git_query_reply(&mut self, payload: serde_json::Value) {
+    fn broadcast_git_query_reply(&mut self, payload: serde_json::Value) {
         let git_viewer_instances: Vec<u64> = match self.plugin_manager.as_mut() {
             Some(mgr) => {
                 mgr.emit_host_event_to_plugin(
@@ -171,7 +183,7 @@ impl App {
         }
     }
 
-    pub(super) fn forward_one_mesh_context(
+    fn forward_one_mesh_context(
         &mut self,
         local_sid: u32,
         ctx: crate::core::AttachMeshContextForward,
@@ -205,7 +217,7 @@ impl App {
         }
     }
 
-    pub(super) fn forward_one_mesh_input(
+    fn forward_one_mesh_input(
         &mut self,
         local_sid: u32,
         input: tasty_plugin_protocol::protocol::RawInputWire,
@@ -248,7 +260,7 @@ impl App {
     }
 
     /// 해제 전송 실패는 로그를 남기고 폐기한다. 별도 재시도 큐는 없다.
-    pub(super) fn forward_one_attention_clear(&mut self, local_sid: u32) {
+    fn forward_one_attention_clear(&mut self, local_sid: u32) {
         let Some((sess, remote_sid)) = find_mirror_session_and_remote_id(
             &mut self.remote.sessions,
             local_sid,
@@ -265,7 +277,7 @@ impl App {
         }
     }
 
-    pub(super) fn forward_one_mesh_full_resend_request(&mut self, local_sid: u32) {
+    fn forward_one_mesh_full_resend_request(&mut self, local_sid: u32) {
         let Some((sess, remote_sid)) = find_mirror_session_and_remote_id(
             &mut self.remote.sessions,
             local_sid,
@@ -284,7 +296,7 @@ impl App {
 }
 
 /// 에이전트의 닫기 요청을 원격 사용자 복원 스택에 넣지 않도록 origin을 전달한다.
-pub(super) fn forward_origin_of(user_triggered: bool) -> tasty_ipc::stream::ForwardOrigin {
+fn forward_origin_of(user_triggered: bool) -> tasty_ipc::stream::ForwardOrigin {
     if user_triggered {
         tasty_ipc::stream::ForwardOrigin::User
     } else {
@@ -293,7 +305,7 @@ pub(super) fn forward_origin_of(user_triggered: bool) -> tasty_ipc::stream::Forw
 }
 
 /// origin을 항상 포함한 구조 변경 요청 payload.
-pub(super) fn structural_op_payload(
+fn structural_op_payload(
     op_id: u64,
     op: tasty_ipc::stream::StructuralOp,
     user_triggered: bool,
@@ -309,7 +321,7 @@ pub(super) fn structural_op_payload(
 /// 로컬 mirror ID로 만든 구조 변경을 원격 ID로 바꾼다. anchor는 호출자가 이미 찾았다.
 /// MoveSurface의 target도 로컬 ID이므로 같은 세션의 매핑으로 바꾸고, 없으면 보내지 않는다.
 /// 로컬 ID를 그대로 보내면 서버의 무관한 surface를 가리킬 수 있다.
-pub(super) fn remote_structural_op(
+fn remote_structural_op(
     local_op: &StructuralOp,
     remote_anchor: u32,
     remote_to_local: &HashMap<u32, u32>,
@@ -331,7 +343,7 @@ pub(super) fn remote_structural_op(
     Some(wire.with_move_target_surface_id(remote_target))
 }
 
-pub(super) fn find_mirror_session_and_remote_id<'a>(
+fn find_mirror_session_and_remote_id<'a>(
     sessions: &'a mut [AttachClientSession],
     local_sid: u32,
     label: &str,
@@ -523,5 +535,111 @@ impl App {
             focus,
             silent_failure: !user,
         })
+    }
+}
+
+impl App {
+    /// 목록 소비자는 wire에 없으므로 요청 ID에 기록한다. None은 picker, Some은 explorer다.
+    fn send_list_dir_request(
+        &mut self,
+        local_ws_id: u32,
+        request_id: u64,
+        dir: &str,
+        consumer: Option<u32>,
+    ) -> anyhow::Result<()> {
+        let Some(sess) = self
+            .remote
+            .sessions
+            .iter_mut()
+            .find(|s| s.state.local_workspace == local_ws_id)
+        else {
+            anyhow::bail!("no attach session for mirror workspace {local_ws_id}");
+        };
+        let msg = serde_json::json!({
+            "event": "list_dir_request",
+            "request_id": request_id,
+            "dir": dir,
+        });
+        let result = send_control_frame(&sess.transport.frame_tx, &msg);
+        if result.is_ok() {
+            sess.state
+                .pending_list_dir_consumers
+                .insert(request_id, consumer);
+        }
+        result
+    }
+
+    /// 원격 surface ID를 보내 서버가 실제 cwd에서 Git 정보를 찾게 한다.
+    fn send_git_query_request(
+        &mut self,
+        local_surface_id: u32,
+        request_id: u64,
+        kind: tasty_ipc::stream_hub::GitQueryKind,
+        worktree_path: Option<&str>,
+        diff_path: Option<&str>,
+    ) -> anyhow::Result<()> {
+        let Some(sess) = self.remote.sessions.iter().find(|s| {
+            s.state
+                .remote_to_local
+                .values()
+                .any(|&l| l == local_surface_id)
+        }) else {
+            anyhow::bail!("no attach session for mirror surface {local_surface_id}");
+        };
+        let Some(remote_sid) = sess
+            .state
+            .remote_to_local
+            .iter()
+            .find(|&(_, &l)| l == local_surface_id)
+            .map(|(&r, _)| r)
+        else {
+            anyhow::bail!("no remote surface id for mirror surface {local_surface_id}");
+        };
+        let msg = serde_json::json!({
+            "event": "git_query_request",
+            "request_id": request_id,
+            "surface_id": remote_sid,
+            "kind": kind.as_wire_str(),
+            "worktree_path": worktree_path,
+            "diff_path": diff_path,
+        });
+        send_control_frame(&sess.transport.frame_tx, &msg)
+    }
+
+    fn send_markdown_content_request(
+        &mut self,
+        req: &crate::core::PendingMarkdownContentForward,
+    ) -> anyhow::Result<()> {
+        let (local_surface_id, request_id) = (req.local_surface_id, req.request_id);
+        let Some(sess) = self
+            .remote
+            .sessions
+            .iter_mut()
+            .find(|s| s.state.markdown_locals.contains(&local_surface_id))
+        else {
+            anyhow::bail!("no attach session holds mirror markdown surface {local_surface_id}");
+        };
+        let Some(remote_sid) = sess
+            .state
+            .remote_to_local
+            .iter()
+            .find(|&(_, &l)| l == local_surface_id)
+            .map(|(&r, _)| r)
+        else {
+            anyhow::bail!("no remote surface id for mirror surface {local_surface_id}");
+        };
+        if sess.state.phase != SessionState::Connected {
+            anyhow::bail!("mirror session is reconnecting");
+        }
+        let msg = serde_json::json!({
+            "event": "markdown_content_request",
+            "request_id": request_id,
+            "surface_id": remote_sid,
+        });
+        send_control_frame(&sess.transport.frame_tx, &msg)?;
+        sess.state
+            .agent_requests
+            .note_markdown(req.agent_origin, request_id);
+        Ok(())
     }
 }

@@ -19,4 +19,4 @@ field	src/view/preset/draft.rs	insert	2
 field	src/view/preset/draft.rs	remove	2
 field	src/view/preset/draft.rs	rename	3
 terminal	src/adapters/ipc/handler/pty.rs	handle_spawn	1
-terminal	src/app/attach_client/projection.rs	make_mirror_surface	1
+terminal	src/app/attach_client/resources.rs	make_mirror_surface	1

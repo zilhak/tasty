@@ -1,5 +1,28 @@
 //! Apply ordered incoming events to windowed or parked mirror engines.
-use super::*;
+
+#[cfg(test)]
+mod tests;
+use super::agent_origin;
+use super::connection::find_parked_with_workspace;
+use super::navigation::{capture_focused_remote, restore_focus_after_delta, set_focus_to_surface};
+use super::projection::{build_mirror_workspace, lease_mirror_ids, mirror_id_needs};
+use super::resources::{
+    destroy_mirror_markdown_surfaces, install_mirror_fallbacks, push_markdown_changed,
+    push_markdown_content_result,
+};
+use super::survivors::merge_survivor_mapping;
+use crate::app::App;
+use crate::app::attach_client::{GIT_VIEWER_PLUGIN_ID, GIT_VIEWER_QUERY_RESULT_EVENT};
+use crate::app::window_access::engines_mut;
+use crate::ipc::stream::StreamTag;
+use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_session::EngineId;
+use crate::view::ui::View as _;
+use serde_json::Value;
+use std::sync::atomic::Ordering;
+use tasty_remote::client_session::{
+    AttachClientSession, MirrorEvent, PendingOpFocus, SessionState,
+};
 
 impl App {
     /// 창이 있는 engine, parked engine 순서로 적용 대상을 찾은 뒤 출력 버퍼를 비운다.
@@ -101,13 +124,13 @@ impl App {
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum MirrorOutputHost {
+enum MirrorOutputHost {
     Window(winit::window::WindowId),
     Parked(EngineId),
 }
 
 /// 창이 있는 engine을 우선하고 없으면 parked engine에서 찾는다. None이면 버퍼를 비우지 않는다.
-pub(super) fn mirror_output_host<'a>(
+fn mirror_output_host<'a>(
     windowed: Option<winit::window::WindowId>,
     parked: impl IntoIterator<Item = (EngineId, &'a crate::core::CoreState)>,
     local_workspace: u32,
@@ -118,18 +141,9 @@ pub(super) fn mirror_output_host<'a>(
 }
 
 /// 출력 적용·정리·고아 판정이 공유하는 parked engine 검색. 여러 항목 모두 확인한다.
-pub(in crate::app) fn find_parked_with_workspace<'a>(
-    parked: impl IntoIterator<Item = (EngineId, &'a crate::core::CoreState)>,
-    local_workspace: u32,
-) -> Option<EngineId> {
-    parked
-        .into_iter()
-        .find(|(_, engine)| engine.has_workspace(local_workspace))
-        .map(|(id, _)| id)
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum DisconnectDisposition {
+enum DisconnectDisposition {
     None,
     Resync,
     Reconnect,
@@ -138,7 +152,7 @@ pub(super) enum DisconnectDisposition {
 
 /// 연결별 종료 신호에는 한 번만 반응한다. 손실로 Detach를 보낸 세션은 anchor 없이도 재attach한다.
 /// parked에서 Detach를 미룬 동안 별도로 끊기면 일반 끊김으로 처리한다.
-pub(super) fn disconnect_disposition(
+fn disconnect_disposition(
     disconnected: bool,
     state: SessionState,
     resync_released: bool,
@@ -156,14 +170,14 @@ pub(super) fn disconnect_disposition(
 }
 
 /// 창과 parked 상태의 공통 적용 대상. 창이 있어야 의미 있는 toast만 구별한다.
-pub(super) struct MirrorHost<'a, 'engine> {
-    pub(super) state: &'a mut crate::state::MainViewState,
-    pub(super) engine: &'a mut EngineMut<'engine>,
-    pub(super) windowed: bool,
+struct MirrorHost<'a, 'engine> {
+    state: &'a mut crate::state::MainViewState,
+    engine: &'a mut EngineMut<'engine>,
+    windowed: bool,
 }
 
 impl<'a, 'engine> MirrorHost<'a, 'engine> {
-    pub(super) fn windowed(
+    fn windowed(
         state: &'a mut crate::state::MainViewState,
         engine: &'a mut EngineMut<'engine>,
     ) -> Self {
@@ -174,7 +188,7 @@ impl<'a, 'engine> MirrorHost<'a, 'engine> {
         }
     }
 
-    pub(super) fn parked(
+    fn parked(
         state: &'a mut crate::state::MainViewState,
         engine: &'a mut EngineMut<'engine>,
     ) -> Self {
@@ -186,7 +200,7 @@ impl<'a, 'engine> MirrorHost<'a, 'engine> {
     }
 
     /// 적용 대상이 준비된 뒤 버퍼를 비우고 순서대로 적용한다.
-    pub(super) fn drain_and_apply(
+    fn drain_and_apply(
         &mut self,
         sess: &mut AttachClientSession,
         plugin_manager: &mut Option<crate::plugin::PluginManager>,
@@ -199,7 +213,7 @@ impl<'a, 'engine> MirrorHost<'a, 'engine> {
         true
     }
 
-    pub(super) fn toast(&mut self, message: String, kind: crate::adapters::ui::ToastKind) {
+    fn toast(&mut self, message: String, kind: crate::adapters::ui::ToastKind) {
         if self.windowed {
             self.state
                 .toasts
@@ -211,7 +225,7 @@ impl<'a, 'engine> MirrorHost<'a, 'engine> {
 }
 
 /// 적용 대상이 없으면 버퍼를 유지해 다음 수신 이벤트나 주기 확인에서 다시 처리한다.
-pub(super) fn apply_pending_mirror_output(
+fn apply_pending_mirror_output(
     sess: &mut AttachClientSession,
     host: Option<MirrorHost<'_, '_>>,
     plugin_manager: &mut Option<crate::plugin::PluginManager>,
@@ -222,7 +236,7 @@ pub(super) fn apply_pending_mirror_output(
     host.drain_and_apply(sess, plugin_manager)
 }
 
-pub(super) fn apply_mirror_events(
+fn apply_mirror_events(
     sess: &mut AttachClientSession,
     host: &mut MirrorHost<'_, '_>,
     plugin_manager: &mut Option<crate::plugin::PluginManager>,
@@ -265,11 +279,7 @@ pub(super) fn apply_mirror_events(
 
 /// 손실 통지마다 스트림 표지를 바꾼다. 이미 재attach 대기 중이면 손실 수를 누적한다.
 /// parked 상태에서는 창을 다시 찾을 때까지 Detach를 미룬다.
-pub(super) fn begin_resync(
-    sess: &mut AttachClientSession,
-    host: &mut MirrorHost<'_, '_>,
-    frames: u64,
-) {
+fn begin_resync(sess: &mut AttachClientSession, host: &mut MirrorHost<'_, '_>, frames: u64) {
     for &local in sess.state.remote_to_local.values() {
         if let Some(t) = host.engine.runtime.terminals.get_mut(local) {
             t.renew_output_stream();
@@ -295,10 +305,7 @@ pub(super) fn begin_resync(
     release_for_resync(sess, host);
 }
 
-pub(super) fn resume_resync_in_window(
-    sess: &mut AttachClientSession,
-    host: &mut MirrorHost<'_, '_>,
-) {
+fn resume_resync_in_window(sess: &mut AttachClientSession, host: &mut MirrorHost<'_, '_>) {
     if !sess.state.resync_awaiting_window || !host.windowed {
         return;
     }
@@ -312,7 +319,7 @@ pub(super) fn resume_resync_in_window(
 }
 
 /// Detach 뒤 EOF를 확인하면 재attach한다. 큐 전송 실패도 끊김 처리를 기다린다.
-pub(super) fn release_for_resync(sess: &mut AttachClientSession, host: &mut MirrorHost<'_, '_>) {
+fn release_for_resync(sess: &mut AttachClientSession, host: &mut MirrorHost<'_, '_>) {
     if let Err(e) = sess.send_frame(StreamTag::Detach, Vec::new()) {
         tracing::warn!("attach mirror: 재동기화용 Detach 를 큐에 못 넣었다 — 끊김을 기다린다: {e}");
     }
@@ -322,7 +329,7 @@ pub(super) fn release_for_resync(sess: &mut AttachClientSession, host: &mut Mirr
     );
 }
 
-pub(super) fn show_mirror_capture_result(
+fn show_mirror_capture_result(
     host: &mut MirrorHost<'_, '_>,
     ok: bool,
     path: Option<String>,
@@ -349,7 +356,7 @@ pub(super) fn show_mirror_capture_result(
     host.toast(msg, kind);
 }
 
-pub(super) fn apply_one_mirror_event(
+fn apply_one_mirror_event(
     sess: &mut AttachClientSession,
     host: &mut MirrorHost<'_, '_>,
     plugin_manager: &mut Option<crate::plugin::PluginManager>,
@@ -390,9 +397,12 @@ pub(super) fn apply_one_mirror_event(
                 );
             }
         }
-        MirrorEvent::StructuralFailed(op_id, reason) => {
-            agent_origin::apply_structural_failed(sess, host, op_id, reason)
-        }
+        MirrorEvent::StructuralFailed(op_id, reason) => agent_origin::apply_structural_failed(
+            sess,
+            |message, kind| host.toast(message, kind),
+            op_id,
+            reason,
+        ),
         MirrorEvent::StructuralSucceeded(op_id) => {
             // 성공한 요청의 포커스 의도는 다음 delta가 한 번 소비한다.
             sess.state.agent_requests.forget_structural(op_id);
@@ -518,7 +528,7 @@ pub(super) fn apply_one_mirror_event(
 }
 
 /// 요청 때 기록한 소비자로 목록을 전달한다. 요청 기록이 없으면 오래된 회신으로 보고 무시한다.
-pub(super) fn apply_list_dir_result_event(
+fn apply_list_dir_result_event(
     sess: &mut AttachClientSession,
     host: &mut MirrorHost<'_, '_>,
     request_id: u64,
@@ -598,7 +608,7 @@ pub(super) fn apply_list_dir_result_event(
     }
 }
 
-pub(super) fn apply_git_query_result_event(
+fn apply_git_query_result_event(
     plugin_manager: &mut Option<crate::plugin::PluginManager>,
     state: &mut crate::state::MainViewState,
     request_id: u64,
@@ -633,17 +643,14 @@ pub(super) fn apply_git_query_result_event(
     }
 }
 
-pub(super) fn markdown_mirror_local(
-    sess: &AttachClientSession,
-    remote_surface_id: u32,
-) -> Option<u32> {
+fn markdown_mirror_local(sess: &AttachClientSession, remote_surface_id: u32) -> Option<u32> {
     let &local = sess.state.remote_to_local.get(&remote_surface_id)?;
     sess.state.markdown_locals.contains(&local).then_some(local)
 }
 
 /// 원격 ID를 로컬 markdown ID로 바꿔 회신한다. leaf가 사라졌거나 kind가 바뀌었으면 무시한다.
 #[allow(clippy::too_many_arguments)] // reason: wire 회신 필드를 풀어 받는다(GitQueryResult 적용과 같은 형태)
-pub(super) fn apply_markdown_content_result_event(
+fn apply_markdown_content_result_event(
     sess: &mut AttachClientSession,
     host: &mut MirrorHost<'_, '_>,
     plugin_manager: &mut Option<crate::plugin::PluginManager>,
@@ -670,14 +677,18 @@ pub(super) fn apply_markdown_content_result_event(
     });
     push_markdown_content_result(plugin_manager, &payload);
     if ok && truncated {
-        agent_origin::notify_markdown_truncated(host, local, agent_origin);
+        agent_origin::notify_markdown_truncated(
+            |message, kind| host.toast(message, kind),
+            local,
+            agent_origin,
+        );
     }
 }
 
 /// 새 구조를 반영하되 살아남은 surface의 로컬 ID·자원과 사용자의 포커스를 보존한다.
 /// 순수 로컬 포커스 이동은 서버에 전달하지 않으므로 원격 포커스를 그대로 덮어쓰지 않는다.
 /// 사라진 로컬 markdown ID를 반환해 호출자가 플러그인에 destroy를 보낼 수 있게 한다.
-pub(super) fn apply_mirror_structural_delta(
+fn apply_mirror_structural_delta(
     navigation: &mut crate::state::navigation::NavigationState,
     sess: &mut AttachClientSession,
     engine: &mut EngineMut<'_>,
@@ -686,7 +697,13 @@ pub(super) fn apply_mirror_structural_delta(
     surfaces: &[Value],
     pending_focus: Option<PendingOpFocus>,
 ) -> anyhow::Result<Vec<u32>> {
-    let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
+    let ids = lease_mirror_ids(
+        &engine.runtime.ids,
+        &engine.runtime.waker,
+        &tree,
+        surfaces.len(),
+        false,
+    )?;
 
     let old_focused_remote: Option<u32> = engine
         .workspaces()
@@ -736,7 +753,7 @@ pub(super) fn apply_mirror_structural_delta(
             &mapping.explorer,
             &mut mapping.markdown,
         )?;
-        install_mirror_fallbacks(&ws, engine);
+        install_mirror_fallbacks(&ws, &mut engine.runtime.surfaces);
         ws.mirror = true;
 
         // 사용자가 새 surface를 만들었다면 옛 포커스 복원보다 새 surface 선택을 우선한다.
@@ -777,69 +794,4 @@ pub(super) fn apply_mirror_structural_delta(
         );
     }
     Ok(removed_markdown)
-}
-
-pub(super) fn restore_focus_after_delta(
-    navigation: &mut crate::state::navigation::NavigationState,
-    ws: &mut Workspace,
-    old_focused_remote: Option<u32>,
-    remote_to_local: &HashMap<u32, u32>,
-) -> bool {
-    let Some(remote_sid) = old_focused_remote else {
-        return false;
-    };
-    let Some(&new_local_sid) = remote_to_local.get(&remote_sid) else {
-        return false;
-    };
-    set_focus_to_surface(navigation, ws, new_local_sid)
-}
-
-pub(super) fn set_focus_to_surface(
-    navigation: &mut crate::state::navigation::NavigationState,
-    ws: &Workspace,
-    local_sid: u32,
-) -> bool {
-    let Some((pane_id, tab_id)) = find_pane_and_tab_for_surface(ws, local_sid) else {
-        return false;
-    };
-    navigation.select_pane(ws, pane_id);
-    if let Some(pane) = ws.pane_layout().find_pane(pane_id)
-        && let Some(tab_index) = pane.tabs.iter().position(|t| t.id == tab_id)
-    {
-        navigation.select_tab(pane, tab_id);
-        navigation.select_surface(&pane.tabs[tab_index], local_sid);
-        true
-    } else {
-        false
-    }
-}
-
-/// Surviving remote surface IDs restore the active branch after a subtree moves.
-pub(super) fn capture_focused_remote(
-    navigation: &crate::state::navigation::NavigationState,
-    ws: &Workspace,
-    remote_to_local: &HashMap<u32, u32>,
-) -> Option<u32> {
-    let pane = ws.pane_layout().find_pane(navigation.pane_id(ws)?)?;
-    let tab = pane.tabs.get(navigation.tab_index(pane))?;
-    let local_sid = navigation.surface_id(tab)?;
-    remote_to_local
-        .iter()
-        .find(|&(_, &l)| l == local_sid)
-        .map(|(&r, _)| r)
-}
-
-/// 아직 engine에 넣지 않은 새 workspace에서도 찾을 수 있도록 범위를 workspace 하나로 제한한다.
-pub(super) fn find_pane_and_tab_for_surface(ws: &Workspace, surface_id: u32) -> Option<(u32, u32)> {
-    for pane_id in ws.pane_layout().all_pane_ids() {
-        let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
-            continue;
-        };
-        for tab in &pane.tabs {
-            if tab.contains_surface(surface_id) {
-                return Some((pane_id, tab.id));
-            }
-        }
-    }
-    None
 }

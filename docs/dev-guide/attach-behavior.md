@@ -6,7 +6,7 @@ attach의 서버·클라이언트 처리와 연결·점유·복구 규칙을 설
 
 ## GUI client 모듈과 대기 상태
 
-`src/app/attach_client.rs`는 모듈 진입점과 공통 입력 binding을 둔다.
+`src/app/attach_client.rs`는 모듈 선언과 외부 호출용 export만 둔다. 하위 모듈은 사용하는 타입과 함수의 소유 모듈을 직접 import하며, 부모를 통한 glob import는 사용하지 않는다.
 
 | 모듈 (`src/app/attach_client/`) | 책임 |
 |---|---|
@@ -14,9 +14,24 @@ attach의 서버·클라이언트 처리와 연결·점유·복구 규칙을 설
 | `pending.rs` | 원 engine·View·선택·mapping·epoch 검증과 handshake/ID 예약 완료 대기 |
 | `connection.rs` | mirror 설치·재연결·정리 |
 | `output.rs` | 수신 순서와 epoch를 보존하며 창/parked engine에 출력 적용 |
-| `projection.rs`, `survivors.rs` | 논리 ID와 표시 자원을 재사용하며 mirror 트리 구성 |
+| `projection.rs` | 예약한 논리 ID로 descriptor 트리 구성; Engine 대여 없음 |
+| `navigation.rs` | 살아남은 remote/local ID로 선택 위치 복원; 실행 자원 접근 없음 |
+| `survivors.rs` | 서버 descriptor와 기존 자원을 비교해 재사용·교체·회수 |
+| `resources.rs` | 터미널·종류 인스턴스 생성, 입력 binding, 플러그인 통지 |
 | `forward.rs` | 원 target에 묶인 구조·입력·조회 요청 전달 |
-| `bulk.rs`, `wire.rs` | bulk 전송과 control payload 해석 |
+| `bulk.rs` | 캡처·bulk 전송과 원 connection epoch 검사 |
+| `wire.rs` | control payload 해석·인코딩; App/Engine 접근 없음 |
+
+내부 파서·트리 구성 보조 함수·출력 적용 함수는 해당 모듈에서만 보인다. 회귀 테스트도
+소유 모듈의 `tests.rs` 아래에 두며, 테스트를 위해 제품 함수의 공개 범위를 넓히지 않는다.
+루트 `tests.rs`는 테스트 전용 fixture만 제공한다.
+
+ID 임대는 `IdReservations`와 waker만, 터미널 생성은 `TerminalStore`와 출력 관측 여부만
+받는다. fallback 설치는 surface 저장소만, markdown kind 확인·생성은 종류 레지스트리만
+받는다. 통지 정책은 toast callback만 받아 Engine에 접근하지 않는다.
+연결 설치·출력 적용·survivor 교체는 구조와 여러 자원을 함께 변경하므로 `EngineMut`를
+유지한다. 그 대여는 개별 파서나 자원 하나만 다루는 보조 함수로 전달하지 않는다.
+
 
 AppState는 `MirrorAttempts` 하나를 보유하며 내부 맵을 직접 변경하지 않는다.
 연결 교체·취소는 대기 target을 제거하고 Remote의 해당 ticket/token만 취소한다.

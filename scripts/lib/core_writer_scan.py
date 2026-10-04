@@ -53,7 +53,7 @@ FIELD_WRITES = [
         r"\b(?:replace|swap|take)\s*\(\s*&\s*mut\s+[^,;(){}]*?\.\s*(?:" + VEC_FIELDS + r")\b")),
     ("setter", re.compile(r"\.\s*(?:set_attach_mapping|set_category)\s*\(")),
 ]
-TERMINAL_INSERT = re.compile(r"\.\s*terminals\s*\.\s*insert\s*\(")
+TERMINAL_INSERT = re.compile(r"\bterminals\s*\.\s*insert\s*\(")
 
 # View/명령 문맥 함수가 구조를 바꾸는지 판정할 때 쓰는 하위 연산 이름.
 STRUCTURAL_CALLS = [

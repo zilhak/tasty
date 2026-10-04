@@ -1,5 +1,11 @@
 //! Decode control payloads into typed mirror events.
-use super::*;
+
+#[cfg(test)]
+mod tests;
+
+use crate::ipc::stream::{StreamControl, StreamTag};
+use serde_json::Value;
+use tasty_remote::client_session::{MirrorEvent, OutFrame, SharedFrameSender};
 
 /// 제어 프레임을 mirror 이벤트로 변환한다. 어느 파서에서도 인식하지 못하면 무시한다.
 pub(super) fn mirror_event_from_control(payload: &[u8]) -> Option<MirrorEvent> {
@@ -44,7 +50,7 @@ pub(super) fn mirror_event_from_control(payload: &[u8]) -> Option<MirrorEvent> {
 }
 
 #[derive(serde::Deserialize)]
-pub(super) struct CaptureResultWire {
+struct CaptureResultWire {
     ok: bool,
     #[serde(default)]
     path: Option<String>,
@@ -52,7 +58,7 @@ pub(super) struct CaptureResultWire {
     reason: Option<String>,
 }
 
-pub(super) fn parse_capture_result(payload: &[u8]) -> Option<MirrorEvent> {
+fn parse_capture_result(payload: &[u8]) -> Option<MirrorEvent> {
     let value: Value = serde_json::from_slice(payload).ok()?;
     if value.get("event").and_then(|v| v.as_str()) != Some("capture_result") {
         return None;
@@ -67,7 +73,7 @@ pub(super) fn parse_capture_result(payload: &[u8]) -> Option<MirrorEvent> {
 
 /// modified_unix는 epoch 초이며 DirEntryInfo의 SystemTime으로 변환한다.
 #[derive(serde::Deserialize)]
-pub(super) struct ListDirEntryWire {
+struct ListDirEntryWire {
     name: String,
     is_dir: bool,
     size: u64,
@@ -78,7 +84,7 @@ pub(super) struct ListDirEntryWire {
 }
 
 #[derive(serde::Deserialize)]
-pub(super) struct ListDirResultWire {
+struct ListDirResultWire {
     request_id: u64,
     ok: bool,
     #[serde(default)]
@@ -91,7 +97,7 @@ pub(super) struct ListDirResultWire {
     reason: Option<String>,
 }
 
-pub(super) fn parse_list_dir_result(payload: &[u8]) -> Option<MirrorEvent> {
+fn parse_list_dir_result(payload: &[u8]) -> Option<MirrorEvent> {
     let value: Value = serde_json::from_slice(payload).ok()?;
     if value.get("event").and_then(|v| v.as_str()) != Some("list_dir_result") {
         return None;
@@ -122,7 +128,7 @@ pub(super) fn parse_list_dir_result(payload: &[u8]) -> Option<MirrorEvent> {
 
 /// kind별 데이터는 flatten으로 받고 호스트가 해석하지 않은 채 git-viewer로 전달한다.
 #[derive(serde::Deserialize)]
-pub(super) struct GitQueryResultWire {
+struct GitQueryResultWire {
     request_id: u64,
     ok: bool,
     #[serde(default)]
@@ -139,7 +145,7 @@ pub(super) struct GitQueryResultWire {
     rest: serde_json::Map<String, serde_json::Value>,
 }
 
-pub(super) fn parse_git_query_result(payload: &[u8]) -> Option<MirrorEvent> {
+fn parse_git_query_result(payload: &[u8]) -> Option<MirrorEvent> {
     let value: Value = serde_json::from_slice(payload).ok()?;
     if value.get("event").and_then(|v| v.as_str()) != Some("git_query_result") {
         return None;
@@ -158,7 +164,7 @@ pub(super) fn parse_git_query_result(payload: &[u8]) -> Option<MirrorEvent> {
 }
 
 #[derive(serde::Deserialize)]
-pub(super) struct MarkdownContentResultWire {
+struct MarkdownContentResultWire {
     request_id: u64,
     surface_id: u32,
     ok: bool,
@@ -172,7 +178,7 @@ pub(super) struct MarkdownContentResultWire {
     reason: Option<String>,
 }
 
-pub(super) fn parse_markdown_content_result(payload: &[u8]) -> Option<MirrorEvent> {
+fn parse_markdown_content_result(payload: &[u8]) -> Option<MirrorEvent> {
     let value: Value = serde_json::from_slice(payload).ok()?;
     if value.get("event").and_then(|v| v.as_str()) != Some("markdown_content_result") {
         return None;
@@ -189,11 +195,25 @@ pub(super) fn parse_markdown_content_result(payload: &[u8]) -> Option<MirrorEven
     })
 }
 
-pub(super) fn parse_markdown_changed(payload: &[u8]) -> Option<MirrorEvent> {
+fn parse_markdown_changed(payload: &[u8]) -> Option<MirrorEvent> {
     let value: Value = serde_json::from_slice(payload).ok()?;
     if value.get("event").and_then(|v| v.as_str()) != Some("markdown_changed") {
         return None;
     }
     let surface_id = u32::try_from(value.get("surface_id")?.as_u64()?).ok()?;
     Some(MirrorEvent::MarkdownChanged { surface_id })
+}
+
+pub(super) fn send_control_frame(
+    frame_tx: &SharedFrameSender,
+    msg: &serde_json::Value,
+) -> anyhow::Result<()> {
+    let payload = serde_json::to_vec(msg)?;
+    frame_tx
+        .send(OutFrame {
+            tag: StreamTag::Control,
+            payload,
+        })
+        .map_err(|_| anyhow::anyhow!("attach write queue closed (write thread gone)"))?;
+    Ok(())
 }

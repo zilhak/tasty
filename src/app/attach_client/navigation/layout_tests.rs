@@ -1,4 +1,9 @@
 use super::*;
+use crate::app::attach_client::projection::build_mirror_workspace;
+use crate::model::Workspace;
+use serde_json::Value;
+use std::collections::{HashMap, HashSet};
+use tasty_remote::client_session::MirrorStructureIds;
 
 struct Fixture {
     navigation: crate::state::navigation::NavigationState,
@@ -11,7 +16,7 @@ impl Default for Fixture {
         Self {
             navigation: Default::default(),
             structure_ids: Default::default(),
-            ids: super::tests::test_ids(),
+            ids: crate::app::attach_client::tests::test_ids(),
         }
     }
 }
@@ -131,60 +136,4 @@ fn removed_tab_and_surface_use_wire_defaults_but_live_choices_survive() {
         Some(105),
         "deleted local leaf uses wire, not first"
     );
-}
-
-#[test]
-fn parked_mirror_deltas_reclaim_retired_navigation_without_a_redraw() {
-    let (mut state, mut engine_session) = crate::state::tests::test_mirror_state();
-    let mut engine = engine_session.borrow_mut();
-    super::tests::supply_ids(&engine);
-    let workspace = engine.workspace_at(0).expect("workspace index is valid").id;
-    let mut session = super::tests::test_session(workspace, HashMap::new());
-    for generation in 1..=12 {
-        let previous_pane = engine
-            .workspace_at(0)
-            .expect("workspace index is valid")
-            .pane_layout()
-            .first_pane()
-            .unwrap()
-            .id;
-        state
-            .tab_bar_scroll
-            .insert(previous_pane, Default::default());
-        let tree = serde_json::json!({
-            "focused_pane": generation + 10,
-            "panes": [{"id": generation + 10, "tabs": [{
-                "id": generation + 100, "active": true, "focused_surface": 2,
-                "layout": {"type": "Split", "direction": "horizontal", "ratio": 0.5,
-                    "focus_second": false,
-                    "first": {"type": "Leaf", "id": 1, "kind": "terminal"},
-                    "second": {"type": "Leaf", "id": 2, "kind": "terminal"}}
-            }]}]
-        });
-        let surfaces = [1, 2]
-            .map(|id| {
-                serde_json::json!({
-                    "remote_id": id, "role": "terminal", "cols": 80, "rows": 24
-                })
-            })
-            .to_vec();
-        apply_one_mirror_event(
-            &mut session,
-            &mut MirrorHost::parked(&mut state, &mut engine),
-            &mut None,
-            MirrorEvent::StructuralDelta {
-                workspace_id: 7,
-                tree,
-                surfaces,
-            },
-        );
-        assert_eq!(session.state.structure_ids.panes.len(), 1);
-        assert_eq!(session.state.structure_ids.remote_tabs.len(), 1);
-        assert_eq!(
-            state.navigation.split_hints.len(),
-            1,
-            "old split keys must not accumulate while no View redraw occurs"
-        );
-        assert!(!state.tab_bar_scroll.contains_key(&previous_pane));
-    }
 }

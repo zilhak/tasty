@@ -1,5 +1,18 @@
 //! Preserve mirror IDs and runtime instances while applying server descriptor kinds.
-use super::*;
+
+#[cfg(test)]
+mod tests;
+
+use super::projection::{MirrorMarkdownLeaves, MirrorMeshInfo};
+use super::resources::{
+    MARKDOWN_MIRROR_KIND, create_mirror_markdown_surface, deferred_mirror_markdown_surface,
+    make_mirror_surface, markdown_mirror_available,
+};
+use crate::model::{EmptySurface, ExplorerPanel, TerminalSurface};
+use crate::runtime::engine_access::EngineMut;
+use serde_json::Value;
+use std::collections::{HashMap, HashSet};
+use tasty_remote::client_session::SharedFrameSender;
 
 fn mirror_descriptor_kind(s: &Value, markdown_available: bool) -> &str {
     let role = s.get("role").and_then(|v| v.as_str());
@@ -31,7 +44,7 @@ pub(super) fn merge_survivor_mapping(
     let mut explorer_locals: HashMap<u32, std::path::PathBuf> = HashMap::new();
     let mut markdown_locals: MirrorMarkdownLeaves = HashMap::new();
     let mut newly_created_remote_ids: Vec<u32> = Vec::new();
-    let markdown_available = markdown_mirror_available(&engine.as_ref());
+    let markdown_available = markdown_mirror_available(&engine.runtime.surface_registry);
     for s in surfaces {
         let remote_id = s.get("remote_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         let role = s.get("role").and_then(|v| v.as_str());
@@ -57,7 +70,15 @@ pub(super) fn merge_survivor_mapping(
                     if is_terminal {
                         let cols = s.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
                         let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
-                        make_mirror_surface(remote_id, l, cols, rows, frame_tx, engine);
+                        make_mirror_surface(
+                            remote_id,
+                            l,
+                            cols,
+                            rows,
+                            frame_tx,
+                            &mut engine.runtime.terminals,
+                            engine.observer_router.wants(l),
+                        );
                     }
                 }
                 l
@@ -67,7 +88,15 @@ pub(super) fn merge_survivor_mapping(
                 if is_terminal {
                     let cols = s.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
                     let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
-                    make_mirror_surface(remote_id, l, cols, rows, frame_tx, engine);
+                    make_mirror_surface(
+                        remote_id,
+                        l,
+                        cols,
+                        rows,
+                        frame_tx,
+                        &mut engine.runtime.terminals,
+                        engine.observer_router.wants(l),
+                    );
                 }
                 newly_created_remote_ids.push(remote_id);
                 l
@@ -110,7 +139,7 @@ pub(super) fn merge_survivor_mapping(
             if old_kind == Some(MARKDOWN_MIRROR_KIND) {
                 markdown_locals.insert(local_id, MARKDOWN_MIRROR_KIND.to_string());
             } else if let Some(surface) =
-                create_mirror_markdown_surface(s, local_id, &engine.as_ref())
+                create_mirror_markdown_surface(s, local_id, &engine.runtime.surface_registry)
             {
                 markdown_locals.insert(local_id, surface.kind().to_string());
                 engine.runtime.surfaces.insert(local_id, surface);
@@ -180,4 +209,20 @@ pub(super) fn merge_survivor_mapping(
         markdown: markdown_locals,
         newly_created_remote_ids,
     })
+}
+
+pub(super) struct SurvivorMapping {
+    pub(super) remote_to_local: HashMap<u32, u32>,
+    pub(super) terminals: HashSet<u32>,
+    pub(super) mesh: HashMap<u32, MirrorMeshInfo>,
+    pub(super) explorer: HashMap<u32, std::path::PathBuf>,
+    pub(super) markdown: MirrorMarkdownLeaves,
+    /// 새로 매핑한 원격 surface는 사용자 new-tab/split의 포커스 후보가 된다.
+    pub(super) newly_created_remote_ids: Vec<u32>,
+}
+
+impl SurvivorMapping {
+    pub(super) fn markdown_ids(&self) -> HashSet<u32> {
+        self.markdown.keys().copied().collect()
+    }
 }

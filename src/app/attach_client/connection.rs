@@ -1,5 +1,29 @@
 //! Install and retire mirror connections while preserving the originating View.
-use super::*;
+
+#[cfg(test)]
+mod tests;
+
+use super::dispatch::{AttachSource, Outcome, dispatch_attach};
+use super::navigation::{capture_focused_remote, restore_focus_after_delta};
+use super::pending;
+use super::projection::{build_mirror_workspace, lease_mirror_ids};
+use super::resources::{
+    bind_mirror_input, destroy_mirror_markdown_surfaces, install_mirror_fallbacks,
+    markdown_content_failure, push_markdown_changed, push_markdown_content_result,
+};
+use super::survivors::merge_survivor_mapping;
+use crate::app::App;
+use crate::app::window_access::{EngineScanMut, engines_mut};
+use crate::ipc::stream::StreamTag;
+use crate::runtime::engine_access::EngineMut;
+use crate::runtime::engine_session::EngineId;
+use crate::view::ui::View as _;
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::Ordering;
+use tasty_remote::client_session::{
+    AttachClientSession, ClientSessionState, MirrorStructureIds, SessionState,
+};
+use tasty_remote::transport::PreparedConnection;
 
 impl App {
     /// Keep the popup's fixed installation target through the existing user attach guard.
@@ -36,12 +60,7 @@ impl App {
         }
     }
 
-    pub(super) fn try_dispatch_one_gui_attach_ipc(
-        &mut self,
-        engine: EngineId,
-        port: u16,
-        workspace: u32,
-    ) {
+    fn try_dispatch_one_gui_attach_ipc(&mut self, engine: EngineId, port: u16, workspace: u32) {
         let own_port = self.hub.ipc_server.as_ref().map(|s| s.port());
         if let Outcome::Connected(Err(e)) =
             dispatch_attach(own_port, port, workspace, AttachSource::Ipc, || {
@@ -80,7 +99,13 @@ impl App {
             let Some((main, mut engine)) = engines_mut!(self).window_pair(window) else {
                 anyhow::bail!("no focused window to host mirror workspace");
             };
-            let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), true)?;
+            let ids = lease_mirror_ids(
+                &engine.runtime.ids,
+                &engine.runtime.waker,
+                &tree,
+                surfaces.len(),
+                true,
+            )?;
 
             let mut mapping =
                 merge_survivor_mapping(&HashMap::new(), &surfaces, &ids, &frame_tx, &mut engine)?;
@@ -101,7 +126,7 @@ impl App {
                 &mapping.explorer,
                 &mut mapping.markdown,
             )?;
-            install_mirror_fallbacks(&ws, &mut engine);
+            install_mirror_fallbacks(&ws, &mut engine.runtime.surfaces);
             ws.mirror = true;
             engine.push_mirror_workspace(ws);
             main.state.reconcile_presentation(engine.core);
@@ -196,7 +221,13 @@ impl App {
             let Some((main, mut engine)) = engines_mut!(self).window_pair(wid) else {
                 anyhow::bail!("window {wid:?} 가 더 이상 MainView 가 아님 — 재연결 취소");
             };
-            let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
+            let ids = lease_mirror_ids(
+                &engine.runtime.ids,
+                &engine.runtime.waker,
+                &tree,
+                surfaces.len(),
+                false,
+            )?;
 
             let old_focused_remote: Option<u32> = engine
                 .workspaces()
@@ -261,7 +292,7 @@ impl App {
                 &mapping.explorer,
                 &mut mapping.markdown,
             )?;
-            install_mirror_fallbacks(&ws, &mut engine);
+            install_mirror_fallbacks(&ws, &mut engine.runtime.surfaces);
             ws.mirror = true;
             if !restore_focus_after_delta(
                 &mut main.state.navigation,
@@ -482,7 +513,7 @@ impl App {
     }
 }
 /// 이 engine에 해당 workspace가 있으면 mirror 자원을 함께 정리하고 활성 인덱스를 보정한다.
-pub(super) fn remove_mirror_workspace_from_engine(
+fn remove_mirror_workspace_from_engine(
     engine: &mut EngineMut<'_>,
     state: &mut crate::state::MainViewState,
     local_workspace: u32,
@@ -514,7 +545,7 @@ pub(super) fn remove_mirror_workspace_from_engine(
 }
 
 /// 출력 적용·고아 판정과 같은 parked 순회를 사용한다. 첫 항목만 확인해서는 안 된다.
-pub(super) fn remove_mirror_workspace_from_parked(
+fn remove_mirror_workspace_from_parked(
     mut engines: EngineScanMut<'_>,
     local_workspace: u32,
     remote_to_local: &HashMap<u32, u32>,
@@ -532,7 +563,7 @@ pub(super) fn remove_mirror_workspace_from_parked(
     remove_mirror_workspace_from_engine(&mut engine, state, local_workspace, remote_to_local)
 }
 
-pub(super) fn log_mirror_cleanup(sess: &AttachClientSession, from_disconnect: bool) {
+fn log_mirror_cleanup(sess: &AttachClientSession, from_disconnect: bool) {
     if from_disconnect {
         tracing::warn!(
             "attach mirror cleanup: local ws {} (remote ws {}, anchor {:?}) — 원격발 disconnect 로 정리",
@@ -548,4 +579,14 @@ pub(super) fn log_mirror_cleanup(sess: &AttachClientSession, from_disconnect: bo
             sess.state.anchor_ws_id
         );
     }
+}
+
+pub(in crate::app) fn find_parked_with_workspace<'a>(
+    parked: impl IntoIterator<Item = (EngineId, &'a crate::core::CoreState)>,
+    local_workspace: u32,
+) -> Option<EngineId> {
+    parked
+        .into_iter()
+        .find(|(_, engine)| engine.has_workspace(local_workspace))
+        .map(|(id, _)| id)
 }
