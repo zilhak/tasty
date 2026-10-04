@@ -11,11 +11,20 @@
 
 use std::path::{Path, PathBuf};
 
-/// 전체 파일 수 하한은 빈 수집을 찾지만 루트별 완전성을 보장하지 않는다.
-/// src만 읽으면 하한에 못 미치는지는 a_src_only_scan_falls_below_the_floor에서 확인한다.
-/// crates만 읽어도 하한을 넘을 수 있다. 이때 src의 예외 항목이 검사에서 빠졌다는 검사가
-/// 누락을 알리지만, src 예외가 모두 없어지면 그 보호도 사라진다.
-const MIN_SCANNED_FILES: usize = 800;
+/// 2026-10-04의 src 801개, crates 982개를 각각 하한 700/800과 대조한다.
+/// 파일 분리·정리에 여유를 두되 한 루트 누락을 다른 루트의 증가가 가리지 못하게 한다.
+const ROOT_FLOORS: &[(&str, usize)] = &[("src/", 700), ("crates/", 800)];
+
+fn coverage_complaints(paths: &[String]) -> Vec<String> {
+    ROOT_FLOORS
+        .iter()
+        .filter_map(|(prefix, floor)| {
+            let count = paths.iter().filter(|path| path.starts_with(prefix)).count();
+            (count < *floor)
+                .then(|| format!("{prefix} Rust 파일 {count}개가 하한 {floor}에 못 미친다"))
+        })
+        .collect()
+}
 
 /// 경로·건수·사유로 허용 산술을 기록한다. 실제 건수가 늘거나 줄면 목록도 검토한다.
 const ALLOWED: &[(&str, usize, &str)] = &[
@@ -341,19 +350,18 @@ mod tests {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
     }
 
-    /// 선언된 파일 수가 아닌 실제 순회 결과로 src만 읽었을 때 하한 미달인지 확인한다.
     #[test]
-    fn a_src_only_scan_falls_below_the_floor() {
-        let mut files = Vec::new();
-        collect_rs(&repo_root().join("src"), &mut files);
-        let declared = tasty_doc_guards::floored_walk::populations::SRC_RS;
-        assert!(
-            files.len() < MIN_SCANNED_FILES,
-            "src의 Rust 파일 {}개가 하한 {MIN_SCANNED_FILES} 이상이다(선언 SRC_RS={}, 측정 시점 {}). src만 수집한 누락을 전체 하한으로 찾을 수 없으므로 루트별 하한 등으로 검사를 보완해야 한다.",
-            files.len(),
-            declared.measured,
-            declared.measured_on,
-        );
+    fn either_missing_root_is_rejected_even_when_the_other_root_grows() {
+        let src: Vec<_> = (0..2000).map(|i| format!("src/{i}.rs")).collect();
+        let crates: Vec<_> = (0..2000)
+            .map(|i| format!("crates/example/{i}.rs"))
+            .collect();
+        assert_eq!(coverage_complaints(&src).len(), 1);
+        assert!(coverage_complaints(&src)[0].starts_with("crates/"));
+        assert_eq!(coverage_complaints(&crates).len(), 1);
+        assert!(coverage_complaints(&crates)[0].starts_with("src/"));
+        let both: Vec<_> = src.into_iter().chain(crates).collect();
+        assert!(coverage_complaints(&both).is_empty());
     }
 
     fn count_in_source(source: &str) -> usize {
@@ -575,11 +583,9 @@ mod tests {
         let root = repo_root();
         let scanned = scan(&root);
 
-        assert!(
-            scanned.len() >= MIN_SCANNED_FILES,
-            "Rust 파일을 {}개만 읽었다(하한 {MIN_SCANNED_FILES}). 실제 파일 수와 스캔 루트를 확인한다.",
-            scanned.len(),
-        );
+        let paths: Vec<_> = scanned.iter().map(|(path, _)| path.clone()).collect();
+        let coverage = coverage_complaints(&paths);
+        assert!(coverage.is_empty(), "{}", coverage.join("\n"));
 
         let complaints = verdict(&scanned, ALLOWED, PENDING_PORT);
         assert!(complaints.is_empty(), "{}", complaints.join("\n\n---\n\n"));
