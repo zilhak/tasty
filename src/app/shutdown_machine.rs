@@ -117,6 +117,10 @@ impl App {
         self.screenshot_workers.begin_shutdown();
         self.explorer_files.begin_shutdown();
         self.tutorial_progress.stop();
+        self.dag_reads.begin_shutdown();
+        for session in self.engines.all_sessions() {
+            session.runtime.dag_reads.clear();
+        }
 
         // Native child views sit above the GPU loading frame. Normal redraws no
         // longer run after shutdown starts, so hide them before the first frame.
@@ -458,6 +462,7 @@ impl App {
     fn wait_for_explorer_file_shutdown(&mut self) -> bool {
         let remaining = self.explorer_files.poll_shutdown()
             + self.local_reads.poll_shutdown()
+            + self.dag_reads.poll_shutdown()
             + self.tutorial_progress.poll_shutdown();
         if remaining != 0
             && let Some(deadline) = self
@@ -471,7 +476,7 @@ impl App {
             }
             tracing::warn!(
                 remaining,
-                "Explorer file shutdown timed out; worker remains unjoined and file work is not cancelled"
+                "View I/O shutdown timed out; worker remains unjoined and accepted file work is not cancelled"
             );
             if let Some(state) = self.state.shutdown.as_mut() {
                 state.explorer_files_deadline = None;

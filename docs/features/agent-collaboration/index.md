@@ -206,3 +206,5 @@ task 는 영속되지만(`Scope::Workspace`) runner thread 는 in-memory 다 —
 - [design/systems/memory](../../design/systems/memory.md) — 영속 backing store
 - [dev-guide/agent-runner](../../dev-guide/agent-runner.md) — task runner 내부 동작(dispatch/poll, 완료 판정 전략 레지스트리)
 - [ADR-0042](../../adr/0042-agent-coordination-and-task-views.md) — task graph를 화면 두 곳에서 제공하고 host 내장 기능으로 구현한 이유
+
+DAG 화면의 비동기 조회·대상 세대 검증·취소 규약은 [그래프 surface](screens/dag-graph-surface.md#조회-소유와-취소)에 있다. 목록 popup도 같은 App 조회 서비스를 쓴다.

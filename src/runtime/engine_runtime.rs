@@ -11,6 +11,8 @@ use crate::runtime::terminal_store::TerminalStore;
 
 /// Kind instances retire before terminal/Pty owners. Shared service references do not cancel tasks.
 pub(crate) struct EngineRuntime {
+    #[cfg(feature = "gui")]
+    pub(crate) dag_reads: super::dag_query::DagReadQueue,
     pub(crate) settings: crate::settings::Settings,
     pub(crate) default_cols: usize,
     pub(crate) default_rows: usize,
@@ -82,6 +84,8 @@ impl EngineRuntime {
         registries: super::registries::RuntimeRegistries,
     ) -> Self {
         let runtime = Self {
+            #[cfg(feature = "gui")]
+            dag_reads: Default::default(),
             settings,
             default_cols: cols,
             default_rows: rows,

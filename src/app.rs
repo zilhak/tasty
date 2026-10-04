@@ -15,6 +15,8 @@ pub(crate) mod boot_machine;
 pub(crate) mod busy;
 pub(crate) mod command;
 pub(crate) mod creation_intent;
+#[cfg(feature = "gui")]
+pub(crate) mod dag_reads;
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(crate) mod debug_info;
 #[cfg(feature = "gui")]
@@ -120,6 +122,7 @@ pub(crate) struct App {
     pub(crate) explorer_files: explorer_files::ExplorerFiles,
     #[cfg(feature = "gui")]
     pub(crate) local_reads: local_reads::LocalReads,
+    pub(crate) dag_reads: dag_reads::DagReads,
     #[cfg(feature = "gui")]
     pub(crate) tutorial_progress: tutorial_progress::TutorialProgress,
     pub(crate) pending_server_attaches: Vec<attach_activation::PendingAttach>,
@@ -262,6 +265,14 @@ impl App {
                     }
                 })
             })?,
+            dag_reads: dag_reads::DagReads::new({
+                let proxy = proxy.clone();
+                Arc::new(move || {
+                    if proxy.send_event(AppEvent::TimerTick).is_err() {
+                        tracing::debug!("DAG read wake after shutdown");
+                    }
+                })
+            }),
             local_reads: local_reads::LocalReads::new({
                 let proxy = proxy.clone();
                 Arc::new(move || {

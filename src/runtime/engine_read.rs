@@ -34,9 +34,7 @@ pub(crate) struct EngineRead<'a> {
     #[cfg(feature = "gui")]
     readonly: &'a HashMap<u32, tasty_terminal::Terminal>,
     #[cfg(feature = "gui")]
-    memory: &'a std::sync::Mutex<dyn tasty_memory::MemoryStorage>,
-    #[cfg(feature = "gui")]
-    tasks: &'a tasty_task_runtime::TaskScope,
+    dag_source: super::dag_query::DagSource<'a>,
 }
 #[derive(Clone, Copy)]
 pub(crate) struct TerminalRead<'a>(&'a TerminalStore);
@@ -97,9 +95,7 @@ impl<'a> EngineRef<'a> {
             #[cfg(feature = "gui")]
             readonly: &self.runtime.readonly_views,
             #[cfg(feature = "gui")]
-            memory: self.runtime.memory.as_ref(),
-            #[cfg(feature = "gui")]
-            tasks: self.task_scope,
+            dag_source: self.runtime.dag_reads.source(self.journal_binding),
         }
     }
 }
@@ -209,22 +205,8 @@ impl<'a> EngineRead<'a> {
         self.live.mouse_capture_disabled_surfaces.contains(&id)
     }
     #[cfg(feature = "gui")]
-    pub(crate) fn task_list(
-        &self,
-        workspace: u32,
-    ) -> Result<Vec<tasty_agent::Task>, tasty_agent::AgentError> {
-        tasty_task_runtime::task::task_list_from_state(self.memory, self.tasks, workspace)
-    }
-    #[cfg(feature = "gui")]
-    pub(crate) fn dag_list(
-        &self,
-        workspaces: &[u32],
-    ) -> Result<Vec<tasty_agent::DagSummary>, tasty_agent::AgentError> {
-        tasty_task_runtime::task::dag_list_from_state(self.memory, self.tasks, workspaces)
-    }
-    #[cfg(feature = "gui")]
-    pub(crate) fn runner_liveness(&self, workspace: u32) -> (bool, bool) {
-        self.tasks.runner_liveness(workspace)
+    pub(crate) fn dag_source(&self) -> super::dag_query::DagSource<'_> {
+        self.dag_source
     }
 }
 

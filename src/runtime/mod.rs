@@ -65,3 +65,6 @@ mod pty;
 pub(crate) mod html_script;
 #[cfg(feature = "gui")]
 pub(crate) mod surface_binding;
+
+#[cfg(feature = "gui")]
+pub(crate) mod dag_query;

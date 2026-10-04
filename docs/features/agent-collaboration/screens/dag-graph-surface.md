@@ -142,3 +142,20 @@ tasty split --level surface --target-surface <SID> --type dag_graph
 시안 대비 의도적 차이(글리프 치환 · 재개 힌트 문구 · 기본 방향)는
 [design-gallery-mapping](../../../design/systems/design-gallery-mapping.md#task-dag--surface--canvas--node-layouts)
 의 3자 매핑 표에 기록한다.
+
+## 조회 소유와 취소
+
+View는 `EngineRead::dag_source()`로 읽기 요청을 등록하고 완료된 스냅샷만 받는다.
+공유 task store의 잠금 획득·조회·DAG 집계는 App 소유 워커가 수행한다.
+동시에 실행하는 워커는 App 전체 4개, engine별 1개이며 대기 큐는 engine별 16개다.
+큐가 가득 차면 View의 수신 핸들이 요청을 보존해 다음 폴링에 다시 등록한다.
+
+명시한 `workspace_id`가 다른 창의 engine에 속해도 조회할 수 있다. App은 완료 전달 전에
+대상 workspace의 실제 소유 engine과 journal incarnation/runtime epoch를 다시 대조하고,
+러너 표시도 그 소유자의 상태를 사용한다. View는 요청을 낸 engine과 표시 대상 DAG를
+대조한다. surface activation 변경·숨김·닫힘은 진행 중인 수신 핸들을 버린다.
+
+같은 대상의 일시적인 조회 실패는 마지막 정상 화면을 유지한다. 소유 세대가 바뀌거나
+workspace가 사라진 응답은 기존 데이터를 지운다. 저장소 잠금을 기다리는 워커도
+수신 핸들 취소나 App 종료를 관측하면 잠금 해제를 기다리지 않고 반환한다.
+이미 실행 중인 저장소 호출은 강제로 중단하지 않으며 App의 종료 대기 기한을 따른다.

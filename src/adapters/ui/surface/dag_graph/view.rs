@@ -89,6 +89,9 @@ pub struct DagGraphView {
     pub data: Option<DagData>,
     /// 마지막 폴링 시각 — [`POLL_INTERVAL`] 게이트.
     last_poll: Option<Instant>,
+    query: Option<crate::runtime::dag_query::DagQuery>,
+    target: Option<(u32, Option<String>)>,
+    surface_activation: Option<u64>,
     /// 폴링이 실패했을 때의 사유(스토어 에러). 화면 하단에 조용히 표시한다.
     pub error: Option<String>,
 
@@ -107,6 +110,9 @@ impl Default for DagGraphView {
         Self {
             data: None,
             last_poll: None,
+            query: None,
+            target: None,
+            surface_activation: None,
             error: None,
             zoom: 1.0,
             offset: egui::Vec2::ZERO,
@@ -118,6 +124,13 @@ impl Default for DagGraphView {
 }
 
 impl DagGraphView {
+    fn bind_surface_activation(&mut self, activation: Option<u64>) {
+        if self.surface_activation != activation {
+            *self = Self::default();
+            self.surface_activation = activation;
+        }
+    }
+
     /// 이 프레임에 새로 읽어야 하는지.
     fn is_stale(&self, now: Instant) -> bool {
         self.last_poll
@@ -127,7 +140,11 @@ impl DagGraphView {
     /// 다음 폴링 시각. 아직 한 번도 안 읽었으면 `None`(= 즉시 읽어야 함).
     /// 호스트가 이 값을 `Tick::DagGraph` 데드라인으로 쓴다.
     pub fn next_poll_at(&self) -> Option<Instant> {
-        self.last_poll.map(|t| t + POLL_INTERVAL)
+        if self.query.as_ref().is_some_and(|query| query.is_pending()) {
+            Some(Instant::now() + POLL_INTERVAL)
+        } else {
+            self.last_poll.map(|t| t + POLL_INTERVAL)
+        }
     }
 
     /// surface와 팝업이 공유하는 주기별 데이터 조회.
@@ -138,26 +155,50 @@ impl DagGraphView {
         dag_id: Option<&str>,
     ) {
         let now = Instant::now();
-        if !self.is_stale(now) {
-            return;
+        let source = engine.dag_source();
+        let target = (workspace_id, dag_id.map(str::to_owned));
+        if self.target.as_ref() != Some(&target)
+            || self
+                .query
+                .as_ref()
+                .is_some_and(|query| !source.matches(query))
+        {
+            self.invalidate_poll();
+            self.data = None;
+            self.error = None;
+            self.target = Some(target);
         }
-        self.last_poll = Some(now);
-        match fetch(engine, workspace_id, dag_id) {
-            Ok(data) => {
-                self.error = None;
-                self.data = Some(data);
+        if let Some(result) = self.query.as_mut().and_then(|query| query.poll(source)) {
+            self.last_poll = Some(now);
+            match result.and_then(|snapshots| {
+                snapshots
+                    .into_iter()
+                    .find(|snapshot| snapshot.id == workspace_id)
+                    .ok_or_else(|| "DAG workspace missing from result".into())
+            }) {
+                Ok(snapshot) => {
+                    self.error = None;
+                    self.data = Some(present(snapshot, dag_id));
+                }
+                Err(error) => {
+                    tracing::warn!(target: "tasty::dag", "dag poll failed: {error}");
+                    if matches!(error, crate::runtime::dag_query::ReadError::Retired) {
+                        self.data = None;
+                    }
+                    self.error = Some(error.to_string());
+                }
             }
-            Err(e) => {
-                // 일시적 실패에는 마지막으로 읽은 그래프를 유지한다.
-                tracing::warn!(target: "tasty::dag", "dag poll failed: {e}");
-                self.error = Some(e);
-            }
+        }
+        if self.query.as_ref().is_none_or(|query| !query.is_pending()) && self.is_stale(now) {
+            self.query = Some(source.request(vec![workspace_id]));
+            self.last_poll = Some(now);
         }
     }
 
     /// 보고 있던 DAG 가 바뀌었으니 다음 프레임에 곧바로 다시 읽는다.
     /// (popup 의 목록→디테일 진입처럼 500ms 를 기다릴 이유가 없는 전환용.)
     pub fn invalidate_poll(&mut self) {
+        self.query = None;
         self.last_poll = None;
     }
 
@@ -304,32 +345,42 @@ impl DagGraphViewStore {
     pub fn poll(&mut self, engine: &EngineRead<'_>, requests: &[DagPollRequest]) {
         self.note_visible(requests);
         for req in requests {
-            self.views.entry(req.surface_id).or_default().poll_if_stale(
-                engine,
-                req.workspace_id,
-                req.dag_id.as_deref(),
+            let view = self.views.entry(req.surface_id).or_default();
+            view.bind_surface_activation(
+                engine
+                    .core
+                    .find_surface_by_id(req.surface_id)
+                    .and_then(|surface| surface.activation_generation),
             );
+            view.poll_if_stale(engine, req.workspace_id, req.dag_id.as_deref());
         }
     }
 
     /// 보이는 대상 목록을 교체한다. 모두 숨겨진 프레임도 빈 requests로 호출해야
     /// 이전 대상의 타이머가 다시 등록되지 않는다.
     fn note_visible(&mut self, requests: &[DagPollRequest]) {
+        for (id, view) in &mut self.views {
+            if !requests.iter().any(|request| request.surface_id == *id) {
+                view.query = None;
+            }
+        }
         self.visible.clear();
         self.visible.extend(requests.iter().map(|r| r.surface_id));
     }
 }
 
-/// 한 화면 분의 데이터를 memory store 에서 읽어 화면 형태로 만든다.
-fn fetch(
-    engine: &EngineRead<'_>,
-    workspace_id: u32,
+/// Build presentation from a completed App read; no storage access occurs here.
+fn present(
+    snapshot: crate::runtime::dag_query::WorkspaceSnapshot,
     dag_id: Option<&str>,
-) -> Result<DagData, String> {
-    use tasty_agent::{TaskGraph, group_tasks_into_dags};
-
-    let tasks = engine.task_list(workspace_id).map_err(|e| e.to_string())?;
-    let summaries = group_tasks_into_dags(&tasks);
+) -> DagData {
+    use tasty_agent::TaskGraph;
+    let crate::runtime::dag_query::WorkspaceSnapshot {
+        id: workspace_id,
+        tasks,
+        dags: summaries,
+        runner: (running, crashed),
+    } = snapshot;
 
     let dags: Vec<DagListEntry> = summaries
         .iter()
@@ -364,7 +415,6 @@ fn fetch(
         graph
     });
 
-    let (running, crashed) = engine.runner_liveness(workspace_id);
     let runner = current
         .as_ref()
         .map(|g| RunnerBadgeData {
@@ -387,13 +437,13 @@ fn fetch(
             ..RunnerBadgeData::default()
         });
 
-    Ok(DagData {
+    DagData {
         workspace_id,
         dags,
         current,
         runner,
         target_missing,
-    })
+    }
 }
 
 /// 지정한 DAG가 없으면 대체하지 않는다. 미지정이면 실행 중인 것, 그다음 최근 갱신한 것을 고른다.
@@ -436,6 +486,91 @@ mod tests {
             workspace_id: 1,
             dag_id: None,
         }
+    }
+
+    #[test]
+    fn changing_dag_target_discards_the_old_read_and_same_target_failure_keeps_its_snapshot() {
+        let (_, engine) = crate::state::tests::test_state();
+        let workspace = engine.core_state.workspace_at(0).unwrap().id;
+        let mut view = DagGraphView::default();
+        view.poll_if_stale(&engine.read(), workspace, Some("first"));
+        let old = engine
+            .runtime
+            .dag_reads
+            .take(engine.journal_binding.as_ref())
+            .unwrap();
+        view.poll_if_stale(&engine.read(), workspace, Some("second"));
+        assert!(!old.is_live());
+        old.complete(Err("stale first result".into()));
+        let current = engine
+            .runtime
+            .dag_reads
+            .take(engine.journal_binding.as_ref())
+            .unwrap();
+        current.complete(Ok(vec![crate::runtime::dag_query::WorkspaceSnapshot {
+            id: workspace,
+            tasks: Vec::new(),
+            dags: Vec::new(),
+            runner: (false, false),
+        }]));
+        view.poll_if_stale(&engine.read(), workspace, Some("second"));
+        assert!(view.error.is_none());
+        assert_eq!(view.data.as_ref().unwrap().workspace_id, workspace);
+        view.invalidate_poll();
+        view.poll_if_stale(&engine.read(), workspace, Some("second"));
+        engine
+            .runtime
+            .dag_reads
+            .take(engine.journal_binding.as_ref())
+            .unwrap()
+            .complete(Err("current store error".into()));
+        view.poll_if_stale(&engine.read(), workspace, Some("second"));
+        assert_eq!(view.error.as_deref(), Some("current store error"));
+        assert_eq!(view.data.as_ref().unwrap().workspace_id, workspace);
+    }
+
+    #[test]
+    fn retired_workspace_and_replaced_activation_clear_display_and_cancel_pending_reads() {
+        let (_, engine) = crate::state::tests::test_state();
+        let workspace = engine.core_state.workspace_at(0).unwrap().id;
+        let mut view = DagGraphView::default();
+        view.bind_surface_activation(Some(1));
+        view.poll_if_stale(&engine.read(), workspace, None);
+        engine
+            .runtime
+            .dag_reads
+            .take(engine.journal_binding.as_ref())
+            .unwrap()
+            .complete(Ok(vec![crate::runtime::dag_query::WorkspaceSnapshot {
+                id: workspace,
+                tasks: Vec::new(),
+                dags: Vec::new(),
+                runner: (false, false),
+            }]));
+        view.poll_if_stale(&engine.read(), workspace, None);
+        assert!(view.data.is_some());
+        view.invalidate_poll();
+        view.poll_if_stale(&engine.read(), workspace, None);
+        engine
+            .runtime
+            .dag_reads
+            .take(engine.journal_binding.as_ref())
+            .unwrap()
+            .complete(Err(crate::runtime::dag_query::ReadError::Retired));
+        view.poll_if_stale(&engine.read(), workspace, None);
+        assert!(view.data.is_none());
+        view.invalidate_poll();
+        view.poll_if_stale(&engine.read(), workspace, None);
+        let old = engine
+            .runtime
+            .dag_reads
+            .take(engine.journal_binding.as_ref())
+            .unwrap();
+        view.selected = Some("old-task".into());
+        view.bind_surface_activation(Some(2));
+        assert!(!old.is_live());
+        assert!(view.selected.is_none());
+        assert!(view.query.is_none());
     }
 
     #[test]

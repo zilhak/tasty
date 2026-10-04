@@ -86,13 +86,23 @@ pub struct DagListState {
     graph: DagGraphView,
     rows: Vec<DagRow>,
     last_list_poll: Option<Instant>,
+    list_query: Option<crate::runtime::dag_query::DagQuery>,
+    list_workspaces: Vec<u32>,
 }
 
 impl DagListState {
     /// Tick::DagListPopup의 다음 조회 시각. 상세 화면이 닫혀 있으면 그래프 시각은 제외한다.
     /// 조회하지 않는 그래프의 None을 포함하면 매 프레임 즉시 조회를 예약하게 된다.
     pub(crate) fn next_poll_at(&self, now: Instant) -> Instant {
-        let list = self.last_list_poll.map_or(now, |t| t + POLL_INTERVAL);
+        let list = if self
+            .list_query
+            .as_ref()
+            .is_some_and(|query| query.is_pending())
+        {
+            now + POLL_INTERVAL
+        } else {
+            self.last_list_poll.map_or(now, |t| t + POLL_INTERVAL)
+        };
         if self.open_workspace.is_some() && self.open_dag.is_some() {
             list.min(self.graph.next_poll_at().unwrap_or(now))
         } else {
@@ -108,47 +118,80 @@ impl DagListState {
 
     fn poll_list(&mut self, engine: &EngineRead<'_>) {
         let now = Instant::now();
-        if !self.list_is_stale(now) {
-            return;
-        }
-        self.last_list_poll = Some(now);
-        match engine.dag_list(&crate::app::task_completion::dag_workspaces(
+        let source = engine.dag_source();
+        let workspaces = crate::app::task_completion::dag_workspaces(
             engine
                 .workspaces()
                 .into_iter()
                 .map(|workspace| workspace.id),
             None,
-        )) {
-            Ok(summaries) => {
-                self.rows = summaries
+        );
+        if self.list_workspaces != workspaces
+            || self
+                .list_query
+                .as_ref()
+                .is_some_and(|query| !source.matches(query))
+        {
+            self.list_query = None;
+            self.last_list_poll = None;
+            self.rows.clear();
+            self.list_workspaces = workspaces;
+        }
+        let result = self
+            .list_query
+            .as_mut()
+            .and_then(|query| query.poll(source));
+        if let Some(result) = result {
+            self.last_list_poll = Some(now);
+            match result.map(|snapshots| {
+                snapshots
                     .into_iter()
-                    .map(|s| {
-                        let c = &s.state_counts;
-                        DagRow {
-                            workspace_name: engine
-                                .workspaces()
-                                .into_iter()
-                                .find(|w| w.id == s.workspace_id)
-                                .map(|w| w.name.clone())
-                                // 조회 중 워크스페이스가 사라졌으면 이름 대신 ID를 표시한다.
-                                .unwrap_or_else(|| s.workspace_id.to_string()),
-                            workspace_id: s.workspace_id,
-                            id: s.id,
-                            name: s.name,
-                            derived: s.source == "derived",
-                            rollup: DagStatus::from_name(s.rollup_state),
-                            done: c.succeeded + c.failed + c.cancelled + c.skipped,
-                            total: s.task_count,
-                            updated_at: s.updated_at,
-                        }
-                    })
-                    .collect();
-                sort_recent_first(&mut self.rows);
+                    .flat_map(|snapshot| snapshot.dags)
+                    .collect::<Vec<_>>()
+            }) {
+                Ok(summaries) => {
+                    self.rows = summaries
+                        .into_iter()
+                        .map(|s| {
+                            let c = &s.state_counts;
+                            DagRow {
+                                workspace_name: engine
+                                    .workspaces()
+                                    .into_iter()
+                                    .find(|w| w.id == s.workspace_id)
+                                    .map(|w| w.name.clone())
+                                    // 조회 중 워크스페이스가 사라졌으면 이름 대신 ID를 표시한다.
+                                    .unwrap_or_else(|| s.workspace_id.to_string()),
+                                workspace_id: s.workspace_id,
+                                id: s.id,
+                                name: s.name,
+                                derived: s.source == "derived",
+                                rollup: DagStatus::from_name(s.rollup_state),
+                                done: c.succeeded + c.failed + c.cancelled + c.skipped,
+                                total: s.task_count,
+                                updated_at: s.updated_at,
+                            }
+                        })
+                        .collect();
+                    sort_recent_first(&mut self.rows);
+                }
+                Err(e) => {
+                    if matches!(e, crate::runtime::dag_query::ReadError::Retired) {
+                        self.rows.clear();
+                    }
+                    // 일시적인 실패에는 마지막으로 읽은 목록을 유지한다.
+                    tracing::warn!(target: "tasty::dag", "dag list poll failed: {e}");
+                }
             }
-            Err(e) => {
-                // 일시적인 실패에는 마지막으로 읽은 목록을 유지한다.
-                tracing::warn!(target: "tasty::dag", "dag list poll failed: {e}");
-            }
+        }
+        if self
+            .list_query
+            .as_ref()
+            .is_none_or(|query| !query.is_pending())
+            && self.list_is_stale(now)
+        {
+            self.list_query = Some(source.request(self.list_workspaces.clone()));
+            self.last_list_poll = Some(now);
         }
     }
 
@@ -551,6 +594,31 @@ mod tests {
 
     fn ids(rows: &[DagRow]) -> Vec<&str> {
         rows.iter().map(|r| r.id.as_str()).collect()
+    }
+
+    #[test]
+    fn closing_and_reopening_the_popup_retires_its_old_list_receipt() {
+        let (_, engine) = crate::state::tests::test_state();
+        let mut popup = DagListState::default();
+        popup.poll_list(&engine.read());
+        let old = engine
+            .runtime
+            .dag_reads
+            .take(engine.journal_binding.as_ref())
+            .unwrap();
+        popup = DagListState::default();
+        assert!(!old.is_live());
+        popup.poll_list(&engine.read());
+        old.complete(Err("closed popup result".into()));
+        engine
+            .runtime
+            .dag_reads
+            .take(engine.journal_binding.as_ref())
+            .unwrap()
+            .complete(Ok(Vec::new()));
+        popup.poll_list(&engine.read());
+        assert!(!popup.list_query.as_ref().unwrap().is_pending());
+        assert!(popup.rows.is_empty());
     }
 
     #[test]
