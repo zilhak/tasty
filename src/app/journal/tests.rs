@@ -25,13 +25,15 @@ fn application_bootstrap_commits_default_structure_before_installing_its_real_pt
     settings.general.shell = "/bin/sh".into();
     settings.general.startup_command = "printf 'BOOTSTRAP-%s\\n' JOURNAL; exec sleep 60".into();
     let mut session = EngineSession::new_with_ids_and_settings(
-        80,
-        24,
-        Arc::new(|| {}),
-        None,
-        Some(1),
-        memory,
-        runners,
+        crate::runtime::engine_session::EngineSessionSpec {
+            cols: 80,
+            rows: 24,
+            waker: Arc::new(|| {}),
+            shared_ids: None,
+            layout_slot: Some(1),
+            memory,
+            runner_registry: runners,
+        },
         settings,
     )
     .unwrap();
@@ -95,13 +97,15 @@ fn failed_metadata_scope_read_rejects_bootstrap_instead_of_reserving_from_zero()
     ));
     let runners = Arc::new(tasty_task_runtime::RunnerRegistry::new());
     let session = EngineSession::new_with_ids_and_settings(
-        80,
-        24,
-        Arc::new(|| {}),
-        None,
-        Some(1),
-        memory,
-        runners,
+        crate::runtime::engine_session::EngineSessionSpec {
+            cols: 80,
+            rows: 24,
+            waker: Arc::new(|| {}),
+            shared_ids: None,
+            layout_slot: Some(1),
+            memory,
+            runner_registry: runners,
+        },
         crate::settings::Settings::default(),
     )
     .unwrap();

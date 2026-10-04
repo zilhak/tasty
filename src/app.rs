@@ -449,6 +449,8 @@ mod view_frame;
 
 #[cfg(feature = "gui")]
 mod view_mesh;
+#[cfg(feature = "gui")]
+pub(crate) use view_mesh::MeshBootstrap;
 
 #[cfg(feature = "gui")]
 mod explorer_action;

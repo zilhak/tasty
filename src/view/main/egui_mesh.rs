@@ -662,16 +662,16 @@ fn keycode_to_egui(code: KeyCode) -> Option<egui::Key> {
 }
 
 impl MainView {
-    pub(crate) fn note_mesh_bootstrap(
-        &mut self,
-        surface: u32,
-        plugin: String,
-        width: u32,
-        height: u32,
-        ppp: f32,
-        theme: Option<ThemeWire>,
-        focused: bool,
-    ) {
+    pub(crate) fn note_mesh_bootstrap(&mut self, boot: crate::app::MeshBootstrap) {
+        let crate::app::MeshBootstrap {
+            surface,
+            plugin,
+            width,
+            height,
+            ppp,
+            theme,
+            focused,
+        } = boot;
         let state = self.egui_mesh.entry(surface).or_default();
         state.plugin_id = Some(plugin);
         state.common.last_geom = Some((width, height, ppp.to_bits()));

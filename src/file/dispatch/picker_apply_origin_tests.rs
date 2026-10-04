@@ -111,8 +111,10 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
         FileTarget::new("/unknown"),
         None,
         Some(sid),
-        FileDispatchOrigin::User,
-        false,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: FileDispatchOrigin::User,
+            ignore_size_limit: false,
+        },
     );
     let picker = state.dialogs.file_handler_picker.take().unwrap();
     take_picker_open_request(&mut state, false);
@@ -132,8 +134,10 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
         picker.target,
         FileHandlerPickerResult::Selected(HandlerId::new("com.example.origin/open")),
         picker.origin_surface_id,
-        picker.dispatch_origin,
-        picker.ignore_size_limit,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: picker.dispatch_origin,
+            ignore_size_limit: picker.ignore_size_limit,
+        },
     );
     take_creation(&mut state, pane, true);
     assert_eq!(engine.workspace_at(0).unwrap().all_surface_ids(), before);
@@ -170,8 +174,10 @@ fn a_dead_origin_cannot_execute_any_action_or_enqueue_a_new_tab() {
             &handler(action),
             &DispatchTarget::File(FileTarget::new("/missing")),
             Some(u32::MAX),
-            FileDispatchOrigin::Agent,
-            false
+            crate::file::dispatch::FileDispatchPolicy {
+                dispatch_origin: FileDispatchOrigin::Agent,
+                ignore_size_limit: false
+            }
         ));
         assert!(state.pending_intents.is_empty());
         assert!(state.pending_handler_ipc.is_empty());
@@ -228,8 +234,10 @@ fn identify_and_picker_keep_origin_and_cancel_or_missing_target_do_not_dispatch(
         target.clone(),
         None,
         Some(sid),
-        FileDispatchOrigin::User,
-        true,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: FileDispatchOrigin::User,
+            ignore_size_limit: true,
+        },
     );
     let picker = state.dialogs.file_handler_picker.take().unwrap();
     take_picker_open_request(&mut state, false);
@@ -243,8 +251,10 @@ fn identify_and_picker_keep_origin_and_cancel_or_missing_target_do_not_dispatch(
         picker.target,
         FileHandlerPickerResult::Cancelled,
         picker.origin_surface_id,
-        picker.dispatch_origin,
-        picker.ignore_size_limit,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: picker.dispatch_origin,
+            ignore_size_limit: picker.ignore_size_limit,
+        },
     );
     assert!(state.pending_intents.is_empty());
     assert_eq!(state.file_handler_recent.list().len(), recent_before);
@@ -259,8 +269,10 @@ fn identify_and_picker_keep_origin_and_cancel_or_missing_target_do_not_dispatch(
         target.clone(),
         None,
         Some(sid),
-        FileDispatchOrigin::User,
-        false,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: FileDispatchOrigin::User,
+            ignore_size_limit: false,
+        },
     );
     assert!(state.dialogs.file_handler_picker.is_none());
     let h = engine
@@ -277,8 +289,10 @@ fn identify_and_picker_keep_origin_and_cancel_or_missing_target_do_not_dispatch(
         DispatchTarget::File(target),
         FileHandlerPickerResult::Selected(h.id),
         Some(sid),
-        FileDispatchOrigin::Agent,
-        false,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: FileDispatchOrigin::Agent,
+            ignore_size_limit: false,
+        },
     );
     assert!(state.pending_intents.is_empty());
     assert!(state.pending_handler_ipc.is_empty());
@@ -376,8 +390,10 @@ fn user_dispatch_and_remote_placeholder_open_the_picker_as_user_requests() {
         FileTarget::new("/unknown"),
         None,
         Some(sid),
-        FileDispatchOrigin::User,
-        false,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: FileDispatchOrigin::User,
+            ignore_size_limit: false,
+        },
     );
     take_picker_open_request(&mut state, false);
 
@@ -408,8 +424,10 @@ fn agent_dispatch_without_a_matching_handler_opens_no_picker() {
                 FileTarget::new("/unknown"),
                 detector,
                 origin_surface_id,
-                FileDispatchOrigin::Agent,
-                false,
+                crate::file::dispatch::FileDispatchPolicy {
+                    dispatch_origin: FileDispatchOrigin::Agent,
+                    ignore_size_limit: false,
+                },
             );
             assert!(state.dialogs.file_handler_picker.is_none());
             assert!(state.pending_intents.is_empty());
@@ -447,8 +465,10 @@ fn an_unverified_plugin_dispatch_without_a_matching_handler_opens_the_fallback_p
             FileTarget::new("/unknown"),
             detector,
             Some(sid),
-            FileDispatchOrigin::PluginUnverified,
-            false,
+            crate::file::dispatch::FileDispatchPolicy {
+                dispatch_origin: FileDispatchOrigin::PluginUnverified,
+                ignore_size_limit: false,
+            },
         );
         let picker = state
             .dialogs
@@ -482,8 +502,10 @@ fn an_unverified_plugin_dispatch_without_a_matching_handler_opens_the_fallback_p
         DispatchTarget::File(FileTarget::new("/unknown")),
         FileHandlerPickerResult::Selected(picked.id),
         Some(sid),
-        FileDispatchOrigin::PluginUnverified,
-        false,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: FileDispatchOrigin::PluginUnverified,
+            ignore_size_limit: false,
+        },
     );
     take_creation(&mut state, pane_id, false);
     let after = engine.find_pane_by_id(pane_id).unwrap();

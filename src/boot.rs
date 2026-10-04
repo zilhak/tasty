@@ -447,13 +447,15 @@ fn bootstrap_engine(
     }
     // 헤드리스는 슬롯을 점유하지 않으며 레이아웃을 저장·복원하지 않는다.
     let mut engine = crate::runtime::engine_session::EngineSession::new_with_ids(
-        80,
-        24,
-        base_waker,
-        None,
-        None,
-        app.services.memory_arc(),
-        std::sync::Arc::clone(app.services.tasks.runner_registry()),
+        crate::runtime::engine_session::EngineSessionSpec {
+            cols: 80,
+            rows: 24,
+            waker: base_waker,
+            shared_ids: None,
+            layout_slot: None,
+            memory: app.services.memory_arc(),
+            runner_registry: std::sync::Arc::clone(app.services.tasks.runner_registry()),
+        },
         app.services.registries.clone(),
     )?;
     engine.runtime.waker_factory = Some(factory);
@@ -910,13 +912,15 @@ mod journal_event_tests {
         settings.general.shell = "/bin/sh".into();
         settings.general.startup_command = "exec sleep 60".into();
         let mut session = crate::runtime::engine_session::EngineSession::for_journal(
-            80,
-            24,
-            waker.waker_factory().make_default_waker(),
-            None,
-            None,
-            memory,
-            Arc::clone(app.services.tasks.runner_registry()),
+            crate::runtime::engine_session::EngineSessionSpec {
+                cols: 80,
+                rows: 24,
+                waker: waker.waker_factory().make_default_waker(),
+                shared_ids: None,
+                layout_slot: None,
+                memory,
+                runner_registry: Arc::clone(app.services.tasks.runner_registry()),
+            },
             settings,
             app.services.registries.clone(),
         )

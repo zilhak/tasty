@@ -35,8 +35,10 @@ impl App {
                 target,
                 detector,
                 origin_surface_id,
-                dispatch_origin,
-                ignore_size_limit,
+                crate::file::dispatch::FileDispatchPolicy {
+                    dispatch_origin,
+                    ignore_size_limit,
+                },
             );
             main.mark_dirty();
             return;
@@ -51,8 +53,10 @@ impl App {
                     target,
                     detector,
                     origin_surface_id,
-                    dispatch_origin,
-                    ignore_size_limit,
+                    crate::file::dispatch::FileDispatchPolicy {
+                        dispatch_origin,
+                        ignore_size_limit,
+                    },
                 );
             } else {
                 // The RPC already acknowledged enqueueing. Its existing async

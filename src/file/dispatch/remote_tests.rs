@@ -109,8 +109,10 @@ fn apply_on_mirror(
         FileTarget::new("/remote/doc.md"),
         Some(DetectorId::new("remote-test")),
         Some(sid),
-        origin,
-        false,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: origin,
+            ignore_size_limit: false,
+        },
     );
     (state, engine_session, surfaces)
 }
@@ -182,8 +184,10 @@ fn a_mirror_open_with_only_an_ipc_handler_runs_nothing_and_toasts() {
         FileTarget::new("/remote/doc.bin"),
         Some(DetectorId::new("remote-test")),
         Some(sid),
-        FileDispatchOrigin::User,
-        false,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: FileDispatchOrigin::User,
+            ignore_size_limit: false,
+        },
     );
     assert!(queued_creates(&state).is_empty());
     assert!(state.pending_handler_ipc.is_empty());
@@ -211,8 +215,10 @@ fn a_mirror_open_without_a_detector_opens_no_picker() {
         FileTarget::new("/remote/unknown"),
         None,
         Some(sid),
-        FileDispatchOrigin::User,
-        false,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: FileDispatchOrigin::User,
+            ignore_size_limit: false,
+        },
     );
     assert!(queued_creates(&state).is_empty());
     assert!(state.dialogs.file_handler_picker.is_none());
@@ -298,8 +304,10 @@ fn a_user_open_with_an_unopenable_first_handler_shows_only_remote_candidates() {
         FileTarget::new("/remote/doc.md"),
         Some(DetectorId::new("remote-test")),
         Some(sid),
-        FileDispatchOrigin::User,
-        false,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: FileDispatchOrigin::User,
+            ignore_size_limit: false,
+        },
     );
     assert!(queued_creates(&state).is_empty());
     assert!(state.pending_handler_ipc.is_empty());
@@ -332,8 +340,10 @@ fn an_agent_open_with_an_unopenable_first_handler_runs_the_first_remote_one() {
         FileTarget::new("/remote/doc.md"),
         Some(DetectorId::new("remote-test")),
         Some(sid),
-        FileDispatchOrigin::Agent,
-        false,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: FileDispatchOrigin::Agent,
+            ignore_size_limit: false,
+        },
     );
     assert!(
         state.dialogs.file_handler_picker.is_none(),
@@ -357,8 +367,10 @@ fn an_unverified_plugin_open_with_an_unopenable_first_handler_shows_the_remote_p
         FileTarget::new("/remote/doc.md"),
         Some(DetectorId::new("remote-test")),
         Some(sid),
-        FileDispatchOrigin::PluginUnverified,
-        false,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: FileDispatchOrigin::PluginUnverified,
+            ignore_size_limit: false,
+        },
     );
     assert!(queued_creates(&state).is_empty());
     assert!(state.pending_handler_ipc.is_empty());
@@ -395,8 +407,10 @@ fn an_unopenable_remote_file_toasts_unless_an_external_ipc_asked() {
             FileTarget::new("/remote/unknown"),
             None,
             Some(sid),
-            origin,
-            false,
+            crate::file::dispatch::FileDispatchPolicy {
+                dispatch_origin: origin,
+                ignore_size_limit: false,
+            },
         );
         assert!(state.dialogs.file_handler_picker.is_none(), "{origin:?}");
         assert!(queued_creates(&state).is_empty(), "{origin:?}");
@@ -417,8 +431,10 @@ fn a_remote_picker_selection_queues_user_creation_and_rejects_local_handlers() {
         target.clone(),
         crate::state::FileHandlerPickerResult::Selected(HandlerId::new("com.example.ipc/open")),
         Some(sid),
-        FileDispatchOrigin::User,
-        false,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: FileDispatchOrigin::User,
+            ignore_size_limit: false,
+        },
     );
     assert!(state.pending_handler_ipc.is_empty());
     assert!(queued_creates(&state).is_empty());
@@ -430,8 +446,10 @@ fn a_remote_picker_selection_queues_user_creation_and_rejects_local_handlers() {
         target,
         crate::state::FileHandlerPickerResult::Selected(HandlerId::new("com.tasty.markdown/open")),
         Some(sid),
-        FileDispatchOrigin::User,
-        false,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin: FileDispatchOrigin::User,
+            ignore_size_limit: false,
+        },
     );
     assert_eq!(queued_creates(&state).len(), 1);
     let forward = &queued_creates(&state)[0];

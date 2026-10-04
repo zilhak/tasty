@@ -466,7 +466,16 @@ fn apply_one_mirror_event(
                     .collect()
             });
             apply_list_dir_result_event(
-                sess, host, request_id, ok, dir, entries, truncated, reason,
+                sess,
+                host,
+                MirrorResultEnvelope {
+                    request_id,
+                    ok,
+                    truncated,
+                    reason,
+                },
+                dir,
+                entries,
             );
         }
         MirrorEvent::GitQueryResult {
@@ -480,12 +489,14 @@ fn apply_one_mirror_event(
             apply_git_query_result_event(
                 plugin_manager,
                 host.state,
-                request_id,
-                ok,
+                MirrorResultEnvelope {
+                    request_id,
+                    ok,
+                    truncated,
+                    reason,
+                },
                 kind,
                 data,
-                truncated,
-                reason,
             );
         }
         MirrorEvent::MarkdownContentResult {
@@ -527,17 +538,28 @@ fn apply_one_mirror_event(
     }
 }
 
+/// 원격 회신이 공통으로 싣는 결과 봉투.
+struct MirrorResultEnvelope {
+    request_id: u64,
+    ok: bool,
+    truncated: bool,
+    reason: Option<String>,
+}
+
 /// 요청 때 기록한 소비자로 목록을 전달한다. 요청 기록이 없으면 오래된 회신으로 보고 무시한다.
 fn apply_list_dir_result_event(
     sess: &mut AttachClientSession,
     host: &mut MirrorHost<'_, '_>,
-    request_id: u64,
-    ok: bool,
+    envelope: MirrorResultEnvelope,
     dir: Option<String>,
     entries: Option<Vec<crate::core::fs_list::DirEntryInfo>>,
-    truncated: bool,
-    reason: Option<String>,
 ) {
+    let MirrorResultEnvelope {
+        request_id,
+        ok,
+        truncated,
+        reason,
+    } = envelope;
     let consumer = sess
         .state
         .pending_list_dir_consumers
@@ -611,13 +633,16 @@ fn apply_list_dir_result_event(
 fn apply_git_query_result_event(
     plugin_manager: &mut Option<crate::plugin::PluginManager>,
     state: &mut crate::state::MainViewState,
-    request_id: u64,
-    ok: bool,
+    envelope: MirrorResultEnvelope,
     kind: String,
     data: Option<Value>,
-    truncated: bool,
-    reason: Option<String>,
 ) {
+    let MirrorResultEnvelope {
+        request_id,
+        ok,
+        truncated,
+        reason,
+    } = envelope;
     let Some(mgr) = plugin_manager.as_mut() else {
         return;
     };

@@ -165,8 +165,10 @@ fn dispatch_through_with(
         target,
         Some(DetectorId::new("origin-test")),
         origin_surface_id,
-        dispatch_origin,
-        ignore_size_limit,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin,
+            ignore_size_limit,
+        },
     );
     // App receives creation requests; the View does not synchronously create/select a tab.
     assert_eq!(engine.find_pane_by_id(pane_id).unwrap().tabs.len(), 1);
@@ -465,8 +467,10 @@ fn only_an_unverified_plugin_request_opens_the_fallback_picker() {
             target,
             None,
             origin_surface_id,
-            dispatch_origin,
-            ignore_size_limit,
+            crate::file::dispatch::FileDispatchPolicy {
+                dispatch_origin,
+                ignore_size_limit,
+            },
         );
         assert_eq!(
             state.dialogs.file_handler_picker.is_some(),

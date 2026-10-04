@@ -13,9 +13,12 @@ pub(crate) fn apply_identify_result(
     target: FileTarget,
     detector: Option<DetectorId>,
     origin_surface_id: Option<u32>,
-    dispatch_origin: crate::file::dispatch::FileDispatchOrigin,
-    ignore_size_limit: bool,
+    policy: crate::file::dispatch::FileDispatchPolicy,
 ) {
+    let crate::file::dispatch::FileDispatchPolicy {
+        dispatch_origin,
+        ignore_size_limit,
+    } = policy;
     if let Some(sid) = origin_surface_id
         && let Err(message) = crate::file::dispatch::require_origin_pane(engine, sid)
     {
@@ -57,8 +60,10 @@ pub(crate) fn apply_identify_result(
             detector,
             fallback,
             true,
-            dispatch_origin,
-            ignore_size_limit,
+            crate::file::dispatch::FileDispatchPolicy {
+                dispatch_origin,
+                ignore_size_limit,
+            },
         );
         if let Some(picker) = state.dialogs.file_handler_picker.as_mut() {
             picker.origin_surface_id = origin_surface_id;
@@ -73,8 +78,10 @@ pub(crate) fn apply_identify_result(
         &first,
         &target,
         origin_surface_id,
-        dispatch_origin,
-        ignore_size_limit,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin,
+            ignore_size_limit,
+        },
     );
 }
 
@@ -87,9 +94,12 @@ pub(crate) fn apply_file_picker_result(
     target: DispatchTarget,
     result: FileHandlerPickerResult,
     origin_surface_id: Option<u32>,
-    dispatch_origin: crate::file::dispatch::FileDispatchOrigin,
-    ignore_size_limit: bool,
+    policy: crate::file::dispatch::FileDispatchPolicy,
 ) {
+    let crate::file::dispatch::FileDispatchPolicy {
+        dispatch_origin,
+        ignore_size_limit,
+    } = policy;
     let Some(handler_id) = selected_handler_id(result) else {
         return;
     };
@@ -113,8 +123,10 @@ pub(crate) fn apply_file_picker_result(
         &handler,
         &target,
         origin_surface_id,
-        dispatch_origin,
-        ignore_size_limit,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin,
+            ignore_size_limit,
+        },
     ) {
         state.record_file_handler_pick(&handler_id);
     }
@@ -211,8 +223,10 @@ pub(super) mod tests {
             FileTarget::new(PathBuf::from("/tmp/unmatched-target.unknown")),
             Some(unmatched),
             None,
-            crate::file::dispatch::FileDispatchOrigin::User,
-            false,
+            crate::file::dispatch::FileDispatchPolicy {
+                dispatch_origin: crate::file::dispatch::FileDispatchOrigin::User,
+                ignore_size_limit: false,
+            },
         );
 
         let picker = state
@@ -259,8 +273,10 @@ pub(super) mod tests {
             DispatchTarget::http_url("https://example.com/page").expect("url"),
             FileHandlerPickerResult::Selected(handler_id),
             None,
-            crate::file::dispatch::FileDispatchOrigin::Agent,
-            false,
+            crate::file::dispatch::FileDispatchPolicy {
+                dispatch_origin: crate::file::dispatch::FileDispatchOrigin::Agent,
+                ignore_size_limit: false,
+            },
         );
 
         assert!(

@@ -53,35 +53,32 @@ pub(super) fn boot_grid_size(
     gpu.grid_size_for_rect(&terminal_rect)
 }
 
+/// 첫 부팅에서 engine을 세우는 데 함께 옮기는 자원 묶음.
+pub(super) struct FirstBootEngine {
+    pub(super) cols: usize,
+    pub(super) rows: usize,
+    pub(super) factory: crate::waker::SharedWakerFactory,
+    pub(super) proxy: winit::event_loop::EventLoopProxy<crate::AppEvent>,
+    pub(super) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    pub(super) runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
+    pub(super) layout_slot: crate::core::layout_persistence::LayoutSlotId,
+    pub(super) registries: crate::runtime::registries::RuntimeRegistries,
+    #[cfg(debug_assertions)]
+    pub(super) input_simulation_enabled: bool,
+}
+
 /// App 없이 첫 engine과 플러그인 매니저를 만들어 부팅 워커에서도 사용할 수 있다.
 /// engine 생성 오류는 호출자에게 전달하며 첫 부팅과 새 창의 실패 처리는 호출자가 정한다.
 pub(super) fn build_engine_and_plugins(
-    cols: usize,
-    rows: usize,
-    factory: crate::waker::SharedWakerFactory,
-    proxy: winit::event_loop::EventLoopProxy<crate::AppEvent>,
-    memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-    runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
-    layout_slot: crate::core::layout_persistence::LayoutSlotId,
+    boot: FirstBootEngine,
     gauges: crate::app::services::PluginGauges,
-    registries: crate::runtime::registries::RuntimeRegistries,
-    #[cfg(debug_assertions)] input_simulation_enabled: bool,
 ) -> anyhow::Result<(
     crate::runtime::engine_session::EngineSession,
     plugin::PluginManager,
 )> {
-    let engine = build_core_state_first_boot(
-        cols,
-        rows,
-        factory.clone(),
-        proxy,
-        memory,
-        runner_registry,
-        layout_slot,
-        registries.clone(),
-        #[cfg(debug_assertions)]
-        input_simulation_enabled,
-    )?;
+    let factory = boot.factory.clone();
+    let registries = boot.registries.clone();
+    let engine = build_core_state_first_boot(boot)?;
     let mgr = build_plugin_manager(factory, &registries, gauges);
     Ok((engine, mgr))
 }
@@ -98,27 +95,33 @@ fn additional_window_task_scope(
 }
 
 fn build_core_state_first_boot(
-    cols: usize,
-    rows: usize,
-    factory: crate::waker::SharedWakerFactory,
-    proxy: winit::event_loop::EventLoopProxy<crate::AppEvent>,
-    memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-    runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
-    layout_slot: crate::core::layout_persistence::LayoutSlotId,
-    registries: crate::runtime::registries::RuntimeRegistries,
-    #[cfg(debug_assertions)] input_simulation_enabled: bool,
+    boot: FirstBootEngine,
 ) -> anyhow::Result<crate::runtime::engine_session::EngineSession> {
+    let FirstBootEngine {
+        cols,
+        rows,
+        factory,
+        proxy,
+        memory,
+        runner_registry,
+        layout_slot,
+        registries,
+        #[cfg(debug_assertions)]
+        input_simulation_enabled,
+    } = boot;
     // 슬롯 로드 시간도 포함한다. scrollback GC는 창마다 하지 않고 부팅 때 전체 슬롯을 대상으로 한다.
     let t_engine = std::time::Instant::now();
     let waker: crate::terminal::Waker = factory.make_default_waker();
     let mut engine = crate::runtime::engine_session::EngineSession::new_with_ids(
-        cols,
-        rows,
-        waker,
-        None,
-        Some(layout_slot),
-        memory,
-        runner_registry,
+        crate::runtime::engine_session::EngineSessionSpec {
+            cols,
+            rows,
+            waker,
+            shared_ids: None,
+            layout_slot: Some(layout_slot),
+            memory,
+            runner_registry,
+        },
         registries,
     )?;
     engine.runtime.waker_factory = Some(factory);
@@ -235,13 +238,15 @@ impl App {
                 // 기본 workspace 생성부터 ID를 발급하므로 기존 발급기를 생성 전에 주입한다.
                 let waker: crate::terminal::Waker = factory.make_default_waker();
                 let mut engine = crate::runtime::engine_session::EngineSession::new_with_ids(
-                    cols,
-                    rows,
-                    waker,
-                    Some(next_ids),
-                    Some(layout_slot),
-                    self.services.memory_arc(),
-                    Arc::clone(self.services.tasks.runner_registry()),
+                    crate::runtime::engine_session::EngineSessionSpec {
+                        cols,
+                        rows,
+                        waker,
+                        shared_ids: Some(next_ids),
+                        layout_slot: Some(layout_slot),
+                        memory: self.services.memory_arc(),
+                        runner_registry: Arc::clone(self.services.tasks.runner_registry()),
+                    },
                     self.services.registries.clone(),
                 )?;
                 engine.runtime.waker_factory = Some(factory.clone());
@@ -258,18 +263,18 @@ impl App {
                 );
                 engine
             } else {
-                build_core_state_first_boot(
+                build_core_state_first_boot(FirstBootEngine {
                     cols,
                     rows,
-                    factory.clone(),
-                    self.view.proxy.clone(),
-                    self.services.memory_arc(),
-                    Arc::clone(self.services.tasks.runner_registry()),
+                    factory: factory.clone(),
+                    proxy: self.view.proxy.clone(),
+                    memory: self.services.memory_arc(),
+                    runner_registry: Arc::clone(self.services.tasks.runner_registry()),
                     layout_slot,
-                    self.services.registries.clone(),
+                    registries: self.services.registries.clone(),
                     #[cfg(debug_assertions)]
-                    self.state.input_simulation_enabled,
-                )?
+                    input_simulation_enabled: self.state.input_simulation_enabled,
+                })?
             };
             self.install_pending_engine(engine);
         }

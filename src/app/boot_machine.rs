@@ -318,17 +318,19 @@ impl App {
             .name("tasty-boot-engine".into())
             .spawn(move || {
                 let result = crate::app::window_lifecycle::build_engine_and_plugins(
-                    cols,
-                    rows,
-                    factory,
-                    proxy,
-                    memory,
-                    runner_registry,
-                    layout_slot,
+                    crate::app::window_lifecycle::FirstBootEngine {
+                        cols,
+                        rows,
+                        factory,
+                        proxy,
+                        memory,
+                        runner_registry,
+                        layout_slot,
+                        registries,
+                        #[cfg(debug_assertions)]
+                        input_simulation_enabled,
+                    },
                     gauges,
-                    registries,
-                    #[cfg(debug_assertions)]
-                    input_simulation_enabled,
                 );
                 if tx.send(result).is_err() {
                     // 수신자가 없으면 결과를 drop하며 플러그인 자식 정리도 Drop에 맡긴다.

@@ -45,8 +45,10 @@ impl App {
                     target,
                     result,
                     origin_surface_id,
-                    dispatch_origin,
-                    ignore_size_limit,
+                    crate::file::dispatch::FileDispatchPolicy {
+                        dispatch_origin,
+                        ignore_size_limit,
+                    },
                 );
             }
             main.mark_dirty();

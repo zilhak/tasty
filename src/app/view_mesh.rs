@@ -62,7 +62,7 @@ pub(super) fn relay_subscribed_mesh(
                 },
             );
 
-            updates.push(MeshViewUpdate::Bootstrap {
+            updates.push(MeshViewUpdate::Bootstrap(Box::new(MeshBootstrap {
                 surface: sid,
                 plugin: plugin_id,
                 width: width_px,
@@ -70,7 +70,7 @@ pub(super) fn relay_subscribed_mesh(
                 ppp: pixels_per_point,
                 theme,
                 focused,
-            });
+            })));
         } else if need_full {
             // Windowed rendering uses local View geometry. The returned request is
             // queued as LocalMesh on the next frame; parked engines use mesh_forward.
@@ -89,16 +89,20 @@ pub(super) fn relay_subscribed_mesh(
     updates
 }
 
+/// mesh surface의 첫 렌더에 필요한 컨텍스트 묶음.
+pub(crate) struct MeshBootstrap {
+    pub(crate) surface: u32,
+    pub(crate) plugin: String,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) ppp: f32,
+    pub(crate) theme: Option<tasty_plugin_protocol::protocol::ThemeWire>,
+    pub(crate) focused: bool,
+}
+
 pub(super) enum MeshViewUpdate {
-    Bootstrap {
-        surface: u32,
-        plugin: String,
-        width: u32,
-        height: u32,
-        ppp: f32,
-        theme: Option<tasty_plugin_protocol::protocol::ThemeWire>,
-        focused: bool,
-    },
+    /// 큐에 쌓이는 값이라 큰 묶음은 Box로 들고 variant 크기를 Full과 맞춘다.
+    Bootstrap(Box<MeshBootstrap>),
     Full {
         surface: u32,
     },

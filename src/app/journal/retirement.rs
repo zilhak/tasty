@@ -185,15 +185,17 @@ mod tests {
         settings.general.shell = "/bin/sh".into();
         settings.general.startup_command = "exec sleep 60".into();
         let mut session = EngineSession::new_with_ids_and_settings(
-            80,
-            24,
-            Arc::new(|| {}),
-            None,
-            Some(1),
-            Arc::new(std::sync::Mutex::new(
-                tasty_memory::testing::InMemoryStorage::new(),
-            )),
-            Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+            crate::runtime::engine_session::EngineSessionSpec {
+                cols: 80,
+                rows: 24,
+                waker: Arc::new(|| {}),
+                shared_ids: None,
+                layout_slot: Some(1),
+                memory: Arc::new(std::sync::Mutex::new(
+                    tasty_memory::testing::InMemoryStorage::new(),
+                )),
+                runner_registry: Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+            },
             settings,
         )
         .unwrap();
@@ -296,15 +298,17 @@ mod tests {
         settings.general.shell = "/bin/sh".into();
         settings.general.startup_command = "exec sleep 60".into();
         let mut session = EngineSession::new_with_ids_and_settings(
-            80,
-            24,
-            Arc::new(|| {}),
-            None,
-            Some(1),
-            Arc::new(std::sync::Mutex::new(
-                tasty_memory::testing::InMemoryStorage::new(),
-            )),
-            Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+            crate::runtime::engine_session::EngineSessionSpec {
+                cols: 80,
+                rows: 24,
+                waker: Arc::new(|| {}),
+                shared_ids: None,
+                layout_slot: Some(1),
+                memory: Arc::new(std::sync::Mutex::new(
+                    tasty_memory::testing::InMemoryStorage::new(),
+                )),
+                runner_registry: Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+            },
             settings,
         )
         .unwrap();

@@ -151,15 +151,17 @@ fn boot_with_layout(layout: Option<serde_json::Value>) -> (EngineSession, Journa
     settings.general.shell = "/bin/sh".into();
     settings.general.startup_command = "exec sleep 60".into();
     let mut session = EngineSession::new_with_ids_and_settings(
-        80,
-        24,
-        Arc::new(|| {}),
-        None,
-        Some(1),
-        Arc::new(std::sync::Mutex::new(
-            tasty_memory::testing::InMemoryStorage::new(),
-        )),
-        Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+        crate::runtime::engine_session::EngineSessionSpec {
+            cols: 80,
+            rows: 24,
+            waker: Arc::new(|| {}),
+            shared_ids: None,
+            layout_slot: Some(1),
+            memory: Arc::new(std::sync::Mutex::new(
+                tasty_memory::testing::InMemoryStorage::new(),
+            )),
+            runner_registry: Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+        },
         settings,
     )
     .unwrap();
@@ -839,15 +841,17 @@ fn a_failed_public_factory_completes_the_request_without_halting_the_engine() {
 fn an_unfinished_external_effect_blocks_its_engine_but_not_another_engine() {
     let (mut first, mut journal) = boot();
     let mut second = EngineSession::new_with_ids_and_settings(
-        80,
-        24,
-        Arc::new(|| {}),
-        None,
-        Some(2),
-        Arc::new(std::sync::Mutex::new(
-            tasty_memory::testing::InMemoryStorage::new(),
-        )),
-        Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+        crate::runtime::engine_session::EngineSessionSpec {
+            cols: 80,
+            rows: 24,
+            waker: Arc::new(|| {}),
+            shared_ids: None,
+            layout_slot: Some(2),
+            memory: Arc::new(std::sync::Mutex::new(
+                tasty_memory::testing::InMemoryStorage::new(),
+            )),
+            runner_registry: Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+        },
         first.runtime.settings.clone(),
     )
     .unwrap();

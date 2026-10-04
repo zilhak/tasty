@@ -330,13 +330,15 @@ mod engine_creation_failure_tests {
     #[test]
     fn engine_initialization_does_not_execute_the_configured_shell() {
         let owner = crate::runtime::engine_session::EngineSession::new_with_ids_and_settings(
-            80,
-            24,
-            std::sync::Arc::new(|| {}),
-            None,
-            None,
-            in_memory(),
-            registry(),
+            crate::runtime::engine_session::EngineSessionSpec {
+                cols: 80,
+                rows: 24,
+                waker: std::sync::Arc::new(|| {}),
+                shared_ids: None,
+                layout_slot: None,
+                memory: in_memory(),
+                runner_registry: registry(),
+            },
             bogus_shell_settings(),
         )
         .expect("session initialization precedes shell execution");
@@ -352,13 +354,15 @@ mod engine_creation_failure_tests {
         let shared = registry();
         let mut engine_session =
             crate::runtime::engine_session::EngineSession::new_with_ids_and_settings(
-                80,
-                24,
-                waker,
-                None,
-                None,
-                in_memory(),
-                std::sync::Arc::clone(&shared),
+                crate::runtime::engine_session::EngineSessionSpec {
+                    cols: 80,
+                    rows: 24,
+                    waker,
+                    shared_ids: None,
+                    layout_slot: None,
+                    memory: in_memory(),
+                    runner_registry: std::sync::Arc::clone(&shared),
+                },
                 settings,
             )
             .expect("default settings must produce an engine");

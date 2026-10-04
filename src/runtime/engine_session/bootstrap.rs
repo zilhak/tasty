@@ -5,6 +5,17 @@ use crate::settings::Settings;
 use std::sync::Arc;
 use tasty_terminal::Waker;
 
+/// engine 생성 경로가 공통으로 함께 옮기는 자원 묶음.
+pub(crate) struct EngineSessionSpec {
+    pub(crate) cols: usize,
+    pub(crate) rows: usize,
+    pub(crate) waker: Waker,
+    pub(crate) shared_ids: Option<RuntimeCounters>,
+    pub(crate) layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
+    pub(crate) memory: Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    pub(crate) runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
+}
+
 impl EngineSession {
     /// Resource-only test owner with default Settings and in-memory storage.
     /// Structure fixtures must publish a committed journal model explicitly.
@@ -16,13 +27,15 @@ impl EngineSession {
             ));
         let runner_registry = std::sync::Arc::new(tasty_task_runtime::RunnerRegistry::new());
         Self::new_with_ids_and_settings(
-            cols,
-            rows,
-            waker,
-            None,
-            None,
-            memory,
-            runner_registry,
+            EngineSessionSpec {
+                cols,
+                rows,
+                waker,
+                shared_ids: None,
+                layout_slot: None,
+                memory,
+                runner_registry,
+            },
             Settings::default(),
         )
     }
@@ -30,92 +43,47 @@ impl EngineSession {
     /// 다른 engine과 발급기를 공유할 수 있다. 슬롯이 있고 restore_layout이 켜져 있을 때만 읽는다.
     /// runner 등록부는 TaskService가 가진 Arc를 넘긴다.
     pub fn new_with_ids(
-        cols: usize,
-        rows: usize,
-        waker: Waker,
-        shared_ids: Option<RuntimeCounters>,
-        layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
-        memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-        runner_registry: std::sync::Arc<tasty_task_runtime::RunnerRegistry>,
+        spec: EngineSessionSpec,
         registries: super::super::registries::RuntimeRegistries,
     ) -> anyhow::Result<Self> {
-        let state = Self::for_journal(
-            cols,
-            rows,
-            waker,
-            shared_ids,
-            layout_slot,
-            memory,
-            runner_registry,
-            Settings::load(),
-            registries,
-        )?;
+        let state = Self::for_journal(spec, Settings::load(), registries)?;
         Ok(state)
     }
 
     /// Allocate services and the resource owner without creating a local structure or PTY.
     pub(crate) fn for_journal(
-        cols: usize,
-        rows: usize,
-        waker: Waker,
-        shared_ids: Option<RuntimeCounters>,
-        layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
-        memory: Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-        runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
+        spec: EngineSessionSpec,
         settings: Settings,
         registries: super::super::registries::RuntimeRegistries,
     ) -> anyhow::Result<Self> {
-        Self::assemble(
-            cols,
-            rows,
-            waker,
-            shared_ids,
-            layout_slot,
-            memory,
-            runner_registry,
-            settings,
-            Some(registries),
-        )
+        Self::assemble(spec, settings, Some(registries))
     }
 
     #[cfg(test)]
     pub(crate) fn new_with_ids_and_settings(
-        cols: usize,
-        rows: usize,
-        waker: Waker,
-        shared_ids: Option<RuntimeCounters>,
-        layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
-        memory: Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-        runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
+        spec: EngineSessionSpec,
         settings: Settings,
     ) -> anyhow::Result<Self> {
-        Self::assemble(
-            cols,
-            rows,
-            waker,
-            shared_ids,
-            layout_slot,
-            memory,
-            runner_registry,
-            settings,
-            None,
-        )
+        Self::assemble(spec, settings, None)
     }
 
     fn assemble(
-        cols: usize,
-        rows: usize,
-        waker: Waker,
-        shared_ids: Option<RuntimeCounters>,
-        layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
-        memory: Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-        runner_registry: Arc<tasty_task_runtime::RunnerRegistry>,
+        spec: EngineSessionSpec,
         settings: Settings,
         registries: Option<super::super::registries::RuntimeRegistries>,
     ) -> anyhow::Result<Self> {
         // CoreState와 실행 자원이 파일을 읽기 전에 검사 홈을 설정한다.
         #[cfg(test)]
         let isolated_home = Some(crate::test_support::IsolatedHome::new());
+        let EngineSessionSpec {
+            cols,
+            rows,
+            waker,
+            shared_ids,
+            layout_slot,
+            memory,
+            runner_registry,
+        } = spec;
         let next_ids = shared_ids.unwrap_or_default();
         let registries =
             registries.unwrap_or_else(|| super::super::registries::RuntimeRegistries::new(None));

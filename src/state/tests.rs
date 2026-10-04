@@ -86,13 +86,15 @@ fn state_fixture(
 ) {
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
     let mut engine = crate::runtime::engine_session::EngineSession::new_with_ids_and_settings(
-        80,
-        24,
-        waker,
-        None,
-        None,
-        memory,
-        std::sync::Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+        crate::runtime::engine_session::EngineSessionSpec {
+            cols: 80,
+            rows: 24,
+            waker,
+            shared_ids: None,
+            layout_slot: None,
+            memory,
+            runner_registry: std::sync::Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+        },
         crate::settings::Settings::default(),
     )
     .unwrap();

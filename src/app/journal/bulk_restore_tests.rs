@@ -15,13 +15,15 @@ fn more_than_one_channel_capacity_of_captures_are_read_without_halting_bootstrap
     ));
     let runners = Arc::new(tasty_task_runtime::RunnerRegistry::new());
     let mut session = EngineSession::new_with_ids_and_settings(
-        80,
-        24,
-        Arc::new(|| {}),
-        None,
-        Some(1),
-        memory,
-        runners,
+        crate::runtime::engine_session::EngineSessionSpec {
+            cols: 80,
+            rows: 24,
+            waker: Arc::new(|| {}),
+            shared_ids: None,
+            layout_slot: Some(1),
+            memory,
+            runner_registry: runners,
+        },
         crate::settings::Settings::default(),
     )
     .unwrap();
@@ -190,13 +192,15 @@ fn selected_terminal_restores_capture_while_other_tabs_remain_resource_free() {
     settings.general.shell = "/bin/sh".into();
     settings.general.startup_command = String::new();
     let mut session = EngineSession::new_with_ids_and_settings(
-        80,
-        24,
-        Arc::new(|| {}),
-        None,
-        Some(1),
-        memory,
-        runners,
+        crate::runtime::engine_session::EngineSessionSpec {
+            cols: 80,
+            rows: 24,
+            waker: Arc::new(|| {}),
+            shared_ids: None,
+            layout_slot: Some(1),
+            memory,
+            runner_registry: runners,
+        },
         settings,
     )
     .unwrap();
@@ -313,13 +317,15 @@ fn large_generic_capture_waits_for_registration_and_reaches_restore_factory_unch
     ));
     let runners = Arc::new(tasty_task_runtime::RunnerRegistry::new());
     let mut session = EngineSession::new_with_ids_and_settings(
-        80,
-        24,
-        Arc::new(|| {}),
-        None,
-        Some(1),
-        memory,
-        runners,
+        crate::runtime::engine_session::EngineSessionSpec {
+            cols: 80,
+            rows: 24,
+            waker: Arc::new(|| {}),
+            shared_ids: None,
+            layout_slot: Some(1),
+            memory,
+            runner_registry: runners,
+        },
         crate::settings::Settings::default(),
     )
     .unwrap();
@@ -448,13 +454,15 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
     .unwrap();
     let runners = Arc::new(tasty_task_runtime::RunnerRegistry::new());
     let mut session = EngineSession::new_with_ids_and_settings(
-        80,
-        24,
-        Arc::new(|| {}),
-        None,
-        Some(1),
-        memory,
-        runners,
+        crate::runtime::engine_session::EngineSessionSpec {
+            cols: 80,
+            rows: 24,
+            waker: Arc::new(|| {}),
+            shared_ids: None,
+            layout_slot: Some(1),
+            memory,
+            runner_registry: runners,
+        },
         crate::settings::Settings::default(),
     )
     .unwrap();

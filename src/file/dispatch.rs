@@ -27,6 +27,14 @@ pub use crate::core::origin::FileDispatchOrigin;
 #[cfg(feature = "gui")]
 pub(crate) use crate::core::origin::require_origin_pane;
 
+/// picker 표시와 핸들러 실행이 함께 옮기는 요청 출처와 크기 제한 정책.
+#[cfg(feature = "gui")]
+#[derive(Debug, Clone, Copy)]
+pub struct FileDispatchPolicy {
+    pub dispatch_origin: FileDispatchOrigin,
+    pub ignore_size_limit: bool,
+}
+
 /// 파일은 형식 식별을 거치고 http(s) URL은 바로 핸들러 선택·실행으로 전달한다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DispatchTarget {
@@ -155,8 +163,7 @@ pub(crate) fn open_picker(
     detector: Option<DetectorId>,
     candidates: Vec<FileHandler>,
     candidates_are_fallback: bool,
-    dispatch_origin: FileDispatchOrigin,
-    ignore_size_limit: bool,
+    policy: FileDispatchPolicy,
 ) {
     open_picker_from_read(
         state,
@@ -165,8 +172,7 @@ pub(crate) fn open_picker(
         detector,
         candidates,
         candidates_are_fallback,
-        dispatch_origin,
-        ignore_size_limit,
+        policy,
     );
 }
 
@@ -179,9 +185,12 @@ pub(crate) fn open_picker_from_read(
     detector: Option<DetectorId>,
     candidates: Vec<FileHandler>,
     candidates_are_fallback: bool,
-    dispatch_origin: FileDispatchOrigin,
-    ignore_size_limit: bool,
+    policy: FileDispatchPolicy,
 ) {
+    let FileDispatchPolicy {
+        dispatch_origin,
+        ignore_size_limit,
+    } = policy;
     let recent_entries: Vec<(HandlerId, i64)> = state
         .file_handler_recent
         .list()
@@ -307,9 +316,12 @@ pub fn execute_handler_action(
     handler: &FileHandler,
     target: &DispatchTarget,
     origin_surface_id: Option<u32>,
-    dispatch_origin: FileDispatchOrigin,
-    ignore_size_limit: bool,
+    policy: FileDispatchPolicy,
 ) -> bool {
+    let FileDispatchPolicy {
+        dispatch_origin,
+        ignore_size_limit,
+    } = policy;
     if !handler_may_run(&engine.as_ref(), handler, target, origin_surface_id) {
         return false;
     }
@@ -647,8 +659,10 @@ mod tests {
             None,
             Vec::new(),
             false,
-            FileDispatchOrigin::Agent,
-            false,
+            crate::file::dispatch::FileDispatchPolicy {
+                dispatch_origin: FileDispatchOrigin::Agent,
+                ignore_size_limit: false,
+            },
         );
         assert!(
             !state

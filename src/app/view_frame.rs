@@ -54,16 +54,9 @@ impl App {
                 &self.stream_hub,
             ) {
                 match update {
-                    super::view_mesh::MeshViewUpdate::Bootstrap {
-                        surface,
-                        plugin,
-                        width,
-                        height,
-                        ppp,
-                        theme,
-                        focused,
-                    } => view
-                        .note_mesh_bootstrap(surface, plugin, width, height, ppp, theme, focused),
+                    super::view_mesh::MeshViewUpdate::Bootstrap(boot) => {
+                        view.note_mesh_bootstrap(*boot)
+                    }
                     super::view_mesh::MeshViewUpdate::Full { surface } => {
                         view.request_mesh_full(surface)
                     }

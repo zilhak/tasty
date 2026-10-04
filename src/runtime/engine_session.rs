@@ -112,6 +112,7 @@ impl EngineSession {
 }
 
 mod bootstrap;
+pub(crate) use bootstrap::EngineSessionSpec;
 
 #[cfg(test)]
 mod tests;

@@ -30,13 +30,15 @@ fn latest_view_supersedes_pending_tick_and_resume_ignores_legacy_positions() {
     settings.general.shell = "/bin/sh".into();
     settings.general.startup_command = "exec sleep 60".into();
     let mut session = EngineSession::new_with_ids_and_settings(
-        80,
-        24,
-        Arc::new(|| {}),
-        None,
-        Some(1),
-        memory.clone(),
-        runners,
+        crate::runtime::engine_session::EngineSessionSpec {
+            cols: 80,
+            rows: 24,
+            waker: Arc::new(|| {}),
+            shared_ids: None,
+            layout_slot: Some(1),
+            memory: memory.clone(),
+            runner_registry: runners,
+        },
         settings,
     )
     .unwrap();
@@ -218,13 +220,15 @@ fn failed_view_write_retains_the_checkpoint_and_marks_its_engine_dirty() {
     settings.general.shell = "/bin/sh".into();
     settings.general.startup_command = "exec sleep 60".into();
     let mut session = EngineSession::new_with_ids_and_settings(
-        80,
-        24,
-        Arc::new(|| {}),
-        None,
-        Some(1),
-        memory,
-        runners,
+        crate::runtime::engine_session::EngineSessionSpec {
+            cols: 80,
+            rows: 24,
+            waker: Arc::new(|| {}),
+            shared_ids: None,
+            layout_slot: Some(1),
+            memory,
+            runner_registry: runners,
+        },
         settings,
     )
     .unwrap();
@@ -342,13 +346,15 @@ fn failed_legacy_import_keeps_regular_and_secret_scopes() {
     ));
     seed_legacy_scopes(&mut memory.lock().unwrap());
     let mut session = EngineSession::new_with_ids_and_settings(
-        80,
-        24,
-        Arc::new(|| {}),
-        None,
-        Some(1),
-        memory.clone(),
-        Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+        crate::runtime::engine_session::EngineSessionSpec {
+            cols: 80,
+            rows: 24,
+            waker: Arc::new(|| {}),
+            shared_ids: None,
+            layout_slot: Some(1),
+            memory: memory.clone(),
+            runner_registry: Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+        },
         crate::settings::Settings::default(),
     )
     .unwrap();

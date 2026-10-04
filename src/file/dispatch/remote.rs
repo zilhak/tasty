@@ -87,8 +87,10 @@ pub(crate) fn apply_remote_identify_result(
             &first,
             &DispatchTarget::File(target),
             Some(origin_surface_id),
-            dispatch_origin,
-            false,
+            crate::file::dispatch::FileDispatchPolicy {
+                dispatch_origin,
+                ignore_size_limit: false,
+            },
         );
         return;
     }
@@ -121,8 +123,10 @@ fn open_remote_picker(
         detector,
         openable,
         false,
-        dispatch_origin,
-        false,
+        crate::file::dispatch::FileDispatchPolicy {
+            dispatch_origin,
+            ignore_size_limit: false,
+        },
     );
     let Some(picker) = state.dialogs.file_handler_picker.as_mut() else {
         return;
