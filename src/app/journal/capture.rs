@@ -227,6 +227,9 @@ impl JournalApplication {
         source: u32,
         reply: PresetCaptureReply,
     ) -> Result<u64, String> {
+        // gui 가 꺼지면 PendingPresetCapture 가 engine 식별자를 보관하지 않는다.
+        #[cfg(not(feature = "gui"))]
+        let _ = engine_id;
         if self.is_halted() {
             return Err("journal is halted".into());
         }

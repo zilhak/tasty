@@ -309,6 +309,9 @@ impl RequestContext {
         ws_idx: usize,
         origin: WorkspaceCloseOrigin,
     ) -> bool {
+        // gui 가 꺼지면 사용자 조작 경로가 없어 agent 출처로만 보낸다.
+        #[cfg(not(feature = "gui"))]
+        let _ = origin;
         let Some(workspace) = engine.workspace_at(ws_idx) else {
             return false;
         };

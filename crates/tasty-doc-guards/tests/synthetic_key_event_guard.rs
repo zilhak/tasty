@@ -44,7 +44,7 @@ fn synthetic_gate_precedes_every_mode_branch() {
             "부팅 상태 머신 분기",
         ),
         (
-            "self.handle_active_modal_window_event(event_loop, id, event);",
+            "self.handle_active_modal_window_event(id, event);",
             "활성 모달 분기",
         ),
         (
@@ -52,7 +52,7 @@ fn synthetic_gate_precedes_every_mode_branch() {
             "plugin 단축키 가로채기",
         ),
         (
-            "self.dispatch_window_event_to_view(event_loop, id, event);",
+            "self.dispatch_window_event_to_view(id, event);",
             "View 이벤트 전달",
         ),
     ] {

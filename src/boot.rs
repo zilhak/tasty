@@ -336,7 +336,7 @@ fn handle_terminal_output(
             crate::app::command::CoreEvent::TerminalCwdChanged { surface_id, .. } => {
                 crate::intent::headless::apply_terminal_cwd_changed(engine, surface_id);
             }
-            event => fire_terminal_hooks(app, state, engine, vec![event]),
+            event => fire_terminal_hooks(app, engine, vec![event]),
         }
     }
     crate::intent::headless::drain_pending_host_events(&app.services, engine);
@@ -346,7 +346,6 @@ fn handle_terminal_output(
 #[cfg(not(feature = "gui"))]
 fn fire_terminal_hooks(
     app: &crate::app::App,
-    state: &mut crate::state::RequestContext,
     engine: &mut EngineMut<'_>,
     events: Vec<crate::app::command::CoreEvent>,
 ) {
@@ -395,7 +394,7 @@ fn boot_memory(
             .regular_quota_mb_total
             .saturating_mul(1024 * 1024),
     };
-    let memory_arc = match tasty_memory::init_with_config(memory_config) {
+    match tasty_memory::init_with_config(memory_config) {
         Ok(arc) => {
             maintain_memory_at_boot(&arc);
             Some(arc)
@@ -404,8 +403,7 @@ fn boot_memory(
             tracing::warn!("memory.db init at boot failed: {e}");
             crate::boot::wiring::memory_fallback_after(&e)
         }
-    };
-    memory_arc
+    }
 }
 
 /// IPC가 시작됐을 때만 라우터에 의존하는 훅·완료 전략·웹훅을 초기화한다.
@@ -808,14 +806,12 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         let Some(event) = pending else {
             continue;
         };
-        drop(engine);
         let flow = dispatch_headless_event(&mut app, &mut state, &mut session, &waker, event);
         engine = session.borrow_mut();
         if flow.is_break() {
             break;
         }
     }
-    drop(engine);
     finish_headless_shutdown(&mut app, &mut session);
     Ok(())
 }

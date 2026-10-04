@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use crate::app::App;
 use crate::view;
+// `View::mark_dirty` 는 windows 전용 surface_bashrc_save_failure 에서만 쓴다.
+#[cfg(windows)]
 use crate::view::ui::View as _;
 
 struct SettingsInitData {

@@ -295,7 +295,7 @@ fn is_unknown_kind(kind: &str) -> bool {
 /// 닫을 때 폼·조회 슬롯·필터 초안을 버린다. 적용된 필터는 별도 키에 남긴다.
 pub fn on_close_remote_tool_popup(
     ctx: &egui::Context,
-    state: &mut MainViewState,
+    _state: &mut MainViewState,
     _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     clear_ui(ctx);
@@ -394,9 +394,7 @@ pub fn draw_remote_tool_popup(
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing = saved_spacing;
             match st.tab {
-                Tab::Profiles => {
-                    draw_profiles_tab(ui, &th, &ctx, &mut st, &mut profiles, &passkeys)
-                }
+                Tab::Profiles => draw_profiles_tab(ui, &th, &mut st, &mut profiles, &passkeys),
                 Tab::Attach => draw_attach_tab(ui, &th, &mut st, &mut profiles, &passkeys),
                 Tab::Passkeys => draw_passkeys_tab(ui, &th, &mut st, &passkeys),
             }
@@ -550,14 +548,13 @@ fn draw_tab_bar(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, x_range: egui::
 fn draw_profiles_tab(
     ui: &mut egui::Ui,
     th: &Theme,
-    ctx: &egui::Context,
     st: &mut UiState,
     profiles: &mut RemoteProfiles,
     passkeys: &Passkeys,
 ) {
     match st.profile_view.clone() {
         Sub::List => draw_profile_list(ui, th, st, profiles, passkeys),
-        Sub::Form => draw_profile_form(ui, th, ctx, st, profiles, passkeys),
+        Sub::Form => draw_profile_form(ui, th, st, passkeys),
         Sub::ConfirmDelete(name) => {
             if let Some(act) =
                 draw_confirm_delete(ui, th, t("remote_tool.noun_profile"), &name, None)
@@ -1007,14 +1004,7 @@ fn form_from_profile(p: &RemoteProfile, _passkeys: &Passkeys) -> ProfileForm {
     f
 }
 
-fn draw_profile_form(
-    ui: &mut egui::Ui,
-    th: &Theme,
-    ctx: &egui::Context,
-    st: &mut UiState,
-    profiles: &mut RemoteProfiles,
-    passkeys: &Passkeys,
-) {
+fn draw_profile_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: &Passkeys) {
     // 폼은 스크롤 본문과 고정 푸터를 나누고 자체 여백을 적용한다.
     let full_x = ui.clip_rect().x_range();
     let sep = egui::Stroke::new(th.border_width.value(), th.border_strong());
@@ -2350,7 +2340,7 @@ mod tests {
         write_filter(&ctx, ["ssh".to_string()].into_iter().collect());
 
         let (mut state, mut engine_session) = crate::state::tests::test_state();
-        let mut engine = engine_session.borrow_mut();
+        let engine = engine_session.borrow_mut();
         on_close_remote_tool_popup(&ctx, &mut state, &engine.read());
 
         assert!(

@@ -87,7 +87,7 @@ impl App {
         if self.dispatch_plugin_shortcut_key(id, &ev.key, ev.mods) {
             return;
         }
-        let Some((main, mut engine)) = engines_mut!(self).window_pair(id) else {
+        let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
             return;
         };
         // 플러그인 단축키에서 처리하지 않은 키는 원래 webview가 사라졌으면 버린다.

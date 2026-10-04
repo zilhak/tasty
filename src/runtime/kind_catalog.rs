@@ -2,7 +2,9 @@
 use super::surface_registry::{
     KindSource, PresetFieldSpec, RegisteredRendering, SurfaceKindDef, SurfaceKindRegistry,
 };
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
+#[cfg(feature = "gui")]
+use std::sync::Weak;
 #[derive(Clone)]
 pub(crate) struct KindCatalog(Arc<SurfaceKindRegistry>);
 #[cfg(feature = "gui")]

@@ -4,7 +4,6 @@
 #![cfg(not(feature = "gui"))]
 
 use crate::app::App;
-use crate::core::CoreState;
 use crate::ipc::caller::resolve_caller_from_envelope;
 use crate::ipc::server::send_response;
 use crate::runtime::engine_access::EngineMut;
@@ -207,7 +206,7 @@ fn intercept_app_layer(
             &mut app.services,
             window,
             engine,
-            &caller,
+            caller,
             rpc_id,
             &cmd.request.params,
         );

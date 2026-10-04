@@ -15,6 +15,7 @@ pub(crate) mod builder;
 pub(crate) mod file;
 pub(crate) mod impl_attach;
 pub(crate) mod impl_clipboard;
+#[cfg(feature = "gui")]
 pub(crate) mod impl_mirror;
 pub(crate) mod impl_pty;
 pub(crate) mod impl_tab;
@@ -324,8 +325,10 @@ mod semaphore;
 
 mod surface;
 #[cfg(feature = "gui")]
+pub(crate) use surface::RemoteConnParams;
+#[cfg(feature = "gui")]
 pub(crate) use surface::no_application_state;
-pub(crate) use surface::{RemoteConnParams, clipboard_set_text, spawn_remote_workspaces};
+pub(crate) use surface::{clipboard_set_text, spawn_remote_workspaces};
 #[cfg(debug_assertions)]
 mod surface_debug;
 #[cfg(debug_assertions)]

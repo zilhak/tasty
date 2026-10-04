@@ -1,5 +1,6 @@
 mod navigation_compat;
 use super::*;
+#[cfg(feature = "gui")]
 use crate::model::SplitDirection;
 use crate::runtime::engine_access::EngineMut;
 

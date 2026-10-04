@@ -392,7 +392,7 @@ fn open_surface_params(param_key: &str, target: &DispatchTarget) -> serde_json::
 /// origin이 있으면 그 pane에, 없으면 현재 pane에 탭 생성을 요청한다.
 #[cfg(feature = "gui")]
 pub(crate) fn open_surface_tab(
-    core: &mut crate::app::services::AppServices,
+    _core: &mut crate::app::services::AppServices,
     state: &mut RequestContext,
     engine: &mut EngineMut<'_>,
     surface_kind: &str,

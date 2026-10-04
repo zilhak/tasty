@@ -41,7 +41,9 @@ pub mod search;
 #[cfg(feature = "gui")]
 pub use tasty_selection as selection;
 
-pub use crate::core::host_event::{PendingHostEvent, PendingSurfaceClosed};
+pub use crate::core::host_event::PendingHostEvent;
+#[cfg(feature = "gui")]
+pub use crate::core::host_event::PendingSurfaceClosed;
 #[cfg(feature = "gui")]
 pub use dialogs::{
     DialogState, FileHandlerPickerData, FileHandlerPickerResult, PendingNativeMenu,
@@ -55,6 +57,7 @@ pub use events::FocusedSurfaceType;
 #[cfg(any(feature = "gui", debug_assertions))]
 pub use workspace::WorkspaceCloseOrigin;
 
+#[cfg(feature = "gui")]
 use crate::core::CoreState;
 #[cfg(feature = "gui")]
 use crate::model::LogicalPx;

@@ -1,5 +1,6 @@
 #[cfg(feature = "gui")]
 use crate::core::CoreState;
+#[cfg(any(feature = "gui", test))]
 use crate::runtime::engine_read::EngineRead;
 
 use super::RequestContext;
@@ -228,6 +229,9 @@ impl RequestContext {
         capture: bool,
         is_user: bool,
     ) -> bool {
+        // gui 가 꺼지면 사용자 조작 경로가 없어 agent 출처로만 보낸다.
+        #[cfg(not(feature = "gui"))]
+        let _ = is_user;
         if !engine.core.has_surface(surface_id) {
             return false;
         }

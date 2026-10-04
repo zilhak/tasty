@@ -238,13 +238,18 @@ impl Commands {
                 engine,
                 origin,
                 view,
-            } => self.completed_intents.push(IntentResult {
-                #[cfg(feature = "gui")]
-                view,
-                engine,
-                origin,
-                response,
-            }),
+            } => {
+                // gui 가 꺼지면 IntentResult 가 view 연속을 보관하지 않는다.
+                #[cfg(not(feature = "gui"))]
+                let _ = view;
+                self.completed_intents.push(IntentResult {
+                    #[cfg(feature = "gui")]
+                    view,
+                    engine,
+                    origin,
+                    response,
+                })
+            }
         }
     }
 }

@@ -1978,7 +1978,7 @@ mod tests {
         // 포인터가 없는 경우에는 같은 델타로 스크롤되지 않는지 함께 확인한다.
         let mut never_hovered = EguiMeshCore::new();
         let idle = std::cell::Cell::new(f32::NAN);
-        let mut idle_frame = |events: Vec<Event>, core: &mut EguiMeshCore| {
+        let idle_frame = |events: Vec<Event>, core: &mut EguiMeshCore| {
             let mut raw = build_raw_input(w, h, ppp, &RawInputWire::default());
             raw.events = events;
             core.render(raw, false, |ctx| draw_scroll_area_measured(ctx, &idle));

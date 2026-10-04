@@ -57,6 +57,9 @@ pub(crate) struct RequestOutputs {
 }
 impl RequestOutputs {
     pub(crate) fn apply(self, state: &mut crate::state::RequestContext, engine: &CoreState) {
+        // gui 가 꺼지면 승인 popup 이 없어 engine 을 읽는 쪽이 사라진다.
+        #[cfg(not(feature = "gui"))]
+        let _ = engine;
         state.pending_intents.extend(self.intents);
         #[cfg(feature = "gui")]
         for record in self.approvals {

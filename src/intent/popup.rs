@@ -2,9 +2,11 @@
 //! 호출자가 요청 출처에 맞는 OpenPopupMode를 골라야 한다.
 //! 정책: docs/design/flows/action-dispatch.md.
 
+#[cfg(feature = "gui")]
 use super::DispatchedIntent;
 #[cfg(feature = "gui")]
 use super::{Intent, OpenPopupMode, UiIntent};
+#[cfg(feature = "gui")]
 use crate::state::RequestContext;
 
 /// 헤드리스에서는 팝업을 표시할 수 없어 요청을 무시한다.

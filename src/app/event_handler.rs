@@ -282,7 +282,7 @@ impl ApplicationHandler<AppEvent> for App {
         if let Some(modal_id) = self.view.active_modal_id()
             && id == modal_id
         {
-            self.handle_active_modal_window_event(event_loop, id, event);
+            self.handle_active_modal_window_event(id, event);
             return;
         }
 
@@ -316,7 +316,7 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
-        self.dispatch_window_event_to_view(event_loop, id, event);
+        self.dispatch_window_event_to_view(id, event);
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -1096,12 +1096,7 @@ impl App {
     }
 
     /// 모달에 이벤트를 전달하고 반환한 닫기 요청을 처리한다. 호출자는 이후 일반 창 처리를 하지 않는다.
-    fn handle_active_modal_window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        id: WindowId,
-        event: WindowEvent,
-    ) {
+    fn handle_active_modal_window_event(&mut self, id: WindowId, event: WindowEvent) {
         let action = if let Some(modal) = self.view.views.get_mut(&id) {
             let mut ctx = ViewCtx {
                 modal_active: false,
@@ -1151,12 +1146,7 @@ impl App {
         }
     }
 
-    fn dispatch_window_event_to_view(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        id: WindowId,
-        event: WindowEvent,
-    ) {
+    fn dispatch_window_event_to_view(&mut self, id: WindowId, event: WindowEvent) {
         if matches!(event, WindowEvent::RedrawRequested)
             && self
                 .view
@@ -1379,13 +1369,13 @@ impl App {
         if clients.is_empty() {
             return;
         }
-        for mut engine in self.engines_mut().windowed_and_parked() {
+        for engine in self.engines_mut().windowed_and_parked() {
             engine.live.occupancy.mark_clients_disconnected(clients);
         }
     }
 
     pub(crate) fn release_attach_for_disconnected(&mut self, clients: &[u32]) {
-        for mut engine in self.engines_mut().windowed_and_parked() {
+        for engine in self.engines_mut().windowed_and_parked() {
             for &cid in clients {
                 engine.live.occupancy.release_all_for_client(cid);
                 engine.remote.forget_client_structures(cid);
@@ -2334,7 +2324,7 @@ impl App {
 
     /// 메뉴 결과가 마지막 workspace를 닫을 수 있어 처리 직후 빈 창의 닫기 요청도 소비한다.
     fn poll_pending_native_menus(&mut self) {
-        for (_, main, mut engine) in self.engines_mut().window_pairs() {
+        for (_, main, engine) in self.engines_mut().window_pairs() {
             main.poll_pending_native_menu(&engine.read());
         }
         self.close_self_requesting_windows();

@@ -8,7 +8,9 @@
 
 use crate::app::command::CoreEvent;
 use crate::app::services::AppServices;
-use crate::core::{AttentionKind, CoreState};
+use crate::core::AttentionKind;
+#[cfg(test)]
+use crate::core::CoreState;
 use crate::intent::{DispatchedIntent, Intent};
 use crate::runtime::engine_access::EngineMut;
 use crate::state::RequestContext;

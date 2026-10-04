@@ -3,9 +3,11 @@ use super::{
     engine_access::{EngineRef, ObservedPresentation},
     terminal_store::TerminalStore,
 };
+#[cfg(feature = "gui")]
+use crate::model::Tab;
 use crate::{
     core::{CoreState, live::LiveDomainState},
-    model::{StructurePresentation, Surface, Tab},
+    model::{StructurePresentation, Surface},
 };
 use std::{
     collections::{HashMap, HashSet},

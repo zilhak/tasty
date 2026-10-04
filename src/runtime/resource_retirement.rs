@@ -91,7 +91,7 @@ impl ResourceRetirement {
         &mut self,
         claim: ClaimedRetirement,
         engine: &mut crate::runtime::engine_access::EngineMut<'_>,
-        mut plugins: Option<&mut crate::plugin::PluginManager>,
+        plugins: Option<&mut crate::plugin::PluginManager>,
     ) -> Result<(), String> {
         if self.started.is_some()
             || claim.plan != self.plan
@@ -113,14 +113,14 @@ impl ResourceRetirement {
         mut plugins: Option<&mut crate::plugin::PluginManager>,
     ) -> Result<(), String> {
         if self.owners.iter().any(|owner| {
-            (owner
+            owner
                 .surface
                 .as_any()
                 .is::<crate::plugin_bridge::remote_surface::RemoteSurface>()
                 || owner
                     .surface
                     .as_any()
-                    .is::<crate::runtime::egui_mesh_surface::EguiMeshSurface>())
+                    .is::<crate::runtime::egui_mesh_surface::EguiMeshSurface>()
         }) && plugins.is_none()
         {
             return Err("plugin host is absent for committed retirement".into());
