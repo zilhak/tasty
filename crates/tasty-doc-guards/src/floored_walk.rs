@@ -88,10 +88,10 @@ pub mod populations {
 
     /// `src/` 아래 `.rs` 전부.
     pub const SRC_RS: Population = Population {
-        measured: 791,
-        measured_on: "2026-10-03",
+        measured: 801,
+        measured_on: "2026-10-04",
         counted_on: super::CountedOn::Tree(
-            "6c86eef1c — src 아래 Rust 파일 791개. 깊이 4 이하 523개, 깊이 5 이상 268개, 최대 깊이 7.",
+            "fbad2ae0e — src 아래 Rust 파일 801개. 깊이 4 이하 533개, 깊이 5 이상 268개, 최대 깊이 7.",
         ),
         how: "src/ 아래에서 .rs로 끝나는 파일을 깊이 제한 없이 센다. 캐시는 제외한다. git ls-tree의 같은 경로 집합으로 대조하며 측정 당시 미추적 파일은 없었다.",
     };
