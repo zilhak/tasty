@@ -530,7 +530,6 @@ pub struct SettingsPanelCtx<'a> {
     pub captured_double_tap: &'a mut Option<String>,
     pub file_format: &'a FileFormatRegistry,
     pub file_handler: &'a FileHandlerRegistry,
-    pub user_config_path: Option<&'a std::path::Path>,
 }
 
 /// 단축키 충돌 팝업에 표시할 안내 문자열을 구성한다. 팝업 draw 와 open 직전
@@ -598,7 +597,6 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
         captured_double_tap,
         file_format,
         file_handler,
-        user_config_path,
     } = panel;
     if ui_state.draft.is_none() {
         ui_state.draft = Some(settings.clone());
@@ -688,16 +686,7 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                                 }),
                         )
                         .show_inside(ui, |ui| {
-                            draw_settings_footer(
-                                ui,
-                                &th,
-                                settings,
-                                ui_state,
-                                file_format,
-                                file_handler,
-                                user_config_path,
-                                &mut result,
-                            );
+                            draw_settings_footer(ui, &th, settings, ui_state, &mut result);
                         });
                     let fr = footer.response.rect;
                     ui.painter().hline(fr.x_range(), fr.top() + 0.5, sep);
@@ -1633,15 +1622,11 @@ fn sidebar_row(
 // ── 푸터 ──────────────────────────────────────────────────────────────────
 
 /// 콘텐츠 아래의 Cancel과 Save 버튼.
-#[allow(clippy::too_many_arguments)]
 fn draw_settings_footer(
     ui: &mut egui::Ui,
     th: &Theme,
     settings: &mut Settings,
     ui_state: &mut SettingsUiState,
-    file_format: &FileFormatRegistry,
-    file_handler: &FileHandlerRegistry,
-    user_config_path: Option<&std::path::Path>,
     result: &mut Option<bool>,
 ) {
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1652,14 +1637,7 @@ fn draw_settings_footer(
             .show(ui, th)
             .clicked()
         {
-            commit_settings_save(
-                settings,
-                ui_state,
-                file_format,
-                file_handler,
-                user_config_path,
-                result,
-            );
+            commit_settings_save(settings, ui_state, result);
         }
         if Button::new(t("button.cancel"))
             .variant(ButtonVariant::Ghost)
@@ -1671,14 +1649,12 @@ fn draw_settings_footer(
     });
 }
 
-/// 설정과 핸들러 변경 초안을 저장한다. 전역 Theme 적용은 창을 닫은 뒤 처리한다.
-/// 렌더 중에는 THEME 읽기 락을 잡고 있어 여기서 쓰기 락을 잡으면 교착된다.
+/// 설정 초안을 settings 에 반영한다. 핸들러·훅 편집과 전역 Theme 적용은 창을 닫은 뒤
+/// `take_execution_edits` 로 회수해 처리한다. 렌더 중에는 THEME 읽기 락을 잡고 있어
+/// 여기서 쓰기 락을 잡으면 교착된다.
 fn commit_settings_save(
     settings: &mut Settings,
     ui_state: &mut SettingsUiState,
-    file_format: &FileFormatRegistry,
-    file_handler: &FileHandlerRegistry,
-    user_config_path: Option<&std::path::Path>,
     result: &mut Option<bool>,
 ) {
     if let Some(draft) = &ui_state.draft {

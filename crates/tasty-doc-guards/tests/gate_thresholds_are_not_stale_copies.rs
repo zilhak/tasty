@@ -129,9 +129,14 @@ enum Kind {
 /// 검색 결과 중 현재 값 설명이 아닌 파일과 제외 근거.
 const EXCLUDED: &[(&str, Kind, &str)] = &[
     (
-        "crates/tasty-dag-layout/src/engine.rs",
+        "crates/tasty-ssh/src/lib.rs",
         Kind::OtherMeaning,
-        "TRANSPOSE_NODE_LIMIT 128은 교차 감소 알고리즘의 노드 수 상한이며 allow 개수가 아니다",
+        "SYN 재시도 ~127초이며 allow 개수가 아니다",
+    ),
+    (
+        "docs/features/remote-attach/index.md",
+        Kind::OtherMeaning,
+        "SYN 재시도 ~127초이며 allow 개수가 아니다",
     ),
     (
         "docs/adr/0047-ci-and-complexity-checks.md",

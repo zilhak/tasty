@@ -66,7 +66,7 @@ impl App {
         self.settings_edit_owner = Some(crate::app::settings_edit::SettingsEditOwner {
             format: init.file_format.clone(),
             handler: init.file_handler.clone(),
-            path: init.user_config_path.clone(),
+            path: init.user_config_path,
         });
         let mut modal = view::SettingsView::new(
             gpu,
@@ -74,7 +74,6 @@ impl App {
             init.settings,
             crate::runtime::file_catalog::FormatCatalog::new(init.file_format),
             crate::runtime::file_catalog::HandlerCatalog::new(init.file_handler),
-            init.user_config_path,
         );
         modal.set_plugin_shortcuts(self.snapshot_plugin_shortcuts());
         modal.set_plugin_bundle_context(self.plugin_bundle_context());

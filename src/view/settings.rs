@@ -23,8 +23,6 @@ pub struct SettingsView {
     file_format: FileFormatRegistry,
     /// 같은 사용자 TOML의 handler 섹션을 함께 내보내 저장 시 보존한다.
     file_handler: FileHandlerRegistry,
-    /// user TOML 저장 경로. CI/CD 등 홈 디렉토리가 없으면 `None` 으로 들어와 저장 skip.
-    user_config_path: Option<std::path::PathBuf>,
     shown: bool,
     double_tap: crate::double_tap::DoubleTapDetector,
     captured_double_tap: Option<String>,
@@ -57,7 +55,6 @@ impl SettingsView {
         settings: Settings,
         file_format: FileFormatRegistry,
         file_handler: FileHandlerRegistry,
-        user_config_path: Option<std::path::PathBuf>,
     ) -> Self {
         Self {
             base: ViewBase::new(gpu, winit),
@@ -66,7 +63,6 @@ impl SettingsView {
             settings_ui_state: SettingsUiState::new(),
             file_format,
             file_handler,
-            user_config_path,
             shown: false,
             double_tap: crate::double_tap::DoubleTapDetector::new(),
             captured_double_tap: None,
@@ -290,7 +286,6 @@ impl View for SettingsView {
 
         let file_format = self.file_format.clone();
         let file_handler = self.file_handler.clone();
-        let user_config_path = self.user_config_path.clone();
         let full_output = self.base.gpu.run_egui(raw_input, |ctx| {
             action = settings_ui::draw_settings_panel(
                 ctx,
@@ -300,7 +295,6 @@ impl View for SettingsView {
                     captured_double_tap: captured_dt,
                     file_format: &file_format,
                     file_handler: &file_handler,
-                    user_config_path: user_config_path.as_deref(),
                 },
             );
 
