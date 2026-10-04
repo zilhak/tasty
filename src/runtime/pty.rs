@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use crate::runtime::engine_access::EngineMut;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 use tasty_terminal::Terminal;
 use tasty_terminal::TerminalEvent;
 
@@ -40,7 +40,7 @@ impl EngineMut<'_> {
 
     /// 트리는 유지하고 store의 Terminal을 교체한 뒤 기존 Terminal을 drop한다.
     /// 기존 ID가 없으면 새 Terminal을 등록한 상태에서 Err를 반환한다.
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub fn replace_terminal_by_id(
         &mut self,
         surface_id: u32,
