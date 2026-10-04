@@ -97,10 +97,7 @@ const HOOK_STEPS: &[(&str, &[&str])] = &[
         ],
     ),
     ("pre-merge-commit", &[]),
-    (
-        "pre-push",
-        &["B.4", "B.5", "B.6", "B.7", "B.8", "B.9", "B.10"],
-    ),
+    ("pre-push", &["B.4", "B.6", "B.7", "B.8", "B.9", "B.10"]),
 ];
 
 /// 표의 첫 열에 검사 ID를 적는 운영 문서.
@@ -328,16 +325,22 @@ fn pre_push_reports_failures_and_retains_complete_logs() {
     let refs = "refs/heads/main aaaaaaaa refs/heads/main bbbbbbbb\n";
     let (success, output, calls, logs) = run_pre_push_fixture(refs, 0, 0, 0);
     assert!(success, "{output}");
-    assert_eq!(calls.lines().count(), 7, "{calls}");
-    assert!(calls.contains("--range bbbbbbbb aaaaaaaa"));
-    assert!(calls.contains("--rev aaaaaaaa"));
+    // Clippy covers the development targets once; release and headless remain separate.
+    let expected_calls = [
+        "scripts/check-plugin-version-bump.sh --range bbbbbbbb aaaaaaaa",
+        "scripts/check-population-freshness.sh --rev aaaaaaaa",
+        "cargo clippy --workspace --all-targets -- -D clippy::correctness",
+        "cargo check --workspace --release --locked",
+        "cargo check --no-default-features",
+        "cargo test -p tasty-doc-guards",
+    ];
+    assert_eq!(calls.lines().collect::<Vec<_>>(), expected_calls);
     for title in [
         "플러그인 버전",
         "파일 수 검사 기준",
-        "cargo check --workspace --all-targets",
+        "cargo clippy --workspace --all-targets -- -D clippy::correctness",
         "cargo check --workspace --release --locked",
         "cargo check --no-default-features",
-        "cargo clippy --workspace --all-targets -- -D clippy::correctness",
         "cargo test -p tasty-doc-guards",
     ] {
         assert!(output.contains(&format!("시작: {title}")), "{output}");
@@ -346,7 +349,11 @@ fn pre_push_reports_failures_and_retains_complete_logs() {
     assert!(!output.contains("[B."), "{output}");
     let (success, output, calls, logs) = run_pre_push_fixture(refs, 0, 0, 101);
     assert!(!success, "{output}");
-    assert_eq!(calls.lines().count(), 7, "later checks must still run");
+    assert_eq!(
+        calls.lines().collect::<Vec<_>>(),
+        expected_calls,
+        "later checks must still run"
+    );
     assert!(output.contains("101"));
     assert!(
         !output.contains("first diagnostic"),

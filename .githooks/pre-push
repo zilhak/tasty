@@ -155,8 +155,8 @@ else
 fi
 
 # ─
-# B.5  워크스페이스의 개발 빌드와 테스트 코드 컴파일
-run_check B.5 'cargo check --workspace --all-targets' cargo check --workspace --all-targets
+# B.4  개발 빌드와 테스트 코드의 컴파일·Clippy 검사: correctness 경고는 오류로 처리
+run_check B.4 'cargo clippy --workspace --all-targets -- -D clippy::correctness' cargo clippy --workspace --all-targets -- -D clippy::correctness
 
 # ─
 # B.8  release 설정으로 워크스페이스 컴파일
@@ -165,10 +165,6 @@ run_check B.8 'cargo check --workspace --release --locked' cargo check --workspa
 # ─
 # B.6  GUI 기능을 제외한 headless 빌드 컴파일
 run_check B.6 'cargo check --no-default-features' cargo check --no-default-features
-
-# ─
-# B.4  Clippy 검사: correctness 경고는 오류로 처리
-run_check B.4 'cargo clippy --workspace --all-targets -- -D clippy::correctness' cargo clippy --workspace --all-targets -- -D clippy::correctness
 
 # ─
 # B.7  문서, 매니페스트, 인덱스 검사

@@ -55,4 +55,4 @@ printf 'refs/heads/main %s refs/heads/main %s\n' "$before_head" "$before_head" |
 cmp "$fixture/config.before" "$repo/.git/config"
 cmp "$fixture/index.before" "$repo/.git/index"
 [ "$(git config --get core.bare)" = false ]
-[ "$(wc -l < "$fixture/checks" | tr -d ' ')" = 7 ]
+[ "$(wc -l < "$fixture/checks" | tr -d ' ')" = 6 ]

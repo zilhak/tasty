@@ -844,10 +844,12 @@ allow 검사에는 cfg_attr 안의 allow와 한글 `이유:` 표지도 포함한
 | pre-push | 플러그인 버전 `--range <원격 tip> <로컬 tip>`(B.9) | ✅ plugin-version-check.yml과 같은 스크립트다. Git이 전달한 두 tip을 사용하며 비교 범위를 알 수 없으면 실패한다. staged 변경을 보는 P.1과 구분한다. |
 | pre-push | `scripts/check-population-freshness.sh --rev <로컬 tip>`(B.10) | 자동 채널 없음. 공용 Population의 측정값을 실제 push tip과 대조한다. Floor::validate만으로 실제 개수를 확인할 수 없다. 병렬 작업의 개수 변경은 합친 트리에서 다시 검사한다. |
 | pre-push | `cargo clippy --workspace --all-targets -- -D clippy::correctness` | 부분 — Windows 잡의 clippy 는 `--locked` 를 쓰고 correctness deny 를 걸지 않는다. 그리고 이 훅은 Linux 트리의 feature 집합(`tracing/log` 가 켜진 쪽)으로 lint 를 센다 — Windows 잡은 그 갈림을 못 본다([크레이트를 지목한 clippy](#크레이트를-지목한-clippy-는-push-와-다른-feature-집합을-잰다)) |
-| pre-push | `cargo check --workspace --all-targets` | 부분 — CI 는 `--all-targets` 없이 macOS 에서 본다 |
 | pre-push | `cargo check --no-default-features` | ✅ `crossplatform-check.yml` |
 | pre-push | `cargo test -p tasty-doc-guards` | ✅ `doc-guards.yml` — **같은 크레이트를 부른다**. 훅은 push 하는 머신에서만 돌아 worker 머신엔 이 채널이 없다 |
 | pre-push | `cargo check --workspace --release --locked` | ✅ crossplatform-check.yml의 check-release와 같은 명령이다. debug 검사와 별도로 실행하며 bin 하나로 좁히지 않는다. |
+
+pre-push의 기본 feature 개발 빌드·테스트 코드 컴파일 검사는 위 Clippy 명령에 통합한다.
+동일한 타깃의 일반 `cargo check`를 다시 실행하지 않으며, release와 headless 검사는 유지한다.
 
 <a id="창의-양-끝원하는-두-커밋-훅의-면제-경로를-그대로-적용한다"></a>
 <a id="훅이-어느-os-에서-도는가--위-표에-없는-축"></a>

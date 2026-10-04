@@ -45,11 +45,15 @@ push 저장소의 경로를 전달하지 않는다. 이는 [Git 훅의 저장소
 |----|------|
 | B.9 | `scripts/check-plugin-version-bump.sh --range <원격 커밋> <로컬 커밋>`으로 원격에 게시된 플러그인 버전과 비교한다. |
 | B.10 | `scripts/check-population-freshness.sh --rev <로컬 커밋>`으로 파일 수와 `crates/tasty-doc-guards/src/floored_walk.rs`의 검사 기준이 일치하는지 확인한다. |
-| B.5 | `cargo check --workspace --all-targets` |
+| B.4 | `cargo clippy --workspace --all-targets -- -D clippy::correctness`로 워크스페이스의 개발 빌드·테스트 코드 컴파일과 lint를 함께 검사한다. |
 | B.8 | `cargo check --workspace --release --locked` |
 | B.6 | `cargo check --no-default-features` |
-| B.4 | `cargo clippy --workspace --all-targets -- -D clippy::correctness` |
 | B.7 | `cargo test -p tasty-doc-guards` |
+
+기본 feature의 개발 빌드·테스트 코드 컴파일 검사는 Clippy 한 번으로 수행한다.
+같은 타깃에 대한 `cargo check --workspace --all-targets`는 중복 실행하지 않는다.
+release와 headless는 컴파일 조건이 달라 각각 검사한다. 문서 가드는
+[빌드 프로필](build.md#빌드-프로필-3종)의 패키지별 최적화를 적용하며 전체 항목을 실행한다.
 
 B.9와 B.10은 Git이 전달한 ref별 커밋을 검사한다. 파일 수 기준을 수정했다면 커밋한 뒤 다시 push해야 한다. B.9에서 원격 커밋을 로컬에서 찾지 못하면 `git fetch`가 필요하다. 새 ref는 비교할 원격 버전이 없으므로 B.9를 생략하고, 삭제할 ref는 두 검사를 모두 생략한다. ref별 검사·생략 수는 로그에 남는다.
 
