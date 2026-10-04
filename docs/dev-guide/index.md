@@ -32,7 +32,7 @@ Tasty 개발자를 위한 가이드다. Tasty를 사용하는 에이전트용 �
 | 문서 | 내용 |
 |------|------|
 | [build](build.md) | 워크스페이스·빌드 프로필 · debug 전용 번들 자동 동기화 · 공용 모듈의 GUI 정의 경계 · 로컬 dist 산출물 명령 |
-| [release](release.md) | 릴리스 워크플로(버전 bump → 태그 → CI) · self-hosted 러너 인벤토리·운영 |
+| [release](release.md) | 버전·lockfile·README 배지 정합 · 릴리스 워크플로(태그 → CI) · self-hosted 러너 인벤토리·운영 |
 | [dep-issues](dep-issues.md) | 의존성 future-incompat 모니터링 |
 | [site](site.md) | 공개 사이트(GitHub Pages) 생성·배포 — `site/` 생성기, 사용자 가이드 `site/content/`(docs/ 는 발행 안 함), 집필 규칙과 사이트 어조, URL 구조, 영어 번역 모델(`site/content/en/` + 폴백 + 스탬프) |
 

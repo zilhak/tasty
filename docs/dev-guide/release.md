@@ -13,6 +13,8 @@ CLAUDE.md 정책의 운영 형태:
 
 본체 patch bump 절차: `Cargo.toml` patch +1 → `cargo build`(Cargo.lock 갱신) → `README.md`·`README.ko.md` 의 Version 배지(`badge/version-X.Y.Z-blue`)를 같은 값으로 갱신 → `Cargo.toml` + `Cargo.lock` + 두 README 를 **함께** 커밋(`chore: bump version to X.Y.Z`) → 아래 릴리스 절차로 이어감. 배지를 빠뜨리면 `crates/tasty-doc-guards/tests/readme_badge_parity.rs` 가 실패시킨다 — `doc-guards.yml` 이 main push · PR 마다 자동으로 돌리므로([ci-gates](ci-gates.md)) 빠뜨린 bump 는 CI 에서 잡힌다. 다만 자동 잡은 push 된 커밋만 보니 **커밋 전에 직접 돌리면 그 자리에서 잡힌다** — 릴리스뿐 아니라 이 자동 patch +1 커밋에도 적용된다.
 
+버전만 올리는 요청에서도 위 네 파일의 정합을 확인하고 함께 커밋한다. 버전 변경 자체는 태그 생성이나 릴리스 배포를 뜻하지 않는다. 태그·push는 배포 요청 범위에서 진행한다.
+
 ## 릴리스 단계
 
 ### 1. 버전 + CHANGELOG
