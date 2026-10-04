@@ -17,18 +17,21 @@ impl App {
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
     ) {
-        let code = self
-            .view
+        let code = self.take_pending_modal_exit();
+        if let Some(code) = code {
+            self.begin_error_shutdown(event_loop, code);
+        }
+    }
+
+    pub(crate) fn take_pending_modal_exit(&mut self) -> Option<u8> {
+        self.view
             .views
             .values_mut()
             .filter_map(|view| {
                 view.as_main_mut()
                     .and_then(|main| main.state.dialogs.exit_request.take())
             })
-            .max();
-        if let Some(code) = code {
-            self.begin_error_shutdown(event_loop, code);
-        }
+            .max()
     }
 
     /// 안내 모달이 요청한 권한 화면 열기를 처리한다.

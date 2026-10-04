@@ -230,3 +230,5 @@ S4a 는 세 회 모두 plugin 마다 1.6~3.8 ms 였다.
 - [`docs/dev-guide/error-handling.md`](../dev-guide/error-handling.md) — 로그 레벨 선택 기준
 - [`docs/dev-guide/self-verification.md`](../dev-guide/self-verification.md) — debug 인스턴스로 시나리오 재현
 - [ADR-0016](../adr/0016-window-platform-and-shutdown.md) — 종료를 프레임 구동으로 전개하고 로딩 화면을 씌운 결정
+
+일반 종료와 오류 모달 종료가 같은 이벤트 회차에 겹치면 오류 종료 코드와 최종 화면 저장 생략을 우선한다.
