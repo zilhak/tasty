@@ -38,8 +38,10 @@ pub fn cleanup_sibling_hooks<H: HostCall>(host: &H, target_surface: u32, expecte
         && let Some(hooks) = resp.as_array()
     {
         for hook_id in siblings_to_unset(hooks, expected_command) {
-            // 의도적 무시: 정리가 실패해도 이미 전달한 알림의 결과는 바꾸지 않는다.
-            let _ = host.call("hook.unset", json!({ "hook_id": hook_id }));
+            // 남은 once 훅은 다음에 중복 알림을 내므로 실패를 로그로 남긴다.
+            if let Err(e) = host.call("hook.unset", json!({ "hook_id": hook_id })) {
+                tracing::warn!("hook.unset {hook_id} failed during sibling cleanup: {e}");
+            }
         }
     }
 }

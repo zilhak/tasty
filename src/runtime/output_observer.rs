@@ -476,7 +476,7 @@ fn run_memory_sink(
     rx: std::sync::mpsc::Receiver<ParsedItem>,
     memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
 ) {
-    use tasty_memory::{HOST_OWNER, MemoryValue, PutOpts, Scope};
+    use tasty_memory::{HOST_OWNER, MemoryError, MemoryValue, PutOpts, Scope};
     let mut written_keys: std::collections::VecDeque<String> =
         std::collections::VecDeque::with_capacity(max_records.min(1024));
     // 같은 밀리초의 여러 항목이 같은 키를 덮어쓰지 않도록 worker 순번을 덧붙인다.
@@ -514,7 +514,15 @@ fn run_memory_sink(
                         let Some(old) = written_keys.pop_front() else {
                             break;
                         };
-                        let _ = guard.delete(HOST_OWNER, &Scope::Global, &old, None); // 삭제 실패는 무시하며 이 키를 다시 삭제하지 않는다.
+                        // 키는 이미 written_keys에서 빠졌으므로 재시도가 없다.
+                        // 실패하면 max_records 상한이 그만큼 무너진다.
+                        // 이미 없는 키는 상한이 지켜진 것이라 경고하지 않는다.
+                        match guard.delete(HOST_OWNER, &Scope::Global, &old, None) {
+                            Ok(()) | Err(MemoryError::NotFound { .. }) => {}
+                            Err(e) => tracing::warn!(
+                                "observer {observer_id} retention delete failed for {old}: {e}"
+                            ),
+                        }
                     }
                 }
             }

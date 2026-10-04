@@ -196,7 +196,13 @@ impl PresetStore {
                 preset.set_name(to.into());
                 let serialized = toml::to_string_pretty(&preset)?;
                 atomic_write(&to_path, serialized.as_bytes())?;
-                let _ = std::fs::remove_file(&from_path); // best-effort 원본 정리 — 실패 무시
+                // 원본이 남으면 다음 로드에서 옛 이름 프리셋이 되살아난다.
+                if let Err(e) = std::fs::remove_file(&from_path) {
+                    tracing::warn!(
+                        "preset rename left the old file behind: {} ({e})",
+                        from_path.display()
+                    );
+                }
                 self.workspaces.insert(to.into(), preset);
             }
             PresetKind::Tab => {
@@ -204,7 +210,13 @@ impl PresetStore {
                 preset.set_name(to.into());
                 let serialized = toml::to_string_pretty(&preset)?;
                 atomic_write(&to_path, serialized.as_bytes())?;
-                let _ = std::fs::remove_file(&from_path); // best-effort 원본 정리 — 실패 무시
+                // 원본이 남으면 다음 로드에서 옛 이름 프리셋이 되살아난다.
+                if let Err(e) = std::fs::remove_file(&from_path) {
+                    tracing::warn!(
+                        "preset rename left the old file behind: {} ({e})",
+                        from_path.display()
+                    );
+                }
                 self.tabs.insert(to.into(), preset);
             }
             PresetKind::Pane => {
@@ -212,7 +224,13 @@ impl PresetStore {
                 preset.set_name(to.into());
                 let serialized = toml::to_string_pretty(&preset)?;
                 atomic_write(&to_path, serialized.as_bytes())?;
-                let _ = std::fs::remove_file(&from_path); // best-effort 원본 정리 — 실패 무시
+                // 원본이 남으면 다음 로드에서 옛 이름 프리셋이 되살아난다.
+                if let Err(e) = std::fs::remove_file(&from_path) {
+                    tracing::warn!(
+                        "preset rename left the old file behind: {} ({e})",
+                        from_path.display()
+                    );
+                }
                 self.panes.insert(to.into(), preset);
             }
         }

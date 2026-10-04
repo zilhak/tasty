@@ -42,7 +42,13 @@ pub(super) fn purge_stale_semaphore_holders(ctx: &RunnerContext, workspace_id: u
         {
             let mut sem = SemaphoreStore::new(mem, HOST_OWNER);
             for (_task_id, name, holder) in &candidates {
-                let _ = sem.release(workspace_id, name, holder); // 해제 실패도 여기서는 무시하고 작업 상태 처리를 계속한다.
+                // 실패하면 permit이 영구히 묶인다. 바로 아래에서 작업을 실패로 마킹하므로
+                // 나중에 해제할 주체가 없다. 상태 처리는 그대로 이어간다.
+                if let Err(e) = sem.release(workspace_id, name, holder) {
+                    tracing::warn!(
+                        "semaphore '{name}' release for dead holder {holder} failed: {e}"
+                    );
+                }
             }
         }
         let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
@@ -119,7 +125,13 @@ pub(super) fn purge_stale_lease_holders(ctx: &RunnerContext, workspace_id: u32) 
         {
             let mut lstore = LeaseStore::new(mem, HOST_OWNER);
             for (_task_id, resource, holder) in &candidates {
-                let _ = lstore.release(workspace_id, resource, holder); // 해제 실패도 여기서는 무시하고 작업 상태 처리를 계속한다.
+                // 실패하면 lease가 영구히 묶인다. 바로 아래에서 작업을 실패로 마킹하므로
+                // 나중에 회수할 주체가 없다. 상태 처리는 그대로 이어간다.
+                if let Err(e) = lstore.release(workspace_id, resource, holder) {
+                    tracing::warn!(
+                        "lease '{resource}' release for dead holder {holder} failed: {e}"
+                    );
+                }
             }
         }
         let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
