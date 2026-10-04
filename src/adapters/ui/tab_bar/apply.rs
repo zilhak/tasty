@@ -147,7 +147,7 @@ fn show_html_script_banner(
     };
     state.dispatch_intent(
         crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Html(
-            snapshot.request(crate::app::html_runtime::HtmlActionKind::Reshow),
+            snapshot.request(crate::runtime::html_script::HtmlActionKind::Reshow),
         ))
         .from_user_menu("html-script-marker"),
     );

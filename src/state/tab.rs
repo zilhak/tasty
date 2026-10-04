@@ -45,7 +45,8 @@ impl RequestContext {
         sid: u32,
         folder: std::path::PathBuf,
     ) {
-        let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, sid) else {
+        let Some(target) = crate::runtime::surface_binding::SurfaceBinding::capture(engine, sid)
+        else {
             return;
         };
         self.dispatch_intent(

@@ -364,7 +364,7 @@ impl JournalApplication {
                         .iter()
                         .find(|session| session.id == created.engine)
                         .and_then(|session| {
-                            crate::app::engine_action::SurfaceBinding::capture(
+                            crate::runtime::surface_binding::SurfaceBinding::capture(
                                 &session.as_ref().read(),
                                 created.surface,
                             )

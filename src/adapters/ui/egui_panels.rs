@@ -216,7 +216,7 @@ pub fn draw_egui_panels(
             });
             if (dag_id.as_ref(), direction) != (dag.dag_id.as_ref(), dag.direction)
                 && let Some(target) =
-                    crate::app::engine_action::SurfaceBinding::capture(engine, sid)
+                    crate::runtime::surface_binding::SurfaceBinding::capture(engine, sid)
             {
                 state.dispatch_intent(
                     crate::intent::Intent::Engine(
@@ -293,7 +293,8 @@ pub fn draw_egui_panels(
         let Some(projection) = engine.mirror_projection_token(req.local_ws_id) else {
             continue;
         };
-        let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, sid) else {
+        let Some(target) = crate::runtime::surface_binding::SurfaceBinding::capture(engine, sid)
+        else {
             continue;
         };
         state.dispatch_intent(
@@ -480,7 +481,7 @@ fn apply_explorer_panel_action(
     sid: u32,
     action: &crate::explorer_ui::ExplorerAction,
 ) {
-    if let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, sid) {
+    if let Some(target) = crate::runtime::surface_binding::SurfaceBinding::capture(engine, sid) {
         state.dispatch_intent(
             crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::Explorer {
                 target,

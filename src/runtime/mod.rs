@@ -60,3 +60,7 @@ pub(crate) mod file_catalog;
 pub(crate) mod registries;
 
 mod pty;
+
+#[cfg(feature = "gui")]
+pub(crate) mod html_script;
+pub(crate) mod surface_binding;

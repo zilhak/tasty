@@ -286,7 +286,7 @@ pub fn draw_transfer_error(
             && let Some(payload) = err.retry
         {
             if let Some(target) =
-                crate::app::engine_action::SurfaceBinding::capture(engine, payload.surface_id)
+                crate::runtime::surface_binding::SurfaceBinding::capture(engine, payload.surface_id)
             {
                 state.dispatch_intent(
                     crate::intent::Intent::Engine(

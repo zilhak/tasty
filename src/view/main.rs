@@ -593,7 +593,9 @@ impl MainView {
         engine: &crate::runtime::engine_read::EngineRead<'_>,
         surface: u32,
     ) {
-        if let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, surface) {
+        if let Some(target) =
+            crate::runtime::surface_binding::SurfaceBinding::capture(engine, surface)
+        {
             self.state.dispatch_intent(
                 crate::intent::Intent::Engine(
                     crate::app::engine_action::EngineAction::RecordTyping {

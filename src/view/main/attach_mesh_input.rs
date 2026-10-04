@@ -217,7 +217,7 @@ impl MainView {
             }
             if context.is_some() || input.is_some() {
                 if let Some(target) =
-                    crate::app::engine_action::SurfaceBinding::capture(engine, sid)
+                    crate::runtime::surface_binding::SurfaceBinding::capture(engine, sid)
                 {
                     self.state.dispatch_intent(
                         crate::intent::Intent::Engine(

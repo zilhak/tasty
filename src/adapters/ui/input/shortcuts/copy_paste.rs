@@ -179,7 +179,9 @@ impl MainView {
     pub(crate) fn run_paste(&mut self, engine: &EngineRead<'_>) -> bool {
         // 키보드와 팔레트 붙여넣기 모두 사용자 입력으로 기록한다.
         if let Some(sid) = self.state.focused_surface_id(&*engine) {
-            if let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, sid) {
+            if let Some(target) =
+                crate::runtime::surface_binding::SurfaceBinding::capture(engine, sid)
+            {
                 self.state.dispatch_intent(
                     crate::intent::Intent::Engine(
                         crate::app::engine_action::EngineAction::RecordTyping {

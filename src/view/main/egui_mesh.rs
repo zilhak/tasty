@@ -374,7 +374,8 @@ impl MainView {
                 theme: Some(current_theme.clone()),
                 need_full_textures: need_full,
             };
-            if let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, sid)
+            if let Some(target) =
+                crate::runtime::surface_binding::SurfaceBinding::capture(engine, sid)
                 && let Some(registration) = engine.surface_registry.get_live(kind)
             {
                 self.state.dispatch_intent(
@@ -418,7 +419,8 @@ impl MainView {
                 theme: st.common.last_theme.clone(),
                 need_full_textures: true,
             };
-            if let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, *sid)
+            if let Some(target) =
+                crate::runtime::surface_binding::SurfaceBinding::capture(engine, *sid)
                 && let Some(kind) = engine.core.find_surface_by_id(*sid)
                 && let Some(registration) = engine.surface_registry.get_live(&kind.kind)
             {

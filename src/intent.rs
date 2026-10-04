@@ -110,7 +110,7 @@ pub enum CreateFollowup {
 pub enum Intent {
     #[cfg(feature = "gui")]
     MouseCaptureHint {
-        target: crate::app::engine_action::SurfaceBinding,
+        target: crate::runtime::surface_binding::SurfaceBinding,
         foreground_generation: u64,
         view: std::sync::Weak<()>,
     },

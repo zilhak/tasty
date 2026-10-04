@@ -1,35 +1,8 @@
 //! Non-journal execution requests carry targets observed by a View, never a mutable Engine borrow.
-use crate::runtime::engine_access::{EngineMut, EngineRef};
-#[derive(Clone, Debug)]
-pub(crate) struct SurfaceBinding {
-    surface: u32,
-    activation: Option<u64>,
-    resource: Option<tasty_terminal::ResourceGeneration>,
-    mirror: Option<(u32, std::sync::Weak<()>)>,
-}
+use crate::runtime::engine_access::EngineMut;
+use crate::runtime::surface_binding::SurfaceBinding;
+
 impl SurfaceBinding {
-    #[cfg(feature = "gui")]
-    pub(crate) fn capture(
-        engine: &crate::runtime::engine_read::EngineRead<'_>,
-        surface: u32,
-    ) -> Option<Self> {
-        let descriptor = engine.core.find_surface_by_id(surface)?;
-        let mirror = engine
-            .find_workspace_index_for_surface(surface)
-            .and_then(|(index, _)| engine.workspace_at(index))
-            .filter(|workspace| workspace.mirror)
-            .and_then(|workspace| {
-                engine
-                    .mirror_projection_token(workspace.id)
-                    .map(|token| (workspace.id, token))
-            });
-        Some(Self {
-            surface,
-            activation: descriptor.activation_generation,
-            resource: engine.terminals.generation(surface),
-            mirror,
-        })
-    }
     #[cfg(feature = "gui")]
     pub(crate) fn take_mouse_capture_hint(
         &self,
@@ -37,41 +10,29 @@ impl SurfaceBinding {
         foreground_generation: u64,
     ) -> Option<u32> {
         if !self.current(&engine.as_ref())
-            || engine.foreground_generation(self.surface) != foreground_generation
+            || engine.foreground_generation(self.surface_id()) != foreground_generation
             || !engine.runtime.settings.general.mouse_capture_hint
-            || engine.foreground_name(self.surface).is_some_and(|name| {
-                engine
-                    .runtime
-                    .settings
-                    .general
-                    .mouse_capture_banner_disabled_for(name)
-            })
+            || engine
+                .foreground_name(self.surface_id())
+                .is_some_and(|name| {
+                    engine
+                        .runtime
+                        .settings
+                        .general
+                        .mouse_capture_banner_disabled_for(name)
+                })
         {
             return None;
         }
         engine
             .runtime
             .terminals
-            .get_mut(self.surface)?
+            .get_mut(self.surface_id())?
             .take_mouse_capture_hint()
-            .then_some(self.surface)
-    }
-    pub(crate) fn current(&self, engine: &EngineRef<'_>) -> bool {
-        engine
-            .core
-            .find_surface_by_id(self.surface)
-            .is_some_and(|descriptor| descriptor.activation_generation == self.activation)
-            && self.resource.is_none_or(|generation| {
-                engine
-                    .runtime
-                    .terminals
-                    .matches_generation(self.surface, generation)
-            })
-            && self.mirror.as_ref().is_none_or(|(workspace, token)| {
-                engine.matches_mirror_projection(*workspace, token)
-            })
+            .then_some(self.surface_id())
     }
 }
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum ZoomChange {
     In,
@@ -144,7 +105,7 @@ impl SettingsPatch {
 #[derive(Clone, Debug)]
 pub(crate) enum EngineAction {
     #[cfg(feature = "gui")]
-    Html(super::html_runtime::HtmlAction),
+    Html(crate::runtime::html_script::HtmlAction),
     #[cfg(feature = "gui")]
     PluginDisplay(super::plugin_display::PluginDisplayRequest),
     #[cfg(feature = "gui")]
@@ -355,7 +316,7 @@ impl EngineAction {
                         engine
                             .remote
                             .pending_mesh_full_resend_forward
-                            .insert(target.surface);
+                            .insert(target.surface_id());
                     }
                 }
             }
@@ -366,12 +327,12 @@ impl EngineAction {
             #[cfg(feature = "gui")]
             Self::FocusObserved { target } => {
                 if target.current(&engine.as_ref()) {
-                    engine.clear_attention_local(target.surface);
-                    engine.reconcile_soft_occupancy_on_focus(target.surface);
+                    engine.clear_attention_local(target.surface_id());
+                    engine.reconcile_soft_occupancy_on_focus(target.surface_id());
                 }
             }
             Self::RecordTyping { target, at } if target.current(&engine.as_ref()) => {
-                engine.live.last_key_input.insert(target.surface, *at);
+                engine.live.last_key_input.insert(target.surface_id(), *at);
             }
             Self::RecordTyping { .. } => {}
             #[cfg(feature = "gui")]
@@ -397,7 +358,7 @@ impl EngineAction {
                 let targets = targets
                     .iter()
                     .filter(|(target, _, _)| target.current(&engine.as_ref()))
-                    .map(|(target, cols, rows)| (target.surface, *cols, *rows))
+                    .map(|(target, cols, rows)| (target.surface_id(), *cols, *rows))
                     .collect();
                 #[cfg(feature = "gui")]
                 crate::app::services::AppServices::resize_terminals(engine, targets);
@@ -420,14 +381,14 @@ impl EngineAction {
         if !target.current(&engine.as_ref()) {
             return;
         }
-        if let Some((workspace, _)) = &target.mirror {
+        if let Some(workspace) = target.mirror_workspace() {
             engine
                 .remote
                 .pending_image_uploads
                 .push(crate::core::PendingImageUpload {
                     origin_view: view.clone(),
-                    mirror_ws_id: *workspace,
-                    surface_id: target.surface,
+                    mirror_ws_id: workspace,
+                    surface_id: target.surface_id(),
                     bracketed: *bracketed,
                     file_name: file_name.clone(),
                     png_bytes: png_bytes.clone(),
@@ -448,7 +409,7 @@ impl EngineAction {
                 Ok(()) => {
                     // The receiving shell reads this file asynchronously, after this action.
                     let _ = directory.keep();
-                    send_saved_image_path(engine, target.surface, *bracketed, &path);
+                    send_saved_image_path(engine, target.surface_id(), *bracketed, &path);
                 }
                 Err(error) => tracing::warn!(%error,"clipboard image save failed"),
             }
@@ -475,7 +436,7 @@ impl EngineAction {
         }
         let Some(kind) = engine
             .core
-            .find_surface_by_id(target.surface)
+            .find_surface_by_id(target.surface_id())
             .map(|surface| surface.kind.as_str())
         else {
             return;
@@ -493,7 +454,7 @@ impl EngineAction {
             let Some(binding) = engine
                 .runtime
                 .surfaces
-                .get(&target.surface)
+                .get(&target.surface_id())
                 .and_then(|surface| {
                     surface
                         .as_any()
@@ -505,7 +466,7 @@ impl EngineAction {
             };
             manager.send_egui_mesh_surface_create(
                 plugin,
-                target.surface,
+                target.surface_id(),
                 kind,
                 file.as_deref(),
                 name,
@@ -531,13 +492,13 @@ impl EngineAction {
             engine
                 .remote
                 .pending_mesh_context_forward
-                .insert(target.surface, context.clone());
+                .insert(target.surface_id(), context.clone());
         }
         if let Some(input) = input {
             engine
                 .remote
                 .pending_mesh_input_forward
-                .entry(target.surface)
+                .entry(target.surface_id())
                 .and_modify(|pending| {
                     pending.events.extend(input.events.clone());
                     pending.focused = input.focused;
@@ -553,16 +514,15 @@ impl EngineAction {
             unreachable!("variant-specific action dispatch")
         };
         if target.current(&engine.as_ref())
-            && let Some(panel) =
-                engine
-                    .runtime
-                    .surfaces
-                    .get_mut(&target.surface)
-                    .and_then(|surface| {
-                        surface
-                            .as_any_mut()
-                            .downcast_mut::<crate::model::ExplorerPanel>()
-                    })
+            && let Some(panel) = engine
+                .runtime
+                .surfaces
+                .get_mut(&target.surface_id())
+                .and_then(|surface| {
+                    surface
+                        .as_any_mut()
+                        .downcast_mut::<crate::model::ExplorerPanel>()
+                })
         {
             super::explorer_action::apply_to_explorer_panel(panel, action);
             engine.mark_layout_dirty();
@@ -579,16 +539,15 @@ impl EngineAction {
             unreachable!("variant-specific action dispatch")
         };
         if target.current(&engine.as_ref())
-            && let Some(dag) =
-                engine
-                    .runtime
-                    .surfaces
-                    .get_mut(&target.surface)
-                    .and_then(|surface| {
-                        surface
-                            .as_any_mut()
-                            .downcast_mut::<crate::model::DagGraphSurface>()
-                    })
+            && let Some(dag) = engine
+                .runtime
+                .surfaces
+                .get_mut(&target.surface_id())
+                .and_then(|surface| {
+                    surface
+                        .as_any_mut()
+                        .downcast_mut::<crate::model::DagGraphSurface>()
+                })
         {
             dag.dag_id = dag_id.clone();
             dag.direction = *direction;
@@ -603,16 +562,15 @@ impl EngineAction {
         if !target.current(&engine.as_ref()) {
             return;
         }
-        if let Some(explorer) =
-            engine
-                .runtime
-                .surfaces
-                .get_mut(&target.surface)
-                .and_then(|surface| {
-                    surface
-                        .as_any_mut()
-                        .downcast_mut::<crate::model::ExplorerPanel>()
-                })
+        if let Some(explorer) = engine
+            .runtime
+            .surfaces
+            .get_mut(&target.surface_id())
+            .and_then(|surface| {
+                surface
+                    .as_any_mut()
+                    .downcast_mut::<crate::model::ExplorerPanel>()
+            })
         {
             explorer.active_tab_mut().set_cwd(folder.clone());
             engine.mark_layout_dirty();

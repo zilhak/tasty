@@ -860,7 +860,7 @@ impl MainView {
         }
         if engine.settings.general.mouse_capture_hint
             && let Some(target) =
-                crate::app::engine_action::SurfaceBinding::capture(engine, surface_id)
+                crate::runtime::surface_binding::SurfaceBinding::capture(engine, surface_id)
         {
             self.state.dispatch_intent(
                 crate::intent::Intent::MouseCaptureHint {

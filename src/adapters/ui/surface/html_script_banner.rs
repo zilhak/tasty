@@ -13,7 +13,7 @@ use tasty_ui_widgets::{
     inset_banner_zone,
 };
 
-use crate::app::html_runtime::{HtmlAction, HtmlActionKind, HtmlSnapshot};
+use crate::runtime::html_script::{HtmlAction, HtmlActionKind, HtmlSnapshot};
 
 /// 이전 프레임에서 이어받는 페이드 상태.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

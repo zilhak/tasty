@@ -226,7 +226,9 @@ impl RequestContext {
                             as usize)
                             .max(1);
                         if let Some(target) =
-                            crate::app::engine_action::SurfaceBinding::capture(engine, region.id)
+                            crate::runtime::surface_binding::SurfaceBinding::capture(
+                                engine, region.id,
+                            )
                         {
                             targets.push((target, cols, rows));
                         }

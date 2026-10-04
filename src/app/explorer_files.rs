@@ -1,7 +1,7 @@
 //! Bounded local Explorer actions. Views queue fixed inputs; App owns execution and joins.
 mod ops;
 
-use super::engine_action::SurfaceBinding;
+use crate::runtime::surface_binding::SurfaceBinding;
 use crate::view::ui::View;
 use std::collections::VecDeque;
 use std::path::PathBuf;

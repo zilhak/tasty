@@ -111,7 +111,10 @@ impl Deref for EngineRead<'_> {
 }
 impl<'a> EngineRead<'a> {
     #[cfg(feature = "gui")]
-    pub(crate) fn html_script(&self, sid: u32) -> Option<crate::app::html_runtime::HtmlSnapshot> {
+    pub(crate) fn html_script(
+        &self,
+        sid: u32,
+    ) -> Option<crate::runtime::html_script::HtmlSnapshot> {
         let remote = self
             .surfaces
             .get(&sid)?
@@ -120,8 +123,8 @@ impl<'a> EngineRead<'a> {
         if remote.kind_static != "html" {
             return None;
         }
-        let target = crate::app::engine_action::SurfaceBinding::capture(self, sid)?;
-        Some(crate::app::html_runtime::snapshot(remote, target))
+        let target = crate::runtime::surface_binding::SurfaceBinding::capture(self, sid)?;
+        Some(crate::runtime::html_script::snapshot(remote, target))
     }
     #[cfg(feature = "gui")]
     pub(crate) fn as_ref(&self) -> Self {

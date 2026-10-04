@@ -258,7 +258,8 @@ impl MainView {
         // terminal. Fullscreen stage rendering must not acknowledge hidden terminal content.
         if !self.state.fullscreen_stage_active()
             && let Some(sid) = self.state.focused_surface_id(engine)
-            && let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, sid)
+            && let Some(target) =
+                crate::runtime::surface_binding::SurfaceBinding::capture(engine, sid)
         {
             self.state.dispatch_intent(
                 crate::intent::Intent::Engine(
@@ -383,7 +384,7 @@ impl MainView {
             let targets = attach_full_reqs
                 .into_iter()
                 .filter_map(|surface| {
-                    crate::app::engine_action::SurfaceBinding::capture(engine, surface)
+                    crate::runtime::surface_binding::SurfaceBinding::capture(engine, surface)
                 })
                 .collect();
             self.state.dispatch_intent(

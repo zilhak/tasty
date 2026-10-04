@@ -53,7 +53,7 @@ pub(crate) struct IntentViewContinuation {
     #[cfg(feature = "gui")]
     pub(crate) tutorial_preparation: Option<std::sync::Weak<()>>,
     #[cfg(feature = "gui")]
-    pub(crate) tutorial_surface: Option<(u32, crate::app::engine_action::SurfaceBinding)>,
+    pub(crate) tutorial_surface: Option<(u32, crate::runtime::surface_binding::SurfaceBinding)>,
 }
 
 enum Reply {

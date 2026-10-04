@@ -105,7 +105,8 @@ impl MainView {
             return;
         };
 
-        let Some(target) = crate::app::engine_action::SurfaceBinding::capture(engine, sid) else {
+        let Some(target) = crate::runtime::surface_binding::SurfaceBinding::capture(engine, sid)
+        else {
             return;
         };
         match encode_clipboard_image_as_png(&image) {

@@ -40,7 +40,7 @@ Tasty 개발자를 위한 가이드다. Tasty를 사용하는 에이전트용 �
 
 | 문서 | 내용 |
 |------|------|
-| [model-view-split](model-view-split.md) | Model + Host View 분리 |
+| [model-view-split](model-view-split.md) | Model + Host View 분리와 Runtime 요청 계약 |
 | [gpu-rendering](gpu-rendering.md) | View 분할 비율 미리보기·확정 경계, GPU 렌더링 구조 · 성능 측정 |
 | [egui-mesh-channel](egui-mesh-channel.md) | plugin egui mesh → host 합성 렌더 채널 (ADR-0028) |
 | [design-change-workflow](design-change-workflow.md) | 디자인 변경 루프 — 요청문서→Claude design 시안→갤러리/본체/사이트 사본 정합 |
