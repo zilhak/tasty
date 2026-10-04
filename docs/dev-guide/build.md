@@ -48,7 +48,8 @@ workspace는 본 바이너리(`src/`)와 `crates/*`로 구성한다. 전체 목�
 | `release` | `opt-level = 3`, `strip = true` | **thin** | 최적화 검증 `cargo build --release` |
 | `dist` | `inherits = "release"` | **full** (`lto = true`) | 배포 산출물 `cargo build --profile dist` |
 
-- **`dev` 는 본체와 등재되지 않은 워크스페이스 크레이트가 opt 0 이다**: 의존성 전체는 `[profile.dev.package."*"]` 로 opt 3 이고, 워크스페이스 크레이트는 glob 에 안 걸려 루트 `Cargo.toml` 에 `[profile.dev.package.<이름>]` 으로 **하나씩 등재**된 것만 opt 3 이다. 새 크레이트를 만들면 등재 여부를 정한다 — dev 최적화 선택과 재검토 기준은 [ADR-0001](../adr/0001-crate-dependency-boundaries.md).
+- **`dev` 는 본체와 등재되지 않은 워크스페이스 크레이트가 opt 0 이다**: 외부 의존성은 `[profile.dev.package."*"]` 로 opt 3 이고, 워크스페이스 크레이트는 glob 에 안 걸려 루트 `Cargo.toml` 에 `[profile.dev.package.<이름>]` 으로 **하나씩 등재**한다. `tasty-doc-guards`는 opt 2, 나머지 등재된 크레이트는 opt 3 이다. 새 크레이트를 만들면 등재 여부를 정한다 — dev 최적화 선택과 재검토 기준은 [ADR-0001](../adr/0001-crate-dependency-boundaries.md).
+- **문서 가드는 개발·테스트 프로필에서 opt 2로 실행한다**: `test`가 `dev` 설정을 상속하므로 `cargo test -p tasty-doc-guards`에도 적용된다. 저장소를 반복 분석하는 실행 비용을 줄이며, debug assertions와 overflow checks는 개발 프로필의 기본값을 유지한다. 검사 대상과 실행 항목은 줄이지 않는다.
 - **`release` = thin LTO**: 크레이트 IR 요약을 공유해 cross-crate inlining 을 **병렬** 적용. 일상 "릴리즈 검증" 은 모두 이걸 쓴다.
 - **`dist` = full LTO**: 모든 IR 을 단일 LLVM 모듈로 합쳐 재최적화. 최적화 비용이 커 빌드가 오래 걸림. **배포 바이너리(DMG/MSI/AppImage) 빌드 시에만** 쓴다. (AI 자체 검증 빌드에는 절대 사용 금지.)
 

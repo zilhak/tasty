@@ -422,7 +422,7 @@ tiny_http = { path = "vendor/tiny_http" }
 [lints]
 workspace = true
 
-# 본체는 빌드 속도를 위해 opt-level 0, 의존성과 아래 크레이트는 반복 실행 비용을 위해 3을 쓴다.
+# 본체는 빌드 속도를 위해 opt-level 0, 의존성과 아래 크레이트는 반복 실행 비용에 맞춰 최적화한다.
 [profile.dev]
 opt-level = 0
 
@@ -430,6 +430,10 @@ opt-level = 0
 opt-level = 3
 
 # 별표 패턴은 워크스페이스 멤버에 적용되지 않으므로 필요한 크레이트를 명시한다.
+# 문서 가드의 반복 소스 분석을 최적화하되 개발 빌드의 진단 설정은 유지한다.
+[profile.dev.package.tasty-doc-guards]
+opt-level = 2
+
 [profile.dev.package.tasty-agent]
 opt-level = 3
 [profile.dev.package.tasty-approval]
