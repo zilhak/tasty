@@ -139,7 +139,7 @@ mod tests {
 
     #[test]
     fn validate_rejects_empty_reserved_duplicate() {
-        let existing = vec!["work", "play"];
+        let existing = ["work", "play"];
         assert_eq!(
             validate_new_category_name("   ", existing.iter().copied()),
             Err(CategoryNameError::Empty)

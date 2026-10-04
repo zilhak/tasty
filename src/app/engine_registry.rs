@@ -152,8 +152,7 @@ impl EngineRegistry {
     pub(crate) fn finish_retiring(&mut self, id: EngineId) -> Option<EngineSession> {
         self.retiring
             .remove(&id)
-            .map(|_| self.sessions.remove(&id))
-            .flatten()
+            .and_then(|_| self.sessions.remove(&id))
     }
 
     pub(crate) fn preserve_closed_view(

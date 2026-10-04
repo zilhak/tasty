@@ -281,7 +281,10 @@ fn a_drifted_pair_is_named_and_a_matching_pair_is_not() {
         "[package]\nversion = \"0.1.9\"\n".to_string(),
     );
 
-    assert_eq!(version_mismatches(&[same.clone()]), Vec::<String>::new());
+    assert_eq!(
+        version_mismatches(std::slice::from_ref(&same)),
+        Vec::<String>::new()
+    );
     assert_eq!(
         version_mismatches(&[same, drifted]),
         vec!["  zonebeta: manifest=0.1.1 vs Cargo=0.1.9".to_string()]

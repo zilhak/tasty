@@ -730,6 +730,26 @@ fn show_agent_window(window: &Window, anchor: Option<&Window>) {
     window.request_redraw();
 }
 
+fn new_window_attributes(origin: WindowRequestOrigin) -> winit::window::WindowAttributes {
+    use winit::window::WindowAttributes;
+    let title = if cfg!(debug_assertions) {
+        "Tasty (Debug)"
+    } else {
+        "Tasty"
+    };
+    let mut attrs = WindowAttributes::default()
+        .with_title(title)
+        .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
+        .with_min_inner_size(winit::dpi::LogicalSize::new(640, 480));
+    if let Some(icon) = crate::app_icon::winit_window_icon() {
+        attrs = attrs.with_window_icon(Some(icon));
+    }
+    attrs = crate::platform::window_chrome::apply_csd_attributes(attrs);
+    attrs = origin_window_attributes(attrs, origin);
+
+    attrs
+}
+
 #[cfg(test)]
 mod register_focus_tests;
 
@@ -758,24 +778,4 @@ mod tests {
         ));
         assert!(Arc::ptr_eq(added.agent_seq(), first.agent_seq()));
     }
-}
-
-fn new_window_attributes(origin: WindowRequestOrigin) -> winit::window::WindowAttributes {
-    use winit::window::WindowAttributes;
-    let title = if cfg!(debug_assertions) {
-        "Tasty (Debug)"
-    } else {
-        "Tasty"
-    };
-    let mut attrs = WindowAttributes::default()
-        .with_title(title)
-        .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
-        .with_min_inner_size(winit::dpi::LogicalSize::new(640, 480));
-    if let Some(icon) = crate::app_icon::winit_window_icon() {
-        attrs = attrs.with_window_icon(Some(icon));
-    }
-    attrs = crate::platform::window_chrome::apply_csd_attributes(attrs);
-    attrs = origin_window_attributes(attrs, origin);
-
-    attrs
 }

@@ -366,7 +366,7 @@ pub fn draw_full_sidebar_view(
         });
 
     // 전체 워크스페이스의 활성 인덱스를 기록해 실제로 바뀐 프레임에만 스크롤한다.
-    let active_idx = props.workspaces.into_iter().position(|w| w.is_active);
+    let active_idx = props.workspaces.iter().position(|w| w.is_active);
     let active_scroll_track_id = egui::Id::new("sidebar_workspace_active_scroll_track");
     let prev_active_idx: Option<Option<usize>> = ui.data(|d| d.get_temp(active_scroll_track_id));
     let should_scroll_to_active = should_scroll_to_active_workspace(prev_active_idx, active_idx);
@@ -397,30 +397,29 @@ pub fn draw_full_sidebar_view(
                     );
                     resize_priority_hovered |= header.hovered;
                     // 카테고리 키캡은 오른쪽에 표시하고 접힘 상태 chevron은 유지한다.
-                    if props.category_switch_held {
-                        if let Some(digit) =
+                    if props.category_switch_held
+                        && let Some(digit) =
                             crate::adapters::ui::switch_overlay::category_digit(props.kb, sec_i)
-                        {
-                            let active_sec = section.entries.iter().any(|(_, ws)| ws.is_active);
-                            let fade = crate::adapters::ui::switch_overlay::appear_fade(
-                                ui.ctx(),
-                                th,
-                                ("cat_header", u64::from(section.id)),
-                                props.category_switch_held,
-                            );
-                            let pad = th.spacing_sm.value();
-                            let half = crate::adapters::ui::switch_overlay::keycap_size(th) / 2.0;
-                            let center =
-                                egui::pos2(header.rect.max.x - pad - half, header.rect.center().y);
-                            crate::adapters::ui::switch_overlay::paint_keycap(
-                                ui.painter(),
-                                th,
-                                center,
-                                digit,
-                                active_sec,
-                                fade,
-                            );
-                        }
+                    {
+                        let active_sec = section.entries.iter().any(|(_, ws)| ws.is_active);
+                        let fade = crate::adapters::ui::switch_overlay::appear_fade(
+                            ui.ctx(),
+                            th,
+                            ("cat_header", u64::from(section.id)),
+                            props.category_switch_held,
+                        );
+                        let pad = th.spacing_sm.value();
+                        let half = crate::adapters::ui::switch_overlay::keycap_size(th) / 2.0;
+                        let center =
+                            egui::pos2(header.rect.max.x - pad - half, header.rect.center().y);
+                        crate::adapters::ui::switch_overlay::paint_keycap(
+                            ui.painter(),
+                            th,
+                            center,
+                            digit,
+                            active_sec,
+                            fade,
+                        );
                     }
                     if header.toggled {
                         actions.push(SidebarFullAction::CategoryHeaderToggle(section.id));
@@ -475,7 +474,7 @@ pub fn draw_full_sidebar_view(
                     draw_list_separator(ui, th, 0.0);
                 }
 
-                for (i, ws) in props.workspaces.into_iter().enumerate() {
+                for (i, ws) in props.workspaces.iter().enumerate() {
                     if i > 0 {
                         draw_list_separator(ui, th, 32.0);
                     }
@@ -758,7 +757,7 @@ pub fn draw_collapsed_sidebar_view(
                 }
             }
         } else {
-            for (i, ws) in props.workspaces.into_iter().enumerate() {
+            for (i, ws) in props.workspaces.iter().enumerate() {
                 let switch_digit = if props.workspace_switch_held {
                     crate::adapters::ui::switch_overlay::workspace_digit(props.kb, i)
                 } else {

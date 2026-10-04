@@ -393,7 +393,7 @@ fn soak() {
             other => panic!("unknown SOAK_SCENARIO '{other}' (s1|s2|s4|s6|s7|s8|s9)"),
         }
         cycle += 1;
-        if cycle % checkpoint_every == 0 {
+        if cycle.is_multiple_of(checkpoint_every) {
             let cp = checkpoint(&inst, &scenario, cycle);
             writeln!(out, "{cp}").unwrap();
             out.flush().unwrap();

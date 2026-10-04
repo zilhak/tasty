@@ -111,10 +111,10 @@ fn plugin_commands(root: &Path) -> Vec<(String, String)> {
                 if t.is_empty() || t.starts_with('#') {
                     continue;
                 }
-                if let Some(rest) = t.strip_prefix("name") {
-                    if let Some(v) = rest.split('"').nth(1) {
-                        out.push((v.to_string(), owner.clone()));
-                    }
+                if let Some(rest) = t.strip_prefix("name")
+                    && let Some(v) = rest.split('"').nth(1)
+                {
+                    out.push((v.to_string(), owner.clone()));
                 }
                 break;
             }

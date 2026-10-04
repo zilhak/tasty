@@ -640,13 +640,17 @@ mod bind_detection_tests {
 
     #[test]
     fn a_stolen_port_is_retried_a_bounded_number_of_times() {
-        assert!(
-            PORT_STEAL_RETRIES > 0,
-            "포트 예약 해제 뒤 bind 실패에 대한 재시도가 필요하다"
-        );
-        assert!(
-            PORT_STEAL_RETRIES <= 3,
-            "재시도가 길어지면 원인이 로그에 묻힌다"
-        );
+        const {
+            assert!(
+                PORT_STEAL_RETRIES > 0,
+                "포트 예약 해제 뒤 bind 실패에 대한 재시도가 필요하다"
+            );
+        }
+        const {
+            assert!(
+                PORT_STEAL_RETRIES <= 3,
+                "재시도가 길어지면 원인이 로그에 묻힌다"
+            );
+        }
     }
 }

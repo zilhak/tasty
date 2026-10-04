@@ -493,7 +493,6 @@ mod tests {
         assert!(reg.contains("terminal"), "poison 후에도 등록이 반영된다");
         assert!(reg.get("terminal").is_some());
         assert!(!reg.kinds_snapshot().is_empty());
-        assert!(reg.len() > 0);
         assert!(!reg.is_empty());
     }
 

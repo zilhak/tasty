@@ -7,9 +7,10 @@
 //! - 구조 편집은 값 요청을 App에 반환해 저장한다(별도 save 버튼 없음). surface 파라미터는
 //!   설정 화면의 draft 로 고치고 확인을 눌러야 저장된다
 
+pub(crate) mod draft;
+
 use std::sync::Arc;
 
-pub(crate) mod draft;
 use draft::{PresetApplied, PresetDrafts, PresetEdit};
 
 use winit::event::WindowEvent;
@@ -252,7 +253,7 @@ impl View for PresetView {
         let catalog = self
             .surface_registry
             .as_ref()
-            .map(|r| KindCatalog::from_registry(r))
+            .map(KindCatalog::from_registry)
             .unwrap_or_default();
         let active_kind = &mut self.active_kind;
         let sel_ws = &mut self.selected_workspace;

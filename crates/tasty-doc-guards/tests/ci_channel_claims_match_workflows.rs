@@ -517,7 +517,7 @@ fn positive_filters(tail: &str) -> (Vec<String>, bool) {
         return (Vec::new(), false);
     };
     let after = &words[sep + 1..];
-    let exact = after.iter().any(|w| *w == "--exact");
+    let exact = after.contains(&"--exact");
     let mut filters = Vec::new();
     let mut i = 0;
     while i < after.len() {
@@ -799,7 +799,7 @@ fn lib_tests_run_automatically(root: &Path) -> bool {
             return false;
         }
         let words: Vec<&str> = tail.split_whitespace().collect();
-        if words.iter().any(|w| *w == "--lib") {
+        if words.contains(&"--lib") {
             return true;
         }
         // `--test`/`--bins` 로만 좁힌 호출은 lib 유닛 테스트를 돌리지 않는다.

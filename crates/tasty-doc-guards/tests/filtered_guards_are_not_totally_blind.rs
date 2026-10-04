@@ -182,14 +182,14 @@ fn package_of(root: &Path, target: &Path) -> String {
     let mut dir = target.parent();
     while let Some(d) = dir {
         let manifest = d.join("Cargo.toml");
-        if manifest.is_file() {
-            if let Ok(text) = std::fs::read_to_string(&manifest) {
-                for line in text.lines() {
-                    if let Some(rest) = line.trim().strip_prefix("name") {
-                        let rest = rest.trim_start();
-                        if let Some(v) = rest.strip_prefix('=') {
-                            return v.trim().trim_matches('"').to_string();
-                        }
+        if manifest.is_file()
+            && let Ok(text) = std::fs::read_to_string(&manifest)
+        {
+            for line in text.lines() {
+                if let Some(rest) = line.trim().strip_prefix("name") {
+                    let rest = rest.trim_start();
+                    if let Some(v) = rest.strip_prefix('=') {
+                        return v.trim().trim_matches('"').to_string();
                     }
                 }
             }

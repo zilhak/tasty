@@ -32,7 +32,7 @@ fn guarded_targets(root: &Path) -> BTreeSet<String> {
         .flatten()
     {
         let p = e.path();
-        if !p.extension().is_some_and(|x| x == "rs") {
+        if p.extension().is_none_or(|x| x != "rs") {
             continue;
         }
         let Ok(src) = std::fs::read_to_string(&p) else {

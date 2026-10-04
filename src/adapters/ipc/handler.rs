@@ -1162,10 +1162,7 @@ pub(super) fn require_surface_id(
     params: &serde_json::Value,
     id: &serde_json::Value,
 ) -> Result<u32, JsonRpcResponse> {
-    let raw = match params::require_u32(params, "surface_id", id) {
-        Ok(v) => v,
-        Err(e) => return Err(e),
-    };
+    let raw = params::require_u32(params, "surface_id", id)?;
     if !crate::runtime::terminal_store::is_surface_id_space(raw) {
         return Err(JsonRpcResponse::invalid_params(
             id.clone(),

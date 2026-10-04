@@ -349,10 +349,10 @@ pub(crate) fn handle_spawn(
 
     // 경고 기준을 넘어도 spawn은 성공으로 반환한다.
     let mut out = resp;
-    if let Some(warning) = compute_spawn_warning(host, parent_surface, tr) {
-        if let Some(obj) = out.as_object_mut() {
-            obj.insert("warning".into(), json!(warning));
-        }
+    if let Some(warning) = compute_spawn_warning(host, parent_surface, tr)
+        && let Some(obj) = out.as_object_mut()
+    {
+        obj.insert("warning".into(), json!(warning));
     }
 
     Ok(out)

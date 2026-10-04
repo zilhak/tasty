@@ -430,22 +430,21 @@ impl PreparedMaterialization {
             drop(terminal);
             release.retain_pty(pty.retire());
         }
-        if self.publication.take().is_some() {
-            if let Some(remote) =
+        if self.publication.take().is_some()
+            && let Some(remote) =
                 self.leaf
                     .surface
                     .as_any()
                     .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
-            {
-                // Consuming the still-private closure proves Created/Restored was never enqueued.
-                let (receipt, completion) =
-                    crate::plugin_bridge::host_cmd::RemoteRetirementReceipt::pending(
-                        remote.id,
-                        remote.handles().binding(),
-                    );
-                completion.finish(Ok(()));
-                release.retain_remote(receipt);
-            }
+        {
+            // Consuming the still-private closure proves Created/Restored was never enqueued.
+            let (receipt, completion) =
+                crate::plugin_bridge::host_cmd::RemoteRetirementReceipt::pending(
+                    remote.id,
+                    remote.handles().binding(),
+                );
+            completion.finish(Ok(()));
+            release.retain_remote(receipt);
         }
         release.retain_surface(self.leaf.surface);
     }

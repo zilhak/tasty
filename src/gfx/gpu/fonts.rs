@@ -42,13 +42,13 @@ impl GpuState {
         }
 
         // 언어팩 폰트는 마지막 fallback에 추가하며 설치 전에 파일을 다시 검증한다.
-        if let Some(path) = crate::boot::locale::font_env_path() {
-            if let Err(e) = tasty_egui_theme::install_locale_font_fallback(&mut fonts, &path) {
-                tracing::warn!(
-                    "locale font at {} could not be installed: {e}",
-                    path.display()
-                );
-            }
+        if let Some(path) = crate::boot::locale::font_env_path()
+            && let Err(e) = tasty_egui_theme::install_locale_font_fallback(&mut fonts, &path)
+        {
+            tracing::warn!(
+                "locale font at {} could not be installed: {e}",
+                path.display()
+            );
         }
 
         ctx.set_fonts(fonts);

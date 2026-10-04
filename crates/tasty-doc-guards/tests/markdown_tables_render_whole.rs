@@ -20,7 +20,7 @@ fn is_pruned(name: &str) -> bool {
             .is_some_and(|rest| rest == LOCAL_HEAD || rest == format!("{LOCAL_HEAD}{LOCAL_TAIL}"))
 }
 
-fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
+fn gather(path: &Path, out: &mut Vec<PathBuf>) {
     if path.is_file() {
         if path.extension().and_then(|e| e.to_str()) == Some("md") {
             out.push(path.to_path_buf());
@@ -38,7 +38,7 @@ fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
         if is_pruned(name) || tasty_doc_guards::is_build_cache_dir(&p) {
             continue;
         }
-        gather(&p, root, out);
+        gather(&p, out);
     }
 }
 
@@ -153,7 +153,7 @@ const MIN_TABLES: usize = 300;
 fn markdown_tables_do_not_lose_cells_when_rendered() {
     let root = &tasty_doc_guards::repo_root();
     let mut files = Vec::new();
-    gather(root, root, &mut files);
+    gather(root, &mut files);
     files.sort();
 
     let mut findings: Vec<Finding> = Vec::new();
@@ -245,7 +245,7 @@ fn the_walk_prunes_by_name_and_by_marker_and_takes_only_markdown() {
     .expect("표식을 쓰지 못했다");
 
     let mut files = Vec::new();
-    gather(dir, dir, &mut files);
+    gather(dir, &mut files);
     let mut got: Vec<String> = files.iter().map(|f| rel_of(f, dir)).collect();
     got.sort();
     assert_eq!(
@@ -259,7 +259,7 @@ fn the_walk_prunes_by_name_and_by_marker_and_takes_only_markdown() {
     );
 
     let mut none = Vec::new();
-    gather(&dir.join("does-not-exist"), dir, &mut none);
+    gather(&dir.join("does-not-exist"), &mut none);
     assert!(
         none.is_empty(),
         "없는 경로에서 파일을 수집했다: {none:?}. read_dir 실패 시 빈 결과가 나오는지 확인한다."

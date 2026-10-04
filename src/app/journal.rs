@@ -143,10 +143,10 @@ impl JournalApplication {
         if self.opening.contains_key(&session.id) {
             return Ok(());
         }
-        if let EngineSelection::ImportedSlot { source } = &selection {
-            if session.persistence.slot != Some(source.destination_slot) {
-                return Err("import destination must be claimed by the opening engine".into());
-            }
+        if let EngineSelection::ImportedSlot { source } = &selection
+            && session.persistence.slot != Some(source.destination_slot)
+        {
+            return Err("import destination must be claimed by the opening engine".into());
         }
         let scopes = session
             .runtime

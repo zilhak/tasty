@@ -370,7 +370,7 @@ impl ExplorerView {
             Ok(entries) => {
                 let mut tree_children: Vec<DirEntryInfo> =
                     entries.iter().filter(|e| e.is_dir).cloned().collect();
-                tree_children.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+                tree_children.sort_by_key(|a| a.name.to_lowercase());
                 self.tree_children.insert(dir.clone(), tree_children);
                 if is_current {
                     let tab = panel.active_tab();
@@ -411,7 +411,7 @@ impl ExplorerView {
     pub fn tree_children_of(&mut self, dir: &Path, mirror_ws_id: Option<u32>) -> &[DirEntryInfo] {
         if let Some(local_ws_id) = mirror_ws_id {
             if !self.tree_children.contains_key(dir) {
-                if self.remote_state.get(dir).is_none() {
+                if !self.remote_state.contains_key(dir) {
                     let request_id = crate::core::next_list_dir_request_id();
                     self.remote_state.insert(
                         dir.to_path_buf(),

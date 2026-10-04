@@ -209,12 +209,11 @@ fn the_custody_crate_does_not_hand_the_handle_back_out_in_release() {
     let mut returning: Vec<(usize, bool)> = Vec::new();
     for (i, line) in lines.iter().enumerate() {
         let t = line.trim_start();
-        if t.starts_with("fn ") || t.contains(" fn ") {
-            if let Some(at) = line.find("->")
-                && line[at..].contains(TABLE_TYPE)
-            {
-                returning.push((i, gated[i]));
-            }
+        if (t.starts_with("fn ") || t.contains(" fn "))
+            && let Some(at) = line.find("->")
+            && line[at..].contains(TABLE_TYPE)
+        {
+            returning.push((i, gated[i]));
         }
     }
 

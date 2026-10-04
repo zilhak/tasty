@@ -73,15 +73,15 @@ impl App {
                     self.apply_preset_capture_notice(notice);
                 }
                 Some(super::journal::PresetCaptureOutput::Plugin(reply)) => {
-                    if let Some(manager) = self.plugin_manager.as_mut() {
-                        if !manager.send_bound_ipc_result(
+                    if let Some(manager) = self.plugin_manager.as_mut()
+                        && !manager.send_bound_ipc_result(
                             &reply.plugin,
                             &reply.binding,
                             reply.call_id,
                             reply.response,
-                        ) {
-                            tracing::warn!(plugin=%reply.plugin,"discarding preset result for retired plugin");
-                        }
+                        )
+                    {
+                        tracing::warn!(plugin=%reply.plugin,"discarding preset result for retired plugin");
                     }
                 }
                 None => {}

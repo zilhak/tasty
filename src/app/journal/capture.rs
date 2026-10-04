@@ -49,8 +49,8 @@ impl JournalApplication {
                 return Err("capture engine owner disappeared".into());
             };
             let force = self.capture_requests[&id];
-            if !session.persistence.dirty.is_dirty()
-                && !(force && session.runtime.settings.general.restore_surface_content)
+            if !(session.persistence.dirty.is_dirty()
+                || force && session.runtime.settings.general.restore_surface_content)
             {
                 self.capture_requests.remove(&id);
                 continue;

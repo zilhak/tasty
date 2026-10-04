@@ -578,7 +578,7 @@ fn timer_hard_deadline_line(result: &serde_json::Value) -> String {
 fn fmt_duration_ms(ms: u64) -> String {
     if ms < 1000 {
         format!("{ms}ms")
-    } else if ms % 1000 == 0 {
+    } else if ms.is_multiple_of(1000) {
         format!("{}s", ms / 1000)
     } else {
         format!("{:.1}s", ms as f64 / 1000.0)

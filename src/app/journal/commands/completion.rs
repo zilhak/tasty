@@ -393,13 +393,12 @@ impl JournalApplication {
 
         if completed.error.is_none()
             && let Reply::Resume(resume) = &mut pending.reply
+            && resume.generation.is_none()
         {
-            if resume.generation.is_none() {
-                resume.generation = sessions
-                    .iter()
-                    .find(|session| session.id == resume.engine)
-                    .and_then(|session| session.runtime.terminals.generation(resume.surface));
-            }
+            resume.generation = sessions
+                .iter()
+                .find(|session| session.id == resume.engine)
+                .and_then(|session| session.runtime.terminals.generation(resume.surface));
         }
         match pending.reply {
             Reply::Resume(mut resume) => {

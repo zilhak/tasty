@@ -336,10 +336,9 @@ impl Store {
             .entries
             .iter()
             .position(|e| e.scope == scope && e.key == key)
+            && let Some(e) = self.entries.remove(i)
         {
-            if let Some(e) = self.entries.remove(i) {
-                self.total_bytes -= e.bytes;
-            }
+            self.total_bytes -= e.bytes;
         }
     }
 

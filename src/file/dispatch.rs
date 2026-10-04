@@ -445,9 +445,6 @@ pub(crate) fn open_surface_tab(
     true
 }
 
-/// mirror pane이면 원격 실행 큐에 넣은 것이다. 실패가 아니며 결과는 원격 회신으로 받는다.
-/// 요청 주체를 마지막 forward에 표시해야 하므로 CreateTab apply 직후에 호출한다.
-
 /// 경로 구분자를 바꾸고 file URI 접두사를 붙인다. 특수문자 percent-encoding은 하지 않는다.
 fn path_to_file_uri(abs: &std::path::Path) -> String {
     let s = abs.to_string_lossy().replace('\\', "/");

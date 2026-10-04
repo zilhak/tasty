@@ -499,28 +499,6 @@ fn should_apply_remote_reply(pending_request_id: Option<u64>, reply_request_id: 
     }
 }
 
-#[cfg(test)]
-mod remote_reply_tests {
-    use super::*;
-
-    #[test]
-    fn sentinel_abandons_when_pending() {
-        assert!(should_apply_remote_reply(Some(7), 0));
-    }
-
-    #[test]
-    fn sentinel_ignored_when_idle() {
-        assert!(!should_apply_remote_reply(None, 0));
-    }
-
-    #[test]
-    fn normal_id_must_match_exactly() {
-        assert!(should_apply_remote_reply(Some(7), 7));
-        assert!(!should_apply_remote_reply(Some(7), 8));
-        assert!(!should_apply_remote_reply(None, 7));
-    }
-}
-
 impl Plugin for GitViewerPlugin {
     fn id(&self) -> &str {
         PLUGIN_ID
@@ -709,4 +687,26 @@ fn main() -> anyhow::Result<()> {
     let env = PluginEnv::load()?;
     let plugin = GitViewerPlugin::new(&env);
     tasty_plugin_sdk::run(plugin)
+}
+
+#[cfg(test)]
+mod remote_reply_tests {
+    use super::*;
+
+    #[test]
+    fn sentinel_abandons_when_pending() {
+        assert!(should_apply_remote_reply(Some(7), 0));
+    }
+
+    #[test]
+    fn sentinel_ignored_when_idle() {
+        assert!(!should_apply_remote_reply(None, 0));
+    }
+
+    #[test]
+    fn normal_id_must_match_exactly() {
+        assert!(should_apply_remote_reply(Some(7), 7));
+        assert!(!should_apply_remote_reply(Some(7), 8));
+        assert!(!should_apply_remote_reply(None, 7));
+    }
 }

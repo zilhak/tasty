@@ -269,14 +269,13 @@ pub(crate) fn save_in(
              JOIN snapshots AS snapshot ON snapshot.snapshot_id = manifest.snapshot_id WHERE manifest.restore_key = ?1",
             [&manifest.restore_key], |row| Ok((row.get(0)?, row.get(1)?)),
         ).optional()?;
-    if let Some((previous_batch, previous_view)) = previous_cut {
-        if previous_batch > batch
+    if let Some((previous_batch, previous_view)) = previous_cut
+        && (previous_batch > batch
             || (previous == Some(incoming)
                 && crate::payload::read_verified(conn, PayloadRef(to_u64(previous_view)?))?
-                    != manifest.view)
-        {
-            return Err(StoreError::ManifestRegression(manifest.restore_key.clone()));
-        }
+                    != manifest.view))
+    {
+        return Err(StoreError::ManifestRegression(manifest.restore_key.clone()));
     }
     crate::retention::require_cursor(conn, Some(to_u64(batch)?))?;
     crate::snapshot::verify_snapshot(conn, manifest.snapshot_id, PayloadRef(to_u64(body)?))?;

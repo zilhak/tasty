@@ -335,13 +335,12 @@ impl PluginManager {
         let Some(proc) = self.processes.get(plugin_id) else {
             return;
         };
-        if let crate::host_cmd::MeshPublication::Sent(generations) = &*publication {
-            if generations
+        if let crate::host_cmd::MeshPublication::Sent(generations) = &*publication
+            && generations
                 .iter()
                 .any(|generation| generation.process.ptr_eq(&proc.reply_binding()))
-            {
-                return;
-            }
+        {
+            return;
         }
         let request = self.next_request_id.fetch_add(1, Ordering::Relaxed);
         let req = crate::protocol::PluginRequest::new(

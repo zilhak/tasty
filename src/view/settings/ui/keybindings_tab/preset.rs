@@ -298,6 +298,19 @@ fn fmt_bindings(v: &[String], general: &GeneralSettings) -> String {
     }
 }
 
+/// 한 줄 말줄임 galley (디자인 ellipsis — listctrl 관례).
+fn truncated(
+    ui: &egui::Ui,
+    text: &str,
+    font: egui::FontId,
+    color: egui::Color32,
+    max_width: f32,
+) -> std::sync::Arc<egui::Galley> {
+    let mut job = egui::text::LayoutJob::simple_singleline(text.to_owned(), font, color);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(max_width);
+    ui.fonts(|f| f.layout_job(job))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -326,17 +339,4 @@ mod tests {
         assert!(changed > 0);
         assert!(changed <= total);
     }
-}
-
-/// 한 줄 말줄임 galley (디자인 ellipsis — listctrl 관례).
-fn truncated(
-    ui: &egui::Ui,
-    text: &str,
-    font: egui::FontId,
-    color: egui::Color32,
-    max_width: f32,
-) -> std::sync::Arc<egui::Galley> {
-    let mut job = egui::text::LayoutJob::simple_singleline(text.to_owned(), font, color);
-    job.wrap = egui::text::TextWrapping::truncate_at_width(max_width);
-    ui.fonts(|f| f.layout_job(job))
 }

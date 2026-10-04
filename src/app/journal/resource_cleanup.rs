@@ -89,10 +89,10 @@ impl JournalApplication {
                     return Err("retirement owner disappeared before completion".into());
                 };
                 let outcome = owner.outcome().map(|outcome| {
-                    if matches!(outcome, OperationOutcome::Succeeded) {
-                        if let Err(reason) = owner.finish_metadata(&mut session.borrow_mut()) {
-                            return OperationOutcome::Uncertain { reason };
-                        }
+                    if matches!(outcome, OperationOutcome::Succeeded)
+                        && let Err(reason) = owner.finish_metadata(&mut session.borrow_mut())
+                    {
+                        return OperationOutcome::Uncertain { reason };
                     }
                     outcome
                 });

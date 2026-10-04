@@ -857,17 +857,21 @@ mod tests {
 
     #[test]
     fn mouse_capture_banner_disabled_for_matches_pattern() {
-        let mut s = GeneralSettings::default();
-        s.mouse_capture_banner_blacklist = vec!["vim".to_string()];
+        let s = GeneralSettings {
+            mouse_capture_banner_blacklist: vec!["vim".to_string()],
+            ..Default::default()
+        };
         assert!(s.mouse_capture_banner_disabled_for("vim"));
         assert!(!s.mouse_capture_banner_disabled_for("htop"));
     }
 
     #[test]
     fn mouse_capture_banner_blacklist_independent_of_capture_blacklist() {
-        let mut s = GeneralSettings::default();
-        s.mouse_capture_blacklist = vec!["htop".to_string()];
-        s.mouse_capture_banner_blacklist = vec!["vim".to_string()];
+        let s = GeneralSettings {
+            mouse_capture_blacklist: vec!["htop".to_string()],
+            mouse_capture_banner_blacklist: vec!["vim".to_string()],
+            ..Default::default()
+        };
         assert!(s.mouse_capture_disabled_for("htop"));
         assert!(!s.mouse_capture_disabled_for("vim"));
         assert!(s.mouse_capture_banner_disabled_for("vim"));

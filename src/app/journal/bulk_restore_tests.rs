@@ -54,8 +54,7 @@ fn more_than_one_channel_capacity_of_captures_are_read_without_halting_bootstrap
         imported.mapping.workspaces[0].panes[0]
             .tabs
             .iter()
-            .enumerate()
-            .map(|(_, tab)| {
+            .map(|tab| {
                 let sid = tab.surfaces[0];
                 let model = crate::runtime::journal::load(
                     &store,

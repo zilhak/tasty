@@ -66,9 +66,7 @@ fn just_target(fragment: &str) -> Option<String> {
         rest = r.trim_start();
     }
     loop {
-        let Some(word) = rest.split_whitespace().next() else {
-            return None;
-        };
+        let word = rest.split_whitespace().next()?;
         if word == "just" {
             let after = rest[word.len()..].trim_start();
             let name: String = after

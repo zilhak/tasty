@@ -707,10 +707,10 @@ pub(crate) fn handle_spawn(
     }
 
     // 자식 수 경고는 생성 성공을 바꾸지 않는다.
-    if let Some(warning) = compute_spawn_warning(host, parent_surface_id, tr) {
-        if let Some(obj) = out.as_object_mut() {
-            obj.insert("warning".into(), json!(warning));
-        }
+    if let Some(warning) = compute_spawn_warning(host, parent_surface_id, tr)
+        && let Some(obj) = out.as_object_mut()
+    {
+        obj.insert("warning".into(), json!(warning));
     }
 
     // 부모가 자식 상태 전환을 알 수 있도록 완료 훅을 등록한다.

@@ -101,11 +101,7 @@ fn is_integration_target(found: &Walked) -> bool {
         return false;
     }
     let parts: Vec<&str> = found.rel.split('/').collect();
-    match parts.as_slice() {
-        ["tests", _] => true,
-        ["crates", _, "tests", _] => true,
-        _ => false,
-    }
+    matches!(parts.as_slice(), ["tests", _] | ["crates", _, "tests", _])
 }
 
 /// 경로 성분 중 하나라도 [`KNOWN_OUTSIDE`] 에 등재된 이름인가.

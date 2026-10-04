@@ -132,22 +132,20 @@ impl ResourceRetirement {
                 .surface
                 .as_any()
                 .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
-            ) {
-                if !self
-                    .remote_receipts
-                    .iter()
-                    .any(|receipt| receipt.matches(remote.id, &remote.handles().binding()))
-                {
-                    self.remote_receipts.push(
-                        plugins
-                            .as_deref_mut()
-                            .ok_or("plugin host disappeared")?
-                            .enqueue_observed_remote_retirement(
-                                remote.id,
-                                remote.handles().binding(),
-                            )?,
-                    );
-                }
+            ) && !self
+                .remote_receipts
+                .iter()
+                .any(|receipt| receipt.matches(remote.id, &remote.handles().binding()))
+            {
+                self.remote_receipts.push(
+                    plugins
+                        .as_deref_mut()
+                        .ok_or("plugin host disappeared")?
+                        .enqueue_observed_remote_retirement(
+                            remote.id,
+                            remote.handles().binding(),
+                        )?,
+                );
             }
         }
         for owner in &self.owners {
@@ -155,19 +153,17 @@ impl ResourceRetirement {
                 .surface
                 .as_any()
                 .downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>(
-            ) {
-                if !self
-                    .remote_receipts
-                    .iter()
-                    .any(|receipt| receipt.matches(mesh.id, &mesh.retirement_binding.binding()))
-                {
-                    self.remote_receipts.push(
-                        plugins
-                            .as_deref_mut()
-                            .ok_or("plugin host disappeared")?
-                            .enqueue_observed_mesh_retirement(mesh.id, &mesh.retirement_binding)?,
-                    );
-                }
+            ) && !self
+                .remote_receipts
+                .iter()
+                .any(|receipt| receipt.matches(mesh.id, &mesh.retirement_binding.binding()))
+            {
+                self.remote_receipts.push(
+                    plugins
+                        .as_deref_mut()
+                        .ok_or("plugin host disappeared")?
+                        .enqueue_observed_mesh_retirement(mesh.id, &mesh.retirement_binding)?,
+                );
             }
         }
         for mut owner in self.owners.drain(..) {
@@ -471,25 +467,22 @@ impl EngineRelease {
             if let Some(mesh) = surface
                 .as_any()
                 .downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>()
-            {
-                if !self
+                && !self
                     .remote
                     .iter()
                     .any(|receipt| receipt.matches(mesh.id, &mesh.retirement_binding.binding()))
-                {
-                    let result = plugins
-                        .as_deref_mut()
-                        .ok_or_else(|| "mesh plugin host unavailable".to_owned())
-                        .and_then(|plugins| {
-                            plugins
-                                .enqueue_observed_mesh_retirement(mesh.id, &mesh.retirement_binding)
-                        });
-                    match result {
-                        Ok(receipt) => self.remote.push(receipt),
-                        Err(_) => {
-                            retained.push(surface);
-                            continue;
-                        }
+            {
+                let result = plugins
+                    .as_deref_mut()
+                    .ok_or_else(|| "mesh plugin host unavailable".to_owned())
+                    .and_then(|plugins| {
+                        plugins.enqueue_observed_mesh_retirement(mesh.id, &mesh.retirement_binding)
+                    });
+                match result {
+                    Ok(receipt) => self.remote.push(receipt),
+                    Err(_) => {
+                        retained.push(surface);
+                        continue;
                     }
                 }
             }

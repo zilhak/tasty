@@ -139,10 +139,10 @@ impl FontConfig {
     pub fn family_source_path(&self, family: &str) -> Option<std::path::PathBuf> {
         for face in self.font_system.db().faces() {
             for (name, _) in &face.families {
-                if name.eq_ignore_ascii_case(family) {
-                    if let cosmic_text::fontdb::Source::File(path) = &face.source {
-                        return Some(path.clone());
-                    }
+                if name.eq_ignore_ascii_case(family)
+                    && let cosmic_text::fontdb::Source::File(path) = &face.source
+                {
+                    return Some(path.clone());
                 }
             }
         }

@@ -441,11 +441,7 @@ impl App {
     /// jitter로 동시 재시도 집중을 줄이며 상한에 도달하면 자동 재시도만 멈춘다.
     pub(super) fn on_reconnect_attempt_failed(&mut self, anchor: u32, err: &anyhow::Error) {
         let permanent_conflict = err.to_string().contains("already_attached");
-        let slot = self
-            .remote
-            .reconnect
-            .entry(anchor)
-            .or_insert_with(ReconnectSlot::new);
+        let slot = self.remote.reconnect.entry(anchor).or_default();
         slot.attempts += 1;
         if reconnect_exhausted(slot.attempts) {
             slot.given_up = true;

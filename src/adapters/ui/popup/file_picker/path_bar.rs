@@ -164,45 +164,6 @@ fn menu_width(widest_label: f32, th: &Theme) -> f32 {
     row.clamp(floor, ceiling)
 }
 
-#[cfg(test)]
-mod menu_width_tests {
-    use super::*;
-
-    #[test]
-    fn the_menu_width_is_measured_inside_the_band_and_counts_the_whole_row() {
-        let th = crate::theme::theme();
-        let (floor, ceiling) = menu_band(&th);
-        assert!(
-            floor < ceiling,
-            "최소 너비가 최대 너비 이상이다: {floor} .. {ceiling}"
-        );
-
-        assert_eq!(
-            menu_width(0.0, &th),
-            floor,
-            "짧은 경로에 최소 너비가 적용되지 않았다"
-        );
-        assert_eq!(
-            menu_width(ceiling * 2.0, &th),
-            ceiling,
-            "긴 경로에 최대 너비가 적용되지 않았다"
-        );
-
-        let chrome = menu_width(0.0, &th) - floor; // 0 — 바닥에 걸려 안 보인다
-        assert_eq!(chrome, 0.0);
-        let mid_label = (floor + ceiling) * 0.5;
-        let mid = menu_width(mid_label, &th);
-        assert!(
-            mid > mid_label,
-            "행 chrome(글리프 · gap · 좌우 패딩)을 안 셌다 — {mid} <= {mid_label}"
-        );
-        assert!(
-            mid < ceiling,
-            "중간 너비를 검사할 입력이 최대 너비에 도달했다"
-        );
-    }
-}
-
 /// 경계 폭에서 표시 방식이 매 프레임 바뀌지 않도록 직전 단계를 기억한다.
 fn step_memory_id(ui: &egui::Ui) -> egui::Id {
     ui.make_persistent_id("file_picker_path_bar_step")
@@ -341,4 +302,43 @@ fn hidden_crumbs(
             }
         },
     );
+}
+
+#[cfg(test)]
+mod menu_width_tests {
+    use super::*;
+
+    #[test]
+    fn the_menu_width_is_measured_inside_the_band_and_counts_the_whole_row() {
+        let th = crate::theme::theme();
+        let (floor, ceiling) = menu_band(&th);
+        assert!(
+            floor < ceiling,
+            "최소 너비가 최대 너비 이상이다: {floor} .. {ceiling}"
+        );
+
+        assert_eq!(
+            menu_width(0.0, &th),
+            floor,
+            "짧은 경로에 최소 너비가 적용되지 않았다"
+        );
+        assert_eq!(
+            menu_width(ceiling * 2.0, &th),
+            ceiling,
+            "긴 경로에 최대 너비가 적용되지 않았다"
+        );
+
+        let chrome = menu_width(0.0, &th) - floor; // 0 — 바닥에 걸려 안 보인다
+        assert_eq!(chrome, 0.0);
+        let mid_label = (floor + ceiling) * 0.5;
+        let mid = menu_width(mid_label, &th);
+        assert!(
+            mid > mid_label,
+            "행 chrome(글리프 · gap · 좌우 패딩)을 안 셌다 — {mid} <= {mid_label}"
+        );
+        assert!(
+            mid < ceiling,
+            "중간 너비를 검사할 입력이 최대 너비에 도달했다"
+        );
+    }
 }

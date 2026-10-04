@@ -573,11 +573,11 @@ impl View for MainView {
     }
 
     fn handle_event(&mut self, event: WindowEvent, ctx: &mut ViewCtx<'_>) -> ViewAction {
-        let Some(mut engine) = ctx.engine.take() else {
+        let Some(engine) = ctx.engine.take() else {
             tracing::warn!("main window event without an engine: {event:?}");
             return ViewAction::None;
         };
-        self.handle_engine_event(&mut engine, event, ctx)
+        self.handle_engine_event(&engine, event, ctx)
     }
 
     fn render(&mut self) {

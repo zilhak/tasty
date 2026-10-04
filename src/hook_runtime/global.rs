@@ -270,11 +270,11 @@ mod tests {
     fn parse_accepts_file_condition() {
         assert!(matches!(
             HookCondition::parse("file:/tmp/foo.txt"),
-            Some(HookCondition::File(p)) if p == std::path::PathBuf::from("/tmp/foo.txt")
+            Some(HookCondition::File(p)) if p == std::path::Path::new("/tmp/foo.txt")
         ));
         assert!(matches!(
             HookCondition::parse(r"file:C:\Users\foo\bar.txt"),
-            Some(HookCondition::File(p)) if p == std::path::PathBuf::from(r"C:\Users\foo\bar.txt")
+            Some(HookCondition::File(p)) if p == std::path::Path::new(r"C:\Users\foo\bar.txt")
         ));
         assert!(HookCondition::parse("file:").is_none());
     }

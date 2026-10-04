@@ -125,16 +125,15 @@ impl Request {
         };
         let engine = session.as_ref();
         let core = engine.core;
-        if let Cause::ProcessExit(generation) = cause {
-            if !matches!(target,T::Surface(surface) if engine.runtime.terminals.matches_generation(surface,generation))
-            {
-                return Err(bad("PTY exit belongs to a retired physical owner".into()));
-            }
+        if let Cause::ProcessExit(generation) = cause
+            && !matches!(target,T::Surface(surface) if engine.runtime.terminals.matches_generation(surface,generation))
+        {
+            return Err(bad("PTY exit belongs to a retired physical owner".into()));
         }
-        if let Cause::RemoteHolder { client, workspace } = cause {
-            if engine.live.occupancy.workspace_holder(workspace) != Some(client) {
-                return Err(bad("remote workspace holder changed".into()));
-            }
+        if let Cause::RemoteHolder { client, workspace } = cause
+            && engine.live.occupancy.workspace_holder(workspace) != Some(client)
+        {
+            return Err(bad("remote workspace holder changed".into()));
         }
         let (workspace, targets, closes_workspace) = match target {
             T::Tab(tab_id) => {

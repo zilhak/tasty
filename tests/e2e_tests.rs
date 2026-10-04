@@ -1182,13 +1182,12 @@ fn multi_window_owner_routing() {
             .filter_map(|s| s["id"].as_u64())
             .filter(|id| !ids_before.contains(id))
             .collect();
-        if let Some(&id) = new_ids.first() {
-            if arr
+        if let Some(&id) = new_ids.first()
+            && arr
                 .iter()
                 .any(|s| s["id"].as_u64() == Some(id) && s["pty_ready"].as_bool() == Some(true))
-            {
-                break id;
-            }
+        {
+            break id;
         }
         if start.elapsed() > Duration::from_secs(10) {
             panic!("second window surface did not appear in 10s. surface.list = {arr:?}");

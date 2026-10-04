@@ -176,7 +176,7 @@ fn boot_with_layout(layout: Option<serde_json::Value>) -> (EngineSession, Journa
     while !journal.is_ready(session.id) {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         if resume {
-            journal.poll_restore_bootstrap(&mut session).unwrap();
+            journal.poll_restore_bootstrap(&session).unwrap();
         }
         assert!(
             Instant::now() < until,

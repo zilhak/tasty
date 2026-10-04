@@ -67,14 +67,19 @@ fn classify(masked: &str, raw: &str) -> Vec<(usize, Kind)> {
         }
         // replace 인자의 리터럴이 필요해 분류는 원문에서 한다. 위치 검색은 마스킹한 코드에서 한다.
         let mut stmt = String::new();
-        for k in i.saturating_sub(2)..(i + 8).min(raws.len()) {
+        for (k, raw) in raws
+            .iter()
+            .enumerate()
+            .take((i + 8).min(raws.len()))
+            .skip(i.saturating_sub(2))
+        {
             // 뒤의 else 블록을 같은 변환식으로 읽지 않도록 다음 블록에서 멈춘다.
-            if k > i && raws[k].contains('{') {
+            if k > i && raw.contains('{') {
                 break;
             }
-            stmt.push_str(raws[k]);
+            stmt.push_str(raw);
             stmt.push(' ');
-            if raws[k].contains(';') && stmt.contains("strip_prefix(") {
+            if raw.contains(';') && stmt.contains("strip_prefix(") {
                 break;
             }
         }

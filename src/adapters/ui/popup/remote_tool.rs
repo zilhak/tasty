@@ -1996,7 +1996,6 @@ fn draw_passkey_row(
 }
 
 /// 로컬 GUI 전용 값 노출. path kind 는 경로, inline kind 는 관리 파일 내용을 읽는다.
-
 fn draw_passkey_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
     let full_x = ui.clip_rect().x_range();
     let sep = egui::Stroke::new(th.border_width.value(), th.border_strong());
@@ -2223,6 +2222,109 @@ fn indented_hint(
             TextWrap::Wrap,
         );
     });
+}
+
+const FILE_REQUESTS: &str = "remote_tool.file_requests";
+fn enqueue(ctx: &egui::Context, state: &UiState, action: FileAction) {
+    ctx.memory_mut(|memory| {
+        let queue = memory
+            .data
+            .get_temp_mut_or_default::<Vec<FileRequest>>(egui::Id::new(FILE_REQUESTS));
+        if queue.len() >= 64 {
+            tracing::warn!("remote tool request capacity exhausted");
+            return;
+        }
+        queue.push(FileRequest {
+            popup: Arc::downgrade(&state.identity),
+            view: state.view.clone(),
+            action,
+        });
+    });
+}
+pub(crate) fn take_file_requests(ctx: &egui::Context) -> Vec<FileRequest> {
+    ctx.memory_mut(|memory| {
+        std::mem::take(
+            memory
+                .data
+                .get_temp_mut_or_default::<Vec<FileRequest>>(egui::Id::new(FILE_REQUESTS)),
+        )
+    })
+}
+pub(crate) fn accept_file_result(
+    ctx: &egui::Context,
+    request: &FileRequest,
+    result: Result<FileValue, String>,
+) {
+    let mut state = read_ui(ctx);
+    if !request.popup.ptr_eq(&Arc::downgrade(&state.identity)) {
+        return;
+    }
+    match (&request.action, result) {
+        (FileAction::SaveProfile(form), result) if form == &state.pform => match result {
+            Ok(value) => {
+                state.perr = None;
+                state.profile_view = Sub::List;
+                if let FileValue::Detection(id, name) = value {
+                    state.detecting = Some(DetectJob { id, name });
+                }
+            }
+            Err(error) => state.perr = Some(error),
+        },
+        (FileAction::SaveAttach(form), result) if form == &state.aform => match result {
+            Ok(_) => {
+                state.aerr = None;
+                state.attach_view = Sub::List;
+            }
+            Err(error) => state.aerr = Some(error),
+        },
+        (FileAction::SavePasskey(form), result) if form == &state.kform => match result {
+            Ok(_) => {
+                state.kerr = None;
+                state.passkey_view = Sub::List;
+                state.revealed.clear();
+                state.revealed_values.clear();
+            }
+            Err(error) => state.kerr = Some(error),
+        },
+        (FileAction::Detect(_), Ok(FileValue::Detection(id, name))) => {
+            state.detecting = Some(DetectJob { id, name })
+        }
+        (FileAction::Reveal { key, editing }, Ok(FileValue::Revealed(value))) => {
+            if *editing {
+                if state.passkey_view == Sub::Form
+                    && state.kform.editing_original.as_deref() == Some(key.name.as_str())
+                    && state.kform.value.is_empty()
+                {
+                    state.kform.value = value;
+                }
+            } else if state.revealed.contains(&key.name) {
+                state
+                    .revealed_values
+                    .insert(key.name.clone(), (key.clone(), value));
+            }
+        }
+        (_, Err(error)) => tracing::warn!(%error,"remote tool request failed"),
+        _ => {}
+    }
+    write_ui(ctx, state);
+    ctx.request_repaint();
+}
+pub(crate) fn accept_detection(
+    ctx: &egui::Context,
+    update: &tasty_remote::profile_detection::DetectionUpdate,
+) -> bool {
+    let mut state = read_ui(ctx);
+    if !state
+        .detecting
+        .as_ref()
+        .is_some_and(|job| job.id == update.id)
+    {
+        return false;
+    }
+    state.detecting = None;
+    write_ui(ctx, state);
+    ctx.request_repaint();
+    true
 }
 
 #[cfg(test)]
@@ -2715,107 +2817,4 @@ mod tests {
         assert!(!is_unknown_kind("smb")); // builtin
         assert!(!is_unknown_kind("http")); // KNOWN_TYPES
     }
-}
-
-const FILE_REQUESTS: &str = "remote_tool.file_requests";
-fn enqueue(ctx: &egui::Context, state: &UiState, action: FileAction) {
-    ctx.memory_mut(|memory| {
-        let queue = memory
-            .data
-            .get_temp_mut_or_default::<Vec<FileRequest>>(egui::Id::new(FILE_REQUESTS));
-        if queue.len() >= 64 {
-            tracing::warn!("remote tool request capacity exhausted");
-            return;
-        }
-        queue.push(FileRequest {
-            popup: Arc::downgrade(&state.identity),
-            view: state.view.clone(),
-            action,
-        });
-    });
-}
-pub(crate) fn take_file_requests(ctx: &egui::Context) -> Vec<FileRequest> {
-    ctx.memory_mut(|memory| {
-        std::mem::take(
-            memory
-                .data
-                .get_temp_mut_or_default::<Vec<FileRequest>>(egui::Id::new(FILE_REQUESTS)),
-        )
-    })
-}
-pub(crate) fn accept_file_result(
-    ctx: &egui::Context,
-    request: &FileRequest,
-    result: Result<FileValue, String>,
-) {
-    let mut state = read_ui(ctx);
-    if !request.popup.ptr_eq(&Arc::downgrade(&state.identity)) {
-        return;
-    }
-    match (&request.action, result) {
-        (FileAction::SaveProfile(form), result) if form == &state.pform => match result {
-            Ok(value) => {
-                state.perr = None;
-                state.profile_view = Sub::List;
-                if let FileValue::Detection(id, name) = value {
-                    state.detecting = Some(DetectJob { id, name });
-                }
-            }
-            Err(error) => state.perr = Some(error),
-        },
-        (FileAction::SaveAttach(form), result) if form == &state.aform => match result {
-            Ok(_) => {
-                state.aerr = None;
-                state.attach_view = Sub::List;
-            }
-            Err(error) => state.aerr = Some(error),
-        },
-        (FileAction::SavePasskey(form), result) if form == &state.kform => match result {
-            Ok(_) => {
-                state.kerr = None;
-                state.passkey_view = Sub::List;
-                state.revealed.clear();
-                state.revealed_values.clear();
-            }
-            Err(error) => state.kerr = Some(error),
-        },
-        (FileAction::Detect(_), Ok(FileValue::Detection(id, name))) => {
-            state.detecting = Some(DetectJob { id, name })
-        }
-        (FileAction::Reveal { key, editing }, Ok(FileValue::Revealed(value))) => {
-            if *editing {
-                if state.passkey_view == Sub::Form
-                    && state.kform.editing_original.as_deref() == Some(key.name.as_str())
-                    && state.kform.value.is_empty()
-                {
-                    state.kform.value = value;
-                }
-            } else if state.revealed.contains(&key.name) {
-                state
-                    .revealed_values
-                    .insert(key.name.clone(), (key.clone(), value));
-            }
-        }
-        (_, Err(error)) => tracing::warn!(%error,"remote tool request failed"),
-        _ => {}
-    }
-    write_ui(ctx, state);
-    ctx.request_repaint();
-}
-pub(crate) fn accept_detection(
-    ctx: &egui::Context,
-    update: &tasty_remote::profile_detection::DetectionUpdate,
-) -> bool {
-    let mut state = read_ui(ctx);
-    if !state
-        .detecting
-        .as_ref()
-        .is_some_and(|job| job.id == update.id)
-    {
-        return false;
-    }
-    state.detecting = None;
-    write_ui(ctx, state);
-    ctx.request_repaint();
-    true
 }

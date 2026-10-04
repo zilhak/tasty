@@ -152,7 +152,7 @@ fn parse_git_query_result(payload: &[u8]) -> Option<MirrorEvent> {
     }
     let wire: GitQueryResultWire = serde_json::from_value(value).ok()?;
     let truncated = wire.truncated_status || wire.truncated_log || wire.truncated_diff;
-    let data = wire.ok.then(|| Value::Object(wire.rest));
+    let data = wire.ok.then_some(Value::Object(wire.rest));
     Some(MirrorEvent::GitQueryResult {
         request_id: wire.request_id,
         ok: wire.ok,

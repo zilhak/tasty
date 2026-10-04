@@ -657,18 +657,16 @@ fn draw_occupied_overlays(
         }
     }
 
-    if let Some(sid) = pending_force_detach {
-        if let Some(lock) = engine.live.occupancy.occupancy_of(sid) {
-            state.dispatch_intent(
-                crate::intent::Intent::Engine(
-                    crate::app::engine_action::EngineAction::DetachSurface {
-                        surface: sid,
-                        grant: lock.granted_seq,
-                    },
-                )
-                .from_user_context_menu(),
-            );
-        }
+    if let Some(sid) = pending_force_detach
+        && let Some(lock) = engine.live.occupancy.occupancy_of(sid)
+    {
+        state.dispatch_intent(
+            crate::intent::Intent::Engine(crate::app::engine_action::EngineAction::DetachSurface {
+                surface: sid,
+                grant: lock.granted_seq,
+            })
+            .from_user_context_menu(),
+        );
     }
 }
 

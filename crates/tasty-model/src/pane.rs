@@ -16,18 +16,10 @@ pub enum TabSwitch {
 }
 
 /// A screen region with its own independent tab bar.
+#[derive(Default)]
 pub struct Pane {
     pub id: PaneId,
     pub tabs: Vec<Tab>,
-}
-
-impl Default for Pane {
-    fn default() -> Self {
-        Self {
-            id: 0,
-            tabs: Vec::new(),
-        }
-    }
 }
 
 impl Pane {

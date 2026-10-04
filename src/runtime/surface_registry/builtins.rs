@@ -228,6 +228,94 @@ fn register_empty(registry: &SurfaceKindRegistry) {
     });
 }
 
+// DAG 데이터는 host가 보유하므로 내장 surface가 직접 조회한다.
+// 대상·방향은 저장하지만 달라진 그래프에 낡은 화면 위치를 적용하지 않도록 줌·팬·선택은 저장하지 않는다.
+
+fn register_dag_graph(registry: &SurfaceKindRegistry) {
+    registry.register(SurfaceKindDef {
+        kind: "dag_graph",
+        rendering: RegisteredRendering::HostEgui,
+        source: KindSource::HostBuiltin,
+        display_name_i18n_key: "surface.kind.dag_graph",
+        icon: Some("git_tree".to_string()),
+        create: Arc::new(|sid, _cwd, params| {
+            Ok(crate::runtime::surface_registry::PreparedKind::local(
+                Box::new(DagGraphSurface::with_target(
+                    sid,
+                    dag_id_param(params),
+                    params.get("workspace_id").and_then(parse_workspace_id),
+                    params
+                        .get("direction")
+                        .and_then(|v| v.as_str())
+                        .map(DagDirection::from_str)
+                        .unwrap_or_default(),
+                )) as Box<dyn Surface>,
+            ))
+        }),
+        restore: Arc::new(|sid, data| {
+            Ok(crate::runtime::surface_registry::PreparedKind::local(
+                Box::new(DagGraphSurface::with_target(
+                    sid,
+                    dag_id_param(data),
+                    data.get("workspace_id").and_then(parse_workspace_id),
+                    data.get("direction")
+                        .and_then(|v| v.as_str())
+                        .map(DagDirection::from_str)
+                        .unwrap_or_default(),
+                )) as Box<dyn Surface>,
+            ))
+        }),
+        snapshot: Arc::new(|s: &dyn Surface| {
+            let dag = s.as_any().downcast_ref::<DagGraphSurface>()?;
+            let mut obj = json!({ "direction": dag.direction.as_str() });
+            if let Some(id) = &dag.dag_id {
+                obj["dag_id"] = json!(id);
+            }
+            if let Some(ws) = dag.workspace_id {
+                obj["workspace_id"] = json!(ws);
+            }
+            Some(obj)
+        }),
+        // 프리셋은 관찰 대상만 받는다. 방향은 화면에서 바꾸는 설정이다.
+        preset_fields: vec![PresetFieldSpec {
+            id: "dag_id".to_string(),
+            label_key: "preset.edit.dag_id".to_string(),
+            target: PresetFieldTarget::Params("dag_id".to_string()),
+            input: PresetFieldInput::Text,
+            required: false,
+            placeholder_key: Some("preset.edit.dag_id_hint".to_string()),
+            default: None,
+            derive_cwd: false,
+        }],
+        param_aliases: std::collections::HashMap::from([("dag".to_string(), "dag_id".to_string())]),
+        default_params: std::collections::HashMap::new(),
+        consumes_egui_input: true,
+        // UI 폰트 줌과 그래프 줌은 다르므로 같은 입력으로 둘을 함께 바꾸지 않는다.
+        zoomable: false,
+        egui_copy: false,
+        copy_path: false,
+        egui_paste: false,
+        name_from_param: None,
+        records_recent: false,
+        convert_requires_input: false,
+        convert_input_popup: None,
+    });
+}
+
+fn dag_id_param(v: &Value) -> Option<String> {
+    v.get("dag_id")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+fn parse_workspace_id(v: &Value) -> Option<u32> {
+    v.as_u64()
+        .or_else(|| v.as_str().and_then(|s| s.trim().parse::<u64>().ok()))
+        .and_then(|n| u32::try_from(n).ok())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -496,92 +584,4 @@ mod tests {
         assert!(!term.zoomable);
         assert!(!term.copy_path);
     }
-}
-
-// DAG 데이터는 host가 보유하므로 내장 surface가 직접 조회한다.
-// 대상·방향은 저장하지만 달라진 그래프에 낡은 화면 위치를 적용하지 않도록 줌·팬·선택은 저장하지 않는다.
-
-fn register_dag_graph(registry: &SurfaceKindRegistry) {
-    registry.register(SurfaceKindDef {
-        kind: "dag_graph",
-        rendering: RegisteredRendering::HostEgui,
-        source: KindSource::HostBuiltin,
-        display_name_i18n_key: "surface.kind.dag_graph",
-        icon: Some("git_tree".to_string()),
-        create: Arc::new(|sid, _cwd, params| {
-            Ok(crate::runtime::surface_registry::PreparedKind::local(
-                Box::new(DagGraphSurface::with_target(
-                    sid,
-                    dag_id_param(params),
-                    params.get("workspace_id").and_then(parse_workspace_id),
-                    params
-                        .get("direction")
-                        .and_then(|v| v.as_str())
-                        .map(DagDirection::from_str)
-                        .unwrap_or_default(),
-                )) as Box<dyn Surface>,
-            ))
-        }),
-        restore: Arc::new(|sid, data| {
-            Ok(crate::runtime::surface_registry::PreparedKind::local(
-                Box::new(DagGraphSurface::with_target(
-                    sid,
-                    dag_id_param(data),
-                    data.get("workspace_id").and_then(parse_workspace_id),
-                    data.get("direction")
-                        .and_then(|v| v.as_str())
-                        .map(DagDirection::from_str)
-                        .unwrap_or_default(),
-                )) as Box<dyn Surface>,
-            ))
-        }),
-        snapshot: Arc::new(|s: &dyn Surface| {
-            let dag = s.as_any().downcast_ref::<DagGraphSurface>()?;
-            let mut obj = json!({ "direction": dag.direction.as_str() });
-            if let Some(id) = &dag.dag_id {
-                obj["dag_id"] = json!(id);
-            }
-            if let Some(ws) = dag.workspace_id {
-                obj["workspace_id"] = json!(ws);
-            }
-            Some(obj)
-        }),
-        // 프리셋은 관찰 대상만 받는다. 방향은 화면에서 바꾸는 설정이다.
-        preset_fields: vec![PresetFieldSpec {
-            id: "dag_id".to_string(),
-            label_key: "preset.edit.dag_id".to_string(),
-            target: PresetFieldTarget::Params("dag_id".to_string()),
-            input: PresetFieldInput::Text,
-            required: false,
-            placeholder_key: Some("preset.edit.dag_id_hint".to_string()),
-            default: None,
-            derive_cwd: false,
-        }],
-        param_aliases: std::collections::HashMap::from([("dag".to_string(), "dag_id".to_string())]),
-        default_params: std::collections::HashMap::new(),
-        consumes_egui_input: true,
-        // UI 폰트 줌과 그래프 줌은 다르므로 같은 입력으로 둘을 함께 바꾸지 않는다.
-        zoomable: false,
-        egui_copy: false,
-        copy_path: false,
-        egui_paste: false,
-        name_from_param: None,
-        records_recent: false,
-        convert_requires_input: false,
-        convert_input_popup: None,
-    });
-}
-
-fn dag_id_param(v: &Value) -> Option<String> {
-    v.get("dag_id")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-}
-
-fn parse_workspace_id(v: &Value) -> Option<u32> {
-    v.as_u64()
-        .or_else(|| v.as_str().and_then(|s| s.trim().parse::<u64>().ok()))
-        .and_then(|n| u32::try_from(n).ok())
 }

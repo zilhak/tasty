@@ -84,13 +84,13 @@ pub fn build_font_definitions(
     }
 
     // 부팅과 같은 헬퍼로 CJK 뒤에 언어팩 글꼴을 추가한다.
-    if let Some(path) = crate::boot::locale::font_env_path() {
-        if let Err(e) = tasty_egui_theme::install_locale_font_fallback(&mut fonts, &path) {
-            tracing::warn!(
-                "locale font at {} could not be installed: {e}",
-                path.display()
-            );
-        }
+    if let Some(path) = crate::boot::locale::font_env_path()
+        && let Err(e) = tasty_egui_theme::install_locale_font_fallback(&mut fonts, &path)
+    {
+        tracing::warn!(
+            "locale font at {} could not be installed: {e}",
+            path.display()
+        );
     }
 
     for kind in appearance.plugin_font_overrides.keys() {

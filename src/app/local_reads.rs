@@ -27,10 +27,10 @@ impl<T> Query<T> {
         }
     }
     pub(crate) fn poll(&mut self, requests: &mut ReadRequests) -> Option<io::Result<T>> {
-        if let Some(request) = self.request.take() {
-            if let Err(request) = requests.push(request) {
-                self.request = Some(request);
-            }
+        if let Some(request) = self.request.take()
+            && let Err(request) = requests.push(request)
+        {
+            self.request = Some(request);
         }
         match self.receiver.try_recv() {
             Ok(result) => Some(result),

@@ -364,7 +364,7 @@ impl PluginManager {
         if self.processes.contains_key(id) {
             return;
         }
-        let Some(pkg) = self.packages.iter().find(|p| &p.manifest.id == id).cloned() else {
+        let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == id).cloned() else {
             return;
         };
         // 정적 기능은 프로세스 실행 성공 여부와 관계없이 활성화한다.

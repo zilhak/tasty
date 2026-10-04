@@ -440,8 +440,10 @@ font_family = "Iosevka"
 
     #[test]
     fn active_tab_indicator_round_trips() {
-        let mut s = AppearanceSettings::default();
-        s.active_tab_indicator = ActiveTabIndicator::Dot;
+        let s = AppearanceSettings {
+            active_tab_indicator: ActiveTabIndicator::Dot,
+            ..Default::default()
+        };
         let dumped = toml::to_string(&s).unwrap();
         assert!(dumped.contains("active_tab_indicator = \"dot\""));
         let reparsed: AppearanceSettings = toml::from_str(&dumped).unwrap();

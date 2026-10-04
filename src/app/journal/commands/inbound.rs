@@ -26,9 +26,7 @@ impl JournalApplication {
         op: StructuralOp,
         origin: ForwardOrigin,
     ) -> Option<(u64, u32)> {
-        let Some((registration, binding)) = hub.client_identity(client) else {
-            return None;
-        };
+        let (registration, binding) = hub.client_identity(client)?;
         let Some(workspace) = live.occupancy.workspace_held_by(client) else {
             reply(
                 hub,

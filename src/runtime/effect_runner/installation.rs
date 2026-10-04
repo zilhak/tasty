@@ -187,9 +187,8 @@ impl Installation {
                         .map_err(anyhow::Error::msg)?,
                 );
             } else if let Some(binding) = old.mesh {
-                let manager = plugins
-                    .as_deref_mut()
-                    .ok_or_else(|| anyhow::anyhow!("mesh retirement has no plugin host"))?;
+                let manager =
+                    plugins.ok_or_else(|| anyhow::anyhow!("mesh retirement has no plugin host"))?;
                 self.remote_retirements.push(
                     manager
                         .enqueue_observed_mesh_retirement(self.surface_id, &binding)
@@ -315,16 +314,16 @@ impl Installation {
             drop(terminal);
             release.retain_pty(pty.retire());
         }
-        if self.publication.take().is_some() {
-            if let Some(binding) = self.unpublished_remote.take() {
-                let (receipt, completion) =
-                    crate::plugin_bridge::host_cmd::RemoteRetirementReceipt::pending(
-                        self.surface_id,
-                        binding,
-                    );
-                completion.finish(Ok(()));
-                release.retain_remote(receipt);
-            }
+        if self.publication.take().is_some()
+            && let Some(binding) = self.unpublished_remote.take()
+        {
+            let (receipt, completion) =
+                crate::plugin_bridge::host_cmd::RemoteRetirementReceipt::pending(
+                    self.surface_id,
+                    binding,
+                );
+            completion.finish(Ok(()));
+            release.retain_remote(receipt);
         }
         if let Some(receipt) = self.retirement.take() {
             release.retain_pty(receipt);

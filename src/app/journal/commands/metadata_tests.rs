@@ -231,7 +231,7 @@ fn direct_rename_commits_before_notification_and_clear_uses_current_selected_tit
     let tab_id = session.core_state.find_tab_for_surface(sid).unwrap();
     let pane_id = session.core_state.find_pane_for_tab(tab_id).unwrap();
     let origin = IntentOrigin::User {
-        source: crate::core::origin::UserSource::Menu("rename-test".into()),
+        source: crate::core::origin::UserSource::Menu("rename-test"),
     };
     journal.admit_direct_rename(
         session.id,

@@ -239,16 +239,16 @@ impl RequestContext {
     ) {
         if let (Some((workspace, pane, from)), Some((ws, p, to))) =
             (before, self.tutorial_tab_snapshot(engine))
+            && workspace == ws
+            && pane == p
         {
-            if workspace == ws && pane == p {
-                self.tutorial
-                    .observe(crate::adapters::ui::tutorial::PracticeEvent::SwitchTab {
-                        workspace,
-                        pane,
-                        from,
-                        to,
-                    });
-            }
+            self.tutorial
+                .observe(crate::adapters::ui::tutorial::PracticeEvent::SwitchTab {
+                    workspace,
+                    pane,
+                    from,
+                    to,
+                });
         }
     }
 }

@@ -136,12 +136,13 @@ fn calls_in(src: &str) -> Vec<(String, Call)> {
         let b = line.as_bytes();
         let mut i = 0usize;
         while i < b.len() {
-            if b[i] == b't' && !i.checked_sub(1).is_some_and(|p| is_ident_byte(b[p])) {
-                if let Some((key, call, next)) = call_at(b, i) {
-                    out.push((key, call));
-                    i = next;
-                    continue;
-                }
+            if b[i] == b't'
+                && !i.checked_sub(1).is_some_and(|p| is_ident_byte(b[p]))
+                && let Some((key, call, next)) = call_at(b, i)
+            {
+                out.push((key, call));
+                i = next;
+                continue;
             }
             i += 1;
         }

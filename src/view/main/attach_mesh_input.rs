@@ -215,21 +215,20 @@ impl MainView {
                     events,
                 });
             }
-            if context.is_some() || input.is_some() {
-                if let Some(target) =
+            if (context.is_some() || input.is_some())
+                && let Some(target) =
                     crate::runtime::surface_binding::SurfaceBinding::capture(engine, sid)
-                {
-                    self.state.dispatch_intent(
-                        crate::intent::Intent::Engine(
-                            crate::app::engine_action::EngineAction::RemoteMesh {
-                                target,
-                                context,
-                                input,
-                            },
-                        )
-                        .from_user_shortcut("remote-mesh-frame"),
-                    );
-                }
+            {
+                self.state.dispatch_intent(
+                    crate::intent::Intent::Engine(
+                        crate::app::engine_action::EngineAction::RemoteMesh {
+                            target,
+                            context,
+                            input,
+                        },
+                    )
+                    .from_user_shortcut("remote-mesh-frame"),
+                );
             }
         }
     }

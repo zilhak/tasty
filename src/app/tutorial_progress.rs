@@ -203,10 +203,9 @@ impl TutorialProgress {
             .worker
             .as_ref()
             .is_some_and(|worker| worker.is_finished())
+            && self.worker.take().expect("finished worker").join().is_err()
         {
-            if self.worker.take().expect("finished worker").join().is_err() {
-                tracing::warn!("tutorial writer panicked");
-            }
+            tracing::warn!("tutorial writer panicked");
         }
         usize::from(self.worker.is_some())
     }

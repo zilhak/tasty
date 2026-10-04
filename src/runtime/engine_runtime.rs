@@ -82,7 +82,7 @@ impl EngineRuntime {
         rows: usize,
         registries: super::registries::RuntimeRegistries,
     ) -> Self {
-        let runtime = Self {
+        Self {
             #[cfg(feature = "gui")]
             dag_reads: Default::default(),
             settings,
@@ -118,7 +118,6 @@ impl EngineRuntime {
             child_terminals: ChildTerminalRegistry::load(),
             #[cfg(feature = "gui")]
             readonly_views: Default::default(),
-        };
-        runtime
+        }
     }
 }

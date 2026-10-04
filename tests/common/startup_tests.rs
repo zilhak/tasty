@@ -49,8 +49,7 @@ fn emit_noise(burst: usize) {
 
 fn serve_requests(listener: &TcpListener, mode: &str) {
     let mut first = true;
-    let mut burst = 0;
-    for incoming in listener.incoming() {
+    for (burst, incoming) in listener.incoming().enumerate() {
         let mut stream = incoming.unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(5)))
@@ -62,7 +61,6 @@ fn serve_requests(listener: &TcpListener, mode: &str) {
             std::thread::sleep(Duration::from_millis(200));
         }
         emit_noise(burst);
-        burst += 1;
         if first && mode == "response_failure" {
             writeln!(stream, "invalid-json").unwrap();
             first = false;

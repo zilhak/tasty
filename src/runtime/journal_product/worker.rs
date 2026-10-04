@@ -749,15 +749,13 @@ fn release_finished_admission(
 ) {
     // A failed preparation is terminal for this unresolved admission. Release its credit
     // and notify joined callers even when App never sends a later CancelAdmission.
-    if failed {
-        if let Some(abandoned) = pending.remove(&ticket) {
-            for follower in abandoned.followers {
-                if !followers.contains(&follower) {
-                    followers.push(follower);
-                }
+    if failed && let Some(abandoned) = pending.remove(&ticket) {
+        for follower in abandoned.followers {
+            if !followers.contains(&follower) {
+                followers.push(follower);
             }
-            *release_admission = true;
         }
+        *release_admission = true;
     }
     if *release_admission {
         let mut inner = executor.inner.lock().expect("worker executor lock");

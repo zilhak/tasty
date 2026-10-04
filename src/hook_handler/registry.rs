@@ -258,10 +258,10 @@ impl HookHandlerRegistry {
             }
             let mut t = toml::value::Table::new();
             t.insert("id".into(), toml::Value::String(id.as_str().to_string()));
-            if let Some(src) = user.source {
-                if let Ok(v) = toml::Value::try_from(src) {
-                    t.insert("source".into(), v);
-                }
+            if let Some(src) = user.source
+                && let Ok(v) = toml::Value::try_from(src)
+            {
+                t.insert("source".into(), v);
             }
             if let Some(p) = user.priority {
                 t.insert("priority".into(), toml::Value::Integer(p as i64));
@@ -644,14 +644,14 @@ fn install_user(inner: &mut Inner, decl: UserHookHandlerSettingsDecl) {
         );
         return;
     }
-    if let Some(short) = id_str.split('/').next_back() {
-        if !is_valid_hook_handler_short_name(short) {
-            warn!(
-                id = id_str.as_str(),
-                "hook_handler: user handler invalid short-name"
-            );
-            return;
-        }
+    if let Some(short) = id_str.split('/').next_back()
+        && !is_valid_hook_handler_short_name(short)
+    {
+        warn!(
+            id = id_str.as_str(),
+            "hook_handler: user handler invalid short-name"
+        );
+        return;
     }
     push_contribution(
         inner,

@@ -429,7 +429,8 @@ impl MainView {
                 self.run_explorer_action(engine, ExplorerAction::CutFiles);
             }
             Some(DeferredPaletteAction::Paste) => {
-                if !self.run_explorer_action(engine, ExplorerAction::PasteFiles) {
+                let pasted = self.run_explorer_action(engine, ExplorerAction::PasteFiles);
+                if !pasted {
                     self.run_paste(engine);
                 }
             }

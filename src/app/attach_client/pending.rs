@@ -271,20 +271,19 @@ impl App {
             .mirror_attempts
             .cancel_connection(ticket, &mut self.remote);
         tracing::warn!(engine=?target.engine,"mirror connection could not be installed: {error}");
-        if target.resync {
-            if let Some((workspace, epoch)) = &target.reconnect {
-                if let Some(index) = self.remote.sessions.iter().position(|session| {
-                    session.state.local_workspace == *workspace
-                        && session.transport.frame_tx.epoch().same(epoch)
-                }) {
-                    self.remote.sessions[index].state.resync_pending = None;
-                    if target.anchor.is_some() {
-                        self.enter_reconnecting(index);
-                    } else {
-                        let session = self.remote.sessions.remove(index);
-                        self.cleanup_mirror_workspace(&session, true);
-                    }
-                }
+        if target.resync
+            && let Some((workspace, epoch)) = &target.reconnect
+            && let Some(index) = self.remote.sessions.iter().position(|session| {
+                session.state.local_workspace == *workspace
+                    && session.transport.frame_tx.epoch().same(epoch)
+            })
+        {
+            self.remote.sessions[index].state.resync_pending = None;
+            if target.anchor.is_some() {
+                self.enter_reconnecting(index);
+            } else {
+                let session = self.remote.sessions.remove(index);
+                self.cleanup_mirror_workspace(&session, true);
             }
         }
         if let Some(anchor) = target.anchor {

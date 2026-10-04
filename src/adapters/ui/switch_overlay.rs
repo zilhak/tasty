@@ -154,10 +154,11 @@ mod tests {
     use super::*;
 
     fn kb_with(tab: &str, ws: &str) -> KeybindingSettings {
-        let mut kb = KeybindingSettings::default();
-        kb.tab_switch_modifier = tab.to_string();
-        kb.workspace_switch_modifier = ws.to_string();
-        kb
+        KeybindingSettings {
+            tab_switch_modifier: tab.to_string(),
+            workspace_switch_modifier: ws.to_string(),
+            ..Default::default()
+        }
     }
 
     fn mods(ctrl: bool, alt: bool, shift: bool) -> egui::Modifiers {

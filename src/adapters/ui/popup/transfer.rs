@@ -284,20 +284,18 @@ pub fn draw_transfer_error(
         // 저장한 페이로드를 기존 업로드 큐에 다시 넣는다.
         if let Some(err) = state.dialogs.transfer_error.pop_front()
             && let Some(payload) = err.retry
-        {
-            if let Some(target) =
+            && let Some(target) =
                 crate::runtime::surface_binding::SurfaceBinding::capture(engine, payload.surface_id)
-            {
-                state.dispatch_intent(
-                    crate::intent::Intent::Engine(
-                        crate::app::engine_action::EngineAction::ImageUpload {
-                            target,
-                            request: payload,
-                        },
-                    )
-                    .from_user_context_menu(),
-                );
-            }
+        {
+            state.dispatch_intent(
+                crate::intent::Intent::Engine(
+                    crate::app::engine_action::EngineAction::ImageUpload {
+                        target,
+                        request: payload,
+                    },
+                )
+                .from_user_context_menu(),
+            );
         }
         return if state.dialogs.transfer_error.is_empty() {
             PopupAction::Close

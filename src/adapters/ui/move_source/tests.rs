@@ -243,13 +243,12 @@ fn pending_tab_rings_its_cell_whether_active_or_not() {
 fn pending_pane_rings_the_whole_pane_rect() {
     let mut engine_session = test_engine();
     let engine = engine_session.borrow_mut();
-    let pending_move;
     let navigation = crate::state::navigation::NavigationState::default();
     let (left, _, _) = first_pane(&engine);
     let right = 2;
     let right_rect = rect(200.0, 0.0, 200.0, 300.0);
     let panes = [(left, rect(0.0, 0.0, 200.0, 300.0)), (right, right_rect)];
-    pending_move = Some(PendingMove::Pane(right));
+    let pending_move = Some(PendingMove::Pane(right));
     assert!(same(
         resolve(
             pending_move,
@@ -328,11 +327,10 @@ fn target_in_another_workspace_marks_that_workspace_for_every_kind() {
 fn hidden_pane_in_the_active_workspace_emits_nothing() {
     let mut engine_session = test_engine();
     let engine = engine_session.borrow_mut();
-    let pending_move;
     let navigation = crate::state::navigation::NavigationState::default();
     let (left, _, _) = first_pane(&engine);
     let right = 2;
-    pending_move = Some(PendingMove::Pane(right));
+    let pending_move = Some(PendingMove::Pane(right));
     // right가 pane_rects에 없는 프레임. 지금은 생기지 않는 방어 경로다.
     let panes = [(left, rect(0.0, 0.0, 400.0, 300.0))];
     assert!(same(

@@ -58,16 +58,16 @@ impl JournalApplication {
         sessions: &mut [&mut EngineSession],
         mut plugins: Option<&mut crate::plugin::PluginManager>,
     ) -> Result<(), String> {
-        if self.pauses_observation() {
-            if let Some(plugins) = plugins.as_deref_mut() {
-                plugins.poll_publication_retirements()?;
-            }
+        if self.pauses_observation()
+            && let Some(plugins) = plugins.as_deref_mut()
+        {
+            plugins.poll_publication_retirements()?;
         }
         self.submit_openings()?;
         self.submit_commands()?;
         #[cfg(feature = "gui")]
         self.submit_forwards()?;
-        self.poll_resource_cleanup(sessions, plugins.as_deref_mut())?;
+        self.poll_resource_cleanup(sessions, plugins)?;
         self.submit_captures(sessions)?;
         self.submit_preset_captures()?;
         self.refill_execution_ids(sessions)?;
@@ -119,8 +119,7 @@ impl JournalApplication {
             };
             if opening.select_available_slot
                 && let EngineSelection::Slot { slot, .. } = &mut opening.selection
-            {
-                if let Some(available) = self
+                && let Some(available) = self
                     .known_slots
                     .iter()
                     .filter(|(_, retired)| !**retired)
@@ -130,10 +129,9 @@ impl JournalApplication {
                             .iter()
                             .any(|(id, used)| *id != session.id && *used == Some(**candidate))
                     })
-                {
-                    *slot = *available;
-                    session.persistence.slot = Some(*available);
-                }
+            {
+                *slot = *available;
+                session.persistence.slot = Some(*available);
             }
             let model = match opening.selection {
                 EngineSelection::Slot { slot, resume: true } => bootstrap
@@ -402,7 +400,7 @@ impl JournalApplication {
         batch: &tasty_core::StreamBatch,
         before: &std::collections::BTreeMap<String, tasty_core::JournalModel>,
         engine_binding: Option<&crate::runtime::journal_product::EngineBinding>,
-        mut plugins: Option<&mut crate::plugin::PluginManager>,
+        plugins: Option<&mut crate::plugin::PluginManager>,
     ) -> Result<(), String> {
         let opening = self.opening.get_mut(&session.id);
         let stream = match opening.as_ref().map(|opening| &opening.selection) {
@@ -446,13 +444,7 @@ impl JournalApplication {
             crate::runtime::surface_restorer::initialize_instances(session, &after);
             opening.projected = true;
         } else {
-            self.apply_live_batch(
-                session,
-                predecessor,
-                &domain,
-                &stream,
-                plugins.as_deref_mut(),
-            )?;
+            self.apply_live_batch(session, predecessor, &domain, &stream, plugins)?;
         }
         session
             .borrow_mut()
@@ -466,7 +458,7 @@ impl JournalApplication {
         ticket: u64,
         result: &Result<ResultValue, String>,
         sessions: &mut [&mut EngineSession],
-        mut plugins: Option<&mut crate::plugin::PluginManager>,
+        plugins: Option<&mut crate::plugin::PluginManager>,
     ) -> Result<bool, String> {
         #[cfg(feature = "gui")]
         if self.answer_forward(ticket, result)? {
@@ -481,7 +473,7 @@ impl JournalApplication {
         if self.answer_preset_capture(ticket, result) {
             return Ok(true);
         }
-        if self.answer_resource_cleanup(ticket, result, sessions, plugins.as_deref_mut())? {
+        if self.answer_resource_cleanup(ticket, result, sessions, plugins)? {
             return Ok(true);
         }
         #[cfg(feature = "gui")]
@@ -574,14 +566,14 @@ impl JournalApplication {
         ticket: u64,
         result: Result<ResultValue, crate::runtime::journal_product::JournalError>,
         sessions: &mut [&mut EngineSession],
-        mut plugins: Option<&mut crate::plugin::PluginManager>,
+        plugins: Option<&mut crate::plugin::PluginManager>,
     ) -> Result<(), String> {
         if self.answer_command(ticket, &result, sessions)? {
             return Ok(());
         }
         // Resource owners retain diagnostic text; only the command boundary maps IPC categories.
         let result = result.map_err(|error| error.to_string());
-        if self.answer_finished_request(ticket, &result, sessions, plugins.as_deref_mut())? {
+        if self.answer_finished_request(ticket, &result, sessions, plugins)? {
             return Ok(());
         }
         if self.restorations.complete(ticket, &result, sessions)? {

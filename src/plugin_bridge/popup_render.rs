@@ -117,7 +117,6 @@ pub fn draw_plugin_popups(
         }
     };
     for (idx, (snap, rect)) in placed.iter().enumerate() {
-        let snap = snap;
         let rect = *rect;
         let scope_rect = scrim_rects[idx];
         let ownership = pointer_pos.map(|p| point_ownership(rect, snap.z_seq, &occluders, p));

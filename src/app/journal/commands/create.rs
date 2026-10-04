@@ -539,18 +539,16 @@ impl JournalApplication {
         if !matches!(
             pending.close_cause,
             super::close::Cause::RemoteHolder { .. }
+        ) && let Some(response) = crate::ipc::handler::hard_occupied_structural_guard(
+            services,
+            &session.as_ref(),
+            0,
+            &pending.request.method,
+            &pending.request.params,
+            &serde_json::Value::Null,
         ) {
-            if let Some(response) = crate::ipc::handler::hard_occupied_structural_guard(
-                services,
-                &session.as_ref(),
-                0,
-                &pending.request.method,
-                &pending.request.params,
-                &serde_json::Value::Null,
-            ) {
-                self.reject_resolved_request(ticket, response);
-                return;
-            }
+            self.reject_resolved_request(ticket, response);
+            return;
         }
         let view = self
             .completion_views

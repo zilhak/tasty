@@ -256,10 +256,10 @@ impl EngineMut<'_> {
             .find(|n| n.id == id)
             .map(|n| n.source_surface);
         self.live.notifications.mark_read(id);
-        if let Some(surface_id) = source_surface {
-            if !self.live.notifications.has_unread_for_surface(surface_id) {
-                self.clear_attention_local(surface_id);
-            }
+        if let Some(surface_id) = source_surface
+            && !self.live.notifications.has_unread_for_surface(surface_id)
+        {
+            self.clear_attention_local(surface_id);
         }
     }
 
@@ -278,6 +278,20 @@ impl EngineMut<'_> {
         for surface_id in unread_surfaces {
             self.clear_attention_local(surface_id);
         }
+    }
+}
+
+impl crate::runtime::engine_read::EngineRead<'_> {
+    pub(crate) fn attention_kind(&self, id: u32) -> Option<AttentionKind> {
+        self.live.attention.kind_of(id)
+    }
+    #[cfg(feature = "gui")]
+    pub(crate) fn attention_count_of_kind(&self, kind: AttentionKind, ids: &[u32]) -> usize {
+        self.live.attention.count_of_kind(kind, ids)
+    }
+    #[cfg(feature = "gui")]
+    pub(crate) fn attention_dominant_kind(&self, ids: &[u32]) -> Option<AttentionKind> {
+        self.live.attention.dominant_kind(ids)
     }
 }
 
@@ -301,11 +315,11 @@ mod tests {
     fn raise_and_query() {
         let mut s_session = state();
         let mut s = s_session.borrow_mut();
-        assert!(!s.attention_dominant_kind(&[7]).is_some());
+        assert!(s.attention_dominant_kind(&[7]).is_none());
         s.raise_attention(7, AttentionKind::Completion);
         assert!(s.attention_dominant_kind(&[7]).is_some());
         assert_eq!(s.attention_kind(7), Some(AttentionKind::Completion));
-        assert!(!s.attention_dominant_kind(&[8, 9]).is_some());
+        assert!(s.attention_dominant_kind(&[8, 9]).is_none());
     }
 
     #[test]
@@ -313,7 +327,7 @@ mod tests {
         let mut s_session = state();
         let mut s = s_session.borrow_mut();
         s.raise_attention(0, AttentionKind::Completion);
-        assert!(!s.attention_dominant_kind(&[0]).is_some());
+        assert!(s.attention_dominant_kind(&[0]).is_none());
         assert_eq!(
             s.attention_count_of_kind(AttentionKind::Completion, &[0]),
             0
@@ -326,7 +340,7 @@ mod tests {
         let mut s = s_session.borrow_mut();
         s.raise_attention(3, AttentionKind::Completion);
         s.clear_attention(3);
-        assert!(!s.attention_dominant_kind(&[3]).is_some());
+        assert!(s.attention_dominant_kind(&[3]).is_none());
         assert_eq!(s.attention_kind(3), None);
     }
 
@@ -361,7 +375,7 @@ mod tests {
 
         s.mark_notification_read(id);
 
-        assert!(!s.attention_dominant_kind(&[100]).is_some());
+        assert!(s.attention_dominant_kind(&[100]).is_none());
     }
 
     #[test]
@@ -389,7 +403,7 @@ mod tests {
 
         s.mark_notification_read(_id2);
         assert!(
-            !s.attention_dominant_kind(&[100]).is_some(),
+            s.attention_dominant_kind(&[100]).is_none(),
             "마지막 안읽음 알림까지 읽음 처리되면 attention 이 지워져야 한다"
         );
     }
@@ -415,8 +429,8 @@ mod tests {
 
         s.mark_all_notifications_read();
 
-        assert!(!s.attention_dominant_kind(&[100]).is_some());
-        assert!(!s.attention_dominant_kind(&[200]).is_some());
+        assert!(s.attention_dominant_kind(&[100]).is_none());
+        assert!(s.attention_dominant_kind(&[200]).is_none());
     }
 
     #[test]
@@ -439,7 +453,7 @@ mod tests {
             s.attention_dominant_kind(&[100]).is_some(),
             "100에는 안읽음 알림이 없었으므로 별도로 생성한 attention을 유지해야 한다"
         );
-        assert!(!s.attention_dominant_kind(&[200]).is_some());
+        assert!(s.attention_dominant_kind(&[200]).is_none());
     }
 
     #[test]
@@ -1052,19 +1066,5 @@ mod tests {
                 rank_token_of(hi)
             );
         }
-    }
-}
-
-impl crate::runtime::engine_read::EngineRead<'_> {
-    pub(crate) fn attention_kind(&self, id: u32) -> Option<AttentionKind> {
-        self.live.attention.kind_of(id)
-    }
-    #[cfg(feature = "gui")]
-    pub(crate) fn attention_count_of_kind(&self, kind: AttentionKind, ids: &[u32]) -> usize {
-        self.live.attention.count_of_kind(kind, ids)
-    }
-    #[cfg(feature = "gui")]
-    pub(crate) fn attention_dominant_kind(&self, ids: &[u32]) -> Option<AttentionKind> {
-        self.live.attention.dominant_kind(ids)
     }
 }

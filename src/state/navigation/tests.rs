@@ -253,7 +253,7 @@ fn tab_navigation_reports_no_change_and_missing_targets_without_mutating_structu
 #[test]
 fn legacy_split_hints_follow_node_identity_through_extract_and_resplit() {
     use crate::model::{StructurePresentation, SurfaceLayout};
-    let mut workspaces = vec![Workspace::new_with_terminal_marker(
+    let mut workspaces = [Workspace::new_with_terminal_marker(
         1,
         "workspace".into(),
         10,

@@ -127,12 +127,12 @@ pub(crate) fn anchor_snapshot(conn: &Connection) -> StoreResult<Option<u64>> {
     value.map(to_u64).transpose()
 }
 pub(crate) fn require_cursor(conn: &Connection, after: Option<u64>) -> StoreResult<()> {
-    if let Some(retained_after_batch) = floor(conn)? {
-        if after.is_none_or(|after| after < retained_after_batch) {
-            return Err(StoreError::ResyncRequired {
-                retained_after_batch,
-            });
-        }
+    if let Some(retained_after_batch) = floor(conn)?
+        && after.is_none_or(|after| after < retained_after_batch)
+    {
+        return Err(StoreError::ResyncRequired {
+            retained_after_batch,
+        });
     }
     Ok(())
 }
@@ -148,14 +148,13 @@ pub(crate) fn require_stream_cursor(
             |row| row.get(0),
         )
         .optional()?;
-    if let Some(revision) = revision {
-        if after.unwrap_or(0) < to_u64(revision)? {
-            return Err(StoreError::ResyncRequired {
-                retained_after_batch: floor(conn)?.ok_or_else(|| {
-                    StoreError::Corrupt("retention revision has no anchor".into())
-                })?,
-            });
-        }
+    if let Some(revision) = revision
+        && after.unwrap_or(0) < to_u64(revision)?
+    {
+        return Err(StoreError::ResyncRequired {
+            retained_after_batch: floor(conn)?
+                .ok_or_else(|| StoreError::Corrupt("retention revision has no anchor".into()))?,
+        });
     }
     Ok(())
 }

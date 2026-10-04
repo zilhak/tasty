@@ -661,6 +661,33 @@ fn keycode_to_egui(code: KeyCode) -> Option<egui::Key> {
     })
 }
 
+impl MainView {
+    pub(crate) fn note_mesh_bootstrap(
+        &mut self,
+        surface: u32,
+        plugin: String,
+        width: u32,
+        height: u32,
+        ppp: f32,
+        theme: Option<ThemeWire>,
+        focused: bool,
+    ) {
+        let state = self.egui_mesh.entry(surface).or_default();
+        state.plugin_id = Some(plugin);
+        state.common.last_geom = Some((width, height, ppp.to_bits()));
+        state.common.last_theme = theme;
+        state.last_focused = Some(focused);
+        state.common.bootstrap_sent = true;
+    }
+    pub(crate) fn request_mesh_full(&mut self, surface: u32) {
+        self.egui_mesh
+            .entry(surface)
+            .or_default()
+            .set_pending_full();
+        self.base.state.dirty = true;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -756,32 +783,5 @@ mod tests {
             ModifiersWire::default(),
         );
         assert!(ev.is_none());
-    }
-}
-
-impl MainView {
-    pub(crate) fn note_mesh_bootstrap(
-        &mut self,
-        surface: u32,
-        plugin: String,
-        width: u32,
-        height: u32,
-        ppp: f32,
-        theme: Option<ThemeWire>,
-        focused: bool,
-    ) {
-        let state = self.egui_mesh.entry(surface).or_default();
-        state.plugin_id = Some(plugin);
-        state.common.last_geom = Some((width, height, ppp.to_bits()));
-        state.common.last_theme = theme;
-        state.last_focused = Some(focused);
-        state.common.bootstrap_sent = true;
-    }
-    pub(crate) fn request_mesh_full(&mut self, surface: u32) {
-        self.egui_mesh
-            .entry(surface)
-            .or_default()
-            .set_pending_full();
-        self.base.state.dirty = true;
     }
 }

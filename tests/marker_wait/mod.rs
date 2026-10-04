@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 pub const POLL: Duration = Duration::from_millis(50);
 
 pub fn wait_file_content(path: &Path, budget: Duration) -> String {
-    wait_file_content_with_evidence(path, budget, || String::new())
+    wait_file_content_with_evidence(path, budget, String::new)
 }
 
 /// 추가 진단을 만드는 evidence는 만료할 때만 호출한다.

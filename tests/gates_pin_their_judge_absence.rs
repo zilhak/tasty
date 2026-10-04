@@ -176,10 +176,10 @@ fn judge_name(script: &str) -> String {
         .unwrap_or_else(|e| panic!("{script} 를 못 읽는다: {e}"));
     for line in text.lines() {
         let t = line.trim_start();
-        if let Some(rest) = t.strip_prefix("resolve_judge ") {
-            if let Some(name) = rest.split_whitespace().next() {
-                return name.to_string();
-            }
+        if let Some(rest) = t.strip_prefix("resolve_judge ")
+            && let Some(name) = rest.split_whitespace().next()
+        {
+            return name.to_string();
         }
     }
     panic!("{script} 에서 resolve_judge 의 판정기 이름을 못 읽었다 — 호출 형태가 바뀌었다");

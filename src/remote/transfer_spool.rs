@@ -66,10 +66,10 @@ impl Spool {
 impl Drop for Spool {
     fn drop(&mut self) {
         drop(self.file.take());
-        if let Err(error) = std::fs::remove_file(&self.path) {
-            if error.kind() != std::io::ErrorKind::NotFound {
-                tracing::warn!(%error,"transfer spool cleanup failed");
-            }
+        if let Err(error) = std::fs::remove_file(&self.path)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(%error,"transfer spool cleanup failed");
         }
     }
 }

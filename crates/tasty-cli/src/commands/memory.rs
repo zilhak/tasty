@@ -332,11 +332,11 @@ mod scope_selector_pin {
                     }
                 }
             }
-            for i in 0..SCOPE_FLAGS.len() {
-                for j in (i + 1)..SCOPE_FLAGS.len() {
+            for (i, first) in SCOPE_FLAGS.iter().enumerate() {
+                for second in SCOPE_FLAGS.iter().skip(i + 1) {
                     let mut argv = vec!["tasty".to_string()];
                     argv.extend(base.iter().cloned());
-                    for f in [SCOPE_FLAGS[i], SCOPE_FLAGS[j]] {
+                    for f in [*first, *second] {
                         argv.push(format!("--{f}"));
                         if f != "global" {
                             argv.push("1".to_string());
@@ -349,7 +349,7 @@ mod scope_selector_pin {
                     if kind != Some(clap::error::ErrorKind::ArgumentConflict) {
                         bad.push(format!(
                             "{path} — `--{}` + `--{}` 가 충돌로 안 걸린다 ({kind:?})",
-                            SCOPE_FLAGS[i], SCOPE_FLAGS[j]
+                            first, second
                         ));
                     }
                 }

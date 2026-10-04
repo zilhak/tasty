@@ -135,6 +135,118 @@ pub fn missing_referents<'a>(
         .collect()
 }
 
+// METHOD_TABLE의 권한을 텍스트로 읽는다. 실제 런타임 표와의 일치는 본체의
+// tests/method_table_readings_agree.rs가 확인해 여기의 추가 의존성을 피한다.
+
+/// 줄 주석을 지운다. 문자열 리터럴 안의 `//` 는 건드리지 않는다.
+pub fn strip_line_comments(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    for line in src.lines() {
+        let mut in_str = false;
+        let mut cut = line.len();
+        let b = line.as_bytes();
+        let mut i = 0;
+        while i < b.len() {
+            match b[i] {
+                b'\\' if in_str => i += 1,
+                b'"' => in_str = !in_str,
+                b'/' if !in_str && i + 1 < b.len() && b[i + 1] == b'/' => {
+                    cut = i;
+                    break;
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        out.push_str(&line[..cut]);
+        out.push(' ');
+    }
+    out
+}
+
+/// 지원하는 생성자와 plugin 호출 허용 여부. 실제 소스에서 추출한 생성자 집합과 대조한다.
+pub const KNOWN_CTORS: &[(&str, bool)] = &[
+    ("plugin", true),
+    // plugin_only도 권한 목록의 의미는 plugin과 같다.
+    ("plugin_only", true),
+    ("local_only", false),
+];
+
+/// METHOD_TABLE을 메서드별 필요 권한으로 읽는다. None은 plugin 호출 불가다.
+/// 여러 줄 항목과 후행 쉼표를 허용하고 모르는 생성자는 실패로 처리한다.
+pub fn method_table(src: &str) -> BTreeMap<String, Option<Vec<String>>> {
+    let start = src
+        .find("pub const METHOD_TABLE")
+        .expect("METHOD_TABLE 을 못 찾았다");
+    let end = src[start..]
+        .find("\npub const DEBUG_METHODS")
+        .expect("METHOD_TABLE 의 끝을 못 찾았다");
+    let flat = strip_line_comments(&src[start..start + end]);
+    let b = flat.as_bytes();
+    let mut out = BTreeMap::new();
+    let mut unknown: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] != b'"' {
+            i += 1;
+            continue;
+        }
+        let Some(close) = flat[i + 1..].find('"') else {
+            break;
+        };
+        let name = &flat[i + 1..i + 1 + close];
+        let after = &flat[i + 1 + close + 1..];
+        let trimmed = after.trim_start();
+        if !name.is_empty()
+            && name
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '_')
+            && trimmed.starts_with(',')
+        {
+            let tail = trimmed[1..].trim_start();
+            let ctor: String = tail
+                .chars()
+                .take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '_')
+                .collect();
+            if tail[ctor.len()..].starts_with('(') {
+                let Some((_, plugin_callable)) =
+                    KNOWN_CTORS.iter().find(|(n, _)| *n == ctor.as_str())
+                else {
+                    unknown.push(format!("{name} → {ctor}(…)"));
+                    i += 1 + close + 1;
+                    continue;
+                };
+                if *plugin_callable {
+                    let rest = &tail[ctor.len() + 1..];
+                    let open = rest.find('[').expect("plugin 계열은 &[..] 형태다");
+                    let close2 = rest[open..].find(']').expect("&[..] 가 안 닫혔다");
+                    let inner = &rest[open + 1..open + close2];
+                    let vs: Vec<String> = inner
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    out.insert(name.to_string(), Some(vs));
+                } else {
+                    out.insert(name.to_string(), None);
+                }
+            }
+        }
+        i += 1 + close + 1;
+    }
+    // 빈 결과를 정상적인 권한 목록으로 반환하지 않는다.
+    assert!(
+        !out.is_empty(),
+        "METHOD_TABLE에서 항목이 한 건도 나오지 않았다. 표가 비었거나 지원하지 않는 문법인지 확인한다."
+    );
+    assert!(
+        unknown.is_empty(),
+        "METHOD_TABLE에 모르는 생성자가 있다. KNOWN_CTORS에 해석을 추가한다:\n  {}",
+        unknown.join("\n  ")
+    );
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,116 +358,4 @@ mod tests {
         assert!(!here.join("CHANGELOG.md").exists());
         assert!(!here.join("docs/adr/index.md").exists());
     }
-}
-
-// METHOD_TABLE의 권한을 텍스트로 읽는다. 실제 런타임 표와의 일치는 본체의
-// tests/method_table_readings_agree.rs가 확인해 여기의 추가 의존성을 피한다.
-
-/// 줄 주석을 지운다. 문자열 리터럴 안의 `//` 는 건드리지 않는다.
-pub fn strip_line_comments(src: &str) -> String {
-    let mut out = String::with_capacity(src.len());
-    for line in src.lines() {
-        let mut in_str = false;
-        let mut cut = line.len();
-        let b = line.as_bytes();
-        let mut i = 0;
-        while i < b.len() {
-            match b[i] {
-                b'\\' if in_str => i += 1,
-                b'"' => in_str = !in_str,
-                b'/' if !in_str && i + 1 < b.len() && b[i + 1] == b'/' => {
-                    cut = i;
-                    break;
-                }
-                _ => {}
-            }
-            i += 1;
-        }
-        out.push_str(&line[..cut]);
-        out.push(' ');
-    }
-    out
-}
-
-/// 지원하는 생성자와 plugin 호출 허용 여부. 실제 소스에서 추출한 생성자 집합과 대조한다.
-pub const KNOWN_CTORS: &[(&str, bool)] = &[
-    ("plugin", true),
-    // plugin_only도 권한 목록의 의미는 plugin과 같다.
-    ("plugin_only", true),
-    ("local_only", false),
-];
-
-/// METHOD_TABLE을 메서드별 필요 권한으로 읽는다. None은 plugin 호출 불가다.
-/// 여러 줄 항목과 후행 쉼표를 허용하고 모르는 생성자는 실패로 처리한다.
-pub fn method_table(src: &str) -> BTreeMap<String, Option<Vec<String>>> {
-    let start = src
-        .find("pub const METHOD_TABLE")
-        .expect("METHOD_TABLE 을 못 찾았다");
-    let end = src[start..]
-        .find("\npub const DEBUG_METHODS")
-        .expect("METHOD_TABLE 의 끝을 못 찾았다");
-    let flat = strip_line_comments(&src[start..start + end]);
-    let b = flat.as_bytes();
-    let mut out = BTreeMap::new();
-    let mut unknown: Vec<String> = Vec::new();
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] != b'"' {
-            i += 1;
-            continue;
-        }
-        let Some(close) = flat[i + 1..].find('"') else {
-            break;
-        };
-        let name = &flat[i + 1..i + 1 + close];
-        let after = &flat[i + 1 + close + 1..];
-        let trimmed = after.trim_start();
-        if !name.is_empty()
-            && name
-                .chars()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '_')
-            && trimmed.starts_with(',')
-        {
-            let tail = trimmed[1..].trim_start();
-            let ctor: String = tail
-                .chars()
-                .take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '_')
-                .collect();
-            if tail[ctor.len()..].starts_with('(') {
-                let Some((_, plugin_callable)) =
-                    KNOWN_CTORS.iter().find(|(n, _)| *n == ctor.as_str())
-                else {
-                    unknown.push(format!("{name} → {ctor}(…)"));
-                    i += 1 + close + 1;
-                    continue;
-                };
-                if *plugin_callable {
-                    let rest = &tail[ctor.len() + 1..];
-                    let open = rest.find('[').expect("plugin 계열은 &[..] 형태다");
-                    let close2 = rest[open..].find(']').expect("&[..] 가 안 닫혔다");
-                    let inner = &rest[open + 1..open + close2];
-                    let vs: Vec<String> = inner
-                        .split(',')
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect();
-                    out.insert(name.to_string(), Some(vs));
-                } else {
-                    out.insert(name.to_string(), None);
-                }
-            }
-        }
-        i += 1 + close + 1;
-    }
-    // 빈 결과를 정상적인 권한 목록으로 반환하지 않는다.
-    assert!(
-        !out.is_empty(),
-        "METHOD_TABLE에서 항목이 한 건도 나오지 않았다. 표가 비었거나 지원하지 않는 문법인지 확인한다."
-    );
-    assert!(
-        unknown.is_empty(),
-        "METHOD_TABLE에 모르는 생성자가 있다. KNOWN_CTORS에 해석을 추가한다:\n  {}",
-        unknown.join("\n  ")
-    );
-    out
 }

@@ -366,12 +366,12 @@ fn markdown_role_stays_empty_when_another_plugin_owns_the_kind() {
         .expect("leaf");
     assert_eq!(leaf.kind(), "empty");
     assert!(
-        !engine
+        engine
             .runtime
             .surfaces
             .get(&local)
             .and_then(|surface| surface.as_any().downcast_ref::<EmptySurface>())
-            .is_some_and(|empty| empty.deferred.is_some())
+            .is_none_or(|empty| empty.deferred.is_none())
     );
 }
 

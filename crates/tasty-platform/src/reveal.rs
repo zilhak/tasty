@@ -20,7 +20,7 @@ pub fn open_path(path: &Path) -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
     {
         Command::new("open").arg(path).spawn()?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {

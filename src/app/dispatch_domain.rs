@@ -143,15 +143,14 @@ impl App {
             surface_id,
             generation,
         } = &intent
-        {
-            if self.engines.get(source.engine()).is_none_or(|engine| {
+            && self.engines.get(source.engine()).is_none_or(|engine| {
                 !engine
                     .runtime
                     .terminals
                     .matches_generation(*surface_id, *generation)
-            }) {
-                return Ok(());
-            }
+            })
+        {
+            return Ok(());
         }
         let origin = dispatched.origin;
         let id = source.engine();
@@ -220,15 +219,14 @@ impl App {
         origin: &IntentOrigin,
         event: CoreEvent,
     ) {
-        if let Some(DispatchCtx { engine, .. }) = engines_mut!(self).resolve(source.engine()) {
-            if let Some((surface, generation)) = event.terminal_binding()
-                && !engine
-                    .runtime
-                    .terminals
-                    .matches_generation(surface, generation)
-            {
-                return;
-            }
+        if let Some(DispatchCtx { engine, .. }) = engines_mut!(self).resolve(source.engine())
+            && let Some((surface, generation)) = event.terminal_binding()
+            && !engine
+                .runtime
+                .terminals
+                .matches_generation(surface, generation)
+        {
+            return;
         }
         match event {
             CoreEvent::SettingsUpdated(new_settings) => {

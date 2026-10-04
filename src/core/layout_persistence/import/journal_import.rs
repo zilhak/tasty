@@ -47,7 +47,7 @@ pub(crate) fn import(
         request.view,
         false,
     )
-    .map_err(|error| StoreError::Corrupt(error))?;
+    .map_err(StoreError::Corrupt)?;
     let layout = exported.layout;
     let categories = categories_of(&layout);
     // A different journal namespace is not permission to reuse numeric IDs still present in
