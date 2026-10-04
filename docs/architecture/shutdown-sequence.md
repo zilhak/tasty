@@ -1,13 +1,13 @@
 # 종료 시퀀스 — 종료 cascade + Drop tail
 
-GUI 종료는 `App::begin_shutdown`에서 `ShutdownPhase` 상태 머신을 설치해 진행한다. 표시할 윈도우가 있으면 대기 단계 사이에 종료 화면을 그리며, 없으면 같은 단계를 블로킹 루프로 실행한다. Observer join이나 프로세스 kill·wait처럼 동기 대기가 있는 단계에서는 렌더링도 기다릴 수 있다. 선택 이유는 [종료 설계](../adr/0016-window-platform-and-shutdown.md)를 따른다.
+GUI 종료는 일반 종료의 `App::begin_shutdown`과 오류 종료의 `begin_error_shutdown`이 공유하는 `start_shutdown`에서 `ShutdownPhase` 상태 머신을 설치해 진행한다. 표시할 윈도우가 있으면 대기 단계 사이에 종료 화면을 그리며, 없으면 같은 단계를 블로킹 루프로 실행한다. Observer join이나 프로세스 kill·wait처럼 동기 대기가 있는 단계에서는 렌더링도 기다릴 수 있다. 선택 이유는 [종료 설계](../adr/0016-window-platform-and-shutdown.md)를 따른다.
 
 계측은 `event_loop.exit()`까지의 종료 단계와 `run_app` 반환 뒤 `App`을 drop하는 정리 구간(Drop tail)을 나눈다. 후자는 종료 화면을 더 그리지 않는 구간이며, 전체 소요는 `shutdown_total_with_drop`으로 확인한다.
 
 ## 시퀀스
 
 ```text
-begin_shutdown
+begin_shutdown / begin_error_shutdown → start_shutdown
   AppState에 ShutdownState 설치; native webview 숨김
   원 task scope stop·profile/port scan/screenshot 신규 admission 중단
 SavingLayout
@@ -30,7 +30,7 @@ run_app 반환 → drop_app_with_trace → shutdown_total_with_drop
 Remote의 established tunnel과 늦은 연결 결과는 retirement worker가 child wait를 수행한다. App 스레드가 정상 Remote 세션의 SshTunnel을 직접 blocking Drop하는 경로로 설명하지 않는다. CLI의 동기 SshTunnel Drop과 예외적인 Drop tail은 별도다. observer join이나 plugin 강제 종료 후 wait 등 남은 동기 구간은 실제 지연을 측정해야 한다.
 
 
-- `begin_shutdown`을 공통 진입점으로 사용해 시작 시각과 단계 순서를 맞춘다. Layout 저장은 surface 닫기보다 먼저 수행한다.
+- `start_shutdown`을 공통 진입점으로 사용해 시작 시각과 단계 순서를 맞춘다. Layout 저장은 surface 닫기보다 먼저 수행한다.
 - 이미 종료 중이면 중복 요청은 바로 반환하며 단계가 처음으로 돌아가지 않는다.
 - 상태 머신으로 나눴다고 모든 단계가 짧게 끝나는 것은 아니다. checkpoint 완료 대기, observer join, 강제 종료 뒤 wait 등의 실제 대기를 함께 측정한다.
 - S4에서 프로세스 목록을 비웠다면 `PluginProcess::drop`에 남은 대상은 없다. 예외 경로에서 남은 대상의 drop은 kill과 wait를 수행할 수 있다.
@@ -75,7 +75,7 @@ Remote의 established tunnel과 늦은 연결 결과는 retirement worker가 chi
 종료가 확정되면 첫 종료 프레임 전에 모든 MainView 가 소유한 native webview 를
 숨기고 표시 여부 캐시도 비운다. 활성 창·탭뿐 아니라 비활성 탭의 인스턴스도 대상이다.
 이 처리는 일반 redraw 가 끊기기 전의 마지막 프레임에 의존하지 않고
-`App::begin_shutdown` 에서 수행한다. native 자식 뷰는 GPU 표면보다 위에 있으므로
+`App::start_shutdown`에서 수행한다. native 자식 뷰는 GPU 표면보다 위에 있으므로
 로딩 프레임만 다시 그려서는 웹뷰를 가릴 수 없다.
 
 확인 모달을 열거나 취소하는 경로와 최소화는 이 진입점을 거치지 않는다.
@@ -103,7 +103,7 @@ SavingLayout과 ClosingSurfaces가 1ms 미만으로 끝난 측정은 아래 조�
   더 진행할 수 없을 때까지 스텝을 반복하므로, 대기가 없는 종료(plugin 0 개 — 실측
   0.63ms)는 첫 구동에서 완료에 도달해 **한 프레임도 그리지 않는다.** 최소 표시
   시간이나 지연 표시 타이머가 필요 없다.
-- **표시할 윈도우가 없어도 같은 상태 머신을 쓴다.** `begin_shutdown`에서 상태를 먼저 설치하고, 렌더 대상이 없으면 블로킹 루프로 끝까지 진행한다.
+- **표시할 윈도우가 없어도 같은 상태 머신을 쓴다.** `start_shutdown`에서 상태를 먼저 설치하고, 렌더 대상이 없으면 블로킹 루프로 끝까지 진행한다.
 - **창이 여럿이면 전부 종료 화면으로 바꾼다.** 하나만 그리고 나머지를 먼저 닫으면
   창이 하나씩 사라지는 것으로 보여 크래시와 구분되지 않는다.
 - **종료 가드** — 종료 진행 중에는 steady-state 파이프라인(IPC 처리 / intent drain /

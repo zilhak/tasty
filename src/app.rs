@@ -122,6 +122,7 @@ pub(crate) struct App {
     pub(crate) explorer_files: explorer_files::ExplorerFiles,
     #[cfg(feature = "gui")]
     pub(crate) local_reads: local_reads::LocalReads,
+    #[cfg(feature = "gui")]
     pub(crate) dag_reads: dag_reads::DagReads,
     #[cfg(feature = "gui")]
     pub(crate) tutorial_progress: tutorial_progress::TutorialProgress,

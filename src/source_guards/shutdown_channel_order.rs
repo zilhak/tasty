@@ -14,7 +14,16 @@ const THEN: &str = "self.begin_plugin_shutdown()";
 #[test]
 fn shutdown_entry_hides_native_children_before_the_first_drive() {
     let src = std::fs::read_to_string(repo_root().join(HOME)).unwrap();
-    let body = strip_comments(&fn_body(&src, "fn begin_shutdown").unwrap());
+    for entry in ["fn begin_shutdown", "fn begin_error_shutdown"] {
+        let body = strip_comments(&fn_body(&src, entry).unwrap());
+        assert!(
+            body.contains("self.start_shutdown("),
+            "{entry} must use the shared start"
+        );
+        assert!(!body.contains("self.drive_shutdown_frame("));
+        assert!(!body.contains("self.run_shutdown_blocking("));
+    }
+    let body = strip_comments(&fn_body(&src, "fn start_shutdown").unwrap());
     let hide = body.find("main.hide_webviews_for_shutdown()").unwrap();
     for drive in ["self.drive_shutdown_frame(", "self.run_shutdown_blocking("] {
         assert!(
