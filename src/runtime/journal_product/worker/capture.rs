@@ -323,7 +323,7 @@ pub(super) fn preset(
     }
     .map_err(|error| error.to_string())?;
     if bytes.len().saturating_add(result.1.len())
-        > crate::adapters::production::tcp_ipc_server::MAX_REQUEST_LINE_BYTES
+        > crate::runtime::journal_product::MAX_PRESET_CAPTURE_BYTES
     {
         return Err("resolved preset exceeds response byte limit".into());
     }

@@ -233,7 +233,7 @@ ports-and-adapters 배치:
 | [multi-window](multi-window.md) | AppServices·EngineSession·ViewRegistry 소유, parked/pending/retiring, 모달과 읽기 대여 |
 | [input-layer](input-layer.md) | 마우스 입력 z-order 계층 — 소비/버블링 + 커서 결정 |
 | [data-flows](data-flows.md) | 주요 데이터 흐름 (파일+함수 기준) |
-| [ipc-server](ipc-server.md) | IPC 서버가 요청을 받아들이고 처리하는 쪽의 규칙 — 입장 상한 · journal 오류 분류 · dispatch 회차 예산 · 기한 · wake · 요청 압력 게이지 |
+| [ipc-server](ipc-server.md) | IPC 서버가 요청을 받아들이고 처리하는 쪽의 규칙 — 전송·저장·읽기 상한의 소유 · journal 오류 분류 · dispatch 회차 예산 · 기한 · wake · 요청 압력 게이지 |
 | [ui-widgets-crate](ui-widgets-crate.md) | `tasty-ui-widgets` — 본체·갤러리 공유 UI primitive |
 | [Invariants](#invariants) | 깨지면 안 되는 시스템 조건 (surface-cwd 등) — 아래 절 |
 

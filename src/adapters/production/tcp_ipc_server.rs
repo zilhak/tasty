@@ -24,13 +24,7 @@ use tasty_ipc::stream_hub::{StreamClientId, StreamContext, StreamInbound};
 mod accept_clock;
 mod first_line;
 
-/// 개행 없는 요청이 메모리를 계속 차지하지 못하도록 줄 크기를 제한한다.
-/// 기본 memory.put의 1MiB 값은 JSON escape 시 최대 6배로 커져 8MiB에 봉투를 포함할 여유가 있다.
-/// base64는 4/3배다. 저장소의 entry_max_mb는 설정값이지만 줄 상한은 고정값이다.
-/// 값을 늘리면 저장소에 넣을 수 있는 항목도 전송에서 거절될 수 있다.
-/// 최악의 JSON escape는 2MiB, base64는 7MiB 값부터 해당한다.
-/// 기본값과의 관계는 admission 시험이 확인하며 사용자별 설정까지 보장하지 않는다.
-pub(crate) const MAX_REQUEST_LINE_BYTES: usize = 8 * 1024 * 1024;
+use tasty_ipc::protocol::MAX_REQUEST_LINE_BYTES;
 
 /// 정상 줄·EOF·크기 초과·기한 만료·읽기 실패를 구분한다.
 enum LineRead {

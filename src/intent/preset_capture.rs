@@ -55,7 +55,7 @@ impl PresetCaptureDraft {
         store: &tasty_event_store::EventStore,
     ) -> Result<(ClonedPreset, String), String> {
         let mut resolved = std::collections::BTreeMap::new();
-        let mut remaining = crate::adapters::production::tcp_ipc_server::MAX_REQUEST_LINE_BYTES;
+        let mut remaining = crate::runtime::journal_product::MAX_PRESET_CAPTURE_BYTES;
         for (index, source) in &self.pending {
             resolved.insert(
                 *index,

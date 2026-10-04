@@ -32,8 +32,10 @@ pub(crate) use preparation::{
 pub(crate) use response::{CompletionView, ResponsePlan, ResponseProgress};
 
 const QUEUE_CAPACITY: usize = 64;
-const MAX_REQUEST_BYTES: usize =
-    crate::adapters::production::tcp_ipc_server::MAX_REQUEST_LINE_BYTES;
+/// Maximum encoded input retained for one journal command.
+pub(crate) const MAX_COMMAND_INPUT_BYTES: usize = 8 * 1024 * 1024;
+/// Maximum serialized preset result and label admitted by capture.
+pub(crate) const MAX_PRESET_CAPTURE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_QUEUED_BYTES: usize = tasty_ipc::admission::QUEUED_BYTES_LIMIT;
 
 #[derive(Debug, Clone)]
@@ -413,10 +415,9 @@ impl Drop for JournalWorker {
 // bytes share the queue budget; the public request limit applies to the admitted user payload.
 fn request_payload_too_large(work: &Work) -> bool {
     match work {
-        Work::Admit(header) => header.original_digest.len() > MAX_REQUEST_BYTES,
-        Work::PutPreparation(input) => {
-            serde_json::to_vec(&input.params).map_or(true, |bytes| bytes.len() > MAX_REQUEST_BYTES)
-        }
+        Work::Admit(header) => header.original_digest.len() > MAX_COMMAND_INPUT_BYTES,
+        Work::PutPreparation(input) => serde_json::to_vec(&input.params)
+            .map_or(true, |bytes| bytes.len() > MAX_COMMAND_INPUT_BYTES),
         _ => false,
     }
 }

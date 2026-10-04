@@ -12,6 +12,7 @@ use std::{
 };
 
 const MAX_RUNNING: usize = 4;
+const MAX_SCRIPT_BYTES: u64 = 8 * 1024 * 1024;
 
 pub(crate) struct Query<T> {
     request: Option<Request>,
@@ -76,12 +77,10 @@ impl Request {
             Self::Git(path, sender) => sender.send(Ok(git_branch(&path))).is_ok(),
             Self::Script(path, sender) => {
                 use std::io::Read;
-                const LIMIT: u64 =
-                    crate::adapters::production::tcp_ipc_server::MAX_REQUEST_LINE_BYTES as u64;
                 let result = std::fs::File::open(&path).and_then(|file| {
                     let mut text = String::new();
-                    file.take(LIMIT + 1).read_to_string(&mut text)?;
-                    if text.len() as u64 > LIMIT {
+                    file.take(MAX_SCRIPT_BYTES + 1).read_to_string(&mut text)?;
+                    if text.len() as u64 > MAX_SCRIPT_BYTES {
                         return Err(io::Error::other("script exceeds 8 MiB"));
                     }
                     Ok(ScriptSource {
@@ -359,6 +358,24 @@ mod tests {
         let result = owner.finish(&mut query).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].name, "new");
+        while owner.poll_shutdown() != 0 {
+            std::thread::yield_now();
+        }
+    }
+    #[test]
+    fn script_reads_accept_the_budget_and_reject_one_extra_byte() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("script.sh");
+        let mut owner = LocalReads::default();
+        for size in [MAX_SCRIPT_BYTES - 1, MAX_SCRIPT_BYTES, MAX_SCRIPT_BYTES + 1] {
+            std::fs::write(&path, vec![b'x'; size as usize]).unwrap();
+            let result = owner.finish(&mut script(path.clone()));
+            if size <= MAX_SCRIPT_BYTES {
+                assert_eq!(result.unwrap().source.len() as u64, size);
+            } else {
+                assert_eq!(result.err().unwrap().to_string(), "script exceeds 8 MiB");
+            }
+        }
         while owner.poll_shutdown() != 0 {
             std::thread::yield_now();
         }

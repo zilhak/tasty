@@ -214,7 +214,7 @@ fn boot_with_layout(layout: Option<serde_json::Value>) -> (EngineSession, Journa
 #[test]
 fn oversized_admission_and_resolution_do_not_halt_other_requests() {
     let (mut session, mut journal) = boot();
-    let too_big = "x".repeat(crate::adapters::production::tcp_ipc_server::MAX_REQUEST_LINE_BYTES);
+    let too_big = "x".repeat(crate::runtime::journal_product::MAX_COMMAND_INPUT_BYTES);
     let rx = send(
         &mut journal,
         request(

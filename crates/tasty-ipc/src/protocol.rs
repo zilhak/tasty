@@ -1,5 +1,13 @@
 use serde::{Deserialize, Serialize};
 
+/// 개행 없는 요청이 메모리를 계속 차지하지 못하도록 줄 크기를 제한한다.
+/// 기본 memory.put의 1MiB 값은 JSON escape 시 최대 6배로 커져 8MiB에 봉투를 포함할 여유가 있다.
+/// base64는 4/3배다. 저장소의 entry_max_mb는 설정값이지만 줄 상한은 고정값이다.
+/// 값을 늘리면 저장소에 넣을 수 있는 항목도 전송에서 거절될 수 있다.
+/// 최악의 JSON escape는 2MiB, base64는 7MiB 값부터 해당한다.
+/// 기본값과의 관계는 admission 시험이 확인하며 사용자별 설정까지 보장하지 않는다.
+pub const MAX_REQUEST_LINE_BYTES: usize = 8 * 1024 * 1024;
+
 // 전송·대기·멱등 키 처리의 오류 코드. 실행 여부는 코드마다 다르므로 각 계약을 따른다.
 
 /// 요청 한 줄이 서버의 줄 상한(`MAX_REQUEST_LINE_BYTES`)을 넘었다. 넘긴 줄의 나머지가
