@@ -145,8 +145,8 @@ impl App {
             }
         };
         self.state
-            .pending_remote_endpoints
-            .insert(attempt.clone(), endpoint_target);
+            .mirror_attempts
+            .register_endpoint(attempt.clone(), endpoint_target);
         self.remote.active.insert(anchor);
         self.remote.pending_reactivation.remove(&anchor);
         let spawned =
@@ -229,8 +229,8 @@ impl App {
             }
         };
         self.state
-            .pending_remote_endpoints
-            .insert(attempt.clone(), endpoint_target);
+            .mirror_attempts
+            .register_endpoint(attempt.clone(), endpoint_target);
         self.remote.active.insert(anchor);
         self.remote.pending_reactivation.remove(&anchor);
         let spawned =
@@ -241,9 +241,7 @@ impl App {
     }
 
     fn reject_endpoint_start(&mut self, anchor: u32, error: String, reconnect: bool) {
-        self.state
-            .pending_remote_endpoints
-            .retain(|token, _| token.is_active());
+        self.state.mirror_attempts.discard_inactive_endpoints();
         self.remote.active.remove(&anchor);
         let stage = if reconnect { "reconnect" } else { "endpoint" };
         tracing::warn!("remote {stage} start rejected: {error}");
@@ -278,21 +276,21 @@ impl App {
         self.remote.reap_attempts();
         let stale: Vec<_> = self
             .state
-            .pending_remote_endpoints
-            .iter()
+            .mirror_attempts
+            .endpoint_snapshot()
+            .into_iter()
             .filter(|(_, target)| !self.mirror_install_target_is_current(target))
-            .map(|(token, target)| (token.clone(), target.anchor))
+            .map(|(token, target)| (token, target.anchor))
             .collect();
         for (token, anchor) in stale {
-            self.state.pending_remote_endpoints.remove(&token);
-            self.remote.cancel_attempt(&token);
+            self.state
+                .mirror_attempts
+                .cancel_endpoint(&token, &mut self.remote);
             if let Some(anchor) = anchor {
                 self.remote.active.remove(&anchor);
             }
         }
-        self.state
-            .pending_remote_endpoints
-            .retain(|token, _| token.is_active());
+        self.state.mirror_attempts.discard_inactive_endpoints();
         while let Ok(outcome) = self.remote.rx.try_recv() {
             self.apply_auto_attach_outcome(outcome);
         }
@@ -302,7 +300,7 @@ impl App {
         &mut self,
         outcome: &AutoAttachOutcome,
     ) -> Option<crate::app::attach_client::pending::PendingMirrorInstall> {
-        let Some(target) = self.state.pending_remote_endpoints.remove(&outcome.attempt) else {
+        let Some(target) = self.state.mirror_attempts.take_endpoint(&outcome.attempt) else {
             self.remote.finish_attempt(&outcome.attempt);
             return None;
         };

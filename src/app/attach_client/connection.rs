@@ -1,0 +1,551 @@
+//! Install and retire mirror connections while preserving the originating View.
+use super::*;
+
+impl App {
+    /// Keep the popup's fixed installation target through the existing user attach guard.
+    pub(crate) fn queue_browser_mirror(
+        &mut self,
+        target: pending::PendingMirrorInstall,
+        port: u16,
+        workspace: u32,
+        tunnel: Option<tasty_ssh::SshTunnel>,
+    ) -> anyhow::Result<()> {
+        let own_port = self.hub.ipc_server.as_ref().map(|server| server.port());
+        let mut tunnel = tunnel;
+        let outcome = dispatch_attach(own_port, port, workspace, AttachSource::User, || {
+            self.queue_mirror_connection(target, port, workspace, tunnel.take())
+        });
+        self.remote.retire_tunnel(tunnel);
+        match outcome {
+            Outcome::Connected(result) => result,
+            Outcome::RejectedSelf => anyhow::bail!("self attach is not supported"),
+        }
+    }
+
+    pub(crate) fn dispatch_pending_gui_attach(&mut self) {
+        let mut requests = Vec::new();
+        for session in self.engines.all_sessions_mut() {
+            requests.extend(
+                std::mem::take(&mut session.remote.pending_gui_attach)
+                    .into_iter()
+                    .map(|request| (session.id, request)),
+            );
+        }
+        for (engine, (port, workspace)) in requests {
+            self.try_dispatch_one_gui_attach_ipc(engine, port, workspace);
+        }
+    }
+
+    pub(super) fn try_dispatch_one_gui_attach_ipc(
+        &mut self,
+        engine: EngineId,
+        port: u16,
+        workspace: u32,
+    ) {
+        let own_port = self.hub.ipc_server.as_ref().map(|s| s.port());
+        if let Outcome::Connected(Err(e)) =
+            dispatch_attach(own_port, port, workspace, AttachSource::Ipc, || {
+                let target = self.mirror_install_target(Some(engine), None, None, false)?;
+                self.queue_mirror_connection(target, port, workspace, None)
+            })
+        {
+            tracing::warn!("gui attach failed (port={port}, ws={workspace}): {e}");
+        }
+    }
+
+    pub(super) fn install_new_mirror(
+        &mut self,
+        target: &pending::PendingMirrorInstall,
+        prepared: PreparedConnection,
+    ) -> anyhow::Result<u32> {
+        let PreparedConnection {
+            port,
+            remote_workspace: workspace,
+            client_id,
+            name,
+            surfaces,
+            tree,
+            transport,
+        } = prepared;
+        let frame_tx = transport.frame_tx.clone();
+        let anchor_ws_id = target.anchor;
+        let local_ws_id;
+        let remote_to_local: HashMap<u32, u32>;
+        let markdown_locals: HashSet<u32>;
+        let mut structure_ids = MirrorStructureIds::default();
+        {
+            let Some(window) = target.window else {
+                anyhow::bail!("mirror View was retired");
+            };
+            let Some((main, mut engine)) = engines_mut!(self).window_pair(window) else {
+                anyhow::bail!("no focused window to host mirror workspace");
+            };
+            let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), true)?;
+
+            let mut mapping =
+                merge_survivor_mapping(&HashMap::new(), &surfaces, &ids, &frame_tx, &mut engine)?;
+            markdown_locals = mapping.markdown_ids();
+            remote_to_local = std::mem::take(&mut mapping.remote_to_local);
+
+            local_ws_id = ids.next_workspace()?;
+            let mut ws = build_mirror_workspace(
+                &mut structure_ids,
+                &mut main.state.navigation,
+                local_ws_id,
+                &name,
+                &tree,
+                &ids,
+                &remote_to_local,
+                &mapping.terminals,
+                &mapping.mesh,
+                &mapping.explorer,
+                &mut mapping.markdown,
+            )?;
+            install_mirror_fallbacks(&ws, &mut engine);
+            ws.mirror = true;
+            engine.push_mirror_workspace(ws);
+            main.state.reconcile_presentation(engine.core);
+            main.mark_dirty();
+        }
+
+        self.remote.sessions.push(AttachClientSession {
+            transport,
+            state: ClientSessionState {
+                structure_ids,
+                local_workspace: local_ws_id,
+                remote_to_local,
+                phase: SessionState::Connected,
+                client_id,
+                remote_workspace: workspace,
+                bulk_port: port,
+                anchor_ws_id,
+                op_seq: 0,
+                pending_op_focus: HashMap::new(),
+                agent_requests: Default::default(),
+                next_delta_focus: None,
+                last_forwarded_resize: HashMap::new(),
+                remote_label: format!("127.0.0.1:{port}"),
+                pending_list_dir_consumers: HashMap::new(),
+                markdown_locals,
+                resync_pending: None,
+                resync_awaiting_window: false,
+            },
+        });
+        tracing::info!(
+            "gui attach: mirror workspace {local_ws_id} from 127.0.0.1:{port} (remote ws {workspace})"
+        );
+        Ok(local_ws_id)
+    }
+
+    /// 기존 mirror의 로컬 ID·scrollback·포커스를 보존하며 새 연결의 구조를 반영한다.
+    /// A prepared connection retains its snapshot tail until the original engine can install it.
+    pub(crate) fn reconnect_session(
+        &mut self,
+        sess_idx: usize,
+        port: u16,
+        tunnel: Option<tasty_ssh::SshTunnel>,
+    ) -> anyhow::Result<()> {
+        let target = match self.mirror_install_target(None, None, Some(sess_idx), false) {
+            Ok(target) => target,
+            Err(error) => {
+                self.remote.retire_tunnel(tunnel);
+                return Err(error);
+            }
+        };
+        let workspace = self
+            .remote
+            .sessions
+            .get(sess_idx)
+            .ok_or_else(|| anyhow::anyhow!("reconnect session missing"))?
+            .state
+            .remote_workspace;
+        self.queue_mirror_connection(target, port, workspace, tunnel)
+    }
+
+    pub(super) fn install_reconnected_mirror(
+        &mut self,
+        sess_idx: usize,
+        target: &pending::PendingMirrorInstall,
+        prepared: PreparedConnection,
+    ) -> anyhow::Result<()> {
+        let PreparedConnection {
+            port,
+            remote_workspace: workspace,
+            client_id,
+            name,
+            surfaces,
+            tree,
+            transport,
+            ..
+        } = prepared;
+        let shared_frame_tx = transport.frame_tx.clone();
+        let local_workspace = target
+            .reconnect
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("reconnect target missing"))?
+            .0;
+        let wid = self.engines.window_of(target.engine).ok_or_else(|| {
+            anyhow::anyhow!("reconnect View is parked; retain the pending resource")
+        })?;
+        let removed_markdown: Vec<u32>;
+        {
+            let sess = &mut self.remote.sessions[sess_idx];
+            sess.transport.frame_tx.retire();
+            sess.transport.disconnected.store(true, Ordering::Release);
+
+            let Some((main, mut engine)) = engines_mut!(self).window_pair(wid) else {
+                anyhow::bail!("window {wid:?} 가 더 이상 MainView 가 아님 — 재연결 취소");
+            };
+            let ids = lease_mirror_ids(&engine, &tree, surfaces.len(), false)?;
+
+            let old_focused_remote: Option<u32> = engine
+                .workspaces()
+                .into_iter()
+                .find(|w| w.id == local_workspace)
+                .and_then(|ws| {
+                    capture_focused_remote(&main.state.navigation, ws, &sess.state.remote_to_local)
+                });
+
+            engine.remote.discard_connection_requests(
+                &sess.state.remote_to_local,
+                sess.state.local_workspace,
+            );
+            let mut mapping = merge_survivor_mapping(
+                &sess.state.remote_to_local,
+                &surfaces,
+                &ids,
+                &shared_frame_tx,
+                &mut engine,
+            )?;
+            sess.state.remote_to_local = std::mem::take(&mut mapping.remote_to_local);
+            // 연결 사이에 빠진 출력을 연속된 스트림으로 읽지 않도록 표지를 바꾼다.
+            for (&remote, &local) in &sess.state.remote_to_local {
+                if let Some(terminal) = engine.runtime.terminals.get_mut(local) {
+                    bind_mirror_input(terminal, remote, &shared_frame_tx, true);
+                    terminal.renew_output_stream();
+                }
+            }
+            // 옛 연결의 mesh 캐시와 구독 기록을 비워 full texture를 다시 요청한다.
+            for &local in mapping.mesh.keys() {
+                engine.remote.attach_mesh_frames.remove(local);
+                main.attach_mesh_input.remove(&local);
+            }
+            let new_markdown = mapping.markdown_ids();
+            removed_markdown = sess
+                .state
+                .markdown_locals
+                .difference(&new_markdown)
+                .copied()
+                .collect();
+            sess.state.markdown_locals = new_markdown;
+
+            let Some(_) = engine
+                .workspaces()
+                .into_iter()
+                .position(|w| w.id == local_workspace)
+            else {
+                anyhow::bail!(
+                    "mirror workspace {local_workspace} 를 engine 에서 못 찾음 — 재연결 취소"
+                );
+            };
+            let mut ws = build_mirror_workspace(
+                &mut sess.state.structure_ids,
+                &mut main.state.navigation,
+                local_workspace,
+                &name,
+                &tree,
+                &ids,
+                &sess.state.remote_to_local,
+                &mapping.terminals,
+                &mapping.mesh,
+                &mapping.explorer,
+                &mut mapping.markdown,
+            )?;
+            install_mirror_fallbacks(&ws, &mut engine);
+            ws.mirror = true;
+            if !restore_focus_after_delta(
+                &mut main.state.navigation,
+                &mut ws,
+                old_focused_remote,
+                &sess.state.remote_to_local,
+            ) {
+                tracing::info!(
+                    "gui reconnect: 이전 focus surface 를 재연결 후 트리에서 찾지 못함 — 원격 기본 focus 유지"
+                );
+            }
+            engine
+                .replace_mirror_workspace(ws)
+                .unwrap_or_else(|_| panic!("mirror workspace disappeared"));
+            main.state.reconcile_presentation(engine.core);
+            main.state.toasts.push(
+                crate::i18n::t("attach.toast.mirror_reconnected").to_string(),
+                crate::adapters::ui::ToastKind::Success,
+                crate::adapters::ui::ToastScope::Window,
+            );
+            main.mark_dirty();
+        }
+        destroy_mirror_markdown_surfaces(&mut self.plugin_manager, removed_markdown);
+
+        let sess = &mut self.remote.sessions[sess_idx];
+        sess.transport = transport;
+        sess.state.client_id = client_id;
+        sess.state.bulk_port = port;
+        sess.state.op_seq = 0;
+        sess.state.pending_op_focus.clear();
+        sess.state.agent_requests.clear();
+        sess.state.next_delta_focus = None;
+        sess.state.last_forwarded_resize.clear();
+        // 옛 연결의 목록 요청은 다시 응답하지 않는다. 소비자는 자체 timeout으로 실패 처리한다.
+        sess.state.pending_list_dir_consumers.clear();
+        sess.state.resync_pending = None;
+        sess.state.resync_awaiting_window = false;
+        sess.state.phase = SessionState::Connected;
+        sess.state.remote_label = format!("127.0.0.1:{port}");
+        // 원문은 바로 다시 받지 않는다. 변경 신호를 보내 플러그인이 재요청이나 stale 표시를 선택하게 한다.
+        let markdown_locals: Vec<u32> = sess.state.markdown_locals.iter().copied().collect();
+        for local in markdown_locals {
+            push_markdown_changed(&mut self.plugin_manager, local);
+        }
+        tracing::info!(
+            "gui attach: mirror workspace {local_workspace} 재연결 성공 (remote ws {workspace})"
+        );
+        Ok(())
+    }
+
+    /// 사용자가 연결한 mirror로만 포커스를 옮긴다. IPC·자동 연결은 호출하지 않는다.
+    pub(super) fn focus_mirror_workspace(&mut self, ws_id: u32) {
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            if let Some(idx) = engine
+                .workspaces()
+                .into_iter()
+                .position(|ws| ws.id == ws_id)
+            {
+                main.state.set_active_workspace_index(engine.core, idx);
+                main.mark_dirty();
+                break;
+            }
+        }
+    }
+
+    /// 새 attach snapshot으로 손실 뒤 화면을 재동기화한다. 빠진 출력 이력을 복구하는 것은 아니다.
+    pub(super) fn resync_session(&mut self, idx: usize) -> bool {
+        let (port, tunnel, frames, local_workspace) = {
+            let sess = &mut self.remote.sessions[idx];
+            (
+                sess.state.bulk_port,
+                sess.transport.tunnel.take(),
+                sess.state.resync_pending.unwrap_or(0),
+                sess.state.local_workspace,
+            )
+        };
+        match self.reconnect_session(idx, port, tunnel) {
+            Ok(()) => {
+                tracing::info!(
+                    "gui attach: mirror workspace {local_workspace} 재동기화 준비 대기 — 프레임 {frames} 장 손실 뒤 재attach"
+                );
+                true
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "gui attach: mirror workspace {local_workspace} 재동기화 실패 — 끊김으로 처리한다: {e}"
+                );
+                self.remote.sessions[idx].state.resync_pending = None;
+                false
+            }
+        }
+    }
+
+    /// anchor가 있는 세션은 연결이 끊겨도 mirror를 남겨 자동 재연결을 기다린다.
+    pub(super) fn enter_reconnecting(&mut self, idx: usize) {
+        let (anchor, local_workspace, markdown_locals) = {
+            let sess = &mut self.remote.sessions[idx];
+            sess.state.phase = SessionState::Reconnecting;
+            sess.transport.frame_tx.retire();
+            (
+                sess.state.anchor_ws_id,
+                sess.state.local_workspace,
+                sess.state.markdown_locals.clone(),
+            )
+        };
+        // 기다리던 원문 요청을 request_id=0으로 취소하고 표시 중인 원문도 끊김 상태로 바꾼다.
+        for local in markdown_locals {
+            push_markdown_content_result(
+                &mut self.plugin_manager,
+                &markdown_content_failure(local, 0, "mirror workspace disconnected"),
+            );
+        }
+        if let Some(anchor) = anchor {
+            self.remote.active.remove(&anchor);
+            self.remote.pending_reactivation.insert(anchor);
+        }
+        for (_, main, engine) in self.engines_mut().window_pairs() {
+            if engine
+                .workspaces()
+                .into_iter()
+                .any(|ws| ws.id == local_workspace)
+            {
+                main.state.toasts.push(
+                    crate::i18n::t("attach.toast.mirror_reconnecting").to_string(),
+                    crate::adapters::ui::ToastKind::Warning,
+                    crate::adapters::ui::ToastScope::Window,
+                );
+                main.mark_dirty();
+                break;
+            }
+        }
+        tracing::info!(
+            "gui attach: mirror workspace {local_workspace} 재연결 대기(Reconnecting) 진입 (anchor {anchor:?})"
+        );
+    }
+
+    /// mirror 자원을 정리하며 사용자 닫힌 항목 기록에는 넣지 않는다.
+    /// from_disconnect일 때만 재활성화 대기 상태와 끊김 안내를 남긴다.
+    pub(super) fn cleanup_mirror_workspace(
+        &mut self,
+        sess: &AttachClientSession,
+        from_disconnect: bool,
+    ) {
+        log_mirror_cleanup(sess, from_disconnect);
+        // 창과 parked engine 모두 정리해야 창 복원 때 끊긴 mirror가 되살아나지 않는다.
+        // 창을 순회하는 부분의 범위 일치는 자동 검증하지 않는다.
+        // window_access::mirror_workspace_engine_alive의 검사 범위 설명을 참고한다.
+        let mut removed = false;
+        for (_, main, mut engine) in self.engines_mut().window_pairs() {
+            if remove_mirror_workspace_from_engine(
+                &mut engine,
+                &mut main.state,
+                sess.state.local_workspace,
+                &sess.state.remote_to_local,
+            ) {
+                // 사용자가 직접 닫은 경우에는 끊김 toast를 표시하지 않는다.
+                if from_disconnect {
+                    main.state.toasts.push(
+                        crate::i18n::t("attach.toast.mirror_disconnected").to_string(),
+                        crate::adapters::ui::ToastKind::Warning,
+                        crate::adapters::ui::ToastScope::Window,
+                    );
+                }
+                main.mark_dirty();
+                removed = true;
+                break;
+            }
+        }
+        if !removed {
+            // parked 상태에는 표시할 창이 없어 toast를 쌓거나 redraw를 요청하지 않는다.
+            remove_mirror_workspace_from_parked(
+                self.engines_mut(),
+                sess.state.local_workspace,
+                &sess.state.remote_to_local,
+            );
+        }
+        // 응답을 받을 수 없어진 git-viewer 요청을 취소한다.
+        if from_disconnect {
+            self.notify_git_viewer_mirror_lost();
+        }
+        destroy_mirror_markdown_surfaces(
+            &mut self.plugin_manager,
+            sess.state.markdown_locals.clone(),
+        );
+        // 사용자 닫기도 heartbeat를 멈춰 소켓이 불필요하게 유지되지 않게 한다.
+        sess.transport.disconnected.store(true, Ordering::SeqCst);
+        let _ = sess.send_frame(StreamTag::Detach, Vec::new()); // 종료 중 writer가 사라졌다면 전송 실패를 무시한다.
+        if let Some(anchor) = sess.state.anchor_ws_id {
+            self.remote.active.remove(&anchor);
+            self.remote.reconnect.remove(&anchor);
+            if from_disconnect {
+                self.remote.pending_reactivation.insert(anchor);
+            } else {
+                self.remote.pending_reactivation.remove(&anchor);
+            }
+        }
+    }
+
+    /// mirror workspace가 창과 parked engine 어디에도 없으면 세션도 정리한다.
+    /// 창이 없다는 사실만으로 parked 세션을 고아로 판단하지 않는다.
+    pub(crate) fn detach_orphaned_mirror_sessions(&mut self) {
+        if self.remote.sessions.is_empty() {
+            return;
+        }
+        let orphaned: Vec<usize> = self
+            .remote
+            .sessions
+            .iter()
+            .enumerate()
+            .map(|(idx, s)| (idx, s.state.local_workspace))
+            .filter(|&(_, ws)| !self.mirror_workspace_engine_alive(ws))
+            .map(|(idx, _)| idx)
+            .collect();
+        for &idx in orphaned.iter().rev() {
+            let sess = self.remote.sessions.remove(idx);
+            self.cleanup_mirror_workspace(&sess, false);
+        }
+    }
+}
+/// 이 engine에 해당 workspace가 있으면 mirror 자원을 함께 정리하고 활성 인덱스를 보정한다.
+pub(super) fn remove_mirror_workspace_from_engine(
+    engine: &mut EngineMut<'_>,
+    state: &mut crate::state::MainViewState,
+    local_workspace: u32,
+    remote_to_local: &HashMap<u32, u32>,
+) -> bool {
+    let Some(_) = engine
+        .workspaces()
+        .into_iter()
+        .position(|ws| ws.id == local_workspace)
+    else {
+        return false;
+    };
+    let _ = engine.task_scope.request_stop_workspace(local_workspace); // RunnerRegistry retains and joins the stop control.
+    for &local in remote_to_local.values() {
+        engine.runtime.surfaces.remove(&local);
+        engine.runtime.terminals.remove(local);
+        engine.forget_mirror_surface_busy(local);
+        engine.forget_mirror_surface_attention(local);
+        engine.forget_mirror_surface_cwd(local);
+        engine.remote.attach_mesh_frames.remove(local);
+        // 로컬 닫기 정리와 같이 soft 점유 등 이 surface의 점유 기록을 지운다.
+        engine.forget_closed_surface(local);
+    }
+    engine.remove_mirror_workspace(local_workspace);
+    state.reconcile_presentation(engine);
+    // mirror만 남았다면 원격 끊김 때문에 사용자 창을 닫는 대신 기본 workspace를 만든다.
+    state.recreate_workspace_if_empty(&engine.read(), "mirror workspace cleanup");
+    true
+}
+
+/// 출력 적용·고아 판정과 같은 parked 순회를 사용한다. 첫 항목만 확인해서는 안 된다.
+pub(super) fn remove_mirror_workspace_from_parked(
+    mut engines: EngineScanMut<'_>,
+    local_workspace: u32,
+    remote_to_local: &HashMap<u32, u32>,
+) -> bool {
+    let parked = engines
+        .reborrow()
+        .parked_sessions_with_ids()
+        .map(|(id, _, e)| (id, &*e.core));
+    let Some(id) = find_parked_with_workspace(parked, local_workspace) else {
+        return false;
+    };
+    let Some((state, mut engine)) = engines.parked_session(id) else {
+        return false;
+    };
+    remove_mirror_workspace_from_engine(&mut engine, state, local_workspace, remote_to_local)
+}
+
+pub(super) fn log_mirror_cleanup(sess: &AttachClientSession, from_disconnect: bool) {
+    if from_disconnect {
+        tracing::warn!(
+            "attach mirror cleanup: local ws {} (remote ws {}, anchor {:?}) — 원격발 disconnect 로 정리",
+            sess.state.local_workspace,
+            sess.state.remote_workspace,
+            sess.state.anchor_ws_id
+        );
+    } else {
+        tracing::info!(
+            "attach mirror cleanup: local ws {} (remote ws {}, anchor {:?}) — 사용자 close 로 정리",
+            sess.state.local_workspace,
+            sess.state.remote_workspace,
+            sess.state.anchor_ws_id
+        );
+    }
+}

@@ -12,15 +12,7 @@ pub(crate) struct AppState {
         std::collections::HashMap<u64, crate::app::remote_browser::BrowserTarget>,
     pub(crate) started: bool,
     #[cfg(feature = "gui")]
-    pub(crate) pending_remote_endpoints: std::collections::HashMap<
-        tasty_remote::outbound::AttemptToken,
-        crate::app::attach_client::pending::PendingMirrorInstall,
-    >,
-    #[cfg(feature = "gui")]
-    pub(crate) pending_mirror_installs: std::collections::HashMap<
-        tasty_remote::pending_connection::ConnectionTicket,
-        crate::app::attach_client::pending::PendingMirrorInstall,
-    >,
+    pub(crate) mirror_attempts: crate::app::attach_client::attempts::MirrorAttempts,
     #[cfg(feature = "gui")]
     pub(crate) pending_host_events: Vec<crate::core::host_event::PendingHostEvent>,
     #[cfg(not(feature = "gui"))]

@@ -28,12 +28,11 @@ src/view/main/redraw.rs
 src/view/settings/ui.rs
 src/view/settings/ui/tabs/appearance.rs
 
-# ── 아래 7개는 게이트 도입 뒤 추가된 예외다.
+# ── 아래 6개는 게이트 도입 뒤 추가된 예외다.
 # 위 13개는 게이트 도입 당시의 예외다.
 crates/tasty-gallery/src/catalog/components/preset_editor.rs
 crates/tasty-plugin-manifest/src/validate.rs
 src/adapters/ipc/handler.rs
 src/adapters/ui/popup/remote_attach.rs
-src/app/attach_client.rs
 src/app/event_handler.rs
 src/view/main/mouse.rs

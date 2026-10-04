@@ -146,23 +146,9 @@ impl App {
             self.remote.retire_tunnel(tunnel);
             anyhow::bail!("mirror origin was retired before connection");
         }
-        let stale: Vec<_> = self
-            .state
-            .pending_mirror_installs
-            .iter()
-            .filter_map(|(ticket, pending)| {
-                ((target.anchor.is_some() || target.reconnect.is_some())
-                    && pending.engine == target.engine
-                    && pending.reconnect.as_ref().map(|(id, _)| *id)
-                        == target.reconnect.as_ref().map(|(id, _)| *id)
-                    && pending.anchor == target.anchor)
-                    .then_some(*ticket)
-            })
-            .collect();
-        for ticket in stale {
-            self.state.pending_mirror_installs.remove(&ticket);
-            self.remote.cancel_connection(ticket);
-        }
+        self.state
+            .mirror_attempts
+            .supersede_connections(&target, &mut self.remote);
         let mapping = target.mapping.clone();
         let ticket = self
             .remote
@@ -176,21 +162,19 @@ impl App {
                 mirror_event_from_control,
             )
             .map_err(anyhow::Error::msg)?;
-        self.state.pending_mirror_installs.insert(ticket, target);
+        self.state
+            .mirror_attempts
+            .register_connection(ticket, target);
         Ok(())
     }
     pub(crate) fn poll_pending_mirror_installs(&mut self) {
         self.remote.collect_connections();
-        let pending: Vec<_> = self
-            .state
-            .pending_mirror_installs
-            .iter()
-            .map(|(ticket, target)| (*ticket, target.clone()))
-            .collect();
+        let pending = self.state.mirror_attempts.connection_snapshot();
         for (ticket, target) in pending {
             if !self.mirror_install_target_is_current(&target) {
-                self.state.pending_mirror_installs.remove(&ticket);
-                self.remote.cancel_connection(ticket);
+                self.state
+                    .mirror_attempts
+                    .cancel_connection(ticket, &mut self.remote);
                 continue;
             }
             if let Some(error) = self.remote.connection_error(ticket) {
@@ -232,7 +216,7 @@ impl App {
             let Some(prepared) = self.remote.take_connection(ticket) else {
                 continue;
             };
-            self.state.pending_mirror_installs.remove(&ticket);
+            self.state.mirror_attempts.finish_connection(ticket);
             let installed = if let Some((workspace, epoch)) = &target.reconnect {
                 let index = self.remote.sessions.iter().position(|session| {
                     session.state.local_workspace == *workspace
@@ -275,8 +259,9 @@ impl App {
         target: &PendingMirrorInstall,
         error: String,
     ) {
-        self.state.pending_mirror_installs.remove(&ticket);
-        self.remote.cancel_connection(ticket);
+        self.state
+            .mirror_attempts
+            .cancel_connection(ticket, &mut self.remote);
         tracing::warn!(engine=?target.engine,"mirror connection could not be installed: {error}");
         if target.resync {
             if let Some((workspace, epoch)) = &target.reconnect {

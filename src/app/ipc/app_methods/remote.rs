@@ -63,8 +63,8 @@ impl App {
             }
         };
         self.state
-            .pending_remote_endpoints
-            .insert(attempt.clone(), target_binding);
+            .mirror_attempts
+            .register_endpoint(attempt.clone(), target_binding);
         let tx = self.remote.tx.clone();
         let proxy = self.view.proxy.clone();
         match target {

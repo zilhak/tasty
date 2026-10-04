@@ -4,6 +4,27 @@ attach의 서버·클라이언트 처리와 연결·점유·복구 규칙을 설
 사용법과 사용자에게 보이는 동작은 [원격 attach](../features/remote-attach/index.md)를 따른다.
 서버는 loopback 연결을 받고, 로컬 직결과 SSH 터널의 선택은 클라이언트가 맡는다.
 
+## GUI client 모듈과 대기 상태
+
+`src/app/attach_client.rs`는 모듈 진입점과 공통 입력 binding을 둔다.
+
+| 모듈 (`src/app/attach_client/`) | 책임 |
+|---|---|
+| `attempts.rs` | endpoint·connection 대기 target의 등록, 일회성 인수, 취소, 교체 |
+| `pending.rs` | 원 engine·View·선택·mapping·epoch 검증과 handshake/ID 예약 완료 대기 |
+| `connection.rs` | mirror 설치·재연결·정리 |
+| `output.rs` | 수신 순서와 epoch를 보존하며 창/parked engine에 출력 적용 |
+| `projection.rs`, `survivors.rs` | 논리 ID와 표시 자원을 재사용하며 mirror 트리 구성 |
+| `forward.rs` | 원 target에 묶인 구조·입력·조회 요청 전달 |
+| `bulk.rs`, `wire.rs` | bulk 전송과 control payload 해석 |
+
+AppState는 `MirrorAttempts` 하나를 보유하며 내부 맵을 직접 변경하지 않는다.
+연결 교체·취소는 대기 target을 제거하고 Remote의 해당 ticket/token만 취소한다.
+원격 완료는 원 token으로 한 번만 인수할 수 있고, 이미 취소된 token의 늦은 완료는
+새 시도에 적용되지 않는다. 연결·터널·worker의 실제 수명과 회수는 `Remote`가 소유한다.
+대기 객체의 target은 자원 소유권을 복제하지 않는다.
+
+
 ## 서버 / 클라이언트 계층 (가장 먼저 읽을 것)
 
 attach 는 **server**(피점유 — PTY/grid 소유)와 **client**(점유 — mirror 표시) 두 쪽이다.
@@ -363,7 +384,7 @@ hard 점유의 holder가 원격으로 전달한 구조 명령과, holder가 아�
 
 attach 스트림은 read timeout 이 없는 순수 blocking I/O 라 네트워크가 FIN/RST 없이 **조용히** 끊기면(케이블 단절·NAT 타임아웃 등) 소켓의 read 가 영원히 대기해 어느 쪽도 끊김을 감지하지 못한다. 아래는 이를 감지하는 연결이다 — 상수는 `crates/tasty-ipc/src/stream.rs` 의 `HEARTBEAT_INTERVAL`(5초)/`HEARTBEAT_TIMEOUT`(20초, interval 의 4배 — 일시적 jitter 로 인한 오탐 방지).
 
-- **read timeout**: 서버(`tcp_ipc_server.rs::handle_stream_connection`)·GUI client(`attach_client.rs::start_gui_attach`)·CLI client(`tasty-ipc/src/client/stream.rs::StreamConnection::open_with`) 3곳 모두 소켓에 `HEARTBEAT_TIMEOUT` read timeout 을 건다. **서버는 그것을 attach dispatch 보다 먼저 건다**(`arm_stream_read_timeout` 이 `validate_stream_proto` 앞이다) — 즉 판정은 **연결 단위**이고 점유 유무와 무관하다: 아무 workspace 도 점유하지 않은 단순 upgrade 연결도 20초 침묵하면 닫힌다. 그래서 client 는 점유를 잡았든 안 잡았든 Ping 을 보내야 한다. `try_clone` 된 reader/writer 는 같은 소켓 옵션을 공유하므로 한 번만 걸면 양쪽 다 적용된다. CLI 는 핸드셰이크 ack/`attached(_workspace)` 디스크립터 대기(둘 다 `recv()`)에도 자동으로 적용된다.
+- **read timeout**: 서버(`tcp_ipc_server.rs::handle_stream_connection`)·GUI client(`crates/tasty-remote/src/transport.rs`의 `PreparedConnection::connect`)·CLI client(`tasty-ipc/src/client/stream.rs::StreamConnection::open_with`) 3곳 모두 소켓에 `HEARTBEAT_TIMEOUT` read timeout 을 건다. **서버는 그것을 attach dispatch 보다 먼저 건다**(`arm_stream_read_timeout` 이 `validate_stream_proto` 앞이다) — 즉 판정은 **연결 단위**이고 점유 유무와 무관하다: 아무 workspace 도 점유하지 않은 단순 upgrade 연결도 20초 침묵하면 닫힌다. 그래서 client 는 점유를 잡았든 안 잡았든 Ping 을 보내야 한다. `try_clone` 된 reader/writer 는 같은 소켓 옵션을 공유하므로 한 번만 걸면 양쪽 다 적용된다. CLI 는 핸드셰이크 ack/`attached(_workspace)` 디스크립터 대기(둘 다 `recv()`)에도 자동으로 적용된다.
 - **`StreamTag::Ping`**: 빈 payload 의 keepalive 프레임(값 `2`, 코덱은 이전부터 예약돼 있었다). 수신측은 아무 처리도 하지 않는다 — `read_frame` 호출이 성공적으로 리턴하는 것 자체가 read timeout 을 리셋하므로, Ping 이든 실제 Data/Control 이든 도착만 하면 liveness 로 인정된다.
 - **송신은 write 쪽이 idle 할 때만**: 서버의 write thread(`handle_stream_connection`)는 기존 `for frame in sink_rx` blocking iterator 대신 `sink_rx.recv_timeout(HEARTBEAT_INTERVAL)` 루프를 쓴다 — sink 에 실제 Data/Control 프레임이 흐르면 그게 곧 liveness 라 Ping 을 보내지 않고, `HEARTBEAT_INTERVAL` 동안 조용하면 빈 Ping 을 대신 흘린다. GUI/CLI(raw 브리지) client 는 각각 별도 heartbeat 스레드가 `HEARTBEAT_INTERVAL` 마다 무조건 Ping 을 보낸다(활성 트래픽 여부를 별도로 추적하지 않음 — 5바이트 프레임 오버헤드가 그 추적 비용보다 훨씬 싸다).
 - **CLI dump 모드(mirror-dump/workspace-mirror-dump)도 client 발 heartbeat 을 보낸다 — 스레드 없이 수집 루프 안에서**: 수집 대기를 `min(창 끝, 다음 Ping)` 으로 끊고 `HEARTBEAT_INTERVAL` 마다 `Ping` 을 쓴다(`DumpHeartbeat`). 그래서 `--dump-after` 가 `HEARTBEAT_TIMEOUT` 보다 길어도 서버가 창 도중에 끊지 않는다. 첫 Ping 은 창을 연 지 한 주기 뒤라 기본 500 ms 창의 송신 프레임은 heartbeat 이 없던 때와 같다. `Ping` 쓰기가 실패하면 `Disconnected` 로 끝난다. writer 를 루프 하나가 쥐므로 raw 브리지(stdin 라우팅과 writer 공유 → 별도 heartbeat 스레드 + `Mutex`)와 형태가 다르다. 근거: [ADR-0061](../adr/0061-external-remote-module-and-attach-sync.md).
@@ -458,7 +479,7 @@ anchor 가 없는 mirror(IPC `remote.attach` 로 연 임시 mirror 등)는 대�
 
 backoff 재연결이 매번 `start_gui_attach` 로 완전 신규 mirror workspace/터미널을
 만들면 scrollback 과 local id 가 재연결마다 사라진다. 이를 막기 위해 `reconnect_session`
-(`src/app/attach_client.rs`)은 `resolve_endpoint`/handshake 는 `start_gui_attach` 와 동일하게
+(`src/app/attach_client/connection.rs`)은 endpoint 해소 뒤 신규 연결과 같은 Remote handshake 경로를
 수행하되, 워크스페이스/터미널은 **기존 것을 그대로 재사용**한다:
 
 - **`merge_survivor_mapping`**: 기존 `apply_mirror_structural_delta` 의 survivor-mapping
@@ -539,7 +560,7 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
   로 매 프레임 soft timeout(8초)을 직접 판정할 수 있다.
 - **`git_query_request`/`git_query_result`**(ADR-0022) — 원격 저장소 status/log/diff/worktrees 조회
   (git-viewer). 응답의 **소비자가 host 가 아니라 별도 프로세스인 plugin** 이라는 점이 file picker와
-  다르다 — host(`attach_client.rs`)는 payload 를 해석하지 않고 그대로 `PluginManager::
+  다르다 — host(`src/app/attach_client/output.rs`)는 payload 를 해석하지 않고 그대로 `PluginManager::
   emit_host_event_to_plugin`(Event Bus 의 owner-unicast 경로, 구독 등록 여부 무관 —
   `command.invoked` 와 동일 메커니즘)으로 `git_viewer.query_result` 이벤트를 plugin 에 전달만
   한다. 요청 트리거도 plugin→host `git_viewer.query` IPC(비동기 accept — `request_id` 만 즉시
