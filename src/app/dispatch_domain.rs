@@ -338,7 +338,6 @@ impl App {
                 plugin_id,
                 window_id,
             } => self.cascade_plugin_window_declared(plugin_id, window_id),
-            _ => tracing::error!("obsolete structural event bypassed committed projection"),
         }
     }
 
