@@ -15,6 +15,8 @@ View는 로컬 표시 상태를 직접 바꾸고, 실행 변경은 고정 대상
 
 HTML은 같은 경계의 예다. native WebView 객체는 MainView에 남고, App의 `webview_sync`가 gate·load·reload·navigation proof를 처리한다. 배너는 `runtime::html_script`의 `HtmlSnapshot`에서 만든 일회 요청만 반환한다. 원 대상의 logical/physical/mirror 세대는 `runtime::surface_binding`이 검증하며 필드 조립을 외부에 노출하지 않는다. App은 요청 적용 순서와 View별 navigation proof를 관리한다. App의 프레임 순서는 렌더에서 나온 실행 요청 적용 후 native 동기화이며, 세부 계약은 [WebView 호스트 계약](../design/systems/webview.md#탐색-상태와-실행-소유)에 둔다.
 
+View에서 캡처하는 `runtime::surface_binding`과 HTML 요청 계약은 `gui` feature에서만 컴파일한다. Headless 실행은 이 View 요청 타입을 생성하지 않는다.
+
 ## 왜 분리하나
 
 - **플러그인 호환성** — 모델은 직렬화 가능한 식별 정보만 보유 → plugin 프로세스가 같은 모델을 그대로 쓸 수 있다.
