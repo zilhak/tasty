@@ -682,9 +682,12 @@ fn hook_event_to_state(event: &str, tr: &Translator) -> Result<&'static str, Ipc
     }
 }
 
+/// 보낼 호출 하나 — IPC 메서드 이름과 surface id 로 본문을 만드는 함수.
+type HookSideEffect = (&'static str, fn(u32) -> Value);
+
 /// 상태 변경 외에 보낼 알림 호출을 만든다.
 /// stop/interrupt는 완료 훅을, permission-request는 입력 대기 훅과 화면 알림을 보낸다.
-fn hook_side_effects(event: &str) -> Vec<(&'static str, fn(u32) -> Value)> {
+fn hook_side_effects(event: &str) -> Vec<HookSideEffect> {
     match event {
         "stop" | "interrupt" => vec![(
             "surface.fire_hook",

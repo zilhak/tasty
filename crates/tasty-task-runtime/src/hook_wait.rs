@@ -143,6 +143,12 @@ impl HookTaskWaits {
         );
         guard.len()
     }
+
+    /// `len` 이 시험 전용이므로 짝이 되는 이 메서드도 같은 게이트를 쓴다.
+    #[cfg(test)]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl Default for HookTaskWaits {

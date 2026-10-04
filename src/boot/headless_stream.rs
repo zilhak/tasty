@@ -148,10 +148,12 @@ fn apply_structural_ops(
             engine.live,
             epoch,
             &app.stream_hub,
-            client,
-            op_id,
-            op,
-            origin,
+            crate::app::journal::commands::inbound::InboundOp {
+                client,
+                op_id,
+                op,
+                origin,
+            },
         ) {
             engine
                 .remote

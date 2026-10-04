@@ -48,6 +48,11 @@ pub struct Remote {
     pub tx: std::sync::mpsc::Sender<AutoAttachOutcome>,
     pub rx: std::sync::mpsc::Receiver<AutoAttachOutcome>,
 }
+impl Default for Remote {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl Remote {
     pub fn new() -> Self {
         let (tx, rx) = std::sync::mpsc::channel();

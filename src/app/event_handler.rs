@@ -1811,10 +1811,12 @@ impl App {
                 &session.live,
                 binding.runtime_epoch,
                 hub,
-                client_id,
-                op_id,
-                op.clone(),
-                origin,
+                crate::app::journal::commands::inbound::InboundOp {
+                    client: client_id,
+                    op_id,
+                    op: op.clone(),
+                    origin,
+                },
             ) {
                 session
                     .remote

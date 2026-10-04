@@ -196,12 +196,15 @@ fn draws_entries(sub_tab: KeybindingsSubTab) -> bool {
     )
 }
 
+/// 정렬 전의 항목 한 줄 — 배치 순서와 (필드 id, 라벨 키, 설명 키).
+type PlacedEntry<'a> = (usize, (&'a str, &'a str, Option<&'a str>));
+
 /// GENERAL_BINDING_FIELDS의 필드와 라벨을 읽고 배치표에 따라 정렬한다.
 /// 배치가 없으면 General 끝에 추가한다.
 fn entries_for(
     sub_tab: KeybindingsSubTab,
 ) -> Vec<(&'static str, &'static str, Option<&'static str>)> {
-    let mut rows: Vec<(usize, (&str, &str, Option<&str>))> = Vec::new();
+    let mut rows: Vec<PlacedEntry<'_>> = Vec::new();
     for (field_id, label_key) in crate::settings::KeybindingSettings::GENERAL_BINDING_FIELDS {
         let placed = ENTRY_PLACEMENT
             .iter()

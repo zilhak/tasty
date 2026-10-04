@@ -63,7 +63,10 @@ const LIVENESS: Floor = Floor {
     why_this_gap: "파일 누락은 두 잡 명부의 차집합에서 검출한다. 순회 하한은 파일을 하나도 읽지 못한 경우만 막는다.",
 };
 
-fn measured() -> (BTreeSet<(String, String)>, BTreeSet<(String, String)>) {
+/// 잡 하나의 출처 — (워크플로 파일 상대 경로, 잡 이름).
+type JobCell = (String, String);
+
+fn measured() -> (BTreeSet<JobCell>, BTreeSet<JobCell>) {
     let dir = repo_root().join(".github/workflows");
     let walked = walk_with_floor(&dir, &dir, &LIVENESS, Descend::Everything, &|w| {
         w.rel.ends_with(".yml")

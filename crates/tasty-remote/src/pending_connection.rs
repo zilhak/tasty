@@ -16,17 +16,33 @@ pub(crate) struct ConnectionOutcome {
     pub ticket: ConnectionTicket,
     pub result: Result<PreparedConnection, String>,
 }
+/// 연결이 무엇에 붙는지 — 원격 끝점과 그것을 받을 로컬 자리. 어떻게 붙는지를
+/// 정하는 터널·깨우기·디코더와 달리 이 넷은 대상 하나를 함께 가리킨다.
+pub struct ConnectionTarget {
+    /// 원격 끝점의 포트.
+    pub port: u16,
+    /// 이 연결을 받을 로컬 workspace.
+    pub workspace: u32,
+    /// 붙을 자리를 정하는 surface. 없으면 시도가 자리를 직접 고른다.
+    pub anchor: Option<u32>,
+    /// 원격 workspace 를 로컬에 대응시키는 표.
+    pub mapping: Option<tasty_model::WorkspaceAttachMapping>,
+}
+
 impl Remote {
     pub fn queue_connection(
         &mut self,
-        port: u16,
-        workspace: u32,
+        target: ConnectionTarget,
         tunnel: Option<tasty_ssh::SshTunnel>,
-        anchor: Option<u32>,
-        mapping: Option<tasty_model::WorkspaceAttachMapping>,
         wake: std::sync::Arc<dyn Fn() + Send + Sync>,
         decode: fn(&[u8]) -> Option<super::client_session::MirrorEvent>,
     ) -> Result<ConnectionTicket, String> {
+        let ConnectionTarget {
+            port,
+            workspace,
+            anchor,
+            mapping,
+        } = target;
         if self.pending_connections.len() >= 8 {
             self.retire_tunnel(tunnel);
             return Err("pending remote connection capacity exhausted".into());

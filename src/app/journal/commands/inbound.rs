@@ -14,6 +14,15 @@ pub(crate) struct RemoteReply {
     pub restore: bool,
     pub converted: Option<u32>,
 }
+/// 원격 홀더가 보낸 구조 변경 요청 하나. `PumpOutcome::structural_ops` 의 항목이
+/// 그대로 이 네 값이다.
+pub(crate) struct InboundOp {
+    pub client: u32,
+    pub op_id: u64,
+    pub op: StructuralOp,
+    pub origin: ForwardOrigin,
+}
+
 impl JournalApplication {
     pub(crate) fn admit_remote(
         &mut self,
@@ -21,11 +30,14 @@ impl JournalApplication {
         live: &crate::core::live::LiveDomainState,
         runtime_epoch: u64,
         hub: &StreamHub,
-        client: u32,
-        op_id: u64,
-        op: StructuralOp,
-        origin: ForwardOrigin,
+        inbound: InboundOp,
     ) -> Option<(u64, u32)> {
+        let InboundOp {
+            client,
+            op_id,
+            op,
+            origin,
+        } = inbound;
         let (registration, binding) = hub.client_identity(client)?;
         let Some(workspace) = live.occupancy.workspace_held_by(client) else {
             reply(

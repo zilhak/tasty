@@ -48,6 +48,14 @@ impl TastyHomeGuard {
     }
 }
 
+/// `new()` 와 같은 부작용을 일으킨다 — 전역 락을 잡고 `TASTY_HOME` 을 바꾼다.
+/// 이 타입을 `#[derive(Default)]` 구조체의 필드로 두면 그 부작용이 조용히 일어난다.
+impl Default for TastyHomeGuard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// 이 스레드의 tasty_home을 가드 전용 임시 디렉터리로 지정한다.
 /// 환경변수보다 먼저 적용되는 스레드 로컬 override이므로 전역 락 없이 병렬로 쓸 수 있다.
 /// 생성 뒤에도 파일을 쓰는 CoreState는 수명 전체에 걸쳐 가드를 유지해야 한다.
@@ -81,6 +89,14 @@ impl IsolatedHome {
             _pop: PopHomeOverride,
             _dir: dir,
         }
+    }
+}
+
+/// `new()` 와 같은 부작용을 일으킨다 — 이 스레드의 home override 를 push 한다.
+/// 이 타입을 `#[derive(Default)]` 구조체의 필드로 두면 그 부작용이 조용히 일어난다.
+impl Default for IsolatedHome {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

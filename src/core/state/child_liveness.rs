@@ -332,7 +332,9 @@ mod tests {
     fn priority_table_rows_match_documented_slugs() {
         let long_output = CHILD_OUTPUT_SILENCE + Duration::from_secs(1);
         let long_hook = CHILD_HOOK_SILENCE + Duration::from_secs(1);
-        let rows: Vec<(u32, &str, ChildObservation, (&str, &str, &str))> = vec![
+        /// 한 줄 — 번호, 보고된 훅 상태, 관측값, 기대하는 (state, evidence, slug).
+        type PriorityRow<'a> = (u32, &'a str, ChildObservation, (&'a str, &'a str, &'a str));
+        let rows: Vec<PriorityRow<'_>> = vec![
             (
                 1,
                 "active",

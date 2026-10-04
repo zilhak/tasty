@@ -241,7 +241,7 @@ impl<'a> SurfaceRead<'a> {
     pub(crate) fn source_cwd(&self) -> Option<std::path::PathBuf> {
         self.inner.source_cwd()
     }
-    pub(crate) fn to_tree_json(&self) -> serde_json::Value {
+    pub(crate) fn to_tree_json(self) -> serde_json::Value {
         self.inner.to_tree_json()
     }
     // These builtin models contain ordinary values; their mutation requires &mut ownership.

@@ -6,7 +6,7 @@ use crate::AppEvent;
 use crate::app::App;
 use crate::runtime::engine_session::EngineId;
 use std::sync::Arc;
-use tasty_remote::pending_connection::ConnectionTicket;
+use tasty_remote::pending_connection::{ConnectionTarget, ConnectionTicket};
 use winit::event_loop::EventLoopProxy;
 
 #[derive(Clone)]
@@ -157,15 +157,16 @@ impl App {
         self.state
             .mirror_attempts
             .supersede_connections(&target, &mut self.remote);
-        let mapping = target.mapping.clone();
         let ticket = self
             .remote
             .queue_connection(
-                port,
-                workspace,
+                ConnectionTarget {
+                    port,
+                    workspace,
+                    anchor: target.anchor,
+                    mapping: target.mapping.clone(),
+                },
                 tunnel,
-                target.anchor,
-                mapping,
                 attach_wake(&self.view.proxy),
                 mirror_event_from_control,
             )

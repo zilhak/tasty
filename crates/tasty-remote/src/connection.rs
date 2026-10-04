@@ -38,12 +38,15 @@ impl Drop for QueuedBytes {
         self.counter.fetch_sub(self.bytes, Ordering::AcqRel);
     }
 }
+/// 연결 실패를 알릴 상대 — 끊김 플래그와 깨우기 콜백. `bind_failure` 가 채우고
+/// `fail` 이 읽는다.
+type FailureObserver = (Arc<AtomicBool>, Arc<dyn Fn() + Send + Sync>);
 pub struct ConnectionSender {
     epoch: ConnectionEpoch,
     sender: mpsc::SyncSender<QueuedFrame>,
     bytes: Arc<AtomicUsize>,
     failed: AtomicBool,
-    failure: std::sync::Mutex<Option<(Arc<AtomicBool>, Arc<dyn Fn() + Send + Sync>)>>,
+    failure: std::sync::Mutex<Option<FailureObserver>>,
 }
 impl ConnectionSender {
     pub fn bind_failure(&self, disconnected: Arc<AtomicBool>, wake: Arc<dyn Fn() + Send + Sync>) {

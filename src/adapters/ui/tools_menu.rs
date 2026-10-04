@@ -27,17 +27,17 @@ struct BuiltinTool {
 
 enum BuiltinAction {
     /// 일반 popup 열기.
-    OpenPopup(&'static str),
+    Popup(&'static str),
     /// 별도 winit 윈도우 열기. 현재 사용처는 PresetView 하나.
-    OpenWindow(WindowKind),
+    Window(WindowKind),
     /// workspace 스코프 popup 열기. 스코프는 정의가 아니라 **여는 시점**의 활성
-    /// workspace 로 정해지므로 `OpenPopup` 과 분기가 다르다 — 이 창은 그 workspace
+    /// workspace 로 정해지므로 `Popup` 과 분기가 다르다 — 이 창은 그 workspace
     /// 를 벗어나면 숨고 돌아오면 다시 뜬다.
-    OpenWorkspacePopup(&'static str),
-    /// 파일 피커(docs/features/native-file-picker/index.md) — 단순 `OpenPopup` 과 달리 여는 *전* 활성 workspace 의
+    WorkspacePopup(&'static str),
+    /// 파일 피커(docs/features/native-file-picker/index.md) — 단순 `Popup` 과 달리 여는 *전* 활성 workspace 의
     /// mirror 여부로 로컬/원격을 판별해 `state.dialogs.file_picker` 를 채워야 하므로
     /// 별도 분기.
-    OpenFilePicker,
+    FilePicker,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -48,33 +48,33 @@ enum WindowKind {
 const BUILTIN_TOOLS: &[BuiltinTool] = &[
     BuiltinTool {
         label_key: "command_palette.tools_menu_item",
-        action: BuiltinAction::OpenPopup(super::popup::command_palette::COMMAND_PALETTE_POPUP_ID),
+        action: BuiltinAction::Popup(super::popup::command_palette::COMMAND_PALETTE_POPUP_ID),
     },
     BuiltinTool {
         label_key: "port_scanner.tools_menu_item",
-        action: BuiltinAction::OpenPopup(super::popup::port_scanner::PORT_SCANNER_POPUP_ID),
+        action: BuiltinAction::Popup(super::popup::port_scanner::PORT_SCANNER_POPUP_ID),
     },
     BuiltinTool {
         label_key: "remote_tool.tools_menu_item",
-        action: BuiltinAction::OpenPopup(super::popup::remote_tool::REMOTE_TOOL_POPUP_ID),
+        action: BuiltinAction::Popup(super::popup::remote_tool::REMOTE_TOOL_POPUP_ID),
     },
     BuiltinTool {
         label_key: "preset.tools.menu_item",
-        action: BuiltinAction::OpenWindow(WindowKind::Preset),
+        action: BuiltinAction::Window(WindowKind::Preset),
     },
     BuiltinTool {
         label_key: "tutorial.tools_menu_item",
-        action: BuiltinAction::OpenPopup(
+        action: BuiltinAction::Popup(
             crate::adapters::ui::tutorial::topic_popup::TUTORIAL_TOPICS_POPUP_ID,
         ),
     },
     BuiltinTool {
         label_key: "dag_list.tools_menu_item",
-        action: BuiltinAction::OpenWorkspacePopup(super::popup::dag_list::DAG_LIST_POPUP_ID),
+        action: BuiltinAction::WorkspacePopup(super::popup::dag_list::DAG_LIST_POPUP_ID),
     },
     BuiltinTool {
         label_key: "filepicker.tools_menu_item",
-        action: BuiltinAction::OpenFilePicker,
+        action: BuiltinAction::FilePicker,
     },
 ];
 
@@ -114,10 +114,10 @@ pub fn draw_tools_menu(
         );
         if resp.clicked() {
             match entry.action {
-                BuiltinAction::OpenPopup(id) => open_popup = Some(id),
-                BuiltinAction::OpenWorkspacePopup(id) => open_workspace_popup = Some(id),
-                BuiltinAction::OpenWindow(k) => open_window = Some(k),
-                BuiltinAction::OpenFilePicker => open_file_picker = true,
+                BuiltinAction::Popup(id) => open_popup = Some(id),
+                BuiltinAction::WorkspacePopup(id) => open_workspace_popup = Some(id),
+                BuiltinAction::Window(k) => open_window = Some(k),
+                BuiltinAction::FilePicker => open_file_picker = true,
             }
         }
     }

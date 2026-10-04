@@ -45,7 +45,7 @@ impl Return {
             }
         }
     }
-    fn as_reply(self) -> Reply {
+    fn into_reply(self) -> Reply {
         match self {
             Self::Ipc(sender) => Reply::Ipc(sender),
             Self::Plugin {
@@ -161,7 +161,7 @@ impl Resume {
             .id
             .clone()
             .unwrap_or_default();
-        (self.reply.as_reply(), response)
+        (self.reply.into_reply(), response)
     }
     pub fn reject(self, reason: &str, manager: Option<&mut crate::plugin::PluginManager>) {
         let id = self
@@ -203,14 +203,18 @@ fn deferred(surface: u32, engine: &crate::runtime::engine_access::EngineRef<'_>)
             })
             .is_some_and(|placeholder| placeholder.kind == "terminal")
 }
-fn plan(
-    request: &JsonRpcRequest,
-    engine: &crate::runtime::engine_access::EngineRef<'_>,
-) -> Option<(
+/// 재개를 보류한 요청이 나중에 다시 실행될 때 필요한 값 — 해석해 둔 입력,
+/// 대상별 리소스 세대, 남은 대상 큐.
+type ResumeCarryOver = (
     Option<crate::ipc::handler::terminal::FixedInput>,
     std::collections::BTreeMap<u32, Option<tasty_terminal::ResourceGeneration>>,
     std::collections::VecDeque<(u32, Option<u64>)>,
-)> {
+);
+
+fn plan(
+    request: &JsonRpcRequest,
+    engine: &crate::runtime::engine_access::EngineRef<'_>,
+) -> Option<ResumeCarryOver> {
     if !supported(&request.method) {
         return None;
     }

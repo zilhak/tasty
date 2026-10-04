@@ -281,8 +281,13 @@ fn gather_rs_files(path: &Path, out: &mut Vec<PathBuf>) {
 /// 빈 수집 결과가 위반 0개로 통과하지 않게 하는 하한이다.
 const MIN_SCANNED_FILES: usize = 200;
 
+/// 스캔한 소스 파일 하나 — 저장소 기준 상대 경로와 전체 내용.
+type ScannedSource = (String, String);
+/// 소스에서 거둔 수치 상수 하나 — 이름과 값.
+type NumericConst = (String, f32);
+
 /// 파일을 넘는 상수 참조도 비교하도록 전체 상수 표를 모은 뒤 판정한다.
-fn scan_sources() -> (Vec<(String, String)>, Vec<(String, f32)>) {
+fn scan_sources() -> (Vec<ScannedSource>, Vec<NumericConst>) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
 
     let mut files = Vec::new();
