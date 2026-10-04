@@ -23,6 +23,8 @@ AppState는 `MirrorAttempts` 하나를 보유하며 내부 맵을 직접 변경�
 원격 완료는 원 token으로 한 번만 인수할 수 있고, 이미 취소된 token의 늦은 완료는
 새 시도에 적용되지 않는다. 연결·터널·worker의 실제 수명과 회수는 `Remote`가 소유한다.
 대기 객체의 target은 자원 소유권을 복제하지 않는다.
+mirror publication의 허용 진입점은 `connection.rs`의 설치·재설치·제거와
+`output.rs`의 구조 delta 적용으로 한정하며, 구조 writer 검사는 파일과 함수의 쌍으로 이를 대조한다.
 
 
 ## 서버 / 클라이언트 계층 (가장 먼저 읽을 것)

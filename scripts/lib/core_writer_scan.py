@@ -107,10 +107,10 @@ BOUNDARY_LIMITS = {
     ("src/app/journal/publication.rs", "publish_session", "projection::bootstrap::initialize"): 1,
     ("src/app/journal/publication.rs", "complete_opening", "projection::bootstrap::initialize"): 1,
     # Non-durable remote model install/reconnect/delta/removal, never local canonical writes.
-    ("src/app/attach_client.rs", "install_new_mirror", "push_mirror_workspace"): 1,
-    ("src/app/attach_client.rs", "install_reconnected_mirror", "replace_mirror_workspace"): 1,
-    ("src/app/attach_client.rs", "apply_mirror_structural_delta", "replace_mirror_workspace"): 1,
-    ("src/app/attach_client.rs", "remove_mirror_workspace_from_engine", "remove_mirror_workspace"): 1,
+    ("src/app/attach_client/connection.rs", "install_new_mirror", "push_mirror_workspace"): 1,
+    ("src/app/attach_client/connection.rs", "install_reconnected_mirror", "replace_mirror_workspace"): 1,
+    ("src/app/attach_client/output.rs", "apply_mirror_structural_delta", "replace_mirror_workspace"): 1,
+    ("src/app/attach_client/connection.rs", "remove_mirror_workspace_from_engine", "remove_mirror_workspace"): 1,
     ("src/runtime/structure_observation.rs", "replace_mirror_workspace", "replace_mirror_workspace"): 1,
     ("src/app/journal/commands/display.rs", "apply", "apply_workspace_display_order"): 1,
     # Canonical crate's pure batch validation and live projection validation.
