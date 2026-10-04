@@ -38,7 +38,7 @@ pub(super) fn examples() -> Vec<DomainEvent> {
         },
         DomainEvent::EngineRetired { incarnation: 1 },
         DomainEvent::OperationPrepared {
-            operation: operation(),
+            operation: Box::new(operation()),
         },
         DomainEvent::OperationAwaitingCleanup {
             id: operation().id,
@@ -132,7 +132,7 @@ fn pending_reservations_replay_without_worker_state_or_visible_surfaces() {
     apply(
         &mut model,
         &[DomainEvent::OperationPrepared {
-            operation: operation(),
+            operation: Box::new(operation()),
         }],
     )
     .unwrap();
@@ -145,7 +145,7 @@ fn pending_reservations_replay_without_worker_state_or_visible_surfaces() {
         apply(
             &mut model,
             &[DomainEvent::OperationPrepared {
-                operation: duplicate
+                operation: Box::new(duplicate)
             }]
         )
         .is_err()

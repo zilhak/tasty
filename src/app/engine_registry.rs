@@ -31,7 +31,7 @@ pub(crate) enum RetiringView {
     Discard,
     Releasing,
     Preserve {
-        navigation: crate::state::navigation::NavigationState,
+        navigation: Box<crate::state::navigation::NavigationState>,
         checkpoint: Option<u64>,
     },
 }
@@ -164,7 +164,7 @@ impl EngineRegistry {
         self.retiring.insert(
             id,
             RetiringView::Preserve {
-                navigation,
+                navigation: Box::new(navigation),
                 checkpoint: None,
             },
         );
@@ -183,7 +183,7 @@ impl EngineRegistry {
                 RetiringView::Preserve {
                     navigation,
                     checkpoint,
-                } => Some((*id, navigation.clone(), *checkpoint)),
+                } => Some((*id, navigation.as_ref().clone(), *checkpoint)),
                 _ => None,
             })
             .collect()

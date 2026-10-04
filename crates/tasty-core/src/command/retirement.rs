@@ -95,7 +95,9 @@ pub(super) fn decide(
                 resource_prepared: false,
                 reconciliation_evidence: None,
             };
-            let mut events = vec![DomainEvent::OperationPrepared { operation: record }];
+            let mut events = vec![DomainEvent::OperationPrepared {
+                operation: Box::new(record),
+            }];
             if let Some(capture) = undo {
                 if !is_user_close && !remote_user_close {
                     return Err(Rejection(

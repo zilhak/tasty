@@ -101,7 +101,9 @@ pub(super) fn decide(
     };
     Ok(StructuralDecision {
         events: vec![
-            DomainEvent::OperationPrepared { operation: record },
+            DomainEvent::OperationPrepared {
+                operation: Box::new(record),
+            },
             DomainEvent::StructureReplaced {
                 replacement: *replacement,
                 removed,

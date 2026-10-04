@@ -71,7 +71,7 @@ pub(super) fn decide(
         reconciliation_evidence: None,
     };
     let mut events = vec![DomainEvent::OperationPrepared {
-        operation: coordinator,
+        operation: Box::new(coordinator),
     }];
     let mut effects = Vec::new();
     for (surface, value) in &plan.snapshot.surfaces {
@@ -126,7 +126,9 @@ pub(super) fn decide(
             kind: value.kind.clone(),
             activation_generation: generation,
         });
-        events.push(DomainEvent::OperationPrepared { operation: member });
+        events.push(DomainEvent::OperationPrepared {
+            operation: Box::new(member),
+        });
     }
     Ok(StructuralDecision {
         events,

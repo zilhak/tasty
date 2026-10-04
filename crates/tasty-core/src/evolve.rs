@@ -298,7 +298,7 @@ fn apply(m: &mut JournalModel, event: DomainEvent) -> Result<()> {
             let layout = &mut get_mut(&mut m.tabs, IdKind::Tab, tab)?.layout;
             lifecycle::ratio(layout, &path, ratio)
         }
-        DomainEvent::OperationPrepared { operation } => lifecycle::prepare(m, operation),
+        DomainEvent::OperationPrepared { operation } => lifecycle::prepare(m, *operation),
         DomainEvent::OperationResourcePrepared { id, data, deferred } => {
             lifecycle::prepared(m, id, data, deferred)
         }

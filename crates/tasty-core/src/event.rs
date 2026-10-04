@@ -210,7 +210,7 @@ pub enum DomainEvent {
     },
 
     #[serde(rename = "operation.prepared")]
-    OperationPrepared { operation: Operation },
+    OperationPrepared { operation: Box<Operation> },
     #[serde(rename = "operation.resource_prepared")]
     OperationResourcePrepared {
         id: OperationId,

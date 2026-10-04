@@ -33,7 +33,7 @@ pub(super) fn decide(
             };
             Ok(StructuralDecision {
                 events: vec![DomainEvent::OperationPrepared {
-                    operation: operation.clone(),
+                    operation: Box::new(operation.clone()),
                 }],
                 effects: vec![StructuralEffect::ForwardStructure {
                     operation: operation.id.clone(),

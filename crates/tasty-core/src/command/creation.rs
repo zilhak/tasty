@@ -67,7 +67,7 @@ pub(super) fn decide(
             };
             Ok(StructuralDecision {
                 events: vec![DomainEvent::OperationPrepared {
-                    operation: operation.clone(),
+                    operation: Box::new(operation.clone()),
                 }],
                 effects: vec![StructuralEffect::PrepareSurface {
                     operation: operation.id.clone(),
