@@ -916,7 +916,7 @@ fn the_walk_and_the_length_reader_answer_on_a_substituted_tree() {
     let mut rels: Vec<String> = files
         .iter()
         .map(|p| {
-            repo_relative(p.strip_prefix(&root).unwrap_or(p))
+            repo_relative(p.strip_prefix(root).unwrap_or(p))
                 .display()
                 .to_string()
         })

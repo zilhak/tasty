@@ -97,7 +97,7 @@ impl WasmPluginRuntime {
             .get_export_index(&mut self.store, Some(&iface_idx), name)
             .with_context(|| format!("lookup func index '{name}'"))?;
         self.instance
-            .get_func(&mut self.store, &func_idx)
+            .get_func(&mut self.store, func_idx)
             .with_context(|| format!("lookup func '{name}'"))
     }
 

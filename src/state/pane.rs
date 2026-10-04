@@ -235,8 +235,8 @@ impl RequestContext {
             surface_id,
             presentation: capture.then(|| {
                 Box::new(crate::model::StructurePresentationSnapshot::capture(
-                    &engine.workspaces(),
-                    &engine.categories(),
+                    engine.workspaces(),
+                    engine.categories(),
                     &self.navigation,
                 ))
             }),

@@ -34,7 +34,7 @@ pub(super) fn diff_toolbar(
             .layout(Layout::left_to_right(Align::Center)),
     );
     cui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-    let back = Button::new(&tr.t("git_viewer.back_to_log"))
+    let back = Button::new(tr.t("git_viewer.back_to_log"))
         .variant(ButtonVariant::Ghost)
         .size(ControlSize::Sm)
         .show(&mut cui, theme)
@@ -66,7 +66,7 @@ pub(super) fn draw_diff(
     );
     pane.spacing_mut().item_spacing = vec2(0.0, 0.0);
     if diff.hunks.is_empty() {
-        empty_line(&mut pane, theme, &tr.t("git_viewer.no_changes"));
+        empty_line(&mut pane, theme, tr.t("git_viewer.no_changes"));
         return;
     }
     // 각 hunk 헤더의 전체 행 인덱스를 계산한다.

@@ -101,7 +101,7 @@ fn register_notify_webhook(inst: &WebhookInstance, params_extra: Value) -> (Stri
 #[allow(clippy::cognitive_complexity)] // complexity-exempt: 등록·인증·쿨다운을 순서대로 검증하는 통합 시나리오다. 같은 서버 상태를 물려받아야 하므로 한 함수에 둔다.
 fn integration_flow(inst: &WebhookInstance) {
     {
-        let (id, _url) = register_notify_webhook(&inst, json!({}));
+        let (id, _url) = register_notify_webhook(inst, json!({}));
         let info = inst.call("webhook.info", json!({ "id": id }));
         assert_eq!(info["id"].as_str(), Some(id.as_str()));
         assert_eq!(info["methods"], json!(["POST"]));
@@ -111,14 +111,14 @@ fn integration_flow(inst: &WebhookInstance) {
         assert_eq!(body, "received", "ACK body must be the fixed string");
 
         assert!(
-            wait_notification(&inst, "MARKER_HELLO", Duration::from_secs(8)),
+            wait_notification(inst, "MARKER_HELLO", Duration::from_secs(8)),
             "webhook IpcSequence must create a notification with the substituted body"
         );
         inst.call("webhook.unregister", json!({ "id": id }));
     }
 
     {
-        let (id, _url) = register_notify_webhook(&inst, json!({}));
+        let (id, _url) = register_notify_webhook(inst, json!({}));
 
         let payloads = [
             r#"{"message":"P1","method":"system.shutdown"}"#,
@@ -138,12 +138,12 @@ fn integration_flow(inst: &WebhookInstance) {
             sysinfo.get("version").is_some(),
             "tasty must remain alive — payload method must not execute"
         );
-        assert!(wait_notification(&inst, "P1", Duration::from_secs(8)));
+        assert!(wait_notification(inst, "P1", Duration::from_secs(8)));
         inst.call("webhook.unregister", json!({ "id": id }));
     }
 
     {
-        let (id, _url) = register_notify_webhook(&inst, json!({}));
+        let (id, _url) = register_notify_webhook(inst, json!({}));
         let (code, body) = inst.http("GET", &id, "");
         assert_eq!(code, 405, "wrong method must be 405");
         assert_eq!(body, "method not allowed");
@@ -151,7 +151,7 @@ fn integration_flow(inst: &WebhookInstance) {
     }
 
     {
-        let (id, _url) = register_notify_webhook(&inst, json!({ "count": 2 }));
+        let (id, _url) = register_notify_webhook(inst, json!({ "count": 2 }));
         assert_eq!(inst.post(&id, r#"{"message":"C1"}"#).0, 200);
         let info = inst.call("webhook.info", json!({ "id": id }));
         assert_eq!(info["lifetime"]["remaining"].as_u64(), Some(1));
@@ -166,7 +166,7 @@ fn integration_flow(inst: &WebhookInstance) {
     }
 
     {
-        let (id, _url) = register_notify_webhook(&inst, json!({ "ttl_secs": 1 }));
+        let (id, _url) = register_notify_webhook(inst, json!({ "ttl_secs": 1 }));
         std::thread::sleep(Duration::from_secs(2));
         let (code, body) = inst.post(&id, r#"{"message":"expired"}"#);
         assert_eq!(code, 410, "expired time-limited webhook must be 410 Gone");
@@ -201,7 +201,7 @@ fn integration_flow(inst: &WebhookInstance) {
         let (code, _body) = inst.post(&id, r#"{"message":"HOSTDEFAULT"}"#);
         assert_eq!(code, 200);
         assert!(wait_notification(
-            &inst,
+            inst,
             "HOSTDEFAULT",
             Duration::from_secs(8)
         ));
@@ -210,21 +210,21 @@ fn integration_flow(inst: &WebhookInstance) {
 
     {
         let (id, _url) = register_notify_webhook(
-            &inst,
+            inst,
             json!({ "auth": { "location": "query", "key": "tok", "token": "s3cr3t" } }),
         );
         let (code, body) = inst.post(&id, r#"{"message":"NOAUTH"}"#);
         assert_eq!(code, 401, "missing token must be 401");
         assert_eq!(body, "unauthorized");
         assert!(
-            !has_notification(&inst, "NOAUTH"),
+            !has_notification(inst, "NOAUTH"),
             "unauthorized must not execute"
         );
 
         let path = format!("{id}?tok=s3cr3t");
         let (code, _body) = inst.post(&path, r#"{"message":"AUTHED"}"#);
         assert_eq!(code, 200, "correct token must pass");
-        assert!(wait_notification(&inst, "AUTHED", Duration::from_secs(8)));
+        assert!(wait_notification(inst, "AUTHED", Duration::from_secs(8)));
 
         let info = inst.call("webhook.info", json!({ "id": id }));
         let info_str = serde_json::to_string(&info).unwrap();
@@ -236,7 +236,7 @@ fn integration_flow(inst: &WebhookInstance) {
     }
 
     {
-        let (id, _url) = register_notify_webhook(&inst, json!({}));
+        let (id, _url) = register_notify_webhook(inst, json!({}));
         assert_eq!(inst.post(&id, r#"{"message":"live"}"#).0, 200);
         let removed = inst.call("webhook.unregister", json!({ "id": id }));
         assert_eq!(removed["unregistered"].as_bool(), Some(true));
@@ -281,7 +281,7 @@ fn integration_flow(inst: &WebhookInstance) {
         let (code, _b) = inst.post(&cli_id, r#"{}"#);
         assert_eq!(code, 200);
         assert!(wait_notification(
-            &inst,
+            inst,
             "CLI_MARKER",
             Duration::from_secs(8)
         ));
@@ -323,13 +323,13 @@ fn integration_flow(inst: &WebhookInstance) {
             webhook_common::stderr_str(&out)
         );
         assert!(
-            wait_notification(&inst, "dispatched", Duration::from_secs(8)),
+            wait_notification(inst, "dispatched", Duration::from_secs(8)),
             "dispatched hook handler must execute its IpcSequence"
         );
     }
 
     {
-        let (id, _url) = register_notify_webhook(&inst, json!({}));
+        let (id, _url) = register_notify_webhook(inst, json!({}));
 
         let small = format!(
             r#"{{"message":"SMALLBODY","pad":"{}"}}"#,
@@ -337,11 +337,7 @@ fn integration_flow(inst: &WebhookInstance) {
         );
         assert!(small.len() < MAX_BODY_BYTES);
         assert_eq!(inst.post(&id, &small).0, 200, "상한 이하는 평소대로 200");
-        assert!(wait_notification(
-            &inst,
-            "SMALLBODY",
-            Duration::from_secs(8)
-        ));
+        assert!(wait_notification(inst, "SMALLBODY", Duration::from_secs(8)));
 
         let big = format!(
             r#"{{"message":"BIGBODY","pad":"{}"}}"#,
@@ -351,7 +347,7 @@ fn integration_flow(inst: &WebhookInstance) {
         assert_eq!(code, 413, "상한 초과 body 는 413");
         assert_eq!(body, "payload too large");
         assert!(
-            !has_notification(&inst, "BIGBODY"),
+            !has_notification(inst, "BIGBODY"),
             "413 은 시퀀스를 실행하지 않는다"
         );
 
@@ -383,7 +379,7 @@ fn integration_flow(inst: &WebhookInstance) {
 
         // 인증 실패는 웹훅 횟수 예산을 소비하지 않지만 반복 인증 시도 제한에는 집계돼야 한다.
         let (id, _url) = register_notify_webhook(
-            &inst,
+            inst,
             json!({ "auth": { "location": "query", "key": "tok", "token": "s3cr3t" } }),
         );
         let wrong_token_path = format!("{id}?tok=wrong");

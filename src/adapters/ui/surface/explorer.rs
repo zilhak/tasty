@@ -685,11 +685,11 @@ fn favorites_empty(ui: &mut egui::Ui, theme: &Theme) {
         ui.spacing_mut().item_spacing.x = 0.0;
         let hint = t_fmt(
             "explorer.sidebar.favorites_empty_hint",
-            &t("explorer.context_menu.add_to_favorites"),
+            t("explorer.context_menu.add_to_favorites"),
         );
         let action_label = t("explorer.context_menu.add_to_favorites");
         let micro = theme.font_size_caption.value();
-        if let Some(pos) = hint.find(&action_label) {
+        if let Some(pos) = hint.find(action_label) {
             let (before, rest) = hint.split_at(pos);
             let after = &rest[action_label.len()..];
             for (seg, muted) in [(before, false), (action_label, true), (after, false)] {

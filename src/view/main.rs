@@ -395,8 +395,8 @@ impl MainView {
         // plugin mesh 입력은 별도 전달 경로를 사용해 host가 먼저 소비하지 않게 한다.
         let egui_surface = self
             .state
-            .focused_surface_type(&*engine)
-            .kind_capability(&*engine, |d| d.consumes_egui_input);
+            .focused_surface_type(engine)
+            .kind_capability(engine, |d| d.consumes_egui_input);
 
         let is_redraw_event = matches!(&event, WindowEvent::RedrawRequested);
 
@@ -486,7 +486,7 @@ impl MainView {
                 let kb = &engine.settings.keybindings;
                 if self
                     .state
-                    .update_switch_overlay(&*engine, kb, ctrl, shift, alt, option)
+                    .update_switch_overlay(engine, kb, ctrl, shift, alt, option)
                 {
                     dirty = true;
                 }

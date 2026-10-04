@@ -6197,7 +6197,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-codex"
-version = "0.1.105"
+version = "0.1.106"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -6211,7 +6211,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-git-viewer"
-version = "0.1.112"
+version = "0.1.113"
 dependencies = [
  "anyhow",
  "egui",

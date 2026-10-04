@@ -170,7 +170,7 @@ impl App {
                     Ok(r) => (serde_json::to_value(&r).ok(), None),
                     Err(e) => (None, Some(e)),
                 };
-            mgr.send_plugin_call_result(&call, result, error, None);
+            mgr.send_plugin_call_result(call, result, error, None);
         }
     }
 
@@ -208,7 +208,7 @@ impl App {
             }
         };
         if let Some(mgr) = self.plugin_manager.as_mut() {
-            mgr.send_plugin_call_result(&call, result, error, None);
+            mgr.send_plugin_call_result(call, result, error, None);
         }
     }
 
@@ -235,7 +235,7 @@ impl App {
             }
         };
         if let Some(mgr) = self.plugin_manager.as_mut() {
-            mgr.send_plugin_call_result(&call, result, error, None);
+            mgr.send_plugin_call_result(call, result, error, None);
         }
     }
 
@@ -266,7 +266,7 @@ impl App {
             }
         };
         if let Some(mgr) = self.plugin_manager.as_mut() {
-            mgr.send_plugin_call_result(&call, result, error, None);
+            mgr.send_plugin_call_result(call, result, error, None);
         }
     }
 
@@ -282,7 +282,7 @@ impl App {
             None => (response.result, None, None),
         };
         if let Some(mgr) = self.plugin_manager.as_mut() {
-            mgr.send_plugin_call_result(&call, result, error, code);
+            mgr.send_plugin_call_result(call, result, error, code);
         }
     }
 

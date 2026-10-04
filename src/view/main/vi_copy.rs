@@ -790,7 +790,7 @@ impl MainView {
             // 이미 활성 → noop.
             return;
         }
-        let Some(sid) = self.state.focused_surface_id(&*engine) else {
+        let Some(sid) = self.state.focused_surface_id(engine) else {
             return;
         };
         let Some(terminal) = self.state.focused_terminal(&engine.as_ref()) else {

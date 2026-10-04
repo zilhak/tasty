@@ -208,7 +208,7 @@ impl MainView {
             return;
         }
 
-        let surface_id = match self.state.focused_surface_id(&*engine) {
+        let surface_id = match self.state.focused_surface_id(engine) {
             Some(sid) => sid,
             None => return,
         };
@@ -226,7 +226,7 @@ impl MainView {
 
         // Use the actual content rect (after tab bar) instead of the raw pane rect
         let surface_rect = match self.state.focused_surface_rect(
-            &*engine,
+            engine,
             *terminal_rect,
             self.base.gpu.scale_factor(),
         ) {

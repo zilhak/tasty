@@ -2189,7 +2189,7 @@ fn the_full_suite_judgement_uses_the_same_narrowing_rule() {
 fn workflow_dir(name: &str, files: &[(&str, &str)]) -> Scratch {
     let probe = Scratch::new(&format!("ci-guard-{name}"));
     let dir = probe.path();
-    std::fs::create_dir_all(&dir).expect("합성 워크플로 디렉토리를 만들지 못했다");
+    std::fs::create_dir_all(dir).expect("합성 워크플로 디렉토리를 만들지 못했다");
     for (file, body) in files {
         std::fs::write(dir.join(file), body).expect("합성 워크플로를 쓰지 못했다");
     }

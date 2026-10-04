@@ -594,7 +594,7 @@ impl MainView {
         y: f32,
     ) {
         // 메뉴가 열린 동안 탭 순서가 바뀌어도 같은 탭을 가리키도록 ID로 고정한다.
-        let target = super::menu_target::TabMenuTarget::capture(&*engine, pane_id, tab_index);
+        let target = super::menu_target::TabMenuTarget::capture(engine, pane_id, tab_index);
         let tab_id = target.tab_id();
         let items = self.build_tab_context_menu_items(engine, pane_id, tab_index, tab_id);
         self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
@@ -605,7 +605,7 @@ impl MainView {
             }
             // continuation 은 메뉴가 닫힌 뒤(플랫폼에 따라 여러 프레임 뒤)
             // 실행된다 — 그 사이 탭이 닫혔거나 옮겨졌을 수 있으므로 현재 위치를 다시 찾는다.
-            let Some((pane_id, tab_index)) = target.resolve(&*engine) else {
+            let Some((pane_id, tab_index)) = target.resolve(engine) else {
                 return;
             };
             this.apply_tab_menu_selection(engine, pane_id, tab_index, result);
@@ -902,7 +902,7 @@ impl MainView {
         x: f32,
         y: f32,
     ) {
-        let target = super::menu_target::WorkspaceMenuTarget::capture(&*engine, ws_idx);
+        let target = super::menu_target::WorkspaceMenuTarget::capture(engine, ws_idx);
         let (items, move_targets) = self.build_workspace_context_menu_items(engine, ws_idx);
         self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
             // 메뉴가 열려 있는 동안 워크스페이스가 닫히거나 옮겨졌을 수 있어 현재 위치를 다시 찾는다.
@@ -987,7 +987,7 @@ impl MainView {
                     // 새 카테고리 생성 다이얼로그.
                     crate::adapters::ui::category_actions::open_new_category_dialog(
                         &mut this.state,
-                        &*engine,
+                        engine,
                     );
                 }
                 Some(id) if id >= 200 => {
@@ -1104,7 +1104,7 @@ impl MainView {
         target: crate::state::RenameTarget,
         current_value: String,
     ) {
-        let scope = target.popup_scope(&*engine);
+        let scope = target.popup_scope(engine);
         self.state.dialogs.rename = Some((target, current_value));
         self.state.dispatch_intent(
             crate::intent::UiIntent::OpenPopup {
@@ -1214,7 +1214,7 @@ impl MainView {
                 Some(100) => {
                     crate::adapters::ui::category_actions::open_new_category_dialog(
                         &mut this.state,
-                        &*engine,
+                        engine,
                     );
                 }
                 _ => {}
@@ -1249,7 +1249,7 @@ impl MainView {
                 Some(100) => {
                     crate::adapters::ui::category_actions::open_new_category_dialog(
                         &mut this.state,
-                        &*engine,
+                        engine,
                     );
                 }
                 Some(2) => {
@@ -1742,7 +1742,7 @@ impl MainView {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
             let target = crate::state::RenameTarget::ExplorerEntry { surface_id, path };
-            let scope = target.popup_scope(&*engine);
+            let scope = target.popup_scope(engine);
             self.state.dialogs.rename = Some((target, current_name));
             self.state.dispatch_intent(
                 crate::intent::UiIntent::OpenPopup {
@@ -1779,7 +1779,7 @@ impl MainView {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
         let target = crate::state::RenameTarget::ExplorerAddFavorite { path };
-        let scope = target.popup_scope(&*engine);
+        let scope = target.popup_scope(engine);
         self.state.dialogs.rename = Some((target, seed));
         self.state.dispatch_intent(
             crate::intent::UiIntent::OpenPopup {

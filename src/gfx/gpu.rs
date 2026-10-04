@@ -494,7 +494,7 @@ impl GpuState {
                 &view,
                 &attach_mesh_targets,
                 &attach_mesh_existing,
-                &engine.attach_mesh_frames,
+                engine.attach_mesh_frames,
             );
         }
 

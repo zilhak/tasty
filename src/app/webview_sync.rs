@@ -688,7 +688,7 @@ fn update_html_script_banners(
 }
 
 fn note_user_selection(view: &mut MainView, engine: &crate::runtime::engine_access::EngineRef<'_>) {
-    let focused = view.state.focused_surface_id(&*engine);
+    let focused = view.state.focused_surface_id(engine);
     let selected = match view.html_script_seen_focus.replace(focused) {
         Some(prev) if prev != focused => focused,
         _ => None,

@@ -156,14 +156,14 @@ impl MainView {
     ) {
         let terminal_rect = self.compute_terminal_rect();
         let ppp = self.base.gpu.scale_factor();
-        let focused = self.state.focused_surface_id(&*engine);
+        let focused = self.state.focused_surface_id(engine);
         let modifiers = self.mesh_modifiers();
         let current_theme = self.mesh_theme_snapshot(engine);
 
         let mut targets: Vec<(u32, PhysicalRect)> = Vec::new();
         for (_pane_id, _pane_rect, regions) in
             self.state
-                .surface_regions(&*engine, terminal_rect, self.base.gpu.scale_factor())
+                .surface_regions(engine, terminal_rect, self.base.gpu.scale_factor())
         {
             for r in regions {
                 if engine
@@ -175,7 +175,7 @@ impl MainView {
             }
         }
 
-        let existing = self.state.attach_mesh_surfaces_existing(&*engine);
+        let existing = self.state.attach_mesh_surfaces_existing(engine);
         let live: std::collections::HashSet<u32> = existing.into_iter().collect();
         self.attach_mesh_input.retain(|sid, _| live.contains(sid));
 

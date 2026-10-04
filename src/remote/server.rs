@@ -26,7 +26,7 @@ impl EngineMut<'_> {
         presentation: &dyn crate::model::StructurePresentation,
     ) {
         self.remote.presentation = crate::model::StructurePresentationSnapshot::capture(
-            &self.workspaces(),
+            self.workspaces(),
             self.categories(),
             presentation,
         );

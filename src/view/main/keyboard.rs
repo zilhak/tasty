@@ -113,8 +113,8 @@ impl MainView {
             return;
         }
 
-        let surface_type = self.state.focused_surface_type(&*engine);
-        let typing_surface_id = self.state.focused_surface_id(&*engine);
+        let surface_type = self.state.focused_surface_type(engine);
+        let typing_surface_id = self.state.focused_surface_id(engine);
 
         match surface_type {
             FocusedSurfaceType::Terminal => self.forward_key_to_terminal(engine, event),
@@ -317,7 +317,7 @@ impl MainView {
 
         let shift_enter_newline = engine.settings.terminal_input.shift_enter_newline(
             self.state
-                .focused_surface_id(&*engine)
+                .focused_surface_id(engine)
                 .and_then(|sid| engine.foreground_name(sid)),
         );
 

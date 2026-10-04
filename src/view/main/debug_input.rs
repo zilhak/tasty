@@ -79,7 +79,7 @@ impl MainView {
     ) -> bool {
         let terminal_rect = self.compute_terminal_rect();
         let Some(rect) = self.state.surface_rect_by_id(
-            &*engine,
+            engine,
             surface_id,
             terminal_rect,
             self.base.gpu.scale_factor(),
@@ -133,7 +133,7 @@ impl MainView {
         let pos = if let Some(sid) = surface_id {
             let terminal_rect = self.compute_terminal_rect();
             let Some(rect) = self.state.surface_rect_by_id(
-                &*engine,
+                engine,
                 sid,
                 terminal_rect,
                 self.base.gpu.scale_factor(),

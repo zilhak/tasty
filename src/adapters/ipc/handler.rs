@@ -1373,7 +1373,7 @@ fn handle_send_wait_idle(
         return JsonRpcResponse::success(id, json!({ "sent": false, "reason": "typing" }));
     }
     if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
-        terminal.send_key(&text);
+        terminal.send_key(text);
         JsonRpcResponse::success(id, json!({ "sent": true }))
     } else {
         JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))

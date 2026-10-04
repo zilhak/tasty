@@ -75,7 +75,7 @@ impl MainView {
         if let Some(text) = text
             && !text.is_empty()
         {
-            let surface_id = self.state.focused_surface_id(&*engine);
+            let surface_id = self.state.focused_surface_id(engine);
             let bracketed = self
                 .state
                 .focused_terminal(&engine.as_ref())
@@ -94,7 +94,7 @@ impl MainView {
         let Some(image) = image else {
             return;
         };
-        let Some(sid) = self.state.focused_surface_id(&*engine) else {
+        let Some(sid) = self.state.focused_surface_id(engine) else {
             return;
         };
         let Some(bracketed) = self

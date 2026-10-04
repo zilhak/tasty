@@ -456,8 +456,8 @@ impl MainView {
             let (x, y) = (pos.x as f32, pos.y as f32);
             if let Some(sid) =
                 self.state
-                    .surface_id_at_position(&*engine, x, y, terminal_rect, scale_factor)
-                && self.state.focused_surface_id(&*engine) != Some(sid)
+                    .surface_id_at_position(engine, x, y, terminal_rect, scale_factor)
+                && self.state.focused_surface_id(engine) != Some(sid)
             {
                 let changed_pane =
                     self.state
@@ -541,7 +541,7 @@ impl MainView {
             return;
         }
         let Some(surface_id) = self.state.surface_id_at_position(
-            &*engine,
+            engine,
             x,
             y,
             terminal_rect,
@@ -616,7 +616,7 @@ impl MainView {
             let (x, y) = (pos.x as f32, pos.y as f32);
             if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y))
                 && let Some(surface_id) = self.state.surface_id_at_position(
-                    &*engine,
+                    engine,
                     x,
                     y,
                     terminal_rect,
@@ -697,7 +697,7 @@ impl MainView {
         // hard 점유 화면은 지연된 스냅샷이므로 링크를 열지 않는다(ADR-0021).
         // false를 반환해 로컬 텍스트 선택은 계속 허용한다.
         if let Some(sid) = self.state.surface_id_at_position(
-            &*engine,
+            engine,
             x,
             y,
             *terminal_rect,
@@ -824,7 +824,7 @@ impl MainView {
         // 캡처 안내 배너 경로엔 진입하지 않는다.
         let mouse_tracking = self
             .state
-            .focused_surface_id(&*engine)
+            .focused_surface_id(engine)
             .map(|sid| self.effective_click_tracking(engine, sid, mouse_tracking))
             .unwrap_or(mouse_tracking);
         let shift = self.base.state.modifiers.shift_key();
@@ -837,7 +837,7 @@ impl MainView {
             } else {
                 // 트래킹 ON + Shift 없음: 버튼 press 를 앱에 보고 (ADR-0015 앱 위임). 단,
                 // 트래킹 진입 후 첫 캡처 상호작용이면 캡처 안내를 1회 띄운다.
-                if let Some(sid) = self.state.focused_surface_id(&*engine) {
+                if let Some(sid) = self.state.focused_surface_id(engine) {
                     self.report_left_press_capture(engine, sid);
                     self.report_mouse_event(engine, sid, x, y, 0, false, false);
                     // press 를 보고했으니 이후 motion 도 좌버튼으로 보고한다.
@@ -855,7 +855,7 @@ impl MainView {
     /// 설정이 꺼져 있거나 배너 억제 목록에 해당하면 표시하지 않는다.
     /// 억제된 앱에서는 첫 조작 표지를 남겨 이후 다른 앱에서 안내할 수 있게 한다.
     fn report_left_press_capture(&mut self, engine: &EngineRead<'_>, surface_id: u32) {
-        if mouse_capture_banner_suppressed(&*engine, surface_id) {
+        if mouse_capture_banner_suppressed(engine, surface_id) {
             return;
         }
         if engine.settings.general.mouse_capture_hint
@@ -900,7 +900,7 @@ impl MainView {
         let report_surface = if bypass {
             None
         } else {
-            self.state.focused_surface_id(&*engine).filter(|sid| {
+            self.state.focused_surface_id(engine).filter(|sid| {
                 engine
                     .find_terminal_by_id(*sid)
                     .map(|t| {
@@ -997,7 +997,7 @@ impl MainView {
         y: f32,
         terminal_rect: &crate::model::PhysicalRect,
     ) {
-        let Some(sid) = self.state.focused_surface_id(&*engine) else {
+        let Some(sid) = self.state.focused_surface_id(engine) else {
             return;
         };
         let tracking = engine
@@ -1014,14 +1014,14 @@ impl MainView {
             crate::state::mouse::divider_hit_threshold_physical(self.base.gpu.scale_factor());
         let on_divider_band = self
             .state
-            .find_pane_divider_at(&*engine, x, y, *terminal_rect, threshold)
+            .find_pane_divider_at(engine, x, y, *terminal_rect, threshold)
             .or_else(|| {
                 self.state
                     .find_surface_divider_at(&*engine, x, y, *terminal_rect, threshold)
             })
             .is_some();
         let over_focused_surface = self.state.surface_id_at_position(
-            &*engine,
+            engine,
             x,
             y,
             *terminal_rect,

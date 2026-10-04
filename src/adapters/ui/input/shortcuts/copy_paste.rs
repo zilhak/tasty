@@ -39,7 +39,7 @@ impl MainView {
             && t.elapsed() < crate::view::main::PASTE_CTRL_C_COOLDOWN
         {
             let scope = crate::adapters::ui::ToastScope::Surface(
-                self.state.focused_surface_id(&*engine).unwrap_or(0),
+                self.state.focused_surface_id(engine).unwrap_or(0),
             );
             self.state
                 .toasts
@@ -50,15 +50,15 @@ impl MainView {
         // 키보드 복사는 현재 포커스와 선택 영역의 surface가 같을 때만 한다.
         // 다른 surface의 이전 선택을 복사해 현재 탐색기의 입력을 가로채지 않게 한다.
         let sel_surface_id = self.text_selection.as_ref().map(|s| s.surface_id);
-        let focused = self.state.focused_surface_id(&*engine);
+        let focused = self.state.focused_surface_id(engine);
         let selection_targets_focus = should_copy_via_focused_selection(sel_surface_id, focused);
         if selection_targets_focus && self.copy_selection_to_clipboard(engine) {
             self.mark_dirty();
             return true;
         }
-        let st = self.state.focused_surface_type(&*engine);
+        let st = self.state.focused_surface_type(engine);
         // 선택 위젯은 플러그인 egui Context에 있으므로 Copy 이벤트를 해당 surface에 보낸다.
-        if st.kind_capability(&*engine, |d| d.egui_copy)
+        if st.kind_capability(engine, |d| d.egui_copy)
             && let Some(sid) = self.focused_egui_mesh_surface_id(engine)
         {
             self.egui_mesh_push_copy(sid);
@@ -78,8 +78,8 @@ impl MainView {
     ) -> bool {
         if !self
             .state
-            .focused_surface_type(&*engine)
-            .kind_capability(&*engine, |d| d.copy_path)
+            .focused_surface_type(engine)
+            .kind_capability(engine, |d| d.copy_path)
         {
             return false;
         }
@@ -108,13 +108,13 @@ impl MainView {
     ) -> bool {
         if !self
             .state
-            .focused_surface_type(&*engine)
-            .kind_capability(&*engine, |d| d.copy_path)
+            .focused_surface_type(engine)
+            .kind_capability(engine, |d| d.copy_path)
         {
             return false;
         }
         let is_cut_files = action == ExplorerAction::CutFiles;
-        let Some(sid) = super::focused_explorer_surface_id(&self.state, &*engine) else {
+        let Some(sid) = super::focused_explorer_surface_id(&self.state, engine) else {
             return true;
         };
         if action == ExplorerAction::SelectAll {
@@ -146,7 +146,7 @@ impl MainView {
                 self.explorer_menu_set_clipboard(engine, sid, &paths, is_cut_files);
             }
         } else if action == ExplorerAction::PasteFiles
-            && let Some(cwd) = super::focused_explorer_cwd(&self.state, &*engine)
+            && let Some(cwd) = super::focused_explorer_cwd(&self.state, engine)
         {
             self.explorer_menu_paste(
                 engine,
@@ -178,7 +178,7 @@ impl MainView {
 
     pub(crate) fn run_paste(&mut self, engine: &EngineRead<'_>) -> bool {
         // 키보드와 팔레트 붙여넣기 모두 사용자 입력으로 기록한다.
-        if let Some(sid) = self.state.focused_surface_id(&*engine) {
+        if let Some(sid) = self.state.focused_surface_id(engine) {
             if let Some(target) =
                 crate::runtime::surface_binding::SurfaceBinding::capture(engine, sid)
             {
@@ -193,9 +193,9 @@ impl MainView {
                 );
             }
         }
-        let st = self.state.focused_surface_type(&*engine);
+        let st = self.state.focused_surface_type(engine);
         // egui_paste는 플러그인이 처리하므로 터미널 입력으로 넘기지 않는다.
-        if st.kind_capability(&*engine, |d| d.egui_paste) {
+        if st.kind_capability(engine, |d| d.egui_paste) {
             return true;
         }
         self.paste_to_terminal(engine);

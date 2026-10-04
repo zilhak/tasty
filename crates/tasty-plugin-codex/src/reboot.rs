@@ -110,7 +110,7 @@ pub(crate) fn handle_reboot(
     let thread_session = session_id.clone();
     let thread_policy_args = policy_args.clone();
     // 스레드에는 번역기를 빌려주지 않고 완성된 안내문을 넘긴다.
-    let thread_notice = build_notice(&tr.t(REBOOT_NOTICE_KEY), extra_prompt.as_deref());
+    let thread_notice = build_notice(tr.t(REBOOT_NOTICE_KEY), extra_prompt.as_deref());
     let spawned = thread::Builder::new()
         .name(format!("codex-reboot-s{surface_id}"))
         .spawn(move || {
@@ -393,7 +393,7 @@ mod tests {
     fn notice_without_extra_is_the_translated_text() {
         let tr = test_translator_for("ko");
         assert_eq!(
-            build_notice(&tr.t(REBOOT_NOTICE_KEY), None),
+            build_notice(tr.t(REBOOT_NOTICE_KEY), None),
             tr.t(REBOOT_NOTICE_KEY)
         );
     }
@@ -401,7 +401,7 @@ mod tests {
     #[test]
     fn notice_with_extra_appends_after_blank_line() {
         let tr = test_translator_for("ko");
-        let n = build_notice(&tr.t(REBOOT_NOTICE_KEY), Some("soak 이어서"));
+        let n = build_notice(tr.t(REBOOT_NOTICE_KEY), Some("soak 이어서"));
         assert!(n.starts_with(tr.t(REBOOT_NOTICE_KEY)));
         assert!(n.ends_with("\n\nsoak 이어서"));
     }
@@ -411,7 +411,7 @@ mod tests {
     fn notice_starts_with_the_snippet_in_every_locale() {
         for code in ["en", "ko", "ja"] {
             let tr = test_translator_for(code);
-            let notice = build_notice(&tr.t(REBOOT_NOTICE_KEY), None);
+            let notice = build_notice(tr.t(REBOOT_NOTICE_KEY), None);
             assert!(
                 notice.starts_with(NOTICE_SNIPPET),
                 "[{code}] 안내문이 화면 검증 조각(`{NOTICE_SNIPPET}`)으로 시작하지 않는다: {notice}"
@@ -422,8 +422,8 @@ mod tests {
     /// 언어별 카탈로그를 사용하는지 확인한다.
     #[test]
     fn notice_changes_with_the_locale() {
-        let en = build_notice(&test_translator_for("en").t(REBOOT_NOTICE_KEY), None);
-        let ko = build_notice(&test_translator_for("ko").t(REBOOT_NOTICE_KEY), None);
+        let en = build_notice(test_translator_for("en").t(REBOOT_NOTICE_KEY), None);
+        let ko = build_notice(test_translator_for("ko").t(REBOOT_NOTICE_KEY), None);
         assert_ne!(en, ko, "언어가 달라도 같은 문구를 반환했다");
     }
 

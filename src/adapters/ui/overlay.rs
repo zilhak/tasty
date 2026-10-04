@@ -61,7 +61,7 @@ pub(crate) fn draw_overlays(
     let hint_result = crate::adapters::ui::modifier_hint_overlay::draw_modifier_hint(
         ctx,
         &mut state.modifier_hint,
-        &engine.settings,
+        engine.settings,
         &th,
         reduced_motion,
     );

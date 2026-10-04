@@ -64,7 +64,7 @@ pub fn draw_script_confirm_view(
         tag(
             ui,
             th,
-            &t("script.confirm.changed_tag"),
+            t("script.confirm.changed_tag"),
             TagVariant::Warning,
             false,
         );
@@ -79,14 +79,14 @@ pub fn draw_script_confirm_view(
 
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if Button::new(&t("script.confirm.run"))
+            if Button::new(t("script.confirm.run"))
                 .variant(ButtonVariant::Primary)
                 .show(ui, th)
                 .clicked()
             {
                 action = ScriptConfirmAction::Run;
             }
-            if Button::new(&t("button.cancel"))
+            if Button::new(t("button.cancel"))
                 .variant(ButtonVariant::Ghost)
                 .show(ui, th)
                 .clicked()

@@ -111,7 +111,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, state: &mut ViewerState, tr: &Transl
             .max_rect(ctrl_rect)
             .layout(Layout::right_to_left(Align::Center)),
     );
-    if Button::new(&tr.t("git_viewer.refresh"))
+    if Button::new(tr.t("git_viewer.refresh"))
         .variant(ButtonVariant::Secondary)
         .size(ControlSize::Sm)
         .show(&mut cui, theme)
@@ -285,7 +285,7 @@ fn draw_rail(
         ),
     );
     if state.worktrees.is_empty() {
-        empty_line(&mut pane, theme, &tr.t("git_viewer.no_worktrees"));
+        empty_line(&mut pane, theme, tr.t("git_viewer.no_worktrees"));
         return;
     }
     let mut clicked: Option<usize> = None;
@@ -376,7 +376,7 @@ fn wt_row(
             .max_rect(l1)
             .layout(Layout::right_to_left(Align::Center)),
     );
-    let type_resp = tag(&mut t1, theme, &tr.t(type_key), type_variant, false);
+    let type_resp = tag(&mut t1, theme, tr.t(type_key), type_variant, false);
     let name_right = type_resp.rect.left() - theme.spacing_sm.value();
     let name_clip = Rect::from_min_max(l1.min, egui::pos2(name_right, l1.max.y));
     ui.painter().with_clip_rect(name_clip).text(
@@ -397,7 +397,7 @@ fn wt_row(
                 .max_rect(l2)
                 .layout(Layout::right_to_left(Align::Center)),
         );
-        let resp = tag(&mut t2, theme, &tr.t(label_key), variant, true);
+        let resp = tag(&mut t2, theme, tr.t(label_key), variant, true);
         // 잠금·무효 상태의 이유를 툴팁으로 보여 준다.
         if let Some(reason) = &wt.lock_reason
             && !reason.is_empty()
@@ -486,7 +486,7 @@ fn draw_changes(
         ),
     );
     if state.status_entries.is_empty() {
-        empty_line(&mut pane, theme, &tr.t("git_viewer.no_changes"));
+        empty_line(&mut pane, theme, tr.t("git_viewer.no_changes"));
         return;
     }
     let mut clicked: Option<usize> = None;
@@ -639,7 +639,7 @@ fn draw_commits(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, log: &[LogEnt
         &format!("{} ({})", tr.t("git_viewer.log_heading"), log.len()),
     );
     if log.is_empty() {
-        empty_line(&mut pane, theme, &tr.t("git_viewer.no_commits"));
+        empty_line(&mut pane, theme, tr.t("git_viewer.no_commits"));
         return;
     }
     // 보이는 커밋 행만 그린다.

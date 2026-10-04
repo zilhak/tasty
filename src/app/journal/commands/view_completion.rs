@@ -242,8 +242,8 @@ impl crate::app::App {
                     (
                         id,
                         crate::model::StructurePresentationSnapshot::capture(
-                            &engine.workspaces(),
-                            &engine.categories(),
+                            engine.workspaces(),
+                            engine.categories(),
                             &main.state.navigation,
                         ),
                     )
@@ -254,8 +254,8 @@ impl crate::app::App {
             presentations.insert(
                 id,
                 crate::model::StructurePresentationSnapshot::capture(
-                    &engine.workspaces(),
-                    &engine.categories(),
+                    engine.workspaces(),
+                    engine.categories(),
                     &state.navigation,
                 ),
             );
@@ -265,8 +265,8 @@ impl crate::app::App {
                 presentations.insert(
                     id,
                     crate::model::StructurePresentationSnapshot::capture(
-                        &engine.workspaces(),
-                        &engine.categories(),
+                        engine.workspaces(),
+                        engine.categories(),
                         &navigation,
                     ),
                 );

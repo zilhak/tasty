@@ -225,7 +225,7 @@ pub(crate) fn handle_tell(
         Ok(value) => value,
         Err(error) => return error,
     };
-    let payload = build_tell_payload(&text);
+    let payload = build_tell_payload(text);
     if let Err(e) = send_body_then_submit(engine, &id, surface_id, payload) {
         return e;
     }

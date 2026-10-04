@@ -291,7 +291,7 @@ fn the_walk_and_the_declaration_reader_answer_on_a_substituted_tree() {
     let mut rels: Vec<String> = found
         .iter()
         .map(|p| {
-            tasty_doc_guards::source_text::repo_relative(p.strip_prefix(&root).unwrap_or(p))
+            tasty_doc_guards::source_text::repo_relative(p.strip_prefix(root).unwrap_or(p))
                 .display()
                 .to_string()
         })

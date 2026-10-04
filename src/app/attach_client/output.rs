@@ -700,7 +700,7 @@ fn apply_mirror_structural_delta(
     let ids = lease_mirror_ids(
         &engine.runtime.ids,
         &engine.runtime.waker,
-        &tree,
+        tree,
         surfaces.len(),
         false,
     )?;

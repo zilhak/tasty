@@ -242,7 +242,7 @@ impl MainView {
     ) -> bool {
         let exists = self
             .state
-            .egui_mesh_surfaces_existing(&*engine)
+            .egui_mesh_surfaces_existing(engine)
             .iter()
             .any(|(sid, _)| *sid == surface_id);
         if !exists {
@@ -264,14 +264,14 @@ impl MainView {
     ) {
         let terminal_rect = self.compute_terminal_rect();
         let ppp = self.base.gpu.scale_factor();
-        let focused = self.state.focused_surface_id(&*engine);
+        let focused = self.state.focused_surface_id(engine);
         let modifiers = self.mesh_modifiers();
         let current_theme = self.mesh_theme_snapshot(engine);
 
         let mut targets: Vec<MeshTarget> = Vec::new();
         for (_pane_id, _pane_rect, regions) in
             self.state
-                .surface_regions(&*engine, terminal_rect, self.base.gpu.scale_factor())
+                .surface_regions(engine, terminal_rect, self.base.gpu.scale_factor())
         {
             for r in regions {
                 if let Some(ms) = engine
@@ -291,7 +291,7 @@ impl MainView {
         }
 
         // 숨겨진 surface 상태도 보존하고 레이아웃에서 사라진 것만 정리한다.
-        let existing = self.state.egui_mesh_surfaces_existing(&*engine);
+        let existing = self.state.egui_mesh_surfaces_existing(engine);
         let live: HashSet<u32> = existing.iter().map(|e| e.0).collect();
         self.egui_mesh.retain(|sid, _| live.contains(sid));
 

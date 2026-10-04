@@ -204,7 +204,7 @@ pub fn classify(code: &[&str], comments: &[&str], raw: &[&str]) -> FileClass {
             }
             continue;
         }
-        let reasoned = reason_is_attached(&raw, &comments, idx, |line| {
+        let reasoned = reason_is_attached(raw, comments, idx, |line| {
             REASON_TOKENS.iter().any(|t| line.contains(t))
         });
         if reasoned {

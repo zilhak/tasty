@@ -65,7 +65,7 @@ impl App {
                     (
                         id,
                         crate::model::StructurePresentationSnapshot::capture(
-                            &engine.workspaces(),
+                            engine.workspaces(),
                             engine.categories(),
                             &main.state.navigation,
                         ),

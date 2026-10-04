@@ -236,7 +236,7 @@ fn the_walk_recurses_and_takes_only_rust_files() {
     let mut rels: Vec<String> = found
         .iter()
         .map(|p| {
-            tasty_doc_guards::source_text::repo_relative(p.strip_prefix(&dir).unwrap_or(p))
+            tasty_doc_guards::source_text::repo_relative(p.strip_prefix(dir).unwrap_or(p))
                 .display()
                 .to_string()
         })
