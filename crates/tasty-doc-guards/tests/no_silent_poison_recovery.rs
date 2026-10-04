@@ -97,10 +97,22 @@ fn the_census_routes_and_counts_on_a_substituted_tree() {
         "/// into_inner() 로 되돌리는 자리를 설명하는 주석이다.\nfn ship() {}\n",
     )
     .expect("합성 주석 파일 실패");
+    std::fs::write(dir.join("zone/plain.rs"), "pub fn plain() {}\n").unwrap();
+    std::fs::create_dir(dir.join("zone/test_parent")).unwrap();
+    std::fs::write(
+        dir.join("zone/test_parent.rs"),
+        "#[cfg(test)]\nmod test_child;\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("zone/test_parent/test_child.rs"),
+        "fn helper() {\n    let g = m.lock().unwrap_or_else(|p| p.into_inner());\n}\n",
+    )
+    .unwrap();
 
     let c = census(dir, &["zone"]);
 
-    assert_eq!(c.files_scanned, 5, "걷은 파일 수가 다르다");
+    assert_eq!(c.files_scanned, 8, "복구 토큰이 없는 파일도 세어야 한다");
     assert_eq!(
         c.silent.len(),
         2,
@@ -108,10 +120,10 @@ fn the_census_routes_and_counts_on_a_substituted_tree() {
         c.silent.len(),
         c.silent
     );
-    // 이 트리에는 test-only 선언이 없어 해당 분류가 0이어야 한다.
+    // 복구 토큰이 없는 부모도 모듈 분류에 필요하다.
     assert_eq!(
-        c.test_only_sites, 0,
-        "test-only 선언이 없는 합성 트리에서 복구를 제외했다. 제외 수가 늘어나는 오류는 하한만으로 찾을 수 없다."
+        c.test_only_sites, 1,
+        "test-only 자식의 복구 하나만 제외해야 한다."
     );
     assert!(
         c.silent

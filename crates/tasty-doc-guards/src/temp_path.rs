@@ -379,6 +379,10 @@ pub fn census(root: &Path, scan_roots: &[&str]) -> Census {
     let mut c = Census::default();
     for (rel, raw) in &sources {
         c.files_scanned += 1;
+        // classify가 찾는 호출 이름이 없으면 마스킹·수신자 분석도 필요 없다.
+        if !raw.contains("temp_dir") {
+            continue;
+        }
         let code_src = mask_non_code(raw);
         let comment_src = mask_literals(raw);
         let code: Vec<&str> = code_src.lines().collect();

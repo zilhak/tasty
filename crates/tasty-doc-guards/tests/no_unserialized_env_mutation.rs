@@ -30,6 +30,48 @@ const MIN_MUTATIONS: usize = 15;
 const MIN_SERIALIZED: usize = 15;
 
 #[test]
+fn census_keeps_token_free_parents_and_file_counts() {
+    let scratch = tasty_doc_guards::temp_scratch::Scratch::new("env-census");
+    let root = scratch.path();
+    std::fs::create_dir(root.join("src")).unwrap();
+    std::fs::create_dir(root.join("tests")).unwrap();
+    std::fs::write(root.join("Cargo.toml"), "[package]\nname = \"probe\"\n").unwrap();
+    for (path, source) in [
+        ("src/lib.rs", "#[cfg(test)]\nmod env_cases;\n"),
+        (
+            "src/env_cases.rs",
+            "fn change() {\n    unsafe { std::env::set_var(\"K\", \"v\"); }\n    unsafe { std::env::remove_var(\"K\"); }\n    std::env::set_current_dir(\"somewhere\").unwrap();\n}\n",
+        ),
+        ("src/plain.rs", "pub fn plain() {}\n"),
+        (
+            "src/mention.rs",
+            "// env::set_var(\"K\", \"v\")\nconst TEXT: &str = r#\"env::remove_var(\"K\"); set_current_dir(\"somewhere\");\"#;\n",
+        ),
+        (
+            "src/production.rs",
+            "pub fn change() { unsafe { std::env::set_var(\"K\", \"v\"); } }\n",
+        ),
+        ("tests/empty.rs", "#[test]\nfn empty() {}\n"),
+    ] {
+        std::fs::write(root.join(path), source).unwrap();
+    }
+    let c = census(root, &["src", "tests"]);
+    assert_eq!(c.files_scanned, 6);
+    assert_eq!(c.per_root, vec![("src".into(), 5), ("tests".into(), 1)]);
+    assert_eq!(c.mutations, 3);
+    assert_eq!(c.serialized, 0);
+    assert_eq!(c.bare.len(), 3);
+    for line in 2..=4 {
+        assert!(
+            c.bare
+                .iter()
+                .any(|site| site.starts_with(&format!("src/env_cases.rs:{line}:"))),
+            "{c:?}"
+        );
+    }
+}
+
+#[test]
 fn every_test_env_mutation_is_serialized() {
     let root = repo_root();
     let c = census(&root, SCAN_ROOTS);

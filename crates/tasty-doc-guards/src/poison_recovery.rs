@@ -132,6 +132,10 @@ pub fn census(root: &Path, scan_roots: &[&str]) -> Census {
     let mut c = Census::default();
     for (rel, raw) in &sources {
         c.files_scanned += 1;
+        // classify의 복구 후보에는 into_inner가 반드시 포함된다.
+        if !raw.contains("into_inner") {
+            continue;
+        }
         let masked_src = mask_non_code(raw);
         let masked: Vec<&str> = masked_src.lines().collect();
         let raw_lines: Vec<&str> = raw.lines().collect();

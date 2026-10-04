@@ -114,6 +114,10 @@ pub fn census(root: &Path, scan_roots: &[&str]) -> Census {
         if let Some((_, n)) = c.per_root.iter_mut().find(|(r, _)| rel.starts_with(r)) {
             *n += 1;
         }
+        // 파일 수와 모듈 분류는 유지하고, 변형 호출 후보가 있을 때만 정밀 분석한다.
+        if !MUTATION_TOKENS.iter().any(|token| raw.contains(token)) {
+            continue;
+        }
         let code_src = mask_non_code(raw);
         let marker_src = mask_literals(raw);
         let code: Vec<&str> = code_src.lines().collect();

@@ -132,6 +132,41 @@ fn every_temp_path_is_uniquified_or_reasoned() {
     assert!(v.is_empty(), "{}", v.join("\n\n"));
 }
 
+#[test]
+fn census_counts_all_files_and_classifies_only_real_temp_calls() {
+    let scratch = tasty_doc_guards::temp_scratch::Scratch::new("temp-census");
+    let root = scratch.path();
+    std::fs::create_dir(root.join("src")).unwrap();
+    for (name, source) in [
+        ("plain.rs", "pub fn plain() {}\n"),
+        (
+            "mention.rs",
+            "// std::env::temp_dir().join(\"comment\")\nconst TEXT: &str = r#\"temp_dir().join(\"string\")\"#;\n",
+        ),
+        (
+            "silent.rs",
+            "fn path() {\n    let p = std::env::temp_dir().join(\"fixed\");\n}\n",
+        ),
+        (
+            "reasoned.rs",
+            "fn path() {\n    // reason: a shared location is intentional\n    let p = std::env::temp_dir().join(\"fixed\");\n}\n",
+        ),
+        (
+            "unpaired.rs",
+            "fn path() {\n    let p = std::env::temp_dir();\n}\n",
+        ),
+    ] {
+        std::fs::write(root.join("src").join(name), source).unwrap();
+    }
+    let c = census(root, &["src"]);
+    assert_eq!(c.files_scanned, 5);
+    assert_eq!(c.sites, 2);
+    assert_eq!(c.reasoned, 1);
+    assert_eq!(c.unpaired, 1);
+    assert_eq!(c.silent.len(), 1);
+    assert!(c.silent[0].starts_with("src/silent.rs:2:"));
+}
+
 /// 같은 파일에서 호출을 찾지 못한 판별자 전달 경로의 수다.
 /// DiskScrollback now creates its own unique instance file instead of relying on caller identity.
 /// 호출은 마스킹한 코드에서, 판별자 문자열은 원문에서 읽는다. 호출 미발견은 안전 판정이 아니다.
@@ -144,6 +179,10 @@ fn no_two_callers_hand_the_same_discriminator_to_a_temp_path_helper() {
     let mut hits = Vec::new();
     let mut not_seen = Vec::new();
     for (rel, raw) in tasty_doc_guards::source_text::rust_sources(&root, SCAN_ROOTS) {
+        // 판별자 전달 경로도 이 파일 안의 temp_dir 호출에서 시작한다.
+        if !raw.contains("temp_dir") {
+            continue;
+        }
         let masked = mask_non_code(&raw);
         let code: Vec<&str> = masked.lines().collect();
         let rawl: Vec<&str> = raw.lines().collect();
