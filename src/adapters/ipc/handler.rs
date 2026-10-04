@@ -25,8 +25,6 @@ mod hook_handler;
 pub(crate) mod idempotency;
 #[cfg(test)]
 mod intent_order_tests;
-#[cfg(test)]
-mod structural_origin_tests;
 // 창 라우터 호출자 검사는 해당 라우터와 같은 GUI 조건에서 실행한다.
 #[cfg(all(test, feature = "gui"))]
 mod window_router_caller_tests;
@@ -560,21 +558,6 @@ pub(crate) fn spawn_target_guard(
     None
 }
 
-/// 구조 변경의 요청 출처를 IPC 호출자에서 정한다. IPC 호출은 모두 에이전트 요청이다.
-/// Local에는 사람이 실행한 CLI와 hook·webhook·agent runner의 주입 요청이 섞여 있어
-/// 사용자 조작으로 볼 근거가 없다.
-fn intent_origin_of(caller: &CallerContext) -> crate::core::origin::IntentOrigin {
-    use crate::core::origin::{AgentSource, IntentOrigin};
-    match caller {
-        CallerContext::Plugin { plugin_id, .. } => IntentOrigin::Agent {
-            source: AgentSource::Plugin(plugin_id.clone()),
-        },
-        CallerContext::Local | CallerContext::Agent { .. } => IntentOrigin::Agent {
-            source: AgentSource::Ipc,
-        },
-    }
-}
-
 fn route_engine_handler(
     core: &mut crate::app::services::AppServices,
     window: &mut dyn IpcWindow,
@@ -600,7 +583,6 @@ fn route_engine_handler(
     ) {
         return Some(resp);
     }
-    let origin = intent_origin_of(caller);
     Some(match request.method.as_str() {
         "system.info" => handle_system_info(window, &engine.read(), id),
         "system.pressure" => pressure::handle_system_pressure(&*core, &engine.as_ref(), id),

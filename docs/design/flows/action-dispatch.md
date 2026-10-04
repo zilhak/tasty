@@ -58,7 +58,7 @@ pub enum IntentOrigin { User { source: UserSource }, Agent { source: AgentSource
 //   AgentSource: Ipc / Plugin(String) / Cli / Remote
 ```
 
-`System`은 OSC 등 자동 후속 처리다. `Remote`는 원격 client가 forward한 요청의 출처다. 로컬 View 포커스를 바꾸지 않으며 user/agent wire 표지는 원격 닫기 기록 정책에 사용한다. 구조 명령 admission(`src/app/journal/commands`)은 원 origin과 대상 ID를 유지한다. IPC 라우터는 plugin 호출자를 `Plugin(id)`, 그 밖의 호출자를 `Ipc`로 넘긴다.
+`System`은 OSC 등 자동 후속 처리다. `Remote`는 원격 client가 forward한 요청의 출처다. 로컬 View 포커스를 바꾸지 않으며 user/agent wire 표지는 원격 닫기 기록 정책에 사용한다. 구조 명령 admission(`src/app/journal/commands`)은 원 origin과 대상 ID를 유지한다. 구조 요청의 호출자는 `IntentOrigin`이 아니라 admission이 남기는 `actor`·`origin`이 기록한다. `actor`는 호출자 범위(`local`·`plugin:<id>`·`agent:<id>`)이고 `origin`은 유입 경로(`ipc`·`plugin`·`remote-structure`)다. 비구조 IPC 핸들러는 호출자가 plugin이어도 `Ipc`를 싣는다.
 
 팝업 A의 처리에서 B를 열면 B에도 A의 origin을 전달한다. 별도의 Cascade 출처를 만들지 않는다. `DispatchedIntent.trace_id`는 현재 생성자에서 `None`이며 Event Bus의 `trace_id`와는 별개다.
 
