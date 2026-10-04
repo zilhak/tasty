@@ -50,6 +50,8 @@ impl ShutdownPhase {
 }
 
 pub(crate) struct ShutdownState {
+    pub(crate) exit_code: u8,
+    save_final_view: bool,
     pub(crate) phase: ShutdownPhase,
     final_view_sequence: Option<u64>,
     port_scan_deadline: Option<Instant>,
@@ -68,11 +70,31 @@ enum StepOutcome {
 impl App {
     /// 종료 시작 시각과 순서를 공유한다. 이미 종료 중이면 다시 시작하지 않는다.
     pub(crate) fn begin_shutdown(&mut self, event_loop: &ActiveEventLoop) {
+        self.start_shutdown(event_loop, 0, true);
+    }
+
+    pub(crate) fn begin_error_shutdown(&mut self, event_loop: &ActiveEventLoop, code: u8) {
+        if let Some(state) = self.state.shutdown.as_mut() {
+            state.exit_code = code;
+            state.save_final_view = false;
+        } else {
+            self.start_shutdown(event_loop, code, false);
+        }
+    }
+
+    fn start_shutdown(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        exit_code: u8,
+        save_final_view: bool,
+    ) {
         if self.state.shutdown.is_some() {
             return;
         }
         shutdown_trace::mark_start();
         self.state.shutdown = Some(ShutdownState {
+            exit_code,
+            save_final_view,
             phase: ShutdownPhase::SavingLayout,
             final_view_sequence: None,
             port_scan_deadline: Some(Instant::now() + PORT_SCAN_RECLAIM_TIMEOUT),
@@ -230,13 +252,22 @@ impl App {
             .as_ref()
             .is_some_and(|shutdown| shutdown.final_view_sequence.is_none())
         {
-            self.flush_layout_persistence(true);
-            if !self.journal.is_halted() {
-                for session in self.engines.all_sessions_mut() {
-                    if !session.runtime.settings.general.restore_layout
-                        && let Some(binding) = session.journal_binding.clone()
-                    {
-                        self.journal.retire_engine(session.id, binding, false);
+            // Error dialogs may describe failed persistence initialization. Do not replace
+            // the last checkpoint with fallback presentation, but drain already accepted work.
+            if self
+                .state
+                .shutdown
+                .as_ref()
+                .is_some_and(|state| state.save_final_view)
+            {
+                self.flush_layout_persistence(true);
+                if !self.journal.is_halted() {
+                    for session in self.engines.all_sessions_mut() {
+                        if !session.runtime.settings.general.restore_layout
+                            && let Some(binding) = session.journal_binding.clone()
+                        {
+                            self.journal.retire_engine(session.id, binding, false);
+                        }
                     }
                 }
             }

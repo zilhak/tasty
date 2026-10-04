@@ -12,6 +12,25 @@ use crate::app::App;
 use crate::view::ui::View;
 
 impl App {
+    /// Consume fatal modal requests before normal boot/journal dispatch guards.
+    pub(crate) fn dispatch_pending_modal_exit(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+    ) {
+        let code = self
+            .view
+            .views
+            .values_mut()
+            .filter_map(|view| {
+                view.as_main_mut()
+                    .and_then(|main| main.state.dialogs.exit_request.take())
+            })
+            .max();
+        if let Some(code) = code {
+            self.begin_error_shutdown(event_loop, code);
+        }
+    }
+
     /// 안내 모달이 요청한 권한 화면 열기를 처리한다.
     ///
     /// 설정 창이 이미 열려 있으면 새로 열지 않고 그 창의 탭만 바꾼 뒤 포커스를 준다.

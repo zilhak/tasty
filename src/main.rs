@@ -8,7 +8,7 @@ use anyhow::Result;
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
-fn main() -> Result<()> {
+fn main() -> Result<std::process::ExitCode> {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
     tasty::boot::run()

@@ -74,7 +74,7 @@ fn maintain_memory_at_boot(arc: &std::sync::Arc<std::sync::Mutex<tasty_memory::M
 }
 
 /// main에서 호출하는 프로세스 진입점.
-pub fn run() -> anyhow::Result<()> {
+pub fn run() -> anyhow::Result<std::process::ExitCode> {
     os::attach_windows_console_if_needed();
     os::init_crash_report();
 
@@ -97,14 +97,14 @@ pub fn run() -> anyhow::Result<()> {
                          Build with --no-default-features to enable headless. Falling back to run_gui."
                     );
                 }
-                run_gui(cli)
+                return run_gui(cli);
             }
             #[cfg(not(feature = "gui"))]
             {
                 run_headless(cli)
             }
         }
-    }
+    }.map(|()| std::process::ExitCode::SUCCESS)
 }
 
 fn run_subcommand(
@@ -122,7 +122,7 @@ fn run_augmented_help() -> anyhow::Result<()> {
 }
 
 #[cfg(feature = "gui")]
-fn run_gui(cli: cli::Cli) -> anyhow::Result<()> {
+fn run_gui(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
     locale::init();
 
     let (event_loop, proxy) = event_loop::build()?;
@@ -175,9 +175,14 @@ fn run_gui(cli: cli::Cli) -> anyhow::Result<()> {
     );
     crate::stall_watchdog::spawn();
     event_loop.run_app(&mut app)?;
+    let code = app
+        .state
+        .shutdown
+        .as_ref()
+        .map_or(0, |state| state.exit_code);
     drop_app_with_trace(app);
 
-    Ok(())
+    Ok(std::process::ExitCode::from(code))
 }
 
 /// event_loop 종료 이후 App Drop도 기다릴 수 있어 별도 시간으로 측정한다.

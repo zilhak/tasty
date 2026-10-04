@@ -321,6 +321,7 @@ impl ApplicationHandler<AppEvent> for App {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let _stall_guard = stall_watchdog::Guard::enter(Site::AboutToWait);
+        self.dispatch_pending_modal_exit(event_loop);
         self.poll_retiring_engine_owners();
         // 부팅·종료 중에는 일반 타이머를 처리하지 않고 각 상태 머신이 대기를 정한다.
         // 평상시 대기 시각은 말미에서 타이머·지연 repaint를 함께 반영한다.

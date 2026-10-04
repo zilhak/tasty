@@ -15,8 +15,8 @@ use tasty_ui_widgets::{ButtonVariant, InfoModalView};
 pub enum InfoModalAction {
     /// 큐 처리 후 부팅/동작을 계속한다.
     Continue,
-    /// 큐 처리 후 정상 종료. exit code는 best-effort (winit shutdown 후 process::exit).
-    Exit(i32),
+    /// App이 오류 종료 절차와 객체 정리를 마친 뒤 반환할 프로세스 상태.
+    Exit(u8),
 }
 
 #[derive(Debug, Clone)]
@@ -111,16 +111,8 @@ pub fn on_close_info_modal(
     state: &mut MainViewState,
     _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
-    let Some(modal) = state.dialogs.info_modal_queue.pop_front() else {
-        return;
-    };
-    state.dialogs.info_modal_body_height = None;
-    if let InfoModalAction::Exit(code) = modal.on_close {
-        tracing::info!("info modal exit requested (code={code})");
-        std::process::exit(code);
-    }
-    if !state.dialogs.info_modal_queue.is_empty() {
-        // intent-exempt: popup 자기-close cleanup — 이 함수가 on_close 훅이라 여기서 큐의 다음 항목을 잇는다
+    if dismiss_info_modal(state) {
+        // intent-exempt: popup 자기-close cleanup — 이 훅에서 큐의 다음 안내를 잇는다
         state.popups.open_centered_focused(INFO_MODAL_ID);
     }
 }
@@ -183,19 +175,70 @@ pub fn draw_info_modal(
         return PopupAction::None;
     }
 
-    let popped = state.dialogs.info_modal_queue.pop_front();
-    state.dialogs.info_modal_body_height = None;
-    if let Some(modal) = popped
-        && let InfoModalAction::Exit(code) = modal.on_close
-    {
-        // 즉시 종료하므로 winit을 포함한 남은 객체의 destructor는 실행하지 않는다.
-        tracing::info!("info modal exit requested (code={code})");
-        std::process::exit(code);
-    }
-
-    if state.dialogs.info_modal_queue.is_empty() {
-        PopupAction::Close
-    } else {
+    if dismiss_info_modal(state) {
         PopupAction::None
+    } else {
+        PopupAction::Close
+    }
+}
+
+/// Confirmation and close callbacks consume the same message once. App owns process shutdown.
+fn dismiss_info_modal(state: &mut MainViewState) -> bool {
+    let Some(modal) = state.dialogs.info_modal_queue.pop_front() else {
+        return false;
+    };
+    state.dialogs.info_modal_body_height = None;
+    if let InfoModalAction::Exit(code) = modal.on_close {
+        state.dialogs.exit_request.get_or_insert(code);
+        state.dialogs.info_modal_queue.clear();
+    }
+    !state.dialogs.info_modal_queue.is_empty()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn modal(action: InfoModalAction) -> InfoModal {
+        InfoModal {
+            title: String::new(),
+            body: String::new(),
+            on_close: action,
+            extra_buttons: Vec::new(),
+            emphasis: false,
+            dismiss_label: None,
+        }
+    }
+    #[test]
+    fn confirmation_then_close_keeps_the_exit_request_without_consuming_another_message() {
+        let (mut state, engine) = crate::state::tests::test_state();
+        state
+            .dialogs
+            .info_modal_queue
+            .push_back(modal(InfoModalAction::Exit(1)));
+        state
+            .dialogs
+            .info_modal_queue
+            .push_back(modal(InfoModalAction::Continue));
+        assert!(!dismiss_info_modal(&mut state));
+        on_close_info_modal(&egui::Context::default(), &mut state, &engine.read());
+        assert_eq!(state.dialogs.exit_request, Some(1));
+        assert!(state.dialogs.info_modal_queue.is_empty());
+    }
+    #[test]
+    fn close_requests_the_same_exit_and_continue_does_not_exit() {
+        let (mut state, engine) = crate::state::tests::test_state();
+        state
+            .dialogs
+            .info_modal_queue
+            .push_back(modal(InfoModalAction::Continue));
+        on_close_info_modal(&egui::Context::default(), &mut state, &engine.read());
+        assert_eq!(state.dialogs.exit_request, None);
+        state
+            .dialogs
+            .info_modal_queue
+            .push_back(modal(InfoModalAction::Exit(7)));
+        on_close_info_modal(&egui::Context::default(), &mut state, &engine.read());
+        assert_eq!(state.dialogs.exit_request.take(), Some(7));
+        assert_eq!(state.dialogs.exit_request, None);
     }
 }

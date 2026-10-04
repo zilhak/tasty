@@ -120,6 +120,7 @@ pub struct DialogState {
     /// 이벤트 루프에 접근할 수 없어 여기에 표시만 하고, App 계층이 프레임 시작에 읽어
     /// 처리한다.
     pub(crate) permission_settings_requested: bool,
+    pub(crate) exit_request: Option<u8>,
     /// 응답 대기 중인 approval 큐. 맨 앞 요청을 표시한다.
     pub(crate) approval_records:
         std::collections::HashMap<tasty_approval::ApprovalId, tasty_approval::ApprovalRecord>,
@@ -197,6 +198,7 @@ impl DialogState {
             info_modal_queue: VecDeque::new(),
             info_modal_body_height: None,
             permission_settings_requested: false,
+            exit_request: None,
             approval_records: Default::default(),
             approval_submitting: None,
             pending_approval_ids: VecDeque::new(),

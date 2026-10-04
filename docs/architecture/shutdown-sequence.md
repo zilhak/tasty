@@ -34,7 +34,8 @@ Remote의 established tunnel과 늦은 연결 결과는 retirement worker가 chi
 - 이미 종료 중이면 중복 요청은 바로 반환하며 단계가 처음으로 돌아가지 않는다.
 - 상태 머신으로 나눴다고 모든 단계가 짧게 끝나는 것은 아니다. checkpoint 완료 대기, observer join, 강제 종료 뒤 wait 등의 실제 대기를 함께 측정한다.
 - S4에서 프로세스 목록을 비웠다면 `PluginProcess::drop`에 남은 대상은 없다. 예외 경로에서 남은 대상의 drop은 kill과 wait를 수행할 수 있다.
-- 정상 GUI 종료는 `event_loop.exit()`로 요청한다. 초기화 실패 등의 즉시 종료 경로와 달리 이후 객체 정리도 진행한다.
+- 정상 GUI 종료와 DB 오류 안내 모달의 종료는 App 상태 머신을 거쳐 `event_loop.exit()`로 요청한다. 오류 모달은 종료 상태만 요청하고 프로세스를 직접 끝내지 않는다.
+- 오류 모달로 종료할 때는 fallback 표시 상태로 마지막 checkpoint를 덮어쓰지 않도록 새 layout 저장을 생략한다. 이미 접수한 journal 작업과 자원 회수는 계속 처리한다. `App` Drop 뒤 boot가 요청된 종료 코드를 반환한다.
 
 ## plugin 종료 대기의 겹침 (S4)
 
