@@ -204,7 +204,7 @@ mod on_close_drain_tests {
     fn drain_fires_hook_once_for_queued_close() {
         PLAIN_HOOK_FIRES.store(0, Ordering::SeqCst);
         let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
+        let engine = engine_session.borrow_mut();
         state.popups.open("notifications"); // close() 는 open 이었던 popup 만 큐에 push.
         state.popups.close("notifications");
 
@@ -239,7 +239,7 @@ mod on_close_drain_tests {
         }
 
         let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
+        let engine = engine_session.borrow_mut();
         state.popups.open("search_bar"); // hook_a 가 닫을 대상 — 먼저 열어둬야 close() 가 큐에 push.
         state.popups.open("notifications"); // 최초 트리거 대상도 open 이어야 close() 가 큐에 push.
         state.popups.close("notifications"); // 최초 트리거.
@@ -271,7 +271,7 @@ mod on_close_drain_tests {
         }
 
         let (mut state, mut engine_session) = test_state();
-        let mut engine = engine_session.borrow_mut();
+        let engine = engine_session.borrow_mut();
         state.popups.open("notifications"); // close() 는 open 이었던 popup 만 큐에 push.
         state.popups.close("notifications"); // 최초 트리거 — 1라운드째 큐에 이미 있음.
 

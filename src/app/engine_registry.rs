@@ -368,7 +368,7 @@ mod tests {
         slot: Option<u32>,
     ) -> (MainViewState, crate::runtime::engine_session::EngineSession) {
         let (state, mut engine_session) = crate::state::tests::test_state();
-        let mut engine = engine_session.borrow_mut();
+        let engine = engine_session.borrow_mut();
         engine.persistence.slot = slot;
         (state, engine_session)
     }

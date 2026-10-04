@@ -2,7 +2,7 @@
 //! RequestScope owns the captured defaults and returned intents; it exposes no View or lifecycle methods.
 //! Explicit GUI/debug routes run separately after the engine phase.
 
-use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::EngineRef;
 use std::path::PathBuf;
 
 use crate::core::CoreState;

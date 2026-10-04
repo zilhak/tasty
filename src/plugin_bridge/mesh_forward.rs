@@ -6,7 +6,6 @@
 //! attach 클라이언트의 크기로 다시 렌더하면 로컬 화면의 해상도까지 바뀔 수 있다.
 //! 동작: docs/dev-guide/attach-behavior.md.
 
-use crate::core::CoreState;
 use crate::core::attach::AttachClientId;
 use crate::ipc::stream::{StreamFrame, StreamTag};
 use crate::plugin::PluginManager;
@@ -218,7 +217,7 @@ mod tests {
             },
         ]);
         let (_, mut engine_session) = crate::state::tests::test_state_from_model(model);
-        let mut engine = engine_session.borrow_mut();
+        let engine = engine_session.borrow_mut();
         engine.runtime.surfaces.insert(
             surface_id,
             Box::new(EguiMeshSurface::new(

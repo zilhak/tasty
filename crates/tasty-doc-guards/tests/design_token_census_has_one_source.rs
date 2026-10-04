@@ -55,7 +55,7 @@ fn canonical_census() -> (u32, u32, u32, u32) {
         .unwrap_or_else(|| panic!("{CANONICAL}: census 시험 함수의 끝을 못 찾았다"));
     let body = &body[..end];
 
-    let mut tier = |needle: &str| -> u32 {
+    let tier = |needle: &str| -> u32 {
         let hit = body.find(needle).unwrap_or_else(|| {
             panic!(
                 "{CANONICAL}: `{needle}` 을 못 찾았다 — 정본의 형태가 \

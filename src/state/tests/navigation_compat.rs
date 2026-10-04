@@ -123,7 +123,7 @@ fn crosses_category_off_keeps_local_wrap() {
 #[test]
 fn crosses_category_on_next_lands_on_next_category_first() {
     let (mut state, mut engine_session) = navigation_fixture(&[0, 0, 1, 1]);
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
 
     state.switch_workspace(&engine.read(), 3);
     state.switch_workspace(&engine.read(), 1); // active = B (normal 의 마지막)
@@ -140,7 +140,7 @@ fn crosses_category_on_next_lands_on_next_category_first() {
 #[test]
 fn crosses_category_on_prev_lands_on_prev_category_last() {
     let (mut state, mut engine_session) = navigation_fixture(&[0, 0, 1, 1]);
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     engine
         .runtime
         .settings
@@ -155,7 +155,7 @@ fn crosses_category_on_prev_lands_on_prev_category_last() {
 #[test]
 fn crosses_category_on_wraps_across_full_category_list() {
     let (mut state, mut engine_session) = navigation_fixture(&[0, 0, 1, 1]);
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     engine
         .runtime
         .settings
@@ -170,7 +170,7 @@ fn crosses_category_on_wraps_across_full_category_list() {
 #[test]
 fn crosses_category_on_single_category_falls_back_to_local_wrap() {
     let (mut state, mut engine_session) = navigation_fixture(&[0, 0, 0]);
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     assert!(!engine.runtime.settings.general.workspace_categories_enabled);
     engine
         .runtime

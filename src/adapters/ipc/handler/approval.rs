@@ -141,7 +141,6 @@ pub(crate) fn elevation_error_data(
 /// 창 없이 권한 요청을 만든다. GUI 호출자는 publish_capability_elevation으로 팝업도 연다.
 pub(crate) fn publish_capability_elevation_at(
     core: &mut crate::app::services::AppServices,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     workspace_id: Option<u32>,
     agent_id: &str,
     method: &str,
@@ -233,15 +232,8 @@ pub(crate) fn publish_capability_elevation(
     let workspace_id = engine
         .workspace_at(window.active_workspace_index(engine))
         .map(|ws| ws.id);
-    let record = publish_capability_elevation_at(
-        core,
-        engine,
-        workspace_id,
-        agent_id,
-        method,
-        permission,
-        reason,
-    )?;
+    let record =
+        publish_capability_elevation_at(core, workspace_id, agent_id, method, permission, reason)?;
     #[cfg(feature = "gui")]
     window.enqueue_approval_popup(engine, &record);
     Some(record)

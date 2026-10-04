@@ -245,7 +245,7 @@ pub(crate) fn handle_global_hook_unset(
 
 pub(crate) fn handle_surface_fire_hook(
     core: &mut crate::app::services::AppServices,
-    window: &mut dyn crate::ipc::window_port::IpcWindow,
+    _window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut EngineMut<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,

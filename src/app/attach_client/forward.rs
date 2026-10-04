@@ -18,7 +18,7 @@ impl App {
     /// resize 요청만 전송한다. 로컬 mirror grid는 서버의 Resize 회신으로 갱신한다.
     pub(crate) fn dispatch_pending_resize_forwards(&mut self) {
         let mut pending: Vec<(u32, usize, usize)> = Vec::new();
-        for mut engine in self.engines_mut().windows_and_pending() {
+        for engine in self.engines_mut().windows_and_pending() {
             for (sid, (cols, rows)) in engine.remote.pending_resize_forward.drain() {
                 pending.push((sid, cols, rows));
             }
@@ -55,7 +55,7 @@ impl App {
     /// 목록 요청을 원격으로 보낸다. 세션이 없으면 폐기하며 소비자는 자체 timeout으로 실패 처리한다.
     pub(crate) fn dispatch_pending_list_dir_forwards(&mut self) {
         let mut pending: Vec<crate::core::PendingListDirForward> = Vec::new();
-        for mut engine in self.engines_mut().windows_and_pending() {
+        for engine in self.engines_mut().windows_and_pending() {
             pending.append(&mut engine.remote.pending_list_dir_forward);
         }
         for req in pending {
@@ -74,7 +74,7 @@ impl App {
     /// 원격 git 요청을 보낼 수 없으면 플러그인에 즉시 실패 결과를 전달한다.
     pub(crate) fn dispatch_pending_git_query_forwards(&mut self) {
         let mut pending: Vec<crate::core::PendingGitQueryForward> = Vec::new();
-        for mut engine in self.engines_mut().windows_and_pending() {
+        for engine in self.engines_mut().windows_and_pending() {
             pending.append(&mut engine.remote.pending_git_query_forward);
         }
         for req in pending {
@@ -99,7 +99,7 @@ impl App {
     /// 원격 원문 요청을 보낼 수 없으면 플러그인에 즉시 실패 결과를 전달한다.
     pub(crate) fn dispatch_pending_markdown_content_forwards(&mut self) {
         let mut pending: Vec<crate::core::PendingMarkdownContentForward> = Vec::new();
-        for mut engine in self.engines_mut().windows_and_pending() {
+        for engine in self.engines_mut().windows_and_pending() {
             pending.append(&mut engine.remote.pending_markdown_content_forward);
         }
         for req in pending {
@@ -175,7 +175,7 @@ impl App {
 
     pub(crate) fn dispatch_pending_mesh_context_forwards(&mut self) {
         let mut pending: Vec<(u32, crate::core::AttachMeshContextForward)> = Vec::new();
-        for mut engine in self.engines_mut().windows_and_pending() {
+        for engine in self.engines_mut().windows_and_pending() {
             pending.extend(engine.remote.pending_mesh_context_forward.drain());
         }
         for (local_sid, ctx) in pending {
@@ -209,7 +209,7 @@ impl App {
 
     pub(crate) fn dispatch_pending_mesh_input_forwards(&mut self) {
         let mut pending: Vec<(u32, tasty_plugin_protocol::protocol::RawInputWire)> = Vec::new();
-        for mut engine in self.engines_mut().windows_and_pending() {
+        for engine in self.engines_mut().windows_and_pending() {
             pending.extend(engine.remote.pending_mesh_input_forward.drain());
         }
         for (local_sid, input) in pending {
@@ -240,7 +240,7 @@ impl App {
     /// texture delta 연결이 끊겨 요청한 full frame 재전송을 원격에 전달한다.
     pub(crate) fn dispatch_pending_mesh_full_resend_forwards(&mut self) {
         let mut pending: Vec<u32> = Vec::new();
-        for mut engine in self.engines_mut().windows_and_pending() {
+        for engine in self.engines_mut().windows_and_pending() {
             pending.extend(engine.remote.pending_mesh_full_resend_forward.drain());
         }
         for local_sid in pending {
@@ -251,7 +251,7 @@ impl App {
     /// 실제 attention 해제 때만 기록된 큐를 전달한다. 포커스를 유지한다고 반복 전송하지 않는다.
     pub(crate) fn dispatch_pending_attention_clear_forwards(&mut self) {
         let mut pending: Vec<u32> = Vec::new();
-        for mut engine in self.engines_mut().windows_and_pending() {
+        for engine in self.engines_mut().windows_and_pending() {
             pending.extend(engine.remote.pending_attention_clear_forward.drain());
         }
         for local_sid in pending {

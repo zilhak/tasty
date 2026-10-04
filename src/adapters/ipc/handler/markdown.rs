@@ -96,7 +96,7 @@ mod tests {
         } else {
             crate::state::tests::test_state()
         };
-        let mut engine = engine_session.borrow_mut();
+        let engine = engine_session.borrow_mut();
         let sid = *state
             .active_workspace(&engine)
             .all_surface_ids()

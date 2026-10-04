@@ -117,9 +117,9 @@ mod tests {
     #[test]
     fn notification_merge_has_one_global_limit_and_matches_creation_order() {
         let (_state_a, mut a_session) = crate::state::tests::test_state();
-        let mut a = a_session.borrow_mut();
+        let a = a_session.borrow_mut();
         let (_state_b, mut b_session) = crate::state::tests::test_state();
-        let mut b = b_session.borrow_mut();
+        let b = b_session.borrow_mut();
         let ids = crate::runtime::counters::RuntimeCounters::new();
         a.live.notifications =
             crate::notification::NotificationStore::with_counter(0, ids.notification_counter());

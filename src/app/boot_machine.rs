@@ -236,7 +236,7 @@ impl App {
 
     fn boot_step_waiting_plugins(
         &mut self,
-        boot: &mut BootResources,
+        _boot: &mut BootResources,
         progress: &mut BootProgress,
     ) -> bool {
         let BootPhase::WaitingPlugins {
@@ -265,7 +265,7 @@ impl App {
 
     fn boot_step_restoring_layout(
         &mut self,
-        boot: &mut BootResources,
+        _boot: &mut BootResources,
         progress: &mut BootProgress,
     ) -> bool {
         let BootPhase::RestoringLayout { started, deadline } = &mut progress.phase else {
@@ -343,7 +343,7 @@ impl App {
 
     fn boot_transition_after_engine(
         &mut self,
-        boot: &mut BootResources,
+        _boot: &mut BootResources,
         progress: &mut BootProgress,
     ) -> bool {
         let id = self
@@ -409,7 +409,7 @@ impl App {
 
     fn boot_transition_after_journal(
         &mut self,
-        boot: &mut BootResources,
+        _boot: &mut BootResources,
         progress: &mut BootProgress,
     ) -> bool {
         let id = self.engines.pending_id().expect("pending bootstrap engine");
@@ -499,7 +499,7 @@ impl App {
             .engines
             .pending_id()
             .expect("pending engine must be present to register a main window");
-        let mut core_state = self
+        let core_state = self
             .engines
             .get_mut(engine)
             .expect("pending engine must be present to register a main window");

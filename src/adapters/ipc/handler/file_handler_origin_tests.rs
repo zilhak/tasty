@@ -588,7 +588,7 @@ fn a_mirror_origin_dispatch_echoes_the_requested_depth() {
         } else {
             source_fixture()
         };
-        let mut engine = engine_session.borrow_mut();
+        let engine = engine_session.borrow_mut();
         let sid = engine
             .workspace_at(0)
             .expect("workspace index is valid")

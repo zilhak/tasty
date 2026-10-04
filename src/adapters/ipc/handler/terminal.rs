@@ -165,7 +165,6 @@ fn send_text_to_surface_with_ack(
 /// The existing five-second ack bound and twenty-millisecond settling delay are preserved.
 fn send_body_then_submit(
     engine: &mut EngineMut<'_>,
-    core: &AppServices,
     id: &Value,
     surface_id: u32,
     body: String,
@@ -218,7 +217,6 @@ pub(crate) fn decode_tell<'a>(
 }
 
 pub(crate) fn handle_tell(
-    core: &mut AppServices,
     engine: &mut EngineMut<'_>,
     id: Value,
     params: &Value,
@@ -228,7 +226,7 @@ pub(crate) fn handle_tell(
         Err(error) => return error,
     };
     let payload = build_tell_payload(&text);
-    if let Err(e) = send_body_then_submit(engine, core, &id, surface_id, payload) {
+    if let Err(e) = send_body_then_submit(engine, &id, surface_id, payload) {
         return e;
     }
     if clear_idle_for_new_prompt(&mut engine.runtime.child_terminals, surface_id) {

@@ -17,11 +17,7 @@ const ITEM_MOVE_PANE_HERE: u32 = 10;
 
 impl MainView {
     /// "서피스 이동"과, 서피스가 대기 중일 때만 "서피스를 이곳으로 이동"을 붙인다.
-    pub(super) fn push_surface_move_items(
-        &self,
-        engine: &crate::runtime::engine_read::EngineRead<'_>,
-        items: &mut Vec<MenuItem>,
-    ) {
+    pub(super) fn push_surface_move_items(&self, items: &mut Vec<MenuItem>) {
         items.push(MenuItem::new(
             ITEM_MOVE_SURFACE,
             crate::i18n::t("surface_context_menu.move"),
@@ -35,12 +31,7 @@ impl MainView {
     }
 
     /// surface 메뉴의 이동 항목을 처리한다. 이동 항목이 아니면 false를 반환한다.
-    pub(super) fn apply_surface_move_selection(
-        &mut self,
-        engine: &crate::runtime::engine_read::EngineRead<'_>,
-        surface_id: u32,
-        item: u32,
-    ) -> bool {
+    pub(super) fn apply_surface_move_selection(&mut self, surface_id: u32, item: u32) -> bool {
         match item {
             ITEM_MOVE_SURFACE => {
                 // 도메인 구조는 바꾸지 않고 대기 슬롯만 덮어쓴다.

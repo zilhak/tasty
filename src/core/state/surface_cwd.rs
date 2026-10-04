@@ -3,8 +3,6 @@
 use crate::runtime::engine_access::{EngineMut, EngineRef};
 use std::path::PathBuf;
 
-use super::CoreState;
-
 /// 원격 호스트의 cwd. 표시·전송·원격 조회용이며 로컬 Path 변환을 제공하지 않는다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteCwd(String);

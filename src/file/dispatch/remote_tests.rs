@@ -151,8 +151,7 @@ fn a_mirror_open_queues_one_user_create_tab_without_local_effects() {
 
 #[test]
 fn an_agent_mirror_open_keeps_agent_origin_on_queued_creation() {
-    let (state, mut engine_session, _) = apply_on_mirror(FileDispatchOrigin::Agent);
-    let engine = engine_session.borrow_mut();
+    let (state, _engine_session, _) = apply_on_mirror(FileDispatchOrigin::Agent);
     assert_eq!(queued_creates(&state).len(), 1);
     let forward = &queued_creates(&state)[0];
     assert!(!forward.origin.is_user());
@@ -259,7 +258,7 @@ fn mirror_with_ipc_first() -> (
 ) {
     let (core, _) = build_test_core();
     let (state, mut engine_session) = crate::state::tests::test_mirror_state();
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     register_kind(&engine, "com.tasty.markdown", "markdown");
     FileHandlerRegistryPort::install_plugin_handlers(
         engine.runtime.file_handler.as_ref(),

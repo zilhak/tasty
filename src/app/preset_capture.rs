@@ -1,14 +1,13 @@
 //! Nonblocking preset capture entry points; saved data outlives its originating View.
 use super::{App, journal::PresetCaptureReply};
+use crate::ipc::{
+    protocol::JsonRpcResponse,
+    server::{IpcCommand, send_response},
+};
+#[cfg(not(feature = "gui"))]
+use crate::runtime::engine_session::EngineSession;
 #[cfg(feature = "gui")]
 use crate::view::ui::View;
-use crate::{
-    ipc::{
-        protocol::JsonRpcResponse,
-        server::{IpcCommand, send_response},
-    },
-    runtime::engine_session::EngineSession,
-};
 impl App {
     #[cfg(not(feature = "gui"))]
     pub(crate) fn preset_capture_on_session(

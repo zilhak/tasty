@@ -1313,7 +1313,7 @@ impl MainView {
             crate::i18n::t("terminal_context_menu.copy_surface_id"),
         ));
         items.push(MenuItem::separator());
-        self.push_surface_move_items(engine, &mut items);
+        self.push_surface_move_items(&mut items);
         self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
             // 메뉴가 열려 있는 동안 대상 surface 가 닫혔을 수 있다.
             if !engine.has_surface(surface_id) {
@@ -1350,7 +1350,7 @@ impl MainView {
                 }
                 Some(item) => {
                     // 사용자 우클릭 조작(release 경로)이다. 이동 항목이 아니면 무시한다.
-                    this.apply_surface_move_selection(engine, surface_id, item);
+                    this.apply_surface_move_selection(surface_id, item);
                 }
                 None => {}
             }
@@ -1389,7 +1389,7 @@ impl MainView {
             crate::i18n::t("terminal_context_menu.copy_surface_id"),
         )];
         items.push(MenuItem::separator());
-        self.push_surface_move_items(engine, &mut items);
+        self.push_surface_move_items(&mut items);
         self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
             // 메뉴가 열려 있는 동안 대상 surface 가 닫혔을 수 있다.
             if !engine.has_surface(surface_id) {
@@ -1408,7 +1408,7 @@ impl MainView {
                 }
                 Some(item) => {
                     // 사용자 우클릭 조작(release 경로)이다. 이동 항목이 아니면 무시한다.
-                    this.apply_surface_move_selection(engine, surface_id, item);
+                    this.apply_surface_move_selection(surface_id, item);
                 }
                 None => {}
             }

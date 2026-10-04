@@ -37,7 +37,7 @@ fn window_id_at_emission(reg: &EngineRegistry, windows: &[u64], workspace_id: u3
 
 #[test]
 fn a_committed_workspace_in_a_window_reports_that_window() {
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (_, engine_session) = crate::state::tests::test_state();
     let ws = engine_session.core_state.workspace_at(0).unwrap().id;
     let reg = registry_with_window(engine_session, WINDOW);
     assert_eq!(window_id_at_emission(&reg, &[WINDOW], ws), WINDOW);
@@ -45,7 +45,7 @@ fn a_committed_workspace_in_a_window_reports_that_window() {
 
 #[test]
 fn only_the_window_that_owns_the_workspace_is_reported() {
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (_, engine_session) = crate::state::tests::test_state();
     let ws = engine_session.core_state.workspace_at(0).unwrap().id;
     let (_, other_engine_session) = crate::state::tests::test_state();
     let mut reg = registry_with_window(other_engine_session, OTHER_WINDOW);
@@ -61,7 +61,7 @@ fn only_the_window_that_owns_the_workspace_is_reported() {
 
 #[test]
 fn a_workspace_in_a_parked_engine_reports_zero() {
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (state, engine_session) = crate::state::tests::test_state();
     let ws = engine_session.core_state.workspace_at(0).unwrap().id;
     let mut reg = registry_with_window(engine_session, WINDOW);
     reg.park(WindowId::from(WINDOW), state);
@@ -70,7 +70,7 @@ fn a_workspace_in_a_parked_engine_reports_zero() {
 
 #[test]
 fn a_workspace_closed_before_emission_reports_zero() {
-    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let (_, mut engine_session) = crate::state::tests::test_state();
     let ws = engine_session.core_state.workspace_at(0).unwrap().id;
     engine_session.core_state = crate::core::CoreState::new_base();
     let reg = registry_with_window(engine_session, WINDOW);

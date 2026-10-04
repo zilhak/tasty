@@ -526,7 +526,7 @@ mod tests {
     #[test]
     fn category_validation_new_category_rules() {
         let mut e_session = engine();
-        let mut e = e_session.borrow_mut();
+        let e = e_session.borrow_mut();
         let (err, ok) = category_validation(&RenameTarget::NewCategory, "  ", &e.read());
         assert!(!ok && err.is_none());
         let (err, ok) = category_validation(&RenameTarget::NewCategory, "normal", &e.read());
@@ -540,7 +540,7 @@ mod tests {
     #[test]
     fn category_validation_rename_allows_self_name() {
         let mut e_session = engine();
-        let mut e = e_session.borrow_mut();
+        let e = e_session.borrow_mut();
         let id = 1;
         let (err, ok) = category_validation(
             &RenameTarget::CategoryName { cat_id: id },

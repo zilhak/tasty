@@ -1,7 +1,6 @@
 //! 부모 surface에 연결된 soft 점유. 표시용이며 로컬 쓰기를 막지 않는다.
 //! 임의 점유용 IPC 메서드 없이 child-terminal 처리에서 내부 호출한다.
 
-use super::CoreState;
 use crate::core::attach::OccupancyError;
 
 impl crate::runtime::engine_access::EngineMut<'_> {

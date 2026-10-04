@@ -3,7 +3,6 @@
 
 use crate::runtime::surface_registry::SurfaceKindRegistry;
 use std::sync::Arc;
-use std::sync::atomic::AtomicU32;
 use tasty_terminal::Waker;
 
 use crate::runtime::child_terminal::ChildTerminalRegistry;

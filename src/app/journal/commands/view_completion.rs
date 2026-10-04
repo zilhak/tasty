@@ -196,10 +196,9 @@ impl crate::app::App {
     fn finish_settings_results(&mut self) {
         for (settings, origin, response) in self.journal.take_settings_results() {
             if let Some(error) = response.error {
-                if let Some((state, engine)) = self.engines_mut().sessions().next() {
+                if let Some((state, _)) = self.engines_mut().sessions().next() {
                     crate::intent::report_apply_error(
                         state,
-                        engine.core,
                         &origin,
                         "journal category reset",
                         &anyhow::anyhow!(error.message),
@@ -222,7 +221,6 @@ impl crate::app::App {
                 if let Some(error) = response.error {
                     crate::intent::report_apply_error(
                         context.state,
-                        context.engine.core,
                         &origin,
                         "divider commit",
                         &anyhow::anyhow!(error.message),
@@ -434,7 +432,6 @@ impl crate::app::App {
             }
             crate::intent::report_apply_error(
                 context.state,
-                context.engine.core,
                 &result.origin,
                 "journal structural intent",
                 &anyhow::anyhow!(error.message),

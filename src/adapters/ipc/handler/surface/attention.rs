@@ -163,7 +163,7 @@ mod tests {
     #[test]
     fn get_is_allowed_for_a_mirror_surface() {
         let (state, mut engine_session) = crate::state::tests::test_mirror_state();
-        let mut engine = engine_session.borrow_mut();
+        let engine = engine_session.borrow_mut();
         let sid = state.focused_surface_id(&engine).expect("focused surface");
 
         let resp = handle_attention_get(&engine.as_ref(), json!(1), &json!({ "surface_id": sid }));

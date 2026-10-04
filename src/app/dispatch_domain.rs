@@ -200,7 +200,7 @@ impl App {
             anyhow::bail!("dispatch_domain_intent: engine {id:?} not found");
         };
         let applied = core.apply_live(&mut engine, intent);
-        let events = events_or_report(state, engine.core, &origin, applied);
+        let events = events_or_report(state, &origin, applied);
         for event in events {
             self.handle_core_event(source, &origin, event);
         }
@@ -220,8 +220,7 @@ impl App {
         origin: &IntentOrigin,
         event: CoreEvent,
     ) {
-        if let Some(DispatchCtx { state, engine, .. }) = engines_mut!(self).resolve(source.engine())
-        {
+        if let Some(DispatchCtx { engine, .. }) = engines_mut!(self).resolve(source.engine()) {
             if let Some((surface, generation)) = event.terminal_binding()
                 && !engine
                     .runtime
@@ -432,7 +431,6 @@ impl App {
         text: String,
     ) {
         let Some(DispatchCtx {
-            state,
             mut engine,
             view: dirty_main,
             ..
@@ -522,7 +520,6 @@ impl App {
         exit_code: Option<i32>,
     ) {
         let Some(DispatchCtx {
-            state,
             mut engine,
             view: dirty_main,
             ..
@@ -959,7 +956,7 @@ impl App {
             );
             return;
         };
-        let Some((main, mut engine)) = engines_mut!(self).window_pair(wid) else {
+        let Some((_, mut engine)) = engines_mut!(self).window_pair(wid) else {
             return;
         };
 
@@ -1006,16 +1003,15 @@ impl App {
 }
 
 /// workspace 생성의 창별 후속 처리. 사용자 요청일 때만 활성 workspace를 옮긴다.
-/// apply 오류는 요청한 창의 state·engine으로 알린다. mirror 차단 toast도 이 경로로 뜬다.
+/// apply 오류는 요청한 창의 state로 알린다. mirror 차단 toast도 이 경로로 뜬다.
 /// 오류를 여기서 처리하므로 후속 처리할 이벤트가 없다.
 fn events_or_report(
     state: &mut crate::state::MainViewState,
-    engine: &mut crate::core::CoreState,
     origin: &IntentOrigin,
     applied: anyhow::Result<Vec<CoreEvent>>,
 ) -> Vec<CoreEvent> {
     applied.unwrap_or_else(|err| {
-        crate::intent::report_apply_error(state, engine, origin, "dispatch_domain_intent", &err);
+        crate::intent::report_apply_error(state, origin, "dispatch_domain_intent", &err);
         Vec::new()
     })
 }

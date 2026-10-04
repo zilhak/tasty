@@ -92,7 +92,6 @@ use std::borrow::Cow;
 
 use serde_json::json;
 
-use crate::core::CoreState;
 use crate::ipc::alias;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
@@ -618,7 +617,7 @@ fn route_engine_handler(
             id,
             "terminal.spawn requires committed structure admission",
         ),
-        "terminal.tell" => terminal::handle_tell(core, engine, id, &request.params),
+        "terminal.tell" => terminal::handle_tell(engine, id, &request.params),
         "terminal.children" => terminal::handle_children(engine, id, &request.params),
         "terminal.parent" => terminal::handle_parent(engine, id, &request.params),
         "terminal.state" => terminal::handle_state(engine, id, &request.params),
@@ -1427,7 +1426,7 @@ mod system_info_tests {
 
     #[test]
     fn system_info_identifies_the_engine_and_the_active_workspace_by_id() {
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let (state, mut engine_session) = crate::state::tests::test_state();
         let engine = engine_session.borrow_mut();
         let info = system_info_fields(&engine.read(), state.active_workspace_index(&engine));
         assert_eq!(info["scope"], "engine");
@@ -1445,8 +1444,8 @@ mod system_info_tests {
 
     #[test]
     fn system_info_does_not_invent_an_active_workspace_for_an_empty_engine() {
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
-        let mut engine = engine_session.borrow_mut();
+        let (state, mut engine_session) = crate::state::tests::test_state();
+        let engine = engine_session.borrow_mut();
         *engine.core = crate::core::CoreState::new_base();
         let info = system_info_fields(&engine.read(), state.active_workspace_index(&engine));
         assert_eq!(info["workspace_count"], 0);
@@ -1527,7 +1526,7 @@ mod system_info_tests {
     /// capability를 창별 공통 필드에 중복하지 않는다.
     #[test]
     fn the_per_window_fields_do_not_repeat_the_server_capabilities() {
-        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let (state, mut engine_session) = crate::state::tests::test_state();
         let engine = engine_session.borrow_mut();
         let shared = system_info_fields(&engine.read(), state.active_workspace_index(&engine));
         assert!(

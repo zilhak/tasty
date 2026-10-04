@@ -1,4 +1,3 @@
-use crate::core::CoreState;
 use crate::runtime::engine_access::{EngineMut, EngineRef};
 #[cfg(test)]
 use tasty_terminal::Waker;

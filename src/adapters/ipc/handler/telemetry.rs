@@ -87,12 +87,12 @@ pub(crate) fn record_ipc_call(
     if let Some(w) = ws {
         ev = ev.with_workspace(w);
     }
-    if let Err(e) = persist_event(core, engine, &ev) {
+    if let Err(e) = persist_event(core, &ev) {
         tracing::warn!("telemetry middleware: record failed: {e}");
         return;
     }
     evaluate_caps_after_record(core, window, out, engine, &ev);
-    for anomaly in detect_anomalies_after_ipc(core, engine, agent.as_str(), method, params, ts) {
+    for anomaly in detect_anomalies_after_ipc(core, agent.as_str(), method, params, ts) {
         fire_anomaly_notification(window, out, engine, &anomaly);
     }
 }
@@ -100,7 +100,6 @@ pub(crate) fn record_ipc_call(
 /// 호출 후 CallBurst/SlowLoop를 검사해 저장한다. 알림은 호출자가 담당한다.
 fn detect_anomalies_after_ipc(
     core: &AppServices,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     agent: &str,
     method: &str,
     params: &Value,
@@ -195,11 +194,7 @@ fn build_event(
 }
 
 /// 같은 밀리초에 들어온 이벤트는 새 seq로 키 충돌을 피한다.
-fn persist_event(
-    core: &AppServices,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
-    ev: &TelemetryEvent,
-) -> std::result::Result<String, String> {
+fn persist_event(core: &AppServices, ev: &TelemetryEvent) -> std::result::Result<String, String> {
     let seq = core.telemetry_seq.next();
     let key = event_key(ev.ts, seq);
     let scope = scope_for(ev.workspace_id);

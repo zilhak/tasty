@@ -48,7 +48,7 @@ pub fn handle_record(
         Ok(ev) => ev,
         Err(e) => return JsonRpcResponse::invalid_params(id, e),
     };
-    let response = match persist_event(core, engine, &ev) {
+    let response = match persist_event(core, &ev) {
         Ok(key) => crate::adapters::ipc::handler::memory::written(
             core,
             id,
@@ -102,7 +102,7 @@ pub fn handle_record_batch(
     }
     let mut keys = Vec::with_capacity(events.len());
     for ev in &events {
-        match persist_event(core, engine, ev) {
+        match persist_event(core, ev) {
             Ok(k) => keys.push(k),
             Err(e) => return JsonRpcResponse::error(id, -32603, e),
         }

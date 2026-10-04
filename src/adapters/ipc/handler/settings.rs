@@ -91,7 +91,7 @@ mod tests {
     #[test]
     fn plugin_can_read_back_its_own_stored_setting() {
         let mut e_session = engine();
-        let mut e = e_session.borrow_mut();
+        let e = e_session.borrow_mut();
         e.runtime.settings.set_plugin_setting(
             "com.tasty.claude",
             "spawn_child_warn_threshold",
@@ -136,7 +136,7 @@ mod tests {
     #[test]
     fn get_remote_transfer_reflects_live_settings() {
         let mut e_session = engine();
-        let mut e = e_session.borrow_mut();
+        let e = e_session.borrow_mut();
         e.runtime.settings.remote_transfer.dir = "/tmp/xfer".to_string();
         e.runtime.settings.remote_transfer.max_mb = 42;
         let resp = handle_get_remote_transfer(&e.read(), json!(1));
@@ -148,7 +148,7 @@ mod tests {
     #[test]
     fn plugin_cannot_read_another_plugins_setting() {
         let mut e_session = engine();
-        let mut e = e_session.borrow_mut();
+        let e = e_session.borrow_mut();
         e.runtime.settings.set_plugin_setting(
             "com.tasty.codex",
             "spawn_child_warn_threshold",

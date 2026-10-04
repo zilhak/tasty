@@ -154,7 +154,7 @@ mod tests {
                     index: 0,
                 },
             ]));
-        let mut engine = engine_session.borrow_mut();
+        let engine = engine_session.borrow_mut();
         let resp = handle_ui_state(&state, &engine, serde_json::json!(1));
         let result = resp.result.expect("성공 응답이어야 한다");
         assert_eq!(result["workspace_count"], 0);

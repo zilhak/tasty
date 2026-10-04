@@ -30,20 +30,19 @@ fn user() -> IntentOrigin {
 
 #[test]
 fn a_withdrawn_kind_refusal_toasts_only_for_the_user() {
-    let (_core, mut state, mut engine_session) = fixture();
-    let mut engine = engine_session.borrow_mut();
+    let (_core, mut state, _engine_session) = fixture();
     let err = anyhow::Error::new(crate::runtime::surface_registry::SurfaceKindWithdrawn {
         kind: "markdown".to_string(),
         plugin_id: "com.tasty.markdown".to_string(),
     });
-    report_apply_error(&mut state, &mut engine, &agent(), "t", &err);
+    report_apply_error(&mut state, &agent(), "t", &err);
     assert_eq!(
         state.toasts.len(),
         0,
         "에이전트 요청 거절은 토스트로 표시하지 않는다"
     );
 
-    report_apply_error(&mut state, &mut engine, &user(), "t", &err);
+    report_apply_error(&mut state, &user(), "t", &err);
     assert_eq!(
         state.toasts.len(),
         1,

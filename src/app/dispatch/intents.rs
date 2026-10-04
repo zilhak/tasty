@@ -131,7 +131,7 @@ impl App {
     }
 
     fn classify_intent(intent: &crate::intent::DispatchedIntent) -> IntentClass {
-        use crate::intent::{Intent, UiIntent};
+        use crate::intent::Intent;
         if matches!(
             intent.body,
             Intent::RemoteBrowser(_)
@@ -366,8 +366,6 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     /// 두 GUI 라우팅 파일에서 사전 검사 호출·반환의 원문 위치 또는 CheckedRequest 인자를 확인한다.
     /// 실행 경로나 실제 검사·기록 횟수는 증명하지 않는다. 주석·문자열도 제거하지 않는 텍스트 검사다.
     /// CheckedRequest의 실제 소비는 handler::checked 시험에서 확인하며 헤드리스는 이 스캔에 포함하지 않는다.

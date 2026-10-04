@@ -62,7 +62,7 @@ impl App {
             if pending.result != Some(true) {
                 continue; // 취소 — 폐기(이미 take 됨).
             }
-            if let Some((main, mut engine)) = engines_mut!(self).window_pair(id) {
+            if let Some((main, engine)) = engines_mut!(self).window_pair(id) {
                 engine
                     .runtime
                     .settings

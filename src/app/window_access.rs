@@ -593,8 +593,6 @@ fn pick_free_slot(files: &[LayoutSlotId], occupied: &HashSet<LayoutSlotId>) -> L
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::*;
 
     fn named_fixture(
@@ -740,7 +738,7 @@ mod tests {
 
     #[test]
     fn workspace_in_later_parked_engine_is_not_orphaned() {
-        let (mut reg, ids) = parked(&["first", "second"]);
+        let (reg, ids) = parked(&["first", "second"]);
         // 첫 engine과 겹치지 않는 ID를 두 번째 engine에만 만든다.
         let first = reg.get(ids[0]).unwrap().workspace_at(0).unwrap().id;
         let target = reg.get(ids[1]).unwrap().workspace_at(0).unwrap().id;
@@ -826,7 +824,7 @@ mod tests {
         engine_mut(&mut reg, ids[0]).persistence.slot = Some(4);
         engine_mut(&mut reg, ids[1]).persistence.slot = Some(2);
         let mut pending_session = engine_with_workspace_name("tmp");
-        let mut pending = pending_session.borrow_mut();
+        let pending = pending_session.borrow_mut();
         pending.persistence.slot = Some(7);
         with_pending(&mut reg, pending_session);
         let views = HashMap::new();

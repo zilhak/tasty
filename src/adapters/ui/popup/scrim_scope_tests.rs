@@ -131,7 +131,7 @@ fn scrim_rects(
 #[test]
 fn a_surface_scoped_popup_dims_only_its_own_surface() {
     let (mut state, mut engine_session, ids) = prepared();
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     state.dialogs.convert_popup = Some(ids.surface);
     state
         .popups
@@ -144,7 +144,7 @@ fn a_surface_scoped_popup_dims_only_its_own_surface() {
 #[test]
 fn a_window_scoped_popup_still_dims_the_whole_window() {
     let (mut state, mut engine_session, ids) = prepared();
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     state
         .popups
         .open_with_scope("command_palette", PopupScope::Window);
@@ -156,7 +156,7 @@ fn a_window_scoped_popup_still_dims_the_whole_window() {
 #[test]
 fn a_parent_and_its_child_picker_share_one_scrim() {
     let (mut state, mut engine_session, ids) = prepared();
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     state.dialogs.convert_popup = Some(ids.surface);
     state
         .popups
@@ -173,7 +173,7 @@ fn a_parent_and_its_child_picker_share_one_scrim() {
 #[test]
 fn two_scrim_popups_in_one_scope_still_paint_one_scrim() {
     let (mut state, mut engine_session, ids) = prepared();
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     state.dialogs.convert_popup = Some(ids.surface);
     state
         .popups
@@ -189,7 +189,7 @@ fn two_scrim_popups_in_one_scope_still_paint_one_scrim() {
 #[test]
 fn a_window_scrim_absorbs_the_surface_scrim_under_it() {
     let (mut state, mut engine_session, ids) = prepared();
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     state.dialogs.convert_popup = Some(ids.surface);
     state
         .popups
@@ -205,7 +205,7 @@ fn a_window_scrim_absorbs_the_surface_scrim_under_it() {
 #[test]
 fn nothing_a_surface_scoped_popup_paints_lands_outside_its_surface() {
     let (mut state, mut engine_session, ids) = prepared();
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     state.dialogs.convert_popup = Some(ids.narrow);
     state
         .popups

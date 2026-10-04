@@ -64,7 +64,7 @@ fn only_one_stage_at_a_time() {
     use std::sync::atomic::Ordering;
 
     let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     // cfg(test)의 두 번째 무대로 교체를 검사한다.
     let b = fullscreen::defs::TEST_STAGE_ID;
     assert!(state.open_fullscreen_stage(b));
@@ -107,7 +107,7 @@ fn close_pushes_exactly_one_hook_entry_and_is_idempotent() {
 fn normal_frame_drains_the_close_hook_queue() {
     // 종료 후에는 일반 프레임이 닫기 큐를 처리해야 한다.
     let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     state.open_fullscreen_stage("blank");
     state.close_fullscreen_stage();
     assert!(!state.stage_closed_queue.is_empty());
@@ -119,7 +119,7 @@ fn normal_frame_drains_the_close_hook_queue() {
 fn stage_frame_drains_the_close_hook_queue() {
     // 무대 교체에는 일반 프레임이 끼지 않으므로 무대 프레임도 닫기 큐를 처리해야 한다.
     let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     state.open_fullscreen_stage("blank");
     state.stage_closed_queue.push("blank");
     run_stage_frame(&mut state, &engine.read());
@@ -129,7 +129,7 @@ fn stage_frame_drains_the_close_hook_queue() {
 #[test]
 fn stage_frame_paints_only_when_a_stage_is_up() {
     let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     let painted = |state: &mut crate::state::RequestContext,
                    engine: &crate::runtime::engine_read::EngineRead<'_>| {
         let ctx = egui::Context::default();
@@ -190,7 +190,7 @@ fn fullscreen_btn_center(pos: egui::Pos2, size: egui::Vec2) -> egui::Pos2 {
 #[test]
 fn clicking_the_popup_fullscreen_button_opens_the_stage_and_keeps_the_popup() {
     let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     state
         .popups
         .open_at_focused("notifications", egui::pos2(400.0, 300.0)); // intent-exempt: 테스트 하네스.
@@ -223,7 +223,7 @@ fn clicking_the_popup_fullscreen_button_opens_the_stage_and_keeps_the_popup() {
 #[test]
 fn the_same_click_on_a_popup_without_the_flag_does_nothing() {
     let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     state
         .popups
         .open_at_focused("rename", egui::pos2(400.0, 300.0)); // intent-exempt: 테스트 하네스.
@@ -251,7 +251,7 @@ fn the_stage_scroll_state_is_a_different_entry_from_the_popups() {
     let scroll_entries = |ctx: &egui::Context| ctx.memory(|m| m.data.count::<ScrollState>());
 
     let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     let ctx = egui::Context::default();
 
     state
@@ -299,7 +299,7 @@ fn the_stage_scroll_state_is_a_different_entry_from_the_popups() {
 #[test]
 fn two_stages_with_the_same_content_do_not_share_scroll_state() {
     let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     let ctx = egui::Context::default();
     let draw_stage = |state: &mut crate::state::RequestContext,
                       engine: &crate::runtime::engine_read::EngineRead<'_>,
@@ -327,7 +327,7 @@ fn two_stages_with_the_same_content_do_not_share_scroll_state() {
 #[test]
 fn notifications_stage_clears_its_own_scroll_state_on_close() {
     let (mut state, mut engine_session) = test_state();
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     assert!(state.open_fullscreen_stage(fullscreen::notifications::NOTIFICATIONS_STAGE_ID));
 
     let ctx = egui::Context::default();

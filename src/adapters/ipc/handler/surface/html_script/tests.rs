@@ -164,7 +164,7 @@ fn a_surface_without_a_document_reports_null_document() {
 #[test]
 fn rejects_a_missing_surface_and_a_non_html_surface() {
     let (_state, mut engine_session, _sid) = state_with_html_tab();
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     let err = html_script_of(&engine, 999_999)
         .error
         .expect("missing surface");

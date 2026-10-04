@@ -1,5 +1,3 @@
-use super::CoreState;
-
 #[derive(Debug, Clone)]
 pub struct SurfaceMessage {
     pub(crate) id: u32,

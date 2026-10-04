@@ -332,7 +332,7 @@ mod tests {
     #[test]
     fn foreground_generation_accessor_reads_cache_and_defaults_to_zero() {
         let mut e_session = engine();
-        let mut e = e_session.borrow_mut();
+        let e = e_session.borrow_mut();
         assert_eq!(e.foreground_generation(42), 0);
         e.live.foreground_generation.insert(42, 5);
         assert_eq!(e.foreground_generation(42), 5);

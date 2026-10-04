@@ -683,7 +683,7 @@ mod explorer_open_tests {
             } else {
                 crate::state::tests::test_state()
             };
-            let mut engine = engine_session.borrow_mut();
+            let engine = engine_session.borrow_mut();
             let sid = engine
                 .workspace_at(0)
                 .expect("workspace index is valid")

@@ -6,15 +6,16 @@
 
 use std::fmt;
 
+#[cfg(test)]
+use tasty_core::encode_snapshot;
 use tasty_core::{
     CodecError, DomainEvent, EvolveError, JournalModel, MODEL_VERSION, RecordedEvent,
     STRUCTURE_STREAM_PREFIX, StreamBatch, StructureModels, decode_event, decode_snapshot,
-    encode_event, encode_snapshot, evolve_streams, is_structure_stream,
+    encode_event, evolve_streams, is_structure_stream,
 };
-use tasty_event_store::{
-    EventStore, NewSnapshot, OpaquePayload, PayloadRef, SnapshotId, StoreError, StoredBatch,
-    StreamId, WriterEpoch,
-};
+use tasty_event_store::{EventStore, OpaquePayload, SnapshotId, StoreError, StoredBatch, StreamId};
+#[cfg(test)]
+use tasty_event_store::{NewSnapshot, PayloadRef, WriterEpoch};
 
 /// 엔진의 구조 stream. 엔진의 영속 식별은 그 엔진이 쓰는 레이아웃 슬롯 번호다.
 pub(crate) fn engine_stream(slot: u32) -> StreamId {

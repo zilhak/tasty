@@ -50,7 +50,7 @@ impl App {
                     action,
                     order_hint: 0,
                 };
-                if let Some((main, mut engine)) = engines_mut!(self).window_pair(wid) {
+                if let Some((main, engine)) = engines_mut!(self).window_pair(wid) {
                     crate::adapters::ui::tools_menu::invoke_tool(
                         &mut main.state,
                         &engine.read(),

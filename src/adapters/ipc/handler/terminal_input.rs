@@ -141,7 +141,7 @@ mod tests {
         let mut engine_session =
             crate::runtime::engine_session::EngineSession::new(80, 24, std::sync::Arc::new(|| {}))
                 .unwrap();
-        let mut engine = engine_session.borrow_mut();
+        let engine = engine_session.borrow_mut();
         let caller = CallerContext::Plugin {
             plugin_id: "com.tasty.claude".into(),
             permissions: Default::default(),

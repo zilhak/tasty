@@ -53,10 +53,10 @@ impl App {
     fn trigger_pending_image_uploads(&mut self) {
         let mut reqs: Vec<crate::core::PendingImageUpload> = Vec::new();
         let mut engines = self.engines_mut();
-        for mut engine in engines.reborrow().windows_and_pending() {
+        for engine in engines.reborrow().windows_and_pending() {
             reqs.append(&mut engine.remote.pending_image_uploads);
         }
-        for mut engine in engines.parked() {
+        for engine in engines.parked() {
             reqs.append(&mut engine.remote.pending_image_uploads);
         }
         for req in reqs {

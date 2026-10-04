@@ -18,7 +18,6 @@ impl JournalApplication {
     pub(crate) fn admit_remote(
         &mut self,
         engine: EngineId,
-        core: &crate::core::CoreState,
         live: &crate::core::live::LiveDomainState,
         runtime_epoch: u64,
         hub: &StreamHub,

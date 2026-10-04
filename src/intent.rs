@@ -35,7 +35,6 @@ pub use crate::core::origin::{AgentSource, IntentOrigin};
 /// 사용자 표시 규칙은 docs/design/systems/toast.md를 따른다.
 pub fn report_apply_error(
     state: &mut crate::state::RequestContext,
-    engine: &mut crate::core::CoreState,
     origin: &IntentOrigin,
     label: &str,
     err: &anyhow::Error,

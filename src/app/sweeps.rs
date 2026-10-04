@@ -16,7 +16,7 @@ impl App {
 
     pub(crate) fn poll_capture_sweep(&mut self) {
         let now = Instant::now();
-        for mut engine in self.engines_mut().windowed_and_parked() {
+        for engine in self.engines_mut().windowed_and_parked() {
             engine.remote.capture_uploads.sweep_expired(now);
         }
     }

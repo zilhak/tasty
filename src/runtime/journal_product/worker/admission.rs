@@ -13,7 +13,8 @@ pub(super) fn admit(
     }
     let pending_count: usize = pending.values().map(|p| 1 + p.followers.len()).sum();
     if let Some(key) = &admission.key {
-        for (leader, existing) in pending.iter_mut() {
+        for entry in pending.iter_mut() {
+            let existing = entry.1;
             if existing.admission.key.as_ref() == Some(key) {
                 if existing.admission.original_digest != admission.original_digest {
                     return Err(JournalError::KeyConflict);
@@ -26,7 +27,7 @@ pub(super) fn admit(
                 existing.followers.push(ticket);
                 return Ok(ResultValue::JoinedAdmission {
                     #[cfg(test)]
-                    leader_ticket: *leader,
+                    leader_ticket: *entry.0,
                 });
             }
         }

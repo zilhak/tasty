@@ -20,7 +20,7 @@ impl App {
         }
 
         // 화면이 없는 parked engine도 계속 판정한다.
-        for (state, mut engine) in self.engines_mut().parked_sessions() {
+        for (_, mut engine) in self.engines_mut().parked_sessions() {
             for event in engine.fire_idle_timeout_hooks(&exec) {
                 engine.enqueue_host_event(event);
             }

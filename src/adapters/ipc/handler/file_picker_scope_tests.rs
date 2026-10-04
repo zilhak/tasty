@@ -133,7 +133,7 @@ fn assert_work_preserved(state: &RequestContext, dir: &str, request: u64) {
 #[test]
 fn hidden_child_keeps_selection_and_request_without_paint_hit_or_keyboard_gate() {
     let (mut state, mut engine_session) = trigger(Some(7));
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     // 범위 대상이 사라진 팝업은 그리기 전에 닫히므로 엔진에 있는 surface를 쓴다.
     let sid = state.focused_surface_id(&engine).expect("surface");
     let inst = parent("surface", Some(sid));
@@ -156,7 +156,7 @@ fn hidden_child_keeps_selection_and_request_without_paint_hit_or_keyboard_gate()
         active_tabs: vec![],
         active_tab_ids: vec![],
     };
-    let mut draw = |state: &mut RequestContext, layout: &LayoutContext, events| {
+    let draw = |state: &mut RequestContext, layout: &LayoutContext, events| {
         let raw = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,

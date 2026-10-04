@@ -9,10 +9,9 @@ use crate::runtime::engine_access::EngineRef;
 use std::collections::HashMap;
 
 use crate::app::services::AppServices;
-use crate::core::CoreState;
 use crate::core::attach::{AttachClientId, AttachError};
 use crate::model::{AttachSurfaceClass, SurfaceId, WorkspaceId};
-use tasty_ipc::stream::{StreamControl, StreamFrame, StreamTag, encode_mux};
+use tasty_ipc::stream::{StreamControl, StreamFrame, StreamTag};
 use tasty_ipc::stream_hub::{PushResult, StreamHub};
 
 #[cfg(feature = "gui")]

@@ -1818,7 +1818,6 @@ impl App {
         {
             if let Some((ticket, workspace)) = self.journal.admit_remote(
                 session.id,
-                &session.core_state,
                 &session.live,
                 binding.runtime_epoch,
                 hub,

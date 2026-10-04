@@ -4,7 +4,7 @@ use super::*;
 
 pub fn handle_respond(
     core: &mut crate::app::services::AppServices,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    _engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     caller: &CallerContext,
     id: Value,
     params: &Value,

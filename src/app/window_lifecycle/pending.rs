@@ -195,7 +195,6 @@ impl App {
             if checkpoint.is_none() {
                 navigation.reconcile(&session.core_state.workspaces());
                 let active = navigation.workspace_id(&session.core_state.workspaces());
-                let active_index = navigation.workspace_index(&session.core_state.workspaces());
                 self.journal.queue_surface_capture(session, true);
                 self.journal.queue_view(
                     crate::runtime::journal_product::view_record::StoredView::capture(

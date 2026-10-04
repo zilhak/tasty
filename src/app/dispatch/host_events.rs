@@ -33,7 +33,7 @@ fn take_current_host_events(engine: &mut EngineMut<'_>) -> Vec<PendingHostEvent>
 impl App {
     pub(crate) fn dispatch_pending_host_events(&mut self) {
         let mut drained = std::mem::take(&mut self.state.pending_host_events);
-        for (state, mut engine) in engines_mut!(self).sessions() {
+        for (state, engine) in engines_mut!(self).sessions() {
             let mut observed = state.detect_focus_change(engine.core);
             observed.extend(state.detect_workspace_activation(engine.core));
             observed.extend(state.detect_tab_focus_change(engine.core));

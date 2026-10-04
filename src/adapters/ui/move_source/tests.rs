@@ -243,7 +243,7 @@ fn pending_tab_rings_its_cell_whether_active_or_not() {
 fn pending_pane_rings_the_whole_pane_rect() {
     let mut engine_session = test_engine();
     let engine = engine_session.borrow_mut();
-    let mut pending_move;
+    let pending_move;
     let navigation = crate::state::navigation::NavigationState::default();
     let (left, _, _) = first_pane(&engine);
     let right = 2;
@@ -328,7 +328,7 @@ fn target_in_another_workspace_marks_that_workspace_for_every_kind() {
 fn hidden_pane_in_the_active_workspace_emits_nothing() {
     let mut engine_session = test_engine();
     let engine = engine_session.borrow_mut();
-    let mut pending_move;
+    let pending_move;
     let navigation = crate::state::navigation::NavigationState::default();
     let (left, _, _) = first_pane(&engine);
     let right = 2;

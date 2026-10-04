@@ -164,7 +164,7 @@ impl App {
         if self.view.is_modal_active() {
             return false;
         }
-        let Some((main, mut engine)) = engines_mut!(self).window_pair(id) else {
+        let Some((main, engine)) = engines_mut!(self).window_pair(id) else {
             return false;
         };
         // 일반 창 키 처리보다 먼저 실행되므로 popup·overlay·전체화면 무대의 키를 여기서 보호한다.

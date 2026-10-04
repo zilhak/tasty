@@ -572,7 +572,7 @@ fn explorer_fixture(
 #[test]
 fn local_explorer_cwd_is_local_and_inherited() {
     let (state, mut engine_session, sid, root) = explorer_fixture(false);
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     assert_eq!(
         engine.surface_cwd(sid),
         Some(crate::core::state::SurfaceCwd::Local(root.clone()))
@@ -590,7 +590,7 @@ fn local_explorer_cwd_is_local_and_inherited() {
 #[test]
 fn mirror_explorer_cwd_is_remote_and_not_inherited_locally() {
     let (state, mut engine_session, sid, root) = explorer_fixture(true);
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
 
     assert_eq!(
         engine.surface_cwd(sid),
@@ -610,7 +610,7 @@ fn mirror_explorer_cwd_is_remote_and_not_inherited_locally() {
 #[test]
 fn popup_context_splits_cwd_keys_by_gate_and_provenance() {
     let (state, mut engine_session, sid, root) = explorer_fixture(false);
-    let mut engine = engine_session.borrow_mut();
+    let engine = engine_session.borrow_mut();
     let root_s = root.to_string_lossy().into_owned();
 
     let local = state.popup_surface_context(&engine.read(), Some(sid));

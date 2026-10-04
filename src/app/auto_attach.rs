@@ -7,7 +7,7 @@
 use std::time::Instant;
 
 use tasty_remote_profiles::{Passkeys, RemoteProfiles};
-use tasty_ssh::{self as ssh, Backoff, PortMode, SshTarget, SshTunnel};
+use tasty_ssh::{self as ssh, PortMode, SshTarget, SshTunnel};
 
 use crate::app::App;
 use crate::model::WorkspaceAttachTarget;

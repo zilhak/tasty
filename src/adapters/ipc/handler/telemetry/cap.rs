@@ -70,7 +70,7 @@ pub(super) fn cap_to_json(cap: &CostCap) -> Value {
 
 pub fn handle_cap_set(
     core: &AppServices,
-    engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+    _engine: &mut crate::runtime::engine_access::EngineMut<'_>,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

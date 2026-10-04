@@ -1,5 +1,5 @@
 //! Resolve immutable undo values and reserve all replacement identities on the journal worker.
-use super::super::{EngineBinding, PreparationInput, ShellRecipe};
+use super::super::{EngineBinding, ShellRecipe};
 use super::*;
 use std::collections::BTreeMap;
 use tasty_core::{

@@ -292,7 +292,7 @@ mod tests {
     /// 같은 surface의 알림을 별개 항목으로 검사하기 위해 합치기 시간을 0으로 둔다.
     fn state_no_coalesce() -> crate::runtime::engine_session::EngineSession {
         let mut s_session = state();
-        let mut s = s_session.borrow_mut();
+        let s = s_session.borrow_mut();
         s.live.notifications = crate::notification::NotificationStore::with_coalesce_ms(0);
         s_session
     }
@@ -802,7 +802,7 @@ mod tests {
     #[test]
     fn local_clear_is_disallowed_exactly_while_hard_occupied() {
         let mut s_session = state();
-        let mut s = s_session.borrow_mut();
+        let s = s_session.borrow_mut();
         assert!(
             s.local_attention_clear_allowed(42),
             "점유 없는 surface 는 로컬 해제 대상이다"

@@ -145,7 +145,6 @@ fn apply_structural_ops(
     for (client, op_id, op, origin) in std::mem::take(&mut outcome.structural_ops) {
         if let Some((ticket, workspace)) = app.journal.admit_remote(
             id,
-            engine.core,
             engine.live,
             epoch,
             &app.stream_hub,

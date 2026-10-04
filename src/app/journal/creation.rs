@@ -150,7 +150,6 @@ impl Creation {
         session: &EngineSession,
         worker: &JournalWorker,
     ) -> Result<Self, String> {
-        let core = &session.core_state;
         let shell = crate::core::state::ShellConfig::from_settings(&session.runtime.settings);
         let binding = session
             .journal_binding
@@ -207,7 +206,7 @@ impl Creation {
     pub(super) fn restore(
         ticket: u64,
         session: &EngineSession,
-        worker: &JournalWorker,
+        _worker: &JournalWorker,
         request: crate::runtime::surface_restorer::RestoreInput,
     ) -> Result<Self, String> {
         let binding = session

@@ -10,7 +10,7 @@ use crate::app::command::CoreEvent;
 use crate::app::services::AppServices;
 use crate::core::{AttentionKind, CoreState};
 use crate::intent::{DispatchedIntent, Intent};
-use crate::runtime::engine_access::{EngineMut, EngineRef};
+use crate::runtime::engine_access::EngineMut;
 use crate::state::RequestContext;
 
 /// 한 번에 처리할 묶음 수. 처리 중 명령이 계속 추가돼도 루프를 빠져나올 수 있게 한다.
@@ -51,13 +51,7 @@ pub(crate) fn drain_pending_intents_in_app(
                 Ok(Some(intent)) => dispatched.body = Intent::Domain(intent),
                 Ok(None) => {}
                 Err(error) => {
-                    super::report_apply_error(
-                        state,
-                        engine.core,
-                        &dispatched.origin,
-                        "creation input",
-                        &error,
-                    );
+                    super::report_apply_error(state, &dispatched.origin, "creation input", &error);
                     continue;
                 }
             }

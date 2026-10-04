@@ -227,8 +227,8 @@ mod tests {
 
     #[test]
     fn set_url_remembers_whether_the_owning_plugin_wrote_the_page() {
-        let (mut state, mut engine_session) = fixture(0, true);
-        let mut engine = engine_session.borrow_mut();
+        let (state, mut engine_session) = fixture(0, true);
+        let engine = engine_session.borrow_mut();
         let md_sid = focused_surface_id(&state, &engine.as_ref());
         let owner = remote_surface(&engine.as_ref(), md_sid).plugin_id.clone();
         assert!(!remote_surface(&engine.as_ref(), md_sid).webview_page_by_owner());
@@ -246,8 +246,8 @@ mod tests {
     // 외부 작성자에서 소유 플러그인으로 바뀐 기록은 host가 읽을 때까지 유지한다.
     #[test]
     fn set_url_marks_when_the_owning_plugin_takes_the_page_back() {
-        let (mut state, mut engine_session) = fixture(0, true);
-        let mut engine = engine_session.borrow_mut();
+        let (state, mut engine_session) = fixture(0, true);
+        let engine = engine_session.borrow_mut();
         let md_sid = focused_surface_id(&state, &engine.as_ref());
         let owner = plugin_caller(&remote_surface(&engine.as_ref(), md_sid).plugin_id.clone());
         let agent = tasty_ipc::caller::CallerContext::Local;
@@ -276,7 +276,7 @@ mod tests {
     #[test]
     fn set_url_reaches_non_focused_split_leaf() {
         let (state, mut engine_session) = fixture(1, false);
-        let mut engine = engine_session.borrow_mut();
+        let engine = engine_session.borrow_mut();
         let terminal_sid = focused_surface_id(&state, &engine.as_ref());
         let md_sid = 2;
 
@@ -293,9 +293,8 @@ mod tests {
 
     #[test]
     fn set_url_reaches_all_leaves_of_nested_split() {
-        let (state, mut engine_session) = fixture(2, false);
-        let mut engine = engine_session.borrow_mut();
-        let terminal_sid = focused_surface_id(&state, &engine.as_ref());
+        let (_, mut engine_session) = fixture(2, false);
+        let engine = engine_session.borrow_mut();
         // 1차: terminal | markdown_a → 2차: (terminal | markdown_b) | markdown_a
         let md_a = 2;
         let md_b = 3;
@@ -312,8 +311,8 @@ mod tests {
 
     #[test]
     fn set_url_sole_leaf_ok_and_unknown_id_errors() {
-        let (mut state, mut engine_session) = fixture(0, true);
-        let mut engine = engine_session.borrow_mut();
+        let (state, mut engine_session) = fixture(0, true);
+        let engine = engine_session.borrow_mut();
         let md_sid = focused_surface_id(&state, &engine.as_ref());
         let resp = set_url(&engine.as_ref(), md_sid);
         assert!(
@@ -335,7 +334,7 @@ mod tests {
         use tasty_ipc::stream_hub::StreamHub;
 
         let (state, mut engine_session) = fixture(1, false);
-        let mut engine = engine_session.borrow_mut();
+        let engine = engine_session.borrow_mut();
         let terminal_sid = focused_surface_id(&state, &engine.as_ref());
         let md_sid = 2;
         let hub = StreamHub::new();
@@ -369,7 +368,7 @@ mod tests {
     #[test]
     fn set_url_on_terminal_leaf_reports_not_webview() {
         let (state, mut engine_session) = fixture(1, false);
-        let mut engine = engine_session.borrow_mut();
+        let engine = engine_session.borrow_mut();
         let terminal_sid = focused_surface_id(&state, &engine.as_ref());
         // 분할만 준비한다. 검사 대상은 기존 터미널이며 새 surface ID는 사용하지 않는다.
         let resp = set_url(&engine.as_ref(), terminal_sid);

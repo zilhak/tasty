@@ -259,7 +259,7 @@ pub(crate) fn receive_update(
 pub fn draw_remote_attach_popup(
     ui: &mut egui::Ui,
     state: &mut MainViewState,
-    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();

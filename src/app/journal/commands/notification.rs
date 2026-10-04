@@ -1,5 +1,5 @@
 //! Resolve View-dependent notification text only after the corresponding projection is published.
-use crate::core::{CoreState, host_event::PendingHostEvent};
+use crate::core::host_event::PendingHostEvent;
 
 pub(super) enum Notification {
     Ready(PendingHostEvent),
