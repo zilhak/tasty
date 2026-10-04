@@ -11,6 +11,7 @@
 //! doc-guards.yml의 경로 필터 없는 main push·PR 검사에서 실행된다. 전체 구성은 docs/dev-guide/ci-gates.md를 따른다.
 
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use tasty_doc_guards::cfg_predicate::cfg_gated_lines;
 use tasty_doc_guards::shipping_scope::test_only_files;
 use tasty_doc_guards::source_text::{mask_non_code, rust_sources};
@@ -91,8 +92,16 @@ fn violations(
     out
 }
 
-/// 스캔 대상 — 출하되는 `.rs` 만. `(경로, 마스킹된 본문, cfg(test) 줄 표)`.
-fn shipping_sources() -> Vec<(PathBuf, String, Vec<bool>)> {
+/// 출하되는 `.rs`의 `(경로, 마스킹된 본문, cfg(test) 줄 표)`.
+type ShippingSource = (PathBuf, String, Vec<bool>);
+
+/// 같은 테스트 프로세스의 검사들은 한 번 분석한 저장소 입력을 공유한다.
+fn shipping_sources() -> &'static [ShippingSource] {
+    static SOURCES: OnceLock<Vec<ShippingSource>> = OnceLock::new();
+    SOURCES.get_or_init(collect_shipping_sources)
+}
+
+fn collect_shipping_sources() -> Vec<ShippingSource> {
     let root = repo_root();
     let sources = rust_sources(&root, SCAN_ROOTS);
     let test_only = test_only_files(&root, &sources);
@@ -126,7 +135,7 @@ fn report(kind: &str, hits: &[(PathBuf, usize, String)]) -> String {
 fn every_scroll_area_declares_drag_to_scroll() {
     let mut hits = Vec::new();
     for (rel, masked, gated) in shipping_sources() {
-        for (line, ctor) in violations(&masked, &gated, SCROLL_AREA_CTORS, SCROLL_AREA_ENDS, None) {
+        for (line, ctor) in violations(masked, gated, SCROLL_AREA_CTORS, SCROLL_AREA_ENDS, None) {
             hits.push((rel.clone(), line, ctor));
         }
     }
@@ -138,7 +147,7 @@ fn every_scroll_area_declares_drag_to_scroll() {
 fn every_table_builder_declares_drag_to_scroll() {
     let mut hits = Vec::new();
     for (rel, masked, gated) in shipping_sources() {
-        for (line, ctor) in violations(&masked, &gated, &["TableBuilder::new("], TABLE_ENDS, None) {
+        for (line, ctor) in violations(masked, gated, &["TableBuilder::new("], TABLE_ENDS, None) {
             hits.push((rel.clone(), line, ctor));
         }
     }
@@ -152,8 +161,8 @@ fn every_scrolling_window_declares_drag_to_scroll() {
     let mut hits = Vec::new();
     for (rel, masked, gated) in shipping_sources() {
         for (line, ctor) in violations(
-            &masked,
-            &gated,
+            masked,
+            gated,
             &["Window::new("],
             WINDOW_ENDS,
             Some(WINDOW_SCROLL_ON),
