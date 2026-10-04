@@ -1267,22 +1267,22 @@ impl App {
         tracing::info!("system resumed — running PTY health pass (ADR-0013)");
         let core = &mut self.services;
         let mut pending: Vec<(DispatchSource, Vec<CoreEvent>)> = Vec::new();
-        for (id, main, engine) in engines_mut!(self).window_entries() {
+        for (id, main, mut engine) in engines_mut!(self).window_entries() {
             let suspects = engine.wake_terminals_after_resume();
-            let outcome = core.process_all_pty_output(engine);
+            let outcome = core.process_all_pty_output(&mut engine);
             if !outcome.events.is_empty() {
                 pending.push((DispatchSource::Engine(id), outcome.events));
             }
-            Self::notify_resume_suspects(engine, &suspects);
+            Self::notify_resume_suspects(&mut engine, &suspects);
             main.mark_dirty();
         }
-        for (id, _, engine) in engines_mut!(self).parked_sessions_with_ids() {
+        for (id, _, mut engine) in engines_mut!(self).parked_sessions_with_ids() {
             let suspects = engine.wake_terminals_after_resume();
-            let outcome = core.process_all_pty_output(engine);
+            let outcome = core.process_all_pty_output(&mut engine);
             if !outcome.events.is_empty() {
                 pending.push((DispatchSource::Engine(id), outcome.events));
             }
-            Self::notify_resume_suspects(engine, &suspects);
+            Self::notify_resume_suspects(&mut engine, &suspects);
         }
         for (source, events) in pending {
             for ev in events {
@@ -1292,7 +1292,10 @@ impl App {
     }
 
     #[cfg(all(windows, feature = "gui"))]
-    fn notify_resume_suspects(engine: &mut crate::core::CoreState, suspects: &[u32]) {
+    fn notify_resume_suspects(
+        engine: &mut crate::runtime::engine_access::EngineMut<'_>,
+        suspects: &[u32],
+    ) {
         for &sid in suspects {
             let ws_id = engine
                 .workspaces()
