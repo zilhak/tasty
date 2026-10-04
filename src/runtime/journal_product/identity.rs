@@ -108,7 +108,7 @@ fn persist(temporary: tempfile::NamedTempFile, path: &Path) -> Result<(), String
     let temporary = temporary.into_temp_path();
     let from: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
     let to: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-    // Both UTF-16 paths remain valid for the call; the temporary file was closed and flushed.
+    // SAFETY: Both UTF-16 paths are NUL-terminated and outlive the call; the temporary file was closed and flushed.
     unsafe {
         MoveFileExW(
             PCWSTR(from.as_ptr()),
