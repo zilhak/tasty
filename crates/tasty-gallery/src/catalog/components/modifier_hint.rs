@@ -198,6 +198,17 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "plugin row dot",
                 theme.modhint_agent_dot().to_egui(),
             ),
+            TokenChip::new(
+                "modhint-header-bg",
+                "drag strip",
+                theme.modhint_header_bg().to_egui(),
+            ),
+            TokenChip::new("accent-agent", "plugin dot", theme.accent_agent().to_egui()),
+            TokenChip::new(
+                "modhint-grip-fg",
+                "resize grip",
+                theme.modhint_grip_fg().to_egui(),
+            ),
         ],
     );
 

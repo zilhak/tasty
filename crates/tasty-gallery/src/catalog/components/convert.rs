@@ -232,11 +232,11 @@ pub fn draw_narrow(ui: &mut egui::Ui, theme: &Theme) {
             ),
             ("widen to fit", "no"),
         ],
-        &[TokenChip::new(
-            "bg-sidebar",
-            "title bar",
-            theme.bg_sidebar().to_egui(),
-        )],
+        &[
+            TokenChip::new("bg-sidebar", "title bar", theme.bg_sidebar().to_egui()),
+            TokenChip::without_color("convert-popup-width", "240 × ui_scale"),
+            TokenChip::without_color("popup-title-btn-size", "reserve part"),
+        ],
     );
 
     spec::dont(

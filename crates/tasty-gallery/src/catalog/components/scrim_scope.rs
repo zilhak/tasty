@@ -377,6 +377,12 @@ pub fn draw_scope(ui: &mut egui::Ui, theme: &Theme) {
                 "chrome left lit under a surface scrim",
                 theme.bg_panel().into(),
             ),
+            TokenChip::without_color("shadow-modal", "the popup keeps its modal shadow"),
+            TokenChip::new(
+                "border-frame",
+                "divider / surface edge, undimmed",
+                theme.border_frame().into(),
+            ),
         ],
     );
 
@@ -449,6 +455,8 @@ pub fn draw_child(ui: &mut egui::Ui, theme: &Theme) {
                 "child picker fill",
                 theme.surface_raised().into(),
             ),
+            TokenChip::without_color("fp-popup-min-width", "picker floor, surface overrides it"),
+            TokenChip::without_color("shadow-modal", "both shells"),
         ],
     );
 

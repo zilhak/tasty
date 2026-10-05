@@ -224,6 +224,36 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "match highlight",
                 egui::Color32::from(theme.accent_primary()),
             ),
+            TokenChip::new(
+                "input-border",
+                "idle border",
+                egui::Color32::from(theme.input_border()),
+            ),
+            TokenChip::new(
+                "input-border-focus",
+                "editing border",
+                egui::Color32::from(theme.input_border_focus()),
+            ),
+            TokenChip::new(
+                "border-focus",
+                "focus ring (35%)",
+                egui::Color32::from(theme.border_focus()),
+            ),
+            TokenChip::new(
+                "autocomplete-menu-bg",
+                "dropdown fill",
+                egui::Color32::from(theme.autocomplete_menu_bg()),
+            ),
+            TokenChip::new(
+                "autocomplete-row-bg-active",
+                "keyboard-active row",
+                egui::Color32::from(theme.autocomplete_row_bg_active()),
+            ),
+            TokenChip::new(
+                "input-icon-fg",
+                "leading icon",
+                egui::Color32::from(theme.input_icon_fg()),
+            ),
         ],
     );
 }

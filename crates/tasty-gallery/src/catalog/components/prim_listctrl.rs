@@ -73,6 +73,36 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "desc · chevron",
                 egui::Color32::from(theme.listctrl_desc_fg()),
             ),
+            TokenChip::new(
+                "listctrl-row-bg-hover",
+                "row hover",
+                egui::Color32::from(theme.listctrl_row_bg_hover()),
+            ),
+            TokenChip::new(
+                "listctrl-row-bg-selected",
+                "selected row",
+                egui::Color32::from(theme.listctrl_row_bg_selected()),
+            ),
+            TokenChip::new(
+                "listctrl-selected-bar",
+                "accent left bar",
+                egui::Color32::from(theme.listctrl_selected_bar()),
+            ),
+            TokenChip::new(
+                "listctrl-label-fg",
+                "label",
+                egui::Color32::from(theme.listctrl_label_fg()),
+            ),
+            TokenChip::new(
+                "listctrl-desc-fg",
+                "description",
+                egui::Color32::from(theme.listctrl_desc_fg()),
+            ),
+            TokenChip::new(
+                "listctrl-chevron-fg",
+                "drill-in chevron",
+                egui::Color32::from(theme.listctrl_chevron_fg()),
+            ),
         ],
     );
 }

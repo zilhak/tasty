@@ -800,6 +800,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "footer divider",
                 theme.border_default().into(),
             ),
+            TokenChip::without_color("badge-group-gap", "4px between the two"),
+            TokenChip::new(
+                "status-dot-success",
+                "rail dot — busy/running",
+                theme.status_dot_success().into(),
+            ),
+            TokenChip::without_color("status-dot-size", "8px"),
         ],
     );
 
@@ -931,11 +938,20 @@ pub fn draw_attached_ring(ui: &mut egui::Ui, theme: &Theme) {
                 "inset 10 · slot 18 · gap 5 → label x 33 · row height unchanged",
             ),
         ],
-        &[TokenChip::new(
-            "status-dot-attached-ring",
-            "attached ring",
-            theme.status_dot_attached_ring().into(),
-        )],
+        &[
+            TokenChip::without_color("workspace-row-padding-x", "→ space-sm 8"),
+            TokenChip::without_color("workspace-dot-slot", "→ size-16"),
+            TokenChip::without_color("workspace-dot-gap", "→ space-xs 4"),
+            TokenChip::without_color(
+                "workspace-row-active-bar-width",
+                "→ selection-edge-width 2 (hairline)",
+            ),
+            TokenChip::new(
+                "status-dot-attached-ring",
+                "attached ring",
+                theme.status_dot_attached_ring().into(),
+            ),
+        ],
     );
 
     spec::note(

@@ -256,6 +256,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "force-detach confirm",
                 theme.accent_danger().into(),
             ),
+            TokenChip::new(
+                "surface-occupied-soft-border",
+                "soft edge (→ green)",
+                theme.surface_occupied_soft_border().into(),
+            ),
+            TokenChip::new(
+                "surface-occupied-hard-border",
+                "hard edge (→ peach)",
+                theme.surface_occupied_hard_border().into(),
+            ),
+            TokenChip::without_color("surface-occupied-border-width", "occupancy edge = 1px"),
+            TokenChip::without_color("surface-highlight-done-width", "completion edge = 2px"),
+            TokenChip::without_color("surface-highlight-input-width", "2px — matches completion"),
         ],
     );
 

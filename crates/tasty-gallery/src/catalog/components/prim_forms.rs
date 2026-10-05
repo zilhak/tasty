@@ -353,4 +353,94 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
         ],
     );
+
+    meta(
+        ui,
+        theme,
+        &[
+            (
+                "trigger",
+                "Select language — 28px --tasty-multiselect-height · 12 left · 28 chevron room",
+            ),
+            (
+                "open trigger",
+                "border-focus + 1px ring, chevron rotates 180°",
+            ),
+            (
+                "summary",
+                "3 branches, caller-injected · plain text · single line + ellipsis",
+            ),
+            (
+                "menu",
+                "4 below the trigger · min-width = trigger · grows to content up to --tasty-multiselect-menu-max-width (320)",
+            ),
+            ("row", "28px · 12 padding-x · 8 box→label · Checkbox 16px"),
+            ("checked row", "checkmark only — no background"),
+            (
+                "overflow",
+                "scrolls past 220 --tasty-multiselect-menu-max-height · .tasty-scroll",
+            ),
+            (
+                "bulk row",
+                "allToggle — accent action row + separator, off below ~8 options",
+            ),
+            (
+                "keys",
+                "↓/↵/Space open · ↑↓ Home End move · Space/↵ toggle (menu stays) · Esc close",
+            ),
+            ("motion", "border/chevron 120ms · check state 0ms"),
+        ],
+        &[
+            TokenChip::new(
+                "multiselect-bg",
+                "trigger fill",
+                egui::Color32::from(theme.multiselect_bg()),
+            ),
+            TokenChip::new(
+                "multiselect-border",
+                "trigger edge",
+                egui::Color32::from(theme.multiselect_border()),
+            ),
+            TokenChip::new(
+                "multiselect-border-focus",
+                "focus / open",
+                egui::Color32::from(theme.multiselect_border_focus()),
+            ),
+            TokenChip::new(
+                "multiselect-summary-fg-empty",
+                "0 selected",
+                egui::Color32::from(theme.multiselect_summary_fg_empty()),
+            ),
+            TokenChip::new(
+                "multiselect-menu-bg",
+                "menu fill",
+                egui::Color32::from(theme.multiselect_menu_bg()),
+            ),
+            TokenChip::new(
+                "multiselect-row-bg-hover",
+                "pointer hover",
+                egui::Color32::from(theme.multiselect_row_bg_hover()),
+            ),
+            TokenChip::new(
+                "multiselect-row-bg-active",
+                "keyboard-active",
+                egui::Color32::from(theme.multiselect_row_bg_active()),
+            ),
+            TokenChip::new(
+                "multiselect-row-fg",
+                "row label (primary, not muted)",
+                egui::Color32::from(theme.multiselect_row_fg()),
+            ),
+            TokenChip::new(
+                "checkbox-bg-checked",
+                "checked box",
+                egui::Color32::from(theme.checkbox_bg_checked()),
+            ),
+            TokenChip::new(
+                "multiselect-all-fg",
+                "bulk select/clear",
+                egui::Color32::from(theme.multiselect_all_fg()),
+            ),
+        ],
+    );
 }

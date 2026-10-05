@@ -8,7 +8,7 @@ use tasty_ui_widgets::tokens::TRANSFER_CARD_PAD_X;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
 
 use crate::catalog::icons;
-use crate::catalog::spec::{self, StageVariant};
+use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
 /// 헤더/푸터 가로 패딩 (디자인 14 — space 스텝 밖 raw).
@@ -61,6 +61,34 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             );
         });
     });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("width", "--tasty-transfer-popup-width"),
+            ("header", "download glyph · title · mono %"),
+            ("filename", "mono 13 · ellipsized"),
+            ("bar", "4px track + accent fill · no animation"),
+            ("stats", "done / total · rate (mono, muted)"),
+            ("close", "auto on completion · Cancel aborts"),
+            ("outside click", "does not dismiss"),
+        ],
+        &[
+            TokenChip::new(
+                "progress-track-bg",
+                "recessed track",
+                theme.progress_track_bg().to_egui(),
+            ),
+            TokenChip::new(
+                "progress-fill-bg",
+                "determinate fill",
+                theme.progress_fill_bg().to_egui(),
+            ),
+            TokenChip::without_color("progress-height", "4px thickness"),
+            TokenChip::new("bg-panel", "frame", theme.bg_panel().to_egui()),
+        ],
+    );
 }
 
 /// 시작 전 거부와 전송 중 실패의 확인·재시도 버튼을 비교한다.

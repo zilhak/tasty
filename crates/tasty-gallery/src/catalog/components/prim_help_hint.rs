@@ -93,6 +93,52 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "bubble border",
                 egui::Color32::from(theme.border_strong()),
             ),
+            TokenChip::new(
+                "help-hint-color",
+                "rest glyph",
+                egui::Color32::from(theme.help_hint_color()),
+            ),
+            TokenChip::new(
+                "help-hint-color-hover",
+                "hover glyph",
+                egui::Color32::from(theme.help_hint_color_hover()),
+            ),
+            TokenChip::without_color("help-hint-gap", "label → (?)"),
+        ],
+    );
+
+    meta(
+        ui,
+        theme,
+        &[
+            ("bg", "--tasty-tooltip-bg"),
+            ("border", "1px --tasty-tooltip-border"),
+            ("radius", "--tasty-tooltip-radius"),
+            ("max-width", "240 --tasty-tooltip-max-width"),
+            ("placement", "top / bottom / left / right"),
+            (
+                "over native content",
+                "tab strip · pane head: always top, clamped inside the window (Layouts › Pane tab strip)",
+            ),
+            ("delay", "150ms --tasty-tooltip-delay"),
+        ],
+        &[
+            TokenChip::new(
+                "tooltip-bg",
+                "bubble fill",
+                egui::Color32::from(theme.tooltip_bg()),
+            ),
+            TokenChip::new(
+                "tooltip-border",
+                "1px edge",
+                egui::Color32::from(theme.tooltip_border()),
+            ),
+            TokenChip::new(
+                "tooltip-fg",
+                "copy",
+                egui::Color32::from(theme.tooltip_fg()),
+            ),
+            TokenChip::without_color("tooltip-shadow", "lift"),
         ],
     );
 }

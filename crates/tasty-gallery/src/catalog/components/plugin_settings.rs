@@ -159,6 +159,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "frame edge",
                 theme.border_strong().to_egui(),
             ),
+            TokenChip::new("select-bg", "scheme select", theme.select_bg().to_egui()),
+            TokenChip::new(
+                "switch-track-bg-on",
+                "enabled toggle",
+                theme.switch_track_bg_on().to_egui(),
+            ),
+            TokenChip::new("input-bg", "zoom field", theme.input_bg().to_egui()),
         ],
     );
 }

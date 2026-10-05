@@ -737,6 +737,44 @@ pub fn draw_more_menu(ui: &mut egui::Ui, theme: &Theme) {
                 "menu edge",
                 theme.border_strong().to_egui(),
             ),
+            TokenChip::without_color("banner-more-column-gap", "4px ⋯ ↔ ×"),
+            TokenChip::without_color("banner-more-reserve", "56px body right padding"),
+            TokenChip::new(
+                "overlay-active",
+                "open-trigger wash",
+                theme.overlay_active().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-primary",
+                "open-trigger glyph",
+                theme.accent_primary().to_egui(),
+            ),
+            TokenChip::new(
+                "banner-more-menu-bg",
+                "menu fill",
+                theme.banner_more_menu_bg().to_egui(),
+            ),
+            TokenChip::new(
+                "banner-more-menu-border",
+                "edge",
+                theme.banner_more_menu_border().to_egui(),
+            ),
+            TokenChip::without_color("banner-more-menu-shadow", "popover lift"),
+            TokenChip::without_color("banner-more-menu-offset", "4px below trigger"),
+            TokenChip::without_color("banner-more-menu-min-width", "200px floor"),
+            TokenChip::without_color("banner-more-menu-max-width", "288px ceiling"),
+            TokenChip::without_color("banner-more-app-font", "mono program name"),
+            TokenChip::new(
+                "banner-more-app-fg",
+                "program name tone",
+                theme.banner_more_app_fg().to_egui(),
+            ),
+            TokenChip::without_color("menu-item-height", "28px rows"),
+            TokenChip::new(
+                "accent-danger",
+                "rejected variant only",
+                theme.accent_danger().to_egui(),
+            ),
         ],
     );
 

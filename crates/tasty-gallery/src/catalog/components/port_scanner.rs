@@ -331,6 +331,29 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "star on (favorited)",
                 theme.accent_warning().to_egui(),
             ),
+            TokenChip::new(
+                "port-star-on",
+                "registered star",
+                theme.port_star_on().to_egui(),
+            ),
+            TokenChip::new(
+                "port-star-off",
+                "outline star",
+                theme.port_star_off().to_egui(),
+            ),
+            TokenChip::new(
+                "port-favorites-bg",
+                "section tone",
+                theme.port_favorites_bg().to_egui(),
+            ),
+            TokenChip::new(
+                "port-state-none-dot",
+                "NONE dot",
+                theme.port_state_none_dot().to_egui(),
+            ),
+            TokenChip::without_color("port-favorites-max-height", "scroll cap"),
+            TokenChip::without_color("port-process-col-min-width", "Process floor"),
+            TokenChip::without_color("port-star-col-width", "leading star column"),
         ],
     );
 

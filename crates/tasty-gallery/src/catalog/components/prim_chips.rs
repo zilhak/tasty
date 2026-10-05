@@ -41,6 +41,16 @@ pub fn draw_badge(ui: &mut egui::Ui, theme: &Theme) {
                 "agent fill",
                 egui::Color32::from(theme.accent_agent()),
             ),
+            TokenChip::new(
+                "badge-danger-bg",
+                "default",
+                egui::Color32::from(theme.badge_danger_bg()),
+            ),
+            TokenChip::new(
+                "badge-agent-bg",
+                "agent",
+                egui::Color32::from(theme.badge_agent_bg()),
+            ),
             TokenChip::without_color("font-size-caption", "label 11px"),
         ],
     );

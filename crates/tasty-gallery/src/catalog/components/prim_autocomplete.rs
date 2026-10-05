@@ -271,7 +271,47 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::without_color("table-cell-height", "Detail row + header (28)"),
             TokenChip::without_color("tree-row-height", "List row (22)"),
+            TokenChip::new(
+                "input-bg",
+                "trigger fill",
+                egui::Color32::from(theme.input_bg()),
+            ),
+            TokenChip::new(
+                "input-border-focus",
+                "trigger border (open)",
+                egui::Color32::from(theme.input_border_focus()),
+            ),
+            TokenChip::new(
+                "autocomplete-menu-bg",
+                "dropdown fill",
+                egui::Color32::from(theme.autocomplete_menu_bg()),
+            ),
+            TokenChip::new(
+                "autocomplete-menu-border",
+                "dropdown edge",
+                egui::Color32::from(theme.autocomplete_menu_border()),
+            ),
+            TokenChip::new(
+                "autocomplete-row-bg-hover",
+                "pointer hover",
+                egui::Color32::from(theme.autocomplete_row_bg_hover()),
+            ),
+            TokenChip::new(
+                "autocomplete-row-bg-active",
+                "keyboard-active",
+                egui::Color32::from(theme.autocomplete_row_bg_active()),
+            ),
+            TokenChip::new(
+                "autocomplete-match-fg",
+                "match highlight",
+                egui::Color32::from(theme.autocomplete_match_fg()),
+            ),
             TokenChip::without_color("autocomplete-max-height", "default cap (220)"),
+            TokenChip::new(
+                "autocomplete-empty-fg",
+                "no-match row",
+                egui::Color32::from(theme.autocomplete_empty_fg()),
+            ),
         ],
     );
 }

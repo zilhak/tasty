@@ -353,6 +353,11 @@ pub fn draw_title_bar(ui: &mut egui::Ui, theme: &Theme) {
         &[
             TokenChip::new("bg-sidebar", "title bar", theme.bg_sidebar().to_egui()),
             TokenChip::new("icon-button-fg", "glyphs", theme.icon_button_fg().to_egui()),
+            TokenChip::without_color("popup-title-btn-size", "→ icon-button-size-sm 24"),
+            TokenChip::without_color("popup-title-btn-gap", "→ space-xs 4"),
+            TokenChip::without_color("popup-title-edge-inset", "→ space-xs 4"),
+            TokenChip::without_color("popup-title-text-gap", "→ space-xs 4"),
+            TokenChip::without_color("notifications-popup-width", "→ size-352"),
         ],
     );
 

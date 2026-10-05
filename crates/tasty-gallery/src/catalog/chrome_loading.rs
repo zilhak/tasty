@@ -73,7 +73,21 @@ pub fn draw_default(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[("window", "1280×720 default"), ("phase", "GpuInit")],
-        &[],
+        &[
+            TokenChip::new("bg-app", "full surface", theme.bg_app().to_egui()),
+            TokenChip::new(
+                "accent-primary",
+                "spinner arc",
+                theme.accent_primary().to_egui(),
+            ),
+            TokenChip::new(
+                "brand-melon-flesh",
+                "wordmark dot",
+                theme.brand_melon_flesh().to_egui(),
+            ),
+            TokenChip::without_color("spinner-duration", "900ms rotation"),
+            TokenChip::without_color("space-xl / -lg", "stack gaps"),
+        ],
     );
 }
 

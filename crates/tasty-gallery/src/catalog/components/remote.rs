@@ -515,6 +515,11 @@ pub fn draw_attach_form(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new("text-muted", "labels / hints", theme.text_muted().to_egui()),
             TokenChip::without_color("separator", "footer + tab divider"),
             TokenChip::without_color("remote-label-col", "shared 112 label column"),
+            TokenChip::new(
+                "surface-active",
+                "selected connection segment",
+                theme.surface_active().to_egui(),
+            ),
         ],
     );
 }
