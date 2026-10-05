@@ -13,6 +13,7 @@ mod button;
 mod center_state;
 mod chip;
 mod chrome_slot;
+mod clipboard_viewer;
 mod control;
 pub mod crumb_alloc;
 mod drilldown;
@@ -63,6 +64,9 @@ pub use chip::{
     paint_badge_dot, paint_num_keycap, tag, tag_disabled, tag_width,
 };
 pub use chrome_slot::top_right_inset_square;
+pub use clipboard_viewer::{
+    SEG_COMPACT_AT, SegmentIconPainter, TypeSegment, draw_type_segments, seg_shows_label,
+};
 pub use control::ControlSize;
 pub use drilldown::{DrillDown, DrillDownActions, DrillDownOutput, DrillDownView};
 pub use help_hint::HelpHint;

@@ -548,7 +548,7 @@ master-detail 레이아웃은 폐기됐다 — header→type-bar→body→footer
 | plugin view.rs | 토큰 | 갤러리 함수 |
 |---|---|---|
 | header(아이콘+타이틀+snapshot 뱃지+close) | `text-muted`/`font-size-max`/`tag` Default | `header_row` |
-| type-bar(≤1: 뱃지, ≥2: 세그먼트) | `bg-sidebar` 행 + `tag` Accent(≤1) / `border-default`+`accent-primary`(≥2) | `type_bar_row`(text) / `type_bar_segmented_row`(Text/Files) / `image_type_bar_row`(image, 우측에 meta 텍스트) / `type_bar_row_html`(우측 Pretty print 체크박스) / `other_type_bar_row`(Other 뱃지) |
+| type-bar(≤1: 뱃지, ≥2: 세그먼트) | `bg-sidebar` 행 + `tag` Accent(≤1) / `border-default`+`accent-primary`(≥2) | `type_bar_row`(text) / `type_bar_segmented_row`(Text/Files) / `type_bar_compact_row`(다섯 타입) / `image_type_bar_row`(image, 우측에 meta 텍스트) / `type_bar_row_html`(우측 Pretty print 체크박스) / `other_type_bar_row`(Other 뱃지) |
 | body well(text/html) | `bg-app` fill + `separator`+`border-width` + `corner-radius`, mono 스크롤 | `body_row` / `body_row_text`(임의 문자열) |
 | body well(files) | 위와 동일 + 아이콘(`text-muted`)+mono 경로 한 줄씩 | `files_body_row` |
 | body well(image — 인라인 렌더 없음) | 위와 동일 fill/border, 콘텐츠는 중앙 정렬(아이콘 30px 고정 + `text-muted` + mono caption 메타 + `text-disabled` italic 안내) | `image_body_row` |
@@ -559,6 +559,12 @@ master-detail 레이아웃은 폐기됐다 — header→type-bar→body→footer
 화면 전용 고정값 480×360 은 용도를 명시한 모듈 상수. 10 상태(data-text/data-files/
 compact/image/html-raw/html-pretty/other/empty/read-failed/already-open) 를
 `StageVariant::Column` 으로 노출.
+
+**세그먼트(≥2)는 공용 view 다.** plugin `type_switch` 와 갤러리 `type_bar_segmented_row`·`type_bar_compact_row`
+는 같은 `tasty_ui_widgets::draw_type_segments`(`crates/tasty-ui-widgets/src/clipboard_viewer.rs`)를 부른다. 세그먼트
+크기·간격·구분선·채움·글자색, `SEG_COMPACT_AT` 과 `seg_shows_label` 규칙이 그 함수 하나에 있다. 호출자는
+라벨·툴팁 목록과 아이콘 그리기만 넘긴다 — plugin 은 baked 아이콘, 갤러리는 SVG 글리프. 타입 순서와 아이콘
+짝(갤러리 `COMPACT_TYPES`)은 갤러리 데이터로 남는다.
 
 **압축 세그먼트**는 지원하는 5개 타입을 모두 표시할 때 사용한다. `SEG_COMPACT_AT` 은 5 이고 `ClipboardType`
 도 다섯(Text/Files/Image/Html/Other)이며 `read_available()` 이 다섯 리더의 결과를 이어 붙이므로,

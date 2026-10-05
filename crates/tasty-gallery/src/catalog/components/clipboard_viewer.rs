@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use tasty_type_geometry::length::LogicalPx;
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{TagVariant, checkbox, tag};
+use tasty_ui_widgets::{TagVariant, TypeSegment, checkbox, draw_type_segments, tag};
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -18,15 +18,18 @@ const POPUP_H: LogicalPx = LogicalPx(360.0);
 
 use tasty_ui_widgets::tokens::CLIPBOARD_CENTER_ICON_SIZE as CENTER_ICON_SIZE;
 
-/// compact type-bar 의 다섯 세그먼트 — (아이콘, 라벨, active). `ClipboardType` 의 다섯
-/// arm 과 같은 순서이고 아이콘도 plugin `type_icon` 과 같은 짝이다.
-const COMPACT_TYPES: &[(MockGlyph, &str, bool)] = &[
-    (icons::TEXT_LEFT, "Text", false),
-    (icons::FILE, "Files", true),
-    (icons::IMAGE, "Image", false),
-    (icons::HTML, "Html", false),
-    (icons::LAYERS, "Other", false),
+/// compact type-bar 의 다섯 세그먼트 — (아이콘, 라벨). `ClipboardType` 의 다섯 arm 과 같은
+/// 순서이고 아이콘도 plugin `type_icon` 과 같은 짝이다. 선택은 Files 다.
+const COMPACT_TYPES: &[(MockGlyph, &str)] = &[
+    (icons::TEXT_LEFT, "Text"),
+    (icons::FILE, "Files"),
+    (icons::IMAGE, "Image"),
+    (icons::HTML, "Html"),
+    (icons::LAYERS, "Other"),
 ];
+
+/// 두 타입(Text/Files) 세그먼트, 선택은 Files.
+const SEGMENTED_TYPES: &[(MockGlyph, &str)] = &[(icons::TEXT_LEFT, "Text"), (icons::FILE, "Files")];
 
 /// body well 안 mono 미리보기 샘플 — 현재 클립보드 text 표현.
 const PREVIEW: &[&str] = &[
@@ -276,20 +279,7 @@ fn type_bar_segmented_row(ui: &mut egui::Ui, theme: &Theme) {
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
 
-    egui::Frame::new()
-        .stroke(egui::Stroke::new(
-            theme.border_width.value(),
-            theme.border_default().to_egui(),
-        ))
-        .corner_radius(theme.corner_radius.value())
-        .inner_margin(egui::Margin::ZERO)
-        .show(&mut lui, |ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-            ui.horizontal(|ui| {
-                seg(ui, theme, icons::TEXT_LEFT, "Text", false, true, true);
-                seg(ui, theme, icons::FILE, "Files", true, true, false);
-            });
-        });
+    type_segments(&mut lui, theme, SEGMENTED_TYPES, 1);
 
     hline(ui, theme, rect.bottom());
 }
@@ -358,81 +348,24 @@ fn type_bar_compact_row(ui: &mut egui::Ui, theme: &Theme) {
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
 
-    egui::Frame::new()
-        .stroke(egui::Stroke::new(
-            theme.border_width.value(),
-            theme.border_default().to_egui(),
-        ))
-        .corner_radius(theme.corner_radius.value())
-        .inner_margin(egui::Margin::ZERO)
-        .show(&mut lui, |ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-            ui.horizontal(|ui| {
-                for (i, (glyph, label, on)) in COMPACT_TYPES.iter().enumerate() {
-                    seg(ui, theme, *glyph, label, *on, *on, i == 0);
-                }
-            });
-        });
+    type_segments(&mut lui, theme, COMPACT_TYPES, 1);
 
     hline(ui, theme, rect.bottom());
 }
 
-fn seg(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    glyph: MockGlyph,
-    label: &str,
-    active: bool,
-    show_label: bool,
-    first: bool,
-) {
-    let h = theme.item_height_tab.value();
-    let icon_sz = theme.icon_glyph_size_xs.value();
-    let pad_x = theme.spacing_sm.value();
-    let gap = if show_label {
-        theme.spacing_xs.value()
-    } else {
-        0.0
-    };
-    let font = egui::FontId::proportional(theme.font_size_term_sm.value());
-    let label_w = if show_label {
-        ui.fonts(|f| f.layout_no_wrap(label.to_owned(), font.clone(), egui::Color32::PLACEHOLDER))
-            .size()
-            .x
-    } else {
-        0.0
-    };
-    let w = pad_x * 2.0 + icon_sz + gap + label_w;
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
-    if !first {
-        ui.painter().vline(
-            rect.left(),
-            rect.y_range(),
-            egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
-        );
-    }
-    if active {
-        ui.painter()
-            .rect_filled(rect, 0.0, theme.accent_primary().to_egui());
-    }
-    let fg = if active {
-        theme.text_on_accent()
-    } else {
-        theme.text_secondary()
-    }
-    .to_egui();
-    let icon_center = egui::pos2(rect.left() + pad_x + icon_sz * 0.5, rect.center().y);
-    let icon_rect = egui::Rect::from_center_size(icon_center, egui::vec2(icon_sz, icon_sz));
-    glyph.image(icon_sz, fg).paint_at(ui, icon_rect);
-    if show_label {
-        ui.painter().text(
-            egui::pos2(icon_center.x + icon_sz * 0.5 + gap, rect.center().y),
-            egui::Align2::LEFT_CENTER,
+/// plugin 과 같은 공용 세그먼트 view 를 부른다. 아이콘만 갤러리 SVG 글리프로 그린다.
+fn type_segments(ui: &mut egui::Ui, theme: &Theme, types: &[(MockGlyph, &str)], active: usize) {
+    let segments: Vec<TypeSegment<'_>> = types
+        .iter()
+        .map(|(_, label)| TypeSegment {
             label,
-            font,
-            fg,
-        );
-    }
+            tooltip: label,
+        })
+        .collect();
+    draw_type_segments(ui, theme, &segments, active, &|ui, i, center, size, fg| {
+        let rect = egui::Rect::from_center_size(center, egui::vec2(size, size));
+        types[i].0.image(size, fg).paint_at(ui, rect);
+    });
 }
 
 fn files_body_row(ui: &mut egui::Ui, theme: &Theme) {

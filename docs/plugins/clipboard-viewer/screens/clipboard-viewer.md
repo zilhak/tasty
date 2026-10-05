@@ -13,7 +13,7 @@
 ## UI 요소 인벤토리
 
 - **header** — 클립보드 아이콘 + "Clipboard" 타이틀(14px/600) + `snapshot` 뱃지(default tag) + 우측 close IconButton.
-- **type-bar** — 좌측 [`type_switch`]: 가용 타입이 1개면 아이콘 + accent 뱃지(읽기전용), 2개 이상이면 가로 세그먼트 버튼 그룹(rail 없음). 5개 이상(`SEG_COMPACT_AT`)이면 비활성 세그먼트가 아이콘 전용으로 압축되고 hover 시 전체 타입명 툴팁이 뜬다. Other 세그먼트/뱃지의 hover 툴팁은 기본 라벨("Other") 대신 "{n} unrecognized formats"(발견된 포맷 개수)를 보여준다. 우측 슬롯은 HTML 타입일 때만 "Pretty print" `Checkbox`(`tasty_ui_widgets::checkbox`)로 스왑되고, 다른 타입은 빈 슬롯.
+- **type-bar** — 좌측 [`type_switch`]: 가용 타입이 1개면 아이콘 + accent 뱃지(읽기전용), 2개 이상이면 가로 세그먼트 버튼 그룹(rail 없음, 갤러리와 같은 공용 view `tasty_ui_widgets::draw_type_segments`). 5개 이상(`SEG_COMPACT_AT`)이면 비활성 세그먼트가 아이콘 전용으로 압축되고 hover 시 전체 타입명 툴팁이 뜬다. Other 세그먼트/뱃지의 hover 툴팁은 기본 라벨("Other") 대신 "{n} unrecognized formats"(발견된 포맷 개수)를 보여준다. 우측 슬롯은 HTML 타입일 때만 "Pretty print" `Checkbox`(`tasty_ui_widgets::checkbox`)로 스왑되고, 다른 타입은 빈 슬롯.
 - **body** — well(border+radius+bg-app) 안에 타입별 콘텐츠.
   Text 는 mono pre 스크롤(`well`).
   Files 는 아이콘+mono 경로 한 줄씩(긴 경로는 말줄임, `well` 스크롤).

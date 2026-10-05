@@ -8,14 +8,14 @@ mod baked_icons {
 
 use tasty_plugin_sdk::{Translator, baked_icon};
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, TagVariant, checkbox, tag};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, ControlSize, IconButton, TagVariant, TypeSegment, checkbox,
+    draw_type_segments, tag,
+};
 
 use crate::ViewerState;
 use crate::clipboard::{ClipboardType, ContentRepr, OtherFormatEntry, format_bytes};
 use crate::html_format::prettify;
-
-/// 타입이 이 개수 이상이면 선택하지 않은 버튼은 아이콘만 표시한다.
-const SEG_COMPACT_AT: usize = 5;
 
 /// 헤더·타입바·푸터의 좌우 여백. spacing_md 토큰을 사용한다.
 fn row_pad_x(theme: &Theme) -> f32 {
@@ -231,8 +231,8 @@ fn data_state(
     );
 }
 
-/// 타입이 하나면 배지, 여러 개면 선택 버튼을 그린다.
-/// SEG_COMPACT_AT 이상이면 선택한 타입만 라벨을 표시한다.
+/// 타입이 하나면 배지, 여러 개면 공용 타입 세그먼트를 그린다.
+/// `SEG_COMPACT_AT` 이상이면 선택한 타입만 라벨을 표시한다.
 /// 기타 포맷의 툴팁에는 개수를 넣는다.
 fn type_switch(
     ui: &mut egui::Ui,
@@ -265,95 +265,34 @@ fn type_switch(
         return None;
     }
 
-    let compact = types.len() >= SEG_COMPACT_AT;
-    let h = ControlSize::Sm.height(theme);
-    let icon_sz = theme.icon_glyph_size_xs.value();
-    let font = egui::FontId::proportional(theme.font_size_term_sm.value());
-    let pad_x = theme.spacing_sm.value();
-    let gap = theme.spacing_xs.value();
-    let mut picked = None;
-
-    egui::Frame::new()
-        .stroke(egui::Stroke::new(
-            theme.border_width.value(),
-            theme.border_default().to_egui(),
-        ))
-        .corner_radius(theme.corner_radius.value())
-        .inner_margin(egui::Margin::ZERO)
-        .show(ui, |ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-            ui.horizontal(|ui| {
-                for (i, ty) in types.iter().copied().enumerate() {
-                    let on = ty == active;
-                    let show_label = seg_shows_label(compact, on);
-                    let label = tr.t(ty.label_i18n_key());
-                    let label_w = if show_label {
-                        ui.fonts(|f| {
-                            f.layout_no_wrap(
-                                label.to_owned(),
-                                font.clone(),
-                                egui::Color32::PLACEHOLDER,
-                            )
-                        })
-                        .size()
-                        .x
-                    } else {
-                        0.0
-                    };
-                    let row_gap = if show_label { gap } else { 0.0 };
-                    let seg_w = pad_x * 2.0 + icon_sz + row_gap + label_w;
-                    let (rect, resp) =
-                        ui.allocate_exact_size(egui::vec2(seg_w, h), egui::Sense::click());
-
-                    if i > 0 {
-                        ui.painter().vline(
-                            rect.left(),
-                            rect.y_range(),
-                            egui::Stroke::new(
-                                theme.border_width.value(),
-                                theme.border_default().to_egui(),
-                            ),
-                        );
-                    }
-                    if on {
-                        ui.painter()
-                            .rect_filled(rect, 0.0, theme.accent_primary().to_egui());
-                    }
-                    let fg = if on {
-                        theme.text_on_accent()
-                    } else {
-                        theme.text_secondary()
-                    }
-                    .to_egui();
-                    let icon_center =
-                        egui::pos2(rect.left() + pad_x + icon_sz * 0.5, rect.center().y);
-                    baked_icon::draw(ui.painter(), type_icon(ty), icon_center, icon_sz, fg);
-                    if show_label {
-                        ui.painter().text(
-                            egui::pos2(icon_center.x + icon_sz * 0.5 + row_gap, rect.center().y),
-                            egui::Align2::LEFT_CENTER,
-                            label,
-                            font.clone(),
-                            fg,
-                        );
-                    }
-                    let tooltip = match (ty, other_count) {
-                        (ClipboardType::Other, Some(n)) => other_unrecognized_text(tr, n),
-                        _ => label.to_string(),
-                    };
-                    if resp.on_hover_text(tooltip).clicked() && !on {
-                        picked = Some(ty);
-                    }
-                }
-            });
-        });
-
-    picked
-}
-
-/// 압축 표시 중에는 선택한 타입만 라벨을 표시한다.
-fn seg_shows_label(compact: bool, active: bool) -> bool {
-    !compact || active
+    let labels: Vec<&str> = types.iter().map(|ty| tr.t(ty.label_i18n_key())).collect();
+    let tooltips: Vec<String> = types
+        .iter()
+        .zip(&labels)
+        .map(|(ty, label)| match (ty, other_count) {
+            (ClipboardType::Other, Some(n)) => other_unrecognized_text(tr, n),
+            _ => label.to_string(),
+        })
+        .collect();
+    let segments: Vec<TypeSegment<'_>> = labels
+        .iter()
+        .zip(&tooltips)
+        .map(|(label, tooltip)| TypeSegment { label, tooltip })
+        .collect();
+    let active_idx = types
+        .iter()
+        .position(|ty| *ty == active)
+        .unwrap_or(usize::MAX);
+    draw_type_segments(
+        ui,
+        theme,
+        &segments,
+        active_idx,
+        &|ui, i, center, size, fg| {
+            baked_icon::draw(ui.painter(), type_icon(types[i]), center, size, fg);
+        },
+    )
+    .map(|i| types[i])
 }
 
 /// 타입 선택과 우측 내용을 그린다. 우측에는 메타데이터나 HTML 체크박스를 넣는다.
@@ -835,21 +774,6 @@ fn bottom_separator(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn compact_mode_starts_at_seg_compact_at() {
-        // 압축하지 않을 때는 모든 타입의 라벨을 표시한다.
-        assert!(seg_shows_label(false, false));
-        assert!(seg_shows_label(false, true));
-        // 압축할 때는 선택한 타입만 라벨을 표시한다.
-        assert!(!seg_shows_label(true, false));
-        assert!(seg_shows_label(true, true));
-    }
-
-    #[test]
-    fn seg_compact_at_matches_design() {
-        assert_eq!(SEG_COMPACT_AT, 5);
-    }
 
     #[test]
     fn footer_mime_text_text_is_plain_mime_only() {
