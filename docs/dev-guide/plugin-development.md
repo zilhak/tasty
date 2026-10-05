@@ -503,6 +503,10 @@ Drop이 실행되지 않는 크래시·강제 종료에 대비해 `PluginReaper`
 
 모든 결박 실패(Job 생성/assign 실패 등)는 `tracing::warn!` 으로 흡수하고 기존 kill 기반 정리로 degrade — 결박 실패가 기능이나 호스트를 죽이지 않는다.
 
+Linux spawner가 자식을 생성한 뒤 요청자가 결과 채널을 닫았다면, 반환된 자식 핸들로
+종료와 wait를 수행한다. 전달받은 호출자가 없다는 이유로 Child를 버리면 프로세스가 남는다.
+결과 전달에 성공한 자식은 기존 호출자가 수명을 관리한다.
+
 PTY 셸도 별도 정리 경로가 있다. Windows에서는 `tasty-reaper`의 호스트 Job Object에
 `Terminal::new`가 셸 PID를 등록한다. plugin Job과는 별도 인스턴스다.
 Unix에서는 PTY master가 닫히며 SIGHUP이 전경 프로세스 그룹에 전달된다.
