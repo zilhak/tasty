@@ -22,7 +22,7 @@ Tasty 개발자를 위한 가이드다. Tasty를 사용하는 에이전트용 �
 | [adr-renumber](adr-renumber.md) | ADR 을 새 번호로 옮기고 레포 전체의 인용을 한 번에 고치는 도구(`adr-renumber` bin) — 매핑 파일 형식, 고치는 형태와 보고만 하는 형태, 삭제되는 ADR 을 부르는 자리가 쓰기를 막는 이유, 도구가 못 보는 것 |
 | [error-handling](error-handling.md) | Result 처리·락 poison 복구와 관측 범위 |
 | [clippy-policy](clippy-policy.md) | 위치별 allow 선호, 워크스페이스 끄기 지양 · unsafe `// SAFETY:` 작성 + 자가검토 7문 |
-| [complexity-gate](complexity-gate.md) | 복잡도 게이트(cognitive deny + 파일 SLOC), 예외 컨벤션 |
+| [complexity-gate](complexity-gate.md) | 복잡도 게이트(cognitive deny + 파일 SLOC), 오류 분기 분리와 예외 컨벤션 |
 | [duplicated-sets](duplicated-sets.md) | 같은 집합이 여러 곳에 적힐 때 — 자리로 셀 수 있는 것, 합칠 곳과 남길 곳을 가르는 기준 |
 | [theme › 색 생성 정책](../design/systems/theme.md#색-생성-정책) | 색 생성 newtype + clippy 강제 (design/systems/theme 의 절) |
 | [i18n](i18n.md) | 번역 키·CLI 도움말·사용자 오버라이드·폰트·하드코딩 예외 |

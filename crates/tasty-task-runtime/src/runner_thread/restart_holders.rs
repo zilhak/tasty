@@ -1,7 +1,7 @@
 //! Reconcile task-owned semaphore and lease holders before runner restart.
 
 use super::{RunnerContext, now_ms};
-use tasty_agent::{LeaseStore, SemaphoreStore, TaskResult, TaskState, TaskStore};
+use tasty_agent::{LeaseStore, SemaphoreStore, Task, TaskResult, TaskState, TaskStore};
 use tasty_memory::HOST_OWNER;
 
 /// Running 작업 중 semaphore 이름이 있고 holder가 task ID인 항목을 정리한다.
@@ -53,31 +53,14 @@ pub(super) fn purge_stale_semaphore_holders(ctx: &RunnerContext, workspace_id: u
         }
         let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
         for (task_id, _, _) in &candidates {
-            if let Err(e) = store.set_result(
+            fail_restarted_task(
+                &mut store,
                 workspace_id,
                 task_id,
-                TaskResult {
-                    exit_code: None,
-                    output: None,
-                    error: Some("host restart".to_string()),
-                },
-            ) {
-                tracing::warn!("purge set_result for {task_id} failed: {e}");
-            }
-            match store.set_state(
-                workspace_id,
-                task_id,
-                TaskState::Failed {
-                    error: "host restart".to_string(),
-                },
                 now,
-            ) {
-                Ok((task, downstream)) => {
-                    transitioned.push(task);
-                    transitioned.extend(downstream);
-                }
-                Err(e) => tracing::warn!("purge set_state for {task_id} failed: {e}"),
-            }
+                "purge",
+                &mut transitioned,
+            );
         }
         transitioned
     });
@@ -136,31 +119,14 @@ pub(super) fn purge_stale_lease_holders(ctx: &RunnerContext, workspace_id: u32) 
         }
         let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
         for (task_id, _, _) in &candidates {
-            if let Err(e) = store.set_result(
+            fail_restarted_task(
+                &mut store,
                 workspace_id,
                 task_id,
-                TaskResult {
-                    exit_code: None,
-                    output: None,
-                    error: Some("host restart".to_string()),
-                },
-            ) {
-                tracing::warn!("purge(lease) set_result for {task_id} failed: {e}");
-            }
-            match store.set_state(
-                workspace_id,
-                task_id,
-                TaskState::Failed {
-                    error: "host restart".to_string(),
-                },
                 now,
-            ) {
-                Ok((task, downstream)) => {
-                    transitioned.push(task);
-                    transitioned.extend(downstream);
-                }
-                Err(e) => tracing::warn!("purge(lease) set_state for {task_id} failed: {e}"),
-            }
+                "purge(lease)",
+                &mut transitioned,
+            );
         }
         transitioned
     });
@@ -169,4 +135,40 @@ pub(super) fn purge_stale_lease_holders(ctx: &RunnerContext, workspace_id: u32) 
         "agent runner ws{workspace_id}: processed {} stale lease holder candidate(s) during startup cleanup",
         candidates.len()
     );
+}
+
+// Failed result persistence must not prevent the state transition or downstream notifications.
+fn fail_restarted_task(
+    store: &mut TaskStore<'_>,
+    workspace_id: u32,
+    task_id: &tasty_agent::TaskId,
+    now: u64,
+    context: &str,
+    transitioned: &mut Vec<Task>,
+) {
+    if let Err(e) = store.set_result(
+        workspace_id,
+        task_id,
+        TaskResult {
+            exit_code: None,
+            output: None,
+            error: Some("host restart".to_string()),
+        },
+    ) {
+        tracing::warn!("{context} set_result for {task_id} failed: {e}");
+    }
+    match store.set_state(
+        workspace_id,
+        task_id,
+        TaskState::Failed {
+            error: "host restart".to_string(),
+        },
+        now,
+    ) {
+        Ok((task, downstream)) => {
+            transitioned.push(task);
+            transitioned.extend(downstream);
+        }
+        Err(e) => tracing::warn!("{context} set_state for {task_id} failed: {e}"),
+    }
 }
