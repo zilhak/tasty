@@ -493,13 +493,12 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme) -> bool {
                 .strong(),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui
-                .add(
-                    egui::ImageButton::new(
-                        icons::CLOSE.image(th.icon_glyph_size_md.value(), th.text_muted().into()),
-                    )
-                    .frame(false),
-                )
+            if IconButton::new()
+                .variant(IconButtonVariant::Ghost)
+                .size(ControlSize::Sm)
+                .show(ui, th, &|ui, rect, c| {
+                    icons::CLOSE.image(rect.height(), c).paint_at(ui, rect)
+                })
                 .on_hover_text(t("remote_tool.close"))
                 .clicked()
             {
@@ -1472,27 +1471,13 @@ fn draw_attach_row(
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
-            if ui
-                .add(
-                    egui::ImageButton::new(icons::TRASH.image(
-                        th.icon_glyph_size_row_action.value(),
-                        th.text_muted().into(),
-                    ))
-                    .frame(false),
-                )
+            if row_icon_button(ui, th, icons::TRASH, None)
                 .on_hover_text(t("remote_tool.delete"))
                 .clicked()
             {
                 out = Some(AttachRowAction::Delete);
             }
-            if ui
-                .add(
-                    egui::ImageButton::new(icons::EDIT.image(
-                        th.icon_glyph_size_row_action.value(),
-                        th.text_muted().into(),
-                    ))
-                    .frame(false),
-                )
+            if row_icon_button(ui, th, icons::EDIT, None)
                 .on_hover_text(t("remote_tool.edit"))
                 .clicked()
             {
@@ -1502,6 +1487,22 @@ fn draw_attach_row(
     });
     hsep(ui, th);
     out
+}
+
+/// 목록 행의 아이콘 버튼 — profile 행과 같은 ghost sm. `tint` 가 있으면 그 색으로 글리프를 칠한다.
+fn row_icon_button(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    glyph: icons::Icon,
+    tint: Option<egui::Color32>,
+) -> egui::Response {
+    IconButton::new()
+        .variant(IconButtonVariant::Ghost)
+        .size(ControlSize::Sm)
+        .show(ui, th, &|ui, rect, c| {
+            let c = tint.unwrap_or(c);
+            glyph.image(rect.height(), c).paint_at(ui, rect)
+        })
 }
 
 fn form_from_attach(p: &RemoteProfile) -> AttachForm {
@@ -1923,45 +1924,25 @@ fn draw_passkey_row(
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
-            if ui
-                .add(
-                    egui::ImageButton::new(icons::TRASH.image(
-                        th.icon_glyph_size_row_action.value(),
-                        th.text_muted().into(),
-                    ))
-                    .frame(false),
-                )
+            if row_icon_button(ui, th, icons::TRASH, None)
                 .on_hover_text(t("remote_tool.delete"))
                 .clicked()
             {
                 out = Some(PasskeyRowAction::Delete);
             }
-            if ui
-                .add(
-                    egui::ImageButton::new(icons::EDIT.image(
-                        th.icon_glyph_size_row_action.value(),
-                        th.text_muted().into(),
-                    ))
-                    .frame(false),
-                )
+            if row_icon_button(ui, th, icons::EDIT, None)
                 .on_hover_text(t("remote_tool.edit"))
                 .clicked()
             {
                 out = Some(PasskeyRowAction::Edit);
             }
+            // 값이 보이는 동안은 글리프를 text-primary 로 둔다.
             let (reveal_icon, reveal_tint) = if revealed {
-                (icons::EYE_OFF, th.text_primary())
+                (icons::EYE_OFF, Some(th.text_primary().into()))
             } else {
-                (icons::EYE, th.text_muted())
+                (icons::EYE, None)
             };
-            if ui
-                .add(
-                    egui::ImageButton::new(
-                        reveal_icon
-                            .image(th.icon_glyph_size_row_action.value(), reveal_tint.into()),
-                    )
-                    .frame(false),
-                )
+            if row_icon_button(ui, th, reveal_icon, reveal_tint)
                 .on_hover_text(t("remote_tool.reveal_tooltip"))
                 .clicked()
             {
