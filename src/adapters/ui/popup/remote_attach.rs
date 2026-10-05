@@ -38,9 +38,6 @@ const WS_ROW_H: LogicalPx = LogicalPx(34.0);
 const BADGE_H: LogicalPx = LogicalPx(16.0);
 const HEADER_PAD_L: LogicalPx = LogicalPx(14.0);
 
-/// 생성 중에도 목록을 남겨 두되 흐리게 표시한다.
-const LIST_DIM_WHILE_CREATING: f32 = 0.5;
-
 /// 조회 화면 상태. 목록이 비어도 새 워크스페이스를 만드는 행은 표시한다.
 #[derive(Clone, Default)]
 enum Conn {
@@ -672,15 +669,15 @@ fn draw_ws_list(
                 empty_line(ui, th, profile_name);
                 return;
             }
-            // 생성 중에는 목록을 흐리게 남기고 다른 행 선택을 막는다.
+            // 생성 중에는 목록을 디밍 항목으로 남기고 다른 행 선택을 막는다.
+            // egui disabled fade가 디밍 위에 겹치지 않도록 입력은 행의 Sense로만 막는다.
             let creating = *phase == NewWsPhase::Creating;
             ui.scope(|ui| {
                 if creating {
-                    ui.set_opacity(LIST_DIM_WHILE_CREATING);
-                    ui.disable();
+                    ui.set_opacity(th.state_dim_opacity());
                 }
                 for w in ws {
-                    if ws_row(ui, th, w, ws_sel == Some(WsSel::Existing(w.id))) {
+                    if ws_row(ui, th, w, ws_sel == Some(WsSel::Existing(w.id)), !creating) {
                         action = Some(ListAction::Select(WsSel::Existing(w.id)));
                     }
                 }
@@ -903,10 +900,16 @@ fn row_separator(ui: &mut egui::Ui, th: &Theme) {
     );
 }
 
-fn ws_row(ui: &mut egui::Ui, th: &Theme, w: &RemoteWorkspace, selected: bool) -> bool {
+fn ws_row(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    w: &RemoteWorkspace,
+    selected: bool,
+    interactive: bool,
+) -> bool {
     let width = ui.available_width();
     let disabled = w.attached;
-    let sense = if disabled {
+    let sense = if disabled || !interactive {
         egui::Sense::hover()
     } else {
         egui::Sense::click()
@@ -919,7 +922,7 @@ fn ws_row(ui: &mut egui::Ui, th: &Theme, w: &RemoteWorkspace, selected: bool) ->
             egui::vec2(th.selection_edge_width.value(), rect.height()),
         );
         ui.painter().rect_filled(bar, 0.0, th.accent_primary());
-    } else if !disabled && resp.hovered() {
+    } else if !disabled && interactive && resp.hovered() {
         ui.painter()
             .rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
     }
