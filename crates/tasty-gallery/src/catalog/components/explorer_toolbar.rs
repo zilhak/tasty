@@ -95,7 +95,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("leading", "folderOpen (input-icon-fg)"),
             ("trailing", "Go IconButton (sm) — arrow-right"),
             ("keys", "Enter/Go navigate · ↑/↓ active · Esc revert"),
-            ("toggle", "3 icons · active surface-active"),
+            ("toggle", "3 icons · active segtoggle-on-bg"),
             ("height", "28 (control-height-interactive)"),
         ],
         &[
@@ -110,9 +110,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 egui::Color32::from(theme.text_secondary()),
             ),
             TokenChip::new(
-                "surface-active",
-                "active segment",
-                egui::Color32::from(theme.surface_active()),
+                "segtoggle-on-bg",
+                "selected segment",
+                egui::Color32::from(theme.segtoggle_on_bg()),
+            ),
+            TokenChip::new(
+                "segtoggle-on-fg",
+                "selected segment ink",
+                egui::Color32::from(theme.segtoggle_on_fg()),
             ),
             TokenChip::new(
                 "text-muted",
@@ -163,7 +168,7 @@ fn seg_toggle(ui: &mut egui::Ui, theme: &Theme, selected: usize) -> Option<usize
             ui.painter().rect_filled(
                 seg_rect,
                 theme.corner_radius_sm.value(),
-                egui::Color32::from(theme.surface_active()),
+                egui::Color32::from(theme.segtoggle_on_bg()),
             );
         } else if resp.hovered() {
             ui.painter().rect_filled(
@@ -173,7 +178,7 @@ fn seg_toggle(ui: &mut egui::Ui, theme: &Theme, selected: usize) -> Option<usize
             );
         }
         let fg = if active {
-            egui::Color32::from(theme.text_primary())
+            egui::Color32::from(theme.segtoggle_on_fg())
         } else {
             egui::Color32::from(theme.text_muted())
         };

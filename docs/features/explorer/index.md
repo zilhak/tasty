@@ -33,7 +33,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 
 ### 뷰 모드 / 정렬
 
-- 뷰 모드 3 종(grid / list / detail)을 toolbar 우측의 **아이콘 view-mode 토글**(`seg_toggle`, design `SegToggle`)로 전환한다 — grid/list/detail 아이콘 세그먼트, active = surface-active 배경 + text-primary. detail 뷰는 정렬 컬럼 헤더를 클릭하면 해당 컬럼으로 정렬(같은 컬럼 재클릭 시 방향 토글).
+- 뷰 모드 3 종(grid / list / detail)을 toolbar 우측의 **아이콘 view-mode 토글**(`seg_toggle`, design `SegToggle`)로 전환한다 — grid/list/detail 아이콘 세그먼트, active = segtoggle-on-bg(accent-primary) 채움 + segtoggle-on-fg(text-on-accent) 글리프, inactive = text-muted. detail 뷰는 정렬 컬럼 헤더를 클릭하면 해당 컬럼으로 정렬(같은 컬럼 재클릭 시 방향 토글).
 - toolbar 의 **주소표시줄**(`address_bar`, design `ExpToolbar`/`PathField`)은 공용 **편집형 `PathField`** 다 — folderOpen leading 아이콘 + mono 경로(비편집=text-secondary / 편집=text-primary) + 우측 Go(arrow-right) 버튼(input-bg/input-border(-focus) 토큰).
   클릭하면 편집 모드로 들어가 임의 디렉토리 경로를 타이핑하고 `↵` 또는 Go 로 **current 이동**한다(존재하는 디렉토리만 — `navigate_target` 가 `exists() && is_dir()` 를 통과해야 `ExplorerAction::Navigate` emit, 파일/오타는 no-op).
   `Esc` 또는 확정 없는 포커스 이탈은 현재 current 로 원복.
