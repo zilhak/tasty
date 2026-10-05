@@ -1398,4 +1398,103 @@ mod tests {
         let got = c.probe(size.x / 2.0, 0.0, size.y);
         assert_eq!(got, Some(FileHandlerPickerAction::OpenSettings));
     }
+
+    /// 더블클릭은 그 행을 고르고 바로 연다. 이미 다른 행이 선택돼 있어도 더블클릭한 행이 열린다.
+    #[test]
+    fn a_double_click_selects_and_opens_the_row_it_landed_on() {
+        let mut c = Case::new();
+        c.selected = Some("dev.git-helper.diff/viewer".into());
+        let size = picker_size_for(&c.theme, c.candidates.len(), 0, false);
+        let x = size.x / 2.0;
+        let want = FileHandlerPickerAction::Select("com.tasty.markdown/preview".into());
+        let mut y = 0.0;
+        let row_y = loop {
+            assert!(y < size.y, "첫 후보 행을 찾지 못했다");
+            let ctx = egui::Context::default();
+            drop(c.run(&ctx, egui::RawInput::default()));
+            if c.click_at(&ctx, egui::pos2(x, y)) == want {
+                break y;
+            }
+            y += 2.0;
+        };
+
+        let ctx = egui::Context::default();
+        drop(c.run(&ctx, egui::RawInput::default()));
+        assert_eq!(c.click_at(&ctx, egui::pos2(x, row_y)), want);
+        assert_eq!(
+            c.click_at(&ctx, egui::pos2(x, row_y)),
+            FileHandlerPickerAction::Dispatch("com.tasty.markdown/preview".into()),
+            "두 번째 클릭은 선택이 아니라 그 행의 열기여야 한다"
+        );
+    }
+
+    /// 프레임에 그려진 글자열을 모은다.
+    fn painted_texts(shapes: &[egui::epaint::ClippedShape]) -> Vec<String> {
+        fn walk(shape: &egui::Shape, out: &mut Vec<String>) {
+            match shape {
+                egui::Shape::Text(t) => out.push(t.galley.text().to_string()),
+                egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, out)),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        shapes.iter().for_each(|c| walk(&c.shape, &mut out));
+        out
+    }
+
+    /// URL 대상은 detector 를 거치지 않아 형식 Tag 가 "format unknown" 이고,
+    /// 경로 자리에 URL 원문이 파일 경로와 같은 앞자름 규칙으로 들어간다.
+    #[test]
+    fn a_url_target_shows_format_unknown_and_the_front_elided_url() {
+        let url = "https://example.com/docs/guides/handlers/picker/canonical/form/\
+                   with/a/very/long/tail/index.html";
+        let (mut state, mut session) = crate::state::tests::test_state();
+        let engine = session.borrow_mut();
+        let read = engine.read();
+        let all = read.file_handler.all_handlers();
+        // 링크 메뉴와 같은 호출 — URL 은 detector 없이 picker 로 간다.
+        crate::file::dispatch::open_picker_from_read(
+            &mut state,
+            &read,
+            crate::file::dispatch::DispatchTarget::http_url(url).expect("http(s) url"),
+            None,
+            all,
+            true,
+            crate::file::dispatch::FileDispatchPolicy {
+                dispatch_origin: crate::file::dispatch::FileDispatchOrigin::User,
+                ignore_size_limit: false,
+            },
+        );
+
+        let th = test_theme();
+        let ctx = egui::Context::default();
+        crate::gfx::gpu::GpuState::setup_egui_fonts(&ctx);
+        let mut expected_path = String::new();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                expected_path = fh_model::elide_target_front(url, target_budget(ui, &th));
+                drop(draw_file_handler_picker(ui, &mut state, &read));
+            });
+        });
+        let texts = painted_texts(&out.shapes);
+
+        assert!(
+            expected_path.starts_with('…') && url.ends_with(&expected_path['…'.len_utf8()..]),
+            "예제 URL 은 예산보다 길어 앞에서 잘려야 한다: {expected_path}"
+        );
+        assert!(
+            texts.contains(&expected_path),
+            "경로 자리에 앞자름한 URL 이 그려져야 한다: {texts:?}"
+        );
+        assert!(
+            !texts.iter().any(|t| t == url),
+            "잘리지 않은 URL 원문이 그대로 그려지면 안 된다"
+        );
+        assert!(
+            texts
+                .iter()
+                .any(|s| s == t("file_handler.picker.format_unknown")),
+            "형식 Tag 는 format unknown 이어야 한다: {texts:?}"
+        );
+    }
 }
