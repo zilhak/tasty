@@ -525,12 +525,6 @@ pub fn run_attach_workspace_ssh(
     }
 }
 
-/// workspace demux-dump: surface-prefixed Data 를 demux 해 각 mirror 에 feed,
-/// deadline 후 surface 별 화면을 섹션으로 stdout 출력. 검증 핵심(GUI 없이 N grid 확인).
-///
-/// 손실 통지를 받으면 `resync_allowed` 일 때 수집을 멈추고 옛 연결을 놓아
-/// [`SessionEnd::Desynced`] 를 돌려준다(화면은 찍지 않는다 — 다시 붙어 새로 받는다).
-/// 아니면 수집을 이어가고, 끝에 stderr 로 공백이 있다고 알린다.
 fn send_detach_notice(writer: &mut TcpStream) {
     if let Err(error) = stream::write_frame(writer, StreamTag::Detach, &[]) {
         tracing::debug!(%error, "detach notice could not reach the closing server");
@@ -543,6 +537,12 @@ fn join_attach_reader(reader: thread::JoinHandle<()>) {
     }
 }
 
+/// workspace demux-dump: surface-prefixed Data 를 demux 해 각 mirror 에 feed,
+/// deadline 후 surface 별 화면을 섹션으로 stdout 출력. 검증 핵심(GUI 없이 N grid 확인).
+///
+/// 손실 통지를 받으면 `resync_allowed` 일 때 수집을 멈추고 옛 연결을 놓아
+/// [`SessionEnd::Desynced`] 를 돌려준다(화면은 찍지 않는다 — 다시 붙어 새로 받는다).
+/// 아니면 수집을 이어가고, 끝에 stderr 로 공백이 있다고 알린다.
 fn run_workspace_mirror_dump(
     mut conn: StreamConnection,
     mut mirrors: Vec<(u32, Terminal)>,

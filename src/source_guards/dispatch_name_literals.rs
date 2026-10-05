@@ -18,6 +18,7 @@ use super::{
 const ROUTERS: &[&str] = &[
     "src/app/journal.rs",
     "src/app/journal/commands.rs",
+    "src/app/journal/commands/headless.rs",
     "src/app/journal/commands/workspace.rs",
     "src/app/journal/commands/forwarding.rs",
     "src/app/journal/commands/replacement.rs",

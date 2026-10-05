@@ -44,7 +44,7 @@ const ALLOWED: &[(&str, usize, &str)] = &[
         "EffectiveFont의 auto 모드는 설정한 폰트 크기에 배율을 적용한다. 좌표 타입의 변환과 별개인 폰트 설정 계산으로 허용한다.",
     ),
     (
-        "crates/tasty-plugin-sdk/src/egui_surface.rs",
+        "crates/tasty-plugin-sdk/src/egui_surface/input.rs",
         2,
         "플러그인 SDK는 tasty-type-geometry에 의존하지 않아 현재 타입 변환 API를 사용할 수 없다.",
     ),

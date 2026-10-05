@@ -384,7 +384,7 @@ fn journal_key_declarations_match_the_connected_structural_resolver() {
         ("src/app/journal/commands/workspace.rs", "fn resolve("),
         ("src/app/journal/commands.rs", "fn resolve_ipc_for_engine("),
         (
-            "src/app/journal/commands.rs",
+            "src/app/journal/commands/headless.rs",
             "fn resolve_headless_requests(",
         ),
     ] {
@@ -405,9 +405,9 @@ fn journal_key_declarations_match_the_connected_structural_resolver() {
             "conditional resolver missing: {conditional}"
         );
     }
-    let source = strip_comments(shipped(&read("src/app/journal/commands.rs")));
-    for (function, calls) in [
+    for (path, function, calls) in [
         (
+            "src/app/journal/commands/headless.rs",
             "fn resolve_headless_requests(",
             &[
                 "resolve_public_creation(",
@@ -417,6 +417,7 @@ fn journal_key_declarations_match_the_connected_structural_resolver() {
             ][..],
         ),
         (
+            "src/app/journal/commands.rs",
             "fn resolve_ipc_for_engine(",
             &[
                 "resolve_close(",
@@ -427,6 +428,7 @@ fn journal_key_declarations_match_the_connected_structural_resolver() {
             ][..],
         ),
     ] {
+        let source = strip_comments(shipped(&read(path)));
         let body = fn_body(&source, function).expect("connected resolver body");
         for call in calls {
             assert!(body.contains(call), "{function} no longer connects {call}");
