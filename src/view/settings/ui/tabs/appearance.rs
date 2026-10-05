@@ -1791,9 +1791,12 @@ fn font_override_grid(
                 .custom_font_path
                 .clone()
                 .unwrap_or_else(|| default.custom_font_path.clone());
-            ui.add_enabled_ui(ov.custom_font_path.is_some(), |ui| {
-                ui.text_edit_singleline(&mut path_value);
-            });
+            // 폭은 이전 egui 한 줄 입력의 기본 폭을 그대로 쓴다.
+            let path_width = ui.spacing().text_edit_width;
+            Input::new()
+                .enabled(ov.custom_font_path.is_some())
+                .width(path_width)
+                .show(ui, &th, &mut path_value);
             if let Some(stored) = ov.custom_font_path.as_mut() {
                 *stored = path_value;
             }
