@@ -6,27 +6,42 @@ use crate::app::window_access::engines_mut;
 use crate::ipc as host_ipc;
 use crate::ipc::server::{IpcCommand, send_response};
 
+/// namespace 소유 메서드면 플러그인에 넘기고 true 를 돌려준다.
+/// 공용 메서드 표의 변경 요청은 멱등 키를 확인한다. 플러그인 고유 메서드는 개입하지 않는다.
+/// GUI App 은 winit 이벤트 루프 없이 만들 수 없어 매니저만 받는다. 명령당 전달 횟수와 넘긴
+/// 번호는 `namespace_forward_tests` 가 잰다.
+fn forward_owned_namespace(
+    plugin_manager: Option<&mut crate::plugin::PluginManager>,
+    caller: &host_ipc::caller::CallerContext,
+    cmd: &IpcCommand,
+) -> bool {
+    let Some(mgr) = plugin_manager else {
+        return false;
+    };
+    if !mgr.owns_namespace(&cmd.request.method) {
+        return false;
+    }
+    host_ipc::handler::idempotency::forward_keeping_the_key(caller, cmd, |c| {
+        let id = c.request.id.clone().unwrap_or(serde_json::Value::Null);
+        mgr.forward_namespace_call(
+            &c.request.method,
+            c.request.params.clone(),
+            None, // CLI/사용자 호출. plugin → plugin 호출은 별도 경로.
+            id,
+            c.response_tx.clone(),
+            Some(c.request_seq()),
+        );
+    });
+    true
+}
+
 impl App {
     pub(crate) fn ipc_step_routing(
         &mut self,
         cmd: &IpcCommand,
         checked: &host_ipc::handler::CheckedRequest<'_>,
     ) -> IpcStep {
-        // 공용 메서드 표의 변경 요청은 멱등 키를 확인한다. 플러그인 고유 메서드는 개입하지 않는다.
-        if let Some(mgr) = self.plugin_manager.as_mut()
-            && mgr.owns_namespace(&cmd.request.method)
-        {
-            host_ipc::handler::idempotency::forward_keeping_the_key(checked.caller(), cmd, |c| {
-                let id = c.request.id.clone().unwrap_or(serde_json::Value::Null);
-                mgr.forward_namespace_call(
-                    &c.request.method,
-                    c.request.params.clone(),
-                    None, // CLI/사용자 호출. plugin → plugin 호출은 별도 경로.
-                    id,
-                    c.response_tx.clone(),
-                    Some(c.request_seq()),
-                );
-            });
+        if forward_owned_namespace(self.plugin_manager.as_mut(), checked.caller(), cmd) {
             return IpcStep::Handled;
         }
 
@@ -127,5 +142,92 @@ impl App {
         #[cfg(debug_assertions)]
         let response = self.project_active_modal(&cmd.request.method, response);
         send_response(&cmd.response_tx, response);
+    }
+}
+
+/// IPC 명령 하나가 namespace 소유 메서드로 오면 플러그인 전달이 정확히 한 번이고, 그 대기
+/// 항목이 명령의 요청 번호를 드는지 stub 플러그인으로 잰다. 파일 밖 헬퍼를 거친 추가 전달도
+/// stub 이 받은 요청 수로 드러난다.
+#[cfg(test)]
+mod namespace_forward_tests {
+    use std::sync::{Arc, mpsc};
+
+    use serde_json::json;
+
+    use super::forward_owned_namespace;
+    use crate::ipc::caller::CallerContext;
+    use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
+    use crate::ipc::server::IpcCommand;
+    use crate::plugin::PluginManager;
+
+    const OWNER: &str = "com.test.gui-namespace-forward";
+
+    fn manager() -> PluginManager {
+        PluginManager::with_registries(
+            Arc::new(tasty_terminal::waker_factory::NoopWakerFactory),
+            Arc::new(crate::file::format::FileFormatRegistry::new()),
+            Arc::new(crate::file::handler::FileHandlerRegistry::new()),
+        )
+    }
+
+    fn command(method: &str, key: Option<&str>) -> (IpcCommand, mpsc::Receiver<JsonRpcResponse>) {
+        let (tx, rx) = mpsc::sync_channel(4);
+        let request = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: method.into(),
+            params: json!({}),
+            id: Some(json!(1)),
+            session_token: None,
+            response_timeout_ms: None,
+            idempotency_key: key.map(str::to_string),
+        };
+        (IpcCommand::new(request, tx), rx)
+    }
+
+    fn forwards_once_with_its_seq(prefix: &str, method: &str, key: Option<&str>) {
+        let mut mgr = manager();
+        let stub = mgr.attach_namespace_stub_for_test(OWNER, prefix);
+        let (cmd, _rx) = command(method, key);
+        assert!(forward_owned_namespace(
+            Some(&mut mgr),
+            &CallerContext::Local,
+            &cmd
+        ));
+        let sent = stub.drain_invokes();
+        assert_eq!(
+            sent.iter().map(|(_, m)| m.as_str()).collect::<Vec<_>>(),
+            [method],
+            "명령 하나에 플러그인 전달이 정확히 한 번이어야 한다"
+        );
+        assert_eq!(
+            mgr.pending_origins_for_test(OWNER),
+            [(sent[0].0, Some(cmd.request_seq()))],
+            "전달의 대기 항목이 명령의 요청 번호를 들어야 한다"
+        );
+    }
+
+    #[test]
+    fn a_plugin_method_is_forwarded_once_with_the_commands_request_seq() {
+        forwards_once_with_its_seq("guifwdns", "guifwdns.run", None);
+    }
+
+    /// 키가 있는 계약 안 메서드는 보존소의 relay 안에서 같은 전달을 부른다.
+    #[test]
+    fn a_keyed_table_method_is_forwarded_once_with_the_commands_request_seq() {
+        forwards_once_with_its_seq("image", "image.open", Some("gui-namespace-forward-once"));
+    }
+
+    #[test]
+    fn a_method_outside_every_namespace_is_not_forwarded() {
+        let mut mgr = manager();
+        let stub = mgr.attach_namespace_stub_for_test(OWNER, "guifwdns");
+        let (cmd, _rx) = command("workspace.list", None);
+        assert!(!forward_owned_namespace(
+            Some(&mut mgr),
+            &CallerContext::Local,
+            &cmd
+        ));
+        assert!(stub.drain_invokes().is_empty());
+        assert!(!forward_owned_namespace(None, &CallerContext::Local, &cmd));
     }
 }
