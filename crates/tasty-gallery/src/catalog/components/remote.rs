@@ -782,11 +782,18 @@ fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Profile) {
                     }
                 });
             });
+            // 본체 행과 같이 오른쪽부터 삭제 · 편집 · 재탐지(ssh 만, 탐지 중이면 비활성)를 둔다.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                for glyph in [icons::TRASH, icons::PLUG, icons::EDIT] {
+                ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
+                let redetect = (p.tag == "ssh").then_some((icons::REFRESH, !p.detecting));
+                for (glyph, enabled) in [(icons::TRASH, true), (icons::EDIT, true)]
+                    .into_iter()
+                    .chain(redetect)
+                {
                     IconButton::new()
                         .variant(IconButtonVariant::Ghost)
                         .size(tasty_ui_widgets::ControlSize::Sm)
+                        .enabled(enabled)
                         .show(ui, theme, &|ui, rect, c| {
                             glyph.image(rect.height(), c).paint_at(ui, rect)
                         });
