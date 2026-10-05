@@ -116,7 +116,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new(
                 "segtoggle-on-fg",
-                "selected segment ink",
+                "selected segment glyph",
                 egui::Color32::from(theme.segtoggle_on_fg()),
             ),
             TokenChip::new(
