@@ -192,47 +192,55 @@ fn gather_rs(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
 
 pub(super) type FnKey = (Vec<String>, String);
 
-/// 모듈·함수 이름으로 본문을 색인한다. 같은 이름이 중복되면 먼저 수집한 정의를 사용한다.
-pub(super) fn fn_index(files: &[(String, String)]) -> BTreeMap<FnKey, String> {
-    let mut out = BTreeMap::new();
+/// 모듈·함수 이름으로 본문을 색인한다. 같은 열쇠의 정의가 여럿이면(cfg 로 갈린 정의) 모두 모은다.
+/// 먼저 나온 정의만 남기면 뒤 정의에만 있는 읽기가 빠지고, 꺼진 정의가 앞에 오면 살아 있는
+/// 정의 전체가 안 보인다. 소비자는 모든 본문을 돈다.
+pub(super) fn fn_index(files: &[(String, String)]) -> BTreeMap<FnKey, Vec<String>> {
+    let mut out: BTreeMap<FnKey, Vec<String>> = BTreeMap::new();
     for (rel, src) in files {
         let module = module_of(rel);
-        for (name, body) in fn_bodies(src) {
-            out.entry((module.clone(), name)).or_insert(body);
+        for (name, body) in named_fn_bodies(src) {
+            out.entry((module.clone(), name)).or_default().push(body);
         }
     }
     out
 }
 
-fn fn_bodies(src: &str) -> Vec<(String, String)> {
-    let mut out = Vec::new();
+/// 파일의 모든 함수 정의를 (이름, 원문 본문) 으로 돌려준다. 이름은 주석·리터럴을 가린 사본에서
+/// 모으고 본문은 공용 판정기(`Source::fn_bodies`)로 뗀다. 리터럴 속 `fn ` 은 정의가 아니다.
+fn named_fn_bodies(src: &str) -> Vec<(String, String)> {
+    let source = tasty_doc_guards::match_arms::Source::new(src);
+    let code = source.code.as_str();
+    let is_word = |c: char| c.is_alphanumeric() || c == '_';
+    let mut names: Vec<String> = Vec::new();
     let mut from = 0usize;
-    while let Some(at) = src[from..].find("fn ") {
+    while let Some(at) = code[from..].find("fn ") {
         let start = from + at;
-        let prev_ok = start == 0
-            || !src.as_bytes()[start - 1].is_ascii_alphanumeric()
-                && src.as_bytes()[start - 1] != b'_';
-        let after = &src[start + 3..];
-        let name: String = after
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-            .collect();
         from = start + 3;
-        if !prev_ok || name.is_empty() {
+        if code[..start].chars().next_back().is_some_and(is_word) {
             continue;
         }
-        let Some(brace) = src[start..].find('{') else {
-            break;
-        };
-        let body = balanced(src, start + brace);
-        out.push((name, body.to_string()));
+        let name: String = code[start + 3..]
+            .trim_start()
+            .chars()
+            .take_while(|c| is_word(*c))
+            .collect();
+        if !name.is_empty() && !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    let mut out = Vec::new();
+    for name in names {
+        for r in source.fn_bodies(&name) {
+            out.push((name.clone(), source.slice(&r).to_string()));
+        }
     }
     out
 }
 
 /// 접두사·명시 모듈·현재 모듈·루트·유일한 이름 순으로 찾는다. 수신자 타입을 해석하는 것은 아니다.
 pub(super) fn resolve(
-    index: &BTreeMap<FnKey, String>,
+    index: &BTreeMap<FnKey, Vec<String>>,
     caller: &[String],
     path: &str,
 ) -> Option<FnKey> {
@@ -363,7 +371,7 @@ pub(super) fn called_paths(fragment: &str) -> Vec<String> {
 }
 
 fn reachable_keys(
-    index: &BTreeMap<FnKey, String>,
+    index: &BTreeMap<FnKey, Vec<String>>,
     caller: &[String],
     fragment: &str,
     depth: u32,
@@ -374,7 +382,7 @@ fn reachable_keys(
 
 /// 다른 검사도 같은 깊이·재수출 해석을 쓰도록 키 추출 함수만 교체할 수 있게 한다.
 pub(super) fn reachable_keys_with(
-    index: &BTreeMap<FnKey, String>,
+    index: &BTreeMap<FnKey, Vec<String>>,
     caller: &[String],
     fragment: &str,
     depth: u32,
@@ -392,15 +400,16 @@ pub(super) fn reachable_keys_with(
         if !seen.insert(key.clone()) {
             continue;
         }
-        let body = index[&key].clone();
-        keys.extend(reachable_keys_with(
-            index,
-            &key.0,
-            &body,
-            depth - 1,
-            seen,
-            extract,
-        ));
+        for body in &index[&key] {
+            keys.extend(reachable_keys_with(
+                index,
+                &key.0,
+                body,
+                depth - 1,
+                seen,
+                extract,
+            ));
+        }
     }
     keys
 }
@@ -640,6 +649,18 @@ fn generic_and_scoped_are_read_as_two_layers() {
 #[cfg(test)]
 mod exemption_mutations {
     use super::*;
+
+    /// 꺼진 정의가 앞에 와도 뒤의 살아 있는 정의가 보이고, 리터럴 속 `fn ` 은 정의가 아니다.
+    #[test]
+    fn every_definition_of_a_key_is_indexed() {
+        let src = "#[cfg(any())]\nfn h(p: &V) { off(p) }\nfn h(p: &V) { on(p) }\nfn g() { let s = \"fn h() { lit }\"; }\n";
+        let index = fn_index(&[(HANDLER_ROOT.to_string(), src.to_string())]);
+        assert_eq!(
+            index[&(Vec::new(), "h".to_string())],
+            ["{ off(p) }", "{ on(p) }"]
+        );
+        assert_eq!(index.len(), 2, "리터럴 속 정의를 색인했다: {index:?}");
+    }
 
     #[test]
     fn a_new_method_reading_an_exempt_key_is_not_covered() {
