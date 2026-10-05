@@ -736,6 +736,9 @@ mod committed_tap_order;
 mod mesh_bootstrap_order;
 
 #[cfg(test)]
+mod theme_changed_after_install;
+
+#[cfg(test)]
 mod modifier_hint_paint_order;
 
 #[cfg(test)]
