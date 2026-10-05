@@ -80,7 +80,7 @@ if let Some(new) = selected_new { *sub_tab = new; }
 
 탭 선택은 다음 프레임에 반영되므로 약 16ms의 지연이 생긴다. 두 클로저의 가변 참조 충돌을 피하기 위한 방식이다.
 
-`horizontal_tab_bar_with_arrows` 의 chevron 아이콘은 `tasty-icons` 의 `CHEVRON_LEFT`/`CHEVRON_RIGHT` 를 쓰며, 호출자가 `egui_extras::install_image_loaders` 와 `tasty_icons::install_texture_loader` 를 미리 호출했다고 가정한다.
+`horizontal_tab_bar_with_arrows` 의 chevron 아이콘은 `tasty-icons` 의 `CHEVRON_LEFT`/`CHEVRON_RIGHT` 를 쓰며, 호출자가 `tasty_icons::install_texture_loader` 를 미리 호출했다고 가정한다.
 
 ## 확장 가이드
 

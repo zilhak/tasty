@@ -9,10 +9,12 @@ repository = "https://github.com/zilhak/tasty"
 [dependencies]
 # 플러그인 build.rs는 SVG만 읽으므로 egui를 기본 의존성에 넣지 않는다.
 egui = { version = "0.31", default-features = false, optional = true }
+# 아이콘 텍스처 로더가 SVG를 직접 래스터한다. egui_extras와 같은 버전·기능을 쓴다.
+resvg = { version = "0.37", default-features = false, optional = true }
 
 [features]
 default = []
-egui = ["dep:egui"]
+egui = ["dep:egui", "dep:resvg"]
 
 # SVG를 래스터로 그려 실제 도형의 경계를 검사한다.
 [dev-dependencies]

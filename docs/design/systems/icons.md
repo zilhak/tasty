@@ -30,8 +30,8 @@ pub struct Icon {
 
 1. **host / gallery 런타임** — `feature = "egui"` 를 켜고 [`Icon::image(size, tint)`] 로
    `egui::Image` 를 만든다. 앱은 두 로더를 설치한다(`gpu.rs`, 갤러리 `main.rs` 동일).
-   - `egui_extras::install_image_loaders`: SVG를 요청 크기로 래스터한다.
-   - `tasty_icons::install_texture_loader`: 아이콘 텍스처를 캐시한다.
+   - `tasty_icons::install_texture_loader`: 아이콘 SVG를 요청 크기로 래스터하고 텍스처를 캐시한다.
+   - `egui_extras::install_image_loaders`: 아이콘이 아닌 이미지(SVG·PNG 등)를 읽는다.
 2. **plugin build.rs 빌드타임** — `[build-dependencies]` 로 이 크레이트를 **egui 없이**
    링크해 `Icon::svg` / `Icon::body` 를 usvg로 읽어 선분 데이터로 바꾼다. egui optional·default off
    구조라 build-dependency 로 붙어도 egui 가 링크되지 않는다.
@@ -55,6 +55,8 @@ egui 0.31의 기본 텍스처 로더는 uri와 `TextureOptions`만 캐시 키로
 
 `tasty_icons::install_texture_loader`가 설치하는 로더는 `bytes://tasty_icon_` uri만 맡는다. 키는 `(uri, TextureOptions, SizeHint)`이고, `SizeHint`는 논리 크기 × 배율의 물리 픽셀이다. 같은 아이콘이라도 크기와 배율마다 따로 래스터하며, 배율이 바뀌면 그 배율로 다시 래스터한다. 다른 uri는 기본 로더가 처리한다.
 
+래스터도 이 로더가 resvg로 직접 한다. resvg(tiny-skia)의 픽셀은 알파를 미리 곱한(premultiplied) 값이라 egui에 premultiplied로 그대로 넘긴다. egui_extras 0.31의 SVG 로더는 이 값을 곱하지 않은 값으로 넘겨 가장자리 알파가 한 번 더 곱해지고, 작은 아이콘의 획이 흐려진다. 그래서 아이콘은 그 경로를 쓰지 않는다.
+
 텍스처는 쓰인 (아이콘, 크기, 배율) 조합 수만큼 생기고 앱이 끝날 때까지 남는다. 조합은 테마의 아이콘 크기 토큰과 배율 수로 제한된다.
 
 `texture_loader.rs` 단위 테스트가 다음을 검사한다.
@@ -63,6 +65,7 @@ egui 0.31의 기본 텍스처 로더는 uri와 `TextureOptions`만 캐시 키로
 - 아이콘이 아닌 uri는 기본 로더에 넘긴다.
 - 두 번 설치해도 로더는 하나다.
 - 두 매크로가 만드는 uri가 이 로더의 접두사를 쓴다.
+- 래스터한 모든 픽셀이 같은 SVG를 tiny-skia로 직접 그린 알파 a에 대해 (a, a, a, a)다. 곱하지 않은 값으로 넘기면 가장자리 픽셀에서 실패한다.
 
 ## 크기 소유 — 호출측
 
