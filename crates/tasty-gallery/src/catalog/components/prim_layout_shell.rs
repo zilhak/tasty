@@ -162,7 +162,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("filtered", "좌측 패널 상단에 필터 입력 슬롯 추가"),
             (
                 "tab bar",
-                "가로 ScrollArea · overflow 시에만 chevron 오버레이(알파)",
+                "가로 ScrollArea · overflow 시에만 양옆 정사각 chevron 칸(탭 스트립과 같은 fg·disabled 잉크, tint 없음)",
             ),
             ("scroll step", "chevron 1클릭 = 80px"),
             ("tab content", "4면 균등 TAB_CONTENT_PADDING wrapper"),
