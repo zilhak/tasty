@@ -96,6 +96,8 @@ pub struct PaneTabBarsProps<'a> {
     /// 그 외엔 `None`. 이 pane 의 탭바에서만 leading 아이콘을 숫자 키캡(`Ctrl+1`…`0`)으로
     /// in-place 교체한다(비-focused pane 은 held 여도 아이콘 유지). release 시 `None` → 원복.
     pub switch_overlay_pane: Option<u32>,
+    /// 드러난 네이티브 WebView 영역(egui 논리 좌표). 탭 스트립 툴팁이 이 영역을 피한다.
+    pub native_content: &'a [egui::Rect],
 }
 
 /// View 가 발생시킨 사용자 의도. wrapper 가 state/engine 으로 반영.
@@ -365,6 +367,12 @@ pub fn draw_pane_tab_bars(
         | crate::adapters::ui::switch_overlay::SwitchTarget::Category => None,
     });
 
+    let native_content: Vec<egui::Rect> = state
+        .native_content_rects
+        .iter()
+        .map(|r| crate::adapters::ui::to_egui_rect(*r, scale_factor))
+        .collect();
+
     let props = PaneTabBarsProps {
         theme: &th,
         kb: &engine.settings.keybindings,
@@ -375,6 +383,7 @@ pub fn draw_pane_tab_bars(
         active_tab_indicator: appearance.active_tab_indicator,
         drag,
         switch_overlay_pane,
+        native_content: &native_content,
     };
 
     let output = draw_pane_tab_bars_view(ctx, &props);
@@ -511,6 +520,7 @@ mod tests {
                 active_tab_indicator: crate::settings::ActiveTabIndicator::default(),
                 drag: drag.clone(),
                 switch_overlay_pane: None,
+                native_content: &[],
             };
             out = draw_pane_tab_bars_view(ctx, &props);
         }));
@@ -751,6 +761,7 @@ mod tests {
                     active_tab_indicator: crate::settings::ActiveTabIndicator::default(),
                     drag: None,
                     switch_overlay_pane: None,
+                    native_content: &[],
                 };
                 actions = draw_pane_tab_bars_view(ctx, &props).actions;
             }));
@@ -834,6 +845,7 @@ mod tests {
                     active_tab_indicator: crate::settings::ActiveTabIndicator::default(),
                     drag: None,
                     switch_overlay_pane: None,
+                    native_content: &[],
                 };
                 drop(draw_pane_tab_bars_view(ctx, &props));
             });

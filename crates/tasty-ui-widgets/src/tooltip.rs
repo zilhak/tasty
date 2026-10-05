@@ -24,6 +24,8 @@ pub struct Tooltip<'a> {
     /// 버블 `Area` 의 고유 id — 한 프레임에 여러 버블(specimen 4 placement)을 그릴 때
     /// 충돌을 막는다. 기본값은 단일 사용을 가정한 고정 id.
     id: egui::Id,
+    /// [`Tooltip::placement_clear_of_native`]가 정한 창 영역. 있으면 버블을 이 안으로 당긴다.
+    window: Option<egui::Rect>,
 }
 
 impl<'a> Tooltip<'a> {
@@ -32,6 +34,7 @@ impl<'a> Tooltip<'a> {
             text,
             placement: TooltipPlacement::default(),
             id: egui::Id::new("tasty_tooltip"),
+            window: None,
         }
     }
 
@@ -68,6 +71,34 @@ impl<'a> Tooltip<'a> {
         self.placement(placement)
     }
 
+    /// pane 탭 스트립·pane 머리에 붙은 툴팁의 배치 규칙이다.
+    /// 위 → 아래 순으로, `window` 안에 들어가고 `native`의 어느 사각형과도 겹치지 않는 첫 후보를 쓴다.
+    /// `native`는 egui보다 위에 그려지는 네이티브 콘텐츠(WebView) 영역이며 호출자가 넘긴다.
+    /// 둘 다 안 되면 위에 두고 창 안으로 당긴다. 가로는 창 가장자리에서 `tooltip-offset`만큼 안쪽으로 당긴다.
+    pub fn placement_clear_of_native(
+        self,
+        ctx: &egui::Context,
+        theme: &Theme,
+        anchor: egui::Rect,
+        window: egui::Rect,
+        native: &[egui::Rect],
+    ) -> Self {
+        let size = self.bubble_size(ctx, theme);
+        let placement = [TooltipPlacement::Top, TooltipPlacement::Bottom]
+            .into_iter()
+            .find(|&p| {
+                let rect = bubble_rect(p, anchor, size, theme, window);
+                window.contains_rect(rect)
+                    && native.iter().all(|n| !rect.intersect(*n).is_positive())
+            })
+            .unwrap_or(TooltipPlacement::Top);
+        Self {
+            placement,
+            window: Some(window),
+            ..self
+        }
+    }
+
     /// `anchor` rect 를 기준으로 버블을 그린다(강제 표시). hover/delay 판정은 호출부 몫.
     pub fn show(self, ui: &egui::Ui, theme: &Theme, anchor: egui::Rect) {
         self.show_in(ui.ctx(), theme, anchor);
@@ -75,6 +106,24 @@ impl<'a> Tooltip<'a> {
 
     /// `Ui` 없이 painter만 쓰는 호출부용 [`Tooltip::show`].
     pub fn show_in(self, ctx: &egui::Context, theme: &Theme, anchor: egui::Rect) {
+        if let Some(window) = self.window
+            && matches!(
+                self.placement,
+                TooltipPlacement::Top | TooltipPlacement::Bottom
+            )
+        {
+            let size = self.bubble_size(ctx, theme);
+            let rect = bubble_rect(self.placement, anchor, size, theme, window);
+            // 위·아래 모두 실패해 위로 둔 경우 창 위쪽 밖으로 나가지 않도록 당긴다.
+            let top = rect.top().min(window.bottom() - size.y).max(window.top());
+            self.paint(
+                ctx,
+                theme,
+                egui::pos2(rect.left(), top),
+                egui::Align2::LEFT_TOP,
+            );
+            return;
+        }
         let offset = theme.spacing_xs.value();
         // 앵커 rect 중앙 기준 앵커 포인트 + 버블 pivot(버블에서 앵커에 붙는 변).
         let (anchor_pos, pivot) = match self.placement {
@@ -96,13 +145,17 @@ impl<'a> Tooltip<'a> {
             ),
         };
 
+        self.paint(ctx, theme, anchor_pos, pivot);
+    }
+
+    fn paint(self, ctx: &egui::Context, theme: &Theme, pos: egui::Pos2, pivot: egui::Align2) {
         let pad_x = theme.spacing_sm.value();
         let pad_y = theme.spacing_xs.value();
         let job = self.layout_job(theme);
 
         egui::Area::new(self.id)
             .order(egui::Order::Tooltip)
-            .fixed_pos(anchor_pos)
+            .fixed_pos(pos)
             .pivot(pivot)
             .constrain(true) // 화면/모달 밖으로 나가면 egui 기본 constrain 이 안으로 당김.
             .interactable(false)
@@ -150,9 +203,39 @@ impl<'a> Tooltip<'a> {
 
     /// 버블 높이 — 텍스트 + 위아래 padding + 위아래 테두리.
     fn bubble_height(&self, ctx: &egui::Context, theme: &Theme) -> f32 {
-        let text = ctx.fonts(|f| f.layout_job(self.layout_job(theme)).size().y);
-        text + theme.spacing_xs.scaled(2.0).value() + theme.border_width.scaled(2.0).value()
+        self.bubble_size(ctx, theme).y
     }
+
+    /// 버블 크기 — 텍스트 + padding + 테두리.
+    fn bubble_size(&self, ctx: &egui::Context, theme: &Theme) -> egui::Vec2 {
+        let text = ctx.fonts(|f| f.layout_job(self.layout_job(theme)).size());
+        let border = theme.border_width.scaled(2.0).value();
+        egui::vec2(
+            text.x + theme.spacing_sm.scaled(2.0).value() + border,
+            text.y + theme.spacing_xs.scaled(2.0).value() + border,
+        )
+    }
+}
+
+/// 위·아래 후보 버블의 사각형. 가로는 창 가장자리에서 `tooltip-offset`만큼 안쪽으로 당긴다.
+fn bubble_rect(
+    placement: TooltipPlacement,
+    anchor: egui::Rect,
+    size: egui::Vec2,
+    theme: &Theme,
+    window: egui::Rect,
+) -> egui::Rect {
+    let offset = theme.tooltip_offset().value();
+    let top = match placement {
+        TooltipPlacement::Bottom => anchor.bottom() + offset,
+        TooltipPlacement::Top | TooltipPlacement::Left | TooltipPlacement::Right => {
+            anchor.top() - offset - size.y
+        }
+    };
+    let left = (anchor.center().x - size.x / 2.0)
+        .min(window.right() - offset - size.x)
+        .max(window.left() + offset);
+    egui::Rect::from_min_size(egui::pos2(left, top), size)
 }
 
 /// `hovered`가 이어진 시간이 `tooltip-delay`를 넘었는지 판정한다. 벗어나면 초기화한다.
@@ -211,6 +294,76 @@ mod tests {
     #[test]
     fn bottom_is_used_when_the_bubble_does_not_fit_above() {
         assert_eq!(placement_for(0.0), TooltipPlacement::Bottom);
+    }
+
+    /// 800×600 창에서 `anchor_top`의 16×16 앵커와 `native` 영역으로 고른 배치.
+    fn native_placement_for(anchor_top: f32, native: &[egui::Rect]) -> TooltipPlacement {
+        let window = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        let anchor =
+            egui::Rect::from_min_size(egui::pos2(100.0, anchor_top), egui::vec2(16.0, 16.0));
+        let ctx = egui::Context::default();
+        let mut placement = TooltipPlacement::Left;
+        let _output = ctx.run(egui::RawInput::default(), |ctx| {
+            placement = Tooltip::new("Scripts blocked. Click to show the notice again.")
+                .placement_clear_of_native(ctx, &theme(), anchor, window, native)
+                .placement;
+        });
+        placement
+    }
+
+    /// 앵커 바로 아래(탭 바 아래)부터 시작하는 WebView 영역.
+    fn webview_below(anchor_top: f32) -> egui::Rect {
+        egui::Rect::from_min_max(egui::pos2(0.0, anchor_top + 20.0), egui::pos2(800.0, 600.0))
+    }
+
+    #[test]
+    fn native_rule_opens_top_over_a_webview_below() {
+        assert_eq!(
+            native_placement_for(60.0, &[webview_below(60.0)]),
+            TooltipPlacement::Top
+        );
+    }
+
+    #[test]
+    fn native_rule_falls_back_to_bottom_when_top_leaves_the_window() {
+        assert_eq!(native_placement_for(2.0, &[]), TooltipPlacement::Bottom);
+    }
+
+    #[test]
+    fn native_rule_opens_bottom_when_a_webview_is_above() {
+        let above = egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(800.0, 290.0));
+        assert_eq!(
+            native_placement_for(300.0, &[above]),
+            TooltipPlacement::Bottom
+        );
+    }
+
+    #[test]
+    fn native_rule_keeps_top_when_neither_side_clears() {
+        let above = egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(800.0, 290.0));
+        assert_eq!(
+            native_placement_for(300.0, &[above, webview_below(300.0)]),
+            TooltipPlacement::Top
+        );
+        assert_eq!(
+            native_placement_for(2.0, &[webview_below(2.0)]),
+            TooltipPlacement::Top
+        );
+    }
+
+    #[test]
+    fn bubble_is_clamped_to_the_window_edges_by_the_tooltip_offset() {
+        let theme = theme();
+        let window = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        let size = egui::vec2(200.0, 24.0);
+        let offset = theme.tooltip_offset().value();
+        let at_right = egui::Rect::from_min_size(egui::pos2(790.0, 100.0), egui::vec2(8.0, 8.0));
+        let rect = bubble_rect(TooltipPlacement::Top, at_right, size, &theme, window);
+        assert_eq!(rect.right(), window.right() - offset);
+        let at_left = egui::Rect::from_min_size(egui::pos2(0.0, 100.0), egui::vec2(8.0, 8.0));
+        let rect = bubble_rect(TooltipPlacement::Bottom, at_left, size, &theme, window);
+        assert_eq!(rect.left(), window.left() + offset);
+        assert_eq!(rect.top(), at_left.bottom() + offset);
     }
 
     #[test]

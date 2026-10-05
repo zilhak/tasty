@@ -61,6 +61,10 @@ pub struct MainViewState {
     /// 측정한 탭 바 높이(물리 픽셀). 측정 전에는 0이며 논리 길이 토큰을 초기값으로 넣지 않는다.
     #[cfg(any(feature = "gui", test))]
     pub(crate) tab_bar_height: PhysicalPx,
+    /// 지금 화면에 드러난 네이티브 WebView 영역(물리 픽셀). egui보다 위에 그려지므로
+    /// 탭 스트립 툴팁이 이 영역을 피해 배치한다. WebView 동기화가 매 프레임 갱신한다.
+    #[cfg(feature = "gui")]
+    pub(crate) native_content_rects: Vec<crate::model::PhysicalRect>,
     /// Popup manager for internal popups (notification panel, etc.).
     #[cfg(feature = "gui")]
     pub(crate) popups: crate::adapters::ui::PopupManager,

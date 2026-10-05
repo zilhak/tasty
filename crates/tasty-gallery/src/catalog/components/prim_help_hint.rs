@@ -69,6 +69,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("gap to label", "4px · space-xs"),
             ("bubble", "surface-raised card · no arrow"),
             ("max-width", "240px · wraps"),
+            (
+                "over native content",
+                "tab strip · pane head: always top, clamped inside the window (Tab strips › Tooltips in the strip open upward)",
+            ),
             ("text", "caption 11 · line-height 1.4"),
             ("delay", "150ms hover"),
         ],

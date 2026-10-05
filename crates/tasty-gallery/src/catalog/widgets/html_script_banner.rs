@@ -5,7 +5,7 @@
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    HtmlScriptBannerState, HtmlScriptBannerView, HtmlScriptMarkerKind, html_script_banner,
+    HtmlScriptBannerState, HtmlScriptBannerView, HtmlScriptMarkerKind, Tooltip, html_script_banner,
     html_script_banner_is_narrow, html_script_marker, inset_banner_zone, inset_content_rect,
 };
 
@@ -23,6 +23,10 @@ const NARROW_SURFACE_H: LogicalPx = LogicalPx(300.0);
 const MARKER_SURFACE_W: LogicalPx = LogicalPx(240.0);
 /// 마커 예제 surface의 높이. 디자인 `HtmlSurfaceG`의 `height={120}`이며 배너가 없어 탭 스트립과 페이지 윗부분만 보인다.
 const MARKER_SURFACE_H: LogicalPx = LogicalPx(120.0);
+/// 탭 스트립 툴팁 예제 창의 폭. 디자인은 `--tasty-size-320`을 쓴다.
+const STRIP_TOOLTIP_W: LogicalPx = LogicalPx(320.0);
+/// 탭 스트립 툴팁 예제의 WebView 자리 높이. 디자인은 `--tasty-size-96`을 쓴다.
+const STRIP_TOOLTIP_WEBVIEW_H: LogicalPx = LogicalPx(96.0);
 /// 상태 예제 한 장의 최대 폭. 디자인은 `--tasty-size-600`을 쓴다.
 const STATE_CARD_MAX_W: LogicalPx = LogicalPx(600.0);
 /// 배너 버튼 예제의 테마별 패널 폭. 디자인은 `--tasty-size-560`을 쓴다.
@@ -86,7 +90,7 @@ fn tab(
     glyph: MockGlyph,
     active: bool,
     marker: Option<(HtmlScriptMarkerKind, &str)>,
-) {
+) -> Option<egui::Rect> {
     let w = theme.tab_width.value().min(strip.width());
     let rect = egui::Rect::from_min_size(strip.min, egui::vec2(w, strip.height()));
     let fg = if active {
@@ -128,14 +132,16 @@ fn tab(
             );
     }
     let mut cluster_left = close_rect.left();
+    let mut marker_rect = None;
     if let Some((kind, tip)) = marker {
         let m = egui::Rect::from_min_size(
             egui::pos2(cluster_left - status_gap - hit, cy - hit / 2.0),
             egui::vec2(hit, hit),
         );
         let mut mui = ui.new_child(egui::UiBuilder::new().max_rect(m));
-        html_script_marker(&mut mui, theme, kind, tip);
+        html_script_marker(&mut mui, theme, kind, tip, &[]);
         cluster_left = m.left();
+        marker_rect = Some(m);
     }
 
     let icon = theme.tab_icon_size().value();
@@ -162,6 +168,7 @@ fn tab(
         rect.y_range(),
         egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
     );
+    marker_rect
 }
 
 /// 탭 스트립을 그리고 그 아래 콘텐츠 rect를 돌려준다.
@@ -591,6 +598,10 @@ pub fn draw_markers(ui: &mut egui::Ui, theme: &Theme) {
             ("cleared by", "navigation to another document · app restart"),
             ("kept on", "#fragment moves"),
             (
+                "tooltip placement",
+                "top (Tab strips › Tooltips in the strip open upward)",
+            ),
+            (
                 "no banner when",
                 "no runnable script · already allowed · sandbox off",
             ),
@@ -615,6 +626,128 @@ pub fn draw_markers(ui: &mut egui::Ui, theme: &Theme) {
         "Firing: only when the user views the document (opened it, or selected the surface). \
          Agent/IPC opens, session restore and background loads keep a \"has scripts\" flag and \
          show the banner the first time the user looks at that surface.",
+    );
+}
+
+/// 탭 스트립 툴팁 예제 창 하나: 제목 영역 → 탭 스트립(html 탭 활성, lock hover) → WebView 자리.
+/// 툴팁은 본체와 같은 규칙으로 WebView 자리를 피해 위로 뜬다.
+fn strip_tooltip_window(ui: &mut egui::Ui, theme: &Theme, id: &str) {
+    let bw = theme.border_width.value();
+    let title_h = theme.titlebar_height.value();
+    let strip_h = theme.tab_height().value();
+    let size = egui::vec2(
+        STRIP_TOOLTIP_W.value(),
+        title_h + strip_h + bw + STRIP_TOOLTIP_WEBVIEW_H.value() + bw * 2.0,
+    );
+    let (outer, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let painter = ui.painter().clone();
+    let radius = theme.corner_radius.value();
+    painter.rect_filled(outer, radius, theme.border_frame().to_egui());
+    let inner = outer.shrink(bw);
+
+    let title = egui::Rect::from_min_size(inner.min, egui::vec2(inner.width(), title_h));
+    painter.rect_filled(title, 0.0, theme.bg_app().to_egui());
+    painter.text(
+        egui::pos2(title.left() + theme.spacing_sm.value(), title.center().y),
+        egui::Align2::LEFT_CENTER,
+        "title area",
+        egui::FontId::monospace(theme.font_size_micro.value()),
+        theme.text_muted().to_egui(),
+    );
+
+    let strip = egui::Rect::from_min_size(title.left_bottom(), egui::vec2(inner.width(), strip_h));
+    painter.rect_filled(strip, 0.0, theme.surface_raised().to_egui());
+    // lock의 hover 채움은 글리프 아래에 깔리도록 자리를 먼저 잡는다.
+    let hover_fill = painter.add(egui::Shape::Noop);
+    let tip = t(MARKER_BLOCKED);
+    let marker = tab(
+        ui,
+        theme,
+        strip,
+        "report.html",
+        icons::HTML,
+        true,
+        Some((HtmlScriptMarkerKind::Blocked, tip)),
+    );
+    let second = egui::Rect::from_min_max(
+        egui::pos2(strip.left() + theme.tab_width.value(), strip.top()),
+        strip.max,
+    );
+    tab(ui, theme, second, "shell", icons::TERMINAL, false, None);
+    painter.hline(
+        strip.x_range(),
+        strip.bottom() + bw / 2.0,
+        egui::Stroke::new(bw, theme.separator.to_egui()),
+    );
+
+    let webview =
+        egui::Rect::from_min_max(egui::pos2(inner.left(), strip.bottom() + bw), inner.max);
+    painter.rect_filled(webview, 0.0, theme.bg_panel().to_egui());
+    painter.text(
+        webview.center(),
+        egui::Align2::CENTER_CENTER,
+        "WebView — native, drawn above Tasty",
+        egui::FontId::monospace(theme.font_size_micro.value()),
+        theme.text_muted().to_egui(),
+    );
+
+    if let Some(m) = marker {
+        painter.set(
+            hover_fill,
+            egui::Shape::rect_filled(
+                m,
+                theme.corner_radius_sm.value(),
+                theme.html_script_marker_hover_bg().to_egui_premultiplied(),
+            ),
+        );
+        Tooltip::new(tip)
+            .id_source(("strip_tooltip", id))
+            .placement_clear_of_native(ui.ctx(), theme, m, ui.ctx().screen_rect(), &[webview])
+            .show(ui, theme, m);
+    }
+}
+
+/// 탭 스트립·pane 머리 툴팁은 위로 연다. 아래의 네이티브 WebView가 egui 위에 그려지기 때문이다.
+pub fn draw_strip_tooltips(ui: &mut egui::Ui, theme: &Theme) {
+    let latte = crate::host_shell::latte_theme();
+    let mocha = mocha();
+    spec::stage(ui, theme, StageVariant::Tight, |ui| {
+        app_backdrop(ui, theme, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing =
+                    egui::vec2(theme.spacing_lg.value(), theme.spacing_lg.value());
+                for (name, th) in [("Mocha", &mocha), ("Latte", &latte)] {
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
+                        caption(ui, th, &format!("{name} · html tab active, lock hovered"));
+                        strip_tooltip_window(ui, th, name);
+                    });
+                }
+            });
+        });
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            (
+                "scope",
+                "every tooltip anchored in a pane tab strip or pane head",
+            ),
+            (
+                "placement",
+                "top → bottom; first that clears all native rects",
+            ),
+            ("neither clears", "top, clamped to the window"),
+            ("horizontal", "clamped to window edges · tooltip-offset 4"),
+            ("WebView hiding", "not used for tooltips"),
+            ("delay · copy · click", "unchanged"),
+        ],
+        &[
+            TokenChip::without_color("tooltip-offset", "→ space-xs 4 · anchor gap + edge clamp"),
+            TokenChip::new("tooltip-bg", "bubble", theme.tooltip_bg().to_egui()),
+        ],
     );
 }
 

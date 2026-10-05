@@ -340,8 +340,13 @@ fn paint_html_script_marker(
         i,
     )));
     child.set_clip_rect(context.clip_rect.intersect(ui.clip_rect()));
-    let resp =
-        tasty_ui_widgets::html_script_marker(&mut child, context.props.theme, marker.kind, tooltip);
+    let resp = tasty_ui_widgets::html_script_marker(
+        &mut child,
+        context.props.theme,
+        marker.kind,
+        tooltip,
+        context.props.native_content,
+    );
     resp.clicked().then_some(marker.surface_id)
 }
 

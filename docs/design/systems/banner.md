@@ -72,6 +72,17 @@ tasty가 위에 그릴 수 없는 네이티브 레이어(HTML surface의 WebView
 - 기하는 `tasty_ui_widgets::inset_banner_zone`(배너를 둘 영역)과 `inset_content_rect`(카드 아래 콘텐츠 rect)가 계산한다.
 - 첫 사용처는 HTML surface의 스크립트 차단 안내다. 스코프는 그 surface 하나이며 옆 surface에는 배너가 없다. 배너 view는 `tasty_ui_widgets::html_script_banner`, 닫거나 허용한 뒤 탭 라벨 뒤에 남는 표지는 `html_script_marker`다. 본체는 `src/adapters/ui/surface/html_script_banner.rs`가 webview chrome 위에 배너를 그리고, 카드 아래 `banner_inset_gap`까지의 높이만큼 WebView 영역을 줄인다. surface 폭이 `banner_narrow_below()` 미만이면 narrow 배치를 쓴다. 허용 버튼은 셸 안에서 그리므로 배너 버튼 박스를 쓴다. 닫기(×)는 셸 밖에 겹쳐 그리는 Ghost IconButton이라 이 규칙의 대상이 아니다. surface가 새 문서를 로드하는 동안(commit 전) 허용 버튼은 비활성이며 배너 버튼 박스가 아니라 공용 disabled 규칙(중립 상자, disabled ink, opacity 없음)을 따른다.
 
+### 탭 스트립 툴팁
+
+네이티브 WebView는 OS z-order상 항상 egui 렌더 표면 위에 있어 그 영역에 그린 egui 툴팁은 보이지 않는다. 그래서 pane 탭 스트립과 pane 머리에 붙은 툴팁은 surface 종류와 관계없이 같은 배치 규칙을 쓴다.
+
+- 후보는 위 → 아래 순서다. 창 안에 들어가고 드러난 모든 네이티브 콘텐츠 영역(WebView)과 겹치지 않는 첫 후보를 쓴다.
+- 둘 다 안 되면(html pane 위에 다른 html pane이 쌓인 경우 등) 위에 두고 창 안으로 당긴다.
+- 가로는 창 가장자리에서 `tooltip-offset`(4)만큼 안쪽으로 당긴다.
+- 툴팁을 보이는 동안 WebView를 숨기지 않는다. hover마다 페이지가 깜박이기 때문이다. 대기 시간·문안·클릭 동작은 다른 툴팁과 같다.
+
+위젯은 `Tooltip::placement_clear_of_native`이며 피할 영역은 호출자가 넘긴다. 본체는 WebView 동기화가 드러낸 WebView의 영역을 `MainViewState::native_content_rects`에 기록하고 탭 바가 이를 읽는다. 지금 이 규칙을 쓰는 탭 스트립 툴팁은 스크립트 표지(`html_script_marker`)뿐이다. 다른 탭 스트립 요소(닫기·스크롤 화살표·분할 버튼)에는 툴팁이 없다. 갤러리 예제는 Layouts › Tab strips의 `tab-strip-tooltips` spec이다.
+
 ## 닫기 버튼 / 카운트다운 (우측 상단, 같은 자리)
 
 우상단 같은 자리에서 상태에 따라 표현이 바뀐다.

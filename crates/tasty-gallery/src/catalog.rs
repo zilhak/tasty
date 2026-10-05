@@ -1575,6 +1575,14 @@ pub fn pages() -> Vec<Page> {
                             components::tab_bar::draw,
                         ),
                         spec(
+                            "tab-strip-tooltips",
+                            "Tooltips in the strip open upward — native content below",
+                            Some(
+                                "top → bottom, first clear of every WebView rect · else top clamped to the window",
+                            ),
+                            widgets::html_script_banner::draw_strip_tooltips,
+                        ),
+                        spec(
                             "tab-scroll-arrows",
                             "Tab strip scroll arrows — disabled ink",
                             Some(

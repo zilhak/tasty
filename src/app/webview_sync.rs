@@ -44,12 +44,14 @@ pub(crate) fn synchronize(
 }
 
 /// HTML surface 전체와 활성 surface의 영역을 수집한다. native 호출은 하지 않는다.
+/// 활성 surface의 영역은 플랫폼에 넘길 논리 좌표와 egui 툴팁 배치에 쓸 물리 사각형을 함께 돌려준다.
 fn collect_html_surfaces(
     view: &MainView,
     engine: &crate::runtime::engine_access::EngineRef<'_>,
     scale_factor: f64,
 ) -> (
     std::collections::HashMap<u32, crate::webview::WebViewBounds>,
+    std::collections::HashMap<u32, crate::model::PhysicalRect>,
     Vec<u32>,
 ) {
     let terminal_rect = view.compute_terminal_rect();
@@ -57,6 +59,8 @@ fn collect_html_surfaces(
     // Collect all Html surface IDs and their visibility/bounds
     let active_ws = view.state.active_workspace_index(engine);
     let mut active_html: std::collections::HashMap<u32, crate::webview::WebViewBounds> =
+        std::collections::HashMap::new();
+    let mut active_physical: std::collections::HashMap<u32, crate::model::PhysicalRect> =
         std::collections::HashMap::new();
     let mut all_html_ids: Vec<u32> = Vec::new();
 
@@ -143,6 +147,15 @@ fn collect_html_surfaces(
                                 scale_factor,
                             );
                             active_html.insert(sid, bounds);
+                            active_physical.insert(
+                                sid,
+                                crate::model::PhysicalRect {
+                                    x: crate::model::PhysicalPx(physical.x as f32),
+                                    y: crate::model::PhysicalPx(physical.y as f32),
+                                    width: crate::model::PhysicalPx(physical.width as f32),
+                                    height: crate::model::PhysicalPx(physical.height as f32),
+                                },
+                            );
                         }
                     }
                 }
@@ -150,7 +163,7 @@ fn collect_html_surfaces(
         }
     }
 
-    (active_html, all_html_ids)
+    (active_html, active_physical, all_html_ids)
 }
 
 /// 필요한 설정을 읽은 뒤 HTML surface의 native WebView를 만들고 페이지를 연다.
@@ -362,6 +375,27 @@ fn resync_webview_urls(
     }
 }
 
+/// 드러난 WebView 영역을 기록한다. 탭 스트립 툴팁은 다음 프레임에 이 영역을 피해 배치한다.
+/// HashMap 순회 순서가 바뀌어도 같은 값으로 보도록 surface id 순으로 정렬한다.
+fn publish_native_content_rects(
+    view: &mut MainView,
+    active: &std::collections::HashMap<u32, crate::model::PhysicalRect>,
+    mut revealed: Vec<u32>,
+) {
+    revealed.sort_unstable();
+    let rects: Vec<_> = revealed
+        .iter()
+        .filter_map(|sid| active.get(sid).copied())
+        .collect();
+    let current = &view.state.native_content_rects;
+    let unchanged =
+        current.len() == rects.len() && current.iter().zip(&rects).all(|(a, b)| a.approx_eq(b));
+    if !unchanged {
+        view.state.native_content_rects = rects;
+        view.mark_dirty();
+    }
+}
+
 /// Synchronize native WebView instances with the current state.
 /// Creates webviews for new Html panels, destroys removed ones,
 /// updates bounds and visibility based on active workspace/tab.
@@ -372,7 +406,8 @@ fn sync_webviews(
     proofs: &super::html_runtime::NavigationProofs,
 ) {
     let scale_factor = view.base.gpu.scale_factor() as f64;
-    let (active_html, all_html_ids) = collect_html_surfaces(view, engine, scale_factor);
+    let (active_html, active_physical, all_html_ids) =
+        collect_html_surfaces(view, engine, scale_factor);
     create_missing_webviews(view, engine, &all_html_ids, &active_html, scale_factor);
     resync_webview_urls(view, engine, &all_html_ids);
     update_html_script_banners(view, engine, &all_html_ids);
@@ -447,6 +482,7 @@ fn sync_webviews(
     // navigation이 Done일 때만 native 페이지를 표시한다. 그 전에는 egui의
     // 로딩·오류 표시가 native 페이지에 가려지지 않도록 숨긴다.
     let mut any_visible = false;
+    let mut revealed = Vec::new();
     let mut reveal_pending: Vec<(u32, crate::webview::NavState)> = Vec::new();
     for (sid, wv) in &view.webviews {
         // active 면 bounds 는 숨겨져 있어도 갱신(다음 reveal 대비).
@@ -463,7 +499,9 @@ fn sync_webviews(
         }
         wv.set_visible(reveal);
         any_visible |= reveal;
+        revealed.extend(reveal.then_some(*sid));
     }
+    publish_native_content_rects(view, &active_physical, revealed);
     note_reveal_pending(view, &reveal_pending);
     // 키 폴링 tick 의 게이트(`app::webview_keys`) — 드러난 webview 가 없으면
     // 키가 그리로 갈 수 없으므로 폴링을 세우지 않는다.

@@ -375,7 +375,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `feedback/StatusDot` | `status_dot`(kind+pulse) | `prim_status_dot` |
 | `feedback/Spinner` | `Spinner`(size/color, 모션은 `Theme` 이 결정 · reduced_motion 은 override) | `prim_spinner` |
 | `feedback/CenterState` · `gallery/components.jsx` `CenterStateG`(Section `centerstate`) | `CenterState` / `CenterStateVariant` / `CenterStateOutput` / `CENTER_STATE_ERROR_GLYPH` (loading·empty·error, 글리프 24 · 제목 · 보조 줄 슬롯 항상 예약, 받은 영역 안 세로 가운데, 오류 글리프 alertTriangle 부품 소유, 선택 액션은 가운데 정렬 밖 보조 슬롯 아래 `center-state-action-gap`, 높이 없는 호스트는 대칭 자연 높이 — 액션이 있으면 위아래 48) | `prim_center_state` (Components `CenterState — empty · loading · error` 의 `center-state` · `center-state-action` · `center-state-unsized` spec) |
-| `feedback/Tooltip` | `Tooltip`(text/placement/id_source · `placement_top_then_bottom` · painter 전용 호출부의 `show_in`) · 호버 지연 `tooltip_hover_delay_elapsed` | `prim_help_hint` · convert(잘린 제목) |
+| `feedback/Tooltip` | `Tooltip`(text/placement/id_source · `placement_top_then_bottom` · 탭 스트립 규칙 `placement_clear_of_native` · painter 전용 호출부의 `show_in`) · 호버 지연 `tooltip_hover_delay_elapsed` | `prim_help_hint` · convert(잘린 제목) |
 | `feedback/HelpHint` | `HelpHint`(text/placement/open/id_source) — `(?)` 글리프 painter 직접 드로잉 + `Tooltip` 조합 | `prim_help_hint` |
 | `navigation/MenuItem` | `menu_item` / `menu_separator` | `prim_nav` |
 | `navigation/TreeRow` | `tree_row` | `prim_nav` |
@@ -500,7 +500,7 @@ inset banner`, `banner` Section 다음). 배너와 마커는 본체가 호출할
 | 디자인 jsx 함수 | 공용 함수 / 갤러리 함수 | 비고 |
 |---|---|---|
 | `HtmlScriptBanner` | `tasty_ui_widgets::html_script_banner`(`HtmlScriptBannerView`) | 셸 > 행 [lock 글리프 `icon_glyph_size_md` · `html_script_banner_glyph()` \| 제목 `banner_title_font_size` · 본문 `banner_body_font_size` text-muted, 각 2줄 clamp \| Secondary/Sm 액션] + 우상단 닫기 슬롯(top `banner_padding_y`, right `spacing_sm`). 행 gap `banner_gap`, 오른쪽 예약 `icon_button_size_sm + space_sm + space_xs`. reloading은 스피너 `icon_glyph_size_sm` + 라벨이 액션 자리를 대신하고 본문에 `opacity_dimmed()`, 닫기 숨김. loading은 액션을 비활성 Button(중립 상자·disabled ink)으로 그리고 hover 지연 뒤 위쪽 툴팁(`loading_tooltip`)을 보이며 닫기는 blocked와 같다. narrow는 액션이 본문 왼쪽 가장자리에 맞춰 다음 줄 |
-| `HtmlScriptMarker` | `tasty_ui_widgets::html_script_marker`(`HtmlScriptMarkerKind`) | Blocked = `LOCK` · `html_script_marker_fg()`, 클릭 가능 / Allowed = `SCRIPT`(design `scriptFile`) · `html_script_marker_allowed_fg()`, 툴팁만. 크기 `html_script_marker_size()` |
+| `HtmlScriptMarker` | `tasty_ui_widgets::html_script_marker`(`HtmlScriptMarkerKind`) | Blocked = `LOCK` · `html_script_marker_fg()`, 클릭 가능 / Allowed = `SCRIPT`(design `scriptFile`) · `html_script_marker_allowed_fg()`, 툴팁만. 크기 `html_script_marker_size()`. 툴팁은 `placement_clear_of_native`(위 → 아래, 호출자가 넘긴 WebView 영역 회피) |
 | `HtmlSurfaceG` | `html_surface` | 탭 스트립 → `inset_banner_zone` 안의 배너 → `inset_content_rect`의 페이지 자리 |
 | `HsTab` | `tab` | `tab_height` · padding `spacing_sm` · gap `spacing_xs` · caption 라벨 · 활성 bg-panel + 하단 `tab_indicator_width` accent-primary · 오른쪽 separator |
 | `HsPage` | `page_stand_in` | 터미널 focused bg, mono micro 라벨 + surface-raised 막대 3개 |
@@ -917,6 +917,18 @@ kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highl
 참조). `AttentionKind`/`AttentionLevel`(host, `src/core/state/attention.rs`)이 색 선택의
 기준이다. 갤러리는 본체 바이너리에 의존하지 않아 동일 우선순위·색을 정적 데모 데이터로 미러한다(라이브
 attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관례).
+
+## 탭 스트립 툴팁 — 네이티브 콘텐츠 위로 (Layouts)
+
+디자인 `gallery/layouts-tabstrip.jsx` Spec "Tooltips in the strip open upward — native content below" ↔ 갤러리 `catalog/widgets/html_script_banner.rs::draw_strip_tooltips`(Layouts › Tab strips, `tab-strip-tooltips` spec) ↔ 본체 `src/adapters/ui/tab_bar/tab.rs`의 표지 툴팁. 규칙은 [배너 시스템 §탭 스트립 툴팁](banner.md#탭-스트립-툴팁)에 있다.
+
+| 디자인 요소 | 갤러리 | 본체 | 비고 |
+|---|---|---|---|
+| 창(`size-320` 폭, `border-frame` 테두리, `radius`) | `strip_tooltip_window` | Tasty 창 | 폭과 WebView 자리 높이 `size-96`은 예제 전용 이름 붙은 상수 |
+| 제목 영역(`titlebar-height`, bg-app, mono micro text-muted) | 같은 함수 | 타이틀바 | |
+| 탭 스트립(surface-raised, separator 아래 선) · 활성 html 탭의 lock(hover 채움) + 비활성 shell 탭 | `tab` 두 번 + hover 채움 | `html_script_marker` | |
+| 위로 뜬 툴팁 | `Tooltip::placement_clear_of_native`(WebView 자리를 피할 영역으로 넘김) | 같은 함수, 피할 영역은 `MainViewState::native_content_rects` | Mocha·Latte 두 장 |
+| WebView 자리(bg-panel, 가운데 mono micro text-muted) | 같은 함수 | 네이티브 WebView | |
 
 ## 탭 스트립 스크롤 화살표 — disabled ink (Layouts)
 

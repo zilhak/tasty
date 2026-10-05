@@ -152,7 +152,9 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 원격 도구 예제의 SSH config 빈 상태 카드 폭 300은 디자인 Stage 액자 값이다.
         // 탐색기 사이드바 예제의 body 620·300과 pin 비교 줄의 560은 디자인 `ExpSidebar` specimen 높이이며
         // 역할 토큰이 없다.
-        133,
+        // 탭 스트립 툴팁 예제의 창 폭 320과 WebView 자리 높이 96은 디자인 Spec의 `--tasty-size-320`·`--tasty-size-96`이며
+        // 역할 토큰이 없다.
+        135,
         "갤러리 specimen은 배율 검사에서 제외돼도 스케일 검사는 받는다(ADR-0039). 이름 붙은 치수와 인라인 값, 전시 목적을 별도로 분류한다.",
     ),
     (
@@ -609,7 +611,7 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
     );
     assert_eq!(
         (named_cited, named_plain, inline_cited, inline_plain),
-        (51, 75, 0, 12),
+        (53, 75, 0, 12),
         "갤러리 후보의 (이름 있음/없음, 디자인 언급 있음/없음) 분류 수가 바뀌었다. 해당 선언과 주석을 확인하고 기록을 갱신한다."
     );
 }
@@ -727,7 +729,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         (zeros, in_tests),
         // Layout preview tests add on-scale PhysicalPx(0), PhysicalPx(0),
         // PhysicalPx(600), and the PhysicalPx(1) content-height floor; 1000 is off-scale.
-        (187, 311),
+        // Tooltip placement tests add their window, anchor and WebView rect literals.
+        (187, 324),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

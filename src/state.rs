@@ -163,6 +163,8 @@ impl RequestContext {
             #[cfg(any(feature = "gui", test))]
             tab_bar_height: PhysicalPx(0.0),
             #[cfg(feature = "gui")]
+            native_content_rects: Vec::new(),
+            #[cfg(feature = "gui")]
             last_focused_surface_id: None,
             #[cfg(feature = "gui")]
             last_active_workspace_id: None,
