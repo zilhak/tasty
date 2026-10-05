@@ -1473,7 +1473,10 @@ mod tests {
         let out = ctx.run(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 expected_path = fh_model::elide_target_front(url, target_budget(ui, &th));
-                drop(draw_file_handler_picker(ui, &mut state, &read));
+                assert!(matches!(
+                    draw_file_handler_picker(ui, &mut state, &read),
+                    PopupAction::None
+                ));
             });
         });
         let texts = painted_texts(&out.shapes);
