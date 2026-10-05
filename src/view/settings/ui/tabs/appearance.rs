@@ -1786,8 +1786,8 @@ fn font_override_grid(
                 .custom_font_path
                 .clone()
                 .unwrap_or_else(|| default.custom_font_path.clone());
-            // 폭은 이전 egui 한 줄 입력의 기본 폭을 그대로 쓴다.
-            let path_width = ui.spacing().text_edit_width;
+            // 폭은 이전 egui 한 줄 입력과 같다. 기본 폭을 쓰되 칸의 가용 폭을 넘지 않는다.
+            let path_width = ui.spacing().text_edit_width.min(ui.available_width());
             Input::new()
                 .enabled(ov.custom_font_path.is_some())
                 .width(path_width)
