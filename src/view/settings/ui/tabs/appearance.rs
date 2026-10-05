@@ -10,7 +10,9 @@ use tasty_type_appearance::theme::{
     FALLBACK_SURFACE, PartialColors, PartialSurfaceTheme, SurfaceTheme, Theme, ThemeColors,
 };
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{HelpHint, Input, TooltipPlacement, vspace};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, ControlSize, HelpHint, Input, TooltipPlacement, vspace,
+};
 
 /// plugin ID와 page ID를 함께 비교해 다른 plugin의 같은 이름 페이지와 구분한다.
 pub(super) fn find_plugin_settings_entry<'a>(
@@ -1198,8 +1200,11 @@ fn draw_appearance_colors(ui: &mut egui::Ui, settings: &mut Settings) {
             } else {
                 t("settings.appearance.colors.reset_all").to_string()
             };
-            if ui
-                .add_enabled(total > 0, egui::Button::new(label))
+            if Button::new(&label)
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Sm)
+                .enabled(total > 0)
+                .show(ui, &th)
                 .clicked()
             {
                 let ov = &mut settings.appearance.theme_overrides;
