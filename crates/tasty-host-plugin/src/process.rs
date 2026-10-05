@@ -17,7 +17,7 @@ use tasty_plugin_protocol::{HandleChannelMessage, PixelRect, SharedBufferId};
 use crate::handle_channel::{HandleListener, HandleStream, HandleStreamReader};
 use crate::listener::HostListener;
 use crate::protocol::{PluginEvent, PluginRequest, PluginResponse};
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use channel_bytes::ChannelLimits;
 use channel_bytes::{
     Admission, ChannelLedger, Direction, MeteredReceiver, MeteredSender, Refusal, TrySendRefusal,
@@ -138,6 +138,30 @@ pub struct PluginProcess {
 
 #[cfg(test)]
 impl PluginProcess {
+    /// 실제 자식을 회수하는 시험용 stub. 송신 큐는 끊겨 있어 shutdown 요청은 전달되지 않는다.
+    pub(crate) fn stub_with_child(plugin_id: &str, child: Child) -> Self {
+        let mut proc = Self::stub_for_test(plugin_id);
+        proc.child = Some(child);
+        proc
+    }
+
+    /// 연결 전 요청의 deadline을 시험하도록 연결 대기 상태로 바꾼다.
+    pub(crate) fn mark_connecting_for_test(&mut self) {
+        self.connected_at = None;
+    }
+
+    /// 실제 대기 없이 무응답 상태를 시험하도록 마지막 수신 시각을 과거로 옮긴다.
+    pub(crate) fn backdate_pong_for_test(&self, by: Duration) {
+        let mut last = self.last_pong.lock().expect("fresh mutex");
+        *last = Instant::now()
+            .checked_sub(by)
+            .expect("the clock goes back far enough");
+    }
+}
+
+/// 매니저 밖(본체 시험)에서도 namespace 소유자를 흉내 내도록 `test-support` 기능에서 연다.
+#[cfg(any(test, feature = "test-support"))]
+impl PluginProcess {
     /// 시험에서 보낸 요청을 읽을 수 있도록 수신단을 유지하는 stub.
     pub(crate) fn stub_with_request_rx(plugin_id: &str) -> (Self, RequestTap) {
         Self::stub_with_request_rx_capacity(plugin_id, REQUEST_QUEUE_CAPACITY)
@@ -166,26 +190,6 @@ impl PluginProcess {
         let mut proc = Self::stub_for_test(plugin_id);
         proc.req_tx = req_tx;
         (proc, RequestTap(req_rx))
-    }
-
-    /// 실제 자식을 회수하는 시험용 stub. 송신 큐는 끊겨 있어 shutdown 요청은 전달되지 않는다.
-    pub(crate) fn stub_with_child(plugin_id: &str, child: Child) -> Self {
-        let mut proc = Self::stub_for_test(plugin_id);
-        proc.child = Some(child);
-        proc
-    }
-
-    /// 연결 전 요청의 deadline을 시험하도록 연결 대기 상태로 바꾼다.
-    pub(crate) fn mark_connecting_for_test(&mut self) {
-        self.connected_at = None;
-    }
-
-    /// 실제 대기 없이 무응답 상태를 시험하도록 마지막 수신 시각을 과거로 옮긴다.
-    pub(crate) fn backdate_pong_for_test(&self, by: Duration) {
-        let mut last = self.last_pong.lock().expect("fresh mutex");
-        *last = Instant::now()
-            .checked_sub(by)
-            .expect("the clock goes back far enough");
     }
 
     /// 자식이 없고 송수신 채널이 끊겨 있는 단위 테스트용 stub.
@@ -228,10 +232,10 @@ thread_local! {
 }
 
 /// 송신 큐의 JSON 줄을 요청으로 읽는 시험용 수신단.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) struct RequestTap(MeteredReceiver<String>);
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl RequestTap {
     pub(crate) fn try_recv(&self) -> Result<PluginRequest, mpsc::TryRecvError> {
         let line = self.0.try_recv()?;

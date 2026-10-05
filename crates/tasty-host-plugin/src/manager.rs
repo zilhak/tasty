@@ -529,6 +529,10 @@ mod pump;
 mod queries;
 mod response;
 mod retire;
+#[cfg(any(test, feature = "test-support"))]
+mod test_support;
+#[cfg(any(test, feature = "test-support"))]
+pub use test_support::NamespaceStub;
 
 // 패키지 변경 뒤 확장 상태가 다시 계산되는지 검사한다.
 #[cfg(test)]

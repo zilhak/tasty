@@ -54,7 +54,7 @@ impl ConnectSlot {
     }
 
     /// 이미 거둔 상태로 만든다 — 연결 대기가 없는 시험용 stub 이 쓴다.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) fn reported() -> Arc<Self> {
         Arc::new(Self {
             state: Mutex::new(ConnectState::Reported),

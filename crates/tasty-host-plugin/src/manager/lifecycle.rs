@@ -264,7 +264,7 @@ impl PluginManager {
     }
 
     /// 디스크 스캔 없이 설치 목록을 교체하고 namespace 소유자를 갱신한다.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_packages_for_tests(&mut self, packages: Vec<crate::PluginPackage>) {
         self.packages = packages;
         self.sync_ipc_namespaces_from_packages();
