@@ -1415,6 +1415,7 @@ impl MainView {
         });
     }
 
+    #[allow(clippy::too_many_arguments)] // reason: 호출부가 PendingNativeMenu::Explorer 를 해체해 그대로 넘기는 형제 핸들러다 — 다시 묶으면 방금 해체한 것을 되돌리는 꼴이다
     fn handle_explorer_native_menu(
         &mut self,
         engine: &EngineRead<'_>,

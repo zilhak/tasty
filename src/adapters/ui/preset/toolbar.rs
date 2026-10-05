@@ -160,6 +160,7 @@ pub(super) struct ToolbarViewClicks {
 
 /// 일반(비-편집) 상태 툴바: rename 인라인 입력 또는 name/subtitle 라벨 + Edit·
 /// delete·duplicate·rename 아이콘 버튼.
+#[allow(clippy::too_many_arguments)] // reason: 형제 draw_toolbar_editing 과 같은 툴바 상태 묶음을 받는 egui 그리기 함수이고, 세 &mut 의 소유자가 각각 다르다
 pub(super) fn draw_toolbar_view(
     ui: &mut egui::Ui,
     theme: &Theme,

@@ -1049,6 +1049,7 @@ fn install_new_builtin(
 }
 
 /// dest 존재 시 decide_builtin_upgrade 판정 → 해당 분기 적용.
+#[allow(clippy::too_many_arguments)] // reason: 호출부가 따로 구한 판정 입력을 그대로 넘긴다 — 묶어도 조립 코드만 늘고 재사용할 호출부가 없다
 fn apply_builtin_upgrade_decision(
     mgr: &mut PluginManager,
     spec: &BuiltinSpec,

@@ -3,6 +3,7 @@ use super::*;
 use crate::ipc::handler::params;
 use tasty_core::StructuralCommand;
 
+#[allow(clippy::large_enum_variant)] // reason: 호출부가 곧바로 해체하는 1회용 반환값이라 Box 할당이 순손실이다
 pub(super) enum Resolved {
     Create(String),
     Apply(StructuralCommand, JsonRpcResponse),

@@ -62,6 +62,7 @@ pub(crate) fn workspace_cue(
 /// 대상이 다른 워크스페이스에 있거나 대상 페인이 `pane_rects`에 없으면 None이다.
 /// 활성 워크스페이스의 페인은 모두 `pane_rects`에 있으므로 뒤의 경우는 방어용이다.
 /// 탭 칸이 탭 바 스크롤 밖에 있거나 rect가 링보다 좁아 보이지 않는 경우는 여기서 거르지 않는다.
+#[allow(clippy::too_many_arguments)] // reason: 활성 워크스페이스 레이아웃을 읽어 표시 단서만 돌려주는 순수 질의다 — 호출부 두 곳이 같은 목록을 넘기므로 묶을 여지는 있고, 구조체화는 동작을 건드리는 별도 작업이다
 pub(crate) fn resolve(
     pending: Option<PendingMove>,
     presentation: &dyn crate::model::StructurePresentation,

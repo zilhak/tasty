@@ -45,6 +45,7 @@ impl Pending {
 
 type Acknowledgements = mpsc::Receiver<(u64, Result<(), String>)>;
 
+#[allow(clippy::too_many_arguments)] // reason: 스레드 생성 1회에 소유권째로 넘기는 자원 묶음이다
 pub(super) fn run(
     home: PathBuf,
     readers: Arc<crate::runtime::journal_payload::PayloadReaders>,

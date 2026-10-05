@@ -14,6 +14,7 @@ pub(crate) enum SettingsFileRequest {
     },
 }
 
+#[allow(clippy::large_enum_variant)] // reason: 내보내기·가져오기 조작 1회마다 하나를 만들어 즉시 소비한다 — 힙 할당을 더할 자리가 아니다
 pub(crate) enum SettingsFileResult {
     Export {
         path: PathBuf,

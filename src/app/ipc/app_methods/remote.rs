@@ -192,6 +192,7 @@ fn send_attach_outcome(
 }
 
 /// 새 workspace의 생성 결과를 응답하고 attach를 요청한다. 실패하면 attach 요청은 보내지 않는다.
+#[allow(clippy::too_many_arguments)] // reason: spawn_attempt 클로저가 move 로 잡은 값을 그대로 펼친 워커 진입점이다 — 묶으면 캡처를 한 번 더 옮기는 구조체만 생긴다
 fn remote_attach_create_worker(
     conn: RemoteConnParams,
     name: Option<String>,

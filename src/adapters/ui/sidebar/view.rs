@@ -1014,6 +1014,7 @@ fn draw_category_header(
 }
 
 /// 워크스페이스 행과 드래그 영역을 그린다. 액션 대상은 전역 인덱스다.
+#[allow(clippy::too_many_arguments)] // reason: 표시 입력은 이미 props 로 묶었고 남은 셋은 호출부가 루프 밖에서 따로 쓰는 &mut 출력이다
 fn draw_ws_row(
     ui: &mut egui::Ui,
     props: &SidebarFullProps<'_>,
@@ -1312,6 +1313,7 @@ fn draw_collapsed_avatar(
 }
 
 /// Full 사이드바의 workspace card 1 장 — Frame::show 로 직접 그리고 점유한 rect 반환.
+#[allow(clippy::too_many_arguments)] // reason: props 뭉치 대신 말단 표시값만 받아 카드 그리기를 사이드바 상태에서 떼어 둔다 — 묶으면 그 분리가 사라진다
 fn draw_workspace_card(
     ui: &mut egui::Ui,
     th: &Theme,

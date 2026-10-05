@@ -157,6 +157,7 @@ pub(crate) struct Request {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)] // reason: Vec 에 모으지 않고 completions 채널(sync_channel, 용량 64)로만 흐른다 — 상한이 64 라 낭비가 묶이고 Box 는 completion 마다 할당을 더한다
 pub(crate) enum ResultValue {
     CapturedPreset {
         preset: crate::intent::ClonedPreset,
@@ -210,6 +211,7 @@ pub(crate) enum ResultValue {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)] // reason: Vec 에 모으지 않고 completions 채널(sync_channel, 용량 64)로만 흐른다 — 상한이 64 라 낭비가 묶이고 Box 는 completion 마다 할당을 더한다
 pub(crate) enum Completion {
     Ready {
         #[cfg(test)]

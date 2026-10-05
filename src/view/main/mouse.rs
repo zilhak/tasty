@@ -1048,6 +1048,7 @@ impl MainView {
     /// 마우스 버튼/드래그 이벤트를 트래킹 앱(PTY)에 보고한다. `button` 0=left /
     /// 1=middle / 2=right, `motion` 드래그 여부, `release` 버튼 떼기. 좌표/SGR 여부는
     /// 보고 시점에 해당 surface 에서 조회한다.
+    #[allow(clippy::too_many_arguments)] // reason: 인자가 마우스 이벤트 그 자체라 묶으면 호출부 6곳이 전부 구조체 리터럴이 된다
     fn report_mouse_event(
         &mut self,
         engine: &EngineRead<'_>,

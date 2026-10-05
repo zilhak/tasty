@@ -217,6 +217,7 @@ impl JournalApplication {
         )
     }
 
+    #[allow(clippy::too_many_arguments)] // reason: 두 호출부가 서로 다른 엔진 핸들(EngineSession / EngineMut)에서 EngineRef 임시값을 만들어 넘긴다 — 공용 구조체로 묶으면 호출부마다 임시값을 let 으로 끌어올려야 해서 호출부만 복잡해진다
     pub(crate) fn queue_preset_capture_borrowed(
         &mut self,
         engine: &crate::runtime::engine_access::EngineRef<'_>,

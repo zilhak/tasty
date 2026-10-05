@@ -56,6 +56,7 @@ pub(crate) struct IntentViewContinuation {
     pub(crate) tutorial_surface: Option<(u32, crate::runtime::surface_binding::SurfaceBinding)>,
 }
 
+#[allow(clippy::large_enum_variant)] // reason: 처리 중 요청만 담는 맵이라 MAX_PENDING(64)으로 상한이 걸려 있다 — 낭비는 몇 KB로 묶이고 Box 는 요청마다 붙는다
 enum Reply {
     Resume(live_resume::Resume),
     Remote(inbound::RemoteReply),
