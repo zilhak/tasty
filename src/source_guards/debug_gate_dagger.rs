@@ -8,7 +8,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use super::{mask_non_code, repo_root, strip_comments};
+use tasty_doc_guards::match_arms::Source;
+
+use super::{mask_non_code, repo_root};
 
 const DOC: &str = "docs/dev-guide/debug-ipc.md";
 const DISPATCH: &str = "src/adapters/ipc/handler.rs";
@@ -83,17 +85,32 @@ const REFUSAL_CALLEES: &[&str] = &["error", "invalid_params"];
 
 /// 같은 메서드가 cfg별로 다른 핸들러를 부를 수 있어 호출 대상을 집합으로 보존한다.
 fn dispatch_map() -> BTreeMap<String, BTreeSet<String>> {
-    dispatch_map_of(&strip_comments(&read(DISPATCH)))
+    dispatch_map_of(&read(DISPATCH))
 }
 
-/// 리터럴 속 구분자로 분기를 잘못 나누지 않도록 마스킹한 소스에서 경계를 찾고 원문에서 이름을 읽는다.
+/// 파일의 모든 match 팔을 공용 판정기(`match_arms`)로 떼어 읽는다. 패턴의 `|` 조각마다 이름을
+/// 읽고, 본문의 첫 호출 이름을 호출 대상으로 본다. guard 안의 쉼표·중괄호·리터럴은 패턴이
+/// 아니므로 이름 구간을 자르거나 이름으로 섞이지 않는다. 판정기가 못 읽는 블록은 실패로 알린다.
 fn dispatch_map_of(src: &str) -> BTreeMap<String, BTreeSet<String>> {
-    let code = tasty_doc_guards::source_text::mask_non_code_aligned(src);
+    let source = Source::new(src);
+    let arms = source
+        .match_blocks(0..src.len())
+        .and_then(|blocks| {
+            blocks.into_iter().try_fold(Vec::new(), |mut acc, b| {
+                acc.extend(source.match_arms(b)?);
+                Ok(acc)
+            })
+        })
+        .unwrap_or_else(|e| {
+            panic!("dispatch 소스의 match 팔을 읽지 못했다 — {e}. 판정기가 읽는 모양으로 둔다")
+        });
     let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for (i, _) in code.match_indices("=>") {
-        let rhs = &code[i + 2..];
-        let Some(paren) = rhs.find('(') else { continue };
-        let callee: String = rhs[..paren]
+    for arm in arms {
+        let body = source.code_slice(&arm.body);
+        let Some(paren) = body.find('(') else {
+            continue;
+        };
+        let callee: String = body[..paren]
             .rsplit(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
             .next()
             .unwrap_or_default()
@@ -101,42 +118,20 @@ fn dispatch_map_of(src: &str) -> BTreeMap<String, BTreeSet<String>> {
         if callee.is_empty() || REFUSAL_CALLEES.contains(&callee.as_str()) {
             continue;
         }
-        let lhs_start = code[..i]
-            .rfind("=>")
-            .map(|p| p + 2)
-            .into_iter()
-            .chain(code[..i].rfind('{').map(|p| p + 1))
-            .chain(code[..i].rfind(',').map(|p| p + 1))
-            .max()
-            .unwrap_or(0);
-        for m in backticked_or_quoted(&src[lhs_start..i]) {
-            out.entry(m).or_default().insert(callee.clone());
+        for alt in source.alternatives(&arm.pattern) {
+            if let Some(m) = source.plain_string(&alt).filter(|m| method_shaped(m)) {
+                out.entry(m.to_owned()).or_default().insert(callee.clone());
+            }
         }
     }
     out
 }
 
-fn backticked_or_quoted(text: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut rest = text;
-    while let Some(i) = rest.find('"') {
-        let after = &rest[i + 1..];
-        match after.find('"') {
-            None => break,
-            Some(j) => {
-                let inner = &after[..j];
-                if inner.contains('.')
-                    && inner
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
-                {
-                    out.push(inner.to_owned());
-                }
-                rest = &after[j + 1..];
-            }
-        }
-    }
-    out
+fn method_shaped(name: &str) -> bool {
+    name.contains('.')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
 }
 
 /// 게이트 이름 앞의 마지막 fn 이름을 수집한다. 함수 정의 자체는 제외하며 실제 호출 관계까지 분석하지 않는다.
@@ -356,6 +351,29 @@ match m {
             !gated.contains("surface.raw_key"),
             "게이트 없이 실행되는 분기가 있는데 게이트가 있는 메서드로 분류했다"
         );
+    }
+
+    /// 줄·쉼표 근사는 guard 안의 쉼표·중괄호에서 이름 구간을 잘라 이 팔들을 놓쳤다.
+    #[test]
+    fn arms_with_guards_and_alternatives_are_read() {
+        let src = r#"
+match m {
+    "x.a" | "x.b" => h::handle_x(s),
+    "x.g" if cond(a, b) => h::handle_g(s),
+    "x.k" if v.iter().any(|c| { c.ok() }) => h::handle_k(s),
+    "x.l" if s == "y.not_a_method" => h::handle_l(s),
+    "x.m" => h::handle_m(s), "x.n" => h::handle_n(s),
+    _ => not_found(),
+}
+"#;
+        let map = dispatch_map_of(src);
+        let names: Vec<&str> = map.keys().map(String::as_str).collect();
+        assert_eq!(
+            names,
+            ["x.a", "x.b", "x.g", "x.k", "x.l", "x.m", "x.n"],
+            "guard 의 리터럴이 이름으로 섞였거나 팔을 놓쳤다: {map:?}"
+        );
+        assert!(map["x.g"].contains("handle_g") && map["x.k"].contains("handle_k"));
     }
 
     #[test]

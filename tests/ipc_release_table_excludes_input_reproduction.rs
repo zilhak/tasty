@@ -9,7 +9,7 @@
 #![cfg(debug_assertions)]
 
 use tasty_doc_guards::cfg_predicate as cfg_span;
-use tasty_doc_guards::match_arms::{Source, matching_close};
+use tasty_doc_guards::match_arms::Source;
 
 use std::ops::Range;
 use std::path::Path;
@@ -210,37 +210,6 @@ struct Scanned {
     gated: bool,
 }
 
-/// 본문의 모든 `match` 블록(중첩 포함)의 시작 `{` 위치.
-fn match_blocks(source: &Source, body: &Range<usize>) -> Vec<usize> {
-    let code = source.code.as_str();
-    let is_word = |c: char| c.is_alphanumeric() || c == '_';
-    let mut out = Vec::new();
-    let mut from = body.start;
-    while let Some(rel) = code[from..body.end].find("match") {
-        let at = from + rel;
-        from = at + "match".len();
-        if code[..at].chars().next_back().is_some_and(is_word)
-            || !code[from..].starts_with(char::is_whitespace)
-        {
-            continue;
-        }
-        // 조사 대상 식 안의 괄호는 건너뛰고 깊이 0 의 첫 `{` 를 블록 시작으로 본다.
-        let mut depth = 0usize;
-        for (k, b) in code.as_bytes()[from..body.end].iter().enumerate() {
-            match b {
-                b'(' | b'[' => depth += 1,
-                b')' | b']' => depth = depth.saturating_sub(1),
-                b'{' if depth == 0 => {
-                    out.push(from + k);
-                    break;
-                }
-                _ => {}
-            }
-        }
-    }
-    out
-}
-
 /// 팔 앞 속성 중 debug_assertions 를 함의하는 `#[cfg(…)]` 가 있는가.
 fn attrs_imply_debug(attrs: &str) -> bool {
     attrs.split("#[").skip(1).any(|a| {
@@ -264,11 +233,8 @@ fn attrs_imply_debug(attrs: &str) -> bool {
 /// 한 줄에 하나로 편다. 이 한계는 `known_limit_a_cfg_statement_gates_its_whole_line` 이 고정한다.
 fn scan_body(source: &Source, body: Range<usize>) -> Result<Vec<Scanned>, String> {
     let mut arms = Vec::new();
-    for open in match_blocks(source, &body) {
-        let close = matching_close(&source.code, open)
-            .filter(|c| *c < body.end)
-            .ok_or_else(|| format!("{}행: match 블록이 닫히지 않는다", source.line_of(open)))?;
-        arms.extend(source.match_arms(open..close + 1)?);
+    for block in source.match_blocks(body.clone())? {
+        arms.extend(source.match_arms(block)?);
     }
 
     // 팔 속성을 지운 본문 — 남은 cfg 는 블록·문장 단위다.

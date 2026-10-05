@@ -7,15 +7,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use tasty_doc_guards::match_arms::Source;
+
 use super::repo_root;
 
 const DISPATCH_SOURCES: &[&str] = &["src/adapters/ipc/handler.rs"];
 
 /// 2026-09-05 플랫폼 조건의 메서드 2개를 측정했다. 빈 수집을 찾기 위한 하한이다.
 const MIN_PLATFORM_ARMS: usize = 2;
-
-/// cfg 뒤의 패턴 길이와 ;·{를 검사해 const·use 선언을 dispatch 분기로 오인하지 않도록 한다.
-const MAX_ARM_PATTERN: usize = 200;
 
 fn read(rel: &str) -> String {
     std::fs::read_to_string(repo_root().join(rel))
@@ -27,78 +26,62 @@ fn normalize(cond: &str) -> String {
     cond.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
-fn cfg_condition(src: &str, open_paren: usize) -> Option<(String, usize)> {
-    let bytes = src.as_bytes();
-    let mut depth = 0usize;
-    for (i, _) in src[open_paren..].char_indices() {
-        match bytes[open_paren + i] {
-            b'(' => depth += 1,
-            b')' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some((
-                        src[open_paren + 1..open_paren + i].to_string(),
-                        open_paren + i,
-                    ));
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-fn literals(seg: &str) -> BTreeSet<String> {
-    let mut out = BTreeSet::new();
-    let mut rest = seg;
-    while let Some(at) = rest.find('"') {
-        let after = &rest[at + 1..];
-        let Some(end) = after.find('"') else { break };
-        out.insert(after[..end].to_string());
-        rest = &after[end + 1..];
-    }
-    out
-}
-
 pub(super) struct Arms {
     by_method: BTreeMap<String, BTreeSet<String>>,
     platform: Vec<(String, String)>,
 }
 
-/// 구조 구분자는 마스킹한 소스에서 찾고 조건·메서드 이름은 같은 바이트 구간의 원문에서 읽는다.
+/// 팔 앞 속성들의 cfg 술어. 여럿이면 함께 걸리므로 `all(…)` 로 묶는다.
+fn arm_cfg(attrs: &str) -> Option<String> {
+    let preds: Vec<&str> = attrs
+        .split("#[")
+        .skip(1)
+        .filter_map(|a| {
+            a.trim_start()
+                .strip_prefix("cfg(")
+                .and_then(|r| r.trim_end().strip_suffix(")]"))
+        })
+        .collect();
+    match preds.as_slice() {
+        [] => None,
+        [one] => Some((*one).to_string()),
+        many => Some(format!("all({})", many.join(","))),
+    }
+}
+
+/// 파일의 모든 match 팔을 공용 판정기(`match_arms`)로 떼어 cfg 가 붙은 팔만 모은다.
+/// 조건은 팔 앞 속성에서, 이름은 패턴의 `|` 조각에서 읽는다. guard 의 리터럴·중괄호와 긴
+/// alternation 은 패턴 판독에 영향을 주지 않는다. 판정기가 못 읽는 블록은 실패로 알린다.
 pub(super) fn scan(src: &str) -> Arms {
-    let code = tasty_doc_guards::source_text::mask_non_code_aligned(src);
+    let source = Source::new(src);
+    let arms = source
+        .match_blocks(0..src.len())
+        .and_then(|blocks| {
+            blocks.into_iter().try_fold(Vec::new(), |mut acc, b| {
+                acc.extend(source.match_arms(b)?);
+                Ok(acc)
+            })
+        })
+        .unwrap_or_else(|e| {
+            panic!("dispatch 소스의 match 팔을 읽지 못했다 — {e}. 판정기가 읽는 모양으로 둔다")
+        });
     let mut by_method: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut platform: Vec<(String, String)> = Vec::new();
-    let mut from = 0usize;
-    while let Some(at) = code[from..].find("#[cfg(") {
-        let at = from + at;
-        let open = at + "#[cfg".len();
-        let Some((_, close)) = cfg_condition(&code, open) else {
-            break;
-        };
-        let cond = src[open + 1..close].to_string();
-        from = close + 1;
-        let Some(arrow) = code[from..].find("=>") else {
+    for arm in arms {
+        let Some(cond) = arm_cfg(source.slice(&arm.attrs)) else {
             continue;
         };
-        let seg_code = &code[from..from + arrow];
-        let seg = &src[from..from + arrow];
-        let looks_like_arm = arrow <= MAX_ARM_PATTERN
-            && !seg_code.contains(';')
-            && !seg_code.contains('{')
-            && seg.contains('"');
-        if !looks_like_arm {
-            continue;
-        }
         let cond_n = normalize(&cond);
-        for m in literals(seg) {
+        for alt in source.alternatives(&arm.pattern) {
+            let Some(m) = source.plain_string(&alt) else {
+                continue;
+            };
             by_method
-                .entry(m.clone())
+                .entry(m.to_string())
                 .or_default()
                 .insert(cond_n.clone());
             if cond.contains("target_os") {
-                platform.push((m, cond_n.clone()));
+                platform.push((m.to_string(), cond_n.clone()));
             }
         }
     }
@@ -212,6 +195,31 @@ fn f() { let x = a => b; }
             !found.by_method.contains_key("platform"),
             "게이트된 항목의 문자열을 arm 패턴으로 집었다: {:?}",
             found.by_method
+        );
+    }
+
+    /// 가린 사본의 문자열 검색은 guard 의 중괄호에서 팔을 버렸고 200 바이트를 넘는 패턴도
+    /// 버렸으며, guard 의 리터럴을 메서드로 집었다.
+    #[test]
+    fn guards_and_long_alternations_are_read_by_the_pattern() {
+        let long: Vec<String> = (0..20).map(|i| format!("\"p.long_{i}\"")).collect();
+        let src = format!(
+            "match m {{\n    #[cfg(target_os = \"macos\")]\n    \"p.k\" if v.iter().any(|c| {{ c.ok() }}) => go(),\n    #[cfg(target_os = \"macos\")]\n    \"p.l\" if s == \"zz\" => go(),\n    #[cfg(target_os = \"macos\")]\n    {} => go(),\n    #[cfg(target_os = \"macos\")]\n    \"p.a\" => go(), \"p.b\" => go(),\n    _ => x(),\n}}\n",
+            long.join(" | ")
+        );
+        assert!(
+            src.len() > 200 + 100,
+            "긴 alternation 이 200 바이트를 넘지 않는다"
+        );
+        let found = scan(&src);
+        let names: BTreeSet<&str> = found.platform.iter().map(|(m, _)| m.as_str()).collect();
+        for want in ["p.k", "p.l", "p.a", "p.long_0", "p.long_19"] {
+            assert!(names.contains(want), "`{want}` 을 못 읽었다: {names:?}");
+        }
+        assert!(!names.contains("zz"), "guard 의 리터럴을 이름으로 집었다");
+        assert!(
+            !names.contains("p.b"),
+            "같은 줄 다음 팔에 앞 팔의 cfg 를 붙였다"
         );
     }
 

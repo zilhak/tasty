@@ -102,6 +102,10 @@ match를 감싼 블록·문장의 cfg를 본다. 마지막 것은 팔 속성을 
 한 줄에 놓인 다음 팔이 앞 팔의 cfg로 칠해지지 않는다. `==`·`starts_with` 비교는 판정기 밖이라
 줄 단위로 읽으며, 한 줄에 둔 cfg 문장이 같은 줄의 다른 비교까지 칠하는 한계를 시험으로 고정한다.
 
+`src/source_guards`의 debug_gate_dagger와 platform_gated_dispatch_complement도 dispatch 파일의
+모든 match 블록을 `Source::match_blocks`와 `match_arms`로 읽고 Err면 실패한다. 이름은 패턴의
+`|` 조각에서만 읽으므로 guard 안의 쉼표·중괄호·리터럴이나 긴 alternation이 판독을 바꾸지 않는다.
+
 함수 정의를 찾는 범위도 구분한다.
 
 | 구현 | 범위와 제약 |

@@ -94,6 +94,45 @@ impl<'a> Source<'a> {
         out
     }
 
+    /// `within` 안의 모든 `match` 블록(`{ … }` 구간)을 앞에서부터 돌려준다. 중첩된 블록도 따로 든다.
+    ///
+    /// 조사 대상 식의 괄호 안 `{` 는 건너뛰고 깊이 0 의 첫 `{` 를 블록 시작으로 본다. 블록이
+    /// `within` 안에서 닫히지 않으면 Err 다 — 건너뛰면 그 안의 팔이 조용히 빠진다.
+    pub fn match_blocks(&self, within: Range<usize>) -> Result<Vec<Range<usize>>, String> {
+        let code = self.code.as_str();
+        let is_word = |c: char| c.is_alphanumeric() || c == '_';
+        let mut out = Vec::new();
+        let mut from = within.start;
+        while let Some(rel) = code[from..within.end].find("match") {
+            let at = from + rel;
+            from = at + "match".len();
+            if code[..at].chars().next_back().is_some_and(is_word)
+                || !code[from..within.end].starts_with(char::is_whitespace)
+            {
+                continue;
+            }
+            let mut depth = 0usize;
+            let open = code.as_bytes()[from..within.end]
+                .iter()
+                .enumerate()
+                .find_map(|(k, b)| {
+                    match b {
+                        b'(' | b'[' => depth += 1,
+                        b')' | b']' => depth = depth.saturating_sub(1),
+                        b'{' if depth == 0 => return Some(from + k),
+                        _ => {}
+                    }
+                    None
+                })
+                .ok_or_else(|| format!("{}행: `match` 뒤에 블록이 없다", self.line_of(at)))?;
+            let close = matching_close(code, open)
+                .filter(|c| *c < within.end)
+                .ok_or_else(|| format!("{}행: match 블록이 닫히지 않는다", self.line_of(open)))?;
+            out.push(open..close + 1);
+        }
+        Ok(out)
+    }
+
     /// match 블록의 분기를 차례로 읽는다. 지원하지 않는 형태는 Err로 반환한다.
     pub fn match_arms(&self, block: Range<usize>) -> Result<Vec<Arm>, String> {
         let code = self.code.as_bytes();
@@ -354,6 +393,19 @@ fn route(m: &str) -> Option<u8> {
         assert_eq!(src.slice(&arms[3].attrs).trim(), "#[cfg(unix)]");
         assert_eq!(src.slice(&arms[5].pattern), "_");
         assert_eq!(src.slice(&arms[5].body), "return None");
+    }
+
+    #[test]
+    fn every_match_block_is_found_and_mentions_are_not() {
+        let text = "fn f() {\n// match x { }\nlet s = \"match y {\";\nlet t = matches!(m, A);\nmatch g(|c| { c }) { 1 => match m { _ => 0 }, _ => 2 }\n}\n";
+        let src = Source::new(text);
+        let blocks = src.match_blocks(0..text.len()).unwrap();
+        let heads: Vec<_> = blocks.iter().map(|b| &src.slice(b)[..5]).collect();
+        assert_eq!(heads, vec!["{ 1 =", "{ _ =",]);
+        assert!(
+            src.match_blocks(0..text.len() - 4).is_err(),
+            "잘린 구간의 블록은 Err 여야 한다"
+        );
     }
 
     #[test]
