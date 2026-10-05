@@ -637,6 +637,7 @@ journal이 원격 요청을 실제 해소할 때도 anchor 부재 판정은 모�
 
 ## CLI 출력 종료
 
-raw attach의 stdout 쓰기나 flush가 BrokenPipe로 끝나면 세션을 정상 종료한다.
+`remote attach`, `tool attach`, debug 전용 `debug attach`의 raw 모드는 같은
+출력 처리를 사용한다. stdout 쓰기나 flush가 BrokenPipe로 끝나면 세션을 정상 종료한다.
 다른 출력 오류는 호출자에게 반환한다. detach 통지 실패나 reader 스레드 패닉은
 진단을 남기며 후속 종료 처리를 계속한다. 종료 직전 입력 송신 실패도 기록한다.

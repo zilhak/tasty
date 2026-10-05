@@ -38,7 +38,7 @@
 ### Fixed
 
 - **Linux에서 플러그인 시작 결과를 받을 요청이 사라지면 새 프로세스를 종료·회수한다.** 시작 중 요청이 취소되어도 소유자 없는 플러그인 프로세스가 남지 않는다.
-- **`tasty attach --raw`가 표준 출력 오류를 처리한다.** 파이프를 받는 프로그램이 먼저 닫으면 정상 종료하고, 그 밖의 쓰기·flush 실패는 오류로 반환한다.
+- **CLI attach의 `--raw` 모드가 표준 출력 오류를 처리한다.** 파이프를 받는 프로그램이 먼저 닫으면 정상 종료하고, 그 밖의 쓰기·flush 실패는 오류로 반환한다.
 
 - **`tasty claude kill`이 원격으로 넘긴 종료를 `killed: true`로 답하지 않는다.** 이전에는 원격 attach(mirror) 서피스로 넘긴 kill도 `{"killed": true}`로만 답해 실제로 닫힌 것처럼 보였다. 이제 호스트 응답(닫혔으면 `killed_surface_id`·`child_index`, 원격으로 넘겼으면 `forwarded`·`surface_id`·`child_index`)에 `killed`를 더해 돌려주며, `killed`는 실제로 닫힌 경우에만 `true`다. 원격으로 넘긴 kill은 `killed: false`이고 그 서피스의 오류 감시도 유지한다.
 - **`tasty terminal kill`과 `tasty codex kill`이 원격으로 넘긴 종료를 성공으로 답하지 않는다.** 이전에는 원격 attach(mirror) 워크스페이스의 자식을 종료하면 닫기가 원격에 넘어가기만 했는데도 `killed_surface_id`로 성공을 답하고 부모·자식 관계를 먼저 지웠다. 그래서 서피스가 살아 있는데도 자식 목록 조회·종료·해제로 다시 다룰 수 없었다. 이제 원격으로 넘긴 경우 `{"forwarded": true, "surface_id", "child_index"}`로 답하고 관계를 남겼다가 원격에서 서피스가 닫히면 정리한다. 닫기가 실패하면 오류를 돌려주고 관계는 그대로 둔다. 실제로 닫혔을 때만 관계를 지우고 `killed_surface_id`로 답한다.

@@ -162,7 +162,7 @@ tasty settings get-remote-transfer
 tasty settings set-remote-transfer --dir ~/Downloads/tasty --max-mb 2000
 ```
 
-CLI attach 출력을 다른 명령으로 넘겼을 때 그 명령이 먼저 종료하면 attach도 정상 종료합니다.
+CLI attach의 `--raw` 출력을 다른 명령으로 넘겼을 때 그 명령이 먼저 종료하면 attach도 정상 종료합니다.
 출력 장치의 권한 문제 같은 다른 쓰기 오류는 실패로 알려 줍니다.
 
 ## 문제 해결
