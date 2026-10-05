@@ -689,6 +689,8 @@ mod repo_relative_paths;
 
 #[cfg(test)]
 mod home_env_has_one_door;
+#[cfg(test)]
+mod icon_texture_loader_installed;
 
 mod headless_app_layer_coverage;
 mod key_contract_by_layer;

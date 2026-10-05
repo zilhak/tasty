@@ -67,6 +67,8 @@ egui 0.31의 기본 텍스처 로더는 uri와 `TextureOptions`만 캐시 키로
 - 두 매크로가 만드는 uri가 이 로더의 접두사를 쓴다.
 - 래스터한 모든 픽셀이 같은 SVG를 tiny-skia로 직접 그린 알파 a에 대해 (a, a, a, a)다. 곱하지 않은 값으로 넘기면 가장자리 픽셀에서 실패한다.
 
+본체 창의 egui Context 생성 자리(`src/gfx/gpu.rs`)와 갤러리 `main.rs`는 같은 fn에서 이 로더를 설치해야 한다. source guard `icon_texture_loader_installed`가 Context를 받은 변수로 `install_texture_loader`를 호출하는지 텍스트로 확인한다. 호출이 실제로 실행되는지(조건 분기·이른 반환)는 판단하지 않는다. 두 파일 밖에서 만드는 egui Context는 보지 않는다.
+
 ## 크기 소유 — 호출측
 
 `tasty-icons` 는 **크기를 소유하지 않는다**. `Icon::image(size, tint)` 의 `size` 는 호출측이
