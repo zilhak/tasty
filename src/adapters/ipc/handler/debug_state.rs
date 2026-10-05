@@ -190,6 +190,47 @@ mod tests {
         assert_eq!(calls, 0);
     }
 
+    /// 핸들러가 이전 theme 과 patch 의 theme 을 비교해 적용 함수를 부르는지 배선째 확인한다.
+    /// 내장 mocha 로 바꾸면 theme_is_light 와 색 override 가 그 theme 값으로 정해진다.
+    /// test_state 의 엔진이 이 스레드의 tasty_home 을 임시 디렉터리로 격리한다.
+    #[test]
+    fn settings_apply_with_a_new_theme_dispatches_that_themes_colour_set() {
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
+        {
+            let appearance = &mut engine.runtime.settings.appearance;
+            appearance.theme = "latte".to_string();
+            appearance.theme_is_light = true;
+            appearance.theme_overrides.crust =
+                tasty_type_appearance::color::HexColor::from_hex("#123456");
+            assert!(appearance.theme_overrides.crust.is_some());
+        }
+
+        let resp = super::handle_debug_settings_apply(
+            &mut state,
+            &mut engine,
+            serde_json::json!(1),
+            &serde_json::json!({ "settings": { "appearance": { "theme": "mocha" } } }),
+        );
+        assert!(resp.result.is_some(), "{:?}", resp.error);
+
+        let intents = state.take_pending_intents();
+        assert_eq!(intents.len(), 1);
+        let crate::intent::Intent::Domain(crate::app::command::DomainIntent::UpdateSettings(
+            settings,
+        )) = &intents[0].body
+        else {
+            panic!("expected UpdateSettings: {:?}", intents[0].body);
+        };
+        assert_eq!(settings.appearance.theme, "mocha");
+        assert!(!settings.appearance.theme_is_light);
+        assert!(
+            settings.appearance.theme_overrides.is_empty(),
+            "{:?}",
+            settings.appearance.theme_overrides
+        );
+    }
+
     #[test]
     fn ui_state_answers_for_a_parked_engine_without_workspaces() {
         let (state, mut engine_session) =
