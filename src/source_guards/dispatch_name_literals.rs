@@ -10,8 +10,8 @@
 use std::collections::BTreeSet;
 
 use super::{
-    CallSite, METHOD_EXPR, arg_at, callers_of, fn_body, fn_spans, mask_non_code, matching_delim,
-    opaque_method_sites, opaque_sites_for, repo_root, rust_sources, strip_comments,
+    CallSite, METHOD_EXPR, arg_at, callers_of, fn_bodies_of, fn_body, fn_spans, mask_non_code,
+    matching_delim, opaque_method_sites, opaque_sites_for, repo_root, rust_sources, strip_comments,
 };
 
 /// request.method로 분기하는 라우터 파일. 시험의 리터럴 분기도 같은 문법 검사를 받는다.
@@ -289,14 +289,19 @@ fn every_delegated_router_decides_by_a_name_the_scan_can_see() {
     let mut seen = 0usize;
     for (rel, name) in DELEGATED_ROUTERS {
         let src = router_source(rel);
-        let body = fn_body(&src, &format!("fn {name}(")).unwrap_or_else(|| {
-            panic!("{rel}의 fn {name} 본문을 읽지 못했다. 이동·이름 변경과 파서를 확인한다.")
-        });
-        let opaque = opaque_sites_for(&body, DELEGATED_PARAM);
+        // 본문 전체에 대한 전칭 명제라 cfg 로 갈린 정의도 모두 대조한다.
+        let bodies = fn_bodies_of(&src, &format!("fn {name}("));
         assert!(
-            opaque.is_empty(),
-            "{rel}의 fn {name}에서 문자열 리터럴이 아닌 값으로 메서드를 구분한다. 이 함수는 이름을 인자로 받으므로 `{METHOD_EXPR}` 검색만으로는 검사할 수 없다: {opaque:?}"
+            !bodies.is_empty(),
+            "{rel}의 fn {name} 본문을 읽지 못했다. 이동·이름 변경과 파서를 확인한다."
         );
+        for body in &bodies {
+            let opaque = opaque_sites_for(body, DELEGATED_PARAM);
+            assert!(
+                opaque.is_empty(),
+                "{rel}의 fn {name}에서 문자열 리터럴이 아닌 값으로 메서드를 구분한다. 이 함수는 이름을 인자로 받으므로 `{METHOD_EXPR}` 검색만으로는 검사할 수 없다: {opaque:?}"
+            );
+        }
         seen += 1;
     }
     assert_eq!(

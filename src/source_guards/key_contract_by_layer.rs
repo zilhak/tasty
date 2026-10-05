@@ -19,7 +19,7 @@ use tasty_ipc::method_meta::{
 };
 
 use super::headless_app_layer_coverage::{headless_dispatch_code, method_literals};
-use super::{fn_body, mask_non_code, repo_root, strip_comments, word_positions};
+use super::{fn_body, fn_definitions_of, mask_non_code, repo_root, strip_comments, word_positions};
 
 const GUI_DISPATCH: &str = "src/app/ipc.rs";
 const GUI_ROUTING: &str = "src/app/ipc/routing.rs";
@@ -42,6 +42,32 @@ fn read(rel: &str) -> String {
 /// 첫 줄 시작의 #[cfg(test)] 앞까지만 읽는다. 모든 cfg 형태를 분석하는 것은 아니다.
 fn shipped(src: &str) -> &str {
     src.split("\n#[cfg(test)]").next().unwrap_or(src)
+}
+
+/// debug 빌드에서 컴파일되는 정의 하나의 본문. `ipc_step_debug_layers` 는 debug·release 로 갈린
+/// 두 정의이고, 이 파일의 명제(보존소 뒤의 debug 단계 · relay · handled 판정)는 보존소를 부르는
+/// debug 정의에 관한 것이다. 그래서 `not(debug_assertions)` 를 함의하는 정의를 빼고 남은 것이
+/// 정확히 하나여야 한다. release 정의는 보존소 없이 창 필요 단계만 부르며 이 가드는 그 정의를
+/// 대조하지 않는다. 재는 변이: `#[cfg(any())]` 셋째 정의를 더하면 정의가 둘 남아 실패한다.
+fn debug_build_body(src: &str, signature: &str) -> Option<String> {
+    let mut defs: Vec<_> = fn_definitions_of(src, signature)
+        .into_iter()
+        .filter(|d| !attrs_imply(&d.attrs, "not(debug_assertions)"))
+        .collect();
+    assert!(
+        defs.len() <= 1,
+        "`{signature}` 의 debug 빌드 정의가 {}개다 — 어느 정의를 대조할지 정하라",
+        defs.len()
+    );
+    defs.pop().map(|d| d.body)
+}
+
+fn attrs_imply(attrs: &str, needle: &str) -> bool {
+    attrs.lines().any(|a| {
+        a.strip_prefix("#[cfg(")
+            .and_then(|r| r.strip_suffix(")]"))
+            .is_some_and(|pred| tasty_doc_guards::cfg_predicate::implies(pred, needle))
+    })
 }
 
 fn table() -> impl Iterator<Item = &'static (&'static str, MethodMeta)> {
@@ -192,7 +218,7 @@ fn the_gui_debug_steps_run_behind_the_store() {
             "dispatch가 `{step}`을 debug 묶음 밖에서 부른다. 해당 호출이 키 보존소를 우회하지 않도록 묶음 함수로 전달한다."
         );
     }
-    let layers = fn_body(&src, "fn ipc_step_debug_layers")
+    let layers = debug_build_body(&src, "fn ipc_step_debug_layers")
         .unwrap_or_else(|| panic!("{GUI_DISPATCH} 에서 `ipc_step_debug_layers` 를 못 잘랐다"));
     let store = layers
         .find("run_app_layer(")
@@ -284,7 +310,7 @@ const STORE_CALLS: &[StoreCall] = &[
 fn store_call_args(site: &StoreCall) -> Vec<String> {
     let masked = mask_non_code(shipped(&read(site.rel)));
     let scope = match site.scope_fn {
-        Some(sig) => fn_body(&masked, sig)
+        Some(sig) => debug_build_body(&masked, sig)
             .unwrap_or_else(|| panic!("{}: `{sig}` 본문을 못 잘랐다", site.rel)),
         None => masked,
     };

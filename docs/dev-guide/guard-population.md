@@ -111,7 +111,8 @@ match를 감싼 블록·문장의 cfg를 본다. 마지막 것은 팔 속성을 
 | 구현 | 범위와 제약 |
 |---|---|
 | 공용 match_arms의 fn_bodies | 같은 이름의 정의를 모두 반환. 소비자가 전부 검사하거나 정확히 하나를 요구함 |
-| src/source_guards의 fn_body | 첫 정의만 반환. cfg로 나뉜 같은 이름의 뒤 정의를 놓칠 수 있음 |
+| src/source_guards의 fn_body | 정의가 하나일 때만 반환. 같은 이름의 정의가 둘 이상이면 실패하므로 소비자가 아래 함수로 옮겨 대조 방법을 정함 |
+| src/source_guards의 fn_bodies_of · fn_definitions_of | 공용 fn_bodies로 같은 이름의 정의를 모두 반환. fn_definitions_of는 정의마다 앞 속성 줄도 함께 줌 |
 | routing_key_method_scope의 fn_index | 사설 fn_bodies 결과를 모듈·이름으로 등록하며 첫 정의만 유지 |
 | 직접 find로 정의를 찾는 소비자 | 첫 일치 뒤만 읽을 수 있으므로 개별 확인 필요 |
 

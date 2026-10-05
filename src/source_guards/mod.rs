@@ -123,13 +123,76 @@ fn non_literal_arms(block: &str) -> Vec<String> {
     out
 }
 
-/// 마스킹한 소스에서 첫 시그니처와 중괄호 짝을 찾아 원문 본문을 반환한다.
+/// 시그니처의 함수 정의가 **하나일 때** 그 원문 본문을 반환한다. 없으면 None 이다.
+///
+/// 같은 이름의 정의가 둘 이상이면(cfg 로 갈린 정의) 첫 정의만 읽지 않고 실패한다. 첫 정의만
+/// 읽으면 뒤 정의에만 들어간 위반이 초록으로 지나간다. 둘 이상을 만난 소비자는 [`fn_bodies_of`]
+/// 로 옮기고 전부 대조할지, 하나만 있어야 하는지, 첫 것만 볼지(사유와 함께)를 정한다.
+/// 재는 변이: `should_rate_limit` 뒤에 `#[cfg(any())]` 로 둘째 정의를 두면 이 함수를 쓰는
+/// 소비자는 실패한다(`fn_body_refuses_a_second_definition`).
 fn fn_body(src: &str, signature: &str) -> Option<String> {
-    let code = tasty_doc_guards::source_text::mask_non_code_aligned(src);
-    let at = code.find(signature)?;
-    let open = code[at..].find('{')? + at;
-    let close = tasty_doc_guards::match_arms::matching_close(&code, open)?;
-    Some(src[open..=close].to_string())
+    let mut bodies = fn_bodies_of(src, signature);
+    assert!(
+        bodies.len() <= 1,
+        "`{signature}` 정의가 {}개다. fn_body 는 첫 정의만 읽을 수 없다 — 소비자를 fn_bodies_of 로 \
+         옮기고 둘 이상일 때의 대조 방법을 정하라",
+        bodies.len()
+    );
+    bodies.pop()
+}
+
+/// 시그니처(`fn 이름(` · `pub(crate) fn 이름` …)의 함수 이름과 같은 정의의 원문 본문을 모두
+/// 반환한다. cfg 로 갈린 정의도 포함하며 주석·리터럴 속 언급과 이름이 더 긴 함수는 제외한다.
+fn fn_bodies_of(src: &str, signature: &str) -> Vec<String> {
+    fn_definitions_of(src, signature)
+        .into_iter()
+        .map(|d| d.body)
+        .collect()
+}
+
+/// 함수 정의 하나 — 앞에 붙은 속성 줄들과 원문 본문.
+struct FnDefinition {
+    /// `fn` 줄 바로 앞에 이어진 `#[…]` 줄들(주석·doc 줄은 건너뛴다).
+    attrs: String,
+    body: String,
+}
+
+/// [`fn_bodies_of`] 와 같은 정의들을 앞 속성과 함께 돌려준다. 속성은 줄 단위로 읽으므로
+/// `fn` 과 같은 줄에 쓴 속성은 들지 않는다.
+fn fn_definitions_of(src: &str, signature: &str) -> Vec<FnDefinition> {
+    let name: String = signature
+        .rsplit_once("fn ")
+        .map_or("", |(_, rest)| rest)
+        .trim_start()
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    assert!(
+        !name.is_empty(),
+        "시그니처에서 함수 이름을 못 읽었다: {signature}"
+    );
+    let source = tasty_doc_guards::match_arms::Source::new(src);
+    let head = format!("fn {name}");
+    source
+        .fn_bodies(&name)
+        .iter()
+        .map(|r| {
+            let fn_at = source.code[..r.start].rfind(&head).unwrap_or(r.start);
+            let line_start = src[..fn_at].rfind('\n').map_or(0, |i| i + 1);
+            let mut attrs: Vec<&str> = src[..line_start]
+                .lines()
+                .rev()
+                .map(str::trim)
+                .take_while(|l| l.starts_with("#[") || l.starts_with("//"))
+                .filter(|l| l.starts_with("#["))
+                .collect();
+            attrs.reverse();
+            FnDefinition {
+                attrs: attrs.join("\n"),
+                body: source.slice(r).to_string(),
+            }
+        })
+        .collect()
 }
 
 fn repo_root() -> PathBuf {
@@ -682,3 +745,44 @@ mod shutdown_channel_order;
 mod headless_loop_reaps_both_hubs;
 
 mod committed_ratio_boundary;
+
+#[cfg(test)]
+mod fn_body_definitions {
+    use super::{fn_bodies_of, fn_body, fn_definitions_of};
+
+    const TWO: &str = "\
+// fn f() { in_comment }
+#[cfg(unix)]
+fn f(m: &str) { first }
+#[cfg(any())]
+fn f(m: &str) { second }
+fn ff() { longer_name }
+";
+
+    #[test]
+    fn fn_bodies_of_reads_every_definition() {
+        assert_eq!(fn_bodies_of(TWO, "fn f("), ["{ first }", "{ second }"]);
+        assert_eq!(fn_bodies_of(TWO, "pub(crate) fn ff"), ["{ longer_name }"]);
+    }
+
+    #[test]
+    #[should_panic(expected = "정의가 2개다")]
+    fn fn_body_refuses_a_second_definition() {
+        fn_body(TWO, "fn f(");
+    }
+
+    #[test]
+    fn each_definition_carries_its_own_attributes() {
+        let attrs: Vec<String> = fn_definitions_of(TWO, "fn f(")
+            .into_iter()
+            .map(|d| d.attrs)
+            .collect();
+        assert_eq!(attrs, ["#[cfg(unix)]", "#[cfg(any())]"]);
+    }
+
+    #[test]
+    fn fn_body_reads_a_single_definition_by_its_exact_name() {
+        assert_eq!(fn_body(TWO, "fn ff").as_deref(), Some("{ longer_name }"));
+        assert_eq!(fn_body(TWO, "fn missing("), None);
+    }
+}
