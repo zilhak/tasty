@@ -25,7 +25,7 @@ pub fn open_path(path: &Path) -> std::io::Result<()> {
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         Command::new("xdg-open").arg(path).spawn()?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(any(windows, target_os = "macos", all(unix, not(target_os = "macos")))))]
     {

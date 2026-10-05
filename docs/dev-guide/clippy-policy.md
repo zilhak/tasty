@@ -36,6 +36,10 @@ rustc와 Clippy lint는 모두 멤버가 `[lints] workspace = true`로 상속한
 
 clippy 내장 threshold config(`type-complexity-threshold`, `too-many-arguments-threshold` 등)는 **위반을 봐주려고 느슨하게 풀지 않는다**(원칙 #3) — 위반은 소스 개선(struct/type alias) 또는 위치별 attr 로 처리한다. 이는 threshold 를 *올려 신규 위반까지 은폐하는* 것을 금하는 것이며, 복잡도 상한 강제 자체를 배제하지 않는다. 복잡도 상한은 별도의 **복잡도 게이트**(아래)가 담당한다 — 두 축은 독립이다.
 
+Unix 핸들 전달의 `cmsghdr.cmsg_len`은 Linux와 macOS/BSD의 필드 타입이 다르므로
+`usize` 변환은 유지하며 해당 식에만 `unnecessary_cast` 예외와 사유를 둔다.
+대기 중 원격 연결은 큰 준비 결과를 Box로 소유하고, 연결을 가져갈 때 소유권을 넘긴다.
+
 ## 복잡도 게이트
 
 함수 cognitive 복잡도(clippy 내장 `cognitive_complexity` = `deny`, 임계 20)와 파일 SLOC(`tokei` + `scripts/check-file-size.sh`, 상한 1000)의 **신규/증가분**을 차단한다. **두 축은 강제 채널이 다르다** — cognitive 는 clippy `deny` 라 자동 잡의 컴파일 단계에서 막히고, 파일 SLOC 은 전용 워크플로(`complexity-check.yml`)가 담당한다 — **그 워크플로의 트리거와 실제 발사 여부는 시점마다 다르므로 여기 적지 않는다.** 판정이 필요하면 [ci-gates](ci-gates.md) 의 "트리거는 어느 ref 의 것인가" 를 보고, 거기 적힌 세 명령을 그 자리에서 다시 돌려라. 기존 초과분은 위치 단위로 동결한다 — 함수는 `#[allow(clippy::cognitive_complexity)] // complexity-exempt: <사유>`, 파일은 `.complexity-file-allowlist`. 여기서 threshold 를 *조이는* 것(cognitive 게이트 신설)은 위 원칙 #3(threshold 를 *푸는* 것 금지)과 모순이 아니라 계층 분리다. 상세: [complexity-gate.md](complexity-gate.md), [ADR-0047](../adr/0047-ci-and-complexity-checks.md).

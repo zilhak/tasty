@@ -814,6 +814,8 @@ mod unix_wire {
             if level == libc::SOL_SOCKET && ty == libc::SCM_RIGHTS {
                 // SAFETY: CMSG_LEN(0)으로 헤더 크기 추출.
                 let header_len = unsafe { libc::CMSG_LEN(0) } as usize;
+                // 이유: Linux의 cmsg_len은 size_t지만 macOS/BSD는 socklen_t라 변환이 필요하다.
+                #[allow(clippy::unnecessary_cast)]
                 let data_len = (len as usize).saturating_sub(header_len);
                 let n_fds = data_len / mem::size_of::<libc::c_int>();
                 // SAFETY: CMSG_DATA는 cmsg 안의 data 시작 포인터.

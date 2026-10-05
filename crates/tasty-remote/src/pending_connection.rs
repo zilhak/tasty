@@ -9,7 +9,7 @@ static TUNNEL_POISON_REPORTED: std::sync::atomic::AtomicBool =
 pub struct ConnectionTicket(pub u64);
 pub(crate) enum PendingConnection {
     Connecting(AttemptToken),
-    Ready(AttemptToken, PreparedConnection),
+    Ready(AttemptToken, Box<PreparedConnection>),
     Failed(AttemptToken, String),
 }
 pub(crate) struct ConnectionOutcome {
@@ -131,7 +131,7 @@ impl Remote {
             self.pending_connections.insert(
                 outcome.ticket,
                 match outcome.result {
-                    Ok(prepared) => PendingConnection::Ready(token, prepared),
+                    Ok(prepared) => PendingConnection::Ready(token, Box::new(prepared)),
                     Err(error) => PendingConnection::Failed(token, error),
                 },
             );
@@ -161,7 +161,7 @@ impl Remote {
             return None;
         };
         let active = self.finish_attempt(&token).is_some();
-        active.then_some(prepared)
+        active.then_some(*prepared)
     }
     pub fn cancel_connection(&mut self, ticket: ConnectionTicket) {
         if let Some(pending) = self.pending_connections.remove(&ticket) {

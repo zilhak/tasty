@@ -60,18 +60,17 @@ pub fn scan(pids: &HashSet<u32>) -> io::Result<Vec<ListeningPort>> {
                 Some(s) => s,
                 None => continue,
             };
-            if let Some(inode_str) = s.strip_prefix("socket:[").and_then(|r| r.strip_suffix(']')) {
-                if let Ok(inode) = inode_str.parse::<u64>() {
-                    if let Some(&(addr, port, state)) = inode_map.get(&inode) {
-                        out.push(ListeningPort {
-                            pid,
-                            port,
-                            addr,
-                            process_name: process_name.clone(),
-                            state,
-                        });
-                    }
-                }
+            if let Some(inode_str) = s.strip_prefix("socket:[").and_then(|r| r.strip_suffix(']'))
+                && let Ok(inode) = inode_str.parse::<u64>()
+                && let Some(&(addr, port, state)) = inode_map.get(&inode)
+            {
+                out.push(ListeningPort {
+                    pid,
+                    port,
+                    addr,
+                    process_name: process_name.clone(),
+                    state,
+                });
             }
         }
     }
@@ -93,10 +92,7 @@ pub fn scan_all() -> io::Result<Vec<SystemListeningPort>> {
 
     // inode → (pid, process_name)
     let mut inode_owner: HashMap<u64, (u32, Option<String>)> = HashMap::new();
-    let proc_entries = match std::fs::read_dir("/proc") {
-        Ok(e) => e,
-        Err(e) => return Err(e),
-    };
+    let proc_entries = std::fs::read_dir("/proc")?;
     for entry in proc_entries.flatten() {
         let file_name = entry.file_name();
         let name = match file_name.to_str() {
@@ -122,15 +118,14 @@ pub fn scan_all() -> io::Result<Vec<SystemListeningPort>> {
                 Some(s) => s,
                 None => continue,
             };
-            if let Some(inode_str) = s.strip_prefix("socket:[").and_then(|r| r.strip_suffix(']')) {
-                if let Ok(inode) = inode_str.parse::<u64>() {
-                    if inode_map.contains_key(&inode) {
-                        let pn = process_name.get_or_insert_with(|| read_comm(pid));
-                        inode_owner
-                            .entry(inode)
-                            .or_insert_with(|| (pid, pn.clone()));
-                    }
-                }
+            if let Some(inode_str) = s.strip_prefix("socket:[").and_then(|r| r.strip_suffix(']'))
+                && let Ok(inode) = inode_str.parse::<u64>()
+                && inode_map.contains_key(&inode)
+            {
+                let pn = process_name.get_or_insert_with(|| read_comm(pid));
+                inode_owner
+                    .entry(inode)
+                    .or_insert_with(|| (pid, pn.clone()));
             }
         }
     }

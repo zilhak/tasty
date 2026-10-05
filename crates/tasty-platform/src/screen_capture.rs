@@ -212,9 +212,6 @@ mod tests {
     #[cfg(all(unix, not(target_os = "macos")))]
     #[test]
     fn try_command_capture_missing_binary_returns_false() {
-        assert_eq!(
-            try_command_capture("tasty-definitely-not-a-real-binary", &[]).unwrap(),
-            false
-        );
+        assert!(!try_command_capture("tasty-definitely-not-a-real-binary", &[]).unwrap());
     }
 }
