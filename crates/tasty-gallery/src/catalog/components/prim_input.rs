@@ -15,8 +15,11 @@ thread_local! {
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
+    // 시안의 클러스터 폭(200 · 160 · 110)을 field-width 토큰(lg · md · color)으로 읽는다.
     let xs = theme.field_width_xs.value();
     let md = theme.field_width_md.value();
+    let lg = theme.field_width_lg.value();
+    let unit = theme.field_width_color.value();
 
     BUFS.with(|b| {
         let mut slot = b.borrow_mut();
@@ -38,14 +41,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme,
                 "default · icon · addon — click to focus",
                 |ui| {
-                    Input::new().placeholder("Workspace name").width(md).show(
+                    Input::new().placeholder("Workspace name").width(lg).show(
                         ui,
                         theme,
                         &mut bufs[0],
                     );
                     Input::new()
                         .placeholder("Filter…")
-                        .width(md)
+                        .width(lg)
                         .icon(&|ui, rect, c| {
                             glyph::SEARCH.image(rect.height(), c).paint_at(ui, rect)
                         })
@@ -53,14 +56,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     Input::new()
                         .mono(true)
                         .addon("px")
-                        .width(xs)
+                        .width(unit)
                         .show(ui, theme, &mut bufs[2]);
                 },
             );
             cluster(ui, theme, "mono · invalid · disabled", |ui| {
                 Input::new()
                     .mono(true)
-                    .width(md)
+                    .width(lg)
                     .show(ui, theme, &mut bufs[3]);
                 Input::new()
                     .invalid(true)
