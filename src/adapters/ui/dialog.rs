@@ -10,6 +10,7 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::margin_sym;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_2, STRUCT_GAP_4};
 use tasty_ui_widgets::vspace;
+use tasty_ui_widgets::{Button, ButtonVariant};
 
 pub fn rename_popup_default_size() -> egui::Vec2 {
     egui::vec2(
@@ -176,14 +177,20 @@ pub fn draw_rename_popup_view(
     vspace(ui, props.theme.spacing_sm);
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button(props.cancel_label).clicked() {
-                cancel = true;
-            }
-            if ui
-                .add_enabled(props.save_enabled, egui::Button::new(props.save_label))
+            if Button::new(props.save_label)
+                .variant(ButtonVariant::Primary)
+                .enabled(props.save_enabled)
+                .show(ui, props.theme)
                 .clicked()
             {
                 confirm = true;
+            }
+            if Button::new(props.cancel_label)
+                .variant(ButtonVariant::Ghost)
+                .show(ui, props.theme)
+                .clicked()
+            {
+                cancel = true;
             }
         });
     });
