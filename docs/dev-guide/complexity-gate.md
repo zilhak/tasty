@@ -45,6 +45,22 @@
 별도 가드가 raw 줄 수를 tokei SLOC 대신 사용하지 않는다. 문자열을 지운 줄 수 역시
 제품 SLOC의 안전한 상한이 아니다.
 
+### 역할별 모듈 경계
+
+큰 파일의 보조 로직은 다음 모듈에서 관리한다. 기존 호출 경로는 부모 모듈의
+재수출로 유지하며, 헤드리스 전용 구현은 모듈 선언에서 GUI 빌드와 분리한다.
+
+| 부모 | 분리한 모듈 | 책임 |
+|---|---|---|
+| `crates/tasty-task-runtime/src/runner_host.rs` | `runner_host/run_result.rs` | 출력 캡처·실행 결과 저장과 조회 |
+| `crates/tasty-ssh/src/lib.rs` | `tunnel.rs` | SSH 터널 수명과 재시도 간격 |
+| `crates/tasty-plugin-sdk/src/egui_surface.rs` | `egui_surface/input.rs` | wire 입력을 egui 이벤트로 변환 |
+| `crates/tasty-cli/src/local/attach.rs` | `attach/stdin.rs` | 표준 입력 라우팅과 EOF 전달 |
+| `src/adapters/ui/preset.rs` | `preset/preview.rs` | 프리셋 미리보기·설정 상세 표시 |
+| `src/adapters/ui/popup/file_picker.rs` | `file_picker/paths.rs` | 필터·로컬 및 원격 경로·breadcrumb 계산 |
+| `src/app/dispatch_domain.rs` | `dispatch_domain/terminal.rs` | 터미널 이벤트의 상태·알림 반영 |
+| `src/app/journal/commands.rs` | `commands/headless.rs` | 헤드리스 요청 소유권 확인·응답 완료 |
+
 ## 로컬 재현
 
 ```bash

@@ -38,6 +38,7 @@ const AGENT_FACING: &[&str] = &[
     "src/adapters/ipc/handler/",
     "src/app/dispatch/",
     "src/app/dispatch_domain.rs",
+    "src/app/dispatch_domain/",
     "src/file/identify_worker.rs",
     "src/adapters/ipc/request_scope.rs",
     "src/app/journal/commands.rs",
@@ -111,7 +112,7 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
         "preset.apply의 target pane 생략 호환값을 원 engine 문맥에서 고정한다. 명시 target의 owner 해소를 대체하지 않는다",
     ),
     (
-        "src/app/journal/commands.rs",
+        "src/app/journal/commands/headless.rs",
         CompatibilityDefault,
         1,
         "headless preset의 target pane 생략 호환값이며 로컬 GUI View를 새로 만들어 선택하지 않는다",
@@ -159,13 +160,13 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
         "명시 source ID의 owner engine을 먼저 찾고 preset capture에 원 View presentation snapshot을 고정한다",
     ),
     (
-        "src/app/journal/commands.rs",
+        "src/app/journal/commands/headless.rs",
         Recovery,
         1,
         "headless의 확정 replacement 결과를 명령 기본 문맥에 적용하며 GUI 사용자 선택을 생성하지 않는다",
     ),
     (
-        "src/app/journal/commands.rs",
+        "src/app/journal/commands/headless.rs",
         Projection,
         1,
         "확정 host notification을 현재 명령 문맥으로 해소하며 명령 실행 대상을 새로 고르지 않는다",
@@ -267,7 +268,7 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
         "debug 전용 핸들러 파일이므로 release 빌드의 검사 대상에서 제외된다.",
     ),
     (
-        "src/app/dispatch_domain.rs",
+        "src/app/dispatch_domain/terminal.rs",
         Attribution,
         2,
         "알림을 밀어 넣을 때 어느 워크스페이스 알림인지를 채운다",

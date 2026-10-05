@@ -11,7 +11,9 @@ src/adapters/ui/preset/demo_layout.rs
 src/adapters/ui/sidebar/view.rs
 src/adapters/ui/surface/explorer.rs
 src/app/dispatch_domain.rs
+src/app/dispatch_domain/terminal.rs
 crates/tasty-task-runtime/src/runner_host.rs
+crates/tasty-task-runtime/src/runner_host/run_result.rs
 crates/tasty-task-runtime/src/runner_host/command_inputs.rs
 src/view/main/redraw.rs
 src/view/settings/ui.rs
