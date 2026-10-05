@@ -657,8 +657,6 @@ fn strip_tooltip_window(ui: &mut egui::Ui, theme: &Theme, id: &str) {
 
     let strip = egui::Rect::from_min_size(title.left_bottom(), egui::vec2(inner.width(), strip_h));
     painter.rect_filled(strip, 0.0, theme.surface_raised().to_egui());
-    // lock의 hover 채움은 글리프 아래에 깔리도록 자리를 먼저 잡는다.
-    let hover_fill = painter.add(egui::Shape::Noop);
     let tip = t(MARKER_BLOCKED);
     let marker = tab(
         ui,
@@ -692,14 +690,23 @@ fn strip_tooltip_window(ui: &mut egui::Ui, theme: &Theme, id: &str) {
     );
 
     if let Some(m) = marker {
-        painter.set(
-            hover_fill,
-            egui::Shape::rect_filled(
-                m,
-                theme.corner_radius_sm.value(),
-                theme.html_script_marker_hover_bg().to_egui_premultiplied(),
-            ),
+        // 강제 표시 버블은 창 안으로 당겨지므로 예제가 스크롤로 가려졌을 때는 그리지 않는다.
+        if !ui.is_rect_visible(m) {
+            return;
+        }
+        // 강제 hover 상태: 활성 탭 배경 위에 hover 채움을 깔고 lock 글리프를 그 위에 다시 그린다.
+        painter.rect_filled(
+            m,
+            theme.corner_radius_sm.value(),
+            theme.html_script_marker_hover_bg().to_egui_premultiplied(),
         );
+        let size = theme.html_script_marker_size().value();
+        tasty_icons::LOCK
+            .image(size, theme.html_script_marker_fg().to_egui())
+            .paint_at(
+                ui,
+                egui::Rect::from_center_size(m.center(), egui::vec2(size, size)),
+            );
         Tooltip::new(tip)
             .id_source(("strip_tooltip", id))
             .placement_clear_of_native(ui.ctx(), theme, m, ui.ctx().screen_rect(), &[webview])
