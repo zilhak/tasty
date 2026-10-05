@@ -173,3 +173,137 @@ pub fn paint_icon_button_state(
         theme.icon_button_fg().to_egui()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 상태 하나를 칠하고 (칠한 배경들, 반환한 글리프 색)을 돌려준다.
+    fn paint(theme: &Theme, state: IconButtonState) -> (Vec<egui::Color32>, egui::Color32) {
+        let ctx = egui::Context::default();
+        let mut glyph = None;
+        let output = ctx.run(egui::RawInput::default(), |ctx| {
+            let painter = ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new("icon_button_state_test"),
+            ));
+            let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(24.0, 24.0));
+            glyph = Some(paint_icon_button_state(&painter, theme, rect, state));
+        });
+        let fills = output
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Rect(r) => Some(r.fill),
+                _ => None,
+            })
+            .collect();
+        (fills, glyph.expect("closure ran"))
+    }
+
+    /// 상태표: 배경은 enabled 일 때만, active·pressed 가 hover 보다 먼저다.
+    /// 글리프는 disabled → active → (solid 또는 hover) → 기본 순서이고 pressed 는 글리프를 바꾸지 않는다.
+    #[test]
+    fn every_state_combination_paints_the_tabled_background_and_glyph() {
+        let theme = tasty_themes::mocha_fallback();
+        let bg_active = theme.icon_button_bg_active().to_egui_premultiplied();
+        let bg_hover = theme.icon_button_overlay_hover().to_egui_premultiplied();
+        let disabled = theme.state_disabled_fg().to_egui();
+        let accent = theme.accent_primary().to_egui();
+        let fg_hover = theme.icon_button_fg_hover().to_egui();
+        let fg = theme.icon_button_fg().to_egui();
+        // 같은 값이 섞이면 표가 순서를 가르지 못한다.
+        assert_ne!(bg_active, bg_hover);
+        let glyphs = [disabled, accent, fg_hover, fg];
+        for (i, a) in glyphs.iter().enumerate() {
+            for b in &glyphs[i + 1..] {
+                assert_ne!(a, b, "glyph colours must differ: {glyphs:?}");
+            }
+        }
+
+        let mut seen = 0;
+        for variant in [IconButtonVariant::Ghost, IconButtonVariant::Solid] {
+            for enabled in [true, false] {
+                for hovered in [false, true] {
+                    for pressed in [false, true] {
+                        for active in [false, true] {
+                            let state = IconButtonState {
+                                variant,
+                                enabled,
+                                active,
+                                hovered,
+                                pressed,
+                            };
+                            let want_bg = match (enabled, active || pressed, hovered) {
+                                (false, _, _) => vec![],
+                                (true, true, _) => vec![bg_active],
+                                (true, false, true) => vec![bg_hover],
+                                (true, false, false) => vec![],
+                            };
+                            let want_glyph = if !enabled {
+                                disabled
+                            } else if active {
+                                accent
+                            } else if variant == IconButtonVariant::Solid || hovered {
+                                fg_hover
+                            } else {
+                                fg
+                            };
+                            let (bg, glyph) = paint(&theme, state);
+                            assert_eq!(bg, want_bg, "background for {state:?}");
+                            assert_eq!(glyph, want_glyph, "glyph for {state:?}");
+                            seen += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(seen, 32);
+    }
+
+    /// 표의 우선순위를 이름으로 고정한 행. 조합 표와 같은 규칙을 다른 모양으로 한 번 더 적는다.
+    #[test]
+    fn named_rows_pin_the_priority_between_states() {
+        let theme = tasty_themes::mocha_fallback();
+        let bg_active = theme.icon_button_bg_active().to_egui_premultiplied();
+        let all_on = |variant, enabled| IconButtonState {
+            variant,
+            enabled,
+            active: true,
+            hovered: true,
+            pressed: true,
+        };
+
+        // disabled 는 다른 상태가 모두 켜져도 배경이 없고 disabled ink 다.
+        let (bg, glyph) = paint(&theme, all_on(IconButtonVariant::Ghost, false));
+        assert!(bg.is_empty(), "disabled painted {bg:?}");
+        assert_eq!(glyph, theme.state_disabled_fg().to_egui());
+
+        // active 가 hover 보다 먼저다 — 배경도 글리프도.
+        let (bg, glyph) = paint(
+            &theme,
+            IconButtonState {
+                pressed: false,
+                ..all_on(IconButtonVariant::Ghost, true)
+            },
+        );
+        assert_eq!(bg, vec![bg_active]);
+        assert_eq!(glyph, theme.accent_primary().to_egui());
+
+        // pressed 는 overlay-active 를 칠하지만 글리프는 hover 규칙을 따른다.
+        let (bg, glyph) = paint(&theme, IconButtonState::ghost(true, true));
+        assert_eq!(bg, vec![bg_active]);
+        assert_eq!(glyph, theme.icon_button_fg_hover().to_egui());
+
+        // solid 는 hover 없이도 fg-hover 글리프다.
+        let (bg, glyph) = paint(
+            &theme,
+            IconButtonState {
+                variant: IconButtonVariant::Solid,
+                ..IconButtonState::ghost(false, false)
+            },
+        );
+        assert!(bg.is_empty());
+        assert_eq!(glyph, theme.icon_button_fg_hover().to_egui());
+    }
+}
