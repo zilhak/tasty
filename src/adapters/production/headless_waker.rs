@@ -56,6 +56,10 @@ impl HeadlessWaker {
     pub(crate) fn stream_waker(&self) -> IpcWaker {
         let tx = self.tx.clone();
         Arc::new(move || {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "The headless event loop may have already returned and dropped the receiver during shutdown."
+            )]
             let _ = tx.send(AppEvent::StreamReady); // shutdown race — drop quietly.
         })
     }
@@ -75,6 +79,10 @@ fn send_ipc_ready(tx: &Sender<AppEvent>, gate: &AtomicBool) {
         return;
     }
     // headless receiver 가 종료된 후의 race 는 무시 (정상 shutdown 시퀀스).
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "The headless event loop may have already returned and dropped the receiver during shutdown."
+    )]
     let _ = tx.send(AppEvent::IpcReady); // receiver dropped during shutdown — drop quietly.
 }
 
@@ -101,6 +109,10 @@ impl WakerFactory for HeadlessWakerFactory {
             if gate.swap(true, Ordering::AcqRel) {
                 return;
             }
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "The headless event loop may have already returned and dropped the receiver during shutdown."
+            )]
             let _ = tx.send(AppEvent::TerminalOutput(Some(surface_id))); // headless receiver shutdown race — send 실패 무시(정상 종료 시퀀스).
         })
     }
@@ -112,6 +124,10 @@ impl WakerFactory for HeadlessWakerFactory {
             if gate.swap(true, Ordering::AcqRel) {
                 return;
             }
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "The headless event loop may have already returned and dropped the receiver during shutdown."
+            )]
             let _ = tx.send(AppEvent::TerminalOutput(None)); // headless receiver shutdown race — send 실패 무시(정상 종료 시퀀스).
         })
     }
