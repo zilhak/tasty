@@ -430,7 +430,10 @@ mod tests {
 
     /// 두 파일의 namespace 전달 호출 문자열과 Some(c.request_seq()) 인자를 확인한다.
     /// 주석·문자열도 포함한 원문 검사이며 호출 횟수나 c의 실제 바인딩은 확인하지 않는다.
-    /// 다른 파일의 전달 경로는 대상이 아니다. 키를 뗀 사본의 번호 보존은 idempotency 시험이 확인한다.
+    /// 다른 파일의 전달 경로는 대상이 아니다. 명령당 전달 횟수와 넘긴 번호는 행동 시험
+    /// `app::ipc::routing::namespace_forward_tests`(gui)와
+    /// `boot::headless_dispatch::namespace_forward_tests`(headless, `--no-default-features`)가
+    /// stub 플러그인으로 잰다. 키를 뗀 사본의 번호 보존은 idempotency 시험이 확인한다.
     #[test]
     fn both_namespace_forwards_pass_the_commands_request_seq() {
         for (name, src) in [
