@@ -171,6 +171,9 @@ rm -rf "$dir"
 
 ### 공용 측정값은 푸시할 트리에서 다시 센다
 
+큰 파일을 하위 모듈로 나누어도 소스 파일 수가 늘어난다. 동작 변경 여부와 관계없이
+분리된 파일을 포함한 커밋에서 다시 세고, 그 커밋을 측정 근거로 기록한다.
+
 `Floor::validate` 는 `min <= measured`, 날짜 형식, 근거 문자열을 검사한다.
 실제 트리와의 정합은 `scripts/check-population-freshness.sh --rev <commit>` 이 별도로
 검사한다. pre-push B.10 은 Git 이 건넨 로컬 tip 을 이 스크립트에 넘겨 `SRC_RS`,
