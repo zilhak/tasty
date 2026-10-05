@@ -81,7 +81,7 @@ DOM을 조사하지 않는 이유는 OS별로 다음과 같다.
   - 응답 단계에서 허용과 일치한 문서가 commit되면 허용을 유지한다. 그 밖의 문서가 commit되면 허용을 해제한다. 응답 단계 없이 commit되는 bfcache 복원도 해제에 포함된다.
   - 응답 단계의 결과는 로드마다 새로 둔다. 로드가 시작될 때 이전 로드의 결과를 비우고, commit에서 소비한다. 비우지 않으면 앞선 재로드의 "일치"가 뒤이은 bfcache commit에 남아 허용이 유지된다(page cache를 켠 상태의 리뷰 측정).
   - 응답 단계 없이 commit된 문서는 지문이 없다. 이 문서는 허용할 수 없다. Linux는 아래처럼 page cache를 꺼서 이 경우를 없앤다.
-- **문서가 바뀌지 않고 끝나는 로드**: 로드 실패, 중단, 다운로드처럼 main frame 문서가 commit되지 않고 로드가 끝나는 경우다.
+- **문서가 바뀌지 않고 끝나는 로드**: 로드 실패, 중단, 다운로드, web process 종료처럼 main frame 문서가 commit되지 않고 로드가 끝나는 경우다.
   - 화면에 남은 문서가 허용된 문서이면 JS를 허용 상태로 되돌린다. 멈춘 채 두지 않는다.
   - 허용 기록은 그대로 둔다.
 - **세션 한정**: 허용은 세션 안에서만 유지한다. 레이아웃에 저장하지 않으므로 재시작하면 다시 차단 상태가 된다.
@@ -128,7 +128,10 @@ OS별 구현은 다음과 같다.
     - 화면 문서는 마지막 `COMMITTED`에서 호스트가 기록한 현재 문서다. `FINISHED` 시점이나 `stop_loading` 뒤의 `get_uri()`는 쓰지 않는다.
       - 취소된 로드의 `FINISHED` 시점 `get_uri()`는 아직 시작하지 않은 다음 URL을 돌려줬다(리뷰 측정).
       - `load_uri` 직후 `stop_loading`하면 이벤트가 없는데도 `get_uri()`가 새 URL로 남았다. 화면은 이전 문서였다(리뷰 측정).
-    - `load-failed`는 기록만 한다. 측정한 두 경우 모두 `load-failed` 뒤에 `FINISHED`가 왔다. `FINISHED` 한 곳에서 처리하면 commit 없이 끝나는 다른 경로도 함께 다룬다.
+    - `load-failed`는 기록만 한다. 측정한 두 경우 모두 `load-failed` 뒤에 `FINISHED`가 왔다. `FINISHED`에서 처리하면 commit 없이 끝나는 다른 경로도 함께 다룬다. 예외는 web process 종료다.
+    - commit 전에 web process가 종료되면 `web-process-terminated`만 오고 `load-failed`와 `FINISHED`는 오지 않았다. 느린 http 응답을 기다리는 로드에서 web process를 강제 종료해 측정했고, 3분 뒤에도 신호가 없었다. 복원하지 않으면 로드 중 상태가 남아 배너가 허용 버튼을 비활성으로 두고 허용 요청이 `AllowError::Loading`으로 거절됐다(측정).
+      - 그래서 `web-process-terminated`에서도 `FINISHED`와 같은 방식으로 로드를 끝내고 JS를 되돌린다. 로드가 이미 끝났으면 아무것도 바꾸지 않으므로, 뒤에 `FINISHED`가 와도 결과가 같다.
+      - Windows·macOS 백엔드에는 web process 종료 콜백이 없다. 같은 증상이 나는지는 측정하지 않았다.
     - 측정 결과 허용 문서의 timer가 다시 돌았다(tick 14→19, JS True).
   - `stop_loading`이나 기존 정책이 무시하는 `http(s)` navigation에는 `STARTED`가 오지 않았다. 따라서 JS와 문서가 그대로다(리뷰 측정).
 - **Windows(미측정, API 문서 근거)**: `NavigationStarting`은 main frame navigation에서만 발생한다. 서브프레임은 `FrameNavigationStarting`, 새 창은 `NewWindowRequested`로 따로 온다. 이 핸들러 안에서 `IsScriptEnabled`를 정한다. API 문서의 예제도 이 핸들러에서 해당 navigation에 적용되도록 설정을 바꾼다. `NavigationStarting` 이후에 바꾸면 다음 top-level navigation부터 적용된다.
@@ -236,6 +239,7 @@ OS별 구현은 다음과 같다.
 - 에이전트가 파일 쓰기 없이 로드만 할 수 있는 실행 형태가 생기면 지문과 읽기 사이의 경합을 다시 정한다. 원격 에이전트나 쓰기 권한이 없는 샌드박스 에이전트가 예다. 이때는 이 창이 새 권한이 되므로, 호스트가 읽은 바이트를 공급하는 방식을 다시 비교한다.
 - Windows나 macOS에서 응답 단계 없이 commit되는 문서가 생기고 bfcache를 끌 수 없으면, 지문 없는 문서의 허용 방법과 배너 동작을 디자인과 함께 다시 정한다.
 - `load-failed` 핸들러가 WebKit 기본 오류 페이지를 쓰도록 바뀌면 commit 없는 로드의 복원 규칙을 다시 확인한다.
+- WebKitGTK가 web process 종료 뒤 `FINISHED`를 보내도록 바뀌면 종료 핸들러의 로드 종료 처리를 뺄 수 있는지 확인한다.
 
 실행 결과로 확인한다.
 
@@ -260,7 +264,7 @@ OS별 구현은 다음과 같다.
 - `src/view/main/redraw.rs`의 `resolve_webview_settings`: 전역 sandbox 값 전달.
 - `src/host_api/webview/script_gate.rs`: navigation 콜백과 허용 상태의 연결.
 - 현재 navigation 콜백:
-  - `src/host_api/webview/linux.rs`의 `connect_decide_policy`, `connect_load_failed`
+  - `src/host_api/webview/linux.rs`의 `connect_decide_policy`, `connect_load_failed`, `connect_web_process_terminated`
   - `src/host_api/webview/macos.rs`의 navigation delegate
   - `src/host_api/webview/windows.rs`의 `add_NavigationStarting`
 - `Cargo.toml`의 `webkit2gtk` feature.

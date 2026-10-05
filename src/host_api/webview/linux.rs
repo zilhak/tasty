@@ -406,13 +406,18 @@ impl PlatformWebView {
             });
         }
         {
-            // web process 종료 때는 load-failed가 오지 않을 수 있어 따로 기록한다.
+            // web process가 commit 전에 종료되면 load-failed도 load-changed Finished도 오지 않는다(실측).
+            // 여기서 로드를 끝내지 않으면 스크립트 게이트가 로드 중에 머물러 허용을 거절한다.
             let nav = nav_state.clone();
-            webview.connect_web_process_terminated(move |_wv, reason| {
+            let gate = script_gate.clone();
+            webview.connect_web_process_terminated(move |wv, reason| {
                 tracing::warn!(
                     "WebView surface {surface_id}: WebKit web process terminated ({reason:?})"
                 );
                 nav.set(NavState::Failed);
+                if let Some(js) = gate.borrow().as_ref().and_then(|g| g.finished()) {
+                    set_js(wv, js);
+                }
             });
         }
         {
