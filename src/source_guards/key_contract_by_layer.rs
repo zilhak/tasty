@@ -4,6 +4,7 @@
 //! 헤드리스 app 가로채기도 버전 1로 선언돼서는 안 된다.
 //!
 //! debug 처리 전에 보존소를 호출하는지, namespace 전달이 키 보존 함수의 인자 안에 있는지 텍스트로 확인한다.
+//! release 묶음은 보존소 없이 창 필요 단계로 가므로 그 단계가 아무것도 처리하지 않는지 따로 확인한다.
 //! relay 클로저는 전달받은 명령을 쓰고 바깥 명령 이름은 쓰지 않아야 한다. 그렇지 않으면
 //! 키를 제거한 명령과 결과 기록용 응답 경로를 우회할 수 있다.
 //!
@@ -27,10 +28,8 @@ const HEADLESS_DISPATCH: &str = "src/boot/headless_dispatch.rs";
 const GUI_APP_STEP: &str = "src/app/ipc/app_methods.rs";
 const GUI_APP_FN: &str = "fn ipc_step_app_methods";
 /// GUI debug 메서드 이름을 수집할 파일들.
-const GUI_DEBUG_STEPS: &[&str] = &[
-    "src/app/ipc/debug_methods.rs",
-    "src/app/ipc/window_required.rs",
-];
+const GUI_DEBUG_STEPS: &[&str] = &["src/app/ipc/debug_methods.rs", GUI_WINDOW_STEP];
+const GUI_WINDOW_STEP: &str = "src/app/ipc/window_required.rs";
 
 fn read(rel: &str) -> String {
     let p = repo_root().join(rel);
@@ -47,8 +46,9 @@ fn shipped(src: &str) -> &str {
 /// debug 빌드에서 컴파일되는 정의 하나의 본문. `ipc_step_debug_layers` 는 debug·release 로 갈린
 /// 두 정의이고, 이 파일의 명제(보존소 뒤의 debug 단계 · relay · handled 판정)는 보존소를 부르는
 /// debug 정의에 관한 것이다. 그래서 `not(debug_assertions)` 를 함의하는 정의를 빼고 남은 것이
-/// 정확히 하나여야 한다. release 정의는 보존소 없이 창 필요 단계만 부르며 이 가드는 그 정의를
-/// 대조하지 않는다. 재는 변이: `#[cfg(any())]` 셋째 정의를 더하면 정의가 둘 남아 실패한다.
+/// 정확히 하나여야 한다. release 정의는 보존소 없이 창 필요 단계만 부르며, 그래도 되는 근거는
+/// [`the_release_layers_hand_every_request_to_routing`] 이 따로 대조한다.
+/// 재는 변이: `#[cfg(any())]` 셋째 정의를 더하면 정의가 둘 남아 실패한다.
 fn debug_build_body(src: &str, signature: &str) -> Option<String> {
     let mut defs: Vec<_> = fn_definitions_of(src, signature)
         .into_iter()
@@ -60,6 +60,20 @@ fn debug_build_body(src: &str, signature: &str) -> Option<String> {
         defs.len()
     );
     defs.pop().map(|d| d.body)
+}
+
+/// release 빌드 정의 하나의 본문. `not(debug_assertions)` 를 함의하는 정의가 정확히 하나여야 한다.
+fn release_build_body(src: &str, signature: &str) -> String {
+    let mut defs: Vec<_> = fn_definitions_of(src, signature)
+        .into_iter()
+        .filter(|d| attrs_imply(&d.attrs, "not(debug_assertions)"))
+        .collect();
+    assert_eq!(
+        defs.len(),
+        1,
+        "`{signature}` 의 release 빌드 정의가 하나가 아니다 — 어느 정의를 대조할지 정하라"
+    );
+    defs.pop().map(|d| d.body).unwrap_or_default()
 }
 
 fn attrs_imply(attrs: &str, needle: &str) -> bool {
@@ -232,6 +246,34 @@ fn the_gui_debug_steps_run_behind_the_store() {
             "debug 묶음이 보존소보다 `{step}` 를 먼저 부른다"
         );
     }
+}
+
+/// release 묶음은 보존소를 부르지 않는다. release 의 창 필요 단계는 아무것도 처리하지 않으므로
+/// 요청은 모두 routing 으로 가고, 키는 거기서 보존된다: namespace 전달은 `forward_keeping_the_key`
+/// (`src/app/ipc/routing.rs`), 호스트 라우팅은 `route_checked_request` 의 `idempotency::begin`·`finish`
+/// (`src/adapters/ipc/handler.rs`). release 에서 창 필요 단계가 무언가를 처리하게 되면 이 근거가
+/// 사라지므로 실패하고, 그때는 release 묶음도 debug 정의처럼 보존소 뒤로 옮긴다.
+/// 재는 변이: release `ipc_step_window_required` 가 `IpcStep::Handled` 를 돌려주거나 release 묶음이
+/// `ipc_step_debug(` 를 부르면 실패한다.
+#[test]
+fn the_release_layers_hand_every_request_to_routing() {
+    let src = strip_comments(shipped(&read(GUI_DISPATCH)));
+    let layers = release_build_body(&src, "fn ipc_step_debug_layers");
+    if layers.contains("run_app_layer(") {
+        return;
+    }
+    assert!(
+        !layers.contains("ipc_step_debug("),
+        "release 묶음이 보존소 없이 debug 단계를 부른다"
+    );
+    let window = strip_comments(shipped(&read(GUI_WINDOW_STEP)));
+    let body = release_build_body(&window, "fn ipc_step_window_required");
+    let code: String = body.split_whitespace().collect();
+    assert_eq!(
+        code, "{IpcStep::NotHandled}",
+        "release `ipc_step_window_required` 가 요청을 처리한다. 보존소 없는 release 묶음을 \
+         보존소 뒤로 옮긴다"
+    );
 }
 
 /// namespace 전달이 보존소 밖에서 실행되면 멱등 키를 보존하지 못할 수 있어 인자 안에 있는지 확인한다.

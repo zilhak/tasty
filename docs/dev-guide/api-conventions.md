@@ -236,6 +236,7 @@ client는 부수효과 전에 capability를 확인한다.
 image·markdown처럼 plugin으로 전달되는 호스트 이름은 forward_keeping_the_key가 Kept를 확인하고 공용 relay를 사용한다.
 plugin 고유 이름까지 같은 Mutate라는 이유로 저장하면 Outside 계약이 깨지므로 Kept 판정을 생략하지 않는다.
 GUI debug 두 단계도 공용 저장 경로로 묶는다.
+release 빌드의 같은 묶음 함수(`ipc_step_debug_layers`)는 보존소를 부르지 않는다. release의 창 필요 단계(`ipc_step_window_required`)는 아무 요청도 처리하지 않고, debug의 창 필요 이름은 release 메서드 표에 없어 `-32601`로 끝난다. 요청은 모두 routing으로 넘어가며 키는 거기서 `forward_keeping_the_key`(namespace 전달)와 `route_checked_request`의 `idempotency::begin`·`finish`(호스트 라우팅)가 보존한다. `key_contract_by_layer`는 release 창 필요 단계가 요청을 처리하지 않는지와 release 묶음이 debug 단계를 부르지 않는지를 텍스트로 확인한다. release에서 창 필요 단계가 요청을 처리하게 되면 release 묶음도 보존소 뒤로 옮긴다.
 원 요청 대신 키를 뗀 relay 인자를 전달하고 forward 완료 전 재시도도 합류시킨다.
 host injector·plugin host-call·구조 stream op에는 현재 호출자 멱등 키 자체가 없다. plugin host-call의 공개 구조 요청도 plugin 주체로 같은 journal admission을 거치지만, 현재 plugin 프로토콜에서 키를 전달한다는 보장은 아니다.
 plugin host-call은 IpcCall을 수집할 때 원 process binding을 고정한다. reload 뒤 새 process에 이전 call_id를 다시 결합하지 않으며 admission에서 현재 binding을 대조한다. 지연 구조·입력·namespace 결과와 오류도 원 binding에만 회신한다.
