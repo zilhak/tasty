@@ -2923,7 +2923,7 @@ impl crate::theme::Theme {
     /// `component.tab-indicator-width` → `{semantic.selection-edge-width}` = 2px
     #[inline]
     pub fn tab_indicator_width(&self) -> LogicalPx {
-        self.tab_indicator_width
+        self.selection_edge_width
     }
 
     /// `component.tab-padding-x` → `{semantic.space-sm}` = 8px

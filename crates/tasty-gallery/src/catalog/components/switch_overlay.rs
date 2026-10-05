@@ -89,7 +89,7 @@ fn tab_strip(ui: &mut egui::Ui, theme: &Theme, held: bool) {
         );
         if *active {
             p.rect_filled(tab, 0.0, egui::Color32::from(theme.bg_panel()));
-            let ind = theme.tab_indicator_width.value();
+            let ind = theme.tab_indicator_width().value();
             let bar = egui::Rect::from_min_size(
                 egui::pos2(tab.min.x, tab.max.y - ind),
                 egui::vec2(tw.value(), ind),

@@ -237,9 +237,9 @@ fn l1_tab(ui: &mut egui::Ui, theme: &Theme, label: &str, band_h: LogicalPx, acti
         let bar = egui::Rect::from_min_size(
             egui::pos2(
                 rect.left(),
-                rect.bottom() - theme.tab_indicator_width.value(),
+                rect.bottom() - theme.tab_indicator_width().value(),
             ),
-            egui::vec2(rect.width(), theme.tab_indicator_width.value()),
+            egui::vec2(rect.width(), theme.tab_indicator_width().value()),
         );
         ui.painter()
             .rect_filled(bar, 0.0, theme.accent_primary().to_egui());

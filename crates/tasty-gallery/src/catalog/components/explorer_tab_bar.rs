@@ -59,7 +59,7 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
                 .rect_filled(tab_rect, 0.0, egui::Color32::from(theme.bg_panel()));
             let indicator = egui::Rect::from_min_size(
                 tab_rect.min,
-                egui::vec2(tab_w, theme.tab_indicator_width.value()),
+                egui::vec2(tab_w, theme.tab_indicator_width().value()),
             );
             ui.painter()
                 .rect_filled(indicator, 0.0, egui::Color32::from(theme.accent_primary()));

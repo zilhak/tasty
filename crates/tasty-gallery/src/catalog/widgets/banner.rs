@@ -142,9 +142,9 @@ fn faux_chrome(
             let bar = egui::Rect::from_min_size(
                 egui::pos2(
                     this.left(),
-                    this.bottom() - theme.tab_indicator_width.value(),
+                    this.bottom() - theme.tab_indicator_width().value(),
                 ),
-                egui::vec2(this.width(), theme.tab_indicator_width.value()),
+                egui::vec2(this.width(), theme.tab_indicator_width().value()),
             );
             painter.rect_filled(bar, 0.0, theme.accent_primary().to_egui());
         }

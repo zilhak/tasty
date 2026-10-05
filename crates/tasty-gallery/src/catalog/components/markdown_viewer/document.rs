@@ -474,7 +474,7 @@ fn table_divider(ui: &mut egui::Ui, theme: &Theme) {
 /// nested blockquote — left bar(border-strong) + muted 본문, 1단계 중첩.
 fn blockquote(ui: &mut egui::Ui, theme: &Theme) {
     let body = theme.font_size_body.value();
-    let bar_w = theme.tab_indicator_width.value();
+    let bar_w = theme.tab_indicator_width().value();
     let gap = theme.spacing_md.value();
     quote_block(ui, theme, bar_w, gap, |ui| {
         ui.label(rich(

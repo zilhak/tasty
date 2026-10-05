@@ -222,7 +222,7 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 | 폰트 상한 | UI는 14px. 콘텐츠 폰트는 별도이며 브랜드 워드마크 17·부트 락업 30은 승인된 예외다. |
 | 보더 | `border_width` 1px. |
 | 지목 링 | 대상을 감싸는 획은 `focus_ring_width` 2px. 색은 용도에 맞는 semantic 색을 고른다. |
-| 한쪽 선택 바 | 선택 항목의 한쪽 변 띠는 하나의 역할 `selection_edge_width` 2px(hairline, 배율 제외)다. 탭 밑줄은 `tab_indicator_width`, 활성 워크스페이스 행은 `workspace_row_active_bar_width()`, 목록 행 선택 바(ListCtrl · file handler picker · git viewer 커밋·파일 행)는 `listctrl_selected_bar_width()`로 읽고 모두 이 역할을 가리킨다. remote attach·preset 목록 행과 갤러리 switch overlay·file picker 선택 행은 `selection_edge_width`를 직접 읽는다. 토스트 바는 `toast_accent_width` 3px로 별도 역할이다. |
+| 한쪽 선택 바 | 선택 항목의 한쪽 변 띠는 하나의 역할 `selection_edge_width` 2px(hairline, 배율 제외)다. 탭 밑줄은 `tab_indicator_width()`, 활성 워크스페이스 행은 `workspace_row_active_bar_width()`, 목록 행 선택 바(ListCtrl · file handler picker · git viewer 커밋·파일 행)는 `listctrl_selected_bar_width()`로 읽고 모두 이 역할을 가리킨다. remote attach·preset 목록 행과 갤러리 switch overlay·file picker 선택 행은 `selection_edge_width`를 직접 읽는다. 토스트 바는 `toast_accent_width` 3px로 별도 역할이다. |
 | painter 아이콘 | close X·chevron·트리 가지 등의 선은 `icon_stroke_width` 1.5px. |
 | 반경 | `corner_radius_sm` 2, 기본 4, `_lg` 8. 반경이 없으면 `CornerRadius::ZERO`. |
 | hover·active | `hover_overlay` 8%, `active_overlay` 12%. 밝은 테마는 검정, 어두운 테마는 흰색에서 만든다. |
@@ -345,7 +345,7 @@ disabled 컨트롤은 opacity로 흐리게 그리지 않는다. 변형과 관계
 `AppearanceSettings.ui_scale`(`small/medium/large` = `0.85/1.0/1.2`). `install_global_with_runtime`(`ThemeRuntime.ui_zoom`) 이 `Theme::with_colors_and_zoom` 으로 sizing 토큰 자체에 배율을 곱해 전역 `Theme` 재빌드 — UI 호출부에서는 다시 배율을 곱하지 않는다(`theme().spacing_*`에 이미 적용됨).
 
 - **zoom 받음**: `spacing_*` · `font_size_*` · `corner_radius`(`_sm`/`_lg` 포함) · `focus_ring_width` · `item_height_*` · 사이드바 sizing 토큰들.
-- **zoom 제외**: hairline(`border_width` 1px 정책 · `icon_stroke_width` — 이 굵기를 쓰는 타이틀바 버튼 기하가 고정 px 라 선만 굵어지면 글리프 형태가 달라진다 · `tab_indicator_width` · `selection_edge_width`) · 탭바 토큰(`tab_width`/`tab_bar_*`) · 상태바 토큰(`status_bar_height`) · CSD 타이틀바 토큰 · 렌더 콘텐츠 폰트(터미널 `font_size_term_*` 는 별도 `effective_terminal_font` 경로로 GPU 셰이더에 전달, markdown `font_size_prose_h1`).
+- **zoom 제외**: hairline(`border_width` 1px 정책 · `icon_stroke_width` — 이 굵기를 쓰는 타이틀바 버튼 기하가 고정 px 라 선만 굵어지면 글리프 형태가 달라진다 · `selection_edge_width` — 탭 밑줄 `tab_indicator_width()` 는 별도 필드 없이 이 필드를 읽는다) · 탭바 토큰(`tab_width`/`tab_bar_*`) · 상태바 토큰(`status_bar_height`) · CSD 타이틀바 토큰 · 렌더 콘텐츠 폰트(터미널 `font_size_term_*` 는 별도 `effective_terminal_font` 경로로 GPU 셰이더에 전달, markdown `font_size_prose_h1`).
   이 목록은 **요약이고 정본이 아니다** — 정본은 `crates/tasty-type-appearance` 의 zoom 면제 가드가 든 이름 집합이며, 소스와 이름 단위로 대조된다. 필드를 새로 면제하려면 그 목록에 사유 갈래와 함께 등록해야 하고, 등록 없이 `zoomed()` 를 빼면 그 검사가 해당 필드 이름을 표시하며 실패한다. 각 필드의 사유는 필드 doc 에도 붙어 있다.
 - **4px 그리드 + zoom**: 비정수(`12×1.2=14.4`)는 `round_ui()`/`f32::round()` 로 정수 픽셀로 반올림.
 - **라이브 갱신**: settings save / IPC update 는 `App::apply_settings_after_structure` 에서 새 설정의 전역 Theme 를 먼저 설치한다. 테마 ID·`ui_scale`·`theme_overrides` 중 하나가 바뀌었으면 모든 창의 `GpuState::refresh_theme` 와 모든 engine 의 `resync_terminal_palettes` 를 1회 호출한다(polling 아님). 그다음 테마 ID 가 바뀐 경우 plugin 에 `theme.changed` 를 발행한다. 설치를 발행보다 먼저 하는 순서는 `src/app/dispatch_domain/theme_order.rs` 의 `install_theme_then` 이 정한다. 그 파일의 시험은 헬퍼 안의 순서를, 소스 가드 `src/source_guards/theme_changed_after_install.rs` 는 `src/` 의 `theme.changed` 발행과 `announce_settings_change` 호출이 그 헬퍼의 클로저 인자 안에만 있다는 텍스트 형태를 확인한다. 가드는 클로저를 변수로 넘기는 형태, 상수·매크로로 감춘 키, `crates/` 의 발행, 클로저의 실제 실행 여부를 판정하지 않는다. 이 순서는 구독자가 수신 후 `theme.query` 로 새 테마를 읽는 계약([markdown Theme parity](../../plugins/markdown/index.md))의 전제다.

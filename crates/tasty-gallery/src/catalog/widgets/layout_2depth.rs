@@ -53,8 +53,8 @@ fn layout(ui: &mut egui::Ui, theme: &Theme) {
         );
         if *active {
             let underline = egui::Rect::from_min_size(
-                egui::pos2(x, l1.max.y - theme.tab_indicator_width.value()),
-                egui::vec2(tw, theme.tab_indicator_width.value()),
+                egui::pos2(x, l1.max.y - theme.tab_indicator_width().value()),
+                egui::vec2(tw, theme.tab_indicator_width().value()),
             );
             p.rect_filled(underline, 0.0, egui::Color32::from(theme.accent_primary()));
         }

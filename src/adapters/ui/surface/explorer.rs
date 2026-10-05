@@ -257,7 +257,7 @@ fn tab_strip(
                 .rect_filled(tab_rect, 0.0, theme.bg_panel().to_egui());
             let indicator = egui::Rect::from_min_size(
                 tab_rect.min,
-                egui::vec2(tab_w, theme.tab_indicator_width.value()),
+                egui::vec2(tab_w, theme.tab_indicator_width().value()),
             );
             ui.painter()
                 .rect_filled(indicator, 0.0, theme.accent_primary().to_egui());

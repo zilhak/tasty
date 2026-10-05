@@ -65,7 +65,6 @@ fn sizing_value(field: &str) -> f32 {
         "toast_accent_width" => SIZING.toast_accent_width.0,
         "status_dot_size" => SIZING.status_dot_size.0,
         "spinner_size" => SIZING.spinner_size.0,
-        "tab_indicator_width" => SIZING.tab_indicator_width.0,
         "tab_bar_height" => SIZING.tab_bar_height.0,
         "tab_bar_label_font_size" => SIZING.tab_bar_label_font_size.0,
         other => panic!(

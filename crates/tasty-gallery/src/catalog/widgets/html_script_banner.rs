@@ -102,7 +102,7 @@ fn tab(
     let painter = ui.painter().clone();
     if active {
         painter.rect_filled(rect, 0.0, theme.bg_panel().to_egui());
-        let bar = theme.tab_indicator_width.value();
+        let bar = theme.tab_indicator_width().value();
         painter.rect_filled(
             egui::Rect::from_min_max(egui::pos2(rect.left(), rect.bottom() - bar), rect.max),
             0.0,

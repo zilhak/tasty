@@ -271,7 +271,7 @@ pub fn draw_tab_strip(ui: &mut egui::Ui, th: &Theme, data: &TabStripData<'_>) ->
             ui.painter().hline(
                 rect.x_range(),
                 bar.max.y - th.border_width.value(),
-                egui::Stroke::new(th.tab_indicator_width.value(), th.accent_primary()),
+                egui::Stroke::new(th.tab_indicator_width().value(), th.accent_primary()),
             );
         }
         if resp.clicked() && !on {

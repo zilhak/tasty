@@ -41,7 +41,7 @@ pub(super) fn draw_tab(
     let bar_h = th.tab_bar_height.value();
     let label_font_size = props.tab_font_size;
     let h_padding: f32 = 8.0;
-    let active_indicator_h = th.tab_indicator_width.value();
+    let active_indicator_h = th.tab_indicator_width().value();
     if i > 0 {
         let sep = egui::Rect::from_min_size(
             egui::pos2(x, clip_rect.min.y),

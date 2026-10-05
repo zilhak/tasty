@@ -350,8 +350,6 @@ pub struct ThemeSizing {
     pub spinner_size: LogicalPx,
     /// 토스트 좌측 accent 바 두께 (3px).
     pub toast_accent_width: LogicalPx,
-    /// 탭 밑줄 두께. selection_edge_width와 같은 역할이며 둘러싸는 링은 focus_ring_width를 사용한다.
-    pub tab_indicator_width: LogicalPx,
     /// 선택 항목의 한쪽 변에 붙는 띠 두께 (2px).
     pub selection_edge_width: LogicalPx,
     /// 상단 정렬 모달(command palette) 상단 gap (88px).
@@ -421,7 +419,6 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     status_dot_size: LogicalPx(8.0),
     spinner_size: LogicalPx(16.0),
     toast_accent_width: LogicalPx(3.0),
-    tab_indicator_width: LogicalPx(2.0),
     selection_edge_width: LogicalPx(2.0),
     overlay_top_offset: LogicalPx(88.0),
     label_detail_gap: LogicalPx(2.0),
@@ -939,8 +936,6 @@ pub struct Theme {
     pub status_dot_size: LogicalPx,
     pub spinner_size: LogicalPx,
     pub toast_accent_width: LogicalPx,
-    /// 탭 밑줄. hairline 띠이므로 UI zoom 제외.
-    pub tab_indicator_width: LogicalPx,
     /// 선택 항목의 한쪽 변 띠(탭 밑줄·활성 워크스페이스 행·remote attach·preset 목록 행).
     /// hairline 띠이므로 UI zoom 제외.
     pub selection_edge_width: LogicalPx,
@@ -1112,7 +1107,6 @@ impl Theme {
             status_dot_size: zoomed(SIZING.status_dot_size),
             spinner_size: zoomed(SIZING.spinner_size),
             toast_accent_width: zoomed(SIZING.toast_accent_width),
-            tab_indicator_width: SIZING.tab_indicator_width,
             selection_edge_width: SIZING.selection_edge_width,
             overlay_top_offset: zoomed(SIZING.overlay_top_offset),
             label_detail_gap: zoomed(SIZING.label_detail_gap),

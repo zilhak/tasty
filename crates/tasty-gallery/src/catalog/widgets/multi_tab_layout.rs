@@ -71,7 +71,7 @@ fn window(ui: &mut egui::Ui, theme: &Theme) {
             p.rect_filled(tab, 0.0, egui::Color32::from(theme.bg_panel()));
             let bar = egui::Rect::from_min_size(
                 tab.min,
-                egui::vec2(tab_w, theme.tab_indicator_width.value()),
+                egui::vec2(tab_w, theme.tab_indicator_width().value()),
             );
             p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
         }

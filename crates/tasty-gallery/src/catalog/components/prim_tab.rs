@@ -109,7 +109,7 @@ fn draw_tab(painter: &egui::Painter, theme: &Theme, rect: egui::Rect, tab: &TabS
         painter.rect_filled(rect, 0.0, egui::Color32::from(theme.bg_panel()));
         let bar = egui::Rect::from_min_size(
             rect.min,
-            egui::vec2(rect.width(), theme.tab_indicator_width.value()),
+            egui::vec2(rect.width(), theme.tab_indicator_width().value()),
         );
         painter.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
     }
