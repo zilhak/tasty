@@ -1885,26 +1885,19 @@ fn override_checkbox<T, F>(
 }
 
 fn font_scale_mode_combo(ui: &mut egui::Ui, value: &mut String, salt: &str, enabled: bool) {
-    ui.add_enabled_ui(enabled, |ui| {
-        let combo_id = format!("font_scale_mode_{}", salt);
-        egui::ComboBox::from_id_salt(combo_id)
-            .selected_text(match value.as_str() {
-                "auto" => t("settings.appearance.font_scale_mode_auto"),
-                _ => t("settings.appearance.font_scale_mode_fixed"),
-            })
-            .show_ui(ui, |ui| {
-                ui.selectable_value(
-                    value,
-                    "auto".to_string(),
-                    t("settings.appearance.font_scale_mode_auto"),
-                );
-                ui.selectable_value(
-                    value,
-                    "fixed".to_string(),
-                    t("settings.appearance.font_scale_mode_fixed"),
-                );
-            });
-    });
+    const MODES: [&str; 2] = ["auto", "fixed"];
+    let th = crate::theme::theme();
+    let labels = [
+        t("settings.appearance.font_scale_mode_auto"),
+        t("settings.appearance.font_scale_mode_fixed"),
+    ];
+    let mut idx = usize::from(value.as_str() != "auto");
+    // 폭은 이전 egui ComboBox의 기본 폭을 그대로 쓴다.
+    let width = ui.spacing().combo_width;
+    let salt = format!("font_scale_mode_{salt}");
+    if tasty_ui_widgets::select(ui, &th, &salt, &mut idx, &labels, width, enabled) {
+        *value = MODES[idx].to_string();
+    }
 }
 
 /// Draw a 2-row colored preview block for an `EffectiveFont`. `slot` is a
