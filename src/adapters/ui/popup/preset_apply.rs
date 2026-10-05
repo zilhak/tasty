@@ -3,6 +3,7 @@
 
 use tasty_presets::PresetKind;
 use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::{Button, ButtonVariant};
 
 /// preset 행 라벨. DTCG primitive `font-size-12` 는 있으나 semantic role 이 없어
 /// `Theme` 필드가 없다 — ADR-0035 대로 **이름에 primitive 임을 남긴다**.
@@ -224,16 +225,24 @@ pub fn draw_apply_preset_view(
 
         ui.separator();
         ui.horizontal(|ui| {
-            let can_apply = !names.is_empty() && effective_selected.is_some();
-            if ui
-                .add_enabled(can_apply, egui::Button::new(props.apply_button_label))
-                .clicked()
-            {
-                apply_clicked = true;
-            }
-            if ui.button(props.cancel_button_label).clicked() {
-                cancel_clicked = true;
-            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let can_apply = !names.is_empty() && effective_selected.is_some();
+                if Button::new(props.apply_button_label)
+                    .variant(ButtonVariant::Primary)
+                    .enabled(can_apply)
+                    .show(ui, th)
+                    .clicked()
+                {
+                    apply_clicked = true;
+                }
+                if Button::new(props.cancel_button_label)
+                    .variant(ButtonVariant::Ghost)
+                    .show(ui, th)
+                    .clicked()
+                {
+                    cancel_clicked = true;
+                }
+            });
         });
     });
 
