@@ -164,10 +164,8 @@ fn validate_task_output_refs(
 }
 
 fn validate_command_poll_ref(command: &TaskCommand) -> Result<(), String> {
-    if let TaskCommand::Custom {
-        poll: Some(PollSpecRef::Named { strategy }),
-        ..
-    } = command
+    if let TaskCommand::Custom { poll: Some(p), .. } = command
+        && let PollSpecRef::Named { strategy } = p.as_ref()
     {
         let id = crate::completion_strategy::CompletionStrategyId::new(strategy.clone());
         crate::completion_strategy::global()
@@ -1112,9 +1110,9 @@ mod poll_strategy_ref_tests {
         let command = TaskCommand::Custom {
             ipc_method: "tcpoll1.spawn".into(),
             params: Value::Null,
-            poll: Some(PollSpecRef::Named {
+            poll: Some(Box::new(PollSpecRef::Named {
                 strategy: "tcpoll1/does-not-exist".into(),
-            }),
+            })),
         };
         let err = validate_poll_strategy_refs(&command, &OnFailure::Abort).unwrap_err();
         assert!(err.contains("tcpoll1/does-not-exist"));
@@ -1126,9 +1124,9 @@ mod poll_strategy_ref_tests {
         let command = TaskCommand::Custom {
             ipc_method: "tcpoll2.spawn".into(),
             params: Value::Null,
-            poll: Some(PollSpecRef::Named {
+            poll: Some(Box::new(PollSpecRef::Named {
                 strategy: "tcpoll2/spawn-wait".into(),
-            }),
+            })),
         };
         assert!(validate_poll_strategy_refs(&command, &OnFailure::Abort).is_ok());
     }
@@ -1138,9 +1136,9 @@ mod poll_strategy_ref_tests {
         let bad_fallback = TaskCommand::Custom {
             ipc_method: "tcpoll3.spawn".into(),
             params: Value::Null,
-            poll: Some(PollSpecRef::Named {
+            poll: Some(Box::new(PollSpecRef::Named {
                 strategy: "tcpoll3/does-not-exist".into(),
-            }),
+            })),
         };
         let on_failure = OnFailure::Fallback {
             task: None,
@@ -1166,7 +1164,7 @@ mod poll_strategy_ref_tests {
         let inline_cmd = TaskCommand::Custom {
             ipc_method: "tcpoll4.spawn".into(),
             params: Value::Null,
-            poll: Some(PollSpecRef::Inline(tasty_agent::PollSpec {
+            poll: Some(Box::new(PollSpecRef::Inline(tasty_agent::PollSpec {
                 poll_method: "tcpoll4.wait".into(),
                 map_from_response: Default::default(),
                 map_from_request: Default::default(),
@@ -1175,7 +1173,7 @@ mod poll_strategy_ref_tests {
                 failure_states: vec![],
                 interval_ms: 500,
                 timeout_ms: None,
-            })),
+            }))),
         };
         assert!(validate_poll_strategy_refs(&inline_cmd, &OnFailure::Abort).is_ok());
 

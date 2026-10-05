@@ -151,7 +151,7 @@ pub enum TaskCommand {
         /// 인라인 PollSpec 또는 등록 전략 이름. None이면 호스트가 기본 전략을 찾고,
         /// 기본 전략도 없으면 dispatch 응답으로 즉시 완료한다.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        poll: Option<PollSpecRef>,
+        poll: Option<Box<PollSpecRef>>,
     },
     /// 다른 task의 결과를 합성.
     Reduce {

@@ -620,7 +620,7 @@ impl HostExecutor {
                     .dispatch_plugin(ipc_method, params.clone())
                     .map_err(|e| format!("Custom '{ipc_method}': {e}"))?;
                 use tasty_agent::PollSpecRef;
-                let spec: tasty_agent::PollSpec = match poll {
+                let spec: tasty_agent::PollSpec = match poll.as_deref() {
                     Some(PollSpecRef::Inline(spec)) => spec.clone(),
                     Some(PollSpecRef::Named { strategy }) => {
                         let strat = self.ctx.completion.named(strategy).map_err(|e| {
@@ -1740,7 +1740,7 @@ mod tests {
             command: TaskCommand::Custom {
                 ipc_method: "fake.start".into(),
                 params: json!({ "surface_id": 7 }),
-                poll: Some(PollSpecRef::Inline(PollSpec {
+                poll: Some(Box::new(PollSpecRef::Inline(PollSpec {
                     poll_method: "fake.poll".into(),
                     map_from_response,
                     map_from_request,
@@ -1749,7 +1749,7 @@ mod tests {
                     failure_states: vec![],
                     interval_ms: 1,
                     timeout_ms: None,
-                })),
+                }))),
             },
             state: tasty_agent::TaskState::Ready,
             depends_on: vec![],
@@ -1900,9 +1900,9 @@ mod tests {
             command: TaskCommand::Custom {
                 ipc_method: "rhtest1.start".into(),
                 params: json!({}),
-                poll: Some(PollSpecRef::Named {
+                poll: Some(Box::new(PollSpecRef::Named {
                     strategy: "rhtest1/wait-done".into(),
-                }),
+                })),
             },
             state: tasty_agent::TaskState::Ready,
             depends_on: vec![],
@@ -1991,9 +1991,9 @@ mod tests {
             command: TaskCommand::Custom {
                 ipc_method: "rhtest-push.start".into(),
                 params: json!({ "surface_id": 7 }),
-                poll: Some(PollSpecRef::Named {
+                poll: Some(Box::new(PollSpecRef::Named {
                     strategy: "rhtest-push/wait-done".into(),
-                }),
+                })),
             },
             state: tasty_agent::TaskState::Ready,
             depends_on: vec![],
@@ -2073,9 +2073,9 @@ mod tests {
             command: TaskCommand::Custom {
                 ipc_method: "rhtest-push2.start".into(),
                 params: json!({}),
-                poll: Some(PollSpecRef::Named {
+                poll: Some(Box::new(PollSpecRef::Named {
                     strategy: "rhtest-push2/wait-done".into(),
-                }),
+                })),
             },
             state: tasty_agent::TaskState::Ready,
             depends_on: vec![],
@@ -2128,9 +2128,9 @@ mod tests {
             command: TaskCommand::Custom {
                 ipc_method: "rhtest2.start".into(),
                 params: json!({}),
-                poll: Some(PollSpecRef::Named {
+                poll: Some(Box::new(PollSpecRef::Named {
                     strategy: "rhtest2/does-not-exist".into(),
-                }),
+                })),
             },
             state: tasty_agent::TaskState::Ready,
             depends_on: vec![],
