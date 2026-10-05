@@ -121,8 +121,10 @@ slow_requests는 큐+호스트+plugin 대기 합계가 100ms 이상인 최근 32
 원문 params·토큰·멱등 키·RPC id는 저장하지 않는다.
 plugin hop은 원 번호와 host_request_id로 연결하지만 plugin→host 부모를 추측하지 않는다.
 intent 뒤 파일 핸들러 forward와 큐를 안 지난 host-call은 연계되지 않는다.
-IPC 명령 하나가 plugin namespace 메서드로 오면 GUI와 헤드리스 dispatch 모두 plugin 전달은 한 번이고, 그 대기 항목이 명령의 RequestSeq를 든다.
-두 dispatch의 `namespace_forward_tests`가 namespace를 소유한 stub plugin으로 전달 수와 번호를 확인한다. 헤드리스 쪽은 `--no-default-features` 조합에서만 실행된다.
+IPC 명령 하나가 plugin namespace 메서드로 오면 plugin 전달은 한 번이고, 그 대기 항목이 명령의 RequestSeq를 든다.
+각 dispatch의 `namespace_forward_tests`가 namespace를 소유한 stub plugin으로 전달 수와 번호를 확인하지만 범위가 다르다.
+GUI 시험은 namespace 단계 함수(`forward_owned_namespace`) 안의 전달만 잰다. GUI App은 시험에서 만들 수 없어 `ipc_step_routing`에서 그 함수 밖에 둔 전달은 덮지 않는다.
+헤드리스 시험은 `dispatch_command` 전체를 지나므로 구조상 그 단계 밖의 전달도 드러나지만, 그 위치의 변이는 재지 않았다. 헤드리스 쪽은 `--no-default-features` 조합에서만 실행된다.
 이 기록은 재시작하면 사라진다. 지연 원인을 볼 때 전체 histogram과 함께 확인한다.
 
 느린 요청의 host.outcome과 error_code는 응답 대기자가 실제로 받은 결과를 한 번 기록하는 공유 상태에서 읽는다. dispatch 끝에서 값을 복사하면 plugin의 늦은 답과 timeout 결과가 빠지므로 OnceLock 참조를 링에 둔다. 아직 결과가 없거나 기한 없는 내부 대기가 포기하면 null일 수 있다. 같은 행을 나중에 읽으면 null이 결과로 채워질 수 있지만 채운 값은 바꾸지 않는다. 새 대기 경로는 record_answer를 호출해야 한다.

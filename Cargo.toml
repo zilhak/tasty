@@ -395,7 +395,8 @@ serde_json = "1"
 # IsolatedHome의 push_home_override를 테스트에서 사용하기 위한 설정이다.
 tasty-utils = { path = "crates/tasty-utils", features = ["test-support"] }
 tasty-test-support = { path = "crates/tasty-test-support" }
-# 플러그인 프로세스 없이 팝업 인스턴스를 만드는 테스트용 함수를 활성화한다.
+# 플러그인 프로세스 없이 팝업 인스턴스를 만들고, namespace stub 을 붙여 전달과 대기 항목의
+# 원 요청 번호를 읽는 테스트용 함수를 활성화한다.
 tasty-host-plugin = { path = "crates/tasty-host-plugin", features = ["test-support"] }
 tasty-doc-guards = { path = "crates/tasty-doc-guards" }
 # 지연 시험의 대조 측정용이다. docs/dev-guide/self-verification.md#시간-측정과-실패-진단

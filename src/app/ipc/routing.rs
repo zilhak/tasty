@@ -146,8 +146,9 @@ impl App {
 }
 
 /// IPC 명령 하나가 namespace 소유 메서드로 오면 플러그인 전달이 정확히 한 번이고, 그 대기
-/// 항목이 명령의 요청 번호를 드는지 stub 플러그인으로 잰다. 파일 밖 헬퍼를 거친 추가 전달도
-/// stub 이 받은 요청 수로 드러난다.
+/// 항목이 명령의 요청 번호를 드는지 stub 플러그인으로 잰다. `forward_owned_namespace` 안에서
+/// 파일 밖 헬퍼를 거친 추가 전달은 stub 이 받은 요청 수로 드러난다. GUI App 을 시험에서 만들 수
+/// 없어 `ipc_step_routing` 에서 이 함수 밖에 둔 전달은 덮지 않는다.
 #[cfg(test)]
 mod namespace_forward_tests {
     use std::sync::{Arc, mpsc};

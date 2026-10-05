@@ -40,8 +40,10 @@ sysinfo = "0.35"
 [features]
 # 기본 비활성인 WASM 실험 코드.
 wasm-poc = []
-# 호스트 크레이트의 시험이 plugin 프로세스 없이 popup 인스턴스를 세우는 훅
-# (`PluginManager::insert_popup_instance_for_test`). 루트가 dev-dependency 로만 켠다.
+# 호스트 크레이트의 시험이 plugin 프로세스 없이 쓰는 훅. popup 인스턴스를 세우는
+# `PluginManager::insert_popup_instance_for_test`, namespace 를 소유한 stub 을 붙이는
+# `attach_namespace_stub_for_test` 와 대기 항목의 원 요청 번호를 읽는 `pending_origins_for_test`,
+# 그리고 이를 받치는 `PluginProcess` stub 생성자. 루트가 dev-dependency 로만 켠다.
 test-support = []
 
 [dev-dependencies]
