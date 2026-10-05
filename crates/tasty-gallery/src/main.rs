@@ -242,6 +242,7 @@ async fn init_runtime(window: Arc<Window>) -> anyhow::Result<Runtime> {
     });
     tasty_gallery::fonts::install(&egui_ctx);
     egui_extras::install_image_loaders(&egui_ctx);
+    tasty_icons::install_texture_loader(&egui_ctx);
 
     let egui_state = egui_winit::State::new(
         egui_ctx.clone(),

@@ -207,6 +207,7 @@ impl GpuState {
         });
 
         egui_extras::install_image_loaders(&egui_ctx);
+        tasty_icons::install_texture_loader(&egui_ctx);
 
         Self::setup_egui_fonts(&egui_ctx);
 

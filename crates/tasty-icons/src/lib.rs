@@ -2,6 +2,11 @@
 //! egui 기능을 켜면 Icon::image로 읽고, 빌드 스크립트에서는 svg/body를 직접 읽는다.
 //! 디자인의 icons.json에 대응하며 흰색 도형에 소비자가 테마 색을 입힌다.
 
+#[cfg(feature = "egui")]
+mod texture_loader;
+#[cfg(feature = "egui")]
+pub use texture_loader::install_texture_loader;
+
 /// egui 없이도 SVG를 읽을 수 있는 아이콘 정의.
 #[derive(Clone, Copy, Debug)]
 pub struct Icon {
@@ -17,7 +22,8 @@ pub struct Icon {
 
 #[cfg(feature = "egui")]
 impl Icon {
-    /// 지정한 논리 크기와 색으로 이미지를 만든다. 앱에 SVG 로더가 설치돼 있어야 한다.
+    /// 지정한 논리 크기와 색으로 이미지를 만든다. 앱에 SVG 로더와 `install_texture_loader`가
+    /// 설치돼 있어야 크기마다 선명하게 그려진다.
     pub fn image(self, size: f32, tint: egui::Color32) -> egui::Image<'static> {
         egui::Image::from_bytes(self.uri, self.svg.as_bytes())
             .fit_to_exact_size(egui::vec2(size, size))

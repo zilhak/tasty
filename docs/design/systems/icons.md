@@ -20,7 +20,7 @@ tasty 의 라인/필 아이콘 세트 규칙. 지오메트리(SVG path)의 **단
 pub struct Icon {
     pub svg: &'static str,   // 완성 <svg viewBox="0 0 24 24" …> 문서
     pub body: &'static str,  // inner 마크업만(<path>/<rect>/<circle> 시퀀스)
-    pub uri: &'static str,   // egui 이미지 캐시 키(bytes://tasty_icon_<name>.svg)
+    pub uri: &'static str,   // egui 로더가 쓰는 uri(bytes://tasty_icon_<name>.svg)
     pub filled: bool,        // true=채운 글리프 / false=stroke-only
 }
 ```
@@ -29,8 +29,9 @@ pub struct Icon {
 쓰는 것이 정합의 핵심이다.
 
 1. **host / gallery 런타임** — `feature = "egui"` 를 켜고 [`Icon::image(size, tint)`] 로
-   `egui::Image` 를 만든다. 실제 SVG 텍스처화는 앱이 설치한 `egui_extras` svg 로더
-   (`gpu.rs` 의 `install_image_loaders`, 갤러리 동일)가 담당한다.
+   `egui::Image` 를 만든다. 앱은 두 로더를 설치한다(`gpu.rs`, 갤러리 `main.rs` 동일).
+   - `egui_extras::install_image_loaders`: SVG를 요청 크기로 래스터한다.
+   - `tasty_icons::install_texture_loader`: 아이콘 텍스처를 캐시한다.
 2. **plugin build.rs 빌드타임** — `[build-dependencies]` 로 이 크레이트를 **egui 없이**
    링크해 `Icon::svg` / `Icon::body` 를 usvg로 읽어 선분 데이터로 바꾼다. egui optional·default off
    구조라 build-dependency 로 붙어도 egui 가 링크되지 않는다.
@@ -47,6 +48,21 @@ pub struct Icon {
 (stroke-only), `fill_icon!` = `fill="white" stroke="white"`(채운 글리프, 예: `STAR_FILL`).
 채운 상태 표시자(StatusDot / Badge)는 아이콘이 아니다 — 아이콘에 fill 을 더해 상태를
 표현하지 않는다.
+
+### 크기별 텍스처
+
+egui 0.31의 기본 텍스처 로더는 uri와 `TextureOptions`만 캐시 키로 쓴다. 그래서 같은 아이콘을 여러 크기로 그리면 처음 래스터한 크기의 텍스처를 늘이거나 줄여 흐려진다.
+
+`tasty_icons::install_texture_loader`가 설치하는 로더는 `bytes://tasty_icon_` uri만 맡는다. 키는 `(uri, TextureOptions, SizeHint)`이고, `SizeHint`는 논리 크기 × 배율의 물리 픽셀이다. 같은 아이콘이라도 크기와 배율마다 따로 래스터하며, 배율이 바뀌면 그 배율로 다시 래스터한다. 다른 uri는 기본 로더가 처리한다.
+
+텍스처는 쓰인 (아이콘, 크기, 배율) 조합 수만큼 생기고 앱이 끝날 때까지 남는다. 조합은 테마의 아이콘 크기 토큰과 배율 수로 제한된다.
+
+`texture_loader.rs` 단위 테스트가 다음을 검사한다.
+
+- 크기마다 따로 텍스처를 만든다.
+- 아이콘이 아닌 uri는 기본 로더에 넘긴다.
+- 두 번 설치해도 로더는 하나다.
+- 두 매크로가 만드는 uri가 이 로더의 접두사를 쓴다.
 
 ## 크기 소유 — 호출측
 
