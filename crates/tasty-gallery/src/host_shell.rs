@@ -22,14 +22,13 @@ pub enum ThemeId {
 }
 
 impl ThemeId {
-    /// 해당 id 의 *기본 색상 세트* 를 만들고 base mode 를 적용해 Theme 으로 반환.
-    fn build(self, is_light: bool) -> Theme {
-        let mut t = match self {
+    /// 해당 id 의 색상 세트와 테마가 정한 밝기로 Theme 을 만든다.
+    /// 밝기를 따로 고르는 토글은 없으므로 직전 테마의 밝기를 이어받지 않는다.
+    fn build(self) -> Theme {
+        match self {
             ThemeId::Mocha => tasty_themes::mocha_fallback(),
             ThemeId::Latte => latte_theme(),
-        };
-        t.set_is_light(is_light);
-        t
+        }
     }
 }
 
@@ -84,7 +83,7 @@ impl GalleryState {
     pub fn new() -> Self {
         let theme_id = ThemeId::Mocha;
         Self {
-            theme: theme_id.build(false),
+            theme: theme_id.build(),
             theme_id,
             pages: catalog::pages(),
             active_page: 0,
@@ -94,6 +93,16 @@ impl GalleryState {
             shot_scroll: None,
             brand_logo: None,
         }
+    }
+
+    /// 테마를 바꾸고 다음 frame 에 egui 에 다시 적용하게 한다. 같은 테마면 아무것도 하지 않는다.
+    fn switch_theme(&mut self, id: ThemeId) {
+        if id == self.theme_id {
+            return;
+        }
+        self.theme_id = id;
+        self.theme = id.build();
+        self.needs_reapply = true;
     }
 
     /// 페이지 index 를 범위 내로 고정해 활성화 (스크린샷 배치 등 외부 진입점용).
@@ -273,12 +282,8 @@ fn header_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
     ui.painter()
         .vline(rect.left() + NAV_WIDTH.value(), rect.y_range(), stroke);
 
-    if let Some(id) = act_theme
-        && id != state.theme_id
-    {
-        state.theme_id = id;
-        state.theme = id.build(state.theme.is_light);
-        state.needs_reapply = true;
+    if let Some(id) = act_theme {
+        state.switch_theme(id);
     }
     if let Some(on) = act_specs {
         state.specs_on = on;
@@ -635,4 +640,39 @@ fn seg(ui: &mut egui::Ui, s: &SegStyle, items: &[(&str, bool)]) -> Option<usize>
             });
         });
     clicked
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Mocha 에서 Latte 로 바꾸면 Latte 의 밝기(light)와 그 밝기의 accent 위 잉크를 쓴다.
+    /// 되돌리면 다시 Mocha 의 dark 다.
+    #[test]
+    fn switching_theme_takes_the_new_themes_own_brightness() {
+        let mut state = GalleryState::new();
+        assert!(!state.theme.is_light);
+
+        state.switch_theme(ThemeId::Latte);
+        assert!(
+            state.theme.is_light,
+            "Latte kept the dark brightness of Mocha"
+        );
+        assert_eq!(
+            state.theme.text_on_accent(),
+            latte_theme().text_on_accent(),
+            "accent ink after Mocha to Latte"
+        );
+        assert!(state.needs_reapply);
+
+        state.switch_theme(ThemeId::Mocha);
+        assert!(
+            !state.theme.is_light,
+            "Mocha kept the light brightness of Latte"
+        );
+        assert_eq!(
+            state.theme.text_on_accent(),
+            tasty_themes::mocha_fallback().text_on_accent()
+        );
+    }
 }
