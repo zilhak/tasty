@@ -12,16 +12,16 @@
 
 | 디자인 jsx 컴포넌트 | tasty 함수 | 갤러리 항목 |
 |---|---|---|
-| `RemoteTool`(container) | `draw_remote_tool_popup` | `components/remote.rs` `remote` spec (프레임 + 3탭 + add-bar + 목록). 셸은 specimen 미러, **안의 탭 스트립과 로컬 ssh 섹션은 공용 view 호출** |
+| `RemoteTool`(container) | `draw_remote_tool_popup` | `components/remote.rs` `remote` spec (프레임 + 3탭 + add-bar + 목록). 셸(프레임·add-bar·목록 배치)은 갤러리가 본체 구성을 다시 그린 사본, **안의 탭 스트립과 로컬 ssh 섹션은 공용 view 호출** |
 | `TabBtn`(내부, 3탭) | `draw_tab_bar` (wrapper) → `tasty_ui_widgets::draw_tab_strip` | `components/remote.rs` `tab_bar` 이 **같은 공용 view 를 호출**한다 |
 | `WarnBadge` | `warn_badge` | `components/remote.rs` `warn_pill` (specimen 미러 — 아이콘 없는 pill, gallery jsx 형) |
 | `ListShell` | `draw_profile_list` / `draw_attach_list` / `draw_passkey_list` (add-bar+scroll 합침) | — |
 | `ProtocolFilter`(add-bar 버튼) | `tasty_ui_widgets::draw_protocol_filter_button` | `components/remote.rs` `remote-filter` spec — 닫힘 2 상태(가린 것 없음 / 1 개 가림) |
 | `ProtocolFilter`(드롭다운/팝오버) | `tasty_ui_widgets::draw_protocol_filter_body` (본체 wrapper `draw_protocol_filter` 가 memory·배치·닫기를 소유) | `components/remote.rs` `remote-filter` spec — 열림 1 상태 |
-| `ProfileRow` | `draw_profile_row` | `components/remote.rs` `profile_row` (`remote` spec) |
+| `ProfileRow` | `draw_profile_row` | `components/remote.rs` `profile_row` (`remote` spec) — 행 동작 버튼은 본체와 같이 오른쪽부터 삭제(`TRASH`)·편집·재탐지(ssh 만) |
 | `ProfileForm` | `draw_profile_form` | — |
 | `LocalSshSection`(kit 정의 — 위 `space-md` 여백·`border-frame` 선·`space-sm` 안쪽 여백, 헤더와 빈 상태 줄 `size-2`/`space-xs`, 행 `space-xs`·alias↔target `label-detail-gap`) | `tasty_ui_widgets::draw_local_ssh_section` (본체 wrapper: `remote_tool.rs` 동명 함수 — i18n + 빈 상태 원인 판정) | `components/remote.rs` `remote` spec 이 **같은 공용 view 를 호출**한다. 호스트 3건 목록 옆에 no hosts·no file·unreadable config 빈 상태 세 장 |
-| `AttachRow` | `draw_attach_row` | `components/remote.rs` `attach_row` (`remote-attach` spec) |
+| `AttachRow` | `draw_attach_row` | `components/remote.rs` `attach_row` (`remote-attach` spec) — 삭제 아이콘은 디자인 gallery 미러를 따라 `CLOSE`, 본체는 `TRASH` |
 | `AttachForm` | `draw_attach_form` | `components/remote.rs` `attach_form_card` (`remote-attach-form` spec, ref/inline 2변종) |
 | `PasskeyRow` | `draw_passkey_row` | — |
 | `PasskeyForm` | `draw_passkey_form` | — |
@@ -37,7 +37,9 @@ tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전�
 
 디자인과의 차이는 헤더·빈 줄 위 세로 여백 2px다. 4px 그리드 밖이며 대응 토큰이 없어 적용하지 않았다. 가로 들여쓰기 4px는 `space-xs`를 사용한다. 자간 `letterSpacing: 0.06em`은 `SECTION_HEADING_TRACKING_EM`(0.06)에 글자 크기를 곱해 `TextFormat::extra_letter_spacing`으로 적용한다. caption 11px에서는 0.66px이며, 사이드바의 0.07em(10px에서 0.7px)과 같은 방법이다.
 
-`draw_remote_tool_popup`은 MainViewState·CoreState를 받으므로 갤러리의 `(ui, &Theme)` 콜백에서 직접 호출할 수 없다. 프로필·Passkey 읽기, `FILTER_MEMORY_ID`·`FILTER_POPUP_ID`, 배치는 본체가 맡는다. 내부 그리기 함수는 `crates/tasty-ui-widgets/src/remote_tool.rs`에서 props를 받아 본체와 갤러리가 공유한다.
+**셸은 공유하지 않고 사본으로 둔다.** `draw_remote_tool_popup`은 MainViewState·CoreState를 받으므로 갤러리의 `(ui, &Theme)` 콜백에서 직접 호출할 수 없다. 프로필·Passkey 읽기, 폼 상태, `FILTER_MEMORY_ID`·`FILTER_POPUP_ID`, 배치는 본체가 맡는다. 셸을 props 로 떼어 내면 이 상태 전부를 갤러리 쪽 가짜 값으로 다시 만들어야 하므로, 공유 범위는 상태 없이 그릴 수 있는 내부 위젯(탭 스트립, 로컬 SSH 섹션, 필터 버튼·드롭다운, 버튼·배지·텍스트 헬퍼)으로 한정한다. 이 함수들은 `crates/tasty-ui-widgets/src/remote_tool.rs`에서 props를 받아 본체와 갤러리가 공유한다.
+
+사본인 셸과 행은 캡처를 맞대어 비교한다. 격리한 debug 인스턴스에서 `tasty debug host-popup open --popup-id remote_tool`로 본체 팝업을 열고 `tasty screenshot --window <id>`로 Profiles·Attach·Passkeys 탭을 Mocha·Latte 각각 찍는다. 갤러리는 `TASTY_GALLERY_SHOT`으로 Overlays 페이지의 `remote`·`remote-attach` 카드를 찍는다. 두 캡처에서 프레임 여백, add-bar 구성, 행 높이, 행 동작 버튼의 아이콘·순서·비활성 표시가 같은지 본다. 셸을 바꾸는 커밋은 같은 방법으로 변경 전후를 비교한다.
 
 필터 예제는 닫힘과 열림 모습을 나란히 보여 준다. 열림 전이를 재현하지 않으며 목록 높이를 먼저 확보한다. 본체 팝업과 달리 갤러리 카드의 남은 높이가 작으면 같은 ScrollArea도 마지막 행을 자르기 때문이다.
 
