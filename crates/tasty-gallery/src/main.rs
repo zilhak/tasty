@@ -406,6 +406,10 @@ fn capture_to_png(
     let slice = buffer.slice(..);
     let (tx, rx) = std::sync::mpsc::channel();
     slice.map_async(wgpu::MapMode::Read, move |r| {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "The receiving session or event loop may have already ended."
+        )]
         let _ = tx.send(r); // 수신자가 사라지면 캡처 결과를 전달할 곳이 없으므로 무시한다.
     });
     let _ = device.poll(wgpu::Maintain::Wait); // map 콜백 완료를 기다린다. 반환된 큐 상태는 사용하지 않는다.

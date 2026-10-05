@@ -408,7 +408,7 @@ impl EngineAction {
             match std::fs::write(&path, png_bytes) {
                 Ok(()) => {
                     // The receiving shell reads this file asynchronously, after this action.
-                    let _ = directory.keep();
+                    drop(directory.keep());
                     send_saved_image_path(engine, target.surface_id(), *bracketed, &path);
                 }
                 Err(error) => tracing::warn!(%error,"clipboard image save failed"),

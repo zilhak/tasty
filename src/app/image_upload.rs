@@ -118,6 +118,7 @@ impl App {
                             &png_bytes,
                             move |sent, tot| {
                                 let rate = format_rate(sent, start.elapsed());
+                                #[expect(clippy::let_underscore_must_use, reason = "The receiving session or event loop may have already ended.")]
                                 // 수신자 종료/이벤트루프 종료 시에만 실패 — 무시.
                                 let _ = progress_tx.send(TransferProgressMsg {
                                     id: transfer_id,
@@ -125,6 +126,7 @@ impl App {
                                     total: tot,
                                     rate,
                                 });
+                                #[expect(clippy::let_underscore_must_use, reason = "The receiving session or event loop may have already ended.")]
                                 // 이벤트 루프 종료 시에만 실패 — 무시.
                                 let _ = proxy.send_event(crate::AppEvent::TransferProgressTick);
                             },
@@ -136,6 +138,7 @@ impl App {
                         "no attach session for mirror workspace {mirror_ws_id}"
                     )),
                 };
+                #[expect(clippy::let_underscore_must_use, reason = "The receiving session or event loop may have already ended.")]
                 // 수신자(메인 루프)가 종료돼 채널이 닫힌 경우에만 실패 — 무시.
                 let _ = tx.send(ImageUploadOutcome {
                     attempt: worker_attempt,
@@ -149,6 +152,7 @@ impl App {
                     png_bytes,
                     result,
                 });
+                #[expect(clippy::let_underscore_must_use, reason = "The receiving session or event loop may have already ended.")]
                 // event loop 가 종료된 경우에만 실패 — 무시.
                 let _ = proxy.send_event(crate::AppEvent::ImageUploadReady);
             });

@@ -100,57 +100,26 @@ mod imp {
 
     // A failed send returns ownership of a spawned child; dropping Child alone does not reap it.
     fn deliver_spawn_result(reply: &SyncSender<io::Result<Child>>, result: io::Result<Child>) {
-        if let Err(mpsc::SendError(result)) = reply.send(result) {
-            match result {
-                Ok(mut child) => {
-                    let pid = child.id();
-                    if let Err(error) = child.kill() {
-                        tracing::warn!(pid, %error, "could not stop an unclaimed plugin process");
-                    }
-                    if let Err(error) = child.wait() {
-                        tracing::warn!(pid, %error, "could not reap an unclaimed plugin process");
-                    }
-                }
-                Err(error) => {
-                    tracing::debug!(%error, "plugin spawn failed after its requester left")
-                }
+        let Err(mpsc::SendError(result)) = reply.send(result) else {
+            return;
+        };
+        let child = match result {
+            Ok(child) => child,
+            Err(error) => {
+                tracing::debug!(%error, "plugin spawn failed after its requester left");
+                return;
             }
-        }
+        };
+        stop_unclaimed_child(child);
     }
 
-    #[cfg(test)]
-    mod delivery_tests {
-        use super::*;
-
-        #[test]
-        fn abandoned_spawn_is_killed_and_reaped() {
-            let (tx, rx) = mpsc::sync_channel(1);
-            drop(rx);
-            let child = Command::new("sleep").arg("30").spawn().unwrap();
-            let pid = child.id();
-            deliver_spawn_result(&tx, Ok(child));
-            assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
+    fn stop_unclaimed_child(mut child: Child) {
+        let pid = child.id();
+        if let Err(error) = child.kill() {
+            tracing::warn!(pid, %error, "could not stop an unclaimed plugin process");
         }
-
-        #[test]
-        fn claimed_spawn_keeps_the_child_owned_by_the_receiver() {
-            let (tx, rx) = mpsc::sync_channel(1);
-            let child = Command::new("sleep").arg("30").spawn().unwrap();
-            deliver_spawn_result(&tx, Ok(child));
-            let mut child = rx.recv().unwrap().unwrap();
-            let state = child.try_wait().unwrap();
-            child.kill().unwrap();
-            child.wait().unwrap();
-            assert!(state.is_none());
-        }
-
-        #[test]
-        fn spawn_error_is_delivered_or_dropped_without_a_child() {
-            let (tx, rx) = mpsc::sync_channel(1);
-            deliver_spawn_result(&tx, Err(io::Error::other("spawn failed")));
-            assert_eq!(rx.recv().unwrap().unwrap_err().to_string(), "spawn failed");
-            drop(rx);
-            deliver_spawn_result(&tx, Err(io::Error::other("spawn failed")));
+        if let Err(error) = child.wait() {
+            tracing::warn!(pid, %error, "could not reap an unclaimed plugin process");
         }
     }
 
@@ -208,6 +177,41 @@ mod imp {
             }
         }
         Ok(())
+    }
+    #[cfg(test)]
+    mod delivery_tests {
+        use super::*;
+
+        #[test]
+        fn abandoned_spawn_is_killed_and_reaped() {
+            let (tx, rx) = mpsc::sync_channel(1);
+            drop(rx);
+            let child = Command::new("sleep").arg("30").spawn().unwrap();
+            let pid = child.id();
+            deliver_spawn_result(&tx, Ok(child));
+            assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
+        }
+
+        #[test]
+        fn claimed_spawn_keeps_the_child_owned_by_the_receiver() {
+            let (tx, rx) = mpsc::sync_channel(1);
+            let child = Command::new("sleep").arg("30").spawn().unwrap();
+            deliver_spawn_result(&tx, Ok(child));
+            let mut child = rx.recv().unwrap().unwrap();
+            let state = child.try_wait().unwrap();
+            child.kill().unwrap();
+            child.wait().unwrap();
+            assert!(state.is_none());
+        }
+
+        #[test]
+        fn spawn_error_is_delivered_or_dropped_without_a_child() {
+            let (tx, rx) = mpsc::sync_channel(1);
+            deliver_spawn_result(&tx, Err(io::Error::other("spawn failed")));
+            assert_eq!(rx.recv().unwrap().unwrap_err().to_string(), "spawn failed");
+            drop(rx);
+            deliver_spawn_result(&tx, Err(io::Error::other("spawn failed")));
+        }
     }
 }
 

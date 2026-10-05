@@ -369,21 +369,41 @@ fn handle_command(out: &mut io::Stdout, cmd: &str, args: &str) -> io::Result<()>
         // ── Termination ── (process exits unconditionally — no caller left
         // to propagate an error to, so these writes are best-effort.)
         "quit" | "exit" => {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "Exit and terminal restoration tolerate a peer that has already closed."
+            )]
             let _ = write!(out, "BYE\r\n"); // 직후 exit — 전달할 호출자가 없다.
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "Exit and terminal restoration tolerate a peer that has already closed."
+            )]
             let _ = out.flush(); // 위와 같음.
             std::process::exit(0);
         }
         "exit-code" => {
             // exit-code <N>
             let code = args.parse::<i32>().unwrap_or(1);
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "Exit and terminal restoration tolerate a peer that has already closed."
+            )]
             let _ = out.flush(); // 직후 exit — 전달할 호출자가 없다.
             std::process::exit(code);
         }
         "crash" => {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "Exit and terminal restoration tolerate a peer that has already closed."
+            )]
             let _ = out.flush(); // 직후 abort — 전달할 호출자가 없다.
             std::process::abort();
         }
         "panic" => {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "Exit and terminal restoration tolerate a peer that has already closed."
+            )]
             let _ = out.flush(); // 직후 panic — 전달할 호출자가 없다.
             panic!("tasty-tui-sim: panic requested");
         }
@@ -530,7 +550,15 @@ fn flood_mode(rate_ms: u64, cols: u16, rows: u16, frames: u64, inline: bool) {
 
     // Best-effort restore: surface may already be gone (BrokenPipe), so ignore errors.
     if !inline {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "Exit and terminal restoration tolerate a peer that has already closed."
+        )]
         let _ = out.write_all(b"\x1b[?1049l\x1b[?25h"); // 정리: 복원 실패해도 무시
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "Exit and terminal restoration tolerate a peer that has already closed."
+        )]
         let _ = out.flush(); // 정리: 복원 실패해도 무시
     }
 }
@@ -648,6 +676,10 @@ fn scenario_cursor(row: u16, col: u16, marker: &str, exit: bool) {
     clear_and_setup(&mut out);
     write!(out, "\x1b[{};{}H{}", row + 1, col + 1, marker).unwrap();
     out.flush().unwrap();
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "Exit and terminal restoration tolerate a peer that has already closed."
+    )]
     let _ = finish(&mut out, "CURSOR_TEST_DONE", exit); // 마지막 문 — peer 가 이미 사라졌으면 결과 무의미(best-effort)
 }
 
@@ -659,6 +691,10 @@ fn scenario_colors(exit: bool) {
     if out.flush().is_err() {
         return;
     }
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "Exit and terminal restoration tolerate a peer that has already closed."
+    )]
     let _ = finish(&mut out, "COLORS_TEST_DONE", exit); // 마지막 문 — peer 가 이미 사라졌으면 결과 무의미(best-effort)
 }
 
@@ -670,6 +706,10 @@ fn scenario_attrs(exit: bool) {
     if out.flush().is_err() {
         return;
     }
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "Exit and terminal restoration tolerate a peer that has already closed."
+    )]
     let _ = finish(&mut out, "ATTRS_TEST_DONE", exit); // 마지막 문 — peer 가 이미 사라졌으면 결과 무의미(best-effort)
 }
 
@@ -699,6 +739,10 @@ fn scenario_unicode(exit: bool) {
     if out.flush().is_err() {
         return;
     }
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "Exit and terminal restoration tolerate a peer that has already closed."
+    )]
     let _ = finish(&mut out, "UNICODE_TEST_DONE", exit); // 마지막 문 — peer 가 이미 사라졌으면 결과 무의미(best-effort)
 }
 
@@ -710,5 +754,9 @@ fn scenario_scroll_region(exit: bool) {
     if out.flush().is_err() {
         return;
     }
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "Exit and terminal restoration tolerate a peer that has already closed."
+    )]
     let _ = finish(&mut out, "SCROLL_TEST_DONE", exit); // 마지막 문 — peer 가 이미 사라졌으면 결과 무의미(best-effort)
 }

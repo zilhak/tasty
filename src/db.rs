@@ -164,7 +164,7 @@ pub fn init() -> Result<(), DbInitError> {
     let db = Db::open(&path)?;
     tracing::info!("opened state.db at {}", path.display());
     // 동시에 초기화한 연결이 먼저 등록됐다면 그 연결을 유지한다.
-    let _ = DB.set(Mutex::new(db)); // 이미 초기화된 경우 무시 (OnceLock idempotent)
+    DB.get_or_init(|| Mutex::new(db)); // 이미 초기화된 경우 무시 (OnceLock idempotent)
     Ok(())
 }
 

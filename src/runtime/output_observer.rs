@@ -402,7 +402,11 @@ impl Drop for ObserverRouter {
     fn drop(&mut self) {
         let ids: Vec<ObserverId> = self.observers.keys().copied().collect();
         for id in ids {
-            let _ = self.unregister(id); // 종료 중 NotFound는 추가 처리하지 않는다.
+            if let Err(error) = self.unregister(id)
+                && !matches!(error, ObserverError::NotFound(_))
+            {
+                tracing::warn!(?error, "observer cleanup failed");
+            }
         }
         // 명시적 종료 절차를 거치지 않은 Drop도 남은 worker 종료를 기다린다.
         self.join_retired();

@@ -479,7 +479,9 @@ impl App {
         );
         // 사용자 닫기도 heartbeat를 멈춰 소켓이 불필요하게 유지되지 않게 한다.
         sess.transport.disconnected.store(true, Ordering::SeqCst);
-        let _ = sess.send_frame(StreamTag::Detach, Vec::new()); // 종료 중 writer가 사라졌다면 전송 실패를 무시한다.
+        if let Err(error) = sess.send_frame(StreamTag::Detach, Vec::new()) {
+            tracing::debug!(%error, "detach notice could not reach the closing writer");
+        }
         if let Some(anchor) = sess.state.anchor_ws_id {
             self.remote.active.remove(&anchor);
             self.remote.reconnect.remove(&anchor);

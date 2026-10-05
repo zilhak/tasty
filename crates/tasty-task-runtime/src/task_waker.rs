@@ -135,7 +135,10 @@ impl TaskWakerHub {
             return;
         };
         for (_, tx) in senders {
-            let _ = tx.try_send(snapshot.clone()); // 대기 시간이 끝나 수신자가 없을 수 있어 실패는 무시한다.
+            // A disconnected waiter has already timed out; only a full one-shot queue is unexpected.
+            if let Err(std::sync::mpsc::TrySendError::Full(_)) = tx.try_send(snapshot.clone()) {
+                tracing::warn!(workspace_id, %task_id, "task waiter queue was unexpectedly full");
+            }
         }
     }
 }

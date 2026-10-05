@@ -461,7 +461,7 @@ impl ApprovalStore {
                     by: by.clone(),
                     comment: comment.clone(),
                 };
-                let _ = tx.try_send(responded); // 수신측 drop 가능 — try_send 실패 무시.
+                notify_waiter(&tx, responded);
             }
         }
         Ok(StateChange {
@@ -493,7 +493,7 @@ impl ApprovalStore {
         let record = record.clone();
         if let Some(waiters) = g.waiters.remove(id) {
             for tx in waiters {
-                let _ = tx.try_send(WaitResult::Cancelled); // 수신측이 이미 drop 됐을 수 있음 — 무시
+                notify_waiter(&tx, WaitResult::Cancelled);
             }
         }
         Ok(StateChange {
@@ -599,7 +599,7 @@ impl ApprovalStore {
                         let timed_out = WaitResult::TimedOut {
                             default_choice: default_choice.clone(),
                         };
-                        let _ = tx.try_send(timed_out); // 수신측 drop 가능 — try_send 실패 무시.
+                        notify_waiter(&tx, timed_out);
                     }
                 }
                 WaitResult::TimedOut { default_choice }
@@ -658,3 +658,10 @@ fn now_ms() -> u64 {
 #[cfg(test)]
 #[path = "lib_tests.rs"]
 mod tests;
+
+// Disconnected waiters have timed out; a full one-shot queue means a duplicate notification.
+fn notify_waiter(tx: &SyncSender<WaitResult>, result: WaitResult) {
+    if let Err(std::sync::mpsc::TrySendError::Full(_)) = tx.try_send(result) {
+        tracing::warn!("approval waiter queue was unexpectedly full");
+    }
+}

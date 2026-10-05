@@ -526,6 +526,18 @@ pub fn run_attach_workspace_ssh(
 /// 손실 통지를 받으면 `resync_allowed` 일 때 수집을 멈추고 옛 연결을 놓아
 /// [`SessionEnd::Desynced`] 를 돌려준다(화면은 찍지 않는다 — 다시 붙어 새로 받는다).
 /// 아니면 수집을 이어가고, 끝에 stderr 로 공백이 있다고 알린다.
+fn send_detach_notice(writer: &mut TcpStream) {
+    if let Err(error) = stream::write_frame(writer, StreamTag::Detach, &[]) {
+        tracing::debug!(%error, "detach notice could not reach the closing server");
+    }
+}
+
+fn join_attach_reader(reader: thread::JoinHandle<()>) {
+    if reader.join().is_err() {
+        tracing::warn!("attach reader thread panicked during cleanup");
+    }
+}
+
 fn run_workspace_mirror_dump(
     mut conn: StreamConnection,
     mut mirrors: Vec<(u32, Terminal)>,
@@ -630,11 +642,11 @@ fn run_workspace_mirror_dump(
     }
 
     if !forced && !disconnected {
-        let _ = stream::write_frame(&mut writer, StreamTag::Detach, &[]); // best-effort detach 통지 — 무시
+        send_detach_notice(&mut writer);
     } else if forced {
         crate::out::errln!("{}", tasty_i18n::t("cli.attach.force_detached"));
     }
-    let _ = reader.join(); // reader 스레드 join 실패(패닉) 무시 — 종료 경로
+    join_attach_reader(reader);
     report_unrecovered_loss(lost);
     Ok(SessionEnd::Exit(if disconnected {
         AttachExit::Disconnected
@@ -732,11 +744,11 @@ fn run_mirror_dump(
 
     // 정상 종료 시 detach 통지(force-detach/단절이면 서버가 이미 끊음).
     if !forced && !disconnected {
-        let _ = stream::write_frame(&mut writer, StreamTag::Detach, &[]); // best-effort detach 통지 — 무시
+        send_detach_notice(&mut writer);
     } else if forced {
         crate::out::errln!("{}", tasty_i18n::t("cli.attach.force_detached"));
     }
-    let _ = reader.join(); // reader 스레드 join 실패(패닉) 무시 — 종료 경로
+    join_attach_reader(reader);
     report_unrecovered_loss(lost);
     Ok(SessionEnd::Exit(if disconnected {
         AttachExit::Disconnected
@@ -855,6 +867,10 @@ fn route_stdin_chunk(slot: &StdinSlot, data: &[u8]) {
     // 사망해 이후 모든 재연결 세션이 stdin 을 못 받는다.
     let sender = lock_stdin_slot(slot).clone();
     if let Some(tx) = sender {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "The receiving session or event loop may have already ended."
+        )]
         let _ = tx.send(RawEvent::Stdin(data.to_vec())); // 세션 전환 중 송신 실패는 버림 — 위 불변식 참고
     }
 }
@@ -881,6 +897,10 @@ fn install_sender(slot: &StdinSlot, eof_latch: &StdinEofLatch, tx: mpsc::Sender<
     // 루프조차 못 돌고 `tasty attach --raw --ssh` 프로세스 자체가 종료된다.
     *lock_stdin_slot(slot) = Some(tx.clone());
     if eof_latch.swap(false, Ordering::AcqRel) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "The receiving session or event loop may have already ended."
+        )]
         let _ = tx.send(RawEvent::StdinEof); // best-effort — 세션이 이미 끝났으면 무시.
     }
 }
@@ -957,6 +977,10 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<SessionE
                         }
                     }
                     Err(_) => {
+                        #[expect(
+                            clippy::let_underscore_must_use,
+                            reason = "The receiving session or event loop may have already ended."
+                        )]
                         // 채널 receiver 가 이미 drop 된 정상 종료 케이스(메인 루프가
                         // stdin EOF/detach 등 다른 사유로 먼저 return) — 송신 실패 무시.
                         let _ = tx.send(RawEvent::ServerRecvErr);
@@ -991,14 +1015,21 @@ fn raw_bridge_main_loop(
                     if pos > 0 {
                         match writer.lock() {
                             Ok(mut w) => {
-                                let _ = stream::write_frame(&mut *w, StreamTag::Data, &data[..pos]); // 종료 경로 best-effort 송신 — 무시
+                                if let Err(error) =
+                                    stream::write_frame(&mut *w, StreamTag::Data, &data[..pos])
+                                {
+                                    tracing::warn!(%error, "input could not be flushed before detach");
+                                }
                             }
                             Err(_) => note_writer_poisoned("flushing input before detach"),
                         }
                     }
                     match writer.lock() {
                         Ok(mut w) => {
-                            let _ = stream::write_frame(&mut *w, StreamTag::Detach, &[]); // best-effort detach 통지 — 무시
+                            if let Err(error) = stream::write_frame(&mut *w, StreamTag::Detach, &[])
+                            {
+                                tracing::debug!(%error, "detach notice could not reach the closing server");
+                            }
                         }
                         Err(_) => note_writer_poisoned("sending the detach notice"),
                     }
@@ -1018,8 +1049,12 @@ fn raw_bridge_main_loop(
             Ok(RawEvent::StdinEof) => return done(Completed),
             Ok(RawEvent::Server(frame)) => match frame.tag {
                 StreamTag::Data => {
-                    let _ = out.write_all(&frame.payload); // best-effort 미러 — 무시
-                    let _ = out.flush(); // best-effort flush — 무시
+                    if let Err(error) = out.write_all(&frame.payload).and_then(|()| out.flush()) {
+                        if error.kind() == std::io::ErrorKind::BrokenPipe {
+                            return done(Completed);
+                        }
+                        return Err(error.into());
+                    }
                 }
                 StreamTag::Detach => return done(Completed),
                 StreamTag::Control => match classify_control(&frame.payload) {
@@ -1200,6 +1235,63 @@ mod raw_bridge_tests {
             }
         });
         Arc::new(Mutex::new(client))
+    }
+
+    struct FailedOutput {
+        kind: std::io::ErrorKind,
+        fail_flush: bool,
+    }
+
+    impl std::io::Write for FailedOutput {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if self.fail_flush {
+                Ok(bytes.len())
+            } else {
+                Err(std::io::Error::from(self.kind))
+            }
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::from(self.kind))
+        }
+    }
+
+    #[test]
+    fn closed_stdout_finishes_attach_but_other_output_errors_are_returned() {
+        for fail_flush in [false, true] {
+            for kind in [
+                std::io::ErrorKind::BrokenPipe,
+                std::io::ErrorKind::PermissionDenied,
+            ] {
+                let (tx, rx) = mpsc::channel();
+                tx.send(RawEvent::Server(StreamFrame::new(
+                    StreamTag::Data,
+                    b"hello".to_vec(),
+                )))
+                .unwrap();
+                drop(tx);
+                let result = raw_bridge_main_loop(
+                    rx,
+                    dummy_writer(),
+                    &mut FailedOutput { kind, fail_flush },
+                );
+                if kind == std::io::ErrorKind::BrokenPipe {
+                    assert!(matches!(
+                        result.unwrap(),
+                        SessionEnd::Exit(AttachExit::Completed)
+                    ));
+                } else {
+                    assert_eq!(
+                        result
+                            .err()
+                            .expect("non-BrokenPipe errors must be returned")
+                            .downcast_ref::<std::io::Error>()
+                            .unwrap()
+                            .kind(),
+                        kind
+                    );
+                }
+            }
+        }
     }
 
     #[test]

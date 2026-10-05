@@ -63,7 +63,9 @@ impl NotificationSoundPlayer for LinuxBeepPlayer {
                 .map(|_| ()),
             Strategy::TtyBell => {
                 use std::io::Write;
-                let _ = std::io::stderr().write_all(b"\x07"); // 사운드 부재 = stderr 실패와 동등, notification 발화는 막지 않음.
+                if let Err(error) = std::io::stderr().write_all(b"\x07") {
+                    tracing::debug!(%error, "TTY bell write failed");
+                }
                 Ok(())
             }
         };

@@ -367,13 +367,25 @@ impl<'a> SessionStore<'a> {
             }
             alive.push(session);
         }
+        self.persist_list_cleanup(to_evict, to_resave);
+        Ok(alive)
+    }
+
+    fn persist_list_cleanup(
+        &mut self,
+        to_evict: Vec<String>,
+        to_resave: Vec<(SessionToken, AgentSession)>,
+    ) {
         for key in to_evict {
-            let _ = self.mem.delete(&self.owner, &Scope::Global, &key, None); // best-effort 만료 키 제거 — 실패 무시
+            if let Err(error) = self.mem.delete(&self.owner, &Scope::Global, &key, None) {
+                tracing::warn!(%error, "failed to evict an expired agent session");
+            }
         }
         for (t, s) in to_resave {
-            let _ = self.put(&t, &s); // best-effort 재저장 — 실패 무시
+            if let Err(error) = self.put(&t, &s) {
+                tracing::warn!(%error, "failed to persist expired grant removal");
+            }
         }
-        Ok(alive)
     }
 }
 

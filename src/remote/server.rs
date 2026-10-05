@@ -834,7 +834,16 @@ impl crate::runtime::engine_access::EngineMut<'_> {
         }
 
         if !self.runtime.terminals.contains(surface_id) {
-            let _ = self.live.occupancy.release(surface_id, client_id); // already released has no additional work.
+            if let Err(error) = self.live.occupancy.release(surface_id, client_id)
+                && !matches!(error, AttachError::NotAttached)
+            {
+                tracing::warn!(
+                    ?error,
+                    surface_id,
+                    client_id,
+                    "could not release a failed attach"
+                );
+            }
             reject_attach(hub, client_id, "spawn_failed", None);
             return;
         }

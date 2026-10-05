@@ -23,8 +23,12 @@ pub fn path_for(dir: &Path, prefix: &str, surface_id: u32) -> PathBuf {
 /// 이전 파일을 지우고 내용을 쓴다. Unix에서는 새 파일에 0600 모드를 지정한다.
 /// mode는 기존 파일을 열 때 권한을 바꾸지 않으므로 먼저 삭제를 시도한다.
 pub fn write(path: &Path, content: &str) -> std::io::Result<()> {
-    // 의도적 무시: 파일이 없는 경우도 정상이며, 이어지는 열기·쓰기가 성공 여부를 반환한다.
-    let _ = std::fs::remove_file(path);
+    // Opening and writing below remain authoritative, including when the old file cannot be removed.
+    if let Err(error) = std::fs::remove_file(path)
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::debug!(%error, "could not remove the previous prompt file before writing");
+    }
     #[cfg(unix)]
     {
         use std::io::Write;

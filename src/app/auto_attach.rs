@@ -267,7 +267,15 @@ impl App {
                 result,
                 is_reconnect,
             };
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "The receiving session or event loop may have already ended."
+            )]
             let _ = tx.send(outcome); // 수신자가 종료되면 결과를 전달할 수 없다.
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "The receiving session or event loop may have already ended."
+            )]
             let _ = proxy.send_event(crate::app::event::AppEvent::AutoAttachReady); // 이벤트 루프 종료 시 깨움 실패를 무시한다.
         })
     }

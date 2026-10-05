@@ -142,6 +142,10 @@ fn record_at(
         .append(true)
         .open(path)
     {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "Best-effort diagnostics or cleanup must not replace the original failure."
+        )]
         let _ = f.write_all(format_line(method, params, code, reason).as_bytes()); // best-effort
     }
 }
@@ -153,6 +157,10 @@ fn rotate_if_needed(path: &std::path::Path) {
         .map(|m| m.len() >= MAX_BYTES)
         .unwrap_or(false);
     if too_big {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "Best-effort diagnostics or cleanup must not replace the original failure."
+        )]
         let _ = std::fs::rename(path, path.with_extension("log.1")); // best-effort
     }
 }

@@ -187,7 +187,15 @@ fn send_attach_outcome(
         result,
         is_reconnect: false,
     };
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "The receiving session or event loop may have already ended."
+    )]
     let _ = tx.send(outcome); // 수신자(메인 루프) drop 시에만 실패 — 무시.
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "The receiving session or event loop may have already ended."
+    )]
     let _ = proxy.send_event(AppEvent::AutoAttachReady); // event loop 종료 시에만 실패 — 무시
 }
 

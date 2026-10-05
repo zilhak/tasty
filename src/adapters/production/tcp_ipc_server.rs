@@ -584,7 +584,9 @@ impl TcpIpcServer {
         peer: Option<std::net::SocketAddr>,
     ) {
         ctx.hub.unregister(client_id); // drops the sink sender → write thread exits
-        let _ = write_handle.join(); // writer 스레드 join 실패(패닉) 무시 — 종료 경로
+        if write_handle.join().is_err() {
+            tracing::warn!("IPC writer thread panicked during connection cleanup");
+        }
         // 메인 루프가 남아 있으면 이 연결의 점유를 해제한다. 이미 종료됐으면 통지 실패를 무시한다.
         if ctx
             .inbound_tx

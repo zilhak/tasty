@@ -560,10 +560,10 @@ fn lock_slot(m: &Mutex<Option<Child>>) -> std::sync::MutexGuard<'_, Option<Child
 /// ([`SshTunnel::drop`] 과 같은 패턴 — kill 은 이미 종료된 자식에서 실패할 수 있다).
 fn kill_and_reap(child: &mut Child) {
     if let Err(e) = child.kill() {
-        tracing::debug!("타임아웃 ssh kill 실패(이미 종료됐을 수 있음): {e}");
+        tracing::debug!("ssh child kill failed (the child may already have exited): {e}");
     }
     if let Err(e) = child.wait() {
-        tracing::debug!("타임아웃 ssh reaping 실패: {e}");
+        tracing::debug!("ssh child reaping failed: {e}");
     }
 }
 
@@ -1191,8 +1191,7 @@ impl Drop for SshTunnel {
         use std::sync::atomic::Ordering;
 
         let t_drop = Instant::now();
-        let _ = self.child.kill(); // best-effort 자식 종료 — 이미 종료됐을 수 있음, 무시
-        let _ = self.child.wait(); // 좀비 방지 reaping — 실패 무시
+        kill_and_reap(&mut self.child);
         TUNNEL_DROP_NANOS.fetch_add(
             u64::try_from(t_drop.elapsed().as_nanos()).unwrap_or(u64::MAX),
             Ordering::Relaxed,

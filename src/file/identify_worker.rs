@@ -56,6 +56,10 @@ impl IdentifyWorker {
                 dispatch_origin,
                 ignore_size_limit,
             };
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "The receiving session or event loop may have already ended."
+            )]
             let _ = proxy.send_event(done); // event loop 종료 시에만 실패 — 무시.
         });
         id

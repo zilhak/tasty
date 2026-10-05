@@ -49,6 +49,10 @@ impl Scratch {
 
 impl Drop for Scratch {
     fn drop(&mut self) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "Best-effort diagnostics or cleanup must not replace the original failure."
+        )]
         // 정리 오류가 원래 시험 실패를 가리거나 패닉 되감기 중 abort를 일으키지 않게 한다.
         let _ = std::fs::remove_dir_all(&self.path);
     }

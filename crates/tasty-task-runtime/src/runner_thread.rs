@@ -67,6 +67,10 @@ struct RunnerControl {
 impl RunnerControl {
     fn request_stop(&self) {
         if !self.stopping.swap(true, Ordering::AcqRel) {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "The receiving session or event loop may have already ended."
+            )]
             let _ = self.stop_tx.send(()); // A finished receiver already needs no stop signal.
         }
     }
@@ -544,7 +548,9 @@ fn evict_stale_handles(ctx: &RunnerContext, scope: &Scope, stale: &[TaskId]) {
     }
     ctx.with_memory(|mem| {
         for tid in stale {
-            let _ = mem.delete(HOST_OWNER, scope, &handle_key(tid), None); // 삭제 실패는 무시하며 다음 reload에서 다시 시도할 수 있다.
+            mem.delete(HOST_OWNER, scope, &handle_key(tid), None).unwrap_or_else(|error| {
+                tracing::warn!(%error, "failed to evict a stale task handle; reload will retry");
+            });
         }
     });
 }
@@ -591,7 +597,10 @@ fn mark_dead_tasks(
             }
         }
         for (task_id, _) in dead {
-            let _ = mem.delete(HOST_OWNER, scope, &handle_key(task_id), None); // 삭제 실패는 무시하며 handle이 남으면 다음 reload가 다시 분류한다.
+            mem.delete(HOST_OWNER, scope, &handle_key(task_id), None)
+                .unwrap_or_else(|error| {
+                    tracing::warn!(%error, "failed to evict a dead task handle; reload will retry");
+                });
         }
         transitioned
     });

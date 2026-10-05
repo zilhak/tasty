@@ -83,7 +83,7 @@ pub(crate) fn init() {
                     locale.code
                 );
                 // 첫 사유만 보관한다. 이미 값이 있으면 새 사유는 버린다.
-                let _ = FONT_WARNING.set(detail);
+                FONT_WARNING.get_or_init(|| detail);
             }
             crate::boot::locale_font::FontResolution::None => {}
         }

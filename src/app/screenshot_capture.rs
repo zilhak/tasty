@@ -91,6 +91,10 @@ impl App {
         let proxy = self.view.proxy.clone();
         if let Err(error) = self.screenshot_workers.spawn(move || {
             let result = capture_and_maybe_read(mirror_ws_id.is_some());
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "The receiving session or event loop may have already ended."
+            )]
             // 수신자가 사라지면 캡처 결과를 전달할 곳이 없어 오류를 무시한다.
             let _ = tx.send(ScreenshotCaptureOutcome {
                 engine,
@@ -100,6 +104,10 @@ impl App {
                 source_window,
                 result,
             });
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "The receiving session or event loop may have already ended."
+            )]
             // 이벤트 루프가 끝났으면 깨우기 실패를 무시한다.
             let _ = proxy.send_event(crate::AppEvent::ScreenshotCaptureReady);
         }) {

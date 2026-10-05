@@ -120,7 +120,11 @@ impl RecentPicks {
         match std::fs::rename(&tmp, path) {
             Ok(()) => Ok(()),
             Err(e) => {
-                let _ = std::fs::remove_file(&tmp); // best-effort 임시파일 정리 — 실패 무시
+                if let Err(cleanup_error) = std::fs::remove_file(&tmp)
+                    && cleanup_error.kind() != std::io::ErrorKind::NotFound
+                {
+                    tracing::debug!(%cleanup_error, "temporary file cleanup failed after a write failure");
+                }
                 Err(e)
             }
         }
