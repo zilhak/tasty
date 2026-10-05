@@ -413,3 +413,89 @@ fn forward_to_plugin_namespace(
     });
     true
 }
+
+/// IPC 명령 하나가 namespace 소유 메서드로 오면 헤드리스 dispatch 전체(공용 검사·journal·
+/// App 층 포함)에서 플러그인 전달이 정확히 한 번이고, 그 대기 항목이 명령의 요청 번호를
+/// 드는지 stub 플러그인으로 잰다. 파일 밖 헬퍼를 거친 추가 전달도 stub 이 받은 요청 수로 드러난다.
+#[cfg(test)]
+mod namespace_forward_tests {
+    use std::sync::{Arc, mpsc};
+
+    use serde_json::json;
+
+    use super::dispatch_command;
+    use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
+    use crate::ipc::server::IpcCommand;
+    use crate::plugin::PluginManager;
+
+    const OWNER: &str = "com.test.headless-namespace-forward";
+
+    fn command(method: &str, key: Option<&str>) -> (IpcCommand, mpsc::Receiver<JsonRpcResponse>) {
+        let (tx, rx) = mpsc::sync_channel(4);
+        let request = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: method.into(),
+            params: json!({}),
+            id: Some(json!(1)),
+            session_token: None,
+            response_timeout_ms: None,
+            idempotency_key: key.map(str::to_string),
+        };
+        (IpcCommand::new(request, tx), rx)
+    }
+
+    fn forwards_once_with_its_seq(prefix: &str, method: &str, key: Option<&str>) {
+        let _home = crate::test_support::IsolatedHome::new();
+        let (events_tx, _events) = mpsc::channel();
+        let waker = crate::adapters::production::headless_waker::HeadlessWaker::new(events_tx);
+        let mut app =
+            crate::app::App::new_headless(waker.journal_waker(), None, None).expect("headless app");
+        let mut session =
+            crate::runtime::engine_session::EngineSession::new(80, 24, Arc::new(|| {}))
+                .expect("engine");
+        let mut state = crate::state::RequestContext::new(
+            &session.as_ref().read(),
+            app.services.preset_store.clone(),
+        );
+        let mut mgr = PluginManager::with_registries(
+            Arc::new(tasty_terminal::waker_factory::NoopWakerFactory),
+            Arc::new(crate::file::format::FileFormatRegistry::new()),
+            Arc::new(crate::file::handler::FileHandlerRegistry::new()),
+        );
+        let stub = mgr.attach_namespace_stub_for_test(OWNER, prefix);
+        app.plugin_manager = Some(mgr);
+
+        let (cmd, rx) = command(method, key);
+        let seq = cmd.request_seq();
+        let flow = dispatch_command(&mut app, &mut state, &mut session, cmd);
+        assert!(flow.is_continue());
+        let sent = stub.drain_invokes();
+        assert_eq!(
+            sent.iter().map(|(_, m)| m.as_str()).collect::<Vec<_>>(),
+            [method],
+            "명령 하나에 플러그인 전달이 정확히 한 번이어야 한다. 이미 온 답: {:?}",
+            rx.try_recv().ok()
+        );
+        let mgr = app.plugin_manager.as_ref().expect("manager");
+        assert_eq!(
+            mgr.pending_origins_for_test(OWNER),
+            [(sent[0].0, Some(seq))],
+            "전달의 대기 항목이 명령의 요청 번호를 들어야 한다"
+        );
+    }
+
+    #[test]
+    fn a_plugin_method_is_forwarded_once_with_the_commands_request_seq() {
+        forwards_once_with_its_seq("hdlfwdns", "hdlfwdns.run", None);
+    }
+
+    /// 키가 있는 계약 안 메서드는 보존소의 relay 안에서 같은 전달을 부른다.
+    #[test]
+    fn a_keyed_table_method_is_forwarded_once_with_the_commands_request_seq() {
+        forwards_once_with_its_seq(
+            "image",
+            "image.open",
+            Some("headless-namespace-forward-once"),
+        );
+    }
+}
