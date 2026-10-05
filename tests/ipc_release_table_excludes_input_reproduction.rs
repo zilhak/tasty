@@ -9,8 +9,9 @@
 #![cfg(debug_assertions)]
 
 use tasty_doc_guards::cfg_predicate as cfg_span;
-use tasty_doc_guards::match_arms::Source;
+use tasty_doc_guards::match_arms::{Source, matching_close};
 
+use std::ops::Range;
 use std::path::Path;
 
 use tasty_ipc::method_meta::METHOD_TABLE;
@@ -179,58 +180,163 @@ const RELEASE_ROUTERS: &[(&str, &str, usize)] = &[
     ),
 ];
 
-/// 주석·리터럴을 가린 소스로 함수 경계를 찾고 동일 이름의 정의를 모두 읽는다.
-/// 서로 다른 정의의 cfg 범위가 섞이지 않도록 본문을 따로 반환한다.
-fn fn_body_lines(src: &str, sig: &str) -> Vec<Vec<String>> {
+/// 함수의 정의마다 메서드 후보를 읽는다. 같은 이름의 정의가 여럿이면(cfg 로 갈린 정의) 모두 읽는다.
+fn router_candidates(text: &str, sig: &str) -> Vec<Scanned> {
     let name = sig
         .split_once("fn ")
         .and_then(|(_, rest)| rest.strip_suffix('('))
         .unwrap_or_else(|| panic!("시그니처가 `… fn <이름>(` 모양이 아니다: {sig}"));
-    let source = Source::new(src);
+    let source = Source::new(text);
     let bodies = source.fn_bodies(name);
     assert!(!bodies.is_empty(), "함수 시그니처를 찾지 못했다: {sig}");
-    bodies
-        .iter()
-        .map(|body| {
-            let mut lines: Vec<String> = source.slice(body).lines().map(str::to_owned).collect();
-            join_wrapped_arms(&mut lines);
-            lines
-        })
-        .collect()
+    let mut out = Vec::new();
+    for body in bodies {
+        match scan_body(&source, body.clone()) {
+            Ok(found) => out.extend(found),
+            Err(e) => panic!(
+                "{sig}({}행 정의)의 match 팔을 읽지 못했다 — {e}. 라우터를 판정기가 읽을 수 있는 \
+                 모양으로 두어라. 못 읽는 팔은 release 표와 대조할 수 없다",
+                source.line_of(body.start)
+            ),
+        }
+    }
+    out
 }
 
-/// 여러 줄의 match 패턴·화살표·guard를 합쳐 한 줄 판독에 맞춘다.
-/// guard는 앞줄이 닫는 따옴표로 끝날 때만 합친다. 병합한 줄은 비워 원래 줄 번호와 cfg 대응을 유지한다.
-fn join_wrapped_arms(lines: &mut [String]) {
-    for i in (0..lines.len()).rev() {
-        let t = lines[i].trim_start();
-        let guard = starts_with_guard(t);
-        if !(t.starts_with("=>") || t.starts_with('|') || guard) {
-            continue;
-        }
-        let Some(prev) = (0..i).rev().find(|&j| !lines[j].trim().is_empty()) else {
-            continue;
-        };
-        if lines[prev].trim_start().starts_with("//") {
-            continue;
-        }
-        if guard && !lines[prev].trim_end().ends_with('"') {
-            continue;
-        }
-        let merged = format!("{} {}", lines[prev].trim_end(), t);
-        lines[prev] = merged;
-        lines[i] = String::new();
-    }
-}
-struct Arm<'a> {
-    name: &'a str,
+struct Scanned {
+    name: String,
     /// 메서드 하나가 아닌 접두사 비교로 추출한 항목이다.
+    is_prefix: bool,
+    gated: bool,
+}
+
+/// 본문의 모든 `match` 블록(중첩 포함)의 시작 `{` 위치.
+fn match_blocks(source: &Source, body: &Range<usize>) -> Vec<usize> {
+    let code = source.code.as_str();
+    let is_word = |c: char| c.is_alphanumeric() || c == '_';
+    let mut out = Vec::new();
+    let mut from = body.start;
+    while let Some(rel) = code[from..body.end].find("match") {
+        let at = from + rel;
+        from = at + "match".len();
+        if code[..at].chars().next_back().is_some_and(is_word)
+            || !code[from..].starts_with(char::is_whitespace)
+        {
+            continue;
+        }
+        // 조사 대상 식 안의 괄호는 건너뛰고 깊이 0 의 첫 `{` 를 블록 시작으로 본다.
+        let mut depth = 0usize;
+        for (k, b) in code.as_bytes()[from..body.end].iter().enumerate() {
+            match b {
+                b'(' | b'[' => depth += 1,
+                b')' | b']' => depth = depth.saturating_sub(1),
+                b'{' if depth == 0 => {
+                    out.push(from + k);
+                    break;
+                }
+                _ => {}
+            }
+        }
+    }
+    out
+}
+
+/// 팔 앞 속성 중 debug_assertions 를 함의하는 `#[cfg(…)]` 가 있는가.
+fn attrs_imply_debug(attrs: &str) -> bool {
+    attrs.split("#[").skip(1).any(|a| {
+        a.trim_start()
+            .strip_prefix("cfg(")
+            .and_then(|r| r.trim_end().strip_suffix(")]"))
+            .is_some_and(|pred| cfg_span::implies(pred, "debug_assertions"))
+    })
+}
+
+/// 본문 하나에서 메서드 후보를 읽는다.
+///
+/// match 팔은 공용 판정기(`Source::match_arms`)로 떼어 팔마다 읽는다. debug 게이트도 팔 단위로
+/// 본다 — 팔 머리 앞 속성, 그 팔을 감싼 팔의 속성, 그리고 match 를 감싼 블록·문장의 cfg.
+/// 마지막 것은 팔 속성을 지운 사본에서 줄 단위로 계산한다. 팔 속성을 남겨 두면 한 줄에 놓인
+/// 다음 팔까지 같은 줄이라 게이트로 칠해진다.
+///
+/// `==`·`starts_with`·`strip_prefix` 비교는 match 팔이 아니라 판정기 밖이다. 이 형태는 줄 단위로
+/// 읽고 게이트도 줄 단위다 — `#[cfg]` 문장은 그 줄 전체가 같은 문장이라 팔과 같은 사각이 없다.
+/// 한 줄에 cfg 문장과 다른 비교 문장을 함께 두면 둘째가 게이트로 칠해지지만 rustfmt 는 문장을
+/// 한 줄에 하나로 편다. 이 한계는 `known_limit_a_cfg_statement_gates_its_whole_line` 이 고정한다.
+fn scan_body(source: &Source, body: Range<usize>) -> Result<Vec<Scanned>, String> {
+    let mut arms = Vec::new();
+    for open in match_blocks(source, &body) {
+        let close = matching_close(&source.code, open)
+            .filter(|c| *c < body.end)
+            .ok_or_else(|| format!("{}행: match 블록이 닫히지 않는다", source.line_of(open)))?;
+        arms.extend(source.match_arms(open..close + 1)?);
+    }
+
+    // 팔 속성을 지운 본문 — 남은 cfg 는 블록·문장 단위다.
+    let mut bytes = source.slice(&body).as_bytes().to_vec();
+    for arm in &arms {
+        for b in &mut bytes[arm.attrs.start - body.start..arm.attrs.end - body.start] {
+            if *b != b'\n' {
+                *b = b' ';
+            }
+        }
+    }
+    let blanked = String::from_utf8(bytes).map_err(|e| format!("팔 속성 지우기: {e}"))?;
+    let lines: Vec<String> = blanked.lines().map(str::to_owned).collect();
+    let line_gate = debug_gated_lines(&lines);
+    let gated_line =
+        |i: usize| line_gate.get(i).copied().unwrap_or(false) || is_debug_gated(&lines, i);
+    let line_index = |pos: usize| source.text[body.start..pos].matches('\n').count();
+
+    let gated_spans: Vec<Range<usize>> = arms
+        .iter()
+        .filter(|a| attrs_imply_debug(source.slice(&a.attrs)))
+        .map(|a| a.attrs.start..a.body.end)
+        .collect();
+
+    let mut out = Vec::new();
+    for arm in &arms {
+        for alt in source.alternatives(&arm.pattern) {
+            let Some(name) = source.plain_string(&alt).filter(|n| method_shaped(n)) else {
+                continue;
+            };
+            out.push(Scanned {
+                name: name.to_string(),
+                is_prefix: false,
+                gated: gated_spans.iter().any(|s| s.contains(&alt.start))
+                    || gated_line(line_index(alt.start)),
+            });
+        }
+    }
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim_start().starts_with("//") {
+            continue;
+        }
+        for c in comparison_methods(line) {
+            out.push(Scanned {
+                name: c.name.to_string(),
+                is_prefix: c.is_prefix,
+                gated: gated_line(i),
+            });
+        }
+    }
+    Ok(out)
+}
+
+fn method_shaped(name: &str) -> bool {
+    name.contains('.')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '.')
+}
+
+struct Comparison<'a> {
+    name: &'a str,
     is_prefix: bool,
 }
 
-/// match 패턴, == 비교, starts_with·strip_prefix의 문자열을 메서드 후보로 읽는다.
+/// == 비교와 starts_with·strip_prefix 의 문자열을 메서드 후보로 읽는다. match 팔은 읽지 않는다.
 /// 수신자 타입이나 실제 라우팅 동작까지 분석하지는 않는다.
-fn dispatch_methods(line: &str) -> Vec<Arm<'_>> {
+fn comparison_methods(line: &str) -> Vec<Comparison<'_>> {
     let mut out = Vec::new();
     let mut from = 0;
     while let Some(rel) = line[from..].find('"') {
@@ -240,45 +346,15 @@ fn dispatch_methods(line: &str) -> Vec<Arm<'_>> {
         };
         let close = open + 1 + close_rel;
         let name = &line[open + 1..close];
-        let after = line[close + 1..].trim_start();
         let before = line[..open].trim_end();
-        // 대안 패턴과 guard 때문에 문자열 바로 뒤에 =>가 없어도 match 패턴일 수 있다.
-        let is_arm = after.starts_with("=>")
-            || starts_with_guard(after)
-            || (after.starts_with('|')
-                && (after.contains("=>") || alternation_ends_in_guard(after)));
         let is_eq = before.ends_with("==");
         let is_prefix = before.ends_with("starts_with(") || before.ends_with("strip_prefix(");
-        let shaped = name.contains('.')
-            && !name.is_empty()
-            && name
-                .chars()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '.');
-        if shaped && (is_arm || is_eq || is_prefix) {
-            out.push(Arm { name, is_prefix });
+        if method_shaped(name) && (is_eq || is_prefix) {
+            out.push(Comparison { name, is_prefix });
         }
         from = close + 1;
     }
     out
-}
-
-fn starts_with_guard(t: &str) -> bool {
-    t.strip_prefix("if")
-        .is_some_and(|r| r.starts_with(|c: char| c.is_whitespace() || c == '('))
-}
-
-fn alternation_ends_in_guard(mut rest: &str) -> bool {
-    while let Some(r) = rest.strip_prefix('|') {
-        let r = r.trim_start();
-        let Some(r) = r.strip_prefix('"') else {
-            return false;
-        };
-        let Some(close) = r.find('"') else {
-            return false;
-        };
-        rest = r[close + 1..].trim_start();
-    }
-    starts_with_guard(rest)
 }
 
 /// 앞의 연속 속성·주석·빈 줄에서 debug_assertions 문자열을 찾는다. 이 보조 검사는 조건식의 not·any 의미를 평가하지 않는다.
@@ -305,30 +381,6 @@ fn debug_gated_lines(lines: &[String]) -> Vec<bool> {
     cfg_span::cfg_gated_lines(lines, "debug_assertions")
 }
 
-struct Scanned {
-    name: String,
-    is_prefix: bool,
-    gated: bool,
-}
-
-fn scan_arms(lines: &[String]) -> Vec<Scanned> {
-    let gated = debug_gated_lines(lines);
-    let mut out = Vec::new();
-    for (i, line) in lines.iter().enumerate() {
-        if line.trim_start().starts_with("//") {
-            continue;
-        }
-        for arm in dispatch_methods(line) {
-            out.push(Scanned {
-                name: arm.name.to_string(),
-                is_prefix: arm.is_prefix,
-                gated: gated[i] || is_debug_gated(lines, i),
-            });
-        }
-    }
-    out
-}
-
 /// 접두사 항목은 같은 접두사로 시작하는 release 메서드가 하나만 있어도 등록된 것으로 본다.
 fn registered_in_release_table(name: &str, is_prefix: bool) -> bool {
     if is_prefix {
@@ -348,10 +400,7 @@ fn release_router_arms_are_registered_in_the_release_table() {
         let path = root.join(rel);
         let src = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("라우터 소스를 읽을 수 없다: {}: {e}", path.display()));
-        let arms: Vec<Scanned> = fn_body_lines(&src, sig)
-            .iter()
-            .flat_map(|lines| scan_arms(lines))
-            .collect();
+        let arms = router_candidates(&src, sig);
         let here = arms.len();
         for arm in arms {
             if arm.gated {
@@ -384,8 +433,18 @@ fn release_router_arms_are_registered_in_the_release_table() {
 mod extractor_mutations {
     use super::*;
 
-    fn lines(src: &str) -> Vec<String> {
-        src.lines().map(str::to_owned).collect()
+    /// 조각을 함수 본문으로 감싸 실제 검사와 같은 경로로 읽는다.
+    fn scan(snippet: &str) -> Vec<Scanned> {
+        let text = format!("fn f() {{\n{snippet}}}\n");
+        let source = Source::new(&text);
+        let body = source.fn_bodies("f").remove(0);
+        scan_body(&source, body).unwrap_or_else(|e| panic!("조각을 읽지 못했다: {e}"))
+    }
+
+    fn find<'a>(arms: &'a [Scanned], name: &str) -> &'a Scanned {
+        arms.iter()
+            .find(|a| a.name == name)
+            .unwrap_or_else(|| panic!("`{name}` 을 못 읽었다"))
     }
 
     #[test]
@@ -398,7 +457,7 @@ mod extractor_mutations {
     if method.starts_with(\"debug.event_bus.\") { run(); }
 }
 ";
-        let arms = scan_arms(&lines(src));
+        let arms = scan(src);
         assert_eq!(
             arms.len(),
             2,
@@ -424,9 +483,8 @@ mod extractor_mutations {
     if method == \"debug.lua.eval\" { run(); }
 }
 ";
-        let arms = scan_arms(&lines(src));
         assert!(
-            arms.iter().any(|a| a.name == "debug.lua.eval" && !a.gated),
+            !find(&scan(src), "debug.lua.eval").gated,
             "cfg 없는 블록의 팔을 gated 로 봤다 — 상속이 너무 넓다"
         );
     }
@@ -440,12 +498,10 @@ mod extractor_mutations {
 }
 if method == \"leaked.method\" { run(); }
 ";
-        let arms = scan_arms(&lines(src));
-        let leaked = arms
-            .iter()
-            .find(|a| a.name == "leaked.method")
-            .expect("블록 뒤의 팔을 못 봤다");
-        assert!(!leaked.gated, "블록의 게이트가 블록 밖으로 새어 나갔다");
+        assert!(
+            !find(&scan(src), "leaked.method").gated,
+            "블록의 게이트가 블록 밖으로 새어 나갔다"
+        );
     }
 
     #[test]
@@ -457,9 +513,8 @@ if method == \"leaked.method\" { run(); }
     if method == \"debug.lua.eval\" { run(); }
 }
 ";
-        let arms = scan_arms(&lines(src));
         assert!(
-            arms.iter().any(|a| a.name == "debug.lua.eval" && a.gated),
+            find(&scan(src), "debug.lua.eval").gated,
             "문자열 안 `}}` 에 속아 블록이 일찍 닫혔다"
         );
     }
@@ -477,21 +532,17 @@ match method {
     _ => {}
 }
 ";
-        let names: Vec<String> = scan_arms(&lines(src)).into_iter().map(|a| a.name).collect();
+        let arms = scan(src);
         for want in [
             "leaked.guarded",
             "leaked.alt_a",
             "leaked.alt_b",
             "leaked.multiline",
         ] {
-            assert!(
-                names.iter().any(|n| n == want),
-                "guard 가 붙은 팔 `{want}` 을 못 봤다: {names:?}"
-            );
+            assert!(!find(&arms, want).gated, "`{want}` 을 gated 로 봤다");
         }
     }
 
-    /// 실제 검사처럼 줄 병합 뒤 메서드를 추출한다.
     #[test]
     fn a_guard_wrapped_to_the_next_line_is_still_an_arm() {
         let src = "\
@@ -507,27 +558,109 @@ match method {
     _ => {}
 }
 ";
-        let mut ls = lines(src);
-        join_wrapped_arms(&mut ls);
-        let names: Vec<String> = scan_arms(&ls).into_iter().map(|a| a.name).collect();
+        let arms = scan(src);
         for want in ["leaked.wrapped", "leaked.wrapped_a", "leaked.wrapped_b"] {
-            assert!(
-                names.iter().any(|n| n == want),
-                "다음 줄로 내린 guard 의 팔 `{want}` 을 못 봤다: {names:?}"
-            );
+            find(&arms, want);
         }
     }
 
     #[test]
-    fn a_plain_if_statement_is_not_joined_as_a_guard() {
+    fn a_plain_if_statement_is_read_once() {
         let src = "\
 let x = run();
 if method == \"kept.eq\" { run(); }
 ";
-        let mut ls = lines(src);
-        join_wrapped_arms(&mut ls);
-        assert_eq!(ls[1].trim(), "if method == \"kept.eq\" { run(); }");
-        assert_eq!(scan_arms(&ls).len(), 1);
+        assert_eq!(scan(src).len(), 1);
+    }
+
+    /// 한 줄에 두 팔이면 둘 다 읽는다(줄 단위 판독은 둘째를 줄의 나머지로 읽었다).
+    #[test]
+    fn two_arms_on_one_line_are_both_read() {
+        let src = "\
+match method {
+    \"system.info\" => run(), \"zz.not_in_table\" => run(),
+    _ => {}
+}
+";
+        let arms = scan(src);
+        assert!(!find(&arms, "system.info").gated);
+        assert!(!find(&arms, "zz.not_in_table").gated);
+    }
+
+    /// 첫 팔의 debug cfg 가 같은 줄의 다음 팔을 칠하지 않는다. 줄 단위 게이트는 둘째 팔까지
+    /// gated 로 읽어, release 에서 컴파일되는 팔이 표 대조를 피했다.
+    #[test]
+    fn a_debug_cfg_on_an_arm_does_not_gate_the_next_arm_on_the_same_line() {
+        let src = "\
+match method {
+    #[cfg(debug_assertions)]
+    \"system.zz_debug\" => run(), \"zz.not_in_table\" => run(),
+    _ => {}
+}
+";
+        let arms = scan(src);
+        assert!(find(&arms, "system.zz_debug").gated);
+        assert!(
+            !find(&arms, "zz.not_in_table").gated,
+            "같은 줄의 둘째 팔이 첫 팔의 cfg 로 칠해졌다"
+        );
+    }
+
+    #[test]
+    fn a_gated_arm_gates_the_match_nested_in_its_body() {
+        let src = "\
+match method {
+    #[cfg(debug_assertions)]
+    \"debug.outer\" => match sub {
+        \"debug.inner\" => run(),
+        _ => {}
+    },
+    \"kept.outer\" => run(),
+    _ => {}
+}
+";
+        let arms = scan(src);
+        assert!(
+            find(&arms, "debug.inner").gated,
+            "바깥 팔의 게이트가 안쪽 팔에 안 미쳤다"
+        );
+        assert!(
+            !find(&arms, "kept.outer").gated,
+            "게이트가 다음 팔로 새어 나갔다"
+        );
+    }
+
+    #[test]
+    fn a_not_debug_cfg_on_an_arm_is_release() {
+        let src = "\
+match method {
+    #[cfg(not(debug_assertions))]
+    \"kept.release_only\" => run(),
+    _ => {}
+}
+";
+        assert!(!find(&scan(src), "kept.release_only").gated);
+    }
+
+    /// 판정기 밖에 남긴 비교 형태의 한계를 고정한다. 한 줄에 cfg 문장과 다른 비교 문장을 함께
+    /// 두면 둘째도 gated 로 읽는다. rustfmt 가 문장을 한 줄에 하나로 펴서 레포에는 들어오기
+    /// 어렵다. 이 시험이 실패하면 한계가 닫힌 것이므로 scan_body 의 설명도 함께 고친다.
+    #[test]
+    fn known_limit_a_cfg_statement_gates_its_whole_line() {
+        let src = "\
+#[cfg(debug_assertions)]
+if method == \"debug.x\" { run(); } if method == \"leaked.same_line\" { run(); }
+";
+        assert!(find(&scan(src), "leaked.same_line").gated);
+    }
+
+    #[test]
+    fn an_unreadable_match_is_an_error_not_a_skip() {
+        let text =
+            "fn f() {\nmatch method { \"a.b\" => if x { 1 } else { 2 } \"c.d\" => 3, _ => 0 }\n}\n";
+        let source = Source::new(text);
+        let body = source.fn_bodies("f").remove(0);
+        assert!(scan_body(&source, body).is_err());
     }
 
     #[test]
