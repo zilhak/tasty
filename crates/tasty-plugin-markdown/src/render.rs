@@ -1606,6 +1606,9 @@ fn theme_css(theme: &Theme) -> String {
 --md-rule:{rule};
 --md-zebra:{zebra};
 --md-bg:{bg};
+--md-disabled-fill:{disabled_fill};
+--md-disabled-border:{disabled_border};
+--md-disabled-fg:{disabled_fg};
 --md-radius:{radius}px;
 --md-border-w:{border_w}px;
 --md-space-xs:{space_xs}px;
@@ -1629,7 +1632,7 @@ body{{min-height:100%;margin:0;padding:0;background:var(--md-bg);color:var(--md-
 #tasty-find-count{{min-width:40px;text-align:center;font-size:calc(var(--md-font-body) * 0.85);color:{muted};}}
 #tasty-find-count.tasty-find-nomatch{{color:{danger};}}
 .tasty-find-btn{{height:22px;width:22px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);color:var(--md-fg);font-size:10px;line-height:1;padding:0;cursor:pointer;}}
-.tasty-find-btn:disabled{{opacity:0.45;cursor:default;}}
+.tasty-find-btn:disabled{{background:var(--md-disabled-fill);border-color:var(--md-disabled-border);color:var(--md-disabled-fg);cursor:default;}}
 mark.tasty-find-hit{{background:{find_match_bg};color:inherit;border-radius:2px;}}
 mark.tasty-find-hit.tasty-find-current{{background:{find_current_bg};color:{find_current_fg};}}
 #tasty-md-body{{padding:var(--md-space-sm) var(--md-space-md);}}
@@ -1717,6 +1720,9 @@ li input[type=checkbox]{{margin-right:0.4em;}}
         muted = theme.text_muted().to_hex(),
         danger = theme.accent_danger().to_hex(),
         success = theme.accent_success().to_hex(),
+        disabled_fill = theme.state_disabled_fill().to_hex(),
+        disabled_border = theme.state_disabled_border().to_hex(),
+        disabled_fg = theme.state_disabled_fg().to_hex(),
         img_error_icon = alert_icon_data_uri(
             tasty_icons::IMAGE.body,
             false,
