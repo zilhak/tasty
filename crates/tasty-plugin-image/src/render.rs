@@ -644,7 +644,8 @@ fn baked_icon_button(
     resp
 }
 
-/// 비활성 상태에서는 버튼과 아이콘을 흐리게 그린다.
+/// 비활성 상태는 흐리게 하지 않고 disabled 상자와 disabled 잉크로 그린다.
+/// 입력은 Sense로만 막아 egui disabled fade가 겹치지 않게 한다.
 fn baked_icon_button_enabled(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -653,25 +654,28 @@ fn baked_icon_button_enabled(
     enabled: bool,
 ) -> egui::Response {
     let [w, h] = icon_button_size(theme);
-    let color = if enabled {
-        theme.text_primary()
+    let (button, color) = if enabled {
+        (styled_button(theme, ""), theme.text_primary())
     } else {
-        theme.text_muted()
+        let button = egui::Button::new("")
+            .fill(theme.state_disabled_fill().to_egui())
+            .stroke(egui::Stroke::new(
+                theme.border_width.value(),
+                theme.state_disabled_border().to_egui(),
+            ))
+            .corner_radius(theme.corner_radius_sm.value())
+            .sense(egui::Sense::hover());
+        (button, theme.state_disabled_fg())
     };
-    ui.add_enabled_ui(enabled, |ui| {
-        let resp = ui
-            .add_sized([w, h], styled_button(theme, ""))
-            .on_hover_text(tooltip);
-        tasty_plugin_sdk::baked_icon::draw(
-            ui.painter(),
-            icon,
-            resp.rect.center(),
-            h * ICON_DRAW_RATIO,
-            color.to_egui(),
-        );
-        resp
-    })
-    .inner
+    let resp = ui.add_sized([w, h], button).on_hover_text(tooltip);
+    tasty_plugin_sdk::baked_icon::draw(
+        ui.painter(),
+        icon,
+        resp.rect.center(),
+        h * ICON_DRAW_RATIO,
+        color.to_egui(),
+    );
+    resp
 }
 
 /// Text button (Save / Cancel / Fit / zoom +/-, popup buttons). Auto width.
