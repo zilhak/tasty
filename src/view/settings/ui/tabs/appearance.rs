@@ -1611,6 +1611,8 @@ fn font_family_picker(
     let combo_id = format!("font_family_combo_{}", salt);
     let filter = font_filter.entry(salt.to_string()).or_default();
 
+    // 공용 Select 에는 검색 필터가 없어 egui ComboBox 를 유지한다. 그래서 disabled 모양은
+    // 아직 egui fade 를 따른다.
     ui.add_enabled_ui(enabled, |ui| {
         egui::ComboBox::from_id_salt(combo_id)
             .selected_text(&display_name)
