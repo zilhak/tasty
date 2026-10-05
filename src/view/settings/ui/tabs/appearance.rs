@@ -908,13 +908,8 @@ fn draw_surface_bg_row(
 
         // ── "Use default" 체크박스 ──
         let mut use_default = !is_ov;
-        if ui
-            .checkbox(
-                &mut use_default,
-                t("settings.appearance.terminal.use_default"),
-            )
-            .changed()
-        {
+        let default_label = t("settings.appearance.terminal.use_default");
+        if tasty_ui_widgets::checkbox(ui, th, &mut use_default, default_label, true).changed() {
             let ov = &mut settings.appearance.theme_overrides;
             if use_default {
                 set_surface_bg_override(ov, field, None);
