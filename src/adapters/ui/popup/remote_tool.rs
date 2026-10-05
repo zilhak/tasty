@@ -21,8 +21,9 @@ use crate::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::STRUCT_GAP_1;
 use tasty_ui_widgets::{
-    LocalSshHost, LocalSshSectionData, ProtocolFilterItem, ProtocolFilterLabels, TabStripData,
-    TextWrap, draw_local_ssh_section as ssh_section_view, draw_protocol_filter_body,
+    ControlSize, IconButton, IconButtonVariant, LocalSshHost, LocalSshSectionData,
+    ProtocolFilterItem, ProtocolFilterLabels, TabStripData, TextWrap,
+    draw_local_ssh_section as ssh_section_view, draw_protocol_filter_body,
     draw_protocol_filter_button, draw_tab_strip, ghost_button, hsep, primary_button,
     secondary_button, selectable_label, selectable_text, warn_badge,
 };
@@ -908,42 +909,29 @@ fn draw_profile_row(
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
             // 오른쪽부터 배치하므로 삭제 버튼을 먼저 그린다.
-            if ui
-                .add(
-                    egui::ImageButton::new(icons::TRASH.image(
-                        th.icon_glyph_size_row_action.value(),
-                        th.text_muted().into(),
-                    ))
-                    .frame(false),
-                )
+            let row_action = |ui: &mut egui::Ui, glyph: icons::Icon, enabled: bool| {
+                IconButton::new()
+                    .variant(IconButtonVariant::Ghost)
+                    .size(ControlSize::Sm)
+                    .enabled(enabled)
+                    .show(ui, th, &|ui, rect, c| {
+                        glyph.image(rect.height(), c).paint_at(ui, rect)
+                    })
+            };
+            if row_action(ui, icons::TRASH, true)
                 .on_hover_text(t("remote_tool.delete"))
                 .clicked()
             {
                 out = Some(ProfileRowAction::Delete);
             }
-            if ui
-                .add(
-                    egui::ImageButton::new(icons::EDIT.image(
-                        th.icon_glyph_size_row_action.value(),
-                        th.text_muted().into(),
-                    ))
-                    .frame(false),
-                )
+            if row_action(ui, icons::EDIT, true)
                 .on_hover_text(t("remote_tool.edit"))
                 .clicked()
             {
                 out = Some(ProfileRowAction::Edit);
             }
             if is_ssh
-                && ui
-                    .add_enabled(
-                        !detecting_now,
-                        egui::ImageButton::new(icons::REFRESH.image(
-                            th.icon_glyph_size_row_action.value(),
-                            th.text_muted().into(),
-                        ))
-                        .frame(false),
-                    )
+                && row_action(ui, icons::REFRESH, !detecting_now)
                     .on_hover_text(t("remote_tool.refresh_tooltip"))
                     .clicked()
             {
