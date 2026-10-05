@@ -298,14 +298,11 @@ pub fn draw_callout(
                         } else {
                             t("tutorial.btn_next")
                         };
-                        let next = ui
-                            .add_enabled_ui(props.ready, |ui| {
-                                Button::new(label)
-                                    .variant(ButtonVariant::Primary)
-                                    .size(ControlSize::Sm)
-                                    .show(ui, theme)
-                            })
-                            .inner;
+                        let next = Button::new(label)
+                            .variant(ButtonVariant::Primary)
+                            .size(ControlSize::Sm)
+                            .enabled(props.ready)
+                            .show(ui, theme);
                         if props.keyboard_focus && ui.memory(|m| m.focused().is_none()) {
                             next.request_focus();
                         }
