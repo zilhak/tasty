@@ -489,6 +489,10 @@ mod tests {
         assert!(!swept.contains(&live.id));
         assert!(info(&expired.id).is_none());
         assert!(info(&live.id).is_some());
+        assert!(
+            !sweep().contains(&expired.id),
+            "한 번 걷어 낸 만료 웹훅을 다음 sweep 이 다시 돌려줬다"
+        );
         unregister(&live.id);
     }
 }
