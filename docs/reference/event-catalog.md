@@ -194,6 +194,8 @@ scope=global command 단축키는 조합키만, scope=surface 는 단일 키도 
 | `system.shutdown_initiated` | system | Stable | `reason` |
 | `debug.*` | system | Internal | (가변, debug 빌드만) |
 
+`theme.changed` 는 테마 ID 가 바뀐 설정 적용에서 새 전역 Theme 를 설치한 뒤에 발행한다. payload 에 색과 `is_light` 가 없으므로 구독자는 수신 후 `theme.query` 로 새 테마를 읽는다.
+
 > `composition_update`·`process.output_match`·`settings.changed` 는 1.0 제외. 알림 읽음 처리는 표시 상태만 바꾸며 host 이벤트를 발행하지 않는다.
 
 <a id="구독발화-권한-패턴"></a>

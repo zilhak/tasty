@@ -4,6 +4,7 @@
 //! [계층 경계](../../docs/adr/0002-domain-execution-and-ports.md)를 따른다.
 
 mod terminal;
+mod theme_order;
 
 use tasty_settings::Settings;
 
@@ -625,10 +626,28 @@ impl App {
             != Some(new_settings.appearance.theme.as_str())
             || prev_ui_scale.as_deref() != Some(new_settings.appearance.ui_scale.as_str())
             || prev_overrides.as_ref() != Some(&new_settings.appearance.theme_overrides);
-        tasty_themes::install_global_with_runtime(
-            &new_settings.appearance,
-            new_settings.theme_runtime(),
-        );
+        theme_order::install_theme_then(&new_settings, || {
+            self.announce_settings_change(
+                &new_settings,
+                appearance_changed,
+                prev_theme,
+                prev_language,
+            )
+        });
+
+        // 바뀐 단축키가 macOS 메뉴 표시에도 반영되도록 재구성한다.
+        #[cfg(target_os = "macos")]
+        crate::macos_delegate::rebuild_main_menu(&new_settings.keybindings);
+    }
+
+    /// 전역 Theme 설치 뒤에 창·터미널 색을 갱신하고 plugin에 설정 변경 이벤트를 발행한다.
+    fn announce_settings_change(
+        &mut self,
+        new_settings: &Settings,
+        appearance_changed: bool,
+        prev_theme: Option<String>,
+        prev_language: Option<String>,
+    ) {
         if appearance_changed {
             for view in self.view.views.values_mut() {
                 view.base_mut().gpu.refresh_theme();
@@ -661,10 +680,6 @@ impl App {
                 );
             }
         }
-
-        // 바뀐 단축키가 macOS 메뉴 표시에도 반영되도록 재구성한다.
-        #[cfg(target_os = "macos")]
-        crate::macos_delegate::rebuild_main_menu(&new_settings.keybindings);
     }
 
     fn cascade_notification_pushed(

@@ -31,7 +31,7 @@ UI의 색·글꼴 크기·간격은 `Theme`에서 읽는다. 이 문서는 테�
 
 - **`theme_base` 는 앱 소유다.** 빌트인 테마 파일은 앱이 관리하고 부팅 때 임베드 원본과 동기화한다. 사용자 테마 파일은 별도 ID로 만들 수 있다. 선택한 테마 위에서 색을 조절할 때는 아래 override를 사용한다.
 - **사용자 색 변경은 오직 `theme_overrides` 로만 들어간다.** settings 가 보관하는 partial 레이어로, base 위에 resolve 시점에 얹힌다. base(파일)를 어떻게 바꾸거나 동기화해도 사용자 override 는 보존된다 — 두 레이어가 분리돼 충돌이 없다.
-- **override 를 기록하는 정식 경로 = Settings › Appearance › Colors picker.** 픽커는 flat `PartialColors` 46색(Surfaces·Overlays·Text·Accents·Terminal-specific·ANSI 16) 을 그룹별 collapsible 로 노출한다. 각 행의 "Default" 체크 = 그 필드 `None`(프리셋 base 추종), 해제 = `Some(hex)`. base 값은 resolved `theme_base` 에서 읽어 시드한다(하드코딩 없음). 행/그룹/전체 3단계 reset 으로 `None` 복귀. 저장 시 `theme_overrides`가 바뀌면 `AppearanceChanged`로 모든 창에 즉시 반영한다. `surface_themes`(맵 구조)는 이 flat 픽커에서 분리돼 `Tasty`/`Terminal` 섹션의 curated shortcut 으로 남되 같은 `theme_overrides` 에 기록된다.
+- **override 를 기록하는 정식 경로 = Settings › Appearance › Colors picker.** 픽커는 flat `PartialColors` 46색(Surfaces·Overlays·Text·Accents·Terminal-specific·ANSI 16) 을 그룹별 collapsible 로 노출한다. 각 행의 "Default" 체크 = 그 필드 `None`(프리셋 base 추종), 해제 = `Some(hex)`. base 값은 resolved `theme_base` 에서 읽어 시드한다(하드코딩 없음). 행/그룹/전체 3단계 reset 으로 `None` 복귀. 저장 시 `theme_overrides`가 바뀌면 설정 적용 경로가 모든 창에 즉시 반영한다(아래 "라이브 갱신"). `surface_themes`(맵 구조)는 이 flat 픽커에서 분리돼 `Tasty`/`Terminal` 섹션의 curated shortcut 으로 남되 같은 `theme_overrides` 에 기록된다.
 - **테마를 바꾸면 `theme_overrides` 를 비운다(설계).** `apply_theme` 의 `theme_overrides.clear()` 는 부수효과가 아니라 의도다 — 테마 전환 = 그 테마의 색을 깨끗하게 적용하고 이전 테마에 얹어둔 사용자 변경분은 폐기한다. 픽커가 채운 override 도 함께 비워진다.
 
 ### Crate 책임
@@ -346,7 +346,7 @@ disabled 컨트롤은 opacity로 흐리게 그리지 않는다. 변형과 관계
 - **zoom 제외**: hairline(`border_width` 1px 정책 · `icon_stroke_width` — 이 굵기를 쓰는 타이틀바 버튼 기하가 고정 px 라 선만 굵어지면 글리프 형태가 달라진다 · `tab_indicator_width` · `selection_edge_width`) · 탭바 토큰(`tab_width`/`tab_bar_*`) · 상태바 토큰(`status_bar_height`) · CSD 타이틀바 토큰 · 렌더 콘텐츠 폰트(터미널 `font_size_term_*` 는 별도 `effective_terminal_font` 경로로 GPU 셰이더에 전달, markdown `font_size_prose_h1`).
   이 목록은 **요약이고 정본이 아니다** — 정본은 `crates/tasty-type-appearance` 의 zoom 면제 가드가 든 이름 집합이며, 소스와 이름 단위로 대조된다. 필드를 새로 면제하려면 그 목록에 사유 갈래와 함께 등록해야 하고, 등록 없이 `zoomed()` 를 빼면 그 검사가 해당 필드 이름을 표시하며 실패한다. 각 필드의 사유는 필드 doc 에도 붙어 있다.
 - **4px 그리드 + zoom**: 비정수(`12×1.2=14.4`)는 `round_ui()`/`f32::round()` 로 정수 픽셀로 반올림.
-- **라이브 갱신**: settings save / IPC update 시 `UiIntent::AppearanceChanged` 발생 → `cascade_appearance_changed` 가 전 윈도우 GpuState 에 broadcast(polling 아님, 변경 시 1회).
+- **라이브 갱신**: settings save / IPC update 는 `App::apply_settings_after_structure` 에서 새 설정의 전역 Theme 를 먼저 설치한다. 테마 ID·`ui_scale`·`theme_overrides` 중 하나가 바뀌었으면 모든 창의 `GpuState::refresh_theme` 와 모든 engine 의 `resync_terminal_palettes` 를 1회 호출한다(polling 아님). 그다음 테마 ID 가 바뀐 경우 plugin 에 `theme.changed` 를 발행한다. 설치를 발행보다 먼저 하는 순서는 `src/app/dispatch_domain/theme_order.rs` 의 `install_theme_then` 이 정하며, 구독자가 수신 후 `theme.query` 로 새 테마를 읽는 계약([markdown Theme parity](../../plugins/markdown/index.md))의 전제다.
 - **불변식 — `set_theme`/`install_global*` 은 렌더 밖에서만**: 전역 `THEME` 는 std `RwLock`(재진입 불가)이라, egui 렌더 클로저는 `theme()`(=`THEME.read()`) read guard 를 보유한다. 렌더 도중 `set_theme`(=`THEME.write()`)을 호출하면 자기 read guard 때문에 자기 읽기 잠금을 기다리는 교착 상태가 된다. 따라서 테마 install 은 항상 인텐트 dispatch(`about_to_wait` / cascade) 단계에서만 수행하고, 렌더 핸들러(설정 모달 Save 등)는 `UpdateSettings` 인텐트만 큐잉한다(install 직접 호출 금지).
 
 ## 코드 위치
