@@ -4,9 +4,10 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, TabScrollArrowInk, TabScrollArrowSide, paint_tab_scroll_arrow,
+};
 
-use crate::catalog::icons::{CHEVRON_LEFT, CHEVRON_RIGHT, MockGlyph};
 use crate::catalog::spec::{StageVariant, TokenChip, dont, meta, stage};
 
 /// C4 스트립 폭. 시안이 `--tasty-size-288`을 쓴다.
@@ -39,25 +40,32 @@ fn caption(ui: &mut egui::Ui, th: &Theme, text: &str) {
 }
 
 /// C4 행: surface-raised 스트립 양끝의 스크롤 화살표. 왼쪽은 끝까지 스크롤해 disabled,
-/// 오른쪽은 enabled 잉크다. 화살표 칸에는 자체 채움이 없다.
+/// 오른쪽은 enabled 잉크다. 화살표 칸은 본체와 같은 `paint_tab_scroll_arrow`로 그리며 자체 채움이 없다.
 fn c4_strip(ui: &mut egui::Ui, th: &Theme) {
     let h = th.item_height_tab.value();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(C4_STRIP_W.value(), h), egui::Sense::hover());
     ui.painter()
         .rect_filled(rect, th.corner_radius_sm.value(), ec(th.surface_raised()));
     let w = th.tab_scroll_arrow_width().value();
-    let glyph = th.tab_scroll_arrow_glyph_size().value();
-    let arrow = |cell: egui::Rect, g: MockGlyph, ink: egui::Color32| {
-        g.image(glyph, ink).paint_at(
-            ui,
-            egui::Rect::from_center_size(cell.center(), egui::vec2(glyph, glyph)),
-        );
-    };
     let left = egui::Rect::from_min_size(rect.min, egui::vec2(w, h));
     let right =
         egui::Rect::from_min_size(egui::pos2(rect.right() - w, rect.top()), egui::vec2(w, h));
-    arrow(left, CHEVRON_LEFT, ec(th.tab_scroll_arrow_fg_disabled()));
-    arrow(right, CHEVRON_RIGHT, ec(th.tab_scroll_arrow_fg()));
+    paint_tab_scroll_arrow(
+        ui,
+        th,
+        left,
+        TabScrollArrowSide::Left,
+        TabScrollArrowInk::Disabled,
+        false,
+    );
+    paint_tab_scroll_arrow(
+        ui,
+        th,
+        right,
+        TabScrollArrowSide::Right,
+        TabScrollArrowInk::Enabled,
+        false,
+    );
     ui.painter_at(rect).text(
         egui::pos2(left.right() + th.spacing_sm.value(), rect.center().y),
         egui::Align2::LEFT_CENTER,

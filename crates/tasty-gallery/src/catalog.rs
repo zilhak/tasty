@@ -1604,7 +1604,7 @@ pub fn pages() -> Vec<Page> {
                             "tab-scroll-arrows",
                             "Tab strip scroll arrows — disabled ink",
                             Some(
-                                "< at the scroll start takes tab-scroll-arrow-fg-disabled · > takes tab-scroll-arrow-fg",
+                                "left chevron at the scroll start takes tab-scroll-arrow-fg-disabled · right chevron takes tab-scroll-arrow-fg",
                             ),
                             components::tab_bar::draw_scroll_arrows,
                         ),

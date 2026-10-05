@@ -5,7 +5,9 @@ mod kit_strip;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
-use crate::catalog::icons::{CHEVRON_LEFT, CHEVRON_RIGHT, MockGlyph, PLUS, SEARCH, SPLIT};
+use tasty_ui_widgets::{TabScrollArrowInk, TabScrollArrowSide, paint_tab_scroll_arrow};
+
+use crate::catalog::icons::{PLUS, SEARCH, SPLIT};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 pub use kit_strip::{draw_move_cue, draw_scroll_shape, draw_status_cluster};
@@ -233,22 +235,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 /// 스크롤 화살표 예제 스트립의 폭. 디자인 Disabled ink Spec의 C4 행이 `--tasty-size-288`을 쓴다.
 const SCROLL_STRIP_W: LogicalPx = LogicalPx(288.0);
 
-/// 디자인 C4 행의 탭 스트립 스크롤 화살표 칸. 칸은 자체 채움 없이 스트립 바탕 위에 chevron만 그린다.
-fn arrow_cell(
-    ui: &egui::Ui,
-    theme: &Theme,
-    cell: egui::Rect,
-    glyph: MockGlyph,
-    ink: egui::Color32,
-) {
-    let size = theme.tab_scroll_arrow_glyph_size().value();
-    glyph.image(size, ink).paint_at(
-        ui,
-        egui::Rect::from_center_size(cell.center(), egui::vec2(size, size)),
-    );
-}
-
-/// 왼쪽 끝까지 스크롤한 스트립: `<`는 disabled, `>`는 enabled 잉크. 스트립 전체가 surface-raised다.
+/// 왼쪽 끝까지 스크롤한 스트립: 왼쪽 chevron 칸은 disabled, 오른쪽은 enabled 잉크다.
+/// 스트립 전체가 surface-raised이고 화살표 칸은 본체와 같은 `paint_tab_scroll_arrow`로 그린다.
 fn scroll_strip(ui: &mut egui::Ui, theme: &Theme) {
     let h = theme.item_height_tab.value();
     let w = theme.tab_scroll_arrow_width().value();
@@ -262,19 +250,21 @@ fn scroll_strip(ui: &mut egui::Ui, theme: &Theme) {
     let left = egui::Rect::from_min_size(rect.min, egui::vec2(w, h));
     let right =
         egui::Rect::from_min_size(egui::pos2(rect.right() - w, rect.top()), egui::vec2(w, h));
-    arrow_cell(
+    paint_tab_scroll_arrow(
         ui,
         theme,
         left,
-        CHEVRON_LEFT,
-        egui::Color32::from(theme.tab_scroll_arrow_fg_disabled()),
+        TabScrollArrowSide::Left,
+        TabScrollArrowInk::Disabled,
+        false,
     );
-    arrow_cell(
+    paint_tab_scroll_arrow(
         ui,
         theme,
         right,
-        CHEVRON_RIGHT,
-        egui::Color32::from(theme.tab_scroll_arrow_fg()),
+        TabScrollArrowSide::Right,
+        TabScrollArrowInk::Enabled,
+        false,
     );
     ui.painter_at(rect).text(
         egui::pos2(left.right() + theme.spacing_sm.value(), rect.center().y),
