@@ -108,17 +108,36 @@ pub(super) fn handle_debug_settings_apply(
     json_deep_merge(&mut base, patch);
 
     // 전체 설정에 합쳤으므로 patch에서 빠진 필드가 기본값으로 바뀌지 않는다.
-    let new_settings: tasty_settings::Settings = match serde_json::from_value(base) {
+    let mut new_settings: tasty_settings::Settings = match serde_json::from_value(base) {
         Ok(s) => s,
         Err(e) => {
             return JsonRpcResponse::invalid_params(id, format!("invalid settings patch: {e}"));
         }
     };
+    reapply_theme_on_change(
+        &engine.runtime.settings.appearance.theme,
+        &mut new_settings,
+        tasty_themes::apply_theme,
+    );
 
     state.dispatch_intent(
         crate::app::command::DomainIntent::UpdateSettings(new_settings).from_agent_ipc(),
     );
     JsonRpcResponse::success(id, json!({ "applied": true }))
+}
+
+/// theme id가 바뀌었으면 설정 모달·상태바 토글처럼 그 테마의 색 세트와 밝기를 적용한다.
+/// id만 바꾸면 UpdateSettings가 이전 theme_base로 Theme를 설치해 화면이 바뀌지 않는다.
+/// 모달과 같이 색 override는 비워진다.
+fn reapply_theme_on_change(
+    prev_theme: &str,
+    new_settings: &mut tasty_settings::Settings,
+    apply: impl FnOnce(&mut tasty_settings::AppearanceSettings, &str),
+) {
+    if new_settings.appearance.theme != prev_theme {
+        let target = new_settings.appearance.theme.clone();
+        apply(&mut new_settings.appearance, &target);
+    }
 }
 
 /// object는 키별로 재귀 병합하고 그 외 값은 대체한다. 지정하지 않은 중첩 필드는 유지한다.
@@ -143,6 +162,33 @@ fn json_deep_merge(target: &mut serde_json::Value, patch: &serde_json::Value) {
 #[cfg(test)]
 mod tests {
     use super::handle_ui_state;
+    use super::reapply_theme_on_change;
+
+    fn settings_with_theme(id: &str) -> tasty_settings::Settings {
+        let mut s = tasty_settings::Settings::default();
+        s.appearance.theme = id.to_string();
+        s
+    }
+
+    /// 다른 theme id 가 오면 그 id 로 적용 함수를 한 번 부른다.
+    #[test]
+    fn a_changed_theme_id_goes_through_the_theme_apply_function() {
+        let mut new_settings = settings_with_theme("latte");
+        let mut calls = Vec::new();
+        reapply_theme_on_change("mocha", &mut new_settings, |_, id| {
+            calls.push(id.to_string())
+        });
+        assert_eq!(calls, vec!["latte".to_string()]);
+    }
+
+    /// theme id 가 그대로면 적용하지 않는다 — 다른 설정 patch 가 색 override 를 지우지 않는다.
+    #[test]
+    fn an_unchanged_theme_id_leaves_the_colour_set_alone() {
+        let mut new_settings = settings_with_theme("mocha");
+        let mut calls = 0;
+        reapply_theme_on_change("mocha", &mut new_settings, |_, _| calls += 1);
+        assert_eq!(calls, 0);
+    }
 
     #[test]
     fn ui_state_answers_for_a_parked_engine_without_workspaces() {
