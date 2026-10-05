@@ -5,7 +5,7 @@ use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Input, checkbox};
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Input, checkbox};
 
 use crate::catalog::spec::{StageVariant, TokenChip, meta, stage};
 
@@ -170,5 +170,96 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 egui::Color32::from(theme.input_readonly_fg()),
             ),
         ],
+    );
+}
+
+/// 본체 Colors 헤더의 설명 문장(`settings.appearance.colors.intro` 영어 원문).
+const COLORS_INTRO: &str = "Override individual colors of the current preset. Uncheck \"Default\" on a row to edit it; switching presets clears every override.";
+
+/// Colors 헤더 한 줄 — 설명 + 오른쪽 Reset all. 본체 `draw_appearance_colors` 헤더와 같은 배치다.
+fn colors_header(ui: &mut egui::Ui, th: &Theme, changed: usize) {
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let label = if changed > 0 {
+                format!("Reset all ({changed})")
+            } else {
+                "Reset all".to_string()
+            };
+            Button::new(&label)
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Sm)
+                .enabled(changed > 0)
+                .show(ui, th);
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(COLORS_INTRO)
+                            .small()
+                            .color(egui::Color32::from(th.text_muted())),
+                    )
+                    .wrap(),
+                );
+            });
+        });
+    });
+}
+
+fn header_panel(ui: &mut egui::Ui, th: &Theme, name: &str) {
+    let frame = egui::Frame::new()
+        .fill(egui::Color32::from(th.bg_panel()))
+        .stroke(egui::Stroke::new(
+            th.border_width.value(),
+            egui::Color32::from(th.border_default()),
+        ))
+        .corner_radius(th.corner_radius.value())
+        .inner_margin(egui::Margin::same(th.spacing_md.value() as i8));
+    let content_w = THEME_PANEL_WIDTH.value() - frame.total_margin().sum().x;
+    frame.show(ui, |ui| {
+        ui.vertical(|ui| {
+            ui.set_width(content_w);
+            ui.spacing_mut().item_spacing.y = th.label_detail_gap.value();
+            ui.label(
+                egui::RichText::new(name)
+                    .size(th.font_size_caption.value())
+                    .color(egui::Color32::from(th.text_muted())),
+            );
+            ui.add_space(th.spacing_xs.value());
+            for changed in [0, 3] {
+                ui.push_id((name, changed), |ui| colors_header(ui, th, changed));
+                ui.add_space(th.spacing_sm.value());
+            }
+        });
+    });
+}
+
+/// Appearance › Colors 헤더 — override 가 없으면 Reset all 은 비활성, 있으면 개수를 붙인다.
+pub fn draw_header(ui: &mut egui::Ui, theme: &Theme) {
+    let with_zoom =
+        |base: Theme| Theme::with_colors_and_zoom(base.to_colors(), base.is_light, theme.ui_zoom);
+    let mocha = with_zoom(tasty_themes::mocha_fallback());
+    let latte = with_zoom(crate::host_shell::latte_theme());
+    stage(ui, theme, StageVariant::Column, |ui| {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+            header_panel(ui, &mocha, "Mocha");
+            header_panel(ui, &latte, "Latte");
+        });
+    });
+
+    meta(
+        ui,
+        theme,
+        &[
+            ("intro", "caption · text-muted · wraps"),
+            ("action", "Button ghost sm · right"),
+            ("label", "Reset all · Reset all (N) with N overrides"),
+            ("no override", "disabled — disabled ink, no box"),
+            ("scope", "clears the palette overrides only"),
+        ],
+        &[TokenChip::new(
+            "state-disabled-fg",
+            "disabled ink",
+            egui::Color32::from(theme.state_disabled_fg()),
+        )],
     );
 }

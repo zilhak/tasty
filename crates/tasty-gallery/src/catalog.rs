@@ -1323,6 +1323,14 @@ pub fn pages() -> Vec<Page> {
                             components::settings_appearance_colors::draw,
                         ),
                         spec(
+                            "settings-appearance-colors-header",
+                            "Appearance › Colors header — Reset all",
+                            Some(
+                                "intro text + Reset all (ghost sm) · disabled with no override, count when overridden",
+                            ),
+                            components::settings_appearance_colors::draw_header,
+                        ),
+                        spec(
                             "settings-file-extension-mapping",
                             "Handler › File Extension Mapping",
                             Some(
