@@ -5,7 +5,7 @@
 use tasty_type_appearance::theme::Theme;
 
 use crate::catalog::icons::{CLOSE, MARKDOWN, MockGlyph, TERMINAL};
-use crate::catalog::spec::{StageVariant, TokenChip, meta, stage};
+use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage};
 
 struct TabSpec {
     label: &'static str,
@@ -91,6 +91,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("separator", "dividers"),
         ],
     );
+    note(
+        ui,
+        theme,
+        "The body tab strip (src/adapters/ui/tab_bar/tab.rs) tints the icon with the label \
+         colour; this spec draws the kit text-muted icon.",
+    );
 }
 
 fn draw_tab(
@@ -125,7 +131,10 @@ fn draw_tab(
         egui::pos2(rect.left() + theme.spacing_md.value(), cy - icon * 0.5),
         egui::vec2(icon, icon),
     );
-    tab.icon.image(icon, label_color).paint_at(ui, icon_rect);
+    // 시안 `.tasty-tab__icon` 은 상태와 무관하게 text-muted 다.
+    tab.icon
+        .image(icon, egui::Color32::from(theme.text_muted()))
+        .paint_at(ui, icon_rect);
 
     // 오른쪽 끝부터 닫기 · 점 순서로 자리를 잡는다. 닫기는 활성 탭에서만 보인다(hover 는 정적 예제에서 생략).
     let close = theme.tab_close_size().value();
@@ -164,14 +173,23 @@ fn draw_tab(
         label_right = c.x - d * 0.5 - gap;
     }
 
+    // 시안 제목은 `text-overflow: ellipsis` 로 남는 폭에서 말줄임한다.
     let text_x = icon_rect.right() + gap;
-    let galley = painter.layout_no_wrap(
+    let mut job = egui::text::LayoutJob::single_section(
         tab.label.to_owned(),
-        egui::FontId::proportional(theme.font_size_body.value()),
-        label_color,
+        egui::TextFormat::simple(
+            egui::FontId::proportional(theme.font_size_body.value()),
+            label_color,
+        ),
     );
-    let clip = egui::Rect::from_x_y_ranges(text_x..=label_right.max(text_x), rect.y_range());
-    painter.with_clip_rect(clip).galley(
+    job.wrap = egui::text::TextWrapping {
+        max_width: (label_right - text_x).max(0.0),
+        max_rows: 1,
+        break_anywhere: true,
+        overflow_character: Some('\u{2026}'),
+    };
+    let galley = painter.layout_job(job);
+    painter.galley(
         egui::pos2(text_x, cy - galley.size().y * 0.5),
         galley,
         label_color,
