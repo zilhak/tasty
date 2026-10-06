@@ -255,8 +255,7 @@ impl App {
                         self.focus_mirror_workspace(workspace);
                     }
                     if let Some(anchor) = target.anchor {
-                        self.remote.reconnect.remove(&anchor);
-                        self.remote.attach_retry.remove(&anchor);
+                        crate::app::auto_attach::forget_anchor_backoff(&mut self.remote, anchor);
                     }
                 }
                 Err(error) => self.fail_pending_mirror(ticket, &target, error.to_string()),

@@ -445,7 +445,7 @@ anchor 가 없는 mirror(IPC `remote.attach` 로 연 임시 mirror 등)는 대�
   (해석·접수 실패는 `on_first_attach_failed`, 접수 뒤 연결 실패는 `pending.rs::fail_pending_mirror`)가
   재연결과 같은 `Backoff`(0.5초→30초)와 jitter 로 `Remote::record_first_attach_failure` 에 기록하고, `sync_reconnect_timers` 가 아직
   오지 않은 시각만 `Tick::Reconnect(anchor)` 로 예약한다(지난 시각을 예약하면 다른 워크스페이스에
-  있는 동안 루프를 계속 깨운다). 설치 성공 때 `pending.rs` 가 기록을 지운다. 예를 들어 이미 활성인 워크스페이스에 `attach_mapping` 을 방금 새로 설정하면
+  있는 동안 루프를 계속 깨운다). 기록은 `forget_anchor_backoff` 가 재연결 기록(`Remote.reconnect`)과 함께 지운다 — 설치 성공(`pending.rs`), 재연결 중 매핑 소멸(`trigger_reconnect_anchor`), mirror 닫기(`connection.rs`). 또 `poll_auto_attach` 머리의 `prune_first_attach_retries` 가 창과 parked engine 을 훑어 워크스페이스가 닫혔거나 매핑이 지워지거나 바뀐 anchor 의 기록을 지운다. 예를 들어 이미 활성인 워크스페이스에 `attach_mapping` 을 방금 새로 설정하면
   (`tasty set workspace --ssh-profile ...`) 워크스페이스 전환 없이도 다음 프레임에 즉시
   트리거된다. "재진입 대기(pending reactivation)" anchor(과거엔 disconnect 로 정리된
   모든 anchor 가 여기 들어갔지만, 지금은 이 표시가 남아있는 것 자체는 드물다 — 아래

@@ -49,6 +49,7 @@ fn should_reset_given_up(slot: Option<&ReconnectSlot>, edge_now: bool) -> bool {
 impl App {
     /// 활성 워크스페이스의 전환을 한 번 계산해 두 트리거가 같은 전환을 보게 한다.
     pub(crate) fn poll_auto_attach(&mut self) {
+        self.prune_first_attach_retries();
         let prev_active = self.remote.last_active_ws;
         let current_ws_id = self
             .focused_pair()
@@ -63,6 +64,26 @@ impl App {
         self.maybe_trigger_auto_attach(current_ws_id, prev_active);
         self.maybe_trigger_reconnect(current_ws_id, prev_active);
         self.drain_auto_attach_results();
+    }
+
+    /// 워크스페이스가 닫혔거나 매핑이 지워지거나 바뀐 anchor의 첫 attach 재시도 기록을 지운다.
+    /// 창과 parked engine을 모두 본다.
+    fn prune_first_attach_retries(&mut self) {
+        if self.remote.attach_retry.is_empty() {
+            return;
+        }
+        let live: std::collections::HashMap<u32, crate::model::WorkspaceAttachMapping> = self
+            .engines()
+            .sessions()
+            .flat_map(|(_, engine)| {
+                engine
+                    .workspaces()
+                    .into_iter()
+                    .filter_map(|ws| ws.attach_mapping.clone().map(|mapping| (ws.id, mapping)))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        retain_live_first_attach_retries(&mut self.remote, |anchor| live.get(&anchor));
     }
 
     /// 타이머만 등록·해제한다. 중단 상태를 담은 재연결 슬롯은 보존한다.
@@ -224,7 +245,7 @@ impl App {
                 .and_then(|ws| ws.attach_mapping.clone())
         });
         let Some(mapping) = mapping else {
-            self.remote.reconnect.remove(&anchor);
+            forget_anchor_backoff(&mut self.remote, anchor);
             self.remote.pending_reactivation.remove(&anchor);
             return;
         };
@@ -655,6 +676,22 @@ pub(crate) fn back_off_first_attach(
     remote.record_first_attach_failure(anchor, mapping, Instant::now(), jitter);
 }
 
+/// anchor의 재연결·첫 attach 실패 기록을 함께 지운다. mirror 설치 성공, 매핑 소멸, mirror 닫기가 쓴다.
+pub(crate) fn forget_anchor_backoff(remote: &mut tasty_remote::outbound::Remote, anchor: u32) {
+    remote.reconnect.remove(&anchor);
+    remote.attach_retry.remove(&anchor);
+}
+
+/// 기록한 매핑이 지금도 그 anchor의 매핑인 첫 attach 재시도 기록만 남긴다.
+fn retain_live_first_attach_retries<'a>(
+    remote: &mut tasty_remote::outbound::Remote,
+    current: impl Fn(u32) -> Option<&'a crate::model::WorkspaceAttachMapping>,
+) {
+    remote
+        .attach_retry
+        .retain(|anchor, retry| current(*anchor) == Some(&retry.mapping));
+}
+
 /// 첫 자동 attach를 아직 미뤄야 하는지. 재활성화 직후에는 기다리지 않는다.
 fn first_attach_waits(
     retry: Option<&tasty_remote::outbound::AttachRetry>,
@@ -871,6 +908,37 @@ mod tests {
         let port = fake_peer::free_port();
         let resolved = resolve_endpoint_bound_with(&attempt, || Ok((None::<()>, port)));
         assert_eq!(resolved.expect("direct endpoint").1, port);
+    }
+
+    #[test]
+    fn forgetting_an_anchor_clears_both_retry_records() {
+        let mut remote = tasty_remote::outbound::Remote::new();
+        let mapping = profile_mapping("a");
+        remote.reconnect.insert(3, ReconnectSlot::new());
+        back_off_first_attach(&mut remote, 3, Some(&mapping));
+        back_off_first_attach(&mut remote, 4, Some(&mapping));
+        forget_anchor_backoff(&mut remote, 3);
+        assert!(!remote.reconnect.contains_key(&3));
+        assert!(!remote.attach_retry.contains_key(&3));
+        assert!(remote.attach_retry.contains_key(&4), "other anchors stay");
+    }
+
+    #[test]
+    fn a_closed_or_remapped_workspace_drops_its_first_attach_record() {
+        let mut remote = tasty_remote::outbound::Remote::new();
+        let (kept, changed) = (profile_mapping("a"), profile_mapping("b"));
+        for anchor in [1, 2, 3] {
+            back_off_first_attach(&mut remote, anchor, Some(&kept));
+        }
+        // 1은 그대로, 2는 다른 매핑, 3은 워크스페이스나 매핑이 없다.
+        retain_live_first_attach_retries(&mut remote, |anchor| match anchor {
+            1 => Some(&kept),
+            2 => Some(&changed),
+            _ => None,
+        });
+        let mut left: Vec<u32> = remote.attach_retry.keys().copied().collect();
+        left.sort();
+        assert_eq!(left, vec![1]);
     }
 
     #[test]

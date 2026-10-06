@@ -505,7 +505,7 @@ impl App {
         }
         if let Some(anchor) = sess.state.anchor_ws_id {
             self.remote.active.remove(&anchor);
-            self.remote.reconnect.remove(&anchor);
+            crate::app::auto_attach::forget_anchor_backoff(&mut self.remote, anchor);
             if from_disconnect {
                 self.remote.pending_reactivation.insert(anchor);
             } else {
