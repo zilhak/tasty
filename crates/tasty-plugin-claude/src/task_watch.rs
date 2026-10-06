@@ -172,15 +172,9 @@ struct FileMark {
     modified: Option<SystemTime>,
 }
 
-/// 서브에이전트의 링크는 대상 transcript 가 생기기 전에 만들어질 수 있다. 그때는 링크 자체를 크기 0 으로 본다.
+/// 파일(링크면 그 대상)의 관측값. 없거나 대상이 없는 링크면 `None` 이다.
 fn mark(path: &Path) -> Option<FileMark> {
-    let Ok(m) = std::fs::metadata(path) else {
-        let link = std::fs::symlink_metadata(path).ok()?;
-        return Some(FileMark {
-            len: 0,
-            modified: link.modified().ok(),
-        });
-    };
+    let m = std::fs::metadata(path).ok()?;
     Some(FileMark {
         len: m.len(),
         modified: m.modified().ok(),
@@ -188,65 +182,83 @@ fn mark(path: &Path) -> Option<FileMark> {
 }
 
 /// 대기 한 번의 작업 파일 관측 상태.
+///
+/// 서브에이전트의 링크는 대상 transcript 가 생기기 전에 만들어지고, transcript 저장이 꺼진 세션에서는 끝까지
+/// 대상이 없다. 대상이 없는 링크는 활동 판정에서 빼고, 대상이 생기면 그때부터 활동으로 센다.
 #[derive(Debug)]
 pub(crate) struct FileActivity {
+    /// 작업, 경로, 마지막 관측값(`None` 은 대상이 아직 없는 링크).
     files: Vec<(WatchedTask, PathBuf, Option<FileMark>)>,
-    /// 마지막으로 크기나 수정 시각이 바뀐 것을 본 시각.
-    last_activity: SystemTime,
+    /// 마지막으로 크기나 수정 시각이 바뀐 것을 본 시각. 대상이 있는 파일을 아직 못 봤으면 `None` 이다.
+    last_activity: Option<SystemTime>,
 }
 
 impl FileActivity {
-    /// 출력 파일을 찾는다. 기다리는 작업의 파일이 하나도 없으면 `None` 이다.
-    pub fn locate(watch: &TaskWatch, dir: &Path, now: SystemTime) -> Option<Self> {
+    /// 출력 파일과 링크를 찾는다. 기다리는 작업의 파일도 링크도 없으면 `None` 이다.
+    pub fn locate(watch: &TaskWatch, dir: &Path) -> Option<Self> {
         let files: Vec<_> = watch
             .tasks
             .iter()
-            .map(|t| {
-                let path = dir.join(format!("{}.output", t.id));
+            .map(|t| (t.clone(), dir.join(format!("{}.output", t.id))))
+            .filter(|(_, path)| std::fs::symlink_metadata(path).is_ok())
+            .map(|(t, path)| {
                 let m = mark(&path);
-                (t.clone(), path, m)
+                (t, path, m)
             })
-            .filter(|(_, _, m)| m.is_some())
             .collect();
         if files.is_empty() {
             return None;
         }
-        // 처음 관측은 파일의 마지막 수정 시각부터 조용한 것으로 본다.
+        // 처음 관측은 대상이 있는 파일의 마지막 수정 시각부터 조용한 것으로 본다.
         let last_activity = files
             .iter()
             .filter_map(|(_, _, m)| m.and_then(|m| m.modified))
-            .max()
-            .unwrap_or(now);
+            .max();
         Some(Self {
             files,
             last_activity,
         })
     }
 
-    /// 파일을 다시 보고, 모든 대상이 활동 없이 지난 시간을 돌려준다. 크기나 수정 시각이 바뀌면 활동이다.
-    pub fn poll(&mut self, now: SystemTime) -> Duration {
+    /// 파일을 다시 보고, 대상이 있는 모든 파일이 활동 없이 지난 시간을 돌려준다. 크기나 수정 시각이 바뀌거나
+    /// 링크의 대상이 생기면 활동이다. 대상이 있는 파일이 하나도 없으면 `None` 이다.
+    pub fn poll(&mut self, now: SystemTime) -> Option<Duration> {
         for (_, path, last) in &mut self.files {
             let current = mark(path);
-            if current != *last {
-                let at = current
-                    .and_then(|m| m.modified)
-                    .filter(|t| *t <= now)
-                    .map_or(now, |t| t.max(self.last_activity));
-                // 크기만 바뀌고 수정 시각 해상도가 거칠면 지금을 활동 시각으로 본다.
-                self.last_activity = if current.map(|m| m.len) != last.map(|m| m.len) {
-                    now
-                } else {
-                    at
-                };
-                *last = current;
+            if current == *last {
+                continue;
             }
+            let activity = match (*last, current) {
+                // 대상이 생겼거나 크기가 바뀌었다. 수정 시각 해상도가 거칠 수 있어 지금을 활동 시각으로 본다.
+                (None, Some(_)) => Some(now),
+                (Some(a), Some(b)) if a.len != b.len => Some(now),
+                (Some(_), Some(b)) => Some(
+                    b.modified
+                        .filter(|t| *t <= now)
+                        .map_or(now, |t| self.last_activity.map_or(t, |l| t.max(l))),
+                ),
+                // 대상이 사라졌다. 활동으로 보지 않는다.
+                (_, None) => None,
+            };
+            if activity.is_some() {
+                self.last_activity = activity;
+            }
+            *last = current;
         }
-        now.duration_since(self.last_activity).unwrap_or_default()
+        if self.files.iter().all(|(_, _, m)| m.is_none()) {
+            return None;
+        }
+        let since = *self.last_activity.get_or_insert(now);
+        Some(now.duration_since(since).unwrap_or_default())
     }
 
-    /// 알림에 적을 작업 이름.
+    /// 알림에 적을 작업 이름. 대상이 있는 파일의 작업만 적는다.
     pub fn labels(&self) -> Vec<String> {
-        self.files.iter().map(|(t, _, _)| t.label.clone()).collect()
+        self.files
+            .iter()
+            .filter(|(_, _, m)| m.is_some())
+            .map(|(t, _, _)| t.label.clone())
+            .collect()
     }
 }
 
@@ -336,17 +348,17 @@ mod tests {
         let w = watch("/w");
         let path = dir.path().join("btwzfqgkg.output");
         let now = SystemTime::now();
-        assert!(FileActivity::locate(&w, dir.path(), now).is_none());
+        assert!(FileActivity::locate(&w, dir.path()).is_none());
         std::fs::write(&path, "tick 1\n").unwrap();
-        let mut a = FileActivity::locate(&w, dir.path(), now).expect("파일 있음");
+        let mut a = FileActivity::locate(&w, dir.path()).expect("파일 있음");
         assert_eq!(a.labels(), vec!["sleep 300"]);
         let later = now + Duration::from_secs(130);
-        assert!(a.poll(later) >= Duration::from_secs(129));
+        assert!(a.poll(later) >= Some(Duration::from_secs(129)));
         std::fs::write(&path, "tick 1\ntick 2\n").unwrap();
-        assert_eq!(a.poll(later), Duration::ZERO);
+        assert_eq!(a.poll(later), Some(Duration::ZERO));
         assert_eq!(
             a.poll(later + Duration::from_secs(30)),
-            Duration::from_secs(30)
+            Some(Duration::from_secs(30))
         );
     }
 
@@ -360,20 +372,61 @@ mod tests {
         let mut w = watch("/w");
         w.tasks[0].id = "a1".into();
         let now = SystemTime::now() + Duration::from_secs(200);
-        let pending = dir.path().join("pending.output");
-        std::os::unix::fs::symlink(dir.path().join("agent-pending.jsonl"), &pending).unwrap();
-        let mut early = w.clone();
-        early.tasks[0].id = "pending".into();
-        let mut e = FileActivity::locate(&early, dir.path(), now).expect("끊긴 링크도 찾음");
-        std::fs::write(dir.path().join("agent-pending.jsonl"), "{}\n").unwrap();
-        assert_eq!(
-            e.poll(now),
-            Duration::ZERO,
-            "대상 transcript 가 생기면 활동이다"
-        );
-        let mut a = FileActivity::locate(&w, dir.path(), now).expect("링크 대상 있음");
-        assert!(a.poll(now) >= Duration::from_secs(150));
+        let mut a = FileActivity::locate(&w, dir.path()).expect("링크 대상 있음");
+        assert!(a.poll(now) >= Some(Duration::from_secs(150)));
         std::fs::write(&transcript, "{}\n{}\n").unwrap();
-        assert_eq!(a.poll(now), Duration::ZERO);
+        assert_eq!(a.poll(now), Some(Duration::ZERO));
+    }
+
+    /// 대상 transcript 가 없는 링크는 시간이 지나도 조용한 것으로 세지 않는다(`None`).
+    /// 대상이 생기면 그때가 활동이고, 그 뒤부터 조용한 시간을 센다.
+    #[cfg(unix)]
+    #[test]
+    fn a_link_without_its_transcript_is_left_out_until_the_transcript_appears() {
+        let dir = tempfile::tempdir().unwrap();
+        let transcript = dir.path().join("agent-pending.jsonl");
+        std::os::unix::fs::symlink(&transcript, dir.path().join("pending.output")).unwrap();
+        let mut w = watch("/w");
+        w.tasks[0].id = "pending".into();
+        let mut a = FileActivity::locate(&w, dir.path()).expect("링크는 찾음");
+        let now = SystemTime::now();
+        assert_eq!(a.poll(now), None);
+        assert_eq!(a.poll(now + Duration::from_secs(600)), None);
+        assert!(a.labels().is_empty());
+        std::fs::write(&transcript, "{}\n").unwrap();
+        let t1 = now + Duration::from_secs(700);
+        assert_eq!(a.poll(t1), Some(Duration::ZERO));
+        assert_eq!(
+            a.poll(t1 + Duration::from_secs(130)),
+            Some(Duration::from_secs(130))
+        );
+    }
+
+    /// 셸 출력 파일과 끊긴 링크가 함께 있으면 대상이 있는 파일만으로 판정하고 그 작업만 적는다.
+    #[cfg(unix)]
+    #[test]
+    fn a_dangling_link_beside_a_real_file_does_not_count() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("b1.output"), "").unwrap();
+        std::os::unix::fs::symlink(
+            dir.path().join("agent-a1.jsonl"),
+            dir.path().join("a1.output"),
+        )
+        .unwrap();
+        let mut w = watch("/w");
+        w.tasks = vec![
+            WatchedTask {
+                id: "b1".into(),
+                label: "sleep 300".into(),
+            },
+            WatchedTask {
+                id: "a1".into(),
+                label: "subagent".into(),
+            },
+        ];
+        let mut a = FileActivity::locate(&w, dir.path()).unwrap();
+        let later = SystemTime::now() + Duration::from_secs(130);
+        assert!(a.poll(later) >= Some(Duration::from_secs(129)));
+        assert_eq!(a.labels(), vec!["sleep 300"]);
     }
 }

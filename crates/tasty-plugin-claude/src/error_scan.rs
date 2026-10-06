@@ -119,6 +119,8 @@ struct BackgroundWait {
     files: Option<FileActivity>,
     /// 마지막으로 출력 파일을 찾아본 시각. 못 찾으면 [`LOCATE_RETRY`] 뒤에 다시 찾는다.
     last_locate: Option<Instant>,
+    /// 대상이 있는 출력 파일을 못 본 채 지난 구간의 시작. 링크 대상은 Stop 직후 잠시 없을 수 있어 바로 경고하지 않는다.
+    unresolved_since: Option<Instant>,
     /// 못 찾았다는 경고를 이 대기에서 남겼는지.
     warned: bool,
 }
@@ -134,11 +136,13 @@ impl BackgroundWait {
             watch: None,
             files: None,
             last_locate: None,
+            unresolved_since: None,
             warned: false,
         }
     }
 
-    /// 기다리는 작업의 출력 파일이 모두 활동 없이 지난 시간. 파일을 찾지 못했으면 `None` 이다.
+    /// 기다리는 작업의 출력 파일이 모두 활동 없이 지난 시간. 파일을 찾지 못했거나 대상이 있는 파일이 없으면
+    /// (transcript 가 없는 서브에이전트 링크뿐이면) `None` 이며 화면 기준으로 돌아간다.
     fn file_quiet(&mut self, surface_id: u32, now: Instant) -> Option<Duration> {
         let watch = self.watch.as_ref()?;
         let due = self
@@ -146,23 +150,31 @@ impl BackgroundWait {
             .is_none_or(|t| now.saturating_duration_since(t) >= LOCATE_RETRY);
         if self.files.is_none() && due {
             self.last_locate = Some(now);
-            let wall = std::time::SystemTime::now();
             self.files = crate::task_watch::tasks_dir(watch)
-                .and_then(|dir| FileActivity::locate(watch, &dir, wall));
-            if self.files.is_none() && !self.warned {
-                self.warned = true;
-                tracing::warn!(
-                    "claude stall s{surface_id}: no output file found for background task(s) {:?} of session {} — falling back to the screen output rule",
-                    watch
-                        .tasks
-                        .iter()
-                        .map(|t| t.id.as_str())
-                        .collect::<Vec<_>>(),
-                    watch.session_id
-                );
-            }
+                .and_then(|dir| FileActivity::locate(watch, &dir));
         }
-        Some(self.files.as_mut()?.poll(std::time::SystemTime::now()))
+        let quiet = self
+            .files
+            .as_mut()
+            .and_then(|f| f.poll(std::time::SystemTime::now()));
+        if quiet.is_some() {
+            self.unresolved_since = None;
+            return quiet;
+        }
+        let since = *self.unresolved_since.get_or_insert(now);
+        if now.saturating_duration_since(since) >= STALL_QUIET_NO_ERROR && !self.warned {
+            self.warned = true;
+            tracing::warn!(
+                "claude stall s{surface_id}: no output file found for background task(s) {:?} of session {} — falling back to the screen output rule",
+                watch
+                    .tasks
+                    .iter()
+                    .map(|t| t.id.as_str())
+                    .collect::<Vec<_>>(),
+                watch.session_id
+            );
+        }
+        None
     }
 }
 
@@ -1081,7 +1093,7 @@ mod tests {
                 label: "sleep 300".into(),
             }],
         };
-        let files = FileActivity::locate(&watch, dir.path(), std::time::SystemTime::now()).unwrap();
+        let files = FileActivity::locate(&watch, dir.path()).unwrap();
         (dir, watch, files)
     }
 
@@ -1122,6 +1134,38 @@ mod tests {
             s.scan_one_at(&host, 1, t0 + STALL_QUIET_BACKGROUND_WAIT * i);
         }
         assert_eq!(host.stalled_count(), 0);
+    }
+
+    /// transcript 가 없는 서브에이전트 링크뿐이면 일반 기준에 알리지 않고 대기 기준(10분)으로 돌아간다.
+    #[cfg(unix)]
+    #[test]
+    fn a_wait_with_only_a_dangling_link_uses_the_wait_threshold() {
+        let host = ScanHost::new("❯ \n⏵⏵ 1 local agent\n", "active");
+        let mut s = ErrorScanner::new();
+        s.mark_background_wait(1, 1_000);
+        let dir = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(
+            dir.path().join("agent-a1.jsonl"),
+            dir.path().join("a1.output"),
+        )
+        .unwrap();
+        let watch = TaskWatch {
+            session_id: "s-dangling".into(),
+            cwd: "/w".into(),
+            tasks: vec![crate::task_watch::WatchedTask {
+                id: "a1".into(),
+                label: "subagent".into(),
+            }],
+        };
+        let files = FileActivity::locate(&watch, dir.path()).unwrap();
+        s.set_file_activity_for_test(1, watch, files);
+        let t0 = Instant::now();
+        s.scan_one_at(&host, 1, t0);
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_NO_ERROR + Duration::from_secs(1));
+        assert_eq!(host.stalled_count(), 0);
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_BACKGROUND_WAIT);
+        assert_eq!(host.stalled_count(), 1);
+        assert!(!host.events().iter().any(|e| e.starts_with("meta-set:")));
     }
 
     /// 출력 파일을 찾지 못하면 대기 기준(10분)으로 돌아간다.
