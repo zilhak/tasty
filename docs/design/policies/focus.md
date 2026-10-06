@@ -262,7 +262,7 @@ Tasty에는 포커스를 주는 IPC 메서드가 없다.
   `focused_view_id`의 View 활성화를 OS에 요청한다. `focus_window()`는 부르지 않는다.
   - X11: 창에 `_NET_STARTUP_ID`를 걸고 startup id의 `_TIME` 타임스탬프로 `_NET_ACTIVE_WINDOW`(source 1)를 보낸다.
   - Windows: 두 번째 프로세스가 `AllowSetForegroundWindow`로 넘긴 권한으로 `SetForegroundWindow`를 부른다.
-  - Wayland: 이미 있는 창을 활성화할 수단이 없어 요청하지 않는다. MainView가 없을 때 여는 새 창에만 토큰을 쓴다.
+  - Wayland: 이미 있는 창을 활성화할 수단이 없다. 그래서 위 복원 대신 항상 토큰을 실은 새 `User` 창을 열고, 숨김·최소화 창은 그대로 둔다.
   - MainView가 하나도 없으면 증거를 실은 `User` 창을 연다. 만드는 중인 창이 있으면 새로 만들지 않고 그 창이 등록될 때 요청한다.
 - 증거는 OS 판단의 근거일 뿐 위조 불가능한 증명은 아니다. X11 startup id는 같은 사용자의 어떤 프로세스든 만들 수 있다.
   한계와 근거는 [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)의 "같은 홈의 다시 실행" 절에 있다.
