@@ -146,7 +146,7 @@ fn a_write_to_a_durable_store_answers_as_before() {
 // 빠지는 팔이 줄지 않는다. 남는 사각은 주석 속 같은 텍스트를 먼저 집는 것이다. 재는 변이로
 // `"memory.put" =>` 팔을 주석으로 바꾸면 handle_put이 유일한 호출자를 잃어 dead-code 컴파일
 // 오류로 막혔다(2026-10-05). 이 검사가 "팔 ⊆ 표" 같은 부분집합 명제를 갖게 되거나 주석 속
-// 인용 때문에 초록이 난 일이 생기면 판정기로 옮긴다.
+// 인용 때문에 잘못 통과한 일이 생기면 판정기로 옮긴다.
 #[test]
 fn every_memory_write_reports_a_fallback_store_as_not_durable() {
     /// 이 저장소(`memory.db`)에 쓰는 이름공간. 여기 없는 이름공간은 다른 저장소

@@ -2633,9 +2633,9 @@ mod tests {
     fn sanitize_html_strips_event_handler_attributes() {
         let out = sanitize_html(r#"<img src="x.png" onerror="alert(1)">"#);
         // ★ 먼저 img 가 **살아남았다**는 것을 못박는다. 이 줄이 없으면 아래 부정 둘은
-        // `out` 이 빈 문자열일 때도 통과하고, 그 초록의 뜻은 "핸들러를 벗겼다" 가 아니라
+        // `out` 이 빈 문자열일 때도 통과하고, 그 통과의 뜻은 "핸들러를 벗겼다" 가 아니라
         // "아무것도 안 남았다" 다. 빈 출력은 가상이 아니다 — 태그 허용목록에서 `img` 가
-        // 빠지면 ammonia 가 요소를 통째로 지우고, 그때도 이 시험은 계속 초록이다.
+        // 빠지면 ammonia 가 요소를 통째로 지우고, 그때도 이 시험은 계속 통과한다.
         assert!(out.contains("x.png"));
         assert!(!out.contains("onerror"));
         assert!(!out.contains("alert"));
@@ -4827,7 +4827,7 @@ Outro\n";
                 "src={src} 에서 경로가 샜다: {out}"
             );
             // ★ img 요소 자체는 남아야 한다. 이 줄이 없으면 위 부정 둘은 출력이
-            // 통째로 비었을 때도 통과하고, 그 초록의 뜻은 "거절했다" 가 아니라
+            // 통째로 비었을 때도 통과하고, 그 통과의 뜻은 "거절했다" 가 아니라
             // "아무것도 안 남았다" 다.
             assert!(out.contains("<img"), "img 가 통째로 사라졌다: {out}");
         }
@@ -4906,7 +4906,7 @@ Outro\n";
         let (dir, png) = tree_with_image();
         let outside = tempfile::tempdir().unwrap();
         // ★ 트리 밖 파일은 **실재해야** 한다. 없는 파일로 적으면 `canonicalize` 가
-        // 먼저 실패해서, 범위 판정을 통째로 지워도 이 시험이 초록으로 남는다.
+        // 먼저 실패해서, 범위 판정을 통째로 지워도 이 시험이 계속 통과한다.
         let outside_png = outside.path().join("x.png");
         std::fs::write(&outside_png, b"\x89PNG\r\n\x1a\n").unwrap();
         let escape_rel = format!(
@@ -4941,7 +4941,7 @@ Outro\n";
             rest = &v[j..];
         }
         // 남은 src 는 원격 하나 + 인라인 둘이어야 한다 — 0 이면 위 단정이 한 번도
-        // 안 돌고 초록이 된다.
+        // 안 돌고 통과한다.
         assert_eq!(seen, 3, "got: {out}");
     }
 

@@ -113,7 +113,7 @@ fn the_two_sends_address_the_same_plugin() {
                 continue;
             };
             let Some(set) = masked[*open..*close].find(SET_CONTEXT).map(|p| p + *open) else {
-                continue; // 짝이 없는 것은 위 시험이 이미 빨갛게 만든다.
+                continue; // 짝이 없는 것은 위 시험이 이미 실패시킨다.
             };
             let a = first_arg(&masked, create).unwrap_or_else(|| {
                 panic!(
