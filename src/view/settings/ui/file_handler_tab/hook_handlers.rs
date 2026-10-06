@@ -3,6 +3,8 @@
 //!
 //! 모든 출처의 활성 상태를 바꿀 수 있고 ShellCommand는 명령을 편집할 수 있다.
 //! 삭제는 user 항목만 허용하며 host/plugin 항목에는 자물쇠를 표시한다.
+//! 사용자 patch 가 걸린 host/plugin 항목은 출처 Tag 뒤에 edited Tag 를, 둘째 줄에 Revert 를 단다.
+//! Revert 는 초안에만 들어가며(Undo · "reverts on save") Save 하면 그 patch 를 지운다.
 //! IpcSequence는 요약 한 줄과 Edit 이다. Edit 은 그 행 둘째 줄을 한 줄에 호출 하나인 문자열 편집기로
 //! 바꾸고, Apply 한 결과는 초안에 들어간다. 한 줄 형식으로 쓸 수 없는 시퀀스는 편집기 대신
 //! `tasty hook-handler get` 명령을 복사하게 한다.
@@ -14,7 +16,7 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
     Button, ButtonVariant, CodeAreaKeys, ControlSize, IconButton, IconButtonVariant, Input,
     SequenceEditorAction, SequenceEditorError, SequenceEditorView, TagVariant, sequence_editor,
-    switch, tag, vspace,
+    switch, tag, tag_disabled, vspace,
 };
 
 use crate::adapters::ui::icons;
@@ -51,6 +53,8 @@ pub(crate) struct HookHandlerEditDraft {
     seq_editor: Option<SeqEditor>,
     /// user-origin entry 삭제 의도.
     remove: BTreeSet<HookHandlerId>,
+    /// host/plugin 항목에 걸린 사용자 patch 를 지워 기본값으로 되돌릴 의도.
+    revert: BTreeSet<HookHandlerId>,
     /// 새로 추가될 user 핸들러 (short-name, 셸 명령).
     add: Vec<PendingHookAdd>,
     /// "Add handler" 인라인 draft 폼 상태.
@@ -94,9 +98,15 @@ struct AddHookForm {
 impl HookHandlerEditDraft {
     pub(crate) fn into_edits(self) -> Vec<crate::app::settings_edit::RegistryEdit> {
         use crate::app::settings_edit::RegistryEdit as E;
-        self.enabled
+        // 되돌리기를 먼저 적용한다. 그 뒤에 남은 편집은 기본값 위에 새 patch 로 얹힌다.
+        self.revert
             .into_iter()
-            .map(|(id, value)| E::HookEnabled(id, value))
+            .map(E::RemoveHook)
+            .chain(
+                self.enabled
+                    .into_iter()
+                    .map(|(id, value)| E::HookEnabled(id, value)),
+            )
             .chain(self.remove.into_iter().map(E::RemoveHook))
             .chain(self.cmd_edits.into_iter().map(|(id, cmd)| {
                 E::UpsertHook(UserHookHandlerUpsertDecl {
@@ -196,6 +206,7 @@ pub(super) fn draw_hook_handlers(
 
     // ── 등록 핸들러 rows (registry 정렬순: priority↑ → owner → id) + draft 추가분 ──
     let rows = crate::runtime::file_catalog::hook_handlers();
+    let defaults = crate::runtime::file_catalog::hook_handler_defaults();
     if rows.is_empty() && hh.add.is_empty() {
         ui.label(
             egui::RichText::new(t("settings.file_handler.hook_handlers.empty"))
@@ -207,6 +218,7 @@ pub(super) fn draw_hook_handlers(
     let mut toggle: Option<(HookHandlerId, bool)> = None;
     let mut cmd_edit: Option<(HookHandlerId, String)> = None;
     let mut remove_toggle: Option<HookHandlerId> = None;
+    let mut revert_toggle: Option<HookHandlerId> = None;
     let mut seq_event: Option<SeqRowEvent> = None;
     let mut editor = hh.seq_editor.take();
     for h in &rows {
@@ -214,9 +226,14 @@ pub(super) fn draw_hook_handlers(
             toggle: &mut toggle,
             cmd_edit: &mut cmd_edit,
             remove_toggle: &mut remove_toggle,
+            revert_toggle: &mut revert_toggle,
             seq_event: &mut seq_event,
         };
-        draw_hook_row(ui, &th, hh, h, kb, &mut editor, &mut out);
+        let item = RowItem {
+            h,
+            default: defaults.get(&h.id),
+        };
+        draw_hook_row(ui, &th, hh, &item, kb, &mut editor, &mut out);
     }
     hh.seq_editor = editor;
     match seq_event {
@@ -254,6 +271,24 @@ pub(super) fn draw_hook_handlers(
     if let Some(i) = remove_add {
         hh.add.remove(i);
     }
+    if let Some(id) = revert_toggle {
+        hh.toggle_revert(id);
+    }
+}
+
+impl HookHandlerEditDraft {
+    /// Revert ↔ Undo. Revert 는 그 행의 초안 편집도 함께 버린다 — patch 전부를 한 번에 되돌리는 동작이다.
+    fn toggle_revert(&mut self, id: HookHandlerId) {
+        if !self.revert.remove(&id) {
+            self.enabled.remove(&id);
+            self.cmd_edits.remove(&id);
+            self.seq_edits.remove(&id);
+            if self.seq_editor.as_ref().is_some_and(|ed| ed.id == id) {
+                self.seq_editor = None;
+            }
+            self.revert.insert(id);
+        }
+    }
 }
 
 /// 대문자 고정폭 섹션 제목. 자간은 시안의 `letter-spacing-caps` 다.
@@ -272,7 +307,14 @@ struct RowOutput<'a> {
     toggle: &'a mut Option<(HookHandlerId, bool)>,
     cmd_edit: &'a mut Option<(HookHandlerId, String)>,
     remove_toggle: &'a mut Option<HookHandlerId>,
+    revert_toggle: &'a mut Option<HookHandlerId>,
     seq_event: &'a mut Option<SeqRowEvent>,
+}
+
+/// 그릴 행 — 병합된 핸들러와, 사용자 patch 가 걸린 host/plugin 행이면 그 기본값.
+struct RowItem<'a> {
+    h: &'a HookHandler,
+    default: Option<&'a HookHandler>,
 }
 
 /// 편집기 글자 영역의 id. 편집기를 처음 그린 프레임에 이 id 로 포커스를 요청한다.
@@ -286,7 +328,7 @@ fn draw_hook_row(
     ui: &mut egui::Ui,
     th: &tasty_type_appearance::theme::Theme,
     hh: &HookHandlerEditDraft,
-    h: &HookHandler,
+    item: &RowItem<'_>,
     kb: &crate::settings::KeybindingSettings,
     editor: &mut Option<SeqEditor>,
     out: &mut RowOutput<'_>,
@@ -295,12 +337,22 @@ fn draw_hook_row(
         toggle,
         cmd_edit,
         remove_toggle,
+        revert_toggle,
         seq_event,
     } = out;
-    let on = hh.enabled.get(&h.id).copied().unwrap_or(!h.disabled);
+    let h = item.h;
+    // 병합 결과의 owner 는 patch 를 단 User 다. 출처 Tag·자물쇠는 기본값의 owner 를 따른다.
+    let origin = item.default.map_or(&h.owner, |d| &d.owner);
+    let pending_revert = item.default.is_some() && hh.revert.contains(&h.id);
+    // 되돌리기 대기 중이면 Save 뒤 모습(기본값)을 보인다.
+    let shown = match item.default {
+        Some(d) if pending_revert => d,
+        _ => h,
+    };
+    let on = hh.enabled.get(&h.id).copied().unwrap_or(!shown.disabled);
     let pending_remove = hh.remove.contains(&h.id);
-    let is_shell = matches!(h.action, HookHandlerAction::ShellCommand { .. });
-    let seq_calls: Option<&[IpcCall]> = match &h.action {
+    let is_shell = matches!(shown.action, HookHandlerAction::ShellCommand { .. });
+    let seq_calls: Option<&[IpcCall]> = match &shown.action {
         HookHandlerAction::IpcSequence { calls } => Some(
             hh.seq_edits
                 .get(&h.id)
@@ -314,7 +366,14 @@ fn draw_hook_row(
             .cmd_edits
             .get(&h.id)
             .cloned()
-            .unwrap_or_else(|| action_display(&h.action)),
+            .unwrap_or_else(|| action_display(&shown.action)),
+    };
+    let (origin_label, origin_variant) = origin_tag(origin);
+    // Revert/Undo 슬롯 — 둘째 줄 Edit 왼쪽(셸 행은 Input 오른쪽)이다.
+    let mut revert_slot = |ui: &mut egui::Ui| {
+        if item.default.is_some() && revert_button(ui, th, pending_revert, origin_label) {
+            **revert_toggle = Some(h.id.clone());
+        }
     };
 
     let resp = ui.scope(|ui| {
@@ -336,7 +395,7 @@ fn draw_hook_row(
                     ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         // 오른쪽부터 배치한다. user 행은 삭제 버튼, host/plugin은 자물쇠를 쓴다.
-                        if matches!(h.owner, HookHandlerOwner::User) {
+                        if matches!(origin, HookHandlerOwner::User) {
                             if IconButton::new()
                                 .variant(IconButtonVariant::Ghost)
                                 .size(ControlSize::Sm)
@@ -376,8 +435,10 @@ fn draw_hook_row(
                                 )
                                 .truncate(),
                             );
-                            let (label, variant) = origin_tag(&h.owner);
-                            tag(ui, th, label, variant, false);
+                            tag(ui, th, origin_label, origin_variant, false);
+                            if item.default.is_some() {
+                                edited_tag(ui, th, pending_revert);
+                            }
                             ui.label(
                                 egui::RichText::new(t_fmt(
                                     "settings.file_handler.hook_handlers.prio",
@@ -409,17 +470,28 @@ fn draw_hook_row(
                         },
                     );
                     if is_shell {
-                        let mut buf = cmd_display.clone();
-                        if Input::new()
-                            .mono(true)
-                            .enabled(on)
-                            .show(ui, th, &mut buf)
-                            .changed()
-                        {
-                            **cmd_edit = Some((h.id.clone(), buf));
-                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            revert_slot(ui);
+                            let mut buf = cmd_display.clone();
+                            if Input::new()
+                                .mono(true)
+                                .enabled(on)
+                                .show(ui, th, &mut buf)
+                                .changed()
+                            {
+                                **cmd_edit = Some((h.id.clone(), buf));
+                            }
+                        });
                     } else if let Some(calls) = seq_calls {
-                        seq_summary_line(ui, th, h, calls, cmd_display, seq_event);
+                        seq_summary_line(
+                            ui,
+                            th,
+                            h,
+                            calls,
+                            cmd_display,
+                            seq_event,
+                            &mut revert_slot,
+                        );
                     }
                 });
             });
@@ -544,6 +616,55 @@ fn lock_slot(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme) {
     resp.on_hover_text(t("settings.file_handler.hook_handlers.not_removable"));
 }
 
+/// 출처 Tag 뒤의 표시 — 평소 "edited"(툴팁: 기본값 갱신이 더는 적용되지 않음),
+/// 되돌리기 대기 중이면 disabled Tag "reverts on save".
+fn edited_tag(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme, pending: bool) {
+    if pending {
+        tag_disabled(
+            ui,
+            th,
+            t("settings.file_handler.hook_handlers.reverts_on_save"),
+            false,
+        );
+    } else {
+        tag(
+            ui,
+            th,
+            t("settings.file_handler.hook_handlers.edited"),
+            TagVariant::Default,
+            false,
+        )
+        .on_hover_text(t("settings.file_handler.hook_handlers.edited_tip"));
+    }
+}
+
+/// Revert(툴팁: 어느 출처의 기본값으로 가는지) 또는 대기 중이면 같은 자리의 Undo. 눌렸는가를 돌려준다.
+fn revert_button(
+    ui: &mut egui::Ui,
+    th: &tasty_type_appearance::theme::Theme,
+    pending: bool,
+    origin: &str,
+) -> bool {
+    let label = if pending {
+        t("settings.file_handler.hook_handlers.undo")
+    } else {
+        t("settings.file_handler.hook_handlers.revert")
+    };
+    let resp = Button::new(label)
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Sm)
+        .show(ui, th);
+    let resp = if pending {
+        resp
+    } else {
+        resp.on_hover_text(t_fmt(
+            "settings.file_handler.hook_handlers.revert_tip",
+            origin,
+        ))
+    };
+    resp.clicked()
+}
+
 /// 출처 표시: host, plugin ID, 사용자(you).
 fn origin_tag(owner: &HookHandlerOwner) -> (&str, TagVariant) {
     match owner {
@@ -562,6 +683,7 @@ fn seq_summary_line(
     calls: &[IpcCall],
     summary: String,
     seq_event: &mut Option<SeqRowEvent>,
+    revert_slot: &mut dyn FnMut(&mut egui::Ui),
 ) {
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         match format_sequence(calls) {
@@ -595,6 +717,7 @@ fn seq_summary_line(
                 .on_hover_text(command);
             }
         }
+        revert_slot(ui);
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
             ui.add(
                 egui::Label::new(
@@ -942,6 +1065,27 @@ mod tests {
         draft.remove.insert(HookHandlerId::new("user/gone"));
         assert!(
             matches!(draft.into_edits().as_slice(), [RegistryEdit::RemoveHook(id)] if id.as_str() == "user/gone")
+        );
+    }
+
+    #[test]
+    fn revert_drops_row_edits_and_saves_before_new_edits() {
+        use crate::app::settings_edit::RegistryEdit;
+        let id = HookHandlerId::new("host/notify");
+        let mut draft = HookHandlerEditDraft::default();
+        draft.enabled.insert(id.clone(), false);
+        draft.cmd_edits.insert(id.clone(), "echo old".into());
+        draft.toggle_revert(id.clone());
+        assert!(draft.enabled.is_empty() && draft.cmd_edits.is_empty());
+        // Undo 는 대기만 푼다.
+        draft.toggle_revert(id.clone());
+        assert!(draft.revert.is_empty());
+        draft.toggle_revert(id.clone());
+        // 되돌리기 뒤에 다시 고친 값은 기본값 위의 새 patch 가 되도록 RemoveHook 뒤에 온다.
+        draft.enabled.insert(id.clone(), false);
+        let edits = draft.into_edits();
+        assert!(
+            matches!(edits.as_slice(), [RegistryEdit::RemoveHook(a), RegistryEdit::HookEnabled(b, false)] if a == &id && b == &id)
         );
     }
 

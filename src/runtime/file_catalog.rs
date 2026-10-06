@@ -60,3 +60,8 @@ impl HandlerCatalog {
 pub(crate) fn hook_handlers() -> Vec<crate::hook_handler::HookHandler> {
     crate::hook_handler::global().all_handlers_including_disabled()
 }
+pub(crate) fn hook_handler_defaults()
+-> std::collections::BTreeMap<crate::hook_handler::HookHandlerId, crate::hook_handler::HookHandler>
+{
+    crate::hook_handler::global().patched_defaults()
+}

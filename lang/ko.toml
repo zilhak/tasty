@@ -324,6 +324,12 @@ seq_err_invalid_method = "{}번째 줄: 메서드 이름에 제어 문자가 있
 seq_err_invalid_params = "{}번째 줄 {}번째 열: 매개변수 JSON이 올바르지 않습니다."
 seq_edit_with_cli = "CLI로 편집"
 seq_copy_cli = "편집 명령 복사"
+edited = "수정됨"
+edited_tip = "설정에서 바꾼 항목입니다. 기본값이 갱신되어도 더 이상 적용되지 않습니다."
+revert = "되돌리기"
+revert_tip = "{}의 기본값으로 되돌립니다."
+reverts_on_save = "저장 시 되돌림"
+undo = "실행 취소"
 
 [settings.general]
 heading = "일반"

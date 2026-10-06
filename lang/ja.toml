@@ -324,6 +324,12 @@ seq_err_invalid_method = "{} 行目: メソッド名に制御文字が含まれ�
 seq_err_invalid_params = "{} 行目 {} 列目: パラメーターの JSON が正しくありません。"
 seq_edit_with_cli = "CLI で編集"
 seq_copy_cli = "編集コマンドをコピー"
+edited = "編集済み"
+edited_tip = "設定で変更した項目です。既定値が更新されても適用されなくなります。"
+revert = "元に戻す"
+revert_tip = "{} の既定値に戻します。"
+reverts_on_save = "保存時に元に戻す"
+undo = "取り消す"
 
 [settings.general]
 heading = "一般"

@@ -768,6 +768,15 @@ L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)
   **그 plugin 의 id**(mauve `accent-agent`)를 찍는다. `IpcSequence` 행은 인라인 편집
   대신 mono 한 줄 요약(스텝을 `→` 로 이음)이다. intro copy 의 priority 방향은 엔진
   규약(낮을수록 먼저)으로 기술.
+- **사용자 patch 가 걸린 host/plugin 행**(시안 `HookOverrideG`, 갤러리
+  `settings_hook_override.rs` = `settings-hook-edited-default` Spec, Mocha·Latte): 병합 결과의 owner 는
+  patch 를 단 User 이므로 본체는 `HookHandlerRegistry::patched_defaults`(사용자 기여분을 뺀 병합)에서
+  원 출처와 기본값을 읽는다. 출처 Tag·자물쇠는 원 출처를 따르고, 출처 Tag 바로 뒤에 기본 `Tag`
+  "edited"(툴팁 "Changed in your settings. Updates to the default no longer apply.")를 단다. 둘째 줄에는
+  `Edit` 왼쪽(셸 행은 Input 오른쪽)에 Revert(ghost sm, 툴팁 "Go back to the default from {origin}.")가
+  온다. 누르면 확장자 연결의 대기 모양을 따른다 — 같은 자리 Undo, `tag_disabled` "reverts on save",
+  요약·Switch 는 기본값을 보인다. 그 행의 초안 편집도 함께 버리고, Save 가 `RemoveHook`(patch 삭제)을
+  다른 편집보다 먼저 적용한다. Cancel 은 초안을 버리므로 patch 가 그대로 남는다. user 행에는 달지 않는다.
 - **`IpcSequence` 행**: 요약 한 줄(줄어드는 항목) · 오른쪽 끝 `Edit`(ghost sm). 한 줄 형식으로
   쓸 수 없는 시퀀스(`sequence_text::format_sequence` 가 거절)는 `Edit` 대신 caption
   "Edit with CLI"(text-muted, 툴팁 = `tasty hook-handler get --id <id>`) + 복사 `IconButton` sm 이다.

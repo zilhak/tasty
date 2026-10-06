@@ -324,6 +324,12 @@ seq_err_invalid_method = "Line {}: the method name contains a control character.
 seq_err_invalid_params = "Line {}, column {}: invalid params JSON."
 seq_edit_with_cli = "Edit with CLI"
 seq_copy_cli = "Copy edit command"
+edited = "edited"
+edited_tip = "Changed in your settings. Updates to the default no longer apply."
+revert = "Revert"
+revert_tip = "Go back to the default from {}."
+reverts_on_save = "reverts on save"
+undo = "Undo"
 
 [settings.general]
 heading = "General"

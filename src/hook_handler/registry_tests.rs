@@ -444,6 +444,38 @@ fn remove_and_clear_user_override() {
 }
 
 #[test]
+fn patched_defaults_lists_only_host_rows_with_a_user_patch() {
+    let reg = HookHandlerRegistry::new();
+    load_host(&reg);
+    let id = HookHandlerId::new(HOST_NOTIFY_ID);
+    assert!(reg.patched_defaults().is_empty());
+    reg.set_user_handler_disabled(&id, true);
+    reg.upsert_user_handler(UserHookHandlerUpsertDecl {
+        id: "user/mine".into(),
+        source: Some(HookSource::Hook),
+        priority: None,
+        display_name_i18n_key: None,
+        disabled: None,
+        action: Some(UserHookHandlerActionDecl::ShellCommand {
+            command: "true".into(),
+            args: Vec::new(),
+        }),
+    })
+    .unwrap();
+    let defaults = reg.patched_defaults();
+    assert_eq!(defaults.keys().collect::<Vec<_>>(), vec![&id]);
+    let default = &defaults[&id];
+    assert!(matches!(default.owner, HookHandlerOwner::Host));
+    assert!(!default.disabled);
+    // 병합 결과는 사용자 patch 를 따르고 owner 도 User 로 바뀐다 — 그래서 기본값을 따로 읽는다.
+    let merged = reg.get(&id).unwrap();
+    assert!(merged.disabled);
+    assert!(matches!(merged.owner, HookHandlerOwner::User));
+    reg.remove_user_handler(&id);
+    assert!(reg.patched_defaults().is_empty());
+}
+
+#[test]
 fn reload_user_config_replaces_user_keeps_host() {
     let reg = HookHandlerRegistry::new();
     load_host(&reg);

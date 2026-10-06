@@ -1604,6 +1604,14 @@ pub fn pages() -> Vec<Page> {
                             components::settings_handler::draw_hook_handlers,
                         ),
                         spec(
+                            "settings-hook-edited-default",
+                            "Hook Handlers — edited default: mark + Revert",
+                            Some(
+                                "host / plugin row with a user patch · edited Tag · Revert → Undo + reverts on save (Mocha + Latte)",
+                            ),
+                            components::settings_hook_override::draw,
+                        ),
+                        spec(
                             "settings-hook-seq-editor",
                             "Hook Handlers — IpcSequence text editor",
                             Some(

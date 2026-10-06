@@ -340,6 +340,39 @@ impl HookHandlerRegistry {
         inner.dirty = true;
     }
 
+    /// 사용자 patch 가 걸린 host·plugin 핸들러의 기본값 — 사용자 기여분을 뺀 병합 결과다.
+    /// 병합 결과의 owner 는 마지막 기여자(User)이므로, 설정 화면은 원 출처와 Revert 뒤 모습을 여기서 읽는다.
+    /// 사용자만 기여한 id 와 필드가 하나도 없는 사용자 기여분은 넣지 않는다.
+    #[cfg(any(feature = "gui", test))]
+    pub fn patched_defaults(&self) -> BTreeMap<HookHandlerId, HookHandler> {
+        let inner = self.lock_read();
+        inner
+            .contributions
+            .iter()
+            .filter(|(_, contribs)| {
+                contribs.iter().any(|c| {
+                    matches!(c.owner, HookHandlerOwner::User)
+                        && (c.source.is_some()
+                            || c.priority.is_some()
+                            || c.display_name_i18n_key.is_some()
+                            || c.disabled_override.is_some()
+                            || c.action.is_some())
+                })
+            })
+            .filter_map(|(id, contribs)| {
+                let base: Vec<HookHandlerContribution> = contribs
+                    .iter()
+                    .filter(|c| !matches!(c.owner, HookHandlerOwner::User))
+                    .cloned()
+                    .collect();
+                if base.is_empty() {
+                    return None;
+                }
+                merge_contribution(id, &base).map(|h| (id.clone(), h))
+            })
+            .collect()
+    }
+
     #[allow(dead_code)] // 이유: 현재 검사에서만 사용한다.
     pub fn clear_user_handler_override(&self, id: &HookHandlerId) {
         let mut inner = self.lock_write();
