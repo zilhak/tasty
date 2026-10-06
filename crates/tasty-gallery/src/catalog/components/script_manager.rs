@@ -1,5 +1,5 @@
-//! 스크립트 관리의 등록 목록·변경 안내·빈 상태를 보여주는 정적 예제.
-//! 등록·이름 변경·삭제·단축키 연결은 실제로 실행하지 않는다.
+//! 스크립트 관리의 등록 목록·변경 안내·자동 실행 트리거·빈 상태를 보여주는 정적 예제.
+//! 등록·이름 변경·삭제·단축키 연결·트리거 편집은 실제로 실행하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -14,6 +14,8 @@ use crate::catalog::widgets::dialog as kit;
 const FRAME_MAX_W: LogicalPx = LogicalPx(560.0);
 /// 행 중앙 컬럼의 name→path→help 사이 hairline 간격 (jsx `gap: 2` — 4px 그리드 하위).
 const ROW_LINE_GAP: LogicalPx = LogicalPx(2.0);
+/// 트리거 칩과 Add trigger… 컨트롤 높이(jsx `height: 16`, changed 배지와 같은 높이).
+const CHIP_H: LogicalPx = LogicalPx(16.0);
 
 /// RTL 클러스터에서 kbd 키캡이 역순으로 그려지는 것을 상쇄하려 combo 파트를 미리
 /// 뒤집는다(`"Ctrl+Shift+J"` → `"J+Shift+Ctrl"` → RTL 렌더 후 화면상 정순).
@@ -22,12 +24,14 @@ fn rtl_combo(combo: &str) -> String {
 }
 
 /// 한 스크립트 행(seed). `dir`+`file` 은 중간생략 경로용, `shortcut` 빈값=Unbound.
+/// `triggers` 는 자동 실행에 묶인 host 수명주기 이벤트다.
 struct Seed {
     name: &'static str,
     dir: &'static str,
     file: &'static str,
     shortcut: &'static str,
     changed: bool,
+    triggers: &'static [&'static str],
 }
 
 const SEEDS: &[Seed] = &[
@@ -37,6 +41,7 @@ const SEEDS: &[Seed] = &[
         file: "reformat-json.lua",
         shortcut: "Ctrl+Shift+J",
         changed: false,
+        triggers: &["clipboard.copy.post"],
     },
     Seed {
         name: "Tail & highlight errors",
@@ -44,6 +49,7 @@ const SEEDS: &[Seed] = &[
         file: "tail-errors.lua",
         shortcut: "",
         changed: false,
+        triggers: &["pane.create.post", "session.start.post"],
     },
     Seed {
         name: "Deploy staging",
@@ -51,45 +57,52 @@ const SEEDS: &[Seed] = &[
         file: "deploy-staging.lua",
         shortcut: "Ctrl+Alt+D",
         changed: true,
+        triggers: &[],
     },
 ];
 
-/// 목록 variant — 3 seed 행(bound / unbound / changed+help).
+/// 시안 무대: 등록 목록(bound / unbound / changed+help, 자동 실행 트리거)과 빈 상태를 나란히 둔다.
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    frame(ui, theme, false);
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        // 시안 무대는 `alignItems: flex-start` 라 높이가 다른 두 프레임도 위쪽을 맞춘다.
+        ui.with_layout(
+            egui::Layout::left_to_right(egui::Align::Min).with_main_wrap(true),
+            |ui| {
+                for (caption, empty) in [("registered scripts", false), ("empty state", true)] {
+                    spec::wrap_item(ui, |ui| {
+                        ui.push_id(caption, |ui| {
+                            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                            ui.label(
+                                egui::RichText::new(caption)
+                                    .size(theme.font_size_caption.value())
+                                    .color(theme.text_muted().to_egui()),
+                            );
+                            frame(ui, theme, empty);
+                        });
+                    });
+                }
+            },
+        );
+    });
     meta_note(ui, theme);
 }
 
-/// 빈 상태 variant.
-pub fn draw_empty(ui: &mut egui::Ui, theme: &Theme) {
-    frame(ui, theme, true);
-    spec::note(
-        ui,
-        theme,
-        "Empty state — the shared CenterState part (Components › CenterState): \
-         glyph 24, a title, and an Add-script prompt.",
-    );
-}
-
 fn frame(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
-    let width = LogicalPx(ui.available_width()).min(FRAME_MAX_W);
-    spec::stage(ui, theme, StageVariant::Column, |ui| {
-        // 설정 창 내부 콘텐츠이므로 팝업 그림자를 추가하지 않는다.
-        kit::frame_card_flat(ui, theme, width, kit::panel_fill(theme), |ui| {
-            kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
-                ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
-                header(ui, theme);
-                if empty {
-                    empty_state(ui, theme);
-                } else {
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = 0.0;
-                        for s in SEEDS {
-                            script_row(ui, theme, s);
-                        }
-                    });
-                }
-            });
+    // 설정 창 내부 콘텐츠이므로 팝업 그림자를 추가하지 않는다.
+    kit::frame_card_flat(ui, theme, FRAME_MAX_W, kit::panel_fill(theme), |ui| {
+        kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+            header(ui, theme);
+            if empty {
+                empty_state(ui, theme);
+            } else {
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    for s in SEEDS {
+                        script_row(ui, theme, s);
+                    }
+                });
+            }
         });
     });
 }
@@ -132,6 +145,13 @@ fn header(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 fn script_row(ui: &mut egui::Ui, theme: &Theme, s: &Seed) {
+    // 시안 `ScriptRow` 안쪽 여백 8 4(space-sm · space-xs).
+    egui::Frame::new()
+        .inner_margin(egui::Margin::symmetric(
+            theme.spacing_xs.value() as i8,
+            theme.spacing_sm.value() as i8,
+        ))
+        .show(ui, |ui| {
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
         ui.vertical(|ui| {
@@ -198,9 +218,11 @@ fn script_row(ui: &mut egui::Ui, theme: &Theme, s: &Seed) {
                         .color(theme.accent_warning().to_egui()),
                     );
                 }
+                trigger_row(ui, theme, s.triggers);
             });
         });
     });
+        });
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(w, theme.border_width.value()),
@@ -278,6 +300,83 @@ fn changed_badge(ui: &mut egui::Ui, theme: &Theme) {
     ui.painter().galley(pos, galley, warn);
 }
 
+/// 자동 실행 줄 — "Auto-run:" 캡션 · 트리거 칩(누르면 제거) · 점선 Add trigger… 컨트롤.
+/// 칩이 넘치면 다음 줄로 넘어간다.
+fn trigger_row(ui: &mut egui::Ui, theme: &Theme, triggers: &[&str]) {
+    // 시안 `marginTop: 2`.
+    ui.add_space(ROW_LINE_GAP.value());
+    ui.horizontal_wrapped(|ui| {
+        let gap = theme.spacing_xs.value();
+        ui.spacing_mut().item_spacing = egui::vec2(gap, gap);
+        ui.label(
+            egui::RichText::new("Auto-run:")
+                .size(theme.font_size_caption.value())
+                .color(theme.text_muted().to_egui()),
+        );
+        for event in triggers {
+            trigger_chip(ui, theme, event, false);
+        }
+        trigger_chip(ui, theme, "Add trigger…", true);
+    });
+}
+
+/// 트리거 칩 — mono micro 이벤트명 + 오른쪽 글리프 12, 높이 16, 안쪽 여백 0 4, border-default.
+/// `add` 면 점선 테두리 · text-muted 글자 · chevronDown 글리프(남은 이벤트 메뉴), 아니면
+/// 실선 테두리 · text-secondary 글자 · close 글리프(칩 전체가 제거 영역).
+fn trigger_chip(ui: &mut egui::Ui, theme: &Theme, label: &str, add: bool) {
+    let fg = if add {
+        theme.text_muted()
+    } else {
+        theme.text_secondary()
+    }
+    .to_egui();
+    let glyph = theme.icon_glyph_size_xs.value();
+    let gap = theme.spacing_xs.value();
+    let pad_x = theme.spacing_xs.value();
+    let galley = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        egui::FontId::monospace(theme.font_size_micro.value()),
+        fg,
+    );
+    let w = pad_x * 2.0 + galley.rect.width() + gap + glyph;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, CHIP_H.value()), egui::Sense::hover());
+    let bw = theme.border_width.value();
+    let stroke = egui::Stroke::new(bw, theme.border_default().to_egui());
+    let radius = theme.corner_radius_sm.value();
+    if add {
+        // 점선 길이는 시안에 값이 없어 갤러리의 다른 점선 예제와 같은 space-xs 를 쓴다.
+        let dash = theme.spacing_xs.value();
+        let r = rect.shrink(bw * 0.5);
+        for pts in [
+            [r.left_top(), r.right_top()],
+            [r.right_top(), r.right_bottom()],
+            [r.right_bottom(), r.left_bottom()],
+            [r.left_bottom(), r.left_top()],
+        ] {
+            ui.painter()
+                .extend(egui::Shape::dashed_line(&pts, stroke, dash, dash));
+        }
+    } else {
+        ui.painter()
+            .rect_stroke(rect, radius, stroke, egui::StrokeKind::Inside);
+    }
+    let pos = egui::pos2(
+        rect.left() + pad_x,
+        rect.center().y - galley.rect.height() * 0.5,
+    );
+    ui.painter().galley(pos, galley, fg);
+    let gr = egui::Rect::from_min_size(
+        egui::pos2(rect.right() - pad_x - glyph, rect.center().y - glyph * 0.5),
+        egui::vec2(glyph, glyph),
+    );
+    let (g, gc) = if add {
+        (icons::CHEVRON_DOWN, fg)
+    } else {
+        (icons::CLOSE, theme.text_muted().to_egui())
+    };
+    g.image(glyph, gc).paint_at(ui, gr);
+}
+
 /// 목록이 들어갈 자리에 공용 CenterState 를 자연 높이로 그린다(본체 Settings 와 같은 호출).
 fn empty_state(ui: &mut egui::Ui, theme: &Theme) {
     CenterState::empty(icons::SCRIPT, "No scripts registered")
@@ -292,42 +391,45 @@ fn meta_note(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("frame", "≤560 · bg-panel · 1px border-strong · no shadow"),
+            ("home", "Settings › Misc › Scripts (subsection)"),
+            ("row", "name · path · shortcut · actions · auto-run"),
+            ("shortcut", "Kbd badge or italic Unbound"),
+            ("changed", "peach badge + help line (SHA mismatch)"),
             (
-                "header",
-                "title font-size-max semibold + muted desc · Add script (secondary sm)",
+                "auto-run",
+                "trigger chips + Add trigger… (13 lifecycle events)",
             ),
-            (
-                "row",
-                "glyph 16 · name 13/600 · mono path (middle-elided) · Kbd/Unbound · bind·edit·trash",
-            ),
-            (
-                "changed",
-                "accent-warning badge + help line (TOFU re-confirm)",
-            ),
-            ("divider", "1px separator per row"),
+            ("chip", "mono event · click removes · hover 12% overlay"),
+            ("actions", "bind · rename · remove"),
+            ("empty", "glyph + Add script prompt"),
         ],
         &[
-            TokenChip::new("bg-panel", "frame", theme.bg_panel().to_egui()),
             TokenChip::new(
                 "accent-warning",
-                "changed",
+                "changed badge + help",
                 theme.accent_warning().to_egui(),
+            ),
+            TokenChip::new(
+                "border-default",
+                "chip + add-control border",
+                theme.border_default().to_egui(),
+            ),
+            TokenChip::new(
+                "overlay-active",
+                "chip hover / menu open",
+                theme.overlay_active().to_egui_premultiplied(),
             ),
             TokenChip::new("text-disabled", "Unbound", theme.text_disabled().to_egui()),
             TokenChip::without_color("font-mono", "path · trigger chips"),
-            TokenChip::new(
-                "separator",
-                "row divider",
-                theme.separator.to_egui_premultiplied(),
-            ),
         ],
     );
     spec::note(
         ui,
         theme,
-        "Mirrors the body ScriptManager (Settings › Misc › Scripts). Binding is owned by \
-         Keybindings — this surface only shows the bound key and links into it. A row is \
-         marked changed when the on-disk SHA differs from the hash recorded at registration.",
+        "Two independent run paths: a manual shortcut (bound in the Keybindings tab, shown as \
+         the Kbd badge) and auto-run triggers (edited inline here — the script fires when the \
+         host emits a bound lifecycle event). A script can have either, both, or neither. The \
+         changed state is informational — the script still runs, but re-confirms once (TOFU) \
+         because the on-disk file drifted from the registered hash.",
     );
 }

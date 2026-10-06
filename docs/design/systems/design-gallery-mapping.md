@@ -647,12 +647,13 @@ markdown 은 Column · Solo · Column · Wrap 네 무대. 화면 전용 고정�
 
 | 디자인 컴포넌트 | 본체 draw | 갤러리 specimen | 핵심 토큰 |
 |---|---|---|---|
-| `ScriptManager` (헤더+add card+list/empty) | `view/settings/ui/tabs/misc.rs::draw_scripts_subtab` | `catalog/components/script_manager.rs::draw`(list) / `::draw_empty` | 제목 `font-size-max`/semibold · 설명 `text-muted`/`measure-md` |
+| `ScriptManager` (헤더+add card+list/empty) | `view/settings/ui/tabs/misc.rs::draw_scripts_subtab` | `catalog/components/script_manager.rs::draw`(list와 empty를 한 Spec에 나란히, `frame(empty)`) | 제목 `font-size-max`/semibold · 설명 `text-muted`/`measure-md` |
 | `ScriptRow` (glyph/name/path/kbd/actions) | `draw_script_row` | specimen 내 `Row` | 행 하단 `separator` 보더 · name 13/600 `text-primary` |
 | `ScriptChangedBadge` | inline | inline | `accent-warning` color-mix(40% border/12% bg) · mono `font-size-micro`(10) + warn glyph 12 |
+| `TriggerRow` (Auto-run) | `draw_trigger_row` / `trigger_chip` | `trigger_row` / `trigger_chip` | "Auto-run:" caption `text-muted` · 칩 높이 16 · 안쪽 여백 0 `space-xs` · `border-default` · mono `font-size-micro` `text-secondary` + close 12 `text-muted` · Add trigger… 점선 `border-default` + chevronDown 12, `text-muted`. 본체는 칩 좌우 여백이 `space-sm`이고 추가 컨트롤이 ComboBox다 |
 | `ScriptPath` (중간생략) | `draw_script_path` | inline `Path` | dir=`text-muted` ellipsis-first / file=`text-secondary` full · mono 12 |
 | Add card | inline | (list variant만) | `surface-raised` bg + `border-default` + `radius` · 라벨폭 100 · row `settings-row-min-height` |
-| Empty state | `draw_empty` → 공용 `CenterState` | `empty` variant(같은 위젯) | `SCRIPT` 글리프 `center-state-glyph-size`(24) + 제목 body 13 `center-state-title-fg` + 보조 caption `center-state-sub-fg` · `center-state-max-width`(300) 줄바꿈, 자연 높이 |
+| Empty state | `draw_empty` → 공용 `CenterState` | `frame(empty)` (같은 위젯) | `SCRIPT` 글리프 `center-state-glyph-size`(24) + 제목 body 13 `center-state-title-fg` + 보조 caption `center-state-sub-fg` · `center-state-max-width`(300) 줄바꿈, 자연 높이 |
 
 **전사 스펙 (jsx inline style → LogicalPx / Theme)**:
 - ScriptRow: `align-items:flex-start`, `gap: space-md`(12), `padding: space-sm space-xs`(8/4), 하단 `1px separator`. glyph 16 `text-muted` `margin-top:2`. 중앙 flex1 `min-width:0` col `gap:2`. 우측 `flex:none` `gap: space-sm`(8).

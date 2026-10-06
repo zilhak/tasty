@@ -1684,22 +1684,14 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "scripts",
                     "Misc · Scripts (Lua script manager)",
-                    vec![
-                        spec(
-                            "scripts-list",
-                            "Registered scripts — bound / unbound / changed",
-                            Some(
-                                "glyph · name+path (middle-elided) · Kbd/Unbound · bind·rename·remove",
-                            ),
-                            components::script_manager::draw,
+                    vec![spec(
+                        "scripts-list",
+                        "Scripts subsection — list, states & empty",
+                        Some(
+                            "name · path (middle-elided) · Kbd/Unbound · changed badge · auto-run trigger chips + Add trigger… · bind·rename·remove · empty state",
                         ),
-                        spec(
-                            "scripts-empty",
-                            "Empty state",
-                            Some("Centered glyph + \"No scripts registered\" + Add-script prompt"),
-                            components::script_manager::draw_empty,
-                        ),
-                    ],
+                        components::script_manager::draw,
+                    )],
                 ),
                 section(
                     "tutorial",
