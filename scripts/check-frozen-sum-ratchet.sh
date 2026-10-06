@@ -197,7 +197,8 @@ if [ "$SUM" -gt "$CEILING" ]; then
     echo "    git log --format='%h %s' --numstat -- \$(grep -v '^#' .complexity-file-allowlist)"
     echo
     echo "  할 일은 둘 중 하나다."
-    echo "  - 위 파일 중 하나를 분해해 합을 $CEILING 이하로 내린다 ."
+    echo "  - 위 파일에서 실제 코드를 줄여 합을 $CEILING 이하로 내린다(중복 제거·죽은 코드 삭제)."
+    echo "    분해(이동)만으로는 합이 줄지 않는다 — 분해한 하위 모듈도 이 명부에 남는다."
     echo "  - 이 커밋이 .complexity-file-allowlist 에 **항목을 새로 추가**하는 커밋이라면,"
     echo "    추가가 정당한지 검토한 뒤 예산 줄도 갱신한다:"
     echo "      # frozen-sum-budget: $SUM"
