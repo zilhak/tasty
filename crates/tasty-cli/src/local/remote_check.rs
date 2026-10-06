@@ -88,9 +88,9 @@ fn probe_system_info(port: u16) -> Result<serde_json::Value> {
         method: "system.info".to_string(),
         params: serde_json::json!({}),
         id: Some(serde_json::json!(1)),
-        session_token: std::env::var("TASTY_SESSION_TOKEN")
-            .ok()
-            .filter(|s| !s.is_empty()),
+        // 세션 토큰은 이 프로세스를 띄운 로컬 Tasty가 발급한 것이라 원격 Tasty는 모른다.
+        // 원격 요청에 실으면 `session_token unknown`으로 거절되므로 싣지 않는다.
+        session_token: None,
     };
 
     let mut writer = stream.try_clone()?;
@@ -180,5 +180,45 @@ mod tests {
             }
         }
         panic!("연결 거부는 dead(에러)여야 한다 — 세 포트가 전부 응답했다: {answered:?}");
+    }
+
+    /// 부모 Tasty의 토큰을 상속한 프로세스에서도 원격 요청에 `session_token`을 싣지 않는다.
+    /// 환경변수를 바꾸는 대신 이 시험만 `TASTY_SESSION_TOKEN`을 둔 자식 프로세스로 다시 실행한다.
+    #[test]
+    fn a_remote_request_does_not_carry_the_inherited_session_token() {
+        const CHILD: &str = "TASTY_TEST_INHERITED_TOKEN_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "local::remote_check::tests::a_remote_request_does_not_carry_the_inherited_session_token", "--nocapture", "--test-threads=1"])
+                .env(CHILD, "1")
+                .env("TASTY_SESSION_TOKEN", "ab".repeat(32))
+                .status()
+                .unwrap();
+            assert!(status.success(), "child run failed: {status}");
+            return;
+        }
+        assert_eq!(
+            std::env::var("TASTY_SESSION_TOKEN").unwrap(),
+            "ab".repeat(32)
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let h = thread::spawn(move || {
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut request = String::new();
+            BufReader::new(sock.try_clone().unwrap())
+                .read_line(&mut request)
+                .unwrap();
+            sock.write_all(br#"{"jsonrpc":"2.0","result":{},"id":1}"#)
+                .unwrap();
+            sock.write_all(b"\n").unwrap();
+            request
+        });
+        probe_system_info(port).expect("probe");
+        let request: serde_json::Value = serde_json::from_str(h.join().unwrap().trim()).unwrap();
+        assert!(
+            request.get("session_token").is_none(),
+            "remote request carried a session token: {request}"
+        );
     }
 }

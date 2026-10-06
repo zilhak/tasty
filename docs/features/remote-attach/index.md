@@ -280,6 +280,10 @@ Auto 체인이 전 단계 실패하면 가장 확정적인 분류(취소 > 타�
 
 이 능력은 **CLI(`remote workspaces`)와 로컬 IPC method(`remote.workspaces`) 양면**으로 노출된다(원칙 2 — 에이전트가 CLI 없이 소켓만으로도 브라우징 가능). 둘 다 동일한 코어(`tasty_remote::browse`)를 공유하며, 블로킹 SSH I/O 는 호스트 IPC 경로에서 **워커 스레드**로 돌려 이벤트루프를 막지 않는다. RA02 원격 추가 팝업의 우측 목록이 이 출력을 데이터 소스로 소비한다.
 
+### 원격 요청의 세션 토큰
+
+세션 토큰(`TASTY_SESSION_TOKEN`)은 그 프로세스를 띄운 로컬 Tasty의 `session.issue`가 발급하므로 다른 인스턴스는 모른다. 원격 인스턴스로 보내는 IPC 요청(브라우징의 `workspace.list`·`attach.list`, 원격 워크스페이스 생성의 `workspace.create`, `remote check`의 `system.info`)에는 세션 토큰을 싣지 않는다. Tasty 안의 터미널에서 띄운 GUI·CLI가 부모 Tasty의 토큰을 상속해도 원격은 토큰 없는 요청으로 받는다. 원격 쪽 권한 경계는 SSH 접속이다. attach 채널도 토큰을 싣지 않는다(아래 비-목표). `--ssh 127.0.0.1:<port>` loopback 직결로 같은 머신의 다른 인스턴스를 조회할 때도 같다.
+
 ### 원격 attach (IPC — focus 중립)
 
 로컬 IPC method `remote.attach` { `remote_workspace`, `profile?`/`ssh?` } — 선택한 원격 워크스페이스를 **로컬 mirror 로 attach**(호스트가 워커 스레드에서 SSH 터널을 세우고 mirror 를 재구성).
@@ -406,6 +410,7 @@ bulk 파일 전송과 mirror 터미널 이미지 붙여넣기 업로드에 대�
 - Given client 가 FIN/RST 없이 조용히 끊김(silent disconnect) When attach heartbeat TTL 이 만료 Then 점유 lock 이 EOF 와 동일하게 자동 free 되고, 같은 surface/workspace 로 새 client 의 재attach 가 성공한다.
 - Given workspace attach When 멤버 터미널 하나가 이미 다른 client 점유 Then workspace attach 가 거부된다.
 - Given stale 포트 파일만 있는 죽은 인스턴스 When `tasty remote check` Then dead(exit≠0)로 판정한다.
+- Given 부모 Tasty의 `TASTY_SESSION_TOKEN`을 상속한 GUI·CLI When 다른 인스턴스로 원격 브라우징·생성·생존 확인 요청을 보낸다 Then 요청에 세션 토큰이 없고, 원격은 `session_token unknown` 없이 응답한다.
 - Given workspace attach 대상에 bundled egui-mesh surface(image/mesh_demo) 가 있음 When client 가 GUI mirror 로 attach Then 그 surface 의 실제 렌더 콘텐츠가 mirror pane 에 표시된다(placeholder 아님). markdown은 아래의 원문 전달 채널을 사용한다.
   - image — 미검증.
   - mesh_demo — 미검증.
