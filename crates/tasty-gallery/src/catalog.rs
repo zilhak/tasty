@@ -1039,6 +1039,14 @@ pub fn pages() -> Vec<Page> {
                             components::file_picker::draw_gesture_table,
                         ),
                         spec(
+                            "filepicker-path-bar",
+                            "Path bar — what gives way when the folded path still doesn't fit",
+                            Some(
+                                "current folder → parent → root → the … menu · five steps, each at its floor",
+                            ),
+                            components::file_picker::draw_path_fit,
+                        ),
+                        spec(
                             "filepicker-filter-chip",
                             "File-type filter chip — a read-only readout",
                             Some(

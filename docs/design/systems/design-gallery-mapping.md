@@ -825,7 +825,7 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
 
 ## 파일 피커 (Overlays)
 
-디자인 `gallery/overlays-shared.jsx` `FilePickerFrame`/`FpRow`/`FpCrumbs`/`FpHostBadge`
+디자인 `gallery/overlays-shared.jsx` `FilePickerFrame`/`FpRow`/`FpCrumbs`/`FpCrumbMenu`/`FpHostBadge`
 + `gallery/overlays-windows.jsx` `#filepicker` Section ↔ 갤러리
 `catalog/components/file_picker.rs`.
 본체는 `src/adapters/ui/popup/file_picker.rs`의 `draw_file_picker`를 사용한다. `FILE_PICKER_POPUP_ID = "file_picker"`인 egui `PopupDef`가 `defs.rs`에 등록돼 있다. 디자인처럼 헤더는 하나다 — `PopupDef`가 `headless`라 셸 타이틀바가 없고, 뷰가 그린 헤더 줄을 이동 손잡이(`DragHandle::Region`)로 보고한다. 셸 공통 내부 여백을 두지 않는 popup 이라 구역의 배경·구분선(path bar 의 `bg-sidebar` 띠 포함)은 창 좌우 끝까지 닿는다.
@@ -850,16 +850,19 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 
 | `FilePickerFrame`(container) | `card` | 640×480 · bg-panel · border-strong · modal shadow |
 | header(glyph·title·host indicator·✕) | `header` | 글리프 항상 `FILE`(B안의 remote 글리프 스왑 미반영) |
 | host 배지(§6.1 A안, 채택) | `host_badge` | mono `user@host` · `accent-info` 14%/45% 배경/보더 |
-| path bar(`FpCrumbs`+refresh) | `path_bar` → `crumbs` | `bg-sidebar` 전폭 띠 · 아래 `separator` 1px. root=mono, 중간=accent 링크, current=bold 비클릭 |
+| path bar(`FpCrumbs`+refresh) | `path_bar` → `crumbs` | `bg-sidebar` 전폭 띠 · 아래 `separator` 1px. root=mono, 조상=accent 링크, 현재 폴더=`text-primary` 비클릭 |
 | list header(NAME/SIZE/MODIFIED) | `list_header` | loaded/multi 상태만, `cols()` 좌표 공유 |
 | `FpRow` | `row` | selected=surface-active+2px accent 좌측바, focus=1px accent outline(선택과 구분) |
 | 로딩/빈폴더/에러(권한·연결끊김) | `body` → `center` → 공용 `CenterState` | Spinner · folderOpen · 부품 소유 오류 글리프(alertTriangle). Retry/Reconnect 는 refresh 아이콘을 단 위젯 액션으로, 가운데 정렬 밖 보조 슬롯 아래에 매달린다 |
 | footer(name field+filter chip+Cancel/Open) | `footer` + 공용 `filter_readout` | `kit::field` 재사용, Open 은 loaded 상태에서만 활성. 라벨·칩·버튼 flex:none, 이름 칸만 준다 |
 | `FilePickerFrame filters` prop · `overlays-windows.jsx` "File-type filter chip — a read-only readout" | `Variant::filtered` · `Variant::sized` · `draw_filter_chip`(Spec `filepicker-filter-chip`) | 4 프레임(필터 없음 · 하나 · 둘+저장 · 여섯=상한 말줄임), 디자인과 같은 480×300 카드. 읽기 전용 표시라 chevron·채움·hover 없음, 툴팁 "Showing …" |
 | footer overwrite line(`save="picked"`) | `overwrite_line` · `footer_height` | alertTriangle + 이름 mono · `accent-warning`. footer 가 커지면 본문이 준다 |
-| `FilePickerFrame mode/save/deep` prop | `Variant` · `Mode` · `SaveState` | Save file 제목 · Save/Overwrite 라벨 · 저장 모드 선택 행 |
+| `FilePickerFrame mode/save` prop | `Variant` · `Mode` · `SaveState` | Save file 제목 · Save/Overwrite 라벨 · 저장 모드 선택 행 |
+| `FilePickerFrame remote/deep/pathKind` prop | `Variant::path` · `path_bar::PathKind`(`Local` · `Remote` · `Deep` · `LongTwo` · `LongRoot`) | 디자인 crumbs seed 를 그대로 쓴다 |
 | `FilePickerFrame folderSel` prop | `Variant::folder_selected` · `footer::folder_line`(Spec `filepicker-gesture-table`) | 고른 것이 폴더인 상태 — 저장은 "저장 대상이 아니다", 열기는 "확정하면 들어간다". 톤 없는 muted caption + `folder` 글리프, 열기 문구는 확정 버튼 이름을 부른다. 본체는 `file_picker::selected_folder` · `footer::folder_line` |
-| `FpCrumbs elide` | `crumbs`(`DEEP_CRUMBS`) | root + `…` + 마지막 두 성분, 성분 `CRUMB_MAX_W`(180) 말줄임, path bar 는 refresh 가 먼저 자리 잡고 crumbs 는 남은 폭으로 clip |
+| `FpCrumbs`(배분 · `elide` · `single`) | `crumbs` → 공용 `tasty_ui_widgets::crumb_alloc::plan` | 본체와 같은 배분을 카드의 실제 폭에 돌린다. 가용 폭은 refresh 와 그 간격을 뺀 폭. 상한·바닥·여유는 `fp-crumb-max-width`(180) · `fp-crumb-min-width`(64) · `fp-crumb-current-min-width`(96) · `fp-bar-hysteresis`(8). 조상은 꼬리, 현재 폴더는 앞(`…-bbbb`)에서 말줄임. `…` 는 hover 시 "Show N hidden folders"(1 이면 단수) |
+| `FpCrumbMenu`(`crumbMenu` prop) | `Variant::crumb_menu_open` · `path_bar::crumb_menu` | 숨긴 조상을 경로 순서로, `folder` 글리프 + `menu_item`. 폭은 가장 긴 줄을 `fp-crumb-menu-min-width`(180)~`fp-crumb-menu-max-width`(320) 밴드에 맞춘다(본체 `menu_width` 와 같은 식). 첫 줄 `overlay-hover` |
+| `overlays-windows.jsx` "Path bar — what gives way when the folded path still doesn't fit" | `draw_path_fit`(Spec `filepicker-path-bar`) | 디자인과 같은 4 카드(640×480 longtwo · 400×360 longtwo · 440×300 longroot · 400×360 저장 덮어쓰기) + Meta + Do/Don't + Note |
 | `overlays-windows.jsx` "Save mode — one confirm, in the footer" | `draw_save_mode` | 4 프레임(new · picked · edited · deep) + Meta + Note |
 
 본체 `src/adapters/ui/popup/file_picker.rs::entry_row`도 `FpRow`의 오른쪽 고정 열과
@@ -867,9 +870,13 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 
 선택·확정에 사용하는 원래 이름은 보존한다.
 
 **갤러리 vs 디자인 차이**: 긴 파일명 말줄임은 jsx `text-overflow:ellipsis`(CSS 네이티브)
-대신 `elide()`(문자 단위 폭 측정 후 컷 + `…`)로 근사한다 — 브레드크럼 세그먼트별
-`maxWidth:180` ellipsis 도 같은 `elide()` 로 근사한다. 갤러리의 가운데 생략은 jsx 와 같이
-`deep` prop 으로 켜고, 본체는 전체 breadcrumb 이 폭을 넘을 때 켠다. **별도 Theme 필드 없음** — 전부 기존 semantic 접근자
+대신 `elide()`(문자 단위 폭 측정 후 컷 + `…`)로 근사한다. 브레드크럼은 jsx 처럼 `elide`·`single` prop 으로
+접힘 단계를 정하지 않고 본체와 같은 `crumb_alloc::plan` 이 카드 폭으로 정한다. 그래서 같은 카드 크기·경로에서
+디자인 그림과 단계가 다를 수 있다 — 640×480 의 깊은 경로와 53자 두 성분은 다 들어가 접히지 않고, 400×360 의
+53자 두 성분은 `/ › … › 부모(64) › 현재` 에서 멈추며, 440×300 의 UNC root 는 180 상한에서 말줄임될 뿐 접히지 않는다.
+카드 라벨은 갤러리가 실제로 그린 단계를 적는다. `…` 메뉴 예제는 깊은 경로가 접히는 피커 바닥 폭(`fp-popup-min-width`)
+카드에 둔다. 갤러리 카드는 크기가 고정이라 직전 단계(히스테리시스)를 넘기지 않는다. 디자인 path bar 는 refresh 하나뿐이고
+갤러리도 그렇다. 본체는 위로 이동 버튼도 있어 같은 피커 폭에서 경로 가용 폭이 그만큼 좁다. 색·간격은 전부 기존 semantic 접근자
 (`accent_info`/`surface_active`/`accent_primary`/`text_placeholder`/`bg_sidebar` 등)와
 기존 위젯(`kit::field`/`checkbox`/`Spinner`/`Button`/`IconButton`)으로 해소.
 

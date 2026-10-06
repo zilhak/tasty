@@ -4,8 +4,11 @@
 mod filter_chip;
 mod footer;
 mod path_bar;
+mod path_fit;
 
 pub use filter_chip::draw_filter_chip;
+use path_bar::PathKind;
+pub use path_fit::draw_path_fit;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -20,9 +23,6 @@ const FRAME_W: LogicalPx = LogicalPx(640.0);
 const FRAME_H: LogicalPx = LogicalPx(480.0);
 const SIZE_COL_W: LogicalPx = LogicalPx(68.0);
 const MOD_COL_W: LogicalPx = LogicalPx(108.0);
-/// 브레드크럼 한 성분의 최대 폭(디자인 `FpCrumbs` span `maxWidth:180`, 넘치면 말줄임).
-/// 대응 Theme 토큰이 없는 구조 폭이다.
-const CRUMB_MAX_W: LogicalPx = LogicalPx(180.0);
 /// 폴더 선택 갈래에서 고른 행 — 디자인 seed(`overlays-shared.jsx` `folderSel`).
 const FOLDER_SEL: &str = "configs";
 
@@ -174,8 +174,10 @@ struct Variant {
     remote: bool,
     multi: bool,
     mode: Mode,
-    /// 깊은 경로 — breadcrumb 가운데 생략.
-    deep: bool,
+    /// 경로 데이터 — 디자인 `remote` · `deep` · `pathKind`.
+    path: PathKind,
+    /// 접힌 조상의 `…` 메뉴를 펼친 상태 — 디자인 `crumbMenu`.
+    crumb_menu: bool,
     /// 고른 행이 **폴더**다 — 디자인 `FilePickerFrame folderSel`. 두 모드에서 뜻이 다르다:
     /// 저장은 "이것은 저장 대상이 아니다", 열기는 "확정하면 들어간다".
     folder_sel: bool,
@@ -193,7 +195,12 @@ impl Variant {
             remote,
             multi,
             mode: Mode::Open,
-            deep: false,
+            path: if remote {
+                PathKind::Remote
+            } else {
+                PathKind::Local
+            },
+            crumb_menu: false,
             folder_sel: false,
             filters: &[],
             w: FRAME_W,
@@ -207,7 +214,12 @@ impl Variant {
             remote: false,
             multi: false,
             mode: Mode::Save(save),
-            deep,
+            path: if deep {
+                PathKind::Deep
+            } else {
+                PathKind::Local
+            },
+            crumb_menu: false,
             folder_sel: false,
             filters: &[],
             w: FRAME_W,
@@ -223,6 +235,16 @@ impl Variant {
 
     const fn filtered(mut self, filters: &'static [&'static str]) -> Self {
         self.filters = filters;
+        self
+    }
+
+    const fn path(mut self, path: PathKind) -> Self {
+        self.path = path;
+        self
+    }
+
+    const fn crumb_menu_open(mut self) -> Self {
+        self.crumb_menu = true;
         self
     }
 
@@ -363,9 +385,14 @@ pub fn draw_save_mode(ui: &mut egui::Ui, theme: &Theme) {
                 card(ui, theme, Variant::save(SaveState::Edited, false));
             },
         );
-        spec::cluster(ui, theme, "deep path — middle-elided breadcrumb", |ui| {
-            card(ui, theme, Variant::save(SaveState::New, true));
-        });
+        spec::cluster(
+            ui,
+            theme,
+            "deep path — fits at 640, so nothing folds",
+            |ui| {
+                card(ui, theme, Variant::save(SaveState::New, true));
+            },
+        );
     });
 
     spec::meta(
@@ -380,7 +407,10 @@ pub fn draw_save_mode(ui: &mut egui::Ui, theme: &Theme) {
             ("selection", "clears as soon as the name diverges → Save"),
             ("overwrite", "11px warning line above the buttons"),
             ("disabled", "Save disabled while the name is empty"),
-            ("breadcrumb", "root + … + last two segments"),
+            (
+                "breadcrumb",
+                "folds one ancestor at a time only when it doesn't fit",
+            ),
             ("footer", "never shrinks — the input absorbs it"),
         ],
         &[
@@ -406,7 +436,7 @@ pub fn draw_save_mode(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Long paths are shortened in the middle, keeping the root and final two segments. The path field takes the remaining width after the refresh button. In the footer, the name field shrinks while the labels, filter and action buttons retain their width.",
+        "A path that does not fit folds its ancestors into a … menu one at a time, from the middle; a path that fits stays whole. The path field takes the remaining width after the refresh button. In the footer, the name field shrinks while the labels, filter and action buttons retain their width.",
     );
 }
 
@@ -436,6 +466,21 @@ pub fn draw_gesture_table(ui: &mut egui::Ui, theme: &Theme) {
                 );
             },
         );
+        // 640 에서는 깊은 경로가 다 들어가 접히지 않는다 — 피커 바닥 폭(320)에서 조상이 접힌다.
+        spec::cluster(
+            ui,
+            theme,
+            "… menu open — the hidden ancestors (320 · fp-popup-min-width)",
+            |ui| {
+                card(
+                    ui,
+                    theme,
+                    Variant::save(SaveState::New, true)
+                        .sized(theme.fp_popup_min_width(), FRAME_H)
+                        .crumb_menu_open(),
+                );
+            },
+        );
     });
 
     spec::meta(
@@ -454,6 +499,15 @@ pub fn draw_gesture_table(ui: &mut egui::Ui, theme: &Theme) {
             ),
             ("folder + Open", "enters it — the keyboard route to descend"),
             ("name field", "open: empty while a folder is selected"),
+            (
+                "elision",
+                "overflow-driven — one ancestor at a time, no depth threshold",
+            ),
+            (
+                "… tooltip",
+                "Show 3 hidden folders (singular: 1 hidden folder)",
+            ),
+            ("… menu", "content-measured, 180–320 band, path order"),
             (
                 "tone",
                 "the folder line has none — it is a fact, not a warning",
@@ -474,6 +528,11 @@ pub fn draw_gesture_table(ui: &mut egui::Ui, theme: &Theme) {
                 "overlay-active",
                 "selected row bed",
                 theme.overlay_active().to_egui_premultiplied(),
+            ),
+            TokenChip::new(
+                "surface-raised",
+                "… menu fill",
+                theme.surface_raised().to_egui(),
             ),
             TokenChip::without_color("fp-crumb-menu-max-width", "320 — … menu ceiling (NEW)"),
             TokenChip::without_color("fp-crumb-menu-min-width", "180 — … menu floor (NEW)"),
@@ -513,7 +572,8 @@ fn card(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
                 ui.set_width(v.w.value());
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                 header(ui, theme, v);
-                path_bar::path_bar(ui, theme, v);
+                let hidden = path_bar::path_bar(ui, theme, v);
+                let bar_bottom = ui.min_rect().bottom();
                 // footer 를 먼저 재고 남은 높이를 본문에 준다 — 덮어쓰기 경고 줄이 footer 를
                 // 키우면 본문이 줄지 footer 가 밀려나지 않는다.
                 let footer_h = footer::footer_height(ui, theme, v);
@@ -524,6 +584,10 @@ fn card(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
                     v.h - header_height(theme) - path_bar_height(theme) - footer_h,
                 );
                 footer::footer(ui, theme, v, footer_h);
+                // 메뉴는 본문 위에 떠야 하므로 본문·footer 다음에 그린다.
+                if let Some(hidden) = hidden.filter(|_| v.crumb_menu) {
+                    path_bar::crumb_menu(ui, theme, &hidden, bar_bottom);
+                }
             });
         });
 }

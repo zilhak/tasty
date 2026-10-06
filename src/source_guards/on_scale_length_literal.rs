@@ -169,7 +169,8 @@ const AREAS: &[(&str, usize, &str)] = &[
         // HTML 로드 실패 예제의 surface 높이 220은 디자인 `HtmlSurfaceG`의 `height={220}`이며 역할 토큰이 없다.
         // 파일 선택 필터 칩 예제의 카드 높이 300은 디자인 Spec의 `--tasty-size-300`이며 역할 토큰이 없다.
         // Font override 예제의 좁은 짝 폭 360은 디자인 Spec의 `--tasty-size-360`이며 역할 토큰이 없다.
-        144,
+        // 파일 선택 path bar 예제의 카드 400×360·440×300은 디자인 Spec `FilePickerFrame w/h`이며 역할 토큰이 없다.
+        147,
         "갤러리 specimen은 배율 검사에서 제외돼도 스케일 검사는 받는다(ADR-0039). 이름 붙은 치수와 인라인 값, 전시 목적을 별도로 분류한다.",
     ),
     (
@@ -629,7 +630,7 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
     );
     assert_eq!(
         (named_cited, named_plain, inline_cited, inline_plain),
-        (60, 76, 0, 13),
+        (61, 78, 0, 13),
         "갤러리 후보의 (이름 있음/없음, 디자인 언급 있음/없음) 분류 수가 바뀌었다. 해당 선언과 주석을 확인하고 기록을 갱신한다."
     );
 }
