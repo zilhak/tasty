@@ -244,7 +244,10 @@ fn reason_detail(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
         }
         Kind::UnknownKey | Kind::SignatureInvalid => {
             mono_header(ui, "Signature");
-            fingerprint_line(ui, theme, "SHA256:9f2c…a17e");
+            // 본체처럼 서명 무효에는 fingerprint 줄이 없다.
+            if kind == Kind::UnknownKey {
+                fingerprint_line(ui, theme, "SHA256:9f2c…a17e");
+            }
         }
         Kind::HealthError => {
             mono_header(ui, "Log");

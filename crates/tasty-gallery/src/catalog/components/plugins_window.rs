@@ -35,8 +35,8 @@ fn list_w(theme: &Theme) -> f32 {
 fn stage_size(theme: &Theme, tab: Tab) -> egui::Vec2 {
     let h = match tab {
         Tab::Installed { .. } => theme.measure_xl,
-        // 매니페스트 프리뷰는 경고와 fingerprint 줄까지 담아야 액션 바가 무대 안에 든다.
-        Tab::Add { preview: true } => theme.measure_md,
+        // 매니페스트 카드와 신뢰 상자, fingerprint 줄까지 담아야 액션 바가 무대 안에 든다.
+        Tab::Add { preview: true } => theme.measure_xl,
         _ => theme.measure_sm,
     };
     egui::vec2(list_w(theme) + theme.measure_md.value(), h.value())
@@ -358,6 +358,25 @@ fn window(ui: &mut egui::Ui, theme: &Theme, tab: Tab) {
     }
 }
 
+/// 디자인 `ThemePair` — Mocha·Latte를 `bg-app` 바탕에 그린다. 예제 폭이 560이라 위아래로 쌓는다.
+fn theme_pair(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    mocha: &Theme,
+    latte: &Theme,
+    draw: impl Fn(&mut egui::Ui, &Theme),
+) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
+        for th in [mocha, latte] {
+            egui::Frame::new()
+                .fill(th.bg_app().to_egui())
+                .inner_margin(egui::Margin::same(theme.spacing_lg.value() as i8))
+                .show(ui, |ui| draw(ui, th));
+        }
+    });
+}
+
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     for (label, tab) in [
         (
@@ -396,9 +415,22 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             spec::stage(ui, theme, StageVariant::Solo, |ui| window(ui, theme, tab));
         });
     }
-    spec::cluster(ui, theme, "Add plugin — blocked (3 reasons)", |ui| {
-        let width = stage_size(theme, Tab::Add { preview: true }).x;
-        add::blocked_bars(ui, theme, width);
+    let latte = crate::host_shell::latte_theme();
+    let mocha = tasty_themes::mocha_fallback();
+    spec::cluster(
+        ui,
+        theme,
+        "Add plugin — action bar (grants · trust & add · 3 blocked reasons)",
+        |ui| {
+            theme_pair(ui, theme, &mocha, &latte, |ui, th| {
+                add::add_bars(ui, th, th.measure_xl.value());
+            });
+        },
+    );
+    spec::cluster(ui, theme, "Add plugin — trust judgment (5 kinds)", |ui| {
+        theme_pair(ui, theme, &mocha, &latte, |ui, th| {
+            add::trust_boxes(ui, th, th.measure_xl.value());
+        });
     });
     spec::cluster(ui, theme, "attention reasons (4)", |ui| {
         attention::reason_cards(ui, theme);
@@ -432,7 +464,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "add",
-                "단일 열 · 경로 입력(입력+Verify / 구분선 / 폴더 찾기)과 매니페스트 프리뷰 두 상태 · 액션 바는 오른쪽 Cancel(ghost) + Add(primary), 추가할 수 없으면 Add disabled + 왼쪽 이유(caption, text-muted)",
+                "단일 열 · 경로 입력(입력+Verify / 구분선 / 폴더 찾기)과 매니페스트 프리뷰 두 상태 · 프리뷰는 매니페스트 카드(아바타 lg · 이름 + 버전 Tag · id · 작성자 · 설명 · Permissions/Surface kinds Tag · Source · Homepage) 아래 신뢰 상자, 액션 바는 왼쪽 Grants 문구 또는 막힌 이유(caption, text-muted) + 오른쪽 Cancel(ghost) + Add plugin(primary, 미신뢰면 Trust & add), 막히면 disabled",
             ),
         ],
         &[

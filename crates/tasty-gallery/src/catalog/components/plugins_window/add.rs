@@ -1,8 +1,11 @@
 //! 플러그인 추가의 경로 입력과 매니페스트 확인 예제.
-//! 미신뢰 플러그인 예제는 공개키가 있어 신뢰 등록이 가능한 경우만 보여준다.
+//! 프리뷰는 본체와 같은 공용 매니페스트 카드·신뢰 상자·액션 바를 그린다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, ControlSize, PLUGIN_ADD_INSET, PluginAddBarView, PluginManifestCardView,
+    PluginTrustKind, plugin_add_bar, plugin_manifest_card, plugin_trust_box,
+};
 
 /// 경로 입력 오른쪽의 Verify 버튼 공간을 확보한다.
 fn field_width(theme: &Theme, available: f32) -> f32 {
@@ -50,135 +53,162 @@ pub(super) fn input_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
         .show(&mut child, theme);
 }
 
-/// 한 줄짜리 라벨-값 행 — 본체 프리뷰의 `label(format!("{}: {}"))` 들.
-fn field(ui: &mut egui::Ui, theme: &Theme, label: &str, value: &str) {
-    ui.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new(label)
-                .size(theme.font_size_caption.value())
-                .color(theme.text_muted().to_egui()),
-        );
-        ui.label(
-            egui::RichText::new(value)
-                .size(theme.font_size_caption.value())
-                .color(theme.text_secondary().to_egui()),
-        );
-    });
+/// 디자인 `SAMPLE_MANIFEST`. 미신뢰 · 공개키 있음.
+const SAMPLE_FINGERPRINT: &str = "9f2c 4ad1 b770 e3a6  ·  ed25519";
+
+fn sample_strings(items: &[&str]) -> Vec<String> {
+    items.iter().map(|s| (*s).to_owned()).collect()
 }
 
-/// 매니페스트 프리뷰 상태 (미신뢰 · 공개키 있음).
+/// 매니페스트 프리뷰 상태 (미신뢰 · 공개키 있음). 본체 `draw_add_preview`와 같은 공용 view를 쓴다.
 pub(super) fn preview_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     ui.painter_at(rect)
         .rect_filled(rect, 0.0, theme.bg_panel().to_egui());
-    let inner = rect.shrink(theme.spacing_md.value());
+    let bar_h = ControlSize::Md.height(theme) + theme.spacing_md.value() * 2.0;
+    let body = egui::Rect::from_min_max(rect.min, egui::pos2(rect.max.x, rect.max.y - bar_h));
+    let inner = body.shrink(theme.spacing_md.value());
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
-    child.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+    child.set_max_width(theme.measure_xl.value().min(inner.width()));
+    child.spacing_mut().item_spacing.y = PLUGIN_ADD_INSET.value();
 
-    child.label(
-        egui::RichText::new("Plugin information")
-            .size(theme.font_size_max.value())
-            .strong()
-            .color(theme.text_primary().to_egui()),
+    let authors = sample_strings(&["aurelia"]);
+    let perms = sample_strings(&["fs:read", "fs:watch", "ipc:logwatch.*"]);
+    let surfaces = sample_strings(&["logwatch.viewer"]);
+    plugin_manifest_card(
+        &mut child,
+        theme,
+        &PluginManifestCardView {
+            name: "logwatch",
+            version: "0.3.1",
+            id: "com.aurelia.logwatch",
+            authors: &authors,
+            description: "Tails and highlights structured log files as a dedicated surface — severity filters, a jump-to-error gutter, and live follow on the active workspace.",
+            permissions_label: "Permissions",
+            permissions: &perms,
+            surface_kinds_label: "Surface kinds",
+            surface_kinds: &surfaces,
+            source_label: "Source",
+            source: "~/dev/tasty-logwatch",
+            homepage_label: "Homepage",
+            homepage: "",
+            none: "None",
+        },
     );
-    child.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new("Port scanner")
-                .size(theme.font_size_max.value())
-                .color(theme.text_primary().to_egui()),
-        );
-        ui.label(
-            egui::RichText::new("v0.2.0")
-                .size(theme.font_size_body.value())
-                .color(theme.text_secondary().to_egui()),
-        );
-    });
-    child.label(
-        egui::RichText::new("com.example.port-scanner")
-            .size(theme.font_size_caption.value())
-            .color(theme.text_muted().to_egui()),
-    );
-    child.label(
-        egui::RichText::new("Scans listening ports and shows what owns them.")
-            .size(theme.font_size_body.value())
-            .color(theme.text_primary().to_egui()),
-    );
-    field(&mut child, theme, "Authors:", "example");
-    field(&mut child, theme, "Source:", "~/dev/port-scanner");
-    field(&mut child, theme, "Surface kinds:", "port-scanner");
-    field(&mut child, theme, "Permissions:", "net · process:read");
+    trust_box(&mut child, theme, PluginTrustKind::UnknownKey);
 
-    untrusted_warning(&mut child, theme);
-
-    child.separator();
-    action_bar(&mut child, theme, None);
+    let bar = egui::Rect::from_min_max(egui::pos2(rect.min.x, body.max.y), rect.max);
+    let mut bar_ui = ui.new_child(egui::UiBuilder::new().max_rect(bar));
+    action_bar(&mut bar_ui, theme, None, false, 3);
 }
 
-/// 프리뷰 하단 액션 바 — 본체 `draw_add_preview` 의 버튼 줄.
-/// `blocked` 가 있으면 Add 를 숨기지 않고 disabled 로 두고 이유를 왼쪽에 적는다.
-pub(super) fn action_bar(ui: &mut egui::Ui, theme: &Theme, blocked: Option<&str>) {
-    ui.allocate_ui_with_layout(
-        egui::vec2(ui.available_width(), ControlSize::Md.height(theme)),
-        egui::Layout::left_to_right(egui::Align::Center),
-        |ui| {
-            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-            if let Some(reason) = blocked {
-                ui.label(
-                    egui::RichText::new(reason)
-                        .size(theme.font_size_caption.value())
-                        .color(theme.text_muted().to_egui()),
-                );
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                Button::new("Add")
-                    .variant(ButtonVariant::Primary)
-                    .enabled(blocked.is_none())
-                    .show(ui, theme);
-                Button::new("Cancel")
-                    .variant(ButtonVariant::Ghost)
-                    .show(ui, theme);
-            });
+/// 디자인 `TRUST_KIND`의 제목과 본문.
+fn trust_copy(kind: PluginTrustKind) -> (&'static str, &'static str) {
+    match kind {
+        PluginTrustKind::Trusted => (
+            "",
+            "Signed by a trusted publisher — its key is in your trust store.",
+        ),
+        PluginTrustKind::UnknownKey => (
+            "Unverified publisher",
+            "This plugin isn't signed by a key in your trust store. It runs with the permissions above on every launch — review them, and only add plugins from sources you trust. Adding it also trusts this key.",
+        ),
+        PluginTrustKind::PermissionsChanged => (
+            "Permissions changed",
+            "This publisher is trusted, but this version asks for permissions the trusted version did not have. Review the list above; adding it trusts the new set.",
+        ),
+        PluginTrustKind::MissingPubkey => (
+            "Public key file missing",
+            "The manifest is signed by a key that isn't in your trust store, and tasty-plugin.toml.pub is missing or unreadable, so the key can't be added. Ask the publisher for this public key file.",
+        ),
+        PluginTrustKind::SignatureError => (
+            "Signature check failed",
+            "The signature could not be verified. The plugin can't be added until the publisher ships a valid signature.",
+        ),
+    }
+}
+
+fn trust_box(ui: &mut egui::Ui, theme: &Theme, kind: PluginTrustKind) {
+    let (title, body) = trust_copy(kind);
+    plugin_trust_box(ui, theme, kind, title, body, |ui| {
+        super::attention::fingerprint_line(ui, theme, SAMPLE_FINGERPRINT);
+    });
+}
+
+/// 디자인 `grantsLabel`.
+fn grants(perms: usize) -> String {
+    match perms {
+        0 => "No permissions".to_owned(),
+        1 => "Grants 1 permission".to_owned(),
+        n => format!("Grants {n} permissions"),
+    }
+}
+
+/// 프리뷰 하단 액션 바 — 본체 `draw_add_preview`의 버튼 줄.
+/// `blocked`가 있으면 추가 버튼을 disabled로 두고 이유를 왼쪽에 적는다.
+fn action_bar(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    blocked: Option<&str>,
+    trusted: bool,
+    perms: usize,
+) {
+    let grants = grants(perms);
+    plugin_add_bar(
+        ui,
+        theme,
+        &PluginAddBarView {
+            left: blocked.unwrap_or(&grants),
+            cancel: "Cancel",
+            add: if blocked.is_none() && !trusted {
+                "Trust & add"
+            } else {
+                "Add plugin"
+            },
+            add_enabled: blocked.is_none(),
         },
     );
 }
 
-/// 추가할 수 없는 세 이유의 액션 바를 나란히 쌓는다 — 본체 `add_blocked_reason_key`.
-pub(super) fn blocked_bars(ui: &mut egui::Ui, theme: &Theme, width: f32) {
-    // cluster 는 가로로 흐르므로 세 바를 세로로 쌓는다.
+/// 디자인 `AddBarG` 일곱 줄. 추가 가능(신뢰·미신뢰), 막힌 세 이유, 권한 1개·0개.
+pub(super) fn add_bars(ui: &mut egui::Ui, theme: &Theme, width: f32) {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-        for reason in [
-            "Already installed",
-            "Signed, but the publisher's public key file is missing",
-            "Signature check failed",
+        for (blocked, trusted, perms) in [
+            (None, true, 3),
+            (None, false, 3),
+            (Some("Already installed"), true, 3),
+            (
+                Some("Signed, but the publisher's public key file is missing"),
+                true,
+                3,
+            ),
+            (None, true, 1),
+            (None, true, 0),
+            (Some("Signature check failed"), true, 3),
         ] {
             egui::Frame::new()
                 .fill(theme.bg_panel().to_egui())
-                .inner_margin(theme.spacing_md.value())
                 .show(ui, |ui| {
                     ui.set_width(width);
-                    action_bar(ui, theme, Some(reason));
+                    action_bar(ui, theme, blocked, trusted, perms);
                 });
         }
     });
 }
 
-/// 출처 미상 경고 — 본체 `draw_untrusted_warning` 의 `UntrustedWithPubkey` 가지.
-fn untrusted_warning(ui: &mut egui::Ui, theme: &Theme) {
-    let red = theme.accent_danger().to_egui();
-    ui.separator();
-    ui.label(
-        egui::RichText::new("Unknown source plugin")
-            .strong()
-            .size(theme.font_size_body.value())
-            .color(red),
-    );
-    ui.label(
-        egui::RichText::new(
-            "This plugin is not signed by a verified key. Adding it will permanently record \
-             your trust so future loads are automatic.",
-        )
-        .size(theme.font_size_caption.value())
-        .color(theme.text_primary().to_egui()),
-    );
-    super::attention::fingerprint_line(ui, theme, "SHA256:9f2c…a17e");
+/// 디자인 `TrustBoxG` 다섯 가지.
+pub(super) fn trust_boxes(ui: &mut egui::Ui, theme: &Theme, width: f32) {
+    ui.vertical(|ui| {
+        ui.set_width(width);
+        ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+        for kind in [
+            PluginTrustKind::Trusted,
+            PluginTrustKind::UnknownKey,
+            PluginTrustKind::PermissionsChanged,
+            PluginTrustKind::MissingPubkey,
+            PluginTrustKind::SignatureError,
+        ] {
+            trust_box(ui, theme, kind);
+        }
+    });
 }

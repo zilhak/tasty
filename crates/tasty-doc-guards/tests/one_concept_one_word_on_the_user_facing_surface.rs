@@ -86,13 +86,6 @@ const NOT_A_WINDOW: &[NotAWindow] = &[
         evidence: "스크립트 변경 확인 — host `PopupDef` id `script_changed_confirm`",
     },
     NotAWindow {
-        path: "site/content/plugins/index.md",
-        phrase: "확인 창이 뜹니다",
-        count: 1,
-        evidence: "플러그인 서명 확인 — 플러그인 윈도우(`PluginsView`) **안에서** 뜨는 확인이지 \
-                   자기 OS 창을 갖는 `View` 가 아니다",
-    },
-    NotAWindow {
         path: "site/content/using/files.md",
         phrase: "주소창",
         count: 4,

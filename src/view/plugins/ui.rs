@@ -155,9 +155,9 @@ pub struct AddPreview {
     pub homepage: String,
     pub surface_kinds: Vec<String>,
     pub permissions: Vec<String>,
-    /// 이미 같은 id의 플러그인이 설치되어 있으면 메시지 — 추가 버튼 비활성화.
-    pub already_installed: Option<String>,
-    /// 매니페스트 sig 검증으로 결정된 trust 상태. UI 분기 (빨간 경고 표시 여부).
+    /// 같은 id의 플러그인이 이미 설치됐다. 추가 버튼을 끄고 액션 바에 이유를 적는다.
+    pub already_installed: bool,
+    /// 매니페스트 sig 검증으로 결정된 trust 상태. 신뢰 상자의 종류를 정한다.
     pub trust_state: AddTrustState,
 }
 
@@ -176,12 +176,11 @@ pub enum AddTrustState {
         reason: AddTrustReason,
     },
     /// 출처 미상 + `.pub` sidecar 가 없거나 손상 — trust 등록 불가, install 차단.
-    UntrustedNoPubkey {
-        fingerprint: String,
-        reason: AddTrustReason,
-    },
+    /// 신뢰 상자는 사유와 관계없이 공개 키 파일이 없다는 한 문구다.
+    UntrustedNoPubkey { fingerprint: String },
     /// 매니페스트 sig 검증 자체 에러 (sidecar 누락 / 길이 / placeholder 키 등).
-    SigError(String),
+    /// 신뢰 상자는 고정 문구만 보이며 원인은 검증 시점에 로그로 남긴다.
+    SigError,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

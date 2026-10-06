@@ -67,9 +67,10 @@
 **플러그인 추가** <!-- en: Add plugin --> 탭.
 
 1. **플러그인 폴더 경로** <!-- en: Plugin folder path --> 에 `tasty-plugin.toml` 이 들어 있는 폴더를 입력하거나 **플러그인 폴더 찾기…** <!-- en: Find plugin folder… --> 로 고릅니다.
-2. **확인** <!-- en: Verify --> 을 누르면 **플러그인 정보** <!-- en: Plugin information --> 에 이름 · 버전 · 설명과 **요구 권한** 이 미리 보입니다.
-3. **추가** <!-- en: Add --> 를 누릅니다. 추가할 수 없는 플러그인이면 버튼이 비활성으로 남고 왼쪽에 이유가 표시됩니다 — **이미 설치됨** <!-- en: Already installed -->, **서명은 있지만 게시자의 공개 키 파일이 없음** <!-- en: Signed, but the publisher's public key file is missing -->, **서명 확인 실패** <!-- en: Signature check failed -->.
-4. 검증된 키로 서명되지 않은 플러그인이면 **출처를 알 수 없는 플러그인** <!-- en: Unknown source plugin --> 확인 창이 뜹니다. 지문을 확인하고 진행하면 그 키가 신뢰 목록에 기록돼 다음부터는 묻지 않습니다. 서명 키 파일(`tasty-plugin.toml.pub`)이 없으면 등록할 수 없으므로 배포자에게 요청합니다.
+2. **확인** <!-- en: Verify --> 을 누르면 **플러그인 정보** <!-- en: Plugin information --> 에 매니페스트 카드가 보입니다. 이름 · 버전 · id · 작성자 · 설명 · **요구 권한** · 서피스 종류 · 원본 경로가 나오고, 홈페이지가 있으면 링크를 눌러 브라우저로 열 수 있습니다. 작성자가 여럿이면 첫 작성자 뒤에 `+N` 이 붙고, 마우스를 올리면 전체 목록이 보입니다.
+3. 카드 아래 상자가 서명 판정을 알려 줍니다 — **신뢰한 게시자가 서명했습니다** <!-- en: Signed by a trusted publisher -->, **확인되지 않은 게시자** <!-- en: Unverified publisher -->, **권한 변경됨** <!-- en: Permissions changed -->, **공개 키 파일 없음** <!-- en: Public key file missing -->, **서명 확인 실패** <!-- en: Signature check failed -->. 확인되지 않은 게시자나 권한 변경이면 상자에 지문(fingerprint)이 나오고 복사 버튼으로 복사할 수 있습니다.
+4. 아래 줄 왼쪽에 부여할 권한 수가 보입니다. **플러그인 추가** <!-- en: Add plugin --> 를 누릅니다. 확인되지 않은 게시자나 권한 변경이면 같은 자리의 버튼이 **신뢰하고 추가** <!-- en: Trust & add --> 로 바뀌고, 누르면 그 키(또는 새 권한 묶음)가 신뢰 목록에 기록돼 다음부터는 묻지 않습니다.
+5. 추가할 수 없는 플러그인이면 버튼이 비활성으로 남고 왼쪽에 이유가 표시됩니다 — **이미 설치됨** <!-- en: Already installed -->, **서명은 있지만 게시자의 공개 키 파일이 없음** <!-- en: Signed, but the publisher's public key file is missing -->, **서명 확인 실패** <!-- en: Signature check failed -->. 공개 키 파일(`tasty-plugin.toml.pub`)이 없으면 등록할 수 없으므로 배포자에게 요청합니다.
 
 설치하면 플러그인이 요청한 권한이 허용됩니다. 추가하기 전에 미리보기에서 권한 목록을 확인하세요.
 

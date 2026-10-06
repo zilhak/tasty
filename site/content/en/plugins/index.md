@@ -1,4 +1,4 @@
-<!-- source-hash: 842f54945d98 -->
+<!-- source-hash: 41f3bde8bd0c -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -68,9 +68,10 @@ The **Attention** tab. Plugins whose registration was rejected or that failed to
 The **Add plugin** tab.
 
 1. In **Plugin folder path**, enter a folder containing `tasty-plugin.toml`, or pick one with **Find plugin folder…**.
-2. Press **Verify** and **Plugin information** previews the name · version · description and the **required permissions**.
-3. Press **Add**. If the plugin cannot be added, the button stays disabled and the reason is shown on its left: **Already installed**, **Signed, but the publisher's public key file is missing**, or **Signature check failed**.
-4. If the plugin is not signed with a verified key, the **Unknown source plugin** confirmation appears. If you check the fingerprint and proceed, that key is recorded in the trust list and you are not asked again. A plugin without its signing key file (`tasty-plugin.toml.pub`) cannot be registered, so ask the distributor for it.
+2. Press **Verify** and **Plugin information** shows the manifest card: name · version · id · authors · description · **required permissions** · surface kinds · source path, plus a homepage link that opens in your browser when the plugin has one. With several authors, the first one is followed by `+N`; hover to see them all.
+3. The box under the card tells you how the signature was judged: **Signed by a trusted publisher**, **Unverified publisher**, **Permissions changed**, **Public key file missing**, or **Signature check failed**. For an unverified publisher or changed permissions the box shows the fingerprint, which you can copy with its button.
+4. The left of the bottom bar shows how many permissions the plugin will get. Press **Add plugin**. For an unverified publisher or changed permissions the same button reads **Trust & add**; pressing it records that key (or the new permission set) in the trust list so you are not asked again.
+5. If the plugin cannot be added, the button stays disabled and the reason is shown on its left: **Already installed**, **Signed, but the publisher's public key file is missing**, or **Signature check failed**. A plugin without its public key file (`tasty-plugin.toml.pub`) cannot be registered, so ask the distributor for it.
 
 Installing grants the permissions the plugin requests. Review the permission list in the preview before adding it.
 

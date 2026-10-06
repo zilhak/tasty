@@ -1202,15 +1202,10 @@ const OVER_CAP_SANCTIONED: &[(&str, &str)] = &[(
 
 /// 상한을 넘지만 디자인 결정을 기다리는 항목. 기다리는 결정을 기록한다.
 /// 위반이 없어지면 항목과 예산을 함께 줄이며 승인된 정책 예외와 구별한다.
-const OVER_CAP_PENDING: &[(&str, &str, &str)] = &[(
-    // 미배정 primitive16의 역할과 상한 예외 여부를 결정해야 한다.
-    "src/view/plugins/ui/add.rs",
-    "ADD_PREVIEW_NAME_PRIMITIVE_16",
-    "16을 14로 바꾸거나 상한 예외로 승인할지, 어떤 semantic에 연결할지 디자인 결정을 기다린다.",
-)];
+const OVER_CAP_PENDING: &[(&str, &str, &str)] = &[];
 
 /// 대기 목록이 늘거나 줄면 예산도 함께 검토하도록 개수를 일치시킨다.
-const OVER_CAP_PENDING_BUDGET: usize = 1;
+const OVER_CAP_PENDING_BUDGET: usize = 0;
 
 /// UI 폰트 상한은 SIZING.font_size_max에서 가져온다. 렌더링이 아닌 비교 전용 길이값이다.
 const UI_FONT_SIZE_CAP: LogicalPx = tasty_type_appearance::theme::SIZING.font_size_max;

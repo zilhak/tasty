@@ -23,8 +23,9 @@
   - **install dir 열기**, **uninstall**.
 - **Attention (확인 필요)**: 등록 거부(서명/신뢰) 또는 실행 실패(health error) plugin 을 사유·조치와 함께 보여준다. 탭 라벨에 개수를 danger 배지로 표시.
 - **Install (add)**: 디렉터리(`tasty-plugin.toml`)에서 설치.
-  - 매니페스트 + 권한 **미리보기**.
-  - **서명/신뢰 검증**: `Trusted` 이면 바로 설치, 서명/권한이 바뀐 경우(`PermissionsChanged`) 재신뢰(`TrustAndInstall`) 후 설치.
+  - **미리보기**: 매니페스트 카드(이름·버전, `id · 첫 작성자 +N`(작성자 전체는 툴팁), 설명, 권한·surface 종류 Tag, 원본 경로, 홈페이지 링크)와 그 아래 신뢰 판정 상자. 홈페이지 링크를 누르면 기본 브라우저로 연다. 권한이나 surface 종류가 없으면 `None`을 적는다.
+  - **신뢰 판정 상자 다섯 가지**: 신뢰한 게시자(success, 그대로 추가) · 확인되지 않은 게시자와 권한 변경(warning, 추가하면 키나 새 권한 묶음을 신뢰) · 공개 키 파일 없음과 서명 확인 실패(danger, 추가 불가). 서명 확인 실패를 뺀 미신뢰 상자에는 fingerprint 줄이 붙는다. 서명 확인 실패의 원인은 상자에 쓰지 않고 로그에 남긴다.
+  - **액션 바**: 왼쪽에 부여할 권한 수(`No permissions` · `Grants 1 permission` · `Grants N permissions`), 오른쪽에 Cancel과 `Add plugin`. 추가하면 키나 새 권한 묶음을 신뢰하게 되는 경우(`UntrustedWithPubkey`)는 같은 Primary 버튼이 `Trust & add`이고 `TrustAndInstall`로 설치한다. 추가할 수 없으면(이미 설치됨 · 공개 키 파일 없음 · 서명 확인 실패) 버튼을 disabled로 두고 왼쪽 문구를 그 이유로 바꾼다. 이미 설치된 플러그인도 신뢰 상자는 판정대로 그린다.
 
 ### CLI (`tasty plugin …`)
 

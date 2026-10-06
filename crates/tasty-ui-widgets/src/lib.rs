@@ -32,6 +32,7 @@ mod menu_item;
 mod move_source;
 mod multi_select;
 mod path_field;
+mod plugin_add;
 mod plugin_avatar;
 mod popup_title;
 mod remote_tool;
@@ -101,6 +102,11 @@ pub use multi_select::{
     multi_select_summary, popup_chrome_width,
 };
 pub use path_field::{PathField, PathFieldOutcome};
+pub use plugin_add::{
+    PLUGIN_ADD_INSET, PluginAddBarClicks, PluginAddBarView, PluginManifestCardOutput,
+    PluginManifestCardView, PluginTrustKind, plugin_add_bar, plugin_manifest_card,
+    plugin_trust_box,
+};
 pub use plugin_avatar::{PluginAvatarSize, paint_plugin_avatar, plugin_avatar};
 pub use popup_title::{
     elide_popup_title, paint_popup_title_glyph, popup_title_font, popup_title_text_rect,

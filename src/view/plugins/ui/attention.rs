@@ -309,7 +309,10 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
         AttentionKind::UnknownKey | AttentionKind::SignatureInvalid => {
             mono_header(ui, "plugins.attn_signature");
             vspace(ui, th.spacing_xs);
-            if let Some(fp) = &entry.fingerprint {
+            // 서명 무효는 fingerprint가 가리킬 서명 자체가 깨졌으므로 줄을 두지 않는다.
+            if entry.kind == AttentionKind::UnknownKey
+                && let Some(fp) = &entry.fingerprint
+            {
                 fingerprint_line(ui, th, fp);
             }
         }
