@@ -112,7 +112,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "13 · text-secondary · CSS line-height (full control)",
             ),
             ("h1", "Heading anchor prose-h1 20 · text-primary"),
-            ("h2–h6", "CSS-interpolated 20→13 · strong"),
+            (
+                "h2–h6",
+                "CSS 5-step interpolation 20→13 (--md-h1…--md-h6) · strong",
+            ),
+            ("leading", "CSS line-height 1.6 · block spacing CSS"),
             ("small", "11 · muted"),
             (
                 "heading id",
@@ -127,12 +131,20 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "syntax highlighting",
                 "client-side highlight.js (offline vendor) · hljs-* token colors from Theme hues",
             ),
+            (
+                "hljs roles",
+                "keyword mauve · string green · title/function blue · number peach · type yellow · comment text-muted italic · tag teal · variable lavender · built_in red",
+            ),
+            (
+                "diff",
+                "deletion / addition bg = accent-danger / accent-success at tint-fill-alpha",
+            ),
             ("link", "accent-primary · nav-fragment intercepted"),
             ("table", "real <table> — header band + zebra + padding"),
             ("states", "failed=accent-danger · empty=muted"),
             (
                 "callouts",
-                "blockquote + collapsible details — md-quote-bar-width bar · colour per alert type",
+                "blockquote + collapsible details — md-quote-bar-width bar · type fill at tint-fill-alpha · 16px icon · radius",
             ),
         ],
         &[
@@ -219,6 +231,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new("blue", "hljs-title/function", theme.blue.to_egui()),
             TokenChip::new("green", "hljs-string", theme.green.to_egui()),
             TokenChip::new("red", "hljs-built_in", theme.red.to_egui()),
+            TokenChip::new("peach", "hljs-number", theme.peach.to_egui()),
+            TokenChip::new("yellow", "hljs-type", theme.yellow.to_egui()),
+            TokenChip::new("teal", "hljs-tag", theme.teal.to_egui()),
+            TokenChip::new("lavender", "hljs-variable", theme.lavender.to_egui()),
+            TokenChip::without_color("tint-fill-alpha", "diff bg · callout fill"),
         ],
     );
 

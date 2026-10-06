@@ -505,8 +505,9 @@ fn quote_block(
     callout_block(ui, bar_w, gap, theme.border_strong().to_egui(), add);
 }
 
-/// 콜아웃 표본의 강조색·제목·본문·접힘 여부.
+/// 콜아웃 표본의 아이콘·강조색·제목·본문·접힘 여부.
 type CalloutSpec = (
+    icons::MockGlyph,
     fn(&Theme) -> tasty_type_appearance::color::HexColor,
     &'static str,
     &'static str,
@@ -514,54 +515,27 @@ type CalloutSpec = (
 );
 
 /// GitHub alert·Obsidian callout 두 형태(blockquote · 접히는 details) — 시안 `Callouts`.
-/// 둘 다 왼쪽 막대가 md-quote-bar-width 이고 색만 종류별로 다르다. 접힌 형태는 제목 앞에
-/// ▸(chevron) 를 두고 본문 대신 caption 설명을 단다.
+/// 본체 렌더러와 같은 상자(종류 색 채움·아이콘·radius)이며, 접힌 형태는 제목 앞에 chevron 을 두고
+/// 본문 대신 caption 설명을 단다.
 fn callouts(ui: &mut egui::Ui, theme: &Theme) {
     let items: [CalloutSpec; 2] = [
         (
+            icons::ALERT_CIRCLE,
             Theme::accent_primary,
             "Note",
             "Non-collapsible: > [!note]",
             false,
         ),
         (
+            icons::ALERT_TRIANGLE,
             Theme::accent_warning,
             "Warning",
             "Collapsible: > [!warning]- (closed until clicked)",
             true,
         ),
     ];
-    let bar_w = theme.md_quote_bar_width().value();
-    let gap = theme.spacing_md.value();
-    for (accent, title, body, fold) in items {
-        let color = accent(theme).to_egui();
-        callout_block(ui, bar_w, gap, color, |ui| {
-            ui.horizontal(|ui| {
-                if fold {
-                    // 시안의 ▸ 글자는 egui 글꼴에 없어 같은 모양의 chevron 아이콘으로 그린다.
-                    let sz = theme.icon_glyph_size_xs.value();
-                    let (rect, _) =
-                        ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
-                    icons::CHEVRON_RIGHT.image(sz, color).paint_at(ui, rect);
-                }
-                ui.label(rich(theme, title, theme.font_size_body.value(), color).strong());
-            });
-            if fold {
-                ui.label(rich(
-                    theme,
-                    body,
-                    theme.font_size_caption.value(),
-                    theme.text_muted().to_egui(),
-                ));
-            } else {
-                ui.label(rich(
-                    theme,
-                    body,
-                    theme.font_size_body.value(),
-                    theme.md_quote_fg().to_egui(),
-                ));
-            }
-        });
+    for (icon, accent, title, body, fold) in items {
+        super::callout_kinds::callout_box(ui, theme, icon, accent(theme), title, body, fold);
         ui.add_space(theme.spacing_md.value());
     }
 }
