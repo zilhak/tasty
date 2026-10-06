@@ -135,7 +135,7 @@ pub fn cluster(
     label: &str,
     add_contents: impl FnOnce(&mut egui::Ui),
 ) {
-    ui.vertical(|ui| {
+    let body = |ui: &mut egui::Ui| {
         ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
         ui.label(
             egui::RichText::new(label.to_uppercase())
@@ -146,7 +146,20 @@ pub fn cluster(
             ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
             add_contents(ui);
         });
-    });
+    };
+    // 감싸는 줄(stage Wrap)은 크기를 모르는 자식 ui 를 다음 줄로 보내지 못한다. 직전 프레임에
+    // 잰 크기로 자리를 요청해 시안 `flex-wrap: wrap` 처럼 칸을 넘기면 줄을 바꾼다.
+    let id = ui.next_auto_id().with(("cluster", label));
+    let prev: Option<egui::Vec2> = ui.data(|d| d.get_temp(id));
+    let rect = match prev {
+        Some(size) => {
+            ui.allocate_ui_with_layout(size, egui::Layout::top_down(egui::Align::Min), body)
+                .response
+                .rect
+        }
+        None => ui.vertical(body).response.rect,
+    };
+    ui.data_mut(|d| d.insert_temp(id, rect.size()));
 }
 
 /// 왼쪽에는 치수 설명을, 오른쪽에는 사용한 토큰을 표시한다.
@@ -261,16 +274,19 @@ fn token_chip(ui: &mut egui::Ui, theme: &Theme, t: &TokenChip, font: &egui::Font
     let sw = theme.font_size_caption.value();
     let tok =
         ui.fonts(|f| f.layout_no_wrap(t.tok.to_owned(), font.clone(), col(theme.text_primary())));
+    let sw_w = if t.color.is_some() { sw + gap } else { 0.0 };
+    // 시안 `.chip`은 inline-flex라 줄 폭보다 길면 용도 글자가 칩 안에서 줄바꿈된다.
+    let use_wrap = (ui.max_rect().width() - pad.x * 2.0 - sw_w - tok.size().x - gap).max(sw);
     let use_ = (!t.use_.is_empty()).then(|| {
         ui.fonts(|f| {
-            f.layout_no_wrap(
+            f.layout(
                 format!("— {}", t.use_),
                 font.clone(),
                 col(theme.text_muted()),
+                use_wrap,
             )
         })
     });
-    let sw_w = if t.color.is_some() { sw + gap } else { 0.0 };
     let use_w = use_.as_ref().map_or(0.0, |g| gap + g.size().x);
     let text_h = tok.size().y.max(use_.as_ref().map_or(0.0, |g| g.size().y));
     let size = egui::vec2(
@@ -289,7 +305,8 @@ fn token_chip(ui: &mut egui::Ui, theme: &Theme, t: &TokenChip, font: &egui::Font
         egui::StrokeKind::Inside,
     );
     let mut x = rect.min.x + pad.x;
-    let cy = rect.center().y;
+    // 용도 글자가 여러 줄이면 스와치와 토큰 이름은 첫 줄에 맞춘다.
+    let cy = rect.min.y + pad.y + text_h.min(tok.size().y.max(sw)) * 0.5;
     if let Some(color) = t.color {
         let r = egui::Rect::from_center_size(egui::pos2(x + sw * 0.5, cy), egui::vec2(sw, sw));
         painter.rect_filled(r, radius, color);
@@ -305,7 +322,7 @@ fn token_chip(ui: &mut egui::Ui, theme: &Theme, t: &TokenChip, font: &egui::Font
     let tok_y = cy - tok.size().y * 0.5;
     painter.galley(egui::pos2(x, tok_y), tok, col(theme.text_primary()));
     if let Some(g) = use_ {
-        let y = cy - g.size().y * 0.5;
+        let y = rect.min.y + pad.y;
         painter.galley(egui::pos2(x + tok_w + gap, y), g, col(theme.text_muted()));
     }
 }
