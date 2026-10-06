@@ -473,6 +473,12 @@ impl ErrorScanner {
         );
     }
 
+    /// 시험 전용 — 정지 관측이 있는지.
+    #[cfg(test)]
+    pub(crate) fn is_watching(&self, surface_id: u32) -> bool {
+        self.watch.contains_key(&surface_id)
+    }
+
     /// 시험 전용 — 조용한 구간의 상태 확인을 마쳤는지.
     #[cfg(test)]
     pub(crate) fn is_settled(&self, surface_id: u32) -> bool {

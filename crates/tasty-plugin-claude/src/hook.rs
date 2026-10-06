@@ -318,6 +318,11 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
         now_ms,
     ));
 
+    // 새 턴의 active 를 보내기 전에 정지 관측을 지운다. 순서가 반대면 그 사이 스캔이
+    // 이전 턴의 조용한 구간과 새 상태 active 를 함께 보고 거짓 정지 알림을 낼 수 있다.
+    if is_new_turn_event(event) {
+        reset_dedupe_if_enabled(scanner, surface_id);
+    }
     // 호스트 호출의 실패 횟수를 항상 응답에 포함한다.
     let host_call_failures = settled_failures + deliver_all(host, &calls);
     // 상태(`idle`)를 먼저 쓴 뒤에 예약한다 — 만기 처리가 그 상태를 확인한다.
@@ -330,9 +335,6 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
         std::time::Instant::now(),
     );
 
-    if is_new_turn_event(event) {
-        reset_dedupe_if_enabled(scanner, surface_id);
-    }
     if ends_background_wait(event) {
         crate::error_scan::lock_scanner(scanner).clear_background_wait(surface_id);
     }
@@ -1716,6 +1718,61 @@ mod tests {
             "자동 재개 시도 기록이 남아야 한다"
         );
         assert!(rig.wall_time_open(), "wall_time 이 열려 있어야 한다");
+    }
+
+    /// active 를 받는 순간 스캐너에 이전 턴의 정지 관측이 남아 있었는지 기록하는 호스트.
+    struct TurnOrderProbe {
+        scanner: Arc<Mutex<ErrorScanner>>,
+        watched_at_active: std::cell::RefCell<Vec<bool>>,
+    }
+
+    impl HostCallSink for TurnOrderProbe {
+        fn call(
+            &self,
+            method: &str,
+            params: Value,
+        ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+            if method == "terminal.set_state" && params["state"] == "active" {
+                let watching =
+                    crate::error_scan::lock_scanner(&self.scanner).is_watching(HookRig::SURFACE);
+                self.watched_at_active.borrow_mut().push(watching);
+            }
+            Ok(json!({}))
+        }
+    }
+
+    /// 새 턴 hook 은 active 를 보내기 전에 정지 관측을 지운다. 순서가 반대면 그 사이의 스캔
+    /// tick 이 이전 턴의 조용한 구간으로 거짓 정지 알림을 낼 수 있다.
+    #[test]
+    fn a_new_turn_clears_the_stall_watch_before_reporting_active() {
+        for event in ["prompt-submit", "session-start", "active"] {
+            let rig = HookRig::new();
+            {
+                let mut s = crate::error_scan::lock_scanner(&rig.scanner);
+                s.enable(HookRig::SURFACE, crate::error_scan::ScanTarget::Child);
+                s.settle_for_test(HookRig::SURFACE);
+            }
+            let probe = TurnOrderProbe {
+                scanner: Arc::clone(&rig.scanner),
+                watched_at_active: std::cell::RefCell::new(Vec::new()),
+            };
+            handle_claude_hook(
+                &rig.state,
+                &rig.scanner,
+                &rig.resume,
+                &rig.pairing,
+                &probe,
+                &json!({ "event": event, "surface": HookRig::SURFACE }),
+                None,
+                &test_translator(),
+            )
+            .expect("hook handled");
+            assert_eq!(
+                *probe.watched_at_active.borrow(),
+                vec![false],
+                "{event}: active 를 보낼 때 이전 정지 관측이 없어야 한다"
+            );
+        }
     }
 
     /// hook 은 상태를 바꿀 수 있으므로, 조용한 구간의 상태 확인을 마친 대상도 다시 묻게 한다.
