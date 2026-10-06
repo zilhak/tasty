@@ -35,7 +35,9 @@
 - **파일 핸들러** — `detector "markdown"`(확장자 매핑) + `handler` action `open_surface{surface_kind:"markdown"}`. 마크다운 파일 열기 시 이 surface 로 뜬다.
 - **파일 열기와 대용량 확인 팝업** — 매니페스트에 `file-open`과 `large-file-confirm`을 등록하며 egui-mesh로 그린다. 파일 열기 팝업은 경로 입력, 찾아보기, 열기/취소로 구성한다.
 
-  `file-open`은 `scope = "surface"`다. host가 연결한 대상 surface가 보일 때 그 영역 가운데에 뜬다. 제자리 변환은 그 surface를, 새 탭 열기는 당시 포커스된 surface를 대상으로 삼는다. 다른 workspace나 탭으로 이동하면 숨고 돌아오면 복원된다. event trigger로 열 때는 창 범위를 사용한다([팝업 범위](../../design/systems/popup.md#plugin-popup-의-스코프)).
+  `file-open`은 `scope = "surface"`다. host가 연결한 대상 surface가 보일 때 그 영역 가운데에 뜬다. 제자리 변환은 그 surface를, 새 탭 열기는 당시 포커스된 surface를 대상으로 삼는다. 다른 workspace나 탭으로 이동하면 숨고 돌아오면 복원된다. event trigger로 열 때는 이벤트가 이 플러그인의 surface를 가리키면 그 surface, 대상이 없으면 창 범위를 사용한다([팝업 범위](../../design/systems/popup.md#plugin-popup-의-스코프)).
+
+  `large-file-confirm`도 `scope = "surface"`다. 대용량 파일을 연 markdown surface 가 `surface_id`를 실은 surface 이벤트를 발행하므로, 확인 팝업은 그 surface 영역 가운데에 뜨고 scrim도 그 surface 만 덮는다. host 는 대상이 이 플러그인의 surface 일 때만 연다.
 
   | 열기 경로 | 동작 |
   |---|---|

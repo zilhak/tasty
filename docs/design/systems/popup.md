@@ -166,7 +166,7 @@ popup 을 열지 않고 경고 로그를 남긴다. `window` 로 낮춰 열지 �
 scrim 도 그 범위를 덮는다(위 §scrim 의 범위). 셸이 범위보다 크면 범위 크기로 줄어든다 —
 plugin 콘텐츠는 GPU 합성으로 올라가 egui 레이어 클립이 그것까지 잘라 주지 않기 때문이다.
 
-현재 `scope = "surface"` 선언: markdown `file-open`.
+현재 `scope = "surface"` 선언: markdown `file-open` · `large-file-confirm`.
 
 ## Modal 과의 차이
 

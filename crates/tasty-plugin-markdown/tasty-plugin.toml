@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.218"
+version = "0.1.219"
 description = "Markdown viewer surface (webview)"
 api_version = "1"
 permissions = [
@@ -65,12 +65,14 @@ prefix = "markdown"
 description_i18n_key = "markdown.namespace.desc"
 
 # 크기 확인 이벤트로 여는 팝업. 콘텐츠는 플러그인, 외곽과 닫기는 호스트가 처리한다.
+# 이벤트가 가리키는 이 플러그인의 surface 영역 가운데에 뜬다.
 [[contributes.popup]]
 id = "large-file-confirm"
 trigger = { kind = "event", event_key = "com.tasty.markdown.large_file_confirm" }
 rendering = "egui-mesh"
 size_hint = { width = 360, height = 150 }
 anchor = "screen-center"
+scope = "surface"
 dismiss_on_outside_click = true
 
 # 파일 열기 팝업. 대상 surface가 있으면 그 자리에서 변환하고 없으면 새 탭을 연다.
