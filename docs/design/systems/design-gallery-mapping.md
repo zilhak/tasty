@@ -771,9 +771,11 @@ General L1의 마지막 L2 서브탭이다. 디자인은 원격 킷의
 | `Tag`("debug", 손쉬운 사용 행) | debug 빌드에서만 행을 넣음 | E 시나리오 |
 | `InfoModalShell`(440 × 140..360, 본문 스크롤, 버튼 줄 위 스크롤 경계) | `src/adapters/ui/info_modal.rs::draw_info_modal` → `tasty_ui_widgets::info_modal` | `components/info_modal.rs::draw` (`info-modal` spec) |
 | `PermissionNoticeModal`(강조 표기가 있는 본문) | 같은 셸, `InfoModal.emphasis = true` | `components/info_modal.rs::draw_permissions` (`info-modal-permissions` spec) |
+| `PermNoticeBody({ fda, selfBuilt })` | `tasty_platform::macos_permission_notice::permission_notice_body`(문단 키 조립, 본체·갤러리 공용) | `draw_permissions`의 never 4장 + stale·revoked 각 1장(selfBuilt 참) |
+| `PERM_SCENARIOS.fdaStale`·`PermRow sub` | FDA 행 `PermRow.detail` = `full_disk_access_stale_detail`(상태는 Missing 그대로) | F 시나리오 Mocha·Latte |
 
-갤러리는 본체보다 많은 것을 보여준다. 시안의 A~E 조합(아무것도 허용하지 않음, 모두 허용,
-Full Disk Access 확인 불가, 요청 중, debug 빌드)을 나란히 놓는데, 특히 `Unknown`은 추정에
+갤러리는 본체보다 많은 것을 보여준다. 시안의 A~F 조합(아무것도 허용하지 않음, 모두 허용,
+Full Disk Access 확인 불가, 업데이트 뒤 잃은 Full Disk Access, 요청 중, debug 빌드)을 나란히 놓는데, 특히 `Unknown`은 추정에
 쓰는 경로가 하나도 없는 macOS에서만 나와 실제 장비에서 재현하기 어렵다. 본체는 그 장비의
 TCC 상태 하나만 그린다. 손쉬운 사용 행은 본체에서 debug 빌드에서만
 보인다([ADR-0012](../../adr/0012-request-admission-and-isolation.md)).

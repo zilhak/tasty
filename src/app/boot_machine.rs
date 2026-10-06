@@ -620,7 +620,12 @@ impl App {
             state,
             crate::adapters::ui::info_modal::InfoModal {
                 title: crate::i18n::t("macos_permissions.notice.title").to_string(),
-                body: crate::i18n::t("macos_permissions.notice.body").to_string(),
+                body: {
+                    let (fda, self_built) = crate::macos_permissions::notice_inputs();
+                    crate::macos_permissions::permission_notice_body(fda, self_built, |key| {
+                        crate::i18n::t(key)
+                    })
+                },
                 on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
                 extra_buttons: permission_notice_buttons(),
                 emphasis: true,

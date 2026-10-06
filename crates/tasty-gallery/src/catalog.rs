@@ -1376,7 +1376,7 @@ pub fn pages() -> Vec<Page> {
                             "settings-macos-permissions",
                             "General › Permissions (macOS)",
                             Some(
-                                "3-column table · glyph + word states · FDA row action · HelpHints · debug Tag · requesting spinner (A–E, Mocha + Latte)",
+                                "3-column table · glyph + word states · FDA row action · HelpHints · debug Tag · requesting spinner · stale grant caption (A–F, Mocha + Latte)",
                             ),
                             components::settings_macos_permissions::draw,
                         ),
@@ -1528,7 +1528,7 @@ pub fn pages() -> Vec<Page> {
                             "info-modal-permissions",
                             "Permissions notice (macOS) — the long case",
                             Some(
-                                "scroll top / mid / end · paths · lead-ins · command chip · scroll edge above buttons",
+                                "scroll top / mid / end · paths · lead-ins · command chip · scroll edge above buttons · FDA paragraph branches (never / stale / revoked)",
                             ),
                             components::info_modal::draw_permissions,
                         ),

@@ -5927,6 +5927,7 @@ dependencies = [
  "tasty-font",
  "tasty-i18n",
  "tasty-icons",
+ "tasty-platform",
  "tasty-settings",
  "tasty-themes",
  "tasty-type-appearance",

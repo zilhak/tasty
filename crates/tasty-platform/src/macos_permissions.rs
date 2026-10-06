@@ -305,6 +305,20 @@ fn should_show_permission_notice(full_disk_access: FullDiskAccess, screen_record
     matches!(full_disk_access, FullDiskAccess::Denied) || !screen_recording
 }
 
+pub use crate::macos_permission_notice::{
+    FdaNoticeBranch, permission_notice_body, permission_notice_paragraph_keys,
+};
+
+/// 이번 부팅 안내에 쓸 FDA 문단 갈래와 직접 빌드 여부.
+///
+/// 갈래를 가르려면 Full Disk Access를 보유했던 관측과 그때의 서명 해시를 저장해 두고 지금
+/// 해시와 비교해야 한다. 그 기록을 남기는 곳과 해시를 얻는 방법이 아직 없어 보유 이력이
+/// 없는 것으로 보고 [`FdaNoticeBranch::Never`]를 돌려준다. 직접 빌드 여부도 아직 구분할
+/// 신호가 없어 서명 안내 문단을 계속 보인다.
+pub fn notice_inputs() -> (FdaNoticeBranch, bool) {
+    (FdaNoticeBranch::Never, true)
+}
+
 /// 보호 경로를 열어 FDA 상태를 추정한다.
 #[cfg(all(target_os = "macos", feature = "gui"))]
 pub fn full_disk_access_state() -> FullDiskAccess {

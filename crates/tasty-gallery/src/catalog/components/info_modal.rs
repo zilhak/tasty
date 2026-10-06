@@ -12,18 +12,17 @@ use tasty_ui_widgets::{
 };
 
 use crate::catalog::popup_frame::{self, TITLE_BAR_HEIGHT, TitleButtons};
+use tasty_platform::macos_permission_notice::{FdaNoticeBranch, permission_notice_body};
+
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 const THEME_NOT_FOUND: &str =
     "The theme \"gruvbox-hard\" set in settings.toml was not found, so the default theme is used.";
 const DB_LOCKED: &str = "The database file is locked by another Tasty process. Close the other \
                          instance and start Tasty again.";
-/// 권한 안내 본문의 번역 키. 본체와 같은 문자열과 강조 표기를 `lang/en.toml`에서 읽는다.
-const PERMISSIONS_NOTICE_KEY: &str = "macos_permissions.notice.body";
-
-/// 권한 안내 본문.
-fn permissions_notice() -> &'static str {
-    crate::i18n::t(PERMISSIONS_NOTICE_KEY)
+/// 권한 안내 본문. 본체와 같은 조립 함수로 `lang/en.toml`의 문단과 강조 표기를 잇는다.
+fn permissions_notice(fda: FdaNoticeBranch) -> String {
+    permission_notice_body(fda, true, crate::i18n::t)
 }
 
 const OK: &[InfoModalButton<'static>] = &[InfoModalButton {
@@ -372,24 +371,39 @@ pub fn draw_title_bar(ui: &mut egui::Ui, theme: &Theme) {
 /// macOS 권한 안내 — 본문이 가장 긴 경우. 강조 표기는 이 메시지만 쓴다.
 pub fn draw_permissions(ui: &mut egui::Ui, theme: &Theme) {
     let latte = crate::host_shell::latte_theme();
-    let cases: [(&str, &str, &Theme, f32); 4] = [
-        ("perm-top", "scrolled to top", theme, 0.0),
-        ("perm-mid", "mid-way", theme, 0.5),
-        ("perm-end", "at the end", theme, 1.0),
-        ("perm-top-latte", "top — Latte", &latte, 0.0),
+    let never = FdaNoticeBranch::Never;
+    let cases: [(&str, &str, &Theme, f32, FdaNoticeBranch); 6] = [
+        ("perm-top", "scrolled to top", theme, 0.0, never),
+        ("perm-mid", "mid-way", theme, 0.5, never),
+        ("perm-end", "at the end", theme, 1.0, never),
+        ("perm-top-latte", "top — Latte", &latte, 0.0, never),
+        (
+            "perm-stale",
+            "FDA granted before, Tasty changed since",
+            theme,
+            0.0,
+            FdaNoticeBranch::Stale,
+        ),
+        (
+            "perm-revoked",
+            "FDA granted before, turned off outside Tasty",
+            theme,
+            0.0,
+            FdaNoticeBranch::Revoked,
+        ),
     ];
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         for pair in cases.chunks(2) {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
-                for &(key, label, th, scroll) in pair {
+                for &(key, label, th, scroll, fda) in pair {
                     spec::cluster(ui, th, label, |ui| {
                         modal(
                             ui,
                             th,
                             key,
                             "Some permissions are not granted",
-                            permissions_notice(),
+                            &permissions_notice(fda),
                             true,
                             PERMISSIONS_BUTTONS,
                             Some(scroll),

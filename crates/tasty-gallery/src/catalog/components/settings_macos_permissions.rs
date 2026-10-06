@@ -2,7 +2,7 @@
 //!
 //! 본체 `src/view/settings/ui/tabs/macos_permissions.rs`와 같은
 //! `tasty_ui_widgets::mac_permissions`를 호출한다. 본체는 실제 장비의 TCC 상태 하나만
-//! 보여주지만, 여기서는 시안의 A~E 조합을 나란히 둔다. 특히 Full Disk Access의 "Unknown"은
+//! 보여주지만, 여기서는 시안의 A~F 조합을 나란히 둔다. 특히 Full Disk Access의 "Unknown"은
 //! 추정에 쓰는 경로가 하나도 없는 macOS에서만 나오고, 요청 진행 중 화면은 실제 프롬프트를
 //! 띄우지 않고서는 볼 수 없다. 손쉬운 사용 행은 debug 빌드에만 있다(ADR-0012).
 
@@ -27,6 +27,8 @@ const REQUEST_NOTE: &str = "Asks for folder access, then screen recording, one p
      Items you already allowed or denied are not asked again, and a denied item can only be \
      restored in System Settings. Full Disk Access cannot be requested by an app: use Open \
      System Settings in its row and add Tasty yourself.";
+/// 보유했다가 앱이 바뀌어 잃은 Full Disk Access 행의 처방 줄.
+const FDA_STALE_DETAIL_KEY: &str = "settings.macos_permissions.full_disk_access_stale_detail";
 const REQUESTING_NOTE: &str = "Requesting permissions. Answer each prompt as it appears; the next \
      one shows after you answer.";
 
@@ -36,6 +38,8 @@ enum Scenario {
     None,
     All,
     FdaUnknown,
+    /// 보유했다가 업데이트·재빌드로 잃었다. 상태는 Not granted, FDA 행에 처방 줄이 붙는다.
+    FdaStale,
     Requesting,
 }
 
@@ -47,6 +51,7 @@ impl Scenario {
             }
             Scenario::All => (PermState::Granted, PermState::Granted, PermState::Granted),
             Scenario::FdaUnknown => (PermState::Unknown, PermState::Granted, PermState::Granted),
+            Scenario::FdaStale => (PermState::Missing, PermState::Granted, PermState::Granted),
         }
     }
 }
@@ -62,7 +67,7 @@ fn word(state: PermState) -> &'static str {
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     let latte = crate::host_shell::latte_theme();
-    let cases: [(&str, &str, &Theme, Scenario, bool); 7] = [
+    let cases: [(&str, &str, &Theme, Scenario, bool); 9] = [
         (
             "a",
             "A · nothing granted — Mocha",
@@ -83,6 +88,20 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             "C · FDA unknown, screen granted",
             theme,
             Scenario::FdaUnknown,
+            false,
+        ),
+        (
+            "f",
+            "F · FDA granted before an update — Mocha",
+            theme,
+            Scenario::FdaStale,
+            false,
+        ),
+        (
+            "f-latte",
+            "F · FDA granted before an update — Latte",
+            &latte,
+            Scenario::FdaStale,
             false,
         ),
         ("d", "D · requesting", theme, Scenario::Requesting, false),
@@ -140,6 +159,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "status + action wrap to the next line, right-aligned",
             ),
             ("debug row", "Tag \"debug\""),
+            (
+                "stale grant",
+                "no 5th state — Not granted + a caption line under the label with the remedy (remove, then add again)",
+            ),
         ],
         &[
             TokenChip::new(
@@ -187,7 +210,9 @@ fn pane(ui: &mut egui::Ui, theme: &Theme, key: &str, scenario: Scenario, debug: 
         PermRow {
             label: "Full Disk Access",
             hint: Some(FDA_HINT),
-            detail: None,
+            // 처방 문구는 본체와 같은 번역 키에서 읽어 사본을 두지 않는다.
+            detail: matches!(scenario, Scenario::FdaStale)
+                .then(|| crate::i18n::t(FDA_STALE_DETAIL_KEY)),
             tag: None,
             state: fda,
             state_label: word(fda),
