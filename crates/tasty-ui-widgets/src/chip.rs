@@ -448,10 +448,26 @@ pub fn paint_num_keycap(
 }
 
 /// Kbd — 키캡 시퀀스. `keys` 는 `"+"` 로 분할(예: `"Ctrl+K"`), 각 키를 키캡으로.
+/// `+` 키 자체는 [`split_keys`] 규칙으로 키캡 하나가 된다(`"+"`, `"Ctrl++"`).
 pub fn kbd(ui: &mut egui::Ui, theme: &Theme, keys: &str) {
-    let parts: Vec<&str> = keys.split('+').collect();
-    let owned: Vec<KbdKey<'_>> = parts.into_iter().map(KbdKey::Text).collect();
+    let owned: Vec<KbdKey<'_>> = split_keys(keys).into_iter().map(KbdKey::Text).collect();
     kbd_parts(ui, theme, &owned);
+}
+
+/// 키 조합 문자열을 키 이름으로 나눈다. 구분자와 같은 `+` 키는 분할 결과에 빈 조각 두 개로
+/// 나타나므로(`"+"` → `["", ""]`, `"Ctrl++"` → `["Ctrl", "", ""]`) 연속한 빈 조각을 `+` 키 하나로 합친다.
+fn split_keys(keys: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut segs = keys.split('+').peekable();
+    while let Some(seg) = segs.next() {
+        if seg.is_empty() && segs.peek() == Some(&"") {
+            segs.next();
+            out.push("+");
+        } else {
+            out.push(seg);
+        }
+    }
+    out
 }
 
 /// 글자 폭에 패딩을 더하되 정사각 최소 크기를 유지한다.
@@ -492,9 +508,9 @@ pub fn kbd_parts_width(ctx: &egui::Context, theme: &Theme, keys: &[KbdKey<'_>]) 
     LogicalPx(items.iter().sum::<f32>() + theme.kbd_gap().value() * gaps)
 }
 
-/// [`kbd`] 가 차지할 폭 — `"+"` 로 분할한 뒤 [`kbd_parts_width`] 에 넘긴다.
+/// [`kbd`] 가 차지할 폭 — [`split_keys`] 로 나눈 뒤 [`kbd_parts_width`] 에 넘긴다.
 pub fn kbd_width(ctx: &egui::Context, theme: &Theme, keys: &str) -> LogicalPx {
-    let parts: Vec<KbdKey<'_>> = keys.split('+').map(KbdKey::Text).collect();
+    let parts: Vec<KbdKey<'_>> = split_keys(keys).into_iter().map(KbdKey::Text).collect();
     kbd_parts_width(ctx, theme, &parts)
 }
 
@@ -708,6 +724,17 @@ fn draw_keycap_box(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_plus_key_is_one_keycap() {
+        assert_eq!(super::split_keys("+"), vec!["+"]);
+        assert_eq!(super::split_keys("Ctrl++"), vec!["Ctrl", "+"]);
+        assert_eq!(
+            super::split_keys("Ctrl+Shift+K"),
+            vec!["Ctrl", "Shift", "K"]
+        );
+        assert_eq!(super::split_keys("="), vec!["="]);
+    }
+
     use super::*;
 
     /// 그려진 Tag 라벨과 그 자간을 모은다.
