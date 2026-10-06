@@ -202,8 +202,8 @@ pub fn all_defs() -> &'static [PopupDef] {
                 title_key: "command_palette.heading",
                 fullscreen_stage: None,
                 title_fn: None,
-                // 등록 시점의 placeholder다. sizer가 매 프레임 palette-width와 검색 결과에 맞춘
-                // 높이로 덮어쓴다.
+                // 처음 등록할 때의 전역 UI 배율로 palette-width를 한 번 계산한다. sizer가 매 프레임
+                // 실제 크기로 덮어쓰므로 이후 배율이 바뀌어도 동작에는 영향이 없다.
                 default_size: egui::vec2(palette_width, 412.0),
                 sizer: Some(super::command_palette::command_palette_sizer),
                 default_scope: PopupScope::Window,
