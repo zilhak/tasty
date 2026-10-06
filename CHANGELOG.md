@@ -70,6 +70,7 @@
 
 ### Fixed
 
+- **마크다운 문서 바탕이 테마의 `[surfaces.markdown]` `focused_bg` 를 따른다.** 이전에는 앱 바탕색(crust)으로 칠해, 테마 파일에서 마크다운 바탕을 바꿔도 문서에 반영되지 않았다. 기본 테마(Mocha·Latte)는 두 값이 같아 보이는 차이가 없다.
 - **호스트명이나 LAN IP 로 이 Tasty 자신을 가리키는 원격 attach 를 거절한다.** 이전에는 loopback 표기(`127.0.0.1` 등)만 자기 자신으로 알아봐서, 같은 머신을 호스트명·LAN IP 프로필로 지정하면 자기 mirror 가 자기 워크스페이스를 점유하고 `new_workspace` 요청은 자기 자신에 워크스페이스를 만들었다. 이제 SSH 로 연결한 뒤 상대의 인스턴스 식별자를 비교해 같으면 거절한다. IPC `remote.attach` 의 `new_workspace` 는 `-32602` 오류로 응답한다. 기존 워크스페이스 attach 는 판정에 SSH 왕복이 필요해 응답을 늦추지 않고 `{attaching:true}` 를 준 뒤 비동기로 거절해 `tasty remote refusals` 에 `via_ssh` 로 남기며(loopback 표기는 지금처럼 바로 오류), 자동 attach 매핑도 같은 기록을 남기고, 원격 워크스페이스 추가 창은 안내 문구를 보여 준다. 같은 컴퓨터의 다른 인스턴스에는 그대로 붙는다. `system.info`(`tasty list info`)에 프로세스별 `instance_id` 가 추가됐다.
 
 - **Tasty 안의 터미널에서 띄운 Tasty가 원격 워크스페이스 목록을 불러온다.** 부모 Tasty의 세션 토큰을 이어받은 GUI·CLI가 원격 워크스페이스 목록 조회·새 워크스페이스 생성·`tasty remote check` 요청에 그 토큰을 실어 보내, 원격이 모르는 토큰이라며 거절할 수 있었다. 이제 원격으로 보내는 요청에는 세션 토큰을 싣지 않는다.

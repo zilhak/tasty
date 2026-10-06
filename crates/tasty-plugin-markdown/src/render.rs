@@ -1591,6 +1591,16 @@ fn html_unescape(s: &str) -> String {
 /// html의 height:100%와 body의 min-height:100%는 서로 역할이 다르다.
 /// body가 문서만큼 늘어나야 sticky 주소창이 끝까지 남고, html 높이가 정해져야
 /// 짧은 문서에서도 body의 백분율 최소 높이가 viewport를 채운다.
+/// 문서 바탕(디자인 토큰 md-doc-bg = surface-markdown-focused-bg). webview 경로에는 focus 신호가
+/// 없으므로 focused 색 하나만 쓴다. `surface_themes`를 싣지 않는 이전 호스트에서는 markdown 항목이
+/// 없으므로 이전처럼 bg_app으로 칠한다(`Theme::surface`의 대체 색은 검정이라 쓰지 않는다).
+fn md_doc_bg(theme: &Theme) -> tasty_type_appearance::color::HexColor {
+    theme
+        .surface_themes
+        .get("markdown")
+        .map_or_else(|| theme.bg_app(), |surface| surface.focused_bg)
+}
+
 fn theme_css(theme: &Theme) -> String {
     let [h1, h2, h3, h4, h5, h6] = heading_sizes_px(theme);
     let body = theme.font_size_body.value();
@@ -1701,9 +1711,7 @@ li input[type=checkbox]{{margin-right:0.4em;}}
         quote_bar = theme.border_strong().to_hex(),
         rule = theme.separator.unpremultiplied().to_hex(),
         zebra = theme.md_table_row_bg_zebra().to_hex(),
-        // webview 렌더 경로엔 focus 신호가 없다 — surfaces.markdown.focused_bg 대신
-        // bg_app(=crust)을 문서의 유일한 배경으로 쓴다.
-        bg = theme.bg_app().to_hex(),
+        bg = md_doc_bg(theme).to_hex(),
         radius = theme.corner_radius.value(),
         border_w = theme.border_width.value(),
         quote_bar_w = theme.md_quote_bar_width().value(),
@@ -4995,5 +5003,57 @@ Outro\n";
             let out = sanitize_html(&format!(r#"<img src="{src}" alt="a">"#));
             assert!(out.contains(src), "src={src} 가 사라졌다: {out}");
         }
+    }
+
+    // ── document background ─────────────────────────────────────────────────
+
+    #[test]
+    fn document_background_follows_the_markdown_surface_focused_bg() {
+        let mut colors = tasty_themes::mocha_fallback_colors();
+        let doc = tasty_type_appearance::color::HexColor::from_hex("#203040").expect("valid hex");
+        colors
+            .surface_themes
+            .get_mut("markdown")
+            .expect("markdown surface in the fallback theme")
+            .focused_bg = doc;
+        let theme = Theme::with_colors_and_zoom(colors, false, 1.0);
+        assert_ne!(theme.bg_app(), doc);
+        let css = theme_css(&theme);
+        assert!(css.contains(&format!("--md-bg:{};", doc.to_hex())), "{css}");
+    }
+
+    #[test]
+    fn a_host_without_surface_colors_keeps_the_app_background() {
+        // surface_themes 를 싣지 않는 이전 호스트의 ThemeWire.
+        let mut colors = tasty_themes::mocha_fallback_colors();
+        colors.surface_themes.clear();
+        let theme = Theme::with_colors_and_zoom(colors, false, 1.0);
+        let css = theme_css(&theme);
+        assert!(
+            css.contains(&format!("--md-bg:{};", theme.bg_app().to_hex())),
+            "{css}"
+        );
+    }
+
+    #[test]
+    fn the_theme_wire_carries_the_markdown_surface_colors() {
+        // 호스트가 보내는 ThemeWire(JSON)를 플러그인이 받아도 markdown surface 색이 남는다.
+        let mut colors = tasty_themes::mocha_fallback_colors();
+        let doc = tasty_type_appearance::color::HexColor::from_hex("#203040").expect("valid hex");
+        colors
+            .surface_themes
+            .get_mut("markdown")
+            .expect("markdown surface")
+            .focused_bg = doc;
+        let host = Theme::with_colors_and_zoom(colors, false, 1.0);
+        let wire = tasty_plugin_protocol::ThemeWire {
+            colors: host.to_colors(),
+            is_light: host.is_light,
+            ui_zoom: 1.0,
+        };
+        let json = serde_json::to_string(&wire).unwrap();
+        let back: tasty_plugin_protocol::ThemeWire = serde_json::from_str(&json).unwrap();
+        let plugin = Theme::with_colors_and_zoom(back.colors, back.is_light, back.ui_zoom);
+        assert_eq!(md_doc_bg(&plugin), doc);
     }
 }

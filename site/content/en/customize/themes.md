@@ -1,4 +1,4 @@
-<!-- source-hash: d6a2b7dcbdbf -->
+<!-- source-hash: c2f52eb1b2d2 -->
 # Themes
 
 Choose the light Latte theme or the dark Mocha theme. Adjust a few colours, or make your own theme in a TOML file. Theme files live in `~/.tasty/themes/`.
@@ -134,7 +134,7 @@ focused_fg   = "#cdd6f4"
 Rules:
 
 - Colours use the `#RGB` · `#RRGGBB` · `#RRGGBBAA` formats. With 8 digits, the last two are opacity.
-- `[surfaces.<kind>]` holds the focused / unfocused background · text colours per Surface kind. Besides `terminal` · `markdown` you can use kind names registered by plugins, and kinds you do not define are drawn with safe default colours.
+- `[surfaces.<kind>]` holds the focused / unfocused background · text colours per Surface kind. Besides `terminal` · `markdown` you can use kind names registered by plugins, and kinds you do not define are drawn with safe default colours. The Markdown document background always uses `focused_bg` from `[surfaces.markdown]`, whether or not the surface is focused.
 - Translucent effects such as hover and selection highlights are derived from `is_light`. Spacing and font sizes are not configured in the theme file.
 - When making a light theme, be sure to write `is_light = true`. The direction of the overlay colours (black tint / white tint) depends on this value.
 
