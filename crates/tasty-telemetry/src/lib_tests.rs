@@ -421,6 +421,73 @@ fn windows_of_surfaces_that_stopped_calling_are_dropped() {
     );
 }
 
+/// 정리는 SlowLoop 창(5분) 기준이다. 60초 넘게 쉬었어도 5분 창에 호출이 남은 루프는 창과 보고 여부를
+/// 잃지 않아 다시 알리지 않는다.
+#[test]
+fn a_sweep_after_a_pause_shorter_than_the_window_keeps_the_loop() {
+    let d = AnomalyDetector::new();
+    let params = serde_json::json!({ "surface": 7 });
+    let t0 = 1_000u64;
+    let mut fired = 0;
+    let mut call = |ts: u64, seq: u64| {
+        fired += d
+            .record_call("agent_a", "terminal.parent", &params, ts, seq)
+            .iter()
+            .filter(|a| a.kind == AnomalyKind::SlowLoop)
+            .count();
+    };
+    // 첫 호출이 정리 시각을 t0 로 둔다. 225초 동안 800ms 간격.
+    let mut seq = 0;
+    let mut ts = t0;
+    while ts <= t0 + 225_000 {
+        call(ts, seq);
+        seq += 1;
+        ts += 800;
+    }
+    // 75초 쉬고(> 60초) 다음 정리 시각(t0 + 5분)에 다시 이어간다.
+    let resume = t0 + SLOW_LOOP_WINDOW_MS;
+    for i in 0..30u64 {
+        call(resume + i * 800, seq + i);
+    }
+    assert_eq!(
+        fired, 1,
+        "5분 창 안에서 쉬었다 이어진 루프는 다시 알리지 않는다"
+    );
+}
+
+/// 정리는 쿨다운이 지나지 않은 emit 기록을 남긴다. 정리 직전에 낸 CallBurst 는 정리 뒤에도 쿨다운을 지킨다.
+#[test]
+fn a_sweep_keeps_emit_records_still_inside_the_cooldown() {
+    let d = AnomalyDetector::new();
+    let t0 = 1_000u64;
+    let params = serde_json::json!({});
+    // 정리 시각을 t0 로 둔다.
+    d.record_call("agent_a", "warmup", &params, t0, 0);
+    let start = t0 + 270_000;
+    let mut bursts = Vec::new();
+    for i in 0..(CALL_BURST_THRESHOLD as u64) {
+        let ts = start + i * 10;
+        if d.record_call("agent_a", "m", &params, ts, i + 1)
+            .iter()
+            .any(|a| a.kind == AnomalyKind::CallBurst)
+        {
+            bursts.push(ts);
+        }
+    }
+    assert_eq!(bursts.len(), 1, "전제: 첫 CallBurst");
+    // 정리가 도는 호출(t0 + 5분). 첫 발화 뒤 쿨다운(60초) 안이다.
+    let sweep_at = t0 + SLOW_LOOP_WINDOW_MS;
+    assert!(
+        sweep_at - bursts[0] < ANOMALY_DEDUP_COOLDOWN_MS,
+        "전제: 쿨다운 안"
+    );
+    let again = d.record_call("agent_a", "m", &params, sweep_at, 9_999);
+    assert!(
+        !again.iter().any(|a| a.kind == AnomalyKind::CallBurst),
+        "정리 뒤에도 쿨다운 안이면 다시 알리지 않는다"
+    );
+}
+
 #[test]
 fn slow_loop_anomaly_does_not_fire_when_params_vary() {
     let d = AnomalyDetector::new();
