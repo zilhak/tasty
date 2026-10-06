@@ -18,11 +18,12 @@ const LADDER_440: LogicalPx = LogicalPx(440.0);
 const LADDER_360: LogicalPx = LogicalPx(360.0);
 
 /// `crumb_alloc::plan` 이 고른 단계를 디자인 Spec 의 단계 이름으로 적는다. 단계 번호는 덜 접힌
-/// 구성부터 센 순번이라, 조상을 하나씩 접는 1단계가 성분 수만큼 늘어난다.
+/// 구성부터 센 순번이라, 조상을 하나씩 접는 1단계가 성분 수만큼 늘어난다. 0단계도 각 칸은
+/// `fp-crumb-max-width` 에서 말줄임될 수 있어 "다 들어간다"고 적지 않는다.
 fn step_label(n: usize, step: usize) -> String {
     let foldable = n.saturating_sub(3);
     if step == 0 {
-        return "fits — nothing folds".to_owned();
+        return "nothing folds".to_owned();
     }
     if n >= 3 && step <= foldable {
         return if step == 1 {
