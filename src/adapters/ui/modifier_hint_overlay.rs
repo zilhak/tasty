@@ -145,7 +145,7 @@ pub fn debug_state_json(
         .map(|s| {
             json!({
                 "combo": combo_keycaps(s.combo, &settings.general),
-                "rows": s.rows.iter().map(|r| prettify_binding(binding_leaf(&r.binding))).collect::<Vec<_>>(),
+                "rows": s.rows.iter().map(|r| row_key_text(&r.binding)).collect::<Vec<_>>(),
                 "roles": s.roles.iter().map(|r| r.desc_key()).collect::<Vec<_>>(),
                 // 빈 섹션도 화면에는 "바인딩 없음"으로 표시한다.
                 "empty": s.is_empty(),
@@ -660,7 +660,7 @@ fn draw_row(
                 .circle_filled(r.center(), d * 0.5, theme.modhint_agent_dot().to_egui());
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            kbd(ui, theme, &prettify_binding(binding_leaf(&row.binding)));
+            kbd(ui, theme, &row_key_text(&row.binding));
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.add(
                     egui::Label::new(
@@ -790,20 +790,10 @@ fn combo_key_parts(
     combo_keycap_parts(sec.combo, general)
 }
 
-/// 키 이름의 첫 글자를 대문자로 바꾼다. 호출부가 binding_leaf로 modifier를 제거하므로
-/// Alt/Option/Shift 표시 설정은 여기서 적용하지 않는다.
-fn prettify_binding(binding: &str) -> String {
-    binding
-        .split('+')
-        .map(|seg| {
-            let mut chars = seg.chars();
-            match chars.next() {
-                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                None => String::new(),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("+")
+/// 행 바인딩의 키캡 문자열. modifier 는 섹션 헤더가 보여 주므로 키만 남기고, 설정 화면과 같은
+/// [`KeybindingSettings::format_key_display`] 로 표시한다(`ctrl+plus` → `+`).
+fn row_key_text(binding: &str) -> String {
+    tasty_settings::KeybindingSettings::format_key_display(binding_leaf(binding))
 }
 
 /// 행 출처 → (표시 라벨, plugin 여부). 라벨 해석은 이 오버레이 책임(모델은 키만 반환).
@@ -836,6 +826,15 @@ mod tests {
 
     const DELAY: f32 = 500.0;
     const FADE: f32 = 200.0;
+
+    #[test]
+    fn row_keys_use_the_settings_key_display() {
+        assert_eq!(row_key_text("ctrl+plus"), "+");
+        assert_eq!(row_key_text("ctrl++"), "+");
+        assert_eq!(row_key_text("ctrl+minus"), "-");
+        assert_eq!(row_key_text("ctrl+shift+t"), "T");
+        assert_eq!(row_key_text("ctrl+,"), ",");
+    }
 
     #[test]
     fn alpha_hidden_before_delay() {

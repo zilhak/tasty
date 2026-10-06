@@ -731,22 +731,27 @@ impl KeybindingSettings {
         }
 
         if !rest.is_empty() {
-            let key_display = match rest.to_ascii_lowercase().as_str() {
-                "plus" => "+".into(),
-                "minus" => "-".into(),
-                "equals" => "=".into(),
-                _ => {
-                    let mut chars = rest.chars();
-                    match chars.next() {
-                        Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
-                        None => String::new(),
-                    }
-                }
-            };
-            parts.push(key_display);
+            parts.push(Self::format_key_display(rest));
         }
 
         parts
+    }
+
+    /// modifier 를 뺀 키 이름 하나의 표시 문자열. `plus`·`minus`·`equals` 별칭은 기호로 바꾸고,
+    /// 나머지는 첫 글자만 대문자로 바꾼다(`k` → `K`, `f11` → `F11`). 설정 화면과 보조키 도움말이 같이 쓴다.
+    pub fn format_key_display(key: &str) -> String {
+        match key.to_ascii_lowercase().as_str() {
+            "plus" => "+".into(),
+            "minus" => "-".into(),
+            "equals" => "=".into(),
+            _ => {
+                let mut chars = key.chars();
+                match chars.next() {
+                    Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
+                    None => String::new(),
+                }
+            }
+        }
     }
 }
 

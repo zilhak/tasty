@@ -230,6 +230,17 @@ fn format_display_symbol_aliases() {
 }
 
 #[test]
+fn format_key_display_maps_aliases_and_capitalises() {
+    assert_eq!(KeybindingSettings::format_key_display("plus"), "+");
+    assert_eq!(KeybindingSettings::format_key_display("Minus"), "-");
+    assert_eq!(KeybindingSettings::format_key_display("equals"), "=");
+    assert_eq!(KeybindingSettings::format_key_display("+"), "+");
+    assert_eq!(KeybindingSettings::format_key_display("k"), "K");
+    assert_eq!(KeybindingSettings::format_key_display("f11"), "F11");
+    assert_eq!(KeybindingSettings::format_key_display(""), "");
+}
+
+#[test]
 fn format_display_empty_and_minus() {
     let general = GeneralSettings::default();
     assert_eq!(KeybindingSettings::format_display("", &general), "");
