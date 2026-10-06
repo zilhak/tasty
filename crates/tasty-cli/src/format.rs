@@ -166,24 +166,14 @@ fn format_command_summary(command: &serde_json::Value) -> String {
     }
 }
 
-/// agent 작업 회차의 세션 연결과 세부 단계. 연결 전이면 단계만 보인다.
+/// agent task 회차가 묶인 세션. 단계(`phase`)는 후처리와 같은 `phase:` 줄이 보인다.
 fn task_agent_line(task: &serde_json::Value) -> Option<String> {
-    let phase = task.get("phase").and_then(|v| v.as_str());
-    let link = task
-        .get("attempt")
-        .and_then(|a| a.get("agent"))
-        .filter(|v| !v.is_null());
-    let Some(link) = link else {
-        return phase.map(|p| format!("phase: {p}"));
-    };
+    let link = task.pointer("/attempt/agent").filter(|v| !v.is_null())?;
     let provider = link.get("provider").and_then(|v| v.as_str()).unwrap_or("?");
     let surface = link.get("surface_id").and_then(|v| v.as_u64()).unwrap_or(0);
     let mut line = format!("agent session: {provider} surface {surface}");
-    if let Some(p) = phase {
-        line.push_str(&format!(", phase {p}"));
-    }
     if let Some(since) = link.get("awaiting_input_since").and_then(|v| v.as_u64()) {
-        line.push_str(&format!(" (awaiting input since {since})"));
+        line.push_str(&format!(", awaiting input since {since}"));
     }
     Some(line)
 }
@@ -747,10 +737,25 @@ fn format_notification_list(result: &serde_json::Value) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        format_runner_summary, format_workspace_row, render_layout, task_postprocess_lines,
-        task_route_line, task_skip_line, timer_hard_deadline_line, timer_row_line, timer_row_text,
+        format_runner_summary, format_workspace_row, render_layout, task_agent_line,
+        task_postprocess_lines, task_route_line, task_skip_line, timer_hard_deadline_line,
+        timer_row_line, timer_row_text,
     };
     use serde_json::json;
+
+    #[test]
+    fn task_get_shows_the_agent_session_and_leaves_the_phase_to_the_phase_line() {
+        let task = json!({
+            "state": {"kind": "running"}, "phase": "awaiting_input",
+            "attempt": {"agent": {"provider": "claude", "surface_id": 12, "awaiting_input_since": 5}},
+        });
+        assert_eq!(
+            task_agent_line(&task).as_deref(),
+            Some("agent session: claude surface 12, awaiting input since 5")
+        );
+        assert_eq!(task_postprocess_lines(&task), ["phase: awaiting_input"]);
+        assert_eq!(task_agent_line(&json!({"phase": "retry_wait"})), None);
+    }
 
     #[test]
     fn task_get_shows_the_postprocess_phase_while_it_runs() {
