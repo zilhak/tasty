@@ -1,13 +1,14 @@
 //! 탐색기 내용 영역의 상태 화면 세 개(빈 폴더 · 권한 거부 · 불러오는 중)와
 //! 즐겨찾기 추가·이름 변경 팝업을 한 무대에 놓은 예제.
 
+mod popups;
+
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::Spinner;
 
-use super::{explorer_favorite_popup, explorer_rename_popup};
 use crate::catalog::icons::{self, MockGlyph};
-use crate::catalog::spec::{self, StageVariant, TokenChip, wrap_item};
+use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 시안 상태 줄의 최대 폭(`maxWidth: 700`)과 상태 칸 높이(`height: 180`). 전시 치수다.
 const ROW_W: LogicalPx = LogicalPx(700.0);
@@ -68,10 +69,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     state_cell(ui, theme, s, cell_w);
                 }
             });
-            ui.horizontal_wrapped(|ui| {
+            // 시안 팝업 줄은 `justifyContent: center` 라 상태 줄과 같은 축의 가운데에 둔다.
+            ui.horizontal_top(|ui| {
+                let row_w = theme.measure_sm * 2.0 + POPUP_GAP;
+                ui.add_space(((ROW_W - row_w) * 0.5).value().max(0.0));
                 ui.spacing_mut().item_spacing.x = POPUP_GAP.value();
-                wrap_item(ui, |ui| explorer_favorite_popup::card(ui, theme));
-                wrap_item(ui, |ui| explorer_rename_popup::card(ui, theme));
+                popups::favorite(ui, theme);
+                popups::rename(ui, theme);
             });
         });
     });
@@ -136,7 +140,9 @@ fn state_cell(ui: &mut egui::Ui, theme: &Theme, s: &StateCell, w: f32) {
     } else {
         theme.text_secondary().to_egui()
     };
-    let glyph = theme.icon_glyph_size_md.value() * GLYPH_SCALE;
+    // transform: scale 은 배치에 영향이 없다. 배치는 원래 글리프 크기로 하고 확대해서 그린다.
+    let glyph_box = theme.icon_glyph_size_md.value();
+    let glyph = glyph_box * GLYPH_SCALE;
     let gap = theme.spacing_sm.value();
     let inner_w = (w - theme.spacing_lg.value() * 2.0).max(0.0);
     let title = ui.painter().layout(
@@ -156,10 +162,10 @@ fn state_cell(ui: &mut egui::Ui, theme: &Theme, s: &StateCell, w: f32) {
         ui.painter().layout_job(job)
     });
     let block_h =
-        glyph + gap + title.rect.height() + sub.as_ref().map_or(0.0, |g| gap + g.rect.height());
+        glyph_box + gap + title.rect.height() + sub.as_ref().map_or(0.0, |g| gap + g.rect.height());
     let mut y = rect.center().y - block_h * 0.5;
     let glyph_rect = egui::Rect::from_center_size(
-        egui::pos2(rect.center().x, y + glyph * 0.5),
+        egui::pos2(rect.center().x, y + glyph_box * 0.5),
         egui::vec2(glyph, glyph),
     );
     match s.glyph {
@@ -171,7 +177,7 @@ fn state_cell(ui: &mut egui::Ui, theme: &Theme, s: &StateCell, w: f32) {
             Spinner::new().size(glyph).show(&mut slot, theme);
         }
     }
-    y += glyph + gap;
+    y += glyph_box + gap;
     let title_h = title.rect.height();
     ui.painter().galley(
         egui::pos2(rect.center().x - title.rect.width() * 0.5, y),
