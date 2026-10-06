@@ -11,6 +11,7 @@ pub mod foundations_shape;
 pub mod foundations_uiscale;
 pub mod icons;
 pub mod layouts_settled;
+pub mod overlays_settled;
 pub mod popup_frame;
 pub mod spacing;
 pub mod spec;
@@ -814,14 +815,22 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "scrim",
                     "Scrim & frame",
-                    vec![spec(
-                        "scrim",
-                        "Dismiss on scrim or Esc",
-                        Some(
-                            "The shared recipe — bg-panel frame, 1px border-strong, modal shadow, scrim + blur",
+                    vec![
+                        spec(
+                            "scrim",
+                            "Dismiss on scrim or Esc",
+                            Some(
+                                "The shared recipe — bg-panel frame, 1px border-strong, modal shadow, scrim + blur",
+                            ),
+                            widgets::dialog::draw,
                         ),
-                        widgets::dialog::draw,
-                    )],
+                        spec(
+                            "drag-handles",
+                            "Drag handles — TitleBar · Region · None",
+                            Some("how a popup moves · the cursor is the only affordance"),
+                            overlays_settled::draw_drag_handles,
+                        ),
+                    ],
                 ),
                 section(
                     "scrim-scope",
@@ -1656,14 +1665,24 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "plugins-window",
                     "Plugins manager window",
-                    vec![spec(
-                        "plugins-window",
-                        "Installed / Attention / Add plugin",
-                        Some(
-                            "상태 8 · 헤더 48 + 목록 + 상세 전량 · builtin 점 · health danger dot",
+                    vec![
+                        spec(
+                            "plugins-window",
+                            "Installed / Attention / Add plugin",
+                            Some(
+                                "상태 8 · 헤더 48 + 목록 + 상세 전량 · builtin 점 · health danger dot",
+                            ),
+                            components::plugins_window::draw,
                         ),
-                        components::plugins_window::draw,
-                    )],
+                        spec(
+                            "plugin-identity-mark",
+                            "Plugin identity mark — one component, two sizes",
+                            Some(
+                                "sm 32 on list rows · lg 46 on detail and preview · fixed tint bed",
+                            ),
+                            overlays_settled::draw_plugin_identity,
+                        ),
+                    ],
                 ),
                 section(
                     "drop-overlay",
@@ -1990,12 +2009,22 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "git-viewer",
                     "Git worktree viewer popup",
-                    vec![spec(
-                        "git-viewer",
-                        "Worktree rail + status / log / diff",
-                        Some("≈960 · splitter H 0.25 · splitter V 0.5 · rail → status/log/diff"),
-                        components::git_viewer::draw,
-                    )],
+                    vec![
+                        spec(
+                            "git-viewer",
+                            "Worktree rail + status / log / diff",
+                            Some(
+                                "≈960 · splitter H 0.25 · splitter V 0.5 · rail → status/log/diff",
+                            ),
+                            components::git_viewer::draw,
+                        ),
+                        spec(
+                            "git-diff-toolbar",
+                            "Diff toolbar — a container height, not a button height",
+                            Some("git-toolbar-height 32 holds 28px controls"),
+                            overlays_settled::draw_diff_toolbar,
+                        ),
+                    ],
                 ),
                 section(
                     "markdown-viewer",
