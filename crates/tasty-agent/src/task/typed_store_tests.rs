@@ -389,12 +389,20 @@ fn int64_extremes_survive_the_memory_store_exactly() {
     let store = TaskStore::new(&mut mem, "_host", &seq);
     let t = store.get(1, &id).unwrap().unwrap();
     let out = t.typed_result.unwrap().output;
-    assert_eq!(out, values);
+    // 저장된 wire 값은 10진 문자열이다.
+    assert_eq!(
+        out,
+        json!([
+            "-9223372036854775808",
+            "9223372036854775807",
+            "9007199254740993"
+        ])
+    );
     let ints: Vec<i64> = out
         .as_array()
         .unwrap()
         .iter()
-        .map(|v| v.as_i64().unwrap())
+        .map(|v| super::types::int64_of(v).unwrap())
         .collect();
     assert_eq!(ints, vec![i64::MIN, i64::MAX, 9007199254740993]);
 }
@@ -422,7 +430,7 @@ fn run_exit_code_is_the_output_and_execution_failures_keep_their_stage() {
     );
     assert_eq!(t.state, TaskState::Succeeded);
     let typed = t.typed_result.unwrap();
-    assert_eq!(typed.output, json!(7));
+    assert_eq!(typed.output, json!("7"));
     assert_eq!(typed.raw.execution, Some(streams));
 
     let f = store

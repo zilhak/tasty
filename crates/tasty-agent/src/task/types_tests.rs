@@ -19,18 +19,39 @@ fn parsed(text: &str) -> Value {
 }
 
 #[test]
-fn int64_accepts_integer_tokens_and_rejects_strings_fractions_and_overflow() {
+fn int64_reads_integer_tokens_and_decimal_strings_and_rejects_fractions_and_overflow() {
     let s = TypeSchema::int64();
-    assert_eq!(check(&s, json!(42)).unwrap(), json!(42));
-    assert_eq!(kind_of(check(&s, json!("42"))), TypeErrorKind::TypeMismatch);
+    // 검증된 int64 는 10진 문자열로 정규화된다.
+    assert_eq!(check(&s, json!(42)).unwrap(), json!("42"));
+    assert_eq!(check(&s, json!("42")).unwrap(), json!("42"));
+    assert_eq!(check(&s, json!("-7")).unwrap(), json!("-7"));
+    assert_eq!(check(&s, json!("0")).unwrap(), json!("0"));
     assert_eq!(kind_of(check(&s, json!(1.5))), TypeErrorKind::NotInteger);
+    assert_eq!(kind_of(check(&s, json!("1.5"))), TypeErrorKind::NotInteger);
     // 정수처럼 보여도 f64 로 읽힌 값은 원래 정수를 알 수 없다.
     assert_eq!(
         kind_of(check(&s, parsed("42.0"))),
         TypeErrorKind::NotInteger
     );
+    for odd in [
+        "", "-", "-0", "007", "+5", " 5", "5 ", "1e3", "0x10", "forty",
+    ] {
+        assert_eq!(
+            kind_of(check(&s, json!(odd))),
+            TypeErrorKind::TypeMismatch,
+            "{odd:?}"
+        );
+    }
     assert_eq!(
         kind_of(check(&s, parsed("9223372036854775808"))),
+        TypeErrorKind::OutOfRange
+    );
+    assert_eq!(
+        kind_of(check(&s, json!("9223372036854775808"))),
+        TypeErrorKind::OutOfRange
+    );
+    assert_eq!(
+        kind_of(check(&s, json!("-9223372036854775809"))),
         TypeErrorKind::OutOfRange
     );
     assert_eq!(
@@ -44,17 +65,22 @@ fn int64_accepts_integer_tokens_and_rejects_strings_fractions_and_overflow() {
 }
 
 #[test]
-fn int64_boundaries_and_beyond_2_pow_53_round_trip_exactly_through_json_text() {
+fn int64_boundaries_and_beyond_2_pow_53_keep_their_value_as_decimal_strings() {
     let s = TypeSchema::int64();
-    for text in [
-        "-9223372036854775808",
-        "9223372036854775807",
-        "9007199254740993",
+    for (text, n) in [
+        ("-9223372036854775808", i64::MIN),
+        ("9223372036854775807", i64::MAX),
+        ("9007199254740993", 9_007_199_254_740_993),
     ] {
-        let v = check(&s, parsed(text)).unwrap();
-        assert_eq!(serde_json::to_string(&v).unwrap(), text);
-        let back: Value = parsed(&serde_json::to_string(&v).unwrap());
-        assert_eq!(back.as_i64(), text.parse::<i64>().ok(), "{text}");
+        // 정수 토큰으로 받아도, 문자열로 받아도 같은 wire 값이 된다.
+        let from_token = check(&s, parsed(text)).unwrap();
+        let from_string = check(&s, json!(text)).unwrap();
+        assert_eq!(from_token, json!(text));
+        assert_eq!(from_string, from_token);
+        // wire 값을 f64 숫자로 읽는 소비자를 거쳐도 문자열은 바뀌지 않는다.
+        let wire = serde_json::to_string(&from_token).unwrap();
+        assert_eq!(wire, format!("\"{text}\""));
+        assert_eq!(int64_of(&parsed(&wire)), Ok(n));
     }
 }
 
@@ -122,7 +148,10 @@ fn object_distinguishes_required_optional_nullable_and_default() {
     let s = review_object();
     let v = check(&s, json!({"verdict": "pass", "reviewer": null})).unwrap();
     // optional 은 빠진 채로 두고, default 는 채운다. nullable 의 null 은 그대로다.
-    assert_eq!(v, json!({"verdict": "pass", "reviewer": null, "round": 1}));
+    assert_eq!(
+        v,
+        json!({"verdict": "pass", "reviewer": null, "round": "1"})
+    );
 
     let missing = check(&s, json!({"reviewer": null})).unwrap_err();
     assert_eq!(missing.kind, TypeErrorKind::MissingField);
@@ -151,7 +180,7 @@ fn list_checks_items_and_length_with_item_paths() {
     let s = schema(json!({"type": "list", "items": {"type": "int64"}, "max_len": 2}));
     assert!(check(&s, json!([1, 2])).is_ok());
     assert_eq!(kind_of(check(&s, json!([1, 2, 3]))), TypeErrorKind::TooLong);
-    let e = check(&s, json!([1, "2"])).unwrap_err();
+    let e = check(&s, json!([1, true])).unwrap_err();
     assert_eq!(e.path, "/1");
     assert_eq!(e.kind, TypeErrorKind::TypeMismatch);
 }

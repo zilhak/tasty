@@ -736,32 +736,17 @@ impl TypeDefs {
         };
         match resolved.kind {
             TypeKind::Boolean => value.as_bool().map(|_| value.clone()).ok_or_else(mismatch),
-            TypeKind::Int64 => {
-                let Value::Number(n) = value else {
-                    return Err(mismatch());
-                };
-                // u64 토큰과 정수 모양의 큰 f64 는 범위 밖이다(f64 는 i64 범위를 넘을 때만).
-                let huge_float = n.as_f64().is_some_and(|f| {
-                    n.is_f64() && f.fract() == 0.0 && -(i64::MIN as f64) <= f.abs()
-                });
-                if n.is_i64() {
-                    Ok(value.clone())
-                } else if n.is_u64() || huge_float {
-                    Err(err(
-                        TypeErrorKind::OutOfRange,
-                        path,
-                        format!("int64 in [{}, {}]", i64::MIN, i64::MAX),
-                        describe_value(value),
-                    ))
-                } else {
-                    Err(err(
-                        TypeErrorKind::NotInteger,
-                        path,
-                        expected(),
-                        describe_value(value),
-                    ))
-                }
-            }
+            TypeKind::Int64 => int64_of(value)
+                .map(|i| Value::String(i.to_string()))
+                .map_err(|kind| {
+                    let want = match kind {
+                        TypeErrorKind::OutOfRange => {
+                            format!("int64 in [{}, {}]", i64::MIN, i64::MAX)
+                        }
+                        _ => expected(),
+                    };
+                    err(kind, path, want, describe_value(value))
+                }),
             TypeKind::Float64 { min, max } => {
                 let Value::Number(n) = value else {
                     return Err(mismatch());
@@ -846,8 +831,12 @@ impl TypeDefs {
                             );
                         }
                         None => match &field.default {
+                            // 기본값도 같은 경로로 정규화한다(int64 는 10진 문자열).
                             Some(d) => {
-                                out.insert(name.clone(), d.clone());
+                                out.insert(
+                                    name.clone(),
+                                    self.validate_at(&field.schema, d, &fpath, depth + 1)?,
+                                );
                             }
                             None if field.optional => {}
                             None => {
@@ -915,6 +904,47 @@ pub struct ResolvedSchema<'a> {
     pub nullable: bool,
 }
 
+/// int64 값을 wire 형식에서 읽는다. 검증을 통과한 값은 10진 문자열이고(JavaScript 의
+/// f64 숫자를 지나도 같은 정수로 돌아오게 하기 위해), 입력으로는 JSON 정수 토큰도 받는다.
+/// 문자열은 `-?(0|[1-9][0-9]*)` 꼴만 받는다. `-0`·앞자리 0·`+`·공백은 거절한다.
+pub fn int64_of(value: &Value) -> Result<i64, TypeErrorKind> {
+    match value {
+        Value::String(s) => {
+            let digits = s.strip_prefix('-').unwrap_or(s);
+            let canonical = !digits.is_empty()
+                && digits.bytes().all(|b| b.is_ascii_digit())
+                && (digits == "0" || !digits.starts_with('0'))
+                && s != "-0";
+            if canonical {
+                s.parse::<i64>().map_err(|_| TypeErrorKind::OutOfRange)
+            } else if s
+                .parse::<f64>()
+                .is_ok_and(|f| f.is_finite() && f.fract() != 0.0)
+            {
+                Err(TypeErrorKind::NotInteger)
+            } else {
+                Err(TypeErrorKind::TypeMismatch)
+            }
+        }
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(i)
+            } else if n.is_u64() {
+                Err(TypeErrorKind::OutOfRange)
+            } else {
+                // 정수 모양의 큰 f64 는 범위 밖, 나머지 실수 토큰은 정수가 아니다.
+                let f = n.as_f64().unwrap_or(f64::NAN);
+                if f.fract() == 0.0 && -(i64::MIN as f64) <= f.abs() {
+                    Err(TypeErrorKind::OutOfRange)
+                } else {
+                    Err(TypeErrorKind::NotInteger)
+                }
+            }
+        }
+        _ => Err(TypeErrorKind::TypeMismatch),
+    }
+}
+
 /// 정수 토큰은 f64 로 정확히 표현될 때만 float64 로 받는다.
 fn float_of(n: &serde_json::Number) -> Option<f64> {
     if let Some(i) = n.as_i64() {
@@ -946,146 +976,8 @@ fn json_depth(v: &Value) -> usize {
 
 // ── 대입 호환 ────────────────────────────────────────────────────────────────
 
-/// `src` 타입의 모든 유효 값이 `dst` 타입에도 유효한지 검사한다. 값 변환·필드 제거는
-/// 하지 않는다. source 쪽 필드가 더 많거나 `json` 을 구체 타입으로 받으려면
-/// 명시 projection 이 필요하므로 호환되지 않는다.
-pub fn check_assignable(
-    src_defs: &TypeDefs,
-    src: &TypeSchema,
-    dst_defs: &TypeDefs,
-    dst: &TypeSchema,
-) -> Result<(), TypeError> {
-    assignable_at(src_defs, src, dst_defs, dst, "", 0)
-}
-
-fn assignable_at(
-    sd: &TypeDefs,
-    src: &TypeSchema,
-    dd: &TypeDefs,
-    dst: &TypeSchema,
-    path: &str,
-    depth: usize,
-) -> Result<(), TypeError> {
-    let fail = || {
-        err(
-            TypeErrorKind::Incompatible,
-            path,
-            dst.describe(),
-            src.describe(),
-        )
-    };
-    if depth > MAX_SCHEMA_DEPTH {
-        return Err(err(
-            TypeErrorKind::TooDeep,
-            path,
-            format!("schema depth <= {MAX_SCHEMA_DEPTH}"),
-            "deeper schema",
-        ));
-    }
-    let s = sd.resolve(src)?;
-    let d = dd.resolve(dst)?;
-    if matches!(d.kind, TypeKind::Json) {
-        return Ok(());
-    }
-    if s.nullable && !d.nullable {
-        return Err(fail());
-    }
-    match (s.kind, d.kind) {
-        (TypeKind::Boolean, TypeKind::Boolean)
-        | (TypeKind::Int64, TypeKind::Int64)
-        | (TypeKind::Unit, TypeKind::Unit) => Ok(()),
-        (
-            TypeKind::Float64 {
-                min: smin,
-                max: smax,
-            },
-            TypeKind::Float64 {
-                min: dmin,
-                max: dmax,
-            },
-        ) => {
-            let lo_ok = match (smin, dmin) {
-                (_, None) => true,
-                (Some(s), Some(d)) => s >= d,
-                (None, Some(_)) => false,
-            };
-            let hi_ok = match (smax, dmax) {
-                (_, None) => true,
-                (Some(s), Some(d)) => s <= d,
-                (None, Some(_)) => false,
-            };
-            if lo_ok && hi_ok { Ok(()) } else { Err(fail()) }
-        }
-        (TypeKind::String { max_len: sl }, TypeKind::String { max_len: dl }) => match (sl, dl) {
-            (_, None) => Ok(()),
-            (Some(s), Some(d)) if s <= d => Ok(()),
-            _ => Err(fail()),
-        },
-        (TypeKind::Enum { values: sv }, TypeKind::Enum { values: dv }) => {
-            if sv.iter().all(|v| dv.contains(v)) {
-                Ok(())
-            } else {
-                Err(fail())
-            }
-        }
-        (
-            TypeKind::List {
-                items: si,
-                max_len: sl,
-            },
-            TypeKind::List {
-                items: di,
-                max_len: dl,
-            },
-        ) => {
-            match (sl, dl) {
-                (_, None) => {}
-                (Some(s), Some(d)) if s <= d => {}
-                _ => return Err(fail()),
-            }
-            assignable_at(sd, si, dd, di, &child_path(path, "items"), depth + 1)
-        }
-        (TypeKind::Object { fields: sf }, TypeKind::Object { fields: df }) => {
-            if let Some(extra) = sf.keys().find(|k| !df.contains_key(*k)) {
-                return Err(err(
-                    TypeErrorKind::UnexpectedField,
-                    &child_path(path, extra),
-                    "no field outside the target type (project it explicitly)",
-                    format!("field \"{extra}\""),
-                ));
-            }
-            for (name, dfield) in df {
-                let fpath = child_path(path, name);
-                match sf.get(name) {
-                    Some(sfield) => {
-                        // default 가 있는 source 필드는 검증 뒤 항상 채워진다.
-                        let may_be_absent = sfield.optional && sfield.default.is_none();
-                        if may_be_absent && !dfield.optional && dfield.default.is_none() {
-                            return Err(err(
-                                TypeErrorKind::MissingField,
-                                &fpath,
-                                dfield.schema.describe(),
-                                "optional field",
-                            ));
-                        }
-                        assignable_at(sd, &sfield.schema, dd, &dfield.schema, &fpath, depth + 1)?;
-                    }
-                    None if dfield.optional || dfield.default.is_some() => {}
-                    None => {
-                        return Err(err(
-                            TypeErrorKind::MissingField,
-                            &fpath,
-                            dfield.schema.describe(),
-                            "absent",
-                        ));
-                    }
-                }
-            }
-            Ok(())
-        }
-        _ => Err(fail()),
-    }
-}
+mod assign;
+pub use assign::check_assignable;
 
 #[cfg(test)]
 #[path = "types_tests.rs"]
