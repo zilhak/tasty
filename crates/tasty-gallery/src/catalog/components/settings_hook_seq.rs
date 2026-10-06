@@ -9,7 +9,7 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{SequenceEditorError, SequenceEditorView, TagVariant, sequence_editor, tag};
 
 use crate::catalog::icons;
-use crate::catalog::spec::{StageVariant, TokenChip, meta, stage};
+use crate::catalog::spec::{StageVariant, TokenChip, meta, stage, wrap_item};
 
 /// 시안 편집기 카드 폭 `--tasty-size-460`. 공개 역할 토큰이 없어 갤러리 무대 치수로 둔다.
 const CARD_WIDTH: LogicalPx = LogicalPx(460.0);
@@ -134,24 +134,28 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         // 시안은 상태마다 Stage 하나에 Mocha·Latte 짝을 둔다.
         for (si, (state, pair)) in STATES.iter().zip(bufs.chunks_mut(2)).enumerate() {
             stage(ui, theme, StageVariant::Wrap, |ui| {
-                ui.horizontal_top(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+                // 시안 ThemePair 는 줄바꿈 줄이다. 두 카드가 문서 칸에 안 들어가면 아래로 내려간다.
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing =
+                        egui::vec2(theme.spacing_lg.value(), theme.spacing_lg.value());
                     for ((label, th), buf) in themes.iter().zip(pair.iter_mut()) {
-                        egui::Frame::new()
-                            .fill(th.bg_app().to_egui())
-                            .corner_radius(th.corner_radius.value())
-                            .inner_margin(egui::Margin::same(th.spacing_md.value() as i8))
-                            .show(ui, |ui| {
-                                ui.vertical(|ui| {
-                                    ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
-                                    ui.label(
-                                        egui::RichText::new(*label)
-                                            .size(th.font_size_caption.value())
-                                            .color(th.text_muted().to_egui()),
-                                    );
-                                    editor_card(ui, th, *state, (si, label), buf);
+                        wrap_item(ui, |ui| {
+                            egui::Frame::new()
+                                .fill(th.bg_app().to_egui())
+                                .corner_radius(th.corner_radius.value())
+                                .inner_margin(egui::Margin::same(th.spacing_md.value() as i8))
+                                .show(ui, |ui| {
+                                    ui.vertical(|ui| {
+                                        ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+                                        ui.label(
+                                            egui::RichText::new(*label)
+                                                .size(th.font_size_caption.value())
+                                                .color(th.text_muted().to_egui()),
+                                        );
+                                        editor_card(ui, th, *state, (si, label), buf);
+                                    });
                                 });
-                            });
+                        });
                     }
                 });
             });
