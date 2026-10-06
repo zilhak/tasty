@@ -1104,6 +1104,14 @@ pub fn pages() -> Vec<Page> {
                             components::remote::draw_generic_passkey_forms,
                         ),
                         spec(
+                            "remote-segment-rule",
+                            "Segmented active is an accent fill — tab strips keep the underline",
+                            Some(
+                                "tab strip = 2px accent underline (view) · segmented = accent-primary fill + text-on-accent (value) · surface-active stays row selection",
+                            ),
+                            components::remote::draw_segment_rule,
+                        ),
+                        spec(
                             "remote-passkeys",
                             "Passkeys tab — reveal states",
                             Some("right tab · hidden / revealed (active) / unknown kind"),

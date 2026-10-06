@@ -16,8 +16,10 @@ use crate::catalog::widgets::dialog as kit;
 
 mod forms;
 mod passkeys;
+mod segment_rule;
 pub use forms::{draw_generic_passkey_forms, draw_profile_form};
 pub use passkeys::draw_passkeys;
+pub use segment_rule::draw_segment_rule;
 
 const WIDTH: LogicalPx = LogicalPx(520.0);
 /// SSH config 빈 상태 카드 폭. 디자인 "From ssh config" Spec 의 Stage 액자 값이다.
@@ -291,34 +293,37 @@ const ATTACHES: &[Attach] = &[
     },
 ];
 
-pub fn draw_attach(ui: &mut egui::Ui, theme: &Theme) {
-    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-            attach_header(ui, theme);
-            tab_bar(ui, theme, 1);
+/// Attach 탭이 열린 원격 연결 창.
+fn attach_frame(ui: &mut egui::Ui, theme: &Theme) {
+    kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
+        attach_header(ui, theme);
+        tab_bar(ui, theme, 1);
 
-            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
-                ui.horizontal(|ui| {
-                    Button::new("Add attach")
-                        .variant(ButtonVariant::Secondary)
-                        .size(tasty_ui_widgets::ControlSize::Sm)
-                        .leading_icon(&|ui, rect, c| {
-                            icons::PLUS.image(rect.height(), c).paint_at(ui, rect)
-                        })
-                        .show(ui, theme);
-                });
-            });
-
-            kit::region_sym(ui, theme.spacing_md, LogicalPx(0.0), |ui| {
-                for (i, a) in ATTACHES.iter().enumerate() {
-                    if i > 0 {
-                        kit::hsep(ui, theme);
-                    }
-                    attach_row(ui, theme, a);
-                }
+        kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+            ui.horizontal(|ui| {
+                Button::new("Add attach")
+                    .variant(ButtonVariant::Secondary)
+                    .size(tasty_ui_widgets::ControlSize::Sm)
+                    .leading_icon(&|ui, rect, c| {
+                        icons::PLUS.image(rect.height(), c).paint_at(ui, rect)
+                    })
+                    .show(ui, theme);
             });
         });
+
+        kit::region_sym(ui, theme.spacing_md, LogicalPx(0.0), |ui| {
+            for (i, a) in ATTACHES.iter().enumerate() {
+                if i > 0 {
+                    kit::hsep(ui, theme);
+                }
+                attach_row(ui, theme, a);
+            }
+        });
     });
+}
+
+pub fn draw_attach(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| attach_frame(ui, theme));
 
     spec::meta(
         ui,
