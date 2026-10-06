@@ -1,10 +1,12 @@
-/* Use shared color, radius and elevation tokens, with site-specific spacing and type sizes.
+/* Colors come from the vendored design tokens; spacing, radii and shadows use the
+   site's own variables defined in global.css.
 
    Every rule here is the site's own (docs/dev-guide/site.md), so spacing uses the
    site scale. Literal values left without a line comment belong to axes the site
    scale does not have: font sizes, element sizes, pill radii (999px) and the
-   1-2px hover nudges. Media query conditions stay literal because a query
-   condition cannot read a custom property. */
+   1-2px hover nudges. Widths in em follow the reader's font size and stay
+   relative. Media query conditions stay literal because a query condition cannot
+   read a custom property. */
 
 .landing {
   --gutter: var(--sp-6);
