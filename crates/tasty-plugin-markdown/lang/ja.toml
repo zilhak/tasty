@@ -58,7 +58,7 @@ close_tooltip = "閉じる (Esc)"
 label = "目次"
 aria_label = "目次"
 
-# GFM alert blockquote(`> [!NOTE]` 等)のヘッダーラベル — render.rs::CALLOUT_KINDS が参照。
+# GFM alert blockquote(`> [!NOTE]` 等)のヘッダーラベル — render/callout.rs::CALLOUT_KINDS が参照。
 [markdown.alert]
 note = "メモ"
 tip = "ヒント"

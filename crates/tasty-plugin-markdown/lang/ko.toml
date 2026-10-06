@@ -58,7 +58,7 @@ close_tooltip = "닫기 (Esc)"
 label = "목차"
 aria_label = "목차"
 
-# GFM alert blockquote(`> [!NOTE]` 등) 헤더 레이블 — render.rs::CALLOUT_KINDS 가 조회.
+# GFM alert blockquote(`> [!NOTE]` 등) 헤더 레이블 — render/callout.rs::CALLOUT_KINDS 가 조회.
 [markdown.alert]
 note = "참고"
 tip = "팁"

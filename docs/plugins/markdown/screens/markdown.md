@@ -203,7 +203,7 @@ CSS 변수 `--md-quote-bar-w`로 받아 그린다. 접지 않는 콜아웃은 `<
 - **Obsidian 확장 10종**(공식 문서 [obsidian.md/help/callouts](https://obsidian.md/help/callouts)
   기준으로 확정 — GFM 5종과 겹치지 않는 타입만): `abstract`/`info`/`todo`/`success`/`question`/
   `failure`/`danger`/`bug`/`example`/`quote`.
-- **Obsidian 문서상의 별칭**(충돌 없는 것만, `render.rs::CALLOUT_ALIASES`): `summary`/`tldr`→
+- **Obsidian 문서상의 별칭**(충돌 없는 것만, `render/callout.rs::CALLOUT_ALIASES`): `summary`/`tldr`→
   abstract, `hint`→tip, `check`/`done`→success, `help`/`faq`→question, `fail`/`missing`→failure,
   `error`→danger, `cite`→quote.
 - **의도적으로 제외한 별칭**: Obsidian 문서는 `important`/`caution`/`attention`을 각각
@@ -232,13 +232,13 @@ blockquote 로 폴백). 이 경우를 포함한 모든 콜아웃 인식·렌더�
 `rewrite_callout_buffer`에서 한 곳에 모여 처리된다. **결과적으로 GFM 5종에 마커/제목이
 붙은 문법(`[!note]+ 제목`처럼)도 Obsidian 문법으로 자연히 인식된다**.
 
-헤더 레이블(기본 타입 라벨 또는 커스텀 제목)은 `render.rs::CALLOUT_KINDS`가 plugin 자신의
+헤더 레이블(기본 타입 라벨 또는 커스텀 제목)은 `render/callout.rs::CALLOUT_KINDS`가 plugin 자신의
 `Translator`로 UI 언어에 맞게 조회한다(`markdown.alert.<type>`, `lang/{en,ko,ja}.toml`) —
 마커 없는 구조는 CSS 가 언어를 분기할 수 없으므로 `data-label` 속성 + `content:
 attr(data-label)`로 반영하고, `<details>` 구조는 `<summary>` 안의 실제 텍스트 노드로
 반영한다(어느 쪽이든 커스텀 제목이 있으면 그 텍스트가 기본 라벨을 대체). 아이콘은
 `tasty-icons`의 canonical 글리프를 각 kind 의 accent 색으로 만든 SVG data URI 로
-`background-image` 에 심는다(`render.rs::alert_icon_data_uri`, 15개 타입이 7개 기존
+`background-image` 에 심는다(`render/callout.rs::alert_icon_data_uri`, 15개 타입이 7개 기존
 semantic accent(`accent_primary`/`accent_info`/`accent_success`/`accent_warning`/
 `accent_attention`/`accent_danger`/`accent_agent`)를 나눠 쓴다 — 전용 색 토큰 신설 없음,
 겹치는 조합은 아이콘·라벨 텍스트로 구분).
@@ -488,7 +488,7 @@ image_error_script`). 문서에 `<img` 가 하나도 없으면(대다수 비-이
   idempotent화, 리스너 경로와 즉시-검사 경로가 동시에 fire해도 안전) 두 데이터 속성으로
   방어한다.
 - **테마 연동**: 아이콘은 `tasty_icons::IMAGE` 글리프를 `theme.accent_danger()`로 만든 data URI로
-  심는다(GFM alert 아이콘과 동일한 `render.rs::alert_icon_data_uri` 재사용). 테두리/라벨 색도
+  심는다(GFM alert 아이콘과 동일한 `render/callout.rs::alert_icon_data_uri` 재사용). 테두리/라벨 색도
   같은 `danger` 토큰, 경로 텍스트는 `.tasty-state-detail`과 동일한 `muted` 토큰 — 별도 실패 UI
   전용 토큰 없이 기존 에러 상태 배색을 그대로 재사용한다.
 

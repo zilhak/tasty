@@ -113,7 +113,7 @@ fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 강조색 31/255 채움(`render.rs::alert_css`의 `BG_ALPHA`) + 왼쪽 md-quote-bar-width 막대 +
+/// 강조색 31/255 채움(`render/callout.rs::alert_css`의 `BG_ALPHA`) + 왼쪽 md-quote-bar-width 막대 +
 /// 아이콘과 굵은 라벨 + 본문.
 fn callout_box(
     ui: &mut egui::Ui,

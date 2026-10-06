@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.225"
+version = "0.1.226"
 description = "Markdown viewer surface (webview)"
 api_version = "1"
 permissions = [
