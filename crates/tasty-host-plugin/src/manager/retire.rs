@@ -28,6 +28,8 @@ pub(crate) struct Retiring {
     generation: Option<std::sync::Weak<()>>,
     /// 이 세대의 회수가 끝나면 성공으로 확정할 surface 회수 receipt.
     waiters: Vec<RemoteRetirementCompletion>,
+    /// 관측이 멈춘 동안 미리 거둔 경우 그때까지 걸린 시간(ms). 기록 줄이 실제 회수 시각을 쓴다.
+    settled_ms: Option<f64>,
 }
 
 impl Retiring {
@@ -83,6 +85,7 @@ fn spawn_waiter(plugin_id: &str, pending: PendingShutdown) -> Retiring {
             respawn: false,
             generation: None,
             waiters: Vec::new(),
+            settled_ms: None,
         },
         Err(e) => {
             tracing::warn!(
@@ -96,6 +99,7 @@ fn spawn_waiter(plugin_id: &str, pending: PendingShutdown) -> Retiring {
                 respawn: false,
                 generation: None,
                 waiters: Vec::new(),
+                settled_ms: None,
             }
         }
     }
@@ -179,7 +183,9 @@ impl PluginManager {
                 continue;
             };
             let respawn = r.respawn;
-            let ms = r.started.elapsed().as_secs_f64() * 1000.0;
+            let ms = r
+                .settled_ms
+                .unwrap_or_else(|| r.started.elapsed().as_secs_f64() * 1000.0);
             let outcome = self.settle_retired(r);
             tracing::info!(
                 plugin_id = id,
@@ -193,6 +199,39 @@ impl PluginManager {
             self.timers.cancel(PluginTick::Retire);
         }
         out
+    }
+
+    /// 관측이 멈춘 동안(닫기 정리 중)에는 pump 와 [`PluginTick::Retire`] 가 돌지 않는다.
+    /// 그 사이 끝난 회수를 거둬 세대를 기록하고 기다리던 surface 회수를 확정한다. 다시 띄우기는
+    /// 새 실행이라 여기서 하지 않고, 결과를 남긴 항목으로 Retire 틱에 넘긴다.
+    pub(super) fn settle_finished_retirements_in_place(&mut self) {
+        let finished: Vec<String> = self
+            .retiring
+            .iter()
+            .filter(|(_, r)| r.generation.is_some() && r.is_finished())
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in finished {
+            let Some(r) = self.retiring.remove(&id) else {
+                continue;
+            };
+            let started = r.started;
+            let respawn = r.respawn;
+            let settled_ms = Some(started.elapsed().as_secs_f64() * 1000.0);
+            let outcome = self.settle_retired(r);
+            self.retiring.insert(
+                id,
+                Retiring {
+                    handle: None,
+                    done: Some(outcome),
+                    started,
+                    respawn,
+                    generation: None,
+                    waiters: Vec::new(),
+                    settled_ms,
+                },
+            );
+        }
     }
 
     /// [`PluginTick::Retire`] 한 번 — 끝난 회수를 거두고, 다시 띄울 것을 띄운다.
@@ -296,9 +335,29 @@ impl PluginManager {
         outcome
     }
 
-    /// 동기로 회수를 끝낸 프로세스의 세대를 기록한다.
+    /// 회수를 끝낸 프로세스의 세대를 기록한다. 기록하기 전에 어떤 surface 등록이나 mesh
+    /// bootstrap 도 가리키지 않는 세대를 지운다. 가리키는 세대는 남겨 할당을 붙잡는다 —
+    /// 주소가 재사용되면 `ptr_eq` 가 새 프로세스와 옛 세대를 혼동한다.
     pub(super) fn note_reaped_generation(&mut self, generation: std::sync::Weak<()>) {
+        self.prune_unreferenced_generations();
         self.reaped_generations.push(generation);
+    }
+
+    fn prune_unreferenced_generations(&mut self) {
+        if self.reaped_generations.is_empty() {
+            return;
+        }
+        let mut referenced: Vec<std::sync::Weak<()>> = self
+            .surfaces
+            .values()
+            .filter_map(|entry| match &entry.publication {
+                super::RemotePublication::Sent(binding) => Some(binding.clone()),
+                super::RemotePublication::NeverSent => None,
+            })
+            .collect();
+        referenced.extend(self.mesh_publications.live_generations());
+        self.reaped_generations
+            .retain(|generation| referenced.iter().any(|r| r.ptr_eq(generation)));
     }
 
     /// 원 프로세스가 없을 때 surface 회수를 그 세대의 회수로 확정한다. 회수가 끝났으면 바로

@@ -311,6 +311,8 @@ impl PluginManager {
         for id in obsolete {
             self.pending_requests.remove(&id);
         }
+        // 관측이 멈춘 동안 pump 의 Retire 틱이 돌지 않으므로 여기서 끝난 회수를 거둔다.
+        self.settle_finished_retirements_in_place();
         if !halted
             && self.retirement_control.bytes >= crate::process::channel_bytes::QUEUE_BYTES_LIMIT
         {

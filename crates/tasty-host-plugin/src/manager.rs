@@ -474,6 +474,8 @@ pub struct PluginManager {
     /// 회수를 마친 프로세스의 응답 바인딩. 그 프로세스가 만든 surface 를 나중에 닫을 때
     /// 소멸 증거로 쓴다. 프로세스 교체 한 번에 한 항목씩만 늘어난다.
     pub(super) reaped_generations: Vec<std::sync::Weak<()>>,
+    /// 보낸 mesh bootstrap 의 게시 상태. 회수한 세대를 아직 가리키는지 판정한다.
+    pub(super) mesh_publications: crate::host_cmd::MeshPublicationRegistry,
 }
 
 /// 호스트가 추적 중인 popup 인스턴스 한 건. plugin process가 죽으면 함께 제거된다.

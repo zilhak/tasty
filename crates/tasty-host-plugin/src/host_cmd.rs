@@ -65,6 +65,49 @@ impl MeshBinding {
     }
 }
 
+static MESH_REGISTRY_POISONED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+const MESH_REGISTRY_WHAT: &str = "mesh publication registry";
+
+/// manager 가 보낸 mesh bootstrap 의 게시 상태를 약하게 추적한다. mesh surface 는 호스트
+/// 쪽에 있으므로, 회수한 세대를 아직 가리키는지 묻는 데만 쓴다.
+#[derive(Default)]
+pub(crate) struct MeshPublicationRegistry(Mutex<Vec<std::sync::Weak<Mutex<MeshPublication>>>>);
+
+impl MeshPublicationRegistry {
+    pub(crate) fn register(&self, binding: &MeshBinding) {
+        let mut entries = tasty_utils::poison::recover_mutex(
+            self.0.lock(),
+            MESH_REGISTRY_WHAT,
+            &MESH_REGISTRY_POISONED,
+        );
+        entries.retain(|entry| entry.strong_count() > 0);
+        let weak = Arc::downgrade(&binding.publication);
+        if !entries.iter().any(|entry| entry.ptr_eq(&weak)) {
+            entries.push(weak);
+        }
+    }
+
+    /// 살아 있는 bootstrap 이 게시된 프로세스 세대.
+    pub(crate) fn live_generations(&self) -> Vec<std::sync::Weak<()>> {
+        let mut entries = tasty_utils::poison::recover_mutex(
+            self.0.lock(),
+            MESH_REGISTRY_WHAT,
+            &MESH_REGISTRY_POISONED,
+        );
+        entries.retain(|entry| entry.strong_count() > 0);
+        let mut generations = Vec::new();
+        for publication in entries.iter().filter_map(std::sync::Weak::upgrade) {
+            if let MeshPublication::Sent(sent) =
+                &*publication.lock().expect("mesh binding poisoned")
+            {
+                generations.extend(sent.iter().map(|bootstrap| bootstrap.process.clone()));
+            }
+        }
+        generations
+    }
+}
+
 /// Exact destroy-RPC observation. Neither FIFO enqueue nor dropping the host kind is an ACK.
 #[derive(Clone)]
 pub struct RemoteRetirementReceipt {

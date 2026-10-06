@@ -402,6 +402,8 @@ impl PluginManager {
                 crate::host_cmd::MeshPublication::Sent(generations) => generations.push(generation),
                 _ => *publication = crate::host_cmd::MeshPublication::Sent(vec![generation]),
             }
+            drop(publication);
+            self.mesh_publications.register(binding);
         }
     }
 

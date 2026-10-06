@@ -194,6 +194,7 @@ impl PluginManager {
             shutdown_batch: None,
             retiring: HashMap::new(),
             reaped_generations: Vec::new(),
+            mesh_publications: Default::default(),
         }
     }
 

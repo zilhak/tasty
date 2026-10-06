@@ -100,3 +100,94 @@ fn a_process_that_vanished_without_a_retirement_stays_unconfirmed() {
         ))
     );
 }
+
+/// 닫기 정리 중에는 pump 가 돌지 않고 `poll_publication_retirements` 만 돈다. 그 폴링만으로
+/// 회수 완료가 확정되고, 다시 띄우기는 Retire 틱으로 미뤄진다.
+#[test]
+fn closing_while_retiring_settles_through_the_paused_publication_poll() {
+    let (mut mgr, surface) = manager_with_surface();
+    let process = mgr.processes.remove(PLUGIN).expect("running stub");
+    mgr.retire_process(PLUGIN, process, true);
+    let receipt = mgr
+        .enqueue_observed_remote_retirement(7, surface.binding())
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while receipt.observation().is_none() && std::time::Instant::now() < deadline {
+        mgr.poll_publication_retirements().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(receipt.observation(), Some(Ok(())));
+    assert_eq!(
+        mgr.retiring_respawn(PLUGIN),
+        Some(true),
+        "관측이 멈춘 동안에는 다시 띄우지 않고 Retire 틱에 넘긴다"
+    );
+    assert!(mgr.wait_retired(PLUGIN), "재시작 예약이 남아 있다");
+}
+
+fn retire_and_reap(mgr: &mut PluginManager) -> std::sync::Weak<()> {
+    let process = mgr.processes.remove(PLUGIN).expect("running stub");
+    let generation = process.reply_binding();
+    mgr.retire_process(PLUGIN, process, false);
+    assert!(!mgr.wait_retired(PLUGIN), "재시작 예약이 없는 회수다");
+    generation
+}
+
+fn holds(mgr: &PluginManager, generation: &std::sync::Weak<()>) -> bool {
+    mgr.reaped_generations.iter().any(|g| g.ptr_eq(generation))
+}
+
+#[test]
+fn reaped_generations_keep_only_generations_a_surface_still_points_at() {
+    let (mut mgr, surface) = manager_with_surface();
+    let first = retire_and_reap(&mut mgr);
+    mgr.processes
+        .insert(PLUGIN.into(), PluginProcess::stub_with_request_rx(PLUGIN).0);
+    let second = retire_and_reap(&mut mgr);
+    mgr.processes
+        .insert(PLUGIN.into(), PluginProcess::stub_with_request_rx(PLUGIN).0);
+    let third = retire_and_reap(&mut mgr);
+    assert!(holds(&mgr, &first), "surface 7 이 가리키는 세대는 남는다");
+    assert!(!holds(&mgr, &second), "아무도 가리키지 않는 세대는 지운다");
+    assert!(
+        holds(&mgr, &third),
+        "방금 회수한 세대는 다음 회수까지 남는다"
+    );
+    let receipt = close(&mut mgr, &surface);
+    assert_eq!(receipt.observation(), Some(Ok(())));
+    mgr.processes
+        .insert(PLUGIN.into(), PluginProcess::stub_with_request_rx(PLUGIN).0);
+    retire_and_reap(&mut mgr);
+    assert!(
+        !holds(&mgr, &first),
+        "닫힌 surface 의 세대는 다음 회수 때 지운다"
+    );
+    assert_eq!(mgr.reaped_generations.len(), 1);
+}
+
+#[test]
+fn reaped_generations_keep_a_generation_a_mesh_bootstrap_points_at() {
+    let mut mgr = PluginManager::new(Arc::new(NoopWakerFactory));
+    let (process, _requests) = PluginProcess::stub_with_request_rx(PLUGIN);
+    mgr.processes.insert(PLUGIN.into(), process);
+    let mesh = crate::host_cmd::MeshBinding::default();
+    mgr.send_egui_mesh_surface_create(PLUGIN, 9, "canvas", None, "canvas", &mesh);
+    let context = tasty_plugin_protocol::SurfaceSetContextParams {
+        surface_id: 9,
+        ..Default::default()
+    };
+    mgr.send_surface_set_context(PLUGIN, &context);
+    let meshed = retire_and_reap(&mut mgr);
+    mgr.processes
+        .insert(PLUGIN.into(), PluginProcess::stub_with_request_rx(PLUGIN).0);
+    retire_and_reap(&mut mgr);
+    assert!(
+        holds(&mgr, &meshed),
+        "mesh bootstrap 이 가리키는 세대는 남는다"
+    );
+    drop(mesh);
+    mgr.processes
+        .insert(PLUGIN.into(), PluginProcess::stub_with_request_rx(PLUGIN).0);
+    retire_and_reap(&mut mgr);
+    assert!(!holds(&mgr, &meshed), "bootstrap 이 사라지면 지운다");
+}
