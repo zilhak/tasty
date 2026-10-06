@@ -164,8 +164,13 @@ plugin popup(`[[contributes.popup]]`)은 매니페스트 `scope` 로 범위의 *
 `surface` 범위 popup은 앵커의 가운데 기준도 그 surface 영역이다. 범위가 안 보이는 frame 에는
 셸·콘텐츠 합성·히트테스트 rect·Esc·바깥 클릭·키 게이트 어디에도 들어가지 않는다 — 보이지
 않는 rect 가 클릭을 삼키지 않는다. 인스턴스는 살아 있어 범위가 다시 보이면 그대로 복원된다.
-scrim 도 그 범위를 덮는다(위 §scrim 의 범위). 셸이 범위보다 크면 범위 크기로 줄어든다 —
-plugin 콘텐츠는 GPU 합성으로 올라가 egui 레이어 클립이 그것까지 잘라 주지 않기 때문이다.
+scrim 도 그 범위를 덮는다(위 §scrim 의 범위). 보이는 범위의 안쪽(테두리 inset 을 뺀 영역)이
+선언 크기(`size_hint`)보다 좁거나 낮으면 그 frame 에는 `window` 범위로 연다 — 범위에 맞춰
+줄이면 버튼이 잘려 확정할 수 없기 때문이다. 배치·scrim·히트테스트가 모두 이 실효 범위를 쓰고,
+surface 가 다시 넓어지면 surface 범위로 돌아온다. 숨은 범위는 대체하지 않고 계속 숨긴다.
+창보다 큰 셸은 창 크기로 줄어든다 — plugin 콘텐츠는 GPU 합성으로 올라가 egui 레이어 클립이
+그것까지 잘라 주지 않기 때문이다. 자식 파일 피커의 범위 상속은 선언 종류와 대상으로 계산하며
+이 대체를 반영하지 않는다.
 
 현재 `scope = "surface"` 선언: markdown `file-open` · `large-file-confirm`.
 

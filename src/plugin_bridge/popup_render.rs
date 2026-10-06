@@ -324,7 +324,8 @@ fn place_visible(
 ) -> Vec<(MeshSnap, Rect)> {
     snaps
         .into_iter()
-        .filter_map(|snap| {
+        .filter_map(|mut snap| {
+            snap.scope = fitting_scope(snap.scope, snap.size, layout, screen_rect);
             let rect = place_popup(
                 snap.anchor,
                 &snap.scope,
@@ -551,6 +552,31 @@ fn place_popup(
     Some(Rect::from_min_size(pos, size))
 }
 
+/// 보이는 surface 범위가 선언 크기보다 작으면 창 범위로 연다. 범위에 맞춰 줄이면 버튼이
+/// 잘려 확정할 수 없다. 숨은 범위와 다른 범위는 그대로 둔다. 배치·scrim·히트테스트가 모두
+/// 이 결과를 쓴다.
+fn fitting_scope(
+    scope: PopupScope,
+    size: Vec2,
+    layout: Option<&LayoutContext>,
+    screen_rect: Rect,
+) -> PopupScope {
+    if !matches!(scope, PopupScope::Surface(_)) || !PopupManager::is_scope_visible(&scope, layout) {
+        return scope;
+    }
+    let bounds = PopupManager::scope_bounds(
+        &scope,
+        layout,
+        screen_rect,
+        crate::theme::theme().spacing_sm.value(),
+    );
+    if bounds.width() < size.x || bounds.height() < size.y {
+        PopupScope::Window
+    } else {
+        scope
+    }
+}
+
 fn clamp_to_bounds(pos: Pos2, size: Vec2, bounds: Rect) -> Pos2 {
     egui::pos2(
         pos.x
@@ -745,6 +771,52 @@ mod tests {
         .expect("surface 가 보이면 그려져야 한다");
         assert_eq!(rect.min, SURFACE_7.shrink(inset).min);
         assert!(SURFACE_7.contains_rect(rect));
+    }
+
+    fn layout_with_surface(id: u32, rect: Rect) -> LayoutContext {
+        LayoutContext {
+            surface_rects: vec![(id, rect)],
+            ..layout_with_surface_7(false)
+        }
+    }
+
+    #[test]
+    fn a_surface_narrower_than_the_declared_size_opens_the_popup_on_the_window() {
+        // 선언 크기 400×200. surface 폭이 inset 을 빼고 400 보다 작다.
+        let narrow = Rect::from_min_size(Pos2::new(1500.0, 0.0), Vec2::new(100.0, 1000.0));
+        let inst = instance(PopupScopeDecl::Surface, Some(7), PopupAnchor::ScreenCenter);
+        let layout = layout_with_surface(7, narrow);
+        let placed = place_visible(
+            mesh_snapshots(std::iter::once((1, &inst))),
+            Some(&layout),
+            SCREEN,
+            None,
+        );
+        assert_eq!(placed.len(), 1);
+        assert_eq!(placed[0].0.scope, PopupScope::Window);
+        assert_eq!(placed[0].1.size(), Vec2::new(400.0, 200.0), "줄이지 않는다");
+        assert_eq!(placed[0].1.center(), SCREEN.center());
+        let (rects, _) = scrim_plan(&placed, Some(&layout), SCREEN);
+        assert_eq!(rects, vec![SCREEN], "scrim 도 창 범위를 덮는다");
+    }
+
+    #[test]
+    fn a_surface_lower_than_the_declared_size_opens_the_popup_on_the_window() {
+        let low = Rect::from_min_size(Pos2::new(0.0, 900.0), Vec2::new(1600.0, 100.0));
+        let inst = instance(PopupScopeDecl::Surface, Some(7), PopupAnchor::ScreenCenter);
+        let rect =
+            placed_rect(&inst, &layout_with_surface(7, low), None).expect("창 범위로 그린다");
+        assert_eq!(rect.center(), SCREEN.center());
+    }
+
+    #[test]
+    fn a_surface_that_fits_only_with_no_inset_still_opens_on_the_window() {
+        // 테두리 inset 을 뺀 안쪽이 선언 크기보다 작으면 범위 밖으로 넘친다.
+        let inset = crate::theme::theme().spacing_sm.value();
+        let exact = Rect::from_min_size(Pos2::new(0.0, 0.0), Vec2::new(400.0 + inset, 600.0));
+        let inst = instance(PopupScopeDecl::Surface, Some(7), PopupAnchor::ScreenCenter);
+        let rect = placed_rect(&inst, &layout_with_surface(7, exact), None).expect("그린다");
+        assert_eq!(rect.center(), SCREEN.center());
     }
 
     #[test]
