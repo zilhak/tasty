@@ -87,7 +87,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("toolbar", "44px · nav · path field · view toggle"),
             ("sidebar", "196px — Files tree + Favorites"),
             ("splitter", "1px separator, drag to resize"),
-            ("row height", "28px (Detail) table-cell-height"),
+            (
+                "row height",
+                "28 (Detail) · table-cell-height — the shared Table",
+            ),
             ("selected row", "surface-active"),
         ],
         &[
@@ -150,10 +153,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "Toolbar and rows follow the body: Up is the body chevronUp (the kit draws an up \
-         arrow); the view toggle is the body SegToggle at pad 4 · gap 4 · 24×20 cells (kit \
-         pad 2 · gap 2 · 24×22). Detail rows follow the shared Table: 28px rows \
-         (table-cell-height; the kit Meta says 26 while its DetailRow draws 28), 12px cell \
-         padding (kit 0 10), the shared header font (kit mono 10 uppercase), Type at 11px \
+         arrow); the view toggle is the body SegToggle at pad 4 · gap 4 · 24×20 cells (the kit \
+         now draws the same). Detail rows follow the shared Table: 28px rows \
+         (table-cell-height), 12px cell padding (kit 0 10), the shared header font (kit mono 10 uppercase), Type at 11px \
          (kit 12), cut dims the ink only (kit dims the whole row to 0.5), and hover shows \
          only under the pointer (the kit pins notes.md in hover).",
     );

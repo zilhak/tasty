@@ -657,7 +657,7 @@ pub fn draw_process_column(ui: &mut egui::Ui, theme: &Theme) {
         for (label, w) in [
             ("default — Process takes the spare width", PROC_TABLE_WIDE),
             (
-                "narrow — Process holds its 200 floor and ellipsises",
+                "narrow (460) — Process gets the remaining 230 and ellipsises; the 200 floor engages only below 430",
                 PROC_TABLE_NARROW,
             ),
         ] {

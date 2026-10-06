@@ -431,7 +431,7 @@ pub fn draw_generic_passkey_forms(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new(
                 "accent-primary",
-                "selected kind segment",
+                "selected kind segment (accent fill)",
                 theme.accent_primary().to_egui(),
             ),
             TokenChip::new(

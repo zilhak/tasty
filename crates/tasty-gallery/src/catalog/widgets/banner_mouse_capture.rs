@@ -141,9 +141,14 @@ pub fn draw_elastic(ui: &mut egui::Ui, theme: &Theme) {
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing =
                         egui::vec2(ELASTIC_GAP.value(), ELASTIC_GAP.value());
-                    elastic_slot(ui, theme, "short name — at the 200px floor", |ui| {
-                        more_menu(ui, theme, "vim", None, false);
-                    });
+                    elastic_slot(
+                        ui,
+                        theme,
+                        "short name — content-sized (the vim row already passes the 200 floor)",
+                        |ui| {
+                            more_menu(ui, theme, "vim", None, false);
+                        },
+                    );
                     elastic_slot(ui, theme, "medium — grows to fit", |ui| {
                         more_menu(ui, theme, "python3.11", Some(0), false);
                     });
