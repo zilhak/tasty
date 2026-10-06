@@ -460,6 +460,7 @@ fn hint_row(
     overflow: RowLabel,
 ) {
     ui.horizontal(|ui| {
+        ui.set_min_height(theme.modhint_row_min_height().value());
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
         if plugin {
             let d = theme.status_dot_size().value();
@@ -472,7 +473,7 @@ fn hint_row(
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 let text = egui::Label::new(
                     egui::RichText::new(label)
-                        .size(theme.font_size_body.value())
+                        .size(theme.modhint_row_font_size().value())
                         .color(theme.modhint_row_fg().to_egui()),
                 );
                 ui.add(match overflow {
@@ -492,7 +493,7 @@ fn empty_row(ui: &mut egui::Ui, theme: &Theme) {
         ui.add(
             egui::Label::new(
                 egui::RichText::new("No shortcuts bound")
-                    .size(theme.font_size_body.value())
+                    .size(theme.modhint_row_font_size().value())
                     .color(theme.modhint_empty_fg().to_egui()),
             )
             .selectable(false),
@@ -537,7 +538,7 @@ fn role_row(ui: &mut egui::Ui, theme: &Theme, desc: &str, glyph: RoleGlyph) {
                 ui.add(
                     egui::Label::new(
                         egui::RichText::new(desc)
-                            .size(theme.font_size_body.value())
+                            .size(theme.modhint_row_font_size().value())
                             .color(theme.modhint_row_fg().to_egui()),
                     )
                     .wrap(),
@@ -827,8 +828,17 @@ pub fn draw_anatomy(ui: &mut egui::Ui, theme: &Theme) {
             ("keycap row", "action + Kbd"),
             ("role row", "washed, leading glyph, no keycap"),
             ("plugin row", "agent dot, context-dependent"),
-            ("grip", "bottom-right, nwse-resize"),
-            ("min size", "200 × 240"),
+            (
+                "row text",
+                "11 · modhint-row-font-size (chord · role · empty rows)",
+            ),
+            ("chord row", "min 24 · modhint-row-min-height"),
+            ("role row pad", "6 / 8 · modhint-row-gap / space-sm"),
+            (
+                "grip",
+                "12 · inset 2 from right/bottom · modhint-grip-size · modhint-grip-inset (on-scale)",
+            ),
+            ("min size", "180 × 240"),
         ],
         &[
             TokenChip::new(
