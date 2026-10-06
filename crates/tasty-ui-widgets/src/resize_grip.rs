@@ -14,12 +14,16 @@ pub fn resize_grip_segments(rect: egui::Rect, size: f32, inset: f32) -> [[egui::
     STROKES.map(|[x0, y0, x1, y1]| [at(x0, y0), at(x1, y1)])
 }
 
-/// modhint 패널의 코너 그립을 그린다. 크기 `modhint-grip-size`, 색 `modhint-grip-fg`, 굵기 border-width.
-/// 시안의 right 2·bottom 2 여백은 대응 토큰이 없어 border-width 두 배로 둔다.
+/// modhint 패널의 코너 그립을 그린다. 크기 `modhint-grip-size`, 색 `modhint-grip-fg`, 굵기 border-width,
+/// 오른쪽·아래 여백 `modhint-grip-inset`(UI 배율을 따른다).
 pub fn modhint_resize_grip(painter: &egui::Painter, theme: &Theme, panel: egui::Rect) {
     let bw = theme.border_width.value();
     let stroke = egui::Stroke::new(bw, theme.modhint_grip_fg().to_egui());
-    for seg in resize_grip_segments(panel, theme.modhint_grip_size().value(), bw * 2.0) {
+    for seg in resize_grip_segments(
+        panel,
+        theme.modhint_grip_size().value(),
+        theme.modhint_grip_inset().value(),
+    ) {
         painter.line_segment(seg, stroke);
     }
 }
