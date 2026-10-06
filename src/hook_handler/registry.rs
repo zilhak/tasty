@@ -276,7 +276,7 @@ impl HookHandlerRegistry {
                 t.insert("disabled".into(), toml::Value::Boolean(d));
             }
             if let Some(action) = &user.action {
-                match toml::Value::try_from(action) {
+                match action_toml(action) {
                     Ok(v) => {
                         t.insert("action".into(), v);
                     }
@@ -739,6 +739,21 @@ pub fn global() -> &'static HookHandlerRegistry {
 }
 
 /// 사용자 설정 경로. 홈을 못 찾으면 None이다.
+/// 사용자 action 을 TOML 값으로 바꾼다. TOML 에는 null 이 없으므로 `params` 가 null 인 호출은 키를 뺀다.
+/// 읽을 때 `IpcCall::params` 의 serde 기본값이 다시 null 을 채운다. params 안쪽의 null 은 표현할 수
+/// 없어 오류로 남는다.
+fn action_toml(action: &HookHandlerAction) -> Result<toml::Value, String> {
+    let mut json = serde_json::to_value(action).map_err(|e| e.to_string())?;
+    if let Some(calls) = json.get_mut("calls").and_then(|c| c.as_array_mut()) {
+        for call in calls.iter_mut().filter_map(|c| c.as_object_mut()) {
+            if call.get("params").is_some_and(serde_json::Value::is_null) {
+                call.remove("params");
+            }
+        }
+    }
+    toml::Value::try_from(json).map_err(|e| e.to_string())
+}
+
 pub fn user_config_path() -> Option<PathBuf> {
     tasty_utils::path::tasty_home().map(|d| d.join("hook-handlers.toml"))
 }

@@ -744,6 +744,49 @@ fn export_round_trip_preserves_user_handler() {
     assert!(matches!(h.action, HookHandlerAction::IpcSequence { .. }));
 }
 
+/// 메서드만 있는 호출(params null)도 저장된다. TOML 에 null 이 없어 action 전체가 빠지던 경로다.
+#[test]
+fn export_keeps_a_sequence_whose_calls_have_no_params() {
+    let reg = HookHandlerRegistry::new();
+    load_host(&reg);
+    reg.upsert_user_handler(UserHookHandlerUpsertDecl {
+        id: "user/plain".into(),
+        source: Some(HookSource::Webhook),
+        priority: None,
+        display_name_i18n_key: None,
+        disabled: None,
+        action: Some(UserHookHandlerActionDecl::IpcSequence {
+            calls: vec![
+                IpcCall {
+                    method: "system.info".into(),
+                    params: serde_json::Value::Null,
+                },
+                IpcCall {
+                    method: "notification.send".into(),
+                    params: serde_json::json!({ "title": "x" }),
+                },
+            ],
+        }),
+    })
+    .unwrap();
+    let exported = reg.export_user_config();
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("re-emit.toml");
+    std::fs::write(&p, &exported).unwrap();
+    let reg2 = HookHandlerRegistry::new();
+    load_host(&reg2);
+    reg2.install_user_config(&p);
+    let h = reg2
+        .get(&HookHandlerId::new("user/plain"))
+        .expect("round-trip handler");
+    let HookHandlerAction::IpcSequence { calls } = h.action else {
+        panic!("expected a sequence, got {exported}")
+    };
+    assert_eq!(calls.len(), 2);
+    assert!(calls[0].params.is_null());
+    assert_eq!(calls[1].params, serde_json::json!({ "title": "x" }));
+}
+
 #[test]
 fn save_user_config_atomic_write_creates_parent() {
     let reg = HookHandlerRegistry::new();
