@@ -2117,14 +2117,11 @@ fn draw_font_preview(
         }
     };
     match layout {
-        // Focused · Unfocused 를 나란히 둔다. 두 칸은 남은 폭을 반씩 나눈다.
-        // 한 칸이 필드 폭 lg 보다 좁아지면 위아래로 쌓는다.
-        PreviewLayout::SideBySide
-            if (ui.available_width() - th.spacing_md.value()) / 2.0
-                >= th.field_width_lg.value() =>
-        {
+        // Focused · Unfocused 를 폭과 관계없이 나란히 두고 남은 폭을 반씩 나눈다.
+        // 시안 `pv()` 가 flex 1 1 0 · min-width 0 이라 좁아도 줄을 바꾸지 않는다.
+        PreviewLayout::SideBySide => {
             let gap = th.spacing_md.value();
-            let half = (ui.available_width() - gap) / 2.0;
+            let half = ((ui.available_width() - gap) / 2.0).max(0.0);
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = gap;
                 for b in blocks {
@@ -2135,7 +2132,7 @@ fn draw_font_preview(
                 }
             });
         }
-        PreviewLayout::SideBySide | PreviewLayout::Stacked => {
+        PreviewLayout::Stacked => {
             for (i, b) in blocks.into_iter().enumerate() {
                 if i > 0 {
                     vspace(ui, th.spacing_sm);

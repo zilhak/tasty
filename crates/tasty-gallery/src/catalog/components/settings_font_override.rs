@@ -156,20 +156,14 @@ fn font_override(ui: &mut egui::Ui, th: &Theme, long: bool, state: &mut [(String
                 .size(th.font_size_caption.value())
                 .color(th.text_muted().to_egui()),
         );
-        // 두 칸이 나란히 들어가지 않으면(각 칸이 필드 폭 lg 보다 좁아지면) 위아래로 쌓는다.
+        // 시안 `pv()` 는 flex 1 1 0 · min-width 0 이라 좁아도 줄을 바꾸지 않고 반씩 나눈다.
         let gap = th.spacing_md.value();
-        let half = (ui.available_width() - gap) / 2.0;
-        if half >= th.field_width_lg.value() {
-            ui.horizontal_top(|ui| {
-                ui.spacing_mut().item_spacing.x = gap;
-                preview_block(ui, th, true, half);
-                preview_block(ui, th, false, half);
-            });
-        } else {
-            let w = ui.available_width();
-            preview_block(ui, th, true, w);
-            preview_block(ui, th, false, w);
-        }
+        let half = ((ui.available_width() - gap) / 2.0).max(0.0);
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            preview_block(ui, th, true, half);
+            preview_block(ui, th, false, half);
+        });
         ui.label(
             egui::RichText::new("Font: D2Coding / 14.0px")
                 .monospace()
@@ -269,7 +263,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "preview",
-                "below the grid at every width · Focused | Unfocused side by side, stacked when narrow · mono summary",
+                "below the grid at every width · Focused | Unfocused side by side at every width (flex 1 1 0, min-width 0) · mono summary",
             ),
         ],
         &[
