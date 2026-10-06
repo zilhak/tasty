@@ -56,6 +56,8 @@ pub(crate) mod request_owner;
 pub(crate) mod screenshot_capture;
 pub(crate) mod services;
 #[cfg(feature = "gui")]
+mod shell_setup_events;
+#[cfg(feature = "gui")]
 pub(crate) mod shutdown_cascade;
 #[cfg(feature = "gui")]
 pub(crate) mod shutdown_machine;

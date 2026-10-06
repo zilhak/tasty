@@ -112,6 +112,14 @@ impl ApplicationHandler<AppEvent> for App {
                     // 애니메이션의 연속 repaint 요청에도 상한을 적용한다.
                     w.mark_dirty_from(RepaintSource::EguiAnimation);
                 }
+                // 셸 설정 창은 views 밖에 있으므로 hover·애니메이션 요청을 직접 그린다.
+                if let Some(w) = self
+                    .shell_setup_window
+                    .as_ref()
+                    .filter(|w| w.id() == window_id)
+                {
+                    w.request_redraw();
+                }
                 // 아직 views에 등록되지 않은 부팅 창의 요청은 여기서 처리하지 않는다.
             }
             AppEvent::Shutdown => {
@@ -1005,6 +1013,7 @@ impl App {
         event_loop: &ActiveEventLoop,
         event: WindowEvent,
     ) {
+        use crate::app::shell_setup_events::{render_error_reconfigures, setup_event_effect};
         if let WindowEvent::RedrawRequested = &event {
             if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window)
             {
@@ -1017,6 +1026,10 @@ impl App {
                     Ok(crate::gpu::ShellSetupAction::Exit) => {
                         event_loop.exit();
                     }
+                    Err(e) if render_error_reconfigures(&e) => {
+                        gpu.resize(window.inner_size());
+                        window.request_redraw();
+                    }
                     Err(e) => {
                         let msg = format!("shell setup render error: {e}");
                         tracing::warn!("{}", msg);
@@ -1024,6 +1037,7 @@ impl App {
                     }
                 }
             }
+            // RedrawRequested에서 다시 요청하면 유휴 상태에도 렌더가 계속 반복된다.
             if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window)
             {
                 gpu.handle_egui_event(window, &event);
@@ -1031,8 +1045,16 @@ impl App {
             return;
         }
         if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window) {
-            gpu.handle_egui_event(window, &event);
-            if let WindowEvent::CloseRequested = &event {
+            let (_, egui_repaint) = gpu.handle_egui_event(window, &event);
+            let effect = setup_event_effect(&event, egui_repaint);
+            if effect.reconfigure_surface {
+                gpu.sync_scale_factor(window);
+                gpu.resize(window.inner_size());
+            }
+            if effect.redraw {
+                window.request_redraw();
+            }
+            if effect.exit {
                 event_loop.exit();
             }
         }
