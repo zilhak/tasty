@@ -636,7 +636,7 @@ fn draw_empty_row(ui: &mut egui::Ui, theme: &Theme) {
         ui.add(
             egui::Label::new(
                 egui::RichText::new(t("modifier_hint.empty"))
-                    .size(theme.font_size_body.value())
+                    .size(theme.modhint_row_font_size().value())
                     .color(theme.modhint_empty_fg().to_egui()),
             )
             .selectable(false),
@@ -651,6 +651,7 @@ fn draw_row(
     row: &super::input::shortcuts::modifier_hint::HintRow,
 ) {
     ui.horizontal(|ui| {
+        ui.set_min_height(theme.modhint_row_min_height().value());
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
         let (label, is_plugin) = row_label(&row.source);
         if is_plugin {
@@ -665,7 +666,7 @@ fn draw_row(
                 ui.add(
                     egui::Label::new(
                         egui::RichText::new(label)
-                            .size(theme.font_size_body.value())
+                            .size(theme.modhint_row_font_size().value())
                             .color(theme.modhint_row_fg().to_egui()),
                     )
                     .wrap(),
@@ -711,7 +712,7 @@ fn draw_role_row(ui: &mut egui::Ui, theme: &Theme, role: HintRole) {
                 ui.add(
                     egui::Label::new(
                         egui::RichText::new(t(role.desc_key()))
-                            .size(theme.font_size_body.value())
+                            .size(theme.modhint_row_font_size().value())
                             .color(theme.modhint_row_fg().to_egui()),
                     )
                     .wrap(),
