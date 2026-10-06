@@ -353,9 +353,9 @@ enum SendError {
         code: i32,
         message: String,
     },
-    /// 연결하지 못했다. 요청은 닿지 않았다.
+    /// 연결이나 기능 확인 단계에서 실패했다. `window.create`는 보내지 않았다.
     Unreachable(String),
-    /// 연결된 뒤 실패했다. 요청이 닿았을 수 있다.
+    /// `window.create`를 보낸 뒤 실패했다. 요청이 닿았을 수 있다.
     Transport(String),
 }
 
@@ -378,12 +378,22 @@ fn send_window_create(
         .map_err(|e| SendError::Unreachable(e.to_string()))?;
     stream
         .set_read_timeout(Some(left))
-        .map_err(|e| transport(&e))?;
+        .map_err(|e| SendError::Unreachable(e.to_string()))?;
     stream
         .set_write_timeout(Some(left))
-        .map_err(|e| transport(&e))?;
+        .map_err(|e| SendError::Unreachable(e.to_string()))?;
+    let unreachable = |e: &dyn std::fmt::Display| SendError::Unreachable(e.to_string());
     let mut connection =
-        tasty_ipc::client::IpcConnection::new(stream).map_err(|e| transport(&e))?;
+        tasty_ipc::client::IpcConnection::new(stream).map_err(|e| unreachable(&e))?;
+    // `send_idempotent`는 먼저 기능 확인 요청을 보내고 응답을 기다린다. 멈춘 인스턴스는 여기서 막히므로
+    // 따로 먼저 불러 "본 요청을 아직 보내지 않음"과 "보낸 뒤 실패"를 가른다. 결과는 연결에 저장된다.
+    connection
+        .require_capability(
+            tasty_ipc::client::IDEMPOTENCY_CAPABILITY,
+            tasty_ipc::client::IDEMPOTENCY_CAPABILITY_VERSION,
+            None,
+        )
+        .map_err(|e| unreachable(&e))?;
     let request = tasty_ipc::protocol::JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         method: "window.create".to_string(),
@@ -791,16 +801,50 @@ mod tests {
     }
 
     #[test]
-    fn a_written_request_to_a_live_but_silent_instance_is_unconfirmed_not_lost() {
-        // 요청은 닿았는데(연결 성공) 응답이 없고 A는 살아 있다: 상자 대신 성공으로 끝낼 근거가 된다.
+    fn a_live_but_silent_instance_never_receives_the_request() {
+        // 연결은 되지만 기능 확인에도 답하지 않는 인스턴스(멈춘 A): window.create는 보내지 않았으므로
+        // "썼다"로 보지 않는다. 그렇게 보면 성공으로 끝나 실행 요청이 사라진다.
         let home = tempfile::tempdir().unwrap();
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let record = publish_self(home.path(), listener.local_addr().unwrap().port());
         let log = LaunchLog::new(Some(home.path()));
         let error = request_new_view_within(home.path(), &record, &log, Duration::from_millis(600))
             .unwrap_err();
-        assert!(error.written, "{error:?}");
+        assert!(!error.written, "{error:?}");
         assert!(is_running(home.path(), &record));
         drop(listener);
+    }
+
+    #[test]
+    fn a_request_sent_to_a_live_instance_that_never_answers_is_written() {
+        // 기능 확인에는 답하고 window.create는 받기만 하는 인스턴스(이벤트 루프가 늦은 A).
+        // 요청이 닿았으므로 "썼다"이고, A가 살아 있으면 상자 없이 성공으로 끝낼 근거가 된다.
+        use std::io::{BufRead, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let record = publish_self(home.path(), listener.local_addr().unwrap().port());
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
+            let mut writer = stream;
+            let mut probe = String::new();
+            reader.read_line(&mut probe).unwrap();
+            assert!(probe.contains("system.info"), "{probe}");
+            writer
+                .write_all(
+                    b"{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{\"capabilities\":\
+                      [{\"name\":\"ipc.idempotency-key\",\"version\":99}]}}\n",
+                )
+                .unwrap();
+            let mut request = String::new();
+            reader.read_line(&mut request).unwrap();
+            request
+        });
+        let log = LaunchLog::new(Some(home.path()));
+        let error = request_new_view_within(home.path(), &record, &log, Duration::from_millis(800))
+            .unwrap_err();
+        assert!(error.written, "{error:?}");
+        let request = server.join().unwrap();
+        assert!(request.contains("window.create"), "{request}");
     }
 }
