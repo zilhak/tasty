@@ -9,7 +9,7 @@ mod baked_icons {
 use egui::emath::GuiRounding as _;
 use tasty_plugin_sdk::Translator;
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton};
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, Input};
 
 use crate::doc::{DragState, EditState, ImageDoc, ResizeHandle};
 
@@ -241,7 +241,7 @@ fn draw_zoom_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &m
         doc.zoom = (doc.zoom / 1.25).max(0.1);
     }
     let zoom_pct = format!("{}%", (doc.zoom * 100.0).round_ui() as i32);
-    ui.label(caption(theme, &zoom_pct));
+    zoom_label(ui, theme, &zoom_pct);
     if icon_button(
         ui,
         theme,
@@ -392,7 +392,7 @@ fn draw_floating_selection(
     effective_zoom: f32,
     response: &egui::Response,
 ) {
-    let handle_size = theme.spacing_sm.value().max(6.0);
+    let handle_size = theme.image_handle_size().value();
 
     let sel_screen_rect = if let EditState::FloatingSelection {
         ref mut selection, ..
@@ -533,132 +533,204 @@ fn resize_handle_rects(sel_rect: egui::Rect, handle_size: f32) -> Vec<(ResizeHan
     ]
 }
 
-fn draw_new_image_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &mut ImageDoc) {
+/// 확대 비율 — 시안 ZoomGroup 의 mono caption. 최소 폭 칸 가운데에 두어 자릿수가 바뀌어도 버튼이 흔들리지 않는다.
+fn zoom_label(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+    let galley = ui.painter().layout_no_wrap(
+        text.to_owned(),
+        egui::FontId::monospace(theme.image_zoom_font_size().value()),
+        theme.text_muted().to_egui(),
+    );
+    let w = galley.size().x.max(theme.image_zoom_min_width().value());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(w, ControlSize::Sm.height(theme)),
+        egui::Sense::hover(),
+    );
+    let at = rect.center() - galley.size() * 0.5;
+    ui.painter()
+        .galley(at, galley, theme.text_muted().to_egui());
+}
+
+/// New Image · Save As 가 공유하는 카드 — 시안 `image-popup-*`. 제목 · 본문 줄 · 오른쪽 정렬 Cancel + 확인.
+/// 확인 버튼을 눌렀으면 참을 돌려준다. Cancel 은 `cancel` 로 처리한다.
+fn popup_card(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    title: &str,
+    confirm: &str,
+    cancel: &str,
+    body: impl FnOnce(&mut egui::Ui),
+) -> (bool, bool) {
+    let width = theme.image_popup_width().value();
+    let pad_x = theme.image_popup_pad_x().value() as i8;
+    let pad_top = theme.image_popup_pad_top().value() as i8;
+    let gap = theme.image_popup_gap().value();
+    let btn_gap = theme.image_popup_btn_gap().value();
+    let (mut confirmed, mut cancelled) = (false, false);
+    ui.add_space(theme.spacing_lg.value());
     ui.vertical_centered(|ui| {
-        ui.add_space(theme.spacing_lg.value());
-        ui.label(heading(theme, tr.t("image_viewer.new_image_title")));
-        ui.add_space(theme.spacing_md.value());
-
-        ui.horizontal(|ui| {
-            ui.label(body(theme, tr.t("image_viewer.width")));
-            ui.add(
-                egui::TextEdit::singleline(&mut doc.new_image_width)
-                    .desired_width(theme.spacing_lg.value() * 5.0)
-                    .font(egui::FontId::proportional(theme.font_size_body.value())),
-            );
-            ui.label(body(theme, " x "));
-            ui.label(body(theme, tr.t("image_viewer.height")));
-            ui.add(
-                egui::TextEdit::singleline(&mut doc.new_image_height)
-                    .desired_width(theme.spacing_lg.value() * 5.0)
-                    .font(egui::FontId::proportional(theme.font_size_body.value())),
-            );
-        });
-
-        ui.add_space(theme.spacing_md.value());
-        ui.horizontal(|ui| {
-            if Button::new(tr.t("button.cancel"))
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
-                .show(ui, theme)
-                .clicked()
-            {
-                doc.new_image_popup = false;
-            }
-            if Button::new(tr.t("button.ok"))
-                .variant(ButtonVariant::Primary)
-                .size(ControlSize::Sm)
-                .show(ui, theme)
-                .clicked()
-            {
-                let w = doc
-                    .new_image_width
-                    .parse::<usize>()
-                    .unwrap_or(800)
-                    .clamp(1, 8192);
-                let h = doc
-                    .new_image_height
-                    .parse::<usize>()
-                    .unwrap_or(600)
-                    .clamp(1, 8192);
-                doc.create_blank_canvas(w, h);
-            }
-        });
+        egui::Frame::new()
+            .fill(theme.bg_panel().to_egui())
+            .stroke(egui::Stroke::new(
+                theme.border_width.value(),
+                theme.border_strong().to_egui(),
+            ))
+            .corner_radius(theme.corner_radius.value())
+            .shadow(theme.shadow_modal().to_egui())
+            .show(ui, |ui| {
+                ui.set_width(width);
+                ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    egui::Frame::new()
+                        .inner_margin(egui::Margin {
+                            left: pad_x,
+                            right: pad_x,
+                            top: pad_top,
+                            bottom: gap as i8,
+                        })
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            // 시안 제목은 14 / semibold 다. egui 에 semibold 글꼴이 없어 굵기는 재현하지 않는다.
+                            ui.label(
+                                egui::RichText::new(title)
+                                    .size(theme.image_popup_title_font_size().value())
+                                    .color(theme.text_primary().to_egui()),
+                            );
+                            ui.add_space(gap);
+                            body(ui);
+                        });
+                    egui::Frame::new()
+                        .inner_margin(egui::Margin {
+                            left: pad_x,
+                            right: pad_x,
+                            top: 0,
+                            bottom: pad_top,
+                        })
+                        .show(ui, |ui| {
+                            let row =
+                                egui::vec2(ui.available_width(), ControlSize::Sm.height(theme));
+                            ui.allocate_ui_with_layout(
+                                row,
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.spacing_mut().item_spacing.x = btn_gap;
+                                    confirmed = Button::new(confirm)
+                                        .variant(ButtonVariant::Primary)
+                                        .size(ControlSize::Sm)
+                                        .show(ui, theme)
+                                        .clicked();
+                                    cancelled = Button::new(cancel)
+                                        .variant(ButtonVariant::Ghost)
+                                        .size(ControlSize::Sm)
+                                        .show(ui, theme)
+                                        .clicked();
+                                },
+                            );
+                        });
+                });
+            });
     });
+    (confirmed, cancelled)
+}
+
+fn draw_new_image_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &mut ImageDoc) {
+    let (ok, cancel) = popup_card(
+        ui,
+        theme,
+        tr.t("image_viewer.new_image_title"),
+        tr.t("button.ok"),
+        tr.t("button.cancel"),
+        |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.image_popup_btn_gap().value();
+                let input_w = theme.image_size_input_width().value();
+                ui.label(body(theme, tr.t("image_viewer.width")));
+                Input::new()
+                    .width(input_w)
+                    .show(ui, theme, &mut doc.new_image_width);
+                ui.label(caption(theme, "×"));
+                ui.label(body(theme, tr.t("image_viewer.height")));
+                Input::new()
+                    .width(input_w)
+                    .show(ui, theme, &mut doc.new_image_height);
+            });
+        },
+    );
+    if cancel {
+        doc.new_image_popup = false;
+    }
+    if ok {
+        let w = doc
+            .new_image_width
+            .parse::<usize>()
+            .unwrap_or(800)
+            .clamp(1, 8192);
+        let h = doc
+            .new_image_height
+            .parse::<usize>()
+            .unwrap_or(600)
+            .clamp(1, 8192);
+        doc.create_blank_canvas(w, h);
+    }
 }
 
 fn draw_save_path_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &mut ImageDoc) {
-    ui.vertical_centered(|ui| {
-        ui.add_space(theme.spacing_lg.value());
-        ui.label(heading(theme, tr.t("image_viewer.save_path_title")));
-        ui.add_space(theme.spacing_md.value());
-
-        // 찾아보기 IconButton을 오른쪽 끝에 먼저 놓고 남은 폭을 경로 입력칸이 채운다.
-        // TextEdit 바깥 폭은 desired_width에 자기 여백을 더한 값이라 남은 폭을 직접 빼지 않는다.
-        let row = egui::vec2(ui.available_width(), ControlSize::Sm.height(theme));
-        ui.allocate_ui_with_layout(
-            row,
-            egui::Layout::right_to_left(egui::Align::Center),
-            |ui| {
-                if icon_button(
-                    ui,
-                    theme,
-                    baked_icons::FOLDER_OPEN,
-                    tr.t("image_viewer.browse"),
-                    true,
-                )
-                .clicked()
-                {
-                    let dialog = rfd::FileDialog::new()
-                        .add_filter("PNG", &["png"])
-                        .set_file_name("image.png");
-                    if let Some(path) = dialog.save_file() {
-                        doc.save_path_buffer = path.to_string_lossy().to_string();
+    let (save, cancel) = popup_card(
+        ui,
+        theme,
+        tr.t("image_viewer.save_path_title"),
+        tr.t("button.save"),
+        tr.t("button.cancel"),
+        |ui| {
+            // 찾아보기 IconButton을 오른쪽 끝에 먼저 놓고 남은 폭을 경로 입력칸이 채운다.
+            let row = egui::vec2(ui.available_width(), ControlSize::Sm.height(theme));
+            ui.allocate_ui_with_layout(
+                row,
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = theme.image_path_row_gap().value();
+                    if icon_button(
+                        ui,
+                        theme,
+                        baked_icons::FOLDER_OPEN,
+                        tr.t("image_viewer.browse"),
+                        true,
+                    )
+                    .clicked()
+                    {
+                        let dialog = rfd::FileDialog::new()
+                            .add_filter("PNG", &["png"])
+                            .set_file_name("image.png");
+                        if let Some(path) = dialog.save_file() {
+                            doc.save_path_buffer = path.to_string_lossy().to_string();
+                        }
                     }
-                }
-                let resp = ui.add(
-                    egui::TextEdit::singleline(&mut doc.save_path_buffer)
-                        .desired_width(f32::INFINITY)
-                        .font(egui::FontId::proportional(theme.font_size_body.value())),
-                );
-                if !resp.has_focus() && doc.save_path_buffer.is_empty() {
-                    resp.request_focus();
-                }
-            },
-        );
-
-        ui.add_space(theme.spacing_md.value());
-        ui.horizontal(|ui| {
-            if Button::new(tr.t("button.cancel"))
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
-                .show(ui, theme)
-                .clicked()
-            {
-                doc.save_path_popup = false;
-            }
-            if Button::new(tr.t("button.save"))
-                .variant(ButtonVariant::Primary)
-                .size(ControlSize::Sm)
-                .show(ui, theme)
-                .clicked()
-                && !doc.save_path_buffer.is_empty()
-            {
-                let mut path = doc.save_path_buffer.clone();
-                if !path.ends_with(".png") {
-                    path.push_str(".png");
-                }
-                if let Err(e) = doc.save_png(&path) {
-                    tracing::warn!("failed to save image: {e}");
-                } else {
-                    doc.adopt_saved_path(path);
-                    doc.save_path_popup = false;
-                    doc.exit_edit_mode();
-                    doc.reload_from_disk();
-                }
-            }
-        });
-    });
+                    let resp = Input::new()
+                        .placeholder(tr.t("image_viewer.save_path_placeholder"))
+                        .show(ui, theme, &mut doc.save_path_buffer);
+                    if !resp.has_focus() && doc.save_path_buffer.is_empty() {
+                        resp.request_focus();
+                    }
+                },
+            );
+        },
+    );
+    if cancel {
+        doc.save_path_popup = false;
+    }
+    if save && !doc.save_path_buffer.is_empty() {
+        let mut path = doc.save_path_buffer.clone();
+        if !path.ends_with(".png") {
+            path.push_str(".png");
+        }
+        if let Err(e) = doc.save_png(&path) {
+            tracing::warn!("failed to save image: {e}");
+        } else {
+            doc.adopt_saved_path(path);
+            doc.save_path_popup = false;
+            doc.exit_edit_mode();
+            doc.reload_from_disk();
+        }
+    }
 }
 
 /// A caption-sized muted label (filename / zoom % / field labels).
@@ -672,12 +744,6 @@ fn body(theme: &Theme, text: &str) -> egui::RichText {
     egui::RichText::new(text)
         .size(theme.font_size_body.value())
         .color(theme.text_muted().to_egui())
-}
-
-fn heading(theme: &Theme, text: &str) -> egui::RichText {
-    egui::RichText::new(text)
-        .size(theme.font_size_heading.value())
-        .color(theme.text_primary().to_egui())
 }
 
 /// 시안 ImgBtn: 도구 모음·zoom 그룹·찾아보기의 sm IconButton.
