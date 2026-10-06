@@ -238,15 +238,27 @@ pub fn draw_address_states(ui: &mut egui::Ui, theme: &Theme) {
             ui.painter()
                 .with_clip_rect(scope.intersect(ui.clip_rect()))
                 .rect_filled(scope, 0.0, ec(theme.scrim()));
+            // 시안 scrim 은 `alignItems: center; justifyContent: center` 다. 카드 크기를 먼저
+            // 재고 막은 범위의 정중앙에 놓는다.
+            let inner = scope.shrink(theme.spacing_md.value());
+            let mut sizing = ui.new_child(
+                egui::UiBuilder::new()
+                    .id_salt("large-file-sizing")
+                    .max_rect(inner)
+                    .layout(egui::Layout::top_down(egui::Align::Min))
+                    .sizing_pass()
+                    .invisible(),
+            );
+            md_large_file::popup_card(&mut sizing, theme);
+            let card = egui::Rect::from_center_size(inner.center(), sizing.min_rect().size());
             let mut popup = ui.new_child(
                 egui::UiBuilder::new()
-                    .max_rect(scope.shrink(theme.spacing_md.value()))
-                    .layout(egui::Layout::centered_and_justified(
-                        egui::Direction::TopDown,
-                    )),
+                    .id_salt("large-file-popup")
+                    .max_rect(card)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
             );
             popup.set_clip_rect(scope.intersect(ui.clip_rect()));
-            popup.vertical_centered(|ui| md_large_file::popup_card(ui, theme));
+            md_large_file::popup_card(&mut popup, theme);
         });
     });
     meta(
