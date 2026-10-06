@@ -70,6 +70,12 @@ pub enum AgentError {
     /// v2 task 계약 위반. 실패 단계와 타입 오류(task·경로·기대·실제)를 싣는다.
     #[error("task contract: {0}")]
     TypeContract(Box<task::contract::TaskFailure>),
+    /// 저장소가 영속이 아니라(memory 대체 모드) 재시작 복구를 요구한 그래프를 받지 않았다.
+    #[error(
+        "the task store is not durable ({cause}), so this graph would not survive a restart; \
+         set \"durability\": \"best_effort\" to run it anyway"
+    )]
+    StoreNotDurable { cause: String },
     /// 완료 보고를 적용하지 않았다. 다른 회차의 보고이거나, 이미 끝난 회차에 다른 보고가
     /// 왔거나, 회차 지문 없이 이미 끝난 task 다.
     #[error(

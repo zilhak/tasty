@@ -24,7 +24,7 @@ v2 그래프 정의에 `durability` 를 둔다. 값은 `required`(기본)와 `be
 
 - 그래프를 보내는 쪽이 재시작 복구 여부를 실행 전에 안다. 대체 모드를 모르는 도구는 거절을 받고 원인을 `error.data` 에서 읽는다.
 - 정상 모드에서는 동작이 같다. `durability` 를 적지 않은 그래프는 그대로 실행된다.
-- 판정은 IPC 처리기에서 한다. `TaskService::task_graph_submit` 을 직접 부르는 Rust 호출자는 대체 모드를 검사하지 않는다. 현재 그런 호출자는 IPC 처리기뿐이다.
+- 판정은 `TaskService::task_graph_submit` 이 한다(`AgentError::StoreNotDurable`). 서비스는 조립할 때 대체 모드의 원인을 받으므로(`with_store_fallback`), IPC 처리기를 거치지 않는 Rust 호출자도 같은 판정을 받는다. IPC 처리기는 그 오류를 `-32602` 로 전달한다.
 - task 조회(`task_get`·`task_list`)는 그래프의 `durability` 를 따로 싣지 않는다. 그래프 레코드에만 있다.
 
 ## Alternatives Considered
@@ -37,7 +37,7 @@ v2 그래프 정의에 `durability` 를 둔다. 값은 `required`(기본)와 `be
 
 코드와 설정에서 확인:
 
-- `TaskService::task_graph_submit` 을 IPC 처리기 밖에서 부르는 호출자가 생기면 판정을 서비스로 옮긴다.
+- 대체 모드가 실행 중에 바뀌게 되면(재연결로 파일 저장소 복귀 등) 조립 때 받은 원인 대신 저장소 상태를 매번 읽어야 한다.
 - 대체 모드가 사라지거나(초기화 실패 시 시작을 막는 정책) 다른 저장소가 생기면 이 구분을 다시 본다.
 
 실행 결과로 확인:
@@ -46,7 +46,8 @@ v2 그래프 정의에 `durability` 를 둔다. 값은 `required`(기본)와 `be
 
 ## References
 
-- `src/adapters/ipc/handler/agent/task_graph_submit.rs` — 판정과 응답.
+- `crates/tasty-task-runtime/src/task.rs` — `TaskService::task_graph_submit` 의 판정.
+- `src/adapters/ipc/handler/agent.rs` — `StoreNotDurable` 의 IPC 응답.
 - `crates/tasty-agent/src/task/store/graph_submit.rs` — `GraphDurability`, 그래프 레코드.
 - [ADR-0010](0010-storage-failure-reporting.md) — 대체 모드의 쓰기 응답.
 - [ADR-0069](0069-typed-task-graphs-activate-through-a-graph-record.md) — 그래프 활성화.

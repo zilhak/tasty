@@ -50,6 +50,13 @@ pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcRespon
             serde_json::json!({ "referenced_by": referenced_by }),
         ),
         TaskRunning(_) => JsonRpcResponse::error(id, -32011, msg),
+        // 요청의 durability 를 고치면 받는다. 대체 모드의 원인을 함께 싣는다.
+        StoreNotDurable { cause } => JsonRpcResponse::error_with_data(
+            id,
+            -32602,
+            msg,
+            serde_json::json!({"location": "/durability", "store_durable": false, "cause": cause}),
+        ),
         // 보고를 적용하지 않았다. 사유와 두 회차 id 로 호출자가 다시 낼지 정한다.
         CompletionRejected {
             attempt_id,

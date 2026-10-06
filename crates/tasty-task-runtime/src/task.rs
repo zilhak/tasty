@@ -1,8 +1,8 @@
 //! TaskService의 작업 API. 원본은 memory의 TaskStore이며 engine별 순번·허브는 TaskScope로 받는다.
 
 use tasty_agent::task::{
-    Completion, CompletionOutcome, CompletionReceipt, TaskCreateOpts, TaskDeleteOpts,
-    TaskDeleteReport, TaskGraphSpec, TaskPurgeFilter, TaskSweepPlan,
+    Completion, CompletionOutcome, CompletionReceipt, GraphDurability, TaskCreateOpts,
+    TaskDeleteOpts, TaskDeleteReport, TaskGraphSpec, TaskPurgeFilter, TaskSweepPlan,
 };
 use tasty_agent::{
     AgentError, DagSummary, ReducerInput, Task, TaskId, TaskResult, TaskState, TaskStore,
@@ -43,6 +43,14 @@ impl TaskService {
         dry_run: bool,
         now_ms: u64,
     ) -> Result<GraphSubmitOutcome, AgentError> {
+        // 검증만 할 때도 같은 판정을 해 제출 결과를 미리 알 수 있게 한다.
+        if let Some(cause) = self.store_fallback()
+            && spec.durability == GraphDurability::Required
+        {
+            return Err(AgentError::StoreNotDurable {
+                cause: cause.to_string(),
+            });
+        }
         let seq = scope.agent_seq().clone();
         let outcome = self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
@@ -480,5 +488,55 @@ mod tests {
         let malformed = task(json!({"kind": "run", "workspace_id": 1,
                                     "command": ["echo", "${task.x}"]}));
         assert!(reject_output_placeholders(0, &malformed).is_err());
+    }
+
+    fn service(fallback: Option<&str>) -> (TaskService, TaskScope) {
+        let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
+            std::sync::Arc::new(std::sync::Mutex::new(
+                tasty_memory::MemoryStore::open_in_memory().expect("memory"),
+            ));
+        let svc = TaskService::new(
+            memory,
+            std::sync::Arc::new(std::sync::OnceLock::new()),
+            std::sync::Arc::new(crate::completion::fixture::Resolver::default()),
+        )
+        .with_store_fallback(fallback.map(str::to_string));
+        let scope = TaskScope::new(svc.runner_registry().clone());
+        (svc, scope)
+    }
+
+    fn graph(durability: Option<&str>) -> TaskGraphSpec {
+        let mut g = json!({"contract_version": 2, "tasks": [
+            {"id": "only", "command": {"kind": "custom", "ipc_method": "system.ping", "params": {}}}]});
+        if let Some(d) = durability {
+            g["durability"] = json!(d);
+        }
+        serde_json::from_value(g).expect("graph")
+    }
+
+    #[test]
+    fn a_direct_caller_gets_the_same_durability_judgement_as_ipc() {
+        let (svc, scope) = service(Some("corrupt"));
+        assert!(!svc.store_durable());
+        for dry_run in [true, false] {
+            let e = svc
+                .task_graph_submit(&scope, 1, graph(None), dry_run, 0)
+                .expect_err("required graph on a fallback store");
+            assert!(
+                matches!(&e, AgentError::StoreNotDurable { cause } if cause == "corrupt"),
+                "{e:?}"
+            );
+        }
+        assert!(svc.task_list(&scope, 1).unwrap().is_empty());
+        let ok = svc
+            .task_graph_submit(&scope, 1, graph(Some("best_effort")), false, 0)
+            .expect("best effort");
+        assert!(ok.activated);
+
+        let (durable, scope) = service(None);
+        assert!(durable.store_durable());
+        durable
+            .task_graph_submit(&scope, 1, graph(None), false, 0)
+            .expect("durable store");
     }
 }

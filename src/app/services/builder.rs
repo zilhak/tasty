@@ -130,6 +130,11 @@ impl AppServicesBuilder {
             memory.clone(),
             Arc::clone(&host_ipc_injector),
             Arc::new(crate::app::task_completion::AppCompletionResolver),
+        )
+        .with_store_fallback(
+            self.memory_init_fallback
+                .as_ref()
+                .map(|f| f.cause.to_string()),
         );
         let home = self
             .home

@@ -84,6 +84,8 @@ pub struct TaskService {
     runner_registry: Arc<RunnerRegistry>,
     hook_task_waits: Arc<HookTaskWaits>,
     completion: Arc<dyn crate::completion::CompletionResolver>,
+    /// 저장소가 memory 대체 모드면 그 원인. 재시작 복구를 요구한 그래프를 거절하는 데 쓴다.
+    store_fallback: Option<String>,
 }
 
 impl TaskService {
@@ -98,7 +100,23 @@ impl TaskService {
             completion,
             runner_registry: Arc::new(RunnerRegistry::new()),
             hook_task_waits: Arc::new(HookTaskWaits::new()),
+            store_fallback: None,
         }
+    }
+
+    /// 저장소가 memory 대체 모드임을 알린다. `cause` 는 대체 모드의 원인 이름이다.
+    pub fn with_store_fallback(mut self, cause: Option<String>) -> Self {
+        self.store_fallback = cause;
+        self
+    }
+
+    /// 저장소가 재시작 뒤에도 남는가.
+    pub fn store_durable(&self) -> bool {
+        self.store_fallback.is_none()
+    }
+
+    pub(crate) fn store_fallback(&self) -> Option<&str> {
+        self.store_fallback.as_deref()
     }
 
     /// 공용 poison 복구 정책으로 저장소 락을 얻는다. 콜백이 끝날 때까지 락을 유지한다.

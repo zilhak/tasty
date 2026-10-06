@@ -56,8 +56,7 @@ struct Submitted {
 }
 
 /// 검증(과 dry_run 이 아니면 저장·활성화)을 하고 그래프 id 와 task 목록을 돌려준다.
-/// 저장소가 영속이 아니면 `durability: best_effort` 를 밝힌 그래프만 받는다. 검증만 할 때도
-/// 같은 판정을 해 제출 결과를 미리 알 수 있게 한다.
+/// 저장소가 영속이 아닐 때의 판정은 TaskService 가 한다.
 fn submit(
     core: &AppServices,
     engine: &mut EngineMut<'_>,
@@ -76,17 +75,6 @@ fn submit(
         JsonRpcResponse::invalid_params(id.clone(), format!("invalid 'graph': {e}"))
     })?;
     let durability = spec.durability;
-    if let Some(fallback) = core.memory_init_fallback()
-        && durability == GraphDurability::Required
-    {
-        return Err(JsonRpcResponse::error_with_data(
-            id.clone(),
-            -32602,
-            "the task store is not durable (memory fallback), so this graph would not survive a \
-             restart; set \"durability\": \"best_effort\" to run it anyway",
-            json!({"location": "/durability", "store_durable": false, "cause": fallback.cause}),
-        ));
-    }
     let outcome = core
         .tasks
         .task_graph_submit(engine.task_scope, workspace_id, spec, dry_run, now_ms())
