@@ -195,7 +195,8 @@ const SELF_ATTACH_WATCH: Duration = Duration::from_secs(6);
 #[cfg(debug_assertions)]
 const INTO_GUI_SOURCE: &str = "attach.into_gui";
 
-#[cfg(debug_assertions)]
+/// 유일한 사용처인 remote.attach 거절 시험이 gui 조합에만 있다.
+#[cfg(all(feature = "gui", debug_assertions))]
 const ENDPOINT_SOURCE: &str = "remote.attach/auto-attach";
 
 #[cfg(debug_assertions)]
