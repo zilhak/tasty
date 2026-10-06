@@ -222,7 +222,7 @@ tasty debug settings apply --json '{"general":{"workspace_categories_enabled":fa
 
 로컬 loopback self-attach를 실행하는 **debug 전용** CLI다(`local/debug/attach.rs`).
 사용자의 mirror 조작을 재현하는 로컬 CLI 진입점만 debug로 제한하며, 원격 attach는
-release에서도 `tasty remote attach`로 실행한다. 같은 머신의 다른 인스턴스에 `127.0.0.1:PORT`로
+release에서도 `tasty remote attach`로 실행한다. 같은 머신의 다른 인스턴스에 loopback 주소(`127.0.0.1:PORT`·`localhost:PORT`·`[::1]:PORT`)로
 붙는 GUI 원격 연결 팝업·IPC `remote.attach`·자동 attach도 release에 있다. 두 명령은 같은 attach 세션 구현을 쓴다.
 결정 근거는 [ADR-0020](../adr/0020-remote-connection-profiles.md),
 동작은 [attach-behavior.md](attach-behavior.md)를 참고한다.

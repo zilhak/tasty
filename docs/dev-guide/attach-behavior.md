@@ -51,7 +51,7 @@ attach 는 **server**(피점유 — PTY/grid 소유)와 **client**(점유 — mi
   - 점유된 workspace의 디렉터리·Git·markdown 조회와 응답 직렬화 예산은 `src/remote/server/content_queries.rs`가 담당한다. 호출자는 기존 `server` handler 경로를 사용한다.
 - **클라이언트측** — "원격성" 을 전부 흡수한다. 두 종류:
   - **로컬 CLI client**: 포트 파일(`~/.tasty/tasty.port`)을 읽어 그 loopback 포트로 직결. **release CLI 에서 제거 → debug 전용**(`tasty debug attach`).
-  - **loopback 직결 대상 지정**: GUI 원격 연결 팝업·IPC `remote.attach`·자동 attach 는 대상이 `127.0.0.1:PORT`·`localhost:PORT` 면 SSH 없이 그 포트로 직결한다(`tasty_remote::browse::resolve_endpoint`, `src/app/auto_attach.rs`). release 에도 있으며, 같은 머신의 다른 인스턴스를 mirror 할 수 있다. 자기 인스턴스 포트는 아래 self-attach 거절을 따른다.
+  - **loopback 직결 대상 지정**: GUI 원격 연결 팝업·IPC `remote.attach`·자동 attach 는 대상이 `127.0.0.1:PORT`·`localhost:PORT`·`[::1]:PORT` 면 SSH 없이 그 포트로 직결한다(`tasty_remote::browse::resolve_endpoint`, `src/app/auto_attach.rs`). release 에도 있으며, 같은 머신의 다른 인스턴스를 mirror 할 수 있다. 자기 인스턴스 포트는 아래 self-attach 거절을 따른다.
   - **원격 client**: `ssh -L 127.0.0.1:<localport>:127.0.0.1:<remoteport> -N` 터널 후 그 **localport 로 직결**. 터널은 바이트 파이프라 스트림 프로토콜에 투명 — 원격 client 도 결국 자기 머신 loopback 에 붙는다(`tasty remote attach --ssh|--profile`).
 
 ### "로컬 attach 제거" 의 정확한 의미
@@ -396,7 +396,7 @@ hard 점유의 holder가 원격으로 전달한 구조 명령과, holder가 아�
   입력 유실은 재연결 중 세션을 바꾸는 구간에서 발생하며, 리더 스레드가 누적돼 시간이 갈수록 커지는 문제는 아니다.
   슬롯이 비어 있는 동안 stdin EOF나 오류가 발생하면 별도 `AtomicBool`에 기록한다. 다음 세션의 `install_sender`가 sender를 설치할 때 `RawEvent::StdinEof`를 바로 전달해, 이미 닫힌 stdin을 계속 기다리지 않도록 한다.
   현재는 재연결 중 보내지 못한 입력을 버퍼에 보관하지 않는다.
-- **loopback 직결 없음**: 이 공용 경로(`remote attach`·`tool attach`·`remote check`)는 인라인 host 가 `127.0.0.1:PORT`/`localhost:PORT` 여도 SSH 포트 발견과 터널을 거치므로 SSH 없이 붙지 않는다. loopback 직결 분기는 `tasty_remote::browse::resolve_endpoint`(browse·`remote new-workspace`·IPC `remote.*`·GUI 원격 브라우저 워커)와 자동 attach 의 `src/app/auto_attach.rs` 에만 있다. 같은 머신 다중 인스턴스에서 attach 를 재현할 때는 debug 빌드의 `tasty debug attach` 로 서버 인스턴스의 포트에 직접 붙는다([debug-ipc](debug-ipc.md)).
+- **loopback 직결 없음**: 이 공용 경로(`remote attach`·`tool attach`·`remote check`)는 인라인 host 가 `127.0.0.1:PORT`·`localhost:PORT`·`[::1]:PORT` 여도 SSH 포트 발견과 터널을 거치므로 SSH 없이 붙지 않는다. loopback 직결 분기는 `tasty_remote::browse::resolve_endpoint`(browse·`remote new-workspace`·IPC `remote.*`·GUI 원격 브라우저 워커)와 자동 attach 의 `src/app/auto_attach.rs` 에만 있다. 같은 머신 다중 인스턴스에서 attach 를 재현할 때는 debug 빌드의 `tasty debug attach` 로 서버 인스턴스의 포트에 직접 붙는다([debug-ipc](debug-ipc.md)).
 
 ## 연결 생존 확인 (read timeout + heartbeat)
 

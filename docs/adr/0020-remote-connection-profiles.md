@@ -11,7 +11,7 @@
 
 ## Decision
 
-release CLI는 remote attach를 제공하고 로컬 attach 검증 진입점은 debug에 둔다. 서버 attach 수신은 공통으로 유지한다. 단발 화면 조회는 attach 세션 대신 read API를 사용한다. GUI client가 자기 서버 포트로 동기 attach하면 교착하므로 연결 전에 거절한다. 별도 프로세스의 debug attach 검증과 구분한다.
+release CLI는 remote attach를 제공하고 로컬 attach 검증 진입점은 debug에 둔다. 서버 attach 수신은 공통으로 유지한다. 단발 화면 조회는 attach 세션 대신 read API를 사용한다. GUI client는 자기 서버 포트로의 attach를 연결 전에 거절한다. 성립하면 자기 mirror가 자기 workspace를 점유해 원본의 로컬 입력이 막히기 때문이다. handshake는 Remote worker가 비동기로 수행하므로 교착은 거절 이유가 아니다. 별도 프로세스의 debug attach 검증과 구분한다.
 
 원격 프로필은 확장 가능한 kind 문자열과 Str/List 필드의 레지스트리다. 동작은 소비자가 해석하며 자격증명은 passkey 이름으로 참조한다. 미등록 kind는 등록을 허용하되 경고한다. plugin은 선언한 kind만 접근하고 기본 제공 기능은 필요한 종류를 사용 시 검증한다.
 
@@ -33,7 +33,7 @@ ConnectTimeout만으로 인증 후 정지·원격 명령·TTY 프롬프트 대�
 
 ## Reconsideration Triggers
 
-release 로컬 attach의 실제 용례, 미등록 타입의 관리 문제, 강제 스키마 요구가 생기면 범위를 검토한다. ssh와 attach가 항상 일대일이거나 attach 전용 파일이 필요한 소비자가 생기면 분리 방식을 다시 비교한다. 특정 원격 셸에서 port_file 읽기가 실패하면 셸별 처리를 검토한다.
+release 로컬 CLI attach 진입점의 실제 용례, 미등록 타입의 관리 문제, 강제 스키마 요구가 생기면 범위를 검토한다. ssh와 attach가 항상 일대일이거나 attach 전용 파일이 필요한 소비자가 생기면 분리 방식을 다시 비교한다. 특정 원격 셸에서 port_file 읽기가 실패하면 셸별 처리를 검토한다.
 
 정상 연결이 반복해서 제한에 걸리거나, 취소 가능한 비동기 발견·새 탐색 단계·BatchMode 변경이 생기면 세 제한의 값과 역할을 다시 평가한다.
 

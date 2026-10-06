@@ -23,7 +23,7 @@ hard 점유된 workspace의 terminal.spawn은 자원을 만들기 전에 거절�
 
 terminal.spawn의 제한은 최종 pane ID를 해소한 뒤 실제 소속 workspace에서 검사한다. workspace 인자와 pane override가 다를 수 있으므로 workspace 인자만 검사하지 않는다. mirror workspace도 생성을 시작하거나 forward 큐에 넣기 전에 거절한다. child registry는 즉시 생성 ID가 필요한데 일반 mirror forward는 그 ID를 동기로 반환하지 않기 때문이다.
 
-점유 획득 전 stream.open의 proto를 현재 STREAM_PROTO와 비교한다. 생략된 0이나 불일치는 기존 StreamAck{ok:false,proto,error}로 거절한다. GUI self-attach 포트 검사는 debug에서도 적용한다. 정상 연결 이후의 EOF·TTL 회수는 계속 필요하다.
+점유 획득 전 stream.open의 proto를 현재 STREAM_PROTO와 비교한다. 생략된 0이나 불일치는 기존 StreamAck{ok:false,proto,error}로 거절한다. GUI 원격 연결 팝업과 IPC attach.into_gui의 self-attach 포트 검사는 debug에서도 적용한다. IPC remote.attach와 자동 attach의 자기 포트 검사는 release 빌드에만 있다. 정상 연결 이후의 EOF·TTL 회수는 계속 필요하다.
 
 원격 조회·프로필 CRUD의 신뢰는 SSH와 loopback에 의존하지만, 로컬 mirror workspace를 만드는 remote.attach는 local_only로 둔다. 원격 접근 자격만으로 무권한 plugin에 로컬 구조 변경 권한을 주지 않는다.
 
@@ -67,7 +67,7 @@ mirror 휠·실시간 갱신·선택 중 좌표 변화 문제가 생기면 reado
 
 forward가 생성 ID를 반환하고 원격 child의 소유·입력을 다룰 수 있게 되면 mirror spawn을 다시 검토한다. 동기 ID가 필요 없는 spawn이 추가되면 메서드 전체 거절보다 좁은 조건을 비교한다.
 
-프로토콜 호환 범위·인증·새 점유 진입점이 생기면 점유 전 검사를 함께 확장한다. 비동기 self-attach 필요가 생기면 교착과 제품 정책을 따로 검토한다. plugin의 정당한 remote.attach 소비자가 생기면 명시 권한을 첫 대안으로 검토한다. 로컬 강제 해제 경로가 모두 사라지거나 새 close 경로에서 누락이 발생하면 닫기 보호 구현을 재검토한다.
+프로토콜 호환 범위·인증·새 점유 진입점이 생기면 점유 전 검사를 함께 확장한다. self-attach handshake는 이미 Remote worker에서 비동기로 수행되어 교착하지 않는다. 자기 인스턴스 mirror의 정당한 용례가 생기면 자기 workspace 점유로 원본 입력이 막히는 문제와 거절 정책을 함께 검토한다. plugin의 정당한 remote.attach 소비자가 생기면 명시 권한을 첫 대안으로 검토한다. 로컬 강제 해제 경로가 모두 사라지거나 새 close 경로에서 누락이 발생하면 닫기 보호 구현을 재검토한다.
 
 배치 순서나 pump가 추가되면 disconnected 표시가 attach보다 먼저 전달되는지 확인한다. sink 등록·해제 순서가 acquire와 명확히 보장되면 registry의 정보 전달을 단순화할 수 있다.
 
