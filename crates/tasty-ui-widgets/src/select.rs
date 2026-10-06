@@ -130,24 +130,28 @@ fn select_impl(
     }
 
     let mut picked = None;
-    egui::popup_below_widget(
-        ui,
-        popup_id,
-        &resp,
-        egui::PopupCloseBehavior::CloseOnClick,
-        |ui| {
-            ui.set_min_width(width);
-            if let (None, Some(p)) = (selected, placeholder) {
-                // sentinel — 누르면 메뉴만 닫힌다(값이 아니므로 응답을 읽지 않는다).
-                let _sentinel = ui.selectable_label(true, p);
-            }
-            for (i, opt) in options.iter().enumerate() {
-                if ui.selectable_label(selected == Some(i), *opt).clicked() && selected != Some(i) {
-                    picked = Some(i);
+    tasty_egui_theme::with_popover_frame(ui, theme, |ui| {
+        egui::popup_below_widget(
+            ui,
+            popup_id,
+            &resp,
+            egui::PopupCloseBehavior::CloseOnClick,
+            |ui| {
+                ui.set_min_width(width);
+                if let (None, Some(p)) = (selected, placeholder) {
+                    // sentinel — 누르면 메뉴만 닫힌다(값이 아니므로 응답을 읽지 않는다).
+                    let _sentinel = ui.selectable_label(true, p);
                 }
-            }
-        },
-    );
+                for (i, opt) in options.iter().enumerate() {
+                    if ui.selectable_label(selected == Some(i), *opt).clicked()
+                        && selected != Some(i)
+                    {
+                        picked = Some(i);
+                    }
+                }
+            },
+        )
+    });
     picked
 }
 

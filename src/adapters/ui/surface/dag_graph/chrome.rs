@@ -161,23 +161,25 @@ fn dag_picker(ui: &mut egui::Ui, theme: &Theme, data: &DagData) -> Option<String
     }
 
     let mut picked = None;
-    egui::ComboBox::from_id_salt("dag_picker")
-        .selected_text(current_name)
-        .show_ui(ui, |ui| {
-            for entry in &data.dags {
-                let selected = data.current.as_ref().is_some_and(|g| g.id == entry.id);
-                let label = t_fmt2(
-                    "dag.header.entry",
-                    &entry.name,
-                    &entry.task_count.to_string(),
-                );
-                let text = egui::RichText::new(format!("{} {}", entry.rollup.glyph(), label))
-                    .size(theme.font_size_caption.value());
-                if ui.selectable_label(selected, text).clicked() {
-                    picked = Some(entry.id.clone());
+    tasty_egui_theme::with_popover_frame(ui, theme, |ui| {
+        egui::ComboBox::from_id_salt("dag_picker")
+            .selected_text(current_name)
+            .show_ui(ui, |ui| {
+                for entry in &data.dags {
+                    let selected = data.current.as_ref().is_some_and(|g| g.id == entry.id);
+                    let label = t_fmt2(
+                        "dag.header.entry",
+                        &entry.name,
+                        &entry.task_count.to_string(),
+                    );
+                    let text = egui::RichText::new(format!("{} {}", entry.rollup.glyph(), label))
+                        .size(theme.font_size_caption.value());
+                    if ui.selectable_label(selected, text).clicked() {
+                        picked = Some(entry.id.clone());
+                    }
                 }
-            }
-        });
+            })
+    });
     picked
 }
 

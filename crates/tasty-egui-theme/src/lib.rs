@@ -21,6 +21,25 @@ fn stroke1(theme: &Theme, c: HexColor) -> egui::Stroke {
     egui::Stroke::new(theme.border_width.value(), c)
 }
 
+/// 버튼에 붙는 egui 팝오버(`popup_below_widget` · `popup_above_or_below_widget` ·
+/// `ComboBox`)를 `add` 안에서 열면 그 틀이 메뉴 컨테이너 토큰(menu-bg · menu-border ·
+/// menu-radius)을 쓴다. egui 는 팝오버 틀을 부모 `Ui` 스타일로, tooltip 틀을 전역 스타일로
+/// 그리므로 부모 스타일만 잠시 바꾼다. 자식 `Ui` 를 만들지 않아 위젯·팝업 ID 는 그대로다.
+pub fn with_popover_frame<R>(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    let prev = ui.style().clone();
+    let visuals = &mut ui.style_mut().visuals;
+    visuals.window_fill = theme.menu_bg().into();
+    visuals.window_stroke = stroke1(theme, theme.menu_border());
+    visuals.menu_corner_radius = theme.menu_radius().value().into();
+    let out = add(ui);
+    ui.set_style(prev);
+    out
+}
+
 /// Theme를 egui에 적용한다. Theme에 이미 UI 배율이 반영되어 있어야 한다.
 pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
     // 직접 지정하지 않는 필드도 테마 밝기에 맞도록 기본값을 선택한다.
@@ -31,11 +50,12 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
     };
 
     visuals.panel_fill = theme.mantle.into();
-    // egui 의 popup·menu·tooltip 프레임은 window 값을 읽는다. 버튼에 붙는 팝오버가
-    // 메뉴 컨테이너 토큰(menu-bg · menu-border · menu-radius)을 쓰도록 여기서 맞춘다.
-    visuals.window_fill = theme.menu_bg().into();
-    visuals.window_stroke = stroke1(theme, theme.menu_border());
-    visuals.menu_corner_radius = theme.menu_radius().value().into();
+    // egui 의 popup·tooltip 프레임은 같은 window 값을 읽는다. tooltip 은 전역 스타일로
+    // 그려지므로 전역 값은 tooltip 토큰이다. 부모 `Ui` 스타일로 그려지는 팝오버는
+    // [`with_popover_frame`] 이 그 호출 동안만 메뉴 토큰으로 바꾼다.
+    visuals.window_fill = theme.tooltip_bg().into();
+    visuals.window_stroke = stroke1(theme, theme.tooltip_border());
+    visuals.menu_corner_radius = theme.tooltip_radius().value().into();
 
     // 위젯에 붙는 팝업은 popover, 독립 창은 modal 그림자를 사용한다.
     // 프레임을 직접 지정하는 호출부도 같은 두 토큰 중에서 선택한다.

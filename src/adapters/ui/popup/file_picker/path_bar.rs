@@ -259,49 +259,55 @@ fn hidden_crumbs(
     if resp.clicked() {
         ui.memory_mut(|m| m.toggle_popup(popup_id));
     }
-    egui::popup_below_widget(
-        ui,
-        popup_id,
-        &resp,
-        egui::PopupCloseBehavior::CloseOnClick,
-        |ui| {
-            let font = egui::FontId::proportional(th.font_size_body.value());
-            let widest = props.crumbs[range.clone()]
-                .iter()
-                .map(|c| {
-                    ui.painter()
-                        .layout_no_wrap(c.label.clone(), font.clone(), egui::Color32::PLACEHOLDER)
-                        .size()
-                        .x
-                })
-                .fold(0.0_f32, f32::max);
-            let band = menu_band(th);
-            ui.set_min_width(menu_width(widest, th));
-            ui.set_max_width(band.1);
-            let folder = th.accent_primary().to_egui();
-            for i in range.clone() {
-                let glyph = |ui: &mut egui::Ui, rect: egui::Rect, _c: egui::Color32| {
-                    icons::FOLDER
-                        .image(rect.height(), folder)
-                        .paint_at(ui, rect)
-                };
-                if menu_item(
-                    ui,
-                    th,
-                    Some(&glyph),
-                    &props.crumbs[i].label,
-                    None,
-                    MenuItemVariant::Normal,
-                    false,
-                    true,
-                )
-                .clicked()
-                {
-                    *action = FilePickerAction::NavigateTo(i);
+    tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+        egui::popup_below_widget(
+            ui,
+            popup_id,
+            &resp,
+            egui::PopupCloseBehavior::CloseOnClick,
+            |ui| {
+                let font = egui::FontId::proportional(th.font_size_body.value());
+                let widest = props.crumbs[range.clone()]
+                    .iter()
+                    .map(|c| {
+                        ui.painter()
+                            .layout_no_wrap(
+                                c.label.clone(),
+                                font.clone(),
+                                egui::Color32::PLACEHOLDER,
+                            )
+                            .size()
+                            .x
+                    })
+                    .fold(0.0_f32, f32::max);
+                let band = menu_band(th);
+                ui.set_min_width(menu_width(widest, th));
+                ui.set_max_width(band.1);
+                let folder = th.accent_primary().to_egui();
+                for i in range.clone() {
+                    let glyph = |ui: &mut egui::Ui, rect: egui::Rect, _c: egui::Color32| {
+                        icons::FOLDER
+                            .image(rect.height(), folder)
+                            .paint_at(ui, rect)
+                    };
+                    if menu_item(
+                        ui,
+                        th,
+                        Some(&glyph),
+                        &props.crumbs[i].label,
+                        None,
+                        MenuItemVariant::Normal,
+                        false,
+                        true,
+                    )
+                    .clicked()
+                    {
+                        *action = FilePickerAction::NavigateTo(i);
+                    }
                 }
-            }
-        },
-    );
+            },
+        )
+    });
 }
 
 #[cfg(test)]

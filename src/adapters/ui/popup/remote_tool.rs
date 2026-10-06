@@ -762,25 +762,27 @@ fn draw_protocol_filter(
         // 프레임은 이 scope 의 스타일로 그려지고 popup 안쪽 Ui 는 컨텍스트 스타일을 받으므로,
         // 테두리 + 안쪽 여백은 여기서 잰다. 토큰은 테두리를 포함한 폭이다.
         let frame_x = egui::Frame::popup(ui.style()).total_margin().sum().x;
-        egui::popup::popup_above_or_below_widget(
-            ui,
-            popup_id,
-            &btn,
-            egui::AboveOrBelow::Below,
-            egui::PopupCloseBehavior::CloseOnClickOutside,
-            |ui| {
-                ui.set_min_width(filter_dropdown_content_width(th, LogicalPx(frame_x)).value());
-                if draw_protocol_filter_body(ui, th, &items, &labels, &mut st.filter_draft) {
-                    applied = Some(
-                        st.filter_draft
-                            .iter()
-                            .filter(|p| protocols.iter().any(|x| x == *p))
-                            .cloned()
-                            .collect(),
-                    );
-                }
-            },
-        );
+        tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+            egui::popup::popup_above_or_below_widget(
+                ui,
+                popup_id,
+                &btn,
+                egui::AboveOrBelow::Below,
+                egui::PopupCloseBehavior::CloseOnClickOutside,
+                |ui| {
+                    ui.set_min_width(filter_dropdown_content_width(th, LogicalPx(frame_x)).value());
+                    if draw_protocol_filter_body(ui, th, &items, &labels, &mut st.filter_draft) {
+                        applied = Some(
+                            st.filter_draft
+                                .iter()
+                                .filter(|p| protocols.iter().any(|x| x == *p))
+                                .cloned()
+                                .collect(),
+                        );
+                    }
+                },
+            )
+        });
     });
     // 부모 밖으로 나온 드롭다운도 안쪽 클릭으로 인식하도록 영역을 보고한다.
     let overlay_rect = ui
@@ -1066,18 +1068,20 @@ fn draw_profile_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
                                             .desired_width(edit_w)
                                             .font(egui::TextStyle::Monospace),
                                     );
-                                    egui::ComboBox::from_id_salt("remote_tool.type_suggest")
-                                        .selected_text("▾")
-                                        .width(combo_w)
-                                        .show_ui(ui, |ui| {
-                                            for kt in KNOWN_TYPES {
-                                                ui.selectable_value(
-                                                    &mut f.kind,
-                                                    (*kt).to_string(),
-                                                    *kt,
-                                                );
-                                            }
-                                        });
+                                    tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+                                        egui::ComboBox::from_id_salt("remote_tool.type_suggest")
+                                            .selected_text("▾")
+                                            .width(combo_w)
+                                            .show_ui(ui, |ui| {
+                                                for kt in KNOWN_TYPES {
+                                                    ui.selectable_value(
+                                                        &mut f.kind,
+                                                        (*kt).to_string(),
+                                                        *kt,
+                                                    );
+                                                }
+                                            })
+                                    });
                                 });
                             });
                             if unknown {
@@ -1132,18 +1136,20 @@ fn draw_profile_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
                                     false,
                                 );
                                 form_row(ui, th, t("remote_tool.field_shell"), |ui| {
-                                    egui::ComboBox::from_id_salt("remote_tool.shell")
-                                        .selected_text(f.shell.clone())
-                                        .width(ui.available_width())
-                                        .show_ui(ui, |ui| {
-                                            for sh in SHELLS {
-                                                ui.selectable_value(
-                                                    &mut f.shell,
-                                                    (*sh).to_string(),
-                                                    *sh,
-                                                );
-                                            }
-                                        });
+                                    tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+                                        egui::ComboBox::from_id_salt("remote_tool.shell")
+                                            .selected_text(f.shell.clone())
+                                            .width(ui.available_width())
+                                            .show_ui(ui, |ui| {
+                                                for sh in SHELLS {
+                                                    ui.selectable_value(
+                                                        &mut f.shell,
+                                                        (*sh).to_string(),
+                                                        *sh,
+                                                    );
+                                                }
+                                            })
+                                    });
                                 });
                                 passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
                                 if f.shell == "auto" {
@@ -1257,15 +1263,17 @@ fn passkey_dropdown_row(ui: &mut egui::Ui, th: &Theme, value: &mut String, passk
         } else {
             value.clone()
         };
-        egui::ComboBox::from_id_salt("remote_tool.passkey_ref")
-            .selected_text(sel)
-            .width(ui.available_width())
-            .show_ui(ui, |ui| {
-                ui.selectable_value(value, String::new(), t("remote_tool.passkey_none"));
-                for k in &passkeys.passkeys {
-                    ui.selectable_value(value, k.name.clone(), &k.name);
-                }
-            });
+        tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+            egui::ComboBox::from_id_salt("remote_tool.passkey_ref")
+                .selected_text(sel)
+                .width(ui.available_width())
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(value, String::new(), t("remote_tool.passkey_none"));
+                    for k in &passkeys.passkeys {
+                        ui.selectable_value(value, k.name.clone(), &k.name);
+                    }
+                })
+        });
     });
 }
 
@@ -1621,28 +1629,30 @@ fn draw_attach_form(
                                     } else {
                                         f.ssh_ref.clone()
                                     };
-                                    egui::ComboBox::from_id_salt("remote_tool.attach_ssh_ref")
-                                        .selected_text(sel)
-                                        .width(ui.available_width())
-                                        .show_ui(ui, |ui| {
-                                            for sp in profiles
-                                                .profiles
-                                                .iter()
-                                                .filter(|sp| sp.kind == "ssh")
-                                            {
-                                                let display = match &sp.label {
-                                                    Some(l) if !l.is_empty() => {
-                                                        format!("{} ({})", sp.name, l)
-                                                    }
-                                                    _ => sp.name.clone(),
-                                                };
-                                                ui.selectable_value(
-                                                    &mut f.ssh_ref,
-                                                    sp.name.clone(),
-                                                    display,
-                                                );
-                                            }
-                                        });
+                                    tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+                                        egui::ComboBox::from_id_salt("remote_tool.attach_ssh_ref")
+                                            .selected_text(sel)
+                                            .width(ui.available_width())
+                                            .show_ui(ui, |ui| {
+                                                for sp in profiles
+                                                    .profiles
+                                                    .iter()
+                                                    .filter(|sp| sp.kind == "ssh")
+                                                {
+                                                    let display = match &sp.label {
+                                                        Some(l) if !l.is_empty() => {
+                                                            format!("{} ({})", sp.name, l)
+                                                        }
+                                                        _ => sp.name.clone(),
+                                                    };
+                                                    ui.selectable_value(
+                                                        &mut f.ssh_ref,
+                                                        sp.name.clone(),
+                                                        display,
+                                                    );
+                                                }
+                                            })
+                                    });
                                 });
                             } else {
                                 text_row(
@@ -1670,18 +1680,20 @@ fn draw_attach_form(
                                     true,
                                 );
                                 form_row(ui, th, t("remote_tool.field_shell"), |ui| {
-                                    egui::ComboBox::from_id_salt("remote_tool.attach_shell")
-                                        .selected_text(f.shell.clone())
-                                        .width(ui.available_width())
-                                        .show_ui(ui, |ui| {
-                                            for sh in SHELLS {
-                                                ui.selectable_value(
-                                                    &mut f.shell,
-                                                    (*sh).to_string(),
-                                                    *sh,
-                                                );
-                                            }
-                                        });
+                                    tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+                                        egui::ComboBox::from_id_salt("remote_tool.attach_shell")
+                                            .selected_text(f.shell.clone())
+                                            .width(ui.available_width())
+                                            .show_ui(ui, |ui| {
+                                                for sh in SHELLS {
+                                                    ui.selectable_value(
+                                                        &mut f.shell,
+                                                        (*sh).to_string(),
+                                                        *sh,
+                                                    );
+                                                }
+                                            })
+                                    });
                                 });
                                 passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
                             }
@@ -1703,18 +1715,20 @@ fn draw_attach_form(
                                 true,
                             );
                             form_row(ui, th, t("remote_tool.field_port_mode"), |ui| {
-                                egui::ComboBox::from_id_salt("remote_tool.attach_port_mode")
-                                    .selected_text(f.port_mode.clone())
-                                    .width(ui.available_width())
-                                    .show_ui(ui, |ui| {
-                                        for m in PORT_MODES {
-                                            ui.selectable_value(
-                                                &mut f.port_mode,
-                                                (*m).to_string(),
-                                                *m,
-                                            );
-                                        }
-                                    });
+                                tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+                                    egui::ComboBox::from_id_salt("remote_tool.attach_port_mode")
+                                        .selected_text(f.port_mode.clone())
+                                        .width(ui.available_width())
+                                        .show_ui(ui, |ui| {
+                                            for m in PORT_MODES {
+                                                ui.selectable_value(
+                                                    &mut f.port_mode,
+                                                    (*m).to_string(),
+                                                    *m,
+                                                );
+                                            }
+                                        })
+                                });
                             });
                             text_row(
                                 ui,

@@ -342,70 +342,74 @@ pub fn multi_select(
     let menu_max = (theme.multiselect_menu_max_width().value() - menu_chrome).max(menu_min);
     let menu_width = widest_row.clamp(menu_min, menu_max);
 
-    egui::popup_below_widget(
-        ui,
-        popup_id,
-        &resp,
-        egui::PopupCloseBehavior::CloseOnClickOutside,
-        |ui| {
-            ui.set_min_width(menu_width);
-            ui.set_max_width(menu_width);
-            ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-            // 체크박스 행의 간격을 사용하고 일괄 토글 행은 스크롤 밖에 고정한다.
-            if let Some(t) = all_toggle {
-                let all_on = all_rows_on(selected, options, disabled);
-                let label = if all_on { t.clear_all } else { t.select_all };
-                if all_toggle_row(ui, theme, label).clicked() {
-                    // 전부 켜져 있으면 끄고, 아니면 켠다. 비활성 행은 어느 쪽이든 그대로.
-                    let n = row_count(selected, options);
-                    for (i, flag) in selected.iter_mut().enumerate().take(n) {
-                        if row_enabled(disabled, i) && *flag == all_on {
-                            *flag = !all_on;
-                            changed = true;
-                        }
-                    }
-                }
-                all_toggle_separator(ui, theme);
-            }
-            // 긴 목록만 내부에서 스크롤한다.
-            egui::ScrollArea::vertical()
-                .id_salt(("tasty_multi_select_list", id_salt))
-                .max_height(theme.multiselect_menu_max_height().value())
-                .auto_shrink([true, true])
-                .drag_to_scroll(false)
-                .show(ui, |ui| {
-                    for (i, opt) in options.iter().enumerate() {
-                        let Some(flag) = selected.get_mut(i) else {
-                            break;
-                        };
-                        // 체크박스 뒤에 메뉴 전체 폭의 키보드 선택 배경을 넣도록 도형 자리를 예약한다.
-                        let cursor = (active == Some(i))
-                            .then(|| (ui.painter().add(egui::Shape::Noop), ui.available_width()));
-                        let resp = crate::checkbox(ui, theme, flag, opt, row_enabled(disabled, i));
-                        if resp.changed() {
-                            changed = true;
-                        }
-                        if let Some((slot, row_width)) = cursor {
-                            let row = egui::Rect::from_min_size(
-                                resp.rect.left_top(),
-                                egui::vec2(row_width, resp.rect.height()),
-                            );
-                            ui.painter().set(
-                                slot,
-                                egui::Shape::rect_filled(
-                                    row,
-                                    theme.menu_item_radius().value(),
-                                    theme.surface_active().to_egui(),
-                                ),
-                            );
-                            if scroll_to_active {
-                                ui.scroll_to_rect(row, None);
+    tasty_egui_theme::with_popover_frame(ui, theme, |ui| {
+        egui::popup_below_widget(
+            ui,
+            popup_id,
+            &resp,
+            egui::PopupCloseBehavior::CloseOnClickOutside,
+            |ui| {
+                ui.set_min_width(menu_width);
+                ui.set_max_width(menu_width);
+                ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                // 체크박스 행의 간격을 사용하고 일괄 토글 행은 스크롤 밖에 고정한다.
+                if let Some(t) = all_toggle {
+                    let all_on = all_rows_on(selected, options, disabled);
+                    let label = if all_on { t.clear_all } else { t.select_all };
+                    if all_toggle_row(ui, theme, label).clicked() {
+                        // 전부 켜져 있으면 끄고, 아니면 켠다. 비활성 행은 어느 쪽이든 그대로.
+                        let n = row_count(selected, options);
+                        for (i, flag) in selected.iter_mut().enumerate().take(n) {
+                            if row_enabled(disabled, i) && *flag == all_on {
+                                *flag = !all_on;
+                                changed = true;
                             }
                         }
                     }
-                });
-        },
-    );
+                    all_toggle_separator(ui, theme);
+                }
+                // 긴 목록만 내부에서 스크롤한다.
+                egui::ScrollArea::vertical()
+                    .id_salt(("tasty_multi_select_list", id_salt))
+                    .max_height(theme.multiselect_menu_max_height().value())
+                    .auto_shrink([true, true])
+                    .drag_to_scroll(false)
+                    .show(ui, |ui| {
+                        for (i, opt) in options.iter().enumerate() {
+                            let Some(flag) = selected.get_mut(i) else {
+                                break;
+                            };
+                            // 체크박스 뒤에 메뉴 전체 폭의 키보드 선택 배경을 넣도록 도형 자리를 예약한다.
+                            let cursor = (active == Some(i)).then(|| {
+                                (ui.painter().add(egui::Shape::Noop), ui.available_width())
+                            });
+                            let resp =
+                                crate::checkbox(ui, theme, flag, opt, row_enabled(disabled, i));
+                            if resp.changed() {
+                                changed = true;
+                            }
+                            if let Some((slot, row_width)) = cursor {
+                                let row = egui::Rect::from_min_size(
+                                    resp.rect.left_top(),
+                                    egui::vec2(row_width, resp.rect.height()),
+                                );
+                                ui.painter().set(
+                                    slot,
+                                    egui::Shape::rect_filled(
+                                        row,
+                                        theme.menu_item_radius().value(),
+                                        theme.surface_active().to_egui(),
+                                    ),
+                                );
+                                if scroll_to_active {
+                                    ui.scroll_to_rect(row, None);
+                                }
+                            }
+                        }
+                    });
+            },
+        )
+    });
 
     // 팝업 내부 클릭으로 잃은 포커스를 되찾아 키보드 조작을 이어간다.
     if open && pressed_inside_popup(ui, popup_id) {

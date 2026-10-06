@@ -378,7 +378,7 @@ search bar는 범위 상단 중앙에 있어도 scrim 없이 콘텐츠 위에 �
 
 `Shadow {}` 생성은 `ShadowToken::to_egui()`로 모은다. 페이드가 필요하면 변환 결과의 color에만 opacity를 적용하고 offset·blur·spread는 바꾸지 않는다. egui 기본값도 `visuals.popup_shadow`는 popover, `visuals.window_shadow`는 modal에 연결한다. 직접 프레임을 넘긴 호출부는 자신의 shadow 설정을 사용한다.
 
-버튼에 붙는 팝오버(드롭다운·필터·열 선택·숨은 경로 메뉴 등)의 틀은 메뉴 컨테이너 토큰 `menu_bg()`·`menu_border()`·`menu_radius()`와 `shadow_popover()`다. egui popup 틀은 `visuals.window_fill`·`window_stroke`·`menu_corner_radius`를 읽으므로 `apply_theme_to_egui`가 이 세 값을 메뉴 토큰으로 넣는다. 같은 틀을 쓰는 egui 기본 tooltip(`on_hover_text`)도 이 값을 받는다.
+버튼에 붙는 팝오버(드롭다운·필터·열 선택·숨은 경로 메뉴 등)의 틀은 메뉴 컨테이너 토큰 `menu_bg()`·`menu_border()`·`menu_radius()`와 `shadow_popover()`다. egui 는 팝오버 틀과 기본 tooltip(`on_hover_text`) 틀을 같은 `visuals.window_fill`·`window_stroke`·`menu_corner_radius`로 그리되, 팝오버는 부모 `Ui` 스타일에서, tooltip 은 전역 스타일에서 읽는다. 그래서 `apply_theme_to_egui`는 전역 값에 tooltip 토큰 `tooltip_bg()`·`tooltip_border()`·`tooltip_radius()`를 넣고, 팝오버를 여는 호출부는 `tasty_egui_theme::with_popover_frame`으로 감싸 그 호출 동안만 부모 스타일을 메뉴 토큰으로 바꾼다. 이 래퍼는 자식 `Ui`를 만들지 않아 위젯·팝업 ID 가 그대로다. 새 팝오버 호출부도 이 래퍼로 감싼다. 감싸지 않으면 tooltip 틀로 그려진다.
 
 `ShadowToken.spread`는 음수를 표현하지만 egui의 u8 spread로 재현할 수 없다. 음수를 0으로 근사하지 않으며 해당 표면은 미구현으로 둔다. `to_egui()`는 debug에서 음수 spread를 단언으로 거부한다.
 

@@ -1222,29 +1222,31 @@ fn draw_column_chooser(
         ui.memory_mut(|m| m.toggle_popup(popup_id));
     }
 
-    egui::popup_below_widget(
-        ui,
-        popup_id,
-        &resp,
-        egui::PopupCloseBehavior::CloseOnClickOutside,
-        |ui| {
-            ui.set_min_width(th.port_columns_menu_min_width().value());
-            ui.label(
-                egui::RichText::new(props.label_columns_menu_title)
-                    .color(th.text_muted())
-                    .size(th.font_size_caption.value())
-                    .strong(),
-            );
-            ui.add_space(th.spacing_xs.value());
-            for col in ColumnId::ALL {
-                let mut checked = props.filter.columns.is_visible(col);
-                let enabled = !col.mandatory();
-                if checkbox(ui, th, &mut checked, column_label(col, props), enabled).changed() {
-                    out = Some(PortScannerAction::SetColumnVisible(col, checked));
+    tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+        egui::popup_below_widget(
+            ui,
+            popup_id,
+            &resp,
+            egui::PopupCloseBehavior::CloseOnClickOutside,
+            |ui| {
+                ui.set_min_width(th.port_columns_menu_min_width().value());
+                ui.label(
+                    egui::RichText::new(props.label_columns_menu_title)
+                        .color(th.text_muted())
+                        .size(th.font_size_caption.value())
+                        .strong(),
+                );
+                ui.add_space(th.spacing_xs.value());
+                for col in ColumnId::ALL {
+                    let mut checked = props.filter.columns.is_visible(col);
+                    let enabled = !col.mandatory();
+                    if checkbox(ui, th, &mut checked, column_label(col, props), enabled).changed() {
+                        out = Some(PortScannerAction::SetColumnVisible(col, checked));
+                    }
                 }
-            }
-        },
-    );
+            },
+        )
+    });
     // 팝업 밖으로 나온 드롭다운도 안쪽 클릭으로 인식하도록 영역을 보고한다.
     let overlay_rect = ui
         .memory(|m| m.is_popup_open(popup_id))
@@ -1349,86 +1351,88 @@ fn draw_state_filter(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<
     }
 
     let mut applied: Option<PortScannerAction> = None;
-    egui::popup::popup_above_or_below_widget(
-        ui,
-        popup_id,
-        &btn,
-        egui::AboveOrBelow::Below,
-        egui::PopupCloseBehavior::CloseOnClickOutside,
-        |ui| {
-            ui.set_min_width(th.port_state_menu_min_width().value());
-            ui.label(
-                egui::RichText::new(props.label_state_filter_title)
-                    .color(th.text_muted())
-                    .size(th.font_size_caption.value())
-                    .monospace(),
-            );
-            ui.add_space(th.spacing_xs.value());
+    tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+        egui::popup::popup_above_or_below_widget(
+            ui,
+            popup_id,
+            &btn,
+            egui::AboveOrBelow::Below,
+            egui::PopupCloseBehavior::CloseOnClickOutside,
+            |ui| {
+                ui.set_min_width(th.port_state_menu_min_width().value());
+                ui.label(
+                    egui::RichText::new(props.label_state_filter_title)
+                        .color(th.text_muted())
+                        .size(th.font_size_caption.value())
+                        .monospace(),
+                );
+                ui.add_space(th.spacing_xs.value());
 
-            let mut draft = read_state_draft(ui.ctx());
-            let mut draft_changed = false;
-            egui::ScrollArea::vertical()
-                .max_height(th.port_state_menu_max_height().value())
-                .drag_to_scroll(false)
-                .show(ui, |ui| {
-                    for st in present {
-                        let mut checked = draft.contains(st);
-                        if checkbox(ui, th, &mut checked, st.label(), true).changed() {
-                            if checked {
-                                draft.insert(*st);
-                            } else {
-                                draft.remove(st);
+                let mut draft = read_state_draft(ui.ctx());
+                let mut draft_changed = false;
+                egui::ScrollArea::vertical()
+                    .max_height(th.port_state_menu_max_height().value())
+                    .drag_to_scroll(false)
+                    .show(ui, |ui| {
+                        for st in present {
+                            let mut checked = draft.contains(st);
+                            if checkbox(ui, th, &mut checked, st.label(), true).changed() {
+                                if checked {
+                                    draft.insert(*st);
+                                } else {
+                                    draft.remove(st);
+                                }
+                                draft_changed = true;
                             }
-                            draft_changed = true;
                         }
-                    }
-                });
-            if draft_changed {
-                write_state_draft(ui.ctx(), draft);
-            }
+                    });
+                if draft_changed {
+                    write_state_draft(ui.ctx(), draft);
+                }
 
-            state_filter_hsep(ui, th);
-            ui.horizontal(|ui| {
-                if Button::new(props.label_state_filter_select_all)
-                    .variant(ButtonVariant::Ghost)
-                    .show(ui, th)
-                    .clicked()
-                {
-                    write_state_draft(ui.ctx(), present.iter().copied().collect());
-                }
-                if Button::new(props.label_state_filter_deselect_all)
-                    .variant(ButtonVariant::Ghost)
-                    .show(ui, th)
-                    .clicked()
-                {
-                    write_state_draft(ui.ctx(), HashSet::new());
-                }
-            });
-            ui.horizontal(|ui| {
-                if Button::new(props.label_state_filter_reset)
-                    .variant(ButtonVariant::Ghost)
-                    .show(ui, th)
-                    .clicked()
-                {
-                    write_state_draft(ui.ctx(), HashSet::from([PortState::Listen]));
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if Button::new(props.label_state_filter_apply)
-                        .variant(ButtonVariant::Primary)
+                state_filter_hsep(ui, th);
+                ui.horizontal(|ui| {
+                    if Button::new(props.label_state_filter_select_all)
+                        .variant(ButtonVariant::Ghost)
                         .show(ui, th)
                         .clicked()
                     {
-                        // Apply = draft ∩ present (사라진 상태가 묻어 들어가지 않게 보정).
-                        let set: HashSet<PortState> = read_state_draft(ui.ctx())
-                            .into_iter()
-                            .filter(|s| present.contains(s))
-                            .collect();
-                        applied = Some(PortScannerAction::SetVisibleStates(set));
+                        write_state_draft(ui.ctx(), present.iter().copied().collect());
+                    }
+                    if Button::new(props.label_state_filter_deselect_all)
+                        .variant(ButtonVariant::Ghost)
+                        .show(ui, th)
+                        .clicked()
+                    {
+                        write_state_draft(ui.ctx(), HashSet::new());
                     }
                 });
-            });
-        },
-    );
+                ui.horizontal(|ui| {
+                    if Button::new(props.label_state_filter_reset)
+                        .variant(ButtonVariant::Ghost)
+                        .show(ui, th)
+                        .clicked()
+                    {
+                        write_state_draft(ui.ctx(), HashSet::from([PortState::Listen]));
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if Button::new(props.label_state_filter_apply)
+                            .variant(ButtonVariant::Primary)
+                            .show(ui, th)
+                            .clicked()
+                        {
+                            // Apply = draft ∩ present (사라진 상태가 묻어 들어가지 않게 보정).
+                            let set: HashSet<PortState> = read_state_draft(ui.ctx())
+                                .into_iter()
+                                .filter(|s| present.contains(s))
+                                .collect();
+                            applied = Some(PortScannerAction::SetVisibleStates(set));
+                        }
+                    });
+                });
+            },
+        )
+    });
     let overlay_rect = ui
         .memory(|m| m.is_popup_open(popup_id))
         .then(|| ui.memory(|m| m.area_rect(popup_id)))
