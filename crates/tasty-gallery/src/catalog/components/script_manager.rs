@@ -18,6 +18,10 @@ const ROW_LINE_GAP: LogicalPx = LogicalPx(2.0);
 const CHIP_H: LogicalPx = LogicalPx(16.0);
 /// 캡션과 프레임 사이 간격(jsx 무대 열 `gap: 6`).
 const CAPTION_GAP: LogicalPx = LogicalPx(6.0);
+/// 프레임 안쪽 여백(jsx `ScriptManagerFrame` `padding: 18`, 간격 토큰 밖 값).
+const FRAME_PAD: LogicalPx = LogicalPx(18.0);
+/// 머리줄과 목록 사이 간격(jsx `ScriptManagerFrame` `gap: 14`, 간격 토큰 밖 값).
+const FRAME_GAP: LogicalPx = LogicalPx(14.0);
 
 /// RTL 클러스터에서 kbd 키캡이 역순으로 그려지는 것을 상쇄하려 combo 파트를 미리
 /// 뒤집는다(`"Ctrl+Shift+J"` → `"J+Shift+Ctrl"` → RTL 렌더 후 화면상 정순).
@@ -90,10 +94,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 fn frame(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
-    // 설정 창 내부 콘텐츠이므로 팝업 그림자를 추가하지 않는다.
-    kit::frame_card_flat(ui, theme, FRAME_MAX_W, kit::panel_fill(theme), |ui| {
-        kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
-            ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+    // 시안 프레임은 bg-panel · border-strong · radius · shadow-modal 이다.
+    kit::frame_card(ui, theme, FRAME_MAX_W, kit::panel_fill(theme), |ui| {
+        kit::region_sym(ui, FRAME_PAD, FRAME_PAD, |ui| {
+            ui.spacing_mut().item_spacing.y = FRAME_GAP.value();
             header(ui, theme);
             if empty {
                 empty_state(ui, theme);
