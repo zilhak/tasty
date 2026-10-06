@@ -593,32 +593,39 @@ fn draw_save_path_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
         ui.label(heading(theme, tr.t("image_viewer.save_path_title")));
         ui.add_space(theme.spacing_md.value());
 
-        ui.horizontal(|ui| {
-            let resp = ui.add(
-                egui::TextEdit::singleline(&mut doc.save_path_buffer)
-                    .desired_width(ui.available_width() - theme.spacing_lg.value() * 2.0)
-                    .font(egui::FontId::proportional(theme.font_size_body.value())),
-            );
-            if !resp.has_focus() && doc.save_path_buffer.is_empty() {
-                resp.request_focus();
-            }
-            if icon_button(
-                ui,
-                theme,
-                baked_icons::FOLDER_OPEN,
-                tr.t("image_viewer.browse"),
-                true,
-            )
-            .clicked()
-            {
-                let dialog = rfd::FileDialog::new()
-                    .add_filter("PNG", &["png"])
-                    .set_file_name("image.png");
-                if let Some(path) = dialog.save_file() {
-                    doc.save_path_buffer = path.to_string_lossy().to_string();
+        // 찾아보기 IconButton을 오른쪽 끝에 먼저 놓고 남은 폭을 경로 입력칸이 채운다.
+        // TextEdit 바깥 폭은 desired_width에 자기 여백을 더한 값이라 남은 폭을 직접 빼지 않는다.
+        let row = egui::vec2(ui.available_width(), ControlSize::Sm.height(theme));
+        ui.allocate_ui_with_layout(
+            row,
+            egui::Layout::right_to_left(egui::Align::Center),
+            |ui| {
+                if icon_button(
+                    ui,
+                    theme,
+                    baked_icons::FOLDER_OPEN,
+                    tr.t("image_viewer.browse"),
+                    true,
+                )
+                .clicked()
+                {
+                    let dialog = rfd::FileDialog::new()
+                        .add_filter("PNG", &["png"])
+                        .set_file_name("image.png");
+                    if let Some(path) = dialog.save_file() {
+                        doc.save_path_buffer = path.to_string_lossy().to_string();
+                    }
                 }
-            }
-        });
+                let resp = ui.add(
+                    egui::TextEdit::singleline(&mut doc.save_path_buffer)
+                        .desired_width(f32::INFINITY)
+                        .font(egui::FontId::proportional(theme.font_size_body.value())),
+                );
+                if !resp.has_focus() && doc.save_path_buffer.is_empty() {
+                    resp.request_focus();
+                }
+            },
+        );
 
         ui.add_space(theme.spacing_md.value());
         ui.horizontal(|ui| {
