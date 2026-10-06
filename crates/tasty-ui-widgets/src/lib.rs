@@ -32,6 +32,7 @@ mod mac_permissions;
 mod menu_item;
 mod move_source;
 mod multi_select;
+mod override_row;
 mod path_field;
 mod plugin_add;
 mod plugin_avatar;
@@ -103,6 +104,7 @@ pub use multi_select::{
     MultiSelectAllToggle, MultiSelectLabels, multi_select, multi_select_popup_id,
     multi_select_summary, popup_chrome_width,
 };
+pub use override_row::{OverrideCell, override_row, override_row_fits};
 pub use path_field::{PathField, PathFieldOutcome};
 pub use plugin_add::{
     PLUGIN_ADD_INSET, PluginAddBarClicks, PluginAddBarView, PluginManifestCardOutput,

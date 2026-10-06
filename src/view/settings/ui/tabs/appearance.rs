@@ -11,7 +11,8 @@ use tasty_type_appearance::theme::{
 };
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, ControlSize, HelpHint, Input, TooltipPlacement, vspace,
+    Button, ButtonVariant, ControlSize, HelpHint, Input, OverrideCell, TooltipPlacement,
+    override_row, vspace,
 };
 
 /// plugin ID와 page ID를 함께 비교해 다른 plugin의 같은 이름 페이지와 구분한다.
@@ -291,6 +292,7 @@ fn draw_appearance_general(
         let preview_colors = crate::theme::theme().surface("terminal").clone();
         draw_font_preview(
             &mut columns[1],
+            PreviewLayout::Stacked,
             &preview_eff,
             &preview_colors,
             &settings.appearance,
@@ -994,28 +996,28 @@ fn draw_surface_font_section(
     );
     vspace(ui, th.spacing_sm);
 
-    ui.columns(2, |columns| {
-        let default_font = settings.appearance.default_font.clone();
-        font_override_grid(
-            &mut columns[0],
-            target.override_mut(&mut settings.appearance),
-            &default_font,
-            font_families,
-            font_filter,
-            target.salt(),
-        );
-
-        let eff = target.effective(&settings.appearance);
-        let colors = crate::theme::theme().surface(target.surface_id()).clone();
-        draw_font_preview(
-            &mut columns[1],
-            &eff,
-            &colors,
-            &settings.appearance,
-            target.salt(),
-            preview_font_loaded,
-        );
-    });
+    // 미리보기는 창 폭과 관계없이 격자 아래에 둔다 — 옆 열이 없으니 좁은 폭에서도 겹치지 않는다.
+    let default_font = settings.appearance.default_font.clone();
+    font_override_grid(
+        ui,
+        target.override_mut(&mut settings.appearance),
+        &default_font,
+        font_families,
+        font_filter,
+        target.salt(),
+    );
+    vspace(ui, th.spacing_lg);
+    let eff = target.effective(&settings.appearance);
+    let colors = crate::theme::theme().surface(target.surface_id()).clone();
+    draw_font_preview(
+        ui,
+        PreviewLayout::SideBySide,
+        &eff,
+        &colors,
+        &settings.appearance,
+        target.salt(),
+        preview_font_loaded,
+    );
 }
 
 // Colors 화면은 각 색 필드의 override를 편집한다. None이면 테마 기본값을 따른다.
@@ -1616,7 +1618,7 @@ fn font_family_picker(
     ui.add_enabled_ui(enabled, |ui| {
         egui::ComboBox::from_id_salt(combo_id)
             .selected_text(&display_name)
-            .width(200.0)
+            .width(th.field_width_lg.value())
             .height(300.0)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .show_ui(ui, |ui| {
@@ -1729,9 +1731,24 @@ fn font_settings_grid(
                 t("settings.appearance.font_scale_mode_label"),
                 t("settings.appearance.font_scale_mode_tooltip"),
             );
-            font_scale_mode_combo(ui, &mut font.font_scale_mode, salt, true);
+            font_scale_mode_combo(ui, &mut font.font_scale_mode, salt, true, None);
             ui.end_row();
         });
+}
+
+/// override 행 라벨 — 본문 크기 `text-secondary`, 설명이 있으면 HelpHint 를 붙인다.
+fn override_label(ui: &mut egui::Ui, th: &crate::theme::Theme, label: &str, hint: Option<&str>) {
+    ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
+    ui.label(
+        egui::RichText::new(label)
+            .size(th.font_size_body.value())
+            .color(th.text_secondary()),
+    );
+    if let Some(hint) = hint {
+        HelpHint::new(hint)
+            .placement(TooltipPlacement::Bottom)
+            .show(ui, th);
+    }
 }
 
 /// Edit a `FontOverride` against a `FontSettings` default. Each row has a
@@ -1747,126 +1764,175 @@ fn font_override_grid(
     salt: &str,
 ) {
     let th = crate::theme::theme();
-    egui::Grid::new(format!("font_override_grid_{}", salt))
-        .num_columns(3)
-        .spacing([8.0, 8.0])
-        .show(ui, |ui| {
-            // ── Font family ──
-            ui.label(t("settings.appearance.font_family_label"));
-            override_checkbox(
-                ui,
-                &mut ov.font_family,
-                || default.font_family.clone(),
-                salt,
-            );
-            let mut family_value = ov
-                .font_family
-                .clone()
-                .unwrap_or_else(|| default.font_family.clone());
-            font_family_picker(
-                ui,
-                &mut family_value,
-                font_families,
-                font_filter,
-                salt,
-                ov.font_family.is_some(),
-            );
-            if let Some(stored) = ov.font_family.as_mut() {
-                *stored = family_value;
-            }
-            ui.end_row();
+    let use_default = t("settings.appearance.font.use_default_label");
+    ui.push_id(("font_override_grid", salt), |ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
 
-            // ── Custom font path ──
-            ui.label(t("settings.appearance.custom_font_label"));
-            override_checkbox(
-                ui,
-                &mut ov.custom_font_path,
-                || default.custom_font_path.clone(),
-                salt,
-            );
-            let mut path_value = ov
-                .custom_font_path
-                .clone()
-                .unwrap_or_else(|| default.custom_font_path.clone());
-            // 폭은 이전 egui 한 줄 입력과 같다. 기본 폭을 쓰되 칸의 가용 폭을 넘지 않는다.
-            let path_width = ui.spacing().text_edit_width.min(ui.available_width());
-            Input::new()
-                .enabled(ov.custom_font_path.is_some())
-                .width(path_width)
-                .show(ui, &th, &mut path_value);
-            if let Some(stored) = ov.custom_font_path.as_mut() {
-                *stored = path_value;
-            }
-            ui.end_row();
+        // ── Font family ──
+        override_row(
+            ui,
+            &th,
+            th.field_width_lg,
+            use_default,
+            |ui, cell| match cell {
+                OverrideCell::Label => {
+                    override_label(ui, &th, t("settings.appearance.font_family_label"), None)
+                }
+                OverrideCell::Control => {
+                    let mut family_value = ov
+                        .font_family
+                        .clone()
+                        .unwrap_or_else(|| default.font_family.clone());
+                    font_family_picker(
+                        ui,
+                        &mut family_value,
+                        font_families,
+                        font_filter,
+                        salt,
+                        ov.font_family.is_some(),
+                    );
+                    if let Some(stored) = ov.font_family.as_mut() {
+                        *stored = family_value;
+                    }
+                }
+                OverrideCell::UseDefault => {
+                    override_checkbox(ui, &mut ov.font_family, || default.font_family.clone())
+                }
+            },
+        );
 
-            // ── Font size ──
-            ui.label(t("settings.appearance.font_size_label"));
-            override_checkbox(ui, &mut ov.font_size, || default.font_size, salt);
-            let mut size_value = ov.font_size.unwrap_or(default.font_size) as f64;
-            super::number::number_field(
-                ui,
-                &th,
-                ("appearance_override_font_size", salt),
-                &font_size_spec().enabled(ov.font_size.is_some()),
-                &mut size_value,
-            );
-            if let Some(stored) = ov.font_size.as_mut() {
-                *stored = size_value as f32;
-            }
-            ui.end_row();
+        // ── Custom font path ──
+        override_row(
+            ui,
+            &th,
+            th.field_width_lg,
+            use_default,
+            |ui, cell| match cell {
+                OverrideCell::Label => {
+                    override_label(ui, &th, t("settings.appearance.custom_font_label"), None)
+                }
+                OverrideCell::Control => {
+                    let mut path_value = ov
+                        .custom_font_path
+                        .clone()
+                        .unwrap_or_else(|| default.custom_font_path.clone());
+                    Input::new()
+                        .mono(true)
+                        .enabled(ov.custom_font_path.is_some())
+                        .width(th.field_width_lg.value())
+                        .show(ui, &th, &mut path_value);
+                    if let Some(stored) = ov.custom_font_path.as_mut() {
+                        *stored = path_value;
+                    }
+                }
+                OverrideCell::UseDefault => override_checkbox(ui, &mut ov.custom_font_path, || {
+                    default.custom_font_path.clone()
+                }),
+            },
+        );
 
-            // ── Line height ──
-            label_with_tooltip(
-                ui,
-                t("settings.appearance.line_height_label"),
-                t("settings.appearance.line_height_tooltip"),
-            );
-            override_checkbox(ui, &mut ov.line_height, || default.line_height, salt);
-            let mut lh_value = ov.line_height.unwrap_or(default.line_height) as f64;
-            super::number::number_field(
-                ui,
-                &th,
-                ("appearance_override_line_height", salt),
-                &line_height_spec().enabled(ov.line_height.is_some()),
-                &mut lh_value,
-            );
-            if let Some(stored) = ov.line_height.as_mut() {
-                *stored = lh_value as f32;
-            }
-            ui.end_row();
+        // ── Font size ──
+        override_row(
+            ui,
+            &th,
+            th.field_width_xs,
+            use_default,
+            |ui, cell| match cell {
+                OverrideCell::Label => {
+                    override_label(ui, &th, t("settings.appearance.font_size_label"), None)
+                }
+                OverrideCell::Control => {
+                    let mut size_value = ov.font_size.unwrap_or(default.font_size) as f64;
+                    super::number::number_field(
+                        ui,
+                        &th,
+                        ("appearance_override_font_size", salt),
+                        &font_size_spec().enabled(ov.font_size.is_some()),
+                        &mut size_value,
+                    );
+                    if let Some(stored) = ov.font_size.as_mut() {
+                        *stored = size_value as f32;
+                    }
+                }
+                OverrideCell::UseDefault => {
+                    override_checkbox(ui, &mut ov.font_size, || default.font_size)
+                }
+            },
+        );
 
-            // ── Font scale mode ──
-            label_with_tooltip(
-                ui,
-                t("settings.appearance.font_scale_mode_label"),
-                t("settings.appearance.font_scale_mode_tooltip"),
-            );
-            override_checkbox(
-                ui,
-                &mut ov.font_scale_mode,
-                || default.font_scale_mode.clone(),
-                salt,
-            );
-            let mut mode_value = ov
-                .font_scale_mode
-                .clone()
-                .unwrap_or_else(|| default.font_scale_mode.clone());
-            font_scale_mode_combo(ui, &mut mode_value, salt, ov.font_scale_mode.is_some());
-            if let Some(stored) = ov.font_scale_mode.as_mut() {
-                *stored = mode_value;
-            }
-            ui.end_row();
-        });
+        // ── Line height ──
+        override_row(
+            ui,
+            &th,
+            th.field_width_xs,
+            use_default,
+            |ui, cell| match cell {
+                OverrideCell::Label => override_label(
+                    ui,
+                    &th,
+                    t("settings.appearance.line_height_label"),
+                    Some(t("settings.appearance.line_height_tooltip")),
+                ),
+                OverrideCell::Control => {
+                    let mut lh_value = ov.line_height.unwrap_or(default.line_height) as f64;
+                    super::number::number_field(
+                        ui,
+                        &th,
+                        ("appearance_override_line_height", salt),
+                        &line_height_spec().enabled(ov.line_height.is_some()),
+                        &mut lh_value,
+                    );
+                    if let Some(stored) = ov.line_height.as_mut() {
+                        *stored = lh_value as f32;
+                    }
+                }
+                OverrideCell::UseDefault => {
+                    override_checkbox(ui, &mut ov.line_height, || default.line_height)
+                }
+            },
+        );
+
+        // ── Font scale mode ──
+        override_row(
+            ui,
+            &th,
+            th.field_width_md,
+            use_default,
+            |ui, cell| match cell {
+                OverrideCell::Label => override_label(
+                    ui,
+                    &th,
+                    t("settings.appearance.font_scale_mode_label"),
+                    Some(t("settings.appearance.font_scale_mode_tooltip")),
+                ),
+                OverrideCell::Control => {
+                    let mut mode_value = ov
+                        .font_scale_mode
+                        .clone()
+                        .unwrap_or_else(|| default.font_scale_mode.clone());
+                    font_scale_mode_combo(
+                        ui,
+                        &mut mode_value,
+                        salt,
+                        ov.font_scale_mode.is_some(),
+                        Some(th.field_width_md.value()),
+                    );
+                    if let Some(stored) = ov.font_scale_mode.as_mut() {
+                        *stored = mode_value;
+                    }
+                }
+                OverrideCell::UseDefault => override_checkbox(ui, &mut ov.font_scale_mode, || {
+                    default.font_scale_mode.clone()
+                }),
+            },
+        );
+    });
 }
 
 /// "Use default" checkbox: checked when override is None.
 /// Toggling on → set to None; toggling off → seed with the current default.
-fn override_checkbox<T, F>(
-    ui: &mut egui::Ui,
-    slot: &mut Option<T>,
-    default_provider: F,
-    _salt: &str,
-) where
+fn override_checkbox<T, F>(ui: &mut egui::Ui, slot: &mut Option<T>, default_provider: F)
+where
     F: FnOnce() -> T,
 {
     let th = crate::theme::theme();
@@ -1881,7 +1947,14 @@ fn override_checkbox<T, F>(
     }
 }
 
-fn font_scale_mode_combo(ui: &mut egui::Ui, value: &mut String, salt: &str, enabled: bool) {
+/// `width` 가 없으면 이전 egui ComboBox 의 기본 폭을 쓴다.
+fn font_scale_mode_combo(
+    ui: &mut egui::Ui,
+    value: &mut String,
+    salt: &str,
+    enabled: bool,
+    width: Option<f32>,
+) {
     const MODES: [&str; 2] = ["auto", "fixed"];
     let th = crate::theme::theme();
     let labels = [
@@ -1889,12 +1962,19 @@ fn font_scale_mode_combo(ui: &mut egui::Ui, value: &mut String, salt: &str, enab
         t("settings.appearance.font_scale_mode_fixed"),
     ];
     let mut idx = usize::from(value.as_str() != "auto");
-    // 폭은 이전 egui ComboBox의 기본 폭을 그대로 쓴다.
-    let width = ui.spacing().combo_width;
+    let width = width.unwrap_or(ui.spacing().combo_width);
     let salt = format!("font_scale_mode_{salt}");
     if tasty_ui_widgets::select(ui, &th, &salt, &mut idx, &labels, width, enabled) {
         *value = MODES[idx].to_string();
     }
+}
+
+/// 미리보기 두 칸(Focused · Unfocused)의 배치. 글꼴 override 는 격자 아래에 나란히 두고,
+/// 기본 글꼴 화면은 옆 열 안에 위아래로 쌓는다.
+#[derive(Clone, Copy)]
+enum PreviewLayout {
+    SideBySide,
+    Stacked,
 }
 
 /// Draw a 2-row colored preview block for an `EffectiveFont`. `slot` is a
@@ -1902,6 +1982,7 @@ fn font_scale_mode_combo(ui: &mut egui::Ui, value: &mut String, salt: &str, enab
 /// font family slot name and the cache key in `preview_font_loaded`.
 fn draw_font_preview(
     ui: &mut egui::Ui,
+    layout: PreviewLayout,
     eff: &EffectiveFont,
     colors: &SurfaceTheme,
     appearance: &crate::settings::AppearanceSettings,
@@ -1909,8 +1990,20 @@ fn draw_font_preview(
     preview_font_loaded: &mut HashMap<String, String>,
 ) {
     let th = crate::theme::theme();
-    ui.heading(t("settings.appearance.preview_heading"));
-    vspace(ui, th.spacing_xs);
+    match layout {
+        PreviewLayout::SideBySide => {
+            ui.label(
+                egui::RichText::new(t("settings.appearance.preview_heading"))
+                    .size(th.font_size_caption.value())
+                    .color(th.text_muted()),
+            );
+            vspace(ui, th.spacing_sm);
+        }
+        PreviewLayout::Stacked => {
+            ui.heading(t("settings.appearance.preview_heading"));
+            vspace(ui, th.spacing_xs);
+        }
+    }
 
     let slot_name = format!("preview_{}", slot);
     let display_family = if eff.font_family.is_empty() {
@@ -1971,62 +2064,71 @@ fn draw_font_preview(
     let padding = 8.0;
     let block_height = line_height * sample_lines.len() as f32 + padding * 2.0;
 
-    // ── Focused preview ──
-    ui.label(
-        egui::RichText::new(t("settings.appearance.preview_focused"))
-            .size(th.font_size_caption.value())
-            .color(th.text_muted()),
-    );
-    let (focused_rect, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), block_height),
-        egui::Sense::hover(),
-    );
-    ui.painter().rect_filled(focused_rect, 2.0, focused_bg32);
-    for (i, line) in sample_lines.iter().enumerate() {
-        let pos = focused_rect.min + egui::vec2(padding, padding + line_height * i as f32);
-        ui.painter().text(
-            pos,
-            egui::Align2::LEFT_TOP,
-            line,
-            preview_font.clone(),
-            fg32,
+    let blocks = [
+        ("settings.appearance.preview_focused", focused_bg32),
+        ("settings.appearance.preview_unfocused", unfocused_bg32),
+    ];
+    let block = |ui: &mut egui::Ui, (label_key, bg): (&str, egui::Color32), w: f32| {
+        ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
+        ui.label(
+            egui::RichText::new(t(label_key))
+                .size(th.font_size_caption.value())
+                .color(th.text_muted()),
         );
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(w, block_height), egui::Sense::hover());
+        ui.painter().rect_filled(rect, 2.0, bg);
+        for (i, line) in sample_lines.iter().enumerate() {
+            let pos = rect.min + egui::vec2(padding, padding + line_height * i as f32);
+            ui.painter().text(
+                pos,
+                egui::Align2::LEFT_TOP,
+                line,
+                preview_font.clone(),
+                fg32,
+            );
+        }
+    };
+    match layout {
+        // Focused · Unfocused 를 나란히 둔다. 두 칸은 남은 폭을 반씩 나눈다.
+        // 한 칸이 필드 폭 lg 보다 좁아지면 위아래로 쌓는다.
+        PreviewLayout::SideBySide
+            if (ui.available_width() - th.spacing_md.value()) / 2.0
+                >= th.field_width_lg.value() =>
+        {
+            let gap = th.spacing_md.value();
+            let half = (ui.available_width() - gap) / 2.0;
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                for b in blocks {
+                    ui.vertical(|ui| {
+                        ui.set_width(half);
+                        block(ui, b, half);
+                    });
+                }
+            });
+        }
+        PreviewLayout::SideBySide | PreviewLayout::Stacked => {
+            for (i, b) in blocks.into_iter().enumerate() {
+                if i > 0 {
+                    vspace(ui, th.spacing_sm);
+                }
+                let w = ui.available_width();
+                block(ui, b, w);
+            }
+        }
     }
 
     vspace(ui, th.spacing_sm);
-
-    // ── Unfocused preview ──
-    ui.label(
-        egui::RichText::new(t("settings.appearance.preview_unfocused"))
-            .size(th.font_size_caption.value())
-            .color(th.text_muted()),
-    );
-    let (unfocused_rect, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), block_height),
-        egui::Sense::hover(),
-    );
-    ui.painter()
-        .rect_filled(unfocused_rect, 2.0, unfocused_bg32);
-    for (i, line) in sample_lines.iter().enumerate() {
-        let pos = unfocused_rect.min + egui::vec2(padding, padding + line_height * i as f32);
-        ui.painter().text(
-            pos,
-            egui::Align2::LEFT_TOP,
-            line,
-            preview_font.clone(),
-            fg32,
-        );
+    let mut info = egui::RichText::new(crate::i18n::t_fmt(
+        "settings.appearance.preview_font_info",
+        &format!("{} / {:.1}px", display_family, font_size),
+    ))
+    .size(th.font_size_caption.value())
+    .color(th.text_muted());
+    if matches!(layout, PreviewLayout::SideBySide) {
+        info = info.monospace();
     }
-
-    vspace(ui, th.spacing_sm);
-    ui.label(
-        egui::RichText::new(crate::i18n::t_fmt(
-            "settings.appearance.preview_font_info",
-            &format!("{} / {:.1}px", display_family, font_size),
-        ))
-        .size(th.font_size_caption.value())
-        .color(th.text_muted()),
-    );
+    ui.label(info);
 }
 
 #[cfg(test)]

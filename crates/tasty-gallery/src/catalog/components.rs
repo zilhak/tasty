@@ -70,6 +70,7 @@ pub mod search_bar;
 pub mod segmented;
 pub mod settings;
 pub mod settings_appearance_colors;
+pub mod settings_font_override;
 pub mod settings_handler;
 pub mod settings_macos_permissions;
 pub mod settings_number;

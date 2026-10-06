@@ -1353,6 +1353,14 @@ pub fn pages() -> Vec<Page> {
                             components::settings_appearance_colors::draw_header,
                         ),
                         spec(
+                            "settings-appearance-font-override",
+                            "Appearance › Font override — rows + preview below",
+                            Some(
+                                "label settings-label-width · control at its field width · trailing Use default · preview below the grid",
+                            ),
+                            components::settings_font_override::draw,
+                        ),
+                        spec(
                             "settings-file-extension-mapping",
                             "Handler › File Extension Mapping",
                             Some(
