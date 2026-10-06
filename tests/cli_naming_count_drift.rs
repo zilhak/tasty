@@ -6,7 +6,7 @@ use tasty_ipc::method_meta::METHOD_TABLE;
 
 /// 메서드 표 변경 시 검토할 namespace별 개수.
 const EXPECTED: &[(&str, usize)] = &[
-    ("agent", 35),
+    ("agent", 37),
     ("approval", 9),
     ("attach", 6),
     ("banner", 2),
