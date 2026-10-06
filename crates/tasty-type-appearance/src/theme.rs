@@ -2091,6 +2091,17 @@ mod tests {
         }
     }
 
+    /// 탭 밑줄·목록 선택 막대·워크스페이스 활성 막대는 selection-edge-width의 alias다.
+    /// 별도 필드를 읽으면 selection-edge 값이 바뀔 때 혼자 남는다.
+    #[test]
+    fn selection_edge_aliases_read_the_selection_edge_field() {
+        let mut t = Theme::with_colors_and_zoom(dummy_colors(), false, 1.0);
+        t.selection_edge_width = LogicalPx(5.0);
+        assert_eq!(t.tab_indicator_width(), LogicalPx(5.0));
+        assert_eq!(t.listctrl_selected_bar_width(), LogicalPx(5.0));
+        assert_eq!(t.workspace_row_active_bar_width(), LogicalPx(5.0));
+    }
+
     #[test]
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: 반복 assert_eq 테스트 — clippy 과대계상, rca cognitive 0
     fn zoom_one_preserves_sizing() {
