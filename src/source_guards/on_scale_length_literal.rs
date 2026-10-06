@@ -166,7 +166,8 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 역할 토큰이 없다.
         // 원격 도구 Passkeys 예제의 경고 배지 높이 16은 디자인 `WarnBadge`의 height 16이며 역할 토큰이 없다.
         // transfer 예제의 여백 상수는 본체와 같은 transfer-* 토큰으로 옮겨 집계에서 빠졌다.
-        141,
+        // HTML 로드 실패 예제의 surface 높이 220은 디자인 `HtmlSurfaceG`의 `height={220}`이며 역할 토큰이 없다.
+        142,
         "갤러리 specimen은 배율 검사에서 제외돼도 스케일 검사는 받는다(ADR-0039). 이름 붙은 치수와 인라인 값, 전시 목적을 별도로 분류한다.",
     ),
     (
@@ -626,7 +627,7 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
     );
     assert_eq!(
         (named_cited, named_plain, inline_cited, inline_plain),
-        (57, 76, 0, 13),
+        (58, 76, 0, 13),
         "갤러리 후보의 (이름 있음/없음, 디자인 언급 있음/없음) 분류 수가 바뀌었다. 해당 선언과 주석을 확인하고 기록을 갱신한다."
     );
 }

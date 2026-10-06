@@ -19,6 +19,8 @@ const SURFACE_STAGE_H: LogicalPx = LogicalPx(260.0);
 const NARROW_SURFACE_W: LogicalPx = LogicalPx(360.0);
 /// 좁은 surface 예제의 높이. 두 줄로 늘어난 배너 아래에도 페이지 자리가 남도록 디자인이 정했다.
 const NARROW_SURFACE_H: LogicalPx = LogicalPx(300.0);
+/// 로드 실패 예제 surface의 높이. 디자인 `HtmlSurfaceG`의 `height={220}`이다.
+const FAILED_SURFACE_H: LogicalPx = LogicalPx(220.0);
 /// 마커 예제 surface의 폭. 디자인은 `--tasty-size-240`을 쓴다.
 const MARKER_SURFACE_W: LogicalPx = LogicalPx(240.0);
 /// 마커 예제 surface의 높이. 디자인 `HtmlSurfaceG`의 `height={120}`이며 배너가 없어 탭 스트립과 페이지 윗부분만 보인다.
@@ -45,6 +47,9 @@ const RELOADING: &str = "banner.html_script.reloading";
 const ACTION_LOADING: &str = "banner.html_script.action_loading";
 const MARKER_BLOCKED: &str = "banner.html_script.marker_blocked";
 const MARKER_ALLOWED: &str = "banner.html_script.marker_allowed";
+const LOAD_FAILED: &str = "webview.error";
+/// 실패 예제의 URL. 디자인 `HsFailed`의 기본값이다.
+const FAILED_URL: &str = "file:///Users/me/report.html";
 
 fn view(state: HtmlScriptBannerState, remote: bool, hover: bool) -> HtmlScriptBannerView<'static> {
     HtmlScriptBannerView {
@@ -231,13 +236,62 @@ fn page_stand_in(ui: &egui::Ui, theme: &Theme, rect: egui::Rect) {
     }
 }
 
+/// 로드 실패 상태(디자인 `HsFailed`). 본체 webview chrome의 실패 상태와 같은 배치다.
+fn failed_stand_in(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
+    let pad = theme.spacing_md.value();
+    let gap = theme.spacing_sm.value();
+    let inner = rect.shrink(pad);
+    let glyph = theme.icon_glyph_size_md.value();
+    let painter = ui.painter_at(rect);
+    let title = painter.layout_no_wrap(
+        t(LOAD_FAILED).to_owned(),
+        egui::FontId::proportional(theme.font_size_body.value()),
+        theme.accent_danger().to_egui(),
+    );
+    let mut url_job = egui::text::LayoutJob::simple_singleline(
+        FAILED_URL.to_owned(),
+        egui::FontId::monospace(theme.font_size_caption.value()),
+        theme.text_disabled().to_egui(),
+    );
+    url_job.wrap.max_width = inner.width();
+    url_job.wrap.max_rows = 1;
+    url_job.wrap.break_anywhere = true;
+    let url = ui.fonts(|f| f.layout_job(url_job));
+    let block_h = glyph + gap + title.size().y + gap + url.size().y;
+    let mut y = inner.center().y - block_h / 2.0;
+    let cx = inner.center().x;
+    tasty_icons::ALERT_CIRCLE
+        .image(glyph, theme.accent_danger().to_egui())
+        .paint_at(
+            ui,
+            egui::Rect::from_min_size(egui::pos2(cx - glyph / 2.0, y), egui::vec2(glyph, glyph)),
+        );
+    y += glyph + gap;
+    let title_w = title.size().x;
+    let title_h = title.size().y;
+    painter.galley(
+        egui::pos2(cx - title_w / 2.0, y),
+        title,
+        theme.accent_danger().to_egui(),
+    );
+    y += title_h + gap;
+    let url_w = url.size().x;
+    painter.galley(
+        egui::pos2(cx - url_w / 2.0, y),
+        url,
+        theme.text_disabled().to_egui(),
+    );
+}
+
 /// HTML surface 하나(디자인 `HtmlSurfaceG`): 탭 스트립 → inset 배너 → 줄어든 WebView 자리.
+/// `failed`면 페이지 자리에 로드 실패 상태를 그린다.
 fn html_surface(
     ui: &mut egui::Ui,
     theme: &Theme,
     rect: egui::Rect,
     banner: Option<HtmlScriptBannerView<'_>>,
     marker: Option<(HtmlScriptMarkerKind, &str)>,
+    failed: bool,
 ) {
     ui.painter()
         .rect_filled(rect, 0.0, theme.bg_panel().to_egui());
@@ -253,7 +307,11 @@ fn html_surface(
         }
         None => scope,
     };
-    page_stand_in(ui, theme, page);
+    if failed {
+        failed_stand_in(ui, theme, page);
+    } else {
+        page_stand_in(ui, theme, page);
+    }
 }
 
 /// 옆 터미널 surface(디자인 `TermSurfaceG`). 배너 스코프가 surface라 여기에는 배너가 없다.
@@ -327,6 +385,7 @@ pub fn draw_placement(ui: &mut egui::Ui, theme: &Theme) {
                                 left,
                                 Some(view(HtmlScriptBannerState::Blocked, false, false)),
                                 None,
+                                false,
                             );
                             term_surface(ui, th, right);
                         },
@@ -415,6 +474,7 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
                             inner,
                             Some(view(HtmlScriptBannerState::Blocked, false, false)),
                             None,
+                            false,
                         );
                     },
                 );
@@ -578,6 +638,7 @@ pub fn draw_markers(ui: &mut egui::Ui, theme: &Theme) {
                                                     inner,
                                                     None,
                                                     Some((kind, tip)),
+                                                    false,
                                                 );
                                             },
                                         );
@@ -628,6 +689,98 @@ pub fn draw_markers(ui: &mut egui::Ui, theme: &Theme) {
         "Firing: only when the user views the document (opened it, or selected the surface). \
          Agent/IPC opens, session restore and background loads keep a \"has scripts\" flag and \
          show the banner the first time the user looks at that surface.",
+    );
+}
+
+/// Spec — 로드 실패. 테마마다 현재(배너·표지가 실패 위에 남음)와 결정(실패 상태만)을 나란히 보인다.
+pub fn draw_load_failed(ui: &mut egui::Ui, theme: &Theme) {
+    let latte = crate::host_shell::latte_theme();
+    let mocha = mocha();
+    spec::stage(ui, theme, StageVariant::Tight, |ui| {
+        app_backdrop(ui, theme, |ui| {
+            // 테마 패널 둘은 한 줄에 들어가지 않아 시안의 flex-wrap처럼 다음 줄로 내린다.
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
+                for (name, th) in [("Mocha", &mocha), ("Latte", &latte)] {
+                    egui::Frame::new()
+                        .fill(th.bg_app().to_egui())
+                        .stroke(egui::Stroke::new(
+                            th.border_width.value(),
+                            th.border_default().to_egui(),
+                        ))
+                        .corner_radius(th.corner_radius.value())
+                        .inner_margin(egui::Margin::same(th.spacing_md.value() as i8))
+                        .show(ui, |ui| {
+                            ui.horizontal_top(|ui| {
+                                ui.spacing_mut().item_spacing.x = th.spacing_md.value();
+                                for (cap, stale) in [
+                                    ("current — stale banner over the failure (wrong)", true),
+                                    ("decided — failure state only", false),
+                                ] {
+                                    ui.vertical(|ui| {
+                                        ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
+                                        caption(ui, th, &format!("{name} · {cap}"));
+                                        framed(
+                                            ui,
+                                            th,
+                                            egui::vec2(
+                                                NARROW_SURFACE_W.value(),
+                                                FAILED_SURFACE_H.value(),
+                                            ),
+                                            |ui, inner| {
+                                                html_surface(
+                                                    ui,
+                                                    th,
+                                                    inner,
+                                                    stale.then(|| {
+                                                        view(
+                                                            HtmlScriptBannerState::Blocked,
+                                                            false,
+                                                            false,
+                                                        )
+                                                    }),
+                                                    stale.then(|| {
+                                                        (
+                                                            HtmlScriptMarkerKind::Blocked,
+                                                            t(MARKER_BLOCKED),
+                                                        )
+                                                    }),
+                                                    true,
+                                                );
+                                            },
+                                        );
+                                    });
+                                }
+                            });
+                        });
+                }
+            });
+        });
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("banner", "removed while failed"),
+            ("tab marker", "lock / script glyph removed while failed"),
+            (
+                "failure state",
+                "alertCircle md + Failed to load (accent-danger) · URL mono caption text-disabled",
+            ),
+            (
+                "reload commits",
+                "banner + marker re-derived from the new document",
+            ),
+        ],
+        &[
+            TokenChip::new(
+                "accent-danger",
+                "glyph + title",
+                theme.accent_danger().to_egui(),
+            ),
+            TokenChip::new("text-disabled", "URL", theme.text_disabled().to_egui()),
+        ],
     );
 }
 
@@ -835,6 +988,7 @@ mod tests {
             RELOADING,
             MARKER_BLOCKED,
             MARKER_ALLOWED,
+            LOAD_FAILED,
         ] {
             let text = t(key);
             assert_ne!(text, key, "{key} is missing from lang/en.toml");

@@ -415,6 +415,9 @@ impl PlatformWebView {
                     "WebView surface {surface_id}: WebKit web process terminated ({reason:?})"
                 );
                 nav.set(NavState::Failed);
+                if let Some(gate) = gate.borrow().as_ref() {
+                    gate.failed();
+                }
                 if let Some(js) = gate.borrow().as_ref().and_then(|g| g.finished()) {
                     set_js(wv, js);
                 }
@@ -422,12 +425,16 @@ impl PlatformWebView {
         }
         {
             let nav = nav_state.clone();
+            let gate = script_gate.clone();
             webview.connect_load_failed(move |_wv, _event, failing_uri, error| {
                 tracing::warn!(
                     "WebView surface {surface_id}: WebKitGTK load-failed \
                      uri={failing_uri} err={error}"
                 );
                 nav.set(NavState::Failed);
+                if let Some(gate) = gate.borrow().as_ref() {
+                    gate.failed();
+                }
                 true // 기본 에러 페이지 억제(host error chrome 사용)
             });
         }

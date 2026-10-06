@@ -1,4 +1,4 @@
-<!-- source-hash: 485df18198a7 -->
+<!-- source-hash: 240c587d99ba -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -133,6 +133,7 @@ With **Sandbox scripts** on, viewing a document that contains scripts shows a **
 - While the view is loading a new document, **Allow for this document** can't be pressed. Hovering it shows **Available when the document finishes loading**. When a document you opened yourself (a link, going back, or reloading) has scripts, the button comes back; when it has none, the notice goes away. A document an agent opened shows the notice when you look at that tab again.
 - **×** at the top right of the notice — closes the notice without allowing. A lock icon stays after the tab title; press the lock to show the notice again. Pressing the lock does not switch tabs.
 - A document opened by an agent, or reopened by session restore, shows the notice when a person looks at that tab. Agents cannot allow scripts; they can only query the state.
+- While **Failed to load** is shown because the document could not be loaded, the notice and the tab's lock or script icon are removed. When a reloaded document opens, they are decided again for that document.
 
 ```sh
 tasty html open --surface 5 ./dist/index.html

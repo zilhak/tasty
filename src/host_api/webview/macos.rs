@@ -60,6 +60,23 @@ impl NavDelegateIvars {
         }
     }
 
+    /// 로드가 실패했다. 게이트가 시작한 마지막 로드의 실패일 때만 다음 commit까지 배너와 탭
+    /// 표지를 내리고 로드를 끝낸다. 앞 로드가 늦게 취소된 실패는 새 로드를 건드리지 않는다.
+    fn gate_navigation_failed(&self, navigation: Option<&WKNavigation>) {
+        let current = navigation_key(self.gate_navigation.borrow().as_deref());
+        if is_current_load(current, navigation_key(navigation)) {
+            self.gate_failed();
+        }
+        self.gate_navigation_ended(navigation);
+    }
+
+    /// 로드가 실패했다. 다음 commit까지 배너와 탭 표지를 내린다.
+    fn gate_failed(&self) {
+        if let Some(gate) = self.script_gate.borrow().as_ref() {
+            gate.failed();
+        }
+    }
+
     /// 로드가 commit 없이 끝났을 때 게이트 상태를 되돌린다. 화면 문서의 JS는 탐색 단위라 그대로다.
     /// provisional 시작 없이 끝난 로드의 대기 표시도 내려, 뒤에 오는 무관한 provisional 시작을
     /// 게이트 로드의 세대로 기록하지 않게 한다.
@@ -139,7 +156,7 @@ define_class!(
                 error.localizedDescription()
             );
             self.ivars().nav_state.set(NavState::Failed);
-            self.ivars().gate_navigation_ended(navigation);
+            self.ivars().gate_navigation_failed(navigation);
         }
 
         #[unsafe(method(webView:didFailProvisionalNavigation:withError:))]
@@ -155,7 +172,7 @@ define_class!(
                 error.localizedDescription()
             );
             self.ivars().nav_state.set(NavState::Failed);
-            self.ivars().gate_navigation_ended(navigation);
+            self.ivars().gate_navigation_failed(navigation);
         }
 
         /// web content process가 끝나면 Linux처럼 게이트 로드를 끝낸다(ADR-0053, 실기 미측정).

@@ -498,7 +498,7 @@ Section 1개(6 Spec) — `fullscreen-stage` 다음.
 
 ### HTML script notice (inset 배너)
 
-디자인 `gallery/overlays-banners.jsx`의 `#htmlscript` Section(4 Spec)과
+디자인 `gallery/overlays-banners.jsx`의 `#htmlscript` Section(5 Spec)과
 `ui_kits/terminal/overlays/html_script_banner.jsx` ↔ 갤러리
 `crates/tasty-gallery/src/catalog/widgets/html_script_banner.rs` (Overlays › `HTML script notice — the first
 inset banner`, `banner` Section 다음). 배너와 마커는 본체가 호출할 공용 함수를 그대로 쓰고,
@@ -512,7 +512,8 @@ inset banner`, `banner` Section 다음). 배너와 마커는 본체가 호출할
 | `HsTab` | `tab` | `tab_height` · padding `spacing_sm` · gap `spacing_xs` · caption 라벨 · 활성 bg-panel + 하단 `tab_indicator_width` accent-primary · 오른쪽 separator |
 | `HsPage` | `page_stand_in` | 터미널 focused bg, mono micro 라벨 + surface-raised 막대 3개 |
 | `TermSurfaceG` | `term_surface` | 터미널 unfocused bg, 배너 없음 |
-| Spec 1 · 2 · 3 · 4 | `draw_placement` · `draw_states` · `draw_banner_button` · `draw_markers` | Spec 1(배치)·Spec 3(배너 셸 위 버튼)·Spec 4(마커)는 고정 테마(`mocha_fallback`·`latte_theme`)로 Mocha·Latte를 나란히 그린다. Spec 2(상태)는 시안과 같이 페이지 테마를 따른다. Spec 3의 버튼 상자는 `banner_shell`이 여는 배너 문맥이 정한다 |
+| `HsFailed` | `failed_stand_in` | 페이지 자리 가운데에 `ALERT_CIRCLE` `icon_glyph_size_md` accent-danger → "Failed to load"(`webview.error`, body, accent-danger) → URL(mono caption, text-disabled, 한 줄). 사이 간격 `spacing_sm`, 안쪽 여백 `spacing_md` |
+| Spec 1 · 2 · 3 · 4 · 5 | `draw_placement` · `draw_states` · `draw_banner_button` · `draw_markers` · `draw_load_failed` | Spec 5(로드 실패)는 테마마다 현재(배너·lock이 실패 위에 남은 모양)와 결정(실패 상태만)을 나란히 그리고, 두 테마 패널은 시안의 flex-wrap처럼 세로로 쌓는다. Spec 1(배치)·Spec 3(배너 셸 위 버튼)·Spec 4(마커)는 고정 테마(`mocha_fallback`·`latte_theme`)로 Mocha·Latte를 나란히 그린다. Spec 2(상태)는 시안과 같이 페이지 테마를 따른다. Spec 3의 버튼 상자는 `banner_shell`이 여는 배너 문맥이 정한다 |
 
 제목의 semibold는 egui에 굵기 family가 없어 재현하지 않는다([디자인 정합 지침](design-parity-notes.md)).
 글리프 nudge 1과 제목↔본문 간격 2는 디자인이 primitive `size-1`·`size-2`를 직접 써서 역할 토큰이 없으므로

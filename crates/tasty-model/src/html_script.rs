@@ -137,6 +137,8 @@ pub struct HtmlScriptState {
     host_requested_load: bool,
     /// 문서가 아직 없거나 로드 중일 때 사용자가 이 surface를 선택했다. 다음 commit 문서를 본 것으로 한다.
     viewed_before_commit: bool,
+    /// 마지막 로드가 문서를 commit하지 못하고 실패했다. 다음 commit까지 배너와 탭 표지를 내린다.
+    load_failed: bool,
     banner: BannerFlags,
 }
 
@@ -164,6 +166,7 @@ impl HtmlScriptState {
             reloading_after_allow: false,
             host_requested_load: false,
             viewed_before_commit: false,
+            load_failed: false,
             banner: BannerFlags::default(),
         }
     }
@@ -282,6 +285,7 @@ impl HtmlScriptState {
             };
         }
         self.end_load_marks();
+        self.load_failed = false;
         self.committed_since_start = true;
         self.effective_js()
     }
@@ -293,6 +297,17 @@ impl HtmlScriptState {
         self.pending = None;
         self.end_load_marks();
         restore.then(|| self.effective_js())
+    }
+
+    /// main frame 로드가 실패했다. 호스트 chrome이 실패 상태를 보이는 동안 배너와 탭 표지는
+    /// 이전 문서를 가리키므로 내린다. 로드 종료 처리는 호스트가 [`Self::on_load_finished`]로 따로 알린다.
+    pub fn on_load_failed(&mut self) {
+        self.load_failed = true;
+    }
+
+    /// 마지막 로드가 실패한 채 새 문서가 commit되지 않았다.
+    pub fn load_failed(&self) -> bool {
+        self.load_failed
     }
 
     /// 현재 문서를 허용으로 기록하고 재로드를 요청한다. 파일을 다시 읽지 않는다.

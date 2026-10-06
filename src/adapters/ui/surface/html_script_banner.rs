@@ -3,6 +3,7 @@
 //! 배너 단계는 `tasty_model::html_script`가 정하고 여기서는 읽기만 한다. 그린 카드 아래
 //! `banner_inset_gap`까지의 높이를 돌려주면 호출자가 native WebView를 그만큼 내린다.
 //! 재로드가 commit되어 단계가 사라지면 재로드 중 배너를 `banner_fade` 동안 흐리게 지운다.
+//! 로드가 실패하면 배너를 페이드 없이 바로 내린다.
 //! 배너는 키보드 포커스를 가져가지 않고, 클릭은 사용자 조작으로만 상태를 바꾼다.
 
 use tasty_model::html_script::BannerPhase;
@@ -107,7 +108,12 @@ pub fn draw(
         .data(|d| d.get_temp::<FadeMemo>(memo_id))
         .unwrap_or_default();
     let now = ui.ctx().input(|i| i.time);
-    let (shown, memo) = resolve(phase, memo, now, theme.banner_fade().to_secs_f64());
+    // 실패 상태의 배너는 이전 문서를 가리키므로 재로드 중 배너도 페이드 없이 내린다.
+    let (shown, memo) = if snapshot.load_failed {
+        (None, FadeMemo::default())
+    } else {
+        resolve(phase, memo, now, theme.banner_fade().to_secs_f64())
+    };
     ui.ctx().data_mut(|d| d.insert_temp(memo_id, memo));
     let shown = shown?;
     if shown.alpha < 1.0 {

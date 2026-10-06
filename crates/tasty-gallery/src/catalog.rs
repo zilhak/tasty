@@ -896,6 +896,14 @@ pub fn pages() -> Vec<Page> {
                             ),
                             widgets::html_script_banner::draw_markers,
                         ),
+                        spec(
+                            "html-script-load-failed",
+                            "Load failed — no banner, no marker",
+                            Some(
+                                "the host chrome's Failed to load state takes the body · banner and tab marker are removed until a reload commits",
+                            ),
+                            widgets::html_script_banner::draw_load_failed,
+                        ),
                     ],
                 ),
                 section(

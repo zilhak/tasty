@@ -27,6 +27,8 @@ pub(crate) struct HtmlSnapshot {
     pub(crate) phase: BannerPhase,
     pub(crate) remote_only: bool,
     pub(crate) marker: Option<ScriptMarker>,
+    /// 마지막 로드가 실패한 채 새 문서가 commit되지 않았다.
+    pub(crate) load_failed: bool,
     request: HtmlAction,
 }
 impl HtmlSnapshot {
@@ -43,6 +45,7 @@ pub(crate) fn snapshot(remote: &RemoteSurface, target: SurfaceBinding) -> HtmlSn
         phase: state.banner_phase(),
         remote_only: state.current_detection() == Some(ScriptDetection::ScriptsRemoteOnly),
         marker: state.marker(),
+        load_failed: state.load_failed(),
         request: HtmlAction {
             target,
             surface,

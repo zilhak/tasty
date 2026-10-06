@@ -93,6 +93,16 @@ impl ScriptGate {
         restore
     }
 
+    /// main frame 로드가 실패했다. 다음 commit까지 배너와 탭 표지를 내린다.
+    /// 로드 종료는 [`Self::finished`]로 따로 알린다.
+    pub fn failed(&self) {
+        self.lock().on_load_failed();
+        tracing::debug!(
+            "WebView surface {}: html script load failed -> banner and marker hidden until a commit",
+            self.surface_id
+        );
+    }
+
     /// 화면 문서와 같은 문서의 fragment 이동인지. Windows·macOS에서 로드 신호를 건너뛸 때 쓴다.
     // 이유: Linux는 fragment 이동에 로드 신호가 오지 않아 이 판정을 쓰지 않는다.
     #[cfg_attr(target_os = "linux", allow(dead_code))]

@@ -334,7 +334,8 @@ impl PlatformWebView {
                             }
                         }
                     });
-                    if is_current_load(generation_done.get(), nav_id) {
+                    let current = is_current_load(generation_done.get(), nav_id);
+                    if current {
                         if let (Some(js), Some(wv)) = (
                             gate_done.borrow().as_ref().and_then(|g| g.finished()),
                             &sender,
@@ -361,6 +362,9 @@ impl PlatformWebView {
                             "WebView surface {surface_id}: WebView2 navigation failed: status={status:?}"
                         );
                         nav_done.set(NavState::Failed);
+                        if current && let Some(gate) = gate_done.borrow().as_ref() {
+                            gate.failed();
+                        }
                     }
                     Ok(())
                 },

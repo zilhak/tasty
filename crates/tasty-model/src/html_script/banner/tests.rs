@@ -263,3 +263,52 @@ fn no_marker_without_scripts_or_with_the_sandbox_off() {
     st.set_sandbox(false);
     assert_eq!(st.marker(), None);
 }
+
+#[test]
+fn a_failed_load_hides_the_banner_and_the_marker_until_a_document_commits() {
+    let mut st = HtmlScriptState::new(true);
+    st.on_user_view();
+    load(&mut st, A, scripts(1));
+    assert_eq!(st.update_banner(), BannerPhase::Blocked);
+
+    st.on_load_started();
+    st.on_load_failed();
+    assert_eq!(st.on_load_finished(), Some(false));
+    assert_eq!(st.update_banner(), BannerPhase::Hidden);
+    assert_eq!(st.marker(), None);
+
+    st.on_load_started();
+    assert_eq!(
+        st.update_banner(),
+        BannerPhase::Hidden,
+        "commit 전 재로드는 실패 상태를 유지한다"
+    );
+    st.on_main_response(A, Some(scripts(1)));
+    st.on_committed(Some(A));
+    assert_eq!(st.on_load_finished(), None);
+    assert!(!st.load_failed());
+    assert_eq!(st.update_banner(), BannerPhase::Blocked);
+}
+
+#[test]
+fn a_failed_load_hides_the_marker_of_a_dismissed_or_allowed_document() {
+    let mut st = HtmlScriptState::new(true);
+    st.on_user_view();
+    load(&mut st, A, scripts(1));
+    st.dismiss_banner();
+    assert_eq!(st.marker(), Some(ScriptMarker::Blocked));
+    st.on_load_failed();
+    assert_eq!(st.marker(), None);
+    load(&mut st, A, scripts(1));
+    assert_eq!(
+        st.marker(),
+        Some(ScriptMarker::Blocked),
+        "같은 문서가 다시 commit되면 닫힘 표지를 다시 정한다"
+    );
+
+    st.allow_current().expect("allow");
+    load(&mut st, A, scripts(1));
+    assert_eq!(st.marker(), Some(ScriptMarker::Allowed));
+    st.on_load_failed();
+    assert_eq!(st.marker(), None);
+}

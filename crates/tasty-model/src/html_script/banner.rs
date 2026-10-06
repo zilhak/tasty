@@ -46,9 +46,9 @@ pub enum ScriptMarker {
 }
 
 impl HtmlScriptState {
-    /// 탭 표지. 전역 sandbox가 꺼져 있으면 없다. 문서가 바뀌면 허용과 닫힘이 풀리므로 함께 사라진다.
+    /// 탭 표지. 전역 sandbox가 꺼져 있거나 로드가 실패한 상태면 없다. 문서가 바뀌면 허용과 닫힘이 풀리므로 함께 사라진다.
     pub fn marker(&self) -> Option<ScriptMarker> {
-        if !self.sandbox {
+        if !self.sandbox || self.load_failed {
             return None;
         }
         if self.current_is_allowed() {
@@ -121,7 +121,7 @@ impl HtmlScriptState {
 
     /// 표지를 바꾸지 않고 지금 단계를 읽는다.
     pub fn banner_phase(&self) -> BannerPhase {
-        if !self.sandbox {
+        if !self.sandbox || self.load_failed {
             return BannerPhase::Hidden;
         }
         if self.reloading_after_allow && self.banner.shown {
