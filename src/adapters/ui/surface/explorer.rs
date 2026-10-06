@@ -29,15 +29,7 @@ const CELL_W: LogicalPx = LogicalPx(80.0);
 const SIDEBAR_W: LogicalPx = LogicalPx(196.0);
 
 mod columns;
-
-/// 기본 고정 높이.
-const FAV_PIN_BASE_H: LogicalPx = LogicalPx(240.0);
-/// 사이드바 본문 높이가 이 값 미만이면 고정 높이 대신 비율(`FAV_PIN_RATIO`)을 쓴다.
-const FAV_PIN_THRESHOLD_H: LogicalPx = LogicalPx(600.0);
-/// 좁은 사이드바에서 Favorites 가 차지하는 본문 높이 비율.
-const FAV_PIN_RATIO: f32 = 0.4;
-/// Favorites 고정 영역 최소 높이 하한.
-const FAV_PIN_MIN_H: LogicalPx = LogicalPx(120.0);
+mod favorites_pin;
 
 /// `draw_explorer` 가 호스트에 위임하는 액션. 렌더 루프 종료 후 적용된다.
 #[derive(Clone, Debug)]
@@ -588,8 +580,11 @@ fn sidebar(
     let current = panel.current_root().to_path_buf();
 
     // 트리와 하단 즐겨찾기에 독립 스크롤 영역을 주고 즐겨찾기 높이를 먼저 확보한다.
-    let fav_h = favorites_pin_height(full.y);
-    let files_h = (full.y - fav_h - theme.border_width.value()).max(0.0);
+    // 낮은 본문에서는 즐겨찾기를 빼고 트리가 본문 전체를 쓴다.
+    let fav_h = favorites_pin::height(theme, full.y);
+    let files_h = fav_h.map_or(full.y, |h| {
+        (full.y - h - theme.border_width.value()).max(0.0)
+    });
 
     ui.allocate_ui_with_layout(
         egui::vec2(full.x, files_h),
@@ -607,6 +602,9 @@ fn sidebar(
                 });
         },
     );
+    let Some(fav_h) = fav_h else {
+        return;
+    };
 
     let (sep, _) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), theme.border_width.value()),
@@ -641,16 +639,6 @@ fn sidebar(
                 });
         },
     );
-}
-
-/// Favorites 하단 고정 영역 높이 (design `favPinHeight`): 사이드바 본문 높이가
-/// `FAV_PIN_THRESHOLD_H` 이상이면 `FAV_PIN_BASE_H` 고정, 미만이면 본문 높이의
-/// `FAV_PIN_RATIO` 를 4px 그리드로 스냅한 값과 `FAV_PIN_MIN_H` 중 큰 값.
-fn favorites_pin_height(body_h: f32) -> f32 {
-    if body_h <= 0.0 || body_h >= FAV_PIN_THRESHOLD_H.value() {
-        return FAV_PIN_BASE_H.value();
-    }
-    ((body_h * FAV_PIN_RATIO / 4.0).round() * 4.0).max(FAV_PIN_MIN_H.value())
 }
 
 /// 즐겨찾기 빈 상태 (design `FavoritesEmpty`): 흐린 별 + "No favorites yet" + 힌트.
@@ -1590,7 +1578,7 @@ fn type_label(e: &DirEntryInfo) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{favorites_pin_height, navigate_target};
+    use super::navigate_target;
     use std::path::PathBuf;
 
     /// 낮은 칸에 탐색기를 한 번 그리고 상태줄 글자의 사각형과 그 글자를 자르는 사각형을 돌려준다.
@@ -1680,18 +1668,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    /// design 시안 pin 높이 사다리: 본문 높이 → 고정 높이.
-    #[test]
-    fn favorites_pin_height_matches_design_ladder() {
-        assert_eq!(favorites_pin_height(620.0), 240.0);
-        assert_eq!(favorites_pin_height(600.0), 240.0);
-        assert_eq!(favorites_pin_height(560.0), 224.0);
-        assert_eq!(favorites_pin_height(420.0), 168.0);
-        assert_eq!(favorites_pin_height(300.0), 120.0);
-        assert_eq!(favorites_pin_height(100.0), 120.0);
-        assert_eq!(favorites_pin_height(0.0), 240.0);
     }
 
     /// 존재하는 디렉토리 → Some(그 경로).

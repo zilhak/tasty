@@ -93,6 +93,15 @@ const PIN_STRIP_BODY_H: [LogicalPx; 4] = [
     PIN_STRIP_LOWER_H,
     FAVORITES_BODY_H,
 ];
+/// 시안 Short cell Spec 의 body 높이(`[300, 240, 200, 90]`). 90 은 칸이 하한 160 에 닿았을 때다.
+const SHORT_STRIP_BODY_H: [LogicalPx; 4] = [
+    FAVORITES_BODY_H,
+    LogicalPx(240.0),
+    LogicalPx(200.0),
+    LogicalPx(90.0),
+];
+/// 시안 Short cell 라벨이 칸 하한을 적는 body 높이(`h === 90`).
+const SHORT_FLOOR_BODY_H: LogicalPx = SHORT_STRIP_BODY_H[3];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     cluster(
@@ -143,43 +152,23 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 
     // 시안 비교 줄: 긴 트리와 기본 즐겨찾기로 body 높이마다 pin 높이를 보여 준다.
-    // 네 예제가 창 끝을 넘지 않고 줄을 바꾸도록 본문 컬럼 폭 안에 둔다.
-    body_column(ui, |ui| {
-        cluster(ui, theme, "pin height by body height", |ui| {
-            // 시안처럼 높이가 다른 예제를 위쪽에 맞춘다. 크기를 먼저 알려야 폭을 넘는 예제가
-            // 다음 줄로 간다.
-            let wrap_top = egui::Layout::left_to_right(egui::Align::Min).with_main_wrap(true);
-            ui.with_layout(wrap_top, |ui| {
-                for (i, body_h) in PIN_STRIP_BODY_H.into_iter().enumerate() {
-                    let size = egui::vec2(SIDEBAR_W.value(), body_h.value());
-                    ui.allocate_ui_with_layout(
-                        size,
-                        egui::Layout::top_down(egui::Align::Min),
-                        |ui| {
-                            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-                            ui.label(
-                                egui::RichText::new(pin_strip_label(body_h))
-                                    .font(egui::FontId::monospace(theme.font_size_micro.value()))
-                                    .color(egui::Color32::from(theme.text_muted())),
-                            );
-                            stage(ui, theme, StageVariant::Tight, |ui| {
-                                panel(ui, theme, body_h, |ui| {
-                                    two_region(
-                                        ui,
-                                        theme,
-                                        &format!("pin{i}"),
-                                        body_h,
-                                        TREE_LONG,
-                                        FAVS_FEW,
-                                    );
-                                });
-                            });
-                        },
-                    );
-                }
-            });
-        });
-    });
+    body_strip(
+        ui,
+        theme,
+        "pin height by body height",
+        "pin",
+        &PIN_STRIP_BODY_H,
+        pin_strip_label,
+    );
+    // 시안 Short cell: 240 미만에서 Favorites 가 빠지고 90 은 칸 하한 160 에 닿은 본문이다.
+    body_strip(
+        ui,
+        theme,
+        "short cell — favorites drops below 240",
+        "short",
+        &SHORT_STRIP_BODY_H,
+        |body_h| short_strip_label(theme, body_h),
+    );
 
     cluster(ui, theme, "with favorites", |ui| {
         stage(ui, theme, StageVariant::Tight, |ui| {
@@ -232,6 +221,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "recomputed from the live body height — no drag handle",
             ),
             (
+                "hide Favorites",
+                "body < 240 → Files only, full body · back at 240",
+            ),
+            (
+                "cell floor",
+                "160 · split drag stops here · sidebar never hidden",
+            ),
+            (
                 "row visuals",
                 "unchanged (tree row · star row · empty state)",
             ),
@@ -261,6 +258,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("explorer-favorites-pin-threshold", "small-surface switch"),
             TokenChip::without_color("explorer-favorites-pin-height", "pinned region height"),
             TokenChip::without_color("explorer-sidebar-width", "196 column"),
+            TokenChip::without_color("explorer-favorites-hide-below", "Files-only switch"),
+            TokenChip::without_color("explorer-min-height", "cell floor (split drag)"),
             TokenChip::new(
                 "bg-sidebar",
                 "both regions' fill",
@@ -289,6 +288,63 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          \"pinned\" is communicated by behaviour (the line never moves, each side scrolls \
          alone), not by extra decoration.",
     );
+    note(
+        ui,
+        theme,
+        "Short cell: below a 240px body (the 120 Favorites floor + 120 for Files) the \
+         Favorites region is not drawn and Files takes the whole body; it comes back at 240. \
+         The explorer cell itself stops at 160 (toolbar + status line + two rows) while a \
+         split is dragged, so the Files caption and at least one row stay visible. The \
+         sidebar is never hidden as a whole.",
+    );
+}
+
+/// body 높이마다 사이드바 하나를 위쪽에 맞춰 늘어놓는 비교 줄. 네 예제가 창 끝을 넘지 않고
+/// 줄을 바꾸도록 본문 컬럼 폭 안에 둔다.
+fn body_strip(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    title: &str,
+    salt: &str,
+    bodies: &[LogicalPx],
+    label: impl Fn(LogicalPx) -> String,
+) {
+    body_column(ui, |ui| {
+        cluster(ui, theme, title, |ui| {
+            // 시안처럼 높이가 다른 예제를 위쪽에 맞춘다. 크기를 먼저 알려야 폭을 넘는 예제가
+            // 다음 줄로 간다.
+            let wrap_top = egui::Layout::left_to_right(egui::Align::Min).with_main_wrap(true);
+            ui.with_layout(wrap_top, |ui| {
+                for (i, &body_h) in bodies.iter().enumerate() {
+                    let size = egui::vec2(SIDEBAR_W.value(), body_h.value());
+                    ui.allocate_ui_with_layout(
+                        size,
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                            ui.label(
+                                egui::RichText::new(label(body_h))
+                                    .font(egui::FontId::monospace(theme.font_size_micro.value()))
+                                    .color(egui::Color32::from(theme.text_muted())),
+                            );
+                            stage(ui, theme, StageVariant::Tight, |ui| {
+                                panel(ui, theme, body_h, |ui| {
+                                    two_region(
+                                        ui,
+                                        theme,
+                                        &format!("{salt}{i}"),
+                                        body_h,
+                                        TREE_LONG,
+                                        FAVS_FEW,
+                                    );
+                                });
+                            });
+                        },
+                    );
+                }
+            });
+        });
+    });
 }
 
 /// 데모 사이드바 컨테이너 — 배경 + 보더 + 고정 폭/높이(`body_h`).
@@ -335,8 +391,12 @@ fn two_region_inner(
     tree: &[Node],
     favs: &[(&str, bool)],
 ) {
-    let fav_h = favorites_pin_height(body_h);
-    let files_h = (body_h - fav_h - theme.border_width).max(LogicalPx(0.0));
+    // 시안 Short cell: body 가 explorer-favorites-hide-below 보다 낮으면 Files 만 그린다.
+    let fav_h =
+        (body_h >= theme.explorer_favorites_hide_below()).then(|| favorites_pin_height(body_h));
+    let files_h = fav_h.map_or(body_h, |h| {
+        (body_h - h - theme.border_width).max(LogicalPx(0.0))
+    });
 
     ui.allocate_ui_with_layout(
         egui::vec2(SIDEBAR_W.value(), files_h.value()),
@@ -374,6 +434,9 @@ fn two_region_inner(
         },
     );
 
+    let Some(fav_h) = fav_h else {
+        return;
+    };
     section_separator(ui, theme);
 
     ui.allocate_ui_with_layout(
@@ -417,7 +480,25 @@ fn pin_strip_label(body_h: LogicalPx) -> String {
     format!("body {} → pin {}{kind}", body_h.value(), pin.value())
 }
 
-/// design `favPinHeight` 전사 — 본체 `explorer.rs::favorites_pin_height` 와 동일 공식.
+/// 시안 Short cell 라벨: `body {h} → pin {pin}` 또는 `Files only`, 90 이면 칸 하한을 덧붙인다.
+fn short_strip_label(theme: &Theme, body_h: LogicalPx) -> String {
+    let shown = if body_h >= theme.explorer_favorites_hide_below() {
+        format!("pin {}", favorites_pin_height(body_h).value())
+    } else {
+        "Files only".to_string()
+    };
+    let floor = if body_h == SHORT_FLOOR_BODY_H {
+        format!(
+            " (cell at its {} floor)",
+            theme.explorer_min_height().value()
+        )
+    } else {
+        String::new()
+    };
+    format!("body {} → {shown}{floor}", body_h.value())
+}
+
+/// design `favPinHeight` 전사 — 본체 `explorer/favorites_pin.rs` 와 동일 공식.
 fn favorites_pin_height(body_h: LogicalPx) -> LogicalPx {
     if body_h <= LogicalPx(0.0) || body_h >= PIN_THRESHOLD {
         return PIN_BASE;
