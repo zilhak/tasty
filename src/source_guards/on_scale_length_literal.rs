@@ -805,7 +805,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // vec2(400, 600) 두 번이 test 코드에 네 개를 더한다.
         // 시안 Spec 보완 스무 건의 여백·간격·원점 0 리터럴이 열다섯 개를 더한다.
         // Gate 4 반영의 0 리터럴 하나를 더한다.
-        (217, 443),
+        // 탐색기 낮은 칸 상태줄 시험의 칸 폭 1100이 하나를 더한다.
+        (217, 444),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
