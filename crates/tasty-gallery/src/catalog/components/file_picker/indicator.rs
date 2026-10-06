@@ -49,7 +49,7 @@ pub fn draw_remote_indicator(ui: &mut egui::Ui, theme: &Theme) {
             ("A badge", "mono host chip · info-tinted · explicit"),
             ("B glyph", "remote icon + inline host · lightest"),
             ("C border", "info edge + 2px top strip · loudest"),
-            ("shared axis", "--tasty-accent-info (never danger)"),
+            ("shared axis", "accent-info (never danger)"),
             ("local", "no indicator · file glyph · / root"),
         ],
         &[
