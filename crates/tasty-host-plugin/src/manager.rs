@@ -443,6 +443,9 @@ pub struct PluginManager {
     pub(super) banner_mesh_frames: HashMap<u64, EguiMeshFrame>,
     /// SurfaceInvalidated로 재그리기를 요청한 surface. pump가 넣고 take_invalidated_surfaces가 가져간다.
     pub(super) invalidated_surfaces: Vec<u32>,
+    /// 새 PaintFrame을 받은 surface. 이 frame은 창이 그린 뒤에 도착할 수 있어 호스트가 다시
+    /// 그려야 화면에 나온다. pump가 넣고 take_fresh_frame_surfaces가 가져간다.
+    pub(super) fresh_frame_surfaces: std::collections::HashSet<u32>,
     /// 입력 없이도 재그리기가 필요한 popup의 요청. pump가 넣고 take_invalidated_popups가 가져간다.
     pub(super) invalidated_popups: Vec<u64>,
     /// 입력 없이도 재그리기가 필요한 banner의 요청. pump가 넣고 take_invalidated_banners가 가져간다.

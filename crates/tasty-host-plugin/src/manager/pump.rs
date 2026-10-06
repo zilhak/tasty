@@ -339,6 +339,11 @@ impl PluginManager {
         std::mem::take(&mut self.invalidated_surfaces)
     }
 
+    /// 새 frame을 받은 surface를 가져간다. 호스트가 그 surface가 보이는 창을 다시 그린다.
+    pub fn take_fresh_frame_surfaces(&mut self) -> Vec<u32> {
+        self.fresh_frame_surfaces.drain().collect()
+    }
+
     /// 팝업 갱신 요청을 가져간다. 호스트가 입력 없이도 다시 forward하도록 예약한다.
     pub fn take_invalidated_popups(&mut self) -> Vec<u64> {
         std::mem::take(&mut self.invalidated_popups)
@@ -565,6 +570,7 @@ impl PluginManager {
         self.clear_dead_plugin_frames(&disconnected);
         for (surface_id, frame) in new_paint_frames {
             self.egui_mesh_frames.insert(surface_id, frame);
+            self.fresh_frame_surfaces.insert(surface_id);
         }
         for (instance_id, frame) in new_popup_paint_frames {
             self.popup_mesh_frames.insert(instance_id, frame);
@@ -1138,6 +1144,35 @@ mod tests {
         assert_eq!(mgr.take_invalidated_banners(), vec![7]);
         assert!(
             mgr.take_invalidated_banners().is_empty(),
+            "드레인은 1회여야 한다"
+        );
+    }
+
+    /// 새 frame을 받은 surface는 호스트가 다시 그리도록 한 번 넘긴다. 플러그인이 입력 없이 보낸
+    /// frame(파일 감시의 reload 등)은 창이 그린 뒤에 도착할 수 있다.
+    #[test]
+    fn a_fresh_paint_frame_is_handed_over_once_for_a_redraw() {
+        let mut mgr = mgr();
+        let mut out = CollectedPluginEvents::default();
+        for generation in [1, 2] {
+            mgr.classify_event(
+                "com.tasty.image",
+                PluginEvent::PaintFrame {
+                    surface_id: 5,
+                    buffer_id: SharedBufferId(1),
+                    generation,
+                    frame_seq: generation,
+                    full_textures: false,
+                    byte_len: 0,
+                    ime_cursor: None,
+                },
+                &mut out,
+            );
+        }
+        mgr.apply_collected_events(out);
+        assert_eq!(mgr.take_fresh_frame_surfaces(), vec![5]);
+        assert!(
+            mgr.take_fresh_frame_surfaces().is_empty(),
             "드레인은 1회여야 한다"
         );
     }

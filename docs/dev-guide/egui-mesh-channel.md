@@ -159,7 +159,11 @@ IPC 메서드나 파일 변경 등으로 **자기 상태를 out-of-band 로 바�
   이벤트는 저장 안 함).
 - `repaint_last(&host, run_ui)` 는 캐시된 geom/ppp 로 **빈 이벤트 + 직전 focused 보존**
   재-run → 출력이 바뀌면 `PaintFrame`(popup/banner 는 각자 `*PaintFrame`) 을 송신한다.
-  host 의 기존 wake·재합성 경로가 이 프레임에 깨어난다(1-hop, 재-forward 왕복 불필요).
+  재-forward 왕복은 필요 없다(1-hop). plugin 줄을 읽은 수신 스레드가 이벤트 루프를 깨우지만,
+  그 깨움의 redraw 는 `pump` 가 프레임을 넣기 전에 끝날 수 있다. 그래서 `pump` 는 새
+  `PaintFrame` 을 받은 surface 를 `take_fresh_frame_surfaces` 로 넘기고, App 이 그 surface 가
+  보이는 창에 redraw 를 다시 요청한다(`mark_plugin_surfaces_dirty`). surface 전용이다 —
+  popup/banner 의 `*PaintFrame` 은 이 표시를 쓰지 않는다.
 - 첫 set_context 도착 전(캐시 없음)이면 no-op, 출력 무변화면 `last_hash` dedup 으로 생략.
 
 **identity 불변식**: 재-paint 의 `events` 는 빈 배열 — `set_context.raw_input` 에 가짜
@@ -169,7 +173,7 @@ set_context 값을 그대로 재현한다(불변식 무위반) — false 로 떨
 퇴행한다(markdown 주소창 진동 버그의 원인이었다). 캐시된 theme 은 `last_theme()` 로
 노출돼 plugin 이 draw closure 를 같은 토큰으로 재구성한다.
 
-image는 `image.next`·`prev`·`paste`·`save` 뒤 이 경로로 다시 그린다.
+image는 `image.next`·`prev`·`paste`·`save`·`reload`(파일 감시) 뒤 이 경로로 다시 그린다.
 git-viewer는 draw closure의 사용자 입력에서 상태가 바뀌므로 별도 self-repaint가 필요하지 않다.
 markdown 본문은 WebView이며 확인 팝업만 egui-mesh를 사용한다.
 

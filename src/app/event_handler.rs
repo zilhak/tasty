@@ -491,7 +491,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.finalize_plugin_hello(hello_pairs);
         self.record_plugin_rss_samples_if_present();
         self.forward_mesh_frames_for_parked();
-        self.mark_invalidated_surfaces_dirty();
+        self.mark_plugin_surfaces_dirty();
         self.mark_invalidated_popups_dirty();
         self.mark_invalidated_banners_dirty();
         self.process_plugin_ipc_calls();
@@ -753,30 +753,6 @@ impl App {
                     mgr,
                     &self.stream_hub,
                 );
-            }
-        }
-    }
-
-    /// 플러그인이 무입력 상태의 변경을 알리면 다음 렌더에서 다시 전달하도록 표시한다.
-    fn mark_invalidated_surfaces_dirty(&mut self) {
-        let invalidated_surfaces = self
-            .plugin_manager
-            .as_mut()
-            .map(|mgr| mgr.take_invalidated_surfaces())
-            .unwrap_or_default();
-        if invalidated_surfaces.is_empty() {
-            return;
-        }
-        for (_, main, engine) in self.engines_mut().window_pairs() {
-            // any는 첫 true에서 멈추므로 모든 surface를 표시할 수 없다.
-            let mut touched = false;
-            for &sid in &invalidated_surfaces {
-                if main.mark_surface_invalidated(&engine.read(), sid) {
-                    touched = true;
-                }
-            }
-            if touched {
-                main.mark_dirty();
             }
         }
     }

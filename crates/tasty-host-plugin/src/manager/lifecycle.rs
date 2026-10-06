@@ -181,6 +181,7 @@ impl PluginManager {
             next_banner_instance_id: 1,
             banner_mesh_frames: HashMap::new(),
             invalidated_surfaces: Vec::new(),
+            fresh_frame_surfaces: std::collections::HashSet::new(),
             invalidated_popups: Vec::new(),
             invalidated_banners: Vec::new(),
             sys: sysinfo::System::new(),
