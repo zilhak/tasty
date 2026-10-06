@@ -241,7 +241,7 @@ attr(data-label)`로 반영하고, `<details>` 구조는 `<summary>` 안의 실�
 `background-image` 에 심는다(`render/callout.rs::alert_icon_data_uri`, 15개 타입이 7개 기존
 semantic accent(`accent_primary`/`accent_info`/`accent_success`/`accent_warning`/
 `accent_attention`/`accent_danger`/`accent_agent`)를 나눠 쓴다 — 전용 색 토큰 신설 없음,
-겹치는 조합은 아이콘·라벨 텍스트로 구분).
+겹치는 조합은 아이콘·라벨 텍스트로 구분). 상자 바탕은 종류 색을 `tint-fill-alpha`(0.12, CSS 알파 31)로 칠한다(`render/callout.rs::tint_fill_alpha`). highlight.js 의 diff 추가·삭제 줄 배경도 같은 알파로 `accent_success`·`accent_danger`를 칠한다.
 
 태그가 없거나 지원하지 않는 종류의 Markdown 인용문은 일반 인용문으로 남는다.
 콜아웃 변환은 파서 이벤트와 인용문 첫 줄을 처리한다. Raw HTML에 class만 넣었다고
@@ -543,15 +543,15 @@ debounce, `compositionend` 시 즉시)마다 이전 `<mark>` 를 먼저 원문�
 로 **손으로 근사**한다(픽셀 동일성은 비목표) — 헤딩/문단/링크/리스트/코드블록/표(격자+zebra)/캡션
 대표 문서 + 주소창 chrome 의 정적 근사 + TOC chrome 의 정적 근사(`toc_chrome` — 접기/펼치기·클릭
 스크롤 같은 라이브 상태는 없고 항상-펼침 스냅샷 하나, 레벨별 들여쓰기만 CSS `.tasty-toc-l<N>` 과
-동일 비율로 미러) + 시안 `Callouts` 표본 두 개(note · 접힌 warning, 종류별 색의 `md_quote_bar_width`
-막대) + 코드블록(`code_block` —
+동일 비율로 미러) + 시안 `Callouts` 표본 두 개(note · 접힌 warning, 아래 콜아웃 종류 카드와 같은 상자) + 코드블록(`code_block` —
 `fn main() { format!("hi from tasty"); }` 를 highlight.js 의 rust 문법이 나눌 토큰 그대로 손으로
 분할해 `hljs-*` scope 별 `Theme` hue 색을 입힌 `CodeToken` 런, 라이브 highlight.js 실행 결과의
 정적 근사).
 같은 섹션의 `Markdown callout kinds` 카드(`markdown_viewer/callout_kinds.rs`)는 렌더러가 그리는
-콜아웃 다섯 종을 본체 모양 그대로 보인다 — 종류별 색 31/255 채움(egui 에 반투명 색을 넘기지 않고
-문서 바탕 `md-doc-bg` 위에서 sRGB 로 미리 섞은 불투명 색), 왼쪽 `md_quote_bar_width` 막대,
-아이콘과 굵은 라벨. 시안 `Callouts` 에는 채움·아이콘이 없어 본체 전용 견본으로 표시한다.
+콜아웃 다섯 종을 본체 모양 그대로 보인다 — 종류별 색 `tint-fill-alpha` 채움(egui 에 반투명 색을
+넘기지 않고 문서 바탕 `md-doc-bg` 위에서 sRGB 로 미리 섞은 불투명 색), 왼쪽 `md_quote_bar_width`
+막대, radius, 16px 종류 아이콘과 굵은 라벨(space-xs 간격). 시안 `Callouts` 도 같은 상자를 그리므로
+문서 카드의 두 표본과 이 카드가 `callout_box` 하나를 함께 쓴다.
 디자인·갤러리·제품 구현의 대응표: [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#surface-viewers-plugins).
 
 ## 시각 소스

@@ -556,10 +556,6 @@ fn figurize_paragraph_buffer(buf: Vec<Event<'_>>) -> Vec<Event<'_>> {
 /// 검색 결과 배경의 투명도. 테마 색에 적용한다.
 const FIND_HIT_BG_ALPHA: u8 = 90;
 
-/// diff 추가/삭제 줄 배경의 알파 — `gamma_multiply(0.12)` 과 같은 비율을
-/// 알파 공간으로 옮긴 값이다. 대응 토큰 없음.
-const DIFF_LINE_BG_ALPHA: u8 = 31;
-
 const AUTOLINK_SCHEMES: &[&str] = &["https://", "http://"];
 
 /// Trailing characters stripped one at a time from the end of a matched URL run — mirrors GFM's
@@ -1597,11 +1593,11 @@ fn hljs_css(theme: &Theme) -> String {
         builtin = theme.red.to_hex(),
         deletion_bg = theme
             .accent_danger()
-            .with_alpha(DIFF_LINE_BG_ALPHA)
+            .with_alpha(callout::tint_fill_alpha(theme))
             .to_hex(),
         addition_bg = theme
             .accent_success()
-            .with_alpha(DIFF_LINE_BG_ALPHA)
+            .with_alpha(callout::tint_fill_alpha(theme))
             .to_hex(),
     )
 }

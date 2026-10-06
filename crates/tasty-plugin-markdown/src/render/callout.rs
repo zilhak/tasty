@@ -180,10 +180,15 @@ pub(super) fn find_callout_kind(type_key: &str) -> Option<&'static CalloutKind> 
     CALLOUT_KINDS.iter().find(|k| k.type_key == canonical)
 }
 
+/// 강조색 채움의 알파 바이트. design `--tasty-tint-fill-alpha` 를 CSS `#rrggbbaa` 의 알파로 옮긴다.
+/// 콜아웃 채움과 diff 추가·삭제 줄 배경이 같이 쓴다.
+pub(super) fn tint_fill_alpha(theme: &Theme) -> u8 {
+    (theme.tint_fill_alpha() * f32::from(u8::MAX)).round() as u8
+}
+
 /// 콜아웃 종류별 테마 색과 아이콘 CSS를 만든다.
 pub(super) fn alert_css(theme: &Theme) -> String {
-    /// ~12% opacity — same ratio `drop_overlay.rs` uses for `accent_primary().with_alpha(31)`.
-    const BG_ALPHA: u8 = 31;
+    let bg_alpha = tint_fill_alpha(theme);
     let mut rules = String::new();
     for kind in CALLOUT_KINDS {
         let color = (kind.accent)(theme);
@@ -192,7 +197,7 @@ pub(super) fn alert_css(theme: &Theme) -> String {
             ".{class}{{border-left-color:{hex};background:{bg};}}.{class}::before,.{class}>summary::before{{color:{hex};background-image:url(\"{icon_uri}\");}}\n",
             class = kind.class,
             hex = color.to_hex(),
-            bg = color.with_alpha(BG_ALPHA).to_hex(),
+            bg = color.with_alpha(bg_alpha).to_hex(),
         ));
     }
     rules
@@ -209,4 +214,19 @@ pub(super) fn alert_icon_data_uri(icon_body: &str, filled: bool, color_hex: &str
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="{fill}" stroke="{stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{icon_body}</svg>"#,
     );
     format!("data:image/svg+xml,{}", percent_encode_fragment(&svg))
+}
+
+#[cfg(test)]
+mod tests {
+    use tasty_type_appearance::theme::Theme;
+
+    /// 토큰 0.12 는 CSS 알파 31(`#rrggbb1f`)이다. 콜아웃 채움과 diff 줄 배경의 출력이 그대로여야 한다.
+    #[test]
+    fn tint_fill_alpha_is_the_31_byte_the_stylesheet_writes() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        assert_eq!(super::tint_fill_alpha(&theme), 31);
+        let css = super::alert_css(&theme);
+        let note = theme.accent_primary().with_alpha(31).to_hex();
+        assert!(css.contains(&format!("background:{note};")), "{css}");
+    }
 }
