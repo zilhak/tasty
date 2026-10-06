@@ -35,6 +35,9 @@ title = "ターミナルを起動できません"
 body = "ターミナルを起動できませんでした。詳細: {}"
 hint = "config.toml の general.shell が実在するシェルを指しているか確認してから、もう一度起動してください。"
 
+[boot.already_running]
+body = "Tasty はすでに実行中です。"
+
 [boot.home_in_use]
 title = "データフォルダーは使用中です"
 body = "別の Tasty がこのデータフォルダーをすでに使用しています: {}"

@@ -114,6 +114,10 @@ pub(crate) enum AppEvent {
     /// Windows·Linux의 숨긴 창을 다시 표시한다. macOS는 창 생성 경로로 복원한다.
     #[cfg(all(any(windows, target_os = "linux"), feature = "gui"))]
     TrayShowWindow,
+    /// 같은 홈으로 다시 실행한 두 번째 프로세스의 활성화 요청(Linux D-Bus `Activate`, Windows 등록 메시지).
+    /// 증거가 없으면 아무것도 바꾸지 않는다.
+    #[cfg(feature = "gui")]
+    ExternalActivate(crate::boot::single_instance::ExternalActivation),
     /// Windows 절전 복귀 뒤 ConPTY 자식 상태를 확인하고 살아 있는 자식을 깨운다.
     #[cfg(all(windows, feature = "gui"))]
     SystemResumed,

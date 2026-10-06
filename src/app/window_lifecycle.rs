@@ -499,7 +499,14 @@ impl App {
             return Err("another window is waiting for its committed engine".into());
         }
 
-        let attrs = new_window_attributes(origin);
+        let mut attrs = new_window_attributes(origin);
+        if let Some(evidence) = self.next_window_activation.take() {
+            attrs = crate::boot::single_instance::with_activation_token(
+                attrs,
+                &evidence,
+                crate::boot::single_instance::is_wayland(event_loop),
+            );
+        }
 
         let window = match event_loop.create_window(attrs) {
             Ok(w) => Arc::new(w),
@@ -607,6 +614,7 @@ impl App {
             show_agent_window(&window, anchor.as_deref());
             self.pending_focus_hint_clear.insert(window_id);
         }
+        self.apply_pending_external_activation(window_id);
         tracing::info!("created new window {window_id:?} ({origin:?})");
         Ok(window_id)
     }
@@ -751,8 +759,22 @@ fn new_window_attributes(origin: WindowRequestOrigin) -> winit::window::WindowAt
     }
     attrs = crate::platform::window_chrome::apply_csd_attributes(attrs);
     attrs = origin_window_attributes(attrs, origin);
+    main_view_class(attrs)
+}
 
-    attrs
+/// Windows MainView 창은 전용 클래스 이름을 쓴다. 두 번째 프로세스가 이 이름으로 활성화 메시지를 보낼 창을 찾는다.
+pub(crate) fn main_view_class(
+    attrs: winit::window::WindowAttributes,
+) -> winit::window::WindowAttributes {
+    #[cfg(windows)]
+    {
+        use winit::platform::windows::WindowAttributesExtWindows;
+        attrs.with_class_name(crate::platform::single_instance_windows::MAIN_VIEW_CLASS)
+    }
+    #[cfg(not(windows))]
+    {
+        attrs
+    }
 }
 
 #[cfg(test)]

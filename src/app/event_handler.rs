@@ -145,6 +145,9 @@ impl ApplicationHandler<AppEvent> for App {
                     self.view.views.len()
                 );
             }
+            AppEvent::ExternalActivate(request) => {
+                self.handle_external_activation(event_loop, request);
+            }
             // 타이머 실행은 이어지는 about_to_wait가 담당한다.
             AppEvent::TimerTick => {
                 if !self.journal.is_halted() && !self.journal.pauses_observation() {
@@ -587,7 +590,17 @@ impl App {
         event_loop: &ActiveEventLoop,
         boot_t0: std::time::Instant,
     ) -> std::sync::Arc<winit::window::Window> {
-        let attrs = Self::boot_window_attributes();
+        let mut attrs =
+            crate::app::window_lifecycle::main_view_class(Self::boot_window_attributes());
+        // 이 실행의 실행기 토큰은 첫 창이 받아 실행기의 대기 표시를 끝낸다.
+        let evidence = crate::boot::single_instance::evidence::take();
+        if evidence.is_present() {
+            attrs = crate::boot::single_instance::with_activation_token(
+                attrs,
+                &evidence,
+                crate::boot::single_instance::is_wayland(event_loop),
+            );
+        }
         // 표시할 창이 없으면 오류를 로그로 남기고 실패 코드로 종료한다.
         let window = match event_loop.create_window(attrs) {
             Ok(w) => std::sync::Arc::new(w),

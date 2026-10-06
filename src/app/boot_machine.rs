@@ -713,6 +713,7 @@ impl App {
         };
         let connections = self.services.connections().clone();
         if let Some(injector) = self.hub.start_ipc(ipc_waker, stream_ctx, connections) {
+            self.start_single_instance_service();
             // 리스너가 참조할 훅 레지스트리를 먼저 채운다. 웹훅 시작 실패는 비치명적 경고로 알린다.
             crate::hook_handler::install_default_sources();
             crate::completion_strategy::install_default_sources();
@@ -728,6 +729,35 @@ impl App {
             if let Some(server) = self.hub.ipc_server.as_ref() {
                 self.services.set_own_ipc_port(server.port());
             }
+        }
+    }
+
+    /// IPC가 열린 뒤 인스턴스 파일에 포트를 쓰고, 두 번째 프로세스의 활성화 요청을 받을 경로를 연다.
+    fn start_single_instance_service(&mut self) {
+        let Some(port) = self.hub.ipc_server.as_ref().map(|server| server.port()) else {
+            return;
+        };
+        crate::boot::single_instance::instance_file::publish_port(port);
+        if !crate::boot::single_instance::service_enabled() {
+            return;
+        }
+        #[cfg(target_os = "linux")]
+        if let Some(home) = tasty_utils::path::tasty_home() {
+            let proxy = self.view.proxy.clone();
+            crate::boot::single_instance::dbus::start_service(
+                &home,
+                Box::new(move |evidence| {
+                    crate::shortcuts::send_app_event(
+                        &proxy,
+                        crate::AppEvent::ExternalActivate(
+                            crate::boot::single_instance::ExternalActivation {
+                                evidence,
+                                os_granted: false,
+                            },
+                        ),
+                    );
+                }),
+            );
         }
     }
 

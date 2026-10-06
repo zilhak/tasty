@@ -47,6 +47,10 @@ const ALLOWLIST_PATH_PREFIXES: &[(&str, &str)] = &[
         "clap 도움말 보강 출력 — clap 의 영어 about 텍스트와 한 화면에 섞여 나오므로 같은 언어(i18n.md clap 예외)",
     ),
     (
+        "src/boot/single_instance/launch_log.rs",
+        "launch.log 진단 줄과 그 stderr 사본이다. 내부 진단 로그와 같은 자리이며 사용자 표면이 아니다(i18n.md 예외).",
+    ),
+    (
         "crates/tasty-doc-guards/src/bin/",
         "개발자용 검사 도구의 진단이다. 의존성이 없는 크레이트이므로 번역 테이블을 추가하지 않는다(ADR-0048). 바이너리 경로만 제외한다.",
     ),

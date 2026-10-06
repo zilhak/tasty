@@ -78,6 +78,9 @@ pub(crate) mod window_access;
 pub(crate) mod window_lifecycle;
 
 #[cfg(feature = "gui")]
+mod external_activation;
+
+#[cfg(feature = "gui")]
 use std::sync::Arc;
 
 #[cfg(feature = "gui")]
@@ -191,6 +194,14 @@ pub(crate) struct App {
     /// 그 전에 닫힌 창은 닫기 경로에서 제거한다.
     #[cfg(feature = "gui")]
     pub(crate) pending_focus_hint_clear: std::collections::HashSet<WindowId>,
+    /// 다음에 만드는 창에 넣을 실행기 활성화 토큰(외부 활성화 요청에 창이 없을 때).
+    #[cfg(feature = "gui")]
+    pub(crate) next_window_activation:
+        Option<crate::boot::single_instance::evidence::LaunchEvidence>,
+    /// 만드는 중인 창이 등록되면 OS 활성화를 요청할 외부 요청.
+    #[cfg(feature = "gui")]
+    pub(crate) pending_external_activation:
+        Option<crate::boot::single_instance::ExternalActivation>,
     #[cfg(feature = "gui")]
     pub(crate) remote: tasty_remote::outbound::Remote,
     /// 스크린샷→클립보드 캡처 워커 스레드 → 메인 루프 결과 채널.
@@ -324,6 +335,8 @@ impl App {
                 })
             }),
             pending_focus_hint_clear: std::collections::HashSet::new(),
+            next_window_activation: None,
+            pending_external_activation: None,
             remote: tasty_remote::outbound::Remote::new(),
             screenshot_workers: Default::default(),
             screenshot_capture_tx,

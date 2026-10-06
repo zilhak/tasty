@@ -35,6 +35,9 @@ title = "터미널을 시작할 수 없음"
 body = "터미널을 시작하지 못했습니다. 자세한 내용: {}"
 hint = "config.toml의 general.shell이 실제 셸 경로인지 확인한 뒤 다시 실행하세요."
 
+[boot.already_running]
+body = "이미 실행 중인 Tasty가 있습니다."
+
 [boot.home_in_use]
 title = "이미 사용 중인 데이터 폴더"
 body = "다른 Tasty가 이 데이터 폴더를 이미 사용하고 있습니다: {}"

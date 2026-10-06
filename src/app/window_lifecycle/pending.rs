@@ -213,6 +213,8 @@ impl App {
     }
 
     fn release_failed_pending_window(&mut self, id: EngineId) {
+        // 실패한 창에 걸린 외부 활성화는 다음 창으로 넘기지 않는다.
+        self.pending_external_activation = None;
         let Some(session) = self.engines.session_mut(id) else {
             return;
         };
@@ -341,6 +343,7 @@ impl App {
             show_agent_window(&window, anchor.as_deref());
             self.pending_focus_hint_clear.insert(window_id);
         }
+        self.apply_pending_external_activation(window_id);
         if let Some(completion) = pending.completion {
             completion.reply_window_create(Ok(u64::from(window_id)));
         }

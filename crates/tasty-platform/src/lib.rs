@@ -26,6 +26,8 @@ pub mod power_windows;
 pub mod reveal;
 #[cfg(feature = "gui")]
 pub mod screen_capture;
+/// Windows 단일 실행: MainView 창 탐색·등록 활성화 메시지·포그라운드 권한 위임.
+pub mod single_instance_windows;
 #[cfg(feature = "gui")]
 pub mod stall_watchdog;
 #[cfg(all(
@@ -33,6 +35,9 @@ pub mod stall_watchdog;
     feature = "gui"
 ))]
 pub mod system_tray;
+/// 사용자가 다시 실행했을 때 OS 활성화 증거로 기존 창의 활성화를 OS에 요청한다.
+#[cfg(feature = "gui")]
+pub mod window_activation;
 #[cfg(feature = "gui")]
 pub mod window_chrome;
 /// 에이전트가 만든 창을 사용자 창 뒤에, 키 포커스 없이 보인다(docs/features/window-chrome/index.md#에이전트-창의-os-표시).

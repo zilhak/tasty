@@ -16,6 +16,8 @@ pub(crate) mod locale;
 pub(crate) mod locale_font;
 pub(crate) mod os;
 #[cfg(feature = "gui")]
+pub(crate) mod single_instance;
+#[cfg(feature = "gui")]
 pub(crate) mod trace;
 #[cfg(feature = "gui")]
 pub(crate) mod waker;
@@ -77,6 +79,9 @@ fn maintain_memory_at_boot(arc: &std::sync::Arc<std::sync::Mutex<tasty_memory::M
 
 /// main에서 호출하는 프로세스 진입점.
 pub fn run() -> anyhow::Result<std::process::ExitCode> {
+    // 자식 셸에 활성화 토큰이 새지 않도록 다른 초기화·스레드보다 먼저 읽어 두고 환경에서 지운다.
+    #[cfg(feature = "gui")]
+    single_instance::evidence::capture_and_clear_env();
     os::attach_windows_console_if_needed();
     os::init_crash_report();
 
@@ -89,11 +94,24 @@ pub fn run() -> anyhow::Result<std::process::ExitCode> {
         cli_routing::Routed::Gui(cli) => {
             // 로그 파일·memory.db·설정·플러그인·저널을 건드리기 전에 이 홈의 저널 writer 잠금을 선점한다.
             // 잡혀 있으면 저널 worker와 같은 구간 동안 다시 시도한다. 창을 만들기 전이라 멈춘 화면이 없다.
-            // 그래도 다른 Tasty가 쥐고 있으면 그 인스턴스의 홈에 부작용을 내지 않고 오류 화면만 띄운다.
+            // 그래도 다른 Tasty가 쥐고 있으면 그 인스턴스의 홈에 부작용을 내지 않는다. release는 실행 중인
+            // Tasty에 요청을 넘기고 끝나며(단일 실행), debug는 "홈 사용 중" 오류 화면을 띄운다.
             #[cfg(feature = "gui")]
             let writer_lock = match preempt_home_writer_lock() {
-                HomeWriterLock::Acquired(lock) => Some(lock),
-                HomeWriterLock::Held(home) => return home_in_use::run(&home),
+                HomeWriterLock::Acquired(lock, home) => {
+                    single_instance::instance_file::publish_started(&home);
+                    Some(lock)
+                }
+                HomeWriterLock::Held(home) if cfg!(debug_assertions) => {
+                    return home_in_use::run(&home);
+                }
+                HomeWriterLock::Held(home) => match single_instance::second::handle_held(&home) {
+                    single_instance::second::HeldOutcome::Exit(code) => return Ok(code),
+                    single_instance::second::HeldOutcome::BootNormally(lock) => {
+                        single_instance::instance_file::publish_started(&home);
+                        Some(lock)
+                    }
+                },
                 HomeWriterLock::Unchecked => None,
             };
             // CLI도 같은 바이너리라 호스트로 결정한 뒤 열어야 실행 중 호스트의 로그를 자르지 않는다.
@@ -134,7 +152,7 @@ fn run_augmented_help() -> anyhow::Result<()> {
 
 #[cfg(feature = "gui")]
 enum HomeWriterLock {
-    Acquired(tasty_event_store::WriterLock),
+    Acquired(tasty_event_store::WriterLock, std::path::PathBuf),
     /// 다른 프로세스가 이 홈의 저널 writer 잠금을 쥐고 있다.
     Held(std::path::PathBuf),
     /// 홈을 알 수 없거나 잠금을 쓸 수 없다. 저널 worker가 다시 시도하고 그 결과로 판정한다.
@@ -148,7 +166,9 @@ fn preempt_home_writer_lock() -> HomeWriterLock {
     };
     let database = crate::runtime::journal_product::journal_database_path(&home);
     match tasty_event_store::preempt_writer_lock(&database) {
-        Ok(tasty_event_store::WriterPreempt::Acquired(lock)) => HomeWriterLock::Acquired(lock),
+        Ok(tasty_event_store::WriterPreempt::Acquired(lock)) => {
+            HomeWriterLock::Acquired(lock, home)
+        }
         Ok(tasty_event_store::WriterPreempt::Held) => HomeWriterLock::Held(home),
         Err(e) => {
             tracing::warn!(
@@ -223,6 +243,8 @@ fn run_gui(
         .shutdown
         .as_ref()
         .map_or(0, |state| state.exit_code);
+    // 저널 잠금은 App과 함께 놓이므로, 다음 소유자가 낡은 기록을 보지 않게 그 전에 지운다.
+    single_instance::instance_file::remove_owned();
     drop_app_with_trace(app);
 
     Ok(std::process::ExitCode::from(code))

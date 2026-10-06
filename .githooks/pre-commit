@@ -246,6 +246,8 @@ check_println() {
         case "$f" in
             src/main.rs) continue ;;
             src/boot/cli_routing.rs) continue ;;
+            # launch.log의 stderr 사본. release stderr tracing은 warn 이상만 보여 진단 줄이 사라진다.
+            src/boot/single_instance/launch_log.rs) continue ;;
             crates/tasty-cli/*) continue ;;
             crates/tasty-tui-simulator/*) continue ;;
             site/*) continue ;;
