@@ -234,15 +234,29 @@ fn an_active_binding_never_recreates_a_lost_database() {
     assert!(!home.path().join("structure/journal.db").exists());
 }
 
+/// 잠금을 놓은 뒤 선점한다. 다른 테스트가 PTY를 fork하면 자식이 exec 전까지 잠금 파일의 열린 설명을
+/// 잠깐 공유하므로, 단발 시도는 해제 직후에도 `Held`를 볼 수 있다. writer 잠금의 재시도 시간 안에서 다시 시도한다.
+fn preempt_after_release(database: &std::path::Path) -> tasty_event_store::WriterLock {
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        match tasty_event_store::preempt_writer_lock(database).unwrap() {
+            tasty_event_store::WriterPreempt::Acquired(lock) => return lock,
+            tasty_event_store::WriterPreempt::Held if std::time::Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            tasty_event_store::WriterPreempt::Held => {
+                panic!("the released writer lock stayed held")
+            }
+        }
+    }
+}
+
 #[test]
 fn a_held_writer_lock_is_reported_as_home_in_use() {
     let home = tempfile::tempdir().unwrap();
     drop(start(home.path()));
     let database = super::identity::journal_database_path(home.path());
-    let lock = match tasty_event_store::preempt_writer_lock(&database).unwrap() {
-        tasty_event_store::WriterPreempt::Acquired(lock) => lock,
-        tasty_event_store::WriterPreempt::Held => panic!("nothing else holds the lock"),
-    };
+    let lock = preempt_after_release(&database);
     // 핸들 없이 여는 경로(헤드리스·테스트)도 같은 종류로 알린다.
     let worker = JournalWorker::spawn(home.path().to_owned(), Arc::new(|| {})).unwrap();
     let Completion::StartupFailed(error) = receive(&worker) else {
@@ -277,10 +291,7 @@ fn a_held_binding_lock_is_reported_as_home_in_use() {
 fn a_preempted_writer_lock_lets_the_worker_open_and_keeps_others_out() {
     let home = tempfile::tempdir().unwrap();
     let database = super::identity::journal_database_path(home.path());
-    let lock = match tasty_event_store::preempt_writer_lock(&database).unwrap() {
-        tasty_event_store::WriterPreempt::Acquired(lock) => lock,
-        tasty_event_store::WriterPreempt::Held => panic!("an empty home must be free"),
-    };
+    let lock = preempt_after_release(&database);
     // 빈 홈(첫 실행)에서도 선점 잠금으로 저널을 초기화하고 writer가 된다.
     let worker =
         JournalWorker::spawn_with(home.path().to_owned(), Arc::new(|| {}), Some(lock)).unwrap();
@@ -290,10 +301,7 @@ fn a_preempted_writer_lock_lets_the_worker_open_and_keeps_others_out() {
         tasty_event_store::WriterPreempt::Held
     ));
     drop(worker);
-    assert!(matches!(
-        tasty_event_store::preempt_writer_lock(&database).unwrap(),
-        tasty_event_store::WriterPreempt::Acquired(_)
-    ));
+    drop(preempt_after_release(&database));
 }
 
 #[test]
