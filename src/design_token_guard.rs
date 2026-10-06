@@ -568,6 +568,14 @@ fn semantic_theme_field<'a>(
 /// 값이 같은 다른 Theme 토큰으로 우회하지 않는다.
 const PATHLESS_LENGTH_TOKENS: &[(&str, &str)] = &[
     (
+        "semantic.border-dash",
+        "소비처가 없어 표에 오른 적이 없다 — 본체는 아직 점선 테두리를 그리지 않는다",
+    ),
+    (
+        "semantic.border-dash-gap",
+        "소비처가 없어 표에 오른 적이 없다 — 본체는 아직 점선 테두리를 그리지 않는다",
+    ),
+    (
         "semantic.field-width-range",
         "소비처가 없어 표에 오른 적이 없다",
     ),
