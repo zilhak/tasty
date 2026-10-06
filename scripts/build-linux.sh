@@ -415,9 +415,10 @@ SHASUMS_FILE="SHA256SUMS-linux-${ARCH}.txt"
     {
         sha256sum "$ARCHIVE_NAME"
         sha256sum "$HEADLESS_ARCHIVE_NAME"
-        [[ -n "$DEB_FILE" ]]      && sha256sum "$(basename "$DEB_FILE")"
-        [[ -n "$RPM_FILE" ]]      && sha256sum "$(basename "$RPM_FILE")"
-        [[ -n "$APPIMAGE_FILE" ]] && sha256sum "$(basename "$APPIMAGE_FILE")"
+        # --debug 에는 deb·rpm·AppImage 가 없다. `[[ ]] &&` 가 블록 마지막에서 거짓이면 set -e 로 스크립트가 끝난다.
+        if [[ -n "$DEB_FILE" ]]; then sha256sum "$(basename "$DEB_FILE")"; fi
+        if [[ -n "$RPM_FILE" ]]; then sha256sum "$(basename "$RPM_FILE")"; fi
+        if [[ -n "$APPIMAGE_FILE" ]]; then sha256sum "$(basename "$APPIMAGE_FILE")"; fi
     } > "$SHASUMS_FILE"
 )
 
@@ -425,7 +426,7 @@ echo ""
 echo "Done!"
 echo "  Archive:  $DIST_DIR/$ARCHIVE_NAME"
 echo "  Headless: $DIST_DIR/$HEADLESS_ARCHIVE_NAME"
-[[ -n "$DEB_FILE" ]]      && echo "  Deb:      $DEB_FILE"
-[[ -n "$RPM_FILE" ]]      && echo "  Rpm:      $RPM_FILE"
-[[ -n "$APPIMAGE_FILE" ]] && echo "  AppImage: $APPIMAGE_FILE"
+if [[ -n "$DEB_FILE" ]]; then echo "  Deb:      $DEB_FILE"; fi
+if [[ -n "$RPM_FILE" ]]; then echo "  Rpm:      $RPM_FILE"; fi
+if [[ -n "$APPIMAGE_FILE" ]]; then echo "  AppImage: $APPIMAGE_FILE"; fi
 echo "  SHA:      $DIST_DIR/$SHASUMS_FILE"
