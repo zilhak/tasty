@@ -46,11 +46,16 @@ fn navigation_key(navigation: Option<&WKNavigation>) -> Option<u64> {
 }
 
 impl NavDelegateIvars {
-    /// 종료 신호가 게이트가 시작한 마지막 로드의 것일 때만 [`Self::gate_finished`]를 부른다.
-    /// 어느 쪽이든 WKNavigation을 알 수 없으면 현재 로드로 본다(Windows와 같은 규칙).
-    fn gate_navigation_ended(&self, navigation: Option<&WKNavigation>) {
+    /// 신호가 게이트가 시작한 마지막 로드의 것인지. 어느 쪽이든 WKNavigation을 알 수 없으면
+    /// 현재 로드로 본다(Windows와 같은 규칙).
+    fn is_current_navigation(&self, navigation: Option<&WKNavigation>) -> bool {
         let current = navigation_key(self.gate_navigation.borrow().as_deref());
-        if is_current_load(current, navigation_key(navigation)) {
+        is_current_load(current, navigation_key(navigation))
+    }
+
+    /// 종료 신호가 게이트가 시작한 마지막 로드의 것일 때만 [`Self::gate_finished`]를 부른다.
+    fn gate_navigation_ended(&self, navigation: Option<&WKNavigation>) {
+        if self.is_current_navigation(navigation) {
             self.gate_finished();
         } else {
             tracing::debug!(
@@ -60,11 +65,12 @@ impl NavDelegateIvars {
         }
     }
 
-    /// 로드가 실패했다. 게이트가 시작한 마지막 로드의 실패일 때만 다음 commit까지 배너와 탭
-    /// 표지를 내리고 로드를 끝낸다. 앞 로드가 늦게 취소된 실패는 새 로드를 건드리지 않는다.
+    /// 로드가 실패했다. 게이트가 시작한 마지막 로드의 실패일 때만 chrome을 Failed로 두고
+    /// 다음 commit까지 배너와 탭 표지를 내린 뒤 로드를 끝낸다. 앞 로드가 늦게 취소된 실패는
+    /// 새 로드의 chrome과 게이트를 건드리지 않는다.
     fn gate_navigation_failed(&self, navigation: Option<&WKNavigation>) {
-        let current = navigation_key(self.gate_navigation.borrow().as_deref());
-        if is_current_load(current, navigation_key(navigation)) {
+        if self.is_current_navigation(navigation) {
+            self.nav_state.set(NavState::Failed);
             self.gate_failed();
         }
         self.gate_navigation_ended(navigation);
@@ -155,7 +161,6 @@ define_class!(
                 self.ivars().surface_id,
                 error.localizedDescription()
             );
-            self.ivars().nav_state.set(NavState::Failed);
             self.ivars().gate_navigation_failed(navigation);
         }
 
@@ -171,7 +176,6 @@ define_class!(
                 self.ivars().surface_id,
                 error.localizedDescription()
             );
-            self.ivars().nav_state.set(NavState::Failed);
             self.ivars().gate_navigation_failed(navigation);
         }
 

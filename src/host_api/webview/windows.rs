@@ -361,9 +361,12 @@ impl PlatformWebView {
                         tracing::warn!(
                             "WebView surface {surface_id}: WebView2 navigation failed: status={status:?}"
                         );
-                        nav_done.set(NavState::Failed);
-                        if current && let Some(gate) = gate_done.borrow().as_ref() {
-                            gate.failed();
+                        // 앞 로드의 늦은 실패는 새 로드의 chrome과 게이트를 건드리지 않는다.
+                        if current {
+                            nav_done.set(NavState::Failed);
+                            if let Some(gate) = gate_done.borrow().as_ref() {
+                                gate.failed();
+                            }
                         }
                     }
                     Ok(())
