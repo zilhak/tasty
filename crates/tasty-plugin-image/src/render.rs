@@ -651,7 +651,7 @@ fn draw_save_path_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
                 if let Err(e) = doc.save_png(&path) {
                     tracing::warn!("failed to save image: {e}");
                 } else {
-                    doc.file_path = Some(path);
+                    doc.adopt_saved_path(path);
                     doc.save_path_popup = false;
                     doc.exit_edit_mode();
                     doc.reload_from_disk();

@@ -107,6 +107,14 @@ impl Plugin for ImagePlugin {
             "image.save" | "image.export_png" => {
                 let out = self.image_save(&ctx.params)?;
                 self.repaint_after_edit(&ctx.host, &ctx.params);
+                if let Ok(sid) = require_surface(&ctx.params)
+                    && let Some(path) = self
+                        .docs
+                        .get_mut(&sid)
+                        .and_then(ImageDoc::take_path_for_host)
+                {
+                    announce_saved_path(&ctx.host, sid, path);
+                }
                 Ok(out)
             }
             // 파일 읽기와 문서 변경은 플러그인 처리 스레드에서 수행한다.
@@ -160,7 +168,7 @@ impl ImagePlugin {
         match doc.save_png(&final_path) {
             Ok(()) => {
                 if doc.is_blank() {
-                    doc.file_path = Some(final_path.clone());
+                    doc.adopt_saved_path(final_path.clone());
                 }
                 // 직접 저장한 내용을 외부 변경으로 다시 읽지 않도록 감시 기준을 갱신한다.
                 let watched = doc.file_path.clone();
@@ -269,6 +277,9 @@ impl ImagePlugin {
         if let Err(e) = result {
             tracing::warn!("image surface {sid} paint failed: {e}");
         }
+        if let Some(path) = doc.take_path_for_host() {
+            announce_saved_path(&ctx.host, sid, path);
+        }
     }
 
     /// IPC로 바뀐 문서를 마지막 컨텍스트와 빈 입력으로 다시 그린다. 테마가 없으면 생략한다.
@@ -309,6 +320,25 @@ impl ImagePlugin {
     /// Unix·Windows 외에는 다시 그리기도 생략한다.
     #[cfg(not(any(unix, windows)))]
     fn repaint_after_edit(&mut self, _host: &HostHandle, _params: &Value) {}
+}
+
+/// 새 경로로 저장한 이미지를 호스트의 `image.open`으로 같은 surface에서 다시 연다.
+/// 호스트가 탭 제목과 복원 경로를 바꾸고 surface를 다시 만들어, 새 문서가 그 파일을 감시한다.
+/// 호스트는 다시 만들 때 이 플러그인의 응답을 기다리므로 플러그인 처리 스레드에서 호출하면
+/// 서로 기다리다 호출 시한(60초)까지 멈춘다. 그래서 별도 스레드에서 호출한다.
+fn announce_saved_path(host: &HostHandle, surface_id: u32, path: String) {
+    let host = host.clone();
+    let spawned = std::thread::Builder::new()
+        .name("image-save-as".to_string())
+        .spawn(move || {
+            let params = json!({ "surface_id": surface_id, "path": path });
+            if let Err(e) = host.call("image.open", params) {
+                tracing::warn!("image surface {surface_id}: image.open after save failed: {e}");
+            }
+        });
+    if let Err(e) = spawned {
+        tracing::warn!("image surface {surface_id}: save-as announce thread spawn failed: {e}");
+    }
 }
 
 /// 같은 이름의 호스트 메서드를 호출한다. 호스트가 이 자기 호출을 내부 처리기로 보낸다.
@@ -475,6 +505,82 @@ mod tests {
         let mut p = ImagePlugin::new(Translator::default());
         let err = p.image_save(&json!({})).unwrap_err();
         assert_eq!(err.code, -32602);
+    }
+
+    /// 같은 프로세스의 재호출도 구분하는 시험용 임시 PNG 경로.
+    fn probe_path(what: &str) -> std::path::PathBuf {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        std::env::temp_dir().join(format!(
+            "tasty-image-{what}-{}-{}.png",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ))
+    }
+
+    /// 새 캔버스를 경로를 주어 저장하면 그 경로를 호스트에 한 번 알릴 경로로 남겨야 한다.
+    #[test]
+    fn saving_a_new_canvas_to_a_path_queues_that_path_for_the_host_once() {
+        let mut p = ImagePlugin::new(Translator::default());
+        p.create_surface(SurfaceCreateCtx {
+            surface_id: 1,
+            kind: "image".into(),
+            cwd: None,
+            params: json!({ "surface_id": 1, "kind": "image", "params": {} }),
+        });
+        p.docs
+            .get_mut(&1)
+            .expect("문서가 있어야 한다")
+            .ensure_loaded();
+        let path = probe_path("saveas-host");
+        let file = path.to_string_lossy().into_owned();
+
+        p.image_save(&json!({ "surface": 1, "path": file }))
+            .expect("새 캔버스 저장이 성공해야 한다");
+        let doc = p.docs.get_mut(&1).expect("문서가 있어야 한다");
+        assert_eq!(doc.file_path.as_deref(), Some(file.as_str()));
+        assert_eq!(
+            doc.take_path_for_host().as_deref(),
+            Some(file.as_str()),
+            "저장한 경로를 호스트에 알려 탭 제목·복원 경로·감시 대상을 바꾸게 해야 한다"
+        );
+        assert_eq!(
+            doc.take_path_for_host(),
+            None,
+            "같은 경로를 두 번 알리지 않아야 한다"
+        );
+        let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시.
+    }
+
+    /// 파일을 연 문서를 다른 경로로 내보내는 저장은 문서 경로를 바꾸지 않으므로 호스트에 알리지 않는다.
+    #[test]
+    fn exporting_an_opened_file_to_another_path_does_not_move_the_surface() {
+        let src = probe_path("export-src");
+        image::RgbImage::from_pixel(4, 4, image::Rgb([255, 0, 0]))
+            .save(&src)
+            .expect("probe png 저장 실패");
+        let dst = probe_path("export-dst");
+        let mut p = ImagePlugin::new(Translator::default());
+        p.create_surface(SurfaceCreateCtx {
+            surface_id: 1,
+            kind: "image".into(),
+            cwd: None,
+            params: json!({ "surface_id": 1, "kind": "image", "params": { "file": src.to_string_lossy() } }),
+        });
+        p.docs
+            .get_mut(&1)
+            .expect("문서가 있어야 한다")
+            .ensure_loaded();
+
+        p.image_save(&json!({ "surface": 1, "path": dst.to_string_lossy() }))
+            .expect("내보내기 저장이 성공해야 한다");
+        let doc = p.docs.get_mut(&1).expect("문서가 있어야 한다");
+        assert_eq!(
+            doc.file_path.as_deref(),
+            Some(src.to_string_lossy().as_ref())
+        );
+        assert_eq!(doc.take_path_for_host(), None);
+        let _ = std::fs::remove_file(&src); // best-effort 정리 — 실패 무시.
+        let _ = std::fs::remove_file(&dst); // best-effort 정리 — 실패 무시.
     }
 
     /// 파일을 연 서피스에서 새 캔버스를 만든 뒤 경로 없이 저장하면 원래 파일을 덮어쓰지 않아야 한다.

@@ -179,6 +179,9 @@ pub struct ImageDoc {
 
     pub save_path_popup: bool,
     pub save_path_buffer: String,
+    /// 새 경로로 저장한 뒤 호스트에 아직 알리지 않은 경로.
+    /// 호스트가 탭 제목·복원 경로·감시 대상을 이 경로로 바꾸도록 `image.open`으로 보낸다.
+    path_for_host: Option<String>,
 
     /// 편집 중 받은 외부 변경을 기억했다가 편집이 끝날 때 다시 읽는다.
     /// 변경 감시기가 같은 변경을 다시 알리지 않으므로 여기서 버리지 않는다.
@@ -221,6 +224,7 @@ impl ImageDoc {
             new_image_height: DEFAULT_BLANK_CANVAS_HEIGHT.to_string(),
             save_path_popup: false,
             save_path_buffer: String::new(),
+            path_for_host: None,
             pending_external_reload: false,
             loaded: false,
             themed_brush: false,
@@ -315,6 +319,17 @@ impl ImageDoc {
             self.pan_offset = Vec2::ZERO;
             self.exit_edit_mode();
         }
+    }
+
+    /// 새 경로로 저장한 문서가 그 파일을 가리키게 하고, 호스트에 알릴 경로로 남긴다.
+    pub fn adopt_saved_path(&mut self, path: String) {
+        self.file_path = Some(path.clone());
+        self.path_for_host = Some(path);
+    }
+
+    /// 호스트에 알릴 경로를 꺼낸다. 한 번만 보내도록 비운다.
+    pub fn take_path_for_host(&mut self) -> Option<String> {
+        self.path_for_host.take()
     }
 
     /// Default save destination for the current image (always `.png`).

@@ -106,6 +106,10 @@ surface kind 선언에는 host 가 kind-agnostic 하게 소비하는 메타가 �
 - **`convert_requires_input`**(기본 false) + **`convert_input_popup`** — 이 kind 로 convert 하려면 host 가 먼저 "파일 입력 팝업"을 띄워야 하는지, 그리고 그때 열 이 plugin 의 팝업 **local id**. host 는 kind 이름·event key 하드코딩 없이 이 데이터만 따라 `<plugin_id>/<popup_id>` 팝업을 `open_popup_instance` 로 연다(payload 의 `surface_id` 로 제자리 변환 / 새 탭 분기). 예: markdown 은 `convert_requires_input = true`, `convert_input_popup = "file-open"`([ADR-0031](../adr/0031-file-handler-routing.md)). 미선언이면 빈 params 즉시 변환.
 
 변환 입력 popup 요청은 pending popup queue로 전달해 렌더 중 직접 상태를 변경하지 않는다.
+
+파일 surface가 열고 있는 파일 경로를 플러그인이 바꿨다면(다른 이름으로 저장 등) 호스트에도 알린다. 호스트는 그 surface의 탭 제목(`name_from_param`), 레이아웃 저장·복원 경로, `image.list` 같은 조회 결과를 자기 기록에서 읽는다. 전용 setter는 없다. 그 kind의 제자리 변환 메서드(image는 `image.open`, markdown은 `markdown.navigate`)를 같은 `surface_id`와 새 경로로 호출한다. 호스트는 surface ID를 유지한 채 플러그인 surface를 닫았다가(`destroy_surface`) 새 경로로 다시 만든다(`create_surface`). 그래서 감시 대상도 새로 등록되지만 undo·확대 같은 문서 상태는 이어지지 않는다.
+
+이 호출은 플러그인 처리 스레드(`paint`·`handle_ipc_method`)에서 직접 하지 않는다. 자기 surface를 다시 만드는 변환을 처리 스레드에서 기다리면 호출이 `host.call` 시한(60초)까지 끝나지 않고, 그동안 다른 플러그인도 응답 없음으로 재시작된다(image surface에 `image.open`을 다시 호출해 확인했다). image 플러그인은 `HostHandle`을 복제한 별도 스레드에서 호출하고 결과는 경고 로그로만 남긴다.
 등록 때 local popup ID에 plugin ID를 붙이며 payload의 surface_id가 제자리 변환과 새 탭 열기를 구별한다.
 
 > 대용량 파일 확인 게이트는 SurfaceKindDef 필드가 아니라 **플러그인 소유**다. 플러그인이 자기 프로세스에서 크기를 감지(`std::fs::metadata`)해 event 를 publish 하고, event trigger `[[contributes.popup]]`(아래 "도구 메뉴 항목 + popup")로 확인 팝업을 자가 렌더한다(예: markdown). host 는 파일 크기를 알지 않는다.
