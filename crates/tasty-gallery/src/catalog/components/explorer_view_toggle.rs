@@ -14,6 +14,11 @@ const BOX_PAD: LogicalPx = LogicalPx(14.0);
 const BOX_GAP: LogicalPx = LogicalPx(10.0);
 /// 시안 줄 설명 칸 폭(`width: 190`). 전시 치수다.
 const CAPTION_W: LogicalPx = LogicalPx(190.0);
+/// 시안 무대의 테마 상자 사이 간격(`gap: 18`). 대응 토큰이 없다.
+const THEME_GAP: LogicalPx = LogicalPx(18.0);
+/// egui `TextEdit` 의 기본 좌우 안쪽 여백(`Margin::symmetric(4, 2)`). 공용 Input 이 이 값을 바꾸지
+/// 않으므로 경로 필드의 내용 폭에 더한다.
+const TEXT_EDIT_MARGIN_X: LogicalPx = LogicalPx(4.0);
 
 const PATH: &str = "~/Downloads";
 
@@ -32,6 +37,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ("Latte", with_zoom(crate::host_shell::latte_theme())),
     ];
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(THEME_GAP.value(), THEME_GAP.value());
         for (label, th) in &themes {
             wrap_item(ui, |ui| theme_box(ui, th, label));
         }
@@ -92,6 +98,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          — including a value that only changes how the same content is drawn. surface-active \
          is row selection and belongs to neither. No third branch is needed; the word \
          \u{201c}view\u{201d} in a variable name does not make a control a tab strip.",
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "Drawn with the body parts: the toggle is the body SegToggle at pad 4 · gap 4 · 24×20 \
+         cells (the kit draws pad 2 · gap 2 · 24×22), and the address is the shared PathField \
+         at padding 12, gap 8 and mono 11 with 8 before Go (the kit draws padding 0 8, gap 6, \
+         mono 12 and 6 before Go).",
     );
 
     spec::dont(
@@ -164,8 +179,9 @@ fn row(ui: &mut egui::Ui, th: &Theme, caption: &str, on: usize, hover: Option<us
     });
 }
 
-/// 편집하지 않는 경로 필드. 시안은 `flex: 1; min-width: 0` 이고 고정 폭이 없어 내용 폭
-/// (아이콘 + 경로 글자 + 안쪽 여백 + Go 버튼)으로 잡는다.
+/// 편집하지 않는 경로 필드. 시안은 `flex: 1; min-width: 0` 이고 고정 폭이 없어 공용
+/// PathField 의 내용 폭으로 잡는다: Input 좌우 여백 · 아이콘 · Input 간격 · 경로 글자 ·
+/// TextEdit 좌우 여백 · 필드와 Go 사이 간격 · Go 버튼.
 fn path_field(ui: &mut egui::Ui, th: &Theme) {
     let text_w = ui
         .painter()
@@ -176,10 +192,12 @@ fn path_field(ui: &mut egui::Ui, th: &Theme) {
         )
         .rect
         .width();
-    let width = text_w
+    let width = th.input_padding_x().value() * 2.0
         + th.icon_glyph_size_md.value()
-        + th.spacing_sm.value() * 4.0
-        + th.spacing_lg.value()
+        + th.input_gap().value()
+        + text_w
+        + TEXT_EDIT_MARGIN_X.value() * 2.0
+        + th.spacing_sm.value()
         + ControlSize::Sm.height(th);
     let folder_icon = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
         glyph::FOLDER_OPEN
