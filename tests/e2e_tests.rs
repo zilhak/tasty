@@ -2352,14 +2352,14 @@ fn x11_capture_webview(display: &str, parent: u64) -> Result<Option<X11WebViewCa
 /// GTK 배율이 2 인 X11 세션(GNOME HiDPI 의 창 배율 2 와 같은 조건 — 여기서는 `GDK_SCALE=2` 와
 /// winit 배율 2 로 만든다)에서 html surface 의 페이지 viewport 가 native WebView 창과 같은
 /// 크기인지 잰다. 페이지는 viewport 전체에 고정한 3 CSS px 파란 테두리를 그리므로, viewport 가
-/// 창과 같으면 창의 네 변 모두에 파랑이 보인다. 현재 main 에서는 오른쪽·아래 변이 초록이다 —
-/// viewport 가 창의 두 배로 잡혀 페이지 오른쪽·아래 절반이 잘린다. 배율 1 에서는 네 변이 모두
-/// 파랑이다(실측). 실행: 창이 배율 2 로 2560x1440 이므로 화면이 그보다 큰 격리 Xvfb(예:
+/// 창과 같으면 창의 네 변 모두에 테두리 색이 보인다. host 가 GTK 크기·allocation 에 물리 px 를
+/// 그대로 주면 viewport 가 창의 두 배로 잡혀 오른쪽·아래 변에 페이지 바탕색이 나오고 실패한다.
+/// 실행: 창이 배율 2 로 2560x1440 이므로 화면이 그보다 큰 격리 Xvfb(예:
 /// `Xvfb :<n> -screen 0 2600x1600x24`)와 번들 plugin 준비 뒤
 /// `TASTY_E2E_DISPLAY=:<n> cargo test --locked --test e2e_tests -- --ignored --exact webview_page_viewport_fills_its_native_window_under_gtk_scale_two`.
 #[cfg(all(target_os = "linux", feature = "gui"))]
 #[test]
-#[ignore = "현재 main 에서 실패하는 결함 측정이다. Linux X11 디스플레이·번들 html plugin 이 필요해 CI 에서 돌리지 않는다"]
+#[ignore = "2560x1440 보다 큰 Linux X11 디스플레이와 번들 html plugin 이 필요해 기본 실행·CI 에서 돌리지 않는다"]
 fn webview_page_viewport_fills_its_native_window_under_gtk_scale_two() {
     const BLUE: u32 = 0x0000ff;
     let display = x11_harness_display()

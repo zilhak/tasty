@@ -529,11 +529,16 @@ impl PlatformWebView {
             (self.xlib.XFlush)(self.x11_display as _);
         }
 
-        self.gtk_window.resize(w.max(1), h.max(1));
+        // GTK 크기·allocation은 GDK 창 배율로 나눈 논리 px다. X 창과 같은 물리 크기를 덮도록
+        // 올림한다. 물리 px를 그대로 주면 GDK 배율만큼 페이지 viewport가 X 창보다 커진다.
+        let gdk_scale = self.gdk_window.scale_factor().max(1);
+        let gtk_w = (w.max(1) + gdk_scale - 1) / gdk_scale;
+        let gtk_h = (h.max(1) + gdk_scale - 1) / gdk_scale;
+        self.gtk_window.resize(gtk_w, gtk_h);
 
         // foreign X 창의 크기 변경을 GTK가 자동 반영하지 못하므로 allocation도 직접 갱신한다.
         self.gtk_window
-            .size_allocate(&gtk::Allocation::new(0, 0, w.max(1), h.max(1)));
+            .size_allocate(&gtk::Allocation::new(0, 0, gtk_w, gtk_h));
     }
 
     pub fn set_visible(&self, visible: bool) {

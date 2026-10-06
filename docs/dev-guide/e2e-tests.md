@@ -346,14 +346,14 @@ renderD128·VK_ERROR_·DRI3·libEGL·tu_knl·failed to open device 같은 메시
 새 시그니처를 원인 판정에 사용하려면 정상 실행에서도 나타나는지 먼저 확인한다.
 현재 GPU_FALLBACK_MARKERS는 단서이며 확정 진단이 아니다.
 
-## 7. 결함 측정용 ignored 시험
+## 7. WebView 배치 측정 시험 (ignored)
 
-`e2e_tests`의 `webview_page_viewport_fills_its_native_window_under_gtk_scale_two`는 Linux X11에서 GTK 배율이 2일 때 html surface의 페이지 viewport가 native WebView 창과 같은 크기인지 잰다. GNOME HiDPI의 창 배율 2와 같은 조건을 `GDK_SCALE=2`와 `WINIT_X11_SCALE_FACTOR=2`로 만든다. 페이지는 viewport 전체에 고정한 파란 테두리를 그리고, 시험은 WebView X 자식 창의 네 변 가운데 픽셀을 `XGetImage`로 읽어 모두 파랑인지 확인한다.
+`e2e_tests`의 두 시험은 Linux X11에서 native WebView X 자식 창과 메인 창의 픽셀을 `XGetImage`로 읽어 WebView 배치를 잰다.
 
-현재 main에서는 이 시험이 실패한다. 오른쪽·아래 변이 페이지 바탕색으로 나오며, viewport가 창의 두 배로 잡혀 페이지의 오른쪽·아래 절반이 잘린다는 뜻이다. GTK 배율 1(`GDK_SCALE=1`, winit 배율 2)에서는 같은 시험이 통과한다.
+`webview_page_viewport_fills_its_native_window_under_gtk_scale_two`는 GTK 배율이 2일 때 html surface의 페이지 viewport가 native WebView 창과 같은 크기인지 잰다. GNOME HiDPI의 창 배율 2와 같은 조건을 `GDK_SCALE=2`와 `WINIT_X11_SCALE_FACTOR=2`로 만든다. 페이지는 viewport 전체에 고정한 파란 테두리를 그리고, 시험은 WebView 창의 네 변 가운데 픽셀이 모두 테두리 색인지 확인한다. host가 GTK 크기·allocation에 GDK 배율로 나눈 논리 px를 주지 않으면 viewport가 창의 두 배로 잡혀 오른쪽·아래 변에 페이지 바탕색이 나오고 실패한다.
 
 - `#[cfg(all(target_os = "linux", feature = "gui"))]`와 `#[ignore]`로 두어 기본 `cargo test`와 CI 워크플로에서 실행하지 않는다. CI의 GUI e2e 단계는 `multi_window_owner_routing`만 이름으로 실행한다.
-- 창이 배율 2로 2560x1440이므로 그보다 큰 격리 Xvfb와 번들 plugin(html)이 필요하다. 자식 창이 화면 밖으로 나가면 시험은 픽셀을 읽지 않고 화면을 키우라는 오류로 끝난다.
+- 이 시험은 창이 배율 2로 2560x1440이므로 그보다 큰 격리 Xvfb와 번들 plugin(html)이 필요하다. 자식 창이 화면 밖으로 나가면 시험은 픽셀을 읽지 않고 화면을 키우라는 오류로 끝난다.
 
 ```
 Xvfb :<n> -screen 0 2600x1600x24 -nolisten tcp -ac &
@@ -364,7 +364,7 @@ TASTY_E2E_DISPLAY=:<n> cargo test --locked --test e2e_tests -- --ignored --exact
 
 Xvfb는 저장한 PID로 회수한다.
 
-`webview_edge_inset_shows_no_chrome_text`는 markdown surface의 WebView X 창 바로 아래·왼쪽·오른쪽 두 줄씩을 메인 창 픽셀에서 읽어 줄마다 한 가지 색인지 확인한다. WebView는 pane 콘텐츠 영역 외곽 변에서 분할선 입력 영역만큼 안쪽에 놓이고, 그 여백에는 webview chrome의 배경·테두리만 보여야 한다. chrome이 안내 글자를 WebView 영역 안으로 자르지 않으면 아래 여백에서 글자를 검출해 실패한다. 부팅 안내 toast가 여백에 겹칠 수 있어 toast 수명이 지날 때까지 최대 10초 다시 읽는다. 같은 조건(Linux·gui·`#[ignore]`)이며 기본 크기 Xvfb에서 실행할 수 있다.
+`webview_edge_inset_shows_no_chrome_text`는 markdown surface의 WebView X 창 바로 아래·왼쪽·오른쪽 두 줄씩을 메인 창 픽셀에서 읽어 줄마다 한 가지 색인지 확인한다. WebView는 pane 콘텐츠 영역 외곽 변에서 분할선 입력 영역만큼 안쪽에 놓이고, 그 여백에는 webview chrome의 배경·테두리만 보여야 한다. chrome이 안내 글자를 WebView 영역 안으로 자르지 않으면 아래 여백에서 글자를 검출해 실패한다. 부팅 안내 toast가 여백에 겹칠 수 있어 toast 수명이 지날 때까지 최대 10초 다시 읽는다. 같은 조건(Linux·gui·`#[ignore]`)이며 번들 plugin(markdown)과 기본 크기 Xvfb에서 실행할 수 있다.
 
 ```
 TASTY_E2E_DISPLAY=:<n> cargo test --locked --test e2e_tests -- --ignored --exact \
