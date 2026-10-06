@@ -35,8 +35,8 @@ const RESERVED_OPACITY: f32 = 0.55;
 /// 척도 표의 행 높이.
 const SCALE_ROW_H: LogicalPx = LogicalPx(32.0);
 /// 예약된 Error·Approval rank. 시안에만 있는 값이며 토큰이 아직 없다.
-const RANK_ERROR_RESERVED: f32 = 40.0;
-const RANK_APPROVAL_RESERVED: f32 = 20.0;
+const RANK_ERROR_RESERVED: u16 = 40;
+const RANK_APPROVAL_RESERVED: u16 = 20;
 
 #[inline]
 fn ec(c: impl Into<egui::Color32>) -> egui::Color32 {
@@ -280,7 +280,7 @@ fn scale_cell(ui: &mut egui::Ui, w: LogicalPx, body: impl FnOnce(&mut egui::Ui))
 pub fn draw_attention_scale(ui: &mut egui::Ui, theme: &Theme) {
     let kinds = [
         Kind {
-            rank: RANK_ERROR_RESERVED,
+            rank: f32::from(RANK_ERROR_RESERVED),
             name: "Error",
             what: "failed and unrecovered",
             role: "accent-danger",
@@ -297,7 +297,7 @@ pub fn draw_attention_scale(ui: &mut egui::Ui, theme: &Theme) {
             )),
         },
         Kind {
-            rank: RANK_APPROVAL_RESERVED,
+            rank: f32::from(RANK_APPROVAL_RESERVED),
             name: "Approval",
             what: "an agent asks permission",
             role: "accent-agent",

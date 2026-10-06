@@ -15,7 +15,6 @@ const KEYCAP_PANEL_W: LogicalPx = LogicalPx(380.0);
 const DROPPED_CAP_SIZE: LogicalPx = LogicalPx(18.0);
 const DROPPED_CAP_PAD_X: LogicalPx = LogicalPx(5.0);
 const DROPPED_CAP_GAP: LogicalPx = LogicalPx(4.0);
-const DROPPED_CAP_FONT: LogicalPx = LogicalPx(11.0);
 
 /// 글리프 예제 칸의 높이. 28px 글리프까지 같은 줄에 세운다.
 const GLYPH_SLOT_H: LogicalPx = LogicalPx(34.0);
@@ -55,7 +54,7 @@ fn mono_micro(ui: &mut egui::Ui, theme: &Theme, s: &str, color: egui::Color32) {
 
 /// 폐기된 팔레트 키캡 한 벌의 폭. 그리기와 같은 식으로 계산한다.
 fn dropped_caps_width(ui: &egui::Ui, theme: &Theme, keys: &str) -> f32 {
-    let font = egui::FontId::monospace(DROPPED_CAP_FONT.value());
+    let font = egui::FontId::monospace(theme.font_size_caption.value());
     let caps: Vec<f32> = keys
         .split('+')
         .map(|key| {
@@ -75,7 +74,7 @@ fn dropped_caps(ui: &mut egui::Ui, theme: &Theme, keys: &str) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = DROPPED_CAP_GAP.value();
         for key in keys.split('+') {
-            let font = egui::FontId::monospace(DROPPED_CAP_FONT.value());
+            let font = egui::FontId::monospace(theme.font_size_caption.value());
             let galley = ui
                 .painter()
                 .layout_no_wrap(key.to_string(), font, ec(theme.kbd_fg()));

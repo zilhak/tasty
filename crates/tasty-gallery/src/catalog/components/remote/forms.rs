@@ -14,7 +14,7 @@ const TYPE_SELECT_W: LogicalPx = LogicalPx(64.0);
 /// Port 입력 칸 폭.
 const PORT_FIELD_W: LogicalPx = LogicalPx(96.0);
 /// inline secret 입력은 세 줄 높이다.
-const SECRET_ROWS: f32 = 3.0;
+const SECRET_ROWS: u8 = 3;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Variant {
@@ -85,7 +85,7 @@ fn full_select(ui: &mut egui::Ui, theme: &Theme, salt: &str, items: &[&str]) {
 /// 세 줄 secret 입력 칸. 비어 있는 상태라 placeholder만 보인다.
 fn secret_area(ui: &mut egui::Ui, theme: &Theme) {
     let line = theme.font_size_term_sm.value() * theme.line_height_ui;
-    let h = line * SECRET_ROWS + theme.spacing_sm.value() * 2.0;
+    let h = line * f32::from(SECRET_ROWS) + theme.spacing_sm.value() * 2.0;
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), h), egui::Sense::hover());
     let p = ui.painter();
