@@ -9,8 +9,7 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, Input};
 
 use super::preset_editor::{
-    Kind, Scope, build_pane, build_tab, build_workspace, draw_scope_body, leaf, pleaf, psplit,
-    ssplit, tab,
+    Kind, Scope, Surf, cell, draw_scope_body, leaf_with, pleaf, psplit, ssplit, tab,
 };
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage};
@@ -67,7 +66,7 @@ const SCOPES: [(&str, &[PresetEntry]); 3] = [
             PresetEntry {
                 name: "claude",
                 subtitle: "editor · agent · logs",
-                build: build_workspace,
+                build: build_claude,
             },
             PresetEntry {
                 name: "six",
@@ -92,7 +91,7 @@ const SCOPES: [(&str, &[PresetEntry]); 3] = [
             PresetEntry {
                 name: "split-shell",
                 subtitle: "editor + run + log",
-                build: build_tab,
+                build: build_split_shell,
             },
             PresetEntry {
                 name: "single",
@@ -107,7 +106,7 @@ const SCOPES: [(&str, &[PresetEntry]); 3] = [
             PresetEntry {
                 name: "triple",
                 subtitle: "3 tabs · server/dev/notes",
-                build: build_pane,
+                build: build_triple,
             },
             PresetEntry {
                 name: "watch",
@@ -118,6 +117,58 @@ const SCOPES: [(&str, &[PresetEntry]); 3] = [
     ),
 ];
 
+// leaf 값 요약 — 시안 `surf(kind, x)` 는 모든 leaf 에 cwd "~/tasty" · startup "" 을 기본으로
+// 넣고, `FIELDS` 가 kind 마다 보일 필드(terminal: cwd·startup, editor·log: cwd, markdown: file,
+// plugin:portscan: host·range)를 정한다. 빈 값의 행은 숨긴다.
+const DEFAULT_CWD: &str = "~/tasty";
+
+fn terminal(startup: Option<&'static str>) -> Surf {
+    let mut rows = vec![cell("cwd", DEFAULT_CWD, true)];
+    if let Some(cmd) = startup {
+        rows.push(cell("startup", cmd, false));
+    }
+    leaf_with(Kind::Terminal, rows)
+}
+fn editor(cwd: &'static str) -> Surf {
+    leaf_with(Kind::Editor, vec![cell("cwd", cwd, true)])
+}
+fn log() -> Surf {
+    leaf_with(Kind::Log, vec![cell("cwd", DEFAULT_CWD, true)])
+}
+fn markdown(file: &'static str) -> Surf {
+    leaf_with(Kind::Markdown, vec![cell("file", file, true)])
+}
+
+/// 시안 `buildWorkspace`.
+fn build_claude() -> Scope {
+    Scope::PaneTree(psplit(
+        true,
+        0.6,
+        pleaf(
+            vec![
+                tab(
+                    "edit",
+                    ssplit(
+                        false,
+                        0.64,
+                        editor("~/tasty/src"),
+                        terminal(Some("cargo watch")),
+                    ),
+                ),
+                tab("agent", editor(DEFAULT_CWD)),
+            ],
+            0,
+        ),
+        pleaf(
+            vec![
+                tab("preview", markdown("docs/architecture.md")),
+                tab("logs", ssplit(true, 0.5, log(), terminal(Some("tail -f")))),
+            ],
+            0,
+        ),
+    ))
+}
+/// 시안 `buildSix`.
 fn build_six() -> Scope {
     Scope::PaneTree(psplit(
         true,
@@ -128,8 +179,13 @@ fn build_six() -> Scope {
                 ssplit(
                     false,
                     0.5,
-                    leaf(Kind::Editor),
-                    ssplit(true, 0.5, leaf(Kind::Terminal), leaf(Kind::Terminal)),
+                    editor("~/tasty/src"),
+                    ssplit(
+                        true,
+                        0.5,
+                        terminal(Some("cargo watch")),
+                        terminal(Some("cargo test")),
+                    ),
                 ),
             )],
             0,
@@ -140,8 +196,19 @@ fn build_six() -> Scope {
                 ssplit(
                     false,
                     0.5,
-                    ssplit(true, 0.5, leaf(Kind::Log), leaf(Kind::PortScan)),
-                    leaf(Kind::Markdown),
+                    ssplit(
+                        true,
+                        0.5,
+                        log(),
+                        leaf_with(
+                            Kind::PortScan,
+                            vec![
+                                cell("host", "127.0.0.1", false),
+                                cell("range", "3000-3999", false),
+                            ],
+                        ),
+                    ),
+                    markdown("docs/runbook.md"),
                 ),
             )],
             0,
@@ -152,27 +219,44 @@ fn build_dev() -> Scope {
     Scope::PaneTree(psplit(
         true,
         0.5,
-        pleaf(vec![tab("shell", leaf(Kind::Terminal))], 0),
-        pleaf(vec![tab("logs", leaf(Kind::Log))], 0),
+        pleaf(vec![tab("shell", terminal(None))], 0),
+        pleaf(vec![tab("logs", log())], 0),
     ))
 }
 fn build_review() -> Scope {
     Scope::PaneTree(psplit(
         false,
         0.55,
-        pleaf(vec![tab("diff", leaf(Kind::Editor))], 0),
-        pleaf(vec![tab("run", leaf(Kind::Terminal))], 0),
+        pleaf(vec![tab("diff", editor(DEFAULT_CWD))], 0),
+        pleaf(vec![tab("run", terminal(None))], 0),
+    ))
+}
+/// 시안 `buildTab`.
+fn build_split_shell() -> Scope {
+    Scope::TabFrame(ssplit(
+        true,
+        0.5,
+        editor("~/tasty/src"),
+        ssplit(false, 0.5, terminal(Some("cargo build")), log()),
     ))
 }
 fn build_single() -> Scope {
-    Scope::TabFrame(leaf(Kind::Terminal))
+    Scope::TabFrame(terminal(None))
+}
+/// 시안 `buildPane`.
+fn build_triple() -> Scope {
+    Scope::PaneTree(pleaf(
+        vec![
+            tab("server", terminal(Some("npm start"))),
+            tab("dev", ssplit(false, 0.5, terminal(Some("vite")), log())),
+            tab("notes", markdown("NOTES.md")),
+        ],
+        0,
+    ))
 }
 fn build_watch() -> Scope {
     Scope::PaneTree(pleaf(
-        vec![
-            tab("build", leaf(Kind::Terminal)),
-            tab("test", leaf(Kind::Terminal)),
-        ],
+        vec![tab("build", terminal(None)), tab("test", terminal(None))],
         0,
     ))
 }

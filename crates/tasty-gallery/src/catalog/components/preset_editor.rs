@@ -107,7 +107,7 @@ impl Kind {
 /// leaf 값 요약의 한 행 — 라벨(소문자 필드 키) + 값 + 앞자름 여부(본체 `LeafSummaryRow`
 /// 전사). path-like(cwd/file) = 앞자름(경로 꼬리 유지), command/url(startup/url) = 뒤자름.
 #[derive(Clone)]
-struct SummaryCell {
+pub(super) struct SummaryCell {
     label: &'static str,
     value: &'static str,
     front_elide: bool,
@@ -161,7 +161,11 @@ pub(super) fn leaf(k: Kind) -> Surf {
         summary: Vec::new(),
     })
 }
-fn cell(label: &'static str, value: &'static str, front_elide: bool) -> SummaryCell {
+/// 값 요약이 있는 leaf.
+pub(super) fn leaf_with(k: Kind, summary: Vec<SummaryCell>) -> Surf {
+    Surf::Leaf(DemoLeaf { kind: k, summary })
+}
+pub(super) fn cell(label: &'static str, value: &'static str, front_elide: bool) -> SummaryCell {
     SummaryCell {
         label,
         value,
