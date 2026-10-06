@@ -302,6 +302,9 @@ Meta를 먼저 쓴 뒤 이벤트를 보내며 새 턴(`prompt-submit`/`session-s
 - 시작: `PostToolUse`(matcher `Bash|Agent|Task`, token `background-start`)의 `tool_response`에서 읽는다.
   Bash는 `backgroundTaskId`, Agent는 `isAsync: true` 또는 `status: "async_launched"`와 함께 오는 `agentId`다(2.1.290 실측).
   다른 도구 호출과 포그라운드 호출은 기록하지 않으며 상태도 바꾸지 않는다.
+  이 훅이 끝날 때까지 Claude Code는 다음 API 요청을 보내지 않으므로, 설치 명령은 stdin payload에 `"backgroundTaskId":"` 또는
+  `"isAsync":true`가 있을 때만 `tasty claude hook background-start`를 실행하고 나머지는 셸에서 바로 끝낸다(2.1.291 payload는 공백 없는 JSON).
+  실측 지연과 한계는 ADR-0041 결과 절에 있다.
 - 끝: `UserPromptSubmit`의 `prompt`가 `<task-notification>`으로 시작하면 그 안의 `<task-id>` 작업을 지운다.
 - `Stop`의 `background_tasks`를 읽을 수 있으면 기록을 그 목록의 끝나지 않은 항목으로 바꾼다.
   `SessionStart`·`SessionEnd`는 기록을 버린다.

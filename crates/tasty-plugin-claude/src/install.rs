@@ -45,8 +45,27 @@ pub(crate) fn tasty_guarded_command(argv: &str) -> String {
 
 /// 이벤트 이름만 넣은 명령을 만든다. 세션 id·메시지 등은 CLI가 stdin JSON에서 읽는다.
 fn tasty_hook_command(event_token: &str) -> String {
+    if event_token == crate::hook::BACKGROUND_START_EVENT {
+        return background_start_command();
+    }
     tasty_guarded_command(&format!("tasty claude hook {event_token}"))
 }
+
+/// `background-start` 훅 명령. 이 훅은 Bash·Agent 호출마다 실행되고, 끝날 때까지 Claude Code 가 다음
+/// 모델 요청을 보내지 않는다. 그래서 백그라운드로 띄운 호출의 `tool_response` 에만 있는 필드
+/// (`"backgroundTaskId":"`, `"isAsync":true`)를 셸에서 먼저 보고, 없으면 tasty CLI 를 띄우지 않고 끝낸다.
+/// Claude Code 2.1.291 의 payload 는 공백 없는 JSON 이다. 형식이 바뀌어 맞지 않으면 기록이 빠질 뿐
+/// 세션은 막지 않는다. 플러그인은 CLI 로 받은 payload 를 다시 해석해 판정한다.
+fn background_start_command() -> String {
+    format!(
+        "if [ -n \"$TASTY_SURFACE_ID\" ]; then p=$(cat); case \"$p\" in {}) printf '%s' \"$p\" | tasty claude hook {} || true ;; esac; fi",
+        BACKGROUND_PAYLOAD_PATTERNS,
+        crate::hook::BACKGROUND_START_EVENT
+    )
+}
+
+/// 백그라운드 호출 payload 에만 있는 문자열을 찾는 셸 `case` 패턴.
+const BACKGROUND_PAYLOAD_PATTERNS: &str = r#"*'"backgroundTaskId":"'*|*'"isAsync":true'*"#;
 
 pub(crate) fn claude_settings_path(tr: &Translator) -> Result<PathBuf> {
     let base = directories::BaseDirs::new()
@@ -611,5 +630,68 @@ mod tests {
             cmd
         );
         assert!(cmd.contains("tasty claude hook session-start"));
+    }
+
+    /// background-start 명령은 백그라운드 호출 payload 만 CLI 에 넘기고, 넘길 때 stdin 을 그대로 전달한다.
+    /// 포그라운드 호출과 Tasty 밖 셸에서는 CLI 를 실행하지 않는다. payload 는 Claude Code 2.1.291 실측이다.
+    #[cfg(unix)]
+    #[test]
+    fn the_background_start_command_runs_the_cli_only_for_background_calls() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("calls.log");
+        let fake = dir.path().join("tasty");
+        std::fs::write(
+            &fake,
+            format!(
+                "#!/bin/sh\n{{ echo \"$*\"; cat; echo; }} >> '{}'\n",
+                log.display()
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let path = format!(
+            "{}:{}",
+            dir.path().display(),
+            std::env::var("PATH").unwrap()
+        );
+        let run = |payload: &str, surface: Option<&str>| {
+            use std::io::Write;
+            let mut cmd = std::process::Command::new("sh");
+            cmd.arg("-c")
+                .arg(tasty_hook_command(crate::hook::BACKGROUND_START_EVENT))
+                .env("PATH", &path)
+                .stdin(std::process::Stdio::piped());
+            match surface {
+                Some(s) => cmd.env("TASTY_SURFACE_ID", s),
+                None => cmd.env_remove("TASTY_SURFACE_ID"),
+            };
+            let mut child = cmd.spawn().unwrap();
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(payload.as_bytes())
+                .unwrap();
+            assert!(child.wait().unwrap().success());
+            std::fs::read_to_string(&log).unwrap_or_default()
+        };
+        let fg_bash = r#"{"tool_name":"Bash","tool_input":{"command":"echo fg"},"tool_response":{"stdout":"fg","stderr":"","interrupted":false,"isImage":false,"noOutputExpected":false}}"#;
+        let fg_agent = r#"{"tool_name":"Agent","tool_input":{"run_in_background":false},"tool_response":{"status":"completed","agentId":"a242555e6059db038","content":[{"type":"text","text":"say \"isAsync\":true"}]}}"#;
+        let bg_bash = r#"{"tool_name":"Bash","tool_input":{"command":"sleep 2","run_in_background":true},"tool_response":{"stdout":"","backgroundTaskId":"bd0w3381s"}}"#;
+        let bg_agent = r#"{"tool_name":"Agent","tool_input":{"run_in_background":true},"tool_response":{"isAsync":true,"status":"async_launched","agentId":"a22d7fc9077e1353c"}}"#;
+        assert_eq!(run(fg_bash, Some("7")), "");
+        assert_eq!(run(fg_agent, Some("7")), "");
+        assert_eq!(run(bg_bash, None), "");
+        let after_bash = run(bg_bash, Some("7"));
+        assert_eq!(
+            after_bash,
+            format!("claude hook background-start\n{bg_bash}\n")
+        );
+        let after_agent = run(bg_agent, Some("7"));
+        assert_eq!(
+            after_agent,
+            format!("{after_bash}claude hook background-start\n{bg_agent}\n")
+        );
     }
 }
